@@ -345,6 +345,12 @@ function KillConfirm({ s, onClose }) {
   );
 }
 
+// P31: 대화 보기(.mt-chat)의 세로 스크롤 막대를 누르면 끌기(React Flow, 노드 래퍼의 mousedown)로 넘기지 않는다
+const onScrollbarDown = (e) => {
+  const el = e.target;
+  if (el && el.classList && el.classList.contains('mt-chat') && e.nativeEvent.offsetX >= el.clientWidth) e.stopPropagation();
+};
+
 function SessionNodeInner({ id, selected }) {
   const t = useT();
   const s = useStore((st) => st.sessions.get(id));
@@ -396,7 +402,9 @@ function SessionNodeInner({ id, selected }) {
       {face !== 'icon' && <Header s={s} onKill={() => setKilling(true)} onBrief={() => (briefing ? closeBriefing() : openBriefing(id))} onMenu={() => setMenu((m) => !m)} onLoops={() => setLoopsOpen((o) => !o)} />}
       {!far && <GitLine s={s} />}
       {far && (s.state === 'waiting' || s.state === 'trust_wait') && (face === 'icon' || n.h * zoom < 160) && <AskCallout s={s} />}
-      <div className="mt-node-body">
+      {/* P31: 가까이(터미널)가 아닌 얼굴은 본문 어디를 끌어도 머리줄처럼 노드를 옮긴다(mt-drag, Canvas.jsx onNodeDragStart). 누르기만 하면 들어간다(H4).
+          단추·입력·답 카드·링크는 nodrag. 대화 보기의 스크롤 막대를 누른 것은 끌기로 넘기지 않는다 */}
+      <div className={`mt-node-body${face !== 'close' ? ' mt-drag' : ''}`} onMouseDownCapture={face === 'middle' ? onScrollbarDown : undefined}>
         <NodeBoundary id={id} label={face === 'close' ? 'terminal' : face} compact>
           {asleep && face !== 'icon' && <SleepFace s={s} zoom={zoom} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} />}
           {!asleep && face === 'close' && (attached ? <TerminalView sessionId={id} width={n.w} height={n.h} reserve={showCard ? ANSWER_H : 0} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /> : <CloseWaiting s={s} />)}

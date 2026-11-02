@@ -14,6 +14,7 @@ import { LoopEngine, normalizeTrigger, normalizeStop, describeLoop, describeLoop
 import { confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { missionGraph } from './mission.mjs';
 import { Settings } from './settings.mjs';
+import { Launchers } from './launchers.mjs'; // P33: 호출자
 import { placeItem } from './canvas-ops.mjs';
 
 const SHELL = 'shell';
@@ -40,6 +41,8 @@ export function attachFeatures(b, { timers = true } = {}) {
 
   const f = {};
   f.settings = new Settings({ store, broadcast });
+  f.launchers = new Launchers({ store, broadcast, gateway: { healthUrl: b.cfg.ocxHealthUrl, baseUrl: b.cfg.ocxBaseUrl } }); // 처음 켤 때 옛 새 세션 기본값을 옮긴다
+  if (f.launchers.migrated) b.log(`launchers created (${f.launchers.migrated.oldBoard ? 'from old settings' : 'new board'}): favorites ${f.launchers.migrated.favorites.join(',')}`);
   f.outputs = new Outputs({ cfg: b.cfg, store, resolve: (r) => b.resolve(r), hooked: (s) => b.hooked(s), transcriptOf, readMessages, workspaceName: wsName, apiError });
   f.thread = new ThreadLog({
     store, broadcast,
@@ -126,6 +129,14 @@ export function attachFeatures(b, { timers = true } = {}) {
     // I7 설정(트레이 상주)
     'settings.get': () => ({ settings: f.settings.get(), schema: f.settings.describe() }),
     'settings.set': (p) => ({ settings: f.settings.set(p) }),
+    // P33 호출자
+    'launcher.list': () => f.launchers.list(),
+    'launcher.create': (p) => f.launchers.create(p),
+    'launcher.update': (p) => f.launchers.update(p),
+    'launcher.delete': (p) => f.launchers.delete(p),
+    'launcher.favorite': (p) => f.launchers.favorite(p),
+    'launcher.order': (p) => f.launchers.order(p),
+    'launcher.preview': (p) => f.launchers.preview(p),
   };
   // 세션 요약에 덧붙이는 값: 긴 답인지(출력 보기), 켜진 루프 수(노드 배지)
   f.summaryExtra = (s) => ({ output: { long: isLongAnswer(s.rt.lastAnswer), chars: typeof s.rt.lastAnswer === 'string' ? s.rt.lastAnswer.length : 0 }, loops: f.loops.activeCount(s.sessionId) });

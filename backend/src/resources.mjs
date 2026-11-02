@@ -79,8 +79,12 @@ export class ResourceMonitor {
     Object.assign(this, { sessions, processInfo, controllers, herdrServerPid, session, readTable, intervalMs });
     this.last = null;
   }
-  start(onSample) { this.onSample = onSample; this.timer = setInterval(() => this.sample().catch(() => {}), this.intervalMs); setTimeout(() => this.sample().catch(() => {}), 3000); }
-  stop() { clearInterval(this.timer); }
+  start(onSample) {
+    this.onSample = onSample; this.stopped = false;
+    this.timer = setInterval(() => this.sample().catch(() => {}), this.intervalMs);
+    this.firstTimer = setTimeout(() => this.sample().catch(() => {}), 3000); // 첫 측정도 stop()에서 취소한다(이슈 #1-10)
+  }
+  stop() { this.stopped = true; clearInterval(this.timer); clearTimeout(this.firstTimer); }
 
   async sample() {
     const t0 = Date.now();
@@ -89,8 +93,8 @@ export class ResourceMonitor {
     const list = this.sessions();
     const rows = [];
     for (const s of list) {
-      let info = null;
-      if (s.paneId && s.present) info = await this.processInfo(s.paneId).catch(() => null);
+      let info = null; // 에이전트 없는 셸 세션도 패널이 있으면 잰다(이슈 #1-11). 실패는 null
+      if (s.paneId) info = await this.processInfo(s.paneId).catch(() => null);
       const shell = info && info.shell_pid;
       const claude = info && (info.foreground_processes || []).find((p) => /claude/i.test(p.name || ''));
       const tree = shell ? descendants(table.procs, shell) : [];
@@ -116,7 +120,7 @@ export class ResourceMonitor {
       tuiProcesses: tuiClientsFor(table.herdr, this.session),
     };
     this.last = snap;
-    if (this.onSample) this.onSample(snap);
+    if (this.onSample && !this.stopped) this.onSample(snap); // 멈춘 뒤 끝난 측정은 알리지 않는다
     return snap;
   }
 }

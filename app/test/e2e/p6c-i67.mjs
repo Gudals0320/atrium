@@ -26,7 +26,7 @@ try {
   await sleep(400);
   const boxes = await page.locator('[data-role="mm-node"]').evaluateAll((es) => es.map((e) => { const r = e.getBoundingClientRect(); return { kind: e.dataset.kind, name: e.dataset.name || '사람', cat: e.dataset.category, x: Math.round(r.x), y: Math.round(r.y) }; }));
   log('미션 맵 노드', boxes);
-  const edges = await page.locator('[data-role="mm-edge"]').evaluateAll((es) => es.map((e) => `${e.dataset.kind}:${e.querySelector('text') ? e.querySelector('text').textContent : ''}`));
+  const edges = await page.locator('[data-role="mm-edge"]').evaluateAll((es) => es.map((e) => `${e.dataset.kind}:${(e.querySelector('title') || {}).textContent || ''}`));
   log('미션 맵 선', edges);
   const cols = [...new Set(boxes.map((b) => b.x))].sort((a, b) => a - b);
   log('열 x', cols, '사람 열', boxes.find((b) => b.kind === 'human').x, 's1 열', boxes.find((b) => b.name === 's1').x, '그룹 열', (boxes.find((b) => b.kind === 'group') || {}).x, 's2 열', boxes.find((b) => b.name === 's2').x);
@@ -38,10 +38,10 @@ try {
   await shot(page, 'i6-2-mission-filter-idle', log);
   await mm.locator('[data-filter="all"]').click();
   // 연 동안 바뀌면 다시 읽는다: s2에게 보내면 사람 → s2 선(명령 바)의 횟수가 는다
-  const barBefore = await page.locator('[data-role="mm-edge"][data-kind="bar"]').evaluateAll((es) => es.map((e) => e.querySelector('text').textContent));
+  const barBefore = await page.locator('[data-role="mm-edge"][data-kind="bar"]').evaluateAll((es) => es.map((e) => e.querySelector('title').textContent));
   await call(page, 'session.send', { target: ['s2'], text: 'Reply with exactly: MAP' });
-  await until(async () => JSON.stringify(await page.locator('[data-role="mm-edge"][data-kind="bar"]').evaluateAll((es) => es.map((e) => e.querySelector('text').textContent))) !== JSON.stringify(barBefore), 15000, 300).catch(() => {});
-  log('명령 바 선(전, 후)', barBefore, await page.locator('[data-role="mm-edge"][data-kind="bar"]').evaluateAll((es) => es.map((e) => e.querySelector('text').textContent)));
+  await until(async () => JSON.stringify(await page.locator('[data-role="mm-edge"][data-kind="bar"]').evaluateAll((es) => es.map((e) => e.querySelector('title').textContent))) !== JSON.stringify(barBefore), 15000, 300).catch(() => {});
+  log('명령 바 선(전, 후)', barBefore, await page.locator('[data-role="mm-edge"][data-kind="bar"]').evaluateAll((es) => es.map((e) => e.querySelector('title').textContent)));
   await sleep(500);
   await shot(page, 'i6-3-mission-live-update', log);
   // 노드를 누르면 덮개를 닫고 그 노드로

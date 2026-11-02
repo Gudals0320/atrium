@@ -1,5 +1,6 @@
 // P12 창 시험: 왼쪽 레일의 Claude, 셸을 누르면 대화상자 없이 지금 워크스페이스에 설정의 새 세션 기본값으로 뜨고 그 터미널로 들어간다.
 // Shift+누르기는 대화상자를 기본값으로 연다. 설정 화면에 새 세션 기본값 절이 있다.
+// P33: 새 세션 기본값은 호출자다. 레일 단추는 즐겨찾기 호출자(data-launcher), 기본값은 Claude Code·Codex 호출자의 값, 설정 화면은 호출자 탭이다.
 // 판: herdr 세션 atrium-dev-p12, 포트 47826, backend/.dev/p12. 다른 판과 그 세션은 건드리지 않는다. 시험 폴더는 새로 만든 C:\Workspace\mtask-p12-ws\demo 하나다.
 // 대화 목록은 그 폴더의 대화만 읽는다(실제 ~/.claude/projects 전체를 읽지 않는다). 사용: MT_E2E_OUT=p12 node test/e2e/p12-quick.mjs
 import fs from 'node:fs';
@@ -11,7 +12,7 @@ import { APP_ROOT, REPO, OUT, sleep, until, shot, logger, closeApp, e2eBoard } f
 import { assertTestBoard } from './p9-guard.mjs';
 
 const B = e2eBoard({ session: 'atrium-dev-p12', port: '47826', dev: path.join(REPO, 'backend', '.dev', 'p12'), dir: 'C:\\Workspace\\mtask-p12-ws\\demo' }); // P18: 다른 판에서 다시 돌릴 수 있게
-if (!['p12', 'p18', 'p21', 'p25'].includes(process.env.MT_E2E_OUT)) throw new Error('MT_E2E_OUT=p12를 명령줄에서 준다');
+if (!['p12', 'p18', 'p21', 'p25', 'p33'].includes(process.env.MT_E2E_OUT)) throw new Error('MT_E2E_OUT=p12를 명령줄에서 준다');
 const DEV = B.dev;
 const DIR = B.dir;
 const PROJECT = path.join(os.homedir(), '.claude', 'projects', DIR.replace(/[^A-Za-z0-9]/g, '-'));
@@ -46,11 +47,11 @@ try {
   await page.waitForSelector('.mt-wsbtn[data-name="demo"]');
   await page.click('.mt-wsbtn[data-name="demo"]');
   await until(() => page.evaluate(() => { const s = window.__mt.getState(); const w = s.workspaces.find((x) => x.key === s.currentWs); return w && w.name === 'demo'; }), 10000);
-  await call(page, 'settings.set', { claudeEffort: 'low', claudePermissionMode: 'acceptEdits', claudeModel: '' });
+  await call(page, 'launcher.update', { id: 'claude', patch: { effort: 'low', permissionMode: 'acceptEdits', model: '' } }); // P33: 옛 settings.set claude*
 
   // 1. Claude 단추: 대화상자 없이 뜨고 터미널로 들어간다
   const before = new Set((await sessions(page)).map((s) => s.id));
-  await page.click('[data-role="rail-left"] [data-action="spawn"]');
+  await page.click('[data-role="rail-left"] [data-launcher="claude"]');
   await sleep(300);
   step('Claude 단추는 대화상자를 열지 않는다', !(await page.$('[data-role="spawn"]')));
   const c = await until(async () => (await sessions(page)).find((s) => !before.has(s.id) && s.kind === 'claude'), 30000);
@@ -64,7 +65,7 @@ try {
 
   // 2. 셸 단추
   const before2 = new Set((await sessions(page)).map((s) => s.id));
-  await page.click('[data-role="rail-left"] [data-action="spawn-shell"]');
+  await page.click('[data-role="rail-left"] [data-launcher="shell"]');
   const sh = await until(async () => (await sessions(page)).find((s) => !before2.has(s.id) && s.kind === 'shell'), 30000);
   const sf = await until(async () => { const f = await focusIn(page, sh.id); return f.focusId === sh.id && f.inNode && f.xterm ? f : null; }, 20000).catch(() => null);
   step('셸 단추도 바로 뜨고 그 터미널로 들어간다', sf, sf || (await focusIn(page, sh.id)));
@@ -72,23 +73,24 @@ try {
   await shot(page, 'p12-quick-shell', log);
 
   // 3. Shift+누르기: 대화상자를 설정의 기본값으로 연다
-  await page.click('[data-role="rail-left"] [data-action="spawn"]', { modifiers: ['Shift'] });
+  await page.click('[data-role="rail-left"] [data-launcher="claude"]', { modifiers: ['Shift'] });
   await page.waitForSelector('[data-role="spawn"]', { timeout: 5000 });
-  const dlg = await page.evaluate(() => { const f = document.querySelector('[data-role="spawn"]'); return { kind: f.querySelector('[data-field=kind]').value, model: f.querySelector('[data-field=model]').value, mode: [...f.querySelectorAll('select')].map((x) => x.value).find((v) => v === 'acceptEdits') || null, cwd: f.querySelector('[data-field=cwd]').value }; });
-  step('Shift+누르기는 대화상자를 기본값으로 연다', dlg.kind === 'claude' && dlg.mode === 'acceptEdits' && dlg.model === 'haiku' && /demo$/.test(dlg.cwd), dlg);
+  const dlg = await page.evaluate(() => { const f = document.querySelector('[data-role="spawn"]'); return { launcher: f.querySelector('[data-field=launcher]').value, model: f.querySelector('[data-field=model]').value, preview: (f.querySelector('[data-role=launcher-preview]') || {}).textContent || '', cwd: f.querySelector('[data-field=cwd]').value }; });
+  step('Shift+누르기는 대화상자를 기본값으로 연다(P33: 그 호출자, 권한 모드는 미리보기에)', dlg.launcher === 'claude' && /--permission-mode acceptEdits/.test(dlg.preview) && dlg.model === 'haiku' && /demo$/.test(dlg.cwd), dlg);
   await shot(page, 'p12-quick-dialog', log);
   await page.keyboard.press('Escape');
   await page.click('[data-role="spawn"] button[type=button]').catch(() => {});
 
   // 4. 설정 화면의 새 세션 기본값 절
   await page.click('[data-role="top-right"] [data-action="settings-open"]');
-  await page.waitForSelector('[data-role="spawn-settings"]', { timeout: 5000 });
-  const sv = await page.evaluate(() => { const r = document.querySelector('[data-role="spawn-settings"]'); return { effort: r.querySelector('[data-field=setting-claudeEffort]').value, mode: r.querySelector('[data-field=setting-claudePermissionMode]').value, model: r.querySelector('[data-field=setting-claudeModel]').value }; });
-  step('설정 화면에 지금 기본값이 보인다', sv.effort === 'low' && sv.mode === 'acceptEdits' && sv.model === '', sv);
-  await page.fill('[data-field=setting-codexArgs]', '-m gpt-5');
-  await page.press('[data-field=setting-codexArgs]', 'Enter');
-  await until(async () => (await call(page, 'settings.get')).settings.codexArgs === '-m gpt-5', 5000).then(() => step('Codex 실행 인자를 설정 화면에서 바꾼다', true), () => step('Codex 실행 인자를 설정 화면에서 바꾼다', false));
-  await page.evaluate(() => document.querySelector('[data-role="spawn-settings"]').scrollIntoView());
+  await page.click('[data-role="settings-tabs"] [data-tab="launchers"]');
+  await page.waitForSelector('[data-role="launchers-list"]', { timeout: 5000 });
+  const sv = await page.$eval('[data-role="launcher-row"][data-launcher="claude"]', (e) => e.textContent);
+  step('설정 화면(호출자 탭)에 지금 기본값이 보인다', /--permission-mode acceptEdits/.test(sv) && /--effort low/.test(sv) && !/--model/.test(sv), { sv });
+  await page.click('[data-role="launcher-row"][data-launcher="codex"] [data-action="launcher-edit"]');
+  await page.fill('[data-field=launcher-args]', '-m gpt-5');
+  await page.click('[data-action=launcher-save]');
+  await until(async () => (await call(page, 'launcher.list')).launchers.find((l) => l.id === 'codex').args === '-m gpt-5', 5000).then(() => step('Codex 실행 인자를 설정 화면에서 바꾼다', true), () => step('Codex 실행 인자를 설정 화면에서 바꾼다', false));
   await shot(page, 'p12-quick-settings', log);
 } catch (e) {
   step('시험 중 오류', false, e.message);
@@ -97,7 +99,8 @@ try {
   // 정리: 이 시험이 띄운 세션을 끄고 기본값을 처음으로 돌린다(판의 herdr 서버와 세션은 tools에서 지운다)
   try {
     for (const s of await sessions(page)) atrium('kill', s.name, '--yes');
-    await call(page, 'settings.set', { claudeEffort: '', claudePermissionMode: 'manual', codexArgs: '' });
+    await call(page, 'launcher.update', { id: 'claude', patch: { effort: '', permissionMode: 'manual' } });
+    await call(page, 'launcher.update', { id: 'codex', patch: { args: '' } });
   } catch (e) { log('정리 오류', e.message); }
   await closeApp(app);
 }

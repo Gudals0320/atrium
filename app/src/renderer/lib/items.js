@@ -1,5 +1,4 @@
-// P6c 창 쪽 순수 규칙: 메모·칸반 노드의 워크스페이스 소속(놓은 자리), 루프 배지 글, Thread 결과 글, 미션 맵 배치. 단위 시험이 있다(test/p6c-lib.test.mjs).
-import { treeOrder } from './branch.js'; // P8(K4): 미션 맵의 나무 순서
+// P6c 창 쪽 순수 규칙: 메모·칸반 노드의 워크스페이스 소속(놓은 자리), 루프 배지 글, Thread 결과 글(미션 맵 배치는 P32부터 lib/mission-layout.js). 단위 시험이 있다(test/p6c-lib.test.mjs).
 import { t as tr } from './i18n.js';
 
 // 열쇠 → 글(P16). 객체처럼 읽되 그때의 언어로 돌려준다(LOOP_STATUS[l.status])
@@ -80,37 +79,4 @@ export const RESULT_PHASE = labelMap('items.resultPhase', ['delivering', 'runnin
 export const ITEM_PHASE = labelMap('items.itemPhase', ['active', 'done', 'partial', 'failed']);
 export const SOURCE_LABEL = labelMap('items.source', ['bar', 'output', 'loop', 'atrium', 'mtask']);
 
-// 미션 맵 배치(I6): 두 열(0 사람과 지시하는 세션, 1 세션). P22에서 그룹 열을 뺐다. 거르기(category)를 받으면 그 분류의 세션만(사람은 남긴다)
-// → { boxes: Map id → { x, y, w, h, node }, edges: [{ ...edge, path }], width, height }
-export const MISSION = { colW: 260, colGap: 140, rowH: 66, rowGap: 14, pad: 24, head: 34, indent: 18 };
-export function missionLayout(graph, { filter = 'all' } = {}) {
-  const L = MISSION;
-  const keep = (n) => n.kind !== 'session' || filter === 'all' || n.category === filter;
-  const nodes = (graph.nodes || []).filter(keep);
-  const ids = new Set(nodes.map((n) => n.id));
-  const cols = [[], []];
-  for (const n of nodes) cols[Math.max(0, Math.min(1, n.column ?? 1))].push(n);
-  // 열 안의 순서: 사람 먼저, 그다음 내 차례 > 작업 중 > 쉼 > 검토 > 끝남, 이름
-  const rank = { needs_you: 0, working: 1, idle: 2, done: 3, exited: 4 };
-  const cmp = (a, b) => (a.kind === 'human' ? -1 : b.kind === 'human' ? 1 : 0) || (rank[a.category] ?? 5) - (rank[b.category] ?? 5) || String(a.name).localeCompare(String(b.name));
-  // P8(K4): 세션은 나무 순서(부모 바로 다음에 자식)로 매긴 번호를 열마다 따른다. 다른 열에 있는 부모의 자식들도 부모 순서대로 모인다
-  const tree = new Map(treeOrder(nodes.filter((n) => n.kind === 'session'), { cmp, idOf: (n) => n.id, parentOf: (n) => n.parentId || null }).map((t, i) => [t.item.id, i]));
-  for (const c of cols) c.sort((a, b) => (a.kind === 'session' && b.kind === 'session' ? tree.get(a.id) - tree.get(b.id) : cmp(a, b)));
-  const boxes = new Map();
-  cols.forEach((c, ci) => c.forEach((n, ri) => {
-    const ind = n.kind === 'session' ? Math.min(3, Math.max(0, (n.depth || 1) - 1)) * L.indent : 0; // 하위 세션은 깊이만큼 들여 쓴다
-    boxes.set(n.id, { x: L.pad + ci * (L.colW + L.colGap) + ind, y: L.pad + L.head + ri * (L.rowH + L.rowGap), w: L.colW - ind, h: L.rowH, node: n });
-  }));
-  const edges = [];
-  for (const e of graph.edges || []) {
-    if (!ids.has(e.from) || !ids.has(e.to)) continue;
-    const a = boxes.get(e.from), b = boxes.get(e.to);
-    let p;
-    if (a.x < b.x) { const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, dx = Math.max(40, (x2 - x1) / 2); p = { d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`, lx: (x1 + x2) / 2, ly: (y1 + y2) / 2 }; }
-    else if (a.x > b.x) { const x1 = a.x, y1 = a.y + a.h / 2, x2 = b.x + b.w, y2 = b.y + b.h / 2, dx = Math.max(40, (x1 - x2) / 2); p = { d: `M${x1},${y1} C${x1 - dx},${y1} ${x2 + dx},${y2} ${x2},${y2}`, lx: (x1 + x2) / 2, ly: (y1 + y2) / 2 }; }
-    else { const x1 = a.x + a.w, y1 = a.y + a.h / 2, y2 = b.y + b.h / 2, bulge = 50 + Math.abs(y2 - y1) / 6; p = { d: `M${x1},${y1} C${x1 + bulge},${y1} ${x1 + bulge},${y2} ${x1},${y2}`, lx: x1 + bulge * 0.75, ly: (y1 + y2) / 2 }; }
-    edges.push({ ...e, ...p });
-  }
-  const rows = Math.max(1, ...cols.map((c) => c.length));
-  return { boxes, edges, width: L.pad * 2 + 2 * L.colW + L.colGap, height: L.pad * 2 + L.head + rows * (L.rowH + L.rowGap) };
-}
+// 미션 맵 배치는 lib/mission-layout.js(P32)

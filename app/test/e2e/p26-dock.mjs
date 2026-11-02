@@ -1,3 +1,4 @@
+// P30: 3·4 단계(덩어리 안 연결)는 다리·둘레 길과 초점 강조로 고쳤다(터미널 위 선 없음). P30 판(MT_E2E_BOARD=p30)에서도 돈다
 // P26 창 시험: 덩어리 안 연결선(진한 색과 어두운 테두리, 밝은 셸 화면 위), 초점 세션의 선은 테두리 가운데에서, 눌러서 보기(머리줄·본문·멀리·아이콘 얼굴,
 // 85% 채우기, 이미 보면 그대로), 고른 노드 막대(맨 위 줄, 가로|세로 토글, 불 들어오는 크기 단추, 세션 수 2·3·4·6마다 다른 틀)를 본다.
 // 판: herdr 세션 atrium-dev-p26, 포트 47845, backend/.dev(experiments/p26/tools/env.cjs). 시험 폴더는 새로 만든 C:\Workspace\mtask-p26-ws 하나, 셸만 띄운다.
@@ -6,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { launch, closeApp, shot, logger, sleep, until, call, writeJson, DIRS, DEV, OUT } from './p10-lib.mjs';
 
-if (process.env.MT_E2E_BOARD !== 'p26') throw new Error('MT_E2E_BOARD=p26으로 돌린다(experiments/p26/tools/e2e.cjs)');
+if (!['p26', 'p30'].includes(process.env.MT_E2E_BOARD)) throw new Error('MT_E2E_BOARD=p26이나 p30으로 돌린다(experiments/p26·p30/tools/e2e.cjs)'); // P30: 덩어리 안 연결 단계를 다리·둘레 길로 고쳐 P30 판에서도 돈다
 const log = logger('p26-dock');
 const result = { steps: [] };
 const step = (name, ok, data = {}) => { result.steps.push({ name, ok: !!ok, ...data }); log(`${ok ? '통과' : '실패'}: ${name}`, data); };
@@ -84,27 +85,24 @@ async function paintWhite(page, name) {
   await page.keyboard.press('Enter');
   await sleep(1500);
 }
+// P30: 덩어리 안 연결은 다리·괄호·둘레 길(터미널 위 선 없음). 초점 칸에 닿는 것은 hot, 나머지는 dim
 const dlInfo = (page) => page.evaluate(() => {
   const root = document.querySelector('[data-role=dock-links]');
   if (!root) return null;
   return {
     focus: root.dataset.focus || null,
-    lines: [...root.querySelectorAll('.mt-dl')].map((g) => {
-      const line = g.querySelector('.mt-dl-line'), casing = g.querySelector('.mt-dl-casing');
-      const cs = getComputedStyle(line), cc = casing ? getComputedStyle(casing) : null;
-      return { link: g.dataset.link, anchored: g.dataset.anchored || null, a: [+g.dataset.ax, +g.dataset.ay], b: [+g.dataset.bx, +g.dataset.by], stroke: cs.stroke, op: +cs.opacity, width: +line.getAttribute('stroke-width'), casing: cc ? { stroke: cc.stroke, width: +casing.getAttribute('stroke-width') } : null, start: !!g.querySelector('.mt-dl-start') };
-    }),
+    items: [...root.querySelectorAll('[data-kind]')].map((e) => ({ link: e.dataset.link, kind: e.dataset.kind, from: e.dataset.from, to: e.dataset.to, lane: e.dataset.lane, sides: e.dataset.sides, hot: e.classList.contains('hot'), dim: e.classList.contains('dim') })),
   };
 });
-const ROLE_BLUE = 'rgb(122, 167, 240)';
-// 테두리 가운데(lib/dock-links.js borderAnchor와 같은 셈)
-const anchor = (r, p) => {
-  const c = { x: r.x + r.w / 2, y: r.y + r.h / 2 }, dx = p.x - c.x, dy = p.y - c.y;
-  if (Math.abs(dx) * r.h >= Math.abs(dy) * r.w) return dx >= 0 ? [r.x + r.w, c.y] : [r.x, c.y];
-  return dy >= 0 ? [c.x, r.y + r.h] : [c.x, r.y];
-};
-const center = (r) => [r.x + r.w / 2, r.y + r.h / 2];
-const near = (p, q, tol = 2) => Math.abs(p[0] - q[0]) <= tol && Math.abs(p[1] - q[1]) <= tol;
+// 바깥 길(괄호·둘레 길)의 모든 점이 덩어리 바깥(창 좌표, 처음·끝 칸 테두리는 뺀다)
+const routesOutside = (page) => page.evaluate(() => {
+  const nodes = [...document.querySelectorAll('.mt-node.docked')].map((e) => e.getBoundingClientRect());
+  const O = { x: Math.min(...nodes.map((r) => r.left)), y: Math.min(...nodes.map((r) => r.top)), r: Math.max(...nodes.map((r) => r.right)), b: Math.max(...nodes.map((r) => r.bottom)) };
+  return [...document.querySelectorAll('[data-role=dock-links] g.mt-dl .mt-dl-line')].every((p) => {
+    const m = p.getScreenCTM(), L = p.getTotalLength();
+    return Array.from({ length: 37 }, (_, i) => p.getPointAtLength((L * (i + 2)) / 40)).every((q) => { const x = q.x * m.a + m.e, y = q.y * m.d + m.f; return x < O.x + 2 || x > O.r - 2 || y < O.y + 2 || y > O.b - 2; });
+  });
+});
 
 let { app, page } = await launch({ log });
 try {
@@ -188,43 +186,30 @@ try {
   await page.evaluate(() => window.__mt.setFocus(null));
   await setView(page, { x: outer.x + outer.w / 2, y: outer.y - 300, w: 1, h: 1 }, 0.55); // 화면 가운데가 덩어리 위쪽 밖
   let dl = await dlInfo(page);
-  const rel = (n) => ({ x: r[n].x - outer.x, y: r[n].y - outer.y, w: r[n].w, h: r[n].h });
-  const l14 = dl && dl.lines.find((l) => near(l.a, center(rel('s1'))) || near(l.b, center(rel('s4'))));
-  step('덩어리 안 연결선: 진한 색(역할 파랑, 불투명) 위에 어두운 테두리, 초점이 없으면 가운데 점끼리', dl && dl.lines.length === 2 && !dl.focus && l14 && l14.stroke === ROLE_BLUE && l14.op >= 0.99 && l14.casing && l14.casing.width > l14.width * 1.8 && near(l14.a, center(rel('s1'))) && near(l14.b, center(rel('s4'))) && !l14.anchored, { dl });
+  // P30: 대각선 둘(s1 → s4, s2 → s3)은 둘레 길(바깥), 같은 변을 쓰면 다른 차선. 터미널 위에 선이 없다
+  const around = dl ? dl.items.filter((x) => x.kind === 'around') : [];
+  step('덩어리 안 연결(P30): 2 × 2 대각선 둘은 덩어리 둘레를 도는 길, 터미널 위 선 없음, 초점이 없으면 모두 보통', dl && dl.items.length === 2 && around.length === 2 && !dl.focus && (await routesOutside(page)) && dl.items.every((x) => !x.hot && !x.dim), { dl });
   await shot(page, 'p26-3-1-links-no-focus', log);
-  // 흰 셸 위를 가까이서
+  // 흰 셸 위를 가까이서: 터미널 위를 지나는 선이 없다
   await setView(page, { x: r.s1.x + r.s1.w * 0.75, y: r.s1.y + r.s1.h * 0.75, w: 1, h: 1 }, 1.2);
   await shot(page, 'p26-3-2-link-over-white-shell', log);
-  // 화면 그림에서 선 둘레의 어두운 테두리와 파랑이 흰 바탕 위에 있는지(선 가운데 점의 화소)
-  const px = await page.evaluate(() => {
-    const g = document.querySelector('[data-role=dock-links] .mt-dl.role .mt-dl-line');
-    const r = g.getBoundingClientRect();
-    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
-  });
-  step('흰 셸 화면 위에서도 선이 보인다(스크린숏 p26-3-2)', !!px, { px });
+  step('흰 셸 화면 위에 선이 없다(스크린숏 p26-3-2)', await routesOutside(page), {});
 
-  // 4) 초점 세션의 선은 테두리 가운데에서
+  // 4) 초점 칸(고름)에 닿는 연결만 진하게(P30: 테두리 끝 대신 강조)
   await frame(page, outer, 80);
-  const headClick = async (n) => { const h = await page.locator(`.mt-node[data-name="${n}"] .mt-node-head`).boundingBox(); await page.mouse.click(h.x + Math.min(160, h.width / 2), h.y + h.height / 2); await sleep(900); };
+  const headClick = async (n) => { const h = await page.locator(`.mt-node[data-name="${n}"] .mt-node-head`).boundingBox(); await page.mouse.click(h.x + Math.min(160, h.width / 2), h.y + h.height / 2); await sleep(900); await page.mouse.move(3, 400); await sleep(300); };
+  const hotOf = (d, from, to) => { const x = d && d.items.find((i) => i.from === from && i.to === to); return x ? (x.hot ? 'hot' : x.dim ? 'dim' : '') : null; };
   await headClick('s1');
   dl = await dlInfo(page);
-  let l = dl && dl.lines.find((x) => near(x.b, center(rel('s4'))));
-  step('s1 머리줄을 누르면(고름) s1이 초점이고, s1 → s4 선의 s1 쪽 끝이 s1 테두리 가운데(s4 쪽), s4 쪽 끝은 s4 가운데', dl && dl.focus === ids.s1 && l && l.anchored === 'from' && near(l.a, anchor(rel('s1'), { x: center(rel('s4'))[0], y: center(rel('s4'))[1] })) && l.start, { focus: dl && dl.focus, line: l, want: anchor(rel('s1'), { x: center(rel('s4'))[0], y: center(rel('s4'))[1] }) });
-  const s2line = dl && dl.lines.find((x) => near(x.a, center(rel('s2'))));
-  step('초점과 닿지 않는 선(s2 → s3)은 그대로 가운데 점끼리', s2line && !s2line.anchored, { line: s2line });
-  const labels = await page.evaluate(() => [...document.querySelectorAll('[data-role=dock-links] .mt-dl-label')].map((e) => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, r: r.right, b: r.bottom, k: +e.dataset.k }; }));
-  const overlap = labels.some((p, i) => labels.some((q, j) => j > i && p.x < q.r && q.x < p.r && p.y < q.b && q.y < p.b));
-  step('엇갈린 두 선의 글이 겹치지 않는다(겹치면 선을 따라 옮긴다)', labels.length === 2 && !overlap, { labels });
+  step('s1 머리줄을 누르면(고름) s1이 초점이고 s1 → s4만 진하게', dl && dl.focus === ids.s1 && hotOf(dl, ids.s1, ids.s4) === 'hot' && hotOf(dl, ids.s2, ids.s3) === 'dim', { dl });
   await shot(page, 'p26-4-1-focus-s1', log);
   await headClick('s4');
   dl = await dlInfo(page);
-  l = dl && dl.lines.find((x) => near(x.a, center(rel('s1'))));
-  step('s4를 고르면 같은 선의 s4 쪽 끝이 s4 테두리 가운데로 옮겨 간다', dl && dl.focus === ids.s4 && l && l.anchored === 'to' && near(l.b, anchor(rel('s4'), { x: center(rel('s1'))[0], y: center(rel('s1'))[1] })), { focus: dl && dl.focus, line: l });
+  step('s4를 고르면 같은 연결(s1 → s4)이 진하다', dl && dl.focus === ids.s4 && hotOf(dl, ids.s1, ids.s4) === 'hot' && hotOf(dl, ids.s2, ids.s3) === 'dim', { dl });
   await shot(page, 'p26-4-2-focus-s4', log);
   await headClick('s3');
   dl = await dlInfo(page);
-  l = dl && dl.lines.find((x) => x.anchored);
-  step('s3을 고르면 s2 → s3 선의 s3 쪽 끝이 s3 위 테두리 가운데', dl && dl.focus === ids.s3 && l && l.anchored === 'to' && near(l.b, anchor(rel('s3'), { x: center(rel('s2'))[0], y: center(rel('s2'))[1] })), { line: l });
+  step('s3을 고르면 s2 → s3만 진하다', dl && dl.focus === ids.s3 && hotOf(dl, ids.s2, ids.s3) === 'hot' && hotOf(dl, ids.s1, ids.s4) === 'dim', { dl });
   await shot(page, 'p26-4-3-focus-s3', log);
   await clearSel(page);
 

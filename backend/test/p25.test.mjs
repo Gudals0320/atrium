@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { normalizePatch, DEFAULTS } from '../src/settings.mjs';
+import { DEFAULTS } from '../src/settings.mjs';
+import { Launchers, exampleDeepseek, normalizeLauncher } from '../src/launchers.mjs';
 import { checkCommand, checkProxy, DEFAULT_MODEL, FLAVOR, COMMAND_MAX } from '../src/deepseek.mjs';
 import { Store } from '../src/store.mjs';
 import { Backend } from '../src/backend.mjs';
@@ -23,22 +24,25 @@ async function server(reply) {
 // 닫힌 포트(꺼진 프록시)
 async function closedUrl() { const s = await server(() => {}); await s.close(); return s.url; }
 
-test('P25 설정: DeepSeek 모델 기본값과 [ ] - 를 받는다, 직접 명령은 비어 있다', () => {
-  assert.equal(DEFAULTS.deepseekModel, 'ocx-claude-deepseek--deepseek-flash[1m]');
-  assert.equal(DEFAULT_MODEL, DEFAULTS.deepseekModel);
-  assert.equal(DEFAULTS.deepseekCommand, '');
-  assert.deepEqual(normalizePatch({ deepseekModel: ' ocx-claude-deepseek--deepseek-pro[1m] ' }), { deepseekModel: 'ocx-claude-deepseek--deepseek-pro[1m]' });
-  assert.throws(() => normalizePatch({ deepseekModel: 'x --dangerously-skip-permissions' }), /deepseekModel/);
+// P33: DeepSeek 모델과 직접 명령은 설정이 아니라 DeepSeek 예시 호출자(launchers.mjs)다
+test('P25 설정: DeepSeek 예시 호출자는 Claude Code + 게이트웨이 환경 변수이고 모델 기본값은 그대로다', () => {
+  const ex = exampleDeepseek();
+  assert.equal(ex.model, 'ocx-claude-deepseek--deepseek-flash[1m]');
+  assert.equal(DEFAULT_MODEL, ex.model);
+  assert.equal(ex.harness, 'claude'); assert.equal(ex.icon, 'deepseek');
+  assert.equal(normalizeLauncher({ ...ex, model: ' ocx-claude-deepseek--deepseek-pro[1m] ' }).model, 'ocx-claude-deepseek--deepseek-pro[1m]');
+  assert.throws(() => normalizeLauncher({ ...ex, model: 'x --dangerously-skip-permissions' }), (e) => e.key === 'launchers.err.model');
 });
 
 test('P25 설정: 직접 명령은 PowerShell 한 줄(줄바꿈·탭·제어 글자 없음, 길이 제한)', () => {
   const cmd = 'ocx claude --model "ocx-claude-deepseek--deepseek-flash[1m]"';
-  assert.deepEqual(normalizePatch({ deepseekCommand: `  ${cmd} ` }), { deepseekCommand: cmd });
-  assert.deepEqual(normalizePatch({ deepseekCommand: "echo hi; claude --model haiku | Out-Host & 'x'" }), { deepseekCommand: "echo hi; claude --model haiku | Out-Host & 'x'" });
-  assert.throws(() => normalizePatch({ deepseekCommand: 'echo a\nclaude' }), /deepseekCommand.*한 줄/);
-  assert.throws(() => normalizePatch({ deepseekCommand: 'echo a\rclaude' }), /deepseekCommand/);
-  assert.throws(() => normalizePatch({ deepseekCommand: 'echo\ta' }), /deepseekCommand/);
-  assert.throws(() => normalizePatch({ deepseekCommand: 'x'.repeat(COMMAND_MAX + 1) }), /deepseekCommand/);
+  const L = (command) => normalizeLauncher({ name: 'DS', harness: 'command', icon: 'deepseek', command });
+  assert.equal(L(`  ${cmd} `).command, cmd);
+  assert.equal(L("echo hi; claude --model haiku | Out-Host & 'x'").command, "echo hi; claude --model haiku | Out-Host & 'x'");
+  assert.throws(() => L('echo a\nclaude'), (e) => e.key === 'launchers.err.commandLine');
+  assert.throws(() => L('echo a\rclaude'), (e) => e.key === 'launchers.err.commandLine');
+  assert.throws(() => L('echo\ta'), (e) => e.key === 'launchers.err.commandLine');
+  assert.throws(() => L('x'.repeat(COMMAND_MAX + 1)), (e) => e.key === 'launchers.err.commandLong');
   assert.equal(checkCommand('  '), '');
   assert.equal(checkCommand(' pi --model x '), 'pi --model x');
   assert.throws(() => checkCommand('a\nb'), (e) => e.code === 'bad_request' && e.key === 'deepseekCommandLine');
@@ -120,17 +124,18 @@ test('P25 spawn: DeepSeek는 판이 띄우는 Claude Code(hook, 이어 가기)�
     assert.equal(s.flavor, 'deepseek'); assert.equal(b.hooked(s), true);
     assert.equal(b.store.getSession(r.sessionId).flavor, 'deepseek', '판 기록에 남아 다시 켜도 DeepSeek로 보인다');
     assert.equal(b.store.getSession(r.sessionId).kind, 'claude');
-    // 설정의 DeepSeek 모델, 대화상자가 넘긴 모델
-    b.features.settings.get = () => ({ ...DEFAULTS, deepseekModel: 'ocx-claude-deepseek--deepseek-pro[1m]' });
+    // 판의 DeepSeek 호출자 모델(P33: 설정 deepseekModel 대신), 대화상자가 넘긴 모델
+    b.features.launchers = new Launchers({ store: b.store, gateway: { healthUrl: ok.url } });
+    b.features.launchers.update({ id: 'deepseek', patch: { model: 'ocx-claude-deepseek--deepseek-pro[1m]' } });
     const r2 = await b.spawn({ cwd, kind: FLAVOR });
     assert.ok(r2.resumeArgv.includes('ocx-claude-deepseek--deepseek-pro[1m]'));
     const r3 = await b.spawn({ cwd, flavor: FLAVOR, kind: 'claude', model: 'm-x[1m]', effort: 'low' });
     assert.ok(r3.resumeArgv.includes('m-x[1m]') && r3.resumeArgv.includes('low'));
     // 보통 Claude는 그대로
     const r4 = await b.spawn({ cwd });
-    b.features.settings.get = () => ({ ...DEFAULTS, claudeModel: 'opus', claudeEffort: 'high' });
+    b.features.launchers.update({ id: 'claude', patch: { model: 'opus', effort: 'high' } });
     assert.equal(r4.flavor, null);
-    const r5 = await b.spawn({ cwd });
+    const r5 = await b.spawn({ cwd, launcher: 'claude' });
     assert.equal(r5.flavor, null); assert.ok(r5.resumeArgv.includes('opus') && r5.resumeArgv.includes('high'));
     assert.ok(!(JSON.parse(fs.readFileSync(r5.settingsPath, 'utf8')).env || {}).ANTHROPIC_BASE_URL, '보통 Claude 세션은 사용자 설정 그대로');
     b.store.close();
@@ -139,7 +144,9 @@ test('P25 spawn: DeepSeek는 판이 띄우는 Claude Code(hook, 이어 가기)�
 
 test('P25 spawn: 직접 명령은 새 셸 패널에 그 글을 그대로 치고(덧붙이는 인자 없음) hook 없는 세션이다. 프록시는 보지 않는다', async () => {
   const cmd = 'echo ds-test; claude --model haiku';
-  const { b, calls, cwd } = spawnBackend({ healthUrl: await closedUrl(), settings: { deepseekCommand: cmd } });
+  const { b, calls, cwd } = spawnBackend({ healthUrl: await closedUrl() });
+  b.features.launchers = new Launchers({ store: b.store });
+  b.features.launchers.update({ id: 'deepseek', patch: { harness: 'command', command: cmd } }); // P33: 설정 deepseekCommand 대신 DeepSeek 호출자의 명령
   const r = await b.spawn({ cwd, kind: FLAVOR });
   assert.equal(r.kind, 'shell'); assert.equal(r.flavor, 'deepseek'); assert.equal(r.command, cmd);
   assert.ok(!calls.some((c) => c[0] === 'startAgent'), '판이 에이전트를 띄우지 않는다');

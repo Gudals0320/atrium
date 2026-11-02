@@ -5,13 +5,13 @@
 import { memo, useMemo, useState } from 'react';
 import { useStore as useFlowStore } from '@xyflow/react';
 import { api } from './api.js';
-import { useStore, openDialog, selectWorkspace, noteWorkspace, toast, markArranged } from './store.js';
+import { useStore, getState, openDialog, selectWorkspace, noteWorkspace, toast, markArranged } from './store.js';
 import { Icon } from './lib/icons.jsx';
 import { useT, t, errText } from './lib/i18n.js';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP } from '../../../backend/src/canvas.mjs';
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
-import { worktreeLabel, arrowPath } from '../../../backend/src/worktree-areas.mjs'; // P27: 워크트리 영역과 브랜치 화살표
+import { worktreeLabel, arrowPath, arrowStyle } from '../../../backend/src/worktree-areas.mjs'; // P27: 워크트리 영역과 브랜치 화살표. P31: 배율에 따른 굵기·글자
 
 const zoomSel = (s) => s.transform[2];
 
@@ -20,7 +20,21 @@ export async function arrangeWorkspace(key, undo = false) {
     if (undo) { await api.call('board.arrange', { workspace: key, undo: true }); markArranged(key, false); toast(t('regions.undone')); return; }
     const r = await api.call('board.arrange', { workspace: key, apply: true });
     markArranged(key, true);
+    markArranged(BOARD_ARRANGED, false); // 판 전체 정리의 되돌리기는 지워졌다
     toast(r.edges ? t('regions.arranged', { n: r.edges }) : t('regions.arrangedNoLinks'));
+  } catch (e) { toast(t('regions.arrangeFail', { error: errText(e) }), 'error'); }
+}
+// P31: 판 전체 정리(아래 칩 "정리"). 모든 워크스페이스 안을 정리하고 영역(리포 영역과 워크트리 위성 영역 묶음)도 줄 맞춰 다시 놓는다.
+// 되돌리기는 칩 줄의 "정리 되돌리기"(한 번). 영역 이름표의 "정리"는 그 영역 안만 그대로다
+export const BOARD_ARRANGED = '*';
+export async function arrangeBoard(undo = false) {
+  try {
+    if (undo) { await api.call('board.arrange', { all: true, undo: true }); markArranged(BOARD_ARRANGED, false); toast(t('arrangeAll.undone')); return; }
+    const r = await api.call('board.arrange', { all: true, apply: true });
+    for (const k of [...getState().arranged]) markArranged(k, false); // 워크스페이스 하나의 되돌리기는 지워졌다
+    markArranged(BOARD_ARRANGED, true);
+    toast(t('arrangeAll.done', { n: (r.regions || []).length }));
+    setTimeout(() => { const st = getState(); if (st.fitAll) st.fitAll(250); }, 400); // 다시 놓은 판 전체가 보이게
   } catch (e) { toast(t('regions.arrangeFail', { error: errText(e) }), 'error'); }
 }
 
@@ -93,19 +107,20 @@ function WorktreeAreaNodeInner({ data }) {
 export const WorktreeAreaNode = memo(WorktreeAreaNodeInner);
 
 // P27: 본 저장소 영역 테두리에서 워크트리 영역 테두리로 가는 브랜치 화살표(끝에 화살촉, 가운데에 브랜치 이름). 굵기와 글자는 화면 기준 크기
+// P31: 굵기·화살촉은 줌 아웃하면 영역 테두리·연결선처럼 판 기준으로 줄고(화면 1px 아래로는 안 준다), 글자는 멀리서 숨는다(arrowStyle)
 function BranchArrowNodeInner({ data, width, height }) {
   const zoom = useFlowStore(zoomSel);
-  const z = Math.max(zoom, 0.05);
+  const st = arrowStyle(zoom);
   const a = data.arrow;
-  const g = arrowPath(a, data.ox, data.oy, { tip: Math.max(16, 14 / z) });
-  const fs = Math.max(12, Math.min(64, 12 / z));
+  const g = arrowPath(a, data.ox, data.oy, { tip: st.tip });
+  const fs = st.fs;
   const label = worktreeLabel({ branch: data.branch, path: data.wt }).branch;
   const v = a.dir === 'v';
   return (
     <svg className="mt-wtarrow" data-ws={data.wsKey} data-worktree={data.wt} width={width} height={height} style={{ overflow: 'visible' }}>
-      <path className="mt-wtarrow-line" d={g.d} fill="none" strokeWidth={Math.max(2, 2 / z)} />
+      <path className="mt-wtarrow-line" d={g.d} fill="none" strokeWidth={st.stroke} />
       <path className="mt-wtarrow-head" d={g.head} />
-      <text className="mt-wtarrow-label" x={g.mid.x + (v ? fs * 0.6 : 0)} y={v ? g.mid.y : g.mid.y - fs * 0.7} fontSize={fs} textAnchor={v ? 'start' : 'middle'}>⎇ {label}</text>
+      {st.label && <text className="mt-wtarrow-label" x={g.mid.x + (v ? fs * 0.6 : 0)} y={v ? g.mid.y : g.mid.y - fs * 0.7} fontSize={fs} textAnchor={v ? 'start' : 'middle'}>⎇ {label}</text>}
     </svg>
   );
 }

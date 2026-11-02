@@ -506,25 +506,48 @@ img.mt-kind-icon { object-fit: contain; }
 .mt-junction { position: absolute; left: 50%; top: 50%; width: var(--size, 14px); height: var(--size, 14px); transform: translate(-50%, -50%); border-radius: 50%; cursor: move; touch-action: none; }
 .mt-junction::after { content: ''; position: absolute; inset: 25%; border-radius: 50%; background: var(--con-line); }
 .mt-junction:hover::after { inset: 10%; background: var(--accent); }
-/* P23: 덩어리 안 연결선(세션 위에 겹친다). 반투명이고 선과 글만 누를 수 있다 */
+/* P30: 덩어리 안 연결. 터미널 위로 선을 긋지 않는다: 경계 위 다리(알약), 바깥 괄호·둘레 길, 둘레에 닿지 않는 칸은 머리줄 칩.
+   색은 받는 쪽 상태(--dl), 일이 오가면(.active) 흐른다. 한 칸에 초점·마우스가 있으면 그 칸에 닿는 것만 진하게(.hot), 나머지는 옅게(.dim) */
 .mt-docklinks { position: absolute; inset: 0; pointer-events: none; }
 .mt-docklinks-svg { position: absolute; inset: 0; pointer-events: none; }
-.mt-dl { cursor: pointer; --dl: var(--wire-end); }
-.mt-dl.role { --dl: var(--wire-role); }
-/* P26: 어두운 테두리(casing) 위에 진한 색 선. 터미널 글(밝은 화면 포함) 위에서도 보이게 */
-.mt-dl-hit { stroke: transparent; pointer-events: stroke; }
-.mt-dl-casing { stroke: var(--dl-casing); pointer-events: none; stroke-linecap: round; }
-.mt-dl-line { stroke: var(--dl); pointer-events: none; stroke-linecap: round; }
-.mt-dl-end, .mt-dl-start { fill: var(--dl); stroke: var(--dl-casing); pointer-events: none; }
-.mt-dl-start { fill: var(--dl-casing); stroke: var(--dl); }
-.mt-dl:hover .mt-dl-line { stroke: color-mix(in srgb, var(--dl) 70%, white); }
-.mt-dl-label { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; display: flex; align-items: center; gap: .35em; white-space: nowrap; padding: .12em .5em; border-radius: 1em; background: color-mix(in srgb, var(--chrome-bg) 94%, transparent); border: 1.5px solid var(--wire-end); color: var(--text); cursor: pointer; box-shadow: 0 0 0 1px var(--dl-casing); }
-.mt-dl-label.role { border-color: var(--wire-role); }
-.mt-dl-label:hover { background: var(--chrome-bg-hi); }
-.mt-dl-label .mt-pill { font-size: .85em; }
-/* P23: 덩어리 안 세션 가운데 점(잇기 손잡이). 그 덩어리 안에 연결이 있거나 잇기 모드일 때만 보이고, 잇기 모드에서만 끈다 */
+.mt-dl, .mt-dl-bridge, .mt-dl-chip { --dl: var(--st-ready); }
+.st-starting:is(.mt-dl, .mt-dl-bridge, .mt-dl-chip) { --dl: var(--st-starting); }
+.st-working:is(.mt-dl, .mt-dl-bridge, .mt-dl-chip) { --dl: var(--st-working); }
+.st-shell_running:is(.mt-dl, .mt-dl-bridge, .mt-dl-chip) { --dl: var(--st-shell_running); }
+.st-review:is(.mt-dl, .mt-dl-bridge, .mt-dl-chip) { --dl: var(--st-review); }
+.st-error:is(.mt-dl, .mt-dl-bridge, .mt-dl-chip) { --dl: var(--st-error); }
+.st-exited:is(.mt-dl, .mt-dl-bridge, .mt-dl-chip) { --dl: var(--st-exited); }
+.st-sleeping:is(.mt-dl, .mt-dl-bridge, .mt-dl-chip) { --dl: var(--st-sleeping); }
+:is(.st-waiting, .st-trust_wait):is(.mt-dl, .mt-dl-bridge, .mt-dl-chip) { --dl: var(--attn); }
+.mt-dl { cursor: pointer; transition: opacity .15s; }
+.mt-dl-hit { stroke: transparent; fill: none; pointer-events: stroke; }
+.mt-dl-casing { stroke: var(--dl-casing); fill: none; pointer-events: none; stroke-linecap: round; stroke-linejoin: round; }
+.mt-dl-line { stroke: var(--dl); fill: none; pointer-events: none; stroke-linecap: round; stroke-linejoin: round; }
+.mt-dl-head { fill: var(--dl); stroke: var(--dl-casing); pointer-events: none; stroke-linejoin: round; }
+.mt-dl.active .mt-dl-line { stroke-dasharray: var(--dash); animation: mt-dl-dash .8s linear infinite; }
+@keyframes mt-dl-dash { to { stroke-dashoffset: var(--dash-off); } }
+.mt-dl:hover .mt-dl-line, .mt-dl.hot .mt-dl-line { stroke: color-mix(in srgb, var(--dl) 75%, white); }
+.mt-dl.dim { opacity: .28; }
+/* 다리: 경계 가운데 작은 알약. 화살표 하나, 마우스를 올리면 역할 이름이 펼쳐진다 */
+.mt-dl-bridge { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; display: inline-flex; align-items: center; gap: .3em; height: 1.7em; min-width: 1.7em; padding: 0 .45em; justify-content: center;
+  border-radius: .85em; border: .14em solid var(--dl); background: var(--chrome-bg); color: var(--dl); font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 0 0 .1em var(--dl-casing), 0 .1em .45em rgba(0, 0, 0, .45); transition: opacity .15s; z-index: 1; }
+.mt-dl-arrow { display: inline-block; font-size: 1.15em; }
+.mt-dl-role { display: none; color: var(--text); font-weight: 600; }
+.mt-dl-bridge:hover { background: var(--chrome-bg-hi); z-index: 2; }
+.mt-dl-bridge:hover .mt-dl-role { display: inline; }
+.mt-dl-bridge.hot { background: color-mix(in srgb, var(--dl) 22%, var(--chrome-bg)); }
+.mt-dl-bridge.dim, .mt-dl-chip.dim { opacity: .3; }
+.mt-dl-bridge.active .mt-dl-arrow { animation: mt-dl-flow .9s ease-in-out infinite; }
+@keyframes mt-dl-flow { 0% { transform: translate(calc(var(--fx) * -.22em), calc(var(--fy) * -.22em)); opacity: .35; } 60% { opacity: 1; } 100% { transform: translate(calc(var(--fx) * .22em), calc(var(--fy) * .22em)); opacity: .35; } }
+/* 칩: 둘레에 닿지 않는 칸의 머리줄 위(칩이 여럿이면 옆으로) */
+.mt-dl-chip { position: absolute; transform: translate(calc(-50% + var(--i, 0) * 110%), -50%); pointer-events: auto; padding: .15em .6em; border-radius: .9em; border: .12em solid var(--dl); background: var(--chrome-bg); color: var(--text);
+  font-weight: 600; white-space: nowrap; cursor: pointer; box-shadow: 0 0 0 .1em var(--dl-casing); }
+.mt-dl-chip:hover, .mt-dl-chip.hot { background: color-mix(in srgb, var(--dl) 22%, var(--chrome-bg)); }
+/* 바깥 길에 마우스를 올리면 역할 이름 */
+.mt-dl-tip { position: absolute; transform: translate(-50%, -50%); pointer-events: none; padding: .12em .55em; border-radius: .9em; background: var(--chrome-bg); color: var(--text); border: 1px solid var(--chrome-line); white-space: nowrap; font-weight: 600; box-shadow: 0 .1em .4em rgba(0, 0, 0, .4); }
+/* P23: 덩어리 안 세션 가운데 점(잇기 손잡이). P30: 잇기 모드에서만 보이고 끈다(덩어리 안 연결은 이제 점끼리 잇는 선이 아니다) */
 .mt-handle.h-c { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; width: calc(12px * var(--inv, 1)) !important; height: calc(12px * var(--inv, 1)) !important; border-width: calc(2px * var(--inv, 1)) !important; background: var(--wire-end) !important; opacity: 0 !important; pointer-events: none !important; z-index: 6; }
-.mt-node.docked.dock-linked .mt-handle.h-c { opacity: .5 !important; }
 .mt-app.linking .mt-node.docked .mt-handle.h-c { opacity: .85 !important; pointer-events: auto !important; width: calc(16px * var(--inv, 1)) !important; height: calc(16px * var(--inv, 1)) !important; }
 .mt-node:not(.docked) .mt-handle.h-c { display: none; }
 /* 붙은 노드의 가장자리 잇기 손잡이는 숨긴다(분할선·테두리 자리). 밖과 잇는 선의 끝 자리로는 그대로 쓴다 */
@@ -756,39 +779,79 @@ textarea.mt-kinput { width: 100%; resize: vertical; box-sizing: border-box; }
 .mt-loop-short { width: 70px; } .mt-loop-mid { width: 160px; }
 .mt-loop-dialog .mt-row { grid-template-columns: 1fr 1fr 2fr; }
 
-/* 미션 맵(I6): 위쪽 알약 아래를 덮는다 */
-.mt-mission { position: absolute; left: 0; right: 0; top: 0; bottom: 0; padding-top: 60px; z-index: 36; background: var(--mission-bg); display: flex; flex-direction: column; }
-.mt-mission-head { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--panel-line); white-space: nowrap; }
-.mt-mission-head > b { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
-.mt-mission-filters { display: flex; gap: 4px; margin-left: 10px; }
+/* 미션 맵(I6, P32에서 다시 그림): 위쪽 알약 아래를 덮는다. 왼쪽 → 오른쪽 나무, 아래 "연결 없음" 격자. 빈 곳을 누르면 닫힌다 */
+.mt-mission { position: absolute; left: 0; right: 0; top: 0; bottom: 0; padding-top: 60px; z-index: 36; background: var(--mission-bg); backdrop-filter: blur(6px); display: flex; flex-direction: column; }
+.mt-mission-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 16px; border-bottom: 1px solid var(--panel-line); white-space: nowrap; }
+.mt-mission-title { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: .01em; }
+.mt-mission-filters { display: flex; gap: 4px; margin-left: 6px; }
+.mt-mm-filter { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--panel-line); background: none; color: var(--dim); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.mt-mm-filter:hover { color: var(--text); border-color: var(--panel-line-2); }
+.mt-mm-filter.on { color: var(--text); background: var(--panel-3); border-color: var(--panel-line-2); }
+.mt-mm-fdot { width: 7px; height: 7px; border-radius: 50%; background: var(--st-ready); flex: none; }
+.mt-mm-filter.c-needs_you .mt-mm-fdot { background: var(--attn); }
+.mt-mm-filter.c-working .mt-mm-fdot { background: var(--st-working); }
+.mt-mm-filter.c-done .mt-mm-fdot { background: var(--st-review); }
+.mt-mm-filter.c-exited .mt-mm-fdot { background: var(--st-exited); }
+.mt-mm-fn { font-family: var(--font-mono); font-size: 11.5px; color: var(--dim-2); margin-left: 2px; }
+.mt-mm-filter.on .mt-mm-fn { color: var(--text-2); }
+.mt-mm-legend { display: flex; align-items: center; gap: 12px; color: var(--dim); font-size: 12px; cursor: default; }
+.mt-mm-key { display: inline-flex; align-items: center; gap: 5px; }
+.mt-mm-key line { stroke-width: 2.4; }
 .mt-mission-body { flex: 1; overflow: auto; }
-.mt-mission-canvas { position: relative; margin: 0 auto; }
-.mt-mm-colhead { position: absolute; top: 18px; color: var(--dim); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; text-align: center; border-bottom: 1px solid var(--panel-line); padding-bottom: 4px; }
-.mt-mm-svg { position: absolute; left: 0; top: 0; pointer-events: none; }
-.mt-mm-edge path { fill: none; stroke-width: 1.8; opacity: .9; }
-.mt-mm-edge text { fill: var(--dim); font-size: 12px; }
-.mt-mm-edge.k-role path { stroke: var(--wire-role); }
-.mt-mm-edge.k-prompt path { stroke: var(--wire); }
-.mt-mm-edge.k-spawn path { stroke: var(--wire); stroke-dasharray: 6 4; }
-.mt-mm-edge.k-bar path { stroke: var(--accent); }
-.mt-mm-edge.k-loop path { stroke: var(--teal); stroke-dasharray: 3 4; }
-.mt-mm-edge.active path { stroke-dasharray: 6 4; animation: mt-dash 0.8s linear infinite; stroke-width: 2.4; }
-.mt-mm-box { position: absolute; box-sizing: border-box; border: 1.5px solid var(--con-line); border-radius: 10px; background: var(--con-bg); padding: 6px 10px; font-size: 12.5px; overflow: hidden; cursor: pointer; display: grid; align-content: center; gap: 3px; }
-.mt-mm-box:hover { border-color: var(--panel-line-2); }
-.mt-mm-box.human { cursor: default; border-color: var(--accent); background: var(--accent-bg); grid-template-columns: auto 1fr; gap: 8px; align-items: center; }
-.mt-mm-box.session.c-needs_you { border-color: var(--attn); box-shadow: var(--con-glow); }
+.mt-mission-canvas { position: relative; margin: 8px auto 0; }
+.mt-mm-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+/* 선: 판의 선과 같은 색(역할 파랑, 지시 초록 점선, 띄움 초록, 명령 바 강조 초록, 루프 청록 점선) */
+.mt-mm-edge path.line { fill: none; stroke-width: 2; }
+.mt-mm-edge path.hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: default; }
+.mt-mm-edge:hover path.line { stroke-width: 3; }
+.mt-mm-edge.back path.line { opacity: .55; }
+.mt-mm-edge .dot { stroke: var(--mission-bg); stroke-width: 2; }
+.mt-mm-edge.k-role path.line, .mt-mm-key.k-role line { stroke: var(--wire-role); }
+.mt-mm-edge.k-prompt path.line, .mt-mm-key.k-prompt line { stroke: var(--wire); stroke-dasharray: 7 5; }
+.mt-mm-edge.k-spawn path.line, .mt-mm-key.k-spawn line { stroke: var(--wire); }
+.mt-mm-edge.k-bar path.line, .mt-mm-key.k-bar line { stroke: var(--accent-2); }
+.mt-mm-edge.k-loop path.line, .mt-mm-key.k-loop line { stroke: var(--teal); stroke-dasharray: 2 4; }
+.mt-mm-edge.k-role .dot, .mt-mm-arrow.k-role path { fill: var(--wire-role); }
+.mt-mm-edge.k-prompt .dot, .mt-mm-edge.k-spawn .dot, .mt-mm-arrow.k-prompt path, .mt-mm-arrow.k-spawn path { fill: var(--wire-end); }
+.mt-mm-edge.k-bar .dot, .mt-mm-arrow.k-bar path { fill: var(--accent-2); }
+.mt-mm-edge.k-loop .dot, .mt-mm-arrow.k-loop path { fill: var(--teal); }
+.mt-mm-edge.active path.line { stroke-dasharray: 7 5; animation: mt-dash 0.8s linear infinite; stroke-width: 2.4; }
+/* 이름표: 받는 상자 바로 왼쪽, 선 끝 높이(오른쪽 끝이 그 점) */
+.mt-mm-label { position: absolute; transform: translate(-100%, -50%); height: 18px; line-height: 16px; padding: 0 7px; box-sizing: border-box; border-radius: 9px; border: 1px solid var(--panel-line-2); background: var(--panel); color: var(--text-2); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+.mt-mm-label.k-role { border-color: color-mix(in srgb, var(--wire-role) 60%, transparent); color: var(--info); }
+.mt-mm-label.k-prompt, .mt-mm-label.k-spawn { border-color: color-mix(in srgb, var(--wire-end) 50%, transparent); color: var(--accent-text); }
+.mt-mm-label.k-bar { border-color: color-mix(in srgb, var(--accent-2) 55%, transparent); color: var(--accent-text); }
+.mt-mm-label.k-loop { border-color: color-mix(in srgb, var(--teal) 55%, transparent); color: var(--teal); }
+.mt-mm-section { position: absolute; display: flex; align-items: center; gap: 6px; height: 20px; color: var(--dim); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; border-top: 1px dashed var(--panel-line-2); padding-top: 6px; }
+.mt-mm-empty { position: absolute; left: 28px; top: 28px; }
+/* 상자: 판의 노드처럼 종류 아이콘, 이름, 상태 알약. 둘째 줄은 묻는 내용(주황) 또는 마지막 지시. 올리면 아래에 전체 글 */
+.mt-mm-box { position: absolute; box-sizing: border-box; border: 1.5px solid var(--con-line); border-radius: var(--con-radius); background: var(--con-bg); padding: 7px 10px; font-size: 12.5px; cursor: pointer; display: grid; align-content: center; gap: 4px; box-shadow: var(--con-shadow); }
+.mt-mm-box:hover { border-color: var(--panel-line-2); z-index: 2; }
+.mt-mm-box.human { cursor: default; border-color: var(--accent-line); background: var(--accent-bg); display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px; }
+.mt-mm-you { font-size: 14px; font-weight: 700; color: var(--accent-text); }
+.mt-mm-box.session.c-idle, .mt-mm-box.session.c-exited { background: var(--con-idle-bg); border-color: var(--con-idle-line); }
 .mt-mm-box.session.c-working { border-color: var(--con-line-working); }
 .mt-mm-box.session.c-done { border-color: var(--con-line-review); }
-.mt-mm-box.session.c-exited { opacity: .6; }
-.mt-mm-line { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
-.mt-mm-cat { font-size: 12px; font-weight: 650; }
-.mt-mm-cat.c-needs_you { color: var(--accent-2); } .mt-mm-cat.c-working { color: var(--st-working); } .mt-mm-cat.c-idle { color: var(--dim); } .mt-mm-cat.c-done { color: var(--violet); } .mt-mm-cat.c-exited { color: var(--dim); }
-.mt-mm-ask { color: var(--accent-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mt-mm-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mt-mm-counts { display: flex; gap: 6px; flex-wrap: wrap; }
-.mt-mm-c { font-size: 12px; color: var(--dim); }
-.mt-mm-c.c-needs_you { color: var(--accent-2); } .mt-mm-c.c-working { color: var(--st-working); }
-.mt-mm-box .mt-mm-branch { color: var(--info); font-size: 12px; margin-left: 4px; }
+.mt-mm-box.session.c-needs_you { border-color: var(--attn); box-shadow: var(--con-glow); }
+.mt-mm-box.session.c-exited .mt-mm-name { color: var(--con-idle-text); }
+.mt-mm-box.ghost { opacity: .45; }
+.mt-mm-line { display: flex; align-items: center; gap: 7px; white-space: nowrap; min-width: 0; }
+.mt-mm-kind { width: 18px; height: 18px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.mt-mm-kind .mt-kind-icon { width: 18px; height: 18px; }
+.mt-mm-name { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; margin-right: auto; }
+.mt-mm-line .mt-pill { font-size: 11px; flex: none; }
+.mt-mm-loop { font-size: 11px; color: var(--teal); flex: none; }
+.mt-mm-sub { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 25px; }
+.mt-mm-box.human .mt-mm-sub { padding-left: 0; }
+.mt-mm-sub.ask { color: var(--attn-text); }
+.mt-mm-sub.none { color: var(--dim-2); opacity: .7; }
+.mt-mm-more { display: none; position: absolute; left: -1.5px; right: -1.5px; top: calc(100% + 4px); z-index: 3; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--panel-line-2); background: var(--panel-2); box-shadow: var(--panel-shadow); color: var(--text-2); font-size: 12px; line-height: 1.45; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; max-height: 160px; overflow: hidden; pointer-events: none; }
+.mt-mm-more b { color: var(--dim); font-weight: 600; }
+.mt-mm-box.c-needs_you .mt-mm-more { border-color: var(--attn-line); }
+.mt-mm-box:hover .mt-mm-more { display: block; }
+/* P32: 연결 알약(세션 수)을 누르면 미션 맵. 열려 있으면 강조 테두리(.mt-cp.on) */
+.mt-cp.conn.click { cursor: pointer; }
+.mt-cp.conn.click:focus-visible { outline: 1px solid var(--accent-line); outline-offset: 1px; }
 
 /* 설정(I7). P28: 탭으로 나눠 스크롤 없이 한 화면에. 높이를 고정해 탭을 바꿔도 창이 출렁이지 않는다(최소 창 900×600에서도 들어간다).
    본문은 이름·값·풀이 세 칸 격자이고 줄(.mt-set-row)은 display: contents로 격자 칸에 그대로 놓인다. 긴 풀이(.mt-set-note)는 세 칸을 다 쓴다 */
@@ -892,3 +955,41 @@ button.mt-cv-chip:hover { border-color: var(--cv-line-hi); color: var(--text); }
 .mt-res-sum { padding: 4px 10px 6px; color: var(--dim); font-size: 12px; }
 .mt-chip.asleep { opacity: .8; }
 .mt-chip.asleep .mt-i, .mt-menu .mt-btn .mt-i { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; }
+
+/* P33 호출자. 왼쪽 레일의 즐겨찾기 칸은 창 높이를 넘지 않게 그 칸만 위아래로 넘긴다(스크롤 막대는 숨긴다, 휠로 넘긴다) */
+.mt-rail-favs { display: flex; flex-direction: column; align-items: center; gap: 7px; max-height: max(43px, calc(100vh - 360px)); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; flex-shrink: 1; }
+.mt-rail-favs::-webkit-scrollbar { display: none; }
+.mt-rail-favs .mt-tool { flex-shrink: 0; }
+.mt-tool-mark { width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid currentColor; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; line-height: 1; }
+/* 설정의 호출자 탭: 목록(목록 칸만 넘긴다)과 만들기·고치기 틀. 최소 창(900×600)에서 탭 본문 안에 들어간다 */
+.mt-ln { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; }
+.mt-ln .mt-set-note { margin: 0; }
+.mt-ln-rows { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.mt-ln-row { display: grid; grid-template-columns: 24px 24px minmax(80px, 150px) minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 34px; padding: 0 6px; border-radius: 8px; }
+.mt-ln-row:hover { background: var(--panel-2); }
+.mt-ln-star { border: 0; background: none; color: var(--dim); font-size: 16px; cursor: pointer; padding: 0; width: 24px; }
+.mt-ln-star.on { color: var(--warn); }
+.mt-ln-ico { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; color: var(--chrome-text-2); }
+.mt-ln-ico .mt-kind-icon, .mt-ln-ico .mt-i { width: 20px; height: 20px; }
+.mt-ln-ico.mark { border: 1.5px solid currentColor; border-radius: 6px; font-size: 12px; font-weight: 800; }
+.mt-ln-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-ln-line { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-ln-acts { display: flex; gap: 4px; align-items: center; }
+.mt-ln-acts .mt-btn.small { min-width: 28px; padding: 0 7px; }
+.mt-ln-acts .mt-i { width: 12px; height: 12px; }
+.mt-ln-foot { display: flex; gap: 8px; align-items: center; }
+.mt-ln-foot .mt-set-hint { margin-left: auto; }
+.mt-ln-form { height: 100%; display: grid; grid-template-rows: auto auto auto 1fr; gap: 8px; align-content: start; }
+.mt-ln-form .mt-ln-foot { align-self: end; }
+.mt-ln-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 18px; align-items: center; }
+.mt-ln-f { display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); margin: 0; }
+.mt-ln-f.wide, .mt-ln-grid .wide { grid-column: 1 / -1; }
+.mt-ln-f select, .mt-ln-f .mt-set-text { width: 100%; min-width: 0; height: 30px; padding: 4px 9px; font-weight: 400; }
+.mt-ln-f textarea { width: 100%; min-width: 0; resize: none; padding: 4px 9px; font-size: 12px; font-weight: 400; }
+.mt-ln-f.check { display: flex; gap: 8px; font-weight: 400; }
+.mt-ln-f.check input { width: 16px; height: 16px; margin: 0; }
+.mt-ln-grid .mt-set-sub { margin-top: 0; padding-top: 6px; }
+.mt-ln-secret { font-size: 12px; color: var(--dim-2); line-height: 1.4; }
+.mt-ln-secret.warn { color: var(--warn); }
+.mt-ln-preview { font-size: 12px; padding: 6px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--panel-line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-ln-preview.bad { color: var(--bad); white-space: normal; }

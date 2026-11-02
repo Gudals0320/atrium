@@ -8,7 +8,7 @@ import path from 'node:path';
 import { launch, closeApp, shot, logger, sleep, until, call, writeJson, atrium, DIRS, DEV, REPO } from './p10-lib.mjs';
 
 // P23: P23 판(experiments/p23/tools/e2e.cjs)에서도 돌린다
-if (!['p17', 'p23'].includes(process.env.MT_E2E_BOARD)) throw new Error('MT_E2E_BOARD=p17로 돌린다(experiments/p17/tools/e2e.cjs)');
+if (!['p17', 'p23', 'p30'].includes(process.env.MT_E2E_BOARD)) throw new Error('MT_E2E_BOARD=p17로 돌린다(experiments/p17/tools/e2e.cjs)');
 const B = process.env.MT_E2E_BOARD;
 const log = logger('p17-dock');
 const result = { steps: [] };
@@ -87,6 +87,10 @@ async function reset(page, base) {
   await sleep(900);
   await frame(page, { x: base.x, y: base.y, w: 1620, h: 1160 }, 260);
 }
+// P30: P26부터 막대가 좁으면 배치 틀이 단추 하나(layout-more)로 접힌다. 접혔으면 펼친다
+async function openPresets(page) {
+  if (await page.isVisible('[data-role=selection] [data-action=layout-more]') && !(await page.isVisible('[data-role=selection] [data-role=presets] [data-preset]'))) { await page.click('[data-role=selection] [data-action=layout-more]'); await sleep(300); }
+}
 // 터미널 칸 수가 노드 크기에 맞는가: xterm 화면이 노드 몸통 안에 들어가고 남는 폭·높이가 한 칸보다 작다. 판이 받은 크기(perf.terminals)와 같은가
 const termFit = (page, names) => page.evaluate((ns) => ns.map((n) => {
   const s = [...window.__mt.getState().sessions.values()].find((x) => x.name === n);
@@ -148,6 +152,7 @@ try {
   for (const n of ['s1', 's2', 's3']) await ctrlClick(page, n);
   const picked = await page.evaluate(() => window.__mt.getState().selected.map((id) => window.__mt.getState().sessions.get(id).name));
   await shot(page, 'p17-3-3-selection-bar-presets', log);
+  await openPresets(page); // P30: P26부터 좁으면 틀이 단추 하나로 접힌다
   await page.click('[data-role=selection] [data-preset="main-left"]');
   await sleep(1500);
   t = await trees(page); r = await rects(page);
@@ -156,7 +161,10 @@ try {
   await shot(page, 'p17-3-4-three-way-by-preset', log);
 
   // 4) 2 × 2 틀(덩어리 하나와 노드 하나를 고르면 덩어리 전체가 들어온다)
+  // P30: 배치 틀을 누른 뒤에도 고름이 남으므로 먼저 푼다
+  await page.evaluate(() => window.__mt.getState().clearSelection && window.__mt.getState().clearSelection()); await sleep(300);
   await ctrlClick(page, 's1'); await ctrlClick(page, 's4');
+  await openPresets(page);
   await page.click('[data-role=selection] [data-preset="grid"]');
   await sleep(1500);
   r = await rects(page);

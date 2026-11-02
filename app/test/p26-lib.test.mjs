@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sizeStepOf, litStep, autoDir, flipStep, sizeTargets, layoutCount, placeBar, stepPlace } from '../src/renderer/lib/selbar.js';
-import { borderAnchor, linkEnds, dockFocus, centerOf, placeLabels } from '../src/renderer/lib/dock-links.js';
+import { dockFocus } from '../src/renderer/lib/dock-links.js'; // P30: 선 끝(borderAnchor, linkEnds)과 글 자리(placeLabels)는 다리·괄호로 바뀌어 없앴다(p30-lib.test.mjs)
 import { enterView, isViewing, fullyVisible, dockRect, FILL, ZOOM_MAX } from '../src/renderer/lib/nav.js';
 
 test('크기 단계 찾기: 여섯 중 맞는 것(±1px), 없으면 null', () => {
@@ -50,24 +50,6 @@ test('막대 자리: 맨 위 줄 창 가운데, 두 묶음 사이로 밀고, 좁
   assert.deepEqual(placeBar({ width: 1000, tlRight: 400, trLeft: 495, widths }), { row: 'below', level: 0 });
 });
 
-test('선 끝: 테두리 가운데는 상대 쪽(위·아래·왼쪽·오른쪽)', () => {
-  const r = { x: 0, y: 0, w: 800, h: 400 };
-  assert.deepEqual(borderAnchor(r, { x: 2000, y: 250 }), { x: 800, y: 200, side: 'right' });
-  assert.deepEqual(borderAnchor(r, { x: -100, y: 180 }), { x: 0, y: 200, side: 'left' });
-  assert.deepEqual(borderAnchor(r, { x: 420, y: 900 }), { x: 400, y: 400, side: 'bottom' });
-  assert.deepEqual(borderAnchor(r, { x: 380, y: -50 }), { x: 400, y: 0, side: 'top' });
-  // 대각선: 가로로 긴 사각형은 가운데에서 그은 선이 위·아래 테두리를 먼저 지나면 위·아래
-  assert.equal(borderAnchor(r, { x: 900, y: 700 }).side, 'bottom');
-  assert.equal(borderAnchor(r, { x: 1600, y: 700 }).side, 'right');
-});
-
-test('선 끝: 초점 쪽만 테두리 가운데, 상대는 가운데 점', () => {
-  const a = { x: 0, y: 0, w: 720, h: 460 }, b = { x: 720, y: 0, w: 720, h: 460 }, c = { x: 0, y: 460, w: 1440, h: 460 };
-  assert.deepEqual(linkEnds(a, b), { a: centerOf(a), b: centerOf(b), anchored: null });
-  assert.deepEqual(linkEnds(a, b, 'from'), { a: { x: 720, y: 230, side: 'right' }, b: centerOf(b), anchored: 'from' });
-  assert.deepEqual(linkEnds(a, c, 'to'), { a: centerOf(a), b: { x: 720, y: 460, side: 'top' }, anchored: 'to' });
-});
-
 test('초점 세션: 고름 > 눌러 들어감(보일 때) > 화면 가운데 > 없음', () => {
   const rects = { a: { x: 0, y: 0, w: 720, h: 460 }, b: { x: 720, y: 0, w: 720, h: 460 } };
   const view = { x: 800, y: 0, w: 600, h: 400 }; // 가운데 (1100, 200)는 b 안
@@ -111,17 +93,4 @@ test('이미 보는 중이면 다시 옮기지 않는다', () => {
   // 멀리서 덩어리가 다 보여도 터미널(가까이 얼굴)이 아니면 옮긴다
   assert.ok(!isViewing({ node: b, dock, view: dv, viewport: at(0.45, 1080, 230), screen }));
   assert.ok(fullyVisible(node, at(1, 360, 230), screen));
-});
-
-test('선 글 자리: 시키는 쪽 가까이(0.36), 겹치면 선을 따라 옮긴다', () => {
-  const one = placeLabels([{ a: { x: 0, y: 0 }, b: { x: 1000, y: 0 }, w: 100, h: 20 }]);
-  assert.deepEqual(one, [{ x: 360, y: 0, k: 0.36 }]);
-  // X자로 엇갈린 두 선: 두 글이 같은 자리에 오면 둘째를 옮긴다
-  const two = placeLabels([
-    { a: { x: 720, y: 230 }, b: { x: 1080, y: 690 }, w: 140, h: 20 },
-    { a: { x: 1080, y: 230 }, b: { x: 360, y: 690 }, w: 140, h: 20 },
-  ]);
-  assert.equal(two[0].k, 0.36);
-  assert.notEqual(two[1].k, 0.36);
-  assert.ok(Math.abs(two[0].x - two[1].x) * 2 >= 140 || Math.abs(two[0].y - two[1].y) * 2 >= 20, '겹치지 않는다');
 });

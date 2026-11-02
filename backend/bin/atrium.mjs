@@ -10,7 +10,8 @@ const HELP = `atrium [--dev] [--json] <명령>
   backend start|stop|status         백엔드 띄우기(없으면 herdr 서버도 띄움), 끄기, 상태
   status                            백엔드와 판 전용 herdr 상태(버전, 프로토콜, 기능)
   herdr start|stop|restart [--yes]  판 전용 herdr 서버 켜기, 끄기, 다시 띄우기
-  spawn <폴더> [--name n] [--prompt 글] [--model m] [--effort e] [--mode 권한모드] [--kind 종류|shell] [--args "인자"] [--allow-herdr]
+  spawn <폴더> [--launcher 호출자] [--name n] [--prompt 글] [--model m] [--effort e] [--mode 권한모드] [--kind 종류|shell] [--args "인자"] [--allow-herdr]   --launcher면 그 호출자로 띄우고 준 값이 덮는다(P33)
+  launchers                         호출자 목록(즐겨찾기 순서, 하네스, 명령 미리보기, P33)
   ls [--ws 워크스페이스]            세션 목록과 상태(워크스페이스별)
   ws                                리포지토리 워크스페이스 목록과 세는 값(세션, 작업 중, 내 차례, 검토 대기)
   ws open <폴더> | ws close <이름|키> [--yes] | ws select <이름|키>   빈 워크스페이스 만들기, 빈 것 닫기, 지금 워크스페이스 고르기
@@ -48,6 +49,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   dock layout <틀> <A> <B> ...   고른 노드를 배치 틀로 한 덩어리로 짠다(P17). 틀: main-left, grid, row, col 등(P26: dock-tree.mjs PRESETS)
   size <이름> large|normal|small|wide-large|...|tall-small [--dock]   노드 크기 단계(P6a). 가로·세로 크기와 --dock(덩어리 전체 바깥)은 P23
   arrange <워크스페이스> [--apply] [--undo]   연결을 따라 정리(미리 보기, 적용, 한 번 되돌리기)(P6a)
+  arrange --all [--apply] [--undo]          판 전체 정리: 영역마다 안을 정리하고 영역도 줄 맞춰 다시 놓는다(P31)
 ${FEATURES_HELP}
   closed [--ws 워크스페이스]        닫힌 세션(판에서 빠졌지만 다시 열 수 있다, P7)
   reopen <이름|ID> [--model m]      닫힌 세션을 판으로 다시 열기. claude는 같은 대화로 이어 간다(P7)
@@ -178,9 +180,21 @@ async function main() {
       }
       case 'spawn': {
         if (!rest[0]) throw new Error('폴더를 준다');
-        const r = await c.call('session.spawn', { cwd: path.resolve(rest[0]), name: flags.name, prompt: flags.prompt, model: flags.model, effort: flags.effort, permissionMode: flags.mode, kind: flags.kind, args: flags.args, allowHerdr: flags['allow-herdr'] ? true : undefined });
+        const r = await c.call('session.spawn', { cwd: path.resolve(rest[0]), launcher: flags.launcher, name: flags.name, prompt: flags.prompt, model: flags.model, effort: flags.effort, permissionMode: flags.mode, kind: flags.kind, args: flags.args, allowHerdr: flags['allow-herdr'] ? true : undefined });
         if (JSONOUT) return out(r);
-        console.log(`시작: ${r.name} (${r.kind}, ${r.sessionId}) 패널 ${r.paneId}\n  신뢰 대화상자 예상: ${r.trust.needsTrust == null ? '예상하지 않음' : r.trust.needsTrust ? '뜬다' : `안 뜬다(신뢰한 폴더 ${r.trust.trustedBy})`}\n  실행: ${(r.argv || []).join(' ')}${r.resumeArgv ? `\n  이어 가기 등록: ${r.resumeArgv.join(' ')}` : ''}`);
+        console.log(`시작: ${r.name} (${r.kind}${r.flavor ? `/${r.flavor}` : ''}, ${r.sessionId}) 패널 ${r.paneId}${r.command ? `
+  친 명령: ${r.command}` : ''}\n  신뢰 대화상자 예상: ${r.trust.needsTrust == null ? '예상하지 않음' : r.trust.needsTrust ? '뜬다' : `안 뜬다(신뢰한 폴더 ${r.trust.trustedBy})`}\n  실행: ${(r.argv || []).join(' ')}${r.resumeArgv ? `\n  이어 가기 등록: ${r.resumeArgv.join(' ')}` : ''}`);
+        return;
+      }
+      case 'launchers': {
+        const r = await c.call('launcher.list');
+        if (JSONOUT) return out(r);
+        const fav = r.favorites;
+        const rows = [...r.launchers].sort((a, b) => (fav.includes(a.id) ? fav.indexOf(a.id) : 1e3) - (fav.includes(b.id) ? fav.indexOf(b.id) : 1e3));
+        for (const l of rows) {
+          const pv = l.preview || {};
+          console.log(`${l.favorite ? `★${fav.indexOf(l.id) + 1}` : '  '} ${l.name.padEnd(16)} ${l.id.padEnd(10)} ${l.harness.padEnd(8)} ${pv.shell ? '(셸)' : pv.line}${pv.env && pv.env.length ? `  [env ${pv.env.join(', ')}]` : ''}`);
+        }
         return;
       }
       case 'ls': {
@@ -373,6 +387,13 @@ async function main() {
       }
       case 'size': return out(await c.call('board.setSize', { session: rest[0], size: rest[1], scope: flags.dock ? 'dock' : undefined }));
       case 'arrange': {
+        if (flags.all) { // P31: 판 전체(영역도 다시 놓는다)
+          const r = await c.call('board.arrange', { all: true, apply: !!flags.apply, undo: !!flags.undo });
+          if (JSONOUT || r.undone) return out(r);
+          for (const g of r.regions) console.log(`영역 ${g.key.padEnd(40)} (${g.from.x},${g.from.y}) → (${g.to.x},${g.to.y}) ${g.to.w}x${g.to.h}`);
+          console.log(r.applied ? '적용했다(arrange --all --undo로 한 번 되돌린다)' : '미리 보기(--apply로 적용)');
+          return;
+        }
         const ws = (await c.call('workspace.list')).workspaces.find((w) => w.key === rest[0] || w.name.toLowerCase() === String(rest[0] || '').toLowerCase());
         if (!ws) throw new Error(`없는 워크스페이스: ${rest[0]}`);
         const r = await c.call('board.arrange', { workspace: ws.key, apply: !!flags.apply, undo: !!flags.undo });

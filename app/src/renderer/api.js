@@ -3,6 +3,8 @@
 // 끊기면 1초 뒤 다시 붙는다. 그때 main 프로세스가 백엔드가 없으면 다시 띄운다(ARCH 1절 백엔드 수명).
 import { perfLog } from './perf.js';
 
+export const CONNECT_TIMEOUT_MS = 10000; // 소켓이 이 안에 열리지 않으면(CONNECTING에 멈춤) 정리하고 다시 붙는다(이슈 #1-15)
+
 export class Api {
   constructor() {
     this.n = 0;
@@ -10,6 +12,7 @@ export class Api {
     this.listeners = new Map(); // event → Set(fn)
     this.status = 'connecting';
     this.info = null;
+    this.gen = 0; // 연결 세대. 옛 connect()의 늦은 응답과 옛 소켓의 이벤트는 무시한다(이슈 #1-14)
   }
 
   on(event, fn) {
@@ -22,27 +25,50 @@ export class Api {
   setStatus(s, detail) { this.status = s; perfLog('ws', { status: s }); this.emit('$status', { status: s, detail }); }
 
   async connect() {
+    const gen = ++this.gen;
+    clearTimeout(this.openTimer);
     this.setStatus('connecting');
     let info;
-    try { info = await window.mt.backend(); } catch (e) { this.setStatus('error', String(e && e.message || e)); return this.retry(); }
+    try { info = await window.mt.backend(); } catch (e) { if (gen !== this.gen) return; this.setStatus('error', String(e && e.message || e)); return this.retry(); }
+    if (gen !== this.gen) return; // 그사이 새 connect()가 시작했다
     this.info = info;
+    this.drop(this.ws);
     const ws = new WebSocket(`ws://127.0.0.1:${info.port}/api?token=${info.token}`);
     this.ws = ws;
+    const live = () => gen === this.gen && this.ws === ws;
+    this.openTimer = setTimeout(() => {
+      if (!live() || ws.readyState !== 0) return; // 0 = CONNECTING
+      this.drop(ws);
+      this.setStatus('closed'); this.emit('$close'); this.retry();
+    }, CONNECT_TIMEOUT_MS);
     ws.onopen = async () => {
+      if (!live()) return;
+      clearTimeout(this.openTimer);
       this.setStatus('open');
       try { const r = await this.call('events.subscribe'); this.emit('$open', r); } catch (e) { console.error(e); }
     };
     ws.onmessage = (ev) => {
+      if (!live()) return;
       let m; try { m = JSON.parse(ev.data); } catch { return; }
       if (m.event) return this.emit(m.event, m.data);
       const w = this.wait.get(m.id); if (!w) return; this.wait.delete(m.id);
       if (m.error) w.rej(Object.assign(new Error(m.error.message), { code: m.error.code, key: m.error.key, vars: m.error.vars })); else w.res(m.result); // key·vars: 화면 글 열쇠(P16, lib/i18n.js errText)
     };
     ws.onclose = () => {
+      if (!live()) return;
+      clearTimeout(this.openTimer);
       for (const w of this.wait.values()) w.rej(Object.assign(new Error('disconnected'), { code: 'disconnected' }));
       this.wait.clear();
-      if (this.ws === ws) { this.setStatus('closed'); this.emit('$close'); this.retry(); }
+      this.setStatus('closed'); this.emit('$close'); this.retry();
     };
+  }
+  // 옛 소켓을 떼어 내고 닫는다. 기다리던 요청은 끊김으로 끝낸다
+  drop(ws) {
+    if (!ws) return;
+    ws.onopen = ws.onmessage = ws.onclose = null;
+    try { ws.close(); } catch {}
+    for (const w of this.wait.values()) w.rej(Object.assign(new Error('disconnected'), { code: 'disconnected' }));
+    this.wait.clear();
   }
   retry() { clearTimeout(this.retryTimer); this.retryTimer = setTimeout(() => this.connect(), 1000); }
 

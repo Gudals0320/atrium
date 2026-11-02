@@ -135,3 +135,13 @@ export function arrowPath(a, ox = 0, oy = 0, { tip = 18 } = {}) {
   const head = a.dir === 'h' ? `M ${x2} ${y2} L ${ex} ${ey - w} L ${ex} ${ey + w} Z` : `M ${x2} ${y2} L ${ex - w} ${ey} L ${ex + w} ${ey} Z`;
   return { d, head, mid: { x: (x1 + x2) / 2, y: (y1 + y2) / 2 } };
 }
+
+// P31: 화살표의 굵기·화살촉·글자 크기(판 좌표 값). zoom: 캔버스 배율.
+// 가까이(배율 1 이상)는 옛 모양(굵기 2, 화살촉 16, 글자 12). 줌 아웃하면 다른 판 요소(영역 테두리 1.5, 연결선 2.6은 판 기준이라 배율만큼 준다)처럼 판 기준으로 두되,
+// 화면에서 1px 아래로는 가늘어지지 않게 한다(영역 테두리도 화면 1px로 남는다). 글자는 화면 12px로 두다가 배율 ARROW_LABEL_MIN 아래에서는 그리지 않는다.
+// 그 배율에서는 워크트리 영역 이름표(⎇ 브랜치)가 같은 이름을 더 크게 보인다
+export const ARROW_LABEL_MIN = 0.25;
+export function arrowStyle(zoom) {
+  const z = Math.max(Number(zoom) || 1, 0.02);
+  return { stroke: Math.max(2, 1 / z), tip: Math.max(16, 6 / z), fs: Math.max(12, 12 / z), label: z >= ARROW_LABEL_MIN };
+}

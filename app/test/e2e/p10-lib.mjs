@@ -12,7 +12,7 @@ import { assertTestBoard, atriumEnv } from './p9-guard.mjs';
 // P11: MT_E2E_BOARD=p11이면 P11 판(atrium-dev-p11, 47825, experiments/p11/tools/env.cjs)에서 같은 시험을 다시 돌린다(MT_E2E_OUT=p11)
 // P13: MT_E2E_BOARD=p13이면 P13 판(atrium-dev-p13, 47827, experiments/p13/tools/env.cjs, MT_E2E_OUT=p13). 판 값 이름은 P11_ENV 그대로 받는다
 // P16·P17: MT_E2E_BOARD=p16·p17이면 그 작업자의 판(experiments/p16·p17/tools/env.cjs)
-export const BOARD = ['p11', 'p13', 'p16', 'p17', 'p21', 'p23', 'p26'].includes(process.env.MT_E2E_BOARD) ? process.env.MT_E2E_BOARD : null;
+export const BOARD = ['p11', 'p13', 'p16', 'p17', 'p21', 'p23', 'p26', 'p30'].includes(process.env.MT_E2E_BOARD) ? process.env.MT_E2E_BOARD : null;
 export const P11 = !!BOARD;
 const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', BOARD || 'p10', 'tools', 'env.cjs'));
 export const { DEV, DIRS, FIXTURE, LIVE_PROJECT } = T;

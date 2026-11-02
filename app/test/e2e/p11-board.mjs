@@ -7,7 +7,7 @@ import { REPO } from './harness.mjs';
 import { atriumEnv } from './p9-guard.mjs';
 
 // P13: MT_E2E_BOARD=p13이면 P13 판(experiments/p13/tools/env.cjs)
-const BOARD = ['p11', 'p13', 'p16', 'p17', 'p21', 'p23', 'p26'].includes(process.env.MT_E2E_BOARD) ? process.env.MT_E2E_BOARD : null;
+const BOARD = ['p11', 'p13', 'p16', 'p17', 'p21', 'p23', 'p26', 'p30'].includes(process.env.MT_E2E_BOARD) ? process.env.MT_E2E_BOARD : null;
 export const P11 = !!BOARD;
 const T = P11 ? createRequire(import.meta.url)(path.join(REPO, 'experiments', BOARD, 'tools', 'env.cjs')) : null;
 export const P11_DIRS = T ? T.DIRS : null;

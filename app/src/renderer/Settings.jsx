@@ -1,14 +1,15 @@
 // 설정(ARCH 4절 I7, P6c): 트레이 상주, 가지 펼치기 상한(P8), 보관 기간과 리포 스스로 찾기(P10), 새 세션 기본값. 켜면 창을 닫아도 앱이 트레이에 남아 OS 알림을 계속 띄운다(Electron main tray.mjs).
 // 판 기록에 두므로(settings.set) atrium settings와 같은 값이다. 바꾸면 settings.updated로 main과 창이 함께 따른다.
 // P16: 화면 언어(영어 기본, 한국어). 고르면 창을 다시 읽지 않고 곧바로 바뀐다. 글은 사전(locales/)에 있다.
-// P28: 스크롤 없이 한 화면에 들어가게 탭으로 나눴다(일반, 새 세션 Claude Code, 새 세션 Codex·DeepSeek, 잠재우기, 가지 펼치기, 보관과 리포 찾기).
-//   새 세션 기본값은 한 탭에 넣으면 최소 창(900×600)에서 넘쳐 두 탭으로 나눴다.
+// P28: 스크롤 없이 한 화면에 들어가게 탭으로 나눴다(일반, 호출자, 잠재우기, 가지 펼치기, 보관과 리포 찾기).
+//   P33: 옛 새 세션 기본값 두 탭은 호출자 탭(Launchers.jsx) 하나가 대신한다.
 //   줄마다 이름·값·풀이 세 칸(styles.css .mt-set-grid)이고, 체크 상자도 값 칸에 둔다. 긴 풀이는 탭 위 한 단락(.mt-set-note). 아래 텍스트 로고는 뺐다.
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast } from './store.js';
 import { BranchSettings } from './Branch.jsx'; // P8(K3): 가지 펼치기 상한
 import { useT, errText, setLanguage, getLanguage, LANGUAGES } from './lib/i18n.js';
+import { LaunchersTab } from './Launchers.jsx'; // P33: 호출자 탭
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 export function SetRow({ name, hint, children, role }) {
@@ -88,52 +89,6 @@ function RecallSettings({ settings, schema }) {
   );
 }
 
-// 새 세션 기본값: 왼쪽 레일의 Claude, Codex, DeepSeek를 누르면 이 값으로 바로 뜬다. 대화상자의 처음 값도 이것이다
-function SpawnSettings({ settings, schema, part }) {
-  const t = useT();
-  const [draft, setDraft] = useState({}); // 치는 중인 글(모델, Codex 인자)
-  const save = async (key, value) => {
-    try { await api.call('settings.set', { key, value }); setDraft((d) => { const n = { ...d }; delete n[key]; return n; }); toast(t('settings.spawnSaved')); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
-  };
-  const text = (key, placeholder) => (
-    <input className="mt-set-text" data-field={`setting-${key}`} placeholder={placeholder} title={placeholder} value={draft[key] ?? settings[key] ?? ''}
-      onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
-      onBlur={() => draft[key] != null && save(key, draft[key])}
-      onKeyDown={(e) => { if (e.key === 'Enter' && draft[key] != null) save(key, draft[key]); }} />
-  );
-  const opts = (key, fallback) => (schema && schema[key] && schema[key].options) || fallback;
-  return (
-    <div className="mt-set-grid" data-role="spawn-settings">
-      <SetNote>{t('settings.spawnNote')}</SetNote>
-      {part === 'claude' && <>
-      <SetRow name={t('settings.claudeModel')} hint={t('settings.claudeModelHint')}>{text('claudeModel', t('settings.claudeModelPh'))}</SetRow>
-      <SetRow name={t('settings.effort')} hint={t('settings.effortHint')}>
-        <select value={settings.claudeEffort || ''} data-field="setting-claudeEffort" onChange={(e) => save('claudeEffort', e.target.value)}>
-          {opts('claudeEffort', ['', 'low', 'medium', 'high', 'xhigh', 'max']).map((o) => <option key={o} value={o}>{o === '' ? t('settings.effortDefault') : o}</option>)}
-        </select>
-      </SetRow>
-      <SetRow name={t('settings.permissionMode')} hint={t('settings.permissionModeHint')}>
-        <select value={settings.claudePermissionMode || 'manual'} data-field="setting-claudePermissionMode" onChange={(e) => save('claudePermissionMode', e.target.value)}>
-          {opts('claudePermissionMode', ['manual', 'acceptEdits', 'plan', 'auto']).map((o) => <option key={o}>{o}</option>)}
-        </select>
-      </SetRow>
-      <SetRow name={t('settings.allowHerdrName')} hint={t('settings.allowHerdr')}><Toggle checked={!!settings.claudeAllowHerdr} onChange={(v) => save('claudeAllowHerdr', v)} field="setting-claudeAllowHerdr" /></SetRow>
-      </>}
-      {part === 'others' && <>
-      <SetSub>Codex</SetSub>
-      <SetRow name={t('settings.codexArgs')} hint={t('settings.codexArgsNote')}>{text('codexArgs', t('settings.codexArgsPh'))}</SetRow>
-      {/* P25: DeepSeek. 직접 명령을 비우면 판이 위 모델로 Claude Code를 띄우고, 채우면 새 셸 패널에 그 명령을 그대로 친다 */}
-      {settings.deepseekModel != null && <>
-        <SetSub>DeepSeek</SetSub>
-        <SetRow name={t('settings.deepseekModel')} hint={t('settings.deepseekModelHint')}>{text('deepseekModel', t('settings.deepseekModelPh'))}</SetRow>
-        <SetRow name={t('settings.deepseekCommand')} hint={t('settings.deepseekCommandHint')}>{text('deepseekCommand', t('settings.deepseekCommandPh'))}</SetRow>
-        <SetNote>{t('settings.deepseekNote')}</SetNote>
-      </>}
-      </>}
-    </div>
-  );
-}
-
 // P21(D4): 쉬면 잠재우기(분)
 function SleepSetting({ settings, schema }) {
   const t = useT();
@@ -153,8 +108,7 @@ function SleepSetting({ settings, schema }) {
 // 탭: 있는 설정만(옛 백엔드면 빠진다)
 const TABS = [
   { key: 'general', has: () => true },
-  { key: 'spawn', has: (s) => s && s.claudePermissionMode != null },
-  { key: 'agents', has: (s) => s && s.claudePermissionMode != null },
+  { key: 'launchers', has: (s, l) => !!l, label: 'launchers.tab' }, // P33: 옛 "새 세션" 두 탭(Claude Code, Codex·DeepSeek)을 대신한다
   { key: 'sleep', has: (s) => s && s.sleepAfterMin != null },
   { key: 'branch', has: (s) => s && s.branchMaxChildren != null },
   { key: 'recall', has: (s) => s && s.archiveDays != null },
@@ -163,24 +117,24 @@ const TABS = [
 export function SettingsDialog({ onClose }) {
   const t = useT();
   const settings = useStore((st) => st.settings);
+  const launchers = useStore((st) => st.launchers);
   const [schema, setSchema] = useState(null);
   const [tab, setTab] = useState('general');
   useEffect(() => { api.call('settings.get').then((r) => setSchema(r.schema)).catch((e) => toast(t('settings.saveFailed', { error: errText(e) }), 'error')); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const k = (e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
-  const tabs = TABS.filter((x) => x.has(settings));
+  const tabs = TABS.filter((x) => x.has(settings, launchers));
   const cur = tabs.some((x) => x.key === tab) ? tab : 'general';
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="mt-modal mt-settings" data-role="settings" data-tab={cur}>
         <h3>{t('settings.title')}</h3>
         <div className="mt-set-tabs" role="tablist" data-role="settings-tabs">
-          {tabs.map((x) => <button key={x.key} type="button" role="tab" aria-selected={cur === x.key} className={`mt-set-tab${cur === x.key ? ' on' : ''}`} data-tab={x.key} onClick={() => setTab(x.key)}>{t(`settings.tab.${x.key}`)}</button>)}
+          {tabs.map((x) => <button key={x.key} type="button" role="tab" aria-selected={cur === x.key} className={`mt-set-tab${cur === x.key ? ' on' : ''}`} data-tab={x.key} onClick={() => setTab(x.key)}>{t(x.label || `settings.tab.${x.key}`)}</button>)}
         </div>
         <div className="mt-set-body" role="tabpanel">
           {!settings && <div className="dim">{t('settings.loading')}</div>}
           {cur === 'general' && <GeneralTab settings={settings} />}
-          {settings && cur === 'spawn' && <SpawnSettings settings={settings} schema={schema} part="claude" />}
-          {settings && cur === 'agents' && <SpawnSettings settings={settings} schema={schema} part="others" />}
+          {cur === 'launchers' && <LaunchersTab />}
           {settings && cur === 'sleep' && <SleepSetting settings={settings} schema={schema} />}
           {settings && cur === 'branch' && <BranchSettings settings={settings} schema={schema} />}
           {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}

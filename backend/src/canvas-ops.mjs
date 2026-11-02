@@ -7,6 +7,7 @@ import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, rem
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, WT_EMPTY } from './worktree-areas.mjs'; // P27: 워크트리 영역
+import { layoutRegions } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
 import { keyed } from './msg.mjs'; // P16: 화면 글 열쇠
@@ -430,7 +431,43 @@ function moveItem(b, kind, id, x, y) {
   if (b.features) b.features.kanbans.emit(b.store.getKanban(id));
 }
 
+// 한 워크스페이스(본 저장소 영역) 안의 정리 계획. avoid: 정리한 영역이 다른 영역과 겹치면 영역째 빈자리로 옮긴다(워크스페이스 하나 정리)
+function planWorkspace(b, key, { avoid = true } = {}) {
+  const blocks = blocksOf(b, key);
+  if (!blocks.length) return { blocks, out: [], edges: [], moved: null };
+  const ids = new Set(blocks.flatMap((x) => x.members));
+  const edges = b.store.links().filter((l) => ids.has(l.from) && ids.has(l.to) && (l.role || l.observed || l.spawned)).map((l) => [l.from, l.to]);
+  const start = bbox(blocks);
+  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y } });
+  let sx = 0, sy = 0;
+  if (avoid) {
+    // 정리한 영역이 다른 영역과 겹치면(맞닿는 것은 괜찮다) 영역째로 빈자리로 옮긴다
+    const others = regions(b); others.delete(key);
+    const newRegion = regionRect(blocks.map((x) => plan.get(x.id)));
+    if (newRegion && [...others.values()].some((r) => overlaps(newRegion, r, -1))) {
+      const at = newRegionSlot(others, newRegion);
+      sx = at.x - newRegion.x; sy = at.y - newRegion.y;
+    }
+  }
+  const out = blocks.map((x) => { const q = plan.get(x.id); return { id: x.id, kind: x.kind, names: x.members.map((m) => b.nameOf(m)), from: { x: x.x, y: x.y, w: x.w, h: x.h }, to: { ...q, x: q.x + sx, y: q.y + sy } }; });
+  return { blocks, out, edges, moved: sx || sy ? { dx: sx, dy: sy } : null };
+}
+// 계획을 판에 쓴다(노드, 덩어리, 메모·칸반)
+function applyWorkspacePlan(b, { blocks, out }) {
+  const ids = new Set(blocks.flatMap((x) => x.members));
+  const byId = new Map(b.store.nodes().filter((n) => ids.has(n.session_id)).map((n) => [n.session_id, n]));
+  for (const x of blocks) {
+    const q = out.find((o) => o.id === x.id).to;
+    const dx = q.x - x.x, dy = q.y - x.y;
+    if (x.kind === 'memo' || x.kind === 'kanban') { moveItem(b, x.kind, x.memoId || x.kanbanId, q.x, q.y); continue; }
+    if (x.kind === 'node') { const n = byId.get(x.id); b.store.setNode({ ...n, x: Math.round(q.x), y: Math.round(q.y), w: q.w, h: q.h, size: q.size || n.size || null }); continue; }
+    for (const m of x.members) { const n = byId.get(m); b.store.setNode({ ...n, x: Math.round(n.x + dx), y: Math.round(n.y + dy) }); }
+  }
+}
+
+// 정리(H7). workspace: 그 워크스페이스 영역 안만. all: 판 전체(P31: 모든 워크스페이스 안을 정리한 뒤 영역 묶음도 다시 놓는다, arrangeBoard)
 export function arrange(b, p) {
+  if (p.all) return arrangeBoard(b, p);
   const w = b.store.getWorkspace(p.workspace) || null;
   if (!w) throw keyed(apiError('not_found', `판에 없는 워크스페이스: ${p.workspace}`), 'wsNotFound', { ref: p.workspace });
   const key = w.key;
@@ -445,38 +482,85 @@ export function arrange(b, p) {
     b.api.broadcast('board.changed', { why: 'arrange undo' });
     return { undone: true };
   }
-  const blocks = blocksOf(b, key);
-  if (!blocks.length) return { plan: [], applied: false };
-  const ids = new Set(blocks.flatMap((x) => x.members));
-  const edges = b.store.links().filter((l) => ids.has(l.from) && ids.has(l.to) && (l.role || l.observed || l.spawned)).map((l) => [l.from, l.to]);
-  const start = bbox(blocks);
-  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y } });
-  // 정리한 영역이 다른 영역과 겹치면(맞닿는 것은 괜찮다) 영역째로 빈자리로 옮긴다
-  const items = canvasItems(b);
-  const others = regions(b, items); others.delete(key);
-  const placedRects = blocks.map((x) => plan.get(x.id));
-  const newRegion = regionRect(placedRects);
-  let sx = 0, sy = 0;
-  if (newRegion && [...others.values()].some((r) => overlaps(newRegion, r, -1))) {
-    const at = newRegionSlot(others, newRegion);
-    sx = at.x - newRegion.x; sy = at.y - newRegion.y;
-  }
-  const out = blocks.map((x) => { const q = plan.get(x.id); return { id: x.id, kind: x.kind, names: x.members.map((m) => b.nameOf(m)), from: { x: x.x, y: x.y, w: x.w, h: x.h }, to: { ...q, x: q.x + sx, y: q.y + sy } }; });
-  if (!p.apply) return { plan: out, applied: false, edges: edges.length };
+  const pl = planWorkspace(b, key);
+  if (!pl.blocks.length) return { plan: [], applied: false };
+  if (!p.apply) return { plan: pl.out, applied: false, edges: pl.edges.length };
+  const ids = new Set(pl.blocks.flatMap((x) => x.members));
   const nodes = b.store.nodes().filter((n) => ids.has(n.session_id));
-  const itemsBefore = blocks.filter((x) => x.kind === 'memo' || x.kind === 'kanban').map((x) => ({ kind: x.kind, id: x.memoId || x.kanbanId, x: x.x, y: x.y }));
+  const itemsBefore = pl.blocks.filter((x) => x.kind === 'memo' || x.kind === 'kanban').map((x) => ({ kind: x.kind, id: x.memoId || x.kanbanId, x: x.x, y: x.y }));
   b.store.setMeta(undoKey, { at: Date.now(), nodes, items: itemsBefore });
-  const byId = new Map(nodes.map((n) => [n.session_id, n]));
-  for (const x of blocks) {
-    const q = out.find((o) => o.id === x.id).to;
-    const dx = q.x - x.x, dy = q.y - x.y;
-    if (x.kind === 'memo' || x.kind === 'kanban') { moveItem(b, x.kind, x.memoId || x.kanbanId, q.x, q.y); continue; }
-    if (x.kind === 'node') { const n = byId.get(x.id); b.store.setNode({ ...n, x: Math.round(q.x), y: Math.round(q.y), w: q.w, h: q.h, size: q.size || n.size || null }); continue; }
-    for (const m of x.members) { const n = byId.get(m); b.store.setNode({ ...n, x: Math.round(n.x + dx), y: Math.round(n.y + dy) }); }
-  }
-  b.store.addEvent(null, 'arranged', { workspace: key, blocks: blocks.length, edges: edges.length, moved: sx || sy ? { dx: sx, dy: sy } : null });
+  b.store.setMeta(BOARD_UNDO, null); // 판 전체 정리의 되돌리기는 이 정리 뒤로는 맞지 않는다
+  applyWorkspacePlan(b, pl);
+  b.store.addEvent(null, 'arranged', { workspace: key, blocks: pl.blocks.length, edges: pl.edges.length, moved: pl.moved });
   b.api.broadcast('board.changed', { why: 'arrange' });
-  return { plan: out, applied: true, edges: edges.length, undo: true };
+  return { plan: pl.out, applied: true, edges: pl.edges.length, undo: true };
+}
+
+// P31: 판 전체 정리. 1) 워크스페이스마다 안을 정리하고(영역 피하기 없이) 2) 그 결과의 영역들을 묶음(리포 영역 + 워크트리 위성 영역)째
+// 겹치지 않게 줄 맞춰 다시 놓는다(region-layout.mjs layoutRegions). 소속 없는 메모·칸반도 맨 뒤에 놓는다.
+// 되돌리기는 판 전체(노드, 메모·칸반, 대화 노드, 영역 자리, 워크트리 영역 자리)를 정리 전으로. 영역을 옮기는 것은 사람이 이것을 누를 때뿐이다(BRIEF 4절)
+const BOARD_UNDO = 'arrangeUndo:*';
+function arrangeBoard(b, p) {
+  if (p.undo) {
+    const u = b.store.getMeta(BOARD_UNDO);
+    if (!u) throw keyed(apiError('not_found', '되돌릴 정리가 없다'), 'noArrangeUndo');
+    for (const n of u.nodes) if (b.sessions.has(n.session_id)) b.store.setNode({ ...n, size: n.size ?? '' });
+    for (const it of u.items || []) moveItem(b, it.kind, it.id, it.x, it.y);
+    const ws = new Set(b.store.workspaces().map((w) => w.key));
+    for (const a of u.anchors || []) if (ws.has(a.key)) b.store.setWorkspaceAnchor(a.key, a.x, a.y);
+    const rows = new Map(areaRows(b).map((a) => [`${a.wsKey}|${a.wt}`, a]));
+    for (const a of u.areas || []) { const now = rows.get(`${a.wsKey}|${a.wt}`); if (now) b.store.putWorktreeArea({ ...now, x: a.x, y: a.y }); }
+    if (b.store.convoNodes && u.convos && u.convos.length) {
+      const cs = new Map(b.store.convoNodes().map((n) => [n.convId, n]));
+      for (const c of u.convos) { const now = cs.get(c.convId); if (now) b.store.putConvoNode({ ...now, x: c.x, y: c.y }); }
+      if (b.recall) b.recall.layoutCanvas().catch(() => {});
+    }
+    b.store.setMeta(BOARD_UNDO, null);
+    b.store.addEvent(null, 'arrange_undone', { workspace: '*' });
+    b.api.broadcast('board.changed', { why: 'arrange undo' });
+    return { undone: true, all: true };
+  }
+  const wss = b.store.workspaces();
+  const plans = wss.map((w) => ({ key: w.key, ...planWorkspace(b, w.key, { avoid: false }) })).filter((x) => x.blocks.length);
+  // 정리한 뒤의 판을 흉내 내어 영역을 계산한다(미리 보기도 같은 값)
+  const items = canvasItems(b).map((i) => ({ ...i }));
+  const find = (kind, id) => items.find((i) => i.kind === kind && i.id === id);
+  for (const pl of plans) for (const x of pl.blocks) {
+    const q = pl.out.find((o) => o.id === x.id).to;
+    if (x.kind === 'node') Object.assign(find('node', x.id) || {}, { x: q.x, y: q.y, w: q.w, h: q.h });
+    else if (x.kind === 'memo' || x.kind === 'kanban') Object.assign(find(x.kind, x.memoId || x.kanbanId) || {}, { x: q.x, y: q.y });
+    else for (const m of x.members) { const it = find('node', m); if (it) { it.x += q.x - x.x; it.y += q.y - x.y; } }
+  }
+  const regs = regionsOf(areaAnchors(b), items);
+  const entries = [...regs].map(([k, r]) => { const { ws, wt } = parseArea(k); return { key: k, ws, wt, rect: r, empty: !items.some((i) => i.ws === k) }; });
+  for (const i of items) if (!i.ws && (i.kind === 'memo' || i.kind === 'kanban')) entries.push({ key: `${i.kind}:${i.id}`, ws: null, wt: '', rect: { x: i.x, y: i.y, w: i.w, h: i.h }, item: i });
+  const lay = layoutRegions(entries);
+  const regionPlan = entries.map((e) => ({ key: e.key, from: e.rect, to: lay.rects.get(e.key) }));
+  const edges = plans.reduce((s, pl) => s + pl.edges.length, 0);
+  if (!p.apply) return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, applied: false, edges };
+  // 되돌리기 자료: 판 전체
+  b.store.setMeta(BOARD_UNDO, {
+    at: Date.now(),
+    nodes: b.store.nodes().filter((n) => b.sessions.has(n.session_id)),
+    items: [...b.store.memos().map((m) => ({ kind: 'memo', id: m.memoId, x: m.x, y: m.y })), ...b.store.kanbans().map((k) => ({ kind: 'kanban', id: k.kanbanId, x: k.x, y: k.y }))],
+    anchors: wss.map((w) => ({ key: w.key, x: w.x ?? null, y: w.y ?? null })),
+    areas: areaRows(b).map((a) => ({ wsKey: a.wsKey, wt: a.wt, x: a.x, y: a.y })),
+    convos: b.store.convoNodes ? b.store.convoNodes().map((n) => ({ convId: n.convId, x: n.x, y: n.y })) : [],
+  });
+  for (const w of wss) b.store.setMeta(`arrangeUndo:${w.key}`, null); // 워크스페이스 하나의 되돌리기는 이 정리 뒤로는 맞지 않는다
+  for (const pl of plans) applyWorkspacePlan(b, pl);
+  const fresh = canvasItems(b);
+  const moved = [];
+  for (const e of entries) {
+    const s = lay.shifts.get(e.key);
+    if (!s) continue;
+    if (e.item) { moveItem(b, e.item.kind, e.item.id, e.item.x + s.dx, e.item.y + s.dy); moved.push({ key: e.key, ...s }); continue; }
+    moved.push({ key: e.key, ...s, items: shiftWorkspace(b, e.key, s.dx, s.dy, fresh) });
+  }
+  settleRegions(b, 'arrange'); // 안전망: 계산이 맞으면 옮길 것이 없다
+  b.store.addEvent(null, 'arranged', { workspace: '*', workspaces: plans.length, regions: entries.length, edges, moved });
+  b.api.broadcast('board.changed', { why: 'arrange' });
+  return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, applied: true, edges, undo: true };
 }
 
 // ---------- 검색(H2) ----------

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { branchLabel, treeOrder } from '../src/renderer/lib/branch.js';
-import { missionLayout, MISSION } from '../src/renderer/lib/items.js';
+import { missionLayout } from '../src/renderer/lib/mission-layout.js'; // P32: 나무 배치
 import { setLanguage } from '../src/renderer/lib/i18n.js';
 
 test('K4: 머리줄 — atrium child로 만든 하위 세션만 "@부모의 역할 · n단계"', () => {
@@ -22,13 +22,15 @@ test('K4: 나무 순서 — 부모 바로 아래에 자식(형제는 주어진 �
   assert.deepEqual(out.map((o) => `${o.item.sessionId}:${o.indent}`), ['lead:0', 'w2:1', 'w1:1', 'g1:2', 'other:0', 'lost:0', 'x:0', 'y:1']);
 });
 
-test('K4: 미션 맵 — 하위 세션은 부모 순서대로 모이고 깊이만큼 들여 쓴다', () => {
-  const sess = (id, name, column, depth, parentId, category = 'idle') => ({ id, kind: 'session', name, column, depth, parentId, category });
-  const graph = { nodes: [{ id: 'human', kind: 'human', column: 0 }, sess('s:b', 'b-lead', 0, 1, null), sess('s:a', 'a-lead', 0, 1, null), sess('s:bw', 'zz', 2, 2, 's:b'), sess('s:aw', 'yy', 2, 2, 's:a'), sess('s:solo', 'aaa', 2, 1, null, 'working')], edges: [] };
+test('K4: 미션 맵(P32 나무) — 하위 세션은 부모 오른쪽 열에, 형제는 위아래로 쌓이고 부모는 그 가운데', () => {
+  const sess = (id, name, depth, parentId, category = 'idle') => ({ id, kind: 'session', name, depth, parentId, category });
+  const graph = { nodes: [{ id: 'human', kind: 'human', column: 0 }, sess('s:b', 'b-lead', 1, null), sess('s:a', 'a-lead', 1, null), sess('s:bw', 'zz', 2, 's:b'), sess('s:aw', 'yy', 2, 's:a'), sess('s:aw2', 'yz', 2, 's:a'), sess('s:solo', 'aaa', 1, null, 'working')], edges: [{ id: 'sp1', from: 's:a', to: 's:aw', kind: 'spawn' }, { id: 'sp2', from: 's:a', to: 's:aw2', kind: 'spawn' }, { id: 'sp3', from: 's:b', to: 's:bw', kind: 'spawn' }] };
   const lay = missionLayout(graph);
-  const y = (id) => lay.boxes.get(id).y;
-  assert.ok(y('s:a') < y('s:b')); // 이름 순
-  assert.ok(y('s:solo') < y('s:aw') && y('s:aw') < y('s:bw')); // 오른쪽 열: 뿌리(작업 중) 먼저, 그다음 부모 순서대로
-  assert.equal(lay.boxes.get('s:aw').x - lay.boxes.get('s:solo').x, MISSION.indent);
-  assert.equal(lay.boxes.get('s:aw').w, MISSION.colW - MISSION.indent);
+  const b = (id) => lay.boxes.get(id);
+  assert.ok(b('s:a').y < b('s:b').y); // 이름 순
+  assert.equal(b('s:aw').depth, b('s:a').depth + 1);
+  assert.ok(b('s:aw').x > b('s:a').x);
+  assert.ok(b('s:aw').y < b('s:aw2').y && b('s:aw2').y < b('s:bw').y, '부모 순서대로 모인다');
+  assert.equal(b('s:a').y, (b('s:aw').y + b('s:aw2').y) / 2);
+  assert.deepEqual(lay.loose, ['s:solo'], '선이 없는 뿌리는 연결 없음 칸');
 });

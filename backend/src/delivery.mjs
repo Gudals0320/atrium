@@ -34,7 +34,9 @@ export class DeliveryQueue extends EventEmitter {
     this.items = new Map();
     for (const d of store.activeDeliveries()) {
       // 백엔드가 보내는 중에 꺼졌다면 들어갔는지 모른다 → sent로 보고 확인을 기다린다(C2에서 대화 기록으로 맞춘다)
+      // sentAt이 없으면 확인 기한을 셀 수 없어 영영 sent로 남는다 → 복구 시각을 넣는다(이슈 #1-1)
       if (d.status === 'sending') d.status = 'sent';
+      if (d.status === 'sent' && !d.sentAt) { d.sentAt = Date.now(); store.updateDelivery(d.deliveryId, { status: 'sent', reason: d.reason ?? null, sentAt: d.sentAt }); }
       this.items.set(d.deliveryId, d);
     }
   }
@@ -97,7 +99,8 @@ export class DeliveryQueue extends EventEmitter {
       const d = this._head(sid);
       if (!d || d.status === 'sending') continue;
       if (d.status === 'sent') {
-        if (now - (d.sentAt || now) > this.cfg.submitConfirmMs) this._set(d, 'unconfirmed', 'no UserPromptSubmit hook');
+        if (!d.sentAt) d.sentAt = now; // 다른 길로 sentAt 없는 sent가 생겨도 여기서부터 기한을 센다
+        if (now - d.sentAt > this.cfg.submitConfirmMs) this._set(d, 'unconfirmed', 'no UserPromptSubmit hook');
         continue;
       }
       if (now - d.createdAt > this.cfg.deliveryMaxWaitMs) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
@@ -109,12 +112,15 @@ export class DeliveryQueue extends EventEmitter {
   }
 
   async _deliver(d) {
+    d.workingSeen = false; // 앞 시도(실패) 중의 working 신호를 이 시도의 확인으로 쓰지 않는다(이슈 #1-3)
     this._set(d, 'sending', null, { attempt: true });
     try {
       await this.send(d.sessionId, d.text);
       if (d.status === 'sending') this._set(d, 'sent', null, { sentAt: Date.now() });
       if (d.workingSeen && d.status === 'sent') this._set(d, 'confirmed', 'herdr working', { confirmedAt: Date.now() });
     } catch (e) {
+      // 그사이 hook 등으로 confirmed가 되었거나 상태가 바뀌었으면 늦은 오류로 되돌리지 않는다(이슈 #1-2)
+      if (d.status !== 'sending' || !this.items.has(d.deliveryId)) return;
       if (e.code === 'agent_blocked') this._set(d, 'queued', 'waiting'); // 막힌 패널은 herdr가 거부한다(E0 3.2)
       else if (e.code === 'agent_not_found' || e.code === 'agent_not_ready') this._set(d, 'queued', 'no_agent');
       else if (e.code === 'unreachable') this._set(d, 'queued', 'herdr_down');

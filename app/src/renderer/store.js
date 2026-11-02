@@ -50,6 +50,7 @@ const state = {
   threadOpen: false,
   loops: new Map(), // loopId → 루프
   settings: null, // { tray, language, … }. language를 받으면 화면 언어를 바꾼다(P16)
+  launchers: null, // P33 호출자: { launchers: [{ id, name, harness, …, favorite, preview }], favorites: [id], harnesses }
   outputView: null, // { sessionId, turn } 출력 보기 창
   missionOpen: false, // 미션 맵 덮개
   itemSelected: null, // 캔버스에서 고른 메모·칸반 노드 id(memo:…, kanban:…)
@@ -245,7 +246,7 @@ api.on('$open', async (r) => {
     state.resources = res; state.clients = clients;
     changed();
     // P6c: Thread, 루프, 설정. P6b 전 백엔드면 없다(조용히 넘어간다)
-    await Promise.all([loadThread().catch(() => {}), loadLoops().catch(() => {}), api.call('settings.get').then((r) => { putSettings(r.settings); }).catch(() => {})]);
+    await Promise.all([loadThread().catch(() => {}), loadLoops().catch(() => {}), api.call('settings.get').then((r) => { putSettings(r.settings); }).catch(() => {}), loadLaunchers()]);
   } catch (e) { toast(t('store.loadFailed', { error: errText(e) }), 'error'); }
 });
 api.on('session.updated', (sum) => putSession(sum));
@@ -286,3 +287,7 @@ api.on('thread.item', (it) => putThread([it]));
 api.on('loop.updated', (l) => { state.loops = new Map(state.loops); state.loops.set(l.loopId, l); changed(); });
 api.on('loop.removed', (d) => { state.loops = new Map(state.loops); state.loops.delete(d.loopId); changed(); });
 api.on('settings.updated', (v) => putSettings(v.settings || v));
+// P33 호출자(왼쪽 레일 즐겨찾기, 설정의 호출자 탭, 새 세션 창). 옛 백엔드면 없다
+export function putLaunchers(v) { state.launchers = v && Array.isArray(v.launchers) ? v : null; changed(); }
+export const loadLaunchers = () => api.call('launcher.list').then(putLaunchers).catch(() => {});
+api.on('launchers.updated', (v) => putLaunchers(v));

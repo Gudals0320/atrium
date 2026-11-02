@@ -142,8 +142,8 @@ export function SelectionBar() {
   const resize = async (size) => {
     for (const x of sizeTargets(getState().selected, [...getState().docks.values()])) await call('board.setSize', { session: x.id, size, scope: x.dockId ? 'dock' : undefined });
   };
-  // P26: 토글을 바꾸면 불이 들어온 단계를 다른 쪽의 같은 단계로 바꾼다(불이 없으면 쪽만 바꾼다)
-  const flip = (d) => { setDirPick(d); const k = flipStep(lit, d); if (k) resize(k); };
+  // P26: 토글을 바꾸면 불이 들어온 단계를 다른 쪽의 같은 단계로 바꾼다. P30: 불이 없으면 누른 쪽에서 지금 크기와 가장 가까운 단계로(덩어리 하나나 노드 하나를 골랐을 때)
+  const flip = (d) => { setDirPick(d); const k = flipStep(lit, d, rects.length === 1 ? rects[0] : null); if (k) resize(k); }; // P30: 불이 없으면 가장 가까운 단계로
   const sizeTitle = (k) => t('selection.sizeTitle', { w: SIZE_STEPS[k].w, h: SIZE_STEPS[k].h });
   const style = !place ? { visibility: 'hidden' } : place.row === 'top' ? { left: place.x, width: place.w } : undefined;
   return (
@@ -157,7 +157,7 @@ export function SelectionBar() {
       <div className="mt-sel-sizes" data-role="size-buttons" data-dir={dir} data-lit={lit || undefined}>
         {BAR_SIZES[dir].map((k, i) => <button key={k} className={`mt-btn small ghost mt-sel-size${lit === k ? ' on' : ''}`} data-size={k} aria-pressed={lit === k} title={sizeTitle(k)} onClick={() => resize(k)}>{t(`selection.${SIZE_LEVELS[i]}`)}</button>)}
       </div>
-      {/* P17: 배치 틀. 고른 순서대로 칸을 채워 한 덩어리로 짠다(고른 노드가 든 덩어리는 통째로). P23: 글 대신 도형. P26: 세션 수에 맞는 틀만 */}
+      {/* P17: 배치 틀. 고른 순서대로 칸을 채워 한 덩어리로 짠다(고른 노드가 든 덩어리는 통째로). P23: 글 대신 도형. P26: 세션 수에 맞는 틀만. P30: 누른 뒤에도 고름을 풀지 않는다(이어서 다른 틀·크기를 바로 고른다) */}
       <span className="mt-sel-sep" />
       <button className={`mt-btn small ghost mt-sel-layout${layoutOpen ? ' on' : ''}`} data-action="layout-more" aria-expanded={layoutOpen} title={dt('layoutLabel')} onClick={() => setLayoutOpen((o) => !o)}>{presets[0] && <PresetIcon id={presets[0]} n={n} />}<span className="mt-sel-caret">▾</span></button>
       <div className={`mt-sel-presets${layoutOpen ? ' open' : ''}`} data-role="presets" data-count={n}>
@@ -166,7 +166,7 @@ export function SelectionBar() {
           const label = dt(b.label, { n });
           return (
             <button key={id} className="mt-btn small ghost mt-preset" data-preset={id} disabled={ws.size !== 1} aria-label={label} title={ws.size !== 1 ? dt('layoutMixed') : `${label}: ${dt(b.title, { n })}\n${dt('layoutTitle')}`}
-              onClick={() => call('dock.layout', { members: selected, preset: id }, () => dt('layoutDone', { name: label })).then(() => { setLayoutOpen(false); clear(); })}><PresetIcon id={id} n={n} /></button>
+              onClick={() => call('dock.layout', { members: selected, preset: id }, () => dt('layoutDone', { name: label })).then(() => setLayoutOpen(false))}><PresetIcon id={id} n={n} /></button>
           );
         })}
       </div>

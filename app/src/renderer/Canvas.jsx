@@ -8,7 +8,7 @@
 //   영역과 그룹 배경은 안의 노드를 감싸도록 그릴 때마다 계산한다(끄는 중에도). 영역 이름표를 끌면 안의 것이 모두 함께 움직인다.
 //   붙여 묶기(H5): 덩어리의 노드를 끌면 덩어리째로 움직이고, Alt를 누른 채 끌면 그 노드만 끌어낸다. 혼자인 노드를 다른 노드(덩어리) 바깥 가장자리 가까이
 //   끌면 붙을 자리를 보이고 놓으면 붙는다. 분할선(Docks.jsx)으로 이웃한 두 노드의 크기를 함께 바꾼다.
-//   P23: 덩어리 안 세션끼리의 연결은 일반 선 대신 노드 가운데 점끼리 잇는 겹친 선(Docks.jsx DockLinks)이다. 붙은 노드의 바깥 테두리와 엇갈리는 점도 끈다.
+//   P23: 붙은 노드의 바깥 테두리와 엇갈리는 점도 끈다. P30: 덩어리 안 세션끼리의 연결은 일반 선 대신 경계 위 다리·바깥 괄호·둘레 길(Docks.jsx DockLinks)이다.
 //   P17: 덩어리는 분할 나무다(dock-tree.mjs). Ctrl을 누른 채 노드를 끌면(ctrlDrag) 그 노드만 움직이고, 다른 노드나 덩어리 위에서 놓일 자리를 보인다:
 //   노드의 위·아래·왼쪽·오른쪽 가장자리 쪽이면 그 노드를 반으로 나누고, 덩어리 바깥 가장자리 쪽이면 덩어리 전체 옆 새 칸. 아무 데도 아니면 덩어리에서 뗀다.
 //   분할선은 마디마다 하나씩, 덩어리 오른쪽 아래 모서리 손잡이로 바깥 크기를 바꾼다.
@@ -148,6 +148,8 @@ function backdrops(content, ghost, ctrlId = null) {
   // P17: 덩어리(분할 나무)마다 마디의 분할선과 바깥 크기 손잡이. 지금 그리는 구성 노드 자리의 bbox를 바깥으로 본다(덩어리째 끄는 중에도 따라온다).
   // Ctrl+끌기로 끌어내는 노드(ctrlId)는 저장소 자리로 센다(덩어리 모양은 놓을 때까지 그대로)
   // P23: 붙은 노드의 바깥 테두리(잎마다 덩어리 바깥에 닿은 쪽), 엇갈리는 점, 덩어리 안 연결선(그 덩어리 안에 연결이 있을 때만)
+  // P30: 덩어리 안 연결(다리·괄호·둘레 길)은 분할선(3000)보다 위(3003)라 다리를 누를 수 있다. 노드 상자는 1 × 1로 두고 안의 그림이 넘쳐 그려지게 한다
+  //   (덩어리만 한 상자를 그 높이에 두면 React Flow가 가운데 점에서 잇기를 시작하지 않는다)
   const fixed = { selectable: false, draggable: false, focusable: false };
   for (const d of st.docks.values()) {
     const rs = d.members.map((m) => (m === ctrlId ? st.nodes.get(m) : rect.get(m)));
@@ -171,7 +173,7 @@ function backdrops(content, ghost, ctrlId = null) {
     extra.push({ id: `grip:${d.dockId}`, type: 'dockgrip', position: { x: outer.x + outer.w - LINE / 2, y: outer.y + outer.h - LINE / 2 }, width: LINE, height: LINE, data: { dockId: d.dockId }, zIndex: 3001, ...fixed });
     if ([...st.links.values()].some((l) => d.members.includes(l.from) && d.members.includes(l.to))) {
       const rel = Object.fromEntries(d.members.map((m, i) => [m, { x: rs[i].x - outer.x, y: rs[i].y - outer.y, w: rs[i].w, h: rs[i].h }]));
-      extra.push({ id: `dl:${d.dockId}`, type: 'docklinks', position: { x: outer.x, y: outer.y }, width: outer.w, height: outer.h, data: { dockId: d.dockId, rects: rel }, zIndex: 2990, ...fixed, style: { pointerEvents: 'none' } });
+      extra.push({ id: `dl:${d.dockId}`, type: 'docklinks', position: { x: outer.x, y: outer.y }, width: 1, height: 1, data: { dockId: d.dockId, rects: rel }, zIndex: 3003, ...fixed, style: { pointerEvents: 'none' } });
     }
   }
   // P13: 워크트리 대화 배경(지금 그리는 자리로)
@@ -501,7 +503,8 @@ export function Canvas() {
     const st = getState();
     // P21: 잠든 세션은 패널이 없어 터미널을 붙이지 않는다(깨면 starting이 되어 붙는다)
     const list = [...st.nodes].filter(([id]) => st.sessions.has(id) && st.sessions.get(id).state !== 'sleeping').map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
-    const want = pickAttached(list, vp, { width: el.clientWidth, height: el.clientHeight }, { max: MAX_CONTROLLERS, prev: new Set(st.attached) });
+    // 이슈 #1-16: 상한보다 많이 보여도 고른 노드와 초점 노드는 터미널을 먼저 받는다
+    const want = pickAttached(list, vp, { width: el.clientWidth, height: el.clientHeight }, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus: st.focusId, selected: new Set(st.selected) });
     // P24: 가까이 얼굴로 보이는 노드 모두(잠든 노드, 제어기 상한 밖 포함)는 그 리포를 보고 있는 것이다(저절로 잠재우지 않는다)
     const all = [...st.nodes].filter(([id]) => st.sessions.has(id)).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
     setCloseIds(pickAttached(all, vp, { width: el.clientWidth, height: el.clientHeight }, { max: Infinity }).sort());
@@ -520,7 +523,9 @@ export function Canvas() {
 
   const timer = useRef(null);
   const schedule = useCallback((ms = 200) => { clearTimeout(timer.current); timer.current = setTimeout(recompute, ms); }, [recompute]);
-  useEffect(() => { schedule(50); }, [storeNodes, sessions, schedule]);
+  const focusId = useStore((st) => st.focusId);
+  const selectedIds = useStore((st) => st.selected);
+  useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, schedule]);
   useEffect(() => { const t = setInterval(() => recompute(), HOLD_MS + 100); window.addEventListener('resize', () => schedule()); return () => clearInterval(t); }, [recompute, schedule]);
 
   const sizeOf = () => { const el = wrapRef.current; return el ? { width: el.clientWidth, height: el.clientHeight } : null; };

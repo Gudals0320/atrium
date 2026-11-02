@@ -101,10 +101,12 @@ export class Kanbans {
   // op: addColumn{name,index?} renameColumn{column,name} moveColumn{column,index} removeColumn{column} addCard{column?,text,session?,index?}
   //     editCard{card,text} moveCard{card,column?,index?} removeCard{card} linkCard{card,session|null}
   async update(p) {
+    // await는 워크스페이스 풀기 하나뿐이다. 칸반은 그 뒤에 읽고, 바꾸고, 저장한다(사이에 await 없음).
+    // 먼저 읽어 두면 동시에 온 다른 요청의 변경을 옛 열 목록으로 덮는다(이슈 #1-8)
+    const ws = await this.wsKey(p.workspace);
     const k = this.find(p.kanban);
     const f = geometry(p, {}, KANBAN);
     if (p.title !== undefined) f.title = this.title(p.title);
-    const ws = await this.wsKey(p.workspace);
     if (ws !== undefined) f.workspaceKey = ws;
     const ops = [...(p.op ? [typeof p.op === 'string' ? { ...p, op: p.op } : p.op] : []), ...(Array.isArray(p.ops) ? p.ops : [])];
     let cols = k.columns;

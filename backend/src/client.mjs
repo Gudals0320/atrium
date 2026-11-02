@@ -17,9 +17,10 @@ export function health(port) {
 
 export class ApiClient {
   constructor(info) { this.info = info; this.n = 0; this.wait = new Map(); this.handlers = []; }
-  open() {
+  // handshakeTimeoutMs: 받기만 하고 답하지 않는 서버에 끝없이 매달리지 않게 연결 수립에 기한을 둔다(이슈 #1-13)
+  open({ handshakeTimeoutMs = 10000 } = {}) {
     return new Promise((res, rej) => {
-      this.ws = new WebSocket(`ws://127.0.0.1:${this.info.port}/api?token=${this.info.token}`);
+      this.ws = new WebSocket(`ws://127.0.0.1:${this.info.port}/api?token=${this.info.token}`, { handshakeTimeout: handshakeTimeoutMs });
       this.ws.on('open', res);
       this.ws.on('error', rej);
       this.ws.on('message', (raw) => {
@@ -51,11 +52,15 @@ export async function startBackend(cfg, { nodePath = process.execPath } = {}) {
   const log = fs.openSync(path.join(cfg.logDir, 'backend.out'), 'a');
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AGENT_SDK|ELECTRON_)/.test(k)));
   const p = spawn(nodePath, [path.join(BACKEND_ROOT, 'src', 'main.mjs')], { env: { ...env, ...profileEnv(cfg) }, detached: true, stdio: ['ignore', log, log], windowsHide: true });
+  // 띄우지 못하면(없는 nodePath 등) error 이벤트가 온다. 받지 않으면 uncaught error로 이 프로세스(Electron main 포함)가 죽는다(이슈 #1-12)
+  let spawnError = null;
+  p.on('error', (e) => { spawnError = e; });
   p.unref();
   fs.closeSync(log);
   const t0 = Date.now();
   while (Date.now() - t0 < 60000) { // P18: 처음 뜰 때 옛 판 옮기기(옛 백엔드·herdr 끄기)가 몇십 초 걸릴 수 있다
     await sleep(200);
+    if (spawnError) throw new Error(`백엔드를 띄우지 못했다(${nodePath}): ${spawnError.code || spawnError.message}`);
     const b = backendInfo(cfg);
     if (b && b.pid === p.pid && (await health(b.port))) {
       const c = new ApiClient(b); await c.open();

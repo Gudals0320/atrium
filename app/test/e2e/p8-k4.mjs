@@ -33,7 +33,8 @@ try {
   await page.click('[data-action="mission-open"]');
   await page.waitForSelector('[data-role="mm-node"][data-kind="session"]', { timeout: 20000 });
   await sleep(800);
-  result.mission = await page.evaluate(() => [...document.querySelectorAll('[data-role="mm-node"][data-kind="session"]')].map((e) => ({ name: e.dataset.name, x: parseInt(e.style.left, 10), y: parseInt(e.style.top, 10), branch: (e.querySelector('[data-role="mm-branch"]') || {}).textContent || null })).sort((a, b) => a.x - b.x || a.y - b.y));
+  result.mission = await page.evaluate(() => [...document.querySelectorAll('[data-role="mm-node"][data-kind="session"]')].map((e) => ({ name: e.dataset.name, x: parseInt(e.style.left, 10), y: parseInt(e.style.top, 10), branch: (e.getAttribute('title') || '').split('
+')[0] || null })).sort((a, b) => a.x - b.x || a.y - b.y));
   log('mission', JSON.stringify(result.mission));
   await shot(page, `${tag}-3-mission-map`, log);
   await page.click('[data-action="mission-close"]');

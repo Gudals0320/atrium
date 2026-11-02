@@ -4,12 +4,13 @@
 // 판: herdr 세션 atrium-dev-p23, 포트 47841, backend/.dev(experiments/p23/tools/env.cjs). 시험 폴더는 새로 만든 C:\Workspace\mtask-p23-ws 하나, 셸만 띄운다.
 // 사용: node experiments/p23/tools/e2e.cjs p23-dock.mjs
 // P26: 막대가 가로|세로 토글과 크기 단추 셋, 세션 수(넷)에 맞는 틀 여섯으로 바뀌었고 겹친 선이 진해졌다. P26 판(MT_E2E_BOARD=p26)에서도 돈다
+// P30: 덩어리 안 연결은 겹친 선 대신 다리·괄호·둘레 길(터미널 위 선 없음)이고 가운데 점은 잇기 모드에서만 보인다. P30 판(MT_E2E_BOARD=p30)에서도 돈다
 import fs from 'node:fs';
 import path from 'node:path';
 import { launch, closeApp, shot, logger, sleep, until, call, writeJson, DIRS, DEV, OUT } from './p10-lib.mjs';
 
 const BOARD = process.env.MT_E2E_BOARD;
-if (!['p23', 'p26'].includes(BOARD)) throw new Error('MT_E2E_BOARD=p23이나 p26으로 돌린다(experiments/p23·p26/tools/e2e.cjs)');
+if (!['p23', 'p26', 'p30'].includes(BOARD)) throw new Error('MT_E2E_BOARD=p23, p26, p30으로 돌린다(experiments/p23·p26·p30/tools/e2e.cjs)');
 const log = logger('p23-dock');
 const result = { steps: [] };
 const step = (name, ok, data = {}) => { result.steps.push({ name, ok: !!ok, ...data }); log(`${ok ? '통과' : '실패'}: ${name}`, data); };
@@ -250,7 +251,7 @@ try {
 
   // 7) 덩어리 안 점끼리 잇기와 겹친 선
   await grid(page, base);
-  const dots = () => page.evaluate(() => [...document.querySelectorAll('.mt-node.docked .mt-handle.h-c')].map((h) => ({ name: h.closest('.mt-node').dataset.name, op: +getComputedStyle(h).opacity, pe: getComputedStyle(h).pointerEvents })));
+  const dots = () => page.evaluate(() => [...document.querySelectorAll('.mt-node.docked .mt-handle.h-c')].map((h) => (h.style.transition = 'none', h)).map((h) => ({ name: h.closest('.mt-node').dataset.name, op: +getComputedStyle(h).opacity, pe: getComputedStyle(h).pointerEvents })));
   let ds = await dots();
   const overlay0 = await page.$$('[data-role=dock-links]');
   step('연결이 없으면 점이 보이지 않고 겹친 선도 없다', ds.length === 4 && ds.every((d) => d.op === 0 && d.pe === 'none') && overlay0.length === 0, { dots: ds });
@@ -272,16 +273,17 @@ try {
   step('잇기 모드에서 s1 점을 끌어 s4 점에 놓으면 역할을 묻고 잇는다', linkModeDots && !!roleDlg, { dots: ds });
   await page.click('[data-action=link-mode]'); await sleep(600);
   ds = await dots();
-  const lines = await page.evaluate(() => [...document.querySelectorAll('[data-role=dock-links] .mt-dl')].map((g) => g.dataset.link));
-  const plain = await page.evaluate((ls) => ls.filter((id) => document.querySelector(`.react-flow__edge[data-id="${id}"], .react-flow__edge[data-testid="rf__edge-${id}"]`)).length, lines);
-  const overStyle = await page.evaluate(() => { const l = document.querySelector('[data-role=dock-links] .mt-dl-line'); const n = document.querySelector('.react-flow__node-docklinks'); return l ? { op: +getComputedStyle(l).opacity, casing: !!document.querySelector('[data-role=dock-links] .mt-dl-casing'), z: n && +getComputedStyle(n).zIndex } : null; });
-  step('덩어리 안 연결은 두 점을 잇는 겹친 선(P26: 진한 색에 어두운 테두리, 세션 위), 일반 선은 없다, 점은 연결이 있으면 보인다', lines.length === 1 && plain === 0 && overStyle && overStyle.op >= 0.9 && overStyle.casing && overStyle.z >= 1000 && ds.every((d) => d.op > 0 && d.pe === 'none'), { lines, plain, overStyle, dots: ds });
+  const lines = await page.evaluate(() => [...document.querySelectorAll('[data-role=dock-links] [data-kind]')].map((g) => ({ link: g.dataset.link, kind: g.dataset.kind })));
+  const plain = await page.evaluate((ls) => ls.filter((x) => document.querySelector(`.react-flow__edge[data-id="${x.link}"], .react-flow__edge[data-testid="rf__edge-${x.link}"]`)).length, lines);
+  // P30: s1 → s4(2 × 2 대각선)는 덩어리 둘레를 도는 길이고, 점은 잇기 모드가 아니면 숨는다
+  step('덩어리 안 연결은 둘레 길(P30: 터미널 위 선 없음), 일반 선은 없다, 점은 잇기 모드가 아니면 숨는다', lines.length === 1 && lines[0].kind === 'around' && plain === 0 && ds.every((d) => d.op === 0 && d.pe === 'none'), { lines, plain, dots: ds });
   await shot(page, 'p23-6-4-overlay-line', log);
-  // 선의 글을 누르면 오간 기록
-  await page.click('[data-role=dock-links] .mt-dl-label'); await sleep(800);
+  // 둘레 길을 누르면 오간 기록
+  const onRoute = await page.evaluate(() => { const p = document.querySelector('[data-role=dock-links] g.mt-dl .mt-dl-line'); const m = p.getScreenCTM(); const q = p.getPointAtLength(p.getTotalLength() / 2); return { x: q.x * m.a + m.e, y: q.y * m.d + m.f }; });
+  await page.mouse.click(onRoute.x, onRoute.y); await sleep(800);
   const panel = await page.$('[data-role=link-panel]');
   await shot(page, 'p23-6-5-link-panel', log);
-  step('겹친 선의 글을 누르면 오간 기록과 끊기', !!panel, {});
+  step('둘레 길을 누르면 오간 기록과 끊기', !!panel, {});
   if (panel) { await page.click('[data-action=unlink]'); await sleep(500); if (await page.$('[data-action=unlink-confirm]')) await page.click('[data-action=unlink-confirm]'); await sleep(1500); }
   ds = await dots();
   const overlay1 = await page.$$('[data-role=dock-links]');

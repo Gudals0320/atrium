@@ -49,7 +49,7 @@ function Dialogs() {
   const d = useStore((st) => st.dialog);
   if (!d) return null;
   const close = () => openDialog(null);
-  if (d.kind === 'spawn') return <SpawnDialog cwd={d.cwd} agentKind={d.agentKind} onClose={close} />;
+  if (d.kind === 'spawn') return <SpawnDialog cwd={d.cwd} agentKind={d.agentKind} launcher={d.launcher} onClose={close} />;
   if (d.kind === 'close') return <CloseDialog ids={d.ids || []} onClose={close} />;
   if (d.kind === 'role') return <RoleDialog from={d.from} to={d.to} onClose={close} />;
   if (d.kind === 'link') return <LinkPanel linkId={d.linkId} onClose={close} />;

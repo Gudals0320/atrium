@@ -117,7 +117,7 @@ try {
   await page.waitForSelector('[data-role="mission"] [data-role="mm-node"]', { timeout: 15000 });
   await sleep(600);
   const mm = await page.evaluate(() => ({ heads: [...document.querySelectorAll('.mt-mm-colhead')].map((x) => x.textContent), groups: document.querySelectorAll('[data-role="mm-node"][data-kind="group"]').length, member: document.querySelectorAll('[data-role="mm-edge"][data-kind="member"]').length }));
-  step('1d 미션 맵은 두 열이고 그룹 열·노드·소속 선이 없다', mm.heads.length === 2 && !mm.groups && !mm.member, mm);
+  step('1d 미션 맵에 그룹 노드·소속 선이 없다(P32: 열 머리 대신 나무)', !mm.groups && !mm.member, mm);
   await shot(page, 'p22-03-mission');
   await page.click('[data-action="mission-close"]');
   await sleep(300);

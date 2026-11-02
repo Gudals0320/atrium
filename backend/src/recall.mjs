@@ -762,10 +762,11 @@ export class Recall {
     if (claude) {
       hookToken = crypto.randomBytes(24).toString('hex');
       const extra = b.branch ? b.branch.settingsExtra(id) : {}; // P8: 다시 연 세션도 하위 세션 명령을 쓴다
-      if (spec.flavor === DEEPSEEK) extra.env = { ...(extra.env || {}), ...deepseekEnv(baseUrlOf({ baseUrl: cfg.ocxBaseUrl, healthUrl: cfg.ocxHealthUrl })) }; // P25: DeepSeek는 프록시 주소에 붙인다
+      if (spec.env && Object.keys(spec.env).length) extra.env = { ...spec.env, ...(extra.env || {}) }; // P33: 띄울 때의 호출자 환경 변수
+      else if (spec.flavor === DEEPSEEK) extra.env = { ...(extra.env || {}), ...deepseekEnv(baseUrlOf({ baseUrl: cfg.ocxBaseUrl, healthUrl: cfg.ocxHealthUrl })) }; // P25: DeepSeek는 프록시 주소에 붙인다
       settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, allowHerdr: !!spec.allowHerdr, ...extra });
       trust = predictTrust(cwd, cfg.claudeJson);
-      const launch = { sessionId: id, settingsPath, permissionMode, model: spec.model || null, effort: spec.effort || null, ...b.plugin };
+      const launch = { sessionId: id, settingsPath, permissionMode, model: spec.model || null, effort: spec.effort || null, extraArgs: spec.extraArgs || [], ...b.plugin };
       args = spec.resume ? buildResumeArgs(launch) : buildStartArgs(launch);
       resumeArgv = buildResumeArgv({ claudeCommand: cfg.claudeCommand, ...launch });
     } else if (!shell) args = (spec.args || []).map(String);
@@ -778,7 +779,7 @@ export class Recall {
     let s;
     const hw = await b.withNewPane(() => b.adapter.createWorkspace({ cwd, label: name }), (r) => {
       const now = Date.now();
-      s = { sessionId: id, name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model: claude ? spec.model || null : null, effort: claude ? spec.effort || null : null, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: spec.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, kind, origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: spec.flavor || null }; // P25: flavor(deepseek)는 다시 열어도 남는다
+      s = { sessionId: id, name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model: claude ? spec.model || null : null, effort: claude ? spec.effort || null : null, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: spec.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, kind, origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: spec.flavor || null, extraArgs: claude ? spec.extraArgs || [] : [] }; // P25: flavor(deepseek)는 다시 열어도 남는다
       if (spec.reuseRow) {
         this.store.reopenRow(id, { name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: s.agentName, settingsPath, hookToken, resumeArgv, resumeVerified: false, runtime: rt, kind, origin: 'board', workspaceKey: ws.key, permissionMode, model: s.model, effort: s.effort, touchedAt: now, parentSessionId: null });
         if (spec.reuseRow.name !== name) this.store.addEvent(id, 'renamed', { from: spec.reuseRow.name, to: name, why: 'name taken on reopen' });
@@ -817,7 +818,7 @@ export class Recall {
     if (row.reopenedAs) throw apiError('moved', `이 세션은 이미 다른 세션(${row.reopenedAs})으로 다시 열었다`);
     const kind = row.kind || 'claude';
     const info = this.store.spawnInfo(row.sessionId) || {};
-    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, allowHerdr: !!info.allowHerdr, createdAt: row.createdAt, flavor: row.flavor || null };
+    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, allowHerdr: !!info.allowHerdr, createdAt: row.createdAt, flavor: row.flavor || null, env: info.env || null, extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [] }; // P33: 호출자의 환경 변수와 추가 인자도 그대로
     if (kind === 'claude') {
       const conv = convOf(row);
       if (conv) {

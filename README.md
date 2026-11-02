@@ -29,10 +29,11 @@ Atrium does not replace your agents or tell them how to work. It starts the sess
 ## Features
 
 - **One board for every session.** Claude Code, Codex, DeepSeek (Claude Code through a local gateway) and plain shells live side by side. Each repository gets an area, and live git worktrees appear as satellite areas with branch arrows.
+- **Launchers.** A launcher is a harness (Claude Code, Codex, ...) plus a model and options, or one command line you write yourself. Build them from dropdowns in one settings tab, star your favorites, and they sit on the left rail: one click starts a session.
 - **Know whose turn it is.** Every session is *working*, *ready*, *your turn* or *error*, computed from herdr events and Claude Code hooks. The **Your turn** and **Review** queues, OS notifications and a tray badge tell you where to look. Answer an `AskUserQuestion` prompt from a card on the node.
 - **Talk from the board.** Type `@name` (or `@all`) in the command bar. Each session has its own delivery queue, and every message is confirmed when the agent actually submits it.
 - **Live terminals that zoom.** Every node is a real xterm.js terminal. Zoom out and nodes turn into summary cards: name, state, pending question, last request, last answer. Click any node to fly to it.
-- **Docks.** Snap sessions together into tmux-style split layouts, with layout presets for 2 to 7+ sessions.
+- **Docks.** Snap sessions together into tmux-style split layouts, with layout presets for 2 to 7+ sessions. Links inside a dock show as small bridges on the dividers or short brackets along the outside, never as lines across your terminals.
 - **Links between agents.** Draw a link from one session to another and give it a role, such as `worker` or `reviewer`. The agent learns how to hand work to that role through herdr, and the link lights up while work moves along it. Agents can also start child sessions (`atrium child`), which appear as a tree with spawn limits.
 - **Pick up old conversations.** Past Claude Code CLI conversations in an open folder show up as chat nodes that you can resume. Leftovers from test folders go to a *missed* list that you can clear in bulk.
 - **Overviews.** A mission map of who directs whom, a list of changes since you last looked, and `Ctrl+F` search across sessions.

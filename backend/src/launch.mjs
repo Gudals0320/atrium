@@ -28,12 +28,14 @@ export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutS
 // 처음 띄울 때와 이어 갈 때가 같은 설정을 쓰도록 공통 인자를 한곳에서 만든다
 // P4: herdr 스킬을 쥐여 준다. Claude Code는 ~/.agents/skills를 읽지 않으므로 실행마다 --plugin-dir로 넘긴다(사용자 설정은 고치지 않는다).
 //     짧은 안내(--append-system-prompt-file)는 판의 연결 알림을 알아듣게 한다.
-function commonArgs({ settingsPath, permissionMode, model, effort, pluginDir, systemPromptFile }) {
+// P33: extraArgs는 호출자의 추가 인자(판이 정하는 인자는 호출자 검사가 막는다). 끝에 붙인다
+function commonArgs({ settingsPath, permissionMode, model, effort, pluginDir, systemPromptFile, extraArgs = [] }) {
   const a = ['--no-chrome', '--permission-mode', permissionMode, '--settings', settingsPath];
   if (model) a.push('--model', model);
   if (effort) a.push('--effort', effort);
   if (pluginDir) a.push('--plugin-dir', pluginDir);
   if (systemPromptFile) a.push('--append-system-prompt-file', systemPromptFile);
+  if (extraArgs && extraArgs.length) a.push(...extraArgs);
   return a;
 }
 

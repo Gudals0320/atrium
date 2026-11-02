@@ -250,7 +250,7 @@ try {
     // 본문 칸(overflow hidden) 밖으로 나가 잘린 것: 입력, 이름, 풀이, 단락
     const clipped = [...m.querySelectorAll('.mt-set-body input, .mt-set-body select, .mt-set-body button, .mt-set-name, .mt-set-hint, .mt-set-note, .mt-set-sub')].filter((e) => { const q = e.getBoundingClientRect(); return q.width && (q.right > body.right + 1 || q.bottom > body.bottom + 1 || q.left < body.left - 1); }).map((e) => e.dataset.field || e.textContent.slice(0, 24));
     const out = r.bottom > innerHeight || r.right > innerWidth || r.top < 0;
-    return { over, clipped, out, mh: Math.round(r.height), vh: innerHeight, mw: Math.round(r.width), brand: !!m.querySelector('.mt-modal-brand, img') };
+    return { over, clipped, out, mh: Math.round(r.height), vh: innerHeight, mw: Math.round(r.width), brand: !!m.querySelector('.mt-modal-brand, img:not(.mt-ln-ico img)') }; // P33: 호출자 탭의 하네스 로고는 텍스트 로고가 아니다
   });
   const allOk = [];
   for (const lang of ['en', 'ko']) {

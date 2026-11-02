@@ -8,9 +8,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, getState, openDialog, toast, wsName, setMissionOpen, setSearchOpen, selectWorkspace } from './store.js';
 import { quickSpawn } from './SpawnDialog.jsx';
+import { favoriteLaunchers, launcherIcon, launcherMark, launcherTooltip } from './lib/launchers.js'; // P33: 레일 = 즐겨찾기 호출자
 import { api } from './api.js';
 import { createItem } from './Memo.jsx';
-import { arrangeWorkspace } from './Regions.jsx';
+import { arrangeBoard, BOARD_ARRANGED } from './Regions.jsx'; // P31: 칩의 정리는 판 전체
 import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
 import { useInbox } from './InboxBar.jsx';
@@ -156,9 +157,13 @@ function ConnPill() {
   const startHerdr = async () => { setStarting(true); try { await api.call('herdr.start'); toast(t('top.herdrStarted')); } catch (e) { toast(t('top.herdrStartFail', { error: errText(e) }), 'error'); } setStarting(false); };
   const ok = conn === 'open' && herdr.connected;
   const connWord = (c) => t(c === 'open' ? 'top.connected' : c === 'connecting' ? 'top.connecting' : 'top.disconnected');
-  const title = [t('top.connBackend', { state: connWord(conn) }), t('top.connHerdr', { session: herdr.session || '?', version: herdr.version ? ` (${herdr.version})` : '', state: connWord(herdr.connected ? 'open' : 'closed') }), t('top.connSessions', { n: count }), t('top.connLinks', { n: links })].join('\n');
+  // P32: 누르면 미션 맵을 열고(열려 있으면 닫고) 올리면 연결 풀이. 백엔드와 끊겨 있으면 맵을 읽을 수 없으므로 누르기를 받지 않는다(herdr만 끊긴 때는 판 데이터로 연다)
+  const mission = useStore((st) => st.missionOpen);
+  const canOpen = conn === 'open';
+  const title = [t('top.connBackend', { state: connWord(conn) }), t('top.connHerdr', { session: herdr.session || '?', version: herdr.version ? ` (${herdr.version})` : '', state: connWord(herdr.connected ? 'open' : 'closed') }), t('top.connSessions', { n: count }), t('top.connLinks', { n: links }), canOpen ? t(mission ? 'mmap.pillClose' : 'mmap.pillOpen') : null].filter(Boolean).join('\n');
+  const toggle = () => { if (canOpen || mission) setMissionOpen(!mission); };
   return <>
-    <span className={`mt-cp conn${ok ? '' : ' bad'}`} data-role="conn" title={title}>
+    <span className={`mt-cp conn${ok ? '' : ' bad'}${canOpen ? ' click' : ''}${mission ? ' on' : ''}`} data-role="conn" data-action="conn-mission" title={title} role={canOpen ? 'button' : undefined} tabIndex={canOpen ? 0 : undefined} aria-pressed={canOpen ? mission : undefined} onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>
       <span className={`mt-dot ${ok ? 'ok' : 'bad'}`} />
       {conn !== 'open' ? t('top.backendState', { state: connWord(conn) }) : herdr.connected === false ? t('top.herdrDown') : <><span className="mono">{count}</span><span className="dim">{t('top.sessions', { n: count })}</span></>}
       <span hidden data-role="links">{links}</span>
@@ -249,9 +254,26 @@ function Tool({ icon, kind, label, on, onClick, action }) {
   );
 }
 const Sep = () => <span className="mt-rail-sep" />;
-const spawn = (agentKind) => openDialog({ kind: 'spawn', agentKind });
-// 누르면 지금 워크스페이스에 설정의 기본값으로 바로 띄운다. Shift+누르기는 폴더, 이름, 첫 지시를 고르는 대화상자
-const spawnNow = (agentKind) => (e) => (e && e.shiftKey ? spawn(agentKind) : quickSpawn(agentKind));
+// P33: 즐겨찾기 호출자 하나. 누르면 지금 워크스페이스에 그 호출자로 바로 띄운다. Shift+누르기는 그 호출자를 채운 새 세션 창.
+// 아이콘은 하네스 로고(고른 아이콘이 먼저), 셸은 터미널, 직접 명령은 터미널 위에 이름 첫 글자. 마우스를 올리면 이름과 명령 미리보기
+function LauncherTool({ l }) {
+  const t = useT();
+  const kind = launcherIcon(l);
+  const tip = launcherTooltip(l, { shellText: t('launchers.shellPreview'), envText: t('launchers.envShort') });
+  const go = (e) => (e && e.shiftKey ? openDialog({ kind: 'spawn', launcher: l.id }) : quickSpawn(l.id));
+  return (
+    <button className="mt-tool" title={tip} aria-label={l.name} data-action="launch" data-launcher={l.id} data-name={l.name} onClick={go}>
+      {kind === 'shell' ? <Icon name="terminal" /> : kind ? <KindIcon kind={kind} title={tip} badge /> : <span className="mt-tool-mark" data-role="launcher-mark">{launcherMark(l)}</span>}
+    </button>
+  );
+}
+// 즐겨찾기가 많으면 이 칸만 위아래로 넘긴다(레일은 창 높이를 넘지 않는다)
+function Favorites() {
+  const data = useStore((st) => st.launchers);
+  const favs = favoriteLaunchers(data);
+  if (!favs.length) return null;
+  return <div className="mt-rail-favs" data-role="rail-favorites">{favs.map((l) => <LauncherTool key={l.id} l={l} />)}</div>;
+}
 
 export function LeftRail({ linking, setLinking }) {
   const t = useT();
@@ -261,10 +283,7 @@ export function LeftRail({ linking, setLinking }) {
       {/* 손으로 잇기는 선택과 서로 바뀌는 모드라 바로 아래에 둔다 */}
       <Tool icon="link" on={linking} label={t('rail.link')} action="link-mode" onClick={() => setLinking(!linking)} />
       <Sep />
-      <Tool kind="claude" label={t('rail.claude')} action="spawn" onClick={spawnNow('claude')} />
-      <Tool kind="codex" label={t('rail.codex')} action="spawn-codex" onClick={spawnNow('codex')} />
-      <Tool kind="deepseek" label={t('rail.deepseek')} action="spawn-deepseek" onClick={spawnNow('deepseek')} />
-      <Tool icon="terminal" label={t('rail.shell')} action="spawn-shell" onClick={spawnNow('shell')} />
+      <Favorites />
       <Sep />
       <Tool icon="note" label={t('rail.memo')} action="memo-new" onClick={() => createItem('memo')} />
       <Tool icon="kanban" label={t('rail.kanban')} action="kanban-new" onClick={() => createItem('kanban')} />
@@ -305,10 +324,12 @@ export function LoopsPanel({ onClose }) {
 // 빠른 동작 칩. 칩마다 테두리 색이 다르다(tokens.css --chip-ring-n)
 export function ChipRow() {
   const t = useT();
-  const currentWs = useStore((st) => st.currentWs);
+  const boardArranged = useStore((st) => st.arranged.has(BOARD_ARRANGED));
   const chips = [
-    [t('chips.spawn'), 'chip-spawn', t('chips.spawnTitle'), () => spawn('claude')],
-    [t('chips.arrange'), 'chip-arrange', currentWs ? t('chips.arrangeTitle', { ws: wsName(currentWs) }) : t('chips.arrangeNoWs'), () => (currentWs ? arrangeWorkspace(currentWs) : toast(t('chips.arrangeNoWsToast'), 'error'))],
+    [t('chips.spawn'), 'chip-spawn', t('chips.spawnTitle'), () => openDialog({ kind: 'spawn' })],
+    // P31: 칩의 정리는 판 전체(영역도 다시 놓는다). 영역 이름표의 정리는 그 영역 안만
+    [t('chips.arrange'), 'chip-arrange', t('arrangeAll.title'), () => arrangeBoard()],
+    ...(boardArranged ? [[t('arrangeAll.undo'), 'chip-arrange-undo', t('arrangeAll.undoTitle'), () => arrangeBoard(true)]] : []),
     [t('chips.mission'), 'chip-mission', t('chips.missionTitle'), () => setMissionOpen(true)],
     [t('chips.changes'), 'chip-changes', t('chips.changesTitle'), () => getState().showChanges && getState().showChanges(60)],
     [t('chips.fit'), 'chip-fit', t('chips.fitTitle'), () => getState().fitAll && getState().fitAll(250)],

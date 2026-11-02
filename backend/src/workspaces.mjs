@@ -8,7 +8,10 @@
 
 // 경로 맞추기: 역슬래시 → 슬래시, 겹친 슬래시와 끝 슬래시 빼기. 드라이브 문자와 대소문자는 키에서만 소문자로 맞춘다.
 export function normPath(p) {
-  let s = String(p || '').trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+  let s = String(p || '').trim().replace(/\\/g, '/');
+  const unc = /^\/\/[^/]/.test(s); // UNC 경로(\\Server\Share)는 앞의 // 를 지킨다(이슈 #1-9)
+  s = s.replace(/\/{2,}/g, '/');
+  if (unc) s = '/' + s;
   if (s.length > 1 && !/^[A-Za-z]:\/$/.test(s)) s = s.replace(/\/+$/, '');
   if (/^[a-z]:/.test(s)) s = s[0].toUpperCase() + s.slice(1);
   return s;
