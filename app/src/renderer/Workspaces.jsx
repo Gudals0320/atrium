@@ -2,7 +2,7 @@
 // P6a: P5의 위쪽 워크스페이스 줄과 아래쪽 세션 줄은 캔버스의 워크스페이스 영역, 아래쪽 워크스페이스 단추, 검색으로 바꿨다(Regions.jsx, Search.jsx).
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
-import { selectWorkspace, toast } from './store.js';
+import { selectWorkspace, toast, openDialog } from './store.js';
 import { useT, t, errText, tMsg } from './lib/i18n.js';
 
 // "+ 리포 열기": 폴더를 고르면 그 폴더의 리포지토리(저장소가 아니면 그 폴더)를 빈 워크스페이스로 만들고 그 영역으로 간다
@@ -33,6 +33,9 @@ export function OpenRepoDialog({ onClose }) {
         <div className="mt-card-actions">
           <button className="mt-btn primary" disabled={busy || !dir.trim()} data-action="ws-open-submit">{t('common.open')}</button>
           <button type="button" className="mt-btn ghost" onClick={onClose}>{t('common.cancel')}</button>
+          {/* P34: 데스크톱 앱 세션을 리포 영역으로 한 번에 가져온다(그 창이 리포를 연다) */}
+          <span className="mt-dimport-sp" />
+          <button type="button" className="mt-btn" data-action="desktop-import-open" title={t('desktopImport.openTitle')} onClick={() => openDialog({ kind: 'desktopImport' })}>{t('desktopImport.open')}</button>
         </div>
       </form>
     </div>

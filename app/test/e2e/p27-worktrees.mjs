@@ -1,4 +1,4 @@
-// P27 창 시험: 워크트리 영역과 브랜치 화살표. 판: herdr 세션 atrium-dev-p27, 포트 47846, 이 워크트리의 backend/.dev(experiments/p27/tools/env.cjs).
+// P27 창 시험: 워크트리 영역(P35부터 리포 영역 안의 노란 상자, 화살표 없음). 판: herdr 세션 atrium-dev-p27, 포트 47846, 이 워크트리의 backend/.dev(experiments/p27/tools/env.cjs).
 // 시험 저장소 C:\Workspace\mtask-p27-repo를 새로 git init하고 워크트리 둘(저장소 안 .claude\worktrees\feat-a, 저장소 밖 mtask-p27-wt-b)을 만든다.
 // 세션은 셸 노드만 쓰고(신뢰 대화상자가 없다), 판 밖 대화는 고정 자료(backend/.dev/p27-projects)로 둔다. claude는 띄우지 않는다.
 // 사용: node experiments/p27/tools/e2e.cjs p27-worktrees.mjs [--fresh]
@@ -118,12 +118,12 @@ try {
   // 1. 워크트리 둘
   git(T.REPO, 'worktree', 'add', '-q', '-b', 'feat-a', T.WT_A);
   git(T.REPO, 'worktree', 'add', '-q', '-b', 'fix-b', T.WT_B);
-  const s1 = await until(async () => { const s = await snap(); return s.areas.length === 2 && s.wtareas.length === 2 && s.arrows.length === 2 ? s : null; }, 30000, 500).catch(async () => snap());
-  step('워크트리 둘을 만들면(10초 주기 안에) 영역 둘과 화살표 둘이 생긴다', s1.areas.length === 2 && s1.wtareas.length === 2 && s1.arrows.length === 2, { areas: s1.areas.map((a) => [a.branch, a.path]), dom: s1.wtareas.map((a) => a.text), arrows: s1.arrows.map((a) => a.text) });
+  const s1 = await until(async () => { const s = await snap(); return s.areas.length === 2 && s.wtareas.length === 2 ? s : null; }, 30000, 500).catch(async () => snap());
+  step('워크트리 둘을 만들면(10초 주기 안에) 영역 둘이 생기고 화살표는 없다(P35)', s1.areas.length === 2 && s1.wtareas.length === 2 && s1.arrows.length === 0, { areas: s1.areas.map((a) => [a.branch, a.path]), dom: s1.wtareas.map((a) => a.text) });
   const main1 = boxOf(s1, repoKey), a1 = boxOf(s1, areaK(T.WT_A)), b1 = boxOf(s1, areaK(T.WT_B));
-  step('워크트리 영역은 본 영역 오른쪽(또는 아래)에 겹치지 않게 놓인다', main1 && a1 && b1 && a1.x >= main1.x + main1.w && b1.x >= main1.x + main1.w && (b1.y >= a1.y + a1.h || b1.x >= a1.x + a1.w), { main1, a1, b1 });
+  const hits = (p, q) => p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h;
+  step('워크트리 영역(P35: 상자)은 리포 영역 안에 서로 겹치지 않게 놓인다', main1 && a1 && b1 && within(a1, main1) && within(b1, main1) && !hits(a1, b1), { main1, a1, b1 });
   step('영역 이름표는 ⎇ 브랜치 이름과 세는 값', /⎇ feat-a/.test(a1.text) && /세션 0/.test(a1.text) && /⎇ fix-b/.test(b1.text), [a1.text, b1.text]);
-  step('화살표 글은 브랜치 이름', s1.arrows.some((x) => /feat-a/.test(x.text)) && s1.arrows.some((x) => /fix-b/.test(x.text)), s1.arrows.map((x) => x.text));
   await fitRepo();
   await shot(page, 'p27-1-two-areas');
 
@@ -195,12 +195,12 @@ try {
   await fitRepo();
   await shot(page, 'p27-5-after-restart');
 
-  // 5. 워크트리 하나를 지우면 그 영역과 화살표가 사라진다. 그 폴더의 셸은 먼저 끈다(셸이 폴더를 쥐고 있으면 지우지 못한다)
+  // 5. 워크트리 하나를 지우면 그 영역이 사라진다. 그 폴더의 셸은 먼저 끈다(셸이 폴더를 쥐고 있으면 지우지 못한다)
   log(atrium('kill', 'b-sh', '--yes').trim().split('\n').slice(-1)[0]); shells.splice(shells.indexOf('b-sh'), 1);
   await sleep(1500);
   git(T.REPO, 'worktree', 'remove', '--force', T.WT_B);
-  const s5 = await until(async () => { const s = await snap(); return s.wtareas.length === 1 && s.arrows.length === 1 ? s : null; }, 30000, 500).catch(async () => snap());
-  step('워크트리 하나를 지우면 그 영역과 화살표가 사라진다(다른 하나는 남는다)', s5.areas.length === 1 && s5.areas[0].branch === 'feat-a' && s5.wtareas.length === 1 && s5.arrows.length === 1 && /feat-a/.test(s5.arrows[0].text), { areas: s5.areas.map((a) => a.branch), dom: s5.wtareas.map((a) => a.text) });
+  const s5 = await until(async () => { const s = await snap(); return s.wtareas.length === 1 ? s : null; }, 30000, 500).catch(async () => snap());
+  step('워크트리 하나를 지우면 그 영역이 사라진다(다른 하나는 남는다, 화살표 없음)', s5.areas.length === 1 && s5.areas[0].branch === 'feat-a' && s5.wtareas.length === 1 && s5.arrows.length === 0, { areas: s5.areas.map((a) => a.branch), dom: s5.wtareas.map((a) => a.text) });
   await fitRepo();
   await shot(page, 'p27-6-one-removed');
 } catch (e) {

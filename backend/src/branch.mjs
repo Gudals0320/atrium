@@ -15,7 +15,7 @@ import { workspaceOf, gitProbe } from './git.mjs';
 import { ROLE_RE } from './links.mjs';
 import { SIZE_STEPS, GAP, REGION_GAP, overlaps, regionRect } from './canvas.mjs';
 import { canvasItems, regions, areaOfNode } from './canvas-ops.mjs';
-import { parseArea } from './worktree-areas.mjs'; // P27
+import { parseArea, wsOfArea } from './worktree-areas.mjs'; // P27
 import { deriveState } from './state.mjs';
 import { DEFAULTS } from './settings.mjs';
 import { clip } from './text.mjs';
@@ -251,11 +251,12 @@ export class Branch {
     const size = SIZE_STEPS[CHILD_SIZE];
     const kidIds = new Set(this.openChildren(parentId).map((x) => x.sessionId));
     const siblings = nodes.filter((n) => kidIds.has(n.session_id));
-    const items = canvasItems(b);
-    const regs = regions(b, items);
-    const ak = areaOfNode(b, parentId, items); // P27: 부모가 든 영역(워크트리 영역일 수 있다)
+    const all = canvasItems(b);
+    const regs = regions(b, all);
+    const ak = areaOfNode(b, parentId, all); // P27: 부모가 든 영역(워크트리 영역일 수 있다)
+    const items = all.filter((i) => i.box !== ak); // P35: 워크트리 상자 안에 놓을 때 그 상자 자신은 피하지 않는다
     const own = items.filter((i) => i.ws === ak);
-    const others = [...regs].filter(([k]) => k !== ak).map(([, r]) => r);
+    const others = [...regs].filter(([k]) => wsOfArea(k) !== wsOfArea(ak)).map(([, r]) => r); // P35: 같은 리포의 영역(리포 영역, 상자)은 빼고. 상자 겹침은 settleRegions가 민다
     const free = (c) => !items.some((i) => overlaps(c, i, GAP - 1));
     const fits = (c) => free(c) && !others.some((r) => overlaps(regionRect([...own, c]), r, REGION_GAP / 2 - 1));
     // 옆 영역 때문에 자리가 없으면 노드끼리만 피해 나무 모양을 지킨다. 그때 생기는 영역 겹침은 spawn 뒤 settleRegions가 옆 영역을 밀어 푼다(P9)

@@ -727,12 +727,13 @@ export class Recall {
   placeFor(id, wsKey, prev, near = null, area = '') {
     const size = prev ? { w: prev.w, h: prev.h } : NODE;
     const fits = (rect) => {
-      const all = canvasItems(this.b).filter((i) => i.id !== id && i.id !== `convo:${id}`);
-      const regs = areaRegions(this.b, all);
+      const all0 = canvasItems(this.b).filter((i) => i.id !== id && i.id !== `convo:${id}`);
+      const regs = areaRegions(this.b, all0);
       const ak = area && regs.has(areaKey(wsKey, area)) ? areaKey(wsKey, area) : wsKey;
+      const all = all0.filter((i) => i.box !== ak); // P35: 워크트리 상자 안이면 그 상자 자신은 피하지 않는다
       // P9: 그 자리로 커진 영역이 다른 영역과 겹치면 마지막 자리를 쓰지 않는다(닫힌 동안 다른 영역이 그 자리로 왔다)
       const reg = regionRect([...all.filter((i) => i.ws === ak), rect]);
-      const others = [...regs].filter(([k]) => k !== ak).map(([, r]) => r);
+      const others = [...regs].filter(([k]) => parseArea(k).ws !== wsKey).map(([, r]) => r); // P35: 같은 리포의 리포 영역과 상자는 빼고(상자 겹침은 settleRegions가 민다)
       return !all.some((i) => overlaps(rect, i)) && !others.some((r) => overlaps(reg, r, -1));
     };
     if (prev) { const rect = { x: prev.x, y: prev.y, w: prev.w, h: prev.h }; if (fits(rect)) return { ...rect, kept: true }; }

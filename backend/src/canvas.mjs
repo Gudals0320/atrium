@@ -73,9 +73,11 @@ export function newRegionSlot(regions, size = EMPTY_REGION, { aspect = 1.6 } = {
 // 영역 사이 틈은 REGION_GAP/2를 먼저 지키고, 그런 자리가 없으면(사람이 영역을 다른 영역 바로 옆에 둔 경우) 겹치지만 않는 자리로 찾는다.
 // 그래도 없으면 자기 영역 오른쪽 열(영역 높이 안에서 위부터). 그때 생기는 영역 겹침은 부른 쪽이 separateRegions로 푼다(P9).
 // 이미 자기 영역과 겹친 영역은 후보를 거르는 데 쓰지 않는다. 쓰면 모든 후보가 거부되어 새 노드가 한 줄로 아래로 쌓인다(P9에서 찾은 영역 겹침의 원인)
-export function slotInRegion({ wsKey, size = NODE, items = [], regions = new Map(), near = null, skip = null }) {
+// P35: 워크트리 상자(리포 영역 안)에 놓을 때는 그 상자 자신(items의 box가 wsKey인 'wtbox')을 피하지 않고, 그 상자를 감싼 리포 영역도 막는 것으로 보지 않는다
+export function slotInRegion({ wsKey, size = NODE, items: all = [], regions = new Map(), near = null, skip = null }) {
+  const items = all.filter((i) => !(i && i.box === wsKey));
   const own = items.filter((i) => i.ws === wsKey && i !== skip);
-  const ownReg = regionRect(own);
+  const ownReg = regionRect(own) || regions.get(wsKey) || null;
   const others = [...regions].filter(([k]) => k !== wsKey).map(([, r]) => r).filter((r) => !ownReg || !overlaps(ownReg, r, -1));
   let regionGap = REGION_GAP / 2 - 1;
   const fits = (c) => {
@@ -89,7 +91,9 @@ export function slotInRegion({ wsKey, size = NODE, items = [], regions = new Map
     const c = r ? { x: r.x + REGION_PAD, y: r.y + REGION_HEAD + REGION_PAD, w: size.w, h: size.h } : { x: 0, y: 0, w: size.w, h: size.h };
     if (fits(c)) return { x: c.x, y: c.y };
   }
-  const base = near || own0 || { x: 0, y: 0, w: size.w, h: size.h };
+  // P35: 안이 빈 영역(빈 워크트리 상자)은 그 영역 안쪽 왼쪽 위를 기준으로 찾는다(판 원점 둘레로 가지 않게)
+  const r0 = regions.get(wsKey);
+  const base = near || own0 || (r0 ? { x: r0.x + REGION_PAD, y: r0.y + REGION_HEAD + REGION_PAD, w: size.w, h: size.h } : { x: 0, y: 0, w: size.w, h: size.h });
   const sx = size.w + GAP, sy = size.h + GAP;
   // 기준 오른쪽에서 시작해 고리 모양으로 넓혀 간다. near(부모)가 있으면 가까운 자리를 먼저, 없으면 영역이 덜 길쭉해지는 자리를 먼저(화면 비율 1.6).
   // 왼쪽·위로 넓히는 자리는 조금 미룬다(영역의 왼쪽 위가 덜 흔들리게)

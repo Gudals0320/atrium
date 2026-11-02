@@ -442,15 +442,13 @@ img.mt-kind-icon { object-fit: contain; }
 .mt-ws-c.asleep .mt-i, .mt-region-acts .mt-btn .mt-i { width: 1em; height: 1em; }
 .mt-region.asleep .mt-region-box { border-style: dashed; border-color: color-mix(in srgb, var(--st-sleeping) 45%, var(--group-line)); }
 .mt-region.asleep .mt-region-dot { background: var(--st-sleeping); }
-/* P27: 워크트리 영역(본 저장소 영역 옆 위성)과 브랜치 화살표 */
-.mt-wtarea .mt-region-box { border-style: dashed; border-color: var(--cv-wt-line); background: color-mix(in srgb, var(--warn) 3%, transparent); }
-.mt-wtarea.run .mt-region-box { border-color: color-mix(in srgb, var(--warn) 55%, var(--region-line)); }
+/* P27: 워크트리 영역. P35: 리포 영역 안의 노란 상자(화살표 없음) */
+.mt-wtarea .mt-region-box { border: 1.5px solid var(--wt-box-line); border-radius: 14px; background: var(--wt-box-bg); } /* P35: 리포 영역 안의 노란 상자 */
+.mt-wtarea.run .mt-region-box { border-color: var(--wt-box-line-run); }
 .mt-wtarea.warn .mt-region-box { border-color: var(--bad); background: var(--region-warn-bg); }
-.mt-wtarea-name { font-family: var(--font-mono); font-weight: 700; color: var(--warn); }
-.mt-wtarrow { pointer-events: none; }
-.mt-wtarrow-line { stroke: color-mix(in srgb, var(--warn) 55%, transparent); stroke-linecap: round; }
-.mt-wtarrow-head { fill: color-mix(in srgb, var(--warn) 75%, transparent); }
-.mt-wtarrow-label { fill: var(--warn); font-family: var(--font-mono); font-weight: 700; paint-order: stroke; stroke: var(--canvas); stroke-width: .3em; }
+.mt-wtarea .mt-region-head { background: var(--wt-box-head-bg); }
+.mt-wtarea-name { font-family: var(--font-mono); font-weight: 700; color: var(--wt-box-text); }
+.mt-wtarea-meta { color: var(--wt-box-dim); }
 .mt-res-repo { display: flex; align-items: center; gap: 6px; padding: 6px 10px 2px; font-size: 12px; color: var(--dim); }
 .mt-res-repo b { color: var(--chrome-text); }
 .mt-res-repo .mt-res-asleep { margin-left: auto; }
@@ -993,3 +991,23 @@ button.mt-cv-chip:hover { border-color: var(--cv-line-hi); color: var(--text); }
 .mt-ln-secret.warn { color: var(--warn); }
 .mt-ln-preview { font-size: 12px; padding: 6px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--panel-line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .mt-ln-preview.bad { color: var(--bad); white-space: normal; }
+
+/* P34: 데스크톱 앱에서 가져오기 창. 고정 크기(최소 창 900×600 안), 목록 칸만 스크롤 */
+.mt-modal.mt-dimport { width: min(760px, calc(100vw - 48px)); height: min(540px, calc(100vh - 40px)); max-height: none; overflow: hidden; grid-template-rows: auto auto auto 1fr auto auto; gap: 10px; }
+.mt-dimport-bar { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); min-width: 0; }
+.mt-dimport-sp { flex: 1; }
+.mt-dimport-body { min-height: 0; }
+.mt-dimport-list { overflow: auto; border: 1px solid var(--panel-line); border-radius: 8px; padding: 4px 0; }
+.mt-dimport-repo + .mt-dimport-repo { border-top: 1px solid var(--panel-line); margin-top: 4px; padding-top: 4px; }
+.mt-dimport-repo-h { padding: 4px 10px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-modal label.mt-dimport-row { display: flex; align-items: center; gap: 8px; padding: 4px 10px; color: var(--text); font-size: 13px; font-weight: 400; cursor: pointer; min-width: 0; }
+.mt-modal label.mt-dimport-row:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.mt-modal label.mt-dimport-row.off { color: var(--dim); cursor: default; }
+.mt-dimport-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-dimport-st { flex: none; font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--panel-line); color: var(--dim); white-space: nowrap; }
+.mt-dimport-st.st-new { color: var(--accent-text); border-color: var(--accent); }
+.mt-dimport-st.st-more { color: var(--warn); border-color: var(--warn); }
+.mt-dimport-st.warn { color: var(--warn); }
+.mt-dimport-at { flex: none; font-size: 11px; white-space: nowrap; width: 72px; text-align: right; }
+.mt-dimport-foot { font-size: 12px; min-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-sleep-title { color: var(--text); font-weight: 600; }

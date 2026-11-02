@@ -72,6 +72,7 @@ function Origin({ s }) {
     {s.kind === 'shell' && <span className="mt-badge kind shell" data-kind="shell" title={t('node.shellTitle')}>{t('node.shell')}</span>}
     {s.kind && s.kind !== 'claude' && s.kind !== 'shell' && <span className="mt-badge kind" data-kind={s.kind} title={t('node.kindTitle')}>{s.kind}</span>}
     {s.fromShell && <span className="mt-badge kind" data-role="from-shell" title={t('node.fromShellTitle')}>{t('node.fromShell')}</span>}
+    {s.imported && <span className="mt-badge adopted" data-role="imported-badge" title={t('node.importedTitle', { title: s.imported.title || '', gen: s.imported.gen })}>{t('node.imported')}</span>}
     {s.origin === 'adopted' && <span className="mt-badge adopted" data-role="adopted" title={s.kind === 'shell' ? t('node.adoptedShellTitle', { pane: s.paneId }) : t('node.adoptedAgentTitle', { name: s.agentName })}>{parent ? t('node.spawnedBy', { name: parent.name }) : t('node.adopted')}</span>}
     {s.elsewhere && <span className="mt-badge warn" data-role="elsewhere" title={t('node.elsewhereTitle', { cwd: s.cwdNow })}>{t(s.elsewhere.repo ? 'node.elsewhereRepo' : 'node.elsewhereFolder', { name: s.elsewhere.name })}</span>}
   </>;
@@ -222,6 +223,7 @@ function SleepFace({ s, zoom, w, h, far, close }) { // 깨우기 단추는 가�
         <span className="mt-sleep-at" data-role="slept-at">{z.at ? t('sleep.sleptAt', { time: fmtTime(z.at) }) : t('sleep.face')}</span>
         {z.memMB > 0 && <span className="mt-sleep-saved" data-role="sleep-saved">{t('sleep.saved', { mb: fmtMB(z.memMB) })}</span>}
       </div>
+      {s.imported && s.imported.title && <div className="mt-far-line one mt-sleep-title" data-role="import-title" title={t('node.importedTitle', { title: s.imported.title, gen: s.imported.gen })}>{s.imported.title}</div>}
       {s.lastPrompt && <div className="mt-far-line one prompt" data-role="sleep-prompt"><span className="mt-far-k">{t('node.prompt')}</span> {oneLine(s.lastPrompt)}</div>}
       {s.lastAnswer && <div className="mt-far-line" data-role="sleep-answer"><span className="mt-far-k">{t('node.answer')}</span> {oneLine(s.lastAnswer).slice(0, 400)}</div>}
       {z.error && !s.waking && <div className="mt-far-line warn" data-role="wake-error">{t('sleep.failed', { error: z.error.message || z.error.code })}</div>}

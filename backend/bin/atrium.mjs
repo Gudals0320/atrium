@@ -64,6 +64,8 @@ ${FEATURES_HELP}
   classify                          대화 기록의 분류별 수(판에 올림, 보관, missed, 도는 중, 데스크톱 등)
   missed                            missed(지울 대화): 폴더가 없어졌거나 이 앱의 시험 폴더인 대화를 폴더별로
   missed rm (--all | --folder <폴더> | <대화 ID>...) [--yes]   휴지통으로 보낸다(--yes 없이는 수와 크기만)
+  import-desktop --list             데스크톱 앱(Code 탭)에서 가져올 세션 후보: 리포별 상태, 기본 고름, 지금 도는지(P34)
+  import-desktop --all | <앱 세션 ID>...   기본 고름 전부(새것과 더 씀, 도는 것은 뺌) 또는 고른 것을 갈라 열어 잠든 판 세션으로 가져온다
   call <메서드> [JSON]              판 API를 그대로 부른다`;
 
 const argv = process.argv.slice(2);
@@ -359,6 +361,27 @@ async function main() {
         for (const g of r.folders) {
           console.log(`${g.folder}  [${g.why}] ${g.count}개 ${mb(g.bytes)} ${ts(g.lastAt)}`);
           for (const x of g.items) console.log(`  ${x.convId}  ${ts(x.lastAt)} ${(x.size / 1024).toFixed(0)}KB  ${String(x.title || '').replace(/\s+/g, ' ').slice(0, 50)}`);
+        }
+        return;
+      }
+      // P34: 데스크톱 앱 세션 가져오기
+      case 'import-desktop': {
+        const LABEL = { new: '새것', imported: '이미 옮김', more: '옮긴 뒤 더 씀', onBoard: '이미 판 세션', noTranscript: '기록 없음', noFolder: '폴더 없음' };
+        const one = (t) => String(t || '').replace(/\s+/g, ' ').slice(0, 50);
+        if (flags.all || rest.length) {
+          const r = await c.call('desktop.import', flags.all ? { all: true } : { ids: rest });
+          if (JSONOUT) return out(r);
+          console.log(`가져옴 ${r.imported.length}, 건너뜀 ${r.skipped.length} (고른 것 ${r.total})`);
+          for (const x of r.imported) console.log(`  + @${x.name}  ${x.gen}세대  ${x.folder === 'repo' ? '저장소 폴더에서 ' : ''}${x.cwd}  ${one(x.title)}${x.running ? '  (앱에서 도는 중: 진행 중인 턴은 빠질 수 있다)' : ''}${x.replaced.length ? `  [호출자 값으로: ${x.replaced.join(', ')}]` : ''}`);
+          for (const x of r.skipped) console.log(`  - ${x.appSessionId}  ${x.reason}${x.message ? ` (${x.message})` : ''}  ${one(x.title)}`);
+          return;
+        }
+        const r = await c.call('desktop.list');
+        if (JSONOUT) return out(r);
+        console.log(`데스크톱 앱 세션 ${r.total}개(보관 제외), 기본 고름 ${r.picked}, 지금 도는 것 ${r.running}`);
+        for (const g of r.repos) {
+          console.log(`${g.name || '(폴더 모름)'}  ${g.root || ''}`);
+          for (const x of g.items) console.log(`  ${x.pick ? '[x]' : '[ ]'} ${x.appSessionId}  ${(LABEL[x.status] || x.status).padEnd(8)} ${x.running ? '도는 중 ' : ''}${ts(x.lastActivityAt)}  ${one(x.title)}${x.folder === 'repo' ? '  (워크트리 없음 → 저장소 폴더)' : ''}${x.more ? `  (+지시 ${x.more.prompts}, 답 ${x.more.answers})` : ''}`);
         }
         return;
       }

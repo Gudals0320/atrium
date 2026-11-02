@@ -6,7 +6,7 @@ import { NODE, SIZE_STEPS, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regi
 import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, remove as removeLeaf, removeWithOuter, insertWithOuter, rootSizes, presetTree, presetSize, PRESETS } from './dock-tree.mjs'; // P17: 분할 나무
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
-import { areaKey, parseArea, wsOfArea, WT_EMPTY } from './worktree-areas.mjs'; // P27: 워크트리 영역
+import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자
 import { layoutRegions } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
@@ -17,6 +17,8 @@ import { keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 // 메모·칸반도 넣어야 새 세션이 그 위에 놓이지 않고, 그 워크스페이스 영역이 감싼다
 // P27: ws는 영역 키(본 저장소 영역은 워크스페이스 키, 워크트리 영역은 worktree-areas.mjs areaKey), wsKey는 워크스페이스 키.
 // 노드와 대화 노드는 저장한 영역(area)이 살아 있는 워크트리 영역이면 그 영역, 아니면 본 저장소 영역이다. 메모·칸반은 본 저장소 영역이다
+// P35: 워크트리 상자는 리포 영역 안에 있다. 목록 끝에 상자마다 리포 영역의 안의 것 { kind: 'wtbox', ws: 리포 키, box: 상자 키 }를 더한다(worktree-areas.mjs withBoxes).
+//   그래서 리포 영역이 상자를 감싸고, 본 저장소 쪽 빈자리 계산은 상자를 피한다
 const areaRows = (b) => (b.store.worktreeAreas ? b.store.worktreeAreas() : []);
 function areaResolver(b) {
   const live = new Set(areaRows(b).map((a) => areaKey(a.wsKey, a.wt)));
@@ -29,7 +31,7 @@ export function canvasItems(b) {
   const kanbans = b.store.kanbans().map((k) => ({ id: k.kanbanId, kind: 'kanban', ws: k.workspaceKey || null, wsKey: k.workspaceKey || null, x: k.x, y: k.y, w: k.w, h: k.h }));
   // P13: 캔버스에 올린 판 밖 대화 노드(읽기 전용 카드). id는 convo:<대화 ID>
   const convos = b.store.shownConvoNodes ? b.store.shownConvoNodes().map((n) => ({ id: `convo:${n.convId}`, kind: 'convo', ws: area(n.workspaceKey || null, n.area), wsKey: n.workspaceKey || null, x: n.x, y: n.y, w: n.w, h: n.h })) : [];
-  return [...nodes, ...memos, ...kanbans, ...convos];
+  return withBoxes(areaAnchors(b), [...nodes, ...memos, ...kanbans, ...convos]);
 }
 // 영역의 자리(안이 비었을 때): 워크스페이스와, 그 워크스페이스의 워크트리 영역(P27)
 export function areaAnchors(b) {
@@ -37,7 +39,7 @@ export function areaAnchors(b) {
   const keys = new Set(ws.map((w) => w.key));
   return [...ws, ...areaRows(b).filter((a) => keys.has(a.wsKey)).map((a) => ({ key: areaKey(a.wsKey, a.wt), x: a.x, y: a.y, empty: WT_EMPTY, wsKey: a.wsKey, wt: a.wt }))];
 }
-export const regions = (b, items = canvasItems(b)) => regionsOf(areaAnchors(b), items);
+export const regions = (b, items = canvasItems(b)) => nestedRegions(areaAnchors(b), items); // P35: 리포 영역은 상자를 감싼다(상자 키도 든다)
 // 세션 노드가 든 영역 키(P27)
 export const areaOfNode = (b, sid, items = canvasItems(b)) => { const it = items.find((i) => i.kind === 'node' && i.id === sid); return it ? it.ws : (b.sessions.get(sid) || {}).workspaceKey || null; };
 
@@ -58,10 +60,15 @@ export function slotFor(b, { wsKey, size = NODE, near = null, area = '' }) {
   const items = canvasItems(b);
   const regs = regions(b, items);
   const k = area && regs.has(areaKey(wsKey, area)) ? areaKey(wsKey, area) : wsKey;
-  return slotInRegion({ wsKey: k, size, items, regions: slotRegions(regs, k), near });
+  return slotInRegion({ wsKey: k, size, items: slotItems(items, k), regions: slotRegions(regs, k), near });
 }
 // P27: 워크트리 영역에 놓을 때는 같은 리포의 다른 워크트리 영역을 피하지 않는다(빈 영역 바로 아래에 다음 영역이 있다).
 // 커진 영역이 형제 영역과 겹치면 부르는 쪽이 settleRegions로 아래·오른쪽으로 민다
+// P35: 상자에 놓을 때는 같은 리포의 다른 상자(리포 영역의 안의 것 'wtbox')도 피하지 않는다. 그래야 상자가 제자리에서 커지고, 형제 상자와 겹치면 settleRegions가 뒤의 상자를 민다
+export function slotItems(items, k) {
+  const { ws, wt } = parseArea(k);
+  return wt ? items.filter((i) => !(i.kind === 'wtbox' && wsOfArea(i.box) === ws)) : items;
+}
 export function slotRegions(regs, k) {
   const { ws, wt } = parseArea(k);
   if (!wt) return regs;
@@ -91,18 +98,20 @@ export function workspaceMove(b, p) {
   if (!dx && !dy) return { moved: 0 };
   const items = canvasItems(b);
   const before = regions(b, items);
-  // P27: 워크트리 영역은 리포 영역 옆에 붙어 다니는 위성이다. 리포 영역을 옮기면 함께 옮긴다
-  const own = items.filter((i) => i.wsKey === key);
+  // P27: 리포 영역을 옮기면 워크트리 영역도 함께 옮긴다(P35: 상자는 리포 영역 안이다)
+  const own = items.filter((i) => i.wsKey === key && i.kind !== 'wtbox');
   const mine = [...before].filter(([k]) => wsOfArea(k) === key);
   const hit = mine.map(([, r]) => ({ ...r, x: r.x + dx, y: r.y + dy })).map((after) => [...before].find(([k, r]) => wsOfArea(k) !== key && overlaps(after, r, -1))).find(Boolean);
   if (hit && !p.force) throw keyed(apiError('overlap', `다른 워크스페이스 영역과 겹친다(${hit[0]})`), 'regionOverlap', { ws: wsOfArea(hit[0]) });
-  shiftWorkspace(b, key, dx, dy, items, { satellites: true });
+  shiftWorkspace(b, key, dx, dy, items);
   b.store.addEvent(null, 'workspace_moved', { key, dx, dy, items: own.length, areas: mine.length - (before.has(key) ? 1 : 0) });
   b.api.broadcast('board.changed', { why: 'workspace.move' });
   return { moved: own.length, dx, dy };
 }
 
-// P27: 워크트리 영역 하나만 옮긴다(이름표를 끌었다). 그 자리를 저장한다. 다른 영역(자기 리포 영역 포함)과 겹치면 거부
+// P27: 워크트리 영역 하나만 옮긴다(이름표를 끌었다). 그 자리를 저장한다.
+// P35: 상자는 리포 영역 안이다. 옮긴 상자가 같은 리포의 다른 상자나 본 저장소 쪽 것과 겹치거나, 그만큼 커진 리포 영역이 다른 영역과 겹치면 거부(overlap).
+//   리포 영역 밖으로 끌면 리포 영역이 그 상자를 감싸도록 커진다
 export function worktreeMove(b, p) {
   const w = b.store.getWorkspace(p.workspace);
   if (!w) throw keyed(apiError('not_found', `판에 없는 워크스페이스: ${p.workspace}`), 'wsNotFound', { ref: p.workspace });
@@ -112,24 +121,31 @@ export function worktreeMove(b, p) {
   if (!dx && !dy) return { moved: 0 };
   const key = areaKey(w.key, row.wt);
   const items = canvasItems(b);
-  const before = regions(b, items);
-  const reg = before.get(key);
-  const after = reg && { ...reg, x: reg.x + dx, y: reg.y + dy };
-  const hit = after && [...before].find(([k, r]) => k !== key && overlaps(after, r, -1));
-  if (hit && !p.force) throw keyed(apiError('overlap', `다른 영역과 겹친다(${hit[0]})`), 'regionOverlap', { ws: wsOfArea(hit[0]) });
+  const hit = boxMoveHit(areaAnchors(b), items, key, dx, dy);
+  if (hit && !p.force) throw keyed(apiError('overlap', `다른 영역과 겹친다(${hit})`), 'regionOverlap', { ws: w.key });
   const n = shiftWorkspace(b, key, dx, dy, items);
   b.store.putWorktreeArea({ ...b.store.worktreeAreas().find((a) => a.wsKey === w.key && a.wt === row.wt), movedAt: Date.now() });
   b.store.addEvent(null, 'worktree_area_moved', { key: w.key, worktree: row.path, dx, dy, items: n });
   b.api.broadcast('board.changed', { why: 'worktree.move' });
   return { moved: n, dx, dy };
 }
+// P35: 상자(key)를 dx, dy 옮겼을 때 새로 생기는 겹침 쌍(없으면 null). 창의 놓기 확인과 같은 규칙(worktree-areas.mjs regionConflicts)
+export function boxMoveHit(anchors, items, key, dx, dy) {
+  const base = items.filter((i) => i.kind !== 'wtbox');
+  const before = regionConflicts(nestedRegions(anchors, base), base);
+  const moved = base.map((i) => (i.ws === key ? { ...i, x: i.x + dx, y: i.y + dy } : i));
+  const anc = anchors.map((a) => (a.key === key ? { ...a, x: a.x + dx, y: a.y + dy } : a));
+  const after = regionConflicts(nestedRegions(anc, moved), moved);
+  return [...after].find((x) => !before.has(x)) || null;
+}
 
-// 영역 하나의 안의 것(노드, 메모·칸반, 대화 노드)과 영역 자리를 통째로 옮긴다. key는 영역 키(P27).
-// satellites: 리포 영역을 옮길 때 그 리포의 워크트리 영역(안의 것과 자리)도 함께(사람이 끈 경우). 겹침 풀기는 영역마다 따로 민다
-function shiftWorkspace(b, key, dx, dy, items = canvasItems(b), { satellites = false } = {}) {
+// 영역 하나의 안의 것(노드, 메모·칸반, 대화 노드)과 영역 자리를 통째로 옮긴다. 키는 영역 키(P27).
+// P35: 리포 영역(본 저장소 영역)을 옮기면 그 안의 워크트리 상자(안의 것과 자리)도 늘 함께 옮긴다. 상자 키면 그 상자만
+function shiftWorkspace(b, key, dx, dy, items = canvasItems(b)) {
   const { ws: wsKey, wt } = parseArea(key);
+  const satellites = !wt;
   const inArea = (i) => (satellites ? i.wsKey === wsKey : i.ws === key);
-  const own = items.filter(inArea);
+  const own = items.filter((i) => i.kind !== 'wtbox' && inArea(i));
   const ids = new Set(own.filter((i) => i.kind === 'node').map((i) => i.id));
   for (const n of b.store.nodes()) if (ids.has(n.session_id)) b.store.setNode({ ...n, x: n.x + dx, y: n.y + dy });
   // 메모·칸반도 함께 옮긴다(P6c). 창이 이벤트로 바꿔 끼운다
@@ -150,15 +166,45 @@ function shiftWorkspace(b, key, dx, dy, items = canvasItems(b), { satellites = f
 
 // 영역끼리 겹치면 통째로 밀어 편다(P9, H1). 백엔드가 뜰 때(이미 겹친 판)와 새 노드를 놓거나 크기를 바꾼 뒤에 부른다.
 // 영역 안의 상대 자리와 영역끼리의 좌우·위아래 관계는 지킨다(canvas.mjs separateRegions). 옮긴 것이 없으면 아무것도 하지 않는다
+// P35: 먼저 리포마다 안의 워크트리 상자가 본 저장소 쪽 것이나 다른 상자와 겹치면 상자를 민다(settleBoxes, 리포 영역이 그만큼 커진다).
+//   그다음 맨 위 영역(리포, 폴더)끼리 편다. 리포 영역을 밀면 안의 상자도 함께 간다
 export function settleRegions(b, cause = 'unknown') {
-  const items = canvasItems(b);
-  const shifts = separateRegions(regions(b, items));
-  if (!shifts.size) return [];
   const moved = [];
-  for (const [key, { dx, dy }] of shifts) moved.push({ key, dx, dy, items: shiftWorkspace(b, key, dx, dy, items) });
+  let items = canvasItems(b);
+  const boxesOf = new Map();
+  for (const [k, r] of regions(b, items)) if (isBoxKey(k)) { const ws = wsOfArea(k); if (!boxesOf.has(ws)) boxesOf.set(ws, []); boxesOf.get(ws).push({ key: k, rect: r }); }
+  for (const [ws, boxes] of boxesOf) {
+    const fixed = items.filter((i) => i.ws === ws && i.kind !== 'wtbox');
+    for (const [key, { dx, dy }] of settleBoxes(boxes, fixed)) moved.push({ key, dx, dy, items: shiftWorkspace(b, key, dx, dy, items) });
+  }
+  if (moved.length) items = canvasItems(b);
+  const top = new Map([...regions(b, items)].filter(([k]) => !isBoxKey(k)));
+  for (const [key, { dx, dy }] of separateRegions(top)) moved.push({ key, dx, dy, items: shiftWorkspace(b, key, dx, dy, items) });
+  if (!moved.length) return [];
   b.store.addEvent(null, 'regions_settled', { cause, moved });
   if (b.log) b.log(`regions settled (${cause}) ${JSON.stringify(moved)}`);
   if (b.api) b.api.broadcast('board.changed', { why: 'regions settled' });
+  return moved;
+}
+
+// P35: 옛 판(P27~P34)의 워크트리 영역은 리포 영역 바깥 옆(위성)에 있다. 처음 켤 때 한 번 리포 영역 안(본 저장소 쪽 것의 오른쪽이나 아래)으로 다시 놓는다.
+// meta 'boxesInside'로 한 번만 한다(다시 불러도 아무것도 하지 않는다). 영역 겹침 풀기(settleRegions 'start')보다 먼저 부른다
+export const BOXES_INSIDE = 'boxesInside';
+export function migrateBoxesInside(b) {
+  if (!b.store.worktreeAreas || b.store.getMeta(BOXES_INSIDE)) return [];
+  const moved = [];
+  const items = canvasItems(b);
+  const anchors = areaAnchors(b);
+  const rects = regions(b, items);
+  for (const w of b.store.workspaces()) {
+    const boxes = anchors.filter((a) => a.wt && a.wsKey === w.key).map((a) => ({ key: a.key, rect: rects.get(a.key) })).filter((x) => x.rect);
+    if (!boxes.length) continue;
+    const content = items.filter((i) => i.ws === w.key && i.kind !== 'wtbox');
+    const main = regionRect(content, w);
+    for (const [key, { dx, dy }] of migrateBoxes({ main, content, boxes })) moved.push({ key, dx, dy, items: shiftWorkspace(b, key, dx, dy, items) });
+  }
+  b.store.setMeta(BOXES_INSIDE, { at: Date.now(), moved: moved.length });
+  if (moved.length) { b.store.addEvent(null, 'worktree_boxes_migrated', { moved }); if (b.log) b.log(`worktree boxes moved inside ${JSON.stringify(moved)}`); }
   return moved;
 }
 
@@ -404,9 +450,11 @@ export function setSize(b, p) {
 }
 
 // 정리할 블록: 덩어리, 나머지 노드 하나씩, 그 워크스페이스의 메모·칸반(P6c: 크기 그대로, 연결 없는 줄에 둔다. 빼면 정리한 노드가 그 위에 놓인다)
+// P35: 리포 영역 안의 워크트리 상자도 한 블록이다(크기 그대로, 연결 없는 줄). 상자 안의 노드는 상자째 옮긴다(상자 안은 정리하지 않는다)
 function blocksOf(b, wsKey) {
   // P27: 정리는 본 저장소 영역 안의 것만(워크트리 영역의 노드는 그 영역에 둔다)
-  const main = new Set(canvasItems(b).filter((i) => i.kind === 'node' && i.ws === wsKey).map((i) => i.id));
+  const all = canvasItems(b);
+  const main = new Set(all.filter((i) => i.kind === 'node' && i.ws === wsKey).map((i) => i.id));
   const nodes = b.store.nodes().filter((n) => b.sessions.has(n.session_id) && (n.workspace_key || null) === wsKey && main.has(n.session_id));
   const byId = new Map(nodes.map((n) => [n.session_id, n]));
   const used = new Set();
@@ -421,6 +469,7 @@ function blocksOf(b, wsKey) {
   for (const n of nodes) if (!used.has(n.session_id)) out.push({ id: n.session_id, kind: 'node', x: n.x, y: n.y, w: n.w, h: n.h, members: [n.session_id], resizable: true });
   for (const m of b.store.memos().filter((m) => (m.workspaceKey || null) === wsKey)) out.push({ id: `m:${m.memoId}`, kind: 'memo', memoId: m.memoId, x: m.x, y: m.y, w: m.w, h: m.h, members: [], resizable: false });
   for (const k of b.store.kanbans().filter((k) => (k.workspaceKey || null) === wsKey)) out.push({ id: `k:${k.kanbanId}`, kind: 'kanban', kanbanId: k.kanbanId, x: k.x, y: k.y, w: k.w, h: k.h, members: [], resizable: false });
+  for (const x of all.filter((i) => i.kind === 'wtbox' && i.ws === wsKey).sort((p, q) => p.y - q.y || p.x - q.x)) out.push({ id: `w:${x.box}`, kind: 'wtbox', box: x.box, x: x.x, y: x.y, w: x.w, h: x.h, members: [], resizable: false });
   return out;
 }
 // 메모·칸반 자리를 바꾸고 창에 알린다(정리, 되돌리기)
@@ -442,7 +491,7 @@ function planWorkspace(b, key, { avoid = true } = {}) {
   let sx = 0, sy = 0;
   if (avoid) {
     // 정리한 영역이 다른 영역과 겹치면(맞닿는 것은 괜찮다) 영역째로 빈자리로 옮긴다
-    const others = regions(b); others.delete(key);
+    const others = new Map([...regions(b)].filter(([k]) => wsOfArea(k) !== key)); // P35: 자기 리포 영역과 그 안의 상자는 빼고
     const newRegion = regionRect(blocks.map((x) => plan.get(x.id)));
     if (newRegion && [...others.values()].some((r) => overlaps(newRegion, r, -1))) {
       const at = newRegionSlot(others, newRegion);
@@ -460,6 +509,7 @@ function applyWorkspacePlan(b, { blocks, out }) {
     const q = out.find((o) => o.id === x.id).to;
     const dx = q.x - x.x, dy = q.y - x.y;
     if (x.kind === 'memo' || x.kind === 'kanban') { moveItem(b, x.kind, x.memoId || x.kanbanId, q.x, q.y); continue; }
+    if (x.kind === 'wtbox') { if (dx || dy) shiftWorkspace(b, x.box, Math.round(dx), Math.round(dy)); continue; } // P35: 상자째(안의 노드, 대화 노드, 자리)
     if (x.kind === 'node') { const n = byId.get(x.id); b.store.setNode({ ...n, x: Math.round(q.x), y: Math.round(q.y), w: q.w, h: q.h, size: q.size || n.size || null }); continue; }
     for (const m of x.members) { const n = byId.get(m); b.store.setNode({ ...n, x: Math.round(n.x + dx), y: Math.round(n.y + dy) }); }
   }
@@ -477,6 +527,11 @@ export function arrange(b, p) {
     if (!u) throw keyed(apiError('not_found', '되돌릴 정리가 없다'), 'noArrangeUndo');
     for (const n of u.nodes) if (b.sessions.has(n.session_id)) b.store.setNode({ ...n, size: n.size ?? '' }); // 크기 단계도 정리 전 값으로(없었으면 지운다)
     for (const it of u.items || []) moveItem(b, it.kind, it.id, it.x, it.y);
+    // P35: 상자는 정리 전 자리로 상자째 되돌린다(그 사이 안의 노드가 바뀌어도 상대 자리는 지킨다)
+    if (u.boxes && u.boxes.length) {
+      const now = new Map(canvasItems(b).filter((i) => i.kind === 'wtbox').map((i) => [i.box, i]));
+      for (const x of u.boxes) { const c = now.get(x.box); if (c && (c.x !== x.x || c.y !== x.y)) shiftWorkspace(b, x.box, Math.round(x.x - c.x), Math.round(x.y - c.y)); }
+    }
     b.store.setMeta(undoKey, null);
     b.store.addEvent(null, 'arrange_undone', { workspace: key });
     b.api.broadcast('board.changed', { why: 'arrange undo' });
@@ -488,7 +543,8 @@ export function arrange(b, p) {
   const ids = new Set(pl.blocks.flatMap((x) => x.members));
   const nodes = b.store.nodes().filter((n) => ids.has(n.session_id));
   const itemsBefore = pl.blocks.filter((x) => x.kind === 'memo' || x.kind === 'kanban').map((x) => ({ kind: x.kind, id: x.memoId || x.kanbanId, x: x.x, y: x.y }));
-  b.store.setMeta(undoKey, { at: Date.now(), nodes, items: itemsBefore });
+  const boxesBefore = pl.blocks.filter((x) => x.kind === 'wtbox').map((x) => ({ box: x.box, x: x.x, y: x.y }));
+  b.store.setMeta(undoKey, { at: Date.now(), nodes, items: itemsBefore, boxes: boxesBefore });
   b.store.setMeta(BOARD_UNDO, null); // 판 전체 정리의 되돌리기는 이 정리 뒤로는 맞지 않는다
   applyWorkspacePlan(b, pl);
   b.store.addEvent(null, 'arranged', { workspace: key, blocks: pl.blocks.length, edges: pl.edges.length, moved: pl.moved });
@@ -496,7 +552,7 @@ export function arrange(b, p) {
   return { plan: pl.out, applied: true, edges: pl.edges.length, undo: true };
 }
 
-// P31: 판 전체 정리. 1) 워크스페이스마다 안을 정리하고(영역 피하기 없이) 2) 그 결과의 영역들을 묶음(리포 영역 + 워크트리 위성 영역)째
+// P31: 판 전체 정리. 1) 워크스페이스마다 안을 정리하고(영역 피하기 없이, P35: 워크트리 상자는 리포 영역 안의 한 블록) 2) 그 결과의 영역들(리포 영역은 상자째)을
 // 겹치지 않게 줄 맞춰 다시 놓는다(region-layout.mjs layoutRegions). 소속 없는 메모·칸반도 맨 뒤에 놓는다.
 // 되돌리기는 판 전체(노드, 메모·칸반, 대화 노드, 영역 자리, 워크트리 영역 자리)를 정리 전으로. 영역을 옮기는 것은 사람이 이것을 누를 때뿐이다(BRIEF 4절)
 const BOARD_UNDO = 'arrangeUndo:*';
@@ -522,17 +578,23 @@ function arrangeBoard(b, p) {
   }
   const wss = b.store.workspaces();
   const plans = wss.map((w) => ({ key: w.key, ...planWorkspace(b, w.key, { avoid: false }) })).filter((x) => x.blocks.length);
-  // 정리한 뒤의 판을 흉내 내어 영역을 계산한다(미리 보기도 같은 값)
-  const items = canvasItems(b).map((i) => ({ ...i }));
+  // 정리한 뒤의 판을 흉내 내어 영역을 계산한다(미리 보기도 같은 값). P35: 상자 블록은 안의 것과 자리를 함께 옮겨 본다
+  const items = canvasItems(b).filter((i) => i.kind !== 'wtbox').map((i) => ({ ...i }));
+  const anchors = areaAnchors(b).map((a) => ({ ...a }));
   const find = (kind, id) => items.find((i) => i.kind === kind && i.id === id);
   for (const pl of plans) for (const x of pl.blocks) {
     const q = pl.out.find((o) => o.id === x.id).to;
     if (x.kind === 'node') Object.assign(find('node', x.id) || {}, { x: q.x, y: q.y, w: q.w, h: q.h });
     else if (x.kind === 'memo' || x.kind === 'kanban') Object.assign(find(x.kind, x.memoId || x.kanbanId) || {}, { x: q.x, y: q.y });
-    else for (const m of x.members) { const it = find('node', m); if (it) { it.x += q.x - x.x; it.y += q.y - x.y; } }
+    else if (x.kind === 'wtbox') {
+      const dx = q.x - x.x, dy = q.y - x.y;
+      for (const it of items) if (it.ws === x.box) { it.x += dx; it.y += dy; }
+      for (const a of anchors) if (a.key === x.box) { a.x += dx; a.y += dy; }
+    } else for (const m of x.members) { const it = find('node', m); if (it) { it.x += q.x - x.x; it.y += q.y - x.y; } }
   }
-  const regs = regionsOf(areaAnchors(b), items);
-  const entries = [...regs].map(([k, r]) => { const { ws, wt } = parseArea(k); return { key: k, ws, wt, rect: r, empty: !items.some((i) => i.ws === k) }; });
+  const regs = nestedRegions(anchors, items);
+  // 맨 위 영역(리포 영역은 상자를 감싼다, 폴더)과 소속 없는 메모·칸반만 다시 놓는다. 상자는 리포 영역과 함께 간다
+  const entries = [...regs].filter(([k]) => !isBoxKey(k)).map(([k, r]) => ({ key: k, ws: k, wt: '', rect: r, empty: !items.some((i) => i.wsKey === k) }));
   for (const i of items) if (!i.ws && (i.kind === 'memo' || i.kind === 'kanban')) entries.push({ key: `${i.kind}:${i.id}`, ws: null, wt: '', rect: { x: i.x, y: i.y, w: i.w, h: i.h }, item: i });
   const lay = layoutRegions(entries);
   const regionPlan = entries.map((e) => ({ key: e.key, from: e.rect, to: lay.rects.get(e.key) }));

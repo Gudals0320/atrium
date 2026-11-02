@@ -187,6 +187,24 @@ export function desktopSessionRoots(base) {
   for (const p of ps) { if (!p.isDirectory()) continue; const d = path.join(base, p.name, 'claude-code-sessions'); try { if (fs.statSync(d).isDirectory()) out.push(d); } catch {} }
   return out;
 }
+// P34: 가져오기(desktop-import.mjs)가 쓰는 앱 세션 한 줄의 필드. 형식이 공개되지 않아 없는 필드는 null로 둔다
+const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+const timeOf = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null);
+export function desktopInfoOf(o, file = null) {
+  if (!o || typeof o !== 'object') return null;
+  const id = (x) => (str(x) ? str(x).toLowerCase() : null);
+  return {
+    file, sessionId: str(o.sessionId), cliSessionId: id(o.cliSessionId), priorCliSessionIds: (Array.isArray(o.priorCliSessionIds) ? o.priorCliSessionIds : []).map(id).filter(Boolean),
+    cwd: str(o.cwd), originCwd: str(o.originCwd), title: str(o.title), model: str(o.model), effort: str(o.effort), permissionMode: str(o.permissionMode),
+    isArchived: !!o.isArchived, isStarred: !!o.isStarred, lastActivityAt: timeOf(o.lastActivityAt), worktreePath: str(o.worktreePath), worktreeName: str(o.worktreeName),
+    branch: str(o.branch), lastAssistantUuid: str(o.lastAssistantUuid), adoptedFromOtherSurface: !!o.adoptedFromOtherSurface,
+  };
+}
+// P34: 앱 세션 목록 전부(보관 포함). readDesktopSessions와 같은 캐시를 쓴다
+export function listDesktopSessions(base, cache = new Map()) {
+  readDesktopSessions(base, cache);
+  return [...cache.values()].map((c) => c.info).filter((x) => x && x.sessionId);
+}
 export function readDesktopSessions(base, cache = new Map()) {
   const out = new Map();
   const seen = new Set();
@@ -201,8 +219,8 @@ export function readDesktopSessions(base, cache = new Map()) {
         let mtime = 0; try { mtime = fs.statSync(p).mtimeMs; } catch { continue; }
         let c = cache.get(p);
         if (!c || c.mtime !== mtime) {
-          try { const o = JSON.parse(fs.readFileSync(p, 'utf8')); c = { mtime, ids: [o.cliSessionId, ...(Array.isArray(o.priorCliSessionIds) ? o.priorCliSessionIds : [])].filter(Boolean).map((x) => String(x).toLowerCase()), archived: !!o.isArchived }; }
-          catch { c = { mtime, ids: [], archived: false }; }
+          try { const o = JSON.parse(fs.readFileSync(p, 'utf8')); c = { mtime, ids: [o.cliSessionId, ...(Array.isArray(o.priorCliSessionIds) ? o.priorCliSessionIds : [])].filter(Boolean).map((x) => String(x).toLowerCase()), archived: !!o.isArchived, info: desktopInfoOf(o, p) }; }
+          catch { c = { mtime, ids: [], archived: false, info: null }; }
           cache.set(p, c);
         }
         for (const id of c.ids) out.set(id, { archived: c.archived });

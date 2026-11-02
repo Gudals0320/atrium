@@ -22,7 +22,7 @@ import { SHELL_TOOLS, LINK_VERBS, parseHerdrCommands, parseHerdrOutput, readText
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
-import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks } from './canvas-ops.mjs';
+import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
@@ -30,6 +30,7 @@ import { attachBranch } from './branch.mjs'; // P8: 가지 펼치기(하위 세�
 import { FLAVOR as DEEPSEEK, checkCommand, checkProxy } from './deepseek.mjs'; // P25: DeepSeek 바로 띄우기
 import { resolveLauncher, exampleDeepseek, checkGateway, splitArgs } from './launchers.mjs'; // P33: 호출자
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
+import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
 import { attachSleep, draftAfterInput } from './sleep.mjs'; // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
 import { migrateLegacyData, fixLegacyRecords, writeTombstone, checkLegacyDevHerdr, MARKER, PANE_PREFIX } from './rename-migrate.mjs'; // P18: 이름 옮기기(multitask → Atrium)
 
@@ -148,6 +149,8 @@ export class Backend {
     if (canv) { this.store.addEvent(null, 'canvas_migrated', canv); this.log(`single canvas migrated ${JSON.stringify(canv)}`); }
     // P17: 옛 한 줄 덩어리 행을 한 마디짜리 분할 나무로 바꾼다(모양 그대로, H5)
     migrateDocks(this);
+    // P35: 옛 판의 워크트리 위성 영역(리포 영역 바깥)을 리포 영역 안으로 한 번 다시 놓는다(겹침 풀기보다 먼저)
+    migrateBoxesInside(this);
     // P9: 이미 겹친 영역은 뜰 때 편다(영역째 오른쪽·아래로 밀어 상대 자리를 지킨다, H1)
     settleRegions(this, 'start');
     // P8: 하위 세션 명령. 플러그인에 일 맡기기 스킬과 atrium 명령을 더하고, 이미 띄운 세션의 설정 파일에 env와 승인 규칙을 더한다
@@ -188,6 +191,8 @@ export class Backend {
     Object.assign(this.api.handlers, this.recall.handlers);
     this.sleeper = attachSleep(this, { tickMs: cfg.sleepTickMs });
     Object.assign(this.api.handlers, this.sleeper.handlers);
+    this.desktopImport = attachDesktopImport(this);
+    Object.assign(this.api.handlers, this.desktopImport.handlers);
 
     // herdr 서버가 백엔드가 꺼진 동안 다시 떴는가(재부팅 포함). 저장한 서버 PID와 비교한다(C3, P3)
     const prevHerdrPid = this.store.getMeta('herdrServerPid');
@@ -320,6 +325,7 @@ export class Backend {
       ...(this.features ? this.features.summaryExtra(s) : {}), // P6b: output(긴 답인지), loops(켜진 루프 수)
       ...(this.branch ? this.branch.summaryExtra(s) : {}), // P8: branch(깊이, 부모 이름, 하위 세션이면 역할)
       ...(this.sleeper ? this.sleeper.summaryExtra(s) : {}), // P21: sleep(잠든 때, 아낀 메모리, 깨우기 실패), waking
+      ...(this.desktopImport ? this.desktopImport.summaryExtra(s) : {}), // P34: imported(데스크톱 앱에서 가져온 세션의 앱 제목)
     };
   }
 

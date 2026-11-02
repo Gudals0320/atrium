@@ -29,6 +29,7 @@ import { CommandBar } from './CommandBar.jsx';
 import { SpawnDialog } from './SpawnDialog.jsx';
 import { RoleDialog, LinkPanel } from './Links.jsx';
 import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
+import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';
 import { keyToData, closeKeyTargets } from './lib/keys.js';
@@ -54,6 +55,7 @@ function Dialogs() {
   if (d.kind === 'role') return <RoleDialog from={d.from} to={d.to} onClose={close} />;
   if (d.kind === 'link') return <LinkPanel linkId={d.linkId} onClose={close} />;
   if (d.kind === 'wsopen') return <OpenRepoDialog onClose={close} />;
+  if (d.kind === 'desktopImport') return <DesktopImportDialog onClose={close} />;
   if (d.kind === 'wsclose') return <CloseWsDialog ws={d.ws} onClose={close} />;
   if (d.kind === 'loop') return <LoopDialog target={d.target} onClose={close} />;
   if (d.kind === 'settings') return <SettingsDialog onClose={close} />;

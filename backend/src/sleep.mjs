@@ -293,8 +293,9 @@ export class Sleeper {
   }
 
   // 리포 key에서 잠든 세션을 모두 깨운다. first(부른 세션)를 먼저, 나머지는 staggerMs 간격으로. → [{ name, job }]
+  // P34: 데스크톱 앱에서 가져와 아직 한 번도 깨지 않은 세션(sleep.by import)은 리포를 깨울 때 함께 깨우지 않는다(수십 개가 한꺼번에 뜨지 않게). 그 노드를 누르거나 글을 보낼 때만 깬다
   wakeRepo(key, first, why) {
-    const asleep = this.members(key).filter((s) => this.isAsleep(s));
+    const asleep = this.members(key).filter((s) => this.isAsleep(s) && (s === first || !(s.rt.sleep && s.rt.sleep.by === 'import')));
     const order = first && asleep.includes(first) ? [first, ...asleep.filter((x) => x !== first)] : asleep;
     this.busyAt.set(key, Date.now());
     return order.map((s, i) => ({ name: s.name, sessionId: s.sessionId, job: this.wake(s, i === 0 ? why : `repo:${why}`, i * this.staggerMs) }));

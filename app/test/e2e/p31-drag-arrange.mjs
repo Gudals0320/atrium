@@ -1,4 +1,4 @@
-// P31 창 시험: 줌 아웃 얼굴 본문 끌기, 판 전체 정리(영역 다시 놓기와 되돌리기), 줌 아웃 때 워크트리 화살표.
+// P31 창 시험: 줌 아웃 얼굴 본문 끌기, 판 전체 정리(영역 다시 놓기와 되돌리기). P35: 워크트리는 리포 영역 안의 상자라 위성 배치와 화살표 단계는 상자 확인으로 바꿨다.
 // 판: herdr 세션 atrium-dev-p31, 포트 47849, 이 워크트리의 backend/.dev(experiments/p31/tools/env.cjs). 셸 노드만 쓴다.
 // 사용: node experiments/p31/tools/e2e.cjs p31-drag-arrange.mjs [--fresh]
 import fs from 'node:fs';
@@ -192,18 +192,18 @@ try {
   await sleep(1200);
   const before = await layout();
   const zB = await zoomNow();
-  const regsBefore = [...await domRects('.react-flow__node-region'), ...await domRects('.react-flow__node-wtarea')];
-  step('정리 전: 영역 넷(리포, 워크트리 위성, 폴더 둘)이 흩어져 있다', regsBefore.length === 4, regsBefore.map((r) => [r.id.slice(0, 40), Math.round(r.x), Math.round(r.y)]));
+  const regsBefore = await domRects('.react-flow__node-region');
+  step('정리 전: 영역 셋(리포(안에 워크트리 상자), 폴더 둘)이 흩어져 있다', regsBefore.length === 3, regsBefore.map((r) => [r.id.slice(0, 40), Math.round(r.x), Math.round(r.y)]));
   await shot(page, 'p31-7-arrange-before');
   await page.click('[data-action=chip-arrange]');
   await sleep(2500);
-  const regsAfter = [...await domRects('.react-flow__node-region'), ...await domRects('.react-flow__node-wtarea')];
-  const main = regsAfter.find((r) => r.id === `ws:${repoKey}`), sat = regsAfter.find((r) => r.id === `wa:${areaK}`);
+  const regsAfter = await domRects('.react-flow__node-region');
+  const main = regsAfter.find((r) => r.id === `ws:${repoKey}`), sat = (await domRects('.react-flow__node-wtarea')).find((r) => r.id === `wa:${areaK}`);
   const spread = (rs) => { const x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y)), x1 = Math.max(...rs.map((r) => r.x + r.w)), y1 = Math.max(...rs.map((r) => r.y + r.h)); return (x1 - x0) * (y1 - y0); };
   const zA = await zoomNow();
   const areaWorld = (rs, zz) => spread(rs) / (zz * zz);
-  step('정리 뒤: 영역끼리 겹치지 않는다', regsAfter.length === 4 && overlapPairs(regsAfter).length === 0, overlapPairs(regsAfter));
-  step('정리 뒤: 워크트리 위성 영역은 리포 영역 바로 오른쪽, 위를 맞춘다', main && sat && sat.x > main.x + main.w && near(sat.y, main.y, 3) && sat.x - (main.x + main.w) < 260 * zA, { main, sat, zoom: zA });
+  step('정리 뒤: 영역끼리 겹치지 않는다', regsAfter.length === 3 && overlapPairs(regsAfter).length === 0, overlapPairs(regsAfter));
+  step('정리 뒤: 워크트리 상자는 리포 영역 안(P35)', main && sat && sat.x >= main.x - 1 && sat.y >= main.y - 1 && sat.x + sat.w <= main.x + main.w + 1 && sat.y + sat.h <= main.y + main.h + 1, { main, sat, zoom: zA });
   step('정리 뒤: 덜 흩어진다(영역 전체를 감싸는 넓이가 절반 아래로)', areaWorld(regsAfter, zA) < areaWorld(regsBefore, zB) / 2, { before: Math.round(areaWorld(regsBefore, zB)), after: Math.round(areaWorld(regsAfter, zA)) });
   await shot(page, 'p31-8-arrange-after');
   const undoBtn = await page.$('[data-action=chip-arrange-undo]');
@@ -216,27 +216,8 @@ try {
   await sleep(1000);
   await shot(page, 'p31-9-arrange-undone');
 
-  // ---------- 3. 워크트리 화살표 ----------
-  await page.click('[data-action=chip-arrange]'); // 화살표를 보기 좋게 다시 정리해 둔다
-  await sleep(2500);
-  const arrowAt = async () => page.$eval('.react-flow__node-wtarrow', (e) => { const p = e.querySelector('.mt-wtarrow-line'); const r = e.getBoundingClientRect(); return { stroke: Number(p.getAttribute('stroke-width')), label: !!e.querySelector('.mt-wtarrow-label'), x: r.x, y: r.y, w: r.width, h: r.height }; });
-  const ma = await page.evaluate((k) => window.__mt.getState().regionOf(k), repoKey);
-  await view(ma.x + ma.w, ma.y + 200, 1);
-  const a1z = await arrowAt();
-  await shot(page, 'p31-10-arrow-zoom1');
-  await view(ma.x + ma.w, ma.y + 200, 0.4);
-  const a04 = await arrowAt();
-  await shot(page, 'p31-11-arrow-zoom04');
-  await page.evaluate(() => window.__mt.getState().setViewport({ x: 200, y: 200, zoom: 0.1 })); await sleep(300);
-  await page.evaluate(() => window.__mt.getState().fitAll(0)); await sleep(800);
-  const zf = await zoomNow();
-  await view(ma.x + ma.w, ma.y + 200, Math.min(zf, 0.12));
-  const af = await arrowAt();
-  const zf2 = await zoomNow();
-  await shot(page, 'p31-12-arrow-far');
-  step('화살표: 배율 1에서는 옛 모양(굵기 2, 글자 있음)', a1z.stroke === 2 && a1z.label, a1z);
-  step('화살표: 줌 아웃하면 화면 굵기가 영역 테두리처럼 준다(0.4에서 화면 1px)', near(a04.stroke * 0.4, 1, 0.05) && a04.label, a04);
-  step('화살표: 멀리서는 글자를 그리지 않고 선은 화면 1px로 남는다', !af.label && near(af.stroke * zf2, 1, 0.05), { ...af, zoom: zf2 });
+  // ---------- 3. 워크트리 화살표: P35에서 뺐다(워크트리는 리포 영역 안의 상자). 화살표가 없는지만 본다 ----------
+  step('워크트리 화살표가 없다(P35)', (await page.$$('.react-flow__node-wtarrow, .mt-wtarrow')).length === 0);
 } catch (e) {
   log('오류', e.stack);
   step('시험이 끝까지 돌았다', false, e.message);

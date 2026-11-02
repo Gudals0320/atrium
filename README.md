@@ -28,7 +28,7 @@ Atrium does not replace your agents or tell them how to work. It starts the sess
 
 ## Features
 
-- **One board for every session.** Claude Code, Codex, DeepSeek (Claude Code through a local gateway) and plain shells live side by side. Each repository gets an area, and live git worktrees appear as satellite areas with branch arrows.
+- **One board for every session.** Claude Code, Codex, DeepSeek (Claude Code through a local gateway) and plain shells live side by side. Each repository gets an area, and each live git worktree is a yellow box inside its repository's area.
 - **Launchers.** A launcher is a harness (Claude Code, Codex, ...) plus a model and options, or one command line you write yourself. Build them from dropdowns in one settings tab, star your favorites, and they sit on the left rail: one click starts a session.
 - **Know whose turn it is.** Every session is *working*, *ready*, *your turn* or *error*, computed from herdr events and Claude Code hooks. The **Your turn** and **Review** queues, OS notifications and a tray badge tell you where to look. Answer an `AskUserQuestion` prompt from a card on the node.
 - **Talk from the board.** Type `@name` (or `@all`) in the command bar. Each session has its own delivery queue, and every message is confirmed when the agent actually submits it.
@@ -36,6 +36,7 @@ Atrium does not replace your agents or tell them how to work. It starts the sess
 - **Docks.** Snap sessions together into tmux-style split layouts, with layout presets for 2 to 7+ sessions. Links inside a dock show as small bridges on the dividers or short brackets along the outside, never as lines across your terminals.
 - **Links between agents.** Draw a link from one session to another and give it a role, such as `worker` or `reviewer`. The agent learns how to hand work to that role through herdr, and the link lights up while work moves along it. Agents can also start child sessions (`atrium child`), which appear as a tree with spawn limits.
 - **Pick up old conversations.** Past Claude Code CLI conversations in an open folder show up as chat nodes that you can resume. Leftovers from test folders go to a *missed* list that you can clear in bulk.
+- **Move over from the desktop app.** Import the sessions you haven't archived in the Claude desktop app in one go. Each one is opened as a fork under a new ID, so the app's copy is never touched, and lands asleep in its repository area until you click it. Importing again only picks up sessions that are new or that you kept using in the app.
 - **Overviews.** A mission map of who directs whom, a list of changes since you last looked, and `Ctrl+F` search across sessions.
 - **Notes on the canvas.** Markdown memos and kanban boards sit next to the sessions. Loops resend an instruction on a schedule or whenever a session goes idle.
 - **Easy on memory.** A repository that has been idle for 30 minutes (configurable) goes to sleep and wakes up as a whole. Each node shows its memory use.

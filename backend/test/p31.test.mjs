@@ -1,4 +1,5 @@
-// P31 시험: 판 전체 정리의 영역 배치(region-layout.mjs layoutRegions), 브랜치 화살표 크기(arrowStyle), 판 전체 정리와 되돌리기(board.arrange { all })
+// P31 시험: 판 전체 정리의 영역 배치(region-layout.mjs layoutRegions), 판 전체 정리와 되돌리기(board.arrange { all })
+// P35: 워크트리 위성 열과 화살표 크기 시험은 뺐다. 상자는 리포 영역 안에서 함께 움직인다
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,7 +12,7 @@ import { Backend } from '../src/backend.mjs';
 import * as ops from '../src/canvas-ops.mjs';
 import { pathKey, normPath } from '../src/workspaces.mjs';
 import { attachWorktrees } from '../src/worktrees.mjs';
-import { areaKey, arrowStyle, WT_GAP } from '../src/worktree-areas.mjs';
+import { areaKey, isBoxKey } from '../src/worktree-areas.mjs';
 import { layoutRegions } from '../src/region-layout.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'p31u-'));
@@ -46,41 +47,17 @@ test('P31 영역 배치: 흩어진 묶음을 겹치지 않게 줄 맞춰, 사이
   assert.deepEqual(layoutRegions([]).shifts.size, 0);
 });
 
-test('P31 영역 배치: 워크트리 위성 영역은 리포 영역 오른쪽 열에 지금 위아래 순서로 쌓이고 묶음째 움직인다. 빈 영역은 뒤, 소속 없는 메모는 맨 뒤', () => {
+test('P31 영역 배치: 빈 영역은 안이 있는 영역 뒤, 소속 없는 메모는 맨 뒤(P35: 위성 열 없음, 영역 하나가 한 묶음)', () => {
   const entries = [
-    { key: 'r', ws: 'r', wt: '', rect: R(0, 0, 1600, 1200) },
-    { key: 'r#wt=2', ws: 'r', wt: '2', rect: R(100, 5000, 480, 200), empty: true }, // 사람이 멀리 끌어 둔 위성
-    { key: 'r#wt=1', ws: 'r', wt: '1', rect: R(1800, 300, 800, 600) }, // 정리로 커진 본 영역과 겹친다
-    { key: 'e', ws: 'e', wt: '', rect: R(-500, -500, 800, 320), empty: true },
-    { key: 'f', ws: 'f', wt: '', rect: R(4000, 0, 900, 700) },
-    { key: 'memo:m', ws: null, wt: '', rect: R(-2000, -2000, 360, 240) },
+    { key: 'r', ws: 'r', rect: R(0, 0, 1600, 1200) },
+    { key: 'e', ws: 'e', rect: R(-500, -500, 800, 320), empty: true },
+    { key: 'f', ws: 'f', rect: R(4000, 0, 900, 700) },
+    { key: 'memo:m', ws: null, rect: R(-2000, -2000, 360, 240) },
   ];
   const { rects, groups } = layoutRegions(entries);
   assert.deepEqual(pairs(rects), [], '겹치지 않는다');
-  const main = rects.get('r'), s1 = rects.get('r#wt=1'), s2 = rects.get('r#wt=2');
-  assert.equal(s1.x, main.x + main.w + WT_GAP, '위성은 본 영역 오른쪽 WT_GAP');
-  assert.equal(s2.x, s1.x);
-  assert.equal(s1.y, main.y, '첫 위성은 본 영역 위에 맞춘다');
-  assert.equal(s2.y, s1.y + s1.h + REGION_GAP / 2, '지금 위에 있던 위성이 위');
   assert.deepEqual(groups.map((g) => g.ws), ['r', 'f', 'e', null], '안이 있는 묶음 → 빈 영역 → 소속 없는 메모');
-  assert.deepEqual(groups[0].keys.sort(), ['r', 'r#wt=1', 'r#wt=2']);
-  const g0 = groups[0].rect;
-  assert.ok(rects.get('f').x >= g0.x + g0.w + REGION_GAP || rects.get('f').y >= g0.y + g0.h + REGION_GAP, '다음 묶음은 위성까지 다 지나서');
-});
-
-test('P31 브랜치 화살표 크기: 가까이에서는 화면 기준(옛 모양), 줌 아웃하면 판 기준으로 줄고 글자는 멀리서 숨는다', () => {
-  const near = arrowStyle(1);
-  assert.deepEqual([near.stroke, near.label], [2, true]);
-  assert.ok(near.fs >= 12 && near.tip >= 14);
-  // 줌 아웃: 화면에서 보이는 굵기·화살촉(판 값 × 배율)이 영역 테두리처럼 함께 준다
-  const mid = arrowStyle(0.4), far = arrowStyle(0.12), tiny = arrowStyle(0.05);
-  assert.ok(mid.stroke * 0.4 < 2 && mid.stroke * 0.4 >= 1, `중간 ${JSON.stringify(mid)}`);
-  assert.ok(far.stroke * 0.12 <= 1.01, '멀리서는 화면 1px 남짓(영역 테두리와 같은 결)');
-  assert.ok(tiny.stroke * 0.05 >= 0.99, '아무리 멀어도 사라지지 않는다');
-  assert.ok(far.tip * 0.12 < near.tip, '화살촉도 화면에서 작아진다');
-  assert.equal(mid.label, true);
-  assert.equal(far.label, false, '멀리서는 글자를 그리지 않는다(워크트리 영역 이름표가 같은 이름을 보인다)');
-  assert.ok(mid.fs * 0.4 <= 12.01 && mid.fs * 0.4 >= 9, '글자는 화면에서 너무 작아지기 전까지');
+  assert.deepEqual(groups.map((g) => g.keys), [['r'], ['f'], ['e'], ['memo:m']]);
 });
 
 // ---------- 판 위에서(가짜 백엔드) ----------
@@ -110,14 +87,14 @@ function board() {
 }
 const snap = (b) => JSON.stringify({ n: b.store.nodes().map((n) => [n.session_id, n.x, n.y, n.w, n.h]), w: b.store.workspaces().map((w) => [w.key, w.x, w.y]), a: b.store.worktreeAreas().map((a) => [a.wt, a.x, a.y]), m: b.store.memos().map((m) => [m.memoId, m.x, m.y]) });
 
-test('P31 판 전체 정리: 흩어진 영역 넷(워크트리 위성 포함)이 겹치지 않게 가지런히, 위성은 리포 옆, 되돌리면 정리 전 그대로', async () => {
+test('P31 판 전체 정리(P35 상자): 흩어진 영역 셋이 겹치지 않게 가지런히, 워크트리 상자는 리포 영역 안의 한 블록, 되돌리면 정리 전 그대로', async () => {
   const { b, ws, add, W1 } = board();
   add('a1', ws.key, 'C:/repo', R(40, 112));
   add('a2', ws.key, 'C:/repo', R(3000, 2000));
   add('w1', ws.key, W1, R(40, 112));
   await b.worktrees.sync('t'); // w1은 워크트리 영역으로
-  // 사람이 위성 영역을 멀리 끌어 둔다
-  ops.worktreeMove(b, { workspace: ws.key, worktree: pathKey(W1), dx: -9000, dy: 6000 });
+  // 사람이 상자를 멀리 끌어 둔다(리포 영역이 그만큼 커진다)
+  ops.worktreeMove(b, { workspace: ws.key, worktree: pathKey(W1), dx: -9000, dy: 3000 });
   add('b1', 'c:/b', 'C:/b', R(12040, -3888));
   add('c1', 'c:/c', 'C:/c', R(-5960, 9112));
   b.store.insertMemo && b.store.insertMemo({ memoId: 'm1', workspaceKey: null, x: 20000, y: 20000, w: 360, h: 240, text: 'x', createdAt: 1 });
@@ -131,14 +108,16 @@ test('P31 판 전체 정리: 흩어진 영역 넷(워크트리 위성 포함)이
   assert.equal(r.applied, true);
   const regs = ops.regions(b);
   assert.equal(regs.size, regsBefore.size);
-  assert.deepEqual(pairs(regs, REGION_GAP / 2 - 1), [], '영역끼리 겹치지 않고 띄운다');
+  const top = (m) => new Map([...m].filter(([k]) => !isBoxKey(k)));
+  assert.deepEqual(pairs(top(regs), REGION_GAP / 2 - 1), [], '맨 위 영역끼리 겹치지 않고 띄운다');
   const k1 = areaKey(ws.key, pathKey(W1));
   const main = regs.get(ws.key), sat = regs.get(k1);
-  assert.equal(sat.x, main.x + main.w + WT_GAP, `위성은 리포 영역 바로 오른쪽 ${JSON.stringify([main, sat])}`);
-  assert.equal(sat.y, main.y);
+  assert.ok(sat.x >= main.x && sat.y >= main.y && sat.x + sat.w <= main.x + main.w && sat.y + sat.h <= main.y + main.h, `상자는 리포 영역 안 ${JSON.stringify([main, sat])}`);
+  for (const n of b.store.nodes().filter((x) => x.session_id !== 'id-w1' && x.workspace_key === ws.key)) assert.ok(!overlaps(n, sat, -1), '상자는 본 저장소 쪽 노드와 겹치지 않는다');
+  assert.ok(sat.w * sat.h < main.w * main.h, '리포 영역이 다시 줄었다');
   const nb = bbox([...regsBefore.values()]), na = bbox([...regs.values()]);
   assert.ok(na.w * na.h < nb.w * nb.h / 4, '덜 흩어진다');
-  // 안의 것은 영역 안에 남는다(워크트리 셸은 위성 안)
+  // 안의 것은 영역 안에 남는다(워크트리 셸은 상자 안)
   const w1 = b.store.nodes().find((n) => n.session_id === 'id-w1');
   assert.ok(w1.x >= sat.x && w1.x + w1.w <= sat.x + sat.w);
   // 영역 겹침 풀기가 더 할 일이 없다
