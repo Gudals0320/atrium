@@ -1,0 +1,7 @@
+/* 앱에 넣은 글꼴(P11, OFL, app/THIRD_PARTY_NOTICES.txt). CDN을 쓰지 않는다. esbuild가 글꼴 파일을 dist/fonts/로 옮긴다.
+   UI는 Geist(한글 Pretendard), 터미널과 숫자는 JetBrains Mono(한글 Nanum Gothic Coding). 한글 글꼴은 unicode-range 부분 집합이라 쓰는 글자의 조각만 읽는다 */
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/jetbrains-mono/wght.css";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+@import "@fontsource/nanum-gothic-coding/korean-400.css";
+@import "@fontsource/nanum-gothic-coding/korean-700.css";

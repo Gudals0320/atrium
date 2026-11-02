@@ -1,0 +1,2 @@
+# 훅 스크립트는 Windows 체크아웃에서도 LF로 둔다(CRLF면 sh가 마지막 인자에 CR을 붙인다).
+.githooks/* text eol=lf

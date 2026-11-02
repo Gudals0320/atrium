@@ -1,0 +1,227 @@
+/* 판 화면의 디자인 토큰(P11). 색은 이 파일에만 둔다. 다른 CSS와 JS는 var(--…)로 가리킨다(JS는 lib/tokens.js의 cssVar).
+   목업 app/design/board-mock/tokens.css의 값을 들였다(symvibe 데모 화면을 재서 맞춘 값. 이름, 로고, 에셋은 쓰지 않고 색, 크기, 모양만 따른다).
+   크기는 화면 기준(크롬)과 월드 기준(캔버스 위, 줌으로 바뀜)이 섞여 있다. 월드 값은 줌 100% 기준이다. */
+:root {
+  /* 바탕과 점 격자(월드 92px 간격). P28: 바탕을 검정에 더 가깝게(#0f0f0b → #070705), 점은 그만큼 낮춰 같은 정도로 보이게 */
+  --canvas: #070705;
+  --canvas-dot: #2a2a24;
+  --dot-gap: 92;
+
+  /* 떠 있는 크롬(알약, 레일, 명령 입력) */
+  --chrome-bg: #151510;
+  --chrome-bg-hi: #1c1c17;
+  --chrome-bg-2: #22231f;            /* 명령 입력 */
+  --chrome-line: rgba(255, 250, 235, 0.075);
+  --chrome-line-2: rgba(255, 250, 235, 0.09);
+  --chrome-sep: #33332d;
+  --chrome-text: #e9e6dc;
+  --chrome-text-2: #9a978c;
+  --chrome-text-3: #cfcabe;
+  --chrome-radius: 11px;
+  --chrome-h: 31px;
+  --chrome-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --chrome-shadow-lg: 0 8px 26px rgba(0, 0, 0, 0.5);
+  --chip-bg: #18180f;
+  --chip-text: #f1eee6;
+  --chrome-text-4: #bfbab0;
+  --cmd-ph: #8a877d;
+  --cmd-btn-line: #4a4a43;
+  --cmd-btn-bg: #3a3a35;
+  --cmd-btn-ink: #77756c;
+  --kbd-bg: rgba(0, 0, 0, 0.2);
+  --kbd-bg-2: rgba(255, 255, 255, 0.08);
+  --white: #ffffff;
+
+  /* 패널(사이드바, 대화상자, 미션 맵, 검색, 출력 보기, 토스트) */
+  --panel: #161412;
+  --panel-2: #1d1b18;               /* 패널 안의 칸, 올린 줄 */
+  --panel-3: #262420;               /* 고른 줄, 눌린 칸 */
+  --panel-line: rgba(255, 250, 235, 0.09);
+  --panel-line-2: rgba(255, 250, 235, 0.16);
+  --panel-radius: 12px;
+  --panel-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+  --field-bg: #0f0e0c;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --mission-bg: rgba(15, 15, 11, 0.97);
+
+  /* 콘솔(세션 노드). P28: 바탕·머리를 살짝 낮췄다(#171912 → #12140e, #0d0c0a → #0a0a08) */
+  --con-bg: #12140e;
+  --con-head: #0a0a08;
+  --con-line: rgba(255, 250, 235, 0.09);
+  --con-line-working: rgba(28, 182, 109, 0.78);
+  --con-line-review: rgba(185, 166, 240, 0.45);
+  --con-line-codex: rgba(96, 120, 220, 0.55);
+  --con-line-error: rgba(224, 96, 122, 0.7);
+  --con-glow: 0 0 0 4px rgba(255, 107, 61, 0.16), 0 0 30px rgba(255, 107, 61, 0.2);
+  --con-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  --con-radius: 10px;
+  --con-head-h: 28px;
+  --con-overlay: rgba(18, 20, 14, 0.97);
+  /* P28: 쉬는·끝난 노드는 흐리게(opacity) 하지 않고 바탕과 테두리 명도를 낮춘다. 잠든 노드는 푸른 바탕과 점선(--st-sleeping) */
+  --con-idle-bg: #0c0d09;
+  --con-idle-line: rgba(255, 250, 235, 0.05);
+  --con-idle-text: #a29f94;
+  --con-sleep-bg: #0d0f13;
+  --con-sleep-line: rgba(143, 155, 184, 0.5);
+  --icon-bg: #0e0f0b;               /* 아이콘 얼굴 타일 */
+
+  /* 워크스페이스 영역 */
+  --region-line: #3f4f4a;
+  --region-line-run: #405a54;
+  --region-dot: #5fb8a4;
+  --region-warn-bg: rgba(224, 96, 122, 0.06);
+
+  /* 터미널(xterm 테마와 목업 터미널 글) */
+  --term-bg: #12140e;
+  --term-text: #ece7db;
+  --term-dim: #8d8a80;
+  --term-orange: #d77757;
+  --term-cursor: #75ec9c;
+  --term-yellow: #e2b24c;
+  --term-red: #e0607a;
+  --term-green: #67c27a;
+  --term-blue: #7aa7f0;
+  --term-violet: #b48cf2;
+  --term-teal: #5fc4b0;
+  --term-select: #2c2d28;
+  --term-black: #1c1d18;
+  --term-bright-black: #5d5b54;
+  --term-bright-red: #ef8099;
+  --term-bright-green: #85d595;
+  --term-bright-yellow: #f0c86c;
+  --term-bright-blue: #98bdf6;
+  --term-bright-violet: #c9a8f7;
+  --term-bright-teal: #7fd6c4;
+  --term-white: #ece7db;
+  --term-bright-white: #ffffff;
+
+  /* 강조: Atrium 로고의 초록(뒤 #1CB66D, 앞 #75EC9C). 꽉 찬 단추 글은 어두운 색 */
+  --accent: #1cb66d;
+  --accent-2: #75ec9c;
+  --accent-ink: #04140b;
+  --accent-soft: rgba(28, 182, 109, 0.16);
+  --accent-line: rgba(117, 236, 156, 0.6);
+  --accent-tab: #10261a;             /* 지금 워크스페이스 탭 */
+  --accent-tab-line: #2b9a5e;
+  --accent-tab-text: #e8f7ec;
+  --accent-bg: #0f2318;              /* 강조 줄 바탕(사람 상자, 지시 앞부분) */
+  --accent-bg-2: #0d1a13;
+  --accent-text: #c4f5d4;
+  /* 주의: 내 차례(묻는 중, 신뢰 대기)와 승인 줄은 눈에 띄게 따뜻한 주황으로 남긴다(트레이 점과 같은 색) */
+  --attn: #ff6b3d;
+  --attn-ink: #ffffff;
+  --attn-line: rgba(255, 107, 61, 0.7);
+  --attn-bg: #2a1810;                /* 내 차례 알약 바탕 */
+  --attn-bg-2: #1e1610;              /* 승인 줄 바탕 */
+  --attn-text: #ffd9c7;
+  --answer-line: rgba(255, 107, 61, 0.35);
+  --answer-no-line: #5a4a3a;
+  --answer-no-text: #efe7da;
+  --answer-term: #bdb4a6;
+  --badge: #e5484d;
+  --badge-bg: rgba(229, 72, 77, 0.22);
+  --badge-text: #ff5a5f;
+  --live: #6fbf73;
+
+  /* 뜻 색(상태, 알림) */
+  --text: #e9e6dc;
+  --text-2: #d9d5ca;
+  --dim: #9a978c;
+  --dim-2: #8d8a80;
+  --ok: #67c27a;
+  --warn: #e2b24c;
+  --bad: #e0607a;
+  --info: #7aa7f0;
+  --violet: #b9a6f0;
+  --teal: #5fc4b0;
+  --ok-bg: rgba(103, 194, 122, 0.14);
+  --warn-bg: rgba(226, 178, 76, 0.12);
+  --bad-bg: rgba(224, 96, 122, 0.12);
+  --info-bg: rgba(122, 167, 240, 0.13);
+  --violet-bg: rgba(185, 166, 240, 0.14);
+  --teal-bg: rgba(95, 196, 176, 0.12);
+  --warn-band: #3a2f14;
+  --bad-band: #3a161c;
+  --mark: rgba(226, 178, 76, 0.32);
+
+  /* 세션 상태(상태 알약, 테두리, 아이콘 얼굴의 점) */
+  --st-starting: #8d8a80;
+  --st-trust_wait: #ff6b3d;
+  --st-ready: #8d8a80;
+  --st-working: #3fcf86;
+  --st-waiting: #ff6b3d;
+  --st-review: #b9a6f0;
+  --st-error: #e0607a;
+  --st-exited: #6a6860;
+  --st-sleeping: #8f9bb8; /* P21: 잠듦(달) */
+  --st-shell_idle: #8d8a80;
+  --st-shell_running: #67c27a;
+  --st-codex: #6f9cf0;
+
+  /* P13: 판 밖 대화 노드(읽기 전용 카드)와 워크트리 배경 */
+  --cv-bg: #13140f;
+  --cv-head: #0f100c;
+  --cv-line: rgba(255, 250, 235, 0.11);
+  --cv-line-hi: rgba(255, 250, 235, 0.22);
+  --cv-run: #3fcf86;
+  --cv-wt-bg: rgba(226, 178, 76, 0.035);
+  --cv-wt-line: rgba(226, 178, 76, 0.32);
+  --cv-missed: #e0607a;
+
+  /* 선 */
+  --wire: rgba(28, 182, 109, 0.85);
+  --wire-end: #75ec9c;
+  --wire-role: #7aa7f0;
+  --wire-observed: #b48cf2;
+  --wire-repo: #55554e;
+  --dl-casing: rgba(8, 9, 6, 0.88); /* P26: 덩어리 안 연결선의 어두운 테두리 */
+
+  /* 칩 줄의 테두리(칩마다 다른 색) */
+  --chip-ring-1: linear-gradient(90deg, #1cb66d, #75ec9c, #c6f7d6);
+  --chip-ring-2: linear-gradient(90deg, #75ec9c, #b9f27c, #4fd69a);
+  --chip-ring-3: linear-gradient(90deg, #2bc48a, #8fe3b8, #1cb66d);
+  --chip-ring-4: linear-gradient(90deg, #19a867, #5ed1a0, #a8f0c4);
+  --chip-ring-5: linear-gradient(90deg, #3dd6a0, #7ee8d0, #2fb884);
+  --chip-ring-6: linear-gradient(90deg, #8bea9f, #1cb66d, #6fddb3);
+  --chip-ring-7: linear-gradient(90deg, #5fe0a6, #c2f5a8, #2cb675);
+  --mask-solid: linear-gradient(#000 0 0); /* 칩 테두리 고리를 오려 내는 마스크(색이 아니라 불투명도) */
+  /* P28: 처음 화면 텍스트 로고가 아래부터 켜지는 띠(불투명도). 아래 38%는 켜짐, 38~74%에서 서서히 꺼짐. 마스크 높이 300%라 화면에 보이는 띠는 로고 높이 약 1.1배 */
+  --splash-mask: linear-gradient(to top, #000 0 38%, rgba(0, 0, 0, .55) 50%, rgba(0, 0, 0, .18) 62%, transparent 74%);
+
+  /* 세션마다 다른 머리 점(이름에서 고른다, lib/tokens.js dotVar) */
+  --dot-1: #a78bfa;
+  --dot-2: #4ade80;
+  --dot-3: #60a5fa;
+  --dot-4: #f472b6;
+  --dot-5: #facc15;
+  --dot-6: #5fc4b0;
+  --dot-7: #fb923c;
+  --dot-8: #c4b5fd;
+
+  /* 메모 기본 색 */
+  --memo: #e2b24c;
+
+  /* 에이전트 종류(로고가 없을 때 그리는 기호) */
+  --kind-claude: #d97a4a;
+  --kind-claude-ink: #1a1208;
+  --kind-codex: #4f8fd9;
+  --kind-codex-ink: #08121d;
+  --kind-deepseek: #4d6bfe; /* P25: DeepSeek 로고 파랑 */
+  --kind-deepseek-ink: #ffffff;
+  --kind-pi: #9a7be0;
+  --kind-pi-ink: #140c22;
+  --kind-grok: #c9ced8;
+  --kind-grok-ink: #101216;
+  --kind-shell: #5d5b54;
+  --kind-shell-ink: #ece7db;
+  --kind-other: #4aa37a;
+  --kind-other-ink: #08170f;
+
+  /* 글꼴(앱에 넣은 OFL 글꼴. fonts.css) */
+  --font-ui: "Geist Variable", "Pretendard Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Nanum Gothic Coding", ui-monospace, monospace;
+  /* 스크롤바: 바탕 없이 가는 따뜻한 회색 막대. 올리면 밝아진다 */
+  --scroll-thumb: rgba(255, 250, 235, 0.14);
+  --scroll-thumb-hover: rgba(255, 250, 235, 0.28);
+  --scroll-size: 8px;
+}

@@ -1,0 +1,79 @@
+/* P7(J5) 사이드바. 캔버스 칸(mt-stage)과 한 줄(mt-body)에 있고, 열면 캔버스와 그 위의 크롬이 함께 옆으로 줄어든다.
+   P11: 패널 토큰(--panel, 반경, 대문자 회색 절 이름)으로 맞췄다. 색은 tokens.css의 변수만 쓴다 */
+.mt-sb-toggle { border: 1px solid var(--chrome-line); background: transparent; border-radius: 8px; width: 28px; height: 26px; cursor: pointer; color: var(--dim); font-size: 14px; line-height: 1; padding: 0; }
+.mt-sb-toggle:hover { color: var(--text); }
+.mt-sb-toggle.on { border-color: var(--accent-line); color: var(--accent-2); }
+
+.mt-sidebar { width: 340px; flex: 0 0 340px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--panel-line); z-index: 42; min-height: 0; }
+.mt-sb-top { display: flex; gap: 6px; align-items: center; padding: 12px 10px 10px; border-bottom: 1px solid var(--panel-line); }
+.mt-sb-filter { flex: 1; min-width: 0; background: var(--field-bg); border: 1px solid var(--panel-line-2); border-radius: 8px; padding: 6px 9px; color: var(--text); font: inherit; font-size: 13px; }
+.mt-sb-filter:focus { outline: none; border-color: var(--accent-line); }
+.mt-sb-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 0 12px; scrollbar-width: thin; }
+.mt-sb-foot { padding: 6px 12px; color: var(--dim); font-size: 12px; border-top: 1px solid var(--panel-line); }
+.mt-sb-empty { color: var(--dim); padding: 8px 14px; font-size: 12.5px; }
+
+.mt-sb-ws { border-bottom: 1px solid var(--panel-line); }
+.mt-sb-ws-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 5px; position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.mt-sb-fold { border: none; background: none; cursor: pointer; color: var(--dim); width: 18px; padding: 0; }
+.mt-sb-ws-name { border: none; background: none; cursor: pointer; font-weight: 700; padding: 0 2px; display: flex; gap: 5px; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; letter-spacing: .05em; font-size: 12.5px; }
+.mt-sb-ws-name:hover { color: var(--accent-2); }
+.mt-sb-ws-icon { color: var(--dim); font-weight: 400; }
+.mt-sb-ws-c { margin-left: auto; display: flex; gap: 6px; color: var(--dim); font-size: 12px; white-space: nowrap; font-family: var(--font-mono); }
+.mt-sb-ws-c .working { color: var(--st-working); }
+.mt-sb-ws-c .need { color: var(--accent-2); font-weight: 700; }
+.mt-sb-ws-c .arch { color: var(--dim-2); }
+.mt-sb-ws-body { padding: 0 6px 6px 20px; }
+
+.mt-sb-sec { margin-top: 4px; }
+.mt-sb-sec-head { color: var(--dim); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 6px 4px 3px; }
+.mt-sb-n { opacity: .7; }
+.mt-sb-row { display: grid; gap: 2px; width: 100%; text-align: left; border: 1px solid transparent; border-radius: 8px; background: none; padding: 5px 7px; margin: 1px 0; color: var(--text); }
+button.mt-sb-row { cursor: pointer; }
+.mt-sb-row:hover { background: var(--panel-2); border-color: var(--panel-line); }
+.mt-sb-row.board.sub { border-left: 2px solid color-mix(in srgb, var(--wire-end) 55%, transparent); }
+.mt-sb-row .mt-sb-branch { color: var(--dim); font-size: 12px; }
+.mt-sb-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mt-sb-line b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-sb-title { font-weight: 650; }
+.mt-sb-kind { color: var(--dim); font-size: 12px; border: 1px solid var(--panel-line-2); border-radius: 8px; padding: 0 5px; }
+.mt-sb-time { margin-left: auto; color: var(--dim); font-size: 12px; white-space: nowrap; font-family: var(--font-mono); }
+.mt-sb-sub { color: var(--dim); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-sb-sub.need { color: var(--attn-text); }
+.mt-sb-tag { font-size: 12px; padding: 0 6px; border-radius: 8px; white-space: nowrap; }
+.mt-sb-tag.closed { background: var(--panel-3); color: var(--dim); }
+.mt-sb-tag.convo { background: var(--info-bg); color: var(--info); }
+.mt-sb-tag.arch { background: var(--warn-bg); color: var(--warn); }
+.mt-sb-acts { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.mt-sb-bound { font-size: 12px; color: var(--dim); border: 1px dashed var(--panel-line-2); border-radius: 8px; padding: 0 6px; white-space: nowrap; }
+.mt-sb-bound[data-bound="desktop"] { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 45%, transparent); }
+.mt-sb-bound[data-bound="terminal"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.mt-sb-row.bound { opacity: .55; }
+.mt-sb-row.bound:hover { opacity: .8; }
+.mt-sb-more { border: none; background: none; color: var(--accent-2); cursor: pointer; font-size: 12.5px; padding: 2px 6px; }
+
+/* P10: 보관. 리포 묶음의 "오래된 것 보관"과 확인 줄, 맨 아래 보관함(접혀 있음) */
+.mt-sb-row.bound .mt-sb-acts [data-action="archive"] { opacity: 1; }
+.mt-sb-tools { display: flex; justify-content: flex-end; }
+.mt-sb-oldask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--text); background: var(--warn-bg); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: 8px; padding: 7px 9px; margin: 4px 0; }
+.mt-sb-oldask > span { flex: 1 1 100%; }
+.mt-sb-archive { border-top: 1px solid var(--panel-line); margin-top: 8px; }
+.mt-sb-archive-head { display: flex; gap: 6px; align-items: center; width: 100%; border: none; background: none; cursor: pointer; color: var(--dim); font: inherit; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 10px 12px; text-align: left; }
+.mt-sb-archive-head:hover { color: var(--text); }
+.mt-sb-dim { font-weight: 400; font-size: 12px; opacity: .8; text-transform: none; letter-spacing: 0; }
+.mt-sb-archive-body { padding: 0 6px 8px 20px; display: grid; gap: 4px; }
+.mt-sb-archive-body > .mt-sb-filter { margin: 0 0 4px; }
+.mt-sb-row.archived { opacity: .85; }
+
+/* P13: missed(지울 대화) 함과 확인창. 대화 노드로 가는 제목 단추 */
+.mt-sb-title.link { border: none; background: none; color: inherit; font: inherit; font-weight: 650; padding: 0; cursor: pointer; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mt-sb-title.link:hover { color: var(--accent-2); text-decoration: underline; }
+.mt-sb-tag.missed { background: var(--bad-bg); color: var(--cv-missed); }
+.mt-sb-missed .mt-sb-tools { justify-content: flex-start; align-items: center; gap: 8px; margin-bottom: 4px; }
+.mt-sb-missed-ws { border-top: 1px solid var(--panel-line); padding: 6px 0 4px; display: grid; gap: 3px; }
+.mt-sb-missed-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mt-sb-missed-path { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.mt-sb-missed-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); padding-left: 22px; }
+.mt-sb-missed-meta .mt-btn { margin-left: auto; }
+.mt-missed-sum { font-size: 14px; color: var(--text); }
+.mt-missed-folders { margin: 0; padding-left: 18px; max-height: 220px; overflow: auto; display: grid; gap: 3px; font-size: 12.5px; }
+.mt-missed-folders .mono { font-family: var(--font-mono); overflow-wrap: anywhere; }
