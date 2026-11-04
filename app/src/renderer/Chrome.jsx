@@ -155,7 +155,8 @@ function ConnPill() {
   const links = useStore((st) => st.links.size);
   const [starting, setStarting] = useState(false);
   const startHerdr = async () => { setStarting(true); try { await api.call('herdr.start'); toast(t('top.herdrStarted')); } catch (e) { toast(t('top.herdrStartFail', { error: errText(e) }), 'error'); } setStarting(false); };
-  const ok = conn === 'open' && herdr.connected;
+  const herdrBlocked = !!(herdr.missing || herdr.level === 'missing' || herdr.level === 'incompatible'); // P40: 띠가 까닭과 할 일을 보인다
+  const ok = conn === 'open' && herdr.connected && !herdrBlocked;
   const connWord = (c) => t(c === 'open' ? 'top.connected' : c === 'connecting' ? 'top.connecting' : 'top.disconnected');
   // P32: 누르면 미션 맵을 열고(열려 있으면 닫고) 올리면 연결 풀이. 백엔드와 끊겨 있으면 맵을 읽을 수 없으므로 누르기를 받지 않는다(herdr만 끊긴 때는 판 데이터로 연다)
   const mission = useStore((st) => st.missionOpen);
@@ -165,10 +166,10 @@ function ConnPill() {
   return <>
     <span className={`mt-cp conn${ok ? '' : ' bad'}${canOpen ? ' click' : ''}${mission ? ' on' : ''}`} data-role="conn" data-action="conn-mission" title={title} role={canOpen ? 'button' : undefined} tabIndex={canOpen ? 0 : undefined} aria-pressed={canOpen ? mission : undefined} onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>
       <span className={`mt-dot ${ok ? 'ok' : 'bad'}`} />
-      {conn !== 'open' ? t('top.backendState', { state: connWord(conn) }) : herdr.connected === false ? t('top.herdrDown') : <><span className="mono">{count}</span><span className="dim">{t('top.sessions', { n: count })}</span></>}
+      {conn !== 'open' ? t('top.backendState', { state: connWord(conn) }) : herdrBlocked ? t(herdr.level === 'incompatible' ? 'top.herdrIncompatible' : 'top.herdrMissing') : herdr.connected === false ? t('top.herdrDown') : <><span className="mono">{count}</span><span className="dim">{t('top.sessions', { n: count })}</span></>}
       <span hidden data-role="links">{links}</span>
     </span>
-    {conn === 'open' && herdr.connected === false && <button className="mt-cp accent" disabled={starting} onClick={startHerdr} data-action="herdr-start">{t('top.herdrStart')}</button>}
+    {conn === 'open' && herdr.connected === false && !herdrBlocked && <button className="mt-cp accent" disabled={starting} onClick={startHerdr} data-action="herdr-start">{t('top.herdrStart')}</button>}
   </>;
 }
 

@@ -4,7 +4,8 @@ import http from 'node:http';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { HerdrAdapter } from './herdr/adapter.mjs';
+import { HerdrAdapter, findHerdr, readServerExe } from './herdr/adapter.mjs';
+import { updateNotice } from './herdr/discover.mjs'; // P40: herdr 찾기와 업데이트 감지
 import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
 import { DeliveryQueue } from './delivery.mjs';
@@ -99,6 +100,8 @@ export class Backend {
       const prev = JSON.parse(fs.readFileSync(cfg.backendFile, 'utf8'));
       if (prev.pid !== process.pid && pidAlive(prev.pid)) throw apiError('already_running', `백엔드가 이미 돈다(pid ${prev.pid}, 포트 ${prev.port})`);
     } catch (e) { if (e.code === 'already_running') throw e; }
+    // P40: 옛 판 옮기기는 옛 herdr를 끌 때 실행 파일이 필요하다. 설정(판 기록)은 아직 못 읽으므로 설정 없이 찾는다
+    if (cfg.legacy && !cfg.herdrPath) cfg.herdrPath = (await findHerdr({ envPath: cfg.herdrEnvPath }).catch(() => ({}))).path || null;
     // P18: 옛 이름(multitask) 판을 옮긴다(실제 판 프로필에서 한 번). 옮기지 못하면 LegacyBlocked를 던져 뜨지 않는다(새 판을 빈 채로 만들지 않게)
     this.migration = await migrateLegacyData(cfg, { log: (m) => this.log(m) });
     await checkLegacyDevHerdr(cfg); // 개발용 기본 판: 옛 개발용 herdr(multitask-dev)가 돌면 뜨지 않는다
@@ -127,8 +130,10 @@ export class Backend {
     // P18: 옮긴 옛 폴더의 backend.json도 이 백엔드를 가리킨다(열린 옛 창이 옛 백엔드를 다시 띄우지 않고 이 판에 붙는다)
     if (cfg.legacy && fs.existsSync(path.join(cfg.legacy.dataDir, MARKER))) writeTombstone(cfg.legacy.dataDir, { pid: process.pid, port: cfg.port, token: this.apiToken, herdrSession: cfg.herdrSession, movedTo: cfg.dataDir });
 
-    this.adapter = new HerdrAdapter({ herdrPath: cfg.herdrPath, session: cfg.herdrSession, logDir: cfg.logDir });
+    this.adapter = new HerdrAdapter({ herdrPath: cfg.herdrPath, session: cfg.herdrSession, logDir: cfg.logDir, protocols: cfg.herdrProtocols, tested: cfg.herdrTested });
     this.adapter.on('log', (m) => this.log('[herdr]', m));
+    // P40: 쓸 herdr 실행 파일을 고른다(도는 판 서버의 실행 파일 → 찾기 결과). 못 찾아도 백엔드는 뜬다
+    await this.resolveHerdr('start');
     // P21: 판 터미널에서 친 글로 보내지 않은 초안이 있는지 기억한다(초안이 있으면 잠재우지 않는다)
     this.relay = new TerminalRelay({ adapter: this.adapter, onInput: (sid, data) => { const s = this.sessions.get(sid); if (s) { s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.touch(s); } }, log: (m) => this.log(m) });
 
@@ -210,6 +215,16 @@ export class Backend {
     this.adapter.on('connected', () => this.onHerdrConnected().catch((err) => this.log('resync error', err.stack)));
     this.adapter.on('disconnected', () => this.onHerdrDisconnected());
     if (this.herdrCompat && this.herdrCompat.ok) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
+    // P40: herdr 경로 설정을 바꾸면 다시 찾는다(백엔드를 다시 켜지 않고 서버를 띄워 붙는다)
+    const setSettings = this.api.handlers['settings.set'];
+    this.api.handlers['settings.set'] = async (p) => {
+      const r = await setSettings(p);
+      if (p && ('herdrPath' in p || p.key === 'herdrPath')) r.herdr = await this.rediscoverHerdr('settings').catch((e) => { this.log('herdr rediscover error', e.stack); return null; });
+      return r;
+    };
+    // P40: 새 herdr가 설치됐는지 본다(뜰 때, 주기적으로, 진단 때). 알리기만 하고 다시 띄우지 않는다
+    this.checkHerdrUpdate('start').catch(() => {});
+    this.updateTimer = setInterval(() => this.checkHerdrUpdate('timer').catch(() => {}), cfg.herdrUpdateMs);
 
     this.queue.start();
     this.heartbeat = setInterval(() => this.store.setMeta('heartbeat', Date.now()), 2000);
@@ -237,7 +252,7 @@ export class Backend {
 
   async stop(reason = 'stop') {
     this.log('backend stopping:', reason);
-    clearInterval(this.heartbeat); clearInterval(this.quietTimer); clearInterval(this.clientTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer);
+    clearInterval(this.heartbeat); clearInterval(this.updateTimer); clearInterval(this.quietTimer); clearInterval(this.clientTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer);
     this.resources.stop();
     this.queue.stop();
     if (this.features) this.features.stop();
@@ -256,20 +271,118 @@ export class Backend {
     this.store.close();
   }
 
-  // herdr 서버가 없으면 띄우고(깨끗한 환경) 버전을 확인한다. 다르면 붙지 않고 알린다(ARCH 1절).
+  // herdr 서버가 없으면 띄우고(깨끗한 환경) 버전을 확인한다(ARCH 1절).
+  // P40: 프로토콜이 맞으면 붙고 시험하지 않은 버전이면 경고한다. herdr를 못 찾았거나 띄우지 못하면 던지지 않고 그 상태로 둔다(보드는 연다)
   async ensureHerdr() {
     const p = await this.adapter.probe();
     let pong = p.pong;
+    this.herdrMissing = null;
     if (!p.running) {
-      const r = await this.adapter.startServer();
+      if (!this.adapter.herdrPath) {
+        this.herdrMissing = { reason: 'not_found', at: Date.now() };
+        this.herdrCompat = { ok: false, level: 'missing', problems: ['herdr not found'], version: null, protocol: null, capabilities: null, warning: null };
+        this.herdrOk = false;
+        this.log(`herdr not found: ${JSON.stringify((this.herdrFind && this.herdrFind.tried) || [])}`);
+        this.store.addEvent(null, 'herdr_missing', { tried: (this.herdrFind && this.herdrFind.tried) || [] });
+        return this.herdrCompat;
+      }
+      let r;
+      try { r = await this.adapter.startServer(); }
+      catch (e) {
+        this.herdrMissing = { reason: e.code || 'start_failed', error: e.herdrMessage || e.message, path: this.adapter.herdrPath, at: Date.now() };
+        this.herdrCompat = { ok: false, level: 'missing', problems: [`herdr server did not start: ${e.code}: ${e.herdrMessage || e.message}`], version: null, protocol: null, capabilities: null, warning: null };
+        this.herdrOk = false;
+        this.log(`herdr server start failed (${this.adapter.herdrPath}): ${e.message}`);
+        this.store.addEvent(null, 'herdr_missing', { reason: e.code, error: e.herdrMessage || e.message });
+        return this.herdrCompat;
+      }
       pong = r.pong;
-      this.log(`herdr server started pid=${r.pid} in ${r.ms}ms`);
+      this.log(`herdr server started pid=${r.pid} in ${r.ms}ms exe=${this.adapter.herdrPath}`);
       this.store.addEvent(null, 'herdr_started', { pid: r.pid, by: 'backend' });
     }
-    this.herdrCompat = this.adapter.checkCompat(pong);
-    this.herdrOk = this.herdrCompat.ok;
-    if (!this.herdrOk) this.log('herdr incompatible:', this.herdrCompat.problems.join('; '));
+    this.setHerdrCompat(this.adapter.checkCompat(pong));
     return this.herdrCompat;
+  }
+  // P40: 호환 결과를 두고, 시험하지 않은 버전·다른 프로토콜이면 판 이벤트와 로그로 한 번씩 알린다
+  setHerdrCompat(c) {
+    this.herdrCompat = c;
+    this.herdrOk = !!c.ok;
+    const key = `${c.level}:${c.version}:${c.protocol}`;
+    if (key === this._compatNoted) return;
+    this._compatNoted = key;
+    if (c.level === 'untested') { this.log(`herdr untested: ${c.warning}`); this.store.addEvent(null, 'herdr_untested', { version: c.version, protocol: c.protocol, tested: c.tested }); }
+    if (c.level === 'incompatible') { this.log('herdr incompatible:', c.problems.join('; ')); this.store.addEvent(null, 'herdr_incompatible', { version: c.version, protocol: c.protocol, problems: c.problems }); }
+  }
+
+  // P40: 설정의 herdr 경로(따옴표는 뗀다)
+  herdrSettingPath() {
+    const v = ((this.features && this.features.settings.get()) || this.store.getMeta('settings') || {}).herdrPath;
+    return String(v || '').trim().replace(/^"(.*)"$/, '$1');
+  }
+  // P40: 쓸 herdr 실행 파일을 고른다. 판 서버가 돌면 그 서버의 실행 파일(CLI·제어기·--skill이 서버와 같은 버전이 되게), 아니면 찾기 결과.
+  // 서버 실행 파일을 못 읽으면 찾기 결과를 쓰고 진단에 남긴다
+  async resolveHerdr(why) {
+    const found = await findHerdr({ envPath: this.cfg.herdrEnvPath, settingPath: this.herdrSettingPath() }).catch((e) => ({ path: null, tried: [], reason: `find failed: ${e.message}` }));
+    const p = await this.adapter.probe();
+    let serverExe = null, note = null;
+    if (p.running) {
+      serverExe = await readServerExe(this.cfg.herdrSession, this.adapter.serverPid()).catch(() => null);
+      if (!serverExe) note = 'running server executable unreadable; using discovered path';
+    }
+    const chosen = serverExe ? { path: serverExe, source: 'server', reason: 'running board herdr server' } : found.path ? { path: found.path, source: found.source, reason: found.reason } : null;
+    this.adapter.herdrPath = chosen ? chosen.path : null;
+    this.cfg.herdrPath = this.adapter.herdrPath;
+    this.herdrFind = { why, at: Date.now(), chosen, serverRunning: p.running, serverExe, note, found: { path: found.path, version: found.version, source: found.source, reason: found.reason }, tried: found.tried };
+    this.lastFound = found;
+    this.log(`herdr resolve (${why}): ${chosen ? `${chosen.source} ${chosen.path}` : 'none'}${note ? ` (${note})` : ''}`);
+    return this.herdrFind;
+  }
+  // P40: 다시 찾기(창의 단추, 설정 저장). 이미 붙어 있으면 진단만 고친다. 못 붙어 있으면 찾아서 서버를 띄우고 붙는다(백엔드를 다시 켜지 않는다)
+  async rediscoverHerdr(why = 'rediscover') {
+    if (this._rediscovering) return this._rediscovering;
+    this._rediscovering = (async () => {
+      await this.resolveHerdr(why);
+      if (!this.adapter.connected) {
+        await this.ensureHerdr();
+        if (this.herdrOk) {
+          if (!this.adapter._watching) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
+          for (let i = 0; i < 50 && !this.adapter.connected; i++) await sleep(100); // 이벤트 구독이 붙을 때까지 잠깐(답에 connected를 담는다)
+          // 처음에 herdr 없이 떴으면 플러그인의 herdr 스킬은 기본 글이다. 이 herdr의 글로 다시 쓴다
+          this.plugin = writeBoardPlugin({ dir: path.join(this.cfg.dataDir, 'plugin'), skillText: await this.herdrSkillText(), ...this.branch.pluginExtra() });
+        }
+      }
+      await this.checkHerdrUpdate(why).catch(() => {});
+      this.api.broadcast('herdr', this.herdrView());
+      return this.herdrStatus();
+    })().finally(() => { this._rediscovering = null; });
+    return this._rediscovering;
+  }
+  // P40: 판 서버가 도는 동안 찾기 결과가 더 새 버전을 가리키면 알린다(한 버전에 한 번). 저절로 다시 띄우지 않는다
+  async checkHerdrUpdate(why) {
+    if (!this.adapter.connected && !(this.herdrCompat && this.herdrCompat.version)) return null;
+    this._updateCheckedAt = Date.now();
+    const found = why === 'start' && this.lastFound ? this.lastFound : await findHerdr({ envPath: this.cfg.herdrEnvPath, settingPath: this.herdrSettingPath() }).catch(() => null);
+    if (found) this.lastFound = found;
+    const n = updateNotice({ serverVersion: this.herdrCompat && this.herdrCompat.version, found });
+    const prev = this.herdrUpdate;
+    this.herdrUpdate = n;
+    if (n && (!prev || prev.version !== n.version)) {
+      this.log(`herdr update available (${why}): ${n.message}`);
+      this.store.addEvent(null, 'herdr_update_available', { version: n.version, serverVersion: n.serverVersion, source: n.source });
+      this.api.broadcast('herdr', this.herdrView());
+    } else if (!n && prev) this.api.broadcast('herdr', this.herdrView());
+    return n;
+  }
+  // P40: 창이 띠와 표시에 쓰는 herdr 상태
+  herdrView() {
+    const c = this.herdrCompat || {};
+    return {
+      connected: !!(this.adapter && this.adapter.connected), session: this.cfg.herdrSession, path: this.adapter ? this.adapter.herdrPath : null,
+      missing: this.herdrMissing || null, level: c.level || null, version: c.version || null, protocol: c.protocol ?? null, warning: c.warning || null, problems: c.problems || [],
+      protocols: this.cfg.herdrProtocols, tested: this.cfg.herdrTested,
+      find: this.herdrFind ? { chosen: this.herdrFind.chosen, note: this.herdrFind.note, tried: this.herdrFind.tried } : null,
+      update: this.herdrUpdate || null,
+    };
   }
 
   async herdrSkillText() {
@@ -697,11 +810,14 @@ export class Backend {
   }
   async onHerdrConnected() {
     this.log('herdr connected');
-    this.herdrCompat = this.adapter.checkCompat(this.adapter.pong);
+    this.setHerdrCompat(this.adapter.checkCompat(this.adapter.pong));
+    this.herdrMissing = null;
     const pid = this.adapter.serverPid();
     if (pid) this.store.setMeta('herdrServerPid', pid);
     this.store.addEvent(null, 'herdr_connected', { compat: this.herdrCompat, pid });
-    this.api.broadcast('herdr', { connected: true, compat: this.herdrCompat });
+    this.api.broadcast('herdr', { ...this.herdrView(), compat: this.herdrCompat });
+    // P40: 판 밖에서 다른 herdr로 서버가 다시 떴을 수 있다. 서버의 실행 파일을 다시 읽는다(기다리지 않는다)
+    if (this.herdrWasDown) this.resolveHerdr('reconnected').then(() => this.checkHerdrUpdate('reconnected')).then(() => this.api.broadcast('herdr', this.herdrView())).catch(() => {});
     // 백엔드가 꺼진 동안 herdr가 다시 떴다(재부팅 포함): 그 전에 돌던 세션은 herdr가 꺼져서 끝난 것으로 본다
     const afterRestart = !!(this.herdrWasDown || this.herdrRestartedWhileDown);
     this.herdrWasDown = false;
@@ -910,8 +1026,16 @@ export class Backend {
   }
 
   // ---------- 명령 ----------
+  // P40: herdr가 없으면 herdr_missing, 프로토콜이 다르면 herdr_incompatible(까닭과 할 일을 함께). 보드의 다른 기능은 막지 않는다
   requireHerdr() {
-    if (!this.herdrOk) throw apiError('herdr_incompatible', `herdr 호환 안 됨: ${(this.herdrCompat && this.herdrCompat.problems.join('; ')) || 'unknown'}`);
+    if (this.herdrMissing || (this.herdrCompat && this.herdrCompat.level === 'missing')) {
+      const tried = ((this.herdrFind && this.herdrFind.tried) || []).length;
+      throw keyed(apiError('herdr_missing', `herdr를 찾지 못해 세션을 띄울 수 없다(후보 ${tried}곳을 봄). herdr를 설치하거나(https://herdr.dev) 설정의 herdr 경로나 ATRIUM_HERDR로 실행 파일을 준다`), 'herdrMissing', { n: tried });
+    }
+    if (!this.herdrOk) {
+      const c = this.herdrCompat || {};
+      throw keyed(apiError('herdr_incompatible', `herdr 호환 안 됨: ${(c.problems || []).join('; ') || 'unknown'}. 지원하는 프로토콜(${this.cfg.herdrProtocols.join(', ')})의 herdr를 설치하거나 설정의 herdr 경로로 맞는 herdr를 준다`), 'herdrIncompatible', { version: c.version || '?', protocol: c.protocol ?? '?', supported: this.cfg.herdrProtocols.join(', ') });
+    }
     if (!this.adapter.connected) throw keyed(apiError('herdr_down', 'herdr 서버에 붙어 있지 않다'), 'herdrDown');
   }
   // B3: 새 세션 시작. P5: 시작 폴더의 리포지토리 워크스페이스에 생긴다(G1). 종류 shell은 에이전트 없는 일반 셸(G2)
@@ -1204,18 +1328,33 @@ export class Backend {
       this.herdrStopping = false;
     }
     if (op === 'start' || op === 'restart') {
-      const r = await this.adapter.startServer();
+      // P40: 새 서버는 찾기 결과로 띄운다(업데이트한 herdr로 다시 띄우기). 못 찾으면 까닭과 함께 막는다
+      await this.resolveHerdr(op);
+      if (!this.adapter.herdrPath) { this.herdrMissing = { reason: 'not_found', at: Date.now() }; this.herdrCompat = { ok: false, level: 'missing', problems: ['herdr not found'] }; this.herdrOk = false; this.api.broadcast('herdr', this.herdrView()); this.requireHerdr(); }
+      let r;
+      try { r = await this.adapter.startServer(); }
+      catch (e) { await this.ensureHerdr(); this.api.broadcast('herdr', this.herdrView()); throw keyed(apiError(e.code || 'start_failed', `herdr 서버를 띄우지 못했다: ${e.message}`), 'herdrStartFailed', { error: e.herdrMessage || e.message }); }
+      this.herdrMissing = null;
       this.store.addEvent(null, 'herdr_started', { pid: r.pid, by: op });
-      out.start = { started: r.started, pid: r.pid, ms: r.ms, version: r.pong && r.pong.version, protocol: r.pong && r.pong.protocol };
-      this.herdrCompat = this.adapter.checkCompat(r.pong); this.herdrOk = this.herdrCompat.ok;
+      out.start = { started: r.started, pid: r.pid, ms: r.ms, version: r.pong && r.pong.version, protocol: r.pong && r.pong.protocol, exe: this.adapter.herdrPath };
+      this.setHerdrCompat(this.adapter.checkCompat(r.pong));
       if (this.herdrOk && !this.adapter._watching) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
+      this.checkHerdrUpdate(op).catch(() => {});
     }
     return out;
   }
 
+  // P40: 진단에 고른 경로, 까닭, 본 후보와 결과, 시험하지 않은 버전 경고, 업데이트 알림을 더한다. 진단 때 업데이트도 본다(1분에 한 번까지)
   async herdrStatus() {
     const p = await this.adapter.probe();
-    return { session: this.cfg.herdrSession, running: p.running, connected: this.adapter.connected, serverPid: p.running ? this.adapter.serverPid() : null, compat: p.running ? this.adapter.checkCompat(p.pong) : null, cliVersion: await this.adapter.cliVersion(), subscribedPanes: this.adapter.subscribedPanes || [] };
+    if (p.running && Date.now() - (this._updateCheckedAt || 0) > 60000) await this.checkHerdrUpdate('status').catch(() => {});
+    const compat = p.running ? this.adapter.checkCompat(p.pong) : null;
+    const v = this.herdrView();
+    return {
+      session: this.cfg.herdrSession, running: p.running, connected: this.adapter.connected, serverPid: p.running ? this.adapter.serverPid() : null, compat, cliVersion: await this.adapter.cliVersion(), subscribedPanes: this.adapter.subscribedPanes || [],
+      path: v.path, missing: v.missing, level: compat ? compat.level : v.level, version: compat ? compat.version : v.version, protocol: compat ? compat.protocol : v.protocol, warning: compat ? compat.warning : v.warning, protocols: v.protocols, tested: v.tested, update: v.update,
+      find: this.herdrFind || null,
+    };
   }
 
   inbox() {
@@ -1564,6 +1703,7 @@ export class Backend {
       'herdr.stop': (p) => this.herdrControl('stop', p.confirm),
       'herdr.start': () => this.herdrControl('start', true),
       'herdr.restart': (p) => this.herdrControl('restart', p.confirm),
+      'herdr.rediscover': () => this.rediscoverHerdr('rediscover'), // P40: 다시 찾기
       'session.spawn': (p) => this.spawn(p),
       'session.list': () => [...this.sessions.values()].map((s) => this.summary(s)),
       'session.get': (p) => this.get(p),

@@ -9,8 +9,11 @@ import { DEFAULT_HEALTH_URL as DEEPSEEK_HEALTH_URL } from './deepseek.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const BACKEND_ROOT = path.resolve(HERE, '..');
 
-export const HERDR_VERSION = '0.9.5';
-export const HERDR_PROTOCOL = 22;
+// P40: herdr 버전 정책. 프로토콜이 이 목록에 있으면 붙는다. 시험한 버전이 아니면 붙되 경고한다(herdr/discover.mjs herdrCompat).
+// 시험 판은 ATRIUM_HERDR_PROTOCOLS·ATRIUM_HERDR_TESTED(쉼표로 여럿)로 바꿔 본다
+export const HERDR_PROTOCOLS = [22];
+export const HERDR_TESTED = ['0.9.5'];
+const listOf = (v, num) => String(v).split(',').map((x) => x.trim()).filter(Boolean).map((x) => (num ? Number(x) : x)).filter((x) => (num ? Number.isInteger(x) : true));
 
 export const APP_NAME = 'Atrium'; // 보이는 이름(창 제목, 트레이, 알림, 바로가기)
 export const APP_ID = 'atrium'; // 식별자(herdr 세션, 데이터 폴더, 창 프로필, Windows 앱 ID)
@@ -49,7 +52,12 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     herdrSession: E('HERDR_SESSION') || base.herdrSession,
     port: Number(E('PORT') || base.port),
     dataDir: path.resolve(E('DATA_DIR') || base.dataDir),
-    herdrPath: E('HERDR') || path.join(os.homedir(), '.herdr', 'packages', 'standalone', 'releases', `${HERDR_VERSION}-x86_64-pc-windows-msvc`, 'herdr.exe'),
+    // P40: herdr 실행 파일은 백엔드가 뜰 때 찾는다(herdr/discover.mjs). herdrEnvPath는 1순위 후보(ATRIUM_HERDR), herdrPath는 고른 결과(없으면 null)
+    herdrEnvPath: E('HERDR') || '',
+    herdrPath: E('HERDR') || null,
+    herdrProtocols: E('HERDR_PROTOCOLS') ? listOf(E('HERDR_PROTOCOLS'), true) : HERDR_PROTOCOLS,
+    herdrTested: E('HERDR_TESTED') ? listOf(E('HERDR_TESTED'), false) : HERDR_TESTED,
+    herdrUpdateMs: Number(E('HERDR_UPDATE_MS') || 30 * 60 * 1000), // P40: 새 herdr가 설치됐는지 보는 간격
     claudeCommand: 'claude',
     ocxHealthUrl: E('OCX_HEALTH') || DEEPSEEK_HEALTH_URL, // P25: DeepSeek 세션 전에 opencodex 프록시가 도는지 보는 주소(`ocx status`의 Health)
     ocxBaseUrl: E('OCX_BASE_URL') || null, // P25: DeepSeek 세션의 ANTHROPIC_BASE_URL. 비우면 health 주소의 origin(deepseek.mjs baseUrlOf)
