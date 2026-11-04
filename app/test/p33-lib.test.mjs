@@ -72,7 +72,7 @@ test('P33 화면 글: 두 언어 사전에 호출자 절이 같은 열쇠로 있
   for (const k of keys) assert.ok(en.launchers.err[k] && ko.launchers.err[k], k);
   // errText는 launchers.err.* 열쇠를 번역한다
   setLanguage('ko');
-  assert.equal(errText({ code: 'name_taken', key: 'launchers.err.nameTaken', vars: { name: 'X' }, message: 'm' }), '이미 있는 호출자 이름: X');
+  assert.equal(errText({ code: 'name_taken', key: 'launchers.err.nameTaken', vars: { name: 'X' }, message: 'm' }), '이미 있는 런처 이름입니다: X');
   setLanguage('en');
   assert.equal(errText({ code: 'gateway_down', key: 'launchers.err.gatewayDown', vars: { name: 'GW', url: 'http://h', why: 'ECONNREFUSED' } }), 'GW: the gateway at http://h is not reachable (ECONNREFUSED). Start it, then try again');
 });

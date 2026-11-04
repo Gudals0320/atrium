@@ -3,6 +3,8 @@
 // - 붙여넣기는 괄호 붙여넣기로 감싸고, 휠은 SGR 마우스 시퀀스로 바꾼다. ctrl+g(외부 편집기)는 막는다.
 // - WebGL 렌더러는 예산(기본 8) 안에서만 쓰고, 넘거나 컨텍스트를 잃으면 DOM으로 그린다(BRIEF 위험 2).
 // - P6a(H4): 노드를 눌러 들어간 뒤 붙기 전에 친 글(store.pendingInput)은 붙자마자 넣고 초점을 준다.
+// - P38: 판 배율 아래에서도 끌어 고르기가 마우스 밑 글자를 따라가게 xterm의 마우스 → 칸 계산에 확대·축소 전 자리를 넘긴다(unscalePoint).
+//   고르는 동안 포인터는 글 고르기 모양. 복사·붙여넣기·휠 뒤와 고른 자리의 글이 바뀌면 선택을 지운다(clearsSelection). 복사는 줄 끝 빈칸을 뺀다.
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -10,7 +12,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
 import { useStore, takePendingInput, pendingFor } from './store.js';
-import { wrapPaste, wheelToSgr, keyAction, frameBytes } from './lib/term-input.js';
+import { wrapPaste, wheelToSgr, keyAction, frameBytes, unscalePoint, clearsSelection, copyText } from './lib/term-input.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
 import { onFrame, onWritten, markInput, setTerminal, perfLog } from './perf.js';
 import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/tokens.js';
@@ -25,6 +27,18 @@ function readNumber(key, dflt) {
 }
 export const budget = new RendererBudget(readNumber('webglBudget', DEFAULT_WEBGL_BUDGET));
 export const terms = new Map(); // sessionId → Terminal (시험과 E6에서 읽는다)
+
+// P38: xterm은 마우스 위치를 칸으로 바꿀 때 판의 CSS 확대·축소를 모른다(화면 px를 확대·축소 전 칸 크기로 나눈다).
+// 마우스 서비스(선택, 링크, 마우스 보고가 함께 쓴다)에 확대·축소 전 자리를 넘긴다. xterm 6.0.0의 내부(_core._mouseService)라
+// 판 올릴 때 확인한다. 없으면 기록만 남기고 그대로 둔다(배율 1에서는 그대로 맞는다)
+function fixMouseScale(term, sessionId) {
+  const ms = term._core && term._core._mouseService;
+  if (!ms || typeof ms.getCoords !== 'function' || typeof ms.getMouseReportCoords !== 'function') { window.mt.log(`xterm mouse service not found ${sessionId}: selection may drift when zoomed`); return; }
+  const unscale = (ev, el) => unscalePoint({ clientX: ev.clientX, clientY: ev.clientY, rect: el.getBoundingClientRect(), width: el.offsetWidth, height: el.offsetHeight });
+  const getCoords = ms.getCoords.bind(ms), getReport = ms.getMouseReportCoords.bind(ms);
+  ms.getCoords = (ev, el, ...rest) => getCoords(unscale(ev, el), el, ...rest);
+  ms.getMouseReportCoords = (ev, el) => getReport(unscale(ev, el), el);
+}
 
 // P11: 색은 tokens.css --term-…, 글꼴은 앱에 넣은 JetBrains Mono(한글 Nanum Gothic Coding). 글 크기와 줄 높이는 lib/tokens.js
 
@@ -50,6 +64,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     term.loadAddon(fit);
     term.open(host);
     terms.set(sessionId, term);
+    fixMouseScale(term, sessionId);
 
     let renderer = budget.acquire(sessionId);
     perfLog('term_mount', { sessionId, renderer, used: budget.used });
@@ -81,13 +96,19 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       const a = keyAction(e, term.hasSelection());
       if (a === 'block-ctrl-g') { e.preventDefault(); flash(t('terminal.ctrlG')); return false; }
       if (a === 'paste') return false; // 브라우저 붙여넣기 이벤트로 넘긴다(아래에서 감싼다)
-      if (a === 'copy') { const sel = term.getSelection(); navigator.clipboard.writeText(sel).catch(() => {}); e.preventDefault(); flash(t('terminal.copied')); return false; }
+      if (a === 'copy') {
+        const sel = copyText(term.getSelection());
+        navigator.clipboard.writeText(sel).catch(() => {});
+        if (clearsSelection('copy', { hasSelection: term.hasSelection() })) term.clearSelection(); // P38
+        e.preventDefault(); flash(t('terminal.copied')); return false;
+      }
       return true;
     });
     term.attachCustomWheelEventHandler((ev) => {
       const screen = host.querySelector('.xterm-screen') || host;
       const r = wheelToSgr({ deltaY: ev.deltaY, deltaMode: ev.deltaMode, clientX: ev.clientX, clientY: ev.clientY, rect: screen.getBoundingClientRect(), cols: term.cols, rows: term.rows, acc: st.acc });
       st.acc = r.acc;
+      if (r.seq && clearsSelection('wheel', { hasSelection: term.hasSelection() })) term.clearSelection(); // P38: 다시 그린 화면에서 선택이 다른 글 위에 남지 않게
       send(r.seq);
       ev.preventDefault();
       return false;
@@ -96,9 +117,16 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const onPaste = (e) => {
       e.preventDefault(); e.stopPropagation();
       const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+      if (clearsSelection('paste', { hasSelection: term.hasSelection() })) term.clearSelection(); // P38
       send(wrapPaste(text));
     };
     host.addEventListener('paste', onPaste, true);
+    // P38: 끄는 중(왼쪽 단추를 누른 채)에는 노드 밖으로 나가도 포인터를 글 고르기 모양으로 두고, 프레임으로 선택을 지우지 않는다
+    const endDrag = () => { st.dragging = false; document.body.classList.remove('mt-term-selecting'); window.removeEventListener('mouseup', endDrag, true); };
+    const onDown = (e) => { if (e.button !== 0) return; st.dragging = true; document.body.classList.add('mt-term-selecting'); window.addEventListener('mouseup', endDrag, true); };
+    host.addEventListener('mousedown', onDown, true);
+    st.selText = '';
+    term.onSelectionChange(() => { st.selText = term.hasSelection() ? term.getSelection() : ''; });
 
     const offFrame = api.on('terminal.frame', (f) => {
       if (f.sessionId !== sessionId || !st.alive) return;
@@ -106,7 +134,11 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       const bytes = frameBytes(f.bytes);
       const t0 = onFrame(sessionId, bytes.length, f.width, f.height);
       if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) term.resize(f.width, f.height); // 쓰기 전에 크기 맞추기(E4)
-      term.write(bytes, () => onWritten(t0));
+      term.write(bytes, () => {
+        onWritten(t0);
+        // P38: 고른 자리의 글이 바뀌었으면(화면이 다시 그려짐) 선택을 지운다
+        if (term.hasSelection() && clearsSelection('frame', { dragging: st.dragging, before: st.selText, after: term.getSelection() })) { perfLog('term_selection_cleared', { sessionId, why: 'frame' }); term.clearSelection(); }
+      });
     });
     // 백엔드에 다시 붙으면(백엔드 재시작, C2) 옛 연결의 제어기는 이미 놓였다. 다시 붙는다.
     const offOpen = api.on('$open', () => { if (st.alive) { perfLog('term_reattach_on_reconnect', { sessionId }); setStatus({ kind: 'attaching' }); setRetry((x) => x + 1); } });
@@ -137,6 +169,8 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       perfLog('term_unmount', { sessionId });
       offFrame(); offDetached(); offOpen();
       host.removeEventListener('paste', onPaste, true);
+      host.removeEventListener('mousedown', onDown, true);
+      endDrag();
       api.call('terminal.detach', { session: sessionId }).catch(() => {});
       budget.release(sessionId);
       terms.delete(sessionId);

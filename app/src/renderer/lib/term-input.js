@@ -50,3 +50,40 @@ export function frameBytes(b64) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+
+// ---------- P38: 끌어 고르기와 선택 ----------
+// 판은 노드를 CSS 확대·축소(transform: scale)로 그린다. xterm은 마우스 위치(화면 px)를 확대·축소 전 칸 크기로 나눠
+// 칸을 구하므로, 배율이 1이 아니면 선택이 마우스 밑 글자보다 뒤처지거나(배율 < 1) 앞선다(배율 > 1).
+// 화면 점을 확대·축소 전 자리로 되돌려 xterm에 넘긴다. rect: 화면에 그려진 요소 사각형(getBoundingClientRect),
+// width·height: 확대·축소 전 크기(offsetWidth·offsetHeight). 그러면 xterm의 칸 계산이 그대로 맞는다.
+export function unscalePoint({ clientX, clientY, rect, width, height }) {
+  if (!rect) return { clientX, clientY };
+  const sx = rect.width > 0 && width > 0 ? rect.width / width : 1;
+  const sy = rect.height > 0 && height > 0 ? rect.height / height : 1;
+  return { clientX: rect.left + (clientX - rect.left) / sx, clientY: rect.top + (clientY - rect.top) / sy };
+}
+
+// 선택을 지우는 때(Windows Terminal처럼). true면 지운다.
+//   'copy'   고른 글을 복사했다(Ctrl+C, Ctrl+Shift+C)
+//   'paste'  붙여넣었다(Ctrl+V, Shift+Insert). 글 입력은 xterm이 스스로 지운다
+//   'wheel'  휠을 SGR로 보냈다. Claude Code가 화면을 다시 그려 글이 움직이는데 선택은 따라갈 수 없다
+//   'frame'  새 프레임을 그렸다. 끄는 중이 아니고 고른 자리의 글(before → after)이 바뀌었으면 지운다(다른 글 위에 남지 않게)
+export function clearsSelection(event, { hasSelection = true, dragging = false, before = '', after = '' } = {}) {
+  if (!hasSelection) return false;
+  if (event === 'copy' || event === 'paste' || event === 'wheel') return true;
+  if (event === 'frame') return !dragging && before !== after;
+  return false;
+}
+
+// 복사할 글: herdr가 다시 그린 화면은 줄 끝까지 빈칸이 차 있어, 줄마다 끝의 빈칸을 뺀다(Windows Terminal처럼)
+export function copyText(sel) {
+  return String(sel ?? '').replace(/[ \t]+(?=\r?\n|$)/g, '');
+}
+
+// 터미널 안을 누르면 판이 그 노드로 간다(navigateTo viewOnly). 끌어 고른 뒤의 click, 두세 번 누르기에서는 가지 않는다.
+// 한 번 누르기도 TERM_CLICK_WAIT(Windows 기본 두 번 누르기 간격 500ms 가까이) 뒤에 다시 물어, 그 사이 선택이 생겼으면 가지 않는다.
+// 기다리는 동안 다시 누르면(두 번째 누르기, 끌기 시작) 부르는 쪽(Canvas)이 취소한다
+export const TERM_CLICK_WAIT = 450;
+export function termClickNavigates({ detail = 1, hasSelection = false } = {}) {
+  return detail <= 1 && !hasSelection;
+}

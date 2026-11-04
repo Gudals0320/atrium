@@ -34,7 +34,7 @@
 - 시험 판의 CLI는 `experiments/p6c/tools/mt.cjs`처럼 환경 변수를 넣는 감싸개로 부른다. 셸의 `source`와 변수로 만든 명령은 Claude Code 워크트리에서 막힌다.
 - 옛 단계의 창 시험을 다른 판에서 다시 돌릴 때는 `experiments/p11/tools/e2e.cjs <시험 파일>`처럼 판 값과 `MT_E2E_BOARD`, `MT_E2E_OUT`을 넣어 시험을 부르는 감싸개를 쓴다. 각 lib는 `app/test/e2e/p11-board.mjs`로 판 값을 바꾼다. 그 `env.cjs`는 옛 이름 `MTASK_*`로 적혀 있어 `atriumEnv`로 바꿔 넣는다. `p12-quick`, `p14-tray`, `p15-close`는 `MT_E2E_HERDR_SESSION`, `MT_E2E_PORT`, `MT_E2E_DEV`, `MT_E2E_DIR`로 판 값을 덮어 다른 판에서 돌린다.
 - 창 크기에 기대는 시험(`p10-dock.mjs` 등)은 창 안쪽을 그 단계 때 크기(P10은 1584×921)로 맞추고 돌린다. 최소 크기 창에서는 덩어리가 다 들어가지 않는다.
-- 내 차례 줄(`.mt-chip.need`)은 위 오른쪽 `[data-role="inbox"]`를 눌러야 보이고, 영역 이름표의 단추(`[data-action=arrange]` 등)는 이름표에 마우스를 올려야 보인다.
+- 응답 필요 줄(`.mt-chip.need`)은 위 오른쪽 `[data-role="inbox"]`를 눌러야 보이고, 영역 이름표의 단추(`[data-action=arrange]` 등)는 이름표에 마우스를 올려야 보인다.
 - 노드를 끌 때는 시작과 끝 자리가 함께 화면 안쪽에 오게 먼저 맞춘다. 끄는 점이 캔버스 가장자리에 닿으면 React Flow가 화면을 저절로 밀어 노드를 더 멀리 옮긴다.
 - 스크린숏과 로그는 `experiments/p<번호>/`에 둔다.
 

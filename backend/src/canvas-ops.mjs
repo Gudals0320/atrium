@@ -196,15 +196,21 @@ export function migrateBoxesInside(b) {
   const items = canvasItems(b);
   const anchors = areaAnchors(b);
   const rects = regions(b, items);
-  for (const w of b.store.workspaces()) {
-    const boxes = anchors.filter((a) => a.wt && a.wsKey === w.key).map((a) => ({ key: a.key, rect: rects.get(a.key) })).filter((x) => x.rect);
-    if (!boxes.length) continue;
-    const content = items.filter((i) => i.ws === w.key && i.kind !== 'wtbox');
-    const main = regionRect(content, w);
-    for (const [key, { dx, dy }] of migrateBoxes({ main, content, boxes })) moved.push({ key, dx, dy, items: shiftWorkspace(b, key, dx, dy, items) });
-  }
+  for (const w of b.store.workspaces()) moved.push(...reslotBoxes(b, w, { items, anchors, rects }));
   b.store.setMeta(BOXES_INSIDE, { at: Date.now(), moved: moved.length });
   if (moved.length) { b.store.addEvent(null, 'worktree_boxes_migrated', { moved }); if (b.log) b.log(`worktree boxes moved inside ${JSON.stringify(moved)}`); }
+  return moved;
+}
+
+// 리포 하나의 워크트리 상자를 본 저장소 쪽 것의 오른쪽이나 아래로 다시 놓는다(상자째 옮겨 안의 상대 자리는 그대로, migrateBoxes).
+// P35 옛 위성 옮기기와 P37 합치기(본 저장소 쪽이 비어 있던 저장소 영역에 폴더 영역의 것이 들어왔을 때)가 쓴다. 옮긴 것 [{ key, dx, dy, items }]
+export function reslotBoxes(b, w, { items = canvasItems(b), anchors = areaAnchors(b), rects = regions(b, items) } = {}) {
+  const moved = [];
+  const boxes = anchors.filter((a) => a.wt && a.wsKey === w.key).map((a) => ({ key: a.key, rect: rects.get(a.key) })).filter((x) => x.rect);
+  if (!boxes.length) return moved;
+  const content = items.filter((i) => i.ws === w.key && i.kind !== 'wtbox');
+  const main = regionRect(content, w);
+  for (const [key, { dx, dy }] of migrateBoxes({ main, content, boxes })) moved.push({ key, dx, dy, items: shiftWorkspace(b, key, dx, dy, items) });
   return moved;
 }
 

@@ -24,9 +24,9 @@ test('닫기 확인: 조합 키, 한글 조합 중, 입력 칸·터미널 안의
   assert.equal(confirmKey(key('Delete', { target: { tagName: 'DIV', closest: (s) => (s === '.xterm' ? {} : null) } })), null, '터미널 안');
 });
 
-test('사전: 설정 탭 여섯과 새 줄 이름, 닫기 키 안내가 두 언어에 있다', () => {
+test('사전: 설정 탭 다섯(P36에서 가지 펼치기 상한 탭을 뺐다)과 새 줄 이름, 닫기 키 안내가 두 언어에 있다', () => {
   for (const d of [en, ko]) {
-    assert.deepEqual(Object.keys(d.settings.tab).sort(), ['agents', 'branch', 'general', 'recall', 'sleep', 'spawn']);
+    assert.deepEqual(Object.keys(d.settings.tab).sort(), ['agents', 'general', 'recall', 'sleep', 'spawn']);
     for (const k of ['on', 'off', 'languageHint', 'trayName', 'autoOpenName', 'allowHerdrName', 'claudeModelHint', 'effortHint', 'permissionModeHint', 'deepseekModelHint', 'deepseekCommandHint']) assert.equal(typeof d.settings[k], 'string', k);
     assert.equal(typeof d.close.keys, 'string');
     assert.equal(typeof d.close.keysArmed, 'string');

@@ -267,21 +267,8 @@ export default {
     worktree: '. Worktree {wt}',
     refused: 'Refused a sub-session request from @{name} ({code}{limit}): {reason}',
     refusedCode: {
-      too_many_children: 'sub-session limit',
-      too_deep: 'depth limit',
-      board_full: 'board-wide limit',
       not_parent: 'not its own sub-session',
     },
-    saved: 'Branching limits changed',
-    settingError: 'Settings: {error}',
-    settingsTitle: 'Branching limits',
-    settingsHelp: 'Applies only to sub-sessions that board sessions create with atrium child. Requests over a limit are refused with the reason.',
-    key: {
-      branchMaxChildren: 'Sub-sessions per session',
-      branchMaxDepth: 'Depth (levels)',
-      branchMaxTotal: 'Sub-sessions on the board',
-    },
-    range: '{min}–{max}, default {def}',
   },
   warn: {
     client: 'client {id}',
@@ -332,7 +319,7 @@ export default {
     issues: 'Issues',
     issuesEmpty: 'No issues',
     changes: 'What changed in the last hour',
-    settings: 'Settings (tray, branching)',
+    settings: 'Settings',
   },
   rail: {
     select: 'Select: click a node to enter. Shift+drag for several, Ctrl+click to add (click to clear)',
@@ -533,7 +520,7 @@ export default {
   },
   settings: {
     title: 'Settings',
-    tab: { general: 'General', spawn: 'Claude Code', agents: 'Codex · DeepSeek', sleep: 'Sleep', branch: 'Branching', recall: 'Archive & repos' },
+    tab: { general: 'General', spawn: 'Claude Code', agents: 'Codex · DeepSeek', sleep: 'Sleep', recall: 'Archive & repos' },
     on: 'On',
     off: 'Off',
     language: 'Language',
@@ -1258,7 +1245,7 @@ export default {
     pillClose: 'Click: close the mission map',
   },
   arrangeAll: { // P31: arrange the whole board (bottom chip)
-    title: 'Arrange the whole board: lay out each area along its links, then line the areas up without overlaps (worktree areas stay next to their repo). "Undo arrange" reverts once',
+    title: 'Arrange the whole board: lay out each area along its links, then line the areas up without overlaps (worktree boxes stay inside their repo area). "Undo arrange" reverts once',
     done: 'Arranged the whole board ({n} areas). "Undo arrange" reverts once',
     undo: 'Undo arrange',
     undoTitle: 'Put nodes, notes and areas back where they were before the board arrange (once)',

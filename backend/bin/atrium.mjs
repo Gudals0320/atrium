@@ -389,7 +389,7 @@ async function main() {
       case 'tree': {
         const r = await c.call('branch.tree');
         if (JSONOUT) return out(r);
-        console.log(`하위 세션 ${r.total}/${r.limits.branchMaxTotal} · 세션마다 ${r.limits.branchMaxChildren} · 깊이 ${r.limits.branchMaxDepth}단계`);
+        console.log(`하위 세션 ${r.total}개(상한 없음, P36)`);
         const kids = (id) => r.rows.filter((x) => x.parentSessionId === id);
         const walk = (x, ind) => { console.log(`${'  '.repeat(ind)}@${x.name} ${x.depth}단계 ${x.state}${x.role ? ` "${x.role}"` : x.parentSessionId ? ' (판에 올림)' : ''}`); for (const k of kids(x.sessionId)) walk(k, ind + 1); };
         for (const x of r.rows.filter((y) => !y.parentSessionId || !r.rows.some((z) => z.sessionId === y.parentSessionId))) walk(x, 0);

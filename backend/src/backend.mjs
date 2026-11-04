@@ -21,6 +21,7 @@ import { ResourceMonitor, childProcesses } from './resources.mjs';
 import { SHELL_TOOLS, LINK_VERBS, parseHerdrCommands, parseHerdrOutput, readTextOf, tailText, screenAnswerText, roleNotice, unlinkNotice, paneChangedNotice, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
+import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
@@ -149,6 +150,8 @@ export class Backend {
     if (canv) { this.store.addEvent(null, 'canvas_migrated', canv); this.log(`single canvas migrated ${JSON.stringify(canv)}`); }
     // P17: 옛 한 줄 덩어리 행을 한 마디짜리 분할 나무로 바꾼다(모양 그대로, H5)
     migrateDocks(this);
+    // P37: 같은 폴더를 가리키는 폴더 키와 저장소 키가 함께 있으면(폴더가 판에 열린 뒤 저장소가 됨) 하나로 합친다. 여러 번 돌려도 같다
+    await reconcileWorkspaces(this, 'start', { quiet: true }).catch((e) => this.log('workspace merge error', e.stack));
     // P35: 옛 판의 워크트리 위성 영역(리포 영역 바깥)을 리포 영역 안으로 한 번 다시 놓는다(겹침 풀기보다 먼저)
     migrateBoxesInside(this);
     // P9: 이미 겹친 영역은 뜰 때 편다(영역째 오른쪽·아래로 밀어 상대 자리를 지킨다, H1)
@@ -293,7 +296,8 @@ export class Backend {
     const sleeping = this.sleeper && this.sleeper.going.has(sid); // P21: 잠재우는 중에는 보내지 않는다(끝나면 깨운다)
     const st = deriveState(s.rt).state;
     // 깨우는 중에는 준비된 뒤 잠깐 더 기다린다(sleep.mjs WAKE_SETTLE_MS: 입력 칸이 Enter를 받기 전에 보내면 제출되지 않는다)
-    return { state: sleeping ? 'sleeping' : s.waking && st !== 'sleeping' ? 'starting' : st, agentPresent: s.rt.herdr.present, herdrConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false };
+    const gated = this.branch && this.branch.holds(sid); // P36: 신뢰 관문을 지나 claude -w로 뜰 때까지 보내지 않는다
+    return { state: sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : st, agentPresent: s.rt.herdr.present, herdrConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false };
   }
 
   summary(s) {
@@ -342,6 +346,7 @@ export class Backend {
   // 처음 보는 워크스페이스면 줄을 만든다(세션이 하나라도 생기면 워크스페이스가 저절로 생긴다, G1)
   ensureWorkspace(ws, why) {
     if (this.store.getWorkspace(ws.key)) return false;
+    if (adoptTwin(this, ws, why)) return false; // P37: 같은 폴더의 다른 키 워크스페이스(폴더가 저장소가 됨)를 이 키로 옮겼다
     this.store.insertWorkspace({ ...ws, createdAt: Date.now() });
     anchorWorkspace(this, ws.key); // P6a: 새 영역은 다른 영역과 겹치지 않는 곳(H1)
     if (!this.store.getMeta('currentWorkspace')) this.store.setMeta('currentWorkspace', ws.key);
@@ -350,6 +355,8 @@ export class Backend {
     this.bus.emit('workspace', ws.key); // P7: 그 리포의 판 밖 대화를 찾는다(J3)
     return true;
   }
+  // P37: 열린 워크스페이스를 다시 보아 폴더 ↔ 저장소로 바뀐 것을 옮긴다(worktrees.mjs sync가 부른다)
+  reconcileWorkspaces(cause) { return reconcileWorkspaces(this, cause); }
   // 키, 이름(대소문자 무시), 또는 그 안의 폴더 경로로 워크스페이스를 찾는다
   async resolveWorkspace(ref, { required = true } = {}) {
     if (!ref) { if (required) throw apiError('bad_request', 'workspace required'); return null; }

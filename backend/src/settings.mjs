@@ -1,5 +1,6 @@
 // 판 설정(P6b, ARCH 4절 I7): 판 기록(meta 표의 `settings`)에 둔다. P16: 화면 언어(language, 기본 영어). 창과 Electron main이 settings.get으로 읽고 settings.updated 이벤트로 따라간다.
-// 트레이 상주(tray, P14부터 기본 켜짐), P8의 가지 펼치기 상한 셋(branchMax*), P10의 보관 기간(archiveDays)과 리포 스스로 찾기(autoOpenRepos). 창 쪽 설정 화면은 P6c가 만들었다.
+// 트레이 상주(tray, P14부터 기본 켜짐), P10의 보관 기간(archiveDays)과 리포 스스로 찾기(autoOpenRepos). 창 쪽 설정 화면은 P6c가 만들었다.
+// P36: P8의 가지 펼치기 상한 셋(branchMaxChildren, branchMaxDepth, branchMaxTotal)을 없앴다. 판 기록에 남은 옛 값은 아래 옛 키처럼 읽지도 보이지도 않는다.
 // P33: 옛 새 세션 기본값(claude*, codexArgs, deepseek*)은 호출자(launchers.mjs)로 옮겼다. 옛 키는 판 기록에 남지만(옛 코드로 돌아갈 때) 읽지도 보이지도 않는다.
 
 export const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max']; // claude --effort. 빈 값이면 넘기지 않는다
@@ -10,10 +11,6 @@ export const LANGUAGES = ['en', 'ko']; // P16: 화면 언어. 새 판은 영어
 export const SETTINGS = {
   language: { type: 'choice', default: 'en', options: LANGUAGES, label: '화면 언어(en 영어, ko 한국어). 창과 트레이 메뉴가 따른다(P16)' },
   tray: { type: 'boolean', default: true, label: '창을 닫아도 트레이에 남아 알림을 띄운다(I7). 트레이 메뉴로 백엔드를 켜고 끈다(P14)' },
-  // P8(K3): 가지 펼치기 상한. 판이 띄운 세션이 atrium child로 만드는 하위 세션에만 쓴다
-  branchMaxChildren: { type: 'number', default: 4, min: 1, max: 16, label: '세션 하나가 만들 수 있는 하위 세션 수(K3)' },
-  branchMaxDepth: { type: 'number', default: 3, min: 2, max: 6, label: '나무 깊이(사람이 띄운 세션이 1단계, K3)' },
-  branchMaxTotal: { type: 'number', default: 16, min: 1, max: 64, label: '판 전체 하위 세션 수(K3)' },
   // P10: 보관과 리포 스스로 찾기(archive.mjs, recall.mjs). 0일이면 저절로 보관을 끈다(손 보관은 그대로)
   archiveDays: { type: 'number', default: 14, min: 0, max: 365, label: '마지막 활동이 이 일수보다 오래된 판 밖 대화와 닫힌 세션은 보관으로 본다(0이면 끔)' },
   autoOpenRepos: { type: 'boolean', default: true, label: '터미널(Claude Code CLI)에서 일한 리포를 워크스페이스로 저절로 연다' },

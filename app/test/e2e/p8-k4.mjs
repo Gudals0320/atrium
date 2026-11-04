@@ -39,12 +39,12 @@ try {
   await shot(page, `${tag}-3-mission-map`, log);
   await page.click('[data-action="mission-close"]');
 
-  // 설정의 상한 칸
+  // 설정: P36에서 상한 칸(가지 펼치기 탭)을 없앴다
   await page.click('[data-action="settings-open"]');
-  await page.waitForSelector('[data-role="branch-settings"]', { timeout: 10000 });
-  result.settings = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('[data-role="branch-settings"] input')].map((i) => [i.dataset.field, i.value])));
+  await page.waitForSelector('[data-role="settings-tabs"]', { timeout: 10000 });
+  result.settings = await page.evaluate(() => ({ tabs: [...document.querySelectorAll('[data-role="settings-tabs"] [data-tab]')].map((x) => x.dataset.tab), branchSettings: !!document.querySelector('[data-role="branch-settings"]') }));
   log('settings', JSON.stringify(result.settings));
-  await shot(page, `${tag}-4-settings-limits`, log);
+  await shot(page, `${tag}-4-settings-no-limits`, log);
   await page.keyboard.press('Escape');
   await page.evaluate(() => { const b = [...document.querySelectorAll('.mt-modal .mt-btn')].find((x) => x.textContent === '닫기'); if (b) b.click(); });
 

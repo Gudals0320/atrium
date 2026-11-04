@@ -1011,3 +1011,6 @@ button.mt-cv-chip:hover { border-color: var(--cv-line-hi); color: var(--text); }
 .mt-dimport-at { flex: none; font-size: 11px; white-space: nowrap; width: 72px; text-align: right; }
 .mt-dimport-foot { font-size: 12px; min-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-sleep-title { color: var(--text); font-weight: 600; }
+
+/* P38: 터미널에서 끌어 고르는 동안은 노드·판 위로 나가도 포인터를 글 고르기 모양으로 */
+body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }

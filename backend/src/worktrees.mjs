@@ -95,7 +95,9 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
   let chain = Promise.resolve();
   function sync(cause = 'tick') {
     chain = chain.catch(() => {}).then(async () => {
-      const changed = await syncAreas();
+      // P37: 폴더 워크스페이스가 저장소가 됐으면(반대도) 먼저 키를 옮긴다(workspace-merge-ops.mjs). 옮겼으면 영역 행도 다시 맞춘다
+      const merged = b.reconcileWorkspaces ? await b.reconcileWorkspaces(cause).catch((e) => { log(`workspace merge error ${e.stack}`); return []; }) : [];
+      const changed = (await syncAreas()) || merged.length > 0;
       const moved = relocateNodes();
       if (!changed && !moved) return { changed: false, moved: 0 };
       settleRegions(b, `worktrees ${cause}`);

@@ -30,6 +30,11 @@ import { ConvoNode, WorktreeBox, SpawnEdge } from './ConvoNode.jsx'; // P13
 import { worktreeBoxes } from '../../../backend/src/convo-canvas.mjs';
 import { api } from './api.js';
 import { SessionNode } from './SessionNode.jsx';
+import { terms } from './TerminalView.jsx'; // P38
+import { termClickNavigates, TERM_CLICK_WAIT } from './lib/term-input.js'; // P38
+
+let termClickTimer = null; // P38: 터미널 안 한 번 누르기의 화면 옮기기. 기다리는 동안 다시 누르면(두 번 누르기, 끌기 시작) 취소한다
+if (typeof window !== 'undefined') window.addEventListener('mousedown', () => clearTimeout(termClickTimer), true);
 import { RegionNode, WorktreeAreaNode } from './Regions.jsx'; // P27: 워크트리 영역(P35: 리포 영역 안의 상자)
 import { MemoNode } from './Memo.jsx';
 import { KanbanNode } from './Kanban.jsx';
@@ -628,7 +633,14 @@ export function Canvas() {
     if (node.type === 'region' || node.type === 'wtarea') { selectWorkspace(node.data.wsKey); return; } // P27
     if (node.type !== 'session' || e.ctrlKey || e.shiftKey || e.metaKey) return;
     // 터미널 안을 누르면 화면만 옮긴다(초점은 터미널이 스스로 잡는다)
-    if (e.target.closest && e.target.closest('.mt-term-wrap')) { getState().navigateTo(node.id, { viewOnly: true }); return; }
+    // P38: 끌어 고른 뒤의 click과 두세 번 누르기에서는 가지 않는다. 한 번 누르기도 잠깐 기다려 두 번째 누르기·선택이 없을 때만 간다
+    if (e.target.closest && e.target.closest('.mt-term-wrap')) {
+      clearTimeout(termClickTimer);
+      const sel = () => { const tm = terms.get(node.id); return !!(tm && tm.hasSelection()); };
+      if (!termClickNavigates({ detail: e.detail, hasSelection: sel() })) return;
+      termClickTimer = setTimeout(() => { if (termClickNavigates({ hasSelection: sel() })) getState().navigateTo(node.id, { viewOnly: true }); }, TERM_CLICK_WAIT);
+      return;
+    }
     // 머리줄을 누르면 고르기만 한다(터미널에 초점을 주지 않아 Delete로 닫을 수 있다). 화면은 옮긴다. 본문을 누르면 들어간다
     if (e.target.closest && e.target.closest('.mt-node-head')) { const a = document.activeElement; if (a && a.blur && a !== document.body) a.blur(); getState().navigateTo(node.id, { viewOnly: true }); return; }
     getState().navigateTo(node.id, { focusTerminal: true });

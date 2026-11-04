@@ -8,6 +8,7 @@ import { RECALL_SCHEMA, RECALL_COLUMNS, RECALL_SESSION_FIELDS, installRecall } f
 import { BRANCH_COLUMNS, installBranch } from './store-branch.mjs'; // P8: 하위 세션 기록
 import { WORKTREE_SCHEMA, WORKTREE_COLUMNS, installWorktrees } from './store-worktrees.mjs'; // P27: 워크트리 영역
 import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: 데스크톱 앱 가져오기 장부
+import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs'; // P17: 덩어리 분할 나무
 
 let DatabaseSync;
@@ -267,3 +268,4 @@ installRecall(Store); // P7
 installBranch(Store); // P8
 installWorktrees(Store); // P27
 installImports(Store); // P34
+installMerge(Store); // P37

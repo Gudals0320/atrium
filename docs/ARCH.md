@@ -127,7 +127,7 @@
 
 ### F. 세션끼리 연결
 
-판은 백엔드가 뜰 때 `<데이터 폴더>\plugin\atrium-herdr\`에 플러그인을 만들고, 판이 띄우는 claude마다 `--plugin-dir`로 넘긴다. 플러그인에는 herdr 스킬(고정한 herdr의 `herdr --skill` 출력), 일 맡기기 스킬(K2), 하위 세션 명령 `bin/atrium`과 별칭 `bin/mtask`(K1)가 있다. 짧은 안내(`--append-system-prompt-file`)는 herdr 스킬을 쓰라는 것, herdr 명령에 `--session`·`--machine`·`--remote`를 붙이지 않는다는 것, `[Atrium 판]` 글은 판의 알림이라는 것, 하위 세션은 `atrium child`로 만든다는 것을 알린다. `resume_argv`에도 같은 인자가 들어간다.
+판은 백엔드가 뜰 때 `<데이터 폴더>\plugin\atrium-herdr\`에 플러그인을 만들고, 판이 띄우는 claude마다 `--plugin-dir`로 넘긴다. 플러그인에는 herdr 스킬(고정한 herdr의 `herdr --skill` 출력), 판에서 일하는 법 스킬(`atrium`, 옛 이름 `delegate`, K2), 하위 세션 명령 `bin/atrium`과 별칭 `bin/mtask`(K1)가 있다. 짧은 안내(`--append-system-prompt-file`)는 herdr 스킬을 쓰라는 것, herdr 명령에 `--session`·`--machine`·`--remote`를 붙이지 않는다는 것, `[Atrium 판]` 글은 판의 알림이라는 것, 일이 조각으로 나뉘면 atrium 스킬로 하위 세션을 쓴다는 것을 알린다. `resume_argv`에도 같은 인자가 들어간다.
 
 - **F1 일 시키기를 선으로.** 판이 띄운 Claude Code의 `PreToolUse`·`PostToolUse`(Bash, PowerShell) hook에서 `herdr agent prompt`, `herdr pane run`, `herdr agent start`, `herdr pane split` 명령 글을 읽어 "연결"과 "오간 일"로 저장한다. `PostToolUse` 결과로 전달 끝과 읽은 답도 얻는다. 받는 쪽 상태와 새로 나타난 에이전트는 herdr 이벤트로 본다. 명령 치환, 변수에 담은 대상, 스크립트 안의 호출은 풀지 못한다. 다른 곳을 부른 호출은 선 없이 판 이벤트(`herdr_foreign_call`)로 남기고, 대상이 아직 판에 없으면 120초 기다린다.
 - **F2 판에서 잇기.** 순서 있는 두 세션 쌍마다 연결 하나(표 `links`, `link_events`). 판에서 A → B를 잇고 역할을 정하면 A에게 B의 herdr 이름, 패널, 역할과 일 시키기·답 읽기 명령을 B1로 알린다. 끊을 때 확인을 받고 끊겼다고 알리며, B의 패널 ID가 바뀌면 새 패널을 알린다. 오간 기록은 끊어도 남는다. 알림 글은 `backend/src/links.mjs`에 있다.
@@ -138,7 +138,7 @@
 
 ### G. 워크스페이스와 일반 셸
 
-- **G1 워크스페이스.** 세션의 워크스페이스 키는 시작 폴더의 git 공통 폴더(`git rev-parse --path-format=absolute --git-common-dir`, 역슬래시·끝 슬래시·대소문자를 맞추고 UNC의 앞 `//`는 지킴)다. 워크트리도 본 저장소와 같은 키이고, git이 아니면 그 폴더다. 판에 올린 에이전트와 셸은 패널 폴더로 정한다. 세션이 다른 저장소로 `cd`해도 옮기지 않고 "다른 저장소에서 일하는 중"만 표시한다. 세션이 생기면 워크스페이스가 저절로 생기고 "+ 리포 열기"로 빈 워크스페이스도 만든다. 비어 있을 때만 닫는다(`not_empty`). 이름은 저장소 폴더 이름(겹치면 `부모/이름`)이다. 옛 판은 뜰 때 `backend/src/migrate.mjs`가 옮긴다. herdr의 "작업 공간"과는 다르다.
+- **G1 워크스페이스.** 세션의 워크스페이스 키는 시작 폴더의 git 공통 폴더(`git rev-parse --path-format=absolute --git-common-dir`, 역슬래시·끝 슬래시·대소문자를 맞추고 UNC의 앞 `//`는 지킴)다. 워크트리도 본 저장소와 같은 키이고, git이 아니면 그 폴더다. 판에 올린 에이전트와 셸은 패널 폴더로 정한다. 세션이 다른 저장소로 `cd`해도 옮기지 않고 "다른 저장소에서 일하는 중"만 표시한다. 세션이 생기면 워크스페이스가 저절로 생기고 "+ 리포 열기"로 빈 워크스페이스도 만든다. 비어 있을 때만 닫는다(`not_empty`). 이름은 저장소 폴더 이름(겹치면 `부모/이름`)이다. 연 폴더가 나중에 git 저장소(또는 그 안)가 되면 저장소 키로 옮기거나 합치고, `.git`이 없어지면 폴더 키로 되돌린다(노드 자리는 그대로). 옛 판은 뜰 때 `backend/src/migrate.mjs`가 옮긴다. herdr의 "작업 공간"과는 다르다.
 - **G2 일반 셸.** 판 전용 herdr 세션의 모든 패널(`pane.created`, `pane.closed`, `pane.exited`, `pane.agent_detected`, 다시 맞출 때 `pane.list`)이 노드다. 에이전트가 없으면 종류 `shell`이고, 나중에 에이전트가 나타나면 같은 노드의 종류만 바뀌며, 판이 띄우지 않은 에이전트가 끝나면 셸로 돌아간다. 셸은 2초마다 화면 끝 줄이 프롬프트인지로 쉬는지 보고, 명령 글은 마지막 프롬프트 줄에서, 프로세스 이름은 셸 PID의 자식에서 얻는다. 셸에는 hook과 승인 줄이 없고 글을 보내지 않는다(`not_agent`). 새 세션 대화상자의 "셸(PowerShell)"은 `workspace.create`만 한다.
 - **G4 가로지르기.** 내 차례, 검토 대기, 문제 칩, OS 알림, `N`은 모든 워크스페이스를 가로지른다. 자원 표시와 D3 경고는 판 전체 기준이다.
 
@@ -159,7 +159,7 @@
 - **I3·I4 메모와 칸반.** 캔버스의 마크다운 글 노드와, 열과 카드를 가진 칸반 노드(열 하나면 체크리스트). 놓은 노드가 영역 안이나 바로 옆에 있으면 그 워크스페이스 소속이다. 카드를 세션에 이으면 세션 상태가 보이고 누르면 그 세션으로 간다. 글이 있는 메모, 카드가 있는 칸반·열은 지울 때 묻는다. 마크다운은 의존성 없이 직접 그린다.
 - **I5 루프.** 같은 지시를 조건에 따라 다시 보낸다. 시작 조건은 주기(1분~24시간), 쉴 때(ready가 될 때), 마지막 답이나 화면의 특정 글이고, 멈춤 조건은 횟수, 시간, 마지막 답의 특정 글, 사람이다. 내 차례인 세션은 그 차례를 건너뛰고(`needs_you`, `busy`, `not_ready`) B1을 따른다. 셸에는 걸 수 없다. 토큰을 쓰므로 만들 때 `confirm`을 받는다. 백엔드가 꺼지면 멈추고 다시 뜨면 남은 횟수와 시간으로 이어 간다.
 - **I6 미션 맵.** `M`이나 연결 알약으로 여는 덮개 화면. 왼쪽 → 오른쪽 나무와 연결 없음 칸, 한 쌍에 선 하나(화살표, 받는 쪽 역할 이름표, 종류는 범례). 빈 곳이나 Esc로 닫는다. `mission.graph`가 만들고 배치는 창(`lib/mission-layout.js`)이 한다.
-- **I7 설정과 트레이 상주.** 설정(`settings`)은 트레이 상주, 가지 펼치기 상한(K3), 보관(J), 호출자(F6), 잠재우기 시간이다. 트레이 아이콘(Atrium 로고, 내 차례면 주황 점)은 앱이 도는 동안 늘 있고, Electron main(`app/src/main/tray.mjs`)이 백엔드에 따로 붙는다. 트레이 상주(기본 켜짐)면 창을 닫아도 앱이 남아 창과 같은 규칙으로 OS 알림을 띄운다. 트레이 메뉴는 열기, 내 차례 수, 백엔드 상태와 켜기·다시 띄우기·끄기(창을 먼저 닫는다), herdr까지 모두 끄기(확인), 앱 끝내기(백엔드와 세션은 계속), 백엔드도 끄고 끝내기다.
+- **I7 설정과 트레이 상주.** 설정(`settings`)은 트레이 상주, 보관(J), 호출자(F6), 잠재우기 시간이다. 트레이 아이콘(Atrium 로고, 내 차례면 주황 점)은 앱이 도는 동안 늘 있고, Electron main(`app/src/main/tray.mjs`)이 백엔드에 따로 붙는다. 트레이 상주(기본 켜짐)면 창을 닫아도 앱이 남아 창과 같은 규칙으로 OS 알림을 띄운다. 트레이 메뉴는 열기, 내 차례 수, 백엔드 상태와 켜기·다시 띄우기·끄기(창을 먼저 닫는다), herdr까지 모두 끄기(확인), 앱 끝내기(백엔드와 세션은 계속), 백엔드도 끄고 끝내기다.
 - **I8 셸과 판에 올린 패널의 복구.** herdr를 다시 띄운 뒤 패널이 남으면 같은 노드로 남고(에이전트가 없으면 셸), 패널이 없어지면 J1 규칙을 따른다. 셸에서 돌던 명령은 "끊긴 명령"으로 남긴다. 셸 화면은 줄바꿈을 푼 최근 줄(`recent_unwrapped`)로 읽는다.
 
 ### J. 세션 되찾기와 사이드바
@@ -174,10 +174,10 @@
 
 ### K. 가지 펼치기
 
-- **K1 하위 세션 명령.** 판이 띄운 세션은 판 플러그인의 `bin/atrium`(`atrium child`, `atrium children`, `atrium child-kill`, 별칭 `mtask`)으로 하위 세션을 만들고 보고 끈다. Claude Code가 플러그인 `bin/`을 Bash 도구 PATH에 올리므로 사용자의 PATH를 고치지 않는다. 명령은 세션 설정 파일 env의 세션 ID, 세션 토큰(판 API 토큰과 세션 ID의 HMAC), 판을 찾아갈 값으로 `POST /branch/child|children|kill`만 부르고 판 API 토큰은 쓰지 않는다. 하위 세션은 판이 띄운 정식 세션(B3)이고 부모의 폴더, 모델, 노력 수준, 권한 모드를 물려받는다. 부모와 역할 선(기본 "워커")으로 잇고, 하위 세션의 herdr 이름, 패널, 역할, 일 시키기·답 읽기 명령은 명령의 응답으로 부모에게 간다(응답이 닿지 않았을 때만 F2처럼 알린다). `atrium child`는 하위 세션이 준비될 때까지 기다린다. `--cwd`가 다른 폴더면 그 워크스페이스에, `--worktree`면 `claude -w <이름>`으로 띄운다(신뢰하지 않은 저장소는 `needs_trust`로 미리 거부). `--kind`는 F5처럼 다룬다.
-- **K2 나무와 스킬.** 하위 세션도 같은 명령을 써서 지시 한 번에 여러 단계로 펼쳐진다. 일 맡기기 스킬(`atrium-herdr:delegate`)의 순서는 만들기 → `herdr agent prompt <이름> "…" --wait` → `herdr agent read` → 모아 보고다. 끝난 하위 세션은 기본으로 두고, 사람이 끄라고 하면 자기가 만든 것만 끈다. 세션 설정 파일의 승인 규칙은 이 명령과 `herdr agent prompt|wait|read`만 묻지 않게 한다. herdr 명령은 대상을 가리지 않으므로 같은 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다.
-- **K3 불어나지 않게.** 세션 하나의 하위 세션 수, 깊이(사람이 띄운 세션이 1단계), 판 전체 하위 세션 수에 상한이 있다(설정 `branchMaxChildren`, `branchMaxDepth`, `branchMaxTotal`, ⚙에서 바꿈). 넘으면 만들지 않고 까닭(`too_many_children`, `too_deep`, `board_full`)을 명령의 응답, 판 이벤트, 창 알림으로 남긴다. 에이전트는 자기 자손만 끌 수 있고(아니면 `not_parent`) 끄면 자손까지 깊은 것부터 끈다. 하위 세션은 새 세션 ID로 띄운다.
-- **K4 나무 모양.** 하위 세션은 작게 부모 오른쪽 열의 빈자리에 놓이고 형제는 위아래로 쌓인다(H7의 나무 배치를 새 노드 하나에). 다른 워크스페이스의 하위 세션은 그 영역에 놓인다. 노드 머리줄에 부모와 역할("@lead의 워커"), 사이드바에서는 부모 아래에 들여, 미션 맵에서는 부모 오른쪽에 보인다. 다시 켜도 관계와 역할 선이 남는다.
+- **K1 하위 세션 명령.** 판이 띄운 세션은 판 플러그인의 `bin/atrium`(`atrium child`, `children`, `child-wait`, `child-kill`, 별칭 `mtask`)으로 하위 세션을 만들고 보고 끈다. Claude Code가 플러그인 `bin/`을 Bash 도구 PATH에 올리므로 사용자의 PATH를 고치지 않는다. 명령은 세션 설정 파일 env의 세션 ID, 세션 토큰(판 API 토큰과 세션 ID의 HMAC), 판을 찾아갈 값으로 `POST /branch/child|children|kill`만 부르고 판 API 토큰은 쓰지 않는다. 하위 세션은 판이 띄운 정식 세션(B3)이고 부모의 폴더, 모델, 노력 수준, 권한 모드를 물려받는다. 부모와 역할 선(기본 "워커")으로 잇고, 하위 세션의 herdr 이름, 패널, 역할, 일 시키기·답 읽기 명령은 명령의 응답으로 부모에게 간다(응답이 닿지 않았을 때만 F2처럼 알린다). `atrium child`는 하위 세션이 준비될 때까지 기다린다. `--cwd`가 다른 폴더면 그 워크스페이스에, `--worktree`면 `claude -w <이름>`으로 띄운다. 커밋 없는 저장소는 `needs_commit`으로 띄우지 않는다. 신뢰하지 않은 저장소는 먼저 `-w` 없이 띄워 노드에 신뢰 질문을 보이고 `needs_trust`와 사람에게 할 한 문장을 돌려준다. 사람이 답하면 같은 패널·세션 ID로 `-w`를 다시 띄우고, 그동안 전달은 멈춘다(부모는 `atrium child-wait`). `--model`, `--effort`는 물려받기를 덮고, `--kind`는 F5처럼 다룬다.
+- **K2 나무와 스킬.** 하위 세션도 같은 명령을 써서 지시 한 번에 여러 단계로 펼쳐진다. 판에서 일하는 법 스킬(`atrium-herdr:atrium`, 옛 이름 `delegate`)은 사용자가 워커·병렬·워크트리를 말하거나 일이 서로 기다리지 않는 조각으로 나뉘면 세션이 스스로 쓴다. 순서는 만들기(코드 조각은 `--worktree`) → 시키고 기다리기 → `herdr agent read` → 모아 보고·합치기다. 끝난 하위 세션은 기본으로 두고, 사람이 끄라고 하면 자기가 만든 것만 끈다. 세션 설정 파일의 승인 규칙은 이 명령과 `herdr agent prompt|wait|read`만 묻지 않게 한다. herdr 명령은 대상을 가리지 않으므로 같은 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다.
+- **K3 끄기.** 하위 세션 수와 깊이에 상한이 없다. 에이전트는 자기 자손만 끌 수 있고(아니면 `not_parent`) 끄면 자손까지 깊은 것부터 끈다. 하위 세션은 새 세션 ID로 띄운다.
+- **K4 나무 모양.** 하위 세션은 작게 부모 오른쪽 열의 빈자리에 놓이고 형제는 위아래로, 많으면 격자로 쌓인다(H7의 나무 배치를 새 노드 하나에). 다른 워크스페이스의 하위 세션은 그 영역에 놓인다. 노드 머리줄에 부모와 역할("@lead의 워커"), 사이드바에서는 부모 아래에 들여, 미션 맵에서는 부모 오른쪽에 보인다. 다시 켜도 관계와 역할 선이 남는다.
 
 ## 5. 백엔드 모듈
 
@@ -200,7 +200,7 @@
 | 복귀 요약 | 판 이벤트를 "세션 × 종류" 한 줄로 모음(`changes.mjs`) |
 | 연결 | 4절 F. 에이전트끼리 오간 지시 알아채기, 연결과 역할 저장, 워크트리 알아내기. 순수 함수(명령 글 나누기와 herdr 호출 읽기, 화면에서 답 고르기, 빈자리, 같은 저장소 선, 알림 글)는 `links.mjs`(창도 같이 씀), 나머지는 `backend.mjs` |
 | 패널 추적 | 4절 G2·F3. 판 전용 herdr 세션의 모든 패널을 노드로 두고 셸 상태를 본다(`backend.mjs`의 `adoptPane`, `promoteShell`, `demoteToShell`, `pollShells`, `screen.mjs`의 `shellPromptState`) |
-| 워크스페이스 | 4절 G1. 워크스페이스 키, 목록과 세는 값, 옛 판 옮기기(`workspaces.mjs`(창도 같이 씀), `migrate.mjs`, `git.mjs`의 `workspaceOf`) |
+| 워크스페이스 | 4절 G1. 워크스페이스 키, 목록과 세는 값, 옛 판 옮기기, 폴더 ↔ 저장소 합치기(`workspaces.mjs`(창도 같이 씀), `migrate.mjs`, `git.mjs`의 `workspaceOf`, `workspace-merge*.mjs`, `store-merge.mjs`) |
 | 배치(단일 캔버스) | 4절 H. 영역, 덩어리, 크기 단계, 정리 배치, P5 판 옮기기, 영역 겹침 풀기(뜰 때와 노드를 놓거나 키운 뒤 겹친 영역을 오른쪽·아래로 통째로 밂, `settleRegions`). 순수 함수는 `canvas.mjs`와 덩어리 분할 나무 `dock-tree.mjs`(창도 같이 씀), 판 API는 `canvas-ops.mjs`, 옮기기는 `migrate-canvas.mjs`(덩어리 옛 행은 `canvas-ops.mjs` `migrateDocks`) |
 | 실제 판 실행 | 바로가기 → `app/scripts/real.cmd` → `real.mjs`(바뀐 소스가 있으면 빌드, Electron을 `--dev` 없이 떼어 띄움). 바로가기는 `make-shortcut.ps1`, `npm run real`도 같은 프로필 |
 | 검색 | 4절 H2(`search.mjs`, `store.searchText`, `store.searchOutputs`) |
@@ -214,7 +214,7 @@
 | 판 밖 대화 노드·missed | 4절 J6. 띄움 관계 찾기(`spawns.mjs`), 분류와 휴지통 지우기(`missed.mjs`), 영역 안 자리(`convo-canvas.mjs`, 창도 같이 씀), 판 API는 `recall.mjs`. 창은 `ConvoNode.jsx`, 사이드바 missed 함 |
 | 노드 얼굴과 들어가기 | 7.2. 얼굴 고르기(`lib/faces.js`, 아이콘 얼굴 포함), 종류 아이콘 한곳(`lib/kinds.js`. Claude Code, DeepSeek, Codex, Grok, Pi는 `assets/kinds/`의 로고(보여줄 종류는 `shownKind`, flavor가 먼저), 그 밖은 직접 그린 기호), 덩어리 안 노드로 들어갈 때의 화면(`lib/nav.js`) |
 | 화면 생김새 | 7.1. 색은 `tokens.css` 한곳(강조 `--accent` 초록, 내 차례 `--attn` 주황. JS는 `lib/tokens.js`가 변수를 읽는다. xterm 테마, 세션 머리 점), 앱에 넣은 OFL 글꼴(`fonts.css`, 빌드가 `dist/fonts/`로, 고지 `app/THIRD_PARTY_NOTICES.txt`), 선 아이콘 한곳(`lib/icons.jsx`), 캔버스 위에 떠 있는 크롬(위 알약 묶음 둘, 좌우 도구 레일, 칩 줄, 줌 알약, 루프 목록: `Chrome.jsx`), 콘솔 아래쪽 승인 줄(`ApprovalCard.jsx`, 터미널이 줄 높이만큼 비킨다) |
-| 가지 펼치기 | 4절 K. 하위 세션 명령(부모 알아보기, 정식 하위 세션 띄우기, 물려받기, 상한, 자기 자손만 끄기), 일 맡기기 스킬, 나무 자리(`branch.mjs`, `bin/atrium-child.mjs`(별칭 `bin/mtask-child.mjs`), 창 `Branch.jsx`, `lib/branch.js`) |
+| 가지 펼치기 | 4절 K. 하위 세션 명령(부모 알아보기, 정식 하위 세션 띄우기, 물려받기, 신뢰 관문, 자기 자손만 끄기), 판에서 일하는 법 스킬, 나무 자리(`branch.mjs`, `bin/atrium-child.mjs`(별칭 `bin/mtask-child.mjs`), 창 `Branch.jsx`, `lib/branch.js`) |
 | 잠재우기 | 4절 D4. 리포 단위 판정과 잠재우기·깨우기(`sleep.mjs`, 판정 `repoSleepPlan`·`sessionActivity`, 초안 `draftAfterInput`, 설정 `sleepAfterMin`) |
 | 이름 옮기기 | 옛 이름(multitask) 판을 처음 뜰 때 한 번 옮긴다(`rename-migrate.mjs`, 창 프로필은 `app/src/main/profile.mjs`, 세부는 `docs/log/p18-rename-atrium.md`). 환경 변수는 `config.mjs`의 `envVar`(ATRIUM_*, 옛 MTASK_*) |
 
@@ -266,14 +266,14 @@
 | `kanban.create { title?, columns?, …, near? }`, `kanban.update { kanban, op? \| ops?, confirm? }`, `kanban.delete`, `kanban.list` | 칸반. `op`는 열·카드 더하기, 이름 바꾸기, 옮기기, 지우기, `linkCard` |
 | `loop.create { session, prompt, trigger, stop?, confirm }`, `loop.pause`, `loop.resume`, `loop.delete`, `loop.list { session? }` | 루프. `confirm`이 없으면 `needsConfirm` |
 | `mission.graph` | `{ nodes, edges }`(부를 때마다 만듦) |
-| `settings.get`, `settings.set { key, value }` | `tray`, `branchMaxChildren`, `branchMaxDepth`, `branchMaxTotal`, `archiveDays`, `autoOpenRepos` |
+| `settings.get`, `settings.set { key, value }` | `tray`, `archiveDays`, `autoOpenRepos` |
 | `recall.list { workspace? }`, `recall.closed`, `recall.reopen { session, model?, permissionMode?, effort? }`, `recall.dismiss { session }` | 보관되지 않은 닫힌 세션과 판 밖 대화, 보관된 수(`archived`), 다시 열기(묶여 있으면 `bound`), 보관(`dismiss`) |
 | `convo.list { workspace?, refresh? }`, `convo.open { convo, … }`, `convo.binding { convo }`, `convo.scan`, `convo.discover` | 판 밖 대화, 판으로 열기, 묶임 다시 판정, 다시 훑기, 리포 스스로 찾기 |
 | `archive.add { convo \| session \| items }`, `archive.restore { … }`, `archive.old { workspace, days?, confirm? }`, `archive.list { workspace? }` | 보관(열린 세션은 `open_session`), 꺼내기, 오래된 것 보관(`needsConfirm`), 보관함 |
 | `convo.nodes`, `convo.move { convo, x, y }`, `convo.subagents { convo }`, `convo.classify`, `missed.list`, `missed.delete { all \| folder \| convos, confirm }` | 대화 노드와 자리, 하위 에이전트 목록, 분류 수, missed 목록과 휴지통 지우기(확인 없으면 `needsConfirm`). `board.get`에 `convoNodes`, `convoEdges` |
-| `branch.tree`, `branch.limits` | 모든 열린 세션의 부모·깊이·역할과 상한 |
-| HTTP `POST /branch/child { name?, prompt?, role?, cwd?, worktree?, model?, kind?, wait? }` | 머리글 `X-MT-Session`, `Authorization: Bearer <세션 토큰>`. → 하위 세션의 이름, 패널, 역할, 깊이, `next`(일 시키기·답 읽기 명령). 거부는 상한 까닭, `needs_trust` |
-| HTTP `POST /branch/children { all? }`, `POST /branch/kill { name, only? }` | 자식 목록, 자손 끄기(`not_parent`) |
+| `branch.tree` | 모든 열린 세션의 부모·깊이·역할 |
+| HTTP `POST /branch/child { name?, prompt?, role?, cwd?, worktree?, model?, effort?, kind?, wait? }` | 머리글 `X-MT-Session`, `Authorization: Bearer <세션 토큰>`. → 하위 세션의 이름, 패널, 역할, 깊이, `next`(일 시키기·답 읽기 명령). 신뢰 관문이면 `needs_trust`와 `tellHuman`. 거부는 `needs_commit` |
+| HTTP `POST /branch/children { all? }`, `/branch/wait { name }`, `/branch/kill { name, only? }` | 자식 목록, 관문을 지나 준비되기 기다리기, 자손 끄기(`not_parent`) |
 
 **조회**
 
@@ -325,6 +325,7 @@
    - `allowProposedApi: true`로 만들고 `@xterm/addon-unicode11`을 켠다. 켜지 않으면 이모지가 든 줄이 어긋난다.
    - 프레임의 `w`·`h`가 바뀌면 그 프레임을 쓰기 전에 xterm 크기를 맞춘다.
    - 붙여넣기는 가로채 `ESC[200~ … ESC[201~`로 감싸 보낸다. 감싸지 않으면 줄마다 따로 제출된다.
+   - 끌어 고르기는 판 배율을 되돌린 자리로 칸을 구하고, 그동안 판은 움직이지 않는다. 복사·붙여넣기·휠 뒤와 고른 자리의 글이 바뀌면 선택을 지우고, 복사는 줄 끝 빈칸을 뺀다.
    - 마우스 휠은 SGR 마우스 시퀀스(위 `ESC[<64;x;yM`, 아래 `ESC[<65;x;yM`)로 바꿔 보낸다. 그러면 Claude Code가 스스로 대화를 스크롤한다.
    - Claude Code는 전체 화면 렌더러(기본값)로 띄우고 `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN`을 넘기지 않는다. 클래식으로 떨어지면 노드에 알린다.
    - WebGL 렌더러는 예산(기본 8) 안에서만 쓰고, 넘거나 컨텍스트를 잃으면 DOM으로 그린다. 노드마다 오류 경계를 둔다.
