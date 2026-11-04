@@ -62,7 +62,7 @@ Atrium은 에이전트를 대신하지 않고 일하는 방식을 정하지도 �
 | | |
 |---|---|
 | [Node.js](https://nodejs.org/) | 24.x |
-| [herdr](https://herdr.dev) | 0.9.5. `%USERPROFILE%\.herdr\packages\standalone\releases\0.9.5-x86_64-pc-windows-msvc\herdr.exe`에서 찾습니다. 다른 경로는 `ATRIUM_HERDR`로 줍니다. |
+| [herdr](https://herdr.dev) | 0.9.5(프로토콜 22)로 시험했습니다. herdr 설치 폴더나 `PATH`에서 찾습니다. 다른 파일을 쓰려면 `ATRIUM_HERDR`나 설정의 herdr 경로로 줍니다. 프로토콜 22인 다른 버전은 경고와 함께 씁니다. herdr가 없어도 보드는 열리지만 세션은 시작할 수 없습니다. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `PATH`에 있는 최근 `claude` CLI. |
 | Git | 저장소와 워크트리를 알아내는 데 씁니다. |
 | 선택 | Codex 세션에는 Codex CLI. DeepSeek 세션에는 `127.0.0.1:10100`의 Anthropic 호환 게이트웨이(예: opencodex). |

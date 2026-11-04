@@ -62,7 +62,7 @@ Atrium is **Windows only** for now (Windows 10 or 11, x64).
 | | |
 |---|---|
 | [Node.js](https://nodejs.org/) | 24.x |
-| [herdr](https://herdr.dev) | 0.9.5. Atrium looks for `%USERPROFILE%\.herdr\packages\standalone\releases\0.9.5-x86_64-pc-windows-msvc\herdr.exe`. Set `ATRIUM_HERDR` to use another path. |
+| [herdr](https://herdr.dev) | Tested with 0.9.5 (protocol 22). Atrium finds herdr in the herdr install folder or on `PATH`. To use another file, set `ATRIUM_HERDR` or the herdr path in Settings. Other versions with protocol 22 work, with a warning. Without herdr the board still opens, but sessions cannot start. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`. |
 | Git | For repository and worktree detection. |
 | Optional | Codex CLI for Codex sessions. An Anthropic-compatible gateway on `127.0.0.1:10100` (for example opencodex) for DeepSeek sessions. |

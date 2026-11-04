@@ -240,7 +240,7 @@ api.on('$open', async (r) => {
     const ds = await api.call('delivery.list', { limit: 10 });
     state.deliveries = new Map(ds.reverse().filter((d) => state.sessions.has(d.sessionId)).map((d) => [d.deliveryId, d])); // 판에 있는 세션 것만
     const st = await api.call('herdr.status');
-    state.herdr = { connected: st.connected, running: st.running, session: st.session, version: st.compat && st.compat.version };
+    state.herdr = herdrStateOf(st);
     changed();
     const [res, clients] = await Promise.all([api.call('resources.get'), api.call('herdr.clients')]);
     state.resources = res; state.clients = clients;
@@ -267,7 +267,18 @@ api.on('delivery', (d) => {
 // P13: 판 밖 대화 노드가 바뀌었다(새 대화, 자리, 보관, 판 세션이 됨, 묶임 표시)
 export function setConvoNodes(nodes, edges) { state.convoNodes = new Map((nodes || []).map((c) => [c.convId, c])); state.convoEdges = edges || []; changed(); }
 api.on('convo.nodes', (d) => setConvoNodes(d.nodes, d.edges));
-api.on('herdr', (d) => { state.herdr = { ...state.herdr, connected: d.connected }; changed(); });
+api.on('herdr', (d) => { state.herdr = { ...state.herdr, ...herdrEventOf(d) }; changed(); });
+// P40: herdr 상태(herdr.status 결과, herdr 이벤트) → 창이 쓰는 값. 띠(못 찾음, 다른 프로토콜, 검증하지 않은 버전, 새 버전)와 알약이 읽는다
+export function herdrStateOf(st) {
+  return { connected: st.connected, running: st.running, session: st.session, version: (st.compat && st.compat.version) || null, ...herdrEventOf(st) };
+}
+export function herdrEventOf(d) {
+  const out = { connected: d.connected };
+  for (const k of ['missing', 'level', 'warning', 'problems', 'protocols', 'tested', 'update', 'path', 'find']) if (k in d) out[k] = d[k];
+  if (d.version) out.version = d.version;
+  if (d.protocol != null) out.protocol = d.protocol;
+  return out;
+}
 api.on('board.changed', () => { loadBoard().catch(() => {}); });
 api.on('link.updated', (l) => { state.links = new Map(state.links); if (l.removedAt) state.links.delete(l.linkId); else state.links.set(l.linkId, l); changed(); });
 api.on('link.removed', (d) => { state.links = new Map(state.links); state.links.delete(d.linkId); changed(); });

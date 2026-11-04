@@ -578,6 +578,18 @@ img.mt-kind-icon { object-fit: contain; }
 .mt-warns { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); width: min(760px, calc(100% - 180px)); display: grid; gap: 6px; z-index: 41; }
 .mt-warnbar { background: var(--warn-band); color: var(--text); padding: 8px 12px; font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 10px; box-shadow: var(--chrome-shadow); }
 .mt-warnbar.bad { background: var(--bad-band); border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
+/* P40: 설정의 herdr 경로 칸 */
+.mt-set-path { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.mt-set-path .mt-set-text { flex: 1 1 auto; min-width: 0; width: 100%; }
+/* P40: herdr 띠(못 찾음, 다른 프로토콜, 검증하지 않은 버전, 새 버전) */
+.mt-herdr-band { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.mt-herdr-band .mt-herdr-head { flex: 1 1 360px; min-width: 0; line-height: 1.45; }
+.mt-warnbar-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.mt-warnbar-actions a.mt-btn { text-decoration: none; }
+.mt-herdr-tried { flex: 1 0 100%; font-size: 12px; }
+.mt-herdr-tried summary { cursor: pointer; color: var(--text-dim, inherit); }
+.mt-herdr-tried ul { margin: 4px 0 0; padding-left: 18px; max-height: 140px; overflow: auto; }
+.mt-herdr-tried li { overflow-wrap: anywhere; }
 
 /* 복귀 요약 */
 .mt-return { position: absolute; top: 60px; right: 74px; width: min(620px, 50vw); max-height: 60vh; overflow: auto; z-index: 37; background: var(--panel); border: 1px solid var(--panel-line); border-radius: var(--panel-radius); padding: 10px 12px; box-shadow: var(--panel-shadow); }

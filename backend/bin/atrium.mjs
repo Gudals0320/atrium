@@ -10,6 +10,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   backend start|stop|status         백엔드 띄우기(없으면 herdr 서버도 띄움), 끄기, 상태
   status                            백엔드와 판 전용 herdr 상태(버전, 프로토콜, 기능)
   herdr start|stop|restart [--yes]  판 전용 herdr 서버 켜기, 끄기, 다시 띄우기
+  herdr status|rediscover           herdr 진단(고른 실행 파일, 본 후보, 버전 경고), 다시 찾기(P40)
   spawn <폴더> [--launcher 호출자] [--name n] [--prompt 글] [--model m] [--effort e] [--mode 권한모드] [--kind 종류|shell] [--args "인자"] [--allow-herdr]   --launcher면 그 호출자로 띄우고 준 값이 덮는다(P33)
   launchers                         호출자 목록(즐겨찾기 순서, 하네스, 명령 미리보기, P33)
   ls [--ws 워크스페이스]            세션 목록과 상태(워크스페이스별)
@@ -171,6 +172,12 @@ async function main() {
         if (st.previousRun) console.log(`  이전 실행: ${st.previousRun.cleanShutdown ? '정상 종료' : '비정상 종료'}, 꺼져 있던 시간 ${(st.previousRun.downMs / 1000).toFixed(1)}초(그동안 세션 화면에 hook 연결 오류 글이 찍혔을 수 있다)`);
         console.log(`herdr 세션=${h.session} 실행=${h.running} 연결=${h.connected} 서버 pid=${h.serverPid} CLI=${h.cliVersion}`);
         if (h.compat) console.log(`  version=${h.compat.version} protocol=${h.compat.protocol} 호환=${h.compat.ok}${h.compat.problems.length ? ' 문제: ' + h.compat.problems.join('; ') : ''}\n  capabilities=${JSON.stringify(h.compat.capabilities)}`);
+        // P40: 고른 실행 파일과 까닭, 본 후보, 경고
+        const ch = h.find && h.find.chosen;
+        console.log(`  실행 파일=${h.path || '(못 찾음)'}${ch ? ` (${ch.reason})` : ''}${h.find && h.find.note ? ` [${h.find.note}]` : ''}`);
+        if (h.missing || !ch) for (const t of (h.find && h.find.tried) || []) console.log(`    ${t.ok ? 'ok ' : '-- '}${t.source.padEnd(9)} ${t.path}${t.ok ? ` ${t.version}` : ` (${t.error})`}`);
+        if (h.warning) console.log(`  경고: ${h.warning}`);
+        if (h.update) console.log(`  알림: ${h.update.message}`);
         if (st.relay.length) console.log(`  붙은 제어기: ${JSON.stringify(st.relay)}`);
         return;
       }
