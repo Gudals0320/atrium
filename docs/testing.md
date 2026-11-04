@@ -43,6 +43,8 @@
 - 시험 에이전트가 부르는 `herdr` 명령에 `--session`, `--machine`, `--remote`를 쓰게 하지 않는다. 판이 띄운 패널의 `herdr`는 herdr가 넣는 `HERDR_SESSION`·`HERDR_SOCKET_PATH`로 판 전용 세션에 붙는다.
 - herdr 소켓 API의 `pane.split`은 `target_pane_id`로 대상을 준다. 빼면 초점 패널(사용자 세션일 수 있다)을 나눈다.
 
+- herdr 없음·다른 버전은 설치된 herdr를 바꾸지 않고 가린 env와 `ATRIUM_HERDR_TESTED`·`ATRIUM_HERDR_PROTOCOLS`로 흉내 낸다.
+
 ## 단위 시험
 
 - 백엔드: `cd backend && npm test`
