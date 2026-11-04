@@ -19,7 +19,7 @@
 
 | 구분 | 종류 | 파일 | 수명 | 쓰기 규칙 |
 |---|---|---|---|---|
-| 살아 있음 | 상시 규칙 | `CLAUDE.md` 또는 `AGENTS.md` | 영구, 매 세션 로드 | 모든 세션이 지킬 규칙만. 특정 도구·환경 변수·명령 이름이 든 줄은 `testing.md`로, 변경 이력은 `README.md`로 보낸다. |
+| 살아 있음 | 상시 규칙 | `CLAUDE.md` 또는 `AGENTS.md` | 영구, 매 세션 로드 | 모든 세션이 지킬 규칙만. 특정 도구·환경 변수·명령 이름이 든 줄은 `testing.md`로, 변경 이력은 `CHANGELOG.md`로 보낸다. |
 | 살아 있음 | 인계 | `docs/BRIEF.md` | 영구 | 왜, 무엇, 정한 것 표. 표의 행은 500자 이하, 날짜 하나만 남긴다. 결정이 바뀌면 행을 다시 쓰고 이전 문장은 지운다. |
 | 살아 있음 | 설계 | `docs/ARCH.md` | 영구, 드물게 바뀜 | 프로세스 구조, 데이터 모델, 모듈 표, API 표만. 지금의 구조를 쓴다. 구현하며 정한 세부 값(픽셀, 초, 상한, 단축키)은 코드와 보고 절에만 둔다. |
 | 살아 있음 | 계획 | `docs/PLAN.md` | 현재 단계와 다음 단계 | 아래 "PLAN의 구조". |
@@ -71,13 +71,14 @@ PLAN은 2단계 제목이 세 개뿐이다.
 
 ## 2. 어디에 두는가
 
-- 루트에는 `README.md`와 `CLAUDE.md`(또는 `AGENTS.md`)만 둔다.
+- 루트에는 `README.md`와 그 번역, `CHANGELOG.md`, `CLAUDE.md`(또는 `AGENTS.md`)만 둔다.
 - `docs/` 바로 아래에는 1절의 파일만 둔다. 하위 폴더는 `log/`, `experiments/`, `research/` 셋뿐이다. 다른 폴더나 파일이 있으면 검사가 실패한다.
 - 작업 파일은 모두 `docs/log/` 한 폴더에 둔다. 단계가 늘어도 늘어나는 곳은 여기뿐이다.
 
 ```
 저장소/
 ├── README.md
+├── CHANGELOG.md
 ├── CLAUDE.md
 ├── .githooks/pre-commit
 ├── .claude/settings.json      훅 설정
@@ -158,7 +159,7 @@ node scripts/check-docs.mjs --close    # 단계 닫기: HEAD 대비 비증가, �
 1. 이 규약을 `docs/README.md`로, `check-docs.mjs`와 `docs-guard.mjs`를 `scripts/`로, `pre-commit`을 `.githooks/`로 복사한다. `.claude/settings.json`에 훅 설정을 합친다(스킬의 `assets/hooks.json`). `git config core.hooksPath .githooks`를 건다. SessionStart 훅이 새 클론에서도 같은 설정을 건다.
 2. 계획 문서를 나눈다. 프로세스 구조, 데이터 모델, 모듈 표, API 표는 ARCH로. 끝난 단계의 시나리오와 경위, 측정 기록은 `decisions.md`와 작업 파일의 보고 절로. PLAN에는 지금 단계와 다음 단계만 남기고 세 절 구조로 다시 쓴다.
 3. 작업마다 `docs/log/<작업>.md`를 만들고 지시문을 지시 절로, 보고서를 보고 절로 옮긴다. 첫 줄은 `상태: 닫힘`.
-4. CLAUDE.md에서 변경 이력 문단을 README로, 도구·환경 변수·명령 이름이 든 줄을 `testing.md`로 옮긴다. 다음 한 줄을 넣는다.
+4. CLAUDE.md에서 변경 이력 문단을 CHANGELOG로, 도구·환경 변수·명령 이름이 든 줄을 `testing.md`로 옮긴다. 다음 한 줄을 넣는다.
 
    > 문서를 만들거나, 작업을 맡기거나, 단계를 닫을 때는 `docs/README.md`를 따른다.
 

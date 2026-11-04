@@ -6,7 +6,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, relative, isAbsolute } from "node:path";
 
-const ROOT_ALLOW = ["README.md", "CLAUDE.md", "AGENTS.md", "LICENSE.md"];
+const ROOT_ALLOW = ["README.md", "README.ko.md", "CHANGELOG.md", "CLAUDE.md", "AGENTS.md", "LICENSE.md"];
 const DOCS_ALLOW = ["README.md", "BRIEF.md", "ARCH.md", "PLAN.md", "testing.md", "decisions.md"];
 const DOCS_DIRS = ["log", "experiments", "research"];
 const LIVE_FOR_WORKER = ["CLAUDE.md", "AGENTS.md", "docs/PLAN.md", "docs/BRIEF.md", "docs/testing.md", "docs/decisions.md", "docs/README.md"];

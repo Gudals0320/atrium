@@ -1,0 +1,3 @@
+#!/bin/sh
+# 공개 저장소 검사: 커밋 메시지. --no-verify 로 건너뛰지 않는다.
+node scripts/check-public.mjs --message "$1"

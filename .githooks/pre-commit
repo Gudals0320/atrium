@@ -1,0 +1,4 @@
+#!/bin/sh
+# docs 규약 검사와 공개 저장소 검사. 실패하면 고친 뒤 다시 커밋한다. --no-verify 로 건너뛰지 않는다.
+node scripts/check-docs.mjs --staged || exit 1
+node scripts/check-public.mjs --staged
