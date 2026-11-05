@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig, legacyOf, legacyAppUserData, profileEnv, LEGACY_REAL } from '../src/config.mjs';
 import { pathFixer, moveDataDir, migrateLegacyData, fixLegacyRecords, shutdownLegacyBackend, checkLegacyDevHerdr, LegacyBlocked, MARKER, PANE_PREFIX } from '../src/rename-migrate.mjs';
 import { Store } from '../src/store.mjs';
+import { backendInfo, health } from '../src/client.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p18-'));
@@ -217,12 +218,14 @@ import { WebSocketServer } from ${JSON.stringify(path.join(HERE, '..', 'node_mod
 const srv = http.createServer((q, s) => { s.end(JSON.stringify({ ok: true })); });
 const wss = new WebSocketServer({ noServer: true });
 srv.on('upgrade', (q, so, h) => wss.handleUpgrade(q, so, h, (ws) => ws.on('message', (m) => { const { id, method } = JSON.parse(m); ws.send(JSON.stringify({ id, result: { ok: true } })); if (method === 'backend.shutdown') setTimeout(() => process.exit(0), 300); })));
-srv.listen(0, '127.0.0.1', () => fs.writeFileSync(process.argv[2], JSON.stringify({ pid: process.pid, port: srv.address().port, token: 'tok' })));
+srv.listen(0, '127.0.0.1', () => { fs.writeFileSync(process.argv[2] + '.tmp', JSON.stringify({ pid: process.pid, port: srv.address().port, token: 'tok' })); fs.renameSync(process.argv[2] + '.tmp', process.argv[2]); }); // 다 쓴 뒤에만 보이게
 `);
   const bj = path.join(d, 'backend.json');
   const p = spawn(process.execPath, [script, bj], { stdio: 'ignore' });
   try {
-    for (let i = 0; i < 100 && !fs.existsSync(bj); i++) await new Promise((r) => setTimeout(r, 50));
+    // 가짜 백엔드가 backend.json을 쓰고 /health에 답할 때까지(시간이 아니라 조건으로) 기다린다. 먼저 끝나면 그 까닭으로 실패한다
+    let exited = null; p.once('exit', (c) => { exited = c; });
+    while (!(backendInfo({ backendFile: bj }) && (await health(backendInfo({ backendFile: bj }).port)))) { assert.equal(exited, null, '가짜 백엔드가 먼저 끝났다'); await new Promise((r) => setTimeout(r, 20)); }
     const r = await shutdownLegacyBackend(d);
     assert.equal(r.stopped, true); assert.equal(r.pid, p.pid);
     assert.deepEqual(await shutdownLegacyBackend(d), { running: false }); // 이미 꺼졌다
