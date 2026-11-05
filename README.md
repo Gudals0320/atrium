@@ -9,7 +9,7 @@
 
 <p align="center">
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white">
-  <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-5FA04E?logo=nodedotjs&logoColor=white">
+  <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-22.13%2B-5FA04E?logo=nodedotjs&logoColor=white">
   <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1CB66D">
 </p>
@@ -101,7 +101,7 @@ Atrium is **Windows only** for now (Windows 10 or 11, x64).
 
 | | |
 |---|---|
-| [Node.js](https://nodejs.org/) | 24.x |
+| [Node.js](https://nodejs.org/) | 22.13 or later (tested on 22 and 24) |
 | [herdr](https://herdr.dev) | Tested with 0.9.5 (protocol 22). Atrium finds herdr in the herdr install folder or on `PATH`; set `ATRIUM_HERDR` or the path in Settings to use another file. Other versions with protocol 22 work, with a warning. Without herdr the board still opens, but sessions cannot start. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`. |
 | Git | For repository and worktree detection. |
@@ -201,7 +201,7 @@ flowchart LR
   WEB["Laptop browser"]
   TS["tailscale serve<br/>HTTPS, tailnet only"]
   CLI["atrium CLI"]
-  B["Backend<br/>Node 24, 127.0.0.1"]
+  B["Backend<br/>Node 22+, 127.0.0.1"]
   DB[("SQLite")]
   H["herdr session: atrium"]
   A["claude, codex, shells"]

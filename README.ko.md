@@ -9,7 +9,7 @@
 
 <p align="center">
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white">
-  <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-5FA04E?logo=nodedotjs&logoColor=white">
+  <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-22.13%2B-5FA04E?logo=nodedotjs&logoColor=white">
   <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1CB66D">
 </p>
@@ -101,7 +101,7 @@ Atrium은 에이전트를 대신하지 않고 일하는 방식을 정하지도 �
 
 | | |
 |---|---|
-| [Node.js](https://nodejs.org/) | 24.x |
+| [Node.js](https://nodejs.org/) | 22.13 이상(22와 24에서 시험) |
 | [herdr](https://herdr.dev) | 0.9.5(프로토콜 22)로 시험했습니다. herdr 설치 폴더나 `PATH`에서 찾고, 다른 파일을 쓰려면 `ATRIUM_HERDR`나 설정의 herdr 경로로 줍니다. 프로토콜 22인 다른 버전은 경고와 함께 씁니다. herdr가 없어도 보드는 열리지만 세션은 시작할 수 없습니다. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `PATH`에 있는 최근 `claude` CLI. |
 | Git | 저장소와 워크트리를 알아내는 데 씁니다. |
@@ -201,7 +201,7 @@ flowchart LR
   WEB["노트북 브라우저"]
   TS["tailscale serve<br/>HTTPS, tailnet 안"]
   CLI["atrium CLI"]
-  B["백엔드<br/>Node 24, 127.0.0.1"]
+  B["백엔드<br/>Node 22+, 127.0.0.1"]
   DB[("SQLite")]
   H["herdr 세션: atrium"]
   A["claude, codex, 셸"]

@@ -7,7 +7,7 @@
   "type": "module",
   "main": "src/main/main.mjs",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "node scripts/build.mjs",

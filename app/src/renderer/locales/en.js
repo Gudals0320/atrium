@@ -1792,7 +1792,7 @@ export default {
     moreProblems: { one: '(and {n} more)', other: '(and {n} more)' },
     showDiag: 'Show diagnosis',
     pair: 'Pair a browser',
-    pairDesc: 'Make a one-time code, or allow a request a browser sent. The browser then makes a passkey.',
+    pairDesc: 'Make a one-time code, or allow a request a browser sent. If passkey check is on, the browser then makes a passkey.',
     noRequests: 'No requests from browsers.',
     devices: 'Paired devices',
     devicesDesc: 'Browsers that can use this board. Disconnect closes the connection now; unpair removes the device.',

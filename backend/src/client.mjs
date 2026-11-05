@@ -44,14 +44,14 @@ export async function connect(cfg) {
 }
 
 // 백엔드가 없으면 띄운다. 백엔드는 herdr 서버가 없으면 띄운다(ARCH 1절 백엔드 수명).
-// nodePath: 백엔드를 돌릴 Node 24. Electron main에서는 process.execPath가 electron.exe라서 따로 준다.
+// nodePath: 백엔드를 돌릴 Node(22.13 이상, node:sqlite). Electron main에서는 process.execPath가 electron.exe라서 따로 준다.
 export async function startBackend(cfg, { nodePath = process.execPath } = {}) {
   const info = backendInfo(cfg);
   if (info && (await health(info.port))) return { already: true, pid: info.pid, port: info.port };
   fs.mkdirSync(cfg.logDir, { recursive: true });
   const log = fs.openSync(path.join(cfg.logDir, 'backend.out'), 'a');
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AGENT_SDK|ELECTRON_)/.test(k)));
-  const p = spawn(nodePath, [path.join(BACKEND_ROOT, 'src', 'main.mjs')], { env: { ...env, ...profileEnv(cfg) }, detached: true, stdio: ['ignore', log, log], windowsHide: true });
+  const p = spawn(nodePath, ['--disable-warning=ExperimentalWarning', path.join(BACKEND_ROOT, 'src', 'main.mjs')], { env: { ...env, ...profileEnv(cfg) }, detached: true, stdio: ['ignore', log, log], windowsHide: true });
   // 띄우지 못하면(없는 nodePath 등) error 이벤트가 온다. 받지 않으면 uncaught error로 이 프로세스(Electron main 포함)가 죽는다(이슈 #1-12)
   let spawnError = null;
   p.on('error', (e) => { spawnError = e; });
