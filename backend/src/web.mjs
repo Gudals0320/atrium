@@ -194,11 +194,16 @@ export function allowedHosts(port, extra = envVar('WEB_HOSTS') || '') {
   return hosts;
 }
 export const hostOk = (req, hosts) => hosts.has(String(req.headers.host || '').toLowerCase());
-// 기기 연결: Origin이 꼭 있고 받는 주소와 같아야 한다
+// 기기 연결: Origin이 꼭 있고 받는 주소(요청의 Host, 포트까지)와 같아야 한다.
+// 쿠키와 패스키(RP ID)는 포트를 가리지 않으므로, 같은 Tailscale 이름의 다른 포트 서비스(serve의 다른 항목)에서 온 페이지가 판을 부르지 못하게 한다
 export function originOk(req, hosts) {
   const o = req.headers.origin;
   if (!o) return false;
-  try { const u = new URL(o); return (u.protocol === 'http:' || u.protocol === 'https:') && hosts.has(u.host.toLowerCase()); } catch { return false; }
+  try {
+    const u = new URL(o);
+    const oh = u.host.toLowerCase();
+    return (u.protocol === 'http:' || u.protocol === 'https:') && hosts.has(oh) && oh === String(req.headers.host || '').toLowerCase();
+  } catch { return false; }
 }
 const FORWARD_HEADERS = ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded', 'x-real-ip'];
 // 이 PC의 프로세스가 직접 부른 요청인지(브라우저도, 앞단 프록시를 거친 것도 아니다). hook·branch·판 API 토큰 연결이 쓴다.

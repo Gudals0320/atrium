@@ -259,7 +259,7 @@ test('원격 받기 끄기: 바깥 요청과 기기 연결 거부, 붙은 연결
     const code = (await wsCall(local.ws, 'device.code')).result.code;
     const lr = await pairAndRegister(b.port, code, LOCAL(b.port), { name: 'Here' });
     const lo = { device: lr.device, cookie: lr.cookie, auth: lr.auth };
-    const localHdr = () => ({ origin: `http://localhost:${b.port}`, cookie: lo.cookie });
+    const localHdr = () => ({ host: `localhost:${b.port}`, origin: `http://localhost:${b.port}`, cookie: lo.cookie });
     const remoteDev = await openDevice(b, a);
     const localDev = await wsOpen(`ws://127.0.0.1:${b.port}/api`, localHdr());
     assert.ok(remoteDev.ok && localDev.ok);

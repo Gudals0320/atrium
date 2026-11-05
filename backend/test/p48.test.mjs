@@ -112,8 +112,9 @@ test('이 PC의 프로세스 판정과 Origin', () => {
   assert.equal(isLocalProcess(fakeReq({ host: `127.0.0.1:${port}`, origin: 'file://' }), port, { allowFileOrigin: true }), true, 'Electron 창');
   assert.equal(isLocalProcess(fakeReq({ host: `127.0.0.1:${port}`, origin: 'file://' }), port), false);
   const hosts = allowedHosts(port, 'pc.tail.ts.net');
-  assert.equal(originOk(fakeReq({ origin: `http://127.0.0.1:${port}` }), hosts), true);
-  assert.equal(originOk(fakeReq({ origin: 'https://pc.tail.ts.net' }), hosts), true);
+  assert.equal(originOk(fakeReq({ host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}` }), hosts), true);
+  assert.equal(originOk(fakeReq({ host: 'pc.tail.ts.net', origin: 'https://pc.tail.ts.net' }), hosts), true);
+  assert.equal(originOk(fakeReq({ host: `localhost:${port}`, origin: `http://127.0.0.1:${port}` }), hosts), false, 'P59: Origin은 요청 Host와 같아야 한다');
   assert.equal(originOk(fakeReq({ origin: 'http://evil.example' }), hosts), false);
   assert.equal(originOk(fakeReq({}), hosts), false);
 });
@@ -216,7 +217,7 @@ test('짝 맺기 전에는 API가 거부되고, 코드로 맺은 기기는 붙�
     // 기기로 WebSocket: Origin이 같아야 한다
     assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api`, { cookie })).ok, false, 'Origin 없음');
     assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api`, { cookie, origin: 'http://evil.example' })).ok, false);
-    const dev = await wsOpen(`ws://127.0.0.1:${b.port}/api`, { origin: H.origin, cookie });
+    const dev = await wsOpen(`ws://127.0.0.1:${b.port}/api`, { host: H.host, origin: H.origin, cookie });
     assert.equal(dev.ok, true);
     assert.equal((await wsCall(dev.ws, 'ping')).result.kind, 'device');
     // 기기는 코드를 만들거나 허락하지 못한다
