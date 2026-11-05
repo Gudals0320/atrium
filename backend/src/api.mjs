@@ -22,6 +22,12 @@ export class ApiServer {
   handleUpgrade(req, socket, head) {
     const u = new URL(req.url, 'http://127.0.0.1');
     const auth = this.authorize ? this.authorize(req) : (u.pathname === '/api' && u.searchParams.get('token') === this.token ? { kind: 'local' } : null);
+    // P57: 바깥 기기 연결은 authorize가 whois를 기다리는 약속을 돌려준다. 실패하면 막는다
+    if (auth && typeof auth.then === 'function') { auth.then((a) => this._upgrade(a, req, socket, head), () => this._upgrade(null, req, socket, head)); return; }
+    this._upgrade(auth, req, socket, head);
+  }
+  _upgrade(auth, req, socket, head) {
+    if (socket.destroyed) return;
     if (!auth) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return;
     }

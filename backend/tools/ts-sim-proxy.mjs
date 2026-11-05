@@ -12,8 +12,11 @@ import { fileURLToPath } from 'node:url';
 export function simHeaders(headers, cfg) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) if (!k.toLowerCase().startsWith('tailscale-')) out[k.toLowerCase()] = v; // serve는 들어온 사용자 머리글을 지운다
-  out.host = cfg.host || cfg.name;
-  if (out.origin) out.origin = `https://${cfg.name}`;
+  // P56: keepOrigin이면 Host와 Origin을 브라우저가 보낸 그대로 둔다(패스키의 clientDataJSON origin이 브라우저 주소라 Origin 머리글과 같아야 한다)
+  if (!cfg.keepOrigin) {
+    out.host = cfg.host || cfg.name;
+    if (out.origin) out.origin = `https://${cfg.name}`;
+  } else if (cfg.host) out.host = cfg.host;
   if (cfg.login) { out['tailscale-user-login'] = cfg.login; out['tailscale-user-name'] = cfg.userName || 'Test User'; }
   out['x-forwarded-for'] = cfg.ip || '100.64.0.2';
   out['x-forwarded-proto'] = 'https';
@@ -22,8 +25,8 @@ export function simHeaders(headers, cfg) {
 }
 
 // cfg는 도는 중에 바꿀 수 있다(login, host). close()는 열린 연결을 모두 끊는다(끊김 시험)
-export function startTsSim({ listen, target, name = 'pc.example.ts.net', login = 'me@example.com', log = () => {} }) {
-  const cfg = { name, login, host: null };
+export function startTsSim({ listen, target, name = 'pc.example.ts.net', login = 'me@example.com', keepOrigin = false, log = () => {} }) {
+  const cfg = { name, login, host: null, keepOrigin };
   const socks = new Set();
   const srv = http.createServer((req, res) => {
     const up = http.request({ host: '127.0.0.1', port: target, method: req.method, path: req.url, headers: simHeaders(req.headers, cfg) }, (r) => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });

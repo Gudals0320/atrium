@@ -111,15 +111,27 @@ You can use the board from a laptop browser over [Tailscale](https://tailscale.c
    `enable` runs `tailscale serve --bg --https=443 http://127.0.0.1:47800`. Without `--yes` it only prints the command. If another service already uses https 443, it stops and suggests a port (`--https-port 8443`). `remote guide` prints these steps.
 4. On the laptop, open the address that `remote status` shows, for example `https://my-pc.example-tailnet.ts.net/`.
 5. Pair the browser. On the PC window, open **Settings › Connected devices**, press **New code**, and type the 6-digit code on the laptop. Or ask for access from the laptop and allow it on the PC. The same tab shows the Tailscale check and the laptop address.
-6. Optional: use the browser's **Install app** to open the board in its own window.
+6. Create a passkey. Right after pairing, the laptop asks you to press **Create passkey** and confirm with Windows Hello, Touch ID or a security key. The device is added only after this step, and you have a few minutes to do it.
+7. Optional: use the browser's **Install app** to open the board in its own window.
+
+When the session ends, the laptop shows **Confirm it is you**: confirm with the same passkey and the board opens again. A session ends 12 hours after you sign in, or after 30 minutes with no connection (for example while the laptop sleeps). You can change both times in **Settings › Connected devices** on the PC. Passkeys work only on a secure page: open the board at its `https://…ts.net` address, or at `http://localhost:<port>` on the PC (not `127.0.0.1`).
 
 Security notes:
 
 - A paired browser has the same power as your Windows user on the PC. It can start a shell and run anything. Pair only your own devices.
+- The browser keeps no password or token. The board stores only the public key of the passkey. After you confirm with the passkey, the session lives in an `HttpOnly; SameSite=Strict` cookie (`Secure` on https) that scripts on the page cannot read. The board keeps only a hash of the session ID.
+- A paired browser works only from the Tailscale device it paired from. The board checks the requesting device with `tailscale whois` and refuses a session cookie or passkey signature that comes from a different Tailscale device. A browser paired on the PC itself (`localhost`) works only on the PC. The device list shows the device name that Tailscale confirmed in large text and the browser name in small text.
+- Unpairing a device, or disconnecting it from the PC, ends all of its sessions at once and closes its open connections. A disconnected device must confirm with its passkey again to reattach. A browser can unpair only itself; disconnecting or renaming other devices is done on the PC.
+- Browsers paired before passkeys (with a token) or before devices were bound to a Tailscale device cannot connect any more. They show **needs pairing again** in the device list. Remove them and pair the browser again.
 - Requests that come through Tailscale are accepted only from the Tailscale user logged in on the PC. You can add other logins, or turn the check off, in **Settings › Connected devices** on the PC.
 - Requests through Tailscale cannot call the hook and child-session endpoints, and the board API token is never given to a browser.
 - Do not use `tailscale funnel`. Funnel puts the board on the public internet. `remote status` warns when funnel is on.
-- To remove a device, press **Remove** in **Settings › Connected devices**, or run `node backend\bin\atrium.mjs devices rm <id>`. To stop remote access, run `node backend\bin\atrium.mjs remote disable --yes`.
+- You can see, disconnect and block remote connections from the PC.
+  - The PC window shows a notice when a remote device attaches or pairs (also an OS notification when the window is hidden).
+  - Click the **n other devices** pill at the top: each attached device has **Disconnect** (closes the connection and ends its session) and **Unpair**.
+  - Turn off **Accept remote connections** in **Settings › Connected devices** (or in the tray menu, or run `node backend\bin\atrium.mjs remote block`) to refuse every paired device and every request through Tailscale and end all device sessions. The window and the CLI on this PC keep working. Run `remote allow` to accept them again.
+  - Pairing, sign-ins, connects and disconnects, and refusals with their reason are kept in a connection log. See it in the same tab or with `node backend\bin\atrium.mjs remote log`.
+- To unpair a device, press **Unpair** in **Settings › Connected devices**, or run `node backend\bin\atrium.mjs devices rm <id>`. To stop remote access (serve), run `node backend\bin\atrium.mjs remote disable --yes`.
 
 ## How it works
 

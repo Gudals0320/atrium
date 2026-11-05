@@ -140,7 +140,7 @@ export class Backend {
     // P49(R3): Tailscale 상태 읽기(바꾸지 않는다). 이름을 Host 허용 목록에 넣고 로그인 사용자를 제한한다
     this.tailscale = new TailscaleWatch({ port: cfg.port, log: (m) => this.log(m), onChange: (ts) => this.log(`tailscale: ${ts.status && ts.status.running ? 'running' : 'not running'}, hosts ${tailscaleHosts(ts).length}`) });
     this.web = new WebServer({ cfg, store: this.store, api: null, log: (m) => this.log(m), recentDirs: () => this.recentDirs(), tailscale: this.tailscale, settings: () => (this.features ? this.features.settings.get() : {}) });
-    this.api = new ApiServer({ token: this.apiToken, ready: this.ready, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: () => { if (this.peers) this.peers.opened(); }, onClose: (c) => { if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
+    this.api = new ApiServer({ token: this.apiToken, ready: this.ready, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: (c) => { this.web.clientOpened(c); if (this.peers) this.peers.opened(); }, onClose: (c) => { this.web.clientClosed(c); if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
     this.web.api = this.api;
     this.tailscale.start();
     this.peers = new Peers({ api: this.api, log: (m) => this.log(m) });
@@ -242,7 +242,10 @@ export class Backend {
     this.api.handlers['settings.set'] = async (p, c) => {
       // P49: 원격 접속 규칙(remote*)은 이 PC의 창·CLI만 바꾼다
       if (c && c.auth && c.auth.kind !== 'local' && p && (Object.keys(p).some((k) => k.startsWith('remote')) || String(p.key || '').startsWith('remote'))) throw Object.assign(new Error('only the board on this PC can change remote access rules'), { code: 'forbidden' });
+      const wasAccepting = this.web.accepting();
       const r = await setSettings(p, c);
+      const nowAccepting = this.web.accepting();
+      if (nowAccepting !== wasAccepting) r.remote = this.web.accessChanged(nowAccepting); // P58: 원격 받기 끄기·켜기(끄면 붙은 원격 연결을 닫는다)
       if (p && ('herdrPath' in p || p.key === 'herdrPath')) r.herdr = await this.rediscoverHerdr('settings').catch((e) => { this.log('herdr rediscover error', e.stack); return null; });
       return r;
     };

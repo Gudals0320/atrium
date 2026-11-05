@@ -11,6 +11,7 @@ import WebSocket from 'ws';
 import { Store } from '../src/store.mjs';
 import { ApiServer } from '../src/api.mjs';
 import { WebServer, isLocalProcess } from '../src/web.mjs';
+import { pairAndRegister, loginWith } from './fake-authenticator.mjs'; // P56
 import { bindAuth, parseClientHello } from '../src/multiclient.mjs';
 import { Peers, peerHandlers } from '../src/peers.mjs';
 import { TerminalRelay } from '../src/relay.mjs';
@@ -21,6 +22,7 @@ import {
   serveCommand, serveOffCommand, portConflict, freeHttpsPort, remoteUrl, proxiesTo, tailscaleBin, runTailscale,
 } from '../src/tailscale.mjs';
 import { planChange, formatStatus, guideText, localStatus } from '../bin/atrium-remote.mjs';
+import { fakeWhois } from '../../app/test/e2e/p49-fake-tailscale.mjs'; // P57: whois 가짜 출력(100.64.0.2·3은 me, 4는 other)
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p49-'));
 const PORT = 47868;
@@ -48,6 +50,7 @@ const runner = (status, serve, calls = []) => async (bin, args) => {
   calls.push(args.join(' '));
   if (args[0] === 'status') { if (status instanceof Error) throw status; return JSON.stringify(status); }
   if (args[0] === 'serve') return JSON.stringify(serve);
+  if (args[0] === 'whois') { const w = fakeWhois(args[2]); if (!w) throw new Error('no match for IP'); return JSON.stringify(w); }
   throw new Error('unexpected');
 };
 const tsOf = async (o = {}) => readTailscale({ port: PORT, bin: 'tailscale', run: runner(fakeStatus(o), fakeServe(o)) });
@@ -198,11 +201,15 @@ test('tailscale serve를 거친 요청: 같은 사용자만 짝 맺고 연결, �
     assert.equal((await raw(b.port, '/web/pair/request', { method: 'POST', headers: { ...viaServe('other@example.com'), origin, 'content-type': 'application/json' }, body: '{}' })).status, 403);
     // 머리글 없는 Tailscale 요청(태그 기기, funnel)도 막는다
     assert.equal((await raw(b.port, '/web/pair/code', { method: 'POST', headers: { host: NAME, origin, 'content-type': 'application/json' }, body: JSON.stringify({ code }) })).status, 403);
-    const ok = await raw(b.port, '/web/pair/code', { method: 'POST', headers: { ...viaServe(), origin, 'content-type': 'application/json' }, body: JSON.stringify({ code, name: 'laptop' }) });
-    assert.equal(ok.status, 200);
-    const token = ok.body.token;
+    // P56: 코드 → 등록 허가 → 패스키 등록(serve를 거친 같은 사용자) → 세션 쿠키
+    const ok = await pairAndRegister(b.port, code, { ...viaServe(), origin }, { name: 'laptop' });
+    assert.equal(ok.res.status, 200);
+    assert.match(ok.res.cookies[0], /; Secure$/, 'https 출처면 Secure');
+    const cookie = ok.cookie;
+    // 다른 사용자는 패스키 로그인도 못 한다
+    assert.equal((await loginWith(b.port, ok.auth, { ...viaServe('other@example.com'), origin })).res.status, 403);
     // 연결: 같은 사용자 + 같은 출처(https://이름)만. 원격 연결로 표시되고 압축이 켜진다. 웹 클라이언트로 알아본다
-    const dev = await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${token}&client=laptop-tab-1&kind=desktop`, { ...viaServe(), origin });
+    const dev = await wsOpen(`ws://127.0.0.1:${b.port}/api?client=laptop-tab-1&kind=desktop`, { ...viaServe(), origin, cookie });
     assert.equal(dev.ok, true);
     const who = (await wsCall(dev.ws, 'whoami')).result;
     assert.equal(who.kind, 'device'); assert.equal(who.remote, true);
@@ -211,16 +218,22 @@ test('tailscale serve를 거친 요청: 같은 사용자만 짝 맺고 연결, �
     assert.match(who.deflate, /permessage-deflate/, '원격 연결만 압축');
     const lw = (await wsCall(local.ws, 'whoami')).result;
     assert.equal(lw.remote, false); assert.equal(lw.deflate, '', '이 PC 안 연결은 압축하지 않는다');
-    // 다른 사용자는 기기 토큰이 있어도 연결하지 못한다
-    assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${token}`, { ...viaServe('other@example.com'), origin })).ok, false);
-    // 허용 목록에 더하면 된다
+    // 다른 사용자는 세션 쿠키가 있어도 연결하지 못한다
+    const otherHdr = { ...viaServe('other@example.com'), 'x-forwarded-for': '100.64.0.4', origin };
+    assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api`, { ...otherHdr, cookie })).ok, false);
+    // 허용 목록에 더하면 그 사용자도 자기 기기로 짝 맺고 쓴다(P57: 다른 기기의 세션은 여전히 못 쓴다)
     b.st.remoteAllowedLogins = 'other@example.com';
-    assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${token}`, { ...viaServe('other@example.com'), origin })).ok, true);
+    assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api`, { ...otherHdr, cookie })).ok, false, '다른 Tailscale 기기');
+    const code2 = (await wsCall(local.ws, 'device.code')).result.code;
+    const ok2 = await pairAndRegister(b.port, code2, otherHdr, { name: 'theirs' });
+    assert.equal(ok2.res.status, 200);
+    const dev2 = await wsOpen(`ws://127.0.0.1:${b.port}/api`, { ...otherHdr, cookie: ok2.cookie });
+    assert.equal(dev2.ok, true); dev2.ws.close();
     // 진단(remote.status)은 이 판의 값으로
     const d = (await wsCall(local.ws, 'remote.status')).result;
     assert.equal(d.ready, true); assert.equal(d.url, `https://${NAME}/`); assert.deepEqual(d.allowed, ['other@example.com']);
     assert.ok(d.checks.find((c) => c.id === 'hosts').level === 'ok');
-    assert.equal(d.checks.find((c) => c.id === 'devices').vars.n, 1);
+    assert.equal(d.checks.find((c) => c.id === 'devices').vars.n, 2);
     dev.ws.close(); local.ws.close();
   } finally { await b.close(); }
 });
@@ -232,9 +245,9 @@ test('R1·R2 합친 뒤: 기기 클라이언트는 web, ID가 없으면 기기�
   try {
     const local = await wsOpen(`ws://127.0.0.1:${b.port}/api?token=${b.apiToken}&client=pc-window&kind=desktop&name=PC`);
     const code = (await wsCall(local.ws, 'device.code')).result.code;
-    const origin = `http://127.0.0.1:${b.port}`;
-    const pr = await raw(b.port, '/web/pair/code', { method: 'POST', headers: { host: `127.0.0.1:${b.port}`, origin, 'content-type': 'application/json' }, body: JSON.stringify({ code, name: 'tab' }) });
-    const dev = await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${pr.body.token}`, { origin });
+    const origin = `http://localhost:${b.port}`; // P56: 패스키는 IP 주소에서 쓰지 못한다
+    const pr = await pairAndRegister(b.port, code, { host: `localhost:${b.port}`, origin }, { name: 'tab' });
+    const dev = await wsOpen(`ws://localhost:${b.port}/api`, { origin, cookie: pr.cookie });
     const h = (await wsCall(dev.ws, 'client.hello', { client: 'tab-xyz1', kind: 'desktop' })).result;
     assert.equal(h.kind, 'web'); assert.equal(h.clientId, 'tab-xyz1');
     const list = (await wsCall(local.ws, 'clients.list')).result;
