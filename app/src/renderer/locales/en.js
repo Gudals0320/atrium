@@ -1363,4 +1363,10 @@ export default {
     bracket: 'bracket',
     around: 'perimeter route',
   },
+  // P43: arrow keys on the board (the board has keyboard focus, e.g. after clicking an empty spot) and the auto-hiding bottom bar
+  boardKeys: {
+    tool: '← on the board switches between Select and Link',
+    search: '↑ on the board also opens search. Click outside it or press Esc to close',
+    command: 'Ctrl+K or ↓ on the board to type here. The bar hides until you point at the bottom edge',
+  },
 };

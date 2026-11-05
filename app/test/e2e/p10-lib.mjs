@@ -34,6 +34,7 @@ export async function launch({ log = console.log } = {}) {
   page.on('console', (m) => { if (m.type() === 'error') log(`[console.error] ${m.text().slice(0, 300)}`); });
   page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));
   await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 90000 });
+  await page.evaluate(() => window.__mt.pinBottom && window.__mt.pinBottom(true)); // P43: 아래 바를 늘 보이게(옛 창 시험은 바를 바로 누른다)
   // P11: 이 PC의 지금 화면에서는 기본 창(1600×960)이 최소 크기(900×600)로 뜬다. P10 시험 때와 같은 창 안쪽 1584×921로 맞춘다
   if (P11) { await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1584, 921)); await sleep(500); }
   const pid = await app.evaluate(() => process.pid);

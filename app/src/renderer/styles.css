@@ -1026,3 +1026,20 @@ button.mt-cv-chip:hover { border-color: var(--cv-line-hi); color: var(--text); }
 
 /* P38: 터미널에서 끌어 고르는 동안은 노드·판 위로 나가도 포인터를 글 고르기 모양으로 */
 body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
+
+/* P43: 아래 바 자동 숨김(CommandBar.jsx useAutoHide, lib/bottom.js). 숨은 동안 바와 칩은 마우스를 받지 않아 밑의 터미널이 눌린다.
+   전달 칩(.mt-bottom-above)은 숨은 동안에도 보이되 아래로 내려 앉는다. 아래 가운데의 얇은 줄이 숨은 바 자리를 알린다 */
+.mt-bottom > .mt-cmd { transition: opacity .16s ease, transform .18s ease; }
+.mt-bottom[data-hidden="1"] { pointer-events: none; }
+.mt-bottom[data-hidden="1"] > .mt-cmd { opacity: 0; transform: translateY(18px); }
+.mt-bottom-above { transition: bottom .18s ease; }
+.mt-bottom[data-hidden="1"] .mt-bottom-above { bottom: 4px; }
+.mt-chips { transition: opacity .16s ease, transform .18s ease; }
+.mt-chips[data-hidden="1"] { opacity: 0; transform: translateX(-50%) translateY(18px); pointer-events: none; }
+.mt-bottom-hint { position: absolute; left: 50%; bottom: 7px; width: 72px; height: 4px; margin-left: -36px; border-radius: 2px; background: var(--chrome-text-3); opacity: 0; pointer-events: none; z-index: 34; transition: opacity .2s ease; }
+.mt-bottom-hint[data-on="1"] { opacity: .28; }
+@media (prefers-reduced-motion: reduce) { .mt-bottom > .mt-cmd, .mt-bottom-above, .mt-chips, .mt-bottom-hint { transition: none; } }
+
+/* P43: 찾기 바는 위 가운데(위 알약 줄 아래)에 뜨고 결과는 아래로 펼친다 */
+.mt-search { top: 60px; bottom: auto; }
+.mt-search-list { max-height: min(50vh, calc(100vh - 200px)); }

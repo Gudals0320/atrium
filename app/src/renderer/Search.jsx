@@ -1,6 +1,7 @@
 // 검색(ARCH 4절 H2, P6a)과 고른 노드 막대(H6·H7)
 // - 검색(Ctrl+F): 세션 이름, 워크스페이스 이름, 기다리는 질문, 요청, 답, 메모, 지난 지시에서 찾는다(백엔드 search.query, 판 기록만).
 //   위아래 화살표로 오가고 Enter로 그 노드(워크스페이스면 그 영역)로 간다. Esc로 닫는다.
+//   P43: 위 가운데(위 크롬 아래)에 뜨고 결과는 아래로 펼친다. 판에서 ↑ 키로도 연다. 바깥을 누르면 닫는다(누르기는 판에 그대로 간다)
 //   P6c: 출력(hook 없는 세션의 화면 답), 메모 노드, 칸반(제목, 열, 카드)도 나온다. 고르면 그 메모·칸반 노드로 간다(카드는 빛난다).
 // - 고른 노드 막대: Ctrl+누르기나 Shift+끌기로 노드를 고르면 뜬다. 크기(P26: 가로|세로 토글과 크게·보통·작게, 지금 크기 단계에 불), 배치 틀(P17 붙여 묶기, P23: 도형 단추,
 //   P26: 고른 세션 수에 맞는 틀만), 고름 풀기. P26: 위 알약 묶음과 같은 맨 위 줄 가운데에 두고, 자리가 모자라면 그 아래 줄로 접는다.
@@ -21,7 +22,15 @@ export function SearchBox() {
   const [res, setRes] = useState([]);
   const [pick, setPick] = useState(0);
   const inRef = useRef(null);
+  const boxRef = useRef(null);
   useEffect(() => { if (open) setTimeout(() => inRef.current && inRef.current.select(), 0); }, [open]);
+  // P43: 찾기 바 바깥을 한 번 누르면 닫는다. 누르기는 막지 않아 판에 그대로 간다(노드를 눌렀으면 노드도 골라진다)
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setSearchOpen(false); };
+    window.addEventListener('pointerdown', onDown, true);
+    return () => window.removeEventListener('pointerdown', onDown, true);
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const query = q.trim();
@@ -51,7 +60,7 @@ export function SearchBox() {
     return <>{text.slice(0, i)}<mark>{text.slice(i, i + q.trim().length)}</mark>{text.slice(i + q.trim().length)}</>;
   };
   return (
-    <div className="mt-search" data-role="search">
+    <div className="mt-search" data-role="search" ref={boxRef}>
       <input ref={inRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={t('search.placeholder')} data-field="search" spellCheck={false} />
       <div className="mt-search-list">
         {res.map((r, i) => (

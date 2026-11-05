@@ -32,6 +32,7 @@ export async function launch({ log = console.log, size = { w: 1584, h: 921 } } =
   page.on('console', (m) => { if (m.type() === 'error') log(`[console.error] ${m.text().slice(0, 300)}`); });
   page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));
   await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 90000 });
+  await page.evaluate(() => window.__mt.pinBottom && window.__mt.pinBottom(true)); // P43: 아래 바를 늘 보이게(옛 창 시험은 바를 바로 누른다)
   const loadedMs = Date.now() - t0;
   if (size) { await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0].setContentSize(s.w, s.h), size); await sleep(500); }
   const pid = await app.evaluate(() => process.pid);
