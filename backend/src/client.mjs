@@ -69,6 +69,12 @@ export async function startBackend(cfg, { nodePath = process.execPath } = {}) {
     }
     if (p.exitCode !== null) break;
   }
+  // P54: 같은 판을 둘이 함께 띄우면(CLI 둘, 창과 CLI) 늦은 쪽은 포트를 못 열고 끝난다. 먼저 뜬 백엔드가 돌면 그것을 쓴다
+  for (let i = 0; i < 15; i++) {
+    const other = backendInfo(cfg);
+    if (other && other.pid !== p.pid && (await health(other.port))) return { already: true, pid: other.pid, port: other.port };
+    await sleep(200);
+  }
   // P18: 백엔드가 까닭을 남기고 끝났으면(예: 옛 판을 옮기지 못함) 그 줄을 함께 알린다
   let why = '';
   try { why = fs.readFileSync(path.join(cfg.logDir, 'backend.out'), 'utf8').split(/\r?\n/).reverse().find((l) => l.startsWith('백엔드를 시작하지 못했다')) || ''; } catch {}

@@ -93,6 +93,8 @@ export class Backend {
     this.killing = new Set();
     this.logFile = path.join(cfg.logDir, 'backend.log');
     this.bus = new EventEmitter(); // P6b 기능(features.mjs)에 알린다: session, closed, screenAnswer
+    // P54: 판 API는 포트를 연 뒤 바로 요청을 받지만, 처리는 start()가 끝날 때까지 기다린다(뜨는 중의 relay 없음, herdr 실행 파일 고르기 전 herdr.stop)
+    this.ready = new Promise((r) => { this._markReady = r; });
   }
 
   log(...a) {
@@ -102,7 +104,11 @@ export class Backend {
   }
 
   // ---------- 시작과 끝 ----------
+  // P54: 실패해도 기다리던 요청은 풀어 준다(백엔드는 곧 끝난다)
   async start() {
+    try { return await this.startInner(); } finally { this._markReady(); }
+  }
+  async startInner() {
     const cfg = this.cfg;
     for (const d of [cfg.dataDir, cfg.sessionsDir, cfg.logDir]) fs.mkdirSync(d, { recursive: true });
     try {
@@ -134,7 +140,7 @@ export class Backend {
     // P49(R3): Tailscale 상태 읽기(바꾸지 않는다). 이름을 Host 허용 목록에 넣고 로그인 사용자를 제한한다
     this.tailscale = new TailscaleWatch({ port: cfg.port, log: (m) => this.log(m), onChange: (ts) => this.log(`tailscale: ${ts.status && ts.status.running ? 'running' : 'not running'}, hosts ${tailscaleHosts(ts).length}`) });
     this.web = new WebServer({ cfg, store: this.store, api: null, log: (m) => this.log(m), recentDirs: () => this.recentDirs(), tailscale: this.tailscale, settings: () => (this.features ? this.features.settings.get() : {}) });
-    this.api = new ApiServer({ token: this.apiToken, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: () => { if (this.peers) this.peers.opened(); }, onClose: (c) => { if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
+    this.api = new ApiServer({ token: this.apiToken, ready: this.ready, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: () => { if (this.peers) this.peers.opened(); }, onClose: (c) => { if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
     this.web.api = this.api;
     this.tailscale.start();
     this.peers = new Peers({ api: this.api, log: (m) => this.log(m) });
@@ -1388,6 +1394,9 @@ export class Backend {
     if ((op === 'stop' || op === 'restart') && !confirm) return confirmResult(warn, m('herdrStop'));
     const out = { op };
     if (op === 'stop' || op === 'restart') {
+      // P54: 끌 실행 파일을 모르면(찾기 실패) 다시 찾는다. 그래도 없으면 부르지 않고 까닭을 알린다(전에는 10초 기다린 뒤 'herdr not found'를 담아 돌려주었다)
+      if (!this.adapter.herdrPath) await this.resolveHerdr(op);
+      if (!this.adapter.herdrPath) throw apiError('herdr_missing', 'herdr 실행 파일을 찾지 못해 판 herdr 서버를 끌 수 없다. 설정의 herdr 경로나 ATRIUM_HERDR로 실행 파일을 준다');
       this.herdrStopping = true;
       out.stop = await this.adapter.stopServer();
       await sleep(500);

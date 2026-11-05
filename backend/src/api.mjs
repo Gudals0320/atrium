@@ -8,7 +8,9 @@ export const REMOTE_DEFLATE = { threshold: 512, zlibDeflateOptions: { level: 1 }
 
 export class ApiServer {
   // authorize(req): P48 연결 허락. { kind: 'local' }(판 API 토큰), { kind: 'device', device, remote? }(기기 토큰), null(막음). 없으면 판 API 토큰만 본다
-  constructor({ token, handlers, onClose, onOpen, log, authorize }) {
+  // ready: P54 백엔드가 다 뜰 때 풀리는 약속. 그 전에 온 요청은 기다렸다가 처리한다(뜨는 중인 백엔드의 빈 필드나 아직 없는 처리기를 부르지 않게)
+  constructor({ token, handlers, onClose, onOpen, log, authorize, ready = null }) {
+    this.ready = ready;
     this.token = token; this.handlers = handlers; this.onClose = onClose; this.onOpen = onOpen || (() => {}); this.log = log || (() => {}); this.authorize = authorize || null;
     this.wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
     this.wssRemote = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024, perMessageDeflate: REMOTE_DEFLATE }); // P49
@@ -40,6 +42,7 @@ export class ApiServer {
     ws.on('message', async (raw) => {
       let msg;
       try { msg = JSON.parse(String(raw)); } catch { return ws.send(JSON.stringify({ id: null, error: { code: 'bad_json', message: 'invalid JSON' } })); }
+      if (this.ready) await this.ready; // P54: 처리기는 뜨는 동안 더해지므로 기다린 뒤에 찾는다
       const h = this.handlers[msg.method];
       if (!h) return ws.send(JSON.stringify({ id: msg.id, error: { code: 'unknown_method', message: msg.method } }));
       try {
