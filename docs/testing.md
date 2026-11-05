@@ -38,6 +38,8 @@
 - 노드를 끌 때는 시작과 끝 자리가 함께 화면 안쪽에 오게 먼저 맞춘다. 끄는 점이 캔버스 가장자리에 닿으면 React Flow가 화면을 저절로 밀어 노드를 더 멀리 옮긴다.
 - 스크린숏과 로그는 `experiments/p<번호>/`에 둔다(git 밖).
 
+- 원격 창 시험(`p59-remote.mjs`)은 가짜 tailscale(whois 포함)과 노트북마다 흉내 프록시를 쓰고, Chromium 플래그로 흉내 주소를 보안 출처로 맞추며, 패스키는 CDP 가상 인증기로 만든다(`p59-lib.mjs`).
+
 ## herdr를 부르는 시험
 
 - 시험 에이전트가 부르는 `herdr` 명령에 `--session`, `--machine`, `--remote`를 쓰게 하지 않는다. 판이 띄운 패널의 `herdr`는 herdr가 넣는 `HERDR_SESSION`·`HERDR_SOCKET_PATH`로 판 전용 세션에 붙는다.

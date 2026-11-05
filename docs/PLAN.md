@@ -2,7 +2,7 @@
 
 ## 지금: 바뀐 화면으로 실제 판 쓰기
 
-판의 생김새를 symvibe 데모 화면을 따라 그린 목업(`app/design/board-mock/`)으로 바꿨고(`docs/log/p11-board-look.md`), 판 밖 CLI 대화가 리포별 대화 노드로 보인다(`docs/log/p13-outside-convos.md`). 사용자가 이 화면으로 실제 판을 쓰며 피드백을 주고, 피드백마다 작은 작업으로 고친다.
+사용자가 실제 판을 쓰며 피드백을 주고, 피드백마다 작은 작업으로 고친다.
 
 - 실제 판을 쓰며 나오는 화면과 사용성 피드백을 고친다. 새 화면은 목업에 먼저 그리고 견준 뒤 옮긴다(`docs/research/board-mock.md` 4절).
 - 화면 구조가 바뀌어 아직 다시 돌리지 않은 옛 창 시험(`p5-g4.mjs`, `c345.mjs`, `c3-trust.mjs`, `p6c-arrange.mjs`)을 맞춘다. 응답 필요 줄은 펼침 목록 안에 있고, 영역 이름표의 단추는 마우스를 올려야 보인다(`docs/testing.md`).
@@ -19,6 +19,7 @@
 | 손으로 잇기, 패널 ID가 바뀔 때의 알림, Claude Code 워크트리 기능, D3 경고 | `docs/log/p4-links.md` 보고 7절 |
 | 단일 캔버스와 남은 기능의 손맛(끌기, 오버뷰, 정리, 선과 붙여 묶기, 출력 보기, Thread, 메모, 루프, 미션 맵) | `docs/log/p6a-canvas.md` 보고 8절, `docs/log/p6c-features-screen.md` 보고 7절 |
 | 실제 대화로 사이드바 보기, git 최상위 폴더 대화를 판으로 열기(신뢰 대화상자) | `docs/log/p7-recall-sidebar.md` 보고 8절 |
+| 노트북에서 패스키(Windows Hello)로 다시 짝 맺기, 다시 확인, 실제 serve(https)에서 기기 묶기와 끊기·막기 | `docs/log/p59-remote-integrate.md` 보고 |
 | 노드에서 신뢰를 답한 워크트리 하위 세션이 `-w`로 다시 떠 첫 지시를 받는지 | `docs/log/p36-workers-skill.md` 보고 |
 | 영어·한국어 화면, Ctrl+끌기 붙이기와 배치 틀의 손맛(머리줄 잡기, 2×2 가운데 점) | `docs/log/p16-i18n.md`, `docs/log/p17-dock-layout.md` 보고 |
 | 실제 기록의 대화 노드와 띄움 선, missed 함의 폴더 목록을 보고 지우기 | `docs/log/p13-outside-convos.md` 보고 |

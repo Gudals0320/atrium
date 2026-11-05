@@ -1,4 +1,4 @@
-상태: 열림
+상태: 닫힘
 날짜: 2026-11-05
 
 ## 지시
@@ -147,3 +147,8 @@
 - ARCH 모듈 표: `passkey.mjs`(WebAuthn 확인, CBOR, 챌린지), `web-auth.mjs`(등록 허가, 세션, 쿠키), `remote-log.mjs`(연결 기록 `remote-log.jsonl`, 정한 필드만, 2000개·30일, 새로 붙음 판단), `tailscale.mjs` 행에 "whois 기기 확인(주소마다 기억)".
 - ARCH API 표: `POST /web/passkey/register/options`·`/register`·`/login/options`·`/login`, `POST /web/logout`, `device.disconnect { id }`·`device.revoke`·`device.rename`(이 PC만), `device.forget`(기기 자신만), `device.list`(기기에는 자기 기록만), `remote.log { limit }`(이 PC만), 이벤트 `remote.connected`·`remote.logged`(PC 창에만), `remote.status`의 `accepting`·`connected`·`nodes`. 판 기록 `webSessions`, 판 설정 `remoteSessionHours`·`remoteIdleMinutes`·`remoteAccess`.
 - testing.md: 원격 창 시험은 흉내 프록시를 `keepOrigin`으로 노트북마다 하나 띄운다(`cfg.ip` = 그 노트북의 tailnet 주소). 흉내 주소는 Chromium `--unsafely-treat-insecure-origin-as-secure`(쉼표로 여럿)와 `--host-resolver-rules`로 보안 출처로 맞추고, 인증기는 CDP 가상 인증기를 쓴다. 가상 인증기는 페이지에 붙으므로 그 페이지를 닫지 않는다(`app/test/e2e/p59-lib.mjs`). 가짜 tailscale은 whois도 낸다(100.64.0.2·3 노트북 A·B, 4 다른 사용자, 9 태그 기기). `ATRIUM_WEB_SESSION_TEST_SEC`(개발용 판만)로 세션 수명을, `ATRIUM_REMOTE_QUIET_MS`로 다시 연결 알림 간격을 줄인다. Playwright가 띄운 Electron 창에서 `document.hasFocus()`는 늘 참이라 창 상태는 main에서 본다.
+
+### 지휘 세션이 합칠 때 더한 것
+
+- 기기 연결의 Origin은 요청 Host와 포트까지 같아야 한다(`originOk`, `backend/test/p59-origin.test.mjs`). 이 PC처럼 같은 Tailscale 이름의 다른 포트에 다른 serve 항목이 있으면, 쿠키(SameSite는 포트를 보지 않음)와 패스키(RP ID는 이름)가 그쪽 페이지에도 통해 판 세션을 쓸 수 있었다. 시험 셋(p48 둘, p58 하나)이 Host와 다른 Origin으로 연결하고 있어 실제 브라우저처럼 맞췄다. 백엔드 445/445, 창 199/199, `p59-remote.mjs` 21/21.
+- 남는 위험: 같은 이름의 다른 포트 서비스는 요청에 실린 판 쿠키를 받는다(쿠키는 포트로 가를 수 없다). 그 서비스는 이 PC의 프로세스라 판 API 토큰도 읽을 수 있으므로 권한이 더 늘지는 않는다.
