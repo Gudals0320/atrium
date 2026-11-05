@@ -1,6 +1,6 @@
 // P47(원격 R1): 붙은 클라이언트(창, 웹, 트레이) 목록과 알림 받을 클라이언트. 판단은 multiclient.mjs의 순수 함수가 한다.
 // 이벤트 clients.updated {clients, notify}: 목록이나 알림 받을 클라이언트가 바뀔 때 구독한 클라이언트 모두에게 보낸다.
-import { clientList, pickNotifyClient, parseClientHello, ACTIVE_MS } from './multiclient.mjs';
+import { clientList, pickNotifyClient, parseClientHello, bindAuth, ACTIVE_MS } from './multiclient.mjs';
 
 const TICK_MS = 15000; // 활성이 저절로 끝나는 것(ACTIVE_MS)을 알아채는 주기
 
@@ -36,7 +36,7 @@ export class Peers {
 export function peerHandlers(b) {
   return {
     // 연결 주소 대신 첫 메시지로 알릴 수도 있다(P48 웹 화면). 주소 값과 같은 이름을 쓴다
-    'client.hello': (p, c) => { const h = parseClientHello(p || {}); if (h.clientId) Object.assign(c, h); else if (p && p.name) c.name = String(p.name).slice(0, 60); b.peers.publish(); return { clientId: c.clientId, name: c.name, kind: c.kind }; },
+    'client.hello': (p, c) => { const h = bindAuth(parseClientHello(p || {}), c && c.auth); /* P49: 기기 연결은 web */ if (h.clientId) Object.assign(c, h); else if (p && p.name) c.name = String(p.name).slice(0, 60); b.peers.publish(); return { clientId: c.clientId, name: c.name, kind: c.kind }; },
     'client.active': (_p, c) => { b.peers.touch(c); return { ok: true, notify: b.peers.view().notify }; },
     'clients.list': (_p, c) => ({ ...b.peers.view(), me: c ? c.clientId : null }),
   };

@@ -49,7 +49,9 @@ export class Api {
     // P47: 클라이언트 ID·기기 이름·종류를 연결 주소로 알린다(백엔드 multiclient.mjs parseClientHello). 웹 화면(P48)은 info.clientKind = 'web'
     this.clientName = clientName(info);
     const q = clientQuery({ clientId: this.clientId, name: this.clientName, kind: info.clientKind || 'desktop' });
-    const ws = new WebSocket(`ws://127.0.0.1:${info.port}/api?token=${info.token}${q ? `&${q}` : ''}`);
+    // P48: 웹 화면은 같은 출처와 기기 토큰(web.js의 info.wsUrl). P49: 웹도 클라이언트 값을 함께 붙인다
+    const base = info.wsUrl || `ws://127.0.0.1:${info.port}/api?token=${info.token}`;
+    const ws = new WebSocket(q ? `${base}${base.includes('?') ? '&' : '?'}${q}` : base);
     this.ws = ws;
     const live = () => gen === this.gen && this.ws === ws;
     this.openTimer = setTimeout(() => {

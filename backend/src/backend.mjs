@@ -8,6 +8,7 @@ import { HerdrAdapter, findHerdr, readServerExe } from './herdr/adapter.mjs';
 import { updateNotice } from './herdr/discover.mjs'; // P40: herdr 찾기와 업데이트 감지
 import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
+import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
 import { DeliveryQueue } from './delivery.mjs';
 import { TerminalRelay } from './relay.mjs';
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -127,7 +128,10 @@ export class Backend {
     this.startedAt = Date.now();
     this.hookUrl = `http://127.0.0.1:${cfg.port}/hooks/claude`;
 
-    this.api = new ApiServer({ token: this.apiToken, handlers: this.handlers(), onOpen: () => { if (this.peers) this.peers.opened(); }, onClose: (c) => { if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
+    // P48(R2): 웹 화면, 짝 맺기, 기기 토큰. 판 API 토큰 연결은 이 PC의 프로세스만, 기기 연결은 같은 출처의 브라우저만 받는다(web.mjs)
+    this.web = new WebServer({ cfg, store: this.store, api: null, log: (m) => this.log(m), recentDirs: () => this.recentDirs() });
+    this.api = new ApiServer({ token: this.apiToken, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: () => { if (this.peers) this.peers.opened(); }, onClose: (c) => { if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
+    this.web.api = this.api;
     this.peers = new Peers({ api: this.api, log: (m) => this.log(m) });
     this.http = http.createServer((req, res) => this.onHttp(req, res));
     this.http.on('upgrade', (req, sock, head) => this.api.handleUpgrade(req, sock, head));
@@ -274,6 +278,7 @@ export class Backend {
     this.store.setMeta('cleanShutdown', true);
     this.store.addEvent(null, 'backend_stopped', { reason });
     this.api.close();
+    if (this.web) this.web.stop();
     await new Promise((r) => this.http.close(r));
     try { const b = JSON.parse(fs.readFileSync(this.cfg.backendFile, 'utf8')); if (b.pid === process.pid) fs.rmSync(this.cfg.backendFile); } catch {}
     this.store.close();
@@ -462,6 +467,8 @@ export class Backend {
     const sums = [...this.sessions.values()].map((s) => this.summary(s));
     return rows.map((w) => ({ key: w.key, name: names.get(w.key), kind: w.kind, root: w.root, createdAt: w.createdAt, counts: workspaceCounts(sums, w.key), x: w.x, y: w.y, auto: !!w.auto, worktrees: this.worktrees ? this.worktrees.view(w.key) : [] })); // P27: 워크트리 영역
   }
+  // P48: 폴더 탐색기의 최근 폴더(워크스페이스 뿌리, 최근 세션 폴더)
+  recentDirs() { const ss = [...this.sessions.values()].sort((a, b) => (b.touchedAt || b.createdAt || 0) - (a.touchedAt || a.createdAt || 0)); return [...this.store.workspaces().map((w) => w.root), ...ss.map((x) => x.cwd)].filter(Boolean); }
   currentWorkspace() { const k = this.store.getMeta('currentWorkspace'); return k && this.store.getWorkspace(k) ? k : (this.store.workspaces()[0] || {}).key || null; }
   broadcastWorkspaces() { this.api.broadcast('workspace.updated', { workspaces: this.workspaceList(), current: this.currentWorkspace(), groups: readGroups(this).groups }); } // P44: groups(가상 그룹)
   // 처음 보는 워크스페이스면 줄을 만든다(세션이 하나라도 생기면 워크스페이스가 저절로 생긴다, G1)
@@ -594,8 +601,12 @@ export class Backend {
 
   // ---------- hook 수신기 ----------
   onHttp(req, res) {
-    if (req.method === 'POST' && req.url.split('?')[0] === '/hooks/claude') return this.onHook(req, res);
+    const u = req.url.split('?')[0];
+    // P48: hook과 하위 세션 명령은 이 PC의 프로세스만 부른다(브라우저·앞단 프록시를 거친 요청은 막는다)
+    if ((u === '/hooks/claude' || u.startsWith('/branch/')) && !isLocalProcess(req, this.cfg.port)) { res.writeHead(403); res.end(); return; }
+    if (req.method === 'POST' && u === '/hooks/claude') return this.onHook(req, res);
     if (this.branch && this.branch.handleHttp(req, res)) return; // P8: POST /branch/*(하위 세션 명령, 세션 토큰)
+    if (this.web && this.web.handleHttp(req, res)) return; // P48: 웹 화면(/, 정적 파일)과 /web/*(짝 맺기, 기기 정보, 업로드)
     if (req.method === 'GET' && req.url === '/health') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ ok: true, pid: process.pid })); }
     res.writeHead(404); res.end();
   }
@@ -1744,7 +1755,7 @@ export class Backend {
 
   handlers() {
     return {
-      'backend.status': async () => ({ pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, herdr: await this.herdrStatus(), sessions: this.sessions.size, relay: this.relay.stats(), clients: this.clients || null, plugin: this.plugin, migration: this.migrationView() }),
+      'backend.status': async () => ({ pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, herdr: await this.herdrStatus(), sessions: this.sessions.size, relay: this.relay.stats(), clients: this.clients || null, plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null }),
       'backend.shutdown': async () => { setTimeout(() => this.stop('api').then(() => process.exit(0)), 50); return { stopping: true }; },
       'herdr.status': () => this.herdrStatus(),
       'herdr.stop': (p) => this.herdrControl('stop', p.confirm),

@@ -9,6 +9,15 @@
 export const ACTIVE_MS = 5 * 60 * 1000; // 이 안에 입력이 있었으면 활성
 export const CLIENT_KINDS = ['desktop', 'web', 'tray', 'cli'];
 
+// P49: 기기 토큰(짝 맺은 브라우저)으로 붙은 연결은 늘 웹 클라이언트다. 연결 주소의 kind를 믿지 않고(desktop을 흉내 내어 알림을 가져가지 않게),
+// 이름이 없으면 짝 맺을 때의 기기 이름, ID가 없으면 기기마다 하나(web-<기기 ID>)를 쓴다
+export function bindAuth(hello, auth) {
+  const dev = auth && auth.kind === 'device' && auth.device;
+  if (!dev) return hello;
+  const id = hello.clientId || (/^[A-Za-z0-9_.:-]{1,70}$/.test(String(dev.id)) ? `web-${dev.id}` : null);
+  return { clientId: id, name: hello.name || dev.name || null, kind: 'web' };
+}
+
 // 연결 주소(URLSearchParams)나 client.hello 값 → 클라이언트 정보. ID가 없으면 목록에 넣지 않는 익명 연결(CLI, 옛 창)
 export function parseClientHello(q) {
   const get = (k) => (typeof q.get === 'function' ? q.get(k) : q[k]);

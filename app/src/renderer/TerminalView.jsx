@@ -26,6 +26,8 @@ import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/to
 import { termFontSize } from './lib/scale.js'; // P45
 import { useT, errText } from './lib/i18n.js';
 import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
+import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
+import { pathsText, filesOf, hasFiles } from './lib/upload.js';
 
 function readNumber(key, dflt) {
   const q = new URLSearchParams(location.search).get(key);
@@ -158,13 +160,25 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       return false;
     });
     // 붙여넣기: xterm보다 먼저(캡처 단계) 받아 괄호 붙여넣기로 감싼다. 감싸지 않으면 줄마다 따로 제출된다(E4 2.5).
+    // P48: 웹 화면은 붙여 넣거나 끌어 놓은 파일(그림 등)을 백엔드로 올리고 그 PC 경로를 넣는다
+    const uploadInto = (files) => {
+      flash(t('upload.uploading', { n: files.length }));
+      uploadFiles(files).then((paths) => { send(wrapPaste(pathsText(paths))); flash(t('upload.done', { n: paths.length })); perfLog('term_upload', { sessionId, n: paths.length }); },
+        (err) => { flash(t('upload.failed', { error: err.message })); window.mt.log(`upload failed ${sessionId}: ${err.message}`); });
+    };
     const onPaste = (e) => {
       e.preventDefault(); e.stopPropagation();
-      const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+      const files = isWeb ? filesOf(e.clipboardData) : [];
       if (clearsSelection('paste', { hasSelection: sel.has() })) sel.clear('paste');
+      if (files.length) return uploadInto(files);
+      const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
       send(wrapPaste(text));
     };
     host.addEventListener('paste', onPaste, true);
+    const onDragOver = (e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } };
+    const onDrop = (e) => { const files = isWeb ? filesOf(e.dataTransfer) : []; if (!files.length) return; e.preventDefault(); e.stopPropagation(); uploadInto(files); };
+    host.addEventListener('dragover', onDragOver, true);
+    host.addEventListener('drop', onDrop, true);
 
     // P42: 셸은 그림자 터미널(herdr 화면과 같은 scrollback 0 화면)에 먼저 써서 새 출력으로 화면이 몇 줄 밀렸는지 보고,
     // 프레임을 쓰기 전에 그만큼 xterm 영역을 올려 밀려난 줄을 scrollback으로 보낸다. 첫 프레임 앞에는 herdr 기록(지난 출력)을 넣는다
@@ -283,6 +297,8 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       if (term.textarea) term.textarea.removeEventListener('focus', onFocusIn);
       clearTimeout(st.typingTimer);
       host.removeEventListener('paste', onPaste, true);
+      host.removeEventListener('dragover', onDragOver, true);
+      host.removeEventListener('drop', onDrop, true);
       sel.dispose();
       clearTimeout(st.syncTimer);
       if (shadow) shadow.dispose();
