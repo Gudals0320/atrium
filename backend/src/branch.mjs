@@ -196,7 +196,7 @@ export class Branch {
   constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, fetchModels = fetchGatewayModels } = {}) {
     this.b = b; this.readyWaitMs = readyWaitMs; this.submitWaitMs = submitWaitMs; this.childWaitMs = childWaitMs; this.gateTrustWaitMs = gateTrustWaitMs;
     this.fetchModels = fetchModels; this.gwCache = new Map(); // P41: 게이트웨이 주소 → { at, r }
-    this.modelErrors = new Map(); // P41: 세션 ID → 마지막으로 알린 모델 오류 시각
+    this.modelErrors = new Map(); // P41: 세션 ID → 마지막으로 알린 모델 오류(rt.lastError 객체. P55: 시각으로 가리면 같은 밀리초의 다음 오류를 놓친다)
     this.passing = new Set(); // P36: 신뢰 관문을 지나는 중인 세션 ID(claude -w로 다시 띄우는 중)
     this.info = new Map(); // 세션 ID → 하위 세션 기록(sessions.branch)
     this.closed = new Map(); // 닫힌 세션 ID → { parentSessionId, name }(깊이·자손을 셀 때 따라간다)
@@ -530,8 +530,8 @@ export class Branch {
   // P41: 모델 오류(없는 모델, 닿지 않는 모델)로 턴이 끝났으면 판 이벤트로 남기고 부모에게도 남긴다(같은 오류는 한 번)
   noteModelError(s) {
     const e = s.rt && s.rt.lastError;
-    if (!e || !isModelError(e) || this.modelErrors.get(s.sessionId) === e.at) return;
-    this.modelErrors.set(s.sessionId, e.at);
+    if (!e || !isModelError(e) || this.modelErrors.get(s.sessionId) === e) return;
+    this.modelErrors.set(s.sessionId, e);
     const data = { type: e.type, message: clip(e.message, 300) || modelErrorText(s.model), model: s.model || null };
     this.b.store.addEvent(s.sessionId, 'model_error', data);
     if (s.parentSessionId && this.info.has(s.sessionId)) this.b.store.addEvent(s.parentSessionId, 'branch_child_error', { child: s.name, sessionId: s.sessionId, ...data });

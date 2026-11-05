@@ -309,6 +309,25 @@ test('P41 스킬 글과 짧은 안내: 말로 한 모델은 atrium models로 골
   assert.match(BOARD_SYSTEM_PROMPT, /`atrium models`에서 골라 띄운다/);
 });
 
+// P55: 같은 밀리초에 끝난 두 모델 오류도 둘 다 알린다(시각이 아니라 오류마다). 시계를 멈춰 같은 밀리초를 늘 만든다
+test('P41 모델 오류: 같은 밀리초에 연달아 난 두 오류도 각각 판 이벤트로 남고, 같은 오류는 한 번', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const added = [];
+  const b = { store: { branchRows: () => [], addEvent: (sid, kind, data) => added.push([sid, kind, data]) }, bus: { on() {} }, log() {} };
+  const br = new Branch(b);
+  const rt = newRuntime({ kind: 'claude', hooked: true });
+  rt.herdr.status = 'idle'; rt.herdr.present = true; rt.phase = 'running';
+  const s = { sessionId: 'k1', name: 'w1', model: 'haiku', rt };
+  applyHook(rt, { hook_event_name: 'UserPromptSubmit', prompt: '1+1' });
+  applyHook(rt, { hook_event_name: 'StopFailure', error: 'model_not_found', message: 'first' });
+  br.noteModelError(s); br.noteModelError(s);
+  applyHook(rt, { hook_event_name: 'UserPromptSubmit', prompt: '2+2' });
+  applyHook(rt, { hook_event_name: 'StopFailure', error: 'model_not_found', message: 'second' });
+  assert.equal(rt.lastError.at, 1_000_000);
+  br.noteModelError(s); br.noteModelError(s);
+  assert.deepEqual(added.filter((e) => e[1] === 'model_error').map((e) => e[2].message), ['first', 'second']);
+});
+
 test('P41 모델 오류: StopFailure model_not_found나 Claude Code의 오류 글로 끝난 턴은 error, 인용한 답은 아니다. 판 이벤트와 atrium children', async () => {
   const rt = newRuntime({ kind: 'claude', hooked: true });
   rt.herdr.status = 'idle'; rt.herdr.present = true; rt.phase = 'running';
