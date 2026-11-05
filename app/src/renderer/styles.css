@@ -1158,6 +1158,9 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 .mt-pair-wait { display: grid; gap: 8px; justify-items: start; }
 .mt-pair-check { font: 700 30px/1 var(--mono, monospace); letter-spacing: .25em; color: var(--accent-text); }
 .mt-pair-error { color: var(--bad); font-size: 12.5px; }
+/* P56: 짝이 풀렸다는 알림(짝 맺기 화면 위), 다시 짝 맺기가 필요한 옛 기기 */
+.mt-pair-banner { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 96; padding: 8px 14px; border-radius: 8px; background: var(--surface, #1d1c18); color: var(--warn); font-size: 13px; }
+.mt-wdev-row.repair .mt-wdev-name { opacity: 0.7; }
 .mt-fpick-bg { z-index: 70; }
 .mt-fpick { width: min(760px, calc(100vw - 32px)); }
 .mt-fpick-body { display: grid; grid-template-columns: 180px 1fr; gap: 10px; height: min(52vh, 460px); min-height: 220px; }

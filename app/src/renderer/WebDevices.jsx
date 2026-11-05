@@ -7,6 +7,7 @@ import { api } from './api.js';
 import { toast } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { isWeb } from './web.js';
+import { webLogout } from './lib/passkey.js'; // P56
 
 const when = (t) => (t ? new Date(t).toLocaleString() : '—');
 
@@ -84,14 +85,18 @@ export function DevicesTab() {
       <div className="mt-wdev-list" data-role="device-list">
         {view && !view.devices.length && <div className="dim">{t('webDevices.none')}</div>}
         {view && view.devices.map((d) => (
-          <div key={d.id} className="mt-wdev-row" data-device={d.id}>
+          <div key={d.id} className={`mt-wdev-row${d.needsRepair ? ' repair' : ''}`} data-device={d.id} data-needs-repair={d.needsRepair ? '1' : undefined}>
             <span className="mt-wdev-name">{d.name}{me && me.id === d.id ? <span className="mt-wdev-me"> {t('webDevices.thisBrowser')}</span> : null}</span>
+            {/* P56: 패스키 전에 토큰으로 짝 맺은 기기는 더 쓸 수 없다. 지우고 다시 짝 맺는다 */}
+            {d.needsRepair && <span className="mt-wdev-warn" title={t('webDevices.needsRepairHint')} data-role="needs-repair">{t('webDevices.needsRepair')}</span>}
             <span className="dim">{t('webDevices.paired', { at: when(d.createdAt) })}</span>
             <span className="dim">{t('webDevices.lastSeen', { at: when(d.lastSeenAt) })}</span>
+            {d.sessions != null && !d.needsRepair && <span className="dim" data-role="device-sessions">{t('webDevices.sessions', { n: d.sessions })}</span>}
             <button type="button" className="mt-btn small danger" onClick={() => revoke(d)} data-action="device-revoke">{t('webDevices.revoke')}</button>
           </div>
         ))}
       </div>
+      {isWeb && <div className="mt-wdev-url"><button type="button" className="mt-btn small ghost" data-action="web-sign-out" onClick={() => webLogout().then(() => location.reload())}>{t('webDevices.signOut')}</button></div>}
     </div>
   );
 }
@@ -145,7 +150,25 @@ function RemoteRules() {
         <input type="text" className="mt-set-text" spellCheck={false} disabled={isWeb} data-field="remoteAllowedLogins" placeholder={t('remote.allowed')} value={allowed ?? s.remoteAllowedLogins ?? ''} onChange={(e) => setAllowed(e.target.value)} />
         <button type="button" className="mt-btn small" disabled={isWeb || allowed == null} onClick={() => set({ remoteAllowedLogins: allowed }).then(() => setAllowed(null))}>{t('remote.save')}</button>
       </div>
+      {/* P56: 웹 화면 세션의 수명(로그인 뒤 몇 시간, 연결이 끊긴 채 몇 분) */}
+      <SessionLimit field="remoteSessionHours" label={t('remote.sessionHours')} s={s} set={set} min={1} max={168} />
+      <SessionLimit field="remoteIdleMinutes" label={t('remote.idleMinutes')} s={s} set={set} min={5} max={1440} />
+      <span className="mt-set-hint">{t('remote.sessionHint')}</span>
       {isWeb && <span className="mt-set-hint">{t('remote.onlyPc')}</span>}
+    </div>
+  );
+}
+function SessionLimit({ field, label, s, set, min, max }) {
+  const t = useT();
+  const [v, setV] = useState(null);
+  if (!(field in s)) return null;
+  const val = v ?? String(s[field]);
+  const ok = /^\d+$/.test(val) && Number(val) >= min && Number(val) <= max;
+  return (
+    <div className="mt-remote-row">
+      <span>{label}</span>
+      <input type="number" className="mt-set-text" min={min} max={max} disabled={isWeb} data-field={field} value={val} onChange={(e) => setV(e.target.value)} style={{ width: 90 }} />
+      {v != null && <button type="button" className="mt-btn small" disabled={isWeb || !ok} onClick={() => set({ [field]: Number(val) }).then(() => setV(null))} data-action={`save-${field}`}>{t('remote.save')}</button>}
     </div>
   );
 }
