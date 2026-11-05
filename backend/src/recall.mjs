@@ -19,7 +19,7 @@ import { NODE, SIZE_STEPS, overlaps, regionRect, regionsOf, slotInRegion } from 
 import { pathKey, normPath, workspaceNames } from './workspaces.mjs';
 import { clip } from './text.mjs';
 import { archiveState, isOld, discoverable, itemKey, DISCOVER_DAYS, OLD_DAYS } from './archive.mjs';
-import { CONVO_PARSER, listTranscriptFiles, readTranscriptSummary, readLiveSessions, readDesktopSessions, claudeProcesses, parseClaudeCmdlines, bindingOf, inWorkspace, convoView, readSpawns, mergeSpawns, countSubagents, listSubagents } from './convos.mjs';
+import { CONVO_PARSER, listTranscriptFiles, readTranscriptSummary, readLiveSessions, readDesktopSessions, claudeProcesses, parseClaudeCmdlines, bindingOf, inWorkspace, convoView, readSpawns, mergeSpawns, countSubagents, listSubagents, branchName } from './convos.mjs';
 import { matchSpawns } from './spawns.mjs';
 import { classifyConvo, testDirKind, trashPlan, trashPaths, removeEmptyProjectDirs, REFUSE_LABEL } from './missed.mjs';
 import { CONVO_CAP, placeCards } from './convo-canvas.mjs';
@@ -536,7 +536,7 @@ export class Recall {
       const parentNode = r ? nodeIdOf(r.parent) : null;
       return {
         convId: n.convId, workspaceKey: n.workspaceKey, wsName: names.get(n.workspaceKey) || null, x: n.x, y: n.y, w: n.w, h: n.h,
-        block: x && !x.area ? this.blockOf(c, x.w) : '', area: n.area || '', cwd: c.cwd ? normPath(c.cwd) : null, branch: c.branch || null, // P27: area(놓인 워크트리 영역)
+        block: x && !x.area ? this.blockOf(c, x.w) : '', area: n.area || '', cwd: c.cwd ? normPath(c.cwd) : null, branch: branchName(c.branch), // P27: area(놓인 워크트리 영역)
         title: c.title || null, firstPrompt: c.firstPrompt || null, lastPrompt: c.lastPrompt || null, lastAnswer: c.lastAnswer || null, lastAt: c.lastAt || c.mtime || null, prompts: c.prompts || 0,
         subagents: c.subagents || 0, binding: bind, canOpen: !bind.bound, children: kids.get(n.convId) || 0,
         spawnedBy: r ? { via: r.via, name: r.name, at: r.at, onCanvas: !!parentNode, label: parentNode ? null : this.parentLabel(r.parent, byId.get(r.parent), boardConvs, marks), labelMsg: parentNode ? null : this.parentLabelMsg(r.parent, byId.get(r.parent), boardConvs, marks) } : null,

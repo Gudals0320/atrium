@@ -1480,4 +1480,8 @@ export default {
     crossTitle: '다른 워크스페이스의 세션에 맡긴 작업',
     crossIn: '{name}에서 맡김',
   },
+  // P53(#10): 변경 내역의 백엔드 재시작 줄 이름표(herdr 줄과 나눔)
+  changeSys: {
+    backend: '앱 연결 서비스',
+  },
 };
