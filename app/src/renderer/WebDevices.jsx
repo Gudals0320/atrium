@@ -5,8 +5,9 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { toast } from './store.js';
-import { useT, errText } from './lib/i18n.js';
+import { useT, errText, tOr } from './lib/i18n.js';
 import { isWeb } from './web.js';
+import { logRow } from './lib/remote.js'; // P58
 
 const when = (t) => (t ? new Date(t).toLocaleString() : '—');
 
@@ -78,6 +79,7 @@ export function DevicesTab() {
         </div>
       )}
       {!isWeb && view && <Requests requests={view.requests} />}
+      <RemoteAccess />
       <RemoteStatus />
       <RemoteRules />
       <h4 className="mt-wdev-h">{t('webDevices.tab')}</h4>
@@ -91,6 +93,62 @@ export function DevicesTab() {
             <button type="button" className="mt-btn small danger" onClick={() => revoke(d)} data-action="device-revoke">{t('webDevices.revoke')}</button>
           </div>
         ))}
+      </div>
+      {!isWeb && <RemoteLog />}
+    </div>
+  );
+}
+
+// P58(S4): 원격 받기 스위치(판 설정 remoteAccess). 끄면 짝 맺은 기기와 Tailscale로 온 요청을 모두 거부하고 붙은 원격 연결을 닫는다. 이 PC의 창에서만 바꾼다
+function RemoteAccess() {
+  const t = useT();
+  const [s, setS] = useState(null);
+  useEffect(() => { api.call('settings.get').then((r) => setS(r.settings)).catch(() => {}); const off = api.on('settings.updated', (v) => setS(v)); return off; }, []);
+  if (!s || !('remoteAccess' in s)) return null;
+  const on = s.remoteAccess !== false;
+  const set = (v) => api.call('settings.set', { remoteAccess: v }).then((r) => toast(v ? t('remoteAccess.allowed') : t('remoteAccess.blocked', { n: (r.remote && r.remote.closed) || 0 }))).catch((e) => toast(t('webDevices.failed', { error: errText(e) }), 'error'));
+  return (
+    <div className={`mt-remote-access${on ? '' : ' off'}`} data-role="remote-access" data-on={on ? '1' : '0'}>
+      <label className="mt-remote-row">
+        <input type="checkbox" checked={on} disabled={isWeb} data-field="remoteAccess" onChange={(e) => set(e.target.checked)} />
+        <b>{t('remoteAccess.label')}</b>
+      </label>
+      <span className="mt-set-hint">{on ? t('remoteAccess.onHint') : t('remoteAccess.offHint')}</span>
+    </div>
+  );
+}
+
+// P58(S4): 연결 기록(최근 것부터). 짝 맺기, 연결·끊김, 거부와 까닭, 짝 풀기, 원격 받기 끄기·켜기. 새 줄은 remote.logged로 따라온다
+function RemoteLog() {
+  const t = useT();
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => api.call('remote.log', { limit: 100 }).then((r) => live && setRows(r.entries)).catch(() => {});
+    load();
+    let timer = null;
+    const off1 = api.on('remote.logged', () => { clearTimeout(timer); timer = setTimeout(load, 300); }); // 합친 줄(count)도 다시 읽어 맞춘다
+    const off2 = api.on('$open', load);
+    return () => { live = false; clearTimeout(timer); off1(); off2(); };
+  }, []);
+  if (!rows) return null;
+  const reasonText = (r) => tOr(`remoteLog.reason_${r}`, r);
+  return (
+    <div className="mt-remote-log" data-role="remote-log">
+      <h4 className="mt-wdev-h">{t('remoteLog.title')}</h4>
+      <span className="mt-set-hint">{t('remoteLog.hint')}</span>
+      {!rows.length && <div className="dim">{t('remoteLog.none')}</div>}
+      <div className="mt-remote-log-list">
+        {rows.map((e, i) => {
+          const r = logRow(e);
+          return (
+            <div key={`${e.at}-${i}`} className={`mt-remote-log-row${r.bad ? ' bad' : ''}`} data-event={e.event} data-reason={e.reason || ''}>
+              <span className="dim mono">{new Date(e.at).toLocaleString()}</span>
+              <span className="mt-remote-log-ev">{t(r.key)}{r.reason ? ` · ${reasonText(r.reason)}` : ''}{r.count ? ` ×${r.count}` : ''}</span>
+              <span className="mt-remote-log-who">{r.who || ''}{r.remote === true ? ` · ${t('peers.remote')}` : r.remote === false ? ` · ${t('remoteLog.local')}` : ''}{r.browser ? ` · ${r.browser}` : ''}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

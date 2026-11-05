@@ -82,7 +82,7 @@ export class Api {
     clearTimeout(this.openTimer);
     this.setStatus('connecting');
     let info;
-    try { info = await window.mt.backend(); } catch (e) { if (gen !== this.gen) return; this.step({ type: 'close', code: e && e.code === 'not_paired' ? 'not_paired' : 'backend' }); this.setStatus('error', String(e && e.message || e)); return this.retry(); }
+    try { info = await window.mt.backend(); } catch (e) { if (gen !== this.gen) return; this.step({ type: 'close', code: e && (e.code === 'not_paired' || e.code === 'remote_blocked') ? e.code : 'backend' }); /* P58: remote_blocked면 막음 화면 */ this.setStatus('error', String(e && e.message || e)); return this.retry(); }
     if (gen !== this.gen) return; // 그사이 새 connect()가 시작했다
     this.info = info;
     this.drop(this.ws);

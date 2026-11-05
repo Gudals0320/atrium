@@ -1208,6 +1208,28 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 .mt-remote-rules { display: grid; gap: 6px; }
 .mt-remote-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .mt-remote-row .mt-set-text { flex: 1; min-width: 0; }
+/* P58: "다른 기기" 알약의 목록(끊기, 짝 풀기), 웹 화면의 원격 막음, 설정의 원격 받기와 연결 기록 */
+button.mt-peers { cursor: pointer; }
+.mt-peers-list { width: 420px; }
+.mt-peer-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; }
+.mt-peer-row:hover { background: var(--panel-3); }
+.mt-peer-text { display: grid; gap: 1px; min-width: 0; flex: 1; font-size: 13px; }
+.mt-peer-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-peer-text .dim { font-size: 11.5px; }
+.mt-peer-actions { display: flex; gap: 6px; flex: none; }
+.mt-blocked { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; background: color-mix(in srgb, var(--canvas) 88%, transparent); padding: 16px; }
+.mt-blocked-card { width: min(460px, 100%); display: grid; gap: 10px; justify-items: start; background: var(--panel); border: 1px solid var(--warn); border-radius: var(--panel-radius); padding: 20px 22px; box-shadow: var(--panel-shadow); }
+.mt-blocked-card h3 { margin: 0; font-size: 16px; }
+.mt-blocked-card p { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.5; }
+.mt-remote-access { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--field-bg); border: 1px solid transparent; }
+.mt-remote-access.off { border-color: var(--warn); }
+.mt-remote-log { display: grid; gap: 6px; }
+.mt-remote-log-list { display: grid; gap: 2px; max-height: 280px; overflow: auto; }
+.mt-remote-log-row { display: grid; grid-template-columns: auto minmax(120px, auto) 1fr; gap: 10px; align-items: baseline; padding: 3px 8px; border-radius: 6px; font-size: 12px; }
+.mt-remote-log-row:nth-child(odd) { background: var(--field-bg); }
+.mt-remote-log-row.bad .mt-remote-log-ev { color: var(--warn); }
+.mt-remote-log-who { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .mt-peers-list { width: calc(100vw - 32px); } .mt-remote-log-row { grid-template-columns: 1fr; gap: 0; } }
 
 
 /* P50(#6): 빈 판의 첫 걸음 안내(Canvas.jsx EmptyHint). 캔버스 가운데에 떠 있고, 단추 밖은 캔버스 조작을 막지 않는다 */

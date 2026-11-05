@@ -19,6 +19,7 @@ export async function webMe() {
   if (!deviceToken()) return null;
   const r = await fetch('/web/me', { headers: auth(), cache: 'no-store' });
   if (r.status === 401) { clearDeviceToken(); return null; }
+  if (r.status === 403) { let j = null; try { j = await r.json(); } catch {} if (j && j.error && j.error.code === 'remote_blocked') throw Object.assign(new Error('remote access is blocked on the PC'), { code: 'remote_blocked' }); } // P58
   if (!r.ok) throw new Error(`backend ${r.status}`);
   return r.json();
 }

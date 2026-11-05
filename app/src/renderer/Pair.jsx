@@ -28,7 +28,7 @@ function PairScreen({ onDone }) {
   const [error, setError] = useState(null);
   const [req, setReq] = useState(null); // { requestId, secret, check, expiresAt }
   const timer = useRef(null);
-  const why = (e) => (e.code === 'rate_limited' ? t('pair.rateLimited', { s: Math.ceil((e.retryAfterMs || 60000) / 1000) }) : e.code === 'bad_code' || e.code === 'no_code' ? t('pair.badCode') : t('pair.failed', { error: e.message }));
+  const why = (e) => (e.code === 'remote_blocked' ? t('remoteAccess.blockedTitle') : e.code === 'rate_limited' ? t('pair.rateLimited', { s: Math.ceil((e.retryAfterMs || 60000) / 1000) }) : e.code === 'bad_code' || e.code === 'no_code' ? t('pair.badCode') : t('pair.failed', { error: e.message }));
   const finish = (r) => { saveDeviceToken(r.token); markPaired(); onDone(); };
 
   async function submitCode(e) {
