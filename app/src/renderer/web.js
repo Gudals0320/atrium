@@ -13,10 +13,19 @@ export const isWeb = typeof window !== 'undefined' && !window.mt;
 if (isWeb) try { localStorage.removeItem('atrium.deviceToken'); } catch {}
 
 // 기기 정보(백엔드가 내주는 창의 시작 값). 401이면 null(다시 확인이나 짝 맺기 필요). 쿠키는 브라우저가 붙인다
+// P59: 401의 까닭을 webDenied에 둔다. login_required(세션 끝, PC에서 끊음) → 다시 확인, tailscale_node(짝 맺은 Tailscale 기기와 다름, 옛 기기) → 짝 맺기 화면.
+// P58: 403 remote_blocked(원격 받기 꺼짐) → 막음 화면. 그 밖의 403(Tailscale 기기를 잠깐 읽지 못함)은 연결 오류로 다시 시도한다(다시 확인 ↔ 거부 고리 없음)
+export let webDenied = null; // { code, reason } 비밀 아님
 export async function webMe() {
   const r = await fetch('/web/me', { cache: 'no-store', credentials: 'same-origin' });
-  if (r.status === 401) return null;
+  if (r.status === 401 || r.status === 403) {
+    let j = null; try { j = await r.json(); } catch {}
+    const err = (j && j.error) || {};
+    if (r.status === 401) { webDenied = { code: err.code || 'login_required', reason: err.reason || null }; return null; }
+    if (err.code === 'remote_blocked') throw Object.assign(new Error('remote access is blocked on the PC'), { code: 'remote_blocked' }); // P58
+  }
   if (!r.ok) throw new Error(`backend ${r.status}`);
+  webDenied = null;
   return r.json();
 }
 

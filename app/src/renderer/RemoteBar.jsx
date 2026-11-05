@@ -17,10 +17,19 @@ export function RemoteBar() {
   }, []);
   return (
     <>
+      {conn.phase === 'blocked' && ( // P58: PC에서 원격 받기를 껐다. 백오프로 계속 다시 붙어 보고, 켜지면 저절로 돌아온다
+        <div className="mt-blocked" role="alert" data-role="remote-blocked">
+          <div className="mt-blocked-card">
+            <h3>{t('remoteAccess.blockedTitle')}</h3>
+            <p>{t('remoteAccess.blockedBody')}</p>
+            <button type="button" className="mt-btn small" data-action="reconnect-now" onClick={() => api.wake()}>{t('remote.retryNow')}</button>
+          </div>
+        </div>
+      )}
       {showBanner(conn) && (
-        <div className="mt-reconnect" role="status" data-role="reconnect-banner">
+        <div className="mt-reconnect" role="status" data-role="reconnect-banner" data-close={conn.lastClose ?? ''}>
           <span className="mt-reconnect-dot" />
-          <span>{t('remote.reconnecting')}</span>
+          <span>{conn.lastClose === 4402 ? t('remoteAccess.kicked') : t('remote.reconnecting')}</span>
           <button type="button" className="mt-btn small ghost" data-action="reconnect-now" onClick={() => api.wake()}>{t('remote.retryNow')}</button>
         </div>
       )}

@@ -18,6 +18,8 @@ export const SETTINGS = {
   herdrPath: { type: 'string', default: '', max: 1024, label: 'herdr 실행 파일 경로(비우면 herdr 설치 폴더와 PATH에서 찾는다, P40)' },
   // P49(R3): Tailscale로 온 요청의 로그인 사용자 제한. 켜져 있으면 이 PC에 로그인한 Tailscale 사용자와 허용 목록만 짝 맺고 연결한다. 이 PC의 창에서만 바꾼다
   remoteSameUser: { type: 'boolean', default: true, label: 'Tailscale로 온 요청은 이 PC의 Tailscale 사용자와 허용 목록의 사용자만 받는다(P49)' },
+  // P58(S4): 원격 받기. 끄면 이 PC 밖에서 온 요청(바깥 요청, 짝 맺은 기기 연결)을 모두 거부하고 붙은 원격 연결을 닫는다. 이 PC의 창과 CLI는 그대로. Tailscale serve 설정은 건드리지 않는다
+  remoteAccess: { type: 'boolean', default: true, label: '원격 받기: 끄면 짝 맺은 기기와 Tailscale로 온 요청을 모두 거부하고 붙은 원격 연결을 닫는다(P58)' },
   remoteAllowedLogins: { type: 'string', default: '', max: 1000, pattern: /^[A-Za-z0-9._%+@,\s-]*$/, hint: '로그인 이름을 쉼표로', label: '더 받을 Tailscale 로그인 이름(쉼표로 여럿, P49)' },
   // P56(S3): 웹 화면 로그인 세션의 수명. remote*라서 이 PC의 창·CLI만 바꾼다(backend.mjs settings.set)
   remoteSessionHours: { type: 'number', default: 12, min: 1, max: 168, label: '웹 화면은 패스키로 로그인한 뒤 이 시간이 지나면 다시 확인한다(P56)' },

@@ -8,6 +8,9 @@ export const BACKOFF_MAX_MS = 15_000;
 export const PING_EVERY_MS = 15_000;
 export const PING_TIMEOUT_MS = 8_000;
 export const CLOSE_REVOKED = 4401; // 백엔드가 기기를 끊을 때(web.mjs revoke), P56: 세션이 끝났을 때(sweepSessions)도
+// P58: PC에서 원격 받기를 껐을 때(web.mjs accessChanged). 4402(PC에서 끊기)는 보통 끊김처럼 곧 다시 붙어 본다.
+// P59: 끊기는 세션도 끝내므로 다시 붙을 때 backend()의 /web/me가 401을 받고 다시 확인 화면으로 간다
+export const CLOSE_BLOCKED = 4403;
 
 export function backoffMs(attempt, rand = Math.random(), maxMs = BACKOFF_MAX_MS) {
   const n = Math.max(0, Math.floor(Number(attempt) || 0));
@@ -15,13 +18,15 @@ export function backoffMs(attempt, rand = Math.random(), maxMs = BACKOFF_MAX_MS)
   return Math.round(raw * (0.8 + 0.4 * Math.min(1, Math.max(0, rand))));
 }
 
-// 연결 상태. phase: 'connecting'(처음) | 'open' | 'reconnecting'(열렸다가 끊김) | 'unpaired'
+// 연결 상태. phase: 'connecting'(처음) | 'open' | 'reconnecting'(열렸다가 끊김) | 'unpaired' | 'blocked'(P58: PC에서 원격을 막음)
 export const connInit = () => ({ phase: 'connecting', attempt: 0, wasOpen: false, since: null, lastClose: null });
 export function connStep(s, ev, now = Date.now()) {
   switch (ev.type) {
     case 'open': return { ...s, phase: 'open', attempt: 0, wasOpen: true, since: null };
     case 'close': {
       if (ev.code === CLOSE_REVOKED || ev.unpaired) return { ...s, phase: 'unpaired', since: s.since || now, lastClose: ev.code ?? null };
+      // P58: PC에서 원격을 막았다(4403, /web/me의 remote_blocked). 띠 대신 막음 화면을 보이고 백오프로 계속 다시 붙어 본다(켜면 돌아온다)
+      if (ev.code === CLOSE_BLOCKED || ev.code === 'remote_blocked') return { ...s, phase: 'blocked', attempt: s.phase === 'open' ? 0 : s.attempt + 1, since: s.since || now, lastClose: ev.code };
       const phase = s.wasOpen ? 'reconnecting' : 'connecting';
       return { ...s, phase, attempt: s.phase === 'open' ? 0 : s.attempt + 1, since: s.since || now, lastClose: ev.code ?? null };
     }

@@ -12,6 +12,9 @@ const HELP = `atrium [--dev] [--json] <명령>
   status                            백엔드와 판 전용 herdr 상태(버전, 프로토콜, 기능)
   devices [code|rm <id>]            웹 화면에 짝 맺은 기기 목록, 짝 맺기 코드 만들기, 끊기(P48)
   remote status|guide               원격 접속(Tailscale) 진단과 따라 할 단계(P49). 읽기만 한다
+  remote block|allow                원격 받기 끄기·켜기(P58). 끄면 짝 맺은 기기와 Tailscale로 온 요청을 모두 거부한다. serve는 그대로
+  remote log [--limit n]            원격 연결 기록(짝 맺기, 연결·끊김, 거부와 까닭, P58)
+  devices kick <id>                 그 기기의 지금 연결만 끊는다(다시 붙을 수 있다, P58)
   remote enable|disable [--yes] [--https-port n]   tailscale serve로 판을 tailnet에 켜고 끈다(--yes가 있을 때만 실행, funnel은 쓰지 않음)
   herdr start|stop|restart [--yes]  판 전용 herdr 서버 켜기, 끄기, 다시 띄우기
   herdr status|rediscover           herdr 진단(고른 실행 파일, 본 후보, 버전 경고), 다시 찾기(P40)
@@ -300,6 +303,7 @@ async function main() {
       case 'devices': { // P48: 웹 화면에 짝 맺은 기기
         if (rest[0] === 'code') { const r = await c.call('device.code'); if (JSONOUT) return out(r); console.log(`짝 맺기 코드 ${r.code} (${new Date(r.expiresAt).toLocaleTimeString()}까지, 한 번만)`); return; }
         if (rest[0] === 'rm') return out(await c.call('device.revoke', { id: rest[1] }));
+        if (rest[0] === 'kick') return out(await c.call('device.disconnect', { id: rest[1] })); // P58: 지금 연결만 끊는다
         const r = await c.call('device.list'); if (JSONOUT) return out(r);
         for (const d of r.devices) console.log(`${d.id}  ${d.name.padEnd(20)}  짝 맺음 ${ts(d.createdAt)}  마지막 ${d.lastSeenAt ? ts(d.lastSeenAt) : '-'}${d.needsRepair ? '  다시 짝 맺기 필요(P56 전 토큰 기기, devices rm으로 지운다)' : `  로그인 ${d.sessions ?? 0}`}`);
         for (const q of r.requests) console.log(`허락 요청 ${q.id} ${q.name} 확인 ${q.check}`);

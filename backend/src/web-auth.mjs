@@ -128,6 +128,8 @@ export class WebSessions {
     if (n) this.save();
     return n;
   }
+  // P59: 원격 받기를 끄면 모든 기기의 세션을 끝낸다
+  endAll() { const n = this.map.size; if (n) { this.map.clear(); this.save(); } return n; }
   countFor(deviceId) { return [...this.map.values()].filter((s) => s.deviceId === deviceId && this.alive(s)).length; }
   // 끝난 세션을 지우고 그 해시를 돌려준다(연결을 닫으려고)
   prune() {

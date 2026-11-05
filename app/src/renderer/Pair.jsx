@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useT, setLanguage } from './lib/i18n.js';
-import { webMe, markPaired } from './web.js';
+import { webMe, markPaired, webDenied } from './web.js';
 import { BRAND_WORDMARK } from './lib/icons.jsx';
 import { passkeySupport, savedPasskey, clearPasskey, registerPasskey, loginPasskey, webauthnError } from './lib/passkey.js';
 
@@ -20,16 +20,24 @@ export function guessDeviceName(ua = navigator.userAgent) {
 async function post(url, body) {
   const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' });
   let j = null; try { j = await r.json(); } catch {}
-  if (!r.ok) throw Object.assign(new Error((j && j.error && j.error.message) || String(r.status)), { code: j && j.error && j.error.code, status: r.status, retryAfterMs: j && j.error && j.error.retryAfterMs });
+  if (!r.ok) throw Object.assign(new Error((j && j.error && j.error.message) || String(r.status)), { code: j && j.error && j.error.code, status: r.status, retryAfterMs: j && j.error && j.error.retryAfterMs, reason: j && j.error && j.error.reason });
   return j;
 }
 function useNow(on) { const [n, set] = useState(Date.now()); useEffect(() => { if (!on) return; const id = setInterval(() => set(Date.now()), 1000); return () => clearInterval(id); }, [on]); return n; }
+
+// P59: P57 Tailscale 기기 확인의 까닭(짝 맺은 기기와 다름 등)
+export const nodeWhy = (reason, t) => t(`pair.node_${['other_node', 'other_user', 'local_only', 'not_bound', 'login_mismatch'].includes(reason) ? reason : 'unknown'}`);
+// 짝 맺은 Tailscale 기기와 달라 다시 확인해도 소용없는 거부(401). 짝 맺기 화면으로 간다
+export const needsPairAgain = (e) => !!e && e.code === 'tailscale_node' && e.status === 401;
 
 // 패스키·서버 오류를 화면 글로
 function passkeyWhy(e, t) {
   const k = webauthnError(e);
   if (k) return t(`pair.pk_${k}`);
   if (e && (e.code === 'bad_grant')) return t('pair.grantExpired');
+  if (e && e.code === 'grant_node') return t('pair.grantNode'); // P59: 허가를 받은 Tailscale 기기가 아님
+  if (e && e.code === 'tailscale_node') return nodeWhy(e.reason, t);
+  if (e && e.code === 'remote_blocked') return t('remoteAccess.blockedTitle');
   if (e && e.code === 'ip_host') return t('pair.unsupported_ip_host', { url: `http://localhost:${location.port}/` });
   return t('pair.pkFailed', { error: (e && e.message) || String(e) });
 }
@@ -79,7 +87,7 @@ function PairScreen({ onDone, onHaveKey }) {
   const [req, setReq] = useState(null); // { requestId, secret, check, expiresAt }
   const [grant, setGrant] = useState(null); // P56: { grant, expiresAt } 등록 허가(이 페이지의 메모리에만)
   const timer = useRef(null);
-  const why = (e) => (e.code === 'rate_limited' ? t('pair.rateLimited', { s: Math.ceil((e.retryAfterMs || 60000) / 1000) }) : e.code === 'bad_code' || e.code === 'no_code' ? t('pair.badCode') : t('pair.failed', { error: e.message }));
+  const why = (e) => (e.code === 'remote_blocked' ? t('remoteAccess.blockedTitle') : e.code === 'rate_limited' ? t('pair.rateLimited', { s: Math.ceil((e.retryAfterMs || 60000) / 1000) }) : e.code === 'bad_code' || e.code === 'no_code' ? t('pair.badCode') : t('pair.failed', { error: e.message }));
 
   async function submitCode(e) {
     e.preventDefault(); setBusy(true); setError(null);
@@ -150,7 +158,9 @@ function ReauthScreen({ saved, onDone, onPair, note }) {
       const r = await loginPasskey(saved && saved.credentialId);
       if (r.status === 'unpaired') { onPair(t('reauth.unpaired')); return; }
       markPaired(); onDone();
-    } catch (e) { setError(e && e.code === 'rate_limited' ? t('pair.rateLimited', { s: Math.ceil((e.retryAfterMs || 60000) / 1000) }) : passkeyWhy(e, t)); setBusy(false); }
+    } catch (e) {
+      if (needsPairAgain(e)) { clearPasskey(); onPair(nodeWhy(e.reason, t)); return; } // P59: 다시 확인을 되풀이하지 않는다
+      setError(e && e.code === 'rate_limited' ? t('pair.rateLimited', { s: Math.ceil((e.retryAfterMs || 60000) / 1000) }) : passkeyWhy(e, t)); setBusy(false); }
   }
   return (
     <Card>
@@ -183,6 +193,7 @@ function Unsupported({ sup }) {
 }
 
 function UnpairedNote() { const t = useT(); return t('reauth.unpaired'); }
+function NodeNote({ reason }) { const t = useT(); return <span data-reason={reason}>{nodeWhy(reason, t)}</span>; }
 function Gate({ sup, onDone, initial, initialNote }) {
   const [mode, setMode] = useState(initial);
   const [note, setNote] = useState(initialNote || null);
@@ -203,6 +214,9 @@ export async function webGate() {
   if (me) { markPaired(); return; }
   try { if (/^ko\b/i.test(navigator.language || '')) setLanguage('ko'); } catch {}
   const sup = passkeySupport(window);
+  // P59: 짝 맺은 Tailscale 기기와 다르면(옛 기기 포함) 다시 확인해도 소용없다. 기억한 패스키를 버리고 짝 맺기 화면에 그 까닭을 보인다
+  const nodeDenied = webDenied && webDenied.code === 'tailscale_node' ? webDenied.reason || 'unknown' : null;
+  if (nodeDenied) clearPasskey();
   // 기억한 패스키가 아직 짝인지 먼저 묻는다(짝이 풀렸으면 곧바로 짝 맺기 화면). credential ID는 비밀이 아니다
   let initial = savedPasskey() ? 'login' : 'pair', unpaired = false;
   if (sup.ok && initial === 'login') {
@@ -211,6 +225,7 @@ export async function webGate() {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
-  await new Promise((res) => root.render(<Gate sup={sup} onDone={res} initial={initial} initialNote={unpaired ? <UnpairedNote /> : null} />));
+  const note = nodeDenied ? <NodeNote reason={nodeDenied} /> : unpaired ? <UnpairedNote /> : null;
+  await new Promise((res) => root.render(<Gate sup={sup} onDone={res} initial={initial} initialNote={note} />));
   root.unmount(); host.remove();
 }

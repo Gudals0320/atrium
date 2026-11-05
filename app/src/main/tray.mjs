@@ -124,6 +124,12 @@ export function startTray({ cfg, log, hasWindow, showNode, quit, notifications =
       st.lastSleep = r;
       if (Notification.isSupported()) new Notification({ title: tr('app.name'), body: r.slept ? tr('sleep.trayDone', { repos: r.repos, n: r.slept, mb: r.savedMB >= 1024 ? `${(r.savedMB / 1024).toFixed(1)}GB` : `${r.savedMB}MB` }) : tr('sleep.sleepIdleNone'), icon: NOTIFY_ICON, silent: true }).show();
     }),
+    // P58: 원격 받기 끄기·켜기(판 설정 remoteAccess). 끄면 백엔드가 붙은 원격 연결을 닫는다
+    'remote-access': async () => {
+      if (!st.client) return;
+      const want = !st.remoteAccess;
+      try { await st.client.call('settings.set', { remoteAccess: want }); log(`tray remote access ${want ? 'on' : 'off'}`); } catch (e) { st.lastError = String((e && e.message) || e); log('tray remote access error', st.lastError); refreshTray(); }
+    },
     quit: () => quit(),
     'quit-all': () => work('busyQuitAll', async () => { await closeFirst(); log('tray stop backend', JSON.stringify(await stopBackend())); quit(); }),
   };
@@ -138,7 +144,7 @@ export function startTray({ cfg, log, hasWindow, showNode, quit, notifications =
   function refreshTray() {
     if (st.stopped) return;
     const mine = needsYou();
-    const key = JSON.stringify([st.lang, st.connected, st.busy, st.lastError, st.migration, st.sessions.size, mine.map((s) => [s.sessionId, s.name, s.state])]);
+    const key = JSON.stringify([st.lang, st.connected, st.busy, st.lastError, st.migration, st.sessions.size, st.remoteAccess, mine.map((s) => [s.sessionId, s.name, s.state])]);
     if (!st.tray) { st.images = { idle: trayImage(false), turn: trayImage(true) }; st.tray = new Tray(st.images.idle); st.icon = 'idle'; st.tray.on('click', () => showNode(null)); st.menuKey = null; log('tray created'); }
     if (key === st.menuKey) return;
     st.menuKey = key;
@@ -160,11 +166,12 @@ export function startTray({ cfg, log, hasWindow, showNode, quit, notifications =
       item('herdr-stop', tr('tray.herdrStop'), st.connected),
       { type: 'separator' },
       item('sleep-idle', tr('sleep.trayItem'), st.connected), // P21, P24: 쉬는 리포 모두
+      { ...item('remote-access', tr('tray.remoteAccess'), st.connected), type: 'checkbox', checked: st.remoteAccess !== false }, // P58
       { type: 'separator' },
       item('quit', tr('tray.quit')),
       item('quit-all', tr('tray.quitAll')),
     ];
-    st.menu = template.filter((x) => x.label).map((x) => (x.submenu ? `${x.label} [${x.submenu.map((y) => y.label).join(', ')}]` : `${x.label}${x.enabled === false && x.id !== 'status' ? ' (off)' : ''}`)); // 시험이 읽는다
+    st.menu = template.filter((x) => x.label).map((x) => (x.submenu ? `${x.label} [${x.submenu.map((y) => y.label).join(', ')}]` : `${x.label}${x.type === 'checkbox' ? (x.checked ? ' [x]' : ' [ ]') : ''}${x.enabled === false && x.id !== 'status' ? ' (off)' : ''}`)); // 시험이 읽는다
     st.tray.setContextMenu(Menu.buildFromTemplate(template));
   }
 
@@ -172,6 +179,7 @@ export function startTray({ cfg, log, hasWindow, showNode, quit, notifications =
     const was = st.enabled;
     st.enabled = !!(settings && settings.tray !== false);
     st.lang = settings && LANGUAGES.includes(settings.language) ? settings.language : DEFAULT_LANGUAGE; // P16
+    st.remoteAccess = !(settings && settings.remoteAccess === false); // P58
     if (was !== st.enabled) log(`tray setting ${st.enabled ? 'on' : 'off'}`);
     refreshTray();
     // 트레이를 끈 때 창이 없으면 지금처럼 앱을 끝낸다(창을 닫으면 끝나는 것과 같다)
@@ -205,6 +213,20 @@ export function startTray({ cfg, log, hasWindow, showNode, quit, notifications =
     note.show();
   }
 
+  // P58: 원격 기기가 새로 붙거나 짝을 맺었다. 창이 있으면 창이 알리고(remote-notice.js), 없으면 트레이가 OS 알림을 띄운다
+  function remoteNotice(ev) {
+    if (hasWindow() || !ev || !ev.device) return;
+    const name = String(ev.device.name || '?').slice(0, 40);
+    const title = tr(ev.kind === 'paired' ? 'remoteNotice.paired' : ev.remote ? 'remoteNotice.connectedRemote' : 'remoteNotice.connected', { name });
+    const body = [ev.login, ev.browser].filter(Boolean).join(' · ') || tr('remoteNotice.body');
+    log(`tray remote notice ${ev.kind} ${ev.device.id}`);
+    if (!Notification.isSupported()) return;
+    const note = new Notification({ title: title.slice(0, 120), body: body.slice(0, 240), icon: NOTIFY_ICON, silent: false });
+    note.on('click', () => showNode(null));
+    notifications.push({ source: 'remote', at: Date.now(), note, shown: true, title }); if (notifications.length > 50) notifications.shift();
+    note.show();
+  }
+
   // P18: 옛 이름(multitask) 판을 옮기다 생긴 문제를 툴팁·메뉴에 두고, 처음 한 번 알림을 띄운다
   function noteMigration(m) {
     const problems = (m && m.problems) || [];
@@ -223,6 +245,7 @@ export function startTray({ cfg, log, hasWindow, showNode, quit, notifications =
     if (ev === 'settings.updated') return apply(d);
     if (ev === 'backend.migration') return noteMigration(d);
     if (ev === 'clients.updated') { st.peers = d; return; } // P47
+    if (ev === 'remote.connected') return remoteNotice(d); // P58
     if (ev === 'session.updated') st.sessions.set(d.sessionId, d);
     else if (ev === 'session.state' && d.summary) st.sessions.set(d.sessionId, d.summary);
     else if (ev === 'session.removed') st.sessions.delete(d.sessionId);
@@ -268,7 +291,7 @@ export function startTray({ cfg, log, hasWindow, showNode, quit, notifications =
     notifiedKeys() { const now = Date.now(); return [...st.notified].filter(([, t]) => now - t < DAY); },
     lang: () => st.lang, // P16: main의 대화상자도 같은 언어로
     tr,
-    state: () => ({ icon: st.tray ? st.icon : null, lang: st.lang, enabled: st.enabled, connected: st.connected, busy: st.busy, lastError: st.lastError, migration: st.migration, hasTray: !!st.tray, menu: st.tray ? st.menu : null, tooltip: st.tray ? st.tooltip : null, needsYou: needsYou().map((s) => s.name), notified: [...st.notified.keys()], pending: [...st.pending.keys()], lastSleep: st.lastSleep || null }),
+    state: () => ({ icon: st.tray ? st.icon : null, lang: st.lang, enabled: st.enabled, connected: st.connected, busy: st.busy, lastError: st.lastError, migration: st.migration, hasTray: !!st.tray, menu: st.tray ? st.menu : null, tooltip: st.tray ? st.tooltip : null, needsYou: needsYou().map((s) => s.name), notified: [...st.notified.keys()], pending: [...st.pending.keys()], lastSleep: st.lastSleep || null, remoteAccess: st.remoteAccess !== false }),
     run: (id) => ACTIONS[id] && ACTIONS[id](), // 시험이 메뉴 누르기를 흉내 낸다
     iconPng: (kind, scaleFactor = 1) => (st.images ? st.images[kind].toPNG({ scaleFactor }).toString('base64') : null), // 시험이 트레이 그림을 저장한다
     // P18: 창이 백엔드를 띄우지 못한 까닭(옛 판을 옮기지 못함 등)이나 옛 창 프로필 문제를 툴팁에 보인다

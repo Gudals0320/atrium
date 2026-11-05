@@ -2,6 +2,7 @@
 // - status: 진단(Tailscale 설치·실행·로그인, MagicDNS, HTTPS 인증서, serve가 판 포트로 가는지, funnel, Host 허용 목록, 짝 맺은 기기, 노트북에서 열 주소).
 //   백엔드가 떠 있으면 백엔드의 remote.status를, 아니면 이 자리에서 tailscale을 읽는다(읽기 명령만).
 // - guide: 따라 할 단계.
+// - block / allow(P58): 원격 받기 끄기·켜기(판 설정 remoteAccess). 끄면 짝 맺은 기기와 Tailscale로 온 요청을 모두 거부하고 붙은 원격 연결을 닫는다. serve는 그대로다.
 // - enable / disable: `tailscale serve --bg --https=<포트> http://127.0.0.1:<판 포트>`와 그 끄기. --yes가 있을 때만 실행하고, 없으면 할 명령만 보인다.
 //   funnel(인터넷 공개)은 쓰지 않는다. 그 https 포트를 다른 서비스가 쓰고 있으면 덮어쓰지 않고 멈춘다(--https-port로 다른 포트).
 import { execFile } from 'node:child_process';
@@ -32,10 +33,33 @@ export function checkText(c, port) {
 
 export function formatStatus(d) {
   const lines = d.checks.map((c) => checkText(c, d.port));
+  // P58: 원격 받기 스위치(판 설정 remoteAccess)와 지금 붙은 기기 수. 백엔드 없이 읽으면 모른다
+  if (d.accepting === false) lines.unshift('[막음] PC에서 원격을 막았습니다. 짝 맺은 기기와 Tailscale로 온 요청을 모두 거부합니다. 켜기: atrium remote allow');
+  else if (d.accepting === true) lines.unshift(`[ok]   원격 받기 켜짐${Number.isInteger(d.connected) ? ` (지금 붙은 기기 ${d.connected}대)` : ''}. 막기: atrium remote block`);
   lines.push('');
   if (d.url) lines.push(`노트북에서 열 주소: ${d.url}${d.ready ? '' : ' (위의 [안 됨]을 먼저 고칩니다)'}`);
   if (d.enable) lines.push(`켜기: ${d.enable}`);
   return lines.join('\n');
+}
+
+// P58: 연결 기록 한 줄(CLI). 창은 locales의 remoteLog.* 열쇠를 쓴다
+const LOG_TEXT = { 'pair.request': '짝 맺기 요청', 'pair.grant': '짝 맺기 허가', 'pair.ok': '짝 맺음', login: '패스키 로그인', logout: '로그아웃', 'pair.fail': '짝 맺기 실패', connect: '연결', disconnect: '끊김', deny: '거부', unpair: '짝 풀기', kick: 'PC에서 끊기', 'remote.block': '원격 받기 끔', 'remote.allow': '원격 받기 켬', other: '기타' };
+export function formatLogEntry(e) {
+  const p2 = (n) => String(n).padStart(2, '0');
+  const d = new Date(e.at);
+  const when = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  const parts = [when, (LOG_TEXT[e.event] || e.event).padEnd(8)];
+  if (e.reason) parts.push(`까닭=${e.reason}`);
+  if (e.via) parts.push(`방법=${e.via === 'code' ? '코드' : '허락'}`);
+  if (e.deviceName || e.deviceId) parts.push(`기기=${e.deviceName || ''}${e.deviceId ? ` (${e.deviceId.slice(0, 8)})` : ''}`);
+  if (e.node) parts.push(`Tailscale 기기=${e.node}`); // P59
+  if (e.remote != null) parts.push(e.remote ? '바깥' : '이 PC');
+  if (e.login) parts.push(`로그인=${e.login}`);
+  if (e.addr) parts.push(`주소=${e.addr}`);
+  if (e.browser) parts.push(e.browser);
+  if (Number.isInteger(e.n)) parts.push(`닫은 연결 ${e.n}개`);
+  if (e.count > 1) parts.push(`×${e.count}`);
+  return parts.join('  ');
 }
 
 export function guideText(port, httpsPort = DEFAULT_HTTPS_PORT) {
@@ -54,7 +78,9 @@ export function guideText(port, httpsPort = DEFAULT_HTTPS_PORT) {
     '주의',
     '- 짝 맺은 기기는 이 PC 사용자와 같은 권한입니다(셸을 띄워 무엇이든 실행할 수 있습니다).',
     '- funnel(tailscale funnel)은 쓰지 않습니다. 판이 인터넷에 공개됩니다.',
-    '- 끊기: PC 창 설정 › 연결된 기기에서 "끊기", 또는 atrium devices rm <ID>.',
+    '- 끊기: PC 창 위쪽 "다른 기기" 알약의 "끊기"(지금 연결만, atrium devices kick <ID>), "짝 풀기"(설정 › 연결된 기기에도, atrium devices rm <ID>).',
+    '- 모두 막기: atrium remote block (트레이 메뉴와 설정 › 연결된 기기의 "원격 받기"와 같다). 켜기: atrium remote allow',
+    '- 기록: atrium remote log (짝 맺기, 연결·끊김, 거부와 까닭)',
     `- 끄기: atrium remote disable --yes (= tailscale ${serveOffCommand(port, httpsPort).join(' ')})`,
   ].join('\n');
 }
@@ -109,6 +135,27 @@ export async function remoteCommand(cfg, rest, flags, connect) {
     if (flags.json) { const { ts, ...rest2 } = d; return console.log(JSON.stringify(rest2, null, 2)); }
     return console.log(formatStatus(d));
   }
+  if (op === 'log') { // P58: 연결 기록(최근 것부터)
+    const c = await connect();
+    try {
+      const r = await c.call('remote.log', { limit: Number.parseInt(flags.limit, 10) || 50 });
+      if (flags.json) return console.log(JSON.stringify(r, null, 2));
+      if (!r.entries.length) return console.log('원격 연결 기록이 없습니다');
+      for (const e of r.entries) console.log(formatLogEntry(e));
+    } finally { c.close?.(); }
+    return;
+  }
+  // P58: 원격 받기 끄기·켜기(판 설정 remoteAccess). Tailscale serve 설정은 건드리지 않는다. 백엔드가 떠 있어야 한다
+  if (op === 'block' || op === 'allow') {
+    let c;
+    try { c = await connect(); } catch (e) { console.log(`백엔드가 떠 있지 않습니다. 원격 받기는 판 설정이라 백엔드가 떠 있을 때 바꿉니다(${(e && e.message) || e})`); process.exitCode = 1; return; }
+    try {
+      const r = await c.call('settings.set', { remoteAccess: op === 'allow' });
+      if (flags.json) return console.log(JSON.stringify({ remoteAccess: r.settings.remoteAccess, closed: (r.remote && r.remote.closed) || 0 }, null, 2));
+      console.log(op === 'block' ? `원격을 막았습니다. 붙어 있던 원격 연결 ${(r.remote && r.remote.closed) || 0}개를 닫았습니다. 이 PC의 창과 CLI는 그대로입니다. 켜기: atrium remote allow` : '원격 받기를 켰습니다. 짝 맺은 기기가 다시 붙을 수 있습니다');
+    } finally { c.close?.(); }
+    return;
+  }
   if (op === 'enable' || op === 'disable') {
     const bin = tailscaleBin();
     const ts = await readTailscale({ port: cfg.port, bin });
@@ -125,6 +172,6 @@ export async function remoteCommand(cfg, rest, flags, connect) {
     if (out.trim()) console.log(out.trim());
     return;
   }
-  console.log('사용: atrium remote status|guide|enable|disable [--yes] [--https-port <포트>]');
+  console.log('사용: atrium remote status|guide|block|allow|enable|disable [--yes] [--https-port <포트>]');
   process.exitCode = 1;
 }
