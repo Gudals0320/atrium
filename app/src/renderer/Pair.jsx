@@ -1,6 +1,7 @@
 // P48(원격 R2): 웹 화면의 짝 맺기. 로그인하지 않은 브라우저는 보드를 보지 못하고 이 화면만 본다.
 // PC 보드(설정 > 연결된 기기)에서 만든 6자리 코드를 넣거나, PC에 허락을 청하고 PC 창에서 "허락"을 누르면 짝을 맺는다.
 // P56(원격 S2·S3): 짝을 맺으면 기기 토큰 대신 몇 분짜리 등록 허가를 받고, 이 브라우저에서 패스키(Windows Hello 등)를 만들어야 기기가 생긴다.
+// P60: 짝 맺기와 다시 확인에서 휴대폰(iPhone·Android, QR과 블루투스)과 이 기기(Windows Hello·보안 키) 가운데 고른다(ViaChoice).
 //   세션이 끝나면(12시간, 연결이 끊긴 채 30분, 4401) "다시 확인" 화면에서 패스키로 다시 확인한다. 짝이 풀렸으면 짝 맺기 화면으로 간다.
 //   패스키를 쓸 수 없는 브라우저(보안 출처가 아님, WebAuthn 없음, IP 주소)는 이유를 보이고 막는다. 토큰으로 되돌아가는 길은 없다.
 import { useEffect, useRef, useState } from 'react';
@@ -8,7 +9,7 @@ import { createRoot } from 'react-dom/client';
 import { useT, setLanguage } from './lib/i18n.js';
 import { webMe, markPaired, webDenied } from './web.js';
 import { BRAND_WORDMARK } from './lib/icons.jsx';
-import { passkeySupport, savedPasskey, clearPasskey, registerPasskey, loginPasskey, webauthnError } from './lib/passkey.js';
+import { passkeySupport, savedPasskey, clearPasskey, registerPasskey, loginPasskey, webauthnError, savedVia, saveVia, PASSKEY_VIAS } from './lib/passkey.js';
 
 // 기본 기기 이름: 브라우저와 OS
 export function guessDeviceName(ua = navigator.userAgent) {
@@ -53,21 +54,46 @@ function Card({ children, onSubmit }) {
   );
 }
 
+// P60: 패스키를 무엇으로 확인할지. 휴대폰(iPhone·Android, 하이브리드)을 먼저 둔다. 고른 것은 이 브라우저에 기억하고(비밀 아님) 서버가 hints로 바꾼다
+export function ViaChoice({ via, onPick, disabled }) {
+  const t = useT();
+  return (
+    <div className="mt-pk-via-wrap">
+      <div className="mt-pk-via" role="radiogroup" aria-label={t('passkeyVia.label')} data-role="passkey-via" data-value={via || ''}>
+        {PASSKEY_VIAS.map((v) => (
+          <button key={v} type="button" role="radio" aria-checked={via === v} className={`mt-pk-via-opt${via === v ? ' on' : ''}`} data-via={v} disabled={disabled} onClick={() => onPick(v)}>
+            <b>{t(`passkeyVia.${v}`)}</b>
+            <span>{t(`passkeyVia.${v}Sub`)}</span>
+          </button>
+        ))}
+      </div>
+      {via === 'phone' && <div className="mt-pair-hint mt-pk-via-hint" data-role="passkey-phone-hint">{t('passkeyVia.phoneHint')}</div>}
+      {!via && <div className="mt-pair-hint">{t('passkeyVia.pickHint')}</div>}
+    </div>
+  );
+}
+function useVia() {
+  const [via, setVia] = useState(() => savedVia());
+  return [via, (v) => { setVia(v); saveVia(v); }];
+}
+
 // 짝을 맺은 뒤: 등록 허가로 패스키를 만든다(몸짓이 필요한 브라우저가 있어 버튼으로)
 function RegisterStep({ grant, onDone, onRestart }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [via, pickVia] = useVia();
   const now = useNow(true);
   const left = Math.max(0, Math.ceil((grant.expiresAt - now) / 1000));
   async function create() {
     setBusy(true); setError(null);
-    try { await registerPasskey(grant.grant); markPaired(); onDone(); } catch (e) { setError(passkeyWhy(e, t)); setBusy(false); }
+    try { await registerPasskey(grant.grant, navigator.credentials, via); markPaired(); onDone(); } catch (e) { setError(passkeyWhy(e, t)); setBusy(false); }
   }
   return (
     <div className="mt-pair-wait" data-role="passkey-register">
       <h3>{t('pair.passkeyTitle')}</h3>
-      <p className="mt-pair-note">{t('pair.passkeyNote')}</p>
+      <p className="mt-pair-note">{t('passkeyVia.registerNote')}</p>
+      <ViaChoice via={via} onPick={pickVia} disabled={busy} />
       <div className="mt-card-actions">
         <button type="button" className="mt-btn primary" disabled={busy || left <= 0} onClick={create} data-action="passkey-create">{t('pair.createPasskey')}</button>
         <button type="button" className="mt-btn ghost" onClick={onRestart}>{t('common.cancel')}</button>
@@ -152,10 +178,11 @@ function ReauthScreen({ saved, onDone, onPair, note }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [via, pickVia] = useVia(); // P60
   async function verify() {
     setBusy(true); setError(null);
     try {
-      const r = await loginPasskey(saved && saved.credentialId);
+      const r = await loginPasskey(saved && saved.credentialId, navigator.credentials, via);
       if (r.status === 'unpaired') { onPair(t('reauth.unpaired')); return; }
       markPaired(); onDone();
     } catch (e) {
@@ -166,8 +193,9 @@ function ReauthScreen({ saved, onDone, onPair, note }) {
     <Card>
       <div data-role="reauth">
         <h3>{t('reauth.title')}</h3>
-        <p className="mt-pair-note">{saved && saved.name ? t('reauth.note', { name: saved.name }) : t('reauth.noteAny')}</p>
+        <p className="mt-pair-note">{saved && saved.name ? t('passkeyVia.reauthNote', { name: saved.name }) : t('passkeyVia.reauthNoteAny')}</p>
         {note && <div className="mt-pair-hint">{note}</div>}
+        <ViaChoice via={via} onPick={pickVia} disabled={busy} />
         <div className="mt-card-actions">
           <button type="button" className="mt-btn primary" disabled={busy} onClick={verify} autoFocus data-action="passkey-verify">{t('reauth.verify')}</button>
           <button type="button" className="mt-btn ghost" disabled={busy} onClick={() => { clearPasskey(); onPair(null); }} data-action="reauth-pair">{t('reauth.repair')}</button>

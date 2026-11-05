@@ -7,7 +7,7 @@
 // 비밀(허가, 세션 ID, 챌린지)은 로그에 쓰지 않는다.
 import crypto from 'node:crypto';
 import net from 'node:net';
-import { Challenges, challengeOf, creationOptions, requestOptions, verifyRegistration, verifyAssertion, PasskeyError, b64u } from './passkey.mjs';
+import { Challenges, challengeOf, creationOptions, requestOptions, verifyRegistration, verifyAssertion, PasskeyError, b64u, viaOf } from './passkey.mjs';
 
 export const GRANT_TTL_MS = 5 * 60_000;
 export const GRANT_MAX_TRIES = 5; // 등록이 이만큼 틀리면 허가를 버린다
@@ -158,11 +158,12 @@ export class WebAuth {
     if (allow && !allow(g)) { this.grants.drop(g); throw err('grant_node', 'register the passkey on the device that paired. Pair again', 403); }
     return g;
   }
-  registerOptions({ grant, origin, allow = null }) {
+  // via: 사용자가 고른 인증기(P60, 'phone'|'device'|없음). hints만 바꾼다
+  registerOptions({ grant, origin, allow = null, via = null }) {
     const g = this.grantOf(grant, origin, allow);
     const rpId = rpIdOf(origin);
     const challenge = this.challenges.issue({ kind: 'reg', grantHash: g.hash, origin, rpId });
-    return { options: creationOptions({ rpId, challenge, userId: g.userId, name: g.name }), expiresAt: g.expiresAt };
+    return { options: creationOptions({ rpId, challenge, userId: g.userId, name: g.name, via: viaOf(via) }), expiresAt: g.expiresAt };
   }
   register({ grant, credential, origin, allow = null }) {
     const g = this.grantOf(grant, origin, allow);
@@ -181,16 +182,16 @@ export class WebAuth {
     }
   }
   // credentialId(브라우저가 기억한 것, 비밀 아님)가 있는데 모르는 것이면 짝이 풀린 것이다
-  loginOptions({ credentialId, origin }) {
+  loginOptions({ credentialId, origin, via = null }) {
     const rpId = rpIdOf(origin);
     let ids = [];
     if (credentialId != null && credentialId !== '') {
       const d = typeof credentialId === 'string' && credentialId.length < 2000 ? this.devices.byCred(credentialId) : null;
       if (!d || d.passkey.rpId !== rpId) return { status: 'unpaired' };
-      ids = [credentialId];
+      ids = [{ id: credentialId, transports: d.passkey.transports }]; // P60: 등록 때 받은 길(hybrid 등)
     }
     const challenge = this.challenges.issue({ kind: 'login', origin, rpId });
-    return { status: 'ok', options: requestOptions({ rpId, challenge, credIds: ids }) };
+    return { status: 'ok', options: requestOptions({ rpId, challenge, credIds: ids, via: viaOf(via) }) };
   }
   // check(device): 서명을 확인한 기기를 받을지(P57: 지금 요청한 Tailscale 기기에 묶였는가). 던지면 세션을 만들지 않는다
   login({ credential, origin, check = null }) {
@@ -200,7 +201,7 @@ export class WebAuth {
     if (!d) throw Object.assign(new PasskeyError('unknown_credential', 'this passkey is not paired with the board'), { unpaired: true });
     const r = verifyAssertion(credential, d.passkey, { challenge: ch.challenge, origin, rpId: ch.rpId });
     if (check) check(d);
-    this.devices.setPasskey(d.id, { signCount: r.signCount, lastUsedAt: this.now() });
+    this.devices.setPasskey(d.id, { signCount: r.signCount, backedUp: r.backedUp, lastUsedAt: this.now() });
     const session = this.sessions.create(d.id);
     return { device: this.devices.get(d.id), session };
   }

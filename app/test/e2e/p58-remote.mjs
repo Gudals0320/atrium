@@ -183,8 +183,10 @@ try {
   await win.click('button[data-tab=devices]').catch(() => {});
   await win.waitForSelector('[data-role=remote-log] .mt-remote-log-row', { timeout: 10000 });
   await win.evaluate(() => document.querySelector('[data-role=remote-log]').scrollIntoView());
+  const preview = await win.$$eval('[data-role=remote-log] .mt-remote-log-row', (els) => els.length);
+  while (await win.$('[data-action=remote-log-more]')) { await win.click('[data-action=remote-log-more]'); await sleep(100); } // P60: 기본으로 최근 몇 줄, 더 보기로 늘린다
   const rows = await win.$$eval('[data-role=remote-log] .mt-remote-log-row', (els) => els.length);
-  check('설정 › 연결된 기기 탭에 최근 기록이 보인다', rows >= 10, { rows });
+  check('설정 › 연결된 기기 탭에 최근 기록이 보인다', preview >= 1 && rows >= 10, { preview, rows });
   await shot(win, '08-pc-remote-log', log);
 } catch (e) {
   log(`오류 ${e.stack}`);

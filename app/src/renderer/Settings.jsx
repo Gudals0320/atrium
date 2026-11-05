@@ -65,13 +65,16 @@ function ScaleSetting({ kind }) {
   return (
     <div className="mt-set-row" data-role={`${field}-setting`}>
       <span className="mt-set-name">{t(`scale.${kind}Name`)}</span>
+      {/* P60: −·값·+를 판 단추 높이(30px)의 한 덩어리로. 브라우저 스핀 단추는 숨기고(styles.css .mt-nospin), 뒤 단추는 100%로 되돌리기 */}
       <span className="mt-set-value mt-scale">
-        <button type="button" className="mt-btn small ghost" data-action={`${field}-down`} disabled={value <= SCALE_MIN} title={t('scale.down')} onClick={() => set(stepScale(value, -1))}>−</button>
-        <input type="number" className="mt-set-num mt-scale-num" min={SCALE_MIN * 100} max={SCALE_MAX * 100} step={SCALE_STEP * 100} data-field={`setting-${field}`} data-value={pctOf(value)}
-          value={text ?? pctOf(value)} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }} />
-        <span className="mt-scale-pct">%</span>
-        <button type="button" className="mt-btn small ghost" data-action={`${field}-up`} disabled={value >= SCALE_MAX} title={t('scale.up')} onClick={() => set(stepScale(value, 1))}>+</button>
-        <button type="button" className="mt-btn small ghost" data-action={`${field}-reset`} disabled={value === 1} onClick={() => set(1)}>{t('scale.reset')}</button>
+        <span className="mt-stepper">
+          <button type="button" className="mt-stepper-btn" data-action={`${field}-down`} disabled={value <= SCALE_MIN} title={t('scale.down')} aria-label={t('scale.down')} onClick={() => set(stepScale(value, -1))}>−</button>
+          <input type="number" inputMode="numeric" className="mt-scale-num mt-nospin" min={SCALE_MIN * 100} max={SCALE_MAX * 100} step={SCALE_STEP * 100} data-field={`setting-${field}`} data-value={pctOf(value)} aria-label={t(`scale.${kind}Name`)}
+            value={text ?? pctOf(value)} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }} />
+          <span className="mt-scale-pct">%</span>
+          <button type="button" className="mt-stepper-btn" data-action={`${field}-up`} disabled={value >= SCALE_MAX} title={t('scale.up')} aria-label={t('scale.up')} onClick={() => set(stepScale(value, 1))}>+</button>
+        </span>
+        <button type="button" className="mt-btn ghost mt-scale-reset" data-action={`${field}-reset`} disabled={value === 1} title={t('settingsP60.scaleResetTitle')} onClick={() => set(1)}>{t('settingsP60.scaleReset')}</button>
       </span>
       <span className="mt-set-hint">{t(`scale.${kind}Hint`, { min: SCALE_MIN * 100, max: SCALE_MAX * 100 })}</span>
     </div>

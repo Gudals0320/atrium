@@ -1246,3 +1246,102 @@ button.mt-peers { cursor: pointer; }
 .mt-empty-title { font-size: 15px; font-weight: 700; color: var(--text); }
 .mt-empty-body { font-size: 12.5px; line-height: 1.5; color: var(--dim); }
 .mt-empty-actions { display: flex; gap: 8px; margin-top: 6px; pointer-events: auto; }
+
+/* P60: 설정 창 크기와 스크롤. 제목, 탭 줄, 닫기 단추는 그대로 두고 탭 내용(.mt-set-body)만 스크롤한다. 창 크기에 맞춰 상한(dvh는 웹 화면 주소창 몫) */
+.mt-modal.mt-settings { width: min(860px, calc(100vw - 32px)); height: min(680px, calc(100vh - 32px)); height: min(680px, calc(100dvh - 32px)); }
+.mt-set-body { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; margin-right: -10px; padding-right: 10px; scrollbar-gutter: stable; }
+@media (max-height: 600px) { .mt-modal.mt-settings { height: calc(100vh - 16px); height: calc(100dvh - 16px); padding: 12px 16px 10px; gap: 8px; } }
+@media (max-width: 640px) { .mt-set-grid { grid-template-columns: minmax(0, 1fr); row-gap: 4px; } .mt-set-hint { margin-bottom: 6px; } .mt-set-tabs { overflow-x: auto; } }
+/* P60: 배율 입력. 브라우저 스핀 단추를 숨기고 −·값·+를 판 단추(.mt-btn, 30px·9px 모서리)와 같은 한 덩어리로 */
+input[type="number"].mt-nospin { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"].mt-nospin::-webkit-inner-spin-button, input[type="number"].mt-nospin::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+.mt-scale { gap: 8px; }
+.mt-stepper { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--panel-line-2); border-radius: 9px; background: var(--field-bg); overflow: hidden; flex: none; }
+.mt-stepper:focus-within { border-color: var(--accent-line); }
+.mt-stepper-btn { width: 30px; border: 0; background: transparent; color: var(--text-2); font-size: 15px; font-weight: 600; line-height: 1; cursor: pointer; display: grid; place-items: center; padding: 0; transition: background-color .15s ease, color .15s ease; }
+.mt-stepper-btn:first-child { border-right: 1px solid var(--panel-line); }
+.mt-stepper-btn:last-child { border-left: 1px solid var(--panel-line); }
+.mt-stepper-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.mt-stepper-btn:disabled { opacity: .4; cursor: default; }
+.mt-stepper-btn:focus-visible { outline: 2px solid var(--accent-line); outline-offset: -2px; }
+.mt-stepper .mt-scale-num { width: 46px; height: 100%; border: 0; border-radius: 0; background: transparent; padding: 0 1px 0 6px; text-align: right; font-variant-numeric: tabular-nums; }
+.mt-stepper .mt-scale-pct { align-self: center; margin: 0; padding: 0 8px 0 1px; color: var(--dim); font-size: 12.5px; }
+.mt-scale-reset { flex: none; }
+/* P60: 연결된 기기 탭. 묶음(.mt-dsec)마다 제목과 한 줄 설명 */
+.mt-dtab { gap: 18px; padding-bottom: 4px; }
+.mt-dsec { display: grid; gap: 8px; min-width: 0; }
+.mt-dsec + .mt-dsec { padding-top: 14px; border-top: 1px solid var(--panel-line); }
+.mt-dsec-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mt-dsec-title { margin: 0; font-size: 13.5px; font-weight: 700; color: var(--text); }
+.mt-dsec-desc { margin: -4px 0 0; color: var(--dim); font-size: 12px; line-height: 1.45; }
+.mt-dsec-body { display: grid; gap: 10px; min-width: 0; }
+.mt-dsec-empty { font-size: 12.5px; }
+.mt-dsec-sub { color: var(--chrome-text-4); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-top: 6px; }
+.mt-dsec-more { display: flex; gap: 6px; }
+.mt-dsec-limit input { width: 90px; flex: none; }
+.mt-dsec-limit > span:first-child { flex: 1 1 auto; min-width: 0; }
+/* 요약: 스위치 줄, 상태 알약, 주소와 명령의 복사 */
+.mt-dsum { gap: 6px; }
+.mt-dsum-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mt-dsum-pill { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--accent-line); color: var(--accent-text); background: var(--accent-soft); }
+.mt-dsum-pill.off { border-color: var(--warn); color: var(--warn); background: transparent; }
+.mt-dsum-count { font-size: 12.5px; margin-left: auto; }
+.mt-dsum-rows { display: grid; gap: 8px; }
+.mt-dsum-row { display: grid; grid-template-columns: minmax(110px, 150px) minmax(0, 1fr); gap: 10px; align-items: start; font-size: 12.5px; }
+.mt-dsum-label { color: var(--text-2); font-weight: 600; line-height: 24px; }
+.mt-dsum-stack { display: grid; gap: 5px; min-width: 0; }
+.mt-dsum-warn { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); font-size: 12.5px; }
+.mt-dsum-warn > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+.mt-remote-mark.lv-warn { background: var(--warn); }
+.mt-remote-mark.lv-fail { background: var(--danger, #e5534b); }
+.mt-copy { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mt-copy-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono, monospace); font-size: 12px; padding: 3px 8px; border-radius: 7px; background: var(--field-bg); border: 1px solid var(--panel-line); user-select: all; }
+.mt-copy .mt-btn { flex: none; }
+.mt-copy.wrap { align-items: flex-start; }
+.mt-copy.wrap .mt-copy-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.mt-dsec-limit .mt-set-text { width: 90px; flex: 0 0 90px; }
+.mt-copy-done { flex: none; font-size: 12px; color: var(--accent-text); opacity: 0; transform: translateX(-4px); transition: opacity .16s ease, transform .16s ease; }
+.mt-copy-done.show { opacity: 1; transform: none; }
+.mt-copy-done.fail { color: var(--bad); }
+/* 스위치(원격 받기) */
+input[type="checkbox"].mt-switch { appearance: none; -webkit-appearance: none; width: 30px; height: 18px; margin: 0; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--panel-line-2); position: relative; cursor: pointer; flex: none; transition: background-color .16s ease, border-color .16s ease; }
+input[type="checkbox"].mt-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--text-2); transition: transform .16s ease, background-color .16s ease; }
+input[type="checkbox"].mt-switch:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"].mt-switch:checked::after { transform: translateX(12px); background: var(--accent-ink); }
+input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+/* 짝 맺은 기기: 연결 점, 이름과 별칭·패스키 종류, 상태, 단추 */
+.mt-dev-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.mt-dev-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chrome-text-2); opacity: .5; }
+.mt-dev-dot.on { background: var(--ok); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.mt-dev-on { color: var(--ok); font-weight: 600; }
+.mt-dev-state { font-size: 12px; white-space: nowrap; }
+.mt-dev-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.mt-wdev-repair { display: grid; gap: 4px; margin-top: 6px; }
+/* Tailscale 진단(접힘) */
+.mt-dsec-fold > summary { list-style: none; cursor: pointer; user-select: none; }
+.mt-dsec-fold > summary::-webkit-details-marker { display: none; }
+.mt-dsec-caret { width: 0; height: 0; border-left: 5px solid var(--text-2); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .15s ease; flex: none; }
+.mt-dsec-fold[open] .mt-dsec-caret { transform: rotate(90deg); }
+.mt-dsec-fold .mt-remote-head .mt-set-hint { flex: 1 1 auto; min-width: 0; }
+.mt-dsec-fold[open] > :not(summary) { animation: mt-dsec-in .16s ease-out; }
+@keyframes mt-dsec-in { from { opacity: 0; transform: translateY(-3px); } }
+.mt-dtab .mt-remote-log-list { max-height: none; }
+/* P60: 패스키를 무엇으로 확인할지(짝 맺기, 다시 확인). 휴대폰이 먼저 */
+.mt-pk-via-wrap { display: grid; gap: 6px; justify-items: stretch; width: 100%; }
+.mt-pk-via { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mt-pk-via-opt { display: grid; gap: 2px; justify-items: start; text-align: left; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--panel-line-2); background: transparent; color: var(--text); cursor: pointer; transition: border-color .15s ease, background-color .15s ease; }
+.mt-pk-via-opt b { font-size: 13px; font-weight: 600; }
+.mt-pk-via-opt span { font-size: 11.5px; color: var(--dim); }
+.mt-pk-via-opt:hover:not(:disabled) { background: var(--panel-2); }
+.mt-pk-via-opt.on, .mt-pk-via-opt.on:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.mt-pk-via-opt.on b { color: var(--accent-text); }
+.mt-pk-via-opt:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.mt-pk-via-opt:disabled { opacity: .5; cursor: default; }
+@media (max-width: 420px) { .mt-pk-via { grid-template-columns: 1fr; } }
+.mt-pair [data-role=reauth] { display: grid; gap: 8px; }
+.mt-pair [data-role=reauth] h3 { margin: 0; }
+@media (max-width: 640px) { .mt-dsum-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } .mt-dev-row { grid-template-columns: auto minmax(0, 1fr); } .mt-dev-state, .mt-dev-acts { grid-column: 2; justify-content: flex-start; } }
+@media (prefers-reduced-motion: reduce) {
+  .mt-stepper-btn, .mt-copy-done, input[type="checkbox"].mt-switch, input[type="checkbox"].mt-switch::after, .mt-dsec-caret, .mt-pk-via-opt { transition: none; }
+  .mt-dsec-fold[open] > :not(summary) { animation: none; }
+}

@@ -62,6 +62,14 @@ export function savedPasskey(storage = globalThis.localStorage) {
 export function savePasskey(v, storage = globalThis.localStorage) { try { storage.setItem(PASSKEY_KEY, JSON.stringify({ credentialId: v.credentialId, deviceId: v.deviceId || null, name: v.name || null })); } catch {} }
 export function clearPasskey(storage = globalThis.localStorage) { try { storage.removeItem(PASSKEY_KEY); } catch {} }
 
+// P60: 패스키를 무엇으로 확인할지(휴대폰 'phone' = iPhone·Android의 하이브리드(QR과 블루투스), 이 기기 'device' = Windows Hello·보안 키).
+// 고른 것을 이 브라우저에 기억한다(비밀 아님). 서버는 이 값으로 hints를 고른다. 고르지 않았으면 null(브라우저가 정한다)
+export const PASSKEY_VIA_KEY = 'atrium.passkeyVia';
+export const PASSKEY_VIAS = ['phone', 'device'];
+export function savedVia(storage = globalThis.localStorage) { try { const v = storage.getItem(PASSKEY_VIA_KEY); return PASSKEY_VIAS.includes(v) ? v : null; } catch { return null; } }
+export function saveVia(v, storage = globalThis.localStorage) { try { if (PASSKEY_VIAS.includes(v)) storage.setItem(PASSKEY_VIA_KEY, v); else storage.removeItem(PASSKEY_VIA_KEY); } catch {} }
+const viaBody = (via) => (PASSKEY_VIAS.includes(via) ? { via } : {});
+
 async function post(url, body) {
   const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin', cache: 'no-store' });
   let j = null; try { j = await r.json(); } catch {}
@@ -78,9 +86,9 @@ export function webauthnError(e) {
   return null;
 }
 
-// 짝 맺기의 등록 허가로 패스키를 만든다. 돌려주는 것: { device }
-export async function registerPasskey(grant, creds = navigator.credentials) {
-  const { options } = await post('/web/passkey/register/options', { grant });
+// 짝 맺기의 등록 허가로 패스키를 만든다. via: 고른 인증기(P60). 돌려주는 것: { device }
+export async function registerPasskey(grant, creds = navigator.credentials, via = null) {
+  const { options } = await post('/web/passkey/register/options', { grant, ...viaBody(via) });
   const cred = await creds.create({ publicKey: toCreateOptions(options) });
   if (!cred) throw Object.assign(new Error('no credential'), { name: 'NotAllowedError' });
   const r = await post('/web/passkey/register', { grant, credential: credentialToJSON(cred) });
@@ -88,8 +96,8 @@ export async function registerPasskey(grant, creds = navigator.credentials) {
   return r;
 }
 // 패스키로 다시 확인. credentialId가 없으면 이 브라우저가 찾을 수 있는 패스키로. 돌려주는 것: { status: 'ok', device } | { status: 'unpaired' }
-export async function loginPasskey(credentialId, creds = navigator.credentials) {
-  const o = await post('/web/passkey/login/options', { credentialId: credentialId || null });
+export async function loginPasskey(credentialId, creds = navigator.credentials, via = null) {
+  const o = await post('/web/passkey/login/options', { credentialId: credentialId || null, ...viaBody(via) });
   if (o.status === 'unpaired') { clearPasskey(); return { status: 'unpaired' }; }
   const cred = await creds.get({ publicKey: toGetOptions(o.options) });
   if (!cred) throw Object.assign(new Error('no credential'), { name: 'NotAllowedError' });

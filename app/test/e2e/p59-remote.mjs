@@ -228,6 +228,7 @@ try {
   await win.click('button[data-tab=devices]').catch(() => {});
   await win.waitForSelector('[data-role=remote-log] .mt-remote-log-row', { timeout: 10000 });
   await win.evaluate(() => document.querySelector('[data-role=remote-log]').scrollIntoView());
+  while (await win.$('[data-action=remote-log-more]')) { await win.click('[data-action=remote-log-more]'); await sleep(100); } // P60: 기록은 기본으로 최근 몇 줄
   const denyRow = await win.evaluate(() => { const r = document.querySelector('[data-role=remote-log] .mt-remote-log-row[data-reason="tailscale_node:other_node"]'); return r ? r.textContent : null; });
   check('설정 탭 기록에 거부 까닭이 사람이 읽는 글로', !!denyRow && /Tailscale/.test(denyRow), denyRow);
   await shot(win, '14-pc-remote-log', log);

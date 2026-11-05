@@ -4,6 +4,7 @@
 // P57: `whois --json <주소>`도 낸다. 모양은 실제 tailscale의 apitype.WhoIsResponse(Node, UserProfile, CapMap)에서 판이 쓰는 키를 따른다.
 //   100.64.0.2 laptop-a, 100.64.0.3 laptop-b(둘 다 me@example.com), 100.64.0.4 other-laptop(other@example.com), 100.64.0.9 태그 기기.
 //   다른 주소는 실제처럼 실패로 끝난다. P57_FAKE_WHOIS=fail이면 모든 whois가 실패한다(Tailscale 꺼짐 흉내).
+import { readFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const NAME = 'pc.example.ts.net';
 const port = Number(process.env.P49_FAKE_TS_PORT || 47868);
@@ -36,6 +37,9 @@ if (!isMain) { /* 불러 쓸 때(fakeWhois)는 아무것도 내지 않는다 */ 
     CurrentTailnet: { Name: 'example', MagicDNSSuffix: 'example.ts.net', MagicDNSEnabled: true },
     CertDomains: [NAME], User: { 1: USERS[1] }, Health: [],
   }));
+} else if (line === 'serve status --json' && process.env.P60_FAKE_SERVE_FILE && (() => { try { return readFileSync(process.env.P60_FAKE_SERVE_FILE, 'utf8').trim() === 'other'; } catch { return false; } })()) {
+  // P60: 파일에 'other'가 있으면 https 443을 다른 서비스가 쓰고 판으로 가는 serve가 없다(켜기 명령과 관리자 권한 안내 흉내)
+  console.log(JSON.stringify({ TCP: { 443: { HTTPS: true } }, Web: { [`${NAME}:443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:3000' } } } } }));
 } else if (line === 'serve status --json') {
   console.log(JSON.stringify({ TCP: { 443: { HTTPS: true } }, Web: { [`${NAME}:443`]: { Handlers: { '/': { Proxy: `http://127.0.0.1:${port}` } } } } }));
 } else if (args.length === 3 && args[0] === 'whois' && args[1] === '--json') {
