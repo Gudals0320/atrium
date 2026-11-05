@@ -53,14 +53,14 @@ async function copyText(text) {
     document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok;
   } catch { return false; }
 }
-function CopyLine({ text, role, action }) {
+function CopyLine({ text, role, action, wrap = false }) {
   const t = useT();
   const [state, setState] = useState(null); // 'ok' | 'fail'
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
   const copy = async () => { const ok = await copyText(text); setState(ok ? 'ok' : 'fail'); clearTimeout(timer.current); timer.current = setTimeout(() => setState(null), 1600); };
   return (
-    <div className="mt-copy">
+    <div className={`mt-copy${wrap ? ' wrap' : ''}`}>
       <code className="mt-copy-text" data-role={role} title={text}>{text}</code>
       <button type="button" className={`mt-btn small${state === 'ok' ? ' on' : ''}`} data-action={action} onClick={copy}>{t('devTab.copy')}</button>
       <span className={`mt-copy-done${state ? ' show' : ''}${state === 'fail' ? ' fail' : ''}`} data-role={`${role}-copied`} aria-live="polite">{state === 'ok' ? t('devTab.copied') : state === 'fail' ? t('termSelect.copyFail') : ''}</span>
@@ -167,7 +167,7 @@ function Summary({ s, d, connected, onDiag }) {
               <span className="mt-dsum-label">{t('devTab.enableLabel')}</span>
               <div className="mt-dsum-stack">
                 <span className="mt-set-hint">{t('devTab.enableHint')}</span>
-                <CopyLine text={d.enableCmd} role="remote-enable" action="copy-remote-enable" />
+                <CopyLine text={d.enableCmd} role="remote-enable" action="copy-remote-enable" wrap />
                 {d.serveOthers > 0 && <span className="mt-set-hint mt-wdev-warn" data-role="remote-admin-hint">{t('devTab.adminHint', { n: d.serveOthers })}</span>}
               </div>
             </div>

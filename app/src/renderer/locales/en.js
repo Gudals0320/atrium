@@ -1776,7 +1776,7 @@ export default {
     offline: 'Not connected',
     paired: 'Paired {at}',
     kind_phone: 'Phone passkey',
-    kind_device: 'Built-in passkey (Windows Hello and the like)',
+    kind_device: 'Built-in passkey',
     kind_key: 'Security key',
     kind_unknown: 'Passkey',
     security: 'Security',

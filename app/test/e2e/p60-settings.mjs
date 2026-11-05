@@ -124,11 +124,12 @@ try {
     await A.page.waitForSelector('[data-role=passkey-phone-hint]');
     const hint = await A.page.textContent('[data-role=passkey-phone-hint]');
     check('휴대폰을 고르면 블루투스와 QR 안내를 보인다', /블루투스/.test(hint) && /QR/.test(hint), hint);
+    await sleep(300); // 고른 칸의 테두리 전환(150ms)이 끝난 뒤
     await wshot(A.page, 'after-web-passkey-register-phone');
     await A.page.click('[data-action=passkey-create]');
     await L.boardOpen(A.page);
     const reg = A.seen.find((x) => x.url.endsWith('/register/options'));
-    check('등록: 휴대폰 선택이 via=phone으로 가고 hints가 hybrid(붙임 cross-platform)', reg && reg.body.via === 'phone' && reg.res && JSON.stringify(reg.res.options.hints) === '["hybrid"]' && reg.res.options.authenticatorSelection.authenticatorAttachment === 'cross-platform', reg && { body: reg.body, hints: reg.res && reg.res.options.hints, sel: reg.res && reg.res.options.authenticatorSelection });
+    check('등록: 휴대폰 선택이 via=phone으로 가고 hints가 hybrid(붙임 cross-platform)', reg && reg.body.via === 'phone' && reg.res && JSON.stringify(reg.res.options.hints) === '["hybrid"]' && reg.res.options.authenticatorSelection.authenticatorAttachment === 'cross-platform', reg && { via: reg.body.via, hints: reg.res && reg.res.options.hints, sel: reg.res && reg.res.options.authenticatorSelection });
     const credsA = await A.creds();
     const devA = (await win.evaluate(() => window.__mt.api.call('device.list'))).devices.find((d) => d.name === 'Chrome on laptop A');
     check('가상 휴대폰 인증기(cable)로 만든 패스키는 기기 목록에 휴대폰 패스키', credsA.length === 1 && devA && devA.passkey && devA.passkey.kind === 'phone', { creds: credsA.length, passkey: devA && devA.passkey });
@@ -136,7 +137,8 @@ try {
     check('고른 것은 브라우저에 기억한다(atrium.passkeyVia, 비밀 아님)', via === 'phone', via);
     // 다시 확인: 로그아웃 → 다시 열기 → 기억한 휴대폰이 골라져 있다 → 확인
     await A.page.evaluate(() => fetch('/web/logout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', credentials: 'same-origin' }));
-    await A.page.goto(`${BASE}/`);
+    await sleep(800);
+    await A.page.goto(`${BASE}/`).catch(() => {}); // 로그아웃으로 연결이 닫히면 화면이 스스로 다시 읽을 수 있다
     await A.page.waitForSelector('[data-role=reauth] [data-role=passkey-via]', { timeout: 20000 });
     check('다시 확인 화면: 기억한 휴대폰이 골라져 있다', (await A.page.getAttribute('[data-role=reauth] [data-role=passkey-via]', 'data-value')) === 'phone');
     await wshot(A.page, 'after-web-reauth-phone');
@@ -144,7 +146,7 @@ try {
     await A.page.click('[data-action=passkey-verify]');
     await L.boardOpen(A.page);
     const lo = A.seen.find((x) => x.url.endsWith('/login/options') && x.body && x.body.via);
-    check('다시 확인: via=phone → hints hybrid, allowCredentials에 등록 때 받은 transports', lo && lo.body.via === 'phone' && JSON.stringify(lo.res.options.hints) === '["hybrid"]' && lo.res.options.allowCredentials[0].transports && lo.res.options.allowCredentials[0].transports.length > 0, lo && { body: lo.body, hints: lo.res && lo.res.options.hints, allow: lo.res && lo.res.options.allowCredentials });
+    check('다시 확인: via=phone → hints hybrid, allowCredentials에 등록 때 받은 transports', lo && lo.body.via === 'phone' && JSON.stringify(lo.res.options.hints) === '["hybrid"]' && lo.res.options.allowCredentials[0].transports && lo.res.options.allowCredentials[0].transports.length > 0, lo && { via: lo.body.via, hints: lo.res && lo.res.options.hints, allow: lo.res && lo.res.options.allowCredentials });
   }
   // ---- 2. 노트북 B(같은 Tailscale 기기의 다른 브라우저): 이 기기로(internal) ----
   const Bl = await laptop(browser, 'B', 'internal');
@@ -153,7 +155,7 @@ try {
   await L.boardOpen(Bl.page);
   if (PHASE === 'after') {
     const reg = Bl.seen.find((x) => x.url.endsWith('/register/options'));
-    check('등록: 이 기기 선택이 via=device로 가고 hints가 client-device·security-key', reg && reg.body.via === 'device' && JSON.stringify(reg.res.options.hints) === '["client-device","security-key"]', reg && { body: reg.body, hints: reg.res && reg.res.options.hints });
+    check('등록: 이 기기 선택이 via=device로 가고 hints가 client-device·security-key', reg && reg.body.via === 'device' && JSON.stringify(reg.res.options.hints) === '["client-device","security-key"]', reg && { via: reg.body.via, hints: reg.res && reg.res.options.hints });
     const devB = (await win.evaluate(() => window.__mt.api.call('device.list'))).devices.find((d) => d.name === 'Edge on laptop A');
     check('내장 인증기(internal) 패스키는 기기 내장 패스키', devB && devB.passkey.kind === 'device', devB && devB.passkey);
   }
@@ -173,7 +175,7 @@ try {
       const h = (sel) => Math.round(row.querySelector(sel).getBoundingClientRect().height);
       return { appearance: getComputedStyle(inp).appearance || getComputedStyle(inp).webkitAppearance, stepper: h('.mt-stepper'), down: h('[data-action=uiScale-down]'), reset: h('[data-action=uiScale-reset]'), resetText: row.querySelector('[data-action=uiScale-reset]').textContent, radius: getComputedStyle(row.querySelector('.mt-stepper')).borderRadius, btnRadius: getComputedStyle(row.querySelector('[data-action=uiScale-reset]')).borderRadius };
     });
-    check('배율 칸: 기본 스핀 단추 없음(appearance textfield), −·+·기본으로가 판 단추 높이(30)와 모서리(9px)', sc.appearance === 'textfield' && sc.stepper === 30 && sc.reset === 30 && sc.radius === sc.btnRadius && /기본으로/.test(sc.resetText), sc);
+    check('배율 칸: 기본 스핀 단추 없음(appearance textfield), −·+·기본으로가 판 단추 높이(30)와 모서리(9px)', sc.appearance === 'textfield' && sc.stepper === 30 && sc.reset === 30 && sc.radius === sc.btnRadius && /기본으로|Reset/.test(sc.resetText), sc);
     await win.click('[data-action=uiScale-up]'); await sleep(200);
     const up = await win.getAttribute('[data-field=setting-uiScale]', 'data-value');
     await win.click('[data-action=uiScale-reset]'); await sleep(200);
@@ -246,7 +248,7 @@ try {
     await win.waitForSelector('[data-role=remote-enable]', { timeout: 10000 });
     const en = await win.evaluate(() => ({ cmd: document.querySelector('[data-role=remote-enable]').textContent, admin: (document.querySelector('[data-role=remote-admin-hint]') || {}).textContent || null, warn: (document.querySelector('[data-role=remote-problem]') || { dataset: {} }).dataset.check || null }));
     check('serve가 판으로 가지 않으면 PATH에 기대지 않는 켜기 명령(node …atrium.mjs --dev remote enable --yes --https-port 8443)', /^node "?.+[\\/]backend[\\/]bin[\\/]atrium\.mjs"? --dev remote enable --yes --https-port 8443$/.test(en.cmd), en.cmd.replace(/^node "?.+[\\/]backend/, 'node <repo>/backend'));
-    check('같은 이름의 다른 serve 항목이 있으면 관리자 권한 안내', !!en.admin && /관리자/.test(en.admin), en.admin);
+    check('같은 이름의 다른 serve 항목이 있으면 관리자 권한 안내', !!en.admin && /관리자|administrator/.test(en.admin), en.admin);
     check('진단 문제는 요약에 경고 한 줄(serve)', en.warn === 'serve', en.warn);
     await win.click('[data-action=copy-remote-enable]');
     await win.waitForSelector('[data-role=remote-enable-copied].show', { timeout: 3000 });

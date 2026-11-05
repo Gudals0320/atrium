@@ -1297,6 +1297,9 @@ input[type="number"].mt-nospin::-webkit-inner-spin-button, input[type="number"].
 .mt-copy { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mt-copy-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono, monospace); font-size: 12px; padding: 3px 8px; border-radius: 7px; background: var(--field-bg); border: 1px solid var(--panel-line); user-select: all; }
 .mt-copy .mt-btn { flex: none; }
+.mt-copy.wrap { align-items: flex-start; }
+.mt-copy.wrap .mt-copy-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.mt-dsec-limit .mt-set-text { width: 90px; flex: 0 0 90px; }
 .mt-copy-done { flex: none; font-size: 12px; color: var(--accent-text); opacity: 0; transform: translateX(-4px); transition: opacity .16s ease, transform .16s ease; }
 .mt-copy-done.show { opacity: 1; transform: none; }
 .mt-copy-done.fail { color: var(--bad); }
@@ -1330,11 +1333,13 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 .mt-pk-via-opt b { font-size: 13px; font-weight: 600; }
 .mt-pk-via-opt span { font-size: 11.5px; color: var(--dim); }
 .mt-pk-via-opt:hover:not(:disabled) { background: var(--panel-2); }
-.mt-pk-via-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.mt-pk-via-opt.on, .mt-pk-via-opt.on:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
 .mt-pk-via-opt.on b { color: var(--accent-text); }
 .mt-pk-via-opt:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .mt-pk-via-opt:disabled { opacity: .5; cursor: default; }
 @media (max-width: 420px) { .mt-pk-via { grid-template-columns: 1fr; } }
+.mt-pair [data-role=reauth] { display: grid; gap: 8px; }
+.mt-pair [data-role=reauth] h3 { margin: 0; }
 @media (max-width: 640px) { .mt-dsum-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } .mt-dev-row { grid-template-columns: auto minmax(0, 1fr); } .mt-dev-state, .mt-dev-acts { grid-column: 2; justify-content: flex-start; } }
 @media (prefers-reduced-motion: reduce) {
   .mt-stepper-btn, .mt-copy-done, input[type="checkbox"].mt-switch, input[type="checkbox"].mt-switch::after, .mt-dsec-caret, .mt-pk-via-opt { transition: none; }
