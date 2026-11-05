@@ -131,7 +131,8 @@ try {
   const a0 = await active();
   step('처음: 그 자리를 누르면 터미널에 초점이 간다', a0 && a0.xterm && a0.session === S, a0);
   const b0b = await barState();
-  step('처음: 터미널을 누른 뒤에도 바는 숨어 있다', b0b.hidden, b0b);
+  // P61: 들어오는 범위가 아래 150px로 넓어져 마우스가 이 자리(아래에서 61px)에 머물면 바가 나타난다(lib/bottom.js BAND_PX)
+  step('처음: 터미널을 누른 뒤 마우스가 아래 범위에 머물면 바가 나타난다(P61)', !b0b.hidden, b0b);
 
   // ---------- 2. 마우스를 아래 띠로 가져가면 나타나고, 벗어나면 숨는다 ----------
   await clickBlank();
