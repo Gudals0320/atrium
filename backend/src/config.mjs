@@ -93,9 +93,9 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     gitPollMs: Number(E('GIT_POLL_MS') || 15000), // F4: hook이 없는 세션의 폴더(herdr cwd)와 git을 다시 보는 간격
   };
   // 기본 herdr 세션은 이름이 없다. 판은 반드시 이름 있는 세션을 쓴다.
-  if (!cfg.herdrSession || cfg.herdrSession === 'default') throw new Error('herdr 세션 이름이 필요하다(기본 세션은 쓰지 않는다)');
-  if (profile === 'dev' && [PROFILES.real.herdrSession, LEGACY_REAL.herdrSession].includes(cfg.herdrSession)) throw new Error('dev 프로필이 실제 판의 herdr 세션을 가리킨다');
-  if (profile === 'dev' && [PROFILES.real.dataDir, LEGACY_REAL.dataDir].some((d) => samePath(d, cfg.dataDir))) throw new Error('dev 프로필이 실제 판의 데이터 폴더를 가리킨다');
+  if (!cfg.herdrSession || cfg.herdrSession === 'default') throw new Error("herdr 세션 이름을 지정하세요. 기본 세션은 사용하지 않습니다.");
+  if (profile === 'dev' && [PROFILES.real.herdrSession, LEGACY_REAL.herdrSession].includes(cfg.herdrSession)) throw new Error("개발용 프로필이 실제 보드의 herdr 세션을 가리킵니다.");
+  if (profile === 'dev' && [PROFILES.real.dataDir, LEGACY_REAL.dataDir].some((d) => samePath(d, cfg.dataDir))) throw new Error("개발용 프로필이 실제 보드의 데이터 폴더를 가리킵니다.");
   cfg.sessionsDir = path.join(cfg.dataDir, 'sessions');
   cfg.dbFile = path.join(cfg.dataDir, 'board.db');
   cfg.backendFile = path.join(cfg.dataDir, 'backend.json');

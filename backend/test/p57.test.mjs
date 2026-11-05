@@ -130,8 +130,8 @@ test('진단: "짝 맺은 기기는 Tailscale 기기에 묶임" 줄과 묶이지
   assert.deepEqual(line(0), { id: 'nodes', level: 'ok', vars: { n: 0 } });
   assert.deepEqual(line(2), { id: 'nodes', level: 'warn', vars: { n: 2 } });
   assert.equal(line(undefined).level, 'skip', '백엔드 없이 읽으면 모름');
-  assert.match(checkText(line(0), PORT), /Tailscale 기기에 묶임/);
-  assert.match(checkText(line(2), PORT), /옛 기기 2대/);
+  assert.match(checkText(line(0), PORT), /Tailscale 기기에서만 접속/);
+  assert.match(checkText(line(2), PORT), /기존 기기 2대/);
 });
 
 // ---------- HTTP·WebSocket(serve 흉내 머리글) ----------

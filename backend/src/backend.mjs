@@ -68,7 +68,7 @@ export function spawnPlanOf(b, p) {
   const over = { model: p.model, effort: p.effort, permissionMode: p.permissionMode, allowHerdr: p.allowHerdr, args: Array.isArray(p.args) ? p.args.join(' ') : p.args, command: p.command };
   if (p.launcherDef) return resolveLauncher(p.launcherDef, over);
   if (p.launcher) {
-    if (!L) throw keyed(apiError('no_launcher', `호출자가 없다: ${p.launcher}`), 'launchers.err.notFound', { ref: String(p.launcher) });
+    if (!L) throw keyed(apiError('no_launcher', `런처를 찾을 수 없습니다: ${p.launcher}`), 'launchers.err.notFound', { ref: String(p.launcher) });
     return resolveLauncher(L.get(p.launcher), over);
   }
   if (p.kind === DEEPSEEK || p.flavor === DEEPSEEK) {
@@ -113,7 +113,7 @@ export class Backend {
     for (const d of [cfg.dataDir, cfg.sessionsDir, cfg.logDir]) fs.mkdirSync(d, { recursive: true });
     try {
       const prev = JSON.parse(fs.readFileSync(cfg.backendFile, 'utf8'));
-      if (prev.pid !== process.pid && pidAlive(prev.pid)) throw apiError('already_running', `백엔드가 이미 돈다(pid ${prev.pid}, 포트 ${prev.port})`);
+      if (prev.pid !== process.pid && pidAlive(prev.pid)) throw apiError('already_running', `백엔드가 이미 실행 중입니다 (PID ${prev.pid}, 포트 ${prev.port})`);
     } catch (e) { if (e.code === 'already_running') throw e; }
     // P40: 옛 판 옮기기는 옛 herdr를 끌 때 실행 파일이 필요하다. 설정(판 기록)은 아직 못 읽으므로 설정 없이 찾는다
     if (cfg.legacy && !cfg.herdrPath) cfg.herdrPath = (await findHerdr({ envPath: cfg.herdrEnvPath }).catch(() => ({}))).path || null;
@@ -434,7 +434,7 @@ export class Backend {
     const key = String(ref).replace(/^@/, '');
     if (this.sessions.has(key)) return this.sessions.get(key);
     for (const s of this.sessions.values()) if (s.name === key) return s;
-    throw keyed(apiError('not_found', `판에 없는 세션: ${ref}`), 'sessionNotFound', { ref });
+    throw keyed(apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`), 'sessionNotFound', { ref });
   }
   deliveryView(sid, d) {
     const s = this.sessions.get(sid);
@@ -514,13 +514,13 @@ export class Backend {
     const byName = list.find((w) => w.name.toLowerCase() === r.toLowerCase()) || list.find((w) => w.key === pathKey(r));
     if (byName) return this.store.getWorkspace(byName.key);
     if (fs.existsSync(r)) { const ws = await workspaceOf(path.resolve(r)); const w = this.store.getWorkspace(ws.key); if (w) return w; }
-    if (required) throw keyed(apiError('not_found', `판에 없는 워크스페이스: ${ref}`), 'wsNotFound', { ref });
+    if (required) throw keyed(apiError('not_found', `보드에서 프로젝트를 찾을 수 없습니다: ${ref}`), 'wsNotFound', { ref });
     return null;
   }
   // "+ 리포 열기": 폴더를 골라 빈 워크스페이스를 만든다(이미 있으면 그대로)
   async workspaceOpen(p) {
     const dir = path.resolve(String(p.path || ''));
-    if (!p.path || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw keyed(apiError('bad_request', `폴더가 없다: ${p.path}`), 'noFolder', { path: p.path });
+    if (!p.path || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.path}`), 'noFolder', { path: p.path });
     const ws = await workspaceOf(dir);
     const created = this.ensureWorkspace(ws, 'open');
     this.bus.emit('workspace_opened', ws.key); // P10: 사람이 연 워크스페이스는 저절로 연 것이 아니다(닫은 기억도 지운다)
@@ -539,12 +539,12 @@ export class Backend {
     const sums = [...this.sessions.values()].map((s) => this.summary(s));
     const plan = closePlan(named, sums);
     if (!p.confirm) {
-      if (named.length === 1 && plan.empty) return confirmResult(`빈 워크스페이스 ${named[0].name}(${named[0].root})를 닫는다. 폴더와 저장소는 그대로다.`, m('wsClose', { name: named[0].name, root: named[0].root }), { plan });
-      return confirmResult(`워크스페이스 ${named.length}개를 판에서 지운다(세션 ${plan.sessions}개, 돌고 있는 CLI ${plan.running}개). 폴더와 대화 기록 파일은 그대로다.`, m(plan.empty ? 'wsCloseMany' : 'wsCloseSessions', { n: named.length, sessions: plan.sessions, running: plan.running }), { plan });
+      if (named.length === 1 && plan.empty) return confirmResult(`빈 프로젝트 ${named[0].name}(${named[0].root})를 닫습니다. 폴더와 Git 저장소는 그대로 유지합니다.`, m('wsClose', { name: named[0].name, root: named[0].root }), { plan });
+      return confirmResult(`프로젝트 ${named.length}개를 보드에서 제거합니다 (세션 ${plan.sessions}개, 실행 중인 CLI ${plan.running}개). 폴더와 대화 기록 파일은 그대로 유지합니다.`, m(plan.empty ? 'wsCloseMany' : 'wsCloseSessions', { n: named.length, sessions: plan.sessions, running: plan.running }), { plan });
     }
     const chk = checkAfter(plan, p.after);
-    if (!chk.ok && chk.reason === 'choose') throw keyed(apiError('not_empty', `세션이 ${plan.sessions}개 있다. after로 archive(모두 보관) 또는 delete(모두 삭제)를 고른다`), 'wsChooseAfter', { n: plan.sessions });
-    if (!chk.ok) throw apiError('bad_request', `after는 archive 또는 delete: ${p.after}`);
+    if (!chk.ok && chk.reason === 'choose') throw keyed(apiError('not_empty', `세션이 ${plan.sessions}개 있습니다. after에 archive(모두 보관) 또는 delete(모두 삭제)를 지정하세요.`), 'wsChooseAfter', { n: plan.sessions });
+    if (!chk.ok) throw apiError('bad_request', `after에는 archive 또는 delete를 지정하세요: ${p.after}`);
     const keys = new Set(named.map((w) => w.key));
     const targets = [...this.sessions.values()].filter((s) => keys.has(s.workspaceKey));
     const done = { archived: 0, deleted: 0, failed: [] };
@@ -921,8 +921,8 @@ export class Backend {
     if (!stuck.length) {
       const legacy = new HerdrAdapter({ herdrPath: this.cfg.herdrPath, session: m.legacy, logDir: this.cfg.logDir });
       deleted = await legacy.deleteSession().catch((e) => ({ deleted: false, out: e.message }));
-      if (!deleted.deleted) this.migration.problems.push(`옛 herdr 세션 ${m.legacy}을 지우지 못했다: ${deleted.reason || deleted.out || ''}`);
-    } else this.migration.problems.push(`되살리지 못한 세션이 있어 옛 herdr 세션 ${m.legacy}을 남겼다: ${stuck.join(', ')}`);
+      if (!deleted.deleted) this.migration.problems.push(`옛 herdr 세션 ${m.legacy}을 삭제하지 못했습니다: ${deleted.reason || deleted.out || ''}`);
+    } else this.migration.problems.push(`복구하지 못한 세션이 있어 이전 herdr 세션 ${m.legacy}을 유지했습니다: ${stuck.join(', ')}`);
     m.done = true;
     m.result = { resumed, stuck, closed, deleted };
     this.store.addEvent(null, 'rename_herdr_migrated', m.result);
@@ -1108,19 +1108,19 @@ export class Backend {
   requireHerdr() {
     if (this.herdrMissing || (this.herdrCompat && this.herdrCompat.level === 'missing')) {
       const tried = ((this.herdrFind && this.herdrFind.tried) || []).length;
-      throw keyed(apiError('herdr_missing', `herdr를 찾지 못해 세션을 띄울 수 없다(후보 ${tried}곳을 봄). herdr를 설치하거나(https://herdr.dev) 설정의 herdr 경로나 ATRIUM_HERDR로 실행 파일을 준다`), 'herdrMissing', { n: tried });
+      throw keyed(apiError('herdr_missing', `herdr를 찾지 못해 세션을 시작할 수 없습니다 (후보 ${tried}곳 확인). herdr를 설치하거나(https://herdr.dev) 설정의 herdr 경로 또는 ATRIUM_HERDR로 실행 파일을 지정하세요.`), 'herdrMissing', { n: tried });
     }
     if (!this.herdrOk) {
       const c = this.herdrCompat || {};
-      throw keyed(apiError('herdr_incompatible', `herdr 호환 안 됨: ${(c.problems || []).join('; ') || 'unknown'}. 지원하는 프로토콜(${this.cfg.herdrProtocols.join(', ')})의 herdr를 설치하거나 설정의 herdr 경로로 맞는 herdr를 준다`), 'herdrIncompatible', { version: c.version || '?', protocol: c.protocol ?? '?', supported: this.cfg.herdrProtocols.join(', ') });
+      throw keyed(apiError('herdr_incompatible', `herdr가 호환되지 않습니다: ${(c.problems || []).join('; ') || 'unknown'}. 지원하는 프로토콜(${this.cfg.herdrProtocols.join(', ')})의 herdr를 설치하거나 설정에서 호환되는 herdr의 경로를 지정하세요.`), 'herdrIncompatible', { version: c.version || '?', protocol: c.protocol ?? '?', supported: this.cfg.herdrProtocols.join(', ') });
     }
-    if (!this.adapter.connected) throw keyed(apiError('herdr_down', 'herdr 서버에 붙어 있지 않다'), 'herdrDown');
+    if (!this.adapter.connected) throw keyed(apiError('herdr_down', "herdr 서버에 연결되어 있지 않습니다."), 'herdrDown');
   }
   // B3: 새 세션 시작. P5: 시작 폴더의 리포지토리 워크스페이스에 생긴다(G1). 종류 shell은 에이전트 없는 일반 셸(G2)
   async spawn(p) {
     this.requireHerdr();
     const cwd = path.resolve(String(p.cwd || ''));
-    if (!p.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더가 없다: ${p.cwd}`), 'noFolder', { path: p.cwd });
+    if (!p.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.cwd}`), 'noFolder', { path: p.cwd });
     const pending = this.spawningNames || (this.spawningNames = new Set()); // 만드는 중인 세션 이름
     const taken = new Set([...this.sessions.values()].map((s) => s.name).concat([...pending]));
     // P33: 띄울 값은 호출자(launchers.mjs)가 정한다. 함께 준 값(모델 등)이 호출자 값을 덮는다. 호출자 없이 부르면 준 값만 쓴다(atrium child, CLI --kind)
@@ -1131,14 +1131,14 @@ export class Backend {
     let name = p.name;
     const prefix = flavor === DEEPSEEK ? 'ds' : shell ? 'sh' : 's';
     if (!name) { let i = 1; while (taken.has(`${prefix}${i}`)) i++; name = `${prefix}${i}`; }
-    if (!NAME_RE.test(name) || name === 'all') throw apiError('bad_request', `이름은 영문, 숫자, -, _ 만(all 제외): ${name}`);
-    if (taken.has(name)) throw keyed(apiError('name_taken', `이미 있는 이름: ${name}`), 'nameTaken', { name });
+    if (!NAME_RE.test(name) || name === 'all') throw apiError('bad_request', `이름에는 영문, 숫자, -, _만 사용할 수 있습니다 (all 제외): ${name}`);
+    if (taken.has(name)) throw keyed(apiError('name_taken', `이미 사용 중인 이름입니다: ${name}`), 'nameTaken', { name });
     // 이름 검사와 세션 등록 사이에 await가 있어, 같은 이름의 요청 둘이 함께 지나가지 않게 예약해 둔다(이슈 #1-7, branch.mjs의 pendingNames와 같은 방식)
     pending.add(name);
     try {
       const claude = kind === 'claude';
       const permissionMode = claude ? plan.permissionMode || 'manual' : p.permissionMode || 'manual';
-      if (!PERMISSION_MODES.has(permissionMode)) throw apiError('bad_request', `권한 모드: ${permissionMode}`);
+      if (!PERMISSION_MODES.has(permissionMode)) throw apiError('bad_request', `승인 방식: ${permissionMode}`);
       const model = claude ? plan.model || null : null;
       const effort = claude ? plan.effort || null : null;
       const allowHerdr = claude && !!plan.allowHerdr;
@@ -1147,10 +1147,10 @@ export class Backend {
       if (!KIND_RE.test(kind)) throw apiError('bad_request', `에이전트 종류: ${kind}`);
       if (!shell) {
         const kinds = await this.adapter.agentKinds().catch(() => []);
-        if (kinds.length && !kinds.some((k) => k.kind === kind)) throw apiError('bad_request', `herdr가 모르는 종류: ${kind}`);
+        if (kinds.length && !kinds.some((k) => k.kind === kind)) throw apiError('bad_request', `herdr에서 지원하지 않는 에이전트 종류입니다: ${kind}`);
       }
-      if (command && p.prompt) throw keyed(apiError('not_agent', '직접 명령으로 띄우면 첫 지시를 보내지 않는다(판이 에이전트가 준비된 때를 모른다). 뜬 뒤 보낸다'), 'deepseekCommandNoPrompt');
-      if (shell && p.prompt) throw keyed(apiError('not_agent', '셸에는 첫 지시를 보내지 않는다(명령 바는 에이전트에게만). 터미널에 직접 친다'), 'shellNoPrompt');
+      if (command && p.prompt) throw keyed(apiError('not_agent', "직접 입력한 명령으로 실행하는 세션에는 첫 요청을 자동 전송하지 않습니다. 보드에서 에이전트의 준비 상태를 확인할 수 없으므로 세션이 시작된 뒤 요청을 보내세요."), 'deepseekCommandNoPrompt');
+      if (shell && p.prompt) throw keyed(apiError('not_agent', "셸에는 첫 요청을 자동 전송하지 않습니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요."), 'shellNoPrompt');
       // P25·P33: 게이트웨이를 거치는 호출자는 게이트웨이가 닿아야 답한다. 판이 켜지 않고 알린다(DeepSeek 예시는 옛 opencodex 안내)
       if (claude && plan.gateway) {
         if (flavor === DEEPSEEK && plan.gateway.health) await checkProxy({ url: plan.gateway.url });
@@ -1270,8 +1270,8 @@ export class Backend {
       if (p.target) targets = String(p.target).split(/[\s,]+/).filter(Boolean);
       else { const parsed = parseTargets(p.text || ''); targets = parsed.targets; text = parsed.text; }
     }
-    if (!targets.length) throw apiError('bad_request', '받는 세션이 없다(@이름)');
-    if (!text || !String(text).trim()) throw apiError('bad_request', '보낼 글이 없다');
+    if (!targets.length) throw apiError('bad_request', "메시지를 받을 세션을 @이름으로 지정하세요.");
+    if (!text || !String(text).trim()) throw apiError('bad_request', "보낼 내용을 입력하세요.");
     // 대상 풀기: @all, @세션 이름(B2)
     const picked = new Map(); // sessionId → 세션
     const agent = (s) => s.kind !== SHELL;
@@ -1280,13 +1280,13 @@ export class Backend {
       if (t === 'all') {
         const ws = p.workspace ? await this.resolveWorkspace(p.workspace) : null;
         const list = [...this.sessions.values()].filter((s) => (!ws || s.workspaceKey === ws.key) && agent(s));
-        if (!list.length) throw apiError('not_found', ws ? `워크스페이스 ${ws.root}에 에이전트 세션이 없다` : '판에 에이전트 세션이 없다');
+        if (!list.length) throw apiError('not_found', ws ? `프로젝트 ${ws.root}에 에이전트 세션이 없습니다.` : "보드에 에이전트 세션이 없습니다.");
         for (const s of list) if (!picked.has(s.sessionId)) picked.set(s.sessionId, s);
         continue;
       }
       const one = [...this.sessions.values()].find((s) => s.name === t || s.sessionId === t);
-      if (one && !agent(one)) throw keyed(apiError('not_agent', `@${one.name}은 일반 셸이다. 명령 바로는 에이전트에게만 보낸다. 셸에는 터미널에서 직접 친다`), 'shellNoBar', { name: one.name });
-      if (!one) throw keyed(apiError('not_found', `판에 없는 세션: ${raw}`), 'targetNotFound', { ref: raw });
+      if (one && !agent(one)) throw keyed(apiError('not_agent', `@${one.name} 세션은 일반 셸입니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요.`), 'shellNoBar', { name: one.name });
+      if (!one) throw keyed(apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${raw}`), 'targetNotFound', { ref: raw });
       picked.set(one.sessionId, one);
     }
     const deliveries = [...picked.values()].map((s) => {
@@ -1304,12 +1304,12 @@ export class Backend {
     const s = this.resolve(p.session);
     const shared = await this.adapter.workspacePanes(s.herdrWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => []);
     const kindName = s.kind || 'claude';
-    const closeText = shared.length ? `패널 ${s.paneId}만 닫는다(같은 작업 공간의 다른 패널 ${shared.length}개는 그대로).` : '패널을 닫는다.';
+    const closeText = shared.length ? `패널 ${s.paneId}만 닫습니다 (같은 herdr 작업 공간의 다른 터미널 창 ${shared.length}개는 유지합니다).` : "터미널 창을 닫습니다.";
     // G2: 셸은 패널만 닫는다. 돌고 있는 명령도 함께 끝난다
     const closeMsg = shared.length ? m('killClosePane', { pane: s.paneId, n: shared.length }) : m('killCloseAll');
-    if (!p.confirm && kindName === SHELL) { const sh = s.rt.shell; const cmd = sh && !sh.atPrompt ? clip(sh.command || (sh.procs || []).join(', ') || '?', 60) : null; return confirmResult(`셸 ${s.name}의 ${closeText}${cmd ? ` 돌고 있는 명령(${cmd})도 끝난다.` : ''}`, m('killShell', { name: s.name, close: closeMsg, running: cmd ? m('killShellRunning', { cmd }) : '' })); }
-    if (!p.confirm) return confirmResult(`${s.name} 세션의 ${kindName}를 끄고 ${closeText} 보관하면 보관함에서 다시 열 수 있다.${kindName === 'claude' ? ' 삭제하면 대화 기록을 휴지통으로 보내고 판에서 지운다.' : ' 삭제하면 판에서 지운다.'}`, m('kill', { name: s.name, kind: kindName, close: closeMsg, del: m(kindName === 'claude' ? 'killDeleteClaude' : 'killDeleteOther') }));
-    if (p.after && !['archive', 'delete'].includes(p.after)) throw apiError('bad_request', `after는 archive 또는 delete: ${p.after}`);
+    if (!p.confirm && kindName === SHELL) { const sh = s.rt.shell; const cmd = sh && !sh.atPrompt ? clip(sh.command || (sh.procs || []).join(', ') || '?', 60) : null; return confirmResult(`셸 ${s.name}: ${closeText}${cmd ? ` 실행 중인 명령(${cmd})도 종료합니다.` : ''}`, m('killShell', { name: s.name, close: closeMsg, running: cmd ? m('killShellRunning', { cmd }) : '' })); }
+    if (!p.confirm) return confirmResult(`${s.name} 세션에서 실행 중인 ${kindName} 에이전트를 종료합니다. ${closeText} 보관하면 보관함에서 다시 열 수 있습니다.${kindName === 'claude' ? " 삭제하면 대화 기록을 휴지통으로 보내고 보드에서 제거합니다." : " 삭제하면 보드에서 제거합니다."}`, m('kill', { name: s.name, kind: kindName, close: closeMsg, del: m(kindName === 'claude' ? 'killDeleteClaude' : 'killDeleteOther') }));
+    if (p.after && !['archive', 'delete'].includes(p.after)) throw apiError('bad_request', `after에는 archive 또는 delete를 지정하세요: ${p.after}`);
     // P21(D4): 잠든 세션은 패널이 없다. herdr 없이 판에서 닫고 보관·삭제한다
     if (s.rt.sleep && !s.paneId && !(this.sleeper && (this.sleeper.wakes.has(s.sessionId) || this.sleeper.going.has(s.sessionId)))) {
       s.rt.sleep = null; s.rt.exit = { kind: 'normal', reason: 'closed while sleeping', at: Date.now() };
@@ -1366,14 +1366,14 @@ export class Backend {
     const s = this.resolve(p.session);
     this.requireHerdr();
     // 승인 카드의 키 순서는 판이 띄운 Claude Code만 안다(E9). 다른 종류와 판에 올린 에이전트는 터미널에서 답한다(F5)
-    if (!this.hooked(s)) throw apiError('answer_in_terminal', `${s.name}(${s.kind})는 판이 키 순서를 모른다. 터미널에서 답한다`);
+    if (!this.hooked(s)) throw apiError('answer_in_terminal', `${s.name}(${s.kind})의 응답 키 입력 순서를 보드에서 확인할 수 없습니다. 터미널에서 직접 응답하세요.`);
     const card = { toolUseId: p.toolUseId || null, since: p.since || null };
     const ask = s.rt.pendingAsk;
     if (!ask) return { sent: false, reason: 'no_pending_ask' };
     if (!sameAsk(ask, card)) return { sent: false, reason: 'stale' };
     const plan = planAnswer(ask, p);
     checkSteps(plan.steps);
-    if (s.answering) throw keyed(apiError('busy', '이 세션에 답을 넣는 중이다'), 'answerBusy');
+    if (s.answering) throw keyed(apiError('busy', "이 세션에 이미 응답을 전송하고 있습니다."), 'answerBusy');
     s.answering = true;
     try {
       const a = await this.adapter.getAgent(s.agentName);
@@ -1396,13 +1396,13 @@ export class Backend {
 
   // herdr 서버 끄기·켜기·다시 띄우기(C3, D2). 끄면 claude도 함께 끝나고, 다시 띄우면 이어 가기로 다시 뜬다.
   async herdrControl(op, confirm) {
-    const warn = '판 전용 herdr 서버를 끄면 그 안의 claude가 모두 끝난다. 다시 띄우면 세션들이 이어 가기로 다시 뜨고, 진행 중이던 턴은 끊긴다.';
+    const warn = "보드 전용 herdr 서버를 종료하면 모든 Claude Code 세션이 종료되고 진행 중인 작업이 중단됩니다. 서버를 다시 시작하면 기존 대화에서 세션을 재개합니다.";
     if ((op === 'stop' || op === 'restart') && !confirm) return confirmResult(warn, m('herdrStop'));
     const out = { op };
     if (op === 'stop' || op === 'restart') {
       // P54: 끌 실행 파일을 모르면(찾기 실패) 다시 찾는다. 그래도 없으면 부르지 않고 까닭을 알린다(전에는 10초 기다린 뒤 'herdr not found'를 담아 돌려주었다)
       if (!this.adapter.herdrPath) await this.resolveHerdr(op);
-      if (!this.adapter.herdrPath) throw apiError('herdr_missing', 'herdr 실행 파일을 찾지 못해 판 herdr 서버를 끌 수 없다. 설정의 herdr 경로나 ATRIUM_HERDR로 실행 파일을 준다');
+      if (!this.adapter.herdrPath) throw apiError('herdr_missing', "herdr 실행 파일을 찾지 못해 보드 전용 herdr 서버를 종료할 수 없습니다. 설정의 herdr 경로 또는 ATRIUM_HERDR로 실행 파일을 지정하세요.");
       this.herdrStopping = true;
       out.stop = await this.adapter.stopServer();
       await sleep(500);
@@ -1414,7 +1414,7 @@ export class Backend {
       if (!this.adapter.herdrPath) { this.herdrMissing = { reason: 'not_found', at: Date.now() }; this.herdrCompat = { ok: false, level: 'missing', problems: ['herdr not found'] }; this.herdrOk = false; this.api.broadcast('herdr', this.herdrView()); this.requireHerdr(); }
       let r;
       try { r = await this.adapter.startServer(); }
-      catch (e) { await this.ensureHerdr(); this.api.broadcast('herdr', this.herdrView()); throw keyed(apiError(e.code || 'start_failed', `herdr 서버를 띄우지 못했다: ${e.message}`), 'herdrStartFailed', { error: e.herdrMessage || e.message }); }
+      catch (e) { await this.ensureHerdr(); this.api.broadcast('herdr', this.herdrView()); throw keyed(apiError(e.code || 'start_failed', `herdr 서버를 시작하지 못했습니다: ${e.message}`), 'herdrStartFailed', { error: e.herdrMessage || e.message }); }
       this.herdrMissing = null;
       this.store.addEvent(null, 'herdr_started', { pid: r.pid, by: op });
       out.start = { started: r.started, pid: r.pid, ms: r.ms, version: r.pong && r.pong.version, protocol: r.pong && r.pong.protocol, exe: this.adapter.herdrPath };
@@ -1712,9 +1712,9 @@ export class Backend {
   // F2: 판에서 A → B 연결을 잇고 역할을 정한다. A에게 B의 herdr 이름, 패널, 역할을 B1 규칙으로 알린다
   linkCreate(p) {
     const a = this.resolve(p.from), b = this.resolve(p.to);
-    if (a === b) throw apiError('bad_request', '같은 세션끼리는 잇지 않는다');
+    if (a === b) throw apiError('bad_request', "세션을 자기 자신과 연결할 수 없습니다.");
     const role = String(p.role || '').trim();
-    if (!ROLE_RE.test(role)) throw apiError('bad_request', '역할은 1~40자, 줄바꿈·따옴표·$·\\ 없이');
+    if (!ROLE_RE.test(role)) throw apiError('bad_request', "역할은 1~40자로 입력하세요. 줄바꿈, 따옴표, $, \\는 사용할 수 없습니다.");
     const l = this.ensureLink(a.sessionId, b.sessionId, { role });
     const text = roleNotice({ role, agentName: b.agentName, paneId: b.paneId, kind: b.kind || 'claude' });
     const d = this.queue.enqueue(a.sessionId, text);
@@ -1726,9 +1726,9 @@ export class Backend {
   // 연결 끊기. 역할이 있었으면 A에게 끊겼다고 알린다. 선은 판에서 빠지고 기록은 남는다
   linkDelete(p) {
     const l = this.store.getLink(p.link);
-    if (!l) throw apiError('not_found', `없는 연결: ${p.link}`);
+    if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`);
     const a = this.sessions.get(l.from), b = this.sessions.get(l.to);
-    if (!p.confirm) return l.role && a ? confirmResult(`@${a.name} → @${b ? b.name : '?'} 연결("${l.role}")을 끊는다. @${a.name}에게 끊겼다고 알린다. 오간 기록은 남는다.`, m('linkCut', { from: a.name, to: b ? b.name : '?', role: l.role })) : confirmResult('이 선을 판에서 뺀다. 오간 기록은 남는다.', m('linkRemove'));
+    if (!p.confirm) return l.role && a ? confirmResult(`@${a.name} → @${b ? b.name : '?'} 연결("${l.role}")을 끊는다. @${a.name}에 연결 해제를 알립니다. 주고받은 기록은 유지합니다.`, m('linkCut', { from: a.name, to: b ? b.name : '?', role: l.role })) : confirmResult("보드에서 이 연결선을 제거합니다. 주고받은 기록은 유지합니다.", m('linkRemove'));
     let deliveryId = null;
     if (l.role && a && b) { const d = this.queue.enqueue(a.sessionId, unlinkNotice({ role: l.role, agentName: b.agentName })); deliveryId = d.deliveryId; }
     this.linkEvent(l, 'unlink', l.role || null, { deliveryId }, { quiet: true });
@@ -1800,7 +1800,7 @@ export class Backend {
       'terminal.snapshot': async (p) => { const s = this.resolve(p.session); return { sessionId: s.sessionId, format: p.format || 'ansi', text: await this.adapter.readScreen(s.paneId, { source: 'visible', format: p.format || 'ansi' }) }; },
       // P42: 셸 노드의 지난 출력(herdr 기록, 화면 너비로 감긴 줄, ANSI). 창이 xterm scrollback에 넣어 판 안에서 올려 보고 고른다
       'terminal.history': async (p) => { const s = this.resolve(p.session); if (!s.paneId) return { sessionId: s.sessionId, text: '' }; return { sessionId: s.sessionId, text: await this.adapter.readScreen(s.paneId, { source: 'recent', format: 'ansi', lines: Math.min(Math.max(Number(p.lines) || 3000, 1), 10000) }) }; },
-      'terminal.attach': (p, c) => { this.requireHerdr(); const s = this.resolve(p.session); if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name}은 잠들어 패널이 없다. 먼저 깨운다`), 'sleepingNoPane', { name: s.name }); return this.relay.attach(s, p.cols || 120, p.rows || 40, c); },
+      'terminal.attach': (p, c) => { this.requireHerdr(); const s = this.resolve(p.session); if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name} 세션은 절전 중이라 터미널이 닫혀 있습니다. 먼저 작업을 재개하세요.`), 'sleepingNoPane', { name: s.name }); return this.relay.attach(s, p.cols || 120, p.rows || 40, c); },
       'terminal.input': (p, c) => { this.relay.input(this.resolve(p.session).sessionId, String(p.data ?? ''), c); return { ok: true }; },
       'terminal.resize': (p, c) => { this.relay.resize(this.resolve(p.session).sessionId, p.cols, p.rows, c); return { ok: true }; },
       'terminal.detach': (p, c) => { this.relay.detach(this.resolve(p.session).sessionId, c); return { ok: true }; },
@@ -1856,7 +1856,7 @@ export class Backend {
       'link.list': () => this.linksOpen(),
       'link.create': (p) => this.linkCreate(p),
       'link.delete': (p) => this.linkDelete(p),
-      'link.log': (p) => { const l = this.store.getLink(p.link); if (!l) throw apiError('not_found', `없는 연결: ${p.link}`); return { link: this.linkView(l), events: this.store.linkEvents(l.linkId, p.limit || 200) }; },
+      'link.log': (p) => { const l = this.store.getLink(p.link); if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`); return { link: this.linkView(l), events: this.store.linkEvents(l.linkId, p.limit || 200) }; },
       'agent.kinds': () => this.adapter.agentKinds(),
       // 자원과 붙은 클라이언트(D1·D3)
       'resources.get': async (p) => (p.fresh ? this.resources.sample() : this.resources.last),

@@ -64,8 +64,16 @@ export function outputFileName({ session, turn, at }) { return `${safeName(sessi
 // 저장할 문서 글: 머리(세션, 워크스페이스, 턴, 시각, 지시)와 답 본문
 export function renderMarkdown({ session, workspace, cwd, turn, prompt, answer, answerAt, source }) {
   const quote = (s) => String(s || '').split('\n').map((l) => `> ${l}`).join('\n');
-  const head = [`# @${session} 턴 ${turn}`, '', `- 워크스페이스: ${workspace || '-'}`, `- 폴더: ${cwd || '-'}`, `- 끝난 시각: ${answerAt ? new Date(answerAt).toLocaleString() : '-'}`, `- 출처: ${source === 'screen' ? '화면에서 고른 답' : '대화 기록'}`];
-  return `${head.join('\n')}\n\n## 지시\n\n${prompt ? quote(prompt) : '(알 수 없음)'}\n\n## 답\n\n${answer || '(답 없음)'}\n`;
+  const head = [`# @${session} 턴 ${turn}`, '', `- 프로젝트: ${workspace || '-'}`, `- 폴더: ${cwd || '-'}`, `- 완료 시각: ${answerAt ? new Date(answerAt).toLocaleString() : '-'}`, `- 출처: ${source === 'screen' ? "터미널 화면에서 가져온 응답" : '대화 기록'}`];
+  return `${head.join('\n')}
+
+## 요청
+
+${prompt ? quote(prompt) : '(알 수 없음)'}
+
+## 응답
+
+${answer || "(응답 없음)"}\n`;
 }
 
 // 백엔드에 붙는 부분. ctx: { cfg, store, resolve(ref), summary(s), hooked(s), transcriptOf(s), readMessages(file), workspaceName(key), apiError }
@@ -92,7 +100,7 @@ export class Outputs {
     const s = c.resolve(p.session);
     const { source, turns } = this.turnsOf(s);
     const t = pickTurn(turns, p.turn);
-    if (p.turn != null && !t) throw c.apiError('not_found', `없는 턴: ${p.turn}(턴 ${turns.length}개)`);
+    if (p.turn != null && !t) throw c.apiError('not_found', `응답 기록을 찾을 수 없습니다: ${p.turn}(턴 ${turns.length}개)`);
     return {
       sessionId: s.sessionId, name: s.name, workspaceKey: s.workspaceKey || null, workspace: c.workspaceName(s.workspaceKey), source,
       turnCount: turns.length,
@@ -107,7 +115,7 @@ export class Outputs {
     const s = c.resolve(p.session);
     const { source, turns } = this.turnsOf(s);
     const t = pickTurn(turns, p.turn);
-    if (!t || !t.answer) throw c.apiError('not_found', p.turn != null ? `없는 턴이거나 답이 없다: ${p.turn}` : '저장할 답이 없다');
+    if (!t || !t.answer) throw c.apiError('not_found', p.turn != null ? `응답 기록이 없거나 내용이 없습니다: ${p.turn}` : "저장할 응답이 없습니다.");
     const wsName = c.workspaceName(s.workspaceKey) || 'board';
     const dir = path.join(c.cfg.dataDir, 'outputs', safeName(wsName));
     fs.mkdirSync(dir, { recursive: true });

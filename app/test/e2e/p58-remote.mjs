@@ -73,7 +73,7 @@ try {
   // ---- 1. 짝 맺기와 붙음 알림 ----
   await pairByCode('p58 laptop');
   const n1 = await until(async () => { const n = await notices(); return n.length ? n : null; }, 10000).catch(() => []);
-  check('짝 맺기(패스키 등록) 성공을 PC 창에 알린다(토스트)', n1.length === 1 && n1[0].kind === 'paired' && /짝을 맺었습니다|paired/.test(n1[0].text), n1);
+  check('짝 맺기(패스키 등록) 성공을 PC 창에 알린다(토스트)', n1.length === 1 && n1[0].kind === 'paired' && /기기를 이 보드에 등록했습니다|paired/.test(n1[0].text), n1);
   await shot(win, '01-pc-paired-toast', log);
   await sleep(1000);
   check('짝 맺은 바로 뒤 첫 연결은 다시 알리지 않는다', (await notices()).length === 1, await notices());

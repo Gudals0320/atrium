@@ -51,7 +51,7 @@ test('P24: 영역 이름표의 잠듦과 메모리 목록의 리포별 묶음', 
     ['repo-a', 90, ['sh'], ['a1', 'a2'], 950],
   ]);
   setLanguage('ko');
-  assert.equal(errText({ key: 'repoSleepRefused', vars: { repo: 'repo-b', name: '@b2', reason: { key: 'sleepWhy_working' } } }), 'repo-b 프로젝트를 지금 절전 모드로 전환할 수 없습니다: @b2 작업을 진행하고 있습니다.');
+  assert.equal(errText({ key: 'repoSleepRefused', vars: { repo: 'repo-b', name: '@b2', reason: { key: 'sleepWhy_working' } } }), 'repo-b 프로젝트를 지금 절전 모드로 전환할 수 없습니다. 대상 세션: @b2 · 사유: 작업을 진행하고 있습니다.');
   assert.equal(t('sleep.trayItem'), '대기 중인 프로젝트 모두 절전 모드로');
   setLanguage('en');
   assert.equal(errText({ key: 'repoSleepRefused', vars: { repo: 'repo-b', name: '@b2', reason: { key: 'sleepWhy_working' } } }), 'repo-b is not put to sleep now: @b2 working');

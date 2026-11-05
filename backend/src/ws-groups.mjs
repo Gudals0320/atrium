@@ -114,8 +114,8 @@ export function dropWorkspaces(state, keys) {
 // ---------- 판에 붙이기 ----------
 const ERR = {
   bad_name: () => keyed(apiError('bad_request', `그룹 이름은 1~${GROUP_NAME_MAX}자`), 'groupBadName', { max: GROUP_NAME_MAX }),
-  name_taken: (name) => keyed(apiError('conflict', `이미 있는 그룹 이름: ${name}`), 'groupNameTaken', { name }),
-  not_found: (ref) => keyed(apiError('not_found', `없는 그룹이나 워크스페이스: ${ref}`), 'groupNotFound', { ref }),
+  name_taken: (name) => keyed(apiError('conflict', `이미 사용 중인 그룹 이름입니다: ${name}`), 'groupNameTaken', { name }),
+  not_found: (ref) => keyed(apiError('not_found', `그룹이나 프로젝트를 찾을 수 없습니다: ${ref}`), 'groupNotFound', { ref }),
 };
 export function readGroups(b) { return normalizeGroups(b.store.getMeta(GROUPS_META), b.store.workspaces().map((w) => w.key)); }
 function save(b, next, why) {

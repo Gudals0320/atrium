@@ -175,7 +175,7 @@ const wsOpen = (url, headers = {}, opts = {}) => new Promise((res) => {
 });
 const wsCall = (ws, method, params = {}) => new Promise((res) => { const id = Math.random(); const on = (m0) => { const m = JSON.parse(String(m0)); if (m.id === id) { ws.off('message', on); res(m); } }; ws.on('message', on); ws.send(JSON.stringify({ id, method, params })); });
 
-test('tailscale serve를 거친 요청: 같은 사용자만 짝 맺고 연결, 다른 Host는 421, hook·branch는 403', async () => {
+test('tailscale serve를 거친 요청: 같은 사용자만 기기 등록고 연결, 다른 Host는 421, hook·branch는 403', async () => {
   const b = await boot();
   const origin = `https://${NAME}`;
   try {
@@ -192,7 +192,7 @@ test('tailscale serve를 거친 요청: 같은 사용자만 짝 맺고 연결, �
     assert.deepEqual(b.counts(), { hooks: 0, branches: 0 });
     // 판 API 토큰은 바깥에서 못 쓴다
     assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api?token=${b.apiToken}`, viaServe())).ok, false);
-    // 짝 맺기: 같은 사용자
+    // 기기 등록기: 같은 사용자
     const local = await wsOpen(`ws://127.0.0.1:${b.port}/api?token=${b.apiToken}`);
     const code = (await wsCall(local.ws, 'device.code')).result.code;
     // 다른 사용자는 코드가 맞아도 막힌다(코드를 쓰지도 않는다)
@@ -221,7 +221,7 @@ test('tailscale serve를 거친 요청: 같은 사용자만 짝 맺고 연결, �
     // 다른 사용자는 세션 쿠키가 있어도 연결하지 못한다
     const otherHdr = { ...viaServe('other@example.com'), 'x-forwarded-for': '100.64.0.4', origin };
     assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api`, { ...otherHdr, cookie })).ok, false);
-    // 허용 목록에 더하면 그 사용자도 자기 기기로 짝 맺고 쓴다(P57: 다른 기기의 세션은 여전히 못 쓴다)
+    // 허용 목록에 더하면 그 사용자도 자기 기기로 기기 등록고 쓴다(P57: 다른 기기의 세션은 여전히 못 쓴다)
     b.st.remoteAllowedLogins = 'other@example.com';
     assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api`, { ...otherHdr, cookie })).ok, false, '다른 Tailscale 기기');
     const code2 = (await wsCall(local.ws, 'device.code')).result.code;
@@ -292,8 +292,8 @@ test('atrium remote 진단: 가짜 상태들', async () => {
   assert.equal(remoteUrl(await tsOf({ other443: true })), `https://${NAME}:8443/`);
   // 글
   const text = formatStatus({ ...diagnose(await tsOf({ board: false }), ctx()), port: PORT });
-  assert.match(text, /\[안 됨\] tailscale serve가 판으로 가지 않습니다/);
-  assert.match(text, /노트북에서 열 주소: https:\/\/pc\.example\.ts\.net\//);
+  assert.match(text, /\[안 됨\] tailscale serve가 이 보드로 연결되도록 설정되어 있지 않습니다/);
+  assert.match(text, /노트북에서 접속할 주소: https:\/\/pc\.example\.ts\.net\//);
   assert.match(guideText(PORT), /funnel/);
   assert.match(guideText(PORT), new RegExp(`serve --bg --https=443 http://127.0.0.1:${PORT}`));
   // 백엔드 없이 이 자리에서

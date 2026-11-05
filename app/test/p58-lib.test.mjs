@@ -12,7 +12,7 @@ test('붙음 알림: 짝 맺음·원격·이 PC 글, 로그인과 브라우저�
   assert.equal(noticeOf({ kind: 'paired', device: { name: 'x' }, remote: true }).key, 'remoteNotice.paired');
   assert.equal(noticeOf({ kind: 'connected', device: { name: 'x' }, remote: false }).key, 'remoteNotice.connected');
   assert.equal(noticeOf({}), null);
-  assert.equal(translate('ko', 'remoteNotice.connectedRemote', { name: '노트북' }), '노트북이(가) 원격으로 붙었습니다');
+  assert.equal(translate('ko', 'remoteNotice.connectedRemote', { name: '노트북' }), '노트북 기기가 원격으로 연결되었습니다.');
   assert.deepEqual(noticeWay({ visible: true, focused: true }), { toast: true, os: false });
   assert.equal(noticeWay({ visible: false, focused: false }).os, true);
   assert.equal(noticeWay({ visible: true, focused: false }).os, true);

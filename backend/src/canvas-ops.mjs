@@ -94,7 +94,7 @@ export function placeItem(b, { wsKey = null, size, near = null }) {
 export function workspaceMove(b, p) {
   const key = p.workspace;
   const w = b.store.getWorkspace(key);
-  if (!w) throw keyed(apiError('not_found', `판에 없는 워크스페이스: ${key}`), 'wsNotFound', { ref: key });
+  if (!w) throw keyed(apiError('not_found', `보드에서 프로젝트를 찾을 수 없습니다: ${key}`), 'wsNotFound', { ref: key });
   const dx = Math.round(Number(p.dx) || 0), dy = Math.round(Number(p.dy) || 0);
   if (!dx && !dy) return { moved: 0 };
   const items = canvasItems(b);
@@ -103,7 +103,7 @@ export function workspaceMove(b, p) {
   const own = items.filter((i) => i.wsKey === key && i.kind !== 'wtbox');
   const mine = [...before].filter(([k]) => wsOfArea(k) === key);
   const hit = mine.map(([, r]) => ({ ...r, x: r.x + dx, y: r.y + dy })).map((after) => [...before].find(([k, r]) => wsOfArea(k) !== key && overlaps(after, r, -1))).find(Boolean);
-  if (hit && !p.force) throw keyed(apiError('overlap', `다른 워크스페이스 영역과 겹친다(${hit[0]})`), 'regionOverlap', { ws: wsOfArea(hit[0]) });
+  if (hit && !p.force) throw keyed(apiError('overlap', `다른 프로젝트 영역과 겹칩니다 (${hit[0]})`), 'regionOverlap', { ws: wsOfArea(hit[0]) });
   shiftWorkspace(b, key, dx, dy, items);
   b.store.addEvent(null, 'workspace_moved', { key, dx, dy, items: own.length, areas: mine.length - (before.has(key) ? 1 : 0) });
   b.api.broadcast('board.changed', { why: 'workspace.move' });
@@ -115,15 +115,15 @@ export function workspaceMove(b, p) {
 //   리포 영역 밖으로 끌면 리포 영역이 그 상자를 감싸도록 커진다
 export function worktreeMove(b, p) {
   const w = b.store.getWorkspace(p.workspace);
-  if (!w) throw keyed(apiError('not_found', `판에 없는 워크스페이스: ${p.workspace}`), 'wsNotFound', { ref: p.workspace });
+  if (!w) throw keyed(apiError('not_found', `보드에서 프로젝트를 찾을 수 없습니다: ${p.workspace}`), 'wsNotFound', { ref: p.workspace });
   const row = areaRows(b).find((a) => a.wsKey === w.key && (a.wt === p.worktree || a.path === p.worktree || a.branch === p.worktree));
-  if (!row) throw apiError('not_found', `판에 없는 워크트리 영역: ${p.worktree}`);
+  if (!row) throw apiError('not_found', `보드에서 워크트리 영역을 찾을 수 없습니다: ${p.worktree}`);
   const dx = Math.round(Number(p.dx) || 0), dy = Math.round(Number(p.dy) || 0);
   if (!dx && !dy) return { moved: 0 };
   const key = areaKey(w.key, row.wt);
   const items = canvasItems(b);
   const hit = boxMoveHit(areaAnchors(b), items, key, dx, dy);
-  if (hit && !p.force) throw keyed(apiError('overlap', `다른 영역과 겹친다(${hit})`), 'regionOverlap', { ws: w.key });
+  if (hit && !p.force) throw keyed(apiError('overlap', `다른 영역과 겹칩니다 (${hit})`), 'regionOverlap', { ws: w.key });
   const n = shiftWorkspace(b, key, dx, dy, items);
   b.store.putWorktreeArea({ ...b.store.worktreeAreas().find((a) => a.wsKey === w.key && a.wt === row.wt), movedAt: Date.now() });
   b.store.addEvent(null, 'worktree_area_moved', { key: w.key, worktree: row.path, dx, dy, items: n });
@@ -255,12 +255,12 @@ const SIDES = ['left', 'right', 'top', 'bottom'];
 // at을 주지 않으면 대상이 덩어리 안이면 'leaf', 혼자이면 'dock'(옛 한 줄 붙이기와 같다: 붙는 노드는 제 너비·높이를 지키고 다른 쪽은 대상을 따른다)
 export function dockAttach(b, p, why = 'user') {
   const s = b.resolve(p.session), t = b.resolve(p.to);
-  if (s === t) throw apiError('bad_request', '같은 노드끼리는 붙이지 않는다');
+  if (s === t) throw apiError('bad_request', "카드를 자기 자신과 묶을 수 없습니다.");
   const side = String(p.side || 'right');
   if (!SIDES.includes(side)) throw apiError('bad_request', `side: ${side}`);
-  if (p.at != null && !['leaf', 'dock'].includes(p.at)) throw apiError('bad_request', `at은 leaf 또는 dock: ${p.at}`);
+  if (p.at != null && !['leaf', 'dock'].includes(p.at)) throw apiError('bad_request', `at에는 leaf 또는 dock을 지정하세요: ${p.at}`);
   const ws = sameWs(b, [s.sessionId, t.sessionId]);
-  if (ws === undefined) throw apiError('bad_request', '덩어리는 한 워크스페이스 안에 있다. 다른 워크스페이스의 노드끼리는 붙이지 않는다');
+  if (ws === undefined) throw apiError('bad_request', "창 그룹은 하나의 프로젝트 안에서만 만들 수 있습니다. 서로 다른 프로젝트의 카드는 묶을 수 없습니다.");
   const sRect = nodeRect(b, s.sessionId);
   // 붙는 노드가 다른 덩어리에 있었으면 먼저 뗀다. 같은 덩어리 안에서 옮기면 바깥은 그대로 두고 나무 안에서만 옮긴다
   const old = dockOf(b, s.sessionId), td0 = dockOf(b, t.sessionId);
@@ -285,9 +285,9 @@ export function dockAttach(b, p, why = 'user') {
 // 고른 노드들로 한 줄 덩어리를 만든다(atrium CLI, 시험). 순서는 주어진 대로, 자리는 첫 노드에서 시작하고 노드 크기를 줄 방향으로 지킨다
 export function dockCreate(b, p) {
   const ids = (p.members || []).map((x) => b.resolve(x).sessionId);
-  if (ids.length < 2 || new Set(ids).size !== ids.length) throw apiError('bad_request', '덩어리에는 서로 다른 노드가 둘 이상 있어야 한다');
+  if (ids.length < 2 || new Set(ids).size !== ids.length) throw apiError('bad_request', "창 그룹에는 서로 다른 카드가 2개 이상 있어야 합니다.");
   const ws = sameWs(b, ids);
-  if (ws === undefined) throw apiError('bad_request', '덩어리는 한 워크스페이스 안에 있다');
+  if (ws === undefined) throw apiError('bad_request', "창 그룹은 하나의 프로젝트 안에서만 만들 수 있습니다.");
   const dir = p.dir === 'col' ? 'col' : 'row';
   for (const id of ids) { const d = dockOf(b, id); if (d) detach(b, d, id, 'recreate'); }
   const rects = ids.map((id) => nodeRect(b, id));
@@ -303,7 +303,7 @@ export function dockCreate(b, p) {
 // 고른 것이 덩어리 하나와 꼭 같으면 그 덩어리의 바깥 크기를 지키고, 아니면 칸마다 보통 노드 크기(cell)로 첫 노드 자리에서 시작한다
 export function dockLayout(b, p) {
   const preset = String(p.preset || '');
-  if (!PRESETS[preset]) throw apiError('bad_request', `배치 틀: ${Object.keys(PRESETS).join(', ')}`);
+  if (!PRESETS[preset]) throw apiError('bad_request', `분할 레이아웃: ${Object.keys(PRESETS).join(', ')}`);
   const picked = [];
   const docks = [];
   for (const x of p.members || []) {
@@ -313,9 +313,9 @@ export function dockLayout(b, p) {
     if (d) { if (!docks.some((y) => y.dockId === d.dockId)) docks.push(d); for (const m of d.members) if (!picked.includes(m) && b.sessions.has(m)) picked.push(m); }
     else picked.push(sid);
   }
-  if (picked.length < 2) throw apiError('bad_request', '배치 틀에는 노드가 둘 이상 있어야 한다');
+  if (picked.length < 2) throw apiError('bad_request', "분할 레이아웃에는 카드가 2개 이상 있어야 합니다.");
   const ws = sameWs(b, picked);
-  if (ws === undefined) throw apiError('bad_request', '덩어리는 한 워크스페이스 안에 있다. 다른 워크스페이스의 노드는 섞어 짜지 않는다');
+  if (ws === undefined) throw apiError('bad_request', "창 그룹은 하나의 프로젝트 안에서만 만들 수 있습니다. 서로 다른 프로젝트의 카드는 함께 배치할 수 없습니다.");
   const one = docks.length === 1 && docks[0].members.length === picked.length ? docks[0] : null;
   const head = dockOf(b, picked[0]);
   const start = head ? dockOuter(b, head) : nodeRect(b, picked[0]);
@@ -348,12 +348,12 @@ function presetSpot(b, picked, outer) {
 // x·y: 덩어리째 옮기기(바깥 왼쪽 위), w·h: 바깥 크기(비율대로 다시 나누고 잎마다 최소 크기를 지킨다)
 export function dockUpdate(b, p) {
   const d = b.store.getDock(p.dock);
-  if (!d) throw apiError('not_found', `없는 덩어리: ${p.dock}`);
+  if (!d) throw apiError('not_found', `창 그룹을 찾을 수 없습니다: ${p.dock}`);
   let tree = d.tree, outer = dockOuter(b, d);
   if (p.tree != null) {
     const t = normalize(p.tree);
     const ls = leaves(t);
-    if (ls.length !== d.members.length || ls.some((x) => !d.members.includes(x))) throw apiError('bad_request', 'tree: 이 덩어리의 구성 노드를 모두 한 번씩(붙이기·떼기는 dock.attach, dock.remove)');
+    if (ls.length !== d.members.length || ls.some((x) => !d.members.includes(x))) throw apiError('bad_request', 'tree: 이 창 그룹의 구성 카드를 모두 한 번씩(붙이기·떼기는 dock.attach, dock.remove)');
     tree = t;
   }
   if (Array.isArray(p.sizes)) {
@@ -385,7 +385,7 @@ function detach(b, d, sid, why) {
 export function dockRemove(b, p) {
   if (p.dock) {
     const d = b.store.getDock(p.dock);
-    if (!d) throw apiError('not_found', `없는 덩어리: ${p.dock}`);
+    if (!d) throw apiError('not_found', `창 그룹을 찾을 수 없습니다: ${p.dock}`);
     b.store.deleteDock(d.dockId);
     b.store.addEvent(null, 'dock_removed', { dockId: d.dockId, why: 'user' });
     b.api.broadcast('board.changed', { why: 'dock' });
@@ -541,12 +541,12 @@ function applyWorkspacePlan(b, { blocks, out }) {
 export function arrange(b, p) {
   if (p.all) return arrangeBoard(b, p);
   const w = b.store.getWorkspace(p.workspace) || null;
-  if (!w) throw keyed(apiError('not_found', `판에 없는 워크스페이스: ${p.workspace}`), 'wsNotFound', { ref: p.workspace });
+  if (!w) throw keyed(apiError('not_found', `보드에서 프로젝트를 찾을 수 없습니다: ${p.workspace}`), 'wsNotFound', { ref: p.workspace });
   const key = w.key;
   const undoKey = `arrangeUndo:${key}`;
   if (p.undo) {
     const u = b.store.getMeta(undoKey);
-    if (!u) throw keyed(apiError('not_found', '되돌릴 정리가 없다'), 'noArrangeUndo');
+    if (!u) throw keyed(apiError('not_found', "되돌릴 자동 정렬 내역이 없습니다."), 'noArrangeUndo');
     for (const n of u.nodes) if (b.sessions.has(n.session_id)) b.store.setNode({ ...n, size: n.size ?? '' }); // 크기 단계도 정리 전 값으로(없었으면 지운다)
     for (const it of u.items || []) moveItem(b, it.kind, it.id, it.x, it.y);
     // P35: 상자는 정리 전 자리로 상자째 되돌린다(그 사이 안의 노드가 바뀌어도 상대 자리는 지킨다)
@@ -581,7 +581,7 @@ const BOARD_UNDO = 'arrangeUndo:*';
 function arrangeBoard(b, p) {
   if (p.undo) {
     const u = b.store.getMeta(BOARD_UNDO);
-    if (!u) throw keyed(apiError('not_found', '되돌릴 정리가 없다'), 'noArrangeUndo');
+    if (!u) throw keyed(apiError('not_found', "되돌릴 자동 정렬 내역이 없습니다."), 'noArrangeUndo');
     for (const n of u.nodes) if (b.sessions.has(n.session_id)) b.store.setNode({ ...n, size: n.size ?? '' });
     for (const it of u.items || []) moveItem(b, it.kind, it.id, it.x, it.y);
     const ws = new Set(b.store.workspaces().map((w) => w.key));

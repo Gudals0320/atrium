@@ -113,5 +113,5 @@ test('백엔드 글: 열쇠가 있으면 번역(값 안의 열쇠와 목록도),
   assert.equal(errText(Object.assign(new Error('연결 끊김'), { code: 'disconnected' })), 'Not connected to the backend');
   assert.equal(errText(Object.assign(new Error('모르는 오류'), { code: 'weird' })), '모르는 오류');
   setLanguage('ko');
-  try { assert.equal(tMsg(r), '빈 프로젝트 a (C:/a)을 닫습니다. 폴더와 Git 저장소는 그대로 유지합니다.'); } finally { setLanguage('en'); }
+  try { assert.equal(tMsg(r), '빈 프로젝트를 닫습니다: a (C:/a). 폴더와 Git 저장소는 그대로 유지합니다.'); } finally { setLanguage('en'); }
 });

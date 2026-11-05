@@ -83,14 +83,14 @@ export function descendantsOf(rootId, rows) {
 // 하위 세션 이름. want가 있으면 그대로(herdr 이름 규칙), 없으면 <부모>-w<n>(부모 이름이 규칙에 안 맞으면 w<n>)
 export function childName({ want, parentName, taken }) {
   if (want) {
-    if (!CHILD_NAME_RE.test(want) || want === 'all') throw apiError('bad_request', `하위 세션 이름은 영문 소문자로 시작하고 소문자·숫자·-·_ 만, 32자까지: ${want}`);
-    if (taken.has(want)) throw apiError('name_taken', `판에 이미 있는 이름: ${want}. 다른 이름을 준다`);
+    if (!CHILD_NAME_RE.test(want) || want === 'all') throw apiError('bad_request', `하위 세션 이름은 영문 소문자로 시작해야 하며 소문자, 숫자, -, _를 사용해 32자까지 입력할 수 있습니다: ${want}`);
+    if (taken.has(want)) throw apiError('name_taken', `보드에서 이미 사용 중인 이름입니다: ${want}. 다른 이름을 지정하세요.`);
     return want;
   }
   const p = String(parentName || '').toLowerCase();
   const base = CHILD_NAME_RE.test(`${p}-w`) ? `${p.slice(0, 26)}-w` : 'w';
   for (let i = 1; i < 1000; i++) if (!taken.has(`${base}${i}`)) return `${base}${i}`;
-  throw apiError('name_taken', '이름을 짓지 못했다');
+  throw apiError('name_taken', "이름을 지정하지 못했습니다.");
 }
 // K4: 부모 오른쪽 열에 형제끼리 위아래로. parent·siblings는 노드 사각형, fits(c)는 겹침과 영역 규칙을 본다.
 // 부모와 열 사이 200은 선 위의 역할·상태 글이 접히지 않는 너비(창 labelFit: 172 이상). 열에 이미 형제가 있으면 그 맨 아래 다음 칸부터, 없으면 부모 윗변과 같은 높이부터 아래로. 막히면 한 열 더 오른쪽. 끝내 없으면 null(빈자리 규칙으로 넘긴다)
@@ -114,14 +114,14 @@ export function childSlot({ parent, siblings = [], size, fits, gapX = 200, gap =
 }
 // P36: 하위 세션이 신뢰 질문에서 멈췄을 때 부모가 사람에게 할 한 문장
 // P41: Claude Code의 StopFailure(model_not_found)는 글 없이 온다. 판이 부모에게 보일 까닭
-export const modelErrorText = (model) => `쓰지 못한 모델: ${model || '(기본)'}. 없는 모델이거나, 이 길(게이트웨이 env 없이 등)로는 닿지 않는 모델이다`;
-export const trustSentence = (name) => `판에서 @${name} 노드의 신뢰 질문에 답해 주세요.`;
+export const modelErrorText = (model) => `사용할 수 없는 모델입니다: ${model || '(기본)'}. 모델이 없거나 현재 실행 설정으로 접근할 수 없습니다 (게이트웨이 환경 변수 누락 등).`;
+export const trustSentence = (name) => `보드에서 @${name} 카드의 신뢰 질문에 답해 주세요.`;
 // 부모가 받는 알림 글(명령의 응답에 넣는다. F2 연결 알림과 같은 내용)
 export function childNotice({ role, agentName, paneId, kind = 'claude', depth }) {
   return [
-    `[Atrium 판] 하위 세션: herdr 에이전트 \`${agentName}\`(패널 ${paneId}, 종류 ${kind}, ${depth}단계)가 너의 "${role}"이다.`,
+    `[Atrium 보드] 하위 세션: herdr 에이전트 \`${agentName}\`(패널 ${paneId}, 종류 ${kind}, ${depth}단계)가 너의 "${role}"이다.`,
     `일 시키기: herdr agent prompt ${agentName} "<할 일>" --wait --timeout 600000`,
-    `답 읽기: herdr agent read ${agentName} --source recent-unwrapped --lines 80`,
+    `응답 읽기: herdr agent read ${agentName} --source recent-unwrapped --lines 80`,
     `끄기(사람이 끄라고 할 때만): atrium child-kill ${agentName}`,
   ].join('\n');
 }
@@ -131,9 +131,9 @@ export function childNotice({ role, agentName, paneId, kind = 'claude', depth })
 // skills/delegate/SKILL.md에도 같은 글을 이름만 바꿔 쓴다(그 세션은 새로 생긴 스킬 atrium을 목록에 갖고 있지 않다)
 export const SKILL_NAME = 'atrium';
 export const LEGACY_SKILL_NAME = 'delegate';
-const SKILL_BODY = `# Atrium 판에서 일하기: 워커로 나눠 맡기기
+const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 
-너는 \`atrium\` 명령으로 워커(하위 세션)를 만든다. 워커는 판의 정식 세션이다. 판에 노드로 보이고, 너와 역할 선으로 이어지고, 너의 폴더·모델·노력 수준·권한 모드를 물려받는다. 워커도 같은 방법으로 다시 펼친다. 수와 깊이에 상한은 없다.
+너는 \`atrium\` 명령으로 워커(하위 세션)를 만든다. 워커는 보드의 정식 세션이다. 보드에 카드로 보이고, 너와 역할 선으로 이어지고, 너의 폴더·모델·추론 수준·승인 방식를 물려받는다. 워커도 같은 방법으로 다시 펼친다. 수와 깊이에 상한은 없다.
 
 ## 쓰는 때
 
@@ -143,23 +143,23 @@ const SKILL_BODY = `# Atrium 판에서 일하기: 워커로 나눠 맡기기
 ## 순서
 
 1. 만들기(조각 하나에 워커 하나): \`atrium child <이름> --prompt "<지시>"\`
-   - 이름은 사람이 판에서 보고 무슨 일을 맡은 워커인지 알 수 있게 네가 생각해서 짓는다. 맡긴 일이나 역할을 짧게 말한다(예: p31-worker, api-tests, reviewer, ko-copy, login-bug). w1·ds1 같은 번호 이름은 일이 정말 하찮을 때만 쓴다. 예를 외우지 말고 이번 일에 맞게 짓는다.
+   - 이름은 사람이 보드에서 보고 무슨 일을 맡은 워커인지 알 수 있게 네가 생각해서 짓는다. 맡긴 일이나 역할을 짧게 말한다(예: p31-worker, api-tests, reviewer, ko-copy, login-bug). w1·ds1 같은 번호 이름은 일이 정말 하찮을 때만 쓴다. 예를 외우지 말고 이번 일에 맞게 짓는다.
    - 규칙: 영문 소문자로 시작, 소문자·숫자·-·_ 만, 32자까지, 판 전체에서 하나. 겹친다는 답(\`name_taken\`)이 오면 다른 이름으로 다시 짓는다.
    - 워커가 준비되고 지시가 들어가면 돌아온다. 응답에 herdr 이름과 다음에 칠 명령이 있다.
-   - 코드를 고치는 조각은 \`--worktree <이름>\`을 붙인다. Claude Code가 \`claude -w\`로 \`.claude/worktrees/<이름>\`과 브랜치 \`worktree-<이름>\`을 만든다. 손으로 \`git worktree add\`를 하거나 판 밖 형제 폴더를 만들지 않는다.
+   - 코드를 고치는 조각은 \`--worktree <이름>\`을 붙인다. Claude Code가 \`claude -w\`로 \`.claude/worktrees/<이름>\`과 브랜치 \`worktree-<이름>\`을 만든다. 직접 \`git worktree add\`를 하거나 보드 외부 형제 폴더를 만들지 않는다.
    - 다른 폴더는 \`--cwd C:/Workspace/x\`(슬래시로). 역할 이름 \`--role 리뷰어\`(기본 워커), 다른 종류 \`--kind codex\`.
-   - 모델과 노력 수준은 조각에 맞게 고른다: 찾기·요약·단순 수정은 \`--model haiku\`나 \`--effort low\`, 설계·어려운 디버깅은 \`--effort high\`. 빼면 너의 것을 물려받는다.
-   - 사용자가 모델을 말로 하면("deepseek flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "deepseek flash"\`처럼 들은 말을 줘도 판이 푼다. 정확한 ID를 사용자에게 묻지 않고, 판이 후보 여럿을 돌려줄 때만 묻는다. 판의 워커 대신 너의 내부 하위 에이전트로 우회하지 않는다.
+   - 모델과 추론 수준은 조각에 맞게 고른다: 찾기·요약·단순 수정은 \`--model haiku\`나 \`--effort low\`, 설계·어려운 디버깅은 \`--effort high\`. 빼면 너의 것을 물려받는다.
+   - 사용자가 모델을 말로 하면("deepseek flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "deepseek flash"\`처럼 들은 말을 줘도 보드가 푼다. 정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다. 보드의 워커 대신 너의 내부 하위 에이전트로 우회하지 않는다.
 2. 지시 쓰는 법(\`--prompt\`나 \`herdr agent prompt\`의 글): 목표, 할 것, 손대지 말 것, 완료 기준, 끝났음을 알리는 법("끝나면 바꾼 파일과 결과를 다섯 줄로 답한다", 워크트리면 "자기 브랜치에 커밋하고 커밋 해시를 답한다"). 워커는 너의 대화를 모른다. 필요한 파일 경로와 사실을 글에 넣는다.
 3. 기다리기: \`herdr agent wait <이름> --timeout 600000\`. 처음부터 시키지 않았으면 \`herdr agent prompt <이름> "<지시>" --wait --timeout 600000\`.
    - 여럿에게 함께 시킬 때는 한 응답에 Bash 호출을 여러 개 낸다(워커마다 하나).
-4. 답 읽기: \`herdr agent read <이름> --source recent-unwrapped --lines 80\`. 목록·상태·마지막 답은 \`atrium children\`(\`--all\`이면 그 아래까지).
+4. 응답 읽기: \`herdr agent read <이름> --source recent-unwrapped --lines 80\`. 목록·상태·마지막 응답은 \`atrium children\`(\`--all\`이면 그 아래까지).
 5. 모아 보고, 합치기: 워커마다 답을 확인하고(완료 기준을 채웠는지, 시험이 통과했는지) 정리해 사용자에게 보고한다. 워크트리 브랜치는 네가 합친다(\`git merge worktree-<이름>\`). 충돌이나 빠진 것은 그 워커에게 다시 시킨다.
 
 ## 신뢰 질문
 
-- 응답이 \`needs_trust\`(신뢰 질문에서 멈춤)면 사용자에게 응답에 적힌 한 문장만 말한다. 예: "판에서 @wt1 노드의 신뢰 질문에 답해 주세요." 판 밖 터미널을 열라고 하지 않는다. 신뢰는 사람만 준다. 네가 키를 보내 답하지 않는다.
-- 워크트리 워커는 사람이 답하면 판이 그 노드에서 워크트리로 다시 띄우고, \`--prompt\`의 지시는 그 뒤에 들어간다. 그동안 그 워커에게 herdr로 시키지 말고 \`atrium child-wait <이름>\`으로 기다린다.
+- 응답이 \`needs_trust\`(신뢰 질문에서 멈춤)면 사용자에게 응답에 적힌 한 문장만 말한다. 예: "보드에서 @wt1 카드의 신뢰 질문에 답해 주세요." 보드 외부 터미널을 열라고 하지 않는다. 신뢰는 사람만 준다. 네가 키를 보내 답하지 않는다.
+- 워크트리 워커는 사람이 답하면 보드가 그 카드에서 워크트리로 다시 띄우고, \`--prompt\`의 지시는 그 뒤에 들어간다. 그동안 그 워커에게 herdr로 시키지 말고 \`atrium child-wait <이름>\`으로 기다린다.
 - \`needs_commit\`이면 저장소에 커밋이 없는 것이다. 사용자에게 알리고, 첫 커밋을 만들라고 한 경우에만 만든다.
 
 ## 지킬 것
@@ -167,14 +167,14 @@ const SKILL_BODY = `# Atrium 판에서 일하기: 워커로 나눠 맡기기
 - 명령은 위 모양 그대로 한 줄씩 친다. \`$변수\`, \`$(…)\`, 파이프, \`&&\`, \`;\`를 섞지 않는다(섞으면 사람의 승인을 기다린다).
 - herdr 명령에 \`--session\`, \`--machine\`, \`--remote\`를 붙이지 않는다. \`test "$HERDR_ENV"\` 확인은 하지 않는다(늘 herdr 안이다).
 - 끝난 워커는 끄지 않고 둔다(사람이 나무와 결과를 본다). 사람이 끄라고 할 때만 \`atrium child-kill <이름>\`으로 끈다(그 아래도 함께, 자기 자손만).
-- 워커가 권한을 묻고 멈추면(\`herdr agent prompt\`가 blocked) 대신 답하지 않는다. 사용자에게 "판에서 @이름의 승인 카드에 답해 주세요"라고 알린다.
+- 워커가 권한을 묻고 멈추면(\`herdr agent prompt\`가 blocked) 대신 답하지 않는다. 사용자에게 "보드에서 @이름의 승인 카드에 답해 주세요"라고 알린다.
 - 잠든 워커는 \`atrium wake <이름>\`으로 깨운 뒤 시킨다.
 - 워커가 모델 오류로 답하지 못하면(\`atrium children\`의 오류 줄) 사용자에게 알리고 \`atrium models\`의 다른 줄로 다시 띄운다.
 `;
 export function boardSkill(name = SKILL_NAME) {
   const description = name === SKILL_NAME
-    ? 'Atrium 판에서 일하는 법: 워커(하위 세션)를 만들어 일을 나눠 맡기고, 코드 조각은 워크트리에서 시키고, 답을 모아 합친다. 사용자가 워커, 하위 세션, 병렬, 나눠 맡기기, 워크트리, spawn workers, sub-sessions를 말할 때, 그리고 일이 서로 기다리지 않는 조각 여럿으로 나뉠 때 사용자가 말하지 않아도 쓴다. Atrium 판이 띄운 세션에서만 된다.'
-    : 'atrium 스킬의 옛 이름(내용이 같다). 워커(하위 세션)를 만들어 일을 나눠 맡기고 답을 모아 온다. Atrium 판이 띄운 세션에서만 된다.';
+    ? 'Atrium 보드에서 일하는 법: 워커(하위 세션)를 만들어 일을 나눠 맡기고, 코드 조각은 워크트리에서 시키고, 답을 모아 합친다. 사용자가 워커, 하위 세션, 병렬, 나눠 맡기기, 워크트리, spawn workers, sub-sessions를 말할 때, 그리고 일이 서로 기다리지 않는 조각 여럿으로 나뉠 때 사용자가 말하지 않아도 쓴다. Atrium 보드가 띄운 세션에서만 된다.'
+    : 'atrium 스킬의 옛 이름(내용이 같다). 워커(하위 세션)를 만들어 일을 나눠 맡기고 답을 모아 온다. Atrium 보드가 띄운 세션에서만 된다.';
   return `---\nname: ${name}\ndescription: ${description}\n---\n\n${SKILL_BODY}`;
 }
 export const delegateSkill = () => boardSkill(LEGACY_SKILL_NAME); // P8 이름(시험과 옛 호출)
@@ -184,8 +184,8 @@ export function childShims({ node = process.execPath, script = path.join(BACKEND
   const fwd = (p) => p.split(path.sep).join('/');
   const out = {};
   for (const c of ['atrium', 'mtask']) {
-    out[c] = `#!/bin/sh\n# Atrium 판(P8): 하위 세션 명령. ${c} child | children | child-kill | child-wait | wake | models 만 된다\nexec "${fwd(node)}" "${fwd(script)}" "$@"\n`;
-    out[`${c}.cmd`] = `@echo off\r\nrem Atrium 판(P8): 하위 세션 명령. ${c} child ^| children ^| child-kill ^| child-wait ^| wake ^| models 만 된다\r\n"${node}" "${script}" %*\r\n`;
+    out[c] = `#!/bin/sh\n# Atrium 보드(P8): 하위 세션 명령. ${c} child | children | child-kill | child-wait | wake | models 만 된다\nexec "${fwd(node)}" "${fwd(script)}" "$@"\n`;
+    out[`${c}.cmd`] = `@echo off\r\nrem Atrium 보드(P8): 하위 세션 명령. ${c} child ^| children ^| child-kill ^| child-wait ^| wake ^| models 만 된다\r\n"${node}" "${script}" %*\r\n`;
   }
   return out;
 }
@@ -301,9 +301,9 @@ export class Branch {
     req.on('data', (d) => { size += d.length; if (size > BODY_MAX) tooBig = true; else chunks.push(d); });
     req.on('end', async () => {
       const send = (status, obj) => { if (!res.headersSent) { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)); } };
-      if (tooBig) return send(413, { error: { code: 'too_big', message: '요청이 너무 크다' } });
+      if (tooBig) return send(413, { error: { code: 'too_big', message: "요청 크기가 너무 큽니다." } });
       let body = {};
-      try { body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}; } catch { return send(400, { error: { code: 'bad_json', message: 'JSON이 아니다' } }); }
+      try { body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}; } catch { return send(400, { error: { code: 'bad_json', message: "유효한 JSON 형식이 아닙니다." } }); }
       const caller = this.auth(req.headers, op);
       if (caller.error) return send(caller.status, { error: caller.error });
       try {
@@ -319,12 +319,12 @@ export class Branch {
   auth(headers, op) {
     const sid = String(headers['x-mt-session'] || '');
     const s = this.b.sessions.get(sid);
-    if (!s) return { status: 404, error: { code: 'not_on_board', message: `이 판(${this.b.cfg.herdrSession})에 없는 세션이다. 판이 띄운 세션에서만 부른다` } };
+    if (!s) return { status: 404, error: { code: 'not_on_board', message: `이 보드(${this.b.cfg.herdrSession})에서 찾을 수 없는 세션입니다. 보드에서 시작한 세션에서만 호출할 수 있습니다.` } };
     const given = String(headers.authorization || '').replace(/^Bearer /, '');
     const want = this.token(sid);
     const ok = given.length === want.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want));
-    if (!ok) { this.b.store.addEvent(sid, 'branch_rejected', { op, why: 'bad token' }); return { status: 401, error: { code: 'bad_token', message: '세션 토큰이 맞지 않는다' } }; }
-    if (!this.b.hooked(s)) return { status: 403, error: { code: 'not_board_session', message: '판이 띄운 Claude Code 세션만 하위 세션을 만든다' } };
+    if (!ok) { this.b.store.addEvent(sid, 'branch_rejected', { op, why: 'bad token' }); return { status: 401, error: { code: 'bad_token', message: "세션 토큰이 일치하지 않습니다." } }; }
+    if (!this.b.hooked(s)) return { status: 403, error: { code: 'not_board_session', message: "보드에서 시작한 Claude Code 세션에서만 하위 세션을 만들 수 있습니다." } };
     return { s };
   }
   dispatch(op, s, body, res) {
@@ -334,7 +334,7 @@ export class Branch {
     if (op === 'wake') return this.wakeAgent(s, body); // P21(D4)
     if (op === 'wait') return this.waitChild(s, body); // P36
     if (op === 'models') return this.listModels(s, body); // P41
-    throw apiError('unknown_op', `모르는 명령: ${op}`);
+    throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
   }
 
   // K1: 하위 세션 만들기. o: { name, prompt, role, cwd(절대 경로), worktree, model, kind, wait }
@@ -345,22 +345,22 @@ export class Branch {
     const asleep = o.name && [...b.sessions.values()].find((x) => x.name === String(o.name).replace(/^@/, '') && x.parentSessionId === parent.sessionId && (x.rt.sleep || (b.sleeper && b.sleeper.wakes.has(x.sessionId))));
     if (asleep) return this.wakeAgent(parent, { name: asleep.name, prompt: o.prompt });
     const role = o.role == null || o.role === '' ? DEFAULT_ROLE : String(o.role).trim();
-    if (!ROLE_RE.test(role)) throw apiError('bad_request', '역할은 1~40자, 줄바꿈·따옴표·$·\\ 없이');
-    if (o.kind === 'shell') throw apiError('bad_request', '하위 세션은 에이전트만 만든다(셸은 herdr pane split으로)');
+    if (!ROLE_RE.test(role)) throw apiError('bad_request', "역할은 1~40자로 입력하세요. 줄바꿈, 따옴표, $, \\는 사용할 수 없습니다.");
+    if (o.kind === 'shell') throw apiError('bad_request', "하위 세션은 에이전트만 만들 수 있습니다. 셸은 herdr pane split으로 만드세요.");
     // P41: 무엇으로 띄우는가(호출자, 말로 한 모델 이름 풀기, 부모의 게이트웨이 물려받기)
     const route = await this.routeOf(parent, o);
     const kind = route.kind;
     const claude = kind === 'claude';
-    if (kind === 'shell') throw apiError('bad_request', '하위 세션은 에이전트만 만든다(셸은 herdr pane split으로)');
+    if (kind === 'shell') throw apiError('bad_request', "하위 세션은 에이전트만 만들 수 있습니다. 셸은 herdr pane split으로 만드세요.");
     const pcwd = parent.rt.cwd && fs.existsSync(parent.rt.cwd) ? parent.rt.cwd : parent.cwd;
     const cwd = o.cwd ? path.resolve(pcwd, String(o.cwd)) : pcwd;
-    if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw apiError('bad_request', `폴더가 없다: ${o.cwd}. Windows 경로는 슬래시로 쓴다(--cwd C:/Workspace/x). 따옴표 없는 백슬래시는 Bash가 지운다`);
+    if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw apiError('bad_request', `폴더를 찾을 수 없습니다: ${o.cwd}. Windows 경로는 슬래시로 입력하세요 (--cwd C:/Workspace/x). 따옴표로 묶지 않은 백슬래시는 Bash에서 제거됩니다.`);
     const worktree = o.worktree ? String(o.worktree) : null;
-    if (worktree && !WORKTREE_RE.test(worktree)) throw apiError('bad_request', `워크트리 이름은 영문·숫자·.·-·_ 만: ${worktree}`);
-    if (worktree && !claude) throw apiError('bad_request', '--worktree는 Claude Code(claude -w)만 된다');
-    if (worktree && !(await gitProbe(cwd)).isRepo) throw apiError('bad_request', `--worktree는 git 저장소 안에서만 된다: ${cwd}`);
+    if (worktree && !WORKTREE_RE.test(worktree)) throw apiError('bad_request', `워크트리 이름에는 영문, 숫자, ., -, _만 사용할 수 있습니다: ${worktree}`);
+    if (worktree && !claude) throw apiError('bad_request', "--worktree는 Claude Code(claude -w)에서만 사용할 수 있습니다.");
+    if (worktree && !(await gitProbe(cwd)).isRepo) throw apiError('bad_request', `--worktree는 Git 저장소 안에서만 사용할 수 있습니다: ${cwd}`);
     // P36: 커밋이 없는 저장소는 워크트리를 만들 곳이 없다. 판과 명령은 빈 커밋을 대신 만들지 않는다
-    if (worktree && !repoHasCommit(cwd)) throw apiError('needs_commit', `이 저장소(${cwd.split(path.sep).join('/')})에 커밋이 하나도 없어 워크트리를 만들 수 없다. 첫 커밋이 있어야 한다(판은 대신 만들지 않는다)`);
+    if (worktree && !repoHasCommit(cwd)) throw apiError('needs_commit', `이 저장소(${cwd.split(path.sep).join('/')})에 커밋이 없어 워크트리를 만들 수 없습니다. 먼저 첫 커밋을 만드세요. 보드에서 대신 생성하지는 않습니다.`);
     // Claude Code는 신뢰를 받지 않은 저장소에서 -w를 신뢰 대화상자 없이 거부하고 바로 끝난다("Workspace trust not yet accepted", P8·P36 시험).
     // P36: 미리 거부하지 않고 신뢰 관문으로 띄운다(그 저장소에서 claude를 띄워 신뢰 질문을 노드에 보이고, 사람이 답하면 claude -w로 다시 띄운다)
     const gate = worktree && predictTrust(cwd, b.cfg.claudeJson).needsTrust ? worktree : null;
@@ -369,9 +369,9 @@ export class Branch {
     if (model && !MODEL_RE.test(model)) throw apiError('bad_request', `모델: ${model}`);
     const launcherEffort = route.type === 'launcher' && harnessOf(route.launcher.harness).fields.includes('effort') ? route.launcher.effort || null : null;
     const effort = claude ? (o.effort ? String(o.effort) : route.type === 'launcher' ? launcherEffort : parent.effort || null) : null; // P36: --effort, 빼면 물려받는다. P41: 호출자면 호출자의 것
-    if (effort && !EFFORTS.includes(effort)) throw apiError('bad_request', `노력 수준은 ${EFFORTS.filter(Boolean).join(', ')} 가운데 하나: ${effort}`);
+    if (effort && !EFFORTS.includes(effort)) throw apiError('bad_request', `추론 수준은 ${EFFORTS.filter(Boolean).join(', ')} 가운데 하나: ${effort}`);
     const prompt = o.prompt == null ? null : String(o.prompt);
-    if (prompt != null && !prompt.trim()) throw apiError('bad_request', '첫 지시가 비었다');
+    if (prompt != null && !prompt.trim()) throw apiError('bad_request', "첫 요청을 입력하세요.");
     const taken = new Set([...b.sessions.values()].map((x) => x.name).concat([...this.pendingNames]));
     const name = childName({ want: o.name ? String(o.name) : null, parentName: parent.name, taken });
 
@@ -395,7 +395,7 @@ export class Branch {
       out = await b.spawn(sp);
     } finally { this.pending.splice(this.pending.indexOf(parent.sessionId), 1); this.pendingNames.delete(name); }
     const child = b.sessions.get(out.sessionId);
-    if (!child) throw apiError('spawn_failed', '하위 세션이 판에 남지 않았다');
+    if (!child) throw apiError('spawn_failed', "하위 세션이 보드에 등록되지 않았습니다.");
 
     // 부모와 역할 선(F2처럼), 띄움 기록
     const l = b.ensureLink(parent.sessionId, child.sessionId, { role, spawned: true });
@@ -464,17 +464,17 @@ export class Branch {
     const down = cat.gateways.filter((g) => !g.ok);
     const downLine = down.length ? `\n게이트웨이가 닿지 않아 그 모델 목록은 보지 못했다: ${down.map((g) => `${g.url}(${g.why})`).join(', ')}` : '';
     if (r.code === 'model_ambiguous') return apiError('model_ambiguous', `모델 "${query}"에 맞는 것이 여럿이다. 띄우지 않았다. 사용자에게 어느 것인지 묻거나 아래 명령 가운데 하나로 띄운다:\n${candidateLines(r.candidates)}`, { candidates: r.candidates.map((e) => ({ text: describeEntry(e), command: e.command })) });
-    return apiError('model_unknown', `판이 모르는 모델: "${query}". 띄우지 않았다.${r.candidates.length ? ` 가까운 것:\n${candidateLines(r.candidates)}` : ''}\n전체 목록: atrium models${downLine}`, { candidates: r.candidates.map((e) => ({ text: describeEntry(e), command: e.command })) });
+    return apiError('model_unknown', `보드가 모르는 모델: "${query}". 띄우지 않았다.${r.candidates.length ? ` 가까운 것:\n${candidateLines(r.candidates)}` : ''}\n전체 목록: atrium models${downLine}`, { candidates: r.candidates.map((e) => ({ text: describeEntry(e), command: e.command })) });
   }
   // 무엇으로 띄우는가. type: launcher(호출자 그대로) | model(하네스 모델) | gateway(게이트웨이 모델, 그 호출자의 env) | inherit-gateway(부모가 게이트웨이 세션) | plain
   async routeOf(parent, o) {
     if (o.launcher) {
       const l = this.findLauncher(o.launcher);
-      if (!l) throw apiError('no_launcher', `없는 호출자: ${o.launcher}. 호출자와 모델 목록: atrium models`);
+      if (!l) throw apiError('no_launcher', `런처를 찾을 수 없습니다: ${o.launcher}. 런처와 모델 목록: atrium models`);
       const h = harnessOf(l.harness);
-      if (!h || h.id === 'shell' || h.id === 'command') throw apiError('bad_request', `하위 세션은 에이전트를 띄우는 호출자만 쓴다: ${l.name}(${h ? h.label : l.harness})`);
-      if (o.kind && o.kind !== h.kind) throw apiError('bad_request', `호출자 ${l.name}은 종류 ${h.kind}다(--kind ${o.kind}와 다르다)`);
-      if (o.model) throw apiError('bad_request', '--launcher와 --model을 함께 주지 않는다. 다른 모델이면 그 모델의 명령으로 띄운다(atrium models)');
+      if (!h || h.id === 'shell' || h.id === 'command') throw apiError('bad_request', `하위 세션에는 에이전트를 실행하는 런처만 사용할 수 있습니다: ${l.name}(${h ? h.label : l.harness})`);
+      if (o.kind && o.kind !== h.kind) throw apiError('bad_request', `런처 ${l.name}은 종류 ${h.kind}다(--kind ${o.kind}와 다르다)`);
+      if (o.model) throw apiError('bad_request', "--launcher와 --model은 함께 지정할 수 없습니다. 다른 모델을 사용하려면 atrium models에서 해당 모델의 실행 명령을 확인하세요.");
       const gw = h.id === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL ? l.env.ANTHROPIC_BASE_URL : null;
       return { type: 'launcher', launcher: l, kind: h.kind, gateway: gw, resolved: null };
     }
@@ -491,7 +491,7 @@ export class Branch {
       if (e.source === 'harness') return { type: 'model', kind: e.kind, model: e.model, args: e.kind === 'claude' ? null : ['-m', e.model], gateway: null, resolved };
       const hostG = cat.hosts.find((g) => g.url === e.gateway);
       const host = hostG && hostG.host ? hostG.host : null;
-      if (!host) throw apiError('gateway_down', `게이트웨이 ${e.gateway}의 호출자를 찾지 못했다`);
+      if (!host) throw apiError('gateway_down', `게이트웨이 ${e.gateway}의 런처를 찾을 수 없습니다.`);
       return { type: 'gateway', kind: 'claude', model: e.model, launcherDef: { ...host, id: host.id || null, icon: e.provider === 'deepseek' ? 'deepseek' : '', model: e.model }, gateway: e.gateway, resolved };
     }
     // 물려받기: 부모가 게이트웨이를 거치는 세션이면(spawn 이벤트의 env) 하위 세션도 같은 env로 띄운다
@@ -567,10 +567,10 @@ export class Branch {
   async waitChild(parent, o = {}) {
     const b = this.b;
     const ref = String(o.name || '').replace(/^@/, '');
-    if (!ref) throw apiError('bad_request', '기다릴 하위 세션 이름을 준다: atrium child-wait <이름>');
+    if (!ref) throw apiError('bad_request', "대기할 하위 세션 이름을 지정하세요: atrium child-wait <이름>");
     const t = [...b.sessions.values()].find((x) => x.name === ref || x.agentName === ref);
-    if (!t) throw apiError('not_found', `판에 없는 세션: ${ref}`);
-    if (!isDescendant(t.sessionId, parent.sessionId, this.rowOf)) throw apiError('not_parent', `@${t.name}은 너(@${parent.name})의 하위 세션이 아니다`);
+    if (!t) throw apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`);
+    if (!isDescendant(t.sessionId, parent.sessionId, this.rowOf)) throw apiError('not_parent', `@${t.name}은 너(@${parent.name})의 하위 세션이 아닙니다.`);
     const limit = Math.min(Number(o.timeoutMs) || this.childWaitMs, this.childWaitMs);
     const t0 = Date.now();
     const st = () => (b.sessions.has(t.sessionId) ? deriveState(t.rt).state : 'closed');
@@ -610,9 +610,9 @@ export class Branch {
   async wakeAgent(caller, o = {}) {
     const b = this.b;
     const ref = String(o.name || '').replace(/^@/, '');
-    if (!ref) throw apiError('bad_request', '깨울 세션 이름을 준다: atrium wake <이름>');
+    if (!ref) throw apiError('bad_request', "작업을 재개할 세션 이름을 지정하세요: atrium wake <이름>");
     const t = [...b.sessions.values()].find((x) => x.name === ref || x.agentName === ref || x.sessionId === ref);
-    if (!t) throw apiError('not_found', `판에 없는 세션: ${ref}`);
+    if (!t) throw apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`);
     const was = !!(t.rt.sleep || (b.sleeper && b.sleeper.wakes.has(t.sessionId)));
     const r = was ? await b.sleeper.wakeFor(t, `atrium:${caller.name}`) : null; // P24: 그 리포의 잠든 세션을 모두 깨우고 이 세션이 준비될 때까지
     let first = null;
@@ -640,11 +640,11 @@ export class Branch {
   async killChild(parent, o = {}) {
     const b = this.b;
     const ref = String(o.name || '').replace(/^@/, '');
-    if (!ref) throw apiError('bad_request', '끌 하위 세션 이름을 준다');
+    if (!ref) throw apiError('bad_request', "종료할 하위 세션 이름을 지정하세요.");
     const t = [...b.sessions.values()].find((x) => x.name === ref || x.agentName === ref || x.paneId === ref || x.sessionId === ref);
-    if (!t) throw apiError('not_found', `판에 없는 세션: ${ref}`);
+    if (!t) throw apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`);
     if (t === parent || !isDescendant(t.sessionId, parent.sessionId, this.rowOf)) {
-      const msg = t === parent ? '자기 자신은 atrium child-kill로 끄지 않는다' : `@${t.name}은 너(@${parent.name})가 만든 하위 세션이 아니다. 자기 하위 세션(그 아래 포함)만 끈다`;
+      const msg = t === parent ? "atrium child-kill로 자기 세션을 종료할 수 없습니다." : `@${t.name}은 너(@${parent.name})가 만든 하위 세션이 아닙니다. 자신의 하위 세션과 그 하위 세션만 종료할 수 있습니다.`;
       b.store.addEvent(parent.sessionId, 'branch_refused', { code: 'not_parent', reason: msg, target: t.name });
       b.api.broadcast('branch.refused', { sessionId: parent.sessionId, name: parent.name, code: 'not_parent', reason: msg, target: t.name });
       throw apiError('not_parent', msg);

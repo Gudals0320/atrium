@@ -50,7 +50,7 @@ export function normalizeEnv(v) {
   for (const [k, raw] of pairs) {
     const val = String(raw ?? '');
     if (!ENV_NAME_RE.test(k)) throw err('bad_request', `환경 변수 이름: ${k}`, 'envName', { name: String(k).slice(0, 40) });
-    if (RESERVED_ENV.test(k)) throw err('bad_request', `판이 정하는 환경 변수: ${k}`, 'envReserved', { name: k });
+    if (RESERVED_ENV.test(k)) throw err('bad_request', `보드가 정하는 환경 변수: ${k}`, 'envReserved', { name: k });
     if (val.length > ENV_VALUE_MAX || CTRL_RE.test(val)) throw err('bad_request', `환경 변수 값(${k}): 한 줄, ${ENV_VALUE_MAX}자까지`, 'envValue', { name: k, max: ENV_VALUE_MAX });
     out[k] = val;
   }
@@ -67,10 +67,10 @@ function checkUrlOf(v) {
 
 // 호출자 하나를 확인하고 정리한다. others는 이름 겹침을 볼 다른 호출자들. 하네스가 받지 않는 칸은 비운다
 export function normalizeLauncher(input, { others = [] } = {}) {
-  if (!input || typeof input !== 'object') throw err('bad_request', '호출자가 없다', 'empty');
+  if (!input || typeof input !== 'object') throw err('bad_request', "런처를 지정하세요.", 'empty');
   const name = String(input.name ?? '').trim();
   if (!name || name.length > NAME_MAX || CTRL_RE.test(name)) throw err('bad_request', `이름은 1~${NAME_MAX}자 한 줄`, 'name', { max: NAME_MAX });
-  if (others.some((o) => o.id !== input.id && o.name.toLowerCase() === name.toLowerCase())) throw err('name_taken', `이미 있는 호출자 이름: ${name}`, 'nameTaken', { name });
+  if (others.some((o) => o.id !== input.id && o.name.toLowerCase() === name.toLowerCase())) throw err('name_taken', `이미 사용 중인 런처 이름입니다: ${name}`, 'nameTaken', { name });
   const h = harnessOf(String(input.harness || 'claude'));
   if (!h) throw err('bad_request', `하네스: ${input.harness}`, 'harness', { harness: String(input.harness).slice(0, 32) });
   const has = (f) => h.fields.includes(f);
@@ -79,16 +79,16 @@ export function normalizeLauncher(input, { others = [] } = {}) {
   const model = has('model') ? String(input.model ?? '').trim() : '';
   if (model.length > 80 || !MODEL_RE.test(model)) throw err('bad_request', `모델: 영문·숫자·._:/[]-만, 80자까지`, 'model', { model: model.slice(0, 40) });
   const effort = has('effort') ? String(input.effort ?? '') : '';
-  if (!EFFORTS.includes(effort)) throw err('bad_request', `노력 수준: ${effort}`, 'effort', { effort });
+  if (!EFFORTS.includes(effort)) throw err('bad_request', `추론 수준: ${effort}`, 'effort', { effort });
   const permissionMode = has('permissionMode') ? String(input.permissionMode || 'manual') : '';
-  if (has('permissionMode') && !PERMISSION_MODES.includes(permissionMode)) throw err('bad_request', `권한 모드: ${permissionMode}`, 'permissionMode', { mode: permissionMode });
+  if (has('permissionMode') && !PERMISSION_MODES.includes(permissionMode)) throw err('bad_request', `승인 방식: ${permissionMode}`, 'permissionMode', { mode: permissionMode });
   const args = has('args') ? String(input.args ?? '').trim() : '';
   if (args.length > ARGS_MAX || CTRL_RE.test(args)) throw err('bad_request', `추가 인자: 한 줄, ${ARGS_MAX}자까지`, 'args', { max: ARGS_MAX });
-  if (h.id === 'claude') { const bad = splitArgs(args).find((a) => RESERVED_CLAUDE_ARGS.has(a.split('=')[0])); if (bad) throw err('bad_request', `판이 정하는 인자: ${bad}`, 'argsReserved', { arg: bad }); }
+  if (h.id === 'claude') { const bad = splitArgs(args).find((a) => RESERVED_CLAUDE_ARGS.has(a.split('=')[0])); if (bad) throw err('bad_request', `보드가 정하는 인자: ${bad}`, 'argsReserved', { arg: bad }); }
   let command = '';
   if (has('command')) {
     try { command = checkCommand(input.command); } catch (e) { throw err('bad_request', e.message, e.key === 'deepseekCommandLong' ? 'commandLong' : 'commandLine', { max: COMMAND_MAX, n: String(input.command || '').trim().length }); }
-    if (!command) throw err('bad_request', '명령이 비어 있다', 'commandEmpty');
+    if (!command) throw err('bad_request', "명령을 입력하세요.", 'commandEmpty');
   }
   const env = has('env') ? normalizeEnv(input.env) : {};
   const checkUrl = has('checkUrl') ? checkUrlOf(input.checkUrl) : '';
@@ -192,7 +192,7 @@ export class Launchers {
     const items = this.data().items;
     return items.find((l) => l.id.toLowerCase() === r) || items.find((l) => l.name.toLowerCase() === r) || null;
   }
-  get(ref) { const l = this.find(ref); if (!l) throw err('no_launcher', `없는 호출자: ${ref}`, 'notFound', { ref: String(ref).slice(0, 40) }); return l; }
+  get(ref) { const l = this.find(ref); if (!l) throw err('no_launcher', `런처를 찾을 수 없습니다: ${ref}`, 'notFound', { ref: String(ref).slice(0, 40) }); return l; }
   create(p) {
     const d = this.data();
     const l = normalizeLauncher({ ...(p && p.launcher ? p.launcher : p), id: null }, { others: d.items });
@@ -229,7 +229,7 @@ export class Launchers {
   order(p) {
     const d = this.data();
     const ids = Array.isArray(p && p.ids) ? p.ids.map(String) : null;
-    if (!ids || ids.length !== d.favorites.length || new Set(ids).size !== ids.length || ids.some((x) => !d.favorites.includes(x))) throw err('bad_request', '즐겨찾기 순서는 지금 즐겨찾기 ID 전부', 'order');
+    if (!ids || ids.length !== d.favorites.length || new Set(ids).size !== ids.length || ids.some((x) => !d.favorites.includes(x))) throw err('bad_request', "즐겨찾기 순서에는 현재 즐겨찾기에 추가된 ID가 모두 포함되어야 합니다.", 'order');
     d.favorites = ids;
     return this.save(d);
   }
@@ -253,5 +253,5 @@ export async function checkGateway({ url, health = false, name = '', timeoutMs =
       why = `status ${body.status}`;
     } else why = `HTTP ${r.status}`;
   } catch (e) { why = e && e.name === 'TimeoutError' ? 'timeout' : (e && (e.cause && e.cause.code)) || (e && e.message) || 'unreachable'; }
-  throw err('gateway_down', `${name ? `${name}: ` : ''}게이트웨이가 닿지 않는다(${url}: ${why}). 게이트웨이를 켠 뒤 다시 띄운다`, 'gatewayDown', { url, why, name });
+  throw err('gateway_down', `${name ? `${name}: ` : ''}게이트웨이에 연결할 수 없습니다 (${url}: ${why}). 게이트웨이를 실행한 뒤 다시 시도하세요.`, 'gatewayDown', { url, why, name });
 }

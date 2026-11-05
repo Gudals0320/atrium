@@ -56,7 +56,7 @@ test('P41 이름 풀기: 정확한 ID와 호출자 이름', () => {
   assert.equal(r('claude-opus-5-5').entry.source, 'harness', 'Anthropic 모델은 게이트웨이를 거치지 않는다');
   assert.deepEqual([r('DeepSeek').how, r('DeepSeek').entry.source, r('DeepSeek').entry.launcher], ['exact', 'launcher', 'DeepSeek']);
   assert.equal(r('codex').entry.launcher, 'Codex');
-  // 실제 판에서 실패한 이름: 호출자 DeepSeek의 모델과 같으면 그 호출자(게이트웨이 env)로
+  // 실제 판에서 실패한 이름: 런처 DeepSeek의 모델과 같으면 그 호출자(게이트웨이 env)로
   assert.equal(r('ocx-claude-deepseek--deepseek-flash[1m]').entry.launcher, 'DeepSeek');
   assert.deepEqual([r('claude-fable-5-p08e').entry.source, r('claude-fable-5-p08e').entry.gateway], ['gateway', BASE]);
 });
@@ -167,8 +167,8 @@ test('P41 atrium child --launcher: 호출자의 하네스·모델·옵션·게�
     await b.branch.spawnChild(lead, { name: 'ds2', launcher: 'deepseek', effort: 'high', wait: false });
     assert.equal(arg(startOf('ds2'), '--effort'), 'high');
     await assert.rejects(b.branch.spawnChild(lead, { name: 'x1', launcher: 'nope', wait: false }), (e) => e.code === 'no_launcher' && /atrium models/.test(e.message));
-    await assert.rejects(b.branch.spawnChild(lead, { name: 'x1', launcher: 'shell', wait: false }), /에이전트를 띄우는 호출자/);
-    await assert.rejects(b.branch.spawnChild(lead, { name: 'x1', launcher: 'DeepSeek', model: 'opus', wait: false }), /함께 주지 않는다/);
+    await assert.rejects(b.branch.spawnChild(lead, { name: 'x1', launcher: 'shell', wait: false }), /에이전트를 실행하는 런처/);
+    await assert.rejects(b.branch.spawnChild(lead, { name: 'x1', launcher: 'DeepSeek', model: 'opus', wait: false }), /함께 지정할 수 없습니다/);
     // codex 호출자: 하네스 codex, -m 모델
     b.features.launchers.update({ id: 'codex', patch: { model: 'gpt-6-astra' } });
     const cx = await b.branch.spawnChild(lead, { name: 'cx1', launcher: 'Codex', wait: false });
@@ -181,10 +181,10 @@ test('P41 atrium child --model <말>: 풀어서 띄우고 무엇으로 풀었는
   const gw = await gatewayServer();
   try {
     const { b, lead, calls, startOf, arg, settingsOf } = await board({ gatewayUrl: gw.url });
-    // "deepseek flash" → 호출자 DeepSeek(게이트웨이 env)
+    // "deepseek flash" → 런처 DeepSeek(게이트웨이 env)
     const ds = await b.branch.spawnChild(lead, { name: 'ds1', model: 'deepseek flash', wait: false });
     assert.equal(ds.resolved.how, 'loose'); assert.equal(ds.resolved.source, 'launcher'); assert.equal(ds.resolved.launcher, 'DeepSeek');
-    assert.match(ds.resolved.to, /호출자 DeepSeek/);
+    assert.match(ds.resolved.to, /런처 DeepSeek/);
     assert.equal(settingsOf(ds).env.ANTHROPIC_BASE_URL, gw.url);
     // "haiku" → 하네스 모델(게이트웨이 env 없음), 부모의 노력 수준·권한 모드
     const hk = await b.branch.spawnChild(lead, { name: 'hk1', model: 'haiku', wait: false });
@@ -265,14 +265,14 @@ test('P41 atrium models: 호출자, 하네스 모델·별칭, 게이트웨이 �
     const env = b.branch.envFor(lead.sessionId);
     const out = await runChild(['models'], env);
     assert.equal(out.code, 0, out.stderr);
-    assert.match(out.stdout, /호출자 DeepSeek .*게이트웨이 경유/); assert.match(out.stdout, /atrium child <이름> --model haiku/);
-    assert.match(out.stdout, /게이트웨이 http:\/\/127\.0\.0\.1:\d+\(호출자 DeepSeek의 env로 띄운다\)의 모델 \d+개/);
+    assert.match(out.stdout, /런처 DeepSeek .*게이트웨이 경유/); assert.match(out.stdout, /atrium child <이름> --model haiku/);
+    assert.match(out.stdout, /게이트웨이 http:\/\/127\.0\.0\.1:\d+\(런처 DeepSeek의 env로 띄운다\)의 모델 \d+개/);
     const bad = await runChild(['child', 'x9', '--model', 'gpt-99', '--no-wait'], env);
     assert.notEqual(bad.code, 0); assert.match(bad.stderr, /model_unknown/); assert.match(bad.stderr, /atrium models/);
     const words = await runChild(['child', 'x9', '--model', 'deepseek', 'flash'], env);
     assert.equal(words.code, 2); assert.match(words.stderr, /따옴표로 묶는다/);
     const ok = await runChild(['child', 'ds9', '--model', 'deepseek flash', '--no-wait'], env);
-    assert.equal(ok.code, 0, ok.stderr); assert.match(ok.stdout, /모델 "deepseek flash" → 호출자 DeepSeek/);
+    assert.equal(ok.code, 0, ok.stderr); assert.match(ok.stdout, /모델 "deepseek flash" → 런처 DeepSeek/);
     b.store.close();
   } finally { if (srv.s) srv.s.close(); await gw.close(); }
 });
@@ -302,7 +302,7 @@ test('P41 승인 규칙: atrium models는 묻지 않는다(옛 이름 mtask도)'
 test('P41 스킬 글과 짧은 안내: 말로 한 모델은 atrium models로 골라 띄우고, ID를 묻지 않고, 내부 하위 에이전트로 우회하지 않는다', () => {
   const s = boardSkill();
   assert.match(s, /`atrium models`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다/);
-  assert.match(s, /정확한 ID를 사용자에게 묻지 않고, 판이 후보 여럿을 돌려줄 때만 묻는다/);
+  assert.match(s, /정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다/);
   assert.match(s, /내부 하위 에이전트로 우회하지 않는다/);
   assert.match(s, /모델 오류로 답하지 못하면/);
   assert.ok(Buffer.byteLength(s) < 7000, `스킬 글 ${Buffer.byteLength(s)}바이트`);
@@ -360,8 +360,8 @@ test('P41 모델 오류: StopFailure model_not_found나 Claude Code의 오류 �
     applyHook(ks.rt, { hook_event_name: 'UserPromptSubmit', prompt: '2+2' });
     applyHook(ks.rt, { hook_event_name: 'StopFailure', error: 'model_not_found' });
     b.bus.emit('session', ks, b.summary(ks));
-    assert.match(b.branch.listChildren(lead).children.find((c) => c.name === 'w1').error.message, /쓰지 못한 모델: haiku/);
-    assert.match(b.store.events({ sessionId: lead.sessionId }).filter((e) => e.kind === 'branch_child_error').at(-1).data.message, /쓰지 못한 모델: haiku/);
+    assert.match(b.branch.listChildren(lead).children.find((c) => c.name === 'w1').error.message, /사용할 수 없는 모델입니다: haiku/);
+    assert.match(b.store.events({ sessionId: lead.sessionId }).filter((e) => e.kind === 'branch_child_error').at(-1).data.message, /사용할 수 없는 모델입니다: haiku/);
     b.store.close();
   } finally { await gw.close(); }
 });

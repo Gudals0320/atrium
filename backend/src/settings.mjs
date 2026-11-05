@@ -9,24 +9,24 @@ export const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontA
 export const LANGUAGES = ['en', 'ko']; // P16: 화면 언어. 새 판은 영어
 
 export const SETTINGS = {
-  language: { type: 'choice', default: 'en', options: LANGUAGES, label: '화면 언어(en 영어, ko 한국어). 창과 트레이 메뉴가 따른다(P16)' },
-  tray: { type: 'boolean', default: true, label: '창을 닫아도 트레이에 남아 알림을 띄운다(I7). 트레이 메뉴로 백엔드를 켜고 끈다(P14)' },
+  language: { type: 'choice', default: 'en', options: LANGUAGES, label: '화면 언어 (en: 영어, ko: 한국어). 앱 창과 트레이 메뉴에 적용합니다.' },
+  tray: { type: 'boolean', default: true, label: '창을 닫아도 트레이에서 실행하며 알림을 표시합니다. 트레이 메뉴에서 백엔드를 시작하거나 중지할 수 있습니다.' },
   // P10: 보관과 리포 스스로 찾기(archive.mjs, recall.mjs). 0일이면 저절로 보관을 끈다(손 보관은 그대로)
-  archiveDays: { type: 'number', default: 14, min: 0, max: 365, label: '마지막 활동이 이 일수보다 오래된 판 밖 대화와 닫힌 세션은 보관으로 본다(0이면 끔)' },
-  autoOpenRepos: { type: 'boolean', default: true, label: '터미널(Claude Code CLI)에서 일한 리포를 워크스페이스로 저절로 연다' },
+  archiveDays: { type: 'number', default: 14, min: 0, max: 365, label: '마지막 활동 이후 지정한 일수가 지난 보드 외부 대화와 닫힌 세션을 자동 보관합니다 (0: 사용 안 함).' },
+  autoOpenRepos: { type: 'boolean', default: true, label: '터미널(Claude Code CLI)에서 작업한 Git 저장소를 프로젝트로 자동으로 엽니다.' },
   // P40: herdr 실행 파일 경로. 비우면 찾는다(ATRIUM_HERDR 다음, 설치기 current 링크·PATH·알려진 폴더보다 먼저). 바꾸면 백엔드가 다시 찾는다
-  herdrPath: { type: 'string', default: '', max: 1024, label: 'herdr 실행 파일 경로(비우면 herdr 설치 폴더와 PATH에서 찾는다, P40)' },
+  herdrPath: { type: 'string', default: '', max: 1024, label: 'herdr 실행 파일 경로입니다. 비우면 herdr 설치 폴더와 PATH에서 찾습니다.' },
   // P49(R3): Tailscale로 온 요청의 로그인 사용자 제한. 켜져 있으면 이 PC에 로그인한 Tailscale 사용자와 허용 목록만 짝 맺고 연결한다. 이 PC의 창에서만 바꾼다
-  remoteSameUser: { type: 'boolean', default: true, label: 'Tailscale로 온 요청은 이 PC의 Tailscale 사용자와 허용 목록의 사용자만 받는다(P49)' },
+  remoteSameUser: { type: 'boolean', default: true, label: 'Tailscale을 통한 요청은 이 PC에 로그인한 사용자와 허용 목록의 사용자만 허용합니다.' },
   // P58(S4): 원격 받기. 끄면 이 PC 밖에서 온 요청(바깥 요청, 짝 맺은 기기 연결)을 모두 거부하고 붙은 원격 연결을 닫는다. 이 PC의 창과 CLI는 그대로. Tailscale serve 설정은 건드리지 않는다
-  remoteAccess: { type: 'boolean', default: true, label: '원격 받기: 끄면 짝 맺은 기기와 Tailscale로 온 요청을 모두 거부하고 붙은 원격 연결을 닫는다(P58)' },
-  remoteAllowedLogins: { type: 'string', default: '', max: 1000, pattern: /^[A-Za-z0-9._%+@,\s-]*$/, hint: '로그인 이름을 쉼표로', label: '더 받을 Tailscale 로그인 이름(쉼표로 여럿, P49)' },
+  remoteAccess: { type: 'boolean', default: true, label: '원격 접속 허용: 끄면 등록된 기기와 Tailscale을 통한 요청을 모두 차단하고 현재 원격 연결을 종료합니다.' },
+  remoteAllowedLogins: { type: 'string', default: '', max: 1000, pattern: /^[A-Za-z0-9._%+@,\s-]*$/, hint: '로그인 이름을 쉼표로 구분하세요', label: '추가로 허용할 Tailscale 로그인 이름입니다. 쉼표로 구분하세요.' },
   // P56(S3): 웹 화면 로그인 세션의 수명. remote*라서 이 PC의 창·CLI만 바꾼다(backend.mjs settings.set)
-  remoteSessionHours: { type: 'number', default: 12, min: 1, max: 168, label: '웹 화면은 패스키로 로그인한 뒤 이 시간이 지나면 다시 확인한다(P56)' },
-  remoteIdleMinutes: { type: 'number', default: 30, min: 5, max: 1440, label: '웹 화면의 연결이 모두 끊긴 채 이 분이 지나면 다시 확인한다(노트북 잠자기, P56)' },
+  remoteSessionHours: { type: 'number', default: 12, min: 1, max: 168, label: '패스키 로그인 후 다시 인증할 때까지의 시간입니다 (시간 단위).' },
+  remoteIdleMinutes: { type: 'number', default: 30, min: 5, max: 1440, label: '브라우저 연결이 모두 종료된 뒤 다시 인증할 때까지의 시간입니다 (분 단위).' },
   // P62: 패스키로 확인. 끄면(기본) 짝 맺기만으로 세션을 받고 세션은 짝을 풀 때까지 이어진다(Tailscale 기기 묶기, 쿠키, Origin 확인은 그대로). 켜면 P56~P60처럼 패스키와 12시간·30분 세션
-  remotePasskey: { type: 'boolean', default: false, label: '패스키로 확인: 켜면 짝 맺은 뒤 패스키를 만들고 세션이 끝나면 패스키로 다시 확인한다. 끄면 짝 맺은 Tailscale 기기에서 바로 열린다(P62)' },
-  sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '리포(워크스페이스)에 이 분 동안 아무 일이 없으면 그 리포의 판 Claude Code 세션을 모두 잠재운다(0이면 저절로 잠재우지 않음, P21·P24 D4)' },
+  remotePasskey: { type: 'boolean', default: false, label: '패스키 인증: 켜면 기기 등록 승인 후 패스키를 만들고 세션 종료 시 다시 인증합니다. 끄면 등록된 Tailscale 기기에서 바로 접속할 수 있습니다.' },
+  sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '프로젝트에 지정한 시간(분) 동안 활동이 없으면 보드에서 시작한 Claude Code 세션을 모두 절전 모드로 전환합니다 (0: 자동 절전 사용 안 함).' },
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));
 
@@ -36,26 +36,26 @@ export const touchesRemoteRules = (p) => !!p && typeof p === 'object' && (Object
 const BOOL = { true: true, false: false, on: true, off: false, '1': true, '0': false, yes: true, no: false };
 // 바꿀 값 확인: 모르는 키와 맞지 않는 값은 거부한다. 'on'/'off' 같은 글도 받는다(atrium CLI)
 export function normalizePatch(patch) {
-  if (!patch || typeof patch !== 'object') throw Object.assign(new Error('바꿀 설정이 없다'), { code: 'bad_request' });
+  if (!patch || typeof patch !== 'object') throw Object.assign(new Error("변경할 설정을 지정하세요."), { code: 'bad_request' });
   const out = {};
   for (const [k, v] of Object.entries(patch)) {
     const d = SETTINGS[k];
-    if (!d) throw Object.assign(new Error(`모르는 설정: ${k}`), { code: 'bad_request' });
+    if (!d) throw Object.assign(new Error(`알 수 없는 설정입니다: ${k}`), { code: 'bad_request' });
     if (d.type === 'boolean') {
       const b = typeof v === 'boolean' ? v : BOOL[String(v).toLowerCase()];
-      if (b === undefined) throw Object.assign(new Error(`${k}는 참/거짓`), { code: 'bad_request' });
+      if (b === undefined) throw Object.assign(new Error(`${k}에는 true 또는 false를 지정하세요.`), { code: 'bad_request' });
       out[k] = b;
     } else if (d.type === 'number') {
       const n = typeof v === 'number' ? v : Number(String(v).trim());
-      if (!Number.isInteger(n) || n < d.min || n > d.max) throw Object.assign(new Error(`${k}는 ${d.min}~${d.max}의 정수`), { code: 'bad_request' });
+      if (!Number.isInteger(n) || n < d.min || n > d.max) throw Object.assign(new Error(`${k}: ${d.min}~${d.max} 범위의 정수를 입력하세요.`), { code: 'bad_request' });
       out[k] = n;
     } else if (d.type === 'choice') {
       const c = String(v ?? '').trim();
-      if (!d.options.includes(c)) throw Object.assign(new Error(`${k}는 ${d.options.map((o) => o || '(빈 값)').join(', ')} 가운데 하나`), { code: 'bad_request' });
+      if (!d.options.includes(c)) throw Object.assign(new Error(`${k}: ${d.options.map((o) => o || '(빈 값)').join(', ')} 중 하나를 지정하세요.`), { code: 'bad_request' });
       out[k] = c;
     } else if (d.type === 'string') {
       const t = String(v ?? '').trim();
-      if (t.length > d.max || (d.pattern && !d.pattern.test(t))) throw Object.assign(new Error(`${k}: 맞지 않는 값(${d.max}자까지${d.pattern ? `, ${d.hint || '영문·숫자·._:/[]-만'}` : ''})`), { code: 'bad_request' });
+      if (t.length > d.max || (d.pattern && !d.pattern.test(t))) throw Object.assign(new Error(`${k}: 유효하지 않은 값입니다 (${d.max}자까지${d.pattern ? `, ${d.hint || '영문·숫자·._:/[]-만'}` : ''})`), { code: 'bad_request' });
       out[k] = t;
     }
   }

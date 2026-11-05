@@ -285,7 +285,7 @@ test('켬 → 끔: 살아 있는 세션은 끔의 수명으로 늘어나고 쿠�
     assert.equal(r.settings.remotePasskey, false); assert.equal(r.passkey.closed, 0);
     await wait(30);
     const offLine = (await wsCall(local.ws, 'remote.log', { limit: 50 })).result.entries.find((e) => e.event === 'passkey.off');
-    assert.ok(offLine); assert.match(formatLogEntry(offLine), /패스키로 확인 끔/);
+    assert.ok(offLine); assert.match(formatLogEntry(offLine), /패스키 인증 사용 안 함/);
     // 12시간·끊긴 30분이 지나도 살아 있다
     b.clock.off = 40 * DAY; b.web.sweepSessions();
     const m = await me(b, a.cookie);

@@ -137,7 +137,7 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   assert.match(skill, /^---\nname: atrium\n/); assert.match(old, /^---\nname: delegate\n/);
   assert.equal(skill.split('\n---\n')[1], old.split('\n---\n')[1]); // 몸글이 같다(돌던 세션이 옛 이름을 불러도 새 글)
   assert.ok(!skill.includes('mtask') && !skill.includes('multitask'));
-  for (const w of ['atrium child', '--worktree', '--prompt', '--model', '--effort', 'herdr agent wait', 'herdr agent prompt', 'herdr agent read', 'atrium child-kill', 'atrium child-wait', 'needs_trust', 'needs_commit', '판에서 @wt1 노드의 신뢰 질문에 답해 주세요.', 'git worktree add', '--session', '상한은 없다', '사용자가 말하지 않아도', '완료 기준']) assert.ok(skill.includes(w), w);
+  for (const w of ['atrium child', '--worktree', '--prompt', '--model', '--effort', 'herdr agent wait', 'herdr agent prompt', 'herdr agent read', 'atrium child-kill', 'atrium child-wait', 'needs_trust', 'needs_commit', '보드에서 @wt1 카드의 신뢰 질문에 답해 주세요.', 'git worktree add', '--session', '상한은 없다', '사용자가 말하지 않아도', '완료 기준']) assert.ok(skill.includes(w), w);
   for (const w of ['상한(', '개, 깊이', '판 밖 터미널을 열라고 한다']) assert.ok(!skill.includes(w), w);
   // 길이: P8 delegate 글(3107바이트)의 두 배를 넘지 않는다
   assert.ok(Buffer.byteLength(skill) <= 2 * 3107, `skill ${Buffer.byteLength(skill)}B`);
@@ -156,7 +156,7 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
 });
 
 test('K3(P36): 상한 설정이 없다. 판 기록에 남은 옛 키는 오류 없이 무시한다', () => {
-  for (const k of ['branchMaxChildren', 'branchMaxDepth', 'branchMaxTotal']) assert.throws(() => normalizePatch({ [k]: 2 }), /모르는 설정/);
+  for (const k of ['branchMaxChildren', 'branchMaxDepth', 'branchMaxTotal']) assert.throws(() => normalizePatch({ [k]: 2 }), /알 수 없는 설정/);
   const d = tmp(); const store = new Store(path.join(d, 'b.db'));
   store.setMeta('settings', { branchMaxChildren: 4, branchMaxDepth: 3, branchMaxTotal: 2, tray: false });
   const st = new Settings({ store, broadcast: () => {} });
@@ -244,7 +244,7 @@ test('K1: 하위 세션은 부모의 폴더·모델·노력 수준·권한 모�
   assert.equal(sum.depth, 2); assert.equal(sum.parentName, 'lead'); assert.equal(sum.role, '워커'); assert.equal(sum.child, true);
   assert.equal(b.branch.summaryExtra(lead).branch.children, 2);
   // 워크트리는 git 저장소에서만
-  await assert.rejects(b.branch.spawnChild(lead, { name: 'w3', worktree: 'feat', wait: false }), /git 저장소/);
+  await assert.rejects(b.branch.spawnChild(lead, { name: 'w3', worktree: 'feat', wait: false }), /Git 저장소/);
   await assert.rejects(b.branch.spawnChild(lead, { name: 'w3', kind: 'shell', wait: false }), /에이전트만/);
   // P36: 커밋이 없는 저장소는 needs_commit 한 문장(판은 빈 커밋을 만들지 않는다)
   const repo = tmp();
@@ -260,7 +260,7 @@ test('K1: 하위 세션은 부모의 폴더·모델·노력 수준·권한 모�
   const g = await b.branch.spawnChild(lead, { name: 'w3', cwd: repo, worktree: 'feat', prompt: 'do it', wait: false });
   assert.equal(b.spawned.at(-1).worktree, null); assert.equal(b.spawned.at(-1).branch.gate, 'trust');
   assert.equal(g.status, 'needs_trust'); assert.equal(g.needsTrust, true); assert.equal(g.gate, 'trust'); assert.equal(g.worktree, 'feat');
-  assert.equal(g.tellHuman, '판에서 @w3 노드의 신뢰 질문에 답해 주세요.');
+  assert.equal(g.tellHuman, '보드에서 @w3 카드의 신뢰 질문에 답해 주세요.');
   assert.equal(g.next.wait, 'atrium child-wait w3');
   assert.ok(b.branch.holds(g.sessionId)); // 판의 전달(첫 지시)은 관문을 지날 때까지 멈춘다
   fs.writeFileSync(b.cfg.claudeJson, JSON.stringify({ projects: { [repo.split(path.sep).join('/')]: { hasTrustDialogAccepted: true } } }));
@@ -268,7 +268,7 @@ test('K1: 하위 세션은 부모의 폴더·모델·노력 수준·권한 모�
   assert.equal(b.spawned.at(-1).worktree, 'feat2'); assert.equal(wt.worktree, 'feat2'); assert.equal(wt.needsTrust, false); assert.equal(wt.tellHuman, null);
   // P36: --effort가 물려받기를 덮는다. 맞지 않는 값은 거부
   assert.equal(b.spawned.at(-1).effort, 'high'); assert.equal(wt.effort, 'high');
-  await assert.rejects(b.branch.spawnChild(lead, { name: 'w5', effort: 'huge', wait: false }), /노력 수준/);
+  await assert.rejects(b.branch.spawnChild(lead, { name: 'w5', effort: 'huge', wait: false }), /추론 수준/);
 });
 
 test('P36: 신뢰 예상 — 커밋 없는 저장소는 상위 폴더의 신뢰를 물려받고, 커밋이 생기면 저장소 루트에서 멈춘다', async () => {
@@ -309,7 +309,7 @@ test('P36: 신뢰 관문 — ready가 되면 claude -w로 다시 띄우고, 관�
   child.rt.herdr = { ...child.rt.herdr, status: 'blocked', present: true, launchPending: true, agentSessionId: null };
   child.rt.trustScreen = { at: Date.now() };
   const w = await b.branch.waitChild(lead, { name: 'wt1' });
-  assert.equal(w.status, 'needs_trust'); assert.equal(w.tellHuman, '판에서 @wt1 노드의 신뢰 질문에 답해 주세요.'); assert.equal(w.gated, true); assert.equal(w.timeout, true);
+  assert.equal(w.status, 'needs_trust'); assert.equal(w.tellHuman, '보드에서 @wt1 카드의 신뢰 질문에 답해 주세요.'); assert.equal(w.gated, true); assert.equal(w.timeout, true);
   b.bus.emit('session', child, { state: 'trust_wait' });
   assert.equal(calls.length, 0); // 신뢰 질문에는 아무것도 보내지 않는다
   assert.ok(b.branch.holds(child.sessionId));
@@ -432,7 +432,7 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     assert.ok(env.ATRIUM_SESSION_TOKEN !== b.apiToken && env.ATRIUM_SESSION_TOKEN.length === 64); // 판 API 토큰이 아니다
     const ok = await runChild(['child', 'w1', '--no-wait'], env);
     assert.equal(ok.code, 0, ok.stderr);
-    assert.match(ok.stdout, /하위 세션을 만들었다: @w1 \(herdr 이름 w1/);
+    assert.match(ok.stdout, /하위 세션을 생성했습니다: @w1 \(herdr 이름 w1/);
     assert.match(ok.stdout, /일 시키기: herdr agent prompt w1/);
     const ls = await runChild(['children'], env);
     assert.match(ls.stdout, /@lead\(1단계\)의 하위 세션 1개/);
@@ -446,9 +446,9 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     const nobody = await runChild(['children'], { ...env, ATRIUM_SESSION_ID: 'nope' });
     assert.match(nobody.stderr, /not_on_board/);
     const other = await runChild(['children'], { ...env, ATRIUM_HERDR_SESSION: 'atrium' });
-    assert.match(other.stderr, /다른 판이 답했다/);
+    assert.match(other.stderr, /다른 보드에서 응답했습니다/);
     const noenv = await runChild(['child'], {});
-    assert.match(noenv.stderr, /판이 띄운 세션이 아니다/);
+    assert.match(noenv.stderr, /보드에서 시작한 세션이 아닙니다/);
     const nope = await runChild(['kill', 'w1'], env);
     assert.equal(nope.code, 2); assert.match(nope.stderr, /child, children, child-kill, child-wait, wake, models만/);
     const five = await runChild(['child-kill', 'lead'], env);

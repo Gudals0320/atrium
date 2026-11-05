@@ -141,18 +141,18 @@ export function screenAnswerText(text, n = 20) {
 // --session·--machine은 쓰지 않는다. 패널 안의 herdr 명령은 판 전용 세션에 붙는다(HERDR_SESSION, HERDR_SOCKET_PATH).
 export function roleNotice({ role, agentName, paneId, kind = 'claude' }) {
   return [
-    `[Atrium 판] 연결 알림: herdr 에이전트 \`${agentName}\`(패널 ${paneId}, 종류 ${kind})가 너의 "${role}"이다.`,
+    `[Atrium 보드] 연결 알림: herdr 에이전트 \`${agentName}\`(패널 ${paneId}, 종류 ${kind})가 너의 "${role}"이다.`,
     `앞으로 "${role}에게 맡겨"처럼 이 역할을 부르면, herdr 스킬로 이 에이전트에게 일을 시키고 답을 받아 와라.`,
     `일 시키기: herdr agent prompt ${agentName} "<할 일>" --wait`,
-    `답 읽기: herdr agent read ${agentName} --source recent-unwrapped --lines 80`,
+    `응답 읽기: herdr agent read ${agentName} --source recent-unwrapped --lines 80`,
     '이 알림에는 "알겠다"고만 답해라.',
   ].join('\n');
 }
 export function unlinkNotice({ role, agentName }) {
-  return `[Atrium 판] 연결 해제: herdr 에이전트 \`${agentName}\`는 더 이상 너의 "${role}"가 아니다. 이 역할로 일을 시키지 마라. 이 알림에는 "알겠다"고만 답해라.`;
+  return `[Atrium 보드] 연결 해제: herdr 에이전트 \`${agentName}\`는 더 이상 너의 "${role}"가 아니다. 이 역할로 일을 시키지 마라. 이 알림에는 "알겠다"고만 답해라.`;
 }
 export function paneChangedNotice({ role, agentName, paneId }) {
-  return `[Atrium 판] 연결 갱신: 너의 "${role}" \`${agentName}\`의 패널이 ${paneId}로 바뀌었다. 이름(${agentName})으로 부르면 그대로 된다. 이 알림에는 "알겠다"고만 답해라.`;
+  return `[Atrium 보드] 연결 갱신: 너의 "${role}" \`${agentName}\`의 패널이 ${paneId}로 바뀌었다. 이름(${agentName})으로 부르면 그대로 된다. 이 알림에는 "알겠다"고만 답해라.`;
 }
 
 export const ROLE_RE = /^[^\n\r"`$\\]{1,40}$/;
@@ -212,7 +212,7 @@ export function facingSides(a, b) {
 export function linkLabel(link, max = 48) {
   const parts = [];
   if (link.role) parts.push(link.role);
-  else if (link.spawned && !link.lastText) parts.push('띄움');
+  else if (link.spawned && !link.lastText) parts.push("세션 생성");
   if (link.lastText) { const t = String(link.lastText).replace(/\s+/g, ' ').trim(); parts.push(`"${t.length > max ? t.slice(0, max - 1) + '…' : t}"`); }
   return parts.join(' · ');
 }

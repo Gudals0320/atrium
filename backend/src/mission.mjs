@@ -28,7 +28,7 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
     const active = l.lastKind === 'prompt' || l.lastKind === 'target_working' || l.lastKind === 'target_submitted';
     if (l.role) add({ ...base, kind: 'role', label: l.role, active });
     if (l.observed) add({ ...base, kind: 'prompt', label: clip(l.lastText, 80), active });
-    if (l.spawned) add({ ...base, kind: 'spawn', label: '띄움', active: false });
+    if (l.spawned) add({ ...base, kind: 'spawn', label: "세션 생성", active: false });
   }
 
   // 명령 바 전달(Thread): 사람 → 세션. 같은 대상은 한 선으로 모아 횟수와 마지막 글을 붙인다
@@ -59,7 +59,7 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
   for (const e of edges) if ((e.kind === 'role' || e.kind === 'prompt' || e.kind === 'spawn') && e.from.startsWith('s:')) directs.set(e.from, (directs.get(e.from) || 0) + 1);
 
   const counts = { all: 0, working: 0, needs_you: 0, idle: 0, done: 0, exited: 0 };
-  const nodes = [{ id: HUMAN_ID, kind: 'human', name: '사람(명령 바)', column: 0 }];
+  const nodes = [{ id: HUMAN_ID, kind: 'human', name: "사용자 (명령 입력줄)", column: 0 }];
   for (const s of sessions) {
     const cat = categoryOf(s);
     counts.all++; counts[cat]++;

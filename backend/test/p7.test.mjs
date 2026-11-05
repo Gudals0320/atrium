@@ -135,7 +135,7 @@ test('J4: claude 명령줄의 --resume·--session-id·-r에서 대화 ID를 읽�
   assert.deepEqual([...m.entries()].map(([k, v]) => [k, v.pid]).sort(), [[ID(1), 10], [ID(2), 11], [ID(3), 12]]);
 });
 
-test('J4: 묶임 판정 순서 — 세션 파일, 명령줄, 데스크톱 목록, 대화 기록의 출처, 출처 모름·sdk, 방금 기록됨. 확실하지 않으면 묶인 것으로 본다', () => {
+test('J4: 묶임 판정 순서 — 세션 파일, 명령줄, 데스크톱 목록, 대화 기록의 출처, 출처 모름·sdk, 최근 활동 감지. 확실하지 않으면 묶인 것으로 본다', () => {
   const now = 10_000_000;
   const base = { convId: ID(1), entrypoints: ['cli'], mtime: now - RECENT_WRITE_MS - 1, now };
   assert.deepEqual(bindingOf(base), { bound: false });
@@ -149,7 +149,7 @@ test('J4: 묶임 판정 순서 — 세션 파일, 명령줄, 데스크톱 목록
   const u = bindingOf({ ...base, entrypoints: [] });
   assert.equal(u.bound, true); assert.equal(u.sure, false);
   assert.match(bindingOf({ ...base, entrypoints: ['sdk-cli'] }).label, /sdk-cli/);
-  assert.match(bindingOf({ ...base, mtime: now - 1000 }).label, /방금 기록됨/);
+  assert.match(bindingOf({ ...base, mtime: now - 1000 }).label, /최근 활동 감지/);
   // 세션 파일이 데스크톱 목록보다 먼저(지금 열려 있는 곳)
   assert.equal(bindingOf({ ...base, live: new Map([[ID(1), { pid: 1 }]]), desktop: new Map([[ID(1), {}]]) }).where, 'terminal');
 });
@@ -302,7 +302,7 @@ test('J2: 닫힌 claude를 다시 열면 같은 세션 ID로 이어 간다(--res
   assert.ok(fs.readFileSync(row.settingsPath, 'utf8').includes(row.hookToken));
   assert.deepEqual(b.store.nodeOf(ID(2)), { session_id: ID(2), x: 100, y: 200, w: 720, h: 460, z: 0, size: null, area: '' }); // P27: area(본 저장소 영역)
   assert.ok(b.calls.some((c) => c[0] === 'registerResume'));
-  await assert.rejects(r.reopen({ session: ID(2) }), /닫힌 세션이 아니다/);
+  await assert.rejects(r.reopen({ session: ID(2) }), /닫힌 세션이 아닙니다/);
 });
 
 test('J2: 대화 기록이 없는 claude는 같은 --session-id로 새로, 셸은 같은 폴더에 새 셸, 다른 종류는 띄울 때의 인자로. 이름이 쓰이고 있으면 바꾸고 자리가 차면 빈자리', async () => {

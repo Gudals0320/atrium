@@ -275,7 +275,7 @@ function evenTree(kind, ids) {
 // 고른 노드(ids, 채울 순서)를 틀로 짠 나무. 칸보다 적으면 빈 칸은 없앤다. 많으면 남는 노드는 마지막 칸을 그 칸의 마디와 다른 방향으로 다시 나눠 넣는다
 export function presetTree(name, ids) {
   const p = PRESETS[name];
-  if (!p) throw new Error(`없는 배치 틀: ${name}`);
+  if (!p) throw new Error(`분할 레이아웃을 찾을 수 없습니다: ${name}`);
   if (p.line) return normalize({ dir: p.line, kids: [...ids], ratios: ids.map(() => 1) });
   if (p.even) return evenTree(p.even, [...ids]);
   const k = cells(p.tree);

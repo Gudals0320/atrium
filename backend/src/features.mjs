@@ -91,10 +91,10 @@ export function attachFeatures(b, { timers = true } = {}) {
   const loopCreate = (p) => {
     if (!p.session) throw apiError('bad_request', 'session required');
     const s = b.resolve(p.session);
-    if (s.kind === SHELL) throw keyed(apiError('not_agent', `@${s.name}은 일반 셸이다. 루프는 에이전트에게만 건다`), 'shellNoLoop', { name: s.name });
+    if (s.kind === SHELL) throw keyed(apiError('not_agent', `@${s.name} 세션은 일반 셸입니다. 반복 작업은 에이전트 세션에서만 사용할 수 있습니다.`), 'shellNoLoop', { name: s.name });
     const target = { kind: 'session', id: s.sessionId, name: s.name };
     const trigger = normalizeTrigger(p.trigger), stop = normalizeStop(p.stop || {});
-    if (!String(p.prompt || '').trim()) throw apiError('bad_request', '보낼 지시가 없다');
+    if (!String(p.prompt || '').trim()) throw apiError('bad_request', "보낼 요청을 입력하세요.");
     if (!p.confirm) return confirmResult(describeLoop({ targetLabel: `@${target.name}`, prompt: p.prompt, trigger, stop }), describeLoopMsg({ target: `@${target.name}`, prompt: p.prompt, trigger, stop }));
     const v = f.loops.create({ target, prompt: p.prompt, trigger, stop });
     store.addEvent(target.id, 'loop_created', { loopId: v.loopId, target, trigger, stop });

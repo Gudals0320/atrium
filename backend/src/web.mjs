@@ -251,7 +251,7 @@ const NO_BUILD = `<!doctype html><html><head><meta charset="utf-8"><title>Atrium
 // P58: 원격 받기가 꺼진 동안 바깥에서 온 화면 요청에 주는 쪽(15초마다 다시 읽는다)
 const BLOCKED_PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="15"><title>Atrium</title><style>body{background:#070705;color:#e9e6dc;font:15px/1.6 system-ui,sans-serif;margin:0;display:grid;place-items:center;height:100vh}div{max-width:520px;padding:24px}</style></head>
 <body><div data-role="remote-blocked"><h2>Remote access is blocked on the PC</h2><p>Someone at the PC turned off remote access to this board. This page tries again every 15 seconds.</p>
-<h2>PC에서 원격을 막았습니다</h2><p>PC에서 이 보드의 원격 받기를 껐습니다. 이 페이지는 15초마다 다시 시도합니다.</p></div></body></html>`;
+<h2>원격 접속이 차단되어 있습니다</h2><p>PC에서 이 보드의 원격 접속을 차단했습니다. 이 페이지는 15초마다 다시 시도합니다.</p></div></body></html>`;
 
 export class StaticFiles {
   constructor(dir) { this.dir = dir; this.zipped = new Map(); }

@@ -161,9 +161,9 @@ function lev(a, b) {
 
 // 한 줄 설명(atrium models, 후보 목록)
 export function describeEntry(e) {
-  if (e.source === 'launcher') return `호출자 ${e.launcher} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness} · 모델 ${e.model || '(하네스 기본)'}${e.gateway ? ` · 게이트웨이 경유(${e.gateway})` : ''}`;
+  if (e.source === 'launcher') return `런처 ${e.launcher} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness} · 모델 ${e.model || '(하네스 기본)'}${e.gateway ? ` · 게이트웨이 경유(${e.gateway})` : ''}`;
   if (e.source === 'harness') return `${HARNESSES[e.harness].label} 모델 ${e.model}${e.aliases && e.aliases.length ? `(별칭 ${e.aliases.join(', ')})` : ['opus', 'sonnet', 'haiku'].includes(e.model) ? '(Claude Code 별칭)' : ''}`;
-  return `게이트웨이 모델 ${e.label || e.model} · Claude Code · 게이트웨이 경유(${e.gateway}${e.host ? `, 호출자 ${e.host}의 env` : ''})`;
+  return `게이트웨이 모델 ${e.label || e.model} · Claude Code · 게이트웨이 경유(${e.gateway}${e.host ? `, 런처 ${e.host}의 env` : ''})`;
 }
 export const candidateLines = (list) => list.map((e) => `  - ${describeEntry(e)}\n    ${e.command}`).join('\n');
 
@@ -175,7 +175,7 @@ export async function fetchGatewayModels(baseUrl, { timeoutMs = 2000, fetchImpl 
     if (!r.ok) return { ok: false, why: `HTTP ${r.status}` };
     const j = await r.json().catch(() => null);
     const data = j && Array.isArray(j.data) ? j.data : null;
-    if (!data) return { ok: false, why: '모델 목록이 아니다' };
+    if (!data) return { ok: false, why: "유효한 모델 목록이 아닙니다." };
     return { ok: true, models: data.filter((m) => m && typeof m.id === 'string').map((m) => ({ id: m.id, display_name: m.display_name || null, owned_by: m.owned_by || null })) };
   } catch (e) { return { ok: false, why: e && e.name === 'TimeoutError' ? 'timeout' : (e && e.cause && e.cause.code) || (e && e.message) || 'unreachable' }; }
 }

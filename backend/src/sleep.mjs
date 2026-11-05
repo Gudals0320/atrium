@@ -250,7 +250,7 @@ export class Sleeper {
     const pl = this.plan(key, 'hand');
     if (pl.why) {
       const repo = this.repoName(key);
-      throw keyed(apiError(`sleep_${pl.why}`, `리포 ${repo}는 지금 잠재우지 않는다: ${pl.who ? `@${pl.who} ` : ''}${pl.why}`), 'repoSleepRefused', { repo, name: pl.who ? `@${pl.who}` : '', reason: m(`sleepWhy_${pl.why}`) });
+      throw keyed(apiError(`sleep_${pl.why}`, `리포 ${repo} 프로젝트를 지금 절전 모드로 전환할 수 없습니다: ${pl.who ? `@${pl.who} ` : ''}${pl.why}`), 'repoSleepRefused', { repo, name: pl.who ? `@${pl.who}` : '', reason: m(`sleepWhy_${pl.why}`) });
     }
     return this.sleepRepo(key, { by: 'hand', mode: 'hand' });
   }
@@ -331,7 +331,7 @@ export class Sleeper {
       // 재는 동안 이 세션에 일이 들어왔으면 그만둔다(리포의 다른 세션은 sleepRepo가 세션마다 다시 본다)
       const x = { ...this.info(s), closing: false };
       const why = sleepTarget(x) || sessionActivity(x, { mode });
-      if (why) throw keyed(apiError(`sleep_${why}`, `@${s.name}은 지금 잠재우지 않는다: ${why}`), 'sleepRefused', { name: s.name, reason: m(`sleepWhy_${why}`) });
+      if (why) throw keyed(apiError(`sleep_${why}`, `@${s.name} 세션을 지금 절전 모드로 전환할 수 없습니다: ${why}`), 'sleepRefused', { name: s.name, reason: m(`sleepWhy_${why}`) });
       const conv = convoOf(s, b.cfg.claudeProjects);
       const prev = { state: deriveState(rt).state, lastPrompt: rt.lastPrompt, lastAnswer: rt.lastAnswer };
       // 지금부터 sleeping으로 보인다(전달은 기다리고 깨우기를 부른다. claude가 끝나는 동안 exited로 깜빡이지 않는다)
@@ -343,7 +343,7 @@ export class Sleeper {
         await b.adapter.sendText(s.paneId, '/exit'); await sleep(150); await b.adapter.paneKeys(s.paneId, ['enter']);
         const t = Date.now();
         while (rt.herdr.present && Date.now() - t < b.cfg.killWaitMs) await sleep(200);
-        if (rt.herdr.present) { rt.sleep = null; rt.exitRequested = false; b.broadcastSession(s, { cause: 'sleep:failed' }); throw apiError('still_running', `@${s.name}의 claude가 /exit 뒤에도 끝나지 않았다`); }
+        if (rt.herdr.present) { rt.sleep = null; rt.exitRequested = false; b.broadcastSession(s, { cause: 'sleep:failed' }); throw apiError('still_running', `@${s.name} 세션의 claude 프로세스가 /exit 후에도 종료되지 않았습니다.`); }
         steps.push(`/exit ${Date.now() - t}ms`);
       }
       const shared = await b.adapter.workspacePanes(s.herdrWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => []);
@@ -394,7 +394,7 @@ export class Sleeper {
     let created = null;
     try {
       b.requireHerdr();
-      if (!s.cwd || !fs.existsSync(s.cwd)) throw keyed(apiError('no_folder', `폴더가 없다: ${s.cwd}`), 'noFolder', { path: s.cwd });
+      if (!s.cwd || !fs.existsSync(s.cwd)) throw keyed(apiError('no_folder', `폴더를 찾을 수 없습니다: ${s.cwd}`), 'noFolder', { path: s.cwd });
       const conv = convoOf(s, b.cfg.claudeProjects);
       const { plan, args } = wakeArgs(b.launchOf(s), conv);
       created = await b.withNewPane(() => b.adapter.createWorkspace({ cwd: s.cwd, label: s.name }), (r) => {
@@ -414,16 +414,16 @@ export class Sleeper {
       let state = deriveState(s.rt).state;
       for (const tw = Date.now(); Date.now() - tw < this.wakeReadyMs; ) {
         state = deriveState(s.rt).state;
-        if (s.rt.exit) throw apiError('resume_failed', `claude가 이어 가자마자 끝났다(${s.rt.exit.kind}${s.rt.exit.reason ? `: ${s.rt.exit.reason}` : ''})`);
+        if (s.rt.exit) throw apiError('resume_failed', `대화를 재개한 직후 claude 프로세스가 종료되었습니다 (${s.rt.exit.kind}${s.rt.exit.reason ? `: ${s.rt.exit.reason}` : ''})`);
         if (['ready', 'working', 'waiting', 'trust_wait', 'error'].includes(state)) break;
-        if (!b.sessions.has(s.sessionId)) throw apiError('closed', '깨우는 동안 세션이 닫혔다');
+        if (!b.sessions.has(s.sessionId)) throw apiError('closed', "작업을 재개하는 동안 세션이 닫혔습니다.");
         await sleep(200);
       }
-      if (!['ready', 'working', 'waiting', 'trust_wait', 'error'].includes(state)) throw apiError('timeout', `${Math.round(this.wakeReadyMs / 1000)}초 안에 준비되지 않았다`);
+      if (!['ready', 'working', 'waiting', 'trust_wait', 'error'].includes(state)) throw apiError('timeout', `${Math.round(this.wakeReadyMs / 1000)}초 안에 준비되지 않았습니다.`);
       // 이어 간 직후 herdr가 idle을 알려도 Claude Code 입력 칸이 아직 Enter를 받지 않을 때가 있다(P21 창 시험: 깬 직후 보낸 글이 제출되지 않고 입력 칸에 남음).
       // 깨우는 중(s.waking)인 동안 전달은 starting으로 기다리므로 잠깐 더 둔다
       if (state === 'ready' && this.settleMs) await sleep(this.settleMs);
-      if (s.rt.exit) throw apiError('resume_failed', `claude가 이어 가자마자 끝났다(${s.rt.exit.kind})`);
+      if (s.rt.exit) throw apiError('resume_failed', `대화를 재개한 직후 claude 프로세스가 종료되었습니다 (${s.rt.exit.kind})`);
       state = deriveState(s.rt).state;
       s.wokeAt = Date.now(); s.waking = null; s.draft = false;
       const out = { woke: true, name: s.name, why, plan, convId: conv.convId, state, ms: Date.now() - t0, sleptMs: t0 - (z.at || t0), paneId: s.paneId };
@@ -454,7 +454,7 @@ export class Sleeper {
       }
       b.store.addEvent(s.sessionId, 'wake_failed', { why, error, ms: Date.now() - t0 });
       b.log(`wake ${s.name} failed: ${error.code} ${error.message}`);
-      throw keyed(apiError(error.code === 'herdr_down' ? 'herdr_down' : 'wake_failed', `@${s.name}을 깨우지 못했다: ${error.message}`), 'wakeFailed', { name: s.name, error: error.message });
+      throw keyed(apiError(error.code === 'herdr_down' ? 'herdr_down' : 'wake_failed', `@${s.name} 세션의 작업을 재개하지 못했습니다: ${error.message}`), 'wakeFailed', { name: s.name, error: error.message });
     }
   }
 }

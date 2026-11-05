@@ -1,4 +1,4 @@
-// P17 단위 시험: 붙여 묶기의 분할 나무(dock-tree.mjs)와 판 API(canvas-ops.mjs). 넣기, 빼기, 정리, 비율(분할선), 배치 틀, 옛 한 줄 행 바꾸기,
+// P17 단위 시험: 붙여 묶기의 분할 나무(dock-tree.mjs)와 판 API(canvas-ops.mjs). 넣기, 빼기, 정리, 비율(분할선), 분할 레이아웃, 옛 한 줄 행 바꾸기,
 // 붙을 자리(Ctrl+끌기), 덩어리 안 노드 닫기, 바깥 크기, 다시 열어도 같은 나무. herdr와 claude 없이 돈다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -107,7 +107,7 @@ test('비율: 분할선은 그 마디의 두 쪽만 바꾸고(합 그대로), �
   assert.deepEqual([o.w, ...Object.values(rectsOf(tree, o)).map((r) => r.x)], [1920, 100, 700, 1540]);
 });
 
-test('배치 틀: 1+2, 2+1, 2×2, 가로·세로 셋, 한 줄. 칸보다 적으면 빈 칸을 없애고, 많으면 마지막 칸을 다시 나눈다', () => {
+test('분할 레이아웃: 1+2, 2+1, 2×2, 가로·세로 셋, 한 줄. 칸보다 적으면 빈 칸을 없애고, 많으면 마지막 칸을 다시 나눈다', () => {
   const ids = ['a', 'b', 'c', 'd', 'e'];
   assert.deepEqual(presetTree('main-left', ids.slice(0, 3)), { dir: 'row', kids: ['a', { dir: 'col', kids: ['b', 'c'], ratios: [0.5, 0.5] }], ratios: [0.6, 0.4] });
   assert.deepEqual(presetTree('main-right', ids.slice(0, 3)), { dir: 'row', kids: [{ dir: 'col', kids: ['a', 'b'], ratios: [0.5, 0.5] }, 'c'], ratios: [0.4, 0.6] });
@@ -121,7 +121,7 @@ test('배치 틀: 1+2, 2+1, 2×2, 가로·세로 셋, 한 줄. 칸보다 적으�
   assert.deepEqual(presetSize('row', 4, NODE), { w: 2880, h: 460 });
   assert.deepEqual(presetSize('col3', 3, NODE), { w: 720, h: 1380 });
   for (const name of Object.keys(PRESETS)) { const t = presetTree(name, ids); assert.ok(tiles(t, R(0, 0, 2000, 1500)), name); assert.deepEqual(leaves(t).sort(), [...ids].sort(), name); }
-  assert.throws(() => presetTree('nope', ids), /배치 틀/);
+  assert.throws(() => presetTree('nope', ids), /분할 레이아웃/);
 });
 
 test('옛 한 줄 행: 노드 크기 비율의 한 마디 나무로 바꾼다(모양 그대로)', () => {
@@ -188,7 +188,7 @@ test('API: 가로 덩어리 아래에 붙이기, 덩어리 안 노드 하나의 
   assert.deepEqual(ops.dockOuter(b, d), R(0, 0, 1440, 920));
   assert.deepEqual(d.members, ['id-a', 'id-d', 'id-b', 'id-c']);
   assert.deepEqual([at('a').w, at('d').w, at('b'), at('c')], [360, 360, R(720, 0, 720, 460), R(0, 460, 1440, 460)]);
-  assert.throws(() => ops.dockAttach(b, { session: 'x', to: 'a', side: 'right' }), /워크스페이스/);
+  assert.throws(() => ops.dockAttach(b, { session: 'x', to: 'a', side: 'right' }), /프로젝트/);
   assert.throws(() => ops.dockAttach(b, { session: 'a', to: 'b', side: 'right', at: 'middle' }), /at/);
   assert.ok(b.events.some((e) => e.event === 'board.changed'));
   b.store.close();
@@ -210,7 +210,7 @@ test('API: 3분할을 끌기로(왼쪽 크게 + 오른쪽 위아래)와 틀로, 
   assert.equal(shape(r.dock), '{"dir":"col","kids":[{"dir":"row","kids":["d","a"],"ratios":[0.5,0.5]},{"dir":"row","kids":["b","c"],"ratios":[0.5,0.5]}],"ratios":[0.5,0.5]}');
   assert.deepEqual([at('d'), at('a'), at('b'), at('c')], [R(6000, 0), R(6720, 0), R(6000, 460), R(6720, 460)], '첫 노드 자리에서 칸마다 보통 크기');
   assert.equal(b.store.docks().length, 1);
-  assert.throws(() => ops.dockLayout(b, { members: ['a'], preset: 'nope' }), /배치 틀/);
+  assert.throws(() => ops.dockLayout(b, { members: ['a'], preset: 'nope' }), /분할 레이아웃/);
   b.store.close();
 });
 
@@ -223,7 +223,7 @@ test('API: 분할선(나무 통째로), 바깥 크기, 덩어리째 옮기기, �
   const t2 = moveDivider(dock.tree, outer, [1], 0, 120);
   ({ dock } = ops.dockUpdate(b, { dock: dock.dockId, tree: t2 }));
   assert.deepEqual([at('b').h, at('c').h], [580, 340]);
-  assert.throws(() => ops.dockUpdate(b, { dock: dock.dockId, tree: { dir: 'row', kids: ['id-a', 'id-b'], ratios: [1, 1] } }), /구성 노드/);
+  assert.throws(() => ops.dockUpdate(b, { dock: dock.dockId, tree: { dir: 'row', kids: ['id-a', 'id-b'], ratios: [1, 1] } }), /구성 카드/);
   // 바깥 크기: 비율대로
   ops.dockUpdate(b, { dock: dock.dockId, w: 2880, h: 1840 });
   assert.deepEqual([at('a'), at('b'), at('c')], [R(0, 0, 1728, 1840), R(1728, 0, 1152, 1160), R(1728, 1160, 1152, 680)]);

@@ -12,7 +12,7 @@ import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs'; // P17: 덩어리 분할 나무
 
 let DatabaseSync;
-try { ({ DatabaseSync } = await import('node:sqlite')); } catch (e) { throw new Error(`node:sqlite를 불러오지 못했다(Node 22.13 이상이 필요하다): ${e.message}`); }
+try { ({ DatabaseSync } = await import('node:sqlite')); } catch (e) { throw new Error(`node:sqlite를 불러오지 못했습니다 (Node 22.13 이상 필요): ${e.message}`); }
 
 const SCHEMA = `
 PRAGMA journal_mode = WAL;

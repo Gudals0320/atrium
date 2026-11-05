@@ -185,7 +185,7 @@ export class DesktopImport {
   }
   guard() {
     const g = importAllowed(this.cfg);
-    if (!g.ok) throw keyed(apiError('import_blocked', `데스크톱 앱 가져오기를 이 판에서 쓸 수 없다(${g.reason}). 개발용 판은 ATRIUM_CLAUDE_DESKTOP으로 데이터 폴더 안의 가짜 앱 목록을 준다`, { reason: g.reason }), 'desktopImportBlocked', { reason: g.reason });
+    if (!g.ok) throw keyed(apiError('import_blocked', `이 보드에서는 데스크톱 앱 가져오기를 사용할 수 없습니다 (${g.reason}). 개발용 보드에서는 ATRIUM_CLAUDE_DESKTOP으로 데이터 폴더 안의 테스트용 앱 목록을 지정하세요.`, { reason: g.reason }), 'desktopImportBlocked', { reason: g.reason });
   }
   fallback() {
     const L = this.b.features && this.b.features.launchers;
@@ -290,7 +290,7 @@ export class DesktopImport {
     const newId = this.newId();
     const src = await fs.promises.readFile(plan.source, 'utf8');
     const fork = forkText(src, newId);
-    if (!fork.lines) throw apiError('empty', '대화 기록이 비어 있다');
+    if (!fork.lines) throw apiError('empty', "대화 기록이 비어 있습니다.");
     const dest = transcriptPathFor(cfg.claudeProjects, plan.cwd, newId);
     await fs.promises.mkdir(path.dirname(dest), { recursive: true });
     await fs.promises.writeFile(dest, fork.text, { flag: 'wx' });

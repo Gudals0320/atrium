@@ -145,7 +145,7 @@ test('H2: 검색 — 이름, 질문, 요청, 답, 메모, 워크스페이스. �
   r = searchBoard({ q: 'multi', sessions, workspaces: ws });
   assert.deepEqual(r.map((x) => x.kind), ['workspace', 'session', 'session'], '워크스페이스 이름: 워크스페이스(영역) 먼저, 그 안 세션도');
   r = searchBoard({ q: '배포', sessions, workspaces: ws, texts: [{ sessionId: '3', field: 'history', text: '내일 배포 전에 다시 보기' }] });
-  assert.deepEqual(r.map((x) => [x.name, x.label]), [['test-bot', '지난 요청']]);
+  assert.deepEqual(r.map((x) => [x.name, x.label]), [['test-bot', '이전 요청']]);
   assert.deepEqual(searchBoard({ q: '  ', sessions }), []);
 });
 
@@ -233,7 +233,7 @@ test('H5: 덩어리 — 붙이기(덩어리 옆 새 칸), 다른 워크스페이
   r = ops.dockAttach(b, { session: 'm', to: 'a', side: 'left', at: 'dock' }); // P17: 덩어리 전체 왼쪽 새 칸(제 너비를 지킨다)
   assert.deepEqual(r.dock.members, ['id-m', 'id-a', 'id-n']);
   assert.deepEqual(rectOf(b, 'm'), { x: -NODE.w, y: 0, w: NODE.w, h: NODE.h }, '앞에 붙으면 덩어리가 그만큼 앞에서 시작');
-  assert.throws(() => ops.dockAttach(b, { session: 'x', to: 'n', side: 'right' }), /워크스페이스/);
+  assert.throws(() => ops.dockAttach(b, { session: 'x', to: 'n', side: 'right' }), /프로젝트/);
   // 분할선
   ops.dockUpdate(b, { dock: r.dock.dockId, sizes: [600, 840, 480] });
   assert.deepEqual([rectOf(b, 'm').x, rectOf(b, 'a').x, rectOf(b, 'n').x], [-NODE.w, -NODE.w + 600, -NODE.w + 1440]);

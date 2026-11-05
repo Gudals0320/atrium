@@ -49,5 +49,5 @@ test('연결 기록 줄: 패스키 없이 짝 맺음 표시, 패스키로 확인
     for (const k of ['check_passkey_on_ok', 'check_passkey_off_ok', 'check_passkey_skip']) assert.ok(d.remote[k], k);
   }
   // 스위치 설명은 끔과 켬의 차이(바로 열림, 휴대폰이나 이 기기의 패스키로 다시 확인)를 쓴다
-  assert.match(ko.passkeyMode.offHint, /바로 열립니다/); assert.match(ko.passkeyMode.onHint, /휴대폰이나 이 기기의 패스키/);
+  assert.match(ko.passkeyMode.offHint, /보드를 바로 열 수 있습니다/); assert.match(ko.passkeyMode.onHint, /휴대폰이나 이 기기의 패스키/);
 });

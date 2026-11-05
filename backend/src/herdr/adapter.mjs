@@ -143,7 +143,7 @@ export function parseKinds(helpText) {
 export class HerdrAdapter extends EventEmitter {
   constructor({ herdrPath, session, logDir, protocols = HERDR_PROTOCOLS, tested = HERDR_TESTED }) {
     super();
-    if (!session || session === 'default') throw new Error('이름 있는 herdr 세션만 쓴다');
+    if (!session || session === 'default') throw new Error("이름이 지정된 herdr 세션만 사용할 수 있습니다.");
     this.herdrPath = herdrPath || null; // P40: 백엔드가 찾은 실행 파일. 못 찾았으면 null(서버를 띄우지 않는다)
     this.policy = { protocols, tested };
     this.session = session;

@@ -39,8 +39,8 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 
 // 닫힌 까닭을 사람이 읽는 말로(사이드바)
 export const CLOSE_REASON = {
-  killed: '판에서 끔', 'pane gone': '패널이 없어짐', 'pane exited': '셸에서 나감', 'pane closed outside board': '판 밖에서 패널을 닫음',
-  'workspace closed outside board': '판 밖에서 작업 공간을 닫음', 'not resumed after herdr restart': 'herdr를 다시 띄운 뒤 이어 가지 못함',
+  killed: "보드에서 종료", 'pane gone': "터미널 창을 찾을 수 없음", 'pane exited': "셸 종료", 'pane closed outside board': "보드 외부에서 터미널 창 종료",
+  'workspace closed outside board': "보드 외부에서 herdr 작업 공간 종료", 'not resumed after herdr restart': "herdr 재시작 후 작업이 재개되지 않음",
 };
 // 세션(열린 것이나 닫힌 행)의 Claude Code 대화 ID. 판이 띄운 claude는 세션 ID 그대로, 판에 올린 claude는 herdr가 아는 대화 ID
 export function convOf(row) {
@@ -549,12 +549,12 @@ export class Recall {
   // 부모가 캔버스에 없을 때 노드에 적는 "띄운 곳" 글. 글이 저장된 대화(열린 워크스페이스)면 제목, 아니면 분류와 폴더 이름
   parentLabel(conv, row, boardConvs, marks) {
     const known = boardConvs.get(conv);
-    if (known) return known.open ? '판 세션' : '닫힌 판 세션';
+    if (known) return known.open ? '보드 세션' : "보드에서 닫힌 세션";
     if (!row) return '다른 대화';
     const cl = this.classOf(row, { boardConvs, marks });
     const folder = row.cwd ? normPath(row.cwd).split('/').pop() : null;
     if (cl.cls === 'desktop') return '데스크톱 앱 대화';
-    if (cl.cls === 'missed') return `missed 대화${folder ? ` · ${folder}` : ''}`;
+    if (cl.cls === 'missed') return `정리 대상 대화${folder ? ` · ${folder}` : ''}`;
     if (cl.cls === 'archived') return `보관된 대화${row.title ? ` · ${clip(row.title, 40)}` : ''}`;
     return row.title ? clip(row.title, 60) : `대화 · ${folder || conv.slice(0, 8)}`;
   }
@@ -574,7 +574,7 @@ export class Recall {
   moveConvo(p) {
     const id = String(p.convo || '').toLowerCase();
     const n = this.store.convoNodes().find((x) => x.convId === id);
-    if (!n) throw apiError('not_found', `캔버스에 없는 대화: ${p.convo}`);
+    if (!n) throw apiError('not_found', `캔버스에서 대화를 찾을 수 없습니다: ${p.convo}`);
     const x = Math.round(Number(p.x)), y = Math.round(Number(p.y));
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw apiError('bad_request', 'x, y');
     this.store.putConvoNode({ ...n, x, y, movedAt: Date.now() });
@@ -584,7 +584,7 @@ export class Recall {
   }
   async subagents(p) {
     const row = this.store.getConvoById(String(p.convo || '').toLowerCase());
-    if (!row) throw apiError('not_found', `대화 기록을 찾지 못했다: ${p.convo}`);
+    if (!row) throw apiError('not_found', `대화 기록을 찾을 수 없습니다: ${p.convo}`);
     return { convId: row.convId, subagents: await listSubagents(row.path) };
   }
 
@@ -615,7 +615,7 @@ export class Recall {
     const groups = new Map();
     let bytes = 0, titled = 0;
     for (const c of rows) {
-      const folder = c.cwd ? normPath(c.cwd) : '(폴더 모름)';
+      const folder = c.cwd ? normPath(c.cwd) : "(폴더 확인 불가)";
       const size = c.size + this.dirSize(c.path.slice(0, -6));
       bytes += size;
       const title = p.titles === false || titled >= MISSED_TITLE_MAX ? null : (titled++, await this.titleOf(c));
@@ -633,17 +633,17 @@ export class Recall {
     const rows = this.missedRows();
     let targets;
     if (p.all) targets = rows;
-    else if (p.folder) { const k = pathKey(p.folder); targets = rows.filter((c) => (c.cwd ? pathKey(c.cwd) : '(폴더 모름)') === k || (!c.cwd && p.folder === '(폴더 모름)')); }
+    else if (p.folder) { const k = pathKey(p.folder); targets = rows.filter((c) => (c.cwd ? pathKey(c.cwd) : "(폴더 확인 불가)") === k || (!c.cwd && p.folder === "(폴더 확인 불가)")); }
     else if (Array.isArray(p.convos) || p.convo) {
       const ids = new Set([].concat(p.convos || [], p.convo || []).map((x) => String(x).toLowerCase()));
       targets = rows.filter((c) => ids.has(c.convId));
       for (const id of ids) if (!targets.some((c) => c.convId === id)) { const row = this.store.getConvoById(id); if (row) targets.push({ ...row, notMissed: true }); else targets.push({ convId: id, path: '', notFound: true }); }
-    } else throw apiError('bad_request', 'all, folder, convos 중 하나가 필요하다');
+    } else throw apiError('bad_request', "all, folder 또는 convos 중 하나를 지정하세요.");
     const folders = new Map();
     let bytes = 0;
-    for (const c of targets.filter((x) => !x.notMissed && !x.notFound)) { const f = c.cwd ? normPath(c.cwd) : '(폴더 모름)'; const size = c.size + this.dirSize(c.path.slice(0, -6)); bytes += size; const g = folders.get(f) || { folder: f, count: 0, bytes: 0 }; g.count++; g.bytes += size; folders.set(f, g); }
+    for (const c of targets.filter((x) => !x.notMissed && !x.notFound)) { const f = c.cwd ? normPath(c.cwd) : "(폴더 확인 불가)"; const size = c.size + this.dirSize(c.path.slice(0, -6)); bytes += size; const g = folders.get(f) || { folder: f, count: 0, bytes: 0 }; g.count++; g.bytes += size; folders.set(f, g); }
     const n = targets.filter((x) => !x.notMissed && !x.notFound).length;
-    if (!p.confirm) return { needsConfirm: true, count: n, bytes, folders: [...folders.values()], message: n ? `missed 대화 ${n}개(${fmtBytes(bytes)}, 폴더 ${folders.size}개)를 Windows 휴지통으로 보낸다. 대화 기록 파일과 옆의 하위 에이전트 폴더만 보낸다.` : '지울 missed 대화가 없다', msg: n ? m('missedTrash', { n, size: fmtBytes(bytes), folders: folders.size }) : m('missedNone') };
+    if (!p.confirm) return { needsConfirm: true, count: n, bytes, folders: [...folders.values()], message: n ? `missed 대화 ${n}개(${fmtBytes(bytes)}, 폴더 ${folders.size}개)를 Windows 휴지통으로 보냅니다. 해당 대화의 기록 파일과 하위 에이전트 폴더만 이동합니다.` : "삭제할 정리 대상 대화가 없습니다.", msg: n ? m('missedTrash', { n, size: fmtBytes(bytes), folders: folders.size }) : m('missedNone') };
     // 지우기 직전 판정: 묶임은 출처 추측 없이(SDK 대화도 끝났으면 지운다) 세션 파일, 명령줄, 데스크톱 목록, 방금 기록됨으로
     this.refreshBindings(); await this.refreshProcs();
     const boardConvs = this.store.boardConversations(), marks = this.store.archiveMarks();
@@ -673,7 +673,7 @@ export class Recall {
   // 그래도 묶여 있거나 휴지통으로 못 보내면 지우지 않고 보관한다(대화 기록이 남으면 판 밖 대화로 다시 뜨므로).
   async forgetClosed(sessionId, { waitMs = 8000 } = {}) {
     const row = this.store.closedSession(sessionId);
-    if (!row) throw apiError('not_found', `닫힌 세션이 아니다: ${sessionId}`);
+    if (!row) throw apiError('not_found', `닫힌 세션이 아닙니다: ${sessionId}`);
     const conv = convOf(row);
     let file = null;
     if (conv) {
@@ -751,9 +751,9 @@ export class Recall {
     const b = this.b, cfg = this.cfg;
     b.requireHerdr();
     const cwd = path.resolve(String(spec.cwd || ''));
-    if (!spec.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더가 없다: ${spec.cwd}`), 'noFolder', { path: spec.cwd });
+    if (!spec.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${spec.cwd}`), 'noFolder', { path: spec.cwd });
     const id = spec.id;
-    if (b.sessions.has(id)) throw apiError('already_open', '이미 판에 있는 세션이다');
+    if (b.sessions.has(id)) throw apiError('already_open', "이미 보드에 열린 세션입니다.");
     const kind = spec.kind || 'claude';
     const shell = kind === SHELL, claude = kind === 'claude';
     const name = this.freeName(spec.name, shell ? 'sh' : 's');
@@ -815,8 +815,8 @@ export class Recall {
     const ref = String(p.session || '');
     let row = this.store.closedSession(ref);
     if (!row) { const byName = this.store.closedSessions().find((x) => x.name === ref.replace(/^@/, '')); row = byName ? this.store.closedSession(byName.sessionId) : null; }
-    if (!row) throw apiError('not_found', `닫힌 세션이 아니다: ${ref}`);
-    if (row.reopenedAs) throw apiError('moved', `이 세션은 이미 다른 세션(${row.reopenedAs})으로 다시 열었다`);
+    if (!row) throw apiError('not_found', `닫힌 세션이 아닙니다: ${ref}`);
+    if (row.reopenedAs) throw apiError('moved', `이 세션은 이미 다른 세션(${row.reopenedAs})으로 다시 열었습니다.`);
     const kind = row.kind || 'claude';
     const info = this.store.spawnInfo(row.sessionId) || {};
     const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, allowHerdr: !!info.allowHerdr, createdAt: row.createdAt, flavor: row.flavor || null, env: info.env || null, extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [] }; // P33: 호출자의 환경 변수와 추가 인자도 그대로
@@ -825,7 +825,7 @@ export class Recall {
       if (conv) {
         this.refreshBindings(); await this.refreshProcs();
         const bind = this.bindingFor(conv, this.store.getConvoById(conv), { strict: false });
-        if (bind.bound) throw keyed(apiError('bound', `대화가 다른 곳에 묶여 있다: ${bind.label}. 그곳에서 끝낸 뒤 연다`, { binding: bind }), 'boundOpen', { where: bind.where || '' });
+        if (bind.bound) throw keyed(apiError('bound', `다른 곳에서 이 대화를 사용 중입니다: ${bind.label}. 해당 세션을 종료한 뒤 여세요.`, { binding: bind }), 'boundOpen', { where: bind.where || '' });
       }
       if (!conv || conv === row.sessionId.toLowerCase()) {
         // 판이 띄운 claude(또는 대화 ID를 모르는 판에 올린 claude): 같은 행, 같은 세션 ID
@@ -833,7 +833,7 @@ export class Recall {
       }
       // 판에 올린 claude: 판의 hook을 붙여 그 대화 ID로 이어 가는 판 세션이 된다. 세션 ID가 대화 ID와 달라 새 행을 쓰고, 옛 행은 옮겨 갔다고 남긴다
       const existing = this.store.getSession(conv);
-      if (existing && !existing.closedAt) throw apiError('already_open', '그 대화는 이미 판 세션이다');
+      if (existing && !existing.closedAt) throw apiError('already_open', "이미 보드 세션에서 사용 중인 대화입니다.");
       const cwd = (row.runtime && row.runtime.cwd) || row.cwd;
       const out = await this.bring({ ...base, cwd, permissionMode: p.permissionMode || 'manual', model: p.model || null, effort: p.effort || null, id: conv, reuseRow: existing || null, nodeFrom: row.sessionId, from: 'adopted', resume: this.transcriptExists(conv, cwd) });
       this.store.updateSession(row.sessionId, { reopenedAs: conv });
@@ -855,16 +855,16 @@ export class Recall {
       let row = this.store.closedSession(ref);
       if (!row) { const byName = this.store.closedSessions().find((x) => x.name === ref); row = byName ? this.store.closedSession(byName.sessionId) : null; }
       const open = this.b.sessions.get(ref) || [...this.b.sessions.values()].find((s) => s.name === ref);
-      if (!row && open) throw keyed(apiError('open_session', `@${open.name}은 판에 열려 있다. 먼저 끈 뒤 보관한다`), 'openSession', { name: open.name });
-      if (!row) throw apiError('not_found', `닫힌 세션이 아니다: ${p.session}`);
+      if (!row && open) throw keyed(apiError('open_session', `@${open.name} 세션은 보드에 열려 있습니다. 먼저 세션을 종료한 뒤 보관하세요.`), 'openSession', { name: open.name });
+      if (!row) throw apiError('not_found', `닫힌 세션이 아닙니다: ${p.session}`);
       return { kind: 'session', id: row.sessionId };
     }
     const id = String(p.convo || '').toLowerCase();
-    if (!/^[0-9a-f-]{36}$/.test(id)) throw apiError('bad_request', 'convo(대화 ID) 또는 session이 필요하다');
+    if (!/^[0-9a-f-]{36}$/.test(id)) throw apiError('bad_request', "convo(대화 ID) 또는 session을 지정하세요.");
     const known = this.store.boardConversations().get(id);
-    if (known && known.open) throw keyed(apiError('open_session', '그 대화는 판에 열려 있는 세션이다. 먼저 끈 뒤 보관한다'), 'openConvo');
+    if (known && known.open) throw keyed(apiError('open_session', "이 대화는 보드에 열린 세션에서 사용 중입니다. 먼저 세션을 종료한 뒤 보관하세요."), 'openConvo');
     if (known && !known.movedTo) return { kind: 'session', id: known.sessionId }; // 판이 아는 대화는 그 닫힌 세션으로 보관한다
-    if (!this.store.getConvoById(id)) throw apiError('not_found', `대화 기록을 찾지 못했다: ${id}`);
+    if (!this.store.getConvoById(id)) throw apiError('not_found', `대화 기록을 찾을 수 없습니다: ${id}`);
     return { kind: 'convo', id };
   }
   markArchive(p, on, by = 'hand') {
@@ -888,14 +888,14 @@ export class Recall {
   async archiveOld(p = {}) {
     const w = await this.b.resolveWorkspace(p.workspace);
     const days = p.days != null ? Number(p.days) : OLD_DAYS;
-    if (!Number.isFinite(days) || days < 0) throw apiError('bad_request', 'days는 0 이상');
+    if (!Number.isFinite(days) || days < 0) throw apiError('bad_request', "days는 0 이상으로 설정하세요.");
     const marks = this.store.archiveMarks();
     const v = (await this.compute({ only: w.key })).get(w.key) || { closed: [], convos: [] };
     const items = [
       ...v.closed.filter((c) => isOld({ lastAt: c.lastActivityAt || c.closedAt, mark: marks.get(itemKey('session', c.sessionId)), olderThanDays: days })).map((c) => ({ session: c.sessionId })),
       ...v.convos.filter((c) => !(c.binding && c.binding.open) && isOld({ lastAt: c.lastAt, mark: marks.get(itemKey('convo', c.convId)), olderThanDays: days })).map((c) => ({ convo: c.convId })),
     ];
-    if (!p.confirm) return { needsConfirm: true, count: items.length, days, message: items.length ? `마지막 활동이 ${days}일보다 오래된 ${items.length}개(닫힌 세션과 판 밖 대화)를 보관한다. 지우지 않고, 보관함에서 꺼낼 수 있다.` : `${days}일보다 오래된 것이 없다`, msg: items.length ? m('archiveOld', { days, n: items.length }) : m('archiveOldNone', { days }) };
+    if (!p.confirm) return { needsConfirm: true, count: items.length, days, message: items.length ? `마지막 활동이 ${days}일보다 오래된 ${items.length}개(닫힌 세션과 보드 외부 대화)를 보관합니다. 삭제하지 않으며 보관함에서 복원할 수 있습니다.` : `${days}일을 넘긴 항목이 없습니다.`, msg: items.length ? m('archiveOld', { days, n: items.length }) : m('archiveOldNone', { days }) };
     if (!items.length) return { archived: 0, items: [] };
     return this.archiveAdd({ items, by: 'old' });
   }
@@ -920,12 +920,12 @@ export class Recall {
     if (known) return { ...(await this.reopen({ ...p, session: known.sessionId })), reopenedClosed: true };
     let row = this.store.getConvoById(id);
     if (!row) { await this.scan({ wait: true }); row = this.store.getConvoById(id); }
-    if (!row || !row.cwd) throw apiError('not_found', `대화 기록을 찾지 못했다: ${id}`);
+    if (!row || !row.cwd) throw apiError('not_found', `대화 기록을 찾을 수 없습니다: ${id}`);
     this.refreshBindings(); await this.refreshProcs();
     const bind = this.bindingFor(id, { ...row, mtime: this.mtimeNow(row) });
-    if (bind.bound) throw keyed(apiError('bound', `대화가 다른 곳에 묶여 있다: ${bind.label}`, { binding: bind }), 'bound', { where: bind.where || '' });
+    if (bind.bound) throw keyed(apiError('bound', `다른 곳에서 이 대화를 사용 중입니다: ${bind.label}`, { binding: bind }), 'bound', { where: bind.where || '' });
     const ws = await this.resolveWs(row.cwd);
-    if (!this.matchWorkspace(row.cwd, ws)) throw apiError('bad_request', '열린 워크스페이스의 대화가 아니다');
+    if (!this.matchWorkspace(row.cwd, ws)) throw apiError('bad_request', "열린 프로젝트의 대화가 아닙니다.");
     const card = this.store.convoNodes().find((n) => n.convId === id && n.shown); // P13: 캔버스의 대화 노드에서 열면 그 자리에서 세션 노드가 된다
     const out = await this.bring({ id, cwd: row.cwd, kind: 'claude', name: p.name || null, permissionMode: p.permissionMode || 'manual', model: p.model || null, effort: p.effort || null, from: 'convo', resume: true, near: card ? { x: card.x, y: card.y, w: card.w, h: card.h } : null });
     this.store.addEvent(id, 'convo_opened', { convId: id, title: clip(row.title, 120), lastAt: row.lastAt });

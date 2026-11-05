@@ -1,5 +1,5 @@
 // P58(원격 강화 S4) 단위 시험: 연결 기록(남기기, 상한, 비밀 빠짐, 까닭 코드), 새로 붙음 알림(다시 연결은 알리지 않음),
-// PC에서 끊기(그 기기의 연결만), 원격 받기 끄기(바깥 요청·기기 연결 거부, 붙은 연결 닫힘, 이 PC의 창과 CLI는 됨), device.disconnect·remote.log는 이 PC만.
+// PC에서 연결 종료(그 기기의 연결만), 원격 받기 끄기(바깥 요청·기기 연결 거부, 붙은 연결 닫힘, 이 PC의 창과 CLI는 됨), device.disconnect·remote.log는 이 PC만.
 // 이름과 주소는 예시(pc.example.ts.net, 100.64.0.x, user@example.com)만 쓴다
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -69,7 +69,7 @@ test('연결 기록: 상한(개수·30일), 되풀이 거부는 count로 합침,
   assert.equal(new RemoteLog({ file, now: () => t }).entries.length, 1);
 });
 
-test('새로 붙음 알림: 연결이 없다가 생길 때만, 다시 연결(몇 분 안)과 짝 맺기 직후 첫 연결은 알리지 않는다', () => {
+test('새로 붙음 알림: 연결이 없다가 생길 때만, 다시 연결(몇 분 안)과 기기 등록 직후 첫 연결은 알리지 않는다', () => {
   let t = 0;
   const w = new ConnectWatch({ now: () => t });
   assert.equal(w.opened('a'), true, '처음 붙음');
@@ -80,7 +80,7 @@ test('새로 붙음 알림: 연결이 없다가 생길 때만, 다시 연결(몇
   w.closed('a');
   t += RECONNECT_QUIET_MS + 1; assert.equal(w.opened('a'), true, '몇 분 뒤에 다시 붙으면 알린다');
   assert.equal(w.opened('b'), true, '다른 기기는 따로');
-  w.paired('c'); t += 2000; assert.equal(w.opened('c'), false, '짝 맺기 성공을 알렸으면 첫 연결은 알리지 않는다');
+  w.paired('c'); t += 2000; assert.equal(w.opened('c'), false, '기기 등록 성공을 알렸으면 첫 연결은 알리지 않는다');
   assert.equal(w.opened(null), false);
 });
 
@@ -140,7 +140,7 @@ const wsCall = (ws, method, params = {}) => new Promise((res) => { const id = Ma
 const closed = (ws) => new Promise((r) => ws.on('close', (code) => r(code)));
 const until = async (fn, ms = 2000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = fn(); if (v) return v; await new Promise((r) => setTimeout(r, 20)); } return fn(); };
 const ORIGIN = `https://${NAME}`;
-// P59: 짝 맺기 = 코드 → 등록 허가 → 패스키 등록(가짜 인증기) → 세션 쿠키. 돌려주는 것: { code, device, cookie, auth }
+// P59: 기기 등록 = 코드 → 등록 허가 → 패스키 등록(가짜 인증기) → 세션 쿠키. 돌려주는 것: { code, device, cookie, auth }
 async function pairRemote(b, local, name, headers = { ...viaServe(), origin: ORIGIN }) {
   const code = (await wsCall(local.ws, 'device.code')).result.code;
   const r = await pairAndRegister(b.port, code, headers, { name });
@@ -152,7 +152,7 @@ async function relogin(b, dev, headers = { ...viaServe(), origin: ORIGIN }) { co
 const openDevice = (b, dev, extra = {}) => wsOpen(`ws://127.0.0.1:${b.port}/api`, { ...viaServe(extra), origin: ORIGIN, cookie: dev.cookie });
 const LOCAL = (port) => ({ host: `localhost:${port}`, origin: `http://localhost:${port}`, 'user-agent': CHROME }); // 패스키는 IP 주소에서 쓰지 못한다
 
-test('붙으면 알림: PC 창에만 remote.connected, 짝 맺기 성공도, 다시 연결은 다시 알리지 않음', async () => {
+test('붙으면 알림: PC 창에만 remote.connected, 기기 등록 성공도, 다시 연결은 다시 알리지 않음', async () => {
   const b = await boot();
   try {
     const local = await wsOpen(`ws://127.0.0.1:${b.port}/api?token=${b.apiToken}&client=pc-window&kind=desktop`);
@@ -189,7 +189,7 @@ test('붙으면 알림: PC 창에만 remote.connected, 짝 맺기 성공도, 다
   } finally { await b.close(); }
 });
 
-test('PC에서 끊기: 그 기기의 연결만 닫고(4402), 기기는 다시 붙을 수 있다. 짝 풀기는 4401과 거부. device.disconnect·remote.log는 이 PC만', async () => {
+test('PC에서 연결 종료: 그 기기의 연결만 닫고(4402), 기기는 다시 붙을 수 있다. 기기 등록 해제는 4401과 거부. device.disconnect·remote.log는 이 PC만', async () => {
   const b = await boot();
   try {
     const local = await wsOpen(`ws://127.0.0.1:${b.port}/api?token=${b.apiToken}`);
@@ -220,13 +220,13 @@ test('PC에서 끊기: 그 기기의 연결만 닫고(4402), 기기는 다시 �
     await relogin(b, a);
     const a3 = await openDevice(b, a);
     assert.equal(a3.ok, true);
-    // 짝 풀기: 4401, 그 뒤 거부
+    // 기기 등록 해제: 4401, 그 뒤 거부
     const a3c = closed(a3.ws);
     assert.equal((await wsCall(local.ws, 'device.revoke', { id: a.device.id })).result.revoked, true);
     assert.equal(await a3c, 4401);
     assert.equal((await openDevice(b, a)).ok, false);
     assert.deepEqual(b.hooks.at(-1), { id: a.device.id, reason: 'revoke' });
-    // 기록: 짝 맺음, 연결, PC에서 끊기, 끊김(까닭 pc), 짝 풀기, 거부(no_session). 비밀이 없다
+    // 기록: 기기 등록 완료, 연결, PC에서 연결 종료, 끊김(까닭 pc), 기기 등록 해제, 거부(no_session). 비밀이 없다
     await new Promise((x) => setTimeout(x, 50));
     const log = (await wsCall(local.ws, 'remote.log', { limit: 100 })).result.entries;
     const ev = (name, f = () => true) => log.filter((e) => e.event === name && f(e));
@@ -268,7 +268,7 @@ test('원격 받기 끄기: 바깥 요청과 기기 연결 거부, 붙은 연결
     const r = (await wsCall(local.ws, 'settings.set', { remoteAccess: false })).result;
     assert.equal(r.settings.remoteAccess, false); assert.equal(r.remote.closed, 2);
     assert.equal(await rc, 4403); assert.equal(await lc, 4403);
-    assert.equal((await wsCall(local.ws, 'device.list')).result.code, null, '짝 맺기 코드를 버린다');
+    assert.equal((await wsCall(local.ws, 'device.list')).result.code, null, '기기 등록 코드를 버린다');
     // 거부: 기기 연결(바깥·이 PC 안), /web/*(바깥·이 PC 안), 바깥 화면 요청
     assert.equal((await openDevice(b, a)).ok, false);
     assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api`, localHdr())).ok, false);
@@ -280,7 +280,7 @@ test('원격 받기 끄기: 바깥 요청과 기기 연결 거부, 붙은 연결
     assert.equal(b.web.auth.sessions.countFor(a.device.id) + b.web.auth.sessions.countFor(lo.device.id), 0, '원격 받기를 끄면 세션이 끝남');
     assert.equal((await raw(b.port, '/web/pair/request', { method: 'POST', headers: { ...viaServe(), origin: ORIGIN, 'content-type': 'application/json' }, body: '{}' })).status, 403);
     const page = await raw(b.port, '/', { headers: viaServe() });
-    assert.equal(page.status, 503); assert.match(page.text, /PC에서 원격을 막았습니다/);
+    assert.equal(page.status, 503); assert.match(page.text, /원격 접속이 차단되어 있습니다/);
     // 이 PC: 창(판 API 토큰)과 CLI 연결, 이 PC 안 화면 파일은 된다
     assert.equal((await wsCall(local.ws, 'ping')).result.at > 0, true);
     const cli = await wsOpen(`ws://127.0.0.1:${b.port}/api?token=${b.apiToken}`);
@@ -289,7 +289,7 @@ test('원격 받기 끄기: 바깥 요청과 기기 연결 거부, 붙은 연결
     // 진단에 보인다
     const d = (await wsCall(local.ws, 'remote.status')).result;
     assert.equal(d.accepting, false); assert.equal(d.ready, false);
-    assert.match(formatStatus(d), /\[막음\] PC에서 원격을 막았습니다/);
+    assert.match(formatStatus(d), /\[차단\] 원격 접속이 차단되어 있습니다/);
     // 켜면 다시 된다(P59: 끈 동안 끝난 세션은 패스키로 다시 확인한 뒤)
     assert.equal((await wsCall(local.ws, 'settings.set', { remoteAccess: true })).result.settings.remoteAccess, true);
     assert.equal((await openDevice(b, a)).ok, false, '옛 세션 쿠키는 끝났다');
@@ -300,7 +300,7 @@ test('원격 받기 끄기: 바깥 요청과 기기 연결 거부, 붙은 연결
     assert.equal((await raw(b.port, '/', { headers: viaServe() })).status, 200);
     const d2 = (await wsCall(local.ws, 'remote.status')).result;
     assert.equal(d2.accepting, true); assert.equal(d2.connected, 1);
-    assert.match(formatStatus(d2), /원격 받기 켜짐 \(지금 붙은 기기 1대\)/);
+    assert.match(formatStatus(d2), /원격 접속 허용 \(현재 연결된 기기 1대\)/);
     // 기록: 끔·켬, 끊김(blocked), 거부(remote_blocked)
     await new Promise((x) => setTimeout(x, 50));
     const log = (await wsCall(local.ws, 'remote.log')).result.entries;
