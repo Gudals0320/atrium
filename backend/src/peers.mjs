@@ -39,5 +39,7 @@ export function peerHandlers(b) {
     'client.hello': (p, c) => { const h = bindAuth(parseClientHello(p || {}), c && c.auth); /* P49: 기기 연결은 web */ if (h.clientId) Object.assign(c, h); else if (p && p.name) c.name = String(p.name).slice(0, 60); b.peers.publish(); return { clientId: c.clientId, name: c.name, kind: c.kind }; },
     'client.active': (_p, c) => { b.peers.touch(c); return { ok: true, notify: b.peers.view().notify }; },
     'clients.list': (_p, c) => ({ ...b.peers.view(), me: c ? c.clientId : null }),
+    // P49: 웹 화면이 15초마다 부른다. 왕복 지연(ms)을 재고, 잠자기·네트워크 바뀜 뒤 죽은 연결을 알아챈다
+    'ping': (p) => ({ t: p && Number.isFinite(p.t) ? p.t : null, at: Date.now() }),
   };
 }

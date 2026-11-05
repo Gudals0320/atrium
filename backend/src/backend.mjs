@@ -8,6 +8,8 @@ import { HerdrAdapter, findHerdr, readServerExe } from './herdr/adapter.mjs';
 import { updateNotice } from './herdr/discover.mjs'; // P40: herdr 찾기와 업데이트 감지
 import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
+import { TailscaleWatch, tailscaleHosts } from './tailscale.mjs'; // P49(R3): Tailscale 상태 읽기
+import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
 import { DeliveryQueue } from './delivery.mjs';
 import { TerminalRelay } from './relay.mjs';
@@ -129,9 +131,12 @@ export class Backend {
     this.hookUrl = `http://127.0.0.1:${cfg.port}/hooks/claude`;
 
     // P48(R2): 웹 화면, 짝 맺기, 기기 토큰. 판 API 토큰 연결은 이 PC의 프로세스만, 기기 연결은 같은 출처의 브라우저만 받는다(web.mjs)
-    this.web = new WebServer({ cfg, store: this.store, api: null, log: (m) => this.log(m), recentDirs: () => this.recentDirs() });
+    // P49(R3): Tailscale 상태 읽기(바꾸지 않는다). 이름을 Host 허용 목록에 넣고 로그인 사용자를 제한한다
+    this.tailscale = new TailscaleWatch({ port: cfg.port, log: (m) => this.log(m), onChange: (ts) => this.log(`tailscale: ${ts.status && ts.status.running ? 'running' : 'not running'}, hosts ${tailscaleHosts(ts).length}`) });
+    this.web = new WebServer({ cfg, store: this.store, api: null, log: (m) => this.log(m), recentDirs: () => this.recentDirs(), tailscale: this.tailscale, settings: () => (this.features ? this.features.settings.get() : {}) });
     this.api = new ApiServer({ token: this.apiToken, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: () => { if (this.peers) this.peers.opened(); }, onClose: (c) => { if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
     this.web.api = this.api;
+    this.tailscale.start();
     this.peers = new Peers({ api: this.api, log: (m) => this.log(m) });
     this.http = http.createServer((req, res) => this.onHttp(req, res));
     this.http.on('upgrade', (req, sock, head) => this.api.handleUpgrade(req, sock, head));
@@ -146,7 +151,7 @@ export class Backend {
     // P40: 쓸 herdr 실행 파일을 고른다(도는 판 서버의 실행 파일 → 찾기 결과). 못 찾아도 백엔드는 뜬다
     await this.resolveHerdr('start');
     // P21: 판 터미널에서 친 글로 보내지 않은 초안이 있는지 기억한다(초안이 있으면 잠재우지 않는다)
-    this.relay = new TerminalRelay({ adapter: this.adapter, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
+    this.relay = new TerminalRelay({ adapter: this.adapter, remoteBatchMs: envVar('REMOTE_BATCH_MS') != null ? Number(envVar('REMOTE_BATCH_MS')) : undefined, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
 
     for (const row of this.store.openSessions()) {
       const rt = row.runtime || newRuntime({ kind: row.kind, hooked: row.origin === 'board' && row.kind === 'claude' });
@@ -228,8 +233,10 @@ export class Backend {
     if (this.herdrCompat && this.herdrCompat.ok) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
     // P40: herdr 경로 설정을 바꾸면 다시 찾는다(백엔드를 다시 켜지 않고 서버를 띄워 붙는다)
     const setSettings = this.api.handlers['settings.set'];
-    this.api.handlers['settings.set'] = async (p) => {
-      const r = await setSettings(p);
+    this.api.handlers['settings.set'] = async (p, c) => {
+      // P49: 원격 접속 규칙(remote*)은 이 PC의 창·CLI만 바꾼다
+      if (c && c.auth && c.auth.kind !== 'local' && p && (Object.keys(p).some((k) => k.startsWith('remote')) || String(p.key || '').startsWith('remote'))) throw Object.assign(new Error('only the board on this PC can change remote access rules'), { code: 'forbidden' });
+      const r = await setSettings(p, c);
       if (p && ('herdrPath' in p || p.key === 'herdrPath')) r.herdr = await this.rediscoverHerdr('settings').catch((e) => { this.log('herdr rediscover error', e.stack); return null; });
       return r;
     };
@@ -279,6 +286,7 @@ export class Backend {
     this.store.addEvent(null, 'backend_stopped', { reason });
     this.api.close();
     if (this.web) this.web.stop();
+    if (this.tailscale) this.tailscale.stop();
     await new Promise((r) => this.http.close(r));
     try { const b = JSON.parse(fs.readFileSync(this.cfg.backendFile, 'utf8')); if (b.pid === process.pid) fs.rmSync(this.cfg.backendFile); } catch {}
     this.store.close();

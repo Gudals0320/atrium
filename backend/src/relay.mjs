@@ -3,13 +3,14 @@
 // P47(원격 R1): herdr는 패널 하나에 클라이언트 하나만 받으므로(실험) 제어기는 패널마다 하나이고, 붙은 클라이언트 모두에게 나눠 보낸다.
 // 새로 붙은 클라이언트는 full 프레임부터 받는다(같은 크기 resize로 full을 부른다). 패널 크기는 마지막으로 입력했거나 초점을 준 클라이언트가 정하고,
 // 다른 클라이언트는 같은 열×행을 비율로 그린다. 상태 바꾸기는 multiclient.mjs의 순수 함수다.
+import { FrameBatcher, REMOTE_BATCH_MS } from './frame-batch.mjs'; // P49: 원격 클라이언트에게는 프레임을 묶어 보낸다
 import { shareEmpty, shareJoin, shareLeave, shareActive, shareWant, shareSize, shareFrame, shareNeedsFull, shareOwnerView } from './multiclient.mjs';
 
 const INPUT_NOTE_MS = 1000; // 같은 클라이언트의 "방금 입력" 알림은 이 간격에 한 번
 
 export class TerminalRelay {
-  constructor({ adapter, onInput, log, now = () => Date.now() }) {
-    this.adapter = adapter; this.onInput = onInput; this.log = log || (() => {}); this.now = now;
+  constructor({ adapter, onInput, log, now = () => Date.now(), remoteBatchMs = REMOTE_BATCH_MS }) {
+    this.adapter = adapter; this.onInput = onInput; this.log = log || (() => {}); this.now = now; this.remoteBatchMs = remoteBatchMs;
     this.attached = new Map(); // sessionId → { ctl, paneId, share, clients: Map(key → client), size, frames, bytes }
     this.keys = new WeakMap(); // client → 연결 키
     this.nextKey = 1;
@@ -22,7 +23,7 @@ export class TerminalRelay {
     const now = this.now();
     if (!e) {
       const ctl = this.adapter.openController(session.paneId, cols, rows);
-      e = { ctl, paneId: session.paneId, share: shareEmpty(), clients: new Map(), size: { cols, rows }, frames: 0, bytes: 0, startedAt: now, inputNote: new Map() };
+      e = { ctl, paneId: session.paneId, share: shareEmpty(), clients: new Map(), size: { cols, rows }, frames: 0, bytes: 0, startedAt: now, inputNote: new Map(), batch: new Map() };
       this.attached.set(session.sessionId, e);
       this._wire(session.sessionId, e);
       e.share = shareJoin(e.share, { key, clientId: client.clientId || null, name: client.name || null, cols, rows, now });
@@ -45,15 +46,23 @@ export class TerminalRelay {
       const r = shareFrame(e.share, !!f.full);
       e.share = r.st;
       const data = { sessionId, controllerPid: ctl.pid, ...f };
-      for (const k of r.to) { const c = e.clients.get(k); if (c) c.sendEvent('terminal.frame', data); }
+      for (const k of r.to) { const c = e.clients.get(k); if (c) this._send(e, k, c, data); }
     });
     ctl.on('stderr', (s) => this.log(`controller ${e.paneId} stderr: ${s.trim().slice(0, 200)}`));
     ctl.on('record', (m) => { if (m.type === 'terminal.closed' && /taken over/.test(m.reason || '')) e.closeReason ||= 'takeover'; });
     ctl.on('exit', (code) => {
       if (this.attached.get(sessionId) === e) this.attached.delete(sessionId);
       // 같은 세션에 새 제어기가 붙은 뒤에 옛 제어기가 끝날 수 있다. 창은 controllerPid로 어느 제어기의 일인지 가린다.
+      for (const b of e.batch.values()) b.flush(); // P49: 묶어 둔 프레임을 먼저
       for (const c of e.clients.values()) c.sendEvent('terminal.detached', { sessionId, controllerPid: ctl.pid, reason: e.closeReason || `controller exit ${code}` });
     });
+  }
+  // P49: 원격 클라이언트(client.remote)는 패널마다 묶어서(frame-batch.mjs), 이 PC 안의 창은 바로
+  _send(e, key, c, data) {
+    if (!c.remote || !(this.remoteBatchMs > 0)) { c.sendEvent('terminal.frame', data); return; }
+    let b = e.batch.get(key);
+    if (!b) { b = new FrameBatcher({ send: (fr) => c.sendEvent('terminal.frame', fr), intervalMs: this.remoteBatchMs, now: this.now }); e.batch.set(key, b); }
+    b.push(data);
   }
   // 크기 정하는 클라이언트의 크기로 제어기를 맞춘다. full을 기다리는 클라이언트가 있으면 같은 크기로라도 resize해 full 프레임을 부른다
   _apply(sessionId, e, { forceFull = false } = {}) {
@@ -109,6 +118,7 @@ export class TerminalRelay {
   _leave(sessionId, e, client) {
     const key = this.keyOf(client);
     e.clients.delete(key);
+    const b = e.batch.get(key); if (b) { b.drop(); e.batch.delete(key); }
     e.share = shareLeave(e.share, key);
     if (!e.clients.size) { this._close(sessionId, 'detach'); return; }
     this._apply(sessionId, e);
@@ -122,6 +132,7 @@ export class TerminalRelay {
     const e = this.attached.get(sessionId);
     if (!e) return;
     e.closeReason = reason;
+    for (const b of e.batch.values()) b.drop();
     this.attached.delete(sessionId);
     e.ctl.close();
   }
@@ -129,7 +140,7 @@ export class TerminalRelay {
   stats() {
     return [...this.attached.entries()].map(([sid, e]) => {
       const o = shareOwnerView(e.share);
-      return { sessionId: sid, paneId: e.paneId, controllerPid: e.ctl.pid, frames: e.frames, bytes: e.bytes, clients: e.clients.size, owner: o ? o.clientId : null, cols: e.size.cols, rows: e.size.rows };
+      return { sessionId: sid, paneId: e.paneId, controllerPid: e.ctl.pid, frames: e.frames, bytes: e.bytes, clients: e.clients.size, owner: o ? o.clientId : null, cols: e.size.cols, rows: e.size.rows, batched: [...e.batch.values()].reduce((a, b) => ({ in: a.in + b.stats.in, out: a.out + b.stats.out }), { in: 0, out: 0 }) };
     });
   }
 }

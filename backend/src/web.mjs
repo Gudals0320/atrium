@@ -13,6 +13,7 @@ import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { BACKEND_ROOT, envVar } from './config.mjs';
+import { loginAllowed, parseLogins, isRemoteRequest, diagnose } from './tailscale.mjs'; // P49(R3)
 
 export const PAIR_CODE_TTL_MS = 5 * 60_000;
 export const PAIR_REQUEST_TTL_MS = 2 * 60_000;
@@ -308,9 +309,10 @@ export function cleanupUploads(dir, { maxAgeMs = UPLOAD_MAX_AGE_MS, maxTotal = U
 // ---------- 묶음: 백엔드에 붙인다 ----------
 export class WebServer {
   // api: ApiServer(clients, dropWhere), boot: () => 웹 창의 시작 값(프로필 등)
-  constructor({ cfg, store, api, log = () => {}, recentDirs = () => [], now = Date.now }) {
-    this.cfg = cfg; this.api = api; this.log = log; this.recentDirs = recentDirs; this.now = now;
-    this.hosts = allowedHosts(cfg.port);
+  // P49: tailscale(TailscaleWatch)가 있으면 이 PC의 Tailscale 이름을 Host 허용 목록에 저절로 넣고 로그인 사용자를 제한한다. settings()는 판 설정(remoteSameUser, remoteAllowedLogins)
+  constructor({ cfg, store, api, log = () => {}, recentDirs = () => [], now = Date.now, tailscale = null, settings = () => ({}) }) {
+    this.cfg = cfg; this.api = api; this.log = log; this.recentDirs = recentDirs; this.now = now; this.tailscale = tailscale; this.settings = settings;
+    this.baseHosts = allowedHosts(cfg.port);
     this.devices = new Devices({ store, now });
     this.pairing = new Pairing({ devices: this.devices, now, onChange: () => this.broadcastLocal() });
     this.files = new StaticFiles(WEB_DIST());
@@ -319,6 +321,18 @@ export class WebServer {
     this.sweepTimer = setInterval(() => this.pairing.sweep(), 15_000); this.sweepTimer.unref();
   }
   stop() { clearInterval(this.sweepTimer); }
+  // P49: 허용 Host = 127.0.0.1·localhost(그 포트), ATRIUM_WEB_HOSTS, 이 PC의 Tailscale 이름
+  get hosts() { const ts = this.tailscale ? this.tailscale.hosts() : []; if (!ts.length) return this.baseHosts; return new Set([...this.baseHosts, ...ts]); }
+  policy() {
+    let st = {}; try { st = this.settings() || {}; } catch {}
+    return { sameUser: st.remoteSameUser !== false, allowed: parseLogins(st.remoteAllowedLogins), self: this.tailscale ? this.tailscale.selfLogin() : null, tsHosts: this.tailscale ? this.tailscale.hosts() : [] };
+  }
+  // P49: atrium remote status와 설정의 연결된 기기 탭이 보이는 진단
+  async remoteStatus({ fresh = false } = {}) {
+    const ts = this.tailscale ? (fresh ? await this.tailscale.refresh() : this.tailscale.last) : { installed: false, disabled: true };
+    const pol = this.policy();
+    return { ...diagnose(ts, { port: this.cfg.port, hosts: [...this.hosts], devices: this.devices.all().length, built: this.files.built(), sameUser: pol.sameUser, allowed: pol.allowed }), port: this.cfg.port, sameUser: pol.sameUser, allowed: pol.allowed };
+  }
   url() { return `http://127.0.0.1:${this.cfg.port}/`; }
   status() { return { url: this.url(), built: this.files.built(), devices: this.devices.all().length, hosts: [...this.hosts] }; }
   boot(device) {
@@ -343,12 +357,15 @@ export class WebServer {
     if (token != null) return safeEq(token, apiToken) && isLocalProcess(req, this.cfg.port, { allowFileOrigin: true }) ? { kind: 'local' } : null;
     const dt = u.searchParams.get('device');
     if (dt != null) {
-      if (!hostOk(req, this.hosts) || !originOk(req, this.hosts)) return null;
+      const hosts = this.hosts;
+      if (!hostOk(req, hosts) || !originOk(req, hosts)) return null;
+      const lg = loginAllowed(req, this.policy()); // P49: 다른 Tailscale 사용자는 기기 토큰이 있어도 막는다
+      if (!lg.ok) { this.log(`web connect refused: tailscale user ${lg.reason}`); return null; }
       const d = this.devices.verify(dt);
       if (!d) return null;
       this.devices.touch(d.id, true);
       setImmediate(() => this.broadcastLocal()); // 마지막 접속을 PC 창 목록에
-      return { kind: 'device', device: { id: d.id, name: d.name } };
+      return { kind: 'device', device: { id: d.id, name: d.name }, remote: isRemoteRequest(req, this.cfg.port), login: lg.login };
     }
     return null;
   }
@@ -373,6 +390,9 @@ export class WebServer {
     const fail = (e) => send(e.status || 400, { error: { code: e.code || 'error', message: e.message, ...(e.retryAfterMs ? { retryAfterMs: e.retryAfterMs } : {}) } }, e.retryAfterMs ? { 'retry-after': String(Math.ceil(e.retryAfterMs / 1000)) } : {});
     // 브라우저에서 온 요청은 같은 출처여야 한다(다른 사이트가 짝 맺기를 시도하거나 올리지 못하게)
     if (req.headers.origin != null ? !originOk(req, this.hosts) : req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin') { fail(apiErr('bad_origin', 'cross-origin request', 403)); return true; }
+    // P49: Tailscale로 온 요청은 이 PC의 Tailscale 사용자(또는 허용 목록)만 짝 맺고 쓴다
+    const lg = loginAllowed(req, this.policy());
+    if (!lg.ok) { fail(apiErr('tailscale_user', lg.reason === 'no_login' ? 'this Tailscale device has no user login (tagged device or funnel)' : 'this Tailscale user is not allowed on this board', 403)); return true; }
     const ua = String(req.headers['user-agent'] || '');
     const ip = clientIp(req);
     const device = () => { const d = this.devices.verify(bearer(req)); if (!d) throw apiErr('unauthorized', 'not paired', 401); return d; };
@@ -424,6 +444,7 @@ export class WebServer {
       'device.approve': localOnly((p) => this.pairing.decide(String(p.id || ''), true)),
       'device.deny': localOnly((p) => this.pairing.decide(String(p.id || ''), false)),
       'web.status': () => this.status(),
+      'remote.status': (p) => this.remoteStatus({ fresh: !!(p && p.fresh) }), // P49
       'fs.roots': async () => {
         const drives = await driveRoots();
         const seen = new Set(); const recent = [];

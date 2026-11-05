@@ -16,6 +16,9 @@ export const SETTINGS = {
   autoOpenRepos: { type: 'boolean', default: true, label: '터미널(Claude Code CLI)에서 일한 리포를 워크스페이스로 저절로 연다' },
   // P40: herdr 실행 파일 경로. 비우면 찾는다(ATRIUM_HERDR 다음, 설치기 current 링크·PATH·알려진 폴더보다 먼저). 바꾸면 백엔드가 다시 찾는다
   herdrPath: { type: 'string', default: '', max: 1024, label: 'herdr 실행 파일 경로(비우면 herdr 설치 폴더와 PATH에서 찾는다, P40)' },
+  // P49(R3): Tailscale로 온 요청의 로그인 사용자 제한. 켜져 있으면 이 PC에 로그인한 Tailscale 사용자와 허용 목록만 짝 맺고 연결한다. 이 PC의 창에서만 바꾼다
+  remoteSameUser: { type: 'boolean', default: true, label: 'Tailscale로 온 요청은 이 PC의 Tailscale 사용자와 허용 목록의 사용자만 받는다(P49)' },
+  remoteAllowedLogins: { type: 'string', default: '', max: 1000, pattern: /^[A-Za-z0-9._%+@,\s-]*$/, hint: '로그인 이름을 쉼표로', label: '더 받을 Tailscale 로그인 이름(쉼표로 여럿, P49)' },
   sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '리포(워크스페이스)에 이 분 동안 아무 일이 없으면 그 리포의 판 Claude Code 세션을 모두 잠재운다(0이면 저절로 잠재우지 않음, P21·P24 D4)' },
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));

@@ -4,12 +4,15 @@
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { connect as connectTo, startBackend as startBackendFor, stopBackend as stopBackendFor } from '../src/client.mjs';
+import { remoteCommand } from './atrium-remote.mjs'; // P49(R3): 원격 접속(Tailscale)
 import { FEATURES_HELP, FEATURE_BOOL_FLAGS, featureCommand, featureEvent } from './atrium-features.mjs'; // P6b
 
 const HELP = `atrium [--dev] [--json] <명령>
   backend start|stop|status         백엔드 띄우기(없으면 herdr 서버도 띄움), 끄기, 상태
   status                            백엔드와 판 전용 herdr 상태(버전, 프로토콜, 기능)
   devices [code|rm <id>]            웹 화면에 짝 맺은 기기 목록, 짝 맺기 코드 만들기, 끊기(P48)
+  remote status|guide               원격 접속(Tailscale) 진단과 따라 할 단계(P49). 읽기만 한다
+  remote enable|disable [--yes] [--https-port n]   tailscale serve로 판을 tailnet에 켜고 끈다(--yes가 있을 때만 실행, funnel은 쓰지 않음)
   herdr start|stop|restart [--yes]  판 전용 herdr 서버 켜기, 끄기, 다시 띄우기
   herdr status|rediscover           herdr 진단(고른 실행 파일, 본 후보, 버전 경고), 다시 찾기(P40)
   spawn <폴더> [--launcher 호출자] [--name n] [--prompt 글] [--model m] [--effort e] [--mode 권한모드] [--kind 종류|shell] [--args "인자"] [--allow-herdr]   --launcher면 그 호출자로 띄우고 준 값이 덮는다(P33)
@@ -162,6 +165,7 @@ async function main() {
     if (op === 'start') return out(await startBackend());
     if (op === 'stop') return out(await stopBackend());
   }
+  if (cmd === 'remote') return remoteCommand(cfg, rest, flags, connect); // P49: 백엔드가 없어도 된다
   const c = await connect();
   try {
     switch (cmd) {
