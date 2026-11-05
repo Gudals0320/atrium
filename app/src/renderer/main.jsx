@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider } from '@xyflow/react';
 import { api } from './api.js';
-import { useStore, getState, openDialog, setKillAsk, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus } from './store.js';
+import { useStore, getState, openDialog, setKillAsk, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin } from './store.js';
 import { OutputPanel } from './Output.jsx';
 import { LoopDialog } from './Loops.jsx';
 import { MissionMap } from './Mission.jsx';
@@ -32,7 +32,7 @@ import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
 import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';
-import { keyToData, closeKeyTargets } from './lib/keys.js';
+import { keyToData, closeKeyTargets, boardArrowKey } from './lib/keys.js';
 import { ReturnSummary, useReturnSummary } from './ReturnSummary.jsx';
 import { CloseDialog } from './SessionNode.jsx';
 import { AppBoundary } from './ErrorBoundary.jsx';
@@ -101,6 +101,9 @@ function App() {
   const order = [...inbox.needsYou, ...inbox.problems].map((s) => s.sessionId);
   const orderRef = useRef(order);
   orderRef.current = order;
+  // P11: 왼쪽 레일의 "손으로 잇기"(노드 손잡이를 늘 보인다), 오른쪽 레일의 루프 목록. P43: 판에서 ← 키로도 바꾼다
+  const [linking, setLinking] = useState(false);
+  const [loopsOpen, setLoopsOpen] = useState(false);
 
   useEffect(() => {
     // H4: 노드를 눌러 들어간 직후 터미널이 붙기 전에 친 키(입력칸 밖)는 모아 둔다. 터미널에 초점이 가면 그만 모은다
@@ -109,6 +112,16 @@ function App() {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); e.stopPropagation(); setSearchOpen(true); return; }
       const st = getState();
       const p = st.pendingInput && pendingFor(st.pendingInput.id);
+      // P43: 판에 초점이 있을 때의 방향키(lib/keys.js boardArrowKey). 노드에 들어가 터미널을 기다리는 동안(p)은 터미널 몫이다.
+      // 잡는 단계에서 받아 React Flow(고른 노드를 방향키로 옮긴다)보다 먼저 쓴다
+      const arrow = boardArrowKey(e, { dialog: st.dialog, missionOpen: st.missionOpen, outputOpen: !!st.outputView, pending: !!p });
+      if (arrow) {
+        e.preventDefault(); e.stopPropagation();
+        if (arrow === 'command') cmd.current && cmd.current.focus();
+        else if (arrow === 'search') { if (st.searchOpen) { const el = document.querySelector('[data-field="search"]'); if (el) el.select(); } else setSearchOpen(true); }
+        else if (arrow === 'tool') setLinking((l) => !l);
+        return;
+      }
       if (!p) return;
       if (e.target && e.target.closest && e.target.closest('.xterm')) return;
       if (editable(e.target)) return;
@@ -136,9 +149,6 @@ function App() {
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keydown', onKeyCapture, true); };
   }, []);
 
-  // P11: 왼쪽 레일의 "손으로 잇기"(노드 손잡이를 늘 보인다), 오른쪽 레일의 루프 목록
-  const [linking, setLinking] = useState(false);
-  const [loopsOpen, setLoopsOpen] = useState(false);
   return (
     <div className={`mt-app${linking ? ' linking' : ''}`}>
       <div className="mt-body">
@@ -171,7 +181,7 @@ function App() {
 }
 
 // 시험 스크립트(Playwright)와 E5·E6 측정이 읽는 창 안의 값
-window.__mt = { api, getState, perf, budget, terms, maxControllers: MAX_CONTROLLERS, notifyLog, setDebugThrow, setConvoNodes, setFocus }; // P13: setConvoNodes는 성능 시험의 기준(대화 노드 뺀 판). P26: setFocus는 초점 세션 시험
+window.__mt = { api, getState, perf, budget, terms, maxControllers: MAX_CONTROLLERS, notifyLog, setDebugThrow, setConvoNodes, setFocus, pinBottom: setBottomPin }; // P13: setConvoNodes는 성능 시험의 기준(대화 노드 뺀 판). P26: setFocus는 초점 세션 시험. P43: pinBottom(true)은 아래 바를 늘 보이게(옛 창 시험)
 window.addEventListener('error', (e) => { perf.perfLog('window_error', { message: e.message, at: `${e.filename}:${e.lineno}` }); window.mt.log(`error ${e.message} ${e.filename}:${e.lineno}`); });
 window.addEventListener('unhandledrejection', (e) => { perf.perfLog('unhandled', { message: String(e.reason && (e.reason.message || e.reason)) }); window.mt.log(`unhandled ${e.reason && (e.reason.stack || e.reason.message || e.reason)}`); });
 

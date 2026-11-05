@@ -84,7 +84,7 @@ export function TopLeft() {
       {/* P9: 개발용 판이면 표시한다. 실제 판에는 없다 */}
       {api.info && api.info.profile === 'dev' && <span className="mt-dev-badge" data-role="dev-badge" title={t('top.devBadge', { session: api.info.herdrSession, port: api.info.port })}>dev</span>}
       <WorkspaceTabs />
-      <button className="mt-cp" data-action="search" title={t('top.searchTitle')} onClick={() => setSearchOpen(true)}>
+      <button className="mt-cp" data-action="search" title={`${t('top.searchTitle')}\n${t('boardKeys.search')}`} onClick={() => setSearchOpen(true)}>
         <Icon name="search" /><span className="dim">{t('top.search')}</span><span className="mt-kbd">Ctrl F</span>
       </button>
     </div>
@@ -280,9 +280,9 @@ export function LeftRail({ linking, setLinking }) {
   const t = useT();
   return (
     <div className="mt-rail left" data-role="rail-left">
-      <Tool icon="pointer" on={!linking} label={t('rail.select')} action="tool-select" onClick={() => { setLinking(false); getState().clearSelection && getState().clearSelection(); }} />
-      {/* 손으로 잇기는 선택과 서로 바뀌는 모드라 바로 아래에 둔다 */}
-      <Tool icon="link" on={linking} label={t('rail.link')} action="link-mode" onClick={() => setLinking(!linking)} />
+      <Tool icon="pointer" on={!linking} label={`${t('rail.select')}\n${t('boardKeys.tool')}`} action="tool-select" onClick={() => { setLinking(false); getState().clearSelection && getState().clearSelection(); }} />
+      {/* 손으로 잇기는 선택과 서로 바뀌는 모드라 바로 아래에 둔다. P43: 판에서 ← 키로도 바꾼다(main.jsx) */}
+      <Tool icon="link" on={linking} label={`${t('rail.link')}\n${t('boardKeys.tool')}`} action="link-mode" onClick={() => setLinking(!linking)} />
       <Sep />
       <Favorites />
       <Sep />
@@ -326,6 +326,7 @@ export function LoopsPanel({ onClose }) {
 export function ChipRow() {
   const t = useT();
   const boardArranged = useStore((st) => st.arranged.has(BOARD_ARRANGED));
+  const shown = useStore((st) => st.bottomShown); // P43: 명령 바와 함께 숨고 나타난다(CommandBar.jsx useAutoHide)
   const chips = [
     [t('chips.spawn'), 'chip-spawn', t('chips.spawnTitle'), () => openDialog({ kind: 'spawn' })],
     // P31: 칩의 정리는 판 전체(영역도 다시 놓는다). 영역 이름표의 정리는 그 영역 안만
@@ -336,7 +337,7 @@ export function ChipRow() {
     [t('chips.fit'), 'chip-fit', t('chips.fitTitle'), () => getState().fitAll && getState().fitAll(250)],
   ];
   return (
-    <div className="mt-chips" data-role="chips">
+    <div className="mt-chips" data-role="chips" data-hidden={shown ? undefined : '1'}>
       {chips.map(([label, action, title, fn], i) => <button key={action} className="mt-qchip" style={{ '--chip-ring': `var(--chip-ring-${(i % 7) + 1})` }} data-action={action} title={title} onClick={fn}>{label}</button>)}
     </div>
   );
