@@ -44,4 +44,41 @@ P50 작업자가 개발용 판을 정리하다 본 것(`docs/log/p50-issues-canv
 
 ## 작업 기록
 
+- 시험 판: herdr 세션 `atrium-dev-p54`, 포트 47873, 데이터 `backend/.dev/data`, 창 프로필 `backend/.dev/app`, 대화 목록은 새로 만든 빈 폴더(`C:\Workspace\mtask-p54-ws`)와 `ATRIUM_CLAUDE_DESKTOP=none`. CLI는 판 값을 넣는 감싸개 `experiments/p54/tools/at.cjs`로 불렀다. 창과 claude 세션은 띄우지 않았다.
+- 재현(고치기 전):
+  - 꺼진 판에서 `backend start` 한 번만으로 `atrium: internal: Cannot read properties of undefined (reading 'stats')`가 났다(`cold1.txt`). 백엔드 자체는 뜬 채로 남는다.
+  - 같은 때 `backend start`를 하나 더 치면 늦은 쪽이 `백엔드가 뜨지 않았다: listen EADDRINUSE`로 실패했다(`second.txt`).
+  - herdr 서버가 도는 채로 백엔드만 멈춘 뒤 `backend start`를 띄우고 곧바로 `herdr stop --yes`를 치면, 앞은 `stats` 오류, 뒤는 10초 뒤 `{ stop: { stopped: false, out: 'herdr not found' } }`였고 서버는 그대로 돌았다(`cold2.txt`, `stop.txt`). P50 정리 순서(백엔드 멈춤 → 다시 띄움 → herdr 끄기)와 같다.
+  - 백엔드가 다 뜬 뒤에는 `backend status`, `status`, `herdr status|start|stop --yes|restart --yes`, `remote status`, `devices`가 모두 오류 없이 돌았다.
+- 원인: 백엔드 `start()`가 포트를 열고 `backend.json`을 쓴 뒤에도 herdr 실행 파일 고르기(`resolveHerdr`: `where herdr`, 후보마다 `--version`, 도는 서버의 실행 파일을 읽는 PowerShell, 수 초)를 기다리고, `relay`·`queue`·기능 처리기는 그 뒤에 만든다. 판 API는 그동안에도 요청을 처리했다.
+  - `backend start`(`client.mjs startBackend`)는 `/health`가 답하면 바로 `backend.status`를 부르고, 그 처리기가 아직 없는 `this.relay.stats()`를 읽었다.
+  - `herdr not found`는 백엔드 어댑터의 `herdrPath`가 아직 `null`(고르기 전, `ATRIUM_HERDR` 없음)일 때 `herdr.stop`이 `stopServer()`를 부른 것이다. `execText`가 파일이 없으면 `herdr not found`를 돌려준다. 찾기 결과, 도는 서버의 실행 파일, CLI 쪽 문제는 아니다(CLI는 herdr를 부르지 않는다). 다 뜬 뒤 찾기 결과는 installer 링크, 서버 실행 파일도 같은 경로였다.
+  - P40이 `resolveHerdr`를 `listen` 뒤, `relay` 앞에 넣어 이 틈이 수 초로 벌어졌다. P49는 `backend.status`에 `web`을 더했을 뿐 이 틈과는 관계없다.
+  - 실제 판(env 없는 기본 프로필)도 같은 `start()`와 같은 CLI 길이다. 옛 판 옮기기 때문에 `start()` 앞에서 찾기를 한 번 더 하지만 `listen` 뒤의 틈은 같다(코드로만 봄, 실제 판으로는 시험하지 않음).
+- 수정:
+  - `backend/src/api.mjs`: `ApiServer`에 `ready`(약속)를 둔다. 요청은 `ready`가 풀린 뒤에 처리기를 찾아 부른다. 뜨는 동안 `Object.assign`으로 더하는 처리기(기능, 워크트리 등)를 그 전에 부르면 `unknown_method`이던 것도 함께 풀린다.
+  - `backend/src/backend.mjs`: `start()`를 `startInner()`로 감싸 끝나면(실패해도) `ready`를 푼다. `herdr.stop|restart`는 실행 파일을 모르면 다시 찾고, 그래도 없으면 부르지 않고 `herdr_missing` 오류를 낸다(전에는 10초 기다린 뒤 `herdr not found`를 담아 돌려주었다).
+  - `backend/src/client.mjs`: 띄운 백엔드가 끝났는데 같은 판의 다른 백엔드가 `/health`에 답하면 `{ already: true }`를 돌려준다(동시 시작의 EADDRINUSE).
+  - `backend start`가 다 뜰 때까지 기다리므로 처음 시작이 몇 초 길어질 수 있다(시험에서 2.7초).
+- 단위 시험 `backend/test/p54.test.mjs` 7개: `ready` 전에는 답하지 않고 뒤에 더한 처리기도 찾음, `ready` 없으면 전과 같음, `start()` 실패에도 `ready`가 풀림, `herdr stop`의 경로 없음·다시 찾음·이미 앎(가짜 어댑터), 동시 시작(가짜 `/health` 서버와 진짜 `main.mjs`가 포트를 못 열고 끝남).
+- 고친 뒤 개발용 판(`after-*.txt`): 꺼진 판 `backend start`와 곧바로 친 `herdr stop --yes`가 둘 다 정상(`started`, `stopped: true`). 동시 `backend start` 셋은 `started` 하나와 `already` 둘. 명령 순서 `backend start → backend status → status → herdr status → herdr stop --yes ×2 → herdr start ×2 → herdr restart --yes → remote status → devices → backend stop ×2 → backend status → backend start → status`가 모두 exit 0이고, 꺼진 백엔드의 `backend status`만 뜻한 대로 "백엔드가 돌지 않는다"와 exit 1이다(`after-seq.txt`).
+- `cd backend && npm test` 408개 통과, `cd app && npm test` 185개 통과, `cd app && npm run build` 통과(`backend-test.txt`, `app-test.txt`, `app-build.txt`).
+- 정리: CLI로 herdr 서버와 백엔드를 멈추고 herdr 세션 `atrium-dev-p54`를 지웠다. `backend/.dev/data`, `backend/.dev/app`, 시험 폴더, 단위 시험 임시 폴더를 지웠다. 다른 판과 사용자의 herdr 세션은 건드리지 않았다.
+
 ## 보고
+
+### 요약
+
+| 오류 | 재현 | 원인 | 수정 | 시험 |
+| --- | --- | --- | --- | --- |
+| `backend start`의 `reading 'stats'` | 됨(꺼진 판에서 한 번만 쳐도) | 판 API가 `start()`가 끝나기 전 요청을 처리, `backend.status`가 아직 없는 `relay`를 읽음 | `ApiServer`가 `ready`까지 기다림 | `p54.test.mjs`, 개발용 판 |
+| `herdr stop --yes`의 `herdr not found` | 됨(백엔드를 띄운 직후) | 같은 틈. 백엔드가 herdr 실행 파일을 고르기 전(`herdrPath` null)에 `stopServer` | 같은 수정. 경로를 모르면 다시 찾고, 없으면 `herdr_missing` | 같음 |
+| 동시 `backend start`의 EADDRINUSE | 됨 | 늦은 백엔드가 포트를 못 열고 끝남 | 먼저 뜬 백엔드가 있으면 `already` | 같음 |
+
+- 같은 계열 명령(`herdr status|start|restart`, `backend stop|status`, `status`, `remote status`, `devices`)은 다 뜬 뒤에는 문제가 없었고, 뜨는 중의 틈은 위 수정으로 함께 닫힌다.
+- 다 뜬 판에서 서버가 이미 꺼져 있을 때 `herdr stop --yes`는 `stopped: true`와 herdr의 "server is not running" 글을 돌려준다. 오류는 아니라 두었다.
+
+### 문서에 고칠 문장(제안)
+
+- ARCH 판 API 절: "판 API는 백엔드가 다 뜬 뒤(`start()` 끝)에 요청을 처리한다. 그 전에 온 요청은 기다린다(P54)."
+- ARCH 백엔드 수명 또는 CLI 절: "`backend start`는 다 뜰 때까지 기다리고, 같은 판을 함께 띄우면 먼저 뜬 백엔드를 쓴다(`already`)."
