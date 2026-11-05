@@ -21,6 +21,7 @@ import {
   serveCommand, serveOffCommand, portConflict, freeHttpsPort, remoteUrl, proxiesTo, tailscaleBin, runTailscale,
 } from '../src/tailscale.mjs';
 import { planChange, formatStatus, guideText, localStatus } from '../bin/atrium-remote.mjs';
+import { fakeWhois } from '../../app/test/e2e/p49-fake-tailscale.mjs'; // P57: whois 가짜 출력(100.64.0.2·3은 me, 4는 other)
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p49-'));
 const PORT = 47868;
@@ -48,6 +49,7 @@ const runner = (status, serve, calls = []) => async (bin, args) => {
   calls.push(args.join(' '));
   if (args[0] === 'status') { if (status instanceof Error) throw status; return JSON.stringify(status); }
   if (args[0] === 'serve') return JSON.stringify(serve);
+  if (args[0] === 'whois') { const w = fakeWhois(args[2]); if (!w) throw new Error('no match for IP'); return JSON.stringify(w); }
   throw new Error('unexpected');
 };
 const tsOf = async (o = {}) => readTailscale({ port: PORT, bin: 'tailscale', run: runner(fakeStatus(o), fakeServe(o)) });
@@ -212,15 +214,21 @@ test('tailscale serve를 거친 요청: 같은 사용자만 짝 맺고 연결, �
     const lw = (await wsCall(local.ws, 'whoami')).result;
     assert.equal(lw.remote, false); assert.equal(lw.deflate, '', '이 PC 안 연결은 압축하지 않는다');
     // 다른 사용자는 기기 토큰이 있어도 연결하지 못한다
-    assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${token}`, { ...viaServe('other@example.com'), origin })).ok, false);
-    // 허용 목록에 더하면 된다
+    const otherHdr = { ...viaServe('other@example.com'), 'x-forwarded-for': '100.64.0.4', origin };
+    assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${token}`, otherHdr)).ok, false);
+    // 허용 목록에 더하면 그 사용자도 자기 기기로 짝 맺고 쓴다(P57: 다른 기기의 토큰은 여전히 못 쓴다)
     b.st.remoteAllowedLogins = 'other@example.com';
-    assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${token}`, { ...viaServe('other@example.com'), origin })).ok, true);
+    assert.equal((await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${token}`, otherHdr)).ok, false, '다른 Tailscale 기기');
+    const code2 = (await wsCall(local.ws, 'device.code')).result.code;
+    const ok2 = await raw(b.port, '/web/pair/code', { method: 'POST', headers: { ...otherHdr, 'content-type': 'application/json' }, body: JSON.stringify({ code: code2, name: 'theirs' }) });
+    assert.equal(ok2.status, 200);
+    const dev2 = await wsOpen(`ws://127.0.0.1:${b.port}/api?device=${ok2.body.token}`, otherHdr);
+    assert.equal(dev2.ok, true); dev2.ws.close();
     // 진단(remote.status)은 이 판의 값으로
     const d = (await wsCall(local.ws, 'remote.status')).result;
     assert.equal(d.ready, true); assert.equal(d.url, `https://${NAME}/`); assert.deepEqual(d.allowed, ['other@example.com']);
     assert.ok(d.checks.find((c) => c.id === 'hosts').level === 'ok');
-    assert.equal(d.checks.find((c) => c.id === 'devices').vars.n, 1);
+    assert.equal(d.checks.find((c) => c.id === 'devices').vars.n, 2);
     dev.ws.close(); local.ws.close();
   } finally { await b.close(); }
 });

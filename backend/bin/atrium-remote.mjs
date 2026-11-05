@@ -24,7 +24,8 @@ export function checkText(c, port) {
     hosts: { ok: `Host 허용 목록에 ${v.name}가 있습니다`, fail: `Host 허용 목록에 Tailscale 이름이 없습니다${v.name ? ` (${v.name}). 백엔드를 다시 켜거나 잠시 뒤 다시 봅니다` : ''}` },
     built: { ok: '웹 화면 빌드 있음', fail: '웹 화면 빌드가 없습니다. cd app && npm run build' },
     devices: { ok: `짝 맺은 기기 ${v.n}대`, warn: '짝 맺은 기기가 없습니다. 노트북에서 주소를 열고 코드로 짝을 맺습니다' },
-    users: { ok: `같은 Tailscale 사용자만 받습니다${v.n ? ` (+허용 ${v.n}명)` : ''}`, warn: '로그인 사용자 제한이 꺼져 있습니다. tailnet의 누구든 짝 맺기를 시도할 수 있습니다' },
+    nodes: { ok: '짝 맺은 기기는 Tailscale 기기에 묶임(다른 Tailscale 기기에서는 그 자격을 쓸 수 없습니다)', warn: `짝 맺은 기기는 Tailscale 기기에 묶임. 묶이지 않은 옛 기기 ${v.n}대는 바깥에서 막힙니다(다시 짝 맺기 필요)`, skip: '짝 맺은 기기는 Tailscale 기기에 묶임(옛 기기 수: 백엔드 없이 읽어 모름)' },
+    users: { ok:`같은 Tailscale 사용자만 받습니다${v.n ? ` (+허용 ${v.n}명)` : ''}`, warn: '로그인 사용자 제한이 꺼져 있습니다. tailnet의 누구든 짝 맺기를 시도할 수 있습니다' },
   };
   return `${MARK[c.level] || ''} ${(T[c.id] && T[c.id][c.level]) || `${c.id} ${c.level}`}`;
 }
