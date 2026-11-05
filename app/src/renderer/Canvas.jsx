@@ -49,7 +49,8 @@ import { enterSession } from './touch.js';
 import { wakeSession } from './sleep.js'; // P21
 import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t를 메모·칸반 종류 이름으로도 쓴다
 import { repoEdges, facingSides } from '../../../backend/src/links.mjs';
-import { boundsOf, fitViewport } from '../../../backend/src/workspaces.mjs';
+import { boundsOf } from '../../../backend/src/workspaces.mjs';
+import { chromeInset, fitInset } from './lib/chrome-inset.js'; // P52(#5)
 import { bbox, REGION_GAP } from '../../../backend/src/canvas.mjs';
 import { layout as layoutTree, dropZone, edgeSnap, junctions } from '../../../backend/src/dock-tree.mjs'; // P17, P23
 import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안
@@ -567,17 +568,24 @@ export function Canvas() {
     if (now - lastLive.current > 120) { lastLive.current = now; setViewNow(vp, sizeOf()); }
   }, [schedule]);
 
-  // 전체가 화면에 들어오게(처음 열 때, "전체" 단추). 소속 없는 메모·칸반도 넣는다
+  // P52(#5): 캔버스 위에 떠 있는 크롬(위 알약, 왼쪽·오른쪽 레일, 보이는 아래 바)이 덮는 가장자리 여백
+  const insetNow = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return {};
+    const q = (sel) => [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+    return chromeInset(el.getBoundingClientRect(), { top: q('[data-role="top-left"], [data-role="top-right"]'), left: q('[data-role="rail-left"]'), right: q('[data-role="rail-right"]'), bottom: q('[data-role="bottom"]:not([data-hidden]), [data-role="chips"]:not([data-hidden])') });
+  }, []);
+  // 전체가 화면에 들어오게(처음 열 때, "전체" 단추). 소속 없는 메모·칸반도 넣는다. P52: 떠 있는 크롬 밑은 빼고 맞춘다
   const fitAll = useCallback((duration = 0) => {
     const el = wrapRef.current;
     if (!el) return;
     const rects = [...allRegions().values(), ...itemRects().filter((r) => !r.ws)];
-    const vp = fitViewport(boundsOf(rects, 40), { width: el.clientWidth, height: el.clientHeight }, { minZoom: 0.05, maxZoom: 1 });
+    const vp = fitInset(boundsOf(rects, 40), { width: el.clientWidth, height: el.clientHeight }, insetNow(), { minZoom: 0.05, maxZoom: 1 });
     perfLog('fit_all', { regions: rects.length, zoom: vp ? +vp.zoom.toFixed(3) : null });
     rf.setViewport(vp || { x: 40, y: 80, zoom: 0.75 }, { duration });
     setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), duration + 30);
     schedule(duration + 100);
-  }, [rf, schedule]);
+  }, [rf, schedule, insetNow]);
   // 처음 열 때: 저장한 뷰포트가 없으면(처음, P5 판을 옮긴 뒤) 모두 보이게 맞춘다
   useEffect(() => { const t = setTimeout(() => { if (!getState().viewport) fitAll(0); else setViewNow(rf.getViewport(), sizeOf()); }, 80); return () => clearTimeout(t); }, [fitAll, rf]);
 
@@ -598,7 +606,7 @@ export function Canvas() {
       setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), 200);
       schedule(250);
     };
-    st.navigateToRect = (r, duration = 250) => { const el = wrapRef.current; rf.setCenter(r.x + r.w / 2, r.y + r.h / 2, { zoom: Math.min(1, Math.max(0.05, Math.min((el.clientWidth * 0.92) / r.w, (el.clientHeight * 0.92) / r.h))), duration }); setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), duration + 50); schedule(duration + 50); };
+    st.navigateToRect = (r, duration = 250) => { const el = wrapRef.current; const vp = fitInset(r, { width: el.clientWidth, height: el.clientHeight }, insetNow(), { minZoom: 0.05, maxZoom: 1, fill: 0.92 }); if (vp) rf.setViewport(vp, { duration }); setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), duration + 50); schedule(duration + 50); };
     // P27: 리포로 가면 워크트리 영역까지 들어오게
     const repoRect = (key) => bbox([...allRegions()].filter(([k]) => wsOfArea(k) === key).map(([, r]) => r));
     st.fitWorkspace = (key) => { const r = repoRect(key); if (r) st.navigateToRect(r); };
@@ -653,7 +661,7 @@ export function Canvas() {
       markSeen(id);
       if (focusTerminal && !viewOnly) setTimeout(() => setFocus(id, { terminal: true }), 700); // 터미널이 붙은 뒤 한 번 더
     };
-  }, [rf, schedule, fitAll]);
+  }, [rf, schedule, fitAll, insetNow]);
 
   // H4: 노드 본문을 누르면(어느 얼굴이든) 들어간다. 단추, 입력칸, 카드를 누른 것과 여러 개 고르기(Ctrl, Shift)는 빼고.
   // P26: 머리줄, 본문, 터미널 안, 멀리·아이콘 얼굴 어디를 누르든 화면을 그 노드(덩어리 안이면 덩어리 전체)로 옮긴다(이미 보고 있으면 그대로).

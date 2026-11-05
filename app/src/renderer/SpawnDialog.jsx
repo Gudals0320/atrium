@@ -11,6 +11,7 @@ import { toast, getState, wsName, openDialog, goWhenOpen } from './store.js';
 import { useT, t, errText } from './lib/i18n.js';
 import { kindOf } from './lib/kinds.js';
 import { favoriteLaunchers, orderedLaunchers, previewLine } from './lib/launchers.js';
+import { useDialog } from './dialog.js';
 
 const startedText = (r) => t('spawn.started', { name: r.name, kind: r.flavor ? t('spawn.startedKind', { kind: kindOf(r.flavor).label + (r.command ? t('spawn.startedCommand') : '') }) : r.command ? t('spawn.startedKind', { kind: t('launchers.harness.command') }) : r.kind !== 'claude' ? t('spawn.startedKind', { kind: r.kind === 'shell' ? t('spawn.shell') : r.kind }) : '', trust: r.trust && r.trust.needsTrust ? t('spawn.startedTrust') : '', ws: r.workspaceKey && r.workspaceKey !== getState().currentWs ? t('spawn.startedWs', { ws: wsName(r.workspaceKey) || r.workspaceRoot }) : '' });
 
@@ -62,6 +63,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
   const claude = harness === 'claude';
   const shell = harness === 'shell';
   const typed = harness === 'command'; // 직접 명령: 셸 패널에 그 줄을 친다(hook 없음, 첫 지시 없음)
+  const box = useDialog(onClose); // P52: 열면 첫 칸에 초점, Esc로 닫기, 닫으면 연 단추로 초점
   const pickLauncher = (id) => { setLid(id); const l = findLauncher(id); setLmodel(l ? l.model || devModel(l) : ''); };
 
   useEffect(() => { api.call('agent.kinds').then((ks) => setKinds([...ks].sort((a, b) => (b.installed - a.installed) || (a.kind === 'claude' ? -1 : b.kind === 'claude' ? 1 : 0)))).catch(() => {}); }, []);
@@ -93,7 +95,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
 
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="mt-modal" onSubmit={submit} data-role="spawn" data-launcher={lid || ''}>
+      <form ref={box} className="mt-modal" onSubmit={submit} data-role="spawn" data-launcher={lid || ''}>
         <h3>{t('spawn.title')}</h3>
         {data && <>
           <label>{t('launchers.pick')}

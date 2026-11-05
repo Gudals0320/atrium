@@ -14,6 +14,7 @@ import { createItem } from './Memo.jsx';
 import { arrangeBoard, BOARD_ARRANGED } from './Regions.jsx'; // P31: 칩의 정리는 판 전체
 import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
+import { useDialog } from './dialog.js'; // P52
 import { useInbox } from './InboxBar.jsx';
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
@@ -319,8 +320,9 @@ export function LoopsPanel({ onClose }) {
   const loops = useStore((st) => st.loops);
   const now = useNow();
   const list = [...loops.values()];
-  if (!list.length) return <div className="mt-loops-panel"><div className="mt-loop-list" data-role="loop-list"><div className="mt-card-head"><span className="mt-card-title">{t('loops.title')}</span><button className="mt-card-min" onClick={onClose}><Icon name="x" /></button></div><div className="dim">{t('loops.panelEmpty')}</div></div></div>;
-  return <div className="mt-loops-panel"><LoopList loops={list} now={now} onClose={onClose} /></div>;
+  const box = useDialog(onClose, { modal: false }); // P52: 떠 있는 창. Esc로 닫는다
+  if (!list.length) return <div ref={box} className="mt-loops-panel"><div className="mt-loop-list" data-role="loop-list"><div className="mt-card-head"><span className="mt-card-title">{t('loops.title')}</span><button className="mt-card-min" onClick={onClose}><Icon name="x" /></button></div><div className="dim">{t('loops.panelEmpty')}</div></div></div>;
+  return <div ref={box} className="mt-loops-panel"><LoopList loops={list} now={now} onClose={onClose} /></div>;
 }
 
 // ---------- 아래 ----------

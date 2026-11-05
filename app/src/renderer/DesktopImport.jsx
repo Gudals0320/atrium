@@ -6,6 +6,7 @@ import { api } from './api.js';
 import { toast } from './store.js';
 import { useT, errText, tOr } from './lib/i18n.js';
 import { agoText } from './lib/labels.js';
+import { useDialog } from './dialog.js';
 
 const CAN = new Set(['new', 'more']); // 고를 수 있는 상태(나머지는 까닭만 보인다)
 
@@ -17,6 +18,7 @@ export function DesktopImportDialog({ onClose }) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
+  const box = useDialog(() => !busy && onClose()); // P52: 가져오는 동안은 닫지 않는다(바깥 누르기와 같다)
   async function load(keepPick = false) {
     try {
       const r = await api.call('desktop.list');
@@ -47,7 +49,7 @@ export function DesktopImportDialog({ onClose }) {
   };
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
-      <div className="mt-modal mt-dimport" data-role="desktop-import">
+      <div ref={box} className="mt-modal mt-dimport" data-role="desktop-import">
         <h3>{t('desktopImport.title')}</h3>
         <div className="mt-card-sub">{t('desktopImport.note')}</div>
         {error ? <div className="mt-warn mt-dimport-body" data-role="import-error">{errText(error)}</div>

@@ -12,6 +12,7 @@ import { pctOf, parsePct, stepScale, SCALE_MIN, SCALE_MAX, SCALE_STEP } from './
 import { useT, errText, setLanguage, getLanguage, LANGUAGES } from './lib/i18n.js';
 import { LaunchersTab } from './Launchers.jsx'; // P33: 호출자 탭
 import { DevicesTab } from './WebDevices.jsx'; // P48: 연결된 기기(웹 화면)
+import { useDialog } from './dialog.js'; // P52
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 export function SetRow({ name, hint, children, role }) {
@@ -182,12 +183,12 @@ export function SettingsDialog({ onClose }) {
   const [schema, setSchema] = useState(null);
   const [tab, setTab] = useState('general');
   useEffect(() => { api.call('settings.get').then((r) => setSchema(r.schema)).catch((e) => toast(t('settings.saveFailed', { error: errText(e) }), 'error')); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const k = (e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
+  const box = useDialog(onClose); // P52: Esc 닫기는 공용(dialog.js). 열면 상자에 초점, Tab은 안에서 돈다
   const tabs = TABS.filter((x) => x.has(settings, launchers));
   const cur = tabs.some((x) => x.key === tab) ? tab : 'general';
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="mt-modal mt-settings" data-role="settings" data-tab={cur}>
+      <div ref={box} className="mt-modal mt-settings" data-role="settings" data-tab={cur}>
         <h3>{t('settings.title')}</h3>
         <div className="mt-set-tabs" role="tablist" data-role="settings-tabs">
           {tabs.map((x) => <button key={x.key} type="button" role="tab" aria-selected={cur === x.key} className={`mt-set-tab${cur === x.key ? ' on' : ''}`} data-tab={x.key} onClick={() => setTab(x.key)}>{t(x.label || `settings.tab.${x.key}`)}</button>)}
