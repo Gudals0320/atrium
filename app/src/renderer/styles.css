@@ -1345,3 +1345,60 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
   .mt-stepper-btn, .mt-copy-done, input[type="checkbox"].mt-switch, input[type="checkbox"].mt-switch::after, .mt-dsec-caret, .mt-pk-via-opt { transition: none; }
   .mt-dsec-fold[open] > :not(summary) { animation: none; }
 }
+
+
+/* P61: 아래 바가 아래에서 올라오며 나타나고(0.2초), 숨을 때는 내려가며 흐려진다(0.15초). 칩 줄은 바보다 조금 늦게 올라오고 함께 내려간다.
+   ↓ 키나 초점으로 나타날 때도 같다. 움직임 줄이기면 바로 바뀐다 */
+.mt-bottom > .mt-cmd { transition: opacity .18s cubic-bezier(.2, .7, .2, 1), transform .2s cubic-bezier(.2, .8, .2, 1); }
+.mt-bottom[data-hidden="1"] > .mt-cmd { opacity: 0; transform: translateY(28px) scale(.985); transition-duration: .15s, .15s; transition-timing-function: ease-in, ease-in; }
+.mt-chips { transition: opacity .18s cubic-bezier(.2, .7, .2, 1) .03s, transform .2s cubic-bezier(.2, .8, .2, 1) .03s; }
+.mt-chips[data-hidden="1"] { opacity: 0; transform: translateX(-50%) translateY(28px); transition: opacity .15s ease-in, transform .15s ease-in; }
+@media (prefers-reduced-motion: reduce) {
+  .mt-bottom > .mt-cmd, .mt-bottom[data-hidden="1"] > .mt-cmd, .mt-chips, .mt-chips[data-hidden="1"] { transition: none; }
+}
+
+/* P61: 찾기 창(Search.jsx SearchBox). 위 가운데에 조금 더 크게 뜨고, 위에서 가볍게 내려온다(닫힐 때는 올라가며 흐려진다).
+   찾기 아이콘이 든 입력칸, 빈 칸일 때 찾는 범위, 종류 아이콘·표시가 든 두 줄 결과, 아래 키 안내 */
+.mt-search { top: 62px; width: min(880px, calc(100% - 180px)); padding: 10px; gap: 0; border-radius: 16px; display: flex; flex-direction: column;
+  animation: mt-search-in .18s cubic-bezier(.2, .8, .2, 1) both; }
+.mt-search[data-state="closing"] { animation: mt-search-out .15s ease-in both; pointer-events: none; }
+@keyframes mt-search-in { from { opacity: 0; translate: 0 -14px; } to { opacity: 1; translate: 0 0; } }
+@keyframes mt-search-out { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: 0 -10px; } }
+.mt-search-bar { position: relative; display: flex; align-items: center; height: 50px; padding: 0 8px 0 14px; gap: 10px; border-radius: 11px; background: var(--field-bg); border: 1px solid var(--panel-line-2); }
+.mt-search-bar:focus-within { border-color: var(--accent-line); }
+.mt-search-bar .mt-search-icon { width: 18px; height: 18px; color: var(--dim); }
+.mt-search-bar:focus-within .mt-search-icon { color: var(--accent-2); }
+.mt-search .mt-search-bar input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: none; font-size: 16px; color: var(--text); }
+.mt-search .mt-search-bar input:focus { outline: none; }
+.mt-search .mt-search-bar input::placeholder { color: var(--dim-2); }
+.mt-search-clear { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--dim); cursor: pointer; }
+.mt-search-clear:hover { background: var(--panel-2); color: var(--text); }
+.mt-search-scope { padding: 10px 6px 2px; font-size: 12.5px; line-height: 1.5; color: var(--dim); }
+.mt-search .mt-search-list { margin-top: 8px; gap: 2px; max-height: min(56vh, calc(100vh - 240px)); }
+.mt-search .mt-search-item { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; min-height: 50px; padding: 7px 10px; border-radius: 10px; font-size: 13.5px; white-space: nowrap; }
+.mt-search .mt-search-item.on { background: var(--panel-3); box-shadow: inset 2px 0 0 var(--accent); }
+.mt-search-kind { width: 32px; height: 32px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: var(--panel-2); border: 1px solid var(--panel-line); color: var(--dim); }
+.mt-search-kind .mt-i { width: 16px; height: 16px; }
+.mt-search-item.on .mt-search-kind { color: var(--accent-2); border-color: var(--accent-line); }
+.mt-search-main { display: grid; gap: 3px; min-width: 0; }
+.mt-search-top, .mt-search-sub { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mt-search-name { overflow: hidden; text-overflow: ellipsis; font-weight: 650; color: var(--text); }
+.mt-search-tag { flex: none; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--panel-line); color: var(--dim); }
+.mt-search .mt-search-field { flex: none; min-width: 0; font-size: 12px; color: var(--dim-2); }
+.mt-search .mt-search-snip { font-size: 12.5px; color: var(--dim); }
+.mt-search-name mark, .mt-search .mt-search-snip mark { background: var(--mark); color: var(--text); border-radius: 3px; padding: 0 1px; }
+.mt-search .mt-search-more { font-family: var(--font-mono); font-size: 11.5px; color: var(--dim); }
+.mt-search-go { min-width: 24px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 13px; line-height: 1; padding: 0 5px; border-radius: 5px; border: 1px solid var(--panel-line-2); color: var(--dim); visibility: hidden; }
+.mt-search-item.on .mt-search-go { visibility: visible; }
+.mt-search .mt-search-item.empty { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 0; margin-top: 8px; padding: 22px 16px; white-space: normal; text-align: center; cursor: default; color: var(--dim); }
+.mt-search-item.empty b { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.mt-search-item.empty span { font-size: 12.5px; }
+.mt-search-empty-icon { width: 22px; height: 22px; color: var(--dim-2); margin-bottom: 2px; }
+.mt-search-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 8px 4px 0; border-top: 1px solid var(--panel-line); font-size: 11.5px; color: var(--dim); }
+.mt-search-keys { display: flex; flex-wrap: wrap; gap: 14px; }
+.mt-search-keys > span { display: inline-flex; align-items: center; gap: 3px; }
+.mt-search-keys > span > kbd:last-of-type { margin-right: 3px; }
+.mt-search-foot kbd { min-width: 18px; height: 18px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; color: var(--text-2); background: var(--panel-2); border: 1px solid var(--panel-line-2); border-bottom-width: 2px; border-radius: 5px; }
+.mt-search-count { font-family: var(--font-mono); color: var(--dim-2); }
+@media (max-width: 640px) { .mt-search { width: calc(100% - 32px); } .mt-search-go, .mt-search-keys > span:first-child { display: none; } }
+@media (prefers-reduced-motion: reduce) { .mt-search, .mt-search[data-state="closing"] { animation: none; } }
