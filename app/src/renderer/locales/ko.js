@@ -1373,4 +1373,18 @@ export default {
   termSelect: {
     copyFail: '클립보드에 복사하지 못했습니다.',
   },
+  // P47: 한 백엔드에 창(클라이언트) 여럿
+  peers: {
+    pill: '다른 기기 {n}',
+    title: '이 보드에 붙은 다른 창과 기기',
+    row: '{name} · {kind}',
+    active: '{time} 사용',
+    idle: '쉬는 중',
+    notifyHere: '알림은 이 기기에 뜹니다.',
+    notifyThere: '알림은 가장 최근에 쓴 {name}에 뜹니다.',
+    kind_desktop: '데스크톱',
+    kind_web: '브라우저',
+    typing: '{name}에서 입력 중',
+    sizeBy: '{name}의 크기로 보입니다. 클릭하거나 입력하면 이 노드 크기에 맞춥니다.',
+  },
 };

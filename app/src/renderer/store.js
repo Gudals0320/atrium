@@ -26,6 +26,7 @@ const state = {
   boardSeenAt: null, // A3: 판을 마지막으로 본 시각(백엔드 기록)
   resources: null, // D1
   clients: null, // D3: 판 전용 herdr 세션에 붙은 다른 화면
+  peers: null, // P47: 이 백엔드에 붙은 창·웹 클라이언트 { clients, notify(알림 받을 클라이언트 ID), me }
   links: new Map(), // P4: linkId → 연결(누가 누구에게 시켰는지, 역할, 띄움)
   dialog: null, // { kind: 'spawn' | 'role' | 'link' | 'wsopen' | 'wsclose' | 'close', from?, to?, linkId?, cwd?, ids? }
   killAsk: null, // P22: { id, at } Delete 키로 그 노드의 닫기 확인(X와 같음)을 연다
@@ -240,6 +241,7 @@ export async function loadLoops() { const ls = await api.call('loop.list'); stat
 api.on('$status', ({ status, detail }) => { state.conn = status; state.connDetail = detail || null; changed(); });
 api.on('$open', async (r) => {
   state.sessions = new Map(r.sessions.map((s) => [s.sessionId, s]));
+  if (r.clients) state.peers = { ...r.clients, me: r.clients.me || api.clientId }; // P47
   changed();
   try {
     await loadBoard();
@@ -295,6 +297,16 @@ api.on('workspace.updated', (d) => {
   changed();
 });
 api.on('herdr.clients', (v) => { state.clients = v; changed(); });
+api.on('clients.updated', (v) => { state.peers = { ...v, me: api.clientId }; changed(); }); // P47
+// P47: 사람이 이 창에서 무엇을 하면(키, 마우스) 백엔드에 알린다. 알림은 최근에 쓴 클라이언트에서만 뜬다(백엔드 pickNotifyClient)
+const ACTIVE_PING_MS = 20000;
+let lastPing = 0;
+export function noteActive(now = Date.now()) {
+  if (now - lastPing < ACTIVE_PING_MS || api.status !== 'open') return;
+  lastPing = now;
+  api.call('client.active').catch(() => { lastPing = 0; });
+}
+if (typeof window !== 'undefined' && window.addEventListener) for (const ev of ['keydown', 'pointerdown', 'wheel']) window.addEventListener(ev, () => noteActive(), { capture: true, passive: true });
 // P6c 이벤트
 api.on('memo.updated', (m) => { state.memos = new Map(state.memos); state.memos.set(m.memoId, m); changed(); });
 api.on('memo.removed', (d) => { state.memos = new Map(state.memos); state.memos.delete(d.memoId); changed(); });

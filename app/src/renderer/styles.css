@@ -1043,3 +1043,9 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 /* P43: 찾기 바는 위 가운데(위 알약 줄 아래)에 뜨고 결과는 아래로 펼친다 */
 .mt-search { top: 60px; bottom: auto; }
 .mt-search-list { max-height: min(50vh, calc(100vh - 200px)); }
+
+/* P47: 한 백엔드에 창 여럿. 위쪽 "다른 기기 n" 알약, 다른 기기가 방금 친 터미널 표시, 다른 창이 크기를 정한 터미널의 모서리 표시 */
+.mt-peers { color: var(--chrome-text-2); font-size: 12px; cursor: default; }
+.mt-peers-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); flex: none; }
+.mt-term-typing { position: absolute; right: 8px; top: 6px; z-index: 3; pointer-events: none; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent-2); padding: 2px 8px; border-radius: 8px; font-size: 11px; }
+.mt-term-sizeby { position: absolute; left: 4px; bottom: 4px; z-index: 3; width: 8px; height: 8px; border-left: 2px solid var(--accent-line); border-bottom: 2px solid var(--accent-line); opacity: 0.8; pointer-events: none; }

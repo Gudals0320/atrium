@@ -7,6 +7,8 @@
 //   고르는 동안 포인터는 글 고르기 모양. 복사는 줄 끝 빈칸을 뺀다.
 // - P42: 글 고르기는 웹처럼 한다(term-selection.js). 선택은 글에 붙어 휠·가장자리 자동 스크롤·새 프레임에 함께 움직이고 풀리지 않는다.
 //   claude 등은 프레임을 이어 붙인 문서로, 셸은 herdr 기록과 밀려난 줄을 xterm scrollback에 넣어(판 안에서 스크롤) 화면 밖 글까지 고르고 복사한다.
+// - P47: 창(클라이언트) 여럿이 한 패널을 함께 본다. 패널 크기는 마지막으로 입력했거나 초점을 준 창이 정하고(terminal.owner),
+//   다른 창은 같은 열×행을 노드 크기에 맞춰 비율로 그린다(fitScale). 다른 기기가 방금 친 터미널에는 짧게 표시한다(잠그지 않는다).
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -21,6 +23,7 @@ import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
 import { onFrame, onWritten, markInput, setTerminal, perfLog } from './perf.js';
 import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/tokens.js';
 import { useT, errText } from './lib/i18n.js';
+import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
 
 function readNumber(key, dflt) {
   const q = new URLSearchParams(location.search).get(key);
@@ -60,10 +63,12 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
   const [status, setStatus] = useState({ kind: 'attaching' });
   const [hint, setHint] = useState(null);
   const [retry, setRetry] = useState(0);
+  const [share, setShare] = useState({ shared: 1, ownerIsMe: true, ownerName: null }); // P47
+  const [typing, setTyping] = useState(null); // P47: 다른 기기가 방금 입력
 
   useEffect(() => {
     const host = hostRef.current;
-    const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null };
+    const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null, shared: 1, scale: 1 };
     // P42: 셸은 앱이 스스로 스크롤하지 않아(PowerShell은 SGR 휠을 무시) 지난 출력을 xterm scrollback에 두고 판 안에서 스크롤한다
     const shell = (getState().sessions.get(sessionId) || {}).kind === 'shell';
     const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: TERM_FONT_SIZE, lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
@@ -74,6 +79,20 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     term.loadAddon(fit);
     term.open(host);
     terms.set(sessionId, term);
+    // P47: 다른 창이 정한 패널 크기를 내 노드에 맞춰 비율로 그린다. 혼자 볼 때는 늘 1(예전과 같다)
+    st.applyScale = () => {
+      const el = term.element, screen = el && el.querySelector('.xterm-screen');
+      if (!el || !screen) return;
+      const s = st.shared > 1 ? fitScale({ termW: screen.offsetWidth, termH: screen.offsetHeight, boxW: host.clientWidth, boxH: host.clientHeight }) : 1;
+      if (s === st.scale) return;
+      st.scale = s;
+      el.style.transformOrigin = '0 0';
+      el.style.transform = s === 1 ? '' : `scale(${s})`;
+      host.dataset.scale = String(+s.toFixed(3));
+    };
+    // P47: 터미널에 초점을 주면 이 창이 패널 크기를 가져간다
+    const onFocusIn = () => { if (st.pid) api.call('terminal.focus', { session: sessionId }).catch(() => {}); };
+    if (term.textarea) term.textarea.addEventListener('focus', onFocusIn);
     fixMouseScale(term, sessionId);
 
     let renderer = budget.acquire(sessionId);
@@ -189,7 +208,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       await writeP(shadow, bytes);
       if (!st.alive) return;
       const after = rowsOf(shadow);
-      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) term.resize(f.width, f.height);
+      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) { term.resize(f.width, f.height); st.applyScale(); }
       if (history === 'wait') { history = 'done'; await prefill(after); if (!st.alive) return; }
       else if (!before) markStale();
       else {
@@ -209,7 +228,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       const bytes = frameBytes(f.bytes);
       const t0 = onFrame(sessionId, bytes.length, f.width, f.height);
       if (shell) { chain = chain.then(() => shellFrame(f, bytes, t0)).catch((e) => window.mt.log(`shell frame ${sessionId}: ${e.stack || e.message}`)); return; }
-      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) term.resize(f.width, f.height); // 쓰기 전에 크기 맞추기(E4)
+      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) { term.resize(f.width, f.height); st.applyScale(); } // 쓰기 전에 크기 맞추기(E4)
       term.write(bytes, () => {
         onWritten(t0);
         sel.onFrame(); // P42: 고른 글이 있으면 화면이 움직인 만큼 선택을 옮긴다(지우지 않는다)
@@ -217,6 +236,20 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     });
     // 백엔드에 다시 붙으면(백엔드 재시작, C2) 옛 연결의 제어기는 이미 놓였다. 다시 붙는다.
     const offOpen = api.on('$open', () => { if (st.alive) { perfLog('term_reattach_on_reconnect', { sessionId }); setStatus({ kind: 'attaching' }); setRetry((x) => x + 1); } });
+    // P47: 누가 패널 크기를 정하는지, 몇 창이 함께 보는지. 다른 기기가 방금 친 것
+    const offOwner = api.on('terminal.owner', (d) => {
+      if (d.sessionId !== sessionId || !st.alive || (st.pid !== null && d.controllerPid !== st.pid)) return;
+      st.shared = d.shared || 1;
+      setShare({ shared: st.shared, ownerIsMe: !!d.ownerIsMe, ownerName: d.ownerName || d.owner || null });
+      perfLog('term_owner', { sessionId, shared: st.shared, ownerIsMe: !!d.ownerIsMe, cols: d.cols, rows: d.rows });
+      requestAnimationFrame(() => st.alive && st.applyScale());
+    });
+    const offInputBy = api.on('terminal.input_by', (d) => {
+      if (d.sessionId !== sessionId || !st.alive) return;
+      const name = inputByLabel(d, api.clientId);
+      if (!name) return;
+      setTyping(name); clearTimeout(st.typingTimer); st.typingTimer = setTimeout(() => setTyping(null), 2000);
+    });
     const offDetached = api.on('terminal.detached', (d) => {
       if (d.sessionId !== sessionId || !st.alive || (st.pid !== null && d.controllerPid !== st.pid)) return;
       perfLog('term_detached', { sessionId, reason: d.reason });
@@ -232,6 +265,8 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       .then((r) => {
         st.pid = r.controllerPid;
         if (!st.alive) return;
+        st.shared = r.shared || 1; // P47
+        if (r.shared > 1) { setShare({ shared: r.shared, ownerIsMe: !!r.ownerIsMe, ownerName: r.owner || null }); requestAnimationFrame(() => st.alive && st.applyScale()); }
         setStatus({ kind: 'attached', pid: r.controllerPid });
         // H4: 들어가며 친 글이 있으면 넣고 터미널에 초점을 준다
         if (pendingFor(sessionId)) { const buf = takePendingInput(sessionId); if (buf) { perfLog('pending_input', { sessionId, chars: buf.length }); send(buf); } term.focus(); }
@@ -242,7 +277,9 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     return () => {
       st.alive = false;
       perfLog('term_unmount', { sessionId });
-      offFrame(); offDetached(); offOpen();
+      offFrame(); offDetached(); offOpen(); offOwner(); offInputBy();
+      if (term.textarea) term.textarea.removeEventListener('focus', onFocusIn);
+      clearTimeout(st.typingTimer);
       host.removeEventListener('paste', onPaste, true);
       sel.dispose();
       clearTimeout(st.syncTimer);
@@ -261,6 +298,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     if (!st.fit) return;
     const refit = () => {
       if (!st.fit) return;
+      if (st.applyScale) st.applyScale(); // P47: 노드 크기가 바뀌면 비율도 다시
       const d = st.fit.proposeDimensions();
       if (!d) return;
       const cols = Math.max(20, d.cols), rows = Math.max(8, d.rows);
@@ -308,6 +346,8 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
         </div>
       )}
       {hint && <div className="mt-term-hint">{hint}</div>}
+      {typing && <div className="mt-term-typing" data-role="term-typing">{t('peers.typing', { name: typing })}</div>}
+      {share.shared > 1 && !share.ownerIsMe && <div className="mt-term-sizeby" data-role="term-sizeby" title={t('peers.sizeBy', { name: share.ownerName || '?' })} />}
     </div>
   );
 }

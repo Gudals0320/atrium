@@ -16,6 +16,7 @@ import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
 import { useInbox } from './InboxBar.jsx';
 import { KindIcon } from './SessionNode.jsx';
+import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
 import { Icon } from './lib/icons.jsx';
 import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
@@ -239,6 +240,7 @@ export function TopRight({ maxControllers }) {
       <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} />
       {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? EXIT_LABEL[s.exit && s.exit.kind] : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
       <ConnPill />
+      <DevicesPill />
       <ResourcePill maxControllers={maxControllers} />
       <button className="mt-cp round" title={t('top.changes')} onClick={() => getState().showChanges && getState().showChanges(60)} data-action="changes"><Icon name="history" /></button>
       <button className="mt-cp round" onClick={() => openDialog({ kind: 'settings' })} data-action="settings-open" title={t('top.settings')}><Icon name="gear" /></button>
