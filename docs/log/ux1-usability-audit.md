@@ -153,4 +153,76 @@
 
 ## 작업 기록
 
+2026-11-05 작업자 세션(ux1 워크트리, `main` 41ee376).
+
+- 판: herdr 세션 `atrium-dev-ux1`, 포트 47867, 데이터 `backend/.dev/data`, 창 프로필 `backend/.dev/app`. 판 값은 `experiments/ux1/tools/env.cjs` 한곳에 두고 `e2e.cjs`(창 시험), `mt.cjs`(CLI)가 같이 쓴다. herdr 없음은 따로 띄운 작은 판(`atrium-dev-ux1h`, 47868, 가린 env, herdr 서버는 뜨지 않음)에서 봤다.
+- 시험 폴더: `C:\Workspace\mtask-ux1-dir`, `-dir2`(신뢰된 `C:\Workspace` 아래, git 아님), `-repo`(커밋 하나, 신뢰 안 됨), `-repo-wt`(그 저장소의 워크트리). 대화 목록은 고정 자료 폴더 `backend/.dev/ux1-projects`만 읽게 했고, 데스크톱 앱은 가짜 목록(`backend/.dev/ux1-desktop`)만 줬다.
+- 처음 창이 90초 동안 판을 못 읽었다. 워크트리에 `app/dist`가 없어서였다(`npm ci`만 하고 빌드하지 않음). `npm run build` 뒤 정상.
+- 방법: 탐색은 창을 띄워 둔 드라이버(`ux1-drive.mjs`, 127.0.0.1:47869)에 짧은 스크립트(`experiments/ux1/q/*.js`)를 보내며 스크린숏·DOM·CLI를 함께 봤다. 찾은 것은 재현 각본(`ux1-repro.mjs`)으로 옮겨 판 데이터를 지운 빈 판에서 다시 돌렸다(1·2회차는 `--fresh`, 3~7회차는 사례만).
+- 에이전트: claude는 모두 haiku. deepseek flash는 S2의 워커 하나로 한 턴만 썼다(게이트웨이가 떠 있었다). 판 밖 대화는 CLI에서 새로 띄운 `claude -p`(haiku) 두 개로 만들었다.
+- 탐색 중 버린 것: 버튼에 초점이 있을 때 Playwright `insertText`(한글 입력)가 숨은 노드의 터미널로 들어가 Enter까지 제출됐다. 같은 일을 실제 키(`press`)로는 재현하지 못했고 CDP `insertText`는 실제 IME와 다르다. 시험 도구의 특성일 수 있어 이슈로 올리지 않고 사람 점검으로 남긴다(보고 "보지 못한 것").
+- 탐색 중 실수: 증거 브랜치를 만들 때 PowerShell에서 `git mktree` 입력이 깨져 빈 해시로 `git branch ux-evidence`가 HEAD를 가리켰다. 푸시 전에 지우고(`git branch -D`) node 스크립트(`experiments/ux1/tools/evidence-commit.cjs`)로 다시 만들었다.
+- 정리: 시험 세션은 각 회차 끝과 탐색 끝에 CLI `kill`로 껐다. 창은 드라이버가 닫았다. 백엔드와 herdr 서버(`atrium herdr stop --yes`)를 멈추고 herdr 세션 `atrium-dev-ux1`만 `herdr session delete`로 지웠다. 시험 폴더 4개, `~/.claude/projects`의 시험 대화 폴더 2개(`C--Workspace-mtask-ux1-dir`, `-dir2`), `backend/.dev`의 시험 데이터를 지웠다. 남은 프로세스는 없다.
+
 ## 보고
+
+### 만든 것
+
+- 각본(커밋함): `app/test/e2e/ux1-lib.mjs`(판 막기, 창 띄우기, 넘침·겹침·프레임 간격·반영 시간 재기), `ux1-drive.mjs`(탐색 드라이버), `ux1-repro.mjs`(찾은 문제 재현 사례 11개), `ux1-s8-noherdr.mjs`(herdr 없음 판).
+- 결과(git 밖): `experiments/ux1/`에 스크린숏, 회차별 `ux1-repro-r*.json`, 창 크기·언어별 넘침 측정 `screens.json`, 이슈 글 `issues/*.md`, 증거 원본 `evidence/`.
+- GitHub: 라벨 11개(`ux`, `severity:S1~S3`, `area:*` 7개), 이슈 9개(#2~#10), 증거 브랜치 `ux-evidence`(orphan, 이미지 13장, 한 장 3~99KB).
+
+### 올린 이슈
+
+| 번호 | 제목 | 심각도 | 영역 | 원칙 |
+|---|---|---|---|---|
+| [#2](https://github.com/Gudals0320/atrium/issues/2) | Layout preset places the new group on top of another node and hides it | S2 | canvas | U1, U4, H5 |
+| [#3](https://github.com/Gudals0320/atrium/issues/3) | Multi-line paste into a shell node runs every line but the last without Enter | S2 | terminal | U8, H3 |
+| [#4](https://github.com/Gudals0320/atrium/issues/4) | Sidebar workspace counts (working, needs you) do not update when sessions change state | S2 | chrome | U3, H2 |
+| [#5](https://github.com/Gudals0320/atrium/issues/5) | UX polish: chrome (ux1) — Esc로 안 닫히는 대화상자·초점, 전체 보기가 크롬 밑에 깔림, 빨간 탭 숫자 | S3 | chrome | H4, H5, H6 |
+| [#6](https://github.com/Gudals0320/atrium/issues/6) | UX polish: canvas (ux1) — 새 메모 뒤 키로 메모가 또 생김, 먼 배율에서 메모 편집 불가, 빈 판 안내 없음 | S3 | canvas | H1, H2, H3 |
+| [#7](https://github.com/Gudals0320/atrium/issues/7) | Shell node wheel scrolls about 2 lines per notch and a whole line per small touchpad step | S3 | terminal | H7, H4 |
+| [#8](https://github.com/Gudals0320/atrium/issues/8) | Outside-conversation card shows "HEAD" branch for a folder that is not a git repository | S3 | sessions | H2 |
+| [#9](https://github.com/Gudals0320/atrium/issues/9) | English UI uses "Prompt" both for the last request and for an idle shell | S3 | i18n | H4 |
+| [#10](https://github.com/Gudals0320/atrium/issues/10) | Changes panel counts the first backend start as a restart | S3 | recovery | H2 |
+
+S1은 없다. S2는 셋이라 상한(8)에 걸리지 않았다. 이슈마다 탐색에서 한 번, 빈 판의 재현 각본에서 한 번 이상 재현했다.
+
+### 시나리오별 결과
+
+| | 통과한 것 | 발견한 것 | 보지 못한 것 |
+|---|---|---|---|
+| S1 시작 | 프로젝트 열기(Enter로 열림, 0.3초에 영역), 레일 셸 띄우기(0.4초에 노드와 터미널, 초점이 터미널로), 런처 만들기·별 달기(레일에 바로 나옴), Shift+클릭 새 세션 창, 새 노드는 빈자리(겹침 0), 신뢰 안내(창의 문구, 노드의 "폴더 신뢰 확인 필요"와 터미널에서 답하기), 노드 X의 보관·삭제·취소 확인과 Esc 취소 | #5(새 세션·프로젝트 열기 창이 Esc로 안 닫히고 초점이 안 들어감, 빨간 탭 숫자), #6(빈 판 안내 없음) | 찾아보기(OS 폴더 창) |
+| S2 워커 | 리드(haiku)가 워커 셋(haiku 둘, deepseek flash 하나)을 띄우고 둘의 답을 모아 보고, 워크트리 워커는 신뢰 질문에서 멈추고 리드가 사람에게 알림, 응답 필요 1, 머리줄 "@lead의 워커 · 2단계", 사이드바 나무, 작업 관계도 | #4(사이드바 머리 "작업 중 2"가 남음) | `atrium children` 직접 실행(세션 토큰이 필요해 리드의 보고로만 봄), 신뢰를 답한 뒤의 워크트리(대신 누르지 않음) |
+| S3 지켜보기 | manual 세션의 Write 승인 요청 2.8초에 waiting, 응답 필요 목록이 두 워크스페이스를 가로지름, `N`이 오래 기다린 순서로 돌고 노드는 안 움직임, 노드가 안 보일 때 OS 알림(보일 때는 띄우지 않음), 승인 카드로 허용, 확인할 결과 수와 목록, 변경 내역, 작업 관계도 | #5(변경 내역 Esc), #10(첫 시작을 다시 시작으로 셈) | 실제 OS 알림 누르기, 창 밖에 초점이 있을 때 |
+| S4 말 걸기 | ↓ 키로 명령 바, `@lea` 후보, `@lead` 전달 0.8초에 working, `@all` 여러 줄(Shift+Enter)이 셸을 빼고 두 세션에 전달·제출 확인, Thread, 바깥을 누르면 아래 바가 숨음 | 없음 | 쓰다 만 글이 남을 때의 숨김(P43 시험이 이미 봄) |
+| S5 터미널 | 치기에서 화면까지 34ms, Claude 노드 여러 줄 붙여넣기(입력칸에 두 줄), 끌어 고르기가 화면 위로 넘어 83줄 복사, 판은 안 움직임, 배율 1.25/1/0.75/0.5는 가까이 얼굴·0.3은 중간 얼굴(넘침 0, 프레임 p95 7ms), 크기 바꾸기 0.4초에 칸 수 반영 | #3(셸 여러 줄 붙여넣기 실행), #7(셸 휠) | OS 화면 배율 125%·150%(창 배율만 봤다), 셸 안 전체 화면 앱 |
+| S6 정리 | Ctrl+끌기로 붙이기(놓일 자리 표시), 노드 메뉴의 그룹에서 분리, 자동 정렬과 한 번 되돌리기, 영역 이름표 끌기, 워크트리 상자, 칸반 카드, 영역 메뉴 절전(둘 다 잠듦)·작업 재개(6초, 같은 대화) | #2(배치 틀이 노드를 덮음), #5(전체 보기·정렬 뒤 크롬 가림), #6(메모) | 덩어리 분할선 끌기 |
+| S7 되찾기 | 판 밖 대화 카드, 판으로 열기(0.9초에 세션, ready), 닫힌 세션 목록, 데스크톱 가져오기(가짜 앱 폴더, 중복 막기 "이미 보드의 세션", 1개 가져옴, 절전 노드에 앱 제목), 정리 대상 대화(원래 폴더 없음 1개) | #8(git 아닌 폴더의 "⎇ HEAD") | 정리 대상 휴지통 보내기(고정 자료가 휴지통에 남으므로 하지 않음) |
+| S8 버티기 | 창 닫고 다시 열기(세션 7개, 덩어리, 터미널 바로), 백엔드 끄기 → 창이 2.4초에 다시 띄움, herdr 없음(띠, "herdr 없음" 알약, 띄우기 실패 글과 할 일), 세션 21개(셸 16, claude 5) | #10(재시작 횟수가 실제보다 1 많음) | herdr 재시작과 재부팅(C3) |
+| S9 글 | 1366×768·1584×921·2560×1440과 ko·en에서 설정 탭 4개, 새 세션·프로젝트 열기 창, 응답 필요·확인할 결과 목록, 사이드바, 변경 내역, 작업 관계도: 위 알약끼리 부딪힘 없음, 영어 화면에 번역이 빠진 곳 없음(한국어는 사용자 글뿐) | #9("Prompt" 겹침) | OS 화면 배율 |
+
+### 측정값
+
+- 세션 21개(셸 16, haiku 4 + 가져온 절전 1): 판 전체 보기 프레임 p50 6.9ms·p95 7.1ms·최대 21ms, 빈 캔버스 끌기 p95 7ms, 휠 확대 12번 p95 7.1ms·최대 70ms. 창 프로세스 작업 집합 합 약 525MB(브라우저 105, GPU 158, 탭 211, 유틸 51). 세션 메모리 합 약 3.3GB, 제어기 3개 79.5MB.
+- 반영 시간: 셸 띄우기 → 노드 0.4초, claude(haiku) starting → ready 4.7초, 신뢰 안 된 저장소 starting → trust_wait 5초, 전달 → working 0.8초, 크기 바꾸기 → 칸 수 0.4초, 백엔드 끄기 → 다시 연결 2.4초, 영역 재개 6.2초, 데스크톱 가져오기 0.3초.
+- 창 콘솔 오류: 재현 각본 1~7회차와 탐색에서 0개(Electron CSP 경고만).
+
+### 이슈로 올리지 않은 것
+
+- 두 번 재현되지 않아 버림: 승인 대기 노드로 `N`을 누른 뒤 다음 `N`이 터미널로 들어감(탐색 한 번, 다시 해 보니 화면 이동만 함), 고른 노드가 Esc로 안 풀림(재현 각본에서는 풀림), 절전 노드 먼 얼굴의 글줄 겹침(가져온 세션 제목 줄에서 한 번 뚜렷, 다시 할 때는 겹침이 2px 안팎으로 애매).
+- 시험 도구 특성일 수 있음: 위 작업 기록의 한글 `insertText`가 숨은 터미널로 들어가 제출된 일.
+- 지금 고치는 중(P44~P48)이라 뺌: Thread 첫 항목의 여러 줄 요청이 결과 줄과 겹침(P45), 사이드바 리포 이름·워커 이름표 잘림(P44·P46), 0.5 배율 터미널 글자 크기(P45), 창 그룹 연결 이름표가 작아 안 읽힘(P46).
+- 이미 아는 것: 워크트리 하위 세션이 신뢰 관문에서 기다리는 동안 전달 칩이 "세션 시작 중"으로 보임(P36 보고의 관문 동작). 런처 목록 DeepSeek 명령 줄 말줄임(P39).
+
+### 계획과 다른 곳
+
+- "배율 0.5, 0.75, 1.25"는 캔버스 배율로 봤다. OS 화면 배율(Windows 디스플레이 배율)은 바꾸지 않았다(사용자 설정이라).
+- 판 밖 대화를 "판으로 열기"로 보려고, 고정 자료 폴더에 복사한 `claude -p` 대화 기록의 `entrypoint`를 `sdk-cli`에서 `cli`로 바꿨다(복사본만, 원본은 그대로). `-p` 대화는 "다른 곳에서 사용 중일 수 있음"으로 흐리게 나와 캔버스 카드가 생기지 않는다(설계대로).
+- 2560×1440은 `setContentSize`로 창 안쪽을 그 크기로 맞췄다(모니터보다 커도 창 안 크기는 그대로 잡혔다).
+- 증거 브랜치는 작업 트리를 바꾸지 않으려고 `git commit-tree`로 만든 orphan 커밋이다. 그래서 그 커밋에는 commit-msg 훅이 돌지 않았고, 푸시 전 검사(pre-push)는 돌았다.
+
+### 남은 것과 주의
+
+- `~/.claude.json`에 시험 폴더 항목(`C:/Workspace/mtask-ux1-repo` 등)이 Claude Code가 쓴 채 남았을 수 있다. 읽기만 하라는 규칙대로 지우지 않았다.
+- 사람 점검: (1) 판에서 버튼에 초점이 있을 때 실제 한글 IME로 글을 쳐 보고, 글이 다른 노드 터미널로 가지 않는지. (2) Windows 디스플레이 배율 125%·150%에서 S5·S6·S9 화면. (3) 실제 OS 알림을 눌러 그 노드로 가는지.
