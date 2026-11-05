@@ -56,4 +56,49 @@ README 두 파일은 P64가 고치므로 손대지 않는다. 그 안에 그 이
 
 ## 작업 기록
 
+2026-11-05, P63 작업자 세션.
+
+- 이름은 23개 파일 52곳이었다(지시와 같다). README 두 파일에는 없었다.
+- docs-guard는 작업자가 CLAUDE.md, BRIEF, decisions를 고치는 것과 닫힌 작업 파일을 편집 도구로 고치는 것을 막는다. 그래서 23개 파일 모두 스크래치 폴더의 Node 스크립트로 한 번에 바꿨다(정확한 문장 몇 개를 먼저 바꾸고, 그다음 조사에 맞춰 `참고 제품과/이/은/을/의`로 바꿨다). 남은 것이 있으면 스크립트가 멈추게 했다. 스크립트는 저장소에 넣지 않았다.
+- 닫힌 작업 파일 검사(`check-docs`의 "HEAD와 다르다")는 `--close`에서만 돌고, 커밋 전 검사(`--staged`)에서는 돌지 않는다. 그래서 `check-docs`는 고치지 않았다. 지휘 세션이 합친 뒤 `--close`를 돌릴 때는 HEAD에 이미 이 고침이 있으므로 걸리지 않는다.
+- 닫힌 작업 파일 8개의 "(이름)는 화면 구성과 동작만 참고한다"는 "참고 제품은 … 참고한다"가 되면 어색해서 "참고 제품에서는 화면 구성과 동작만 참고한다"로 썼다.
+- `docs/research/(이름).md`를 가리키던 곳 5개는 `docs/research/reference.md`로 바꿨다. 그 폴더는 git 밖이고 이 워크트리에는 없다.
+- 살아 있는 문서 합계가 69,983/70,000자였다. CLAUDE.md 규칙 문장은 18자 늘었지만 BRIEF에서 이름(7자)이 "참고 제품"(5자)으로 바뀌며 줄어서, 합계는 69,979자다.
+- `app/package.json`에는 이미 `"license": "MIT"`가 있었다(첫 커밋부터). 고치지 않았다.
+- `docs/README.md`와 `docs/testing.md`에는 공개 검사의 메일 규칙 설명이 없어 고치지 않았다.
+- 개발용 판은 띄우지 않았다(화면 동작이 바뀌지 않는다). herdr 세션과 서버, 백엔드, 창도 띄우지 않았다.
+- 커밋은 `ATRIUM_PRIVATE_WORDS`에 그 이름을 넣고 훅을 그대로 거쳐 했다. 스테이지와 메시지 검사가 그 낱말로도 통과했고, `check-public --tree HEAD`도 같은 env로 통과했다.
+
 ## 보고
+
+### 만든 것
+
+- **이름 지우기.** `git grep -i`로 0번이다(종료 코드 1, 출력 없음). 코드 주석 6곳(`faces.js`, `en.js`, `tokens.css`, `mission.mjs`, `outputs.mjs`, `thread.mjs`), `.gitignore`, `CHANGELOG.md`, `CLAUDE.md`, `docs/BRIEF.md`, `docs/decisions.md`, 닫힌 작업 파일 12개다. 값과 동작은 바꾸지 않았다(주석만 바뀜). git 기록은 다시 쓰지 않았다.
+  - CLAUDE.md 규칙: "다른 제품의 화면을 참고할 때는 화면 구성, 동작, 생김새(색, 크기, 모양)만 따른다. 비공개 제품의 코드, 이름, 로고, 에셋(그림, 영상, 글꼴 파일)은 가져오지 않고 그 이름을 저장소에 쓰지 않는다. 데모 화면 캡처는 저장소에 넣지 않는다(`app/design/`은 git 밖)."
+  - BRIEF 행은 낱말만 바꿨고 decisions로 옮기지 않았다. 2절에서 "참고 제품(macOS 전용 유료 앱)"으로 처음 소개한다.
+- **비공개 낱말 목록.** `scripts/check-public.mjs`
+  - `privateWordsFile(cwd)`: `git rev-parse --git-common-dir`로 `<공통 폴더>/atrium-private-words`를 찾는다. 워크트리에서도 본 저장소의 같은 파일이다.
+  - `readPrivateWords(file)`: 한 줄에 하나, 앞뒤 공백·빈 줄·`#` 줄·BOM은 건너뛴다. 파일이 없으면 빈 목록이다.
+  - `localSecrets`가 목록 파일과 `ATRIUM_PRIVATE_WORDS`(쉼표)를 둘 다 받는다. 세 글자 미만은 무시한다(전과 같다). 대소문자는 무시하고 낱말 경계로 잡는다(전과 같다). `@`가 든 낱말은 관리자 개인 메일로도 본다.
+  - 스테이지된 글, 커밋 메시지, 푸시하는 커밋의 파일과 메시지를 막는 길은 전과 같은 `scanText`다. 찾은 값은 가려서 보인다.
+- **기여자 메일.** `committerOk`를 `authorOk`와 같게 했다(`committerOk = authorOk`, 둘째 인자로 secrets). 관리자의 개인 메일(`git config --global/--system user.email`과 목록의 `@` 낱말)만 막고 다른 메일과 noreply는 받는다. 오류 글은 "커미터 메일이 개인 메일이다"이다.
+- **시험.** `backend/test/check-public.test.mjs`에 4개를 더하고 1개를 고쳤다(7 → 11개).
+  - 작성자·커미터 같은 규칙(기여자 메일 받음, 관리자 메일 막음, 대소문자).
+  - 목록 낱말과 env 낱말, `@` 낱말은 개인 메일.
+  - 임시 git 저장소와 워크트리: 목록 파일 자리가 공통 폴더이고, 워크트리에서 부른 `--message`가 그 목록으로 막는다.
+  - 임시 저장소에서 스크립트를 훅처럼 불러 `--staged`, `--message`, `--push`(파일, 메시지)가 막고, 고치면 통과하며, env만으로도 막는다.
+  - 커미터·작성자 메일: 기여자 일반 메일과 noreply는 통과, git 설정(임시 `GIT_CONFIG_GLOBAL`)의 관리자 메일과 목록의 메일은 스테이지와 푸시 모두에서 막는다.
+  - 시험은 실제 목록 파일, 실제 git 전역 설정, `ATRIUM_PRIVATE_WORDS`를 쓰지 않는다. 가짜 값은 실행할 때 만든다.
+- **확인.** `cd backend && npm test` 463/463, `cd app && npm test` 214/214, `cd app && npm run build` 통과. `check-docs` 통과(합계 69,979/70,000). `check-public --tree HEAD` 통과.
+
+### 계획과 다른 곳
+
+- 할 것 4(`"license": "MIT"`)는 이미 있어서 바꾸지 않았다.
+- `docs/research/(이름).md`를 가리키던 링크를 `docs/research/reference.md`로 바꿨다. git 밖의 본 저장소 파일은 이 이름이 아니므로 지휘 세션이 그 파일 이름을 `reference.md`로 바꿔야 링크가 맞는다.
+- `check-docs`는 고치지 않았다(닫힌 기록 검사는 `--close`에서만 돈다).
+
+### 알려진 문제
+
+- 실제 목록 파일은 만들지 않았다. 지휘 세션이 `<공통 폴더>/atrium-private-words`를 만들 때까지는 `ATRIUM_PRIVATE_WORDS`가 없으면 그 이름이 다시 들어와도 막히지 않는다.
+- git 기록과 공개 fork에는 그 이름이 남아 있다(지시대로 기록은 다시 쓰지 않았다).
+- 목록 파일은 이 PC에만 있다. 다른 PC에서 관리자가 커밋하면 그곳에도 같은 파일을 두어야 한다.
