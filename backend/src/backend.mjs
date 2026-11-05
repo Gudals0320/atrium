@@ -10,6 +10,8 @@ import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
 import { DeliveryQueue } from './delivery.mjs';
 import { TerminalRelay } from './relay.mjs';
+import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
+import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
 import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState } from './screen.mjs';
@@ -125,7 +127,8 @@ export class Backend {
     this.startedAt = Date.now();
     this.hookUrl = `http://127.0.0.1:${cfg.port}/hooks/claude`;
 
-    this.api = new ApiServer({ token: this.apiToken, handlers: this.handlers(), onClose: (c) => { if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); }, log: (m) => this.log(m) });
+    this.api = new ApiServer({ token: this.apiToken, handlers: this.handlers(), onOpen: () => { if (this.peers) this.peers.opened(); }, onClose: (c) => { if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
+    this.peers = new Peers({ api: this.api, log: (m) => this.log(m) });
     this.http = http.createServer((req, res) => this.onHttp(req, res));
     this.http.on('upgrade', (req, sock, head) => this.api.handleUpgrade(req, sock, head));
     // 포트는 고정이다. 이미 띄운 세션의 hook 주소가 설정 파일 안에 있기 때문이다(ARCH 1절).
@@ -139,7 +142,7 @@ export class Backend {
     // P40: 쓸 herdr 실행 파일을 고른다(도는 판 서버의 실행 파일 → 찾기 결과). 못 찾아도 백엔드는 뜬다
     await this.resolveHerdr('start');
     // P21: 판 터미널에서 친 글로 보내지 않은 초안이 있는지 기억한다(초안이 있으면 잠재우지 않는다)
-    this.relay = new TerminalRelay({ adapter: this.adapter, onInput: (sid, data) => { const s = this.sessions.get(sid); if (s) { s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.touch(s); } }, log: (m) => this.log(m) });
+    this.relay = new TerminalRelay({ adapter: this.adapter, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
 
     for (const row of this.store.openSessions()) {
       const rt = row.runtime || newRuntime({ kind: row.kind, hooked: row.origin === 'board' && row.kind === 'claude' });
@@ -264,6 +267,7 @@ export class Backend {
     if (this.worktrees) this.worktrees.stop();
     if (this.sleeper) this.sleeper.stop();
     this.relay.closeAll();
+    this.peers.stop();
     this.adapter.stopEvents();
     for (const s of this.sessions.values()) this.store.saveRuntime(s.sessionId, s.rt);
     this.store.setMeta('heartbeat', Date.now());
@@ -1766,32 +1770,37 @@ export class Backend {
       'terminal.input': (p, c) => { this.relay.input(this.resolve(p.session).sessionId, String(p.data ?? ''), c); return { ok: true }; },
       'terminal.resize': (p, c) => { this.relay.resize(this.resolve(p.session).sessionId, p.cols, p.rows, c); return { ok: true }; },
       'terminal.detach': (p, c) => { this.relay.detach(this.resolve(p.session).sessionId, c); return { ok: true }; },
-      'events.subscribe': (p, c) => { c.subscribed = true; return { subscribed: true, sessions: [...this.sessions.values()].map((s) => this.summary(s)) }; },
+      'terminal.focus': (p, c) => { this.relay.focus(this.resolve(p.session).sessionId, c); this.peers.touch(c); return { ok: true }; }, // P47: 초점을 준 클라이언트가 패널 크기를 정한다
+      'events.subscribe': (p, c) => { c.subscribed = true; return { subscribed: true, sessions: [...this.sessions.values()].map((s) => this.summary(s)), clients: { ...this.peers.view(), me: c.clientId || null } }; }, // P47: 붙은 클라이언트
       // P5: workspace를 주면 그 판의 노드와 그룹만(연결은 한쪽이라도 그 판에 있는 것). 창은 다른 워크스페이스로 가는 연결과 칩 때문에 모두 받는다
       // P6a: 캔버스 하나. viewport는 캔버스 하나의 것(meta). workspace를 주면 그 워크스페이스의 노드·덩어리만(연결은 한쪽이라도 그 안에 있는 것)
-      'board.get': async (p) => {
+      // P47: viewport는 클라이언트마다(meta viewport:<client>). 처음 붙는 클라이언트와 익명 연결은 보드 값(meta viewport, 옛 판 값)
+      'board.get': async (p, c) => {
         const w = p.workspace ? await this.resolveWorkspace(p.workspace) : null;
         const inWs = (k) => !w || (k || null) === w.key;
         const nodes = this.store.nodes().filter((n) => inWs(n.workspace_key));
         const ids = new Set(nodes.map((n) => n.session_id));
-        return { nodes, docks: this.store.docks().filter((d) => inWs(d.workspaceKey)), viewport: this.store.getMeta('viewport') || null, seenAt: this.store.getMeta('boardSeenAt'), links: this.linksOpen().filter((l) => !w || ids.has(l.from) || ids.has(l.to)), workspaces: this.workspaceList(), current: this.currentWorkspace(), groups: readGroups(this).groups, canvas: this.store.getMeta('canvas'),
+        return { nodes, docks: this.store.docks().filter((d) => inWs(d.workspaceKey)), viewport: viewportFor(c && c.clientId ? this.store.getMeta(viewportKey(c.clientId)) : null, this.store.getMeta('viewport')), seenAt: this.store.getMeta('boardSeenAt'), links: this.linksOpen().filter((l) => !w || ids.has(l.from) || ids.has(l.to)), workspaces: this.workspaceList(), current: this.currentWorkspace(), groups: readGroups(this).groups, canvas: this.store.getMeta('canvas'),
           // P6c: 메모·칸반 노드(P6b I3·I4)도 같은 판에 그린다
           ...(this.features ? { memos: this.store.memos().filter((m) => inWs(m.workspaceKey)), kanbans: this.store.kanbans().filter((k) => inWs(k.workspaceKey)).map((k) => this.features.kanbans.view(k)) } : {}),
           // P13: 판 밖 대화 노드와 띄움 선(recall.layoutCanvas가 만든 것)
           ...(this.recall ? { convoNodes: this.recall.canvas.nodes.filter((n) => inWs(n.workspaceKey)), convoEdges: this.recall.canvas.edges } : {}) };
       },
       // cause: 창이 왜 옮겼는지(drag, resize, divider…). 자리가 바뀌면 판 이벤트 node_moved로 남긴다(P5 5절 2번 조사)
-      'board.setNode': (p) => {
+      'board.setNode': (p, c) => {
         const s = this.resolve(p.session);
         const before = this.store.nodes().find((n) => n.session_id === s.sessionId);
         const n = { session_id: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z };
         this.store.setNode(n);
         noteNodeMove(this, s, before, n, p.cause);
+        // P47: 다른 창도 옮긴 자리를 바로 그린다(예전에는 다음 board.changed까지 옛 자리). 보낸 창은 by로 알아보고 무시한다
+        this.api.broadcast('board.node', { sessionId: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z, by: (c && c.clientId) || null });
         return { ok: true };
       },
       // P6a: workspace 없이 부르면 캔버스 하나의 뷰포트. P5처럼 workspace를 주면 그 워크스페이스 줄에 남긴다
-      'board.setViewport': async (p) => {
-        if (!p.workspace) { this.store.setMeta('viewport', { x: p.x, y: p.y, zoom: p.zoom }); return { ok: true, workspace: null }; }
+      // P47: 클라이언트가 알려 온 연결이면 그 클라이언트의 값에 남긴다. 보드 값은 다음에 처음 붙는 클라이언트가 시작할 자리로 함께 고친다
+      'board.setViewport': async (p, c) => {
+        if (!p.workspace) { const vp = { x: p.x, y: p.y, zoom: p.zoom }; if (c && c.clientId) { this.store.setMeta(viewportKey(c.clientId), vp); this.peers.touch(c); } this.store.setMeta('viewport', vp); return { ok: true, workspace: null, client: (c && c.clientId) || null }; }
         const w = await this.resolveWorkspace(p.workspace, { required: false });
         if (w) this.store.setWorkspaceViewport(w.key, { x: p.x, y: p.y, zoom: p.zoom });
         return { ok: true, workspace: w ? w.key : null };
@@ -1821,6 +1830,7 @@ export class Backend {
       // P6a: 단일 캔버스(검색, 붙여 묶기, 풀기, 정리, 크기 단계, 영역 옮기기)
       ...canvasHandlers(this),
       ...groupHandlers(this), // P44: 워크스페이스 가상 그룹
+      ...peerHandlers(this), // P47: client.hello, client.active, clients.list
     };
   }
 }

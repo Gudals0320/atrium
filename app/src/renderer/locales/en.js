@@ -1480,4 +1480,18 @@ export default {
     crossTitle: 'Work handed to a session in another workspace',
     crossIn: 'from {name}',
   },
+  // P47: several windows (clients) on one backend
+  peers: {
+    pill: { one: '{n} other device', other: '{n} other devices' },
+    title: 'Other windows and devices attached to this board',
+    row: '{name} · {kind}',
+    active: 'active {time}',
+    idle: 'idle',
+    notifyHere: 'Notifications show on this device',
+    notifyThere: 'Notifications show on {name} (used most recently)',
+    kind_desktop: 'desktop',
+    kind_web: 'browser',
+    typing: '{name} is typing',
+    sizeBy: 'Sized by {name}. Click or type to fit this node',
+  },
 };
