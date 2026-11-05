@@ -674,7 +674,6 @@ export default {
     output: '응답 보기',
     memTitle: '이 세션 창에서 실행 중인 셸, claude, 하위 프로세스의 메모리 사용량입니다. 약 30초마다 갱신합니다.',
     menuTitle: '크기, 반복 작업, 창 그룹 분리',
-    briefTitle: '세션 요약: 마지막 요청, 응답, 현재 상태',
     killTitle: '세션을 닫고 보관하거나 삭제합니다.',
     waitingForYou: '응답 필요',
     workingIn: '{name}에서 작업 중',
@@ -754,14 +753,6 @@ export default {
     reattach: '다시 연결',
   },
   extras: {
-    briefTitle: '세션 요약 · @{name}',
-    touched: '마지막 확인 이후: {d}',
-    stateNow: '현재 상태',
-    pendingQuestion: '응답이 필요한 질문',
-    lastPrompt: '마지막 요청',
-    lastAnswer: '마지막 응답',
-    interruptedBy: '재시작으로 작업 중단 ({state})',
-    briefNote: '대화 기록에서 발췌한 내용입니다. AI로 요약하지 않았습니다.',
     interruptedCmdTitle: '재시작으로 중단된 명령',
     interruptedTurnTitle: '재시작으로 중단된 작업',
     interruptedWhen: '{ago} · 당시 상태: {state}',
@@ -1372,5 +1363,35 @@ export default {
   // P42: 터미널 노드의 웹 같은 글 고르기
   termSelect: {
     copyFail: '클립보드에 복사하지 못했습니다.',
+  },
+  // P45: 명령 입력줄 위의 요청 기록(Thread)
+  threadView: {
+    title: '요청 기록',
+    count: '{n}개 보냄',
+    countActive: ' · 진행 중 {n}개',
+    all: '전체',
+    filterTitle: '한 세션에 보낸 요청만 봅니다.',
+    resend: '다시 보내기',
+    resendTitle: '같은 대상에게 같은 내용을 다시 보냅니다.',
+    edit: '고쳐 보내기',
+    editTitle: '이 요청을 명령 입력줄에 넣습니다. 고친 뒤 보냅니다.',
+    copy: '복사',
+    copyTitle: '보낸 내용을 복사합니다.',
+    copied: '복사했습니다.',
+    resent: '{to}에게 다시 보냈습니다.',
+    more: '더 보기',
+    less: '접기',
+    reportOpen: '클릭하면 결과 전체를 봅니다.',
+    hidden: '다른 세션 {n}개는 숨겼습니다.',
+  },
+  // P45: 설정 > 일반의 터미널 글자 배율과 화면 배율
+  scale: {
+    uiName: '화면 배율',
+    uiHint: '창 전체(위아래 막대, 사이드바, 카드, 글자)의 크기입니다. 100%가 원래 크기입니다({min}~{max}%).',
+    termName: '터미널 글자 배율',
+    termHint: '터미널 노드 안의 글자 크기입니다. 노드 크기가 같으면 줄과 칸 수가 그만큼 바뀝니다({min}~{max}%).',
+    down: '5% 작게',
+    up: '5% 크게',
+    reset: '100%',
   },
 };

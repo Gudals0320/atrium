@@ -674,7 +674,6 @@ export default {
     output: 'Output',
     memTitle: 'Memory of this pane\'s processes (shell, claude and children), about every 30s',
     menuTitle: 'Size, loops, undock',
-    briefTitle: 'Briefing (last prompt, answer, state)',
     killTitle: 'Close session: archive or delete',
     waitingForYou: 'Waiting for you',
     workingIn: 'Working in {name}',
@@ -754,14 +753,6 @@ export default {
     reattach: 'Reattach',
   },
   extras: {
-    briefTitle: 'Welcome back · @{name}',
-    touched: 'Last touched: {d}',
-    stateNow: 'State',
-    pendingQuestion: 'Pending question',
-    lastPrompt: 'Last prompt',
-    lastAnswer: 'Last answer',
-    interruptedBy: 'Cut off by restart ({state})',
-    briefNote: 'Extracted from the transcript only (no model summary).',
     interruptedCmdTitle: 'Command cut off by restart',
     interruptedTurnTitle: 'Turn cut off by restart',
     interruptedWhen: '{ago} · was {state}',
@@ -1372,5 +1363,35 @@ export default {
   // P42: web-like text selection in terminal nodes
   termSelect: {
     copyFail: 'Could not copy to the clipboard',
+  },
+  // P45: request history above the command bar (Thread)
+  threadView: {
+    title: 'Requests',
+    count: '{n} sent',
+    countActive: ' · {n} in progress',
+    all: 'All',
+    filterTitle: 'Show only what went to one session',
+    resend: 'Resend',
+    resendTitle: 'Send the same text to the same targets again',
+    edit: 'Edit',
+    editTitle: 'Put this request in the command bar to change it before sending',
+    copy: 'Copy',
+    copyTitle: 'Copy the sent text',
+    copied: 'Copied',
+    resent: 'Sent again to {to}',
+    more: 'Show more',
+    less: 'Show less',
+    reportOpen: 'Click to read the whole report',
+    hidden: '{n} other sessions hidden',
+  },
+  // P45: terminal text scale and window (UI) scale in Settings > General
+  scale: {
+    uiName: 'Window scale',
+    uiHint: 'Size of everything in the window: bars, sidebar, cards and text. 100% is the original size ({min}–{max}%)',
+    termName: 'Terminal text scale',
+    termHint: 'Text size inside terminal nodes. A node of the same size shows more or fewer lines and columns ({min}–{max}%)',
+    down: 'Smaller by 5%',
+    up: 'Larger by 5%',
+    reset: '100%',
   },
 };

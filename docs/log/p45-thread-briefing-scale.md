@@ -69,4 +69,70 @@
 
 ## 작업 기록
 
+2026-11-05 작업자 세션(P45 워크트리).
+
+**시험 판.** `experiments/p45/tools/`(git 밖)에 `env.cjs`(atrium-dev-p45, 47863, 이 워크트리의 `backend/.dev`, 시험 폴더 `C:\Workspace\mtask-p45-dir`, 대화 목록은 빈 고정 자료 폴더), `e2e.cjs`, `mt.cjs`를 두었다. 창 시험은 `app/test/e2e/p45-ui.mjs`다. claude haiku 세션 셋(alpha, beta, gamma)과 셸 하나(sh1)를 띄웠다.
+
+**스레드, 고치기 전에 본 것(`experiments/p45/before-thread-open.png`, 요청 12개, 세 세션).**
+- 줄마다 시각(초까지), "명령 바" 출처 배지, 대상, 줄 상태 글("모두 보고"), 보낸 글, 결과 줄이 모두 같은 굵기와 크기로 이어진다. 보낸 글과 받은 답이 구분되지 않는다.
+- 결과 줄이 "@alpha 완료 제출 확인됨 eleven"처럼 단계와 전달 상태를 둘 다 보인다. 끝난 뒤에는 전달 상태가 필요 없다.
+- `@all`은 대상 자리에 `@all`로만 보이고, 누가 받았는지는 결과 줄을 봐야 안다.
+- 세션 이름을 누르면 그 세션으로 가지만 눌리는 것처럼 보이지 않는다. 다시 보내기, 고쳐 보내기, 복사가 없다. 같은 글을 다시 보내려면 명령 바에 다시 쳐야 한다.
+- 한 세션에 보낸 것만 볼 수 없다.
+- 긴 글은 3.2em에서 잘리고, 글을 누르면 펼쳐지지만 펼칠 수 있다는 표시가 없다.
+- 스레드를 펼쳐도 그 아래 전달 칩(최근 6개)이 그대로 있어 같은 정보가 두 번 보인다.
+
+**정한 것.**
+- 스레드: 줄을 카드로, 머리줄은 "시각 → 받은 세션"(`@all`은 `@all (3)`), 명령 바가 아닌 출처만 배지, 결과가 둘 이상일 때만 줄 상태 글. 보낸 글은 상자에 넣고 3줄이나 240자가 넘으면 접어 "더 보기"를 둔다. 결과는 세션마다 한 줄(@이름 ↗ 단추, 색 있는 상태, 보고 한 줄)이고 보고를 누르면 펼치고 복사할 수 있다. 머리에 세션 단추(전체, @이름 n)로 한 세션만 거른다. 줄 오른쪽에 다시 보내기, 고쳐 보내기, 복사(평소 흐리고 마우스를 올리면 진하게). 펼친 동안 전달 칩은 숨긴다.
+- 브리핑: 창의 브리핑 카드, 머리줄의 브리핑 단추, `brief.js`의 브리핑 열기와 판정(`briefingDue`), store의 `briefing`, CSS와 화면 글을 지웠다. 들어가기·손대기(`session.touch`)는 잠재우기(P21, `sleep.mjs`가 `touchedAt`을 본다)가 쓰므로 `touch.js`로 이름을 바꿔 남겼다. 백엔드 `session.briefing`과 CLI `atrium brief`는 창이 아닌 쪽(CLI, 다른 클라이언트)도 부를 수 있어 남겼다.
+- 배율: 70~150%, 5% 단위. 값은 이 창 프로필의 localStorage(`mt.termScale`, `mt.uiScale`)에 둔다. 사용자가 "환경마다 다를 수 있다"고 했으므로 판 설정(백엔드, 원격 화면과 같이 씀)에 두지 않았다. 화면 배율은 Electron `webFrame.setZoomFactor`로 하고, preload가 판을 그리기 전에 저장한 값을 먼저 맞춘다. 터미널 글자 크기는 14px × 배율(0.1px 단위)이고, 바뀌면 xterm `fontSize`를 바꾼 뒤 줄·칸 수를 다시 재 패널 크기를 맞춘다.
+
+**진행.**
+- 순수 함수 `lib/scale.js`, `lib/thread.js`와 단위 시험 `test/p45-lib.test.mjs`(10개).
+- 창 시험 첫 실행에서 끌어 고르기 6단계가 실패했다. 기대값이 한 칸 어긋났고(12.5칸에서 놓으면 12글자), 110%에서는 시험 줄이 아래 명령 바 밑에 깔렸다. 기대값을 고치고 고르기 전에 `cls`를 친다. 모든 배율에서 같은 12글자를 골랐다.
+- Playwright `page.screenshot`은 창 배율을 바꾸면 옛 크기로 잘려 보였다(화면은 맞음). 스크린숏은 Electron `capturePage`로 찍는다.
+- 스레드 단계에서 연 스레드가 다음 단계의 셸 노드를 가려 누르기가 빗나갔다. 스레드 단계 끝에 닫는다.
+- 마지막 전체 실행(`final`): 27단계 모두 통과.
+
 ## 보고
+
+### 만든 것
+
+**1. 요청 기록 스레드(`Thread.jsx`, `lib/thread.js`, `CommandBar.jsx`의 스레드 부분, `styles.css` 끝).**
+- 바꾼 것과 까닭은 작업 기록 "정한 것"에 있다. 전후 화면: `experiments/p45/before-thread-open.png`(고치기 전), `final-thread-open.png`(고친 뒤), `final-thread-beta.png`(@beta로 묶음), `final-thread-expanded.png`(보고 펼침), `final-thread-after.png`(다시 보내기 뒤).
+- 고쳐 보내기는 처음 대상(`@all` 그대로)과 글을 명령 바 입력칸에 넣고 초점을 준다(`Thread.jsx`의 `commandDraft` 이벤트를 `CommandBar.jsx`가 듣는다). 다시 보내기는 같은 줄을 `session.send`로 바로 보낸다. 세션으로 가기는 `navigateTo(id, { focusTerminal: true })`라 그 터미널에 바로 들어간다. 판에서 빠진 세션은 이름에 줄을 긋고 누를 수 없다.
+- 판단(받은 세션 이름, 세션 단추 목록, 거르기, 긴 글, 한 줄 미리보기, 다시 보내기 글, 결과 색, 요약)은 `lib/thread.js`에 있고 단위 시험한다.
+
+**2. 브리핑 없애기.**
+- 지운 것: `SessionExtras.jsx`의 `BriefingCard`·`closeBriefing`, `SessionNode.jsx`의 머리줄 브리핑 단추와 카드, `brief.js`의 `openBriefing`과 30분 판정(`attention.js`의 `briefingDue`, `DEFAULT_BRIEF_AFTER_MS`), store의 `briefing`·`setBriefing`, `.mt-brief*` CSS, 화면 글 `node.briefTitle`과 `extras.briefTitle`·`touched`·`stateNow`·`pendingQuestion`·`lastPrompt`·`lastAnswer`·`interruptedBy`·`briefNote`(두 언어), 옛 창 시험 `e2-brief.mjs`.
+- 남긴 것: `brief.js` → `touch.js`(`enterSession`, `markInteracted`). 노드를 누르거나 칩·알림으로 가면 `session.touch`를 부른다. 잠재우기(P21)가 손댄 시각을 본다. "자리를 비운 동안 바뀐 것" 요약 창(A3, `ReturnSummary.jsx`)은 브리핑 코드를 쓰지 않아 그대로다. 백엔드 `session.briefing`과 CLI `atrium brief`도 남겼다.
+- 고친 옛 시험: `test/p3-lib.test.mjs`(브리핑 판정 줄을 뺐다), `test/e2e/p22-remove.mjs` 3b(브리핑을 여는 대신 브리핑 단추와 카드가 없는지 본다). `p22-remove.mjs`는 다시 돌리지 않았다.
+- 창 시험: 손댄 시각을 40분 앞으로 돌린 셸을 누르면 브리핑 없이 터미널에 초점이 가고 친 글이 바로 셸에 간다(`final-no-briefing.png`).
+
+**3. 배율(`lib/scale.js`, `store.js` 끝, `Settings.jsx`의 배율 칸, `TerminalView.jsx`의 글자 크기, `main/preload.cjs`).**
+- 설정 ⚙ 일반 탭의 언어 아래에 "화면 배율", "터미널 글자 배율". −·+(5%), 백분율 칸(Enter나 칸을 떠나면 적용), 100% 단추. 범위 70~150%, 5% 단위. 바꾸면 곧바로 보이고 다시 켜도 남는다.
+- 창 시험(`final-*.png`, 판 줌 75%): 터미널 글자 80%(11.2px, 85×18 → 97×24칸), 120%(16.8px, 68×15칸), 화면 90%·110%, 다시 켠 뒤 모두에서 셸의 한 줄을 끌어 고르면 마우스 밑 12글자가 골라졌다(P38·P42 칸 계산). 화면 배율은 창의 CSS px와 마우스 좌표를 함께 바꾸므로 P38의 `unscalePoint`와 P42 고르기는 고치지 않았다. 휠 변환도 화면 사각형과 칸 수로 계산해 그대로다(창 시험으로는 보지 않았다).
+- 화면 배율은 Electron main이 아니라 preload(`webFrame`)에서 한다. main을 거치지 않아도 되고, 판을 그리기 전에 맞출 수 있다. `main.mjs`는 고치지 않았다.
+
+**시험.** `cd backend && npm test` 348 통과, `cd app && npm test` 134 통과, `cd app && npm run build` 성공. 창 시험 `node experiments/p45/tools/e2e.cjs p45-ui.mjs --tag final` 27단계 통과(`experiments/p45/final.txt`, `final-results.json`).
+
+### 계획과 다른 곳
+
+- 백엔드의 브리핑 API(`session.briefing`)와 CLI `atrium brief`는 지우지 않았다. 창은 더 부르지 않는다.
+- 배율은 판 설정이 아니라 창 프로필의 localStorage에 둔다. 판 설정(`atrium settings`)으로는 바꿀 수 없다.
+- 내 파일 밖에서 고친 것: `Canvas.jsx` 두 줄(import 경로 `touch.js`, 누르기 예외 선택자에서 `.mt-brief`를 뺌), `store.js`(브리핑 두 줄을 빼고 배율을 끝에 더함), `lib/attention.js`(브리핑 판정 뺌), `styles.css`의 `.mt-brief*` 줄 지우기(가운데), `locales/*.js`의 브리핑 글 지우기(가운데)와 `threadView`·`scale` 더하기(끝).
+
+### 알려진 문제
+
+- **완료 보고가 다른 요청에 붙는다.** 같은 세션에 짧은 요청을 빠르게 이어 보내면 보고가 뒤 요청의 답으로 붙는다(예: gamma에 보낸 "nine"의 보고가 "twelve"). 스레드 화면이 아니라 백엔드 `thread.mjs`의 `check()`가 끝난 턴을 고르는 방식(`turnAnswers`) 때문으로 보이며, 고치지 않았다.
+- **Ctrl+- / Ctrl+= / Ctrl+0.** 창에 기본 메뉴가 숨어 있어 이 키가 Chromium 확대를 바꿀 수 있다. 그러면 설정의 화면 배율 값과 실제 배율이 다시 켤 때까지 어긋난다. 막지 않았다.
+- **원격 웹 화면(P48).** `window.mt.setZoom`이 없으면 화면 배율은 값만 저장되고 적용되지 않는다. 터미널 글자 배율은 같은 코드라 적용된다.
+- 셸 노드에서 글자 배율을 바꾸면 패널 칸 수가 바뀌어 PowerShell이 줄을 다시 그린다. 그때 판 안 기록(P42)의 한 줄이 겹쳐 보인 적이 있다(`DRAGTEST-t80-ABCDEFGHIJGHIJ`). 노드 크기를 바꿀 때와 같은 길이라 고치지 않았다.
+
+### BRIEF·ARCH에 들어갈 새 문장
+
+- BRIEF 4절 사용성 원칙 "들어갈 때 브리핑" 줄: **누르면 바로 쓴다.** 세션을 누르거나 칩·알림으로 가면 요약 없이 그 터미널로 바로 들어간다. 자리를 비운 동안 바뀐 것은 창으로 돌아올 때 한 번에 보인다(A3).
+- ARCH 4절 E2: **E2 손댄 시각.** 그 세션을 보거나, 터미널에 입력하거나, 글을 보내거나, 카드로 답하면 손댄 시각을 남긴다(`session.touch`). 잠재우기(D4)가 이 시각을 본다. 들어갈 때 브리핑은 P45에서 뺐다(백엔드 `session.briefing`과 `atrium brief`는 남음).
+- ARCH 4절 I2 끝(B1의 스레드): 명령 바 위에 펼친다. 줄은 "시각 → 받은 세션", 보낸 글(길면 접음), 세션마다 상태와 보고 한 줄이다. 세션 단추로 한 세션에 보낸 것만 보고, 줄마다 다시 보내기, 고쳐 보내기(명령 바에 넣음), 복사가 있다. 펼친 동안 전달 칩은 숨는다.
+- ARCH 4절 I7: 설정의 일반 탭에는 화면 배율과 터미널 글자 배율(70~150%, 5% 단위)도 있다. 이 둘은 판 설정이 아니라 창 프로필에 둔다.
+- ARCH 7.2 가까이 얼굴에 한 항목: 글자 크기는 기준 14px × 터미널 글자 배율이다. 배율이 바뀌면 노드 크기는 그대로 두고 줄·칸 수를 다시 재 패널 크기를 맞춘다. 화면 배율은 창 전체의 확대라 마우스 칸 계산(P38)이 그대로 맞는다.

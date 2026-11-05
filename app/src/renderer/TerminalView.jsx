@@ -7,6 +7,7 @@
 //   고르는 동안 포인터는 글 고르기 모양. 복사는 줄 끝 빈칸을 뺀다.
 // - P42: 글 고르기는 웹처럼 한다(term-selection.js). 선택은 글에 붙어 휠·가장자리 자동 스크롤·새 프레임에 함께 움직이고 풀리지 않는다.
 //   claude 등은 프레임을 이어 붙인 문서로, 셸은 herdr 기록과 밀려난 줄을 xterm scrollback에 넣어(판 안에서 스크롤) 화면 밖 글까지 고르고 복사한다.
+// - P45: 글자 크기 = TERM_FONT_SIZE × 터미널 글자 배율(설정 일반 탭, store.termScale). 바꾸면 곧바로 글자를 바꾸고 줄·칸 수를 다시 재 패널 크기를 맞춘다.
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -20,6 +21,7 @@ import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
 import { onFrame, onWritten, markInput, setTerminal, perfLog } from './perf.js';
 import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/tokens.js';
+import { termFontSize } from './lib/scale.js'; // P45
 import { useT, errText } from './lib/i18n.js';
 
 function readNumber(key, dflt) {
@@ -66,7 +68,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null };
     // P42: 셸은 앱이 스스로 스크롤하지 않아(PowerShell은 SGR 휠을 무시) 지난 출력을 xterm scrollback에 두고 판 안에서 스크롤한다
     const shell = (getState().sessions.get(sessionId) || {}).kind === 'shell';
-    const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: TERM_FONT_SIZE, lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
+    const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: termFontSize(TERM_FONT_SIZE, getState().termScale), lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
     const u11 = new Unicode11Addon();
     term.loadAddon(u11);
     term.unicode.activeVersion = '11';
@@ -255,6 +257,15 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     };
   }, [sessionId, retry]);
 
+  // P45: 터미널 글자 배율이 바뀌면 글자 크기를 바꾼다(아래 효과가 줄·칸 수를 다시 잰다)
+  const termScale = useStore((st) => st.termScale);
+  useEffect(() => {
+    const st = ref.current;
+    if (!st.term) return;
+    const size = termFontSize(TERM_FONT_SIZE, termScale);
+    if (st.term.options.fontSize !== size) { st.term.options.fontSize = size; perfLog('term_font', { sessionId, size }); }
+  }, [sessionId, termScale, retry]);
+
   // 노드 크기가 바뀌면 패널 크기를 맞춘다(노드 크기 = 패널 크기, ARCH 7.2). 돌아온 프레임의 w·h로 xterm 크기가 바뀐다.
   useEffect(() => {
     const st = ref.current;
@@ -273,7 +284,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     // P17: 덩어리 분할선·바깥 크기로 여러 노드 크기가 한꺼번에 바뀌면 120ms 때 아직 자리가 덜 잡혀 한 줄 모자라게 잴 때가 있다. 한 번 더 잰다
     const t = setTimeout(refit, 120), t2 = setTimeout(refit, 600);
     return () => { clearTimeout(t); clearTimeout(t2); };
-  }, [sessionId, width, height, reserve]);
+  }, [sessionId, width, height, reserve, termScale]);
 
   useEffect(() => {
     const st = ref.current;

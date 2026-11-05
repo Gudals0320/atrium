@@ -1,7 +1,7 @@
 // P3 창 쪽 순수 규칙: OS 알림(A1), 다시 들어가기 브리핑(E2), 복귀 요약(A3)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { notifyKey, nodeVisible, shouldNotify, briefingDue, awayLongEnough, NOTIFY_MIN_VISIBLE_PX } from '../src/renderer/lib/attention.js';
+import { notifyKey, nodeVisible, shouldNotify, awayLongEnough, NOTIFY_MIN_VISIBLE_PX } from '../src/renderer/lib/attention.js';
 import { deliveryText } from '../src/renderer/lib/labels.js';
 import { setLanguage } from '../src/renderer/lib/i18n.js';
 
@@ -32,12 +32,8 @@ test('A1: 창에 초점이 있고 노드가 보이면 띄우지 않는다. 멀�
   assert.equal(shouldNotify({ focused: true, nodeRect: null, canvasRect: canvas }).notify, true);
 });
 
-test('E2: 오래 손대지 않은 세션에 들어가면 브리핑, A3: 오래 비웠으면 복귀 요약', () => {
+test('A3: 오래 비웠으면 복귀 요약(E2 브리핑은 P45에서 뺐다)', () => {
   const now = 10_000_000;
-  assert.equal(briefingDue({ touchedAt: now - 31 * 60000 }, now), true);
-  assert.equal(briefingDue({ touchedAt: now - 5 * 60000 }, now), false);
-  assert.equal(briefingDue({ touchedAt: null, createdAt: now - 3600e3 }, now), true);
-  assert.equal(briefingDue({ touchedAt: now - 20000 }, now, 10000), true);
   assert.equal(awayLongEnough(now - 6 * 60000, now), true);
   assert.equal(awayLongEnough(now - 60000, now), false);
   assert.equal(awayLongEnough(null, now), false);

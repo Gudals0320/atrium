@@ -21,8 +21,8 @@ import { TerminalView } from './TerminalView.jsx';
 import { ApprovalCard } from './ApprovalCard.jsx';
 import { ChatView } from './ChatView.jsx';
 import { NodeBoundary } from './ErrorBoundary.jsx';
-import { BriefingCard, InterruptedBanner, closeBriefing } from './SessionExtras.jsx';
-import { enterSession, markInteracted, openBriefing } from './brief.js';
+import { InterruptedBanner } from './SessionExtras.jsx';
+import { enterSession, markInteracted } from './touch.js';
 import { LoopBadge, SessionLoopList } from './Loops.jsx';
 import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단계"
 import { Icon } from './lib/icons.jsx';
@@ -95,7 +95,7 @@ function GitLine({ s }) {
 
 // P11: 콘솔 머리(목업): 종류 아이콘, 세션마다 다른 색 점, 이름(굵게), 표시들, 오른쪽에 상태 알약과 동작 아이콘.
 //   머리 높이와 글은 월드 28px·13px이 기준이고, 멀리 볼 때는 화면에서 11px 아래로 작아지지 않게 키운다(styles.css --inv)
-function Header({ s, onKill, onBrief, onMenu, onLoops }) {
+function Header({ s, onKill, onMenu, onLoops }) {
   const t = useT();
   const waiting = s.state === 'waiting' || s.state === 'trust_wait';
   useTick(waiting);
@@ -118,7 +118,6 @@ ${s.sessionId}`}>{s.name}</span>
       {waiting && since && <span className="mt-waited">{ago(since)}</span>}
       <StatePill s={s} />
       <button className="mt-x nodrag" title={t('node.menuTitle')} data-action="node-menu" onClick={onMenu}><Icon name="more" /></button>
-      <button className="mt-x nodrag" title={t('node.briefTitle')} data-action="brief" onClick={onBrief}><Icon name="info" /></button>
       <button className="mt-x nodrag kill" title={t('node.killTitle')} data-action="kill" onClick={onKill}><Icon name="x" /></button>
     </div>
   );
@@ -361,7 +360,6 @@ function SessionNodeInner({ id, selected }) {
   const focusTick = useStore((st) => (st.focusId === id ? st.focusTick : 0));
   const zoom = useFlowStore(zoomSel);
   const n = useStore((st) => st.nodes.get(id));
-  const briefing = useStore((st) => (st.briefing && st.briefing.sessionId === id ? st.briefing : null));
   const [killing, setKilling] = useState(false);
   const killAsk = useStore((st) => (st.killAsk && st.killAsk.id === id ? st.killAsk.at : 0));
   const xVisible = useRef(true);
@@ -401,7 +399,7 @@ function SessionNodeInner({ id, selected }) {
       ))}
       {/* P23: 덩어리 안에서는 가장자리 손잡이 대신 가운데 점으로 잇는다(분할선과 겹치지 않게, 잇기 모드에서만 끈다) */}
       {docked && <Handle type="source" position={Position.Top} id="c" className="mt-handle h-c nodrag" title={t('dock.dotTitle')} />}
-      {face !== 'icon' && <Header s={s} onKill={() => setKilling(true)} onBrief={() => (briefing ? closeBriefing() : openBriefing(id))} onMenu={() => setMenu((m) => !m)} onLoops={() => setLoopsOpen((o) => !o)} />}
+      {face !== 'icon' && <Header s={s} onKill={() => setKilling(true)} onMenu={() => setMenu((m) => !m)} onLoops={() => setLoopsOpen((o) => !o)} />}
       {!far && <GitLine s={s} />}
       {far && (s.state === 'waiting' || s.state === 'trust_wait') && (face === 'icon' || n.h * zoom < 160) && <AskCallout s={s} />}
       {/* P31: 가까이(터미널)가 아닌 얼굴은 본문 어디를 끌어도 머리줄처럼 노드를 옮긴다(mt-drag, Canvas.jsx onNodeDragStart). 누르기만 하면 들어간다(H4).
@@ -416,7 +414,6 @@ function SessionNodeInner({ id, selected }) {
         </NodeBoundary>
         {!far && <div className="mt-node-overlays">
           {s.interruptedTurn && <InterruptedBanner s={s} />}
-          {briefing && <BriefingCard s={s} b={briefing.data} onClose={closeBriefing} />}
         </div>}
         {showCard && !far && <ApprovalCard s={s} onTerminal={toTerminal} onAnswered={() => markInteracted(id)} />}
         {killing && <KillConfirm s={s} onClose={() => setKilling(false)} />}

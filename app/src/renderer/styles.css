@@ -384,14 +384,8 @@ img.mt-kind-icon { object-fit: contain; }
 /* 노드 덧붙임: 끊긴 턴, 브리핑, 메모 */
 .mt-node-overlays { position: absolute; left: 8px; right: 8px; top: 8px; display: grid; gap: 6px; z-index: 4; pointer-events: none; }
 .mt-node-overlays > * { pointer-events: all; }
-.mt-interrupted, .mt-brief { background: var(--panel); border: 1px solid color-mix(in srgb, var(--warn) 60%, transparent); border-radius: 10px; padding: 10px 12px; box-shadow: var(--panel-shadow); max-height: 300px; overflow: auto; }
-.mt-brief { border-color: var(--panel-line-2); }
-.mt-brief .mt-card-title { color: var(--text); }
+.mt-interrupted { background: var(--panel); border: 1px solid color-mix(in srgb, var(--warn) 60%, transparent); border-radius: 10px; padding: 10px 12px; box-shadow: var(--panel-shadow); max-height: 300px; overflow: auto; }
 .mt-interrupted .mt-card-title { color: var(--warn); }
-.mt-brief-grid { display: grid; grid-template-columns: 120px 1fr; gap: 4px 10px; font-size: 12.5px; margin: 6px 0; }
-.mt-brief-grid .k { color: var(--dim); }
-.mt-brief-grid .hot { color: var(--accent-2); }
-.mt-brief-text { white-space: pre-wrap; max-height: 88px; overflow: auto; }
 .mt-tail { font-size: 12px; display: grid; gap: 2px; margin: 4px 0; max-height: 150px; overflow: auto; font-family: var(--font-mono); }
 .mt-tail-user { color: var(--accent-text); }
 .mt-tail-assistant { color: var(--text); }
@@ -1043,3 +1037,61 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 /* P43: 찾기 바는 위 가운데(위 알약 줄 아래)에 뜨고 결과는 아래로 펼친다 */
 .mt-search { top: 60px; bottom: auto; }
 .mt-search-list { max-height: min(50vh, calc(100vh - 200px)); }
+
+/* P45: 요청 기록(Thread.jsx). 줄마다 카드, 왼쪽 띠 색이 줄 상태, 보낸 글은 상자, 결과는 세션마다 한 줄 */
+.mt-tv { max-height: 56vh; }
+.mt-tv-top { display: flex; align-items: center; gap: 10px; padding: 8px 12px 6px; font-size: 12.5px; }
+.mt-tv-title { color: var(--text); font-size: 13px; letter-spacing: .02em; }
+.mt-tv-sp { flex: 1 1 auto; }
+.mt-tv-filter { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid var(--panel-line); }
+.mt-tv-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 12px; border: 1px solid var(--panel-line-2); background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; }
+.mt-tv-chip:hover { color: var(--text); border-color: var(--dim); }
+.mt-tv-chip.on { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--text); }
+.mt-tv-chip.gone { opacity: .6; }
+.mt-tv-chip .n { color: var(--dim); font-variant-numeric: tabular-nums; }
+.mt-tv-chip .mt-cmd-note { position: static; }
+.mt-tv-list { overflow: auto; padding: 10px 12px; display: grid; gap: 10px; align-content: start; }
+.mt-tv-older { justify-self: center; }
+.mt-tv-empty { padding: 8px 0; }
+.mt-tv-item { border: 1px solid var(--panel-line); border-left: 3px solid var(--panel-line-2); border-radius: 8px; padding: 7px 10px 8px; display: grid; gap: 5px; font-size: 12.5px; background: color-mix(in srgb, var(--field-bg) 40%, transparent); }
+.mt-tv-item.ip-active { border-left-color: var(--st-working); }
+.mt-tv-item.ip-done { border-left-color: var(--ok); }
+.mt-tv-item.ip-partial { border-left-color: var(--warn); }
+.mt-tv-item.ip-failed { border-left-color: var(--bad); }
+.mt-tv-head { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.mt-tv-time { color: var(--dim); font-variant-numeric: tabular-nums; }
+.mt-tv-arrow { color: var(--dim); }
+.mt-tv-targets { display: inline-flex; flex-wrap: wrap; gap: 6px; color: var(--text); }
+.mt-tv-iph { color: var(--dim); font-size: 11.5px; }
+.mt-tv-iph.ip-active { color: var(--st-working); }
+.mt-tv-iph.ip-partial { color: var(--warn); }
+.mt-tv-iph.ip-failed { color: var(--bad); }
+.mt-tv-acts { display: inline-flex; gap: 4px; opacity: .35; transition: opacity .12s; }
+.mt-tv-item:hover .mt-tv-acts, .mt-tv-item:focus-within .mt-tv-acts { opacity: 1; }
+.mt-tv-act { height: 22px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--panel-line-2); background: transparent; color: var(--text-2); font-size: 11.5px; cursor: pointer; white-space: nowrap; }
+.mt-tv-act:hover { color: var(--text); border-color: var(--dim); background: var(--field-bg); }
+.mt-tv-text { white-space: pre-wrap; word-break: break-word; color: var(--text); background: var(--field-bg); border-radius: 6px; padding: 6px 9px; line-height: 1.45; }
+.mt-tv-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.mt-tv-more { justify-self: start; border: 0; background: transparent; color: var(--accent-2); font-size: 11.5px; padding: 0 2px; cursor: pointer; }
+.mt-tv-more:hover { text-decoration: underline; }
+.mt-tv-results { display: grid; gap: 3px; }
+.mt-tv-res { display: grid; gap: 4px; }
+.mt-tv-res-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.mt-tv-to { flex: none; display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent; padding: 0; color: var(--text); font-weight: 650; font-size: 12.5px; cursor: pointer; }
+.mt-tv-to:hover:not(:disabled) { color: var(--accent-2); }
+.mt-tv-to:disabled { color: var(--dim); cursor: default; text-decoration: line-through; }
+.mt-tv-go { font-size: 11px; color: var(--dim); }
+.mt-tv-to:hover .mt-tv-go { color: var(--accent-2); }
+.mt-tv-state { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 650; }
+.mt-tv-state.tone-ok { color: var(--ok); } .mt-tv-state.tone-run { color: var(--st-working); } .mt-tv-state.tone-bad { color: var(--bad); } .mt-tv-state.tone-dim { color: var(--dim); }
+.mt-tv-state .mt-spin { width: 9px; height: 9px; }
+.mt-tv-rep { flex: 1 1 auto; min-width: 0; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.mt-tv-rep:hover { color: var(--text); }
+.mt-tv-full { margin: 0 0 2px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: var(--field-bg); border: 1px solid var(--panel-line); border-left: 2px solid var(--ok); border-radius: 6px; padding: 6px 9px; font-size: 12px; }
+.mt-tv-hidden { font-size: 11.5px; }
+
+/* P45: 설정의 배율 칸(−, 백분율, +, 100%) */
+.mt-scale { display: inline-flex; align-items: center; gap: 4px; }
+.mt-scale .mt-btn.small { min-width: 28px; }
+.mt-scale-num { width: 64px; text-align: right; }
+.mt-scale-pct { color: var(--dim); margin-right: 4px; }
