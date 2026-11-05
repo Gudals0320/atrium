@@ -19,6 +19,9 @@ export const SETTINGS = {
   // P49(R3): Tailscale로 온 요청의 로그인 사용자 제한. 켜져 있으면 이 PC에 로그인한 Tailscale 사용자와 허용 목록만 짝 맺고 연결한다. 이 PC의 창에서만 바꾼다
   remoteSameUser: { type: 'boolean', default: true, label: 'Tailscale로 온 요청은 이 PC의 Tailscale 사용자와 허용 목록의 사용자만 받는다(P49)' },
   remoteAllowedLogins: { type: 'string', default: '', max: 1000, pattern: /^[A-Za-z0-9._%+@,\s-]*$/, hint: '로그인 이름을 쉼표로', label: '더 받을 Tailscale 로그인 이름(쉼표로 여럿, P49)' },
+  // P56(S3): 웹 화면 로그인 세션의 수명. remote*라서 이 PC의 창·CLI만 바꾼다(backend.mjs settings.set)
+  remoteSessionHours: { type: 'number', default: 12, min: 1, max: 168, label: '웹 화면은 패스키로 로그인한 뒤 이 시간이 지나면 다시 확인한다(P56)' },
+  remoteIdleMinutes: { type: 'number', default: 30, min: 5, max: 1440, label: '웹 화면의 연결이 모두 끊긴 채 이 분이 지나면 다시 확인한다(노트북 잠자기, P56)' },
   sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '리포(워크스페이스)에 이 분 동안 아무 일이 없으면 그 리포의 판 Claude Code 세션을 모두 잠재운다(0이면 저절로 잠재우지 않음, P21·P24 D4)' },
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));

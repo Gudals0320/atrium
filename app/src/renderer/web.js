@@ -1,5 +1,6 @@
 // P48(원격 R2) 웹 어댑터: 창이 Electron 밖(브라우저)에서 돌면 preload의 window.mt 대신 이것을 쓴다. Electron 창은 preload가 먼저 window.mt를 두므로 그대로다.
-// - backend: 같은 출처의 WebSocket(/api?device=…)과 이 브라우저에 저장한 기기 토큰. 토큰이 없거나 끊겼으면(401) 짝 맺기 화면으로 다시 연다
+// - backend: 같은 출처의 WebSocket(/api). P56: 인증은 패스키로 받은 세션(HttpOnly 쿠키)이다. 화면의 스크립트는 비밀을 읽지도 두지도 않는다.
+//   세션이 끝났으면(401, 4401) 다시 열어 다시 확인 화면(짝이 풀렸으면 짝 맺기 화면)으로 간다(Pair.jsx webGate)
 // - log: 콘솔. metrics: 빈 목록. notify: Web Notifications(처음 누를 때 권한을 묻는다). onNavigate: 알림을 누르면 그 세션으로
 // - pickFolder: PC 폴더 탐색기(FolderPicker.jsx, 백엔드 fs.roots·fs.list)
 // - 업로드: 붙여 넣거나 끌어 놓은 파일을 POST /web/upload로 올리고 PC 경로를 받는다(TerminalView, CommandBar)
@@ -8,28 +9,24 @@ import { hasFiles } from './lib/upload.js';
 import { webZoomOf } from './lib/scale.js'; // P49
 
 export const isWeb = typeof window !== 'undefined' && !window.mt;
-const TOKEN_KEY = 'atrium.deviceToken';
-export function deviceToken() { try { return localStorage.getItem(TOKEN_KEY) || null; } catch { return null; } }
-export function saveDeviceToken(t) { try { localStorage.setItem(TOKEN_KEY, t); } catch {} }
-export function clearDeviceToken() { try { localStorage.removeItem(TOKEN_KEY); } catch {} }
-const auth = () => ({ authorization: `Bearer ${deviceToken() || ''}` });
+// P56: 옛 기기 토큰(P48~P55)이 남아 있으면 지운다. 더 쓰지 않는다
+if (isWeb) try { localStorage.removeItem('atrium.deviceToken'); } catch {}
 
-// 기기 정보(백엔드가 내주는 창의 시작 값). 401이면 null(짝 맺기 필요)
+// 기기 정보(백엔드가 내주는 창의 시작 값). 401이면 null(다시 확인이나 짝 맺기 필요). 쿠키는 브라우저가 붙인다
 export async function webMe() {
-  if (!deviceToken()) return null;
-  const r = await fetch('/web/me', { headers: auth(), cache: 'no-store' });
-  if (r.status === 401) { clearDeviceToken(); return null; }
+  const r = await fetch('/web/me', { cache: 'no-store', credentials: 'same-origin' });
+  if (r.status === 401) return null;
   if (!r.ok) throw new Error(`backend ${r.status}`);
   return r.json();
 }
 
-let paired = false; // 이 페이지가 짝을 맺은 채로 시작했는지. 그 뒤에 끊기면 짝 맺기 화면으로 다시 연다
+let paired = false; // 이 페이지가 로그인한 채로 시작했는지. 그 뒤에 세션이 끝나면 다시 열어 다시 확인 화면으로 간다
 async function backend() {
   const me = await webMe();
-  if (!me) { if (paired) location.reload(); throw Object.assign(new Error('this browser is not paired'), { code: 'not_paired' }); }
+  if (!me) { if (paired) location.reload(); throw Object.assign(new Error('this browser is not signed in'), { code: 'not_paired' }); }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  // P49: 웹 화면도 클라이언트다(P47). api.js가 client·name·kind=web을 연결 주소에 붙인다
-  return { ...me, token: deviceToken(), web: true, clientKind: 'web', deviceName: (me.device && me.device.name) || null, wsUrl: `${proto}://${location.host}/api?device=${encodeURIComponent(deviceToken())}` };
+  // P49: 웹 화면도 클라이언트다(P47). api.js가 client·name·kind=web을 연결 주소에 붙인다. P56: 주소에 비밀이 없다(쿠키)
+  return { ...me, web: true, clientKind: 'web', deviceName: (me.device && me.device.name) || null, wsUrl: `${proto}://${location.host}/api` };
 }
 export function markPaired() { paired = true; }
 
@@ -54,7 +51,7 @@ function applyWebZoom(f) { try { const z = webZoomOf(f); document.documentElemen
 export async function uploadFiles(files) {
   const out = [];
   for (const f of files) {
-    const r = await fetch(`/web/upload?name=${encodeURIComponent(f.name || '')}`, { method: 'POST', headers: { ...auth(), 'content-type': f.type || 'application/octet-stream' }, body: f });
+    const r = await fetch(`/web/upload?name=${encodeURIComponent(f.name || '')}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': f.type || 'application/octet-stream' }, body: f });
     let j = null; try { j = await r.json(); } catch {}
     if (!r.ok) throw new Error((j && j.error && j.error.message) || `upload failed (${r.status})`);
     out.push(j.path);

@@ -301,7 +301,7 @@ async function main() {
         if (rest[0] === 'code') { const r = await c.call('device.code'); if (JSONOUT) return out(r); console.log(`짝 맺기 코드 ${r.code} (${new Date(r.expiresAt).toLocaleTimeString()}까지, 한 번만)`); return; }
         if (rest[0] === 'rm') return out(await c.call('device.revoke', { id: rest[1] }));
         const r = await c.call('device.list'); if (JSONOUT) return out(r);
-        for (const d of r.devices) console.log(`${d.id}  ${d.name.padEnd(20)}  짝 맺음 ${ts(d.createdAt)}  마지막 ${d.lastSeenAt ? ts(d.lastSeenAt) : '-'}`);
+        for (const d of r.devices) console.log(`${d.id}  ${d.name.padEnd(20)}  짝 맺음 ${ts(d.createdAt)}  마지막 ${d.lastSeenAt ? ts(d.lastSeenAt) : '-'}${d.needsRepair ? '  다시 짝 맺기 필요(P56 전 토큰 기기, devices rm으로 지운다)' : `  로그인 ${d.sessions ?? 0}`}`);
         for (const q of r.requests) console.log(`허락 요청 ${q.id} ${q.name} 확인 ${q.check}`);
         if (!r.devices.length && !r.requests.length) console.log('짝 맺은 기기가 없다');
         return;
