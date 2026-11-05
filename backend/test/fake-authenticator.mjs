@@ -26,8 +26,14 @@ export function cbor(v) {
   return Buffer.concat([head(5, entries.length), ...entries.flatMap(([k, x]) => [cbor(k), cbor(x)])]);
 }
 
+// P60: icloud: true면 iCloud 키체인 패스키(iPhone으로 하이브리드 등록)의 모양을 흉내 낸다. signCount는 늘 0, 백업 플래그(BE·BS) 켜짐, ES256,
+// transports ['hybrid', 'internal'], 붙임 cross-platform. transports·attachment로 따로 줄 수도 있다
 export class FakeAuthenticator {
-  constructor({ alg = -7 } = {}) {
+  constructor({ alg = -7, icloud = false, transports = null, attachment = null } = {}) {
+    this.icloud = !!icloud;
+    if (this.icloud) alg = -7;
+    this.transports = transports || (this.icloud ? ['hybrid', 'internal'] : ['internal']);
+    this.attachment = attachment || (this.icloud ? 'cross-platform' : 'platform');
     this.alg = alg;
     this.keys = alg === -7 ? crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }) : crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     this.credId = crypto.randomBytes(32);
@@ -40,8 +46,8 @@ export class FakeAuthenticator {
     if (this.alg === -7) return new Map([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(j.x, 'base64url')], [-3, Buffer.from(j.y, 'base64url')]]);
     return new Map([[1, 3], [3, -257], [-1, Buffer.from(j.n, 'base64url')], [-2, Buffer.from(j.e, 'base64url')]]);
   }
-  authData({ rpId, up = true, uv = true, count, attested = false }) {
-    const flags = (up ? 0x01 : 0) | (uv ? 0x04 : 0) | (attested ? 0x40 : 0);
+  authData({ rpId, up = true, uv = true, count, attested = false, be = this.icloud, bs = this.icloud }) {
+    const flags = (up ? 0x01 : 0) | (uv ? 0x04 : 0) | (be ? 0x08 : 0) | (bs ? 0x10 : 0) | (attested ? 0x40 : 0);
     const c = Buffer.alloc(4); c.writeUInt32BE(count >>> 0, 0);
     const parts = [sha256(Buffer.from(rpId)), Buffer.from([flags]), c];
     if (attested) { const l = Buffer.alloc(2); l.writeUInt16BE(this.credId.length, 0); parts.push(Buffer.alloc(16), l, this.credId, cbor(this.coseKey())); }
@@ -54,17 +60,17 @@ export class FakeAuthenticator {
     const cd = Buffer.from(JSON.stringify({ type: o.type || 'webauthn.create', challenge: o.challenge || options.challenge, origin: o.origin, crossOrigin: false }));
     const ad = this.authData({ rpId, up: o.up, uv: o.uv, count: this.signCount, attested: true });
     const att = cbor(new Map([['fmt', o.fmt || 'none'], ['attStmt', new Map()], ['authData', ad]]));
-    return { id: this.id, rawId: this.id, type: 'public-key', response: { clientDataJSON: b64u(cd), attestationObject: b64u(att), transports: ['internal'] }, authenticatorAttachment: 'platform', clientExtensionResults: {} };
+    return { id: this.id, rawId: this.id, type: 'public-key', response: { clientDataJSON: b64u(cd), attestationObject: b64u(att), transports: this.transports }, authenticatorAttachment: this.attachment, clientExtensionResults: {} };
   }
   // options: 서버가 준 requestOptions. o: { origin, rpId?, count?, up?, uv?, signWith?(다른 인증기), challenge? }
   get(options, o = {}) {
     const rpId = o.rpId || options.rpId;
-    if (o.count == null) this.signCount += 1;
+    if (o.count == null && !this.icloud) this.signCount += 1; // iCloud 키체인은 카운터를 늘리지 않는다(늘 0)
     const cd = Buffer.from(JSON.stringify({ type: o.type || 'webauthn.get', challenge: o.challenge || options.challenge, origin: o.origin, crossOrigin: false }));
     const ad = this.authData({ rpId, up: o.up, uv: o.uv, count: o.count ?? this.signCount });
     const signer = o.signWith || this;
     const sig = crypto.sign('sha256', Buffer.concat([ad, sha256(cd)]), signer.keys.privateKey);
-    return { id: this.id, rawId: this.id, type: 'public-key', response: { clientDataJSON: b64u(cd), authenticatorData: b64u(ad), signature: b64u(sig), userHandle: this.userHandle }, clientExtensionResults: {} };
+    return { id: this.id, rawId: this.id, type: 'public-key', response: { clientDataJSON: b64u(cd), authenticatorData: b64u(ad), signature: b64u(sig), userHandle: this.userHandle }, authenticatorAttachment: this.attachment, clientExtensionResults: {} };
   }
 }
 
@@ -77,8 +83,8 @@ export const cookieOf = (setCookies) => (setCookies || []).map((c) => c.split(';
 const post = (port, p, headers, obj) => raw(port, p, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(obj) });
 
 // 등록 허가 → 패스키 등록. headers: { host, origin, ... }(serve 흉내면 Tailscale 머리글도). 돌려주는 것: { cookie, device, auth, res }
-export async function registerWithGrant(port, grant, headers, { auth = new FakeAuthenticator(), create = {} } = {}) {
-  const opt = await post(port, '/web/passkey/register/options', headers, { grant });
+export async function registerWithGrant(port, grant, headers, { auth = new FakeAuthenticator(), create = {}, via } = {}) {
+  const opt = await post(port, '/web/passkey/register/options', headers, { grant, ...(via ? { via } : {}) });
   if (opt.status !== 200) return { res: opt, auth };
   const credential = auth.create(opt.body.options, { origin: headers.origin, ...create });
   const res = await post(port, '/web/passkey/register', headers, { grant, credential });
@@ -90,8 +96,8 @@ export async function pairAndRegister(port, code, headers, o = {}) {
   return registerWithGrant(port, pr.body.grant, headers, o);
 }
 // 패스키 로그인. 돌려주는 것: { res, cookie }
-export async function loginWith(port, auth, headers, get = {}) {
-  const opt = await post(port, '/web/passkey/login/options', headers, { credentialId: auth.id });
+export async function loginWith(port, auth, headers, get = {}, via) {
+  const opt = await post(port, '/web/passkey/login/options', headers, { credentialId: auth.id, ...(via ? { via } : {}) });
   if (opt.status !== 200 || opt.body.status !== 'ok') return { res: opt };
   const credential = auth.get(opt.body.options, { origin: headers.origin, ...get });
   const res = await post(port, '/web/passkey/login', headers, { credential });

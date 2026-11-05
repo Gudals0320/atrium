@@ -18,7 +18,7 @@ import { execFile } from 'node:child_process';
 import { BACKEND_ROOT, envVar } from './config.mjs';
 import { loginAllowed, parseLogins, isRemoteRequest, diagnose, requestAddr, nodeCheck, whoisMatch, needsRepair } from './tailscale.mjs'; // P49(R3), P57(기기 확인)
 import { WebAuth, sessionIdOf, sessionCookie, clearCookies, isHttpsOrigin } from './web-auth.mjs'; // P56(S2·S3)
-import { PasskeyError } from './passkey.mjs';
+import { PasskeyError, passkeyKind } from './passkey.mjs';
 import { RemoteLog, ConnectWatch, browserOf } from './remote-log.mjs'; // P58(S4): 연결 기록, 새로 붙음 알림
 
 export const PAIR_CODE_TTL_MS = 5 * 60_000;
@@ -55,10 +55,17 @@ const nodeErr = (reason) => Object.assign(apiErr('tailscale_node', NODE_MSG[reas
 // 짝 맺기 요청을 보낸 곳과 토큰을 받으러 온 곳이 같은가(이 PC 안끼리, 같은 Tailscale 기기끼리)
 const sameNode = (a, b) => (a && a.id ? !!(b && b.id) && safeEq(a.id, b.id) : !(b && b.id));
 
+// P60: serve 켜기 명령(글). 실행하지 않는다. 개발용 판이면 --dev를 붙인다
+const quoteArg = (a) => (/[\s"]/.test(a) ? `"${a}"` : a);
+export function enableCommand(httpsPort, cfg = {}, root = BACKEND_ROOT) {
+  const bin = path.join(root, 'bin', 'atrium.mjs');
+  return ['node', quoteArg(bin), ...(cfg.profile === 'dev' ? ['--dev'] : []), 'remote', 'enable', '--yes', ...(Number(httpsPort) && Number(httpsPort) !== 443 ? ['--https-port', String(Number(httpsPort))] : [])].join(' ');
+}
+
 // ---------- 기기(P56: 패스키의 공개 키를 판 기록에 둔다) ----------
 // 옛 기기(P48~P55의 토큰 기기, hash만 있고 passkey가 없다)는 더 쓸 수 없다. 목록에 needsRepair로 보이고 PC에서 지운다
 // P57: 패스키가 있어도 Tailscale 기기 기록(origin)이 없으면 다시 짝 맺어야 한다(needsRepair, 막는 쪽)
-export const devicePub = ({ hash, passkey, ...d }) => ({ ...d, needsRepair: !passkey || needsRepair(d), passkey: passkey ? { rpId: passkey.rpId, alg: passkey.alg, createdAt: passkey.createdAt, lastUsedAt: passkey.lastUsedAt || null, backupEligible: !!passkey.backupEligible } : null });
+export const devicePub = ({ hash, passkey, ...d }) => ({ ...d, needsRepair: !passkey || needsRepair(d), passkey: passkey ? { rpId: passkey.rpId, alg: passkey.alg, createdAt: passkey.createdAt, lastUsedAt: passkey.lastUsedAt || null, backupEligible: !!passkey.backupEligible, backedUp: !!passkey.backedUp, transports: Array.isArray(passkey.transports) ? passkey.transports : [], kind: passkeyKind(passkey) } : null }); // P60: 패스키 종류(휴대폰·이 기기·보안 키)
 export class Devices {
   constructor({ store, now = Date.now }) { this.store = store; this.now = now; }
   all() { return this.store.getMeta(DEVICES_KEY) || []; }
@@ -464,7 +471,9 @@ export class WebServer {
     const pol = this.policy();
     const d = diagnose(ts, { port: this.cfg.port, hosts: [...this.hosts], devices: this.devices.all().length, unbound: this.devices.all().filter(needsRepair).length, built: this.files.built(), sameUser: pol.sameUser, allowed: pol.allowed });
     const accepting = this.accepting(); // P58: 원격 받기가 꺼져 있으면 준비되지 않음
-    return { ...d, ready: d.ready && accepting, accepting, connected: new Set(this.deviceConns().map((c) => c.auth.device.id)).size, port: this.cfg.port, sameUser: pol.sameUser, allowed: pol.allowed };
+    // P60: 판 설정 창이 복사할 켜기 명령(PATH에 기대지 않게 node와 이 백엔드의 atrium.mjs 경로로), 같은 이름의 다른 serve 항목 수(관리자 권한 안내)
+    const serveOthers = ((ts && ts.serve && ts.serve.entries) || []).filter((e) => !e.toBoard).length;
+    return { ...d, ready: d.ready && accepting, accepting, connected: new Set(this.deviceConns().map((c) => c.auth.device.id)).size, port: this.cfg.port, sameUser: pol.sameUser, allowed: pol.allowed, enableCmd: d.enable ? enableCommand(d.httpsPort, this.cfg) : null, serveOthers };
   }
   url() { return `http://localhost:${this.cfg.port}/`; } // P56: 패스키는 IP 주소에서 쓰지 못한다(RP ID는 이름)
   status() { return { url: this.url(), built: this.files.built(), devices: this.devices.all().length, hosts: [...this.hosts] }; }
@@ -635,9 +644,9 @@ export class WebServer {
         if (p === '/web/pair/request' && req.method === 'POST') { const o = origin(); const tsNode = await paired(); const b = await body(); const r = this.pairing.request({ name: b.name, ip, userAgent: ua, origin: o, tsNode }); this.log(`web pair request ${r.requestId}`); this.pairMeta.set(r.requestId, { ...meta, node: tsNode && tsNode.name }); this.note('pair.request', null, { ...meta, deviceName: clipName(b.name) || 'Browser', node: tsNode && tsNode.name }); return send(200, r); }
         if (p === '/web/pair/poll' && req.method === 'GET') { const tsNode = await paired(); return send(200, this.pairing.poll(url.searchParams.get('id'), url.searchParams.get('secret'), tsNode)); }
         // P56: 패스키 등록(짝 맺기의 허가로 한 번)과 로그인, 로그아웃. P57: 등록은 허가를 받은 곳에서만, 로그인은 묶인 Tailscale 기기에서만
-        if (p === '/web/passkey/register/options' && req.method === 'POST') { const o = origin(); const node = await paired(); const b = await body(); return send(200, this.auth.registerOptions({ grant: b.grant, origin: o, allow: grantHere(node) })); }
+        if (p === '/web/passkey/register/options' && req.method === 'POST') { const o = origin(); const node = await paired(); const b = await body(); return send(200, this.auth.registerOptions({ grant: b.grant, origin: o, allow: grantHere(node), via: b.via })); }
         if (p === '/web/passkey/register' && req.method === 'POST') { const o = origin(); const node = await paired(); const b = await body(64 * 1024); const r = this.auth.register({ grant: b.grant, credential: b.credential, origin: o, allow: grantHere(node) }); this.paired(r, meta, r.device.via); return login(r, 'paired with a passkey'); }
-        if (p === '/web/passkey/login/options' && req.method === 'POST') { const o = origin(); await paired(); const b = await body(); return send(200, this.auth.loginOptions({ credentialId: b.credentialId, origin: o })); }
+        if (p === '/web/passkey/login/options' && req.method === 'POST') { const o = origin(); await paired(); const b = await body(); return send(200, this.auth.loginOptions({ credentialId: b.credentialId, origin: o, via: b.via })); }
         if (p === '/web/passkey/login' && req.method === 'POST') {
           const o = origin(); await paired(); const w = await this.whoisOf(req); const b = await body(64 * 1024);
           const r = this.auth.login({ credential: b.credential, origin: o, check: boundHere(w) });

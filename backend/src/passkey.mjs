@@ -140,7 +140,9 @@ export function verifyRegistration(credential, expected) {
   if (c.id !== credId || (c.rawId != null && c.rawId !== credId)) fail('bad_credential', 'credential ID does not match');
   keyOf(ad.key.jwk); // 쓸 수 있는 키인지
   const transports = Array.isArray(c.response.transports) ? c.response.transports.filter((x) => typeof x === 'string' && /^[a-z-]{1,20}$/.test(x)).slice(0, 8) : [];
-  return { credId, alg: ad.key.alg, publicKey: ad.key.jwk, signCount: ad.signCount, rpId: expected.rpId, transports, backupEligible: ad.be, fmt: att.get('fmt').slice(0, 32) };
+  // P60: 브라우저가 알려 준 인증기 붙임(platform·cross-platform). 패스키 종류를 보이는 데만 쓴다(믿음의 근거가 아니다)
+  const attachment = ATTACHMENTS.includes(c.authenticatorAttachment) ? c.authenticatorAttachment : null;
+  return { credId, alg: ad.key.alg, publicKey: ad.key.jwk, signCount: ad.signCount, rpId: expected.rpId, transports, attachment, backupEligible: ad.be, backedUp: ad.bs, fmt: att.get('fmt').slice(0, 32) };
 }
 
 // 로그인 확인. passkey = 기기 기록의 패스키, expected = { challenge, origin, rpId }. 돌려주는 것은 새 signCount
@@ -170,8 +172,29 @@ export function verifyAssertion(credential, passkey, expected) {
   return { signCount: ad.signCount, backedUp: ad.bs };
 }
 
-// 브라우저에 줄 선택 사항(JSON. 바이트는 base64url, 화면의 lib/passkey.js가 바꾼다)
-export function creationOptions({ rpId, challenge, userId, name }) {
+// P60: 사용자가 고른 인증기 → WebAuthn hints. 휴대폰(iPhone·Android, 노트북 화면의 QR과 블루투스)이면 하이브리드를,
+// 이 기기(Windows Hello·Touch ID·보안 키)면 내장 인증기와 보안 키를 먼저 띄운다. 고르지 않았으면 hints를 주지 않는다(브라우저가 정한다)
+export const PASSKEY_VIA = ['phone', 'device'];
+const ATTACHMENTS = ['platform', 'cross-platform'];
+export function passkeyHints(via) {
+  if (via === 'phone') return ['hybrid'];
+  if (via === 'device') return ['client-device', 'security-key'];
+  return null;
+}
+export const viaOf = (v) => (PASSKEY_VIA.includes(v) ? v : null);
+// 등록 때 받은 transports·붙임 → 패스키 종류(화면에 보일 것). hybrid가 있으면 휴대폰, internal이나 platform이면 이 기기, usb·nfc·ble이면 보안 키
+export function passkeyKind(pk) {
+  if (!pk) return null;
+  const tr = Array.isArray(pk.transports) ? pk.transports : [];
+  if (tr.includes('hybrid') || tr.includes('cable')) return 'phone';
+  if (tr.includes('internal') || pk.attachment === 'platform') return 'device';
+  if (tr.some((x) => x === 'usb' || x === 'nfc' || x === 'ble' || x === 'smart-card')) return 'key';
+  return pk.attachment === 'cross-platform' ? 'phone' : 'unknown';
+}
+
+// 브라우저에 줄 선택 사항(JSON. 바이트는 base64url, 화면의 lib/passkey.js가 바꾼다). via: 사용자가 고른 인증기(P60)
+export function creationOptions({ rpId, challenge, userId, name, via = null }) {
+  const hints = passkeyHints(via);
   return {
     rp: { id: rpId, name: 'Atrium' },
     user: { id: userId, name: name || 'Atrium device', displayName: name || 'Atrium device' },
@@ -179,16 +202,23 @@ export function creationOptions({ rpId, challenge, userId, name }) {
     pubKeyCredParams: [{ type: 'public-key', alg: ALG_ES256 }, { type: 'public-key', alg: ALG_RS256 }],
     timeout: 120_000,
     attestation: 'none',
-    authenticatorSelection: { userVerification: 'required', residentKey: 'preferred', requireResidentKey: false },
-    hints: ['client-device', 'security-key'], // 노트북 내장 인증기를 먼저, 보안 키도 받는다
+    // 휴대폰이면 붙임도 cross-platform으로(hints를 읽지 않는 브라우저와 Windows 대화상자도 노트북 내장 인증기를 건너뛴다)
+    authenticatorSelection: { userVerification: 'required', residentKey: 'preferred', requireResidentKey: false, ...(via === 'phone' ? { authenticatorAttachment: 'cross-platform' } : {}) },
+    ...(hints ? { hints } : {}),
     excludeCredentials: [],
   };
 }
-export function requestOptions({ rpId, challenge, credIds = [] }) {
+// creds: [{ id, transports? }] 또는 ID 글. 등록 때 받은 transports를 실어 브라우저가 그 길(예: hybrid)로 곧바로 가게 한다
+export function requestOptions({ rpId, challenge, credIds = [], via = null }) {
+  const hints = passkeyHints(via);
   return {
     rpId, challenge, timeout: 120_000, userVerification: 'required',
-    allowCredentials: credIds.map((id) => ({ type: 'public-key', id })),
-    hints: ['client-device', 'security-key'],
+    allowCredentials: credIds.map((c) => {
+      const id = typeof c === 'string' ? c : c.id;
+      const tr = typeof c === 'object' && Array.isArray(c.transports) ? c.transports.filter((x) => typeof x === 'string') : [];
+      return tr.length ? { type: 'public-key', id, transports: tr } : { type: 'public-key', id };
+    }),
+    ...(hints ? { hints } : {}),
   };
 }
 
