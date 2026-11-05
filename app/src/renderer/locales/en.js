@@ -1464,4 +1464,20 @@ export default {
     up: 'Larger by 5%',
     reset: '100%',
   },
+  // P46: link labels inside docks, workspace groups in the mission map
+  dockLabel: {
+    active: 'Work is going back and forth now',
+    activeTitle: '\nWork is going back and forth now',
+  },
+  mmapGroup: {
+    sessions: '{n} sessions',
+    needs: '{n} need you',
+    noWorkspace: 'No workspace',
+    collapse: 'Collapse',
+    expand: 'Expand',
+    toggleTitle: 'Click to collapse or expand this workspace. When collapsed, its lines meet at the header',
+    cross: 'Other workspace',
+    crossTitle: 'Work handed to a session in another workspace',
+    crossIn: 'from {name}',
+  },
 };

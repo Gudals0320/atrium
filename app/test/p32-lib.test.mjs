@@ -30,7 +30,8 @@ test('P32: 나무 — 사람 0열, 지시하는 세션 1열, 받는 세션 2열.
   assert.equal(b('human').y, b('s:lead').y, '사람은 명령 바가 가는 lead 높이');
   assert.equal(lay.columns, 3);
   assert.deepEqual(lay.loose, ['s:solo']);
-  assert.ok(lay.section && b('s:solo').y > lay.section.y && lay.section.y > b('s:w2').y + MISSION.boxH, '연결 없음 칸은 나무 아래');
+  const sec = lay.groups[0].looseAt; // P46: 연결 없음 칸은 무리 안 나무 아래
+  assert.ok(sec && b('s:solo').y > sec.y && sec.y > b('s:w2').y + MISSION.boxH, '연결 없음 칸은 나무 아래');
   assert.equal(noOverlap(lay), null);
 });
 
@@ -103,7 +104,7 @@ test('P32: 거르기 — 맞는 세션과 그 조상(흐리게)만, 사람은 �
   assert.ok(idle.loose.includes('s:solo') && idle.boxes.get('s:lead').ghost);
   const none = missionLayout({ nodes: [H, S('x')], edges: [] }, { filter: 'all' });
   assert.deepEqual([...none.boxes.keys()], ['s:x'], '선이 없으면 사람 상자 없이 연결 없음 칸만');
-  assert.equal(none.section.y, MISSION.pad);
+  assert.equal(none.groups.length, 1, '연결 없는 세션도 무리 안에(P46)'); assert.equal(none.boxes.get('s:x').y, MISSION.pad + MISSION.groupHead + MISSION.groupPad);
   assert.equal(missionLayout({ nodes: [H, S('x')], edges: [] }, { filter: 'working' }).boxes.size, 0);
 });
 

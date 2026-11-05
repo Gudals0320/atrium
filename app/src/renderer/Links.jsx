@@ -14,7 +14,8 @@ import { linkLabel } from '../../../backend/src/links.mjs';
 
 const ACTIVE_MS = 30 * 60 * 1000;
 
-function Pill({ s }) {
+// P46: 덩어리 안 연결 글(Docks.jsx DockLinks)도 같은 상태 알약을 쓴다
+export function Pill({ s }) {
   useT();
   if (!s) return null;
   return <span className={`mt-pill st-${s.state}`} data-state={s.state}>{STATE_LABEL[s.state] || s.state}</span>;
