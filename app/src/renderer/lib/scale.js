@@ -15,6 +15,8 @@ export function clampScale(v) {
   return Math.round(Math.min(SCALE_MAX, Math.max(SCALE_MIN, stepped)) * 100) / 100;
 }
 export const pctOf = (f) => Math.round(clampScale(f) * 100);
+// P49: 웹 화면의 화면 배율(뿌리 요소의 CSS zoom). Electron은 webFrame(preload), 웹은 이 값. 저장된 글이 이상하면 1
+export function webZoomOf(v) { const n = Number(v); return v != null && v !== '' && Number.isFinite(n) && n >= SCALE_MIN && n <= SCALE_MAX ? n : 1; }
 // 입력칸의 백분율 글("120", "120%", " 85 ") → 소수. 못 읽으면 null(입력을 그대로 둔다)
 export function parsePct(text) {
   const m = String(text ?? '').trim().replace(/%$/, '').trim();

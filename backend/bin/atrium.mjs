@@ -4,11 +4,15 @@
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { connect as connectTo, startBackend as startBackendFor, stopBackend as stopBackendFor } from '../src/client.mjs';
+import { remoteCommand } from './atrium-remote.mjs'; // P49(R3): 원격 접속(Tailscale)
 import { FEATURES_HELP, FEATURE_BOOL_FLAGS, featureCommand, featureEvent } from './atrium-features.mjs'; // P6b
 
 const HELP = `atrium [--dev] [--json] <명령>
   backend start|stop|status         백엔드 띄우기(없으면 herdr 서버도 띄움), 끄기, 상태
   status                            백엔드와 판 전용 herdr 상태(버전, 프로토콜, 기능)
+  devices [code|rm <id>]            웹 화면에 짝 맺은 기기 목록, 짝 맺기 코드 만들기, 끊기(P48)
+  remote status|guide               원격 접속(Tailscale) 진단과 따라 할 단계(P49). 읽기만 한다
+  remote enable|disable [--yes] [--https-port n]   tailscale serve로 판을 tailnet에 켜고 끈다(--yes가 있을 때만 실행, funnel은 쓰지 않음)
   herdr start|stop|restart [--yes]  판 전용 herdr 서버 켜기, 끄기, 다시 띄우기
   herdr status|rediscover           herdr 진단(고른 실행 파일, 본 후보, 버전 경고), 다시 찾기(P40)
   spawn <폴더> [--launcher 호출자] [--name n] [--prompt 글] [--model m] [--effort e] [--mode 권한모드] [--kind 종류|shell] [--args "인자"] [--allow-herdr]   --launcher면 그 호출자로 띄우고 준 값이 덮는다(P33)
@@ -161,6 +165,7 @@ async function main() {
     if (op === 'start') return out(await startBackend());
     if (op === 'stop') return out(await stopBackend());
   }
+  if (cmd === 'remote') return remoteCommand(cfg, rest, flags, connect); // P49: 백엔드가 없어도 된다
   const c = await connect();
   try {
     switch (cmd) {
@@ -170,6 +175,7 @@ async function main() {
         const h = st.herdr;
         console.log(`백엔드 pid=${st.pid} 포트=${st.port} 프로필=${st.profile} 데이터=${st.dataDir} 세션 ${st.sessions}개`);
         if (st.previousRun) console.log(`  이전 실행: ${st.previousRun.cleanShutdown ? '정상 종료' : '비정상 종료'}, 꺼져 있던 시간 ${(st.previousRun.downMs / 1000).toFixed(1)}초(그동안 세션 화면에 hook 연결 오류 글이 찍혔을 수 있다)`);
+        if (st.web) console.log(`  화면 주소=${st.web.url}${st.web.built ? '' : ' (app/dist 없음: cd app && npm run build)'} 짝 맺은 기기 ${st.web.devices}대`); // P48
         console.log(`herdr 세션=${h.session} 실행=${h.running} 연결=${h.connected} 서버 pid=${h.serverPid} CLI=${h.cliVersion}`);
         if (h.compat) console.log(`  version=${h.compat.version} protocol=${h.compat.protocol} 호환=${h.compat.ok}${h.compat.problems.length ? ' 문제: ' + h.compat.problems.join('; ') : ''}\n  capabilities=${JSON.stringify(h.compat.capabilities)}`);
         // P40: 고른 실행 파일과 까닭, 본 후보, 경고
@@ -291,6 +297,15 @@ async function main() {
         return out(isWs ? await c.call('workspace.wake', { workspace: rest[0] }) : await c.call('session.wake', { session: rest[0] }));
       }
       case 'sleep-status': return out(await c.call('sleep.status'));
+      case 'devices': { // P48: 웹 화면에 짝 맺은 기기
+        if (rest[0] === 'code') { const r = await c.call('device.code'); if (JSONOUT) return out(r); console.log(`짝 맺기 코드 ${r.code} (${new Date(r.expiresAt).toLocaleTimeString()}까지, 한 번만)`); return; }
+        if (rest[0] === 'rm') return out(await c.call('device.revoke', { id: rest[1] }));
+        const r = await c.call('device.list'); if (JSONOUT) return out(r);
+        for (const d of r.devices) console.log(`${d.id}  ${d.name.padEnd(20)}  짝 맺음 ${ts(d.createdAt)}  마지막 ${d.lastSeenAt ? ts(d.lastSeenAt) : '-'}`);
+        for (const q of r.requests) console.log(`허락 요청 ${q.id} ${q.name} 확인 ${q.check}`);
+        if (!r.devices.length && !r.requests.length) console.log('짝 맺은 기기가 없다');
+        return;
+      }
       case 'clients': return out(await c.call('herdr.clients'));
       // P4: 세션끼리 연결, 에이전트 종류
       case 'links': {

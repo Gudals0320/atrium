@@ -95,6 +95,32 @@ Then open a folder from the board and start a session from the left rail.
 - Everything runs on your machine. The window talks to the backend on `127.0.0.1`, and the backend talks to herdr.
 - Trust prompts ("Do you trust the files in this folder?") are left for you to answer. When an agent starts a worktree worker in a repository that Claude Code does not trust yet, the prompt appears on that worker's node.
 
+## Remote access (Tailscale)
+
+You can use the board from a laptop browser over [Tailscale](https://tailscale.com). The laptop does not see the PC screen; it opens the same board as a web page. The backend still listens only on `127.0.0.1`. `tailscale serve` on the PC ends HTTPS and passes requests from your tailnet to the board.
+
+1. Install Tailscale on the PC and on the laptop, and log in to the same account on both.
+2. In the tailnet admin console, open **DNS** and turn on **MagicDNS** and **HTTPS Certificates**. Machine names and the tailnet name are written to the public Certificate Transparency log when you do this.
+3. On the PC, check and turn on serve:
+
+   ```powershell
+   node backend\bin\atrium.mjs remote status
+   node backend\bin\atrium.mjs remote enable --yes
+   ```
+
+   `enable` runs `tailscale serve --bg --https=443 http://127.0.0.1:47800`. Without `--yes` it only prints the command. If another service already uses https 443, it stops and suggests a port (`--https-port 8443`). `remote guide` prints these steps.
+4. On the laptop, open the address that `remote status` shows, for example `https://my-pc.example-tailnet.ts.net/`.
+5. Pair the browser. On the PC window, open **Settings › Connected devices**, press **New code**, and type the 6-digit code on the laptop. Or ask for access from the laptop and allow it on the PC. The same tab shows the Tailscale check and the laptop address.
+6. Optional: use the browser's **Install app** to open the board in its own window.
+
+Security notes:
+
+- A paired browser has the same power as your Windows user on the PC. It can start a shell and run anything. Pair only your own devices.
+- Requests that come through Tailscale are accepted only from the Tailscale user logged in on the PC. You can add other logins, or turn the check off, in **Settings › Connected devices** on the PC.
+- Requests through Tailscale cannot call the hook and child-session endpoints, and the board API token is never given to a browser.
+- Do not use `tailscale funnel`. Funnel puts the board on the public internet. `remote status` warns when funnel is on.
+- To remove a device, press **Remove** in **Settings › Connected devices**, or run `node backend\bin\atrium.mjs devices rm <id>`. To stop remote access, run `node backend\bin\atrium.mjs remote disable --yes`.
+
 ## How it works
 
 ```mermaid
