@@ -17,7 +17,7 @@ const ENV = {
   ATRIUM_HERDR_SESSION: 'atrium-dev-p53', ATRIUM_PORT: '47872',
   ATRIUM_DATA_DIR: path.join(DEV, 'data'), ATRIUM_APP_USERDATA: path.join(DEV, 'app'),
   ATRIUM_CLAUDE_PROJECTS: path.join(DEV, 'projects'), ATRIUM_CLAUDE_SESSIONS: path.join(DEV, 'sessions'), ATRIUM_CLAUDE_DESKTOP: 'none',
-  ATRIUM_TEST_PREFIX: 'mtask-p53-',
+  ATRIUM_TEST_PREFIX: 'p53-never-', // 기본(mtask-)이면 시험 폴더의 대화가 missed로 빠져 카드가 뜨지 않는다
 };
 assertTestBoard(ENV, { root: DEV });
 if (!/^C:\\Workspace\\mtask-p53-/.test(DIR)) throw new Error('시험 폴더는 C:\\Workspace\\mtask-p53-*만');

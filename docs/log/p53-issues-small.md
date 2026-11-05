@@ -51,4 +51,51 @@
 
 ## 작업 기록
 
+- 2026-11-05 이슈 #8·#9·#10 글과 재현 각본(`ux1-repro.mjs`의 `convoHead`·`enPrompt`·`firstStartAsRestart`)을 읽었다. 그 각본은 ux1 판(47867)과 지금 없는 `experiments/ux1/tools/env.cjs`에 묶여 있어, 같은 확인을 내 판(`atrium-dev-p53`, 47872)에서 하는 새 창 시험 `app/test/e2e/p53-issues.mjs`를 만들었다. 매번 판 데이터를 지운 빈 판에서 시작한다.
+- #8 고정 자료: 저장소가 아닌 새 폴더 `C:\Workspace\mtask-p53-plain`을 cwd로, Claude Code가 저장소 밖에서 남기는 모양(`"gitBranch":"HEAD"`)의 대화 기록 한 개를 시험 대화 폴더(`ATRIUM_CLAUDE_PROJECTS`)에 두었다. claude는 띄우지 않았다.
+- 처음에는 대화 카드가 뜨지 않았다. 기본 시험 접두어 `mtask-`가 그 폴더를 시험 폴더로 보아 대화를 missed로 뺐기 때문이다(`missed.mjs` `classifyConvo`). 창 시험에서 `ATRIUM_TEST_PREFIX`를 맞지 않는 값으로 주어 풀었다.
+- 고치기 전 코드(`main` 873ca69의 소스)로 돌린 결과(`experiments/p53/p53-before.json`), 넷 다 재현됐다.
+  - #10 빈 판: `herdr | 앱 연결 서비스가 1회 다시 시작되었습니다.`(backend_started 1개)
+  - #8 카드: `p53 outside convo: say ok | 10분 0초 | ⎇ HEAD | 요청 …`
+  - #9 영어, 22%: 셸 먼 얼굴 `@sp1 | Idle | Prompt`
+  - #10 백엔드를 한 번 멈춘 뒤: `herdr | ×2 | 앱 연결 서비스가 2회 다시 시작되었습니다. (중단 시간: 1초)`
+- 고친 뒤 같은 시험 4/4 통과(`experiments/p53/p53-after.json`, 스크린숏 `p53-after-*.png`). `backend` 363, `app` 153 시험 통과, `app` 빌드 통과.
+- 정리: 시험 셸 끔, 판 백엔드와 herdr 서버(`atrium-dev-p53`) 끔, 시험 폴더와 `backend/.dev`의 시험 데이터 지움. 남은 프로세스 없음을 확인했다.
+
 ## 보고
+
+### #8 저장소 밖 대화 카드의 "⎇ HEAD"
+
+- **재현:** 됨(위 작업 기록).
+- **원인:** Claude Code는 저장소 밖 폴더(와 분리된 HEAD)에서 대화 기록의 `gitBranch`에 `"HEAD"`를 쓴다. `convos.mjs`가 그 값을 그대로 `branch`로 담았고, 캔버스 카드 줄(`recall.mjs` 대화 노드)은 워크스페이스 종류를 보지 않고 `branch`를 내보냈다. 사이드바 목록(`convoRowView`)은 저장소 워크스페이스에서만 브랜치를 보여서 카드에만 나왔다.
+- **수정:** 순수 함수 `branchName()`(`convos.mjs`)이 `HEAD`와 빈 값을 버린다. 대화 기록을 읽을 때, `convoView`, 캔버스 대화 노드에 쓴다. 제안("저장소 밖이면 버림")처럼 워크스페이스 종류로 가르지 않았다. 저장소가 아닌 폴더 워크스페이스 아래에 저장소인 하위 폴더가 있으면 진짜 브랜치를 보여야 하기 때문이다. 색인에 이미 `HEAD`로 남은 줄도 보여줄 때 거르므로 `CONVO_PARSER`는 올리지 않았다(전체 다시 읽기를 피함).
+- **시험:** `backend/test/p53.test.mjs`(HEAD·빈 값, 기록 읽기, 색인에 남은 값), 창 시험 `#8` 통과.
+- **댓글 초안:**
+  > Cause: Claude Code writes `"gitBranch":"HEAD"` outside a repository (and on a detached HEAD), and the canvas card passed that value through as the branch.
+  > Fix: a small `branchName()` in `backend/src/convos.mjs` drops `HEAD`/empty values when reading transcripts and when building the card and list views, so already-indexed rows are cleaned too. Verified on a fresh board with a non-git folder: the card has no branch badge.
+
+### #9 영어 "Prompt" 두 뜻
+
+- **재현:** 됨(셸 먼 얼굴 `Idle | Prompt`).
+- **원인:** `en.js`에서 요청 이름표(`node.prompt`, `convo.prompt`)와 셸의 명령 대기(`workspaces.shellPrompt`, `chat.prompt`, `chat.promptLast`)가 모두 `Prompt`였다. 한국어는 `요청`과 `명령 입력 대기`로 나뉘어 있다.
+- **수정:** 셸 쪽 영어를 한국어 뜻에 맞춰 `Waiting for command`(`chat.promptLast`는 `Waiting for command · last command: {cmd}`)로 바꿨다. 요청 이름표는 `Prompt` 그대로다. 제안의 `At prompt`는 셸 용어라서, 한국어 "명령 입력 대기"와 뜻이 바로 맞는 말을 골랐다. 한국어는 바꾸지 않았다. P39 용어표에 더할 짝: `요청` = `Prompt`, `명령 입력 대기` = `Waiting for command`.
+- **시험:** `app/test/p53-lib.test.mjs`(두 뜻이 다른 말, 한국어 짝), 창 시험 `#9` 통과. 22%에서 먼 얼굴 줄 안에 들어간다(`p53-after-enprompt-1-far.png`).
+- **댓글 초안:**
+  > Cause: `en.js` used `Prompt` both for the request label and for a shell waiting at its prompt.
+  > Fix: the shell wait text is now `Waiting for command` (`Waiting for command · last command: {cmd}` in the chat view), matching the Korean `명령 입력 대기`; `Prompt` stays only for the request label. The pair is noted for the P39 term table.
+
+### #10 첫 시작을 재시작으로 셈, "herdr" 이름표
+
+- **재현:** 됨(빈 판 1회, 한 번 멈춘 뒤 2회, 줄 이름표 `herdr`).
+- **원인:** `changes.mjs`가 `backend_started`를 모두 재시작으로 셌다. 빈 데이터 폴더의 첫 시작에는 `previousRun`(앞선 실행의 마지막 심장 박동)이 없다. 또 herdr 꺼짐과 백엔드 재시작을 한 `herdr` 줄로 묶었다.
+- **수정:** 순수 함수 `isRestart()`가 `previousRun.lastHeartbeatAt`이 있을 때만 재시작으로 본다. herdr 줄과 백엔드 줄을 나눠 백엔드 줄은 새 종류 `backend`(이름표 ko `앱 연결 서비스`, en `Backend`, `locales` 끝의 `changeSys.backend`)로 낸다. 줄이 하나씩이라 `chgList`로 묶지 않는다. 창의 `CHANGE_LABEL`(`lib/attention.js`)은 종류 → 열쇠 표로 바꿨다.
+- **시험:** `backend/test/p53.test.mjs`(첫 시작, 1회 재시작, 줄 나눔), `p16.test.mjs`의 herdr 줄 열쇠 기대값을 `chgHerdrDown`으로 고침, `app/test/p53-lib.test.mjs`(이름표), 창 시험 `#10` 두 단계 통과.
+- **댓글 초안:**
+  > Cause: `summarizeChanges` counted every `backend_started` event, including a board's first start (no `previousRun`), and reported backend restarts in the `herdr` row.
+  > Fix: only starts with a previous run's heartbeat count as restarts (`isRestart()` in `backend/src/changes.mjs`), and backend restarts get their own row labeled "Backend" / "앱 연결 서비스". Verified on a fresh board: no line at first, "1회" after one stop/start.
+
+### 남의 영역, 문서
+
+- 고친 파일: `backend/src/convos.mjs`, `recall.mjs`(대화 노드의 `branch` 한 줄), `changes.mjs`, `app/src/renderer/lib/attention.js`, `locales/en.js`(셸 문구 3개는 제자리, 새 열쇠는 끝), `locales/ko.js`(끝에 새 열쇠). P49가 고치는 파일은 건드리지 않았다.
+- ARCH 201행(복귀 요약) 새 문장 제안: `판 이벤트를 "세션 × 종류" 한 줄로 모음. herdr 꺼짐과 백엔드 재시작(앞선 실행이 있을 때만)은 따로 한 줄(`changes.mjs`)`.
+- 재현 각본 `ux1-repro.mjs`는 ux1 판 전용이라 돌리지 않고, 같은 판정을 `app/test/e2e/p53-issues.mjs`로 옮겼다(`MT_E2E_OUT=p53 node test/e2e/p53-issues.mjs --tag <이름>`, app에서).
