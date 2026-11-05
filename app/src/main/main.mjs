@@ -13,6 +13,7 @@ import { startBackend, stopBackend, backendInfo, health } from '../../../backend
 import { startTray, whenBoardReady } from './tray.mjs'; // I7(P6b): 트레이 상주
 import { translate, DEFAULT_LANGUAGE } from '../renderer/lib/i18n.js'; // P16: 대화상자 글. 언어는 트레이가 받은 판 설정
 import { migrateAppProfile } from './profile.mjs'; // P18: 옛 창 프로필 옮기기
+import { noticeWay } from '../renderer/lib/remote.js'; // P58: 원격 붙음 알림은 창이 숨었을 때만 OS 알림
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, '..', '..');
@@ -73,6 +74,8 @@ const notifications = [];
 global.__mtNotifications = notifications; // 시험(Playwright)이 눌림을 흉내 낸다
 ipcMain.handle('mt:notify', (_e, n) => {
   if (!Notification.isSupported()) return { shown: false, reason: 'unsupported' };
+  // P58: ifHidden이면 창이 보이고 초점이 있을 때 띄우지 않는다(창의 실제 상태는 main이 안다)
+  if (n.ifHidden && win && !win.isDestroyed() && !noticeWay({ visible: win.isVisible() && !win.isMinimized(), focused: win.isFocused() }).os) return { shown: false, reason: 'window-visible' };
   const note = new Notification({ title: String(n.title || APP_NAME).slice(0, 120), body: String(n.body || '').slice(0, 240), icon: NOTIFY_ICON, silent: false });
   const rec = { sessionId: n.sessionId, key: n.key, at: Date.now(), shown: false, clicked: false, note };
   note.on('show', () => { rec.shown = true; log(`notification shown ${n.sessionId} ${n.key}`); });

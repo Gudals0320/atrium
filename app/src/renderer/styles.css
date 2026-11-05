@@ -1210,6 +1210,7 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 .mt-remote-row .mt-set-text { flex: 1; min-width: 0; }
 /* P58: "다른 기기" 알약의 목록(끊기, 짝 풀기), 웹 화면의 원격 막음, 설정의 원격 받기와 연결 기록 */
 button.mt-peers { cursor: pointer; }
+.mt-modal label.mt-remote-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 500; } /* 대화상자 label의 격자 대신 한 줄(P49 사용자 제한 칸도) */
 .mt-peers-list { width: 420px; }
 .mt-peer-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; }
 .mt-peer-row:hover { background: var(--panel-3); }

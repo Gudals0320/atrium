@@ -329,7 +329,7 @@ export class WebServer {
     this.sweepTimer = setInterval(() => this.pairing.sweep(), 15_000); this.sweepTimer.unref();
     // P58: 연결 기록과 새로 붙음 알림. 끊기 고리(onDisconnectDevice)는 기기의 다른 상태(P56 세션 등)를 함께 끝낸다
     this.remoteLog = new RemoteLog({ file: cfg.dataDir ? path.join(cfg.dataDir, 'remote-log.jsonl') : null, now, log, onAppend: (e) => this.sendLocal('remote.logged', e) });
-    this.watch = new ConnectWatch({ now });
+    this.watch = new ConnectWatch({ now, quietMs: Number(envVar('REMOTE_QUIET_MS')) > 0 ? Number(envVar('REMOTE_QUIET_MS')) : undefined }); // 시험: ATRIUM_REMOTE_QUIET_MS로 줄인다
     this.disconnectHooks = [];
     this.pairMeta = new Map(); // 허락 요청 ID → 요청한 곳(기록용)
   }
