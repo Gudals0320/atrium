@@ -93,7 +93,7 @@ kbd { font-size: 12px; font-weight: 500; padding: 1px 6px; border-radius: 5px; b
 .mt-wsbtn:hover { background: var(--chrome-bg-hi); color: var(--chrome-text); }
 .mt-wsbtn.on { background: var(--accent-tab); border-color: var(--accent-tab-line); color: var(--accent-tab-text); }
 .mt-ws-n { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--chrome-text-2); }
-.mt-ws-n.badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--badge-bg); color: var(--badge-text); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.mt-ws-n.badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-tab-text); /* P52(#5): 세션 수는 경고가 아니다. 빨강(--badge-bg) 대신 고른 탭의 초록 */ font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .mt-ws-need { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--attn); color: var(--attn-ink); font-family: var(--font-mono); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 6px var(--accent-soft); }
 .mt-ws-x { display: inline-flex; color: var(--chrome-text-2); border-radius: 4px; }
 .mt-ws-x .mt-i { width: 12px; height: 12px; }

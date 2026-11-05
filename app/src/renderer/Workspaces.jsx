@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { selectWorkspace, toast, openDialog } from './store.js';
 import { useT, t, errText, tMsg } from './lib/i18n.js';
+import { useDialog } from './dialog.js';
 
 // "+ 리포 열기": 폴더를 고르면 그 폴더의 리포지토리(저장소가 아니면 그 폴더)를 빈 워크스페이스로 만들고 그 영역으로 간다
 export function OpenRepoDialog({ onClose }) {
   const t = useT();
   const [dir, setDir] = useState('');
   const [busy, setBusy] = useState(false);
+  const box = useDialog(onClose); // P52
   async function browse() { try { const p = await window.mt.pickFolder(); if (p) setDir(p); } catch {} }
   async function submit(e) {
     e.preventDefault(); setBusy(true);
@@ -23,7 +25,7 @@ export function OpenRepoDialog({ onClose }) {
   }
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="mt-modal" onSubmit={submit} data-role="ws-open">
+      <form ref={box} className="mt-modal" onSubmit={submit} data-role="ws-open">
         <h3>{t('workspaces.openTitle')}</h3>
         <div className="mt-card-sub">{t('workspaces.openNote')}</div>
         <div className="mt-row-wide">
@@ -51,6 +53,7 @@ export function CloseWsDialog({ ws, onClose }) {
   const [ask, setAsk] = useState(null);
   const [after, setAfter] = useState(null);
   const [busy, setBusy] = useState(false);
+  const box = useDialog(() => !busy && onClose()); // P52
   useEffect(() => { api.call('workspace.close', { workspaces: keys }).then((r) => setAsk(r)).catch((e) => setAsk({ error: e })); }, [keys.join('|')]);
   const plan = ask && ask.plan;
   const need = !!(plan && plan.needsChoice);
@@ -69,7 +72,7 @@ export function CloseWsDialog({ ws, onClose }) {
   }
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="mt-modal mt-wsrm" data-role="ws-close" data-need={need ? '1' : '0'}>
+      <div ref={box} className="mt-modal mt-wsrm" data-role="ws-close" data-need={need ? '1' : '0'}>
         <h3>{list.length === 1 ? t('workspaces.closeTitle', { name: list[0].name }) : t('sbRemove.title', { n: list.length })}</h3>
         {!ask ? <div>{t('workspaces.confirmLoading')}</div> : ask.error ? <div>{errText(ask.error)}</div> : (
           <>
