@@ -24,9 +24,14 @@ export const SETTINGS = {
   // P56(S3): 웹 화면 로그인 세션의 수명. remote*라서 이 PC의 창·CLI만 바꾼다(backend.mjs settings.set)
   remoteSessionHours: { type: 'number', default: 12, min: 1, max: 168, label: '웹 화면은 패스키로 로그인한 뒤 이 시간이 지나면 다시 확인한다(P56)' },
   remoteIdleMinutes: { type: 'number', default: 30, min: 5, max: 1440, label: '웹 화면의 연결이 모두 끊긴 채 이 분이 지나면 다시 확인한다(노트북 잠자기, P56)' },
+  // P62: 패스키로 확인. 끄면(기본) 짝 맺기만으로 세션을 받고 세션은 짝을 풀 때까지 이어진다(Tailscale 기기 묶기, 쿠키, Origin 확인은 그대로). 켜면 P56~P60처럼 패스키와 12시간·30분 세션
+  remotePasskey: { type: 'boolean', default: false, label: '패스키로 확인: 켜면 짝 맺은 뒤 패스키를 만들고 세션이 끝나면 패스키로 다시 확인한다. 끄면 짝 맺은 Tailscale 기기에서 바로 열린다(P62)' },
   sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '리포(워크스페이스)에 이 분 동안 아무 일이 없으면 그 리포의 판 Claude Code 세션을 모두 잠재운다(0이면 저절로 잠재우지 않음, P21·P24 D4)' },
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));
+
+// P49: 원격 접속 규칙(remote*: 원격 받기, 사용자 규칙, 세션 수명, P62 패스키로 확인)을 바꾸는 요청인가. 이 PC의 창·CLI만 바꾼다(backend.mjs settings.set)
+export const touchesRemoteRules = (p) => !!p && typeof p === 'object' && (Object.keys(p).some((k) => k.startsWith('remote')) || String(p.key || '').startsWith('remote'));
 
 const BOOL = { true: true, false: false, on: true, off: false, '1': true, '0': false, yes: true, no: false };
 // 바꿀 값 확인: 모르는 키와 맞지 않는 값은 거부한다. 'on'/'off' 같은 글도 받는다(atrium CLI)

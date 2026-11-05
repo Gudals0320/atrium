@@ -1214,6 +1214,10 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 .mt-remote-checks li.lv-skip { opacity: .6; }
 .mt-remote-checks li.lv-skip .mt-remote-mark { background: var(--chrome-text-2); }
 .mt-remote-rules { display: grid; gap: 6px; }
+/* P62: 패스키로 확인 스위치와, 끔일 때 쓰지 않는 세션 시간(흐리게) */
+.mt-pk-mode { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--field-bg); margin-bottom: 4px; }
+.mt-pk-limits { display: grid; gap: 6px; }
+.mt-pk-limits.off .mt-dsec-limit { opacity: 0.55; }
 .mt-remote-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .mt-remote-row .mt-set-text { flex: 1; min-width: 0; }
 /* P58: "다른 기기" 알약의 목록(끊기, 짝 풀기), 웹 화면의 원격 막음, 설정의 원격 받기와 연결 기록 */

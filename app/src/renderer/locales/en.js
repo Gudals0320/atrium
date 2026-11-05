@@ -1563,6 +1563,12 @@ export default {
     ev_pair_grant: 'Pairing allowed (waiting for the passkey)',
     ev_login: 'Passkey sign-in',
     ev_logout: 'Signed out',
+    // P62: passkey check on and off, pairing without a passkey
+    ev_passkey_on: 'Passkey check turned on',
+    ev_passkey_off: 'Passkey check turned off',
+    ev_passkey_add: 'Passkey added',
+    noPasskey: 'without a passkey',
+    reason_passkey_required: 'passkey needed',
     reason_session: 'session ended',
     reason_no_session: 'no session (confirm again)',
     reason_login_required: 'sign-in required',
@@ -1625,6 +1631,21 @@ export default {
     unsupportedNote: 'The board signs browsers in only with a passkey.',
   },
   // P56: confirm again with the passkey when the session ended
+  // P62: the board's "Confirm with a passkey" (Connected devices › Security)
+  passkeyMode: {
+    label: 'Confirm with a passkey',
+    offHint: 'Off: paired Tailscale devices open the board directly. Sessions last until you unpair the device; Disconnect and turning off remote access only close the connection.',
+    onHint: 'On: a browser creates a passkey after pairing, and when its session ends it confirms again with a passkey on a phone or this device. Devices paired without a passkey add one when they connect next.',
+    limitsOff: 'The two times above apply only when the passkey check is on.',
+    turnedOn: 'Turned on the passkey check. Closed {n} connections of devices without a passkey.',
+    turnedOff: 'Turned off the passkey check. Paired devices open the board directly until you unpair them.',
+    selfNoPasskey: 'This browser paired without a passkey. If you sign out, you must pair it again.',
+  },
+  // P62: a browser paired without a passkey creates one once
+  enroll: {
+    title: 'Add a passkey for this browser',
+    note: 'The PC turned on the passkey check. This browser paired without a passkey, so create one now to keep using the board.',
+  },
   reauth: {
     title: 'Confirm it is you',
     note: 'The session of {name} on this browser ended. Confirm with your passkey (Windows Hello) to open the board again.',
@@ -1733,6 +1754,9 @@ export default {
     check_nodes_ok: 'Paired devices are bound to their Tailscale device',
     check_nodes_warn: 'Paired devices are bound to their Tailscale device. {n} older device(s) are not bound and are blocked from outside; pair them again',
     check_nodes_skip: 'Paired devices are bound to their Tailscale device',
+    check_passkey_on_ok: 'Passkey check is on: when a session ends, the browser confirms again with a passkey',
+    check_passkey_off_ok: 'Passkey check is off: paired Tailscale devices open the board directly',
+    check_passkey_skip: 'Passkey check: unknown',
   },
   // P49: installable web app
   pwa: {
@@ -1779,8 +1803,11 @@ export default {
     kind_device: 'Built-in passkey',
     kind_key: 'Security key',
     kind_unknown: 'Passkey',
+    kind_none: 'No passkey', // P62
+    needsPasskey: 'Passkey needed',
+    needsPasskeyHint: 'This device paired without a passkey. When it connects next, it must create a passkey on the "Add a passkey" screen before it can use the board.',
     security: 'Security',
-    securityDesc: 'How long a browser stays signed in and which Tailscale users may connect.',
+    securityDesc: 'Whether browsers confirm with a passkey, how long they stay signed in, and which Tailscale users may connect.',
     diagDesc: 'What this board reads from Tailscale. Only reads; nothing is changed here.',
     more: 'Show {n} more',
     less: 'Show less',

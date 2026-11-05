@@ -31,7 +31,7 @@ import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
-import { PERMISSION_MODES as MODES } from './settings.mjs';
+import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
 import { attachBranch } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { FLAVOR as DEEPSEEK, checkCommand, checkProxy } from './deepseek.mjs'; // P25: DeepSeek 바로 띄우기
@@ -241,11 +241,14 @@ export class Backend {
     const setSettings = this.api.handlers['settings.set'];
     this.api.handlers['settings.set'] = async (p, c) => {
       // P49: 원격 접속 규칙(remote*)은 이 PC의 창·CLI만 바꾼다
-      if (c && c.auth && c.auth.kind !== 'local' && p && (Object.keys(p).some((k) => k.startsWith('remote')) || String(p.key || '').startsWith('remote'))) throw Object.assign(new Error('only the board on this PC can change remote access rules'), { code: 'forbidden' });
+      if (c && c.auth && c.auth.kind !== 'local' && touchesRemoteRules(p)) throw Object.assign(new Error('only the board on this PC can change remote access rules'), { code: 'forbidden' });
       const wasAccepting = this.web.accepting();
+      const wasPasskey = this.web.passkeyOn();
       const r = await setSettings(p, c);
       const nowAccepting = this.web.accepting();
       if (nowAccepting !== wasAccepting) r.remote = this.web.accessChanged(nowAccepting); // P58: 원격 받기 끄기·켜기(끄면 붙은 원격 연결을 닫는다)
+      const nowPasskey = this.web.passkeyOn();
+      if (nowPasskey !== wasPasskey) r.passkey = this.web.passkeyChanged(nowPasskey); // P62: 패스키로 확인 켜기·끄기
       if (p && ('herdrPath' in p || p.key === 'herdrPath')) r.herdr = await this.rediscoverHerdr('settings').catch((e) => { this.log('herdr rediscover error', e.stack); return null; });
       return r;
     };

@@ -327,7 +327,8 @@ api.on('kanban.removed', (d) => { state.kanbans = new Map(state.kanbans); state.
 api.on('thread.item', (it) => putThread([it]));
 api.on('loop.updated', (l) => { state.loops = new Map(state.loops); state.loops.set(l.loopId, l); changed(); });
 api.on('loop.removed', (d) => { state.loops = new Map(state.loops); state.loops.delete(d.loopId); changed(); });
-api.on('settings.updated', (v) => putSettings(v.settings || v));
+// P62: 웹 화면은 패스키로 확인이 바뀌면 세션 쿠키를 새 수명으로 다시 받는다(web.js passkeyMode)
+api.on('settings.updated', (v) => { const s = v.settings || v; try { if (s && window.mt && typeof window.mt.passkeyMode === 'function') window.mt.passkeyMode(s.remotePasskey); } catch {} putSettings(s); });
 // P33 호출자(왼쪽 레일 즐겨찾기, 설정의 호출자 탭, 새 세션 창). 옛 백엔드면 없다
 export function putLaunchers(v) { state.launchers = v && Array.isArray(v.launchers) ? v : null; changed(); }
 export const loadLaunchers = () => api.call('launcher.list').then(putLaunchers).catch(() => {});

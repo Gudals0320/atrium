@@ -14,6 +14,8 @@ export const GRANT_MAX_TRIES = 5; // 등록이 이만큼 틀리면 허가를 버
 export const GRANTS_MAX = 16;
 export const SESSION_HOURS_DEFAULT = 12;
 export const IDLE_MINUTES_DEFAULT = 30;
+// P62: 끝이 없는 세션(패스키 끔)의 쿠키 수명. 브라우저가 받는 상한(400일)에 맞추고, /web/me를 부를 때마다 다시 준다(쓰는 동안 늘어남)
+export const COOKIE_MAX_MS = 400 * 24 * 3600_000;
 const SESSIONS_KEY = 'webSessions';
 const SESSIONS_PER_DEVICE = 8; // 한 기기의 세션이 넘치면 오래된 것부터 끝낸다
 
@@ -53,6 +55,8 @@ export function sessionIdOf(req, port) {
   return v && /^[A-Za-z0-9_-]{20,100}$/.test(v) ? v : null;
 }
 export const isHttpsOrigin = (origin) => { try { return new URL(origin).protocol === 'https:'; } catch { return false; } };
+// P62: 요청에 실린 세션 쿠키가 https 이름(__Host-)인지. Origin이 없는 GET(/web/me)에서 쿠키를 다시 줄 때 같은 이름으로 준다
+export const sentSecureCookie = (req, port) => parseCookies(req.headers && req.headers.cookie).has(cookieName(port, true));
 
 // ---------- 등록 허가 ----------
 export class Grants {
@@ -87,10 +91,12 @@ export class WebSessions {
     for (const s of (store && store.getMeta(SESSIONS_KEY)) || []) if (s && typeof s.hash === 'string' && s.deviceId) this.map.set(s.hash, { hash: s.hash, deviceId: s.deviceId, createdAt: Number(s.createdAt) || 0, seenAt: t });
     this.prune();
   }
-  lim() {
-    let l = {}; try { l = this.limits() || {}; } catch {}
-    const maxAgeMs = Number.isFinite(l.maxAgeMs) && l.maxAgeMs > 0 ? l.maxAgeMs : SESSION_HOURS_DEFAULT * 3600_000;
-    const idleMs = Number.isFinite(l.idleMs) && l.idleMs > 0 ? l.idleMs : IDLE_MINUTES_DEFAULT * 60_000;
+  // limits(s): 세션마다 수명을 고른다(P62: 패스키 끔이면 끝이 없다 = Infinity). 모르는 값이면 기본(12시간, 30분)
+  lim(s = null) {
+    let l = {}; try { l = this.limits(s) || {}; } catch {}
+    const ok = (v) => v === Infinity || (Number.isFinite(v) && v > 0);
+    const maxAgeMs = ok(l.maxAgeMs) ? l.maxAgeMs : SESSION_HOURS_DEFAULT * 3600_000;
+    const idleMs = ok(l.idleMs) ? l.idleMs : IDLE_MINUTES_DEFAULT * 60_000;
     return { maxAgeMs, idleMs };
   }
   save() { if (this.store) this.store.setMeta(SESSIONS_KEY, [...this.map.values()].map(({ hash, deviceId, createdAt }) => ({ hash, deviceId, createdAt }))); }
@@ -101,12 +107,21 @@ export class WebSessions {
     const mine = [...this.map.values()].filter((x) => x.deviceId === deviceId).sort((a, b) => a.createdAt - b.createdAt);
     while (mine.length >= SESSIONS_PER_DEVICE) this.map.delete(mine.shift().hash);
     this.map.set(s.hash, s); this.save();
-    const { maxAgeMs } = this.lim();
-    return { id, hash: s.hash, expiresAt: t + maxAgeMs, maxAgeMs };
+    const { maxAgeMs } = this.lim(s);
+    return { id, hash: s.hash, expiresAt: Number.isFinite(maxAgeMs) ? t + maxAgeMs : null, maxAgeMs };
   }
+  // P62: 남은 수명(쿠키 Max-Age). 끝이 없으면 Infinity
+  remainingMs(hash) {
+    const s = this.map.get(hash); if (!s) return 0;
+    const { maxAgeMs } = this.lim(s);
+    return maxAgeMs === Infinity ? Infinity : Math.max(0, s.createdAt + maxAgeMs - this.now());
+  }
+  // P62: 수명을 지금부터 다시 센다(패스키를 켤 때 모든 세션, 패스키를 등록한 세션)
+  restart(hash) { const s = this.map.get(hash); if (!s) return false; s.createdAt = s.seenAt = this.now(); this.save(); return true; }
+  restartAll() { const t = this.now(); for (const s of this.map.values()) s.createdAt = s.seenAt = t; if (this.map.size) this.save(); return this.map.size; }
   alive(s) {
     if (!s) return false;
-    const t = this.now(); const { maxAgeMs, idleMs } = this.lim();
+    const t = this.now(); const { maxAgeMs, idleMs } = this.lim(s);
     if (t >= s.createdAt + maxAgeMs || t < s.createdAt - 60_000) return false;
     if (this.connected(s.hash)) { s.seenAt = t; return true; }
     return t - s.seenAt < idleMs;
@@ -180,6 +195,30 @@ export class WebAuth {
       if (++g.tries >= GRANT_MAX_TRIES) this.grants.drop(g);
       throw e;
     }
+  }
+  // P62(패스키 끔): 짝 맺기의 등록 허가를 같은 응답에서 쓴다. 허가의 확인(같은 출처, 같은 Tailscale 기기)은 등록과 같다. 패스키 없이 기기와 세션이 생긴다
+  pairWithoutPasskey({ grant, origin, allow = null }) {
+    const g = this.grantOf(grant, origin, allow);
+    this.grants.drop(g);
+    const device = this.devices.add({ name: g.name, via: g.via, userAgent: g.userAgent, extra: { ...g.extra, pairOnly: true }, passkey: null });
+    const session = this.sessions.create(device.id);
+    return { device, session };
+  }
+  // P62(끔 → 켬): 패스키 없이 짝 맺은 기기가 지금 세션으로 패스키를 한 번 등록한다. device·session은 호출자가 확인한 것(쿠키 세션, 묶인 Tailscale 기기)
+  enrollOptions({ device, session, origin, via = null }) {
+    const rpId = rpIdOf(origin);
+    const userId = b64u(crypto.randomBytes(16));
+    const challenge = this.challenges.issue({ kind: 'enroll', deviceId: device.id, sessionHash: session.hash, origin, rpId, userId });
+    return { options: creationOptions({ rpId, challenge, userId, name: device.name, via: viaOf(via) }) };
+  }
+  enroll({ device, session, credential, origin }) {
+    const ch = this.challenges.take(challengeOf(credential));
+    if (!ch || ch.kind !== 'enroll' || ch.deviceId !== device.id || ch.sessionHash !== session.hash || ch.origin !== origin) throw new PasskeyError('bad_challenge', 'the challenge is unknown, used or expired');
+    const pk = verifyRegistration(credential, { challenge: ch.challenge, origin, rpId: ch.rpId });
+    if (this.devices.byCred(pk.credId)) throw new PasskeyError('duplicate_credential', 'this passkey is already registered');
+    if (!this.devices.attachPasskey(device.id, { ...pk, userId: ch.userId, createdAt: this.now(), lastUsedAt: this.now() })) throw err('has_passkey', 'this device already has a passkey', 409);
+    this.sessions.restart(session.hash); // 세션은 켬의 수명(지금부터)으로
+    return { device: this.devices.get(device.id), session: { hash: session.hash } };
   }
   // credentialId(브라우저가 기억한 것, 비밀 아님)가 있는데 모르는 것이면 짝이 풀린 것이다
   loginOptions({ credentialId, origin, via = null }) {

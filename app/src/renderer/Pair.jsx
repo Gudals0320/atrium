@@ -4,12 +4,14 @@
 // P60: 짝 맺기와 다시 확인에서 휴대폰(iPhone·Android, QR과 블루투스)과 이 기기(Windows Hello·보안 키) 가운데 고른다(ViaChoice).
 //   세션이 끝나면(12시간, 연결이 끊긴 채 30분, 4401) "다시 확인" 화면에서 패스키로 다시 확인한다. 짝이 풀렸으면 짝 맺기 화면으로 간다.
 //   패스키를 쓸 수 없는 브라우저(보안 출처가 아님, WebAuthn 없음, IP 주소)는 이유를 보이고 막는다. 토큰으로 되돌아가는 길은 없다.
+// P62: 판의 "패스키로 확인"이 꺼져 있으면(기본) 짝 맺기 응답이 곧바로 세션 쿠키를 주고 보드로 간다(패스키 만들기 단계 없음, 패스키를 못 쓰는 브라우저도 짝 맺는다).
+//   켜져 있는데 이 브라우저가 패스키 없이 짝 맺었으면 "패스키 등록" 화면(EnrollScreen)에서 지금 세션으로 패스키를 한 번 만든다.
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useT, setLanguage } from './lib/i18n.js';
 import { webMe, markPaired, webDenied } from './web.js';
 import { BRAND_WORDMARK } from './lib/icons.jsx';
-import { passkeySupport, savedPasskey, clearPasskey, registerPasskey, loginPasskey, webauthnError, savedVia, saveVia, PASSKEY_VIAS } from './lib/passkey.js';
+import { passkeySupport, savedPasskey, clearPasskey, registerPasskey, loginPasskey, enrollPasskey, webauthnError, savedVia, saveVia, PASSKEY_VIAS } from './lib/passkey.js';
 
 // 기본 기기 이름: 브라우저와 OS
 export function guessDeviceName(ua = navigator.userAgent) {
@@ -117,7 +119,11 @@ function PairScreen({ onDone, onHaveKey }) {
 
   async function submitCode(e) {
     e.preventDefault(); setBusy(true); setError(null);
-    try { setGrant(await post('/web/pair/code', { code: code.trim(), name })); } catch (err) { setError(why(err)); }
+    try {
+      const r = await post('/web/pair/code', { code: code.trim(), name });
+      if (r && r.paired) { markPaired(); onDone(); return; } // P62: 패스키 끔이면 이 응답이 세션 쿠키를 준다
+      setGrant(r);
+    } catch (err) { setError(why(err)); }
     setBusy(false);
   }
   async function ask() {
@@ -130,7 +136,7 @@ function PairScreen({ onDone, onHaveKey }) {
     const poll = async () => {
       try {
         const r = await fetch(`/web/pair/poll?id=${encodeURIComponent(req.requestId)}&secret=${encodeURIComponent(req.secret)}`, { cache: 'no-store' }).then((x) => x.json());
-        if (r.status === 'approved') { setReq(null); return setGrant({ grant: r.grant, expiresAt: r.expiresAt }); }
+        if (r.status === 'approved') { setReq(null); if (r.paired) { markPaired(); return onDone(); } return setGrant({ grant: r.grant, expiresAt: r.expiresAt }); } // P62: 끔이면 곧바로 보드
         if (r.status === 'denied') { setReq(null); return setError(t('pair.denied')); }
         if (r.status !== 'pending') { setReq(null); return setError(t('pair.expired')); }
       } catch {}
@@ -157,7 +163,7 @@ function PairScreen({ onDone, onHaveKey }) {
             <span className="mt-pair-or">{t('pair.or')}</span>
             <button type="button" className="mt-btn" disabled={busy} onClick={ask} data-action="pair-ask">{t('pair.ask')}</button>
           </div>
-          <div className="mt-pair-hint"><button type="button" className="mt-btn small ghost" onClick={onHaveKey} data-action="passkey-have">{t('pair.haveKey')}</button></div>
+          {onHaveKey && <div className="mt-pair-hint"><button type="button" className="mt-btn small ghost" onClick={onHaveKey} data-action="passkey-have">{t('pair.haveKey')}</button></div>}
         </>
       )}
       {req && (
@@ -206,6 +212,36 @@ function ReauthScreen({ saved, onDone, onPair, note }) {
   );
 }
 
+// P62: 패스키 없이 짝 맺은 브라우저. PC에서 "패스키로 확인"을 켰으므로 지금 세션으로 패스키를 한 번 만든다(그 Tailscale 기기에서만)
+function EnrollScreen({ onDone, onPair }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [via, pickVia] = useVia();
+  async function enroll() {
+    setBusy(true); setError(null);
+    try { await enrollPasskey(navigator.credentials, via); markPaired(); onDone(); } catch (e) {
+      if (e && (e.code === 'has_passkey' || e.code === 'passkey_off')) { location.reload(); return; } // 다른 탭에서 이미 만들었거나 PC에서 다시 껐다
+      if (e && e.code === 'login_required') { onPair(t('reauth.unpaired')); return; }
+      if (needsPairAgain(e)) { onPair(nodeWhy(e.reason, t)); return; }
+      setError(passkeyWhy(e, t)); setBusy(false);
+    }
+  }
+  return (
+    <Card>
+      <div data-role="passkey-enroll">
+        <h3>{t('enroll.title')}</h3>
+        <p className="mt-pair-note">{t('enroll.note')}</p>
+        <ViaChoice via={via} onPick={pickVia} disabled={busy} />
+        <div className="mt-card-actions">
+          <button type="button" className="mt-btn primary" disabled={busy} onClick={enroll} autoFocus data-action="passkey-enroll">{t('pair.createPasskey')}</button>
+        </div>
+        {error && <div className="mt-pair-error" data-role="pair-error">{error}</div>}
+      </div>
+    </Card>
+  );
+}
+
 function Unsupported({ sup }) {
   const t = useT();
   return (
@@ -222,15 +258,18 @@ function Unsupported({ sup }) {
 
 function UnpairedNote() { const t = useT(); return t('reauth.unpaired'); }
 function NodeNote({ reason }) { const t = useT(); return <span data-reason={reason}>{nodeWhy(reason, t)}</span>; }
-function Gate({ sup, onDone, initial, initialNote }) {
+// passkeyOff: 판의 패스키로 확인이 꺼져 있다(P62). 짝 맺기에는 패스키가 필요 없으므로 패스키를 못 쓰는 브라우저도 짝 맺기 화면을 본다
+function Gate({ sup, onDone, initial, initialNote, passkeyOff }) {
   const [mode, setMode] = useState(initial);
   const [note, setNote] = useState(initialNote || null);
-  if (!sup.ok) return <Unsupported sup={sup} />;
-  if (mode === 'login') return <ReauthScreen saved={savedPasskey()} onDone={onDone} note={null} onPair={(n) => { setNote(n); setMode('pair'); }} />;
+  const toPair = (n) => { setNote(n); setMode('pair'); };
+  if (!sup.ok && !(passkeyOff && mode === 'pair')) return <Unsupported sup={sup} />;
+  if (mode === 'enroll') return <EnrollScreen onDone={onDone} onPair={toPair} />;
+  if (mode === 'login') return <ReauthScreen saved={savedPasskey()} onDone={onDone} note={null} onPair={toPair} />;
   return (
     <>
       {note && <div className="mt-pair-banner" data-role="pair-note">{note}</div>}
-      <PairScreen onDone={onDone} onHaveKey={() => setMode('login')} />
+      <PairScreen onDone={onDone} onHaveKey={sup.ok ? () => setMode('login') : null} />
     </>
   );
 }
@@ -246,7 +285,10 @@ export async function webGate() {
   const nodeDenied = webDenied && webDenied.code === 'tailscale_node' ? webDenied.reason || 'unknown' : null;
   if (nodeDenied) clearPasskey();
   // 기억한 패스키가 아직 짝인지 먼저 묻는다(짝이 풀렸으면 곧바로 짝 맺기 화면). credential ID는 비밀이 아니다
-  let initial = savedPasskey() ? 'login' : 'pair', unpaired = false;
+  // P62: 패스키 없이 짝 맺은 기기인데 PC에서 패스키로 확인을 켰다 → 패스키 등록 화면
+  const needEnroll = !!webDenied && webDenied.code === 'passkey_required';
+  const passkeyOff = !!webDenied && webDenied.passkey === false;
+  let initial = needEnroll ? 'enroll' : savedPasskey() ? 'login' : 'pair', unpaired = false;
   if (sup.ok && initial === 'login') {
     try { const r = await post('/web/passkey/login/options', { credentialId: savedPasskey().credentialId }); if (r.status === 'unpaired') { clearPasskey(); initial = 'pair'; unpaired = true; } } catch {}
   }
@@ -254,6 +296,6 @@ export async function webGate() {
   document.body.appendChild(host);
   const root = createRoot(host);
   const note = nodeDenied ? <NodeNote reason={nodeDenied} /> : unpaired ? <UnpairedNote /> : null;
-  await new Promise((res) => root.render(<Gate sup={sup} onDone={res} initial={initial} initialNote={note} />));
+  await new Promise((res) => root.render(<Gate sup={sup} onDone={res} initial={initial} initialNote={note} passkeyOff={passkeyOff} />));
   root.unmount(); host.remove();
 }

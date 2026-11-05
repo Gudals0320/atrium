@@ -110,4 +110,13 @@ export async function loginPasskey(credentialId, creds = navigator.credentials, 
     throw e;
   }
 }
+// P62: 패스키 없이 짝 맺은 브라우저가 PC에서 "패스키로 확인"을 켠 뒤 지금 세션(쿠키)으로 패스키를 한 번 등록한다. 돌려주는 것: { device }
+export async function enrollPasskey(creds = navigator.credentials, via = null) {
+  const { options } = await post('/web/passkey/enroll/options', { ...viaBody(via) });
+  const cred = await creds.create({ publicKey: toCreateOptions(options) });
+  if (!cred) throw Object.assign(new Error('no credential'), { name: 'NotAllowedError' });
+  const r = await post('/web/passkey/enroll', { credential: credentialToJSON(cred) });
+  savePasskey({ credentialId: cred.id, deviceId: r.device && r.device.id, name: r.device && r.device.name });
+  return r;
+}
 export const webLogout = () => post('/web/logout', {}).catch(() => {});

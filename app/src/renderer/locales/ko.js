@@ -1563,6 +1563,12 @@ export default {
     ev_pair_grant: '짝 맺기 허가(패스키 등록 기다림)',
     ev_login: '패스키 로그인',
     ev_logout: '로그아웃',
+    // P62: 패스키로 확인 켬·끔, 패스키 없이 짝 맺음
+    ev_passkey_on: '패스키로 확인 켬',
+    ev_passkey_off: '패스키로 확인 끔',
+    ev_passkey_add: '패스키 등록',
+    noPasskey: '패스키 없이',
+    reason_passkey_required: '패스키 등록 필요',
     reason_session: '세션 끝남',
     reason_no_session: '세션 없음(다시 확인 필요)',
     reason_login_required: '로그인 필요',
@@ -1625,6 +1631,21 @@ export default {
     unsupportedNote: '보드는 패스키로만 브라우저를 로그인시킵니다.',
   },
   // P56: 세션이 끝나면 패스키로 다시 확인
+  // P62: 판의 "패스키로 확인"(연결된 기기 › 보안 설정)
+  passkeyMode: {
+    label: '패스키로 확인',
+    offHint: '꺼짐: 짝 맺은 Tailscale 기기에서 바로 열립니다. 세션은 짝을 풀 때까지 이어지고, 끊기와 원격 받기 끄기는 연결만 닫습니다.',
+    onHint: '켜짐: 짝 맺은 뒤 패스키를 만들고, 세션이 끝나면 휴대폰이나 이 기기의 패스키로 다시 확인합니다. 패스키 없이 짝 맺은 기기는 다음 접속 때 패스키를 등록합니다.',
+    limitsOff: '위의 두 시간은 패스키로 확인이 켜져 있을 때만 씁니다.',
+    turnedOn: '패스키로 확인을 켰습니다. 패스키가 없는 기기의 연결 {n}개를 닫았습니다.',
+    turnedOff: '패스키로 확인을 껐습니다. 짝 맺은 기기는 짝을 풀 때까지 바로 열립니다.',
+    selfNoPasskey: '이 브라우저는 패스키 없이 짝을 맺었습니다. 로그아웃하면 다시 짝을 맺어야 합니다.',
+  },
+  // P62: 패스키 없이 짝 맺은 브라우저가 패스키를 한 번 만든다
+  enroll: {
+    title: '이 브라우저의 패스키 등록',
+    note: 'PC에서 패스키로 확인을 켰습니다. 이 브라우저는 패스키 없이 짝을 맺었으므로 패스키를 한 번 만들어야 보드를 계속 씁니다.',
+  },
   reauth: {
     title: '다시 확인',
     note: '이 브라우저의 {name} 세션이 끝났습니다. 패스키(Windows Hello)로 확인하면 보드가 다시 열립니다.',
@@ -1733,6 +1754,9 @@ export default {
     check_nodes_ok: '짝 맺은 기기는 Tailscale 기기에 묶입니다',
     check_nodes_warn: '짝 맺은 기기는 Tailscale 기기에 묶입니다. 묶이지 않은 옛 기기 {n}대는 바깥에서 막힙니다. 다시 짝 맺습니다',
     check_nodes_skip: '짝 맺은 기기는 Tailscale 기기에 묶입니다',
+    check_passkey_on_ok: '패스키로 확인 켜짐: 세션이 끝나면 패스키로 다시 확인합니다',
+    check_passkey_off_ok: '패스키로 확인 꺼짐: 짝 맺은 Tailscale 기기에서 바로 열립니다',
+    check_passkey_skip: '패스키로 확인: 알 수 없음',
   },
   // P49: 설치형 웹 앱
   pwa: {
@@ -1779,8 +1803,11 @@ export default {
     kind_device: '기기 내장 패스키',
     kind_key: '보안 키',
     kind_unknown: '패스키',
+    kind_none: '패스키 없음', // P62
+    needsPasskey: '패스키 등록 필요',
+    needsPasskeyHint: '패스키 없이 짝 맺은 기기입니다. 다음에 접속하면 "패스키 등록" 화면에서 패스키를 만들어야 보드를 씁니다.',
     security: '보안 설정',
-    securityDesc: '브라우저가 로그인한 채로 있는 시간과 연결할 수 있는 Tailscale 사용자입니다.',
+    securityDesc: '패스키로 확인할지, 브라우저가 로그인한 채로 있는 시간, 연결할 수 있는 Tailscale 사용자입니다.',
     diagDesc: '이 보드가 Tailscale에서 읽은 것입니다. 읽기만 하고 여기서 바꾸지 않습니다.',
     more: '{n}줄 더 보기',
     less: '줄이기',
