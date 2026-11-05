@@ -47,12 +47,14 @@ import { perfLog } from './perf.js';
 import { enterView, dockRect, isViewing } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
 import { enterSession } from './touch.js';
 import { wakeSession } from './sleep.js'; // P21
-import { t as tr, errText } from './lib/i18n.js'; // P16: 이 파일은 t를 메모·칸반 종류 이름으로도 쓴다
+import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t를 메모·칸반 종류 이름으로도 쓴다
 import { repoEdges, facingSides } from '../../../backend/src/links.mjs';
 import { boundsOf, fitViewport } from '../../../backend/src/workspaces.mjs';
 import { bbox, REGION_GAP } from '../../../backend/src/canvas.mjs';
 import { layout as layoutTree, dropZone, edgeSnap, junctions } from '../../../backend/src/dock-tree.mjs'; // P17, P23
 import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안
+import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
+import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 
 const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, junction: JunctionNode, docklinks: DockLinks };
 const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge };
@@ -230,6 +232,23 @@ function ctrlBlocks(leadId) {
     out.push({ dockId: d.dockId, rect: bbox(rs), leaves: d.members.filter((m) => m !== leadId && st.nodes.get(m)).map((m) => { const q = st.nodes.get(m); return { id: m, x: q.x, y: q.y, w: q.w, h: q.h }; }) });
   }
   return out;
+}
+
+// P50(#6): 빈 판의 첫 걸음 안내. 프로젝트 열기(위 왼쪽 +와 같다)와 세션 띄우기(레일 실행 단추를 Shift로 누른 것과 같은 대화상자)
+function EmptyHint() {
+  const t = useT();
+  const empty = useStore((st) => boardEmpty({ loaded: st.boardLoaded, workspaces: st.workspaces, sessions: st.sessions, memos: st.memos, kanbans: st.kanbans, convoNodes: st.convoNodes }));
+  if (!empty) return null;
+  return (
+    <div className="mt-empty-hint" data-role="empty-hint">
+      <div className="mt-empty-title">{t('emptyBoard.title')}</div>
+      <div className="mt-empty-body">{t('emptyBoard.body')}</div>
+      <div className="mt-empty-actions">
+        <button className="mt-btn" data-action="empty-ws-open" onClick={() => openDialog({ kind: 'wsopen' })}>{t('emptyBoard.open')}</button>
+        <button className="mt-btn ghost" data-action="empty-spawn" onClick={() => openDialog({ kind: 'spawn' })}>{t('emptyBoard.spawn')}</button>
+      </div>
+    </div>
+  );
 }
 
 export function Canvas() {
@@ -595,6 +614,16 @@ export function Canvas() {
       mark(true);
       setTimeout(() => mark(false), 2000);
     };
+    // P50(#6): 메모 편집을 열 화면(lib/memo-edit.js). 먼 얼굴이거나 화면 밖이면 그 메모로 옮긴다
+    st.showMemoForEdit = (r) => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const v = memoEditView({ memo: r, viewport: rf.getViewport(), screen: { width: el.clientWidth, height: el.clientHeight } });
+      if (!v) return;
+      rf.setCenter(v.cx, v.cy, { zoom: v.zoom, duration: 250 });
+      setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), 300);
+      schedule(300);
+    };
     st.clearSelection = () => setNodes((ns) => ns.map((n) => (n.selected ? { ...n, selected: false } : n)));
     // P26: 노드(덩어리 안이면 덩어리 전체)가 화면의 85%를 채우게(배율 상한 1, lib/nav.js). 이미 그 노드를 보고 있으면 화면은 그대로다.
     // viewOnly: 화면만 옮기고 터미널 초점은 건드리지 않는다(머리줄 누르기, 터미널 안 누르기)
@@ -663,6 +692,7 @@ export function Canvas() {
         {/* P11: 점 격자는 월드 92px 간격, 점은 줌과 함께 커지고 작아진다(목업 --dot-gap). 줌 조절은 오른쪽 아래 줌 알약(Chrome.jsx ZoomPill) */}
         <Background variant={BackgroundVariant.Dots} gap={DOT_GAP} size={3.6} className="mt-dots" />
       </ReactFlow>
+      <EmptyHint />
     </div>
   );
 }

@@ -157,6 +157,35 @@ export function freeSlot({ size, rects = [], near = null, gap = GAP }) {
   return all ? { x: Math.round(all.x + all.w + REGION_GAP), y: Math.round(all.y) } : o;
 }
 
+// P50(#2, U1): 배치 틀로 새로 짠 덩어리의 바깥(rect: 원하는 자리와 크기)을 둘 자리 → { x, y }.
+// items: 피할 것(고른 노드는 뺀 노드, 메모·칸반, 대화 노드, 상자), own: 덩어리와 같은 영역에 남는 것, others: 다른 영역 사각형,
+// prefer: 고른 노드들이 있던 사각형(비워지는 자리). 다른 것과 GAP 넘게 떨어지고, 그만큼 커진 자기 영역이 다른 영역과 붙지 않는 곳 가운데
+// 원하는 자리에서 가장 가까운 곳. 거리가 같으면 비워지는 자리와 더 많이 겹치는 곳, 그다음 위, 왼쪽.
+// 후보는 원하는 자리, 비워지는 자리의 왼쪽 위, 각 장애물의 네 변 바로 바깥 줄의 교차점이다.
+// 영역 틈을 지킬 자리가 없으면 겹치지만 않는 자리, 그것도 없으면 모든 것의 오른쪽
+export function dockSpot({ rect, items = [], own = [], others = [], prefer = [] }) {
+  const rs = items.filter((r) => r && Number.isFinite(r.x) && Number.isFinite(r.w));
+  const ps = prefer.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  const { w, h } = rect;
+  const xs = new Set([rect.x, ...ps.map((p) => p.x)]), ys = new Set([rect.y, ...ps.map((p) => p.y)]);
+  for (const r of rs) { xs.add(r.x + r.w + GAP); xs.add(r.x - w - GAP); xs.add(r.x); ys.add(r.y + r.h + GAP); ys.add(r.y - h - GAP); ys.add(r.y); }
+  const area = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + (b.w || 0)) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + (b.h || 0)) - Math.max(a.y, b.y));
+  const cands = [];
+  for (const x of xs) for (const y of ys) { const c = { x, y, w, h }; cands.push({ ...c, d: Math.hypot(x - rect.x, y - rect.y), keep: ps.reduce((s, p) => s + area(c, p), 0) }); }
+  cands.sort((a, b) => a.d - b.d || b.keep - a.keep || a.y - b.y || a.x - b.x);
+  const clear = (c) => !rs.some((r) => overlaps(c, r, GAP - 1));
+  for (const gap of [REGION_GAP / 2 - 1, -1]) {
+    for (const c of cands) {
+      if (!clear(c)) continue;
+      const reg = regionRect([...own, c]);
+      if (others.some((r) => r && overlaps(reg, r, gap))) continue;
+      return { x: Math.round(c.x), y: Math.round(c.y) };
+    }
+  }
+  const all = bbox([...rs, rect]);
+  return { x: Math.round(all.x + all.w + GAP), y: Math.round(rect.y) };
+}
+
 // P5 판 옮기기(H1): 워크스페이스마다 따로이던 판의 묶음(blocks: [{ key, rect }])을 겹치지 않게 늘어놓을 옮김 값. 첫 묶음은 그대로, 상대 자리는 지킨다
 export function packRegions(blocks) {
   const placed = [];

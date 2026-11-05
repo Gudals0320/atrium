@@ -2,7 +2,7 @@
 // - 영역과 빈자리(H1), 영역 옮기기, 검색(H2), 붙여 묶기(H5), 크기 단계와 정리(H7). 골라 묶기(그룹, H6)는 P22에서 뺐다
 // - 계산은 canvas.mjs·search.mjs의 순수 함수(창도 같이 씀). 바꾼 뒤에는 board.changed를 보내 창이 판을 다시 읽게 한다.
 import crypto from 'node:crypto';
-import { NODE, SIZE_STEPS, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP } from './canvas.mjs';
+import { NODE, SIZE_STEPS, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot } from './canvas.mjs';
 import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, remove as removeLeaf, removeWithOuter, insertWithOuter, rootSizes, presetTree, presetSize, PRESETS } from './dock-tree.mjs'; // P17: 분할 나무
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
@@ -320,13 +320,28 @@ export function dockLayout(b, p) {
   const head = dockOf(b, picked[0]);
   const start = head ? dockOuter(b, head) : nodeRect(b, picked[0]);
   const cell = { w: Math.round(Number(p.cellW) || NODE.w), h: Math.round(Number(p.cellH) || NODE.h) };
-  const outer = one ? dockOuter(b, one) : { x: start.x, y: start.y, ...presetSize(preset, picked.length, cell) };
+  let outer = one ? dockOuter(b, one) : { x: start.x, y: start.y, ...presetSize(preset, picked.length, cell) };
+  // P50(#2): 새 크기의 덩어리가 다른 노드·메모·칸반을 덮지 않게, 첫 노드 자리에서 가장 가까운 빈자리로 둔다(U1)
+  if (!one) outer = { ...outer, ...presetSpot(b, picked, outer) };
   for (const d of docks.slice(1)) { b.store.deleteDock(d.dockId); b.store.addEvent(null, 'dock_removed', { dockId: d.dockId, why: `preset ${preset}` }); }
   const saved = saveDock(b, { dockId: docks[0] ? docks[0].dockId : null, workspaceKey: ws, tree: presetTree(preset, picked), origin: p.origin || 'user' }, `preset ${preset}`);
   applyLayout(b, saved.tree, outer);
   settleRegions(b, 'dock preset');
   b.api.broadcast('board.changed', { why: 'dock' });
   return { dock: b.store.getDock(saved.dockId), preset };
+}
+
+// P50(#2): 배치 틀 바깥(outer)을 둘 자리. 고른 노드(picked)는 옮겨 가므로 피하지 않고, 그 노드가 든 영역(상자면 그 상자)도 피하지 않는다
+function presetSpot(b, picked, outer) {
+  const all = canvasItems(b);
+  const area = areaOfNode(b, picked[0], all);
+  const mine = new Set(picked);
+  const items = all.filter((i) => !(i.kind === 'node' && mine.has(i.id)) && !(i.kind === 'wtbox' && i.box === area));
+  const own = items.filter((i) => i.ws === area);
+  const regs = regions(b, all);
+  const ownReg = regionRect(own) || regs.get(area) || null;
+  const others = [...regs].filter(([k]) => k !== area && k !== wsOfArea(area)).map(([, r]) => r).filter((r) => !ownReg || !overlaps(ownReg, r, -1));
+  return dockSpot({ rect: outer, items, own, others, prefer: picked.map((sid) => nodeRect(b, sid)) });
 }
 
 // 덩어리 바꾸기. tree: 나무 통째로(분할선을 끈 비율, 같은 구성 노드만), sizes: 옛 한 줄 덩어리처럼 뿌리 마디 자식마다 길이(가로줄은 너비, 세로줄은 높이),

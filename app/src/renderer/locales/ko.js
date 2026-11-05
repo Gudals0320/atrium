@@ -1606,4 +1606,10 @@ export default {
   changeSys: {
     backend: '앱 연결 서비스',
   },
+  emptyBoard: {
+    title: '판이 비어 있습니다',
+    body: '위 왼쪽의 +로 프로젝트 폴더를 열고, 왼쪽 레일의 실행 단추로 세션을 띄웁니다.',
+    open: '+ 프로젝트 열기',
+    spawn: '세션 띄우기',
+  },
 };
