@@ -62,6 +62,7 @@
   - #5 탭: 고른 탭 수 바탕 `rgba(229,72,77,0.22)`, 글자 `rgb(255,90,95)`(`--badge-bg`, `--badge-text`).
 - 고친 뒤 결과 `experiments/p52/after.json`, `after-esc.json`, 스크린숏 `after-fit-*.png`, `after-tab-on.png`: 네 사례와 콘솔 오류 없음 모두 통과(아래 보고).
 - 시험 세션(셸 `sc-sh`, `fa`, `fb`, `fc`, haiku `sc-cl`)은 각 실행 끝에 `atrium kill`로 껐다.
+- 정리: 창은 시험이 닫았다. `mt.cjs herdr stop --yes`, `backend stop`으로 판을 끄고 `herdr session delete atrium-dev-p52`로 지웠다. 빈 시험 폴더 둘과 haiku 시험 대화 기록(그 시험 폴더의 Claude Code 프로젝트 폴더 하나)을 지웠다. 판 이름, 포트, 이 워크트리 경로가 명령줄에 든 프로세스는 남지 않았다. `backend/.dev/`는 저장소가 무시하므로 남겼다.
 
 ## 보고
 
