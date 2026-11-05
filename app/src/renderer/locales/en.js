@@ -1748,4 +1748,23 @@ export default {
     open: '+ Open project',
     spawn: 'Start a session',
   },
+  // P61: redrawn search window (Search.jsx SearchBox)
+  searchBox: {
+    label: 'Search the board',
+    placeholder: 'Search sessions, chats, memos',
+    scope: 'Looks in names, workspaces, questions, prompts, answers, output, memos and kanban kept on the board',
+    clear: 'Clear',
+    keyPick: 'pick',
+    keyGo: 'go',
+    keyClose: 'close',
+    count: { one: '{n} result', other: '{n} results' },
+    emptyTitle: 'Nothing matches “{q}”',
+    emptyBody: 'Only records kept on the board are searched, not whole transcript files',
+    kind: {
+      session: 'Session',
+      workspace: 'Workspace',
+      memo: 'Memo',
+      kanban: 'Kanban',
+    },
+  },
 };

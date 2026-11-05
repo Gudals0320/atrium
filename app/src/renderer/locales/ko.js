@@ -1748,4 +1748,23 @@ export default {
     open: '+ 프로젝트 열기',
     spawn: '세션 띄우기',
   },
+  // P61: 다시 그린 찾기 창(Search.jsx SearchBox)
+  searchBox: {
+    label: '보드에서 찾기',
+    placeholder: '세션, 대화, 메모 찾기',
+    scope: '이름, 프로젝트, 질문, 요청, 응답, 출력, 메모, 칸반에서 찾습니다. 보드에 저장된 기록만 찾습니다.',
+    clear: '지우기',
+    keyPick: '선택',
+    keyGo: '이동',
+    keyClose: '닫기',
+    count: '{n}개',
+    emptyTitle: '“{q}”에 맞는 결과가 없습니다',
+    emptyBody: '보드에 저장된 기록만 찾고, 대화 기록 파일 전체는 찾지 않습니다.',
+    kind: {
+      session: '세션',
+      workspace: '프로젝트',
+      memo: '메모',
+      kanban: '칸반',
+    },
+  },
 };

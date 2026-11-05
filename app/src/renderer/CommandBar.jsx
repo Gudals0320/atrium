@@ -7,6 +7,7 @@
 // P28: 입력을 판 너비의 56%(564~960px, 줌 알약·레일 자리는 비운다)로 넓혔다(styles.css .mt-bottom)
 // P45: 스레드의 "고쳐 보내기"는 입력칸에 그 줄(@대상 글)을 넣고 초점을 준다. 스레드를 펼친 동안에는 전달 칩을 숨긴다(같은 것이 스레드에 있다)
 // P43: 평소에는 숨고 아래 띠에 마우스가 오거나 초점이 들어오면(Ctrl+K, 판에서 아래 키) 나타난다(useAutoHide)
+// P61: 아래쪽 넓은 범위로 들어오면 나타나고 더 넓은 범위를 벗어나야 숨는다. 나타날 때 아래에서 올라온다(styles.css 끝)
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast, setBottomShown } from './store.js';
@@ -14,7 +15,7 @@ import { deliveryText } from './lib/labels.js';
 import { ThreadPanel, ThreadToggle, commandDraft } from './Thread.jsx';
 import { Icon, Mark } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
-import { inBand, bottomNext } from './lib/bottom.js'; // P43
+import { bandZone, bottomNext } from './lib/bottom.js'; // P43. P61: 들어가는·나가는 범위(bandZone)
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
 
@@ -41,7 +42,7 @@ function useAutoHide(rootRef, { draft, popup }) {
       const stage = root && root.closest('.mt-stage');
       if (!stage) return 'out';
       const r = root.getBoundingClientRect(), s = stage.getBoundingClientRect();
-      return inBand({ x: e.clientX, y: e.clientY }, { left: r.left, right: r.right, bottom: s.bottom }) ? 'band' : 'out';
+      return bandZone({ x: e.clientX, y: e.clientY, buttons: e.buttons }, { left: r.left, right: r.right, bottom: s.bottom }, shownRef.current);
     };
     const onMove = (e) => setZone(zoneOf(e));
     const onLeave = () => setZone('out');

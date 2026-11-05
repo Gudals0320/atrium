@@ -3,6 +3,7 @@
 //   위아래 화살표로 오가고 Enter로 그 노드(워크스페이스면 그 영역)로 간다. Esc로 닫는다.
 //   P43: 위 가운데(위 크롬 아래)에 뜨고 결과는 아래로 펼친다. 판에서 ↑ 키로도 연다. 바깥을 누르면 닫는다(누르기는 판에 그대로 간다)
 //   P6c: 출력(hook 없는 세션의 화면 답), 메모 노드, 칸반(제목, 열, 카드)도 나온다. 고르면 그 메모·칸반 노드로 간다(카드는 빛난다).
+//   P61: 찾기 아이콘이 든 큰 입력칸, 종류 표시가 든 두 줄 결과와 맞는 낱말 강조, 아래 키 안내. 위에서 가볍게 내려오고 닫힐 때 올라간다.
 // - 고른 노드 막대: Ctrl+누르기나 Shift+끌기로 노드를 고르면 뜬다. 크기(P26: 가로|세로 토글과 크게·보통·작게, 지금 크기 단계에 불), 배치 틀(P17 붙여 묶기, P23: 도형 단추,
 //   P26: 고른 세션 수에 맞는 틀만), 고름 풀기. P26: 위 알약 묶음과 같은 맨 위 줄 가운데에 두고, 자리가 모자라면 그 아래 줄로 접는다.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -14,6 +15,10 @@ import { presetTree, presetsFor, layout as layoutTree } from '../../../backend/s
 import { SIZE_STEPS, BAR_SIZES, bbox } from '../../../backend/src/canvas.mjs'; // P23: 가로·세로 크기
 import { SIZE_DIRS, SIZE_LEVELS, COMPACT_LEVELS, litStep, autoDir, flipStep, sizeTargets, layoutCount, placeBar } from './lib/selbar.js'; // P26
 import { useT, errText, tOr } from './lib/i18n.js';
+import { Icon } from './lib/icons.jsx';
+import { SEARCH_LEAVE_MS, kindIcon, markRanges, showField, showSnip, movePick } from './lib/search-ui.js'; // P61: 찾기 창 다시 그리기
+
+const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function SearchBox() {
   const t = useT();
@@ -21,9 +26,21 @@ export function SearchBox() {
   const [q, setQ] = useState('');
   const [res, setRes] = useState([]);
   const [pick, setPick] = useState(0);
+  const [pending, setPending] = useState(false); // 친 말에 대한 결과를 기다리는 중(그동안은 '결과 없음'을 보이지 않는다)
+  const [shown, setShown] = useState(open); // P61: 닫힌 뒤에도 올라가는 움직임 동안 남겨 둔다
   const inRef = useRef(null);
   const boxRef = useRef(null);
+  const listRef = useRef(null);
   useEffect(() => { if (open) setTimeout(() => inRef.current && inRef.current.select(), 0); }, [open]);
+  // P61: 열리면 위에서 내려오고(styles.css mt-search-in), 닫히면 SEARCH_LEAVE_MS 동안 위로 올라가며 흐려진 뒤 사라진다. 움직임 줄이기면 바로
+  useEffect(() => {
+    if (open) { setShown(true); return undefined; }
+    if (inRef.current && document.activeElement === inRef.current) inRef.current.blur();
+    const ms = reducedMotion() ? 0 : SEARCH_LEAVE_MS;
+    if (!ms) { setShown(false); return undefined; }
+    const id = setTimeout(() => setShown(false), ms);
+    return () => clearTimeout(id);
+  }, [open]);
   // P43: 찾기 바 바깥을 한 번 누르면 닫는다. 누르기는 막지 않아 판에 그대로 간다(노드를 눌렀으면 노드도 골라진다)
   useEffect(() => {
     if (!open) return undefined;
@@ -34,12 +51,16 @@ export function SearchBox() {
   useEffect(() => {
     if (!open) return;
     const query = q.trim();
-    if (!query) { setRes([]); return; }
+    if (!query) { setRes([]); setPending(false); return; }
     let alive = true;
-    const timer = setTimeout(() => api.call('search.query', { q: query, limit: 20 }).then((r) => { if (alive) { setRes(r.results); setPick(0); } }).catch((e) => toast(t('search.fail', { error: errText(e) }), 'error')), 120);
+    setPending(true);
+    const timer = setTimeout(() => api.call('search.query', { q: query, limit: 20 }).then((r) => { if (alive) { setRes(r.results); setPick(0); setPending(false); } }).catch((e) => { if (alive) setPending(false); toast(t('search.fail', { error: errText(e) }), 'error'); }), 120);
     return () => { alive = false; clearTimeout(timer); };
   }, [q, open]);
-  if (!open) return null;
+  // 위아래 키로 고른 줄이 목록 밖이면 보이게 굴린다
+  useEffect(() => { const el = listRef.current && listRef.current.querySelector('.mt-search-item.on'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); }, [pick, res]);
+  if (!open && !shown) return null;
+  const leaving = !open;
   const go = (r) => {
     if (!r) return;
     setSearchOpen(false);
@@ -51,28 +72,63 @@ export function SearchBox() {
   const onKey = (e) => {
     if (e.nativeEvent.isComposing) return;
     if (e.key === 'Escape') { e.preventDefault(); setSearchOpen(false); return; }
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (res.length) setPick((p) => (p + (e.key === 'ArrowDown' ? 1 : res.length - 1)) % res.length); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setPick((p) => movePick(p, res.length, e.key === 'ArrowDown' ? 1 : -1)); return; }
     if (e.key === 'Enter') { e.preventDefault(); go(res[pick]); }
   };
-  const hl = (text) => {
-    const i = text.toLowerCase().indexOf(q.trim().toLowerCase());
-    if (i < 0 || !q.trim()) return text;
-    return <>{text.slice(0, i)}<mark>{text.slice(i, i + q.trim().length)}</mark>{text.slice(i + q.trim().length)}</>;
-  };
+  const query = q.trim();
+  const hl = (text) => markRanges(text, query).map((m, i) => (m.hit ? <mark key={i}>{m.text}</mark> : m.text));
+  const empty = !!query && !pending && !res.length;
   return (
-    <div className="mt-search" data-role="search" ref={boxRef}>
-      <input ref={inRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={t('search.placeholder')} data-field="search" spellCheck={false} />
-      <div className="mt-search-list">
-        {res.map((r, i) => (
-          <div key={`${r.kind}:${r.sessionId || r.memoId || r.kanbanId || r.workspaceKey}`} className={`mt-search-item${i === pick ? ' on' : ''}`} data-kind={r.kind} data-name={r.name} data-field={r.field} onMouseEnter={() => setPick(i)} onMouseDown={(e) => { e.preventDefault(); go(r); }}>
-            <b>{r.kind === 'workspace' ? '▣ ' : r.kind === 'memo' ? '▤ ' : r.kind === 'kanban' ? '▦ ' : '@'}{r.name}</b>
-            {r.state && <span className={`mt-pill st-${r.state}`}>{STATE_LABEL[r.state] || r.state}</span>}
-            <span className="mt-search-field">{r.field ? tOr(`search.field.${r.field}`, r.label) : r.label}</span>
-            <span className="mt-search-snip">{hl(r.snippet || '')}</span>
-            {r.hits > 1 && <span className="mt-search-more">+{r.hits - 1}</span>}
-          </div>
-        ))}
-        {q.trim() && !res.length && <div className="mt-search-item empty">{t('search.empty')}</div>}
+    // P61: 찾기 아이콘이 든 큰 입력칸, 찾는 범위 안내(빈 칸일 때), 종류 표시가 든 두 줄 결과, 아래 키 안내. 위에서 가볍게 내려온다
+    <div className="mt-search" data-role={leaving ? undefined : 'search'} data-state={leaving ? 'closing' : 'open'} ref={boxRef} aria-hidden={leaving || undefined}>
+      <div className="mt-search-bar">
+        <Icon name="search" className="mt-search-icon" />
+        <input ref={inRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={t('searchBox.placeholder')} aria-label={t('searchBox.label')} data-field="search" spellCheck={false} />
+        {q && <button type="button" className="mt-search-clear" title={t('searchBox.clear')} data-action="search-clear" onMouseDown={(e) => e.preventDefault()} onClick={() => { setQ(''); if (inRef.current) inRef.current.focus(); }}><Icon name="x" /></button>}
+      </div>
+      {!query && <div className="mt-search-scope">{t('searchBox.scope')}</div>}
+      {res.length > 0 && (
+        <div className="mt-search-list" role="listbox" ref={listRef}>
+          {res.map((r, i) => {
+            const kindText = tOr(`searchBox.kind.${r.kind}`, r.kind);
+            const fieldText = r.field ? tOr(`search.field.${r.field}`, r.label) : r.label;
+            return (
+              <div key={`${r.kind}:${r.sessionId || r.memoId || r.kanbanId || r.workspaceKey}`} role="option" aria-selected={i === pick} className={`mt-search-item${i === pick ? ' on' : ''}`} data-kind={r.kind} data-name={r.name} data-field={r.field} onMouseEnter={() => setPick(i)} onMouseDown={(e) => { e.preventDefault(); go(r); }}>
+                <span className="mt-search-kind" data-kind={r.kind}><Icon name={kindIcon(r.kind)} /></span>
+                <span className="mt-search-main">
+                  <span className="mt-search-top">
+                    <b className="mt-search-name">{r.kind === 'session' ? '@' : ''}{hl(r.name || '')}</b>
+                    {r.state && <span className={`mt-pill st-${r.state}`}>{STATE_LABEL[r.state] || r.state}</span>}
+                    <span className="mt-search-tag">{kindText}</span>
+                  </span>
+                  {(showField(fieldText, kindText) || showSnip(r.snippet, r.name)) && (
+                    <span className="mt-search-sub">
+                      {showField(fieldText, kindText) && <span className="mt-search-field">{fieldText}</span>}
+                      {showSnip(r.snippet, r.name) && <span className="mt-search-snip">{hl(r.snippet)}</span>}
+                    </span>
+                  )}
+                </span>
+                {r.hits > 1 && <span className="mt-search-more">+{r.hits - 1}</span>}
+                <kbd className="mt-search-go" aria-hidden="true">↵</kbd>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {empty && (
+        <div className="mt-search-item empty" data-role="search-empty">
+          <Icon name="search" className="mt-search-empty-icon" />
+          <b>{t('searchBox.emptyTitle', { q: query })}</b>
+          <span>{t('searchBox.emptyBody')}</span>
+        </div>
+      )}
+      <div className="mt-search-foot">
+        <span className="mt-search-keys">
+          <span><kbd>↑</kbd><kbd>↓</kbd>{t('searchBox.keyPick')}</span>
+          <span><kbd>Enter</kbd>{t('searchBox.keyGo')}</span>
+          <span><kbd>Esc</kbd>{t('searchBox.keyClose')}</span>
+        </span>
+        {res.length > 0 && <span className="mt-search-count">{t('searchBox.count', { n: res.length })}</span>}
       </div>
     </div>
   );
