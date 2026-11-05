@@ -55,9 +55,11 @@ function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { 
 
 // P33: session.spawn 값 → 띄울 값. launcher를 주면 그 호출자를 풀고 함께 준 값이 덮는다.
 // 옛 길(P25): kind 또는 flavor가 deepseek면 DeepSeek 호출자(없으면 예시)를 쓰고, command를 주면 그 명령 한 줄로 띄운다
-function spawnPlanOf(b, p) {
+// P41: launcherDef는 판 기록에 없는 호출자 값(atrium child가 게이트웨이 모델을 그 게이트웨이 호출자의 env로 띄울 때)
+export function spawnPlanOf(b, p) {
   const L = b.features && b.features.launchers;
   const over = { model: p.model, effort: p.effort, permissionMode: p.permissionMode, allowHerdr: p.allowHerdr, args: Array.isArray(p.args) ? p.args.join(' ') : p.args, command: p.command };
+  if (p.launcherDef) return resolveLauncher(p.launcherDef, over);
   if (p.launcher) {
     if (!L) throw keyed(apiError('no_launcher', `호출자가 없다: ${p.launcher}`), 'launchers.err.notFound', { ref: String(p.launcher) });
     return resolveLauncher(L.get(p.launcher), over);

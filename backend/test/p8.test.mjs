@@ -450,7 +450,7 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     const noenv = await runChild(['child'], {});
     assert.match(noenv.stderr, /판이 띄운 세션이 아니다/);
     const nope = await runChild(['kill', 'w1'], env);
-    assert.equal(nope.code, 2); assert.match(nope.stderr, /child, children, child-kill, child-wait, wake만/);
+    assert.equal(nope.code, 2); assert.match(nope.stderr, /child, children, child-kill, child-wait, wake, models만/);
     const five = await runChild(['child-kill', 'lead'], env);
     assert.match(five.stderr, /not_parent/);
   } finally { srv.close(); }
