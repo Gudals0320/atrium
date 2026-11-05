@@ -78,6 +78,9 @@ export function DevicesTab() {
         </div>
       )}
       {!isWeb && view && <Requests requests={view.requests} />}
+      <RemoteStatus />
+      <RemoteRules />
+      <h4 className="mt-wdev-h">{t('webDevices.tab')}</h4>
       <div className="mt-wdev-list" data-role="device-list">
         {view && !view.devices.length && <div className="dim">{t('webDevices.none')}</div>}
         {view && view.devices.map((d) => (
@@ -89,6 +92,60 @@ export function DevicesTab() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// P49(원격 R3): Tailscale 진단과 노트북에서 열 주소(atrium remote status와 같은 값, 백엔드 remote.status). 읽기만 한다
+const CHECK_VARS = (c) => ({ ...c.vars, version: c.vars && c.vars.version ? ` (${c.vars.version})` : '', state: c.vars && c.vars.state ? ` (${c.vars.state})` : '' });
+function RemoteStatus() {
+  const t = useT();
+  const [d, setD] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = (fresh) => { setBusy(true); api.call('remote.status', { fresh }).then(setD).catch(() => {}).finally(() => setBusy(false)); };
+  useEffect(() => { load(true); }, []);
+  if (!d) return null;
+  return (
+    <div className="mt-remote" data-role="remote-status">
+      <div className="mt-remote-head">
+        <h4 className="mt-wdev-h">{t('remote.title')}</h4>
+        <span className={`mt-remote-badge${d.ready ? ' ok' : ''}`} data-role="remote-ready">{t(d.ready ? 'remote.ready' : 'remote.notReady')}</span>
+        <button type="button" className="mt-btn small ghost" disabled={busy} onClick={() => load(true)} data-action="remote-refresh">{t('remote.refresh')}</button>
+      </div>
+      <p className="mt-set-note">{t('remote.note')}</p>
+      {d.url && <div className="mt-wdev-url">{t('remote.laptopUrl')} <code data-role="remote-url">{d.url}</code></div>}
+      {d.enable && <div className="mt-wdev-url">{t('remote.enableCmd', { cmd: '' })}<code data-role="remote-enable">{d.enable}</code></div>}
+      <ul className="mt-remote-checks">
+        {d.checks.map((c) => (
+          <li key={c.id} className={`lv-${c.level}`} data-check={c.id} data-level={c.level}>
+            <span className="mt-remote-mark" />
+            {t(`remote.check_${c.id}_${c.level}`, CHECK_VARS(c))}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+// 로그인 사용자 제한(판 설정 remoteSameUser, remoteAllowedLogins). 이 PC의 창에서만 바꾼다
+function RemoteRules() {
+  const t = useT();
+  const [s, setS] = useState(null);
+  const [allowed, setAllowed] = useState(null);
+  useEffect(() => { api.call('settings.get').then((r) => setS(r.settings)).catch(() => {}); const off = api.on('settings.updated', (v) => setS(v)); return off; }, []);
+  if (!s || !('remoteSameUser' in s)) return null;
+  const set = (patch) => api.call('settings.set', patch).then(() => toast(t('remote.saved'))).catch((e) => toast(t('webDevices.failed', { error: errText(e) }), 'error'));
+  return (
+    <div className="mt-remote-rules" data-role="remote-rules">
+      <label className="mt-remote-row">
+        <input type="checkbox" checked={s.remoteSameUser !== false} disabled={isWeb} data-field="remoteSameUser" onChange={(e) => set({ remoteSameUser: e.target.checked })} />
+        <span>{t('remote.sameUser')}</span>
+      </label>
+      <span className="mt-set-hint">{t('remote.sameUserHint')}</span>
+      <div className="mt-remote-row">
+        <input type="text" className="mt-set-text" spellCheck={false} disabled={isWeb} data-field="remoteAllowedLogins" placeholder={t('remote.allowed')} value={allowed ?? s.remoteAllowedLogins ?? ''} onChange={(e) => setAllowed(e.target.value)} />
+        <button type="button" className="mt-btn small" disabled={isWeb || allowed == null} onClick={() => set({ remoteAllowedLogins: allowed }).then(() => setAllowed(null))}>{t('remote.save')}</button>
+      </div>
+      {isWeb && <span className="mt-set-hint">{t('remote.onlyPc')}</span>}
     </div>
   );
 }

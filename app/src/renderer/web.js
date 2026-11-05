@@ -5,6 +5,7 @@
 // - 업로드: 붙여 넣거나 끌어 놓은 파일을 POST /web/upload로 올리고 PC 경로를 받는다(TerminalView, CommandBar)
 import { openFolderPicker } from './FolderPicker.jsx';
 import { hasFiles } from './lib/upload.js';
+import { webZoomOf } from './lib/scale.js'; // P49
 
 export const isWeb = typeof window !== 'undefined' && !window.mt;
 const TOKEN_KEY = 'atrium.deviceToken';
@@ -47,8 +48,7 @@ async function notify(n) {
 }
 
 // P49: 화면 배율. 뿌리 요소의 CSS zoom(Chromium 128부터 표준 zoom이라 마우스 좌표와 요소 크기가 함께 맞는다). 범위는 P45와 같은 70~150%
-export function webZoomValue(v) { const n = Number(v); return v != null && v !== '' && Number.isFinite(n) && n >= 0.7 && n <= 1.5 ? n : 1; }
-function applyWebZoom(f) { try { const z = webZoomValue(f); document.documentElement.style.zoom = z === 1 ? '' : String(z); } catch {} }
+function applyWebZoom(f) { try { const z = webZoomOf(f); document.documentElement.style.zoom = z === 1 ? '' : String(z); } catch {} }
 
 // 업로드: 파일마다 PC 경로
 export async function uploadFiles(files) {

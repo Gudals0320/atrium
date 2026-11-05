@@ -198,8 +198,8 @@ export const bearer = (req) => { const m = /^Bearer\s+(.+)$/i.exec(String(req.he
 
 // ---------- 화면 파일 ----------
 export const WEB_DIST = () => path.resolve(envVar('WEB_DIST') || path.join(BACKEND_ROOT, '..', 'app', 'dist'));
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.map': 'application/json; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.woff': 'font/woff', '.txt': 'text/plain; charset=utf-8' };
-const ZIP = new Set(['.html', '.js', '.css', '.map', '.json', '.svg', '.txt']);
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.map': 'application/json; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.woff': 'font/woff', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8' }; // P49: PWA 매니페스트
+const ZIP = new Set(['.html', '.js', '.css', '.map', '.json', '.svg', '.txt', '.webmanifest']);
 export function cacheControl(rel) {
   if (/^fonts\//.test(rel)) return 'public, max-age=31536000, immutable'; // 이름에 해시가 있다(build.mjs assetNames)
   return 'no-cache'; // ETag로 다시 확인한다. 바뀌지 않았으면 304

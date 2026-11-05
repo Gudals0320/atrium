@@ -11,6 +11,7 @@
 // P48(원격 R2): Electron 밖(브라우저)에서 돌면 웹 어댑터(web.js)가 window.mt를 두고, 짝을 맺기 전에는 짝 맺기 화면(Pair.jsx)만 보인다.
 //   PC 창에는 브라우저의 허락 요청 카드(WebDevices.jsx)가 뜬다
 import { isWeb } from './web.js';
+import { RemoteBar } from './RemoteBar.jsx'; // P49: 웹 화면의 다시 연결 띠와 왕복 지연
 import { webGate } from './Pair.jsx';
 import { PairRequestBanner } from './WebDevices.jsx';
 import '@xyflow/react/dist/style.css';
@@ -180,6 +181,7 @@ function App() {
       </div>
       <Dialogs />
       {loaded && <PairRequestBanner />}
+      {isWeb && <RemoteBar />}
       {splash !== 'off' && <Splash error={!loaded && conn === 'error' ? t('app.backendFailed', { detail }) : null} leaving={splash === 'leaving'} />}
       <div className="mt-toasts">{toasts.map((t) => <div key={t.id} className={`mt-toast ${t.kind}`}>{t.text}</div>)}</div>
     </div>
