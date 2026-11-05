@@ -1636,7 +1636,7 @@ export default {
     label: 'Confirm with a passkey',
     offHint: 'Off: paired Tailscale devices open the board directly. Sessions last until you unpair the device; Disconnect and turning off remote access only close the connection.',
     onHint: 'On: a browser creates a passkey after pairing, and when its session ends it confirms again with a passkey on a phone or this device. Devices paired without a passkey add one when they connect next.',
-    limitsOff: 'The two times below are used only when the passkey check is on.',
+    limitsOff: 'The two times above apply only when the passkey check is on.',
     turnedOn: 'Turned on the passkey check. Closed {n} connections of devices without a passkey.',
     turnedOff: 'Turned off the passkey check. Paired devices open the board directly until you unpair them.',
     selfNoPasskey: 'This browser paired without a passkey. If you sign out, you must pair it again.',

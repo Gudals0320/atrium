@@ -62,6 +62,8 @@ try {
   await win.evaluate(() => window.__mt.pinBottom && window.__mt.pinBottom(true));
   const rs = await until(async () => { const d = await win.evaluate(() => window.__mt.api.call('remote.status', { fresh: true })); return d && d.url ? d : null; }, 20000);
   check('판이 가짜 Tailscale 이름을 읽고 원격 받기가 켜져 있다', rs.url === `https://${NAME}/` && rs.accepting === true, { url: rs.url, accepting: rs.accepting });
+  // P62: 이 시험은 "패스키로 확인" 켬의 흐름이다(판의 기본은 끔). 옛 백엔드는 이 설정이 없다
+  await win.evaluate(() => window.__mt.api.call('settings.set', { remotePasskey: true })).catch(() => {});
   // 앞선 실행에서 남은 기기는 지운다(이 판의 기록만)
   for (const d of (await win.evaluate(() => window.__mt.api.call('device.list'))).devices) await win.evaluate((id) => window.__mt.api.call('device.revoke', { id }), d.id);
   const logStart = Date.now();
