@@ -49,7 +49,7 @@
 
 **백엔드 수명:** Electron 창이 백엔드가 없으면 띄우고, 백엔드는 herdr 서버가 없으면 띄운다. 창이 열려 있는 동안 백엔드 연결이 끊기면 창이 백엔드를 다시 띄운다. 창을 닫아도 백엔드와 herdr는 계속 돈다(트레이 상주는 4절 I7). 창은 같은 프로필로 하나만 뜬다. hook 주소는 세션마다 만든 설정 파일 안에 있고 herdr가 세션을 이어 갈 때 그 파일을 다시 읽으므로(E7), 포트는 고정이고 백엔드는 다시 뜰 때 같은 포트를 쓴다. 백엔드가 꺼져 있는 동안에는 세션 화면에 hook 연결 오류 글이 찍힌다. 포트와 토큰은 데이터 폴더의 파일로 알리고 `127.0.0.1`에만 연다.
 
-**브라우저 탭 웹앱으로 하지 않는 이유:** 전역 단축키, OS 알림, 창 위치와 포커스 관리는 데스크톱 앱이 낫다. 화면 코드는 웹 기술이라, 나중에 같은 화면을 브라우저(휴대폰 포함)에 내보내는 길은 열려 있다.
+**원격(P47~P49):** 백엔드는 같은 포트로 웹 화면을 내주고, Electron 창과 브라우저가 모두 클라이언트다. 판 API 토큰은 이 PC의 프로세스만, 기기 토큰(PC에서 짝 맺음, 해시 저장)은 같은 출처 브라우저만 쓰고, hook과 `/branch/*`는 이 PC의 프로세스만 부른다. 바깥은 PC의 `tailscale serve`(HTTPS, tailnet 안)로만 열고 funnel은 쓰지 않는다. 허용한 Host와 같은 Tailscale 사용자만 받는다(`web.mjs`, `tailscale.mjs`, `atrium remote`). 터미널 화면은 패널마다 제어기 하나를 붙은 클라이언트 모두에게 나눠 보내고(원격은 묶고 압축), 크기는 마지막으로 입력·초점을 준 클라이언트가 정한다. 화면 위치는 클라이언트마다, OS 알림은 최근에 쓴 클라이언트에서만 뜬다(`relay.mjs`, `multiclient.mjs`, `peers.mjs`).
 
 ## 2. 통신 속도
 
@@ -97,7 +97,7 @@
 
 ### A. 알아차리기
 
-- **A1 내 답이 필요하다.** herdr `blocked`와 묻는 hook으로 waiting을 정하고 도구·명령이나 질문·선택지를 붙인다. 위 오른쪽 "내 차례 n" 알약의 펼침 목록이 모든 워크스페이스를 가로질러 오래 기다린 순서로 보이고, `N`으로 노드를 옮기지 않고 그 자리로 간다. OS 알림은 같은 대기(`tool_use_id`)에 한 번만, 창에 초점이 있고 그 노드가 보이면 띄우지 않는다. 누르면 그 노드로 간다. 승인 줄은 `agent.send_keys`로 숫자 키를 보낸다(거부는 `esc`, 지시 덧붙이기는 `tab`, 글, `enter`). 질문 선택지는 hook에서, 권한 선택지는 화면에서 읽는다. 보내기 직전에 `agent.get`으로 아직 막혀 있는지 확인하고, 풀렸으면(`stale`, `no_pending_ask`) 줄을 닫고, hook만 먼저 왔으면(`not_blocked`) 줄을 둔다. "Chat about this"류는 "터미널에서 답하기"로 보내고, 판은 `ctrl+g`(외부 편집기)를 보내지 않으며 노드 터미널의 `ctrl+g`도 막는다. 키 순서는 `backend/src/answer.mjs`에 있다.
+- **A1 내 답이 필요하다.** herdr `blocked`와 묻는 hook으로 waiting을 정하고 도구·명령이나 질문·선택지를 붙인다. 위 오른쪽 "내 차례 n" 알약의 펼침 목록이 모든 워크스페이스를 가로질러 오래 기다린 순서로 보이고, `N`으로 노드를 옮기지 않고 그 자리로 간다. OS 알림은 같은 대기(`tool_use_id`)에 한 번만, 창에 초점이 있고 그 노드가 보이면 띄우지 않는다. 누르면 그 노드로 간다. 승인 줄은 `agent.send_keys`로 답하고, 보내기 직전에 아직 막혀 있는지 확인한다. 질문 선택지는 hook, 권한 선택지는 화면에서 읽는다. 판은 `ctrl+g`(외부 편집기)를 보내지 않는다. 키 순서는 `backend/src/answer.mjs`에 있다.
 - **A2 검토 대기.** hook `Stop`의 `last_assistant_message`, 턴 시작과 끝 시각, 세션 폴더가 git 저장소면 `git diff --stat`.
 - **A3 복귀 요약.** 모든 상태 변화를 판 이벤트로 남기고, `changes.since`가 판을 마지막으로 본 뒤의 변화를 "세션 × 종류" 한 줄로 모은다. 판을 본 시각은 창에 초점이 있는 동안 30초마다와 떠날 때 남기고(`board.markSeen`), 돌아왔을 때 5분 넘게 지났고 바뀐 것이 있으면 연다.
 - **A4 조용함.** 세션별 마지막 상태 이벤트와 hook 시각, `pane.read`의 마지막 줄.
@@ -105,9 +105,9 @@
 
 ### B. 말 걸기와 시작하기
 
-- **B1 `@이름`으로 말 걸기.** 세션마다 전달 대기열이 있고, 한 세션이 응답을 기다려도 다른 세션은 막지 않는다. 규칙: (1) claude가 도는 패널에만 보낸다. (2) waiting이면 보내지 않고 풀리면 다시 보낸다. (3) starting, trust_wait, working에서는 보내지 않고 ready와 error에서만 보낸다. (4) 사람이 그 터미널에 3초 안에 입력했으면 기다린다. (5) 줄바꿈을 LF로 맞춰 `agent.prompt` 한 번으로 보낸다. `pane.send_text`로 넣을 때는 CR을 넣지 않는다. (6) hook `UserPromptSubmit`이 오면 제출 확인, 30초 안에 없으면 "확인 못 함"이다. 보내는 중에 백엔드가 꺼진 전달은 다시 켠 때부터 세고, 끝난 전달은 늦은 전송 오류로 되돌리지 않는다. 비교 전에 Claude Code가 긴 글에 씌우는 `<pasted_content>` 감싸기를 벗기고 CRLF, 탭, 양끝 공백을 맞춘다(`backend/src/text.mjs`). 대화 보기에서도 감싸기를 벗긴다.
+- **B1 `@이름`으로 말 걸기.** 세션마다 전달 대기열이 있고, 한 세션이 응답을 기다려도 다른 세션은 막지 않는다. 규칙: (1) claude가 도는 패널에만 보낸다. (2) waiting이면 보내지 않고 풀리면 다시 보낸다. (3) starting, trust_wait, working에서는 보내지 않고 ready와 error에서만 보낸다. (4) 사람이 그 터미널에 3초 안에 입력했으면 기다린다. (5) 줄바꿈을 LF로 맞춰 `agent.prompt` 한 번으로 보낸다. `pane.send_text`로 넣을 때는 CR을 넣지 않는다. (6) hook `UserPromptSubmit`이 오면 제출 확인, 30초 안에 없으면 "확인 못 함"이다. 제출 확인의 글 비교는 `backend/src/text.mjs`가 맞춘다.
 - **B2 여러 세션에.** 대상은 `@이름`(여럿 가능)과 `@all`(H8)이다. 여러 대상 중 셸이 하나라도 있으면 전체를 보내지 않는다. 일을 나눠 서로 다른 지시를 쓰는 것은 에이전트가 herdr 스킬로 한다.
-- **B3 새 세션 시작.** (1) 세션 설정 파일 `<데이터 폴더>\sessions\<세션 ID>.json`에 http hook(시간 제한 2초), 그 세션의 hook 토큰, 하위 세션 명령의 env와 승인 규칙(K)을 값으로 쓴다. 작업 공간 `env`는 herdr를 다시 띄우면 되살아나지 않는다(E7). (2) `workspace.create`. (3) `agent.start`에 `--session-id <새 UUID>`, `--settings`, `--no-chrome`, 권한 모드, 모델, 플러그인과 짧은 안내(F). (4) ready(또는 working, waiting, error)가 된 뒤 `pane.report_agent_session`으로 `resume_argv`(판의 인자 포함, 경로는 슬래시)를 등록하고, 거부되면 1초마다 다시 시도하며, 판 전용 세션의 `session.json`에서 저장을 확인한다(읽기만). (5) 첫 지시는 ready 뒤 B1로 보낸다. 처음 쓰는 폴더면 trust_wait를 미리 보이고, 신뢰는 대신 누르지 않는다. `claude`는 PATH에 있어야 한다. 설정 파일은 세션이 판에 있는 동안 지우지 않고 D2에서 지운다. 호출자(F6)를 주면 그 값(모델, 노력 수준, 권한 모드, herdr 자동 승인, 추가 인자, env)으로 띄우고 함께 준 값이 덮는다.
+- **B3 새 세션 시작.** (1) 세션 설정 파일 `<데이터 폴더>\sessions\<세션 ID>.json`에 http hook(시간 제한 2초), 그 세션의 hook 토큰, 하위 세션 명령의 env와 승인 규칙(K)을 값으로 쓴다. 작업 공간 `env`는 herdr를 다시 띄우면 되살아나지 않는다(E7). (2) `workspace.create`. (3) `agent.start`에 `--session-id <새 UUID>`, `--settings`, `--no-chrome`, 권한 모드, 모델, 플러그인과 짧은 안내(F). (4) ready(또는 working, waiting, error)가 된 뒤 `pane.report_agent_session`으로 `resume_argv`(판의 인자 포함, 경로는 슬래시)를 등록한다(거부되면 다시 시도). (5) 첫 지시는 ready 뒤 B1로 보낸다. 처음 쓰는 폴더면 trust_wait를 미리 보이고, 신뢰는 대신 누르지 않는다. `claude`는 PATH에 있어야 한다. 설정 파일은 세션이 판에 있는 동안 지우지 않고 D2에서 지운다. 호출자(F6)를 주면 그 값(모델, 노력 수준, 권한 모드, herdr 자동 승인, 추가 인자, env)으로 띄우고 함께 준 값이 덮는다.
 
 ### C. 복구
 
@@ -297,6 +297,7 @@
 |---|---|
 | `events.subscribe` | herdr `events.subscribe` + hook + 전달 상태. 이벤트: `session.created`, `session.updated`, `session.state`, `session.hook`, `session.answer`, `session.removed`, `board.changed`, `workspace.updated`, `link.updated`, `link.removed`, `link.event`, `herdr.clients`, `thread.item`, `memo.updated`, `memo.removed`, `kanban.updated`, `kanban.removed`, `loop.updated`, `loop.removed`, `settings.updated`, `recall.updated`, `branch.refused`, `backend.migration` |
 | `terminal.attach { sessionId, cols, rows }`, `terminal.detach` | 제어기 프레임(`terminal.frame`, 첫 프레임 전체). `terminal.frame`과 `terminal.detached`의 `controllerPid`로 창이 옛 제어기의 늦은 이벤트를 가린다 |
+| `client.*`, `device.*`, `fs.list`, `remote.status`, `/web/*` | 원격(1절) |
 | `terminal.history { session, lines? }` | 셸 노드의 지난 출력(herdr `pane.read recent`). 창이 scrollback에 넣는다(7.2) |
 | `terminal.input { sessionId, data }`, `terminal.resize { sessionId, cols, rows }` | 제어기 stdin. 붙여넣기 감싸기와 휠 변환은 창 쪽에서 한 뒤 보낸다(7.2) |
 
