@@ -1397,6 +1397,8 @@ export default {
     kindAll: 'All kinds',
     clear: 'Clear',
     noMatch: 'Nothing matches the filter',
+    foldAll: 'Fold all workspaces',
+    unfoldAll: 'Unfold all workspaces',
     resize: 'Drag to resize. Double-click for the default width',
   },
   // P44: virtual workspace groups (exist only on the Atrium board, not on disk)

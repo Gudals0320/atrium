@@ -155,6 +155,14 @@ const kindText = (k) => (KIND_LABEL[k] ? t(KIND_LABEL[k]) : k);
 
 // ---------- P44: 접기, 거르기, 고르기, 그룹, 폭 ----------
 function toggleFold(key, open) { side.collapsed = { ...side.collapsed, [key]: open === undefined ? !side.collapsed[key] : !open }; persist(); bump(); }
+// 모두 접기·펼치기: 지금 판의 그룹과 워크스페이스 전부
+function foldAll(fold) {
+  const st = getState();
+  const next = { ...side.collapsed };
+  for (const w of st.workspaces) next[w.key] = fold;
+  for (const g of st.groups || []) next[`g:${g.id}`] = false; // 그룹은 펼쳐 두고 워크스페이스만 접는다(그룹 안 이름이 보이게)
+  side.collapsed = next; persist(); bump();
+}
 function toggleExtra(key) { side.extra = { ...side.extra, [key]: !side.extra[key] }; bump(); }
 function toggleState(b) { const n = new Set(side.states); if (n.has(b)) n.delete(b); else n.add(b); side.states = n; persist(); bump(); }
 function setKind(k) { side.kind = k; persist(); bump(); }
@@ -220,8 +228,9 @@ const SessionRow = memo(function SessionRow({ r, now, cur }) {
       title={sessionTitle(s, now)} onClick={() => { setCursor(r.id); getState().navigateTo && getState().navigateTo(s.sessionId, { focusTerminal: true }); }}>
       <span className="mt-sb2-line">
         <span className={`mt-sb2-dot st-${s.state}`} data-state={s.state} />
+        {k === 'shell' && <span className="mt-sb2-sh" title={kindText(k)}>$</span>}
         <b className="mt-sb2-name">{s.name}</b>
-        {k !== 'claude' && <span className="mt-sb2-kind">{kindText(k)}</span>}
+        {k !== 'claude' && k !== 'shell' && <span className="mt-sb2-kind">{kindText(k)}</span>}
         {s.branch && s.branch.role && <span className="mt-sb2-role">{s.branch.role}</span>}
         {r.attn && <span className={`mt-sb2-tag ${b}`}>{b === 'need' ? t('sb2.st_need') : t('sb2.st_error')}</span>}
         <span className="mt-sb2-time">{ago(s.lastActivityAt || s.createdAt, now)}</span>
@@ -249,7 +258,7 @@ function GroupRow({ r, cur, renaming, dropAt }) {
   useEffect(() => { if (renaming) setVal(r.g.name || ''); }, [renaming, r.g.name]);
   const none = r.none;
   return (
-    <div className={`mt-sb2-row grp${r.open ? '' : ' folded'}${cur ? ' cur' : ''}${none ? ' none' : ''}${dropAt ? ' drop' : ''}`} style={pad(r)} data-sb="group" data-row={r.id} data-group={r.g.id || ''} data-name={r.g.name || ''} {...dragProps(r)}
+    <div className={`mt-sb2-row grp${r.open ? '' : ' folded'}${cur ? ' cur' : ''}${none ? ' none' : ''}${dropAt ? ' drop' : ''}`} style={pad(r, r.none ? 18 : 0)} data-sb="group" data-row={r.id} data-group={r.g.id || ''} data-name={r.g.name || ''} {...dragProps(r)}
       onClick={() => { setCursor(r.id); if (!none && !renaming) toggleFold(r.id); }}>
       {!none && <span className="mt-sb2-fold" data-action="fold">{r.open ? '▾' : '▸'}</span>}
       {renaming
@@ -273,7 +282,7 @@ function WsRow({ r, cur, selecting, selected, dropAt }) {
       {selecting
         ? <input type="checkbox" className="mt-sb2-check" data-action="ws-select" checked={selected} readOnly />
         : <span className="mt-sb2-fold" data-action="fold">{r.open ? '▾' : '▸'}</span>}
-      <span className="mt-sb2-icon">{w.kind === 'repo' ? '⎇' : '▢'}</span>
+      {!selecting && <span className="mt-sb2-icon">{w.kind === 'repo' ? '⎇' : '▢'}</span>}
       <button className="mt-sb2-wname" data-action="go-ws" title={t('sidebar.goWs')} onClick={(e) => { e.stopPropagation(); setCursor(r.id); if (selecting) toggleSelected(w.key); else selectWorkspace(w.key); }}>{w.name}</button>
       {r.matched != null && <span className="mt-sb2-gn" data-count="matched">{r.matched}</span>}
       <Counts c={r.c} attnOnly={!r.open && r.matched == null} />
@@ -434,12 +443,15 @@ function OldAsk() {
 }
 
 // 거르기 칩: 상태 묶음(판 전체 수)과 종류
-function FilterBar({ counts, kinds }) {
+function FilterBar({ counts, kinds, rows }) {
   const t = useT();
   const states = useSide((st) => st.states);
   const kind = useSide((st) => st.kind);
   const filter = useSide((st) => st.filter);
+  const selecting = useSide((st) => st.selecting);
   const any = states.size || kind || filter;
+  const heads = rows.filter((r) => r.type === 'ws');
+  const allFolded = heads.length > 0 && heads.every((r) => !r.open);
   return (
     <div className="mt-sb2-chips" data-role="sidebar-chips">
       {BUCKETS.map((b) => (counts[b] > 0 || states.has(b)) && <button key={b} className={`mt-sb2-chip b-${b}${states.has(b) ? ' on' : ''}`} data-action="state-chip" data-bucket={b} onClick={() => toggleState(b)}>{t(`sb2.st_${b}`)} <span>{counts[b]}</span></button>)}
@@ -450,6 +462,11 @@ function FilterBar({ counts, kinds }) {
         </select>
       )}
       {any ? <button className="mt-sb2-chip clear" data-action="clear-filters" onClick={clearFilters}>{t('sb2.clear')}</button> : null}
+      <span className="mt-sb2-tools">
+        <button className="mt-sb2-tool" title={allFolded ? t('sb2.unfoldAll') : t('sb2.foldAll')} data-action={allFolded ? 'unfold-all' : 'fold-all'} onClick={() => foldAll(!allFolded)}>{allFolded ? '⊞' : '⊟'}</button>
+        <button className="mt-sb2-tool" title={t('sbGroups.newTitle')} data-action="group-new" onClick={() => newGroup()}><Icon name="plus" /></button>
+        <button className={`mt-sb2-tool text${selecting ? ' on' : ''}`} title={t('sbRemove.selectTitle')} data-action="select-mode" onClick={() => setSelecting(!selecting)}>{t('sbRemove.select')}</button>
+      </span>
     </div>
   );
 }
@@ -490,7 +507,7 @@ function VirtualList({ rows, now, scroller }) {
     const key = r.type === 'ws' ? r.w.key : r.type === 'closed' || r.type === 'convo' ? r.x.sessionId || r.x.convId : '';
     out.push(
       <div key={r.id} className="mt-sb2-slot" style={{ top: off[i], height: r.h }}>
-        <Row r={r} now={now} cur={cursor === r.id} busy={busy.has(key)} selecting={selecting} selected={r.type === 'ws' && selected.has(r.w.key)} renaming={r.type === 'group' && renaming === r.g.id} dropAt={dropAt && dropAt.id === r.id ? dropAt : null} />
+        <Row r={r} now={now} cur={cursor === r.id} busy={busy.has(key)} selecting={selecting} selected={r.type === 'ws' && selected.has(r.w.key)} renaming={r.type === 'group' && !!renaming && renaming === r.g.id} dropAt={dropAt && dropAt.id === r.id ? dropAt : null} />
       </div>,
     );
   }
@@ -725,12 +742,10 @@ export function Sidebar() {
             if (e.key === 'Escape') { if (filter) setFilter(''); else setSidebarOpen(false); }
             if (e.key === 'ArrowDown' || (e.key === 'Enter' && filter)) { e.preventDefault(); scroller.current && scroller.current.focus(); const first = moveCursor(rows, null, 1); setCursor(first); if (e.key === 'Enter') activate(rows.find((x) => x.id === first)); }
           }} />
-        <button className="mt-btn small ghost" title={t('sbGroups.newTitle')} data-action="group-new" onClick={() => newGroup()}><Icon name="plus" /></button>
-        <button className={`mt-btn small ghost${selecting ? ' on' : ''}`} title={t('sbRemove.selectTitle')} data-action="select-mode" onClick={() => setSelecting(!selecting)}>{t('sbRemove.select')}</button>
         <button className="mt-btn small ghost" title={t('sidebar.refresh')} data-action="sidebar-refresh" onClick={() => api.call('convo.scan').then(refresh).catch(() => refresh())}>{loading ? '…' : '↻'}</button>
         <button className="mt-btn small ghost" title={t('sidebar.closeTitle')} data-action="sidebar-close" onClick={() => setSidebarOpen(false)}>✕</button>
       </div>
-      <FilterBar counts={built.counts} kinds={built.kinds} />
+      <FilterBar counts={built.counts} kinds={built.kinds} rows={rows} />
       <OldAsk />
       <div className="mt-sb-list mt-sb2-list" ref={scroller} tabIndex={0} data-role="sidebar-list" onKeyDown={onListKey} onFocus={(e) => { if (e.target === e.currentTarget && !side.cursor) setCursor(moveCursor(rows, null, 1)); }}>
         {!workspaces.length && <div className="mt-sb-empty">{t('sidebar.noWs')}</div>}

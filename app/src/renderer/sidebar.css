@@ -202,3 +202,10 @@ body.mt-sb2-resizing .mt-sb2-resize { pointer-events: auto; }
 .mt-wsrm-pick label { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--panel-line-2); border-radius: 9px; padding: 8px 10px; cursor: pointer; font-size: 13px; }
 .mt-wsrm-pick label.on { border-color: var(--accent-line); background: var(--accent-bg-2); }
 .mt-wsrm-pick input { margin-top: 3px; accent-color: var(--accent); }
+.mt-sb2-tools { margin-left: auto; display: inline-flex; gap: 2px; align-items: center; }
+.mt-sb2-tool { border: 1px solid transparent; background: none; color: var(--dim); border-radius: 7px; height: 22px; min-width: 22px; padding: 0 4px; cursor: pointer; font: inherit; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; }
+.mt-sb2-tool .mt-i { width: 14px; height: 14px; }
+.mt-sb2-tool.text { font-size: 11.5px; padding: 0 7px; border-color: var(--panel-line-2); }
+.mt-sb2-tool:hover { color: var(--text); background: var(--panel-2); }
+.mt-sb2-tool.on { color: var(--accent-2); border-color: var(--accent-line); }
+.mt-sb2-sh { color: var(--dim); font-family: var(--font-mono); font-size: 11px; flex: none; margin-right: -3px; }
