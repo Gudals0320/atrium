@@ -61,7 +61,7 @@ Codex 같은 다른 에이전트 종류의 턴은 따로 검증하지 않는다(
 - 시험 에이전트에게 주는 지시에 `herdr --session`, `--machine`, `--remote`를 쓰게 하지 않는다. herdr 소켓 API의 `pane.split`은 `target_pane_id`로 대상을 준다.
 - multitask 저장소에 워크트리나 브랜치를 만들어야 하면 이름을 `mtask-test/`로 시작하게 하고, 끝나면 워크트리와 브랜치를 모두 지운다. 커밋, 푸시, `main` 변경은 하지 않는다.
 - 데스크톱 앱 세션과 기존 세션은 건드리지 않는다. 직접 띄운 프로세스만 PID로 끈다. `~/.claude/settings.json`, `~/.agents/skills`, `~/.codex`는 고치지 않는다.
-- symvibe는 화면 구성과 동작만 참고한다. OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
+- 참고 제품에서는 화면 구성과 동작만 참고한다. OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
 - 끝나면 시험 세션을 끄고, 창을 먼저 닫고, 따로 띄운 백엔드와 herdr 서버(`multitask-dev-p5`)를 멈추고, 그 herdr 세션을 지운다. `backend/.dev/p5/`, `C:\Workspace\mtask-p5-plain`, 임시 워크트리와 `mtask-test/` 브랜치도 지운다. 기본 개발용 판(`multitask-dev`)은 그대로 둔다.
 - `docs/PLAN.md`, `docs/BRIEF.md`, `CLAUDE.md`는 고치지 않는다. 커밋하지 않는다.
 
@@ -170,7 +170,7 @@ Codex 같은 다른 에이전트 종류의 턴은 따로 검증하지 않는다(
 | `src/main/main.mjs`, `preload.cjs` | 폴더 고르기(`mt:pickFolder`) |
 | `test/e2e/p5-*.mjs`(새) | P5 창 시험 7개와 공통 도구(`p5-lib.mjs`: 따로 띄운 판의 환경 변수를 강제한다) |
 
-OpenCove와 symvibe의 코드는 가져오지 않았다.
+OpenCove와 참고 제품의 코드는 가져오지 않았다.
 
 #### 2. 돌리는 법
 

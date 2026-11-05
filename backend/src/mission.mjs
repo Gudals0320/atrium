@@ -6,7 +6,7 @@ export const HUMAN_ID = 'human';
 const sid = (id) => `s:${id}`;
 const clip = (s, n) => { if (typeof s !== 'string') return s ?? null; const t = s.replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
 
-// 미션 맵의 거르기(symvibe: All, Working, Needs you(오류 포함), Idle, Done). Done은 끝났지만 아직 안 본 것(검토 대기)
+// 미션 맵의 거르기(참고 제품: All, Working, Needs you(오류 포함), Idle, Done). Done은 끝났지만 아직 안 본 것(검토 대기)
 export function categoryOf(s) {
   if (s.state === 'waiting' || s.state === 'trust_wait' || s.state === 'error') return 'needs_you';
   if (s.state === 'working' || s.state === 'shell_running') return 'working';

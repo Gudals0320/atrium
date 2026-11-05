@@ -5,7 +5,7 @@
 
 ### 목표
 
-판 화면의 생김새를 바꾼다. 사용자는 지금 화면이 읽기 어렵고 못생겼다고 했다. 기준은 HTML 목업 `app/design/board-mock/`이다. 지휘 세션이 symvibe 홈페이지 데모 영상의 실제 화면을 재서 따라 그렸고, 캡처를 겹쳐 보며 다섯 번 고쳤다. 이 목업의 생김새를 React 창(`app/src/renderer/`)으로 옮긴다. **기능은 바꾸지 않는다.** 백엔드도 고치지 않는다.
+판 화면의 생김새를 바꾼다. 사용자는 지금 화면이 읽기 어렵고 못생겼다고 했다. 기준은 HTML 목업 `app/design/board-mock/`이다. 지휘 세션이 참고 제품 홈페이지의 데모 영상의 실제 화면을 재서 따라 그렸고, 캡처를 겹쳐 보며 다섯 번 고쳤다. 이 목업의 생김새를 React 창(`app/src/renderer/`)으로 옮긴다. **기능은 바꾸지 않는다.** 백엔드도 고치지 않는다.
 
 목업 보는 법은 다음과 같다(인터넷 필요, CDN 글꼴).
 - `app/design/board-mock/index.html?scene=ours`: multitask 내용으로 그린 판. 이것이 목표다.
@@ -85,7 +85,7 @@
 
 ### 지킬 것
 
-- `CLAUDE.md`를 따른다. symvibe의 이름, 로고, 에셋, 코드는 쓰지 않는다. 목업의 `ref` 장면(데모 내용)은 비교용이라 앱에 넣지 않는다. `app/design/board-mock/ref/`(git 밖)의 데모 화면은 쓰지 않아도 된다.
+- `CLAUDE.md`를 따른다. 참고 제품의 이름, 로고, 에셋, 코드는 쓰지 않는다. 목업의 `ref` 장면(데모 내용)은 비교용이라 앱에 넣지 않는다. `app/design/board-mock/ref/`(git 밖)의 데모 화면은 쓰지 않아도 된다.
 - 목업과 다르게 하는 편이 낫다고 보면(가독성, Windows 글꼴 렌더링, 기능 보존) 그렇게 하고 이유를 보고에 적는다. 목업 파일(`app/design/board-mock/`)은 고치지 않는다.
 - 자기 브랜치에만 커밋한다. 메시지 끝에 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. `main`을 바꾸거나 푸시하지 않는다. `node_modules`는 워크트리 안에서 `npm install`로 받는다(본 저장소에 정션을 걸지 않는다).
 - 문서는 이 작업 파일의 작업 기록 절과 보고 절, `docs/ARCH.md`의 자기 모듈 행만 고친다(`docs/README.md` 3절).

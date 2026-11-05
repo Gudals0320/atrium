@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isSyntheticUserText } from './transcript.mjs';
 
-export const LONG_ANSWER_CHARS = 80; // symvibe: 약 80자 또는 세 문단을 넘으면 "출력 보기"
+export const LONG_ANSWER_CHARS = 80; // 참고 제품: 약 80자 또는 세 문단을 넘으면 "출력 보기"
 export const LONG_ANSWER_PARAGRAPHS = 3;
 
 export function paragraphs(text) { return String(text || '').split(/\n\s*\n/).filter((p) => p.trim()).length; }
