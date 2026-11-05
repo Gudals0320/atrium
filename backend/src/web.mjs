@@ -347,6 +347,7 @@ export class WebServer {
       const d = this.devices.verify(dt);
       if (!d) return null;
       this.devices.touch(d.id, true);
+      setImmediate(() => this.broadcastLocal()); // 마지막 접속을 PC 창 목록에
       return { kind: 'device', device: { id: d.id, name: d.name } };
     }
     return null;

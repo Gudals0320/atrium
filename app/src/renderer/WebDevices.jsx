@@ -60,7 +60,7 @@ export function DevicesTab() {
     } catch (e) { toast(t('webDevices.failed', { error: errText(e) }), 'error'); }
   };
   return (
-    <div className="mt-set-grid" data-role="devices-tab">
+    <div className="mt-wdev" data-role="devices-tab">
       <p className="mt-set-note">{t('webDevices.note')}</p>
       {web && <div className="mt-wdev-url">{t('webDevices.url')} <code data-role="web-url">{web.url}</code>{!web.built && <span className="mt-wdev-warn"> {t('webDevices.notBuilt')}</span>}</div>}
       {!isWeb && (

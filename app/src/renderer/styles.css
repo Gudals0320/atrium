@@ -1081,3 +1081,5 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 .mt-wdev-req { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
 .mt-wdev-check { font: 700 16px/1 var(--mono, monospace); letter-spacing: .2em; color: var(--accent-text); }
 .mt-wdev-banner { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 80; background: var(--panel); border: 1px solid var(--accent-line); border-radius: var(--panel-radius); padding: 10px 14px; box-shadow: var(--panel-shadow); max-width: calc(100vw - 32px); }
+.mt-wdev { display: grid; gap: 12px; align-content: start; }
+.mt-wdev .mt-set-note { margin: 0; }
