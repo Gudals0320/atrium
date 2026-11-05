@@ -51,6 +51,8 @@ const EXIT_TEXT = { claude: '/exit' };
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
 import { m, confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
+import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이스 지우기 판단
+import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META } from './ws-groups.mjs'; // P44: 가상 그룹
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 
 // P33: session.spawn 값 → 띄울 값. launcher를 주면 그 호출자를 풀고 함께 준 값이 덮는다.
@@ -457,7 +459,7 @@ export class Backend {
     return rows.map((w) => ({ key: w.key, name: names.get(w.key), kind: w.kind, root: w.root, createdAt: w.createdAt, counts: workspaceCounts(sums, w.key), x: w.x, y: w.y, auto: !!w.auto, worktrees: this.worktrees ? this.worktrees.view(w.key) : [] })); // P27: 워크트리 영역
   }
   currentWorkspace() { const k = this.store.getMeta('currentWorkspace'); return k && this.store.getWorkspace(k) ? k : (this.store.workspaces()[0] || {}).key || null; }
-  broadcastWorkspaces() { this.api.broadcast('workspace.updated', { workspaces: this.workspaceList(), current: this.currentWorkspace() }); }
+  broadcastWorkspaces() { this.api.broadcast('workspace.updated', { workspaces: this.workspaceList(), current: this.currentWorkspace(), groups: readGroups(this).groups }); } // P44: groups(가상 그룹)
   // 처음 보는 워크스페이스면 줄을 만든다(세션이 하나라도 생기면 워크스페이스가 저절로 생긴다, G1)
   ensureWorkspace(ws, why) {
     if (this.store.getWorkspace(ws.key)) return false;
@@ -494,22 +496,61 @@ export class Backend {
     if (p.select !== false) { this.store.setMeta('currentWorkspace', ws.key); this.broadcastWorkspaces(); }
     return { created, workspace: this.workspaceList().find((w) => w.key === ws.key) };
   }
-  // 빈 워크스페이스만 닫는다(세션이 하나라도 있으면 닫지 않는다). 그 안의 그룹 영역도 지운다
+  // 워크스페이스를 판에서 지운다(빼기). P44: 여럿(workspaces)을 한 번에, 안에 세션이 있으면 after('archive' 모두 보관 | 'delete' 모두 삭제)를 골라야 한다.
+  // confirm이 없으면 지울 것과 세션 수, 돌고 있는 CLI 수(plan)를 돌려준다. 디스크의 폴더와 대화 기록 파일은 건드리지 않는다(삭제도 판의 닫힌 세션 행만 지운다).
+  // 세션을 끄지 못한 워크스페이스는 남긴다. 사람이 지운 워크스페이스는 다시 저절로 열지 않는다(P10)
   async workspaceClose(p) {
-    const w = await this.resolveWorkspace(p.workspace);
-    const n = [...this.sessions.values()].filter((s) => s.workspaceKey === w.key).length;
-    if (n) throw keyed(apiError('not_empty', `세션이 ${n}개 있는 워크스페이스는 닫지 않는다. 세션을 먼저 끈다`), 'wsNotEmpty', { n });
-    const name = this.workspaceList().find((x) => x.key === w.key).name;
-    if (!p.confirm) return confirmResult(`빈 워크스페이스 ${name}(${w.root})를 닫는다. 폴더와 저장소는 그대로다.`, m('wsClose', { name, root: w.root }));
+    const refs = Array.isArray(p.workspaces) && p.workspaces.length ? p.workspaces : [p.workspace];
+    const ws = [];
+    for (const ref of refs) { const w = await this.resolveWorkspace(ref); if (!ws.some((x) => x.key === w.key)) ws.push(w); }
+    const list = this.workspaceList();
+    const named = ws.map((w) => ({ key: w.key, root: w.root, name: (list.find((x) => x.key === w.key) || {}).name || w.key }));
+    const sums = [...this.sessions.values()].map((s) => this.summary(s));
+    const plan = closePlan(named, sums);
+    if (!p.confirm) {
+      if (named.length === 1 && plan.empty) return confirmResult(`빈 워크스페이스 ${named[0].name}(${named[0].root})를 닫는다. 폴더와 저장소는 그대로다.`, m('wsClose', { name: named[0].name, root: named[0].root }), { plan });
+      return confirmResult(`워크스페이스 ${named.length}개를 판에서 지운다(세션 ${plan.sessions}개, 돌고 있는 CLI ${plan.running}개). 폴더와 대화 기록 파일은 그대로다.`, m(plan.empty ? 'wsCloseMany' : 'wsCloseSessions', { n: named.length, sessions: plan.sessions, running: plan.running }), { plan });
+    }
+    const chk = checkAfter(plan, p.after);
+    if (!chk.ok && chk.reason === 'choose') throw keyed(apiError('not_empty', `세션이 ${plan.sessions}개 있다. after로 archive(모두 보관) 또는 delete(모두 삭제)를 고른다`), 'wsChooseAfter', { n: plan.sessions });
+    if (!chk.ok) throw apiError('bad_request', `after는 archive 또는 delete: ${p.after}`);
+    const keys = new Set(named.map((w) => w.key));
+    const targets = [...this.sessions.values()].filter((s) => keys.has(s.workspaceKey));
+    const done = { archived: 0, deleted: 0, failed: [] };
+    await Promise.all(targets.map(async (s) => {
+      try {
+        await this.kill({ session: s.sessionId, confirm: true, ...(chk.after === 'archive' ? { after: 'archive' } : {}) });
+        if (chk.after === 'archive') done.archived++;
+        else { this.dropClosedRow(s.sessionId, 'workspace_removed'); done.deleted++; }
+      } catch (e) { done.failed.push({ sessionId: s.sessionId, name: s.name, error: e.code || String(e.message || e) }); }
+    }));
+    const closed = [], kept = [];
+    for (const w of named) {
+      if ([...this.sessions.values()].some((s) => s.workspaceKey === w.key)) { kept.push(w.key); continue; }
+      this.removeWorkspace(w.key);
+      closed.push(w.key);
+    }
+    if (closed.length) { this.store.setMeta(GROUPS_META, dropWorkspaces(readGroups(this), closed)); this.broadcastWorkspaces(); }
+    return { closed: closed.length === named.length, removed: closed, kept, key: named[0].key, after: chk.after, sessions: done };
+  }
+  // 워크스페이스 행 하나를 판에서 뺀다(안에 세션이 없을 때)
+  removeWorkspace(key) {
     // P6c: 그 영역의 메모·칸반은 지우지 않고 소속만 푼다(자리는 그대로)
-    for (const m of this.store.memos().filter((x) => x.workspaceKey === w.key)) { this.store.updateMemo(m.memoId, { workspaceKey: null }); this.api.broadcast('memo.updated', this.store.getMemo(m.memoId)); }
-    for (const k of this.store.kanbans().filter((x) => x.workspaceKey === w.key)) { this.store.updateKanban(k.kanbanId, { workspaceKey: null }); if (this.features) this.features.kanbans.emit(this.store.getKanban(k.kanbanId)); }
-    this.store.deleteWorkspace(w.key);
-    if (this.store.getMeta('currentWorkspace') === w.key) this.store.setMeta('currentWorkspace', (this.store.workspaces()[0] || {}).key || null);
-    this.store.addEvent(null, 'workspace_closed', { key: w.key });
-    this.bus.emit('workspace_closed', w.key); // P10: 사람이 닫은 워크스페이스는 다시 저절로 열지 않는다
+    for (const m of this.store.memos().filter((x) => x.workspaceKey === key)) { this.store.updateMemo(m.memoId, { workspaceKey: null }); this.api.broadcast('memo.updated', this.store.getMemo(m.memoId)); }
+    for (const k of this.store.kanbans().filter((x) => x.workspaceKey === key)) { this.store.updateKanban(k.kanbanId, { workspaceKey: null }); if (this.features) this.features.kanbans.emit(this.store.getKanban(k.kanbanId)); }
+    this.store.deleteWorkspace(key);
+    if (this.store.getMeta('currentWorkspace') === key) this.store.setMeta('currentWorkspace', (this.store.workspaces()[0] || {}).key || null);
+    this.store.addEvent(null, 'workspace_closed', { key });
+    this.bus.emit('workspace_closed', key); // P10: 사람이 닫은 워크스페이스는 다시 저절로 열지 않는다
     this.broadcastWorkspaces();
-    return { closed: true, key: w.key };
+  }
+  // P44: 닫힌 세션 행만 판에서 지운다. 대화 기록 파일은 그대로다(노드 X의 "삭제"와 달리 휴지통으로 보내지 않는다)
+  dropClosedRow(sessionId, why) {
+    const row = this.store.closedSession(sessionId);
+    if (!row) return false;
+    this.store.tx(() => { this.store.deleteClosedSession(sessionId); this.store.addEvent(sessionId, 'session_deleted', { name: row.name, kind: row.kind, trashed: 0, why }); });
+    if (this.recall) this.recall.changed({ force: true }).catch(() => {});
+    return true;
   }
   // 창이 지금 보는 워크스페이스(앱을 다시 열면 여기로 들어간다. @all의 범위)
   async workspaceSelect(p) {
@@ -1733,7 +1774,7 @@ export class Backend {
         const inWs = (k) => !w || (k || null) === w.key;
         const nodes = this.store.nodes().filter((n) => inWs(n.workspace_key));
         const ids = new Set(nodes.map((n) => n.session_id));
-        return { nodes, docks: this.store.docks().filter((d) => inWs(d.workspaceKey)), viewport: this.store.getMeta('viewport') || null, seenAt: this.store.getMeta('boardSeenAt'), links: this.linksOpen().filter((l) => !w || ids.has(l.from) || ids.has(l.to)), workspaces: this.workspaceList(), current: this.currentWorkspace(), canvas: this.store.getMeta('canvas'),
+        return { nodes, docks: this.store.docks().filter((d) => inWs(d.workspaceKey)), viewport: this.store.getMeta('viewport') || null, seenAt: this.store.getMeta('boardSeenAt'), links: this.linksOpen().filter((l) => !w || ids.has(l.from) || ids.has(l.to)), workspaces: this.workspaceList(), current: this.currentWorkspace(), groups: readGroups(this).groups, canvas: this.store.getMeta('canvas'),
           // P6c: 메모·칸반 노드(P6b I3·I4)도 같은 판에 그린다
           ...(this.features ? { memos: this.store.memos().filter((m) => inWs(m.workspaceKey)), kanbans: this.store.kanbans().filter((k) => inWs(k.workspaceKey)).map((k) => this.features.kanbans.view(k)) } : {}),
           // P13: 판 밖 대화 노드와 띄움 선(recall.layoutCanvas가 만든 것)
@@ -1756,7 +1797,7 @@ export class Backend {
         return { ok: true, workspace: w ? w.key : null };
       },
       // 리포지토리 워크스페이스(P5, G1·G3)
-      'workspace.list': () => ({ workspaces: this.workspaceList(), current: this.currentWorkspace() }),
+      'workspace.list': () => ({ workspaces: this.workspaceList(), current: this.currentWorkspace(), groups: readGroups(this).groups }),
       'workspace.open': (p) => this.workspaceOpen(p),
       'workspace.close': (p) => this.workspaceClose(p),
       'workspace.select': (p) => this.workspaceSelect(p),
@@ -1779,6 +1820,7 @@ export class Backend {
       'herdr.clients': () => this.checkClients(),
       // P6a: 단일 캔버스(검색, 붙여 묶기, 풀기, 정리, 크기 단계, 영역 옮기기)
       ...canvasHandlers(this),
+      ...groupHandlers(this), // P44: 워크스페이스 가상 그룹
     };
   }
 }

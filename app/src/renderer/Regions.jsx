@@ -76,6 +76,7 @@ function RegionNodeInner({ data }) {
           {z.asleep > 0 && <button className="mt-btn small nodrag" data-action="region-wake" title={t('regions.wakeTitle')} disabled={z.waking > 0} onClick={() => wakeRepo(key)}><Icon name="moon" />{t('regions.wake')}</button>}
           <button className="mt-btn small nodrag" data-action="region-spawn" onClick={() => { noteWorkspace(key); openDialog({ kind: 'spawn', cwd: w.root }); }}>{t('regions.addSession')}</button>
           <button className="mt-btn small ghost nodrag" title={t('regions.fit')} data-action="region-fit" onClick={() => selectWorkspace(key)}>⤢</button>
+          <button className="mt-btn small ghost nodrag" title={t('sbRemove.regionTitle')} data-action="region-remove" onClick={() => openDialog({ kind: 'wsclose', ws: [w] })}>{t('sbRemove.region')}</button>{/* P44: 판에서 지우기(세션이 있으면 모두 보관·삭제를 고른다) */}
         </span>
         <button className="mt-region-chev nodrag" title={t('regions.acts')} data-action="region-acts" onClick={() => setActs((a) => !a)}><Icon name="chevDown" /></button>
       </div>

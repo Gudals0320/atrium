@@ -8,6 +8,7 @@ import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자
 import { layoutRegions } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치
+import { readGroups, groupIndex } from './ws-groups.mjs'; // P44: 가상 그룹끼리 모으기
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
 import { keyed } from './msg.mjs'; // P16: 화면 글 열쇠
@@ -600,12 +601,13 @@ function arrangeBoard(b, p) {
   }
   const regs = nestedRegions(anchors, items);
   // 맨 위 영역(리포 영역은 상자를 감싼다, 폴더)과 소속 없는 메모·칸반만 다시 놓는다. 상자는 리포 영역과 함께 간다
-  const entries = [...regs].filter(([k]) => !isBoxKey(k)).map(([k, r]) => ({ key: k, ws: k, wt: '', rect: r, empty: !items.some((i) => i.wsKey === k) }));
+  const gidx = groupIndex(readGroups(b)); // P44: 같은 가상 그룹의 영역은 한 덩어리로 모아 놓는다(그룹 안 순서는 사람이 정한 것)
+  const entries = [...regs].filter(([k]) => !isBoxKey(k)).map(([k, r]) => ({ key: k, ws: k, wt: '', rect: r, empty: !items.some((i) => i.wsKey === k), ...(gidx.has(k) ? { group: gidx.get(k).id, order: gidx.get(k).index } : {}) }));
   for (const i of items) if (!i.ws && (i.kind === 'memo' || i.kind === 'kanban')) entries.push({ key: `${i.kind}:${i.id}`, ws: null, wt: '', rect: { x: i.x, y: i.y, w: i.w, h: i.h }, item: i });
   const lay = layoutRegions(entries);
   const regionPlan = entries.map((e) => ({ key: e.key, from: e.rect, to: lay.rects.get(e.key) }));
   const edges = plans.reduce((s, pl) => s + pl.edges.length, 0);
-  if (!p.apply) return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, applied: false, edges };
+  if (!p.apply) return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, applied: false, edges };
   // 되돌리기 자료: 판 전체
   b.store.setMeta(BOARD_UNDO, {
     at: Date.now(),
@@ -628,7 +630,7 @@ function arrangeBoard(b, p) {
   settleRegions(b, 'arrange'); // 안전망: 계산이 맞으면 옮길 것이 없다
   b.store.addEvent(null, 'arranged', { workspace: '*', workspaces: plans.length, regions: entries.length, edges, moved });
   b.api.broadcast('board.changed', { why: 'arrange' });
-  return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, applied: true, edges, undo: true };
+  return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, applied: true, edges, undo: true };
 }
 
 // ---------- 검색(H2) ----------

@@ -15,7 +15,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   launchers                         호출자 목록(즐겨찾기 순서, 하네스, 명령 미리보기, P33)
   ls [--ws 워크스페이스]            세션 목록과 상태(워크스페이스별)
   ws                                리포지토리 워크스페이스 목록과 세는 값(세션, 작업 중, 내 차례, 검토 대기)
-  ws open <폴더> | ws close <이름|키> [--yes] | ws select <이름|키>   빈 워크스페이스 만들기, 빈 것 닫기, 지금 워크스페이스 고르기
+  ws open <폴더> | ws close <이름|키> [--yes] [--after archive|delete] | ws select <이름|키>   빈 워크스페이스 만들기, 판에서 지우기(세션이 있으면 --after로 모두 보관·삭제), 지금 워크스페이스 고르기
   get <이름>                        세션 상세(묻는 내용, 마지막 답, 화면 꼬리, git, 전달)
   watch [--seconds n]               상태 변화, hook, 전달을 실시간으로
   send @이름 [@이름...] <글> [--wait] [--ws 워크스페이스]   글 보내기. @all은 캔버스 전체의 에이전트 세션(--ws면 그 워크스페이스만). --wait면 확인까지 기다림
@@ -226,7 +226,7 @@ async function main() {
         const op = rest[0];
         if (op === 'open') return out(await c.call('workspace.open', { path: path.resolve(rest[1] || '.') }));
         if (op === 'select') return out(await c.call('workspace.select', { workspace: rest[1] }));
-        if (op === 'close') { const r = await c.call('workspace.close', { workspace: rest[1], confirm: !!flags.yes }); if (r.needsConfirm) { console.log(`확인 필요: ${r.message}\n계속하려면 --yes`); process.exitCode = 2; return; } return out(r); }
+        if (op === 'close') { const r = await c.call('workspace.close', { workspace: rest[1], confirm: !!flags.yes, ...(flags.after ? { after: flags.after } : {}) }); if (r.needsConfirm) { console.log(`확인 필요: ${r.message}\n계속하려면 --yes`); process.exitCode = 2; return; } return out(r); }
         const r = await c.call('workspace.list');
         if (JSONOUT) return out(r);
         if (!r.workspaces.length) console.log('(워크스페이스 없음)');
