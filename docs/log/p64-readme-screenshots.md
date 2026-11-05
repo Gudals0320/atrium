@@ -59,4 +59,38 @@ GitHub 첫 화면의 README를 다시 쓰고, 지금 화면으로 스크린숏�
 
 ## 작업 기록
 
+2026-11-05 작업자 세션(워크트리 `worktree-p64`).
+
+- 판: `atrium-dev-p64`, 47890(흉내 프록시 47891), `backend/.dev/data`·`app`, 대화 목록은 빈 `backend/.dev/convos`, 데스크톱 앱 없음, 가짜 tailscale(`p49-fake-tailscale.mjs`). 창 1600×960, devicePixelRatio 1.
+- 신뢰: 새 git 저장소에서 claude를 처음 띄우면 신뢰 대화상자가 뜬다(git 저장소 안이면 저장소 루트에서 신뢰를 찾는다, E10). 신뢰 설정은 읽기만 하고 건드리지 않았다. 대신 데모 폴더를 이미 신뢰된 상위 폴더 아래의 일반 폴더로 만들어 claude를 먼저 띄우고, 그 뒤에 `git init`과 `git worktree add`(비어 있는 폴더를 워크트리로)를 했다. 판은 폴더 → 저장소 합치기(P37)로 영역을 저장소로 옮겼고, 워크트리 세션도 노란 상자로 보였다.
+- 한국어 답: haiku가 사용자 전역 지침을 따라 한국어로 답했다. 데모 상위 폴더(`C:\Workspace\atrium-demo\CLAUDE.md`, 저장소 밖)에 영어로 답하라는 지침을 두고 지시마다 같은 말을 붙였다. 판의 연결 알림(에이전트에게 가는 글이라 번역하지 않음)은 리드 화면에 한국어로 남아, 리드 → 리뷰어 연결을 먼저 만들고 `/clear`를 보낸 뒤 첫 지시를 보냈다. 작업자 역할 기본값 "워커"는 `--role worker`로 바꿨다.
+- 시각: Claude Code의 "done 오후 7:32"는 시스템 지역 설정이다. 판을 띄우는 환경에 `LANG`·`LC_ALL=en_US.UTF-8`을 넣으니 herdr 패널의 claude가 "7:38 PM"으로 찍었다.
+- 지시 흔들림: 처음엔 작업자 셋이 모두 Bash 승인을 기다렸다. 지시에 쓸 도구(Read·Edit, Write 뒤 Bash로 `npm test`)를 적으니 리뷰어(질문)와 tests(`npm test` 승인) 둘만 내 차례가 됐다.
+- 배치: 정리(`arrange --all`)는 리뷰어와 워커를 작게 만들어 그림에 맞지 않았다. `layout` 단계가 판 API로 덩어리·노드·메모·칸반 자리와 크기를 정한다.
+- 개발용 판 표시(`dev`)는 실제 판에 없으므로 찍을 때만 CSS로 가렸다(창과 웹 화면).
+- 장면: board(전체), your-turn(내 차례 목록 펼침, 리뷰어 질문 카드, tests 승인 카드), agents(미션 맵, 내용 높이로 자름 1600×672), dock(덩어리 노드 하나를 고르면 뜨는 막대와 펼친 배치 틀), sidebar(사이드바와 찾기 "theme"), remote(흉내 노트북 1440×860을 브라우저 틀에 넣음, 주소 `https://pc.example.ts.net/`), devices(PC 창의 연결된 기기 탭, 짝 맺은 laptop-a).
+- 다시 찍기: clean → seed → shoot → publish를 처음부터 한 번 더 돌려 같은 판이 나오는 것을 봤다.
+
 ## 보고
+
+### 만든 것
+
+- `app/test/e2e/readme-shots.mjs`: README 그림을 찍는 스크립트. `seed`(데모 폴더 `C:\Workspace\atrium-demo\{web-app, web-app-dark, api}`와 판: claude haiku 세션 lead·review·theme, 리드가 `atrium child`로 띄운 워커 ui·tests, 리드 → 리뷰어 역할 선, 덩어리 main-left, 워크트리 `feature/dark-mode`, api 셸 둘, 메모, 칸반), `layout`, `shoot [장면,…]`, `publish`(1MiB 확인 뒤 `docs/images/`로), `clean`(세션 끄기, 이 판의 herdr·백엔드 멈춤, 데모 폴더·판 데이터·이 판의 herdr 세션 폴더 지우기). 판 값은 `MT_E2E_HERDR_SESSION`·`MT_E2E_PORT`·`MT_E2E_SIM_PORT`로 덮고 `assertTestBoard`로 막는다. 데모 저장소 커밋은 예시 작성자(`demo@example.com`)로 한다.
+- `app/test/e2e/readme-scenes.mjs`: 장면을 찍는 부분(shoot이 부른다). 원격은 흉내 프록시와 가짜 tailscale, 예시 이름만 쓴다.
+- `docs/images/`: board, your-turn, dock을 새 화면으로 바꾸고 agents, sidebar, remote, devices를 더했다(89~260KiB). `banner.png`는 첫 커밋 뒤 바뀌지 않아 그대로 두었다. 찍은 원본과 로그는 `experiments/p64/`(git 밖).
+- `README.md`: 배너, 한 줄 소개, 배지(Electron 45, Node 24, Windows, MIT), 한국어 링크, 대표 그림 → What it is → Features 여섯 묶음(The board, Your turn, Agents working together, Live terminals, Docks and layout, Remote access, 묶음마다 그림) → Requirements → Quick start(보드 키 한 줄 포함) → Remote access(네 단계, 자세한 것은 `<details>`) → CLI 표 → How it works(브라우저와 `tailscale serve`를 더한 다이어그램) → Development(그림 스크립트 한 줄) → Status → Acknowledgments → License(제삼자 로고와 글꼴 고지).
+- `README.ko.md`: 같은 구성과 그림. 화면 용어는 한국어 화면 사전(Qualop 번역)을 따랐다(보드, 세션 창, 창 그룹, 응답 필요, 확인할 결과, 작업 관계도, 요청 기록, 명령 입력줄).
+- 시험: `cd backend && npm test` 459 통과, `cd app && npm test` 214 통과, `npm run build` 통과.
+
+### 계획과 다른 곳
+
+- 데모 저장소를 처음부터 git으로 만들지 않고, claude를 띄운 뒤 git 저장소와 워크트리로 바꿨다(작업 기록의 신뢰 항목).
+- 장면 (3)은 미션 맵 하나로 찍고 Thread 그림은 따로 두지 않았다. 원격은 웹 화면(remote)과 PC의 연결된 기기 탭(devices) 두 장이다. 사이드바·찾기 한 장을 더해 그림이 일곱 장이다.
+- 원격 그림의 웹 화면은 localhost가 아니라 흉내 프록시(`pc.example.ts.net:47891`)로 열었고, 브라우저 틀의 주소 줄에는 `https://pc.example.ts.net/`을 그렸다.
+
+### 알려진 문제
+
+- 연결된 기기 탭의 짝 맺기 설명(`devTab.pairDesc`, en "The browser then makes a passkey.", ko "그다음 브라우저가 패스키를 만듭니다.")이 P62 뒤 기본(패스키로 확인 끔)과 맞지 않는다. devices 그림에 이 문장이 보인다. 맡은 파일이 아니라 고치지 않았다.
+- 같은 탭의 "Board in a browser" 줄은 시험 판 포트(`http://localhost:47890/`)를 보인다. 실제 판에서는 47800이다.
+- 데모 claude 세션의 대화 기록은 `~/.claude/projects` 아래(데모 폴더 이름)에 남았고, Claude Code가 `~/.claude.json`에 데모 폴더 항목을 썼다. 읽기만 하라는 규칙대로 지우지 않았다. 폴더가 없어졌으므로 실제 판에서는 missed로 분류된다.
+- haiku의 답은 실행마다 조금씩 다르다. 다시 찍으면 터미널 글과 승인 명령이 달라질 수 있다(seed 뒤 판 CLI `ls`로 리뷰어와 tests만 내 차례인지 확인하고 찍는다).

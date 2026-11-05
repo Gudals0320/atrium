@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white">
   <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-5FA04E?logo=nodedotjs&logoColor=white">
+  <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1CB66D">
 </p>
 
@@ -18,42 +18,82 @@
   <b>English</b> · <a href="README.ko.md">한국어</a>
 </p>
 
-![Atrium board: a web-app folder with two shells, and an atrium folder with a lead agent docked with two workers and a reviewer waiting for an answer](docs/images/board.png)
+![The Atrium board: a web-app repository with a lead agent docked with two workers, a reviewer and a worker waiting for an answer, a worktree box, a memo and a kanban; an api repository with two shells](docs/images/board.png)
 
-## Why
+## What it is
 
-Running five agent CLIs in five terminal tabs works until one of them asks you a question and waits for twenty minutes. Atrium puts every session on one board. Each folder gets its own area, every session shows its live terminal and its state, and the ones that need you glow orange.
+Atrium is a Windows desktop app that puts every agent CLI session on one board. Each repository gets its own area, every session shows its live terminal and its state, and the sessions that need you glow orange.
 
-Atrium does not replace your agents or tell them how to work. It starts the sessions, connects them, and shows the connections. The agents still do the work, and they delegate to each other through [herdr](https://herdr.dev).
+Atrium does not replace your agents or tell them how to work. It starts sessions, connects them and shows the connections. The agents do the work and hand it to each other through [herdr](https://herdr.dev), which also owns the terminals, so sessions keep running when the window closes.
 
 ## Features
 
-- **One board for every session.** Claude Code, Codex, DeepSeek (Claude Code through a local gateway) and plain shells live side by side. Each repository gets an area, and each live git worktree is a yellow box inside its repository's area. A folder that later becomes a git repository stays one area.
-- **Launchers.** A launcher is a harness (Claude Code, Codex, ...) plus a model and options, or one command line you write yourself. Build them from dropdowns in one settings tab, star your favorites, and they sit on the left rail: one click starts a session.
-- **Know whose turn it is.** Every session is *working*, *ready*, *your turn* or *error*, computed from herdr events and Claude Code hooks. The **Your turn** and **Review** queues, OS notifications and a tray badge tell you where to look. Answer an `AskUserQuestion` prompt from a card on the node.
-- **Talk from the board.** Type `@name` (or `@all`) in the command bar. Each session has its own delivery queue, and every message is confirmed when the agent actually submits it.
-- **Live terminals that zoom.** Every node is a real xterm.js terminal, and you can drag-select and copy at any zoom level. Zoom out and nodes turn into summary cards: name, state, pending question, last request, last answer. Click any node to fly to it.
-- **Docks.** Snap sessions together into tmux-style split layouts, with layout presets for 2 to 7+ sessions. Links inside a dock show as small bridges on the dividers or short brackets along the outside, never as lines across your terminals.
-- **Links between agents.** Draw a link from one session to another and give it a role, such as `worker` or `reviewer`. The agent learns how to hand work to that role through herdr, and the link lights up while work moves along it. Agents can also start child sessions (`atrium child`) with no limit on count or depth, and the board's `atrium` skill lets them split work across workers and git worktrees on their own. Child sessions appear as a tree.
-- **Pick up old conversations.** Past Claude Code CLI conversations in an open folder show up as chat nodes that you can resume. Leftovers from test folders go to a *missed* list that you can clear in bulk.
-- **Move over from the desktop app.** Import the sessions you haven't archived in the Claude desktop app in one go. Each one is opened as a fork under a new ID, so the app's copy is never touched, and lands asleep in its repository area until you click it. Importing again only picks up sessions that are new or that you kept using in the app.
-- **Overviews.** A mission map of who directs whom, a list of changes since you last looked, and `Ctrl+F` search across sessions.
-- **Notes on the canvas.** Markdown memos and kanban boards sit next to the sessions. Loops resend an instruction on a schedule or whenever a session goes idle.
-- **Easy on memory.** A repository that has been idle for 30 minutes (configurable) goes to sleep and wakes up as a whole. Each node shows its memory use.
-- **Keeps running.** Sessions live in herdr, so closing the window does not stop them. The board picks them back up when the window or the backend restarts.
-- **Scriptable.** The `atrium` CLI and a local WebSocket API cover spawn, send, link, dock, kill and more.
-- English and Korean UI. The Korean translation is by [Qualop](https://github.com/Qualop).
+### The board
+
+- **Every session on one canvas.** Claude Code, Codex, other agents that herdr knows, and plain shells live side by side. Each repository is an area, and each live git worktree is a yellow box inside its repository's area.
+- **Faces that follow the zoom.** Up close a node is its terminal. Further out it becomes a chat view, then a summary card: name, state, waiting question, last request and last answer. Click a node to fly to it.
+- **Launchers.** A launcher is a harness plus a model and options, or one command line you write. Star it and it sits on the left rail: one click starts a session.
+- **Sidebar and find.** The sidebar (`Ctrl+Shift+E`) is built for boards with 200+ sessions: virtual groups of repositories, filters by state and kind, and keyboard moves. `Ctrl+F` finds sessions by name, prompt, question or answer, plus memos and kanban cards.
+- **Pick up old work.** Past Claude Code CLI conversations in an open folder appear as cards you can resume. Unarchived Claude desktop app sessions can be imported as forks, so the app's copy is never touched.
+- **Easy on memory.** A repository that stays idle for 30 minutes (configurable) goes to sleep as a whole and wakes up when you click one of its nodes. Each node shows its memory use.
+
+![The sidebar with repositories and sessions, and the find window with results for "theme"](docs/images/sidebar.png)
+
+### Your turn
+
+- **Know who is waiting.** Every session is *working*, *ready*, *your turn* or *error*, computed from herdr events and Claude Code hooks. Finished answers you have not looked at yet count as *Review*.
+- **Answer on the node.** Permission prompts and `AskUserQuestion` questions open a card at the bottom of the node: allow, deny, pick an option, or type in the terminal.
+- **One list for all repositories.** The **Your turn** pill lists every waiting session, oldest first, and `N` jumps to the next one. OS notifications and the tray icon tell you when the window is in the background.
+- **Changes since you looked.** Come back after a break and **Changes** sums up what each session did.
+
+![Your turn: the list of waiting sessions, a reviewer's question card and a worker's permission card](docs/images/your-turn.png)
+
+### Agents working together
+
+- **Role links.** Draw a link from one session to another and give it a role, such as `worker` or `reviewer`. The agent learns how to hand work to that role through herdr, and the link lights up while work moves along it. Handoffs that agents make on their own through herdr are drawn too.
+- **Workers on demand.** Agents start their own workers with `atrium child`, with no limit on count or depth. The board's `atrium` skill tells them when to split work across workers and git worktrees. Workers show their parent and role in the header.
+- **Models by name.** `atrium child --model "deepseek flash"` resolves a spoken model name against the models the board knows (`atrium models`), and model errors go back to the parent.
+- **Mission map and Thread.** `M` opens a map of who directs whom, grouped by repository. Thread keeps every prompt you sent from the command bar with its delivery state and the final report.
+- **Talk from the board.** Type `@name` or `@all` in the command bar. Each session has its own delivery queue, and a message is confirmed only when the agent actually submits it. Loops resend a prompt on a schedule or whenever a session goes idle.
+
+![The mission map: the user, a lead with two workers and a reviewer, a worktree session, and the shells of a second repository](docs/images/agents.png)
+
+### Live terminals
+
+- **Real terminals.** Every near node is an xterm.js terminal attached to the herdr pane, so you can type in it directly.
+- **Select like a web page.** Drag to select at any zoom; the selection follows scrolling, scrolls at the edges and copies beyond the screen.
+- **Paste that works.** Bracketed paste for agents, multi-line paste for shells.
+- **Scale.** UI and terminal text scale from 70% to 150%.
+- **Output view.** Long answers open as Markdown on the side, where you can reply or save them as `.md`.
+
+### Docks and layout
+
+- **Docks.** `Ctrl`+drag a node onto another node's edge to split it, tmux style. Layout presets match the number of sessions (2 to 6, and even splits for 7 or more). Links inside a dock show as small bridges on the dividers, never as lines across your terminals.
+- **Size and arrange.** Size steps (large, normal, small, wide, tall) for nodes and whole docks. **Arrange** lays out the board along the links, with one undo.
+- **Notes on the canvas.** Markdown memos and kanban boards sit next to the sessions. A card linked to a session shows its state and takes you there.
+
+![A dock: the lead on the left and two workers on the right, with the layout presets for three sessions open above](docs/images/dock.png)
+
+### Remote access
+
+- **The board in a browser.** Open the same board from a laptop over [Tailscale](https://tailscale.com). The backend still listens only on `127.0.0.1`; `tailscale serve` on the PC passes tailnet requests to it.
+- **Pair with a code.** Press **New code** on the PC, or allow a request from the laptop. A paired browser is bound to the Tailscale device it paired from.
+- **Passkey optional.** Off by default. Turn it on to confirm sign-ins with a phone or Windows Hello passkey.
+- **Stay in control.** A connection log, attach notices, **Disconnect** and **Unpair** per device, and an **Accept remote connections** switch.
+- Each client keeps its own view. In the browser you can also pick PC folders and drop files into a terminal.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/dock.png" alt="A dock: the lead session on the left with ui and tests workers on the right, joined by links"></td>
-    <td width="50%"><img src="docs/images/your-turn.png" alt="A session in 'Your turn' state with an answer card for its question"></td>
+    <td width="50%"><img src="docs/images/remote.png" alt="The board opened in a laptop browser at an example tailnet address"></td>
+    <td width="50%"><img src="docs/images/devices.png" alt="Settings › Connected devices on the PC: remote switch, address, pairing and one paired laptop"></td>
   </tr>
   <tr>
-    <td align="center"><sub>A dock with links: the lead hands work to two workers.</sub></td>
-    <td align="center"><sub>Your turn: answer the question right on the node.</sub></td>
+    <td align="center"><sub>The same board in a laptop browser.</sub></td>
+    <td align="center"><sub>Connected devices on the PC.</sub></td>
   </tr>
 </table>
+
+English and Korean UI. The Korean translation is by [Qualop](https://github.com/Qualop).
 
 ## Requirements
 
@@ -62,10 +102,10 @@ Atrium is **Windows only** for now (Windows 10 or 11, x64).
 | | |
 |---|---|
 | [Node.js](https://nodejs.org/) | 24.x |
-| [herdr](https://herdr.dev) | Tested with 0.9.5 (protocol 22). Atrium finds herdr in the herdr install folder or on `PATH`. To use another file, set `ATRIUM_HERDR` or the herdr path in Settings. Other versions with protocol 22 work, with a warning. Without herdr the board still opens, but sessions cannot start. |
+| [herdr](https://herdr.dev) | Tested with 0.9.5 (protocol 22). Atrium finds herdr in the herdr install folder or on `PATH`; set `ATRIUM_HERDR` or the path in Settings to use another file. Other versions with protocol 22 work, with a warning. Without herdr the board still opens, but sessions cannot start. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`. |
 | Git | For repository and worktree detection. |
-| Optional | Codex CLI for Codex sessions. An Anthropic-compatible gateway on `127.0.0.1:10100` (for example opencodex) for DeepSeek sessions. |
+| Optional | Codex CLI for Codex sessions. An Anthropic-compatible gateway on `127.0.0.1:10100` (for example opencodex) for DeepSeek sessions. Tailscale for remote access. |
 
 ## Quick start
 
@@ -88,6 +128,8 @@ powershell -ExecutionPolicy Bypass -File app\scripts\make-shortcut.ps1
 
 Then open a folder from the board and start a session from the left rail.
 
+Keys on the board: `N` next session that needs you, `M` mission map, `Ctrl+F` or `↑` find, `↓` command bar, `Ctrl+Shift+E` sidebar, `Delete` close the selected sessions.
+
 ### Good to know
 
 - Atrium never edits your `~/.claude/settings.json`. Each Claude Code session it starts gets its own settings file through `--settings`, which holds the hooks that report state back to the board.
@@ -97,58 +139,74 @@ Then open a folder from the board and start a session from the left rail.
 
 ## Remote access (Tailscale)
 
-You can use the board from a laptop browser over [Tailscale](https://tailscale.com). The laptop does not see the PC screen; it opens the same board as a web page. The backend still listens only on `127.0.0.1`. `tailscale serve` on the PC ends HTTPS and passes requests from your tailnet to the board.
-
-1. Install Tailscale on the PC and on the laptop, and log in to the same account on both.
-2. In the tailnet admin console, open **DNS** and turn on **MagicDNS** and **HTTPS Certificates**. Machine names and the tailnet name are written to the public Certificate Transparency log when you do this.
-3. On the PC, check and turn on serve:
+1. Install Tailscale on the PC and the laptop and log in to the same account. In the tailnet admin console, turn on **MagicDNS** and **HTTPS Certificates** (machine and tailnet names then go to the public Certificate Transparency log).
+2. On the PC, check and turn on serve:
 
    ```powershell
    node backend\bin\atrium.mjs remote status
    node backend\bin\atrium.mjs remote enable --yes
    ```
 
-   `enable` runs `tailscale serve --bg --https=443 http://127.0.0.1:47800`. Without `--yes` it only prints the command. If another service already uses https 443, it stops and suggests a port (`--https-port 8443`). `remote guide` prints these steps.
-4. On the laptop, open the address that `remote status` shows, for example `https://my-pc.example-tailnet.ts.net/`.
-5. Pair the browser. On the PC window, open **Settings › Connected devices**, press **New code**, and type the 6-digit code on the laptop. Or ask for access from the laptop and allow it on the PC. The same tab shows the Tailscale check and the laptop address. The board opens right away.
-6. Optional: use the browser's **Install app** to open the board in its own window.
+3. On the laptop, open the address that `remote status` shows, for example `https://my-pc.example-tailnet.ts.net/`.
+4. On the PC, open **Settings › Connected devices**, press **New code**, and type the 6-digit code on the laptop. The board opens right away.
 
-**Confirm with a passkey** (in **Settings › Connected devices › Security**, off by default) chooses how a paired browser signs in:
+<details>
+<summary><b>Details: serve, passkeys, security notes</b></summary>
 
-- **Off**: the paired browser opens the board directly from the Tailscale device it paired from. Its session lasts until you unpair it. On a personal laptop, the Tailscale device binding, the session cookie, the origin check and the attach notices already keep other devices out.
-- **On**: right after pairing, the laptop asks you to press **Create passkey** and confirm on your phone (iPhone or Android, by scanning a QR code) or on this device (Windows Hello, Touch ID or a security key). When the session ends, the laptop shows **Confirm it is you**: confirm with the same passkey and the board opens again. A session ends 12 hours after you sign in, or after 30 minutes with no connection (for example while the laptop sleeps). You can change both times in the same tab. A passkey also stops someone who gets the laptop after a session ends; the Windows lock screen covers much of that too.
-- When you turn it on, a browser that paired without a passkey shows **Add a passkey for this browser** the next time it connects and creates one with its current session. The device list shows **Passkey needed** until then. When you turn it off, live sessions last until unpair, and passkey records stay.
+**Serve.** `remote enable` runs `tailscale serve --bg --https=443 http://127.0.0.1:47800`. Without `--yes` it only prints the command. If another service already uses https 443, it stops and suggests a port (`--https-port 8443`). `remote guide` prints the steps. Instead of a code, you can also ask for access from the laptop and allow it on the PC. The browser's **Install app** opens the board in its own window.
 
-Passkeys work only on a secure page: open the board at its `https://…ts.net` address, or at `http://localhost:<port>` on the PC (not `127.0.0.1`).
+**Confirm with a passkey** (**Settings › Connected devices › Security**, off by default) chooses how a paired browser signs in:
 
-Security notes:
+- **Off**: the paired browser opens the board directly from the Tailscale device it paired from, until you unpair it. On a personal laptop, the Tailscale device binding, the session cookie, the origin check and the attach notices already keep other devices out.
+- **On**: right after pairing, the laptop asks you to press **Create passkey** and confirm on your phone (iPhone or Android, by scanning a QR code) or on this device (Windows Hello, Touch ID or a security key). When the session ends, the laptop shows **Confirm it is you**. A session ends 12 hours after you sign in, or after 30 minutes with no connection; you can change both times in the same tab. A passkey also stops someone who gets the laptop after a session ends; the Windows lock screen covers much of that too.
+- When you turn it on, a browser that paired without a passkey shows **Add a passkey for this browser** the next time it connects. The device list shows **Passkey needed** until then. When you turn it off, live sessions last until unpair, and passkey records stay.
+- Passkeys work only on a secure page: open the board at its `https://…ts.net` address, or at `http://localhost:<port>` on the PC (not `127.0.0.1`).
+
+**Security notes.**
 
 - A paired browser has the same power as your Windows user on the PC. It can start a shell and run anything. Pair only your own devices.
-- The browser keeps no password or token. Whether the passkey check is on or off, the session lives in an `HttpOnly; SameSite=Strict` cookie (`Secure` on https) that scripts on the page cannot read. The board keeps only a hash of the session ID, and only the public key of a passkey.
-- A paired browser works only from the Tailscale device it paired from. The board checks the requesting device with `tailscale whois` and refuses a session cookie or passkey signature that comes from a different Tailscale device. A browser paired on the PC itself (`localhost`) works only on the PC. The device list shows the device name that Tailscale confirmed in large text and the browser name in small text.
-- Unpairing a device ends all of its sessions at once and closes its open connections. Disconnecting it from the PC closes its connections. With the passkey check on, it also ends its sessions and the device confirms with its passkey to reattach; with it off, the device reattaches by itself. A browser can unpair only itself; disconnecting or renaming other devices is done on the PC.
-- Browsers paired before passkeys (with a token) or before devices were bound to a Tailscale device cannot connect any more. They show **needs pairing again** in the device list. Remove them and pair the browser again.
-- Requests that come through Tailscale are accepted only from the Tailscale user logged in on the PC. You can add other logins, or turn the check off, in **Settings › Connected devices** on the PC.
-- Requests through Tailscale cannot call the hook and child-session endpoints, and the board API token is never given to a browser.
-- Do not use `tailscale funnel`. Funnel puts the board on the public internet. `remote status` warns when funnel is on.
-- You can see, disconnect and block remote connections from the PC.
-  - The PC window shows a notice when a remote device attaches or pairs (also an OS notification when the window is hidden).
-  - Click the **n other devices** pill at the top: each attached device has **Disconnect** (closes the connection; with the passkey check on, also ends its session) and **Unpair**.
-  - Turn off **Accept remote connections** in **Settings › Connected devices** (or in the tray menu, or run `node backend\bin\atrium.mjs remote block`) to refuse every paired device and every request through Tailscale and close their connections. With the passkey check on, it also ends all device sessions; with it off, paired devices reattach when you accept again. The window and the CLI on this PC keep working. Run `remote allow` to accept them again.
-  - Pairing (and whether it was without a passkey), sign-ins, connects and disconnects, passkey check changes, and refusals with their reason are kept in a connection log. See it in the same tab or with `node backend\bin\atrium.mjs remote log`. `remote status` shows whether the passkey check is on.
-- To unpair a device, press **Unpair** in **Settings › Connected devices**, or run `node backend\bin\atrium.mjs devices rm <id>`. To stop remote access (serve), run `node backend\bin\atrium.mjs remote disable --yes`.
+- The browser keeps no password or token. The session lives in an `HttpOnly; SameSite=Strict` cookie (`Secure` on https) that scripts on the page cannot read. The board keeps only a hash of the session ID, and only the public key of a passkey.
+- A paired browser works only from the Tailscale device it paired from: the board checks the requesting device with `tailscale whois`. A browser paired on the PC itself (`localhost`) works only on the PC. Browsers paired before devices were bound (or with an old token) show **needs pairing again**; remove them and pair again.
+- Requests through Tailscale are accepted only from the Tailscale user logged in on the PC (you can add other logins in **Connected devices**). They cannot call the hook and child-session endpoints, and the board API token is never given to a browser.
+- Do not use `tailscale funnel`, which puts the board on the public internet. `remote status` warns when funnel is on.
+- The PC window shows a notice when a device attaches or pairs. The **n other devices** pill has **Disconnect** and **Unpair** for each device; a browser can unpair only itself. Turning off **Accept remote connections** (Settings, the tray menu, or `remote block`) refuses every paired device and closes their connections; `remote allow` accepts them again. With the passkey check on, disconnecting or blocking also ends sessions.
+- Pairing, sign-ins, connects and disconnects, passkey check changes and refusals with their reason are kept in a connection log (`remote log`).
+- To unpair from the CLI, run `node backend\bin\atrium.mjs devices rm <id>`. To stop serve, run `node backend\bin\atrium.mjs remote disable --yes`.
+
+</details>
+
+## CLI
+
+The `atrium` CLI talks to the running backend. Run it as `node backend\bin\atrium.mjs <command>`; `--help` lists everything.
+
+| Command | Does |
+|---|---|
+| `spawn <folder> [--launcher l] [--name n] [--model m] [--kind shell]` | Start a session |
+| `ls`, `inbox`, `get <name>` | Sessions and their state, what needs you, one session in detail |
+| `send @name [@name…] <text> [--wait]` | Send a message (`@all` for every agent) |
+| `answer <name> <n\|reject>` | Answer a permission prompt or question |
+| `link <a> <b> --role worker` | Link two sessions with a role |
+| `dock <a> <b>`, `dock layout <preset> <a> <b> …` | Dock sessions, lay out a dock |
+| `arrange --all --apply` | Arrange the whole board |
+| `kill <name> --yes` | Close a session |
+| `remote status`, `remote log`, `devices` | Remote access, connection log, paired devices |
+
+Sessions the board starts also get `atrium child`, `atrium children` and `atrium models` for their own workers.
 
 ## How it works
 
 ```mermaid
 flowchart LR
   UI["Atrium window<br/>Electron, React Flow, xterm.js"]
+  WEB["Laptop browser"]
+  TS["tailscale serve<br/>HTTPS, tailnet only"]
   CLI["atrium CLI"]
-  B["Backend<br/>Node 24"]
+  B["Backend<br/>Node 24, 127.0.0.1"]
   DB[("SQLite")]
   H["herdr session: atrium"]
   A["claude, codex, shells"]
   UI <-->|WebSocket API| B
+  WEB --> TS -->|web screen| B
   CLI -->|WebSocket| B
   B <-->|socket API| H
   H --> A
@@ -156,9 +214,9 @@ flowchart LR
   B --- DB
 ```
 
-- **herdr** owns the terminals and processes. Sessions keep running when the window or the backend stops.
-- **The backend** (`backend/`) computes session state from herdr events and Claude Code hooks, runs one delivery queue per session, records links and events, and stores the board in SQLite (`node:sqlite`). Its only dependency is `ws`.
-- **The window** (`app/`) draws the board with React Flow and attaches xterm.js to the visible terminals.
+- **herdr** owns the terminals and processes. Sessions keep running when the window or the backend stops, and the board picks them back up when it restarts.
+- **The backend** (`backend/`) computes session state from herdr events and Claude Code hooks, runs one delivery queue per session, records links and events, serves the web screen, and stores the board in SQLite (`node:sqlite`). Its only dependency is `ws`.
+- **The window** (`app/`) draws the board with React Flow and attaches xterm.js to the terminals in view. The PC window and paired browsers are all clients of the same backend.
 
 ## Development
 
@@ -171,7 +229,7 @@ cd ..\app
 npm test             # window unit tests
 ```
 
-The development board never touches the real board (`atrium`, port 47800). End-to-end scripts in `app/test/e2e/` drive the window with Playwright on a separate dev board. See [docs/testing.md](docs/testing.md).
+The development board never touches the real board (`atrium`, port 47800). End-to-end scripts in `app/test/e2e/` drive the window with Playwright on a separate dev board; see [docs/testing.md](docs/testing.md). The pictures in this README come from a demo board built by `app/test/e2e/readme-shots.mjs` (`seed`, `shoot`, `publish`, `clean`).
 
 Design documents are in Korean:
 
@@ -179,6 +237,7 @@ Design documents are in Korean:
 - [docs/ARCH.md](docs/ARCH.md): processes, state model, features, modules, API, screens
 - [docs/PLAN.md](docs/PLAN.md): current work and open decisions
 - [docs/decisions.md](docs/decisions.md): how past decisions changed
+- [CHANGELOG.md](CHANGELOG.md): what each stage built
 
 ## Status
 
@@ -195,4 +254,4 @@ See [app/THIRD_PARTY_NOTICES.txt](app/THIRD_PARTY_NOTICES.txt) for details.
 
 ## License
 
-[MIT](LICENSE) © 2026 Gudals0320
+[MIT](LICENSE) © 2026 Gudals0320. Third-party logos and fonts are not under the MIT license; see [app/THIRD_PARTY_NOTICES.txt](app/THIRD_PARTY_NOTICES.txt).
