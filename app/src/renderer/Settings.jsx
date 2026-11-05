@@ -9,6 +9,7 @@ import { api } from './api.js';
 import { useStore, toast } from './store.js';
 import { useT, errText, setLanguage, getLanguage, LANGUAGES } from './lib/i18n.js';
 import { LaunchersTab } from './Launchers.jsx'; // P33: 호출자 탭
+import { DevicesTab } from './WebDevices.jsx'; // P48: 연결된 기기(웹 화면)
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 export function SetRow({ name, hint, children, role }) {
@@ -143,6 +144,7 @@ const TABS = [
   { key: 'launchers', has: (s, l) => !!l, label: 'launchers.tab' }, // P33: 옛 "새 세션" 두 탭(Claude Code, Codex·DeepSeek)을 대신한다
   { key: 'sleep', has: (s) => s && s.sleepAfterMin != null },
   { key: 'recall', has: (s) => s && s.archiveDays != null },
+  { key: 'devices', has: () => true, label: 'webDevices.tab' }, // P48
 ];
 
 export function SettingsDialog({ onClose }) {
@@ -168,6 +170,7 @@ export function SettingsDialog({ onClose }) {
           {cur === 'launchers' && <LaunchersTab />}
           {settings && cur === 'sleep' && <SleepSetting settings={settings} schema={schema} />}
           {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}
+          {cur === 'devices' && <DevicesTab />}
         </div>
         <div className="mt-card-actions"><button className="mt-btn" data-action="settings-close" onClick={onClose}>{t('common.close')}</button></div>
       </div>

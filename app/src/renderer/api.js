@@ -33,7 +33,7 @@ export class Api {
     if (gen !== this.gen) return; // 그사이 새 connect()가 시작했다
     this.info = info;
     this.drop(this.ws);
-    const ws = new WebSocket(`ws://127.0.0.1:${info.port}/api?token=${info.token}`);
+    const ws = new WebSocket(info.wsUrl || `ws://127.0.0.1:${info.port}/api?token=${info.token}`); // P48: 웹 화면은 같은 출처와 기기 토큰(web.js)
     this.ws = ws;
     const live = () => gen === this.gen && this.ws === ws;
     this.openTimer = setTimeout(() => {

@@ -8,6 +8,11 @@
 // P7: 캔버스 왼쪽의 사이드바(J5). 캔버스와 한 줄(mt-body)에 두어 사이드바를 열면 캔버스가 옆으로 줄어든다
 // P11: 위쪽 줄과 아래쪽 워크스페이스 단추를 없애고 캔버스 위에 떠 있는 크롬(Chrome.jsx)으로 바꿨다. 크롬은 캔버스와 같은 칸(mt-stage)에 있어 사이드바를 열면 함께 옆으로 간다.
 //   색은 tokens.css, 글꼴은 fonts.css(앱에 넣은 OFL 글꼴). 글꼴을 읽은 뒤에 그린다(터미널이 처음부터 제 글꼴로 칸 크기를 잰다)
+// P48(원격 R2): Electron 밖(브라우저)에서 돌면 웹 어댑터(web.js)가 window.mt를 두고, 짝을 맺기 전에는 짝 맺기 화면(Pair.jsx)만 보인다.
+//   PC 창에는 브라우저의 허락 요청 카드(WebDevices.jsx)가 뜬다
+import { isWeb } from './web.js';
+import { webGate } from './Pair.jsx';
+import { PairRequestBanner } from './WebDevices.jsx';
 import '@xyflow/react/dist/style.css';
 import '@xterm/xterm/css/xterm.css';
 import './fonts.css';
@@ -174,6 +179,7 @@ function App() {
         </div>
       </div>
       <Dialogs />
+      {loaded && <PairRequestBanner />}
       {splash !== 'off' && <Splash error={!loaded && conn === 'error' ? t('app.backendFailed', { detail }) : null} leaving={splash === 'leaving'} />}
       <div className="mt-toasts">{toasts.map((t) => <div key={t.id} className={`mt-toast ${t.kind}`}>{t.text}</div>)}</div>
     </div>
@@ -196,7 +202,11 @@ const fontsReady = Promise.race([
     .map((f) => document.fonts.load(f, f.includes('Nanum') || f.includes('Pretendard') ? '가나' : 'Ab').catch(() => null))),
   new Promise((r) => setTimeout(r, 1500)),
 ]);
-fontsReady.then(() => root.render(<ReactFlowProvider><App /></ReactFlowProvider>));
-api.connect();
-startNotifier();
-startViewingReport(); // P21(D4): 초점 노드는 저절로 잠재우지 않는다
+function boot() {
+  fontsReady.then(() => root.render(<ReactFlowProvider><App /></ReactFlowProvider>));
+  api.connect();
+  startNotifier();
+  startViewingReport(); // P21(D4): 초점 노드는 저절로 잠재우지 않는다
+}
+// P48: 웹 화면은 짝을 맺은 뒤에 판에 붙는다
+if (isWeb) webGate().then(boot); else boot();

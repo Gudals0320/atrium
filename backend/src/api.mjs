@@ -3,23 +3,25 @@
 import { WebSocketServer } from 'ws';
 
 export class ApiServer {
-  constructor({ token, handlers, onClose, log }) {
-    this.token = token; this.handlers = handlers; this.onClose = onClose; this.log = log || (() => {});
+  // authorize(req): P48 연결 허락. { kind: 'local' }(판 API 토큰), { kind: 'device', device }(기기 토큰), null(막음). 없으면 판 API 토큰만 본다
+  constructor({ token, handlers, onClose, log, authorize }) {
+    this.token = token; this.handlers = handlers; this.onClose = onClose; this.log = log || (() => {}); this.authorize = authorize || null;
     this.wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
     this.clients = new Set();
-    this.wss.on('connection', (ws) => this._connection(ws));
+    this.wss.on('connection', (ws, req, auth) => this._connection(ws, auth));
   }
   // http 서버의 upgrade 이벤트에서 부른다
   handleUpgrade(req, socket, head) {
     const u = new URL(req.url, 'http://127.0.0.1');
-    if (u.pathname !== '/api' || u.searchParams.get('token') !== this.token) {
+    const auth = this.authorize ? this.authorize(req) : (u.pathname === '/api' && u.searchParams.get('token') === this.token ? { kind: 'local' } : null);
+    if (!auth) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return;
     }
-    this.wss.handleUpgrade(req, socket, head, (ws) => this.wss.emit('connection', ws, req));
+    this.wss.handleUpgrade(req, socket, head, (ws) => this.wss.emit('connection', ws, req, auth));
   }
-  _connection(ws) {
+  _connection(ws, auth) {
     const client = {
-      ws, subscribed: false,
+      ws, subscribed: false, auth: auth || { kind: 'local' }, // P48: 누가 붙었나. 기기면 auth.device = { id, name }
       sendEvent: (event, data) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ event, data })); },
     };
     this.clients.add(client);

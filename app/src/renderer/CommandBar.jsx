@@ -14,6 +14,8 @@ import { ThreadPanel, ThreadToggle } from './Thread.jsx';
 import { Icon, Mark } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
 import { inBand, bottomNext } from './lib/bottom.js'; // P43
+import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
+import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
 
 const FINAL = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']);
 const DONE_SHOW_MS = 6000, FAILED_SHOW_MS = 30000;
@@ -140,6 +142,21 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     }
   }
 
+  // P48: 웹 화면은 붙여 넣거나 끌어 놓은 파일을 백엔드로 올리고 그 PC 경로를 커서 자리에 넣는다
+  function uploadInto(files) {
+    const el = taRef.current;
+    const at = el ? [el.selectionStart, el.selectionEnd] : [text.length, text.length];
+    toast(t('upload.uploading', { n: files.length }));
+    uploadFiles(files).then((paths) => {
+      setText((cur) => {
+        const r = insertAt(cur, at[0], at[1], pathsText(paths));
+        requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(r.caret, r.caret); } });
+        return r.text;
+      });
+      toast(t('upload.done', { n: paths.length }));
+    }, (err) => toast(t('upload.failed', { error: err.message }), 'error'));
+  }
+
   // 명령 바 아래 칩: 아직 가는 중인 전달은 늘, 끝난 전달은 잠깐만(지난 기록은 Thread에 있다). 실패는 조금 더 오래 둔다
   const now = useTick(2000);
   const recent = [...deliveries.values()].filter((d) => !FINAL.has(d.status) || (d._at && now - d._at < (d.status === 'failed' || d.status === 'unconfirmed' ? FAILED_SHOW_MS : DONE_SHOW_MS))).slice(-6).reverse();
@@ -175,7 +192,10 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
         )}
         <Mark />
         <textarea ref={taRef} className="mt-cmd-input" rows={Math.min(6, text.split('\n').length)} value={text} placeholder={t('cmd.placeholder')} title={t('boardKeys.command')}
-          onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} spellCheck={false} data-role="command" />
+          onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} spellCheck={false} data-role="command"
+          onPaste={(e) => { const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }}
+          onDragOver={(e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+          onDrop={(e) => { const f = isWeb ? filesOf(e.dataTransfer) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }} />
         <ThreadToggle />
         <button className={`mt-cmd-send${text.trim() ? ' on' : ''}`} onClick={send} title={t('cmd.send')} data-action="send"><Icon name="arrowUp" /></button>
       </div>

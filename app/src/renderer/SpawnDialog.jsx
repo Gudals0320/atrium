@@ -104,7 +104,8 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
           </label>
           {L && <div className="mt-ln-preview mono" data-role="launcher-preview" title={previewLine(L.preview, t('launchers.shellPreview'))}>{previewLine(L.preview, t('launchers.shellPreview'))}{L.preview && L.preview.env && L.preview.env.length ? <span className="dim">  · {t('launchers.envShort')}: {L.preview.env.join(', ')}</span> : null}</div>}
         </>}
-        <label>{t('spawn.folder')}<input value={cwd} onChange={(e) => setCwd(e.target.value)} data-field="cwd" /></label>
+        {/* P48: 찾아보기. Electron 창은 OS 대화상자, 웹 화면은 PC 폴더 탐색기(window.mt.pickFolder) */}
+        <label>{t('spawn.folder')}<span className="mt-row-wide"><input value={cwd} onChange={(e) => setCwd(e.target.value)} data-field="cwd" /><button type="button" className="mt-btn" data-action="spawn-browse" onClick={async () => { try { const p = await window.mt.pickFolder(); if (p) setCwd(p); } catch {} }}>{t('workspaces.browse')}</button></span></label>
         {claude && trust && trust.needsTrust && <div className="mt-warn">{t('spawn.trustNeeded')}</div>}
         {claude && trust && trust.needsTrust === false && <div className="mt-ok">{t('spawn.trusted', { by: trust.trustedBy })}</div>}
         <div className="mt-row">
