@@ -10,6 +10,8 @@ import { isWeb } from './web.js';
 import { webLogout } from './lib/passkey.js'; // P56
 
 const when = (t) => (t ? new Date(t).toLocaleString() : '—');
+// P57: Tailscale 기기에 묶이지 않은 옛 바깥 기기(backend tailscale.mjs needsRepair와 같은 규칙)
+export const needsRepair = (d) => !!d && !(d.tsNode && d.tsNode.id) && d.origin !== 'local';
 
 function useDevices() {
   const [view, setView] = useState(null);
@@ -36,7 +38,11 @@ function Requests({ requests }) {
     <div className="mt-wdev-reqs" data-role="device-requests">
       {requests.map((r) => (
         <div key={r.id} className="mt-wdev-req" data-request={r.id}>
-          <span>{t('webDevices.request', { name: r.name })}</span>
+          {/* P57: Tailscale이 확인한 기기 이름을 크게, 브라우저가 보낸 이름은 별칭으로 작게 */}
+          <span className="mt-wdev-who">
+            <span data-role="request-node">{t('webDevices.request', { name: r.tsNode ? r.tsNode.name : r.name })}</span>
+            <span className="mt-wdev-sub dim" data-role="request-alias">{r.tsNode ? [t('webDevices.alias', { name: r.name }), r.tsNode.login && t('webDevices.tsLogin', { login: r.tsNode.login })].filter(Boolean).join(' · ') : t('webDevices.requestLocal')}</span>
+          </span>
           <span className="mt-wdev-check" data-role="request-check">{r.check}</span>
           <button type="button" className="mt-btn small primary" onClick={() => decide(r.id, true, t)} data-action="device-allow">{t('webDevices.allow')}</button>
           <button type="button" className="mt-btn small ghost" onClick={() => decide(r.id, false, t)} data-action="device-deny">{t('webDevices.deny')}</button>
@@ -86,9 +92,14 @@ export function DevicesTab() {
         {view && !view.devices.length && <div className="dim">{t('webDevices.none')}</div>}
         {view && view.devices.map((d) => (
           <div key={d.id} className={`mt-wdev-row${d.needsRepair ? ' repair' : ''}`} data-device={d.id} data-needs-repair={d.needsRepair ? '1' : undefined}>
-            <span className="mt-wdev-name">{d.name}{me && me.id === d.id ? <span className="mt-wdev-me"> {t('webDevices.thisBrowser')}</span> : null}</span>
-            {/* P56: 패스키 전에 토큰으로 짝 맺은 기기는 더 쓸 수 없다. 지우고 다시 짝 맺는다 */}
-            {d.needsRepair && <span className="mt-wdev-warn" title={t('webDevices.needsRepairHint')} data-role="needs-repair">{t('webDevices.needsRepair')}</span>}
+            <span className="mt-wdev-who">
+              <span className="mt-wdev-name" data-role="device-node">{d.tsNode ? d.tsNode.name || d.name : d.name}{me && me.id === d.id ? <span className="mt-wdev-me"> {t('webDevices.thisBrowser')}</span> : null}</span>
+              {/* P56: 패스키 전에 토큰으로 짝 맺은 기기, P57: Tailscale 기기에 묶이지 않은 기기는 더 쓸 수 없다. 지우고 다시 짝 맺는다.
+                  P57: Tailscale 기기에 묶인 기기는 브라우저 이름을 별칭으로, 이 PC 안 기기는 그렇게 적는다 */}
+              {d.needsRepair || needsRepair(d)
+                ? <span className="mt-wdev-sub mt-wdev-warn warn" title={t('webDevices.needsRepairHint')} data-role="needs-repair" data-bind="repair">{t('webDevices.needsRepair')}</span>
+                : <span className="mt-wdev-sub dim" data-role="device-bind" data-bind={d.tsNode ? 'tailscale' : 'local'}>{d.tsNode ? t('webDevices.alias', { name: d.name }) : t('webDevices.localOnly')}</span>}
+            </span>
             <span className="dim">{t('webDevices.paired', { at: when(d.createdAt) })}</span>
             <span className="dim">{t('webDevices.lastSeen', { at: when(d.lastSeenAt) })}</span>
             {d.sessions != null && !d.needsRepair && <span className="dim" data-role="device-sessions">{t('webDevices.sessions', { n: d.sessions })}</span>}

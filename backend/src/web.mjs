@@ -14,7 +14,7 @@ import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { BACKEND_ROOT, envVar } from './config.mjs';
-import { loginAllowed, parseLogins, isRemoteRequest, diagnose } from './tailscale.mjs'; // P49(R3)
+import { loginAllowed, parseLogins, isRemoteRequest, diagnose, requestAddr, nodeCheck, whoisMatch, needsRepair } from './tailscale.mjs'; // P49(R3), P57(기기 확인)
 import { WebAuth, sessionIdOf, sessionCookie, clearCookies, isHttpsOrigin } from './web-auth.mjs'; // P56(S2·S3)
 
 export const PAIR_CODE_TTL_MS = 5 * 60_000;
@@ -36,10 +36,25 @@ export const sha256 = (s) => crypto.createHash('sha256').update(String(s)).diges
 const safeEq = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 const clipName = (s, n = 40) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
 const apiErr = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
+// P57: 기기 기록에 둘 Tailscale 기기(바깥에서 짝 맺음) 또는 이 PC 안 표시
+const nodeRecord = (n) => (n && n.id ? { origin: 'tailscale', tsNode: { id: String(n.id), name: clipName(n.name, 80) || null, login: n.login ? String(n.login) : null } } : { origin: 'local' });
+const NODE_REPAIR = new Set(['not_bound', 'local_only', 'other_node', 'other_user']);
+const NODE_MSG = {
+  not_bound: 'this device was paired before devices were bound to a Tailscale device; pair it again',
+  local_only: 'this device was paired on this PC and can be used only on this PC',
+  other_node: 'this device was paired from a different Tailscale device',
+  other_user: 'this device was paired by a different Tailscale user',
+  login_mismatch: 'the Tailscale user does not match the requesting device',
+};
+// 기기 확인 실패: 묶인 기기와 다르면 401(브라우저가 토큰을 버리고 짝 맺기 화면으로), whois를 못 읽거나 맞지 않으면 403
+const nodeErr = (reason) => apiErr('tailscale_node', NODE_MSG[reason] || 'the requesting Tailscale device could not be verified', NODE_REPAIR.has(reason) ? 401 : 403);
+// 짝 맺기 요청을 보낸 곳과 토큰을 받으러 온 곳이 같은가(이 PC 안끼리, 같은 Tailscale 기기끼리)
+const sameNode = (a, b) => (a && a.id ? !!(b && b.id) && safeEq(a.id, b.id) : !(b && b.id));
 
 // ---------- 기기(P56: 패스키의 공개 키를 판 기록에 둔다) ----------
 // 옛 기기(P48~P55의 토큰 기기, hash만 있고 passkey가 없다)는 더 쓸 수 없다. 목록에 needsRepair로 보이고 PC에서 지운다
-export const devicePub = ({ hash, passkey, ...d }) => ({ ...d, needsRepair: !passkey, passkey: passkey ? { rpId: passkey.rpId, alg: passkey.alg, createdAt: passkey.createdAt, lastUsedAt: passkey.lastUsedAt || null, backupEligible: !!passkey.backupEligible } : null });
+// P57: 패스키가 있어도 Tailscale 기기 기록(origin)이 없으면 다시 짝 맺어야 한다(needsRepair, 막는 쪽)
+export const devicePub = ({ hash, passkey, ...d }) => ({ ...d, needsRepair: !passkey || needsRepair(d), passkey: passkey ? { rpId: passkey.rpId, alg: passkey.alg, createdAt: passkey.createdAt, lastUsedAt: passkey.lastUsedAt || null, backupEligible: !!passkey.backupEligible } : null });
 export class Devices {
   constructor({ store, now = Date.now }) { this.store = store; this.now = now; }
   all() { return this.store.getMeta(DEVICES_KEY) || []; }
@@ -47,7 +62,7 @@ export class Devices {
   // 화면에 보일 목록(해시와 공개 키는 빼고)
   list() { return this.all().map(devicePub); }
   get(id) { const d = this.all().find((x) => x.id === id); return d ? devicePub(d) : null; }
-  // extra: 다른 단계가 짝 맺기에서 더하는 필드(그대로 둔다)
+  // extra: 다른 단계가 짝 맺기에서 더하는 필드(그대로 둔다). P57: 등록 허가의 extra = nodeRecord(짝 맺은 Tailscale 기기) → origin, tsNode
   add({ name, via, userAgent, passkey, extra = {} }) {
     const d = { ...extra, id: crypto.randomUUID(), name: clipName(name) || 'Browser', via, userAgent: clipName(userAgent, 160), createdAt: this.now(), lastSeenAt: null, passkey };
     this.save([...this.all(), d]);
@@ -105,7 +120,8 @@ export class Pairing {
     }
     return null;
   }
-  redeem({ code, name, ip, userAgent, origin }) {
+  // P57: tsNode = 짝 맺기를 청한 Tailscale 기기(이 PC 안이면 null). 허가의 extra로 넘겨 패스키 등록 때 기기 기록에 넣는다
+  redeem({ code, name, ip, userAgent, origin, tsNode = null }) {
     const lim = this.limited(ip);
     if (lim) throw Object.assign(apiErr('rate_limited', 'too many pairing attempts', 429), { retryAfterMs: lim.retryAfterMs });
     const c = this.code;
@@ -116,7 +132,7 @@ export class Pairing {
       throw apiErr(c && c.expiresAt > this.now() ? 'bad_code' : 'no_code', 'the code is wrong or expired', 403);
     }
     this.code = null; // 한 번만
-    const r = this.grants.issue({ name: clipName(name) || 'Browser', via: 'code', userAgent: clipName(userAgent, 160), origin });
+    const r = this.grants.issue({ name: clipName(name) || 'Browser', via: 'code', userAgent: clipName(userAgent, 160), origin, extra: nodeRecord(tsNode) });
     this.onChange();
     return r;
   }
@@ -130,7 +146,7 @@ export class Pairing {
     if (this.code && this.code.expiresAt <= t) { this.code = null; changed = true; }
     if (changed) this.onChange();
   }
-  request({ name, ip, userAgent, origin }) {
+  request({ name, ip, userAgent, origin, tsNode = null }) {
     this.sweep();
     const t = this.now();
     this.requestTimes = this.requestTimes.filter((x) => t - x < PAIR_FAIL_WINDOW_MS);
@@ -141,25 +157,27 @@ export class Pairing {
     const secret = crypto.randomBytes(24).toString('base64url');
     // 짧은 확인 글자: PC 창과 브라우저에 같이 보여 맞는 기기인지 사람이 견준다
     const check = String(crypto.randomInt(0, 10_000)).padStart(4, '0');
-    this.requests.set(id, { id, secretHash: sha256(secret), name: clipName(name) || 'Browser', ip, userAgent: clipName(userAgent, 160), origin, createdAt: t, expiresAt: t + PAIR_REQUEST_TTL_MS, status: 'pending', check });
+    this.requests.set(id, { id, secretHash: sha256(secret), name: clipName(name) || 'Browser', ip, userAgent: clipName(userAgent, 160), origin, createdAt: t, expiresAt: t + PAIR_REQUEST_TTL_MS, status: 'pending', check, tsNode: tsNode && tsNode.id ? tsNode : null });
     this.onChange();
     return { requestId: id, secret, check, expiresAt: t + PAIR_REQUEST_TTL_MS };
   }
-  pending() { this.sweep(); return [...this.requests.values()].filter((r) => r.status === 'pending').map(({ id, name, ip, userAgent, createdAt, expiresAt, check }) => ({ id, name, ip, userAgent, createdAt, expiresAt, check })); }
+  pending() { this.sweep(); return [...this.requests.values()].filter((r) => r.status === 'pending').map(({ id, name, ip, userAgent, createdAt, expiresAt, check, tsNode }) => ({ id, name, ip, userAgent, createdAt, expiresAt, check, tsNode: tsNode ? { name: tsNode.name, login: tsNode.login } : null })); }
   decide(id, allow) {
     this.sweep();
     const r = this.requests.get(id);
     if (!r || r.status !== 'pending') throw apiErr('not_found', 'no such pending request', 404);
-    if (allow) { const x = this.grants.issue({ name: r.name, via: 'approve', userAgent: r.userAgent, origin: r.origin }); r.status = 'approved'; r.grant = x; }
+    if (allow) { const x = this.grants.issue({ name: r.name, via: 'approve', userAgent: r.userAgent, origin: r.origin, extra: nodeRecord(r.tsNode) }); r.status = 'approved'; r.grant = x; }
     else r.status = 'denied';
     this.onChange();
     return { status: r.status };
   }
   // 브라우저가 묻는다. 허락된 등록 허가는 한 번만 내준다
-  poll(id, secret) {
+  // P57: tsNode = 지금 묻는 Tailscale 기기(이 PC 안이면 null). 요청을 보낸 곳과 다르면 없는 요청처럼 다룬다
+  poll(id, secret, tsNode = null) {
     this.sweep();
     const r = this.requests.get(String(id || ''));
     if (!r || !safeEq(r.secretHash, sha256(secret || ''))) throw apiErr('not_found', 'no such request', 404);
+    if (!sameNode(r.tsNode, tsNode)) throw apiErr('not_found', 'no such request', 404);
     if (r.status === 'approved' && r.grant) { const g = r.grant; r.grant = null; r.status = 'taken'; return { status: 'approved', grant: g.grant, expiresAt: g.expiresAt }; }
     return { status: r.status === 'taken' ? 'expired' : r.status };
   }
@@ -341,7 +359,7 @@ export class WebServer {
   async remoteStatus({ fresh = false } = {}) {
     const ts = this.tailscale ? (fresh ? await this.tailscale.refresh() : this.tailscale.last) : { installed: false, disabled: true };
     const pol = this.policy();
-    return { ...diagnose(ts, { port: this.cfg.port, hosts: [...this.hosts], devices: this.devices.all().length, built: this.files.built(), sameUser: pol.sameUser, allowed: pol.allowed }), port: this.cfg.port, sameUser: pol.sameUser, allowed: pol.allowed };
+    return { ...diagnose(ts, { port: this.cfg.port, hosts: [...this.hosts], devices: this.devices.all().length, unbound: this.devices.all().filter(needsRepair).length, built: this.files.built(), sameUser: pol.sameUser, allowed: pol.allowed }), port: this.cfg.port, sameUser: pol.sameUser, allowed: pol.allowed };
   }
   url() { return `http://localhost:${this.cfg.port}/`; } // P56: 패스키는 IP 주소에서 쓰지 못한다(RP ID는 이름)
   status() { return { url: this.url(), built: this.files.built(), devices: this.devices.all().length, hosts: [...this.hosts] }; }
@@ -359,7 +377,31 @@ export class WebServer {
     for (const c of this.api.clients) if (c.subscribed && c.auth && c.auth.device) c.sendEvent('device.updated', { devices: v.devices });
   }
 
+  // P57: 바깥 요청이면 요청한 Tailscale 기기를 whois로 읽는다(주소마다 잠깐 기억). 이 PC 안 요청은 null. 못 읽으면 { ok: false }
+  async whoisOf(req) {
+    if (!isRemoteRequest(req, this.cfg.port)) return null;
+    const addr = requestAddr(req);
+    if (!addr) return { ok: false, reason: 'bad_addr' };
+    if (!this.tailscale || typeof this.tailscale.whois !== 'function') return { ok: false, reason: 'disabled' };
+    try { return await this.tailscale.whois(addr); } catch { return { ok: false, reason: 'whois_failed' }; }
+  }
+  // P57: 자격(P56 세션, 패스키 서명) 확인 다음의 기기 확인. 바깥 요청은 기록의 tsNode와 지금 요청한 기기가 같아야 한다. 막으면 까닭만 로그에 남긴다
+  async checkNode(req, device, what) {
+    const r = nodeCheck(req, device, await this.whoisOf(req), this.cfg.port);
+    if (!r.ok) this.log(`web ${what} refused: tailscale node ${r.reason} (device ${device.id})`);
+    return r;
+  }
+  // P57: 짝 맺기의 기기 확인. 바깥이면 whois가 맞아야 하고, 그 기기({ id, name, login })를 기록에 둔다. 이 PC 안이면 node: null
+  async pairNode(req, what) {
+    const w = await this.whoisOf(req);
+    if (w === null) return { ok: true, reason: null, node: null };
+    const m = whoisMatch(req, w);
+    if (!m.ok) this.log(`web ${what} refused: tailscale node ${m.reason}`);
+    return m;
+  }
+
   // WebSocket /api 연결 허락. 판 API 토큰(이 PC의 프로세스) 또는 P56 세션 쿠키(브라우저, 같은 출처). null이면 막는다
+  // P57: 바깥 기기 연결은 whois를 기다려야 하므로 약속(Promise)을 돌려준다(ApiServer.handleUpgrade가 기다린다)
   authorize(req, apiToken) {
     const u = new URL(req.url, 'http://127.0.0.1');
     if (u.pathname !== '/api') return null;
@@ -375,10 +417,16 @@ export class WebServer {
       const s = this.auth.sessions.check(sid);
       const d = s && this.devices.get(s.deviceId);
       if (!d || d.needsRepair) { this.log('web connect refused: no live session'); return null; }
-      this.auth.sessions.touch(s.hash);
-      this.devices.touch(d.id, true);
-      setImmediate(() => this.broadcastLocal()); // 마지막 접속을 PC 창 목록에
-      return { kind: 'device', device: { id: d.id, name: d.name }, session: s.hash, remote: isRemoteRequest(req, this.cfg.port), login: lg.login };
+      const remote = isRemoteRequest(req, this.cfg.port);
+      const accept = (node) => {
+        if (!this.auth.sessions.valid(s.hash)) return null; // whois를 기다리는 사이에 세션이 끝났으면
+        this.auth.sessions.touch(s.hash);
+        this.devices.touch(d.id, true);
+        setImmediate(() => this.broadcastLocal()); // 마지막 접속을 PC 창 목록에
+        return { kind: 'device', device: { id: d.id, name: d.name }, session: s.hash, remote, login: lg.login, ...(node ? { tsNode: { id: node.id, name: node.name } } : {}) };
+      };
+      if (!remote) return accept(null);
+      return this.checkNode(req, d, 'connect').then((r) => (r.ok ? accept(r.node) : null), () => null); // P57: 자격(세션) 확인 다음에 기기 확인
     }
     return null;
   }
@@ -397,7 +445,9 @@ export class WebServer {
   sessionOf(req) {
     const s = this.auth.sessions.check(sessionIdOf(req, this.cfg.port));
     const d = s && this.devices.get(s.deviceId);
-    if (!d || d.needsRepair) throw apiErr('login_required', 'sign in with the passkey', 401);
+    if (!d) throw apiErr('login_required', 'sign in with the passkey', 401);
+    // 다시 짝 맺어야 하는 기기는 다시 확인해도 소용없다(다시 확인 ↔ 거부 고리를 만들지 않게 짝 맺기 화면으로)
+    if (d.needsRepair) throw nodeErr('not_bound');
     return { device: d, session: s };
   }
   // 기기를 끊으면 그 기기의 연결을 곧바로 닫는다(4401)
@@ -433,6 +483,18 @@ export class WebServer {
       this.broadcastLocal();
       send(200, { device: r.device, expiresAt: r.session.expiresAt }, { 'set-cookie': sessionCookie({ port: this.cfg.port, id: r.session.id, secure: isHttpsOrigin(req.headers.origin), maxAgeSec: r.session.maxAgeMs / 1000 }) });
     };
+    // P56 세션 다음에 P57 기기 확인. 묶인 기기와 다르면(다른 기기, 이 PC 안 기기, 옛 기기) 401로 다시 짝 맺게, whois를 못 읽으면 403
+    const device = async () => {
+      const { device: d } = this.sessionOf(req);
+      const r = await this.checkNode(req, d, p); if (!r.ok) throw nodeErr(r.reason);
+      return d;
+    };
+    // P57: 짝 맺기·패스키 등록·로그인을 청한 곳. 바깥이면 whois가 맞아야 하고 그 Tailscale 기기를, 이 PC 안이면 null을 돌려준다
+    const paired = async () => { const r = await this.pairNode(req, p); if (!r.ok) throw nodeErr(r.reason); return r.node; };
+    // P57: 등록 허가는 그 허가를 받은 곳(같은 Tailscale 기기, 또는 이 PC 안끼리)에서만 쓴다
+    const grantHere = (node) => (g) => sameNode(g.extra && g.extra.tsNode, node);
+    // P57: 패스키 서명을 확인한 기기가 지금 요청한 Tailscale 기기에 묶여 있어야 세션을 만든다
+    const boundHere = (w) => (d) => { if (devicePub(d).needsRepair) throw nodeErr('not_bound'); const r = nodeCheck(req, d, w, this.cfg.port); if (!r.ok) { this.log(`web ${p} refused: tailscale node ${r.reason} (device ${d.id})`); throw nodeErr(r.reason); } };
     const body = (max = 16 * 1024) => new Promise((resolve, reject) => {
       const chunks = []; let n = 0;
       req.on('data', (d) => { n += d.length; if (n <= max) chunks.push(d); });
@@ -441,22 +503,22 @@ export class WebServer {
     });
     (async () => {
       try {
-        if (p === '/web/me' && req.method === 'GET') { const { device: d } = this.sessionOf(req); this.devices.touch(d.id); return send(200, this.boot({ id: d.id, name: d.name })); }
-        if (p === '/web/pair/code' && req.method === 'POST') { const o = origin(); const b = await body(); const r = this.pairing.redeem({ code: String(b.code || ''), name: b.name, ip, userAgent: ua, origin: o }); this.log('web pairing code accepted, waiting for the passkey'); return send(200, r); }
-        if (p === '/web/pair/request' && req.method === 'POST') { const o = origin(); const b = await body(); const r = this.pairing.request({ name: b.name, ip, userAgent: ua, origin: o }); this.log(`web pair request ${r.requestId}`); return send(200, r); }
-        if (p === '/web/pair/poll' && req.method === 'GET') return send(200, this.pairing.poll(url.searchParams.get('id'), url.searchParams.get('secret')));
-        // P56: 패스키 등록(짝 맺기의 허가로 한 번)과 로그인, 로그아웃
-        if (p === '/web/passkey/register/options' && req.method === 'POST') { const o = origin(); const b = await body(); return send(200, this.auth.registerOptions({ grant: b.grant, origin: o })); }
-        if (p === '/web/passkey/register' && req.method === 'POST') { const o = origin(); const b = await body(64 * 1024); return login(this.auth.register({ grant: b.grant, credential: b.credential, origin: o }), 'paired with a passkey'); }
-        if (p === '/web/passkey/login/options' && req.method === 'POST') { const o = origin(); const b = await body(); return send(200, this.auth.loginOptions({ credentialId: b.credentialId, origin: o })); }
-        if (p === '/web/passkey/login' && req.method === 'POST') { const o = origin(); const b = await body(64 * 1024); return login(this.auth.login({ credential: b.credential, origin: o }), 'signed in with the passkey'); }
+        if (p === '/web/me' && req.method === 'GET') { const d = await device(); this.devices.touch(d.id); return send(200, this.boot({ id: d.id, name: d.name })); }
+        if (p === '/web/pair/code' && req.method === 'POST') { const o = origin(); const tsNode = await paired(); const b = await body(); const r = this.pairing.redeem({ code: String(b.code || ''), name: b.name, ip, userAgent: ua, origin: o, tsNode }); this.log('web pairing code accepted, waiting for the passkey'); return send(200, r); }
+        if (p === '/web/pair/request' && req.method === 'POST') { const o = origin(); const tsNode = await paired(); const b = await body(); const r = this.pairing.request({ name: b.name, ip, userAgent: ua, origin: o, tsNode }); this.log(`web pair request ${r.requestId}`); return send(200, r); }
+        if (p === '/web/pair/poll' && req.method === 'GET') { const tsNode = await paired(); return send(200, this.pairing.poll(url.searchParams.get('id'), url.searchParams.get('secret'), tsNode)); }
+        // P56: 패스키 등록(짝 맺기의 허가로 한 번)과 로그인, 로그아웃. P57: 등록은 허가를 받은 곳에서만, 로그인은 묶인 Tailscale 기기에서만
+        if (p === '/web/passkey/register/options' && req.method === 'POST') { const o = origin(); const node = await paired(); const b = await body(); return send(200, this.auth.registerOptions({ grant: b.grant, origin: o, allow: grantHere(node) })); }
+        if (p === '/web/passkey/register' && req.method === 'POST') { const o = origin(); const node = await paired(); const b = await body(64 * 1024); return login(this.auth.register({ grant: b.grant, credential: b.credential, origin: o, allow: grantHere(node) }), 'paired with a passkey'); }
+        if (p === '/web/passkey/login/options' && req.method === 'POST') { const o = origin(); await paired(); const b = await body(); return send(200, this.auth.loginOptions({ credentialId: b.credentialId, origin: o })); }
+        if (p === '/web/passkey/login' && req.method === 'POST') { const o = origin(); await paired(); const w = await this.whoisOf(req); const b = await body(64 * 1024); return login(this.auth.login({ credential: b.credential, origin: o, check: boundHere(w) }), 'signed in with the passkey'); }
         if (p === '/web/logout' && req.method === 'POST') {
           origin();
           const s = this.auth.sessions.check(sessionIdOf(req, this.cfg.port));
           if (s) { this.auth.sessions.end(s.hash); this.closeSession((h) => h === s.hash, 'signed out'); }
           return send(200, { ok: true }, { 'set-cookie': clearCookies(this.cfg.port) });
         }
-        if (p === '/web/upload' && req.method === 'POST') { this.sessionOf(req); return this.upload(req, url, send, fail); }
+        if (p === '/web/upload' && req.method === 'POST') { await device(); return this.upload(req, url, send, fail); }
         return send(404, { error: { code: 'not_found', message: p } });
       } catch (e) { fail(e); }
     })();

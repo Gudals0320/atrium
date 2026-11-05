@@ -14,11 +14,14 @@ import { verifyRegistration, verifyAssertion, creationOptions, requestOptions, C
 import { WebAuth, Grants, WebSessions, rpIdOf, sessionCookie, sessionIdOf, cookieName, GRANT_TTL_MS, GRANT_MAX_TRIES } from '../src/web-auth.mjs';
 import { normalizePatch, DEFAULTS } from '../src/settings.mjs';
 import { FakeAuthenticator, cbor, raw, cookieOf, pairAndRegister, registerWithGrant, loginWith } from './fake-authenticator.mjs';
+import { TailscaleWatch } from '../src/tailscale.mjs';
+import { fakeWhois } from '../../app/test/e2e/p49-fake-tailscale.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p56-'));
 const clock = (t0 = 1_700_000_000_000) => { const c = { t: t0, now: () => c.t }; return c; };
 const ORIGIN = 'http://localhost:47875';
 const RP = 'localhost';
+const LOCAL_NODE = { origin: 'local' }; // P59: 짝 맺기가 허가의 extra로 넘기는 P57 기기 기록(이 PC 안에서 짝 맺음)
 const code = (fn) => { try { fn(); } catch (e) { return e.code; } return 'passed'; };
 
 test('등록과 로그인: ES256과 RS256 가짜 인증기, 서버는 공개 키·signCount·RP ID를 둔다', () => {
@@ -134,7 +137,7 @@ test('등록 허가와 세션: 허가는 한 번만·같은 출처·만료, 세�
   let connected = new Set();
   const lim = { maxAgeMs: undefined, idleMs: undefined };
   const auth = new WebAuth({ store, devices, now: c.now, limits: () => lim, connected: (h) => connected.has(h) });
-  const g = auth.grants.issue({ name: 'laptop', via: 'code', userAgent: 'UA', origin: ORIGIN });
+  const g = auth.grants.issue({ name: 'laptop', via: 'code', userAgent: 'UA', origin: ORIGIN, extra: LOCAL_NODE });
   // 다른 출처에서는 등록하지 못한다
   assert.throws(() => auth.registerOptions({ grant: g.grant, origin: 'http://localhost:47800' }), (e) => e.code === 'bad_origin');
   assert.throws(() => auth.registerOptions({ grant: 'nope', origin: ORIGIN }), (e) => e.code === 'bad_grant');
@@ -148,18 +151,18 @@ test('등록 허가와 세션: 허가는 한 번만·같은 출처·만료, 세�
   assert.ok(saved.includes(sha256hex(r.session.id)));
   assert.equal(auth.sessions.check(r.session.id).deviceId, r.device.id);
   // 같은 패스키를 두 번 등록하지 못한다
-  const g2 = auth.grants.issue({ name: 'again', via: 'code', origin: ORIGIN });
+  const g2 = auth.grants.issue({ name: 'again', via: 'code', origin: ORIGIN, extra: LOCAL_NODE });
   const o2 = auth.registerOptions({ grant: g2.grant, origin: ORIGIN }).options;
   assert.throws(() => auth.register({ grant: g2.grant, credential: a.create(o2, { origin: ORIGIN }), origin: ORIGIN }), (e) => e.code === 'duplicate_credential');
   // 틀린 등록이 GRANT_MAX_TRIES번이면 허가를 버린다
-  const g3 = auth.grants.issue({ name: 'z', via: 'code', origin: ORIGIN });
+  const g3 = auth.grants.issue({ name: 'z', via: 'code', origin: ORIGIN, extra: LOCAL_NODE });
   for (let i = 0; i < GRANT_MAX_TRIES; i++) {
     const oo = auth.registerOptions({ grant: g3.grant, origin: ORIGIN }).options;
     assert.throws(() => auth.register({ grant: g3.grant, credential: new FakeAuthenticator().create(oo, { origin: ORIGIN, uv: false }), origin: ORIGIN }), (e) => e.code === 'no_user_verification');
   }
   assert.equal(auth.grants.peek(g3.grant), null);
   // 만료된 허가
-  const g4 = auth.grants.issue({ name: 'late', via: 'code', origin: ORIGIN });
+  const g4 = auth.grants.issue({ name: 'late', via: 'code', origin: ORIGIN, extra: LOCAL_NODE });
   c.t += GRANT_TTL_MS + 1;
   assert.throws(() => auth.registerOptions({ grant: g4.grant, origin: ORIGIN }), (e) => e.code === 'bad_grant');
   // 로그인: 챌린지 재사용과 만료
@@ -207,7 +210,7 @@ test('등록 허가와 세션: 허가는 한 번만·같은 출처·만료, 세�
   assert.equal(auth.sessions.check(s5.id), null);
   assert.equal(auth.loginOptions({ credentialId: a.id, origin: ORIGIN }).status, 'unpaired', '짝 푼 기기는 짝 맺기 화면으로');
   // 백엔드를 다시 켜면 세션은 남고 끊긴 시간은 그때부터
-  const g5 = auth.grants.issue({ name: 'b', via: 'code', origin: ORIGIN }); const b2 = new FakeAuthenticator();
+  const g5 = auth.grants.issue({ name: 'b', via: 'code', origin: ORIGIN, extra: LOCAL_NODE }); const b2 = new FakeAuthenticator();
   const r5 = auth.register({ grant: g5.grant, credential: b2.create(auth.registerOptions({ grant: g5.grant, origin: ORIGIN }).options, { origin: ORIGIN }), origin: ORIGIN });
   c.t += 20 * 60_000;
   const again = new WebSessions({ store, now: c.now, connected: () => false });
@@ -224,7 +227,15 @@ test('설정: remoteSessionHours 기본 12(1~168), remoteIdleMinutes 기본 30(5
 });
 
 // ---------- 진짜 HTTP·WebSocket 서버로 ----------
-async function boot({ c = clock(), hosts = '' } = {}) {
+// P59: ts = 가짜 Tailscale(serve 흉내). P57부터 이 PC 밖 Host의 기기 요청은 whois로 기기를 확인하므로, https 앞단은 serve를 흉내 낸다
+const fakeTs = (port) => new TailscaleWatch({ port, bin: 'tailscale', run: async (bin, args) => {
+  const a = args.join(' ');
+  if (a === 'status --json') return JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'pc.example.ts.net.', UserID: 1 }, User: { 1: { LoginName: 'me@example.com' } }, CurrentTailnet: { MagicDNSEnabled: true }, CertDomains: ['pc.example.ts.net'] });
+  if (a === 'serve status --json') return JSON.stringify({ Web: { 'pc.example.ts.net:443': { Handlers: { '/': { Proxy: `http://127.0.0.1:${port}` } } } } });
+  if (args[0] === 'whois') { const w = fakeWhois(args[2]); if (!w) throw new Error('no match'); return JSON.stringify(w); }
+  throw new Error('unexpected');
+} });
+async function boot({ c = clock(), hosts = '', ts = false } = {}) {
   const dir = tmp();
   const dist = path.join(dir, 'dist'); fs.mkdirSync(dist, { recursive: true });
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>Atrium</title>');
@@ -236,14 +247,16 @@ async function boot({ c = clock(), hosts = '' } = {}) {
   const port = srv.address().port;
   const st = {};
   const logs = [];
-  const web = new WebServer({ cfg: { port, dataDir: dir, profile: 'dev', herdrSession: 'atrium-dev-test' }, store, api: null, now: c.now, settings: () => st, log: (m) => logs.push(m) });
+  const tailscale = ts ? fakeTs(port) : null;
+  if (tailscale) await tailscale.refresh();
+  const web = new WebServer({ cfg: { port, dataDir: dir, profile: 'dev', herdrSession: 'atrium-dev-test' }, store, api: null, now: c.now, settings: () => st, log: (m) => logs.push(m), tailscale });
   delete process.env.ATRIUM_WEB_HOSTS;
   const apiToken = 'board-api-token-for-test';
   const api = new ApiServer({ token: apiToken, handlers: { ...web.handlers(), whoami: (p, cl) => ({ kind: cl.auth.kind, device: cl.auth.device || null }), 'events.subscribe': (p, cl) => { cl.subscribed = true; return {}; } }, authorize: (req) => web.authorize(req, apiToken), onClose: () => {} });
   web.api = api;
   srv.on('request', (req, res) => { if (!isLocalProcess(req, port) && req.url.startsWith('/hooks/')) { res.writeHead(403); return res.end(); } if (web.handleHttp(req, res)) return; res.writeHead(404); res.end(); });
   srv.on('upgrade', (req, s, h) => api.handleUpgrade(req, s, h));
-  const close = async () => { api.close(); web.stop(); await new Promise((r) => srv.close(r)); store.close(); delete process.env.ATRIUM_WEB_DIST; };
+  const close = async () => { api.close(); web.stop(); if (tailscale) tailscale.stop(); await new Promise((r) => srv.close(r)); store.close(); delete process.env.ATRIUM_WEB_DIST; };
   return { c, dir, port, web, api, apiToken, st, store, logs, close };
 }
 const wsOpen = (url, headers = {}) => new Promise((res) => {
@@ -379,8 +392,10 @@ test('HTTP: 세션 만료(12시간)와 끊긴 뒤 30분이면 연결이 4401로 
 });
 
 test('HTTP: https 출처(앞단 프록시)면 쿠키에 Secure와 __Host-', async () => {
-  const b = await boot({ hosts: 'pc.example.ts.net' });
-  const H = { host: 'pc.example.ts.net', origin: 'https://pc.example.ts.net' };
+  const b = await boot({ ts: true });
+  // serve가 넘기는 모양(Tailscale 사용자, 요청한 기기 주소 = 가짜 whois의 노트북 A)
+  const SERVE = { host: 'pc.example.ts.net', 'tailscale-user-login': 'me@example.com', 'x-forwarded-for': '100.64.0.2', 'x-forwarded-proto': 'https' };
+  const H = { ...SERVE, origin: 'https://pc.example.ts.net' };
   try {
     const local = await wsOpen(`ws://127.0.0.1:${b.port}/api?token=${b.apiToken}`);
     const pc = (await wsCall(local.ws, 'device.code')).result.code;
@@ -388,7 +403,7 @@ test('HTTP: https 출처(앞단 프록시)면 쿠키에 Secure와 __Host-', asyn
     assert.equal(reg.res.status, 200, JSON.stringify(reg.res.body));
     assert.equal(reg.options.rp.id, 'pc.example.ts.net');
     assert.match(reg.res.cookies[0], new RegExp(`^__Host-atrium_${b.port}=[^;]+; HttpOnly; SameSite=Strict; Path=/; Max-Age=\\d+; Secure$`));
-    assert.equal((await raw(b.port, '/web/me', { headers: { host: H.host, cookie: reg.cookie } })).status, 200);
+    assert.equal((await raw(b.port, '/web/me', { headers: { ...SERVE, cookie: reg.cookie } })).status, 200);
     // 다른 출처에서 만든 허가로는 등록하지 못한다(짝 맺은 페이지와 등록하는 페이지가 같아야)
     const pc2 = (await wsCall(local.ws, 'device.code')).result.code;
     const pr = await raw(b.port, '/web/pair/code', { method: 'POST', headers: { ...H, 'content-type': 'application/json' }, body: JSON.stringify({ code: pc2 }) });

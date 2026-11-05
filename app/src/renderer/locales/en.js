@@ -1576,9 +1576,14 @@ export default {
     revoked: 'Removed {name}',
     failed: 'Failed: {error}',
     needsRepair: 'needs pairing again',
-    needsRepairHint: 'Paired with a token before passkeys. It cannot connect any more. Remove it and pair the browser again.',
+    needsRepairHint: 'Paired before passkeys and Tailscale device binding. It cannot connect any more. Remove it and pair the browser again.',
     sessions: 'signed in: {n}',
     signOut: 'Sign out on this browser',
+    // P57: devices are bound to the Tailscale device they paired from
+    alias: 'browser name: {name}',
+    tsLogin: 'Tailscale user {login}',
+    localOnly: 'paired on this PC, works only on this PC',
+    requestLocal: 'on this PC',
   },
   // P49: remote access over Tailscale (reconnect banner, latency, diagnosis in the devices tab)
   remote: {
@@ -1630,6 +1635,9 @@ export default {
     check_devices_skip: 'Paired devices: unknown',
     check_users_ok: 'Only the same Tailscale user is accepted',
     check_users_warn: 'The Tailscale user check is off. Anyone on the tailnet can try to pair',
+    check_nodes_ok: 'Paired devices are bound to their Tailscale device',
+    check_nodes_warn: 'Paired devices are bound to their Tailscale device. {n} older device(s) are not bound and are blocked from outside; pair them again',
+    check_nodes_skip: 'Paired devices are bound to their Tailscale device',
   },
   // P49: installable web app
   pwa: {

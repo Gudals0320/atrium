@@ -1576,9 +1576,14 @@ export default {
     revoked: '{name}을(를) 끊었습니다.',
     failed: '실패했습니다: {error}',
     needsRepair: '다시 짝 맺기 필요',
-    needsRepairHint: '패스키 전에 토큰으로 짝 맺은 기기입니다. 더 연결할 수 없습니다. 지우고 그 브라우저에서 다시 짝을 맺습니다.',
+    needsRepairHint: '패스키와 Tailscale 기기 묶기 전에 짝 맺은 기기입니다. 더 연결할 수 없습니다. 지우고 그 브라우저에서 다시 짝을 맺습니다.',
     sessions: '로그인 {n}',
     signOut: '이 브라우저에서 로그아웃',
+    // P57: 기기는 짝 맺은 Tailscale 기기에 묶인다
+    alias: '브라우저 이름: {name}',
+    tsLogin: 'Tailscale 사용자 {login}',
+    localOnly: '이 PC에서 짝 맺음, 이 PC 안에서만 씁니다',
+    requestLocal: '이 PC 안',
   },
   // P49: Tailscale 원격 접속(다시 연결 띠, 왕복 지연, 연결된 기기 탭의 진단)
   remote: {
@@ -1630,6 +1635,9 @@ export default {
     check_devices_skip: '짝 맺은 기기: 알 수 없음',
     check_users_ok: '같은 Tailscale 사용자만 받습니다',
     check_users_warn: 'Tailscale 사용자 확인이 꺼져 있습니다. tailnet의 누구든 짝 맺기를 시도할 수 있습니다',
+    check_nodes_ok: '짝 맺은 기기는 Tailscale 기기에 묶입니다',
+    check_nodes_warn: '짝 맺은 기기는 Tailscale 기기에 묶입니다. 묶이지 않은 옛 기기 {n}대는 바깥에서 막힙니다. 다시 짝 맺습니다',
+    check_nodes_skip: '짝 맺은 기기는 Tailscale 기기에 묶입니다',
   },
   // P49: 설치형 웹 앱
   pwa: {

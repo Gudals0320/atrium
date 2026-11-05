@@ -1182,6 +1182,11 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 .mt-wdev-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center; padding: 6px 8px; border-radius: 8px; background: var(--field-bg); font-size: 12.5px; }
 .mt-wdev-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-wdev-me { color: var(--accent-text); font-weight: 500; }
+/* P57: Tailscale 기기 이름(크게)과 별칭·묶임 상태(작게) */
+.mt-wdev-who { display: grid; gap: 1px; min-width: 0; }
+.mt-wdev-req .mt-wdev-who > span:first-child { font-weight: 600; }
+.mt-wdev-sub { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-wdev-sub.warn { color: var(--warn); }
 .mt-wdev-reqs { display: grid; gap: 6px; }
 .mt-wdev-req { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
 .mt-wdev-check { font: 700 16px/1 var(--mono, monospace); letter-spacing: .2em; color: var(--accent-text); }

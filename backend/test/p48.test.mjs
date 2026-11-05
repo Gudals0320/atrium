@@ -25,7 +25,7 @@ function storeIn(dir) { return new Store(path.join(dir, 'board.db')); }
 test('기기: P56부터 패스키(공개 키)를 두고, 목록에는 공개 키를 싣지 않으며, credential ID로 찾고 끊는다', () => {
   const dir = tmp(); const store = storeIn(dir);
   const d = new Devices({ store });
-  const device = d.add({ name: '  laptop\n chrome ', via: 'code', userAgent: 'UA', passkey: { credId: 'cred-1', publicKey: { kty: 'EC' }, alg: -7, signCount: 0, rpId: 'localhost' } });
+  const device = d.add({ name: '  laptop\n chrome ', via: 'code', userAgent: 'UA', passkey: { credId: 'cred-1', publicKey: { kty: 'EC' }, alg: -7, signCount: 0, rpId: 'localhost' }, extra: { origin: 'local' } }); // P59: P57 기기 기록(이 PC 안)
   assert.equal(device.name, 'laptop chrome');
   assert.equal(d.byCred('cred-1').id, device.id);
   assert.equal(d.byCred('cred-2'), null);
@@ -264,7 +264,7 @@ test('업로드: 기기만, 데이터 폴더 uploads/에 저장하고 PC 경로�
   const b = await boot();
   const origin = b.base;
   try {
-    const d = b.web.devices.add({ name: 't', via: 'code', passkey: { credId: 'c', rpId: 'localhost' } });
+    const d = b.web.devices.add({ name: 't', via: 'code', passkey: { credId: 'c', rpId: 'localhost' }, extra: { origin: 'local' } });
     const cookie = `atrium_${b.port}=${b.web.auth.sessions.create(d.id).id}`; // P56: 세션 쿠키
     assert.equal((await req(b.base, '/web/upload?name=a.png', { method: 'POST', headers: { origin }, body: 'x' })).status, 401);
     const r = await req(b.base, '/web/upload?name=' + encodeURIComponent('../../스크린 샷.png'), { method: 'POST', headers: { origin, cookie, 'content-type': 'image/png' }, body: Buffer.from([1, 2, 3]) });

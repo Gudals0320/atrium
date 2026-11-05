@@ -148,20 +148,22 @@ export class WebAuth {
     this.sessions = new WebSessions({ store, now, limits, connected });
   }
   sweep() { this.grants.sweep(); this.challenges.sweep(); return this.sessions.prune(); }
-  grantOf(grant, origin) {
+  // allow(g): 허가를 받은 곳에서 왔는가(P57: 같은 Tailscale 기기, 또는 이 PC 안끼리). 아니면 허가를 버린다(막는 쪽)
+  grantOf(grant, origin, allow = null) {
     const g = this.grants.peek(grant);
     if (!g) throw err('bad_grant', 'the pairing has expired or was used. Pair again', 403);
     if (g.origin !== origin) throw err('bad_origin', 'register the passkey in the browser that paired', 403);
+    if (allow && !allow(g)) { this.grants.drop(g); throw err('grant_node', 'register the passkey on the device that paired. Pair again', 403); }
     return g;
   }
-  registerOptions({ grant, origin }) {
-    const g = this.grantOf(grant, origin);
+  registerOptions({ grant, origin, allow = null }) {
+    const g = this.grantOf(grant, origin, allow);
     const rpId = rpIdOf(origin);
     const challenge = this.challenges.issue({ kind: 'reg', grantHash: g.hash, origin, rpId });
     return { options: creationOptions({ rpId, challenge, userId: g.userId, name: g.name }), expiresAt: g.expiresAt };
   }
-  register({ grant, credential, origin }) {
-    const g = this.grantOf(grant, origin);
+  register({ grant, credential, origin, allow = null }) {
+    const g = this.grantOf(grant, origin, allow);
     const ch = this.challenges.take(challengeOf(credential));
     try {
       if (!ch || ch.kind !== 'reg' || ch.grantHash !== g.hash || ch.origin !== origin) throw new PasskeyError('bad_challenge', 'the challenge is unknown, used or expired');
@@ -188,12 +190,14 @@ export class WebAuth {
     const challenge = this.challenges.issue({ kind: 'login', origin, rpId });
     return { status: 'ok', options: requestOptions({ rpId, challenge, credIds: ids }) };
   }
-  login({ credential, origin }) {
+  // check(device): 서명을 확인한 기기를 받을지(P57: 지금 요청한 Tailscale 기기에 묶였는가). 던지면 세션을 만들지 않는다
+  login({ credential, origin, check = null }) {
     const ch = this.challenges.take(challengeOf(credential));
     if (!ch || ch.kind !== 'login' || ch.origin !== origin) throw new PasskeyError('bad_challenge', 'the challenge is unknown, used or expired');
     const d = credential && typeof credential.id === 'string' ? this.devices.byCred(credential.id) : null;
     if (!d) throw Object.assign(new PasskeyError('unknown_credential', 'this passkey is not paired with the board'), { unpaired: true });
     const r = verifyAssertion(credential, d.passkey, { challenge: ch.challenge, origin, rpId: ch.rpId });
+    if (check) check(d);
     this.devices.setPasskey(d.id, { signCount: r.signCount, lastUsedAt: this.now() });
     const session = this.sessions.create(d.id);
     return { device: this.devices.get(d.id), session };
