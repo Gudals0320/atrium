@@ -34,6 +34,7 @@ export async function launch({ query = '', log = console.log, env = {} } = {}) {
   page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));
   if (query) await page.evaluate((q) => { location.search = q; }, query);
   await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 90000 });
+  await page.evaluate(() => window.__mt.pinBottom && window.__mt.pinBottom(true)); // P43: 아래 바를 늘 보이게(옛 창 시험은 바를 바로 누른다)
   const pid = await app.evaluate(({ app: a }) => process.pid);
   log(`창 열림 main pid=${pid}`);
   return { app, page, mainPid: pid };

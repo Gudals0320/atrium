@@ -51,6 +51,7 @@ async function open() {
   page = await app.firstWindow();
   page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));
   await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 90000 });
+  await page.evaluate(() => window.__mt.pinBottom && window.__mt.pinBottom(true)); // P43: 아래 바를 늘 보이게(이 시험은 바를 바로 누른다)
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1584, 921));
   await sleep(500);
 }

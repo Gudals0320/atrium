@@ -71,6 +71,7 @@ page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));
 page.on('console', (m) => { if (m.type() === 'error') log(`[console.error] ${m.text().slice(0, 300)}`); });
 try {
   await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 90000 });
+  await page.evaluate(() => window.__mt.pinBottom && window.__mt.pinBottom(true)); // P43: 아래 바를 늘 보이게(이 시험은 바를 바로 누른다)
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1584, 921));
   await call(page, 'settings.set', { key: 'language', value: 'ko' });
   await call(page, 'settings.set', { key: 'sleepAfterMin', value: 0 });
@@ -88,6 +89,7 @@ try {
   // board.setNode는 창에 알리지 않으므로 판을 다시 읽는다(창을 다시 불러온다)
   await page.reload();
   await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 90000 });
+  await page.evaluate(() => window.__mt.pinBottom && window.__mt.pinBottom(true)); // P43: 아래 바를 늘 보이게(이 시험은 바를 바로 누른다)
   await page.evaluate(() => window.__mt.getState().fitAll(0));
   for (const n of ['s1', 's2', 's3']) atrium('send', `@${n}`, `Remember this codeword for later: ${WORD[n]}. Reply with the single word OK.`, '--wait');
   for (const n of ['s1', 's2', 's3']) await until(async () => { const x = await sess(page, n); return x && x.state === 'ready' && x.lastAnswer && fs.existsSync(transcriptOf(x.id, n)); }, 120000, 500);

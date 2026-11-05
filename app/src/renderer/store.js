@@ -42,7 +42,7 @@ const state = {
   arranged: new Set(), // H7: 이 창에서 정리한 워크스페이스(되돌리기 단추)
   searchOpen: false, // H2: Ctrl+F
   bottomShown: false, // P43: 아래 바가 보인다(평소에는 숨는다)
-  bottomPin: false, // P43: 창 시험이 아래 바를 늘 보이게 고정한다
+  bottomPin: (() => { try { return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('mt.bottomPin') === '1'; } catch { return false; } })(), // P43: 창 시험이 아래 바를 늘 보이게 고정한다
   // P6c
   memos: new Map(), // memoId → { memoId, workspaceKey, x, y, w, h, text, color }
   kanbans: new Map(), // kanbanId → { kanbanId, workspaceKey, title, x, y, w, h, columns }
@@ -199,7 +199,8 @@ export function setDockLocal(id, f) { const d = state.docks.get(id); if (!d) ret
 export function setSearchOpen(v) { state.searchOpen = v; changed(); }
 // P43: 아래 바(명령 바·칩)가 보이는가(CommandBar가 정한다, 칩 줄이 따른다). bottomPin은 창 시험이 늘 보이게 고정하는 값
 export function setBottomShown(v) { if (state.bottomShown === !!v) return; state.bottomShown = !!v; changed(); }
-export function setBottomPin(v) { state.bottomPin = !!v; changed(); }
+// 고정은 창을 다시 읽어도(시험의 page.reload) 남게 sessionStorage에 둔다. 창을 닫으면 사라진다
+export function setBottomPin(v) { state.bottomPin = !!v; try { if (v) sessionStorage.setItem('mt.bottomPin', '1'); else sessionStorage.removeItem('mt.bottomPin'); } catch { /* 저장소를 못 쓰면 이 창에서만 */ } changed(); }
 export function markArranged(key, on) { state.arranged = new Set(state.arranged); if (on) state.arranged.add(key); else state.arranged.delete(key); changed(); }
 // H4: 노드를 눌러 들어갔다. 터미널이 붙기 전에 친 글은 모았다가 붙으면 넣는다(8초까지)
 export const PENDING_INPUT_MS = 8000;

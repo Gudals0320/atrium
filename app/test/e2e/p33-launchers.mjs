@@ -62,6 +62,7 @@ async function launchApp(dataDir) {
   const page = await app.firstWindow();
   page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));
   await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded && window.__mt.getState().launchers, null, { timeout: 90000 });
+  await page.evaluate(() => window.__mt.pinBottom && window.__mt.pinBottom(true)); // P43: 아래 바를 늘 보이게(이 시험은 바를 바로 누른다)
   return { app, page };
 }
 
