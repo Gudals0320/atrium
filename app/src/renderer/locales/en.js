@@ -783,8 +783,8 @@ export default {
     noTurn: 'No finished turn yet',
     shellHead: 'Shell (PowerShell) · {cwd}',
     running: 'Running: {cmd}',
-    promptLast: 'Prompt · last command: {cmd}',
-    prompt: 'Prompt',
+    promptLast: 'Waiting for command · last command: {cmd}',
+    prompt: 'Waiting for command',
     procs: 'Processes: {list}',
     shellHint: 'The command bar does not send here. Zoom in and type in the terminal',
     empty: 'No conversation yet',
@@ -1085,7 +1085,7 @@ export default {
     closeFail: 'Close: {error}',
     claudeAdopted: 'claude (adopted)',
     shellLast: 'Last: {cmd}',
-    shellPrompt: 'Prompt',
+    shellPrompt: 'Waiting for command',
   },
   returnSummary: {
     manual: { one: 'Changes in the last {n} minute', other: 'Changes in the last {n} minutes' },
@@ -1601,5 +1601,9 @@ export default {
   // P49: installable web app
   pwa: {
     install: 'Install app',
+  },
+  // P53 (#10): label of the backend restart row in Changes (split from the herdr row)
+  changeSys: {
+    backend: 'Backend',
   },
 };

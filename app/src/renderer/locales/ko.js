@@ -1602,4 +1602,8 @@ export default {
   pwa: {
     install: '앱 설치',
   },
+  // P53(#10): 변경 내역의 백엔드 재시작 줄 이름표(herdr 줄과 나눔)
+  changeSys: {
+    backend: '앱 연결 서비스',
+  },
 };

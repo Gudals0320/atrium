@@ -38,6 +38,6 @@ export function awayLongEnough(seenAt, now = Date.now(), awayMs = DEFAULT_AWAY_M
   return !!seenAt && now - seenAt >= awayMs;
 }
 
-const CHANGE_KEYS = ['needs_you', 'error', 'interrupted', 'exited', 'turn_done', 'herdr'];
+const CHANGE_KEYS = { needs_you: 'change.needs_you', error: 'change.error', interrupted: 'change.interrupted', exited: 'change.exited', turn_done: 'change.turn_done', herdr: 'change.herdr', backend: 'changeSys.backend' }; // P53: backend 줄
 // 그때의 언어로 찾는다(CHANGE_LABEL[kind], P16)
-export const CHANGE_LABEL = new Proxy({}, { get: (_, k) => (typeof k === 'string' && CHANGE_KEYS.includes(k) ? t(`change.${k}`) : undefined) });
+export const CHANGE_LABEL = new Proxy({}, { get: (_, k) => (typeof k === 'string' && Object.hasOwn(CHANGE_KEYS, k) ? t(CHANGE_KEYS[k]) : undefined) });
