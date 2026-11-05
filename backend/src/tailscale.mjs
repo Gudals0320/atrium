@@ -29,7 +29,9 @@ export function tailscaleBin({ env = envVar('TAILSCALE'), platform = process.pla
 const READ_ONLY = new Set(['status --json', 'serve status --json']);
 export function runTailscale(bin, args) {
   if (!READ_ONLY.has(args.join(' '))) return Promise.reject(new Error(`not a read-only tailscale command: ${args.join(' ')}`));
-  return new Promise((res, rej) => execFile(bin, args, { timeout: RUN_TIMEOUT_MS, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (e, out, err) => {
+  // 시험: ATRIUM_TAILSCALE이 .mjs면 node로 부른다(가짜 tailscale, app/test/e2e/p49-fake-tailscale.mjs)
+  const [file, argv] = /\.m?js$/i.test(bin) ? [process.execPath, [bin, ...args]] : [bin, args];
+  return new Promise((res, rej) => execFile(file, argv, { timeout: RUN_TIMEOUT_MS, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (e, out, err) => {
     if (e) return rej(Object.assign(e, { stderr: String(err || '') }));
     res(String(out || ''));
   }));

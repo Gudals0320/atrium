@@ -95,6 +95,32 @@ powershell -ExecutionPolicy Bypass -File app\scripts\make-shortcut.ps1
 - 모든 것이 내 컴퓨터에서 돕니다. 창은 `127.0.0.1`의 백엔드와, 백엔드는 herdr와 이야기합니다.
 - 폴더 신뢰 확인("이 폴더의 파일을 신뢰합니까?")은 대신 수락하지 않고 사용자에게 남겨 둡니다. 에이전트가 Claude Code의 신뢰를 아직 받지 않은 저장소에 워크트리 워커를 띄우면, 그 워커의 세션 창에 신뢰 질문이 뜹니다.
 
+## 원격 접속(Tailscale)
+
+노트북 브라우저에서 [Tailscale](https://tailscale.com)로 이 판을 쓸 수 있습니다. 노트북은 PC 화면이 아니라 같은 판을 웹 페이지로 엽니다. 백엔드는 그대로 `127.0.0.1`에서만 받습니다. PC의 `tailscale serve`가 HTTPS를 끝내고 tailnet에서 온 요청을 판으로 넘깁니다.
+
+1. PC와 노트북에 Tailscale을 설치하고 두 곳 모두 같은 계정으로 로그인합니다.
+2. tailnet 관리 화면의 **DNS**에서 **MagicDNS**와 **HTTPS Certificates**를 켭니다. 이때 기기 이름과 tailnet 이름이 공개 인증서 기록(Certificate Transparency)에 남습니다.
+3. PC에서 확인하고 serve를 켭니다.
+
+   ```powershell
+   node backend\bin\atrium.mjs remote status
+   node backend\bin\atrium.mjs remote enable --yes
+   ```
+
+   `enable`은 `tailscale serve --bg --https=443 http://127.0.0.1:47800`을 실행합니다. `--yes`가 없으면 명령만 보입니다. https 443을 다른 서비스가 쓰고 있으면 멈추고 다른 포트를 알려 줍니다(`--https-port 8443`). `remote guide`는 이 단계를 보입니다.
+4. 노트북에서 `remote status`가 보이는 주소(예: `https://my-pc.example-tailnet.ts.net/`)를 엽니다.
+5. 브라우저와 짝을 맺습니다. PC 창의 **설정 › 연결된 기기**에서 **새 코드**를 누르고 노트북에 6자리 코드를 넣습니다. 노트북에서 허락을 청하고 PC에서 허락해도 됩니다. 같은 탭에 Tailscale 진단과 노트북 주소가 보입니다.
+6. 원하면 브라우저의 **앱 설치**로 판을 따로 된 창에서 엽니다.
+
+보안 주의:
+
+- 짝 맺은 브라우저는 PC의 Windows 사용자와 같은 권한입니다. 셸을 띄워 무엇이든 실행할 수 있습니다. 내 기기만 짝 맺습니다.
+- Tailscale로 온 요청은 PC에 로그인한 Tailscale 사용자의 것만 받습니다. 다른 로그인을 더하거나 확인을 끄는 것은 PC의 **설정 › 연결된 기기**에서 합니다.
+- Tailscale로 온 요청은 hook과 하위 세션 주소를 부를 수 없고, 판 API 토큰은 브라우저에 내주지 않습니다.
+- `tailscale funnel`은 쓰지 않습니다. funnel은 판을 인터넷에 공개합니다. funnel이 켜져 있으면 `remote status`가 알립니다.
+- 기기를 끊으려면 **설정 › 연결된 기기**에서 **끊기**를 누르거나 `node backend\bin\atrium.mjs devices rm <ID>`를 실행합니다. 원격 접속을 끄려면 `node backend\bin\atrium.mjs remote disable --yes`를 실행합니다.
+
 ## 구조
 
 ```mermaid
