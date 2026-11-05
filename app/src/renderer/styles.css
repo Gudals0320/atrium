@@ -1043,3 +1043,49 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 /* P43: 찾기 바는 위 가운데(위 알약 줄 아래)에 뜨고 결과는 아래로 펼친다 */
 .mt-search { top: 60px; bottom: auto; }
 .mt-search-list { max-height: min(50vh, calc(100vh - 200px)); }
+
+/* P46: 덩어리 안 연결 글. 배율 0.4보다 작을 때만 화살표 블록(lv-mini), 그 위로는 역할(lv-short), 0.8부터 @a → @b · 역할 · 상태(lv-full) */
+.mt-dl-arrowbox { display: inline-flex; flex: none; }
+.mt-dl-bridge:not(.lv-mini), .mt-dl-rlabel { max-width: var(--max); justify-content: flex-start; }
+.mt-dl-bridge:not(.lv-mini) .mt-dl-role { display: inline; }
+.mt-dl-bridge.vert { transform: translate(-50%, -50%) rotate(-90deg); } /* 세로 경계: 글을 세워 경계 폭만 차지한다 */
+.mt-dl-bridge.vert .mt-dl-arrowbox { transform: rotate(90deg); } /* 화살표는 실제 방향 그대로 */
+.mt-dl-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; line-height: 1.5; }
+.mt-dl-text > * { vertical-align: middle; }
+.mt-dl-text > * + * { margin-left: .4em; }
+.mt-dl-dir { color: var(--text-2); font-weight: 600; }
+.mt-dl-dir::after { content: " ·"; color: var(--dim); }
+.mt-dl-text .mt-dl-role { display: inline; }
+.mt-dl-text .mt-pill { font-size: .8em; height: 1.6em; }
+.mt-dl-text .mt-edge-tag { font-size: .82em; padding: 0 .45em; border-radius: .7em; }
+.mt-dl-live { display: inline-block; width: .5em; height: .5em; border-radius: 50%; background: var(--st-working); box-shadow: 0 0 0 .18em color-mix(in srgb, var(--st-working) 30%, transparent); animation: mt-dl-live 1.2s ease-in-out infinite; }
+@keyframes mt-dl-live { 50% { opacity: .35; } }
+/* 바깥 길 위 글: 선분 가운데의 알약(세로 선분이면 세운다) */
+.mt-dl-rlabel { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; display: inline-flex; align-items: center; height: 1.7em; padding: 0 .55em; border-radius: .85em; border: .12em solid var(--dl);
+  background: var(--chrome-bg); white-space: nowrap; cursor: pointer; box-shadow: 0 0 0 .1em var(--dl-casing); transition: opacity .15s; z-index: 1; }
+.mt-dl-rlabel { --dl: var(--st-ready); }
+.st-working.mt-dl-rlabel { --dl: var(--st-working); }
+:is(.st-waiting, .st-trust_wait).mt-dl-rlabel { --dl: var(--attn); }
+.st-error.mt-dl-rlabel { --dl: var(--st-error); }
+.st-review.mt-dl-rlabel { --dl: var(--st-review); }
+.mt-dl-rlabel.vert { transform: translate(-50%, -50%) rotate(-90deg); }
+.mt-dl-rlabel.dim { opacity: .3; }
+.mt-dl-rlabel.hot, .mt-dl-rlabel:hover { background: color-mix(in srgb, var(--dl) 22%, var(--chrome-bg)); }
+/* 칩도 같은 글을 이어 붙인다 */
+.mt-dl-chip:not(.lv-mini) { display: inline-flex; align-items: center; gap: .4em; max-width: var(--max); }
+.mt-dl-chipname { flex: none; }
+/* 마우스를 올리면 줄이지 않고 다 보인다(선을 따라 양쪽으로 늘어난다) */
+.mt-dl-bridge:not(.lv-mini):hover, .mt-dl-rlabel:hover, .mt-dl-chip:not(.lv-mini):hover { max-width: none; z-index: 4; }
+
+/* P46: 작업 관계도의 워크스페이스 무리(띠). 머리줄을 누르면 접고 펼친다 */
+.mt-mm-group { position: absolute; box-sizing: border-box; border: 1px solid var(--panel-line-2); border-radius: 12px; background: color-mix(in srgb, var(--panel) 45%, transparent); }
+.mt-mm-group.shut { background: var(--panel); }
+.mt-mm-ghead { position: absolute; left: 0; top: 0; right: 0; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: none; background: none; color: var(--text-2); font-size: 12.5px; cursor: pointer; text-align: left; border-radius: 12px 12px 0 0; }
+.mt-mm-ghead:hover { background: var(--panel-3); color: var(--text); }
+.mt-mm-gcaret { width: 12px; color: var(--dim); flex: none; }
+.mt-mm-gname { color: var(--text); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+.mt-mm-gcount { color: var(--dim); font-family: var(--font-mono); font-size: 11.5px; }
+.mt-mm-gneeds { color: var(--attn); font-weight: 700; font-size: 11.5px; padding: 0 7px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--attn) 55%, transparent); }
+.mt-mm-gloose { position: absolute; color: var(--dim); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.mt-mm-edge.cross path.line { stroke-width: 2.8; }
+.mt-mm-label.cross { border-style: dashed; }

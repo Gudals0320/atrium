@@ -72,6 +72,7 @@ function routeShape(O, d, sa, ca, pa, sb, cb, pb, cw) {
 // 덩어리 안 연결의 그릴 모양.
 // rects: { id: { x, y, w, h } }(같은 좌표계), links: [{ linkId, from, to }], opt: { gap(테두리에서 첫 차선까지), step(차선 사이) }
 // → { bridges: [{ linkId, from, to, x, y, axis, arrow }],
+//     (P46) bridges[].span: 그 다리가 쓸 수 있는 경계 길이(같은 쌍 여럿이면 나눈 몫)
 //     routes: [{ linkId, from, to, kind: 'bracket' | 'around', sides: [sa, sb], lane, points, d }],
 //     chips: [{ linkId, from, to, cell(칩이 붙는 칸), dir: 'in'(그 칸이 받는 쪽) | 'out' }] }
 export function dockRoutes(rects, links, { gap = 14, step = 10 } = {}) {
@@ -91,7 +92,7 @@ export function dockRoutes(rects, links, { gap = 14, step = 10 } = {}) {
   for (const list of pairs.values()) {
     list.forEach(({ l, e }, i) => {
       const along = e.lo + ((e.hi - e.lo) * (i + 1)) / (list.length + 1);
-      bridges.push({ linkId: l.linkId, from: l.from, to: l.to, axis: e.axis, arrow: e.arrow, x: e.axis === 'v' ? e.at : along, y: e.axis === 'v' ? along : e.at });
+      bridges.push({ linkId: l.linkId, from: l.from, to: l.to, axis: e.axis, arrow: e.arrow, x: e.axis === 'v' ? e.at : along, y: e.axis === 'v' ? along : e.at, span: (e.hi - e.lo) / list.length });
     });
   }
   // 2·3. 괄호와 둘레 길: 변 고르기(같은 변이 있으면 괄호), 방향(짧은 쪽)
@@ -173,6 +174,39 @@ export function arrowHead(points, size = 8) {
 export const ACTIVE_MS = 30 * 60 * 1000;
 export function linkActive(link, to, now = Date.now()) {
   return !!(link && to && to.state === 'working' && link.lastAt && now - link.lastAt < ACTIVE_MS && ['prompt', 'target_submitted', 'target_working'].includes(link.lastKind));
+}
+
+// ---------- P46: 배율별 모양 ----------
+// 아주 멀리서(작을 때)는 화살표만(mini), 그보다 가까우면 역할 이름(short), 가까우면 누가 누구에게 · 역할 · 받는 쪽 상태(full).
+// 글은 선을 따라 놓는다: 세로 경계·세로 바깥 선분 위에서는 글을 세워(90° 돌려) 경계 폭만큼만 차지하고 터미널 글을 덮지 않는다.
+export const DOCK_LABEL_ZOOM = { short: 0.4, full: 0.8 }; // 이 배율부터 그 모양
+export const DOCK_LABEL_MIN = { short: 44, full: 130 }; // 그 모양에 필요한 최소 자리(화면 px). 모자라면 한 단계 내린다
+export const DOCK_LABEL_MAX = 340; // 글 길이 상한(화면 px). 분할선을 잡을 자리를 남긴다
+export const dockLabelLevel = (zoom) => (zoom >= DOCK_LABEL_ZOOM.full ? 'full' : zoom >= DOCK_LABEL_ZOOM.short ? 'short' : 'mini');
+// zoom: 배율, room: 선을 따라 쓸 수 있는 길이(판 px) → { level, max(글 최대 길이, 판 px) }
+export function fitDockLabel(zoom, room) {
+  const order = ['mini', 'short', 'full'];
+  const want = dockLabelLevel(zoom);
+  const z = Math.max(zoom, 0.02);
+  const screen = Math.min(DOCK_LABEL_MAX, Math.max(0, room * z * 0.7)); // 자리의 70%까지(양쪽에 분할선 잡을 곳)
+  let i = order.indexOf(want);
+  while (i > 0 && screen < DOCK_LABEL_MIN[order[i]]) i--;
+  return { level: order[i], max: screen / z };
+}
+// 바깥 길(괄호·둘레 길) 위 글 자리: 가장 긴 바깥 선분의 가운데. → { x, y, len(선분 길이), vertical }
+export function labelSpot(points) {
+  let best = null;
+  for (let i = 1; i < points.length - 2; i++) {
+    const a = points[i], b = points[i + 1], len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!best || len > best.len) best = { len, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, vertical: Math.abs(b.x - a.x) < Math.abs(b.y - a.y) };
+  }
+  return best || { ...(points[0] || { x: 0, y: 0 }), len: 0, vertical: false };
+}
+// 글의 낱말들. names: 칸 id → 세션 이름, words: { spawned, directed }(사전의 말, Links.jsx 선 글과 같다)
+// → { role(사용자가 붙인 역할, 없으면 띄움·작업 요청), dir('@a → @b'), spawnTag(역할도 있고 띄우기도 했는가) }
+export function dockLabelParts(link, names, words) {
+  const role = link.role || (link.spawned && !link.observed ? words.spawned : words.directed);
+  return { role, dir: `@${names[link.from] || '?'} → @${names[link.to] || '?'}`, spawnTag: !!(link.role && link.spawned) };
 }
 
 // 연결 하나가 칸 id에 닿는가(강조할 때)

@@ -1373,4 +1373,20 @@ export default {
   termSelect: {
     copyFail: '클립보드에 복사하지 못했습니다.',
   },
+  // P46: 창 그룹 안 연결 글, 작업 관계도의 워크스페이스 묶음
+  dockLabel: {
+    active: '지금 작업을 주고받는 중',
+    activeTitle: '\n지금 작업을 주고받는 중입니다.',
+  },
+  mmapGroup: {
+    sessions: '세션 {n}개',
+    needs: '응답 필요 {n}',
+    noWorkspace: '워크스페이스 없음',
+    collapse: '접기',
+    expand: '펼치기',
+    toggleTitle: '클릭하면 이 워크스페이스의 세션을 접거나 펼칩니다. 접으면 오가는 선은 이름표로 모입니다.',
+    cross: '다른 워크스페이스',
+    crossTitle: '다른 워크스페이스의 세션에 맡긴 작업',
+    crossIn: '{name}에서 맡김',
+  },
 };

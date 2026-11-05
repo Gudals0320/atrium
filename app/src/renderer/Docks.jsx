@@ -19,7 +19,8 @@ import { dt } from './lib/dock-text.js';
 import { moveDivider, layout as layoutTree, minSize, dragEdge, moveJunction, evenDivider } from '../../../backend/src/dock-tree.mjs';
 import { bbox } from '../../../backend/src/canvas.mjs';
 import { useT, t, errText } from './lib/i18n.js';
-import { dockFocus, dockRoutes, roundedPath, arrowHead, linkActive, touches } from './lib/dock-links.js'; // P30: 다리·괄호·둘레 길
+import { dockFocus, dockRoutes, roundedPath, arrowHead, linkActive, touches, fitDockLabel, labelSpot, dockLabelParts } from './lib/dock-links.js'; // P30: 다리·괄호·둘레 길, P46: 배율별 글
+import { Pill } from './Links.jsx';
 
 export const HIT = 8; // 분할선·테두리를 잡는 폭(화면 px)
 const zoomSel = (s) => s.transform[2];
@@ -157,6 +158,9 @@ export const DockGrip = memo(DockGripInner);
 // - 둘레에 닿지 않는 칸이 낀 연결: 그 칸 머리줄 위 작은 칩(← 시킨 쪽, → 받는 쪽).
 // - 색은 받는 쪽 상태(선 이름표와 같다), 일이 오가면(Links.jsx와 같은 조건) 화살표가 흐른다. 누르면 오간 기록(LinkPanel).
 // - 덩어리 안 한 칸에 마우스를 올리거나 초점(고름 > 눌러 들어감)이 있으면 그 칸에 닿는 것만 진하게, 나머지는 옅게.
+// - P46: 배율이 0.4보다 작을 때만 화살표 블록(mini). 0.4부터 역할 이름(short), 0.8부터 @시킨 쪽 → @받는 쪽 · 역할 · 받는 쪽 상태 알약(full).
+//   글은 선을 따라 놓는다(세로 경계·세로 선분이면 세운다). 자리가 모자라면 한 단계 내리고, 그래도 넘치면 줄임표. 마우스를 올리면 다 펼친다.
+//   말과 모양은 덩어리 밖 선 글(Links.jsx)과 같다: 역할 이름, 띄움 꼬리표(mt-edge-tag), 상태 알약(Pill).
 const ARROW = { right: '→', left: '←', down: '↓', up: '↑' };
 const FLOW = { right: [1, 0], left: [-1, 0], down: [0, 1], up: [0, -1] };
 function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) {
@@ -194,26 +198,39 @@ function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) 
     return `st-${to ? to.state : 'exited'}${linkActive(l, to) ? ' active' : ''}${on === true ? ' hot' : on === false ? ' dim' : ''}${l.role ? ' role' : ''}`;
   };
   const nameOf = (id) => (sessions.get(id) || {}).name || '?';
-  const roleText = (l) => l.role || (l.spawned && !l.observed ? t('links.spawned') : t('docks.directed'));
+  const names = Object.fromEntries(Object.keys(rects).map((id) => [id, nameOf(id)]));
+  const words = { spawned: t('links.spawned'), directed: t('docks.directed') };
+  const roleText = (l) => dockLabelParts(l, names, words).role;
   const titleOf = (l) => {
     const to = sessions.get(l.to);
     return t('dockLinks.title', { a: nameOf(l.from), b: nameOf(l.to), role: t('dockLinks.role', { role: roleText(l) }) })
       + (to ? t('dockLinks.state', { b: to.name, state: STATE_LABEL[to.state] || to.state }) : '')
+      + (linkActive(l, to) ? t('dockLabel.activeTitle') : '')
       + (l.lastText ? t('docks.markLast', { text: l.lastText }) : '') + t('docks.markClick');
+  };
+  // P46: 펼친 글(short: 역할, full: @a → @b · 역할 · 상태). noDir: 칩처럼 앞에 이미 상대 이름이 있으면 방향 글을 뺀다
+  const body = (l, level, noDir = false) => {
+    if (level === 'mini') return <span className="mt-dl-role">{roleText(l)}</span>;
+    const p = dockLabelParts(l, names, words);
+    const to = sessions.get(l.to);
+    return (
+      <span className="mt-dl-text" data-role="dock-label">
+        {linkActive(l, to) && <i className="mt-dl-live" title={t('dockLabel.active')} />}
+        {p.spawnTag && <span className="mt-edge-tag">{t('links.spawned')}</span>}
+        {level === 'full' && !noDir && <span className="mt-dl-dir">{p.dir}</span>}
+        <span className="mt-dl-role">{p.role}</span>
+        {level === 'full' && to && <Pill s={to} />}
+      </span>
+    );
   };
   const open = (id) => (e) => { e.stopPropagation(); openDialog({ kind: 'link', linkId: id }); };
   const hov = (id) => ({ onMouseEnter: () => setHoverLink(id), onMouseLeave: () => setHoverLink((h) => (h === id ? null : h)) });
   const fs = Math.max(10, Math.min(160, 11 / z));
-  // 바깥 길 위 역할 글 자리: 가장 긴 바깥 선분의 가운데
-  const midOf = (pts) => {
-    let best = null;
-    for (let i = 1; i < pts.length - 2; i++) { const a = pts[i], b = pts[i + 1], len = Math.hypot(b.x - a.x, b.y - a.y); if (!best || len > best.len) best = { len, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
-    return best || pts[0];
-  };
   const tip = hoverLink && res.routes.find((r) => r.linkId === hoverLink);
-  const tipAt = tip && byId.get(tip.linkId) ? midOf(tip.points) : null;
+  const tipSpot = tip ? labelSpot(tip.points) : null;
+  const tipAt = tip && byId.get(tip.linkId) && fitDockLabel(zoom, tipSpot.len).level === 'mini' ? tipSpot : null; // 펼친 글이 있으면 따로 띄우지 않는다
   return (
-    <div className="mt-docklinks" data-role="dock-links" data-dock={dockId} data-focus={hot || undefined}>
+    <div className="mt-docklinks" data-role="dock-links" data-dock={dockId} data-focus={hot || undefined} data-level={fitDockLabel(zoom, 1e9).level}>
       <svg className="mt-docklinks-svg" width="100%" height="100%" style={{ overflow: 'visible' }}>
         {res.routes.map((r) => {
           const l = byId.get(r.linkId);
@@ -232,15 +249,31 @@ function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) 
           );
         })}
       </svg>
+      {/* P46: 바깥 길 위 글(가장 긴 바깥 선분 가운데, 그 선분 방향으로) */}
+      {res.routes.map((r) => {
+        const l = byId.get(r.linkId);
+        if (!l) return null;
+        const spot = labelSpot(r.points);
+        const fit = fitDockLabel(zoom, spot.len);
+        if (fit.level === 'mini') return null;
+        return (
+          <button key={`t:${r.linkId}`} className={`mt-dl-rlabel lv-${fit.level}${spot.vertical ? ' vert' : ''} ${look(l)} nodrag nopan`} data-link={r.linkId} data-kind="route-label" data-level={fit.level}
+            style={{ left: spot.x, top: spot.y, fontSize: fs, '--max': `${fit.max}px` }} title={titleOf(l)} onClick={open(r.linkId)} {...hov(r.linkId)}>
+            {body(l, fit.level)}
+          </button>
+        );
+      })}
       {res.bridges.map((b) => {
         const l = byId.get(b.linkId);
         if (!l) return null;
         const [fx, fy] = FLOW[b.arrow];
+        const fit = fitDockLabel(zoom, b.span);
+        const vert = b.axis === 'v' && fit.level !== 'mini';
         return (
-          <button key={b.linkId} className={`mt-dl-bridge axis-${b.axis} ${look(l)} nodrag nopan`} data-link={b.linkId} data-kind="bridge" data-arrow={b.arrow} data-from={l.from} data-to={l.to}
-            style={{ left: b.x, top: b.y, fontSize: fs, '--fx': fx, '--fy': fy }} title={titleOf(l)} onClick={open(b.linkId)} {...hov(b.linkId)}>
-            <span className="mt-dl-arrow">{ARROW[b.arrow]}</span>
-            <span className="mt-dl-role">{roleText(l)}</span>
+          <button key={b.linkId} className={`mt-dl-bridge axis-${b.axis} lv-${fit.level}${vert ? ' vert' : ''} ${look(l)} nodrag nopan`} data-link={b.linkId} data-kind="bridge" data-arrow={b.arrow} data-from={l.from} data-to={l.to} data-level={fit.level}
+            style={{ left: b.x, top: b.y, fontSize: fs, '--fx': fx, '--fy': fy, '--max': `${fit.max}px` }} title={titleOf(l)} onClick={open(b.linkId)} {...hov(b.linkId)}>
+            <span className="mt-dl-arrowbox"><span className="mt-dl-arrow">{ARROW[b.arrow]}</span></span>
+            {body(l, fit.level)}
           </button>
         );
       })}
@@ -248,11 +281,14 @@ function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) 
         const l = byId.get(c.linkId);
         const r = rects[c.cell];
         if (!l || !r) return null;
-        const i = res.chips.filter((x) => x.cell === c.cell).indexOf(c);
+        const mine = res.chips.filter((x) => x.cell === c.cell);
+        const i = mine.indexOf(c);
+        const fit = fitDockLabel(zoom, r.w / mine.length);
         return (
-          <button key={c.linkId} className={`mt-dl-chip ${look(l)} nodrag nopan`} data-link={c.linkId} data-kind="chip" data-cell={c.cell} data-dir={c.dir}
-            style={{ left: r.x + r.w / 2, top: r.y, fontSize: fs, '--i': i }} title={titleOf(l)} onClick={open(c.linkId)} {...hov(c.linkId)}>
-            {t(c.dir === 'in' ? 'dockLinks.chipIn' : 'dockLinks.chipOut', { name: nameOf(c.dir === 'in' ? l.from : l.to) })}
+          <button key={c.linkId} className={`mt-dl-chip lv-${fit.level} ${look(l)} nodrag nopan`} data-link={c.linkId} data-kind="chip" data-cell={c.cell} data-dir={c.dir} data-level={fit.level}
+            style={{ left: r.x + r.w / 2, top: r.y, fontSize: fs, '--i': i, '--max': `${fit.max}px` }} title={titleOf(l)} onClick={open(c.linkId)} {...hov(c.linkId)}>
+            <span className="mt-dl-chipname">{t(c.dir === 'in' ? 'dockLinks.chipIn' : 'dockLinks.chipOut', { name: nameOf(c.dir === 'in' ? l.from : l.to) })}</span>
+            {fit.level !== 'mini' && body(l, fit.level, true)}
           </button>
         );
       })}
