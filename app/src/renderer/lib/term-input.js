@@ -6,19 +6,38 @@ export const PASTE_END = '\x1b[201~';
 
 // 붙여넣기를 괄호 붙여넣기로 감싼다. 감싸지 않으면 줄마다 따로 제출된다(E4 2.5).
 // 줄바꿈은 터미널이 보내는 모양(CR)으로 맞춘다. 글 안의 감싸기 끝 표시는 지워 감싸기를 깨지 못하게 한다.
-export function wrapPaste(text) {
-  const body = String(text ?? '').replace(/\x1b\[20[01]~/g, '').replace(/\r\n?|\n/g, '\r');
+// P51(#3): shell이면 줄바꿈을 Shift+Enter(win32-input-mode 키 누름·뗌)로 보낸다. Windows PowerShell 5.1의 PSReadLine 2.0은
+// 괄호 붙여넣기를 몰라 CR마다 제출한다. Shift+Enter는 PSReadLine의 AddLine이라 여러 줄이 입력줄에 쌓이고, 마지막 Enter는 사람이 친다(U8).
+// ConPTY가 이 시퀀스를 Shift+Enter 키로 바꾼다. PSReadLine이 아닌 앞 프로그램(cmd, REPL)에서는 Enter와 같아 지금과 다르지 않다.
+export const SHIFT_ENTER = '\x1b[13;28;13;1;16;1_\x1b[13;28;13;0;16;1_';
+export function wrapPaste(text, { shell = false } = {}) {
+  const body = String(text ?? '').replace(/\x1b\[20[01]~/g, '').replace(/\r\n?|\n/g, shell ? SHIFT_ENTER : '\r');
   return body ? PASTE_START + body + PASTE_END : '';
+}
+
+// 휠 값을 단계 수로 바꾼다. 픽셀(deltaMode 0)은 pxPerStep px을 한 단계, 줄(1)은 한 줄을 한 단계, 쪽(2)은 rows단계로 본다.
+// 소수 부분은 acc에 모아 다음 휠에 더한다(트랙패드의 작은 값이 모여, 같은 거리면 같은 만큼 간다)
+export function wheelSteps({ deltaY, deltaMode = 0, rows = 24, acc = 0, pxPerStep = 100 }) {
+  const unit = deltaMode === 1 ? 1 : deltaMode === 2 ? rows : 1 / pxPerStep;
+  let total = acc + deltaY * unit;
+  const steps = Math.trunc(total + Math.sign(total) * 1e-9); // 0.3 × 10이 2.9999…가 되는 소수 오차를 버린다
+  total -= steps;
+  return { steps, acc: Math.abs(total) < 1e-9 ? 0 : total };
+}
+
+// P51(#7): 셸 노드 판 안 기록 휠. 100px에 3줄(Windows Terminal의 기본, Windows의 휠 한 칸 3줄 설정과 같다).
+// Chromium은 휠 한 칸을 100px로 주고, Windows 설정에서 한 칸 줄 수를 바꾸면 픽셀 값도 그 비율로 바뀌므로 그 설정을 따라간다.
+export const SHELL_WHEEL_LINES = 3;
+export function shellWheelLines({ deltaY, deltaMode = 0, rows = 24, acc = 0 }) {
+  const r = wheelSteps({ deltaY, deltaMode, rows, acc, pxPerStep: 100 / SHELL_WHEEL_LINES });
+  return { lines: r.steps, acc: r.acc };
 }
 
 // 휠을 SGR 마우스 시퀀스로 바꾼다(위 ESC[<64;x;yM, 아래 ESC[<65;x;yM). Claude Code 전체 화면 렌더러가 스스로 스크롤한다(E4 2.4).
 // rect는 화면에 그려진(확대·축소가 반영된) 터미널 영역이라, 판의 배율과 상관없이 칸 위치를 비율로 구한다.
 // 한 번에 여러 칸 굴린 휠은 최대 maxSteps번으로 나눠 보낸다. 트랙패드의 작은 값은 acc에 모아 둔다.
 export function wheelToSgr({ deltaY, deltaMode = 0, clientX, clientY, rect, cols, rows, acc = 0, maxSteps = 5 }) {
-  const unit = deltaMode === 1 ? 1 : deltaMode === 2 ? rows : 1 / 100; // 줄 단위로 바꾼다(픽셀은 100px을 한 번으로 본다)
-  let total = acc + deltaY * unit;
-  const steps = Math.trunc(total);
-  total -= steps;
+  const { steps, acc: total } = wheelSteps({ deltaY, deltaMode, rows, acc }); // 픽셀은 100px을 한 번으로 본다
   if (!steps || !rect || !rect.width || !rect.height) return { seq: '', acc: total };
   const x = clamp(Math.floor(((clientX - rect.left) / rect.width) * cols) + 1, 1, cols);
   const y = clamp(Math.floor(((clientY - rect.top) / rect.height) * rows) + 1, 1, rows);
