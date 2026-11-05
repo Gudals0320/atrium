@@ -2,6 +2,8 @@
 // 판: herdr 세션 atrium-dev-p38, 포트 47856, 이 워크트리의 backend/.dev(experiments/p38/tools/env.cjs).
 // 셸 노드로 고르기·지우기를 보고(덩어리 밖과 안), claude 노드(--model haiku)로 휠 스크롤 뒤의 선택을 본다.
 // 시스템 클립보드를 쓰므로 시험 앞의 글을 끝에서 되돌린다.
+// P42: 선택은 글에 붙어 휠·프레임에 함께 움직이고 풀리지 않는다(셸은 판 안 기록을 스크롤한다). 휠·셸 글 바뀜 단계를 새 동작에 맞췄다.
+//   P42 판(atrium-dev-p42, 47860)에서도 돌린다: node experiments/p42/tools/e2e.cjs p38-select.mjs
 // 사용: node experiments/p38/tools/e2e.cjs p38-select.mjs [--fresh] [--no-claude] [--tag 이름]
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,12 +13,14 @@ import { _electron as electron } from 'playwright';
 import { APP_ROOT, REPO, OUT, sleep, until, logger, closeApp } from './harness.mjs';
 import { assertTestBoard } from './p9-guard.mjs';
 
-if (process.env.MT_E2E_OUT !== 'p38') throw new Error('MT_E2E_OUT=p38를 명령줄에서 준다');
-const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', 'p38', 'tools', 'env.cjs'));
-const ENV = Object.fromEntries(Object.entries(T.P38_ENV).filter(([k]) => k.startsWith('ATRIUM_')));
+const BOARDS = { p38: ['atrium-dev-p38', '47856', 'P38_ENV'], p42: ['atrium-dev-p42', '47860', 'P42_ENV'] };
+const B = BOARDS[process.env.MT_E2E_OUT];
+if (!B) throw new Error('MT_E2E_OUT=p38(또는 p42)를 명령줄에서 준다');
+const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', process.env.MT_E2E_OUT, 'tools', 'env.cjs'));
+const ENV = Object.fromEntries(Object.entries(T[B[2]]).filter(([k]) => k.startsWith('ATRIUM_')));
 assertTestBoard(ENV, { root: T.DEV });
-if (ENV.ATRIUM_HERDR_SESSION !== 'atrium-dev-p38' || ENV.ATRIUM_PORT !== '47856') throw new Error('P38 판(atrium-dev-p38, 47856)만');
-if (!/^C:\\Workspace\\mtask-p38-/.test(T.DIR)) throw new Error(`시험 폴더는 C:\\Workspace\\mtask-p38-*만: ${T.DIR}`);
+if (ENV.ATRIUM_HERDR_SESSION !== B[0] || ENV.ATRIUM_PORT !== B[1]) throw new Error(`${process.env.MT_E2E_OUT} 판(${B[0]}, ${B[1]})만`);
+if (!new RegExp(`^C:\\\\Workspace\\\\mtask-${process.env.MT_E2E_OUT}-`).test(T.DIR)) throw new Error(`시험 폴더는 C:\\Workspace\\mtask-${process.env.MT_E2E_OUT}-*만: ${T.DIR}`);
 fs.mkdirSync(OUT, { recursive: true });
 
 const argv = process.argv.slice(2);
@@ -281,8 +285,10 @@ try {
     await page.mouse.wheel(0, -300);
     await sleep(800);
     const b = await term(S);
+    // P42: 셸은 판 안 기록을 스크롤하고, 선택은 같은 글(버퍼 줄)에 붙어 남는다
     const stay = b.has && b.sel === a.sel && same(b.pos, a.pos);
-    step('셸: 휠 뒤 선택은 지워지거나 같은 글 위에 그대로', a.has && (!b.has || stay), { before: a.sel, after: b.has ? b.sel : null });
+    step('셸: 휠 뒤 선택은 풀리지 않고 같은 글 위에 남는다(P42)', a.has && stay, { before: a.sel, after: b.has ? b.sel : null });
+    await page.evaluate((i) => window.__mt.terms.get(i).scrollToBottom(), S);
     await shot('after-wheel-shell');
     await call('terminal.input', { session: S, data: '\x1b' });
   }
@@ -292,7 +298,9 @@ try {
     await call('terminal.input', { session: S, data: "cls; 'zzzz zzzz zzzz zzzz zzzz zzzz zzzz'\r" });
     await sleep(1500);
     const b = await term(S);
-    step('셸: 고른 자리의 글이 바뀌면 선택이 다른 글 위에 남지 않는다', a.has && (!b.has || b.sel === a.sel), { before: a.sel, after: b.has ? b.sel : null });
+    // P42: 프레임으로는 선택을 지우지 않는다(일하는 중에도 복사되게). 셸의 cls처럼 제자리에서 글이 바뀌면 선택은 그 자리에 남고, 복사는 지금 글이다
+    step('셸: 고른 자리의 글이 바뀌어도 선택이 풀리지 않는다(P42)', a.has && b.has, { before: a.sel, after: b.has ? b.sel : null });
+    await clearSel(S);
     await printKnown(S);
   }
   // 한 번 누르기(끌지 않음)는 지금처럼 그 노드로 화면을 옮긴다(늦춰서)
@@ -337,8 +345,8 @@ try {
         await sleep(1500);
         const b = await term(C);
         const moved = b.lines.join('\n') !== a.lines.join('\n');
-        // 선택이 남았으면 그 자리의 글이 고를 때와 같아야 한다
-        step(`claude 배율 ${z}: 휠 스크롤 뒤 선택이 다른 글 위에 남지 않는다`, a.has && (!b.has || b.sel === a.sel), { before: a.sel, after: b.has ? b.sel : null, screenMoved: moved });
+        // P42: 선택은 풀리지 않고 고를 때의 글 그대로다(글과 함께 움직인다)
+        step(`claude 배율 ${z}: 휠 스크롤 뒤 선택이 풀리지 않고 고른 글 그대로다(P42)`, a.has && b.has && b.sel === a.sel, { before: a.sel, after: b.has ? b.sel : null, screenMoved: moved });
         await shot(`claude-wheel-z${z}`);
         await page.mouse.wheel(0, 300); await sleep(800);
         await clearSel(C);

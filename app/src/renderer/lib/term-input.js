@@ -28,10 +28,18 @@ export function wheelToSgr({ deltaY, deltaMode = 0, clientX, clientY, rect, cols
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+// P42: 휠 steps번(아래 +, 위 -)을 칸(x, y: 1부터)의 SGR 휠로. 끄는 중 가장자리 자동 스크롤이 쓴다
+export function sgrWheel(steps, x, y, cols, rows) {
+  const n = Math.trunc(steps);
+  if (!n) return '';
+  return `\x1b[<${n < 0 ? 64 : 65};${clamp(x, 1, cols)};${clamp(y, 1, rows)}M`.repeat(Math.abs(n));
+}
+
 // 키 처리(xterm attachCustomKeyEventHandler에서 부른다). 돌려준 action:
 //   'block-ctrl-g'  막는다. Claude Code가 외부 편집기(메모장)를 띄운다(E9 2.4, P2에서 막기로 정함. docs/decisions.md)
 //   'paste'         xterm이 ^V를 보내지 않게 하고 브라우저 붙여넣기 이벤트로 넘긴다(그 이벤트에서 감싼다)
 //   'copy'          고른 글이 있으면 복사하고 ^C를 보내지 않는다
+//   'clear-selection' P42: 고른 글이 있을 때 Esc는 선택만 끝낸다(웹처럼). 앱에 보내지 않는다(Claude Code에서 Esc는 턴 끊기)
 //   'pass'          xterm이 처리한다
 export function keyAction(e, hasSelection) {
   if (e.type !== 'keydown') return 'pass';
@@ -40,6 +48,7 @@ export function keyAction(e, hasSelection) {
   if (e.ctrlKey && !e.altKey && k === 'v') return 'paste';
   if (e.shiftKey && !e.ctrlKey && k === 'insert') return 'paste';
   if (e.ctrlKey && !e.altKey && k === 'c' && (e.shiftKey || hasSelection)) return 'copy';
+  if (k === 'escape' && hasSelection && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) return 'clear-selection';
   return 'pass';
 }
 
@@ -63,16 +72,17 @@ export function unscalePoint({ clientX, clientY, rect, width, height }) {
   return { clientX: rect.left + (clientX - rect.left) / sx, clientY: rect.top + (clientY - rect.top) / sy };
 }
 
-// 선택을 지우는 때(Windows Terminal처럼). true면 지운다.
-//   'copy'   고른 글을 복사했다(Ctrl+C, Ctrl+Shift+C)
-//   'paste'  붙여넣었다(Ctrl+V, Shift+Insert). 글 입력은 xterm이 스스로 지운다
-//   'wheel'  휠을 SGR로 보냈다. Claude Code가 화면을 다시 그려 글이 움직이는데 선택은 따라갈 수 없다
-//   'frame'  새 프레임을 그렸다. 끄는 중이 아니고 고른 자리의 글(before → after)이 바뀌었으면 지운다(다른 글 위에 남지 않게)
-export function clearsSelection(event, { hasSelection = true, dragging = false, before = '', after = '' } = {}) {
-  if (!hasSelection) return false;
-  if (event === 'copy' || event === 'paste' || event === 'wheel') return true;
-  if (event === 'frame') return !dragging && before !== after;
-  return false;
+// 선택을 지우는 때. true면 지운다. P42(웹처럼): 선택은 문서 줄에 붙어 휠·자동 스크롤·새 프레임에 함께 움직이므로
+// 'wheel'·'scroll'·'frame'으로는 지우지 않는다. 고르기를 끝내는 것은 웹과 같다(밖 누르기, 글 입력, Esc).
+//   'copy'    고른 글을 복사했다(Ctrl+C, Ctrl+Shift+C). 다음 Ctrl+C가 ^C가 되게 지운다(Windows Terminal처럼)
+//   'paste'   붙여넣었다(Ctrl+V, Shift+Insert)
+//   'input'   글을 쳤다
+//   'escape'  Esc
+//   'outside' 터미널 밖을 눌렀다
+//   'resize'  칸 수가 바뀌었다(줄이 다시 감겨 문서를 이어 갈 수 없다)
+const CLEARS = new Set(['copy', 'paste', 'input', 'escape', 'outside', 'resize']);
+export function clearsSelection(event, { hasSelection = true } = {}) {
+  return !!hasSelection && CLEARS.has(event);
 }
 
 // 복사할 글: herdr가 다시 그린 화면은 줄 끝까지 빈칸이 차 있어, 줄마다 끝의 빈칸을 뺀다(Windows Terminal처럼)

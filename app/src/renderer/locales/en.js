@@ -1369,4 +1369,8 @@ export default {
     search: '↑ on the board also opens search. Click outside it or press Esc to close',
     command: 'Ctrl+K or ↓ on the board to type here. The bar hides until you point at the bottom edge',
   },
+  // P42: web-like text selection in terminal nodes
+  termSelect: {
+    copyFail: 'Could not copy to the clipboard',
+  },
 };

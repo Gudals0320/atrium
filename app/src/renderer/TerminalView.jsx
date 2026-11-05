@@ -4,15 +4,19 @@
 // - WebGL 렌더러는 예산(기본 8) 안에서만 쓰고, 넘거나 컨텍스트를 잃으면 DOM으로 그린다(BRIEF 위험 2).
 // - P6a(H4): 노드를 눌러 들어간 뒤 붙기 전에 친 글(store.pendingInput)은 붙자마자 넣고 초점을 준다.
 // - P38: 판 배율 아래에서도 끌어 고르기가 마우스 밑 글자를 따라가게 xterm의 마우스 → 칸 계산에 확대·축소 전 자리를 넘긴다(unscalePoint).
-//   고르는 동안 포인터는 글 고르기 모양. 복사·붙여넣기·휠 뒤와 고른 자리의 글이 바뀌면 선택을 지운다(clearsSelection). 복사는 줄 끝 빈칸을 뺀다.
+//   고르는 동안 포인터는 글 고르기 모양. 복사는 줄 끝 빈칸을 뺀다.
+// - P42: 글 고르기는 웹처럼 한다(term-selection.js). 선택은 글에 붙어 휠·가장자리 자동 스크롤·새 프레임에 함께 움직이고 풀리지 않는다.
+//   claude 등은 프레임을 이어 붙인 문서로, 셸은 herdr 기록과 밀려난 줄을 xterm scrollback에 넣어(판 안에서 스크롤) 화면 밖 글까지 고르고 복사한다.
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
-import { useStore, takePendingInput, pendingFor } from './store.js';
-import { wrapPaste, wheelToSgr, keyAction, frameBytes, unscalePoint, clearsSelection, copyText } from './lib/term-input.js';
+import { useStore, getState, takePendingInput, pendingFor } from './store.js';
+import { wrapPaste, wheelToSgr, sgrWheel, keyAction, frameBytes, unscalePoint, clearsSelection, copyText } from './lib/term-input.js';
+import { findShift, bigChange, historyAbove, historyPrefill, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
+import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
 import { onFrame, onWritten, markInput, setTerminal, perfLog } from './perf.js';
 import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/tokens.js';
@@ -27,6 +31,8 @@ function readNumber(key, dflt) {
 }
 export const budget = new RendererBudget(readNumber('webglBudget', DEFAULT_WEBGL_BUDGET));
 export const terms = new Map(); // sessionId → Terminal (시험과 E6에서 읽는다)
+const SHELL_SCROLLBACK = 5000; // P42: 셸 노드의 판 안 기록 줄 수
+const HISTORY_WAIT = 1500; // P42: 셸 기록을 첫 프레임 앞에 넣으려고 기다리는 시간(넘으면 기록 없이 그린다)
 
 // P38: xterm은 마우스 위치를 칸으로 바꿀 때 판의 CSS 확대·축소를 모른다(화면 px를 확대·축소 전 칸 크기로 나눈다).
 // 마우스 서비스(선택, 링크, 마우스 보고가 함께 쓴다)에 확대·축소 전 자리를 넘긴다. xterm 6.0.0의 내부(_core._mouseService)라
@@ -47,6 +53,8 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
   const t = useT();
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
+  const onActivateRef = useRef(onActivate);
+  onActivateRef.current = onActivate;
   const hostRef = useRef(null);
   const ref = useRef({});
   const [status, setStatus] = useState({ kind: 'attaching' });
@@ -56,7 +64,9 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
   useEffect(() => {
     const host = hostRef.current;
     const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null };
-    const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: TERM_FONT_SIZE, lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
+    // P42: 셸은 앱이 스스로 스크롤하지 않아(PowerShell은 SGR 휠을 무시) 지난 출력을 xterm scrollback에 두고 판 안에서 스크롤한다
+    const shell = (getState().sessions.get(sessionId) || {}).kind === 'shell';
+    const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: TERM_FONT_SIZE, lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
     const u11 = new Unicode11Addon();
     term.loadAddon(u11);
     term.unicode.activeVersion = '11';
@@ -91,25 +101,38 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     };
     const flash = (t) => { setHint(t); clearTimeout(st.hintTimer); st.hintTimer = setTimeout(() => setHint(null), 2500); };
 
-    term.onData(send);
+    // P42: 글 고르기(웹처럼). xterm 자체 선택 대신 문서 줄에 붙은 선택을 쓴다. 판(Canvas)과 시험이 보는 hasSelection·getSelection도 이것으로 답한다
+    const sel = new TermSelection({
+      term, host, mode: shell ? 'buffer' : 'live',
+      sendWheel: (steps, c) => send(sgrWheel(steps, c.cell + 1, c.row + 1, term.cols, term.rows)),
+      onActivate: () => { if (onActivateRef.current) onActivateRef.current(); },
+      log: (name, d) => perfLog(name, { sessionId, ...d }),
+    });
+    st.sel = sel;
+    term._mtSel = sel; // 시험이 선택 기록(trace)을 읽는다
+    term.hasSelection = () => sel.has();
+    term.getSelection = () => sel.text();
+    term.onData((d) => { if (clearsSelection('input', { hasSelection: sel.has() })) sel.clear('input'); send(d); });
     term.attachCustomKeyEventHandler((e) => {
-      const a = keyAction(e, term.hasSelection());
+      const a = keyAction(e, sel.has());
       if (a === 'block-ctrl-g') { e.preventDefault(); flash(t('terminal.ctrlG')); return false; }
       if (a === 'paste') return false; // 브라우저 붙여넣기 이벤트로 넘긴다(아래에서 감싼다)
+      if (a === 'clear-selection') { e.preventDefault(); sel.clear('escape'); return false; } // P42: Esc는 선택만 끝낸다
       if (a === 'copy') {
-        const sel = copyText(term.getSelection());
-        navigator.clipboard.writeText(sel).catch(() => {});
-        if (clearsSelection('copy', { hasSelection: term.hasSelection() })) term.clearSelection(); // P38
+        // P42: 화면 밖으로 나간 부분까지 고른 글 전체. 일하는 중에도 프레임이 선택을 지우지 않는다
+        const text = copyText(sel.text());
+        navigator.clipboard.writeText(text).then(() => perfLog('term_copy', { sessionId, chars: text.length }), (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash(t('termSelect.copyFail')); });
+        if (clearsSelection('copy', { hasSelection: sel.has() })) sel.clear('copy');
         e.preventDefault(); flash(t('terminal.copied')); return false;
       }
       return true;
     });
     term.attachCustomWheelEventHandler((ev) => {
+      if (shell) return true; // P42: 셸은 판 안 기록을 xterm이 스크롤한다(선택은 버퍼 줄에 붙어 함께 움직인다)
       const screen = host.querySelector('.xterm-screen') || host;
       const r = wheelToSgr({ deltaY: ev.deltaY, deltaMode: ev.deltaMode, clientX: ev.clientX, clientY: ev.clientY, rect: screen.getBoundingClientRect(), cols: term.cols, rows: term.rows, acc: st.acc });
       st.acc = r.acc;
-      if (r.seq && clearsSelection('wheel', { hasSelection: term.hasSelection() })) term.clearSelection(); // P38: 다시 그린 화면에서 선택이 다른 글 위에 남지 않게
-      send(r.seq);
+      send(r.seq); // P42: 선택은 지우지 않는다. 다음 프레임에서 글과 함께 움직인다(끄는 중이면 늘어난다)
       ev.preventDefault();
       return false;
     });
@@ -117,27 +140,79 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const onPaste = (e) => {
       e.preventDefault(); e.stopPropagation();
       const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
-      if (clearsSelection('paste', { hasSelection: term.hasSelection() })) term.clearSelection(); // P38
+      if (clearsSelection('paste', { hasSelection: sel.has() })) sel.clear('paste');
       send(wrapPaste(text));
     };
     host.addEventListener('paste', onPaste, true);
-    // P38: 끄는 중(왼쪽 단추를 누른 채)에는 노드 밖으로 나가도 포인터를 글 고르기 모양으로 두고, 프레임으로 선택을 지우지 않는다
-    const endDrag = () => { st.dragging = false; document.body.classList.remove('mt-term-selecting'); window.removeEventListener('mouseup', endDrag, true); };
-    const onDown = (e) => { if (e.button !== 0) return; st.dragging = true; document.body.classList.add('mt-term-selecting'); window.addEventListener('mouseup', endDrag, true); };
-    host.addEventListener('mousedown', onDown, true);
-    st.selText = '';
-    term.onSelectionChange(() => { st.selText = term.hasSelection() ? term.getSelection() : ''; });
+
+    // P42: 셸은 그림자 터미널(herdr 화면과 같은 scrollback 0 화면)에 먼저 써서 새 출력으로 화면이 몇 줄 밀렸는지 보고,
+    // 프레임을 쓰기 전에 그만큼 xterm 영역을 올려 밀려난 줄을 scrollback으로 보낸다. 첫 프레임 앞에는 herdr 기록(지난 출력)을 넣는다
+    let shadow = null, chain = Promise.resolve(), history = 'wait';
+    const writeP = (tm, data) => new Promise((res) => tm.write(data, res));
+    const rowsOf = (tm) => { const b = tm.buffer.active, out = []; for (let r = 0; r < tm.rows; r++) { const l = b.getLine(b.viewportY + r); out.push(l ? l.translateToString(true) : ''); } return out; };
+    if (shell) { shadow = new Terminal({ allowProposedApi: true, scrollback: 0, cols: 80, rows: 24 }); const su = new Unicode11Addon(); shadow.loadAddon(su); shadow.unicode.activeVersion = '11'; }
+    // herdr 기록 가운데 지금 화면 위의 줄(ANSI). 맞는 자리가 없으면 null
+    const readHistory = async (screen) => {
+      const r = await Promise.race([api.call('terminal.history', { session: sessionId }).catch(() => null), new Promise((res) => setTimeout(() => res(null), HISTORY_WAIT))]);
+      const ansi = r && r.text ? r.text.split(/\r?\n/) : [];
+      const above = ansi.length ? historyAbove(ansi.map(stripAnsi), screen) : -1;
+      return { lines: ansi.length, above, ansi: above >= 0 ? ansi.slice(0, above) : null };
+    };
+    const prefill = async (screen) => {
+      const h = await readHistory(screen);
+      perfLog('term_history', { sessionId, lines: h.lines, above: h.above });
+      if (h.above > 0 && st.alive) term.write(historyPrefill(h.ansi, term.rows));
+    };
+    // 빠른 출력이 한 프레임에 지나가거나(화면에 한 번도 안 보인 줄), cls·크기 바뀜으로 판 안 기록이 herdr 기록과 어긋났다.
+    // 출력이 멈추면(그리고 고르는 중이나 위로 올려 보는 중이 아니면) herdr 기록으로 다시 맞춘다: 지금 화면을 칸 그대로 적어 두고 reset 뒤 기록 + 화면
+    const resync = async () => {
+      st.stale = false;
+      const h = await readHistory(rowsOf(shadow));
+      if (!st.alive || !h.ansi) { perfLog('term_history_resync', { sessionId, lines: h.lines, above: h.above, skipped: true }); return; }
+      const b = term.buffer.active;
+      const screen = serializeScreen(b, { base: b.baseY, rows: term.rows, cols: term.cols, cursorX: b.cursorX, cursorY: b.cursorY, cell: b.getNullCell() });
+      term.reset();
+      term.write(historyPrefill(h.ansi, term.rows) + screen);
+      perfLog('term_history_resync', { sessionId, lines: h.lines, above: h.above });
+    };
+    const trySync = () => {
+      if (!st.alive || !st.stale) return;
+      const b = term.buffer.active;
+      if (sel.has() || sel.dragging || b.viewportY < b.baseY) { clearTimeout(st.syncTimer); st.syncTimer = setTimeout(trySync, 1000); return; }
+      chain = chain.then(resync).catch((e) => window.mt.log(`shell resync ${sessionId}: ${e.stack || e.message}`));
+    };
+    const markStale = () => { st.stale = true; clearTimeout(st.syncTimer); st.syncTimer = setTimeout(trySync, 500); };
+    const shellFrame = async (f, bytes, t0) => {
+      let resized = false;
+      if (f.width && f.height && (f.width !== shadow.cols || f.height !== shadow.rows)) { shadow.resize(f.width, f.height); resized = true; }
+      const before = resized ? null : rowsOf(shadow);
+      await writeP(shadow, bytes);
+      if (!st.alive) return;
+      const after = rowsOf(shadow);
+      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) term.resize(f.width, f.height);
+      if (history === 'wait') { history = 'done'; await prefill(after); if (!st.alive) return; }
+      else if (!before) markStale();
+      else {
+        const s = findShift(before, after);
+        // 영역을 올려 밀려난 줄을 scrollback으로 보낸 뒤, 화면은 그림자(herdr의 새 화면)를 칸 그대로 다시 쓴다.
+        // herdr 프레임은 herdr 앞 화면에서 바뀐 칸만 쓰므로, 올린 화면에 그대로 쓰면 글이 깨진다. 그 뒤 프레임을 써도 같은 칸을 같은 글로 쓸 뿐이다
+        if (s.d > 0) { const sb = shadow.buffer.active; term.write(scrollUpSeq(s.d, s.hi, term.rows) + serializeScreen(sb, { base: sb.baseY, rows: shadow.rows, cols: shadow.cols, cursorX: sb.cursorX, cursorY: sb.cursorY, cell: sb.getNullCell() })); }
+        else if (bigChange(before, after)) markStale();
+      }
+      term.write(bytes, () => onWritten(t0));
+      if (st.stale) { clearTimeout(st.syncTimer); st.syncTimer = setTimeout(trySync, 500); } // 출력이 이어지는 동안은 미룬다
+    };
 
     const offFrame = api.on('terminal.frame', (f) => {
       if (f.sessionId !== sessionId || !st.alive) return;
       if (st.pid !== null && f.controllerPid !== st.pid) return;
       const bytes = frameBytes(f.bytes);
       const t0 = onFrame(sessionId, bytes.length, f.width, f.height);
+      if (shell) { chain = chain.then(() => shellFrame(f, bytes, t0)).catch((e) => window.mt.log(`shell frame ${sessionId}: ${e.stack || e.message}`)); return; }
       if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) term.resize(f.width, f.height); // 쓰기 전에 크기 맞추기(E4)
       term.write(bytes, () => {
         onWritten(t0);
-        // P38: 고른 자리의 글이 바뀌었으면(화면이 다시 그려짐) 선택을 지운다
-        if (term.hasSelection() && clearsSelection('frame', { dragging: st.dragging, before: st.selText, after: term.getSelection() })) { perfLog('term_selection_cleared', { sessionId, why: 'frame' }); term.clearSelection(); }
+        sel.onFrame(); // P42: 고른 글이 있으면 화면이 움직인 만큼 선택을 옮긴다(지우지 않는다)
       });
     });
     // 백엔드에 다시 붙으면(백엔드 재시작, C2) 옛 연결의 제어기는 이미 놓였다. 다시 붙는다.
@@ -169,8 +244,9 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       perfLog('term_unmount', { sessionId });
       offFrame(); offDetached(); offOpen();
       host.removeEventListener('paste', onPaste, true);
-      host.removeEventListener('mousedown', onDown, true);
-      endDrag();
+      sel.dispose();
+      clearTimeout(st.syncTimer);
+      if (shadow) shadow.dispose();
       api.call('terminal.detach', { session: sessionId }).catch(() => {});
       budget.release(sessionId);
       terms.delete(sessionId);
