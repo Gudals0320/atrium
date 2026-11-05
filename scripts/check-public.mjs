@@ -6,13 +6,16 @@
 //   node scripts/check-public.mjs --push <원격>      푸시 전(.githooks/pre-push): 표준 입력의 ref 줄로 올라갈 커밋 전부
 //   node scripts/check-public.mjs --tree [rev]      저장소 전체(기본 HEAD)
 //
-// 막는 것: 이 컴퓨터의 사용자 이름·홈 폴더·개인 메일, 남의 홈 폴더 경로, 토큰과 개인 키, 공개하지 않는 폴더(.gitignore와 같다),
-// 1MiB가 넘는 파일, noreply가 아닌 커미터 메일, 개인 메일인 작성자.
-// 사용자 이름, 홈 폴더, 개인 메일은 코드에 적지 않고 실행할 때 이 컴퓨터에서 읽는다(검사기가 그것을 공개하지 않게).
+// 막는 것: 이 컴퓨터의 사용자 이름·홈 폴더·개인 메일, 비공개 낱말, 남의 홈 폴더 경로, 토큰과 개인 키,
+// 공개하지 않는 폴더(.gitignore와 같다), 1MiB가 넘는 파일, 관리자의 개인 메일인 작성자·커미터(기여자의 메일과 noreply는 받는다).
+// 사용자 이름, 홈 폴더, 개인 메일, 비공개 낱말은 코드에 적지 않고 실행할 때 이 컴퓨터에서 읽는다(검사기가 그것을 공개하지 않게).
+// 비공개 낱말은 <git 공통 폴더>/atrium-private-words(한 줄에 하나, # 줄은 주석, git 밖, 워크트리끼리 같은 파일)와
+// ATRIUM_PRIVATE_WORDS(쉼표로 나눔)에서 읽는다. @가 든 낱말은 개인 메일로도 본다.
 // 찾은 값은 가려서 보인다. 검사를 건너뛰지 않는다(--no-verify 금지). 잘못 걸리면 이 파일의 규칙을 고친다.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const MAX_BYTES = 1024 * 1024;
@@ -45,12 +48,30 @@ const HOME_PATH = /\b[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}(?![<{%$*…]|\.\.\.|Publ
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// 이 컴퓨터에서 읽은 개인 값. env로 덧붙일 수 있다(ATRIUM_PRIVATE_WORDS, 쉼표로 나눔)
-export function localSecrets({ home = os.homedir(), user = os.userInfo().username, emails = personalEmails(), extra = process.env.ATRIUM_PRIVATE_WORDS || '' } = {}) {
+export const PRIVATE_WORDS_FILE = 'atrium-private-words';
+
+// 비공개 낱말 목록 파일의 자리: <git 공통 폴더>/atrium-private-words. 워크트리에서도 본 저장소와 같은 파일이다. git 밖이면 null
+export function privateWordsFile(cwd = process.cwd()) {
+  try {
+    const dir = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return dir ? path.join(path.resolve(cwd, dir), PRIVATE_WORDS_FILE) : null;
+  } catch { return null; }
+}
+// 목록 파일의 낱말. 빈 줄과 # 줄은 건너뛴다. 파일이 없으면 []
+export function readPrivateWords(file = privateWordsFile()) {
+  if (!file) return [];
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  return text.replace(/^﻿/, '').split(/\r?\n/).map((x) => x.trim()).filter((x) => x && !x.startsWith('#'));
+}
+
+// 이 컴퓨터에서 읽은 개인 값. 비공개 낱말은 목록 파일(words)과 env(extra, 쉼표로 나눔) 둘 다에서 받는다
+export function localSecrets({ home = os.homedir(), user = os.userInfo().username, emails = personalEmails(), extra = process.env.ATRIUM_PRIVATE_WORDS || '', words: listed = readPrivateWords() } = {}) {
   const words = [];
   if (user && user.length >= 4 && !GENERIC_USERS.has(user.toLowerCase())) words.push([user, '사용자 이름']);
   for (const e of emails) if (e && !NOREPLY.test(e)) words.push([e, '개인 메일']);
-  for (const w of String(extra).split(',').map((x) => x.trim()).filter((x) => x.length >= 3)) words.push([w, '개인 낱말']);
+  const more = [...listed, ...String(extra).split(',')].map((x) => String(x).trim()).filter((x) => x.length >= 3);
+  for (const w of new Set(more)) words.push([w, w.includes('@') && !NOREPLY.test(w) ? '개인 메일' : '개인 낱말']);
   const res = words.map(([w, kind]) => [new RegExp(`(?<![A-Za-z0-9])${esc(w)}(?![A-Za-z0-9])`, 'i'), kind]);
   if (home) {
     const parts = home.split(/[\\/]/).filter(Boolean);
@@ -83,8 +104,9 @@ function mask(l, m) {
   return (s ? '…' : '') + l.slice(s, m.index) + '‹가림›' + l.slice(m.index + m[0].length, m.index + m[0].length + 30);
 }
 export function blockedPath(p) { for (const [re, why] of BLOCKED_PATHS) if (re.test(p)) return why; return null; }
-export function committerOk(email) { return NOREPLY.test(String(email || '').trim()); }
+// 작성자와 커미터는 같은 규칙이다: 관리자의 개인 메일(이 컴퓨터의 git 설정과 비공개 낱말 목록)만 막고, 기여자의 메일과 noreply는 받는다
 export function authorOk(email, secrets) { const e = String(email || '').trim(); return NOREPLY.test(e) || !secrets.some(([re, kind]) => kind === '개인 메일' && re.test(e)); }
+export const committerOk = authorOk;
 const isBinary = (buf) => buf.subarray(0, 8000).includes(0);
 
 // ---------- git ----------
@@ -107,7 +129,7 @@ function checkStaged(secrets) {
   const problems = [];
   const committer = emailOf(git(['var', 'GIT_COMMITTER_IDENT']));
   const author = emailOf(git(['var', 'GIT_AUTHOR_IDENT']));
-  if (!committerOk(committer)) problems.push(`커미터 메일이 noreply가 아니다(${mask(committer, { index: 0, 0: committer })}). git config user.email 을 GitHub noreply 주소로 둔다`);
+  if (!committerOk(committer, secrets)) problems.push('커미터 메일이 개인 메일이다. git config user.email 을 GitHub noreply 주소로 둔다');
   if (!authorOk(author, secrets)) problems.push('작성자 메일이 개인 메일이다. git config user.email 을 GitHub noreply 주소로 둔다');
   const out = git(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR']);
   for (const p of out.split('\0').filter(Boolean)) checkBlob('', `:${p}`, p, secrets, problems);
@@ -124,7 +146,7 @@ function checkCommits(commits, secrets) {
   for (const c of commits) {
     const short = c.slice(0, 7);
     const [ae, ce] = git(['log', '-1', '--format=%ae%n%ce', c]).split('\n');
-    if (!committerOk(ce)) problems.push(`${short}: 커미터 메일이 noreply가 아니다`);
+    if (!committerOk(ce, secrets)) problems.push(`${short}: 커미터 메일이 개인 메일이다`);
     if (!authorOk(ae, secrets)) problems.push(`${short}: 작성자 메일이 개인 메일이다`);
     for (const f of scanText(git(['log', '-1', '--format=%B', c]), secrets)) problems.push(`${short} 커밋 메시지:${f.line}: ${f.kind}: ${f.text}`);
     const files = git(['diff-tree', '--no-commit-id', '-r', '-z', '--root', '-m', '--name-only', '--diff-filter=ACMR', c]).split('\0').filter(Boolean);

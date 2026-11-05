@@ -12,7 +12,7 @@ P6은 작업자 셋이 나눠 만든다(`docs/PLAN.md` 7절 P6). 너는 **P6b**�
 #### 먼저 읽을 것
 
 - `CLAUDE.md`, `docs/BRIEF.md`(3절, 5절, 7절), `docs/PLAN.md`(4절 B1·A1, **4절 I**, 6절, 7절 P6, 8절)
-- `docs/research/symvibe.md`의 출력 보기, Thread, 루프, 미션 맵(동작만 참고)
+- `docs/research/reference.md`의 출력 보기, Thread, 루프, 미션 맵(동작만 참고)
 - `docs/P5.md`, `docs/P4.md`, 필요하면 `docs/P3.md`(OS 알림, 그룹 상한)
 - `backend/` 코드와 `app/src/main/`(Electron main)
 
@@ -402,7 +402,7 @@ mtask loop pause r… | mtask loop resume r… | mtask loop rm r…
 
 - 세 열: 0 = 사람과 다른 세션에게 지시를 내리는 세션(나가는 role·prompt·spawn 선이 있음), 1 = 그룹, 2 = 세션.
 - 선: `role`(판에서 정한 역할, 라벨은 역할), `prompt`(알아챈 지시, 라벨은 마지막 지시 앞부분), `spawn`(띄움), `bar`(명령 바 전달. 사람 → 세션, `@그룹`으로 보낸 것은 사람 → 그룹. 같은 대상은 한 선으로 모아 `count`와 마지막 글), `loop`(사람 → 루프 대상, `status`), `member`(그룹 → 세션). `active`는 받는 쪽이 도는 중이거나 켜진 루프다.
-- 거르기(`category`)는 symvibe와 같다. needs_you에는 error가 들고, done은 끝났지만 아직 안 본 것(검토 대기)이다.
+- 거르기(`category`)는 참고 제품과 같다. needs_you에는 error가 들고, done은 끝났지만 아직 안 본 것(검토 대기)이다.
 - 실시간 갱신용 이벤트는 따로 없다. 창은 미션 맵을 여는 동안 `session.updated`, `link.updated`, `thread.item`, `loop.updated`를 받으면 다시 부른다(한 번 부르는 데 1ms 안쪽).
 
 ```sh

@@ -61,7 +61,7 @@ PLAN 7절 P8의 다섯 가지다. 개발용 판에서 실제 세션으로 확인
 - `CLAUDE.md`를 따른다. 실제 판의 값으로는 띄우지 않는다.
 - 신뢰 대화상자는 수락하지 않는다. 시험 에이전트의 herdr 명령에 `--session`, `--machine`, `--remote`를 쓰게 하지 않는다. herdr 소켓 API의 `pane.split`은 `target_pane_id`로 대상을 준다.
 - 데스크톱 앱 세션과 기존 세션은 건드리지 않는다. 직접 띄운 프로세스만 PID로 끈다. `~/.claude/settings.json`, `~/.agents/skills`, `~/.codex`, `~/.claude/projects`는 고치지 않는다. 사용자의 PATH와 환경 변수 설정도 고치지 않는다.
-- symvibe는 화면 구성과 동작만 참고한다. OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
+- 참고 제품에서는 화면 구성과 동작만 참고한다. OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
 - `docs/PLAN.md`, `docs/BRIEF.md`, `CLAUDE.md`는 고치지 않는다.
 
 #### 끝낼 때

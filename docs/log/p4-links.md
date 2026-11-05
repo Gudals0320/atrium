@@ -45,7 +45,7 @@ PLAN 7절의 P4를 만든다. 판의 역할은 세션을 띄우고, 세션끼리
 - **신뢰 대화상자는 수락하지 않는다.** 워크트리 시험에 git 저장소가 필요한데 신뢰 대화상자가 뜨면, 수락하지 말고 다른 방법(herdr `worktree create`, 신뢰를 물려받는 위치)을 찾거나 사람이 할 점검표로 남긴다.
 - **multitask 저장소에 워크트리나 브랜치를 만들어야 하면** 이름을 `mtask-test/`로 시작하게 하고, 끝나면 워크트리와 브랜치를 모두 지운다. 커밋, 푸시, `main` 변경은 하지 않는다.
 - 데스크톱 앱 세션과 기존 세션은 건드리지 않는다. 직접 띄운 프로세스만 PID로 끈다. `~/.claude/settings.json`과 `~/.agents/skills`를 고치지 않는다.
-- symvibe는 화면 구성과 동작만 참고한다. OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
+- 참고 제품에서는 화면 구성과 동작만 참고한다. OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
 - 끝나면 시험 세션을 끄고, 창을 먼저 닫고, 개발용 백엔드와 herdr 서버를 멈추고, 띄운 herdr 세션을 모두 지운다.
 - `docs/PLAN.md`, `docs/BRIEF.md`, `CLAUDE.md`는 고치지 않는다. 커밋하지 않는다.
 
@@ -156,7 +156,7 @@ E1(데스크톱 앱 세션)과 E3(기본 herdr 세션)의 읽기 전용 표시�
 | `src/renderer/InboxBar.jsx`, `store.js`, `main.jsx` | 위쪽에 연결 수, 연결 저장과 이벤트, 대화상자 둘 |
 | `test/e2e/p4-*.mjs`(새), `harness.mjs` | P4 창 시험 7개와 공통 도구(`p4-lib.mjs`). `closeApp`(6절 8번) |
 
-OpenCove와 symvibe의 코드는 가져오지 않았다.
+OpenCove와 참고 제품의 코드는 가져오지 않았다.
 
 #### 2. 돌리는 법
 

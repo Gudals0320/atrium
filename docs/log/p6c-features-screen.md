@@ -53,7 +53,7 @@ PLAN 7절 P6의 "P6c"다. I1~I7의 화면이 단일 캔버스에서 실제 세�
 - `CLAUDE.md`를 따른다. 실제 판의 값으로는 띄우지 않는다.
 - 신뢰 대화상자는 수락하지 않는다. 시험 에이전트의 herdr 명령에 `--session`, `--machine`, `--remote`를 쓰게 하지 않는다.
 - 데스크톱 앱 세션과 기존 세션은 건드리지 않는다. 직접 띄운 프로세스만 PID로 끈다. `~/.claude/settings.json`, `~/.agents/skills`, `~/.codex`는 고치지 않는다.
-- symvibe는 화면 구성과 동작만 참고한다. OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
+- 참고 제품에서는 화면 구성과 동작만 참고한다. OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
 - 백엔드에 빠진 것이 있으면 최소한으로 더하고 보고에 적는다.
 - `docs/PLAN.md`, `docs/BRIEF.md`, `CLAUDE.md`는 고치지 않는다.
 

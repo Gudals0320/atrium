@@ -1,5 +1,5 @@
 // English dictionary (default language, P16). Keys are screen-place names (lib/i18n.js).
-// Sentence case like the symvibe demo: only the first letter is capitalized. Keep it short.
+// Sentence case like the reference demo: only the first letter is capitalized. Keep it short.
 // Plural values are { one, other } and are chosen by vars.n. Placeholders are {name}.
 export default {
   app: {

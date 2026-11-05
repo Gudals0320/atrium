@@ -11,7 +11,7 @@
 
 - `CLAUDE.md`, `docs/BRIEF.md`, `docs/PLAN.md`, `docs/P1.md`
 - `docs/experiments/E4.md`, `E9.md`, `E10.md`
-- `docs/research/symvibe.md`, `docs/research/opencove.md`
+- `docs/research/reference.md`, `docs/research/opencove.md`
 - `backend/` 코드
 
 #### 할 일
@@ -46,7 +46,7 @@ PLAN 7절의 P2, 즉 BRIEF 5절의 v0.1 화면을 만든다.
 
 - `CLAUDE.md`를 따른다.
 - 개발용 프로필(`--dev`)만 쓴다. 실제 판의 값으로는 띄우지 않는다. 창도 `mtask`와 같은 방법으로 프로필을 고른다.
-- symvibe는 화면 구성과 동작만 참고한다. 코드, 이름, 로고, 에셋은 가져오지 않는다.
+- 참고 제품에서는 화면 구성과 동작만 참고한다. 코드, 이름, 로고, 에셋은 가져오지 않는다.
 - OpenCove 파일을 가져오면 `CLAUDE.md`의 MIT 고지 규칙을 지킨다.
 - 기본 herdr 세션, 데스크톱 앱 세션, 그 밖의 기존 세션은 건드리지 않는다.
 - 직접 띄운 프로세스만 PID로 끈다.
@@ -127,7 +127,7 @@ Electron 창, 판, 터미널 노드 4개, 상태 표시, 내 차례 목록과 `N
 | `bin/mtask.mjs` | 위 모듈을 쓰고, `mtask answer <이름> <번호|reject|amend> [--text] [--picks]`를 더했다 |
 | `test/unit.test.mjs` | 답하기 4개, 구독 바꾸기 1개를 더하고 줄바꿈 선택지 확인을 더했다. 모두 23개 |
 
-OpenCove 코드는 가져오지 않았다. WebGL 예산 기본값 8과 "멀리서는 요약"이라는 생각만 참고했다. symvibe에서는 화면 구성과 동작(내 차례 칩, N, 명령 바, 상태 필)만 참고했다.
+OpenCove 코드는 가져오지 않았다. WebGL 예산 기본값 8과 "멀리서는 요약"이라는 생각만 참고했다. 참고 제품에서는 화면 구성과 동작(내 차례 칩, N, 명령 바, 상태 필)만 참고했다.
 
 #### 2. 돌리는 법
 
@@ -250,7 +250,7 @@ cd ../backend && npm test    # 백엔드 단위 시험
 1. **`session.answer`의 모양.** PLAN은 `{ sessionId, choice, text? }`다. 카드가 가리키는 요청을 확인하려고 `toolUseId`(없으면 `since`)를 받고, 여러 개 고르기와 여러 질문을 위해 `picks`를 더했다. `choice`는 번호, `'reject'`(esc), `'amend'`(tab, 글, enter)다. 돌려주는 값은 `{ sent: true, label, steps }` 또는 `{ sent: false, reason: stale | no_pending_ask | not_blocked }`다. `not_blocked`는 hook이 herdr `blocked`보다 먼저 온 짧은 틈이라 카드를 닫지 않는다.
 2. **"No" 선택지도 esc로 보낸다.** A1의 "권한 거부는 esc"를 따라, 화면에서 읽은 선택지 글이 "No"로 시작하면 번호 대신 esc를 보낸다.
 3. **Ctrl+G를 노드 터미널에서 막았다(PLAN 8절 열린 결정).** 누르면 메모장이 뜨고 Claude Code가 그 창을 기다린다(E9). 막고 안내 글을 보인다.
-4. **`N`은 내 차례 다음에 문제(오류, 비정상 종료)까지 돈다.** symvibe의 needs you가 오류를 포함한다. 위쪽 줄에는 내 차례, 검토 대기, 문제를 따로 보인다.
+4. **`N`은 내 차례 다음에 문제(오류, 비정상 종료)까지 돈다.** 참고 제품의 needs you가 오류를 포함한다. 위쪽 줄에는 내 차례, 검토 대기, 문제를 따로 보인다.
 5. **얼굴 기준을 배율이 아니라 노드의 화면 너비로 정했다(PLAN 9.2 "P2에서 정한다").** 노드 크기가 달라도 같은 기준이 된다. 기준은 2절에 있다.
 6. **창은 백엔드가 꺼지면 다시 띄운다.** PLAN 1절의 "창이 백엔드가 없으면 띄우고"를 연결이 끊길 때마다 적용했다. 그래서 개발 중에 백엔드를 끄려면 창을 먼저 닫아야 한다(4절의 실수).
 7. **승인 카드는 노드 본문 아래쪽에 겹쳐 띄운다.** PLAN은 "노드 위에 뜬다"다. 노드 위쪽 바깥에 띄우면 위 노드를 가린다(노드 사이 40px). 카드는 접을 수 있다.
