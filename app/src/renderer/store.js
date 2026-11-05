@@ -57,6 +57,7 @@ const state = {
   outputView: null, // { sessionId, turn } 출력 보기 창
   missionOpen: false, // 미션 맵 덮개
   itemSelected: null, // 캔버스에서 고른 메모·칸반 노드 id(memo:…, kanban:…)
+  memoEdit: null, // P50(#6): 편집을 열 메모 id(메모 노드가 받아 편집을 열고 지운다)
   // P13: 판 밖 대화 노드(읽기 전용 카드)와 대화끼리의 띄움 선. 백엔드 recall.layoutCanvas가 만든다
   convoNodes: new Map(), // convId → { convId, workspaceKey, x, y, w, h, block, title, lastPrompt, lastAnswer, lastAt, binding, subagents, spawnedBy, … }
   convoEdges: [], // [{ id, from, to, via, name }] from·to는 세션 ID나 convo:<대화 ID>
@@ -215,6 +216,13 @@ export function takePendingInput(id) {
 }
 
 // ---------- P6c ----------
+// P50(#6): 메모 편집을 연다. 먼 얼굴이면 화면을 그 메모로 옮긴다(Canvas.jsx showMemoForEdit). rect를 주지 않으면 창이 가진 메모 자리
+export function editMemo(id, rect = null) {
+  const r = rect || state.memos.get(id);
+  if (r && state.showMemoForEdit) state.showMemoForEdit(r);
+  state.memoEdit = id; changed();
+}
+export function takeMemoEdit(id) { if (state.memoEdit === id) { state.memoEdit = null; changed(); } }
 export function setMemoLocal(id, f) { const m = state.memos.get(id); if (!m) return; state.memos = new Map(state.memos); state.memos.set(id, { ...m, ...f }); changed(); }
 export function setConvoLocal(id, f) { const c = state.convoNodes.get(id); if (!c) return; state.convoNodes = new Map(state.convoNodes); state.convoNodes.set(id, { ...c, ...f }); changed(); } // P13
 export function setKanbanLocal(id, f) { const k = state.kanbans.get(id); if (!k) return; state.kanbans = new Map(state.kanbans); state.kanbans.set(id, { ...k, ...f }); changed(); }

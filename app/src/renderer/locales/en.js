@@ -1480,4 +1480,10 @@ export default {
     crossTitle: 'Work handed to a session in another workspace',
     crossIn: 'from {name}',
   },
+  emptyBoard: {
+    title: 'The board is empty',
+    body: 'Open a project folder with + at the top left, then start a session from a launcher on the left rail.',
+    open: '+ Open project',
+    spawn: 'Start a session',
+  },
 };

@@ -1141,3 +1141,9 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 .mt-mm-gloose { position: absolute; color: var(--dim); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .mt-mm-edge.cross path.line { stroke-width: 2.8; }
 .mt-mm-label.cross { border-style: dashed; }
+
+/* P50(#6): 빈 판의 첫 걸음 안내(Canvas.jsx EmptyHint). 캔버스 가운데에 떠 있고, 단추 밖은 캔버스 조작을 막지 않는다 */
+.mt-empty-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: min(440px, calc(100% - 32px)); padding: 20px 24px; text-align: center; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--panel-line); border-radius: var(--panel-radius); box-shadow: var(--panel-shadow); }
+.mt-empty-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.mt-empty-body { font-size: 12.5px; line-height: 1.5; color: var(--dim); }
+.mt-empty-actions { display: flex; gap: 8px; margin-top: 6px; pointer-events: auto; }

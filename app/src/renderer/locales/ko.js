@@ -1480,4 +1480,10 @@ export default {
     crossTitle: '다른 워크스페이스의 세션에 맡긴 작업',
     crossIn: '{name}에서 맡김',
   },
+  emptyBoard: {
+    title: '판이 비어 있습니다',
+    body: '위 왼쪽의 +로 프로젝트 폴더를 열고, 왼쪽 레일의 실행 단추로 세션을 띄웁니다.',
+    open: '+ 프로젝트 열기',
+    spawn: '세션 띄우기',
+  },
 };
