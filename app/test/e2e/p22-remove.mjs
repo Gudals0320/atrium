@@ -195,13 +195,8 @@ try {
   for (let i = 0; i < 12; i++) { if (await page.evaluate(() => !!document.querySelector('[data-role="leave-memo"], [data-role="memo"], [data-field="memo"]'))) memoSeen = true; await sleep(250); }
   step('3a 손댄 세션에서 옮겨도 한 줄 메모 칸이 뜨지 않는다', !memoSeen);
   await shot(page, 'p22-06-no-leave-memo');
-  await page.locator('.mt-node[data-name="s2"] [data-action="brief"]').first().click();
-  await page.waitForSelector('.mt-node[data-name="s2"] [data-role="briefing"]', { timeout: 15000 });
-  await sleep(500);
-  const brief = await page.locator('.mt-node[data-name="s2"] [data-role="briefing"]').innerText();
-  step('3b 브리핑은 지시·답·상태를 보이고 메모 줄이 없다', /마지막 답/.test(brief) && !/메모/.test(brief), brief.replace(/\s+/g, ' ').slice(0, 240));
-  await shot(page, 'p22-07-briefing');
-  await page.locator('.mt-node[data-name="s2"] [data-action="brief-close"]').first().click();
+  // P45: 브리핑(E2)을 뺐다. 머리줄에 브리핑 단추가 없고 노드를 눌러도 브리핑이 뜨지 않는다
+  step('3b 브리핑 단추와 브리핑이 없다', !(await page.evaluate(() => !!document.querySelector('.mt-node[data-name="s2"] [data-action="brief"], [data-role="briefing"]'))));
 
   // 4. 터미널 안 Delete는 글자를 지운다(가로채지 않는다)
   await viewNode(page, 's1', 720);

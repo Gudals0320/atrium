@@ -5,12 +5,13 @@
 // P6c(I2): 명령 바 위에 Thread(보낸 글, 전달 상태, 완료 보고)를 펼친다. 단추는 입력칸 옆
 // P11: 아래 가운데에 떠 있는 넓은 입력(564×60, 반경 17). 왼쪽에 주황 2×2 마크, 오른쪽에 Thread와 보내기 둥근 단추. 전달 칩은 입력 위에
 // P28: 입력을 판 너비의 56%(564~960px, 줌 알약·레일 자리는 비운다)로 넓혔다(styles.css .mt-bottom)
+// P45: 스레드의 "고쳐 보내기"는 입력칸에 그 줄(@대상 글)을 넣고 초점을 준다. 스레드를 펼친 동안에는 전달 칩을 숨긴다(같은 것이 스레드에 있다)
 // P43: 평소에는 숨고 아래 띠에 마우스가 오거나 초점이 들어오면(Ctrl+K, 판에서 아래 키) 나타난다(useAutoHide)
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast, setBottomShown } from './store.js';
 import { deliveryText } from './lib/labels.js';
-import { ThreadPanel, ThreadToggle } from './Thread.jsx';
+import { ThreadPanel, ThreadToggle, commandDraft } from './Thread.jsx';
 import { Icon, Mark } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
 import { inBand, bottomNext } from './lib/bottom.js'; // P43
@@ -85,6 +86,15 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const rootRef = useRef(null);
   const hist = useRef({ list: [], i: -1 });
   useImperativeHandle(ref, () => ({ focus: () => taRef.current && taRef.current.focus() }));
+  useEffect(() => {
+    const onDraft = (e) => {
+      const v = String(e.detail || '');
+      setText(v); setPick(0);
+      requestAnimationFrame(() => { const el = taRef.current; if (el) { el.focus(); el.setSelectionRange(v.length, v.length); } });
+    };
+    commandDraft.addEventListener('draft', onDraft);
+    return () => commandDraft.removeEventListener('draft', onDraft);
+  }, []);
 
   // 커서 앞 낱말이 @로 시작하면 대상 메뉴(전체, 각 세션)
   const caretWord = (() => {
@@ -153,7 +163,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       {/* P11: Thread와 전달 칩은 칩 줄 위로 띄운다 */}
       <div className="mt-bottom-above">
       <ThreadPanel />
-      {recent.length > 0 && (
+      {recent.length > 0 && !threadOpen && (
         <div className="mt-deliveries">
           {recent.map((d) => (
             <div key={d.deliveryId} className={`mt-delivery ds-${d.status}`} data-delivery={d.deliveryId} data-status={d.status}>

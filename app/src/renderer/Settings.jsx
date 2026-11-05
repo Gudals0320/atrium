@@ -1,12 +1,14 @@
 // 설정(ARCH 4절 I7, P6c): 트레이 상주, 가지 펼치기 상한(P8), 보관 기간과 리포 스스로 찾기(P10), 새 세션 기본값. 켜면 창을 닫아도 앱이 트레이에 남아 OS 알림을 계속 띄운다(Electron main tray.mjs).
 // 판 기록에 두므로(settings.set) atrium settings와 같은 값이다. 바꾸면 settings.updated로 main과 창이 함께 따른다.
 // P16: 화면 언어(영어 기본, 한국어). 고르면 창을 다시 읽지 않고 곧바로 바뀐다. 글은 사전(locales/)에 있다.
+// P45: 일반 탭에 화면 배율과 터미널 글자 배율(이 창의 localStorage, lib/scale.js).
 // P28: 스크롤 없이 한 화면에 들어가게 탭으로 나눴다(일반, 호출자, 잠재우기, 가지 펼치기, 보관과 리포 찾기).
 //   P33: 옛 새 세션 기본값 두 탭은 호출자 탭(Launchers.jsx) 하나가 대신한다.
 //   줄마다 이름·값·풀이 세 칸(styles.css .mt-set-grid)이고, 체크 상자도 값 칸에 둔다. 긴 풀이는 탭 위 한 단락(.mt-set-note). 아래 텍스트 로고는 뺐다.
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
-import { useStore, toast } from './store.js';
+import { useStore, toast, setTermScale, setUiScale } from './store.js';
+import { pctOf, parsePct, stepScale, SCALE_MIN, SCALE_MAX, SCALE_STEP } from './lib/scale.js'; // P45
 import { useT, errText, setLanguage, getLanguage, LANGUAGES } from './lib/i18n.js';
 import { LaunchersTab } from './Launchers.jsx'; // P33: 호출자 탭
 
@@ -50,7 +52,31 @@ function LanguageSetting({ settings }) {
   );
 }
 
-// 일반: 언어와 트레이 상주
+// P45: 터미널 글자 배율과 화면 배율. 이 창에만 둔다(판 설정이 아니다). −·+는 5%씩, 칸에 백분율을 적고 Enter. 바꾸면 곧바로 보인다
+function ScaleSetting({ kind }) {
+  const t = useT();
+  const value = useStore((st) => (kind === 'term' ? st.termScale : st.uiScale));
+  const [text, setText] = useState(null);
+  const set = kind === 'term' ? setTermScale : setUiScale;
+  const field = kind === 'term' ? 'termScale' : 'uiScale';
+  const apply = () => { if (text == null) return; const f = parsePct(text); if (f != null) set(f); setText(null); };
+  return (
+    <div className="mt-set-row" data-role={`${field}-setting`}>
+      <span className="mt-set-name">{t(`scale.${kind}Name`)}</span>
+      <span className="mt-set-value mt-scale">
+        <button type="button" className="mt-btn small ghost" data-action={`${field}-down`} disabled={value <= SCALE_MIN} title={t('scale.down')} onClick={() => set(stepScale(value, -1))}>−</button>
+        <input type="number" className="mt-set-num mt-scale-num" min={SCALE_MIN * 100} max={SCALE_MAX * 100} step={SCALE_STEP * 100} data-field={`setting-${field}`} data-value={pctOf(value)}
+          value={text ?? pctOf(value)} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }} />
+        <span className="mt-scale-pct">%</span>
+        <button type="button" className="mt-btn small ghost" data-action={`${field}-up`} disabled={value >= SCALE_MAX} title={t('scale.up')} onClick={() => set(stepScale(value, 1))}>+</button>
+        <button type="button" className="mt-btn small ghost" data-action={`${field}-reset`} disabled={value === 1} onClick={() => set(1)}>{t('scale.reset')}</button>
+      </span>
+      <span className="mt-set-hint">{t(`scale.${kind}Hint`, { min: SCALE_MIN * 100, max: SCALE_MAX * 100 })}</span>
+    </div>
+  );
+}
+
+// 일반: 언어, 배율(P45), 트레이 상주
 function GeneralTab({ settings }) {
   const t = useT();
   const [pending, setPending] = useState(null); // 누른 값(백엔드가 settings.updated로 확정할 때까지 먼저 보인다)
@@ -62,6 +88,8 @@ function GeneralTab({ settings }) {
   return (
     <div className="mt-set-grid" data-role="general-settings">
       <LanguageSetting settings={settings} />
+      <ScaleSetting kind="ui" />
+      <ScaleSetting kind="term" />
       {settings && <>
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>

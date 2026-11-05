@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react';
 import { api } from './api.js';
 import { setLanguage, t, errText } from './lib/i18n.js';
+import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 
 const state = {
   conn: 'connecting',
@@ -29,7 +30,6 @@ const state = {
   links: new Map(), // P4: linkId → 연결(누가 누구에게 시켰는지, 역할, 띄움)
   dialog: null, // { kind: 'spawn' | 'role' | 'link' | 'wsopen' | 'wsclose' | 'close', from?, to?, linkId?, cwd?, ids? }
   killAsk: null, // P22: { id, at } Delete 키로 그 노드의 닫기 확인(X와 같음)을 연다
-  briefing: null, // E2: { sessionId, data } 들어갈 때 브리핑
   // P5: 리포지토리 워크스페이스
   workspaces: [], // [{ key, name, kind, root, createdAt, counts, x, y }] 처음 생긴 순서
   groups: [], // P44: 가상 그룹 [{ id, name, members: [워크스페이스 키] }](판 데이터 meta wsGroups)
@@ -130,7 +130,6 @@ export function setViewNow(vp, size) {
   state.vpNow = vp; if (size) state.canvasSize = size; changed();
 }
 export function setKillAsk(id) { state.killAsk = id ? { id, at: Date.now() } : null; changed(); }
-export function setBriefing(v) { state.briefing = v; changed(); }
 // 시험용(P3, 노드 오류 경계): 이 세션 노드가 그릴 때 일부러 오류를 낸다. 창 안의 window.__mt.setDebugThrow로만 켠다
 export function setDebugThrow(id) { state.debugThrow = id; changed(); }
 
@@ -311,3 +310,12 @@ api.on('settings.updated', (v) => putSettings(v.settings || v));
 export function putLaunchers(v) { state.launchers = v && Array.isArray(v.launchers) ? v : null; changed(); }
 export const loadLaunchers = () => api.call('launcher.list').then(putLaunchers).catch(() => {});
 api.on('launchers.updated', (v) => putLaunchers(v));
+
+// P45: 터미널 글자 배율과 화면 배율(lib/scale.js). 이 창(프로필)의 localStorage에 두어 다시 켜도 남는다.
+// 화면 배율은 preload가 창을 그리기 전에 먼저 맞추고(preload.cjs), 바꾸면 여기서 다시 맞춘다
+const scaleStore = () => { try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; } };
+function applyUiScale(f) { try { if (typeof window !== 'undefined' && window.mt && window.mt.setZoom) window.mt.setZoom(f); } catch { /* 웹 화면 등 창 배율이 없는 곳 */ } }
+state.termScale = readScale(scaleStore(), SCALE_KEYS.term);
+state.uiScale = readScale(scaleStore(), SCALE_KEYS.ui);
+export function setTermScale(f) { state.termScale = saveScale(scaleStore(), SCALE_KEYS.term, f); changed(); }
+export function setUiScale(f) { state.uiScale = saveScale(scaleStore(), SCALE_KEYS.ui, f); applyUiScale(state.uiScale); changed(); }
