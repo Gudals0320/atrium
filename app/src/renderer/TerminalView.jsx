@@ -17,7 +17,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
 import { useStore, getState, takePendingInput, pendingFor } from './store.js';
-import { wrapPaste, wheelToSgr, sgrWheel, keyAction, frameBytes, unscalePoint, clearsSelection, copyText } from './lib/term-input.js';
+import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, keyAction, frameBytes, unscalePoint, clearsSelection, copyText } from './lib/term-input.js';
 import { findShift, bigChange, historyAbove, historyPrefill, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
 import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
@@ -151,7 +151,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       return true;
     });
     term.attachCustomWheelEventHandler((ev) => {
-      if (shell) return true; // P42: 셸은 판 안 기록을 xterm이 스크롤한다(선택은 버퍼 줄에 붙어 함께 움직인다)
+      if (shell) return false; // 셸은 아래 onShellWheel이 먼저 받는다
       const screen = host.querySelector('.xterm-screen') || host;
       const r = wheelToSgr({ deltaY: ev.deltaY, deltaMode: ev.deltaMode, clientX: ev.clientX, clientY: ev.clientY, rect: screen.getBoundingClientRect(), cols: term.cols, rows: term.rows, acc: st.acc });
       st.acc = r.acc;
@@ -159,6 +159,17 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       ev.preventDefault();
       return false;
     });
+    // P42: 셸은 판 안 기록을 스크롤한다(선택은 버퍼 줄에 붙어 onScroll로 함께 움직인다).
+    // P51(#7): xterm 6의 기록 스크롤(안쪽 스크롤 요소)은 한 칸에 약 2줄, 작은 값마다 한 줄이라, 캡처 단계에서 먼저 받아 모은 뒤 100px에 3줄로 굴린다.
+    // 사용자 휠 처리기(attachCustomWheelEventHandler)는 안쪽 스크롤 요소보다 늦게 불려 막지 못한다
+    const onShellWheel = (ev) => {
+      if (!ev.deltaY) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const r = shellWheelLines({ deltaY: ev.deltaY, deltaMode: ev.deltaMode, rows: term.rows, acc: st.acc });
+      st.acc = r.acc;
+      if (r.lines) term.scrollLines(r.lines);
+    };
+    if (shell) host.addEventListener('wheel', onShellWheel, { capture: true, passive: false });
     // 붙여넣기: xterm보다 먼저(캡처 단계) 받아 괄호 붙여넣기로 감싼다. 감싸지 않으면 줄마다 따로 제출된다(E4 2.5).
     // P48: 웹 화면은 붙여 넣거나 끌어 놓은 파일(그림 등)을 백엔드로 올리고 그 PC 경로를 넣는다
     const uploadInto = (files) => {
@@ -172,7 +183,8 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       if (clearsSelection('paste', { hasSelection: sel.has() })) sel.clear('paste');
       if (files.length) return uploadInto(files);
       const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
-      send(wrapPaste(text));
+      // P51(#3): 셸 노드는 줄바꿈을 Shift+Enter로 보내 여러 줄이 입력줄에 쌓이게 한다(지금 종류로 본다. 셸 안에서 띄운 에이전트로 바뀔 수 있다)
+      send(wrapPaste(text, { shell: (getState().sessions.get(sessionId) || {}).kind === 'shell' }));
     };
     host.addEventListener('paste', onPaste, true);
     const onDragOver = (e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } };
@@ -299,6 +311,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       host.removeEventListener('paste', onPaste, true);
       host.removeEventListener('dragover', onDragOver, true);
       host.removeEventListener('drop', onDrop, true);
+      host.removeEventListener('wheel', onShellWheel, { capture: true });
       sel.dispose();
       clearTimeout(st.syncTimer);
       if (shadow) shadow.dispose();
