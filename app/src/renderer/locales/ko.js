@@ -1363,4 +1363,8 @@ export default {
     bracket: '괄호선',
     around: '바깥쪽 경로',
   },
+  // P42: 터미널 노드의 웹 같은 글 고르기
+  termSelect: {
+    copyFail: '클립보드에 복사하지 못했습니다.',
+  },
 };

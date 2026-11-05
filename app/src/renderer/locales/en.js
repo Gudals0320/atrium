@@ -1363,4 +1363,8 @@ export default {
     bracket: 'bracket',
     around: 'perimeter route',
   },
+  // P42: web-like text selection in terminal nodes
+  termSelect: {
+    copyFail: 'Could not copy to the clipboard',
+  },
 };

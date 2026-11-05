@@ -1,5 +1,5 @@
 // P38 창 단위 시험: 터미널 끌어 고르기와 선택(lib/term-input.js). 판 배율 아래의 마우스 → 칸 계산(unscalePoint),
-// 선택을 지우는 때(clearsSelection), 복사할 글(copyText), 터미널 안 누르기의 화면 옮기기(termClickNavigates)
+// 선택을 지우는 때(clearsSelection, P42에서 휠·프레임은 지우지 않게 바뀜), 복사할 글(copyText), 터미널 안 누르기의 화면 옮기기(termClickNavigates)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unscalePoint, clearsSelection, copyText, termClickNavigates, TERM_CLICK_WAIT, keyAction } from '../src/renderer/lib/term-input.js';
@@ -53,15 +53,13 @@ test('unscalePoint: 배율 1이거나 크기를 모르면 그대로', () => {
   assert.deepEqual(out, { clientX: 1300, clientY: 100 });
 });
 
-test('clearsSelection: 복사·붙여넣기·휠은 지우고, 프레임은 고른 자리의 글이 바뀔 때만(끄는 중이면 두기)', () => {
-  for (const e of ['copy', 'paste', 'wheel']) {
+test('clearsSelection: 복사·붙여넣기는 지우고, 휠과 프레임으로는 지우지 않는다(P42에서 바뀜: 선택이 글에 붙어 함께 움직인다)', () => {
+  for (const e of ['copy', 'paste']) {
     assert.equal(clearsSelection(e), true, e);
     assert.equal(clearsSelection(e, { hasSelection: false }), false, `${e} 선택 없음`);
   }
-  assert.equal(clearsSelection('frame', { before: 'abc', after: 'abc' }), false);
-  assert.equal(clearsSelection('frame', { before: 'abc', after: 'xyz' }), true);
-  assert.equal(clearsSelection('frame', { before: 'abc', after: 'xyz', dragging: true }), false);
-  assert.equal(clearsSelection('frame', { before: 'abc', after: 'xyz', hasSelection: false }), false);
+  assert.equal(clearsSelection('wheel'), false);
+  assert.equal(clearsSelection('frame', { before: 'abc', after: 'xyz' }), false);
   assert.equal(clearsSelection('focus'), false);
 });
 
