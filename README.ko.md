@@ -120,12 +120,18 @@ powershell -ExecutionPolicy Bypass -File app\scripts\make-shortcut.ps1
 
 - 짝 맺은 브라우저는 PC의 Windows 사용자와 같은 권한입니다. 셸을 띄워 무엇이든 실행할 수 있습니다. 내 기기만 짝 맺습니다.
 - 브라우저에는 비밀번호나 토큰을 두지 않습니다. 판은 패스키의 공개 키만 둡니다. 패스키로 확인하면 세션을 `HttpOnly; SameSite=Strict` 쿠키(https면 `Secure`)로 주므로 페이지의 스크립트가 읽지 못합니다. 판은 세션 ID의 해시만 둡니다.
-- 기기를 끊으면 그 기기의 세션이 모두 곧바로 끝나고 열린 연결이 닫힙니다.
-- 패스키 전에 토큰으로 짝 맺은 브라우저는 더 연결할 수 없습니다. 기기 목록에 **다시 짝 맺기 필요**로 보입니다. 지우고 그 브라우저에서 다시 짝을 맺습니다.
+- 짝 맺은 브라우저는 짝을 맺은 Tailscale 기기에서만 씁니다. 판은 요청한 기기를 `tailscale whois`로 확인합니다. 세션 쿠키나 패스키 서명이 다른 Tailscale 기기에서 오면 거부합니다. PC 안(`localhost`)에서 짝 맺은 브라우저는 PC 안에서만 씁니다. 기기 목록에는 Tailscale이 확인한 기기 이름이 크게, 브라우저 이름이 작게 보입니다.
+- 기기의 짝을 풀거나 PC에서 연결을 끊으면 그 기기의 세션이 모두 곧바로 끝나고 열린 연결이 닫힙니다. 끊은 기기는 패스키로 다시 확인해야 다시 붙습니다. 브라우저는 자기 짝만 풀 수 있고, 다른 기기를 끊거나 이름을 바꾸는 것은 PC에서만 합니다.
+- 패스키 전에 토큰으로 짝 맺은 브라우저와 Tailscale 기기에 묶이기 전에 짝 맺은 브라우저는 더 연결할 수 없습니다. 기기 목록에 **다시 짝 맺기 필요**로 보입니다. 지우고 그 브라우저에서 다시 짝을 맺습니다.
 - Tailscale로 온 요청은 PC에 로그인한 Tailscale 사용자의 것만 받습니다. 다른 로그인을 더하거나 확인을 끄는 것은 PC의 **설정 › 연결된 기기**에서 합니다.
 - Tailscale로 온 요청은 hook과 하위 세션 주소를 부를 수 없고, 판 API 토큰은 브라우저에 내주지 않습니다.
 - `tailscale funnel`은 쓰지 않습니다. funnel은 판을 인터넷에 공개합니다. funnel이 켜져 있으면 `remote status`가 알립니다.
-- 기기를 끊으려면 **설정 › 연결된 기기**에서 **끊기**를 누르거나 `node backend\bin\atrium.mjs devices rm <ID>`를 실행합니다. 원격 접속을 끄려면 `node backend\bin\atrium.mjs remote disable --yes`를 실행합니다.
+- PC에서 원격 연결을 보고 끊고 막을 수 있습니다.
+  - 원격 기기가 붙거나 짝을 맺으면 PC 창에 알림이 뜹니다(창이 가려져 있으면 OS 알림도).
+  - 위쪽 **다른 기기 n** 알약을 누르면 붙은 기기마다 **끊기**(지금 연결을 닫고 세션을 끝냄)와 **짝 풀기**가 있습니다.
+  - **설정 › 연결된 기기**의 **원격 받기**를 끄면(트레이 메뉴, `node backend\bin\atrium.mjs remote block`도 같음) 짝 맺은 기기와 Tailscale로 온 요청을 모두 거부하고 모든 기기 세션을 끝냅니다. 이 PC의 창과 CLI는 그대로입니다. 다시 켜려면 `remote allow`를 실행합니다.
+  - 짝 맺기, 로그인, 연결과 끊김, 거부와 그 까닭은 연결 기록에 남습니다. 같은 탭이나 `node backend\bin\atrium.mjs remote log`로 봅니다.
+- 짝을 풀려면 **설정 › 연결된 기기**에서 **짝 풀기**를 누르거나 `node backend\bin\atrium.mjs devices rm <ID>`를 실행합니다. 원격 접속(serve)을 끄려면 `node backend\bin\atrium.mjs remote disable --yes`를 실행합니다.
 
 ## 구조
 
