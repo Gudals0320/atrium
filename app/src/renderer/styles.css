@@ -1082,7 +1082,7 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 .mt-mm-group.shut { background: var(--panel); }
 .mt-mm-ghead { position: absolute; left: 0; top: 0; right: 0; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: none; background: none; color: var(--text-2); font-size: 12.5px; cursor: pointer; text-align: left; border-radius: 12px 12px 0 0; }
 .mt-mm-ghead:hover { background: var(--panel-3); color: var(--text); }
-.mt-mm-gcaret { width: 12px; color: var(--dim); flex: none; }
+.mt-mm-gcaret { width: 14px; color: var(--dim); flex: none; font-size: 14px; line-height: 1; text-align: center; }
 .mt-mm-gname { color: var(--text); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
 .mt-mm-gcount { color: var(--dim); font-family: var(--font-mono); font-size: 11.5px; }
 .mt-mm-gneeds { color: var(--attn); font-weight: 700; font-size: 11.5px; padding: 0 7px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--attn) 55%, transparent); }
