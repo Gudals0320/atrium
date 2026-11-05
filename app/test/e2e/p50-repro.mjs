@@ -64,6 +64,8 @@ const domOverlaps = () => page.evaluate(() => {
   }
   return out;
 });
+// 메모가 먼 얼굴(화면 220px 아래)이 되게 배율 0.25로 줄인다(화면 가운데는 그대로). 판이 작으면 전체 보기 배율이 커서 메모가 먼 얼굴이 아니다
+const farView = () => page.evaluate(() => { const st = window.__mt.getState(); const c = st.viewCenter(); const el = document.querySelector('.mt-canvas'); const z = 0.25; st.setViewport({ x: el.clientWidth / 2 - c.x * z, y: el.clientHeight / 2 - c.y * z, zoom: z }); });
 const deleteMemos = async () => { for (const id of await page.evaluate(() => [...window.__mt.getState().memos.keys()])) await call('memo.delete', { memo: id, confirm: true }).catch(() => {}); await sleep(400); };
 
 const cases = {
@@ -98,7 +100,7 @@ const cases = {
     let p = await head('pa'); await page.keyboard.down('Control'); await page.mouse.click(p.x, p.y);
     p = await head('pc'); await page.mouse.click(p.x, p.y); await page.keyboard.up('Control'); await sleep(500);
     const sel = (await page.evaluate(() => window.__mt.getState().selected)).length;
-    await page.click('[data-action="layout-more"]'); await sleep(300);
+    if (await page.isVisible('[data-action="layout-more"]')) { await page.click('[data-action="layout-more"]'); await sleep(300); } // 넓은 창에서는 틀이 막대에 바로 보인다
     await shot('preset-1-before');
     const btn = (await page.$$('[data-role="presets"] button'))[0];
     const title = await btn.getAttribute('title');
@@ -115,6 +117,7 @@ const cases = {
   // #6·H3: 레일의 메모 단추를 누른 뒤 Space·Enter를 치면 메모가 또 생긴다(새 메모는 편집 상태가 아니고 초점이 단추에 남는다)
   async memoKeys() {
     await page.evaluate(() => window.__mt.getState().fitAll(0)); await sleep(800);
+    await farView(); await sleep(800);
     const n0 = await memoCount();
     await page.click('[data-action="memo-new"]'); await sleep(1200);
     const a = await active(); const n1 = await memoCount();
@@ -133,6 +136,7 @@ const cases = {
     const anchor = await page.evaluate(() => { const st = window.__mt.getState(); const r = st.regionOf && st.regionOf(st.workspaces[0].key); return r; });
     await call('memo.create', { text: 'far memo', x: Math.round(anchor.x + anchor.w + 400), y: Math.round(anchor.y), w: 360, h: 240 }); await sleep(800);
     await page.evaluate(() => window.__mt.getState().fitAll(0)); await sleep(1200);
+    await farView(); await sleep(1000);
     const far = await page.evaluate(() => { const e = document.querySelector('.mt-memo-far'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, zoom: window.__mt.getState().vpNow && window.__mt.getState().vpNow.zoom }; });
     await shot('memofar-1-fit');
     if (!far) { step('memoFarEdit: 전체 보기에서 메모가 먼 얼굴이다(시험 전제)', false, { far }); return; }

@@ -33,9 +33,12 @@ test('dockSpot: 원하는 자리가 비면 그대로, 막히면 가장 가까운
   assert.deepEqual(dockSpot({ rect, items: [R(3000, 0)] }), { x: 0, y: 0 }, '비면 그대로');
   // ux1 재현: pa(0,0) 오른쪽에 pb(760,0). pc는 pa 위였고 고른 노드라 빠졌다
   const pb = R(760, 0);
-  const at = dockSpot({ rect, items: [pb], prefer: [{ x: 0, y: -500 }] });
-  assert.deepEqual(at, { x: 0, y: -500 }, '고른 노드가 있던 위쪽 자리(아래와 거리가 같으면 위)');
+  const at = dockSpot({ rect, items: [pb], prefer: [R(0, 0), R(0, -500)] });
+  assert.deepEqual(at, { x: 0, y: -500 }, '고른 노드가 있던 위쪽 자리');
   assert.ok(!overlaps({ ...rect, ...at }, pb, GAP - 1));
+  // 창 시험의 자리: pc가 pa 아래였으면 위·아래 거리가 같아도 비워지는 아래 자리
+  assert.deepEqual(dockSpot({ rect, items: [pb], prefer: [R(0, 0), R(0, 500)] }), { x: 0, y: 500 }, '비워지는 자리와 겹치는 쪽');
+  assert.deepEqual(dockSpot({ rect, items: [pb] }), { x: 0, y: -500 }, '비워지는 자리가 없으면 위');
   // 둘레가 막혀도 겹치지 않는 자리를 찾는다
   const ring = [R(760, 0), R(-760, 0), R(0, -500), R(0, 500), R(760, -500), R(760, 500), R(-760, -500), R(-760, 500)];
   const at2 = dockSpot({ rect, items: ring });
@@ -62,6 +65,13 @@ test('dockLayout: 노드 둘을 가로 2개로 짜도 셋째 노드를 덮지 �
   assert.equal(pa.y, pc.y); assert.equal(pc.x, pa.x + pa.w);
   for (const r of [pa, pc]) assert.ok(!overlaps(r, pb, GAP - 1), `덩어리가 pb를 덮지 않는다: ${JSON.stringify(r)}`);
   assert.deepEqual(pa, R(40, -888), '고른 노드가 있던 자리(pc 자리)에 짠다');
+});
+
+test('dockLayout: 창 시험 자리(pc가 pa 아래)면 비워지는 아래 자리에 짠다', () => {
+  const { b, add, at } = fakeBackend();
+  add('pa', R(40, 112)); add('pb', R(800, 112)); add('pc', R(40, 612));
+  ops.dockLayout(b, { members: ['pa', 'pc'], preset: 'row' });
+  assert.deepEqual([at('pa'), at('pc'), at('pb')], [R(40, 612), R(760, 612), R(800, 112)]);
 });
 
 test('dockLayout: 고른 노드 자리에 메모가 있으면 메모도 피한다', () => {

@@ -341,8 +341,7 @@ function presetSpot(b, picked, outer) {
   const regs = regions(b, all);
   const ownReg = regionRect(own) || regs.get(area) || null;
   const others = [...regs].filter(([k]) => k !== area && k !== wsOfArea(area)).map(([, r]) => r).filter((r) => !ownReg || !overlaps(ownReg, r, -1));
-  const was = bbox(picked.map((sid) => nodeRect(b, sid)));
-  return dockSpot({ rect: outer, items, own, others, prefer: was ? [was] : [] });
+  return dockSpot({ rect: outer, items, own, others, prefer: picked.map((sid) => nodeRect(b, sid)) });
 }
 
 // 덩어리 바꾸기. tree: 나무 통째로(분할선을 끈 비율, 같은 구성 노드만), sizes: 옛 한 줄 덩어리처럼 뿌리 마디 자식마다 길이(가로줄은 너비, 세로줄은 높이),
