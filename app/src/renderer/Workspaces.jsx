@@ -42,19 +42,56 @@ export function OpenRepoDialog({ onClose }) {
   );
 }
 
-// 빈 워크스페이스 닫기(확인을 받는다)
+// 워크스페이스를 판에서 지우기(확인을 받는다). P44: 여럿(ws가 배열)을 한 번에. 안에 세션이 있으면 "모두 보관"(꺼서 보관함) 또는 "모두 삭제"(꺼서 판에서 지움)를 고른다.
+// 돌고 있는 CLI 수를 보인다. 디스크의 폴더와 대화 기록 파일은 건드리지 않는다
 export function CloseWsDialog({ ws, onClose }) {
   const t = useT();
-  const [msg, setMsg] = useState(null);
+  const list = Array.isArray(ws) ? ws : [ws];
+  const keys = list.map((w) => w.key);
+  const [ask, setAsk] = useState(null);
+  const [after, setAfter] = useState(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.call('workspace.close', { workspace: ws.key }).then((r) => setMsg(r)).catch((e) => setMsg({ error: e })); }, [ws.key]);
+  useEffect(() => { api.call('workspace.close', { workspaces: keys }).then((r) => setAsk(r)).catch((e) => setAsk({ error: e })); }, [keys.join('|')]);
+  const plan = ask && ask.plan;
+  const need = !!(plan && plan.needsChoice);
+  async function go() {
+    setBusy(true);
+    try {
+      const r = await api.call('workspace.close', { workspaces: keys, confirm: true, ...(need ? { after } : {}) });
+      const s = r.sessions || {};
+      const parts = [t('sbRemove.doneWs', { n: (r.removed || []).length })];
+      if (s.archived) parts.push(t('sbRemove.doneArchived', { n: s.archived }));
+      if (s.deleted) parts.push(t('sbRemove.doneDeleted', { n: s.deleted }));
+      if (r.kept && r.kept.length) parts.push(t('sbRemove.doneKept', { n: r.kept.length, failed: (s.failed || []).length }));
+      toast(parts.join(' · '), r.kept && r.kept.length ? 'error' : 'info');
+      onClose();
+    } catch (e) { toast(t('workspaces.closeFail', { error: errText(e) }), 'error'); setBusy(false); }
+  }
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="mt-modal" data-role="ws-close">
-        <h3>{t('workspaces.closeTitle', { name: ws.name })}</h3>
-        <div>{!msg ? t('workspaces.confirmLoading') : msg.error ? errText(msg.error) : tMsg(msg)}</div>
+      <div className="mt-modal mt-wsrm" data-role="ws-close" data-need={need ? '1' : '0'}>
+        <h3>{list.length === 1 ? t('workspaces.closeTitle', { name: list[0].name }) : t('sbRemove.title', { n: list.length })}</h3>
+        {!ask ? <div>{t('workspaces.confirmLoading')}</div> : ask.error ? <div>{errText(ask.error)}</div> : (
+          <>
+            {plan && plan.items.length > 1 && (
+              <ul className="mt-wsrm-list" data-role="ws-close-list">
+                {plan.items.map((x) => <li key={x.key} data-ws={x.key}><b>{x.name}</b> <span className="dim">{x.sessions ? t('sbRemove.itemSessions', { n: x.sessions, running: x.running }) : t('sbRemove.itemEmpty')}</span></li>)}
+              </ul>
+            )}
+            {need ? (
+              <>
+                <div className="mt-wsrm-warn" data-role="ws-close-warn">{t('sbRemove.hasSessions', { n: plan.sessions })}{plan.running > 0 && <> <b data-count="running">{t('sbRemove.running', { n: plan.running })}</b></>}</div>
+                <div className="mt-wsrm-pick" role="radiogroup">
+                  <label className={after === 'archive' ? 'on' : ''}><input type="radio" name="wsrm-after" data-action="after-archive" checked={after === 'archive'} onChange={() => setAfter('archive')} /><span><b>{t('sbRemove.archiveAll')}</b><br /><span className="dim">{t('sbRemove.archiveAllNote')}</span></span></label>
+                  <label className={after === 'delete' ? 'on' : ''}><input type="radio" name="wsrm-after" data-action="after-delete" checked={after === 'delete'} onChange={() => setAfter('delete')} /><span><b>{t('sbRemove.deleteAll')}</b><br /><span className="dim">{t('sbRemove.deleteAllNote')}</span></span></label>
+                </div>
+              </>
+            ) : <div data-role="ws-close-msg">{tMsg(ask)}</div>}
+            <div className="mt-card-sub dim">{t('sbRemove.keepNote')}</div>
+          </>
+        )}
         <div className="mt-card-actions">
-          <button className="mt-btn danger" disabled={busy} data-action="ws-close-confirm" onClick={async () => { setBusy(true); try { await api.call('workspace.close', { workspace: ws.key, confirm: true }); onClose(); } catch (e) { toast(t('workspaces.closeFail', { error: errText(e) }), 'error'); setBusy(false); } }}>{t('common.close')}</button>
+          <button className="mt-btn danger" disabled={busy || !ask || !!ask.error || (need && !after)} data-action="ws-close-confirm" onClick={go}>{busy ? t('sbRemove.working') : need ? t('sbRemove.confirmWith', { n: plan.sessions }) : t('sbRemove.confirm')}</button>
           <button className="mt-btn ghost" onClick={onClose}>{t('common.cancel')}</button>
         </div>
       </div>

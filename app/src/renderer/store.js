@@ -32,6 +32,7 @@ const state = {
   briefing: null, // E2: { sessionId, data } 들어갈 때 브리핑
   // P5: 리포지토리 워크스페이스
   workspaces: [], // [{ key, name, kind, root, createdAt, counts, x, y }] 처음 생긴 순서
+  groups: [], // P44: 가상 그룹 [{ id, name, members: [워크스페이스 키] }](판 데이터 meta wsGroups)
   currentWs: null, // 마지막에 고른(가 본) 워크스페이스의 키
   vpNow: null, // 지금 캔버스의 뷰포트
   canvasSize: null,
@@ -91,6 +92,7 @@ export async function loadBoard() {
   state.links = new Map((b.links || []).map((l) => [l.linkId, l]));
   state.docks = new Map((b.docks || []).map((d) => [d.dockId, d]));
   if (b.workspaces) state.workspaces = b.workspaces;
+  if (b.groups) state.groups = b.groups; // P44: 워크스페이스 가상 그룹
   // P6c: 메모·칸반. board.get에 없으면(P6b 전 백엔드) 따로 읽는다
   const memos = b.memos || await api.call('memo.list').catch(() => []);
   const kanbans = b.kanbans || await api.call('kanban.list').catch(() => []);
@@ -291,6 +293,7 @@ api.on('link.removed', (d) => { state.links = new Map(state.links); state.links.
 api.on('resources', (v) => { state.resources = v; changed(); });
 api.on('workspace.updated', (d) => {
   state.workspaces = d.workspaces || [];
+  if (d.groups) state.groups = d.groups; // P44
   if (!state.workspaces.some((w) => w.key === state.currentWs)) state.currentWs = d.current || (state.workspaces[0] || {}).key || null;
   changed();
 });
