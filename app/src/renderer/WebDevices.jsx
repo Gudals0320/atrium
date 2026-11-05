@@ -3,7 +3,7 @@
 //   1. 요약: 원격 받기 스위치, 받는 중·막음과 지금 붙은 기기 수, 노트북에서 열 주소(복사), serve가 판으로 가지 않으면 켜기 명령(복사), 진단 문제 한 줄
 //   2. 짝 맺기: 새 코드(큰 코드와 남은 시간), 허락 요청
 //   3. 짝 맺은 기기: Tailscale 기기 이름, 브라우저 별칭, 패스키 종류, 지금 연결, 마지막 접속, 끊기·짝 풀기. "다시 짝 맺기 필요"는 따로
-//   4. 보안 설정: 세션 시간, 끊긴 뒤 유지 시간, Tailscale 사용자 규칙
+//   4. 보안 설정: 패스키로 확인(P62, 기본 끔), 세션 시간·끊긴 뒤 유지 시간(켬일 때만 쓰임), Tailscale 사용자 규칙
 //   5. Tailscale 진단: 기본으로 접힘
 //   6. 연결 기록: 최근 몇 줄, "더 보기"로 늘린다
 //   웹 화면(브라우저)은 자기 기기 정보, 로그아웃, 이 브라우저 짝 풀기만 본다.
@@ -261,12 +261,13 @@ function DeviceRow({ d, on, onKick, onRevoke }) {
           ? <span className="mt-wdev-sub mt-wdev-warn warn" title={t('webDevices.needsRepairHint')} data-role="needs-repair" data-bind="repair">{t('webDevices.needsRepair')}</span>
           : <span className="mt-wdev-sub dim">
               <span data-role="device-bind" data-bind={d.tsNode ? 'tailscale' : 'local'}>{d.tsNode ? t('webDevices.alias', { name: d.name }) : t('webDevices.localOnly')}</span>
-              {kk && <span data-role="device-kind" data-kind={d.passkey.kind}> · {t(kk)}</span>}
+              {kk ? <span data-role="device-kind" data-kind={d.passkey.kind}> · {t(kk)}</span> : <span data-role="device-kind" data-kind="none"> · {t('devTab.kind_none')}</span>}
             </span>}
       </span>
       <span className="mt-dev-state dim" data-role="device-state">
         {on ? <b className="mt-dev-on">{t('devTab.online')}</b> : t('webDevices.lastSeen', { at: when(d.lastSeenAt) })}
         {d.sessions != null && !rep && <span data-role="device-sessions"> · {t('webDevices.sessions', { n: d.sessions })}</span>}
+        {d.needsPasskey && !rep && <span className="mt-wdev-warn" data-role="needs-passkey" title={t('devTab.needsPasskeyHint')}> · {t('devTab.needsPasskey')}</span>}
       </span>
       <span className="mt-dev-acts">
         {on && <button type="button" className="mt-btn small" onClick={() => onKick(d)} data-action="device-disconnect" title={t('peers.kickHint')}>{t('peers.kick')}</button>}
@@ -276,18 +277,32 @@ function DeviceRow({ d, on, onKick, onRevoke }) {
   );
 }
 
-// 4. 보안 설정: 세션 시간, 끊긴 뒤 유지 시간(P56), Tailscale 사용자 규칙(P49)
+// 4. 보안 설정: 패스키로 확인(P62), 세션 시간, 끊긴 뒤 유지 시간(P56, 패스키 켬일 때만), Tailscale 사용자 규칙(P49)
 function SecuritySection({ s }) {
   const t = useT();
   const [allowed, setAllowed] = useState(null);
   if (!s || !('remoteSameUser' in s)) return null;
   const set = (patch) => api.call('settings.set', patch).then(() => toast(t('remote.saved'))).catch((e) => toast(t('webDevices.failed', { error: errText(e) }), 'error'));
+  const hasPk = 'remotePasskey' in s;
+  const pk = hasPk ? s.remotePasskey === true : true; // 옛 백엔드는 늘 패스키
+  const setPk = (v) => api.call('settings.set', { remotePasskey: v }).then((r) => toast(v ? t('passkeyMode.turnedOn', { n: (r.passkey && r.passkey.closed) || 0 }) : t('passkeyMode.turnedOff'))).catch((e) => toast(t('webDevices.failed', { error: errText(e) }), 'error'));
   return (
     <Section id="security" title={t('devTab.security')} desc={t('devTab.securityDesc')}>
       <div className="mt-remote-rules" data-role="remote-rules">
-        <SessionLimit field="remoteSessionHours" label={t('remote.sessionHours')} s={s} set={set} min={1} max={168} />
-        <SessionLimit field="remoteIdleMinutes" label={t('remote.idleMinutes')} s={s} set={set} min={5} max={1440} />
-        <span className="mt-set-hint">{t('remote.sessionHint')}</span>
+        {hasPk && (
+          <div className="mt-pk-mode" data-role="passkey-mode" data-on={pk ? '1' : '0'}>
+            <label className="mt-remote-row mt-switch-row">
+              <input type="checkbox" className="mt-switch" checked={pk} data-field="remotePasskey" onChange={(e) => setPk(e.target.checked)} />
+              <b>{t('passkeyMode.label')}</b>
+            </label>
+            <span className="mt-set-hint" data-role="passkey-mode-hint">{pk ? t('passkeyMode.onHint') : t('passkeyMode.offHint')}</span>
+          </div>
+        )}
+        <div className={`mt-pk-limits${pk ? '' : ' off'}`} data-role="session-limits" aria-disabled={pk ? undefined : 'true'}>
+          <SessionLimit field="remoteSessionHours" label={t('remote.sessionHours')} s={s} set={set} min={1} max={168} disabled={!pk} />
+          <SessionLimit field="remoteIdleMinutes" label={t('remote.idleMinutes')} s={s} set={set} min={5} max={1440} disabled={!pk} />
+          <span className="mt-set-hint">{pk ? t('remote.sessionHint') : t('passkeyMode.limitsOff')}</span>
+        </div>
         <label className="mt-remote-row">
           <input type="checkbox" checked={s.remoteSameUser !== false} data-field="remoteSameUser" onChange={(e) => set({ remoteSameUser: e.target.checked })} />
           <span>{t('remote.sameUser')}</span>
@@ -301,7 +316,7 @@ function SecuritySection({ s }) {
     </Section>
   );
 }
-function SessionLimit({ field, label, s, set, min, max }) {
+function SessionLimit({ field, label, s, set, min, max, disabled = false }) {
   const t = useT();
   const [v, setV] = useState(null);
   if (!(field in s)) return null;
@@ -310,7 +325,7 @@ function SessionLimit({ field, label, s, set, min, max }) {
   return (
     <div className="mt-remote-row mt-dsec-limit">
       <span>{label}</span>
-      <input type="number" className="mt-set-text mt-nospin" min={min} max={max} data-field={field} value={val} onChange={(e) => setV(e.target.value)} />
+      <input type="number" className="mt-set-text mt-nospin" min={min} max={max} data-field={field} value={val} disabled={disabled} onChange={(e) => setV(e.target.value)} />
       {v != null && <button type="button" className="mt-btn small" disabled={!ok} onClick={() => set({ [field]: Number(val) }).then(() => setV(null))} data-action={`save-${field}`}>{t('remote.save')}</button>}
     </div>
   );
@@ -375,7 +390,7 @@ function RemoteLog() {
             return (
               <div key={`${e.at}-${i}`} className={`mt-remote-log-row${r.bad ? ' bad' : ''}`} data-event={e.event} data-reason={e.reason || ''}>
                 <span className="dim mono">{new Date(e.at).toLocaleString()}</span>
-                <span className="mt-remote-log-ev">{t(r.key)}{r.reason ? ` · ${reasonText(r.reason)}` : ''}{r.count ? ` ×${r.count}` : ''}</span>
+                <span className="mt-remote-log-ev">{t(r.key)}{r.noPasskey ? ` · ${t('remoteLog.noPasskey')}` : ''}{r.reason ? ` · ${reasonText(r.reason)}` : ''}{r.count ? ` ×${r.count}` : ''}</span>
                 <span className="mt-remote-log-who">{r.who || ''}{r.remote === true ? ` · ${t('peers.remote')}` : r.remote === false ? ` · ${t('remoteLog.local')}` : ''}{r.browser ? ` · ${r.browser}` : ''}</span>
               </div>
             );
@@ -414,7 +429,7 @@ function WebSelf() {
                 <span className="mt-wdev-name" data-role="device-node">{d.tsNode ? d.tsNode.name || d.name : d.name}<span className="mt-wdev-me"> {t('webDevices.thisBrowser')}</span></span>
                 <span className="mt-wdev-sub dim">
                   <span data-role="device-bind" data-bind={d.tsNode ? 'tailscale' : 'local'}>{d.tsNode ? t('webDevices.alias', { name: d.name }) : t('webDevices.localOnly')}</span>
-                  {kk && <span data-role="device-kind" data-kind={d.passkey.kind}> · {t(kk)}</span>}
+                  {kk ? <span data-role="device-kind" data-kind={d.passkey.kind}> · {t(kk)}</span> : <span data-role="device-kind" data-kind="none"> · {t('devTab.kind_none')}</span>}
                 </span>
               </span>
               <span className="mt-dev-state dim">{t('devTab.paired', { at: when(d.createdAt) })}</span>
@@ -425,6 +440,7 @@ function WebSelf() {
           <button type="button" className="mt-btn" data-action="web-sign-out" onClick={() => webLogout().then(() => location.reload())}>{t('webDevices.signOut')}</button>
           {d && <button type="button" className="mt-btn danger" data-action="device-revoke" onClick={forget}>{t('devTab.forgetThis')}</button>}
         </div>
+        {d && !d.passkey && <span className="mt-set-hint" data-role="self-no-passkey">{t('passkeyMode.selfNoPasskey')}</span>}
         <span className="mt-set-hint">{t('devTab.selfPcOnly')}</span>
       </Section>
     </div>

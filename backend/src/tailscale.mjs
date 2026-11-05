@@ -324,6 +324,8 @@ function finish(out, ts, ctx) {
   out.push({ id: 'users', level: ctx.sameUser === false ? 'warn' : 'ok', vars: { n: (ctx.allowed || []).length } });
   // P57: 짝 맺은 기기는 Tailscale 기기에 묶인다. 묶이지 않은 옛 바깥 기기(다시 짝 맺기 필요)의 수. null: 백엔드 없이 읽음
   out.push({ id: 'nodes', level: ctx.unbound == null ? 'skip' : ctx.unbound > 0 ? 'warn' : 'ok', vars: { n: ctx.unbound || 0 } });
+  // P62: 패스키로 확인(판 설정 remotePasskey). 고르는 값이라 켬·끔 둘 다 ok. 백엔드 없이 읽으면 모른다(skip)
+  out.push(typeof ctx.passkey === 'boolean' ? { id: ctx.passkey ? 'passkey_on' : 'passkey_off', level: 'ok', vars: {} } : { id: 'passkey', level: 'skip', vars: {} });
   const ready = !out.some((c) => c.level === 'fail');
   const st = ts && ts.status;
   const board = ts && ts.serve && ts.serve.board;

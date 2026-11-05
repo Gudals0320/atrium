@@ -15,18 +15,28 @@ if (isWeb) try { localStorage.removeItem('atrium.deviceToken'); } catch {}
 // 기기 정보(백엔드가 내주는 창의 시작 값). 401이면 null(다시 확인이나 짝 맺기 필요). 쿠키는 브라우저가 붙인다
 // P59: 401의 까닭을 webDenied에 둔다. login_required(세션 끝, PC에서 끊음) → 다시 확인, tailscale_node(짝 맺은 Tailscale 기기와 다름, 옛 기기) → 짝 맺기 화면.
 // P58: 403 remote_blocked(원격 받기 꺼짐) → 막음 화면. 그 밖의 403(Tailscale 기기를 잠깐 읽지 못함)은 연결 오류로 다시 시도한다(다시 확인 ↔ 거부 고리 없음)
-export let webDenied = null; // { code, reason } 비밀 아님
+// P62: passkey = 판의 "패스키로 확인"(false면 짝 맺기만으로 열린다). 401 passkey_required = 패스키 없이 짝 맺은 기기인데 PC에서 켰다 → "패스키 등록" 화면
+export let webDenied = null; // { code, reason, passkey } 비밀 아님
+let lastPasskey = null; // 마지막으로 본 판의 패스키로 확인 값
 export async function webMe() {
   const r = await fetch('/web/me', { cache: 'no-store', credentials: 'same-origin' });
   if (r.status === 401 || r.status === 403) {
     let j = null; try { j = await r.json(); } catch {}
     const err = (j && j.error) || {};
-    if (r.status === 401) { webDenied = { code: err.code || 'login_required', reason: err.reason || null }; return null; }
+    if (r.status === 401) { webDenied = { code: err.code || 'login_required', reason: err.reason || null, passkey: typeof err.passkey === 'boolean' ? err.passkey : null }; return null; }
     if (err.code === 'remote_blocked') throw Object.assign(new Error('remote access is blocked on the PC'), { code: 'remote_blocked' }); // P58
   }
   if (!r.ok) throw new Error(`backend ${r.status}`);
   webDenied = null;
-  return r.json();
+  const me = await r.json();
+  if (typeof me.passkey === 'boolean') lastPasskey = me.passkey;
+  return me;
+}
+// P62: 판의 패스키로 확인이 바뀌었다(settings.updated). /web/me를 다시 불러 쿠키를 새 수명으로 받는다(켬 → 끔이면 400일, 끔 → 켬이면 12시간)
+function passkeyMode(on) {
+  if (typeof on !== 'boolean' || lastPasskey === null || on === lastPasskey) return;
+  lastPasskey = on;
+  webMe().catch(() => {});
 }
 
 let paired = false; // 이 페이지가 로그인한 채로 시작했는지. 그 뒤에 세션이 끝나면 다시 열어 다시 확인 화면으로 간다
@@ -78,6 +88,7 @@ if (isWeb) {
     pickFolder: () => openFolderPicker(),
     onNavigate: (fn) => { navFns.add(fn); return () => navFns.delete(fn); },
     setZoom: (f) => applyWebZoom(f), // P49: 화면 배율(P45)을 웹에서도. Electron은 webFrame, 웹은 CSS zoom
+    passkeyMode, // P62
   };
   try { applyWebZoom(localStorage.getItem('mt.uiScale')); } catch {}
   window.__mtWeb = { notes: webNotes };

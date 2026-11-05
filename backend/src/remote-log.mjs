@@ -17,7 +17,8 @@ const FLUSH_MS = 500;
 
 // 남기는 일. 모르는 일은 'other'로 남긴다
 // P59: pair.grant(코드·허락으로 등록 허가가 나감, 패스키 등록을 기다림), login·logout(P56 패스키 로그인, 로그아웃)
-export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow'];
+// P62: passkey.on·passkey.off(패스키로 확인 켬·끔), passkey.add(패스키 없이 짝 맺은 기기가 패스키를 등록함). pair.ok의 passkey: false = 패스키 없이 짝 맺음
+export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add'];
 const MERGE = new Set(['deny', 'pair.fail']); // 되풀이를 합치는 일
 
 const clip = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -49,6 +50,7 @@ export function logEntry(event, f = {}, at = Date.now()) {
   const br = clip(f.browser, 40); if (br) e.browser = br;
   if (f.remote != null) e.remote = !!f.remote;
   if (f.via === 'code' || f.via === 'approve') e.via = f.via;
+  if (f.passkey === false) e.passkey = false; // P62
   if (Number.isInteger(f.n) && f.n >= 0) e.n = Math.min(f.n, 1e6);
   return e;
 }

@@ -26,6 +26,10 @@ export function checkText(c, port) {
     built: { ok: '웹 화면 빌드 있음', fail: '웹 화면 빌드가 없습니다. cd app && npm run build' },
     devices: { ok: `짝 맺은 기기 ${v.n}대`, warn: '짝 맺은 기기가 없습니다. 노트북에서 주소를 열고 코드로 짝을 맺습니다' },
     nodes: { ok: '짝 맺은 기기는 Tailscale 기기에 묶임(다른 Tailscale 기기에서는 그 자격을 쓸 수 없습니다)', warn: `짝 맺은 기기는 Tailscale 기기에 묶임. 묶이지 않은 옛 기기 ${v.n}대는 바깥에서 막힙니다(다시 짝 맺기 필요)`, skip: '짝 맺은 기기는 Tailscale 기기에 묶임(옛 기기 수: 백엔드 없이 읽어 모름)' },
+    // P62: 패스키로 확인(판 설정 remotePasskey, 바꾸는 것은 PC 창의 설정 › 연결된 기기)
+    passkey_on: { ok: '패스키로 확인 켜짐: 짝 맺은 뒤 패스키를 만들고, 세션이 끝나면 휴대폰이나 이 기기의 패스키로 다시 확인합니다' },
+    passkey_off: { ok: '패스키로 확인 꺼짐: 짝 맺은 Tailscale 기기에서 바로 열립니다(짝을 풀 때까지)' },
+    passkey: { skip: '패스키로 확인: 백엔드 없이 읽어 모름' },
     users: { ok:`같은 Tailscale 사용자만 받습니다${v.n ? ` (+허용 ${v.n}명)` : ''}`, warn: '로그인 사용자 제한이 꺼져 있습니다. tailnet의 누구든 짝 맺기를 시도할 수 있습니다' },
   };
   return `${MARK[c.level] || ''} ${(T[c.id] && T[c.id][c.level]) || `${c.id} ${c.level}`}`;
@@ -43,7 +47,7 @@ export function formatStatus(d) {
 }
 
 // P58: 연결 기록 한 줄(CLI). 창은 locales의 remoteLog.* 열쇠를 쓴다
-const LOG_TEXT = { 'pair.request': '짝 맺기 요청', 'pair.grant': '짝 맺기 허가', 'pair.ok': '짝 맺음', login: '패스키 로그인', logout: '로그아웃', 'pair.fail': '짝 맺기 실패', connect: '연결', disconnect: '끊김', deny: '거부', unpair: '짝 풀기', kick: 'PC에서 끊기', 'remote.block': '원격 받기 끔', 'remote.allow': '원격 받기 켬', other: '기타' };
+const LOG_TEXT = { 'pair.request': '짝 맺기 요청', 'pair.grant': '짝 맺기 허가', 'pair.ok': '짝 맺음', login: '패스키 로그인', logout: '로그아웃', 'passkey.on': '패스키로 확인 켬', 'passkey.off': '패스키로 확인 끔', 'passkey.add': '패스키 등록', 'pair.fail': '짝 맺기 실패', connect: '연결', disconnect: '끊김', deny: '거부', unpair: '짝 풀기', kick: 'PC에서 끊기', 'remote.block': '원격 받기 끔', 'remote.allow': '원격 받기 켬', other: '기타' };
 export function formatLogEntry(e) {
   const p2 = (n) => String(n).padStart(2, '0');
   const d = new Date(e.at);
@@ -51,6 +55,7 @@ export function formatLogEntry(e) {
   const parts = [when, (LOG_TEXT[e.event] || e.event).padEnd(8)];
   if (e.reason) parts.push(`까닭=${e.reason}`);
   if (e.via) parts.push(`방법=${e.via === 'code' ? '코드' : '허락'}`);
+  if (e.passkey === false) parts.push('패스키 없이'); // P62
   if (e.deviceName || e.deviceId) parts.push(`기기=${e.deviceName || ''}${e.deviceId ? ` (${e.deviceId.slice(0, 8)})` : ''}`);
   if (e.node) parts.push(`Tailscale 기기=${e.node}`); // P59
   if (e.remote != null) parts.push(e.remote ? '바깥' : '이 PC');

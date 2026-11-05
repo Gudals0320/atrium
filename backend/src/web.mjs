@@ -17,7 +17,7 @@ import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { BACKEND_ROOT, envVar } from './config.mjs';
 import { loginAllowed, parseLogins, isRemoteRequest, diagnose, requestAddr, nodeCheck, whoisMatch, needsRepair } from './tailscale.mjs'; // P49(R3), P57(기기 확인)
-import { WebAuth, sessionIdOf, sessionCookie, clearCookies, isHttpsOrigin } from './web-auth.mjs'; // P56(S2·S3)
+import { WebAuth, sessionIdOf, sessionCookie, clearCookies, isHttpsOrigin, sentSecureCookie, COOKIE_MAX_MS } from './web-auth.mjs'; // P56(S2·S3)
 import { PasskeyError, passkeyKind } from './passkey.mjs';
 import { RemoteLog, ConnectWatch, browserOf } from './remote-log.mjs'; // P58(S4): 연결 기록, 새로 붙음 알림
 
@@ -65,7 +65,8 @@ export function enableCommand(httpsPort, cfg = {}, root = BACKEND_ROOT) {
 // ---------- 기기(P56: 패스키의 공개 키를 판 기록에 둔다) ----------
 // 옛 기기(P48~P55의 토큰 기기, hash만 있고 passkey가 없다)는 더 쓸 수 없다. 목록에 needsRepair로 보이고 PC에서 지운다
 // P57: 패스키가 있어도 Tailscale 기기 기록(origin)이 없으면 다시 짝 맺어야 한다(needsRepair, 막는 쪽)
-export const devicePub = ({ hash, passkey, ...d }) => ({ ...d, needsRepair: !passkey || needsRepair(d), passkey: passkey ? { rpId: passkey.rpId, alg: passkey.alg, createdAt: passkey.createdAt, lastUsedAt: passkey.lastUsedAt || null, backupEligible: !!passkey.backupEligible, backedUp: !!passkey.backedUp, transports: Array.isArray(passkey.transports) ? passkey.transports : [], kind: passkeyKind(passkey) } : null }); // P60: 패스키 종류(휴대폰·이 기기·보안 키)
+// P62: 패스키 없이 짝 맺은 기기(pairOnly, 패스키 끔)는 옛 기기가 아니다. 그 밖에 패스키가 없는 기기(P48~P55의 토큰 기기)는 여전히 다시 짝 맺어야 한다
+export const devicePub = ({ hash, passkey, ...d }) => ({ ...d, needsRepair: (!passkey && !d.pairOnly) || needsRepair(d), passkey: passkey ? { rpId: passkey.rpId, alg: passkey.alg, createdAt: passkey.createdAt, lastUsedAt: passkey.lastUsedAt || null, backupEligible: !!passkey.backupEligible, backedUp: !!passkey.backedUp, transports: Array.isArray(passkey.transports) ? passkey.transports : [], kind: passkeyKind(passkey) } : null }); // P60: 패스키 종류(휴대폰·이 기기·보안 키)
 export class Devices {
   constructor({ store, now = Date.now }) { this.store = store; this.now = now; }
   all() { return this.store.getMeta(DEVICES_KEY) || []; }
@@ -84,6 +85,8 @@ export class Devices {
     if (!credId || typeof credId !== 'string') return null;
     return this.all().find((x) => x.passkey && typeof x.passkey.credId === 'string' && safeEq(x.passkey.credId, credId)) || null;
   }
+  // P62: 패스키 없는 기기에 패스키를 단다(한 번). 이미 있으면 false
+  attachPasskey(id, passkey) { const list = this.all(); const d = list.find((x) => x.id === id); if (!d || d.passkey) return false; d.passkey = passkey; delete d.pairOnly; this.save(list); return true; }
   setPasskey(id, patch) { const list = this.all(); const d = list.find((x) => x.id === id); if (!d || !d.passkey) return false; Object.assign(d.passkey, patch); this.save(list); return true; }
   touch(id, force = false) {
     const list = this.all(); const d = list.find((x) => x.id === id);
@@ -356,7 +359,7 @@ export class WebServer {
     this.baseHosts = allowedHosts(cfg.port);
     this.devices = new Devices({ store, now });
     // P56: 패스키와 세션. 수명은 판 설정(remoteSessionHours, remoteIdleMinutes). 연결이 열린 세션은 끊긴 시간을 세지 않는다
-    this.auth = new WebAuth({ store, devices: this.devices, now, log, connected: (h) => !!this.api && [...this.api.clients].some((c) => c.auth && c.auth.session === h), limits: () => this.sessionLimits() });
+    this.auth = new WebAuth({ store, devices: this.devices, now, log, connected: (h) => !!this.api && [...this.api.clients].some((c) => c.auth && c.auth.session === h), limits: (s) => this.sessionLimits(s) });
     this.pairing = new Pairing({ devices: this.devices, grants: this.auth.grants, now, onChange: () => this.broadcastLocal() });
     this.files = new StaticFiles(WEB_DIST());
     this.uploadDir = path.join(cfg.dataDir, 'uploads');
@@ -368,9 +371,15 @@ export class WebServer {
     this.disconnectHooks = [];
     this.pairMeta = new Map(); // 허락 요청 ID → 요청한 곳(기록용)
     // P59: PC에서 끊기·짝 풀기·원격 막기는 그 기기의 세션도 끝낸다(다시 붙으려면 패스키로 다시 확인)
-    this.onDisconnectDevice(({ id }) => this.auth.sessions.endDevice(id));
+    // P62: 패스키 끔이면 짝 풀기만 세션을 끝낸다. 끊기와 원격 막기는 연결만 닫고, 기기는 곧(원격 받기를 켜면) 다시 붙는다
+    this.onDisconnectDevice(({ id, reason }) => { if (reason === 'revoke' || this.passkeyOn()) this.auth.sessions.endDevice(id); });
   }
-  sessionLimits() {
+  // P62: 판 설정 remotePasskey. 설정을 못 읽거나 값이 없으면 켬으로 본다(막는 쪽). 판 설정(settings.mjs)은 늘 값이 있고 기본은 끔이다
+  passkeyOn() { try { const st = this.settings(); return !(st && st.remotePasskey === false); } catch { return true; } }
+  // P62: 세션마다 수명. 끔이면 끝이 없다(짝 풀기까지). 켬이어도 패스키가 없는 기기의 세션은 패스키 등록에만 쓰므로(authorize·device()가 막는다) 끝나지 않는다
+  sessionLimits(s = null) {
+    if (!this.passkeyOn()) return { maxAgeMs: Infinity, idleMs: Infinity };
+    if (s) { const d = this.devices.all().find((x) => x.id === s.deviceId); if (d && !d.passkey && d.pairOnly) return { maxAgeMs: Infinity, idleMs: Infinity }; }
     let st = {}; try { st = this.settings() || {}; } catch {}
     // P56 창 시험만: 개발용 판에서 세션 수명을 초로 줄인다(만료 뒤 다시 확인을 보려고). 실제 판은 이 값을 읽지 않는다
     const testSec = this.cfg.profile === 'dev' ? Number(envVar('WEB_SESSION_TEST_SEC')) : NaN;
@@ -416,9 +425,23 @@ export class WebServer {
     if (on) return { closed: 0 };
     const conns = this.api ? [...this.api.clients].filter((c) => (c.auth && c.auth.device) || c.remote) : [];
     for (const id of new Set(conns.map((c) => c.auth && c.auth.device && c.auth.device.id).filter(Boolean))) this.runDisconnectHooks(id, 'blocked');
-    this.auth.sessions.endAll(); // P59: 붙어 있지 않은 기기의 세션도 모두 끝낸다(켠 뒤에는 패스키로 다시 확인)
+    if (this.passkeyOn()) this.auth.sessions.endAll(); // P59: 붙어 있지 않은 기기의 세션도 모두 끝낸다(켠 뒤에는 패스키로 다시 확인). P62: 끔이면 세션은 남아 켜면 다시 붙는다
     if (this.pairing.currentCode()) this.pairing.cancelCode();
     return { closed: this.closeConns(conns, 4403, 'remote access is blocked on the PC', 'blocked') };
+  }
+  // P62: 패스키로 확인을 바꿨다(backend.mjs의 settings.set이 부른다).
+  // 켬: 모든 세션의 수명을 지금부터 센다(켬의 12시간·30분). 패스키가 없는 기기의 연결은 닫는다(4401, 웹 화면은 "패스키 등록" 화면으로).
+  // 끔: 살아 있는 세션은 끔의 수명(짝 풀기까지)으로 늘어난다(sessionLimits가 따른다). 패스키 기록은 지우지 않는다
+  passkeyChanged(on) {
+    this.note(on ? 'passkey.on' : 'passkey.off', null);
+    let closed = 0;
+    if (on) {
+      this.auth.sessions.restartAll();
+      const need = new Set(this.devices.all().filter((d) => !d.passkey).map((d) => d.id));
+      closed = this.closeConns(this.deviceConns().filter((c) => need.has(c.auth.device.id)), 4401, 'register a passkey', 'passkey_required');
+    }
+    this.broadcastLocal();
+    return { closed };
   }
   // ApiServer가 연결을 열고 닫을 때(backend.mjs onOpen·onClose). 기기 연결만 남기고, 새로 붙었으면 PC 창에 알린다
   clientOpened(c) {
@@ -437,8 +460,9 @@ export class WebServer {
     this.note('disconnect', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, reason: c.closeReason || 'closed' });
   }
   // P56: 짝 맺기는 패스키 등록을 마칠 때 끝난다(기기가 생긴다)
-  paired(r, meta, via) {
-    this.note('pair.ok', null, { ...meta, deviceId: r.device.id, deviceName: r.device.name, node: r.device.tsNode && r.device.tsNode.name, via });
+  // P62: passkey = false면 패스키 없이 짝 맺음(연결 기록에 남긴다)
+  paired(r, meta, via, passkey = true) {
+    this.note('pair.ok', null, { ...meta, deviceId: r.device.id, deviceName: r.device.name, node: r.device.tsNode && r.device.tsNode.name, via, ...(passkey ? {} : { passkey: false }) });
     this.watch.paired(r.device.id);
     this.sendLocal('remote.connected', { kind: 'paired', device: { id: r.device.id, name: r.device.name }, remote: !!meta.remote, login: meta.login || null, browser: meta.browser || null, at: this.now() });
   }
@@ -446,7 +470,7 @@ export class WebServer {
   decide(id, allow) {
     const r = this.pairing.decide(id, allow);
     const meta = this.pairMeta.get(id) || {}; this.pairMeta.delete(id);
-    if (allow && r.status === 'approved') this.note('pair.grant', null, { ...meta, via: 'approve' });
+    if (allow && r.status === 'approved') { if (this.passkeyOn()) this.note('pair.grant', null, { ...meta, via: 'approve' }); } // P62: 패스키 끔이면 브라우저가 허가를 받아 갈 때 pair.ok(패스키 없이)
     else this.note('pair.fail', null, { ...meta, reason: 'denied' });
     return r;
   }
@@ -469,11 +493,11 @@ export class WebServer {
   async remoteStatus({ fresh = false } = {}) {
     const ts = this.tailscale ? (fresh ? await this.tailscale.refresh() : this.tailscale.last) : { installed: false, disabled: true };
     const pol = this.policy();
-    const d = diagnose(ts, { port: this.cfg.port, hosts: [...this.hosts], devices: this.devices.all().length, unbound: this.devices.all().filter(needsRepair).length, built: this.files.built(), sameUser: pol.sameUser, allowed: pol.allowed });
+    const d = diagnose(ts, { port: this.cfg.port, hosts: [...this.hosts], devices: this.devices.all().length, unbound: this.devices.all().filter(needsRepair).length, built: this.files.built(), sameUser: pol.sameUser, allowed: pol.allowed, passkey: this.passkeyOn() }); // P62: 패스키로 확인
     const accepting = this.accepting(); // P58: 원격 받기가 꺼져 있으면 준비되지 않음
     // P60: 판 설정 창이 복사할 켜기 명령(PATH에 기대지 않게 node와 이 백엔드의 atrium.mjs 경로로), 같은 이름의 다른 serve 항목 수(관리자 권한 안내)
     const serveOthers = ((ts && ts.serve && ts.serve.entries) || []).filter((e) => !e.toBoard).length;
-    return { ...d, ready: d.ready && accepting, accepting, connected: new Set(this.deviceConns().map((c) => c.auth.device.id)).size, port: this.cfg.port, sameUser: pol.sameUser, allowed: pol.allowed, enableCmd: d.enable ? enableCommand(d.httpsPort, this.cfg) : null, serveOthers };
+    return { ...d, ready: d.ready && accepting, accepting, passkey: this.passkeyOn(), connected: new Set(this.deviceConns().map((c) => c.auth.device.id)).size, port: this.cfg.port, sameUser: pol.sameUser, allowed: pol.allowed, enableCmd: d.enable ? enableCommand(d.httpsPort, this.cfg) : null, serveOthers };
   }
   url() { return `http://localhost:${this.cfg.port}/`; } // P56: 패스키는 IP 주소에서 쓰지 못한다(RP ID는 이름)
   status() { return { url: this.url(), built: this.files.built(), devices: this.devices.all().length, hosts: [...this.hosts] }; }
@@ -482,7 +506,9 @@ export class WebServer {
     return { device, port: this.cfg.port, profile: this.cfg.profile, herdrSession: this.cfg.herdrSession, defaultCwd: dev ? path.join(BACKEND_ROOT, '.dev', 'proj') : os.homedir(), defaultModel: dev ? 'haiku' : '' };
   }
   // 판 API 토큰 클라이언트(PC 창, CLI)에만: 기기 목록과 허락 요청
-  view() { return { devices: this.devices.list().map((d) => ({ ...d, sessions: this.auth.sessions.countFor(d.id) })), requests: this.pairing.pending(), code: this.pairing.currentCode() }; }
+  // P62: needsPasskey = 패스키 켬인데 패스키 없이 짝 맺은 기기(다음 접속 때 "패스키 등록" 화면을 본다)
+  devicesView() { const on = this.passkeyOn(); return this.devices.list().map((d) => ({ ...d, sessions: this.auth.sessions.countFor(d.id), needsPasskey: on && !d.passkey && !d.needsRepair })); }
+  view() { return { devices: this.devicesView(), requests: this.pairing.pending(), code: this.pairing.currentCode(), passkey: this.passkeyOn() }; }
   broadcastLocal() {
     if (!this.api) return;
     const v = this.view();
@@ -493,7 +519,7 @@ export class WebServer {
   // P59: 기기 클라이언트가 보는 목록(자기 기록 하나)
   deviceView(c, all = null) {
     const id = c.auth.device.id;
-    const mine = (all || this.devices.list().map((d) => ({ ...d, sessions: this.auth.sessions.countFor(d.id) }))).filter((d) => d.id === id);
+    const mine = (all || this.devicesView()).filter((d) => d.id === id);
     return { devices: mine, me: c.auth.device };
   }
 
@@ -546,6 +572,7 @@ export class WebServer {
       const accept = (node) => {
         if (!this.accepting()) return this.refuse(req, 'remote_blocked'); // whois를 기다리는 사이에 바뀌었으면
         if (!this.auth.sessions.valid(s.hash)) return this.refuse(req, 'no_session');
+        if (!d.passkey && this.passkeyOn()) return this.refuse(req, 'passkey_required'); // P62: 패스키 켬이면 패스키 없는 기기의 세션은 패스키 등록에만 쓴다
         this.auth.sessions.touch(s.hash);
         this.devices.touch(d.id, true);
         setImmediate(() => this.broadcastLocal()); // 마지막 접속을 PC 창 목록에
@@ -602,7 +629,7 @@ export class WebServer {
     if (isStatic) return this.files.serve(req, res);
     const send = (status, obj, extra = {}) => { if (res.headersSent) return; res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...SECURITY_HEADERS, ...extra }); res.end(JSON.stringify(obj)); };
     // P59: Tailscale 기기 확인의 까닭(other_node 등, 비밀 아님)은 웹 화면이 짝 맺기 화면에 보이도록 싣는다
-    const fail = (e) => send(e.status || 400, { error: { code: e.code || 'error', message: e.message, ...(e.retryAfterMs ? { retryAfterMs: e.retryAfterMs } : {}), ...(e.code === 'tailscale_node' && e.reason ? { reason: e.reason } : {}) } }, e.retryAfterMs ? { 'retry-after': String(Math.ceil(e.retryAfterMs / 1000)) } : {});
+    const fail = (e) => send(e.status || 400, { error: { code: e.code || 'error', message: e.message, ...(e.retryAfterMs ? { retryAfterMs: e.retryAfterMs } : {}), ...(e.code === 'tailscale_node' && e.reason ? { reason: e.reason } : {}), ...(typeof e.passkey === 'boolean' ? { passkey: e.passkey } : {}) } }, e.retryAfterMs ? { 'retry-after': String(Math.ceil(e.retryAfterMs / 1000)) } : {});
     // 브라우저에서 온 요청은 같은 출처여야 한다(다른 사이트가 짝 맺기를 시도하거나 올리지 못하게)
     if (req.headers.origin != null ? !originOk(req, this.hosts) : req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin') { this.note('deny', req, { reason: 'origin' }); fail(apiErr('bad_origin', 'cross-origin request', 403)); return true; }
     // P49: Tailscale로 온 요청은 이 PC의 Tailscale 사용자(또는 허용 목록)만 짝 맺고 쓴다
@@ -611,16 +638,29 @@ export class WebServer {
     const ua = String(req.headers['user-agent'] || '');
     const ip = clientIp(req);
     const origin = () => { if (req.headers.origin == null) throw apiErr('bad_origin', 'the request has no Origin', 403); return String(req.headers.origin); };
-    const login = (r, how) => { // P56: 세션 쿠키를 주고 PC 창 목록을 새로 한다
+    // 세션 쿠키. P62: 수명은 세션의 남은 수명, 끝이 없으면(패스키 끔) 400일
+    const cookie = (id, ms, secure) => ({ 'set-cookie': sessionCookie({ port: this.cfg.port, id, secure, maxAgeSec: Math.min(ms, COOKIE_MAX_MS) / 1000 }) });
+    const login = (r, how, more = {}, secure = isHttpsOrigin(req.headers.origin)) => { // P56: 세션 쿠키를 주고 PC 창 목록을 새로 한다
       this.log(`web device ${how} ${r.device.id} ${r.device.name}`);
       this.broadcastLocal();
-      send(200, { device: r.device, expiresAt: r.session.expiresAt }, { 'set-cookie': sessionCookie({ port: this.cfg.port, id: r.session.id, secure: isHttpsOrigin(req.headers.origin), maxAgeSec: r.session.maxAgeMs / 1000 }) });
+      send(200, { ...more, device: r.device, expiresAt: r.session.expiresAt }, cookie(r.session.id, r.session.maxAgeMs, secure));
     };
     // P56 세션 다음에 P57 기기 확인. 묶인 기기와 다르면(다른 기기, 이 PC 안 기기, 옛 기기) 401로 다시 짝 맺게, whois를 못 읽으면 403
-    const device = async () => {
-      const { device: d } = this.sessionOf(req);
+    // P62: 그다음 패스키 켬이면 패스키가 있어야 한다. 없으면 401 passkey_required(웹 화면은 "패스키 등록" 화면으로)
+    const deviceSession = async () => {
+      const { device: d, session: s } = this.sessionOf(req);
       const r = await this.checkNode(req, d, p); if (!r.ok) throw nodeErr(r.reason);
-      return d;
+      if (!d.passkey && this.passkeyOn()) throw Object.assign(apiErr('passkey_required', 'register a passkey for this browser', 401), { logReason: 'passkey_required' });
+      return { d, s };
+    };
+    const device = async () => (await deviceSession()).d;
+    // P62: 패스키 등록(끔 → 켬). 패스키 켬, 패스키 없이 짝 맺은 기기, 살아 있는 세션, 그 세션이 묶인 Tailscale 기기에서만
+    const enrollee = async () => {
+      if (!this.passkeyOn()) throw apiErr('passkey_off', 'passkeys are off on this board', 409);
+      const { device: d, session: s } = this.sessionOf(req);
+      if (d.passkey) throw apiErr('has_passkey', 'this browser already has a passkey', 409);
+      const r = await this.checkNode(req, d, p); if (!r.ok) throw nodeErr(r.reason);
+      return { d, s };
     };
     // P57: 짝 맺기·패스키 등록·로그인을 청한 곳. 바깥이면 whois가 맞아야 하고 그 Tailscale 기기를, 이 PC 안이면 null을 돌려준다
     const paired = async () => { const r = await this.pairNode(req, p); if (!r.ok) throw nodeErr(r.reason); return r.node; };
@@ -639,10 +679,43 @@ export class WebServer {
     });
     (async () => {
       try {
-        if (p === '/web/me' && req.method === 'GET') { const d = await device(); this.devices.touch(d.id); return send(200, this.boot({ id: d.id, name: d.name })); }
-        if (p === '/web/pair/code' && req.method === 'POST') { const o = origin(); const tsNode = await paired(); const b = await body(); const r = this.pairing.redeem({ code: String(b.code || ''), name: b.name, ip, userAgent: ua, origin: o, tsNode }); this.log('web pairing code accepted, waiting for the passkey'); this.note('pair.grant', null, { ...meta, deviceName: clipName(b.name) || 'Browser', node: tsNode && tsNode.name, via: 'code' }); return send(200, r); }
+        if (p === '/web/me' && req.method === 'GET') {
+          let x; try { x = await deviceSession(); } catch (e) { e.passkey = this.passkeyOn(); throw e; } // P62: 웹 화면이 짝 맺기에 패스키가 필요한지 안다(비밀 아님)
+          this.devices.touch(x.d.id);
+          // P62: 쿠키를 세션의 남은 수명으로 다시 준다(끔이면 400일, 쓰는 동안 늘어난다. 켬 → 끔 뒤에 늘어난 수명도 브라우저에 닿는다)
+          const rem = this.auth.sessions.remainingMs(x.s.hash);
+          return send(200, { ...this.boot({ id: x.d.id, name: x.d.name }), passkey: this.passkeyOn() }, rem > 0 ? cookie(sessionIdOf(req, this.cfg.port), rem, sentSecureCookie(req, this.cfg.port)) : {});
+        }
+        if (p === '/web/pair/code' && req.method === 'POST') {
+          const o = origin(); const tsNode = await paired(); const b = await body();
+          const r = this.pairing.redeem({ code: String(b.code || ''), name: b.name, ip, userAgent: ua, origin: o, tsNode });
+          // P62: 패스키 끔이면 허가를 같은 응답에서 쓰고 곧바로 세션 쿠키를 준다(같은 출처, 같은 Tailscale 기기 확인은 등록과 같다)
+          if (!this.passkeyOn()) { const x = this.auth.pairWithoutPasskey({ grant: r.grant, origin: o, allow: grantHere(tsNode) }); this.paired(x, meta, 'code', false); return login(x, 'paired without a passkey', { paired: true }); }
+          this.log('web pairing code accepted, waiting for the passkey'); this.note('pair.grant', null, { ...meta, deviceName: clipName(b.name) || 'Browser', node: tsNode && tsNode.name, via: 'code' }); return send(200, r);
+        }
         if (p === '/web/pair/request' && req.method === 'POST') { const o = origin(); const tsNode = await paired(); const b = await body(); const r = this.pairing.request({ name: b.name, ip, userAgent: ua, origin: o, tsNode }); this.log(`web pair request ${r.requestId}`); this.pairMeta.set(r.requestId, { ...meta, node: tsNode && tsNode.name }); this.note('pair.request', null, { ...meta, deviceName: clipName(b.name) || 'Browser', node: tsNode && tsNode.name }); return send(200, r); }
-        if (p === '/web/pair/poll' && req.method === 'GET') { const tsNode = await paired(); return send(200, this.pairing.poll(url.searchParams.get('id'), url.searchParams.get('secret'), tsNode)); }
+        if (p === '/web/pair/poll' && req.method === 'GET') {
+          const tsNode = await paired();
+          const r = this.pairing.poll(url.searchParams.get('id'), url.searchParams.get('secret'), tsNode);
+          // P62: 패스키 끔이면 허락된 허가를 여기서 쓴다. 출처는 요청의 Origin(없으면 허가를 청한 출처)이 허가의 출처와 같아야 한다
+          if (r.status === 'approved' && !this.passkeyOn()) {
+            const g = this.auth.grants.peek(r.grant); const o = req.headers.origin != null ? String(req.headers.origin) : g ? g.origin : '';
+            const x = this.auth.pairWithoutPasskey({ grant: r.grant, origin: o, allow: grantHere(tsNode) });
+            this.paired(x, meta, 'approve', false);
+            return login(x, 'paired without a passkey', { status: 'approved', paired: true }, isHttpsOrigin(o));
+          }
+          return send(200, r);
+        }
+        // P62: 패스키 없이 짝 맺은 기기가 지금 세션으로 패스키를 한 번 등록한다(끔 → 켬)
+        if (p === '/web/passkey/enroll/options' && req.method === 'POST') { const o = origin(); const { d, s } = await enrollee(); const b = await body(); return send(200, this.auth.enrollOptions({ device: d, session: s, origin: o, via: b.via })); }
+        if (p === '/web/passkey/enroll' && req.method === 'POST') {
+          const o = origin(); const { d, s } = await enrollee(); const b = await body(64 * 1024);
+          const r = this.auth.enroll({ device: d, session: s, credential: b.credential, origin: o });
+          this.note('passkey.add', null, { ...meta, deviceId: d.id, deviceName: d.name, node: d.tsNode && d.tsNode.name });
+          this.log(`web device added a passkey ${d.id} ${d.name}`);
+          this.broadcastLocal();
+          return send(200, { device: r.device }, cookie(sessionIdOf(req, this.cfg.port), this.auth.sessions.remainingMs(s.hash), isHttpsOrigin(o)));
+        }
         // P56: 패스키 등록(짝 맺기의 허가로 한 번)과 로그인, 로그아웃. P57: 등록은 허가를 받은 곳에서만, 로그인은 묶인 Tailscale 기기에서만
         if (p === '/web/passkey/register/options' && req.method === 'POST') { const o = origin(); const node = await paired(); const b = await body(); return send(200, this.auth.registerOptions({ grant: b.grant, origin: o, allow: grantHere(node), via: b.via })); }
         if (p === '/web/passkey/register' && req.method === 'POST') { const o = origin(); const node = await paired(); const b = await body(64 * 1024); const r = this.auth.register({ grant: b.grant, credential: b.credential, origin: o, allow: grantHere(node) }); this.paired(r, meta, r.device.via); return login(r, 'paired with a passkey'); }
