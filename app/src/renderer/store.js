@@ -298,6 +298,8 @@ api.on('workspace.updated', (d) => {
 });
 api.on('herdr.clients', (v) => { state.clients = v; changed(); });
 api.on('clients.updated', (v) => { state.peers = { ...v, me: api.clientId }; changed(); }); // P47
+// P47: 다른 창이 노드를 옮기거나 크기를 바꿨다(board.setNode). 이 창이 보낸 것은 이미 그렸다
+api.on('board.node', (d) => { if (!d || (d.by && d.by === api.clientId) || !state.nodes.has(d.sessionId)) return; setNodeLocal(d.sessionId, { x: d.x, y: d.y, w: d.w, h: d.h, ...(d.z != null ? { z: d.z } : {}) }); });
 // P47: 사람이 이 창에서 무엇을 하면(키, 마우스) 백엔드에 알린다. 알림은 최근에 쓴 클라이언트에서만 뜬다(백엔드 pickNotifyClient)
 const ACTIVE_PING_MS = 20000;
 let lastPing = 0;

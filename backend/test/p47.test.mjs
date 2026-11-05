@@ -6,6 +6,8 @@ import { EventEmitter } from 'node:events';
 import { parseClientHello, clientList, pickNotifyClient, viewportKey, viewportFor, shareEmpty, shareJoin, shareLeave, shareActive, shareWant, shareSize, shareFrame, shareNeedsFull, shareOwnerView, ACTIVE_MS } from '../src/multiclient.mjs';
 import { TerminalRelay } from '../src/relay.mjs';
 import { Peers } from '../src/peers.mjs';
+import net from 'node:net';
+import { deliverAt, seeded, startDelayProxy } from '../tools/delay-proxy.mjs';
 
 test('P47 클라이언트 알아보기: 연결 주소의 값', () => {
   assert.deepEqual(parseClientHello(new URLSearchParams('client=pc-1234abcd&name=Desk&kind=desktop')), { clientId: 'pc-1234abcd', name: 'Desk', kind: 'desktop' });
@@ -201,4 +203,31 @@ test('P47 붙은 클라이언트: 바뀐 때만 알리고 알림 받을 클라�
     api.clients.delete(A); peers.closed();
     assert.deepEqual(sent.at(-1)[1].clients.map((c) => c.clientId), ['web1']);
   } finally { peers.stop(); }
+});
+
+test('P47 지연 프록시: 보낼 시각은 지연 ± 흔들림이고 순서를 지킨다', () => {
+  assert.equal(deliverAt({ now: 1000, delay: 100 }), 1100);
+  assert.equal(deliverAt({ now: 1000, delay: 100, jitter: 20, rand: 0 }), 1080);
+  assert.equal(deliverAt({ now: 1000, delay: 100, jitter: 20, rand: 1 }), 1120);
+  assert.equal(deliverAt({ now: 1000, prev: 1150, delay: 100 }), 1150, '앞 조각보다 먼저 보내지 않는다');
+  assert.equal(deliverAt({ now: 1000, delay: 5, jitter: 50, rand: 0 }), 1000, '음수 지연은 0');
+  const r1 = seeded(7), r2 = seeded(7);
+  const a = [r1(), r1(), r1()], b = [r2(), r2(), r2()];
+  assert.deepEqual(a, b);
+  assert.ok(a.every((x) => x >= 0 && x < 1));
+});
+
+test('P47 지연 프록시: 127.0.0.1에서 받아 넘기고 지연을 넣는다', async () => {
+  const echo = net.createServer((s) => s.on('data', (d) => s.write(d)));
+  await new Promise((r) => echo.listen(0, '127.0.0.1', r));
+  const p = startDelayProxy({ listen: 0, target: echo.address().port, delay: 60 });
+  const port = await p.ready;
+  try {
+    const rtt = await new Promise((res, rej) => {
+      const c = net.connect(port, '127.0.0.1', () => { const t0 = Date.now(); c.once('data', (d) => { res({ ms: Date.now() - t0, text: String(d) }); c.destroy(); }); c.write('ping'); });
+      c.on('error', rej);
+    });
+    assert.equal(rtt.text, 'ping');
+    assert.ok(rtt.ms >= 110, `왕복 ${rtt.ms}ms는 두 방향 지연(120ms)에 가깝다`);
+  } finally { await p.close(); echo.close(); }
 });

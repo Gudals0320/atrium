@@ -68,7 +68,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
 
   useEffect(() => {
     const host = hostRef.current;
-    const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null, shared: 1, scale: 1 };
+    const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null, shared: 1, scale: 1, ownerIsMe: true };
     // P42: 셸은 앱이 스스로 스크롤하지 않아(PowerShell은 SGR 휠을 무시) 지난 출력을 xterm scrollback에 두고 판 안에서 스크롤한다
     const shell = (getState().sessions.get(sessionId) || {}).kind === 'shell';
     const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: TERM_FONT_SIZE, lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
@@ -79,11 +79,11 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     term.loadAddon(fit);
     term.open(host);
     terms.set(sessionId, term);
-    // P47: 다른 창이 정한 패널 크기를 내 노드에 맞춰 비율로 그린다. 혼자 볼 때는 늘 1(예전과 같다)
+    // P47: 다른 창이 정한 패널 크기를 내 노드에 맞춰 비율로 그린다. 혼자 볼 때와 내가 크기를 가졌을 때는 늘 1(예전과 같다)
     st.applyScale = () => {
       const el = term.element, screen = el && el.querySelector('.xterm-screen');
       if (!el || !screen) return;
-      const s = st.shared > 1 ? fitScale({ termW: screen.offsetWidth, termH: screen.offsetHeight, boxW: host.clientWidth, boxH: host.clientHeight }) : 1;
+      const s = st.shared > 1 && !st.ownerIsMe ? fitScale({ termW: screen.offsetWidth, termH: screen.offsetHeight, boxW: host.clientWidth, boxH: host.clientHeight }) : 1;
       if (s === st.scale) return;
       st.scale = s;
       el.style.transformOrigin = '0 0';
@@ -239,7 +239,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     // P47: 누가 패널 크기를 정하는지, 몇 창이 함께 보는지. 다른 기기가 방금 친 것
     const offOwner = api.on('terminal.owner', (d) => {
       if (d.sessionId !== sessionId || !st.alive || (st.pid !== null && d.controllerPid !== st.pid)) return;
-      st.shared = d.shared || 1;
+      st.shared = d.shared || 1; st.ownerIsMe = !!d.ownerIsMe;
       setShare({ shared: st.shared, ownerIsMe: !!d.ownerIsMe, ownerName: d.ownerName || d.owner || null });
       perfLog('term_owner', { sessionId, shared: st.shared, ownerIsMe: !!d.ownerIsMe, cols: d.cols, rows: d.rows });
       requestAnimationFrame(() => st.alive && st.applyScale());
@@ -265,7 +265,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       .then((r) => {
         st.pid = r.controllerPid;
         if (!st.alive) return;
-        st.shared = r.shared || 1; // P47
+        st.shared = r.shared || 1; st.ownerIsMe = r.ownerIsMe !== false; // P47
         if (r.shared > 1) { setShare({ shared: r.shared, ownerIsMe: !!r.ownerIsMe, ownerName: r.owner || null }); requestAnimationFrame(() => st.alive && st.applyScale()); }
         setStatus({ kind: 'attached', pid: r.controllerPid });
         // H4: 들어가며 친 글이 있으면 넣고 터미널에 초점을 준다
@@ -310,7 +310,12 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     };
     // P17: 덩어리 분할선·바깥 크기로 여러 노드 크기가 한꺼번에 바뀌면 120ms 때 아직 자리가 덜 잡혀 한 줄 모자라게 잴 때가 있다. 한 번 더 잰다
     const t = setTimeout(refit, 120), t2 = setTimeout(refit, 600);
-    return () => { clearTimeout(t); clearTimeout(t2); };
+    // P47: 노드 크기 말고 터미널 칸의 크기가 바뀌어도(승인 줄, 웹 화면의 다른 배치) 다시 잰다. 같은 크기면 refit이 아무것도 하지 않는다
+    let t3 = null;
+    const host = hostRef.current;
+    const ro = host && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { clearTimeout(t3); t3 = setTimeout(refit, 120); }) : null;
+    if (ro) ro.observe(host);
+    return () => { clearTimeout(t); clearTimeout(t2); clearTimeout(t3); if (ro) ro.disconnect(); };
   }, [sessionId, width, height, reserve]);
 
   useEffect(() => {
