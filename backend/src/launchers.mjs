@@ -2,9 +2,12 @@
 // 목록은 판 기록(meta 표의 `launchers`)에 { v, items, favorites }로 둔다. favorites는 왼쪽 레일에 놓인 호출자 ID의 순서다.
 // 하네스마다 무엇을 받고 어떻게 띄우는지는 아래 HARNESSES 표 한곳에 둔다. session.spawn { launcher }는 resolveLauncher로 띄울 값을 얻는다.
 // P25의 DeepSeek(opencodex 게이트웨이)는 "Claude Code + 환경 변수(게이트웨이)" 호출자의 한 예다(exampleDeepseek). 판은 게이트웨이를 켜지 않고 닿는지만 본다.
+// P72: 새 판에는 DeepSeek 예시를 만들지 않는다(Claude Code, Codex, 셸 셋). 옛 판(P33 전의 설정·세션이 있던 판)은 그대로 DeepSeek를 옮긴다.
+// P72: Codex 모델은 Codex의 모델 목록 캐시(codex-models.mjs)를 읽는다. 읽지 못하면 아래 고정 목록이다.
 // 환경 변수 값은 판 기록에 평문으로 남는다. 기본·예시 호출자에는 키를 넣지 않는다(설정 탭에 풀이가 있다).
 import crypto from 'node:crypto';
 import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
+import { unlistedModel } from './codex-models.mjs';
 import { FLAVOR as DEEPSEEK, DEFAULT_MODEL as DEEPSEEK_MODEL, DEFAULT_HEALTH_URL, COMMAND_MAX, proxyEnv, baseUrlOf, checkCommand } from './deepseek.mjs';
 
 export const META_KEY = 'launchers';
@@ -25,13 +28,20 @@ const RESERVED_CLAUDE_ARGS = new Set(['--settings', '--session-id', '--resume', 
 // 하네스 정의. fields는 설정 탭이 보일 칸, models는 알려진 모델(직접 입력도 받는다), kind는 판이 기록하는 herdr 종류
 export const HARNESSES = {
   claude: { id: 'claude', kind: 'claude', label: 'Claude Code', fields: ['model', 'effort', 'permissionMode', 'allowHerdr', 'args', 'env', 'checkUrl'], models: ['haiku', 'sonnet', 'opus', 'claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'] },
-  codex: { id: 'codex', kind: 'codex', label: 'Codex', fields: ['model', 'args'], models: ['gpt-6-astra'] },
+  codex: { id: 'codex', kind: 'codex', label: 'Codex', fields: ['model', 'args'], models: ['gpt-6-astra'], warnUnlisted: true }, // P72: models는 Codex 캐시를 읽지 못할 때의 목록. 목록에 없는 이름은 경고만 한다
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };
 // herdr가 아는 그 밖의 종류(pi, grok 등)는 추가 인자만 받는다
 export const harnessOf = (id) => HARNESSES[id] || (KIND_RE.test(String(id || '')) ? { id, kind: id, label: id, fields: ['args'], models: [] } : null);
-export const describeHarnesses = () => Object.values(HARNESSES).map((h) => ({ ...h }));
+// dyn: 하네스별로 읽어 온 목록 { codex: { models, hidden, labels, source } }(P72). 없으면 고정 목록
+export const describeHarnesses = (dyn = {}) => Object.values(HARNESSES).map((h) => (dyn[h.id] ? { ...h, models: [...dyn[h.id].models], hiddenModels: [...(dyn[h.id].hidden || [])], modelLabels: { ...(dyn[h.id].labels || {}) }, modelSource: dyn[h.id].source || null } : { ...h }));
+// P72: 하네스가 경고하는 목록 밖 모델 이름인가(Codex). 막지는 않는다
+export function modelWarning(l, harnesses) {
+  const h = (harnesses || []).find((x) => x.id === l.harness);
+  if (!h || !h.warnUnlisted || !h.fields.includes('model')) return null;
+  return unlistedModel(l.model, { models: h.models, hidden: h.hiddenModels || [] }) ? { key: 'launcherModels.unlisted', vars: { harness: h.label, model: l.model } } : null;
+}
 
 const err = (code, message, key, vars = {}) => Object.assign(new Error(message), { code, key: `launchers.err.${key}`, vars });
 
@@ -155,18 +165,19 @@ export function exampleDeepseek(o = {}, gw = {}) {
 export const LEGACY_KEYS = ['claudeModel', 'claudeEffort', 'claudePermissionMode', 'claudeAllowHerdr', 'codexArgs', 'deepseekModel', 'deepseekCommand'];
 
 // 처음 켤 때의 호출자 목록. 옛 판(설정을 저장한 적이 있거나 세션 기록이 있음)은 옛 새 세션 기본값을 옮기고 레일 네 단추(Claude, Codex, DeepSeek, 셸)를 그 순서로 즐겨찾기에 둔다.
-// 새 판은 Claude Code, Codex, 셸이 즐겨찾기이고 DeepSeek는 즐겨찾기 밖 예시다. 같은 입력이면 같은 결과다(ID가 고정)
+// P72: 새 판은 Claude Code(권한 방식 manual), Codex, 셸 셋뿐이고 모두 즐겨찾기다. 게이트웨이 호출자는 설정 탭에서 직접 만든다. 같은 입력이면 같은 결과다(ID가 고정)
 export function initialLaunchers({ oldSettings = null, oldBoard = false, gateway = {} } = {}) {
+  if (!oldBoard) return { v: VERSION, items: [claudeDefault(), codexDefault(), shellDefault()], favorites: ['claude', 'codex', 'shell'] };
   const o = oldSettings || {};
   const items = [claudeDefault(o), codexDefault(o), shellDefault(), exampleDeepseek(o, gateway)];
-  const favorites = oldBoard ? ['claude', 'codex', 'deepseek', 'shell'] : ['claude', 'codex', 'shell'];
-  return { v: VERSION, items, favorites };
+  return { v: VERSION, items, favorites: ['claude', 'codex', 'deepseek', 'shell'] };
 }
 
 // 판 기록에 둔 호출자 목록
 export class Launchers {
-  constructor({ store, broadcast = () => {}, gateway = {} }) {
-    this.store = store; this.broadcast = broadcast; this.gateway = gateway;
+  // codexModels: P72 Codex 모델 목록(codex-models.mjs CodexModels). 없으면 하네스의 고정 목록
+  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null }) {
+    this.store = store; this.broadcast = broadcast; this.gateway = gateway; this.codexModels = codexModels;
     this.migrated = this.ensure();
   }
   // 한 번만: 목록이 없으면 만든다. 이미 있으면 아무것도 하지 않는다(여러 번 돌려도 같다). 옛 설정 키는 지우지 않는다(옛 판 코드로 돌아가도 그 값을 쓴다)
@@ -181,9 +192,14 @@ export class Launchers {
   }
   data() { const d = this.store.getMeta(META_KEY) || { v: VERSION, items: [], favorites: [] }; const ids = new Set(d.items.map((x) => x.id)); return { v: d.v, items: d.items, favorites: (d.favorites || []).filter((id) => ids.has(id)) }; }
   save(d) { this.store.setMeta(META_KEY, d); const out = this.list(); this.broadcast('launchers.updated', out); return out; }
+  // 하네스별로 읽어 온 모델 목록(P72: codex)
+  modelLists() { const out = {}; if (this.codexModels) { try { out.codex = this.codexModels.read(); } catch {} } return out; }
+  harnesses() { return describeHarnesses(this.modelLists()); }
+  previewOf(l, hs) { const w = modelWarning(l, hs); return { ...previewLauncher(l), ...(w ? { warn: w } : {}) }; }
   list() {
     const d = this.data();
-    return { launchers: d.items.map((l) => ({ ...l, favorite: d.favorites.includes(l.id), preview: previewLauncher(l) })), favorites: d.favorites, harnesses: describeHarnesses() };
+    const hs = this.harnesses();
+    return { launchers: d.items.map((l) => ({ ...l, favorite: d.favorites.includes(l.id), preview: this.previewOf(l, hs) })), favorites: d.favorites, harnesses: hs };
   }
   // 이름이나 ID(대소문자 무시)
   find(ref) {
@@ -237,7 +253,7 @@ export class Launchers {
   preview(p) {
     const d = this.data();
     const l = normalizeLauncher((p && p.launcher) || p, { others: d.items });
-    return { launcher: l, preview: previewLauncher(l) };
+    return { launcher: l, preview: this.previewOf(l, this.harnesses()) };
   }
 }
 

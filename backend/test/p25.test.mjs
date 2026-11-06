@@ -145,6 +145,7 @@ test('P25 spawn: DeepSeek는 판이 띄우는 Claude Code(hook, 이어 가기)�
 test('P25 spawn: 직접 명령은 새 셸 패널에 그 글을 그대로 치고(덧붙이는 인자 없음) hook 없는 세션이다. 프록시는 보지 않는다', async () => {
   const cmd = 'echo ds-test; claude --model haiku';
   const { b, calls, cwd } = spawnBackend({ healthUrl: await closedUrl() });
+  b.store.setMeta('settings', {}); // 옛 판(DeepSeek 호출자가 있다, P72)
   b.features.launchers = new Launchers({ store: b.store });
   b.features.launchers.update({ id: 'deepseek', patch: { harness: 'command', command: cmd } }); // P33: 설정 deepseekCommand 대신 DeepSeek 호출자의 명령
   const r = await b.spawn({ cwd, kind: FLAVOR });

@@ -1927,4 +1927,8 @@ export default {
     channelDevHint: 'Gets features merged into the dev branch first. They may be less polished than stable releases.',
     channelStableFromDev: 'Stable releases only. You are on a dev build, so the next notice comes when a newer stable release is out.',
   },
+  // P72: model list of a launcher harness (Codex reads its own model cache)
+  launcherModels: {
+    unlisted: 'This model is not in the {harness} list. Check that the name is right.',
+  },
 };

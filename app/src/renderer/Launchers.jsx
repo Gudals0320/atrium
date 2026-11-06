@@ -5,11 +5,11 @@
 // P28 원칙: 최소 창(900×600)에서도 스크롤 없이 들어간다. 목록이 길면 목록 칸만 넘긴다.
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
-import { useStore, toast } from './store.js';
+import { useStore, toast, loadLaunchers } from './store.js';
 import { KindIcon } from './SessionNode.jsx';
 import { Icon } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
-import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, blankLauncher } from './lib/launchers.js';
+import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher } from './lib/launchers.js';
 
 const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 const MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];
@@ -61,6 +61,24 @@ function LauncherList({ data, onEdit }) {
   );
 }
 
+// P72: 모델 입력칸. 누르면 아래에 하네스가 아는 모델(Codex는 Codex의 목록)이 뜨고, 고르거나 직접 친다.
+// 브라우저의 datalist는 친 글자로 목록을 줄여 다른 모델이 안 보이므로 창 안 목록으로 그린다. Esc는 목록만 닫는다
+function ModelInput({ value, onChange, models, labels, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const shown = modelChoices(models, labels, value);
+  const pick = (m) => { onChange(m); setOpen(false); };
+  return (
+    <span className="mt-ln-model">
+      <input className="mt-set-text" data-field="launcher-model" value={value} autoComplete="off" spellCheck={false} role="combobox" aria-expanded={open && shown.length > 0} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onBlur={() => setOpen(false)} onKeyDown={(e) => { if (e.key === 'Escape' && open) { e.preventDefault(); setOpen(false); } }} placeholder={placeholder} />
+      {open && shown.length > 0 && (
+        <span className="mt-ln-models" role="listbox" data-role="launcher-models">
+          {shown.map((m) => <button type="button" key={m} role="option" tabIndex={-1} aria-selected={m === value} className={m === value ? 'on' : ''} data-model={m} onMouseDown={(e) => { e.preventDefault(); pick(m); }}><span className="mono">{m}</span>{labels[m] ? <span className="dim">{labels[m]}</span> : null}</button>)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function LauncherForm({ init, harnesses, onDone }) {
   const t = useT();
   const [d, setD] = useState(() => ({ ...init, envText: envToText(init.env) }));
@@ -72,7 +90,7 @@ function LauncherForm({ init, harnesses, onDone }) {
   const fields = harnessFields(harnesses, d.harness);
   const has = (f) => fields.includes(f);
   const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || 'manual', allowHerdr: d.allowHerdr, args: d.args, env: d.envText, command: d.command, checkUrl: d.checkUrl });
-  useEffect(() => { api.call('agent.kinds').then((ks) => setKinds(ks.map((k) => k.kind).filter((k) => k !== 'claude' && k !== 'codex'))).catch(() => {}); }, []);
+  useEffect(() => { api.call('agent.kinds').then((ks) => setKinds(ks.map((k) => k.kind).filter((k) => k !== 'claude' && k !== 'codex'))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
   // 고르는 대로 미리보기(백엔드가 확인한다). 이름이 비었으면 이름 검사만 건너뛴다
   useEffect(() => {
     const tm = setTimeout(() => {
@@ -91,6 +109,7 @@ function LauncherForm({ init, harnesses, onDone }) {
   };
   const secrets = secretNames(d.envText);
   const models = harnessModels(harnesses, d.harness);
+  const labels = harnessModelLabels(harnesses, d.harness);
   const shellText = t('launchers.shellPreview');
   return (
     <div className="mt-ln-form" data-role="launcher-form" data-harness={d.harness}>
@@ -110,8 +129,7 @@ function LauncherForm({ init, harnesses, onDone }) {
           <label className="mt-ln-f wide"><span>{t('launchers.command')}</span><input className="mt-set-text mono" data-field="launcher-command" value={d.command} onChange={(e) => set('command', e.target.value)} placeholder={t('launchers.commandPh')} /></label>
         ) : has('model') ? (
           <label className="mt-ln-f"><span>{t('launchers.model')}</span>
-            <input className="mt-set-text" data-field="launcher-model" list={`ln-models-${d.harness}`} value={d.model} onChange={(e) => set('model', e.target.value)} placeholder={t('launchers.modelPh')} />
-            <datalist id={`ln-models-${d.harness}`}>{models.map((m) => <option key={m} value={m} />)}</datalist>
+            <ModelInput value={d.model} onChange={(v) => set('model', v)} models={models} labels={labels} placeholder={t('launchers.modelPh')} />
           </label>
         ) : <span />}
         <label className="mt-ln-f"><span>{t('launchers.icon')}</span>
@@ -139,6 +157,7 @@ function LauncherForm({ init, harnesses, onDone }) {
           <span className="dim">{pv.typed ? t('launchers.previewTyped') : pv.board ? t('launchers.previewBoard') : '$ '}</span>{previewLine(pv, shellText)}{pv.env && pv.env.length ? <span className="dim"> · {t('launchers.envShort')}: {pv.env.join(', ')}</span> : null}
         </> : '…'}
       </div>
+      {pv && !pv.error && pv.warn && <div className="mt-ln-secret warn" data-role="launcher-model-warn">{t(pv.warn.key, pv.warn.vars)}</div>}
       <div className="mt-ln-foot">
         <button type="button" className="mt-btn small primary" data-action="launcher-save" disabled={busy} onClick={save}>{d.id ? t('launchers.save') : t('launchers.create')}</button>
         <button type="button" className="mt-btn small ghost" data-action="launcher-cancel" onClick={onDone}>{t('common.cancel')}</button>

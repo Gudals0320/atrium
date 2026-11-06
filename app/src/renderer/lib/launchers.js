@@ -68,6 +68,18 @@ export function harnessModels(harnesses, id) {
   const h = (harnesses || []).find((x) => x.id === id);
   return h ? h.models || [] : [];
 }
+// P72: 모델 입력칸 아래 목록에 보일 모델. 비었거나 목록의 이름 그대로면 전부, 아니면 이름·보이는 이름에 든 글자로 거른다(대소문자 무시)
+export function modelChoices(models, labels = {}, value = '') {
+  const list = models || [];
+  const v = String(value || '').trim().toLowerCase();
+  if (!v || list.includes(String(value).trim())) return list;
+  return list.filter((m) => m.toLowerCase().includes(v) || String(labels[m] || '').toLowerCase().includes(v));
+}
+// P72: 모델의 보이는 이름(Codex 목록의 display_name). 없으면 빈 묶음
+export function harnessModelLabels(harnesses, id) {
+  const h = (harnesses || []).find((x) => x.id === id);
+  return (h && h.modelLabels) || {};
+}
 
 // 새 호출자의 빈 틀
 export const blankLauncher = (harness = 'claude') => ({ id: null, name: '', harness, icon: '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: '', env: {}, command: '', checkUrl: '' });

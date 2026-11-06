@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_HEALTH_URL as DEEPSEEK_HEALTH_URL } from './deepseek.mjs';
+import { codexHomeOf } from './codex-models.mjs'; // P72
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const BACKEND_ROOT = path.resolve(HERE, '..');
@@ -61,6 +62,8 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     claudeCommand: 'claude',
     ocxHealthUrl: E('OCX_HEALTH') || DEEPSEEK_HEALTH_URL, // P25: DeepSeek 세션 전에 opencodex 프록시가 도는지 보는 주소(`ocx status`의 Health)
     ocxBaseUrl: E('OCX_BASE_URL') || null, // P25: DeepSeek 세션의 ANTHROPIC_BASE_URL. 비우면 health 주소의 origin(deepseek.mjs baseUrlOf)
+    ocxConfigured: !!(E('OCX_HEALTH') || E('OCX_BASE_URL')), // P72: opencodex 주소를 직접 줬는가. 아니면 DeepSeek 호출자가 없는 판(새 판)의 atrium models는 opencodex를 묻지 않는다
+    codexHome: codexHomeOf(env), // P72: Codex 모델 목록 캐시(models_cache.json)를 읽을 폴더. CODEX_HOME(Codex와 같은 변수), 없으면 ~/.codex
     claudeJson: E('CLAUDE_JSON') || path.join(os.homedir(), '.claude.json'),
     claudeProjects: path.join(os.homedir(), '.claude', 'projects'),
     // P7(J3·J4): 판 밖 대화 목록이 읽는 대화 기록 폴더(;로 여럿), Claude Code의 세션 파일 폴더, 데스크톱 앱 세션 목록 폴더. 시험은 고정 자료를 가리킨다.

@@ -35,7 +35,7 @@ const GW_MODELS = [
 ];
 const BASE = 'http://127.0.0.1:10100';
 function catalogOf({ ok = true, launchers } = {}) {
-  const ls = launchers || initialLaunchers({ gateway: { healthUrl: `${BASE}/healthz` } }).items;
+  const ls = launchers || initialLaunchers({ oldBoard: true, gateway: { healthUrl: `${BASE}/healthz` } }).items; // DeepSeek 호출자가 있는 판(P72: 새 판에는 없다)
   return buildCatalog({ launchers: ls, gateways: gatewaysOf(ls).map((g) => ({ ...g, ok, models: ok ? GW_MODELS : [], why: ok ? null : 'ECONNREFUSED' })) });
 }
 
@@ -122,6 +122,7 @@ async function board({ gatewayUrl }) {
   b.store = new Store(path.join(dir, 'board.db'));
   b.sessions = new Map(); b.herdrOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
   b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null };
+  b.store.setMeta('settings', {}); // DeepSeek 호출자가 있는 판(P72: 새 판에는 없다)
   b.features.launchers = new Launchers({ store: b.store, gateway: { healthUrl: `${gatewayUrl}/healthz` } });
   b.queue = { enqueue: () => ({ deliveryId: 'd1', status: 'queued' }), pending: () => 0 };
   b.api = { broadcast() {} };
