@@ -1424,3 +1424,18 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 .mt-edge-label.hot { opacity: 1; z-index: 3; }
 .mt-dl-text .mt-edge-more { font-size: .8em; line-height: 1.45em; padding: 0 .4em; }
 .mt-dl-text .mt-edge-dot { width: .55em; height: .55em; }
+
+/* P66: 세션 이름 바꾸기(노드 머리, 아이콘 얼굴, 사이드바 줄)와 바꾼 이름 옆의 에이전트 주소 */
+.mt-node-addr { color: var(--dim-2); font-size: .8em; font-weight: 500; font-family: var(--font-mono); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mt-rename-wrap { display: inline-flex; align-items: center; gap: .45em; min-width: 0; flex: 1 1 auto; cursor: auto; }
+.mt-rename-input { font: inherit; font-weight: 700; font-size: 1em; padding: .05em .4em; border-radius: .35em; border: 1px solid var(--accent-line); background: var(--field-bg); color: var(--text); width: 11em; min-width: 5em; flex: 0 1 auto; }
+.mt-rename-input.bad { border-color: var(--st-error); }
+.mt-rename-err { color: var(--st-error); font-size: .8em; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-node-rename { max-width: 70%; }
+.mt-icon-rename { position: absolute; left: 0; right: 0; top: calc(-2.2em * var(--inv, 1)); display: flex; justify-content: center; z-index: 5; font-size: calc(12px * var(--inv, 1)); }
+.mt-icon-rename .mt-rename-wrap { flex: none; background: var(--panel); border-radius: .4em; padding: .15em; box-shadow: var(--con-shadow); }
+.mt-sb2-srename { font-size: 12.5px; }
+.mt-sb2-srename .mt-rename-input { width: 100%; min-width: 0; flex: 1 1 auto; font-weight: 550; }
+.mt-sb2-row.sess.editing { cursor: default; }
+.mt-sb2-maddr, .mt-mention-addr { color: var(--dim); font-family: var(--font-mono); font-size: .85em; font-weight: 400; }
+.mt-sb2-row.sess .mt-sb2-more { margin-left: 2px; }

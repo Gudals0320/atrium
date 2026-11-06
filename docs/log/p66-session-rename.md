@@ -54,4 +54,60 @@
 
 ## 작업 기록
 
+2026-11-06, P66 작업자 세션.
+
+- 지금 판에서 `name`은 판의 이름이자 에이전트 주소(대부분 herdr 이름과 같음)였다. 백엔드 안에서 `name`을 쓰는 곳이 200곳이 넘어 그 뜻은 그대로 두고, 세션 행에 `label` 열을 더했다. 요약(`summary`)의 `name`은 보이는 이름(`label`이 있으면 그것), 새 `address`는 주소, `label`은 사람이 정한 이름이다. 창과 원격 웹 화면은 요약의 `name`을 그대로 보이므로 노드 머리, 사이드바, 미션 맵, 찾기, 알림, 트레이가 손대지 않고 새 이름을 따른다.
+- 에이전트에게 가는 글(하위 세션 응답, herdr 이름, 연결 알림)은 세션 객체의 `name`(주소)을 그대로 쓴다.
+- 이름 풀기는 세션 ID → 주소(정확히) → 판 이름(정확히) → 판 이름(대소문자 무시) → 주소(대소문자 무시, 하나일 때) 차례다. herdr에서 붙은 이름이 남의 판 이름과 겹쳐도 주소가 이겨 일하던 에이전트의 명령이 깨지지 않는다.
+- 새로 짓는 이름(spawn, `atrium child`, 올리기, 다시 열기, 데스크톱 가져오기)도 남의 판 이름을 대소문자 무시로 피한다. 그래서 spawn의 이름 겹침이 대소문자를 무시하게 됐다(`S1`과 `s1`은 함께 못 쓴다).
+- herdr 0.9.5에 `herdr agent rename <대상> <이름>|--clear`가 있다. 개발용 판(`atrium-dev-p66`)에서 하위 세션 `kid`를 `kid2`로 바꾸니 `herdr agent get kid`가 `agent_not_found`였고, 판의 주소는 `kid`에 남았다(판이 띄운 세션은 따라가지 않는다). 바로 `kid`로 되돌렸다. 이번에는 쓰지 않았다.
+- 창 시험 첫 실행은 사이드바가 닫혀 있어 2단계에서 멈췄고, 둘째 실행은 멈춘 herdr 세션이 옛 패널을 되살려 `s2`가 겹쳤다. 시험이 사이드바를 열고, 시작 전에 `atrium-dev-p66` herdr 세션만 지우게 고쳤다. 셋째 실행에서 22/22 통과했다.
+- 정리: 시험 세션 넷을 `atrium kill --yes`로 끄고, 백엔드와 herdr 서버를 멈춘 뒤 herdr 세션 `atrium-dev-p66`을 지웠다. 시험 폴더 `C:\Workspace\mtask-p66-dir`, 그 폴더의 시험 대화 기록(이번 시험에서 만든 대화 셋뿐), 개발용 데이터 폴더를 지웠다. 47893 포트에는 TimeWait만 남았고 이 워크트리의 프로세스는 없다.
+
 ## 보고
+
+### 만든 것
+
+- **판의 이름(백엔드).** `backend/src/session-label.mjs`
+  - 규칙은 지금 이름 규칙과 같다: 영문·숫자로 시작, 영문·숫자·`-`·`_`, 32자까지, `all` 아님. 앞의 `@`는 뗀다. 비우거나 원래 주소와 같으면 판 이름을 지운다(원래 이름으로 돌아감).
+  - 겹침은 대소문자를 무시하고 남의 주소와 남의 판 이름을 모두 본다. 틀리면 `labelBad`, `labelTooLong`, `labelAll`, `labelTaken`(누가 쓰는지 포함) 열쇠로 이유를 준다.
+  - `session.rename { session, name | clear, by: human | cli }`. 판 기록(`sessions.label`)에 쓰고 `renamed` 이벤트(`from`, `to`, `label`, `address`, `by`)를 남긴다. 그 세션과 하위 세션의 요약을 다시 보내 모든 창(원격 웹 포함)이 곧바로 받는다.
+  - `resolve`, `@이름` 보내기, 닫힌 세션 다시 열기의 이름 풀기가 새 이름과 옛 주소를 둘 다 받는다. 찾기는 옛 주소로도 찾는다.
+  - 오래 남기: 행에 있으니 백엔드·창·herdr를 다시 켜도, 잠재웠다 깨워도(같은 세션 객체), 이어 가기로 되살려도 남는다. 닫았다 다시 열면 그새 겹치지 않을 때만 되살린다. herdr 이름 동기화(`refreshAdoptedName`, `promoteShell`)는 `name`만 바꾸고 `label`은 덮지 않으며, 남의 판 이름과 겹치면 따라 바꾸지 않는다.
+  - 요청 기록(`delivery`), 연결의 `fromName`/`toName`, `session.state` 이벤트, 하위 세션 요약의 부모 이름은 보이는 이름이다. 하위 세션 요약에 `parentAddress`를 더했다.
+- **CLI.** `atrium rename <세션> <새 이름>`, `atrium rename <세션> --clear`. `atrium ls`는 바꾼 세션을 `critic (주소 s2)`로, `atrium tree`는 `(보드 이름 …)`을 덧붙여 보인다.
+- **창.**
+  - 노드 머리: 이름을 두 번 누르기, ⋯ 메뉴 "이름 바꾸기", 고른 노드에서 F2. 바꾼 이름 옆에 주소를 작게 보이고, 툴팁에 "에이전트 주소: s2"를 보인다. 점 색은 주소로 정해 이름을 바꿔도 같다. 아이콘 얼굴(머리 없음)은 F2로 노드 위에 입력칸을 띄운다.
+  - 사이드바 세션 줄: ⋯ 단추(마우스를 올리면)와 오른쪽 누르기 메뉴의 "이름 바꾸기", 목록에 초점이 있을 때 F2. 바꾸는 동안 줄을 단추가 아닌 칸으로 그린다.
+  - 입력칸(`Rename.jsx`): Enter·칸 밖 누르기 = 저장, Esc = 취소, 비우면 원래 이름. 창이 먼저 규칙을 보고(`lib/session-name.js`), 틀리거나 겹치면 칸 옆과 알림에 이유를 보이며 칸을 닫지 않는다.
+  - 명령 바 `@` 목록은 옛 주소를 쳐도 새 이름을 내놓고 옆에 주소를 작게 보인다.
+  - 사전 두 개에 `rename.*`(끝에 더함)과 `backend.label*`(backend 묶음 안, `nameIsSession` 다음)을 더했다. 스타일은 `styles.css` 끝에 더했다.
+- **시험.**
+  - `backend/test/p66.test.mjs` 9개: 이름 규칙, 겹침(대소문자 무시, 하위 세션 이름 포함), 비우기, 이름 풀기 차례, 찾기, 판 위 이름 바꾸기와 이벤트, `@`·CLI의 새 이름과 옛 주소, herdr 이름 바뀜이 판 이름을 덮지 않음, 다시 연 판 기록과 닫힌 세션, spawn 겹침.
+  - `app/test/p66-lib.test.mjs` 3개: 창 미리 보기, F2 대상, 두 사전의 이유 문구.
+  - 창 시험 `app/test/e2e/p66-rename.mjs`(P66 판에서만 뜬다): 22/22 통과. 결과는 `experiments/p66/`(git 밖: `p66-rename.txt`, `p66-results.json`, 스크린숏 10장, `p66-ls.txt`, `p66-tree.txt`).
+    - 두 번 눌러 `s2` → `reviewer`(머리에 주소 `s2`), 겹치는 이름·한글 이름의 이유, Esc.
+    - 사이드바 메뉴로 `s1` → `shell-a`, F2로 → `shellb`, 다른 화면(`atrium watch`)이 같은 순간 받음.
+    - CLI로 옛 주소 `s2` → `critic`, 겹침 실패 이유, `--clear`, `atrium ls`, `renamed` 이벤트의 `by: human`·`by: cli`.
+    - 명령 바 `@critic`, CLI `atrium send @s2`(옛 주소) 모두 haiku 세션에 닿음. 요청 기록 이름은 `critic`.
+    - 백엔드를 멈춘 뒤 창이 다시 띄운 백엔드에서 `critic`·`shellb`가 남고 `@critic`으로 보낼 수 있음.
+    - haiku `lead`가 `atrium child kid`로 하위 세션을 띄우고, `kid`를 `helper`로 바꾼 뒤 `lead`가 `herdr agent prompt kid …`(옛 주소)로 시킨 일이 `helper`에 닿음(답 BANANA, 연결 기록 `toName: helper`, `toAgentName: kid`).
+- **확인.** `cd backend && npm test` 472/472, `cd app && npm test` 217/217, `cd app && npm run build` 통과.
+
+### 계획과 다른 곳
+
+- 원격 웹 화면은 따로 띄우지 않았다. 웹 화면도 창과 같은 `session.updated` 방송을 받으므로, 다른 클라이언트(`atrium watch`)가 곧바로 받는 것으로 확인했다.
+- 잠재웠다 깨우기는 창 시험에 넣지 않았다. 잠재우기는 세션 객체와 행을 그대로 두므로 백엔드 다시 켜기와 같은 길이다.
+
+### 알려진 문제
+
+- 하위 세션이나 다른 에이전트가 판 이름(`helper`)으로 `herdr agent prompt`를 부르면 herdr가 모른다. 판 이름은 `atrium send @helper`에서만 통한다. 노드 머리의 주소 표시로 알린다.
+- 판 바깥에서 `herdr agent rename`으로 판이 띄운 세션의 herdr 이름을 바꾸면 판의 주소가 따라가지 않는다(지금과 같음).
+- 명령 바의 보낸 요청 칩과 Thread 기록은 보낸 때의 이름을 그대로 보인다(예: 이름을 바꾸기 전의 `@kid`).
+
+### 고칠 문서(지휘 세션)
+
+- ARCH 상태 모델: 세션의 `label`(판의 이름)과 요약의 `name`(보이는 이름)·`address`(주소)·`label`. 이름 풀기 차례. API `session.rename`, 이벤트 `renamed`의 `by`.
+- ARCH 화면: 노드 머리 두 번 누르기·F2·⋯ 메뉴, 사이드바 세션 줄 메뉴.
+- BRIEF "정한 것": "세션 이름은 판에서 바꿀 수 있고, 에이전트 주소(herdr 이름)는 바꾸지 않는다" 행.
+- testing.md: 창 시험 전에 그 판의 멈춘 herdr 세션을 지워야 옛 패널이 되살아나지 않는다(`herdr session delete atrium-dev-<이름>`).

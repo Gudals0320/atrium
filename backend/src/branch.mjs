@@ -26,6 +26,7 @@ import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
 import { harnessOf } from './launchers.mjs'; // P41
 import { buildCatalog, resolveModel, gatewaysOf, fetchGatewayModels, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
 import { baseUrlOf, proxyEnv } from './deepseek.mjs'; // P41
+import { takenNames, shownName } from './session-label.mjs'; // P66
 
 export const DEFAULT_ROLE = '워커';
 export const CHILD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/; // herdr 에이전트 이름 규칙과 같다(herdr --skill)
@@ -260,10 +261,11 @@ export class Branch {
     const info = this.info.get(s.sessionId) || null;
     const parentId = s.parentSessionId || null;
     const parent = parentId ? this.rowOf(parentId) : null;
-    return { branch: { depth: this.depth(s.sessionId), parentSessionId: parentId, parentName: parent ? parent.name : null, parentOpen: !!(parentId && this.b.sessions.has(parentId)), child: !!info, role: info ? info.role : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.openChildren(s.sessionId).length } };
+    return { branch: { depth: this.depth(s.sessionId), parentSessionId: parentId, parentName: shownName(parent), // P66: 보이는 이름
+      parentAddress: parent ? parent.name : null, parentOpen: !!(parentId && this.b.sessions.has(parentId)), child: !!info, role: info ? info.role : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.openChildren(s.sessionId).length } };
   }
   tree() {
-    const rows = [...this.b.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, parentSessionId: s.parentSessionId || null, depth: this.depth(s.sessionId), child: this.info.has(s.sessionId), role: (this.info.get(s.sessionId) || {}).role || null, state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null }));
+    const rows = [...this.b.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, label: s.label || null, parentSessionId: s.parentSessionId || null, depth: this.depth(s.sessionId), child: this.info.has(s.sessionId), role: (this.info.get(s.sessionId) || {}).role || null, state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null }));
     return { total: this.openTotal(), rows };
   }
 
@@ -372,7 +374,7 @@ export class Branch {
     if (effort && !EFFORTS.includes(effort)) throw apiError('bad_request', `추론 수준은 ${EFFORTS.filter(Boolean).join(', ')} 가운데 하나: ${effort}`);
     const prompt = o.prompt == null ? null : String(o.prompt);
     if (prompt != null && !prompt.trim()) throw apiError('bad_request', "첫 요청을 입력하세요.");
-    const taken = new Set([...b.sessions.values()].map((x) => x.name).concat([...this.pendingNames]));
+    const taken = takenNames(b.sessions.values(), [...this.pendingNames]); // P66: 판의 이름(label)도 피한다
     const name = childName({ want: o.name ? String(o.name) : null, parentName: parent.name, taken });
 
     // K3: P36에서 상한을 없앴다

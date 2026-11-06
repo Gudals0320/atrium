@@ -21,6 +21,7 @@ import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
 import { pathKey, normPath } from './workspaces.mjs';
 import { BACKEND_ROOT } from './config.mjs';
 import { keyed } from './msg.mjs';
+import { takenNames } from './session-label.mjs'; // P66
 
 export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/; // 판 세션 이름(backend.mjs와 같다)
 export const STATUSES = ['new', 'imported', 'more', 'onBoard', 'noTranscript', 'noFolder'];
@@ -261,7 +262,7 @@ export class DesktopImport {
     const want = p.all ? all.filter((x) => x.c.pick) : (Array.isArray(p.ids) ? p.ids : []).map((id) => all.find((x) => x.c.appSessionId === id) || { missing: id });
     if (!want.length) return { imported: [], skipped: [], total: 0 };
     const fb = this.fallback();
-    const taken = new Set([...b.sessions.values()].map((s) => s.name));
+    const taken = takenNames(b.sessions.values()); // P66: 판의 이름(label)도 피한다
     const imported = [], skipped = [];
     let i = 0;
     for (const x of want) {

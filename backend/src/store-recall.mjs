@@ -65,7 +65,7 @@ export function installRecall(Store) {
       return this.st('SELECT * FROM sessions WHERE closed_at IS NOT NULL AND reopened_as IS NULL ORDER BY closed_at DESC').all().map((r) => {
         let reason = r.close_reason ?? null;
         if (!reason) { const e = this.st("SELECT data FROM events WHERE session_id = ? AND kind = 'closed' ORDER BY id DESC LIMIT 1").get(r.session_id); reason = e ? (P(e.data, {}) || {}).reason || null : null; }
-        return { sessionId: r.session_id, name: r.name, cwd: r.cwd, kind: r.kind || 'claude', origin: r.origin || 'board', workspaceKey: r.workspace_key ?? null, createdAt: r.created_at, closedAt: r.closed_at, dismissedAt: r.dismissed_at ?? null, reason, runtime: P(r.runtime, null), permissionMode: r.permission_mode, model: r.model, effort: r.effort };
+        return { sessionId: r.session_id, name: r.name, label: r.label ?? null, cwd: r.cwd, kind: r.kind || 'claude', origin: r.origin || 'board', workspaceKey: r.workspace_key ?? null, createdAt: r.created_at, closedAt: r.closed_at, dismissedAt: r.dismissed_at ?? null, reason, runtime: P(r.runtime, null), permissionMode: r.permission_mode, model: r.model, effort: r.effort };
       });
     },
     // 판이 아는 대화 ID(열린 세션, 닫힌 세션, 목록에서 뺀 세션 모두): 판 밖 대화 목록에서 뺀다

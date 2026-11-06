@@ -58,6 +58,7 @@ function apiError(code, message) { return Object.assign(new Error(message), { co
 import { m, confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이스 지우기 판단
 import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META } from './ws-groups.mjs'; // P44: 가상 그룹
+import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs'; // P66: 판의 이름(표시 이름)과 에이전트 주소
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 
 // P33: session.spawn 값 → 띄울 값. launcher를 주면 그 호출자를 풀고 함께 준 값이 덮는다.
@@ -427,13 +428,12 @@ export class Backend {
   // ---------- 세션 표시 ----------
   // 판의 hook이 붙은 세션(판이 띄운 Claude Code). 나머지는 herdr 상태와 화면으로만 본다(P4)
   hooked(s) { return s.rt.hooked !== false; }
-  nameOf(sid) { const s = this.sessions.get(sid); return s ? s.name : null; }
+  nameOf(sid) { return shownName(this.sessions.get(sid)); } // P66: 보이는 이름(판의 이름이 있으면 그것)
   sessionByPane(paneId) { for (const s of this.sessions.values()) if (s.paneId === paneId) return s; return null; }
   resolve(ref) {
     if (!ref) throw apiError('bad_request', 'session required');
-    const key = String(ref).replace(/^@/, '');
-    if (this.sessions.has(key)) return this.sessions.get(key);
-    for (const s of this.sessions.values()) if (s.name === key) return s;
+    const s = findSession(this.sessions.values(), ref); // P66: 세션 ID, 주소(herdr 이름), 판의 이름
+    if (s) return s;
     throw keyed(apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`), 'sessionNotFound', { ref });
   }
   deliveryView(sid, d) {
@@ -452,7 +452,8 @@ export class Backend {
     const f = flags(rt, { seenAt: s.seenAt, delivering: this.queue ? this.queue.pending(s.sessionId) : 0, quietMs: this.cfg.quietMs });
     const ask = d.ask ? { ...d.ask, input: undefined, waitedMs: d.ask.since ? Date.now() - d.ask.since : null } : null;
     return {
-      sessionId: s.sessionId, name: s.name, cwd: s.cwd, paneId: s.paneId, herdrWorkspaceId: s.herdrWorkspaceId,
+      sessionId: s.sessionId, name: shownName(s), cwd: s.cwd, paneId: s.paneId, herdrWorkspaceId: s.herdrWorkspaceId,
+      address: s.name, label: s.label || null, // P66: name은 보이는 이름, address는 에이전트가 쓰는 주소(herdr 이름), label은 사람이 정한 이름(없으면 null)
       state: d.state, estimate: d.estimate || null, herdrStatus: rt.herdr.status, ask, error: d.error || rt.lastError || null,
       permissionMode: rt.permissionMode || s.permissionMode, model: s.model,
       lastPrompt: clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
@@ -609,7 +610,7 @@ export class Backend {
       s.lastState = sum.state;
       if (from !== null || cause) {
         this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, herdr: sum.herdrStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined });
-        this.api.broadcast('session.state', { sessionId: s.sessionId, name: s.name, from, to: sum.state, cause: cause || null, summary: sum });
+        this.api.broadcast('session.state', { sessionId: s.sessionId, name: shownName(s), from, to: sum.state, cause: cause || null, summary: sum });
         this.onLinkTargetState(s, from, sum);
       }
     }
@@ -759,7 +760,7 @@ export class Backend {
       if (a.status && a.status !== 'unknown') rt.phase = 'running';
       const from = s.kind;
       s.rt = rt; s.kind = kind; s.agentName = a.name || s.paneId; s.adoptNamed = s.origin !== 'adopted' || !!a.name;
-      if (s.origin === 'adopted' && a.name && NAME_RE.test(a.name) && a.name !== s.name && ![...this.sessions.values()].some((x) => x !== s && x.name === a.name)) {
+      if (s.origin === 'adopted' && a.name && NAME_RE.test(a.name) && a.name !== s.name && !nameOwner(this.sessions.values(), a.name, s)) {
         this.store.addEvent(s.sessionId, 'renamed', { from: s.name, to: a.name }); s.name = a.name; this.store.renameSession(s.sessionId, a.name);
       }
       this.store.updateSession(s.sessionId, { kind, agentName: s.agentName, runtime: rt });
@@ -1122,7 +1123,7 @@ export class Backend {
     const cwd = path.resolve(String(p.cwd || ''));
     if (!p.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.cwd}`), 'noFolder', { path: p.cwd });
     const pending = this.spawningNames || (this.spawningNames = new Set()); // 만드는 중인 세션 이름
-    const taken = new Set([...this.sessions.values()].map((s) => s.name).concat([...pending]));
+    const taken = takenNames(this.sessions.values(), pending); // P66: 판의 이름(label)도 피한다. 대소문자 무시
     // P33: 띄울 값은 호출자(launchers.mjs)가 정한다. 함께 준 값(모델 등)이 호출자 값을 덮는다. 호출자 없이 부르면 준 값만 쓴다(atrium child, CLI --kind)
     const plan = spawnPlanOf(this, p);
     const { flavor, command } = plan;
@@ -1284,15 +1285,15 @@ export class Backend {
         for (const s of list) if (!picked.has(s.sessionId)) picked.set(s.sessionId, s);
         continue;
       }
-      const one = [...this.sessions.values()].find((s) => s.name === t || s.sessionId === t);
-      if (one && !agent(one)) throw keyed(apiError('not_agent', `@${one.name} 세션은 일반 셸입니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요.`), 'shellNoBar', { name: one.name });
+      const one = findSession(this.sessions.values(), t); // P66: 새 이름과 옛 주소를 둘 다 받는다
+      if (one && !agent(one)) throw keyed(apiError('not_agent', `@${shownName(one)} 세션은 일반 셸입니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요.`), 'shellNoBar', { name: shownName(one) });
       if (!one) throw keyed(apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${raw}`), 'targetNotFound', { ref: raw });
       picked.set(one.sessionId, one);
     }
     const deliveries = [...picked.values()].map((s) => {
       const d = this.queue.enqueue(s.sessionId, toLF(text));
       this.touch(s);
-      return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: s.name, status: d.status };
+      return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status };
     });
     // I2(P6b): 명령 바에서 보낸 글은 Thread에 남긴다. source: bar(기본), output(출력 보기에서 답장)
     const item = this.features ? this.features.thread.add({ source: p.source || 'bar', text: toLF(text), targets: targets.map((t) => '@' + String(t).replace(/^@/, '')), deliveries }) : null;
@@ -1497,7 +1498,7 @@ export class Backend {
   linksOpen() { return this.store.links().filter((l) => this.sessions.has(l.from) && this.sessions.has(l.to)).map((l) => this.linkView(l)); }
   linkView(l) {
     const a = this.sessions.get(l.from), b = this.sessions.get(l.to);
-    return { ...l, fromName: a ? a.name : null, toName: b ? b.name : null, toAgentName: b ? b.agentName : null, toPaneId: b ? b.paneId : null, ...this.linkPromptView(l) };
+    return { ...l, fromName: shownName(a), toName: shownName(b), toAgentName: b ? b.agentName : null, toPaneId: b ? b.paneId : null, ...this.linkPromptView(l) };
   }
   // P67: prompts(지시 수, 이름표의 +n), promptAt(마지막 지시 시각, 이름표가 물러나는 기준)
   linkPromptView(l) {
@@ -1620,7 +1621,7 @@ export class Backend {
         || intents.find((x) => { const f = this.sessions.get(x.from); return f && f.herdrWorkspaceId === hw; });
       const sameWs = [...this.sessions.values()].find((x) => x.herdrWorkspaceId === hw && x.paneId !== paneId);
       const parent = (it && this.sessions.get(it.from)) || sameWs || null;
-      const taken = new Set([...this.sessions.values()].map((x) => x.name).concat([...(this.spawningNames || [])])); // 만드는 중인 이름도 피한다(이슈 #1-7)
+      const taken = takenNames(this.sessions.values(), [...(this.spawningNames || [])]); // 만드는 중인 이름도 피한다(이슈 #1-7). P66: 판의 이름도
       const base = a ? (a.name && NAME_RE.test(a.name) ? a.name : `${a.agent || 'agent'}-${paneId.replace(/[^A-Za-z0-9]/g, '')}`) : `sh-${paneId.replace(/[^A-Za-z0-9]/g, '')}`;
       let name = base;
       for (let i = 2; taken.has(name); i++) name = `${base.slice(0, 28)}-${i}`;
@@ -1682,7 +1683,7 @@ export class Backend {
     s._naming = true;
     try {
       const a = (await this.adapter.listAgents()).find((x) => x.paneId === s.paneId);
-      if (!a || !a.name || !NAME_RE.test(a.name) || [...this.sessions.values()].some((x) => x !== s && x.name === a.name)) return;
+      if (!a || !a.name || !NAME_RE.test(a.name) || nameOwner(this.sessions.values(), a.name, s)) return;
       s.adoptNamed = true; s.agentName = a.name;
       if (s.name !== a.name) { this.store.addEvent(s.sessionId, 'renamed', { from: s.name, to: a.name }); s.name = a.name; this.store.renameSession(s.sessionId, a.name); }
       this.store.updateSession(s.sessionId, { agentName: a.name });
@@ -1794,6 +1795,7 @@ export class Backend {
       'session.list': () => [...this.sessions.values()].map((s) => this.summary(s)),
       'session.get': (p) => this.get(p),
       'session.send': (p) => this.send(p),
+      'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancel(p.deliveryId),
       'delivery.list': (p) => this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
       'session.kill': (p) => this.kill(p),
