@@ -170,6 +170,7 @@ export default {
     boundOpen: 'The conversation is held elsewhere ({where}). Finish it there, then open',
     regionOverlap: 'Overlaps another workspace area ({ws})',
     noArrangeUndo: 'Nothing to undo',
+    dockWorkersFew: 'Needs at least 2 workers in the same workspace to dock (@{name}: {n})', // P68
     plain: '{text}',
     parentBoard: 'Board session', parentBoardClosed: 'Closed board session', parentOther: 'Another conversation', parentDesktop: 'Desktop app conversation',
     parentMissed: 'Missed conversation', parentMissedIn: 'Missed conversation · {folder}', parentArchived: 'Archived conversation', parentArchivedTitle: 'Archived conversation · {title}', parentConvo: 'Conversation · {name}',
@@ -1846,5 +1847,13 @@ export default {
       memo: 'Memo',
       kanban: 'Kanban',
     },
+  },
+  // P68: window groups across worktrees of one repository (SessionNode.jsx node menu, branch in each cell header)
+  dockWorkers: {
+    action: 'Dock workers together',
+    hint: 'Places {n} child sessions in one window group, even across worktrees.',
+    done: 'Docked {n} workers in one window group',
+    branchWt: 'Worktree branch: {branch}',
+    branchMain: 'Main repository branch: {branch}',
   },
 };

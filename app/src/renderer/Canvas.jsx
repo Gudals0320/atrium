@@ -53,7 +53,7 @@ import { boundsOf } from '../../../backend/src/workspaces.mjs';
 import { chromeInset, fitInset } from './lib/chrome-inset.js'; // P52(#5)
 import { bbox, REGION_GAP } from '../../../backend/src/canvas.mjs';
 import { layout as layoutTree, dropZone, edgeSnap, junctions } from '../../../backend/src/dock-tree.mjs'; // P17, P23
-import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안
+import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts, dockedAreas, visibleAnchors } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안. P68: 워크트리끼리 붙인 덩어리
 import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 
@@ -81,8 +81,22 @@ const wsOfId = (id) => { const s = getState().sessions.get(id); return s ? s.wor
 // P27: 영역 키(본 저장소 영역은 워크스페이스 키, 워크트리 영역은 areaKey). 노드가 저장한 area가 살아 있는 워크트리 영역이 아니면 본 저장소 영역
 let resolver = { ws: null, fn: null };
 const areaResolve = (st = getState()) => { if (resolver.ws !== st.workspaces) resolver = { ws: st.workspaces, fn: areaResolverOf(st.workspaces) }; return resolver.fn; };
-const areaOfId = (id, st = getState()) => { const s = st.sessions.get(id); if (!s) return null; const n = st.nodes.get(id); return areaResolve(st)(s.workspaceKey || null, n && n.area); };
-const anchorsOf = (st = getState()) => areaAnchorList(st.workspaces);
+const rawAreaOfId = (id, st = getState()) => { const s = st.sessions.get(id); if (!s) return null; const n = st.nodes.get(id); return areaResolve(st)(s.workspaceKey || null, n && n.area); };
+// P68: 같은 리포의 다른 영역 세션이 섞인 덩어리는 리포 영역(본 저장소 쪽)에 든다. 구성 노드가 빠져나가 빈 상자는 숨긴다(백엔드 canvas-ops.mjs boardItems와 같은 규칙)
+let docked = {};
+function dockedOf(st = getState()) {
+  if (docked.docks !== st.docks || docked.nodes !== st.nodes || docked.sessions !== st.sessions || docked.ws !== st.workspaces || docked.cv !== st.convoNodes) {
+    const d = dockedAreas([...st.docks.values()], (id) => (st.nodes.has(id) ? rawAreaOfId(id, st) : null));
+    const used = [];
+    for (const id of st.nodes.keys()) if (st.sessions.has(id)) used.push({ ws: d.area.get(id) ?? rawAreaOfId(id, st) });
+    const area = areaResolve(st);
+    for (const c of st.convoNodes.values()) used.push({ ws: area(c.workspaceKey || null, c.area) });
+    docked = { docks: st.docks, nodes: st.nodes, sessions: st.sessions, ws: st.workspaces, cv: st.convoNodes, area: d.area, anchors: visibleAnchors(areaAnchorList(st.workspaces), used, d.pulled) };
+  }
+  return docked;
+}
+const areaOfId = (id, st = getState()) => dockedOf(st).area.get(id) ?? rawAreaOfId(id, st);
+const anchorsOf = (st = getState()) => dockedOf(st).anchors;
 const mainOnly = (regs) => new Map([...regs].filter(([k]) => wsOfArea(k) === k)); // 메모·칸반이 속할 수 있는 영역(본 저장소 영역)
 let areaShift = null; // P27: 영역을 끄는 동안 빈 워크트리 영역도 따라오게 { ws, wt?, dx, dy }
 // P35: 끄는 중인 영역만큼 옮긴 영역 자리(빈 상자가 따라온다)
@@ -202,11 +216,11 @@ function overlapPairs(sessRects, st = getState(), itemOver = new Map(), anchors 
 
 // P17: 그냥 끌기의 붙을 대상. 같은 워크스페이스의 혼자인 노드와 덩어리(바깥 사각형). 끄는 노드가 든 덩어리는 뺀다. ns: 지금 그리는 노드
 function snapBlocks(ns, leadId) {
-  const ws = areaOfId(leadId); // P27: 같은 영역 안에서만 붙인다
+  const ws = wsOfId(leadId); // P68: 같은 워크스페이스(리포)면 워크트리가 달라도 붙인다(P27에서는 같은 영역만)
   const rm = new Map(ns.filter((n) => n.type === 'session').map((n) => [n.id, rectOf(n)]));
   const out = [], seen = new Set();
   for (const [id, r] of rm) {
-    if (id === leadId || areaOfId(id) !== ws) continue;
+    if (id === leadId || wsOfId(id) !== ws) continue;
     const d = dockOf(id);
     if (!d) { out.push({ id, dockId: null, ...r }); continue; }
     if (seen.has(d.dockId) || d.members.includes(leadId)) continue;
@@ -221,10 +235,10 @@ function snapBlocks(ns, leadId) {
 // P17: Ctrl+끌기의 놓일 자리 후보(dock-tree.mjs dropZone). 저장소 자리로 센다. 끄는 노드는 잎에서 뺀다(제 덩어리의 바깥은 그대로)
 function ctrlBlocks(leadId) {
   const st = getState();
-  const ws = areaOfId(leadId, st); // P27: 같은 영역
+  const ws = wsOfId(leadId); // P68: 같은 워크스페이스(리포)
   const out = [], seen = new Set();
   for (const [id, r] of st.nodes) {
-    if (id === leadId || !st.sessions.has(id) || areaOfId(id, st) !== ws) continue;
+    if (id === leadId || !st.sessions.has(id) || wsOfId(id) !== ws) continue;
     const d = dockOf(id);
     if (!d) { out.push({ dockId: null, rect: { x: r.x, y: r.y, w: r.w, h: r.h }, leaves: [{ id, x: r.x, y: r.y, w: r.w, h: r.h }] }); continue; }
     if (seen.has(d.dockId)) continue;
@@ -324,7 +338,7 @@ export function Canvas() {
     };
     for (const l of links.values()) if (here(l.from) && here(l.to) && !adjacent(l.from, l.to)) out.push({ id: l.linkId, source: l.from, target: l.to, ...sides(l.from, l.to), type: 'link', data: gapOf(l.from, l.to) });
     const linked = (a, b) => [...links.values()].some((l) => l.from === a && l.to === b);
-    const inWtArea = (id) => { const k = areaOfId(id); return !!k && isBoxKey(k); }; // P27: 워크트리 영역에 든 세션은 그 상자가 관계를 보인다(P35: 리포 영역 안의 노란 상자)
+    const inWtArea = (id) => { const k = rawAreaOfId(id); return !!k && isBoxKey(k); }; // P27: 워크트리 영역에 든 세션은 그 상자가 관계를 보인다(P35: 리포 영역 안의 노란 상자). P68: 덩어리로 빠져나간 세션은 칸 머리의 브랜치가 보인다
     for (const e of repoEdges([...sessions.values()].filter((s) => here(s.sessionId)), linked)) if (!adjacent(e.from, e.to) && !inWtArea(e.to) && !inWtArea(e.from)) out.push({ id: e.id, source: e.from, target: e.to, ...sides(e.from, e.to), type: 'repo', data: { ...e, ...gapOf(e.from, e.to) }, selectable: false });
     // P13: 대화끼리의 띄움 선(대화 노드나 판 세션 사이)
     const hereAny = (id) => (String(id).startsWith('convo:') ? convoNodes.has(id.slice(6)) : here(id));

@@ -25,6 +25,7 @@ import { InterruptedBanner } from './SessionExtras.jsx';
 import { enterSession, markInteracted } from './touch.js';
 import { LoopBadge, SessionLoopList } from './Loops.jsx';
 import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단계"
+import { dockBranchOf } from './lib/dock-branch.js'; // P68: 워크트리끼리 붙인 덩어리의 칸마다 브랜치
 import { Icon } from './lib/icons.jsx';
 import { dotVar } from './lib/tokens.js';
 import { ANSWER_H } from './ApprovalCard.jsx';
@@ -102,6 +103,8 @@ function Header({ s, onKill, onMenu, onLoops }) {
   const since = s.ask && s.ask.since;
   // D1: 약 30초마다 오는 자원 이벤트에서 이 세션의 메모리
   const mem = useStore((st) => { const r = st.resources && st.resources.sessions.find((x) => x.sessionId === s.sessionId); return r ? r.memMB : null; });
+  const dockBranch = useStore((st) => dockBranchOf(st, s.sessionId)); // P68: '' 또는 'wt|main<탭>브랜치'
+  const [dbKind, dbName] = dockBranch ? dockBranch.split('\t') : [];
   return (
     <div className="mt-node-head mt-drag">
       <span className="mt-head-kind"><KindIcon kind={shownKind(s)} state={s.state} /></span>
@@ -109,6 +112,7 @@ function Header({ s, onKill, onMenu, onLoops }) {
       <span className="mt-node-name" title={`@${s.name}
 ${s.cwd}
 ${s.sessionId}`}>{s.name}</span>
+      {dockBranch && <span className={`mt-dock-branch${dbKind === 'wt' ? ' wt' : ''}`} data-role="dock-branch" data-branch={dbName} title={t(dbKind === 'wt' ? 'dockWorkers.branchWt' : 'dockWorkers.branchMain', { branch: dbName })}>⎇ {dbName}</span>}
       {/* 표시들은 좁으면 먼저 잘린다(이름이 먼저 보이게) */}
       <span className="mt-head-badges"><Badges s={s} /><Origin s={s} /><BranchBadge s={s} /><LoopBadge s={s} onClick={onLoops} /></span>
       <span className="mt-node-sp" />
@@ -200,6 +204,8 @@ function NodeMenu({ s, docked, onClose }) {
       {/* P21(D4)·P24: 잠든 노드는 그 리포를 깨운다. 잠재우기는 리포 단위라 영역 이름표 메뉴에 있다 */}
       {s.state === 'sleeping' && <div className="mt-menu-row"><button className="mt-btn small" data-action="wake" disabled={!!s.waking} onClick={() => { onClose(); wakeSession(s.sessionId); }}><Icon name="moon" />{t('sleep.menuWake')}</button><span className="dim">{t('sleep.menuWakeHint')}</span></div>}
       {s.kind !== 'shell' && <div className="mt-menu-row"><button className="mt-btn small" data-action="loop-new" onClick={() => { onClose(); openDialog({ kind: 'loop', target: { session: s.sessionId } }); }}>{t('node.loopNew')}</button><span className="dim">{t('node.loopNewHint')}</span></div>}
+      {/* P68: 리드의 하위 세션(워커)을 워크트리가 달라도 한 덩어리로 */}
+      {s.branch && s.branch.children >= 2 && <div className="mt-menu-row"><button className="mt-btn small" data-action="dock-workers" onClick={() => api.call('dock.workers', { lead: s.sessionId }).then((r) => { onClose(); toast(t('dockWorkers.done', { n: (r.workers || []).length })); }, (e) => toast(errText(e), 'error'))}>{t('dockWorkers.action')}</button><span className="dim">{t('dockWorkers.hint', { n: s.branch.children })}</span></div>}
       {docked && <div className="mt-menu-row"><button className="mt-btn small" data-action="undock" onClick={() => call('dock.remove', { session: s.sessionId })}>{dt('undock')}</button><span className="dim">{dt('undockHint')}</span></div>}
       <div className="mt-menu-row dim" data-role="dock-hint">{dt('dockHint')}</div>
       <div className="mt-menu-row"><button className="mt-btn small ghost" data-action="menu-close" onClick={onClose}>{t('common.close')}</button></div>

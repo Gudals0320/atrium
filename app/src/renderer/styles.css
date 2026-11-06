@@ -1406,3 +1406,7 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 .mt-search-count { font-family: var(--font-mono); color: var(--dim-2); }
 @media (max-width: 640px) { .mt-search { width: calc(100% - 32px); } .mt-search-go, .mt-search-keys > span:first-child { display: none; } }
 @media (prefers-reduced-motion: reduce) { .mt-search, .mt-search[data-state="closing"] { animation: none; } }
+
+/* P68: 워크트리끼리 붙인 창 그룹의 칸 머리 브랜치(워크트리는 노란 상자와 같은 색) */
+.mt-dock-branch { flex: 0 0 auto; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 6px; padding: 0 6px; border-radius: 6px; font-family: var(--font-mono); font-size: 11px; line-height: 18px; color: var(--dim-2); border: 1px solid var(--con-line); }
+.mt-dock-branch.wt { color: var(--wt-box-text); border-color: var(--wt-box-line); background: var(--wt-box-head-bg); }

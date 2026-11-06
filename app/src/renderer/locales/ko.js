@@ -170,6 +170,7 @@ export default {
     boundOpen: '다른 곳에서 이 대화를 사용 중입니다({where}). 그곳에서 세션을 종료한 뒤 여세요.',
     regionOverlap: '다른 프로젝트 영역과 겹칩니다({ws}).',
     noArrangeUndo: '되돌릴 자동 정렬 내역이 없습니다.',
+    dockWorkersFew: '같은 프로젝트에서 창 그룹으로 묶을 워커가 2개 이상 있어야 합니다(@{name}: {n}개).', // P68
     plain: '{text}',
     parentBoard: '보드의 세션', parentBoardClosed: '보드에서 닫힌 세션', parentOther: '다른 대화', parentDesktop: '데스크톱 앱 대화',
     parentMissed: '정리 대상 대화', parentMissedIn: '정리 대상 대화 · {folder}', parentArchived: '보관된 대화', parentArchivedTitle: '보관된 대화 · {title}', parentConvo: '대화 · {name}',
@@ -1846,5 +1847,13 @@ export default {
       memo: '메모',
       kanban: '칸반',
     },
+  },
+  // P68: 같은 저장소의 워크트리끼리 붙인 창 그룹(SessionNode.jsx 노드 메뉴, 칸 머리의 브랜치)
+  dockWorkers: {
+    action: '워커를 창 그룹으로 묶기',
+    hint: '하위 세션 {n}개를 워크트리와 상관없이 하나의 창 그룹으로 배치합니다.',
+    done: '워커 {n}개를 창 그룹으로 묶었습니다.',
+    branchWt: '워크트리 브랜치: {branch}',
+    branchMain: '원본 저장소 브랜치: {branch}',
   },
 };

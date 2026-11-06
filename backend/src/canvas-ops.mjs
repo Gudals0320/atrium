@@ -6,7 +6,7 @@ import { NODE, SIZE_STEPS, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regi
 import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, remove as removeLeaf, removeWithOuter, insertWithOuter, rootSizes, presetTree, presetSize, PRESETS } from './dock-tree.mjs'; // P17: 분할 나무
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
-import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자
+import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes, dockedAreas, visibleAnchors, workersPreset } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자. P68: 워크트리끼리 붙인 덩어리
 import { layoutRegions } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치
 import { readGroups, groupIndex } from './ws-groups.mjs'; // P44: 가상 그룹끼리 모으기
 
@@ -25,20 +25,37 @@ function areaResolver(b) {
   const live = new Set(areaRows(b).map((a) => areaKey(a.wsKey, a.wt)));
   return (ws, wt) => { if (!ws || !wt) return ws || null; const k = areaKey(ws, wt); return live.has(k) ? k : ws; };
 }
-export function canvasItems(b) {
+// P68: 같은 리포의 다른 영역 세션이 섞인 덩어리의 구성 노드는 리포 영역(본 저장소 쪽)에 든다(worktree-areas.mjs dockedAreas). 저장한 area는 그대로다.
+//   closed: 막 닫힌 세션 { sessionId, workspaceKey }(그 세션이 아직 덩어리에 든 것으로 본다. onSessionClosed가 닫히기 전 판을 셀 때)
+// → { items: 상자를 뺀 안의 것, pulled: 구성 노드가 덩어리로 빠져나간 상자 키 }
+function boardItems(b, { closed = null } = {}) {
   const area = areaResolver(b);
-  const nodes = b.store.nodes().filter((n) => b.sessions.has(n.session_id)).map((n) => ({ id: n.session_id, kind: 'node', ws: area(n.workspace_key || null, n.area), wsKey: n.workspace_key || null, x: n.x, y: n.y, w: n.w, h: n.h }));
+  const rows = b.store.nodes().filter((n) => b.sessions.has(n.session_id));
+  const byId = new Map(rows.map((n) => [n.session_id, n]));
+  const rawArea = (sid) => {
+    const n = byId.get(sid);
+    if (n) return area(n.workspace_key || null, n.area);
+    if (closed && closed.sessionId === sid && b.store.nodeOf) { const r = b.store.nodeOf(sid); return r ? area(closed.workspaceKey || null, r.area) : null; }
+    return null;
+  };
+  const docked = dockedAreas(b.store.docks ? b.store.docks() : [], rawArea);
+  const nodes = rows.map((n) => ({ id: n.session_id, kind: 'node', ws: docked.area.get(n.session_id) ?? area(n.workspace_key || null, n.area), wsKey: n.workspace_key || null, x: n.x, y: n.y, w: n.w, h: n.h }));
   const memos = b.store.memos().map((m) => ({ id: m.memoId, kind: 'memo', ws: m.workspaceKey || null, wsKey: m.workspaceKey || null, x: m.x, y: m.y, w: m.w, h: m.h }));
   const kanbans = b.store.kanbans().map((k) => ({ id: k.kanbanId, kind: 'kanban', ws: k.workspaceKey || null, wsKey: k.workspaceKey || null, x: k.x, y: k.y, w: k.w, h: k.h }));
   // P13: 캔버스에 올린 판 밖 대화 노드(읽기 전용 카드). id는 convo:<대화 ID>
   const convos = b.store.shownConvoNodes ? b.store.shownConvoNodes().map((n) => ({ id: `convo:${n.convId}`, kind: 'convo', ws: area(n.workspaceKey || null, n.area), wsKey: n.workspaceKey || null, x: n.x, y: n.y, w: n.w, h: n.h })) : [];
-  return withBoxes(areaAnchors(b), [...nodes, ...memos, ...kanbans, ...convos]);
+  return { items: [...nodes, ...memos, ...kanbans, ...convos], pulled: docked.pulled };
 }
-// 영역의 자리(안이 비었을 때): 워크스페이스와, 그 워크스페이스의 워크트리 영역(P27)
-export function areaAnchors(b) {
+export function canvasItems(b) {
+  const s = boardItems(b);
+  return withBoxes(anchorsFrom(b, s), s.items);
+}
+// 영역의 자리(안이 비었을 때): 워크스페이스와, 그 워크스페이스의 워크트리 영역(P27). P68: 덩어리로 빠져나가 빈 상자는 숨긴다
+export function areaAnchors(b) { return anchorsFrom(b, boardItems(b)); }
+function anchorsFrom(b, { items, pulled }) {
   const ws = b.store.workspaces();
   const keys = new Set(ws.map((w) => w.key));
-  return [...ws, ...areaRows(b).filter((a) => keys.has(a.wsKey)).map((a) => ({ key: areaKey(a.wsKey, a.wt), x: a.x, y: a.y, empty: WT_EMPTY, wsKey: a.wsKey, wt: a.wt }))];
+  return visibleAnchors([...ws, ...areaRows(b).filter((a) => keys.has(a.wsKey)).map((a) => ({ key: areaKey(a.wsKey, a.wt), x: a.x, y: a.y, empty: WT_EMPTY, wsKey: a.wsKey, wt: a.wt }))], items, pulled);
 }
 export const regions = (b, items = canvasItems(b)) => nestedRegions(areaAnchors(b), items); // P35: 리포 영역은 상자를 감싼다(상자 키도 든다)
 // 세션 노드가 든 영역 키(P27)
@@ -231,6 +248,44 @@ function applyLayout(b, tree, outer) {
   for (const [sid, r] of lay.rects) { const n = nodeRect(b, sid); if (n) b.store.setNode({ ...n, x: r.x, y: r.y, w: r.w, h: r.h }); }
   return lay.outer;
 }
+// P68: 덩어리를 바꾸는 일(fn) 앞뒤로 워크트리 상자를 맞춘다. 같은 리포의 다른 영역 세션이 섞인 덩어리는 리포 영역에 놓인다(boardItems).
+// 1) 구성 노드가 덩어리로 빠져나가 새로 숨는 상자: 숨기 전 사각형의 왼쪽 위를 그 상자 자리로 저장한다(떼면 그 자리로 돌아온다).
+// 2) 섞인 덩어리에서 나와 다시 자기 상자에 드는 노드(남은 덩어리가 한 상자 것뿐이면 덩어리째): 그 상자의 빈자리로 옮긴다.
+// closed: 막 닫힌 세션(onSessionClosed). 그 세션이 든 덩어리를 닫히기 전 모양으로 센다
+function keepBoxes(b, fn, { closed = null } = {}) {
+  const before = boardItems(b, { closed });
+  const beforeRects = nestedRegions(anchorsFrom(b, before), before.items);
+  const was = new Map(before.items.filter((i) => i.kind === 'node').map((i) => [i.id, i.ws]));
+  const out = fn();
+  const after = boardItems(b);
+  for (const k of after.pulled) {
+    const r = beforeRects.get(k);
+    if (before.pulled.has(k) || !r || after.items.some((i) => i.ws === k)) continue;
+    const { ws, wt } = parseArea(k);
+    const row = areaRows(b).find((a) => a.wsKey === ws && a.wt === wt);
+    if (row) { b.store.putWorktreeArea({ ...row, x: r.x, y: r.y }); b.store.addEvent(null, 'worktree_box_hidden', { key: ws, worktree: row.path, at: { x: r.x, y: r.y } }); }
+  }
+  const done = new Set();
+  for (const it of after.items) {
+    if (it.kind !== 'node' || done.has(it.id) || !isBoxKey(it.ws) || !was.has(it.id) || isBoxKey(was.get(it.id))) continue;
+    const d = dockOf(b, it.id);
+    const group = d ? d.members.filter((m) => b.sessions.has(m)) : [it.id];
+    group.forEach((m) => done.add(m));
+    const rects = group.map((m) => nodeRect(b, m)).filter(Boolean);
+    const box = bbox(rects);
+    if (!box) continue;
+    const items = withBoxes(areaAnchors(b), canvasItems(b).filter((i) => i.kind !== 'wtbox' && !group.includes(i.id)));
+    const regs = regions(b, items);
+    if (!regs.has(it.ws)) continue;
+    const at = slotInRegion({ wsKey: it.ws, size: { w: box.w, h: box.h }, items: slotItems(items, it.ws), regions: slotRegions(regs, it.ws) });
+    const dx = Math.round(at.x - box.x), dy = Math.round(at.y - box.y);
+    if (!dx && !dy) continue;
+    for (const r of rects) b.store.setNode({ ...r, x: r.x + dx, y: r.y + dy });
+    b.store.addEvent(it.id, 'node_moved', { from: { x: box.x, y: box.y, w: box.w, h: box.h }, to: { x: at.x, y: at.y, w: box.w, h: box.h }, cause: 'worktree box return', members: group.length });
+  }
+  return out;
+}
+
 // 나무를 저장한다. 잎이 둘보다 적으면 덩어리를 지운다
 function saveDock(b, dock, why) {
   const tree = normalize(dock.tree);
@@ -254,6 +309,11 @@ const SIDES = ['left', 'right', 'top', 'bottom'];
 // at = 'leaf': 대상 노드를 side 쪽으로 반씩 나눠 그 반을 차지한다. at = 'dock': 덩어리 전체(혼자인 노드면 그 노드) 옆에 새 칸으로 붙는다(붙는 노드 크기만큼 덩어리가 커진다).
 // at을 주지 않으면 대상이 덩어리 안이면 'leaf', 혼자이면 'dock'(옛 한 줄 붙이기와 같다: 붙는 노드는 제 너비·높이를 지키고 다른 쪽은 대상을 따른다)
 export function dockAttach(b, p, why = 'user') {
+  const r = keepBoxes(b, () => attachInner(b, p, why)); // P68
+  settleRegions(b, 'dock attach');
+  return r;
+}
+function attachInner(b, p, why) {
   const s = b.resolve(p.session), t = b.resolve(p.to);
   if (s === t) throw apiError('bad_request', "카드를 자기 자신과 묶을 수 없습니다.");
   const side = String(p.side || 'right');
@@ -284,6 +344,11 @@ export function dockAttach(b, p, why = 'user') {
 
 // 고른 노드들로 한 줄 덩어리를 만든다(atrium CLI, 시험). 순서는 주어진 대로, 자리는 첫 노드에서 시작하고 노드 크기를 줄 방향으로 지킨다
 export function dockCreate(b, p) {
+  const r = keepBoxes(b, () => createInner(b, p)); // P68
+  settleRegions(b, 'dock create');
+  return r;
+}
+function createInner(b, p) {
   const ids = (p.members || []).map((x) => b.resolve(x).sessionId);
   if (ids.length < 2 || new Set(ids).size !== ids.length) throw apiError('bad_request', "창 그룹에는 서로 다른 카드가 2개 이상 있어야 합니다.");
   const ws = sameWs(b, ids);
@@ -302,6 +367,11 @@ export function dockCreate(b, p) {
 // 배치 틀(P17): 고른 노드를 틀(dock-tree.mjs PRESETS)로 한 번에 덩어리로 짠다. 고른 노드가 든 덩어리는 통째로 들어온다(그 자리에 잎 차례대로).
 // 고른 것이 덩어리 하나와 꼭 같으면 그 덩어리의 바깥 크기를 지키고, 아니면 칸마다 보통 노드 크기(cell)로 첫 노드 자리에서 시작한다
 export function dockLayout(b, p) {
+  const r = keepBoxes(b, () => layoutInner(b, p)); // P68
+  settleRegions(b, 'dock preset');
+  return r;
+}
+function layoutInner(b, p) {
   const preset = String(p.preset || '');
   if (!PRESETS[preset]) throw apiError('bad_request', `분할 레이아웃: ${Object.keys(PRESETS).join(', ')}`);
   const picked = [];
@@ -331,16 +401,34 @@ export function dockLayout(b, p) {
   return { dock: b.store.getDock(saved.dockId), preset };
 }
 
+// P68: 워커 붙여 묶기. 리드(lead)의 하위 세션 가운데 리드와 같은 리포(워크스페이스)에 노드가 있는 것을 띄운 차례대로 세션 수에 맞는 배치 틀로 묶는다.
+// 워크트리가 달라도 같은 리포면 한 덩어리가 되어 리포 영역에 놓인다. preset을 주면 그 틀
+export function dockWorkers(b, p) {
+  const lead = b.resolve(p.lead || p.session);
+  const nodes = new Set(b.store.nodes().map((n) => n.session_id));
+  const kids = [...b.sessions.values()]
+    .filter((s) => s.parentSessionId === lead.sessionId && nodes.has(s.sessionId) && (s.workspaceKey || null) === (lead.workspaceKey || null))
+    .sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0) || String(x.name).localeCompare(String(y.name)));
+  if (kids.length < 2) throw keyed(apiError('bad_request', `같은 프로젝트에서 붙여 묶을 워커가 2개 이상 있어야 합니다 (@${lead.name}: ${kids.length}개)`), 'dockWorkersFew', { name: lead.name, n: kids.length });
+  const preset = p.preset ? String(p.preset) : workersPreset(kids.length);
+  const r = dockLayout(b, { members: kids.map((s) => s.sessionId), preset, origin: 'workers' });
+  b.store.addEvent(lead.sessionId, 'workers_docked', { workers: kids.map((s) => s.name), preset, dockId: r.dock && r.dock.dockId });
+  return { ...r, lead: lead.name, workers: kids.map((s) => s.name) };
+}
+
 // P50(#2): 배치 틀 바깥(outer)을 둘 자리. 고른 노드(picked)는 옮겨 가므로 피하지 않고, 그 노드가 든 영역(상자면 그 상자)도 피하지 않는다
+// P68: 고른 노드가 같은 리포의 여러 영역(본 저장소 영역, 워크트리 상자)에 걸치면 덩어리는 리포 영역에 놓인다. 그때 고른 노드가 빠져 비는 상자(숨는다)도 피하지 않는다
 function presetSpot(b, picked, outer) {
   const all = canvasItems(b);
-  const area = areaOfNode(b, picked[0], all);
+  const areas = new Set(picked.map((sid) => areaOfNode(b, sid, all)));
+  const area = areas.size > 1 ? wsOfArea(areaOfNode(b, picked[0], all)) : areaOfNode(b, picked[0], all);
   const mine = new Set(picked);
-  const items = all.filter((i) => !(i.kind === 'node' && mine.has(i.id)) && !(i.kind === 'wtbox' && i.box === area));
+  const emptied = new Set([...areas].filter((k) => isBoxKey(k) && !all.some((i) => i.ws === k && i.kind !== 'wtbox' && !(i.kind === 'node' && mine.has(i.id)))));
+  const items = all.filter((i) => !(i.kind === 'node' && mine.has(i.id)) && !(i.kind === 'wtbox' && (i.box === area || (areas.size > 1 && emptied.has(i.box)))));
   const own = items.filter((i) => i.ws === area);
   const regs = regions(b, all);
   const ownReg = regionRect(own) || regs.get(area) || null;
-  const others = [...regs].filter(([k]) => k !== area && k !== wsOfArea(area)).map(([, r]) => r).filter((r) => !ownReg || !overlaps(ownReg, r, -1));
+  const others = [...regs].filter(([k]) => k !== area && k !== wsOfArea(area) && !(areas.size > 1 && emptied.has(k))).map(([, r]) => r).filter((r) => !ownReg || !overlaps(ownReg, r, -1));
   return dockSpot({ rect: outer, items, own, others, prefer: picked.map((sid) => nodeRect(b, sid)) });
 }
 
@@ -383,6 +471,11 @@ function detach(b, d, sid, why) {
   return saved;
 }
 export function dockRemove(b, p) {
+  const r = keepBoxes(b, () => removeInner(b, p)); // P68: 섞인 덩어리에서 뗀 워크트리 세션은 자기 상자로 돌아간다
+  settleRegions(b, 'dock remove');
+  return r;
+}
+function removeInner(b, p) {
   if (p.dock) {
     const d = b.store.getDock(p.dock);
     if (!d) throw apiError('not_found', `창 그룹을 찾을 수 없습니다: ${p.dock}`);
@@ -412,7 +505,10 @@ export function dockRemove(b, p) {
 // 세션이 닫히면(끄기, 보관, 삭제) 덩어리에서 빠진다
 export function onSessionClosed(b, s) {
   const d = dockOf(b, s.sessionId);
-  if (d) { detach(b, d, s.sessionId, 'session closed'); b.api.broadcast('board.changed', { why: 'dock' }); }
+  if (!d) return;
+  keepBoxes(b, () => detach(b, d, s.sessionId, 'session closed'), { closed: s }); // P68: 남은 워크트리 세션은 자기 상자로
+  settleRegions(b, 'session closed');
+  b.api.broadcast('board.changed', { why: 'dock' });
 }
 
 // P17: 옛 한 줄 덩어리 행(tree 없음)을 뜰 때 한 마디짜리 나무로 바꾼다. 비율은 지금 노드 크기(가로줄은 너비, 세로줄은 높이)라서 모양이 그대로다
@@ -691,6 +787,7 @@ export function canvasHandlers(b) {
     'dock.attach': (p) => dockAttach(b, p),
     'dock.update': (p) => dockUpdate(b, p),
     'dock.layout': (p) => dockLayout(b, p),
+    'dock.workers': (p) => dockWorkers(b, p), // P68
     'dock.remove': (p) => dockRemove(b, p),
     'dock.list': () => b.store.docks(),
     'board.arrange': (p) => arrange(b, p),
