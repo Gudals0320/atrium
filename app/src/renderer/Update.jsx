@@ -9,7 +9,7 @@ import { useT, errText, getLanguage } from './lib/i18n.js';
 import { useUpdate, checkNow, applyUpdate, rollbackUpdate } from './update.js';
 import { isWeb } from './web.js';
 import { SetRow, SetNote, SetSub } from './Settings.jsx';
-import { channelOf, versionLabel } from './lib/update-notice.js';
+import { channelOf, versionLabel, vTag } from './lib/update-notice.js';
 
 const when = (ms) => { if (!ms) return ''; try { return new Date(ms).toLocaleString(getLanguage(), { dateStyle: 'medium', timeStyle: 'short' }); } catch { return new Date(ms).toLocaleString(); } }; // 화면 언어로
 
@@ -37,8 +37,8 @@ export function UpdateSettings({ settings }) {
     setChPending(null);
   };
   const status = view.error ? t(view.error === 'no_release' ? 'update.noRelease' : 'update.checkFailed', { error: view.error })
-    : view.available ? t('update.availableLine', { version: versionLabel(view.latest.tag) })
-    : view.latest ? t('update.upToDate', { version: versionLabel(view.current.version) }) : t('update.notChecked');
+    : view.available ? t('update.availableLine', { version: view.latest.tag })
+    : view.latest ? t('update.upToDate', { version: vTag(view.current.version) }) : t('update.notChecked');
   const go = async () => { const kind = asking; setAsking(null); if (kind === 'apply') await applyUpdate(); else if (kind === 'rollback') await rollbackUpdate(); };
   const local = !isWeb;
   return <>

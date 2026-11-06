@@ -11,9 +11,9 @@ export function noticesFor(view, { toasted = null, resultSeen = null, now = Date
 
 // P70: 업데이트 채널(판 설정 updateChannel). 모르는 값은 정식
 export const channelOf = (v) => (v === 'dev' ? 'dev' : 'stable');
-// P70: 보일 버전. dev 빌드(x.y.z-dev.n)면 뒤에 (dev)를 붙인다. 예: "v0.1.2-dev.1 (dev)"
+// P70: 보일 버전. vTag는 v를 하나만 붙인다(문장 안). versionLabel은 dev 빌드(x.y.z-dev.n)면 뒤에 (dev)도 붙인다(버전 칸). 예: "v0.1.2-dev.1 (dev)"
+export const vTag = (version) => (version ? `v${String(version).replace(/^v/, '')}` : '');
 export function versionLabel(version) {
-  if (!version) return '';
-  const v = String(version).replace(/^v/, '');
-  return /-dev\.\d+$/.test(v) ? `v${v} (dev)` : `v${v}`;
+  const v = vTag(version);
+  return /-dev\.\d+$/.test(v) ? `${v} (dev)` : v;
 }
