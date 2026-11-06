@@ -6,6 +6,7 @@
 // - 위쪽에 연결 상태(연결됨·왕복 지연, 다시 연결 중 → 누르면 지금 다시). 원격 막음 화면과 업데이트 띠는 RemoteBar가 그대로 보인다
 // - 가상 키보드가 올라오면 보이는 높이(visualViewport)에 화면을 맞춰 입력 줄이 가려지지 않게 한다. 노치는 env(safe-area-inset-*)
 // 가로로 돌리거나 폭이 넓으면 main.jsx가 보드 화면을 그대로 보인다. 휴대폰에서도 "보드 화면"을 고를 수 있다(LAYOUT_KEY)
+// P76: 휴대폰의 기본은 보드 화면(캔버스, 탭하면 전체 보기 PhoneFull.jsx)이다. 이 목록은 보드 화면의 목록 단추로 고를 때(LAYOUT_KEY 'list')만 보이고, 머리줄의 보드 단추로 돌아간다
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, toast, markSeen, setFocus, setCloseIds, askKey } from './store.js';
@@ -22,6 +23,7 @@ import { BRAND_WORDMARK } from './lib/icons.jsx';
 import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, viewportBox, sendPlan, nextNeed, isPhoneLayout, LAYOUT_KEY, needsYou } from './lib/phone.js';
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampScale } from './lib/scale.js';
+import { showPhoneList, LIST_PREF } from './lib/touch-board.js'; // P76: 기본은 보드 화면
 import './phone.css';
 
 // ---------- 화면 고르기(main.jsx) ----------
@@ -34,10 +36,10 @@ export function setLayoutPref(v) {
   for (const fn of [...prefSubs]) fn();
 }
 const coarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
-const measure = (p = pref) => isPhoneLayout({ width: window.innerWidth, height: window.innerHeight, coarse: coarse(), pref: p });
-// [휴대폰 화면인가, 휴대폰 화면이 될 수 있는 창인가(보드 화면을 골랐어도)]
+const phoneScreen = () => isPhoneLayout({ width: window.innerWidth, height: window.innerHeight, coarse: coarse() });
+// P76: [세션 목록을 보일까(목록 단추로 골랐을 때만), 휴대폰 세로 화면인가(보드 화면에 목록 단추와 전체 보기를 둔다)]
 export function usePhoneLayout(enabled = true) {
-  const get = () => (enabled ? [measure(), measure(null)] : [false, false]);
+  const get = () => (enabled ? [showPhoneList({ phone: phoneScreen(), pref }), phoneScreen()] : [false, false]);
   const [v, setV] = useState(get);
   useEffect(() => {
     if (!enabled) return undefined;
@@ -51,10 +53,14 @@ export function usePhoneLayout(enabled = true) {
   }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
   return v;
 }
-// 보드 화면을 고른 휴대폰에서 휴대폰 화면으로 돌아가는 알약
-export function PhoneReturn() {
+// P76: 휴대폰 보드 화면(기본)의 작은 세션 목록 단추(오른쪽 위, 늘 보인다)
+export function PhoneListButton() {
   const t = useT();
-  return <button type="button" className="mt-ph-return" data-action="phone-layout" onClick={() => setLayoutPref(null)}>{t('phone.toPhone')}</button>;
+  return (
+    <button type="button" className="mt-ph-listbtn" data-action="phone-list-open" title={t('phoneBoard.toList')} aria-label={t('phoneBoard.toList')} onClick={() => setLayoutPref(LIST_PREF)}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>
+    </button>
+  );
 }
 
 // ---------- 작은 도우미 ----------
@@ -63,7 +69,8 @@ const Chev = ({ dir = 'right' }) => <svg className="mt-ph-chev" viewBox="0 0 24 
 const readFolded = () => { try { return new Set(JSON.parse(store().getItem('mt.phoneFolded') || '[]')); } catch { return new Set(); } };
 const PHONE_SCALE_KEY = 'mt.phoneTermScale';
 const PHONE_SCALE_DEFAULT = 0.8; // 14px × 0.8 ≈ 11px: 390px 폭에 50칸쯤
-const readPhoneScale = () => { try { const v = Number(store().getItem(PHONE_SCALE_KEY)); return v ? clampScale(v) : PHONE_SCALE_DEFAULT; } catch { return PHONE_SCALE_DEFAULT; } };
+export const readPhoneScale = () => { try { const v = Number(store().getItem(PHONE_SCALE_KEY)); return v ? clampScale(v) : PHONE_SCALE_DEFAULT; } catch { return PHONE_SCALE_DEFAULT; } };
+export const writePhoneScale = (n) => { try { store().setItem(PHONE_SCALE_KEY, String(n)); } catch {} }; // P76: 전체 보기도 같은 글자 크기
 
 // 연결 상태(api.js $conn, $rtt)
 function useConn() {
@@ -202,7 +209,7 @@ function PhoneList({ onOpen, onNew }) {
       <header className="mt-ph-head">
         <img className="mt-ph-brand" src={BRAND_WORDMARK} alt="Atrium" draggable={false} />
         <ConnPill />
-        <button type="button" className="mt-ph-icon" data-action="phone-board" title={t('phone.toBoard')} aria-label={t('phone.toBoard')} onClick={() => setLayoutPref('board')}>
+        <button type="button" className="mt-ph-icon" data-action="phone-board" title={t('phone.toBoard')} aria-label={t('phone.toBoard')} onClick={() => setLayoutPref(null)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" /></svg>
         </button>
       </header>

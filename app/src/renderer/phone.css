@@ -153,3 +153,44 @@ html.mt-phone-on .mt-toast { max-width: none; }
 @media (prefers-reduced-motion: reduce) {
   .mt-ph-dot[data-tone=working], .mt-ph-conn.reconnecting .mt-ph-conn-dot { animation: none; }
 }
+
+/* P76: 터치로 쓰는 보드 화면. 페이지는 고무줄로 튀거나 확대되지 않고, 캔버스는 손가락을 모두 판이 받는다(Canvas.jsx) */
+html.mt-touch-board, html.mt-touch-board body { overscroll-behavior: none; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+html.mt-touch-board body { position: fixed; inset: 0; overflow: hidden; }
+html.mt-touch-board .mt-canvas, html.mt-touch-board .mt-canvas * { touch-action: none; -webkit-tap-highlight-color: transparent; }
+html.mt-touch-board input, html.mt-touch-board textarea { -webkit-user-select: text; user-select: text; }
+/* 길게 눌러 잡은 노드: 테두리와 그림자로 알린다 */
+.react-flow__node.touch-lift > * { outline: 3px solid var(--accent); outline-offset: 2px; box-shadow: 0 10px 40px color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* 휴대폰 세로 보드 화면의 크롬: 판을 덜 가리게 줄이고 접는다. 오른쪽 레일·고른 노드 막대·배율 알약은 숨긴다(두 손가락으로 확대, 길게 눌러 옮기기) */
+.mt-app.phone-board .mt-rail.right, .mt-app.phone-board [data-role=selection], .mt-app.phone-board [data-role=zoom], .mt-app.phone-board .mt-rtt { display: none !important; }
+.mt-app.phone-board .mt-rail.left { left: calc(env(safe-area-inset-left) + 6px); transform: translateY(-50%) scale(.72); transform-origin: left center; }
+/* 위 왼쪽(사이드바, 프로젝트 탭, 검색)은 숨기고, 위 오른쪽 알약(내 차례, 검토, 문제, 연결, 설정)을 왼쪽부터 한 줄로 */
+.mt-app.phone-board .mt-cluster.tl, .mt-app.phone-board .mt-cluster.tr [data-role=resources], .mt-app.phone-board .mt-cluster.tr [data-action=changes] { display: none !important; }
+.mt-app.phone-board .mt-cluster.tr { left: calc(env(safe-area-inset-left) + 8px); right: auto; top: calc(env(safe-area-inset-top) + 8px); max-width: calc((100vw - 72px) / .82); transform: scale(.82); transform-origin: left top; }
+.mt-app.phone-board .mt-chips { transform: scale(.85); transform-origin: center bottom; }
+/* 세션 목록 단추: 오른쪽 위, 늘 보인다 */
+.mt-ph-listbtn { position: fixed; top: calc(env(safe-area-inset-top) + 6px); right: calc(env(safe-area-inset-right) + 8px); z-index: 45; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--chrome-line-2); background: var(--chrome-bg); color: var(--chrome-text); box-shadow: var(--chrome-shadow); }
+.mt-ph-listbtn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+/* 전체 보기: 탭한 세션이 화면을 채운다(PhoneFull.jsx). 위 띠(바깥, 탭하면 나옴) · 터미널 · 입력 줄 · 키 줄 */
+.mt-full { position: fixed; left: 0; right: 0; z-index: 60; display: flex; flex-direction: column; background: var(--term-bg); color: var(--text); font-family: var(--font-ui); transform-origin: 0 0; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.mt-full-out { flex: none; display: flex; align-items: center; gap: 8px; min-height: 34px; padding: calc(env(safe-area-inset-top) + 4px) calc(env(safe-area-inset-right) + 14px) 4px calc(env(safe-area-inset-left) + 14px); background: var(--chrome-bg); border-bottom: 1px solid var(--chrome-line); font-size: 14px; touch-action: none; }
+.mt-full-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+.mt-full-state { flex: none; font-size: 12px; color: var(--dim); }
+.mt-full-hint { margin-left: auto; flex: 0 6 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--dim-2); }
+.mt-full-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; touch-action: none; }
+.mt-full-term { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: var(--term-bg); }
+.mt-full-term .mt-term { top: 2px; right: 2px; bottom: 2px; left: 4px; }
+.mt-full-line { flex: none; display: flex; padding: 4px calc(env(safe-area-inset-right) + 8px) 2px calc(env(safe-area-inset-left) + 8px); background: var(--chrome-bg); border-top: 1px solid var(--chrome-line); }
+.mt-full-line textarea { flex: 1; min-width: 0; height: 38px; min-height: 38px; max-height: 96px; resize: none; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--panel-line-2); background: var(--field-bg); color: var(--text); font: 16px/1.3 var(--font-ui); outline: none; }
+.mt-full-line textarea:focus { border-color: var(--accent-line); }
+.mt-full-keys { flex: none; display: flex; gap: 4px; padding: 4px calc(env(safe-area-inset-right) + 8px) calc(env(safe-area-inset-bottom) + 6px) calc(env(safe-area-inset-left) + 8px); overflow-x: auto; scrollbar-width: none; background: var(--chrome-bg); touch-action: pan-x; }
+.mt-full.kb .mt-full-keys { padding-bottom: 6px; }
+.mt-full-keys::-webkit-scrollbar { display: none; }
+/* 키 열 개가 한 줄에 다 들어간다(390px 폭에 한 칸 33px쯤) */
+.mt-full-keys .mt-ph-key { flex: 1 1 0; min-width: 0; height: 40px; padding: 0; font-size: 13.5px; }
+.mt-full-keys .mt-ph-key[data-key=shifttab] { flex-grow: 1.35; }
+.mt-full-keys .mt-ph-key.enter { flex-grow: 1.3; background: var(--accent-soft); border-color: var(--accent-line); }
+/* 위 띠의 글자 크기 단추(세션 바깥) */
+.mt-full-font { flex: none; width: 34px; height: 28px; border-radius: 8px; border: 1px solid var(--panel-line-2); background: var(--panel-2); color: var(--text-2); font: 600 12.5px var(--font-ui); }

@@ -57,6 +57,8 @@ import { layout as layoutTree, dropZone, edgeSnap } from '../../../backend/src/d
 import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts, dockedAreas, visibleAnchors } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안. P68: 워크트리끼리 붙인 덩어리
 import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
+import { oneFinger, releaseKind, pinchViewport, panViewport, mid, dist as gap2, tapTarget, movableId, tapAction, TAP_CONTROL, LONG_PRESS_MS } from './lib/touch-board.js'; // P76
+import { openFull, fullId, onFull } from './full-view.js'; // P76
 
 const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
 const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge };
@@ -276,6 +278,8 @@ export function Canvas() {
   const rf = useReactFlow();
   const wrapRef = useRef(null);
   const [nodes, setNodes] = useState([]);
+  const nodesRef = useRef(nodes); // P76: 길게 눌러 옮길 노드를 찾는다
+  nodesRef.current = nodes;
   const [rev, setRev] = useState(0); // 바꾸면 저장소 자리로 다시 그린다(되돌리기)
   const [labelTick, setLabelTick] = useState(0); // P67: 선 이름표가 시간이 지나 물러나도록 다시 센다
   useEffect(() => { const i = setInterval(() => setLabelTick((n) => n + 1), 15000); return () => clearInterval(i); }, []);
@@ -538,7 +542,10 @@ export function Canvas() {
     const vp = rf.getViewport();
     const st = getState();
     // P21: 잠든 세션은 패널이 없어 터미널을 붙이지 않는다(깨면 starting이 되어 붙는다)
-    const list = [...st.nodes].filter(([id]) => st.sessions.has(id) && st.sessions.get(id).state !== 'sleeping').map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
+    // P76: 전체 보기가 연 세션은 전체 보기가 터미널을 붙인다(한 창에서 한 패널을 두 번 붙이지 않는다)
+    const full = fullId();
+    for (const id of held.current.keys()) if (id === full) held.current.delete(id);
+    const list = [...st.nodes].filter(([id]) => st.sessions.has(id) && st.sessions.get(id).state !== 'sleeping' && id !== full).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
     // 이슈 #1-16: 상한보다 많이 보여도 고른 노드와 초점 노드는 터미널을 먼저 받는다
     const want = pickAttached(list, vp, { width: el.clientWidth, height: el.clientHeight }, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus: st.focusId, selected: new Set(st.selected) });
     // P24: 가까이 얼굴로 보이는 노드 모두(잠든 노드, 제어기 상한 밖 포함)는 그 리포를 보고 있는 것이다(저절로 잠재우지 않는다)
@@ -676,6 +683,145 @@ export function Canvas() {
       if (focusTerminal && !viewOnly) setTimeout(() => setFocus(id, { terminal: true }), 700); // 터미널이 붙은 뒤 한 번 더
     };
   }, [rf, schedule, fitAll, insetNow]);
+
+  // P76: 터치(손가락)는 판이 캡처 단계에서 모두 받아 React Flow·터미널(xterm)에 넘기지 않고 lib/touch-board.js 규칙대로 가른다. 마우스는 이 길로 오지 않는다.
+  //   한 손가락 끌기 = 판 옮기기(노드·터미널 위에서 시작해도), 두 손가락 = 확대·축소, 길게 누른 뒤 끌기 = 노드(덩어리면 덩어리) 옮기기(마우스 끌기와 같은 처리),
+  //   탭 = 휴대폰 세로면 전체 보기(PhoneFull.jsx), 그 밖이면 그 노드로 확대(터미널 초점 없음). 노드 안의 단추·입력칸을 탭하면 그것을 누른다.
+  //   터치로 쓰는 보드 화면에서는 터미널에 글을 치지 않는다(가상 키보드를 띄우지 않는다. 입력은 전체 보기에서)
+  useEffect(() => {
+    const st = getState();
+    st.touchTap = (id, target) => {
+      const s = getState().sessions.get(id);
+      if (!s) return;
+      if (tapAction({ width: window.innerWidth, height: window.innerHeight, coarse: true }) === 'full') {
+        const nodeEl = target && target.closest ? target.closest('.react-flow__node') : null;
+        const r = nodeEl ? nodeEl.getBoundingClientRect() : null;
+        noteWorkspace(s.workspaceKey); enterSession(id); setFocus(id); markSeen(id);
+        perfLog('touch_full', { id });
+        openFull(id, r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null);
+        return;
+      }
+      getState().navigateTo(id, { viewOnly: true });
+    };
+    return () => { delete st.touchTap; };
+  }, []);
+  useEffect(() => onFull(() => schedule(fullId() ? 0 : 250)), [schedule]);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return undefined;
+    let g = null;
+    const coarse = (() => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } })();
+    const pts = (e) => [...e.touches].map((t) => ({ x: t.clientX, y: t.clientY }));
+    const commit = () => onMoveEnd(null, rf.getViewport());
+    const lift = (on) => { if (g && g.nodeEl) g.nodeEl.classList.toggle('touch-lift', on); };
+    const clearTimer = () => { if (g) clearTimeout(g.timer); };
+    const startHold = () => {
+      if (!g || g.mode !== 'pending' || !g.moveId) return;
+      const node = nodesRef.current.find((n) => n.id === g.moveId);
+      if (!node) { g.mode = 'dead'; return; }
+      g.mode = 'hold'; g.node = node; g.pos0 = { ...node.position }; g.pos = { ...node.position };
+      g.nodeEl = el.querySelector(`.react-flow__node[data-id="${CSS.escape(node.id)}"]`);
+      lift(true);
+      try { if (navigator.vibrate) navigator.vibrate(15); } catch {}
+      onNodeDragStart({ clientX: g.start.x, clientY: g.start.y, altKey: false }, node, [node]);
+      perfLog('touch_hold', { id: node.id });
+    };
+    const begin = (p, target) => {
+      clearTimer();
+      const tt = tapTarget(target);
+      g = { mode: 'pending', start: p, last: p, t0: performance.now(), target, tt, moveId: movableId(tt), vp0: rf.getViewport() };
+      if (g.moveId) g.timer = setTimeout(startHold, LONG_PRESS_MS);
+    };
+    const onStart = (e) => {
+      e.preventDefault(); e.stopPropagation(); // 끌기·확대(React Flow), 초점·선택(xterm), 페이지 확대·스크롤, 늦게 오는 마우스 흉내 이벤트를 모두 막는다
+      const a = document.activeElement;
+      if (a && a.closest && a.closest('.xterm')) a.blur(); // 터치 보드에서는 터미널에 치지 않는다(키보드를 내린다)
+      const p = pts(e);
+      if (p.length === 1) return begin(p[0], e.target); // 손가락 하나만 닿았으면 새 동작
+      if (!g) return;
+      if (p.length >= 2 && g.mode !== 'hold') {
+        clearTimer();
+        g = { mode: 'pinch', vp0: rf.getViewport(), m0: mid(p[0], p[1]), d0: Math.max(1, gap2(p[0], p[1])) };
+      }
+    };
+    const onMove = (e) => {
+      if (!g) return;
+      e.preventDefault(); e.stopPropagation();
+      const p = pts(e);
+      if (g.mode === 'pinch') {
+        if (p.length < 2) return;
+        rf.setViewport(pinchViewport(g.vp0, g.m0, g.d0, mid(p[0], p[1]), gap2(p[0], p[1]), { minZoom: 0.05, maxZoom: 2 }));
+        return;
+      }
+      if (!p.length) return;
+      const q = p[0];
+      g.last = q;
+      const dx = q.x - g.start.x, dy = q.y - g.start.y;
+      if (g.mode === 'pending') {
+        const k = oneFinger({ dist: Math.hypot(dx, dy), dt: performance.now() - g.t0, onNode: !!g.moveId });
+        if (k === 'pan') { clearTimer(); g.mode = 'pan'; } // 판은 누른 자리부터 손가락을 그대로 따라간다
+        if (k === 'hold') startHold();
+      }
+      if (g.mode === 'pan') rf.setViewport(panViewport(g.vp0, dx, dy));
+      else if (g.mode === 'hold') {
+        const z = rf.getViewport().zoom;
+        g.pos = { x: g.pos0.x + dx / z, y: g.pos0.y + dy / z };
+        onNodesChange([{ id: g.node.id, type: 'position', position: g.pos, dragging: true }]);
+      }
+    };
+    const onEnd = (e) => {
+      if (!g) return;
+      e.preventDefault(); e.stopPropagation();
+      const left = pts(e);
+      if (g.mode === 'pinch') {
+        if (left.length === 1) { g = { mode: 'pan', start: left[0], last: left[0], vp0: rf.getViewport(), t0: 0 }; return; } // 남은 손가락으로 이어서 옮긴다
+        if (!left.length) { commit(); g = null; }
+        return;
+      }
+      if (left.length) return;
+      clearTimer();
+      const gg = g; g = null;
+      const kind = releaseKind({ mode: gg.mode, dist: Math.hypot(gg.last.x - gg.start.x, gg.last.y - gg.start.y), dt: performance.now() - gg.t0 });
+      if (kind === 'pan') return commit();
+      if (kind === 'hold') {
+        if (gg.nodeEl) gg.nodeEl.classList.remove('touch-lift');
+        const node = { ...gg.node, position: gg.pos };
+        onNodesChange([{ id: node.id, type: 'position', position: gg.pos, dragging: false }]);
+        onNodeDragStop({ clientX: gg.last.x, clientY: gg.last.y }, node, [node]);
+        return;
+      }
+      if (kind !== 'tap') return;
+      const t = gg.tt;
+      perfLog('touch_tap', { kind: t.kind, id: t.id || null });
+      if (t.kind === 'control') {
+        const c = gg.target.closest(TAP_CONTROL);
+        if (c.matches('input, textarea, select, [contenteditable="true"]')) c.focus(); else c.click();
+        return;
+      }
+      if (t.kind === 'session') { getState().touchTap(t.id, gg.target); return; }
+      // 메모·칸반·대화 노드, 영역 이름표, 빈 판: 그 자리를 누른 것으로(React Flow의 누르기 처리)
+      gg.target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: gg.start.x, clientY: gg.start.y }));
+    };
+    const onCancel = (e) => { if (!g) return; e.stopPropagation(); clearTimer(); if (g.mode === 'hold') { lift(false); g = null; setRev((x) => x + 1); drag.current = null; ghostRef.current = null; return; } if (g.mode === 'pan' || g.mode === 'pinch') commit(); g = null; };
+    const cap = { capture: true, passive: false };
+    el.addEventListener('touchstart', onStart, cap);
+    el.addEventListener('touchmove', onMove, cap);
+    el.addEventListener('touchend', onEnd, cap);
+    el.addEventListener('touchcancel', onCancel, cap);
+    // 페이지 자체가 확대되지 않게(iOS Safari는 user-scalable을 무시한다): 캔버스 밖 크롬 위의 두 손가락과 iOS 확대 동작
+    const noGesture = (e) => e.preventDefault();
+    const noPinch = (e) => { if (e.touches && e.touches.length > 1) e.preventDefault(); };
+    document.addEventListener('gesturestart', noGesture, { passive: false });
+    document.addEventListener('touchmove', noPinch, { passive: false });
+    // 손가락 기기에서는 판의 터미널이 가상 키보드를 띄우지 않는다
+    if (coarse) document.documentElement.classList.add('mt-touch-board'); // phone.css: 페이지 고무줄·확대 끄기
+    const quiet = coarse ? setInterval(() => { for (const ta of el.querySelectorAll('.xterm-helper-textarea:not([inputmode="none"])')) ta.setAttribute('inputmode', 'none'); }, 500) : 0;
+    return () => {
+      clearTimer(); clearInterval(quiet); document.documentElement.classList.remove('mt-touch-board');
+      el.removeEventListener('touchstart', onStart, cap); el.removeEventListener('touchmove', onMove, cap); el.removeEventListener('touchend', onEnd, cap); el.removeEventListener('touchcancel', onCancel, cap);
+      document.removeEventListener('gesturestart', noGesture); document.removeEventListener('touchmove', noPinch);
+    };
+  }, [rf, onMoveEnd, onNodeDragStart, onNodeDragStop, onNodesChange]);
 
   // H4: 노드 본문을 누르면(어느 얼굴이든) 들어간다. 단추, 입력칸, 카드를 누른 것과 여러 개 고르기(Ctrl, Shift)는 빼고.
   // P26: 머리줄, 본문, 터미널 안, 멀리·아이콘 얼굴 어디를 누르든 화면을 그 노드(덩어리 안이면 덩어리 전체)로 옮긴다(이미 보고 있으면 그대로).

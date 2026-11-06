@@ -2007,4 +2007,12 @@ export default {
     short: { large: '대', normal: '중', small: '소' },
     edgeTitle: '드래그하면 창 그룹 전체 크기를 조절합니다. 분할 비율은 유지합니다.',
   },
+  // P76: 휴대폰 보드 화면(기본)과 전체 보기
+  phoneBoard: {
+    toList: '세션 목록으로 보기',
+    fullOut: '탭하면 보드로',
+    fullType: '{name}에 입력 (Enter로 보내기)',
+    key_left: '왼쪽 화살표',
+    key_right: '오른쪽 화살표',
+  },
 };

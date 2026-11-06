@@ -64,7 +64,11 @@ async function phone(browser, label, { standalone = false } = {}) {
   const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   return { ctx, page, cdp, authenticatorId };
 }
-const phoneOpen = (pg, ms = 60000) => pg.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded && window.__mt.api.conn.phase === 'open' && !!document.querySelector('[data-role=phone-list], [data-role=phone-session]'), null, { timeout: ms });
+// P76: 휴대폰의 기본 화면은 보드 화면이다. 목록 화면은 보드 화면의 목록 단추로 간다(고른 것은 이 브라우저에 남는다)
+const phoneOpen = async (pg, ms = 60000) => {
+  await pg.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded && window.__mt.api.conn.phase === 'open' && !!document.querySelector('[data-role=phone-list], [data-role=phone-session], [data-action=phone-list-open]'), null, { timeout: ms });
+  if (!(await pg.$('[data-role=phone-list], [data-role=phone-session]'))) { await pg.tap('[data-action=phone-list-open]'); await pg.waitForSelector('[data-role=phone-list]', { timeout: 10000 }); }
+};
 const splashGone = (pg) => pg.waitForFunction(() => !document.querySelector('[data-role=splash]'), null, { timeout: 15000 }).catch(() => {});
 const newCode = () => call('device.code').code;
 
@@ -299,10 +303,10 @@ try {
   if (await pA.$('[data-role=phone-session]')) await pA.tap('[data-action=phone-back]');
   await pA.waitForSelector('[data-role=phone-list]', { timeout: 10000 });
   await pA.tap('[data-action=phone-board]');
-  await pA.waitForSelector('[data-action=phone-layout]', { timeout: 10000 });
+  await pA.waitForSelector('[data-action=phone-list-open]', { timeout: 10000 });
   await sleep(800);
   await wshot(pA, '12-portrait-board-choice');
-  await pA.tap('[data-action=phone-layout]');
+  await pA.tap('[data-action=phone-list-open]');
   check('휴대폰에서 "보드 화면"을 고르고 "휴대폰 화면"으로 돌아온다', !!(await pA.waitForSelector('[data-role=phone-list]', { timeout: 10000 }).catch(() => null)));
   await wshot(pA, '13-list-end');
 
