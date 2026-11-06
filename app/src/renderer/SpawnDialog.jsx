@@ -13,12 +13,12 @@ import { kindOf } from './lib/kinds.js';
 import { favoriteLaunchers, orderedLaunchers, previewLine } from './lib/launchers.js';
 import { useDialog } from './dialog.js';
 
-const startedText = (r) => t('spawn.started', { name: r.name, kind: r.flavor ? t('spawn.startedKind', { kind: kindOf(r.flavor).label + (r.command ? t('spawn.startedCommand') : '') }) : r.command ? t('spawn.startedKind', { kind: t('launchers.harness.command') }) : r.kind !== 'claude' ? t('spawn.startedKind', { kind: r.kind === 'shell' ? t('spawn.shell') : r.kind }) : '', trust: r.trust && r.trust.needsTrust ? t('spawn.startedTrust') : '', ws: r.workspaceKey && r.workspaceKey !== getState().currentWs ? t('spawn.startedWs', { ws: wsName(r.workspaceKey) || r.workspaceRoot }) : '' });
+export const startedText = (r) => t('spawn.started', { name: r.name, kind: r.flavor ? t('spawn.startedKind', { kind: kindOf(r.flavor).label + (r.command ? t('spawn.startedCommand') : '') }) : r.command ? t('spawn.startedKind', { kind: t('launchers.harness.command') }) : r.kind !== 'claude' ? t('spawn.startedKind', { kind: r.kind === 'shell' ? t('spawn.shell') : r.kind }) : '', trust: r.trust && r.trust.needsTrust ? t('spawn.startedTrust') : '', ws: r.workspaceKey && r.workspaceKey !== getState().currentWs ? t('spawn.startedWs', { ws: wsName(r.workspaceKey) || r.workspaceRoot }) : '' });
 
 const findLauncher = (id) => { const d = getState().launchers; return (d && d.launchers.find((l) => l.id === id)) || null; };
 const MODEL_HARNESS = new Set(['claude', 'codex']);
 // 개발용 판은 모델을 비운 Claude Code 호출자를 haiku로 띄운다(api.info.defaultModel)
-const devModel = (l) => (l && l.harness === 'claude' && !l.model ? (api.info || {}).defaultModel || '' : '');
+export const devModel = (l) => (l && l.harness === 'claude' && !l.model ? (api.info || {}).defaultModel || '' : '');
 
 let quickBusy = false;
 // 지금 워크스페이스의 폴더에 그 호출자로 띄우고 그 터미널로 들어간다. 지금 워크스페이스가 없으면 폴더를 묻는 창을 연다

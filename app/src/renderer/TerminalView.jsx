@@ -62,7 +62,8 @@ function fixMouseScale(term, sessionId) {
 // P11: 색은 tokens.css --term-…, 글꼴은 앱에 넣은 JetBrains Mono(한글 Nanum Gothic Coding). 글 크기와 줄 높이는 lib/tokens.js
 
 // reserve: P11 승인 줄이 붙으면 그 높이(월드 px)만큼 터미널 아래를 비운다. 패널 줄 수가 줄어 Claude Code 대화상자가 줄 위에 보인다
-export function TerminalView({ sessionId, width, height, reserve = 0, onActivate, onInput, focusTick }) {
+// P74: fontScale을 주면 store의 터미널 글자 배율 대신 그 값(휴대폰 화면의 글자 크기). webgl = false면 DOM으로 그린다(휴대폰: 터미널 하나, 높은 DPR)
+export function TerminalView({ sessionId, width, height, reserve = 0, onActivate, onInput, focusTick, fontScale = null, webgl = true }) {
   const t = useT();
   const flow = useStoreApi(); // P65: 판 배율·이동을 렌더 없이 구독한다
   const onInputRef = useRef(onInput);
@@ -82,7 +83,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null, shared: 1, scale: 1, ownerIsMe: true, plan: null, comp: { sx: 1, sy: 1 }, shift: { x: 0, y: 0 }, dprMul: 1, movedAt: 0 };
     // P42: 셸은 앱이 스스로 스크롤하지 않아(PowerShell은 SGR 휠을 무시) 지난 출력을 xterm scrollback에 두고 판 안에서 스크롤한다
     const shell = (getState().sessions.get(sessionId) || {}).kind === 'shell';
-    const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: termFontSize(TERM_FONT_SIZE, getState().termScale), lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
+    const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: termFontSize(TERM_FONT_SIZE, fontScale ?? getState().termScale), lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
     const u11 = new Unicode11Addon();
     term.loadAddon(u11);
     term.unicode.activeVersion = '11';
@@ -123,7 +124,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     if (term.textarea) term.textarea.addEventListener('focus', onFocusIn);
     fixMouseScale(term, sessionId);
 
-    let renderer = budget.acquire(sessionId);
+    let renderer = webgl === false ? 'dom' : budget.acquire(sessionId);
     st.renderer = renderer;
     perfLog('term_mount', { sessionId, renderer, used: budget.used });
     if (renderer === 'webgl') {
@@ -428,7 +429,8 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
   }, [sessionId, retry]);
 
   // P45: 터미널 글자 배율이 바뀌면 글자 크기를 바꾼다(아래 효과가 줄·칸 수를 다시 잰다)
-  const termScale = useStore((st) => st.termScale);
+  const storeScale = useStore((st) => st.termScale);
+  const termScale = fontScale ?? storeScale; // P74
   useEffect(() => {
     const st = ref.current;
     if (!st.term) return;

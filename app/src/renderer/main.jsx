@@ -14,6 +14,7 @@ import { isWeb } from './web.js';
 import { RemoteBar } from './RemoteBar.jsx'; // P49: 웹 화면의 다시 연결 띠와 왕복 지연
 import { webGate } from './Pair.jsx';
 import { PairRequestBanner } from './WebDevices.jsx';
+import { PhoneApp, PhoneReturn, usePhoneLayout } from './Phone.jsx'; // P74: 휴대폰 세로 화면
 import { startRemoteNotice, remoteNotices } from './remote-notice.js'; // P58
 import '@xyflow/react/dist/style.css';
 import '@xterm/xterm/css/xterm.css';
@@ -112,6 +113,7 @@ function App() {
   // P11: 왼쪽 레일의 "손으로 잇기"(노드 손잡이를 늘 보인다), 오른쪽 레일의 루프 목록. P43: 판에서 ← 키로도 바꾼다
   const [linking, setLinking] = useState(false);
   const [loopsOpen, setLoopsOpen] = useState(false);
+  const [phone, canPhone] = usePhoneLayout(isWeb); // P74
 
   useEffect(() => {
     // H4: 노드를 눌러 들어간 직후 터미널이 붙기 전에 친 키(입력칸 밖)는 모아 둔다. 터미널에 초점이 가면 그만 모은다
@@ -159,6 +161,15 @@ function App() {
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keydown', onKeyCapture, true); };
   }, []);
 
+  // P74: 웹 화면을 휴대폰 세로로 열면 캔버스 대신 휴대폰 화면(Phone.jsx). 가로·넓은 화면이나 "보드 화면"을 고르면 이 보드 화면
+  if (phone) return (
+    <div className="mt-app phone">
+      {loaded && <AppBoundary><PhoneApp /></AppBoundary>}
+      <RemoteBar />
+      {splash !== 'off' && <Splash error={!loaded && conn === 'error' ? t('app.backendFailed', { detail }) : null} leaving={splash === 'leaving'} />}
+      <div className="mt-toasts">{toasts.map((t) => <div key={t.id} className={`mt-toast ${t.kind}`}>{t.text}</div>)}</div>
+    </div>
+  );
   return (
     <div className={`mt-app${linking ? ' linking' : ''}`}>
       <div className="mt-body">
@@ -186,6 +197,7 @@ function App() {
       <Dialogs />
       {loaded && <PairRequestBanner />}
       {isWeb && <RemoteBar />}
+      {canPhone && <PhoneReturn />}
       {splash !== 'off' && <Splash error={!loaded && conn === 'error' ? t('app.backendFailed', { detail }) : null} leaving={splash === 'leaving'} />}
       <div className="mt-toasts">{toasts.map((t) => <div key={t.id} className={`mt-toast ${t.kind}`}>{t.text}</div>)}</div>
     </div>

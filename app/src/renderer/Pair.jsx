@@ -11,12 +11,14 @@ import { createRoot } from 'react-dom/client';
 import { useT, setLanguage } from './lib/i18n.js';
 import { webMe, markPaired, webDenied } from './web.js';
 import { BRAND_WORDMARK } from './lib/icons.jsx';
+import { isStandalone } from './lib/pwa.js'; // P74: 홈 화면 웹 앱
 import { passkeySupport, savedPasskey, clearPasskey, registerPasskey, loginPasskey, enrollPasskey, webauthnError, savedVia, saveVia, PASSKEY_VIAS } from './lib/passkey.js';
 
 // 기본 기기 이름: 브라우저와 OS
 export function guessDeviceName(ua = navigator.userAgent) {
   const b = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
-  const os = /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : '';
+  // P74: iPhone·iPad의 UA에도 "like Mac OS X"가 있어 iOS를 먼저 본다
+  const os = /Windows/.test(ua) ? 'Windows' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Mac OS X|Macintosh/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
   return os ? `${b} · ${os}` : b;
 }
 
@@ -108,7 +110,7 @@ function RegisterStep({ grant, onDone, onRestart }) {
 
 function PairScreen({ onDone, onHaveKey }) {
   const t = useT();
-  const [name, setName] = useState(guessDeviceName());
+  const [name, setName] = useState(() => guessDeviceName() + (isStandalone() ? ' · App' : '')); // P74: 홈 화면 앱은 Safari와 따로 등록된다
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -151,6 +153,7 @@ function PairScreen({ onDone, onHaveKey }) {
     <Card onSubmit={submitCode}>
       <h3>{t('pair.title')}</h3>
       <p className="mt-pair-note">{t('pair.note')}</p>
+      {isStandalone() && <div className="mt-pair-hint" data-role="pair-standalone">{webDenied && webDenied.passkey ? t('phone.pairAppPasskey') : t('phone.pairApp')}</div>}
       <label>{t('pair.name')}<input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} data-field="pair-name" /></label>
       {!req && (
         <>
