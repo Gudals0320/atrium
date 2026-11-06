@@ -85,11 +85,8 @@ async function run(page) {
   await shot(page, '1-spawned');
   // 세 번째 지시가 가고 alpha가 그 일을 하는 동안
   let seenWorking = null;
-  await until(async () => {
-    const l = await linkOf(page, LEAD, A), a = await byName(page, A);
-    if (l && l.lastText && /THREE/.test(l.lastText) && a && a.state === 'working') { seenWorking = { l, a }; return true; }
-    return l && l.lastText && /THREE/.test(l.lastText) && a && a.state !== 'working' && a.unseen; // 이미 끝났으면 넘어간다
-  }, 420000, 400).catch(() => {});
+  await until(async () => { const l = await linkOf(page, LEAD, A); return l && l.lastText && /THREE/.test(l.lastText); }, 420000, 400).catch(() => {});
+  await until(async () => { const a = await byName(page, A); if (a && a.state === 'working') { seenWorking = a; return true; } return false; }, 60000, 300).catch(() => {});
   await frame(page);
   const L1 = await labels(page);
   log('이름표(일하는 중)', L1);
