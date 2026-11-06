@@ -50,6 +50,21 @@ test('워크트리 나가기 질문: 제목, 선택지 번호, 커밋 수, 브�
   // tmux가 있는 꼴: 남기기·지우기의 번호를 글로 찾는다
   const tmux = parseWorktreeExit(' Exiting worktree session\n You have 4 commits on worktree-c. The branch will be deleted if you remove the worktree.\n ❯ 1. Keep worktree and tmux session\n   2. Keep worktree, end tmux session\n   3. Remove worktree and tmux session');
   assert.equal(tmux.keep.n, 1); assert.equal(tmux.remove.n, 3); assert.equal(tmux.commits, 4);
+  // 낮은 패널: Claude Code 2.1.319는 고른 선택지 하나만 보인다(P71 개발용 판에서 읽은 화면, 경로만 바꿈). 보이지 않는 지우기는 2번으로 정한다
+  const low = parseWorktreeExit([
+    '   Exiting worktree session',
+    '   You have 1 commit on worktree-w1. The branch will be deleted if you remove the',
+    '   worktree.',
+    '',
+    '   ❯ 1. Keep worktree    Stays at C:\\repo\\.claude\\worktrees\\w1',
+    '',
+    '   Enter to confirm · Esc to cancel',
+  ].join('\n'));
+  assert.deepEqual(low.keep, { n: 1, label: 'Keep worktree' });
+  assert.deepEqual(low.remove, { n: 2, label: 'Remove worktree', hidden: true });
+  assert.equal(low.commits, 1); assert.equal(low.branch, 'worktree-w1');
+  const lowRemove = parseWorktreeExit(' Exiting worktree session\n You have 2 commits on worktree-w1. The branch will be deleted if you remove the worktree.\n ❯ 2. Remove worktree    Commits only on worktree-w1 will be lost.');
+  assert.deepEqual(lowRemove.keep, { n: 1, label: 'Keep worktree', hidden: true }); assert.equal(lowRemove.remove.n, 2);
   // 다른 화면은 아니다
   assert.equal(parseWorktreeExit(' Do you want to create x.txt?\n ❯ 1. Yes\n   2. No'), null);
   assert.equal(parseWorktreeExit(' Exiting worktree session\n Keeping worktree…'), null); // 선택지가 아직 없다

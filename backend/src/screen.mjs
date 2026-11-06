@@ -10,8 +10,10 @@ export function isTrustDialog(text) { return /Quick safety check/i.test(text) &&
 
 // P71: 워크트리 나가기 질문. `claude -w`로 띄운 세션이 끝날 때 Claude Code가 묻는다(제목 "Exiting worktree session").
 // "You have 13 commits on worktree-x. The branch will be deleted if you remove the worktree." 아래에 "1. Keep worktree", "2. Remove worktree"
-// (tmux가 있으면 "Keep worktree and tmux session" 등)가 있다. 선택지 설명(Stays at <경로>)은 다음 줄이라 번호 줄만 읽는다.
-// → null | { commits(모르면 null), files(커밋 안 한 파일 수, 없으면 0), branch, keep: { n, label }, remove: { n, label }, choices }
+// (tmux가 있으면 "Keep worktree and tmux session" 등)가 있다. 선택지 설명(Stays at <경로>)은 같은 줄 뒤나 다음 줄이라 번호 줄의 이름만 읽는다.
+// 패널이 낮으면 Claude Code는 고른 선택지 하나만 보인다(P71에서 본 2.1.319: "❯ 1. Keep worktree    Stays at …"만 있고 2번은 화면 밖).
+// 그때 보이지 않는 쪽은 Claude Code의 선택지 순서로 정한다: 남기기는 1번, 지우기는 2번(tmux가 있으면 3번). 그렇게 정한 것은 hidden: true다.
+// → null | { commits(모르면 null), files(커밋 안 한 파일 수, 없으면 0), branch, keep: { n, label, hidden? }, remove: { n, label, hidden? }, choices }
 export function parseWorktreeExit(text) {
   const s = String(text || '');
   if (!/Exiting worktree session/i.test(s)) return null;
@@ -20,9 +22,11 @@ export function parseWorktreeExit(text) {
     const m = raw.match(/^[\s│|]*(❯\s*)?(\d)\.\s+((?:Keep|Remove) worktree[^│|]*?)\s*[│|]?\s*$/);
     if (m) choices.push({ n: Number(m[2]), label: m[3].trim().split(/\s{2,}/)[0] }); // 같은 줄에 설명(Stays at …)이 붙으면 떼어 낸다
   }
-  const keep = choices.find((c) => /^Keep worktree/i.test(c.label)) || null;
-  const remove = choices.find((c) => /^Remove worktree/i.test(c.label)) || null;
-  if (!keep || !remove) return null;
+  if (!choices.length) return null;
+  const tmux = choices.some((c) => /tmux/i.test(c.label));
+  const keep = choices.find((c) => /^Keep worktree( and tmux session)?$/i.test(c.label)) || { n: 1, label: tmux ? 'Keep worktree and tmux session' : 'Keep worktree', hidden: true };
+  const remove = choices.find((c) => /^Remove worktree/i.test(c.label)) || { n: tmux ? 3 : 2, label: tmux ? 'Remove worktree and tmux session' : 'Remove worktree', hidden: true };
+  if (keep.n === remove.n) return null;
   const flat = s.replace(/[│|]/g, ' ').replace(/\s+/g, ' '); // 화면 폭에서 꺾인 문장을 잇는다
   const c = flat.match(/\b(\d+) commits?\b/i);
   const f = flat.match(/\b(\d+) uncommitted files?\b/i);
