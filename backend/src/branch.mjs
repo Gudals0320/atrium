@@ -32,7 +32,7 @@ export const DEFAULT_ROLE = '워커';
 export const CHILD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/; // herdr 에이전트 이름 규칙과 같다(herdr --skill)
 export const WORKTREE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]{0,79}$/;
-export const CHILD_SIZE = 'small'; // H7 정리처럼 받는 쪽은 작게(480×300). 사람이 크기를 바꾸면 그대로 둔다
+export const CHILD_SIZE = 'wide-normal'; // P73: 새로 띄운 하위 세션도 16:9 가로 보통(1440×810. 전에는 정리처럼 작게 480×300). 사람이 크기를 바꾸면 그대로 둔다
 const READY_WAIT_MS = 75000; // atrium child가 하위 세션이 준비되기를 기다리는 시간. Claude Code Bash 도구의 기본 시간 제한(2분) 안쪽
 const SUBMIT_WAIT_MS = 20000; // --prompt를 준 경우 첫 지시가 들어가 일을 시작하기까지 더 기다리는 시간
 const CHILD_WAIT_MS = 100000; // P36: atrium child-wait 한 번의 최대(Bash 도구 2분 안쪽). 더 기다리려면 다시 부른다
@@ -290,7 +290,7 @@ export class Branch {
     const fits = (c) => free(c) && !others.some((r) => overlaps(regionRect([...own, c]), r, REGION_GAP / 2 - 1));
     // 옆 영역 때문에 자리가 없으면 노드끼리만 피해 나무 모양을 지킨다. 그때 생기는 영역 겹침은 spawn 뒤 settleRegions가 옆 영역을 밀어 푼다(P9)
     const at = childSlot({ parent: pn, siblings, size, fits }) || childSlot({ parent: pn, siblings, size, fits: free });
-    return at ? { ...at, size: CHILD_SIZE, area: parseArea(ak).wt } : null;
+    return at ? { ...at, size: CHILD_SIZE, aspect: '16:9', area: parseArea(ak).wt } : null;
   }
 
   // ---------- HTTP: 하위 세션 명령 ----------

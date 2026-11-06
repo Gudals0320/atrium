@@ -40,12 +40,12 @@ import { RegionNode, WorktreeAreaNode } from './Regions.jsx'; // P27: 워크트�
 import { MemoNode } from './Memo.jsx';
 import { KanbanNode } from './Kanban.jsx';
 import { wsAt } from './lib/items.js';
-import { DividerNode, GhostNode, DockGrip, DockEdge, JunctionNode, DockLinks } from './Docks.jsx';
+import { DividerNode, GhostNode, DockGrip, DockEdge, DockLinks } from './Docks.jsx';
 import { LinkEdge, RepoEdge } from './Links.jsx';
 import { withBoundary } from './ErrorBoundary.jsx';
 import { pickAttached, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
 import { perfLog } from './perf.js';
-import { enterView, dockRect, isViewing } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
+import { enterView, dockRect, isViewing, NAV_GAP } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
 import { enterSession } from './touch.js';
 import { wakeSession } from './sleep.js'; // P21
 import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t를 메모·칸반 종류 이름으로도 쓴다
@@ -53,12 +53,12 @@ import { repoEdges, facingSides } from '../../../backend/src/links.mjs';
 import { boundsOf } from '../../../backend/src/workspaces.mjs';
 import { chromeInset, fitInset } from './lib/chrome-inset.js'; // P52(#5)
 import { bbox, REGION_GAP } from '../../../backend/src/canvas.mjs';
-import { layout as layoutTree, dropZone, edgeSnap, junctions } from '../../../backend/src/dock-tree.mjs'; // P17, P23
+import { layout as layoutTree, dropZone, edgeSnap } from '../../../backend/src/dock-tree.mjs'; // P17, P23
 import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts, dockedAreas, visibleAnchors } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안. P68: 워크트리끼리 붙인 덩어리
 import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 
-const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, junction: JunctionNode, docklinks: DockLinks };
+const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
 const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge };
 const HOLD_MS = 1500; // 화면 밖으로 나간 노드의 제어기를 놓기 전 기다리는 시간(끌 때 붙였다 뗐다 하지 않게)
 const DRAG_MIN_PX = 3; // 이보다 덜 끌었으면 자리를 바꾸지 않는다(누르기)
@@ -178,16 +178,11 @@ function backdrops(content, ghost, ctrlId = null) {
       const r = dv.dir === 'row' ? { x: dv.x - LINE / 2, y: dv.y, w: LINE, h: dv.h } : { x: dv.x, y: dv.y - LINE / 2, w: dv.w, h: LINE };
       extra.push({ id: `div:${d.dockId}:${dv.path.join('.')}:${dv.index}`, type: 'divider', position: { x: r.x, y: r.y }, width: r.w, height: r.h, data: { dockId: d.dockId, path: dv.path, index: dv.index, dir: dv.dir }, zIndex: 3000, ...fixed });
     }
-    d.members.forEach((m, i) => {
-      const r = rs[i];
-      const sides = [['left', r.x === outer.x], ['right', r.x + r.w === outer.x + outer.w], ['top', r.y === outer.y], ['bottom', r.y + r.h === outer.y + outer.h]];
-      for (const [side, on] of sides) {
-        if (!on) continue;
-        const e = side === 'left' ? { x: r.x - LINE / 2, y: r.y, w: LINE, h: r.h } : side === 'right' ? { x: r.x + r.w - LINE / 2, y: r.y, w: LINE, h: r.h } : side === 'top' ? { x: r.x, y: r.y - LINE / 2, w: r.w, h: LINE } : { x: r.x, y: r.y + r.h - LINE / 2, w: r.w, h: LINE };
-        extra.push({ id: `edge:${d.dockId}:${m}:${side}`, type: 'dockedge', position: { x: e.x, y: e.y }, width: e.w, height: e.h, data: { dockId: d.dockId, leaf: m, side }, zIndex: 3000, ...fixed });
-      }
-    });
-    for (const j of junctions(d.tree, outer)) extra.push({ id: `jn:${d.dockId}:${j.x - outer.x},${j.y - outer.y}`, type: 'junction', position: { x: j.x - LINE / 2, y: j.y - LINE / 2 }, width: LINE, height: LINE, data: { dockId: d.dockId, j }, zIndex: 3002, ...fixed });
+    // P73: 바깥 테두리는 덩어리 전체의 네 변(끌면 덩어리 전체가 비율대로 커지고 작아진다). 엇갈리는 점 손잡이는 뺐다(칸은 배치 틀로만)
+    for (const side of ['left', 'right', 'top', 'bottom']) {
+      const e = side === 'left' ? { x: outer.x - LINE / 2, y: outer.y, w: LINE, h: outer.h } : side === 'right' ? { x: outer.x + outer.w - LINE / 2, y: outer.y, w: LINE, h: outer.h } : side === 'top' ? { x: outer.x, y: outer.y - LINE / 2, w: outer.w, h: LINE } : { x: outer.x, y: outer.y + outer.h - LINE / 2, w: outer.w, h: LINE };
+      extra.push({ id: `edge:${d.dockId}:${side}`, type: 'dockedge', position: { x: e.x, y: e.y }, width: e.w, height: e.h, data: { dockId: d.dockId, side }, zIndex: 3000, ...fixed });
+    }
     extra.push({ id: `grip:${d.dockId}`, type: 'dockgrip', position: { x: outer.x + outer.w - LINE / 2, y: outer.y + outer.h - LINE / 2 }, width: LINE, height: LINE, data: { dockId: d.dockId }, zIndex: 3001, ...fixed });
     if ([...st.links.values()].some((l) => d.members.includes(l.from) && d.members.includes(l.to))) {
       const rel = Object.fromEntries(d.members.map((m, i) => [m, { x: rs[i].x - outer.x, y: rs[i].y - outer.y, w: rs[i].w, h: rs[i].h }]));
@@ -587,11 +582,12 @@ export function Canvas() {
   }, [schedule]);
 
   // P52(#5): 캔버스 위에 떠 있는 크롬(위 알약, 왼쪽·오른쪽 레일, 보이는 아래 바)이 덮는 가장자리 여백
-  const insetNow = useCallback(() => {
+  // P73: gap은 크롬과 맞출 사각형 사이(눌러서 확대는 NAV_GAP으로 더 좁게). nav면 오른쪽 아래 배율 단추도 아래 크롬으로 본다(꽉 채운 노드의 구석을 덮지 않게)
+  const insetNow = useCallback((gap = 12, nav = false) => {
     const el = wrapRef.current;
     if (!el) return {};
     const q = (sel) => [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
-    return chromeInset(el.getBoundingClientRect(), { top: q('[data-role="top-left"], [data-role="top-right"]'), left: q('[data-role="rail-left"]'), right: q('[data-role="rail-right"]'), bottom: q('[data-role="bottom"]:not([data-hidden]), [data-role="chips"]:not([data-hidden])') });
+    return chromeInset(el.getBoundingClientRect(), { top: q('[data-role="top-left"], [data-role="top-right"]'), left: q('[data-role="rail-left"]'), right: q('[data-role="rail-right"]'), bottom: q(`[data-role="bottom"]:not([data-hidden]), [data-role="chips"]:not([data-hidden])${nav ? ', [data-role="zoom"]' : ''}`) }, { gap });
   }, []);
   // 전체가 화면에 들어오게(처음 열 때, "전체" 단추). 소속 없는 메모·칸반도 넣는다. P52: 떠 있는 크롬 밑은 빼고 맞춘다
   const fitAll = useCallback((duration = 0) => {
@@ -666,7 +662,7 @@ export function Canvas() {
       const dock = d ? dockRect(d.members.map((m) => getState().nodes.get(m))) : null;
       const screen = { width: el.clientWidth, height: el.clientHeight };
       const vp = rf.getViewport();
-      const v = enterView({ node: r, dock, screen });
+      const v = enterView({ node: r, dock, screen, inset: insetNow(NAV_GAP, true) }); // P73: 크롬(과 NAV_GAP 틈)을 뺀 남은 칸을 NAV_FILL까지 채운다
       const seen = isViewing({ node: r, dock, view: v, viewport: vp, screen });
       perfLog('navigate', { id, mode: v.mode, zoom: +v.zoom.toFixed(3), dock: d ? d.members.length : 0, seen, viewOnly });
       if (!seen) {

@@ -12,7 +12,7 @@ import { newRuntime } from '../src/state.mjs';
 import { Backend } from '../src/backend.mjs';
 import * as ops from '../src/canvas-ops.mjs';
 import { Recall } from '../src/recall.mjs';
-import { childSlot, Branch } from '../src/branch.mjs';
+import { childSlot, Branch, CHILD_SIZE } from '../src/branch.mjs';
 import { pathKey, normPath } from '../src/workspaces.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p9-'));
@@ -221,7 +221,7 @@ test('P9 J2: 닫힌 동안 다른 영역이 그 자리로 왔으면 마지막 �
 // ---------- 하위 세션(K4): 열 하나가 좁고 길게 늘어나지 않는다 ----------
 test('P9 K4: 하위 세션이 여러 개면 부모 높이의 약 두 배까지 한 열, 그다음은 오른쪽 열', () => {
   const parent = R(0, 0);
-  const size = SIZE_STEPS.small;
+  const size = { w: 480, h: 300 }; // P73 전 작게(열 나누기 규칙을 본다)
   const items = [parent];
   const fits = (c) => !items.some((i) => overlaps(c, i, GAP - 1));
   const kids = [];
@@ -238,7 +238,7 @@ test('P9 K4: 옆 영역에 막혀 나무 자리가 없으면 노드만 피해 �
   b.bus ??= new EventEmitter();
   const br = new Branch(b);
   const lead = add('lead', 'ws-a', R(0, 0));
-  const small = SIZE_STEPS.small;
+  const small = SIZE_STEPS[CHILD_SIZE]; // P73: 하위 세션 크기(16:9 가로 보통)
   // a 영역 바로 아래에 c 영역(맞닿음), 첫 자식 열 바로 오른쪽에 b의 노드
   add('c0', 'ws-c', R(0, NODE.h + 40 + 40 + 72));
   add('b0', 'ws-b', R(NODE.w + 200 + small.w + 80, 0));

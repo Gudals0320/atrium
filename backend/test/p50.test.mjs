@@ -7,6 +7,7 @@ import path from 'node:path';
 import { NODE, GAP, overlaps, dockSpot, regionRect } from '../src/canvas.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { Store } from '../src/store.mjs';
+const OLD_CELL = { cellW: 720, cellH: 460 }; // P73 전 칸 크기(틀 모양 시험은 옛 칸으로 본다. P73 칸은 p73.test.mjs)
 import * as ops from '../src/canvas-ops.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p50-'));
@@ -59,7 +60,7 @@ test('dockLayout: 노드 둘을 가로 2개로 짜도 셋째 노드를 덮지 �
   const { b, add, at } = fakeBackend();
   // 새 노드 자리 그대로: pa(왼쪽), pb(pa 오른쪽), pc(pa 위)
   add('pa', R(40, -388)); add('pb', R(800, -388)); add('pc', R(40, -888));
-  ops.dockLayout(b, { members: ['pa', 'pc'], preset: 'row' });
+  ops.dockLayout(b, { members: ['pa', 'pc'], preset: 'row', ...OLD_CELL });
   const pa = at('pa'), pc = at('pc'), pb = at('pb');
   assert.deepEqual(pb, R(800, -388), '셋째 노드는 그대로');
   assert.equal(pa.y, pc.y); assert.equal(pc.x, pa.x + pa.w);
@@ -70,7 +71,7 @@ test('dockLayout: 노드 둘을 가로 2개로 짜도 셋째 노드를 덮지 �
 test('dockLayout: 창 시험 자리(pc가 pa 아래)면 비워지는 아래 자리에 짠다', () => {
   const { b, add, at } = fakeBackend();
   add('pa', R(40, 112)); add('pb', R(800, 112)); add('pc', R(40, 612));
-  ops.dockLayout(b, { members: ['pa', 'pc'], preset: 'row' });
+  ops.dockLayout(b, { members: ['pa', 'pc'], preset: 'row', ...OLD_CELL });
   assert.deepEqual([at('pa'), at('pc'), at('pb')], [R(40, 612), R(760, 612), R(800, 112)]);
 });
 
@@ -78,7 +79,7 @@ test('dockLayout: 고른 노드 자리에 메모가 있으면 메모도 피한�
   const { b, add, at } = fakeBackend();
   add('pa', R(40, -388)); add('pb', R(800, -388)); add('pc', R(40, -888));
   b.store.insertMemo({ memoId: 'm1', workspaceKey: 'ws', text: '', x: 900, y: -800, w: 280, h: 200, createdAt: 1 });
-  ops.dockLayout(b, { members: ['pa', 'pc'], preset: 'row' });
+  ops.dockLayout(b, { members: ['pa', 'pc'], preset: 'row', ...OLD_CELL });
   const pa = at('pa'), pc = at('pc'), pb = at('pb');
   assert.deepEqual(pb, R(800, -388));
   for (const o of [pb, ...b.store.memos()]) for (const r of [pa, pc]) assert.ok(!overlaps(r, o, GAP - 1), `${JSON.stringify(r)} / ${JSON.stringify(o)}`);
@@ -87,6 +88,6 @@ test('dockLayout: 고른 노드 자리에 메모가 있으면 메모도 피한�
 test('dockLayout: 원하는 자리가 비면 옛날처럼 첫 노드 자리에서 짠다', () => {
   const { b, add, at } = fakeBackend();
   add('a', R(0, 0)); add('b', R(3000, 0)); add('c', R(6000, 0));
-  ops.dockLayout(b, { members: ['a', 'b', 'c'], preset: 'row' });
+  ops.dockLayout(b, { members: ['a', 'b', 'c'], preset: 'row', ...OLD_CELL });
   assert.deepEqual([at('a'), at('b'), at('c')], [R(0, 0), R(720, 0), R(1440, 0)]);
 });

@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS docks (dock_id TEXT PRIMARY KEY, workspace_key TEXT, 
 const ADDED_COLUMNS = {
   sessions: { touched_at: 'INTEGER', kind: 'TEXT', origin: 'TEXT', parent_session_id: 'TEXT', workspace_key: 'TEXT', flavor: 'TEXT', extra_args: 'TEXT', label: 'TEXT' }, // label(판의 이름, 사람이 정한 표시 이름)은 P66 // extra_args(호출자의 claude 추가 인자, JSON 배열)는 P33 // kind·origin·parent는 P4, workspace_key는 P5, flavor(띄운 방법, 예: deepseek)는 P25
   workspaces: { x: 'REAL', y: 'REAL' }, // P6a: 영역의 자리(빈 워크스페이스, 영역 옮기기)
-  nodes: { size: 'TEXT' }, // P6a: 크기 단계(large, normal, small)
-  docks: { tree: 'TEXT' }, // P17: 분할 나무(dock-tree.mjs). 없으면 옛 한 줄 덩어리(dir, members)이고 뜰 때 나무로 바꾼다(canvas-ops migrateDocks)
+  nodes: { size: 'TEXT', aspect: 'TEXT' }, // P6a: 크기 단계(large, normal, small). P73: aspect(고른 종횡비 16:9·4:3, 없으면 자유 비율)
+  docks: { tree: 'TEXT', aspect: 'TEXT' }, // P17: 분할 나무(dock-tree.mjs). 없으면 옛 한 줄 덩어리(dir, members)이고 뜰 때 나무로 바꾼다(canvas-ops migrateDocks). P73: aspect(덩어리 바깥의 종횡비)
 };
 
 const plain = (r) => (r ? { ...r } : null); // node:sqlite 행은 프로토타입이 없다(E8 2.2)
@@ -90,7 +90,7 @@ function dockRow(r) {
   try { tree = r.tree ? normalize(JSON.parse(r.tree)) : null; } catch { tree = null; }
   const legacy = !tree;
   if (legacy) tree = fromLine(r.dir, JSON.parse(r.members));
-  return { dockId: r.dock_id, workspaceKey: r.workspace_key ?? null, tree, dir: tree && !isLeaf(tree) ? tree.dir : r.dir, members: leaves(tree), legacy, origin: r.origin ?? null, createdAt: r.created_at, updatedAt: r.updated_at };
+  return { dockId: r.dock_id, workspaceKey: r.workspace_key ?? null, tree, dir: tree && !isLeaf(tree) ? tree.dir : r.dir, members: leaves(tree), legacy, origin: r.origin ?? null, aspect: r.aspect ?? null, createdAt: r.created_at, updatedAt: r.updated_at };
 }
 const dockCols = (d) => { const tree = d.tree ? normalize(d.tree) : fromLine(d.dir, d.members || []); return { tree: JSON.stringify(tree), dir: tree && !isLeaf(tree) ? tree.dir : d.dir || 'row', members: JSON.stringify(leaves(tree)) }; };
 const eventRow = (r) => ({ id: r.id, t: r.t, sessionId: r.session_id, kind: r.kind, data: r.data ? JSON.parse(r.data) : null });
@@ -189,7 +189,9 @@ export class Store {
   // 판 배치(9.4). P5: 노드마다 세션의 워크스페이스를 붙인다(판은 워크스페이스마다 하나)
   nodes() { return this.st('SELECT n.*, s.workspace_key FROM nodes n JOIN sessions s ON s.session_id = n.session_id WHERE s.closed_at IS NULL').all().map(plain); }
   // P27: area(놓인 워크트리 영역, 본 저장소는 '')는 주지 않으면 그대로 둔다
-  setNode(n) { this.st('INSERT INTO nodes (session_id, x, y, w, h, z, size, area) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h, z = excluded.z, size = COALESCE(excluded.size, nodes.size), area = COALESCE(excluded.area, nodes.area)').run(n.session_id, n.x, n.y, n.w, n.h, n.z ?? 0, n.size ?? null, n.area ?? null); }
+  setNode(n) { this.st('INSERT INTO nodes (session_id, x, y, w, h, z, size, area, aspect) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h, z = excluded.z, size = COALESCE(excluded.size, nodes.size), area = COALESCE(excluded.area, nodes.area), aspect = COALESCE(excluded.aspect, nodes.aspect)').run(n.session_id, n.x, n.y, n.w, n.h, n.z ?? 0, n.size ?? null, n.area ?? null, n.aspect ?? null); }
+  // P73: 고른 종횡비(16:9·4:3)와 크기 단계 열쇠. null이면 지운다(자유 비율). setNode는 빈 값으로 지우지 않으므로 따로 둔다
+  setNodeAspect(sid, aspect, size = undefined) { if (size === undefined) this.st('UPDATE nodes SET aspect = ? WHERE session_id = ?').run(aspect ?? null, sid); else this.st('UPDATE nodes SET aspect = ?, size = ? WHERE session_id = ?').run(aspect ?? null, size ?? null, sid); }
   // 세션끼리 연결(P4, ARCH 4절 F). 순서 있는 쌍(A → B)마다 한 줄. 판에서 정한 역할(F2), 오간 지시를 알아챔(F1), A가 띄움(F3)을 같은 줄에 모은다.
   // 지운 연결은 removed_at만 남긴다. 같은 쌍에 새 일이 오가면 다시 연다.
   linkByPair(from, to) { return linkRow(this.st('SELECT * FROM links WHERE from_session = ? AND to_session = ? ORDER BY created_at DESC LIMIT 1').get(from, to)); }
@@ -248,9 +250,10 @@ export class Store {
   docks() { return this.st('SELECT * FROM docks ORDER BY created_at').all().map(dockRow); }
   getDock(id) { return dockRow(this.st('SELECT * FROM docks WHERE dock_id = ?').get(id)); }
   // P17: tree를 주면 그것을, 없으면 dir·members로 한 줄 나무를 만들어 둔다. dir·members 열도 나무에 맞춰 함께 쓴다(옛 백엔드가 읽어도 순서는 맞다)
-  insertDock(d) { const c = dockCols(d); this.st('INSERT INTO docks (dock_id, workspace_key, dir, members, tree, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(d.dockId, d.workspaceKey ?? null, c.dir, c.members, c.tree, d.origin ?? null, d.createdAt, d.createdAt); }
+  insertDock(d) { const c = dockCols(d); this.st('INSERT INTO docks (dock_id, workspace_key, dir, members, tree, origin, created_at, updated_at, aspect) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(d.dockId, d.workspaceKey ?? null, c.dir, c.members, c.tree, d.origin ?? null, d.createdAt, d.createdAt, d.aspect ?? null); }
   updateDock(id, f) { const c = dockCols(f); this.st('UPDATE docks SET dir = ?, members = ?, tree = ?, updated_at = ? WHERE dock_id = ?').run(c.dir, c.members, c.tree, Date.now(), id); }
   deleteDock(id) { this.st('DELETE FROM docks WHERE dock_id = ?').run(id); }
+  setDockAspect(id, aspect) { this.st('UPDATE docks SET aspect = ? WHERE dock_id = ?').run(aspect ?? null, id); } // P73: 덩어리 바깥의 종횡비(null이면 자유 비율)
   // 검색(H2): 판 기록에서 q가 든 글. 판이 보낸 글(전달), hook 이벤트(지시와 답), 연결로 오간 지시. LIKE는 영문만 대소문자를 가리지 않는다
   searchText(q, limit = 200) {
     const like = `%${String(q).replace(/[!%_]/g, (c) => '!' + c)}%`;

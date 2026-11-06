@@ -276,7 +276,7 @@ test('H7: 크기 단계와 정리(연결을 따라), 한 번 되돌리기', () =
   add('y', 'ws-b', R(20000, 0));
   ops.setSize(b, { session: 'rev', size: 'small' });
   assert.deepEqual(rectOf(b, 'rev'), { x: 0, y: 0, ...SIZE_STEPS.small });
-  assert.equal(b.store.nodes().find((n) => n.session_id === 'id-rev').size, 'small');
+  assert.equal(b.store.nodes().find((n) => n.session_id === 'id-rev').size, 'wide-small'); // P73: 옛 열쇠 small은 16:9 가로 작게
   assert.throws(() => ops.setSize(b, { session: 'rev', size: 'huge' }));
   for (const [f, t, role] of [['lead', 'rev', '리뷰어'], ['lead', 'help', null]]) b.store.insertLink({ linkId: `l-${t}`, from: 'id-' + f, to: 'id-' + t, role, spawned: !role, createdAt: 1 });
   const before = b.store.nodes().map((n) => ({ ...n }));
@@ -294,7 +294,7 @@ test('H7: 크기 단계와 정리(연결을 따라), 한 번 되돌리기', () =
   ops.arrange(b, { workspace: 'ws-a', undo: true });
   assert.deepEqual(b.store.nodes().map((n) => [n.session_id, n.x, n.y, n.w, n.h]), before.map((n) => [n.session_id, n.x, n.y, n.w, n.h]), '되돌리기');
   const sizeOf = (name) => b.store.nodes().find((n) => n.session_id === 'id-' + name).size || null;
-  assert.deepEqual([sizeOf('lead'), sizeOf('rev')], [null, 'small'], '크기 단계도 정리 전으로');
+  assert.deepEqual([sizeOf('lead'), sizeOf('rev')], [null, 'wide-small'], '크기 단계도 정리 전으로');
   assert.throws(() => ops.arrange(b, { workspace: 'ws-a', undo: true }), (e) => e.code === 'not_found', '되돌리기는 한 번');
   b.store.close();
 });

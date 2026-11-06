@@ -1469,3 +1469,22 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 .mt-wt-choice { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 2px; }
 .mt-wt-choice .mt-check { display: flex; align-items: center; gap: 6px; }
 .mt-wt-choice .mt-wt-warn { color: var(--bad); }
+
+
+/* P73: 크기 막대(방향 × 종횡비 × 단계)와 덩어리 칸 경계 */
+.mt-divider.fixed { pointer-events: none; cursor: default; }
+.mt-sel-aspect .mt-sel-dirbtn { font-variant-numeric: tabular-nums; }
+.mt-selbar .sshort { display: none; }
+.mt-selbar[data-compact="4"] .sfull { display: none; }
+.mt-selbar[data-compact="4"] .sshort { display: inline-block; }
+.mt-selbar[data-compact="4"] .mt-sel-names { display: none; }
+.mt-selbar[data-compact="4"] .full { display: none; }
+.mt-selbar[data-compact="4"] .short { display: inline; }
+.mt-selbar[data-compact="4"] .mt-sel-layout { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; line-height: 0; }
+.mt-selbar[data-compact="4"] .mt-sel-presets { display: none; position: absolute; top: calc(100% + 6px); right: 30px; padding: 5px; background: var(--chrome-bg); border: 1px solid var(--chrome-line); border-radius: var(--chrome-radius); box-shadow: var(--chrome-shadow); }
+.mt-selbar[data-compact="4"] .mt-sel-presets.open { display: inline-flex; }
+.mt-sel-dirglyph { box-sizing: border-box; border: 1.5px solid currentColor; border-radius: 2px; vertical-align: -1px; }
+.mt-sel-dirglyph.wide { width: 13px; height: 8px; }
+.mt-sel-dirglyph.tall { width: 8px; height: 13px; vertical-align: -3px; }
+.mt-btn.mt-preset.glyph { line-height: 1; min-width: 26px; height: 24px; padding: 0 6px; }
+.mt-preset-glyph { font-size: 12px; font-weight: 650; letter-spacing: .02em; }
