@@ -38,6 +38,7 @@ import { FLAVOR as DEEPSEEK, checkCommand, checkProxy } from './deepseek.mjs'; /
 import { resolveLauncher, exampleDeepseek, checkGateway, splitArgs } from './launchers.mjs'; // P33: 호출자
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
+import { attachUpdater } from './updater.mjs'; // P69: 앱 안 업데이트
 import { attachSleep, draftAfterInput } from './sleep.mjs'; // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
 import { migrateLegacyData, fixLegacyRecords, writeTombstone, checkLegacyDevHerdr, MARKER, PANE_PREFIX } from './rename-migrate.mjs'; // P18: 이름 옮기기(multitask → Atrium)
 
@@ -224,6 +225,8 @@ export class Backend {
     Object.assign(this.api.handlers, this.sleeper.handlers);
     this.desktopImport = attachDesktopImport(this);
     Object.assign(this.api.handlers, this.desktopImport.handlers);
+    this.updater = attachUpdater(this); // P69: 새 릴리즈 확인과 업데이트(백엔드만 바꾸고 herdr는 그대로)
+    Object.assign(this.api.handlers, this.updater.handlers);
 
     // herdr 서버가 백엔드가 꺼진 동안 다시 떴는가(재부팅 포함). 저장한 서버 PID와 비교한다(C3, P3)
     const prevHerdrPid = this.store.getMeta('herdrServerPid');
@@ -290,6 +293,7 @@ export class Backend {
     if (this.recall) this.recall.stop();
     if (this.worktrees) this.worktrees.stop();
     if (this.sleeper) this.sleeper.stop();
+    if (this.updater) this.updater.stop();
     this.relay.closeAll();
     this.peers.stop();
     this.adapter.stopEvents();
@@ -1784,7 +1788,7 @@ export class Backend {
 
   handlers() {
     return {
-      'backend.status': async () => ({ pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, herdr: await this.herdrStatus(), sessions: this.sessions.size, relay: this.relay.stats(), clients: this.clients || null, plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null }),
+      'backend.status': async () => ({ pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, herdr: await this.herdrStatus(), sessions: this.sessions.size, relay: this.relay.stats(), clients: this.clients || null, plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null, version: this.updater ? this.updater.running : null }),
       'backend.shutdown': async () => { setTimeout(() => this.stop('api').then(() => process.exit(0)), 50); return { stopping: true }; },
       'herdr.status': () => this.herdrStatus(),
       'herdr.stop': (p) => this.herdrControl('stop', p.confirm),

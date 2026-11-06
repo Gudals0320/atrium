@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { useT } from './lib/i18n.js';
 import { showBanner } from './lib/reconnect.js';
+import { UpdateBanner } from './Update.jsx'; // P69: PC에서 업데이트 중
+import { useUpdate } from './update.js';
 
 export function RemoteBar() {
   const t = useT();
   const [conn, setConn] = useState(api.conn);
   const [rtt, setRtt] = useState(api.rtt);
+  const updating = useUpdate((s) => !!s.restarting); // P69: 업데이트로 끊긴 동안은 다시 연결 띠 대신 업데이트 띠
   useEffect(() => {
     const a = api.on('$conn', (c) => setConn({ ...c }));
     const b = api.on('$rtt', (r) => setRtt(r.rtt));
@@ -26,7 +29,8 @@ export function RemoteBar() {
           </div>
         </div>
       )}
-      {showBanner(conn) && (
+      <UpdateBanner />
+      {showBanner(conn) && !updating && (
         <div className="mt-reconnect" role="status" data-role="reconnect-banner" data-close={conn.lastClose ?? ''}>
           <span className="mt-reconnect-dot" />
           <span>{conn.lastClose === 4402 ? t('remoteAccess.kicked') : t('remote.reconnecting')}</span>

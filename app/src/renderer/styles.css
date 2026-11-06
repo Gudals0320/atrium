@@ -1443,3 +1443,15 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 /* P68: 워크트리끼리 붙인 창 그룹의 칸 머리 브랜치(워크트리는 노란 상자와 같은 색) */
 .mt-dock-branch { flex: 0 0 auto; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 6px; padding: 0 6px; border-radius: 6px; font-family: var(--font-mono); font-size: 11px; line-height: 18px; color: var(--dim-2); border: 1px solid var(--con-line); }
 .mt-dock-branch.wt { color: var(--wt-box-text); border-color: var(--wt-box-line); background: var(--wt-box-head-bg); }
+
+/* P69 업데이트 묶음(설정 › 일반)과 웹 화면의 업데이트 띠 */
+.mt-upd-ver b { font-weight: 600; }
+.mt-upd-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mt-upd-actions a.mt-btn { text-decoration: none; }
+.mt-upd-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text); }
+.mt-upd-ask-btns { display: inline-flex; gap: 6px; }
+.mt-upd-progress { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.mt-upd-spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--panel-line); border-top-color: var(--accent); animation: mt-upd-spin 0.9s linear infinite; flex: none; }
+@keyframes mt-upd-spin { to { transform: rotate(360deg); } }
+.mt-upd-error { color: var(--bad); }
+.mt-upd-notes { grid-column: 1 / -1; margin: 0 0 4px; max-height: 120px; overflow: auto; padding: 8px 10px; border: 1px solid var(--panel-line); border-radius: 6px; color: var(--dim-2); font: 12px/1.45 inherit; white-space: pre-wrap; }

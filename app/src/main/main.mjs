@@ -3,6 +3,7 @@
 // - P18: 실제 판 프로필은 처음 뜰 때 옛 창 프로필(multitask-app-real)을 새 프로필(atrium-app-real)로 복사한다(창 크기·사이드바 접힘 등 localStorage).
 // - 백엔드가 없으면 띄운다. 백엔드는 herdr 서버가 없으면 깨끗한 환경으로 띄운다. 창을 닫아도 백엔드와 herdr는 계속 돈다(ARCH 1절 "백엔드 수명", P2에서 정함).
 // - 창(renderer)은 백엔드 WebSocket API에 직접 붙는다. main은 주소와 토큰만 넘긴다.
+// - P69: 업데이트로 백엔드를 바꿀 때(update.restart) 앱을 끝낸다. 그동안 옛 백엔드를 다시 띄우지 않고, 다시 실행돼도 창을 열지 않는다. 새 창은 바꾸기 프로세스가 띄운다.
 import { app, BrowserWindow, ipcMain, shell, Notification, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -21,6 +22,8 @@ const APP_ROOT = path.resolve(HERE, '..', '..');
 const WINDOW_ICON = path.join(APP_ROOT, 'assets', 'icon.ico');
 const NOTIFY_ICON = path.join(APP_ROOT, 'assets', 'atrium-icon-256.png');
 const cfg = loadConfig({ argv: process.argv });
+const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'package.json'), 'utf8')).version; } catch { return null; } })(); // P69
+let updating = false; // P69: 업데이트로 끝나는 중
 
 // 프로필마다 Electron 사용자 데이터를 따로 둔다(개발용 창과 실제 판 창이 섞이지 않게)
 app.setPath('userData', path.join(app.getPath('appData'), `${APP_ID}-app-${cfg.profile}`));
@@ -40,6 +43,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 
 let starting = null;
 async function ensureBackend() {
+  if (updating) return new Promise(() => {}); // P69: 옛 백엔드를 다시 띄우지 않는다(앱이 곧 끝난다)
   const info = backendInfo(cfg);
   if (info && (await health(info.port))) return info;
   starting ||= startBackend(cfg, { nodePath: envVar('NODE') || 'node' })
@@ -57,6 +61,7 @@ ipcMain.handle('mt:backend', async () => {
     defaultCwd: cfg.profile === 'dev' ? path.join(BACKEND_ROOT, '.dev', 'proj') : app.getPath('home'),
     defaultModel: cfg.profile === 'dev' ? 'haiku' : '',
     deviceName: os.hostname(), clientKind: 'desktop', // P47: 백엔드에 알리는 기기 이름과 클라이언트 종류
+    appVersion: APP_VERSION, // P69: 이 창의 버전(설정 › 업데이트)
   };
 });
 // E5: Electron 프로세스(main, renderer, GPU 등)의 메모리와 CPU
@@ -123,7 +128,7 @@ function createWindow() {
   win.on('closed', () => { win = null; });
 }
 
-app.on('second-instance', () => showNode(null)); // 트레이에 남아 있을 때 다시 실행하면 창을 다시 연다(I7)
+app.on('second-instance', () => { if (!updating) showNode(null); }); // 트레이에 남아 있을 때 다시 실행하면 창을 다시 연다(I7)
 // Windows 알림의 앱 이름. 실제 판과 개발용을 나눈다
 app.setAppUserModelId(`${APP_ID}.${cfg.profile}`);
 // P14: 트레이 메뉴의 확인창. 시험은 global.__mtTrayConfirm으로 답을 정한다
@@ -133,11 +138,19 @@ async function trayConfirm({ message, detail, ok }) {
   const r = await dialog.showMessageBox({ type: 'warning', title: tr('app.name'), message, detail, buttons: [ok || tr('common.ok'), tr('common.cancel')], defaultId: 1, cancelId: 1, noLink: true });
   return r.response === 0;
 }
+// P69: 업데이트로 백엔드를 바꾼다. 창을 닫고 앱을 끝낸다(트레이 상주여도). 새 버전의 창은 바꾸기 프로세스가 띄운다
+function onUpdateRestart(d) {
+  updating = true;
+  log(`update restart: quitting for ${d && d.to ? d.to.tag : '?'}`);
+  if (tray) tray.stop();
+  if (win && !win.isDestroyed()) win.destroy();
+  app.quit();
+}
 app.whenReady().then(() => {
-  log(`app start profile=${cfg.profile} pid=${process.pid}`);
+  log(`app start profile=${cfg.profile} pid=${process.pid} version=${APP_VERSION} root=${path.basename(path.resolve(APP_ROOT, '..'))}`);
   for (const l of early) log(l);
   createWindow();
-  tray = startTray({ cfg, log, hasWindow: () => !!win, showNode, quit: () => app.quit(), notifications, closeWindow: () => { if (win) win.close(); }, startBackend: ensureBackend, stopBackend: () => stopBackend(cfg), confirm: trayConfirm });
+  tray = startTray({ cfg, log, hasWindow: () => !!win, showNode, quit: () => app.quit(), notifications, closeWindow: () => { if (win) win.close(); }, startBackend: ensureBackend, stopBackend: () => stopBackend(cfg), confirm: trayConfirm, onUpdateRestart });
   global.__mtTray = tray;
   global.__mtAppMigration = appMigration; // 시험이 읽는다
   if (appMigration && appMigration.failed.length) tray.noteError(tr('tray.profileCopyFailed', { n: appMigration.failed.length }));

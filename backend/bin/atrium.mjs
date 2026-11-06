@@ -5,6 +5,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { connect as connectTo, startBackend as startBackendFor, stopBackend as stopBackendFor } from '../src/client.mjs';
 import { remoteCommand } from './atrium-remote.mjs'; // P49(R3): 원격 접속(Tailscale)
+import { updateCommand } from './atrium-update.mjs'; // P69: 설치와 업데이트
 import { FEATURES_HELP, FEATURE_BOOL_FLAGS, featureCommand, featureEvent } from './atrium-features.mjs'; // P6b
 
 const HELP = `atrium [--dev] [--json] <명령>
@@ -76,7 +77,9 @@ ${FEATURES_HELP}
   missed rm (--all | --folder <폴더> | <대화 ID>...) [--yes]   대화 기록을 휴지통으로 이동 (--yes 없으면 개수와 크기만 확인)
   import-desktop --list                   데스크톱 앱(Code 탭)의 가져오기 후보 (저장소별 상태, 기본 선택, 실행 여부)
   import-desktop --all | <앱 세션 ID>...     기본 선택된 대화 또는 지정한 대화를 복제해 절전 상태의 보드 세션으로 가져오기
-  call <메서드> [JSON]                       보드 API 직접 호출`;
+  call <메서드> [JSON]                       보드 API 직접 호출
+  install [--shortcut <폴더>] [--no-shortcut]   최신 릴리즈를 설치 폴더에 설치하고 바탕화면 바로가기 생성 (P69)
+  update [--check | --rollback] [--yes]   새 릴리즈 확인, 업데이트, 앞 버전으로 되돌리기. 백엔드만 다시 시작하며 herdr 세션은 유지 (P69)`;
 
 const argv = process.argv.slice(2);
 const cfg = loadConfig({ argv });
@@ -84,7 +87,7 @@ const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--dev') continue;
-  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', 'allow-herdr', 'apply', 'undo', 'old', 'all', 'clear', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
+  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', 'allow-herdr', 'apply', 'undo', 'old', 'all', 'clear', 'check', 'rollback', 'no-shortcut', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
   else pos.push(a);
 }
 const JSONOUT = !!flags.json;
@@ -172,6 +175,7 @@ async function main() {
     if (op === 'start') return out(await startBackend());
     if (op === 'stop') return out(await stopBackend());
   }
+  if (cmd === 'install' || cmd === 'update') return updateCommand(cfg, cmd, flags, { out, json: JSONOUT }); // P69: 백엔드가 없어도 된다
   if (cmd === 'remote') return remoteCommand(cfg, rest, flags, connect); // P49: 백엔드가 없어도 된다
   const c = await connect();
   try {
