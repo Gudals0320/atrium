@@ -16,7 +16,8 @@
 - 다른 제품의 화면을 참고할 때는 화면 구성, 동작, 생김새(색, 크기, 모양)만 따른다. 비공개 제품의 코드, 이름, 로고, 에셋(그림, 영상, 글꼴 파일)은 가져오지 않고 그 이름을 저장소에 쓰지 않는다. 데모 화면 캡처는 저장소에 넣지 않는다(`app/design/`은 git 밖).
 - OpenCove(MIT) 코드를 가져올 때는 파일 머리에 원본 경로와 커밋(`DeadWaveWave/opencove@e10604b`)을 남기고, 저장소에 MIT 고지를 둔다.
 - 일을 맡길 작업자 CLI 세션은 `claude --model claude-opus-5-5 --effort high`로 띄운다. 사용자 기본 모델이 Fable이고 Opus 5.5의 기본 노력 수준이 medium이라, 둘 다 직접 지정해야 한다.
-- 작업자 여럿에게 나눠 맡길 때는 Claude Code 워크트리(`claude -w <이름>`)에서 띄우고, 작업자마다 개발용 판을 따로 준다(`docs/testing.md`). 작업자는 자기 브랜치에만 커밋하고, `main`에 합치는 것은 지휘 세션이 한다.
+- 작업자 여럿에게 나눠 맡길 때는 Claude Code 워크트리(`claude -w <이름>`)에서 띄우고, 작업자마다 개발용 판을 따로 준다(`docs/testing.md`). 작업자는 자기 브랜치에만 커밋하고, 합치는 것은 지휘 세션이 한다.
+- 작업은 `dev`에 커밋한다. 작업자는 워크트리를 연 뒤 `git merge --ff-only origin/dev`부터 한다. 릴리즈는 `scripts/release-check.mjs` 머리의 절차를 따른다.
 - 커밋 메시지에 `Co-Authored-By: Claude` 줄을 넣지 않는다(사용자 요청).
 - 이 저장소는 공개다. 사용자 경로·메일·토큰과 실제 대화 내용은 커밋하지 않고, 시험 결과는 git 밖 `experiments/`에 둔다. 공개 검사(`scripts/check-public.mjs`)를 건너뛰지 않는다.
 - 실험과 시험은 CLI에서 새로 띄운 `claude` 세션으로만 한다. 데스크톱 앱이 잡고 있는 세션과 기존 세션에는 이어 가기(`--resume`, `--continue`, `--fork-session`), 메시지 보내기, 종료, 보관을 하지 않는다. 기록 파일을 읽는 것은 괜찮다.

@@ -17,13 +17,14 @@
 | 승인 줄의 지시 덧붙이기, 여러 개 고르기, 계획 승인 | `docs/log/p2-window.md` 보고 7~8절 |
 | 실제 Windows 알림 누르기, 트레이 아이콘, 리포 열기의 찾아보기 | `docs/log/p3-v02.md` 보고 8절, `docs/log/p5-workspaces.md` 보고 6절, `docs/log/p6b-features-backend.md` 보고 7절 |
 | 손으로 잇기, 패널 ID가 바뀔 때의 알림, Claude Code 워크트리 기능, D3 경고 | `docs/log/p4-links.md` 보고 7절 |
-| 단일 캔버스와 남은 기능의 손맛(끌기, 오버뷰, 정리, 선과 붙여 묶기, 출력 보기, Thread, 메모, 루프, 미션 맵) | `docs/log/p6a-canvas.md` 보고 8절, `docs/log/p6c-features-screen.md` 보고 7절 |
+| 단일 캔버스와 남은 기능의 손맛 | `docs/log/p6a-canvas.md` 보고 8절, `docs/log/p6c-features-screen.md` 보고 7절 |
 | 실제 대화로 사이드바 보기, git 최상위 폴더 대화를 판으로 열기(신뢰 대화상자) | `docs/log/p7-recall-sidebar.md` 보고 8절 |
+| 실제 4K 화면의 터미널 글자, 일하는 워커 붙이기, 설치 폴더로 옮긴 뒤 업데이트 | P65·P68·P69 작업 파일 보고 |
 | 노트북에서 패스키(Windows Hello)로 다시 짝 맺기, 다시 확인, 실제 serve(https)에서 기기 묶기와 끊기·막기 | `docs/log/p59-remote-integrate.md` 보고 |
 | 노드에서 신뢰를 답한 워크트리 하위 세션이 `-w`로 다시 떠 첫 지시를 받는지 | `docs/log/p36-workers-skill.md` 보고 |
 | 영어·한국어 화면, Ctrl+끌기 붙이기와 배치 틀의 손맛(머리줄 잡기, 2×2 가운데 점) | `docs/log/p16-i18n.md`, `docs/log/p17-dock-layout.md` 보고 |
 | 실제 기록의 대화 노드와 띄움 선, missed 함의 폴더 목록을 보고 지우기 | `docs/log/p13-outside-convos.md` 보고 |
-| 바뀐 화면의 손맛(떠 있는 크롬, 도구 레일, 승인 줄, 배율별 얼굴), 실제 모니터에서 글꼴이 흐리지 않은지 | `docs/log/p11-board-look.md` 보고 |
+| 바뀐 화면의 손맛(떠 있는 크롬, 도구 레일, 승인 줄, 배율별 얼굴) | `docs/log/p11-board-look.md` 보고 |
 
 완료 기준: 피드백마다 작업 파일에 쓴다. 사용자가 실제 판을 쓰는 데 화면이 걸리지 않는다고 하면 이 단계를 닫는다.
 

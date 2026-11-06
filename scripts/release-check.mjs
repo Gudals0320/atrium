@@ -3,6 +3,11 @@
 //   node scripts/release-check.mjs <태그>            예: v0.2.0. main이 dev와 같은 커밋인지, 두 version이 태그와 같은지, 태그가 있으면 main을 가리키는지
 //   node scripts/release-check.mjs <태그> --remote   origin/main·origin/dev로 본다(git fetch 뒤)
 // 종료 코드: 0 통과, 1 맞지 않음, 2 실행 불가(인자, git 오류)
+// 릴리즈 절차(작업은 dev에서 한다):
+//   1. dev에서 app/package.json·backend/package.json과 두 잠금 파일 맨 위의 version을 새 버전으로 올려 커밋하고 푸시한다.
+//   2. git checkout main && git merge --ff-only dev, 그리고 node scripts/release-check.mjs v<버전>이 통과하면 main에 git tag -a v<버전>을 달고 main과 태그를 푸시한다.
+//   3. GitHub에서 그 태그로 정식 릴리즈를 만든다(초안·사전 릴리즈는 앱 안 업데이트가 보지 않는다). node scripts/release-check.mjs v<버전> --remote로 원격을 확인한다.
+//   4. 다시 dev로 돌아간다(git checkout dev).
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
