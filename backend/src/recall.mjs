@@ -22,7 +22,7 @@ import { archiveState, isOld, discoverable, itemKey, DISCOVER_DAYS, OLD_DAYS } f
 import { CONVO_PARSER, listTranscriptFiles, readTranscriptSummary, readLiveSessions, readDesktopSessions, claudeProcesses, parseClaudeCmdlines, bindingOf, inWorkspace, convoView, readSpawns, mergeSpawns, countSubagents, listSubagents, branchName } from './convos.mjs';
 import { matchSpawns } from './spawns.mjs';
 import { classifyConvo, testDirKind, trashPlan, trashPaths, removeEmptyProjectDirs, REFUSE_LABEL } from './missed.mjs';
-import { CONVO_CAP, placeCards } from './convo-canvas.mjs';
+import { CONVO_CAP, placeCards, boardSpawnDup } from './convo-canvas.mjs';
 import { m, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 
 const SHELL = 'shell';
@@ -525,7 +525,8 @@ export class Recall {
     const kids = new Map();
     for (const [child, r] of rel) kids.set(r.parent, (kids.get(r.parent) || 0) + 1);
     const edges = [];
-    for (const [child, r] of rel) { const from = nodeIdOf(r.parent), to = nodeIdOf(child); if (from && to && from !== to) edges.push({ id: `spawn:${r.parent}:${child}`, from, to, via: r.via, name: r.name, by: r.by, at: r.at }); }
+    const linked = (a, z) => !!(this.store.linkByPair && this.store.linkByPair(a, z)); // P67: 판의 연결이 있는 판 세션끼리는 그 연결만 보인다
+    for (const [child, r] of rel) { const from = nodeIdOf(r.parent), to = nodeIdOf(child); if (from && to && from !== to && !boardSpawnDup({ from, to, via: r.via }, linked)) edges.push({ id: `spawn:${r.parent}:${child}`, from, to, via: r.via, name: r.name, by: r.by, at: r.at }); }
     const names = workspaceNames(open);
     const nodes = shown.map((n) => {
       const c = byId.get(n.convId);

@@ -21,6 +21,7 @@ import { bbox } from '../../../backend/src/canvas.mjs';
 import { useT, t, errText } from './lib/i18n.js';
 import { dockFocus, dockRoutes, roundedPath, arrowHead, linkActive, touches, fitDockLabel, labelSpot, dockLabelParts } from './lib/dock-links.js'; // P30: 다리·괄호·둘레 길, P46: 배율별 글
 import { Pill } from './Links.jsx';
+import { pairLabels, pairAwake, pairKey, dockRestLevel } from './lib/link-labels.js'; // P67: 한 쌍에 글 하나, 물러나기
 
 export const HIT = 8; // 분할선·테두리를 잡는 폭(화면 px)
 const zoomSel = (s) => s.transform[2];
@@ -189,8 +190,27 @@ function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) 
   });
   const z = Math.max(zoom, 0.02);
   const inside = useMemo(() => [...links.values()].filter((l) => rects[l.from] && rects[l.to]), [links, rects]);
-  const res = useMemo(() => dockRoutes(rects, inside, { gap: 16 / z, step: 11 / z }), [rects, inside, z]);
+  // P67: 한 쌍(방향 상관없이)에 글 하나. 다리·칩은 쌍의 대표 연결(가장 최근)만 놓고, 둘레 길·괄호는 선을 모두 긋되 글은 대표에만 단다
+  const pairs = useMemo(() => pairLabels(inside), [inside]);
+  const primaries = useMemo(() => [...pairs.values()].map((p) => p.primary), [pairs]);
+  const routed = useMemo(() => dockRoutes(rects, inside, { gap: 16 / z, step: 11 / z }), [rects, inside, z]);
+  const lead = useMemo(() => dockRoutes(rects, primaries, { gap: 16 / z, step: 11 / z }), [rects, primaries, z]);
+  const res = { routes: routed.routes, bridges: lead.bridges, chips: lead.chips };
   const byId = new Map(inside.map((l) => [l.linkId, l]));
+  const dialogLink = useStore((st) => (st.dialog && st.dialog.kind === 'link' ? st.dialog.linkId : null));
+  const [, setTick] = useState(0); // 시간이 지나 물러나도록 다시 그린다
+  useEffect(() => { const i = setInterval(() => setTick((n) => n + 1), 15000); return () => clearInterval(i); }, []);
+  const now = Date.now();
+  const pairOf = (l) => pairs.get(pairKey(l.from, l.to));
+  const isLead = (l) => { const p = pairOf(l); return !!p && p.primary.linkId === l.linkId; };
+  // 물러난 글은 short(역할 이름)까지만. 마우스를 올리거나 그 연결 대화상자가 열려 있으면 그대로
+  const rest = (l, level) => {
+    const p = pairOf(l);
+    if (!p) return level;
+    const hot = (hoverLink && p.links.some((x) => x.linkId === hoverLink)) || (dialogLink && p.links.some((x) => x.linkId === dialogLink));
+    return dockRestLevel(level, { awake: pairAwake(p, sessions, now).awake, hot });
+  };
+  const moreOf = (l) => { const p = pairOf(l); return p && p.more > 0 ? <span className="mt-edge-more" data-role="link-more" title={t('linkLabel.moreTitle', { n: p.more })}>{t('linkLabel.more', { n: p.more })}</span> : null; };
   const hot = hoverLink ? null : hoverCell || focus; // 연결 하나에 올렸으면 그것만
   const look = (l) => {
     const to = sessions.get(l.to);
@@ -219,7 +239,9 @@ function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) 
         {p.spawnTag && <span className="mt-edge-tag">{t('links.spawned')}</span>}
         {level === 'full' && !noDir && <span className="mt-dl-dir">{p.dir}</span>}
         <span className="mt-dl-role">{p.role}</span>
+        {moreOf(l)}
         {level === 'full' && to && <Pill s={to} />}
+        {level === 'short' && to && <i className={`mt-edge-dot st-${to.state}`} data-role="link-dot" />}
       </span>
     );
   };
@@ -253,8 +275,10 @@ function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) 
       {res.routes.map((r) => {
         const l = byId.get(r.linkId);
         if (!l) return null;
+        if (!isLead(l)) return null; // P67: 쌍의 글은 대표 연결 하나에만
         const spot = labelSpot(r.points);
-        const fit = fitDockLabel(zoom, spot.len);
+        const fit0 = fitDockLabel(zoom, spot.len);
+        const fit = { ...fit0, level: rest(l, fit0.level) };
         if (fit.level === 'mini') return null;
         return (
           <button key={`t:${r.linkId}`} className={`mt-dl-rlabel lv-${fit.level}${spot.vertical ? ' vert' : ''} ${look(l)} nodrag nopan`} data-link={r.linkId} data-kind="route-label" data-level={fit.level}
@@ -267,7 +291,8 @@ function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) 
         const l = byId.get(b.linkId);
         if (!l) return null;
         const [fx, fy] = FLOW[b.arrow];
-        const fit = fitDockLabel(zoom, b.span);
+        const fit0 = fitDockLabel(zoom, b.span);
+        const fit = { ...fit0, level: rest(l, fit0.level) }; // P67: 물러난 글은 역할 이름까지만
         const vert = b.axis === 'v' && fit.level !== 'mini';
         return (
           <button key={b.linkId} className={`mt-dl-bridge axis-${b.axis} lv-${fit.level}${vert ? ' vert' : ''} ${look(l)} nodrag nopan`} data-link={b.linkId} data-kind="bridge" data-arrow={b.arrow} data-from={l.from} data-to={l.to} data-level={fit.level}
@@ -283,7 +308,8 @@ function DockLinksInner({ data, positionAbsoluteX = 0, positionAbsoluteY = 0 }) 
         if (!l || !r) return null;
         const mine = res.chips.filter((x) => x.cell === c.cell);
         const i = mine.indexOf(c);
-        const fit = fitDockLabel(zoom, r.w / mine.length);
+        const fit0 = fitDockLabel(zoom, r.w / mine.length);
+        const fit = { ...fit0, level: rest(l, fit0.level) }; // P67
         return (
           <button key={c.linkId} className={`mt-dl-chip lv-${fit.level} ${look(l)} nodrag nopan`} data-link={c.linkId} data-kind="chip" data-cell={c.cell} data-dir={c.dir} data-level={fit.level}
             style={{ left: r.x + r.w / 2, top: r.y, fontSize: fs, '--i': i, '--max': `${fit.max}px` }} title={titleOf(l)} onClick={open(c.linkId)} {...hov(c.linkId)}>
