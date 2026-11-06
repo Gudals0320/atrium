@@ -45,7 +45,7 @@ import { LinkEdge, RepoEdge } from './Links.jsx';
 import { withBoundary } from './ErrorBoundary.jsx';
 import { pickAttached, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
 import { perfLog } from './perf.js';
-import { enterView, dockRect, isViewing } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
+import { enterView, dockRect, isViewing, NAV_GAP } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
 import { enterSession } from './touch.js';
 import { wakeSession } from './sleep.js'; // P21
 import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t를 메모·칸반 종류 이름으로도 쓴다
@@ -582,11 +582,12 @@ export function Canvas() {
   }, [schedule]);
 
   // P52(#5): 캔버스 위에 떠 있는 크롬(위 알약, 왼쪽·오른쪽 레일, 보이는 아래 바)이 덮는 가장자리 여백
-  const insetNow = useCallback(() => {
+  // P73: gap은 크롬과 맞출 사각형 사이(눌러서 확대는 NAV_GAP으로 더 좁게). nav면 오른쪽 아래 배율 단추도 아래 크롬으로 본다(꽉 채운 노드의 구석을 덮지 않게)
+  const insetNow = useCallback((gap = 12, nav = false) => {
     const el = wrapRef.current;
     if (!el) return {};
     const q = (sel) => [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
-    return chromeInset(el.getBoundingClientRect(), { top: q('[data-role="top-left"], [data-role="top-right"]'), left: q('[data-role="rail-left"]'), right: q('[data-role="rail-right"]'), bottom: q('[data-role="bottom"]:not([data-hidden]), [data-role="chips"]:not([data-hidden])') });
+    return chromeInset(el.getBoundingClientRect(), { top: q('[data-role="top-left"], [data-role="top-right"]'), left: q('[data-role="rail-left"]'), right: q('[data-role="rail-right"]'), bottom: q(`[data-role="bottom"]:not([data-hidden]), [data-role="chips"]:not([data-hidden])${nav ? ', [data-role="zoom"]' : ''}`) }, { gap });
   }, []);
   // 전체가 화면에 들어오게(처음 열 때, "전체" 단추). 소속 없는 메모·칸반도 넣는다. P52: 떠 있는 크롬 밑은 빼고 맞춘다
   const fitAll = useCallback((duration = 0) => {
@@ -661,7 +662,7 @@ export function Canvas() {
       const dock = d ? dockRect(d.members.map((m) => getState().nodes.get(m))) : null;
       const screen = { width: el.clientWidth, height: el.clientHeight };
       const vp = rf.getViewport();
-      const v = enterView({ node: r, dock, screen, inset: insetNow() }); // P73: 크롬을 뺀 남은 칸을 98%까지 채운다
+      const v = enterView({ node: r, dock, screen, inset: insetNow(NAV_GAP, true) }); // P73: 크롬(과 NAV_GAP 틈)을 뺀 남은 칸을 NAV_FILL까지 채운다
       const seen = isViewing({ node: r, dock, view: v, viewport: vp, screen });
       perfLog('navigate', { id, mode: v.mode, zoom: +v.zoom.toFixed(3), dock: d ? d.members.length : 0, seen, viewOnly });
       if (!seen) {
