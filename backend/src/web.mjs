@@ -241,8 +241,12 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const ZIP = new Set(['.html', '.js', '.css', '.map', '.json', '.svg', '.txt', '.webmanifest']);
 export function cacheControl(rel) {
   if (/^fonts\//.test(rel)) return 'public, max-age=31536000, immutable'; // 이름에 해시가 있다(build.mjs assetNames)
-  return 'no-cache'; // ETag로 다시 확인한다. 바뀌지 않았으면 304
+  return 'no-cache'; // ETag로 다시 확인한다. 바뀌지 않았으면 304. P74: sw.js도 늘 다시 확인한다(새 버전이면 껍데기를 바꾼다)
 }
+// P74: 서비스 워커 스크립트. 브라우저는 등록·갱신 때 "Service-Worker: script" 머리글을 붙인다.
+// 그 요청은 이 파일만 내준다(다른 화면 파일을 서비스 워커로 등록하지 못하게). 범위는 / 하나다(Service-Worker-Allowed를 주지 않는다)
+export const SW_FILE = 'sw.js';
+export const swScriptOk = (rel, headers = {}) => String(headers['service-worker'] || '').toLowerCase() !== 'script' || rel === SW_FILE;
 const SECURITY_HEADERS = { 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', 'cross-origin-opener-policy': 'same-origin' };
 const NO_BUILD = `<!doctype html><html><head><meta charset="utf-8"><title>Atrium</title><style>body{background:#070705;color:#e9e6dc;font:15px/1.6 system-ui,sans-serif;margin:0;display:grid;place-items:center;height:100vh}div{max-width:520px;padding:24px}code{background:#1d1c18;padding:2px 6px;border-radius:4px}</style></head>
 <body><div><h2>The board screen is not built</h2><p>The backend serves the window from <code>app/dist</code>, which does not exist yet. On the PC, run <code>cd app &amp;&amp; npm run build</code>, then reload this page.</p>
@@ -262,6 +266,7 @@ export class StaticFiles {
     let rel = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '');
     if (rel === '') rel = 'index.html';
     if (!/^[A-Za-z0-9._\-/]+$/.test(rel) || rel.split('/').some((p) => p === '..' || p === '' || p.startsWith('.'))) return false;
+    if (!swScriptOk(rel, req.headers)) return false; // P74
     const file = path.resolve(this.dir, rel);
     if (!file.startsWith(path.resolve(this.dir) + path.sep)) return false;
     if (!this.built()) {

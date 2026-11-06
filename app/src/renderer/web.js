@@ -7,6 +7,7 @@
 import { openFolderPicker } from './FolderPicker.jsx';
 import { hasFiles } from './lib/upload.js';
 import { webZoomOf } from './lib/scale.js'; // P49
+import { startPwa, pwaState } from './lib/pwa.js'; // P74: 홈 화면 웹 앱
 
 export const isWeb = typeof window !== 'undefined' && !window.mt;
 // P56: 옛 기기 토큰(P48~P55)이 남아 있으면 지운다. 더 쓰지 않는다
@@ -91,7 +92,8 @@ if (isWeb) {
     passkeyMode, // P62
   };
   try { applyWebZoom(localStorage.getItem('mt.uiScale')); } catch {}
-  window.__mtWeb = { notes: webNotes };
+  window.__mtWeb = { notes: webNotes, pwa: pwaState };
+  startPwa(); // P74: 서비스 워커(껍데기만 캐시)와 설치 제안
   // 알림 권한은 사용자가 처음 누를 때 묻는다(브라우저는 몸짓 없이 묻는 것을 막는다)
   window.addEventListener('pointerdown', askPermission, { once: true, capture: true });
   // 판 밖에 파일을 놓아도 브라우저가 그 파일로 넘어가지 않게
