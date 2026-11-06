@@ -5,17 +5,87 @@
 // - 붙여 묶기(H5): 덩어리는 분할 나무다(P17, dock-tree.mjs). 구성 노드의 자리와 크기는 nodes 표에 두고, 덩어리는 나무(방향과 비율)를 가진다.
 // - 정리(H7): 연결을 따라 시키는 쪽을 왼쪽에 크게, 받는 쪽을 오른쪽에 작게 두는 나무 배치. 덩어리는 한 덩어리로 옮긴다.
 
-export const NODE = { w: 720, h: 460 };
+export const NODE = { w: 720, h: 460 }; // 옛 기본 노드 크기(빈자리 계산의 기본값, 시험). P73: 새 세션은 NEW_NODE
 export const GAP = 40; // 노드 사이 틈
-// H7 크기 단계. large·normal·small은 노드 메뉴와 정리(arrange)가 쓴다.
-// P23: 고른 노드 막대의 가로(16:9)·세로(약 2:3) 크기. wide-large는 배율 1에서 1600×920 안팎의 창 화면을 대략 채운다.
-// 세로는 터미널이 읽히는 너비(글자 14px로 55칸 이상)를 지킨다
-export const SIZE_STEPS = {
-  large: { w: 1040, h: 660 }, normal: { w: 720, h: 460 }, small: { w: 480, h: 300 },
-  'wide-large': { w: 1440, h: 810 }, 'wide-normal': { w: 1040, h: 585 }, 'wide-small': { w: 720, h: 405 },
-  'tall-large': { w: 720, h: 1120 }, 'tall-normal': { w: 600, h: 920 }, 'tall-small': { w: 480, h: 740 },
+// ---------- P73: 크기 = 방향(가로·세로) × 종횡비(16:9·4:3) × 단계(크게·보통·작게) ----------
+// 표는 가로 값이다. 세로는 가로를 돌린 것(16:9 세로 = 9:16, 4:3 세로 = 3:4)이라 가로·세로가 함께 커지고 작아진다.
+// 작게 세로(16:9: 585 너비, 4:3: 660 너비)도 터미널이 글자 14px로 55칸 넘게 읽힌다.
+// 덩어리(붙여 묶기)는 바깥 사각형에 이 크기와 비율을 쓴다(칸 하나하나가 아니다. 칸은 배치 틀의 비율대로 나눈다)
+export const ASPECTS = { '16:9': [16, 9], '4:3': [4, 3] };
+export const ASPECT_KEYS = Object.keys(ASPECTS);
+export const SIZE_DIRS = ['wide', 'tall'];
+export const SIZE_LEVELS = ['large', 'normal', 'small'];
+export const SIZE_TABLE = {
+  '16:9': { large: { w: 1920, h: 1080 }, normal: { w: 1440, h: 810 }, small: { w: 1040, h: 585 } },
+  '4:3': { large: { w: 1600, h: 1200 }, normal: { w: 1200, h: 900 }, small: { w: 880, h: 660 } },
 };
-export const BAR_SIZES = { wide: ['wide-large', 'wide-normal', 'wide-small'], tall: ['tall-large', 'tall-normal', 'tall-small'] };
+export const DEFAULT_ASPECT = '16:9';
+const ASPECT_TAG = { '16:9': '', '4:3': '43' }; // 크기 열쇠: wide-large(16:9), wide43-large(4:3), tall-large(9:16), tall43-large(3:4)
+export function stepSize(dir, aspect, level) {
+  const s = (SIZE_TABLE[aspect] || SIZE_TABLE[DEFAULT_ASPECT])[level];
+  if (!s) return null;
+  return dir === 'tall' ? { w: s.h, h: s.w } : { w: s.w, h: s.h };
+}
+export const stepKey = (dir, aspect, level) => `${dir}${ASPECT_TAG[aspect] ?? ''}-${level}`;
+// 크기 열쇠 → { dir, aspect, level }. 옛 열쇠 large·normal·small(노드 메뉴, 정리)은 { level }만(방향과 비율은 지금 것을 지킨다). 모르는 열쇠는 null
+export function parseStep(key) {
+  if (SIZE_LEVELS.includes(key)) return { level: key };
+  const m = /^(wide|tall)(43)?-(large|normal|small)$/.exec(String(key || ''));
+  return m ? { dir: m[1], aspect: m[2] ? '4:3' : '16:9', level: m[3] } : null;
+}
+// 모든 크기 열쇠 → 크기. 옛 열쇠 large·normal·small은 16:9 가로 값(정리가 쓴다)
+export const SIZE_STEPS = {};
+for (const lv of SIZE_LEVELS) SIZE_STEPS[lv] = stepSize('wide', DEFAULT_ASPECT, lv);
+for (const d of SIZE_DIRS) for (const a of ASPECT_KEYS) for (const lv of SIZE_LEVELS) SIZE_STEPS[stepKey(d, a, lv)] = stepSize(d, a, lv);
+export const NEW_NODE_STEP = stepKey('wide', DEFAULT_ASPECT, 'normal'); // P73: 새로 띄운 세션은 16:9 가로 보통
+export const NEW_NODE = SIZE_STEPS[NEW_NODE_STEP];
+export const DOCK_CELL = { w: 960, h: 540 }; // P73: 배치 틀로 새로 짠 덩어리의 칸 하나(2 × 2면 바깥이 16:9 크게 1920×1080)
+export const OLD_DEFAULT = { w: 720, h: 460 }; // P73 전 새 세션 크기(사람이 바꾸지 않은 옛 노드를 알아본다)
+export const ASPECT_TOL = 0.02; // 비율이 이만큼(상대) 안이면 그 비율로 본다
+export const LEVEL_TOL = 0.03; // 넓이가 이만큼(상대) 안이면 그 단계로 본다
+
+export const dirOf = (r) => (r && r.h > r.w ? 'tall' : 'wide');
+const ratioOf = (dir, aspect) => { const [a, b] = ASPECTS[aspect]; return dir === 'tall' ? b / a : a / b; }; // 너비 / 높이
+// 사각형이 그 비율(방향은 사각형 모양으로)에 맞는가
+export const fitsAspect = (r, aspect, tol = ASPECT_TOL) => !!(r && ASPECTS[aspect] && r.w > 0 && r.h > 0 && Math.abs(r.w / r.h / ratioOf(dirOf(r), aspect) - 1) <= tol);
+// 불이 들어올 비율: 판 기록에 남긴 비율(stored)이 있고 사각형이 그 비율에 맞을 때만. 사람이 테두리를 끌면 기록을 지운다(자유 비율)
+export const aspectOf = (r, stored) => (stored && fitsAspect(r, stored) ? stored : null);
+// 사각형 비율에 맞는 비율 열쇠(기록과 상관없이). 없으면 null
+export const matchAspect = (r) => ASPECT_KEYS.find((a) => fitsAspect(r, a)) || null;
+// 불이 들어올 단계: 비율에 불이 들어왔고 넓이가 그 비율의 단계 넓이와 LEVEL_TOL 안인 것. 자유 비율이면 null
+export function levelOf(r, aspect = null) {
+  if (!r || !(r.w > 0) || !(r.h > 0) || !SIZE_TABLE[aspect]) return null;
+  const t = SIZE_TABLE[aspect];
+  return SIZE_LEVELS.find((lv) => Math.abs((r.w * r.h) / (t[lv].w * t[lv].h) - 1) <= LEVEL_TOL) || null;
+}
+// 사각형 모양에 가장 가까운 비율(로그 거리)
+export function nearestAspect(r) {
+  if (!r || !(r.w > 0) || !(r.h > 0)) return DEFAULT_ASPECT;
+  const far = (a) => Math.abs(Math.log(r.w / r.h / ratioOf(dirOf(r), a)));
+  return ASPECT_KEYS.reduce((best, a) => (far(a) < far(best) - 1e-9 ? a : best), DEFAULT_ASPECT);
+}
+// 지금 사각형(rect)과 기록한 비율(stored)에서 바꿀 크기를 정한다. req: { dir?, aspect?(null이면 자유 비율), level? }. 빠진 것은 지금 것을 지킨다
+// - 비율과 단계가 있으면 표의 크기
+// - 자유 비율에서 단계만 고르면 모양이 가장 가까운 비율의 그 단계(표의 크기)
+// - 비율만 있으면(자유 크기에서 비율 단추) 지금 넓이를 지키고 그 비율로
+// - 자유 비율에서 방향만 바꾸면 돌린다
+// → { w, h, dir, aspect, level, key }(key는 표의 크기일 때 크기 열쇠, 아니면 null)
+export function resolveSize(rect, stored, req = {}) {
+  const curDir = dirOf(rect);
+  const curAspect = aspectOf(rect, stored);
+  const dir = SIZE_DIRS.includes(req.dir) ? req.dir : curDir;
+  let aspect = req.aspect !== undefined ? (ASPECTS[req.aspect] ? req.aspect : null) : curAspect;
+  const level = SIZE_LEVELS.includes(req.level) ? req.level : levelOf(rect, curAspect);
+  if (!aspect && req.aspect === undefined && SIZE_LEVELS.includes(req.level)) aspect = nearestAspect(rect);
+  if (aspect && level) return { ...stepSize(dir, aspect, level), dir, aspect, level, key: stepKey(dir, aspect, level) };
+  if (aspect) {
+    const q = ratioOf(dir, aspect), area = rect.w * rect.h;
+    return { w: Math.round(Math.sqrt(area * q)), h: Math.round(Math.sqrt(area / q)), dir, aspect, level: null, key: null };
+  }
+  const [w, h] = dir !== curDir ? [rect.h, rect.w] : [rect.w, rect.h];
+  return { w: Math.round(w), h: Math.round(h), dir, aspect: null, level: null, key: null };
+}
+
 export const REGION_PAD = 40; // 영역 테두리와 안의 것 사이
 export const REGION_HEAD = 72; // 영역 이름표 자리(안의 것 위)
 export const REGION_GAP = 240; // 영역 사이 최소 거리(멀리서 커지는 이름표가 들어갈 자리)
@@ -216,7 +286,8 @@ export function splitSide(parentRect, childRect) {
 // ---------- 정리(H7) ----------
 // blocks: [{ id, x, y, w, h, members: [sessionId], resizable }](노드 하나, 덩어리, 그룹), edges: [[fromSessionId, toSessionId]]
 // → Map id → { x, y, w, h, size? }. 시키는 쪽(뿌리)을 왼쪽에 크게, 받는 쪽을 오른쪽에 작게. 연결이 없는 블록은 맨 아래에 나란히
-export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 160, gapY = GAP * 2 } = {}) {
+// P73: stepOf(block, level) → { w, h, step }: 단계 크기(노드의 방향과 비율을 지킨다). 없으면 16:9 가로 표
+export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 160, gapY = GAP * 2, stepOf = null } = {}) {
   const bySession = new Map();
   for (const b of blocks) for (const m of b.members) bySession.set(m, b.id);
   const kids = new Map(blocks.map((b) => [b.id, []]));
@@ -249,8 +320,8 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 160
     const b = byId.get(t.id);
     let step = null;
     if (b.resizable) step = t.depth === 0 ? 'large' : t.children.length ? 'normal' : 'small';
-    const s = step ? SIZE_STEPS[step] : { w: b.w, h: b.h };
-    size.set(t.id, { ...s, step });
+    const s = !step ? { w: b.w, h: b.h } : stepOf ? stepOf(b, step) : { ...SIZE_STEPS[step], step };
+    size.set(t.id, { w: s.w, h: s.h, step: step ? s.step || step : null });
     t.children.forEach(sizeOf);
   };
   trees.forEach(sizeOf);

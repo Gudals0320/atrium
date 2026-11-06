@@ -2,7 +2,7 @@
 // - 영역과 빈자리(H1), 영역 옮기기, 검색(H2), 붙여 묶기(H5), 크기 단계와 정리(H7). 골라 묶기(그룹, H6)는 P22에서 뺐다
 // - 계산은 canvas.mjs·search.mjs의 순수 함수(창도 같이 씀). 바꾼 뒤에는 board.changed를 보내 창이 판을 다시 읽게 한다.
 import crypto from 'node:crypto';
-import { NODE, SIZE_STEPS, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot } from './canvas.mjs';
+import { NODE, SIZE_STEPS, SIZE_DIRS, SIZE_LEVELS, ASPECTS, parseStep, resolveSize, fitsAspect, matchAspect, stepSize, DEFAULT_ASPECT, dirOf, aspectOf, DOCK_CELL, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot } from './canvas.mjs';
 import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, remove as removeLeaf, removeWithOuter, insertWithOuter, rootSizes, presetTree, presetSize, PRESETS } from './dock-tree.mjs'; // P17: 분할 나무
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
@@ -389,13 +389,15 @@ function layoutInner(b, p) {
   const one = docks.length === 1 && docks[0].members.length === picked.length ? docks[0] : null;
   const head = dockOf(b, picked[0]);
   const start = head ? dockOuter(b, head) : nodeRect(b, picked[0]);
-  const cell = { w: Math.round(Number(p.cellW) || NODE.w), h: Math.round(Number(p.cellH) || NODE.h) };
+  const cell = { w: Math.round(Number(p.cellW) || DOCK_CELL.w), h: Math.round(Number(p.cellH) || DOCK_CELL.h) }; // P73: 칸 960×540
   let outer = one ? dockOuter(b, one) : { x: start.x, y: start.y, ...presetSize(preset, picked.length, cell) };
   // P50(#2): 새 크기의 덩어리가 다른 노드·메모·칸반을 덮지 않게, 첫 노드 자리에서 가장 가까운 빈자리로 둔다(U1)
   if (!one) outer = { ...outer, ...presetSpot(b, picked, outer) };
   for (const d of docks.slice(1)) { b.store.deleteDock(d.dockId); b.store.addEvent(null, 'dock_removed', { dockId: d.dockId, why: `preset ${preset}` }); }
   const saved = saveDock(b, { dockId: docks[0] ? docks[0].dockId : null, workspaceKey: ws, tree: presetTree(preset, picked), origin: p.origin || 'user' }, `preset ${preset}`);
-  applyLayout(b, saved.tree, outer);
+  const got = applyLayout(b, saved.tree, outer);
+  // P73: 바깥 크기를 지킨 덩어리는 고른 비율도 지킨다. 새로 짠 덩어리는 바깥이 16:9·4:3에 맞으면 그 비율에 불이 들어온다
+  b.store.setDockAspect(saved.dockId, one ? aspectOf(got, one.aspect) : matchAspect(got));
   settleRegions(b, 'dock preset');
   b.api.broadcast('board.changed', { why: 'dock' });
   return { dock: b.store.getDock(saved.dockId), preset };
@@ -455,6 +457,8 @@ export function dockUpdate(b, p) {
   }
   if (p.tree != null || Array.isArray(p.sizes)) b.store.updateDock(d.dockId, { ...d, tree });
   const out = applyLayout(b, tree, outer);
+  // P73: 바깥 크기를 손으로 바꾸면(테두리·모서리 끌기) 고른 비율을 끈다(자유 비율). 그 뒤 비율 단추를 누르면 다시 그 비율로 맞춘다
+  if ((p.w != null || p.h != null || Array.isArray(p.sizes)) && d.aspect) b.store.setDockAspect(d.dockId, null);
   b.store.addEvent(null, 'dock_saved', { dockId: d.dockId, tree: p.tree != null || p.sizes ? renameTree(b, tree) : undefined, outer: out, why: 'update' });
   if (p.w != null || p.h != null) settleRegions(b, 'dock resize');
   b.api.broadcast('board.changed', { why: 'dock' });
@@ -543,28 +547,49 @@ export async function autoDockSplit(b, s, parent) {
 }
 
 // ---------- 크기 단계와 정리(H7) ----------
+// P73: 크기 = 방향(dir: wide·tall) × 종횡비(aspect: 16:9·4:3, null이면 자유 비율) × 단계(level: large·normal·small)(canvas.mjs resolveSize).
+// size(크기 열쇠, 예: wide43-normal)를 주면 셋을 한 번에, 옛 열쇠 large·normal·small은 단계만. dir·aspect·level을 따로 주면 그것만 바꾸고 나머지는 지금 것을 지킨다.
+// 덩어리 안 노드는 덩어리 바깥에 쓴다(scope dock이든 아니든: P73부터 덩어리 크기는 바깥으로만 바꾼다). 바깥 비율은 덩어리 기록(aspect)에, 혼자인 노드는 노드 기록에 남긴다.
+// 왼쪽 위는 그대로. 덩어리는 칸을 나무의 비율대로 나누고 잎마다 최소 크기를 지킨다
+export function sizeRequest(p) {
+  const req = {};
+  if (p.size != null) {
+    const st = parseStep(p.size);
+    if (!st) throw apiError('bad_request', `크기: ${Object.keys(SIZE_STEPS).join(', ')}`);
+    Object.assign(req, st);
+  }
+  if (p.dir != null) { if (!SIZE_DIRS.includes(p.dir)) throw apiError('bad_request', `dir: ${SIZE_DIRS.join(', ')}`); req.dir = p.dir; }
+  if (p.aspect !== undefined) {
+    const a = p.aspect === 'free' || p.aspect === null ? null : String(p.aspect);
+    if (a && !ASPECTS[a]) throw apiError('bad_request', `aspect: ${Object.keys(ASPECTS).join(', ')}, free`);
+    req.aspect = a;
+  }
+  if (p.level != null) { if (!SIZE_LEVELS.includes(p.level)) throw apiError('bad_request', `level: ${SIZE_LEVELS.join(', ')}`); req.level = p.level; }
+  if (!Object.keys(req).length) throw apiError('bad_request', 'size, dir, aspect, level 가운데 하나');
+  return req;
+}
 export function setSize(b, p) {
   const s = b.resolve(p.session);
-  const step = SIZE_STEPS[p.size];
-  if (!step) throw apiError('bad_request', `크기: ${Object.keys(SIZE_STEPS).join(', ')}`);
+  const req = sizeRequest(p);
   const r = nodeRect(b, s.sessionId);
   const d = dockOf(b, s.sessionId);
-  if (d && p.scope === 'dock') {
-    // P23 고른 노드 막대: 덩어리 안 노드면 덩어리 전체 바깥이 그 크기가 된다(비율대로 나누고, 잎마다 최소 크기는 지킨다. 왼쪽 위는 그대로)
+  let out;
+  if (d) {
     const outer = dockOuter(b, d);
+    out = resolveSize(outer, d.aspect, req);
     const need = minSize(d.tree);
-    applyLayout(b, d.tree, { ...outer, w: Math.max(need.w, step.w), h: Math.max(need.h, step.h) });
-    b.store.addEvent(null, 'dock_saved', { dockId: d.dockId, outer: dockOuter(b, d), why: 'size' });
-  } else if (d) {
-    // 덩어리 안(P17): 그 노드가 단계 크기가 되도록 덩어리 바깥을 같은 배율로 늘이거나 줄인다. 비율은 그대로라 이웃도 함께 바뀐다(잎마다 최소 크기)
-    const outer = dockOuter(b, d);
-    b.store.setNode({ ...r, size: p.size });
-    applyLayout(b, d.tree, { ...outer, w: Math.round((outer.w * step.w) / r.w), h: Math.round((outer.h * step.h) / r.h) });
-  } else b.store.setNode({ ...r, w: step.w, h: step.h, size: p.size });
-  b.store.addEvent(s.sessionId, 'node_size', { size: p.size });
+    const got = applyLayout(b, d.tree, { ...outer, w: Math.max(need.w, out.w), h: Math.max(need.h, out.h) });
+    b.store.setDockAspect(d.dockId, out.aspect && got && fitsAspect(got, out.aspect) ? out.aspect : null);
+    b.store.addEvent(null, 'dock_saved', { dockId: d.dockId, outer: dockOuter(b, d), aspect: out.aspect, why: 'size' });
+  } else {
+    out = resolveSize(r, r.aspect, req);
+    b.store.setNode({ ...r, w: out.w, h: out.h });
+    b.store.setNodeAspect(s.sessionId, out.aspect, out.key);
+  }
+  b.store.addEvent(s.sessionId, 'node_size', { size: out.key || p.size || null, dir: out.dir, aspect: out.aspect, level: out.level, dock: d ? d.dockId : undefined });
   settleRegions(b, 'size');
   b.api.broadcast('board.changed', { why: 'size' });
-  return { session: s.name, size: p.size, ...step };
+  return { session: s.name, size: out.key, dir: out.dir, aspect: out.aspect, level: out.level, w: out.w, h: out.h, dock: d ? d.dockId : null };
 }
 
 // 정리할 블록: 덩어리, 나머지 노드 하나씩, 그 워크스페이스의 메모·칸반(P6c: 크기 그대로, 연결 없는 줄에 둔다. 빼면 정리한 노드가 그 위에 놓인다)
@@ -584,7 +609,7 @@ function blocksOf(b, wsKey) {
     const bb = bbox(ms.map((id) => byId.get(id)));
     out.push({ id: `d:${d.dockId}`, kind: 'dock', dockId: d.dockId, ...bb, members: ms, resizable: false });
   }
-  for (const n of nodes) if (!used.has(n.session_id)) out.push({ id: n.session_id, kind: 'node', x: n.x, y: n.y, w: n.w, h: n.h, members: [n.session_id], resizable: true });
+  for (const n of nodes) if (!used.has(n.session_id)) out.push({ id: n.session_id, kind: 'node', x: n.x, y: n.y, w: n.w, h: n.h, aspect: n.aspect || null, members: [n.session_id], resizable: true });
   for (const m of b.store.memos().filter((m) => (m.workspaceKey || null) === wsKey)) out.push({ id: `m:${m.memoId}`, kind: 'memo', memoId: m.memoId, x: m.x, y: m.y, w: m.w, h: m.h, members: [], resizable: false });
   for (const k of b.store.kanbans().filter((k) => (k.workspaceKey || null) === wsKey)) out.push({ id: `k:${k.kanbanId}`, kind: 'kanban', kanbanId: k.kanbanId, x: k.x, y: k.y, w: k.w, h: k.h, members: [], resizable: false });
   for (const x of all.filter((i) => i.kind === 'wtbox' && i.ws === wsKey).sort((p, q) => p.y - q.y || p.x - q.x)) out.push({ id: `w:${x.box}`, kind: 'wtbox', box: x.box, x: x.x, y: x.y, w: x.w, h: x.h, members: [], resizable: false });
@@ -605,7 +630,9 @@ function planWorkspace(b, key, { avoid = true } = {}) {
   const ids = new Set(blocks.flatMap((x) => x.members));
   const edges = b.store.links().filter((l) => ids.has(l.from) && ids.has(l.to) && (l.role || l.observed || l.spawned)).map((l) => [l.from, l.to]);
   const start = bbox(blocks);
-  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y } });
+  // P73: 정리의 크게·보통·작게는 노드의 방향과 고른 비율을 지킨다(비율이 없으면 16:9)
+  const stepOf = (x, level) => { const r = resolveSize(x, x.aspect, { level, aspect: aspectOf(x, x.aspect) || DEFAULT_ASPECT }); return { w: r.w, h: r.h, step: r.key }; };
+  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y }, stepOf });
   let sx = 0, sy = 0;
   if (avoid) {
     // 정리한 영역이 다른 영역과 겹치면(맞닿는 것은 괜찮다) 영역째로 빈자리로 옮긴다
@@ -628,7 +655,7 @@ function applyWorkspacePlan(b, { blocks, out }) {
     const dx = q.x - x.x, dy = q.y - x.y;
     if (x.kind === 'memo' || x.kind === 'kanban') { moveItem(b, x.kind, x.memoId || x.kanbanId, q.x, q.y); continue; }
     if (x.kind === 'wtbox') { if (dx || dy) shiftWorkspace(b, x.box, Math.round(dx), Math.round(dy)); continue; } // P35: 상자째(안의 노드, 대화 노드, 자리)
-    if (x.kind === 'node') { const n = byId.get(x.id); b.store.setNode({ ...n, x: Math.round(q.x), y: Math.round(q.y), w: q.w, h: q.h, size: q.size || n.size || null }); continue; }
+    if (x.kind === 'node') { const n = byId.get(x.id); b.store.setNode({ ...n, x: Math.round(q.x), y: Math.round(q.y), w: q.w, h: q.h, size: q.size || n.size || null }); if (q.size) b.store.setNodeAspect(x.id, parseStep(q.size).aspect, q.size); continue; }
     for (const m of x.members) { const n = byId.get(m); b.store.setNode({ ...n, x: Math.round(n.x + dx), y: Math.round(n.y + dy) }); }
   }
 }
@@ -643,7 +670,7 @@ export function arrange(b, p) {
   if (p.undo) {
     const u = b.store.getMeta(undoKey);
     if (!u) throw keyed(apiError('not_found', "되돌릴 자동 정렬 내역이 없습니다."), 'noArrangeUndo');
-    for (const n of u.nodes) if (b.sessions.has(n.session_id)) b.store.setNode({ ...n, size: n.size ?? '' }); // 크기 단계도 정리 전 값으로(없었으면 지운다)
+    for (const n of u.nodes) if (b.sessions.has(n.session_id)) { b.store.setNode({ ...n, size: n.size ?? '' }); b.store.setNodeAspect(n.session_id, n.aspect ?? null); } // 크기 단계도 정리 전 값으로(없었으면 지운다). P73: 고른 비율도
     for (const it of u.items || []) moveItem(b, it.kind, it.id, it.x, it.y);
     // P35: 상자는 정리 전 자리로 상자째 되돌린다(그 사이 안의 노드가 바뀌어도 상대 자리는 지킨다)
     if (u.boxes && u.boxes.length) {
@@ -678,7 +705,7 @@ function arrangeBoard(b, p) {
   if (p.undo) {
     const u = b.store.getMeta(BOARD_UNDO);
     if (!u) throw keyed(apiError('not_found', "되돌릴 자동 정렬 내역이 없습니다."), 'noArrangeUndo');
-    for (const n of u.nodes) if (b.sessions.has(n.session_id)) b.store.setNode({ ...n, size: n.size ?? '' });
+    for (const n of u.nodes) if (b.sessions.has(n.session_id)) { b.store.setNode({ ...n, size: n.size ?? '' }); b.store.setNodeAspect(n.session_id, n.aspect ?? null); }
     for (const it of u.items || []) moveItem(b, it.kind, it.id, it.x, it.y);
     const ws = new Set(b.store.workspaces().map((w) => w.key));
     for (const a of u.anchors || []) if (ws.has(a.key)) b.store.setWorkspaceAnchor(a.key, a.x, a.y);

@@ -1927,4 +1927,11 @@ export default {
     channelDevHint: 'Gets features merged into the dev branch first. They may be less polished than stable releases.',
     channelStableFromDev: 'Stable releases only. You are on a dev build, so the next notice comes when a newer stable release is out.',
   },
+  // P73: size bar (direction × aspect × step) and dock outer edge
+  sizeBar: {
+    dirTitle: 'Wide or tall. Tall is the wide size turned (16:9 becomes 9:16)',
+    aspectTitle: 'Set the aspect ratio to 16:9 or 4:3, keeping the size step. For a dock, the ratio of the whole dock. Dragging an edge turns both off',
+    short: { large: 'L', normal: 'M', small: 'S' },
+    edgeTitle: 'Drag to resize the whole dock (cells keep their ratio)',
+  },
 };

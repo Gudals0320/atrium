@@ -25,7 +25,7 @@ test('세션 수 2~6마다 틀이 따로 있고, 모두 PRESETS에 있다', () =
   }
   assert.deepEqual(presetsFor(1), []);
   assert.deepEqual(presetsFor(0), []);
-  for (const n of [7, 8, 12]) assert.deepEqual(presetsFor(n), EVEN_PRESETS, `${n}개는 고르게 나눈 틀만`);
+  for (const n of [7, 8, 12]) assert.deepEqual(presetsFor(n), [...EVEN_PRESETS, 'row', 'col'], `${n}개는 고르게 나눈 틀과 H·V(P73)`);
 });
 
 test('수마다의 틀은 모두 그 수의 칸을 틈 없이 채우고, 한 수 안에서 모양이 서로 다르다', () => {

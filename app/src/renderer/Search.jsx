@@ -12,8 +12,8 @@ import { useStore, getState, setSearchOpen, selectWorkspace, toast, setFlashCard
 import { STATE_LABEL } from './lib/labels.js';
 import { dt, presetText } from './lib/dock-text.js'; // P17
 import { presetTree, presetsFor, layout as layoutTree } from '../../../backend/src/dock-tree.mjs'; // P23: 배치 틀 그림. P26: 세션 수마다 틀
-import { SIZE_STEPS, BAR_SIZES, bbox } from '../../../backend/src/canvas.mjs'; // P23: 가로·세로 크기
-import { SIZE_DIRS, SIZE_LEVELS, COMPACT_LEVELS, litStep, autoDir, flipStep, sizeTargets, layoutCount, placeBar } from './lib/selbar.js'; // P26
+import { bbox } from '../../../backend/src/canvas.mjs';
+import { SIZE_DIRS, SIZE_LEVELS, ASPECT_KEYS, COMPACT_LEVELS, aspectLabel, blockState, litOf, levelSize, showBar, showLayouts, presetGlyph, sizeTargets, layoutCount, placeBar } from './lib/selbar.js'; // P26. P73: 방향 × 비율 × 단계, 혼자인 세션도
 import { useT, errText, tOr } from './lib/i18n.js';
 import { Icon } from './lib/icons.jsx';
 import { SEARCH_LEAVE_MS, kindIcon, markRanges, showField, showSnip, movePick } from './lib/search-ui.js'; // P61: 찾기 창 다시 그리기
@@ -180,61 +180,66 @@ export function SelectionBar() {
   const selected = useStore((st) => st.selected);
   const sessions = useStore((st) => st.sessions);
   const nodes = useStore((st) => st.nodes);
-  // 하나만 누른 것은 고르기가 아니다(크기는 노드의 ⋯ 메뉴). P17: 덩어리 안 노드 하나를 골랐으면 그 덩어리를 틀로 다시 짤 수 있게 보인다
+  // P73: 세션 하나만 골라도 뜬다(방향·단계·비율). 배치 틀은 틀에 들어갈 세션이 둘 이상일 때(덩어리 안 노드 하나를 골랐으면 그 덩어리)
   const docks = useStore((st) => st.docks);
   const barRef = useRef(null);
-  const [dirPick, setDirPick] = useState(null);
   const [layoutOpen, setLayoutOpen] = useState(false); // P26: 가장 줄인 막대에서 접은 배치 틀을 펼쳤는가
   const dockList = [...docks.values()];
-  const oneDock = selected.length === 1 && dockList.some((d) => d.members.includes(selected[0]));
-  const show = selected.length >= 2 || oneDock;
+  const show = showBar(selected);
   const list = selected.map((id) => sessions.get(id)).filter(Boolean);
-  // P26: 크기 대상(덩어리는 바깥 하나)과 그 크기, 불이 들어올 단계, 토글 쪽, 틀에 들어갈 세션 수
+  // 크기 대상(덩어리는 바깥 하나)과 그 상태(방향, 불이 든 비율·단계), 틀에 들어갈 세션 수
   const targets = sizeTargets(selected, dockList);
   const rects = targets.map((x) => bbox(x.members.map((m) => nodes.get(m))));
-  const lit = litStep(rects);
-  const dir = dirPick || autoDir(rects, lit);
+  const states = targets.map((x, i) => blockState(rects[i], x.dockId ? (docks.get(x.dockId) || {}).aspect : (nodes.get(x.id) || {}).aspect));
+  const lit = litOf(states);
   const n = layoutCount(selected, dockList);
-  const presets = presetsFor(n);
-  useEffect(() => { setDirPick(null); }, [lit]);
+  const layouts = showLayouts(selected, dockList);
+  const presets = layouts ? presetsFor(n) : [];
   useEffect(() => { setLayoutOpen(false); }, [selected]);
-  const place = useBarPlace(barRef, `${show}|${list.length}|${n}|${dir}|${list.map((s) => s.name).join(',')}`);
-  if (!show) return null;
+  const place = useBarPlace(barRef, `${show}|${list.length}|${n}|${lit.dir}|${layouts}|${list.map((s) => s.name).join(',')}`);
+  if (!show || !list.length) return null;
   const ws = new Set(list.map((s) => s.workspaceKey || null));
   const call = async (method, p, ok) => { try { const r = await api.call(method, p); if (ok) toast(ok(r)); } catch (e) { toast(errText(e), 'error'); } };
   const clear = () => getState().clearSelection && getState().clearSelection();
-  // P23: 크기. 덩어리 안 노드는 덩어리 전체 바깥에 한 번만 쓴다(scope dock), 혼자인 노드는 그 노드에
-  const resize = async (size) => {
-    for (const x of sizeTargets(getState().selected, [...getState().docks.values()])) await call('board.setSize', { session: x.id, size, scope: x.dockId ? 'dock' : undefined });
+  // P73: 크기는 방향·단계·비율 가운데 바꾼 것만 보낸다(나머지는 백엔드가 지금 것을 지킨다). 덩어리 안 노드는 덩어리 바깥에 한 번만
+  const resize = async (req) => {
+    for (const x of sizeTargets(getState().selected, [...getState().docks.values()])) await call('board.setSize', { session: x.id, ...req, scope: x.dockId ? 'dock' : undefined });
   };
-  // P26: 토글을 바꾸면 불이 들어온 단계를 다른 쪽의 같은 단계로 바꾼다. P30: 불이 없으면 누른 쪽에서 지금 크기와 가장 가까운 단계로(덩어리 하나나 노드 하나를 골랐을 때)
-  const flip = (d) => { setDirPick(d); const k = flipStep(lit, d, rects.length === 1 ? rects[0] : null); if (k) resize(k); }; // P30: 불이 없으면 가장 가까운 단계로
-  const sizeTitle = (k) => t('selection.sizeTitle', { w: SIZE_STEPS[k].w, h: SIZE_STEPS[k].h });
+  const one = rects.length === 1 ? rects[0] : null;
+  const sizeTitle = (lv) => { const s = levelSize(lv, { dir: lit.dir, aspect: lit.aspect, rect: one }); return t('selection.sizeTitle', { w: s.w, h: s.h }); };
   const style = !place ? { visibility: 'hidden' } : place.row === 'top' ? { left: place.x, width: place.w } : undefined;
   return (
-    <div ref={barRef} className={`mt-selbar ${place ? place.row : 'top'}`} style={style} data-role="selection" data-row={place ? place.row : undefined} data-compact={place ? place.level : 0}>
+    <div ref={barRef} className={`mt-selbar ${place ? place.row : 'top'}`} style={style} data-role="selection" data-row={place ? place.row : undefined} data-compact={place ? place.level : 0} data-single={layouts ? undefined : ''}>
       <b className="mt-sel-count" title={t('selection.count', { n: list.length })}><span className="full">{t('selection.count', { n: list.length })}</span><span className="short">{list.length}</span></b>
       <span className="dim mt-sel-names" data-role="sel-names">{list.map((s) => `@${s.name}`).join(' ')}</span>
       <span className="mt-sel-sep" />
-      <div className="mt-sel-dir" data-role="size-dir" role="group" title={t('selection.dirTitle')}>
-        {SIZE_DIRS.map((d) => <button key={d} className={`mt-sel-dirbtn${dir === d ? ' on' : ''}`} data-dir={d} aria-pressed={dir === d} onClick={() => flip(d)}>{t(`selection.${d}`)}</button>)}
+      <div className="mt-sel-dir" data-role="size-dir" role="group" title={t('sizeBar.dirTitle')}>
+        {SIZE_DIRS.map((d) => <button key={d} className={`mt-sel-dirbtn${lit.dir === d ? ' on' : ''}`} data-dir={d} aria-pressed={lit.dir === d} aria-label={t(`selection.${d}`)} onClick={() => { if (lit.dir !== d) resize({ dir: d }); }}><span className="sfull">{t(`selection.${d}`)}</span><span className={`sshort mt-sel-dirglyph ${d}`} aria-hidden="true" /></button>)}
       </div>
-      <div className="mt-sel-sizes" data-role="size-buttons" data-dir={dir} data-lit={lit || undefined}>
-        {BAR_SIZES[dir].map((k, i) => <button key={k} className={`mt-btn small ghost mt-sel-size${lit === k ? ' on' : ''}`} data-size={k} aria-pressed={lit === k} title={sizeTitle(k)} onClick={() => resize(k)}>{t(`selection.${SIZE_LEVELS[i]}`)}</button>)}
+      <div className="mt-sel-sizes" data-role="size-buttons" data-dir={lit.dir} data-lit={lit.level || undefined}>
+        {SIZE_LEVELS.map((lv) => <button key={lv} className={`mt-btn small ghost mt-sel-size${lit.level === lv ? ' on' : ''}`} data-level={lv} aria-pressed={lit.level === lv} aria-label={t(`selection.${lv}`)} title={sizeTitle(lv)} onClick={() => resize({ level: lv })}><span className="sfull">{t(`selection.${lv}`)}</span><span className="sshort">{t(`sizeBar.short.${lv}`)}</span></button>)}
       </div>
-      {/* P17: 배치 틀. 고른 순서대로 칸을 채워 한 덩어리로 짠다(고른 노드가 든 덩어리는 통째로). P23: 글 대신 도형. P26: 세션 수에 맞는 틀만. P30: 누른 뒤에도 고름을 풀지 않는다(이어서 다른 틀·크기를 바로 고른다) */}
-      <span className="mt-sel-sep" />
-      <button className={`mt-btn small ghost mt-sel-layout${layoutOpen ? ' on' : ''}`} data-action="layout-more" aria-expanded={layoutOpen} title={dt('layoutLabel')} onClick={() => setLayoutOpen((o) => !o)}>{presets[0] && <PresetIcon id={presets[0]} n={n} />}<span className="mt-sel-caret">▾</span></button>
-      <div className={`mt-sel-presets${layoutOpen ? ' open' : ''}`} data-role="presets" data-count={n}>
-        {presets.map((id) => {
-          const b = presetText(id);
-          const label = dt(b.label, { n });
-          return (
-            <button key={id} className="mt-btn small ghost mt-preset" data-preset={id} disabled={ws.size !== 1} aria-label={label} title={ws.size !== 1 ? dt('layoutMixed') : `${label}: ${dt(b.title, { n })}\n${dt('layoutTitle')}`}
-              onClick={() => call('dock.layout', { members: selected, preset: id }, () => dt('layoutDone', { name: label })).then(() => setLayoutOpen(false))}><PresetIcon id={id} n={n} /></button>
-          );
-        })}
+      {/* P73: 종횡비 토글. 하나를 누르면 그 비율이 되고(지금 단계를 지킨다) 다른 하나는 꺼진다. 테두리를 끌면 둘 다 꺼진다(자유 비율) */}
+      <div className="mt-sel-dir mt-sel-aspect" data-role="size-aspect" role="group" data-lit={lit.aspect || undefined} title={t('sizeBar.aspectTitle')}>
+        {ASPECT_KEYS.map((a) => <button key={a} className={`mt-sel-dirbtn${lit.aspect === a ? ' on' : ''}`} data-aspect={a} aria-pressed={lit.aspect === a} onClick={() => { if (lit.aspect !== a) resize({ aspect: a }); }}>{aspectLabel(a, lit.dir)}</button>)}
       </div>
+      {/* P17: 배치 틀. 고른 순서대로 칸을 채워 한 덩어리로 짠다(고른 노드가 든 덩어리는 통째로). P23: 글 대신 도형. P26: 세션 수에 맞는 틀만. P30: 누른 뒤에도 고름을 풀지 않는다(이어서 다른 틀·크기를 바로 고른다)
+          P73: 혼자인 세션 하나면 틀이 없다. H(모두 가로 한 줄)·V(모두 세로 한 줄)는 칸이 많으면 글자 단추 */}
+      {layouts && <span className="mt-sel-sep" />}
+      {layouts && <button className={`mt-btn small ghost mt-sel-layout${layoutOpen ? ' on' : ''}`} data-action="layout-more" aria-expanded={layoutOpen} title={dt('layoutLabel')} onClick={() => setLayoutOpen((o) => !o)}>{presets[0] && <PresetIcon id={presets[0]} n={n} />}<span className="mt-sel-caret">▾</span></button>}
+      {layouts && (
+        <div className={`mt-sel-presets${layoutOpen ? ' open' : ''}`} data-role="presets" data-count={n}>
+          {presets.map((id) => {
+            const b = presetText(id);
+            const label = dt(b.label, { n });
+            const glyph = presetGlyph(id, n);
+            return (
+              <button key={id} className={`mt-btn small ghost mt-preset${glyph ? ' glyph' : ''}`} data-preset={id} disabled={ws.size !== 1} aria-label={label} title={ws.size !== 1 ? dt('layoutMixed') : `${label}: ${dt(b.title, { n })}\n${dt('layoutTitle')}`}
+                onClick={() => call('dock.layout', { members: selected, preset: id }, () => dt('layoutDone', { name: label })).then(() => setLayoutOpen(false))}>{glyph ? <span className="mt-preset-glyph">{glyph}</span> : <PresetIcon id={id} n={n} />}</button>
+            );
+          })}
+        </div>
+      )}
       <span className="mt-sel-sep" />
       <button className="mt-btn small ghost mt-sel-clear" data-action="selection-clear" title={t('selection.clear')} aria-label={t('selection.clear')} onClick={clear}><span className="full">{t('selection.clear')}</span><span className="short">×</span></button>
     </div>

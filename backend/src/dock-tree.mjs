@@ -248,13 +248,14 @@ export const PRESETS_BY_COUNT = {
   2: ['row', 'col', 'main2-left', 'main2-top'],
   3: ['main-left', 'main-right', 'main-top', 'row', 'col'],
   4: ['grid', 'main-left-3', 'main-right-3', 'main-top-3', 'row', 'col'],
-  5: ['top3-bottom2', 'main-left-4', 'big2-small3', 'main-top-4', 'cols-2-3'],
-  6: ['grid-3x2', 'grid-2x3', 'main-big5', 'big2-small4'],
+  5: ['top3-bottom2', 'main-left-4', 'big2-small3', 'main-top-4', 'cols-2-3', 'row', 'col'],
+  6: ['grid-3x2', 'grid-2x3', 'main-big5', 'big2-small4', 'row', 'col'],
 };
 export const EVEN_PRESETS = ['even-rows', 'even-cols', 'two-rows'];
+export const LINE_PRESETS = ['row', 'col']; // P73: 세션 수와 상관없이 모두 가로 한 줄(H), 모두 세로 한 줄(V)
 export function presetsFor(n) {
   if (!(n >= 2)) return [];
-  return PRESETS_BY_COUNT[n] || EVEN_PRESETS;
+  return PRESETS_BY_COUNT[n] || [...EVEN_PRESETS, ...LINE_PRESETS];
 }
 const cells = (n) => (typeof n === 'number' ? 1 : n.kids.reduce((a, k) => a + cells(k), 0));
 // n을 줄 r개에 고르게(앞 줄이 하나 더 많다)
@@ -411,6 +412,19 @@ export function edgeOf(t, id, side) {
     n = n.kids[i];
   }
   return found || { kind: 'outer', side };
+}
+
+// P73: 덩어리 바깥 테두리 끌기. side 쪽 테두리를 판 좌표 move(왼쪽·오른쪽은 dx, 위·아래는 dy)만큼 옮긴 바깥.
+// 나무(비율)는 그대로라 칸이 비율대로 함께 커지고 작아진다. 맞은편 테두리는 그대로, 잎마다 최소 크기를 지킨다
+export function dragOuter(t, outer, side, move, min = LEAF_MIN) {
+  const need = minSize(t, min);
+  const m = Math.round(Number(move) || 0);
+  const o = { x: Math.round(outer.x), y: Math.round(outer.y), w: Math.round(outer.w), h: Math.round(outer.h) };
+  if (side === 'right') return { ...o, w: Math.max(need.w, o.w + m) };
+  if (side === 'bottom') return { ...o, h: Math.max(need.h, o.h + m) };
+  if (side === 'left') { const w = Math.max(need.w, o.w - m); return { ...o, x: o.x + o.w - w, w }; }
+  if (side === 'top') { const h = Math.max(need.h, o.h - m); return { ...o, y: o.y + o.h - h, h }; }
+  return o;
 }
 
 // 덩어리 바깥 테두리에 닿은 잎 id의 side 쪽을 바깥으로 delta(판 좌표, +면 커짐)만큼 민다.

@@ -348,12 +348,12 @@ test('K1: 다른 폴더면 그 워크스페이스에 띄운다', async () => {
   assert.equal(b.spawned[0].place, null); // 다른 워크스페이스는 그 영역의 빈자리 규칙
 });
 
-test('K4: 하위 세션 노드는 부모 오른쪽에 작게, 형제는 위아래로 쌓인다', async () => {
+test('K4: 하위 세션 노드는 부모 오른쪽에(P73: 16:9 가로 보통), 형제는 위아래로 쌓인다', async () => {
   const { b, lead } = await fakeBoard();
   await b.branch.spawnChild(lead, { name: 'w1', wait: false });
   await b.branch.spawnChild(lead, { name: 'w2', wait: false });
   const [a, c] = b.spawned.map((x) => x.place);
-  assert.equal(a.size, 'small'); assert.equal(a.w, SIZE_STEPS.small.w);
+  assert.equal(a.size, 'wide-normal'); assert.equal(a.w, SIZE_STEPS['wide-normal'].w); assert.equal(a.aspect, '16:9');
   assert.ok(a.x >= 720); assert.equal(a.y, 0);
   assert.equal(c.x, a.x); assert.equal(c.y, a.y + a.h + GAP);
 });

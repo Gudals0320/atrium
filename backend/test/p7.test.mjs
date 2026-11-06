@@ -300,7 +300,7 @@ test('J2: 닫힌 claude를 다시 열면 같은 세션 ID로 이어 간다(--res
   const row = b.store.getSession(ID(2));
   assert.equal(row.closedAt, null); assert.ok(row.hookToken.length > 20);
   assert.ok(fs.readFileSync(row.settingsPath, 'utf8').includes(row.hookToken));
-  assert.deepEqual(b.store.nodeOf(ID(2)), { session_id: ID(2), x: 100, y: 200, w: 720, h: 460, z: 0, size: null, area: '' }); // P27: area(본 저장소 영역)
+  assert.deepEqual(b.store.nodeOf(ID(2)), { session_id: ID(2), x: 100, y: 200, w: 1440, h: 810, z: 0, size: 'wide-normal', aspect: '16:9', area: '' }); // P27: area(본 저장소 영역). P73: 사람이 바꾸지 않은 옛 기본 크기(720×460)는 새 기본 크기로 연다
   assert.ok(b.calls.some((c) => c[0] === 'registerResume'));
   await assert.rejects(r.reopen({ session: ID(2) }), /닫힌 세션이 아닙니다/);
 });

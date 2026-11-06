@@ -5,24 +5,37 @@
 //   그렇게 맞춘 배율에서 누른 노드가 가까이 얼굴(360px)이 못 되면, 누른 노드를 가까이 얼굴로 두고(터미널에 바로 칠 수 있게)
 //   그 배율에서 덩어리가 최대한 많이 보이도록 가운데를 덩어리 쪽으로 옮긴다. 누른 노드는 늘 화면 안에 다 들어온다(P10).
 // - P26: 이미 그 노드(덩어리)를 보고 있으면 화면을 옮기지 않는다(isViewing). 터미널을 누를 때마다 화면이 흔들리지 않게.
+// - P73: 창은 떠 있는 크롬(위 알약 줄, 아래 칩 줄, 레일)이 덮는 가장자리(inset, lib/chrome-inset.js)를 주고, 노드(덩어리)는 그 밖 남은 칸의
+//   NAV_FILL(98%)을 채운다(전에는 화면 전체의 85%). 크롬은 가리지 않고 둘레 여백만 줄인다. 가운데도 남은 칸의 가운데로 맞춘다.
+//   inset을 주지 않으면 예전대로 화면 전체의 FILL.
 import { FACE_CLOSE_PX } from './faces.js';
 
 export const NAV_CLOSE_PX = 380; // 들어갈 때 노드가 차지할 가장 작은 화면 너비(가까이 얼굴 경계 360 + 여유)
 export const FILL = 0.85; // 노드(덩어리)가 화면에서 차지할 몫
 export const ZOOM_MAX = 1; // 들어갈 때 배율 상한(터미널 글이 흐려지지 않게)
+export const NAV_FILL = 0.98; // P73: 크롬을 뺀 남은 칸에서 노드(덩어리)가 차지할 몫
 const MARGIN = 24; // 누른 노드와 화면 가장자리 사이(화면 px)
 
 const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
-const fit = (t, W, H) => Math.min((W * FILL) / t.w, (H * FILL) / t.h, ZOOM_MAX);
+// P73: 크롬이 덮는 가장자리(inset)를 빼고 남은 칸 { w, h, ox, oy }(ox, oy: 남은 칸 가운데가 화면 가운데에서 떨어진 화면 px)
+export function navRoom(screen, inset = null) {
+  if (!inset) return { w: screen.width, h: screen.height, ox: 0, oy: 0, fill: FILL };
+  const l = inset.left || 0, r = inset.right || 0, t = inset.top || 0, b = inset.bottom || 0;
+  return { w: Math.max(1, screen.width - l - r), h: Math.max(1, screen.height - t - b), ox: (l - r) / 2, oy: (t - b) / 2, fill: NAV_FILL };
+}
+const fitIn = (t, room) => Math.min((room.w * room.fill) / t.w, (room.h * room.fill) / t.h, ZOOM_MAX);
 
-// node: { x, y, w, h }(판 좌표), dock: 덩어리 전체 사각형이나 null, screen: { width, height }
+// node: { x, y, w, h }(판 좌표), dock: 덩어리 전체 사각형이나 null, screen: { width, height }, inset: 크롬이 덮는 가장자리(px, 없으면 화면 전체)
 // → { cx, cy, zoom, mode: 'node' | 'dock' | 'node-close' }(cx, cy는 화면 가운데에 둘 판 좌표)
-export function enterView({ node: r, dock = null, screen }) {
+export function enterView({ node: r, dock = null, screen, inset = null }) {
   const W = screen.width, H = screen.height;
-  const zNode = Math.max(fit(r, W, H), Math.min(NAV_CLOSE_PX / r.w, ZOOM_MAX));
-  if (!dock) return { cx: r.x + r.w / 2, cy: r.y + r.h / 2, zoom: zNode, mode: 'node' };
-  const zFit = fit(dock, W, H);
-  if (r.w * zFit >= FACE_CLOSE_PX) return { cx: dock.x + dock.w / 2, cy: dock.y + dock.h / 2, zoom: zFit, mode: 'dock' };
+  const room = navRoom(screen, inset);
+  // 남은 칸 가운데에 t의 가운데가 오도록 화면 가운데에 둘 판 좌표
+  const at = (t, z) => ({ cx: t.x + t.w / 2 - room.ox / z, cy: t.y + t.h / 2 - room.oy / z });
+  const zNode = Math.max(fitIn(r, room), Math.min(NAV_CLOSE_PX / r.w, ZOOM_MAX));
+  if (!dock) return { ...at(r, zNode), zoom: zNode, mode: 'node' };
+  const zFit = fitIn(dock, room);
+  if (r.w * zFit >= FACE_CLOSE_PX) return { ...at(dock, zFit), zoom: zFit, mode: 'dock' };
   const zoom = Math.max(zFit, NAV_CLOSE_PX / r.w);
   const vw = W / zoom, vh = H / zoom, m = MARGIN / zoom;
   // 누른 노드가 화면 안에 들어오는 가운데 범위 안에서 덩어리 가운데에 가장 가까운 곳

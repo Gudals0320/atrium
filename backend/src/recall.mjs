@@ -15,7 +15,7 @@ import { FLAVOR as DEEPSEEK, proxyEnv as deepseekEnv, baseUrlOf } from './deepse
 import { newRuntime } from './state.mjs';
 import { canvasItems, slotFor, settleRegions, regions as areaRegions } from './canvas-ops.mjs';
 import { areaKey, parseArea } from './worktree-areas.mjs'; // P27: 워크트리 영역
-import { NODE, SIZE_STEPS, overlaps, regionRect, regionsOf, slotInRegion } from './canvas.mjs';
+import { NEW_NODE as NODE, NEW_NODE_STEP, OLD_DEFAULT, DEFAULT_ASPECT, SIZE_STEPS, overlaps, regionRect, regionsOf, slotInRegion } from './canvas.mjs'; // P73: 새 노드는 16:9 가로 보통
 import { pathKey, normPath, workspaceNames } from './workspaces.mjs';
 import { clip } from './text.mjs';
 import { archiveState, isOld, discoverable, itemKey, DISCOVER_DAYS, OLD_DAYS } from './archive.mjs';
@@ -726,8 +726,12 @@ export class Recall {
   // 마지막 자리가 비어 있으면(다른 노드·메모·칸반과 겹치지 않으면) 그 자리, 아니면 그 워크스페이스 영역의 빈자리(H1).
   // 붙여 묶기 덩어리에 있던 노드는 옛 짝과 가장자리가 맞닿으므로 맞닿는 것은 겹침으로 보지 않는다. 덩어리·연결은 되살리지 않는다(J2)
   // P27: area(워크트리 경로 키)면 그 워크트리 영역 안(영역이 없으면 본 저장소 영역)
+  // P73: 새 노드(prev 없음)는 16:9 가로 보통. 사람이 크기를 바꾸지 않은 옛 기본 크기(720×460, 크기 단계 없음) 노드도 다시 열 때 새 기본 크기로 연다
   placeFor(id, wsKey, prev, near = null, area = '') {
-    const size = prev ? { w: prev.w, h: prev.h } : NODE;
+    const old = !!prev && !prev.size && prev.w === OLD_DEFAULT.w && prev.h === OLD_DEFAULT.h;
+    const fresh = !prev || old;
+    const size = fresh ? NODE : { w: prev.w, h: prev.h };
+    const tag = fresh ? { size: NEW_NODE_STEP, aspect: DEFAULT_ASPECT } : {};
     const fits = (rect) => {
       const all0 = canvasItems(this.b).filter((i) => i.id !== id && i.id !== `convo:${id}`);
       const regs = areaRegions(this.b, all0);
@@ -738,15 +742,15 @@ export class Recall {
       const others = [...regs].filter(([k]) => parseArea(k).ws !== wsKey).map(([, r]) => r); // P35: 같은 리포의 리포 영역과 상자는 빼고(상자 겹침은 settleRegions가 민다)
       return !all.some((i) => overlaps(rect, i)) && !others.some((r) => overlaps(reg, r, -1));
     };
-    if (prev) { const rect = { x: prev.x, y: prev.y, w: prev.w, h: prev.h }; if (fits(rect)) return { ...rect, kept: true }; }
+    if (prev) { const rect = { x: prev.x, y: prev.y, w: size.w, h: size.h }; if (fits(rect)) return { ...rect, kept: true, ...tag }; }
     // P13: 대화 노드에서 연 세션은 그 카드 자리(보통 크기, 안 되면 작게), 그것도 안 되면 그 카드 바로 옆 빈자리
     if (!prev && near) {
-      for (const [step, s] of [[null, NODE], ['small', SIZE_STEPS.small]]) { const rect = { x: near.x, y: near.y, w: s.w, h: s.h }; if (fits(rect)) return { ...rect, kept: true, size: step }; }
+      for (const [step, s] of [[NEW_NODE_STEP, NODE], ['wide-small', SIZE_STEPS['wide-small']]]) { const rect = { x: near.x, y: near.y, w: s.w, h: s.h }; if (fits(rect)) return { ...rect, kept: true, size: step, aspect: DEFAULT_ASPECT }; }
       const slot = slotFor(this.b, { wsKey, size, near, area });
-      return { x: slot.x, y: slot.y, w: size.w, h: size.h, kept: false };
+      return { x: slot.x, y: slot.y, w: size.w, h: size.h, kept: false, ...tag };
     }
     const slot = slotFor(this.b, { wsKey, size, area });
-    return { x: slot.x, y: slot.y, w: size.w, h: size.h, kept: false };
+    return { x: slot.x, y: slot.y, w: size.w, h: size.h, kept: false, ...tag };
   }
   // 판 세션 하나를 새 herdr 작업 공간에 띄운다. 행이 있으면(닫힌 세션) 그 행을 다시 쓰고, 없으면(판 밖 대화) 만든다
   async bring(spec) {
@@ -792,7 +796,7 @@ export class Recall {
       } else this.store.insertSession({ ...s, runtime: rt });
       b.sessions.set(id, s);
     });
-    this.store.setNode({ session_id: id, x: at.x, y: at.y, w: at.w, h: at.h, z: 0, size: at.size || null, area });
+    this.store.setNode({ session_id: id, x: at.x, y: at.y, w: at.w, h: at.h, z: 0, size: at.size || null, aspect: at.aspect || null, area });
     if (spec.near) { this.store.setConvoNodesShown([id], false); this.layoutCanvas().catch(() => {}); } // P13: 대화 노드는 세션 노드가 됐다
     settleRegions(b, 'reopen');
     this.store.addEvent(id, 'reopened', { from: spec.from, kind, cwd: slash(cwd), workspace: ws.key, resume: !!spec.resume, args, place: at.kept ? 'last' : 'slot', name });

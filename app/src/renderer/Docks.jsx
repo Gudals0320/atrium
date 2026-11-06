@@ -1,11 +1,9 @@
-// 붙여 묶기(ARCH 4절 H5, P6a, P17, P23): 덩어리(분할 나무)의 분할선, 바깥 테두리, 엇갈리는 점, 바깥 크기 손잡이, 붙을 자리 미리 보기, 덩어리 안 연결
-// - 분할선은 나무의 마디(path)마다 자식 사이에 하나씩이다. 끌면 그 마디의 두 쪽 크기가 함께 바뀌고(합은 그대로, 다른 마디의 비율은 그대로)
-//   놓으면 나무 통째로 dock.update로 저장한다. 두 번 누르면 두 쪽을 반반으로(P23). 분할선은 고른 노드(React Flow가 z를 1000 올린다)보다 위에 그린다.
+// 붙여 묶기(ARCH 4절 H5, P6a, P17, P23, P73): 덩어리(분할 나무)의 분할선, 바깥 테두리, 바깥 크기 손잡이, 붙을 자리 미리 보기, 덩어리 안 연결
+// - 분할선은 나무의 마디(path)마다 자식 사이에 하나씩이다. P73: 칸 사이 경계를 보이기만 하고 끌지 않는다(칸 크기는 배치 틀로만 정한다).
+//   엇갈리는 점 손잡이와 두 번 눌러 반반도 뺐다. 분할선은 고른 노드(React Flow가 z를 1000 올린다)보다 위에 그린다.
 // - P23: 잡는 폭은 배율과 상관없이 화면 기준 8px(HIT)이고 마우스를 올리면 초록(--accent)이다. 노드(React Flow)는 얇게 두고 안의 잡는 띠를 배율로 나눈 크기로 그린다.
-// - P23: 붙은 노드의 바깥 테두리(덩어리 바깥에 닿은 쪽)도 끈다. 그 쪽으로 덩어리가 커지거나 줄고 다른 칸의 길이는 그대로다(dock-tree.mjs dragEdge).
-//   이웃과 맞닿은 테두리는 분할선이 그 자리를 맡는다.
-// - P23: 2 × 2처럼 분할선이 엇갈리는 점에 손잡이(가로·세로 분할선을 같이 옮긴다, 두 번 누르면 모두 반반).
-// - 덩어리 오른쪽 아래 모서리 손잡이를 끌면 바깥 크기가 바뀌고 비율대로 나눈다(잎마다 최소 크기, dock-tree.mjs LEAF_MIN).
+// - P73: 덩어리 크기는 바깥 테두리(네 변)와 오른쪽 아래 모서리 손잡이로만 바꾼다. 나무의 비율은 그대로라 칸이 비율대로 함께 커지고 작아진다
+//   (잎마다 최소 크기, dock-tree.mjs dragOuter·LEAF_MIN). 놓으면 dock.update(x, y, w, h)로 저장하고, 백엔드가 고른 종횡비를 끈다(자유 비율).
 // - P30: 덩어리 안 세션끼리의 연결은 터미널 위를 지나지 않는다. 맞닿은 칸은 경계 위 다리, 같은 바깥 변에 닿는 칸은 괄호, 그 밖은 둘레 길,
 //   둘레에 닿지 않는 칸은 칩(DockLinks). 누르면 오간 기록. 그 덩어리 안에 연결이 있을 때만 그린다.
 //   잇기는 지금처럼 잇기 모드에서 가운데 점(SessionNode의 가운데 잇기 손잡이)끼리 끈다. 점은 잇기 모드에서만 보인다.
@@ -13,10 +11,10 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useStore as useFlowStore } from '@xyflow/react';
 import { api } from './api.js';
-import { useStore, getState, setNodesLocal, setDockLocal, openDialog, toast, loadBoard } from './store.js';
+import { useStore, getState, setNodesLocal, openDialog, toast, loadBoard } from './store.js';
 import { STATE_LABEL } from './lib/labels.js';
 import { dt } from './lib/dock-text.js';
-import { moveDivider, layout as layoutTree, minSize, dragEdge, moveJunction, evenDivider } from '../../../backend/src/dock-tree.mjs';
+import { layout as layoutTree, minSize, dragOuter } from '../../../backend/src/dock-tree.mjs';
 import { bbox } from '../../../backend/src/canvas.mjs';
 import { useT, t, errText } from './lib/i18n.js';
 import { dockFocus, dockRoutes, roundedPath, arrowHead, linkActive, touches, fitDockLabel, labelSpot, dockLabelParts } from './lib/dock-links.js'; // P30: 다리·괄호·둘레 길, P46: 배율별 글
@@ -38,94 +36,40 @@ function dragWith(e, zoom, onMove, onUp) {
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
 const fail = (key) => (err) => { toast(dt(key, { msg: errText(err) }), 'error'); loadBoard().catch(() => {}); };
-// 나무만 바뀐 것을 저장(분할선, 엇갈리는 점)
-const saveTree = (dockId, key) => { const cur = getState().docks.get(dockId); if (cur) api.call('dock.update', { dock: dockId, tree: cur.tree }).catch(fail(key)); };
-// 지금 덩어리의 나무를 f(tree, outer)로 바꿔 화면에 놓고 저장한다(두 번 누르기)
-function applyNow(dockId, f, key) {
-  const d = getState().docks.get(dockId);
-  const outer = d && dockOuterNow(d);
-  if (!outer) return;
-  const t2 = f(d.tree, outer);
-  setDockLocal(dockId, { tree: t2 });
-  setNodesLocal([...layoutTree(t2, outer).rects]);
-  saveTree(dockId, key);
-}
 const hitStyle = (zoom) => ({ '--hit': `${HIT / Math.max(zoom, 0.02)}px`, '--line': `${1.5 / Math.max(zoom, 0.02)}px` });
 
+// P73: 칸 사이 경계(보이기만 한다. 끌기·두 번 누르기 없음)
 function DividerNodeInner({ data }) {
   const { dockId, path, index, dir } = data;
-  useT();
   const zoom = useFlowStore(zoomSel);
-  const onPointerDown = (e) => {
-    if (e.button !== 0) return;
-    const d = getState().docks.get(dockId);
-    if (!d) return;
-    const base = d.tree, outer = dockOuterNow(d);
-    if (!outer) return;
-    dragWith(e, zoom, (dx, dy) => {
-      const t2 = moveDivider(base, outer, path, index, dir === 'row' ? dx : dy);
-      setDockLocal(dockId, { tree: t2 });
-      setNodesLocal([...layoutTree(t2, outer).rects]);
-    }, (moved) => { if (moved) saveTree(dockId, 'dividerError'); });
-  };
-  const onDoubleClick = (e) => { e.stopPropagation(); applyNow(dockId, (tr, o) => evenDivider(tr, o, path, index), 'dividerError'); };
-  return (
-    <div className={`mt-divider ${dir} nodrag nopan`} style={hitStyle(zoom)} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} data-dock={dockId} data-path={path.join('.')} data-index={index} title={dt('dividerTitle')} />
-  );
+  return <div className={`mt-divider ${dir} fixed nodrag nopan`} style={hitStyle(zoom)} data-dock={dockId} data-path={path.join('.')} data-index={index} />;
 }
 export const DividerNode = memo(DividerNodeInner);
 
-// P23: 붙은 노드의 바깥 테두리(덩어리 바깥에 닿은 쪽). side 쪽으로 덩어리가 커지거나 줄어든다
+// P73: 덩어리 바깥 테두리(네 변). side 쪽으로 덩어리 전체가 커지거나 줄고 칸은 비율대로 함께 바뀐다(맞은편 변은 그대로)
 function DockEdgeInner({ data }) {
-  const { dockId, leaf, side } = data;
+  const { dockId, side } = data;
   useT();
   const zoom = useFlowStore(zoomSel);
   const onPointerDown = (e) => {
     if (e.button !== 0) return;
     const d = getState().docks.get(dockId);
     if (!d) return;
-    const base = d.tree, outer = dockOuterNow(d);
+    const outer = dockOuterNow(d);
     if (!outer) return;
     let last = null;
     dragWith(e, zoom, (dx, dy) => {
-      last = dragEdge(base, outer, leaf, side, side === 'left' || side === 'right' ? dx : dy);
-      setDockLocal(dockId, { tree: last.tree });
-      setNodesLocal([...layoutTree(last.tree, last.outer).rects]);
+      last = dragOuter(d.tree, outer, side, side === 'left' || side === 'right' ? dx : dy);
+      setNodesLocal([...layoutTree(d.tree, last).rects]);
     }, (moved) => {
       if (!moved || !last) return;
-      const o = last.outer;
-      api.call('dock.update', { dock: dockId, tree: last.tree, x: o.x, y: o.y, w: o.w, h: o.h }).catch(fail('edgeError'));
+      api.call('dock.update', { dock: dockId, x: last.x, y: last.y, w: last.w, h: last.h }).catch(fail('edgeError'));
     });
   };
   const dir = side === 'left' || side === 'right' ? 'row' : 'col';
-  return <div className={`mt-dockedge ${dir} s-${side} nodrag nopan`} style={hitStyle(zoom)} onPointerDown={onPointerDown} data-role="dock-edge" data-dock={dockId} data-leaf={leaf} data-side={side} title={dt('edgeTitle')} />;
+  return <div className={`mt-dockedge ${dir} s-${side} nodrag nopan`} style={hitStyle(zoom)} onPointerDown={onPointerDown} data-role="dock-edge" data-dock={dockId} data-side={side} title={t('sizeBar.edgeTitle')} />;
 }
 export const DockEdge = memo(DockEdgeInner);
-
-// P23: 분할선이 엇갈리는 점. 끌면 그 점에 닿은 세로 분할선은 dx, 가로 분할선은 dy만큼
-function JunctionNodeInner({ data }) {
-  const { dockId, j } = data;
-  useT();
-  const zoom = useFlowStore(zoomSel);
-  const onPointerDown = (e) => {
-    if (e.button !== 0) return;
-    const d = getState().docks.get(dockId);
-    if (!d) return;
-    const base = d.tree, outer = dockOuterNow(d);
-    if (!outer) return;
-    dragWith(e, zoom, (dx, dy) => {
-      const t2 = moveJunction(base, outer, j, dx, dy);
-      setDockLocal(dockId, { tree: t2 });
-      setNodesLocal([...layoutTree(t2, outer).rects]);
-    }, (moved) => { if (moved) saveTree(dockId, 'dividerError'); });
-  };
-  const onDoubleClick = (e) => {
-    e.stopPropagation();
-    applyNow(dockId, (tr, o) => [...j.rows, ...j.cols].reduce((acc, dv) => evenDivider(acc, o, dv.path, dv.index), tr), 'dividerError');
-  };
-  return <div className="mt-junction nodrag nopan" style={{ '--size': `${(HIT + 6) / Math.max(zoom, 0.02)}px`, '--line': `${1.5 / Math.max(zoom, 0.02)}px` }} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} data-role="dock-junction" data-dock={dockId} title={dt('junctionTitle')} />;
-}
-export const JunctionNode = memo(JunctionNodeInner);
 
 // 덩어리 바깥 크기 손잡이(오른쪽 아래 모서리). 왼쪽 위는 그대로 두고 너비·높이만 바꾼다
 function DockGripInner({ data }) {

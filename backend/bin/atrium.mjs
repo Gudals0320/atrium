@@ -58,7 +58,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   dock <A> <B> [--side right|left|top|bottom] [--at leaf|dock] | dock rm <이름>   B 가장자리에 A를 붙인다(leaf: B를 반으로, dock: B의 창 그룹 전체 옆), 창 그룹에서 뗀다(P6a, P17)
   dock layout <틀> <A> <B> ...             선택한 카드를 분할 레이아웃으로 묶기 (main-left, grid, row, col 등)
   dock workers <리드> [--preset <틀>]       리드의 하위 세션(워커)을 워크트리가 달라도 세션 수에 맞는 레이아웃으로 한 번에 묶기 (P68)
-  size <이름> large|normal|small|wide-large|...|tall-small [--dock]   카드 크기 단계(P6a). 가로·세로 크기와 --dock(창 그룹 전체 바깥)은 P23
+  size <이름> [<크기>] [--dir wide|tall] [--aspect 16:9|4:3|free] [--level large|normal|small]   카드 크기(P73: 방향 × 종횡비 × 단계, 창 그룹 안 카드는 그룹 전체 바깥). <크기>: wide-large, wide43-normal, tall-small 등, 옛 large|normal|small은 단계만
   arrange <프로젝트> [--apply] [--undo]       연결 관계에 따라 자동 정렬 (미리보기, 적용, 한 번 되돌리기)
   arrange --all [--apply] [--undo]        각 프로젝트 안의 카드를 정렬한 뒤 프로젝트 영역 전체를 재배치
 ${FEATURES_HELP}
@@ -450,7 +450,7 @@ async function main() {
     if (rest[0] === 'workers') return out(await c.call('dock.workers', { lead: rest[1], ...(flags.preset ? { preset: flags.preset } : {}) })); // P68 워커 붙여 묶기
         return out(await c.call('dock.attach', { session: rest[0], to: rest[1], side: flags.side || 'right', ...(flags.at ? { at: flags.at } : {}) }));
       }
-      case 'size': return out(await c.call('board.setSize', { session: rest[0], size: rest[1], scope: flags.dock ? 'dock' : undefined }));
+      case 'size': return out(await c.call('board.setSize', { session: rest[0], ...(rest[1] ? { size: rest[1] } : {}), ...(flags.dir ? { dir: flags.dir } : {}), ...(flags.aspect ? { aspect: flags.aspect } : {}), ...(flags.level ? { level: flags.level } : {}), scope: flags.dock ? 'dock' : undefined })); // P73
       case 'arrange': {
         if (flags.all) { // P31: 판 전체(영역도 다시 놓는다)
           const r = await c.call('board.arrange', { all: true, apply: !!flags.apply, undo: !!flags.undo });

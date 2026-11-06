@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { NODE, SIZE_STEPS, BAR_SIZES } from '../src/canvas.mjs';
+import { NODE, SIZE_STEPS } from '../src/canvas.mjs';
 import { LEAF_MIN, layout, leafPath, edgeOf, resizeOuterEdge, dragEdge, junctions, moveJunction, evenDivider, moveDivider, presetTree, normalize } from '../src/dock-tree.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { Store } from '../src/store.mjs';
@@ -18,17 +18,18 @@ const ML = normalize({ dir: 'row', kids: ['a', { dir: 'col', kids: ['b', 'c'], r
 const GRID = presetTree('grid', ['a', 'b', 'c', 'd']); // (a | b) / (c | d)
 const O = R(0, 0, 1440, 920);
 
-test('크기 값: 가로는 16:9, 세로는 세로가 더 길고 터미널이 읽히는 너비, 막대의 두 줄', () => {
-  assert.deepEqual(BAR_SIZES, { wide: ['wide-large', 'wide-normal', 'wide-small'], tall: ['tall-large', 'tall-normal', 'tall-small'] });
-  for (const k of BAR_SIZES.wide) assert.ok(Math.abs(SIZE_STEPS[k].w / SIZE_STEPS[k].h - 16 / 9) < 0.01, `${k}는 16:9`);
-  for (const k of BAR_SIZES.tall) {
-    const r = SIZE_STEPS[k].w / SIZE_STEPS[k].h;
-    assert.ok(r >= 9 / 16 && r <= 3 / 4, `${k}는 3:4와 9:16 사이(${r.toFixed(3)})`);
-    assert.ok(SIZE_STEPS[k].w >= 480, `${k}의 너비는 480 이상`);
+test('크기 값: 가로는 16:9·4:3, 세로는 그것을 돌린 것이고 터미널이 읽히는 너비(P73 표)', () => {
+  for (const a of ['', '43']) {
+    const want = a ? 4 / 3 : 16 / 9;
+    for (const lv of ['large', 'normal', 'small']) {
+      const w = SIZE_STEPS[`wide${a}-${lv}`], t = SIZE_STEPS[`tall${a}-${lv}`];
+      assert.ok(Math.abs(w.w / w.h - want) < 0.01, `wide${a}-${lv}`);
+      assert.deepEqual(t, { w: w.h, h: w.w }, '세로는 가로를 돌린 것');
+      assert.ok(t.w >= 480, `tall${a}-${lv}의 너비는 480 이상`);
+    }
+    assert.ok(SIZE_STEPS[`wide${a}-large`].w > SIZE_STEPS[`wide${a}-normal`].w && SIZE_STEPS[`wide${a}-normal`].w > SIZE_STEPS[`wide${a}-small`].w, '크게 > 보통 > 작게');
   }
-  assert.deepEqual(SIZE_STEPS['wide-large'], { w: 1440, h: 810 }, '배율 1에서 1600×920 안팎 창을 대략 채운다');
-  for (const dir of Object.values(BAR_SIZES)) assert.ok(SIZE_STEPS[dir[0]].w > SIZE_STEPS[dir[1]].w && SIZE_STEPS[dir[1]].w > SIZE_STEPS[dir[2]].w, '크게 > 보통 > 작게');
-  assert.deepEqual([SIZE_STEPS.large, SIZE_STEPS.normal, SIZE_STEPS.small], [{ w: 1040, h: 660 }, { w: 720, h: 460 }, { w: 480, h: 300 }], '노드 메뉴와 정리의 단계는 그대로');
+  assert.deepEqual([SIZE_STEPS.large, SIZE_STEPS.normal, SIZE_STEPS.small], [SIZE_STEPS['wide-large'], SIZE_STEPS['wide-normal'], SIZE_STEPS['wide-small']], 'P73: 옛 열쇠는 16:9 가로 값');
 });
 
 test('테두리 종류: 이웃과 맞닿은 쪽은 그 사이 분할선(가장 가까운 마디), 덩어리 바깥 쪽은 outer', () => {
@@ -143,14 +144,14 @@ test('API: 막대의 크기는 덩어리 안 노드면 덩어리 전체 바깥�
   const d = ops.dockOf(b, 'id-a');
   const o = ops.dockOuter(b, d);
   ops.setSize(b, { session: 'b', size: 'wide-large', scope: 'dock' });
-  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(o.x, o.y, 1440, 810), '덩어리 바깥이 그 크기(왼쪽 위 그대로)');
+  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(o.x, o.y, 1920, 1080), '덩어리 바깥이 그 크기(왼쪽 위 그대로)');
   assert.equal(JSON.stringify(ops.dockOf(b, 'id-a').tree), JSON.stringify(d.tree), '비율은 그대로');
   ops.setSize(b, { session: 'a', size: 'tall-small', scope: 'dock' });
-  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(o.x, o.y, 480, 740), '최소 크기(240 + 240, 160 + 160) 안이면 그대로');
+  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(o.x, o.y, 585, 1040), '최소 크기(240 + 240, 160 + 160) 안이면 그대로');
   ops.setSize(b, { session: 'z', size: 'tall-normal', scope: 'dock' });
-  assert.deepEqual([at('z').w, at('z').h], [600, 920], '혼자인 노드는 scope를 무시하고 그 노드');
+  assert.deepEqual([at('z').w, at('z').h], [810, 1440], '혼자인 노드는 scope를 무시하고 그 노드');
   ops.setSize(b, { session: 'z', size: 'wide-small' });
-  assert.deepEqual([at('z').w, at('z').h], [720, 405]);
+  assert.deepEqual([at('z').w, at('z').h], [1040, 585]);
   assert.throws(() => ops.setSize(b, { session: 'z', size: 'wide-huge' }), /크기/);
   // 창의 바깥 테두리 끌기가 보내는 것: 나무와 바깥(왼쪽으로 커짐)
   const now = ops.dockOuter(b, ops.dockOf(b, 'id-a'));

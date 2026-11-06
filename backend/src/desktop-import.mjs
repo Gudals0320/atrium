@@ -15,7 +15,7 @@ import { listDesktopSessions, readLiveSessions, readTranscriptSummary } from './
 import { isSyntheticUserText } from './transcript.mjs';
 import { newRuntime } from './state.mjs';
 import { slotFor, settleRegions } from './canvas-ops.mjs';
-import { NODE } from './canvas.mjs';
+import { NEW_NODE as NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 노드는 16:9 가로 보통
 import { HARNESSES, MODEL_RE } from './launchers.mjs';
 import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
 import { pathKey, normPath } from './workspaces.mjs';
@@ -332,7 +332,7 @@ export class DesktopImport {
     b.sessions.set(id, s);
     const area = b.worktrees ? b.worktrees.areaOf(ws.key, cwd) : '';
     const slot = slotFor(b, { wsKey: ws.key, size: NODE, area });
-    this.store.setNode({ session_id: id, x: slot.x, y: slot.y, w: NODE.w, h: NODE.h, z: 0, area });
+    this.store.setNode({ session_id: id, x: slot.x, y: slot.y, w: NODE.w, h: NODE.h, z: 0, size: NEW_NODE_STEP, aspect: DEFAULT_ASPECT, area });
     this.store.addEvent(id, 'spawn', { name, kind: 'claude', cwd: slash(cwd), workspace: ws.key, args: [], allowHerdr, imported: true });
     if (b.api) b.api.broadcast('session.created', { sessionId: id, name, workspaceKey: ws.key, imported: true });
     if (b.probeGit) b.probeGit(s, cwd);

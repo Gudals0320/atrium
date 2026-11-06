@@ -29,6 +29,7 @@ import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspa
 import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
+import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 세션 크기
 import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
@@ -45,7 +46,7 @@ import { migrateLegacyData, fixLegacyRecords, writeTombstone, checkLegacyDevHerd
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 const PERMISSION_MODES = new Set(MODES);
-const NODE = { w: 720, h: 460, gap: 40, cols: 4 };
+const NODE = { ...NEW_NODE, size: NEW_NODE_STEP, aspect: DEFAULT_ASPECT }; // P73: 새 세션은 16:9 가로 보통(canvas.mjs NEW_NODE)
 const TOUCH_WRITE_MS = 10000; // 터미널 입력마다 손댄 시각을 쓰지 않는다
 const KIND_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 const OPEN_PROMPT_MS = 30 * 60 * 1000; // F1: 보낸 지시에 받는 쪽 상태 변화를 이만큼 이어 붙인다
@@ -1197,7 +1198,7 @@ export class Backend {
       const place = p.branch ? this.branch.placeChild(p.parentSessionId, ws.key) : null;
       const area = this.worktrees ? this.worktrees.areaOf(ws.key, cwd) : ''; // P27: 워크트리 폴더에서 띄우면 그 워크트리 영역
       const slot = place || slotFor(this, { wsKey: ws.key, size: NODE, area });
-      this.store.setNode({ session_id: sessionId, x: slot.x, y: slot.y, w: place ? place.w : NODE.w, h: place ? place.h : NODE.h, z: 0, size: place ? place.size : undefined, area: place ? place.area ?? area : area });
+      this.store.setNode({ session_id: sessionId, x: slot.x, y: slot.y, w: place ? place.w : NODE.w, h: place ? place.h : NODE.h, z: 0, size: place ? place.size : NODE.size, aspect: place ? place.aspect : NODE.aspect, area: place ? place.area ?? area : area });
       settleRegions(this, 'spawn');
       this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, allowHerdr, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
       await this.adapter.refreshSubscription();
@@ -1651,7 +1652,7 @@ export class Backend {
       const anchor = parent && parent.workspaceKey === wsKey && this.store.nodes().find((n) => n.session_id === parent.sessionId);
       const area = this.worktrees ? this.worktrees.areaOf(wsKey, cwd) : ''; // P27
       const slot = slotFor(this, { wsKey, size: NODE, near: anchor && (anchor.area || '') === area ? anchor : null, area });
-      this.store.setNode({ session_id: s.sessionId, x: slot.x, y: slot.y, w: NODE.w, h: NODE.h, z: 0, area });
+      this.store.setNode({ session_id: s.sessionId, x: slot.x, y: slot.y, w: NODE.w, h: NODE.h, z: 0, size: NODE.size, aspect: NODE.aspect, area });
       // P6a(H5): herdr에서 부모와 같은 탭에 나뉜 패널이면 나눈 방향대로 붙인다
       if (parent) await autoDockSplit(this, s, parent);
       settleRegions(this, 'adopt');
@@ -1839,6 +1840,8 @@ export class Backend {
         const before = this.store.nodes().find((n) => n.session_id === s.sessionId);
         const n = { session_id: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z };
         this.store.setNode(n);
+        // P73: 사람이 테두리를 끌어 크기를 바꾸면 고른 비율과 크기 단계를 끈다(자유 비율)
+        if (before && (Math.round(before.w) !== Math.round(n.w) || Math.round(before.h) !== Math.round(n.h)) && (before.aspect || before.size)) this.store.setNodeAspect(s.sessionId, null, null);
         noteNodeMove(this, s, before, n, p.cause);
         // P47: 다른 창도 옮긴 자리를 바로 그린다(예전에는 다음 board.changed까지 옛 자리). 보낸 창은 by로 알아보고 무시한다
         this.api.broadcast('board.node', { sessionId: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z, by: (c && c.clientId) || null });
