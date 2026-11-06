@@ -2007,4 +2007,12 @@ export default {
     short: { large: 'L', normal: 'M', small: 'S' },
     edgeTitle: 'Drag to resize the whole dock (cells keep their ratio)',
   },
+  // P76: phone board view (default) and full view
+  phoneBoard: {
+    toList: 'Show session list',
+    fullOut: 'Tap to return to the board',
+    fullType: 'Type to {name} (Enter sends)',
+    key_left: 'Left arrow',
+    key_right: 'Right arrow',
+  },
 };
