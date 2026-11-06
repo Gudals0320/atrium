@@ -156,6 +156,10 @@ export default {
     herdrStartFailed: 'The herdr server did not start: {error}',
     nameTaken: 'Name already taken: {name}',
     nameIsSession: 'Same as a session name: {name}',
+    labelBad: 'A name must start with a letter or digit and use only letters, digits, - and _: {name}',
+    labelTooLong: 'A name can be up to {max} characters.',
+    labelAll: 'all calls every session, so it cannot be a name.',
+    labelTaken: 'Another session (@{other}) already uses this name: {name}',
     shellNoPrompt: 'Shells get no first prompt (the command bar is for agents only). Type in the terminal',
     deepseekProxyDown: 'The opencodex proxy is not running ({url}: {why}). Check it with `ocx status` in PowerShell, start it with `ocx start`, then try again',
     deepseekCommandLong: 'The direct command is too long ({n} characters, up to {max})',
@@ -1846,5 +1850,17 @@ export default {
       memo: 'Memo',
       kanban: 'Kanban',
     },
+  },
+  // P66: rename a session (the name shown on the board; the agent address stays)
+  rename: {
+    menu: 'Rename',
+    menuHint: 'The agent address does not change',
+    address: 'Agent address: {address}',
+    dblHint: 'Double-click the name to rename it (F2).',
+    label: 'Session name',
+    hint: 'Letters, digits, - and _, up to 32 characters. Leave it empty to go back to the original name ({address}). Enter saves, Esc cancels.',
+    done: 'Renamed to {name}. The agent address stays {address}.',
+    cleared: 'Back to the original name {name}.',
+    goNode: 'Go to card',
   },
 };

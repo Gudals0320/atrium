@@ -156,6 +156,10 @@ export default {
     herdrStartFailed: 'herdr 서버를 시작하지 못했습니다: {error}',
     nameTaken: '이미 사용 중인 이름입니다: {name}',
     nameIsSession: '세션 이름과 같은 이름은 사용할 수 없습니다: {name}',
+    labelBad: '이름은 영문이나 숫자로 시작해야 하며 영문, 숫자, -, _만 사용할 수 있습니다: {name}',
+    labelTooLong: '이름은 {max}자까지 입력할 수 있습니다.',
+    labelAll: 'all은 모든 세션을 부르는 이름이라 사용할 수 없습니다.',
+    labelTaken: '다른 세션(@{other})이 이미 사용 중인 이름입니다: {name}',
     shellNoPrompt: '셸에는 첫 요청을 자동으로 보내지 않습니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요.',
     deepseekProxyDown: 'DeepSeek 연결 서비스(opencodex)가 실행 중이 아닙니다({url}: {why}). PowerShell에서 `ocx status`로 상태를 확인하고 `ocx start`로 실행한 뒤 다시 시도하세요.',
     deepseekCommandLong: '직접 입력한 실행 명령이 너무 깁니다. 현재 {n}자이며 최대 {max}자까지 입력할 수 있습니다.',
@@ -1846,5 +1850,17 @@ export default {
       memo: '메모',
       kanban: '칸반',
     },
+  },
+  // P66: 세션 이름 바꾸기(보드에서 보이는 이름. 에이전트 주소는 그대로)
+  rename: {
+    menu: '이름 바꾸기',
+    menuHint: '에이전트 주소는 바뀌지 않습니다',
+    address: '에이전트 주소: {address}',
+    dblHint: '이름을 두 번 클릭하면 바꿀 수 있습니다(F2).',
+    label: '세션 이름',
+    hint: '영문, 숫자, -, _로 32자까지 입력하세요. 비우면 원래 이름({address})으로 돌아갑니다. Enter로 저장하고 Esc로 취소합니다.',
+    done: '이름을 {name}(으)로 바꿨습니다. 에이전트 주소는 {address} 그대로입니다.',
+    cleared: '이름을 원래 이름({name})으로 되돌렸습니다.',
+    goNode: '카드로 이동',
   },
 };

@@ -31,6 +31,7 @@ const state = {
   links: new Map(), // P4: linkId → 연결(누가 누구에게 시켰는지, 역할, 띄움)
   dialog: null, // { kind: 'spawn' | 'role' | 'link' | 'wsopen' | 'wsclose' | 'close', from?, to?, linkId?, cwd?, ids? }
   killAsk: null, // P22: { id, at } Delete 키로 그 노드의 닫기 확인(X와 같음)을 연다
+  renaming: null, // P66: { id, where: 'node' | 'sidebar' } 이름을 바꾸는 세션과 입력칸 자리
   // P5: 리포지토리 워크스페이스
   workspaces: [], // [{ key, name, kind, root, createdAt, counts, x, y }] 처음 생긴 순서
   groups: [], // P44: 가상 그룹 [{ id, name, members: [워크스페이스 키] }](판 데이터 meta wsGroups)
@@ -132,6 +133,7 @@ export function setViewNow(vp, size) {
   state.vpNow = vp; if (size) state.canvasSize = size; changed();
 }
 export function setKillAsk(id) { state.killAsk = id ? { id, at: Date.now() } : null; changed(); }
+export function setRenaming(id, where = 'node') { state.renaming = id ? { id, where } : null; changed(); } // P66
 // 시험용(P3, 노드 오류 경계): 이 세션 노드가 그릴 때 일부러 오류를 낸다. 창 안의 window.__mt.setDebugThrow로만 켠다
 export function setDebugThrow(id) { state.debugThrow = id; changed(); }
 

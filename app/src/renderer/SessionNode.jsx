@@ -10,7 +10,7 @@
 // P28: 닫기 확인에서 Delete를 한 번 더 누르면 삭제 단추에 초점과 표시가 가고 Enter로 확정한다. Esc는 취소. 멀리·아이콘 얼굴은 흐리게 하지 않는다(styles.css)
 import { memo, useEffect, useRef, useState } from 'react';
 import { NodeResizer, Handle, Position, useStore as useFlowStore } from '@xyflow/react';
-import { useStore, getState, saveNode, setNodeLocal, askKey, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk } from './store.js';
+import { useStore, getState, saveNode, setNodeLocal, askKey, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk, setRenaming } from './store.js';
 import { shellLine } from './Workspaces.jsx';
 import { api } from './api.js';
 import { faceFor } from './lib/faces.js';
@@ -32,6 +32,8 @@ import { dt } from './lib/dock-text.js'; // P17
 import { wakeSession, fmtMB } from './sleep.js'; // P21(D4), P24: 잠재우기는 리포 단위(영역 이름표 메뉴)
 import { fmtTime } from './lib/i18n.js';
 import { confirmKey } from './lib/keys.js'; // P28: 닫기 확인에서 Delete 한 번 더, Esc
+import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 판의 이름 바꾸기
+import { addressOf, renamed } from './lib/session-name.js';
 
 const zoomSel = (s) => s.transform[2];
 // 이 배율보다 작으면 머리줄의 메모리·모델·작은 단추를 숨기고 이름과 상태만 화면 기준 크기로 보인다(사용성 평가 2026-10-31)
@@ -102,13 +104,20 @@ function Header({ s, onKill, onMenu, onLoops }) {
   const since = s.ask && s.ask.since;
   // D1: 약 30초마다 오는 자원 이벤트에서 이 세션의 메모리
   const mem = useStore((st) => { const r = st.resources && st.resources.sessions.find((x) => x.sessionId === s.sessionId); return r ? r.memMB : null; });
+  const editing = useRenaming(s.sessionId, 'node');
   return (
     <div className="mt-node-head mt-drag">
       <span className="mt-head-kind"><KindIcon kind={shownKind(s)} state={s.state} /></span>
-      <span className="mt-head-dot" style={{ background: dotVar(s.name) }} />
-      <span className="mt-node-name" title={`@${s.name}
+      <span className="mt-head-dot" style={{ background: dotVar(addressOf(s)) }} />
+      {/* P66: 이름을 두 번 누르면(또는 ⋯ 메뉴, F2) 바꾼다. 바꾼 이름이면 옆에 에이전트 주소를 작게 보인다 */}
+      {editing
+        ? <RenameInput s={s} where="node" className="mt-node-rename" />
+        : <span className="mt-node-name" data-role="node-name" title={`@${s.name}${renamed(s) ? `
+${t('rename.address', { address: addressOf(s) })}` : ''}
 ${s.cwd}
-${s.sessionId}`}>{s.name}</span>
+${s.sessionId}
+${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenaming(s.sessionId, 'node'); }}>{s.name}</span>}
+      {!editing && renamed(s) && <span className="mt-node-addr" data-role="node-address" title={t('rename.address', { address: addressOf(s) })}>{addressOf(s)}</span>}
       {/* 표시들은 좁으면 먼저 잘린다(이름이 먼저 보이게) */}
       <span className="mt-head-badges"><Badges s={s} /><Origin s={s} /><BranchBadge s={s} /><LoopBadge s={s} onClick={onLoops} /></span>
       <span className="mt-node-sp" />
@@ -197,6 +206,8 @@ function NodeMenu({ s, docked, onClose }) {
       <div className="mt-menu-row"><span className="dim">{t('node.size')}</span>
         {[['large', t('node.sizeLarge')], ['normal', t('node.sizeNormal')], ['small', t('node.sizeSmall')]].map(([k, l]) => <button key={k} className="mt-btn small" data-size={k} onClick={() => call('board.setSize', { session: s.sessionId, size: k })}>{l}</button>)}
       </div>
+      {/* P66: 판의 이름 바꾸기(에이전트 주소는 그대로) */}
+      <div className="mt-menu-row"><button className="mt-btn small" data-action="rename" onClick={() => { onClose(); setRenaming(s.sessionId, 'node'); }}>{t('rename.menu')}</button><span className="dim">{renamed(s) ? t('rename.address', { address: addressOf(s) }) : t('rename.menuHint')}</span></div>
       {/* P21(D4)·P24: 잠든 노드는 그 리포를 깨운다. 잠재우기는 리포 단위라 영역 이름표 메뉴에 있다 */}
       {s.state === 'sleeping' && <div className="mt-menu-row"><button className="mt-btn small" data-action="wake" disabled={!!s.waking} onClick={() => { onClose(); wakeSession(s.sessionId); }}><Icon name="moon" />{t('sleep.menuWake')}</button><span className="dim">{t('sleep.menuWakeHint')}</span></div>}
       {s.kind !== 'shell' && <div className="mt-menu-row"><button className="mt-btn small" data-action="loop-new" onClick={() => { onClose(); openDialog({ kind: 'loop', target: { session: s.sessionId } }); }}>{t('node.loopNew')}</button><span className="dim">{t('node.loopNewHint')}</span></div>}
@@ -400,6 +411,7 @@ function SessionNodeInner({ id, selected }) {
       {/* P23: 덩어리 안에서는 가장자리 손잡이 대신 가운데 점으로 잇는다(분할선과 겹치지 않게, 잇기 모드에서만 끈다) */}
       {docked && <Handle type="source" position={Position.Top} id="c" className="mt-handle h-c nodrag" title={t('dock.dotTitle')} />}
       {face !== 'icon' && <Header s={s} onKill={() => setKilling(true)} onMenu={() => setMenu((m) => !m)} onLoops={() => setLoopsOpen((o) => !o)} />}
+      {face === 'icon' && <IconRename s={s} />}
       {!far && <GitLine s={s} />}
       {far && (s.state === 'waiting' || s.state === 'trust_wait') && (face === 'icon' || n.h * zoom < 160) && <AskCallout s={s} />}
       {/* P31: 가까이(터미널)가 아닌 얼굴은 본문 어디를 끌어도 머리줄처럼 노드를 옮긴다(mt-drag, Canvas.jsx onNodeDragStart). 누르기만 하면 들어간다(H4).
@@ -422,6 +434,14 @@ function SessionNodeInner({ id, selected }) {
       </div>
     </div>
   );
+}
+
+// P66: 아이콘 얼굴에는 머리줄이 없다. F2로 이름을 바꿀 때만 노드 위에 입력칸을 띄운다(글자는 화면 기준 크기)
+function IconRename({ s }) {
+  const editing = useRenaming(s.sessionId, 'node');
+  const zoom = useFlowStore(zoomSel);
+  if (!editing) return null;
+  return <div className="mt-icon-rename nodrag" style={{ '--inv': 1 / Math.max(zoom, 0.05) }}><RenameInput s={s} where="node" /></div>;
 }
 
 export const SessionNode = memo(SessionNodeInner);

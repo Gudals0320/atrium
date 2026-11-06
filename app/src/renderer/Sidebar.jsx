@@ -14,7 +14,7 @@
 import './sidebar.css';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api.js';
-import { useStore, getState, selectWorkspace, toast, goWhenOpen, openDialog } from './store.js';
+import { useStore, getState, selectWorkspace, toast, goWhenOpen, openDialog, setRenaming } from './store.js';
 import { ago, askLine, STATE_LABEL } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { archiveRows, SECTION_STEP, bindingText } from './lib/sidebar.js';
@@ -22,6 +22,8 @@ import { buildRows, offsetsOf, windowOf, scrollFor, moveCursor, parentOf, dropTa
 import { shownKind } from './lib/kinds.js'; // P25: DeepSeek(flavor)를 종류처럼 보인다
 import { branchLabel } from './lib/branch.js'; // P8(K4): 하위 세션은 부모 아래에 들여 보인다
 import { Icon } from './lib/icons.jsx';
+import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 세션 줄 메뉴의 이름 바꾸기
+import { addressOf, renamed } from './lib/session-name.js';
 
 const KEY = 'mt.sidebar';
 function load() { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { return {}; } }
@@ -172,6 +174,7 @@ function setSelecting(v) { side.selecting = v; side.selected = new Set(); bump()
 function toggleSelected(key) { const n = new Set(side.selected); if (n.has(key)) n.delete(key); else n.add(key); side.selected = n; bump(); }
 export function setSidebarWidth(w, save = true) { side.width = clampWidth(w); if (save) persist(); bump(); }
 function openMenu(e, type, key) { const r = e.currentTarget.getBoundingClientRect(); side.menu = { type, key, x: r.right, y: r.bottom + 2 }; bump(); e.stopPropagation(); }
+function openMenuAt(e, type, key) { side.menu = { type, key, x: e.clientX + 180, y: e.clientY }; bump(); e.preventDefault(); e.stopPropagation(); } // P66: 오른쪽 누르기 메뉴(세션 줄)
 function closeMenu() { if (side.menu) { side.menu = null; bump(); } }
 async function groupCall(method, p, done) {
   try { const r = await api.call(method, p); if (done) done(r); return r; } catch (e) { toast(t('sbGroups.fail', { error: errText(e) }), 'error'); return null; }
@@ -207,6 +210,7 @@ function sessionTitle(s, now) {
   const ask = s.state === 'waiting' || s.state === 'trust_wait' ? askLine(s) : '';
   return [
     `@${s.name} · ${kindText(shownKind(s))} · ${STATE_LABEL[s.state] || s.state}${s.lastActivityAt ? ` · ${ago(s.lastActivityAt, now)}` : ''}`,
+    renamed(s) && t('rename.address', { address: addressOf(s) }),
     ask && `${t('sb2.tipAsk')}: ${ask}`,
     s.state === 'error' && s.error && `${t('state.error')}: ${typeof s.error === 'string' ? s.error : s.error.message || ''}`,
     s.lastPrompt && `${t('sb2.tipPrompt')}: ${s.lastPrompt}`,
@@ -223,9 +227,20 @@ const SessionRow = memo(function SessionRow({ r, now, cur }) {
   const b = bucketOf(s);
   const ask = r.attn ? (b === 'need' ? askLine(s) || t(`state.${s.state}`) : (s.error && (typeof s.error === 'string' ? s.error : s.error.message)) || t(`state.${s.state}`)) : '';
   const k = shownKind(s);
+  const editing = useRenaming(s.sessionId, 'sidebar');
+  // P66: 이름을 바꾸는 동안은 줄을 단추가 아닌 칸으로 그린다(단추 안의 입력칸은 초점을 받지 못한다)
+  if (editing) return (
+    <div className={`mt-sb2-row sess b-${b} cur editing`} style={pad(r)} data-sb="session" data-row={r.id} data-session={s.sessionId} data-name={s.name} data-state={s.state}>
+      <span className="mt-sb2-line">
+        <span className={`mt-sb2-dot st-${s.state}`} data-state={s.state} />
+        <RenameInput s={s} where="sidebar" className="mt-sb2-srename" />
+      </span>
+    </div>
+  );
   return (
     <button className={`mt-sb2-row sess b-${b}${r.attn ? ' attn' : ''}${r.pinned ? ' pinned' : ''}${cur ? ' cur' : ''}${s.unseen ? ' unseen' : ''}`} style={pad(r)} data-sb="session" data-row={r.id} data-session={s.sessionId} data-name={s.name} data-state={s.state} data-indent={r.indent || 0} data-pinned={r.pinned ? '1' : undefined}
-      title={sessionTitle(s, now)} onClick={() => { setCursor(r.id); getState().navigateTo && getState().navigateTo(s.sessionId, { focusTerminal: true }); }}>
+      title={sessionTitle(s, now)} onClick={() => { setCursor(r.id); getState().navigateTo && getState().navigateTo(s.sessionId, { focusTerminal: true }); }}
+      onContextMenu={(e) => { setCursor(r.id); openMenuAt(e, 'session', s.sessionId); }}>
       <span className="mt-sb2-line">
         <span className={`mt-sb2-dot st-${s.state}`} data-state={s.state} />
         {k === 'shell' && <span className="mt-sb2-sh" title={kindText(k)}>$</span>}
@@ -234,6 +249,7 @@ const SessionRow = memo(function SessionRow({ r, now, cur }) {
         {s.branch && s.branch.role && <span className="mt-sb2-role">{s.branch.role}</span>}
         {r.attn && <span className={`mt-sb2-tag ${b}`}>{b === 'need' ? t('sb2.st_need') : t('sb2.st_error')}</span>}
         <span className="mt-sb2-time">{ago(s.lastActivityAt || s.createdAt, now)}</span>
+        <span role="button" tabIndex={-1} className="mt-sb2-more" data-action="session-menu" title={t('sb2.menu')} onClick={(e) => { setCursor(r.id); openMenu(e, 'session', s.sessionId); }}><Icon name="more" /></span>
       </span>
       {r.attn && <span className="mt-sb2-ask">{ask}</span>}
     </button>
@@ -400,7 +416,16 @@ function SideMenu() {
   if (!menu) return null;
   const item = (action, label, fn, extra = {}) => <button key={action + (extra.k || '')} className={`mt-sb2-mi${extra.on ? ' on' : ''}${extra.danger ? ' danger' : ''}`} data-action={action} data-group={extra.group} disabled={extra.disabled} onClick={() => { closeMenu(); fn(); }}>{label}</button>;
   let body = null;
-  if (menu.type === 'ws') {
+  if (menu.type === 'session') {
+    // P66: 세션 줄 메뉴. 이름 바꾸기(에이전트 주소는 그대로), 노드로 가기
+    const s = getState().sessions.get(menu.key);
+    if (!s) return null;
+    body = <>
+      <div className="mt-sb2-mh">{s.name}{renamed(s) ? <span className="mt-sb2-maddr"> · {addressOf(s)}</span> : null}</div>
+      {item('menu-rename-session', t('rename.menu'), () => setRenaming(s.sessionId, 'sidebar'))}
+      {item('menu-go-session', t('rename.goNode'), () => { const st = getState(); if (st.navigateTo) st.navigateTo(s.sessionId, { viewOnly: true }); })}
+    </>;
+  } else if (menu.type === 'ws') {
     const w = workspaces.find((x) => x.key === menu.key);
     if (!w) return null;
     const cur = (groups.find((g) => g.members.includes(w.key)) || {}).id || null;
@@ -712,6 +737,7 @@ export function Sidebar() {
     if (e.key === 'Home') return go('home');
     if (e.key === 'End') return go('end');
     if (e.key === 'Enter') { e.preventDefault(); activate(r); return; }
+    if (e.key === 'F2' && r && r.type === 'session') { e.preventDefault(); setRenaming(r.s.sessionId, 'sidebar'); return; } // P66
     if (e.key === ' ' && r && r.type === 'ws' && side.selecting) { e.preventDefault(); toggleSelected(r.w.key); return; }
     if (e.key === 'ArrowRight' && r) {
       e.preventDefault();

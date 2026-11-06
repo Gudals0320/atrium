@@ -46,6 +46,7 @@ export function searchBoard({ q, sessions = [], workspaces = [], texts = [], lim
   const byId = new Map(sessions.map((s) => [s.sessionId, s]));
   for (const s of sessions) {
     hit(s, 'name', s.name);
+    if (s.address && s.address !== s.name) hit(s, 'name', s.address); // P66: 판의 이름을 바꿔도 옛 주소로 찾는다
     hit(s, 'workspace', wsName.get(s.workspaceKey) || '');
     if (s.ask) hit(s, 'ask', [s.ask.question, ...(s.ask.questions || []).map((x) => x.question), s.ask.summary].filter(Boolean).join(' / '), 10);
     hit(s, 'prompt', s.lastPrompt);

@@ -108,11 +108,15 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   })();
   const options = useMemo(() => {
     if (!caretWord) return [];
-    const names = ['all', ...[...sessions.values()].filter((s) => s.kind !== 'shell').map((s) => s.name)];
+    const list = [...sessions.values()].filter((s) => s.kind !== 'shell');
+    const names = ['all', ...list.map((s) => s.name)];
     const q = caretWord.q.toLowerCase();
-    return names.filter((n) => n.toLowerCase().startsWith(q)).sort((a, b) => (a.toLowerCase() === q ? -1 : b.toLowerCase() === q ? 1 : 0)).slice(0, 20);
+    // P66: 판의 이름을 바꾼 세션은 옛 주소로 쳐도 찾고, 새 이름으로 채운다
+    const byAddress = new Set(list.filter((s) => s.address && s.address !== s.name && s.address.toLowerCase().startsWith(q)).map((s) => s.name));
+    return names.filter((n) => n.toLowerCase().startsWith(q) || byAddress.has(n)).sort((a, b) => (a.toLowerCase() === q ? -1 : b.toLowerCase() === q ? 1 : 0)).slice(0, 20);
   }, [caretWord && caretWord.q, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const addrOf = useMemo(() => new Map([...sessions.values()].filter((s) => s.address && s.address !== s.name).map((s) => [s.name, s.address])), [sessions]); // P66: 목록에 옛 주소를 작게
   function complete(name) {
     const el = taRef.current;
     const pos = el.selectionStart;
@@ -198,7 +202,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       <div className="mt-cmd">
         {options.length > 0 && (
           <div className="mt-mention">
-            {options.map((n, i) => <div key={n} className={`mt-mention-item${i === pick ? ' on' : ''}`} onMouseDown={(e) => { e.preventDefault(); complete(n); }}>@{n}{n === 'all' ? t('cmd.mentionAll', { n: allCount }) : ''}</div>)}
+            {options.map((n, i) => <div key={n} className={`mt-mention-item${i === pick ? ' on' : ''}`} onMouseDown={(e) => { e.preventDefault(); complete(n); }}>@{n}{n === 'all' ? t('cmd.mentionAll', { n: allCount }) : ''}{addrOf.get(n) ? <span className="mt-mention-addr"> {addrOf.get(n)}</span> : null}</div>)}
           </div>
         )}
         <Mark />

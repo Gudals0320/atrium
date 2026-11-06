@@ -24,6 +24,7 @@ import { matchSpawns } from './spawns.mjs';
 import { classifyConvo, testDirKind, trashPlan, trashPaths, removeEmptyProjectDirs, REFUSE_LABEL } from './missed.mjs';
 import { CONVO_CAP, placeCards } from './convo-canvas.mjs';
 import { m, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
+import { takenNames, keepLabel, findSession } from './session-label.mjs'; // P66
 
 const SHELL = 'shell';
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
@@ -312,7 +313,7 @@ export class Recall {
     const idx = conv ? this.store.getConvoById(conv) : null;
     const bind = conv ? this.bindingFor(conv, idx, { strict: false }) : { bound: false };
     return {
-      sessionId: row.sessionId, name: row.name, kind: row.kind, flavor: row.flavor || null, origin: row.origin, cwd: row.cwd, workspaceKey: row.workspaceKey, closedAt: row.closedAt, createdAt: row.createdAt,
+      sessionId: row.sessionId, name: row.label || row.name, address: row.name, label: row.label || null, kind: row.kind, flavor: row.flavor || null, origin: row.origin, cwd: row.cwd, workspaceKey: row.workspaceKey, closedAt: row.closedAt, createdAt: row.createdAt,
       reason: row.reason, reasonLabel: CLOSE_REASON[row.reason] || row.reason || null,
       lastPrompt: clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastActivityAt: Math.max(rt.lastActivityAt || 0, row.closedAt || 0) || null,
       convId: conv, hasTranscript: !!idx, binding: bind, canReopen: !bind.bound, nameFree: !names.has(row.name),
@@ -715,7 +716,7 @@ export class Recall {
 
   // ---------- 판으로 열기(J2·J4) ----------
   freeName(want, prefix = 's') {
-    const taken = new Set([...this.b.sessions.values()].map((s) => s.name));
+    const taken = takenNames(this.b.sessions.values()); // P66: 판의 이름(label)도 피한다
     if (want && NAME_RE.test(want) && want !== 'all' && !taken.has(want)) return want;
     if (want && NAME_RE.test(want) && want !== 'all') { for (let i = 2; i < 100; i++) { const n = `${want.slice(0, 28)}-${i}`; if (!taken.has(n)) return n; } }
     let i = 1; while (taken.has(`${prefix}${i}`)) i++;
@@ -784,6 +785,9 @@ export class Recall {
       if (spec.reuseRow) {
         this.store.reopenRow(id, { name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: s.agentName, settingsPath, hookToken, resumeArgv, resumeVerified: false, runtime: rt, kind, origin: 'board', workspaceKey: ws.key, permissionMode, model: s.model, effort: s.effort, touchedAt: now, parentSessionId: null });
         if (spec.reuseRow.name !== name) this.store.addEvent(id, 'renamed', { from: spec.reuseRow.name, to: name, why: 'name taken on reopen' });
+        // P66: 판의 이름은 다시 열어도 남는다. 그새 다른 세션이 그 이름을 쓰면 버린다
+        s.label = keepLabel(spec.reuseRow.label, b.sessions.values(), s);
+        if ((spec.reuseRow.label || null) !== s.label) this.store.setSessionLabel(id, s.label);
       } else this.store.insertSession({ ...s, runtime: rt });
       b.sessions.set(id, s);
     });
@@ -814,7 +818,7 @@ export class Recall {
   async reopen(p) {
     const ref = String(p.session || '');
     let row = this.store.closedSession(ref);
-    if (!row) { const byName = this.store.closedSessions().find((x) => x.name === ref.replace(/^@/, '')); row = byName ? this.store.closedSession(byName.sessionId) : null; }
+    if (!row) { const byName = findSession(this.store.closedSessions(), ref); row = byName ? this.store.closedSession(byName.sessionId) : null; } // P66: 판의 이름으로도
     if (!row) throw apiError('not_found', `닫힌 세션이 아닙니다: ${ref}`);
     if (row.reopenedAs) throw apiError('moved', `이 세션은 이미 다른 세션(${row.reopenedAs})으로 다시 열었습니다.`);
     const kind = row.kind || 'claude';

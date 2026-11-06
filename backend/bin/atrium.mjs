@@ -38,6 +38,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   answer <이름> <번호|reject|amend> [--text 글] [--picks 1,3]   승인 카드 답하기(PLAN 4절 A1)
   seen <이름>                               확인한 것으로 표시
   kill <이름> [--yes]                       보드에서 시작한 세션 종료
+  rename <이름> <새 이름> | rename <이름> --clear   보드에서 보이는 세션 이름 바꾸기·되돌리기. 에이전트 주소(herdr 이름)는 그대로이고 @새 이름과 옛 주소 모두로 부를 수 있음
   trust <폴더>                              폴더 신뢰 확인 창의 표시 여부 예측 (~/.claude.json 읽기 전용)
   board [--ws 프로젝트]                       보드 배치 확인 (프로젝트 지정 시 해당 영역만)
   changes [--minutes n]                   마지막 확인 이후 또는 최근 n분의 변경 내역
@@ -82,7 +83,7 @@ const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--dev') continue;
-  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', 'allow-herdr', 'apply', 'undo', 'old', 'all', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
+  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', 'allow-herdr', 'apply', 'undo', 'old', 'all', 'clear', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
   else pos.push(a);
 }
 const JSONOUT = !!flags.json;
@@ -126,16 +127,18 @@ function fmtAsk(a) {
   const ch = a.choices ? `  선택지: ${a.choices.map((c) => `${c.n}.${c.label}`).join(' | ')}` : '';
   return `권한 요청 ${a.summary || a.tool}${a.question ? ` — "${a.question}"` : ''}${ch}`;
 }
+// P66: 판의 이름을 바꾼 세션은 에이전트 주소(herdr 이름)를 함께 보인다
+const nameCol = (s) => (s.label && s.address && s.address !== s.name ? `${s.name} (주소 ${s.address})` : s.name).padEnd(8);
 function fmtSession(s) {
   const st = s.state + (s.estimate ? '?' : '');
   if (s.kind === 'shell') {
     const sh = s.shell || {};
     const run = sh.atPrompt === false ? `실행 중: ${sh.command || '?'}${sh.procs && sh.procs.length ? ` [${sh.procs.join(', ')}]` : ''}` : '프롬프트';
-    return `${s.name.padEnd(8)} ${st.padEnd(13)} ${s.paneId || ''} (셸${s.origin === 'adopted' ? ', 보드에 올림' : ''}) ${run}${s.elsewhere ? ` ↪ 다른 곳: ${s.elsewhere.root}` : ''}`;
+    return `${nameCol(s)} ${st.padEnd(13)} ${s.paneId || ''} (셸${s.origin === 'adopted' ? ', 보드에 올림' : ''}) ${run}${s.elsewhere ? ` ↪ 다른 곳: ${s.elsewhere.root}` : ''}`;
   }
   const marks = [s.unseen && '확인할 결과', s.quiet && '조용함', s.delivering && `전달${s.delivering}`, s.interruptedTurn && '재시작으로끊긴턴', s.resume && !s.resume.verified && '이어가기미확인'].filter(Boolean).join(',');
   const who = [s.kind && s.kind !== 'claude' && s.kind, s.origin === 'adopted' && '보드에 올림', s.git && s.git.isWorktree && `워크트리 ${s.git.branch}`].filter(Boolean).join(',');
-  let line = `${s.name.padEnd(8)} ${st.padEnd(11)} herdr=${String(s.herdrStatus).padEnd(8)} ${s.paneId || ''} ${who ? `(${who}) ` : ''}${marks ? `[${marks}]` : ''}`;
+  let line = `${nameCol(s)} ${st.padEnd(11)} herdr=${String(s.herdrStatus).padEnd(8)} ${s.paneId || ''} ${who ? `(${who}) ` : ''}${marks ? `[${marks}]` : ''}`;
   if (s.state === 'waiting') line += `\n         ↳ ${fmtAsk(s.ask)} (기다린 ${ago(s.ask && s.ask.since)})`;
   if (s.state === 'trust_wait') line += `\n         ↳ 신뢰 대화상자 대기(예상 ${s.trust.predictedDialog ? '뜸' : '안 뜸'}, 화면 확인 ${s.trust.seenOnScreen ? '됨' : '안 됨'}). 터미널에서 답하기`;
   if (s.state === 'error') line += `\n         ↳ 오류 ${JSON.stringify(s.error)}`;
@@ -279,6 +282,13 @@ async function main() {
         if (r.needsConfirm) { console.log(`확인 필요: ${r.message}\n계속하려면 --yes`); process.exitCode = 2; return; }
         return out(r);
       }
+      case 'rename': {
+        if (!rest[0] || (!flags.clear && !rest[1])) throw new Error('사용: atrium rename <이름> <새 이름> | atrium rename <이름> --clear');
+        const r = await c.call('session.rename', { session: rest[0], name: flags.clear ? null : rest[1], clear: !!flags.clear, by: 'cli' });
+        if (JSONOUT) return out(r);
+        console.log(r.changed ? `${r.from} → ${r.name}${r.label ? ` (주소 ${r.address})` : ''}` : `바뀐 것 없음: ${r.name}`);
+        return;
+      }
       case 'trust': return out(await c.call('trust.predict', { cwd: path.resolve(rest[0] || '.') }));
       case 'board': return out(await c.call('board.get', { workspace: flags.ws }));
       // P3: 복귀 요약, 메모, 브리핑, 그룹, 묶음, 자원, 다른 곳의 세션
@@ -417,7 +427,7 @@ async function main() {
         if (JSONOUT) return out(r);
         console.log(`하위 세션 ${r.total}개(상한 없음, P36)`);
         const kids = (id) => r.rows.filter((x) => x.parentSessionId === id);
-        const walk = (x, ind) => { console.log(`${'  '.repeat(ind)}@${x.name} ${x.depth}단계 ${x.state}${x.role ? ` "${x.role}"` : x.parentSessionId ? ' (보드에 올림)' : ''}`); for (const k of kids(x.sessionId)) walk(k, ind + 1); };
+        const walk = (x, ind) => { console.log(`${'  '.repeat(ind)}@${x.name}${x.label ? ` (보드 이름 ${x.label})` : ''} ${x.depth}단계 ${x.state}${x.role ? ` "${x.role}"` : x.parentSessionId ? ' (보드에 올림)' : ''}`); for (const k of kids(x.sessionId)) walk(k, ind + 1); };
         for (const x of r.rows.filter((y) => !y.parentSessionId || !r.rows.some((z) => z.sessionId === y.parentSessionId))) walk(x, 0);
         return;
       }
