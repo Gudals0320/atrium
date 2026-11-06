@@ -4,12 +4,12 @@
 import { useState } from 'react';
 import { api } from './api.js';
 import { toast } from './store.js';
-import { useT, errText } from './lib/i18n.js';
+import { useT, errText, getLanguage } from './lib/i18n.js';
 import { useUpdate, checkNow, applyUpdate, rollbackUpdate } from './update.js';
 import { isWeb } from './web.js';
 import { SetRow, SetNote, SetSub } from './Settings.jsx';
 
-const when = (ms) => (ms ? new Date(ms).toLocaleString() : '');
+const when = (ms) => { if (!ms) return ''; try { return new Date(ms).toLocaleString(getLanguage(), { dateStyle: 'medium', timeStyle: 'short' }); } catch { return new Date(ms).toLocaleString(); } }; // 화면 언어로
 
 export function UpdateSettings({ settings }) {
   const t = useT();
@@ -45,7 +45,6 @@ export function UpdateSettings({ settings }) {
       </span>
       <span className="mt-set-hint" data-role="update-status" data-available={view.available ? '1' : '0'}>
         {status}{view.checkedAt ? ` · ${t('update.checkedAt', { when: when(view.checkedAt) })}` : ''}
-        {view.latest && view.latest.url && <> · <a href={view.latest.url} target="_blank" rel="noreferrer" data-action="update-notes">{t('update.notes', { version: view.latest.tag })}</a></>}
       </span>
     </div>
     <div className="mt-set-row" data-role="update-actions">
@@ -53,9 +52,10 @@ export function UpdateSettings({ settings }) {
       <span className="mt-set-value mt-upd-actions">
         <button type="button" className="mt-btn small ghost" data-action="update-check" disabled={busy || !!job} onClick={() => checkNow()}>{t('update.checkNow')}</button>
         {local && view.available && <button type="button" className="mt-btn small primary" data-action="update-apply" disabled={busy || !!job || !view.allowed} onClick={() => setAsking('apply')}>{t('update.applyTo', { version: view.latest.tag })}</button>}
+        {view.latest && view.latest.url && <a className="mt-btn small ghost" href={view.latest.url} target="_blank" rel="noreferrer" data-action="update-notes">{t('update.notes')}</a>}
         {local && view.canRollback && !view.available && <button type="button" className="mt-btn small ghost" data-action="update-rollback" disabled={busy || !!job} onClick={() => setAsking('rollback')}>{t('update.rollbackTo', { version: view.previous })}</button>}
       </span>
-      <span className="mt-set-hint">{!local ? t('update.pcOnly') : !view.allowed ? t('update.notAllowed') : view.current.installed ? t('update.installedHint') : t('update.gitHint')}</span>
+      <span className="mt-set-hint">{!local ? t('update.pcOnly') : !view.allowed ? t('update.notAllowed') : !view.current.installed ? t('update.gitHint') : view.available ? t('update.installedHint') : view.canRollback ? t('update.rollbackHint', { version: view.previous }) : ''}</span>
     </div>
     {asking && (
       <div className="mt-set-note mt-upd-ask" data-role="update-confirm">

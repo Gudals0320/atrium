@@ -296,6 +296,9 @@ test('업데이터: 확인(판 기록에 둠), 확인을 묻고, 원격 기기�
     U.writeResult(inst, { kind: 'update', at: 123, ok: true, to: { tag: 'v0.2.0' } });
     const up2 = new Updater(fakeBoard(d).b, { env: { ATRIUM_INSTALL_DIR: inst }, codeRoot: path.join(inst, 'v0.2.0'), timers: false });
     assert.equal(up2.view().lastResult.at, 123);
+    // 백엔드가 뜬 뒤에 결과가 써져도 창이 물을 때 읽는다
+    U.writeResult(inst, { kind: 'update', at: 456, ok: false, rolledBack: true, to: { tag: 'v0.3.0' } });
+    assert.equal(up2.view().lastResult.at, 456);
   } finally { rm(d); }
 });
 

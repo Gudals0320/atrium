@@ -1872,6 +1872,7 @@ export default {
     pcOnly: 'Update from the board on the PC.',
     notAllowed: 'This board cannot change the install folder (dev board without ATRIUM_INSTALL_DIR).',
     installedHint: 'Downloads and builds the new version while the board keeps running.',
+    rollbackHint: 'Roll back returns to {version}, the version installed before this one.',
     gitHint: 'This board runs from a source folder. Update installs the release into the install folder and runs it from there.',
     step: {
       download: 'Downloading…',

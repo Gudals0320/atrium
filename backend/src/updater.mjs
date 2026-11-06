@@ -49,9 +49,11 @@ export class Updater {
     if (timers) {
       this.firstTimer = setTimeout(() => this.autoCheck('start'), firstCheckMs ?? Number(envVar('UPDATE_FIRST_CHECK_MS', env) || FIRST_CHECK_MS));
       this.timer = setInterval(() => this.autoCheck('timer'), this.checkMs);
+      // 뜬 직후 바꾸기 결과가 생기면 알린다(이 백엔드가 바꾸기 프로세스가 띄운 것일 때)
+      this.resultTimers = [1000, 3000, 8000, 20000].map((ms) => setTimeout(() => { if (this.noteResult()) this.broadcast(); }, ms));
     }
   }
-  stop() { clearTimeout(this.firstTimer); clearInterval(this.timer); }
+  stop() { clearTimeout(this.firstTimer); clearInterval(this.timer); for (const t of this.resultTimers || []) clearTimeout(t); }
   log(...a) { const line = `${new Date().toISOString()} ${a.join(' ')}`; try { fs.mkdirSync(path.dirname(this.logFile), { recursive: true }); fs.appendFileSync(this.logFile, line + '\n'); } catch {} }
 
   settings() { return (this.b.features && this.b.features.settings.get()) || this.b.store.getMeta('settings') || {}; }
@@ -60,6 +62,7 @@ export class Updater {
   putMeta(patch) { const m = { ...this.meta(), ...patch }; this.b.store.setMeta('update', m); return m; }
   broadcast() { this.b.api.broadcast('update.state', this.view()); }
   view() {
+    this.noteResult(); // 바꾸기 프로세스는 새 백엔드가 뜬 뒤에 결과를 쓴다. 창이 붙어 물을 때 읽는다
     const m = this.meta();
     const cur = U.readCurrent(this.dir);
     const latest = m.latest ? { tag: m.latest.tag, version: m.latest.version, name: m.latest.name, url: m.latest.url, notes: m.latest.notes, publishedAt: m.latest.publishedAt } : null;
@@ -75,12 +78,13 @@ export class Updater {
   // 바꾸기 프로세스가 남긴 결과(last-update.json)를 판 기록에 옮긴다. 창은 처음 보는 결과를 한 번 알린다
   noteResult() {
     const r = U.readResult(this.dir);
-    if (!r || !r.at) return;
+    if (!r || !r.at) return false;
     const m = this.meta();
-    if (m.lastResult && m.lastResult.at === r.at) return;
+    if (m.lastResult && m.lastResult.at === r.at) return false;
     this.putMeta({ lastResult: r });
     try { this.b.store.addEvent(null, 'update_result', r); } catch {}
     this.log(`swap result ${JSON.stringify(r)}`);
+    return true;
   }
 
   async autoCheck(reason) {
@@ -129,7 +133,7 @@ export class Updater {
     this.log(`update start ${this.running.version} → ${rel.tag}`);
     try {
       const protocol = this.b.herdrCompat && this.b.herdrCompat.ok ? this.b.herdrCompat.protocol : null;
-      const r = await this.prepare({ dir: this.dir, release: rel, apiUrl: this.apiUrl, protocol, step: (step, d) => { this.log(`step ${step}${d ? ` ${JSON.stringify(d)}` : ''}`); this.setJob({ step, ...(d || {}) }); }, log: (l) => this.log(l) });
+      const r = await this.prepare({ dir: this.dir, release: rel, apiUrl: this.apiUrl, protocol, step: (step, d) => { this.log(`step ${step}${d ? ` ${JSON.stringify(d)}` : ''}`); this.setJob({ step, part: null, bytes: null, ...(d || {}) }); }, log: (l) => this.log(l) });
       const before = U.readCurrent(this.dir);
       const previous = this.running.installed ? this.running.tag : (before && before.current) || null;
       await this.swap({ kind: 'update', toRoot: r.root, to: { tag: rel.tag, version: rel.version }, currentAfter: { current: rel.tag, previous: previous === rel.tag ? null : previous, switchedAt: Date.now() } });

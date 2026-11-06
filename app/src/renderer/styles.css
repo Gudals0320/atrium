@@ -1410,6 +1410,7 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 /* P69 업데이트 묶음(설정 › 일반)과 웹 화면의 업데이트 띠 */
 .mt-upd-ver b { font-weight: 600; }
 .mt-upd-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mt-upd-actions a.mt-btn { text-decoration: none; }
 .mt-upd-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text); }
 .mt-upd-ask-btns { display: inline-flex; gap: 6px; }
 .mt-upd-progress { display: flex; align-items: center; gap: 8px; color: var(--text); }

@@ -1872,6 +1872,7 @@ export default {
     pcOnly: 'PC의 보드에서 업데이트하세요.',
     notAllowed: '이 보드는 설치 폴더를 바꿀 수 없습니다(ATRIUM_INSTALL_DIR가 없는 개발용 보드).',
     installedHint: '보드를 계속 쓰는 동안 새 버전을 내려받고 빌드합니다.',
+    rollbackHint: '되돌리면 이 버전 전에 설치했던 {version}로 돌아갑니다.',
     gitHint: '이 보드는 소스 폴더에서 실행 중입니다. 업데이트하면 릴리즈를 설치 폴더에 설치하고 그 버전으로 실행합니다.',
     step: {
       download: '내려받는 중…',
