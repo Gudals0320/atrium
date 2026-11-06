@@ -177,3 +177,29 @@ export function migrateBoxes({ main = null, content = [], boxes = [], gap = BOX_
   }
   return out;
 }
+
+// ---------- P68: 같은 리포의 워크트리끼리 붙인 덩어리 ----------
+// 같은 리포의 서로 다른 영역(본 저장소 영역, 워크트리 상자) 세션이 섞인 덩어리는 리포 영역(본 저장소 쪽)에 놓는다.
+// 세션의 워크트리 정보(nodes.area)는 바꾸지 않는다. 한 상자 안의 세션끼리만 붙인 덩어리는 지금처럼 그 상자 안이다.
+// docks: [{ members }], areaOf(sid) → 저장한 area로 본 영역 키(판에 없는 노드는 null)
+// → { area: Map sid → 리포 키(섞인 덩어리의 구성 노드만), pulled: Set 구성 노드가 덩어리로 빠져나간 상자 키 }
+export function dockedAreas(docks, areaOf) {
+  const area = new Map(), pulled = new Set();
+  for (const d of docks || []) {
+    const ks = (d.members || []).map((m) => [m, areaOf(m)]).filter(([, k]) => k);
+    if (new Set(ks.map(([, k]) => k)).size < 2) continue;
+    for (const [m, k] of ks) { const top = wsOfArea(k); if (k !== top) pulled.add(k); area.set(m, top); }
+  }
+  return { area, pulled };
+}
+// 숨길 상자를 뺀 영역 자리: 구성 노드가 덩어리로 빠져나가 안이 빈 상자(워크트리 자체와 저장한 자리는 그대로).
+// anchors: areaAnchorList·areaAnchors 결과, items: [{ ws: 영역 키 }](덩어리 자리를 반영한 것), pulled: dockedAreas(...).pulled
+export function visibleAnchors(anchors, items, pulled) {
+  if (!pulled || !pulled.size) return anchors;
+  const used = new Set((items || []).map((i) => i && i.ws));
+  return (anchors || []).filter((a) => !(a && a.wt && pulled.has(a.key) && !used.has(a.key)));
+}
+// 워커를 한 번에 붙일 배치 틀(세션 수에 맞는 고른 틀). 둘 가로, 셋 가로 셋, 넷 2 × 2, 다섯 위 셋 아래 둘, 여섯 3 × 2, 그 위로는 고른 줄
+export function workersPreset(n) {
+  return n <= 2 ? 'row' : n === 3 ? 'row3' : n === 4 ? 'grid' : n === 5 ? 'top3-bottom2' : n === 6 ? 'grid-3x2' : 'even-rows';
+}
