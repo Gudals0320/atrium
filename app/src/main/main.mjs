@@ -15,6 +15,7 @@ import { startTray, whenBoardReady } from './tray.mjs'; // I7(P6b): 트레이 �
 import { translate, DEFAULT_LANGUAGE } from '../renderer/lib/i18n.js'; // P16: 대화상자 글. 언어는 트레이가 받은 판 설정
 import { migrateAppProfile } from './profile.mjs'; // P18: 옛 창 프로필 옮기기
 import { noticeWay } from '../renderer/lib/remote.js'; // P58: 원격 붙음 알림은 창이 숨었을 때만 OS 알림
+import { windowTitle } from '../renderer/lib/update-notice.js'; // P71: 창 제목에 버전
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, '..', '..');
@@ -111,7 +112,7 @@ function showNode(sessionId) {
 function createWindow() {
   win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 900, minHeight: 600, icon: WINDOW_ICON,
-    title: `${APP_NAME}${cfg.profile === 'dev' ? ' (dev)' : ''}`,
+    title: windowTitle(APP_NAME, APP_VERSION, cfg.profile), // P71: "Atrium 0.1.2", 개발용 판은 " (dev)"
     backgroundColor: '#070705', // P11·P28: 판 바탕(renderer tokens.css --canvas). 창이 뜰 때 다른 색이 번쩍이지 않게
     webPreferences: { preload: path.join(HERE, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });
@@ -150,7 +151,7 @@ app.whenReady().then(() => {
   log(`app start profile=${cfg.profile} pid=${process.pid} version=${APP_VERSION} root=${path.basename(path.resolve(APP_ROOT, '..'))}`);
   for (const l of early) log(l);
   createWindow();
-  tray = startTray({ cfg, log, hasWindow: () => !!win, showNode, quit: () => app.quit(), notifications, closeWindow: () => { if (win) win.close(); }, startBackend: ensureBackend, stopBackend: () => stopBackend(cfg), confirm: trayConfirm, onUpdateRestart });
+  tray = startTray({ cfg, log, hasWindow: () => !!win, showNode, quit: () => app.quit(), notifications, closeWindow: () => { if (win) win.close(); }, startBackend: ensureBackend, stopBackend: () => stopBackend(cfg), confirm: trayConfirm, onUpdateRestart, appVersion: APP_VERSION });
   global.__mtTray = tray;
   global.__mtAppMigration = appMigration; // 시험이 읽는다
   if (appMigration && appMigration.failed.length) tray.noteError(tr('tray.profileCopyFailed', { n: appMigration.failed.length }));

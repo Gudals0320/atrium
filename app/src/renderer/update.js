@@ -37,4 +37,3 @@ async function call(method, params) {
 }
 export const checkNow = () => call('update.check').then((v) => { if (v) { put(v); if (!v.available && !v.error) toast(t('update.upToDate', { version: vTag(v.current.version) })); } });
 export const applyUpdate = () => call('update.apply', { confirm: true });
-export const rollbackUpdate = () => call('update.rollback', { confirm: true });

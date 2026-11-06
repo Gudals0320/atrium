@@ -1455,3 +1455,10 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 @keyframes mt-upd-spin { to { transform: rotate(360deg); } }
 .mt-upd-error { color: var(--bad); }
 .mt-upd-notes { grid-column: 1 / -1; margin: 0 0 4px; max-height: 120px; overflow: auto; padding: 8px 10px; border: 1px solid var(--panel-line); border-radius: 6px; color: var(--dim-2); font: 12px/1.45 inherit; white-space: pre-wrap; }
+
+/* P71: 워크트리 나가기 질문(승인 줄)과 닫기 확인의 워크트리 선택 */
+.mt-answer .mt-a-msg.mt-wt-warn { color: var(--bad); white-space: normal; flex: 1 1 auto; }
+.mt-a-no.mt-wt-remove { color: var(--bad); }
+.mt-wt-choice { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 2px; }
+.mt-wt-choice .mt-check { display: flex; align-items: center; gap: 6px; }
+.mt-wt-choice .mt-wt-warn { color: var(--bad); }

@@ -38,7 +38,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   input <이름> <글>                 제어기로 터미널 입력(\\e \\r \\n \\t \\xNN 해석)
   answer <이름> <번호|reject|amend> [--text 글] [--picks 1,3]   승인 카드 답하기(PLAN 4절 A1)
   seen <이름>                               확인한 것으로 표시
-  kill <이름> [--yes]                       보드에서 시작한 세션 종료
+  kill <이름> [--yes] [--worktree keep|remove] 보드에서 시작한 세션 종료. claude -w 세션은 워크트리를 남기고, remove면 워크트리와 브랜치를 지움 (P71)
   rename <이름> <새 이름> | rename <이름> --clear   보드에서 보이는 세션 이름 바꾸기·되돌리기. 에이전트 주소(herdr 이름)는 그대로이고 @새 이름과 옛 주소 모두로 부를 수 있음
   trust <폴더>                              폴더 신뢰 확인 창의 표시 여부 예측 (~/.claude.json 읽기 전용)
   board [--ws 프로젝트]                       보드 배치 확인 (프로젝트 지정 시 해당 영역만)
@@ -79,7 +79,7 @@ ${FEATURES_HELP}
   import-desktop --all | <앱 세션 ID>...     기본 선택된 대화 또는 지정한 대화를 복제해 절전 상태의 보드 세션으로 가져오기
   call <메서드> [JSON]                       보드 API 직접 호출
   install [--channel stable|dev] [--shortcut <폴더>] [--no-shortcut]   최신 릴리즈(dev: dev 빌드 포함)를 설치 폴더에 설치하고 바탕화면 바로가기 생성 (P69, P70)
-  update [--check | --rollback] [--channel stable|dev] [--yes]   새 릴리즈 확인, 업데이트, 앞 버전으로 되돌리기. 채널은 판 설정 updateChannel을 따르고 --channel은 이번 한 번만 바꿈. 백엔드만 다시 시작하며 herdr 세션은 유지 (P69, P70)`;
+  update [--check] [--channel stable|dev] [--yes]   새 릴리즈 확인, 업데이트. 채널은 판 설정 updateChannel을 따르고 --channel은 이번 한 번만 바꿈. 백엔드만 다시 시작하며 herdr 세션은 유지 (P69, P70)`;
 
 const argv = process.argv.slice(2);
 const cfg = loadConfig({ argv });
@@ -87,7 +87,7 @@ const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--dev') continue;
-  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', 'allow-herdr', 'apply', 'undo', 'old', 'all', 'clear', 'check', 'rollback', 'no-shortcut', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
+  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', 'allow-herdr', 'apply', 'undo', 'old', 'all', 'clear', 'check', 'no-shortcut', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
   else pos.push(a);
 }
 const JSONOUT = !!flags.json;
@@ -283,7 +283,7 @@ async function main() {
       }
       case 'seen': return out(await c.call('session.markSeen', { session: rest[0] }));
       case 'kill': {
-        const r = await c.call('session.kill', { session: rest[0], confirm: !!flags.yes, after: flags.archive ? 'archive' : flags.delete ? 'delete' : undefined });
+        const r = await c.call('session.kill', { session: rest[0], confirm: !!flags.yes, after: flags.archive ? 'archive' : flags.delete ? 'delete' : undefined, ...(flags.worktree ? { worktree: flags.worktree } : {}) });
         if (r.needsConfirm) { console.log(`확인 필요: ${r.message}\n계속하려면 --yes`); process.exitCode = 2; return; }
         return out(r);
       }

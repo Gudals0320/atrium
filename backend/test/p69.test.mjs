@@ -110,35 +110,28 @@ test('압축 풀기: 맨 위 폴더를 떼고, pax 긴 경로를 읽고, 바깥 
   } finally { rm(d); }
 });
 
-test('current.json 바꾸기와 되돌리기', () => {
+test('current.json 바꾸기(P71: 손으로 하는 되돌리기와 previous는 뺐다)', () => {
   const d = tmp('current');
   try {
     assert.equal(U.readCurrent(d), null);
-    assert.throws(() => U.rollbackCurrent(d), (e) => e.code === 'no_previous');
     U.switchCurrent(d, 'v0.1.0', 1);
-    assert.deepEqual(U.readCurrent(d), { current: 'v0.1.0', previous: null, switchedAt: 1 });
+    assert.deepEqual(U.readCurrent(d), { current: 'v0.1.0', switchedAt: 1 });
     const s = U.switchCurrent(d, 'v0.2.0', 2);
     assert.equal(s.before.current, 'v0.1.0');
-    assert.deepEqual(U.readCurrent(d), { current: 'v0.2.0', previous: 'v0.1.0', switchedAt: 2 });
-    U.switchCurrent(d, 'v0.2.0', 3); // 같은 태그를 다시 깔면 앞 버전은 그대로
-    assert.equal(U.readCurrent(d).previous, 'v0.1.0');
-    assert.throws(() => U.rollbackCurrent(d), /폴더가 없습니다/); // 앞 버전 폴더가 없으면 되돌리지 않는다
-    fs.mkdirSync(path.join(d, 'v0.1.0'));
-    U.rollbackCurrent(d, 4);
-    assert.deepEqual(U.readCurrent(d), { current: 'v0.1.0', previous: 'v0.2.0', switchedAt: 4 });
+    assert.deepEqual(U.readCurrent(d), { current: 'v0.2.0', switchedAt: 2 });
     assert.deepEqual(fs.readdirSync(d).filter((f) => f.endsWith('.tmp')), []);
   } finally { rm(d); }
 });
 
-test('오래된 버전 지우기: 지금 버전과 바로 앞 버전만 남기고, 남은 준비 폴더도 지운다. 버전이 아닌 폴더는 둔다', () => {
+test('오래된 버전 지우기: 지금 버전만 남기고(P71: 앞 버전도 지운다), 남은 준비 폴더도 지운다. 버전이 아닌 폴더는 둔다', () => {
   const d = tmp('prune');
   try {
     for (const n of ['v0.1.0', 'v0.2.0', 'v0.3.0', 'v0.4.0.staging', 'v0.5.0.staging', 'notes', 'v0.0.1']) fs.mkdirSync(path.join(d, n));
     U.writeCurrent(d, { current: 'v0.3.0', previous: 'v0.2.0' });
     const r = U.pruneVersions(d, { keepStaging: ['v0.5.0'] });
-    assert.deepEqual(r.removed.sort(), ['v0.0.1', 'v0.1.0', 'v0.4.0.staging']);
-    assert.deepEqual(fs.readdirSync(d).sort(), ['current.json', 'notes', 'v0.2.0', 'v0.3.0', 'v0.5.0.staging']);
-    assert.deepEqual(U.listVersions(d), ['v0.2.0', 'v0.3.0']);
+    assert.deepEqual(r.removed.sort(), ['v0.0.1', 'v0.1.0', 'v0.2.0', 'v0.4.0.staging']);
+    assert.deepEqual(fs.readdirSync(d).sort(), ['current.json', 'notes', 'v0.3.0', 'v0.5.0.staging']);
+    assert.deepEqual(U.listVersions(d), ['v0.3.0']);
   } finally { rm(d); }
 });
 
@@ -286,7 +279,7 @@ test('업데이터: 확인(판 기록에 둠), 확인을 묻고, 원격 기기�
     assert.deepEqual(job.waitPids, [process.pid, 4242]); assert.equal(job.oldBackendPid, process.pid);
     assert.equal(job.relaunch, true); assert.deepEqual(job.relaunchArgs, ['--dev']);
     assert.deepEqual(job.currentBefore.current, 'v0.1.0');
-    assert.equal(job.currentAfter.current, 'v0.2.0'); assert.equal(job.currentAfter.previous, 'v0.1.0');
+    assert.deepEqual(Object.keys(job.currentAfter).sort(), ['current', 'switchedAt']); assert.equal(job.currentAfter.current, 'v0.2.0'); // P71: previous 없음
     assert.deepEqual(job.profileArgv, []);
     assert.ok(fs.existsSync(file));
     assert.equal(b.stopped, 'update'); assert.deepEqual(exits, [0]);
@@ -302,7 +295,7 @@ test('업데이터: 확인(판 기록에 둠), 확인을 묻고, 원격 기기�
   } finally { rm(d); }
 });
 
-test('업데이터: 준비가 실패하면 실패를 보이고 백엔드는 그대로, 되돌리기는 앞 버전이 있어야 한다', async () => {
+test('업데이터: 준비가 실패하면 실패를 보이고 백엔드는 그대로(P71: 손으로 하는 되돌리기 API는 없다)', async () => {
   const d = tmp('updfail');
   try {
     const inst = path.join(d, 'versions');
@@ -316,7 +309,7 @@ test('업데이터: 준비가 실패하면 실패를 보이고 백엔드는 그�
     assert.ok(await until(() => up.job && up.job.phase === 'failed'));
     assert.match(up.view().job.error, /npm ci failed/);
     assert.equal(b.stopped, null); assert.deepEqual(exits, []);
-    await assert.rejects(up.handlers['update.rollback']({ confirm: true }), (e) => e.code === 'no_previous');
+    assert.equal(up.handlers['update.rollback'], undefined);
   } finally { rm(d); }
 });
 
@@ -345,17 +338,17 @@ function runSwap(inst, job) {
   return U.readResult(inst);
 }
 
-test('바꾸기 프로세스: 새 백엔드가 뜨면 current.json을 새 버전으로 두고, 실행기를 바꾸고, 바로 앞 버전만 남긴다', () => {
+test('바꾸기 프로세스: 새 백엔드가 뜨면 current.json을 새 버전으로 두고, 실행기를 바꾸고, 옛 버전은 지운다(P71)', () => {
   const d = tmp('swapok');
   try {
     const inst = path.join(d, 'versions');
     fakeRoot(inst, 'v0.0.9'); const from = fakeRoot(inst, 'v0.1.0'); const to = fakeRoot(inst, 'v0.2.0');
     U.writeCurrent(inst, { current: 'v0.1.0', previous: 'v0.0.9' });
-    const res = runSwap(inst, { kind: 'update', fromRoot: from, toRoot: to, toInstalled: true, from: { tag: 'v0.1.0' }, to: { tag: 'v0.2.0' }, currentBefore: U.readCurrent(inst), currentAfter: { current: 'v0.2.0', previous: 'v0.1.0' } });
+    const res = runSwap(inst, { kind: 'update', fromRoot: from, toRoot: to, toInstalled: true, from: { tag: 'v0.1.0' }, to: { tag: 'v0.2.0' }, currentBefore: U.readCurrent(inst), currentAfter: { current: 'v0.2.0' } });
     assert.equal(res.ok, true, res.error); assert.equal(res.rolledBack, false);
-    assert.deepEqual(U.readCurrent(inst), { current: 'v0.2.0', previous: 'v0.1.0', switchedAt: null });
-    assert.deepEqual(res.pruned, ['v0.0.9']);
-    assert.deepEqual(U.listVersions(inst), ['v0.1.0', 'v0.2.0']);
+    assert.deepEqual(U.readCurrent(inst), { current: 'v0.2.0', switchedAt: null });
+    assert.deepEqual(res.pruned.sort(), ['v0.0.9', 'v0.1.0']);
+    assert.deepEqual(U.listVersions(inst), ['v0.2.0']);
     assert.equal(fs.readFileSync(path.join(inst, U.LAUNCHER), 'utf8'), '// launcher v0.2.0\n');
     assert.ok(fs.existsSync(path.join(inst, U.LAUNCHER_CMD)));
     assert.equal(fs.readFileSync(path.join(inst, 'started.log'), 'utf8'), 'v0.2.0\n');
@@ -369,11 +362,11 @@ test('바꾸기 프로세스: 새 백엔드가 뜨지 못하면 current.json을 
     fakeRoot(inst, 'v0.1.0'); const from = fakeRoot(inst, 'v0.2.0'); const to = fakeRoot(inst, 'v0.3.0', { bad: true });
     U.writeCurrent(inst, { current: 'v0.2.0', previous: 'v0.1.0', switchedAt: 5 });
     const before = U.readCurrent(inst);
-    const res = runSwap(inst, { kind: 'update', fromRoot: from, toRoot: to, toInstalled: true, from: { tag: 'v0.2.0' }, to: { tag: 'v0.3.0' }, currentBefore: before, currentAfter: { current: 'v0.3.0', previous: 'v0.2.0' } });
+    const res = runSwap(inst, { kind: 'update', fromRoot: from, toRoot: to, toInstalled: true, from: { tag: 'v0.2.0' }, to: { tag: 'v0.3.0' }, currentBefore: before, currentAfter: { current: 'v0.3.0' } });
     assert.equal(res.ok, false); assert.equal(res.rolledBack, true); assert.match(res.error, /시작되지 않았습니다/);
     assert.equal(res.rollbackError, undefined);
     assert.deepEqual(U.readCurrent(inst), before);
-    assert.deepEqual(U.listVersions(inst), ['v0.1.0', 'v0.2.0']);
+    assert.deepEqual(U.listVersions(inst), ['v0.2.0']); // 자동 되돌리기는 옛 코드 폴더(fromRoot)로 하고, 지금 버전만 남긴다(P71)
     assert.equal(fs.readFileSync(path.join(inst, 'started.log'), 'utf8'), 'v0.3.0 fail\nv0.2.0\n');
   } finally { rm(d); }
 });

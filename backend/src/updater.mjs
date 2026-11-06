@@ -46,7 +46,6 @@ export class Updater {
       'update.status': () => this.view(),
       'update.check': (p) => (p && p.channel ? this.checkOnce(p.channel) : this.check('manual')),
       'update.apply': (p, c) => this.apply(p || {}, c),
-      'update.rollback': (p, c) => this.rollback(p || {}, c),
       'update.leaving': (p) => this.leave(p || {}),
     };
     if (timers) {
@@ -79,7 +78,7 @@ export class Updater {
     return {
       current: { version: this.running.version, tag: this.running.tag, installed: this.running.installed, prerelease: !!(U.parseVersion(this.running.version) || { pre: [] }).pre.length },
       channel, latest, available, checkedAt: r.checkedAt || null, error: r.error || null, enabled: this.enabled(),
-      installDir: this.dir, previous: (cur && cur.previous) || null, canRollback: !!(cur && cur.previous && allowed.ok),
+      installDir: this.dir,
       allowed: allowed.ok, job: this.job, lastResult: m.lastResult || null,
     };
   }
@@ -175,33 +174,11 @@ export class Updater {
     try {
       const protocol = this.b.herdrCompat && this.b.herdrCompat.ok ? this.b.herdrCompat.protocol : null;
       const r = await this.prepare({ dir: this.dir, release: rel, apiUrl: this.apiUrl, protocol, step: (step, d) => { this.log(`step ${step}${d ? ` ${JSON.stringify(d)}` : ''}`); this.setJob({ step, part: null, bytes: null, ...(d || {}) }); }, log: (l) => this.log(l) });
-      const before = U.readCurrent(this.dir);
-      const previous = this.running.installed ? this.running.tag : (before && before.current) || null;
-      await this.swap({ kind: 'update', toRoot: r.root, to: { tag: rel.tag, version: rel.version }, currentAfter: { current: rel.tag, previous: previous === rel.tag ? null : previous, switchedAt: Date.now() } });
+      await this.swap({ kind: 'update', toRoot: r.root, to: { tag: rel.tag, version: rel.version }, currentAfter: { current: rel.tag, switchedAt: Date.now() } });
     } catch (e) {
       this.log(`update failed ${e.stack || e.message}`);
       this.setJob({ phase: 'failed', error: String(e.message || e).slice(0, 500) });
     }
-  }
-
-  async rollback(p, c) {
-    this.guard(c);
-    const cur = U.readCurrent(this.dir);
-    if (!cur || !cur.previous) throw apiError('no_previous', '되돌릴 앞 버전이 없습니다');
-    const root = path.join(this.dir, cur.previous);
-    if (!fs.existsSync(root)) throw apiError('no_previous', `앞 버전 폴더가 없습니다: ${cur.previous}`);
-    if (!p.confirm) return { needsConfirm: true, to: cur.previous, message: `앞 버전 ${cur.previous}로 되돌립니다. 백엔드와 창이 다시 뜹니다. herdr의 세션은 그대로 이어집니다.` };
-    this.job = null;
-    this.setJob({ kind: 'rollback', phase: 'prepare', step: 'verify', to: cur.previous, error: null, startedAt: Date.now() });
-    (async () => {
-      try {
-        const protocol = this.b.herdrCompat && this.b.herdrCompat.ok ? this.b.herdrCompat.protocol : null;
-        const v = await this.verify(root, { protocol });
-        if (!v.ok) throw new Error(`앞 버전을 확인하지 못했습니다: ${v.problems.join('; ')}`);
-        await this.swap({ kind: 'rollback', toRoot: root, to: { tag: cur.previous, version: U.versionOfRoot(root) }, currentAfter: { current: cur.previous, previous: cur.current, switchedAt: Date.now() } });
-      } catch (e) { this.log(`rollback failed ${e.message}`); this.setJob({ phase: 'failed', error: String(e.message || e).slice(0, 500) }); }
-    })();
-    return { started: true, to: cur.previous };
   }
 
   // 창(Electron main)이 끝나기 전에 PID와 다시 띄울 때 쓸 인자를 알린다

@@ -9,6 +9,7 @@ import { dismissAsk, askKey, toast } from './store.js';
 import { ago } from './lib/labels.js';
 import { useT, errText } from './lib/i18n.js';
 import { Icon } from './lib/icons.jsx';
+import { worktreeExitLine, removeWarning } from './lib/worktree-exit.js'; // P71
 
 export const ANSWER_H = 86; // 접힌 승인 줄의 높이(월드 px). 터미널이 이만큼 비켜 준다
 
@@ -152,6 +153,19 @@ export function ApprovalCard({ s, onTerminal, onAnswered }) {
           ? <button key={c.n} className="mt-btn ghost" onClick={onTerminal}>{c.n}. {c.label} → {t('approval.toTerminal')}</button>
           : <button key={c.n} className={`mt-btn${c.n === 1 ? ' primary' : ''}`} disabled={busy} data-choice={c.n} onClick={() => answer({ choice: c.n })}>{c.n}. {c.label}</button>)}
       </div>
+    </>;
+  } else if (kind === 'worktree_exit') {
+    // P71: `claude -w` 세션이 끝날 때 묻는 워크트리 나가기 질문(화면에서 읽음). 지우기는 한 번 더 묻는다
+    const warn = removeWarning(ask, t);
+    what = <><b>{t('wtExit.title')}</b> <span className="dim" data-role="wt-exit-what">{worktreeExitLine(ask, t)}</span></>;
+    row = mode === 'remove' ? <>
+      <span className="mt-a-msg mt-wt-warn" data-role="wt-remove-warn">{warn}</span>
+      <button className="mt-a-no mt-wt-remove" disabled={busy} data-action="wt-remove-confirm" title={`${ask.remove.n}. ${ask.remove.label}`} onClick={() => answer({ choice: 'remove', confirm: true })}>{t('wtExit.removeConfirm')}</button>
+      <button className="mt-a-term" disabled={busy} data-action="wt-remove-cancel" onClick={() => setMode(null)}>{t('common.cancel')}</button>
+    </> : <>
+      <button className="mt-a-yes" disabled={busy} data-choice="keep" title={`${ask.keep.n}. ${ask.keep.label}`} onClick={() => answer({ choice: 'keep' })}>{t('wtExit.keep')} <kbd>{ask.keep.n}</kbd></button>
+      <button className="mt-a-no" disabled={busy} data-choice="remove" title={`${ask.remove.n}. ${ask.remove.label}`} onClick={() => setMode('remove')}>{t('wtExit.remove')} <kbd>{ask.remove.n}</kbd></button>
+      {terminalBtn}
     </>;
   } else {
     what = <><b>{t('ask.unknownDialog')}</b> <span className="dim">{t('approval.unknownHint')}</span></>;

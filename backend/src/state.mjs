@@ -130,7 +130,7 @@ export function applyHerdrStatus(rt, status, now = Date.now(), extra = {}) {
   rt.lastActivityAt = now;
   // waiting은 hook이 아니라 herdr가 blocked에서 벗어날 때 끝낸다. 거부·취소에는 hook이 없다(E9).
   if (prev === 'blocked' && status !== 'blocked' && rt.pendingAsk) resolveAsk(rt, `herdr:${status}`, now);
-  if (status !== 'blocked') { rt.trustScreen = null; rt.screenAsk = null; }
+  if (status !== 'blocked') { rt.trustScreen = null; rt.screenAsk = null; rt.worktreeExit = null; }
   // hook이 없는 세션의 턴은 herdr 상태로 센다(검토 대기 표시에 쓴다)
   if (rt.hooked === false && status === 'working' && prev !== 'working') rt.turn = { startedAt: now, endedAt: null };
   if (rt.phase === 'starting' && (status === 'idle' || status === 'done' || status === 'blocked' || status === 'working')) rt.phase = 'running';
@@ -150,6 +150,7 @@ export function applyAgentReleased(rt, now = Date.now(), { herdrStopping = false
   rt.herdr.present = false;
   rt.herdr.status = 'unknown';
   rt.pendingAsk = null;
+  rt.worktreeExit = null;
   const reason = rt.sessionEnd && rt.sessionEnd.reason;
   let kind;
   if (reason === 'prompt_input_exit') kind = 'normal';
@@ -170,6 +171,11 @@ export function applyHerdrDisconnected(rt, now = Date.now()) {
   rt.herdr.status = null;
 }
 
+// P71: 화면에서 읽은 워크트리 나가기 질문(screen.mjs parseWorktreeExit) → 승인 줄이 보일 ask
+export function worktreeExitAsk(w) {
+  return { kind: 'worktree_exit', commits: w.commits ?? null, files: w.files || 0, branch: w.branch || null, keep: w.keep, remove: w.remove, since: w.at };
+}
+
 export function deriveState(rt) {
   const h = rt.herdr;
   if (rt.sleep) return { state: 'sleeping' }; // P21(D4): 판이 잠재움. 패널이 없다(J1·J2의 닫힘과 다르다)
@@ -180,6 +186,7 @@ export function deriveState(rt) {
   if (rt.hooked === false) {
     if (s === 'blocked') {
       if (rt.kind === 'claude' && rt.trustScreen) return { state: 'trust_wait', confirmedByScreen: true };
+      if (rt.kind === 'claude' && rt.worktreeExit) return { state: 'waiting', ask: worktreeExitAsk(rt.worktreeExit) };
       return { state: 'waiting', ask: { kind: 'screen', tail: rt.screenAsk ? rt.screenAsk.tail : null, since: rt.screenAsk ? rt.screenAsk.at : h.at } };
     }
     if (s === 'working') return { state: 'working' };
@@ -189,6 +196,7 @@ export function deriveState(rt) {
   }
   if (s === 'blocked') {
     if (rt.pendingAsk) return { state: 'waiting', ask: rt.pendingAsk };
+    if (rt.worktreeExit) return { state: 'waiting', ask: worktreeExitAsk(rt.worktreeExit) }; // P71: 워크트리 나가기 질문(화면에서 읽음)
     // 신뢰 대화상자: 화면의 "Quick safety check", 또는 hook 없음 + launch_pending + agent_session 없음(E10)
     if (rt.trustScreen || (h.launchPending && !h.agentSessionId && rt.hooksSinceLaunch === 0)) return { state: 'trust_wait', confirmedByScreen: !!rt.trustScreen };
     return { state: 'waiting', ask: { kind: 'unknown_dialog' }, estimate: 'herdr blocked, no ask hook' };

@@ -11,6 +11,7 @@
 import fs from 'node:fs';
 import { buildStartArgs, buildResumeArgs, transcriptPathFor } from './launch.mjs';
 import { deriveState } from './state.mjs';
+import { waitClaudeExit } from './worktree-exit.mjs'; // P71
 import { readProcessTable, descendants, mb } from './resources.mjs';
 import { workspaceNames } from './workspaces.mjs';
 import { m, keyed } from './msg.mjs';
@@ -342,7 +343,7 @@ export class Sleeper {
         rt.exitRequested = true;
         await b.adapter.sendText(s.paneId, '/exit'); await sleep(150); await b.adapter.paneKeys(s.paneId, ['enter']);
         const t = Date.now();
-        while (rt.herdr.present && Date.now() - t < b.cfg.killWaitMs) await sleep(200);
+        await waitClaudeExit(b, s, b.cfg.killWaitMs, { by: 'sleep', steps }); // P71: `claude -w` 세션의 워크트리 나가기 질문에는 남기기로 답한다
         if (rt.herdr.present) { rt.sleep = null; rt.exitRequested = false; b.broadcastSession(s, { cause: 'sleep:failed' }); throw apiError('still_running', `@${s.name} 세션의 claude 프로세스가 /exit 후에도 종료되지 않았습니다.`); }
         steps.push(`/exit ${Date.now() - t}ms`);
       }

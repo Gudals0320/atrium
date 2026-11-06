@@ -1,4 +1,4 @@
-// P69: atrium install, atrium update [--check | --rollback] [--yes]
+// P69: atrium install, atrium update [--check] [--yes]. P71: --rollback(손으로 앞 버전 되돌리기)은 뺐다
 // - install: 최신 릴리즈를 설치 폴더(ATRIUM_INSTALL_DIR, 기본 %LOCALAPPDATA%\atrium\versions)에 깔고 실행기(Atrium.cmd)와 바탕화면 바로가기를 만든다.
 //   바로가기는 실행기를 부르고 실행기는 current.json의 버전을 띄우므로, 업데이트 뒤에도 바로가기를 다시 만들 필요가 없다. 도는 백엔드와 herdr는 건드리지 않는다.
 // - update: 백엔드가 돌면 판 API(update.*)로 창의 "업데이트" 단추와 같은 일을 한다(백엔드만 바꾸고 herdr의 세션은 그대로). 돌지 않으면 받아서 current.json만 바꾼다.
@@ -47,6 +47,7 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
   const allowed = U.installAllowed(cfg, dir);
   const here = U.runningVersion(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'), dir);
   const channel = channelFlag(flags);
+  if (flags.rollback) throw new Error('--rollback은 없어졌습니다(P71). 새 백엔드가 뜨지 못하면 업데이트가 저절로 지금 버전으로 되돌아갑니다.');
 
   if (cmd === 'install') {
     if (!allowed.ok) throw new Error(allowed.message);
@@ -79,13 +80,12 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
       const c = await connect(cfg);
       try { const v = await c.call('update.check', channel ? { channel } : {}); return print(v, out, json); } finally { c.close(); }
     }
-    const v = { current: { version: here.version, tag: here.tag, installed: here.installed }, channel: channel || 'stable', latest: null, available: false, error: null, installDir: dir, previous: (U.readCurrent(dir) || {}).previous || null };
+    const v = { current: { version: here.version, tag: here.tag, installed: here.installed }, channel: channel || 'stable', latest: null, available: false, error: null, installDir: dir };
     try { v.latest = await latestRelease(apiUrl, v.channel); v.available = U.compareVersions(v.latest.version, here.version) > 0; } catch (e) { v.error = e.message; }
     return print(v, out, json);
   }
   if (!up) {
     if (!allowed.ok) throw new Error(allowed.message);
-    if (flags.rollback) { const r = U.rollbackCurrent(dir); return out({ rolledBack: true, current: r.after.current, previous: r.after.previous }); }
     const rel = await latestRelease(apiUrl, channel || 'stable');
     const cur = U.readCurrent(dir);
     if (cur && cur.current && U.compareVersions(rel.version, cur.current) <= 0) return console.log(`새 버전이 없습니다(설치 ${cur.current}, 최신 ${rel.tag})`);
@@ -106,10 +106,9 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
   });
   c.ws.on('close', () => { closed = true; });
   await c.call('events.subscribe');
-  const method = flags.rollback ? 'update.rollback' : 'update.apply';
-  const r = await c.call(method, { confirm: !!flags.yes, ...(channel && !flags.rollback ? { channel } : {}) });
+  const r = await c.call('update.apply', { confirm: !!flags.yes, ...(channel ? { channel } : {}) });
   if (r.needsConfirm) { console.log(`확인 필요: ${r.message}\n계속하려면 --yes`); process.exitCode = 2; c.close(); return; }
-  console.log(`${flags.rollback ? '되돌리기' : '업데이트'} 시작: ${r.to}`);
+  console.log(`업데이트 시작: ${r.to}`);
   while (!closed && !(job && job.phase === 'failed')) await sleep(300);
   if (!closed) { c.close(); process.exitCode = 1; return; }
   // 새 백엔드와 바꾸기 결과를 기다린다
@@ -134,6 +133,5 @@ function print(v, out, json) {
   if (v.channel) console.log(`채널: ${v.channel}${v.once ? ' (이번 한 번)' : ''}`);
   if (v.latest) console.log(`최신 릴리즈: ${v.latest.tag}${v.available ? ' — 새 버전이 있습니다(atrium update --yes)' : ' — 최신입니다'}${v.latest.url ? `\n  ${v.latest.url}` : ''}`);
   if (v.error) console.log(`확인 오류: ${v.error === 'no_release' ? (v.channel === 'dev' ? '릴리즈가 없습니다' : '정식 릴리즈가 없습니다') : v.error}`);
-  if (v.previous) console.log(`되돌릴 앞 버전: ${v.previous}`);
   if (v.checkedAt) console.log(`마지막 확인: ${new Date(v.checkedAt).toLocaleString()}`);
 }

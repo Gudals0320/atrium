@@ -8,6 +8,28 @@ export function tailLines(text, n = 12) {
 // 신뢰 대화상자(E10 2.2)
 export function isTrustDialog(text) { return /Quick safety check/i.test(text) && /trust this folder/i.test(text); }
 
+// P71: 워크트리 나가기 질문. `claude -w`로 띄운 세션이 끝날 때 Claude Code가 묻는다(제목 "Exiting worktree session").
+// "You have 13 commits on worktree-x. The branch will be deleted if you remove the worktree." 아래에 "1. Keep worktree", "2. Remove worktree"
+// (tmux가 있으면 "Keep worktree and tmux session" 등)가 있다. 선택지 설명(Stays at <경로>)은 다음 줄이라 번호 줄만 읽는다.
+// → null | { commits(모르면 null), files(커밋 안 한 파일 수, 없으면 0), branch, keep: { n, label }, remove: { n, label }, choices }
+export function parseWorktreeExit(text) {
+  const s = String(text || '');
+  if (!/Exiting worktree session/i.test(s)) return null;
+  const choices = [];
+  for (const raw of s.split('\n')) {
+    const m = raw.match(/^[\s│|]*(❯\s*)?(\d)\.\s+((?:Keep|Remove) worktree[^│|]*?)\s*[│|]?\s*$/);
+    if (m) choices.push({ n: Number(m[2]), label: m[3].trim().split(/\s{2,}/)[0] }); // 같은 줄에 설명(Stays at …)이 붙으면 떼어 낸다
+  }
+  const keep = choices.find((c) => /^Keep worktree/i.test(c.label)) || null;
+  const remove = choices.find((c) => /^Remove worktree/i.test(c.label)) || null;
+  if (!keep || !remove) return null;
+  const flat = s.replace(/[│|]/g, ' ').replace(/\s+/g, ' '); // 화면 폭에서 꺾인 문장을 잇는다
+  const c = flat.match(/\b(\d+) commits?\b/i);
+  const f = flat.match(/\b(\d+) uncommitted files?\b/i);
+  const b = flat.match(/\bcommits? on (\S+?)\.?\s/i) || flat.match(/\bbranch (\S+?) (?:will be deleted|may hold)/i);
+  return { commits: c ? Number(c[1]) : null, files: f ? Number(f[1]) : 0, branch: b ? b[1] : null, keep, remove, choices };
+}
+
 // 권한 요청 선택지(E9 2.1): "❯ 1. Yes", "  2. Yes, and …", "  3. No". 화면 아래쪽 마지막 번호 목록을 읽는다.
 export function parseChoices(text) {
   const lines = String(text || '').split('\n');
