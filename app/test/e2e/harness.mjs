@@ -27,8 +27,8 @@ export function logger(name) {
 // 부모 Claude Code 표시 변수를 뺀 환경(백엔드와 herdr도 각자 한 번 더 뺀다)
 function cleanEnv() { return Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AGENT_SDK|ELECTRON_RUN_AS_NODE)/.test(k))); }
 
-export async function launch({ query = '', log = console.log, env = {} } = {}) {
-  const app = await electron.launch({ args: ['.', '--dev'], cwd: APP_ROOT, env: { ...cleanEnv(), ...env }, timeout: 60000 });
+export async function launch({ query = '', log = console.log, env = {}, args = [] } = {}) {
+  const app = await electron.launch({ args: ['.', '--dev', ...args], cwd: APP_ROOT, env: { ...cleanEnv(), ...env }, timeout: 60000 }); // P65: args(예: --force-device-scale-factor)
   const page = await app.firstWindow();
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log(`[console.${m.type()}] ${m.text().slice(0, 300)}`); });
   page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));

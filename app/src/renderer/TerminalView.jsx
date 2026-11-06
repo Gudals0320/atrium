@@ -10,7 +10,10 @@
 // - P45: 글자 크기 = TERM_FONT_SIZE × 터미널 글자 배율(설정 일반 탭, store.termScale). 바꾸면 곧바로 글자를 바꾸고 줄·칸 수를 다시 재 패널 크기를 맞춘다.
 // - P47: 창(클라이언트) 여럿이 한 패널을 함께 본다. 패널 크기는 마지막으로 입력했거나 초점을 준 창이 정하고(terminal.owner),
 //   다른 창은 같은 열×행을 노드 크기에 맞춰 비율로 그린다(fitScale). 다른 기기가 방금 친 터미널에는 짧게 표시한다(잠그지 않는다).
+// - P65: 판 배율·분수 DPR에서 글자가 흐리지 않게, 배율이 멈추면 WebGL 터미널을 화면 장치 픽셀에 맞춘 해상도로 다시 그리고
+//   캔버스를 장치 픽셀 경계에 맞춘다(lib/term-sharp.js). 패널 줄·칸 수는 배율 1 칸으로 잰다(배율을 바꿔도 패널 크기는 그대로).
 import { useEffect, useRef, useState } from 'react';
+import { useStoreApi } from '@xyflow/react';
 import { Terminal } from '@xterm/xterm';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -24,6 +27,7 @@ import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
 import { onFrame, onWritten, markInput, setTerminal, perfLog } from './perf.js';
 import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/tokens.js';
 import { termFontSize } from './lib/scale.js'; // P45
+import { sharpPlan, compensate, phaseShift, paintedAt, samePlan, cssCanvas, fitDims } from './lib/term-sharp.js'; // P65
 import { useT, errText } from './lib/i18n.js';
 import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
@@ -40,6 +44,8 @@ export const budget = new RendererBudget(readNumber('webglBudget', DEFAULT_WEBGL
 export const terms = new Map(); // sessionId → Terminal (시험과 E6에서 읽는다)
 const SHELL_SCROLLBACK = 5000; // P42: 셸 노드의 판 안 기록 줄 수
 const HISTORY_WAIT = 1500; // P42: 셸 기록을 첫 프레임 앞에 넣으려고 기다리는 시간(넘으면 기록 없이 그린다)
+const SHARP_SETTLE_MS = 160; // P65: 판이 이만큼 멈춰 있으면 화면 해상도로 다시 그린다(움직이는 동안은 다시 그리지 않는다)
+const SHARP_CHECK_MS = 1000; // P65: 노드를 옮겨 캔버스가 장치 픽셀 경계에서 벗어났는지 보는 주기
 
 // P38: xterm은 마우스 위치를 칸으로 바꿀 때 판의 CSS 확대·축소를 모른다(화면 px를 확대·축소 전 칸 크기로 나눈다).
 // 마우스 서비스(선택, 링크, 마우스 보고가 함께 쓴다)에 확대·축소 전 자리를 넘긴다. xterm 6.0.0의 내부(_core._mouseService)라
@@ -58,6 +64,7 @@ function fixMouseScale(term, sessionId) {
 // reserve: P11 승인 줄이 붙으면 그 높이(월드 px)만큼 터미널 아래를 비운다. 패널 줄 수가 줄어 Claude Code 대화상자가 줄 위에 보인다
 export function TerminalView({ sessionId, width, height, reserve = 0, onActivate, onInput, focusTick }) {
   const t = useT();
+  const flow = useStoreApi(); // P65: 판 배율·이동을 렌더 없이 구독한다
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
   const onActivateRef = useRef(onActivate);
@@ -72,7 +79,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
 
   useEffect(() => {
     const host = hostRef.current;
-    const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null, shared: 1, scale: 1, ownerIsMe: true };
+    const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null, shared: 1, scale: 1, ownerIsMe: true, plan: null, comp: { sx: 1, sy: 1 }, shift: { x: 0, y: 0 }, dprMul: 1, movedAt: 0 };
     // P42: 셸은 앱이 스스로 스크롤하지 않아(PowerShell은 SGR 휠을 무시) 지난 출력을 xterm scrollback에 두고 판 안에서 스크롤한다
     const shell = (getState().sessions.get(sessionId) || {}).kind === 'shell';
     const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: termFontSize(TERM_FONT_SIZE, getState().termScale), lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
@@ -83,16 +90,33 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     term.loadAddon(fit);
     term.open(host);
     terms.set(sessionId, term);
+    // P65: 터미널 요소의 변환 = 장치 픽셀 경계 맞춤 이동 + 크기(P47 비율, 선명하게 그릴 때는 캔버스 1픽셀 = 화면 장치 픽셀 1개가 되는 값)
+    st.layout = () => {
+      const el = term.element;
+      if (!el) return;
+      const c = st.plan ? st.comp : { sx: st.scale, sy: st.scale };
+      const { sx, sy } = c, { x, y } = st.shift;
+      const tf = `${x || y ? `translate(${+x.toFixed(4)}px, ${+y.toFixed(4)}px) ` : ''}${sx !== 1 || sy !== 1 ? `scale(${+sx.toFixed(6)}, ${+sy.toFixed(6)})` : ''}`.trim();
+      if (el.style.transform === tf) return;
+      el.style.transformOrigin = '0 0';
+      el.style.transform = tf;
+    };
+    // 배율 1 때의 터미널 CSS 크기(P65로 다시 그려도 노드 안에서 차지하는 크기는 이것)
+    st.baseSize = () => {
+      const screen = term.element && term.element.querySelector('.xterm-screen');
+      if (st.plan) return { w: cssCanvas(term.cols, st.plan.base.w, st.planDpr), h: cssCanvas(term.rows, st.plan.base.h, st.planDpr) };
+      return screen ? { w: screen.offsetWidth, h: screen.offsetHeight } : null;
+    };
     // P47: 다른 창이 정한 패널 크기를 내 노드에 맞춰 비율로 그린다. 혼자 볼 때와 내가 크기를 가졌을 때는 늘 1(예전과 같다)
     st.applyScale = () => {
-      const el = term.element, screen = el && el.querySelector('.xterm-screen');
-      if (!el || !screen) return;
-      const s = st.shared > 1 && !st.ownerIsMe ? fitScale({ termW: screen.offsetWidth, termH: screen.offsetHeight, boxW: host.clientWidth, boxH: host.clientHeight }) : 1;
+      const b = st.baseSize();
+      if (!b) return;
+      const s = st.shared > 1 && !st.ownerIsMe ? fitScale({ termW: b.w, termH: b.h, boxW: host.clientWidth, boxH: host.clientHeight }) : 1;
       if (s === st.scale) return;
       st.scale = s;
-      el.style.transformOrigin = '0 0';
-      el.style.transform = s === 1 ? '' : `scale(${s})`;
+      st.layout();
       host.dataset.scale = String(+s.toFixed(3));
+      if (st.sharpen) st.sharpen(); // P65: 비율이 바뀌면 선명하게 그릴 크기도 다시
     };
     // P47: 터미널에 초점을 주면 이 창이 패널 크기를 가져간다
     const onFocusIn = () => { if (st.pid) api.call('terminal.focus', { session: sessionId }).catch(() => {}); };
@@ -100,6 +124,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     fixMouseScale(term, sessionId);
 
     let renderer = budget.acquire(sessionId);
+    st.renderer = renderer;
     perfLog('term_mount', { sessionId, renderer, used: budget.used });
     if (renderer === 'webgl') {
       try {
@@ -109,12 +134,82 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
           // 컨텍스트를 잃은 터미널은 DOM으로 그린다. 정리 중 오류가 나도 그 터미널 안에서 끝낸다(E5 2.5)
           try { gl.dispose(); } catch (e) { perfLog('webgl_dispose_error', { sessionId, message: e.message }); window.mt.log(`webgl dispose error ${sessionId}: ${e.stack || e.message}`); }
           budget.release(sessionId, { contextLost: true });
+          st.renderer = 'dom'; if (st.unsharp) st.unsharp('context-loss'); // P65: DOM 렌더러는 배율 1 값으로
           setTerminal(sessionId, { renderer: 'dom', contextLost: true });
           window.mt.log(`webgl context lost ${sessionId}`);
         });
         term.loadAddon(gl);
-      } catch (e) { budget.release(sessionId); renderer = 'dom'; window.mt.log(`webgl failed ${sessionId}: ${e.message}`); }
+        // P65: WebGL은 캔버스의 device-pixel-content-box(CSS 크기 × 실제 DPR)를 보고 캔버스 픽셀 수를 되돌린다.
+        // 선명하게 그리는 동안(xterm이 보는 DPR ≠ 실제 DPR)은 렌더러가 잰 장치 크기를 쓴다(addon-webgl 0.19 내부 _renderer)
+        const r = gl._renderer;
+        if (r && typeof r._setCanvasDevicePixelDimensions === 'function') {
+          const setPx = r._setCanvasDevicePixelDimensions.bind(r);
+          r._setCanvasDevicePixelDimensions = (w, h) => {
+            const dc = st.dprMul !== 1 && r.dimensions && r.dimensions.device.canvas;
+            return dc && dc.width > 0 && dc.height > 0 ? setPx(dc.width, dc.height) : setPx(w, h);
+          };
+        } else window.mt.log(`webgl canvas sizing hook not found ${sessionId}: sharp rendering off`);
+        st.glHooked = !!(r && r._setCanvasDevicePixelDimensions);
+      } catch (e) { budget.release(sessionId); renderer = 'dom'; st.renderer = 'dom'; window.mt.log(`webgl failed ${sessionId}: ${e.message}`); }
     }
+
+    // P65: 선명하게 그리기. xterm이 보는 DPR(coreBrowserService.dpr)을 터미널마다 바꿔 WebGL 캔버스를 화면 장치 픽셀에 맞춘 해상도로 그린다.
+    // xterm 6.0.0·addon-webgl 0.19의 내부(_core._coreBrowserService, _charSizeService, _onDprChange)라 판 올릴 때 확인한다. 없으면 예전처럼 그린다
+    const core = term._core, cbs = core && core._coreBrowserService, chars = core && core._charSizeService;
+    const sharpOk = !!(cbs && cbs._onDprChange && typeof cbs._onDprChange.fire === 'function' && chars && 'dpr' in cbs);
+    if (sharpOk) Object.defineProperty(cbs, 'dpr', { configurable: true, get: () => cbs.window.devicePixelRatio * st.dprMul });
+    else window.mt.log(`xterm dpr service not found ${sessionId}: terminal text is not re-rendered for board zoom`);
+    const setPlan = (plan, dpr) => {
+      const prev = st.plan;
+      st.plan = plan; st.planDpr = dpr;
+      const mul = plan ? plan.E / dpr : 1;
+      const lh = plan ? plan.lineHeight : TERM_LINE_HEIGHT;
+      const t0 = performance.now();
+      if (term.options.lineHeight !== lh) term.options.lineHeight = lh;
+      if (mul !== st.dprMul) { st.dprMul = mul; cbs._onDprChange.fire(cbs.dpr); }
+      host.dataset.sharp = plan ? `${plan.Tw}x${plan.Th}@${+plan.E.toFixed(3)}${plan.capped ? ' capped' : ''}${plan.fillX ? ' fillX' : ''}${plan.fillY ? ' fillY' : ''}` : ''; // 시험이 읽는다
+      if (!samePlan(prev, plan)) perfLog('term_sharp', { sessionId, E: plan ? +plan.E.toFixed(4) : null, k: plan ? +plan.k.toFixed(4) : null, cell: plan ? `${plan.Tw}x${plan.Th}` : null, ms: +(performance.now() - t0).toFixed(1) });
+    };
+    st.unsharp = (why) => {
+      if (!sharpOk || !st.plan) return;
+      setPlan(null, window.devicePixelRatio);
+      st.shift = { x: 0, y: 0 };
+      st.layout();
+      perfLog('term_sharp_off', { sessionId, why });
+    };
+    st.sharpen = () => {
+      if (!st.alive || !sharpOk || !st.glHooked || st.renderer !== 'webgl') return;
+      const screen = term.element && term.element.querySelector('.xterm-screen');
+      if (!screen || !host.offsetWidth) return;
+      const hs = getComputedStyle(host);
+      const hw = parseFloat(hs.width), hh = parseFloat(hs.height);
+      const kAnc = host.getBoundingClientRect().width / hw; // 판 배율 × 웹 화면 배율(조상의 변환)
+      const zc = parseFloat(getComputedStyle(document.documentElement).zoom) || 1; // P49 웹 화면 배율(Electron은 1)
+      const dpr = window.devicePixelRatio;
+      if (!(kAnc > 0 && dpr > 0 && hw > 0 && hh > 0)) return;
+      // 1:1로 그린 터미널이 들어갈 자리. 셸은 스크롤 막대(FitAddon과 같은 14px) 앞까지, 그 밖은 노드 오른쪽 여백(.mt-term right 12px) 안으로 8px까지
+      const room = term.options.scrollback === 0 ? hw + 8 : hw - 14;
+      const plan = sharpPlan({ cw: chars.width, ch: chars.height, dpr, lineHeight: TERM_LINE_HEIGHT, k: kAnc * st.scale, cols: term.cols, rows: term.rows, fitW: room / st.scale, fitH: hh / st.scale });
+      if (!plan) return;
+      const sizeKey = `${term.cols}x${term.rows}`;
+      if (!samePlan(plan, st.plan) || dpr !== st.planDpr || sizeKey !== st.planSize) { st.planSize = sizeKey; setPlan(plan, dpr); }
+      st.comp = compensate(plan, { cols: term.cols, rows: term.rows, dpr, kAnc, s47: st.scale, zc });
+      // 캔버스의 화면 자리를 장치 픽셀 경계에 맞춘다. 지금 이동을 뺀 자리로 재서 이동이 쌓이지 않게 한다(실험 p65: 판 배율 1에서도 분수 DPR이면 반 픽셀 번진다)
+      st.layout();
+      const r = screen.getBoundingClientRect();
+      const x0 = r.left - st.shift.x * kAnc, y0 = r.top - st.shift.y * kAnc;
+      // Blink는 노드(변환이 걸린 가장 가까운 조상) 안의 레이아웃 자리를 장치 픽셀로 반올림해 그린다. getBoundingClientRect는 반올림 전 자리라 그만큼 고쳐 잰다
+      const wr = (host.closest('.react-flow__node') || host).getBoundingClientRect(), g = { kAnc, dpr, zc };
+      const shift = { x: phaseShift(paintedAt(x0, wr.left, g), dpr) / kAnc, y: phaseShift(paintedAt(y0, wr.top, g), dpr) / kAnc };
+      if (Math.abs(shift.x - st.shift.x) > 1e-4 || Math.abs(shift.y - st.shift.y) > 1e-4) { st.shift = shift; st.layout(); }
+    };
+    st.sharpSoon = (ms = SHARP_SETTLE_MS) => { clearTimeout(st.sharpTimer); st.sharpTimer = setTimeout(() => st.sharpen(), ms); };
+    let lastTf = flow.getState().transform;
+    const offFlow = flow.subscribe((s) => { if (s.transform !== lastTf) { lastTf = s.transform; st.movedAt = performance.now(); st.sharpSoon(); } });
+    st.sharpCheck = setInterval(() => { if (performance.now() - st.movedAt > 2 * SHARP_SETTLE_MS) st.sharpen(); }, SHARP_CHECK_MS);
+    const offResize = term.onResize(() => st.sharpSoon());
+    const onWinResize = () => st.sharpSoon();
+    window.addEventListener('resize', onWinResize);
 
     const send = (data) => {
       if (!data) return;
@@ -284,6 +379,14 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       setStatus({ kind: 'detached', reason: d.reason });
     });
 
+    // P65: 선명하게 다시 그린 동안에도 배율 1 칸으로 잰다(배율이 패널 줄·칸 수를 바꾸지 않게)
+    st.propose = () => {
+      if (!st.plan || !term.element || !term.element.parentElement) return fit.proposeDimensions();
+      const ps = getComputedStyle(term.element.parentElement), es = getComputedStyle(term.element);
+      const px = (v) => parseInt(v, 10) || 0;
+      const bar = term.options.scrollback === 0 ? 0 : (term.options.overviewRuler && term.options.overviewRuler.width) || 14; // FitAddon과 같은 값
+      return fitDims({ freeW: Math.max(0, px(ps.width)) - px(es.paddingLeft) - px(es.paddingRight) - bar, freeH: px(ps.height) - px(es.paddingTop) - px(es.paddingBottom), cellW: st.plan.base.w / st.planDpr, cellH: st.plan.base.h / st.planDpr });
+    };
     const dims = fit.proposeDimensions() || { cols: 100, rows: 30 };
     const cols = Math.max(20, dims.cols), rows = Math.max(8, dims.rows);
     term.resize(cols, rows);
@@ -306,6 +409,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       st.alive = false;
       perfLog('term_unmount', { sessionId });
       offFrame(); offDetached(); offOpen(); offOwner(); offInputBy();
+      offFlow(); offResize.dispose(); window.removeEventListener('resize', onWinResize); clearTimeout(st.sharpTimer); clearInterval(st.sharpCheck); // P65
       if (term.textarea) term.textarea.removeEventListener('focus', onFocusIn);
       clearTimeout(st.typingTimer);
       host.removeEventListener('paste', onPaste, true);
@@ -329,7 +433,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const st = ref.current;
     if (!st.term) return;
     const size = termFontSize(TERM_FONT_SIZE, termScale);
-    if (st.term.options.fontSize !== size) { st.term.options.fontSize = size; perfLog('term_font', { sessionId, size }); }
+    if (st.term.options.fontSize !== size) { st.term.options.fontSize = size; perfLog('term_font', { sessionId, size }); if (st.sharpSoon) st.sharpSoon(0); } // P65: 글자 크기가 바뀌면 칸도 다시
   }, [sessionId, termScale, retry]);
 
   // 노드 크기가 바뀌면 패널 크기를 맞춘다(노드 크기 = 패널 크기, ARCH 7.2). 돌아온 프레임의 w·h로 xterm 크기가 바뀐다.
@@ -339,7 +443,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const refit = () => {
       if (!st.fit) return;
       if (st.applyScale) st.applyScale(); // P47: 노드 크기가 바뀌면 비율도 다시
-      const d = st.fit.proposeDimensions();
+      const d = st.propose ? st.propose() : st.fit.proposeDimensions(); // P65: 배율 1 칸으로 잰다
       if (!d) return;
       const cols = Math.max(20, d.cols), rows = Math.max(8, d.rows);
       const key = `${cols}x${rows}`;

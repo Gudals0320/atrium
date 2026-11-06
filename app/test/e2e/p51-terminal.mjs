@@ -2,6 +2,7 @@
 // 판: herdr 세션 atrium-dev-p51, 포트 47870, 이 워크트리의 backend/.dev(experiments/p51/tools/env.cjs). 세션은 셸만.
 // 사용: MT_E2E_OUT=p51 node test/e2e/p51-terminal.mjs (app 폴더에서). 결과: experiments/p51/p51-terminal.json, 스크린숏
 // 시스템 클립보드를 쓰고, 끝나면 앞의 글로 되돌린다.
+// P65: MT_E2E_BOARD=p65면 P65 판(atrium-dev-p65, 47892)에서 돌린다. MT_E2E_DPR이 있으면 --force-device-scale-factor로, MT_E2E_ZOOM이 있으면 그 판 배율에서 시험한다
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -9,12 +10,13 @@ import { execFileSync } from 'node:child_process';
 import { launch, closeApp, shot as shotOf, sleep, until, logger, REPO, OUT } from './harness.mjs';
 import { assertTestBoard } from './p9-guard.mjs';
 
-if (process.env.MT_E2E_OUT !== 'p51') throw new Error('MT_E2E_OUT=p51을 명령줄에서 준다');
-const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', 'p51', 'tools', 'env.cjs'));
-const ENV = Object.fromEntries(Object.entries(T.P51_ENV).filter(([k]) => k.startsWith('ATRIUM_')));
+const B = process.env.MT_E2E_BOARD === 'p65' ? { id: 'p65', session: 'atrium-dev-p65', port: '47892' } : { id: 'p51', session: 'atrium-dev-p51', port: '47870' };
+if (process.env.MT_E2E_OUT !== B.id) throw new Error(`MT_E2E_OUT=${B.id}을 명령줄에서 준다`);
+const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', B.id, 'tools', 'env.cjs'));
+const ENV = Object.fromEntries(Object.entries(T[`${B.id.toUpperCase()}_ENV`]).filter(([k]) => k.startsWith('ATRIUM_')));
 assertTestBoard(ENV, { root: T.DEV });
-if (ENV.ATRIUM_HERDR_SESSION !== 'atrium-dev-p51' || ENV.ATRIUM_PORT !== '47870') throw new Error('P51 판(atrium-dev-p51, 47870)만');
-if (!/^C:\\Workspace\\mtask-p51-/.test(T.DIR)) throw new Error(`시험 폴더는 C:\\Workspace\\mtask-p51-*만: ${T.DIR}`);
+if (ENV.ATRIUM_HERDR_SESSION !== B.session || ENV.ATRIUM_PORT !== B.port) throw new Error(`${B.id} 판(${B.session}, ${B.port})만`);
+if (!new RegExp(`^C:\\\\Workspace\\\\mtask-${B.id}-`).test(T.DIR)) throw new Error(`시험 폴더는 C:\\Workspace\\mtask-${B.id}-*만: ${T.DIR}`);
 fs.mkdirSync(T.DIR, { recursive: true });
 
 const log = logger('p51-terminal');
@@ -23,7 +25,7 @@ const step = (name, ok, data) => { results.push({ name, ok, data }); log(`${ok ?
 const cleanEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AGENT_SDK|ELECTRON_RUN_AS_NODE)/.test(k)));
 const atrium = (...a) => execFileSync(process.execPath, [path.join(REPO, 'backend', 'bin', 'atrium.mjs'), '--dev', ...a], { encoding: 'utf8', env: { ...cleanEnv(), ...ENV, MT_HERDR_SESSION: ENV.ATRIUM_HERDR_SESSION }, timeout: 120000 });
 
-const { app, page } = await launch({ log, env: { ...ENV, MT_HERDR_SESSION: ENV.ATRIUM_HERDR_SESSION } });
+const { app, page } = await launch({ log, env: { ...ENV, MT_HERDR_SESSION: ENV.ATRIUM_HERDR_SESSION }, args: process.env.MT_E2E_DPR ? [`--force-device-scale-factor=${process.env.MT_E2E_DPR}`] : [] });
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1584, 921));
 const shot = (n) => shotOf(page, `p51-${n}`, log);
 const sessionId = (name) => page.evaluate((n) => { const s = [...window.__mt.getState().sessions.values()].find((x) => x.name === n); return s ? s.sessionId : null; }, name);
@@ -33,6 +35,8 @@ try {
   if (!await sessionId('sp1')) atrium('spawn', T.DIR, '--name', 'sp1', '--kind', 'shell');
   const id = await until(() => sessionId('sp1'), 40000);
   await page.evaluate((i) => window.__mt.getState().navigateTo(i), id); await sleep(2500);
+  if (process.env.MT_E2E_ZOOM) { await page.evaluate(([i, z]) => { const st = window.__mt.getState(); const r = st.nodes.get(i); const c = document.querySelector('.mt-canvas'); st.setViewport({ x: c.clientWidth / 2 - (r.x + r.w / 2) * z, y: c.clientHeight / 2 - (r.y + r.h / 2) * z, zoom: z }); }, [id, Number(process.env.MT_E2E_ZOOM)]); await sleep(1500); }
+  log('판 배율', await page.evaluate(() => window.__mt.getState().viewport || null), 'sharp', await page.evaluate((i) => (document.querySelector(`.mt-term[data-session="${i}"]`) || {}).dataset?.sharp || null, id));
   const el = await page.$(`.mt-term[data-session="${id}"] .xterm-screen`); const b = await el.boundingBox();
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); await sleep(500);
   await page.keyboard.type('cls'); await page.keyboard.press('Enter'); await sleep(1200);

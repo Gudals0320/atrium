@@ -7,7 +7,8 @@
 //   - Esc는 선택만 끝낸다
 // 판: herdr 세션 atrium-dev-p42, 포트 47860, 이 워크트리의 backend/.dev(experiments/p42/tools/env.cjs). claude는 --model haiku.
 // 시스템 클립보드를 쓰므로 시험 앞의 글을 끝에서 되돌린다.
-// 사용: node experiments/p42/tools/e2e.cjs p42-select.mjs [--fresh] [--no-claude] [--no-shell] [--no-working] [--tag 이름]
+// 사용: node experiments/p42/tools/e2e.cjs p42-select.mjs [--fresh] [--no-claude] [--no-shell] [--no-working] [--tag 이름] [--zooms 1,0.75]
+// P65: MT_E2E_BOARD=p65면 P65 판(atrium-dev-p65, 47892, experiments/p65/tools/env.cjs)에서 돌린다. MT_E2E_DPR이 있으면 --force-device-scale-factor로 띄운다
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -16,16 +17,19 @@ import { _electron as electron } from 'playwright';
 import { APP_ROOT, REPO, OUT, sleep, until, logger, closeApp } from './harness.mjs';
 import { assertTestBoard } from './p9-guard.mjs';
 
-if (process.env.MT_E2E_OUT !== 'p42') throw new Error('MT_E2E_OUT=p42를 명령줄에서 준다');
-const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', 'p42', 'tools', 'env.cjs'));
-const ENV = Object.fromEntries(Object.entries(T.P42_ENV).filter(([k]) => k.startsWith('ATRIUM_')));
+const B = process.env.MT_E2E_BOARD === 'p65' ? { id: 'p65', session: 'atrium-dev-p65', port: '47892' } : { id: 'p42', session: 'atrium-dev-p42', port: '47860' };
+if (process.env.MT_E2E_OUT !== B.id) throw new Error(`MT_E2E_OUT=${B.id}를 명령줄에서 준다`);
+const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', B.id, 'tools', 'env.cjs'));
+const ENV = Object.fromEntries(Object.entries(T[`${B.id.toUpperCase()}_ENV`]).filter(([k]) => k.startsWith('ATRIUM_')));
 assertTestBoard(ENV, { root: T.DEV });
-if (ENV.ATRIUM_HERDR_SESSION !== 'atrium-dev-p42' || ENV.ATRIUM_PORT !== '47860') throw new Error('P42 판(atrium-dev-p42, 47860)만');
-if (!/^C:\\Workspace\\mtask-p42-/.test(T.DIR)) throw new Error(`시험 폴더는 C:\\Workspace\\mtask-p42-*만: ${T.DIR}`);
+if (ENV.ATRIUM_HERDR_SESSION !== B.session || ENV.ATRIUM_PORT !== B.port) throw new Error(`${B.id} 판(${B.session}, ${B.port})만`);
+if (!new RegExp(`^C:\\\\Workspace\\\\mtask-${B.id}-`).test(T.DIR)) throw new Error(`시험 폴더는 C:\\Workspace\\mtask-${B.id}-*만: ${T.DIR}`);
 fs.mkdirSync(OUT, { recursive: true });
 
 const argv = process.argv.slice(2);
 const TAG = argv.includes('--tag') ? argv[argv.indexOf('--tag') + 1] : 'p42-select';
+const ZOOMS = argv.includes('--zooms') ? argv[argv.indexOf('--zooms') + 1].split(',').map(Number) : [1, 0.75];
+const DPR_ARGS = process.env.MT_E2E_DPR ? [`--force-device-scale-factor=${process.env.MT_E2E_DPR}`] : [];
 const log = logger(TAG);
 const cleanEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AGENT_SDK|ELECTRON_RUN_AS_NODE)/.test(k)));
 const env = { ...cleanEnv(), ...ENV, MT_HERDR_SESSION: ENV.ATRIUM_HERDR_SESSION };
@@ -48,7 +52,7 @@ const ids = {};
 const spawned = [];
 const ready = () => page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 90000 });
 async function open() {
-  app = await electron.launch({ args: ['.', '--dev'], cwd: APP_ROOT, env, timeout: 60000 });
+  app = await electron.launch({ args: ['.', '--dev', ...DPR_ARGS], cwd: APP_ROOT, env, timeout: 60000 });
   page = await app.firstWindow();
   page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));
   await ready();
@@ -230,7 +234,7 @@ try {
       for (let k = 0; k < 40; k++) { const q = await term(S); const rs = numRows(q, SH); if (rs.length && rs[0].n <= 75) break; await page.mouse.wheel(0, -200); await sleep(120); }
       await sleep(400);
     };
-    for (const z of [1, 0.75]) await suite('셸', S, z, { re: SH, dir: -1, toTop: shellTop, wantText: (ns) => ns.map((n) => `shell line ${n}`).join('\r\n') });
+    for (const z of ZOOMS) await suite('셸', S, z, { re: SH, dir: -1, toTop: shellTop, wantText: (ns) => ns.map((n) => `shell line ${n}`).join('\r\n') });
     await page.evaluate((i) => window.__mt.terms.get(i).scrollToBottom(), S);
   }
 
@@ -255,7 +259,7 @@ try {
         for (let k = 0; k < 6; k++) { const q = await term(C); const rs = numRows(q, CL); if (rs.length > 10 && rs[0].n >= 10) break; await page.mouse.wheel(0, 100); await sleep(250); }
         await sleep(600);
       };
-      for (const z of [1, 0.75]) await suite('claude', C, z, { re: CL, dir: 1, toTop: claudeTop, wantText: (ns) => ns.map((n, k) => (k ? `  ${n}` : `${n}`)).join('\r\n') });
+      for (const z of ZOOMS) await suite('claude', C, z, { re: CL, dir: 1, toTop: claudeTop, wantText: (ns) => ns.map((n, k) => (k ? `  ${n}` : `${n}`)).join('\r\n') });
 
       // ---------- claude 일하는 중 ----------
       if (!argv.includes('--no-working')) {
