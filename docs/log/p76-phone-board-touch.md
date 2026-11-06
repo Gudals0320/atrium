@@ -1,0 +1,69 @@
+상태: 열림
+날짜: 2026-11-06
+
+## 지시
+
+### 목표
+
+휴대폰(터치)에서 보드 화면(캔버스)을 쓸 수 있게 한다. 지금은 세션을 누르고 끌면 화면이 튕기는 등 쓸 수 없다.
+
+### 사용자의 말
+
+"핸드폰에서 기본화면이 그냥 세션 목록이네? 뭐 나쁘진 않은거같은데.. 근데 우측상단 canvas 나가서 세션 누르고 드래그하면 튕기는 등 아직 사용 불가능"
+
+사용자는 iPhone Safari(또는 홈 화면 앱)로 원격 판에 붙는다. P74가 만든 휴대폰 화면(세션 목록)은 괜찮다고 했다. 문제는 목록 머리줄 오른쪽 위 단추(`data-action="phone-board"`, "보드 화면으로 보기")로 간 보드 화면이다. 휴대폰을 가로로 돌렸을 때와 태블릿도 같은 보드 화면을 쓴다.
+
+### 할 것
+
+1. **먼저 재현하고 원인을 찾는다.** Playwright 휴대폰 흉내(iPhone 크기, `isMobile`, `hasTouch`)와 CDP 터치 이벤트(`Input.dispatchTouchEvent`, 한 손가락 끌기, 두 손가락 벌리기)로 보드 화면에서 세션을 누르고 끌어 본다. "튕김"이 무엇인지 적는다. 예: 노드 끌기와 판 옮기기가 다투는 것, 눌러서 확대(P73)가 끌기 도중에 끼어드는 것, 터미널(xterm)이 터치를 먹는 것, 페이지가 스크롤·확대되는 것(iOS 고무줄), 노드를 누르면 휴대폰 화면 밖 터미널 초점이 잡히는 것.
+2. **터치 규칙.** 터치로 쓰는 보드 화면은 다음처럼 움직이게 한다. 마우스 보드(PC 창, 노트북 브라우저)는 바꾸지 않는다.
+   - 한 손가락 끌기: 어디서 시작해도(노드 위, 터미널 위 포함) 판을 옮긴다.
+   - 두 손가락 벌리기·오므리기: 확대·축소. 페이지 자체는 확대되거나 스크롤되지 않는다(`touch-action`, `overscroll-behavior`, viewport).
+   - 노드를 짧게 누르기(탭): 그 세션을 휴대폰 세션 화면(P74의 전체 화면 터미널과 입력 줄)으로 연다. 돌아오면 보드 화면의 같은 자리로 온다. 가로 보드 화면처럼 휴대폰 세션 화면이 없는 폭이면 지금처럼 그 노드로 확대한다.
+   - 노드를 길게 누른 뒤 끌기: 노드(덩어리면 덩어리)를 옮긴다. 길게 누름이 잡히면 짧게 진동하거나 테두리로 알린다. 실수로 옮겨지지 않게 길게 누름 시간은 0.5초 안팎으로 한다.
+   - 눌러서 확대(P73)는 터치에서 끈다(탭이 위 규칙을 따른다).
+   - 터치 보드 화면에서는 터미널에 글을 치지 않는다(입력은 휴대폰 세션 화면에서 한다). 터미널 글이 터치를 가로채지 않게 한다.
+3. **휴대폰 보드 화면의 크롬.** 좁은 폭에서 위·아래 알약과 레일이 판을 가리면 줄이거나 접는다. "휴대폰 화면"으로 돌아가는 단추는 늘 보인다. 바꾼 것을 보고에 적는다.
+
+### 완료 기준
+
+1. 단위 시험을 더하고 통과한다: 터치 판단, 탭·길게 누름·끌기 가르기, 길게 누름 시간, 마우스 보드가 그대로인 것.
+2. 창 시험(개발용 판의 원격 웹 화면, 휴대폰 흉내, P74의 `app/test/e2e/p74-mobile.mjs`와 가짜 Tailscale을 본떠서)으로 다음을 확인하고 전후 스크린숏을 `experiments/p76/`에 둔다.
+   - 고치기 전 코드에서 튕김을 재현한 그림이나 수치.
+   - 고친 뒤: 노드 위 한 손가락 끌기는 판만 옮기고 노드 자리는 그대로다. 두 손가락으로 확대·축소하고 페이지 스크롤과 확대는 0이다. 탭하면 휴대폰 세션 화면이 열리고 돌아오면 같은 자리다. 길게 눌러 끌면 노드가 옮겨진다(판 기록의 자리가 바뀜).
+   - 노트북 크기 마우스 보드에서 지금처럼 노드를 끌고 판을 옮길 수 있다.
+3. `cd backend && npm test`, `cd app && npm test`, `cd app && npm run build`가 통과한다.
+
+### 읽을 파일
+
+- `CLAUDE.md`, `docs/testing.md`, `docs/log/p74-mobile-web.md`(설계, 시험 요령, iPhone 순서)
+- `app/src/renderer/Phone.jsx`, `app/src/renderer/lib/phone.js`, `app/src/renderer/phone.css`, `app/src/renderer/main.jsx`(화면 고르기)
+- `app/src/renderer/Canvas.jsx`(React Flow 설정, `onNodeClick`), `app/src/renderer/SessionNode.jsx`, `app/src/renderer/TerminalView.jsx`, `app/src/renderer/lib/nav.js`(눌러서 확대)
+- `app/test/e2e/p74-mobile.mjs`, `app/test/e2e/p49-fake-tailscale.mjs`
+
+### 시험 환경
+
+- 이 작업은 `dev` 브랜치에서 시작한다. 워크트리를 연 뒤 먼저 `git fetch origin && git merge --ff-only origin/dev`를 한다(워크트리가 `main`에서 시작할 수 있다).
+- 개발용 판은 너만의 판으로 띄운다(`docs/testing.md`).
+  - `ATRIUM_HERDR_SESSION=atrium-dev-p76`, `ATRIUM_PORT=47897`, 창의 원격 디버깅 포트 9377
+  - `ATRIUM_DATA_DIR=<워크트리>/backend/.dev/data`, `ATRIUM_APP_USERDATA=<워크트리>/backend/.dev/app`
+- 실제 판(`atrium`, 47800)과 다른 판의 포트는 쓰지 않는다. 사용자의 기본 herdr 세션, 실제 판의 herdr 세션(`atrium`), 다른 판의 herdr 서버는 건드리지 않는다. 사용자의 실제 판은 열지도 캡처하지도 않는다.
+- 너는 사용자의 실제 판 위에서 도는 워커다. 실제 판의 API(47800)와 `atrium` 명령으로 실제 판을 바꾸지 않는다. 시험의 `atrium` CLI는 늘 개발용 판 환경 변수(`ATRIUM_PORT` 등)를 주고 부른다.
+- 실제 설치 폴더(`%LOCALAPPDATA%\\atrium\\versions`)와 실제 데이터 폴더(`%LOCALAPPDATA%\\atrium`)는 읽지도 바꾸지도 않는다.
+- 대화 목록은 시험 폴더의 대화만 읽는다(`ATRIUM_CLAUDE_PROJECTS`, `ATRIUM_CLAUDE_DESKTOP=none`). 시험 폴더는 `C:\\Workspace\\mtask-p76-*`처럼 새로 만든다.
+- 세션은 `claude --model haiku`와 셸로 띄운다. 가짜 Tailscale과 흉내 프록시는 47898·47899를 쓴다.
+- 끝나면 시험 세션, 창, 브라우저, 백엔드, herdr 서버와 세션(`atrium-dev-p76`만), 시험 폴더를 끄고 지운다. 네가 띄운 프로세스가 남지 않았는지 포트로 확인한다.
+
+### 지킬 것
+
+- `CLAUDE.md`를 따른다. 프로세스는 직접 띄운 것만 PID로 끈다.
+- 이 저장소는 공개다. 작업 기록, 시험 코드, 커밋 메시지, 그림에 사용자 경로·메일·토큰, 실제 PC·tailnet 이름, IP, 실제 대화 내용을 쓰지 않는다. 커밋 전·푸시 전 검사를 건너뛰지 않는다.
+- 화면 글은 영어와 한국어 사전 둘 다 고친다. 한국어 문구는 사전의 지금 말투(`docs/log/korean-copy-review.md`)를 따른다.
+- 같은 때 다른 작업자(P75(워커 줄 배치, 47896))가 돈다. 맡은 일에 필요한 만큼만 고치고, `styles.css`와 두 사전은 끝에 더해 합치기 쉽게 한다.
+- 자기 브랜치에만 커밋한다. 커밋 메시지에 `Co-Authored-By` 줄을 넣지 않는다. `main`이나 `dev`를 바꾸거나 푸시하지 않는다. `node_modules`는 워크트리 안에서 받는다(`npm ci`, 창은 그 뒤 `node node_modules/electron/install.js`).
+- 문서는 이 작업 파일의 작업 기록 절과 보고 절만 고친다. 고쳐야 할 ARCH·BRIEF·testing·README 문장은 보고 절에 짧게 적는다.
+- 끝나면 보고 절을 쓰고, 맨 마지막에 `<워크트리>/backend/.dev/p76.done`(브랜치 이름과 마지막 커밋 해시 두 줄)을 만든다.
+
+## 작업 기록
+
+## 보고
