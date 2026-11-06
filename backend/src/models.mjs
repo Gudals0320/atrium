@@ -1,7 +1,7 @@
 // P41: 판이 띄울 수 있는 모델의 목록(atrium models)과 말로 한 모델 이름 풀기(atrium child --model).
 // 목록은 세 곳에서 온다.
 // - 호출자(launchers.mjs): 이름, 하네스, 모델, 게이트웨이 경유 여부. 띄우는 명령은 atrium child <이름> --launcher <호출자>.
-// - 하네스가 아는 모델(HARNESSES의 models)과 짧은 별칭(opus, sonnet, haiku, fable).
+// - 하네스가 아는 모델(HARNESSES의 models)과 짧은 별칭(opus, sonnet, haiku, fable). P72: Codex는 Codex의 모델 목록 캐시(codex-models.mjs)를 읽은 목록이다.
 // - 게이트웨이가 알려 주는 모델: 게이트웨이를 쓰는 claude 호출자(ANTHROPIC_BASE_URL)마다 그 주소의 /v1/models를 Claude Code처럼(anthropic-version 머리글) 읽는다.
 //   이 모델은 그 호출자의 env(게이트웨이 주소 등)로 띄운다. 판이 알려진 Anthropic 모델은 게이트웨이를 거치지 않고 하네스 줄로 띄우므로 게이트웨이 목록에서 뺀다.
 // 이름 풀기는 정확한 ID → 별칭 → 느슨한 맞춤(대소문자, 띄어쓰기·하이픈, "deepseek flash" ↔ deepseek-flash) 순서다. 같은 모델을 가리키는 줄이 여럿이면 하나로 본다(호출자 > 하네스 > 게이트웨이).
@@ -60,7 +60,8 @@ function targetOfModel(harness, model) {
 }
 
 // 목록 만들기. launchers: 호출자들, gateways: [{ url, host(호출자), ok, models: [/v1/models의 data], why }]
-export function buildCatalog({ launchers = [], gateways = [] } = {}) {
+// harnessModels: 하네스별로 읽어 온 모델 목록 { codex: [...] }(P72). 없으면 HARNESSES의 고정 목록
+export function buildCatalog({ launchers = [], gateways = [], harnessModels = {} } = {}) {
   const entries = [];
   for (const l of launchers) {
     const h = harnessOf(l.harness);
@@ -70,7 +71,7 @@ export function buildCatalog({ launchers = [], gateways = [] } = {}) {
     entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: gw ? (l.env && l.env.ANTHROPIC_BASE_URL) || gw.url : null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}` });
   }
   for (const h of Object.values(HARNESSES)) {
-    for (const m of h.models || []) {
+    for (const m of harnessModels[h.id] || h.models || []) {
       const aliases = Object.entries(CLAUDE_ALIASES).filter(([, v]) => h.id === 'claude' && v === m).map(([k]) => k);
       entries.push({ source: 'harness', harness: h.id, kind: h.kind, launcher: null, model: m, gateway: null, keys: { exact: [], exactModel: [m], alias: aliases }, target: `${h.id}:${m.toLowerCase()}`, base: m, provider: h.id, variants: [], aliases, words: [m, ...aliases].join(' '), command: h.id === 'claude' ? `atrium child <이름> --model ${q(m)}` : `atrium child <이름> --kind ${h.kind} --model ${q(m)}` });
     }

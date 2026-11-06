@@ -1927,4 +1927,8 @@ export default {
     channelDevHint: 'dev 브랜치에 합친 기능을 먼저 받습니다. 정식 릴리즈보다 덜 다듬어졌을 수 있습니다.',
     channelStableFromDev: '정식 릴리즈만 알립니다. 지금은 dev 버전이라 이보다 높은 정식 릴리즈가 나오면 알립니다.',
   },
+  // P72: 런처 하네스의 모델 목록(Codex는 Codex의 모델 목록을 읽는다)
+  launcherModels: {
+    unlisted: '{harness} 목록에 없는 모델입니다. 이름이 맞는지 확인하세요.',
+  },
 };

@@ -437,22 +437,27 @@ export class Branch {
   launchersList() { const L = this.b.features && this.b.features.launchers; return L ? L.data().items : []; }
   findLauncher(ref) { const L = this.b.features && this.b.features.launchers; return L ? L.find(ref) : null; }
   // 판 설정의 opencodex 주소(호출자가 없어도 게이트웨이 모델을 볼 수 있게). 그 env는 DeepSeek 예시 호출자와 같다
-  defaultGateway() {
+  // P72: opencodex는 개인 설정이라, 주소를 환경 변수(ATRIUM_OCX_HEALTH·ATRIUM_OCX_BASE_URL)로 줬거나 판에 DeepSeek 호출자가 있을 때(옛 판)만 본다. 새 판은 묻지 않는다
+  defaultGateway(launchers = this.launchersList()) {
     const c = this.b.cfg;
     if (!c.ocxHealthUrl && !c.ocxBaseUrl) return null;
+    if (c.ocxConfigured === false && !launchers.some((l) => l.id === 'deepseek' || l.icon === 'deepseek')) return null;
     let url; try { url = baseUrlOf({ baseUrl: c.ocxBaseUrl || null, healthUrl: c.ocxHealthUrl || undefined }); } catch { return null; }
     return { url, host: { id: null, name: 'opencodex', harness: 'claude', icon: '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: '', env: proxyEnv(url), command: '', checkUrl: c.ocxHealthUrl || '' } };
   }
   async catalog() {
     const launchers = this.launchersList();
-    const gws = gatewaysOf(launchers, [this.defaultGateway()]);
+    const gws = gatewaysOf(launchers, [this.defaultGateway(launchers)]);
     const probed = await Promise.all(gws.map(async (g) => {
       const hit = this.gwCache.get(g.url);
       const r = hit && Date.now() - hit.at < CATALOG_TTL_MS ? hit.r : await this.fetchModels(g.url);
       if (r.ok) this.gwCache.set(g.url, { at: Date.now(), r }); else this.gwCache.delete(g.url);
       return { ...g, ...r };
     }));
-    return { ...buildCatalog({ launchers, gateways: probed }), hosts: probed };
+    const L = this.b.features && this.b.features.launchers;
+    const lists = L && L.modelLists ? L.modelLists() : {}; // P72: Codex 모델 목록(Codex 캐시)
+    const harnessModels = Object.fromEntries(Object.entries(lists).map(([k, v]) => [k, v.models]));
+    return { ...buildCatalog({ launchers, gateways: probed, harnessModels }), hosts: probed };
   }
   // atrium models: 띄울 수 있는 것과 그 명령
   async listModels(parent) {

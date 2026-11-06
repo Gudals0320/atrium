@@ -14,7 +14,8 @@ import { LoopEngine, normalizeTrigger, normalizeStop, describeLoop, describeLoop
 import { confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { missionGraph } from './mission.mjs';
 import { Settings } from './settings.mjs';
-import { Launchers } from './launchers.mjs'; // P33: 호출자
+import { Launchers, HARNESSES } from './launchers.mjs'; // P33: 호출자
+import { CodexModels } from './codex-models.mjs'; // P72: Codex 모델 목록
 import { placeItem } from './canvas-ops.mjs';
 
 const SHELL = 'shell';
@@ -41,7 +42,9 @@ export function attachFeatures(b, { timers = true } = {}) {
 
   const f = {};
   f.settings = new Settings({ store, broadcast });
-  f.launchers = new Launchers({ store, broadcast, gateway: { healthUrl: b.cfg.ocxHealthUrl, baseUrl: b.cfg.ocxBaseUrl } }); // 처음 켤 때 옛 새 세션 기본값을 옮긴다
+  // P72: Codex 모델 목록은 Codex의 캐시 파일을 읽는다(설정 탭의 모델 고르기와 atrium models). 폴더를 주지 않은 판(시험)은 고정 목록
+  f.codexModels = b.cfg.codexHome ? new CodexModels({ home: b.cfg.codexHome, fallback: HARNESSES.codex.models }) : null;
+  f.launchers = new Launchers({ store, broadcast, gateway: { healthUrl: b.cfg.ocxHealthUrl, baseUrl: b.cfg.ocxBaseUrl }, codexModels: f.codexModels }); // 처음 켤 때 옛 새 세션 기본값을 옮긴다
   if (f.launchers.migrated) b.log(`launchers created (${f.launchers.migrated.oldBoard ? 'from old settings' : 'new board'}): favorites ${f.launchers.migrated.favorites.join(',')}`);
   f.outputs = new Outputs({ cfg: b.cfg, store, resolve: (r) => b.resolve(r), hooked: (s) => b.hooked(s), transcriptOf, readMessages, workspaceName: wsName, apiError });
   f.thread = new ThreadLog({

@@ -98,11 +98,15 @@ test('P33 옮기기: 옛 설정 → 호출자, 레일 네 단추 순서로 즐�
   assert.deepEqual(LEGACY_KEYS.sort(), Object.keys(old).sort());
 });
 
-test('P33 옮기기: 새 판은 Claude Code, Codex, 셸이 즐겨찾기이고 DeepSeek는 즐겨찾기 밖 예시', () => {
+test('P33·P72 옮기기: 새 판은 Claude Code(manual), Codex, 셸 셋뿐이고 모두 즐겨찾기. DeepSeek 예시는 없다', () => {
   const v = initialLaunchers({});
   assert.deepEqual(v.favorites, ['claude', 'codex', 'shell']);
-  assert.ok(v.items.some((l) => l.id === 'deepseek'));
+  assert.deepEqual(v.items.map((l) => l.id), ['claude', 'codex', 'shell']);
+  const claude = v.items.find((l) => l.id === 'claude');
+  assert.deepEqual([claude.permissionMode, claude.model, claude.effort, claude.allowHerdr], ['manual', '', '', false]);
+  assert.ok(v.items.every((l) => !Object.keys(l.env).length && !l.checkUrl), '게이트웨이 env·확인 주소가 없다');
   assert.deepEqual(initialLaunchers({}), v, '같은 입력이면 같은 결과');
+  assert.deepEqual(initialLaunchers({ gateway: { healthUrl: 'http://127.0.0.1:1/healthz' } }), v, '새 판은 게이트웨이 설정을 보지 않는다');
 });
 
 test('P33 옮기기: 판 기록에서 한 번만. 옛 설정이 있으면 옛 판, 두 번 켜도 같고 옛 키는 남는다', () => {
@@ -139,10 +143,11 @@ test('P33 API: 만들기, 고치기, 지우기, 즐겨찾기(자리), 순서. �
   const events = [];
   try {
     const store = new Store(path.join(dir, 'board.db'));
+    store.setMeta('settings', { tray: true }); // 옛 판(DeepSeek 호출자가 있다, P72)
     const ls = new Launchers({ store, broadcast: (ev, d) => events.push([ev, d]) });
     const c = ls.create({ launcher: { name: 'Haiku', harness: 'claude', model: 'haiku' }, favorite: true });
     assert.match(c.launcher.id, /^l[0-9a-f]{8}$/);
-    assert.deepEqual(c.favorites, ['claude', 'codex', 'shell', c.launcher.id]);
+    assert.deepEqual(c.favorites, ['claude', 'codex', 'deepseek', 'shell', c.launcher.id]);
     assert.equal(c.launchers.find((l) => l.id === c.launcher.id).preview.line, 'claude --permission-mode manual --model haiku');
     assert.equal(events.at(-1)[0], 'launchers.updated');
     assert.throws(() => ls.create({ launcher: { name: 'haiku', harness: 'claude' } }), (e) => e.code === 'name_taken');
