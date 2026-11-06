@@ -1406,3 +1406,14 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 .mt-search-count { font-family: var(--font-mono); color: var(--dim-2); }
 @media (max-width: 640px) { .mt-search { width: calc(100% - 32px); } .mt-search-go, .mt-search-keys > span:first-child { display: none; } }
 @media (prefers-reduced-motion: reduce) { .mt-search, .mt-search[data-state="closing"] { animation: none; } }
+
+/* P69 업데이트 묶음(설정 › 일반)과 웹 화면의 업데이트 띠 */
+.mt-upd-ver b { font-weight: 600; }
+.mt-upd-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mt-upd-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text); }
+.mt-upd-ask-btns { display: inline-flex; gap: 6px; }
+.mt-upd-progress { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.mt-upd-spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--panel-line); border-top-color: var(--accent); animation: mt-upd-spin 0.9s linear infinite; flex: none; }
+@keyframes mt-upd-spin { to { transform: rotate(360deg); } }
+.mt-upd-error { color: var(--bad); }
+.mt-upd-notes { grid-column: 1 / -1; margin: 0 0 4px; max-height: 120px; overflow: auto; padding: 8px 10px; border: 1px solid var(--panel-line); border-radius: 6px; color: var(--dim-2); font: 12px/1.45 inherit; white-space: pre-wrap; }

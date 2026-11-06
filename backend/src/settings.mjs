@@ -26,6 +26,8 @@ export const SETTINGS = {
   remoteIdleMinutes: { type: 'number', default: 30, min: 5, max: 1440, label: '브라우저 연결이 모두 종료된 뒤 다시 인증할 때까지의 시간입니다 (분 단위).' },
   // P62: 패스키로 확인. 끄면(기본) 짝 맺기만으로 세션을 받고 세션은 짝을 풀 때까지 이어진다(Tailscale 기기 묶기, 쿠키, Origin 확인은 그대로). 켜면 P56~P60처럼 패스키와 12시간·30분 세션
   remotePasskey: { type: 'boolean', default: false, label: '패스키 인증: 켜면 기기 등록 승인 후 패스키를 만들고 세션 종료 시 다시 인증합니다. 끄면 등록된 Tailscale 기기에서 바로 접속할 수 있습니다.' },
+  // P69: 새 릴리즈 확인(GitHub, 몇 시간마다와 창을 켤 때). 알리기만 하고 업데이트는 사람이 누른다
+  updateCheck: { type: 'boolean', default: true, label: '새 릴리즈를 몇 시간마다 확인하고 알립니다. 업데이트는 직접 눌러야 합니다.' },
   sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '프로젝트에 지정한 시간(분) 동안 활동이 없으면 보드에서 시작한 Claude Code 세션을 모두 절전 모드로 전환합니다 (0: 자동 절전 사용 안 함).' },
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));

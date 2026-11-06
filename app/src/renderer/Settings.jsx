@@ -13,6 +13,7 @@ import { useT, errText, setLanguage, getLanguage, LANGUAGES } from './lib/i18n.j
 import { LaunchersTab } from './Launchers.jsx'; // P33: 호출자 탭
 import { DevicesTab } from './WebDevices.jsx'; // P48: 연결된 기기(웹 화면)
 import { useDialog } from './dialog.js'; // P52
+import { UpdateSettings } from './Update.jsx'; // P69: 업데이트 묶음
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 export function SetRow({ name, hint, children, role }) {
@@ -99,6 +100,7 @@ function GeneralTab({ settings }) {
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>
         {'herdrPath' in settings && <HerdrPathSetting settings={settings} />}
+        {'updateCheck' in settings && <UpdateSettings settings={settings} />}
       </>}
     </div>
   );
