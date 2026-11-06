@@ -8,6 +8,7 @@
 - 창은 `cd app && npm start`(개발용 프로필)로 띄운다. 창은 백엔드가 없으면 띄우고, 백엔드는 herdr 서버가 없으면 띄운다.
 - herdr 서버는 `CLAUDECODE`, `CLAUDE_CODE_*` 같은 부모 Claude Code 환경 변수를 뺀 환경으로 띄운다. 백엔드가 띄우면 저절로 그렇게 된다.
 - 기본 개발용 판에 사용자가 직접 띄운 세션이 있으면, `--dev`에 환경 변수 `ATRIUM_HERDR_SESSION`, `ATRIUM_PORT`, `ATRIUM_DATA_DIR`(창은 `ATRIUM_APP_USERDATA`도)를 더해 herdr 세션 이름, 포트, 데이터 폴더를 바꾼 판에서 시험한다. 창 시험 스크립트가 그 값을 강제하게 한다(`app/test/e2e/p5-lib.mjs`). 다른 창 시험은 환경 변수가 없으면 기본 개발용 판에 붙는다.
+- 판이 띄운 워커의 셸에는 실제 판의 `ATRIUM_*`·`HERDR_*`가 있다. 시험, 개발용 판, herdr, `atrium`은 이 변수를 지운 셸(`backend/.dev/clean-env.sh`)로 부른다(P71~P74).
 - 작업자에게 일을 나눠 맡길 때는 작업자마다 이 네 값을 따로 준다(예: herdr 세션 `atrium-dev-p8`, 포트 47820). 환경 변수는 옛 이름 `MTASK_*`도 받고 둘 다 있으면 `ATRIUM_*`가 이긴다. 시험 막이(`app/test/e2e/p9-guard.mjs`)는 옛 시험 판 이름 `multitask-dev-<이름>`도 받는다.
 - 실제 판 프로필로 띄우는 시험이 판 값을 덮으면 옛 판 옮기기는 일어나지 않는다. 옮기기를 시험할 때만 `ATRIUM_LEGACY_HERDR_SESSION`, `ATRIUM_LEGACY_DATA_DIR`, `ATRIUM_LEGACY_APP_USERDATA`로 시험용 옛 판을 주고 `assertLegacyTestBoard`로 막는다(`app/test/e2e/p18-migrate.mjs`).
 - 사용자 세션이 든 개발용 `board.db`는 복사해 쓰지 않는다. 판의 복구가 그 세션을 이어 갈 수 있다.
@@ -36,7 +37,7 @@
 - 창 크기에 기대는 시험(`p10-dock.mjs` 등)은 창 안쪽을 그 단계 때 크기(P10은 1584×921)로 맞추고 돌린다. 최소 크기 창에서는 덩어리가 다 들어가지 않는다.
 - 응답 필요 줄(`.mt-chip.need`)은 위 오른쪽 `[data-role="inbox"]`를 눌러야 보이고, 영역 이름표의 단추(`[data-action=arrange]` 등)는 이름표에 마우스를 올려야 보인다.
 - 노드를 끌 때는 시작과 끝 자리가 함께 화면 안쪽에 오게 먼저 맞춘다. 끄는 점이 캔버스 가장자리에 닿으면 React Flow가 화면을 저절로 밀어 노드를 더 멀리 옮긴다.
-- 스크린숏과 로그는 `experiments/p<번호>/`에 둔다(git 밖).
+- 스크린숏과 로그는 `experiments/p<번호>/`에 둔다(git 밖). 창 안만 찍는다(`page.screenshot`, P72).
 
 - 원격 창 시험(`p59-remote.mjs`)은 가짜 tailscale(whois 포함)과 노트북마다 흉내 프록시를 쓰고, Chromium 플래그로 흉내 주소를 보안 출처로 맞추며, 패스키는 CDP 가상 인증기로 만든다(`p59-lib.mjs`).
 
