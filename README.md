@@ -130,6 +130,20 @@ Then open a folder from the board and start a session from the left rail.
 
 Keys on the board: `N` next session that needs you, `M` mission map, `Ctrl+F` or `↑` find, `↓` command bar, `Ctrl+Shift+E` sidebar, `Delete` close the selected sessions.
 
+### Install and updates
+
+To run a release instead of the cloned folder, install it from the clone (after `npm install` in `backend`):
+
+```powershell
+node backend\bin\atrium.mjs install
+```
+
+This puts the latest release into `%LOCALAPPDATA%\atrium\versions` and adds a desktop shortcut that opens the installed version. Board data stays in `%LOCALAPPDATA%\atrium`.
+
+When a new release is out, the window tells you (Settings › General › Update, and the tray menu). Press Update to install it. Only the backend and the window restart. Your sessions keep running in herdr. If the new version does not start, the board goes back to the version you had.
+
+The update channel is Stable by default. Pick Dev in the same place to get features merged into the `dev` branch first, as pre-releases. Dev builds may be less polished. `node backend\bin\atrium.mjs install --channel dev` installs the newest dev build.
+
 ### Good to know
 
 - Atrium never edits your `~/.claude/settings.json`. Each Claude Code session it starts gets its own settings file through `--settings`, which holds the hooks that report state back to the board.

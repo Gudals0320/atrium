@@ -1885,7 +1885,7 @@ export default {
     versionName: 'Version',
     windowVersion: 'window {version}',
     notChecked: 'Not checked yet',
-    upToDate: 'Up to date (v{version})',
+    upToDate: 'Up to date ({version})',
     availableLine: '{version} is available',
     noRelease: 'No release published yet',
     checkFailed: 'Could not check: {error}',
@@ -1920,5 +1920,11 @@ export default {
     toastRolledBack: 'Update failed, back on {version}: {error}',
     toastRestarting: 'Restarting to update to {version}…',
     trayItem: 'Update to {version}…',
+    // P70: update channel
+    channelName: 'Update channel',
+    channel: { stable: 'Stable', dev: 'Dev' },
+    channelStableHint: 'Notifies about stable releases only.',
+    channelDevHint: 'Gets features merged into the dev branch first. They may be less polished than stable releases.',
+    channelStableFromDev: 'Stable releases only. You are on a dev build, so the next notice comes when a newer stable release is out.',
   },
 };

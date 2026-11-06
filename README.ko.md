@@ -130,6 +130,20 @@ powershell -ExecutionPolicy Bypass -File app\scripts\make-shortcut.ps1
 
 주요 단축키: `N` 다음 응답 필요 세션, `M` 작업 관계도, `Ctrl+F` 또는 `↑` 검색, `↓` 명령 입력줄, `Ctrl+Shift+E` 사이드바, `Delete` 선택한 세션 닫기.
 
+### 설치와 업데이트
+
+복제한 폴더 대신 릴리즈 버전으로 실행하려면, 복제한 폴더에서 설치합니다(`backend`에서 `npm install`을 한 뒤).
+
+```powershell
+node backend\bin\atrium.mjs install
+```
+
+최신 릴리즈를 `%LOCALAPPDATA%\atrium\versions`에 설치하고, 설치한 버전을 여는 바탕화면 바로가기를 만듭니다. 보드 데이터는 그대로 `%LOCALAPPDATA%\atrium`에 있습니다.
+
+새 릴리즈가 나오면 앱이 알립니다(설정 › 일반 › 업데이트, 트레이 메뉴). 업데이트를 누르면 설치합니다. 앱 연결 서비스(백엔드)와 창만 다시 시작하고, 세션은 herdr에서 계속 실행됩니다. 새 버전이 시작되지 않으면 이전 버전으로 돌아갑니다.
+
+업데이트 채널은 기본이 정식입니다. 같은 곳에서 dev를 고르면 `dev` 브랜치에 합친 기능을 사전 릴리즈로 먼저 받습니다. dev 빌드는 정식보다 덜 다듬어졌을 수 있습니다. `node backend\bin\atrium.mjs install --channel dev`는 가장 최신 dev 빌드를 설치합니다.
+
 ### 알아 둘 것
 
 - Atrium은 `~/.claude/settings.json`을 수정하지 않습니다. 보드에서 시작하는 Claude Code 세션마다 설정 파일을 별도로 만들고 `--settings`로 전달합니다. 해당 파일에 지정한 hook이 상태를 보드에 알립니다.

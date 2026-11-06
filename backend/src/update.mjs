@@ -2,6 +2,7 @@
 // - 설치 폴더(ATRIUM_INSTALL_DIR, 기본 %LOCALAPPDATA%\atrium\versions)에 버전마다 저장소 소스 전체(<태그>\backend, <태그>\app, 그 안의 node_modules와 app\dist)를 둔다.
 //   지금 버전은 current.json({ current, previous })이 가리킨다. 판 데이터(판 기록, 플러그인, 세션 설정 파일)는 버전 밖 데이터 폴더에 있다.
 // - 새 릴리즈는 GitHub API(인증 없음)의 releases/latest로 본다. 정식 릴리즈만(초안·사전 릴리즈 제외). 시험만 ATRIUM_UPDATE_API로 가짜 서버를 준다.
+//   P70 dev 채널(판 설정 updateChannel): 릴리즈 목록(releases?per_page=30)에서 정식과 사전 릴리즈(dev 빌드, 태그 v<x.y.z>-dev.<n>) 가운데 가장 높은 버전을 고른다.
 // - 받기 주소는 이 저장소의 GitHub 주소만 받는다(https, api.github.com·github.com·codeload.github.com). 가짜 서버(127.0.0.1)는 API 주소를 바꾼 시험에서만.
 // - 바꾸기(update-swap.mjs)는 백엔드만 끄고 herdr 서버는 그대로 둔다. 새 백엔드가 herdr 세션에 다시 붙는다(ARCH 4절 C3).
 import fs from 'node:fs';
@@ -23,6 +24,9 @@ export const LAUNCHER = 'launch.mjs';
 export const LAUNCHER_CMD = 'Atrium.cmd';
 export const STAGING_SUFFIX = '.staging';
 const TAG_RE = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+export const CHANNELS = ['stable', 'dev']; // P70: 업데이트 채널. stable은 정식 릴리즈만, dev는 사전 릴리즈(dev 빌드)도
+export const LIST_PER_PAGE = 30;
+export const channelOf = (v) => (v === 'dev' ? 'dev' : 'stable');
 
 const localAppData = () => process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
 export const defaultInstallDir = () => path.join(localAppData(), 'atrium', 'versions');
@@ -72,9 +76,9 @@ export function nodeSatisfies(version, range) {
 }
 
 // ---------- 릴리즈 ----------
-// GitHub releases/latest 응답 → 쓸 값. 정식 릴리즈가 아니거나 태그가 버전 꼴이 아니면 null
-export function parseRelease(j) {
-  if (!j || typeof j !== 'object' || j.draft || j.prerelease) return null;
+// GitHub releases/latest 응답(또는 목록의 한 항목) → 쓸 값. 초안, 태그가 버전 꼴이 아닌 것, 그리고 prerelease를 켜지 않으면 사전 릴리즈는 null
+export function parseRelease(j, { prerelease = false } = {}) {
+  if (!j || typeof j !== 'object' || j.draft || (j.prerelease && !prerelease)) return null;
   const tag = String(j.tag_name || '').trim();
   if (!TAG_RE.test(tag)) return null;
   const notes = String(j.body || '').replace(/\r\n/g, '\n').trim();
@@ -84,7 +88,35 @@ export function parseRelease(j) {
     notes: notes.length > 4000 ? `${notes.slice(0, 4000)}…` : notes,
     publishedAt: j.published_at ? Date.parse(j.published_at) || null : null,
     tarball: typeof j.tarball_url === 'string' ? j.tarball_url : null,
+    prerelease: !!j.prerelease,
   };
+}
+// P70: 릴리즈 목록 → 채널에서 가장 높은 버전. dev는 정식과 사전 릴리즈 모두, stable은 정식만. 없으면 null
+export function pickRelease(list, channel = 'stable') {
+  if (!Array.isArray(list)) return null;
+  const dev = channelOf(channel) === 'dev';
+  let best = null;
+  for (const j of list) {
+    const r = parseRelease(j, { prerelease: dev });
+    if (r && (!best || compareVersions(r.version, best.version) > 0)) best = r;
+  }
+  return best;
+}
+// P70: releases/latest 주소 → 같은 저장소의 릴리즈 목록 주소(시험의 가짜 서버도). 꼴이 다르면 null
+export function releasesListUrl(apiUrl = DEFAULT_UPDATE_API) {
+  let u;
+  try { u = new URL(apiUrl); } catch { return null; }
+  if (!/\/releases\/latest\/?$/.test(u.pathname)) return null;
+  u.pathname = u.pathname.replace(/\/releases\/latest\/?$/, '/releases');
+  u.search = `?per_page=${LIST_PER_PAGE}`;
+  return u.href;
+}
+// P70: 채널의 최신 릴리즈를 읽는다. stable은 releases/latest, dev는 목록. 없으면 null
+export async function fetchLatest(fetchJson, apiUrl = DEFAULT_UPDATE_API, channel = 'stable') {
+  if (channelOf(channel) === 'stable') return parseRelease(await fetchJson(apiUrl));
+  const url = releasesListUrl(apiUrl);
+  if (!url) throw new Error(`릴리즈 목록 주소를 만들 수 없습니다: ${apiUrl}`);
+  return pickRelease(await fetchJson(url), 'dev');
 }
 
 const isLoopback = (h) => h === '127.0.0.1' || h === 'localhost' || h === '[::1]' || h === '::1';
