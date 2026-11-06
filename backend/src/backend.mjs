@@ -610,7 +610,7 @@ export class Backend {
       s.lastState = sum.state;
       if (from !== null || cause) {
         this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, herdr: sum.herdrStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined });
-        this.api.broadcast('session.state', { sessionId: s.sessionId, name: s.name, from, to: sum.state, cause: cause || null, summary: sum });
+        this.api.broadcast('session.state', { sessionId: s.sessionId, name: shownName(s), from, to: sum.state, cause: cause || null, summary: sum });
         this.onLinkTargetState(s, from, sum);
       }
     }
