@@ -191,10 +191,8 @@ test('dev에서 정식으로 돌리면 낮은 버전을 알리지 않고, 더 �
     s.updateChannel = 'dev';
     await up.channelChanged();
     assert.equal(up.view().latest.tag, 'v0.1.2'); assert.equal(up.view().available, true);
-    // 되돌리기는 그대로: 앞 버전이 있으면 된다
-    fs.mkdirSync(path.join(inst, 'v0.1.2-dev.1'), { recursive: true });
-    U.writeCurrent(inst, { current: 'v0.1.2-dev.2', previous: 'v0.1.2-dev.1' });
-    assert.equal(up.view().canRollback, true); assert.equal(up.view().previous, 'v0.1.2-dev.1');
+    // P71: 손으로 하는 되돌리기는 뺐다
+    assert.equal('canRollback' in up.view(), false); assert.equal('previous' in up.view(), false);
   } finally { rm(d); }
 });
 
@@ -220,7 +218,7 @@ test('한 번만 다른 채널(atrium update --channel): 판 기록과 판 설�
     const r = await up.apply({ channel: 'dev', confirm: true }, { auth: { kind: 'local' } });
     assert.deepEqual(r, { started: true, to: 'v0.1.2-dev.1' });
     const end = Date.now() + 3000; while (!swaps.length && Date.now() < end) await new Promise((x) => setTimeout(x, 20));
-    assert.equal(swaps[0].to.tag, 'v0.1.2-dev.1'); assert.equal(swaps[0].currentAfter.previous, 'v0.1.1');
+    assert.equal(swaps[0].to.tag, 'v0.1.2-dev.1'); assert.equal(swaps[0].currentAfter.previous, undefined); // P71
   } finally { rm(d); }
 });
 

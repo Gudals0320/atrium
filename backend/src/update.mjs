@@ -1,6 +1,7 @@
-// P69 앱 안 업데이트: 설치 폴더, 버전 비교, 릴리즈 읽기, 받기 주소 검사, current.json 바꾸기·되돌리기, 오래된 버전 지우기, 압축 풀기, 준비(npm ci·빌드)와 미리 보기.
+// P69 앱 안 업데이트: 설치 폴더, 버전 비교, 릴리즈 읽기, 받기 주소 검사, current.json 바꾸기, 오래된 버전 지우기, 압축 풀기, 준비(npm ci·빌드)와 미리 보기.
 // - 설치 폴더(ATRIUM_INSTALL_DIR, 기본 %LOCALAPPDATA%\atrium\versions)에 버전마다 저장소 소스 전체(<태그>\backend, <태그>\app, 그 안의 node_modules와 app\dist)를 둔다.
-//   지금 버전은 current.json({ current, previous })이 가리킨다. 판 데이터(판 기록, 플러그인, 세션 설정 파일)는 버전 밖 데이터 폴더에 있다.
+//   지금 버전은 current.json({ current, switchedAt })이 가리킨다. P71: 손으로 하는 되돌리기를 빼서 앞 버전(previous)을 적지도 남기지도 않는다.
+//   새 백엔드가 뜨지 못할 때의 자동 되돌리기(update-swap.mjs)는 바꾸기 작업 파일의 옛 코드 폴더(fromRoot)와 옛 current.json(currentBefore)으로 한다. 판 데이터(판 기록, 플러그인, 세션 설정 파일)는 버전 밖 데이터 폴더에 있다.
 // - 새 릴리즈는 GitHub API(인증 없음)의 releases/latest로 본다. 정식 릴리즈만(초안·사전 릴리즈 제외). 시험만 ATRIUM_UPDATE_API로 가짜 서버를 준다.
 //   P70 dev 채널(판 설정 updateChannel): 릴리즈 목록(releases?per_page=30)에서 정식과 사전 릴리즈(dev 빌드, 태그 v<x.y.z>-dev.<n>) 가운데 가장 높은 버전을 고른다.
 // - 받기 주소는 이 저장소의 GitHub 주소만 받는다(https, api.github.com·github.com·codeload.github.com). 가짜 서버(127.0.0.1)는 API 주소를 바꾼 시험에서만.
@@ -243,7 +244,7 @@ export function untar(buf, dest, { strip = 1 } = {}) {
 
 // ---------- 설치 폴더와 current.json ----------
 export function readCurrent(dir) {
-  try { const j = JSON.parse(fs.readFileSync(path.join(dir, CURRENT_FILE), 'utf8')); return j && typeof j === 'object' ? { current: j.current || null, previous: j.previous || null, switchedAt: j.switchedAt || null } : null; } catch { return null; }
+  try { const j = JSON.parse(fs.readFileSync(path.join(dir, CURRENT_FILE), 'utf8')); return j && typeof j === 'object' ? { current: j.current || null, switchedAt: j.switchedAt || null } : null; } catch { return null; } // P71: 옛 파일의 previous는 읽지 않는다
 }
 // 쓰다 끊겨도 반쪽 파일이 남지 않게 옆 파일에 쓰고 바꾼다
 export function writeCurrent(dir, value) {
@@ -253,18 +254,10 @@ export function writeCurrent(dir, value) {
   renameRetry(tmp, file);
   return value;
 }
-// tag를 지금 버전으로. 앞 버전은 previous가 된다(같은 태그를 다시 깔면 previous는 그대로)
+// tag를 지금 버전으로
 export function switchCurrent(dir, tag, now = Date.now()) {
   const before = readCurrent(dir);
-  const previous = before && before.current && before.current !== tag ? before.current : (before && before.previous) || null;
-  return { before, after: writeCurrent(dir, { current: tag, previous: previous === tag ? null : previous, switchedAt: now }) };
-}
-// 앞 버전으로 되돌린다(지금 것은 previous가 된다). 앞 버전이 없거나 폴더가 없으면 던진다
-export function rollbackCurrent(dir, now = Date.now()) {
-  const before = readCurrent(dir);
-  if (!before || !before.previous) throw Object.assign(new Error('되돌릴 앞 버전이 없습니다'), { code: 'no_previous' });
-  if (!fs.existsSync(path.join(dir, before.previous))) throw Object.assign(new Error(`앞 버전 폴더가 없습니다: ${before.previous}`), { code: 'no_previous' });
-  return { before, after: writeCurrent(dir, { current: before.previous, previous: before.current, switchedAt: now }) };
+  return { before, after: writeCurrent(dir, { current: tag, switchedAt: now }) };
 }
 export function listVersions(dir) {
   try { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && TAG_RE.test(e.name)).map((e) => e.name).sort(compareVersions); } catch { return []; }
@@ -275,10 +268,11 @@ function renameRetry(a, b) {
     try { fs.renameSync(a, b); return; } catch (e) { if (i >= 20 || !['EPERM', 'EACCES', 'EBUSY'].includes(e.code)) throw e; const t = Date.now() + 250; while (Date.now() < t) { /* 잠깐 기다린다(백신 검사 등) */ } }
   }
 }
-// 지금 버전과 바로 앞 버전(그리고 keep)만 남기고 옛 버전 폴더와 남은 준비 폴더를 지운다. 지우지 못한 것(쓰는 중)은 다음에 다시 지운다
+// 지금 버전(그리고 keep)만 남기고 옛 버전 폴더와 남은 준비 폴더를 지운다. 지우지 못한 것(쓰는 중)은 다음에 다시 지운다.
+// P71: 바로 앞 버전은 손으로 되돌릴 때 쓰려고 남겼는데, 되돌리기를 빼서 남기지 않는다. 바꾸기 프로세스는 새 백엔드가 뜬 뒤(또는 옛 것으로 돌린 뒤)에만 부른다
 export function pruneVersions(dir, { keep = [], keepStaging = [] } = {}) {
   const cur = readCurrent(dir) || {};
-  const hold = new Set([cur.current, cur.previous, ...keep].filter(Boolean));
+  const hold = new Set([cur.current, ...keep].filter(Boolean));
   const removed = [], failed = [];
   let entries = [];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()); } catch { return { removed, failed }; }
@@ -387,7 +381,7 @@ export async function prepareRelease({ dir, release, apiUrl = DEFAULT_UPDATE_API
     const v = await verify(staging, { protocol, node });
     if (!v.ok) throw Object.assign(new Error(`새 버전을 확인하지 못했습니다: ${v.problems.join('; ')}`), { code: 'verify_failed', problems: v.problems });
     const final = path.join(dir, release.tag);
-    if (fs.existsSync(final)) { if (cur && cur.previous === release.tag) log(`replacing previous ${release.tag}`); rmRetry(final); }
+    if (fs.existsSync(final)) { log(`replacing ${release.tag}`); rmRetry(final); } // 지난번에 지우지 못한 같은 버전 폴더
     renameRetry(staging, final);
     return { root: final, verify: v };
   } catch (e) {

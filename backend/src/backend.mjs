@@ -17,11 +17,12 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState } from './screen.mjs';
+import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit } from './screen.mjs';
 import { parseTargets, toLF, clip } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
-import { newRuntime, applyHook, applyHerdrStatus, applyAgentDetected, applyAgentReleased, applyHerdrDisconnected, deriveState, flags } from './state.mjs';
+import { newRuntime, applyHook, applyHerdrStatus, applyAgentDetected, applyAgentReleased, applyHerdrDisconnected, deriveState, flags, worktreeExitAsk } from './state.mjs';
+import { worktreeOf, waitClaudeExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
 import { SHELL_TOOLS, LINK_VERBS, parseHerdrCommands, parseHerdrOutput, readTextOf, tailText, screenAnswerText, roleNotice, unlinkNotice, paneChangedNotice, ROLE_RE } from './links.mjs';
@@ -868,8 +869,18 @@ export class Backend {
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'visible' });
       if (s.kind === 'claude' && isTrustDialog(text)) { s.rt.trustScreen = { at: Date.now() }; this.store.addEvent(s.sessionId, 'trust_dialog', { tail: tailLines(text, 6) }); }
+      else if ((s.kind || 'claude') === 'claude') this.noteWorktreeExit(s, text);
       if (!this.hooked(s)) s.rt.screenAsk = { tail: tailText(text, 14), at: Date.now() };
     } catch {}
+  }
+  // P71: `claude -w` 세션이 끝날 때 묻는 워크트리 나가기 질문을 화면에서 읽어 둔다(승인 줄 "워크트리를 남길까요?")
+  noteWorktreeExit(s, text) {
+    const w = parseWorktreeExit(text);
+    if (!w) return false;
+    const was = s.rt.worktreeExit;
+    s.rt.worktreeExit = { ...w, at: (was && was.at) || Date.now() };
+    if (!was) this.store.addEvent(s.sessionId, 'worktree_exit_dialog', { commits: w.commits, files: w.files, choices: w.choices.map((c) => `${c.n}. ${c.label}`) });
+    return true;
   }
   async readScreenAnswer(s) {
     try {
@@ -1058,7 +1069,7 @@ export class Backend {
     if (plan === 'restart_with_settings') {
       // herdr 기본 이어 가기(`claude --resume <ID>`)로 떠서 hook이 없다. 방금 이어 간 claude라 진행 중인 턴은 없다.
       await this.adapter.sendText(s.paneId, '/exit'); await sleep(150); await this.adapter.paneKeys(s.paneId, ['enter']);
-      const t = Date.now(); while (s.rt.herdr.present && Date.now() - t < this.cfg.killWaitMs) await sleep(200);
+      await waitClaudeExit(this, s, this.cfg.killWaitMs, { by: 'restart', steps }); // P71: 워크트리 나가기 질문은 남기기
       steps.push('/exit (no board settings)');
     }
     await this.adapter.waitShellReady(s.paneId, 8000);
@@ -1315,8 +1326,12 @@ export class Backend {
     // G2: 셸은 패널만 닫는다. 돌고 있는 명령도 함께 끝난다
     const closeMsg = shared.length ? m('killClosePane', { pane: s.paneId, n: shared.length }) : m('killCloseAll');
     if (!p.confirm && kindName === SHELL) { const sh = s.rt.shell; const cmd = sh && !sh.atPrompt ? clip(sh.command || (sh.procs || []).join(', ') || '?', 60) : null; return confirmResult(`셸 ${s.name}: ${closeText}${cmd ? ` 실행 중인 명령(${cmd})도 종료합니다.` : ''}`, m('killShell', { name: s.name, close: closeMsg, running: cmd ? m('killShellRunning', { cmd }) : '' })); }
-    if (!p.confirm) return confirmResult(`${s.name} 세션에서 실행 중인 ${kindName} 에이전트를 종료합니다. ${closeText} 보관하면 보관함에서 다시 열 수 있습니다.${kindName === 'claude' ? " 삭제하면 대화 기록을 휴지통으로 보내고 보드에서 제거합니다." : " 삭제하면 보드에서 제거합니다."}`, m('kill', { name: s.name, kind: kindName, close: closeMsg, del: m(kindName === 'claude' ? 'killDeleteClaude' : 'killDeleteOther') }));
+    // P71: `claude -w` 세션이면 확인에 워크트리를 알린다. 창의 닫기 확인이 "워크트리 남기기(기본)"와 "워크트리와 브랜치 지우기"를 보인다
+    const wt = worktreeOf(s, this.branch && this.branch.info.get(s.sessionId));
+    if (!p.confirm) return confirmResult(`${s.name} 세션에서 실행 중인 ${kindName} 에이전트를 종료합니다. ${closeText} 보관하면 보관함에서 다시 열 수 있습니다.${kindName === 'claude' ? " 삭제하면 대화 기록을 휴지통으로 보내고 보드에서 제거합니다." : " 삭제하면 보드에서 제거합니다."}${wt ? ` 워크트리(${wt.name})는 남깁니다. 지우려면 worktree: remove를 지정하세요.` : ''}`, m('kill', { name: s.name, kind: kindName, close: closeMsg, del: m(kindName === 'claude' ? 'killDeleteClaude' : 'killDeleteOther') }), wt ? { worktree: wt } : {});
     if (p.after && !['archive', 'delete'].includes(p.after)) throw apiError('bad_request', `after에는 archive 또는 delete를 지정하세요: ${p.after}`);
+    if (p.worktree != null && !['keep', 'remove'].includes(p.worktree)) throw apiError('bad_request', `worktree에는 keep 또는 remove를 지정하세요: ${p.worktree}`);
+    const wtChoice = p.worktree === 'remove' ? 'remove' : 'keep'; // 사람이 지우기를 고르지 않았으면 남긴다
     // P21(D4): 잠든 세션은 패널이 없다. herdr 없이 판에서 닫고 보관·삭제한다
     if (s.rt.sleep && !s.paneId && !(this.sleeper && (this.sleeper.wakes.has(s.sessionId) || this.sleeper.going.has(s.sessionId)))) {
       s.rt.sleep = null; s.rt.exit = { kind: 'normal', reason: 'closed while sleeping', at: Date.now() };
@@ -1332,7 +1347,8 @@ export class Backend {
     try {
       const st = () => deriveState(s.rt).state;
       if (s.rt.herdr.present && kindName !== SHELL) {
-        if (st() === 'waiting' || st() === 'trust_wait' || st() === 'working') {
+        const exiting = !!s.rt.worktreeExit; // P71: 워크트리 나가기 질문이 이미 떠 있다. esc로 취소하지 않고 그 질문에 답한다
+        if (!exiting && (st() === 'waiting' || st() === 'trust_wait' || st() === 'working')) {
           await this.adapter.sendKeys(s.agentName, ['esc']).catch((e) => steps.push(`esc failed ${e.code}`));
           steps.push(`esc (${st()})`);
           for (let i = 0; i < 25 && s.rt.herdr.present && ['waiting', 'trust_wait', 'working'].includes(st()); i++) await sleep(200);
@@ -1340,7 +1356,8 @@ export class Backend {
         if (s.rt.herdr.present) {
           s.rt.exitRequested = true;
           // Claude Code는 /exit. 다른 종류는 하네스마다 끝내는 말이 달라 ctrl+c를 두 번 보낸다(codex는 두 번째에 끝난다)
-          if (EXIT_TEXT[kindName]) {
+          if (exiting) steps.push('worktree exit dialog open');
+          else if (EXIT_TEXT[kindName]) {
             await this.adapter.sendText(s.paneId, EXIT_TEXT[kindName]);
             await sleep(150);
             await this.adapter.paneKeys(s.paneId, ['enter']);
@@ -1348,9 +1365,8 @@ export class Backend {
           } else {
             for (let i = 0; i < 2 && s.rt.herdr.present; i++) { await this.adapter.paneKeys(s.paneId, ['ctrl+c']).catch(() => {}); steps.push('ctrl+c'); await sleep(600); }
           }
-          const t0 = Date.now();
-          while (s.rt.herdr.present && Date.now() - t0 < this.cfg.killWaitMs) await sleep(200);
-          steps.push(s.rt.herdr.present ? `${kindName} still running` : `${kindName} exited in ${Date.now() - t0}ms`);
+          const waited = await waitClaudeExit(this, s, this.cfg.killWaitMs, { worktree: wtChoice, by: 'close', steps }); // claude가 아닌 종류는 기다리기만 한다
+          steps.push(s.rt.herdr.present ? `${kindName} still running` : `${kindName} exited in ${waited}ms`);
         }
       }
       const exit = s.rt.exit;
@@ -1372,6 +1388,7 @@ export class Backend {
   async answer(p) {
     const s = this.resolve(p.session);
     this.requireHerdr();
+    if (s.rt.worktreeExit && !s.rt.pendingAsk) return this.answerWorktreeExit(s, p); // P71: 화면에서 읽은 질문이라 hook이 없어도 답한다
     // 승인 카드의 키 순서는 판이 띄운 Claude Code만 안다(E9). 다른 종류와 판에 올린 에이전트는 터미널에서 답한다(F5)
     if (!this.hooked(s)) throw apiError('answer_in_terminal', `${s.name}(${s.kind})의 응답 키 입력 순서를 보드에서 확인할 수 없습니다. 터미널에서 직접 응답하세요.`);
     const card = { toolUseId: p.toolUseId || null, since: p.since || null };
@@ -1395,6 +1412,28 @@ export class Backend {
       // 판에서 답한 기록은 판이 보낸 키로 남긴다(A1 거부 기록)
       this.touch(s);
       const rec = { by: 'board', kind: ask.kind, tool: ask.tool, toolUseId: ask.toolUseId, choice: p.choice ?? null, picks: p.picks ?? null, label: plan.label, steps: plan.steps.map((x) => (x.keys ? x.keys.join('+') : `text(${x.text.length})`)) };
+      this.store.addEvent(s.sessionId, 'answer', rec);
+      this.api.broadcast('session.answer', { sessionId: s.sessionId, name: s.name, ...rec });
+      return { sent: true, label: plan.label, steps: rec.steps };
+    } finally { s.answering = false; }
+  }
+
+  // P71: 승인 줄의 워크트리 나가기 답. 보내기 직전에 화면을 다시 읽어 질문이 아직 있는지 보고 그 번호를 보낸다
+  async answerWorktreeExit(s, p) {
+    const cur = s.rt.worktreeExit;
+    if (p.since && p.since !== cur.at) return { sent: false, reason: 'stale' };
+    planAnswer(worktreeExitAsk(cur), p); // 답 모양과 지우기 확인을 먼저 본다
+    if (s.answering) throw keyed(apiError('busy', "이 세션에 이미 응답을 전송하고 있습니다."), 'answerBusy');
+    s.answering = true;
+    try {
+      const w = parseWorktreeExit(await this.adapter.readScreen(s.paneId, { source: 'visible' }).catch(() => ''));
+      if (!w) { s.rt.worktreeExit = null; this.broadcastSession(s, { cause: 'worktree_exit:gone' }); return { sent: false, reason: 'stale' }; }
+      const plan = planAnswer(worktreeExitAsk({ ...w, at: cur.at }), p);
+      checkSteps(plan.steps);
+      s.rt.exitRequested = true; // 어느 답이든 claude는 끝난다(hook이 없는 세션도 정상 종료로 본다)
+      await this.adapter.paneKeys(s.paneId, plan.steps[0].keys);
+      this.touch(s);
+      const rec = { by: 'board', kind: 'worktree_exit', choice: p.choice, commits: w.commits, files: w.files, label: plan.label, steps: plan.steps.map((x) => x.keys.join('+')) };
       this.store.addEvent(s.sessionId, 'answer', rec);
       this.api.broadcast('session.answer', { sessionId: s.sessionId, name: s.name, ...rec });
       return { sent: true, label: plan.label, steps: rec.steps };

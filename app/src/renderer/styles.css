@@ -1461,3 +1461,11 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 .mt-ln-models button { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--text); font-size: 12.5px; font-weight: 400; text-align: left; cursor: pointer; }
 .mt-ln-models button:hover, .mt-ln-models button.on { background: var(--accent-soft); }
 .mt-ln-models button .dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+
+
+/* P71: 워크트리 나가기 질문(승인 줄)과 닫기 확인의 워크트리 선택 */
+.mt-answer .mt-a-msg.mt-wt-warn { color: var(--bad); white-space: normal; flex: 1 1 auto; }
+.mt-a-no.mt-wt-remove { color: var(--bad); }
+.mt-wt-choice { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 2px; }
+.mt-wt-choice .mt-check { display: flex; align-items: center; gap: 6px; }
+.mt-wt-choice .mt-wt-warn { color: var(--bad); }

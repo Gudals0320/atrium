@@ -31,6 +31,16 @@ export function planAnswer(ask, a = {}) {
   if (kind === 'unknown_dialog') throw inTerminal('알 수 없는 대화상자');
   const choice = a.choice;
 
+  // P71: 워크트리 나가기 질문. { choice: 'keep' } 남기기, { choice: 'remove', confirm: true } 지우기(브랜치와 커밋도 지워진다. 한 번 더 묻고 보낸다)
+  if (kind === 'worktree_exit') {
+    if (choice === 'keep') return { steps: [{ keys: [String(ask.keep.n)] }], label: `${ask.keep.n}. ${ask.keep.label}` };
+    if (choice === 'remove') {
+      if (a.confirm !== true) throw answerError('needs_confirm', '워크트리를 지우면 브랜치와 커밋도 지워집니다. confirm: true로 한 번 더 확인하세요.');
+      return { steps: [{ keys: [String(ask.remove.n)] }], label: `${ask.remove.n}. ${ask.remove.label}` };
+    }
+    throw answerError('bad_request', `워크트리 질문에는 keep 또는 remove로 답하세요: ${choice}`);
+  }
+
   if (kind === 'permission') {
     if (choice === 'reject') return { steps: [{ keys: ['esc'] }], label: '거부' };
     if (choice === 'amend') return { steps: [{ keys: ['tab'] }, { text: oneLine(a.text) }, { keys: ['enter'] }], label: "승인 및 지시 추가" };

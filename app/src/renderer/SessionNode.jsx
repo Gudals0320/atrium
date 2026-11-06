@@ -35,6 +35,7 @@ import { fmtTime } from './lib/i18n.js';
 import { confirmKey } from './lib/keys.js'; // P28: 닫기 확인에서 Delete 한 번 더, Esc
 import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 판의 이름 바꾸기
 import { addressOf, renamed } from './lib/session-name.js';
+import { killWorktreeParam } from './lib/worktree-exit.js'; // P71: 닫기 확인의 워크트리 선택
 
 const zoomSel = (s) => s.transform[2];
 // 이 배율보다 작으면 머리줄의 메모리·모델·작은 단추를 숨기고 이름과 상태만 화면 기준 크기로 보인다(사용성 평가 2026-10-31)
@@ -289,15 +290,28 @@ function useArmDelete() {
 }
 
 // 세션 하나를 닫고(보관 또는 삭제) 결과를 알린다. 닫았으면 true
-async function closeOne(s, after, { quiet = false } = {}) {
+async function closeOne(s, after, { quiet = false, extra = {} } = {}) {
   try {
-    const r = await api.call('session.kill', { session: s.sessionId, confirm: true, after });
+    const r = await api.call('session.kill', { session: s.sessionId, confirm: true, after, ...extra });
     const a = r.after || {};
     if (after === 'archive') { if (!quiet) toast(t('node.closedArchived', { name: s.name })); }
     else if (a.deleted) { if (!quiet) toast(t(a.trashed ? 'node.closedDeletedTrash' : 'node.closedDeleted', { name: s.name })); }
     else toast(t('node.closedNotDeleted', { name: s.name, reason: a.reason ? tOr(`refuse.${a.reason}`, a.label || a.reason) : a.label || '?' }), 'error');
     return true;
   } catch (e) { toast(t('node.closeFail', { error: errText(e) }), 'error'); return false; }
+}
+
+// P71: `claude -w` 세션의 닫기 확인에 보이는 워크트리 선택. 기본은 남기기이고, 지우기는 사람이 고를 때만이다
+function WorktreeChoice({ wt, value, onChange, disabled }) {
+  const t = useT();
+  if (!wt) return null;
+  return (
+    <div className="mt-wt-choice" data-role="close-worktree" data-value={value}>
+      <label className="mt-check"><input type="radio" name="wt-choice" data-choice="keep" checked={value !== 'remove'} disabled={disabled} onChange={() => onChange('keep')} />{t('wtExit.closeKeep', { name: wt.name })}</label>
+      <label className="mt-check"><input type="radio" name="wt-choice" data-choice="remove" checked={value === 'remove'} disabled={disabled} onChange={() => onChange('remove')} />{t('wtExit.closeRemove')}</label>
+      {value === 'remove' && <div className="mt-card-sub mt-wt-warn" data-role="close-worktree-warn">{t('wtExit.closeRemoveWarn')}</div>}
+    </div>
+  );
 }
 
 // P22: Delete 키로 연 닫기 확인(창 가운데). 고른 노드가 여럿이거나, 하나라도 멀리 보아 머리줄의 X가 숨었을 때. X의 확인과 같이 보관·삭제·취소를 묻고 고른 세션 모두에 한다
@@ -309,6 +323,7 @@ export function CloseDialog({ ids, onClose }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(null);
   const [done, setDone] = useState(0);
+  const [wtChoice, setWtChoice] = useState('keep'); // P71
   useEffect(() => { if (one) api.call('session.kill', { session: one.sessionId }).then((r) => setMsg(r || {})).catch((e) => setMsg({ error: e })); }, [one && one.sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
   const del = useArmDelete();
   useConfirmKeys((k) => { if (busy) return; if (k === 'cancel') onClose(); else del.arm(); });
@@ -316,7 +331,7 @@ export function CloseDialog({ ids, onClose }) {
   const run = async (after) => {
     setBusy(after);
     let ok = 0;
-    for (const s of list) { if (await closeOne(s, after, { quiet: !one })) ok++; setDone((n) => n + 1); }
+    for (const s of list) { if (await closeOne(s, after, { quiet: !one, extra: one ? killWorktreeParam(msg && msg.worktree, wtChoice) : {} })) ok++; setDone((n) => n + 1); }
     if (!one && ok) toast(t(after === 'archive' ? 'close.manyArchived' : 'close.manyDeleted', { n: ok }));
     onClose();
   };
@@ -326,6 +341,7 @@ export function CloseDialog({ ids, onClose }) {
         <h3>{one ? t('close.titleOne', { name: one.name }) : t('close.titleMany', { n: list.length })}</h3>
         {one ? <div>{!msg ? t('node.confirmLoading') : msg.error ? errText(msg.error) : tMsg(msg)}</div>
           : <><div>{t('close.many', { n: list.length })}</div><div className="mt-close-names mono" data-role="close-names">{list.map((s) => `@${s.name}`).join('  ')}</div></>}
+        {one && msg && <WorktreeChoice wt={msg.worktree} value={wtChoice} onChange={setWtChoice} disabled={!!busy} />}
         {busy && !one && <div className="dim" data-role="close-progress">{t('close.progress', { done, n: list.length })}</div>}
         <div className="mt-card-actions">
           <button className="mt-btn" disabled={!!busy} data-action="close-archive" onClick={() => run('archive')}>{busy === 'archive' ? t('node.closing') : t('common.archive')}</button>
@@ -343,16 +359,18 @@ function KillConfirm({ s, onClose }) {
   const t = useT();
   const [msg, setMsg] = useState(null); // 백엔드 확인 결과({ message, msg }) 또는 { error }
   const [busy, setBusy] = useState(null); // 'archive' | 'delete'
+  const [wtChoice, setWtChoice] = useState('keep'); // P71
   const del = useArmDelete();
   useConfirmKeys((k) => { if (busy) return; if (k === 'cancel') onClose(); else del.arm(); });
   useEffect(() => { api.call('session.kill', { session: s.sessionId }).then((r) => setMsg(r || {})).catch((e) => setMsg({ error: e })); }, [s.sessionId]);
   const close = async (after) => {
     setBusy(after);
-    if (!(await closeOne(s, after))) setBusy(null);
+    if (!(await closeOne(s, after, { extra: killWorktreeParam(msg && msg.worktree, wtChoice) }))) setBusy(null);
   };
   return (
     <div className="mt-kill nodrag" data-role="kill-confirm" data-loading={msg ? '0' : '1'}>
       <div>{!msg ? t('node.confirmLoading') : msg.error ? errText(msg.error) : tMsg(msg)}</div>
+      {msg && <WorktreeChoice wt={msg.worktree} value={wtChoice} onChange={setWtChoice} disabled={!!busy} />}
       <div className="mt-card-actions">
         <button className="mt-btn" disabled={!!busy} data-action="close-archive" onClick={() => close('archive')}>{busy === 'archive' ? t('node.closing') : t('common.archive')}</button>
         <button ref={del.btn} className={`mt-btn danger${del.armed ? ' armed' : ''}`} disabled={!!busy} data-action="close-delete" onClick={() => close('delete')}>{busy === 'delete' ? t('node.deleting') : t('common.delete')}</button>

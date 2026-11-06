@@ -14,6 +14,7 @@ function askMsg(ask) {
   if (ask.kind === 'question') return m('chgQuestion', { q: (ask.questions || []).map((q) => q.question).join(' / ') });
   if (ask.kind === 'plan') return m('chgPlan');
   if (ask.kind === 'unknown_dialog') return m('chgUnknownDialog');
+  if (ask.kind === 'worktree_exit') return m('chgWorktreeExit');
   return m('chgPermission', { what: ask.summary || ask.tool || '' });
 }
 
@@ -22,6 +23,7 @@ function askText(ask) {
   if (ask.kind === 'question') return `질문: ${(ask.questions || []).map((q) => q.question).join(' / ')}`;
   if (ask.kind === 'plan') return '계획 승인';
   if (ask.kind === 'unknown_dialog') return '알 수 없는 대화상자';
+  if (ask.kind === 'worktree_exit') return '워크트리를 남길지 확인 필요';
   return `권한: ${ask.summary || ask.tool || ''}`;
 }
 const one = (s, n = 120) => (typeof s === 'string' ? (s.replace(/\s+/g, ' ').trim().length > n ? s.replace(/\s+/g, ' ').trim().slice(0, n) + '…' : s.replace(/\s+/g, ' ').trim()) : '');

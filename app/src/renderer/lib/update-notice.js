@@ -17,3 +17,10 @@ export function versionLabel(version) {
   const v = vTag(version);
   return /-dev\.\d+$/.test(v) ? `${v} (dev)` : v;
 }
+
+// P71: 창 제목과 트레이 풍선 글의 이름. 지금 도는 창의 app/package.json version을 그대로 붙인다(dev 빌드면 0.1.3-dev.1).
+// 개발용 판은 뒤에 (dev)를 붙인다. 예: "Atrium 0.1.2", "Atrium 0.1.2 (dev)"
+export function windowTitle(name, version, profile) {
+  const v = version ? String(version).replace(/^v/, '') : '';
+  return `${name}${v ? ` ${v}` : ''}${profile === 'dev' ? ' (dev)' : ''}`;
+}

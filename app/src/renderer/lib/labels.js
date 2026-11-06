@@ -43,6 +43,7 @@ export function askLine(s) {
   if (a.kind === 'question') return t('ask.question', { q: (a.questions || []).map((q) => q.question).join(' / ') });
   if (a.kind === 'plan') return t('ask.plan');
   if (a.kind === 'unknown_dialog') return t('ask.unknownDialog');
+  if (a.kind === 'worktree_exit') return t('wtExit.title');
   if (a.kind === 'screen') return t('ask.screen', { kind: s.kind || t('ask.agent') });
   return t('ask.permission', { what: a.summary || a.tool });
 }

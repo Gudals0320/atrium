@@ -1,12 +1,13 @@
 // P69 설정 › 일반 › 업데이트 묶음과 웹 화면의 "PC에서 업데이트 중" 띠.
-// 묶음: 새 릴리즈 확인 켜기·끄기(판 설정 updateCheck), 지금 버전, 최신 버전과 릴리즈 노트 링크, 지금 확인, 업데이트(누르면 한 번 더 묻는다), 앞 버전으로 되돌리기, 진행.
+// 묶음: 새 릴리즈 확인 켜기·끄기(판 설정 updateCheck), 지금 버전, 최신 버전과 릴리즈 노트 링크, 지금 확인, 업데이트(누르면 한 번 더 묻는다), 진행.
+// P71: 손으로 하는 앞 버전 되돌리기를 뺐다. 새 백엔드가 뜨지 못할 때의 자동 되돌리기(update-swap.mjs)는 그대로다.
 // 업데이트는 이 PC의 창에서만 한다(웹 화면은 보기만). 받기와 준비 동안 판은 그대로 돌고, 끝나면 백엔드와 창만 다시 뜬다(herdr의 세션은 그대로).
 // P70: 업데이트 채널(판 설정 updateChannel, 정식·dev). 고르면 백엔드가 곧바로 다시 확인한다. dev 빌드를 쓰는 중이면 버전 뒤에 (dev)를 붙인다.
 import { useState } from 'react';
 import { api } from './api.js';
 import { toast } from './store.js';
 import { useT, errText, getLanguage } from './lib/i18n.js';
-import { useUpdate, checkNow, applyUpdate, rollbackUpdate } from './update.js';
+import { useUpdate, checkNow, applyUpdate } from './update.js';
 import { isWeb } from './web.js';
 import { SetRow, SetNote, SetSub } from './Settings.jsx';
 import { channelOf, versionLabel, vTag } from './lib/update-notice.js';
@@ -18,7 +19,7 @@ export function UpdateSettings({ settings }) {
   const view = useUpdate((s) => s.view);
   const busy = useUpdate((s) => s.busy);
   const restarting = useUpdate((s) => s.restarting);
-  const [asking, setAsking] = useState(null); // 'apply' | 'rollback'
+  const [asking, setAsking] = useState(false); // 업데이트를 한 번 더 묻는 중
   const [pending, setPending] = useState(null);
   const [chPending, setChPending] = useState(null); // 누른 채널(백엔드가 settings.updated로 확정할 때까지)
   if (!view) return null; // 옛 백엔드
@@ -39,7 +40,7 @@ export function UpdateSettings({ settings }) {
   const status = view.error ? t(view.error === 'no_release' ? 'update.noRelease' : 'update.checkFailed', { error: view.error })
     : view.available ? t('update.availableLine', { version: view.latest.tag })
     : view.latest ? t('update.upToDate', { version: vTag(view.current.version) }) : t('update.notChecked');
-  const go = async () => { const kind = asking; setAsking(null); if (kind === 'apply') await applyUpdate(); else if (kind === 'rollback') await rollbackUpdate(); };
+  const go = async () => { setAsking(false); await applyUpdate(); };
   const local = !isWeb;
   return <>
     <SetSub>{t('update.group')}</SetSub>
@@ -69,18 +70,17 @@ export function UpdateSettings({ settings }) {
       <span className="mt-set-name" />
       <span className="mt-set-value mt-upd-actions">
         <button type="button" className="mt-btn small ghost" data-action="update-check" disabled={busy || !!job} onClick={() => checkNow()}>{t('update.checkNow')}</button>
-        {local && view.available && <button type="button" className="mt-btn small primary" data-action="update-apply" disabled={busy || !!job || !view.allowed} onClick={() => setAsking('apply')}>{t('update.applyTo', { version: view.latest.tag })}</button>}
+        {local && view.available && <button type="button" className="mt-btn small primary" data-action="update-apply" disabled={busy || !!job || !view.allowed} onClick={() => setAsking(true)}>{t('update.applyTo', { version: view.latest.tag })}</button>}
         {view.latest && view.latest.url && <a className="mt-btn small ghost" href={view.latest.url} target="_blank" rel="noreferrer" data-action="update-notes">{t('update.notes')}</a>}
-        {local && view.canRollback && !view.available && <button type="button" className="mt-btn small ghost" data-action="update-rollback" disabled={busy || !!job} onClick={() => setAsking('rollback')}>{t('update.rollbackTo', { version: view.previous })}</button>}
       </span>
-      <span className="mt-set-hint">{!local ? t('update.pcOnly') : !view.allowed ? t('update.notAllowed') : !view.current.installed ? t('update.gitHint') : view.available ? t('update.installedHint') : view.canRollback ? t('update.rollbackHint', { version: view.previous }) : ''}</span>
+      <span className="mt-set-hint">{!local ? t('update.pcOnly') : !view.allowed ? t('update.notAllowed') : !view.current.installed ? t('update.gitHint') : view.available ? t('update.installedHint') : ''}</span>
     </div>
     {asking && (
       <div className="mt-set-note mt-upd-ask" data-role="update-confirm">
-        <span>{asking === 'apply' ? t('update.confirmTitle', { version: view.latest ? view.latest.tag : '' }) : t('update.rollbackTitle', { version: view.previous })} {t('update.confirmBody')}</span>
+        <span>{t('update.confirmTitle', { version: view.latest ? view.latest.tag : '' })} {t('update.confirmBody')}</span>
         <span className="mt-upd-ask-btns">
-          <button type="button" className="mt-btn small primary" data-action="update-confirm" onClick={go}>{asking === 'apply' ? t('update.apply') : t('update.rollback')}</button>
-          <button type="button" className="mt-btn small ghost" data-action="update-cancel" onClick={() => setAsking(null)}>{t('common.cancel')}</button>
+          <button type="button" className="mt-btn small primary" data-action="update-confirm" onClick={go}>{t('update.apply')}</button>
+          <button type="button" className="mt-btn small ghost" data-action="update-cancel" onClick={() => setAsking(false)}>{t('common.cancel')}</button>
         </span>
       </div>
     )}

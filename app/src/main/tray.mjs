@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { ApiClient, backendInfo, health } from '../../../backend/src/client.mjs';
 import { translate, DEFAULT_LANGUAGE, LANGUAGES } from '../renderer/lib/i18n.js'; // P16: 창과 같은 사전. 언어는 판 설정 language를 따른다
 import { APP_NAME } from '../../../backend/src/config.mjs';
+import { windowTitle } from '../renderer/lib/update-notice.js'; // P71: 풍선 글에 버전
 
 export const NOTIFY_DELAY_MS = 1200; // 창의 규칙(renderer lib/attention.js)과 같다
 const NEEDS_YOU = new Set(['waiting', 'trust_wait']);
@@ -96,7 +97,7 @@ export async function whenBoardReady(wc, timeoutMs = 30000) {
 // P14: closeWindow() → 창 닫기, startBackend() → 백엔드가 없으면 띄움, stopBackend() → 백엔드 끄기, confirm({ message, detail, ok }) → 참이면 진행(기본은 Electron 확인창)
 const TRAY_ID = 'tray-main'; // P47: 트레이의 클라이언트 ID(앱 하나에 트레이 하나)
 
-export function startTray({ cfg, log, hasWindow, showNode, quit, notifications = [], closeWindow = () => {}, startBackend = async () => {}, stopBackend = async () => {}, confirm = async () => false, onUpdateRestart = () => {} }) {
+export function startTray({ cfg, log, hasWindow, showNode, quit, notifications = [], closeWindow = () => {}, startBackend = async () => {}, stopBackend = async () => {}, confirm = async () => false, onUpdateRestart = () => {}, appVersion = null }) {
   const st = { lang: DEFAULT_LANGUAGE, enabled: true, connected: false, sessions: new Map(), notified: new Map(), pending: new Map(), tray: null, client: null, menuKey: null, stopped: false, busy: null, lastError: null, migration: null, migrationNoted: false };
 
   const tr = (key, vars) => translate(st.lang, key, vars);
@@ -161,7 +162,7 @@ export function startTray({ cfg, log, hasWindow, showNode, quit, notifications =
     st.icon = mine.length ? 'turn' : 'idle';
     st.tray.setImage(st.images[st.icon]);
     const status = st.busy ? `${tr(`tray.${st.busy}`)}…` : st.connected ? tr('tray.backendOn', { n: st.sessions.size }) : `${tr('tray.backendOff')}${st.lastError ? ` · ${st.lastError.slice(0, 60)}` : ''}`;
-    st.tooltip = `${tr('app.name')}${cfg.profile === 'dev' ? ' (dev)' : ''} · ${tr('tray.turn', { n: mine.length })} · ${status}${st.migration ? ` · ${st.migration}` : ''}`;
+    st.tooltip = `${windowTitle(tr('app.name'), appVersion, cfg.profile)} · ${tr('tray.turn', { n: mine.length })} · ${status}${st.migration ? ` · ${st.migration}` : ''}`;
     st.tray.setToolTip(st.tooltip.slice(0, 127));
     const busy = !!st.busy;
     const item = (id, label, enabled = true) => ({ id, label, enabled: enabled && !busy, click: () => ACTIONS[id]() });
