@@ -35,13 +35,16 @@ export function pairLabels(links) {
 
 // 이름표가 깨어 있는가(글을 다 보이는가). link: 연결, to: 받는 쪽 세션 요약({ state, unseen, delivering, turn: { endedAt } })
 // → { awake, why: 'running' | 'sending' | 'unseen' | null }
+// 지시 시각은 promptAt(백엔드가 센 마지막 지시). lastAt은 답 읽기(reply)·알림에도 바뀌므로, 없을 때만 마지막 기록이 지시였을 때의 lastAt을 쓴다
+export const promptAtOf = (l) => (l.promptAt != null ? l.promptAt : l.lastKind === 'prompt' ? l.lastAt : null) || null;
 export function labelAwake(link, to, now = Date.now(), { restMs = REST_MS, sendMs = SEND_MS } = {}) {
   if (!link || !to) return { awake: false, why: null };
-  const at = touchedAt(link);
+  const sent = promptAtOf(link);
+  const at = sent || link.createdAt || 0; // 지시가 없으면 띄운(이은) 때
   const ended = (to.turn && to.turn.endedAt) || 0;
   const answered = ended >= at && ended > 0; // 그 지시(없으면 띄움) 뒤에 받는 쪽이 한 턴을 끝냈다
   if (BUSY.has(to.state) && !answered && now - at < ACTIVE_MS) return { awake: true, why: 'running' };
-  if (link.lastAt && !answered && ((to.delivering || 0) > 0 || now - link.lastAt < sendMs)) return { awake: true, why: 'sending' };
+  if (sent && !answered && ((to.delivering || 0) > 0 || now - sent < sendMs)) return { awake: true, why: 'sending' };
   if (to.unseen && answered && now - ended < restMs) return { awake: true, why: 'unseen' };
   return { awake: false, why: null };
 }

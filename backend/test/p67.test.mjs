@@ -26,19 +26,20 @@ test('P67: 판 세션끼리의 띄움은 판의 연결이 있으면 대화 띄�
   assert.ok(BOARD_SPAWN_VIA.has('atrium-spawn'));
 });
 
-test('P67: 연결의 지시 수는 prompt 기록만 센다', () => {
+test('P67: 연결의 지시 수와 마지막 지시 시각은 prompt 기록만 본다', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p67-'));
   const store = new Store(path.join(dir, 'board.db'));
   try {
     store.insertLink({ linkId: 'l1', from: 'a', to: 'b', spawned: true, createdAt: 1 });
-    assert.equal(store.linkPromptCount('l1'), 0);
-    store.addLinkEvent('l1', 'spawn', 'atrium child b');
-    store.addLinkEvent('l1', 'prompt', 'one');
-    store.addLinkEvent('l1', 'target_working');
-    store.addLinkEvent('l1', 'prompt', 'two');
-    store.addLinkEvent('l1', 'prompt', 'three');
-    store.addLinkEvent('l1', 'target_done');
-    assert.equal(store.linkPromptCount('l1'), 3);
-    assert.equal(store.linkPromptCount('nope'), 0);
+    assert.deepEqual(store.linkPromptStats('l1'), { n: 0, at: null });
+    store.addLinkEvent('l1', 'spawn', 'atrium child b', null, 10);
+    store.addLinkEvent('l1', 'prompt', 'one', null, 20);
+    store.addLinkEvent('l1', 'target_working', null, null, 25);
+    store.addLinkEvent('l1', 'prompt', 'two', null, 30);
+    store.addLinkEvent('l1', 'prompt', 'three', null, 40);
+    store.addLinkEvent('l1', 'target_done', null, null, 50);
+    store.addLinkEvent('l1', 'reply', 'THREE', null, 60);
+    assert.deepEqual(store.linkPromptStats('l1'), { n: 3, at: 40 });
+    assert.deepEqual(store.linkPromptStats('nope'), { n: 0, at: null });
   } finally { store.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

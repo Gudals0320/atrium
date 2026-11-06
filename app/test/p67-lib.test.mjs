@@ -29,7 +29,7 @@ test('P67: 한 쌍(방향 상관없이)의 연결은 가장 최근 것 하나가
 });
 
 test('P67: 물러나는 조건 — 도는 중과 보내는 중, 안 본 결과(REST_MS까지)에만 깨어 있다', () => {
-  const sent = { linkId: 'l', from: 'a', to: 'b', createdAt: NOW - 20 * MIN, lastAt: NOW - 2 * MIN, lastText: 'do it' };
+  const sent = { linkId: 'l', from: 'a', to: 'b', createdAt: NOW - 20 * MIN, lastAt: NOW - 2 * MIN, lastKind: 'prompt', lastText: 'do it' };
   // 받는 쪽이 그 지시로 일하는 중
   assert.deepEqual(labelAwake(sent, { state: 'working', turn: { endedAt: NOW - 5 * MIN } }, NOW), { awake: true, why: 'running' });
   assert.equal(labelAwake(sent, { state: 'waiting', turn: {} }, NOW).why, 'running'); // 허락을 기다려도 그 일은 도는 중
@@ -42,6 +42,8 @@ test('P67: 물러나는 조건 — 도는 중과 보내는 중, 안 본 결과(R
   assert.equal(labelAwake(sent, doneUnseen, NOW).why, 'unseen');
   assert.equal(labelAwake(sent, { ...doneUnseen, turn: { endedAt: NOW - REST_MS - 1 } }, NOW + 0).awake, false); // 끝난 지 오래(지시보다 앞이면 그 지시의 결과가 아니다)
   assert.equal(labelAwake(sent, doneUnseen, NOW - 1 * MIN + REST_MS + 1).awake, false); // 몇 분 지나면 물러난다
+  // 리드가 답을 읽어(reply) lastAt이 턴 끝보다 늦어도, 지시 시각(promptAt)으로 보므로 안 본 결과는 그대로 깨어 있다
+  assert.equal(labelAwake({ ...sent, lastKind: 'reply', lastAt: NOW - 30 * 1000, promptAt: NOW - 2 * MIN }, doneUnseen, NOW).why, 'unseen');
   // 결과를 봤다 → 바로 물러난다
   assert.deepEqual(labelAwake(sent, { state: 'ready', unseen: false, turn: { endedAt: NOW - 1 * MIN } }, NOW), { awake: false, why: null });
   // 지시 뒤에 받는 쪽이 이미 턴을 끝냈으면, 다시 일해도 그 지시의 일이 아니다
@@ -53,7 +55,7 @@ test('P67: 물러나는 조건 — 도는 중과 보내는 중, 안 본 결과(R
   // 받는 쪽이 없으면 물러난다
   assert.equal(labelAwake(sent, null, NOW).awake, false);
   // 쌍: 하나라도 깨어 있으면
-  const pair = pairLabels([sent, { linkId: 'r', from: 'b', to: 'a', createdAt: NOW - 30 * MIN, lastAt: NOW - 25 * MIN, lastText: 'x' }]).get(pairKey('a', 'b'));
+  const pair = pairLabels([sent, { linkId: 'r', from: 'b', to: 'a', createdAt: NOW - 30 * MIN, lastAt: NOW - 25 * MIN, lastKind: 'prompt', lastText: 'x' }]).get(pairKey('a', 'b'));
   const sessions = new Map([['a', { state: 'ready', turn: { endedAt: NOW - 20 * MIN } }], ['b', { state: 'working', turn: { endedAt: NOW - 30 * MIN } }]]);
   assert.equal(pairAwake(pair, sessions, NOW).awake, true);
   sessions.set('b', { state: 'ready', turn: { endedAt: NOW - 1 * MIN } });
@@ -97,7 +99,7 @@ test('P67: 서로 다른 선의 이름표가 한 자리에 겹치면 선을 따�
 test('P67: 선 목록 꾸미기 — 쌍의 대표만 이름표, 같은 쌍의 같은 저장소 선 이름표는 비켜 놓는다', () => {
   const rects = { lead: { x: 0, y: 0, w: 400, h: 300 }, w1: { x: 1000, y: 0, w: 400, h: 300 } };
   const links = new Map([
-    ['l1', { linkId: 'l1', from: 'lead', to: 'w1', spawned: true, createdAt: NOW - 30 * MIN, lastAt: NOW - 1 * MIN, lastText: 'third', prompts: 3 }],
+    ['l1', { linkId: 'l1', from: 'lead', to: 'w1', spawned: true, createdAt: NOW - 30 * MIN, lastAt: NOW - 1 * MIN, lastKind: 'reply', promptAt: NOW - 2 * MIN, lastText: 'third', prompts: 3 }],
     ['l2', { linkId: 'l2', from: 'w1', to: 'lead', observed: true, createdAt: NOW - 20 * MIN, lastAt: NOW - 10 * MIN, lastText: 'r', prompts: 1 }],
   ]);
   const sessions = new Map([['w1', { state: 'working', turn: {} }], ['lead', { state: 'ready', turn: { endedAt: NOW - 30 * MIN } }]]);
