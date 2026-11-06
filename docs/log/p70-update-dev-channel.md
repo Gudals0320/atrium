@@ -91,4 +91,61 @@
 
 ## 작업 기록
 
+2026-11-06 작업자 세션(워크트리 `p70`, 브랜치 `worktree-p70`, `origin/dev`에서 시작)
+
+- 설계: 확인 결과(판 기록 `meta.update`)에 `channel`을 더했다. `view()`는 지금 채널과 같은 채널의 결과만 쓰고, 다르면 아직 확인하지 않은 것으로 보인다. P69의 결과(채널 없음)는 정식으로 본다. 그래서 채널을 바꾼 순간부터 앞 채널의 결과로 알리지 않는다.
+- 채널을 바꾸면 `backend.mjs`의 `settings.set` 감싸개가 `updater.channelChanged()`를 부른다(지금 상태를 알리고 다시 확인, 기다리지 않음). 앞 채널의 확인이 돌고 있으면 그것이 끝난 뒤 새 채널로 확인하고, 앞 확인의 결과는 버린다.
+- dev 채널은 `releases?per_page=30`을 읽고 `pickRelease`로 정식과 사전 릴리즈 중 가장 높은 것을 고른다. 정식 채널은 P69 그대로 `releases/latest`.
+- "dev에서 정식으로 돌리면 내려가지 않는다"는 따로 막지 않아도 된다. 알림은 지금 버전보다 높을 때만이고 `0.1.1 < 0.1.2-dev.2 < 0.1.2`이다.
+- `update.check`·`update.apply`의 `{ channel }`은 그 한 번만 다른 채널로 본다(`atrium update --channel`). 그 결과는 판 기록에 두지 않는다.
+- 창: 업데이트 묶음에 채널 줄(정식·dev 단추, 언어 줄과 같은 꼴)을 더했다. 버전 칸은 dev 빌드면 "v0.1.2-dev.1 (dev)". 첫 시험에서 상태 줄이 "Up to date (v0.1.2-dev.2 (dev))"로 괄호가 겹쳐, 문장 안에는 `(dev)` 없이 `vTag`만 쓰게 고쳤다. 정식 채널인데 dev 빌드를 쓰는 중이면 풀이가 "더 높은 정식 릴리즈가 나오면 알린다"로 바뀐다.
+- 단위 시험: 백엔드 `test/p70.test.mjs` 10개, 창 `test/p70-lib.test.mjs` 4개. 백엔드 509개, 창 242개 통과, 빌드 통과.
+- 끝까지 시험(git 밖 `experiments/p70/`): 도구는 P69 것을 복사해 고쳤다(가짜 서버가 `releases/latest`와 목록을 내주고, 목록에는 초안과 `nightly` 태그를 섞었다). 설치한 v0.1.1의 CLI로 백엔드를 먼저 띄우고 창은 실행기(`launch.mjs`)로 띄웠다(P69에서 본 디버깅 포트 물려받기를 피함).
+- 시험은 세 번 돌렸다. 첫 번째는 모두 통과했지만 위 괄호 문제가 보였고, 설정 캡처에 herdr 경로 줄(사용자 경로)이 찍혀 캡처를 업데이트 묶음만 잘라 찍게 바꿨다. 두 번째는 다시 뜬 창의 시작 화면이 걷히기 전에 찍힌 캡처가 있어 시작 화면을 기다리게 했다. 세 번째 결과를 남겼다(`e2e.json`, `e2e.log`, `shots/`). 앞 두 번의 기록은 `run1/`, `run2/`(캡처는 지움).
+- 정리: 셸 세션 끄기, 트레이 끄고 창 닫기, herdr 서버·백엔드 멈추고 `herdr session delete atrium-dev-p70`, 가짜 서버 끄기, 시험 폴더(`mtask-p70-install`, `-proj`, `-convos`)와 시험 판 데이터(`backend/.dev/data`, `backend/.dev/app`) 지우기. 포트 9372·47896·47897에 듣는 프로세스가 없다.
+
 ## 보고
+
+### 만든 것
+
+- 판 설정 `updateChannel`(`stable`·`dev`, 기본 `stable`). `atrium settings set updateChannel dev`로도 바꾼다.
+- `backend/src/update.mjs`: `CHANNELS`, `channelOf`, `parseRelease(j, { prerelease })`(결과에 `prerelease`), `pickRelease(list, channel)`, `releasesListUrl(apiUrl)`(`/releases/latest` → `/releases?per_page=30`, 가짜 서버도), `fetchLatest(fetchJson, apiUrl, channel)`. 받기 주소 검사는 그대로.
+- `backend/src/updater.mjs`: 결과에 채널, `view()`에 `channel`과 `current.prerelease`, `latest.prerelease`. `channelChanged()`, `checkOnce(channel)`, `apply({ channel })`. 확인을 묻는 글에 채널.
+- CLI: `atrium update [--check | --rollback] [--channel stable|dev] [--yes]`, `atrium install [--channel stable|dev] ...`. 백엔드가 돌면 판 설정의 채널, `--channel`은 그 한 번만. 도움말 줄을 고쳤다.
+- 창: 설정 › 일반 › 업데이트에 "Update channel / 업데이트 채널"(Stable·Dev / 정식·dev). 고르면 곧바로 다시 확인한다. 버전 칸 "v0.1.2-dev.1 (dev)". 트레이 메뉴는 바꾸지 않았다(백엔드의 상태가 이미 채널을 따른다).
+- `scripts/release-check.mjs`: dev 태그 `v<x.y.z>-dev.<n>`이면 main이 dev의 조상인지, dev의 두 version이 태그와 같은지, 그 버전이 main의 version보다 높은지, 태그가 있으면 dev를 가리키는지 본다. 정식 태그 검사는 그대로. 머리 주석에 dev 빌드 절차를 더했다. 지금 원격으로 돌리면 정식 `v0.1.1`은 main ≠ dev(이 작업 파일 커밋)로, `v0.1.2-dev.1`은 version이 아직 0.1.1이라 실패한다(예상한 결과).
+- README 두 개: 시작하기 아래 "Install and updates / 설치와 업데이트"(설치 명령, 알림과 업데이트, herdr 세션 유지, dev 채널). 클론 방법은 그대로.
+
+### 끝까지 시험 결과(세 번째 실행, 모두 통과)
+
+| 단계 | 결과 |
+|---|---|
+| v0.1.1 설치, v0.1.2-dev.1(사전)만 더함, 정식 채널 | 알림 없음, 업데이트 단추 없음, 최신 v0.1.1. `update --check --channel dev`는 그 한 번만 v0.1.2-dev.1을 보이고 판 설정은 stable 그대로 |
+| 창에서 dev로 바꿈 | 곧바로 다시 확인해 v0.1.2-dev.1 알림(토스트), 창의 단추로 업데이트(누름부터 결과까지 약 14초, 그중 바꾸기 1.5초, npm 캐시 있음) |
+| v0.1.2-dev.2를 더함 | "지금 확인"에서 알림, 업데이트. v0.1.1 폴더 지움(바로 앞 버전만 남김) |
+| 창에서 정식으로 바꿈 | 알림 없음(최신 정식 v0.1.1 < v0.1.2-dev.2), "더 높은 정식이 나오면 알린다" 풀이, 되돌리기 단추는 그대로 |
+| v0.1.2(정식)를 더함 | 알림, 업데이트. `current.json` = v0.1.2, previous = v0.1.2-dev.2 |
+| 매 업데이트 뒤 | 셸의 herdr 패널 `w1:p1`과 herdr 서버 PID가 같고, 업데이트 전과 준비 중에 친 글이 화면에 남음. 백엔드 PID는 매번 바뀜. 창과 백엔드가 새 버전 |
+| 한국어 화면 | `shots/p7-settings-ko-stable.png`, `shots/p8-settings-ko-dev.png` |
+
+캡처는 업데이트 묶음만 잘라 찍었다(설정 일반 탭의 herdr 경로 줄에 사용자 경로가 보이기 때문).
+
+### 계획과 다른 곳
+
+- 백엔드가 돌지 않을 때의 `atrium update`와 `atrium install`은 판 설정을 읽지 않고 `--channel`이 없으면 정식이다(판 기록을 CLI가 따로 열지 않는다). `install --channel dev`는 끝에 앱의 채널도 바꾸는 방법을 알린다.
+- 채널을 바꾸면 "업데이트 확인"(`updateCheck`)이 꺼져 있어도 한 번 확인한다(사람이 바꾼 것이므로).
+- 웹 화면에서도 채널을 바꿀 수 있다(`updateCheck`와 같다). 업데이트 단추는 그대로 PC에만 있다.
+- 시험 결과와 도구는 워크트리 안 `experiments/p70/`(git 밖)에 두었다. 이 세션은 워크트리 밖에 쓸 수 없어 저장소 폴더의 `experiments/`에 두지 못했다.
+
+### 알려진 문제
+
+- dev 채널은 목록 30개 안에서 고른다. 릴리즈가 30개를 넘으면 오래된 것은 보지 않는다(새것부터 오므로 문제는 없다).
+- 백엔드가 던지는 업데이트 오류 글은 영어 화면에서도 한국어다(P69와 같음).
+- 업데이트 직후 다시 뜬 창은 시작 화면(로고)이 몇 초 덮는다. 시험은 그것이 걷힐 때까지 기다렸다(P70과 관계없음).
+
+### 고칠 문서 문장(제안)
+
+- BRIEF "정한 것"의 업데이트 행 끝에: "판 설정의 업데이트 채널(정식·dev, 기본 정식). dev는 dev 브랜치 커밋에 단 사전 릴리즈(`v<x.y.z>-dev.<n>`)도 알린다."
+- ARCH 설정 표: `updateChannel`. API 표: `update.check { channel? }`, `update.apply { channel? }`(그 한 번만). `update.state`의 `channel`, `current.prerelease`. 모듈 표의 `update.mjs`에 `pickRelease`·`releasesListUrl`·`fetchLatest`.
+- testing.md: 가짜 릴리즈 서버는 `releases/latest`와 `releases?per_page=30` 둘 다 내줘야 dev 채널을 시험할 수 있다. 설정 화면 캡처는 herdr 경로 줄에 사용자 경로가 보이므로 필요한 묶음만 잘라 찍는다. 업데이트 뒤 다시 뜬 창은 `[data-role="splash"]`가 사라질 때까지 기다리고 찍는다.
+- CHANGELOG: "업데이트 dev 채널(GitHub 사전 릴리즈), 릴리즈 확인의 dev 태그, README 설치와 업데이트."
