@@ -3,6 +3,9 @@
 // - 업데이트는 사람이 누를 때만 한다(창의 설정 › 일반 › 업데이트, 트레이 메뉴, atrium update). 원격 기기(웹 화면)는 보기만 한다.
 // - 바꾸기: update.restart 이벤트를 보내 창(Electron main)이 update.leaving으로 PID를 알리고 끝나게 한 뒤, 바꾸기 프로세스를 떼어 띄우고 이 백엔드만 끝난다.
 //   herdr 서버는 끄지 않는다. 바꾸기 프로세스가 새 백엔드를 띄우고, 건강 확인을 통과하지 못하면 옛 버전으로 돌린다.
+// - P70 채널(판 설정 updateChannel, stable|dev): 확인 결과에 채널을 남기고, 지금 채널과 다른 채널의 결과는 보이지도 알리지도 않는다. 채널을 바꾸면 곧바로 다시 확인한다.
+//   알림은 지금 버전보다 높을 때만이라 dev 빌드에서 stable로 돌리면 더 높은 정식 릴리즈가 나올 때까지 조용하다(내려가지 않는다).
+//   update.check·update.apply의 { channel }은 그 한 번만 다른 채널로 본다(atrium update --channel). 그 결과는 판 기록에 두지 않는다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -41,7 +44,7 @@ export class Updater {
     this.noteResult();
     this.handlers = {
       'update.status': () => this.view(),
-      'update.check': () => this.check('manual'),
+      'update.check': (p) => (p && p.channel ? this.checkOnce(p.channel) : this.check('manual')),
       'update.apply': (p, c) => this.apply(p || {}, c),
       'update.rollback': (p, c) => this.rollback(p || {}, c),
       'update.leaving': (p) => this.leave(p || {}),
@@ -58,19 +61,24 @@ export class Updater {
 
   settings() { return (this.b.features && this.b.features.settings.get()) || this.b.store.getMeta('settings') || {}; }
   enabled() { return this.settings().updateCheck !== false; }
+  channel() { return U.channelOf(this.settings().updateChannel); }
   meta() { return this.b.store.getMeta('update') || {}; }
   putMeta(patch) { const m = { ...this.meta(), ...patch }; this.b.store.setMeta('update', m); return m; }
   broadcast() { this.b.api.broadcast('update.state', this.view()); }
-  view() {
+  // 확인 결과(채널, latest, checkedAt, error)가 지금 채널의 것인가. P69의 결과(채널 없음)는 stable로 본다
+  fresh(rec, ch = this.channel()) { return !!rec && (rec.channel || 'stable') === ch; }
+  view(rec = null, ch = null) {
     this.noteResult(); // 바꾸기 프로세스는 새 백엔드가 뜬 뒤에 결과를 쓴다. 창이 붙어 물을 때 읽는다
     const m = this.meta();
+    const channel = ch || this.channel();
+    const r = rec || (this.fresh(m, channel) ? m : {}); // 다른 채널의 결과는 보이지 않는다(아직 확인하지 않은 것으로)
     const cur = U.readCurrent(this.dir);
-    const latest = m.latest ? { tag: m.latest.tag, version: m.latest.version, name: m.latest.name, url: m.latest.url, notes: m.latest.notes, publishedAt: m.latest.publishedAt } : null;
+    const latest = r.latest ? { tag: r.latest.tag, version: r.latest.version, name: r.latest.name, url: r.latest.url, notes: r.latest.notes, publishedAt: r.latest.publishedAt, prerelease: !!r.latest.prerelease } : null;
     const available = !!(latest && this.running.version && U.compareVersions(latest.version, this.running.version) > 0);
     const allowed = U.installAllowed(this.b.cfg, this.dir);
     return {
-      current: { version: this.running.version, tag: this.running.tag, installed: this.running.installed },
-      latest, available, checkedAt: m.checkedAt || null, error: m.error || null, enabled: this.enabled(),
+      current: { version: this.running.version, tag: this.running.tag, installed: this.running.installed, prerelease: !!(U.parseVersion(this.running.version) || { pre: [] }).pre.length },
+      channel, latest, available, checkedAt: r.checkedAt || null, error: r.error || null, enabled: this.enabled(),
       installDir: this.dir, previous: (cur && cur.previous) || null, canRollback: !!(cur && cur.previous && allowed.ok),
       allowed: allowed.ok, job: this.job, lastResult: m.lastResult || null,
     };
@@ -91,22 +99,47 @@ export class Updater {
     if (!this.enabled() || this.job) return;
     await this.check(reason).catch(() => {});
   }
+  // 채널 하나를 확인한 결과(판 기록에 둘 꼴). 던지지 않는다
+  async fetchRecord(channel) {
+    const rec = { channel, checkedAt: null, latest: null, error: null };
+    try {
+      rec.latest = await U.fetchLatest(this.fetchJson, this.apiUrl, channel);
+      if (!rec.latest) rec.error = 'no_release';
+    } catch (e) { rec.error = e.code === 'no_release' ? 'no_release' : String(e.message || e).slice(0, 300); }
+    rec.checkedAt = Date.now();
+    return rec;
+  }
+  // 지금 채널을 확인해 판 기록에 둔다. 같은 채널의 확인이 돌고 있으면 그것을 기다리고, 다른 채널의 것이 돌고 있으면 끝난 뒤 다시 확인한다
   check(reason = 'manual') {
-    if (this.checking) return this.checking;
-    this.checking = (async () => {
-      try {
-        const rel = U.parseRelease(await this.fetchJson(this.apiUrl));
-        if (rel) this.putMeta({ checkedAt: Date.now(), latest: rel, error: null });
-        else this.putMeta({ checkedAt: Date.now(), error: 'no_release' });
-      } catch (e) {
-        this.putMeta({ checkedAt: Date.now(), error: e.code === 'no_release' ? 'no_release' : String(e.message || e).slice(0, 300) });
-      }
+    const channel = this.channel();
+    if (this.checking && this.checkingChannel === channel) return this.checking;
+    const before = this.checking || Promise.resolve();
+    const run = before.catch(() => {}).then(async () => {
+      const ch = this.channel(); // 기다리는 동안 또 바뀌었으면 마지막 채널로
+      const rec = await this.fetchRecord(ch);
+      if (ch === this.channel()) this.putMeta({ channel: rec.channel, checkedAt: rec.checkedAt, latest: rec.latest, error: rec.error }); // 그사이 채널이 바뀌었으면 결과를 버린다
       const v = this.view();
-      this.log(`check ${reason} current=${v.current.version} latest=${v.latest && v.latest.tag} available=${v.available}${v.error ? ` error=${v.error}` : ''}`);
+      this.log(`check ${reason} channel=${ch} current=${v.current.version} latest=${v.latest && v.latest.tag} available=${v.available}${v.error ? ` error=${v.error}` : ''}`);
       this.broadcast();
       return v;
-    })().finally(() => { this.checking = null; });
-    return this.checking;
+    });
+    this.checking = run; this.checkingChannel = channel;
+    run.finally(() => { if (this.checking === run) { this.checking = null; this.checkingChannel = null; } }).catch(() => {});
+    return run;
+  }
+  // 그 한 번만 다른 채널로 확인한다(atrium update --check --channel). 판 기록에 두지 않는다
+  async checkOnce(channel) {
+    const ch = U.channelOf(channel);
+    if (ch === this.channel()) return this.check('manual');
+    const rec = await this.fetchRecord(ch);
+    this.log(`check once channel=${ch} latest=${rec.latest && rec.latest.tag}${rec.error ? ` error=${rec.error}` : ''}`);
+    return { ...this.view(rec, ch), once: true };
+  }
+  // 판 설정의 채널이 바뀌었다(backend.mjs settings.set). 앞 채널의 결과는 view가 이미 감춘다. 지금 상태를 알리고 다시 확인한다
+  channelChanged() {
+    this.log(`channel → ${this.channel()}`);
+    this.broadcast();
+    return this.check('channel').catch(() => {});
   }
 
   guard(c) {
@@ -119,11 +152,19 @@ export class Updater {
 
   async apply(p, c) {
     this.guard(c);
-    let v = this.view();
-    if (!v.available) v = await this.check('apply');
-    if (!v.available) throw apiError('no_update', `새 버전이 없습니다(지금 ${v.current.version})`);
-    if (!p.confirm) return { needsConfirm: true, to: v.latest.tag, message: `${v.latest.tag}로 업데이트합니다. 준비가 끝나면 백엔드와 창이 다시 뜹니다. herdr의 세션은 그대로 이어집니다.` };
-    const rel = this.meta().latest;
+    let rel = null, v;
+    if (p.channel && U.channelOf(p.channel) !== this.channel()) {
+      // 그 한 번만 다른 채널(atrium update --channel)
+      const rec = await this.fetchRecord(U.channelOf(p.channel));
+      v = this.view(rec, rec.channel); rel = rec.latest;
+    } else {
+      v = this.view();
+      if (!v.available) v = await this.check('apply');
+      const m = this.meta();
+      rel = this.fresh(m) ? m.latest : null;
+    }
+    if (!v.available || !rel) throw apiError('no_update', `새 버전이 없습니다(지금 ${v.current.version}, ${v.channel} 채널)`);
+    if (!p.confirm) return { needsConfirm: true, to: v.latest.tag, channel: v.channel, message: `${v.latest.tag}로 업데이트합니다(${v.channel} 채널). 준비가 끝나면 백엔드와 창이 다시 뜹니다. herdr의 세션은 그대로 이어집니다.` };
     this.job = null;
     this.setJob({ kind: 'update', phase: 'prepare', step: 'download', to: rel.tag, error: null, startedAt: Date.now() });
     this.runUpdate(rel).catch(() => {});

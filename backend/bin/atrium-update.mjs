@@ -2,6 +2,7 @@
 // - install: 최신 릴리즈를 설치 폴더(ATRIUM_INSTALL_DIR, 기본 %LOCALAPPDATA%\atrium\versions)에 깔고 실행기(Atrium.cmd)와 바탕화면 바로가기를 만든다.
 //   바로가기는 실행기를 부르고 실행기는 current.json의 버전을 띄우므로, 업데이트 뒤에도 바로가기를 다시 만들 필요가 없다. 도는 백엔드와 herdr는 건드리지 않는다.
 // - update: 백엔드가 돌면 판 API(update.*)로 창의 "업데이트" 단추와 같은 일을 한다(백엔드만 바꾸고 herdr의 세션은 그대로). 돌지 않으면 받아서 current.json만 바꾼다.
+// - P70 --channel stable|dev: 그 한 번만 채널을 바꾼다. 없으면 백엔드가 돌 때는 판 설정 updateChannel을, 돌지 않을 때와 install은 stable을 따른다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -16,10 +17,17 @@ function fileLog(cfg) {
   const f = path.join(cfg.logDir, 'update.log');
   return (l) => { try { fs.mkdirSync(cfg.logDir, { recursive: true }); fs.appendFileSync(f, `${new Date().toISOString()} [cli] ${l}\n`); } catch {} };
 }
-async function latestRelease(apiUrl) {
-  const rel = U.parseRelease(await U.httpGetJson(apiUrl));
-  if (!rel) throw new Error('정식 릴리즈가 없습니다');
+async function latestRelease(apiUrl, channel = 'stable') {
+  const rel = await U.fetchLatest(U.httpGetJson, apiUrl, channel);
+  if (!rel) throw new Error(channel === 'dev' ? '릴리즈가 없습니다' : '정식 릴리즈가 없습니다');
   return rel;
+}
+// --channel 값. 없으면 null, 맞지 않으면 던진다
+export function channelFlag(flags) {
+  const v = flags.channel;
+  if (v === undefined || v === false) return null;
+  if (!U.CHANNELS.includes(String(v))) throw new Error(`--channel에는 ${U.CHANNELS.join(' 또는 ')}를 지정하세요`);
+  return String(v);
 }
 // 받고 준비해서 current.json을 바꾼다(백엔드가 없을 때와 install)
 async function installRelease(cfg, dir, apiUrl, rel) {
@@ -38,12 +46,13 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
   const apiUrl = U.updateApiOf();
   const allowed = U.installAllowed(cfg, dir);
   const here = U.runningVersion(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'), dir);
+  const channel = channelFlag(flags);
 
   if (cmd === 'install') {
     if (!allowed.ok) throw new Error(allowed.message);
     console.log(`설치 폴더: ${dir}`);
-    const rel = await latestRelease(apiUrl);
-    console.log(`최신 릴리즈: ${rel.tag}`);
+    const rel = await latestRelease(apiUrl, channel || 'stable');
+    console.log(`최신 릴리즈(${channel || 'stable'} 채널): ${rel.tag}`);
     const r = await installRelease(cfg, dir, apiUrl, rel);
     const { launcher, icon } = U.writeLauncher(dir, path.join(dir, rel.tag));
     let shortcut = null;
@@ -57,6 +66,7 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
     if (json) return out({ installDir: dir, tag: rel.tag, ...r, launcher, shortcut });
     console.log(`설치함: ${rel.tag}${r.already ? '(이미 있음)' : ''}\n실행기: ${launcher}${shortcut ? `\n바로가기: ${shortcut}` : ''}`);
     if (r.pruned && r.pruned.length) console.log(`지운 옛 버전: ${r.pruned.join(', ')}`);
+    if (channel === 'dev') console.log('앱도 dev 빌드를 알리게 하려면 설정 › 일반 › 업데이트에서 dev 채널을 고르거나 atrium settings set updateChannel dev를 실행합니다.');
     console.log('도는 백엔드와 herdr는 그대로입니다. 바로가기로 열면 설치한 버전의 창이 뜹니다. 백엔드도 설치한 버전으로 바꾸려면 트레이 메뉴의 "백엔드 다시 시작"을 누릅니다(herdr의 세션은 그대로).');
     return;
   }
@@ -67,16 +77,16 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
   if (flags.check) {
     if (up) {
       const c = await connect(cfg);
-      try { const v = await c.call('update.check'); return print(v, out, json); } finally { c.close(); }
+      try { const v = await c.call('update.check', channel ? { channel } : {}); return print(v, out, json); } finally { c.close(); }
     }
-    const v = { current: { version: here.version, tag: here.tag, installed: here.installed }, latest: null, available: false, error: null, installDir: dir, previous: (U.readCurrent(dir) || {}).previous || null };
-    try { v.latest = await latestRelease(apiUrl); v.available = U.compareVersions(v.latest.version, here.version) > 0; } catch (e) { v.error = e.message; }
+    const v = { current: { version: here.version, tag: here.tag, installed: here.installed }, channel: channel || 'stable', latest: null, available: false, error: null, installDir: dir, previous: (U.readCurrent(dir) || {}).previous || null };
+    try { v.latest = await latestRelease(apiUrl, v.channel); v.available = U.compareVersions(v.latest.version, here.version) > 0; } catch (e) { v.error = e.message; }
     return print(v, out, json);
   }
   if (!up) {
     if (!allowed.ok) throw new Error(allowed.message);
     if (flags.rollback) { const r = U.rollbackCurrent(dir); return out({ rolledBack: true, current: r.after.current, previous: r.after.previous }); }
-    const rel = await latestRelease(apiUrl);
+    const rel = await latestRelease(apiUrl, channel || 'stable');
     const cur = U.readCurrent(dir);
     if (cur && cur.current && U.compareVersions(rel.version, cur.current) <= 0) return console.log(`새 버전이 없습니다(설치 ${cur.current}, 최신 ${rel.tag})`);
     console.log(`백엔드가 돌지 않습니다. ${rel.tag}를 받아 설치 폴더의 지금 버전으로 바꿉니다`);
@@ -97,7 +107,7 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
   c.ws.on('close', () => { closed = true; });
   await c.call('events.subscribe');
   const method = flags.rollback ? 'update.rollback' : 'update.apply';
-  const r = await c.call(method, { confirm: !!flags.yes });
+  const r = await c.call(method, { confirm: !!flags.yes, ...(channel && !flags.rollback ? { channel } : {}) });
   if (r.needsConfirm) { console.log(`확인 필요: ${r.message}\n계속하려면 --yes`); process.exitCode = 2; c.close(); return; }
   console.log(`${flags.rollback ? '되돌리기' : '업데이트'} 시작: ${r.to}`);
   while (!closed && !(job && job.phase === 'failed')) await sleep(300);
@@ -121,8 +131,9 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
 function print(v, out, json) {
   if (json) return out(v);
   console.log(`지금 버전: ${v.current.version}${v.current.installed ? ` (설치 ${v.current.tag})` : ' (설치 폴더 밖)'}`);
+  if (v.channel) console.log(`채널: ${v.channel}${v.once ? ' (이번 한 번)' : ''}`);
   if (v.latest) console.log(`최신 릴리즈: ${v.latest.tag}${v.available ? ' — 새 버전이 있습니다(atrium update --yes)' : ' — 최신입니다'}${v.latest.url ? `\n  ${v.latest.url}` : ''}`);
-  if (v.error) console.log(`확인 오류: ${v.error === 'no_release' ? '정식 릴리즈가 없습니다' : v.error}`);
+  if (v.error) console.log(`확인 오류: ${v.error === 'no_release' ? (v.channel === 'dev' ? '릴리즈가 없습니다' : '정식 릴리즈가 없습니다') : v.error}`);
   if (v.previous) console.log(`되돌릴 앞 버전: ${v.previous}`);
   if (v.checkedAt) console.log(`마지막 확인: ${new Date(v.checkedAt).toLocaleString()}`);
 }

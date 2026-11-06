@@ -6,7 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { api } from './api.js';
 import { toast } from './store.js';
 import { t, errText } from './lib/i18n.js';
-import { noticesFor } from './lib/update-notice.js';
+import { noticesFor, versionLabel } from './lib/update-notice.js';
 
 const state = { view: null, restarting: null, busy: false };
 const subs = new Set();
@@ -35,6 +35,6 @@ async function call(method, params) {
   state.busy = true; changed();
   try { return await api.call(method, params); } catch (e) { toast(t('update.failed', { error: errText(e) }), 'error'); return null; } finally { state.busy = false; changed(); }
 }
-export const checkNow = () => call('update.check').then((v) => { if (v) { put(v); if (!v.available && !v.error) toast(t('update.upToDate', { version: v.current.version })); } });
+export const checkNow = () => call('update.check').then((v) => { if (v) { put(v); if (!v.available && !v.error) toast(t('update.upToDate', { version: versionLabel(v.current.version) })); } });
 export const applyUpdate = () => call('update.apply', { confirm: true });
 export const rollbackUpdate = () => call('update.rollback', { confirm: true });

@@ -8,3 +8,12 @@ export function noticesFor(view, { toasted = null, resultSeen = null, now = Date
   if (view.available && view.latest && view.latest.tag !== toasted && !(view.job && view.job.phase !== 'failed')) out.push({ kind: 'available', key: view.latest.tag, version: view.latest.tag });
   return out;
 }
+
+// P70: 업데이트 채널(판 설정 updateChannel). 모르는 값은 정식
+export const channelOf = (v) => (v === 'dev' ? 'dev' : 'stable');
+// P70: 보일 버전. dev 빌드(x.y.z-dev.n)면 뒤에 (dev)를 붙인다. 예: "v0.1.2-dev.1 (dev)"
+export function versionLabel(version) {
+  if (!version) return '';
+  const v = String(version).replace(/^v/, '');
+  return /-dev\.\d+$/.test(v) ? `v${v} (dev)` : `v${v}`;
+}

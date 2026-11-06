@@ -248,7 +248,9 @@ export class Backend {
       if (c && c.auth && c.auth.kind !== 'local' && touchesRemoteRules(p)) throw Object.assign(new Error('only the board on this PC can change remote access rules'), { code: 'forbidden' });
       const wasAccepting = this.web.accepting();
       const wasPasskey = this.web.passkeyOn();
+      const wasChannel = this.updater ? this.updater.channel() : null;
       const r = await setSettings(p, c);
+      if (this.updater && this.updater.channel() !== wasChannel) this.updater.channelChanged(); // P70: 업데이트 채널을 바꾸면 곧바로 다시 확인한다(기다리지 않는다)
       const nowAccepting = this.web.accepting();
       if (nowAccepting !== wasAccepting) r.remote = this.web.accessChanged(nowAccepting); // P58: 원격 받기 끄기·켜기(끄면 붙은 원격 연결을 닫는다)
       const nowPasskey = this.web.passkeyOn();

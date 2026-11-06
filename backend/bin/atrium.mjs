@@ -78,8 +78,8 @@ ${FEATURES_HELP}
   import-desktop --list                   데스크톱 앱(Code 탭)의 가져오기 후보 (저장소별 상태, 기본 선택, 실행 여부)
   import-desktop --all | <앱 세션 ID>...     기본 선택된 대화 또는 지정한 대화를 복제해 절전 상태의 보드 세션으로 가져오기
   call <메서드> [JSON]                       보드 API 직접 호출
-  install [--shortcut <폴더>] [--no-shortcut]   최신 릴리즈를 설치 폴더에 설치하고 바탕화면 바로가기 생성 (P69)
-  update [--check | --rollback] [--yes]   새 릴리즈 확인, 업데이트, 앞 버전으로 되돌리기. 백엔드만 다시 시작하며 herdr 세션은 유지 (P69)`;
+  install [--channel stable|dev] [--shortcut <폴더>] [--no-shortcut]   최신 릴리즈(dev: dev 빌드 포함)를 설치 폴더에 설치하고 바탕화면 바로가기 생성 (P69, P70)
+  update [--check | --rollback] [--channel stable|dev] [--yes]   새 릴리즈 확인, 업데이트, 앞 버전으로 되돌리기. 채널은 판 설정 updateChannel을 따르고 --channel은 이번 한 번만 바꿈. 백엔드만 다시 시작하며 herdr 세션은 유지 (P69, P70)`;
 
 const argv = process.argv.slice(2);
 const cfg = loadConfig({ argv });

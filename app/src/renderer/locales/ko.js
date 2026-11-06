@@ -1885,7 +1885,7 @@ export default {
     versionName: '버전',
     windowVersion: '창 {version}',
     notChecked: '아직 확인하지 않았습니다',
-    upToDate: '최신 버전입니다(v{version})',
+    upToDate: '최신 버전입니다({version})',
     availableLine: '새 버전: {version}',
     noRelease: '아직 공개된 릴리즈가 없습니다',
     checkFailed: '확인하지 못했습니다: {error}',
@@ -1920,5 +1920,11 @@ export default {
     toastRolledBack: '업데이트하지 못해 이전 버전({version})으로 되돌아왔습니다: {error}',
     toastRestarting: '업데이트를 위해 다시 시작합니다({version})…',
     trayItem: '{version} 업데이트…',
+    // P70: 업데이트 채널
+    channelName: '업데이트 채널',
+    channel: { stable: '정식', dev: 'dev' },
+    channelStableHint: '정식 릴리즈만 알립니다.',
+    channelDevHint: 'dev 브랜치에 합친 기능을 먼저 받습니다. 정식 릴리즈보다 덜 다듬어졌을 수 있습니다.',
+    channelStableFromDev: '정식 릴리즈만 알립니다. 지금은 dev 버전이라 이보다 높은 정식 릴리즈가 나오면 알립니다.',
   },
 };

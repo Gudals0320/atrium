@@ -28,6 +28,8 @@ export const SETTINGS = {
   remotePasskey: { type: 'boolean', default: false, label: '패스키 인증: 켜면 기기 등록 승인 후 패스키를 만들고 세션 종료 시 다시 인증합니다. 끄면 등록된 Tailscale 기기에서 바로 접속할 수 있습니다.' },
   // P69: 새 릴리즈 확인(GitHub, 몇 시간마다와 창을 켤 때). 알리기만 하고 업데이트는 사람이 누른다
   updateCheck: { type: 'boolean', default: true, label: '새 릴리즈를 몇 시간마다 확인하고 알립니다. 업데이트는 직접 눌러야 합니다.' },
+  // P70: 업데이트 채널. stable은 정식 릴리즈만, dev는 dev 브랜치의 사전 릴리즈(v<x.y.z>-dev.<n>)도 알린다. 바꾸면 백엔드가 곧바로 다시 확인한다
+  updateChannel: { type: 'choice', default: 'stable', options: ['stable', 'dev'], label: '업데이트 채널 (stable: 정식 릴리즈, dev: dev 브랜치에 합친 기능을 먼저 받는 사전 릴리즈).' },
   sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '프로젝트에 지정한 시간(분) 동안 활동이 없으면 보드에서 시작한 Claude Code 세션을 모두 절전 모드로 전환합니다 (0: 자동 절전 사용 안 함).' },
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));
