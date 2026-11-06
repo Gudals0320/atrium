@@ -19,7 +19,7 @@
 | 손으로 잇기, 패널 ID가 바뀔 때의 알림, Claude Code 워크트리 기능, D3 경고 | `docs/log/p4-links.md` 보고 7절 |
 | 단일 캔버스와 남은 기능의 손맛 | `docs/log/p6a-canvas.md` 보고 8절, `docs/log/p6c-features-screen.md` 보고 7절 |
 | 실제 대화로 사이드바 보기, git 최상위 폴더 대화를 판으로 열기(신뢰 대화상자) | `docs/log/p7-recall-sidebar.md` 보고 8절 |
-| 실제 4K 화면의 터미널 글자, 일하는 워커 붙이기, 설치 폴더로 옮긴 뒤 업데이트 | P65·P68·P69 작업 파일 보고 |
+| 실제 4K 화면의 터미널 글자, 일하는 워커 붙이기, 설치한 판에서 실제 업데이트(정식·dev) | P65·P68·P69 작업 파일 보고 |
 | 노트북에서 패스키(Windows Hello)로 다시 짝 맺기, 다시 확인, 실제 serve(https)에서 기기 묶기와 끊기·막기 | `docs/log/p59-remote-integrate.md` 보고 |
 | 노드에서 신뢰를 답한 워크트리 하위 세션이 `-w`로 다시 떠 첫 지시를 받는지 | `docs/log/p36-workers-skill.md` 보고 |
 | 영어·한국어 화면, Ctrl+끌기 붙이기와 배치 틀의 손맛(머리줄 잡기, 2×2 가운데 점) | `docs/log/p16-i18n.md`, `docs/log/p17-dock-layout.md` 보고 |
