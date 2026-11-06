@@ -1497,7 +1497,7 @@ export class Backend {
   linksOpen() { return this.store.links().filter((l) => this.sessions.has(l.from) && this.sessions.has(l.to)).map((l) => this.linkView(l)); }
   linkView(l) {
     const a = this.sessions.get(l.from), b = this.sessions.get(l.to);
-    return { ...l, fromName: a ? a.name : null, toName: b ? b.name : null, toAgentName: b ? b.agentName : null, toPaneId: b ? b.paneId : null };
+    return { ...l, fromName: a ? a.name : null, toName: b ? b.name : null, toAgentName: b ? b.agentName : null, toPaneId: b ? b.paneId : null, prompts: this.store.linkPromptCount ? this.store.linkPromptCount(l.linkId) : 0 }; // P67: prompts(지시 수, 이름표의 +N)
   }
   // 순서 있는 쌍마다 연결 하나. 지운 연결에 새 일이 오가면 다시 연다
   ensureLink(from, to, patch = {}) {

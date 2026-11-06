@@ -1406,3 +1406,21 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 .mt-search-count { font-family: var(--font-mono); color: var(--dim-2); }
 @media (max-width: 640px) { .mt-search { width: calc(100% - 32px); } .mt-search-go, .mt-search-keys > span:first-child { display: none; } }
 @media (prefers-reduced-motion: reduce) { .mt-search, .mt-search[data-state="closing"] { animation: none; } }
+
+/* P67: 연결 선 이름표. 한 쌍에 하나(+n), 물러난 이름표는 칩(역할과 상태 점), 마우스를 올리거나 고르면 다 보인다 */
+.mt-edge-hit { pointer-events: stroke; cursor: pointer; }
+.mt-edge-more { flex: none; font-size: 11px; font-weight: 600; line-height: 16px; padding: 0 5px; border-radius: 8px; color: var(--text-2); background: var(--chrome-bg-hi); }
+.mt-edge-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--st-exited); }
+.mt-edge-dot.st-starting { background: var(--st-starting); }
+.mt-edge-dot.st-ready, .mt-edge-dot.st-shell_idle { background: var(--st-ready); }
+.mt-edge-dot.st-working { background: var(--st-working); }
+.mt-edge-dot.st-shell_running { background: var(--st-shell_running); }
+.mt-edge-dot.st-error { background: var(--st-error); }
+.mt-edge-dot.st-sleeping { background: var(--st-sleeping); }
+.mt-edge-dot.st-waiting, .mt-edge-dot.st-trust_wait { background: var(--attn); }
+.mt-edge-label.lv-chip { gap: 5px; padding: 2px 8px; font-size: 11px; box-shadow: none; }
+.mt-edge-label.lv-chip .mt-edge-text { max-width: 120px; }
+.mt-edge-label.rest { opacity: .88; }
+.mt-edge-label.hot { opacity: 1; z-index: 3; }
+.mt-dl-text .mt-edge-more { font-size: .8em; line-height: 1.45em; padding: 0 .4em; }
+.mt-dl-text .mt-edge-dot { width: .55em; height: .55em; }

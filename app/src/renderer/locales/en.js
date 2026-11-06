@@ -1847,4 +1847,9 @@ export default {
       kanban: 'Kanban',
     },
   },
+  // P67: link line labels (one per pair, count of the other instructions)
+  linkLabel: {
+    more: '+{n}',
+    moreTitle: '{n} earlier requests. Click to see everything sent on this link.',
+  },
 };

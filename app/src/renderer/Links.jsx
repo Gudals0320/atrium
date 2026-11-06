@@ -5,10 +5,12 @@
 // - P11: 띄움·시킴(알아챈 지시)은 얇은 주황 곡선과 끝점(목업의 가지 선), 판에서 정한 역할은 파랑, 같은 저장소는 회색 점선으로 구분한다(styles.css).
 //   하위 세션(P8)처럼 띄우면서 역할도 정한 선은 data-kind는 role 그대로 두고 색만 띄움(주황, .spawn)으로 그린다
 import { useEffect, useState } from 'react';
-import { BaseEdge, EdgeLabelRenderer, getBezierPath } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, useStore as useFlowStore } from '@xyflow/react';
 import { useStore, getState, toast, openDialog } from './store.js';
 import { api } from './api.js';
 import { STATE_LABEL, agoText, labelFit } from './lib/labels.js';
+import { linkLabelLevel, shifted } from './lib/link-labels.js'; // P67
+import { DOCK_LABEL_ZOOM, dockLabelParts } from './lib/dock-links.js';
 import { useT, tMsg, errText, fmtTime } from './lib/i18n.js';
 import { linkLabel } from '../../../backend/src/links.mjs';
 import { useDialog } from './dialog.js';
@@ -22,35 +24,59 @@ export function Pill({ s }) {
   return <span className={`mt-pill st-${s.state}`} data-state={s.state}>{STATE_LABEL[s.state] || s.state}</span>;
 }
 
-export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }) {
+const zoomBand = (s) => { const z = s.transform[2]; return z < DOCK_LABEL_ZOOM.short ? 0.3 : z < DOCK_LABEL_ZOOM.full ? 0.6 : 1; };
+
+// P67: 한 쌍(방향 상관없이)에 이름표 하나(가장 최근 연결, 나머지 지시 수 +n). 일이 돌거나 결과를 아직 안 봤으면 글을 다 보이고, 아니면 칩(역할과 상태 점)으로 줄인다.
+// 마우스를 올리거나 선을 고르거나 그 연결 대화상자가 열려 있으면 다 보인다. 배율은 P46과 같은 경계(0.4 아래 점, 0.8 아래 칩)
+export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected }) {
   const t = useT();
   const link = useStore((st) => st.links.get(id));
   const to = useStore((st) => (link ? st.sessions.get(link.to) : null));
-  const [path, lx, ly] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const lab = data && data.label;
+  const dialogOn = useStore((st) => !!(lab && st.dialog && st.dialog.kind === 'link' && lab.pair.includes(st.dialog.linkId)));
+  const zoom = useFlowStore(zoomBand);
+  const [hover, setHover] = useState(false);
+  const [path, lx0, ly0] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
   if (!link) return null;
+  const [lx, ly] = shifted(lx0, ly0, data);
   const active = to && to.state === 'working' && link.lastAt && Date.now() - link.lastAt < ACTIVE_MS && ['prompt', 'target_submitted', 'target_working'].includes(link.lastKind);
   const kind = link.role ? 'role' : link.observed ? 'observed' : 'spawned';
   const label = !link.role && link.spawned && !link.lastText ? t('links.spawned') : linkLabel(link); // 띄움만 있는 선은 사전의 글
   const fit = labelFit(data);
+  const hot = hover || !!selected || dialogOn;
+  const level = lab ? linkLabelLevel({ zoom, awake: lab.awake, hot, compact: fit.compact }) : null;
+  const chipText = dockLabelParts(link, {}, { spawned: t('links.spawned'), directed: t('docks.directed') }).role;
+  const more = lab && lab.more > 0 ? <span className="mt-edge-more" data-role="link-more" title={t('linkLabel.moreTitle', { n: lab.more })}>{t('linkLabel.more', { n: lab.more })}</span> : null;
+  const on = { onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) };
   return <>
-    <BaseEdge id={id} path={path} className={`mt-edge ${kind}${link.spawned ? ' spawn' : ''}${active ? ' active' : ''}`} interactionWidth={24} />
+    <BaseEdge id={id} path={path} className={`mt-edge ${kind}${link.spawned ? ' spawn' : ''}${active ? ' active' : ''}`} interactionWidth={0} />
+    <path d={path} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={24} {...on} />
     {/* P11: 선 양 끝의 작은 점(목업의 가지 선) */}
     <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={sourceX} cy={sourceY} r={4.5} />
     <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={targetX} cy={targetY} r={4.5} />
-    <EdgeLabelRenderer>
-      <div className={`mt-edge-label ${kind}${link.spawned ? ' spawn' : ''}${fit.compact ? ' compact' : ''} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, '--fitw': `${fit.maxWidth}px` }} data-link={id} data-kind={kind}
-        onClick={(e) => { e.stopPropagation(); openDialog({ kind: 'link', linkId: id }); }} title={t('links.edgeTitle', { label: label || t('links.link') })}>
-        {link.spawned && <span className="mt-edge-tag">{t('links.spawned')}</span>}
-        <span className="mt-edge-text">{label || t('links.link')}</span>
-        {(link.observed || link.role) && <Pill s={to} />}
+    {lab && <EdgeLabelRenderer>
+      <div className={`mt-edge-label ${kind}${link.spawned ? ' spawn' : ''}${level === 'dot' ? ' compact' : ''} lv-${level}${lab.awake ? ' awake' : ' rest'}${hot ? ' hot' : ''} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, '--fitw': `${hot ? 460 : fit.maxWidth}px` }}
+        data-link={id} data-kind={kind} data-level={level} data-awake={lab.awake ? lab.why : 'rest'} data-more={lab.more || 0} data-pair={lab.pair.length}
+        onClick={(e) => { e.stopPropagation(); openDialog({ kind: 'link', linkId: id }); }} title={t('links.edgeTitle', { label: label || t('links.link') })} {...on}>
+        {level === 'chip' ? <>
+          <span className="mt-edge-text">{chipText}</span>
+          {more}
+          {to && <i className={`mt-edge-dot st-${to.state}`} data-role="link-dot" />}
+        </> : <>
+          {link.spawned && <span className="mt-edge-tag">{t('links.spawned')}</span>}
+          <span className="mt-edge-text">{label || t('links.link')}</span>
+          {more}
+          {(link.observed || link.role) && <Pill s={to} />}
+        </>}
       </div>
-    </EdgeLabelRenderer>
+    </EdgeLabelRenderer>}
   </>;
 }
 
 export function RepoEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }) {
   const t = useT();
-  const [path, lx, ly] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const [path, lx0, ly0] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const [lx, ly] = shifted(lx0, ly0, data);
   const fit = labelFit(data);
   if (fit.compact) return <BaseEdge id={id} path={path} className="mt-edge repo" />; // 틈이 좁으면 글 없이 점선만
   return <>

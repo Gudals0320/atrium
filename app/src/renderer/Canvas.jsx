@@ -27,7 +27,8 @@ import { ReactFlow, Background, BackgroundVariant, useReactFlow, applyNodeChange
 import { shiftAreasLocal } from './store.js'; // P27
 import { useStore, getState, setNodeLocal, saveNode, setAttached, setCloseIds, setFocus, markSeen, toast, openDialog, selectWorkspace, noteWorkspace, setViewNow, setSelected, setPendingInput, dockOf, loadBoard, setMemoLocal, setKanbanLocal, setConvoLocal, wsName } from './store.js';
 import { ConvoNode, WorktreeBox, SpawnEdge } from './ConvoNode.jsx'; // P13
-import { worktreeBoxes } from '../../../backend/src/convo-canvas.mjs';
+import { worktreeBoxes, boardSpawnDup } from '../../../backend/src/convo-canvas.mjs';
+import { decorateEdges } from './lib/link-labels.js'; // P67
 import { api } from './api.js';
 import { SessionNode } from './SessionNode.jsx';
 import { terms } from './TerminalView.jsx'; // P38
@@ -267,6 +268,8 @@ export function Canvas() {
   const wrapRef = useRef(null);
   const [nodes, setNodes] = useState([]);
   const [rev, setRev] = useState(0); // 바꾸면 저장소 자리로 다시 그린다(되돌리기)
+  const [labelTick, setLabelTick] = useState(0); // P67: 선 이름표가 시간이 지나 물러나도록 다시 센다
+  useEffect(() => { const i = setInterval(() => setLabelTick((n) => n + 1), 15000); return () => clearInterval(i); }, []);
   const held = useRef(new Map()); // id → 마지막으로 붙일 대상이던 시각
   const drag = useRef(null); // { id, type, mode, start, pointer, followers: [{ id, x, y }], live, snap }
   const ghostRef = useRef(null);
@@ -328,9 +331,10 @@ export function Canvas() {
     for (const e of repoEdges([...sessions.values()].filter((s) => here(s.sessionId)), linked)) if (!adjacent(e.from, e.to) && !inWtArea(e.to) && !inWtArea(e.from)) out.push({ id: e.id, source: e.from, target: e.to, ...sides(e.from, e.to), type: 'repo', data: { ...e, ...gapOf(e.from, e.to) }, selectable: false });
     // P13: 대화끼리의 띄움 선(대화 노드나 판 세션 사이)
     const hereAny = (id) => (String(id).startsWith('convo:') ? convoNodes.has(id.slice(6)) : here(id));
-    for (const e of convoEdges) if (hereAny(e.from) && hereAny(e.to)) out.push({ id: e.id, source: e.from, target: e.to, ...sides(e.from, e.to), type: 'spawnc', data: { ...e, ...gapOf(e.from, e.to) }, selectable: false });
-    return out;
-  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces]);
+    const linkedLive = (a, b) => [...links.values()].some((l) => l.from === a && l.to === b); // P67: 판의 연결이 있는 판 세션끼리의 띄움은 그 연결 하나로
+    for (const e of convoEdges) if (hereAny(e.from) && hereAny(e.to) && !boardSpawnDup(e, linkedLive)) out.push({ id: e.id, source: e.from, target: e.to, ...sides(e.from, e.to), type: 'spawnc', data: { ...e, ...gapOf(e.from, e.to) }, selectable: false });
+    return decorateEdges(out, { rectOf: rectId, links, sessions, now: Date.now() }); // P67: 한 쌍에 이름표 하나, 물러나기, 비켜 놓기
+  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick]);
 
   // 노드 손잡이를 끌어 이으면 역할을 묻는다(F2). 같은 쌍에 이미 역할이 있으면 고칠 수 있게 같은 대화상자를 연다
   const onConnect = useCallback((c) => { if (c.source && c.target && c.source !== c.target) openDialog({ kind: 'role', from: c.source, to: c.target }); }, []);

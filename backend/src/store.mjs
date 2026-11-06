@@ -207,6 +207,7 @@ export class Store {
     const r = this.st('INSERT INTO link_events (link_id, t, kind, text, data) VALUES (?, ?, ?, ?, ?)').run(linkId, t, kind, text, data == null ? null : JSON.stringify(data));
     return { id: Number(r.lastInsertRowid), linkId, t, kind, text, data };
   }
+  linkPromptCount(linkId) { const r = this.st("SELECT COUNT(*) AS n FROM link_events WHERE link_id = ? AND kind = 'prompt'").get(linkId); return r ? Number(r.n) : 0; } // P67: 선 이름표의 지시 수
   linkEvents(linkId, limit = 200) { return this.st('SELECT * FROM link_events WHERE link_id = ? ORDER BY id DESC LIMIT ?').all(linkId, limit).reverse().map((r) => ({ id: r.id, linkId: r.link_id, t: r.t, kind: r.kind, text: r.text, data: r.data ? JSON.parse(r.data) : null })); }
 
   // 리포지토리 워크스페이스(P5, ARCH 4절 G). 줄의 순서는 처음 생긴 순서(created_at)로 고정한다. 닫으면 줄을 지운다

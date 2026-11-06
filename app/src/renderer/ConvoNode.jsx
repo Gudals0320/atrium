@@ -9,6 +9,7 @@ import { useStore } from './store.js';
 import { api } from './api.js';
 import { faceFor } from './lib/faces.js';
 import { ago, labelFit } from './lib/labels.js';
+import { shifted } from './lib/link-labels.js'; // P67
 import { useT, errText, tMsg, fmtDateTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
 import { openConvo, archiveItem } from './Sidebar.jsx';
@@ -144,7 +145,8 @@ export const WorktreeBox = memo(WorktreeBoxInner);
 
 // 대화끼리의 띄움 선(주황 실선, 끝점). 선 위 글은 띄운 방법과 이름
 export function SpawnEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }) {
-  const [path, lx, ly] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const [path, lx0, ly0] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const [lx, ly] = shifted(lx0, ly0, data); // P67: 다른 선의 이름표와 겹치면 비켜 놓은 자리
   const t = useT();
   const fit = labelFit(data);
   return <>
