@@ -9,6 +9,7 @@ import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes, dockedAreas, visibleAnchors, workersPreset } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자. P68: 워크트리끼리 붙인 덩어리
 import { layoutRegions } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치
 import { readGroups, groupIndex } from './ws-groups.mjs'; // P44: 가상 그룹끼리 모으기
+import { blockTree, pushLine, bandOf, subtreeIds, lineKids, boxFrame } from './tree-line.mjs'; // P75: 하위 세션 줄
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
 import { keyed } from './msg.mjs'; // P16: 화면 글 열쇠
@@ -460,7 +461,7 @@ export function dockUpdate(b, p) {
   // P73: 바깥 크기를 손으로 바꾸면(테두리·모서리 끌기) 고른 비율을 끈다(자유 비율). 그 뒤 비율 단추를 누르면 다시 그 비율로 맞춘다
   if ((p.w != null || p.h != null || Array.isArray(p.sizes)) && d.aspect) b.store.setDockAspect(d.dockId, null);
   b.store.addEvent(null, 'dock_saved', { dockId: d.dockId, tree: p.tree != null || p.sizes ? renameTree(b, tree) : undefined, outer: out, why: 'update' });
-  if (p.w != null || p.h != null) settleRegions(b, 'dock resize');
+  if (p.w != null || p.h != null) { if (d.members[0]) reflowLines(b, d.members[0], 'dock resize'); settleRegions(b, 'dock resize'); } // P75: 줄의 뒤 형제를 아래로
   b.api.broadcast('board.changed', { why: 'dock' });
   return { dock: b.store.getDock(d.dockId), outer: out };
 }
@@ -513,6 +514,58 @@ export function onSessionClosed(b, s) {
   keepBoxes(b, () => detach(b, d, s.sessionId, 'session closed'), { closed: s }); // P68: 남은 워크트리 세션은 자기 상자로
   settleRegions(b, 'session closed');
   b.api.broadcast('board.changed', { why: 'dock' });
+}
+
+// ---------- P75: 하위 세션 줄(K4, tree-line.mjs) ----------
+// 한 워크스페이스(리포)의 줄 블록: 워크트리 상자(안의 노드째), 덩어리, 노드 하나. 상자 안의 노드는 상자 블록에 든다(상자 안의 덩어리도)
+export function lineBlocks(b, wsKey, items = canvasItems(b)) {
+  const regs = regions(b, items);
+  const docks = b.store.docks();
+  const out = new Map();
+  for (const n of items) {
+    if (n.kind !== 'node' || (n.wsKey || null) !== (wsKey || null)) continue;
+    const d = isBoxKey(n.ws) ? null : docks.find((x) => x.members.includes(n.id));
+    const id = isBoxKey(n.ws) ? `w:${n.ws}` : d ? `d:${d.dockId}` : n.id;
+    // 아직 상자가 없는 --worktree 워커는 상자가 들어설 테두리까지(자리를 비워 둔 만큼) 차지한다
+    const info = !isBoxKey(n.ws) && !d && b.branch && b.branch.info ? b.branch.info.get(n.id) : null;
+    const rect = isBoxKey(n.ws) ? regs.get(n.ws) : d ? dockOuter(b, d) : info && info.worktree ? boxFrame(n) : n;
+    if (!rect) continue;
+    if (!out.has(id)) out.set(id, { id, kind: isBoxKey(n.ws) ? 'wtbox' : d ? 'dock' : 'node', box: isBoxKey(n.ws) ? n.ws : null, x: rect.x, y: rect.y, w: rect.w, h: rect.h, members: [] });
+    out.get(id).members.push(n.id);
+  }
+  return [...out.values()];
+}
+const sessionRow = (b) => (sid) => { const s = b.sessions.get(sid); return s ? { parentSessionId: s.parentSessionId || null, createdAt: s.createdAt || 0 } : null; };
+export const lineTree = (b, wsKey, items = canvasItems(b)) => blockTree(lineBlocks(b, wsKey, items), sessionRow(b));
+// 블록 하나를 아래로 옮긴다(상자는 상자째)
+function lowerBlock(b, x, dy) {
+  if (x.kind === 'wtbox') { shiftWorkspace(b, x.box, 0, dy); return; }
+  for (const m of x.members) { const n = nodeRect(b, m); if (n) b.store.setNode({ ...n, y: n.y + dy }); }
+}
+// 줄 밀기: sid가 든 블록에서 위로 부모마다, 그 줄의 형제 띠가 겹치면 뒤의 형제를 그 나무째 아래로 민다(당기지 않는다).
+// 새 하위 세션을 놓은 뒤(부모 나무가 길어졌다)와 노드·덩어리가 커진 뒤에 부른다. 옮긴 것이 있으면 [{ block, dy }]
+export function reflowLines(b, sid, cause = 'unknown') {
+  const s = b.sessions.get(sid);
+  if (!s) return [];
+  const ws = s.workspaceKey || null;
+  let tree = lineTree(b, ws);
+  let cur = tree.blockOf.get(sid);
+  const moved = [];
+  const seen = new Set();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const p = tree.parent.get(cur);
+    if (!p) break;
+    const shifts = pushLine(lineKids(tree, p).map((k) => ({ id: k, rect: bandOf(tree, k) })));
+    if (shifts.size) {
+      const done = new Set();
+      for (const [k, dy] of shifts) for (const x of subtreeIds(tree, k)) { if (done.has(x)) continue; done.add(x); lowerBlock(b, tree.byId.get(x), dy); moved.push({ block: x.startsWith('w:') || x.startsWith('d:') || !b.nameOf ? x : b.nameOf(x), dy }); }
+      tree = lineTree(b, ws);
+    }
+    cur = p;
+  }
+  if (moved.length) { b.store.addEvent(sid, 'line_pushed', { cause, moved }); if (b.log) b.log(`line pushed (${cause}) ${JSON.stringify(moved)}`); }
+  return moved;
 }
 
 // P17: 옛 한 줄 덩어리 행(tree 없음)을 뜰 때 한 마디짜리 나무로 바꾼다. 비율은 지금 노드 크기(가로줄은 너비, 세로줄은 높이)라서 모양이 그대로다
@@ -587,6 +640,7 @@ export function setSize(b, p) {
     b.store.setNodeAspect(s.sessionId, out.aspect, out.key);
   }
   b.store.addEvent(s.sessionId, 'node_size', { size: out.key || p.size || null, dir: out.dir, aspect: out.aspect, level: out.level, dock: d ? d.dockId : undefined });
+  reflowLines(b, s.sessionId, 'size'); // P75: 커졌으면 줄의 뒤 형제를 아래로
   settleRegions(b, 'size');
   b.api.broadcast('board.changed', { why: 'size' });
   return { session: s.name, size: out.key, dir: out.dir, aspect: out.aspect, level: out.level, w: out.w, h: out.h, dock: d ? d.dockId : null };
@@ -612,7 +666,8 @@ function blocksOf(b, wsKey) {
   for (const n of nodes) if (!used.has(n.session_id)) out.push({ id: n.session_id, kind: 'node', x: n.x, y: n.y, w: n.w, h: n.h, aspect: n.aspect || null, members: [n.session_id], resizable: true });
   for (const m of b.store.memos().filter((m) => (m.workspaceKey || null) === wsKey)) out.push({ id: `m:${m.memoId}`, kind: 'memo', memoId: m.memoId, x: m.x, y: m.y, w: m.w, h: m.h, members: [], resizable: false });
   for (const k of b.store.kanbans().filter((k) => (k.workspaceKey || null) === wsKey)) out.push({ id: `k:${k.kanbanId}`, kind: 'kanban', kanbanId: k.kanbanId, x: k.x, y: k.y, w: k.w, h: k.h, members: [], resizable: false });
-  for (const x of all.filter((i) => i.kind === 'wtbox' && i.ws === wsKey).sort((p, q) => p.y - q.y || p.x - q.x)) out.push({ id: `w:${x.box}`, kind: 'wtbox', box: x.box, x: x.x, y: x.y, w: x.w, h: x.h, members: [], resizable: false });
+  // P75: 상자 블록의 구성은 상자 안의 세션이다. 그래야 부모 → 워커 연결이 상자에 닿아 상자가 부모 오른쪽 줄에 선다(전에는 연결 없는 줄로 갔다)
+  for (const x of all.filter((i) => i.kind === 'wtbox' && i.ws === wsKey).sort((p, q) => p.y - q.y || p.x - q.x)) out.push({ id: `w:${x.box}`, kind: 'wtbox', box: x.box, x: x.x, y: x.y, w: x.w, h: x.h, members: all.filter((i) => i.kind === 'node' && i.ws === x.box && b.sessions.has(i.id)).map((i) => i.id), resizable: false });
   return out;
 }
 // 메모·칸반 자리를 바꾸고 창에 알린다(정리, 되돌리기)
@@ -629,10 +684,16 @@ function planWorkspace(b, key, { avoid = true } = {}) {
   if (!blocks.length) return { blocks, out: [], edges: [], moved: null };
   const ids = new Set(blocks.flatMap((x) => x.members));
   const edges = b.store.links().filter((l) => ids.has(l.from) && ids.has(l.to) && (l.role || l.observed || l.spawned)).map((l) => [l.from, l.to]);
+  // P75: 하위 세션의 부모(띄운 쪽)도 연결로 본다(역할 선을 끊어도 줄은 부모 오른쪽). 부모 연결을 앞에 두어 나무 부모가 된다
+  const born = (m) => (b.sessions.get(m) || {}).createdAt || 0;
+  const parents = [...ids].map((m) => [(b.sessions.get(m) || {}).parentSessionId, m]).filter(([p]) => p && ids.has(p)).sort((x, y) => born(x[1]) - born(y[1]));
+  edges.unshift(...parents.filter(([p, m]) => !edges.some(([f, t]) => f === p && t === m)));
   const start = bbox(blocks);
   // P73: 정리의 크게·보통·작게는 노드의 방향과 고른 비율을 지킨다(비율이 없으면 16:9)
   const stepOf = (x, level) => { const r = resolveSize(x, x.aspect, { level, aspect: aspectOf(x, x.aspect) || DEFAULT_ASPECT }); return { w: r.w, h: r.h, step: r.key }; };
-  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y }, stepOf });
+  // P75: 형제는 띄운 순서(블록 안에서 가장 먼저 띄운 세션의 때)로 위에서 아래로
+  const rank = new Map(blocks.map((x) => [x.id, x.members.length ? Math.min(...x.members.map(born)) : Infinity]));
+  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y }, stepOf, rank });
   let sx = 0, sy = 0;
   if (avoid) {
     // 정리한 영역이 다른 영역과 겹치면(맞닿는 것은 괜찮다) 영역째로 빈자리로 옮긴다
@@ -685,7 +746,7 @@ export function arrange(b, p) {
   const pl = planWorkspace(b, key);
   if (!pl.blocks.length) return { plan: [], applied: false };
   if (!p.apply) return { plan: pl.out, applied: false, edges: pl.edges.length };
-  const ids = new Set(pl.blocks.flatMap((x) => x.members));
+  const ids = new Set(pl.blocks.filter((x) => x.kind !== 'wtbox').flatMap((x) => x.members)); // P75: 상자 안 노드는 상자째 되돌린다(아래 boxes)
   const nodes = b.store.nodes().filter((n) => ids.has(n.session_id));
   const itemsBefore = pl.blocks.filter((x) => x.kind === 'memo' || x.kind === 'kanban').map((x) => ({ kind: x.kind, id: x.memoId || x.kanbanId, x: x.x, y: x.y }));
   const boxesBefore = pl.blocks.filter((x) => x.kind === 'wtbox').map((x) => ({ box: x.box, x: x.x, y: x.y }));

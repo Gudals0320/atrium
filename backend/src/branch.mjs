@@ -9,15 +9,16 @@
 // - 상한(K3): P36에서 하위 세션 수, 깊이, 판 전체 상한을 없앴다(사용자 요청: 한 작업에 워커 30개 넘게). 자기 자손이 아니면 끄기를 not_parent로 거부한다. 고리는 depthOf가 끊는다.
 // - 신뢰 관문(P36): 신뢰를 받지 않은 저장소의 --worktree는 claude -w가 신뢰 대화상자 없이 바로 끝난다. 그래서 먼저 그 저장소에서 claude를 띄워 신뢰 질문을 노드에 보이고,
 //   사람이 답해 ready가 되면 같은 패널·같은 세션 ID로 claude -w를 다시 띄운다. 그동안 판의 전달(--prompt)은 멈춰 둔다(passGate).
-// - 나무 자리(K4): 새 하위 세션은 부모 오른쪽 열에, 형제는 위아래로 쌓는다(새 노드를 놓을 때만). 다른 워크스페이스면 그 영역의 빈자리.
+// - 나무 자리(K4): 새 하위 세션은 부모 오른쪽 한 열의 끝에 띄운 순서대로 선다(새 노드를 놓을 때만, P75 tree-line.mjs). 다른 워크스페이스면 그 영역의 빈자리.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { workspaceOf, gitProbe } from './git.mjs';
 import { ROLE_RE } from './links.mjs';
-import { SIZE_STEPS, GAP, REGION_GAP, overlaps, regionRect } from './canvas.mjs';
-import { canvasItems, regions, areaOfNode } from './canvas-ops.mjs';
-import { parseArea, wsOfArea } from './worktree-areas.mjs'; // P27
+import { SIZE_STEPS } from './canvas.mjs';
+import { canvasItems, areaOfNode, lineTree, dockOf, dockOuter } from './canvas-ops.mjs';
+import { parseArea, isBoxKey } from './worktree-areas.mjs'; // P27
+import { lineSlot, bandOf, boxFrame, frameInner } from './tree-line.mjs'; // P75: 하위 세션 줄
 import { deriveState, isModelError } from './state.mjs';
 import { EFFORTS } from './settings.mjs';
 import { clip } from './text.mjs';
@@ -93,26 +94,7 @@ export function childName({ want, parentName, taken }) {
   for (let i = 1; i < 1000; i++) if (!taken.has(`${base}${i}`)) return `${base}${i}`;
   throw apiError('name_taken', "이름을 지정하지 못했습니다.");
 }
-// K4: 부모 오른쪽 열에 형제끼리 위아래로. parent·siblings는 노드 사각형, fits(c)는 겹침과 영역 규칙을 본다.
-// 부모와 열 사이 200은 선 위의 역할·상태 글이 접히지 않는 너비(창 labelFit: 172 이상). 열에 이미 형제가 있으면 그 맨 아래 다음 칸부터, 없으면 부모 윗변과 같은 높이부터 아래로. 막히면 한 열 더 오른쪽. 끝내 없으면 null(빈자리 규칙으로 넘긴다)
-// 열 하나는 부모 높이의 약 두 배까지만 쌓는다(P9: 한 열에 12개까지 쌓아 영역이 좁고 길어졌다). rows를 주면 그 값
-// P36: 상한이 없어 형제가 30개를 넘을 수 있다. 형제가 많으면 열의 칸 수를 √(형제 수)까지 늘려 한쪽으로만 길어지지 않게 하고, 열은 64개까지 본다(옛 6열이면 24개 뒤로는 나무 밖 빈자리로 갔다)
-export function childSlot({ parent, siblings = [], size, fits, gapX = 200, gap = GAP, rows = null, cols = 64 }) {
-  if (!parent) return null;
-  rows ??= Math.max(2, Math.round((2 * parent.h + gap) / (size.h + gap)), Math.ceil(Math.sqrt(siblings.length + 1)));
-  let x = parent.x + parent.w + gapX;
-  const yEnd = parent.y + rows * (size.h + gap); // 열의 아래 끝(부모 윗변에서 rows칸)
-  for (let c = 0; c < cols; c++) {
-    const inCol = siblings.filter((s) => Math.abs(s.x - x) < size.w / 2);
-    let y = inCol.length ? Math.max(...inCol.map((s) => s.y + s.h)) + gap : parent.y;
-    for (; y + size.h + gap <= yEnd; y += size.h + gap) {
-      const cand = { x: Math.round(x), y: Math.round(y), w: size.w, h: size.h };
-      if (fits(cand)) return cand;
-    }
-    x += Math.max(size.w, ...siblings.map((s) => s.w)) + gap;
-  }
-  return null;
-}
+// K4 자리 계산은 P75부터 tree-line.mjs(lineSlot: 부모 오른쪽 한 열, 띄운 순서, 격자로 접지 않는다). 옛 childSlot(열을 부모 높이 두 배에서 접어 격자로 쌓았다)은 뺐다
 // P36: 하위 세션이 신뢰 질문에서 멈췄을 때 부모가 사람에게 할 한 문장
 // P41: Claude Code의 StopFailure(model_not_found)는 글 없이 온다. 판이 부모에게 보일 까닭
 export const modelErrorText = (model) => `사용할 수 없는 모델입니다: ${model || '(기본)'}. 모델이 없거나 현재 실행 설정으로 접근할 수 없습니다 (게이트웨이 환경 변수 누락 등).`;
@@ -262,35 +244,62 @@ export class Branch {
     const parentId = s.parentSessionId || null;
     const parent = parentId ? this.rowOf(parentId) : null;
     return { branch: { depth: this.depth(s.sessionId), parentSessionId: parentId, parentName: shownName(parent), // P66: 보이는 이름
-      parentAddress: parent ? parent.name : null, parentOpen: !!(parentId && this.b.sessions.has(parentId)), child: !!info, role: info ? info.role : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.openChildren(s.sessionId).length } };
+      parentAddress: parent ? parent.name : null, parentOpen: !!(parentId && this.b.sessions.has(parentId)), child: !!info, role: info ? info.role : null, order: info ? this.orderOf(s.sessionId) : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.openChildren(s.sessionId).length } };
   }
   tree() {
-    const rows = [...this.b.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, label: s.label || null, parentSessionId: s.parentSessionId || null, depth: this.depth(s.sessionId), child: this.info.has(s.sessionId), role: (this.info.get(s.sessionId) || {}).role || null, state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null }));
+    const rows = [...this.b.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, label: s.label || null, parentSessionId: s.parentSessionId || null, depth: this.depth(s.sessionId), child: this.info.has(s.sessionId), role: (this.info.get(s.sessionId) || {}).role || null, order: this.orderOf(s.sessionId), state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null }));
     return { total: this.openTotal(), rows };
   }
 
-  // K4: 하위 세션 노드 자리. backend.spawn이 부른다. 부모와 같은 워크스페이스면 부모 오른쪽 열, 아니면 null(그 워크스페이스의 빈자리 규칙)
-  placeChild(parentId, wsKey) {
+  // P75: 띄운 순서(같은 부모 안에서 1, 2, 3…). 띄울 때 기록(info.order)에 남겨 형제가 닫혀도 번호가 겹치지 않는다. P75 전 기록은 띄운 때(at) 차례
+  orderOf(sessionId) {
+    const info = this.info.get(sessionId);
+    if (!info) return null;
+    if (info.order) return info.order;
+    const sibs = [...this.info.entries()].filter(([, v]) => v.by === info.by && !v.order).sort(([a, x], [c, y]) => (x.at || 0) - (y.at || 0) || String(a).localeCompare(String(c)));
+    return sibs.findIndex(([id]) => id === sessionId) + 1;
+  }
+  nextOrder(parentId) {
+    let max = 0;
+    for (const [id, v] of this.info) if (v.by === parentId) max = Math.max(max, this.orderOf(id) || 0);
+    return max + 1;
+  }
+
+  // K4·P75: 하위 세션 노드 자리. backend.spawn이 부른다. 부모와 같은 워크스페이스면 부모 오른쪽 한 열의 끝(형제 띠의 맨 아래 다음), 아니면 null(그 워크스페이스의 빈자리 규칙).
+  // 줄은 격자로 접지 않는다. 그 자리에 다른 것이 있으면 그 아래로 잇는다(다른 노드를 옮기지 않는다. 부모 나무가 길어져 생기는 겹침은 spawn 뒤 reflowLines가 뒤 형제를 민다).
+  // worktree를 주면(--worktree 워커) 상자가 들어설 테두리(이름표와 여백)까지 비워 두고 노드는 그 안에 놓는다. 노드는 본 저장소 쪽에 두고,
+  // 워크트리가 생기면 상자가 그 노드 자리를 감싼다(worktrees.mjs). 그래서 상자도 줄에 선다
+  placeChild(parentId, wsKey, { worktree = null } = {}) {
     const b = this.b;
     const parent = b.sessions.get(parentId);
     if (!parent || parent.workspaceKey !== wsKey) return null;
-    const nodes = b.store.nodes();
-    const pn = nodes.find((n) => n.session_id === parentId);
+    const pn = b.store.nodes().find((n) => n.session_id === parentId);
     if (!pn) return null;
     const size = SIZE_STEPS[CHILD_SIZE];
-    const kidIds = new Set(this.openChildren(parentId).map((x) => x.sessionId));
-    const siblings = nodes.filter((n) => kidIds.has(n.session_id));
     const all = canvasItems(b);
-    const regs = regions(b, all);
-    const ak = areaOfNode(b, parentId, all); // P27: 부모가 든 영역(워크트리 영역일 수 있다)
-    const items = all.filter((i) => i.box !== ak); // P35: 워크트리 상자 안에 놓을 때 그 상자 자신은 피하지 않는다
-    const own = items.filter((i) => i.ws === ak);
-    const others = [...regs].filter(([k]) => wsOfArea(k) !== wsOfArea(ak)).map(([, r]) => r); // P35: 같은 리포의 영역(리포 영역, 상자)은 빼고. 상자 겹침은 settleRegions가 민다
-    const free = (c) => !items.some((i) => overlaps(c, i, GAP - 1));
-    const fits = (c) => free(c) && !others.some((r) => overlaps(regionRect([...own, c]), r, REGION_GAP / 2 - 1));
-    // 옆 영역 때문에 자리가 없으면 노드끼리만 피해 나무 모양을 지킨다. 그때 생기는 영역 겹침은 spawn 뒤 settleRegions가 옆 영역을 밀어 푼다(P9)
-    const at = childSlot({ parent: pn, siblings, size, fits }) || childSlot({ parent: pn, siblings, size, fits: free });
-    return at ? { ...at, size: CHILD_SIZE, aspect: '16:9', area: parseArea(ak).wt } : null;
+    const ak = areaOfNode(b, parentId, all); // P27: 부모가 든 영역(워크트리 상자일 수 있다)
+    const inBox = !worktree && isBoxKey(ak); // 워크트리 없는 하위 세션은 부모의 상자 안에 든다
+    const pd = dockOf(b, parentId);
+    const pRect = pd ? dockOuter(b, pd) : pn;
+    const tree = lineTree(b, wsKey, all);
+    const pid = tree.blockOf.get(parentId);
+    // 이미 줄에 선 형제의 띠: 부모와 다른 블록이면 그 블록의 나무째, 부모 블록 안(부모 상자 안의 형제)이면 그 노드
+    const kidIds = this.openChildren(parentId).map((x) => x.sessionId);
+    const bands = [];
+    const seen = new Set();
+    for (const k of kidIds) {
+      const bid = tree.blockOf.get(k);
+      if (!bid || seen.has(bid)) continue;
+      seen.add(bid);
+      const r = bid === pid ? all.find((i) => i.kind === 'node' && i.id === k) : bandOf(tree, bid);
+      if (r && r.x >= pRect.x + pRect.w - 1) bands.push(r);
+    }
+    const frame = worktree ? boxFrame({ x: 0, y: 0, ...size }) : { w: size.w, h: size.h };
+    const obstacles = all.filter((i) => !(inBox && i.box === ak) && !(i.kind === 'node' && i.id === parentId)); // P35: 부모 상자 안에 놓을 때 그 상자 자신은 피하지 않는다
+    const at = lineSlot({ parent: pRect, bands, size: frame, obstacles: [...obstacles, pRect] });
+    if (!at) return null;
+    const pos = worktree ? frameInner(at) : at;
+    return { x: Math.round(pos.x), y: Math.round(pos.y), w: size.w, h: size.h, size: CHILD_SIZE, aspect: '16:9', area: inBox ? parseArea(ak).wt : '' };
   }
 
   // ---------- HTTP: 하위 세션 명령 ----------
@@ -383,7 +392,7 @@ export class Branch {
     const allowHerdr = !!((b.store.spawnInfo(parent.sessionId) || {}).allowHerdr);
     const depth = parentDepth + 1;
     const viaLauncher = route.type === 'launcher';
-    const info = { role, depth, by: parent.sessionId, at: Date.now(), worktree, kind, via: 'atrium child', inherited: { cwd: !o.cwd, model: claude && !o.model && !o.launcher, effort: claude && !o.effort && !viaLauncher && !!parent.effort, permissionMode: !viaLauncher }, ...(viaLauncher ? { launcher: route.launcher.name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(gate ? { gate: 'trust' } : {}) };
+    const info = { role, depth, by: parent.sessionId, at: Date.now(), order: this.nextOrder(parent.sessionId), worktree, kind, via: 'atrium child', inherited: { cwd: !o.cwd, model: claude && !o.model && !o.launcher, effort: claude && !o.effort && !viaLauncher && !!parent.effort, permissionMode: !viaLauncher }, ...(viaLauncher ? { launcher: route.launcher.name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(gate ? { gate: 'trust' } : {}) };
 
     this.pending.push(parent.sessionId); this.pendingNames.add(name);
     let out;

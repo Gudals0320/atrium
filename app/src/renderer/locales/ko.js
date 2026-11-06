@@ -2007,4 +2007,10 @@ export default {
     short: { large: '대', normal: '중', small: '소' },
     edgeTitle: '드래그하면 창 그룹 전체 크기를 조절합니다. 분할 비율은 유지합니다.',
   },
+  // P75: 역할 칩의 띄운 순서(같은 상위 세션 안 번호)
+  branchOrder: {
+    who: '@{parent}의 {role} {n}',
+    whoOrphan: '{role} {n} (상위 세션 닫힘)',
+    title: ' 생성 순서는 {n}번째입니다.',
+  },
 };

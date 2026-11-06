@@ -4,11 +4,13 @@
 // - 영역: 새 워크트리는 표 worktree_areas에 자리를 정해 넣고(P35: 리포 영역 안 빈자리, boxSlot), 없어진 워크트리(목록 읽기가 성공했을 때만)는 행을 지운다.
 // - 노드: 세션의 지금 폴더(hook cwd, 없으면 시작 폴더)가 든 워크트리가 저장한 영역(nodes.area)과 다르면 그 영역의 빈자리로 옮긴다.
 //   덩어리 안 노드는 옮기지 않는다. 대화 노드는 recall.layoutCanvas가 같은 규칙(areaOf)으로 놓는다.
+//   P75: 빈 상자에 처음 드는 노드(--worktree 워커)는 옮기지 않고 상자를 그 노드 둘레로 놓는다. 워커는 하위 세션 줄에 상자 테두리까지 비운 자리에 이미 서 있다.
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { parseWorktreeList, liveWorktrees, worktreeOfPath, areaKey, wsOfArea, boxSlot } from './worktree-areas.mjs';
-import { canvasItems, regions, settleRegions, dockOf, slotRegions, slotItems, anchorWorkspace } from './canvas-ops.mjs';
+import { canvasItems, regions, settleRegions, dockOf, slotRegions, slotItems, anchorWorkspace, reflowLines } from './canvas-ops.mjs';
 import { slotInRegion } from './canvas.mjs';
+import { boxFrame } from './tree-line.mjs'; // P75
 import { pathKey } from './workspaces.mjs';
 
 const TICK_MS = 10000;
@@ -30,6 +32,16 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
     return worktreeOfPath(cwd, wts, pathKey(w.root));
   }
   const cwdOf = (s) => (s.rt && s.rt.cwd) || s.cwd;
+  // P75: --worktree 워커(info.worktree)는 claude -w가 만든 그 워크트리(.claude/worktrees/<이름>)에만 든다. 그 전(부모 폴더에서 막 떴을 때)에는 옮기지 않는다
+  const wantsWt = (s) => { const i = b.branch && b.branch.info ? b.branch.info.get(s.sessionId) : null; return i && i.worktree ? String(i.worktree).toLowerCase() : null; };
+  const fitsWt = (s, wt) => { const name = wantsWt(s); return !name || (!!wt && wt.toLowerCase().endsWith(`/${name}`)); };
+  // 워크트리 wt에서 도는 세션 노드 가운데 상자가 감쌀 것: 덩어리 밖, 먼저 띄운 것(빈 상자를 그 노드 자리로 놓는다)
+  function homeNode(wsKey, wt) {
+    const list = b.store.nodes().filter((n) => n.workspace_key === wsKey && !(n.area || '')).map((n) => ({ n, s: b.sessions.get(n.session_id) }))
+      .filter(({ n, s }) => s && wantsWt(s) && !dockOf(b, n.session_id) && areaOf(wsKey, cwdOf(s)) === wt && fitsWt(s, wt))
+      .sort((p, q) => (p.s.createdAt || 0) - (q.s.createdAt || 0));
+    return list.length ? list[0].n : null;
+  }
 
   // 영역 행 맞추기. 바뀐 것이 있으면 true
   async function syncAreas() {
@@ -54,12 +66,14 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
         const a = have.find((r) => r.wt === x.key);
         if (a) { if (a.branch !== (x.branch || null) || a.path !== x.path) { b.store.putWorktreeArea({ ...a, branch: x.branch || null, path: x.path }); changed = true; } continue; }
         // P35: 리포 영역 안 빈자리(본 저장소 쪽 것의 오른쪽이나 아래, 다른 상자와 겹치지 않게). 리포 영역이 커져 다른 영역과 겹치면 settleRegions가 그 영역을 민다
+        // P75: 그 워크트리에서 도는 세션 노드(--worktree 워커)가 이미 있으면 상자는 그 노드를 감싸는 자리(워커가 선 줄의 자리)
         anchorWorkspace(b, w.key);
         const items = canvasItems(b);
         const regs = regions(b, items);
         const content = items.filter((i) => i.ws === w.key && i.kind !== 'wtbox');
         const boxes = [...regs].filter(([k]) => k !== w.key && wsOfArea(k) === w.key).map(([, r]) => r);
-        const at = boxSlot({ main: regs.get(w.key) || null, content, boxes });
+        const home = homeNode(w.key, x.key);
+        const at = home ? boxFrame(home) : boxSlot({ main: regs.get(w.key) || null, content, boxes });
         b.store.putWorktreeArea({ wsKey: w.key, wt: x.key, path: x.path, branch: x.branch || null, x: at.x, y: at.y });
         b.store.addEvent(null, 'worktree_area_created', { key: w.key, worktree: x.path, branch: x.branch || null, at });
         changed = true;
@@ -79,9 +93,23 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
       const want = areaOf(w.key, cwdOf(s));
       if (want === (n.area || '')) continue;
       if (dockOf(b, s.sessionId)) continue; // 덩어리는 그대로(한 노드만 빼 옮기면 덩어리가 깨진다)
+      if (!fitsWt(s, want)) continue; // P75: 워크트리 워커는 자기 워크트리가 생길 때까지 제자리
       const items = canvasItems(b).filter((i) => i.id !== s.sessionId);
       const regs = regions(b, items);
       const k = want && regs.has(areaKey(w.key, want)) ? areaKey(w.key, want) : w.key;
+      // P75: 빈 상자(사람이 옮기지 않은 것)에 처음 드는 --worktree 워커는 그 자리에 두고 상자를 노드 둘레로 옮긴다. 워커가 선 줄에 상자도 선다.
+      //   다른 세션(사람이 워크트리 폴더에서 띄운 셸 등)은 지금처럼 상자의 빈자리로 옮긴다
+      const row = want && k !== w.key ? b.store.worktreeAreas().find((a) => a.wsKey === w.key && a.wt === want) : null;
+      if (row && wantsWt(s) && !row.movedAt && !items.some((i) => i.ws === k && i.kind !== 'wtbox')) {
+        const f = boxFrame(n);
+        if (row.x !== f.x || row.y !== f.y) b.store.putWorktreeArea({ ...row, x: f.x, y: f.y });
+        b.store.setNode({ ...n, area: want });
+        b.store.addEvent(s.sessionId, 'worktree_box_wrapped', { area: want, at: { x: f.x, y: f.y } });
+        moved++;
+        reflowLines(b, s.sessionId, 'worktree box');
+        settleRegions(b, 'worktree node');
+        continue;
+      }
       const at = slotInRegion({ wsKey: k, size: { w: n.w, h: n.h }, items: slotItems(items, k), regions: slotRegions(regs, k) });
       b.store.setNode({ ...n, x: at.x, y: at.y, area: want });
       b.store.addEvent(s.sessionId, 'node_moved', { from: { x: n.x, y: n.y, w: n.w, h: n.h }, to: { x: at.x, y: at.y, w: n.w, h: n.h }, cause: want ? 'worktree area' : 'main area', area: want || null });

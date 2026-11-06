@@ -2007,4 +2007,10 @@ export default {
     short: { large: 'L', normal: 'M', small: 'S' },
     edgeTitle: 'Drag to resize the whole dock (cells keep their ratio)',
   },
+  // P75: spawn order on the role chip (number among the parent's sub-sessions)
+  branchOrder: {
+    who: '@{parent}\'s {role} {n}',
+    whoOrphan: '{role} {n} (parent closed)',
+    title: '. Sub-session number {n} of its parent',
+  },
 };

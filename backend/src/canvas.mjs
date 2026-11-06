@@ -3,7 +3,7 @@
 // - 워크스페이스 영역(H1): 한 워크스페이스의 노드, 메모·칸반을 감싸는 사각형. 위에 이름표 자리(REGION_HEAD)를 둔다. 안이 비면 저장한 자리(anchor)에 빈 영역.
 // - 빈자리(H1): 새 노드는 그 워크스페이스 영역 안이나 바로 옆에 놓고, 다른 노드와 겹치지 않고, 영역끼리 겹치지 않게 한다. 새 워크스페이스는 다른 영역과 겹치지 않는 곳에.
 // - 붙여 묶기(H5): 덩어리는 분할 나무다(P17, dock-tree.mjs). 구성 노드의 자리와 크기는 nodes 표에 두고, 덩어리는 나무(방향과 비율)를 가진다.
-// - 정리(H7): 연결을 따라 시키는 쪽을 왼쪽에 크게, 받는 쪽을 오른쪽에 작게 두는 나무 배치. 덩어리는 한 덩어리로 옮긴다.
+// - 정리(H7): 연결을 따라 시키는 쪽을 왼쪽에 크게, 받는 쪽을 오른쪽에 작게 두는 나무 배치. 덩어리는 한 덩어리로 옮긴다. P75: 자식은 띄운 순서로 한 열, 부모는 윗변을 맞춘다.
 
 export const NODE = { w: 720, h: 460 }; // 옛 기본 노드 크기(빈자리 계산의 기본값, 시험). P73: 새 세션은 NEW_NODE
 export const GAP = 40; // 노드 사이 틈
@@ -287,7 +287,9 @@ export function splitSide(parentRect, childRect) {
 // blocks: [{ id, x, y, w, h, members: [sessionId], resizable }](노드 하나, 덩어리, 그룹), edges: [[fromSessionId, toSessionId]]
 // → Map id → { x, y, w, h, size? }. 시키는 쪽(뿌리)을 왼쪽에 크게, 받는 쪽을 오른쪽에 작게. 연결이 없는 블록은 맨 아래에 나란히
 // P73: stepOf(block, level) → { w, h, step }: 단계 크기(노드의 방향과 비율을 지킨다). 없으면 16:9 가로 표
-export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 160, gapY = GAP * 2, stepOf = null } = {}) {
+// P75: 하위 세션 줄(tree-line.mjs)과 같은 모양. 자식은 띄운 순서(rank: Map 블록 ID → 띄운 때, 없으면 연결 순서)로 위에서 아래로 서고,
+//   부모는 첫 자식과 윗변을 맞춘다(가운데가 아니다. 새 워커를 띄울 때 놓이는 자리와 같다). 열 사이 200(LINE_GAP_X), 형제 띠 사이 80(LINE_GAP_Y)
+export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200, gapY = GAP * 2, stepOf = null, rank = null } = {}) {
   const bySession = new Map();
   for (const b of blocks) for (const m of b.members) bySession.set(m, b.id);
   const kids = new Map(blocks.map((b) => [b.id, []]));
@@ -299,6 +301,7 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 160
     seenPair.add(`${a}>${b}`);
     kids.get(a).push(b); indeg.set(b, indeg.get(b) + 1);
   }
+  if (rank) for (const list of kids.values()) list.sort((p, q) => (rank.get(p) ?? Infinity) - (rank.get(q) ?? Infinity));
   const byId = new Map(blocks.map((b) => [b.id, b]));
   const order = [...blocks].sort((a, b) => a.y - b.y || a.x - b.x); // 지금 위쪽에 있던 것부터
   const visited = new Set();
@@ -325,29 +328,22 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 160
     t.children.forEach(sizeOf);
   };
   trees.forEach(sizeOf);
-  // 열 너비: 깊이마다 가장 넓은 블록
-  const colW = [];
-  const measure = (t) => { colW[t.depth] = Math.max(colW[t.depth] || 0, size.get(t.id).w); t.children.forEach(measure); };
-  trees.forEach(measure);
-  const colX = []; let x = origin.x;
-  for (let d = 0; d < colW.length; d++) { colX[d] = x; x += colW[d] + gapX; }
-
+  // P75: 열은 부모마다(자식 x = 부모 오른쪽 + gapX). 새 워커를 띄울 때 놓이는 자리(tree-line.mjs lineSlot)와 같다. 전에는 깊이마다 가장 넓은 블록에 맞춘 열이었다
   const out = new Map();
-  const place = (t, top) => {
+  const place = (t, top, x) => {
     const s = size.get(t.id);
     let y = top, span = 0;
-    for (const c of t.children) { const h = place(c, y); y += h + gapY; span += h + gapY; }
+    for (const c of t.children) { const h = place(c, y, x + s.w + gapX); y += h + gapY; span += h + gapY; }
     if (span) span -= gapY;
     const h = Math.max(s.h, span);
-    const myY = span > s.h ? top + (span - s.h) / 2 : top;
-    out.set(t.id, { x: colX[t.depth], y: Math.round(myY), w: s.w, h: s.h, size: s.step });
+    out.set(t.id, { x: Math.round(x), y: Math.round(top), w: s.w, h: s.h, size: s.step });
     return h;
   };
   let top = origin.y;
-  for (const t of trees) top += place(t, top) + gapY * 2;
+  for (const t of trees) top += place(t, top, origin.x) + gapY * 2;
   // 연결 없는 블록: 크기 그대로 한 줄에(너무 길면 줄을 바꾼다)
   let lx = origin.x, rowH = 0;
-  const maxW = Math.max(colX.length ? x - gapX - origin.x : 0, 2400);
+  const maxW = Math.max(out.size ? Math.max(...[...out.values()].map((r) => r.x + r.w)) - origin.x : 0, 2400);
   for (const b of lone) {
     if (lx > origin.x && lx + b.w - origin.x > maxW) { lx = origin.x; top += rowH + gapY; rowH = 0; }
     out.set(b.id, { x: lx, y: top, w: b.w, h: b.h, size: null });
