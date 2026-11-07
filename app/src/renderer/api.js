@@ -17,6 +17,7 @@ function loadClientId() {
 }
 function clientName(info) { try { const n = localStorage.getItem('mt.clientName'); if (n) return n; } catch {} return info.deviceName || null; }
 
+export const BIG_MSG = 8000; // P86: 이보다 큰 메시지는 단계 기록에 남긴다
 export const CONNECT_TIMEOUT_MS = 10000; // 소켓이 이 안에 열리지 않으면(CONNECTING에 멈춤) 정리하고 다시 붙는다(이슈 #1-15)
 
 export class Api {
@@ -31,6 +32,7 @@ export class Api {
     this.conn = connInit(); // P49: 다시 붙기 상태
     this.rtts = []; this.rtt = null; this.pingSentAt = null;
     this.openedAt = null; this.lastClose = null; this.closeLog = []; // P82
+    this.onStep = null; // P86: 단계 기록(crash-watch.js가 둔다). (이름, 값) → 동기로 적는다
     if (typeof window !== 'undefined' && window.addEventListener) {
       const wake = () => this.wake();
       window.addEventListener('online', wake);
@@ -116,6 +118,7 @@ export class Api {
       if (!live()) return;
       clearTimeout(this.openTimer);
       this.openedAt = Date.now(); this.lastClose = null; // P82: 알렸다
+      if (this.onStep) this.onStep('open', { in: this.inB || 0 }); // P86: in = 지금까지 받은 바이트
       this.step({ type: 'open' });
       this.pingSentAt = null; clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
       setTimeout(() => this.ping(), 1000);
@@ -124,8 +127,11 @@ export class Api {
     };
     ws.onmessage = (ev) => {
       if (!live()) return;
-      this.inB = (this.inB || 0) + (typeof ev.data === 'string' ? ev.data.length : ev.data.byteLength || 0); // P84: 받은 양(죽기 전 기록)
+      const size = typeof ev.data === 'string' ? ev.data.length : ev.data.byteLength || 0;
+      this.inB = (this.inB || 0) + size; // P84: 받은 양(죽기 전 기록)
       let m; try { m = JSON.parse(ev.data); } catch { return; }
+      // P86: 큰 메시지는 받자마자 종류 이름(이벤트 또는 요청 이름)과 바이트만 적는다(내용 없음)
+      if (size >= BIG_MSG && this.onStep) { const w0 = m.event ? null : this.wait.get(m.id); this.onStep('msg', { k: m.event || (w0 && w0.m) || 'reply', b: size }); }
       if (m.event) return this.emit(m.event, m.data);
       const w = this.wait.get(m.id); if (!w) return; this.wait.delete(m.id);
       if (m.error) w.rej(Object.assign(new Error(m.error.message), { code: m.error.code, key: m.error.key, vars: m.error.vars })); else w.res(m.result); // key·vars: 화면 글 열쇠(P16, lib/i18n.js errText)
@@ -160,7 +166,7 @@ export class Api {
   call(method, params = {}) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return Promise.reject(Object.assign(new Error('not connected to the backend'), { code: 'disconnected' }));
     const id = ++this.n;
-    return new Promise((res, rej) => { this.wait.set(id, { res, rej }); this.ws.send(JSON.stringify({ id, method, params })); });
+    return new Promise((res, rej) => { this.wait.set(id, { res, rej, m: method }); this.ws.send(JSON.stringify({ id, method, params })); });
   }
 }
 

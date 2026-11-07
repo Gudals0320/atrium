@@ -18,6 +18,7 @@ import { kindOf, SHAPES, stateColor, logoFor, shownKind } from './lib/kinds.js';
 import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { TerminalView } from './TerminalView.jsx';
+import { boardPlan } from './crash-watch.js'; // P86
 import { ApprovalCard } from './ApprovalCard.jsx';
 import { ChatView } from './ChatView.jsx';
 import { NodeBoundary } from './ErrorBoundary.jsx';
@@ -39,6 +40,7 @@ import { killWorktreeParam } from './lib/worktree-exit.js'; // P71: 닫기 확�
 import { tierOf, runsRing, ringDiag } from './lib/overview.js'; // P85: 멀리 보기 강조 등급과 도는 둘레
 
 const zoomSel = (s) => s.transform[2];
+const NO_BOARD_TERMS = !boardPlan().terms; // P86: 보드 단계 1부터 터미널 대신 대화 보기(얼굴)
 // 이 배율보다 작으면 머리줄의 메모리·모델·작은 단추를 숨기고 이름과 상태만 화면 기준 크기로 보인다(사용성 평가 2026-10-31)
 const SMALL_ZOOM = 0.7;
 
@@ -469,7 +471,7 @@ function SessionNodeInner({ id, selected }) {
       <div className={`mt-node-body${face !== 'close' ? ' mt-drag' : ''}`} onMouseDownCapture={face === 'middle' ? onScrollbarDown : undefined}>
         <NodeBoundary id={id} label={face === 'close' ? 'terminal' : face} compact>
           {asleep && face !== 'icon' && <SleepFace s={s} zoom={zoom} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} />}
-          {!asleep && face === 'close' && (attached ? <TerminalView sessionId={id} width={n.w} height={n.h} reserve={showCard ? ANSWER_H : 0} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /> : <CloseWaiting s={s} />)}
+          {!asleep && face === 'close' && (attached ? <TerminalView sessionId={id} width={n.w} height={n.h} reserve={showCard ? ANSWER_H : 0} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /> : NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />)}
           {!asleep && face === 'middle' && <ChatView s={s} />}
           {!asleep && face === 'far' && <FarFace s={s} zoom={zoom} w={n.w} h={n.h} />}
           {face === 'icon' && <IconFace s={s} />}

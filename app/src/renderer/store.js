@@ -4,6 +4,7 @@
 // P6c: 메모·칸반 노드(I3·I4), Thread(I2), 루프(I5), 설정(I7), 출력 보기(I1)와 미션 맵(I6) 창을 연 상태.
 import { useSyncExternalStore } from 'react';
 import { api } from './api.js';
+import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
@@ -105,6 +106,8 @@ export async function loadBoard() {
   if (b.convoNodes) { state.convoNodes = new Map(b.convoNodes.map((c) => [c.convId, c])); state.convoEdges = b.convoEdges || []; } // P13
   if (!state.boardLoaded || !state.workspaces.some((w) => w.key === state.currentWs)) state.currentWs = b.current || (state.workspaces[0] || {}).key || null;
   if (!state.boardLoaded) { state.viewport = b.viewport || null; state.boardSeenAt = b.seenAt || null; }
+  // P86: 판 상태 적용(종류별 수, 그리기 전). 웹 화면만 적는다
+  step('board', { n: state.nodes.size, ss: state.sessions.size, cv: state.convoNodes.size, ce: state.convoEdges.length, m: state.memos.size, kb: state.kanbans.size, l: state.links.size, ws: state.workspaces.length });
   state.boardLoaded = true;
   changed();
 }

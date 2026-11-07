@@ -8,6 +8,7 @@ import { openFolderPicker } from './FolderPicker.jsx';
 import { hasFiles } from './lib/upload.js';
 import { webZoomOf } from './lib/scale.js'; // P49
 import { startPwa, pwaState } from './lib/pwa.js'; // P74: 홈 화면 웹 앱
+import { boardPlan } from './crash-watch.js'; // P86: 보드 단계 3부터 화면 배율(CSS zoom)을 쓰지 않는다
 
 export const isWeb = typeof window !== 'undefined' && !window.mt;
 // P56: 옛 기기 토큰(P48~P55)이 남아 있으면 지운다. 더 쓰지 않는다
@@ -65,7 +66,7 @@ async function notify(n) {
 }
 
 // P49: 화면 배율. 뿌리 요소의 CSS zoom(Chromium 128부터 표준 zoom이라 마우스 좌표와 요소 크기가 함께 맞는다). 범위는 P45와 같은 70~150%
-function applyWebZoom(f) { try { const z = webZoomOf(f); document.documentElement.style.zoom = z === 1 ? '' : String(z); } catch {} }
+function applyWebZoom(f) { try { const z = boardPlan().effects ? webZoomOf(f) : 1; document.documentElement.style.zoom = z === 1 ? '' : String(z); } catch {} }
 
 // 업로드: 파일마다 PC 경로
 export async function uploadFiles(files) {

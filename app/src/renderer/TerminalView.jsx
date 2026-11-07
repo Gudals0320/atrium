@@ -32,8 +32,12 @@ import { useT, errText } from './lib/i18n.js';
 import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles } from './lib/upload.js';
-import { termBudgetNow } from './crash-watch.js'; // P84: 손가락 웹 화면은 WebGL 없이, 웹은 캔버스 픽셀 상한을 낮게
+import { termBudgetNow, step } from './crash-watch.js'; // P84: 손가락 웹 화면은 WebGL 없이, 웹은 캔버스 픽셀 상한을 낮게. P86: 단계 기록
+import { capDims } from './lib/crumbs.js'; // P86: 웹 화면의 칸·줄 상한
 
+// P86: 단계 기록에 적는 터미널 값(잰 글자 폭·높이, 칸·줄, DOM 셀 수, 판 배율). 내용 없음
+const cellsOf = (term) => { const rows = term.element && term.element.querySelector('.xterm-rows'); return rows ? rows.getElementsByTagName('span').length + rows.children.length : 0; };
+const charOf = (term) => { const c = term._core && term._core._charSizeService; return c ? { cw: c.width, ch: c.height } : {}; };
 function readNumber(key, dflt) {
   const q = new URLSearchParams(location.search).get(key);
   let v = q;
@@ -306,6 +310,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const prefill = async (screen) => {
       const h = await readHistory(screen);
       perfLog('term_history', { sessionId, lines: h.lines, above: h.above });
+      step('hist', { lines: h.lines, above: h.above }); // P86: 셸 기록(큰 메시지) 받은 뒤, 쓰기 전
       if (h.above > 0 && st.alive) term.write(historyPrefill(h.ansi, term.rows));
     };
     // 빠른 출력이 한 프레임에 지나가거나(화면에 한 번도 안 보인 줄), cls·크기 바뀜으로 판 안 기록이 herdr 기록과 어긋났다.
@@ -328,13 +333,15 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     };
     const markStale = () => { st.stale = true; clearTimeout(st.syncTimer); st.syncTimer = setTimeout(trySync, 500); };
     const shellFrame = async (f, bytes, t0) => {
+      const first = !st.wrote; st.wrote = true;
+      if (first || bytes.length >= 16000) step('fw0', { b: bytes.length, c: f.width || term.cols, r: f.height || term.rows }); // P86: 첫 프레임(과 큰 프레임) 쓰기 전
       let resized = false;
       if (f.width && f.height && (f.width !== shadow.cols || f.height !== shadow.rows)) { shadow.resize(f.width, f.height); resized = true; }
       const before = resized ? null : rowsOf(shadow);
       await writeP(shadow, bytes);
       if (!st.alive) return;
       const after = rowsOf(shadow);
-      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) { term.resize(f.width, f.height); st.applyScale(); }
+      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) { const d = capDims({ cols: f.width, rows: f.height }, isWeb); term.resize(d.cols, d.rows); st.applyScale(); } // P86: 웹은 상한
       if (history === 'wait') { history = 'done'; await prefill(after); if (!st.alive) return; }
       else if (!before) markStale();
       else {
@@ -344,7 +351,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
         if (s.d > 0) { const sb = shadow.buffer.active; term.write(scrollUpSeq(s.d, s.hi, term.rows) + serializeScreen(sb, { base: sb.baseY, rows: shadow.rows, cols: shadow.cols, cursorX: sb.cursorX, cursorY: sb.cursorY, cell: sb.getNullCell() })); }
         else if (bigChange(before, after)) markStale();
       }
-      term.write(bytes, () => onWritten(t0));
+      term.write(bytes, () => { onWritten(t0); if (first) requestAnimationFrame(() => step('fw1', { cells: cellsOf(term), dom: document.getElementsByTagName('*').length, sb: term.buffer.active.length })); }); // P86: 쓰고 그린 뒤(sb: 기록 줄 수)
       if (st.stale) { clearTimeout(st.syncTimer); st.syncTimer = setTimeout(trySync, 500); } // 출력이 이어지는 동안은 미룬다
     };
 
@@ -356,10 +363,13 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       if (st.again && f.full) { st.again = false; bytes = joinBytes(REDRAW_PREFIX, bytes); }
       const t0 = onFrame(sessionId, bytes.length, f.width, f.height);
       if (shell) { chain = chain.then(() => shellFrame(f, bytes, t0)).catch((e) => window.mt.log(`shell frame ${sessionId}: ${e.stack || e.message}`)); return; }
-      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) { term.resize(f.width, f.height); st.applyScale(); } // 쓰기 전에 크기 맞추기(E4)
+      if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) { const d = capDims({ cols: f.width, rows: f.height }, isWeb); term.resize(d.cols, d.rows); st.applyScale(); } // 쓰기 전에 크기 맞추기(E4). P86: 웹은 상한
+      const first = !st.wrote; st.wrote = true;
+      if (first || bytes.length >= 16000) step('fw0', { b: bytes.length, c: f.width || term.cols, r: f.height || term.rows }); // P86: 첫 프레임(과 큰 프레임) 쓰기 전
       term.write(bytes, () => {
         onWritten(t0);
         sel.onFrame(); // P42: 고른 글이 있으면 화면이 움직인 만큼 선택을 옮긴다(지우지 않는다)
+        if (first) requestAnimationFrame(() => step('fw1', { cells: cellsOf(term), dom: document.getElementsByTagName('*').length })); // P86: 쓰고 그린 뒤
       });
     });
     // 백엔드에 다시 붙으면(백엔드 재시작, C2) 옛 연결의 제어기는 이미 놓였다. 다시 붙는다.
@@ -397,9 +407,10 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       const bar = term.options.scrollback === 0 ? 0 : (term.options.overviewRuler && term.options.overviewRuler.width) || 14; // FitAddon과 같은 값
       return fitDims({ freeW: Math.max(0, px(ps.width)) - px(es.paddingLeft) - px(es.paddingRight) - bar, freeH: px(ps.height) - px(es.paddingTop) - px(es.paddingBottom), cellW: st.plan.base.w / st.planDpr, cellH: st.plan.base.h / st.planDpr });
     };
-    const dims = fit.proposeDimensions() || { cols: 100, rows: 30 };
+    const dims = capDims(fit.proposeDimensions() || { cols: 100, rows: 30 }, isWeb); // P86: 웹은 칸·줄 상한
     const cols = Math.max(20, dims.cols), rows = Math.max(8, dims.rows);
     term.resize(cols, rows);
+    step('term', { c: cols, r: rows, ...charOf(term), z: flow.getState().transform[2], dom: renderer === 'dom' ? 1 : 0, fs: term.options.fontSize }); // P86: 터미널 붙기
     st.lastSize = `${cols}x${rows}`;
     setTerminal(sessionId, { renderer, cols, rows });
     // again: P82 다시 붙은 연결에서 같은 터미널로 다시 붙기(초점과 모아 둔 입력은 건드리지 않는다)
@@ -461,8 +472,9 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const refit = () => {
       if (!st.fit) return;
       if (st.applyScale) st.applyScale(); // P47: 노드 크기가 바뀌면 비율도 다시
-      const d = st.propose ? st.propose() : st.fit.proposeDimensions(); // P65: 배율 1 칸으로 잰다
-      if (!d) return;
+      const d0 = st.propose ? st.propose() : st.fit.proposeDimensions(); // P65: 배율 1 칸으로 잰다
+      if (!d0) return;
+      const d = capDims(d0, isWeb); // P86: 웹은 칸·줄 상한
       const cols = Math.max(20, d.cols), rows = Math.max(8, d.rows);
       const key = `${cols}x${rows}`;
       if (key === st.lastSize) return;

@@ -1527,3 +1527,20 @@ html.mt-spot .mt-wtarea.rest, html.mt-spot .mt-region:not(.mt-wtarea):not(.run):
 }
 .mt-node.selected:is(.t-rest, .t-done):not(.face-close) { box-shadow: 0 0 0 calc(2px * var(--inv, 1)) var(--info); }
 .mt-node:is(.t-rest, .t-done):not(.face-close):hover { border-color: var(--con-line); }
+
+/* P86: 손가락 웹 보드(html.mt-touch-board)는 축소한 판(React Flow 변환) 안에 합성 레이어를 만들지 않는다.
+   xterm 6 스크롤 막대의 손잡이는 translate3d로 레이어를 만들고, WebKit은 그 레이어를 담는 노드와 판 전체(배율 변환)까지 레이어로 올린다.
+   도는 둘레(P85)의 will-change도 같다. 손잡이 자리는 top으로 정하므로 transform을 빼도 그대로 보인다 */
+html.mt-touch-board .react-flow .xterm .slider { transform: none !important; }
+html.mt-touch-board .react-flow .mt-node-run > i { will-change: auto; }
+/* P86: 보드 단계 3부터 효과를 끈다(그림자, 빛, 움직임, 필터, will-change). 웹 화면 배율(CSS zoom)은 web.js가 쓰지 않는다 */
+html.mt-lite *, html.mt-lite *::before, html.mt-lite *::after { box-shadow: none !important; text-shadow: none !important; filter: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; animation: none !important; transition: none !important; will-change: auto !important; }
+html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !important; }
+/* P86: 가벼운 보드 단계 알약(위 오른쪽). 누르면 무엇을 껐는지와 한 단계 무겁게·처음으로 */
+.mt-level { position: fixed; z-index: 61; top: calc(env(safe-area-inset-top) + 8px); right: calc(env(safe-area-inset-right) + 8px); max-width: min(300px, calc(100vw - 24px)); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 12.5px; line-height: 1.4; }
+.mt-level-pill { height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--warn); background: var(--panel); color: var(--text); font-size: 12px; font-weight: 600; }
+.mt-level-body { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--warn); background: var(--panel); color: var(--text); }
+.mt-level-kept { color: var(--dim); }
+.mt-level-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mt-level-actions .mt-ph-tip-btn { height: 32px; padding: 0 12px; font-size: 13px; }
+.mt-level-actions .mt-ph-tip-btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--panel-line, #3a3631); }
