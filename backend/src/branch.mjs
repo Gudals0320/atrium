@@ -182,6 +182,8 @@ export class Branch {
     this.modelErrors = new Map(); // P41: 세션 ID → 마지막으로 알린 모델 오류(rt.lastError 객체. P55: 시각으로 가리면 같은 밀리초의 다음 오류를 놓친다)
     this.passing = new Set(); // P36: 신뢰 관문을 지나는 중인 세션 ID(claude -w로 다시 띄우는 중)
     this.info = new Map(); // 세션 ID → 하위 세션 기록(sessions.branch)
+    this.firstOf = new Map(); // P79: 첫 요청 전달 ID → 하위 세션 ID(들어가지 않으면 부모에게 알린다)
+    this.lost = new Map(); // P79: 하위 세션 ID → 들어가지 않은 첫 요청 { status, reason, at, text }(atrium children에 보인다)
     this.closed = new Map(); // 닫힌 세션 ID → { parentSessionId, name }(깊이·자손을 셀 때 따라간다)
     this.pending = []; // 만드는 중인 하위 세션의 부모 ID(상한을 동시에 넘지 않게)
     this.pendingNames = new Set(); // 만드는 중인 하위 세션 이름(동시에 같은 이름을 짓지 않게)
@@ -426,6 +428,7 @@ export class Branch {
       b.linkEvent(l, 'prompt', prompt, { via: 'board', deliveryId: d.deliveryId });
       child.openPromptFrom = { linkId: l.linkId, at: Date.now(), text: prompt };
       first = { deliveryId: d.deliveryId, status: d.status };
+      this.firstOf.set(d.deliveryId, child.sessionId);
     }
     const wait = o.wait === false ? null : await this.waitReady(child, first);
     const sum = b.sessions.has(child.sessionId) ? b.summary(child) : null;
@@ -632,7 +635,7 @@ export class Branch {
     const was = !!(t.rt.sleep || (b.sleeper && b.sleeper.wakes.has(t.sessionId)));
     const r = was ? await b.sleeper.wakeFor(t, `atrium:${caller.name}`) : null; // P24: 그 리포의 잠든 세션을 모두 깨우고 이 세션이 준비될 때까지
     let first = null;
-    if (o.prompt != null && String(o.prompt).trim()) { const d = b.queue.enqueue(t.sessionId, String(o.prompt)); first = { deliveryId: d.deliveryId, status: d.status }; }
+    if (o.prompt != null && String(o.prompt).trim()) { const d = b.queue.enqueue(t.sessionId, String(o.prompt)); first = { deliveryId: d.deliveryId, status: d.status }; this.firstOf.set(d.deliveryId, t.sessionId); }
     b.store.addEvent(caller.sessionId, 'branch_wake', { target: t.name, woke: was, ms: r ? r.ms : null });
     const v = this.childView(t);
     return { ...v, woke: was, ms: r ? r.ms : null, firstPrompt: first, next: { prompt: `herdr agent prompt ${t.agentName} "<할 일>" --wait --timeout 600000`, wait: `herdr agent wait ${t.agentName} --timeout 600000`, read: `herdr agent read ${t.agentName} --source recent-unwrapped --lines 80` } };
@@ -641,8 +644,33 @@ export class Branch {
   childView(x) {
     const sum = this.b.summary(x);
     const info = this.info.get(x.sessionId) || {};
-    return { name: x.name, sessionId: x.sessionId, agentName: x.agentName, paneId: x.paneId, kind: x.kind || 'claude', role: info.role || null, depth: this.depth(x.sessionId), parent: (this.rowOf(x.parentSessionId) || {}).name || null, state: sum.state, ask: sum.ask ? clip(sum.ask.summary || sum.ask.kind, 160) : null, lastPrompt: clip(x.rt.lastPrompt, 300), lastAnswer: clip(x.rt.lastAnswer, 1500), lastAnswerAt: x.rt.lastAnswerAt || null, error: sum.error ? { type: sum.error.type || null, message: clip(sum.error.message, 300) || (isModelError(sum.error) ? modelErrorText(x.model) : null) } : null, model: x.model || null, cwd: x.rt.cwd || x.cwd, worktree: info.worktree || null, gated: this.gated(x.sessionId), children: this.openChildren(x.sessionId).length };
+    return { name: x.name, sessionId: x.sessionId, agentName: x.agentName, paneId: x.paneId, kind: x.kind || 'claude', role: info.role || null, depth: this.depth(x.sessionId), parent: (this.rowOf(x.parentSessionId) || {}).name || null, state: sum.state, ask: sum.ask ? clip(sum.ask.summary || sum.ask.kind, 160) : null, lastPrompt: clip(x.rt.lastPrompt, 300), lastAnswer: clip(x.rt.lastAnswer, 1500), lastAnswerAt: x.rt.lastAnswerAt || null, error: sum.error ? { type: sum.error.type || null, message: clip(sum.error.message, 300) || (isModelError(sum.error) ? modelErrorText(x.model) : null) } : null, model: x.model || null, cwd: x.rt.cwd || x.cwd, worktree: info.worktree || null, gated: this.gated(x.sessionId), children: this.openChildren(x.sessionId).length, firstPromptLost: this.lost.get(x.sessionId) || null };
   }
+  // P79: 하위 세션의 첫 요청이 끝내 들어가지 않았다(unconfirmed·failed). 판 이벤트로 남기고, 부모에게 그 사실과 다시 보낼 명령을 보낸다.
+  //   첫 요청은 사람(리드)이 맡긴 일이라 조용히 사라지면 안 된다. 같은 전달은 한 번만 알린다
+  onDeliveryEnd(d) {
+    const sid = this.firstOf.get(d.deliveryId);
+    if (!sid) return null;
+    if (d.status === 'confirmed' || d.status === 'cancelled') { this.firstOf.delete(d.deliveryId); this.lost.delete(sid); return null; }
+    if (d.status !== 'unconfirmed' && d.status !== 'failed') return null;
+    this.firstOf.delete(d.deliveryId);
+    const b = this.b;
+    const child = b.sessions.get(sid);
+    if (!child) return null;
+    const row = b.store.getDelivery(d.deliveryId) || {};
+    const lost = { deliveryId: d.deliveryId, status: d.status, reason: d.reason || null, at: Date.now(), text: clip(row.text || '', 300) };
+    this.lost.set(sid, lost);
+    b.store.addEvent(sid, 'first_prompt_lost', { deliveryId: d.deliveryId, status: d.status, reason: d.reason || null });
+    b.log(`first prompt lost ${child.name} (${d.status}: ${d.reason || '-'})`);
+    const parent = child.parentSessionId ? b.sessions.get(child.parentSessionId) : null;
+    if (!parent) return lost;
+    const text = `@${child.name}에게 보낸 첫 요청이 들어가지 않았다(${d.status}${d.reason ? `: ${d.reason}` : ''}). 화면을 보고(${this.readCmd(child)}) 필요하면 다시 보낸다: herdr agent prompt ${child.agentName} "<할 일>"\n이 알림에는 "알겠다"고만 답해라.`;
+    const n = b.queue.enqueue(parent.sessionId, text);
+    const l = b.ensureLink(parent.sessionId, child.sessionId, {});
+    b.linkEvent(l, 'notice', text, { deliveryId: n.deliveryId, why: 'first prompt lost' }, { quiet: true });
+    return lost;
+  }
+  readCmd(x) { return `herdr agent read ${x.agentName} --source recent-unwrapped --lines 40`; }
   // atrium children: 자기의 하위 세션(all이면 그 아래 모두, 나무 순서)
   listChildren(parent, o = {}) {
     const b = this.b;

@@ -119,6 +119,12 @@ async function main() {
     else if (['error', 'exited', 'closed'].includes(w.state)) say(`  상태: ${w.state}. 하위 세션이 제대로 뜨지 않았다${x.error ? `(${x.error.type}: ${x.error.message || ''})` : ''}`);
     else if (w.timeout) say(`  상태: ${w.state}(아직 준비 중). herdr agent wait ${x.agentName} --timeout 600000 으로 기다린다`);
     else say(`  상태: ${w.state}${x.firstPrompt ? `, 첫 요청 ${w.delivery || x.firstPrompt.status}` : ''} (${(w.ms / 1000).toFixed(1)}초)`);
+    // P79: 첫 요청이 들어갔다고 확인하지 못했으면 그 사실과 다음 명령
+    const fp = x.firstPrompt ? (w && w.delivery) || x.firstPrompt.status : null;
+    if (fp && fp !== 'confirmed') {
+      if (['unconfirmed', 'failed', 'cancelled'].includes(fp)) say(`  첫 요청이 들어가지 않았다(${fp}). 화면 보기: herdr agent read ${x.agentName} --source recent-unwrapped --lines 40 · 다시 보내기: ${x.next.prompt}`);
+      else say(`  첫 요청은 아직 확인되지 않았다(${fp}). 보드가 들어갈 때까지 보낸다. 확인: atrium children(들어가지 않으면 "첫 요청 안 들어감"이 보인다) · 다시 보내기: ${x.next.prompt}`);
+    }
     if (x.firstPrompt) say(`끝나기 기다리기: ${x.next.wait}`); else say(`일 시키기: ${x.next.prompt}`);
     say(`응답 읽기: ${x.next.read}`);
     say(counts(x.counts));
@@ -129,7 +135,8 @@ async function main() {
     for (const c of x.children) {
       say(`${'  '.repeat(Math.max(1, c.depth - x.depth))}@${c.name} (herdr ${c.agentName}, 패널 ${c.paneId || '없음'}, "${c.role || '-'}", ${c.depth}단계) ${c.state}${c.state === 'sleeping' ? ` — 절전 중. 시키기 전에 atrium wake ${c.name}` : ''}${c.state === 'trust_wait' ? ` — 신뢰 질문(사람이 답한다). 기다리기: atrium child-wait ${c.name}` : c.gated ? ` — 워크트리로 다시 띄울 차례. 기다리기: atrium child-wait ${c.name}` : ''}${c.ask ? ` — 묻는 중: ${c.ask}` : ''}${c.error ? ` — 오류 ${c.error.type}: ${(c.error.message || '').replace(/\s+/g, ' ')}` : ''}${c.model ? ` · 모델 ${c.model}` : ''}${c.children ? ` · 하위 ${c.children}` : ''}`);
       if (c.error && /model/i.test(c.error.type || '')) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}모델을 쓰지 못했다. 다른 모델로 다시 띄운다(atrium models). 끄기는 사람이 끄라고 할 때만`);
-      if (c.lastAnswer) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}마지막 응답: ${c.lastAnswer.replace(/\s+/g, ' ').slice(0, 400)}`);
+      if (c.firstPromptLost) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}첫 요청 안 들어감(${c.firstPromptLost.status}${c.firstPromptLost.reason ? `: ${c.firstPromptLost.reason}` : ''}). 화면 보기: herdr agent read ${c.agentName} --source recent-unwrapped --lines 40 · 다시 보내기: herdr agent prompt ${c.agentName} "<할 일>"`); // P79
+      if (c.lastAnswer) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}마지막 응답:${c.lastAnswer.replace(/\s+/g, ' ').slice(0, 400)}`);
     }
     return;
   }

@@ -84,6 +84,8 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     deliveryMaxWaitMs: 15 * 60 * 1000, // B1 규칙 2: 최대 15분
     inputQuietMs: 3000, // B1 규칙 4: 사용자가 터미널에 입력한 뒤 이만큼 기다린다
     submitConfirmMs: 30000, // 보낸 뒤 UserPromptSubmit을 기다리는 시간
+    submitRetryMs: 6000, // P79: 보낸 뒤 이만큼 확인이 없으면 입력 칸을 보고 Enter나 다시 보내기
+    submitRetries: 2, // P79: 그 손쓰기의 최대 횟수(다시 보내기는 그 가운데 한 번뿐)
     quietMs: Number(E('QUIET_MS') || 10 * 60 * 1000), // 3절 조용함, 후보 10분
     killWaitMs: 10000,
     answerStepMs: 250, // 답하기에서 키 묶음 사이(tab → 글 → enter)에 화면이 바뀔 시간
