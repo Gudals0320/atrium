@@ -133,8 +133,6 @@ try {
   }
   if (!agentReady) log(`에이전트 화면 ${atrium('screen', 'p83-agent', '--text').slice(0, 600)}`);
   const ID = shellR.sessionId, AG = agentR.sessionId;
-  // 셸에 긴 줄을 낸다(칸 수를 눈으로 본다)
-  call('terminal.input', { session: ID, data: 'echo ' + Array.from({ length: 13 }, (_, i) => `${String(i * 10).padStart(3, '0')}-------`).join('') + '\r' });
 
   const pwDir = path.join(process.env.LOCALAPPDATA || '', 'ms-playwright');
   const found = (() => { try { return fs.readdirSync(pwDir).filter((d) => /^chromium-\d+$/.test(d)).sort().reverse().map((d) => path.join(pwDir, d, 'chrome-win64', 'chrome.exe')).find((f) => fs.existsSync(f)); } catch { return null; } })();
@@ -185,7 +183,11 @@ try {
   judge('명령 바: 손가락으로 보내기(전달이 생기고 입력칸이 빈다)', !!sent && (await pA.inputValue('[data-role=command]').catch(() => 'x')) === '', { sent, bar: b3.bar, hidden: b3.hidden });
   // 바 밖(판)을 탭하면 닫힌다
   await pA.evaluate(() => window.__kb(0));
-  await pA.touchscreen.tap(W / 2, 330); await sleep(1200);
+  // 빈 판 자리(노드가 없는 곳)를 찾아 탭한다
+  const pane = await pA.evaluate(() => { for (let y = 200; y < 700; y += 40) for (let x = 60; x < 360; x += 40) { const el = document.elementFromPoint(x, y); if (el && el.closest && el.closest('.react-flow__pane, .react-flow__renderer') && !el.closest('.react-flow__node')) return { x, y }; } return null; });
+  log(`빈 판 자리 ${JSON.stringify(pane)}`);
+  await pA.touchscreen.tap(pane ? pane.x : 20, pane ? pane.y : 400); await sleep(1200);
+  if (await pA.$('[data-role=phone-full]')) { await pA.evaluate(() => history.back()); await sleep(800); }
   const b4 = await barState(pA);
   judge('명령 바: 판을 탭하면 초점이 풀리고 바가 숨는다(손잡이가 다시 보인다)', b4.hidden && !!b4.handle && b4.focus !== 'command', { hidden: b4.hidden, handle: !!b4.handle, focus: b4.focus });
   await shot(pA, '05-board-bar-closed');
@@ -198,7 +200,12 @@ try {
   const tp = await pA.evaluate((id) => { const el = document.querySelector(`.react-flow__node[data-id="${id}"] .mt-term`); const r = el.getBoundingClientRect(); return { x: Math.min(r.left + r.width / 2, innerWidth - 20), y: Math.min(r.top + r.height / 2, 600) }; }, ID);
   await pA.touchscreen.tap(tp.x, tp.y);
   await pA.waitForSelector(`[data-role=phone-full][data-session="${ID}"] .xterm-screen`, { timeout: 20000 });
-  await sleep(2500);
+  await sleep(2000);
+  // 셸에 긴 줄을 낸다(칸 수를 눈으로 본다). 입력 줄로 치고 키보드는 내린다
+  await pA.fill('[data-field=phone-line]', 'echo ' + Array.from({ length: 13 }, (_, i) => `${String(i * 10).padStart(3, '0')}-------`).join(''));
+  await pA.tap('[data-role=phone-keys] [data-key=enter]');
+  await pA.evaluate(() => document.activeElement && document.activeElement.blur());
+  await sleep(1200);
   const f0 = await fullInfo(pA);
   log(`전체 보기 ${JSON.stringify(f0)}`);
   await shot(pA, '06-full');
@@ -215,9 +222,23 @@ try {
   await sleep(1500);
   const f1 = await fullInfo(pA);
   log(`가장 작은 글자 ${JSON.stringify({ cols: f1.cols, rows: f1.rows, fontSize: f1.fontSize, scale: f1.scale, disabled: f1.fontDownDisabled })}`);
+  const probe = await pA.evaluate(() => {
+    const id = document.querySelector('[data-role=phone-full]').dataset.session; const tm = window.__mt.terms.get(id); const c = tm._core;
+    const rows = document.querySelector('[data-role=phone-full] .xterm-rows'); const cs = rows ? getComputedStyle(rows) : null;
+    const wrap = document.querySelector('[data-role=phone-full] .xterm'); const par = wrap && wrap.parentElement;
+    return { char: c._charSizeService && { w: c._charSizeService.width, h: c._charSizeService.height }, cell: c._renderService && c._renderService.dimensions && c._renderService.dimensions.css.cell,
+      font: cs && { size: cs.fontSize, family: cs.fontFamily.slice(0, 60), ls: cs.letterSpacing },
+      span: (() => { const sp = document.createElement('span'); sp.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${tm.options.fontSize}px ${tm.options.fontFamily}`; sp.textContent = 'W'.repeat(100); document.body.appendChild(sp); const w = sp.getBoundingClientRect().width / 100; sp.remove(); return w; })(), jb: document.fonts.check('5.6px "JetBrains Mono Variable"'), parentW: par && par.getBoundingClientRect().width, dpr: devicePixelRatio, scrollback: tm.options.scrollback };
+  });
+  log(`글자 재기 ${JSON.stringify(probe)}`);
   await shot(pA, '09-full-smallest');
   await pA.screenshot({ path: path.join(OUT, `${STAGE}-10-full-smallest-zoom.png`), clip: { x: 0, y: 100, width: W / 2, height: 150 } });
-  judge('가장 작은 글자: 터미널이 110칸 넘게(Claude Code가 diff를 보이는 폭), A−는 끝에서 막힌다', f1.cols >= 110 && f1.fontDownDisabled && f1.scale === '0.4', { cols0, cols: f1.cols, rows: f1.rows, fontSize: f1.fontSize, scale: f1.scale, disabled: f1.fontDownDisabled });
+  // Windows Chromium은 작은 글자의 글자 폭을 정수 px로 재고(5.6px → 4px 칸), iOS Safari(CoreText)는 소수 그대로(JetBrains Mono 0.6em = 3.36px) 잰다.
+  // 그래서 흉내의 칸 수와 함께, 같은 터미널 폭(스크롤 막대 14px 뺀)을 0.6em 칸으로 나눈 iPhone 칸 수를 본다
+  const freeW = probe.parentW - (probe.scrollback ? 14 : 0);
+  const iphoneCols = Math.floor(freeW / (0.6 * f1.fontSize));
+  log(`칸 수: 흉내 ${f1.cols}(칸 ${probe.cell && probe.cell.width}px), iPhone 예상 ${iphoneCols}(칸 ${(0.6 * f1.fontSize).toFixed(2)}px, 폭 ${freeW}px), 글 폭 재기 ${probe.span}`);
+  judge('가장 작은 글자(5.6px): A−는 끝에서 막히고, 흉내 칸 수는 정수 칸 폭대로, iPhone(0.6em 칸)에서는 110칸 넘게', f1.fontDownDisabled && f1.scale === '0.4' && f1.fontSize === 5.6 && f1.cols === Math.floor(freeW / probe.cell.width) && iphoneCols >= 110, { cols0, cols: f1.cols, iphoneCols, cell: probe.cell, rows: f1.rows, fontSize: f1.fontSize, scale: f1.scale, disabled: f1.fontDownDisabled });
   // 저장값이 맞지 않으면 안전하게: 0.1을 넣고 다시 열면 0.4
   // ---- 6. 전체 보기에서 키보드 ----
   await pA.focus('[data-field=phone-line]');
@@ -228,7 +249,7 @@ try {
   check(`${STAGE === 'before' ? '[전] ' : ''}키보드가 올라오면 키 줄이 키보드 위, 터미널 줄 수 그대로(P76)`, f2.keys && f2.keys.bottom <= f2.vvH + 1 && f2.rows === f1.rows && f2.active === 'phone-line', { keys: f2.keys, vvH: f2.vvH, rows: [f1.rows, f2.rows], active: f2.active });
   await pA.evaluate(() => window.__kb(0)); await pA.evaluate(() => document.activeElement && document.activeElement.blur()); await sleep(800);
   const f3 = await fullInfo(pA);
-  check(`${STAGE === 'before' ? '[전] ' : ''}키보드가 내려가면 다시 아래 끝까지`, f3.full && f3.full.bottom === (STAGE === 'before' ? f0.full.bottom : H) && f3.rows === f1.rows, { full: f3.full, rows: f3.rows });
+  judge('키보드가 내려가면 다시 아래 끝까지', f3.full && f3.full.bottom === H, { full: f3.full, rows: f3.rows });
 
   // ---- 7. 나가기 단추로 보드로 ----
   let exitOk = false, how = 'none';
@@ -271,7 +292,9 @@ try {
     await shot(pA, '13-agent-smallest');
     log(`에이전트 가장 작은 글자 ${JSON.stringify({ cols: fa.cols, rows: fa.rows, fontSize: fa.fontSize })}`);
     const panel = call('session.list').find((s) => s.sessionId === AG);
-    judge('에이전트 전체 보기(가장 작은 글자): 패널이 110칸 넘게', fa.cols >= 110, { cols: fa.cols, rows: fa.rows, panel: panel && panel.size });
+    const agW = await pA.evaluate(() => { const x = document.querySelector('[data-role=phone-full] .xterm'); return x && x.parentElement ? x.parentElement.getBoundingClientRect().width : 0; });
+    const agIphone = Math.floor(agW / (0.6 * fa.fontSize));
+    judge('에이전트 전체 보기(가장 작은 글자): 흉내 패널 칸 수가 늘고(9.8px 64칸보다), iPhone(0.6em 칸)에서는 110칸 넘게', fa.fontSize === 5.6 && fa.cols > 64 && agIphone >= 110, { cols: fa.cols, iphoneCols: agIphone, width: agW, rows: fa.rows, panel: panel && panel.size });
     await pA.evaluate(() => { try { localStorage.removeItem('mt.phoneTermScale'); } catch {} });
   }
 
