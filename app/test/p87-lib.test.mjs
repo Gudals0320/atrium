@@ -61,7 +61,7 @@ test('미션 맵: 워크스페이스 무리(판 순서), 위 → 아래 나무, 
   assert.equal(by.w1.last, false); assert.equal(by.w2.last, true); assert.deepEqual(by.w1a.guides, [true]);
   assert.equal(by.w1.active, true, '역할 선이 일하는 중');
   // 나무에 들지 못한 연결은 보내는 줄에
-  assert.deepEqual(by.w2.links, [{ to: 'w1', role: 'second opinion', kind: 'role', active: false }]);
+  assert.deepEqual(by.w2.links, [{ to: 'w1', toId: 's:w1', role: 'second opinion', kind: 'role', active: false }]);
   assert.deepEqual(by.lead.links, [], '사람(명령 바) 선은 그리지 않는다');
   // 다른 무리의 하위 세션: 그 무리의 뿌리, 부모 표시
   const wc = m.groups[2];
@@ -102,7 +102,7 @@ test('미션 맵: 접은 무리는 줄 없이 수만, 깊은 나무는 들여쓰
   // 서로 지시하는 두 세션(고리): 하나는 뿌리, 둘 다 나온다
   const loop = phoneMission({ nodes: [node('a', 'wa', { createdAt: 1 }), node('b', 'wa', { createdAt: 2 })], edges: [{ from: 's:a', to: 's:b', kind: 'prompt' }, { from: 's:b', to: 's:a', kind: 'prompt' }] });
   assert.deepEqual(names(loop.groups[0]), ['a', '  b']);
-  assert.deepEqual(loop.groups[0].rows[1].links, [{ to: 'a', role: null, kind: 'prompt', active: false }]);
+  assert.deepEqual(loop.groups[0].rows[1].links, [{ to: 'a', toId: 's:a', role: null, kind: 'prompt', active: false }]);
   assert.deepEqual(phoneMission(null).groups, []);
 });
 

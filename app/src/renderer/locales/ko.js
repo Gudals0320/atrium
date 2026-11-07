@@ -2092,10 +2092,13 @@ export default {
     all: '세션 {n}',
     turn: '응답 필요',
     from: '← {name} ({ws})',
-    depth: '{n}단계',
-    hint: '세션을 누르면 그 세션을 엽니다.',
     short: '관계도',
     backToMap: '작업 관계도로 돌아가기',
+    focus: '이 세션만 또렷하게 하고 화면에 맞춥니다. 다시 누르면 모두 보입니다.',
+    legendTree: '하위 세션',
+    legendLink: '그 밖의 연결',
+    fit: '관계도를 화면에 맞추기',
+    fitShort: '맞추기',
   },
   // P88: 휴대폰 홈 화면 앱의 알림(웹 푸시), PC의 기기 목록과 연결 기록
   push: {

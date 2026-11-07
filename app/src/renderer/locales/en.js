@@ -2092,10 +2092,13 @@ export default {
     all: 'Sessions {n}',
     turn: 'Needs you',
     from: '← {name} ({ws})',
-    depth: 'level {n}',
-    hint: 'Tap a session to open it.',
     short: 'Map',
     backToMap: 'Back to the mission map',
+    focus: 'Show only these and fit them on the screen. Tap again to show all.',
+    legendTree: 'Sub-session',
+    legendLink: 'Other link',
+    fit: 'Fit the map to the screen',
+    fitShort: 'Fit',
   },
   // P88: notifications (web push) on the phone home screen app, and the PC device list and remote log
   push: {
