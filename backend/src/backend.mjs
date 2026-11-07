@@ -470,7 +470,7 @@ export class Backend {
     const st = deriveState(s.rt).state;
     // 깨우는 중에는 준비된 뒤 잠깐 더 기다린다(sleep.mjs WAKE_SETTLE_MS: 입력 칸이 Enter를 받기 전에 보내면 제출되지 않는다)
     const gated = this.branch && this.branch.holds(sid); // P36: 신뢰 관문을 지나 claude -w로 뜰 때까지 보내지 않는다
-    return { state: sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : st, agentPresent: s.rt.herdr.present, herdrConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false };
+    return { state: sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : st, agentPresent: s.rt.herdr.present, herdrConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s) }; // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
   }
 
   summary(s) {
@@ -1305,6 +1305,7 @@ export class Backend {
 
   // B1·B2: 이름 하나 이상(@a @b) 또는 @all. P5: 셸에는 보내지 않는다(not_agent).
   // P6a(H8): @all은 캔버스 전체의 에이전트 세션. workspace를 주면 그 워크스페이스의 에이전트 세션만
+  // P90: whileWorking: 'type'(휴대폰 입력 줄)이면 Claude Code가 일하는 중일 때 기다리지 않고 바로 넣는다(delivery.mjs canTypeNow)
   async send(p) {
     let targets = Array.isArray(p.target) ? p.target : null;
     let text = p.text;
@@ -1332,7 +1333,7 @@ export class Backend {
       picked.set(one.sessionId, one);
     }
     const deliveries = [...picked.values()].map((s) => {
-      const d = this.queue.enqueue(s.sessionId, toLF(text));
+      const d = this.queue.enqueue(s.sessionId, toLF(text), { typeNow: p.whileWorking === 'type' });
       this.touch(s);
       return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status };
     });

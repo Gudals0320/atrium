@@ -2140,4 +2140,9 @@ export default {
     reason_timeout: '시간 초과',
     reason_endpoint_host: '허용하지 않은 푸시 서비스',
   },
+  // P90: 일하는 중인 Claude Code에 바로 넣은 휴대폰 글(Claude Code의 대기 메시지)
+  typeNow: {
+    typed: 'Claude Code 대기열에 추가됨',
+    draft: '입력란에 작성 중인 글 있음',
+  },
 };

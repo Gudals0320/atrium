@@ -24,7 +24,7 @@ test('좁은 화면 판단: 폭 430px 이하·세로·터치일 때만 휴대폰
 });
 
 const S = (id, f = {}) => ({ sessionId: id, name: id, state: 'ready', workspaceKey: 'C:/w/a/.git', createdAt: 1, lastActivityAt: 1, ...f });
-test('목록 순서: 응답 필요(오래 기다린 순) → 작업 중(최근 순) → 나머지(프로젝트별, 보드 순서, 살아 있는 것 먼저)', () => {
+test('목록 순서: 응답 필요(오래 기다린 순) → 작업 중(P90: 시작 순) → 나머지(프로젝트별, 보드 순서, 살아 있는 것 먼저)', () => {
   const ws = [{ key: 'C:/w/b/.git', name: 'b' }, { key: 'C:/w/a/.git', name: 'a' }];
   const list = phoneList([
     S('r1', { lastActivityAt: 50 }),
@@ -41,9 +41,9 @@ test('목록 순서: 응답 필요(오래 기다린 순) → 작업 중(최근 �
     S('r3', { lastActivityAt: 80 }),
   ], ws);
   assert.deepEqual(list.needs.map((s) => s.sessionId), ['q1', 't1', 'q2']);
-  assert.deepEqual(list.working.map((s) => s.sessionId), ['w2', 'sh', 'w1'], '명령이 도는 셸도 작업 중');
+  assert.deepEqual(list.working.map((s) => s.sessionId), ['sh', 'w1', 'w2'], '명령이 도는 셸도 작업 중(P90: 시작 시각이 같으면 이름 순)');
   assert.deepEqual(list.groups.map((g) => g.key), ['C:/w/b/.git', 'C:/w/a/.git', null], '보드의 프로젝트 순서, 프로젝트 없음은 끝');
-  assert.deepEqual(list.groups[1].sessions.map((s) => s.sessionId), ['r3', 'r1', 'x1', 'r2'], '살아 있는 것(최근 순) 다음 끝났거나 잠든 것');
+  assert.deepEqual(list.groups[1].sessions.map((s) => s.sessionId), ['r1', 'r3', 'r2', 'x1'], '살아 있는 것 다음 끝났거나 잠든 것(P90: 시작 시각이 같으면 이름 순)');
   assert.equal(list.groups[1].name, 'a');
   assert.equal(list.groups[1].total, 10, '접힌 이름표의 수는 위로 올라간 세션도 센다');
   assert.deepEqual(phoneList([], ws), { needs: [], working: [], groups: [] });
@@ -80,7 +80,7 @@ test('손가락 끌기 → 휠, 가상 키보드를 뺀 높이, 보내기 길, �
   assert.equal(touchWheelDelta(0), 0);
   assert.deepEqual(viewportBox({ height: 400.4, offsetTop: 12.6 }, 844), { height: 400, top: 13 });
   assert.deepEqual(viewportBox(null, 844), { height: 844, top: 0 });
-  assert.deepEqual(sendPlan(S('a'), 'line 1\r\nline 2'), { method: 'session.send', text: 'line 1\nline 2' }, '에이전트는 전달 대기열, 여러 줄 그대로');
+  assert.deepEqual(sendPlan(S('a'), 'line 1\r\nline 2'), { method: 'session.send', text: 'line 1\nline 2', whileWorking: 'type' }, '에이전트는 전달 대기열, 여러 줄 그대로(P90: Claude Code는 일하는 중이면 바로 넣기)');
   assert.deepEqual(sendPlan(S('a', { kind: 'shell' }), 'ls -la\n\n'), { method: 'terminal.input', data: 'ls -la\r' }, '셸은 터미널 입력 + Enter');
   assert.equal(sendPlan(S('a'), '   \n '), null);
   assert.equal(nextNeed(['a', 'b', 'c'], 'b'), 'c');

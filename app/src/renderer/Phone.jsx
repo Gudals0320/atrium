@@ -412,7 +412,7 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
     markInteracted(id);
     try {
       if (plan.method === 'session.send') {
-        const r = await api.call('session.send', { target: [id], text: plan.text });
+        const r = await api.call('session.send', { target: [id], text: plan.text, ...(plan.whileWorking ? { whileWorking: plan.whileWorking } : {}) });
         const d = r && r.deliveries && r.deliveries[0];
         setNote(d ? { deliveryId: d.deliveryId, at: Date.now() } : { text: t('phone.sent'), at: Date.now() });
       } else {
