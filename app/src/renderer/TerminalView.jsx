@@ -26,7 +26,7 @@ import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
 import { onFrame, onWritten, markInput, setTerminal, perfLog } from './perf.js';
 import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/tokens.js';
-import { termFontSize } from './lib/scale.js'; // P45
+import { termFontSize, clampScale, clampPhoneScale } from './lib/scale.js'; // P45. P83: 휴대폰 글자(fontScale)는 40%까지
 import { sharpPlan, compensate, phaseShift, paintedAt, samePlan, cssCanvas, fitDims } from './lib/term-sharp.js'; // P65
 import { useT, errText } from './lib/i18n.js';
 import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
@@ -83,7 +83,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null, shared: 1, scale: 1, ownerIsMe: true, plan: null, comp: { sx: 1, sy: 1 }, shift: { x: 0, y: 0 }, dprMul: 1, movedAt: 0 };
     // P42: 셸은 앱이 스스로 스크롤하지 않아(PowerShell은 SGR 휠을 무시) 지난 출력을 xterm scrollback에 두고 판 안에서 스크롤한다
     const shell = (getState().sessions.get(sessionId) || {}).kind === 'shell';
-    const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: termFontSize(TERM_FONT_SIZE, fontScale ?? getState().termScale), lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
+    const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: termFontSize(TERM_FONT_SIZE, fontScale ?? getState().termScale, fontScale != null ? clampPhoneScale : clampScale), lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
     const u11 = new Unicode11Addon();
     term.loadAddon(u11);
     term.unicode.activeVersion = '11';
@@ -448,7 +448,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
   useEffect(() => {
     const st = ref.current;
     if (!st.term) return;
-    const size = termFontSize(TERM_FONT_SIZE, termScale);
+    const size = termFontSize(TERM_FONT_SIZE, termScale, fontScale != null ? clampPhoneScale : clampScale);
     if (st.term.options.fontSize !== size) { st.term.options.fontSize = size; perfLog('term_font', { sessionId, size }); if (st.sharpSoon) st.sharpSoon(0); } // P65: 글자 크기가 바뀌면 칸도 다시
   }, [sessionId, termScale, retry]);
 

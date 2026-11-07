@@ -105,6 +105,20 @@ export function viewportBox(vv, innerHeight) {
   return { height: Math.round(vv.height), top: Math.max(0, Math.round(vv.offsetTop || 0)) };
 }
 
+// P83: 화면 높이. iOS 홈 화면 앱(standalone, black-translucent)은 창 높이(innerHeight, 100vh, visualViewport)를 화면보다
+// 위 안전 영역(상태 표시줄)만큼 짧게 줄 때가 있다. 그러면 아래에 그만큼 빈 띠가 남는다. 홈 화면 앱에는 브라우저 막대가 없으니
+// 키보드가 닫혀 있고 모자란 높이가 TALL_GAP_MAX 안이면 화면 높이(screen, 세로면 긴 변)를 쓴다. 브라우저 탭과 키보드가 열린 때는 viewportBox 그대로
+export const TALL_GAP_MAX = 100;
+export const KB_GAP_PX = 120; // 보이는 높이가 창 높이보다 이만큼 작으면 키보드(P74, touch-board.js KB_OPEN_PX와 같다)
+export function screenBox({ vv, innerHeight, innerWidth, screenW, screenH, standalone = false }) {
+  const b = viewportBox(vv, innerHeight);
+  if (!standalone || !(screenW > 0) || !(screenH > 0)) return b;
+  if (b.top > 0 || b.height < (innerHeight || 0) - KB_GAP_PX) return b; // 키보드가 열렸다
+  const full = Math.round((innerHeight || 0) >= (innerWidth || 0) ? Math.max(screenW, screenH) : Math.min(screenW, screenH));
+  const gap = full - Math.max(b.height, Math.round(innerHeight || 0));
+  return gap > 0 && gap <= TALL_GAP_MAX ? { height: full, top: 0, tall: gap } : b;
+}
+
 // 입력 줄: 에이전트는 전달 대기열(session.send, 여러 줄 그대로), 셸은 터미널 입력(줄마다 Enter 대신 마지막에 한 번)
 export function sendPlan(s, text) {
   const body = String(text || '').replace(/\r\n?/g, '\n');

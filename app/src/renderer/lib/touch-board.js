@@ -107,3 +107,10 @@ export function lastContentRow(lines, cursorY = 0) {
   for (let i = (lines || []).length - 1; i >= 0; i--) if (String(lines[i] || '').trim()) { last = i; break; }
   return Math.max(last, cursorY || 0);
 }
+
+// P83: 손가락 화면의 명령 바(CommandBar.jsx). 입력칸에 초점이 있고 키보드가 올라오면(보이는 높이가 창 높이보다 KB_OPEN_PX 넘게 작다)
+// 판 아래 끝(stageBottom, 창 좌표)에서 보이는 아래 끝(vvTop + vvHeight)까지 올린다(px). 키보드가 없으면 0
+export function kbLift({ stageBottom, vvTop = 0, vvHeight, innerHeight }) {
+  if (!(vvHeight > 0) || !(innerHeight > 0) || !(vvHeight < innerHeight - KB_OPEN_PX)) return 0;
+  return Math.max(0, Math.round((stageBottom || 0) - ((vvTop || 0) + vvHeight)));
+}

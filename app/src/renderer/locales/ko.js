@@ -2043,4 +2043,11 @@ export default {
   remoteSock: {
     prevClose: '직전 끊김 {v}',
   },
+  // P83: 휴대폰 전체 보기의 나가기 단추와 터치 화면의 명령 바 손잡이
+  phoneExit: {
+    button: '보드',
+    label: '보드로 돌아가기',
+    cmdOpen: '명령 입력 열기',
+    cmdShort: '명령',
+  },
 };

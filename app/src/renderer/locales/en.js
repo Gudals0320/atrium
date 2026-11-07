@@ -2043,4 +2043,11 @@ export default {
   remoteSock: {
     prevClose: 'last close {v}',
   },
+  // P83: exit button of the phone full view and the command bar handle on touch screens
+  phoneExit: {
+    button: 'Board',
+    label: 'Back to the board',
+    cmdOpen: 'Open the command bar',
+    cmdShort: 'Command',
+  },
 };

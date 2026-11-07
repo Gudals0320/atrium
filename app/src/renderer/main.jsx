@@ -14,7 +14,7 @@ import { isWeb } from './web.js';
 import { RemoteBar } from './RemoteBar.jsx'; // P49: 웹 화면의 다시 연결 띠와 왕복 지연
 import { webGate } from './Pair.jsx';
 import { PairRequestBanner } from './WebDevices.jsx';
-import { PhoneApp, PhoneListButton, usePhoneLayout } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P76: 기본은 보드 화면, 목록은 단추로
+import { PhoneApp, PhoneListButton, usePhoneLayout, useScreenFix } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P76: 기본은 보드 화면, 목록은 단추로
 import { PhoneFull } from './PhoneFull.jsx'; // P76: 휴대폰 보드 화면에서 탭한 세션의 전체 보기
 import { closeFull } from './full-view.js';
 import { startRemoteNotice, remoteNotices } from './remote-notice.js'; // P58
@@ -116,6 +116,7 @@ function App() {
   const [linking, setLinking] = useState(false);
   const [loopsOpen, setLoopsOpen] = useState(false);
   const [phone, canPhone] = usePhoneLayout(isWeb); // P74
+  useScreenFix(isWeb); // P83: iOS 홈 화면 앱의 짧은 창 높이
   useEffect(() => { if (!canPhone || phone) closeFull(); }, [canPhone, phone]); // P76: 가로로 돌리거나 목록으로 가면 전체 보기를 닫는다
 
   useEffect(() => {
