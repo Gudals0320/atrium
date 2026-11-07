@@ -51,7 +51,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 ### Agents working together
 
 - **Role links.** Draw a link from one session to another and give it a role, such as `worker` or `reviewer`. The agent learns how to hand work to that role through herdr, and the link lights up while work moves along it. Handoffs that agents make on their own through herdr are drawn too.
-- **Workers on demand.** Agents start their own workers with `atrium child`, with no limit on count or depth. The board's `atrium` skill tells them when to split work across workers and git worktrees. Workers show their parent and role in the header.
+- **Workers on demand.** Agents start their own workers with `atrium child`, with no limit on count or depth. The board's `atrium` skill tells them when to split work across workers and git worktrees. Workers line up to the right of their parent in the order they were started, and show their parent, role and number in the header.
 - **Models by name.** `atrium child --model "deepseek flash"` resolves a spoken model name against the models the board knows (`atrium models`), and model errors go back to the parent.
 - **Mission map and Thread.** `M` opens a map of who directs whom, grouped by repository. Thread keeps every prompt you sent from the command bar with its delivery state and the final report.
 - **Talk from the board.** Type `@name` or `@all` in the command bar. Each session has its own delivery queue, and a message is confirmed only when the agent actually submits it. Loops resend a prompt on a schedule or whenever a session goes idle.
