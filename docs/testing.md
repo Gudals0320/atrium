@@ -43,6 +43,7 @@
 - 원격 창 시험(`p59-remote.mjs`)은 가짜 tailscale(whois 포함)과 노트북마다 흉내 프록시를 쓰고, Chromium 플래그로 흉내 주소를 보안 출처로 맞추며, 패스키는 CDP 가상 인증기로 만든다(`p59-lib.mjs`).
 - 원격 끊김은 `ts-sim-proxy.mjs dropWs`로 흉내 내고, Safari는 Safari UA를 준 Chromium으로 본다(P82).
 - iOS 홈 화면 앱의 높이와 안전 영역은 `p83-phone.mjs`처럼 흉내 낸다. 작은 글자의 칸 수는 Windows Chromium이 iPhone보다 적다(P83).
+- 페이지 죽음은 CDP `Page.crash` 뒤 새 페이지로 흉내 낸다(P84).
 
 ## herdr를 부르는 시험
 
