@@ -49,7 +49,7 @@ export function formatStatus(d) {
 }
 
 // P58: 연결 기록 한 줄(CLI). 창은 locales의 remoteLog.* 열쇠를 쓴다
-const LOG_TEXT = { 'pair.request': '기기 등록 요청', 'pair.grant': '기기 등록 승인', 'pair.ok': '기기 등록 완료', login: '패스키 로그인', logout: '로그아웃', 'passkey.on': '패스키 인증 사용', 'passkey.off': '패스키 인증 사용 안 함', 'passkey.add': '패스키 등록', 'pair.fail': '기기 등록 실패', connect: '연결', disconnect: '연결 종료', deny: '거부', unpair: '기기 등록 해제', kick: 'PC에서 연결 종료', 'remote.block': '원격 접속 차단', 'remote.allow': '원격 접속 허용', boot: '화면이 닫힌 뒤 다시 열림', level: '보드 단계 기억', other: '기타' }; // P84: boot
+const LOG_TEXT = { 'pair.request': '기기 등록 요청', 'pair.grant': '기기 등록 승인', 'pair.ok': '기기 등록 완료', login: '패스키 로그인', logout: '로그아웃', 'passkey.on': '패스키 인증 사용', 'passkey.off': '패스키 인증 사용 안 함', 'passkey.add': '패스키 등록', 'pair.fail': '기기 등록 실패', connect: '연결', disconnect: '연결 종료', deny: '거부', unpair: '기기 등록 해제', kick: 'PC에서 연결 종료', 'remote.block': '원격 접속 차단', 'remote.allow': '원격 접속 허용', boot: '화면이 닫힌 뒤 다시 열림', level: '보드 단계 기억', 'push.on': '알림 켬', 'push.off': '알림 끔', 'push.fail': '알림 보내기 실패', other: '기타' }; // P84: boot. P88: push.*
 export function formatLogEntry(e) {
   const p2 = (n) => String(n).padStart(2, '0');
   const d = new Date(e.at);
@@ -58,6 +58,7 @@ export function formatLogEntry(e) {
   if (e.reason) parts.push(`사유=${e.reason}`);
   if (e.via) parts.push(`방법=${e.via === 'code' ? '코드' : '승인'}`);
   if (e.passkey === false) parts.push('패스키 없이'); // P62
+  if (e.host) parts.push(`푸시 서비스=${e.host}`); // P88
   if (e.deviceName || e.deviceId) parts.push(`기기=${e.deviceName || ''}${e.deviceId ? ` (${e.deviceId.slice(0, 8)})` : ''}`);
   if (e.node) parts.push(`Tailscale 기기=${e.node}`); // P59
   if (e.remote != null) parts.push(e.remote ? '바깥' : '이 PC');
@@ -139,6 +140,15 @@ const STOP = {
   unknown_op: '알 수 없는 명령입니다',
 };
 
+// P88: 시험 알림 결과 한 줄
+export function pushTestLine(x) {
+  const who = `${x.name || ''} (${String(x.id || '').slice(0, 8)})`;
+  if (x.ok) return `[ok]   ${who}: 시험 알림을 보냈습니다`;
+  const why = String(x.reason || '');
+  if (why.startsWith('gone_')) return `[안 됨] ${who}: 푸시 서비스가 구독을 버렸습니다(${why.slice(5)}). 휴대폰에서 알림을 다시 켜세요`;
+  return `[안 됨] ${who}: 보내지 못했습니다 (${why || 'error'})`;
+}
+
 export async function remoteCommand(cfg, rest, flags, connect) {
   const op = rest[0] || 'status';
   if (op === 'guide') return console.log(guideText(cfg.port, Number(flags['https-port']) || DEFAULT_HTTPS_PORT));
@@ -156,6 +166,19 @@ export async function remoteCommand(cfg, rest, flags, connect) {
       if (flags.json) return console.log(JSON.stringify(r, null, 2));
       if (!r.entries.length) return console.log('원격 연결 기록이 없습니다');
       for (const e of r.entries) console.log(formatLogEntry(e));
+    } finally { c.close?.(); }
+    return;
+  }
+  // P88: 알림을 켠 기기에 시험 알림을 보낸다. 기기를 주면(ID 앞부분, 이름, Tailscale 기기 이름) 그 기기에만
+  if (op === 'push-test') {
+    let c;
+    try { c = await connect(); } catch (e) { console.log(`백엔드가 실행 중이 아닙니다 (${(e && e.message) || e})`); process.exitCode = 1; return; }
+    try {
+      const r = await c.call('push.test', rest[1] ? { device: rest[1] } : {});
+      if (flags.json) return console.log(JSON.stringify(r, null, 2));
+      if (!r.results.length) { console.log(rest[1] ? `알림을 켠 기기 중에 '${rest[1]}'이(가) 없습니다` : '알림을 켠 기기가 없습니다. 휴대폰 홈 화면 앱의 세션 목록에서 알림을 켜세요'); process.exitCode = 1; return; }
+      for (const x of r.results) console.log(pushTestLine(x));
+      if (r.results.some((x) => !x.ok)) process.exitCode = 1;
     } finally { c.close?.(); }
     return;
   }
@@ -186,6 +209,6 @@ export async function remoteCommand(cfg, rest, flags, connect) {
     if (out.trim()) console.log(out.trim());
     return;
   }
-  console.log('사용: atrium remote status|guide|block|allow|enable|disable [--yes] [--https-port <포트>]');
+  console.log('사용: atrium remote status|guide|log|block|allow|enable|disable|push-test [기기] [--yes] [--https-port <포트>]');
   process.exitCode = 1;
 }

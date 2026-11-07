@@ -20,6 +20,9 @@ import { loginAllowed, parseLogins, isRemoteRequest, diagnose, requestAddr, node
 import { WebAuth, sessionIdOf, sessionCookie, clearCookies, isHttpsOrigin, sentSecureCookie, COOKIE_MAX_MS } from './web-auth.mjs'; // P56(S2·S3)
 import { PasskeyError, passkeyKind } from './passkey.mjs';
 import { RemoteLog, ConnectWatch, browserOf } from './remote-log.mjs'; // P58(S4): 연결 기록, 새로 붙음 알림
+import { Pusher } from './web-push.mjs'; // P88: 웹 푸시
+import { ACTIVE_MS } from './multiclient.mjs';
+import { UPDATE_REPO } from './update.mjs';
 
 export const PAIR_CODE_TTL_MS = 5 * 60_000;
 export const PAIR_REQUEST_TTL_MS = 2 * 60_000;
@@ -359,7 +362,7 @@ export function cleanupUploads(dir, { maxAgeMs = UPLOAD_MAX_AGE_MS, maxTotal = U
 export class WebServer {
   // api: ApiServer(clients, dropWhere), boot: () => 웹 창의 시작 값(프로필 등)
   // P49: tailscale(TailscaleWatch)가 있으면 이 PC의 Tailscale 이름을 Host 허용 목록에 저절로 넣고 로그인 사용자를 제한한다. settings()는 판 설정(remoteSameUser, remoteAllowedLogins)
-  constructor({ cfg, store, api, log = () => {}, recentDirs = () => [], now = Date.now, tailscale = null, settings = () => ({}) }) {
+  constructor({ cfg, store, api, log = () => {}, recentDirs = () => [], now = Date.now, tailscale = null, settings = () => ({}), wsName = () => null, pushTransport = undefined }) {
     this.cfg = cfg; this.api = api; this.log = log; this.recentDirs = recentDirs; this.now = now; this.tailscale = tailscale; this.settings = settings;
     this.baseHosts = allowedHosts(cfg.port);
     this.devices = new Devices({ store, now });
@@ -378,6 +381,20 @@ export class WebServer {
     // P59: PC에서 끊기·짝 풀기·원격 막기는 그 기기의 세션도 끝낸다(다시 붙으려면 패스키로 다시 확인)
     // P62: 패스키 끔이면 짝 풀기만 세션을 끝낸다. 끊기와 원격 막기는 연결만 닫고, 기기는 곧(원격 받기를 켜면) 다시 붙는다
     this.onDisconnectDevice(({ id, reason }) => { if (reason === 'revoke' || this.passkeyOn()) this.auth.sessions.endDevice(id); });
+    // P88: 웹 푸시. 개발용 판만 흉내 푸시 서비스의 출처(ATRIUM_PUSH_TEST_ORIGINS, 쉼표로 여럿)와 그 인증서(ATRIUM_PUSH_TEST_CA)를 받는다
+    const dev = cfg.profile === 'dev';
+    let ca = null; if (dev && envVar('PUSH_TEST_CA')) try { ca = fs.readFileSync(envVar('PUSH_TEST_CA')); } catch (e) { log(`push test CA unreadable: ${e.message}`); }
+    this.push = new Pusher({
+      store, keyFile: cfg.dataDir ? path.join(cfg.dataDir, 'vapid.json') : null, subject: envVar('PUSH_SUBJECT') || `https://github.com/${UPDATE_REPO}`, now, log,
+      note: (event, f) => { const d = f.deviceId ? this.devices.get(f.deviceId) : null; this.note(event, null, { ...f, deviceName: d && d.name, node: d && d.tsNode && d.tsNode.name }); },
+      watching: (id) => this.deviceConns(id).some((c) => c.pushVisible !== false), // 보이는지 알리지 않은 화면은 연결이 열려 있으면 보는 것으로
+      pcActive: () => !!this.api && [...this.api.clients].some((c) => !(c.auth && c.auth.device) && c.kind === 'desktop' && c.lastInputAt && this.now() - c.lastInputAt < ACTIVE_MS),
+      enabled: () => this.accepting(), wsName,
+      testOrigins: dev ? String(envVar('PUSH_TEST_ORIGINS') || '').split(',').map((x) => x.trim()).filter(Boolean) : [], ca,
+      ...(pushTransport ? { transport: pushTransport } : {}),
+      onChange: () => this.broadcastLocal(),
+    });
+    this.onDisconnectDevice(({ id, reason }) => { if (reason === 'revoke') this.push.forget(id, 'unpair'); }); // P88: 짝을 풀면 구독도 지운다
   }
   // P62: 판 설정 remotePasskey. 설정을 못 읽거나 값이 없으면 켬으로 본다(막는 쪽). 판 설정(settings.mjs)은 늘 값이 있고 기본은 끔이다
   passkeyOn() { try { const st = this.settings(); return !(st && st.remotePasskey === false); } catch { return true; } }
@@ -390,7 +407,7 @@ export class WebServer {
     const testSec = this.cfg.profile === 'dev' ? Number(envVar('WEB_SESSION_TEST_SEC')) : NaN;
     return { maxAgeMs: testSec > 0 ? testSec * 1000 : Number(st.remoteSessionHours) * 3600_000, idleMs: Number(st.remoteIdleMinutes) * 60_000 };
   }
-  stop() { clearInterval(this.sweepTimer); this.remoteLog.flush(); }
+  stop() { clearInterval(this.sweepTimer); this.remoteLog.flush(); this.push.stop(); }
   // P49: 허용 Host = 127.0.0.1·localhost(그 포트), ATRIUM_WEB_HOSTS, 이 PC의 Tailscale 이름
   get hosts() { const ts = this.tailscale ? this.tailscale.hosts() : []; if (!ts.length) return this.baseHosts; return new Set([...this.baseHosts, ...ts]); }
   policy() {
@@ -430,6 +447,7 @@ export class WebServer {
     if (on) return { closed: 0 };
     const conns = this.api ? [...this.api.clients].filter((c) => (c.auth && c.auth.device) || c.remote) : [];
     for (const id of new Set(conns.map((c) => c.auth && c.auth.device && c.auth.device.id).filter(Boolean))) this.runDisconnectHooks(id, 'blocked');
+    this.push.dropAll('blocked'); // P88: 원격 접속을 막으면 모든 기기의 푸시 구독도 지운다(다시 허용하면 휴대폰에서 다시 켠다)
     if (this.passkeyOn()) this.auth.sessions.endAll(); // P59: 붙어 있지 않은 기기의 세션도 모두 끝낸다(켠 뒤에는 패스키로 다시 확인). P62: 끔이면 세션은 남아 켜면 다시 붙는다
     if (this.pairing.currentCode()) this.pairing.cancelCode();
     return { closed: this.closeConns(conns, 4403, 'remote access is blocked on the PC', 'blocked') };
@@ -513,7 +531,7 @@ export class WebServer {
   }
   // 판 API 토큰 클라이언트(PC 창, CLI)에만: 기기 목록과 허락 요청
   // P62: needsPasskey = 패스키 켬인데 패스키 없이 짝 맺은 기기(다음 접속 때 "패스키 등록" 화면을 본다)
-  devicesView() { const on = this.passkeyOn(); return this.devices.list().map((d) => ({ ...d, sessions: this.auth.sessions.countFor(d.id), needsPasskey: on && !d.passkey && !d.needsRepair })); }
+  devicesView() { const on = this.passkeyOn(); return this.devices.list().map((d) => ({ ...d, sessions: this.auth.sessions.countFor(d.id), needsPasskey: on && !d.passkey && !d.needsRepair, push: this.push.deviceView(d.id) })); } // P88: 알림 켜짐, 마지막으로 보낸 때
   view() { return { devices: this.devicesView(), requests: this.pairing.pending(), code: this.pairing.currentCode(), passkey: this.passkeyOn() }; }
   broadcastLocal() {
     if (!this.api) return;
@@ -762,6 +780,29 @@ export class WebServer {
     out.on('error', (e) => { if (!over) fail(apiErr('write_failed', e.message, 500)); });
   }
 
+  // P88: 웹 푸시. 기기는 자기 구독만 바꾼다. 시험 알림은 기기(자기에게)와 이 PC(모두나 기기 하나에게)가 보낸다
+  pushHandlers() {
+    const me = (c) => { const d = c && c.auth && c.auth.kind === 'device' && c.auth.device; if (!d) throw apiErr('forbidden', 'only a paired browser can do this', 403); return d; };
+    return {
+      'push.key': (p, c) => { me(c); return { publicKey: this.push.publicKey() }; },
+      'push.status': (p, c) => this.push.status(me(c).id),
+      'push.subscribe': (p, c) => this.push.subscribe(me(c).id, p && p.subscription, p && p.lang),
+      'push.unsubscribe': (p, c) => this.push.unsubscribe(me(c).id, 'user'),
+      'push.prefs': (p, c) => this.push.setPrefs(me(c).id, p || {}),
+      // 이 연결이 화면에 보이는가(보는 중이면 그 기기에 보내지 않는다)
+      'push.visible': (p, c) => { me(c); c.pushVisible = !!(p && p.visible); return { ok: true }; },
+      'push.test': async (p, c) => {
+        if (c && c.auth && c.auth.kind === 'device') return this.push.test(me(c).id);
+        if (c && c.auth && c.auth.kind !== 'local') throw apiErr('forbidden', 'only the board on this PC can do this', 403);
+        const want = p && p.device ? String(p.device) : null;
+        const list = this.devices.list().filter((d) => this.push.deviceView(d.id).on && (!want || d.id === want || d.id.startsWith(want) || d.name === want || (d.tsNode && d.tsNode.name === want)));
+        const results = [];
+        for (const d of list) { let r; try { r = await this.push.test(d.id); } catch (e) { r = { ok: false, reason: e.code || 'error' }; } results.push({ id: d.id, name: (d.tsNode && d.tsNode.name) || d.name, ...r }); }
+        return { results };
+      },
+    };
+  }
+
   // 판 API(WebSocket)에 더하는 것. c.auth.kind가 'local'(PC 창·CLI)이어야 하는 것은 localOnly로 막는다
   handlers() {
     const localOnly = (fn) => (p, c) => { if (c && c.auth && c.auth.kind !== 'local') throw apiErr('forbidden', 'only the board on this PC can do this', 403); return fn(p, c); };
@@ -801,6 +842,7 @@ export class WebServer {
         return { logged: true };
       },
       'remote.status': (p) => this.remoteStatus({ fresh: !!(p && p.fresh) }), // P49
+      ...this.pushHandlers(), // P88
       'fs.roots': async () => {
         const drives = await driveRoots();
         const seen = new Set(); const recent = [];
