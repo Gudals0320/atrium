@@ -29,7 +29,7 @@
 ### 완료 기준
 
 1. 단위 시험: 상태 → 강조 등급(일함·내 차례·쉼·잠듦·끝남, 셸 실행 중) 판단, 켜기·끄기 저장.
-2. 창 시험(개발용 판, 셸과 `claude --model haiku` 세션)으로 1의 장면을 고치기 전과 뒤로 같은 배율에서 찍어 `experiments/p85/`에 둔다. 휴대폰 보드 화면은 원격 흉내(`app/test/e2e/p59-lib.mjs`, iPhone 흉내 Chromium)로 찍는다. 시험 저장소는 P75·P78과 같은 경로 `C:\\Workspace\\mtask-p75-repo`를 새로 만들어 쓴다(사용자가 그 경로의 신뢰를 이미 주었다). 신뢰 질문이 뜨면 `backend/.dev/p85-need-trust.txt`에 한 줄을 두고 기다린다.
+2. 창 시험(개발용 판, 셸과 `claude --model haiku` 세션)으로 1의 장면을 고치기 전과 뒤로 같은 배율에서 찍어 `experiments/p85/`에 둔다. 휴대폰 보드 화면은 원격 흉내(`app/test/e2e/p59-lib.mjs`, iPhone 흉내 Chromium)로 찍는다. 시험 저장소는 P75·P78과 같은 경로 `C:\Workspace\mtask-p75-repo`를 새로 만들어 쓴다(사용자가 그 경로의 신뢰를 이미 주었다). 신뢰 질문이 뜨면 `backend/.dev/p85-need-trust.txt`에 한 줄을 두고 기다린다.
 3. `cd backend && npm test`, `cd app && npm test`, `cd app && npm run build`가 통과한다.
 
 ### 읽을 파일
