@@ -28,6 +28,8 @@ import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: �
 import { LIST_PREF } from './lib/touch-board.js'; // P76: 목록 단추(태블릿 보드에는 보이지 않는다)
 import { PhoneMission } from './PhoneMission.jsx'; // P87: 휴대폰 미션 맵
 import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 알약을 바꾸지 않는다
+import { PushButton, PushSheet } from './PhonePush.jsx'; // P88: 알림(웹 푸시)
+import { setOpenHandler, launchOpen, clearLaunchOpen } from './push.js'; // P88: 알림을 누르면 그 세션으로
 import { reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록). P86: 보드 단계
 import './phone.css';
 
@@ -172,6 +174,15 @@ export function PhoneApp() {
   // 연 세션이 사라지면 목록으로
   useEffect(() => { if (open && getState().boardLoaded && !sessions.has(open)) { const m = nav.mission; setNav({ open: null, mission: m }); try { history.replaceState(m ? { mtMission: true } : null, ''); } catch {} } }, [open, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   window.__mtPhone = { open: (id) => go(id), list: () => go(null), mission: () => mission(true) }; // 시험이 부른다
+  // P88: 알림을 누르면 그 세션을 연다. 열린 창이면 서비스 워커의 메시지로, 새로 열었으면 주소의 ?open=으로(세션이 들어온 뒤 한 번)
+  const goRef = useRef(go); goRef.current = go;
+  useEffect(() => setOpenHandler((id) => { if (getState().sessions.has(id)) goRef.current(id); }), []);
+  const launch = useRef(launchOpen());
+  useEffect(() => {
+    const id = launch.current;
+    if (!id) return;
+    if (sessions.has(id)) { launch.current = null; clearLaunchOpen(); goRef.current(id); } else if (getState().boardLoaded) { launch.current = null; clearLaunchOpen(); }
+  }, [sessions]);
 
   const s = open ? sessions.get(open) : null;
   return (
@@ -266,6 +277,7 @@ function PhoneList({ onOpen, onNew, onMission }) {
   const loaded = useStore((st) => st.boardLoaded);
   const now = useNow(15000);
   const [folded, setFolded] = useState(readFolded);
+  const [pushOpen, setPushOpen] = useState(false); // P88
   const list = useMemo(() => phoneList([...sessions.values()], workspaces), [sessions, workspaces]);
   const wsName = (k) => { const w = workspaces.find((x) => x.key === k); return w ? w.name : null; };
   const toggle = (k) => setFolded((f) => { const n = new Set(f); const key = k || '-'; if (n.has(key)) n.delete(key); else n.add(key); try { store().setItem('mt.phoneFolded', JSON.stringify([...n])); } catch {} return n; });
@@ -277,6 +289,7 @@ function PhoneList({ onOpen, onNew, onMission }) {
       <header className="mt-ph-head">
         <img className="mt-ph-brand" src={BRAND_WORDMARK} alt="Atrium" draggable={false} />
         <ConnPill />
+        <PushButton onClick={() => setPushOpen(true)} />
         <button type="button" className="mt-ph-icon" data-action="phone-mission" title={t('phoneMission.open')} aria-label={t('phoneMission.open')} onClick={onMission}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v5H9zM3 16h6v5H3zM15 16h6v5h-6zM12 8v4M6 16v-4h12v4" /></svg>
         </button>
@@ -314,6 +327,7 @@ function PhoneList({ onOpen, onNew, onMission }) {
         {nextId && <button type="button" className="mt-ph-next" data-action="phone-next" onClick={() => onOpen(nextId)}>{t('phone.nextNeed', { n: list.needs.length })}</button>}
         <button type="button" className={`mt-ph-new${nextId ? '' : ' wide'}`} data-action="phone-new" onClick={onNew}>{t('phone.newSession')}</button>
       </footer>
+      {pushOpen && <PushSheet onClose={() => setPushOpen(false)} />}
     </div>
   );
 }

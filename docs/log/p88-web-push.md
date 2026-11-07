@@ -92,4 +92,56 @@
 
 ## 작업 기록
 
+- 시작: `git fetch origin && git merge --ff-only origin/dev`(e4e11af). 워크트리 안에서 `npm ci`(백엔드, 창)와 Electron 받기. 물려받은 판 변수를 지우는 `backend/.dev/clean-env.sh`와 이 판의 값(atrium-dev-p88, 47897, `backend/.dev/data`·`app`)만 넣는 `backend/.dev/p88.sh`를 만들어 시험, 빌드, CLI를 그것으로 불렀다(git 밖). 처음 쓴 `p88.sh`는 경로 계산이 틀려 다른 데이터 폴더를 가리켰다. 그 판은 뜨지 않았고(“실행 중이 아닙니다”), 경로를 고정 값으로 고쳤다.
+- RFC 8291 부록 A를 rfc-editor.org 원문에서 받아 시험 벡터로 썼다. 머리 86바이트와 암호문이 그대로 나온다.
+- 백엔드: `backend/src/web-push.mjs`(VAPID 키·JWT, aes128gcm, 허용 목록, 주소 막기, 알릴 때 판단, 구독 기록, 보내기). `web.mjs`에 `push.*` API와 짝 풀기·원격 막기 고리, 기기 목록의 `push`. `backend.mjs` broadcastSession이 상태 바뀜마다 `push.onState`를 부른다. 연결 기록에 `push.on`·`push.off`·`push.fail`(+ `host` 필드). CLI `atrium remote push-test [기기]`.
+- 창: `lib/push.js`(순수 함수), `push.js`(보이는 상태 알리기, 켜기·끄기, 누르면 그 세션), `PhonePush.jsx`(종 단추와 시트), `sw.js`의 `push`·`notificationclick`, `Phone.jsx`(종 단추, `?open=`, 서비스 워커 메시지), `WebDevices.jsx`(기기 줄의 알림 켜짐·마지막 알림, 기록 줄), `lib/remote.js`, `phone.css`·두 사전 끝에 더함.
+- 창 시험 첫 번째(run1) 17/25: 판의 화면 말이 영어(기본)라 한국어 글을 기대한 검사가 틀렸고, CLI를 `execFileSync`로 불러 같은 프로세스의 흉내 푸시 서비스가 응답하지 못해(시간 초과) 그 뒤 검사가 따라 틀렸다. 시험이 판 말을 `ko`로 두고 CLI를 기다리지 않고 부르게 고쳤다. 화면 말을 바꾸면 알림 글의 말도 따라가게 했다(`onLanguage` → `push.prefs`).
+- 창 시험 두 번째(run2) 25/25. 끝난 뒤 시험 세션, 백엔드, herdr 서버(`atrium-dev-p88`), 시험 폴더를 끄고 지웠다. 47897·47898·47899·9377과 `atrium-dev-p88` 프로세스가 남지 않은 것을 확인했다.
+
 ## 보고
+
+### 한 것
+
+- **보내기(백엔드).** 암호화(RFC 8291 aes128gcm)와 서명(RFC 8292 VAPID, ES256, `ieee-p1363` 서명)은 `node:crypto`로 직접 했다. `web-push` 패키지는 의존성 넷(http_ece, asn1.js, jws, https-proxy-agent)을 데려오는데 쓰는 것은 함수 셋이다. 직접 한 것은 RFC 8291 부록 A 벡터와 같은 바이트로 확인했다. VAPID 키는 처음 쓸 때 `<데이터 폴더>/vapid.json`(0600, 데이터 폴더는 사용자 프로필 아래)에 만든다. JWT는 aud = endpoint 출처, exp = 12시간(24시간 이하), sub = 저장소 주소(`ATRIUM_PUSH_SUBJECT`로 바꿈). TTL 4시간, 응답 필요·오류·시험은 Urgency high, 끝남만이면 normal.
+- **구독.** 기기(짝 맺은 기기)마다 하나를 판 기록(meta `webPush`)에 둔다. 짝을 풀면 기록째 지우고, 원격 접속을 막거나 푸시 서비스가 404·410을 주면 구독만 지운다(종류·PC 설정은 남는다). 500 등은 `push.fail`과 마지막 실패만 남기고 구독은 둔다.
+- **SSRF.** endpoint는 https, 포트 443, 사용자 정보 없음, IP 아님, 그리고 `*.push.apple.com`(Apple이 허용하라고 안내하는 범위, iOS는 web.push.apple.com), `fcm.googleapis.com`(Chrome·Android), `updates.push.services.mozilla.com`(Firefox), `*.notify.windows.com`(Edge WNS)만 받는다. 보낼 때 이름이 사설·루프백·링크 로컬·100.64/10(Tailscale)·IPv4 매핑 주소로 풀리면 보내지 않는다. 리디렉션은 따르지 않는다. 개발용 판만 `ATRIUM_PUSH_TEST_ORIGINS`(정확한 출처)와 `ATRIUM_PUSH_TEST_CA`를 더 받는다.
+- **알릴 때.** 셸이 아닌 세션의 `working → ready`(끝남), `waiting`·`trust_wait`(응답 필요), `error`, `exited`의 `other`(예기치 않은 끝남, 오류 설정을 따른다). 사람이 끄거나 판이 끈 것(`normal`, `herdr_stopped`)과 백엔드를 다시 켠 뒤 처음 보는 상태는 뺀다. 같은 세션·같은 종류는 30초에 한 번, 기기마다 1.5초 안에 생긴 것을 한 알림으로 묶는다(“세션 3개”, 이름 넷까지, 누르면 응답 필요 세션이 먼저). 글은 “@이름 · 끝남/응답 필요/오류/세션 꺼짐”과 프로젝트 이름뿐이다. 연결 기록에는 알림 내용이 남지 않는다(`push.on`의 푸시 서비스 이름만).
+- **보내지 않는 때.** 그 기기가 판 화면을 보고 있으면(연결 열림, `push.visible` 참. 알리지 않은 화면은 연결이 열려 있으면 보는 것으로), 원격 접속을 막았으면, 그 종류를 껐으면. PC 사용 중에도 받기(기기 설정)의 기본은 **끔**이다: PC의 보드 창에 최근 5분 안에 입력했으면(P47의 활성 기준과 같다) 사람이 PC 앞에 있고 응답 필요는 PC OS 알림이 이미 띄운다. 휴대폰까지 울리면 같은 일을 두 번 알린다.
+- **휴대폰 화면.** 목록 머리줄의 종 단추 → 알림 시트: 알림 받기, 종류별 셋, PC를 쓰는 중에도 받기, 시험 알림 보내기, 개인 정보 안내. iOS 탭이면 “홈 화면에 추가한 앱에서 알림을 받을 수 있습니다”와 세 단계. 권한 거절, 구독 실패, 허용하지 않은 푸시 서비스, 지원 안 함, 구독 만료를 각각 알린다. 권한은 단추를 누른 동작 안에서 첫 `await`로 묻는다(공개 키는 시트를 열 때 미리 받는다).
+- **서비스 워커.** `push`는 본문을 다시 잘라(`lib/push.js`) 알림을 띄운다. 모르는 본문도 “Atrium”으로 띄운다(iOS는 푸시마다 알림이 있어야 한다). `notificationclick`은 열린 앱 창을 앞으로 가져와 `atrium-open` 메시지로 그 세션을 열고, 창이 없으면 `?open=<세션 ID>`로 연다. 캐시 규칙(`sw-rules.js`)은 바꾸지 않았다.
+- **PC.** 설정 › 연결된 기기의 기기 줄에 “알림 켜짐 (마지막 알림 …)”과 마지막 실패. 연결 기록 줄(알림 켬·끔·보내기 실패와 까닭). CLI `atrium remote push-test [기기]`, `atrium remote log`에 같은 줄.
+
+### 시험
+
+- 단위: 백엔드 621개 통과(새 `p88.test.mjs` 16개: RFC 8291 벡터, JWT 모양·만료·서명, 키 파일, 허용 목록과 주소 막기, 상태 → 종류, 글, 머리글과 풀어 본 내용에 질문·요청·답·오류 글 없음, 묶기·30초, 보는 중·PC 사용 중·종류 끔·원격 막음, 404·410·500, 짝 풀기·원격 막기). 창 336개 통과(새 `p88-lib.test.mjs` 6개). `npm run build` 통과.
+- 창(`app/test/e2e/p88-push.mjs`, 개발용 판, 흉내 원격, Chromium iPhone 흉내) 25/25. 결과 `experiments/p88/p88-push.json`, 스크린숏 `01-install-hint`~`05-gone`.
+  - 구독: Playwright Chromium의 진짜 `subscribe`는 Google FCM에 등록하므로 부르지 않고, `PushManager.subscribe`를 흉내 내어 흉내 푸시 서비스(로컬 https 47899, 자체 서명 인증서) 주소와 시험이 쥔 키를 주었다. 화면이 받은 VAPID 공개 키가 그대로 subscribe에 들어갔다.
+  - 흉내 푸시 서비스가 받은 요청: ES256 서명이 맞고, aud = 그 출처, exp 12시간, k = 공개 키, TTL 14400, aes128gcm. 풀어 본 내용은 “@p88-a · 끝남”/“@p88-a · 응답 필요”와 “mtask-p88-a”뿐이고 요청 글·답 낱말·명령이 없다.
+  - 보이는 동안 끝남 → 0번, 가려짐 흉내 뒤 끝남 → 1번(normal), 응답 필요 → 1번(high). 시험 알림, CLI 시험 알림, 410 → 구독 지움(휴대폰 시트 “만료”), 짝 풀기 → `push.off unpair`.
+  - 서비스 워커 `push`는 CDP `ServiceWorker.deliverPushMessage`로 받은 내용을 넣어 `getNotifications()`로 확인했다. `notificationclick`은 CDP로 누를 수 없어, 그 뒤 화면 쪽(서비스 워커 메시지 → 세션 화면, `?open=` 주소 → 세션 화면)과 주소 만들기(단위 시험)만 확인했다.
+- 하지 않은 것: 실제 iPhone과 Apple 푸시 서버(지시대로 보내지 않음), WebKit(Windows의 Playwright WebKit에는 웹 푸시가 없다), 두 세션 묶음의 창 시험(단위 시험만).
+
+### 사람이 iPhone으로 받는 순서
+
+1. PC 판이 원격 접속을 허용하고 휴대폰이 짝 맺어져 있다(Tailscale https 주소).
+2. iPhone Safari에서 판 주소를 열고 공유 단추 → “홈 화면에 추가”. 홈 화면의 Atrium을 연다(iOS 16.4 이상).
+3. 세션 목록 머리줄의 종 단추 → “알림 받기”를 켠다 → iOS가 묻는 알림 허용을 누른다. “이 기기에서 알림을 받습니다”가 보이고, PC 설정 › 연결된 기기의 그 기기 줄에 “알림 켜짐”이 보인다.
+4. “시험 알림 보내기”(또는 PC에서 `atrium remote push-test`)를 누르고 홈 화면으로 나간다. “Atrium 시험 알림”이 온다.
+5. 앱을 닫거나 홈 화면으로 나간 채 PC에서 세션에 일을 시킨다. 턴이 끝나면 “@이름 · 끝남”, 권한·질문에서 멈추면 “@이름 · 응답 필요”가 온다(앱을 보고 있는 동안에는 오지 않는다. PC 보드 창에 5분 안에 입력했으면 “PC를 쓰는 중에도 받기”를 켜야 온다).
+6. 알림을 누르면 앱이 열리고 그 세션 화면으로 간다.
+7. 안 오면: PC 설정 › 연결된 기기의 연결 기록에서 “알림 보내기 실패”의 까닭(예: `http_403`은 Apple이 서명을 거절함)을 본다. 구독이 만료되면 시트에 “다시 켜세요”가 보인다.
+
+### 남은 것과 주의
+
+- 실제 Apple 푸시 서버로는 보내 보지 않았다. Apple은 JWT `sub`가 올바르지 않으면 403(BadJwtToken)을 준다. 지금 `sub`는 저장소 https 주소다. 사람이 처음 받을 때 403이면 `ATRIUM_PUSH_SUBJECT`(mailto: 또는 https)로 바꿔 본다.
+- 웹 화면은 원래(P48) 첫 터치에서 알림 권한을 묻는다(`web.js` askPermission). 홈 화면 앱에서 시트를 열기 전에 권한 대화상자가 먼저 뜰 수 있다. 바꾸지 않았다. 휴대폰에서는 빼는 것을 권한다.
+- 원격 접속을 막았다가 다시 허용하면 휴대폰에서 알림을 다시 켜야 한다(지시의 “막으면 구독도 지운다”를 따름).
+
+### 문서에 고칠 문장(예산이 차서 바꾸는 문장보다 짧게)
+
+- BRIEF “정한 것” 원격 행 끝에 더함: “P88: 홈 화면 앱에 웹 푸시(끝남·응답 필요·오류, 이름과 종류만).” 그만큼 다른 문장을 줄인다.
+- ARCH 1절 원격 문단: “웹 푸시(`web-push.mjs`): VAPID·aes128gcm을 node:crypto로, 알려진 푸시 서비스만, 보는 기기·PC 사용 중은 뺀다.”
+- ARCH API 표: `push.key|status|subscribe|unsubscribe|prefs|visible|test`(기기, `push.test`는 PC도).
+- testing.md 원격 줄 끝: “웹 푸시는 흉내 푸시 서비스(`ATRIUM_PUSH_TEST_ORIGINS`·`_CA`, 개발용 판만)와 흉내 subscribe로(P88).”
+- README 원격 절: “휴대폰 홈 화면 앱에서 세션이 끝나거나 답이 필요하면 알림을 받는다.”

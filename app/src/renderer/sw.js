@@ -4,6 +4,7 @@
 // API·WebSocket·짝 맺기·로그인 응답은 캐시하지 않고 응답하지도 않는다(브라우저가 그대로 백엔드에 묻는다).
 /* global __SW_VERSION__, __SW_SHELL__ */
 import { swRoute, cacheableResponse, cacheName, staleCaches } from './lib/sw-rules.js';
+import { notificationOf, clickUrl } from './lib/push.js'; // P88
 
 const VERSION = __SW_VERSION__;
 const SHELL = __SW_SHELL__;
@@ -51,4 +52,27 @@ self.addEventListener('fetch', (e) => {
 
 self.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage({ version: VERSION });
+});
+
+// P88: 웹 푸시. 본문은 세션 이름과 종류뿐이다(lib/push.js가 다시 자른다). iOS는 푸시마다 알림을 보여야 하므로 모르는 본문도 앱 이름으로 띄운다
+self.addEventListener('push', (e) => {
+  let msg = null;
+  try { msg = e.data ? e.data.json() : null; } catch { msg = null; }
+  const n = notificationOf(msg);
+  e.waitUntil(self.registration.showNotification(n.title, n.options));
+});
+// 누르면 열린 앱 창을 앞으로 가져와 그 세션을 열게 하고(postMessage), 창이 없으면 그 세션 주소로 새로 연다
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const data = e.notification.data || {};
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const w = wins.find((c) => { try { return new URL(c.url).origin === self.location.origin; } catch { return false; } });
+    if (w) {
+      try { await w.focus(); } catch {}
+      if (data.sessionId) w.postMessage({ type: 'atrium-open', sessionId: data.sessionId });
+      return;
+    }
+    await self.clients.openWindow(clickUrl(data, self.registration.scope));
+  })());
 });

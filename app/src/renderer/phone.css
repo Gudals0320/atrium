@@ -269,3 +269,20 @@ html.mt-full-on, html.mt-full-on body { background: var(--chrome-bg); }
 .mt-pm-row.t-review .mt-pm-state { color: var(--st-review); }
 .mt-pm-row.t-rest .mt-pm-card { opacity: .8; }
 .mt-pm-row.t-sleep .mt-pm-card, .mt-pm-row.t-done .mt-pm-card { opacity: .5; border-style: dashed; }
+
+/* P88: 알림 시트(웹 푸시) */
+.mt-ph-push-line { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--text-2); }
+.mt-ph-push-line[data-on="1"] { color: var(--text); }
+.mt-ph-push-steps { margin: 0; padding: 10px 12px 10px 30px; border-radius: 12px; background: var(--info-bg); font-size: 14px; line-height: 1.55; display: grid; gap: 4px; }
+.mt-ph-switchrow { min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--panel-line); background: var(--panel-2); color: var(--text); font-size: 15.5px; }
+.mt-ph-switchrow.off { opacity: .55; }
+.mt-ph-switchrow-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.mt-ph-switchrow-text b { font-weight: 650; }
+.mt-ph-switchrow-text small { font-size: 12.5px; color: var(--dim); line-height: 1.4; }
+.mt-ph-switchrow input[type="checkbox"].mt-switch { width: 46px; height: 28px; }
+.mt-ph-switchrow input[type="checkbox"].mt-switch::after { top: 2px; left: 2px; width: 22px; height: 22px; }
+.mt-ph-switchrow input[type="checkbox"].mt-switch:checked::after { transform: translateX(18px); }
+.mt-ph-push-test { min-height: 48px; }
+.mt-ph-push-test:disabled { opacity: .5; }
+.mt-ph-push-err { margin: 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--text); font-size: 14px; line-height: 1.45; }
+.mt-ph-push-note { margin: 0; font-size: 12.5px; color: var(--dim); line-height: 1.45; }

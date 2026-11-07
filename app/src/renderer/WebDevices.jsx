@@ -268,6 +268,9 @@ function DeviceRow({ d, on, onKick, onRevoke }) {
         {on ? <b className="mt-dev-on">{t('devTab.online')}</b> : t('webDevices.lastSeen', { at: when(d.lastSeenAt) })}
         {d.sessions != null && !rep && <span data-role="device-sessions"> · {t('webDevices.sessions', { n: d.sessions })}</span>}
         {d.needsPasskey && !rep && <span className="mt-wdev-warn" data-role="needs-passkey" title={t('devTab.needsPasskeyHint')}> · {t('devTab.needsPasskey')}</span>}
+        {/* P88: 알림(웹 푸시) 켜짐과 마지막으로 보낸 때, 마지막 실패 */}
+        {d.push && d.push.on && !rep && <span data-role="device-push" data-on="1"> · {t('push.pcOn')}{d.push.lastSentAt ? ` (${t('push.pcLast', { at: when(d.push.lastSentAt) })})` : ''}</span>}
+        {d.push && d.push.on && d.push.lastFail && !rep && <span className="mt-wdev-warn" data-role="device-push-fail"> · {t('push.pcFail', { reason: d.push.lastFail.reason })}</span>}
       </span>
       <span className="mt-dev-acts">
         {on && <button type="button" className="mt-btn small" onClick={() => onKick(d)} data-action="device-disconnect" title={t('peers.kickHint')}>{t('peers.kick')}</button>}
@@ -390,7 +393,7 @@ function RemoteLog() {
             return (
               <div key={`${e.at}-${i}`} className={`mt-remote-log-row${r.bad ? ' bad' : ''}`} data-event={e.event} data-reason={e.reason || ''}>
                 <span className="dim mono">{new Date(e.at).toLocaleString()}</span>
-                <span className="mt-remote-log-ev">{t(r.key)}{r.noPasskey ? ` · ${t('remoteLog.noPasskey')}` : ''}{r.reason ? ` · ${reasonText(r.reason)}` : ''}{r.count ? ` ×${r.count}` : ''}{r.sock ? <span className="mono dim" data-role="remote-log-sock">{` · ${r.sock}`}</span> : null}{r.prev ? <span className="mono dim" data-role="remote-log-prev">{` · ${t('remoteSock.prevClose', { v: r.prev })}`}</span> : null}{r.light ? ` · ${t('remoteCrash.light')}` : ''}{r.crash ? <span className="mono dim" data-role="remote-log-crash">{` · ${t('remoteCrash.last', { v: r.crash })}`}</span> : null}{r.level != null ? ` · ${t('remoteSteps.level', { n: r.level })}` : ''}{r.steps ? <span className="mono dim" data-role="remote-log-steps">{` · ${t('remoteSteps.steps', { v: r.steps })}`}</span> : null}</span>
+                <span className="mt-remote-log-ev">{t(r.key)}{r.noPasskey ? ` · ${t('remoteLog.noPasskey')}` : ''}{r.reason ? ` · ${r.key.startsWith('push.') ? tOr(`push.reason_${r.reason}`, reasonText(r.reason)) : reasonText(r.reason)}` : ''}{r.host ? ` · ${r.host}` : ''}{r.count ? ` ×${r.count}` : ''}{r.sock ? <span className="mono dim" data-role="remote-log-sock">{` · ${r.sock}`}</span> : null}{r.prev ? <span className="mono dim" data-role="remote-log-prev">{` · ${t('remoteSock.prevClose', { v: r.prev })}`}</span> : null}{r.light ? ` · ${t('remoteCrash.light')}` : ''}{r.crash ? <span className="mono dim" data-role="remote-log-crash">{` · ${t('remoteCrash.last', { v: r.crash })}`}</span> : null}{r.level != null ? ` · ${t('remoteSteps.level', { n: r.level })}` : ''}{r.steps ? <span className="mono dim" data-role="remote-log-steps">{` · ${t('remoteSteps.steps', { v: r.steps })}`}</span> : null}</span>
                 <span className="mt-remote-log-who">{r.who || ''}{r.remote === true ? ` · ${t('peers.remote')}` : r.remote === false ? ` · ${t('remoteLog.local')}` : ''}{r.browser ? ` · ${r.browser}` : ''}</span>
               </div>
             );
