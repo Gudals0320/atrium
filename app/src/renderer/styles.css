@@ -1488,6 +1488,3 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 .mt-sel-dirglyph.tall { width: 8px; height: 13px; vertical-align: -3px; }
 .mt-btn.mt-preset.glyph { line-height: 1; min-width: 26px; height: 24px; padding: 0 6px; }
 .mt-preset-glyph { font-size: 12px; font-weight: 650; letter-spacing: .02em; }
-/* P77: 창 그룹을 고르면 크기 막대 앞에 "칸마다"(막대의 방향·크기·비율이 세션 칸 하나 기준). 많이 줄인 막대에서는 숨기고 도움말만 남긴다 */
-.mt-sel-unit { font-size: 11px; white-space: nowrap; margin-right: -2px; cursor: help; }
-.mt-selbar[data-compact="3"] .mt-sel-unit, .mt-selbar[data-compact="4"] .mt-sel-unit { display: none; }
