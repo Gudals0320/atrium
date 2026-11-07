@@ -453,7 +453,8 @@ export class WebServer {
     const d = c && c.auth && c.auth.device;
     if (!d) return;
     const m = c.auth.meta || {};
-    this.note('connect', null, { ...m, deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name }); // P59: Tailscale 기기 이름
+    // P59: Tailscale 기기 이름. P82: 원격이면 압축을 협상했는지와 창이 본 직전 닫힘
+    this.note('connect', null, { ...m, deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, ...(c.remote ? { ws: { deflate: !!c.deflate }, prev: c.prevClose } : {}) });
     if (this.watch.opened(d.id)) this.sendLocal('remote.connected', { kind: 'connected', device: { id: d.id, name: d.name }, remote: !!m.remote, login: m.login || null, browser: m.browser || null, at: this.now() });
   }
   clientClosed(c) {
@@ -462,7 +463,7 @@ export class WebServer {
     this.watch.closed(d.id);
     // P59: 세션의 끊긴 시각을 지금으로(15초 정리를 기다리지 않는다). 끊긴 채 remoteIdleMinutes가 지나면 세션이 끝난다
     if (c.auth.session) this.auth.sessions.touch(c.auth.session);
-    this.note('disconnect', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, reason: c.closeReason || 'closed' });
+    this.note('disconnect', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, reason: c.closeReason || 'closed', ...(c.wsStats ? { ws: c.wsStats.summary({ ...(c.wsClose || {}), error: c.wsError, deflate: !!c.deflate }) } : {}) }); // P82
   }
   // P56: 짝 맺기는 패스키 등록을 마칠 때 끝난다(기기가 생긴다)
   // P62: passkey = false면 패스키 없이 짝 맺음(연결 기록에 남긴다)

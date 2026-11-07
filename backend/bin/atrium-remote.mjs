@@ -8,6 +8,7 @@
 import { execFile } from 'node:child_process';
 import { readTailscale, diagnose, tailscaleBin, tailscaleHosts, serveCommand, serveOffCommand, portConflict, freeHttpsPort, DEFAULT_HTTPS_PORT } from '../src/tailscale.mjs';
 import { allowedHosts } from '../src/web.mjs';
+import { wsLabel } from '../src/remote-ws.mjs'; // P82
 
 const MARK = { ok: '[ok]  ', warn: '[주의]', fail: '[안 됨]', skip: '[-]   ' };
 
@@ -63,6 +64,8 @@ export function formatLogEntry(e) {
   if (e.addr) parts.push(`주소=${e.addr}`);
   if (e.browser) parts.push(e.browser);
   if (Number.isInteger(e.n)) parts.push(`닫은 연결 ${e.n}개`);
+  if (e.ws) parts.push(`소켓=${wsLabel(e.ws)}${e.ws.out != null ? ` 보냄 ${e.ws.out}개 ${e.ws.outB}B 받음 ${e.ws.in}개 ${e.ws.inB}B${e.ws.last ? ` 마지막 ${e.ws.last.join(',')}` : ''}` : ''}`); // P82
+  if (e.prev) parts.push(`직전 닫힘=${e.prev.code}${e.prev.clean ? '' : ' (깨끗하지 않음)'} ${(e.prev.ms / 1000).toFixed(1)}s`); // P82: 창이 본 것
   if (e.count > 1) parts.push(`×${e.count}`);
   return parts.join('  ');
 }
