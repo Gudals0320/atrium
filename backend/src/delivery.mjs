@@ -28,9 +28,12 @@ export function blockReason(view, now, cfg) {
 export class DeliveryQueue extends EventEmitter {
   // view(sessionId, delivery) → { state, agentPresent, herdrConnected, lastUserInputAt, closed }
   // send(sessionId, text) → Promise. herdr 오류는 code를 가진 Error로 던진다.
-  constructor({ store, cfg, view, send }) {
+  // P79: inspect(sessionId, text) → { box: 'ours'|'empty'|'other'|'unknown', seen }(화면의 입력 칸), pressEnter(sessionId) → Promise.
+  //   보낸 뒤 cfg.submitRetryMs 동안 제출 확인이 없으면 화면을 본다: 입력 칸에 보낸 글이 그대로면 Enter, 비었고 들어간 흔적도 없으면 한 번 다시 보낸다.
+  //   다른 글이 있거나(사람이 쓰는 중) 알 수 없으면 손대지 않는다. 사람이 3초 안에 친 터미널은 기다린다(B1 규칙 4). 둘 다 없으면 전처럼 기다리기만 한다
+  constructor({ store, cfg, view, send, inspect = null, pressEnter = null }) {
     super();
-    this.store = store; this.cfg = cfg; this.view = view; this.send = send;
+    this.store = store; this.cfg = cfg; this.view = view; this.send = send; this.inspect = inspect; this.pressEnter = pressEnter;
     this.items = new Map();
     for (const d of store.activeDeliveries()) {
       // 백엔드가 보내는 중에 꺼졌다면 들어갔는지 모른다 → sent로 보고 확인을 기다린다(C2에서 대화 기록으로 맞춘다)
@@ -100,7 +103,18 @@ export class DeliveryQueue extends EventEmitter {
       if (!d || d.status === 'sending') continue;
       if (d.status === 'sent') {
         if (!d.sentAt) d.sentAt = now; // 다른 길로 sentAt 없는 sent가 생겨도 여기서부터 기한을 센다
-        if (now - d.sentAt > this.cfg.submitConfirmMs) this._set(d, 'unconfirmed', 'no UserPromptSubmit hook');
+        if (d.recovering) continue;
+        const last = d.triedAt || d.sentAt;
+        // P79: 제출 확인이 늦으면 화면을 보고 Enter나 다시 보내기(최대 submitRetries번)
+        if (this.inspect && (d.recoveries || 0) < this._retries() && now - last > this._retryMs()) {
+          const v = this.view(sid, d) || {};
+          if (v.closed) { this._set(d, 'failed', 'session closed'); continue; }
+          if (v.lastUserInputAt && now - v.lastUserInputAt < this.cfg.inputQuietMs) continue; // 사람이 치는 중이면 기다린다(규칙 4)
+          if (v.state === 'working' || v.state === 'waiting') continue; // 이미 돌기 시작했거나 질문 중: 확인(hook)을 더 기다린다
+          this._recover(d);
+          continue;
+        }
+        if (now - last > this.cfg.submitConfirmMs) this._set(d, 'unconfirmed', d.recoveries ? `no UserPromptSubmit hook (${d.recoverNote || 'tried'})` : 'no UserPromptSubmit hook');
         continue;
       }
       if (now - d.createdAt > this.cfg.deliveryMaxWaitMs) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
@@ -125,6 +139,31 @@ export class DeliveryQueue extends EventEmitter {
       else if (e.code === 'agent_not_found' || e.code === 'agent_not_ready') this._set(d, 'queued', 'no_agent');
       else if (e.code === 'unreachable') this._set(d, 'queued', 'herdr_down');
       else this._set(d, 'failed', `${e.code || 'error'}: ${e.herdrMessage || e.message}`);
+    }
+  }
+
+  _retries() { return this.cfg.submitRetries ?? 2; }
+  _retryMs() { return this.cfg.submitRetryMs ?? 6000; }
+  // P79: 보낸 글이 제출되지 않았을 때 한 번 손쓰기. 같은 글이 두 번 들어가지 않게 다시 보내기는 한 번뿐이고,
+  //   입력 칸이 비었어도 화면에 보낸 글이 보이거나(이미 들어감) 다른 hook·working을 봤으면 다시 보내지 않는다
+  async _recover(d) {
+    d.recovering = true;
+    let action = 'none', box = null;
+    try {
+      const look = await this.inspect(d.sessionId, d.text).catch(() => null);
+      if (d.status !== 'sent') return; // 그사이 확인됐다
+      box = look ? look.box : 'unknown';
+      d.recoveries = (d.recoveries || 0) + 1;
+      if (box === 'ours' && this.pressEnter) { await this.pressEnter(d.sessionId); action = 'enter'; }
+      else if (box === 'empty' && !look.seen && !d.resent && !d.mismatchSeen && !d.workingSeen) { d.resent = true; await this.send(d.sessionId, d.text); action = 'resend'; }
+      else d.recoveries = this._retries(); // 다른 글, 알 수 없음, 이미 들어갔을 수 있음: 더 손대지 않는다
+      d.recoverNote = `${action}${box ? ' · ' + box : ''}`;
+    } catch (e) {
+      action = 'error'; d.recoverNote = `error · ${e.code || e.message}`;
+    } finally {
+      d.triedAt = Date.now();
+      d.recovering = false;
+      this.emit('recover', { deliveryId: d.deliveryId, sessionId: d.sessionId, action, box, n: d.recoveries || 0 });
     }
   }
 

@@ -71,3 +71,36 @@ export function shellPromptState(text) {
   for (let i = lines.length - (atPrompt ? 2 : 1); i >= 0; i--) { const c = cmdOf(lines[i]); if (c) { command = c; break; } }
   return { atPrompt, command };
 }
+
+// P79: Claude Code 입력 칸 읽기. 화면 아래쪽 가로줄(───) 둘 사이가 입력 칸이고 첫 줄은 "❯ "(옛 판은 "> ")로 시작한다.
+// → { found, text(입력 칸 글, 앞 기호를 뗀 것), above(입력 칸 위의 줄들) }. 그런 가로줄 쌍이 없으면 found: false
+const RULE = /^\s*[─━]{12,}\s*$/;
+export function claudeInputBox(text) {
+  const lines = String(text || '').split('\n').map((l) => l.replace(/\s+$/, ''));
+  const rules = [];
+  for (let i = 0; i < lines.length; i++) if (RULE.test(lines[i])) rules.push(i);
+  for (let k = rules.length - 1; k > 0; k--) {
+    const top = rules[k - 1], bottom = rules[k];
+    const body = lines.slice(top + 1, bottom);
+    if (!body.length || !/^\s*[❯>](\s|$)/.test(body[0])) continue;
+    const t = body.map((l, i) => (i === 0 ? l.replace(/^\s*[❯>]\s?/, '') : l.trim())).join(' ').replace(/\s+/g, ' ').trim();
+    return { found: true, text: t, above: lines.slice(0, top) };
+  }
+  return { found: false, text: '', above: lines };
+}
+// 보낸 글(prompt)과 화면을 견준다 → { box: 'ours' | 'empty' | 'other' | 'unknown', seen(입력 칸 위에 보낸 글 첫머리가 보인다 = 이미 들어갔을 수 있다) }
+// 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines]) 잘릴 수 있어 첫머리(40자)로 본다
+const flatText = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+export function promptOnScreen(screenText, prompt) {
+  const box = claudeInputBox(screenText);
+  const want = flatText(prompt);
+  const head = want.slice(0, 40);
+  const seen = !!head && box.above.some((l) => flatText(l).includes(head.slice(0, 30)));
+  if (!box.found) return { box: 'unknown', seen };
+  if (!box.text) return { box: 'empty', seen };
+  const pasted = /^\[Pasted text #\d+/.test(box.text) && (/\n/.test(String(prompt)) || want.length > 200);
+  const bare = (s) => s.replace(/\s+/g, ''); // 화면 폭에서 꺾인 줄을 이을 때 낱말 가운데 빈칸이 생긴다
+  const bx = bare(box.text), wn = bare(want);
+  if (bx.startsWith(bare(head)) || (bx.length >= 12 && wn.startsWith(bx)) || pasted) return { box: 'ours', seen };
+  return { box: 'other', seen };
+}

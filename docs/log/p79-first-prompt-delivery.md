@@ -54,4 +54,59 @@ P78 작업자가 창 시험에서 찾았다(`docs/log/p78-worktree-handoff-line.
 
 ## 작업 기록
 
+2026-11-07 작업자 세션(워크트리 `p75`, 브랜치 `worktree-p75`, `origin/dev` `625d8f7`에서 시작)
+
+- 시험·빌드·창 시험·herdr·atrium CLI는 모두 `backend/.dev/clean-env.sh`로 불렀다. 판 값은 `experiments/p79/tools/env.cjs`(git 밖): `atrium-dev-p79`, 47899, 창 디버깅 포트 9379, `backend/.dev/data`·`app`. 시험 저장소는 같은 경로 `C:\Workspace\mtask-p75-repo`를 새로 만들었고 신뢰는 다시 묻지 않았다(`p79-need-trust.txt`를 만들 일이 없었다).
+- 창 시험 `app/test/e2e/p79-first-prompt.mjs`: 리드(haiku)의 env로 `atrium child --prompt`를 워크트리 워커(`--worktree`) 여덟과 워크트리 없는 워커 여덟에 차례로 친다. 저마다 전달 기록(상태·이유·시도 수), herdr 상태, hook 시각, hook `UserPromptSubmit`으로 들어간 수를 판 기록에서 읽고, 보낸 뒤 6초에도 확인이 없거나 확인 못 함으로 끝난 것의 화면을 남긴다.
+- 재현(고치기 전, 지금 `dev`): 워크트리 워커 1/8, 워크트리 없는 워커 8/8. 들어가지 않은 일곱은 모두 ready(herdr idle) 0.3~0.4초 뒤 보냈고(`sent`) 30초 뒤 `unconfirmed: no UserPromptSubmit hook`. 그동안 hook은 하나도 오지 않았다. 화면에는 입력 칸에 보낸 글이 그대로 남아 있었다(`❯ Reply with the single word ok-wt2 …`). 30초 뒤에도 같다.
+- 원인: 글은 입력 칸에 들어갔지만 끝의 Enter가 먹지 않았다. 신뢰·권한 화면은 없었다. 갓 뜬 Claude Code가 입력 칸을 보이고(herdr idle) 바로 들어온 Enter를 버리는 때가 있다. `claude -w`는 워크트리를 만드느라 뜨는 동안이 길어 더 자주 걸린다. 고친 뒤 두 번의 시험에서는 워크트리 없는 워커도 여덟 가운데 셋씩 걸렸다(Enter로 풀렸다). 그래서 ready를 늦추는 것보다 "확인이 늦으면 화면을 보고 손쓰기"를 골랐다. 늦출 시간을 정할 수 없고, 사람이 판에서 보낸 글이나 깨운 뒤의 글에도 같은 일이 생길 수 있다.
+- 고친 것: 전달 대기열(`delivery.mjs`)이 보낸 뒤 6초(`submitRetryMs`) 안에 제출 확인이 없으면 화면의 입력 칸을 읽는다(`screen.mjs claudeInputBox`·`promptOnScreen`).
+  - 보낸 글이 그대로면 Enter를 누른다.
+  - 비었고 화면 위에도 보낸 글이 없고 다른 hook·working도 못 봤으면 한 번만 다시 보낸다.
+  - 다른 글(사람의 글)이 있거나 알 수 없으면 손대지 않는다.
+  - 사람이 3초 안에 친 터미널은 기다리고(B1 규칙 4), working·waiting이면 확인을 더 기다린다.
+  - 손쓰기는 최대 두 번이고, 마지막 손쓰기에서 30초 뒤 unconfirmed.
+  - Claude Code 세션만 본다.
+- 끝내 못 넣으면(`unconfirmed`·`failed`) 판 이벤트 `first_prompt_lost`를 남긴다. 부모에게는 그 사실과 화면 보기·다시 보내기 명령을 전달하고(F2 알림과 같은 길), `atrium children`에 "첫 요청 안 들어감"이 보인다. `atrium child`의 답은 첫 요청이 confirmed가 아니면 그 상태와 다음 명령을 적는다.
+- 단위 시험 `backend/test/p79.test.mjs` 7개: 화면 입력 칸 읽기, Enter, 한 번만 다시 보내기와 끝내 unconfirmed, 두 번 들어가지 않기(위에 보임, 다른 hook), 사람 입력 기다리기와 다른 글에 손대지 않기, working일 때와 화면을 못 볼 때(전과 같음), 부모에게 알리기(한 번만, 확인되면 안 알림).
+- 정리: 시험 세션을 끄고, 창을 닫고, herdr 서버와 백엔드를 멈추고, `herdr session delete atrium-dev-p79`, 시험 워크트리·브랜치, 시험 판 데이터(`backend/.dev/data`, `app`, 고정 대화 폴더 둘), 시험 저장소를 지웠다. 포트 47899와 9379에 듣는 프로세스가 없다.
+
 ## 보고
+
+### 만든 것
+
+- `backend/src/screen.mjs`: `claudeInputBox`(가로줄 둘 사이 `❯` 줄), `promptOnScreen`(보낸 글과 견줘 `ours`·`empty`·`other`·`unknown`, 위에 보이는지 `seen`). 화면 폭에서 꺾인 글과 접힌 긴 글(`[Pasted text #1 …]`)도 본다.
+- `backend/src/delivery.mjs`: `inspect`·`pressEnter`를 받으면 `sent` 뒤 `submitRetryMs`(6초)마다 최대 `submitRetries`(2)번 손쓴다. 이벤트 `recover`(판 기록 `delivery_recover`, 로그 `delivery recover <이름> enter (ours) #1`). 받지 않으면 전과 같다.
+- `backend/src/backend.mjs`: Claude Code 세션의 화면(`pane.read visible`)과 Enter(`pane.send_keys`)를 대기열에 준다. 전달이 끝나면 `branch.onDeliveryEnd`.
+- `backend/src/branch.mjs`: 첫 요청 전달 ID를 기억하고(`atrium child`, `atrium wake`의 `--prompt`), 끝내 들어가지 않으면 `first_prompt_lost` 이벤트, 부모에게 알림(링크 이벤트 `notice`, why `first prompt lost`), `atrium children`의 `firstPromptLost`. 다시 들어가면 표시를 내린다.
+- `backend/bin/atrium-child.mjs`: `atrium child`가 첫 요청이 confirmed가 아니면 상태와 화면 보기·다시 보내기 명령을, `atrium children`이 "첫 요청 안 들어감"을 적는다.
+- `backend/src/config.mjs`: `submitRetryMs` 6000, `submitRetries` 2.
+
+### 창 시험 결과(`experiments/p79/`)
+
+| | 고치기 전 | 고친 뒤 1회(`after-run1`) | 고친 뒤 2회 |
+|---|---|---|---|
+| 워크트리 워커 여덟 | 1/8 (일곱 unconfirmed) | 8/8 | 8/8 |
+| 워크트리 없는 워커 여덟 | 8/8 | 8/8 | 8/8 |
+| 판이 누른 Enter | - | 10 (워크트리 7, 없는 것 3) | 11 (워크트리 8, 없는 것 3) |
+| 다시 보내기 | - | 0 | 0 |
+| 같은 글 두 번 | 0 | 0 | 0 |
+
+- 시험: `cd backend && npm test` 568/568, `cd app && npm test` 278/278, `cd app && npm run build` 통과.
+
+### 계획과 다른 곳
+
+- ready 판정을 늦추지 않았다. 갓 뜬 세션에서 Enter가 버려지는 때를 화면으로 알 수 없고, 워크트리 없는 워커와 다른 전달에도 같은 일이 생긴다. 확인이 늦을 때 화면을 보는 쪽이 원인(입력 칸에 남은 글)에 바로 맞다.
+- 창 시험에서 끝내 못 넣는 경우는 생기지 않았다. 부모에게 알리는 길은 단위 시험으로만 봤다.
+
+### 알려진 문제
+
+- Enter가 버려지는 까닭(Claude Code 안)은 확인하지 못했다. 손쓰기는 보낸 뒤 6초 늦게 들어간다.
+- 사람이 입력 칸에 글을 쓰다 둔 채 3초가 지나면 그 칸은 "다른 글"이라 손대지 않고, 판의 글은 30초 뒤 unconfirmed가 된다(전과 같다. 부모에게는 알린다).
+- 창(사람 화면)에는 첫 요청이 들어가지 않았다는 표시를 따로 더하지 않았다. 판 이벤트와 부모 알림, `atrium children`으로만 보인다.
+
+### 고칠 문서 문장(지시에 따라 짧게)
+
+- ARCH B1 규칙 6 끝: "확인이 6초 늦으면 입력 칸을 보고 Enter, 비었으면 한 번 다시 보낸다(최대 두 번)."
+- ARCH K1: "첫 요청이 끝내 들어가지 않으면 부모에게 알리고 `atrium children`에 보인다."
+- testing.md·BRIEF·README: 고칠 것 없음.

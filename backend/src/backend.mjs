@@ -17,7 +17,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit } from './screen.mjs';
+import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen } from './screen.mjs';
 import { parseTargets, toLF, clip } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
@@ -202,12 +202,19 @@ export class Backend {
     this.spawnIntents = []; // F3: 세션이 herdr로 새 에이전트를 띄우려 한 명령(hook)
     this.adopting = new Set();
 
-    this.queue = new DeliveryQueue({ store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.adapter.prompt(this.sessions.get(sid).agentName, text) });
+    this.queue = new DeliveryQueue({
+      store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.adapter.prompt(this.sessions.get(sid).agentName, text),
+      // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code만. 다른 종류와 셸은 손대지 않는다)
+      inspect: async (sid, text) => { const s = this.sessions.get(sid); if (!s || !s.paneId || (s.kind || 'claude') !== 'claude') return null; return promptOnScreen(await this.adapter.readScreen(s.paneId, { source: 'visible' }), text); },
+      pressEnter: async (sid) => { const s = this.sessions.get(sid); if (s && s.paneId) await this.adapter.paneKeys(s.paneId, ['enter']); },
+    });
+    this.queue.on('recover', (r) => { this.store.addEvent(r.sessionId, 'delivery_recover', r); this.log(`delivery recover ${this.nameOf(r.sessionId)} ${r.action} (${r.box}) #${r.n}`); });
     this.queue.on('delivery', (d) => {
       this.store.addEvent(d.sessionId, 'delivery', d);
       this.api.broadcast('delivery', { ...d, name: this.nameOf(d.sessionId) });
       const s = this.sessions.get(d.sessionId);
       if (s && d.status === 'unconfirmed') s.draft = true; // P21: 보낸 글이 제출되지 않고 입력 칸에 남았을 수 있다(잠재우지 않는다)
+      if (this.branch && ['confirmed', 'unconfirmed', 'failed', 'cancelled'].includes(d.status)) this.branch.onDeliveryEnd(d); // P79: 하위 세션의 첫 요청이 들어가지 않았으면 부모에게
       if (s && d.status === 'confirmed' && s.rt.interruptedTurn) s.rt.interruptedTurn = null; // 새 지시가 들어갔으면 끊긴 턴 표시를 내린다
       // P6a(H3): hook이 없는 세션의 마지막 요청은 판이 보내 제출을 확인한 글로 둔다(멀리 얼굴, 검색)
       if (s && d.status === 'confirmed' && !this.hooked(s)) { const row = this.store.getDelivery(d.deliveryId); if (row) { s.rt.lastPrompt = row.text; s.rt.lastPromptAt = Date.now(); } }
