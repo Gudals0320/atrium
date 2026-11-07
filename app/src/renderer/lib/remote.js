@@ -22,7 +22,7 @@ export function noticeWay({ visible = true, focused = true } = {}) {
 // 연결 기록 한 줄 → 글 열쇠와 값. 까닭은 remoteLog.reason_<코드>가 있으면 그 글, 없으면 코드 그대로(P56·P57이 더하는 까닭)
 // P59: pair.grant(등록 허가가 나감), login·logout(패스키 로그인, 로그아웃). who에 Tailscale 기기 이름(node)
 // P62: passkey.on·passkey.off(패스키로 확인 켬·끔), passkey.add(패스키 없이 짝 맺은 기기가 패스키를 등록). pair.ok의 passkey: false = 패스키 없이 짝 맺음(noPasskey)
-export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add', 'boot', 'level']; // P84: boot(웹 화면이 닫힌 뒤 다시 열림). P86: level(가벼운 보드 단계를 기억함)
+export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add', 'boot', 'level', 'push.on', 'push.off', 'push.fail']; // P84: boot(웹 화면이 닫힌 뒤 다시 열림). P86: level(가벼운 보드 단계를 기억함). P88: push.*(알림 구독·해지·보내기 실패)
 // 까닭 글 열쇠: 'tailscale_node:other_node' → ['remoteLog.reason_tailscale_node_other_node', 'remoteLog.reason_tailscale_node', 'other_node']
 export function reasonKeys(r) {
   const s = String(r || '');
@@ -57,13 +57,14 @@ export function crashText(c) {
 export function logRow(e) {
   const ev = LOG_EVENTS.includes(e && e.event) ? e.event : 'other';
   return {
-    key: ev === 'boot' ? 'remoteCrash.ev_boot' : ev === 'level' ? 'remoteSteps.ev_level' : `remoteLog.ev_${ev.replace('.', '_')}`, // P84: boot 글은 사전 끝(remoteCrash)에. P86: level
+    key: ev === 'boot' ? 'remoteCrash.ev_boot' : ev === 'level' ? 'remoteSteps.ev_level' : ev.startsWith('push.') ? `push.ev_${ev.slice(5)}` : `remoteLog.ev_${ev.replace('.', '_')}`, // P84: boot 글은 사전 끝(remoteCrash)에. P86: level. P88: push.*는 사전 끝(push)에
+    ...(e && e.host ? { host: e.host } : {}), // P88: push.on의 푸시 서비스 이름
     reason: e && e.reason ? e.reason : null,
     who: [e && e.deviceName, e && e.node && e.node !== e.deviceName ? e.node : null, e && e.login, e && e.addr].filter(Boolean).join(' · '),
     browser: (e && e.browser) || null,
     remote: e && e.remote != null ? !!e.remote : null,
     count: e && e.count > 1 ? e.count : null,
-    bad: ev === 'deny' || ev === 'pair.fail',
+    bad: ev === 'deny' || ev === 'pair.fail' || ev === 'push.fail', // P88
     ...(ev === 'pair.ok' && e && e.passkey === false ? { noPasskey: true } : {}),
     // P82: 원격 소켓. disconnect는 서버가 받은 닫힘 코드·붙어 있던 시간·압축, connect는 창이 본 직전 닫힘
     ...(e && e.ws && ev === 'disconnect' ? { sock: sockLabel(e.ws) } : {}),

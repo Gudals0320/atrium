@@ -231,7 +231,7 @@ export class Pusher {
   status(deviceId) {
     const r = this.rec(deviceId);
     let host = null; if (r && r.endpoint) try { host = new URL(r.endpoint).hostname; } catch {}
-    return { on: !!(r && r.endpoint), gone: !!(r && r.gone), ...prefsOf(r), lastSentAt: (r && r.lastSentAt) || null, lastFail: (r && r.lastFail) || null, host };
+    return { on: !!(r && r.endpoint), gone: !!(r && r.gone), ...prefsOf(r), lang: (r && r.lang) || null, lastSentAt: (r && r.lastSentAt) || null, lastFail: (r && r.lastFail) || null, host };
   }
   deviceView(deviceId) { const r = this.rec(deviceId); return { on: !!(r && r.endpoint), lastSentAt: (r && r.lastSentAt) || null, lastFail: (r && r.lastFail) || null }; }
   subscribe(deviceId, sub, lang) {
@@ -269,6 +269,7 @@ export class Pusher {
     this.patch(deviceId, (r) => {
       if (p.kinds && typeof p.kinds === 'object') { r.kinds = prefsOf(r).kinds; for (const k of PUSH_KINDS) if (typeof p.kinds[k] === 'boolean') r.kinds[k] = p.kinds[k]; }
       if (typeof p.whilePc === 'boolean') r.whilePc = p.whilePc;
+      if (typeof p.lang === 'string') r.lang = langOf(p.lang); // 알림 글의 말
     });
     this.onChange();
     return this.status(deviceId);
