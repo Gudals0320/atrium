@@ -392,7 +392,7 @@ export class Branch {
     const allowHerdr = !!((b.store.spawnInfo(parent.sessionId) || {}).allowHerdr);
     const depth = parentDepth + 1;
     const viaLauncher = route.type === 'launcher';
-    const info = { role, depth, by: parent.sessionId, at: Date.now(), order: this.nextOrder(parent.sessionId), worktree, kind, via: 'atrium child', inherited: { cwd: !o.cwd, model: claude && !o.model && !o.launcher, effort: claude && !o.effort && !viaLauncher && !!parent.effort, permissionMode: !viaLauncher }, ...(viaLauncher ? { launcher: route.launcher.name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(gate ? { gate: 'trust' } : {}) };
+    const info = { role, depth, by: parent.sessionId, at: Date.now(), order: this.nextOrder(parent.sessionId), worktree, ...(worktree ? { wtHome: 1 } : {}), kind, via: 'atrium child', inherited: { cwd: !o.cwd, model: claude && !o.model && !o.launcher, effort: claude && !o.effort && !viaLauncher && !!parent.effort, permissionMode: !viaLauncher }, ...(viaLauncher ? { launcher: route.launcher.name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(gate ? { gate: 'trust' } : {}) };
 
     this.pending.push(parent.sessionId); this.pendingNames.add(name);
     let out;

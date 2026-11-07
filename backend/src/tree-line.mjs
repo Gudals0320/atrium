@@ -10,6 +10,8 @@ export const LINE_GAP_Y = 80; // 줄 안 형제(의 띠) 사이
 
 // 워크트리 상자 사각형: 안의 노드 하나를 감싼 영역(canvas.mjs regionRect와 같은 여백)
 export const boxFrame = (r) => ({ x: r.x - REGION_PAD, y: r.y - REGION_PAD - REGION_HEAD, w: r.w + 2 * REGION_PAD, h: r.h + 2 * REGION_PAD + REGION_HEAD });
+// P78: 상자 틀이 노드 둘레에 더하는 테두리(정리 arrangeTree의 pad)
+export const BOX_PAD = { l: REGION_PAD, t: REGION_PAD + REGION_HEAD, r: REGION_PAD, b: REGION_PAD };
 // 상자 사각형(왼쪽 위)에 든 노드 자리
 export const frameInner = (f) => ({ x: f.x + REGION_PAD, y: f.y + REGION_PAD + REGION_HEAD });
 

@@ -341,13 +341,16 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200
   trees.forEach(sizeOf);
   // P75: 열은 부모마다(자식 x = 부모 오른쪽 + gapX). 새 워커를 띄울 때 놓이는 자리(tree-line.mjs lineSlot)와 같다. 전에는 깊이마다 가장 넓은 블록에 맞춘 열이었다
   const out = new Map();
+  // P78: pad { l, t, r, b }: 블록 둘레에 비워 둘 테두리(아직 상자가 없는 --worktree 워커는 상자 틀만큼). 줄은 테두리까지 차지하고 블록은 그 안에 놓는다
   const place = (t, top, x) => {
     const s = size.get(t.id);
+    const pd = byId.get(t.id).pad || { l: 0, t: 0, r: 0, b: 0 };
+    const ow = s.w + pd.l + pd.r, oh = s.h + pd.t + pd.b;
     let y = top, span = 0;
-    for (const c of t.children) { const h = place(c, y, x + s.w + gapX); y += h + gapY; span += h + gapY; }
+    for (const c of t.children) { const h = place(c, y, x + ow + gapX); y += h + gapY; span += h + gapY; }
     if (span) span -= gapY;
-    const h = Math.max(s.h, span);
-    out.set(t.id, { x: Math.round(x), y: Math.round(top), w: s.w, h: s.h, size: s.step });
+    const h = Math.max(oh, span);
+    out.set(t.id, { x: Math.round(x + pd.l), y: Math.round(top + pd.t), w: s.w, h: s.h, size: s.step });
     return h;
   };
   let top = origin.y;
@@ -356,9 +359,11 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200
   let lx = origin.x, rowH = 0;
   const maxW = Math.max(out.size ? Math.max(...[...out.values()].map((r) => r.x + r.w)) - origin.x : 0, 2400);
   for (const b of lone) {
-    if (lx > origin.x && lx + b.w - origin.x > maxW) { lx = origin.x; top += rowH + gapY; rowH = 0; }
-    out.set(b.id, { x: lx, y: top, w: b.w, h: b.h, size: null });
-    lx += b.w + GAP; rowH = Math.max(rowH, b.h);
+    const pd = b.pad || { l: 0, t: 0, r: 0, b: 0 };
+    const ow = b.w + pd.l + pd.r, oh = b.h + pd.t + pd.b;
+    if (lx > origin.x && lx + ow - origin.x > maxW) { lx = origin.x; top += rowH + gapY; rowH = 0; }
+    out.set(b.id, { x: lx + pd.l, y: top + pd.t, w: b.w, h: b.h, size: null });
+    lx += ow + GAP; rowH = Math.max(rowH, oh);
   }
   return out;
 }

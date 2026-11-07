@@ -1211,6 +1211,8 @@ export class Backend {
       const slot = place || slotFor(this, { wsKey: ws.key, size: NODE, area });
       this.store.setNode({ session_id: sessionId, x: slot.x, y: slot.y, w: place ? place.w : NODE.w, h: place ? place.h : NODE.h, z: 0, size: place ? place.size : NODE.size, aspect: place ? place.aspect : NODE.aspect, area: place ? place.area ?? area : area });
       if (place) reflowLines(this, sessionId, 'spawn'); // P75: 부모 나무가 길어져 부모 줄의 뒤 형제와 겹치면 그 형제를 아래로
+      // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
+      if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
       this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, allowHerdr, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
       await this.adapter.refreshSubscription();

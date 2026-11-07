@@ -58,4 +58,56 @@
 
 ## 작업 기록
 
+2026-11-07 작업자 세션(워크트리 `p75`, 브랜치 `worktree-p75`, `origin/dev` `9bd4557`에서 시작)
+
+- 시험·빌드·창 시험·herdr·atrium CLI는 모두 `backend/.dev/clean-env.sh`로 불렀다. 판 값은 `experiments/p78/tools/env.cjs`(git 밖): `atrium-dev-p78`, 47898, 창 디버깅 포트 9378, `backend/.dev/data`·`app`. 시험 저장소는 P75와 같은 경로 `C:\Workspace\mtask-p75-repo`를 새로 만들었다. 신뢰는 다시 묻지 않았다(`p78-need-trust.txt`를 만들 일이 없었다).
+- 지휘 세션의 10/12(w5) 원인: 판은 워커의 폴더를 hook(첫 요청)으로만 안다. `claude -w`는 프로세스 안에서 워크트리로 들어가므로 herdr 패널 폴더는 끝까지 저장소 루트다(`herdr agent prompt` 결과의 `cwd`로 확인). 그리고 `--prompt`의 첫 요청이 가끔 들어가지 않는다. 판이 ready를 보고 보내지만 UserPromptSubmit이 오지 않아 `unconfirmed: no UserPromptSubmit hook`으로 끝나고 다시 보내지 않는다(이 판 기록에서 w3·w4 둘 다, 다른 회에는 하나). 그래서 `--prompt`를 줘도 상자에 들지 못한다.
+- 재현(고치기 전, 지금 `dev`): 요청 없이 띄운 워커의 상자는 리포 영역 오른쪽 위 빈자리(3220, 3760 …)에 빈 채로 생기고 워커는 줄에 노드로 남는다. 정리는 그 노드를 상자 줄과 같은 x(2160)에 놓는다. 인계로 hook이 오면 빈 상자가 노드 둘레로 옮겨 오는데, 상자 틀이 노드보다 왼쪽 40·위 112 크므로 상자는 x 2120으로 비어져 나오고 뒤 형제가 아래로 밀린다. 사용자가 말한 "정렬해도 다시 배치되며 깨짐"이 이것이다.
+- 고른 길: 지시의 두 안 가운데 "띄울 때 아는 워크트리 경로를 쓴다". 판은 `--worktree <이름>`을 알고 `claude -w`는 늘 `<저장소>/.claude/worktrees/<이름>`을 만든다. 그 워크트리가 `git worktree list`에 나타나면 hook 전에도 워커가 거기 있다고 본다(`worktrees.mjs placeOf`). herdr 패널 폴더 안은 위 확인대로 쓸모가 없다. 띄운 뒤 3초·8초에 워크트리 목록을 다시 읽어 상자가 10초 주기를 기다리지 않고 선다.
+- 정리: 아직 상자가 없는 `--worktree` 워커 블록에 상자 틀만큼 테두리(`pad`, `tree-line.mjs BOX_PAD`)를 두어 줄이 틀까지 차지하고 노드는 그 안에 놓인다(`canvas.mjs arrangeTree`, `canvas-ops.mjs blocksOf`). 나중에 상자가 생겨도 정리한 틀 자리와 같다.
+- 이미 있는 판: P78 전에 띄운 워커는 브랜치 정보에 새 표시(`wtHome`)가 없어 지금처럼 hook을 기다린다. 판을 다시 띄워도 저절로 옮기지 않는다.
+- 떠나기: hook이 그 워크트리를 한 번 알린 뒤 본 저장소를 알리면 워커가 나간 것으로 보고 본 저장소 영역으로 옮긴다(P75의 `fitsWt`는 이것도 막고 있었다).
+- 단위 시험 `backend/test/p78.test.mjs` 6개: 정리의 테두리(순수), 요청 없는 워커가 상자에 듦, 정리 → 인계 두 경우(상자 하나도 없음, 일부만 있음, 셸 형제 포함), 사람이 옮긴 노드·상자 그대로, 떠나기와 P78 전 기록.
+- 창 시험 `app/test/e2e/p78-worktree-handoff.mjs`: 리드(haiku)의 env로 `atrium child --worktree` 넷(w1·w2 요청 없이, w3·w4 `--prompt`) → 띄운 직후 → 영역 정리 버튼 → `herdr agent prompt`로 넷에게 인계 → hook이 넷의 폴더를 알릴 때까지 기다린 뒤 잰다.
+  - 1회: 인계를 리드에게 시켰더니(`atrium send`) 리드가 Bash 권한 질문에서 멈췄다. 대신 답하지 않았다. `--allow-herdr`로 띄운 2회에는 리드가 herdr 말고 `test "$HERDR_ENV" = 1`을 쳐서 다시 권한 질문에서 멈췄다. 또 hook이 오기 전에 재는 틈이 있었다. 기록은 `experiments/p78/run1`, `run2`.
+  - 3회(최종): 인계는 리드가 칠 것과 같은 `herdr agent prompt`를 시험이 이 판의 herdr 세션에 직접 쳤다. 고치기 전 6/8, 고친 뒤 8/8.
+- 정리: 시험 세션을 끄고, 창을 닫고, herdr 서버와 백엔드를 멈추고, `herdr session delete atrium-dev-p78`, 시험 워크트리(`claude -w`가 잠근 것이라 `--force --force`)·브랜치, 시험 판 데이터(`backend/.dev/data`, `app`, 고정 대화 폴더 둘), 시험 저장소를 지웠다. 포트 47898과 9378에 듣는 프로세스가 없다.
+
 ## 보고
+
+### 만든 것
+
+- `--worktree` 워커의 자리(`backend/src/worktrees.mjs`): `expectedWt`·`placeOf`. 워크트리 `.claude/worktrees/<이름>`이 목록에 있으면 hook 전에도 워커가 거기 있다고 본다. 상자는 처음부터 워커 둘레에 서고(P75 `homeNode`가 이 자리를 쓴다) 워커는 움직이지 않는다. hook이 그 워크트리를 알린 뒤 다른 곳을 알리면 따른다.
+- 띄움(`backend.mjs`): `--worktree` 워커를 띄운 뒤 3초·8초에 워크트리 목록을 다시 읽는다. 브랜치 정보에 `wtHome: 1`(`branch.mjs`).
+- 정리(`canvas.mjs arrangeTree`, `canvas-ops.mjs blocksOf`): 블록의 `pad`(둘레에 비울 테두리). 상자가 아직 없는 `--worktree` 워커는 `BOX_PAD`(왼쪽·오른쪽·아래 40, 위 112). 줄과 자식 열은 테두리 바깥 기준이다.
+
+### 창 시험 결과(`experiments/p78/`)
+
+| | 고치기 전(`p78-before-*`) | 고친 뒤(`p78-after-*`) |
+|---|---|---|
+| 띄운 직후 | 상자 넷이 오른쪽 위에 빈 채(3220·3760·4300·4840), 워커는 노드로 줄에 | 넷 다 자기 상자에, 상자 한 열(1680) |
+| 정리 뒤 | 한 열(2160) | 한 열(2160) |
+| 인계 뒤 상자 x | 2120 넷(정리한 자리에서 왼쪽 40) | 2160 넷 그대로 |
+| 인계 뒤 상자 y | 112·777·1442·2107 → 0·817·1634·2451 | 112·1154·2196·3238 그대로 |
+| 결과 | 6/8 | 8/8 |
+
+- 같은 시험의 2회 고치기 전에는 첫 요청이 w4에만 들어가 w1~w3만 2120으로 비어져 나와 줄이 두 열이 됐다(`run2`).
+- 시험: `cd backend && npm test` 552/552, `cd app && npm test` 275/275, `cd app && npm run build` 통과.
+
+### 계획과 다른 곳
+
+- 창 시험의 인계는 리드가 아니라 시험이 `herdr agent prompt`를 친다. 리드(haiku)는 시킨 명령 말고 다른 명령도 쳐서 권한 질문에서 멈췄다(대신 답하지 않았다). 판이 보는 것(워커에 요청이 들고 hook이 온다)은 같다.
+- 지시의 다른 안(첫 요청 전에 herdr 패널 폴더 보기)은 쓰지 않았다. `claude -w`의 패널 폴더는 워크트리로 바뀌지 않는다.
+
+### 알려진 문제
+
+- `atrium child --prompt`의 첫 요청이 `claude -w` 워커에서 가끔 들어가지 않는다(`unconfirmed: no UserPromptSubmit hook`, 다시 보내지 않음). 줄은 이제 이것과 상관없지만 리드가 맡긴 첫 일이 사라진다. 워크트리를 만드는 동안 ready로 잘못 보는 것으로 보인다. 따로 고칠 일이다(전달 재시도나 ready 판정).
+- P78 전에 띄운 워커(이미 있는 판)는 지금처럼 첫 요청 전까지 상자에 들지 않는다. 정리하면 테두리만큼 자리를 비우므로 나중에 상자가 생겨도 줄은 그대로다.
+- 워커가 `claude -w` 말고 다른 길(손으로 `git worktree add`)로 다른 이름의 워크트리에 들면 지금처럼 hook을 기다린다.
+
+### 고칠 문서 문장(지시에 따라 짧게)
+
+- ARCH K4 끝: "`--worktree` 워커는 그 워크트리가 생기면 hook 전에도 상자에 든다(`placeOf`)."
+- ARCH H7 끝: "상자가 아직 없는 `--worktree` 워커는 상자 틀만큼 자리를 잡는다."
+- testing.md: 첫 요청과 워크트리 워커에 대한 P75 문장은 "인계는 `herdr --session <판> agent prompt`로 시험이 직접 친다(리드에게 시키면 권한 질문에서 멈출 수 있다)"로 바꾼다.
+- BRIEF·README: 고칠 것 없음.
