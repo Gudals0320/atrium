@@ -25,7 +25,7 @@ import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.j
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
 import { showPhoneList, LIST_PREF } from './lib/touch-board.js'; // P76: 기본은 보드 화면
 import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 알약을 바꾸지 않는다
-import { lightMode, reopenBoard } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록)
+import { lightMode, reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록). P86: 보드 단계
 import './phone.css';
 
 // ---------- 화면 고르기(main.jsx) ----------
@@ -217,6 +217,29 @@ export function LightBanner({ floating = false }) {
     <div className={`mt-ph-light${floating ? ' floating' : ''}`} data-role="light-banner" role="status">
       <div className="mt-ph-light-text"><b>{t('lightView.title')}</b><span>{t('lightView.body')}</span></div>
       <button type="button" className="mt-ph-tip-btn" data-action="light-board" onClick={() => { setLayoutPref(null); reopenBoard(); }}>{t('lightView.reopen')}</button>
+    </div>
+  );
+}
+
+// P86: 가벼운 보드 단계(웹 화면이 죽을 때마다 한 단계씩). 작은 알약을 누르면 무엇을 껐는지와 "한 단계 무겁게", "처음으로"
+export function LevelBadge() {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const n = boardLevel();
+  if (!n) return null;
+  return (
+    <div className={`mt-level${open ? ' open' : ''}`} data-role="board-level" data-level={n} role="status">
+      <button type="button" className="mt-level-pill" data-action="board-level" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{t('boardLevel.title', { n })}</button>
+      {open && (
+        <div className="mt-level-body">
+          <span>{t(`boardLevel.l${n}`)}</span>
+          {bootState().ok && <span className="mt-level-kept">{t('boardLevel.kept')}</span>}
+          <div className="mt-level-actions">
+            <button type="button" className="mt-ph-tip-btn" data-action="board-heavier" onClick={() => boardHeavier()}>{t('boardLevel.heavier')}</button>
+            <button type="button" className="mt-ph-tip-btn ghost" data-action="board-reset" onClick={() => boardReset()}>{t('boardLevel.reset')}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

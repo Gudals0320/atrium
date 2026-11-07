@@ -59,7 +59,7 @@ import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 import { oneFinger, releaseKind, pinchViewport, panViewport, mid, dist as gap2, tapTarget, movableId, tapAction, TAP_CONTROL, LONG_PRESS_MS } from './lib/touch-board.js'; // P76
 import { openFull, fullId, onFull } from './full-view.js'; // P76
-import { termBudgetNow } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게
+import { termBudgetNow, boardPlan, step } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게. P86: 보드 단계(levelPlan)와 단계 기록
 import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
 
 const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
@@ -79,6 +79,7 @@ function readMax() {
   return termBudgetNow(Number.isFinite(n) && v ? n : DEFAULT_MAX_CONTROLLERS, 0).max; // P84: 손가락 웹 화면은 3, 가벼운 화면은 1
 }
 export const MAX_CONTROLLERS = readMax();
+const PLAN = boardPlan(); // P86: 이 부팅의 보드 단계(웹 화면이 죽을 때마다 한 단계씩 가벼워진다. PC 창은 늘 전부 켬)
 const DOT_GAP = 92; // tokens.css --dot-gap와 같은 값(월드 px)
 
 const rectOf = (n) => ({ x: n.position.x, y: n.position.y, w: n.width, h: n.height });
@@ -277,6 +278,7 @@ export function Canvas() {
   const kanbans = useStore((st) => st.kanbans);
   const convoNodes = useStore((st) => st.convoNodes); // P13
   const convoEdges = useStore((st) => st.convoEdges);
+  const currentWs = useStore((st) => (PLAN.allWs ? null : st.currentWs)); // P86 단계 4: 워크스페이스를 바꾸면 그 세션만 다시 그린다
   const initialViewport = useStore((st) => st.viewport);
   const rf = useReactFlow();
   const wrapRef = useRef(null);
@@ -300,6 +302,7 @@ export function Canvas() {
       const sess = [];
       for (const [id, r] of st.nodes) {
         if (!st.sessions.has(id)) continue;
+        if (!PLAN.allWs && (st.sessions.get(id).workspaceKey || null) !== (st.currentWs || null)) continue; // P86 단계 4: 지금 워크스페이스만
         const old = byId.get(id);
         if (old && old.dragging) { sess.push(old); continue; }
         const d = dockOf(id);
@@ -313,12 +316,14 @@ export function Canvas() {
         const p = live && live.get(fid);
         return { ...(old || {}), id: fid, type, position: p || { x: it.x, y: it.y }, width: it.w, height: it.h, dragHandle: handle, data, zIndex: 0 };
       };
-      for (const m of st.memos.values()) sess.push(item(`memo:${m.memoId}`, 'memo', m, '.mt-mdrag', { memoId: m.memoId }));
-      for (const k of st.kanbans.values()) sess.push(item(`kanban:${k.kanbanId}`, 'kanban', k, '.mt-kdrag', { kanbanId: k.kanbanId }));
-      for (const c of st.convoNodes.values()) sess.push(item(`convo:${c.convId}`, 'convo', c, '.mt-cdrag', { convId: c.convId })); // P13
+      if (PLAN.items) { // P86 단계 2부터 메모·칸반·대화 노드를 뺀다
+        for (const m of st.memos.values()) sess.push(item(`memo:${m.memoId}`, 'memo', m, '.mt-mdrag', { memoId: m.memoId }));
+        for (const k of st.kanbans.values()) sess.push(item(`kanban:${k.kanbanId}`, 'kanban', k, '.mt-kdrag', { kanbanId: k.kanbanId }));
+        for (const c of st.convoNodes.values()) sess.push(item(`convo:${c.convId}`, 'convo', c, '.mt-cdrag', { convId: c.convId })); // P13
+      }
       return rederive([...prev.filter((n) => !isContent(n)), ...sess], ghostRef.current, ctrlRef.current);
     });
-  }, [storeNodes, sessions, docks, links, workspaces, memos, kanbans, convoNodes, rev]); // P23: links(덩어리 안 연결선)
+  }, [storeNodes, sessions, docks, links, workspaces, memos, kanbans, convoNodes, rev, currentWs]); // P23: links(덩어리 안 연결선)
 
   // 연결선. 같은 덩어리 안 두 노드 사이의 연결은 노드 위에 겹친 선으로 보인다(H5, P23 DockLinks). 같은 저장소 선은 워크트리 세션이 있을 때만(F4)
   const edges = useMemo(() => {
@@ -326,7 +331,7 @@ export function Canvas() {
     // P13: 대화 노드(convo:<ID>)의 사각형도 찾는다
     const rectId = (id) => { if (storeNodes.has(id)) return storeNodes.get(id); if (String(id).startsWith('convo:')) { const c = convoNodes.get(id.slice(6)); return c ? { x: c.x, y: c.y, w: c.w, h: c.h } : null; } return null; };
     const sides = (a, b) => facingSides(rectId(a), rectId(b));
-    const here = (id) => storeNodes.has(id) && sessions.has(id);
+    const here = (id) => storeNodes.has(id) && sessions.has(id) && (PLAN.allWs || (sessions.get(id).workspaceKey || null) === (getState().currentWs || null)); // P86 단계 4
     // P23: 같은 덩어리 안의 두 세션(그 연결은 Docks.jsx DockLinks가 노드 위에 겹쳐 그린다)
     const dockIdOf = new Map();
     for (const d of docks.values()) for (const m of d.members) dockIdOf.set(m, d.dockId);
@@ -346,11 +351,13 @@ export function Canvas() {
     const inWtArea = (id) => { const k = rawAreaOfId(id); return !!k && isBoxKey(k); }; // P27: 워크트리 영역에 든 세션은 그 상자가 관계를 보인다(P35: 리포 영역 안의 노란 상자). P68: 덩어리로 빠져나간 세션은 칸 머리의 브랜치가 보인다
     for (const e of repoEdges([...sessions.values()].filter((s) => here(s.sessionId)), linked)) if (!adjacent(e.from, e.to) && !inWtArea(e.to) && !inWtArea(e.from)) out.push({ id: e.id, source: e.from, target: e.to, ...sides(e.from, e.to), type: 'repo', data: { ...e, ...gapOf(e.from, e.to) }, selectable: false });
     // P13: 대화끼리의 띄움 선(대화 노드나 판 세션 사이)
-    const hereAny = (id) => (String(id).startsWith('convo:') ? convoNodes.has(id.slice(6)) : here(id));
+    const hereAny = (id) => (String(id).startsWith('convo:') ? PLAN.items && convoNodes.has(id.slice(6)) : here(id)); // P86 단계 2: 대화 노드 없음
     const linkedLive = (a, b) => [...links.values()].some((l) => l.from === a && l.to === b); // P67: 판의 연결이 있는 판 세션끼리의 띄움은 그 연결 하나로
     for (const e of convoEdges) if (hereAny(e.from) && hereAny(e.to) && !boardSpawnDup(e, linkedLive)) out.push({ id: e.id, source: e.from, target: e.to, ...sides(e.from, e.to), type: 'spawnc', data: { ...e, ...gapOf(e.from, e.to) }, selectable: false });
+    // P86 단계 2부터: 선은 일 시키기 연결만, 이름표 없는 곧은 선으로
+    if (!PLAN.fancyEdges) return out.filter((e) => e.type === 'link').map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, type: 'straight', selectable: false }));
     return decorateEdges(out, { rectOf: rectId, links, sessions, now: Date.now() }); // P67: 한 쌍에 이름표 하나, 물러나기, 비켜 놓기
-  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick]);
+  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick, currentWs]);
 
   // 노드 손잡이를 끌어 이으면 역할을 묻는다(F2). 같은 쌍에 이미 역할이 있으면 고칠 수 있게 같은 대화상자를 연다
   const onConnect = useCallback((c) => { if (c.source && c.target && c.source !== c.target) openDialog({ kind: 'role', from: c.source, to: c.target }); }, []);
@@ -563,8 +570,9 @@ export function Canvas() {
       else held.current.delete(id);
     }
     if (full) keep.length = 0; // P84: 전체 보기가 화면을 덮는 동안 판의 터미널은 붙이지 않는다(가려진 터미널의 메모리)
+    if (!PLAN.terms) keep.length = 0; // P86 단계 1부터: 보드에는 터미널을 붙이지 않는다(얼굴만, 전체 보기는 그대로)
     const prev = st.attached;
-    if (keep.length !== prev.length || keep.some((x, i) => x !== prev[i])) perfLog('attach_set', { n: keep.length, prev: prev.length, zoom: +vp.zoom.toFixed(4), w: el.clientWidth, h: el.clientHeight, nodes: list.length });
+    if (keep.length !== prev.length || keep.some((x, i) => x !== prev[i])) { perfLog('attach_set', { n: keep.length, prev: prev.length, zoom: +vp.zoom.toFixed(4), w: el.clientWidth, h: el.clientHeight, nodes: list.length }); step('att', { n: keep.length, z: vp.zoom }); }
     setAttached(keep);
   }, [rf]);
 
@@ -612,7 +620,16 @@ export function Canvas() {
     schedule(duration + 100);
   }, [rf, schedule, insetNow]);
   // 처음 열 때: 저장한 뷰포트가 없으면(처음, P5 판을 옮긴 뒤) 모두 보이게 맞춘다
-  useEffect(() => { const t = setTimeout(() => { if (!getState().viewport) fitAll(0); else setViewNow(rf.getViewport(), sizeOf()); }, 80); return () => clearTimeout(t); }, [fitAll, rf]);
+  useEffect(() => { const t = setTimeout(() => { if (!getState().viewport) fitAll(0); else setViewNow(rf.getViewport(), sizeOf()); const v = rf.getViewport(); step('fit', { z: v.zoom, x: v.x, y: v.y, saved: getState().viewport ? 1 : 0 }); }, 80); return () => clearTimeout(t); }, [fitAll, rf]);
+  // P86: 보드 첫 그리기(React가 노드를 붙인 뒤, 다음 화면 그리기 뒤). 그린 노드 수와 DOM 수
+  const painted = useRef(false);
+  useEffect(() => {
+    if (painted.current || !nodes.length) return;
+    painted.current = true;
+    const count = (t) => nodes.filter((n) => n.type === t).length;
+    step('paint', { n: nodes.length, ss: count('session'), cv: count('convo'), e: edges.length, dom: document.getElementsByTagName('*').length, lv: PLAN.level });
+    requestAnimationFrame(() => setTimeout(() => step('frame', { dom: document.getElementsByTagName('*').length }), 0));
+  }, [nodes, edges]);
 
   // 화면을 노드로 옮긴다. 노드는 움직이지 않는다. 배율은 터미널이 가까이 얼굴이 되도록(이미 0.9~1.5면 그대로, 화면보다 크면 줄이되 가까이 얼굴까지)
   useEffect(() => {

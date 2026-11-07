@@ -785,7 +785,16 @@ export class WebServer {
         if (!d) throw apiErr('forbidden', 'only a paired browser reports its boot', 403);
         if (c.bootNoted || !p || p.crashed !== true) return { logged: false };
         c.bootNoted = true;
-        this.note('boot', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, crashed: true, light: p.light === true, crash: p.crash });
+        this.note('boot', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, crashed: true, light: p.light === true, crash: p.crash, level: p.level });
+        return { logged: true };
+      },
+      // P86: 가벼운 보드 단계가 이 기기에서 살아남았다(1분 넘게 살았거나 정상으로 떠남). 기기 연결 하나에 한 번
+      'web.level': (p, c) => {
+        const d = c && c.auth && c.auth.kind === 'device' && c.auth.device;
+        if (!d) throw apiErr('forbidden', 'only a paired browser reports its board level', 403);
+        if (c.levelNoted || !p || !Number.isInteger(p.level)) return { logged: false };
+        c.levelNoted = true;
+        this.note('level', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, level: p.level });
         return { logged: true };
       },
       'remote.status': (p) => this.remoteStatus({ fresh: !!(p && p.fresh) }), // P49

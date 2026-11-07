@@ -2066,4 +2066,20 @@ export default {
     on: 'Spotlight working: when zoomed out, keep working, waiting and failed sessions sharp and fade the rest (this window only)',
     off: 'Spotlight working is on: click to show every session evenly again',
   },
+  // P86: light board levels after the board page closed (one level lighter per reopen), and the board start steps in the connection log
+  boardLevel: {
+    title: 'Light board · level {n}',
+    l1: 'Terminals are off on the board. Tap a session to open it full screen.',
+    l2: 'Terminals, conversation cards, memos and kanbans are off, and lines are simple.',
+    l3: 'Terminals, cards and visual effects are off.',
+    l4: 'Only sessions in the current project are shown, and terminals, cards and effects are off.',
+    kept: 'This device remembers this level.',
+    heavier: 'Try one level heavier',
+    reset: 'Back to the full board',
+  },
+  remoteSteps: {
+    ev_level: 'Board level kept on this device',
+    level: 'board level {n}',
+    steps: 'last steps: {v}',
+  },
 };

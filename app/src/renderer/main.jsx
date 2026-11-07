@@ -10,12 +10,12 @@
 //   색은 tokens.css, 글꼴은 fonts.css(앱에 넣은 OFL 글꼴). 글꼴을 읽은 뒤에 그린다(터미널이 처음부터 제 글꼴로 칸 크기를 잰다)
 // P48(원격 R2): Electron 밖(브라우저)에서 돌면 웹 어댑터(web.js)가 window.mt를 두고, 짝을 맺기 전에는 짝 맺기 화면(Pair.jsx)만 보인다.
 //   PC 창에는 브라우저의 허락 요청 카드(WebDevices.jsx)가 뜬다
-import { lightMode, startCrashWatch, setCrumbSampler, bootState } from './crash-watch.js'; // P84: 죽기 전 기록, 반복해서 죽으면 가벼운 화면
+import { lightMode, startCrashWatch, setCrumbSampler, bootState, boardPlan } from './crash-watch.js'; // P84: 죽기 전 기록, 반복해서 죽으면 가벼운 화면
 import { isWeb } from './web.js';
 import { RemoteBar } from './RemoteBar.jsx'; // P49: 웹 화면의 다시 연결 띠와 왕복 지연
 import { webGate } from './Pair.jsx';
 import { PairRequestBanner } from './WebDevices.jsx';
-import { PhoneApp, PhoneListButton, usePhoneLayout, useScreenFix, LightBanner } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P76: 기본은 보드 화면, 목록은 단추로
+import { PhoneApp, PhoneListButton, usePhoneLayout, useScreenFix, LightBanner, LevelBadge } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P76: 기본은 보드 화면, 목록은 단추로. P86: LevelBadge(가벼운 보드 단계)
 import { PhoneFull } from './PhoneFull.jsx'; // P76: 휴대폰 보드 화면에서 탭한 세션의 전체 보기
 import { closeFull } from './full-view.js';
 import { startRemoteNotice, remoteNotices } from './remote-notice.js'; // P58
@@ -206,6 +206,7 @@ function App() {
       {loaded && <PairRequestBanner />}
       {isWeb && <RemoteBar />}
       {light && <LightBanner floating />}
+      {!light && <LevelBadge />}
       {canPhone && <PhoneListButton />}
       {canPhone && loaded && <AppBoundary><PhoneFull /></AppBoundary>}
       {splash !== 'off' && <Splash error={!loaded && conn === 'error' ? t('app.backendFailed', { detail }) : null} leaving={splash === 'leaving'} />}
@@ -230,6 +231,8 @@ const fontsReady = Promise.race([
     .map((f) => document.fonts.load(f, f.includes('Nanum') || f.includes('Pretendard') ? '가나' : 'Ab').catch(() => null))),
   new Promise((r) => setTimeout(r, 1500)),
 ]);
+// P86: 보드 단계 3부터 효과를 끈다(styles.css html.mt-lite). 시험이 html[data-level]을 읽는다
+{ const pl = boardPlan(); if (pl.level) document.documentElement.dataset.level = String(pl.level); if (!pl.effects) document.documentElement.classList.add('mt-lite'); }
 function boot() {
   fontsReady.then(() => root.render(<ReactFlowProvider><App /></ReactFlowProvider>));
   api.connect();

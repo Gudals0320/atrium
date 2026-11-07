@@ -1,5 +1,6 @@
 // P58(원격 강화 S4): PC 창에서 원격 연결을 보고 끊는 데 쓰는 순수 함수(단위 시험 app/test/p58-lib.test.mjs).
 // 백엔드 쪽(연결 기록, 새로 붙음 판단, 끊기, 원격 받기)은 backend/src/remote-log.mjs와 web.mjs에 있다.
+import { stepsLabel } from '../../../../backend/src/web-crash.mjs'; // P86: 단계 기록의 짧은 글(CLI와 같은 꼴)
 
 // 알약에서 끊기·짝 풀기를 보일 클라이언트: 짝 맺은 기기(deviceId)로 붙은 웹 클라이언트
 export const isDeviceClient = (c) => !!(c && c.kind === 'web' && c.deviceId);
@@ -21,7 +22,7 @@ export function noticeWay({ visible = true, focused = true } = {}) {
 // 연결 기록 한 줄 → 글 열쇠와 값. 까닭은 remoteLog.reason_<코드>가 있으면 그 글, 없으면 코드 그대로(P56·P57이 더하는 까닭)
 // P59: pair.grant(등록 허가가 나감), login·logout(패스키 로그인, 로그아웃). who에 Tailscale 기기 이름(node)
 // P62: passkey.on·passkey.off(패스키로 확인 켬·끔), passkey.add(패스키 없이 짝 맺은 기기가 패스키를 등록). pair.ok의 passkey: false = 패스키 없이 짝 맺음(noPasskey)
-export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add', 'boot']; // P84: boot(웹 화면이 닫힌 뒤 다시 열림)
+export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add', 'boot', 'level']; // P84: boot(웹 화면이 닫힌 뒤 다시 열림). P86: level(가벼운 보드 단계를 기억함)
 // 까닭 글 열쇠: 'tailscale_node:other_node' → ['remoteLog.reason_tailscale_node_other_node', 'remoteLog.reason_tailscale_node', 'other_node']
 export function reasonKeys(r) {
   const s = String(r || '');
@@ -50,12 +51,13 @@ export function crashText(c) {
   if (c.up != null) parts.push(`${(c.up / 1000).toFixed(c.up < 10000 ? 1 : 0)}s`);
   if (c.hidden) parts.push('hidden');
   if (c.light) parts.push('light');
+  if (c.level) parts.push(`L${c.level}`); // P86
   return parts.join(' · ');
 }
 export function logRow(e) {
   const ev = LOG_EVENTS.includes(e && e.event) ? e.event : 'other';
   return {
-    key: ev === 'boot' ? 'remoteCrash.ev_boot' : `remoteLog.ev_${ev.replace('.', '_')}`, // P84: boot 글은 사전 끝(remoteCrash)에
+    key: ev === 'boot' ? 'remoteCrash.ev_boot' : ev === 'level' ? 'remoteSteps.ev_level' : `remoteLog.ev_${ev.replace('.', '_')}`, // P84: boot 글은 사전 끝(remoteCrash)에. P86: level
     reason: e && e.reason ? e.reason : null,
     who: [e && e.deviceName, e && e.node && e.node !== e.deviceName ? e.node : null, e && e.login, e && e.addr].filter(Boolean).join(' · '),
     browser: (e && e.browser) || null,
@@ -67,6 +69,8 @@ export function logRow(e) {
     ...(e && e.ws && ev === 'disconnect' ? { sock: sockLabel(e.ws) } : {}),
     ...(e && e.prev && ev === 'connect' ? { prev: sockLabel({ code: e.prev.code, ms: e.prev.ms }) } : {}),
     ...(ev === 'boot' ? { bad: true, crash: crashText(e.crash), light: e.light === true } : {}), // P84: 닫히기 전 상태, 이 부팅이 가벼운 화면인지
+    ...(ev === 'boot' && e.crash && e.crash.steps ? { steps: stepsLabel(e.crash.steps) } : {}), // P86: 죽기 직전의 보드 시작 단계
+    ...((ev === 'level' || (ev === 'boot' && e.level > 0)) && Number.isInteger(e.level) ? { level: e.level } : {}), // P86: 보드 단계
   };
 }
 
