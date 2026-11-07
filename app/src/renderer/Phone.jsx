@@ -20,9 +20,9 @@ import { useT, errText } from './lib/i18n.js';
 import { ago, STATE_LABEL, deliveryText } from './lib/labels.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
 import { BRAND_WORDMARK } from './lib/icons.jsx';
-import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, viewportBox, sendPlan, nextNeed, isPhoneLayout, LAYOUT_KEY, needsYou } from './lib/phone.js';
+import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneLayout, LAYOUT_KEY, needsYou } from './lib/phone.js';
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
-import { clampScale } from './lib/scale.js';
+import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
 import { showPhoneList, LIST_PREF } from './lib/touch-board.js'; // P76: 기본은 보드 화면
 import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 알약을 바꾸지 않는다
 import './phone.css';
@@ -54,6 +54,26 @@ export function usePhoneLayout(enabled = true) {
   }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
   return v;
 }
+// P83: 화면 높이(lib/phone.js screenBox). iOS 홈 화면 앱이 창 높이를 상태 표시줄만큼 짧게 주면 html.mt-tall과 --mt-screen-h로
+// html·body·#root를 화면 높이까지 늘린다(phone.css). 키보드가 열려도 그대로 둔다(보이는 높이는 visualViewport로 따로 맞춘다)
+export const screenNow = () => screenBox({ vv: window.visualViewport, innerHeight: window.innerHeight, innerWidth: window.innerWidth, screenW: window.screen && window.screen.width, screenH: window.screen && window.screen.height, standalone: isStandalone() });
+export function useScreenFix(enabled = true) {
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const root = document.documentElement;
+    const fit = () => {
+      const b = screenNow();
+      if (b.tall) { root.style.setProperty('--mt-screen-h', `${b.height}px`); root.classList.add('mt-tall'); } else if (!isStandalone()) root.classList.remove('mt-tall');
+    };
+    fit();
+    const vv = window.visualViewport;
+    if (vv) vv.addEventListener('resize', fit);
+    window.addEventListener('resize', fit);
+    window.addEventListener('orientationchange', fit);
+    return () => { if (vv) vv.removeEventListener('resize', fit); window.removeEventListener('resize', fit); window.removeEventListener('orientationchange', fit); root.classList.remove('mt-tall'); };
+  }, [enabled]);
+}
+
 // P76: 휴대폰 보드 화면(기본)의 작은 세션 목록 단추(오른쪽 위, 늘 보인다)
 export function PhoneListButton() {
   const t = useT();
@@ -69,8 +89,8 @@ function useNow(ms) { const [n, set] = useState(Date.now()); useEffect(() => { c
 const Chev = ({ dir = 'right' }) => <svg className="mt-ph-chev" viewBox="0 0 24 24" aria-hidden="true"><path d={dir === 'left' ? 'm15 18-6-6 6-6' : dir === 'down' ? 'm6 9 6 6 6-6' : 'm9 18 6-6-6-6'} /></svg>;
 const readFolded = () => { try { return new Set(JSON.parse(store().getItem('mt.phoneFolded') || '[]')); } catch { return new Set(); } };
 const PHONE_SCALE_KEY = 'mt.phoneTermScale';
-const PHONE_SCALE_DEFAULT = 0.8; // 14px × 0.8 ≈ 11px: 390px 폭에 50칸쯤
-export const readPhoneScale = () => { try { const v = Number(store().getItem(PHONE_SCALE_KEY)); return v ? clampScale(v) : PHONE_SCALE_DEFAULT; } catch { return PHONE_SCALE_DEFAULT; } };
+// 기본 14px × 0.8 ≈ 11px: 390px 폭에 50칸쯤. P83: 가장 작게 40%(5.6px)면 110칸 안팎
+export const readPhoneScale = () => { try { return clampPhoneScale(store().getItem(PHONE_SCALE_KEY)); } catch { return PHONE_SCALE_DEFAULT; } };
 export const writePhoneScale = (n) => { try { store().setItem(PHONE_SCALE_KEY, String(n)); } catch {} }; // P76: 전체 보기도 같은 글자 크기
 
 // 연결 상태(api.js $conn, $rtt)
@@ -108,7 +128,7 @@ export function PhoneApp() {
     const vv = window.visualViewport;
     const el = rootRef.current;
     const fit = () => {
-      const b = viewportBox(vv, window.innerHeight);
+      const b = screenNow(); // P83: 홈 화면 앱의 짧은 창 높이를 바로잡은 값
       if (el) { el.style.height = `${b.height}px`; el.style.transform = b.top ? `translateY(${b.top}px)` : ''; }
       document.documentElement.classList.toggle('mt-kb-open', b.height < window.innerHeight - 120); // 키보드가 올라왔으면 아래 안전 영역을 비우지 않는다
     };
@@ -320,7 +340,7 @@ function PhoneSession({ s, onBack, onGo }) {
     markInteracted(id);
     api.call('terminal.input', { session: id, data }).catch((e) => { if (e.code !== 'disconnected') toast(errText(e), 'error'); }); // P82: 끊긴 동안은 띠가 알린다
   };
-  const bump = (d) => setScale((v) => { const n = clampScale(Math.round((v + d) * 100) / 100); try { store().setItem(PHONE_SCALE_KEY, String(n)); } catch {} return n; });
+  const bump = (d) => setScale((v) => { const n = clampPhoneScale(Math.round((v + d) * 100) / 100); try { store().setItem(PHONE_SCALE_KEY, String(n)); } catch {} return n; });
   async function send() {
     const plan = sendPlan(s, text);
     if (!plan || busy) return;

@@ -194,3 +194,25 @@ html.mt-touch-board input, html.mt-touch-board textarea { -webkit-user-select: t
 .mt-full-keys .mt-ph-key.enter { flex-grow: 1.3; background: var(--accent-soft); border-color: var(--accent-line); }
 /* 위 띠의 글자 크기 단추(세션 바깥) */
 .mt-full-font { flex: none; width: 34px; height: 28px; border-radius: 8px; border: 1px solid var(--panel-line-2); background: var(--panel-2); color: var(--text-2); font: 600 12.5px var(--font-ui); }
+
+/* P83: 화면 높이, 전체 보기 위 띠(흐림 비키기, 나가기 단추), 아래 끝까지 찬 색, 손가락 화면의 명령 바 */
+/* iOS 홈 화면 앱이 창 높이를 상태 표시줄만큼 짧게 주면 화면 높이까지 늘린다(Phone.jsx useScreenFix) */
+html.mt-tall, html.mt-tall body, html.mt-tall #root { height: var(--mt-screen-h); }
+html.mt-tall body { bottom: auto; }
+/* 전체 보기가 덮지 못한 자리(아래 끝, 고무줄)는 키 줄과 같은 색 */
+html.mt-full-on, html.mt-full-on body { background: var(--chrome-bg); }
+/* 위 띠: iOS가 상태 표시줄 아래 가장자리에 흐림을 그리므로 글과 단추를 안전 영역보다 14px 더 내린다 */
+.mt-full-out { gap: 7px; min-height: 40px; padding-top: calc(env(safe-area-inset-top) + 14px); padding-bottom: 6px; padding-left: calc(env(safe-area-inset-left) + 8px); padding-right: calc(env(safe-area-inset-right) + 10px); }
+.mt-full-exit { flex: none; display: inline-flex; align-items: center; gap: 1px; height: 32px; padding: 0 11px 0 5px; border-radius: 9px; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent-text); font: 650 14px var(--font-ui); -webkit-user-select: none; user-select: none; }
+.mt-full-exit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.mt-full-font { width: 36px; height: 32px; }
+.mt-full-font[data-action=phone-font-down] { margin-left: auto; }
+.mt-full-font:disabled { opacity: .38; }
+/* 키 줄은 홈 표시줄 바로 위 */
+.mt-full-keys { padding-bottom: max(6px, calc(env(safe-area-inset-bottom) - 12px)); }
+/* 손가락 화면의 명령 바: 휴대폰 보드 화면에서는 화면 폭에 맞추고, 숨은 동안은 손잡이 단추로 연다(CommandBar.jsx) */
+.mt-app.phone-board .mt-bottom { left: calc(env(safe-area-inset-left) + 8px); right: calc(env(safe-area-inset-right) + 8px); width: auto; transform: none; bottom: max(10px, calc(env(safe-area-inset-bottom) - 6px)); }
+.mt-app.phone-board .mt-bottom-above { width: 100%; }
+.mt-bottom[data-kb="1"] { bottom: calc(var(--mt-kb-lift) + 6px) !important; }
+.mt-bottom-handle { position: absolute; left: 50%; bottom: max(6px, calc(env(safe-area-inset-bottom) - 10px)); transform: translateX(-50%); z-index: 34; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px 0 11px; border-radius: 17px; border: 1px solid var(--chrome-line-2); background: var(--chrome-bg); color: var(--chrome-text); box-shadow: var(--chrome-shadow); font: 600 13px var(--font-ui); -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+.mt-bottom-handle .mt-mark { width: 18px; height: 18px; }

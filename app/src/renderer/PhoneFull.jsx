@@ -1,5 +1,5 @@
 // P76: 휴대폰 보드 화면에서 노드를 탭하면 그 세션이 화면을 채운다(전체 보기). 판 위에 덮어 그리고, 판의 뷰포트는 그대로라 나오면 같은 자리다.
-// - 위쪽 띠(이름, 상태): 세션 바깥. 탭하면 보드로 나온다. 뒤로 가기(가장자리 밀기)와 두 손가락 오므리기로도 나온다
+// - 위쪽 띠(← 보드 단추, 이름, 상태, 글자 크기): 세션 바깥. 단추나 띠를 탭하면 보드로 나온다. 뒤로 가기(가장자리 밀기)와 두 손가락 오므리기로도 나온다(P83 단추)
 // - 터미널: 화면 폭 전체, 휴대폰 글자 크기(P74와 같은 값). 이 휴대폰이 패널 크기를 가져간다(P47 초점). 손가락으로 끌면 스크롤, 탭하면 입력 줄로 키보드
 // - 아래: 얇은 입력 줄과 특수 키 줄(Esc, Ctrl+C, Tab, ⇧Tab, 화살표, /, ⏎). 세션 위에는 떠 있는 단추를 두지 않는다
 // - 입력 줄은 브라우저의 보통 입력칸이라 한글 조합(IME)을 브라우저가 끝낸 뒤 Enter에 터미널로 친다(lib/touch-board.js linePlan)
@@ -12,11 +12,11 @@ import { markInteracted } from './touch.js';
 import { wakeSession } from './sleep.js';
 import { useT, errText } from './lib/i18n.js';
 import { STATE_LABEL } from './lib/labels.js';
-import { keyBytes, touchWheelDelta, viewportBox, toneOf } from './lib/phone.js';
+import { keyBytes, touchWheelDelta, toneOf } from './lib/phone.js';
 import { fullLayout, kbShift, lastContentRow, linePlan, lineEnterSends, FULL_KEYS, PINCH_EXIT_RATIO, TOUCH_SLOP_PX, TAP_MAX_MS, dist as gap2 } from './lib/touch-board.js';
 import { useFull, closeFull } from './full-view.js';
-import { readPhoneScale, writePhoneScale } from './Phone.jsx';
-import { clampScale } from './lib/scale.js';
+import { readPhoneScale, writePhoneScale, screenNow } from './Phone.jsx';
+import { clampPhoneScale, PHONE_SCALE_MIN, SCALE_MAX } from './lib/scale.js';
 
 const KEY_LABEL = { enter: '⏎', esc: 'Esc', ctrlc: '^C', up: '↑', down: '↓', left: '←', right: '→', tab: 'Tab', shifttab: '⇧Tab', slash: '/' };
 const ATTACH_DELAY_MS = 200; // 판의 노드가 터미널을 뗀 뒤 붙인다(한 창이 한 패널을 두 번 붙이지 않게)
@@ -35,7 +35,7 @@ function FullView({ s, from }) {
   const t = useT();
   const id = s.sessionId;
   const rootRef = useRef(null), topRef = useRef(null), wrapRef = useRef(null), lineRef = useRef(null), keysRef = useRef(null), taRef = useRef(null);
-  const [vv, setVv] = useState(() => viewportBox(window.visualViewport, window.innerHeight));
+  const [vv, setVv] = useState(screenNow); // P83: 홈 화면 앱의 짧은 창 높이를 바로잡은 값
   const [box, setBox] = useState({ w: 0, room: 0, term: 0, open: false });
   const closedTerm = useRef(null);
   const [ready, setReady] = useState(false);
@@ -57,7 +57,7 @@ function FullView({ s, from }) {
   // 가상 키보드: 보이는 높이·자리
   useEffect(() => {
     const v = window.visualViewport;
-    const fit = () => setVv(viewportBox(window.visualViewport, window.innerHeight));
+    const fit = () => setVv(screenNow());
     if (v) { v.addEventListener('resize', fit); v.addEventListener('scroll', fit); }
     window.addEventListener('resize', fit);
     document.documentElement.classList.add('mt-full-on');
@@ -165,19 +165,22 @@ function FullView({ s, from }) {
     markInteracted(id);
     for (const step of plan) { if (step.delay) await sleep(step.delay); await input(step.data); }
   }
-  const bump = (d) => setScale((v) => { const n = clampScale(Math.round((v + d) * 100) / 100); writePhoneScale(n); return n; });
+  const bump = (d) => setScale((v) => { const n = clampPhoneScale(Math.round((v + d) * 100) / 100); writePhoneScale(n); return n; });
   const grow = (el) => { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 96)}px`; };
   const stateText = s.kind === 'shell' && live ? (s.shell && s.shell.atPrompt === false ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[s.state] || s.state;
 
   return (
     <div className={`mt-full${box.open ? ' kb' : ''}`} ref={rootRef} data-role="phone-full" data-session={id} data-kb={box.open ? '1' : undefined} style={{ top: vv.top, height: vv.height }}>
       <div className="mt-full-out" ref={topRef} data-role="phone-full-out" aria-label={t('phoneBoard.fullOut')}>
+        {/* P83: 보드로 돌아가는 단추(띠 누르기, 뒤로 쓸기, 오므리기도 그대로) */}
+        <button type="button" className="mt-full-exit" data-action="phone-full-exit" aria-label={t('phoneExit.label')} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => closeFull()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg><span>{t('phoneExit.button')}</span>
+        </button>
         <span className="mt-ph-dot" data-tone={toneOf(s)} aria-hidden="true" />
         <b className="mt-full-name">{s.name}</b>
         <span className="mt-full-state">{stateText}</span>
-        <span className="mt-full-hint">{t('phoneBoard.fullOut')}</span>
-        {live && <button type="button" className="mt-full-font" data-action="phone-font-down" aria-label={t('phone.fontDown')} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => bump(-0.05)}>A−</button>}
-        {live && <button type="button" className="mt-full-font" data-action="phone-font-up" aria-label={t('phone.fontUp')} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => bump(0.05)}>A+</button>}
+        {live && <button type="button" className="mt-full-font" data-action="phone-font-down" aria-label={t('phone.fontDown')} disabled={scale <= PHONE_SCALE_MIN} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => bump(-0.05)}>A−</button>}
+        {live && <button type="button" className="mt-full-font" data-action="phone-font-up" aria-label={t('phone.fontUp')} disabled={scale >= SCALE_MAX} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => bump(0.05)}>A+</button>}
       </div>
       <div className="mt-full-wrap" ref={wrapRef}>
         <div className="mt-full-term" data-role="phone-full-term" style={box.term ? { height: box.term, top: box.open ? -shift : 'auto', bottom: box.open ? 'auto' : 0 } : undefined} data-shift={box.open ? shift : 0}>
