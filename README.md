@@ -64,7 +64,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Real terminals.** Every near node is an xterm.js terminal attached to the herdr pane, so you can type in it directly.
 - **Select like a web page.** Drag to select at any zoom; the selection follows scrolling, scrolls at the edges and copies beyond the screen.
 - **Paste that works.** Bracketed paste for agents, multi-line paste for shells.
-- **Scale.** UI and terminal text scale from 70% to 150%.
+- **Scale.** UI and terminal text scale from 70% to 150% (terminal text on phones down to 40%).
 - **Output view.** Long answers open as Markdown on the side, where you can reply or save them as `.md`.
 
 ### Docks and layout
