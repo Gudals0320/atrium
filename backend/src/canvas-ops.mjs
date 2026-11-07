@@ -2,8 +2,8 @@
 // - 영역과 빈자리(H1), 영역 옮기기, 검색(H2), 붙여 묶기(H5), 크기 단계와 정리(H7). 골라 묶기(그룹, H6)는 P22에서 뺐다
 // - 계산은 canvas.mjs·search.mjs의 순수 함수(창도 같이 씀). 바꾼 뒤에는 board.changed를 보내 창이 판을 다시 읽게 한다.
 import crypto from 'node:crypto';
-import { NODE, SIZE_STEPS, SIZE_DIRS, SIZE_LEVELS, ASPECTS, parseStep, resolveSize, fitsAspect, matchAspect, stepSize, DEFAULT_ASPECT, dirOf, aspectOf, DOCK_CELL, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot } from './canvas.mjs';
-import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, remove as removeLeaf, removeWithOuter, insertWithOuter, rootSizes, presetTree, presetSize, PRESETS } from './dock-tree.mjs'; // P17: 분할 나무
+import { NODE, SIZE_STEPS, SIZE_DIRS, SIZE_LEVELS, ASPECTS, parseStep, resolveSize, fitsAspect, matchAspect, stepSize, DEFAULT_ASPECT, dirOf, aspectOf, DOCK_CELL, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot, dockCellOf } from './canvas.mjs';
+import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, remove as removeLeaf, removeWithOuter, insertWithOuter, rootSizes, presetTree, presetSize, PRESETS, cellTree } from './dock-tree.mjs'; // P17: 분할 나무
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes, dockedAreas, visibleAnchors, workersPreset } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자. P68: 워크트리끼리 붙인 덩어리
@@ -249,6 +249,18 @@ function applyLayout(b, tree, outer) {
   for (const [sid, r] of lay.rects) { const n = nodeRect(b, sid); if (n) b.store.setNode({ ...n, x: r.x, y: r.y, w: r.w, h: r.h }); }
   return lay.outer;
 }
+// P77: 덩어리의 칸 상태(canvas.mjs dockCellOf). 칸은 가장 작은 구성 노드, 비율 불은 모든 칸이 기록한 비율에 맞을 때만
+export const dockCell = (b, d) => (d ? dockCellOf(d.members.map((sid) => anyRect(b, sid)), d.aspect) : null);
+// P77: 비율에 불이 든 덩어리의 칸 크기(붙이기·떼기·배치 틀 바꾸기에서 지킨다). 꺼져 있으면(테두리로 바꾼 뒤) null
+const litCell = (b, d) => { const c = dockCell(b, d); return c && c.aspect ? c.cell : null; };
+// P77: 칸 크기를 지킨 채 나무를 늘어놓는다. anchor의 왼쪽 위(side가 left·top이면 오른쪽·아래 변)를 지키고 바깥이 늘거나 준다
+function applyCells(b, tree, cell, anchor, side = null) {
+  const c = cellTree(tree, cell);
+  const outer = { x: anchor.x, y: anchor.y, w: c.w, h: c.h };
+  if (side === 'left') outer.x = anchor.x + anchor.w - c.w;
+  if (side === 'top') outer.y = anchor.y + anchor.h - c.h;
+  return { tree: c.tree, outer };
+}
 // P68: 덩어리를 바꾸는 일(fn) 앞뒤로 워크트리 상자를 맞춘다. 같은 리포의 다른 영역 세션이 섞인 덩어리는 리포 영역에 놓인다(boardItems).
 // 1) 구성 노드가 덩어리로 빠져나가 새로 숨는 상자: 숨기 전 사각형의 왼쪽 위를 그 상자 자리로 저장한다(떼면 그 자리로 돌아온다).
 // 2) 섞인 덩어리에서 나와 다시 자기 상자에 드는 노드(남은 덩어리가 한 상자 것뿐이면 덩어리째): 그 상자의 빈자리로 옮긴다.
@@ -329,15 +341,22 @@ function attachInner(b, p, why) {
   const td = dockOf(b, t.sessionId);
   const at = p.at || (td ? 'leaf' : 'dock');
   let tree, outer;
+  // P77: 비율에 불이 든 덩어리(혼자인 대상은 그 노드의 비율 불)는 칸 크기를 지키고 바깥이 는다
+  const tNode = td ? null : nodeRect(b, t.sessionId);
+  const cell = td ? litCell(b, td) : tNode && aspectOf(tNode, tNode.aspect) ? { w: tNode.w, h: tNode.h } : null;
+  const aspect = td ? td.aspect : cell ? tNode.aspect : null;
   if (td) {
     outer = dockOuter(b, td);
     const base = td.members.includes(s.sessionId) ? removeLeaf(td.tree, s.sessionId) : td.tree;
     ({ tree, outer } = insertWithOuter(base, outer, { target: t.sessionId, side, id: s.sessionId, at, size: sRect }));
   } else {
-    ({ tree, outer } = insertWithOuter(t.sessionId, nodeRect(b, t.sessionId), { target: t.sessionId, side, id: s.sessionId, at, size: sRect }));
+    ({ tree, outer } = insertWithOuter(t.sessionId, tNode, { target: t.sessionId, side, id: s.sessionId, at, size: sRect }));
   }
+  if (cell) ({ tree, outer } = applyCells(b, tree, cell, td ? dockOuter(b, td) : tNode, at === 'dock' ? side : null));
   const saved = saveDock(b, { dockId: td ? td.dockId : null, workspaceKey: ws, tree, origin: (td && td.origin) || p.origin || why }, why);
   applyLayout(b, saved.tree, outer);
+  if (cell && !td) b.store.setDockAspect(saved.dockId, aspect);
+  if (cell) reflowLines(b, t.sessionId, 'dock attach'); // P75: 커진 덩어리가 줄의 뒤 형제를 아래로
   settleRegions(b, 'dock attach');
   b.api.broadcast('board.changed', { why: 'dock' });
   return { dock: b.store.getDock(saved.dockId), at };
@@ -390,15 +409,25 @@ function layoutInner(b, p) {
   const one = docks.length === 1 && docks[0].members.length === picked.length ? docks[0] : null;
   const head = dockOf(b, picked[0]);
   const start = head ? dockOuter(b, head) : nodeRect(b, picked[0]);
-  const cell = { w: Math.round(Number(p.cellW) || DOCK_CELL.w), h: Math.round(Number(p.cellH) || DOCK_CELL.h) }; // P73: 칸 960×540
-  let outer = one ? dockOuter(b, one) : { x: start.x, y: start.y, ...presetSize(preset, picked.length, cell) };
+  // P77: 비율에 불이 든 덩어리 하나가 들어오면 그 칸 크기와 비율을 지키고 바깥이 늘거나 준다. 새로 짜는 덩어리는 칸 960×540(16:9)에서 시작한다.
+  // 칸이 16:9·4:3이 아니면(꺼져 있음: 테두리로 바꾼 덩어리, 시험의 cellW·cellH) 지금처럼 바깥(같은 덩어리) 또는 틀의 격자(새 덩어리)에 틀 비율로 나눈다
+  const lit1 = docks.length === 1 ? litCell(b, docks[0]) : null;
+  const given = { w: Math.round(Number(p.cellW) || DOCK_CELL.w), h: Math.round(Number(p.cellH) || DOCK_CELL.h) }; // P73: 칸 960×540
+  const cell = lit1 || given;
+  const aspect = lit1 ? docks[0].aspect : matchAspect(cell);
+  const before = one ? dockOuter(b, one) : null;
+  let tree = presetTree(preset, picked);
+  let outer;
+  if (aspect) ({ tree, outer } = applyCells(b, tree, cell, start));
+  else outer = one ? before : { x: start.x, y: start.y, ...presetSize(preset, picked.length, cell) };
   // P50(#2): 새 크기의 덩어리가 다른 노드·메모·칸반을 덮지 않게, 첫 노드 자리에서 가장 가까운 빈자리로 둔다(U1)
   if (!one) outer = { ...outer, ...presetSpot(b, picked, outer) };
   for (const d of docks.slice(1)) { b.store.deleteDock(d.dockId); b.store.addEvent(null, 'dock_removed', { dockId: d.dockId, why: `preset ${preset}` }); }
-  const saved = saveDock(b, { dockId: docks[0] ? docks[0].dockId : null, workspaceKey: ws, tree: presetTree(preset, picked), origin: p.origin || 'user' }, `preset ${preset}`);
+  const saved = saveDock(b, { dockId: docks[0] ? docks[0].dockId : null, workspaceKey: ws, tree, origin: p.origin || 'user' }, `preset ${preset}`);
   const got = applyLayout(b, saved.tree, outer);
-  // P73: 바깥 크기를 지킨 덩어리는 고른 비율도 지킨다. 새로 짠 덩어리는 바깥이 16:9·4:3에 맞으면 그 비율에 불이 들어온다
-  b.store.setDockAspect(saved.dockId, one ? aspectOf(got, one.aspect) : matchAspect(got));
+  // P73: 바깥 크기를 지킨 덩어리(비율 꺼짐)는 기록도 그대로 둔다. P77: 칸 기준으로 짠 덩어리는 칸의 비율
+  b.store.setDockAspect(saved.dockId, aspect || (one ? one.aspect : null));
+  if (one && aspect && got && (got.w > before.w || got.h > before.h)) reflowLines(b, picked[0], 'dock preset'); // P75: 커진 덩어리가 줄의 뒤 형제를 아래로
   settleRegions(b, 'dock preset');
   b.api.broadcast('board.changed', { why: 'dock' });
   return { dock: b.store.getDock(saved.dockId), preset };
@@ -470,7 +499,9 @@ export function dockUpdate(b, p) {
 // 안쪽 칸이면 같은 마디의 이웃이 그 자리를 채운다. 하나만 남으면 덩어리가 풀린다
 function detach(b, d, sid, why) {
   const outer = dockOuter(b, d);
+  const cell = litCell(b, d); // P77: 비율에 불이 든 덩어리는 칸 크기를 지키고 바깥이 준다(왼쪽 위 그대로)
   const r = removeWithOuter(d.tree, outer, sid);
+  if (cell && r.tree && !isLeaf(r.tree)) Object.assign(r, applyCells(b, r.tree, cell, outer));
   const saved = saveDock(b, { ...d, tree: r.tree }, why);
   if (saved) applyLayout(b, saved.tree, r.outer);
   return saved;
@@ -602,8 +633,8 @@ export async function autoDockSplit(b, s, parent) {
 // ---------- 크기 단계와 정리(H7) ----------
 // P73: 크기 = 방향(dir: wide·tall) × 종횡비(aspect: 16:9·4:3, null이면 자유 비율) × 단계(level: large·normal·small)(canvas.mjs resolveSize).
 // size(크기 열쇠, 예: wide43-normal)를 주면 셋을 한 번에, 옛 열쇠 large·normal·small은 단계만. dir·aspect·level을 따로 주면 그것만 바꾸고 나머지는 지금 것을 지킨다.
-// 덩어리 안 노드는 덩어리 바깥에 쓴다(scope dock이든 아니든: P73부터 덩어리 크기는 바깥으로만 바꾼다). 바깥 비율은 덩어리 기록(aspect)에, 혼자인 노드는 노드 기록에 남긴다.
-// 왼쪽 위는 그대로. 덩어리는 칸을 나무의 비율대로 나누고 잎마다 최소 크기를 지킨다
+// 덩어리 안 노드는 덩어리에 쓴다(scope dock이든 아니든). P77: 덩어리의 크기는 칸 하나(가장 작은 구성 노드)의 것이고 바깥은 나무에서 나온다(dock-tree.mjs cellTree).
+// 칸 비율은 덩어리 기록(aspect)에, 혼자인 노드는 노드 기록에 남긴다. 왼쪽 위는 그대로
 export function sizeRequest(p) {
   const req = {};
   if (p.size != null) {
@@ -628,12 +659,16 @@ export function setSize(b, p) {
   const d = dockOf(b, s.sessionId);
   let out;
   if (d) {
+    // P77: 덩어리의 방향·비율·단계는 칸 하나(가장 작은 구성 노드)의 것이다. 칸이 같은 값의 단독 세션 크기가 되고 바깥은 나무에서 나온다(왼쪽 위 그대로)
     const outer = dockOuter(b, d);
-    out = resolveSize(outer, d.aspect, req);
-    const need = minSize(d.tree);
-    const got = applyLayout(b, d.tree, { ...outer, w: Math.max(need.w, out.w), h: Math.max(need.h, out.h) });
-    b.store.setDockAspect(d.dockId, out.aspect && got && fitsAspect(got, out.aspect) ? out.aspect : null);
-    b.store.addEvent(null, 'dock_saved', { dockId: d.dockId, outer: dockOuter(b, d), aspect: out.aspect, why: 'size' });
+    const st = dockCell(b, d);
+    out = resolveSize(st.cell, st.aspect, req);
+    const c = applyCells(b, d.tree, out, outer);
+    b.store.updateDock(d.dockId, { ...d, tree: normalize(c.tree) });
+    applyLayout(b, normalize(c.tree), c.outer);
+    const now = dockCell(b, { ...d, aspect: out.aspect });
+    b.store.setDockAspect(d.dockId, now && now.aspect ? out.aspect : null);
+    b.store.addEvent(null, 'dock_saved', { dockId: d.dockId, outer: dockOuter(b, d), cell: { w: out.w, h: out.h }, aspect: out.aspect, why: 'size' });
   } else {
     out = resolveSize(r, r.aspect, req);
     b.store.setNode({ ...r, w: out.w, h: out.h });
@@ -643,7 +678,7 @@ export function setSize(b, p) {
   reflowLines(b, s.sessionId, 'size'); // P75: 커졌으면 줄의 뒤 형제를 아래로
   settleRegions(b, 'size');
   b.api.broadcast('board.changed', { why: 'size' });
-  return { session: s.name, size: out.key, dir: out.dir, aspect: out.aspect, level: out.level, w: out.w, h: out.h, dock: d ? d.dockId : null };
+  return { session: s.name, size: out.key, dir: out.dir, aspect: out.aspect, level: out.level, w: out.w, h: out.h, dock: d ? d.dockId : null, ...(d ? { outer: { w: dockOuter(b, d).w, h: dockOuter(b, d).h } } : {}) }; // P77: 덩어리는 w·h가 칸, outer가 바깥
 }
 
 // 정리할 블록: 덩어리, 나머지 노드 하나씩, 그 워크스페이스의 메모·칸반(P6c: 크기 그대로, 연결 없는 줄에 둔다. 빼면 정리한 노드가 그 위에 놓인다)

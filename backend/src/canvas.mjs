@@ -10,7 +10,7 @@ export const GAP = 40; // 노드 사이 틈
 // ---------- P73: 크기 = 방향(가로·세로) × 종횡비(16:9·4:3) × 단계(크게·보통·작게) ----------
 // 표는 가로 값이다. 세로는 가로를 돌린 것(16:9 세로 = 9:16, 4:3 세로 = 3:4)이라 가로·세로가 함께 커지고 작아진다.
 // 작게 세로(16:9: 585 너비, 4:3: 660 너비)도 터미널이 글자 14px로 55칸 넘게 읽힌다.
-// 덩어리(붙여 묶기)는 바깥 사각형에 이 크기와 비율을 쓴다(칸 하나하나가 아니다. 칸은 배치 틀의 비율대로 나눈다)
+// P77: 덩어리(붙여 묶기)는 칸 하나(가장 작은 구성 노드)에 이 크기와 비율을 쓴다. 바깥은 배치 틀에서 나온다(dock-tree.mjs cellTree, dockCellOf)
 export const ASPECTS = { '16:9': [16, 9], '4:3': [4, 3] };
 export const ASPECT_KEYS = Object.keys(ASPECTS);
 export const SIZE_DIRS = ['wide', 'tall'];
@@ -84,6 +84,17 @@ export function resolveSize(rect, stored, req = {}) {
   }
   const [w, h] = dir !== curDir ? [rect.h, rect.w] : [rect.w, rect.h];
   return { w: Math.round(w), h: Math.round(h), dir, aspect: null, level: null, key: null };
+}
+// P77: 덩어리의 칸 상태. 칸은 가장 작은 잎이다. 비율 불은 기록한 비율(stored)이 있고 모든 칸이 같은 방향으로 그 비율에 맞을 때만,
+// 단계 불은 비율 불이 있고 가장 작은 칸이 그 단계일 때만. rects: 구성 노드 사각형 → { cell: { w, h }, dir, aspect, level } | null
+export function dockCellOf(rects, stored = null) {
+  const rs = (rects || []).filter((r) => r && r.w > 0 && r.h > 0);
+  if (!rs.length) return null;
+  const c = rs.reduce((a, r) => (r.w * r.h < a.w * a.h ? r : a));
+  const cell = { w: c.w, h: c.h };
+  const dir = dirOf(cell);
+  const aspect = stored && ASPECTS[stored] && rs.every((r) => dirOf(r) === dir && fitsAspect(r, stored)) ? stored : null;
+  return { cell, dir, aspect, level: aspect ? levelOf(cell, aspect) : null };
 }
 
 export const REGION_PAD = 40; // 영역 테두리와 안의 것 사이

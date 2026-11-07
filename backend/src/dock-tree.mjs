@@ -511,3 +511,34 @@ export function evenDivider(t, outer, path, index, min = LEAF_MIN) {
   if (!dv) return t;
   return moveDivider(t, outer, path, index, (dv.sizes[index + 1] - dv.sizes[index]) / 2, min);
 }
+
+// ---------- P77: 칸 기준 크기 ----------
+// 덩어리의 방향·비율·단계는 칸 하나의 모양과 크기다(칸 하나 = 같은 값의 단독 세션). 바깥 크기는 나무(배치 틀)에서 나온다.
+// 모든 잎이 같은 모양(cell의 너비/높이)을 지키고 가장 작은 잎이 cell 크기다. 가로 마디의 자식은 높이가, 세로 마디의 자식은 너비가 같아야 하므로
+// 모양이 다른 자식은 크기가 달라진다(큰 칸은 작은 칸을 모은 크기: 1 + 2 틀이면 큰 칸이 작은 칸 2 × 2). 잎이 모두 같은 모양이라 납작해지는 잎이 없다.
+// 나무의 비율(ratios)은 여기서 다시 정한다. 마디의 모양: 잎 r(너비/높이), 가로 마디 = 자식 모양의 합, 세로 마디 = 1 / Σ(1 / 자식 모양)
+function shapeOf(t, r) {
+  if (isLeaf(t)) return r;
+  const ss = t.kids.map((k) => shapeOf(k, r));
+  return t.dir === 'row' ? ss.reduce((a, s) => a + s, 0) : 1 / ss.reduce((a, s) => a + 1 / s, 0);
+}
+// → { tree(비율을 칸 기준으로 다시 정한 나무), w, h(바깥 크기) }
+export function cellTree(t, cell) {
+  if (t == null || !cell || !(cell.w > 0) || !(cell.h > 0)) return { tree: t, w: cell ? cell.w : 0, h: cell ? cell.h : 0 };
+  const r = cell.w / cell.h;
+  const hs = [];
+  const walk = (n, h) => { // h: 이 마디의 높이(뿌리 1)
+    if (isLeaf(n)) { hs.push(h); return n; }
+    const ss = n.kids.map((k) => shapeOf(k, r));
+    if (n.dir === 'row') {
+      const sum = ss.reduce((a, s) => a + s, 0);
+      return { dir: 'row', kids: n.kids.map((k) => walk(k, h)), ratios: ss.map((s) => round6(s / sum)) };
+    }
+    const w = shapeOf(n, r) * h;
+    const sum = ss.reduce((a, s) => a + 1 / s, 0);
+    return { dir: 'col', kids: n.kids.map((k, i) => walk(k, w / ss[i])), ratios: ss.map((s) => round6(1 / s / sum)) };
+  };
+  const tree = walk(t, 1);
+  const k = cell.h / Math.min(...hs);
+  return { tree, w: Math.round(shapeOf(t, r) * k), h: Math.round(k) };
+}
