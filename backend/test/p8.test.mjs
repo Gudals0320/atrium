@@ -147,7 +147,7 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   }
   assert.match(BOARD_SYSTEM_PROMPT, /atrium-herdr:atrium/); assert.match(BOARD_SYSTEM_PROMPT, /delegate/); assert.match(BOARD_SYSTEM_PROMPT, /상한은 없다/);
   assert.ok(BRANCH_ALLOW.includes('Bash(atrium child-wait *)') && BRANCH_ALLOW.includes('PowerShell(atrium child-wait *)'));
-  assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 6); // P21: 잠든 세션 깨우기 한 줄
+  assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 7); // P21: 잠든 세션 깨우기 한 줄, P81: atrium me 한 줄
   assert.ok(pl.pluginDir.endsWith('atrium-herdr'));
   assert.match(childNotice({ role: '워커', agentName: 'w1', paneId: 'w2:p1', depth: 2 }), /herdr agent prompt w1/);
 });

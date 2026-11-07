@@ -121,6 +121,9 @@ export default {
     herdrStop: 'Stopping the board herdr server ends every claude in it. When it starts again, sessions come back by resuming and turns in progress are cut off.',
     linkCut: 'Cuts the link @{from} → @{to} ("{role}"). @{from} is told it was cut. The history stays.',
     linkRemove: 'Removes this line from the board. The history stays.',
+    detach: 'Detaches @{name} from @{parent}. The header and sidebar stop showing it as a sub-session of @{parent}, and @{parent} can no longer close it or keep it awake with itself. This cannot be undone.',
+    linkCutParent: 'This line joins a parent and its sub-session. Cutting only the line keeps @{to} a sub-session of @{from}. Detaching from the parent too makes @{to} a session without a parent.',
+    detachNoParent: '@{name} has no parent.',
     missedTrash: { one: 'Sends {n} missed conversation ({size}, {folders} folders) to the Windows trash. Only the transcript file and its subagent folder go.', other: 'Sends {n} missed conversations ({size}, {folders} folders) to the Windows trash. Only transcript files and their subagent folders go.' },
     missedNone: 'No missed conversations to delete',
     archiveOld: { one: 'Archives {n} item (closed sessions and outside conversations) idle for more than {days} days. Nothing is deleted; you can take it out of the archive.', other: 'Archives {n} items (closed sessions and outside conversations) idle for more than {days} days. Nothing is deleted; you can take them out of the archive.' },
@@ -2026,5 +2029,14 @@ export default {
     dirTitle: 'Make the sessions of the dock wide or tall. The split ratios stay; the whole dock is sized so each session\'s long side comes closest to this direction',
     aspectTitle: 'Size the whole dock so its sessions come closest to 16:9 or 4:3, keeping the split ratios and the size step. Dragging an edge turns both off',
     sizeTitle: 'Whole dock {w} × {h}. A bit larger than a single session of the same step, growing with the number of sessions',
+  },
+  // P81: detach from the parent (node menu, link cut confirmation)
+  detach: {
+    menu: 'Detach from parent',
+    menuHint: 'Take it out of @{parent}\'s sub-sessions and leave it without a parent',
+    confirm: 'Detach',
+    cutOnly: 'Cut line only',
+    cutDetach: 'Detach from parent too',
+    done: 'Detached @{name} from @{parent}.',
   },
 };

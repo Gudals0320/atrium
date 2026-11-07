@@ -206,6 +206,11 @@ function AskCallout({ s }) {
 function NodeMenu({ s, docked, onClose }) {
   const t = useT();
   const call = (method, p) => api.call(method, p).then(onClose, (e) => toast(errText(e), 'error'));
+  const [detachAsk, setDetachAsk] = useState(null); // P81: 부모에서 떼기 확인 글
+  const detach = (yes) => api.call('session.detach', { session: s.sessionId, confirm: yes }).then((r) => {
+    if (r && r.needsConfirm) return setDetachAsk(tMsg(r));
+    onClose(); toast(t('detach.done', { name: s.name, parent: r.from || (s.branch && s.branch.parentName) || '' }));
+  }, (e) => toast(errText(e), 'error'));
   return (
     <div className="mt-menu nodrag" data-role="node-menu" onMouseDown={(e) => e.stopPropagation()}>
       <div className="mt-menu-row"><span className="dim">{t('node.size')}</span>
@@ -218,6 +223,10 @@ function NodeMenu({ s, docked, onClose }) {
       {s.kind !== 'shell' && <div className="mt-menu-row"><button className="mt-btn small" data-action="loop-new" onClick={() => { onClose(); openDialog({ kind: 'loop', target: { session: s.sessionId } }); }}>{t('node.loopNew')}</button><span className="dim">{t('node.loopNewHint')}</span></div>}
       {/* P68: 리드의 하위 세션(워커)을 워크트리가 달라도 한 덩어리로 */}
       {s.branch && s.branch.children >= 2 && <div className="mt-menu-row"><button className="mt-btn small" data-action="dock-workers" onClick={() => api.call('dock.workers', { lead: s.sessionId }).then((r) => { onClose(); toast(t('dockWorkers.done', { n: (r.workers || []).length })); }, (e) => toast(errText(e), 'error'))}>{t('dockWorkers.action')}</button><span className="dim">{t('dockWorkers.hint', { n: s.branch.children })}</span></div>}
+      {/* P81: 부모가 있으면 부모에서 떼기(머리줄·사이드바·끄기와 잠재우기 묶음에서 빠진다) */}
+      {s.branch && s.branch.parentSessionId && (detachAsk
+        ? <div className="mt-menu-row mt-detach-ask" data-role="detach-ask"><span className="dim">{detachAsk}</span><button className="mt-btn small danger" data-action="detach-confirm" onClick={() => detach(true)}>{t('detach.confirm')}</button><button className="mt-btn small ghost" onClick={() => setDetachAsk(null)}>{t('common.cancel')}</button></div>
+        : <div className="mt-menu-row"><button className="mt-btn small" data-action="detach" onClick={() => detach(false)}>{t('detach.menu')}</button><span className="dim">{t('detach.menuHint', { parent: s.branch.parentName || '' })}</span></div>)}
       {docked && <div className="mt-menu-row"><button className="mt-btn small" data-action="undock" onClick={() => call('dock.remove', { session: s.sessionId })}>{dt('undock')}</button><span className="dim">{dt('undockHint')}</span></div>}
       <div className="mt-menu-row dim" data-role="dock-hint">{dt('dockHint')}</div>
       <div className="mt-menu-row"><button className="mt-btn small ghost" data-action="menu-close" onClick={onClose}>{t('common.close')}</button></div>
