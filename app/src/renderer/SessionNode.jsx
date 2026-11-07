@@ -36,6 +36,7 @@ import { confirmKey } from './lib/keys.js'; // P28: 닫기 확인에서 Delete �
 import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 판의 이름 바꾸기
 import { addressOf, renamed } from './lib/session-name.js';
 import { killWorktreeParam } from './lib/worktree-exit.js'; // P71: 닫기 확인의 워크트리 선택
+import { tierOf, runsRing, ringDiag } from './lib/overview.js'; // P85: 멀리 보기 강조 등급과 도는 둘레
 
 const zoomSel = (s) => s.transform[2];
 // 이 배율보다 작으면 머리줄의 메모리·모델·작은 단추를 숨기고 이름과 상태만 화면 기준 크기로 보인다(사용성 평가 2026-10-31)
@@ -260,6 +261,20 @@ function SleepFace({ s, zoom, w, h, far, close }) { // 깨우기 단추는 가�
 
 const IDLE_DIM_MS = 30 * 60 * 1000; // 이만큼 아무 일이 없던 쉬는 노드는 흐리게(H3)
 
+// P85: 일하는 노드의 도는 둘레. 회전판(i)만 transform으로 돌아 합성 단계에서 끝난다. 화면 밖이면 멈춘다(창 하나에 관찰자 하나)
+let ringIO = null;
+const ringObserver = () => {
+  if (ringIO || typeof IntersectionObserver === 'undefined') return ringIO;
+  ringIO = new IntersectionObserver((es) => { for (const e of es) e.target.dataset.off = e.isIntersecting ? '' : '1'; }, { rootMargin: '64px' });
+  return ringIO;
+};
+function RunRing({ w, h, zoom }) {
+  const ref = useRef(null);
+  useEffect(() => { const io = ringObserver(); const el = ref.current; if (!io || !el) return undefined; io.observe(el); return () => io.unobserve(el); }, []);
+  const zq = 1.25 ** Math.floor(Math.log(Math.max(zoom, 0.02)) / Math.log(1.25)); // 줌마다 판 크기가 바뀌어 다시 그리지 않게 계단으로(작은 쪽으로 잡아 늘 덮는다)
+  return <span ref={ref} className="mt-node-run" aria-hidden="true" data-role="run-ring"><i style={{ '--diag': `${ringDiag(w, h, zq)}px` }} /></span>;
+}
+
 function CloseWaiting({ s }) {
   const t = useT();
   return (
@@ -431,9 +446,10 @@ function SessionNodeInner({ id, selected }) {
   const toTerminal = () => { const st = getState(); st.navigateTo && st.navigateTo(id, { focusTerminal: true }); };
   const idle = (s.state === 'ready' || s.state === 'shell_idle') && !s.unseen && s.lastActivityAt && Date.now() - s.lastActivityAt > IDLE_DIM_MS;
   const asleep = s.state === 'sleeping'; // P21: 터미널 대신 잠든 얼굴(아이콘 얼굴은 달 표시)
+  const tier = tierOf(s); // P85
 
   return (
-    <div className={`mt-node st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${showCard && !far ? ' asking' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zoom < SMALL_ZOOM ? ' z-small' : ''}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-session={id} data-name={s.name} data-face={face} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
+    <div data-tier={tier} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${showCard && !far ? ' asking' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zoom < SMALL_ZOOM ? ' z-small' : ''}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-session={id} data-name={s.name} data-face={face} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
       <NodeResizer isVisible={selected && face === 'close' && !docked} minWidth={420} minHeight={260} lineClassName="mt-resize-line" handleClassName="mt-resize-handle"
         onResize={(_e, p) => setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height })}
         onResizeEnd={(_e, p) => { setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height }); saveNode(id, 'resize'); }} />
@@ -443,6 +459,7 @@ function SessionNodeInner({ id, selected }) {
       ))}
       {/* P23: 덩어리 안에서는 가장자리 손잡이 대신 가운데 점으로 잇는다(분할선과 겹치지 않게, 잇기 모드에서만 끈다) */}
       {docked && <Handle type="source" position={Position.Top} id="c" className="mt-handle h-c nodrag" title={t('dock.dotTitle')} />}
+      {runsRing(tier, face) && <RunRing w={n.w} h={n.h} zoom={zoom} />}
       {face !== 'icon' && <Header s={s} onKill={() => setKilling(true)} onMenu={() => setMenu((m) => !m)} onLoops={() => setLoopsOpen((o) => !o)} />}
       {face === 'icon' && <IconRename s={s} />}
       {!far && <GitLine s={s} />}

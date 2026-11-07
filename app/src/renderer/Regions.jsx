@@ -96,7 +96,7 @@ function WorktreeAreaNodeInner({ data }) {
   const top = BORDER_TOP - head + Math.min(head / 2, fs * 0.9);
   const { branch, folder } = worktreeLabel({ path: data.path, branch: data.branch });
   return (
-    <div className={`mt-region mt-wtarea${data.warn ? ' warn' : ''}${data.working ? ' run' : ''}`} data-ws={data.wsKey} data-area={data.area} data-worktree={data.path} data-branch={branch}>
+    <div className={`mt-region mt-wtarea${data.warn ? ' warn' : ''}${data.working || data.live ? ' run' : ' rest'}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-ws={data.wsKey} data-area={data.area} data-worktree={data.path} data-branch={branch}>
       <div className="mt-region-box" style={{ top: BORDER_TOP }} />
       <div className="mt-region-head mt-wadrag" style={{ fontSize: fs, height: head, top }} title={t('regions.wtTitle', { path: data.path || '', branch })}>
         <b className="mt-wtarea-name">⎇ {branch}</b>

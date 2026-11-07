@@ -1491,3 +1491,39 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
 /* P81: 부모에서 떼기 확인(노드 메뉴). 글은 한 줄 전체, 단추는 그 아래 */
 .mt-menu-row.mt-detach-ask { flex-wrap: wrap; max-width: 360px; }
 .mt-menu-row.mt-detach-ask > .dim { flex-basis: 100%; line-height: 1.45; }
+/* P85: 멀리 보기 강조(lib/overview.js 등급, data-tier). 일함은 앞으로: 상태 색 테두리와 빛, 머리줄 물듦, 가까이가 아닌 얼굴은 둘레가 돈다(.mt-node-run).
+   내 차례는 지금처럼 주황 고리가 깜빡이고 둘레는 돌지 않는다. 쉼·끝남은 가까이가 아닌 얼굴에서 바로 바탕·테두리 명도를 낮춘다(P28처럼 흐리게 하지 않는다).
+   "작업 중만 또렷하게"(html.mt-spot)일 때만 쉼·끝남·잠듦을 투명하게 물린다. 움직임은 회전판의 transform뿐이고, 움직임 줄이기면 멈춘 고리로 그린다 */
+.mt-node.t-work { --run: var(--st-working); }
+.mt-node.t-work.st-shell_running { --run: var(--st-shell_running); }
+.mt-node.t-work.kind-codex { --run: var(--st-codex); }
+.mt-node.t-work .mt-node-head { background: color-mix(in srgb, var(--run) 13%, var(--con-head)); }
+.mt-node.t-work.face-close { box-shadow: 0 0 18px color-mix(in srgb, var(--run) 16%, transparent), var(--con-shadow); }
+.mt-node.t-work:not(.face-close) { border-color: var(--run); box-shadow: 0 0 0 calc(1px * var(--inv, 1)) color-mix(in srgb, var(--run) 45%, transparent), 0 0 calc(24px * var(--inv, 1)) color-mix(in srgb, var(--run) 30%, transparent), var(--con-shadow); }
+.mt-node.t-work.selected:not(.face-close) { box-shadow: 0 0 0 calc(2px * var(--inv, 1)) var(--info), 0 0 calc(24px * var(--inv, 1)) color-mix(in srgb, var(--run) 30%, transparent); }
+.mt-node.face-icon.t-work { background: color-mix(in srgb, var(--run) 9%, var(--icon-bg)); border-color: var(--run); }
+.mt-node-run { position: absolute; inset: calc(-4px * var(--inv, 1)); border-radius: calc(var(--con-radius) + 4px * var(--inv, 1)); padding: calc(2.5px * var(--inv, 1)); overflow: hidden; pointer-events: none; z-index: 2;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.mt-node-run > i { position: absolute; left: 50%; top: 50%; width: var(--diag); height: var(--diag); margin: calc(var(--diag) / -2) 0 0 calc(var(--diag) / -2); will-change: transform;
+  background: conic-gradient(transparent 0turn .5turn, color-mix(in srgb, var(--run) 30%, transparent) .72turn, var(--run) .93turn, color-mix(in srgb, var(--run) 55%, var(--white)) .985turn, transparent 1turn);
+  animation: mt-run 2.6s linear infinite; }
+.mt-node-run[data-off="1"] > i { animation-play-state: paused; }
+@keyframes mt-run { to { transform: rotate(1turn); } }
+.mt-node.docked .mt-node-run { inset: 0; border-radius: 0; }
+.mt-node:is(.t-rest, .t-done):not(.face-close) { background: var(--con-idle-bg); border-color: var(--con-idle-line); box-shadow: none; }
+.mt-node:is(.t-rest, .t-done):not(.face-close) .mt-node-head { background: var(--con-idle-bg); }
+.mt-node:is(.t-rest, .t-done):not(.face-close) :is(.mt-far-line, .mt-chat) { color: var(--con-idle-text); }
+.mt-node.face-icon:is(.t-rest, .t-done) { background: var(--con-idle-bg); border-color: var(--con-idle-line); }
+.mt-cv.t-done:not(:hover) { background: var(--con-idle-bg); border-color: var(--con-idle-line); box-shadow: none; }
+.mt-wtarea.run .mt-region-box { border-width: max(1.5px, calc(1.5px * var(--inv, 1))); box-shadow: 0 0 calc(18px * var(--inv, 1)) color-mix(in srgb, var(--wt-box-line-run) 28%, transparent); }
+.mt-wtarea.rest .mt-region-box { border-style: dashed; }
+html.mt-spot .mt-node:is(.t-rest, .t-done, .t-sleep):not(.face-close), html.mt-spot .mt-cv:is(.t-rest, .t-done) { opacity: .3; }
+html.mt-spot .mt-node.t-review:not(.face-close) { opacity: .7; }
+html.mt-spot .mt-node:is(.t-rest, .t-done, .t-sleep, .t-review):not(.face-close):hover, html.mt-spot .mt-cv:hover { opacity: 1; }
+html.mt-spot .mt-wtarea.rest, html.mt-spot .mt-region:not(.mt-wtarea):not(.run):not(.hot) .mt-region-box { opacity: .45; }
+@media (prefers-reduced-motion: reduce) {
+  .mt-node-run > i { animation: none; background: var(--run); }
+  .mt-node.st-waiting:not(.face-close), .mt-node.st-trust_wait:not(.face-close), .mt-icon-dot[data-state] { animation: none; }
+}
+.mt-node.selected:is(.t-rest, .t-done):not(.face-close) { box-shadow: 0 0 0 calc(2px * var(--inv, 1)) var(--info); }
+.mt-node:is(.t-rest, .t-done):not(.face-close):hover { border-color: var(--con-line); }

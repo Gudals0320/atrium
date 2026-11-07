@@ -59,6 +59,7 @@ import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 import { oneFinger, releaseKind, pinchViewport, panViewport, mid, dist as gap2, tapTarget, movableId, tapAction, TAP_CONTROL, LONG_PRESS_MS } from './lib/touch-board.js'; // P76
 import { openFull, fullId, onFull } from './full-view.js'; // P76
+import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
 
 const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
 const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge };
@@ -163,7 +164,8 @@ function backdrops(content, ghost, ctrlId = null) {
     if (!a.wt) { regionsOut.push({ id: `ws:${key}`, type: 'region', position: { x: r.x, y: r.y }, width: r.w, height: r.h, dragHandle: '.mt-rdrag', data: { wsKey: key, warn }, zIndex: -2, selectable: false, style: { pointerEvents: 'none' } }); continue; }
     const inSess = sess.filter((n) => sessArea.get(n.id) === key), inItems = items.filter((n) => itemAreaOf.get(n.id) === key);
     const working = inSess.filter((n) => (st.sessions.get(n.id) || {}).state === 'working').length, convos = inItems.filter((n) => n.type === 'convo').length;
-    regionsOut.push({ id: `wa:${key}`, type: 'wtarea', position: { x: r.x, y: r.y }, width: r.w, height: r.h, dragHandle: '.mt-wadrag', data: { wsKey: a.wsKey, wt: a.wt, area: key, branch: a.branch, path: a.path, warn, n: inSess.length, working, convos }, zIndex: -1, selectable: false, style: { pointerEvents: 'none' } });
+    const live = inSess.filter((n) => tierOf(st.sessions.get(n.id)) === 'work').length; // P85: 명령이 도는 셸과 띄우는 중도 일함으로 본다(상자 강조)
+    regionsOut.push({ id: `wa:${key}`, type: 'wtarea', position: { x: r.x, y: r.y }, width: r.w, height: r.h, dragHandle: '.mt-wadrag', data: { wsKey: a.wsKey, wt: a.wt, area: key, branch: a.branch, path: a.path, warn, n: inSess.length, working, live, convos }, zIndex: -1, selectable: false, style: { pointerEvents: 'none' } });
   }
   // P17: 덩어리(분할 나무)마다 마디의 분할선과 바깥 크기 손잡이. 지금 그리는 구성 노드 자리의 bbox를 바깥으로 본다(덩어리째 끄는 중에도 따라온다).
   // Ctrl+끌기로 끌어내는 노드(ctrlId)는 저장소 자리로 센다(덩어리 모양은 놓을 때까지 그대로)

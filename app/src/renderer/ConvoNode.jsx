@@ -8,6 +8,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, Position, useStore 
 import { useStore } from './store.js';
 import { api } from './api.js';
 import { faceFor } from './lib/faces.js';
+import { convoTier } from './lib/overview.js'; // P85: 판 밖 대화 카드도 멀리 보기 규칙을 따른다(열린 대화는 쉼, 닫힌 대화는 끝남)
 import { ago, labelFit } from './lib/labels.js';
 import { shifted } from './lib/link-labels.js'; // P67
 import { useT, errText, tMsg, fmtDateTime } from './lib/i18n.js';
@@ -120,7 +121,7 @@ function ConvoNodeInner({ data, selected }) {
   const face = convoFace(f);
   const b = c.binding || {};
   return (
-    <div className={`mt-cv face-${face}${b.open ? ' running' : ''}${selected ? ' selected' : ''}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-convo={c.convId} data-face={face} data-ws={c.workspaceKey} data-block={c.block || ''}>
+    <div className={`mt-cv face-${face} t-${convoTier(b)}${b.open ? ' running' : ''}${selected ? ' selected' : ''}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-convo={c.convId} data-face={face} data-ws={c.workspaceKey} data-block={c.block || ''}>
       {/* 띄움 선의 끝(잇기는 하지 않는다) */}
       {[['t', Position.Top], ['r', Position.Right], ['b', Position.Bottom], ['l', Position.Left]].map(([hid, pos]) => <Handle key={hid} type="source" position={pos} id={hid} className="mt-cv-handle" isConnectable={false} />)}
       {face === 'card' && <CardFace c={c} now={now} narrow={c.w * zoom < 260} />}

@@ -1,12 +1,12 @@
 // P11: 캔버스 위에 떠 있는 크롬(목업 app/design/board-mock/ ?scene=ours). P6a~P10의 위쪽 줄(InboxBar)과 아래쪽 워크스페이스 단추(Regions)가 하던 일을 옮겼다.
 // - 위 왼쪽: 사이드바, 워크스페이스 탭(지금 영역은 주황 갈색, 세션 수), 리포 열기 +, 찾기(Ctrl+F)
 // - 위 오른쪽: 내 차례(누르면 기다리는 세션 목록, N으로 다음), 검토, 문제, 연결과 세션 수, 메모리, 바뀐 것, 설정
-// - 왼쪽 레일: 선택, 새 세션(Claude, Codex, DeepSeek(P25), 셸), 메모, 칸반, 그룹, 손으로 잇기, 전체 보기
+// - 왼쪽 레일: 선택, 새 세션(Claude, Codex, DeepSeek(P25), 셸), 메모, 칸반, 그룹, 손으로 잇기, 전체 보기, 작업 중만 또렷하게(P85)
 // - 오른쪽 레일: 사이드바(리포), 미션 맵, 루프, 보관함, 설정
 // - 아래: 빠른 동작 칩 줄, 줌 알약(− n% +, 누르면 전체 보기). 명령 입력은 CommandBar.jsx
 // 새 기능은 없다. 모든 단추는 이미 있던 동작을 부른다.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useStore, getState, openDialog, toast, wsName, setMissionOpen, setSearchOpen, selectWorkspace } from './store.js';
+import { useStore, getState, openDialog, toast, wsName, setMissionOpen, setSearchOpen, selectWorkspace, setSpotlight } from './store.js';
 import { quickSpawn } from './SpawnDialog.jsx';
 import { favoriteLaunchers, launcherIcon, launcherMark, launcherTooltip } from './lib/launchers.js'; // P33: 레일 = 즐겨찾기 호출자
 import { api } from './api.js';
@@ -254,9 +254,9 @@ export function TopRight({ maxControllers }) {
 }
 
 // ---------- 도구 레일 ----------
-function Tool({ icon, kind, label, on, onClick, action }) {
+function Tool({ icon, kind, label, on, onClick, action, pressed }) {
   return (
-    <button className={`mt-tool${on ? ' on' : ''}`} title={label} aria-label={label} data-action={action} onClick={onClick}>
+    <button className={`mt-tool${on ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={pressed} data-action={action} onClick={onClick}>
       {kind ? <KindIcon kind={kind} title={label} badge /> : <Icon name={icon} />}
     </button>
   );
@@ -285,6 +285,7 @@ function Favorites() {
 
 export function LeftRail({ linking, setLinking }) {
   const t = useT();
+  const spot = useStore((st) => st.spotlight);
   return (
     <div className="mt-rail left" data-role="rail-left">
       <Tool icon="pointer" on={!linking} label={t('rail.select')} action="tool-select" onClick={() => { setLinking(false); getState().clearSelection && getState().clearSelection(); }} />
@@ -297,6 +298,8 @@ export function LeftRail({ linking, setLinking }) {
       <Tool icon="kanban" label={t('rail.kanban')} action="kanban-new" onClick={() => createItem('kanban')} />
       <Sep />
       <Tool icon="expand" label={t('rail.fitAll')} action="fit-all" onClick={() => getState().fitAll && getState().fitAll(250)} />
+      {/* P85: 멀리 보기에서 일함·내 차례·오류 밖의 노드를 더 물린다. 이 창 프로필에 남는다(단축키 없음) */}
+      <Tool icon="spot" on={spot} pressed={spot} label={t(spot ? 'spotlight.off' : 'spotlight.on')} action="spotlight" onClick={() => setSpotlight(!spot)} />
     </div>
   );
 }

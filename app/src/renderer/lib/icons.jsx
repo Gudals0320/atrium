@@ -31,6 +31,7 @@ export const PATHS = {
   arrange: 'M3 3h7v7H3zM14 3h7v4h-7zM14 11h7v10h-7zM3 14h7v7H3z',
   git: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9',
   power: 'M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04',
+  spot: 'M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', // P85: 작업 중만 또렷하게
 };
 
 export function Icon({ name, className = '', title }) {
