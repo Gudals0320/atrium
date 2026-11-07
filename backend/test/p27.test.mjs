@@ -159,7 +159,7 @@ test('P27 판(P35 상자): 워크트리 둘이 생기면 리포 영역 안에 �
   assert.throws(() => ops.worktreeMove(b, { workspace: ws.key, worktree: 'nope', dx: 1, dy: 1 }), (e) => e.code === 'not_found');
   // 정리는 본 저장소 영역 안의 것만
   const plan = ops.arrange(b, { workspace: ws.key });
-  assert.deepEqual(plan.plan.map((x) => x.names).flat(), ['main']);
+  assert.deepEqual(plan.plan.filter((x) => x.kind !== 'wtbox').map((x) => x.names).flat(), ['main']); // P75: 상자 블록의 이름은 상자 안 세션(상자째 옮긴다)
 });
 
 test('P27 판: 워크트리를 지우면 그 상자가 사라지고, 남은 노드는 본 영역으로 온다. 다시 켜도(새 Store) 자리가 같다', async () => {

@@ -12,7 +12,8 @@ import { newRuntime } from '../src/state.mjs';
 import { Backend } from '../src/backend.mjs';
 import * as ops from '../src/canvas-ops.mjs';
 import { Recall } from '../src/recall.mjs';
-import { childSlot, Branch, CHILD_SIZE } from '../src/branch.mjs';
+import { Branch, CHILD_SIZE } from '../src/branch.mjs';
+import { lineSlot, LINE_GAP_X, LINE_GAP_Y } from '../src/tree-line.mjs';
 import { pathKey, normPath } from '../src/workspaces.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p9-'));
@@ -219,18 +220,14 @@ test('P9 J2: 닫힌 동안 다른 영역이 그 자리로 왔으면 마지막 �
 });
 
 // ---------- 하위 세션(K4): 열 하나가 좁고 길게 늘어나지 않는다 ----------
-test('P9 K4: 하위 세션이 여러 개면 부모 높이의 약 두 배까지 한 열, 그다음은 오른쪽 열', () => {
+test('P9 K4(P75): 하위 세션이 여러 개여도 격자로 접지 않고 부모 오른쪽 한 열에 띄운 순서대로(화면 맞추기는 사람이 확대·축소로)', () => {
   const parent = R(0, 0);
-  const size = { w: 480, h: 300 }; // P73 전 작게(열 나누기 규칙을 본다)
-  const items = [parent];
-  const fits = (c) => !items.some((i) => overlaps(c, i, GAP - 1));
+  const size = { w: 480, h: 300 };
   const kids = [];
-  for (let i = 0; i < 8; i++) { const c = childSlot({ parent, siblings: kids, size, fits }); assert.ok(c, `자식 ${i}`); kids.push(c); items.push(c); }
-  const cols = new Set(kids.map((k) => k.x));
-  assert.ok(cols.size >= 3, `열 ${cols.size}개`);
-  const all = bbox(kids);
-  assert.ok(all.h <= 2 * parent.h + size.h + GAP, `열 높이 ${all.h}`);
-  assert.equal(kids[0].x, parent.w + 200); assert.equal(kids[0].y, 0); assert.equal(kids[1].y, size.h + GAP);
+  for (let i = 0; i < 8; i++) { const c = lineSlot({ parent, bands: kids, size, obstacles: [parent, ...kids] }); assert.ok(c, `자식 ${i}`); kids.push({ ...c, ...size }); }
+  assert.equal(new Set(kids.map((k) => k.x)).size, 1, '한 열');
+  assert.equal(kids[0].x, parent.w + LINE_GAP_X); assert.equal(kids[0].y, 0);
+  for (let i = 1; i < kids.length; i++) assert.equal(kids[i].y, kids[i - 1].y + size.h + LINE_GAP_Y);
 });
 
 test('P9 K4: 옆 영역에 막혀 나무 자리가 없으면 노드만 피해 부모 옆에 두고, 옆 영역을 밀어 겹침을 푼다(먼 빈자리로 보내지 않는다)', () => {
@@ -246,7 +243,7 @@ test('P9 K4: 옆 영역에 막혀 나무 자리가 없으면 노드만 피해 �
   const w1 = kid('w1');
   assert.deepEqual([w1.x, w1.y], [NODE.w + 200, 0]);
   const w2 = kid('w2');
-  assert.deepEqual([w2.x, w2.y], [NODE.w + 200, small.h + GAP], '첫 자식 아래(부모 옆 열)');
+  assert.deepEqual([w2.x, w2.y], [NODE.w + 200, small.h + LINE_GAP_Y], '첫 자식 아래(부모 옆 열)');
   assert.deepEqual(pairs(ops.regions(b)), [], 'c를 아래로 밀어 겹치지 않는다');
   assert.ok(rectOf(b, 'c0').y > NODE.h + 40 + 40 + 72);
 });

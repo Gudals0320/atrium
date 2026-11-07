@@ -2015,4 +2015,10 @@ export default {
     key_left: 'Left arrow',
     key_right: 'Right arrow',
   },
+  // P75: spawn order on the role chip (number among the parent's sub-sessions)
+  branchOrder: {
+    who: '@{parent}\'s {role} {n}',
+    whoOrphan: '{role} {n} (parent closed)',
+    title: '. Sub-session number {n} of its parent',
+  },
 };

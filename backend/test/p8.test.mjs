@@ -16,9 +16,10 @@ import { newRuntime } from '../src/state.mjs';
 import { writeSessionSettings, writeBoardPlugin, buildStartArgs, buildResumeArgv, BOARD_SYSTEM_PROMPT, HERDR_ALLOW } from '../src/launch.mjs';
 import { normalizePatch, Settings } from '../src/settings.mjs';
 import * as branchMod from '../src/branch.mjs';
-import { Branch, BRANCH_ALLOW, depthOf, isDescendant, descendantsOf, childName, childSlot, childNotice, boardSkill, childShims, CHILD_NAME_RE } from '../src/branch.mjs';
+import { Branch, BRANCH_ALLOW, depthOf, isDescendant, descendantsOf, childName, childNotice, boardSkill, childShims, CHILD_NAME_RE } from '../src/branch.mjs';
 import { SIZE_STEPS, overlaps, GAP } from '../src/canvas.mjs';
 import { workspaceOf } from '../src/git.mjs';
+import { lineSlot, LINE_GAP_X, LINE_GAP_Y } from '../src/tree-line.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p8-'));
@@ -57,26 +58,22 @@ test('K1: 하위 세션 이름 — 주면 herdr 이름 규칙대로, 없으면 <
   assert.ok(CHILD_NAME_RE.test(long) && long.length <= 32);
 });
 
-test('K4: 나무 자리 — 부모 오른쪽 열, 형제는 위아래로 쌓이고, 막히면 한 열 더 오른쪽', () => {
+test('K4(P75): 나무 자리 — 부모 오른쪽 한 열, 형제는 앞 형제(의 띠) 아래, 막히면 열을 바꾸지 않고 그 아래로 잇는다', () => {
   const size = SIZE_STEPS.small;
   const parent = { x: 0, y: 0, w: 720, h: 460 };
-  const items = [parent];
-  const fits = (c) => !items.some((i) => overlaps(c, i, GAP - 1));
-  const a = childSlot({ parent, siblings: [], size, fits });
-  assert.equal(a.x, 720 + 200); assert.equal(a.y, 0);
-  items.push(a);
-  const b = childSlot({ parent, siblings: [a], size, fits });
-  assert.equal(b.x, a.x); assert.equal(b.y, a.y + a.h + GAP);
-  items.push(b);
-  // 사람이 형제 하나를 멀리 옮겼으면 그 열의 남은 형제 아래
-  const moved = { ...b, x: 5000, y: 5000 };
-  const c = childSlot({ parent, siblings: [a, moved], size, fits: (r) => !items.filter((i) => i !== b).concat([moved]).some((i) => overlaps(r, i, GAP - 1)) });
-  assert.equal(c.x, a.x); assert.equal(c.y, a.y + a.h + GAP);
-  // 열이 다른 노드로 막혀 있으면 다음 열
-  const wall = { x: 840, y: -10000, w: 480, h: 30000 };
-  const d = childSlot({ parent, siblings: [], size, fits: (r) => !overlaps(r, wall, GAP - 1) && !overlaps(r, parent, GAP - 1) });
-  assert.ok(d.x > wall.x + wall.w);
-  assert.equal(childSlot({ parent: null, size, fits }), null);
+  const a = lineSlot({ parent, bands: [], size, obstacles: [parent] });
+  assert.deepEqual([a.x, a.y], [720 + LINE_GAP_X, 0]);
+  const ra = { ...a, ...size };
+  const b = lineSlot({ parent, bands: [ra], size, obstacles: [parent, ra] });
+  assert.deepEqual([b.x, b.y], [a.x, a.y + size.h + LINE_GAP_Y]);
+  // 앞 형제의 띠(손자까지)가 길면 그 아래
+  const band = { x: a.x, y: 0, w: 3000, h: 2000 };
+  assert.equal(lineSlot({ parent, bands: [band], size }).y, 2000 + LINE_GAP_Y);
+  // 열이 다른 노드로 막혀 있으면 같은 열에서 그 아래로(다음 열로 가지 않는다)
+  const wall = { x: 840, y: -100, w: 480, h: 3000 };
+  const d = lineSlot({ parent, bands: [], size, obstacles: [parent, wall] });
+  assert.equal(d.x, 720 + LINE_GAP_X); assert.equal(d.y, wall.y + wall.h + LINE_GAP_Y);
+  assert.equal(lineSlot({ parent: null, size }), null);
 });
 
 // ---------- 승인 규칙과 env ----------
@@ -348,14 +345,16 @@ test('K1: 다른 폴더면 그 워크스페이스에 띄운다', async () => {
   assert.equal(b.spawned[0].place, null); // 다른 워크스페이스는 그 영역의 빈자리 규칙
 });
 
-test('K4: 하위 세션 노드는 부모 오른쪽에(P73: 16:9 가로 보통), 형제는 위아래로 쌓인다', async () => {
+test('K4: 하위 세션 노드는 부모 오른쪽에(P73: 16:9 가로 보통), 형제는 위아래로 쌓인다(P75: 띄운 순서, 순서 번호)', async () => {
   const { b, lead } = await fakeBoard();
   await b.branch.spawnChild(lead, { name: 'w1', wait: false });
   await b.branch.spawnChild(lead, { name: 'w2', wait: false });
   const [a, c] = b.spawned.map((x) => x.place);
   assert.equal(a.size, 'wide-normal'); assert.equal(a.w, SIZE_STEPS['wide-normal'].w); assert.equal(a.aspect, '16:9');
   assert.ok(a.x >= 720); assert.equal(a.y, 0);
-  assert.equal(c.x, a.x); assert.equal(c.y, a.y + a.h + GAP);
+  assert.equal(c.x, a.x); assert.equal(c.y, a.y + a.h + LINE_GAP_Y);
+  const kids = [...b.sessions.values()].filter((x) => x.parentSessionId === lead.sessionId);
+  assert.deepEqual(kids.map((x) => b.branch.summaryExtra(x).branch.order), [1, 2]);
 });
 
 test('K2·K3(P36): 상한 없음 — 한 세션이 하위 세션 32개, 8단계 나무를 만들고(옛 설정 키가 있어도) 거부가 없다. 형제 자리는 나무 모양으로 겹치지 않는다', async () => {
@@ -370,13 +369,13 @@ test('K2·K3(P36): 상한 없음 — 한 세션이 하위 세션 32개, 8단계 
   for (let d = 2; d <= 8; d++) { last = await b.branch.spawnChild(cur, { name: `d${d}`, wait: false }); cur = b.sessions.get(last.sessionId); }
   assert.equal(last.depth, 8);
   assert.equal(b.store.events({}).filter((e) => e.kind === 'branch_refused').length, 0);
-  // 자리: 32개 형제 모두 나무 자리(부모 오른쪽), 서로 겹치지 않고, 칸 수가 √n을 따라 늘어 한쪽으로만 길지 않다
+  // 자리: 32개 형제 모두 나무 자리(부모 오른쪽), 서로 겹치지 않고, P75: 격자로 접지 않고 한 열에 띄운 순서대로
   const places = b.spawned.slice(0, 32).map((x) => x.place);
   assert.ok(places.every(Boolean), 'all placed in the tree');
   assert.ok(places.every((p) => p.x >= 720 + 200));
   for (let i = 0; i < places.length; i++) for (let j = i + 1; j < places.length; j++) assert.ok(!overlaps(places[i], places[j], GAP - 1), `${i} ${j}`);
-  const cols = new Set(places.map((p) => p.x)).size, rows = new Set(places.map((p) => p.y)).size;
-  assert.ok(cols <= 8 && rows <= 8, `cols ${cols} rows ${rows}`);
+  assert.equal(new Set(places.map((p) => p.x)).size, 1, 'P75: 격자로 접지 않고 한 열');
+  for (let i = 1; i < places.length; i++) assert.ok(places[i].y > places[i - 1].y, `띄운 순서 ${i}`);
   // 깊이 사슬은 단계마다 오른쪽으로
   const chain = b.spawned.slice(32).map((x) => x.place);
   for (let i = 1; i < chain.length; i++) assert.ok(chain[i].x > chain[i - 1].x);

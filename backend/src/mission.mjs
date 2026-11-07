@@ -70,6 +70,8 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
       since: (s.ask && s.ask.since) || s.lastActivityAt || null, lastPrompt: clip(s.lastPrompt, 120), loops: s.loops || 0,
       // P8(K4): 나무(부모 아래에 들여 보인다). 판에 올린 에이전트도 부모가 있으면 같이 따른다
       parentId: s.parentSessionId && byId.has(s.parentSessionId) ? sid(s.parentSessionId) : null, depth: (s.branch && s.branch.depth) || 1, role: (s.branch && s.branch.child && s.branch.role) || null,
+      order: (s.branch && s.branch.child && s.branch.order) || null, createdAt: s.createdAt || null, // P75: 형제는 띄운 순서로
+
     });
   }
   return { nodes, edges, counts, at: now };

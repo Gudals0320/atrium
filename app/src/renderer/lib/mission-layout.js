@@ -15,6 +15,7 @@ export const MISSION = { boxW: 236, boxH: 56, colGap: 156, rowGap: 12, pad: 28, 
 export const EDGE_ORDER = ['role', 'prompt', 'spawn', 'bar', 'loop'];
 const PARENT_RANK = { parent: 0, role: 1, spawn: 2, prompt: 3, bar: 4, loop: 5 };
 const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || '')) || String(a.id).localeCompare(String(b.id));
+const bySpawn = (a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || (a.createdAt || 0) - (b.createdAt || 0) || byName(a, b); // P75
 
 // 한 쌍의 선들을 하나로: { id, from, to, kinds, primary, role, text, count, lastAt, active, status }
 export function mergeEdges(edges, has = () => true) {
@@ -84,7 +85,7 @@ export function missionLayout(graph, { filter = 'all', collapsed = [], order = [
   // 나무 자식은 같은 무리 안만 잇는다. 다른 무리의 자식은 자기 무리에서 뿌리가 되고, 선이 무리 사이를 건넌다
   const kids = new Map();
   for (const s of sessions) if (inTree(s)) { const p = parent.get(s.id); if (p !== hid && wsOf(p) === wsOf(s.id)) push(kids, p, s); }
-  for (const k of kids.values()) k.sort(byName);
+  for (const k of kids.values()) k.sort(bySpawn); // P75: 형제는 띄운 순서(판이 남긴 번호, 없으면 띄운 때, 그다음 이름). 부모 → 워커 선이 엇갈리지 않는다
 
   // 무리: 워크스페이스마다(키가 없으면 ''). 차례는 order, 없는 키는 이름 순, '' 는 끝
   const rankOf = (k) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };

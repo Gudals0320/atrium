@@ -2015,4 +2015,10 @@ export default {
     key_left: '왼쪽 화살표',
     key_right: '오른쪽 화살표',
   },
+  // P75: 역할 칩의 띄운 순서(같은 상위 세션 안 번호)
+  branchOrder: {
+    who: '@{parent}의 {role} {n}',
+    whoOrphan: '{role} {n} (상위 세션 닫힘)',
+    title: ' 생성 순서는 {n}번째입니다.',
+  },
 };

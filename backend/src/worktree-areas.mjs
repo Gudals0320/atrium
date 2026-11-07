@@ -119,17 +119,13 @@ export function regionConflicts(regs, items = []) {
 }
 
 // 상자 겹침 풀기. boxes: [{ key, rect }](한 리포의 상자), fixed: [사각형](그 리포의 본 저장소 쪽 것: 노드, 메모·칸반, 대화 노드) → Map key → { dx, dy }(옮길 것만).
-// 본 저장소 쪽 것은 옮기지 않고 상자만 오른쪽이나 아래(덜 옮기는 쪽)로 gap만큼 띄운다. 상자끼리는 뒤(아래, 그다음 오른쪽)에 있는 쪽을 민다.
+// 본 저장소 쪽 것은 옮기지 않고 상자만 아래로 gap만큼 띄운다. 상자끼리는 뒤(아래, 그다음 오른쪽)에 있는 쪽을 민다.
+// P75: 아래로만 민다(전에는 덜 옮기는 쪽인 오른쪽이나 아래). 하위 세션 줄(tree-line.mjs)의 상자들이 한 열에서 순서를 지키고 옆으로 흩어지지 않는다.
 // 상자는 통째로 옮기므로 안의 상대 자리가 그대로다. 겹침이 없으면 빈 Map
 export function settleBoxes(boxes, fixed = [], { gap = BOX_GAP, maxRounds = 400 } = {}) {
   const list = (boxes || []).filter((b) => b && b.rect).map((b, i) => ({ key: b.key, i, r: { ...b.rect }, dx: 0, dy: 0 }));
   const fx = (fixed || []).filter(Boolean);
-  const push = (p, q) => { // p를 q 뒤로
-    const needX = p.r.x >= q.x ? q.x + q.w + gap - p.r.x : Infinity, needY = p.r.y >= q.y ? q.y + q.h + gap - p.r.y : Infinity;
-    const nx = Number.isFinite(needX) ? needX : q.x + q.w + gap - p.r.x, ny = Number.isFinite(needY) ? needY : q.y + q.h + gap - p.r.y;
-    if (Math.min(needX, needY) === Infinity) { if (nx <= ny) { p.r.x += nx; p.dx += nx; } else { p.r.y += ny; p.dy += ny; } return; }
-    if (needX <= needY) { p.r.x += needX; p.dx += needX; } else { p.r.y += needY; p.dy += needY; }
-  };
+  const push = (p, q) => { const ny = q.y + q.h + gap - p.r.y; if (ny > 0) { p.r.y += ny; p.dy += ny; } }; // p를 q 아래로
   for (let round = 0; round < maxRounds; round++) {
     let moved = false;
     for (const p of list) for (const q of fx) if (overlaps(p.r, q, -1)) { push(p, q); moved = true; }

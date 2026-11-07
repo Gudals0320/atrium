@@ -4,7 +4,7 @@
 // - 거르기: 글(이름, 요청, 질문 등), 상태 묶음, 종류. 거르는 동안에는 접힘을 무시하고 맞는 것만 보인다.
 // - 닫힌 세션과 판 밖 대화는 워크스페이스마다 한 줄(닫힘 n · 대화 m)로 접어 두고, 펼치면 SECTION_STEP씩 보인다.
 import { matches, sidebarRows, SECTION_STEP } from './sidebar.js';
-import { treeOrder } from './branch.js';
+import { treeOrder, spawnOrder } from './branch.js';
 import { askLine } from './labels.js';
 
 // 줄 높이(px). 창의 CSS(sidebar.css .mt-sb2-*)와 같아야 한다
@@ -86,7 +86,7 @@ export function buildRows(opts) {
     const open = filtering || !collapsed[w.key];
     push({ id: `w:${w.key}`, type: 'ws', depth, w, c, open, closedN: closedAll.length, convosN: convosAll.length, archived: (d && d.archived) || 0, matched: filtering ? shown.length : null });
     if (!open) { pinnedRows(all, depth + 1, w.key); return 1; }
-    const tree = treeOrder([...shown].sort(cmp), { cmp });
+    const tree = treeOrder([...shown].sort(cmp), { cmp, kidCmp: spawnOrder((s) => (s.branch && s.branch.order) || null, (s) => s.createdAt, cmp) }); // P75: 하위 세션은 띄운 순서
     for (const { item, indent } of tree) sessionRow(item, depth + 1, indent);
     if (!shown.length && !rest.closed.length && !rest.convos.length && !filtering) push({ id: `e:${w.key}`, type: 'empty', depth: depth + 1, key: w.key });
     const nClosed = rest.closed.length, nConvos = rest.convos.length;
