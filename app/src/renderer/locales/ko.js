@@ -2039,4 +2039,8 @@ export default {
     cutDetach: '부모에서도 떼기',
     done: '@{name} 세션을 @{parent}에서 뗐습니다.',
   },
+  // P82: 연결 기록의 소켓 값(창이 본 직전 끊김)
+  remoteSock: {
+    prevClose: '직전 끊김 {v}',
+  },
 };

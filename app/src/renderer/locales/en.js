@@ -2039,4 +2039,8 @@ export default {
     cutDetach: 'Detach from parent too',
     done: 'Detached @{name} from @{parent}.',
   },
+  // P82: socket values in the connection log (the last close the browser saw)
+  remoteSock: {
+    prevClose: 'last close {v}',
+  },
 };

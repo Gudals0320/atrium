@@ -34,7 +34,11 @@ export function startTsSim({ listen, target, name = 'pc.example.ts.net', login =
     req.pipe(up);
   });
   srv.on('connection', (s) => { socks.add(s); s.on('close', () => socks.delete(s)); });
+  const wsSocks = new Set(); // P82: 넘기는 WebSocket(브라우저 쪽 소켓)
+  let refuseUntil = 0;
   srv.on('upgrade', (req, sock, head) => {
+    if (Date.now() < refuseUntil) { sock.destroy(); return; } // P82: 잠깐 받지 않기(긴 끊김 흉내)
+    wsSocks.add(sock); sock.on('close', () => wsSocks.delete(sock));
     const up = net.connect(target, '127.0.0.1', () => {
       const h = simHeaders(req.headers, cfg);
       up.write(`${req.method} ${req.url} HTTP/1.1\r\n${Object.entries(h).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\r\n')}\r\n\r\n`);
@@ -48,6 +52,8 @@ export function startTsSim({ listen, target, name = 'pc.example.ts.net', login =
   const ready = new Promise((r) => srv.listen(listen, '127.0.0.1', r));
   return {
     cfg, ready,
+    // P82: 서버 쪽에서 WebSocket만 갑자기 끊는다(브라우저는 1006을 본다). refuseMs 동안은 다시 붙는 것도 받지 않는다
+    dropWs: (refuseMs = 0) => { refuseUntil = Date.now() + refuseMs; const n = wsSocks.size; for (const s of wsSocks) s.destroy(); return n; },
     close: () => new Promise((r) => { for (const s of socks) s.destroy(); srv.close(() => r()); }),
   };
 }

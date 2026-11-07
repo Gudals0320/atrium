@@ -24,6 +24,7 @@ import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, view
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampScale } from './lib/scale.js';
 import { showPhoneList, LIST_PREF } from './lib/touch-board.js'; // P76: 기본은 보드 화면
+import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 알약을 바꾸지 않는다
 import './phone.css';
 
 // ---------- 화면 고르기(main.jsx) ----------
@@ -73,16 +74,13 @@ export const readPhoneScale = () => { try { const v = Number(store().getItem(PHO
 export const writePhoneScale = (n) => { try { store().setItem(PHONE_SCALE_KEY, String(n)); } catch {} }; // P76: 전체 보기도 같은 글자 크기
 
 // 연결 상태(api.js $conn, $rtt)
+// P82: 끊긴 지 2초가 안 됐으면 열린 것처럼(지연도 그대로) 보인다
 function useConn() {
-  const [conn, setConn] = useState(api.conn);
+  const { conn: raw, grace } = useConnSteady();
   const [rtt, setRtt] = useState(api.rtt);
-  useEffect(() => {
-    const a = api.on('$conn', (c) => setConn({ ...c }));
-    const b = api.on('$rtt', (r) => setRtt(r.rtt));
-    const c = api.on('$close', () => setRtt(null));
-    return () => { a(); b(); c(); };
-  }, []);
-  return { conn, rtt };
+  useEffect(() => api.on('$rtt', (r) => setRtt(r.rtt)), []);
+  const conn = grace ? { ...raw, phase: 'open' } : raw;
+  return { conn, rtt: conn.phase === 'open' ? rtt : null };
 }
 // compact: 세션 화면의 머리줄(연결되어 있으면 점만, 끊기면 글도)
 function ConnPill({ compact = false }) {
@@ -320,7 +318,7 @@ function PhoneSession({ s, onBack, onGo }) {
     const data = keyBytes(k, { appCursor: !!(term && term.modes && term.modes.applicationCursorKeysMode) });
     if (!data) return;
     markInteracted(id);
-    api.call('terminal.input', { session: id, data }).catch((e) => toast(errText(e), 'error'));
+    api.call('terminal.input', { session: id, data }).catch((e) => { if (e.code !== 'disconnected') toast(errText(e), 'error'); }); // P82: 끊긴 동안은 띠가 알린다
   };
   const bump = (d) => setScale((v) => { const n = clampScale(Math.round((v + d) * 100) / 100); try { store().setItem(PHONE_SCALE_KEY, String(n)); } catch {} return n; });
   async function send() {
@@ -339,7 +337,7 @@ function PhoneSession({ s, onBack, onGo }) {
       }
       setText('');
       requestAnimationFrame(() => { if (taRef.current) taRef.current.style.height = ''; });
-    } catch (e) { toast(t('phone.sendFailed', { error: errText(e) }), 'error'); }
+    } catch (e) { if (e.code !== 'disconnected') toast(t('phone.sendFailed', { error: errText(e) }), 'error'); } // P82: 끊긴 동안은 글을 두고 띠가 알린다
     setBusy(false);
   }
   // 보낸 것의 전달 상태(대기열, 보냄, 확인 …)를 잠깐 보인다
