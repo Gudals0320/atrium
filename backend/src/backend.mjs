@@ -1124,7 +1124,7 @@ export class Backend {
     this.store.addEvent(s.sessionId, 'closed', { reason });
     this.sessions.delete(s.sessionId);
     this.api.broadcast('session.removed', { sessionId: s.sessionId, name: s.name, reason });
-    this.bus.emit('closed', s);
+    this.bus.emit('closed', s, reason); // P81: 까닭(부모에게 보낼 닫힘 알림)
     onSessionClosed(this, s); // P6a: 덩어리에서 뺀다
     this.adapter.refreshSubscription();
   }
@@ -1213,7 +1213,7 @@ export class Backend {
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
       });
       // 빈자리는 그 워크스페이스 영역 안이나 바로 옆(P6a H1). 사람이 보는 화면은 옮기지 않는다. P8(K4): 하위 세션은 부모 오른쪽 열에 형제끼리 쌓는다
-      const place = p.branch ? this.branch.placeChild(p.parentSessionId, ws.key, { worktree: p.branch.worktree || null }) : null; // P75: 워크트리 워커는 상자 테두리까지 비워 둔다
+      const place = p.branch && !p.branch.head ? this.branch.placeChild(p.parentSessionId, ws.key, { worktree: p.branch.worktree || null }) : null; // P75: 워크트리 워커는 상자 테두리까지 비워 둔다
       const area = this.worktrees ? this.worktrees.areaOf(ws.key, cwd) : ''; // P27: 워크트리 폴더에서 띄우면 그 워크트리 영역
       const slot = place || slotFor(this, { wsKey: ws.key, size: NODE, area });
       this.store.setNode({ session_id: sessionId, x: slot.x, y: slot.y, w: place ? place.w : NODE.w, h: place ? place.h : NODE.h, z: 0, size: place ? place.size : NODE.size, aspect: place ? place.aspect : NODE.aspect, area: place ? place.area ?? area : area });
@@ -1790,13 +1790,29 @@ export class Backend {
     const l = this.store.getLink(p.link);
     if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`);
     const a = this.sessions.get(l.from), b = this.sessions.get(l.to);
-    if (!p.confirm) return l.role && a ? confirmResult(`@${a.name} → @${b ? b.name : '?'} 연결("${l.role}")을 끊는다. @${a.name}에 연결 해제를 알립니다. 주고받은 기록은 유지합니다.`, m('linkCut', { from: a.name, to: b ? b.name : '?', role: l.role })) : confirmResult("보드에서 이 연결선을 제거합니다. 주고받은 기록은 유지합니다.", m('linkRemove'));
+    // P81: 부모 → 하위 세션의 선이면 확인에서 "선만 끊기"와 "부모에서도 떼기"를 고른다. 떼기는 선 끊기를 겸한다(알림은 떼기의 것만)
+    const parentLink = !!(a && b && b.parentSessionId === a.sessionId);
+    const pl = parentLink ? { parentLink: { parent: a.name, child: b.name }, parentMsg: m('linkCutParent', { from: a.name, to: b.name }), parentMessage: `@${a.name} → @${b.name}는 부모와 하위 세션의 선입니다. 선만 끊으면 @${b.name}는 여전히 @${a.name}의 하위 세션입니다. 부모에서도 떼면 부모 없는 세션이 됩니다.` } : {};
+    if (!p.confirm) return l.role && a ? confirmResult(`@${a.name} → @${b ? b.name : '?'} 연결("${l.role}")을 끊는다. @${a.name}에 연결 해제를 알립니다. 주고받은 기록은 유지합니다.`, m('linkCut', { from: a.name, to: b ? b.name : '?', role: l.role }), pl) : confirmResult("보드에서 이 연결선을 제거합니다. 주고받은 기록은 유지합니다.", m('linkRemove'), pl);
+    if (p.detach) {
+      if (!parentLink) throw apiError('bad_request', "부모와 하위 세션의 선이 아닙니다. 선만 끊을 수 있습니다.");
+      return { removed: true, deliveryId: null, ...this.branch.detach(b, { by: 'user' }) };
+    }
     let deliveryId = null;
     if (l.role && a && b) { const d = this.queue.enqueue(a.sessionId, unlinkNotice({ role: l.role, agentName: b.agentName })); deliveryId = d.deliveryId; }
     this.linkEvent(l, 'unlink', l.role || null, { deliveryId }, { quiet: true });
     this.store.updateLink(l.linkId, { role: null, removedAt: Date.now() });
     this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'user' });
     return { removed: true, deliveryId };
+  }
+  // P81: 판에서 부모에서 떼기(노드 메뉴). 확인 글은 무엇이 바뀌는지(머리줄, 사이드바, 끄기와 잠재우기 묶음)
+  detachSession(p) {
+    const s = this.resolve(p.session);
+    if (!s.parentSessionId) throw keyed(apiError('no_parent', `@${s.name}에게는 부모가 없습니다.`), 'detachNoParent', { name: s.name });
+    const parent = this.sessions.get(s.parentSessionId);
+    const pname = parent ? parent.name : (this.branch.rowOf(s.parentSessionId) || {}).name || '?';
+    if (!p.confirm) return confirmResult(`@${s.name}을 @${pname}에서 뗍니다. 머리줄과 사이드바에서 @${pname}의 하위 세션 표시가 빠지고, @${pname}가 끄거나 함께 깨어 있게 하는 묶음도 풀립니다. 되돌릴 수 없습니다.`, m('detach', { name: s.name, parent: pname }));
+    return this.branch.detach(s, { by: 'user' });
   }
 
   // ---------- F4: 세션 폴더의 git(워크트리) ----------
@@ -1923,6 +1939,7 @@ export class Backend {
       'link.list': () => this.linksOpen(),
       'link.create': (p) => this.linkCreate(p),
       'link.delete': (p) => this.linkDelete(p),
+      'session.detach': (p) => this.detachSession(p), // P81
       'link.log': (p) => { const l = this.store.getLink(p.link); if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`); return { link: this.linkView(l), events: this.store.linkEvents(l.linkId, p.limit || 200) }; },
       'agent.kinds': () => this.adapter.agentKinds(),
       // 자원과 붙은 클라이언트(D1·D3)

@@ -140,11 +140,12 @@ export function LinkPanel({ linkId, onClose }) {
     const off = api.on('link.event', (e) => { if (e.linkId === linkId) load(); });
     return () => { alive = false; off(); };
   }, [linkId]);
-  async function unlink(yes) {
+  const [parentAsk, setParentAsk] = useState(null); // P81: 부모 → 하위 세션 선이면 "선만 끊기"와 "부모에서도 떼기"
+  async function unlink(yes, detach = false) {
     try {
-      const r = await api.call('link.delete', { link: linkId, confirm: yes });
-      if (r.needsConfirm) return setConfirm(tMsg(r));
-      toast(r.deliveryId ? t('links.unlinked', { a: a ? a.name : '' }) : t('links.removed'));
+      const r = await api.call('link.delete', { link: linkId, confirm: yes, ...(detach ? { detach: true } : {}) });
+      if (r.needsConfirm) { setParentAsk(r.parentLink ? tMsg({ msg: r.parentMsg, message: r.parentMessage }) : null); return setConfirm(tMsg(r)); }
+      toast(r.detached ? t('detach.done', { name: r.name, parent: r.from }) : r.deliveryId ? t('links.unlinked', { a: a ? a.name : '' }) : t('links.removed'));
       onClose();
     } catch (e) { toast(t('links.unlinkFail', { error: errText(e) }), 'error'); }
   }
@@ -172,8 +173,9 @@ export function LinkPanel({ linkId, onClose }) {
       </div>
       <div className="mt-card-actions">
         {confirm ? <>
-          <span className="mt-card-sub">{confirm}</span>
-          <button className="mt-btn danger" onClick={() => unlink(true)} data-action="unlink-confirm">{t('links.unlinkConfirm')}</button>
+          <span className="mt-card-sub">{confirm}{parentAsk ? <span className="mt-link-parent-ask" data-role="link-parent-ask"> {parentAsk}</span> : null}</span>
+          <button className="mt-btn danger" onClick={() => unlink(true)} data-action="unlink-confirm">{parentAsk ? t('detach.cutOnly') : t('links.unlinkConfirm')}</button>
+          {parentAsk && <button className="mt-btn danger" onClick={() => unlink(true, true)} data-action="unlink-detach">{t('detach.cutDetach')}</button>}
           <button className="mt-btn ghost" onClick={() => setConfirm(null)}>{t('common.cancel')}</button>
         </> : <button className="mt-btn danger" onClick={() => unlink(false)} data-action="unlink">{link.role ? t('links.unlink') : t('links.removeLine')}</button>}
         <span className="mt-card-sub">{link.lastAt ? t('links.last', { ago: agoText(link.lastAt) }) : ''}</span>
