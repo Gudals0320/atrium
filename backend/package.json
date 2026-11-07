@@ -1,7 +1,7 @@
 {
   "name": "atrium-backend",
   "private": true,
-  "version": "0.1.4-dev.3",
+  "version": "0.1.4-dev.4",
   "description": "Atrium backend: herdr adapter, hook receiver, session state, delivery queue, SQLite, WebSocket API and the atrium CLI",
   "license": "MIT",
   "type": "module",
