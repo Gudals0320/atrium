@@ -21,7 +21,7 @@ export function noticeWay({ visible = true, focused = true } = {}) {
 // 연결 기록 한 줄 → 글 열쇠와 값. 까닭은 remoteLog.reason_<코드>가 있으면 그 글, 없으면 코드 그대로(P56·P57이 더하는 까닭)
 // P59: pair.grant(등록 허가가 나감), login·logout(패스키 로그인, 로그아웃). who에 Tailscale 기기 이름(node)
 // P62: passkey.on·passkey.off(패스키로 확인 켬·끔), passkey.add(패스키 없이 짝 맺은 기기가 패스키를 등록). pair.ok의 passkey: false = 패스키 없이 짝 맺음(noPasskey)
-export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add'];
+export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add', 'boot']; // P84: boot(웹 화면이 닫힌 뒤 다시 열림)
 // 까닭 글 열쇠: 'tailscale_node:other_node' → ['remoteLog.reason_tailscale_node_other_node', 'remoteLog.reason_tailscale_node', 'other_node']
 export function reasonKeys(r) {
   const s = String(r || '');
@@ -38,10 +38,24 @@ export function sockLabel(ws) {
   if (ws.deflate != null) parts.push(ws.deflate ? 'deflate' : 'plain');
   return parts.join(' · ');
 }
+// P84: 닫히기 전 상태(backend/src/web-crash.mjs crashLabel과 같은 꼴, 예: "board · 3 term · 2.1M px · gl 3 · dpr 3 · 6.0s")
+export function crashText(c) {
+  if (!c) return '';
+  const parts = [];
+  if (c.view) parts.push(c.view);
+  if (c.terms != null) parts.push(`${c.terms} term`);
+  if (c.px != null || c.atlas != null) parts.push(`${(((c.px || 0) + (c.atlas || 0)) / 1e6).toFixed(1)}M px`);
+  if (c.gl != null) parts.push(`gl ${c.gl}`);
+  if (c.dpr != null) parts.push(`dpr ${c.dpr}`);
+  if (c.up != null) parts.push(`${(c.up / 1000).toFixed(c.up < 10000 ? 1 : 0)}s`);
+  if (c.hidden) parts.push('hidden');
+  if (c.light) parts.push('light');
+  return parts.join(' · ');
+}
 export function logRow(e) {
   const ev = LOG_EVENTS.includes(e && e.event) ? e.event : 'other';
   return {
-    key: `remoteLog.ev_${ev.replace('.', '_')}`,
+    key: ev === 'boot' ? 'remoteCrash.ev_boot' : `remoteLog.ev_${ev.replace('.', '_')}`, // P84: boot 글은 사전 끝(remoteCrash)에
     reason: e && e.reason ? e.reason : null,
     who: [e && e.deviceName, e && e.node && e.node !== e.deviceName ? e.node : null, e && e.login, e && e.addr].filter(Boolean).join(' · '),
     browser: (e && e.browser) || null,
@@ -52,6 +66,7 @@ export function logRow(e) {
     // P82: 원격 소켓. disconnect는 서버가 받은 닫힘 코드·붙어 있던 시간·압축, connect는 창이 본 직전 닫힘
     ...(e && e.ws && ev === 'disconnect' ? { sock: sockLabel(e.ws) } : {}),
     ...(e && e.prev && ev === 'connect' ? { prev: sockLabel({ code: e.prev.code, ms: e.prev.ms }) } : {}),
+    ...(ev === 'boot' ? { bad: true, crash: crashText(e.crash), light: e.light === true } : {}), // P84: 닫히기 전 상태, 이 부팅이 가벼운 화면인지
   };
 }
 

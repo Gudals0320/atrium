@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { wsInfo, prevInfo } from './remote-ws.mjs'; // P82: 원격 소켓의 끊김(ws)과 창이 본 직전 닫힘(prev)
+import { crashInfo } from './web-crash.mjs'; // P84: 웹 화면이 죽은 뒤의 부팅(boot)
 
 export const LOG_MAX = 2000;
 export const LOG_MAX_AGE_MS = 30 * 24 * 3600_000;
@@ -19,7 +20,8 @@ const FLUSH_MS = 500;
 // 남기는 일. 모르는 일은 'other'로 남긴다
 // P59: pair.grant(코드·허락으로 등록 허가가 나감, 패스키 등록을 기다림), login·logout(P56 패스키 로그인, 로그아웃)
 // P62: passkey.on·passkey.off(패스키로 확인 켬·끔), passkey.add(패스키 없이 짝 맺은 기기가 패스키를 등록함). pair.ok의 passkey: false = 패스키 없이 짝 맺음
-export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add'];
+// P84: boot(웹 화면이 정상 떠남 없이 다시 읽힘. crashed, 이 부팅이 가벼운 화면인지 light, 직전 상태 crash)
+export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add', 'boot'];
 const MERGE = new Set(['deny', 'pair.fail']); // 되풀이를 합치는 일
 
 const clip = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -55,6 +57,9 @@ export function logEntry(event, f = {}, at = Date.now()) {
   if (Number.isInteger(f.n) && f.n >= 0) e.n = Math.min(f.n, 1e6);
   const ws = wsInfo(f.ws); if (ws) e.ws = ws; // P82: 닫힘 코드·까닭 글, 붙어 있던 ms, 압축, 주고받은 수·바이트, 마지막으로 보낸 것(종류와 크기만)
   const prev = prevInfo(f.prev); if (prev) e.prev = prev; // P82: connect. 창이 본 직전 닫힘(CloseEvent.code, wasClean, 붙어 있던 ms)
+  if (f.crashed === true) e.crashed = true; // P84: boot. 직전 페이지가 죽었다
+  if (f.light === true) e.light = true; // P84: 이 부팅은 가벼운 화면
+  const crash = crashInfo(f.crash); if (crash) e.crash = crash; // P84: 죽기 전 상태(숫자와 짧은 코드만)
   return e;
 }
 const mergeKey = (e) => [e.event, e.reason, e.deviceId, e.addr, e.login, e.remote].join('|');

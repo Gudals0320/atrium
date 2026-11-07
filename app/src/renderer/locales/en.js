@@ -2050,4 +2050,15 @@ export default {
     cmdOpen: 'Open the command bar',
     cmdShort: 'Command',
   },
+  // P84: light view after the page closed repeatedly, and crash lines in the connection log
+  lightView: {
+    title: 'The page closed repeatedly, so it opened in a light view',
+    body: 'Terminals open only for the session you choose.',
+    reopen: 'Reopen the board',
+  },
+  remoteCrash: {
+    ev_boot: 'Page reloaded after closing',
+    light: 'light view',
+    last: 'before: {v}',
+  },
 };

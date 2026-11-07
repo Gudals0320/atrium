@@ -124,6 +124,7 @@ export class Api {
     };
     ws.onmessage = (ev) => {
       if (!live()) return;
+      this.inB = (this.inB || 0) + (typeof ev.data === 'string' ? ev.data.length : ev.data.byteLength || 0); // P84: 받은 양(죽기 전 기록)
       let m; try { m = JSON.parse(ev.data); } catch { return; }
       if (m.event) return this.emit(m.event, m.data);
       const w = this.wait.get(m.id); if (!w) return; this.wait.delete(m.id);

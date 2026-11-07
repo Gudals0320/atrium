@@ -216,3 +216,9 @@ html.mt-full-on, html.mt-full-on body { background: var(--chrome-bg); }
 .mt-bottom[data-kb="1"] { bottom: calc(var(--mt-kb-lift) + 6px) !important; }
 .mt-bottom-handle { position: absolute; left: 50%; bottom: max(6px, calc(env(safe-area-inset-bottom) - 10px)); transform: translateX(-50%); z-index: 34; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px 0 11px; border-radius: 17px; border: 1px solid var(--chrome-line-2); background: var(--chrome-bg); color: var(--chrome-text); box-shadow: var(--chrome-shadow); font: 600 13px var(--font-ui); -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
 .mt-bottom-handle .mt-mark { width: 18px; height: 18px; }
+
+/* P84: 가벼운 화면의 안내(반복해서 죽은 뒤). 목록 위, 휴대폰이 아니면 보드 위쪽에 떠 있다 */
+.mt-ph-light { flex: none; display: flex; align-items: center; gap: 10px; margin: 8px 12px 0; padding: 10px 12px; border-radius: 12px; background: var(--warn-bg); color: var(--text); font-size: 13.5px; line-height: 1.45; }
+.mt-ph-light-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mt-ph-light-text span { color: var(--dim); font-size: 12.5px; }
+.mt-ph-light.floating { position: fixed; z-index: 60; top: calc(env(safe-area-inset-top) + 8px); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 24px)); margin: 0; border: 1px solid var(--warn); background: var(--chrome-bg); box-shadow: var(--chrome-shadow); }

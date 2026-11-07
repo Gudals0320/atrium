@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import { readTailscale, diagnose, tailscaleBin, tailscaleHosts, serveCommand, serveOffCommand, portConflict, freeHttpsPort, DEFAULT_HTTPS_PORT } from '../src/tailscale.mjs';
 import { allowedHosts } from '../src/web.mjs';
 import { wsLabel } from '../src/remote-ws.mjs'; // P82
+import { crashLabel } from '../src/web-crash.mjs'; // P84
 
 const MARK = { ok: '[ok]  ', warn: '[주의]', fail: '[안 됨]', skip: '[-]   ' };
 
@@ -48,7 +49,7 @@ export function formatStatus(d) {
 }
 
 // P58: 연결 기록 한 줄(CLI). 창은 locales의 remoteLog.* 열쇠를 쓴다
-const LOG_TEXT = { 'pair.request': '기기 등록 요청', 'pair.grant': '기기 등록 승인', 'pair.ok': '기기 등록 완료', login: '패스키 로그인', logout: '로그아웃', 'passkey.on': '패스키 인증 사용', 'passkey.off': '패스키 인증 사용 안 함', 'passkey.add': '패스키 등록', 'pair.fail': '기기 등록 실패', connect: '연결', disconnect: '연결 종료', deny: '거부', unpair: '기기 등록 해제', kick: 'PC에서 연결 종료', 'remote.block': '원격 접속 차단', 'remote.allow': '원격 접속 허용', other: '기타' };
+const LOG_TEXT = { 'pair.request': '기기 등록 요청', 'pair.grant': '기기 등록 승인', 'pair.ok': '기기 등록 완료', login: '패스키 로그인', logout: '로그아웃', 'passkey.on': '패스키 인증 사용', 'passkey.off': '패스키 인증 사용 안 함', 'passkey.add': '패스키 등록', 'pair.fail': '기기 등록 실패', connect: '연결', disconnect: '연결 종료', deny: '거부', unpair: '기기 등록 해제', kick: 'PC에서 연결 종료', 'remote.block': '원격 접속 차단', 'remote.allow': '원격 접속 허용', boot: '화면이 닫힌 뒤 다시 열림', other: '기타' }; // P84: boot
 export function formatLogEntry(e) {
   const p2 = (n) => String(n).padStart(2, '0');
   const d = new Date(e.at);
@@ -66,6 +67,8 @@ export function formatLogEntry(e) {
   if (Number.isInteger(e.n)) parts.push(`닫은 연결 ${e.n}개`);
   if (e.ws) parts.push(`소켓=${wsLabel(e.ws)}${e.ws.out != null ? ` 보냄 ${e.ws.out}개 ${e.ws.outB}B 받음 ${e.ws.in}개 ${e.ws.inB}B${e.ws.last ? ` 마지막 ${e.ws.last.join(',')}` : ''}` : ''}`); // P82
   if (e.prev) parts.push(`직전 닫힘=${e.prev.code}${e.prev.clean ? '' : ' (깨끗하지 않음)'} ${(e.prev.ms / 1000).toFixed(1)}s`); // P82: 창이 본 것
+  if (e.light) parts.push('가벼운 화면으로 열림'); // P84
+  if (e.crash) parts.push(`닫히기 전=${crashLabel(e.crash)}${e.crash.ago != null ? ` 다시 열기까지 ${(e.crash.ago / 1000).toFixed(1)}s` : ''}${e.crash.inB != null ? ` 받음 ${e.crash.inB}B` : ''}${e.crash.boots ? ` 이어 닫힘 ${e.crash.boots}번` : ''}${e.crash.retry ? ' 보드로 다시 연 뒤' : ''}`);
   if (e.count > 1) parts.push(`×${e.count}`);
   return parts.join('  ');
 }
