@@ -266,6 +266,7 @@ export class Pusher {
   }
   dropAll(why = 'blocked') { let n = 0; for (const r of this.records()) if (r.endpoint) { this.unsubscribe(r.deviceId, why); n++; } return n; }
   setPrefs(deviceId, p = {}) {
+    if (!this.rec(deviceId) && !p.kinds && typeof p.whilePc !== 'boolean') return this.status(deviceId); // 말만 바꾸면 기록을 만들지 않는다
     this.patch(deviceId, (r) => {
       if (p.kinds && typeof p.kinds === 'object') { r.kinds = prefsOf(r).kinds; for (const k of PUSH_KINDS) if (typeof p.kinds[k] === 'boolean') r.kinds[k] = p.kinds[k]; }
       if (typeof p.whilePc === 'boolean') r.whilePc = p.whilePc;

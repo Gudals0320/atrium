@@ -6,7 +6,7 @@ import { api } from './api.js';
 import { getState } from './store.js';
 import { supportOf, keyBytes, openParam, OPEN_PARAM, SID_RE } from './lib/push.js';
 import { isIOS, isStandalone } from './lib/pwa.js';
-import { getLanguage } from './lib/i18n.js';
+import { getLanguage, onLanguage } from './lib/i18n.js';
 
 let openFn = null;
 export function setOpenHandler(fn) { openFn = fn; return () => { if (openFn === fn) openFn = null; }; }
@@ -22,6 +22,7 @@ export function startPushClient() {
   const report = () => { const visible = document.visibilityState === 'visible'; pushLog.push({ at: Date.now(), visible }); if (pushLog.length > 50) pushLog.shift(); api.call('push.visible', { visible }).catch(() => {}); };
   api.on('$open', report);
   document.addEventListener('visibilitychange', report);
+  onLanguage((l) => { api.call('push.prefs', { lang: l }).catch(() => {}); }); // 화면 말을 바꾸면 알림 글의 말도
   try {
     if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', (e) => { const d = e.data; if (d && d.type === 'atrium-open' && SID_RE.test(String(d.sessionId || ''))) openSession(d.sessionId); });
   } catch {}
