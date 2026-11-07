@@ -120,6 +120,8 @@ iPhone Safari가 판을 열자마자 다시 읽히다가 "문제가 반복적으
 - Safari 탭 흉내와 홈 화면 앱 흉내(높이 보정 켜짐, `mt-tall`) 모두, 가만히 둔 보드와 전체 보기 10초 동안 resize 0, `terminal.*` 요청 0, xterm 다시 그리기 0. 키보드(visualViewport)를 열고 닫아도 요청 0. 크기 바꿈 → 전체 프레임 → 크기 바꿈 고리는 없다.
 - 창 높이 자체가 바뀌면(키보드 흉내 `setViewportSize`) 고치기 전에는 전체 보기 뒤의 보드가 터미널을 떼고 다시 붙였다(attach·detach 2번, history 4번). 고친 뒤에는 resize 2번과 그 터미널의 history 2번뿐이다(위 3번).
 - P82의 같은 xterm 다시 붙기는 이번 시험의 죽음(새 페이지)에는 걸리지 않는다. 고친 것 없음.
+- 시험 수: 백엔드 591(새 5), 창 304(새 10), 창 시험 14/14, `npm run build` 통과.
+- 정리: 시험 세션 12개 지움, 브라우저 닫음, `atrium backend stop`, `atrium herdr stop --yes`, `herdr session delete atrium-dev-p84`, 시험 폴더 `C:\Workspace\mtask-p84-proj` 지움. 47893·47894·47897·9377에 듣는 프로세스와 `atrium-dev-p84`·`mtask-p84`를 가진 프로세스가 남지 않았다. PC 창은 띄우지 않았다.
 
 ## 보고
 
