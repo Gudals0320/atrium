@@ -41,6 +41,25 @@ export function retryDelay(s, { wake = false, rand, maxMs } = {}) {
   return backoffMs(s.attempt, rand ?? Math.random(), maxMs);
 }
 export const showBanner = (s) => s.phase === 'reconnecting';
+// P82: 짧은 끊김(SHORT_DROP_MS 안에 다시 붙음)에는 띠와 연결 알약을 바꾸지 않는다. 남은 ms(0이면 지금 보인다), 보일 일이 없으면 null.
+// PC에서 끊었으면(4402) 바로 보인다
+export const SHORT_DROP_MS = 2000;
+export function bannerDue(s, now = Date.now(), graceMs = SHORT_DROP_MS) {
+  if (!s || s.phase !== 'reconnecting') return null;
+  if (s.lastClose === 4402 || s.since == null) return 0;
+  return Math.max(0, s.since + graceMs - now);
+}
+// 짧은 끊김을 넘겼는가(띠·알약을 바꿀 때인가)
+export const dropShown = (s, now = Date.now(), graceMs = SHORT_DROP_MS) => bannerDue(s, now, graceMs) === 0;
+// P82: 다시 붙을 때 연결 주소로 알리는 직전 닫힘(pc=<코드>.<깨끗이 닫혔나 0|1>.<붙어 있던 ms>, backend/src/remote-ws.mjs parsePrevClose).
+// 코드는 CloseEvent.code 또는 창이 스스로 닫은 까닭(timeout, open_timeout)
+export function prevCloseParam(c) {
+  if (!c) return null;
+  const code = Number.isInteger(c.code) ? c.code : c.code === 'timeout' || c.code === 'open_timeout' ? c.code : null;
+  if (code == null) return null;
+  const ms = Number.isFinite(c.ms) && c.ms > 0 ? Math.min(Math.round(c.ms), 864e5) : 0;
+  return `${code}.${c.wasClean ? 1 : 0}.${ms}`;
+}
 // ping 답을 기다린 시간이 넘었는가
 export const pingTimedOut = (sentAt, now, timeoutMs = PING_TIMEOUT_MS) => sentAt != null && now - sentAt > timeoutMs;
 // 왕복 지연 표시: 최근 몇 번의 가운데 값(튀는 값 하나에 흔들리지 않게)

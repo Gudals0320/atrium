@@ -28,6 +28,16 @@ export function reasonKeys(r) {
   const i = s.indexOf(':');
   return { full: `remoteLog.reason_${s.replace(/[:.]/g, '_')}`, prefix: i > 0 ? `remoteLog.reason_${s.slice(0, i)}` : null, rest: i > 0 ? s.slice(i + 1) : null };
 }
+// P82: "1006 · 3.4s · deflate"(backend/src/remote-ws.mjs wsLabel과 같은 꼴)
+export function sockLabel(ws) {
+  if (!ws) return '';
+  const parts = [];
+  if (ws.code != null) parts.push(String(ws.code));
+  if (ws.err) parts.push(ws.err);
+  if (ws.ms != null) parts.push(`${(ws.ms / 1000).toFixed(ws.ms < 10000 ? 1 : 0)}s`);
+  if (ws.deflate != null) parts.push(ws.deflate ? 'deflate' : 'plain');
+  return parts.join(' · ');
+}
 export function logRow(e) {
   const ev = LOG_EVENTS.includes(e && e.event) ? e.event : 'other';
   return {
@@ -39,6 +49,9 @@ export function logRow(e) {
     count: e && e.count > 1 ? e.count : null,
     bad: ev === 'deny' || ev === 'pair.fail',
     ...(ev === 'pair.ok' && e && e.passkey === false ? { noPasskey: true } : {}),
+    // P82: 원격 소켓. disconnect는 서버가 받은 닫힘 코드·붙어 있던 시간·압축, connect는 창이 본 직전 닫힘
+    ...(e && e.ws && ev === 'disconnect' ? { sock: sockLabel(e.ws) } : {}),
+    ...(e && e.prev && ev === 'connect' ? { prev: sockLabel({ code: e.prev.code, ms: e.prev.ms }) } : {}),
   };
 }
 

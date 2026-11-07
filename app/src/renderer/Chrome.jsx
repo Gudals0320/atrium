@@ -10,6 +10,8 @@ import { useStore, getState, openDialog, toast, wsName, setMissionOpen, setSearc
 import { quickSpawn } from './SpawnDialog.jsx';
 import { favoriteLaunchers, launcherIcon, launcherMark, launcherTooltip } from './lib/launchers.js'; // P33: 레일 = 즐겨찾기 호출자
 import { api } from './api.js';
+import { useConnSteady } from './steady.js'; // P82
+import { isWeb } from './web.js';
 import { createItem } from './Memo.jsx';
 import { arrangeBoard, BOARD_ARRANGED } from './Regions.jsx'; // P31: 칩의 정리는 판 전체
 import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
@@ -151,7 +153,9 @@ function ListPill({ list, label, cls, role, line, empty }) {
 
 function ConnPill() {
   const t = useT();
-  const conn = useStore((st) => st.conn);
+  const rawConn = useStore((st) => st.conn);
+  const { grace } = useConnSteady(); // P82: 웹 화면은 짧은 끊김(2초 안)에 알약을 바꾸지 않는다
+  const conn = isWeb && grace ? 'open' : rawConn;
   const herdr = useStore((st) => st.herdr);
   const count = useStore((st) => st.sessions.size);
   const links = useStore((st) => st.links.size);

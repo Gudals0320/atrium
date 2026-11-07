@@ -7,6 +7,7 @@
 //   그 안에 이미 알렸으면(짝 맺기 성공 직후의 첫 연결 등) 다시 알리지 않는다.
 import fs from 'node:fs';
 import path from 'node:path';
+import { wsInfo, prevInfo } from './remote-ws.mjs'; // P82: 원격 소켓의 끊김(ws)과 창이 본 직전 닫힘(prev)
 
 export const LOG_MAX = 2000;
 export const LOG_MAX_AGE_MS = 30 * 24 * 3600_000;
@@ -52,6 +53,8 @@ export function logEntry(event, f = {}, at = Date.now()) {
   if (f.via === 'code' || f.via === 'approve') e.via = f.via;
   if (f.passkey === false) e.passkey = false; // P62
   if (Number.isInteger(f.n) && f.n >= 0) e.n = Math.min(f.n, 1e6);
+  const ws = wsInfo(f.ws); if (ws) e.ws = ws; // P82: 닫힘 코드·까닭 글, 붙어 있던 ms, 압축, 주고받은 수·바이트, 마지막으로 보낸 것(종류와 크기만)
+  const prev = prevInfo(f.prev); if (prev) e.prev = prev; // P82: connect. 창이 본 직전 닫힘(CloseEvent.code, wasClean, 붙어 있던 ms)
   return e;
 }
 const mergeKey = (e) => [e.event, e.reason, e.deviceId, e.addr, e.login, e.remote].join('|');

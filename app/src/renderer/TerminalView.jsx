@@ -20,7 +20,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
 import { useStore, getState, takePendingInput, pendingFor } from './store.js';
-import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, keyAction, frameBytes, unscalePoint, clearsSelection, copyText } from './lib/term-input.js';
+import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
 import { findShift, bigChange, historyAbove, historyPrefill, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
 import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
@@ -349,7 +349,9 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     const offFrame = api.on('terminal.frame', (f) => {
       if (f.sessionId !== sessionId || !st.alive) return;
       if (st.pid !== null && f.controllerPid !== st.pid) return;
-      const bytes = frameBytes(f.bytes);
+      let bytes = frameBytes(f.bytes);
+      // P82: 다시 붙은 뒤 첫 full 프레임은 지금 화면 위에 그대로 다시 그린다(비우고 같은 쓰기에서 그려 빈 화면이 보이지 않는다)
+      if (st.again && f.full) { st.again = false; bytes = joinBytes(REDRAW_PREFIX, bytes); }
       const t0 = onFrame(sessionId, bytes.length, f.width, f.height);
       if (shell) { chain = chain.then(() => shellFrame(f, bytes, t0)).catch((e) => window.mt.log(`shell frame ${sessionId}: ${e.stack || e.message}`)); return; }
       if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) { term.resize(f.width, f.height); st.applyScale(); } // 쓰기 전에 크기 맞추기(E4)
@@ -359,7 +361,12 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       });
     });
     // 백엔드에 다시 붙으면(백엔드 재시작, C2) 옛 연결의 제어기는 이미 놓였다. 다시 붙는다.
-    const offOpen = api.on('$open', () => { if (st.alive) { perfLog('term_reattach_on_reconnect', { sessionId }); setStatus({ kind: 'attaching' }); setRetry((x) => x + 1); } });
+    // P82: 웹 화면(원격)은 터미널을 새로 만들지 않고 같은 터미널로 다시 붙는다. 화면은 그대로 두고 첫 full 프레임으로 다시 그린다(짧은 끊김에 흔들리지 않게)
+    const offOpen = api.on('$open', () => {
+      if (!st.alive) return;
+      if (isWeb) { perfLog('term_reattach_keep', { sessionId }); st.pid = null; st.again = true; attach(true); return; }
+      perfLog('term_reattach_on_reconnect', { sessionId }); setStatus({ kind: 'attaching' }); setRetry((x) => x + 1);
+    });
     // P47: 누가 패널 크기를 정하는지, 몇 창이 함께 보는지. 다른 기기가 방금 친 것
     const offOwner = api.on('terminal.owner', (d) => {
       if (d.sessionId !== sessionId || !st.alive || (st.pid !== null && d.controllerPid !== st.pid)) return;
@@ -393,17 +400,24 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     term.resize(cols, rows);
     st.lastSize = `${cols}x${rows}`;
     setTerminal(sessionId, { renderer, cols, rows });
-    api.call('terminal.attach', { session: sessionId, cols, rows })
-      .then((r) => {
-        st.pid = r.controllerPid;
-        if (!st.alive) return;
-        st.shared = r.shared || 1; st.ownerIsMe = r.ownerIsMe !== false; // P47
-        if (r.shared > 1) { setShare({ shared: r.shared, ownerIsMe: !!r.ownerIsMe, ownerName: r.owner || null }); requestAnimationFrame(() => st.alive && st.applyScale()); }
-        setStatus({ kind: 'attached', pid: r.controllerPid });
-        // H4: 들어가며 친 글이 있으면 넣고 터미널에 초점을 준다
-        if (pendingFor(sessionId)) { const buf = takePendingInput(sessionId); if (buf) { perfLog('pending_input', { sessionId, chars: buf.length }); send(buf); } term.focus(); }
-      })
-      .catch((e) => { if (st.alive) setStatus({ kind: 'error', reason: e.message }); });
+    // again: P82 다시 붙은 연결에서 같은 터미널로 다시 붙기(초점과 모아 둔 입력은 건드리지 않는다)
+    const attach = (again = false) => {
+      const [c, r0] = again && st.lastSize ? st.lastSize.split('x').map(Number) : [cols, rows];
+      return api.call('terminal.attach', { session: sessionId, cols: c, rows: r0 })
+        .then((r) => {
+          st.pid = r.controllerPid;
+          if (!st.alive) return;
+          st.shared = r.shared || 1; st.ownerIsMe = r.ownerIsMe !== false; // P47
+          if (r.shared > 1 || again) { setShare({ shared: st.shared, ownerIsMe: st.ownerIsMe, ownerName: r.owner || null }); requestAnimationFrame(() => st.alive && st.applyScale()); }
+          setStatus({ kind: 'attached', pid: r.controllerPid });
+          if (again) { perfLog('term_reattached', { sessionId, pid: r.controllerPid }); return; }
+          // H4: 들어가며 친 글이 있으면 넣고 터미널에 초점을 준다
+          if (pendingFor(sessionId)) { const buf = takePendingInput(sessionId); if (buf) { perfLog('pending_input', { sessionId, chars: buf.length }); send(buf); } term.focus(); }
+        })
+        .catch((e) => { if (st.alive) setStatus({ kind: 'error', reason: e.message }); });
+    };
+    st.attach = attach;
+    attach();
     st.term = term; st.fit = fit;
 
     return () => {

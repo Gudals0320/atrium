@@ -4,7 +4,7 @@
 // P49: 다시 붙기는 백오프(lib/reconnect.js), 15초마다 ping으로 왕복 지연을 재고 죽은 연결을 알아챈다. 깨어남·온라인이면 곧바로 다시 붙는다.
 import { perfLog } from './perf.js';
 import { clientIdOf, clientQuery } from './lib/multiclient.js';
-import { connInit, connStep, retryDelay, pingTimedOut, rttLabel, PING_EVERY_MS, PING_TIMEOUT_MS } from './lib/reconnect.js'; // P49
+import { connInit, connStep, retryDelay, pingTimedOut, rttLabel, prevCloseParam, PING_EVERY_MS, PING_TIMEOUT_MS } from './lib/reconnect.js'; // P49. P82: prevCloseParam
 
 // P47: 창 프로필마다 오래 가는 클라이언트 ID(localStorage mt.clientId). 이름은 mt.clientName이 있으면 그것, 없으면 main이 준 기기 이름
 function loadClientId() {
@@ -30,6 +30,7 @@ export class Api {
     this.gen = 0; // 연결 세대. 옛 connect()의 늦은 응답과 옛 소켓의 이벤트는 무시한다(이슈 #1-14)
     this.conn = connInit(); // P49: 다시 붙기 상태
     this.rtts = []; this.rtt = null; this.pingSentAt = null;
+    this.openedAt = null; this.lastClose = null; this.closeLog = []; // P82
     if (typeof window !== 'undefined' && window.addEventListener) {
       const wake = () => this.wake();
       window.addEventListener('online', wake);
@@ -64,6 +65,7 @@ export class Api {
     if (this.ws !== ws) return;
     perfLog('ws', { status: 'dead' });
     this.drop(ws); this.ws = null; this.pingSentAt = null; clearInterval(this.pingTimer);
+    this.noteClose({ code: 'timeout', wasClean: false });
     this.step({ type: 'close', code: 'timeout' });
     this.setStatus('closed'); this.emit('$close'); this.retry();
   }
@@ -76,6 +78,14 @@ export class Api {
   emit(event, data) { const s = this.listeners.get(event); if (s) for (const fn of [...s]) { try { fn(data); } catch (e) { console.error(e); } } }
 
   setStatus(s, detail) { this.status = s; perfLog('ws', { status: s }); this.emit('$status', { status: s, detail }); }
+  // P82: 직전 닫힘(브라우저가 본 코드, 깨끗이 닫혔나, 붙어 있던 ms). 다음 연결 주소의 pc 값으로 백엔드에 알린다(연결 기록의 connect). closeLog는 시험이 읽는다
+  noteClose({ code, wasClean }) {
+    const ms = this.openedAt ? Date.now() - this.openedAt : 0;
+    this.openedAt = null;
+    this.lastClose = { code, wasClean: !!wasClean, ms };
+    this.closeLog.push({ ...this.lastClose, at: Date.now() }); if (this.closeLog.length > 20) this.closeLog.shift();
+    perfLog('ws_close', this.lastClose);
+  }
 
   async connect() {
     const gen = ++this.gen;
@@ -88,7 +98,8 @@ export class Api {
     this.drop(this.ws);
     // P47: 클라이언트 ID·기기 이름·종류를 연결 주소로 알린다(백엔드 multiclient.mjs parseClientHello). 웹 화면(P48)은 info.clientKind = 'web'
     this.clientName = clientName(info);
-    const q = clientQuery({ clientId: this.clientId, name: this.clientName, kind: info.clientKind || 'desktop' });
+    const pc = prevCloseParam(this.lastClose); // P82
+    const q = [clientQuery({ clientId: this.clientId, name: this.clientName, kind: info.clientKind || 'desktop' }), pc ? `pc=${encodeURIComponent(pc)}` : ''].filter(Boolean).join('&');
     // P48: 웹 화면은 같은 출처와 기기 토큰(web.js의 info.wsUrl). P49: 웹도 클라이언트 값을 함께 붙인다
     const base = info.wsUrl || `ws://127.0.0.1:${info.port}/api?token=${info.token}`;
     const ws = new WebSocket(q ? `${base}${base.includes('?') ? '&' : '?'}${q}` : base);
@@ -97,12 +108,14 @@ export class Api {
     this.openTimer = setTimeout(() => {
       if (!live() || ws.readyState !== 0) return; // 0 = CONNECTING
       this.drop(ws);
+      this.noteClose({ code: 'open_timeout', wasClean: false });
       this.step({ type: 'close', code: 'open_timeout' });
       this.setStatus('closed'); this.emit('$close'); this.retry();
     }, CONNECT_TIMEOUT_MS);
     ws.onopen = async () => {
       if (!live()) return;
       clearTimeout(this.openTimer);
+      this.openedAt = Date.now(); this.lastClose = null; // P82: 알렸다
       this.step({ type: 'open' });
       this.pingSentAt = null; clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
       setTimeout(() => this.ping(), 1000);
@@ -120,6 +133,7 @@ export class Api {
       if (!live()) return;
       clearTimeout(this.openTimer);
       clearInterval(this.pingTimer); this.pingSentAt = null;
+      this.noteClose({ code: ev && ev.code, wasClean: ev && ev.wasClean }); // P82
       this.step({ type: 'close', code: ev && ev.code }); // P49: 4401이면 짝이 끊겼다
       for (const w of this.wait.values()) w.rej(Object.assign(new Error('disconnected'), { code: 'disconnected' }));
       this.wait.clear();

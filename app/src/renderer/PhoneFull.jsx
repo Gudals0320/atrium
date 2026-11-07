@@ -149,7 +149,7 @@ function FullView({ s, from }) {
     return () => { clearInterval(quiet); root.removeEventListener('touchstart', onStart, cap); root.removeEventListener('touchmove', onMove, cap); root.removeEventListener('touchend', onEnd, cap); root.removeEventListener('touchcancel', onCancel, cap); };
   }, [id]);
 
-  const input = (data) => api.call('terminal.input', { session: id, data }).catch((e) => toast(errText(e), 'error'));
+  const input = (data) => api.call('terminal.input', { session: id, data }).catch((e) => { if (e.code !== 'disconnected') toast(errText(e), 'error'); }); // P82: 끊긴 동안은 띠가 알린다
   const sendKey = (k) => {
     markInteracted(id);
     if (k === 'enter' && text) return sendLine();
@@ -158,6 +158,7 @@ function FullView({ s, from }) {
     if (data) input(data);
   };
   async function sendLine() {
+    if (api.status !== 'open') return; // P82: 끊긴 동안은 보내지 않고 글을 둔다(다시 붙으면 다시 누른다. 오래 끊기면 띠가 알린다)
     const plan = linePlan(text);
     setText('');
     if (taRef.current) taRef.current.style.height = '';
