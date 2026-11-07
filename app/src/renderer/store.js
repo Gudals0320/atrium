@@ -6,6 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { api } from './api.js';
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
+import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
 
 const state = {
   conn: 'connecting',
@@ -344,3 +345,7 @@ state.termScale = readScale(scaleStore(), SCALE_KEYS.term);
 state.uiScale = readScale(scaleStore(), SCALE_KEYS.ui);
 export function setTermScale(f) { state.termScale = saveScale(scaleStore(), SCALE_KEYS.term, f); changed(); }
 export function setUiScale(f) { state.uiScale = saveScale(scaleStore(), SCALE_KEYS.ui, f); applyUiScale(state.uiScale); changed(); }
+// P85: "작업 중만 또렷하게"(lib/overview.js). 이 창(프로필)의 localStorage에 두고 문서 뿌리의 mt-spot 클래스로 그린다
+state.spotlight = loadSpot(scaleStore());
+applySpot(state.spotlight);
+export function setSpotlight(on) { state.spotlight = saveSpot(scaleStore(), on); applySpot(state.spotlight); changed(); }

@@ -2061,4 +2061,9 @@ export default {
     light: 'light view',
     last: 'before: {v}',
   },
+  // P85: left rail button that fades everything but the busy sessions in the zoomed-out board
+  spotlight: {
+    on: 'Spotlight working: when zoomed out, keep working, waiting and failed sessions sharp and fade the rest (this window only)',
+    off: 'Spotlight working is on: click to show every session evenly again',
+  },
 };
