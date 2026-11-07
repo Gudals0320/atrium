@@ -15,9 +15,8 @@ import { isWeb } from './web.js';
 import { RemoteBar } from './RemoteBar.jsx'; // P49: 웹 화면의 다시 연결 띠와 왕복 지연
 import { webGate } from './Pair.jsx';
 import { PairRequestBanner } from './WebDevices.jsx';
-import { PhoneApp, PhoneListButton, usePhoneLayout, useScreenFix, LightBanner, LevelBadge } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P76: 기본은 보드 화면, 목록은 단추로. P86: LevelBadge(가벼운 보드 단계)
-import { PhoneFull } from './PhoneFull.jsx'; // P76: 휴대폰 보드 화면에서 탭한 세션의 전체 보기
-import { closeFull } from './full-view.js';
+import { PhoneApp, usePhoneLayout, useScreenFix, LightBanner, LevelBadge, phoneScreen } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P86: LevelBadge(가벼운 보드 단계)
+// P87: 휴대폰은 늘 세션 목록(Phone.jsx)이다. P76의 휴대폰 보드(목록 단추, 탭한 세션의 전체 보기 PhoneFull.jsx)는 휴대폰에 그리지 않는다
 import { startRemoteNotice, remoteNotices } from './remote-notice.js'; // P58
 import '@xyflow/react/dist/style.css';
 import '@xterm/xterm/css/xterm.css';
@@ -116,11 +115,9 @@ function App() {
   // P11: 왼쪽 레일의 "손으로 잇기"(노드 손잡이를 늘 보인다), 오른쪽 레일의 루프 목록
   const [linking, setLinking] = useState(false);
   const [loopsOpen, setLoopsOpen] = useState(false);
-  const [phoneList, canPhone] = usePhoneLayout(isWeb); // P74
-  const light = lightMode(); // P84: 반복해서 죽은 뒤의 가벼운 화면. 휴대폰은 목록 화면으로
-  const phone = phoneList || (light && canPhone);
+  const [phone] = usePhoneLayout(isWeb); // P74. P87: 휴대폰이면 늘 목록
+  const light = lightMode(); // P84: 반복해서 죽은 뒤의 가벼운 화면(태블릿·마우스 웹 화면의 보드 위 안내)
   useScreenFix(isWeb); // P83: iOS 홈 화면 앱의 짧은 창 높이
-  useEffect(() => { if (!canPhone || phone) closeFull(); }, [canPhone, phone]); // P76: 가로로 돌리거나 목록으로 가면 전체 보기를 닫는다
 
   useEffect(() => {
     // H4: 노드를 눌러 들어간 직후 터미널이 붙기 전에 친 키(입력칸 밖)는 모아 둔다. 터미널에 초점이 가면 그만 모은다
@@ -170,6 +167,7 @@ function App() {
 
   // P74: 웹 화면을 휴대폰 세로로 열면 캔버스 대신 휴대폰 화면(Phone.jsx). 가로·넓은 화면이나 "보드 화면"을 고르면 이 보드 화면
   // P76: 휴대폰도 기본은 보드 화면이다(phone-board: 크롬을 줄이고, 목록 단추, 탭하면 전체 보기). 목록 단추로 고르면 휴대폰 목록 화면
+  // P87: 휴대폰은 늘 목록 화면이다. 보드 화면은 태블릿·마우스 웹 화면·PC 창만
   if (phone) return (
     <div className="mt-app phone">
       {loaded && <AppBoundary><PhoneApp /></AppBoundary>}
@@ -179,7 +177,7 @@ function App() {
     </div>
   );
   return (
-    <div className={`mt-app${linking ? ' linking' : ''}${canPhone ? ' phone-board' : ''}`}>
+    <div className={`mt-app${linking ? ' linking' : ''}`}>
       <div className="mt-body">
         {loaded && <Sidebar />}
         <div className="mt-stage">
@@ -207,8 +205,6 @@ function App() {
       {isWeb && <RemoteBar />}
       {light && <LightBanner floating />}
       {!light && <LevelBadge />}
-      {canPhone && <PhoneListButton />}
-      {canPhone && loaded && <AppBoundary><PhoneFull /></AppBoundary>}
       {splash !== 'off' && <Splash error={!loaded && conn === 'error' ? t('app.backendFailed', { detail }) : null} leaving={splash === 'leaving'} />}
       <div className="mt-toasts">{toasts.map((t) => <div key={t.id} className={`mt-toast ${t.kind}`}>{t.text}</div>)}</div>
     </div>
@@ -232,7 +228,8 @@ const fontsReady = Promise.race([
   new Promise((r) => setTimeout(r, 1500)),
 ]);
 // P86: 보드 단계 3부터 효과를 끈다(styles.css html.mt-lite). 시험이 html[data-level]을 읽는다
-{ const pl = boardPlan(); if (pl.level) document.documentElement.dataset.level = String(pl.level); if (!pl.effects) document.documentElement.classList.add('mt-lite'); }
+// P87: 휴대폰은 보드를 그리지 않으므로 단계를 걸지 않는다(미션 맵의 가벼운 움직임은 남긴다)
+{ const pl = boardPlan(); if (pl.level && !(isWeb && phoneScreen())) { document.documentElement.dataset.level = String(pl.level); if (!pl.effects) document.documentElement.classList.add('mt-lite'); } }
 function boot() {
   fontsReady.then(() => root.render(<ReactFlowProvider><App /></ReactFlowProvider>));
   api.connect();

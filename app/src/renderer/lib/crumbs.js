@@ -18,7 +18,7 @@ const levelOf = (v) => (Number.isInteger(v) && v >= 0 ? Math.min(v, LEVEL_MAX) :
 export function parseCrumbs(text) {
   let j = null;
   try { j = JSON.parse(text || 'null'); } catch {}
-  if (!j || typeof j !== 'object' || j.v !== 1) return { v: 1, cur: null, crashes: [], light: false, retry: null, level: 0, ok: false };
+  if (!j || typeof j !== 'object' || j.v !== 1) return { v: 1, cur: null, crashes: [], light: false, retry: null, level: 0, ok: false, sent: null };
   return {
     v: 1,
     cur: j.cur && typeof j.cur === 'object' && Number.isFinite(j.cur.boot) ? j.cur : null,
@@ -27,6 +27,7 @@ export function parseCrumbs(text) {
     retry: num(j.retry),
     level: levelOf(j.level),
     ok: j.ok === true,
+    sent: num(j.sent), // P87: 백엔드가 받았다고 답한 마지막 죽음(죽은 페이지의 부팅 시각)
   };
 }
 
@@ -34,11 +35,12 @@ export function parseCrumbs(text) {
 export function bootDecide(stored, now = Date.now()) {
   const s = stored || parseCrumbs(null);
   const prev = s.cur;
-  const crashed = !!prev && !prev.clean;
+  // P87: 이미 알리고 센 죽음(sent)은 다시 죽음으로 보지 않는다. 같은 기록을 두 번 세면 1분 안에 두 번 죽은 것이 되어 가벼운 화면으로 열린다
+  const crashed = !!prev && !prev.clean && !(s.sent != null && prev.boot === s.sent);
   const hidden = crashed && prev.hidden === true;
   const at = crashed ? num(prev.alive) ?? prev.boot : null;
   const crashes = s.crashes.filter((t) => now - t < CRASH_KEEP_MS);
-  if (crashed && !hidden) crashes.push(at);
+  if (crashed && !hidden && !crashes.includes(at)) crashes.push(at);
   let light = s.light;
   if (!light && crashed && !hidden) {
     if (prev.retryBoot === true) light = true; // "보드로 다시 열기"로 연 보드가 또 죽었다
@@ -52,8 +54,9 @@ export function bootDecide(stored, now = Date.now()) {
     const at = levelOf(prev.level);
     if (at >= level) { level = Math.min(at + 1, LEVEL_MAX); ok = false; stepped = level !== at; }
   }
-  const state = { v: 1, cur: { boot: now, alive: now, clean: false, light, retryBoot: retry != null, mode: light ? 'light' : 'board', level }, crashes: light ? [] : crashes.slice(-10), light, retry, level, ok };
-  return { crashed, hidden, light, report, state, level, ok, stepped };
+  const state = { v: 1, cur: { boot: now, alive: now, clean: false, light, retryBoot: retry != null, mode: light ? 'light' : 'board', level }, crashes: light ? [] : crashes.slice(-10), light, retry, level, ok, sent: num(s.sent) };
+  // P87: reportId는 죽은 페이지의 부팅 시각. 백엔드는 같은 id를 한 번만 남기고(web.boot), 받았다는 답이 오면 sent에 적는다(crumbSent)
+  return { crashed, hidden, light, report, reportId: crashed ? prev.boot : null, state, level, ok, stepped };
 }
 
 // P86: 단계 기록. 보드를 여는 단계마다(소켓 열림, 큰 메시지, 판 적용, 첫 그리기, 화면 맞춤, 터미널 붙기, 첫 프레임 쓰기) 그 자리에서 적는다(2초 주기와 별도).
@@ -96,6 +99,9 @@ const survived = (s, now, leaving) => !!s.cur && s.cur.mode === 'board' && Numbe
 // 한 단계 무겁게 다시 시도(곧 다시 읽는다), 처음(단계 0)으로 되돌리기
 export const levelHeavier = (s, now = Date.now()) => ({ ...s, level: Math.max(0, levelOf(s.level) - 1), ok: false, light: false, crashes: [], cur: s.cur ? { ...s.cur, alive: now, clean: true } : null });
 export const levelReset = (s, now = Date.now()) => ({ ...s, level: 0, ok: false, light: false, crashes: [], cur: s.cur ? { ...s.cur, alive: now, clean: true } : null });
+
+// P87: 백엔드가 죽음 기록을 받았다(web.boot의 답). 다음 부팅과 다시 붙은 연결이 같은 것을 다시 알리지 않는다
+export const crumbSent = (s, id) => (Number.isFinite(id) ? { ...s, sent: id } : s);
 
 // 백엔드(web.boot, backend/src/web-crash.mjs crashInfo)에 보낼 직전 상태. 숫자와 짧은 코드만
 export function reportOf(prev, now, { boots = 0 } = {}) {

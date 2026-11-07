@@ -13,6 +13,14 @@ export function isPhoneLayout({ width, height, coarse, pref = null } = {}) {
   return !!coarse && width <= PHONE_MAX_WIDTH && height > width;
 }
 
+// P87: 휴대폰은 늘 세션 목록(캔버스 보드는 iPhone Safari에서 죽는다). 휴대폰 = 손가락 포인터이고 짧은 변이 PHONE_MAX_WIDTH 이하.
+// 가로로 돌려도 휴대폰이다(가로 보드도 같은 이유로 죽는다). 태블릿(짧은 변 700px 안팎)·마우스 웹 화면·PC 창은 보드
+export function isPhoneDevice({ width, height, coarse } = {}) {
+  if (!(width > 0) || !(height > 0)) return false;
+  return !!coarse && Math.min(width, height) <= PHONE_MAX_WIDTH;
+}
+export const firstView = (o) => (isPhoneDevice(o) ? 'list' : 'board');
+
 const NEED = new Set(['waiting', 'trust_wait']);
 const BUSY = new Set(['working', 'starting']);
 export const needsYou = (s) => !!s && NEED.has(s.state);

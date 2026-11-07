@@ -4,7 +4,7 @@
 // - 직전 페이지가 죽었으면 연결이 열릴 때 web.boot로 직전 상태를 보낸다(연결 기록의 boot 줄). 내용(글, 화면)은 보내지 않는다
 // - 가벼운 화면: "보드로 다시 열기"(reopenBoard)는 기록을 바꾸고 페이지를 다시 읽는다
 import { api } from './api.js';
-import { CRUMB_KEY, ALIVE_EVERY_MS, parseCrumbs, bootDecide, crumbAlive, crumbLeave, crumbBack, chooseBoard, termBudget, crumbStep, levelHeavier, levelReset, levelPlan } from './lib/crumbs.js';
+import { CRUMB_KEY, ALIVE_EVERY_MS, parseCrumbs, bootDecide, crumbAlive, crumbLeave, crumbBack, chooseBoard, termBudget, crumbStep, levelHeavier, levelReset, levelPlan, crumbSent } from './lib/crumbs.js';
 // P86: 보드를 여는 단계마다 그 자리에서 적는 단계 기록(step), 다시 열 때마다 한 단계씩 가벼워지는 보드(boardLevel), 살아남은 단계를 연결 기록에(web.level)
 
 const webPage = () => typeof window !== 'undefined' && !!(window.mt ? window.mt.web : true); // web.js가 window.mt.web을 둔다. Electron은 preload가 먼저 둔다
@@ -72,8 +72,16 @@ export function startCrashWatch() {
   setInterval(alive, ALIVE_EVERY_MS);
   document.addEventListener('visibilitychange', alive);
   if (b.crashed) {
-    let sent = false;
-    const send = () => { if (sent) return; api.call('web.boot', { crashed: true, light: b.light, crash: b.report, level: b.level }).then(() => { sent = true; }, () => {}); };
+    // P87: 한 번 알린 죽음은 다시 알리지 않는다. 답을 받기 전에 소켓이 끊기면(P82) 다시 붙을 때 또 보내므로 id(죽은 페이지의 부팅 시각)를 붙여
+    // 백엔드가 같은 것을 한 번만 남기고, 답을 받으면 기기에 적어(crumbSent) 다음 연결과 다음 부팅이 다시 보내지 않는다
+    let sent = false, busy = false;
+    const id = b.reportId;
+    const send = () => {
+      if (sent || busy) return;
+      if (id != null && read().sent === id) { sent = true; return; }
+      busy = true;
+      api.call('web.boot', { crashed: true, id, light: b.light, crash: b.report, level: b.level }).then(() => { sent = true; write(crumbSent(read(), id)); }, () => {}).finally(() => { busy = false; });
+    };
     api.on('$open', send);
     if (api.conn && api.conn.phase === 'open') send();
   }

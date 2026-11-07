@@ -7,6 +7,8 @@
 // - 가상 키보드가 올라오면 보이는 높이(visualViewport)에 화면을 맞춰 입력 줄이 가려지지 않게 한다. 노치는 env(safe-area-inset-*)
 // 가로로 돌리거나 폭이 넓으면 main.jsx가 보드 화면을 그대로 보인다. 휴대폰에서도 "보드 화면"을 고를 수 있다(LAYOUT_KEY)
 // P76: 휴대폰의 기본은 보드 화면(캔버스, 탭하면 전체 보기 PhoneFull.jsx)이다. 이 목록은 보드 화면의 목록 단추로 고를 때(LAYOUT_KEY 'list')만 보이고, 머리줄의 보드 단추로 돌아간다
+// P87: 휴대폰은 늘 이 목록으로 연다(lib/phone.js isPhoneDevice, 보드는 iPhone Safari에서 죽는다). 머리줄의 보드 단추는 미션 맵(PhoneMission.jsx) 단추가 되었고,
+//   가벼운 화면 안내와 "보드로 다시 열기"는 휴대폰에 보이지 않는다(죽음 기록은 그대로 남긴다). 보드 화면·전체 보기 코드는 태블릿을 위해 그대로 둔다
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, toast, markSeen, setFocus, setCloseIds, askKey } from './store.js';
@@ -20,12 +22,13 @@ import { useT, errText } from './lib/i18n.js';
 import { ago, STATE_LABEL, deliveryText } from './lib/labels.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
 import { BRAND_WORDMARK } from './lib/icons.jsx';
-import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneLayout, LAYOUT_KEY, needsYou } from './lib/phone.js';
+import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou } from './lib/phone.js';
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
-import { showPhoneList, LIST_PREF } from './lib/touch-board.js'; // P76: 기본은 보드 화면
+import { LIST_PREF } from './lib/touch-board.js'; // P76: 목록 단추(태블릿 보드에는 보이지 않는다)
+import { PhoneMission } from './PhoneMission.jsx'; // P87: 휴대폰 미션 맵
 import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 알약을 바꾸지 않는다
-import { lightMode, reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록). P86: 보드 단계
+import { reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록). P86: 보드 단계
 import './phone.css';
 
 // ---------- 화면 고르기(main.jsx) ----------
@@ -38,10 +41,11 @@ export function setLayoutPref(v) {
   for (const fn of [...prefSubs]) fn();
 }
 const coarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
-const phoneScreen = () => isPhoneLayout({ width: window.innerWidth, height: window.innerHeight, coarse: coarse() });
-// P76: [세션 목록을 보일까(목록 단추로 골랐을 때만), 휴대폰 세로 화면인가(보드 화면에 목록 단추와 전체 보기를 둔다)]
+export const phoneScreen = () => isPhoneDevice({ width: window.innerWidth, height: window.innerHeight, coarse: coarse() });
+// P76: [세션 목록을 보일까, 휴대폰 세로 화면인가(보드 화면에 목록 단추와 전체 보기를 둔다)]
+// P87: 휴대폰이면 늘 목록이다(목록 단추로 고른 것과 상관없이). 휴대폰에서는 보드를 그리지 않으므로 둘째 값도 같다
 export function usePhoneLayout(enabled = true) {
-  const get = () => (enabled ? [showPhoneList({ phone: phoneScreen(), pref }), phoneScreen()] : [false, false]);
+  const get = () => (enabled ? [phoneScreen(), phoneScreen()] : [false, false]);
   const [v, setV] = useState(get);
   useEffect(() => {
     if (!enabled) return undefined;
@@ -120,7 +124,10 @@ function ConnPill({ compact = false }) {
 // ---------- 뿌리 ----------
 export function PhoneApp() {
   const sessions = useStore((st) => st.sessions);
-  const [open, setOpen] = useState(() => (history.state && history.state.mtPhone) || null);
+  // P87: 화면은 history.state에 둔다. mtPhone: 연 세션, mtMission: 미션 맵(그 위에서 연 세션이면 둘 다)
+  const navOf = (st) => ({ open: (st && st.mtPhone) || null, mission: !!(st && st.mtMission) });
+  const [nav, setNav] = useState(() => navOf(history.state));
+  const open = nav.open;
   const [spawn, setSpawn] = useState(false);
   const rootRef = useRef(null);
 
@@ -142,14 +149,20 @@ export function PhoneApp() {
 
   // 뒤로 가기(Android 뒤로 단추, 가장자리 밀기)는 목록으로
   useEffect(() => {
-    const onPop = (e) => setOpen((e.state && e.state.mtPhone) || null);
+    const onPop = (e) => setNav(navOf(e.state));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const go = (id, { replace = false } = {}) => {
-    if (!id) { if (history.state && history.state.mtPhone) history.back(); else setOpen(null); return; }
-    if (replace || (history.state && history.state.mtPhone)) history.replaceState({ mtPhone: id }, ''); else history.pushState({ mtPhone: id }, '');
-    setOpen(id);
+    if (!id) { if (history.state && history.state.mtPhone) history.back(); else setNav((n) => ({ ...n, open: null })); return; }
+    const next = { mtPhone: id, ...(nav.mission ? { mtMission: true } : {}) };
+    if (replace || (history.state && history.state.mtPhone)) history.replaceState(next, ''); else history.pushState(next, '');
+    setNav({ open: id, mission: nav.mission });
+  };
+  // P87: 미션 맵 열기·닫기(뒤로 가기도 목록으로)
+  const mission = (on) => {
+    if (on) { history.pushState({ mtMission: true }, ''); setNav({ open: null, mission: true }); return; }
+    if (history.state && history.state.mtMission && !history.state.mtPhone) history.back(); else { try { history.replaceState(null, ''); } catch {} setNav({ open: null, mission: false }); }
   };
   // 연 세션: 보는 중(잠재우기에서 뺀다), 들어간 시각, 확인함
   useEffect(() => {
@@ -157,13 +170,15 @@ export function PhoneApp() {
     setFocus(open); setCloseIds([open]); enterSession(open); markSeen(open);
   }, [open]);
   // 연 세션이 사라지면 목록으로
-  useEffect(() => { if (open && getState().boardLoaded && !sessions.has(open)) { setOpen(null); try { history.replaceState(null, ''); } catch {} } }, [open, sessions]);
-  window.__mtPhone = { open: (id) => go(id), list: () => go(null) }; // 시험이 부른다
+  useEffect(() => { if (open && getState().boardLoaded && !sessions.has(open)) { const m = nav.mission; setNav({ open: null, mission: m }); try { history.replaceState(m ? { mtMission: true } : null, ''); } catch {} } }, [open, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  window.__mtPhone = { open: (id) => go(id), list: () => go(null), mission: () => mission(true) }; // 시험이 부른다
 
   const s = open ? sessions.get(open) : null;
   return (
-    <div className="mt-phone" ref={rootRef} data-role="phone" data-view={s ? 'session' : 'list'}>
-      {s ? <PhoneSession key={s.sessionId} s={s} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} /> : <PhoneList onOpen={(id) => go(id)} onNew={() => setSpawn(true)} />}
+    <div className="mt-phone" ref={rootRef} data-role="phone" data-view={s ? 'session' : nav.mission ? 'mission' : 'list'}>
+      {s ? <PhoneSession key={s.sessionId} s={s} fromMission={nav.mission} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} />
+        : nav.mission ? <PhoneMission onBack={() => mission(false)} onOpen={(id) => go(id)} conn={<ConnPill />} />
+        : <PhoneList onOpen={(id) => go(id)} onNew={() => setSpawn(true)} onMission={() => mission(true)} />}
       {spawn && <SpawnSheet onClose={() => setSpawn(false)} onStarted={(id) => { setSpawn(false); go(id); }} />}
     </div>
   );
@@ -244,7 +259,7 @@ export function LevelBadge() {
   );
 }
 
-function PhoneList({ onOpen, onNew }) {
+function PhoneList({ onOpen, onNew, onMission }) {
   const t = useT();
   const sessions = useStore((st) => st.sessions);
   const workspaces = useStore((st) => st.workspaces);
@@ -262,11 +277,11 @@ function PhoneList({ onOpen, onNew }) {
       <header className="mt-ph-head">
         <img className="mt-ph-brand" src={BRAND_WORDMARK} alt="Atrium" draggable={false} />
         <ConnPill />
-        <button type="button" className="mt-ph-icon" data-action="phone-board" title={t('phone.toBoard')} aria-label={t('phone.toBoard')} onClick={() => { setLayoutPref(null); if (lightMode()) reopenBoard(); }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" /></svg>
+        <button type="button" className="mt-ph-icon" data-action="phone-mission" title={t('phoneMission.open')} aria-label={t('phoneMission.open')} onClick={onMission}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v5H9zM3 16h6v5H3zM15 16h6v5h-6zM12 8v4M6 16v-4h12v4" /></svg>
         </button>
       </header>
-      {lightMode() ? <LightBanner /> : <InstallTip />}
+      <InstallTip />
       <div className="mt-ph-scroll" data-role="phone-scroll">
         {list.needs.length > 0 && (
           <section className="mt-ph-sec need" data-section="needs">
@@ -305,7 +320,7 @@ function PhoneList({ onOpen, onNew }) {
 
 // ---------- 세션 하나 ----------
 const KEY_LABEL = { enter: '⏎', esc: 'Esc', ctrlc: 'Ctrl+C', up: '↑', down: '↓', tab: 'Tab', shifttab: '⇧Tab', slash: '/' };
-function PhoneSession({ s, onBack, onGo }) {
+function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   const t = useT();
   const id = s.sessionId;
   const sessions = useStore((st) => st.sessions);
@@ -404,7 +419,7 @@ function PhoneSession({ s, onBack, onGo }) {
   return (
     <div className="mt-ph-session" data-role="phone-session" data-session={id} data-state={s.state}>
       <header className="mt-ph-shead">
-        <button type="button" className="mt-ph-back" data-action="phone-back" aria-label={t('phone.back')} onClick={onBack}><Chev dir="left" /><span>{t('phone.list')}</span></button>
+        <button type="button" className="mt-ph-back" data-action="phone-back" aria-label={fromMission ? t('phoneMission.backToMap') : t('phone.back')} onClick={onBack}><Chev dir="left" /><span>{fromMission ? t('phoneMission.short') : t('phone.list')}</span></button>
         <div className="mt-ph-title">
           <b><span className="mt-ph-dot" data-tone={toneOf(s)} aria-hidden="true" />{s.name}</b>
           <span className="mt-ph-sub">{stateText}</span>
