@@ -69,7 +69,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 ### Docks and layout
 
 - **Docks.** `Ctrl`+drag a node onto another node's edge to split it, tmux style. Layout presets match the number of sessions (2 to 6, and even splits for 7 or more). Links inside a dock show as small bridges on the dividers, never as lines across your terminals.
-- **Size and arrange.** Size steps (large, normal, small, wide, tall) for nodes and each dock cell. **Arrange** lays out the board along the links, with one undo.
+- **Size and arrange.** Size steps (large, normal, small, wide, tall) for nodes and docks. **Arrange** lays out the board along the links, with one undo.
 - **Notes on the canvas.** Markdown memos and kanban boards sit next to the sessions. A card linked to a session shows its state and takes you there.
 
 ![A dock: the lead on the left and two workers on the right, with the layout presets for three sessions open above](docs/images/dock.png)
