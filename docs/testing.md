@@ -41,6 +41,7 @@
 - 스크린숏과 로그는 `experiments/p<번호>/`에 둔다(git 밖). 창 안만 찍는다(`page.screenshot`, P72).
 
 - 원격 창 시험(`p59-remote.mjs`)은 가짜 tailscale(whois 포함)과 노트북마다 흉내 프록시를 쓰고, Chromium 플래그로 흉내 주소를 보안 출처로 맞추며, 패스키는 CDP 가상 인증기로 만든다(`p59-lib.mjs`).
+- 원격 끊김은 `ts-sim-proxy.mjs dropWs`로 흉내 내고, Safari는 Safari UA를 준 Chromium으로 본다(P82).
 
 ## herdr를 부르는 시험
 
