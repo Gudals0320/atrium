@@ -31,12 +31,13 @@ let page = null;
 const shot = async (name) => { const f = path.join(OUT, `${TAG}-${name}.png`); await page.screenshot({ path: f }); log('스크린숏', path.relative(REPO, f)); };
 const call = (m, p = {}) => page.evaluate(([mm, pp]) => window.__mt.api.call(mm, pp), [m, p]);
 
+const DIR2 = `${T.DIR}-ws2`; // 5: ←·→로 오갈 두 번째 워크스페이스(git 아닌 빈 폴더)
 if (argv.includes('--fresh')) {
   try { log('백엔드 멈춤', atrium('backend', 'stop').trim()); } catch (e) { log('백엔드 멈춤', e.message.slice(0, 120)); }
   await sleep(800);
-  for (const d of [path.join(T.DEV, 'data'), path.join(T.DEV, 'app'), T.PROJECTS, T.SESSIONS, T.DIR]) fs.rmSync(d, { recursive: true, force: true });
+  for (const d of [path.join(T.DEV, 'data'), path.join(T.DEV, 'app'), T.PROJECTS, T.SESSIONS, T.DIR, DIR2]) fs.rmSync(d, { recursive: true, force: true });
 }
-for (const d of [T.PROJECTS, T.SESSIONS, T.DIR]) fs.mkdirSync(d, { recursive: true });
+for (const d of [T.PROJECTS, T.SESSIONS, T.DIR, DIR2]) fs.mkdirSync(d, { recursive: true });
 
 let app = null;
 const ids = {};
@@ -190,27 +191,38 @@ try {
   await moveAway();
   await sleep(1200);
 
-  // ---------- 5. 왼쪽 키로 고르기·잇기가 바뀐다 ----------
+  // ---------- 5. 왼쪽·오른쪽 키로 이전·다음 워크스페이스로 간다(2026-11-07 사용자 요청, 고르기·잇기 바꾸기를 대신함) ----------
+  await call('workspace.open', { path: DIR2 });
+  await until(() => page.evaluate(() => window.__mt.getState().workspaces.length >= 2), 10000, 200);
   await clickBlank();
-  const tools = () => page.evaluate(() => ({ linking: document.querySelector('.mt-app').classList.contains('linking'), select: document.querySelector('[data-action="tool-select"]').classList.contains('on'), link: document.querySelector('[data-action="link-mode"]').classList.contains('on') }));
-  const t0 = await tools();
-  await page.keyboard.press('ArrowLeft'); await sleep(250);
-  const t1 = await tools();
-  await shot('05-left-link');
-  await page.keyboard.press('ArrowLeft'); await sleep(250);
-  const t2 = await tools();
-  step('왼쪽 키: 고르기 → 잇기 → 고르기, 도구 단추 표시도 바뀐다', !t0.linking && t0.select && t1.linking && t1.link && !t1.select && !t2.linking && t2.select, { t0, t1, t2 });
+  const wsNow = () => page.evaluate(() => { const s = window.__mt.getState(); const v = document.querySelector('.react-flow__viewport'); return { keys: s.workspaces.map((w) => w.key), current: s.currentWs, linking: document.querySelector('.mt-app').classList.contains('linking'), view: v ? v.style.transform : null }; });
+  const w0 = await wsNow();
+  await page.keyboard.press('ArrowRight'); await sleep(900);
+  const w1 = await wsNow();
+  await shot('05-right-next-ws');
+  await page.keyboard.press('ArrowLeft'); await sleep(900);
+  const w2 = await wsNow();
+  const n5 = w0.keys.length, i5 = w0.keys.indexOf(w0.current);
+  step('오른쪽·왼쪽 키: 다음·이전 워크스페이스를 고르고 화면을 그 영역으로 옮긴다(도구는 그대로)', n5 >= 2 && w1.current === w0.keys[(i5 + 1) % n5] && w2.current === w0.current && w1.view !== w0.view && w2.view !== w1.view && !w1.linking && !w2.linking, { w0, w1, w2 });
+  // 마지막에서 오른쪽은 처음으로, 처음에서 왼쪽은 마지막으로 돈다
+  await page.locator('[data-role="workspaces"] .mt-wsbtn').last().click(); await sleep(600); // 탭을 누른 뒤에도 판의 키다(크롬은 판 칸 안)
+  await page.keyboard.press('ArrowRight'); await sleep(600);
+  const w3 = await wsNow();
+  await page.keyboard.press('ArrowLeft'); await sleep(600);
+  const w4 = await wsNow();
+  step('오른쪽·왼쪽 키: 끝에서 처음으로 돈다', w3.current === w0.keys[0] && w4.current === w0.keys[n5 - 1], { w3: w3.current, w4: w4.current, keys: w0.keys });
+  // 원래 워크스페이스로 돌아간다
+  for (let k = 0; k < n5 && (await wsNow()).current !== w0.current; k++) { await page.keyboard.press('ArrowRight'); await sleep(600); }
   // 노드를 고른 뒤(Ctrl+누르기, 노드 테두리에 초점) 방향키는 노드를 옮기지 않는다
   const n0 = await nodeRect(S);
   const head = await page.$(`.react-flow__node[data-id="${S}"] .mt-node-head`);
   const hb = await head.boundingBox();
   await page.keyboard.down('Control'); await page.mouse.click(hb.x + hb.width / 2, hb.y + 8); await page.keyboard.up('Control'); await sleep(300);
   const a5 = await active();
-  await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowLeft'); await sleep(400);
+  await page.keyboard.press('ArrowRight'); await sleep(600); await page.keyboard.press('ArrowLeft'); await sleep(600);
   const n1 = await nodeRect(S);
-  const t3 = await tools();
-  step('왼쪽·오른쪽 키: 고른 노드는 그대로이고 왼쪽 키는 도구를 바꾼다', JSON.stringify(n0) === JSON.stringify(n1) && t3.linking, { n0, n1, active: a5, t3 });
-  await page.keyboard.press('ArrowLeft'); await sleep(200);
+  const w5 = await wsNow();
+  step('왼쪽·오른쪽 키: 고른 노드는 그대로이고 워크스페이스만 오간다', JSON.stringify(n0) === JSON.stringify(n1) && w5.current === w0.current && !w5.linking, { n0, n1, active: a5, w5: w5.current });
   await page.evaluate(() => window.__mt.getState().clearSelection());
 
   // ---------- 6. 위 키 → 위쪽 찾기 바가 열리고 바로 칠 수 있다. 바깥을 누르면 닫히고 그 누르기는 판에 간다 ----------
@@ -227,7 +239,10 @@ try {
   await shot('06-up-search');
   // 바깥(노드 머리줄) 한 번 누르기: 찾기 바가 닫히고 노드도 골라진다
   const hb2 = await (await page.$(`.react-flow__node[data-id="${S}"] .mt-node-head`)).boundingBox();
-  await page.keyboard.down('Control'); await page.mouse.click(hb2.x + hb2.width / 2, hb2.y + 8); await page.keyboard.up('Control'); await sleep(400);
+  // 찾기 결과 목록이 머리줄 가운데를 덮으면(5에서 연 두 번째 워크스페이스도 결과에 나온다) 목록 밖인 머리줄 왼쪽 끝을 누른다
+  const sr6 = await page.evaluate(() => { const r = document.querySelector('[data-role="search"]').getBoundingClientRect(); return { l: r.left, r: r.right, b: r.bottom }; });
+  const hx6 = hb2.y + 8 > sr6.b || hb2.x + hb2.width / 2 < sr6.l || hb2.x + hb2.width / 2 > sr6.r ? hb2.x + hb2.width / 2 : hb2.x + 6;
+  await page.keyboard.down('Control'); await page.mouse.click(hx6, hb2.y + 8); await page.keyboard.up('Control'); await sleep(400);
   const s6c = await page.evaluate((i) => ({ open: !!document.querySelector('[data-role="search"]'), selected: window.__mt.getState().selected.includes(i) }), S);
   step('찾기 바: 바깥(노드)을 한 번 누르면 닫히고 그 노드도 골라진다', !s6c.open && s6c.selected, s6c);
   await page.evaluate(() => window.__mt.getState().clearSelection());
@@ -262,9 +277,9 @@ try {
   const b7 = await barState();
   step('터미널 초점: 위 키는 셸의 이전 명령을 부른다(찾기 바는 열리지 않는다)', a7 && a7.xterm && /echo p43mark\s*$/.test(prompt) && !s7.search, { active: a7, prompt, s7 });
   await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowDown'); await sleep(400);
-  const s7b = await page.evaluate(() => ({ linking: document.querySelector('.mt-app').classList.contains('linking') }));
+  const s7b = await page.evaluate(() => ({ linking: document.querySelector('.mt-app').classList.contains('linking'), current: window.__mt.getState().currentWs }));
   const b7b = await barState();
-  step('터미널 초점: 왼쪽·아래 키도 터미널 몫이다(도구와 명령 바는 그대로)', !s7b.linking && b7b.hidden && b7.hidden, { s7b, b7, b7b });
+  step('터미널 초점: 왼쪽·아래 키도 터미널 몫이다(워크스페이스와 명령 바는 그대로)', !s7b.linking && s7b.current === w0.current && b7b.hidden && b7.hidden, { s7b, b7, b7b });
   await shot('07-terminal-keys');
   await call('terminal.input', { session: S, data: '\x03' });
 

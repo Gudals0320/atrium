@@ -44,13 +44,14 @@ export function confirmKey(e) {
   return null;
 }
 
-// P43: 판에 키보드 초점이 있을 때의 방향키. 아래 = 명령 바에 초점, 위 = 찾기 바(Ctrl+F와 같다), 왼쪽 = 고르기·잇기 도구 바꾸기,
-// 오른쪽 = 정하지 않았다('none': 받기만 하고 아무것도 하지 않는다. React Flow가 고른 노드를 옮기지 않게).
+// P43: 판에 키보드 초점이 있을 때의 방향키. 아래 = 명령 바에 초점, 위 = 찾기 바(Ctrl+F와 같다).
+// 왼쪽·오른쪽 = 이전·다음 워크스페이스로 가기(위 왼쪽 탭 순서, 끝에서 처음으로 돈다. 2026-11-07 사용자 요청, 고르기·잇기 바꾸기를 대신함).
+// 받으면 React Flow가 고른 노드를 방향키로 옮기지 않는다.
 // 판에 초점이 있다 = 초점이 문서 몸통(빈 캔버스를 누른 뒤 등)이거나 판 칸(.mt-stage: 캔버스, 노드 테두리, 떠 있는 단추) 안의 글을 받지 않는 곳.
 // 글을 받는 곳(입력칸, 터미널), 대화상자·메뉴·펼침 목록·찾기 바 안, 사이드바, 덮개(미션 맵, 출력 보기)가 열린 때, 노드에 들어가 터미널이 붙기를
 // 기다리는 동안(pending: 친 키는 터미널로 간다)에는 받지 않는다. 조합 키(Shift 포함), 한글 조합 중, 누르고 있어 되풀이되는 키도 받지 않는다
-// → 'command' | 'search' | 'tool' | 'none' | null(판의 키가 아니다. 그대로 둔다)
-const ARROWS = { ArrowDown: 'command', ArrowUp: 'search', ArrowLeft: 'tool', ArrowRight: 'none' };
+// → 'command' | 'search' | 'prevWs' | 'nextWs' | null(판의 키가 아니다. 그대로 둔다)
+const ARROWS = { ArrowDown: 'command', ArrowUp: 'search', ArrowLeft: 'prevWs', ArrowRight: 'nextWs' };
 const NOT_BOARD = '.mt-modal, .mt-modal-bg, [role="dialog"], [role="menu"], [role="listbox"], .mt-menu, .mt-dropdown, .mt-search, .mt-mission, .mt-output';
 export function boardArrowKey(e, { dialog = null, missionOpen = false, outputOpen = false, pending = false } = {}) {
   if (!e || !ARROWS[e.key] || e.isComposing || e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return null;
@@ -62,4 +63,15 @@ export function boardArrowKey(e, { dialog = null, missionOpen = false, outputOpe
     if (!t.closest || t.closest('.xterm') || t.closest(NOT_BOARD) || !t.closest('.mt-stage')) return null;
   }
   return ARROWS[e.key];
+}
+
+// ←·→로 갈 워크스페이스. keys: 탭 순서의 워크스페이스 키, dir: -1(이전)·1(다음). 끝에서 처음으로 돈다.
+// 지금 워크스페이스가 목록에 없으면 다음은 첫째, 이전은 마지막. 목록이 비었거나 하나뿐이고 그것이 지금이면 null(움직일 곳이 없다)
+export function stepWorkspace(keys, current, dir) {
+  const list = (keys || []).filter(Boolean);
+  if (!list.length) return null;
+  const at = list.indexOf(current);
+  if (at < 0) return dir < 0 ? list[list.length - 1] : list[0];
+  if (list.length === 1) return null;
+  return list[(at + (dir < 0 ? -1 : 1) + list.length) % list.length];
 }

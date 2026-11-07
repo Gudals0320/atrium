@@ -129,7 +129,7 @@ powershell -ExecutionPolicy Bypass -File app\scripts\make-shortcut.ps1
 
 보드에서 폴더를 열고 왼쪽 도구 모음에서 세션을 시작하세요.
 
-주요 단축키: `N` 다음 응답 필요 세션, `M` 작업 관계도, `Ctrl+F` 또는 `↑` 검색, `↓` 명령 입력줄, `Ctrl+Shift+E` 사이드바, `Delete` 선택한 세션 닫기.
+주요 단축키: `N` 다음 응답 필요 세션, `M` 작업 관계도, `Ctrl+F` 또는 `↑` 검색, `↓` 명령 입력줄, `←` `→` 이전·다음 워크스페이스, `Ctrl+Shift+E` 사이드바, `Delete` 선택한 세션 닫기.
 
 ### 설치와 업데이트
 

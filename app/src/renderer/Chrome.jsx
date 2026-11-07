@@ -57,7 +57,7 @@ function WorkspaceTabs() {
         const on = w.key === current;
         return (
           <div key={w.key} role="button" tabIndex={0} className={`mt-wsbtn${on ? ' on' : ''}${c.needsYou ? ' hot' : ''}`} data-ws={w.key} data-name={w.name}
-            title={t('top.wsTitle', { kind: w.kind === 'repo' ? t('top.wsRepo') : t('top.wsFolder'), root: w.root, sessions: c.sessions, shells: c.shells, working: c.working, needsYou: c.needsYou, review: c.review })}
+            title={`${t('top.wsTitle', { kind: w.kind === 'repo' ? t('top.wsRepo') : t('top.wsFolder'), root: w.root, sessions: c.sessions, shells: c.shells, working: c.working, needsYou: c.needsYou, review: c.review })}\n${t('boardKeys.ws')}`}
             onClick={() => selectWorkspace(w.key)} onKeyDown={(e) => { if (e.key === 'Enter') selectWorkspace(w.key); }}>
             {c.needsYou > 0 && <span className="mt-ws-need" data-count="needsYou" title={t('top.turnN', { n: c.needsYou })}>{c.needsYou}</span>}
             <span className="mt-ws-name">{w.name}</span>
@@ -283,9 +283,9 @@ export function LeftRail({ linking, setLinking }) {
   const t = useT();
   return (
     <div className="mt-rail left" data-role="rail-left">
-      <Tool icon="pointer" on={!linking} label={`${t('rail.select')}\n${t('boardKeys.tool')}`} action="tool-select" onClick={() => { setLinking(false); getState().clearSelection && getState().clearSelection(); }} />
-      {/* 손으로 잇기는 선택과 서로 바뀌는 모드라 바로 아래에 둔다. P43: 판에서 ← 키로도 바꾼다(main.jsx) */}
-      <Tool icon="link" on={linking} label={`${t('rail.link')}\n${t('boardKeys.tool')}`} action="link-mode" onClick={() => setLinking(!linking)} />
+      <Tool icon="pointer" on={!linking} label={t('rail.select')} action="tool-select" onClick={() => { setLinking(false); getState().clearSelection && getState().clearSelection(); }} />
+      {/* 손으로 잇기는 선택과 서로 바뀌는 모드라 바로 아래에 둔다 */}
+      <Tool icon="link" on={linking} label={t('rail.link')} action="link-mode" onClick={() => setLinking(!linking)} />
       <Sep />
       <Favorites />
       <Sep />

@@ -27,7 +27,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider } from '@xyflow/react';
 import { api } from './api.js';
-import { useStore, getState, openDialog, setKillAsk, setRenaming, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin } from './store.js';
+import { useStore, getState, openDialog, setKillAsk, setRenaming, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin, selectWorkspace } from './store.js';
 import { OutputPanel } from './Output.jsx';
 import { LoopDialog } from './Loops.jsx';
 import { MissionMap } from './Mission.jsx';
@@ -42,7 +42,7 @@ import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
 import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';
-import { keyToData, closeKeyTargets, boardArrowKey } from './lib/keys.js';
+import { keyToData, closeKeyTargets, boardArrowKey, stepWorkspace } from './lib/keys.js';
 import { renameKeyTarget } from './lib/session-name.js'; // P66: F2로 고른 노드의 이름 바꾸기
 import { ReturnSummary, useReturnSummary } from './ReturnSummary.jsx';
 import { CloseDialog } from './SessionNode.jsx';
@@ -112,7 +112,7 @@ function App() {
   const order = [...inbox.needsYou, ...inbox.problems].map((s) => s.sessionId);
   const orderRef = useRef(order);
   orderRef.current = order;
-  // P11: 왼쪽 레일의 "손으로 잇기"(노드 손잡이를 늘 보인다), 오른쪽 레일의 루프 목록. P43: 판에서 ← 키로도 바꾼다
+  // P11: 왼쪽 레일의 "손으로 잇기"(노드 손잡이를 늘 보인다), 오른쪽 레일의 루프 목록
   const [linking, setLinking] = useState(false);
   const [loopsOpen, setLoopsOpen] = useState(false);
   const [phone, canPhone] = usePhoneLayout(isWeb); // P74
@@ -132,7 +132,7 @@ function App() {
         e.preventDefault(); e.stopPropagation();
         if (arrow === 'command') cmd.current && cmd.current.focus();
         else if (arrow === 'search') { if (st.searchOpen) { const el = document.querySelector('[data-field="search"]'); if (el) el.select(); } else setSearchOpen(true); }
-        else if (arrow === 'tool') setLinking((l) => !l);
+        else if (arrow === 'prevWs' || arrow === 'nextWs') { const k = stepWorkspace(st.workspaces.map((w) => w.key), st.currentWs, arrow === 'prevWs' ? -1 : 1); if (k) selectWorkspace(k); } // 탭을 누른 것과 같다(고르고 그 영역으로 화면을 맞춘다)
         return;
       }
       if (!p) return;

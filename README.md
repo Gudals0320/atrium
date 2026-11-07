@@ -129,7 +129,7 @@ powershell -ExecutionPolicy Bypass -File app\scripts\make-shortcut.ps1
 
 Then open a folder from the board and start a session from the left rail.
 
-Keys on the board: `N` next session that needs you, `M` mission map, `Ctrl+F` or `↑` find, `↓` command bar, `Ctrl+Shift+E` sidebar, `Delete` close the selected sessions.
+Keys on the board: `N` next session that needs you, `M` mission map, `Ctrl+F` or `↑` find, `↓` command bar, `←` `→` previous and next workspace, `Ctrl+Shift+E` sidebar, `Delete` close the selected sessions.
 
 ### Install and updates
 
