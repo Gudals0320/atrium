@@ -32,6 +32,7 @@ import { useT, errText } from './lib/i18n.js';
 import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles } from './lib/upload.js';
+import { termBudgetNow } from './crash-watch.js'; // P84: 손가락 웹 화면은 WebGL 없이, 웹은 캔버스 픽셀 상한을 낮게
 
 function readNumber(key, dflt) {
   const q = new URLSearchParams(location.search).get(key);
@@ -40,7 +41,8 @@ function readNumber(key, dflt) {
   const n = Number(v);
   return Number.isFinite(n) && v !== null && v !== '' ? n : dflt;
 }
-export const budget = new RendererBudget(readNumber('webglBudget', DEFAULT_WEBGL_BUDGET));
+const termPlan = termBudgetNow(Infinity, readNumber('webglBudget', DEFAULT_WEBGL_BUDGET)); // P84: { webgl, maxPx }
+export const budget = new RendererBudget(termPlan.webgl);
 export const terms = new Map(); // sessionId → Terminal (시험과 E6에서 읽는다)
 const SHELL_SCROLLBACK = 5000; // P42: 셸 노드의 판 안 기록 줄 수
 const HISTORY_WAIT = 1500; // P42: 셸 기록을 첫 프레임 앞에 넣으려고 기다리는 시간(넘으면 기록 없이 그린다)
@@ -190,7 +192,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       if (!(kAnc > 0 && dpr > 0 && hw > 0 && hh > 0)) return;
       // 1:1로 그린 터미널이 들어갈 자리. 셸은 스크롤 막대(FitAddon과 같은 14px) 앞까지, 그 밖은 노드 오른쪽 여백(.mt-term right 12px) 안으로 8px까지
       const room = term.options.scrollback === 0 ? hw + 8 : hw - 14;
-      const plan = sharpPlan({ cw: chars.width, ch: chars.height, dpr, lineHeight: TERM_LINE_HEIGHT, k: kAnc * st.scale, cols: term.cols, rows: term.rows, fitW: room / st.scale, fitH: hh / st.scale });
+      const plan = sharpPlan({ cw: chars.width, ch: chars.height, dpr, lineHeight: TERM_LINE_HEIGHT, k: kAnc * st.scale, cols: term.cols, rows: term.rows, fitW: room / st.scale, fitH: hh / st.scale, ...(termPlan.maxPx ? { maxPx: termPlan.maxPx } : {}) }); // P84: 웹은 캔버스 픽셀 상한이 낮다
       if (!plan) return;
       const sizeKey = `${term.cols}x${term.rows}`;
       if (!samePlan(plan, st.plan) || dpr !== st.planDpr || sizeKey !== st.planSize) { st.planSize = sizeKey; setPlan(plan, dpr); }
@@ -515,4 +517,19 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
       {share.shared > 1 && !share.ownerIsMe && <div className="mt-term-sizeby" data-role="term-sizeby" title={t('peers.sizeBy', { name: share.ownerName || '?' })} />}
     </div>
   );
+}
+
+// P84: 죽기 전 기록(crash-watch.js)이 재는 터미널 메모리. 붙은 터미널 수, 터미널 캔버스 장치 픽셀 합, 글자 아틀라스 장치 픽셀 합(WebGL 렌더러가 쥔 캔버스), WebGL 수.
+// 아틀라스는 xterm 6.0.0·addon-webgl 0.19의 내부(_renderService._renderer._charAtlas.pages)라 없으면 0으로 센다
+export function termStats() {
+  let px = 0, atlas = 0;
+  const seen = new Set();
+  for (const tm of terms.values()) {
+    for (const c of tm.element ? tm.element.querySelectorAll('canvas') : []) px += c.width * c.height;
+    try {
+      let r = tm._core && tm._core._renderService && tm._core._renderService._renderer; r = r && (r.value || r);
+      for (const pg of (r && r._charAtlas && r._charAtlas.pages) || []) if (pg.canvas && !seen.has(pg.canvas)) { seen.add(pg.canvas); atlas += pg.canvas.width * pg.canvas.height; }
+    } catch {}
+  }
+  return { terms: terms.size, px, atlas, gl: budget.used };
 }

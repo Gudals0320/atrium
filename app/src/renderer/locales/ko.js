@@ -2050,4 +2050,15 @@ export default {
     cmdOpen: '명령 입력 열기',
     cmdShort: '명령',
   },
+  // P84: 반복해서 닫힌 뒤의 가벼운 화면과 연결 기록의 죽음 줄
+  lightView: {
+    title: '화면이 반복해서 닫혀 가볍게 열었습니다',
+    body: '터미널은 고른 세션 하나만 엽니다.',
+    reopen: '보드로 다시 열기',
+  },
+  remoteCrash: {
+    ev_boot: '화면이 닫힌 뒤 다시 열림',
+    light: '가벼운 화면',
+    last: '닫히기 전 {v}',
+  },
 };

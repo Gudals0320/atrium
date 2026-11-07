@@ -10,11 +10,12 @@
 //   색은 tokens.css, 글꼴은 fonts.css(앱에 넣은 OFL 글꼴). 글꼴을 읽은 뒤에 그린다(터미널이 처음부터 제 글꼴로 칸 크기를 잰다)
 // P48(원격 R2): Electron 밖(브라우저)에서 돌면 웹 어댑터(web.js)가 window.mt를 두고, 짝을 맺기 전에는 짝 맺기 화면(Pair.jsx)만 보인다.
 //   PC 창에는 브라우저의 허락 요청 카드(WebDevices.jsx)가 뜬다
+import { lightMode, startCrashWatch, setCrumbSampler, bootState } from './crash-watch.js'; // P84: 죽기 전 기록, 반복해서 죽으면 가벼운 화면
 import { isWeb } from './web.js';
 import { RemoteBar } from './RemoteBar.jsx'; // P49: 웹 화면의 다시 연결 띠와 왕복 지연
 import { webGate } from './Pair.jsx';
 import { PairRequestBanner } from './WebDevices.jsx';
-import { PhoneApp, PhoneListButton, usePhoneLayout, useScreenFix } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P76: 기본은 보드 화면, 목록은 단추로
+import { PhoneApp, PhoneListButton, usePhoneLayout, useScreenFix, LightBanner } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P76: 기본은 보드 화면, 목록은 단추로
 import { PhoneFull } from './PhoneFull.jsx'; // P76: 휴대폰 보드 화면에서 탭한 세션의 전체 보기
 import { closeFull } from './full-view.js';
 import { startRemoteNotice, remoteNotices } from './remote-notice.js'; // P58
@@ -47,7 +48,7 @@ import { renameKeyTarget } from './lib/session-name.js'; // P66: F2로 고른 �
 import { ReturnSummary, useReturnSummary } from './ReturnSummary.jsx';
 import { CloseDialog } from './SessionNode.jsx';
 import { AppBoundary } from './ErrorBoundary.jsx';
-import { budget, terms } from './TerminalView.jsx';
+import { budget, terms, termStats } from './TerminalView.jsx';
 import { nextTarget } from './lib/faces.js';
 import { startViewingReport } from './sleep.js';
 import { startNotifier, notifyLog } from './notify.js';
@@ -115,7 +116,9 @@ function App() {
   // P11: 왼쪽 레일의 "손으로 잇기"(노드 손잡이를 늘 보인다), 오른쪽 레일의 루프 목록
   const [linking, setLinking] = useState(false);
   const [loopsOpen, setLoopsOpen] = useState(false);
-  const [phone, canPhone] = usePhoneLayout(isWeb); // P74
+  const [phoneList, canPhone] = usePhoneLayout(isWeb); // P74
+  const light = lightMode(); // P84: 반복해서 죽은 뒤의 가벼운 화면. 휴대폰은 목록 화면으로
+  const phone = phoneList || (light && canPhone);
   useScreenFix(isWeb); // P83: iOS 홈 화면 앱의 짧은 창 높이
   useEffect(() => { if (!canPhone || phone) closeFull(); }, [canPhone, phone]); // P76: 가로로 돌리거나 목록으로 가면 전체 보기를 닫는다
 
@@ -202,6 +205,7 @@ function App() {
       <Dialogs />
       {loaded && <PairRequestBanner />}
       {isWeb && <RemoteBar />}
+      {light && <LightBanner floating />}
       {canPhone && <PhoneListButton />}
       {canPhone && loaded && <AppBoundary><PhoneFull /></AppBoundary>}
       {splash !== 'off' && <Splash error={!loaded && conn === 'error' ? t('app.backendFailed', { detail }) : null} leaving={splash === 'leaving'} />}
@@ -211,7 +215,7 @@ function App() {
 }
 
 // 시험 스크립트(Playwright)와 E5·E6 측정이 읽는 창 안의 값
-window.__mt = { api, getState, perf, budget, terms, maxControllers: MAX_CONTROLLERS, notifyLog, remoteNotices, setDebugThrow, setConvoNodes, setFocus, pinBottom: setBottomPin }; // P13: setConvoNodes는 성능 시험의 기준(대화 노드 뺀 판). P26: setFocus는 초점 세션 시험. P43: pinBottom(true)은 아래 바를 늘 보이게(옛 창 시험)
+window.__mt = { api, getState, perf, budget, terms, maxControllers: MAX_CONTROLLERS, crash: bootState, termStats, notifyLog, remoteNotices, setDebugThrow, setConvoNodes, setFocus, pinBottom: setBottomPin }; // P13: setConvoNodes는 성능 시험의 기준(대화 노드 뺀 판). P26: setFocus는 초점 세션 시험. P43: pinBottom(true)은 아래 바를 늘 보이게(옛 창 시험)
 window.addEventListener('error', (e) => { perf.perfLog('window_error', { message: e.message, at: `${e.filename}:${e.lineno}` }); window.mt.log(`error ${e.message} ${e.filename}:${e.lineno}`); });
 window.addEventListener('unhandledrejection', (e) => { perf.perfLog('unhandled', { message: String(e.reason && (e.reason.message || e.reason)) }); window.mt.log(`unhandled ${e.reason && (e.reason.stack || e.reason.message || e.reason)}`); });
 
@@ -232,6 +236,9 @@ function boot() {
   startNotifier();
   if (!isWeb) startRemoteNotice(); // P58: 원격 기기가 붙으면 PC 창에 알린다
   startViewingReport(); // P21(D4): 초점 노드는 저절로 잠재우지 않는다
+  // P84: 웹 화면의 죽기 전 기록(화면, 터미널 메모리). 직전 페이지가 죽었으면 연결 기록에 남긴다
+  setCrumbSampler(() => ({ view: document.querySelector('[data-role=phone]') ? (document.querySelector('[data-role=phone]').dataset.view === 'session' ? 'session' : 'list') : document.querySelector('[data-role=phone-full]') ? 'full' : 'board', ...termStats() }));
+  startCrashWatch();
 }
 // P48: 웹 화면은 짝을 맺은 뒤에 판에 붙는다
 if (isWeb) webGate().then(boot); else boot();

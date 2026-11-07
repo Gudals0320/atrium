@@ -59,6 +59,7 @@ import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 import { oneFinger, releaseKind, pinchViewport, panViewport, mid, dist as gap2, tapTarget, movableId, tapAction, TAP_CONTROL, LONG_PRESS_MS } from './lib/touch-board.js'; // P76
 import { openFull, fullId, onFull } from './full-view.js'; // P76
+import { termBudgetNow } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게
 
 const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
 const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge };
@@ -74,7 +75,7 @@ function readMax() {
   const q = new URLSearchParams(location.search).get('maxControllers');
   let v = q; try { v ??= localStorage.getItem('mt.maxControllers'); } catch {}
   const n = Number(v);
-  return Number.isFinite(n) && v ? n : DEFAULT_MAX_CONTROLLERS;
+  return termBudgetNow(Number.isFinite(n) && v ? n : DEFAULT_MAX_CONTROLLERS, 0).max; // P84: 손가락 웹 화면은 3, 가벼운 화면은 1
 }
 export const MAX_CONTROLLERS = readMax();
 const DOT_GAP = 92; // tokens.css --dot-gap와 같은 값(월드 px)
@@ -559,6 +560,7 @@ export function Canvas() {
       if (now - t < HOLD_MS && keep.length < MAX_CONTROLLERS && list.some((n) => n.id === id)) keep.push(id);
       else held.current.delete(id);
     }
+    if (full) keep.length = 0; // P84: 전체 보기가 화면을 덮는 동안 판의 터미널은 붙이지 않는다(가려진 터미널의 메모리)
     const prev = st.attached;
     if (keep.length !== prev.length || keep.some((x, i) => x !== prev[i])) perfLog('attach_set', { n: keep.length, prev: prev.length, zoom: +vp.zoom.toFixed(4), w: el.clientWidth, h: el.clientHeight, nodes: list.length });
     setAttached(keep);

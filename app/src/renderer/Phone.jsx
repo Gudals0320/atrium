@@ -25,6 +25,7 @@ import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.j
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
 import { showPhoneList, LIST_PREF } from './lib/touch-board.js'; // P76: 기본은 보드 화면
 import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 알약을 바꾸지 않는다
+import { lightMode, reopenBoard } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록)
 import './phone.css';
 
 // ---------- 화면 고르기(main.jsx) ----------
@@ -209,6 +210,17 @@ function InstallTip() {
   return null;
 }
 
+// P84: 가벼운 화면의 안내(페이지가 1분 안에 두 번 죽은 뒤). 보드로 다시 열면 페이지를 다시 읽는다. floating: 보드 화면 위(휴대폰 밖)
+export function LightBanner({ floating = false }) {
+  const t = useT();
+  return (
+    <div className={`mt-ph-light${floating ? ' floating' : ''}`} data-role="light-banner" role="status">
+      <div className="mt-ph-light-text"><b>{t('lightView.title')}</b><span>{t('lightView.body')}</span></div>
+      <button type="button" className="mt-ph-tip-btn" data-action="light-board" onClick={() => { setLayoutPref(null); reopenBoard(); }}>{t('lightView.reopen')}</button>
+    </div>
+  );
+}
+
 function PhoneList({ onOpen, onNew }) {
   const t = useT();
   const sessions = useStore((st) => st.sessions);
@@ -227,11 +239,11 @@ function PhoneList({ onOpen, onNew }) {
       <header className="mt-ph-head">
         <img className="mt-ph-brand" src={BRAND_WORDMARK} alt="Atrium" draggable={false} />
         <ConnPill />
-        <button type="button" className="mt-ph-icon" data-action="phone-board" title={t('phone.toBoard')} aria-label={t('phone.toBoard')} onClick={() => setLayoutPref(null)}>
+        <button type="button" className="mt-ph-icon" data-action="phone-board" title={t('phone.toBoard')} aria-label={t('phone.toBoard')} onClick={() => { setLayoutPref(null); if (lightMode()) reopenBoard(); }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" /></svg>
         </button>
       </header>
-      <InstallTip />
+      {lightMode() ? <LightBanner /> : <InstallTip />}
       <div className="mt-ph-scroll" data-role="phone-scroll">
         {list.needs.length > 0 && (
           <section className="mt-ph-sec need" data-section="needs">

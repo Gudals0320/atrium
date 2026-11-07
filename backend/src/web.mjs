@@ -779,6 +779,15 @@ export class WebServer {
       'device.disconnect': localOnly((p) => this.disconnect(String(p.id || ''))), // P58: 지금 연결만 닫는다
       'remote.log': localOnly((p) => ({ entries: this.remoteLog.list({ limit: p && Number.isInteger(p.limit) ? p.limit : 100 }) })), // P58: 연결 기록(최근 것부터)
       'web.status': () => this.status(),
+      // P84: 웹 화면이 정상 떠남 없이 다시 읽혔다(페이지가 죽음). 기기 연결 하나에 한 번만 남긴다(넘치는 요청이 기록을 밀어내지 않게)
+      'web.boot': (p, c) => {
+        const d = c && c.auth && c.auth.kind === 'device' && c.auth.device;
+        if (!d) throw apiErr('forbidden', 'only a paired browser reports its boot', 403);
+        if (c.bootNoted || !p || p.crashed !== true) return { logged: false };
+        c.bootNoted = true;
+        this.note('boot', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, crashed: true, light: p.light === true, crash: p.crash });
+        return { logged: true };
+      },
       'remote.status': (p) => this.remoteStatus({ fresh: !!(p && p.fresh) }), // P49
       'fs.roots': async () => {
         const drives = await driveRoots();
