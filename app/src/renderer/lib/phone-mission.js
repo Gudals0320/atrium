@@ -27,7 +27,7 @@ const tally = (rows) => ({ count: rows.length, work: rows.filter((r) => r.tier =
 
 // graph: mission.graph 결과. live: Map(sessionId → 판의 세션 요약), order: 무리 차례(워크스페이스 키들), folded: 접은 무리 키들(키가 없는 무리는 '-')
 // → { groups: [{ key, folded, count, work, turn, rows }], counts: { all, work, turn } }
-//   row: { id, sessionId, name, agentKind, state, tier, depth, indent, last, guides, role, from, links, ask, active, loops }
+//   row: { id, sessionId, name, agentKind, state, tier, depth, indent, last, guides, fromId, role, from, links, ask, active, loops }
 export function phoneMission(graph, { live = null, order = [], folded = [] } = {}) {
   const nodes = ((graph && graph.nodes) || []).filter((n) => n && n.kind === 'session');
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -56,9 +56,10 @@ export function phoneMission(graph, { live = null, order = [], folded = [] } = {
     return {
       id: n.id, sessionId: n.sessionId, name: (l && l.name) || n.name, agentKind: n.agentKind || 'claude', state: (l && l.state) || n.state, tier: phoneTier(n, l),
       depth, indent: Math.min(depth, PM_INDENT_MAX), last, guides: guides.slice(0, PM_INDENT_MAX),
+      fromId: cross ? pn.id : null, // P89: 그래프(lib/phone-graph.js)의 다른 무리 부모 선
       role: (p && p.role) || n.role || null, active: !!(p && p.active),
       from: cross ? { name: pn.name, key: groupOf(pn) } : null, // 다른 무리의 부모
-      links: pairs.filter((x) => x.from === n.id && !treeEdge.has(x.id)).sort((a, b) => bySpawn(byId.get(a.to), byId.get(b.to))).map((x) => ({ to: byId.get(x.to).name, role: x.role || null, kind: x.primary, active: !!x.active })),
+      links: pairs.filter((x) => x.from === n.id && !treeEdge.has(x.id)).sort((a, b) => bySpawn(byId.get(a.to), byId.get(b.to))).map((x) => ({ to: byId.get(x.to).name, toId: x.to, role: x.role || null, kind: x.primary, active: !!x.active })),
       ask: n.ask || null, loops: n.loops || 0,
     };
   };
