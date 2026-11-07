@@ -75,10 +75,16 @@ async function main() {
   log(`start kind=${job.kind} from=${job.from && job.from.tag} to=${job.to && job.to.tag} wait=${JSON.stringify(job.waitPids)}`);
   const result = { kind: job.kind, at: null, ok: false, from: job.from, to: job.to, rolledBack: false, error: null, ms: 0 };
   if (!(await waitGone(job.waitPids || [], job.waitMs || 30000))) {
-    // 옛 백엔드가 끝나지 않았다. 아무것도 바꾸지 않는다
-    result.error = '옛 백엔드가 끝나지 않아 바꾸지 않았습니다';
-    log(result.error);
-    return finish(result, job.fromRoot);
+    // 2026-11-07: 옛 백엔드가 붙잡힌 연결(하위 세션을 띄우며 기다리는 atrium child 등) 때문에 끝나지 않으면 그 백엔드 프로세스만 끄고 이어 간다.
+    // 판 상태는 끝내기 앞부분에서 이미 저장했다(Backend.stop). 창은 끄지 않는다. 그래도 남으면 아무것도 바꾸지 않는다
+    const old = job.oldBackendPid;
+    if (old && alive(old)) { log(`old backend pid=${old} still running after ${job.waitMs || 30000}ms, killing it`); try { process.kill(old); } catch (e) { log('kill failed', e.message); } }
+    if (!(await waitGone(job.waitPids || [], job.killWaitMs || 10000))) {
+      result.error = '옛 백엔드가 끝나지 않아 바꾸지 않았습니다';
+      log(result.error);
+      return finish(result, job.fromRoot);
+    }
+    result.forced = true;
   }
   setCurrent(job.currentAfter);
   try {

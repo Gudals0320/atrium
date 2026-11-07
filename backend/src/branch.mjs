@@ -343,6 +343,10 @@ export class Branch {
     const url = req.url.split('?')[0];
     if (req.method !== 'POST' || !url.startsWith('/branch/')) return false;
     const op = url.slice('/branch/'.length);
+    // 2026-11-07: 답을 기다리는 요청(atrium child는 하위 세션이 준비될 때까지 붙잡는다)을 모아 두고, 백엔드가 끝날 때 바로 답한다(abortInflight)
+    if (!this.inflight) this.inflight = new Set();
+    this.inflight.add(res);
+    res.once('close', () => this.inflight.delete(res));
     const chunks = []; let size = 0, tooBig = false;
     req.on('data', (d) => { size += d.length; if (size > BODY_MAX) tooBig = true; else chunks.push(d); });
     req.on('end', async () => {
@@ -361,6 +365,18 @@ export class Branch {
       }
     });
     return true;
+  }
+  // 백엔드가 끝날 때(업데이트, 다시 띄우기): 아직 답하지 않은 /branch 요청에 다시 시작한다고 답한다. 열린 연결이 http.close를 붙잡아
+  // 업데이트의 바꾸기가 옛 백엔드를 기다리다 포기한 일이 있었다(2026-11-07)
+  abortInflight() {
+    const msg = '보드가 업데이트나 다시 시작으로 잠시 꺼집니다. 하위 세션은 만들어졌을 수 있으니 잠시 뒤 atrium children으로 확인한 뒤 다시 하세요.';
+    let n = 0;
+    for (const res of [...(this.inflight || [])]) {
+      if (res.headersSent || res.writableEnded) continue;
+      try { res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', connection: 'close' }); res.end(JSON.stringify({ error: { code: 'backend_restarting', message: msg } })); n++; } catch {}
+    }
+    if (this.inflight) this.inflight.clear();
+    return n;
   }
   auth(headers, op) {
     const sid = String(headers['x-mt-session'] || '');

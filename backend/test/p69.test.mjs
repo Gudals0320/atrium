@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as U from '../src/update.mjs';
 import { Updater, relaunchArgsOf } from '../src/updater.mjs';
@@ -388,6 +388,22 @@ test('바꾸기 프로세스: 옛 백엔드가 끝나지 않으면 아무것도 
     assert.deepEqual(U.readCurrent(inst), before);
     assert.ok(!fs.existsSync(path.join(inst, 'started.log')));
   } finally { rm(d); }
+});
+
+test('바꾸기 프로세스: 옛 백엔드가 기다린 뒤에도 끝나지 않으면 그 프로세스를 끄고 바꾼다(2026-11-07)', () => {
+  const d = tmp('swapkill');
+  // 끝나지 않는 옛 백엔드 흉내(붙잡힌 연결로 http.close가 끝나지 않던 경우)
+  const old = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  try {
+    const inst = path.join(d, 'versions');
+    const from = fakeRoot(inst, 'v0.1.0'); const to = fakeRoot(inst, 'v0.2.0');
+    U.writeCurrent(inst, { current: 'v0.1.0', previous: null });
+    const res = runSwap(inst, { kind: 'update', fromRoot: from, toRoot: to, toInstalled: true, from: { tag: 'v0.1.0' }, to: { tag: 'v0.2.0' }, currentBefore: U.readCurrent(inst), currentAfter: { current: 'v0.2.0' }, waitPids: [old.pid], oldBackendPid: old.pid, waitMs: 800, killWaitMs: 5000 });
+    assert.equal(res.ok, true, res.error); assert.equal(res.forced, true);
+    assert.equal(U.readCurrent(inst).current, 'v0.2.0');
+    assert.throws(() => process.kill(old.pid, 0), '옛 백엔드는 꺼졌다');
+    assert.match(fs.readFileSync(path.join(inst, 'swap.log'), 'utf8'), /killing it/);
+  } finally { try { old.kill(); } catch {} rm(d); }
 });
 
 test('릴리즈 확인: main이 dev와 같고, 두 version이 태그와 같고, 태그가 main을 가리켜야 한다', () => {

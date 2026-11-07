@@ -63,6 +63,14 @@ import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이�
 import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META } from './ws-groups.mjs'; // P44: 가상 그룹
 import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs'; // P66: 판의 이름(표시 이름)과 에이전트 주소
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
+// HTTP 서버 닫기(2026-11-07): http.close는 열린 연결이 모두 끝나야 끝나므로, 쉬는 연결은 바로, 나머지는 forceMs 뒤 끊는다
+export async function closeHttp(server, forceMs = 1000) {
+  const closed = new Promise((r) => server.close(() => r()));
+  try { server.closeIdleConnections(); } catch {}
+  const force = setTimeout(() => { try { server.closeAllConnections(); } catch {} }, forceMs);
+  await closed;
+  clearTimeout(force);
+}
 
 // P33: session.spawn 값 → 띄울 값. launcher를 주면 그 호출자를 풀고 함께 준 값이 덮는다.
 // 옛 길(P25): kind 또는 flavor가 deepseek면 DeepSeek 호출자(없으면 예시)를 쓰고, command를 주면 그 명령 한 줄로 띄운다
@@ -315,7 +323,11 @@ export class Backend {
     this.api.close();
     if (this.web) this.web.stop();
     if (this.tailscale) this.tailscale.stop();
-    await new Promise((r) => this.http.close(r));
+    // 2026-11-07: 열린 연결이 남아 있으면 http.close가 끝나지 않는다(하위 세션을 띄우며 기다리던 atrium child 요청이 업데이트를 1분 넘게 붙잡았다).
+    // 기다리는 /branch 요청에 먼저 답하고, 쉬는 연결은 바로, 나머지는 1초 뒤 끊는다
+    const aborted = this.branch && this.branch.abortInflight ? this.branch.abortInflight() : 0;
+    if (aborted) this.log(`answered ${aborted} waiting /branch request(s) before stopping`);
+    await closeHttp(this.http);
     try { const b = JSON.parse(fs.readFileSync(this.cfg.backendFile, 'utf8')); if (b.pid === process.pid) fs.rmSync(this.cfg.backendFile); } catch {}
     this.store.close();
   }
