@@ -105,7 +105,7 @@
 
 ### B. 말 걸기와 시작하기
 
-- **B1 `@이름`으로 말 걸기.** 세션마다 전달 대기열이 있고, 한 세션이 응답을 기다려도 다른 세션은 막지 않는다. 규칙: (1) claude가 도는 패널에만 보낸다. (2) waiting이면 보내지 않고 풀리면 다시 보낸다. (3) starting, trust_wait, working에서는 보내지 않고 ready와 error에서만 보낸다. (4) 사람이 그 터미널에 3초 안에 입력했으면 기다린다. (5) 줄바꿈을 LF로 맞춰 `agent.prompt` 한 번으로 보낸다. `pane.send_text`로 넣을 때는 CR을 넣지 않는다. (6) hook `UserPromptSubmit`이 오면 제출 확인이다. 늦으면 입력 칸을 보고 Enter나 한 번 더 보내기로 되살리고(P79), 끝내 없으면 "확인 못 함"이다. 이름은 판에서 바꾸고(`session.rename`), `@`는 새 이름과 그대로인 에이전트 주소를 둘 다 받는다(P66).
+- **B1 `@이름`으로 말 걸기.** 세션마다 전달 대기열이 있고, 한 세션이 응답을 기다려도 다른 세션은 막지 않는다. 규칙: (1) claude가 도는 패널에만 보낸다. (2) waiting이면 보내지 않고 풀리면 다시 보낸다. (3) ready·error에서만 보낸다(휴대폰 글은 working이고 입력 칸이 비면 넣는다, P90). (4) 사람이 그 터미널에 3초 안에 입력했으면 기다린다. (5) 줄바꿈을 LF로 맞춰 `agent.prompt` 한 번으로 보낸다. `pane.send_text`로 넣을 때는 CR을 넣지 않는다. (6) hook `UserPromptSubmit`이 오면 제출 확인이다. 늦으면 입력 칸을 보고 Enter나 한 번 더 보내기로 되살리고(P79), 끝내 없으면 "확인 못 함"이다. 이름은 판에서 바꾸고(`session.rename`), `@`는 새 이름과 그대로인 에이전트 주소를 둘 다 받는다(P66).
 - **B2 여러 세션에.** 대상은 `@이름`(여럿 가능)과 `@all`(H8)이다. 여러 대상 중 셸이 하나라도 있으면 전체를 보내지 않는다.
 - **B3 새 세션 시작.** (1) 세션 설정 파일 `<데이터 폴더>\sessions\<세션 ID>.json`에 http hook, 그 세션의 hook 토큰, 하위 세션 명령의 env와 승인 규칙(K)을 값으로 쓴다. 작업 공간 `env`는 herdr를 다시 띄우면 되살아나지 않는다(E7). (2) `workspace.create`. (3) `agent.start`에 `--session-id <새 UUID>`, `--settings`, `--no-chrome`, 권한 모드, 모델, 플러그인과 짧은 안내(F). (4) ready가 된 뒤 `pane.report_agent_session`으로 `resume_argv`를 등록한다. (5) 첫 지시는 ready 뒤 B1로 보낸다. 처음 쓰는 폴더면 trust_wait를 미리 보이고, 신뢰는 대신 누르지 않는다. 설정 파일은 세션이 판에 있는 동안 지우지 않고 D2에서 지운다. 호출자(F6)를 주면 그 값으로 띄우고 함께 준 값이 덮는다.
 
@@ -118,7 +118,7 @@
 ### D. 자원과 안전
 
 - **D1 자원.** `pane.process_info`로 셸 PID를 얻고, 프로세스 표에서 셸 아래 프로세스의 메모리(에이전트 없는 셸 세션 포함)를 약 30초마다 더한다. 제어기 수도 보인다.
-- **D2 끄기.** `/exit`(다른 종류는 `ctrl+c` 두 번)를 보내고, 같은 작업 공간에 다른 패널이 있으면 `pane.close`, 없으면 `workspace.close`. 판 전용 herdr 세션의 패널만 닫고 `claude.exe`를 이름으로 끄지 않는다. 세션 설정 파일도 이때 지운다. `claude -w` 세션은 워크트리 남기기(기본)·지우기를 골라 나가기 질문에 답한다(P71). 노드의 X나 고른 노드의 Delete는 보관, 삭제, 취소를 묻는다(`after`, 여럿이면 한 확인창). 보관은 끈 세션을 보관함에 두고, 삭제는 대화 기록과 옆 폴더를 휴지통으로 보내고 닫힌 세션 행을 지운다.
+- **D2 끄기.** `/exit`(다른 종류는 `ctrl+c` 두 번)를 보내고, 같은 작업 공간에 다른 패널이 있으면 `pane.close`, 없으면 `workspace.close`. 판 전용 herdr 세션의 패널만 닫고 `claude.exe`를 이름으로 끄지 않는다. 세션 설정 파일도 이때 지운다. `claude -w` 세션은 워크트리 남기기(기본)·지우기를 골라 나가기 질문에 답한다(P71). 노드의 X나 고른 노드의 Delete는 보관, 삭제, 취소를 묻는다(`after`, 여럿이면 한 확인창). 보관은 보관함에 두고, 삭제는 대화 기록과 옆 폴더를 휴지통으로 보내고 닫힌 세션 행을 지운다.
 - **D4 잠재우기.** 리포(워크스페이스)에 정한 시간(기본 30분) 동안 아무 일이 없으면 그 리포의 판 claude를 모두 `/exit`하고 패널까지 닫아 잠듦(`sleeping`)으로 둔다. 리포의 어떤 세션이든 일하는 중, 내 차례, 보는 중, 손댐, 전달 대기, 보내지 않은 초안, 루프가 있으면 그 리포는 잠들지 않는다. 잠든 리포의 노드를 누르거나 그 리포에 글을 보내면(herdr 호출 포함) 리포 전체를 같은 대화로 차례로 깨우고(J7로 가져와 아직 안 깬 세션은 빼고), J1 복구는 잠든 세션을 건너뛴다. 손으로는 영역 이름표 메뉴와 트레이·메모리 목록의 "쉬는 리포 모두"로 한다.
 - **D3 herdr 화면이 붙음.** herdr 화면(TUI)과 판의 제어기는 패널 크기를 두고 다툴 수 있다. 소켓 API에는 클라이언트 목록이 없어서 판 전용 세션의 서버 로그(`herdr-server.log`)와 `herdr.exe` 명령줄로 알아채 경고한다. 로그 형식은 herdr 버전에 묶여 있다.
 
@@ -233,7 +233,7 @@
 | 판 API | herdr 호출이나 출처 |
 |---|---|
 | `session.spawn { cwd, launcher?, name?, prompt?, model?, effort?, permissionMode?, kind?, args?, allowHerdr?, command? }` → `{ sessionId, name, workspaceKey, herdrWorkspaceId }` | `workspace.create` + `agent.start`, 첫 지시는 ready 뒤 `agent.prompt`. `kind: "shell"`이면 `workspace.create`만, `launcher`는 F6 |
-| `session.send { target, text, workspace?, source? }` → `{ deliveries: [{ deliveryId, sessionId }], threadItemId }` | 대상마다 `agent.prompt`(B1). 셸은 `not_agent` |
+| `session.send { target, text, workspace?, source?, whileWorking? }` → `{ deliveries: [{ deliveryId, sessionId }], threadItemId }` | 대상마다 `agent.prompt`(B1). 셸은 `not_agent` |
 | `delivery.cancel { deliveryId }` | 판 대기열 |
 | `session.answer { sessionId, toolUseId?, since?, choice \| picks, text? }` → `{ sent, label, steps }` 또는 `{ sent: false, reason }` | `agent.get` 확인 뒤 `agent.send_keys`, `pane.send_text`(A1). hook 없는 세션은 `answer_in_terminal` |
 | `session.kill { sessionId, confirm, after?, worktree? }` | `/exit`(다른 종류는 `ctrl+c` 두 번), `pane.close` 또는 `workspace.close`. `after`는 `archive`·`delete`, `worktree`는 `keep`·`remove`(D2) |
