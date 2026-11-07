@@ -5,6 +5,8 @@
 // - 노드: 세션의 지금 폴더(hook cwd, 없으면 시작 폴더)가 든 워크트리가 저장한 영역(nodes.area)과 다르면 그 영역의 빈자리로 옮긴다.
 //   덩어리 안 노드는 옮기지 않는다. 대화 노드는 recall.layoutCanvas가 같은 규칙(areaOf)으로 놓는다.
 //   P75: 빈 상자에 처음 드는 노드(--worktree 워커)는 옮기지 않고 상자를 그 노드 둘레로 놓는다. 워커는 하위 세션 줄에 상자 테두리까지 비운 자리에 이미 서 있다.
+//   P78: --worktree 워커의 폴더는 hook(첫 요청)을 기다리지 않는다. 띄울 때 아는 워크트리(.claude/worktrees/<이름>)가 목록에 나타나면 거기 있다고 본다(placeOf).
+//   그래서 요청 없이 띄운 워커도 워크트리가 생기는 대로 상자에 들고, 정리한 뒤 일을 넘겨도 자리가 바뀌지 않는다.
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { parseWorktreeList, liveWorktrees, worktreeOfPath, areaKey, wsOfArea, boxSlot } from './worktree-areas.mjs';
@@ -35,10 +37,32 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
   // P75: --worktree 워커(info.worktree)는 claude -w가 만든 그 워크트리(.claude/worktrees/<이름>)에만 든다. 그 전(부모 폴더에서 막 떴을 때)에는 옮기지 않는다
   const wantsWt = (s) => { const i = b.branch && b.branch.info ? b.branch.info.get(s.sessionId) : null; return i && i.worktree ? String(i.worktree).toLowerCase() : null; };
   const fitsWt = (s, wt) => { const name = wantsWt(s); return !name || (!!wt && wt.toLowerCase().endsWith(`/${name}`)); };
+  // P78: --worktree 워커가 들 워크트리. claude -w는 <저장소>/.claude/worktrees/<이름>을 만들고 그리로 들어간다. 판은 띄울 때 그 이름을 알므로,
+  //   그 워크트리가 목록에 나타나면 hook(첫 요청)을 기다리지 않고 워커가 거기 있다고 본다. hook이 그 워크트리를 한 번 알린 뒤 다른 곳(본 저장소)을
+  //   알리면 워커가 나간 것이므로 hook을 따른다(left)
+  const seen = new Set(), left = new Set(); // 세션 ID: hook이 그 워크트리를 알렸다 / 그 뒤 다른 곳을 알렸다
+  //   P78 전에 띄운 워커(기록에 wtHome 없음)는 지금처럼 hook을 기다린다. 이미 있는 판이 저절로 바뀌지 않게
+  function expectedWt(wsKey, s) {
+    const name = wantsWt(s);
+    const i = name && b.branch && b.branch.info ? b.branch.info.get(s.sessionId) : null;
+    if (!i || !i.wtHome) return '';
+    const live = listOf.get(wsKey) || [];
+    const exact = live.find((x) => x.key.toLowerCase().endsWith(`/.claude/worktrees/${name}`));
+    return exact ? exact.key : '';
+  }
+  function placeOf(wsKey, s) {
+    const real = areaOf(wsKey, cwdOf(s));
+    const exp = expectedWt(wsKey, s);
+    if (real && real === exp) { seen.add(s.sessionId); left.delete(s.sessionId); }
+    if (real) return real;
+    if (!exp) return '';
+    if (seen.has(s.sessionId)) left.add(s.sessionId);
+    return left.has(s.sessionId) ? '' : exp;
+  }
   // 워크트리 wt에서 도는 세션 노드 가운데 상자가 감쌀 것: 덩어리 밖, 먼저 띄운 것(빈 상자를 그 노드 자리로 놓는다)
   function homeNode(wsKey, wt) {
     const list = b.store.nodes().filter((n) => n.workspace_key === wsKey && !(n.area || '')).map((n) => ({ n, s: b.sessions.get(n.session_id) }))
-      .filter(({ n, s }) => s && wantsWt(s) && !dockOf(b, n.session_id) && areaOf(wsKey, cwdOf(s)) === wt && fitsWt(s, wt))
+      .filter(({ n, s }) => s && wantsWt(s) && !dockOf(b, n.session_id) && placeOf(wsKey, s) === wt && fitsWt(s, wt))
       .sort((p, q) => (p.s.createdAt || 0) - (q.s.createdAt || 0));
     return list.length ? list[0].n : null;
   }
@@ -90,10 +114,10 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
       if (!s || !n.workspace_key) continue;
       const w = b.store.getWorkspace(n.workspace_key);
       if (!w || w.kind !== 'repo' || !listOf.has(w.key)) continue;
-      const want = areaOf(w.key, cwdOf(s));
+      const want = placeOf(w.key, s); // P78: --worktree 워커는 자기 워크트리가 생기면 hook 전에도 거기
       if (want === (n.area || '')) continue;
       if (dockOf(b, s.sessionId)) continue; // 덩어리는 그대로(한 노드만 빼 옮기면 덩어리가 깨진다)
-      if (!fitsWt(s, want)) continue; // P75: 워크트리 워커는 자기 워크트리가 생길 때까지 제자리
+      if (!fitsWt(s, want) && !(want === '' && left.has(s.sessionId))) continue; // P75: 워크트리 워커는 자기 워크트리가 생길 때까지 제자리(P78: 떠났다고 hook이 알렸으면 본 저장소로)
       const items = canvasItems(b).filter((i) => i.id !== s.sessionId);
       const regs = regions(b, items);
       const k = want && regs.has(areaKey(w.key, want)) ? areaKey(w.key, want) : w.key;

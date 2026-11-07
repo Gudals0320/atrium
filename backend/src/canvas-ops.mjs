@@ -9,7 +9,7 @@ import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes, dockedAreas, visibleAnchors, workersPreset } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자. P68: 워크트리끼리 붙인 덩어리
 import { layoutRegions } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치
 import { readGroups, groupIndex } from './ws-groups.mjs'; // P44: 가상 그룹끼리 모으기
-import { blockTree, pushLine, bandOf, subtreeIds, lineKids, boxFrame } from './tree-line.mjs'; // P75: 하위 세션 줄
+import { blockTree, pushLine, bandOf, subtreeIds, lineKids, boxFrame, BOX_PAD } from './tree-line.mjs'; // P75: 하위 세션 줄
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
 import { keyed } from './msg.mjs'; // P16: 화면 글 열쇠
@@ -663,7 +663,9 @@ function blocksOf(b, wsKey) {
     const bb = bbox(ms.map((id) => byId.get(id)));
     out.push({ id: `d:${d.dockId}`, kind: 'dock', dockId: d.dockId, ...bb, members: ms, resizable: false });
   }
-  for (const n of nodes) if (!used.has(n.session_id)) out.push({ id: n.session_id, kind: 'node', x: n.x, y: n.y, w: n.w, h: n.h, aspect: n.aspect || null, members: [n.session_id], resizable: true });
+  // P78: 아직 상자가 없는 --worktree 워커는 상자 틀만큼 비워 둔다(나중에 상자가 생겨도 줄의 뒤 형제가 밀리지 않게)
+  const wantsBox = (sid) => { const i = b.branch && b.branch.info ? b.branch.info.get(sid) : null; return !!(i && i.worktree); };
+  for (const n of nodes) if (!used.has(n.session_id)) out.push({ id: n.session_id, kind: 'node', x: n.x, y: n.y, w: n.w, h: n.h, aspect: n.aspect || null, members: [n.session_id], resizable: true, ...(wantsBox(n.session_id) ? { pad: BOX_PAD } : {}) });
   for (const m of b.store.memos().filter((m) => (m.workspaceKey || null) === wsKey)) out.push({ id: `m:${m.memoId}`, kind: 'memo', memoId: m.memoId, x: m.x, y: m.y, w: m.w, h: m.h, members: [], resizable: false });
   for (const k of b.store.kanbans().filter((k) => (k.workspaceKey || null) === wsKey)) out.push({ id: `k:${k.kanbanId}`, kind: 'kanban', kanbanId: k.kanbanId, x: k.x, y: k.y, w: k.w, h: k.h, members: [], resizable: false });
   // P75: 상자 블록의 구성은 상자 안의 세션이다. 그래야 부모 → 워커 연결이 상자에 닿아 상자가 부모 오른쪽 줄에 선다(전에는 연결 없는 줄로 갔다)
