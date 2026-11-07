@@ -143,13 +143,13 @@ test('API: 막대의 크기는 덩어리 안 노드면 덩어리 전체 바깥�
   ops.dockLayout(b, { members: ['a', 'b', 'c'], preset: 'main-left' });
   const d = ops.dockOf(b, 'id-a');
   const o = ops.dockOuter(b, d);
-  // P77: 칸(가장 작은 노드)이 그 크기, 큰 칸은 작은 칸 2 × 2, 바깥은 나무에서(왼쪽 위 그대로)
+  // P80: 틀 비율은 그대로, 바깥은 단독 세션 넓이 × √3이고 칸이 고른 모양에 가장 가깝게(왼쪽 위 그대로)
   ops.setSize(b, { session: 'b', size: 'wide-large', scope: 'dock' });
-  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(o.x, o.y, 5760, 2160), '칸이 그 크기(왼쪽 위 그대로)');
-  assert.deepEqual([at('b').w, at('b').h, at('a').w, at('a').h], [1920, 1080, 3840, 2160]);
+  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(o.x, o.y, 3080, 1166), '바깥이 그 크기(왼쪽 위 그대로)');
+  assert.equal(JSON.stringify(ops.dockOf(b, 'id-a').tree), JSON.stringify(d.tree), '비율은 그대로');
   ops.setSize(b, { session: 'a', size: 'tall-small', scope: 'dock' });
-  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(o.x, o.y, 1755, 2080), '세로형 작게: 칸 585×1040');
-  assert.deepEqual([at('c').w, at('c').h], [585, 1040]);
+  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(o.x, o.y, 938, 1123), '세로형 작게');
+  assert.equal(JSON.stringify(ops.dockOf(b, 'id-a').tree), JSON.stringify(d.tree));
   ops.setSize(b, { session: 'z', size: 'tall-normal', scope: 'dock' });
   assert.deepEqual([at('z').w, at('z').h], [810, 1440], '혼자인 노드는 scope를 무시하고 그 노드');
   ops.setSize(b, { session: 'z', size: 'wide-small' });

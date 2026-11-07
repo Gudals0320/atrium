@@ -2003,7 +2003,7 @@ export default {
   // P73: size bar (direction × aspect × step) and dock outer edge
   sizeBar: {
     dirTitle: 'Wide or tall. Tall is the wide size turned (16:9 becomes 9:16)',
-    aspectTitle: 'Set the aspect ratio to 16:9 or 4:3, keeping the size step. For a dock, the ratio of one session cell. Dragging an edge turns both off',
+    aspectTitle: 'Set the aspect ratio to 16:9 or 4:3, keeping the size step. Dragging an edge turns both off',
     short: { large: 'L', normal: 'M', small: 'S' },
     edgeTitle: 'Drag to resize the whole dock (cells keep their ratio)',
   },
@@ -2021,12 +2021,10 @@ export default {
     whoOrphan: '{role} {n} (parent closed)',
     title: '. Sub-session number {n} of its parent',
   },
-  // P77: with a dock selected, the size bar works on one session cell
-  dockCellBar: {
-    label: 'Per cell',
-    title: 'Wide or tall, size and aspect ratio apply to each session cell of the dock. One cell is the size of a single session with the same values; the whole dock follows from the layout',
-    dirTitle: 'Make each session cell wide or tall (the long side of one session)',
-    aspectTitle: 'Set the aspect ratio of each session cell to 16:9 or 4:3, keeping the size step. Dragging an edge turns both off',
-    sizeTitle: 'One cell {w} × {h}. The whole dock follows from the layout',
+  // P80: with a dock selected, the size bar keeps the split ratios and sets only the size of the whole dock
+  dockSizeBar: {
+    dirTitle: 'Make the sessions of the dock wide or tall. The split ratios stay; the whole dock is sized so each session\'s long side comes closest to this direction',
+    aspectTitle: 'Size the whole dock so its sessions come closest to 16:9 or 4:3, keeping the split ratios and the size step. Dragging an edge turns both off',
+    sizeTitle: 'Whole dock {w} × {h}. A bit larger than a single session of the same step, growing with the number of sessions',
   },
 };

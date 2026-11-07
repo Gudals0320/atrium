@@ -1,12 +1,13 @@
 // 고른 노드 막대(P26, P73, ARCH 4절 H6·H7)의 순수 함수(단위 시험 app/test/p26-lib.test.mjs, p73-lib.test.mjs). 부르는 곳은 Search.jsx SelectionBar.
 // - P73: 크기는 방향(가로 | 세로) × 종횡비(16:9 | 4:3) × 단계(크게·보통·작게)다(canvas.mjs SIZE_TABLE, resolveSize).
-//   세로에서 비율 단추의 글은 돌린 비율(9:16, 3:4)이다. P77: 덩어리는 칸 하나(가장 작은 구성 노드)의 크기와 비율이다(바깥은 배치 틀에서 나온다).
+//   세로에서 비율 단추의 글은 돌린 비율(9:16, 3:4)이다. P80: 덩어리는 틀 비율을 지키고, 바깥을 같은 규칙의 단독 세션 하나로 본다(dock-tree.mjs dockVirtual·dockFit).
 //   비율 불은 판 기록에 남긴 비율(노드 aspect, 덩어리 aspect)이 있고 사각형이 그 비율에 맞을 때만, 단계 불은 비율에 불이 있고 넓이가 그 단계일 때만.
 //   고른 것이 여럿이면 모두 같을 때만 불이 들어온다.
 // - P73: 세션 하나만 골라도 막대가 뜬다(크기와 비율만). 배치 틀은 덩어리에 든 세션이나 세션 둘 이상을 골랐을 때(틀에 들어갈 세션이 둘 이상).
 // - 자리: 위 왼쪽·오른쪽 알약 묶음과 같은 줄(맨 위)의 가운데. 창 가운데에 두되 두 묶음 사이에 들어가게 민다.
 //   두 묶음 사이가 좁으면 단계별로 줄이고(COMPACT_LEVELS), 가장 줄인 막대도 들어가지 않으면 그 아래 줄로 접는다.
-import { SIZE_DIRS, SIZE_LEVELS, ASPECT_KEYS, dirOf, aspectOf, levelOf, stepSize, nearestAspect, dockCellOf } from '../../../../backend/src/canvas.mjs';
+import { SIZE_DIRS, SIZE_LEVELS, ASPECT_KEYS, dirOf, aspectOf, levelOf, stepSize, nearestAspect, bbox } from '../../../../backend/src/canvas.mjs';
+import { dockVirtual, dockFit } from '../../../../backend/src/dock-tree.mjs';
 
 export { SIZE_DIRS, SIZE_LEVELS, ASPECT_KEYS };
 
@@ -20,11 +21,15 @@ export function blockState(rect, stored = null) {
   return { dir: dirOf(rect), aspect, level: aspect ? levelOf(rect, aspect) : null };
 }
 
-// P77: 덩어리의 상태는 칸 하나(가장 작은 구성 노드)의 것. 비율 불은 모든 칸이 기록한 비율일 때만(canvas.mjs dockCellOf)
-// memberRects: 구성 노드 사각형 → { dir, aspect, level, cell } | null
-export function dockState(memberRects, stored = null) {
-  const c = dockCellOf(memberRects, stored);
-  return c ? { dir: c.dir, aspect: c.aspect, level: c.level, cell: c.cell } : null;
+// P80: 덩어리의 상태. 바깥을 같은 규칙의 단독 세션 하나(single)로 보고 단독 세션처럼 불을 켠다(백엔드 canvas-ops dockState와 같다)
+// tree: 덩어리 나무, memberRects: 구성 노드 사각형 → { dir, aspect, level, single } | null
+export function dockState(tree, memberRects, stored = null) {
+  const v = dockVirtual(tree, bbox(memberRects || []));
+  return v ? { ...blockState(v, stored), single: v } : null;
+}
+// P80: 덩어리 단계 단추의 풀이 크기(그 단계의 덩어리 바깥). single은 dockState의 single(불이 없을 때 가까운 비율을 고른다)
+export function dockLevelSize(level, { dir, aspect, tree, single = null }) {
+  return dockFit(tree, levelSize(level, { dir, aspect, rect: single }));
 }
 
 // 고른 것들의 상태 → 막대의 불. 방향은 첫 것, 비율·단계는 모두 같을 때만

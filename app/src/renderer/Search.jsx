@@ -13,7 +13,7 @@ import { STATE_LABEL } from './lib/labels.js';
 import { dt, presetText } from './lib/dock-text.js'; // P17
 import { presetTree, presetsFor, layout as layoutTree } from '../../../backend/src/dock-tree.mjs'; // P23: 배치 틀 그림. P26: 세션 수마다 틀
 import { bbox } from '../../../backend/src/canvas.mjs';
-import { SIZE_DIRS, SIZE_LEVELS, ASPECT_KEYS, COMPACT_LEVELS, aspectLabel, blockState, dockState, litOf, levelSize, showBar, showLayouts, presetGlyph, sizeTargets, layoutCount, placeBar } from './lib/selbar.js'; // P26. P73: 방향 × 비율 × 단계, 혼자인 세션도
+import { SIZE_DIRS, SIZE_LEVELS, ASPECT_KEYS, COMPACT_LEVELS, aspectLabel, blockState, dockState, dockLevelSize, litOf, levelSize, showBar, showLayouts, presetGlyph, sizeTargets, layoutCount, placeBar } from './lib/selbar.js'; // P26. P73: 방향 × 비율 × 단계, 혼자인 세션도
 import { useT, errText, tOr } from './lib/i18n.js';
 import { Icon } from './lib/icons.jsx';
 import { SEARCH_LEAVE_MS, kindIcon, markRanges, showField, showSnip, movePick } from './lib/search-ui.js'; // P61: 찾기 창 다시 그리기
@@ -189,16 +189,17 @@ export function SelectionBar() {
   const list = selected.map((id) => sessions.get(id)).filter(Boolean);
   // 크기 대상(덩어리는 바깥 하나)과 그 상태(방향, 불이 든 비율·단계), 틀에 들어갈 세션 수
   const targets = sizeTargets(selected, dockList);
-  // P77: 덩어리는 칸 하나(가장 작은 구성 노드)의 상태다. 혼자인 노드는 그 노드
-  const states = targets.map((x) => (x.dockId ? dockState(x.members.map((m) => nodes.get(m)), (docks.get(x.dockId) || {}).aspect) : blockState(nodes.get(x.id), (nodes.get(x.id) || {}).aspect)));
-  const rects = targets.map((x, i) => (states[i] && states[i].cell) || bbox(x.members.map((m) => nodes.get(m))));
-  const cellUnit = targets.some((x) => x.dockId); // P77: 덩어리를 골랐으면 막대가 칸 기준임을 글로 보인다
+  // P80: 덩어리는 바깥을 같은 규칙의 단독 세션 하나로 본 상태다(틀 비율은 그대로). 혼자인 노드는 그 노드
+  const states = targets.map((x) => { const d = x.dockId ? docks.get(x.dockId) : null; return d ? dockState(d.tree, x.members.map((m) => nodes.get(m)), d.aspect) : blockState(nodes.get(x.id), (nodes.get(x.id) || {}).aspect); });
+  const rects = targets.map((x, i) => (states[i] && states[i].single) || bbox(x.members.map((m) => nodes.get(m))));
+  const dockUnit = targets.some((x) => x.dockId); // P80: 덩어리를 골랐으면 도움말이 덩어리 규칙
+  const dockOne = targets.length === 1 && targets[0].dockId ? docks.get(targets[0].dockId) : null;
   const lit = litOf(states);
   const n = layoutCount(selected, dockList);
   const layouts = showLayouts(selected, dockList);
   const presets = layouts ? presetsFor(n) : [];
   useEffect(() => { setLayoutOpen(false); }, [selected]);
-  const place = useBarPlace(barRef, `${show}|${list.length}|${n}|${lit.dir}|${layouts}|${cellUnit}|${list.map((s) => s.name).join(',')}`);
+  const place = useBarPlace(barRef, `${show}|${list.length}|${n}|${lit.dir}|${layouts}|${dockUnit}|${list.map((s) => s.name).join(',')}`);
   if (!show || !list.length) return null;
   const ws = new Set(list.map((s) => s.workspaceKey || null));
   const call = async (method, p, ok) => { try { const r = await api.call(method, p); if (ok) toast(ok(r)); } catch (e) { toast(errText(e), 'error'); } };
@@ -208,22 +209,21 @@ export function SelectionBar() {
     for (const x of sizeTargets(getState().selected, [...getState().docks.values()])) await call('board.setSize', { session: x.id, ...req, scope: x.dockId ? 'dock' : undefined });
   };
   const one = rects.length === 1 ? rects[0] : null;
-  const sizeTitle = (lv) => { const s = levelSize(lv, { dir: lit.dir, aspect: lit.aspect, rect: one }); return t(cellUnit ? 'dockCellBar.sizeTitle' : 'selection.sizeTitle', { w: s.w, h: s.h }); };
+  const sizeTitle = (lv) => { const s = dockOne ? dockLevelSize(lv, { dir: lit.dir, aspect: lit.aspect, tree: dockOne.tree, single: one }) : levelSize(lv, { dir: lit.dir, aspect: lit.aspect, rect: one }); return t(dockOne ? 'dockSizeBar.sizeTitle' : 'selection.sizeTitle', { w: s.w, h: s.h }); };
   const style = !place ? { visibility: 'hidden' } : place.row === 'top' ? { left: place.x, width: place.w } : undefined;
   return (
-    <div ref={barRef} className={`mt-selbar ${place ? place.row : 'top'}`} style={style} data-role="selection" data-row={place ? place.row : undefined} data-compact={place ? place.level : 0} data-single={layouts ? undefined : ''} data-unit={cellUnit ? 'cell' : undefined}>
+    <div ref={barRef} className={`mt-selbar ${place ? place.row : 'top'}`} style={style} data-role="selection" data-row={place ? place.row : undefined} data-compact={place ? place.level : 0} data-single={layouts ? undefined : ''} data-unit={dockUnit ? 'dock' : undefined}>
       <b className="mt-sel-count" title={t('selection.count', { n: list.length })}><span className="full">{t('selection.count', { n: list.length })}</span><span className="short">{list.length}</span></b>
       <span className="dim mt-sel-names" data-role="sel-names">{list.map((s) => `@${s.name}`).join(' ')}</span>
       <span className="mt-sel-sep" />
-      {cellUnit && <span className="dim mt-sel-unit" data-role="size-unit" title={t('dockCellBar.title')}>{t('dockCellBar.label')}</span>}
-      <div className="mt-sel-dir" data-role="size-dir" role="group" title={t(cellUnit ? 'dockCellBar.dirTitle' : 'sizeBar.dirTitle')}>
+      <div className="mt-sel-dir" data-role="size-dir" role="group" title={t(dockUnit ? 'dockSizeBar.dirTitle' : 'sizeBar.dirTitle')}>
         {SIZE_DIRS.map((d) => <button key={d} className={`mt-sel-dirbtn${lit.dir === d ? ' on' : ''}`} data-dir={d} aria-pressed={lit.dir === d} aria-label={t(`selection.${d}`)} onClick={() => { if (lit.dir !== d) resize({ dir: d }); }}><span className="sfull">{t(`selection.${d}`)}</span><span className={`sshort mt-sel-dirglyph ${d}`} aria-hidden="true" /></button>)}
       </div>
       <div className="mt-sel-sizes" data-role="size-buttons" data-dir={lit.dir} data-lit={lit.level || undefined}>
         {SIZE_LEVELS.map((lv) => <button key={lv} className={`mt-btn small ghost mt-sel-size${lit.level === lv ? ' on' : ''}`} data-level={lv} aria-pressed={lit.level === lv} aria-label={t(`selection.${lv}`)} title={sizeTitle(lv)} onClick={() => resize({ level: lv })}><span className="sfull">{t(`selection.${lv}`)}</span><span className="sshort">{t(`sizeBar.short.${lv}`)}</span></button>)}
       </div>
       {/* P73: 종횡비 토글. 하나를 누르면 그 비율이 되고(지금 단계를 지킨다) 다른 하나는 꺼진다. 테두리를 끌면 둘 다 꺼진다(자유 비율) */}
-      <div className="mt-sel-dir mt-sel-aspect" data-role="size-aspect" role="group" data-lit={lit.aspect || undefined} title={t(cellUnit ? 'dockCellBar.aspectTitle' : 'sizeBar.aspectTitle')}>
+      <div className="mt-sel-dir mt-sel-aspect" data-role="size-aspect" role="group" data-lit={lit.aspect || undefined} title={t(dockUnit ? 'dockSizeBar.aspectTitle' : 'sizeBar.aspectTitle')}>
         {ASPECT_KEYS.map((a) => <button key={a} className={`mt-sel-dirbtn${lit.aspect === a ? ' on' : ''}`} data-aspect={a} aria-pressed={lit.aspect === a} onClick={() => { if (lit.aspect !== a) resize({ aspect: a }); }}>{aspectLabel(a, lit.dir)}</button>)}
       </div>
       {/* P17: 배치 틀. 고른 순서대로 칸을 채워 한 덩어리로 짠다(고른 노드가 든 덩어리는 통째로). P23: 글 대신 도형. P26: 세션 수에 맞는 틀만. P30: 누른 뒤에도 고름을 풀지 않는다(이어서 다른 틀·크기를 바로 고른다)
