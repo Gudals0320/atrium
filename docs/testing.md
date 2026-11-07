@@ -45,6 +45,7 @@
 - 원격 끊김은 `ts-sim-proxy.mjs dropWs`로 흉내 낸다(P82). WebKit은 Playwright 2370으로 `localhost`에서 열고, 페이지 죽음은 그 웹 프로세스를 PID로 꺼 흉내 낸다(P86).
 - iOS 홈 화면 앱의 높이와 안전 영역은 `p83-phone.mjs`처럼 흉내 낸다. 작은 글자의 칸 수는 Windows Chromium이 iPhone보다 적다(P83).
 - 페이지 죽음은 CDP `Page.crash` 뒤 새 페이지로 흉내 낸다(P84).
+- 웹 푸시는 흉내 푸시 서비스(`ATRIUM_PUSH_TEST_ORIGINS`·`_CA`)로 시험한다(P88).
 
 ## herdr를 부르는 시험
 

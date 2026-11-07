@@ -81,6 +81,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Pair with a code.** Press **New code** on the PC, or allow a request from the laptop. A paired browser is bound to the Tailscale device it paired from.
 - **Passkey optional.** Off by default. Turn it on to confirm sign-ins with a phone or Windows Hello passkey.
 - **Stay in control.** A connection log, attach notices, **Disconnect** and **Unpair** per device, and an **Accept remote connections** switch.
+- **On a phone.** Added to the home screen, the board opens the session list and the mission map, and notifies you when a session finishes or needs an answer (session name only, never the question).
 - Each client keeps its own view. In the browser you can also pick PC folders and drop files into a terminal.
 
 <table>
