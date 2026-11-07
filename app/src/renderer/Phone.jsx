@@ -176,7 +176,7 @@ export function PhoneApp() {
   const s = open ? sessions.get(open) : null;
   return (
     <div className="mt-phone" ref={rootRef} data-role="phone" data-view={s ? 'session' : nav.mission ? 'mission' : 'list'}>
-      {s ? <PhoneSession key={s.sessionId} s={s} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} />
+      {s ? <PhoneSession key={s.sessionId} s={s} fromMission={nav.mission} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} />
         : nav.mission ? <PhoneMission onBack={() => mission(false)} onOpen={(id) => go(id)} conn={<ConnPill />} />
         : <PhoneList onOpen={(id) => go(id)} onNew={() => setSpawn(true)} onMission={() => mission(true)} />}
       {spawn && <SpawnSheet onClose={() => setSpawn(false)} onStarted={(id) => { setSpawn(false); go(id); }} />}
@@ -320,7 +320,7 @@ function PhoneList({ onOpen, onNew, onMission }) {
 
 // ---------- 세션 하나 ----------
 const KEY_LABEL = { enter: '⏎', esc: 'Esc', ctrlc: 'Ctrl+C', up: '↑', down: '↓', tab: 'Tab', shifttab: '⇧Tab', slash: '/' };
-function PhoneSession({ s, onBack, onGo }) {
+function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   const t = useT();
   const id = s.sessionId;
   const sessions = useStore((st) => st.sessions);
@@ -419,7 +419,7 @@ function PhoneSession({ s, onBack, onGo }) {
   return (
     <div className="mt-ph-session" data-role="phone-session" data-session={id} data-state={s.state}>
       <header className="mt-ph-shead">
-        <button type="button" className="mt-ph-back" data-action="phone-back" aria-label={t('phone.back')} onClick={onBack}><Chev dir="left" /><span>{t('phone.list')}</span></button>
+        <button type="button" className="mt-ph-back" data-action="phone-back" aria-label={fromMission ? t('phoneMission.backToMap') : t('phone.back')} onClick={onBack}><Chev dir="left" /><span>{fromMission ? t('phoneMission.short') : t('phone.list')}</span></button>
         <div className="mt-ph-title">
           <b><span className="mt-ph-dot" data-tone={toneOf(s)} aria-hidden="true" />{s.name}</b>
           <span className="mt-ph-sub">{stateText}</span>

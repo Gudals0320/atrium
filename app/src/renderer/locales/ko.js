@@ -2094,5 +2094,7 @@ export default {
     from: '← {name} ({ws})',
     depth: '{n}단계',
     hint: '세션을 누르면 그 세션을 엽니다.',
+    short: '관계도',
+    backToMap: '작업 관계도로 돌아가기',
   },
 };

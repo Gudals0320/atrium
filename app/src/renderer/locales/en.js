@@ -2094,5 +2094,7 @@ export default {
     from: '← {name} ({ws})',
     depth: 'level {n}',
     hint: 'Tap a session to open it.',
+    short: 'Map',
+    backToMap: 'Back to the mission map',
   },
 };
