@@ -105,4 +105,70 @@
 
 ## 작업 기록
 
+- 기준: `origin/dev` `1e20b7a`. 브랜치 `worktree-p81`. 셸에서 실제 판 변수를 지우는 `backend/.dev/clean-env.sh`와, 이 판의 값만 넣는 `backend/.dev/p81.sh`를 만들어(둘 다 git 밖) 시험·빌드·CLI를 모두 그것으로 불렀다.
+- 창 시험 `app/test/e2e/p81-session-links.mjs`를 먼저 쓰고 v0.1.3 코드 그대로 "고치기 전"을 찍었다. 같은 파일로 고친 뒤를 찍었다. 결과와 그림은 `experiments/p81/`(git 밖). 창은 한국어로 바꿔 찍었다.
+- 시험 판의 함정: 창이 띄운 백엔드와 herdr가 창의 원격 디버깅 포트(9378)를 물려받아, 창을 닫은 뒤에도 그 포트를 붙잡았다(다음 창이 `electron.launch` 시간 초과). 내가 띄운 herdr(PID)를 끄고, 시험이 백엔드를 창보다 먼저 CLI(`atrium backend start`)로 띄우게 고쳤다. 트레이 상주도 끈다.
+- 재현(고치기 전, 1번): lead가 `atrium child bb --cwd C:/Workspace/mtask-p81-head`로 B를 띄우고 판에서 선을 끊었다. 끊은 뒤에도 B의 머리줄 "@lead의 워커 1 · 2단계", 사이드바 역할 "워커", `parentSessionId`, lead의 `atrium children`에 @bb, `atrium child-wait bb`(끄기와 같은 `isDescendant` 범위)가 그대로 됐다. 노드 메뉴에는 떼기가 없고, 끊기 확인 단추는 "연결 해제" 하나, `atrium me`는 "알 수 없는 명령", `--head`는 이름 자리 오류였다. 잠재우기 묶음은 창에서 재지 않고 단위 시험으로 쟀다(`sleep.mjs info`가 `parentSessionId`로 묶는다).
+- 구현
+  - `backend/src/link-notice.mjs`(새 파일): 알림 글, 닫힌 까닭(killed → 사람이 닫음, pane exited → 스스로 끝남, 그 밖 → 패널 사라짐), 세션마다 10초 묶기(`NoticeBatcher`). 넣을 때와 보낼 때 닫힘·닫는 중·잠듦이면 버리고 판 이벤트 `link_notice_dropped`로 남긴다.
+  - `branch.mjs`: `me`(나·부모·열린 하위 세션·역할 연결 양쪽·연결마다 마지막 지시), `detach`(부모 기록, `branch` 기록, 부모 → 하위 역할 선. `unlink` 기록에 `why: detach`. 아래 하위 세션의 기록 depth를 다시 셈. 신뢰 관문 중이면 `gated`로 거부), `maybeHead`, 닫힘 알림(`onClosed`, child-kill로 끈 세션은 `byParentKill`로 뺀다). `--head`는 역할 "헤드", 기록 `head`·`headArmed`·`headPrompt`(다시 켜도 이어 감). 스킬에 두 줄, 승인 규칙에 `atrium me`.
+  - `backend.mjs`: `session.detach { session, confirm }`, `link.delete`가 부모 선이면 확인에 `parentLink`·`parentMsg`를 주고 `detach: true`면 떼기(해제 알림 대신 떼기 알림), `closed` 이벤트에 까닭, 헤드는 하위 세션 줄 자리를 쓰지 않는다.
+  - `launch.mjs` 짧은 안내에 한 줄. `bin/atrium-child.mjs`: `atrium me`(글, `--json`), `--head` 응답 글.
+  - 창: 노드 메뉴 "부모에서 떼기"와 확인, 선 끊기 확인의 "선만 끊기"·"부모에서도 떼기", 두 사전(backend 절 세 줄, 끝에 `detach` 절), `styles.css` 끝 세 줄.
+- 스킬 글 크기 상한(P8 delegate의 두 배, 6214B)에 걸려 스킬 추가를 두 줄로 줄였다(5821B → 6180B). 짧은 안내 줄 수 시험(6 → 7)을 고쳤다.
+- 고친 뒤 창 시험 24/24. 처음 돌릴 때 D의 선 이름표가 화면 밖이라 누르지 못해 23/24였고, 요소를 직접 누르게 고쳐 다시 돌렸다. 다시 돌릴 때 시험이 앞서 띄운 a* 세션을 `atrium kill`로 껐더니 lead가 묶인 알림 한 번("@ac가 닫혔다(사람이 닫음).", "@ad가 닫혔다(사람이 닫음).")을 받고 "알겠다"고 답했다(실제 판 흐름의 알림 묶기 확인).
+- 정리: `atrium kill`로 시험 세션 모두, herdr 서버와 백엔드 멈춤, 창 닫음, 시험 폴더 `C:\Workspace\mtask-p75-repo`와 `C:\Workspace\mtask-p81-head` 지움. 이 워크트리 경로·`atrium-dev-p81`을 가진 프로세스와 9378·47898 듣기 포트가 남지 않은 것을 확인했다. 데스크톱 앱과 실제 판의 프로세스는 건드리지 않았다.
+
 ## 보고
+
+### 결과
+
+- 커밋 `564f443`(코드·시험). 백엔드 `npm test` 582/582(P81 새 시험 11), 창 `npm test` 278/278, `npm run build` 통과. 창 시험: 고치기 전 8/8(재현 기록), 고친 뒤 24/24. 공개 검사 통과.
+
+### 고치기 전과 뒤(창 시험, 같은 단계)
+
+| | 고치기 전(선만 끊음) | 고친 뒤(노드 메뉴로 뗌) |
+|---|---|---|
+| B 머리줄 | "@lead의 워커 1 · 2단계" | 없음 |
+| 사이드바 역할 | 워커 | 없음 |
+| `parentSessionId` | lead | 없음, 1단계 |
+| lead의 `atrium children` | @bb 보임 | 안 보임 |
+| child-wait·child-kill 범위 | 됨 | `not_parent` |
+| 선 끊기 확인 | "연결 해제" 하나 | "선만 끊기"(부모 남음 확인), "부모에서도 떼기"(부모 없음 확인) |
+| `atrium me` | 알 수 없는 명령 | 나·부모(역할과 순서)·하위 세션·마지막 지시, 5~7줄 |
+| `--head` | 이름 자리 오류 | "헤드로 띄웠다 … 너의 워커가 아니다. 첫 요청 뒤 보드가 부모 관계를 뗐다", 부모 없음, 다른 워크스페이스 영역의 빈자리 |
+
+미션 맵에서 뗀 세션과 헤드는 "연결 없음"에 선다.
+
+### 정한 것
+
+- `--head`와 `--worktree`는 함께 받지 않는다(`bad_request`). 워크트리는 띄운 쪽이 합칠 브랜치를 만드는 워커의 방식인데, 헤드는 첫 요청 뒤 띄운 쪽과 관계가 끊겨 합칠 사람이 없다. 신뢰 관문(P36)도 부모의 `child-wait`에 기대는데 떼면 범위 밖이 된다. 헤드는 `--cwd`로 다른 폴더·저장소에 띄운다.
+- 헤드의 역할 이름은 떼기 전까지 "헤드". 첫 요청이 confirmed·unconfirmed·failed·cancelled 가운데 하나가 되면 뗀다(못 들어가면 P79 알림이 부모에게 먼저 간다). 첫 요청이 없으면 ready·working이 되면 뗀다. 신뢰 질문·관문 동안은 부모를 둔다.
+- 신뢰 관문을 지나는 중인 하위 세션은 떼지 않는다(`gated`). 관문 상태가 그 기록에 있다.
+- `atrium me`의 "마지막으로 오간 일"은 열린 연결의 마지막 지시(때, 첫 줄 80자)다. 선만 끊은 하위 세션은 목록에 남고 마지막 지시는 빠진다.
+- 알림 글: 한 줄이면 "[Atrium 보드] <줄>", 여럿이면 "연결이 바뀌었다." 아래 목록, 끝에 "지금 연결은 `atrium me`."와 "알겠다" 줄. 부모가 함께 닫히거나 닫는 중이면 버린다.
+
+### 이미 떠 있는 세션(잰 것)
+
+v0.1.3 코드로 띄운 lead를 둔 채 백엔드만 새 코드로 바꾸고 물었다. 새로 띄운 ab와 견줬다.
+
+| | 이미 떠 있던 lead | 새로 띄운 ab |
+|---|---|---|
+| `atrium me` 실행 | 승인 카드를 띄움 | 묻지 않고 실행 |
+| 짧은 안내에 `atrium me`가 있나 | 아니요 | 예 |
+| atrium 스킬에 `atrium me`·`--head`가 있나 | 아니요 | 예 |
+
+백엔드는 시작할 때 플러그인(스킬, 안내 파일)과 세션 설정 파일의 승인 규칙을 다시 쓰지만(설정 파일에 `Bash(atrium me)`가 들어간 것 확인), 돌고 있는 Claude Code는 셋 다 다시 읽지 않는다. `atrium` 명령 파일은 절대 경로라 승인하면 새 `me`가 돈다. 새 안내와 스킬을 쓰려면 세션을 다시 띄워야 한다(이어 가기 포함).
+
+### 열어 둔 것
+
+- hook 없는 종류(codex 등)에 `atrium me`: 지금은 세션 토큰 확인 뒤 `not_board_session`으로 거부한다(다른 하위 세션 명령과 같다). 열지는 정하지 않았다. 열려면 그 종류의 설정에 env(세션 ID·토큰)를 넣는 길이 먼저 있어야 한다.
+- 더 알릴 만해 보인 것(더하지 않음): 부모가 닫혔을 때 하위 세션에게, 사람이 판에서 역할 선을 새로 이었을 때 받는 쪽(B)에게. 지금 B는 `atrium me`로만 안다.
+- 닫힘 알림은 `closeSession`의 까닭으로 가른다. 판 밖에서 작업 공간을 닫은 것과 백엔드 복구 때 패널이 없던 것도 "패널 사라짐"이다.
+
+### 고칠 문서 문장(짧게)
+
+- BRIEF "정한 것": 세션은 자기 연결을 `atrium me`로 판에서 읽는다. 부모 관계는 판에서 뗄 수 있고(노드 메뉴, 선 끊기 확인), `atrium child --head`는 첫 요청 뒤 뗀다. 연결이 바뀌면 짧은 알림(10초 묶음, 잠든 세션은 깨우지 않음).
+- ARCH K1: 명령 목록에 `me`, `child --head`. K: `session.detach`, `link.delete { detach }`, `link-notice.mjs`. F2: 부모 선 끊기 확인의 두 고르기. API 표에 `session.detach`.
+- testing.md: 창 시험은 백엔드를 창보다 먼저 CLI로 띄운다(창이 띄운 백엔드·herdr가 원격 디버깅 포트를 물려받는다).
+- README(단계 목록): P81 한 줄.
