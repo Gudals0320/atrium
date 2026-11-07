@@ -61,6 +61,7 @@ export function logEntry(event, f = {}, at = Date.now()) {
   if (f.light === true) e.light = true; // P84: 이 부팅은 가벼운 화면
   const crash = crashInfo(f.crash); if (crash) e.crash = crash; // P84: 죽기 전 상태(숫자와 짧은 코드만)
   if (Number.isInteger(f.level) && f.level >= 0 && f.level <= 4) e.level = f.level; // P86: boot(이 부팅의 보드 단계), level(살아남아 기억한 단계)
+  if (Number.isFinite(f.bootId) && f.bootId > 0 && f.bootId < 1e14) e.bootId = Math.round(f.bootId); // P87: boot. 죽은 페이지의 부팅 시각(같은 죽음을 한 번만 남긴다)
   return e;
 }
 const mergeKey = (e) => [e.event, e.reason, e.deviceId, e.addr, e.login, e.remote].join('|');

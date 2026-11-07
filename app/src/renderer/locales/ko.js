@@ -2082,4 +2082,17 @@ export default {
     level: '보드 {n}단계',
     steps: '마지막 단계 {v}',
   },
+  // P87: 휴대폰 작업 관계도(세션 목록 머리줄에서 연다)
+  phoneMission: {
+    open: '작업 관계도 보기',
+    title: '작업 관계도',
+    back: '세션 목록으로 돌아가기',
+    working: '작업 중 {n}',
+    needs: '응답 필요 {n}',
+    all: '세션 {n}',
+    turn: '응답 필요',
+    from: '← {name} ({ws})',
+    depth: '{n}단계',
+    hint: '세션을 누르면 그 세션을 엽니다.',
+  },
 };

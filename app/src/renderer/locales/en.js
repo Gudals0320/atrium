@@ -2082,4 +2082,17 @@ export default {
     level: 'board level {n}',
     steps: 'last steps: {v}',
   },
+  // P87: phone mission map (opened from the session list header)
+  phoneMission: {
+    open: 'Open the mission map',
+    title: 'Mission map',
+    back: 'Back to the session list',
+    working: 'Working {n}',
+    needs: 'Needs you {n}',
+    all: 'Sessions {n}',
+    turn: 'Needs you',
+    from: '← {name} ({ws})',
+    depth: 'level {n}',
+    hint: 'Tap a session to open it.',
+  },
 };

@@ -133,7 +133,7 @@ test('마우스 보드는 그대로: 판의 터치 규칙은 터치 이벤트에
   assert.deepEqual([...new Set(events)].sort(), ['gesturestart', 'touchcancel', 'touchend', 'touchmove', 'touchstart'], '마우스·포인터 이벤트는 받지 않는다');
   assert.ok(!/nodesDraggable|panOnDrag|zoomOnPinch/.test(c), 'React Flow 끌기·옮기기 설정을 바꾸지 않았다');
   assert.ok(c.includes('onNodeClick={onNodeClick}') && c.includes("getState().navigateTo(node.id, { focusTerminal: true });"), '마우스 누르기는 그대로 들어간다(눌러서 확대 P73)');
-  // 전체 보기와 목록 단추는 휴대폰 세로 화면에서만 붙는다
+  // P87: 휴대폰은 늘 목록이라 보드 위의 목록 단추와 전체 보기를 붙이지 않는다(태블릿·마우스 보드에는 원래 없었다)
   const m = src('main.jsx');
-  assert.ok(m.includes('{canPhone && <PhoneListButton />}') && m.includes('{canPhone && loaded && <AppBoundary><PhoneFull /></AppBoundary>}'));
+  assert.ok(!m.includes('<PhoneListButton />') && !m.includes('<PhoneFull />'));
 });
