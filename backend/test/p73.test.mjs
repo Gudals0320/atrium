@@ -150,21 +150,23 @@ test('API: 혼자인 노드의 방향·비율·단계, 기록한 비율, 테두�
   store.close();
 });
 
-test('API: 덩어리는 바깥 비율. 넷짜리 16:9 ↔ 4:3, 칸은 틀 비율대로, 바깥 끌기 뒤 비율 꺼짐, 틀을 다시 고르면 바깥과 비율을 지킨다', () => {
+test('API: 덩어리는 칸 기준(P77에서 바뀜). 넷짜리 16:9 ↔ 4:3, 바깥 끌기 뒤 비율 꺼짐, 틀을 다시 고르면 칸 크기를 지킨다', () => {
   const { b, add, at, store } = fakeBackend();
   add('a', R(0, 0)); add('b', R(2000, 0)); add('c', R(4000, 0)); add('d', R(6000, 0));
   const { dock } = ops.dockLayout(b, { members: ['a', 'b', 'c', 'd'], preset: 'grid' });
   const o = ops.dockOuter(b, dock);
   assert.deepEqual([o.w, o.h], [2 * DOCK_CELL.w, 2 * DOCK_CELL.h], '새 덩어리는 칸 960×540(2 × 2 = 1920×1080)');
-  assert.equal(store.getDock(dock.dockId).aspect, '16:9', '바깥이 16:9면 불');
+  assert.equal(store.getDock(dock.dockId).aspect, '16:9', '칸이 16:9면 불');
+  ops.setSize(b, { session: 'b', level: 'large', scope: 'dock' });
+  assert.deepEqual([at('a').w, at('a').h, ops.dockOuter(b, ops.dockOf(b, 'id-a')).w], [1920, 1080, 3840], '칸이 16:9 크게');
   ops.setSize(b, { session: 'b', aspect: '4:3', scope: 'dock' });
   const o2 = ops.dockOuter(b, ops.dockOf(b, 'id-a'));
-  assert.deepEqual([o2.x, o2.y, o2.w, o2.h], [o.x, o.y, 1600, 1200], '바깥이 4:3 크게(단계를 지킨다, 왼쪽 위 그대로)');
-  assert.deepEqual([at('a').w, at('a').h], [800, 600], '칸은 바깥을 틀 비율대로 나눈다(칸 비율이 아니다)');
+  assert.deepEqual([o2.x, o2.y, o2.w, o2.h], [o.x, o.y, 3200, 2400], '칸이 4:3 크게(단계를 지킨다, 왼쪽 위 그대로)');
+  assert.deepEqual([at('a').w, at('a').h], [1600, 1200]);
   assert.equal(ops.dockOf(b, 'id-a').aspect, '4:3');
-  // 덩어리 안 노드의 노드 메뉴(scope 없이 옛 열쇠)도 덩어리 바깥
+  // 덩어리 안 노드의 노드 메뉴(scope 없이 옛 열쇠)도 덩어리의 칸
   ops.setSize(b, { session: 'c', size: 'normal' });
-  assert.deepEqual([ops.dockOuter(b, ops.dockOf(b, 'id-a')).w, ops.dockOuter(b, ops.dockOf(b, 'id-a')).h], [1200, 900]);
+  assert.deepEqual([at('d').w, at('d').h], [1200, 900]);
   // 바깥 테두리 끌기 저장 → 비율 꺼짐(나무는 그대로)
   const tree = JSON.stringify(ops.dockOf(b, 'id-a').tree);
   const now = ops.dockOuter(b, ops.dockOf(b, 'id-a'));
@@ -172,19 +174,18 @@ test('API: 덩어리는 바깥 비율. 넷짜리 16:9 ↔ 4:3, 칸은 틀 비율
   ops.dockUpdate(b, { dock: dock.dockId, x: dragged.x, y: dragged.y, w: dragged.w, h: dragged.h });
   assert.equal(ops.dockOf(b, 'id-a').aspect, null, '테두리를 끌면 두 비율 모두 꺼진다');
   assert.equal(JSON.stringify(ops.dockOf(b, 'id-a').tree), tree, '칸 비율은 그대로');
-  assert.deepEqual([at('a').w, at('b').w], [750, 750], '칸이 비율대로 함께 커진다');
-  // 다시 16:9를 누르면 넓이를 지킨 채 16:9
+  assert.deepEqual([at('a').w, at('b').w], [1350, 1350], '칸이 비율대로 함께 커진다');
+  // 다시 16:9를 누르면 칸 넓이를 지킨 채 16:9
   ops.setSize(b, { session: 'a', aspect: '16:9', scope: 'dock' });
-  const o3 = ops.dockOuter(b, ops.dockOf(b, 'id-a'));
-  assert.ok(Math.abs(o3.w / o3.h - 16 / 9) < 0.01 && Math.abs(area(o3) / (1500 * 900) - 1) < 0.02, JSON.stringify(o3));
+  const c3 = at('a');
+  assert.ok(Math.abs(c3.w / c3.h - 16 / 9) < 0.01 && Math.abs(area(c3) / (1350 * 900) - 1) < 0.02, JSON.stringify(c3));
   assert.equal(ops.dockOf(b, 'id-a').aspect, '16:9');
-  // 같은 덩어리를 H 틀로: 바깥과 비율을 지키고 칸은 가로 한 줄
+  // 같은 덩어리를 H 틀로: 칸과 비율을 지키고 바깥이 가로 한 줄로 바뀐다
   ops.dockLayout(b, { members: ['a'], preset: 'row' });
-  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), o3);
+  assert.deepEqual(['a', 'b', 'c', 'd'].map((n) => [at(n).y, at(n).w, at(n).h]), ['a', 'b', 'c', 'd'].map(() => [o.y, c3.w, c3.h]), 'H: 모두 가로 한 줄, 칸 그대로');
   assert.equal(ops.dockOf(b, 'id-a').aspect, '16:9');
-  assert.deepEqual(['a', 'b', 'c', 'd'].map((n) => at(n).y), [o3.y, o3.y, o3.y, o3.y], 'H: 모두 가로 한 줄');
   ops.dockLayout(b, { members: ['a'], preset: 'col' });
-  assert.deepEqual(['a', 'b', 'c', 'd'].map((n) => at(n).x), [o3.x, o3.x, o3.x, o3.x], 'V: 모두 세로 한 줄');
+  assert.deepEqual(['a', 'b', 'c', 'd'].map((n) => at(n).x), [o.x, o.x, o.x, o.x], 'V: 모두 세로 한 줄');
   // 덩어리 기록은 다시 열어도 남는다
   assert.equal(store.docks()[0].aspect, '16:9');
   store.close();

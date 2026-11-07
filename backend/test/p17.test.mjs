@@ -232,12 +232,14 @@ test('API: 분할선(나무 통째로), 바깥 크기, 덩어리째 옮기기, �
   assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(0, 0, 480, 320), '잎마다 최소 크기');
   ops.dockUpdate(b, { dock: dock.dockId, x: 500, y: 600, w: 1440, h: 920 });
   assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(500, 600, 1440, 920));
-  const before = JSON.stringify(ops.dockOf(b, 'id-a').tree), rects = [at('a'), at('b'), at('c')];
-  // 크기 단계(P73): 덩어리 안 노드면 덩어리 바깥이 그 단계가 된다(자유 비율이면 모양이 가까운 비율, 1440×920은 16:9)
+  // 크기 단계(P73, P77): 덩어리 안 노드면 칸(가장 작은 노드)이 그 단계가 되고 바깥은 나무에서 나온다(자유 비율이면 칸 모양이 가까운 비율, c 576×340은 16:9).
+  // main-left는 큰 칸이 작은 칸 2 × 2(왼쪽 위 그대로)
   ops.setSize(b, { session: 'a', size: 'large' });
-  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(500, 600, 1920, 1080));
+  assert.deepEqual(ops.dockOuter(b, ops.dockOf(b, 'id-a')), R(500, 600, 5760, 2160));
+  assert.deepEqual([at('a'), at('b'), at('c')], [R(500, 600, 3840, 2160), R(4340, 600, 1920, 1080), R(4340, 1680, 1920, 1080)]);
   assert.equal(ops.dockOf(b, 'id-a').aspect, '16:9');
   ops.dockUpdate(b, { dock: dock.dockId, w: 1440, h: 920 });
+  const before = JSON.stringify(ops.dockOf(b, 'id-a').tree), rects = [at('a'), at('b'), at('c')];
   b.store.close();
   // 다시 연다(백엔드를 껐다 켜기)
   const again = fakeBackend(env.file);
