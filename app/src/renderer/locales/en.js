@@ -2140,4 +2140,9 @@ export default {
     reason_timeout: 'timed out',
     reason_endpoint_host: 'push service not allowed',
   },
+  // P90: phone messages typed straight into a working Claude Code session (its own queue)
+  typeNow: {
+    typed: 'queued in Claude Code',
+    draft: 'text in the input box',
+  },
 };

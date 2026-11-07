@@ -324,7 +324,7 @@ test('D4 끄기: 잠든 세션은 herdr 없이 닫는다(보관·삭제는 그 �
 test('D4 전달: 잠재우는 중에는 sleeping, 깨우는 중에는 준비된 뒤에도 잠깐 starting으로 기다린다(입력 칸이 Enter를 받기 전)', () => {
   const rt = newRuntime(); applyAgentDetected(rt); applyHerdrStatus(rt, 'idle');
   const s = { sessionId: 'a', rt };
-  const fake = { sessions: new Map([['a', s]]), sleeper: { going: new Map() }, adapter: { connected: true } };
+  const fake = { sessions: new Map([['a', s]]), sleeper: { going: new Map() }, adapter: { connected: true }, hooked: Backend.prototype.hooked }; // P90: 전달 판단이 hook 여부도 본다
   const view = () => Backend.prototype.deliveryView.call(fake, 'a', null).state;
   assert.equal(view(), 'ready');
   s.waking = { at: 1, why: 'delivery' };

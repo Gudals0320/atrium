@@ -25,6 +25,15 @@ export function blockReason(view, now, cfg) {
   return null;
 }
 
+// P90: 휴대폰 입력 줄은 "일하는 중이면 바로 넣기"(typeNow)로 보낸다. PC 터미널에서 Enter를 친 것처럼 Claude Code가 자기 대기 메시지로 받아 둔다.
+// 판이 띄운 Claude Code(hook 있음)가 working일 때만이다. waiting·trust_wait(권한·질문·신뢰 화면), starting, ready, 셸, 다른 종류, hook 없는 세션은 B1 그대로.
+// 입력 칸에 쓰던 글이 있거나 입력 칸을 못 읽으면 넣지 않는다(_typeNow). 막힌 패널은 herdr agent.prompt가 글을 넣기 전에 거부한다(agent_blocked)
+export function canTypeNow(view) {
+  return !!view && !view.closed && !!view.herdrConnected && !!view.agentPresent && view.state === 'working' && (view.kind || 'claude') === 'claude' && !!view.hooked;
+}
+// 바로 넣을 글: 줄바꿈은 LF(B1 5), 끝 줄바꿈은 뗀다(입력 칸에 빈 줄이 남지 않게). Enter는 agent.prompt가 마지막에 한 번 누른다
+export const typedText = (text) => toLF(text).replace(/\n+$/, '');
+
 export class DeliveryQueue extends EventEmitter {
   // view(sessionId, delivery) → { state, agentPresent, herdrConnected, lastUserInputAt, closed }
   // send(sessionId, text) → Promise. herdr 오류는 code를 가진 Error로 던진다.
@@ -46,8 +55,10 @@ export class DeliveryQueue extends EventEmitter {
   start() { this.timer = setInterval(() => this.pump(), 500); }
   stop() { clearInterval(this.timer); }
 
-  enqueue(sessionId, text) {
-    const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: toLF(text), status: 'queued', reason: null, createdAt: Date.now(), attempts: 0 };
+  // opts.typeNow(P90): 세션이 일하는 중이면 기다리지 않고 바로 넣는다(canTypeNow). 저장하지 않으므로 백엔드가 다시 뜨면 B1 그대로 보낸다
+  enqueue(sessionId, text, opts = {}) {
+    const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: opts.typeNow ? typedText(text) : toLF(text), status: 'queued', reason: null, createdAt: Date.now(), attempts: 0 };
+    if (opts.typeNow) d.typeNow = true;
     this.store.insertDelivery(d);
     this.items.set(d.deliveryId, d);
     this._emit(d);
@@ -69,7 +80,7 @@ export class DeliveryQueue extends EventEmitter {
   onUserPromptSubmit(sessionId, prompt) {
     const d = this._head(sessionId);
     if (!d || (d.status !== 'sending' && d.status !== 'sent')) return null;
-    if (promptMatches(d.text, prompt)) { this._set(d, 'confirmed', null, { confirmedAt: Date.now() }); setImmediate(() => this.pump()); return d; }
+    if (promptMatches(d.text, prompt)) { this._set(d, 'confirmed', d.typed ? 'typed' : null, { confirmedAt: Date.now() }); setImmediate(() => this.pump()); return d; }
     d.mismatchSeen = true;
     return null;
   }
@@ -120,17 +131,38 @@ export class DeliveryQueue extends EventEmitter {
       if (now - d.createdAt > this.cfg.deliveryMaxWaitMs) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
       const reason = blockReason(this.view(sid, d), now, this.cfg);
       if (reason === 'closed') { this._set(d, 'failed', 'session closed'); continue; }
+      if (reason === 'working' && d.typeNow && this.inspect) { const v = this.view(sid, d); if (canTypeNow(v)) { this._typeNow(d, v, now); continue; } }
       if (reason) { if (d.reason !== reason) this._set(d, 'queued', reason); continue; }
       this._deliver(d);
     }
   }
 
-  async _deliver(d) {
+  // P90: 일하는 중에 바로 넣기. 입력 칸을 읽어 비었을 때만(사람이 쓰던 글을 덮지 않는다) 넣는다. 화면 읽기는 typeCheckMs마다 한 번
+  async _typeNow(d, v, now) {
+    if (d.checking || now - (d.checkedAt || 0) < (this.cfg.typeCheckMs ?? 1500)) return;
+    if (v.lastUserInputAt && now - v.lastUserInputAt < this.cfg.inputQuietMs) { if (d.reason !== 'user_typing') this._set(d, 'queued', 'user_typing'); return; } // 규칙 4
+    d.checking = true; d.checkedAt = now;
+    try {
+      const look = await this.inspect(d.sessionId, d.text).catch(() => null);
+      if (d.status !== 'queued' || !this.items.has(d.deliveryId) || this._head(d.sessionId) !== d) return;
+      const box = look ? look.box : 'unknown';
+      const v2 = this.view(d.sessionId, d) || {};
+      if (box !== 'empty' || !canTypeNow(v2) || (v2.lastUserInputAt && Date.now() - v2.lastUserInputAt < this.cfg.inputQuietMs)) {
+        const why = box === 'other' || box === 'ours' ? 'draft' : 'working'; // 입력 칸에 글이 있다 / 못 읽었거나 상태가 바뀌었다
+        if (d.reason !== why) this._set(d, 'queued', why);
+        return;
+      }
+      await this._deliver(d, true);
+    } finally { d.checking = false; }
+  }
+
+  async _deliver(d, typed = false) {
     d.workingSeen = false; // 앞 시도(실패) 중의 working 신호를 이 시도의 확인으로 쓰지 않는다(이슈 #1-3)
-    this._set(d, 'sending', null, { attempt: true });
+    d.typed = typed; // P90: Claude Code 대기 메시지로 넣었다(전달 기록의 이유 'typed')
+    this._set(d, 'sending', typed ? 'typed' : null, { attempt: true });
     try {
       await this.send(d.sessionId, d.text);
-      if (d.status === 'sending') this._set(d, 'sent', null, { sentAt: Date.now() });
+      if (d.status === 'sending') this._set(d, 'sent', typed ? 'typed' : null, { sentAt: Date.now() });
       if (d.workingSeen && d.status === 'sent') this._set(d, 'confirmed', 'herdr working', { confirmedAt: Date.now() });
     } catch (e) {
       // 그사이 hook 등으로 confirmed가 되었거나 상태가 바뀌었으면 늦은 오류로 되돌리지 않는다(이슈 #1-2)

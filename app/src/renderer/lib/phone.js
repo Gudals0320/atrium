@@ -1,6 +1,6 @@
 // P74: 휴대폰 세로 화면(Phone.jsx)이 쓰는 순수 함수(단위 시험 app/test/p74-lib.test.mjs).
 // - 좁은 세로 화면인지(폭 430px 이하, 세로, 터치). 가로로 돌리거나 태블릿·노트북 폭이면 보드 화면을 그대로 쓴다
-// - 세션 목록: 응답 필요(오래 기다린 순) → 작업 중 → 나머지(프로젝트별, 최근 활동 순)
+// - 세션 목록: 응답 필요(오래 기다린 순) → 작업 중 → 나머지(프로젝트별). P90: 작업 중과 프로젝트별은 시작한 순(createdAt)이라 활동이 생겨도 자리가 그대로
 // - 줄마다 마지막 한 줄, 자주 쓰는 키의 바이트, 손가락 끌기 → 휠, 가상 키보드를 뺀 화면 높이
 
 export const PHONE_MAX_WIDTH = 430;
@@ -26,7 +26,8 @@ const BUSY = new Set(['working', 'starting']);
 export const needsYou = (s) => !!s && NEED.has(s.state);
 export const isBusy = (s) => !!s && (BUSY.has(s.state) || !!s.waking || (s.kind === 'shell' && s.shell && s.shell.atPrompt === false && s.state !== 'exited' && s.state !== 'sleeping'));
 const askSince = (s) => (s.ask && s.ask.since) || s.lastActivityAt || s.createdAt || 0;
-const recent = (s) => s.lastActivityAt || s.lastAnswerAt || (s.turn && s.turn.endedAt) || s.createdAt || 0;
+// P90: 시작한 지 오래된 것부터(세션을 띄운 시각). 같으면 이름, 그다음 ID 순으로 늘 같은 자리
+const byStart = (a, b) => (a.createdAt || 0) - (b.createdAt || 0) || String(a.name).localeCompare(String(b.name)) || String(a.sessionId).localeCompare(String(b.sessionId));
 // 나머지 안에서는 살아 있는 세션 먼저, 끝났거나 잠든 세션은 아래로
 const resting = (s) => (s.state === 'exited' || s.state === 'sleeping' ? 1 : 0);
 
@@ -34,7 +35,7 @@ const resting = (s) => (s.state === 'exited' || s.state === 'sleeping' ? 1 : 0);
 export function phoneList(sessions, workspaces = []) {
   const all = [...(sessions || [])].filter(Boolean);
   const needs = all.filter(needsYou).sort((a, b) => askSince(a) - askSince(b) || String(a.name).localeCompare(String(b.name)));
-  const working = all.filter((s) => !needsYou(s) && isBusy(s)).sort((a, b) => recent(b) - recent(a));
+  const working = all.filter((s) => !needsYou(s) && isBusy(s)).sort(byStart);
   const taken = new Set([...needs, ...working].map((s) => s.sessionId));
   const rest = all.filter((s) => !taken.has(s.sessionId));
   const order = new Map(workspaces.map((w, i) => [w.key, i]));
@@ -47,7 +48,7 @@ export function phoneList(sessions, workspaces = []) {
   const nameOf = (k) => { const w = workspaces.find((x) => x.key === k); return w ? w.name : k ? String(k).split('/').filter(Boolean).slice(-1)[0] || k : null; };
   const groups = [...byKey.entries()].map(([key, list]) => ({
     key, name: nameOf(key),
-    sessions: list.sort((a, b) => resting(a) - resting(b) || recent(b) - recent(a)),
+    sessions: list.sort((a, b) => resting(a) - resting(b) || byStart(a, b)),
     // 접힌 이름표에 보일 수(모든 세션: 위로 올라간 응답 필요·작업 중 포함)
     total: all.filter((s) => (s.workspaceKey || null) === key).length,
   })).sort((a, b) => (a.key == null) - (b.key == null) || (order.get(a.key) ?? 1e9) - (order.get(b.key) ?? 1e9) || String(a.name).localeCompare(String(b.name)));
@@ -128,10 +129,12 @@ export function screenBox({ vv, innerHeight, innerWidth, screenW, screenH, stand
 }
 
 // 입력 줄: 에이전트는 전달 대기열(session.send, 여러 줄 그대로), 셸은 터미널 입력(줄마다 Enter 대신 마지막에 한 번)
+// P90: Claude Code는 whileWorking: 'type'. 일하는 중이면 판이 기다리지 않고 바로 넣어 Claude Code가 대기 메시지로 받는다(판단은 백엔드 canTypeNow)
 export function sendPlan(s, text) {
   const body = String(text || '').replace(/\r\n?/g, '\n');
   if (!body.trim()) return null;
   if (s && s.kind === 'shell') return { method: 'terminal.input', data: body.replace(/\n+$/, '') + '\r' };
+  if (!s || (s.kind || 'claude') === 'claude') return { method: 'session.send', text: body, whileWorking: 'type' };
   return { method: 'session.send', text: body };
 }
 

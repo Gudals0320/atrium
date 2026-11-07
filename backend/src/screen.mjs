@@ -75,6 +75,8 @@ export function shellPromptState(text) {
 // P79: Claude Code 입력 칸 읽기. 화면 아래쪽 가로줄(───) 둘 사이가 입력 칸이고 첫 줄은 "❯ "(옛 판은 "> ")로 시작한다.
 // → { found, text(입력 칸 글, 앞 기호를 뗀 것), above(입력 칸 위의 줄들) }. 그런 가로줄 쌍이 없으면 found: false
 const RULE = /^\s*[─━]{12,}\s*$/;
+// P90: 대기 메시지가 있을 때 빈 입력 칸의 안내 글(흐린 글이라 글자로는 구별되지 않는다). 빈 칸으로 본다
+const BOX_HINTS = [/^Press up to edit queued messages$/i];
 export function claudeInputBox(text) {
   const lines = String(text || '').split('\n').map((l) => l.replace(/\s+$/, ''));
   const rules = [];
@@ -84,7 +86,7 @@ export function claudeInputBox(text) {
     const body = lines.slice(top + 1, bottom);
     if (!body.length || !/^\s*[❯>](\s|$)/.test(body[0])) continue;
     const t = body.map((l, i) => (i === 0 ? l.replace(/^\s*[❯>]\s?/, '') : l.trim())).join(' ').replace(/\s+/g, ' ').trim();
-    return { found: true, text: t, above: lines.slice(0, top) };
+    return { found: true, text: BOX_HINTS.some((re) => re.test(t)) ? '' : t, above: lines.slice(0, top) };
   }
   return { found: false, text: '', above: lines };
 }
