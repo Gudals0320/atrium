@@ -3,6 +3,7 @@
 // P4: hook이 없는 세션(판이 띄우지 않은 에이전트, Claude Code가 아닌 종류)은 herdr 상태만으로 정한다(ARCH 4절 F3·F5).
 //   묻는 내용은 화면(pane.read)에서 읽고, 승인 카드는 "터미널에서 답하기"로 보낸다.
 import { unwrapPasted, clip } from './text.mjs';
+import { bgTasksOf } from './push-cycle.mjs'; // P92
 
 // P41: Claude Code가 고른 모델을 쓰지 못할 때의 글("There's an issue with the selected model (x). It may not exist or you may not have access to it.")과 오류 종류
 // 답 글로 볼 때는 그 글로 시작하는 것만(답 안에서 그 글을 인용한 것은 오류가 아니다)
@@ -105,9 +106,12 @@ export function applyHook(rt, body, now = Date.now()) {
       break;
     case 'SessionEnd':
       rt.sessionEnd = { reason: body.reason || null, at: now };
+      rt.bg = null;
       break;
     default: // SubagentStop 등은 상태를 바꾸지 않는다(E2 2.4)
   }
+  // P92: Stop·SubagentStop의 background_tasks = 지금 도는 뒤 일(뒤 셸, 뒤 하위 에이전트). 없으면(옛 Claude Code) 전 값을 둔다
+  if (ev === 'Stop' || ev === 'SubagentStop') { const tasks = bgTasksOf(body); if (tasks) rt.bg = { tasks, at: now }; }
 }
 
 function askFrom(kind, tool, input, toolUseId, since) {
@@ -141,6 +145,7 @@ export function applyHerdrStatus(rt, status, now = Date.now(), extra = {}) {
 // herdr가 패널에서 claude를 다시 찾음(처음 띄울 때, herdr 재시작 뒤 이어 갈 때)
 export function applyAgentDetected(rt, now = Date.now()) {
   rt.herdr.present = true;
+  if (rt.exit) rt.bg = null; // P92: 다시 뜬 claude에는 뒤 일이 없다
   if (rt.exit) { rt.exit = null; rt.phase = 'starting'; rt.launchedAt = now; rt.hooksSinceLaunch = 0; rt.sessionEnd = null; }
 }
 
@@ -151,6 +156,7 @@ export function applyAgentReleased(rt, now = Date.now(), { herdrStopping = false
   rt.herdr.status = 'unknown';
   rt.pendingAsk = null;
   rt.worktreeExit = null;
+  rt.bg = null; // P92: claude가 끝나면 뒤 일도 끝난다
   const reason = rt.sessionEnd && rt.sessionEnd.reason;
   let kind;
   if (reason === 'prompt_input_exit') kind = 'normal';

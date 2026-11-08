@@ -28,7 +28,7 @@ import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: �
 import { LIST_PREF } from './lib/touch-board.js'; // P76: 목록 단추(태블릿 보드에는 보이지 않는다)
 import { PhoneMission } from './PhoneMission.jsx'; // P87: 휴대폰 미션 맵
 import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 알약을 바꾸지 않는다
-import { PushButton, PushSheet } from './PhonePush.jsx'; // P88: 알림(웹 푸시)
+import { PushButton, PushSheet, SessionMuteButton } from './PhonePush.jsx'; // P88: 알림(웹 푸시), P92: 세션 하나 끄기
 import { setOpenHandler, launchOpen, clearLaunchOpen } from './push.js'; // P88: 알림을 누르면 그 세션으로
 import { reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록). P86: 보드 단계
 import './phone.css';
@@ -438,6 +438,7 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
           <b><span className="mt-ph-dot" data-tone={toneOf(s)} aria-hidden="true" />{s.name}</b>
           <span className="mt-ph-sub">{stateText}</span>
         </div>
+        {s.kind !== 'shell' && <SessionMuteButton sessionId={id} />}
         <ConnPill compact />
         <button type="button" className={`mt-ph-nextbtn${next ? ' on' : ''}`} data-action="phone-next-need" disabled={!next} onClick={() => next && onGo(next)} title={t('phone.nextNeedTitle')}>
           <span>{next ? t('phone.nextShort', { n: needIds.filter((x) => x !== id).length }) : t('phone.noNext')}</span><Chev />

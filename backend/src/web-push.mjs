@@ -10,12 +10,15 @@
 // - 알림 글은 세션 이름, 종류, 프로젝트 이름만 넣는다. 질문·요청·답의 글은 넣지 않는다(사용자 요청). 연결 기록에도 알림 내용은 남기지 않는다.
 // - 같은 세션의 같은 종류는 COOLDOWN_MS 안에 한 번만, 기기마다 BATCH_MS 안에 생긴 것은 한 알림으로 묶는다.
 //   그 기기가 판 화면을 보고 있으면(연결 열림, 보이는 상태) 보내지 않는다. PC에서 최근에 입력했으면 기기 설정(whilePc, 기본 끔)에 따른다.
+// - P92: 끝남은 턴마다 보내지 않고 작업 사이클이 끝났을 때(push-cycle.mjs) 한 번 보낸다. 하위 세션(워커) 알림은 기기 설정 sub
+//   (need = 응답 필요만(기본), all = 모두, off = 끔)을 따른다. 기기마다 세션 하나의 알림을 끌 수 있다(muted). 보내지 않은 까닭은 decisions에 남는다.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';
 import dns from 'node:dns';
 import net from 'node:net';
+import { SETTLE_MS, BG_CAP_MS, treeIndex, cycleCheck, subModeOf, subAllows, DEFAULT_SUB } from './push-cycle.mjs'; // P92
 
 export const COOLDOWN_MS = 30_000;
 export const BATCH_MS = 1500;
@@ -24,7 +27,8 @@ export const JWT_TTL_SEC = 12 * 3600; // RFC 8292: 24시간을 넘기지 않는�
 export const SEND_TIMEOUT_MS = 10_000;
 export const BATCH_SHOW = 4; // 묶은 알림에 이름을 보이는 세션 수
 export const PUSH_KINDS = ['done', 'need', 'error'];
-export const DEFAULT_PREFS = Object.freeze({ kinds: Object.freeze({ done: true, need: true, error: true }), whilePc: false });
+export const DEFAULT_PREFS = Object.freeze({ kinds: Object.freeze({ done: true, need: true, error: true }), whilePc: false, sub: DEFAULT_SUB, muted: Object.freeze([]) });
+const MUTED_MAX = 200;
 export const MAX_BODY = 4096; // 푸시 서비스가 받는 본문 상한(RFC 8291: 4096바이트를 넘으면 안 된다)
 const KEY = 'webPush';
 const DECISIONS_MAX = 200;
@@ -166,16 +170,19 @@ export function pushKindOf(sum, from) {
 }
 export const prefKind = (k) => (k === 'exit' ? 'error' : k);
 const WORDS = {
-  ko: { done: '끝남', need: '응답 필요', error: '오류', exit: '세션 꺼짐', many: '세션 {n}개', more: '외 {n}개', testTitle: 'Atrium 시험 알림', testBody: '이 기기에서 알림을 받을 수 있습니다.' },
-  en: { done: 'done', need: 'needs you', error: 'error', exit: 'session ended', many: '{n} sessions', more: '+{n} more', testTitle: 'Atrium test notification', testBody: 'This device can receive notifications.' },
+  ko: { done: '끝남', need: '응답 필요', error: '오류', exit: '세션 꺼짐', many: '세션 {n}개', more: '외 {n}개', subs: '하위 {n}개 포함', testTitle: 'Atrium 시험 알림', testBody: '이 기기에서 알림을 받을 수 있습니다.' },
+  en: { done: 'done', need: 'needs you', error: 'error', exit: 'session ended', many: '{n} sessions', more: '+{n} more', subs: 'incl. {n} sub-sessions', testTitle: 'Atrium test notification', testBody: 'This device can receive notifications.' },
 };
 const fill = (s, v) => s.replace(/\{(\w+)\}/g, (_, k) => String(v[k]));
 const clipName = (s, n = 40) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
 export const langOf = (l) => (String(l || '').toLowerCase().startsWith('ko') ? 'ko' : 'en');
-// items: [{ sessionId, name, kind, ws }]. 이름과 종류, 프로젝트 이름만 쓴다
+// items: [{ sessionId, name, kind, ws, subs? }]. 이름과 종류, 프로젝트 이름, 함께 일한 하위 세션 수(P92)만 쓴다
 export function pushText(items, lang = 'en') {
   const w = WORDS[langOf(lang)];
-  if (items.length === 1) { const it = items[0]; return { title: `@${clipName(it.name)} · ${w[it.kind] || it.kind}`, body: clipName(it.ws, 60) || 'Atrium' }; }
+  if (items.length === 1) {
+    const it = items[0]; const subs = it.kind === 'done' && it.subs > 0 ? fill(w.subs, { n: it.subs }) : null;
+    return { title: `@${clipName(it.name)} · ${w[it.kind] || it.kind}`, body: [clipName(it.ws, 60), subs].filter(Boolean).join(' · ') || 'Atrium' };
+  }
   const shown = items.slice(0, BATCH_SHOW).map((it) => `@${clipName(it.name)} ${w[it.kind] || it.kind}`);
   const rest = items.length - shown.length;
   return { title: fill(w.many, { n: items.length }), body: shown.join(' · ') + (rest > 0 ? ` · ${fill(w.more, { n: rest })}` : '') };
@@ -202,12 +209,17 @@ export function httpsPost(endpoint, { headers, body, timeoutMs = SEND_TIMEOUT_MS
 
 // ---------- 구독과 보내기 ----------
 const okId = (s) => typeof s === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(s);
-const prefsOf = (r) => ({ kinds: { ...DEFAULT_PREFS.kinds, ...((r && r.kinds) || {}) }, whilePc: !!(r && r.whilePc) });
+const prefsOf = (r) => ({ kinds: { ...DEFAULT_PREFS.kinds, ...((r && r.kinds) || {}) }, whilePc: !!(r && r.whilePc), sub: subModeOf(r && r.sub), muted: Array.isArray(r && r.muted) ? r.muted.filter(okId) : [] });
 export class Pusher {
   // note(event, fields): 연결 기록(push.on, push.off, push.fail). watching(deviceId): 그 기기가 판 화면을 보고 있는가. pcActive(): PC에서 최근에 입력했는가
   // enabled(): 원격 접속 허용. wsName(key): 프로젝트 이름. transport(endpoint, opts): 시험이 바꾼다. onChange(): PC 창의 기기 목록을 다시 보낸다
-  constructor({ store, keyFile, subject, now = Date.now, log = () => {}, note = () => {}, watching = () => false, pcActive = () => false, enabled = () => true, wsName = () => null, transport = httpsPost, testOrigins = [], ca = null, batchMs = BATCH_MS, cooldownMs = COOLDOWN_MS, onChange = () => {} }) {
-    Object.assign(this, { store, keyFile, subject, now, log, note, watching, pcActive, enabled, wsName, transport, testOrigins, ca, batchMs, cooldownMs, onChange });
+  // P92: tree(): 판의 세션 [{ sessionId, parentSessionId, name, kind, state, workspaceKey, delivering, loops, bg }](사이클 판단). 없으면 받은 세션 하나만 본다
+  //   settleMs: 쉬고 그대로여야 하는 시간, bgCapMs: 뒤 일만 남았을 때 기다리는 끝. timers: false면 사이클 시계를 돌리지 않는다(시험은 tickCycles를 부른다)
+  constructor({ store, keyFile, subject, now = Date.now, log = () => {}, note = () => {}, watching = () => false, pcActive = () => false, enabled = () => true, wsName = () => null, transport = httpsPost, testOrigins = [], ca = null, batchMs = BATCH_MS, cooldownMs = COOLDOWN_MS, onChange = () => {}, tree = null, settleMs = SETTLE_MS, bgCapMs = BG_CAP_MS, timers = true }) {
+    Object.assign(this, { store, keyFile, subject, now, log, note, watching, pcActive, enabled, wsName, transport, testOrigins, ca, batchMs, cooldownMs, onChange, tree, settleMs, bgCapMs, timers });
+    this.cycles = new Map(); // P92: 세션 ID → { dirty, subs: Set, dueAt, quietSince, lastWhy }
+    this.cycleTimer = null;
+    this.seen = new Map(); // tree가 없을 때 받은 요약(세션 ID → 마디)
     this.mem = []; // store가 없을 때(시험)
     this.cool = new Map(); // `${sessionId}|${kind}` → 마지막으로 알릴 거리로 본 때
     this.pending = new Map(); // deviceId → { items: Map(sessionId → item), timer }
@@ -266,10 +278,14 @@ export class Pusher {
   }
   dropAll(why = 'blocked') { let n = 0; for (const r of this.records()) if (r.endpoint) { this.unsubscribe(r.deviceId, why); n++; } return n; }
   setPrefs(deviceId, p = {}) {
-    if (!this.rec(deviceId) && !p.kinds && typeof p.whilePc !== 'boolean') return this.status(deviceId); // 말만 바꾸면 기록을 만들지 않는다
+    const subOk = typeof p.sub === 'string' && subModeOf(p.sub) === p.sub;
+    const muteOk = !!(p.mute && typeof p.mute === 'object' && okId(p.mute.sessionId) && typeof p.mute.on === 'boolean');
+    if (!this.rec(deviceId) && !p.kinds && typeof p.whilePc !== 'boolean' && !subOk && !muteOk) return this.status(deviceId); // 말만 바꾸면 기록을 만들지 않는다
     this.patch(deviceId, (r) => {
       if (p.kinds && typeof p.kinds === 'object') { r.kinds = prefsOf(r).kinds; for (const k of PUSH_KINDS) if (typeof p.kinds[k] === 'boolean') r.kinds[k] = p.kinds[k]; }
       if (typeof p.whilePc === 'boolean') r.whilePc = p.whilePc;
+      if (subOk) r.sub = p.sub; // P92: 하위 세션(워커) 알림
+      if (muteOk) { const m = prefsOf(r).muted.filter((x) => x !== p.mute.sessionId); if (p.mute.on) m.push(p.mute.sessionId); r.muted = m.slice(-MUTED_MAX); } // P92: 세션 하나 끄기
       if (typeof p.lang === 'string') r.lang = langOf(p.lang); // 알림 글의 말
     });
     this.onChange();
@@ -277,27 +293,98 @@ export class Pusher {
   }
   dropPending(deviceId) { const q = this.pending.get(deviceId); if (q) { clearTimeout(q.timer); this.pending.delete(deviceId); } }
 
-  // 세션 상태가 바뀌었다(backend broadcastSession). 알릴 종류면 구독한 기기마다 묶음에 넣는다
+  // 세션 상태가 바뀌었다(backend broadcastSession). 응답 필요·오류·끝남은 곧바로 구독한 기기마다 묶음에 넣고,
+  // 일이 끝남(done)은 작업 사이클이 끝날 때 넣는다(P92, tickCycles). 돌려주는 값은 이 바뀜의 종류(시험과 진단)
   onState(sum, from) {
     const kind = pushKindOf(sum, from);
-    if (!kind) return null;
-    const subs = this.records().filter((r) => r.endpoint);
-    if (!subs.length) return kind;
-    const t = this.now(); const ck = `${sum.sessionId}|${kind}`;
-    const last = this.cool.get(ck);
-    if (last != null && t - last < this.cooldownMs) { this.decide({ sessionId: sum.sessionId, kind, deviceId: null, why: 'cooldown' }); return kind; }
-    this.cool.set(ck, t);
-    if (this.cool.size > 500) for (const [k, v] of this.cool) if (t - v > this.cooldownMs) this.cool.delete(k);
-    let ws = null; try { ws = sum.workspaceKey ? this.wsName(sum.workspaceKey) : null; } catch {}
-    const item = { sessionId: sum.sessionId, name: sum.name, kind, ws, at: t };
-    for (const r of subs) {
-      if (!prefsOf(r).kinds[prefKind(kind)]) { this.decide({ sessionId: sum.sessionId, kind, deviceId: r.deviceId, why: 'kind_off' }); continue; }
-      let q = this.pending.get(r.deviceId);
-      if (!q) { q = { items: new Map(), timer: null }; this.pending.set(r.deviceId, q); q.timer = setTimeout(() => { this.flush(r.deviceId).catch((e) => this.log(`push flush error: ${e.message}`)); }, this.batchMs); q.timer.unref?.(); }
-      q.items.delete(sum.sessionId); q.items.set(sum.sessionId, item); // 같은 세션은 마지막 것
-    }
+    let tree = null;
+    if (from != null && sum && sum.kind !== 'shell') { tree = this.treeNow(sum); this.trackCycle(sum, tree); }
+    if (!kind || kind === 'done') return kind;
+    this.dispatch({ sessionId: sum.sessionId, name: sum.name, kind, workspaceKey: sum.workspaceKey }, (tree || this.treeNow(sum)).isSub(sum.sessionId));
     return kind;
   }
+  // 판의 세션 나무. 막 바뀐 세션은 받은 요약(sum)의 상태로 맞춘다
+  treeNow(sum = null) {
+    let nodes = [];
+    try { nodes = this.tree ? this.tree() || [] : [...this.seen.values()]; } catch (e) { this.log(`push tree error: ${e.message}`); }
+    if (sum) {
+      const i = nodes.findIndex((n) => n.sessionId === sum.sessionId);
+      const base = i >= 0 ? nodes[i] : { parentSessionId: sum.parentSessionId || null, delivering: sum.delivering || 0, loops: sum.loops || 0, bg: null };
+      const mine = { ...base, sessionId: sum.sessionId, name: sum.name, kind: sum.kind, state: sum.state, workspaceKey: sum.workspaceKey };
+      nodes = i >= 0 ? nodes.map((n, j) => (j === i ? mine : n)) : [...nodes, mine];
+      if (!this.tree) { this.seen.delete(sum.sessionId); this.seen.set(sum.sessionId, mine); if (this.seen.size > 500) this.seen.delete(this.seen.keys().next().value); } // tree가 없으면(시험) 받은 요약을 모아 둔다
+    }
+    return treeIndex(nodes);
+  }
+  // 알릴 거리 하나(sessionId, name, kind, workspaceKey, subs?)를 기기마다 묶음에 넣는다. isSub: 하위 세션(부모가 판에 열려 있음)
+  dispatch(it, isSub) {
+    const { kind } = it;
+    const subs = this.records().filter((r) => r.endpoint);
+    if (!subs.length) return;
+    const t = this.now(); const ck = `${it.sessionId}|${kind}`;
+    const last = this.cool.get(ck);
+    if (last != null && t - last < this.cooldownMs) { this.decide({ sessionId: it.sessionId, kind, deviceId: null, why: 'cooldown' }); return; }
+    this.cool.set(ck, t);
+    if (this.cool.size > 500) for (const [k, v] of this.cool) if (t - v > this.cooldownMs) this.cool.delete(k);
+    let ws = null; try { ws = it.workspaceKey ? this.wsName(it.workspaceKey) : null; } catch {}
+    const item = { sessionId: it.sessionId, name: it.name, kind, ws, at: t, ...(it.subs ? { subs: it.subs } : {}) };
+    for (const r of subs) {
+      const pr = prefsOf(r);
+      if (!pr.kinds[prefKind(kind)]) { this.decide({ sessionId: item.sessionId, kind, deviceId: r.deviceId, why: 'kind_off' }); continue; }
+      if (pr.muted.includes(item.sessionId)) { this.decide({ sessionId: item.sessionId, kind, deviceId: r.deviceId, why: 'muted' }); continue; }
+      if (isSub && !subAllows(pr.sub, kind)) { this.decide({ sessionId: item.sessionId, kind, deviceId: r.deviceId, why: pr.sub === 'off' ? 'sub-off' : 'sub-session' }); continue; }
+      let q = this.pending.get(r.deviceId);
+      if (!q) { q = { items: new Map(), timer: null }; this.pending.set(r.deviceId, q); q.timer = setTimeout(() => { this.flush(r.deviceId).catch((e) => this.log(`push flush error: ${e.message}`)); }, this.batchMs); q.timer.unref?.(); }
+      q.items.delete(item.sessionId); q.items.set(item.sessionId, item); // 같은 세션은 마지막 것
+    }
+  }
+
+  // ---------- P92: 작업 사이클 ----------
+  // 세션 X의 상태가 바뀌면 X와 그 조상마다: X가 일하기 시작하면 사이클을 연다(dirty), 쉬면 열린 사이클의 시계를 다시 건다(settleMs 뒤 판단)
+  trackCycle(sum, tree) {
+    const t = this.now(); const x = sum.sessionId; const busy = sum.state === 'working'; // 새로 뜨는 세션(starting → ready)은 일한 것이 아니다
+    for (const a of tree.chain(x)) {
+      let c = this.cycles.get(a);
+      if (!c) { if (!busy) continue; c = { dirty: false, subs: new Set(), dueAt: null, quietSince: null, lastWhy: null }; this.cycles.set(a, c); }
+      if (busy) {
+        if (a === x && c.dueAt != null) this.decide({ sessionId: a, kind: 'done', deviceId: null, why: 'busy-again' }); // 정한 시간 안에 다시 일함
+        c.dirty = true; c.dueAt = null; c.lastWhy = null;
+        if (a !== x) c.subs.add(x);
+      } else if (c.dirty) { c.dueAt = t + this.settleMs; c.quietSince = t; c.lastWhy = null; }
+    }
+    if (this.cycles.size > 500) for (const [k, c] of this.cycles) if (!c.dirty) this.cycles.delete(k);
+    this.armCycleTimer();
+  }
+  armCycleTimer() {
+    if (!this.timers || this.cycleTimer || ![...this.cycles.values()].some((c) => c.dueAt != null)) return;
+    this.cycleTimer = setInterval(() => { try { this.tickCycles(); } catch (e) { this.log(`push cycle error: ${e.message}`); } }, 1000);
+    this.cycleTimer.unref?.();
+  }
+  // 시계가 다 된 사이클을 판단한다. 끝났으면 done을 넣고, 전달·루프·뒤 일이 남았으면 settleMs 뒤에 다시 본다.
+  // 뒤 일만 남은 채 bgCapMs 동안 나무가 그대로면 끝난 것으로 본다(뒤에 서버를 띄워 둔 경우)
+  tickCycles(t = this.now()) {
+    const due = [...this.cycles].filter(([, c]) => c.dueAt != null && c.dueAt <= t);
+    if (due.length) {
+      const tree = this.treeNow();
+      for (const [id, c] of due) {
+        c.dueAt = null;
+        if (!tree.byId.has(id)) { this.cycles.delete(id); continue; }
+        const r = cycleCheck(id, tree);
+        const capped = !r.ok && r.why === 'background-task' && c.quietSince != null && t - c.quietSince >= this.bgCapMs;
+        if (r.ok || capped) {
+          const n = tree.byId.get(id);
+          const worked = c.subs.size; c.dirty = false; c.subs = new Set(); c.lastWhy = null;
+          if (capped) this.decide({ sessionId: id, kind: 'done', deviceId: null, why: 'background-cap' });
+          this.dispatch({ sessionId: id, name: n.name, kind: 'done', workspaceKey: n.workspaceKey, subs: worked }, tree.isSub(id));
+          continue;
+        }
+        if (r.why !== c.lastWhy) { this.decide({ sessionId: id, kind: 'done', deviceId: null, why: r.why }); c.lastWhy = r.why; }
+        if (r.retry) c.dueAt = t + this.settleMs;
+      }
+    }
+    if (this.cycleTimer && ![...this.cycles.values()].some((c) => c.dueAt != null)) { clearInterval(this.cycleTimer); this.cycleTimer = null; }
+  }
+  cycleView() { return [...this.cycles].map(([sessionId, c]) => ({ sessionId, dirty: c.dirty, subs: c.subs.size, dueAt: c.dueAt, lastWhy: c.lastWhy })); }
   // 묶음을 보낸다. 보는 중, PC 사용 중, 원격 막음은 이때 다시 본다
   async flush(deviceId) {
     const q = this.pending.get(deviceId); this.pending.delete(deviceId);
@@ -350,5 +437,5 @@ export class Pusher {
     this.onChange();
     return { ok: false, reason, ...(status ? { status } : {}) };
   }
-  stop() { for (const q of this.pending.values()) clearTimeout(q.timer); this.pending.clear(); }
+  stop() { for (const q of this.pending.values()) clearTimeout(q.timer); this.pending.clear(); if (this.cycleTimer) clearInterval(this.cycleTimer); this.cycleTimer = null; }
 }

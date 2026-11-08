@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from './store.js';
 import { useT, errText } from './lib/i18n.js';
-import { pushLine, failKey, PUSH_KINDS } from './lib/push.js';
+import { pushLine, failKey, PUSH_KINDS, SUB_MODES, subModeOf, isMuted } from './lib/push.js';
 import { pushSupportNow, permissionNow, enablePush, disablePush, pushStatus, pushKey, pushPrefs, pushTest } from './push.js';
 
 export function PushButton({ onClick }) {
@@ -21,6 +21,38 @@ function Row({ label, hint, checked, disabled, onChange, role }) {
       <span className="mt-ph-switchrow-text"><b>{label}</b>{hint && <small>{hint}</small>}</span>
       <input type="checkbox" className="mt-switch" checked={!!checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
     </label>
+  );
+}
+
+// P92: 하위 세션(워커) 알림. 응답 필요만(기본) / 모두 / 끔
+function SubChoice({ value, disabled, onChange }) {
+  const t = useT();
+  const cur = subModeOf(value);
+  return (
+    <div className={`mt-ph-subchoice${disabled ? ' off' : ''}`} data-role="push-sub" data-value={cur}>
+      <div className="mt-ph-switchrow-text"><b>{t('pushSub.title')}</b><small>{t('pushSub.hint')}</small></div>
+      <div className="mt-ph-seg" role="radiogroup" aria-label={t('pushSub.title')}>
+        {SUB_MODES.map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={cur === m} className={cur === m ? 'on' : ''} data-action={`push-sub-${m}`} disabled={disabled} onClick={() => cur !== m && onChange(m)}>{t(`pushSub.mode_${m}`)}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// P92: 세션 화면 머리줄의 "이 세션 알림 끄기". 이 기기가 알림을 켰을 때만 보인다
+export function SessionMuteButton({ sessionId }) {
+  const t = useT();
+  const [status, setStatus] = useState(null);
+  useEffect(() => { if (pushSupportNow() !== 'ok') return undefined; let live = true; pushStatus().then((s) => { if (live) setStatus(s); }).catch(() => {}); return () => { live = false; }; }, []);
+  if (!status || !status.on) return null;
+  const muted = isMuted(status, sessionId);
+  const flip = () => { pushPrefs({ mute: { sessionId, on: !muted } }).then((s) => { setStatus(s); toast(t(muted ? 'pushSub.unmuted' : 'pushSub.muted')); }).catch((e) => toast(t('push.failed', { error: errText(e) }))); };
+  const label = t(muted ? 'pushSub.unmute' : 'pushSub.mute');
+  return (
+    <button type="button" className={`mt-ph-icon mt-ph-mute${muted ? ' on' : ''}`} data-action="phone-session-mute" data-muted={muted ? '1' : '0'} title={label} aria-label={label} aria-pressed={muted} onClick={flip}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2.2 2.2 0 0 0 4 0" />{muted && <path d="M4 4l16 16" />}</svg>
+    </button>
   );
 }
 
@@ -70,6 +102,7 @@ export function PushSheet({ onClose }) {
             {PUSH_KINDS.map((k) => (
               <Row key={k} role={`push-kind-${k}`} label={t(`push.kind_${k}`)} checked={!status || status.kinds[k]} disabled={!on || busy} onChange={(v) => prefs({ kinds: { [k]: v } })} />
             ))}
+            <SubChoice value={status && status.sub} disabled={!on || busy} onChange={(v) => prefs({ sub: v })} />
             <Row role="push-while-pc" label={t('push.whilePc')} hint={t('push.whilePcHint')} checked={!!(status && status.whilePc)} disabled={!on || busy} onChange={(v) => prefs({ whilePc: v })} />
             <button type="button" className="mt-ph-new wide mt-ph-push-test" data-action="push-test" disabled={!on || busy} onClick={test}>{t('push.test')}</button>
           </>

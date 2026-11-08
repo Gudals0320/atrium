@@ -339,3 +339,13 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pm-legend i.prompt { margin-left: 4px; border-top: 2px dotted var(--wire-observed); }
 .mt-pm-node[data-rank] .mt-pm-state.wait { color: var(--st-working); font-weight: 650; } /* 쉬는(검토 대기) 리드의 "워커 n 기다림"도 일함 색 */
 .mt-pm-legend { white-space: nowrap; gap: 5px; } /* P94: 범례 넷이어도 한 줄 */
+
+/* P92: 하위 세션(워커) 알림 고르기, 세션 화면의 이 세션 알림 끄기 */
+.mt-ph-subchoice { display: grid; gap: 10px; padding: 10px 14px 12px; border-radius: 12px; border: 1px solid var(--panel-line); background: var(--panel-2); color: var(--text); font-size: 15.5px; }
+.mt-ph-subchoice.off { opacity: .55; }
+.mt-ph-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; border-radius: 10px; background: var(--canvas); border: 1px solid var(--panel-line); }
+.mt-ph-seg button { min-height: 40px; border: 0; border-radius: 8px; background: none; color: var(--text-2); font: 600 14px var(--font-ui); -webkit-tap-highlight-color: transparent; }
+.mt-ph-seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .18); }
+.mt-ph-seg button:disabled { cursor: default; }
+.mt-ph-mute { width: 36px; height: 36px; flex: none; }
+.mt-ph-mute.on { color: var(--dim); }
