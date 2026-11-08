@@ -70,26 +70,7 @@ const H = { id: 'human', kind: 'human' };
 const S = (id, ws, o = {}) => ({ id: `s:${id}`, kind: 'session', name: id, category: 'idle', workspaceKey: ws, ...o });
 const E = (from, to, kind, o = {}) => ({ id: `${kind}:${from}>${to}`, from: from === 'human' ? 'human' : `s:${from}`, to: `s:${to}`, kind, ...o });
 const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-const headOf = (g) => ({ x: g.x, y: g.y, w: g.w, h: MISSION.head }); // P100: 판 머리줄
-const inside = (b, g) => b.x >= g.x - 0.5 && b.y >= g.y + MISSION.head - 0.5 && b.x + b.w <= g.x + g.w + 0.5 && b.y + b.h <= g.y + g.h + 0.5;
-// 두 판이 붙어 있다: 한 축으로 틈이 G 안이고 다른 축으로 겹친다
-const touching = (a, b) => { const gx = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w), gy = Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h); return (gx <= MISSION.G + 1 && gx >= -0.5 && gy < 0) || (gy <= MISSION.G + MISSION.gHead + 1 && gy >= -0.5 && gx < 0); };
-// 선의 점들(M·C·L·V·H·Q를 잘게 나눈다)
-function pathPoints(d, n = 12) {
-  const tok = d.match(/[MCLVHQ]|-?[\d.]+/g); const out = []; let x = 0, y = 0, i = 0, cmd = null;
-  const num = () => Number(tok[i++]);
-  while (i < tok.length) {
-    if (/[A-Z]/.test(tok[i])) cmd = tok[i++];
-    if (cmd === 'M') { x = num(); y = num(); out.push([x, y]); }
-    else if (cmd === 'L') { const x2 = num(), y2 = num(); for (let k = 1; k <= n; k++) out.push([x + (x2 - x) * k / n, y + (y2 - y) * k / n]); x = x2; y = y2; }
-    else if (cmd === 'V') { const y2 = num(); for (let k = 1; k <= n; k++) out.push([x, y + (y2 - y) * k / n]); y = y2; }
-    else if (cmd === 'H') { const x2 = num(); for (let k = 1; k <= n; k++) out.push([x + (x2 - x) * k / n, y]); x = x2; }
-    else if (cmd === 'Q') { const cx = num(), cy = num(), x2 = num(), y2 = num(); for (let k = 1; k <= n; k++) { const t = k / n, u = 1 - t; out.push([u * u * x + 2 * u * t * cx + t * t * x2, u * u * y + 2 * u * t * cy + t * t * y2]); } x = x2; y = y2; }
-    else if (cmd === 'C') { const c1x = num(), c1y = num(), c2x = num(), c2y = num(), x2 = num(), y2 = num(); for (let k = 1; k <= n; k++) { const t = k / n, u = 1 - t; out.push([u * u * u * x + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * x2, u * u * u * y + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y2]); } x = x2; y = y2; }
-    else i++;
-  }
-  return out;
-}
+const head = (g) => ({ x: g.x, y: g.y, w: g.w, h: MISSION.wsHead - 4 }); // P95: 워크스페이스 머리 글(상자 없음)
 
 // 워크스페이스 셋(app, api, docs)에 걸친 세션 12개. lead(app)가 api·docs의 워커에게도 시킨다
 const three = () => ({
@@ -103,62 +84,62 @@ const three = () => ({
 });
 const ORDER = ['C:/w/app/', 'C:/w/api/', 'C:/w/docs/'];
 
-test('P46 → P100: 워크스페이스 판 — 세션은 자기 워크스페이스 판 안, 수(세션·응답 필요), 이어진 판은 붙어 있다, 겹치지 않음', () => {
-  const lay = missionLayout(three(), { order: ORDER, width: 1600 });
+test('P46 → P95: 워크스페이스 머리 글 — 판의 영역 차례(팀 먼저, 혼자인 워크스페이스는 오른쪽 기둥), 수(그 아래 놓인 세션·응답 필요), 다른 워크스페이스의 하위 세션은 부모 팀 안, 겹치지 않음', () => {
+  const lay = missionLayout(three(), { order: ORDER });
   assert.deepEqual(lay.groups.map((g) => g.key), ORDER);
-  assert.deepEqual(lay.groups.map((g) => [g.count, g.needs, g.work]), [[4, 1, 1], [4, 1, 1], [4, 1, 0]]);
+  assert.deepEqual(lay.groups.map((g) => [g.count, g.needs, g.packed]), [[7, 2, false], [4, 0, false], [1, 1, true]]);
   const bs = [...lay.boxes.values()];
   for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) assert.ok(!hit(bs[i], bs[j]), `${bs[i].node.id} × ${bs[j].node.id}`);
-  for (let i = 0; i < lay.groups.length; i++) for (let j = i + 1; j < lay.groups.length; j++) assert.ok(!hit(lay.groups[i], lay.groups[j]), `판 ${lay.groups[i].key} × ${lay.groups[j].key}`);
-  for (const b of bs) {
-    const g = lay.groups.find((x) => x.key === b.node.workspaceKey);
-    assert.equal(b.ws, b.node.workspaceKey, `${b.node.id}는 자기 워크스페이스 판`);
-    assert.ok(inside(b, g), `${b.node.id}는 판 안(머리줄 아래)`);
-    for (const h of lay.groups.map(headOf)) assert.ok(!hit(h, b), `머리줄 × ${b.node.id}`);
-  }
-  assert.ok(!lay.boxes.has('human'), 'P100: 나 동그라미 없음');
-  // 판 안 나무: lead 0열 → ui 1열 → ui-tests 2열. 다른 워크스페이스 하위(api-tests, ko-copy)는 자기 판의 맨 위
-  assert.deepEqual(['lead', 'ui', 'ui-tests', 'api-tests', 'ko-copy', 'reviewer'].map((k) => lay.boxes.get(`s:${k}`).depth), [0, 1, 2, 0, 0, 1]);
-  assert.equal(lay.groups[0].span, 3, '팀 판은 나무 깊이만큼 열');
-  // 이어진 판(app → api, app → docs, api ⇢ docs)은 붙어 있다
-  const ps = lay.packOrder.map((k) => lay.groups.find((g) => g.key === k));
-  for (let i = 1; i < ps.length; i++) assert.ok(touching(ps[i - 1], ps[i]), `${ps[i - 1].key} — ${ps[i].key}`);
+  for (const g of lay.groups) for (const b of bs) assert.ok(!hit(head(g), b), `머리 글 ${g.key} × ${b.node.id}`);
+  // 나는 머리 글들 왼쪽 0열
+  const h = lay.boxes.get('human');
+  assert.ok(lay.groups.every((g) => h.x + h.w < g.x));
+  // 열은 판 전체에서 같다: lead(1열)의 다른 워크스페이스 워커도 2열, 부모 팀 안에 놓인다
+  assert.equal(lay.boxes.get('s:lead').depth, 1);
+  for (const k of ['ui', 'api-tests', 'ko-copy']) assert.equal(lay.boxes.get(`s:${k}`).depth, 2, k);
+  assert.equal(lay.boxes.get('s:reviewer').depth, 3);
+  assert.equal(lay.boxes.get('s:api-tests').x, lay.boxes.get('s:ui').x);
+  assert.equal(lay.boxes.get('s:api-tests').group, 'C:/w/app/', '다른 워크스페이스 하위도 부모 팀(머리 글) 아래');
+  assert.ok(lay.boxes.get('s:ko-copy').y < lay.groups[1].y, 'app 팀 안(api 머리 글 위)');
+  // 연결 없는 세션: 팀이 있는 워크스페이스면 그 팀 아래 1열, 혼자뿐인 워크스페이스(docs)는 오른쪽 기둥
   assert.deepEqual(lay.loose.sort(), ['s:app-notes', 's:glossary', 's:perf']);
-  assert.ok(lay.boxes.get('s:app-notes').y > lay.boxes.get('s:ui-tests').y - 1 || lay.boxes.get('s:app-notes').x !== lay.boxes.get('s:ui-tests').x, '연결 없는 세션은 팀 아래 열에');
-  // 순서를 모르면 키 이름 순
+  assert.ok(lay.boxes.get('s:app-notes').y > lay.boxes.get('s:ui-tests').y && lay.boxes.get('s:app-notes').x === lay.boxes.get('s:lead').x);
+  assert.ok(lay.boxes.get('s:glossary').x > Math.max(...bs.filter((b) => !b.loose || b.group !== 'C:/w/docs/').map((b) => b.x + b.w)) - 1, 'docs는 팀 흐름 오른쪽');
+  // 순서를 모르면 키 이름 순(팀 먼저)
   assert.deepEqual(missionLayout(three()).groups.map((g) => g.key), ['C:/w/api/', 'C:/w/app/', 'C:/w/docs/']);
 });
 
-test('P46 → P100: 무리를 건너는 지시 — cross로 표시, 나무 선, 선은 다른 카드·판 머리줄 뒤로 지나지 않는다', () => {
-  for (const width of [1600, 1100, 2400]) {
-    const lay = missionLayout(three(), { order: ORDER, width });
-    const cross = lay.edges.filter((e) => e.cross).map((e) => `${e.from}>${e.to}`).sort();
-    assert.deepEqual(cross, ['s:api-lead>s:en-copy', 's:lead>s:api-tests', 's:lead>s:ko-copy']);
-    assert.ok(lay.edges.find((e) => e.to === 's:ko-copy').tree, '나무 선');
-    assert.ok(!lay.edges.find((e) => e.to === 's:ui').cross);
-    const solid = [...lay.boxes.values()].filter((b) => b.kind !== 'dot');
-    for (const e of lay.edges.filter((x) => !x.quiet)) {
-      const obs = [...solid.filter((o) => o.id !== e.from && o.id !== e.to), ...lay.groups.map(headOf)];
-      for (const [x, y] of pathPoints(e.d)) for (const o of obs) assert.ok(!(x > o.x + 1 && x < o.x + o.w - 1 && y > o.y + 1 && y < o.y + o.h - 1), `${width}: ${e.id}가 ${o.id || o.key || '머리줄'} 뒤로 지난다(${Math.round(x)},${Math.round(y)})`);
-    }
+test('P46: 무리를 건너는 지시 — cross로 표시, 나무 선, 선이 지나는 열 사이에는 다른 상자가 없다', () => {
+  const lay = missionLayout(three(), { order: ORDER });
+  const cross = lay.edges.filter((e) => e.cross).map((e) => `${e.from}>${e.to}`).sort();
+  assert.deepEqual(cross, ['s:api-lead>s:en-copy', 's:lead>s:api-tests', 's:lead>s:ko-copy']);
+  const ko = lay.edges.find((e) => e.to === 's:ko-copy');
+  assert.ok(ko.tree, '나무 선');
+  assert.ok(!lay.edges.find((e) => e.to === 's:ui').cross);
+  assert.ok(!lay.edges.find((e) => e.from === 'human' && e.to === 's:lead').cross, '나에게서 오는 선은 무리를 건너지 않는다');
+  // 앞으로 가는 선(왼쪽 → 오른쪽)은 시킨 상자의 오른쪽 끝에서 받는 상자의 왼쪽 끝까지 — 그 사이에 다른 상자가 없다
+  for (const e of lay.edges.filter((x) => !x.back)) {
+    const a = lay.boxes.get(e.from), b = lay.boxes.get(e.to);
+    for (const o of lay.boxes.values()) assert.ok(!(o.x < b.x && o.x + o.w > a.x + a.w), `${e.id}의 틈에 ${o.node.id}`);
   }
 });
 
-test('P46 → P100: 접은 워크스페이스 — 머리줄만, 그 세션들로 가는 선은 머리줄(대리 상자)로 모인다, 다른 판은 그대로', () => {
-  const open = missionLayout(three(), { order: ORDER, width: 1600 });
-  const lay = missionLayout(three(), { order: ORDER, width: 1600, collapsed: ['C:/w/app/'] });
+test('P46: 접은 워크스페이스 — 머리 글만, 그 세션들로 가는 선은 머리 글(대리 상자)로 모인다, 다른 워크스페이스는 그대로', () => {
+  const open = missionLayout(three(), { order: ORDER });
+  const lay = missionLayout(three(), { order: ORDER, collapsed: ['C:/w/app/'] });
   const app = lay.groups.find((g) => g.key === 'C:/w/app/');
   assert.equal(app.collapsed, true);
-  assert.equal(app.count, 4, '접어도 수는 그대로');
-  assert.equal(app.h, MISSION.head, '머리줄만');
-  for (const k of ['lead', 'ui', 'ui-tests', 'app-notes']) assert.ok(!lay.boxes.has(`s:${k}`), k);
+  assert.equal(app.count, 7, '접어도 수는 그대로');
+  for (const k of ['lead', 'ui', 'ui-tests', 'api-tests', 'ko-copy', 'reviewer', 'app-notes']) assert.ok(!lay.boxes.has(`s:${k}`), k);
   const px = lay.boxes.get('g:C:/w/app/');
   assert.ok(px && px.proxy && px.y === app.y);
-  assert.ok(lay.edges.some((e) => e.from === 'g:C:/w/app/' && e.to === 's:api-tests'), '접은 판 → 다른 판의 하위');
+  assert.ok(lay.edges.some((e) => e.from === 'human' && e.to === 'g:C:/w/app/'), '나 → 접은 워크스페이스');
   assert.ok(lay.edges.every((e) => e.from !== e.to));
-  assert.ok(lay.height <= open.height);
-  // 혼자인 세션이 있는 판을 접어도 다른 판의 자리는 그대로(앞에 놓인 판)
-  const d = missionLayout(three(), { order: ORDER, width: 1600, collapsed: ['C:/w/docs/'] });
+  // 아래 워크스페이스는 위로 올라오고, 판 높이는 줄어든다
+  assert.ok(lay.boxes.get('s:api-lead').y < open.boxes.get('s:api-lead').y);
+  assert.ok(lay.height < open.height);
+  // 혼자인 워크스페이스를 접으면 그 기둥에는 머리 글만
+  const d = missionLayout(three(), { order: ORDER, collapsed: ['C:/w/docs/'] });
   assert.ok(!d.boxes.has('s:glossary') && d.boxes.get('g:C:/w/docs/').proxy);
   assert.equal(d.boxes.get('s:ui').y, open.boxes.get('s:ui').y, '다른 워크스페이스는 그대로');
 });

@@ -49,30 +49,35 @@ test('요약 열: 응답 필요(오류 포함)·작업 중·결과·쉼으로 �
   assert.deepEqual(s.counts, { all: 7, turn: 2, work: 1, review: 1, rest: 3, idle: 1, gone: 2 });
 });
 
-test('PC(P95 → P100): 실제 판 모양은 세로 한 줄이 아니다 — 워크스페이스 판들이 여러 열에 채워져 한 화면 높이 안', () => {
-  const lay = missionLayout(realBoard(), { width: 1580 });
+test('PC: 실제 판 모양은 세로 한 줄이 아니다 — 혼자인 워크스페이스는 팀 오른쪽 여러 기둥, 한 화면 높이 안', () => {
+  const lay = missionLayout(realBoard(), { width: 1300 });
   const bs = [...lay.boxes.values()];
   assert.equal(overlap(bs), null);
-  assert.equal(overlap(lay.groups.map((g) => ({ ...g, node: { id: g.key } }))), null, '판끼리 겹치지 않는다');
-  assert.equal(lay.groups.length, 11);
-  const cols = new Set(lay.groups.map((g) => g.x));
-  assert.ok(cols.size >= 3, `열 ${cols.size}`);
-  assert.ok(lay.height <= 968 - 2 * MISSION.margin, `높이 ${lay.height}`);
-  for (const g of lay.groups) for (const b of bs) assert.ok(!hit({ x: g.x, y: g.y, w: g.w, h: MISSION.head }, b), `머리줄 ${g.key} × ${b.node.id}`);
-  // 좁은 칸(700px): 열이 둘이어도 겹치지 않고 폭 안
+  const packed = lay.groups.filter((g) => g.packed);
+  assert.equal(packed.length, 10);
+  const cols = new Set(packed.map((g) => g.x));
+  assert.ok(cols.size >= 2, `기둥 ${cols.size}`);
+  const flowRight = Math.max(...bs.filter((b) => !b.loose).map((b) => b.x + b.w));
+  assert.ok(packed.every((g) => g.x > flowRight), '팀 흐름 오른쪽');
+  assert.ok(lay.height < 860, `높이 ${lay.height}`);
+  for (const g of lay.groups) for (const b of bs) assert.ok(!hit({ x: g.x, y: g.y, w: g.w, h: MISSION.wsHead - 4 }, b), `머리 글 ${g.key} × ${b.node.id}`);
+  // 좁은 칸(700px): 오른쪽에 자리가 없으면 팀 아래에 기둥으로
   const narrow = missionLayout(realBoard(), { width: 700 });
   assert.equal(overlap([...narrow.boxes.values()]), null);
-  assert.ok(narrow.width <= 700 - 2 * MISSION.margin + 0.5, `폭 ${narrow.width}`);
+  const top = Math.max(...[...narrow.boxes.values()].filter((b) => !b.loose && b.node.kind === 'session').map((b) => b.y + b.h));
+  assert.ok(narrow.groups.filter((g) => g.packed).every((g) => g.y >= top), '팀 아래');
+  assert.ok(narrow.width <= 700 + MISSION.pad);
 });
 
-test('PC: 팀 먼저(같은 워크스페이스의 연결 없는 세션은 아래), 먼 나무 밖 선은 가리킬 때만, 놓은 차례는 부모 먼저(P100: 나에게서 오는 선 없음)', () => {
+test('PC: 팀 먼저(같은 워크스페이스의 연결 없는 세션은 아래), 나의 선은 팀 맨 위로만, 먼 나무 밖 선은 가리킬 때만, 놓은 차례는 부모 먼저', () => {
   clock = 0;
   const g = { nodes: [{ id: 'human', kind: 'human' }, node('loose', 'w'), node('lead', 'w', { state: 'working' }), kid('a', 'w', 'lead'), kid('b', 'w', 'lead'), node('lead2', 'w'), ...Array.from({ length: 8 }, (_, i) => kid(`c${i}`, 'w', 'lead2', { state: 'working' }))],
     edges: [{ from: 'human', to: 's:lead', kind: 'bar' }, { from: 'human', to: 's:a', kind: 'bar' }, { from: 's:a', to: 's:c7', kind: 'prompt' }, { from: 's:lead', to: 's:b', kind: 'role', label: 'x' }] };
   const lay = missionLayout(g);
   const b = (id) => lay.boxes.get(`s:${id}`);
   assert.ok(b('loose').y > b('c7').y, '연결 없는 세션은 팀들 아래');
-  assert.ok(!lay.edges.some((e) => e.from === 'human'), 'P100: 나에게서 오는 선은 지도에 없다');
+  assert.equal(lay.edges.find((e) => e.from === 'human' && e.to === 's:lead').quiet, false);
+  assert.equal(lay.edges.find((e) => e.from === 'human' && e.to === 's:a').quiet, true, '리드가 아닌 세션으로 가는 나의 선');
   const far = lay.edges.find((e) => e.from === 's:a' && e.to === 's:c7');
   assert.ok(!far.tree && far.quiet, '멀리 가는 나무 밖 선');
   assert.deepEqual(mapOrder(lay).slice(0, 4), ['s:lead', 's:a', 's:b', 's:lead2']);

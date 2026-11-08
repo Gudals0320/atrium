@@ -126,28 +126,27 @@ test('가상 그룹 차례: 같은 그룹의 워크스페이스는 처음 나온
 
 const boxOverlap = (boxes) => { const bs = [...boxes.values()].filter((b) => !b.proxy); for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) { const a = bs[i], b = bs[j]; if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) return `${a.node.id}↔${b.node.id}`; } return null; };
 
-test('PC 배치(P100 판): 겹침 없음, 리드 → 워커 순서, 선마다 관계 종류, 가상 그룹은 판들을 감싸는 테, 다른 워크스페이스 하위는 자기 판(이어진 판은 붙는다)', () => {
+test('PC 배치: 겹침 없음, 리드 → 워커 순서, 선마다 관계 종류, 가상 그룹은 머리 글 앞 이름(P95: 띠·팀 상자 없음)', () => {
   const g = board();
-  const lay = missionLayout(g, { order: ['wa', 'wc', 'wb', 'wd'], vgroups: [{ id: 'g1', name: 'product', members: ['wa', 'wb'] }], width: 1600 });
+  const lay = missionLayout(g, { order: ['wa', 'wc', 'wb', 'wd'], vgroups: [{ id: 'g1', name: 'product', members: ['wa', 'wb'] }] });
   assert.equal(boxOverlap(lay.boxes), null);
   const b = (id) => lay.boxes.get(`s:${id}`);
   for (const w of ['rev', 'ui', 'tests', 'build', 'copy']) assert.ok(b(w).x > b('lead').x, `${w}는 리드 오른쪽`);
-  assert.ok(b('notes').x > b('lead2').x);
+  assert.ok(b('old').x > b('rev').x, '손자는 그 부모 오른쪽');
+  assert.ok(b('port').x > b('lead2').x && b('notes').x > b('lead2').x);
   // 형제는 띄운 순서
   assert.ok(b('ui').y < b('tests').y && b('tests').y < b('build').y && b('build').y < b('copy').y);
+  assert.equal(MISSION.boxH, 64);
   const rel = (a, z) => (lay.edges.find((e) => e.from === `s:${a}` && e.to === `s:${z}`) || {}).rel;
   assert.equal(rel('lead', 'rev'), 'spawn'); assert.equal(rel('lead', 'ui'), 'role'); assert.equal(rel('lead2', 'docs'), 'prompt');
-  assert.ok(!lay.edges.some((e) => e.from === 'human'), 'P100: 명령 바 선은 지도에 없다');
+  assert.equal(lay.edges.find((e) => e.from === 'human').rel, 'human');
   const cross = lay.edges.find((e) => e.from === 's:lead2' && e.to === 's:port');
-  assert.ok(cross.cross && cross.tree, '다른 워크스페이스로 간 하위 세션은 cross 나무 선');
-  // 판: 워크스페이스마다(wa, wb는 product끼리 붙고 그 위에 그룹 띠 하나), 세션은 자기 워크스페이스 판
-  assert.deepEqual(lay.groups.map((x) => x.key), ['wa', 'wb', 'wc', 'wd']);
+  assert.ok(cross.cross, '다른 워크스페이스로 간 선은 cross');
+  // 머리 글 차례: 팀이 있는 wa, wb(product끼리 붙는다), 다른 워크스페이스 하위만 있는 wc·wd는 머리 글이 없다(부모 팀 안에 놓인다)
+  assert.deepEqual(lay.groups.map((x) => x.key), ['wa', 'wb']);
   assert.equal(lay.groups[0].vg.name, 'product'); assert.equal(lay.groups[1].vg.name, 'product');
-  assert.deepEqual(lay.frames.map((f) => [f.name, f.keys]), [['product', ['wa', 'wb']]]);
-  const fr = lay.frames[0];
-  for (const k of ['wa', 'wb']) { const p = lay.groups.find((x) => x.key === k); assert.ok(p.x >= fr.x && p.x + p.w <= fr.x + fr.w + 0.5 && fr.y + fr.h <= p.y && p.y - (fr.y + fr.h) <= 8, `${k}는 그룹 띠 바로 아래`); }
-  for (const p of lay.groups) assert.ok(!(p.x < fr.x + fr.w && fr.x < p.x + p.w && p.y < fr.y + fr.h && fr.y < p.y + p.h), `띠가 ${p.key} 판을 덮지 않는다`);
-  assert.equal(b('docs').ws, 'wc'); assert.equal(b('port').ws, 'wc'); assert.equal(b('old').ws, 'wd');
+  assert.equal(b('docs').group, 'wb'); assert.equal(b('old').group, 'wa');
+  assert.equal(lay.bands, undefined); assert.equal(lay.teams, undefined);
   assert.deepEqual([...lay.teamNo.entries()], [['s:lead', 1], ['s:lead2', 2]], '팀 번호(요약 열과 카드)');
 });
 
@@ -165,8 +164,8 @@ test('휴대폰도 같은 분류: 줄마다 등급·묶음·팀·관계 종류, 
   assert.equal(pg.groups[0].vg.name, 'product');
   const er = (kind, a, z) => (pg.edges.find((e) => e.kind === kind && e.from === `s:${a}` && e.to === `s:${z}`) || {}).rel;
   assert.equal(er('tree', 'lead', 'rev'), 'spawn'); assert.equal(er('tree', 'lead', 'ui'), 'role');
-  assert.equal(er('link', 'rev', 'ui'), 'role', '나무 밖 역할 연결(바로 아래 카드로 짧게)');
-  assert.equal(er('tree', 'lead2', 'port'), 'spawn', '다른 워크스페이스 하위로 가는 나무 선');
+  assert.equal(er('link', 'rev', 'ui'), 'role', '나무 밖 역할 연결');
+  assert.equal(er('tree', 'lead2', 'port'), 'spawn', 'P95: 다른 워크스페이스 하위도 부모 팀 안(나무 선)');
   for (let i = 0; i < pg.nodes.length; i++) for (let j = i + 1; j < pg.nodes.length; j++) { const a = pg.nodes[i], b = pg.nodes[j]; assert.ok(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h), `${a.id}↔${b.id}`); }
 });
 

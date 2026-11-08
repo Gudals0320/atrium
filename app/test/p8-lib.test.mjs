@@ -27,7 +27,7 @@ test('K4: 미션 맵(P32 나무) — 하위 세션은 부모 오른쪽 열에, �
   const graph = { nodes: [{ id: 'human', kind: 'human', column: 0 }, sess('s:b', 'b-lead', 1, null), sess('s:a', 'a-lead', 1, null), sess('s:bw', 'zz', 2, 's:b'), sess('s:aw', 'yy', 2, 's:a'), sess('s:aw2', 'yz', 2, 's:a'), sess('s:solo', 'aaa', 1, null, 'working')], edges: [{ id: 'sp1', from: 's:a', to: 's:aw', kind: 'spawn' }, { id: 'sp2', from: 's:a', to: 's:aw2', kind: 'spawn' }, { id: 'sp3', from: 's:b', to: 's:bw', kind: 'spawn' }] };
   const lay = missionLayout(graph);
   const b = (id) => lay.boxes.get(id);
-  assert.ok(b('s:a').y < b('s:b').y || b('s:a').x < b('s:b').x); // 이름 순(P100: 워크스페이스가 없는 판 하나 안에서 위 → 아래)
+  assert.ok(b('s:a').y < b('s:b').y); // 이름 순
   assert.equal(b('s:aw').depth, b('s:a').depth + 1);
   assert.ok(b('s:aw').x > b('s:a').x);
   assert.ok(b('s:aw').y < b('s:aw2').y && b('s:aw2').y < b('s:bw').y, '부모 순서대로 모인다');
