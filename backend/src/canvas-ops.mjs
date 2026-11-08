@@ -7,7 +7,7 @@ import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, rem
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes, dockedAreas, visibleAnchors, workersPreset } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자. P68: 워크트리끼리 붙인 덩어리
-import { layoutRegions } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치
+import { layoutRegions, linkWeights } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치. P99: 다른 영역끼리의 연결 무게
 import { readGroups, groupIndex } from './ws-groups.mjs'; // P44: 가상 그룹끼리 모으기
 import { blockTree, pushLine, bandOf, subtreeIds, lineKids, boxFrame, BOX_PAD } from './tree-line.mjs'; // P75: 하위 세션 줄
 
@@ -854,12 +854,13 @@ function arrangeBoard(b, p) {
   const regs = nestedRegions(anchors, items);
   // 맨 위 영역(리포 영역은 상자를 감싼다, 폴더)과 소속 없는 메모·칸반만 다시 놓는다. 상자는 리포 영역과 함께 간다
   const gidx = groupIndex(readGroups(b)); // P44: 같은 가상 그룹의 영역은 한 덩어리로 모아 놓는다(그룹 안 순서는 사람이 정한 것)
-  const entries = [...regs].filter(([k]) => !isBoxKey(k)).map(([k, r]) => ({ key: k, ws: k, wt: '', rect: r, empty: !items.some((i) => i.wsKey === k), ...(gidx.has(k) ? { group: gidx.get(k).id, order: gidx.get(k).index } : {}) }));
+  const entries = [...regs].filter(([k]) => !isBoxKey(k)).map(([k, r]) => ({ key: k, ws: k, wt: '', rect: r, empty: !items.some((i) => i.wsKey === k), ...(gidx.has(k) ? { group: gidx.get(k).id, order: gidx.get(k).index, loose: !!gidx.get(k).loose } : {}) }));
   for (const i of items) if (!i.ws && (i.kind === 'memo' || i.kind === 'kanban')) entries.push({ key: `${i.kind}:${i.id}`, ws: null, wt: '', rect: { x: i.x, y: i.y, w: i.w, h: i.h }, item: i });
-  const lay = layoutRegions(entries, { aspect: arrangeAspect(p.aspect) }); // P91: 결과 전체를 창이 보낸 캔버스 비율(기본 16:9)에 맞춘다
+  const links = boardLinkWeights(b, items, new Set(entries.map((e) => e.key))); // P99: 다른 영역끼리의 연결은 가까이 놓는다
+  const lay = layoutRegions(entries, { aspect: arrangeAspect(p.aspect), links }); // P91: 결과 전체를 창이 보낸 캔버스 비율(기본 16:9)에 맞춘다
   const regionPlan = entries.map((e) => ({ key: e.key, from: e.rect, to: lay.rects.get(e.key) }));
   const edges = plans.reduce((s, pl) => s + pl.edges.length, 0);
-  if (!p.apply) return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, aspect: lay.aspect, applied: false, edges };
+  if (!p.apply) return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, aspect: lay.aspect, link: lay.link, applied: false, edges };
   // 되돌리기 자료: 판 전체
   b.store.setMeta(BOARD_UNDO, {
     at: Date.now(),
@@ -880,9 +881,17 @@ function arrangeBoard(b, p) {
     moved.push({ key: e.key, ...s, items: shiftWorkspace(b, e.key, s.dx, s.dy, fresh) });
   }
   settleRegions(b, 'arrange'); // 안전망: 계산이 맞으면 옮길 것이 없다
-  b.store.addEvent(null, 'arranged', { workspace: '*', workspaces: plans.length, regions: entries.length, edges, moved });
+  b.store.addEvent(null, 'arranged', { workspace: '*', workspaces: plans.length, regions: entries.length, edges, link: lay.link, moved });
   b.api.broadcast('board.changed', { why: 'arrange' });
-  return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, aspect: lay.aspect, applied: true, edges, undo: true };
+  return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, aspect: lay.aspect, link: lay.link, applied: true, edges, undo: true };
+}
+// P99: 판의 연결(역할 선, 띄움 선, 일 시키기)과 부모 → 하위 세션 관계를 맨 위 영역 쌍의 무게로(region-layout.mjs linkWeights).
+// items: 정리한 뒤를 흉내 낸 판의 것(노드의 ws는 영역 키, 상자 안 노드는 그 리포 영역으로 센다), tops: 다시 놓을 맨 위 영역 키
+export function boardLinkWeights(b, items, tops) {
+  const area = new Map();
+  for (const i of items) if (i.kind === 'node' && i.ws && b.sessions.has(i.id)) { const k = isBoxKey(i.ws) ? wsOfArea(i.ws) : i.ws; if (tops.has(k)) area.set(i.id, k); }
+  const parents = [...b.sessions.values()].filter((s) => s.parentSessionId).map((s) => [s.parentSessionId, s.sessionId]);
+  return linkWeights({ links: b.store.links(), parents, areaOf: (sid) => area.get(sid) || null, now: Date.now() });
 }
 // P91: 판 전체 정리가 맞출 화면 비율(너비 / 높이). 창·휴대폰은 캔버스 크기로 보낸다. 없거나 터무니없으면 16:9
 export function arrangeAspect(v) {

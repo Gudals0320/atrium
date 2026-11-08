@@ -1282,7 +1282,7 @@ export default {
     pillClose: 'Click: close the mission map',
   },
   arrangeAll: { // P31: arrange the whole board (bottom chip)
-    title: 'Arrange the whole board: lay out each area along its links, then line the areas up without overlaps (worktree boxes stay inside their repo area). "Undo arrange" reverts once',
+    title: 'Arrange the whole board: lay out each area along its links, then line the areas up without overlaps (worktree boxes stay inside their repo area), keeping areas linked across workspaces (child sessions, roles, prompts) next to each other. "Undo arrange" reverts once',
     done: 'Arranged the whole board ({n} areas). "Undo arrange" reverts once',
     undo: 'Undo arrange',
     undoTitle: 'Put nodes, notes and areas back where they were before the board arrange (once)',

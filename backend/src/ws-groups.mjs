@@ -39,6 +39,7 @@ export function normalizeGroups(raw, wsKeys = null) {
     if (g.auto && g.root) {
       x.auto = true; x.root = String(g.root);
       if (g.named) x.named = true;
+      if (g.ordered) x.ordered = true; // P99: 사람이 묶음 안 순서를 정했다(판 전체 정리가 연결로 순서를 바꾸지 않는다)
       const pinned = [...new Set((Array.isArray(g.pinned) ? g.pinned : []).map(String).filter((k) => members.includes(k)))];
       if (pinned.length) x.pinned = pinned;
     }
@@ -58,7 +59,8 @@ const MEMORY_MAX = 500;
 // 워크스페이스 키 → { id, index }(그룹 안 순서)
 export function groupIndex(state) {
   const m = new Map();
-  for (const g of (state && state.groups) || []) g.members.forEach((k, i) => m.set(k, { id: g.id, index: i }));
+  // P99: loose = 저절로 만든 묶음이고 사람이 순서를 정한 적이 없다(판 전체 정리가 묶음 안 순서를 연결로 고른다). 사람이 만든 그룹의 순서는 늘 사람이 정한 것
+  for (const g of (state && state.groups) || []) g.members.forEach((k, i) => m.set(k, { id: g.id, index: i, ...(g.auto && !g.ordered ? { loose: true } : {}) }));
   return m;
 }
 export const groupOf = (state, wsKey) => (groupIndex(state).get(wsKey) || {}).id || null;
@@ -119,6 +121,7 @@ export function moveWorkspace(state, wsKey, groupId, index = null) {
     const g = groups.find((x) => x.id === String(groupId));
     const at = index == null ? g.members.length : Math.max(0, Math.min(g.members.length, Number(index) || 0));
     g.members.splice(at, 0, key);
+    if (g.auto && index != null) g.ordered = true; // P99: 자리를 정해 넣거나 옮겼다 = 사람이 순서를 정했다
     if (g.auto && (!from || from.id !== g.id)) { g.pinned = [...new Set([...(g.pinned || []), key])]; excluded = excluded.filter((e) => !(e.root === g.root && e.ws === key)); }
   }
   if (from && from.auto && (groupId == null || String(groupId) !== from.id)) excluded = [...excluded.filter((e) => !(e.root === from.root && e.ws === key)), { root: from.root, ws: key }];
