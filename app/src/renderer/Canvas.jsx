@@ -680,6 +680,7 @@ export function Canvas() {
     // P27: 리포로 가면 워크트리 영역까지 들어오게
     const repoRect = (key) => bbox([...allRegions()].filter(([k]) => wsOfArea(k) === key).map(([, r]) => r));
     st.fitWorkspace = (key) => { const r = repoRect(key); if (r) st.navigateToRect(r); };
+    st.fitWorkspaces = (keys) => { const r = bbox(keys.map(repoRect).filter(Boolean)); if (r) st.navigateToRect(r); }; // P98: 위 바의 묶음 칩(구성 영역 모두)
     st.regionOf = (key) => repoRect(key) || null;
     // P6c: 점(판 좌표)이 든 워크스페이스 영역(새 메모·칸반의 소속), 메모·칸반 노드로 가기(검색). 간 노드는 2초 동안 빛난다
     st.regionAt = (p) => wsAt({ x: p.x, y: p.y, w: 0, h: 0 }, mainOnly(allRegions())); // P27: 메모·칸반은 본 저장소 영역에만
