@@ -241,7 +241,7 @@ try {
       return { d, same: d.every((x) => x[0] === d[0][0] && x[1] === d[0][1]), othersStill: others.every((id) => after[id][0] === before[id][0] && after[id][1] === before[id][1]) };
     };
     const m1 = await dragHead(-60, -40, '6-group-dragged');
-    check('묶음 이름표를 끌면 구성 영역이 함께 움직인다', m1.same && m1.d[0][0] < -0.7 * 60 / zoom && m1.d[0][0] > -1.1 * 60 / zoom && m1.d[0][1] < -0.7 * 40 / zoom && m1.d[0][1] > -1.1 * 40 / zoom, // 끌기 시작 문턱만큼 덜 간다 { d: m1.d[0], expect: [Math.round(-60 / zoom), Math.round(-40 / zoom)] });
+    check('묶음 이름표를 끌면 구성 영역이 함께 움직인다', m1.same && m1.d[0][0] < -0.7 * 60 / zoom && m1.d[0][0] > -1.1 * 60 / zoom && m1.d[0][1] < -0.7 * 40 / zoom && m1.d[0][1] > -1.1 * 40 / zoom, { note: "끌기 시작 문턱만큼 덜 간다", d: m1.d[0], expect: [Math.round(-60 / zoom), Math.round(-40 / zoom)] });
     check('다른 영역은 그대로', m1.othersStill);
     const alphaR = (await regionsNow()).find((r) => r.ws === alphaKey), msR = (await regionsNow()).find((r) => r.ws === kB);
     const m2 = await dragHead((alphaR.x - msR.x) * zoom, (alphaR.y - msR.y) * zoom, '6b-group-drag-onto-alpha');
