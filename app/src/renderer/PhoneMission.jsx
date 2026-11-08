@@ -6,7 +6,9 @@
 // - 위쪽 요약 칩(작업 중·응답 필요)을 누르면 그 등급만 또렷하게 하고 그 카드들로 맞춘다. 다시 누르면 푼다(자리는 그대로, 다시 받지 않는다)
 // - 한 손가락으로 옮기고 두 손가락으로 확대·축소(lib/touch-board.js의 셈). 페이지는 늘어나거나 튀지 않는다(touch-action: none, gesture 막음).
 //   처음과 "맞추기"는 폭에 맞추고 위에 붙인다. 카드를 누르면 세션 화면(Phone.jsx PhoneSession), 돌아오면 같은 자리·배율(화면 크기가 같을 때, 모듈에 둔다)
-// - 가볍게(iPhone Safari): 그래프는 DOM 카드와 SVG 한 장, 옮길 때는 한 요소의 transform만 바꾼다. filter·backdrop-filter·will-change·끝없는 움직임 없음
+// - 가볍게(iPhone Safari): 그래프는 DOM 카드와 SVG 한 장, 옮길 때는 한 요소의 transform만 바꾼다. filter·backdrop-filter·will-change 없음
+// - P101 다듬기: 워크스페이스마다 옅은 판, 쉬는·잠든 세션은 테두리 있는 알약, 종류 동그라미는 카드 안. 서로 이은 두 세션은 짧은 두 줄과 화살촉(lib/phone-graph.js).
+//   일하는 카드의 테두리 움직임(PC)은 휴대폰에 넣지 않는다: P89 가벼움 규칙(끝없는 움직임 없음). WebKit에서 잰 CPU가 크게 늘었다(작업 기록). 움직이지 않는 표시(주황 테두리와 왼쪽 띠)
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
@@ -49,7 +51,7 @@ function Avatar({ live, r }) {
 function Node({ n, live, dim, no, t, now }) {
   const r = n.row;
   const shell = (live && live.kind === 'shell') || r.agentKind === 'shell';
-  const common = { 'data-role': 'pm-node', 'data-session': r.sessionId, 'data-name': r.name, 'data-tier': r.tier, 'data-depth': r.depth, 'data-rank': r.rank, 'data-family': r.family, 'data-shape': n.kind, style: { left: n.x, top: n.y, width: n.w, height: n.h } };
+  const common = { 'data-role': 'pm-node', 'data-id': n.id, 'data-session': r.sessionId, 'data-name': r.name, 'data-tier': r.tier, 'data-depth': r.depth, 'data-rank': r.rank, 'data-family': r.family, 'data-shape': n.kind, style: { left: n.x, top: n.y, width: n.w, height: n.h } };
   const cls = `t-${r.tier} r-${r.rank || 'solo'}${shell ? ' shell' : ''}${dim ? ' dim' : ''}`;
   if (n.kind === 'dot') return <button type="button" className={`mt-pm-dot ${cls}`} aria-label={r.name} {...common}><Avatar live={live} r={r} /></button>;
   const role = r.rank !== 'solo' ? roleText(r, t, { short: true }) : null;
@@ -213,6 +215,7 @@ export function PhoneMission({ onBack, onOpen, conn }) {
         {lay && lay.groups.length === 0 && <div className="mt-ph-empty" data-role="pm-empty">{t('phone.empty')}</div>}
         {pg && pg.nodes.length + pg.groups.length > 0 && (
           <div className="mt-pm-world" data-role="pm-world" ref={worldRef} style={{ width: pg.width, height: pg.height, transform: view.current ? `translate(${view.current.x}px, ${view.current.y}px) scale(${view.current.zoom})` : 'scale(0)' }}>
+            {pg.groups.map((g) => <div key={`p:${g.key || '-'}`} className={`mt-pm-plate${g.folded ? ' folded' : ''}`} data-role="pm-plate" style={{ left: g.plate.x, top: g.plate.y, width: g.plate.w, height: g.plate.h }} />)}
             {pg.groups.map((g) => (
               <button key={g.key || '-'} type="button" className={`mt-pm-ws${g.folded ? ' folded' : ''}`} data-role="pm-group" data-action="pm-fold" data-ws={g.key || ''} aria-expanded={!g.folded} style={{ left: g.x, top: g.y, maxWidth: g.w }}>
                 {g.folded && <Chev dir="right" />}
@@ -225,7 +228,9 @@ export function PhoneMission({ onBack, onOpen, conn }) {
             <svg className="mt-pm-edges" width={pg.width} height={pg.height} viewBox={`0 0 ${pg.width} ${pg.height}`} aria-hidden="true">
               {pg.edges.map((e) => {
                 const dim = focus && !(inFocus(focus, e.tier) || inFocus(focus, tierOfId.get(e.from)));
-                return <path key={e.id} className={`mt-pm-edge ${e.kind} rel-${e.rel || 'spawn'} t-${e.tier}${e.active ? ' active' : ''}${dim ? ' dim' : ''}`} data-role="pm-edge" data-kind={e.kind} data-rel={e.rel} data-from={e.from} data-to={e.to} d={e.d} />;
+                const cls = `${e.kind} rel-${e.rel || 'spawn'} t-${e.tier}${e.pair ? ' pair' : ''}${e.active ? ' active' : ''}${dim ? ' dim' : ''}`;
+                return [<path key={e.id} className={`mt-pm-edge ${cls}`} data-role="pm-edge" data-kind={e.kind} data-rel={e.rel} data-route={e.route} data-pair={e.pair ? '1' : undefined} data-from={e.from} data-to={e.to} d={e.d} />,
+                  e.tip ? <path key={`tip:${e.id}`} className={`mt-pm-tip ${cls}`} data-role="pm-tip" d={e.tip} /> : null];
               })}
             </svg>
             {pg.dots.map((d) => <span key={d.id} className="mt-pm-dots-label" style={{ left: d.x + 2 + Math.min(d.per, d.n) * 22, top: d.y + 2 }}>{t('mmMap.dotsRest', { n: d.n })}</span>)}
