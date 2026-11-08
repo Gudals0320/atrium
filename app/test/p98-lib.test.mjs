@@ -3,6 +3,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { wsTabs, tabKeys, sumCounts, tabOf, groupPick, memberLabel } from '../src/renderer/lib/ws-tabs.js';
 import { stepWorkspace } from '../src/renderer/lib/keys.js';
+import { edgeGap, linkLabelHidden, linkLabelLevel, endInside, innerEnds } from '../src/renderer/lib/link-labels.js';
+import { labelFit } from '../src/renderer/lib/labels.js';
+import { facingSides } from '../../backend/src/links.mjs';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
 
@@ -97,4 +100,50 @@ test('두 사전: 묶음 칩 글이 같은 키와 같은 자리 표시를 가진
   for (const k of keys) assert.equal(slots(ko.wsGroupTab[k]), slots(en.wsGroupTab[k]), k);
   assert.ok(!/\n/.test(en.wsGroupTab.kindAuto) && en.wsGroupTab.title.split('\n').length === 3);
   assert.equal(ko.wsGroupTab.title.split('\n').length, 3);
+});
+
+// ---------- 초록 점: 덩어리 밖 리드 → 덩어리 안쪽 칸 워커 선의 이름표 ----------
+// 창 시험(experiments/p98/workers-before-*)의 자리: 리드는 왼쪽, Codex 워커 넷은 2×2 덩어리(atrium dock workers)
+const LEAD = { x: 3160, y: 112, w: 1211, h: 681 };
+const CELL = { c1: { x: 4411, y: 112, w: 856, h: 481 }, c2: { x: 5267, y: 112, w: 857, h: 481 }, c3: { x: 4411, y: 593, w: 856, h: 482 }, c4: { x: 5267, y: 593, w: 857, h: 482 } };
+const gapTo = (k) => edgeGap(LEAD, CELL[k], facingSides(LEAD, CELL[k]), Object.entries(CELL).filter(([n]) => n !== k).map(([, r]) => r));
+
+test('초록 점: 리드 → 오른쪽 칸 워커 선은 글 자리가 왼쪽 칸 세션 위(blocked)이고, 그 이름표는 그리지 않는다', () => {
+  for (const k of ['c2', 'c4']) {
+    const g = gapTo(k);
+    assert.equal(g.blocked, true, k);
+    assert.equal(labelFit(g).compact, true, '전에는 줄인 ● 점으로 그 세션 위에 그렸다');
+    assert.equal(linkLabelLevel({ compact: true }), 'dot');
+    assert.equal(linkLabelHidden(g), true, k);
+    assert.equal(linkLabelHidden(g, { hot: true }), false, '고른 선·열린 연결 대화상자면 보인다');
+  }
+  for (const k of ['c1', 'c3']) {
+    const g = gapTo(k);
+    assert.ok(!g.blocked, `${k}: 리드와 덩어리 사이 틈에 놓인다`);
+    assert.equal(g.horizontal, true);
+    assert.equal(g.gap, 40);
+    assert.equal(linkLabelHidden(g), false, '좁은 틈의 점은 세션 위가 아니므로 그대로');
+  }
+  assert.equal(linkLabelHidden(null), false);
+  assert.equal(linkLabelHidden({ gap: 300, horizontal: true }), false);
+});
+
+test('초록 점: 덩어리 안쪽 칸 사이 경계에 붙은 선 끝 점은 그리지 않고, 바깥 둘레에 붙은 끝은 그대로', () => {
+  const outer = { x: 4411, y: 112, w: 1713, h: 963 };
+  for (const k of ['c2', 'c4']) assert.deepEqual(innerEnds(LEAD, CELL[k], facingSides(LEAD, CELL[k]), null, outer), { hideTarget: true }, `${k}: 왼쪽 변이 칸 사이 경계`);
+  for (const k of ['c1', 'c3']) assert.deepEqual(innerEnds(LEAD, CELL[k], facingSides(LEAD, CELL[k]), null, outer), {}, `${k}: 왼쪽 변이 덩어리 바깥 둘레`);
+  assert.equal(endInside(CELL.c1, 'r', outer), true);
+  assert.equal(endInside(CELL.c1, 't', outer), false);
+  assert.equal(endInside(CELL.c4, 'b', outer), false);
+  assert.equal(endInside(CELL.c1, 'r', null), false, '덩어리 밖 노드');
+  // 거꾸로(워커가 시키는 쪽)도 같다
+  assert.deepEqual(innerEnds(CELL.c2, LEAD, facingSides(CELL.c2, LEAD), outer, null), { hideSource: true });
+});
+
+test('edgeGap: 다른 노드가 없으면 Canvas의 옛 계산과 같은 틈(가로·세로), 가운데에 다른 노드가 있으면 blocked', () => {
+  const a = { x: 0, y: 0, w: 100, h: 50 }, b = { x: 300, y: 0, w: 100, h: 50 }, c = { x: 0, y: 200, w: 100, h: 50 };
+  assert.deepEqual(edgeGap(a, b, facingSides(a, b)), { gap: 200, horizontal: true });
+  assert.deepEqual(edgeGap(a, c, facingSides(a, c)), { gap: 150, horizontal: false });
+  assert.equal(edgeGap(a, b, facingSides(a, b), [{ x: 175, y: 0, w: 50, h: 50 }]).blocked, true);
+  assert.ok(!edgeGap(a, b, facingSides(a, b), [{ x: 0, y: 400, w: 50, h: 50 }]).blocked);
 });

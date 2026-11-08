@@ -9,7 +9,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, useStore as useFlowStore } 
 import { useStore, getState, toast, openDialog } from './store.js';
 import { api } from './api.js';
 import { STATE_LABEL, agoText, labelFit } from './lib/labels.js';
-import { linkLabelLevel, shifted } from './lib/link-labels.js'; // P67
+import { linkLabelLevel, shifted, linkLabelHidden } from './lib/link-labels.js'; // P67. P98: linkLabelHidden
 import { DOCK_LABEL_ZOOM, dockLabelParts } from './lib/dock-links.js';
 import { useT, tMsg, errText, fmtTime } from './lib/i18n.js';
 import { linkLabel } from '../../../backend/src/links.mjs';
@@ -51,10 +51,11 @@ export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   return <>
     <BaseEdge id={id} path={path} className={`mt-edge ${kind}${link.spawned ? ' spawn' : ''}${active ? ' active' : ''}`} interactionWidth={0} />
     <path d={path} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={24} {...on} />
-    {/* P11: 선 양 끝의 작은 점(목업의 가지 선) */}
-    <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={sourceX} cy={sourceY} r={4.5} />
-    <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={targetX} cy={targetY} r={4.5} />
-    {lab && <EdgeLabelRenderer>
+    {/* P11: 선 양 끝의 작은 점(목업의 가지 선). P98: 덩어리 안쪽 칸 사이 경계에 붙은 끝은 그리지 않는다(Canvas innerEnds) */}
+    {!(data && data.hideSource) && <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={sourceX} cy={sourceY} r={4.5} />}
+    {!(data && data.hideTarget) && <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={targetX} cy={targetY} r={4.5} />}
+    {/* P98: 글 자리가 다른 세션 위(blocked)면 이름표를 그리지 않는다(줄인 ● 점이 그 세션 가운데에 남았다) */}
+    {lab && !linkLabelHidden(data, { hot: !!selected || dialogOn }) && <EdgeLabelRenderer>
       <div className={`mt-edge-label ${kind}${link.spawned ? ' spawn' : ''}${level === 'dot' ? ' compact' : ''} lv-${level}${lab.awake ? ' awake' : ' rest'}${hot ? ' hot' : ''} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, '--fitw': `${hot ? 460 : fit.maxWidth}px` }}
         data-link={id} data-kind={kind} data-level={level} data-awake={lab.awake ? lab.why : 'rest'} data-more={lab.more || 0} data-pair={lab.pair.length}
         onClick={(e) => { e.stopPropagation(); openDialog({ kind: 'link', linkId: id }); }} title={t('links.edgeTitle', { label: label || t('links.link') })} {...on}>
