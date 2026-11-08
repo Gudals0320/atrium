@@ -72,7 +72,9 @@ const rows = [];
 let total = 0;
 for (const [rel, budget] of Object.entries(config.budgets)) {
   if (!has(rel)) continue;
-  const chars = count(read(rel));
+  const text = read(rel);
+  if (text === null) continue;
+  const chars = count(text);
   if (LIVE.includes(rel)) total += chars;
   const over = chars > budget;
   rows.push({ rel, chars, budget, over, note: overrides[rel] ? `기본 ${fmt(DEFAULTS.budgets[rel])} → 재정의` : "" });
@@ -216,8 +218,10 @@ function show(rev, rel) {
   if (DOCS_REPO && rel.startsWith("docs/")) return git(["show", `${rev}:${rel.slice(5)}`], join(root, "docs"));
   return git(["show", `${rev}:${rel}`]);
 }
+// 훅 안에서는 git이 GIT_DIR·GIT_INDEX_FILE 등을 넘겨준다(커밋 -a는 임시 색인). 다른 저장소(docs/)를 읽을 때는 그 값을 지운다
 function git(args, cwd = root) {
-  try { return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); }
+  const env = cwd === root ? process.env : Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+  try { return execFileSync("git", args, { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); }
   catch { return null; }
 }
 function readFs(abs) { return readFileSync(abs, "utf8"); }
