@@ -313,3 +313,6 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-push-test:disabled { opacity: .5; }
 .mt-ph-push-err { margin: 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--text); font-size: 14px; line-height: 1.45; }
 .mt-ph-push-note { margin: 0; font-size: 12.5px; color: var(--dim); line-height: 1.45; }
+/* P93: 명령이 도는 셸은 브랜드 초록(일하는 에이전트는 주황 --st-working) */
+.mt-ph-dot[data-tone=shell_running] { background: var(--st-shell_running); animation: mt-reconnect-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .mt-ph-dot[data-tone=shell_running] { animation: none; } }

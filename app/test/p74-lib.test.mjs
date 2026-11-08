@@ -52,7 +52,7 @@ test('목록 순서: 응답 필요(오래 기다린 순) → 작업 중(P90: 시
 test('상태 점과 마지막 한 줄', () => {
   assert.equal(toneOf(S('a', { state: 'trust_wait' })), 'waiting');
   assert.equal(toneOf(S('a', { unseen: true })), 'review');
-  assert.equal(toneOf(S('a', { kind: 'shell', shell: { atPrompt: false } })), 'working');
+  assert.equal(toneOf(S('a', { kind: 'shell', shell: { atPrompt: false } })), 'shell_running');
   assert.equal(toneOf(S('a', { kind: 'shell', shell: { atPrompt: true } })), 'ready');
   assert.equal(toneOf(S('a', { waking: true, state: 'sleeping' })), 'starting');
   assert.equal(toneOf(S('a', { state: 'weird' })), 'starting');

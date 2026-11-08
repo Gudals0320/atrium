@@ -56,7 +56,7 @@ try {
       railClaude: (document.querySelector('[data-role="rail-left"] [data-action="spawn"] img') || {}).getAttribute?.('src') || null,
     };
   });
-  step('강조색은 초록, 내 차례는 주황', look.accent === '#1cb66d' && look.accent2 === '#75ec9c' && look.attn === '#ff6b3d' && /28, 182, 109/.test(look.working) && look.toolOn === 'rgb(28, 182, 109)', look);
+  step('강조색은 초록, 내 차례는 노랑(P93), 일하는 에이전트 테두리는 주황(P93)', look.accent === '#1cb66d' && look.accent2 === '#75ec9c' && look.attn === '#ffe03d' && /224, 131, 94/.test(look.working) && look.toolOn === 'rgb(28, 182, 109)', look);
   step('명령 입력 왼쪽은 Atrium 로고, 레일의 Claude 단추는 주황 바탕 심볼', look.mark === 'assets/brand/atrium-icon.svg' && look.railClaude === 'assets/kinds/claude-badge.svg', { mark: look.mark, rail: look.railClaude });
 
   // 3. 세션: 노드 머리줄 Claude 심볼, 일하는 중 초록 테두리, 내 차례 주황
@@ -72,7 +72,7 @@ try {
     const n = document.querySelector('.mt-node[data-name="c1"]');
     return n ? { icon: (n.querySelector('.mt-head-kind img') || {}).getAttribute?.('src') || null, border: getComputedStyle(n).borderTopColor, state: [...window.__mt.getState().sessions.values()].find((s) => s.name === 'c1').state } : null;
   });
-  step('노드 머리줄은 바탕 없는 Claude 심볼, 내 차례 노드는 주황 테두리', node && node.icon === 'assets/kinds/claude.svg' && node.state === 'waiting' && node.border === 'rgb(255, 107, 61)', node);
+  step('노드 머리줄은 바탕 없는 Claude 심볼, 내 차례 노드는 노란 테두리(P93)', node && node.icon === 'assets/kinds/claude.svg' && node.state === 'waiting' && node.border === 'rgb(255, 224, 61)', node);
   await shot(page, 'p20-2-board');
   const c1 = await page.$('.mt-node[data-name="c1"]');
   if (c1) await c1.screenshot({ path: path.join(OUT, 'p20-3-node-turn.png') });

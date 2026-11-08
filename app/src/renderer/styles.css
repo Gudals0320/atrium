@@ -201,7 +201,6 @@ html:lang(en) .mt-cmd-input::placeholder { font-size: 14px; white-space: nowrap;
 /* ---------- 콘솔(세션 노드) ---------- */
 .mt-node { width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--con-bg); border: 1.5px solid var(--con-line); border-radius: var(--con-radius); overflow: visible; box-shadow: var(--con-shadow); }
 .mt-node.st-working, .mt-node.st-shell_running { border-color: var(--con-line-working); }
-.mt-node.kind-codex.st-working { border-color: var(--con-line-codex); }
 .mt-node.kind-shell.st-shell_running { border-color: color-mix(in srgb, var(--st-shell_running) 55%, transparent); }
 .mt-node.unseen { border-color: var(--con-line-review); }
 .mt-node.st-error { border-color: var(--con-line-error); }
@@ -244,7 +243,6 @@ html:lang(en) .mt-cmd-input::placeholder { font-size: 14px; white-space: nowrap;
 .mt-pill.st-starting { color: var(--st-starting); }
 .mt-pill.st-ready, .mt-pill.st-shell_idle { color: var(--st-ready); }
 .mt-pill.st-working { color: var(--st-working); border-color: color-mix(in srgb, var(--st-working) 75%, transparent); }
-.mt-node.kind-codex .mt-pill.st-working { color: var(--st-codex); border-color: color-mix(in srgb, var(--st-codex) 70%, transparent); }
 .mt-pill.st-shell_running { color: var(--st-shell_running); }
 .mt-pill.st-review { color: var(--st-review); }
 .mt-pill.st-error { color: var(--st-error); }
@@ -318,7 +316,6 @@ html:lang(en) .mt-cmd-input::placeholder { font-size: 14px; white-space: nowrap;
 .mt-iconface { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7%; cursor: pointer; border-radius: inherit; padding-top: 4%; }
 .mt-node.face-icon.st-working, .mt-node.face-icon.st-shell_running, .mt-node.face-icon.st-error, .mt-node.face-icon.st-waiting, .mt-node.face-icon.st-trust_wait, .mt-node.face-icon.unseen { border-width: calc(2px * var(--inv, 1)); }
 .mt-node.face-icon.st-working, .mt-node.face-icon.st-shell_running { border-color: var(--st-working); }
-.mt-node.face-icon.kind-codex.st-working { border-color: var(--st-codex); }
 .mt-node.face-icon.st-error { border-color: var(--st-error); }
 .mt-node.face-icon.unseen { border-color: var(--st-review); }
 .mt-node.face-icon.idle, .mt-node.face-icon.st-exited { background: var(--con-idle-bg); border-color: var(--con-idle-line); }
@@ -1496,7 +1493,6 @@ input[type="checkbox"].mt-switch:focus-visible { outline: 2px solid var(--accent
    "작업 중만 또렷하게"(html.mt-spot)일 때만 쉼·끝남·잠듦을 투명하게 물린다. 움직임은 회전판의 transform뿐이고, 움직임 줄이기면 멈춘 고리로 그린다 */
 .mt-node.t-work { --run: var(--st-working); }
 .mt-node.t-work.st-shell_running { --run: var(--st-shell_running); }
-.mt-node.t-work.kind-codex { --run: var(--st-codex); }
 .mt-node.t-work .mt-node-head { background: color-mix(in srgb, var(--run) 13%, var(--con-head)); }
 .mt-node.t-work.face-close { box-shadow: 0 0 18px color-mix(in srgb, var(--run) 16%, transparent), var(--con-shadow); }
 .mt-node.t-work:not(.face-close) { border-color: var(--run); box-shadow: 0 0 0 calc(1px * var(--inv, 1)) color-mix(in srgb, var(--run) 45%, transparent), 0 0 calc(24px * var(--inv, 1)) color-mix(in srgb, var(--run) 30%, transparent), var(--con-shadow); }
@@ -1544,3 +1540,23 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-level-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .mt-level-actions .mt-ph-tip-btn { height: 32px; padding: 0 12px; font-size: 13px; }
 .mt-level-actions .mt-ph-tip-btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--panel-line, #3a3631); }
+/* ---------- P93: 상태 색 ----------
+   일하는 에이전트(셸이 아닌 모든 종류: Claude Code, Codex 등)는 주황 --st-working, 명령이 도는 셸은 브랜드 초록 --st-shell_running,
+   응답 필요는 --attn(밝은 노랑, 일함 주황·오류·검토·셸 초록과 갈라 보이는 색). 종류마다 다른 일함 색(Codex 파랑)은 뺐다(규칙과 토큰 --st-codex·--con-line-codex를 지움).
+   위 규칙 중 일함·응답 필요를 초록으로 그리던 자리를 여기서 덮는다 */
+.mt-node.st-shell_running { border-color: var(--con-line-shell); }
+.mt-node.face-icon.st-shell_running { border-color: var(--st-shell_running); }
+.mt-ws-c.working { background: var(--st-working-soft); }
+.mt-cv-flag.run { background: var(--st-working-soft); }
+.mt-thread-item.ip-active { border-left-color: var(--st-working); }
+/* 응답 필요: 알약 글은 응답 필요 색 위의 글색, 기다린 시간·멀리 얼굴의 질문·영역·되돌아보기·칸반·내 차례 목록의 시간도 응답 필요 색 */
+.mt-pill.st-waiting, .mt-pill.st-trust_wait { color: var(--attn-ink); }
+.mt-waited { color: var(--attn); }
+.mt-far-ask { color: var(--attn); }
+.mt-ws-need { box-shadow: 0 0 6px color-mix(in srgb, var(--attn) 40%, transparent); }
+.mt-chip-time { color: var(--attn-text); }
+.mt-region.hot .mt-region-box { border-color: color-mix(in srgb, var(--attn) 45%, var(--region-line)); }
+.mt-region.hot .mt-region-dot { background: var(--attn); box-shadow: 0 0 .5em var(--attn); }
+.mt-return-kind.rk-needs_you { color: var(--attn); }
+.mt-return-tag.hot { border-color: var(--attn-line); color: var(--attn-text); }
+.mt-kcard-sess.hot, .mt-kcard-ask { color: var(--attn); }
