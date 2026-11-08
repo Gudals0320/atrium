@@ -392,6 +392,7 @@ export class WebServer {
       enabled: () => this.accepting(), wsName,
       testOrigins: dev ? String(envVar('PUSH_TEST_ORIGINS') || '').split(',').map((x) => x.trim()).filter(Boolean) : [], ca,
       ...(pushTransport ? { transport: pushTransport } : {}),
+      ...(dev && Number(envVar('PUSH_SETTLE_MS')) > 0 ? { settleMs: Number(envVar('PUSH_SETTLE_MS')) } : {}), // P92 창 시험만: 사이클 끝을 기다리는 시간을 줄인다
       onChange: () => this.broadcastLocal(),
     });
     this.onDisconnectDevice(({ id, reason }) => { if (reason === 'revoke') this.push.forget(id, 'unpair'); }); // P88: 짝을 풀면 구독도 지운다
@@ -799,6 +800,12 @@ export class WebServer {
         const results = [];
         for (const d of list) { let r; try { r = await this.push.test(d.id); } catch (e) { r = { ok: false, reason: e.code || 'error' }; } results.push({ id: d.id, name: (d.tsNode && d.tsNode.name) || d.name, ...r }); }
         return { results };
+      },
+      // P92: 알림을 보내거나 보내지 않은 까닭(진단, 글 없음: 세션 ID·종류·기기·까닭)과 열린 작업 사이클. 이 PC만
+      'push.decisions': (p, c) => {
+        if (!(c && c.auth && c.auth.kind === 'local')) throw apiErr('forbidden', 'only the board on this PC can do this', 403);
+        const n = Math.max(1, Math.min(200, Number(p && p.limit) || 50));
+        return { decisions: this.push.decisions.slice(-n), cycles: this.push.cycleView(), settleMs: this.push.settleMs };
       },
     };
   }

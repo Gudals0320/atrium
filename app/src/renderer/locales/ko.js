@@ -2105,7 +2105,7 @@ export default {
     title: '알림',
     receive: '알림 받기',
     kinds: '알릴 때',
-    kind_done: '세션의 작업이 끝났을 때',
+    kind_done: '작업이 모두 끝났을 때',
     kind_need: '응답이 필요할 때',
     kind_error: '오류가 나거나 세션이 예기치 않게 꺼졌을 때',
     whilePc: 'PC를 쓰는 중에도 받기',
@@ -2147,5 +2147,17 @@ export default {
   typeNow: {
     typed: 'Claude Code 대기열에 추가됨',
     draft: '입력란에 작성 중인 글 있음',
+  },
+  // P92: 휴대폰의 하위 세션(워커) 알림, 이 기기에서 세션 하나의 알림 끄기
+  pushSub: {
+    title: '하위 세션(워커) 알림',
+    hint: '응답 필요만: 하위 세션이 답을 기다리거나 오류가 나면 보냅니다. 작업이 끝났다는 알림은 맨 위 세션과 모든 하위 세션이 끝난 뒤 한 번 보냅니다.',
+    mode_need: '응답 필요만',
+    mode_all: '모두',
+    mode_off: '끔',
+    mute: '이 세션 알림 끄기',
+    unmute: '이 세션 알림 켜기',
+    muted: '이 기기에서 이 세션의 알림을 껐습니다.',
+    unmuted: '이 세션의 알림을 다시 받습니다.',
   },
 };

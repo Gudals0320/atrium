@@ -2105,7 +2105,7 @@ export default {
     title: 'Notifications',
     receive: 'Receive notifications',
     kinds: 'Notify me when',
-    kind_done: 'A session finishes its work',
+    kind_done: 'All work finishes',
     kind_need: 'A session needs your answer',
     kind_error: 'A session fails or ends unexpectedly',
     whilePc: 'Also while I use the PC',
@@ -2147,5 +2147,17 @@ export default {
   typeNow: {
     typed: 'queued in Claude Code',
     draft: 'text in the input box',
+  },
+  // P92: sub-session (worker) notifications on the phone, and muting one session on this device
+  pushSub: {
+    title: 'Sub-session (worker) notifications',
+    hint: 'Needs you only: send when a sub-session waits for your answer or fails. The done notification comes once, after the top session and all its sub-sessions finish.',
+    mode_need: 'Needs you only',
+    mode_all: 'All',
+    mode_off: 'Off',
+    mute: 'Mute this session',
+    unmute: 'Unmute this session',
+    muted: 'Notifications from this session are off on this device.',
+    unmuted: 'Notifications from this session are on again.',
   },
 };

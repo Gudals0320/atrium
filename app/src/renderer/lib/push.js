@@ -7,6 +7,10 @@ export const SID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
 export const OPEN_PARAM = 'open';
 export const PUSH_ICON = 'assets/brand/atrium-icon.svg';
 export const PUSH_KINDS = ['done', 'need', 'error']; // 백엔드 web-push.mjs와 같다(예기치 않은 끝남은 error를 따른다)
+export const SUB_MODES = ['need', 'all', 'off']; // P92: 하위 세션(워커) 알림. 백엔드 push-cycle.mjs와 같다(기본 need)
+export const subModeOf = (v) => (SUB_MODES.includes(v) ? v : 'need');
+// P92: 이 세션의 알림을 이 기기에서 껐는가(status.muted)
+export const isMuted = (status, sessionId) => !!(status && Array.isArray(status.muted) && status.muted.includes(sessionId));
 
 // 'ok' | 'install'(iOS인데 홈 화면 앱이 아님) | 'insecure'(https가 아님) | 'unsupported'
 export function pushSupport({ hasSW, hasPush, hasNotification, secure, ios, standalone }) {

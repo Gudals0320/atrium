@@ -14,6 +14,9 @@ import {
   b64u, unb64u, encryptPayload, decryptPayload, makeVapidKeys, loadVapidKeys, vapidJwt, vapidAuth, endpointCheck, privateAddr,
   pushKindOf, pushText, pushPayload, Pusher, COOLDOWN_MS, JWT_TTL_SEC,
 } from '../src/web-push.mjs';
+import { SETTLE_MS } from '../src/push-cycle.mjs';
+// P92: 끝남은 작업 사이클이 끝날 때(일함 → 쉼 → SETTLE_MS) 보낸다
+const endTurn = (p, o, tick) => { p.onState(sum({ ...o, state: 'working' }), 'ready'); p.onState(sum(o), 'working'); tick(SETTLE_MS); p.tickCycles(); };
 
 // ---------- RFC 8291 부록 A ----------
 const V = {
@@ -144,7 +147,7 @@ function rig(o = {}) {
   const sent = []; const notes = [];
   const state = { watching: false, pc: false, enabled: true, status: 201 };
   const p = new Pusher({
-    store: null, subject: 'https://github.com/x/y', now: () => t, batchMs: 60_000,
+    store: null, subject: 'https://github.com/x/y', now: () => t, batchMs: 60_000, timers: false,
     note: (ev, f) => notes.push({ ev, ...f }), watching: () => state.watching, pcActive: () => state.pc, enabled: () => state.enabled, wsName: (k) => (k === 'w1' ? 'repo-one' : null),
     transport: async (endpoint, opts) => { sent.push({ endpoint, ...opts }); return { status: state.status }; },
     ...o,
@@ -186,32 +189,39 @@ test('묶기와 30초에 한 번: 같은 세션·같은 종류는 한 번, 여�
   const { p, sent, tick } = rig();
   const f = fakeSub();
   p.subscribe('dev-1', f.sub, 'en');
-  p.onState(sum({ sessionId: 's1', name: 'a' }), 'working');
-  p.onState(sum({ sessionId: 's1', name: 'a' }), 'working');
-  p.onState(sum({ sessionId: 's2', name: 'b' }), 'working');
-  p.onState(sum({ sessionId: 's3', name: 'c' }), 'working');
-  assert.ok(p.decisions.some((d) => d.sessionId === 's1' && d.why === 'cooldown'));
+  // P92: 끝남은 사이클 시계가 넣는다. 세 세션이 함께 쉬면 한 알림
+  for (const [id, name] of [['s1', 'a'], ['s2', 'b'], ['s3', 'c']]) { p.onState(sum({ sessionId: id, name, state: 'working' }), 'ready'); p.onState(sum({ sessionId: id, name }), 'working'); }
+  tick(SETTLE_MS); p.tickCycles();
   await p.flush('dev-1');
   assert.equal(sent.length, 1);
   const m = f.open(sent[0].body);
   assert.equal(m.title, '3 sessions');
   assert.equal(m.body, '@a done · @b done · @c done');
   assert.equal(sent[0].headers.Urgency, 'normal');
-  tick(COOLDOWN_MS - 1000);
-  p.onState(sum({ sessionId: 's1', name: 'a' }), 'working');
-  assert.equal(await p.flush('dev-1'), null, '30초 안이라 묶음이 비었다');
-  tick(2000);
-  p.onState(sum({ sessionId: 's1', name: 'a' }), 'working');
-  p.onState(sum({ sessionId: 's1', name: 'a', state: 'waiting' }), 'working'); // 다른 종류는 따로 센다
+  p.onState(sum({ sessionId: 's1', name: 'a', state: 'waiting' }), 'working');
+  p.onState(sum({ sessionId: 's1', name: 'a', state: 'waiting' }), 'working');
+  assert.ok(p.decisions.some((d) => d.sessionId === 's1' && d.why === 'cooldown'));
   await p.flush('dev-1');
   assert.equal(sent.length, 2);
-  assert.equal(f.open(sent[1].body).title, '@a · needs you', '같은 세션은 마지막 것');
+  tick(COOLDOWN_MS - 1000);
+  p.onState(sum({ sessionId: 's1', name: 'a', state: 'waiting' }), 'working');
+  assert.equal(await p.flush('dev-1'), null, '30초 안이라 묶음이 비었다');
+  tick(2000);
+  p.onState(sum({ sessionId: 's1', name: 'a', state: 'error' }), 'working'); // 다른 종류는 따로 센다
+  p.onState(sum({ sessionId: 's1', name: 'a', state: 'waiting' }), 'working');
+  await p.flush('dev-1');
+  assert.equal(sent.length, 3);
+  assert.equal(f.open(sent[2].body).title, '@a · needs you', '같은 세션은 마지막 것');
 });
 
 test('보는 중이면, PC 사용 중이면(기본), 종류를 껐으면, 원격 접속을 막았으면 보내지 않는다. PC 사용 중에도 받기를 켜면 보낸다', async () => {
   const { p, sent, state, tick } = rig();
   p.subscribe('dev-1', fakeSub().sub, 'ko');
-  const go = async (o, from = 'working') => { tick(COOLDOWN_MS + 1); p.onState(sum(o), from); return p.flush('dev-1'); };
+  const go = async (o = {}, from = 'working') => { // P92: 끝남(working → ready)은 사이클 끝까지 기다린다
+    tick(COOLDOWN_MS + 1);
+    if ((o.state || 'ready') === 'ready' && from === 'working') endTurn(p, o, tick); else p.onState(sum(o), from);
+    return p.flush('dev-1');
+  };
   state.watching = true;
   assert.equal((await go()).why, 'watching');
   state.watching = false; state.pc = true;
@@ -238,7 +248,7 @@ test('푸시 서비스가 404·410이면 구독을 지우고, 500이면 실패�
     const { p, state, notes } = rig();
     p.subscribe('dev-1', fakeSub().sub, 'ko');
     state.status = code;
-    p.onState(sum(), 'working');
+    p.onState(sum({ state: 'waiting' }), 'working');
     const r = await p.flush('dev-1');
     assert.equal(r.reason, `gone_${code}`);
     assert.deepEqual({ on: p.status('dev-1').on, gone: p.status('dev-1').gone }, { on: false, gone: true });
