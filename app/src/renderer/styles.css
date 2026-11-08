@@ -1660,3 +1660,57 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-qname-note.bad { color: var(--bad); }
 @media (prefers-reduced-motion: no-preference) { .mt-qname { animation: mt-qname-in .12s ease-out; } }
 @keyframes mt-qname-in { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+
+/* ---------- P101: 미션 맵 다듬기(Mission.jsx, lib/mission-layout.js, lib/mission-wire.js). P95 덩어리 위에 덮는다.
+   워크스페이스 판(옅은 바탕 면), 테두리 있는 알약(쉼·잠듦·끝남), 카드 안 오른쪽 위 종류 동그라미, 글자 단계 13/12/11, 짧은 두 줄의 화살촉,
+   일하는 카드의 테두리 빛(위·아래 가장자리를 짧은 빛이 지나간다: transform만 움직이고 움직임 줄이기에서는 멈춘다) ---------- */
+.mt-mm-plate { position: absolute; box-sizing: border-box; border-radius: 12px; background: var(--mm-plate); border: 1px solid var(--mm-plate-line); pointer-events: none; }
+.mt-mm-ws { height: 20px; margin-left: -4px; padding: 0 4px; color: var(--text-2); font: 650 12px var(--font-ui); letter-spacing: .01em; }
+.mt-mm-ws .vg { color: var(--dim); font-weight: 550; }
+.mt-mm-ws .n { font: 500 11px var(--font-mono); color: var(--dim-2); }
+.mt-mm-ws:hover { background: var(--panel-3); }
+.mt-mm-card { padding: 0 32px 0 12px; border-color: var(--mm-edge); background: var(--mm-card-2); }
+.mt-mm-card.lead { background: var(--mm-card-lead-2); }
+.mt-mm-card:hover, .mt-mm-card.hot { border-color: var(--mm-edge-hot); }
+.mt-mm-card.t-rest, .mt-mm-card.t-sleep, .mt-mm-card.t-done { border-color: var(--mm-edge-rest); }
+.mt-mm-card.t-work { border-color: color-mix(in srgb, var(--st-working) 50%, var(--mm-edge)); }
+.mt-mm-card.t-work.shell { border-color: color-mix(in srgb, var(--st-shell_running) 50%, var(--mm-edge)); }
+.mt-mm-c3 { font-size: 11px; line-height: 14px; }
+.mt-mm-card .mt-mm-av { right: 8px; top: 8px; margin-top: 0; }
+.mt-mm-badge { border-color: var(--mm-card-2); }
+.mt-mm-row { gap: 6px; padding: 0 28px 0 10px; border: 1px solid var(--mm-edge-rest); border-radius: 7px; background: var(--mm-card-2); }
+.mt-mm-row:hover, .mt-mm-row.hot { background: var(--panel-2); border-color: var(--mm-edge-hot); }
+.mt-mm-row .o { display: none; }
+.mt-mm-row .mt-mm-av.sm { right: 6px; }
+.mt-mm-row.t-sleep { border-style: dashed; border-color: var(--mm-edge-sleep); }
+.mt-mm-row.t-done { border-style: dashed; }
+/* 선: 조금 또렷하게(판 위 2.23:1). 상태 색과 가리키기는 다시 적는다(같은 무게라 뒤가 이긴다) */
+.mt-mm-edge path.line { stroke: var(--mm-wire-2); }
+.mt-mm-edge.link path.line { stroke: var(--mm-wire); }
+.mt-mm-edge.rel-human path.line { stroke: var(--mm-wire-faint); }
+.mt-mm-edge.active path.line { stroke: color-mix(in srgb, var(--st-working) 60%, transparent); }
+.mt-mm-edge.turn path.line { stroke: color-mix(in srgb, var(--attn) 50%, transparent); }
+.mt-mm-edge.hot path.line { stroke: var(--mm-wire-hot); }
+.mt-mm-edge.hot.active path.line { stroke: var(--st-working); }
+.mt-mm-edge.hot.turn path.line { stroke: var(--attn); }
+.mt-mm-edge.pair path.hit { stroke-width: 6; }
+.mt-mm-tip { fill: var(--mm-wire-2); stroke: none; pointer-events: none; transition: fill .15s ease; }
+.mt-mm-edge.link .mt-mm-tip { fill: var(--mm-wire); }
+.mt-mm-edge.active .mt-mm-tip { fill: color-mix(in srgb, var(--st-working) 70%, transparent); }
+.mt-mm-edge.turn .mt-mm-tip { fill: color-mix(in srgb, var(--attn) 60%, transparent); }
+.mt-mm-edge.hot .mt-mm-tip { fill: var(--mm-wire-hot); }
+.mt-mm-edge.hot.active .mt-mm-tip { fill: var(--st-working); }
+.mt-mm-edge.hot.turn .mt-mm-tip { fill: var(--attn); }
+/* 일하는 카드의 테두리 빛: 위 가장자리는 왼쪽 → 오른쪽, 아래는 반 박자 늦게 오른쪽 → 왼쪽(테두리를 따라 도는 것처럼). 여럿이어도 같은 박자 */
+.mt-mm-glint { position: absolute; inset: -1px; border-radius: 9px; overflow: hidden; pointer-events: none; }
+.mt-mm-glint i { position: absolute; left: 0; top: 0; width: 36%; height: 2px; background: linear-gradient(90deg, transparent, var(--st-working), transparent); opacity: 0; transform: translateX(-100%); }
+.mt-mm-glint i + i { top: auto; bottom: 0; }
+.mt-mm-card.shell .mt-mm-glint i { background: linear-gradient(90deg, transparent, var(--st-shell_running), transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .mt-mm-glint i { opacity: 1; animation: mt-mm-sweep 2.8s cubic-bezier(.45, 0, .55, 1) infinite; }
+  .mt-mm-glint i + i { animation-name: mt-mm-sweep-back; animation-delay: -1.4s; }
+}
+@keyframes mt-mm-sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+@keyframes mt-mm-sweep-back { from { transform: translateX(300%); } to { transform: translateX(-100%); } }
+.mt-mm-row .nm { flex: 0 0 auto; max-width: 68%; }
+.mt-mm-row .rl { flex: 1 1 auto; }

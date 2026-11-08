@@ -48,9 +48,9 @@ test('P32: 한 쌍의 선은 하나 — 역할 + 띄움, 풀이 글은 역할 �
   assert.equal(edgeLabel(bar, t), 'Command bar ×2');
   const to = lay.boxes.get('s:helper');
   assert.match(lh[0].d, new RegExp(` ${to.x},${cy(to)}$`));
-  // 한 부모의 선은 모두 부모 오른쪽 한 점에서 나간다
+  // 한 부모의 선은 모두 부모 오른쪽 가장자리에서 나간다(P101: 받는 쪽으로 살짝 펼친 높이, 카드 안쪽)
   const lead = lay.boxes.get('s:lead');
-  for (const e of lay.edges.filter((x) => x.from === 's:lead')) assert.ok(e.d.startsWith(`M${lead.x + lead.w},${cy(lead)} `), e.id);
+  for (const e of lay.edges.filter((x) => x.from === 's:lead')) { const m = e.d.match(/^M([\d.]+),([\d.]+) /); assert.ok(m && Number(m[1]) === lead.x + lead.w && Number(m[2]) > lead.y + 8 && Number(m[2]) < lead.y + lead.h - 8, e.id); }
   assert.ok(lay.edges.every((e) => !e.back && (e.tree || e.rel === 'human')));
 });
 

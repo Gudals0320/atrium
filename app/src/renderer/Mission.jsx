@@ -7,6 +7,9 @@
 // - 선은 이름표 없는 가는 곡선. 관계 종류는 모양(나무 밖 연결은 옅은 점선, 요청은 점 선, 다른 프로젝트는 긴 점선)과 가리킬 때 뜨는 풀이로 구별한다. 일하는 쪽으로 가는 선은 일함 색.
 // - 세션(또는 요약 열의 줄)을 가리키거나 키보드로 고르면 그 세션·조상·팀·바로 이어진 세션만 또렷하다(P94). 누르면 덮개를 닫고 판의 그 노드로 간다.
 // - 위 거르기는 맞지 않는 세션을 흐리게만 한다(자리는 그대로). 빈 곳을 누르거나 Esc를 누르면 닫힌다(P32). 연 동안 판이 바뀌면 다시 읽는다(mission.graph).
+// - P101 다듬기: 워크스페이스마다 옅은 판(머리 글과 그 세션들을 감싸는 바탕 면), 쉬는·잠든·끝난 세션은 테두리 있는 알약, 종류 동그라미는 카드 안 오른쪽 위.
+//   서로 이은 두 세션은 마주 보는 가장자리 사이 짧은 두 줄과 화살촉(lib/mission-wire.js). 일하는 카드는 위·아래 테두리를 따라 짧은 빛이 지나간다
+//   (transform만 움직인다, 움직임 줄이기에서는 멈춘다).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
@@ -22,7 +25,7 @@ const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); 
 const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.git.branch) || null;
 
 // 세션 하나의 보일 글: 상태 글, 지금 하는 일, 메타, 경고
-function facts(n, live, m, tier, t, now) {
+function facts(n, live, m, tier, t, now, cross = false) {
   const kind = (live && (live.flavor || live.kind)) || n.agentKind || 'claude';
   const shell = kind === 'shell' || n.agentKind === 'shell';
   const cmd = live && live.shell && live.shell.atPrompt === false ? live.shell.command || (live.shell.procs || []).join(', ') : null;
@@ -39,13 +42,14 @@ function facts(n, live, m, tier, t, now) {
   const model = shell ? null : modelText(n.model || (live && live.model), n.effort || (live && live.effort));
   const branch = n.gitBranch || branchOfLive(live);
   const meta = [model, age, branch ? `⎇ ${branch}` : null, n.loops ? `⟳${n.loops}` : null].filter(Boolean).join(' · ');
+  const away = cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null; // P101: 다른 워크스페이스의 하위 세션(부모 팀의 판 안에 놓였다)
   const warn = tier === 'turn' ? t('mmMap.warnTurn') : tier === 'alert' ? t('mmMap.warnAlert') : tier === 'review' ? t('mmMap.warnReview') : m && m.climb ? t('mmMap.warnClimb', { n: m.climb }) : null;
   // 둘째 줄: 응답 필요는 묻는 글, 오류는 오류, 팀이 있으면 팀 요약(쉬는 리드는 "워커 n 기다림"), 그 밖은 역할 · 지금 하는 일(없으면 상태)
   const line = tier === 'turn' && ask ? { k: 'ask', main: null, text: clip(ask, 120) }
     : tier === 'alert' ? { k: 'err', main: role, text: clip(err || stateText, 90) }
     : team ? { k: 'team', main: role, text: [t('mmRole.team', { n: m.team.size }), m.waiting ? t('mmRole.waiting', { n: m.waiting }) : m.team.work ? t('mmRole.teamWork', { n: m.team.work }) : null].filter(Boolean).join(' · ') }
     : { k: doing ? 'now' : 'state', main: role, text: doing || stateText };
-  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line };
+  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line, away };
 }
 
 function Avatar({ kind, tier, shell, small }) {
@@ -61,12 +65,12 @@ function Avatar({ kind, tier, shell, small }) {
 
 function Node({ b, live, m, tier, t, now, no, hot, recede, dim, onGo, onHot }) {
   const n = b.node;
-  const f = facts(n, live, m, tier, t, now);
+  const f = facts(n, live, m, tier, t, now, b.cross);
   const style = { left: b.x, top: b.y, width: b.w, height: b.h };
   const st = (live && live.state) || n.state;
   const tip = [`@${n.name} · ${f.role}`, f.team, f.ask ? `${t('mmap.ask')} ${f.ask}` : null, n.lastPrompt ? `${t('mmap.prompt')} ${n.lastPrompt}` : null, b.cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null, f.meta || null, t('mission.goSession')].filter(Boolean).join('\n');
   const common = {
-    'data-role': 'mm-node', 'data-kind': 'session', 'data-name': n.name, 'data-tier': tier, 'data-rank': m ? m.rank : undefined, 'data-family': m ? m.family : undefined, 'data-shape': b.kind,
+    'data-role': 'mm-node', 'data-kind': 'session', 'data-id': n.id, 'data-name': n.name, 'data-tier': tier, 'data-rank': m ? m.rank : undefined, 'data-family': m ? m.family : undefined, 'data-shape': b.kind,
     tabIndex: 0, title: tip, onClick: () => onGo(n), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGo(n); } },
     onMouseEnter: () => onHot(n.id), onMouseLeave: () => onHot(null), onFocus: () => onHot(n.id), onBlur: () => onHot(null),
   };
@@ -81,11 +85,12 @@ function Node({ b, live, m, tier, t, now, no, hot, recede, dim, onGo, onHot }) {
   );
   return (
     <div className={`mt-mm-card ${cls}${m && m.team ? ' lead' : ''}`} style={style} {...common}>
+      {tier === 'work' && <span className="mt-mm-glint" data-role="mm-glint" aria-hidden="true"><i /><i /></span>}
       <div className="mt-mm-c1">{no ? <span className="mt-mm-no" data-role="mm-team-no">{no}</span> : null}<b className="mt-mm-name">{n.name}</b></div>
       <div className={`mt-mm-c2 k-${f.line.k}`} data-role={f.line.k === 'ask' ? 'mm-ask' : f.line.k === 'team' ? 'mm-team' : 'mm-line'}>
         {f.line.main ? <b data-role="mm-role">{f.line.main}</b> : null}{f.line.main && f.line.text ? ' · ' : null}{f.line.text}
       </div>
-      <div className="mt-mm-c3"><span className="mt-mm-meta" data-role="mm-meta">{f.meta || (f.shell ? t('mmMap.noModel') : '')}</span>{f.warn ? <span className="mt-mm-warn" data-role="mm-warn">{f.warn}</span> : null}</div>
+      <div className="mt-mm-c3"><span className="mt-mm-meta" data-role="mm-meta">{[f.away ? `↗ ${f.away}` : null, f.meta || (f.shell ? t('mmMap.noModel') : '')].filter(Boolean).join(' · ')}</span>{f.warn ? <span className="mt-mm-warn" data-role="mm-warn">{f.warn}</span> : null}</div>
       <Avatar kind={f.kind} tier={tier} shell={f.shell} />
     </div>
   );
@@ -197,9 +202,10 @@ export function MissionMap() {
         <div className={`mt-mission-body nowheel${focus ? ' focusing' : ''}`} ref={bodyRef}>
           {!lay ? <div className="dim" style={{ padding: 20 }}>{t('common.loading')}</div> : (
             <div className="mt-mission-canvas" style={{ width: lay.width, height: lay.height }}>
+              {lay.groups.map((g) => <div key={`p:${g.key}`} className={`mt-mm-plate${g.collapsed ? ' shut' : ''}`} data-role="mm-plate" data-key={g.key} style={{ left: g.plate.x, top: g.plate.y, width: g.plate.w, height: g.plate.h }} />)}
               {lay.groups.map((g) => (
                 <button key={`g:${g.key}`} type="button" className={`mt-mm-ws${g.collapsed ? ' shut' : ''}`} data-role="mm-group" data-key={g.key} data-collapsed={g.collapsed ? '1' : undefined} data-packed={g.packed ? '1' : undefined}
-                  style={{ left: g.x, top: g.y, maxWidth: g.w + 40 }} title={t('mmapGroup.toggleTitle')} aria-expanded={!g.collapsed} onClick={(ev) => { ev.stopPropagation(); toggle(g.key); }}>
+                  style={{ left: g.x, top: g.y, maxWidth: g.w }} title={t('mmapGroup.toggleTitle')} aria-expanded={!g.collapsed} onClick={(ev) => { ev.stopPropagation(); toggle(g.key); }}>
                   <span className="caret" aria-hidden="true">{g.collapsed ? '▸' : ''}</span>
                   {g.vg && <span className="vg" data-role="mm-vgroup">{g.vg.name} /</span>}
                   <span className="nm" data-role="mm-group-name">{gName(g.key)}</span>
@@ -213,10 +219,11 @@ export function MissionMap() {
                   const target = to && to.node && to.node.kind === 'session' ? tiers.get(e.to) : null;
                   const hotE = edgeHot(e);
                   return (
-                    <g key={e.id} className={`mt-mm-edge rel-${e.rel}${e.tree ? ' tree' : ' link'}${e.cross ? ' cross' : ''}${e.back ? ' back' : ''}${target === 'work' || e.active ? ' active' : ''}${target === 'turn' ? ' turn' : ''}${focus ? (hotE ? ' hot' : ' recede') : ''}`}
-                      data-role="mm-edge" data-kind={e.primary} data-rel={e.rel} data-from={e.from} data-to={e.to} data-cross={e.cross ? '1' : undefined} data-tree={e.tree ? '1' : undefined}>
+                    <g key={e.id} className={`mt-mm-edge rel-${e.rel}${e.tree ? ' tree' : ' link'}${e.cross ? ' cross' : ''}${e.pair ? ' pair' : ''}${target === 'work' || e.active ? ' active' : ''}${target === 'turn' ? ' turn' : ''}${focus ? (hotE ? ' hot' : ' recede') : ''}`}
+                      data-role="mm-edge" data-id={e.id} data-kind={e.primary} data-rel={e.rel} data-route={e.route} data-pair={e.pair ? '1' : undefined} data-from={e.from} data-to={e.to} data-cross={e.cross ? '1' : undefined} data-tree={e.tree ? '1' : undefined}>
                       <path className="hit" d={e.d} />
                       <path className="line" d={e.d} />
+                      {e.tip && <path className="mt-mm-tip" d={e.tip} />}
                       <title>{tipOf(e)}</title>
                     </g>
                   );

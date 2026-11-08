@@ -65,7 +65,16 @@ export function missionTree(graph) {
   const parent = new Map(), via = new Map();
   const ancestorOf = (a, b) => { for (let x = b, i = 0; x && i < 1000; x = parent.get(x), i++) if (x === a) return true; return false; };
   const rankOf = (n, p) => (p.from === n.parentId ? PARENT_RANK.parent : Math.min(...p.kinds.map((k) => PARENT_RANK[k] ?? 9)));
-  for (const n of [...nodes].sort(bySpawn).reverse()) { // 나중에 띄운 쪽부터 부모를 고른다(고리면 먼저 띄운 쪽이 뿌리)
+  // P101: 하위 세션의 실제 부모(parentId)를 먼저 정한다. 하위 세션이 부모에게 보고하는 선(B → A)이 있어도 나무가 뒤집히지 않는다
+  // (전에는 차례가 order로 섞여 하위 세션이 먼저 띄운 쪽으로 셈되어, 리드가 자기 하위 세션의 하위로 그려졌다)
+  for (const n of nodes) {
+    if (!n.parentId || !byId.has(n.parentId) || ancestorOf(n.id, n.parentId)) continue;
+    const p = pairs.find((x) => x.from === n.parentId && x.to === n.id);
+    if (p) { parent.set(n.id, n.parentId); via.set(n.id, p); }
+  }
+  const byTime = (a, b) => (a.createdAt || 0) - (b.createdAt || 0) || byName(a, b);
+  for (const n of [...nodes].sort(byTime).reverse()) { // 나머지는 나중에 띄운 쪽부터 부모를 고른다(고리면 먼저 띄운 쪽이 뿌리)
+    if (parent.has(n.id)) continue;
     const cands = pairs.filter((p) => p.to === n.id).sort((a, b) => rankOf(n, a) - rankOf(n, b) || realDepth(a.from) - realDepth(b.from) || bySpawn(byId.get(a.from), byId.get(b.from)));
     for (const p of cands) { if (ancestorOf(n.id, p.from)) continue; parent.set(n.id, p.from); via.set(n.id, p); break; }
   }

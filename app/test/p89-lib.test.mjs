@@ -61,8 +61,8 @@ test('팀은 두 칸: 리드는 왼쪽 칸, 하위는 오른쪽 칸(손자는 �
   const tree = g.edges.filter((e) => e.kind === 'tree').map((e) => e.id).sort();
   assert.deepEqual(tree, ['t:s:lead>s:port', 't:s:lead>s:rev', 't:s:lead>s:test', 't:s:rev>s:help']);
   const e = g.edges.find((x) => x.id === 't:s:lead>s:rev');
-  assert.match(e.d, new RegExp(`^M${n.lead.x + n.lead.w} ${n.lead.y + n.lead.h / 2}C`), '리드 오른쪽 가운데에서 시작하는 곡선');
-  assert.ok(e.d.endsWith(`${n.rev.x} ${n.rev.y + n.rev.h / 2}`), '하위 왼쪽 가운데에서 끝난다');
+  { const m = e.d.match(/^M([\d.]+),([\d.]+) C/); assert.ok(m && Number(m[1]) === n.lead.x + n.lead.w && Math.abs(Number(m[2]) - (n.lead.y + n.lead.h / 2)) < n.lead.h / 2 - 8, '리드 오른쪽 가장자리에서 시작하는 곡선(P101: 하위 쪽으로 살짝 펼친 높이)'); }
+  assert.ok(e.d.endsWith(`${n.rev.x},${n.rev.y + n.rev.h / 2}`), '하위 왼쪽 가운데에서 끝난다');
   assert.equal(e.active, true); assert.equal(g.edges.find((x) => x.id === 't:s:lead>s:test').tier, 'turn', '선은 받는 쪽 등급');
   assert.ok(g.edges.find((x) => x.id === 't:s:rev>s:help').d.includes('V'), '손자는 같은 칸 안 둥근 꺾임');
   // 혼자인 무리(wb solo, wc old)는 한 칸 기둥. 쉬는·끝난 세션은 한 줄
