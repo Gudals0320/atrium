@@ -2218,7 +2218,7 @@ export default {
     sumTurn: 'Needs you',
     sumWork: 'Working',
     sumReview: 'Results',
-    sumRest: 'Idle · done',
+    sumRest: 'Idle · asleep · done',
     sumNow: 'Now: {text}',
     sumNone: 'Nothing here',
     sumFoot: '{work} working · {all} sessions · {teams} teams',
@@ -2283,5 +2283,17 @@ export default {
     hint: 'Enter creates it. Leave empty to let the board name it. Esc cancels.',
     hintPhone: 'Leave empty to let the board name it.',
     addLauncher: 'New launcher: paste a command line and pin it here',
+  },
+  // P100: 미션 맵 판(워크스페이스)·알약·요약 열
+  mmBoard: {
+    pillSleep: 'asleep {age}',
+    pillDone: 'exited',
+    wsTitle: '{name}: {n} sessions. Click to fold or unfold this workspace. When folded, its lines meet at the header',
+    wsNeeds: '{n} need you',
+    wsWorking: '{n} working',
+    frameTitle: 'Group {name}',
+    dots: '{n} resting',
+    goAnswer: 'Go answer',
+    hint: 'Each box is a workspace. Lines run from a lead to its sessions; dashed lines go to another workspace. Point at a session to see only its links.',
   },
 };

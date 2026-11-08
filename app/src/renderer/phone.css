@@ -223,7 +223,7 @@ html.mt-full-on, html.mt-full-on body { background: var(--chrome-bg); }
 .mt-ph-light-text span { color: var(--dim); font-size: 12.5px; }
 .mt-ph-light.floating { position: fixed; z-index: 60; top: calc(env(safe-area-inset-top) + 8px); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 24px)); margin: 0; border: 1px solid var(--warn); background: var(--chrome-bg); box-shadow: var(--chrome-shadow); }
 
-/* P87·P89: 휴대폰 작업 관계도(PhoneMission.jsx)의 머리줄, 요약 칩, 그래프 칸, 맞추기 단추. 지도 안의 생김새는 끝의 P95 덩어리.
+/* P87·P89: 휴대폰 작업 관계도(PhoneMission.jsx)의 머리줄, 요약 칩, 그래프 칸, 맞추기 단추. 지도 안의 생김새는 끝의 P100 덩어리.
    가볍게(iPhone Safari): 옮기기·확대는 .mt-pm-world의 transform 하나. filter·backdrop-filter·will-change·끝없는 움직임은 쓰지 않는다 */
 .mt-pm .mt-ph-head { gap: 8px; }
 .mt-pm-back { flex: none; height: 40px; display: inline-flex; align-items: center; gap: 2px; padding: 0 8px 0 2px; border: 0; border-radius: 10px; background: none; color: var(--chrome-text-2); font-size: 15px; }
@@ -280,64 +280,79 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-mute { width: 36px; height: 36px; flex: none; }
 .mt-ph-mute.on { color: var(--dim); }
 
-/* ---------- P95: 휴대폰 미션 맵(PhoneMission.jsx, lib/phone-graph.js). PC와 같은 시각 언어: 옅은 워크스페이스 머리 글, 작은 카드, 한 줄, 동그라미 줄, 이름표 없는 가는 곡선.
-   무리 상자·띠·범례 없음. 가볍게(P89): filter·backdrop-filter·will-change·끝없는 움직임 없음, 빛(그림자) 대신 테두리 색과 왼쪽 띠 ---------- */
-.mt-pm-ws { position: absolute; display: flex; align-items: center; gap: 5px; height: 20px; margin: 0; padding: 0 2px; border: 0; background: none; color: var(--dim); font: 600 12px var(--font-ui); letter-spacing: .02em; white-space: nowrap; overflow: hidden; -webkit-tap-highlight-color: transparent; }
-.mt-pm-ws .mt-ph-chev { width: 13px; height: 13px; flex: none; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.mt-pm-ws .vg { color: var(--dim-2); font-weight: 500; }
-.mt-pm-gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.mt-pm-ws .n { font: 500 11px var(--font-mono); color: var(--dim-2); }
-.mt-pm-ws .needs { font: 650 11px var(--font-mono); color: var(--attn); }
-.mt-pm-ws.folded { color: var(--text-2); }
+/* ---------- P100: 휴대폰 미션 맵(PhoneMission.jsx, lib/phone-graph.js). PC와 같은 시각 언어: 워크스페이스 판(옅은 바탕 면, 테두리, 머리줄), 테두리 있는 카드와 알약, 이름표 없는 곡선, 가상 그룹 테.
+   가볍게(P89): filter·backdrop-filter·will-change·끝없는 움직임·그림자 없음. 상태는 기호 모양과 테두리·왼쪽 띠 색 ---------- */
+.mt-pm-stage { background-color: var(--mm-map); background-image: none; }
+.mt-pm-frame { position: absolute; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 2px; pointer-events: none; }
+.mt-pm-frame .lb { flex: none; font: 700 10.5px var(--font-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--mm-frame-text); white-space: nowrap; }
+.mt-pm-frame::after { content: ""; flex: 1; height: 0; border-top: 1px dashed var(--mm-frame-line); }
+.mt-pm-ws[data-vg] { border-top: 2px solid var(--mm-frame-text); }
+.mt-pm-ws { position: absolute; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--mm-ws-line); background: var(--mm-ws); }
+.mt-pm-ws .hd { position: absolute; left: 0; right: 0; top: 0; height: 32px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 8px 0 10px; border: 0; border-bottom: 1px solid var(--mm-ws-line); border-radius: 11px 11px 0 0; background: var(--mm-ws-head); color: var(--text); font-family: var(--font-ui); text-align: left; white-space: nowrap; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.mt-pm-ws.folded .hd { border-bottom-color: transparent; border-radius: 11px; }
+.mt-pm-ws .hd:active { background: var(--panel-2); }
+.mt-pm-ws .mt-mm-fold { width: 13px; height: 13px; }
+.mt-pm-gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; font-weight: 650; }
+.mt-pm-ws .hd .n { flex: none; font: 500 11.5px var(--font-mono); color: var(--dim-2); }
+.mt-pm-ws .hd .sp { flex: 1; }
+.mt-pm-ws .hd .c { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 6px; border-radius: 10px; font: 650 11px var(--font-mono); }
+.mt-pm-ws .hd .c.work { color: var(--st-working); background: var(--st-working-soft); }
+.mt-pm-ws .hd .c.work i { width: 6px; height: 6px; border-radius: 50%; background: var(--st-working); }
+.mt-pm-ws .hd .c.turn { color: var(--attn-ink); background: var(--attn); }
+.mt-pm-ws .hd .mt-ph-chev { flex: none; width: 13px; height: 13px; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .mt-pm-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.mt-pm-edge { fill: none; stroke: var(--mm-wire); stroke-width: 1.25; stroke-linecap: round; }
-.mt-pm-edge.link { stroke: var(--mm-wire-faint); stroke-dasharray: 4 4; }
+.mt-pm-edge { fill: none; stroke: var(--mm-line); stroke-width: 1.4; stroke-linecap: round; }
+.mt-pm-edge.link { stroke: var(--mm-line-faint); stroke-dasharray: 4 4; }
 .mt-pm-edge.rel-prompt { stroke-dasharray: 1.5 4; }
-.mt-pm-edge.active { stroke: color-mix(in srgb, var(--st-working) 55%, transparent); }
-.mt-pm-edge.t-turn { stroke: color-mix(in srgb, var(--attn) 45%, transparent); }
+.mt-pm-edge.cross { stroke-dasharray: 6 4; }
+.mt-pm-edge.active { stroke: color-mix(in srgb, var(--st-working) 72%, transparent); }
+.mt-pm-edge.t-turn { stroke: color-mix(in srgb, var(--attn) 62%, transparent); }
 .mt-pm-edge.dim { opacity: 0.15; }
-/* 카드: 이름(팀 번호), 역할과 지금 하는 일, 옅은 메타. 오른쪽 끝에 종류 동그라미와 상태 배지 */
-.mt-pm-node { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; margin: 0; padding: 0 16px 0 9px; border: 1px solid var(--mm-card-line); border-radius: 8px; background: var(--mm-card); color: var(--text); text-align: left; font-family: var(--font-ui); line-height: 1.25; -webkit-tap-highlight-color: transparent; }
-.mt-pm-node:active { background: var(--panel-2); }
-.mt-pm-node.lead { background: var(--mm-card-lead); }
-.mt-pm-top { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.mt-pm-no { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--dim-2); color: var(--text-2); font: 700 9px var(--font-mono); }
-.mt-pm-name { min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-pm-sub { font-size: 11.5px; line-height: 15px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-pm-sub b { color: var(--text-2); font-weight: 550; }
+.mt-pm-k { flex: none; width: 13px; height: 13px; object-fit: contain; }
+.mt-pm-k.mark { display: inline-grid; place-items: center; font: 800 8px var(--font-mono); }
+.mt-pm .mt-mm-st { width: 12px; height: 12px; }
+/* 카드: 상태 기호와 이름(팀 번호), 역할 · 지금 하는 일 또는 묻는 글, 종류 기호와 메타 */
+.mt-pm-node { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; margin: 0; padding: 0 9px 0 10px; border: 1px solid var(--mm-edge); border-radius: 9px; background: var(--mm-card-bg); color: var(--text); text-align: left; font-family: var(--font-ui); line-height: 1.25; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.mt-pm-node::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: transparent; }
+.mt-pm-node:active { background: var(--panel-3); }
+.mt-pm-top { display: flex; align-items: center; gap: 6px; min-width: 0; height: 18px; }
+.mt-pm-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; }
+.mt-pm-no { flex: none; margin-left: auto; display: inline-grid; place-items: center; min-width: 18px; height: 16px; box-sizing: border-box; padding: 0 4px; border-radius: 8px; background: var(--panel-3); color: var(--text-2); font: 700 10px var(--font-mono); }
+.mt-pm-sub { font-size: 12px; line-height: 16px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-pm-sub b { color: var(--text-2); font-weight: 600; }
 .mt-pm-sub.ask { color: var(--attn-text); }
-.mt-pm-meta { font: 500 10px/13px var(--font-mono); color: var(--dim-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-pm-node.t-work { border-color: color-mix(in srgb, var(--st-working) 45%, transparent); box-shadow: inset 2px 0 0 var(--st-working); }
-.mt-pm-node.t-work.shell { border-color: color-mix(in srgb, var(--st-shell_running) 45%, transparent); box-shadow: inset 2px 0 0 var(--st-shell_running); }
-.mt-pm-node.t-turn { border-color: color-mix(in srgb, var(--attn) 65%, transparent); }
-.mt-pm-node.t-alert { border-color: color-mix(in srgb, var(--st-error) 60%, transparent); }
-.mt-pm-node.t-review { border-color: color-mix(in srgb, var(--st-review) 45%, transparent); }
-.mt-pm-node.t-rest, .mt-pm-node.t-sleep, .mt-pm-node.t-done { border-color: var(--mm-card-rest); }
-.mt-pm-av { position: absolute; right: -8px; top: 50%; margin-top: -8px; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--panel-line-2); background: var(--icon-bg); display: grid; place-items: center; }
-.mt-pm-av img { width: 11px; height: 11px; object-fit: contain; }
-.mt-pm-av .mark { font: 800 8px var(--font-mono); }
-.mt-pm-av.ring { border-style: dashed; border-color: var(--dim-2); }
-.mt-pm-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--canvas); display: grid; place-items: center; font: 900 5.5px/1 var(--font-ui); font-style: normal; color: var(--attn-ink); }
-.mt-pm-badge.b-work { background: var(--st-working); }
-.mt-pm-badge.b-shell { background: var(--st-shell_running); }
-.mt-pm-badge.b-turn { background: var(--attn); }
-.mt-pm-badge.b-alert { background: var(--st-error); }
-.mt-pm-badge.b-review { background: var(--st-review); }
-/* 한 줄(쉼·잠듦·끝남)과 동그라미 줄 */
-.mt-pm-row { position: absolute; box-sizing: border-box; display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 14px 0 8px; border: 0; border-radius: 6px; background: none; color: var(--dim); font: 400 12px var(--font-ui); text-align: left; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
-.mt-pm-row:active { background: var(--panel-2); }
-.mt-pm-row .o { flex: none; width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1.25px solid var(--dim-2); }
-.mt-pm-row .nm { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
-.mt-pm-row .rl { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim-2); }
-.mt-pm-row .rl::before { content: "· "; }
-.mt-pm-row.t-sleep .nm { color: var(--dim); }
-.mt-pm-row.t-done .nm { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--dim-2); }
-.mt-pm-row .mt-pm-av { right: -6px; margin-top: -7px; width: 14px; height: 14px; }
-.mt-pm-row .mt-pm-av img { width: 9px; height: 9px; }
-.mt-pm-dot { position: absolute; margin: 0; padding: 0; border: 0; background: none; -webkit-tap-highlight-color: transparent; }
-.mt-pm-dot .mt-pm-av { position: relative; right: auto; top: auto; margin: 0; }
-.mt-pm-dots-label { position: absolute; font: 500 10.5px/16px var(--font-mono); color: var(--dim-2); white-space: nowrap; pointer-events: none; }
-.mt-pm-node.dim, .mt-pm-row.dim, .mt-pm-dot.dim { opacity: 0.28; }
+.mt-pm-meta { display: flex; align-items: center; gap: 5px; min-width: 0; font: 500 10.5px/14px var(--font-mono); color: var(--dim-2); white-space: nowrap; }
+.mt-pm-meta > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mt-pm-meta .mt-pm-k { width: 11px; height: 11px; }
+.mt-pm-node.t-work { border-color: color-mix(in srgb, var(--st-working) 75%, var(--mm-edge)); }
+.mt-pm-node.t-work::before { background: var(--st-working); }
+.mt-pm-node.t-work.shell { border-color: color-mix(in srgb, var(--st-shell_running) 75%, var(--mm-edge)); }
+.mt-pm-node.t-work.shell::before { background: var(--st-shell_running); }
+.mt-pm-node.t-turn { border-color: var(--attn); background: color-mix(in srgb, var(--attn) 5%, var(--mm-card-bg)); }
+.mt-pm-node.t-turn::before { background: var(--attn); }
+.mt-pm-node.t-alert { border-color: var(--st-error); }
+.mt-pm-node.t-alert::before { background: var(--st-error); }
+.mt-pm-node.t-review { border-color: color-mix(in srgb, var(--st-review) 70%, var(--mm-edge)); }
+.mt-pm-node.t-review::before { background: var(--st-review); }
+.mt-pm-node.t-sleep { border-color: var(--mm-edge-sleep); }
+.mt-pm-node.t-done .mt-pm-name { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--dim-2); }
+/* 알약(쉼·잠듦·끝남)과 동그라미 상자 */
+.mt-pm-pill { position: absolute; box-sizing: border-box; display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 9px 0 9px; border: 1px solid var(--mm-edge); border-radius: 16px; background: var(--mm-card-bg); color: var(--text-2); font: 600 13px var(--font-ui); text-align: left; white-space: nowrap; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.mt-pm-pill:active { background: var(--panel-3); }
+.mt-pm-pill .nm { flex: 0 0 auto; max-width: 62%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mt-pm-pill .rl { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; font-size: 12px; color: var(--dim); }
+.mt-pm-pill .rl::before { content: "· "; }
+.mt-pm-pill .sp { flex: 1; }
+.mt-pm-pill .ag { flex: none; font: 500 10.5px var(--font-mono); color: var(--dim-2); }
+.mt-pm-pill.t-sleep { border-color: var(--mm-edge-sleep); background: color-mix(in srgb, var(--st-sleeping) 5%, var(--mm-card-bg)); color: var(--dim); }
+.mt-pm-pill.t-done .nm { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--dim-2); }
+.mt-pm-dots { position: absolute; box-sizing: border-box; border: 1px solid var(--mm-edge); border-radius: 12px; background: var(--mm-card-bg); pointer-events: none; }
+.mt-pm-dots .lb { position: absolute; left: 9px; top: 4px; font: 500 10.5px var(--font-mono); color: var(--dim); white-space: nowrap; }
+.mt-pm-dot { position: absolute; box-sizing: border-box; display: grid; place-items: center; margin: 0; padding: 0; border: 1.5px solid var(--mm-edge); border-radius: 50%; background: var(--icon-bg); -webkit-tap-highlight-color: transparent; }
+.mt-pm-dot .mt-pm-k { width: 11px; height: 11px; }
+.mt-pm-dot.t-sleep { border-color: var(--mm-edge-sleep); }
+.mt-pm-dot.t-done { border-style: dashed; }
+.mt-pm-node.dim, .mt-pm-pill.dim, .mt-pm-dot.dim { opacity: 0.28; }
 .mt-pm-tools { justify-content: flex-end; }
 
 /* P97: 새 세션 시트의 세션 이름 칸(비우면 보드가 짓는다) */
