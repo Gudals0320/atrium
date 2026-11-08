@@ -36,7 +36,7 @@ import { termClickNavigates, TERM_CLICK_WAIT } from './lib/term-input.js'; // P3
 
 let termClickTimer = null; // P38: 터미널 안 한 번 누르기의 화면 옮기기. 기다리는 동안 다시 누르면(두 번 누르기, 끌기 시작) 취소한다
 if (typeof window !== 'undefined') window.addEventListener('mousedown', () => clearTimeout(termClickTimer), true);
-import { RegionNode, WorktreeAreaNode } from './Regions.jsx'; // P27: 워크트리 영역(P35: 리포 영역 안의 상자)
+import { RegionNode, WorktreeAreaNode, GroupFrameNode } from './Regions.jsx'; // P91: GroupFrameNode(묶음 테두리) // P27: 워크트리 영역(P35: 리포 영역 안의 상자)
 import { MemoNode } from './Memo.jsx';
 import { KanbanNode } from './Kanban.jsx';
 import { wsAt } from './lib/items.js';
@@ -52,7 +52,7 @@ import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t�
 import { repoEdges, facingSides } from '../../../backend/src/links.mjs';
 import { boundsOf } from '../../../backend/src/workspaces.mjs';
 import { chromeInset, fitInset } from './lib/chrome-inset.js'; // P52(#5)
-import { bbox, REGION_GAP } from '../../../backend/src/canvas.mjs';
+import { bbox, REGION_GAP, groupFrames } from '../../../backend/src/canvas.mjs'; // P91: groupFrames(묶음 테두리)
 import { layout as layoutTree, dropZone, edgeSnap } from '../../../backend/src/dock-tree.mjs'; // P17, P23
 import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts, dockedAreas, visibleAnchors } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안. P68: 워크트리끼리 붙인 덩어리
 import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
@@ -62,7 +62,7 @@ import { openFull, fullId, onFull } from './full-view.js'; // P76
 import { termBudgetNow, boardPlan, step } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게. P86: 보드 단계(levelPlan)와 단계 기록
 import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
 
-const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
+const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), wsgroup: withBoundary(GroupFrameNode, 'wsgroup'),memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
 const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge };
 const HOLD_MS = 1500; // 화면 밖으로 나간 노드의 제어기를 놓기 전 기다리는 시간(끌 때 붙였다 뗐다 하지 않게)
 const DRAG_MIN_PX = 3; // 이보다 덜 끌었으면 자리를 바꾸지 않는다(누르기)
@@ -106,7 +106,8 @@ const anchorsOf = (st = getState()) => dockedOf(st).anchors;
 const mainOnly = (regs) => new Map([...regs].filter(([k]) => wsOfArea(k) === k)); // 메모·칸반이 속할 수 있는 영역(본 저장소 영역)
 let areaShift = null; // P27: 영역을 끄는 동안 빈 워크트리 영역도 따라오게 { ws, wt?, dx, dy }
 // P35: 끄는 중인 영역만큼 옮긴 영역 자리(빈 상자가 따라온다)
-const shiftedAnchors = (anchors, sh) => (sh ? anchors.map((a) => (a.wt && a.wsKey === sh.ws && (!sh.wt || sh.wt === a.wt) ? { ...a, x: a.x + sh.dx, y: a.y + sh.dy } : a)) : anchors);
+// P91: 묶음을 끌 때(sh.wss: 구성 워크스페이스 키)는 구성 영역의 자리(빈 영역)와 상자 자리를 모두 옮겨 본다
+const shiftedAnchors = (anchors, sh) => (!sh ? anchors : sh.wss ? anchors.map((a) => (sh.wss.has(a.wt ? a.wsKey : a.key) ? { ...a, x: a.x + sh.dx, y: a.y + sh.dy } : a)) : anchors.map((a) => (a.wt && a.wsKey === sh.ws && (!sh.wt || sh.wt === a.wt) ? { ...a, x: a.x + sh.dx, y: a.y + sh.dy } : a)));
 // P6c: 메모·칸반 노드. React Flow id는 memo:<memoId>, kanban:<kanbanId>
 const ITEM_TYPES = new Set(['memo', 'kanban']);
 const isContent = (n) => n.type === 'session' || ITEM_TYPES.has(n.type) || n.type === 'convo';
@@ -159,6 +160,12 @@ function backdrops(content, ghost, ctrlId = null) {
   const regMap = nestedRegions(anchors, inside);
   const bad = new Set();
   for (const p of regionConflicts(regMap, inside)) { const [a, b] = p.split('|'); bad.add(a); if (regMap.has(b)) bad.add(b); }
+  // P91: 묶음(가상 그룹) 테두리. 구성 영역 둘 이상이 모여 있고 다른 영역이 테두리에 걸치지 않을 때만 그린다(groupFrames ok). 이름표를 끌면 구성 영역이 함께 움직인다
+  const topRegs = new Map([...regMap].filter(([k]) => !isBoxKey(k)));
+  for (const f of groupFrames(st.groups || [], topRegs)) {
+    if (!f.ok) continue;
+    regionsOut.push({ id: `grp:${f.id}`, type: 'wsgroup', position: { x: f.rect.x, y: f.rect.y }, width: f.rect.w, height: f.rect.h, dragHandle: '.mt-gdrag', data: { groupId: f.id, name: f.name, auto: f.auto, keys: f.keys }, zIndex: -3, selectable: false, style: { pointerEvents: 'none' } });
+  }
   for (const a of anchors) {
     const key = a.key, r = regMap.get(key);
     if (!r) continue;
@@ -274,6 +281,7 @@ export function Canvas() {
   const links = useStore((st) => st.links);
   const docks = useStore((st) => st.docks);
   const workspaces = useStore((st) => st.workspaces);
+  const wsGroups = useStore((st) => st.groups); // P91
   const memos = useStore((st) => st.memos);
   const kanbans = useStore((st) => st.kanbans);
   const convoNodes = useStore((st) => st.convoNodes); // P13
@@ -323,7 +331,7 @@ export function Canvas() {
       }
       return rederive([...prev.filter((n) => !isContent(n)), ...sess], ghostRef.current, ctrlRef.current);
     });
-  }, [storeNodes, sessions, docks, links, workspaces, memos, kanbans, convoNodes, rev, currentWs]); // P23: links(덩어리 안 연결선)
+  }, [storeNodes, sessions, docks, links, workspaces, wsGroups, memos, kanbans, convoNodes, rev, currentWs]); // P23: links(덩어리 안 연결선). P91: wsGroups(묶음 테두리)
 
   // 연결선. 같은 덩어리 안 두 노드 사이의 연결은 노드 위에 겹친 선으로 보인다(H5, P23 DockLinks). 같은 저장소 선은 워크트리 세션이 있을 때만(F4)
   const edges = useMemo(() => {
@@ -370,6 +378,7 @@ export function Canvas() {
       if (lead) {
         const dx = lead.position.x - dr.start.x, dy = lead.position.y - dr.start.y;
         if (dr.mode === 'region' || dr.mode === 'wtarea') areaShift = { ws: dr.wsKey, wt: dr.mode === 'wtarea' ? dr.wt : null, dx, dy }; // P27
+        if (dr.mode === 'wsgroup') areaShift = { wss: dr.keys, dx, dy }; // P91: 묶음째
         if (dr.followers.length) {
           dr.live = new Map(dr.followers.map((f) => [f.id, { x: f.x + dx, y: f.y + dy }]));
           next = next.map((n) => (dr.live.has(n.id) ? { ...n, position: dr.live.get(n.id) } : n));
@@ -409,6 +418,12 @@ export function Canvas() {
       dr.wsKey = node.data.wsKey; dr.wt = node.data.wt; dr.area = node.data.area;
       dr.followers = [...st.sessions.values()].filter((s) => st.nodes.has(s.sessionId) && areaOfId(s.sessionId, st) === dr.area).map((s) => at(s.sessionId));
       for (const r of itemRects(st)) if (r.ws === dr.area) dr.followers.push({ id: r.id, x: r.x, y: r.y, item: true });
+    } else if (node.type === 'wsgroup') {
+      // P91: 묶음 이름표. 구성 워크스페이스의 세션, 메모·칸반, 대화 노드가 함께 움직인다(빈 영역과 상자 자리는 areaShift로)
+      dr.keys = new Set(node.data.keys || []);
+      dr.groupId = node.data.groupId;
+      dr.followers = [...st.sessions.values()].filter((s) => dr.keys.has(s.workspaceKey) && st.nodes.has(s.sessionId)).map((s) => at(s.sessionId));
+      for (const r of itemRects(st)) if (dr.keys.has(r.wsKey)) dr.followers.push({ id: r.id, x: r.x, y: r.y, item: true });
     } else if (isItem(node)) {
       dr.mode = (dragging || []).length > 1 ? 'multi' : 'item';
     }
@@ -435,6 +450,19 @@ export function Canvas() {
       for (const f of dr.followers) (f.item ? setItemLocal : setNodeLocal)(f.id, { x: f.x + dx, y: f.y + dy });
       shiftAreasLocal(dr.wsKey, null, Math.round(dx), Math.round(dy)); // P27: 워크트리 영역도 함께
       api.call('workspace.move', { workspace: dr.wsKey, dx: Math.round(dx), dy: Math.round(dy) }).catch((err) => { toast(err.code === 'overlap' ? tr('canvas.overlap') : tr('canvas.regionMoveFail', { error: errText(err) }), 'error'); loadBoard().catch(() => {}); });
+      return;
+    }
+    if (dr.mode === 'wsgroup') {
+      // P91: 묶음째 옮긴다. 구성 아닌 영역과 새로 겹치면 되돌린다
+      const live = new Map(dr.followers.filter((f) => !f.item).map((f) => [f.id, { x: f.x + dx, y: f.y + dy }]));
+      const liveItems = new Map(dr.followers.filter((f) => f.item).map((f) => [f.id, { x: f.x + dx, y: f.y + dy }]));
+      const sessNow = [...st.nodes].filter(([id]) => st.sessions.has(id)).map(([id, r]) => ({ id, ...r, ...(live.get(id) || {}) }));
+      const after = overlapPairs(sessNow, st, liveItems, shiftedAnchors(anchorsOf(st), { wss: dr.keys, dx, dy }));
+      if ([...after].some((p) => !dr.before.has(p))) return revert(tr('canvas.overlapDrag'));
+      drag.current = null;
+      for (const f of dr.followers) (f.item ? setItemLocal : setNodeLocal)(f.id, { x: f.x + dx, y: f.y + dy });
+      for (const k of dr.keys) shiftAreasLocal(k, null, Math.round(dx), Math.round(dy));
+      api.call('group.shift', { group: dr.groupId, dx: Math.round(dx), dy: Math.round(dy) }).catch((err) => { toast(err.code === 'overlap' ? tr('canvas.overlap') : tr('canvas.regionMoveFail', { error: errText(err) }), 'error'); loadBoard().catch(() => {}); });
       return;
     }
     if (dr.mode === 'wtarea') {

@@ -299,7 +299,7 @@ function WsRow({ r, cur, selecting, selected, dropAt }) {
         ? <input type="checkbox" className="mt-sb2-check" data-action="ws-select" checked={selected} readOnly />
         : <span className="mt-sb2-fold" data-action="fold">{r.open ? '▾' : '▸'}</span>}
       {!selecting && <span className="mt-sb2-icon">{w.kind === 'repo' ? '⎇' : '▢'}</span>}
-      <button className="mt-sb2-wname" data-action="go-ws" title={t('sidebar.goWs')} onClick={(e) => { e.stopPropagation(); setCursor(r.id); if (selecting) toggleSelected(w.key); else selectWorkspace(w.key); }}>{w.name}</button>
+      <button className="mt-sb2-wname" data-action="go-ws" title={t('sidebar.goWs')} onClick={(e) => { e.stopPropagation(); setCursor(r.id); if (selecting) toggleSelected(w.key); else selectWorkspace(w.key); }}>{w.label || w.name}</button>{/* P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로 */}
       {r.matched != null && <span className="mt-sb2-gn" data-count="matched">{r.matched}</span>}
       <Counts c={r.c} attnOnly={!r.open && r.matched == null} />
       {!selecting && <button className="mt-sb2-more" data-action="ws-menu" title={t('sb2.menu')} onClick={(e) => openMenu(e, 'ws', w.key)}><Icon name="more" /></button>}

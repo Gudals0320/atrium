@@ -1633,3 +1633,17 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-mm-lhint { color: var(--dim-2); font-size: 11px; }
 .mt-mission-body { padding-bottom: 96px; } /* 범례가 아래 상자를 가리지 않게 */
 .mt-mm-label.rel-human:not(.hot) { opacity: 0.5; } /* P94: 사용자 선의 이름표는 가리킬 때만 또렷하게 */
+
+/* ---------- P91: 묶음(가상 그룹) 테두리와 상대 경로 이름표 ---------- */
+/* 구성 영역 둘레의 옅은 바깥 띠(영역 테두리보다 흐리게), 위 왼쪽 이름표. filter·그림자·끝없는 움직임 없음 */
+.react-flow__node-wsgroup { padding: 0; border: none; background: none; border-radius: 0; width: auto; }
+.mt-wsgroup { width: 100%; height: 100%; position: relative; pointer-events: none; }
+.mt-wsgroup-box { position: absolute; inset: 0; border: 1px solid color-mix(in srgb, var(--region-line) 70%, transparent); border-radius: 26px;
+  background: color-mix(in srgb, var(--region-line) 7%, transparent); }
+.mt-wsgroup-head { pointer-events: all; position: absolute; left: 22px; display: inline-flex; align-items: center; gap: .5em; padding: 0 .7em; max-width: calc(100% - 44px);
+  background: var(--canvas); border-radius: .6em; cursor: grab; white-space: nowrap; overflow: hidden; color: var(--term-dim); font-family: var(--font-mono); }
+.mt-wsgroup-head:active { cursor: grabbing; }
+.mt-wsgroup-name { font-family: var(--font-ui); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: color-mix(in srgb, var(--chrome-text) 80%, transparent); }
+.mt-wsgroup-auto { font-family: var(--font-ui); color: color-mix(in srgb, var(--term-dim) 80%, transparent); }
+.mt-wsgroup-meta { color: var(--term-dim); }
+.mt-region-name[data-label="rel"] { text-transform: none; letter-spacing: .02em; }

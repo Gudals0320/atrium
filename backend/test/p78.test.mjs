@@ -123,7 +123,8 @@ for (const mix of ['none', 'some']) {
     const arranged = Object.fromEntries([...names, 'sh'].map((n) => [n, { ...blockOf(n) }]));
     const L = nodeOf(b, 'lead');
     assert.equal(arranged.h1.x, L.x + L.w + LINE_GAP_X, '줄은 부모 오른쪽 200(상자 틀 기준)');
-    for (const [i, n] of [...names, 'sh'].entries()) if (i) { const p = arranged[[...names, 'sh'][i - 1]]; assert.ok(arranged[n].y >= p.y + p.h + LINE_GAP_Y, `띄운 순서 ${n}`); }
+    // P91: 다섯부터는 다음 열을 오른쪽에 연다. 띄운 순서는 위 → 아래, 다음 열
+    for (const [i, n] of [...names, 'sh'].entries()) if (i) { const p = arranged[[...names, 'sh'][i - 1]]; assert.ok(arranged[n].y >= p.y + p.h + LINE_GAP_Y || arranged[n].x >= p.x + p.w + LINE_GAP_X, `띄운 순서 ${n}`); }
     assert.ok(regs0);
     // 인계: 워크트리가 다 생기고, 리드가 일을 넘겨 hook이 워크트리를 알린다(h2는 요청이 없어 hook이 없다)
     state.wts = names;
