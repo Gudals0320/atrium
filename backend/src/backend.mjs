@@ -484,7 +484,7 @@ export class Backend {
       sessionId: s.sessionId, name: shownName(s), cwd: s.cwd, paneId: s.paneId, herdrWorkspaceId: s.herdrWorkspaceId,
       address: s.name, label: s.label || null, // P66: name은 보이는 이름, address는 에이전트가 쓰는 주소(herdr 이름), label은 사람이 정한 이름(없으면 null)
       state: d.state, estimate: d.estimate || null, herdrStatus: rt.herdr.status, ask, error: d.error || rt.lastError || null,
-      permissionMode: rt.permissionMode || s.permissionMode, model: s.model,
+      permissionMode: rt.permissionMode || s.permissionMode, model: s.model, effort: s.effort || null, // P95: 미션 맵 카드의 메타 줄
       lastPrompt: clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
       exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f,
       trust: { predictedDialog: rt.trustPredicted, seenOnScreen: !!rt.trustScreen },

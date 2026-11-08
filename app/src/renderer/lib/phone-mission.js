@@ -45,6 +45,9 @@ export function phoneMission(graph, { live = null, order: order0 = [], folded = 
       from: cross ? { name: pn.name, key: groupOf(pn) } : null, // 다른 무리의 부모
       links: pairs.filter((x) => x.from === n.id && !treeEdge.has(x.id)).sort((a, b) => bySpawn(byId.get(a.to), byId.get(b.to))).map((x) => ({ to: byId.get(x.to).name, toId: x.to, role: x.role || null, kind: x.primary, rel: relOf(x, tree), active: !!x.active })),
       ask: n.ask || null, loops: n.loops || 0,
+      // P95: 카드의 메타 줄(모델·노력 수준, 일한 시간 또는 마지막 활동, 워크트리 브랜치)과 지금 하는 일
+      model: n.model || (l && l.model) || null, effort: n.effort || (l && l.effort) || null, turnAt: n.turnAt || (l && l.state === 'working' && l.turn && l.turn.startedAt) || null,
+      activeAt: n.activeAt || (l && l.lastActivityAt) || null, gitBranch: n.gitBranch || null, lastPrompt: n.lastPrompt || (l && l.lastPrompt) || null, workspaceKey: n.workspaceKey || null,
       ...pick(roles.get(n.id)), rel: p ? relOf(p, tree) : null, // P94
     };
   };

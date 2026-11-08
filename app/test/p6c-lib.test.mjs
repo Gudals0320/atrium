@@ -70,27 +70,25 @@ test('I5: 루프 배지 — 돌고 있음·멈춤, 남은 횟수, 다음 시각.
   assert.equal(stopText({}), '직접 중지할 때까지');
 });
 
-test('I6: 미션 맵 배치(P32 나무) — 사람이 0열, 지시하는 세션 → 받는 세션, 거르기, 선은 보이는 노드 사이만', () => {
+test('I6: 미션 맵 배치(P32 나무 → P95) — 나 0열, 지시하는 세션 → 받는 세션, 리드가 아닌 세션으로 가는 나의 선은 가리킬 때만(quiet)', () => {
   const graph = {
     nodes: [
       { id: 'human', kind: 'human', column: 0 },
       { id: 's:L', kind: 'session', name: 'lead', category: 'working', column: 0 },
       { id: 's:A', kind: 'session', name: 'a', category: 'needs_you', column: 1 },
       { id: 's:B', kind: 'session', name: 'b', category: 'idle', column: 1 },
-      { id: 's:C', kind: 'session', name: 'c', category: 'idle' }, // 선이 없으면 연결 없음 칸
+      { id: 's:C', kind: 'session', name: 'c', category: 'idle' }, // 선이 없는 세션
     ],
     edges: [{ id: 'e1', from: 'human', to: 's:A', kind: 'bar' }, { id: 'e3', from: 's:L', to: 's:A', kind: 'role' }, { id: 'e4', from: 's:L', to: 'human', kind: 'x' }, { id: 'e5', from: 's:L', to: 's:B', kind: 'prompt' }],
   };
   const lay = missionLayout(graph);
   const box = (id) => lay.boxes.get(id);
-  assert.ok(box('human').x < box('s:L').x && box('s:L').x < box('s:A').x, '사람 → lead → a');
+  assert.ok(box('human').x < box('s:L').x && box('s:L').x < box('s:A').x, '나 → lead → a');
   assert.equal(box('s:A').x, box('s:B').x);
   assert.ok(box('s:A').y < box('s:B').y, '이름 순');
   assert.deepEqual(lay.loose, ['s:C']);
-  assert.equal(lay.edges.length, 4, '사람 → a(나무 밖), lead → a, lead → b, lead → 사람(뒤로)');
+  assert.equal(lay.edges.length, 3, '나 → a, lead → a, lead → b(세션 → 나 선은 그리지 않는다)');
   assert.match(lay.edges[0].d, /^M/);
-  const f = missionLayout(graph, { filter: 'needs_you' });
-  assert.deepEqual([...f.boxes.keys()].sort(), ['human', 's:A', 's:L'], '맞는 세션과 그 조상');
-  assert.equal(f.boxes.get('s:L').ghost, true);
-  assert.ok(f.edges.every((e) => f.boxes.has(e.from) && f.boxes.has(e.to)), '거른 노드의 선은 뺀다');
+  assert.equal(lay.edges.find((e) => e.from === 'human').quiet, true, 'a는 팀의 맨 위가 아니다');
+  assert.ok(lay.edges.every((e) => lay.boxes.has(e.from) && lay.boxes.has(e.to)));
 });

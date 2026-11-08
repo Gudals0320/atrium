@@ -70,7 +70,7 @@ const H = { id: 'human', kind: 'human' };
 const S = (id, ws, o = {}) => ({ id: `s:${id}`, kind: 'session', name: id, category: 'idle', workspaceKey: ws, ...o });
 const E = (from, to, kind, o = {}) => ({ id: `${kind}:${from}>${to}`, from: from === 'human' ? 'human' : `s:${from}`, to: `s:${to}`, kind, ...o });
 const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-const inside = (b, g) => b.x >= g.x && b.y >= g.y + MISSION.groupHead && b.x + b.w <= g.x + g.w && b.y + b.h <= g.y + g.h;
+const head = (g) => ({ x: g.x, y: g.y, w: g.w, h: MISSION.wsHead - 4 }); // P95: 워크스페이스 머리 글(상자 없음)
 
 // 워크스페이스 셋(app, api, docs)에 걸친 세션 12개. lead(app)가 api·docs의 워커에게도 시킨다
 const three = () => ({
@@ -84,88 +84,67 @@ const three = () => ({
 });
 const ORDER = ['C:/w/app/', 'C:/w/api/', 'C:/w/docs/'];
 
-test('P46: 무리 — 워크스페이스마다 하나, 판의 영역 차례, 이름표 수(세션·응답 필요), 상자는 자기 무리 안, 겹치지 않음', () => {
+test('P46 → P95: 워크스페이스 머리 글 — 판의 영역 차례(팀 먼저, 혼자인 워크스페이스는 오른쪽 기둥), 수(그 아래 놓인 세션·응답 필요), 다른 워크스페이스의 하위 세션은 부모 팀 안, 겹치지 않음', () => {
   const lay = missionLayout(three(), { order: ORDER });
   assert.deepEqual(lay.groups.map((g) => g.key), ORDER);
-  assert.deepEqual(lay.groups.map((g) => [g.count, g.needs]), [[4, 1], [4, 1], [4, 1]]);
-  for (const b of lay.boxes.values()) {
-    if (b.node.kind === 'human') continue;
-    const g = lay.groups.find((x) => x.key === b.node.workspaceKey);
-    assert.ok(inside(b, g), `${b.node.name}는 ${g.key} 무리 안`);
-  }
+  assert.deepEqual(lay.groups.map((g) => [g.count, g.needs, g.packed]), [[7, 2, false], [4, 0, false], [1, 1, true]]);
   const bs = [...lay.boxes.values()];
   for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) assert.ok(!hit(bs[i], bs[j]), `${bs[i].node.id} × ${bs[j].node.id}`);
-  for (let i = 0; i < lay.groups.length; i++) for (let j = i + 1; j < lay.groups.length; j++) assert.ok(!hit(lay.groups[i], lay.groups[j]), '무리끼리 겹치지 않는다');
-  assert.ok(lay.groups[0].y + lay.groups[0].h < lay.groups[1].y && lay.groups[1].y + lay.groups[1].h < lay.groups[2].y, '위에서 아래로');
-  // 사람은 무리 밖 0열
+  for (const g of lay.groups) for (const b of bs) assert.ok(!hit(head(g), b), `머리 글 ${g.key} × ${b.node.id}`);
+  // 나는 머리 글들 왼쪽 0열
   const h = lay.boxes.get('human');
   assert.ok(lay.groups.every((g) => h.x + h.w < g.x));
-  // 열은 판 전체에서 같다: lead(1열)의 다른 무리 워커도 2열
+  // 열은 판 전체에서 같다: lead(1열)의 다른 워크스페이스 워커도 2열, 부모 팀 안에 놓인다
   assert.equal(lay.boxes.get('s:lead').depth, 1);
   for (const k of ['ui', 'api-tests', 'ko-copy']) assert.equal(lay.boxes.get(`s:${k}`).depth, 2, k);
   assert.equal(lay.boxes.get('s:reviewer').depth, 3);
   assert.equal(lay.boxes.get('s:api-tests').x, lay.boxes.get('s:ui').x);
-  // 무리 안 연결 없는 세션은 그 무리 격자(나무 아래)
+  assert.equal(lay.boxes.get('s:api-tests').group, 'C:/w/app/', '다른 워크스페이스 하위도 부모 팀(머리 글) 아래');
+  assert.ok(lay.boxes.get('s:ko-copy').y < lay.groups[1].y, 'app 팀 안(api 머리 글 위)');
+  // 연결 없는 세션: 팀이 있는 워크스페이스면 그 팀 아래 1열, 혼자뿐인 워크스페이스(docs)는 오른쪽 기둥
   assert.deepEqual(lay.loose.sort(), ['s:app-notes', 's:glossary', 's:perf']);
-  const app = lay.groups[0];
-  assert.ok(app.looseAt && lay.boxes.get('s:app-notes').y > lay.boxes.get('s:ui-tests').y);
-  // 순서를 모르면 키 이름 순
+  assert.ok(lay.boxes.get('s:app-notes').y > lay.boxes.get('s:ui-tests').y && lay.boxes.get('s:app-notes').x === lay.boxes.get('s:lead').x);
+  assert.ok(lay.boxes.get('s:glossary').x > Math.max(...bs.filter((b) => !b.loose || b.group !== 'C:/w/docs/').map((b) => b.x + b.w)) - 1, 'docs는 팀 흐름 오른쪽');
+  // 순서를 모르면 키 이름 순(팀 먼저)
   assert.deepEqual(missionLayout(three()).groups.map((g) => g.key), ['C:/w/api/', 'C:/w/app/', 'C:/w/docs/']);
 });
 
-test('P46: 무리를 건너는 지시 — cross로 표시, 이름표 있음, 선은 열 사이 틈으로만 지나고 무리 안 선은 cross가 아니다', () => {
+test('P46: 무리를 건너는 지시 — cross로 표시, 나무 선, 선이 지나는 열 사이에는 다른 상자가 없다', () => {
   const lay = missionLayout(three(), { order: ORDER });
   const cross = lay.edges.filter((e) => e.cross).map((e) => `${e.from}>${e.to}`).sort();
   assert.deepEqual(cross, ['s:api-lead>s:en-copy', 's:lead>s:api-tests', 's:lead>s:ko-copy']);
   const ko = lay.edges.find((e) => e.to === 's:ko-copy');
-  assert.equal(ko.fromGroup, 'C:/w/app/'); assert.equal(ko.toGroup, 'C:/w/docs/');
-  assert.ok(ko.label && ko.tree, '나무 선이고 이름표가 있다');
+  assert.ok(ko.tree, '나무 선');
   assert.ok(!lay.edges.find((e) => e.to === 's:ui').cross);
-  assert.ok(!lay.edges.find((e) => e.from === 'human' && e.to === 's:lead').cross, '사람에게서 오는 선은 무리를 건너지 않는다');
+  assert.ok(!lay.edges.find((e) => e.from === 'human' && e.to === 's:lead').cross, '나에게서 오는 선은 무리를 건너지 않는다');
   // 앞으로 가는 선(왼쪽 → 오른쪽)은 시킨 상자의 오른쪽 끝에서 받는 상자의 왼쪽 끝까지 — 그 사이에 다른 상자가 없다
   for (const e of lay.edges.filter((x) => !x.back)) {
     const a = lay.boxes.get(e.from), b = lay.boxes.get(e.to);
     for (const o of lay.boxes.values()) assert.ok(!(o.x < b.x && o.x + o.w > a.x + a.w), `${e.id}의 틈에 ${o.node.id}`);
   }
-  // 이름표는 상자를 덮지 않는다
-  for (const e of lay.edges.filter((x) => x.label)) {
-    const r = { x: e.lx - MISSION.labelW, y: e.ly - 9, w: MISSION.labelW, h: 18 };
-    for (const b of lay.boxes.values()) assert.ok(!hit(r, b), `${e.id} 이름표 × ${b.node.id}`);
-  }
 });
 
-test('P46: 접은 무리 — 머리줄만, 그 세션들로 가는 선은 머리줄 대리 상자로 모인다, 다른 무리는 그대로', () => {
+test('P46: 접은 워크스페이스 — 머리 글만, 그 세션들로 가는 선은 머리 글(대리 상자)로 모인다, 다른 워크스페이스는 그대로', () => {
   const open = missionLayout(three(), { order: ORDER });
-  const lay = missionLayout(three(), { order: ORDER, collapsed: ['C:/w/docs/'] });
-  const docs = lay.groups.find((g) => g.key === 'C:/w/docs/');
-  assert.equal(docs.collapsed, true);
-  assert.equal(docs.h, MISSION.groupHead);
-  assert.equal(docs.count, 4, '접어도 수는 그대로');
-  for (const k of ['ko-copy', 'reviewer', 'en-copy', 'glossary']) assert.ok(!lay.boxes.has(`s:${k}`), k);
-  const px = lay.boxes.get('g:C:/w/docs/');
-  assert.ok(px && px.proxy && px.y === docs.y);
-  // lead → ko-copy, api-lead → en-copy 가 대리 상자로. ko-copy → reviewer(안쪽)는 사라진다
-  const into = lay.edges.filter((e) => e.to === 'g:C:/w/docs/').map((e) => e.from).sort();
-  assert.deepEqual(into, ['s:api-lead', 's:lead']);
+  const lay = missionLayout(three(), { order: ORDER, collapsed: ['C:/w/app/'] });
+  const app = lay.groups.find((g) => g.key === 'C:/w/app/');
+  assert.equal(app.collapsed, true);
+  assert.equal(app.count, 7, '접어도 수는 그대로');
+  for (const k of ['lead', 'ui', 'ui-tests', 'api-tests', 'ko-copy', 'reviewer', 'app-notes']) assert.ok(!lay.boxes.has(`s:${k}`), k);
+  const px = lay.boxes.get('g:C:/w/app/');
+  assert.ok(px && px.proxy && px.y === app.y);
+  assert.ok(lay.edges.some((e) => e.from === 'human' && e.to === 'g:C:/w/app/'), '나 → 접은 워크스페이스');
   assert.ok(lay.edges.every((e) => e.from !== e.to));
-  assert.ok(lay.edges.find((e) => e.to === 'g:C:/w/docs/' && e.from === 's:lead').cross);
-  // 위 무리는 자리가 그대로, 판 높이는 줄어든다
-  assert.equal(lay.boxes.get('s:ui').y, open.boxes.get('s:ui').y);
+  // 아래 워크스페이스는 위로 올라오고, 판 높이는 줄어든다
+  assert.ok(lay.boxes.get('s:api-lead').y < open.boxes.get('s:api-lead').y);
   assert.ok(lay.height < open.height);
-  // 접은 무리 쪽 세션이 시킨 선도 대리 상자에서 나온다
-  const back = missionLayout(three(), { order: ORDER, collapsed: ['C:/w/app/'] });
-  assert.deepEqual(back.edges.filter((e) => e.from === 'g:C:/w/app/').map((e) => e.to).sort(), ['s:api-tests', 's:ko-copy']);
-  assert.ok(back.edges.some((e) => e.from === 'human' && e.to === 'g:C:/w/app/'), '사람 → 접은 무리');
+  // 혼자인 워크스페이스를 접으면 그 기둥에는 머리 글만
+  const d = missionLayout(three(), { order: ORDER, collapsed: ['C:/w/docs/'] });
+  assert.ok(!d.boxes.has('s:glossary') && d.boxes.get('g:C:/w/docs/').proxy);
+  assert.equal(d.boxes.get('s:ui').y, open.boxes.get('s:ui').y, '다른 워크스페이스는 그대로');
 });
 
-test('P46: 거르기와 무리 — 맞는 세션이 없는 무리는 빠지고, 조상은 자기 무리에 흐리게', () => {
-  const lay = missionLayout(three(), { order: ORDER, filter: 'needs_you' });
-  assert.deepEqual(lay.groups.map((g) => [g.key, g.shown]), [['C:/w/app/', 3], ['C:/w/api/', 1], ['C:/w/docs/', 1]]);
-  assert.equal(lay.boxes.get('s:lead').ghost, true);
-  assert.equal(lay.boxes.get('s:api-tests').ghost, false);
-  const work = missionLayout(three(), { order: ORDER, filter: 'working' });
-  assert.deepEqual(work.groups.map((g) => g.key), ['C:/w/app/', 'C:/w/api/']);
-  // 워크스페이스가 없는 세션은 맨 아래 '' 무리
+test('P46: 워크스페이스가 없는 세션은 맨 끝 \'\' 머리 글', () => {
   const g = missionLayout({ nodes: [H, S('a', 'C:/w/app/'), S('b', null)], edges: [] }, { order: ORDER });
   assert.deepEqual(g.groups.map((x) => x.key), ['C:/w/app/', '']);
 });
