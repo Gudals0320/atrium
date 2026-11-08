@@ -2,7 +2,7 @@
 // - 영역과 빈자리(H1), 영역 옮기기, 검색(H2), 붙여 묶기(H5), 크기 단계와 정리(H7). 골라 묶기(그룹, H6)는 P22에서 뺐다
 // - 계산은 canvas.mjs·search.mjs의 순수 함수(창도 같이 씀). 바꾼 뒤에는 board.changed를 보내 창이 판을 다시 읽게 한다.
 import crypto from 'node:crypto';
-import { NODE, SIZE_STEPS, SIZE_DIRS, SIZE_LEVELS, ASPECTS, parseStep, resolveSize, fitsAspect, matchAspect, stepSize, DEFAULT_ASPECT, dirOf, aspectOf, DOCK_CELL, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot, levelOf, NEW_NODE } from './canvas.mjs';
+import { NODE, SIZE_STEPS, SIZE_DIRS, SIZE_LEVELS, ASPECTS, parseStep, resolveSize, fitsAspect, matchAspect, stepSize, DEFAULT_ASPECT, dirOf, aspectOf, DOCK_CELL, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot, levelOf, NEW_NODE, groupFrames, separateGrouped, groupSlot } from './canvas.mjs';
 import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, remove as removeLeaf, removeWithOuter, insertWithOuter, rootSizes, presetTree, presetSize, PRESETS, sideDir, dockVirtual, dockFit } from './dock-tree.mjs'; // P17: 분할 나무
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
@@ -68,7 +68,18 @@ export function anchorWorkspace(b, key) {
   if (!w || (w.x != null && w.y != null)) return;
   const rs = regions(b);
   rs.delete(key);
-  const at = newRegionSlot(rs, w.auto ? AUTO_EMPTY_REGION : EMPTY_REGION);
+  const size = w.auto ? AUTO_EMPTY_REGION : EMPTY_REGION;
+  // P91: 묶음(가상 그룹)에 든 새 워크스페이스는 그 묶음 곁에, 아니면 그려진 묶음 테두리를 한 덩어리로 피해 놓는다
+  const top = new Map([...rs].filter(([k]) => !isBoxKey(k)));
+  const groups = readGroups(b).groups;
+  const frames = groupFrames(groups.map((g) => ({ ...g, members: g.members.filter((k) => k !== key) })), top).filter((f) => f.ok);
+  const g = groups.find((x) => x.members.includes(key));
+  let at = null;
+  if (g) {
+    const mine = g.members.filter((k) => k !== key && top.has(k));
+    at = groupSlot(mine.map((k) => top.get(k)), [...top].filter(([k]) => !mine.includes(k)).map(([, r]) => r), size);
+  }
+  if (!at) at = newRegionSlot([...rs.values(), ...frames.map((f) => f.rect)], size);
   b.store.setWorkspaceAnchor(key, at.x, at.y);
 }
 
@@ -198,7 +209,8 @@ export function settleRegions(b, cause = 'unknown') {
   }
   if (moved.length) items = canvasItems(b);
   const top = new Map([...regions(b, items)].filter(([k]) => !isBoxKey(k)));
-  for (const [key, { dx, dy }] of separateRegions(top)) moved.push({ key, dx, dy, items: shiftWorkspace(b, key, dx, dy, items) });
+  // P91: 그려진 묶음(가상 그룹 테두리)은 한 덩어리로 민다
+  for (const [key, { dx, dy }] of separateGrouped(top, readGroups(b).groups)) moved.push({ key, dx, dy, items: shiftWorkspace(b, key, dx, dy, items) });
   if (!moved.length) return [];
   b.store.addEvent(null, 'regions_settled', { cause, moved });
   if (b.log) b.log(`regions settled (${cause}) ${JSON.stringify(moved)}`);
@@ -844,10 +856,10 @@ function arrangeBoard(b, p) {
   const gidx = groupIndex(readGroups(b)); // P44: 같은 가상 그룹의 영역은 한 덩어리로 모아 놓는다(그룹 안 순서는 사람이 정한 것)
   const entries = [...regs].filter(([k]) => !isBoxKey(k)).map(([k, r]) => ({ key: k, ws: k, wt: '', rect: r, empty: !items.some((i) => i.wsKey === k), ...(gidx.has(k) ? { group: gidx.get(k).id, order: gidx.get(k).index } : {}) }));
   for (const i of items) if (!i.ws && (i.kind === 'memo' || i.kind === 'kanban')) entries.push({ key: `${i.kind}:${i.id}`, ws: null, wt: '', rect: { x: i.x, y: i.y, w: i.w, h: i.h }, item: i });
-  const lay = layoutRegions(entries);
+  const lay = layoutRegions(entries, { aspect: arrangeAspect(p.aspect) }); // P91: 결과 전체를 창이 보낸 캔버스 비율(기본 16:9)에 맞춘다
   const regionPlan = entries.map((e) => ({ key: e.key, from: e.rect, to: lay.rects.get(e.key) }));
   const edges = plans.reduce((s, pl) => s + pl.edges.length, 0);
-  if (!p.apply) return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, applied: false, edges };
+  if (!p.apply) return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, aspect: lay.aspect, applied: false, edges };
   // 되돌리기 자료: 판 전체
   b.store.setMeta(BOARD_UNDO, {
     at: Date.now(),
@@ -870,7 +882,32 @@ function arrangeBoard(b, p) {
   settleRegions(b, 'arrange'); // 안전망: 계산이 맞으면 옮길 것이 없다
   b.store.addEvent(null, 'arranged', { workspace: '*', workspaces: plans.length, regions: entries.length, edges, moved });
   b.api.broadcast('board.changed', { why: 'arrange' });
-  return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, applied: true, edges, undo: true };
+  return { all: true, plan: plans.flatMap((pl) => pl.out), regions: regionPlan, clusters: lay.clusters, aspect: lay.aspect, applied: true, edges, undo: true };
+}
+// P91: 판 전체 정리가 맞출 화면 비율(너비 / 높이). 창·휴대폰은 캔버스 크기로 보낸다. 없거나 터무니없으면 16:9
+export function arrangeAspect(v) {
+  const a = Number(v);
+  return Number.isFinite(a) && a >= 0.3 && a <= 6 ? a : 16 / 9;
+}
+
+// P91: 묶음(가상 그룹) 이름표를 끌면 구성 영역(안의 노드, 메모·칸반, 대화 노드, 워크트리 상자, 영역 자리)이 함께 움직인다.
+// 옮긴 구성 영역이 구성 아닌 영역과 겹치면 거부(overlap, force면 옮긴다)
+export function groupShift(b, p) {
+  const g = readGroups(b).groups.find((x) => x.id === String(p.group || ''));
+  if (!g) throw keyed(apiError('not_found', `그룹을 찾을 수 없습니다: ${p.group}`), 'groupNotFound', { ref: p.group });
+  const dx = Math.round(Number(p.dx) || 0), dy = Math.round(Number(p.dy) || 0);
+  if (!dx && !dy) return { moved: 0 };
+  const items = canvasItems(b);
+  const before = new Map([...regions(b, items)].filter(([k]) => !isBoxKey(k)));
+  const keys = g.members.filter((k) => before.has(k));
+  const mine = new Set(keys);
+  const hit = keys.map((k) => { const r = before.get(k); return { ...r, x: r.x + dx, y: r.y + dy }; }).map((after) => [...before].find(([k, r]) => !mine.has(k) && overlaps(after, r, -1))).find(Boolean);
+  if (hit && !p.force) throw keyed(apiError('overlap', `다른 프로젝트 영역과 겹칩니다 (${hit[0]})`), 'regionOverlap', { ws: hit[0] });
+  let n = 0;
+  for (const k of keys) n += shiftWorkspace(b, k, dx, dy, items);
+  b.store.addEvent(null, 'group_moved', { group: g.id, dx, dy, workspaces: keys.length, items: n });
+  b.api.broadcast('board.changed', { why: 'group.shift' });
+  return { moved: n, workspaces: keys.length, dx, dy };
 }
 
 // ---------- 검색(H2) ----------
@@ -922,6 +959,7 @@ export function canvasHandlers(b) {
     'board.arrange': (p) => arrange(b, p),
     'board.setSize': (p) => setSize(b, p),
     'workspace.move': (p) => workspaceMove(b, p),
+    'group.shift': (p) => groupShift(b, p), // P91: 묶음째 옮기기
     'worktree.move': (p) => worktreeMove(b, p), // P27
   };
 }

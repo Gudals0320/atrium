@@ -209,6 +209,70 @@ export function separateRegions(regions, { gap = REGION_GAP / 2, maxRounds = 500
   return new Map(list.filter((x) => x.dx || x.dy).map((x) => [x.key, { dx: Math.round(x.dx), dy: Math.round(x.dy) }]));
 }
 
+// ---------- P91: 묶음(가상 그룹) 테두리 ----------
+// 묶음의 구성 영역 둘레에 바깥 띠와 이름표를 그린다. 영역끼리 겹침 풀기와 새 영역 자리는 그려진 묶음을 한 덩어리로 본다.
+export const GROUP_PAD = 56; // 묶음 테두리와 구성 영역 사이(영역 사이 틈 REGION_GAP/2 = 120 안에 들어간다)
+export const GROUP_HEAD = 64; // 묶음 이름표 자리(구성 영역 위)
+export const groupFrameOf = (inner) => ({ x: inner.x - GROUP_PAD, y: inner.y - GROUP_PAD - GROUP_HEAD, w: inner.w + 2 * GROUP_PAD, h: inner.h + 2 * GROUP_PAD + GROUP_HEAD });
+// groups: [{ id, name, auto?, members }], regions: Map 키 → 맨 위 영역(리포·폴더 영역. 워크트리 상자는 빼고 준다)
+// → [{ id, name, auto, keys, rect, ok }]. 구성 영역이 min개 이상인 묶음만. ok: 테두리가 구성 아닌 영역과 겹치지 않는다(겹치면 그리지 않고 한 덩어리로 보지도 않는다. 정리를 누르면 모인다)
+export function groupFrames(groups, regions, { min = 2 } = {}) {
+  const out = [];
+  for (const g of groups || []) {
+    const keys = (g.members || []).filter((k) => regions.has(k));
+    if (keys.length < min) continue;
+    const inner = bbox(keys.map((k) => regions.get(k)));
+    const rect = groupFrameOf(inner);
+    const mine = new Set(keys);
+    const ok = ![...regions].some(([k, r]) => !mine.has(k) && r && overlaps(rect, r, -1));
+    // core: 구성 영역 사이(테두리 띠 말고 안쪽)에 다른 영역이 끼지 않았다. 띠에만 걸친 영역은 겹침 풀기가 밀어낸다
+    const core = ok || ![...regions].some(([k, r]) => !mine.has(k) && r && overlaps(inner, r, -1));
+    out.push({ id: g.id, name: g.name, auto: !!g.auto, keys, rect, ok, core });
+  }
+  // 그려진 묶음끼리 겹치면 둘 다 그리지 않는다
+  for (const a of out) for (const b of out) if (a !== b && a.ok && b.ok && overlaps(a.rect, b.rect, -1)) { a.clash = true; b.clash = true; }
+  for (const f of out) if (f.clash) { f.ok = false; f.core = false; delete f.clash; }
+  return out;
+}
+// 영역끼리 겹침 풀기(separateRegions)를 묶음째로. 1) 묶음 안의 구성 영역끼리 편다 2) 묶음(테두리)과 나머지 영역을 한 단위씩 편다(묶음은 통째로 민다).
+// 구성 영역 사이에 다른 영역이 낀 묶음(core 아님, 흩어진 옛 판)은 한 덩어리로 보지 않는다(멀리 밀지 않게. 정리를 누르면 모인다)
+export function separateGrouped(regions, groups = [], opts = {}) {
+  const rs = new Map([...regions].filter(([, r]) => r).map(([k, r]) => [k, { ...r }]));
+  const shift = new Map();
+  const add = (k, dx, dy) => { if (!dx && !dy) return; const s = shift.get(k) || { dx: 0, dy: 0 }; shift.set(k, { dx: s.dx + dx, dy: s.dy + dy }); const r = rs.get(k); r.x += dx; r.y += dy; };
+  const frames = groupFrames(groups, rs).filter((f) => f.core);
+  for (const f of frames) for (const [k, s] of separateRegions(new Map(f.keys.map((k) => [k, rs.get(k)])), opts)) add(k, s.dx, s.dy);
+  const units = new Map();
+  const inFrame = new Set();
+  for (const f of frames) { const r = groupFrameOf(bbox(f.keys.map((k) => rs.get(k)))); units.set(`group:${f.id}`, r); f.keys.forEach((k) => inFrame.add(k)); }
+  for (const [k, r] of rs) if (!inFrame.has(k)) units.set(k, r);
+  for (const [u, s] of separateRegions(units, opts)) {
+    const f = u.startsWith('group:') ? frames.find((x) => `group:${x.id}` === u) : null;
+    if (f) for (const k of f.keys) add(k, s.dx, s.dy); else add(u, s.dx, s.dy);
+  }
+  return new Map([...shift].filter(([, s]) => s.dx || s.dy).map(([k, s]) => [k, { dx: Math.round(s.dx), dy: Math.round(s.dy) }]));
+}
+// 묶음에 새로 든 영역(빈 워크스페이스)의 자리: 구성 영역 오른쪽이나 아래(REGION_GAP 띄움)에서, 그만큼 커진 묶음 테두리가 구성 아닌 영역과 붙지 않는 곳.
+// 전체가 덜 길쭉한 곳을 먼저(newRegionSlot과 같은 점수). 없으면 null(부르는 쪽이 newRegionSlot으로)
+export function groupSlot(members, others, size = EMPTY_REGION, { aspect = 1.6 } = {}) {
+  const ms = members.filter(Boolean), os = others.filter(Boolean);
+  if (!ms.length) return null;
+  const all = bbox(ms);
+  const cands = [];
+  for (const r of ms) cands.push({ x: r.x + r.w + REGION_GAP, y: r.y }, { x: r.x, y: r.y + r.h + REGION_GAP }, { x: all.x, y: r.y + r.h + REGION_GAP });
+  cands.push({ x: all.x, y: all.y + all.h + REGION_GAP }, { x: all.x + all.w + REGION_GAP, y: all.y });
+  const score = (c) => Math.max(c.x + size.w - all.x, (c.y + size.h - all.y) * aspect) * 10 + (c.y - all.y) + (c.x - all.x) / 100;
+  cands.sort((a, b) => score(a) - score(b));
+  for (const c of cands) {
+    const r = { x: c.x, y: c.y, w: size.w, h: size.h };
+    if (ms.some((m) => overlaps(r, m, REGION_GAP - 1))) continue;
+    const frame = groupFrameOf(bbox([...ms, r]));
+    if (os.some((o) => overlaps(frame, o, REGION_GAP / 2 - 1))) continue;
+    return { x: Math.round(c.x), y: Math.round(c.y) };
+  }
+  return null;
+}
+
 // 어느 워크스페이스에도 속하지 않는 노드(P6c: 소속 없는 메모·칸반)를 둘 빈자리. rects(노드, 그룹, 영역) 어느 것과도 겹치지 않는다.
 // near(원하는 왼쪽 위)가 비었으면 거기, 아니면 그 둘레를 고리 모양으로 넓혀 가장 가까운 곳. near가 없으면 판 전체의 오른쪽 위
 export function freeSlot({ size, rects = [], near = null, gap = GAP }) {
@@ -288,7 +352,9 @@ export function splitSide(parentRect, childRect) {
 // P73: stepOf(block, level) → { w, h, step }: 단계 크기(노드의 방향과 비율을 지킨다). 없으면 16:9 가로 표
 // P75: 하위 세션 줄(tree-line.mjs)과 같은 모양. 자식은 띄운 순서(rank: Map 블록 ID → 띄운 때, 없으면 연결 순서)로 위에서 아래로 서고,
 //   부모는 첫 자식과 윗변을 맞춘다(가운데가 아니다. 새 워커를 띄울 때 놓이는 자리와 같다). 열 사이 200(LINE_GAP_X), 형제 띠 사이 80(LINE_GAP_Y)
-export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200, gapY = GAP * 2, stepOf = null, rank = null } = {}) {
+export const WRAP_ASPECT = 16 / 9; // P91: 정리에서 하위 세션 열을 접는 기준 비율
+const WRAP_COST = 0.15;
+export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200, gapY = GAP * 2, stepOf = null, rank = null, wrapAspect = WRAP_ASPECT } = {}) {
   const bySession = new Map();
   for (const b of blocks) for (const m of b.members) bySession.set(m, b.id);
   const kids = new Map(blocks.map((b) => [b.id, []]));
@@ -330,17 +396,42 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200
   // P75: 열은 부모마다(자식 x = 부모 오른쪽 + gapX). 새 워커를 띄울 때 놓이는 자리(tree-line.mjs lineSlot)와 같다. 전에는 깊이마다 가장 넓은 블록에 맞춘 열이었다
   const out = new Map();
   // P78: pad { l, t, r, b }: 블록 둘레에 비워 둘 테두리(아직 상자가 없는 --worktree 워커는 상자 틀만큼). 줄은 테두리까지 차지하고 블록은 그 안에 놓는다
-  const place = (t, top, x) => {
+  // P91: 하위 세션 열이 부모와 함께 16:9(wrapAspect)보다 많이 세로로 길어지면 다음 열을 오른쪽에 연다(띄운 순서 그대로, 위 → 아래 다음 오른쪽).
+  //   열 수 c마다(열마다 ceil(n / c)개) 부모 + 열들의 바깥 비율을 재어 16:9에 가장 가까운 것을 고른다. 열을 하나 더할 때마다 WRAP_COST를 더해 애매하면 한 열로 둔다.
+  //   부모 크게(1920×1080)·하위 작게(1040×585)면 넷까지 한 열, 다섯부터 두 열이다(P75의 "격자로 접지 않는다"를 바꾼다)
+  const meas = new Map();
+  const measure = (t) => {
     const s = size.get(t.id);
     const pd = byId.get(t.id).pad || { l: 0, t: 0, r: 0, b: 0 };
     const ow = s.w + pd.l + pd.r, oh = s.h + pd.t + pd.b;
-    let y = top, span = 0;
-    for (const c of t.children) { const h = place(c, y, x + ow + gapX); y += h + gapY; span += h + gapY; }
-    if (span) span -= gapY;
-    const h = Math.max(oh, span);
-    out.set(t.id, { x: Math.round(x + pd.l), y: Math.round(top + pd.t), w: s.w, h: s.h, size: s.step });
-    return h;
+    const kids = t.children.map((c) => ({ c, m: measure(c) }));
+    let best = { w: ow, h: oh, cols: [], colW: [], ow, pd };
+    if (kids.length) {
+      best = null;
+      for (let c = 1; c <= (wrapAspect ? kids.length : 1); c++) {
+        const per = Math.ceil(kids.length / c);
+        if (c > 1 && Math.ceil(kids.length / (c - 1)) === per) continue; // 같은 나눔
+        const cols = [];
+        for (let i = 0; i < kids.length; i += per) cols.push(kids.slice(i, i + per));
+        const colW = cols.map((col) => Math.max(...col.map((k) => k.m.w)));
+        const colH = cols.map((col) => col.reduce((a, k) => a + k.m.h, 0) + gapY * (col.length - 1));
+        const w = ow + gapX + colW.reduce((a, x) => a + x, 0) + gapX * (cols.length - 1), h = Math.max(oh, ...colH);
+        const score = wrapAspect ? Math.abs(Math.log(w / h / wrapAspect)) + WRAP_COST * (cols.length - 1) : 0;
+        if (!best || score < best.score - 1e-9) best = { score, w, h, cols, colW, ow, pd };
+      }
+    }
+    meas.set(t.id, best);
+    return best;
   };
+  const place = (t, top, x) => {
+    const s = size.get(t.id);
+    const m = meas.get(t.id) || measure(t);
+    let cx = x + m.ow + gapX;
+    m.cols.forEach((col, ci) => { let y = top; for (const k of col) { place(k.c, y, cx); y += k.m.h + gapY; } cx += m.colW[ci] + gapX; });
+    out.set(t.id, { x: Math.round(x + m.pd.l), y: Math.round(top + m.pd.t), w: s.w, h: s.h, size: s.step });
+    return m.h;
+  };
+  trees.forEach(measure);
   let top = origin.y;
   for (const t of trees) top += place(t, top, origin.x) + gapY * 2;
   // 연결 없는 블록: 크기 그대로 한 줄에(너무 길면 줄을 바꾼다)

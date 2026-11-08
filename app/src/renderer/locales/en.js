@@ -2148,4 +2148,9 @@ export default {
     typed: 'queued in Claude Code',
     draft: 'text in the input box',
   },
+  groupFrame: { // P91: group frame around workspace areas on the canvas
+    count: { one: '{n} area', other: '{n} areas' },
+    autoTitle: 'Folders inside {root}, grouped automatically\nDrag the label to move all its areas together. Rename, remove or move workspaces out in the sidebar; your changes stay',
+    title: 'Group\nDrag the label to move all its areas together',
+  },
 };
