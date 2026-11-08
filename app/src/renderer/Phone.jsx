@@ -536,10 +536,10 @@ function SpawnSheet({ onClose, onStarted }) {
           {!workspaces.length && <div className="mt-ph-empty">{t('phone.noRepos')}</div>}
         </div>
         <label className="mt-ph-label" htmlFor="mt-ph-spawn-name">{t('quickName.label')}</label>
-        <input id="mt-ph-spawn-name" className={`mt-ph-name${chk.ok ? '' : ' bad'}`} data-field="phone-spawn-name" value={name} maxLength={40} autoCapitalize="off" autoCorrect="off" spellCheck={false} enterKeyHint="go"
+        <input id="mt-ph-spawn-name" className={`mt-ph-spawn-name${chk.ok ? '' : ' bad'}`} data-field="phone-spawn-name" value={name} maxLength={40} autoCapitalize="off" autoCorrect="off" spellCheck={false} enterKeyHint="go"
           placeholder={t('quickName.ph')} aria-invalid={!chk.ok} aria-describedby="mt-ph-spawn-note" onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); start(); } }} />
-        <div id="mt-ph-spawn-note" className={`mt-ph-name-note${chk.ok ? '' : ' bad'}`} data-role="phone-spawn-note" role={chk.ok ? undefined : 'alert'}>{chk.ok ? t('quickName.hintPhone') : t(`backend.${chk.key}`, chk.vars)}</div>
+        <div id="mt-ph-spawn-note" className={`mt-ph-spawn-note${chk.ok ? '' : ' bad'}`} data-role="phone-spawn-note" role={chk.ok ? undefined : 'alert'}>{chk.ok ? t('quickName.hintPhone') : t(`backend.${chk.key}`, chk.vars)}</div>
         <button type="button" className="mt-ph-primary" data-action="phone-spawn-go" disabled={!L || !W || busy || !chk.ok} onClick={start}>{busy ? t('phone.starting') : t('phone.start', { name: L ? L.name : '' })}</button>
       </div>
     </div>
