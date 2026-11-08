@@ -94,6 +94,31 @@ export function spreadLabels(items, { gap = 6 } = {}) {
   return out;
 }
 
+// 선 위 글이 놓일 틈(두 노드 사이). ra·rb: 두 끝 노드 사각형, sides: { sourceHandle, targetHandle }, others: 다른 세션 노드 사각형들(판 좌표)
+// → { gap, horizontal } 또는 { gap: 0, horizontal, blocked: true }(글 자리 = 두 손잡이의 가운데가 다른 세션 위)
+// P98: 덩어리 밖 리드 → 덩어리 안쪽 칸 워커처럼 선이 다른 세션 뒤로 지나가면 글 자리가 그 세션 위다(blocked). 그런 이름표는 그리지 않는다(linkLabelHidden)
+export function edgeGap(ra, rb, sides, others = []) {
+  const gx = Math.abs(rb.x + rb.w / 2 - (ra.x + ra.w / 2)) - (ra.w + rb.w) / 2, gy = Math.abs(rb.y + rb.h / 2 - (ra.y + ra.h / 2)) - (ra.h + rb.h) / 2;
+  const p = handleAt(ra, sides.sourceHandle), q = handleAt(rb, sides.targetHandle), m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+  if (others.some((r) => r && m.x > r.x && m.x < r.x + r.w && m.y > r.y && m.y < r.y + r.h)) return { gap: 0, horizontal: gx >= gy, blocked: true };
+  return gx >= gy ? { gap: gx, horizontal: true } : { gap: gy, horizontal: false };
+}
+// P98: 이름표 자리가 다른 세션 위면(blocked) 그 세션 가운데에 초록 점(줄인 이름표 ●)만 남으므로 그리지 않는다. 선은 노드 뒤로 지나가 보이지 않는다.
+// 고른 선이나 그 연결 대화상자가 열려 있을 때는 그대로 보인다
+export const linkLabelHidden = (data, { hot = false } = {}) => !!(data && data.blocked) && !hot;
+// P98: 덩어리 안 칸에 닿는 선의 끝 점. 손잡이가 덩어리 바깥 둘레가 아니라 칸 사이 경계(덩어리 안쪽)에 있으면 그리지 않는다(outer: 덩어리 바깥 사각형)
+export function endInside(r, side, outer) {
+  if (!r || !outer) return false;
+  const p = handleAt(r, side);
+  return p.x > outer.x + 1 && p.x < outer.x + outer.w - 1 && p.y > outer.y + 1 && p.y < outer.y + outer.h - 1;
+}
+export function innerEnds(ra, rb, sides, outerA = null, outerB = null) {
+  const o = {};
+  if (endInside(ra, sides.sourceHandle, outerA)) o.hideSource = true;
+  if (endInside(rb, sides.targetHandle, outerB)) o.hideTarget = true;
+  return o;
+}
+
 // 이름표 자리(getBezierPath의 가운데)를 비켜 놓은 만큼 옮긴다
 export const shifted = (lx, ly, data) => (data && data.shift ? [lx + data.shift.dx, ly + data.shift.dy] : [lx, ly]);
 

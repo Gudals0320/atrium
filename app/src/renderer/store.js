@@ -123,6 +123,16 @@ export function selectWorkspace(key) {
   if (moved) api.call('workspace.select', { workspace: key }).catch(() => {});
   if (state.fitWorkspace) state.fitWorkspace(key);
 }
+// P98: 위 바의 묶음 칩. pick을 지금 워크스페이스로 고르고(새 세션 폴더 등), 화면은 묶음 구성 영역 모두에 맞춘다
+export function selectGroup(keys, pick) {
+  if (!pick) return;
+  const moved = pick !== state.currentWs;
+  state.currentWs = pick;
+  changed();
+  if (moved) api.call('workspace.select', { workspace: pick }).catch(() => {});
+  if (state.fitWorkspaces) state.fitWorkspaces(keys && keys.length ? keys : [pick]);
+  else if (state.fitWorkspace) state.fitWorkspace(pick);
+}
 // 노드로 갔을 때 그 워크스페이스를 기본으로(새 세션 대화상자의 폴더)
 export function noteWorkspace(key) {
   if (!key || key === state.currentWs) return;

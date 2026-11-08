@@ -152,8 +152,8 @@ export function SpawnEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositi
   const fit = labelFit(data);
   return <>
     <BaseEdge id={id} path={path} className="mt-edge spawned spawn convo" interactionWidth={12} />
-    <circle className="mt-edge-end spawn" cx={sourceX} cy={sourceY} r={4.5} />
-    <circle className="mt-edge-end spawn" cx={targetX} cy={targetY} r={4.5} />
+    {!(data && data.hideSource) && <circle className="mt-edge-end spawn" cx={sourceX} cy={sourceY} r={4.5} />}
+    {!(data && data.hideTarget) && <circle className="mt-edge-end spawn" cx={targetX} cy={targetY} r={4.5} />}
     {!fit.compact && <EdgeLabelRenderer>
       <div className="mt-edge-label spawn nodrag nopan" style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, pointerEvents: 'none', '--fitw': `${fit.maxWidth}px` }} data-spawn-edge={id}>
         <span className="mt-edge-tag">{t('convo.spawnTag')}</span><span className="mt-edge-text">{VIA[data && data.via] || (data && data.via) || ''}{data && data.name ? ` ${data.name}` : ''}</span>

@@ -2227,4 +2227,14 @@ export default {
     restHidden: '외 {n}개',
     noModel: '셸',
   },
+  // P98: 위 바의 묶음 칩(폴더로 자동 묶은 그룹이나 직접 만든 그룹)
+  wsGroupTab: {
+    title: '{name}: 프로젝트 {n}개를 묶은 {kind}\n세션 {sessions}개 (셸 {shells}개) · 작업 중 {working}개 · 응답 필요 {needsYou}개 · 확인할 결과 {review}개\n클릭하면 그룹 전체로 이동합니다. ▾를 누르면 프로젝트를 하나 선택합니다.',
+    kindAuto: '자동 그룹({root} 안의 폴더)',
+    kindGroup: '그룹',
+    current: '지금: {name}',
+    pick: '{name} 그룹의 프로젝트',
+    headAuto: '자동 그룹',
+    headGroup: '그룹',
+  },
 };

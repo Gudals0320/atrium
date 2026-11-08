@@ -2227,4 +2227,14 @@ export default {
     restHidden: 'and {n} more',
     noModel: 'shell',
   },
+  // P98: top bar chip for a group of workspaces (folder group or your group)
+  wsGroupTab: {
+    title: '{name}: {kind} of {n} workspaces\nSessions {sessions} (shells {shells}) · working {working} · your turn {needsYou} · review {review}\nClick to see the whole group. ▾ picks one workspace',
+    kindAuto: 'folder group in {root}',
+    kindGroup: 'group',
+    current: 'Now: {name}',
+    pick: 'Workspaces in {name}',
+    headAuto: 'folder group',
+    headGroup: 'group',
+  },
 };

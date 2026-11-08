@@ -28,7 +28,7 @@ import { shiftAreasLocal } from './store.js'; // P27
 import { useStore, getState, setNodeLocal, saveNode, setAttached, setCloseIds, setFocus, markSeen, toast, openDialog, selectWorkspace, noteWorkspace, setViewNow, setSelected, setPendingInput, dockOf, loadBoard, setMemoLocal, setKanbanLocal, setConvoLocal, wsName } from './store.js';
 import { ConvoNode, WorktreeBox, SpawnEdge } from './ConvoNode.jsx'; // P13
 import { worktreeBoxes, boardSpawnDup } from '../../../backend/src/convo-canvas.mjs';
-import { decorateEdges } from './lib/link-labels.js'; // P67
+import { decorateEdges, edgeGap, innerEnds } from './lib/link-labels.js'; // P67. P98: edgeGap, innerEnds
 import { api } from './api.js';
 import { SessionNode } from './SessionNode.jsx';
 import { terms } from './TerminalView.jsx'; // P38
@@ -52,7 +52,7 @@ import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t�
 import { repoEdges, facingSides } from '../../../backend/src/links.mjs';
 import { boundsOf } from '../../../backend/src/workspaces.mjs';
 import { chromeInset, fitInset } from './lib/chrome-inset.js'; // P52(#5)
-import { bbox, REGION_GAP, groupFrames } from '../../../backend/src/canvas.mjs'; // P91: groupFrames(묶음 테두리)
+import { bbox, REGION_GAP, groupFrames, groupFrameOf } from '../../../backend/src/canvas.mjs'; // P91: groupFrames(묶음 테두리). P98: groupFrameOf
 import { layout as layoutTree, dropZone, edgeSnap } from '../../../backend/src/dock-tree.mjs'; // P17, P23
 import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts, dockedAreas, visibleAnchors } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안. P68: 워크트리끼리 붙인 덩어리
 import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
@@ -344,15 +344,13 @@ export function Canvas() {
     const dockIdOf = new Map();
     for (const d of docks.values()) for (const m of d.members) dockIdOf.set(m, d.dockId);
     const adjacent = (a, b) => dockIdOf.has(a) && dockIdOf.get(a) === dockIdOf.get(b);
-    // 선 위 글이 놓일 틈(두 노드 사이). 글 자리(두 손잡이의 가운데)가 다른 노드 위면 틈이 없는 것으로 본다(짧은 표시)
-    const handleAt = (r, side) => (side === 'r' ? { x: r.x + r.w, y: r.y + r.h / 2 } : side === 'l' ? { x: r.x, y: r.y + r.h / 2 } : side === 't' ? { x: r.x + r.w / 2, y: r.y } : { x: r.x + r.w / 2, y: r.y + r.h });
+    // 선 위 글이 놓일 틈(두 노드 사이). 글 자리(두 손잡이의 가운데)가 다른 노드 위면 틈이 없는 것으로 본다(blocked, lib/link-labels.js edgeGap)
+    // P98: 덩어리 바깥 사각형(구성 노드 → 그 덩어리). 칸 사이 경계에 붙은 선 끝 점은 그리지 않는다(innerEnds)
+    const outerOf = new Map();
+    for (const d of docks.values()) { const r = bbox(d.members.map((m) => storeNodes.get(m))); if (r) for (const m of d.members) outerOf.set(m, r); }
     const gapOf = (a, b) => {
-      const ra = rectId(a), rb = rectId(b);
-      const gx = Math.abs(rb.x + rb.w / 2 - (ra.x + ra.w / 2)) - (ra.w + rb.w) / 2, gy = Math.abs(rb.y + rb.h / 2 - (ra.y + ra.h / 2)) - (ra.h + rb.h) / 2;
-      const sd = facingSides(ra, rb), p = handleAt(ra, sd.sourceHandle), q = handleAt(rb, sd.targetHandle), m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-      const blocked = [...storeNodes].some(([id, r]) => id !== a && id !== b && sessions.has(id) && m.x > r.x && m.x < r.x + r.w && m.y > r.y && m.y < r.y + r.h);
-      if (blocked) return { gap: 0, horizontal: gx >= gy, blocked: true };
-      return gx >= gy ? { gap: gx, horizontal: true } : { gap: gy, horizontal: false };
+      const ra = rectId(a), rb = rectId(b), sd = facingSides(ra, rb);
+      return { ...edgeGap(ra, rb, sd, [...storeNodes].filter(([id]) => id !== a && id !== b && sessions.has(id)).map(([, r]) => r)), ...innerEnds(ra, rb, sd, outerOf.get(a), outerOf.get(b)) };
     };
     for (const l of links.values()) if (here(l.from) && here(l.to) && !adjacent(l.from, l.to)) out.push({ id: l.linkId, source: l.from, target: l.to, ...sides(l.from, l.to), type: 'link', data: gapOf(l.from, l.to) });
     const linked = (a, b) => [...links.values()].some((l) => l.from === a && l.to === b);
@@ -680,6 +678,7 @@ export function Canvas() {
     // P27: 리포로 가면 워크트리 영역까지 들어오게
     const repoRect = (key) => bbox([...allRegions()].filter(([k]) => wsOfArea(k) === key).map(([, r]) => r));
     st.fitWorkspace = (key) => { const r = repoRect(key); if (r) st.navigateToRect(r); };
+    st.fitWorkspaces = (keys) => { const r = bbox(keys.map(repoRect).filter(Boolean)); if (r) st.navigateToRect(keys.length > 1 ? groupFrameOf(r) : r); }; // P98: 위 바의 묶음 칩(구성 영역 모두와 묶음 테두리·이름표)
     st.regionOf = (key) => repoRect(key) || null;
     // P6c: 점(판 좌표)이 든 워크스페이스 영역(새 메모·칸반의 소속), 메모·칸반 노드로 가기(검색). 간 노드는 2초 동안 빛난다
     st.regionAt = (p) => wsAt({ x: p.x, y: p.y, w: 0, h: 0 }, mainOnly(allRegions())); // P27: 메모·칸반은 본 저장소 영역에만
