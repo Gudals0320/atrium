@@ -26,7 +26,7 @@ export function notifyKey(s) {
   return `${s.sessionId}|${s.state}|${(a && (a.toolUseId || a.since)) || 'x'}`;
 }
 
-// 트레이 아이콘: 16x16 동그라미 PNG를 직접 만든다(에셋 파일 없이). 내 차례가 있으면 주황, 없으면 청록
+// 트레이 아이콘: 16x16 동그라미 PNG를 직접 만든다(에셋 파일 없이). 내 차례가 있으면 노랑(P93), 없으면 청록
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(buf) { let c = 0xffffffff; for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
 function chunk(type, data) { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type, 'ascii'), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td)); return Buffer.concat([len, td, crc]); }
@@ -45,14 +45,14 @@ export function circlePng([r, g, b], size = 16) {
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 6;
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
-const ICON = { idle: [38, 166, 154], needsYou: [245, 146, 40] }; // 로고 파일이 없을 때만 쓰는 색 원
+const ICON = { idle: [38, 166, 154], needsYou: [255, 224, 61] }; // 로고 파일이 없을 때만 쓰는 색 원
 
 // 트레이·알림 로고(app/assets, 원본은 app/design/brand). 트레이는 16·24·32px을 배율 1·1.5·2로 넣는다.
-// 내 차례면 같은 로고의 오른쪽 아래에 주황 점(#ff6b3d, 테마 --accent)을 얹는다. 점 둘레의 어두운 고리는 초록 로고와 갈라 보이게 한다
+// 내 차례면 같은 로고의 오른쪽 아래에 노란 점(#ffe03d, 테마 --attn. P93에 주황에서 옮김)을 얹는다. 점 둘레의 어두운 고리는 초록 로고와 갈라 보이게 한다
 const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
 export const NOTIFY_ICON = path.join(ASSETS, 'atrium-icon-256.png');
 const TRAY_SIZES = [[16, 1], [24, 1.5], [32, 2]];
-const ACCENT = [0xff, 0x6b, 0x3d], RING = [0x0f, 0x0f, 0x0b];
+const ACCENT = [0xff, 0xe0, 0x3d], RING = [0x0f, 0x0f, 0x0b];
 // toBitmap()은 Windows에서 BGRA다. 점과 고리를 덮어 그린 PNG를 돌려준다
 function badgePng(img) {
   const { width: w, height: h } = img.getSize();

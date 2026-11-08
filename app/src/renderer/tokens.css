@@ -48,11 +48,11 @@
   --con-bg: #12140e;
   --con-head: #0a0a08;
   --con-line: rgba(255, 250, 235, 0.09);
-  --con-line-working: rgba(28, 182, 109, 0.78);
+  --con-line-working: rgba(224, 131, 94, 0.78);   /* P93: 일하는 에이전트(셸이 아닌 모든 종류)는 주황 */
+  --con-line-shell: rgba(28, 182, 109, 0.78);     /* P93: 명령이 도는 셸은 브랜드 초록 */
   --con-line-review: rgba(185, 166, 240, 0.45);
-  --con-line-codex: rgba(96, 120, 220, 0.55);
   --con-line-error: rgba(224, 96, 122, 0.7);
-  --con-glow: 0 0 0 4px rgba(255, 107, 61, 0.16), 0 0 30px rgba(255, 107, 61, 0.2);
+  --con-glow: 0 0 0 4px rgba(255, 224, 61, 0.16), 0 0 30px rgba(255, 224, 61, 0.2);
   --con-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   --con-radius: 10px;
   --con-head-h: 28px;
@@ -107,14 +107,15 @@
   --accent-bg: #0f2318;              /* 강조 줄 바탕(사람 상자, 지시 앞부분) */
   --accent-bg-2: #0d1a13;
   --accent-text: #c4f5d4;
-  /* 주의: 내 차례(묻는 중, 신뢰 대기)와 승인 줄은 눈에 띄게 따뜻한 주황으로 남긴다(트레이 점과 같은 색) */
-  --attn: #ff6b3d;
-  --attn-ink: #ffffff;
-  --attn-line: rgba(255, 107, 61, 0.7);
-  --attn-bg: #2a1810;                /* 내 차례 알약 바탕 */
-  --attn-bg-2: #1e1610;              /* 승인 줄 바탕 */
-  --attn-text: #ffd9c7;
-  --answer-line: rgba(255, 107, 61, 0.35);
+  /* 주의: 내 차례(묻는 중, 신뢰 대기)와 승인 줄은 판에서 가장 눈에 띄는 밝은 노랑(트레이 점과 같은 색).
+     P93: 주황(#ff6b3d)에서 옮겼다. 일함이 주황이 되어서다. 바탕 대비 15.3:1, 일함 주황·오류·검토·셸 초록과 색 차이(CIEDE2000) 36.7·57.4·60.3·35.6 */
+  --attn: #ffe03d;
+  --attn-ink: #1a1400;               /* 노랑 위 글은 어두운 색(대비 14.3:1) */
+  --attn-line: rgba(255, 224, 61, 0.7);
+  --attn-bg: #2a2510;                /* 내 차례 알약 바탕 */
+  --attn-bg-2: #1f1c0f;              /* 승인 줄 바탕 */
+  --attn-text: #fff3b8;
+  --answer-line: rgba(255, 224, 61, 0.35);
   --answer-no-line: #5a4a3a;
   --answer-no-text: #efe7da;
   --answer-term: #bdb4a6;
@@ -146,24 +147,24 @@
 
   /* 세션 상태(상태 알약, 테두리, 아이콘 얼굴의 점) */
   --st-starting: #8d8a80;
-  --st-trust_wait: #ff6b3d;
+  --st-trust_wait: #ffe03d;
   --st-ready: #8d8a80;
-  --st-working: #3fcf86;
-  --st-waiting: #ff6b3d;
+  --st-working: #e0835e;      /* P93: 일함은 Claude Code 주황(#d77757)을 어두운 판에서 조금 밝힌 값. 종류마다 다르게 하지 않는다 */
+  --st-working-soft: rgba(224, 131, 94, 0.16); /* 일함 수·도는 대화 표시의 옅은 바탕 */
+  --st-waiting: #ffe03d;
   --st-review: #b9a6f0;
   --st-error: #e0607a;
   --st-exited: #6a6860;
   --st-sleeping: #8f9bb8; /* P21: 잠듦(달) */
   --st-shell_idle: #8d8a80;
-  --st-shell_running: #67c27a;
-  --st-codex: #6f9cf0;
+  --st-shell_running: #1cb66d; /* P93: 일하는 셸은 브랜드 초록(--accent와 같은 값) */
 
   /* P13: 판 밖 대화 노드(읽기 전용 카드)와 워크트리 배경 */
   --cv-bg: #13140f;
   --cv-head: #0f100c;
   --cv-line: rgba(255, 250, 235, 0.11);
   --cv-line-hi: rgba(255, 250, 235, 0.22);
-  --cv-run: #3fcf86;
+  --cv-run: #e0835e;               /* P93: 판 밖에서 도는 대화(에이전트)도 일함 주황 */
   --cv-wt-bg: rgba(226, 178, 76, 0.035);
   --cv-wt-line: rgba(226, 178, 76, 0.32);
   /* P35: 리포 영역 안의 워크트리 상자(노란 테마). --cv-wt-bg·--cv-wt-line보다 조금 짙게 해 리포 영역 안에서 상자로 읽히게 한다 */

@@ -55,11 +55,11 @@ export function phoneList(sessions, workspaces = []) {
   return { needs, working, groups };
 }
 
-// 상태 점의 색 이름(phone.css의 data-tone). 셸은 명령이 돌면 작업 중
+// 상태 점의 색 이름(phone.css의 data-tone). 셸은 명령이 돌면 shell_running(P93: 셸은 초록, 에이전트 working은 주황)
 export function toneOf(s) {
   if (!s) return 'exited';
   if (s.waking) return 'starting';
-  if (s.kind === 'shell' && s.state !== 'exited' && s.state !== 'sleeping' && s.state !== 'error') return s.shell && s.shell.atPrompt === false ? 'working' : 'ready';
+  if (s.kind === 'shell' && s.state !== 'exited' && s.state !== 'sleeping' && s.state !== 'error') return s.shell && s.shell.atPrompt === false ? 'shell_running' : 'ready';
   if (s.state === 'trust_wait') return 'waiting';
   if (s.unseen && s.state === 'ready') return 'review';
   return ['starting', 'ready', 'working', 'waiting', 'error', 'exited', 'sleeping'].includes(s.state) ? s.state : 'starting';

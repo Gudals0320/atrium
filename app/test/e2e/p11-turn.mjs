@@ -46,7 +46,7 @@ try {
   let s = await state(page);
   v = await looks(page);
   step('목록 줄을 누르면 rev로 간다(초점, 가까이 얼굴)', s.focus === 'rev' && v.node.face === 'close', { focus: s.focus, face: v.node.face });
-  step('가까이서 기다리는 노드는 주황 테두리와 빛', /255, 107, 61/.test(v.node.border) && /255, 107, 61/.test(v.node.shadow), v.node);
+  step('가까이서 기다리는 노드는 응답 필요 색(P93: 노랑) 테두리와 빛', /255, 224, 61/.test(v.node.border) && /255, 224, 61/.test(v.node.shadow), v.node);
   await sleep(1500);
   await shot(page, 'p11-turn-3-at-rev');
 

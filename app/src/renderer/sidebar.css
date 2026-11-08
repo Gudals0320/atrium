@@ -20,7 +20,7 @@
 .mt-sb-ws-icon { color: var(--dim); font-weight: 400; }
 .mt-sb-ws-c { margin-left: auto; display: flex; gap: 6px; color: var(--dim); font-size: 12px; white-space: nowrap; font-family: var(--font-mono); }
 .mt-sb-ws-c .working { color: var(--st-working); }
-.mt-sb-ws-c .need { color: var(--accent-2); font-weight: 700; }
+.mt-sb-ws-c .need { color: var(--attn); font-weight: 700; }
 .mt-sb-ws-c .arch { color: var(--dim-2); }
 .mt-sb-ws-body { padding: 0 6px 6px 20px; }
 
