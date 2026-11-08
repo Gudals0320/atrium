@@ -22,7 +22,7 @@
 
 ## What it is
 
-Atrium is a Windows desktop app that puts every agent CLI session on one board. Each repository gets its own area, every session shows its live terminal and its state, and the sessions that need you glow orange.
+Atrium is a Windows desktop app that puts every agent CLI session on one board. Each repository gets its own area, every session shows its live terminal and its state, working agents glow orange, and the sessions that need you glow yellow.
 
 Atrium does not replace your agents or tell them how to work. It starts sessions, connects them and shows the connections. The agents do the work and hand it to each other through [herdr](https://herdr.dev), which also owns the terminals, so sessions keep running when the window closes.
 
@@ -54,7 +54,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Workers on demand.** Agents start their own workers with `atrium child`, with no limit on count or depth. The board's `atrium` skill tells them when to split work across workers and git worktrees. Workers line up to the right of their parent in the order they were started, and show their parent, role and number in the header.
 - **Models by name.** `atrium child --model "deepseek flash"` resolves a spoken model name against the models the board knows (`atrium models`), and model errors go back to the parent.
 - **Links you can read.** A session runs `atrium me` to see its parent, workers and role links as the board has them now, and gets a short notice when they change. Detach a session from its parent on the board, or start one with `atrium child --head` to lead its own work.
-- **Mission map and Thread.** `M` opens a map of who directs whom, grouped by repository. Thread keeps every prompt you sent from the command bar with its delivery state and the final report.
+- **Mission map and Thread.** `M` opens a map of who directs whom, grouped by repository: each card shows its role (lead, reviewer, tests, docs, worker), line styles tell sub-sessions, role links, requests and other projects apart, and pointing at a session keeps only its links. The phone map uses the same look. Thread keeps every prompt you sent from the command bar with its delivery state and the final report.
 - **Talk from the board.** Type `@name` or `@all` in the command bar. Each session has its own delivery queue, and a message is confirmed only when the agent actually submits it. Loops resend a prompt on a schedule or whenever a session goes idle.
 
 ![The mission map: the user, a lead with two workers and a reviewer, a worktree session, and the shells of a second repository](.github/images/agents.png)
@@ -70,7 +70,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 ### Docks and layout
 
 - **Docks.** `Ctrl`+drag a node onto another node's edge to split it, tmux style. Layout presets match the number of sessions (2 to 6, and even splits for 7 or more). Links inside a dock show as small bridges on the dividers, never as lines across your terminals.
-- **Size and arrange.** Size steps (large, normal, small, wide, tall) for nodes and docks. **Arrange** lays out the board along the links, with one undo.
+- **Size and arrange.** Size steps (large, normal, small, wide, tall) for nodes and docks. **Arrange** lays out the board along the links and fits the whole board to the screen ratio, with one undo. Folders inside one another, or under one project folder, are grouped under one frame with relative path labels.
 - **Notes on the canvas.** Markdown memos and kanban boards sit next to the sessions. A card linked to a session shows its state and takes you there.
 
 ![A dock: the lead on the left and two workers on the right, with the layout presets for three sessions open above](.github/images/dock.png)
@@ -81,7 +81,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Pair with a code.** Press **New code** on the PC, or allow a request from the laptop. A paired browser is bound to the Tailscale device it paired from.
 - **Passkey optional.** Off by default. Turn it on to confirm sign-ins with a phone or Windows Hello passkey.
 - **Stay in control.** A connection log, attach notices, **Disconnect** and **Unpair** per device, and an **Accept remote connections** switch.
-- **On a phone.** Added to the home screen, the board opens the session list and the mission map, and notifies you when a session finishes or needs an answer (session name only, never the question).
+- **On a phone.** Added to the home screen, the board opens the session list and the mission map, and notifies you when a lead's whole work cycle ends (its workers included) or a session needs an answer (session name only, never the question). Worker alerts default to answers only.
 - Each client keeps its own view. In the browser you can also pick PC folders and drop files into a terminal.
 
 <table>
