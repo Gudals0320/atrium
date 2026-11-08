@@ -130,6 +130,10 @@ export function resolveModel(query, catalog, { kind = null } = {}) {
     const keysOf = (e) => [...e.keys.exact, ...e.keys.exactModel, ...e.keys.alias, e.base].filter(Boolean).map((k) => norm(stripVariants(k)));
     const strong = entries.filter((e) => keysOf(e).includes(nq));
     if (strong.length) return pick(strong, qv, 'loose');
+    // P96: 제공자 앞머리(deepseek/, b.ai/)를 뗀 이름으로 한 번 더(Codex의 opencodex 이름 deepseek/deepseek-flash ↔ "deepseek flash")
+    const tail = (k) => k.slice(k.lastIndexOf('/') + 1);
+    const strongTail = entries.filter((e) => keysOf(e).map(tail).includes(nq));
+    if (strongTail.length) return pick(strongTail, qv, 'loose');
     const weak = entries.filter((e) => { const et = new Set(tokens(e.words)); return qt.length && qt.every((t) => et.has(t)); });
     if (weak.length) return pick(weak, qv, 'loose');
   }

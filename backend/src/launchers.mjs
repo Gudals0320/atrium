@@ -16,7 +16,8 @@ export const NAME_MAX = 40;
 export const ARGS_MAX = 300;
 export const ENV_MAX = 20; // 이름 수
 export const ENV_VALUE_MAX = 500;
-export const MODEL_RE = /^[A-Za-z0-9._:/\[\]-]*$/;
+export { MODEL_RE } from './model-name.mjs'; // P96: 모델 이름 검사는 model-name.mjs 한 곳
+import { MODEL_RE } from './model-name.mjs';
 const KIND_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const ICON_RE = /^[a-z][a-z0-9-]{0,19}$/;

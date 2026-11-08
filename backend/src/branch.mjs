@@ -27,7 +27,8 @@ import { EFFORTS } from './settings.mjs';
 import { clip } from './text.mjs';
 import { BACKEND_ROOT } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
-import { harnessOf } from './launchers.mjs'; // P41
+import { harnessOf, splitArgs } from './launchers.mjs'; // P41
+import { isModelName } from './model-name.mjs'; // P96
 import { buildCatalog, resolveModel, gatewaysOf, fetchGatewayModels, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
 import { baseUrlOf, proxyEnv } from './deepseek.mjs'; // P41
 import { takenNames, shownName } from './session-label.mjs'; // P66
@@ -37,7 +38,7 @@ import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy, detachedParentLine, detachedC
 export const DEFAULT_ROLE = '워커';
 export const CHILD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/; // herdr 에이전트 이름 규칙과 같다(herdr --skill)
 export const WORKTREE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-export const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]{0,79}$/;
+export { isModelName } from './model-name.mjs'; // P96: 슬래시 든 이름(deepseek/deepseek-flash)도 받는다. 검사는 model-name.mjs 한 곳
 export const CHILD_SIZE = 'wide-normal'; // P73: 새로 띄운 하위 세션도 16:9 가로 보통(1440×810. 전에는 정리처럼 작게 480×300). 사람이 크기를 바꾸면 그대로 둔다
 const READY_WAIT_MS = 75000; // atrium child가 하위 세션이 준비되기를 기다리는 시간. Claude Code Bash 도구의 기본 시간 제한(2분) 안쪽
 const SUBMIT_WAIT_MS = 20000; // --prompt를 준 경우 첫 지시가 들어가 일을 시작하기까지 더 기다리는 시간
@@ -60,6 +61,71 @@ export const BRANCH_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`]),
   'PowerShell(herdr agent prompt *)', 'PowerShell(herdr agent wait *)', 'PowerShell(herdr agent read *)',
 ];
+
+// ---------- P96: 다른 종류 하위 세션(Claude → Codex 등) ----------
+// 무엇으로 띄우는가: --launcher면 그 호출자, 아니면(--kind만, --model이 그 하네스 모델로 풀림) 판 레일의 그 종류 기본 호출자를 바탕으로 띄운다
+// (추가 인자·모델. --model을 주면 모델만 덮는다). 그 종류의 호출자가 없으면 맨 명령. 그래서 사람이 레일 단추로 띄운 것과 같은 설정이 된다.
+// 권한: 부모(Claude Code)의 권한 모드를 그 하네스의 승인 인자로 옮긴다. 호출자의 추가 인자에 승인·샌드박스 인자가 있으면 호출자 것이 이긴다.
+// Codex(0.167 --help): manual·plan은 덧붙이지 않는다(Codex 사용자 설정의 approval_policy). acceptEdits·auto는 작업 폴더 쓰기 샌드박스 + 필요할 때 묻기
+// (옛 --full-auto와 같은 뜻), dontAsk·bypassPermissions는 묻지 않고 샌드박스 없이. 표에 없는 종류(pi 등)는 옮기지 않는다
+export const APPROVAL_ARGS = {
+  codex: {
+    manual: [], plan: [],
+    acceptEdits: ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request'],
+    auto: ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request'],
+    dontAsk: ['--dangerously-bypass-approvals-and-sandbox'],
+    bypassPermissions: ['--dangerously-bypass-approvals-and-sandbox'],
+  },
+};
+const CODEX_APPROVAL_FLAGS = new Set(['-a', '--ask-for-approval', '-s', '--sandbox', '--approve-for-me', '--dangerously-bypass-approvals-and-sandbox', '--full-auto', '--yolo']);
+const CODEX_APPROVAL_KEY = /^(approval_policy|sandbox_mode)\s*=/;
+// 호출자의 추가 인자에 승인·샌드박스 인자가 있는가(-c approval_policy=…, -c sandbox_mode=…도 센다)
+export function hasApprovalArgs(kind, args = []) {
+  if (kind !== 'codex') return false;
+  return args.some((a, i) => CODEX_APPROVAL_FLAGS.has(a.split('=')[0])
+    || ((a === '-c' || a === '--config') && CODEX_APPROVAL_KEY.test(args[i + 1] || ''))
+    || (a.startsWith('--config=') && CODEX_APPROVAL_KEY.test(a.slice(9))) || (a.startsWith('-c') && a.length > 2 && CODEX_APPROVAL_KEY.test(a.slice(2))));
+}
+// → { args, from: parent(옮김) | launcher(호출자 것이 이김) | harness(덧붙이지 않음, 그 하네스의 사용자 설정) | null(옮기지 않는 종류) }
+export function approvalArgsOf(kind, mode, launcherArgs = []) {
+  const table = APPROVAL_ARGS[kind];
+  if (!table) return { args: [], from: null };
+  if (hasApprovalArgs(kind, launcherArgs)) return { args: [], from: 'launcher' };
+  const args = table[mode] || [];
+  return { args: [...args], from: args.length ? 'parent' : 'harness' };
+}
+// 그 종류의 기본 호출자: 레일(즐겨찾기) 순서의 첫 것, 없으면 호출자 목록의 첫 것, 없으면 null
+export function defaultLauncherOf(kind, { items = [], favorites = [] } = {}) {
+  const ofKind = (l) => { const h = l && harnessOf(l.harness); return !!h && h.kind === kind && !['claude', 'shell', 'command'].includes(h.id); };
+  for (const id of favorites) { const l = items.find((x) => x.id === id); if (ofKind(l)) return l; }
+  return items.find(ofKind) || null;
+}
+// 모델을 덮을 때 호출자 인자의 -m·--model을 뺀다(Codex는 -m을 두 번 받지 않는다)
+export function withoutModelArgs(args = []) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const [k] = args[i].split('=');
+    if (k === '-m' || k === '--model') { if (!args[i].includes('=')) i++; continue; }
+    out.push(args[i]);
+  }
+  return out;
+}
+// 다른 종류 하위 세션의 띄울 값. route: routeOf의 값, lists: 호출자 목록 { items, favorites }
+export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) {
+  const kind = route.kind;
+  const l = route.type === 'launcher' ? route.launcher : defaultLauncherOf(kind, lists);
+  const h = l ? harnessOf(l.harness) : harnessOf(kind);
+  const takesModel = !!h && h.fields.includes('model');
+  const override = route.type === 'model' && route.model ? route.model : null;
+  const model = override || (l && takesModel ? l.model || null : null);
+  const largs = override ? withoutModelArgs(splitArgs(l ? l.args : '')) : splitArgs(l ? l.args : '');
+  const approval = approvalArgsOf(kind, permissionMode, largs);
+  const args = [...largs, ...approval.args];
+  return {
+    launcher: l, model, args, argv: [...(model ? ['-m', model] : []), ...args],
+    record: { base: route.type === 'launcher' ? 'launcher' : l ? 'rail' : 'bare', launcher: l ? l.name : null, model, modelFrom: override ? 'model' : model ? 'launcher' : null, approvalArgs: approval.args, approvalFrom: approval.from, parentPermissionMode: permissionMode },
+  };
+}
 
 // ---------- 나무 계산(순수 함수) ----------
 // rowOf(id) → { parentSessionId } | null. 사람이 띄운 세션(부모 없음)이 1단계. 닫힌 중간 세션도 따라간다. 고리는 끊는다
@@ -140,11 +206,11 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 ## 순서
 
 1. 만들기(조각 하나에 워커 하나): \`atrium child <이름> --prompt "<지시>"\`
-   - 이름은 사람이 보드에서 보고 무슨 일을 맡은 워커인지 알 수 있게 네가 생각해서 짓는다. 맡긴 일이나 역할을 짧게 말한다(예: p31-worker, api-tests, reviewer, ko-copy, login-bug). w1·ds1 같은 번호 이름은 일이 정말 하찮을 때만 쓴다. 예를 외우지 말고 이번 일에 맞게 짓는다.
+   - 이름은 사람이 보드에서 보고 무슨 일을 맡은 워커인지 알 수 있게 네가 생각해서 짓는다. 맡긴 일이나 역할을 짧게 말한다(예: api-tests, reviewer, ko-copy, login-bug). w1·ds1 같은 번호 이름은 일이 정말 하찮을 때만 쓴다. 예를 외우지 말고 이번 일에 맞게 짓는다.
    - 규칙: 영문 소문자로 시작, 소문자·숫자·-·_ 만, 32자까지, 판 전체에서 하나. 겹친다는 답(\`name_taken\`)이 오면 다른 이름으로 다시 짓는다.
-   - 워커가 준비되고 지시가 들어가면 돌아온다. 응답에 herdr 이름과 다음에 칠 명령이 있다.
+   - 워커가 준비되면 돌아온다. 응답에 herdr 이름과 다음에 칠 명령이 있다.
    - 코드를 고치는 조각은 \`--worktree <이름>\`을 붙인다. Claude Code가 \`claude -w\`로 \`.claude/worktrees/<이름>\`과 브랜치 \`worktree-<이름>\`을 만든다. 직접 \`git worktree add\`를 하거나 보드 외부 형제 폴더를 만들지 않는다.
-   - 다른 폴더는 \`--cwd C:/Workspace/x\`(슬래시로). 역할 이름 \`--role 리뷰어\`(기본 워커), 다른 종류 \`--kind codex\`.
+   - 다른 폴더는 \`--cwd C:/Workspace/x\`(슬래시로). 역할 이름 \`--role 리뷰어\`(기본 워커).
    - 모델과 추론 수준은 조각에 맞게 고른다: 찾기·요약·단순 수정은 \`--model haiku\`나 \`--effort low\`, 설계·어려운 디버깅은 \`--effort high\`. 빼면 너의 것을 물려받는다.
    - 사용자가 모델을 말로 하면("deepseek flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "deepseek flash"\`처럼 들은 말을 줘도 보드가 푼다. 정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다. 보드의 워커 대신 너의 내부 하위 에이전트로 우회하지 않는다.
 2. 지시 쓰는 법(\`--prompt\`나 \`herdr agent prompt\`의 글): 목표, 할 것, 손대지 말 것, 완료 기준, 끝났음을 알리는 법("끝나면 바꾼 파일과 결과를 다섯 줄로 답한다", 워크트리면 "자기 브랜치에 커밋하고 커밋 해시를 답한다"). 워커는 너의 대화를 모른다. 필요한 파일 경로와 사실을 글에 넣는다.
@@ -153,20 +219,21 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 4. 응답 읽기: \`herdr agent read <이름> --source recent-unwrapped --lines 80\`. 목록·상태·마지막 응답은 \`atrium children\`(\`--all\`이면 그 아래까지).
 5. 모아 보고, 합치기: 워커마다 답을 확인하고(완료 기준을 채웠는지, 시험이 통과했는지) 정리해 사용자에게 보고한다. 워크트리 브랜치는 네가 합친다(\`git merge worktree-<이름>\`). 충돌이나 빠진 것은 그 워커에게 다시 시킨다.
 
-- 연결: \`atrium me\`가 너의 부모·하위 세션·역할 연결의 지금 기록이다. 헷갈리거나 예전 알림과 다르면 친다.
+- 연결: \`atrium me\`가 부모·하위 세션·역할 연결의 지금 기록이다. 헷갈리면 친다.
 - 헤드: 다른 폴더에 따로 이끌 세션을 띄우라면 \`atrium child <이름> --head --cwd <폴더> --prompt "<지시>"\`. 첫 요청 뒤 보드가 떼므로 그 뒤로 시키거나 기다리지 않는다.
+- 다른 종류(Codex 등): \`atrium child <이름> --kind codex --model "<모델>" --prompt "<지시>"\`. 레일의 Codex 설정과 너의 승인 방식을 따른다. hook이 없어 \`herdr agent wait\`로 끝을 본다.
 
 ## 신뢰 질문
 
-- 응답이 \`needs_trust\`(신뢰 질문에서 멈춤)면 사용자에게 응답에 적힌 한 문장만 말한다. 예: "보드에서 @wt1 카드의 신뢰 질문에 답해 주세요." 보드 외부 터미널을 열라고 하지 않는다. 신뢰는 사람만 준다. 네가 키를 보내 답하지 않는다.
+- 응답이 \`needs_trust\`(신뢰 질문에서 멈춤)면 사용자에게 응답에 적힌 한 문장만 말한다. 예: "보드에서 @wt1 카드의 신뢰 질문에 답해 주세요." 보드 외부 터미널을 열라고 하지 않고, 네가 키를 보내 답하지 않는다.
 - 워크트리 워커는 사람이 답하면 보드가 그 카드에서 워크트리로 다시 띄우고, \`--prompt\`의 지시는 그 뒤에 들어간다. 그동안 그 워커에게 herdr로 시키지 말고 \`atrium child-wait <이름>\`으로 기다린다.
 - \`needs_commit\`이면 저장소에 커밋이 없는 것이다. 사용자에게 알리고, 첫 커밋을 만들라고 한 경우에만 만든다.
 
 ## 지킬 것
 
 - 명령은 위 모양 그대로 한 줄씩 친다. \`$변수\`, \`$(…)\`, 파이프, \`&&\`, \`;\`를 섞지 않는다(섞으면 사람의 승인을 기다린다).
-- herdr 명령에 \`--session\`, \`--machine\`, \`--remote\`를 붙이지 않는다. \`test "$HERDR_ENV"\` 확인은 하지 않는다(늘 herdr 안이다).
-- 끝난 워커는 끄지 않고 둔다(사람이 나무와 결과를 본다). 사람이 끄라고 할 때만 \`atrium child-kill <이름>\`으로 끈다(그 아래도 함께, 자기 자손만).
+- herdr 명령에 \`--session\`, \`--machine\`, \`--remote\`를 붙이지 않는다. \`test "$HERDR_ENV"\` 확인은 하지 않는다.
+- 끝난 워커는 끄지 않고 둔다. 사람이 끄라고 할 때만 \`atrium child-kill <이름>\`으로 끈다(그 아래도 함께, 자기 자손만).
 - 워커가 권한을 묻고 멈추면(\`herdr agent prompt\`가 blocked) 대신 답하지 않는다. 사용자에게 "보드에서 @이름의 승인 카드에 답해 주세요"라고 알린다.
 - 잠든 워커는 \`atrium wake <이름>\`으로 깨운 뒤 시킨다.
 - 워커가 모델 오류로 답하지 못하면(\`atrium children\`의 오류 줄) 사용자에게 알리고 \`atrium models\`의 다른 줄로 다시 띄운다.
@@ -431,8 +498,10 @@ export class Branch {
     // P36: 미리 거부하지 않고 신뢰 관문으로 띄운다(그 저장소에서 claude를 띄워 신뢰 질문을 노드에 보이고, 사람이 답하면 claude -w로 다시 띄운다)
     const gate = worktree && predictTrust(cwd, b.cfg.claudeJson).needsTrust ? worktree : null;
     // P41: 모델은 풀린 값(호출자면 호출자의 모델). 빼면 부모의 것
-    const model = route.type === 'launcher' ? route.launcher.model || null : route.type === 'model' || route.type === 'gateway' ? route.model : claude ? parent.model || null : null;
-    if (model && !MODEL_RE.test(model)) throw apiError('bad_request', `모델: ${model}`);
+    // P96: 다른 종류(codex 등)는 판 레일의 그 종류 호출자를 바탕으로 띄우고, 부모의 권한 모드를 그 하네스의 승인 인자로 옮긴다
+    const other = claude ? null : otherKindPlan({ route, permissionMode: parent.permissionMode || 'manual', lists: this.launchersData() });
+    const model = other ? other.model : route.type === 'launcher' ? route.launcher.model || null : route.type === 'model' || route.type === 'gateway' ? route.model : claude ? parent.model || null : null;
+    if (model && !isModelName(model)) throw apiError('bad_request', `모델: ${model}`);
     const launcherEffort = route.type === 'launcher' && harnessOf(route.launcher.harness).fields.includes('effort') ? route.launcher.effort || null : null;
     const effort = claude ? (o.effort ? String(o.effort) : route.type === 'launcher' ? launcherEffort : parent.effort || null) : null; // P36: --effort, 빼면 물려받는다. P41: 호출자면 호출자의 것
     if (effort && !EFFORTS.includes(effort)) throw apiError('bad_request', `추론 수준은 ${EFFORTS.filter(Boolean).join(', ')} 가운데 하나: ${effort}`);
@@ -447,7 +516,7 @@ export class Branch {
     const allowHerdr = !!((b.store.spawnInfo(parent.sessionId) || {}).allowHerdr);
     const depth = parentDepth + 1;
     const viaLauncher = route.type === 'launcher';
-    const info = { role, depth, by: parent.sessionId, at: Date.now(), order: this.nextOrder(parent.sessionId), worktree, ...(worktree ? { wtHome: 1 } : {}), kind, via: 'atrium child', inherited: { cwd: !o.cwd, model: claude && !o.model && !o.launcher, effort: claude && !o.effort && !viaLauncher && !!parent.effort, permissionMode: !viaLauncher }, ...(viaLauncher ? { launcher: route.launcher.name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(gate ? { gate: 'trust' } : {}), ...(head ? { head: true } : {}) };
+    const info = { role, depth, by: parent.sessionId, at: Date.now(), order: this.nextOrder(parent.sessionId), worktree, ...(worktree ? { wtHome: 1 } : {}), kind, via: 'atrium child', inherited: { cwd: !o.cwd, model: claude && !o.model && !o.launcher, effort: claude && !o.effort && !viaLauncher && !!parent.effort, permissionMode: other ? other.record.approvalFrom === 'parent' : !viaLauncher }, ...(viaLauncher || (other && other.launcher) ? { launcher: (viaLauncher ? route.launcher : other.launcher).name } : {}), ...(other ? { harness: other.record } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(gate ? { gate: 'trust' } : {}), ...(head ? { head: true } : {}) };
 
     this.pending.push(parent.sessionId); this.pendingNames.add(name);
     let out;
@@ -455,7 +524,9 @@ export class Branch {
       // 신뢰 관문이면 처음에는 -w 없이 띄운다(그 저장소의 신뢰 질문이 뜬다)
       // P41: 호출자면 그 호출자의 하네스·모델·옵션·env를 그대로 쓴다(준 --effort만 덮는다). 게이트웨이 모델과 게이트웨이 물려받기는 그 게이트웨이 호출자의 env로, 권한 모드는 부모의 것
       const base = { cwd, name, worktree: gate ? null : worktree, parentSessionId: parent.sessionId, branch: info };
-      const sp = viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined }
+      // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
+      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: other.args.join(' ') }, permissionMode: parent.permissionMode } : { ...base, kind, args: other.argv, permissionMode: parent.permissionMode })
+        : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined }
         : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode, allowHerdr }
         : { ...base, kind, model, effort, permissionMode: parent.permissionMode, allowHerdr, ...(route.args ? { args: route.args } : {}) };
       out = await b.spawn(sp);
@@ -468,7 +539,7 @@ export class Branch {
     b.linkEvent(l, 'spawn', `atrium child ${name}`, { by: 'atrium child', paneId: child.paneId, kind, depth }, { quiet: true });
     const notice = head ? headNotice({ agentName: child.agentName, paneId: child.paneId, kind }) : childNotice({ role, agentName: child.agentName, paneId: child.paneId, kind, depth });
     b.linkEvent(l, 'role', role, { notice, via: 'command' });
-    b.store.addEvent(parent.sessionId, 'branch_child', { child: name, sessionId: child.sessionId, role, depth, cwd: cwd.split(path.sep).join('/'), workspace: ws.key, worktree, kind, model, ...(viaLauncher ? { launcher: route.launcher.name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}) });
+    b.store.addEvent(parent.sessionId, 'branch_child', { child: name, sessionId: child.sessionId, role, depth, cwd: cwd.split(path.sep).join('/'), workspace: ws.key, worktree, kind, model, ...(viaLauncher || (other && other.launcher) ? { launcher: (viaLauncher ? route.launcher : other.launcher).name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(other ? { harness: { ...other.record, argv: other.argv } } : {}) });
     b.store.addEvent(child.sessionId, 'branch_parent', { parent: parent.name, parentSessionId: parent.sessionId, role, depth });
     b.log(`branch child ${parent.name} → ${name} (${kind}, ${depth}단계, ws=${ws.key}${worktree ? `, worktree ${worktree}` : ''})`);
     // 명령의 응답이 부모에게 닿지 않았으면(명령이 시간 제한으로 끊김 등) F2처럼 판이 알림을 보낸다
@@ -493,7 +564,9 @@ export class Branch {
     const needsTrust = state === 'trust_wait' || (wait && wait.state === 'trust_wait') || (!!gate && !['exited', 'closed', 'error'].includes(state) && this.gated(child.sessionId));
     return {
       name, sessionId: child.sessionId, agentName: child.agentName, paneId: child.paneId, kind, role, depth, cwd: cwd.split(path.sep).join('/'), workspaceKey: ws.key, worktree, model: child.model || model, effort: child.effort || effort,
-      launcher: viaLauncher ? route.launcher.name : null, resolved: route.resolved || null, gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
+      launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
+      gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
+      harness: other ? { ...other.record, argv: other.argv } : null, // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
       permissionMode: child.permissionMode, state, trust: out.trust, waited: wait,
       status: needsTrust ? 'needs_trust' : state, needsTrust, tellHuman: needsTrust ? trustSentence(name) : null, gate: gate ? 'trust' : null,
       firstPrompt: first ? { ...first, status: (b.store.getDelivery(first.deliveryId) || {}).status || first.status } : null,
@@ -503,7 +576,8 @@ export class Branch {
     };
   }
   // ---------- P41: 모델 목록과 말로 한 이름 풀기 ----------
-  launchersList() { const L = this.b.features && this.b.features.launchers; return L ? L.data().items : []; }
+  launchersList() { return this.launchersData().items; }
+  launchersData() { const L = this.b.features && this.b.features.launchers; return L ? L.data() : { items: [], favorites: [] }; } // P96: 레일 순서(즐겨찾기)도
   findLauncher(ref) { const L = this.b.features && this.b.features.launchers; return L ? L.find(ref) : null; }
   // 판 설정의 opencodex 주소(호출자가 없어도 게이트웨이 모델을 볼 수 있게). 그 env는 DeepSeek 예시 호출자와 같다
   // P72: opencodex는 개인 설정이라, 주소를 환경 변수(ATRIUM_OCX_HEALTH·ATRIUM_OCX_BASE_URL)로 줬거나 판에 DeepSeek 호출자가 있을 때(옛 판)만 본다. 새 판은 묻지 않는다

@@ -131,9 +131,17 @@ export function screenAnswerText(text, n = 20) {
   let L = String(text || '').split(/\r?\n/).map((l) => l.replace(/\s+$/, '')).filter((l) => !/^\s*✻ /.test(l) && !/^\s{30,}\S/.test(l));
   const seps = L.map((l, i) => (SEP.test(l) ? i : -1)).filter((i) => i >= 0);
   if (seps.length >= 2 && seps[seps.length - 1] - seps[seps.length - 2] <= 6) L = L.slice(0, seps[seps.length - 2]);
-  let at = -1;
-  for (let i = L.length - 1; i >= 0; i--) if (/^\s*[❯›>]\s+\S/.test(L[i])) { at = i; break; }
-  const body = (at >= 0 ? L.slice(at + 1) : []).filter((l) => l.trim()).map((l) => l.replace(/^\s*[●•⏺]\s?/, ''));
+  const PROMPT = /^\s*[❯›>]\s+\S/, BULLET = /^\s*[●•⏺]/;
+  let at = -1, end = L.length;
+  for (let i = L.length - 1; i >= 0; i--) if (PROMPT.test(L[i])) { at = i; break; }
+  // P96: Codex(0.167)의 빈 입력칸은 안내문("› Ask Codex to do anything")이 든 프롬프트 줄이고 그 아래는 상태 줄뿐이다.
+  // 마지막 프롬프트 줄 뒤에 답 머리표(•●⏺) 줄이 없고 그 위에 프롬프트 줄이 또 있으면, 마지막 줄을 입력칸으로 보고 그 위 턴을 읽는다
+  if (at > 0 && !L.slice(at + 1).some((l) => BULLET.test(l))) {
+    let prev = -1;
+    for (let i = at - 1; i >= 0; i--) if (PROMPT.test(L[i])) { prev = i; break; }
+    if (prev >= 0) { end = at; at = prev; }
+  }
+  const body = (at >= 0 ? L.slice(at + 1, end) : []).filter((l) => l.trim()).map((l) => l.replace(/^\s*[●•⏺]\s?/, ''));
   return body.length ? body.slice(-n).join('\n') : tailText(L.join('\n'), n);
 }
 
