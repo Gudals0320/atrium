@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import { buildStartArgs, buildResumeArgs, transcriptPathFor } from './launch.mjs';
 import { deriveState } from './state.mjs';
 import { waitClaudeExit } from './worktree-exit.mjs'; // P71
+import { startOpt } from './launchers.mjs'; // P97: 실행 명령
 import { readProcessTable, descendants, mb } from './resources.mjs';
 import { workspaceNames } from './workspaces.mjs';
 import { m, keyed } from './msg.mjs';
@@ -408,7 +409,7 @@ export class Sleeper {
       await b.adapter.refreshSubscription();
       b.broadcastSession(s, { cause: `wake:${why}` });
       await b.adapter.waitShellReady(s.paneId, 8000);
-      const st = await b.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args });
+      const st = await b.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) }); // P97: 실행 명령
       if (st.agent && st.agent.launchPending !== undefined) s.rt.herdr.launchPending = st.agent.launchPending;
       b.registerResume(s);
       // 준비될 때까지(ready, 또는 사람이 필요한 상태). claude가 끝나면(이어 가기 실패) 잠듦으로 되돌린다

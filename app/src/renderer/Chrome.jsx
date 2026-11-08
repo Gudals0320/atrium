@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore, getState, openDialog, toast, wsName, setMissionOpen, setSearchOpen, selectWorkspace, selectGroup, setSpotlight } from './store.js';
-import { quickSpawn } from './SpawnDialog.jsx';
+import { QuickName } from './QuickName.jsx'; // P97: 레일 빠른 생성의 이름 칸
 import { favoriteLaunchers, launcherIcon, launcherMark, launcherTooltip } from './lib/launchers.js'; // P33: 레일 = 즐겨찾기 호출자
 import { api } from './api.js';
 import { useConnSteady } from './steady.js'; // P82
@@ -363,25 +363,34 @@ function Tool({ icon, kind, label, on, onClick, action, pressed }) {
   );
 }
 const Sep = () => <span className="mt-rail-sep" />;
-// P33: 즐겨찾기 호출자 하나. 누르면 지금 워크스페이스에 그 호출자로 바로 띄운다. Shift+누르기는 그 호출자를 채운 새 세션 창.
+// P33: 즐겨찾기 호출자 하나. Shift+누르기는 그 호출자를 채운 새 세션 창.
+// P97: 누르면 바로 띄우지 않고 단추 옆에 세션 이름 칸(QuickName.jsx)을 연다. 다시 누르면 닫는다
 // 아이콘은 하네스 로고(고른 아이콘이 먼저), 셸은 터미널, 직접 명령은 터미널 위에 이름 첫 글자. 마우스를 올리면 이름과 명령 미리보기
-function LauncherTool({ l }) {
+function LauncherTool({ l, open, onOpen }) {
   const t = useT();
   const kind = launcherIcon(l);
   const tip = launcherTooltip(l, { shellText: t('launchers.shellPreview'), envText: t('launchers.envShort') });
-  const go = (e) => (e && e.shiftKey ? openDialog({ kind: 'spawn', launcher: l.id }) : quickSpawn(l.id));
+  const go = (e) => (e && e.shiftKey ? openDialog({ kind: 'spawn', launcher: l.id }) : onOpen(open ? null : { id: l.id, el: e.currentTarget }));
   return (
-    <button className="mt-tool" title={tip} aria-label={l.name} data-action="launch" data-launcher={l.id} data-name={l.name} onClick={go}>
+    <button className={`mt-tool${open ? ' on' : ''}`} title={tip} aria-label={l.name} aria-haspopup="dialog" aria-expanded={open} data-action="launch" data-launcher={l.id} data-name={l.name} onClick={go}>
       {kind === 'shell' ? <Icon name="terminal" /> : kind ? <KindIcon kind={kind} title={tip} badge /> : <span className="mt-tool-mark" data-role="launcher-mark">{launcherMark(l)}</span>}
     </button>
   );
 }
-// 즐겨찾기가 많으면 이 칸만 위아래로 넘긴다(레일은 창 높이를 넘지 않는다)
+// 즐겨찾기가 많으면 이 칸만 위아래로 넘긴다(레일은 창 높이를 넘지 않는다). P97: 끝의 +는 설정 › 런처 › 새 런처(명령줄 붙여 넣기 칸에 초점)
 function Favorites() {
+  const t = useT();
   const data = useStore((st) => st.launchers);
   const favs = favoriteLaunchers(data);
-  if (!favs.length) return null;
-  return <div className="mt-rail-favs" data-role="rail-favorites">{favs.map((l) => <LauncherTool key={l.id} l={l} />)}</div>;
+  const [open, setOpen] = useState(null); // { id, el }: 이름 칸을 연 단추
+  const cur = open && favs.find((l) => l.id === open.id);
+  return (
+    <div className="mt-rail-favs" data-role="rail-favorites">
+      {favs.map((l) => <LauncherTool key={l.id} l={l} open={!!cur && cur.id === l.id} onOpen={setOpen} />)}
+      <button className="mt-tool add" title={t('quickName.addLauncher')} aria-label={t('quickName.addLauncher')} data-action="launcher-add" onClick={() => openDialog({ kind: 'settings', tab: 'launchers', newLauncher: true })}><Icon name="plus" /></button>
+      {cur && <QuickName launcher={cur} anchor={open.el} onClose={() => setOpen(null)} />}
+    </div>
+  );
 }
 
 export function LeftRail({ linking, setLinking }) {

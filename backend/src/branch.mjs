@@ -27,7 +27,7 @@ import { EFFORTS } from './settings.mjs';
 import { clip } from './text.mjs';
 import { BACKEND_ROOT } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
-import { harnessOf, splitArgs } from './launchers.mjs'; // P41
+import { harnessOf, splitArgs, startOpt } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { buildCatalog, resolveModel, gatewaysOf, fetchGatewayModels, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
 import { baseUrlOf, proxyEnv } from './deepseek.mjs'; // P41
@@ -703,7 +703,7 @@ export class Branch {
     if (!b.sessions.has(s.sessionId)) return;
     await b.adapter.waitShellReady(s.paneId, 8000);
     const args = buildStartArgs({ ...b.launchOf(s), worktree: info.worktree });
-    await b.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args });
+    await b.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) }); // P97: 실행 명령
     s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
     s.rt.herdr.launchPending = true; s.rt.herdr.agentSessionId = null; s.rt.trustPredicted = false; s.rt.trustScreen = null;
     const next = { ...info, gate: null, gatePassedAt: Date.now() };
