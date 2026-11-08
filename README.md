@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="Atrium" width="640">
+  <img src=".github/images/banner.png" alt="Atrium" width="640">
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
   <b>English</b> · <a href="README.ko.md">한국어</a>
 </p>
 
-![The Atrium board: a web-app repository with a lead agent docked with two workers, a reviewer and a worker waiting for an answer, a worktree box, a memo and a kanban; an api repository with two shells](docs/images/board.png)
+![The Atrium board: a web-app repository with a lead agent docked with two workers, a reviewer and a worker waiting for an answer, a worktree box, a memo and a kanban; an api repository with two shells](.github/images/board.png)
 
 ## What it is
 
@@ -37,7 +37,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Pick up old work.** Past Claude Code CLI conversations in an open folder appear as cards you can resume. Unarchived Claude desktop app sessions can be imported as forks, so the app's copy is never touched.
 - **Easy on memory.** A repository that stays idle for 30 minutes (configurable) goes to sleep as a whole and wakes up when you click one of its nodes. Each node shows its memory use.
 
-![The sidebar with repositories and sessions, and the find window with results for "theme"](docs/images/sidebar.png)
+![The sidebar with repositories and sessions, and the find window with results for "theme"](.github/images/sidebar.png)
 
 ### Your turn
 
@@ -46,7 +46,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **One list for all repositories.** The **Your turn** pill lists every waiting session, oldest first, and `N` jumps to the next one. OS notifications and the tray icon tell you when the window is in the background.
 - **Changes since you looked.** Come back after a break and **Changes** sums up what each session did.
 
-![Your turn: the list of waiting sessions, a reviewer's question card and a worker's permission card](docs/images/your-turn.png)
+![Your turn: the list of waiting sessions, a reviewer's question card and a worker's permission card](.github/images/your-turn.png)
 
 ### Agents working together
 
@@ -57,7 +57,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Mission map and Thread.** `M` opens a map of who directs whom, grouped by repository. Thread keeps every prompt you sent from the command bar with its delivery state and the final report.
 - **Talk from the board.** Type `@name` or `@all` in the command bar. Each session has its own delivery queue, and a message is confirmed only when the agent actually submits it. Loops resend a prompt on a schedule or whenever a session goes idle.
 
-![The mission map: the user, a lead with two workers and a reviewer, a worktree session, and the shells of a second repository](docs/images/agents.png)
+![The mission map: the user, a lead with two workers and a reviewer, a worktree session, and the shells of a second repository](.github/images/agents.png)
 
 ### Live terminals
 
@@ -73,7 +73,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Size and arrange.** Size steps (large, normal, small, wide, tall) for nodes and docks. **Arrange** lays out the board along the links, with one undo.
 - **Notes on the canvas.** Markdown memos and kanban boards sit next to the sessions. A card linked to a session shows its state and takes you there.
 
-![A dock: the lead on the left and two workers on the right, with the layout presets for three sessions open above](docs/images/dock.png)
+![A dock: the lead on the left and two workers on the right, with the layout presets for three sessions open above](.github/images/dock.png)
 
 ### Remote access
 
@@ -86,8 +86,8 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/remote.png" alt="The board opened in a laptop browser at an example tailnet address"></td>
-    <td width="50%"><img src="docs/images/devices.png" alt="Settings › Connected devices on the PC: remote switch, address, pairing and one paired laptop"></td>
+    <td width="50%"><img src=".github/images/remote.png" alt="The board opened in a laptop browser at an example tailnet address"></td>
+    <td width="50%"><img src=".github/images/devices.png" alt="Settings › Connected devices on the PC: remote switch, address, pairing and one paired laptop"></td>
   </tr>
   <tr>
     <td align="center"><sub>The same board in a laptop browser.</sub></td>
@@ -245,15 +245,9 @@ cd ..\app
 npm test             # window unit tests
 ```
 
-The development board never touches the real board (`atrium`, port 47800). End-to-end scripts in `app/test/e2e/` drive the window with Playwright on a separate dev board; see [docs/testing.md](docs/testing.md). The pictures in this README come from a demo board built by `app/test/e2e/readme-shots.mjs` (`seed`, `shoot`, `publish`, `clean`).
+The development board never touches the real board (`atrium`, port 47800). End-to-end scripts in `app/test/e2e/` drive the window with Playwright on a separate dev board. The pictures in this README come from a demo board built by `app/test/e2e/readme-shots.mjs` (`seed`, `shoot`, `publish`, `clean`).
 
-Design documents are in Korean:
-
-- [docs/BRIEF.md](docs/BRIEF.md): why, what, decisions, usability principles, risks
-- [docs/ARCH.md](docs/ARCH.md): processes, state model, features, modules, API, screens
-- [docs/PLAN.md](docs/PLAN.md): current work and open decisions
-- [docs/decisions.md](docs/decisions.md): how past decisions changed
-- [CHANGELOG.md](CHANGELOG.md): what each stage built
+[CHANGELOG.md](CHANGELOG.md) lists what each stage built.
 
 ## Status
 

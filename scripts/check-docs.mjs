@@ -5,7 +5,9 @@
 //   node scripts/check-docs.mjs --close                   단계 닫기: HEAD 대비 비증가, 닫힌 작업 파일 수정까지
 //   node scripts/check-docs.mjs --stop                    Claude Code Stop 훅: 실패하면 {"decision":"block"} 출력
 // 종료 코드: 0 통과, 1 규약 위반, 2 실행 불가(경로 없음, 설정 오류).
-// 예산은 저장소 루트의 .docs-budget.json 으로 바꿀 수 있으나 기본값의 1.5배까지다.
+// 예산은 docs/.docs-budget.json(없으면 저장소 루트의 .docs-budget.json)으로 바꿀 수 있으나 기본값의 1.5배까지다.
+// docs/가 따로 받아 둔 git 저장소(docs/.git)면 docs/ 아래 파일의 스테이지와 HEAD는 그 저장소에서 읽는다.
+// docs 저장소의 pre-commit은 `node ../scripts/check-docs.mjs --staged ..`로 부른다.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
@@ -54,14 +56,15 @@ if (STOP) {
 const root = resolve(rootArg ?? process.cwd());
 if (!existsSync(root) || !statSync(root).isDirectory()) fail2(`경로 없음: ${root}`);
 
+const DOCS_REPO = existsSync(join(root, "docs", ".git"));
 const { config, overrides } = loadConfig(root);
 const problems = [];
 const warnings = [];
 
 // ---- 파일 목록과 읽기 ----
 const files = STAGED ? gitFiles() : walk(root);
-const read = STAGED ? (rel) => git(["show", `:${rel}`]) : (rel) => readFs(join(root, rel));
-const headRead = (rel) => git(["show", `HEAD:${rel}`]);
+const read = STAGED ? (rel) => show("", rel) : (rel) => readFs(join(root, rel));
+const headRead = (rel) => show("HEAD", rel);
 const has = (rel) => files.includes(rel);
 
 // ---- 1. 예산 ----
@@ -173,7 +176,8 @@ process.exit(problems.length ? 1 : 0);
 
 // ---- 보조 ----
 function loadConfig(dir) {
-  const p = join(dir, ".docs-budget.json");
+  const inDocs = join(dir, "docs", ".docs-budget.json");
+  const p = existsSync(inDocs) ? inDocs : join(dir, ".docs-budget.json");
   const config = { ...DEFAULTS, budgets: { ...DEFAULTS.budgets } };
   const overrides = {};
   if (!existsSync(p)) return { config, overrides };
@@ -202,10 +206,18 @@ function walk(dir, base = dir, out = []) {
 function gitFiles() {
   const out = git(["ls-files", "-z", "--cached"]);
   if (out === null) fail2("--staged 는 git 저장소가 필요하다.");
-  return out.split("\0").filter(Boolean);
+  const list = out.split("\0").filter(Boolean);
+  if (!DOCS_REPO) return list;
+  const inner = git(["ls-files", "-z", "--cached"], join(root, "docs"));
+  return list.concat((inner ?? "").split("\0").filter(Boolean).map((f) => `docs/${f}`));
 }
-function git(args) {
-  try { return execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); }
+// rev "" 는 스테이지, "HEAD" 는 마지막 커밋. docs/가 따로 받아 둔 저장소면 그 저장소에서 읽는다
+function show(rev, rel) {
+  if (DOCS_REPO && rel.startsWith("docs/")) return git(["show", `${rev}:${rel.slice(5)}`], join(root, "docs"));
+  return git(["show", `${rev}:${rel}`]);
+}
+function git(args, cwd = root) {
+  try { return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); }
   catch { return null; }
 }
 function readFs(abs) { return readFileSync(abs, "utf8"); }

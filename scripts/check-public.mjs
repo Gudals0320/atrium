@@ -21,7 +21,7 @@ import { pathToFileURL } from 'node:url';
 export const MAX_BYTES = 1024 * 1024;
 export const BLOCKED_PATHS = [
   [/^experiments\//, '화면 시험 결과 폴더(git 밖)'],
-  [/^docs\/research\//, '조사 자료(git 밖)'],
+  [/^docs\//, '개발 문서(비공개 저장소 atrium-docs, git 밖)'],
   [/^app\/design\//, '디자인 작업 폴더(git 밖)'],
   [/^\.claude\/launch\.json$/, '사용자 로컬 설정'],
   [/^backend\/\.dev\//, '개발용 판 데이터'],

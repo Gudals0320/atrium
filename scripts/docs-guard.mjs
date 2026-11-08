@@ -31,10 +31,16 @@ if (!["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(tool)) process.exit
 const fp = ti.file_path ?? ti.notebook_path;
 if (!fp) process.exit(0);
 const abs = isAbsolute(fp) ? resolve(fp) : resolve(cwd, fp);
-const rel = relative(cwd, abs).split("\\").join("/");
+let rel = relative(cwd, abs).split("\\").join("/");
+// docs/는 비공개 저장소를 주 체크아웃 안에 받아 둔 것이라 워크트리에는 없다. 작업자는 주 체크아웃의 docs/를 절대 경로로 고치므로 그 경로도 docs/로 본다
+if (isWorker) {
+  const main = cwd.replace(/[\\/]\.claude[\\/]worktrees[\\/].*$/, "");
+  const relMain = relative(main, abs).split("\\").join("/");
+  if (relMain.startsWith("docs/")) rel = relMain;
+}
 if (!rel || rel.startsWith("..") || isAbsolute(rel)) process.exit(0); // 프로젝트 밖은 관여하지 않는다
 
-if (rel === ".docs-budget.json") deny("예산 파일은 사람이 고친다. 예산을 올리지 말고 문서를 줄인다.");
+if (rel === ".docs-budget.json" || rel === "docs/.docs-budget.json") deny("예산 파일은 사람이 고친다. 예산을 올리지 말고 문서를 줄인다.");
 
 const parts = rel.split("/");
 if (MD.test(rel)) {

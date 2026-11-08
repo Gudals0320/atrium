@@ -1,7 +1,7 @@
 // P64 README 스크린숏: 개발용 판에 데모를 꾸며 README 그림을 다시 찍는다. 사용자의 실제 판과 캔버스는 열지도 찍지도 않는다.
 //   node app/test/e2e/readme-shots.mjs seed      데모 폴더(C:\Workspace\atrium-demo\*)를 만들고 판에 세션·연결·덩어리·메모·칸반을 둔다
 //   node app/test/e2e/readme-shots.mjs shoot     창(1600×960)과 흉내 노트북 브라우저로 장면을 찍는다. 결과는 experiments/p64/(git 밖)
-//   node app/test/e2e/readme-shots.mjs publish   찍은 그림을 docs/images/로 옮긴다(파일마다 1MiB 아래인지 본다)
+//   node app/test/e2e/readme-shots.mjs publish   찍은 그림을 .github/images/로 옮긴다(파일마다 1MiB 아래인지 본다)
 //   node app/test/e2e/readme-shots.mjs clean     데모 세션을 끄고 백엔드·herdr 서버(이 판만)를 멈추고 데모 폴더를 지운다
 // 판 값: herdr 세션 atrium-dev-p64, 포트 47890(흉내 프록시 47891), 데이터 backend/.dev/data, 창 프로필 backend/.dev/app.
 //   MT_E2E_HERDR_SESSION, MT_E2E_PORT, MT_E2E_SIM_PORT로 덮는다(다른 작업자의 판과 겹치지 않게).
@@ -18,7 +18,7 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const APP_ROOT = path.join(REPO, 'app');
 const DEV = path.join(REPO, 'backend', '.dev');
 const OUT = path.join(REPO, 'experiments', 'p64');
-const IMAGES = path.join(REPO, 'docs', 'images');
+const IMAGES = path.join(REPO, '.github', 'images');
 const DEMO = 'C:\\Workspace\\atrium-demo';
 const WEB = path.join(DEMO, 'web-app');
 const DARK = path.join(DEMO, 'web-app-dark');
@@ -220,7 +220,7 @@ async function layout() {
 }
 
 // ---------- publish ----------
-// README가 쓰는 그림만 docs/images/로 옮긴다. 공개 검사가 1MiB 넘는 파일을 막는다
+// README가 쓰는 그림만 .github/images/로 옮긴다. 공개 검사가 1MiB 넘는 파일을 막는다
 export const README_IMAGES = ['board', 'your-turn', 'agents', 'dock', 'sidebar', 'remote', 'devices'];
 function publish() {
   for (const n of README_IMAGES) {
@@ -229,7 +229,7 @@ function publish() {
     const size = fs.statSync(src).size;
     if (size >= 1024 * 1024) throw new Error(`${n}.png가 1MiB를 넘는다(${size})`);
     fs.copyFileSync(src, path.join(IMAGES, `${n}.png`));
-    log('옮김', `docs/images/${n}.png`, `${(size / 1024).toFixed(0)} KiB`);
+    log('옮김', `.github/images/${n}.png`, `${(size / 1024).toFixed(0)} KiB`);
   }
 }
 

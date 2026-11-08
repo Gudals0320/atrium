@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="Atrium" width="640">
+  <img src=".github/images/banner.png" alt="Atrium" width="640">
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
   <a href="README.md">English</a> · <b>한국어</b>
 </p>
 
-![Atrium 보드: 리드 에이전트가 작업자 둘과 한 창 그룹으로 묶이고 리뷰어와 작업자 하나가 응답을 기다리며, 워크트리 상자와 메모, 칸반이 있는 web-app 저장소와 셸 두 개가 있는 api 저장소](docs/images/board.png)
+![Atrium 보드: 리드 에이전트가 작업자 둘과 한 창 그룹으로 묶이고 리뷰어와 작업자 하나가 응답을 기다리며, 워크트리 상자와 메모, 칸반이 있는 web-app 저장소와 셸 두 개가 있는 api 저장소](.github/images/board.png)
 
 ## Atrium 소개
 
@@ -37,7 +37,7 @@ Atrium은 세션을 실행하고, 세션 사이의 연결을 만들고 표시합
 - **이전 작업 이어가기.** 프로젝트 폴더의 이전 Claude Code CLI 대화를 카드로 표시하며, 해당 대화를 이어갈 수 있습니다. Claude 데스크톱 앱의 보관되지 않은 세션은 복제본으로 가져오므로 원본 대화는 변경하지 않습니다.
 - **자동 절전 모드.** 저장소에 30분 동안 활동이 없으면 해당 저장소의 세션을 절전 모드로 전환합니다. 대기 시간은 설정에서 바꿀 수 있습니다. 세션 창을 클릭하면 작업을 재개하며, 각 창에서 메모리 사용량을 확인할 수 있습니다.
 
-![저장소와 세션이 보이는 사이드바와 "theme"으로 찾은 검색 창](docs/images/sidebar.png)
+![저장소와 세션이 보이는 사이드바와 "theme"으로 찾은 검색 창](.github/images/sidebar.png)
 
 ### 응답 필요
 
@@ -46,7 +46,7 @@ Atrium은 세션을 실행하고, 세션 사이의 연결을 만들고 표시합
 - **모든 저장소의 응답 요청을 한곳에서 확인.** 상단의 **응답 필요** 버튼을 누르면 대기 시간이 긴 세션부터 표시합니다. `N` 키로 다음 세션으로 이동할 수 있습니다. 앱이 백그라운드에 있을 때는 Windows 알림과 트레이 아이콘으로 알려 줍니다.
 - **자리 비운 동안의 변경 내역.** 앱으로 돌아오면 **변경 내역**에서 세션별 진행 상황을 모아 확인할 수 있습니다.
 
-![응답 필요: 기다리는 세션 목록, 리뷰어의 질문 카드, 작업자의 권한 요청 카드](docs/images/your-turn.png)
+![응답 필요: 기다리는 세션 목록, 리뷰어의 질문 카드, 작업자의 권한 요청 카드](.github/images/your-turn.png)
 
 ### 에이전트 협업
 
@@ -57,7 +57,7 @@ Atrium은 세션을 실행하고, 세션 사이의 연결을 만들고 표시합
 - **작업 관계도와 요청 기록.** `M` 키로 세션 간 작업 위임 관계를 저장소별로 확인할 수 있습니다. 명령 입력줄로 보낸 요청의 전달 상태와 완료 결과는 요청 기록에 남습니다.
 - **보드에서 요청 전송.** 명령 입력줄에 `@이름` 또는 `@all`과 요청을 입력합니다. 세션별 전송 대기열이 있으며, 에이전트가 요청을 실제로 제출했는지 확인합니다. 반복 작업은 일정한 주기 또는 세션이 대기 상태가 될 때 같은 요청을 다시 보냅니다.
 
-![작업 관계도: 사용자, 작업자 둘과 리뷰어를 둔 리드, 워크트리 세션, 다른 저장소의 셸](docs/images/agents.png)
+![작업 관계도: 사용자, 작업자 둘과 리뷰어를 둔 리드, 워크트리 세션, 다른 저장소의 셸](.github/images/agents.png)
 
 ### 터미널
 
@@ -73,7 +73,7 @@ Atrium은 세션을 실행하고, 세션 사이의 연결을 만들고 표시합
 - **크기와 자동 정렬.** 세션 창과 창 그룹마다 크기(크게, 보통, 작게)와 방향(가로형, 세로형)을 지정할 수 있습니다. **자동 정렬**은 연결 관계에 따라 보드를 재배치하며, 한 번 되돌릴 수 있습니다.
 - **메모와 칸반.** 세션 옆에 마크다운 메모와 칸반을 배치할 수 있습니다. 세션에 연결된 칸반 카드에는 해당 세션의 상태를 표시하며, 카드를 클릭하면 세션으로 이동합니다.
 
-![창 그룹: 왼쪽에 리드, 오른쪽에 작업자 둘, 위쪽에 세 세션용 분할 레이아웃을 펼친 모습](docs/images/dock.png)
+![창 그룹: 왼쪽에 리드, 오른쪽에 작업자 둘, 위쪽에 세 세션용 분할 레이아웃을 펼친 모습](.github/images/dock.png)
 
 ### 원격 접속
 
@@ -86,8 +86,8 @@ Atrium은 세션을 실행하고, 세션 사이의 연결을 만들고 표시합
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/remote.png" alt="예시 tailnet 주소로 노트북 브라우저에서 연 보드"></td>
-    <td width="50%"><img src="docs/images/devices.png" alt="PC의 설정 › 연결된 기기: 원격 접속 허용 스위치, 주소, 기기 등록, 등록된 노트북 하나"></td>
+    <td width="50%"><img src=".github/images/remote.png" alt="예시 tailnet 주소로 노트북 브라우저에서 연 보드"></td>
+    <td width="50%"><img src=".github/images/devices.png" alt="PC의 설정 › 연결된 기기: 원격 접속 허용 스위치, 주소, 기기 등록, 등록된 노트북 하나"></td>
   </tr>
   <tr>
     <td align="center"><sub>노트북 브라우저에서 연 같은 보드.</sub></td>
@@ -245,15 +245,9 @@ cd ..\app
 npm test             # 창 단위 시험
 ```
 
-개발용 보드는 실제 보드(`atrium`, 포트 47800)와 분리되어 있습니다. `app/test/e2e/`의 테스트 스크립트는 별도로 실행한 개발용 보드에서 Playwright로 UI를 조작합니다. [테스트 안내](docs/testing.md)를 참고하세요. README 이미지는 `app/test/e2e/readme-shots.mjs`(`seed`, `shoot`, `publish`, `clean`)로 구성한 데모 보드에서 촬영했습니다.
+개발용 보드는 실제 보드(`atrium`, 포트 47800)와 분리되어 있습니다. `app/test/e2e/`의 테스트 스크립트는 별도로 실행한 개발용 보드에서 Playwright로 UI를 조작합니다. README 이미지는 `app/test/e2e/readme-shots.mjs`(`seed`, `shoot`, `publish`, `clean`)로 구성한 데모 보드에서 촬영했습니다.
 
-설계 문서는 한국어로 작성되어 있으며, 코드에 대응하는 내부 용어를 사용합니다. 기존 설계 기록에는 이전 UI 용어인 판, 덩어리, 워크스페이스 등이 남아 있습니다.
-
-- [docs/BRIEF.md](docs/BRIEF.md): 왜, 무엇, 정한 것, 사용성 원칙, 위험
-- [docs/ARCH.md](docs/ARCH.md): 프로세스, 상태 모델, 기능, 모듈, API, 화면
-- [docs/PLAN.md](docs/PLAN.md): 지금 할 일과 열린 결정
-- [docs/decisions.md](docs/decisions.md): 결정이 바뀐 경위
-- [CHANGELOG.md](CHANGELOG.md): 단계마다 만든 것
+단계마다 만든 것은 [CHANGELOG.md](CHANGELOG.md)에 있습니다.
 
 ## 상태
 

@@ -59,8 +59,8 @@ test('흔한 사용자 이름(user 등)은 낱말로 막지 않고, 홈 경로�
 });
 
 test('공개하지 않는 경로', () => {
-  for (const p of ['experiments/p1/a.png', 'docs/research/x.md', 'app/design/brand/a.svg', '.claude/launch.json', 'backend/.dev/data/board.db', '.env', 'app/.env.local', 'backend/node_modules/ws/index.js', 'x/backend.json']) assert.ok(blockedPath(p), p);
-  for (const p of ['docs/log/p1-backend.md', 'docs/experiments/E1.md', 'app/src/main/main.mjs', '.claude/settings.json', 'README.ko.md', 'backend/test/fixtures/x.json']) assert.equal(blockedPath(p), null, p);
+  for (const p of ['experiments/p1/a.png', 'docs/research/x.md', 'docs/log/p1-backend.md', 'docs/ARCH.md', 'app/design/brand/a.svg', '.claude/launch.json', 'backend/.dev/data/board.db', '.env', 'app/.env.local', 'backend/node_modules/ws/index.js', 'x/backend.json']) assert.ok(blockedPath(p), p);
+  for (const p of ['.github/images/board.png', 'app/src/main/main.mjs', '.claude/settings.json', 'README.ko.md', 'backend/test/fixtures/x.json']) assert.equal(blockedPath(p), null, p);
 });
 
 test('작성자와 커미터는 같은 규칙: 관리자의 개인 메일만 막고 기여자의 메일과 noreply는 받는다', () => {
