@@ -2227,4 +2227,51 @@ export default {
     restHidden: '외 {n}개',
     noModel: '셸',
   },
+  // P97: Claude Code 런처의 실행 명령(예: ocx claude)
+  launcherStart: {
+    label: '실행 명령',
+    ph: 'claude (기본)',
+    title: 'Claude Code를 실행하는 명령입니다(예: ocx claude). 보드는 이 명령 뒤에 보드의 인자를 붙이므로 보드 연동, 승인, 대화 재개, 워크트리가 그대로 동작합니다.',
+    bad: '실행 명령은 명령 이름으로 시작하고 따옴표나 셸 기호 없이 입력하세요({max}자까지).',
+    reserved: '{arg}는 보드가 직접 지정합니다. 해당 칸을 사용하세요.',
+    notFound: 'PATH에서 {cmd}를 찾지 못했습니다. 런처는 저장되지만 세션이 시작되지 않을 수 있습니다.',
+    failed: '실행 명령({cmd})으로 Claude Code가 시작되지 않았습니다. 세션 터미널에서 오류를 확인하세요.',
+  },
+  // P97: 명령줄을 붙여 넣어 런처 만들기
+  launcherPaste: {
+    label: '명령줄',
+    ph: '쓰던 명령을 붙여 넣으세요. 예: ocx claude --model haiku --permission-mode auto',
+    fill: '채우기',
+    hint: '쓰던 명령을 그대로 붙여 넣으면 에이전트, 실행 명령, 모델, 옵션, 추가 실행 인자, 환경 변수로 나눠 채웁니다.',
+    failed: '명령줄을 읽지 못했습니다: {error}',
+    board: 'Claude Code · 보드 세션(보드 연동, 승인, 대화 재개, 하위 세션)',
+    agent: '{harness} · 에이전트 세션(보드 연동 없음)',
+    command_unknown: '알 수 없는 명령 · 명령 한 줄로 실행합니다(보드 연동 없음)',
+    command_wrapperNotClaude: '실행 명령은 Claude Code만 지정할 수 있습니다 · 명령 한 줄로 실행합니다(보드 연동 없음)',
+    command_quoted: '따옴표로 묶은 명령 이름 · 명령 한 줄로 실행합니다(보드 연동 없음)',
+    command_envNotClaude: '환경 변수는 Claude Code에만 지정할 수 있습니다 · 명령 한 줄로 실행합니다(보드 연동 없음)',
+    start: '실행 명령 {cmd}',
+    mapped: '{arg} → {field}',
+    env: '환경 변수 {names}',
+    path: '{path} 대신 PATH의 claude를 사용합니다',
+    dropped: '제외(보드가 지정하는 인자이거나 따옴표로 묶은 값): {args}',
+    skipped: '제외한 다른 명령: {lines}',
+    field: { model: '모델', effort: '추론 수준', permissionMode: '승인 방식', args: '추가 실행 인자' },
+  },
+  // P97: 런처를 만들면서 왼쪽 도구 모음에 고정
+  launcherPin: {
+    label: '왼쪽 도구 모음에 고정',
+    created: '{name} 런처를 만들고 왼쪽 도구 모음에 고정했습니다.',
+  },
+  // P97: 왼쪽 도구 모음에서 빠르게 세션을 만들 때의 이름 칸
+  quickName: {
+    where: '{ws}에 새 세션',
+    label: '세션 이름',
+    ph: '비우면 자동으로 지정',
+    go: '만들기',
+    starting: '시작하는 중…',
+    hint: 'Enter를 누르면 만듭니다. 비우면 보드가 이름을 지정합니다. Esc를 누르면 취소합니다.',
+    hintPhone: '비우면 보드가 이름을 지정합니다.',
+    addLauncher: '새 런처: 명령줄을 붙여 넣고 여기에 고정합니다',
+  },
 };

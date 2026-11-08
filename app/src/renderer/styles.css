@@ -1614,3 +1614,31 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-mm-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--panel-line); font-size: 12px; color: var(--text-2); }
 .mt-mm-hint { margin-top: 6px; font-size: 11px; line-height: 1.5; color: var(--dim-2); }
 @media (max-width: 980px) { .mt-mm-sum { display: none; } }
+
+/* P97: 런처 틀 맨 위의 명령줄 붙여 넣기 칸과 알아본 결과 칩 */
+.mt-ln-paste { grid-column: 1 / -1; display: grid; gap: 5px; }
+.mt-ln-paste-row { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
+.mt-ln-f .mt-ln-paste-row textarea.mt-set-text { flex: 1 1 auto; height: auto; min-height: 30px; max-height: 92px; resize: none; padding: 5px 9px; font-size: 12px; line-height: 18px; white-space: pre; overflow: auto; }
+.mt-ln-paste-row .mt-btn { flex: none; height: 30px; }
+.mt-ln-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; min-height: 20px; margin-left: 112px; align-items: center; }
+.mt-ln-chips .mt-set-hint { font-size: 11.5px; }
+.mt-ln-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; line-height: 18px; background: var(--panel-3); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-ln-chip.ok { background: var(--accent-soft); color: var(--accent-2); font-weight: 600; }
+.mt-ln-chip.warn { background: var(--warn-bg); color: var(--warn); }
+.mt-ln-foot .mt-ln-pin { display: inline-flex; margin: 0 4px; font-size: 12.5px; }
+/* P97: 레일 끝의 + (새 런처) */
+.mt-tool.add { border: 1px dashed var(--chrome-line-2); color: var(--chrome-text-2); width: 30px; height: 30px; margin: 3px auto; }
+.mt-tool.add .mt-i { width: 14px; height: 14px; }
+/* P97: 레일 빠른 생성의 이름 칸(단추 오른쪽, 화살표가 단추를 가리킨다) */
+.mt-qname { position: fixed; z-index: 65; width: 300px; box-sizing: border-box; padding: 9px 11px 8px; background: var(--panel); border: 1px solid var(--panel-line-2); border-radius: 10px; box-shadow: var(--panel-shadow); display: grid; gap: 6px; font-size: 12.5px; color: var(--text); }
+.mt-qname::before { content: ""; position: absolute; left: -6px; top: var(--qname-arrow, 18px); width: 10px; height: 10px; background: var(--panel); border-left: 1px solid var(--panel-line-2); border-bottom: 1px solid var(--panel-line-2); transform: rotate(45deg); }
+.mt-qname-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+.mt-qname-title b { color: var(--text); font-weight: 600; }
+.mt-qname-row { display: flex; gap: 6px; }
+.mt-qname-row .mt-set-text { flex: 1 1 auto; height: 30px; font-size: 12.5px; }
+.mt-qname-row .mt-set-text.bad { border-color: var(--bad); }
+.mt-qname-row .mt-btn { flex: none; height: 30px; }
+.mt-qname-note { font-size: 11.5px; line-height: 1.4; color: var(--dim); }
+.mt-qname-note.bad { color: var(--bad); }
+@media (prefers-reduced-motion: no-preference) { .mt-qname { animation: mt-qname-in .12s ease-out; } }
+@keyframes mt-qname-in { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }

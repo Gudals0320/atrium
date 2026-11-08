@@ -2227,4 +2227,51 @@ export default {
     restHidden: 'and {n} more',
     noModel: 'shell',
   },
+  // P97: Claude Code launcher start command (e.g. ocx claude)
+  launcherStart: {
+    label: 'Start command',
+    ph: 'claude (default)',
+    title: 'The command that starts Claude Code, for example ocx claude. The board adds its own arguments after it, so the session keeps board hooks, approvals, resume and worktrees.',
+    bad: 'A start command begins with a command name and has no quotes or shell symbols (up to {max} characters).',
+    reserved: 'The board sets {arg} itself. Use the field for it instead.',
+    notFound: '{cmd} was not found on PATH. The launcher is saved, but sessions may not start.',
+    failed: 'Claude Code did not start with the start command ({cmd}). Check the error in the session terminal.',
+  },
+  // P97: create a launcher by pasting a command line
+  launcherPaste: {
+    label: 'Command line',
+    ph: 'Paste a command, e.g. ocx claude --model haiku --permission-mode auto',
+    fill: 'Fill',
+    hint: 'Paste a command you already use. The board splits it into agent, start command, model, options, extra arguments and environment variables.',
+    failed: 'Could not read the command line: {error}',
+    board: 'Claude Code · board session (hooks, approvals, resume, sub-sessions)',
+    agent: '{harness} · agent session (no board hooks)',
+    command_unknown: 'Unknown command · runs as one command line (no board hooks)',
+    command_wrapperNotClaude: 'Only Claude Code can have a start command · runs as one command line (no board hooks)',
+    command_quoted: 'Quoted command name · runs as one command line (no board hooks)',
+    command_envNotClaude: 'Environment variables need Claude Code · runs as one command line (no board hooks)',
+    start: 'start command {cmd}',
+    mapped: '{arg} → {field}',
+    env: 'environment {names}',
+    path: 'uses claude on PATH instead of {path}',
+    dropped: 'left out (set by the board, or a quoted value): {args}',
+    skipped: 'other commands left out: {lines}',
+    field: { model: 'model', effort: 'effort', permissionMode: 'permission mode', args: 'extra args' },
+  },
+  // P97: pin the new launcher to the rail while creating it
+  launcherPin: {
+    label: 'Pin to the left toolbar',
+    created: 'Created launcher {name} and pinned it to the left toolbar.',
+  },
+  // P97: name box for quick spawn from the rail
+  quickName: {
+    where: 'new session in {ws}',
+    label: 'Session name',
+    ph: 'Empty = auto name',
+    go: 'Create',
+    starting: 'Starting…',
+    hint: 'Enter creates it. Leave empty to let the board name it. Esc cancels.',
+    hintPhone: 'Leave empty to let the board name it.',
+    addLauncher: 'New launcher: paste a command line and pin it here',
+  },
 };

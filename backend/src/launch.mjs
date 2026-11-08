@@ -68,7 +68,15 @@ export function writeBoardPlugin({ dir, skillText, skills = {}, bin = {} }) {
 // P8(K1): worktree면 Claude Code가 자기 규칙으로 워크트리를 만든다(claude -w <이름>). 판은 워크트리를 만들지 않는다. 처음 띄울 때만 넣는다
 export function buildStartArgs({ sessionId, worktree = null, ...o }) { return ['--session-id', sessionId, ...(worktree ? ['--worktree', worktree] : []), ...commonArgs(o)]; }
 // B3 4번: 첫 요소는 명령 이름, 경로는 슬래시(E7 2.3)
-export function buildResumeArgv({ claudeCommand = 'claude', sessionId, ...o }) { return [claudeCommand, '--resume', sessionId, ...commonArgs(o)]; }
+// P97: startCommand(호출자의 실행 명령, 예: `ocx claude`)가 있으면 그 낱말들로 시작한다. herdr는 다시 켤 때 이 명령을 패널 셸에서 그대로 돌린다(P97 실험)
+export function buildResumeArgv({ claudeCommand = 'claude', startCommand = '', sessionId, ...o }) {
+  const head = String(startCommand || '').trim().split(/\s+/).filter(Boolean);
+  return [...(head.length ? head : [claudeCommand]), '--resume', sessionId, ...commonArgs(o)];
+}
+// P97: PowerShell 패널에 칠 낱말(안전한 글자가 아니면 작은따옴표로 묶고 '는 두 번). 실행 명령 호출자는 판이 이 줄을 패널에 친다
+const PS_SAFE = /^[A-Za-z0-9_\-.:/\\=]+$/;
+export const psQuote = (w) => (PS_SAFE.test(String(w)) ? String(w) : `'${String(w).replace(/'/g, "''")}'`);
+export const psLine = (words) => words.map(psQuote).join(' ');
 // C3 대책(P3): 판이 직접 이어 갈 때 agent.start에 넘기는 인자(명령 이름 없이)
 export function buildResumeArgs({ sessionId, ...o }) { return ['--resume', sessionId, ...commonArgs(o)]; }
 

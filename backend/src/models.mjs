@@ -68,7 +68,7 @@ export function buildCatalog({ launchers = [], gateways = [], harnessModels = {}
     if (!AGENT_HARNESS(h)) continue;
     const gw = gatewayOf(l);
     const t = targetOfModel(h.id, l.model || '');
-    entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: gw ? (l.env && l.env.ANTHROPIC_BASE_URL) || gw.url : null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}` });
+    entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: gw ? (l.env && l.env.ANTHROPIC_BASE_URL) || gw.url : null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}`, startCommand: l.startCommand || '' }); // P97: 실행 명령
   }
   for (const h of Object.values(HARNESSES)) {
     for (const m of harnessModels[h.id] || h.models || []) {
@@ -162,7 +162,7 @@ function lev(a, b) {
 
 // 한 줄 설명(atrium models, 후보 목록)
 export function describeEntry(e) {
-  if (e.source === 'launcher') return `런처 ${e.launcher} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness} · 모델 ${e.model || '(하네스 기본)'}${e.gateway ? ` · 게이트웨이 경유(${e.gateway})` : ''}`;
+  if (e.source === 'launcher') return `런처 ${e.launcher} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness}${e.startCommand ? ` · 실행 명령 ${e.startCommand}` : ''} · 모델 ${e.model || '(하네스 기본)'}${e.gateway ? ` · 게이트웨이 경유(${e.gateway})` : ''}`;
   if (e.source === 'harness') return `${HARNESSES[e.harness].label} 모델 ${e.model}${e.aliases && e.aliases.length ? `(별칭 ${e.aliases.join(', ')})` : ['opus', 'sonnet', 'haiku'].includes(e.model) ? '(Claude Code 별칭)' : ''}`;
   return `게이트웨이 모델 ${e.label || e.model} · Claude Code · 게이트웨이 경유(${e.gateway}${e.host ? `, 런처 ${e.host}의 env` : ''})`;
 }

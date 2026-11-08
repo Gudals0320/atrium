@@ -5,9 +5,15 @@
 // P72: 새 판에는 DeepSeek 예시를 만들지 않는다(Claude Code, Codex, 셸 셋). 옛 판(P33 전의 설정·세션이 있던 판)은 그대로 DeepSeek를 옮긴다.
 // P72: Codex 모델은 Codex의 모델 목록 캐시(codex-models.mjs)를 읽는다. 읽지 못하면 아래 고정 목록이다.
 // 환경 변수 값은 판 기록에 평문으로 남는다. 기본·예시 호출자에는 키를 넣지 않는다(설정 탭에 풀이가 있다).
+// P97: Claude Code 호출자에 실행 명령(startCommand, 예: `ocx claude`)을 둔다. 비우면 `claude`. 판은 그 명령 뒤에 판의 인자를 붙여 패널에 치고(herdr agent.start는
+//      정해진 실행 파일만 띄운다), herdr가 claude를 알아보면 이름을 붙인다(herdr/adapter.mjs startAgent). 이어 가기·되살리기·워크트리·하위 세션도 같은 실행 명령이다.
+//      명령줄 붙여 넣기(parseCommandLine)는 한 줄(여러 줄도)을 하네스·실행 명령·모델·옵션·추가 인자·환경 변수로 나눈다. 판이 모르는 명령이면 명령 한 줄 호출자다.
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
 import { unlistedModel } from './codex-models.mjs';
+import { psLine } from './launch.mjs'; // P97
 import { FLAVOR as DEEPSEEK, DEFAULT_MODEL as DEEPSEEK_MODEL, DEFAULT_HEALTH_URL, COMMAND_MAX, proxyEnv, baseUrlOf, checkCommand } from './deepseek.mjs';
 
 export const META_KEY = 'launchers';
@@ -23,11 +29,11 @@ const ICON_RE = /^[a-z][a-z0-9-]{0,19}$/;
 const CTRL_RE = /[\x00-\x1f\x7f]/;
 // 판이 정하는 값이라 호출자가 덮지 못하는 것: 환경 변수(herdr·판이 넣는 이름)와 claude 인자(판의 hook·세션 ID·이어 가기)
 const RESERVED_ENV = /^(HERDR_|ATRIUM_|MTASK_|CLAUDECODE$|CLAUDE_CODE_ENTRYPOINT$)/;
-const RESERVED_CLAUDE_ARGS = new Set(['--settings', '--session-id', '--resume', '-r', '--continue', '-c', '--fork-session', '--permission-mode', '--model', '--effort', '--plugin-dir', '--append-system-prompt-file', '--worktree', '-w', '--no-chrome', '-p', '--print']);
+export const RESERVED_CLAUDE_ARGS = new Set(['--settings', '--session-id', '--resume', '-r', '--continue', '-c', '--fork-session', '--permission-mode', '--model', '--effort', '--plugin-dir', '--append-system-prompt-file', '--worktree', '-w', '--no-chrome', '-p', '--print']);
 
 // 하네스 정의. fields는 설정 탭이 보일 칸, models는 알려진 모델(직접 입력도 받는다), kind는 판이 기록하는 herdr 종류
 export const HARNESSES = {
-  claude: { id: 'claude', kind: 'claude', label: 'Claude Code', fields: ['model', 'effort', 'permissionMode', 'allowHerdr', 'args', 'env', 'checkUrl'], models: ['haiku', 'sonnet', 'opus', 'claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'] },
+  claude: { id: 'claude', kind: 'claude', label: 'Claude Code', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'allowHerdr', 'args', 'env', 'checkUrl'], models: ['haiku', 'sonnet', 'opus', 'claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'] },
   codex: { id: 'codex', kind: 'codex', label: 'Codex', fields: ['model', 'args'], models: ['gpt-6-astra'], warnUnlisted: true }, // P72: models는 Codex 캐시를 읽지 못할 때의 목록. 목록에 없는 이름은 경고만 한다
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
@@ -75,6 +81,52 @@ function checkUrlOf(v) {
   return u;
 }
 
+// ---------- P97: 실행 명령 ----------
+export const START_MAX = 120;
+const START_WORDS = 8;
+// 첫 낱말은 PATH에서 찾는 명령 이름이다(herdr의 이어 가기 명령 resume_argv는 첫 요소가 경로 없는 명령 이름이어야 한다). 뒤 낱말은 따옴표·셸 기호 없이
+const START_FIRST_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+const START_WORD_RE = /^[A-Za-z0-9_@%+=:,.\/\\~-]+$/;
+// 실행 명령 → 낱말들. 비었으면 [](판은 claude를 쓴다)
+export const startWords = (s) => String(s || '').trim().split(/\s+/).filter(Boolean);
+// 판이 claude 세션을 다시 띄울 때 칠 실행 명령의 낱말들([]면 herdr agent.start로 claude)
+export const claudeStartOf = (s) => (s && s.kind === 'claude' ? startWords(s.startCommand) : []);
+// herdr startAgent에 넘길 값: 실행 명령이 있을 때만 { command }
+export const startOpt = (s) => { const w = claudeStartOf(s); return w.length ? { command: w } : {}; };
+// 실행 명령을 확인하고 정리한다. 빈칸이나 `claude` 하나면 ''(판의 기본)
+export function normalizeStartCommand(v) {
+  const s = String(v ?? '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const w = s.split(' ');
+  if (s.length > START_MAX || w.length > START_WORDS || CTRL_RE.test(s) || !START_FIRST_RE.test(w[0]) || w.slice(1).some((x) => !START_WORD_RE.test(x))) throw Object.assign(new Error(`실행 명령: 첫 낱말은 명령 이름, 따옴표·셸 기호 없이 ${START_MAX}자까지`), { code: 'bad_request', key: 'launcherStart.bad', vars: { max: START_MAX } });
+  const bad = w.find((x) => RESERVED_CLAUDE_ARGS.has(x.split('=')[0]));
+  if (bad) throw Object.assign(new Error(`보드가 정하는 인자: ${bad}`), { code: 'bad_request', key: 'launcherStart.reserved', vars: { arg: bad } });
+  return s.toLowerCase() === 'claude' ? '' : s;
+}
+// 명령 이름이 PATH에 있는가(Windows는 PATHEXT와 .ps1도). 30초 담아 둔다. 없어도 저장은 막지 않는다(PowerShell 별칭·함수일 수 있다)
+const pathSeen = new Map();
+export function onPath(cmd, { env = process.env, now = Date.now(), platform = process.platform } = {}) {
+  const key = String(cmd || '').toLowerCase();
+  if (!key) return true;
+  const c = pathSeen.get(key);
+  if (c && now - c.at < 30000) return c.ok;
+  const pathVar = env[Object.keys(env).find((k) => k.toUpperCase() === 'PATH')] || '';
+  const extVar = env[Object.keys(env).find((k) => k.toUpperCase() === 'PATHEXT')] || '.COM;.EXE;.BAT;.CMD';
+  const exts = platform === 'win32' ? ['', ...extVar.toLowerCase().split(';').filter(Boolean), '.ps1'] : [''];
+  let ok = false;
+  for (const d of pathVar.split(platform === 'win32' ? ';' : path.delimiter).filter(Boolean)) {
+    for (const e of exts) { try { if (fs.statSync(path.join(d, cmd + e)).isFile()) { ok = true; break; } } catch {} }
+    if (ok) break;
+  }
+  pathSeen.set(key, { ok, at: now });
+  return ok;
+}
+// 미리보기에 붙일 실행 명령 경고(첫 낱말이 PATH에 없음)
+export function startWarning(l, find = onPath) {
+  const w = startWords(l.startCommand);
+  return w.length && !find(w[0]) ? { key: 'launcherStart.notFound', vars: { cmd: w[0] } } : null;
+}
+
 // 호출자 하나를 확인하고 정리한다. others는 이름 겹침을 볼 다른 호출자들. 하네스가 받지 않는 칸은 비운다
 export function normalizeLauncher(input, { others = [] } = {}) {
   if (!input || typeof input !== 'object') throw err('bad_request', "런처를 지정하세요.", 'empty');
@@ -102,7 +154,8 @@ export function normalizeLauncher(input, { others = [] } = {}) {
   }
   const env = has('env') ? normalizeEnv(input.env) : {};
   const checkUrl = has('checkUrl') ? checkUrlOf(input.checkUrl) : '';
-  return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, allowHerdr: has('allowHerdr') ? !!input.allowHerdr : false, args, env, command, checkUrl };
+  const startCommand = has('startCommand') ? normalizeStartCommand(input.startCommand) : ''; // P97
+  return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, allowHerdr: has('allowHerdr') ? !!input.allowHerdr : false, args, env, command, checkUrl, ...(startCommand ? { startCommand } : {}) }; // 빈 실행 명령은 두지 않는다(옛 호출자와 모양이 같다)
 }
 
 // 직접 명령에 환경 변수를 붙인다(PowerShell: $env:이름='값'; 작은따옴표는 두 번)
@@ -127,7 +180,7 @@ export function resolveLauncher(l, over = {}) {
   if (h.id === 'claude') {
     const model = String(pick('model') || '').trim();
     if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
-    return { ...base, model: model || null, effort: pick('effort') || null, permissionMode: pick('permissionMode') || 'manual', allowHerdr: over.allowHerdr != null ? !!over.allowHerdr : !!l.allowHerdr, extraArgs: splitArgs(pick('args')), env: { ...(l.env || {}) }, gateway: gatewayOf(l), command: '' };
+    return { ...base, model: model || null, effort: pick('effort') || null, permissionMode: pick('permissionMode') || 'manual', allowHerdr: over.allowHerdr != null ? !!over.allowHerdr : !!l.allowHerdr, extraArgs: splitArgs(pick('args')), env: { ...(l.env || {}) }, gateway: gatewayOf(l), command: '', startCommand: l.startCommand || '' }; // P97: 실행 명령(빈 값은 claude)
   }
   if (h.id === 'shell') return { ...base, command: '' };
   if (h.id === 'command') { const c = over.command ? checkCommand(over.command) : l.command; return { ...base, command: psEnvPrefix(l.env) + c }; }
@@ -141,7 +194,8 @@ export function previewLauncher(l) {
   const h = harnessOf(l.harness);
   const envNames = Object.keys(l.env || {});
   if (h.id === 'claude') {
-    const a = ['claude', '--permission-mode', l.permissionMode || 'manual'];
+    const s = startWords(l.startCommand); // P97: 실행 명령(비면 claude)
+    const a = [...(s.length ? s : ['claude']), '--permission-mode', l.permissionMode || 'manual'];
     if (l.model) a.push('--model', l.model);
     if (l.effort) a.push('--effort', l.effort);
     return { line: [...a, ...splitArgs(l.args)].join(' '), env: envNames, board: true };
@@ -195,7 +249,8 @@ export class Launchers {
   // 하네스별로 읽어 온 모델 목록(P72: codex)
   modelLists() { const out = {}; if (this.codexModels) { try { out.codex = this.codexModels.read(); } catch {} } return out; }
   harnesses() { return describeHarnesses(this.modelLists()); }
-  previewOf(l, hs) { const w = modelWarning(l, hs); return { ...previewLauncher(l), ...(w ? { warn: w } : {}) }; }
+  // P97: warns는 경고 모두(모델 목록 밖, 실행 명령이 PATH에 없음). warn은 첫 경고(옛 창)
+  previewOf(l, hs) { const warns = [modelWarning(l, hs), startWarning(l)].filter(Boolean); return { ...previewLauncher(l), ...(warns.length ? { warn: warns[0], warns } : {}) }; }
   list() {
     const d = this.data();
     const hs = this.harnesses();
@@ -255,6 +310,143 @@ export class Launchers {
     const l = normalizeLauncher((p && p.launcher) || p, { others: d.items });
     return { launcher: l, preview: this.previewOf(l, this.harnesses()) };
   }
+  // P97: 붙여 넣은 명령줄을 호출자 칸으로 나눈다(저장하지 않는다). kinds: herdr가 아는 에이전트 종류. except: 고치는 중인 호출자 ID(이름 겹침에서 뺀다)
+  parse(p) {
+    const d = this.data();
+    const r = parseCommandLine(p && p.text, { kinds: (p && p.kinds) || [] });
+    r.launcher.name = uniqueName(r.name, d.items.filter((x) => x.id !== (p && p.except)));
+    let preview = null;
+    try { const l = normalizeLauncher({ ...r.launcher, id: null }, { others: [] }); preview = this.previewOf(l, this.harnesses()); }
+    catch (e) { preview = { error: { code: e.code, key: e.key, vars: e.vars, message: e.message } }; }
+    return { launcher: r.launcher, recognized: r.recognized, preview };
+  }
+}
+
+// ---------- P97: 명령줄 붙여 넣기 ----------
+// 셸 글 → 문장들(낱말 배열). 작은따옴표·큰따옴표는 묶음이고 벗긴다(큰따옴표 안의 PowerShell ` 이스케이프는 다음 글자). 줄 끝의 이어 쓰기(\ ` ^)는 이어 붙인다.
+// 줄바꿈, ;, &&, ||는 문장을 나눈다. 따옴표 안의 빈칸이 든 낱말은 spaced에 표시한다
+export function shellStatements(text) {
+  const src = String(text || '').replace(/\r\n?/g, '\n').replace(/[ \t]*[\\`^][ \t]*\n/g, ' ');
+  const out = []; let cur = []; let word = null; let spaced = false; let q = null;
+  const push = () => { if (word !== null) { cur.push(spaced ? { text: word, spaced: true } : word); word = null; spaced = false; } };
+  const end = () => { push(); if (cur.length) out.push(cur); cur = []; };
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) {
+      if (c === q) q = null;
+      else if (q === '"' && c === '`' && i + 1 < src.length) word += src[++i];
+      else { if (/\s/.test(c)) spaced = true; word += c; }
+      continue;
+    }
+    if (c === "'" || c === '"') { q = c; if (word === null) word = ''; continue; }
+    if (c === '\n' || c === ';') { end(); continue; }
+    if ((c === '&' || c === '|') && src[i + 1] === c) { end(); i++; continue; }
+    if (/\s/.test(c)) { push(); continue; }
+    word = (word ?? '') + c;
+  }
+  end();
+  return out;
+}
+const wordText = (w) => (typeof w === 'string' ? w : w.text);
+const isSpaced = (w) => typeof w !== 'string' && !!w.spaced;
+// 실행 파일 이름(경로·확장자를 뺀 소문자)
+const exeBase = (w) => wordText(w).replace(/^.*[\\/]/, '').replace(/\.(exe|cmd|ps1|bat)$/i, '').toLowerCase();
+const isClaudeWord = (w) => /^(claude|claude-code)$/.test(exeBase(w));
+const hasDir = (w) => /[\\/]/.test(wordText(w));
+// 값을 받는 판의 인자(빼면서 값도 함께 뺀다). --resume·-r·--worktree·-w는 값이 없어도 된다
+const RESERVED_WITH_VALUE = new Set(['--settings', '--session-id', '--plugin-dir', '--append-system-prompt-file']);
+const RESERVED_OPT_VALUE = new Set(['--resume', '-r', '--worktree', '-w']);
+const PERMISSION_FROM_FLAG = { '--dangerously-skip-permissions': 'bypassPermissions' };
+
+// 붙여 넣은 글 → { launcher(칸 값), name(제안 이름), recognized: { as: claude|codex|kind|command|empty, harness, board, startCommand, mapped: [{ arg, field }], dropped: [글], env: [이름], skipped: [문장], why? } }
+// kinds: herdr가 아는 에이전트 종류(claude, codex 밖은 추가 인자만 받는다)
+export function parseCommandLine(text, { kinds = [] } = {}) {
+  const stmts = shellStatements(text);
+  const env = {}; const envNames = []; const skipped = []; let cmd = null;
+  const setEnv = (k, v) => { if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) return false; env[k] = v; if (!envNames.includes(k)) envNames.push(k); return true; };
+  for (const st of stmts) {
+    let w = st;
+    const first = wordText(w[0]);
+    // PowerShell: $env:이름='값' 또는 $env:이름 = '값'
+    const m = /^\$env:([A-Za-z_][A-Za-z0-9_]*)(=(.*))?$/i.exec(first);
+    if (m) {
+      const v = m[2] !== undefined ? m[3] : wordText(w[1] || '') === '=' ? w.slice(2).map(wordText).join(' ') : null;
+      if (v !== null && setEnv(m[1], v)) continue;
+    }
+    // export·set 이름=값(bash, cmd)
+    if (/^(export|set)$/i.test(first) && w.length > 1 && w.slice(1).every((x) => wordText(x).indexOf('=') > 0)) { for (const x of w.slice(1)) { const t = wordText(x); setEnv(t.slice(0, t.indexOf('=')), t.slice(t.indexOf('=') + 1)); } continue; }
+    if (first === 'env') w = w.slice(1);
+    // 이름=값 앞머리(bash)
+    while (w.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(wordText(w[0]))) { const t = wordText(w[0]); setEnv(t.slice(0, t.indexOf('=')), t.slice(t.indexOf('=') + 1)); w = w.slice(1); }
+    if (!w.length) continue;
+    if (cmd) skipped.push(cmd.map(wordText).join(' '));
+    cmd = w;
+  }
+  const rec = { as: 'empty', harness: null, board: false, startCommand: '', mapped: [], dropped: [], env: envNames, skipped };
+  const blank = { name: '', harness: 'claude', icon: '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: '', env: {}, command: '', checkUrl: '', startCommand: '' };
+  if (!cmd) return { launcher: { ...blank, env }, name: '', recognized: rec };
+  const known = new Set(kinds.filter((k) => k !== 'claude' && k !== 'codex'));
+  const at = cmd.findIndex((w) => isClaudeWord(w) || exeBase(w) === 'codex' || known.has(exeBase(w)));
+  const asCommand = (why) => {
+    const line = psLine(cmd.map(wordText));
+    return { launcher: { ...blank, harness: 'command', permissionMode: '', command: line, env }, name: exeBase(cmd[0]) || 'command', recognized: { ...rec, as: 'command', harness: 'command', why } };
+  };
+  if (at < 0) return asCommand('unknown');
+  const wrapper = cmd.slice(0, at);
+  const agent = cmd[at];
+  const rest = cmd.slice(at + 1);
+  const kind = isClaudeWord(agent) ? 'claude' : exeBase(agent);
+  if (kind !== 'claude' && wrapper.length) return asCommand('wrapperNotClaude');
+  if (wrapper.some(isSpaced) || isSpaced(agent)) return asCommand('quoted');
+  const out = { model: '', effort: '', permissionMode: '', args: [] };
+  const dropped = []; const mapped = [];
+  for (let k = 0; k < rest.length; k++) {
+    const a = wordText(rest[k]);
+    const eq = a.startsWith('--') ? a.indexOf('=') : -1;
+    const flag = eq > 0 ? a.slice(0, eq) : a;
+    const inline = eq > 0 ? a.slice(eq + 1) : undefined;
+    const value = () => (inline !== undefined ? inline : k + 1 < rest.length ? wordText(rest[++k]) : '');
+    // 빈칸이 든 값은 추가 인자(빈칸으로 나눈다)에 넣을 수 없다. 바로 앞이 값을 받는 플래그였으면 함께 뺀다
+    if (isSpaced(rest[k])) { const prev = out.args[out.args.length - 1]; if (prev && prev.startsWith('-') && !prev.includes('=')) { out.args.pop(); dropped.push(`${prev} "${a}"`); } else dropped.push(`"${a}"`); continue; }
+    if (kind === 'claude') {
+      if (flag === '--model') { out.model = value(); mapped.push({ arg: '--model', field: 'model' }); continue; }
+      if (flag === '--effort') { out.effort = value(); mapped.push({ arg: '--effort', field: 'effort' }); continue; }
+      if (flag === '--permission-mode') { out.permissionMode = value(); mapped.push({ arg: '--permission-mode', field: 'permissionMode' }); continue; }
+      if (PERMISSION_FROM_FLAG[flag]) { out.permissionMode = PERMISSION_FROM_FLAG[flag]; mapped.push({ arg: flag, field: 'permissionMode' }); continue; }
+      if (RESERVED_CLAUDE_ARGS.has(flag)) {
+        let v = '';
+        if (inline === undefined && (RESERVED_WITH_VALUE.has(flag) || (RESERVED_OPT_VALUE.has(flag) && k + 1 < rest.length && !wordText(rest[k + 1]).startsWith('-')))) v = ` ${wordText(rest[++k])}`;
+        dropped.push(a + v); continue;
+      }
+    } else if (kind === 'codex') {
+      if (flag === '-m' || flag === '--model') { out.model = value(); mapped.push({ arg: flag, field: 'model' }); continue; }
+      if (/^-m./.test(a)) { out.model = a.slice(2); mapped.push({ arg: '-m', field: 'model' }); continue; }
+    }
+    out.args.push(a);
+  }
+  if (out.args.length) mapped.push({ arg: out.args.join(' '), field: 'args' });
+  let startCommand = ''; let agentPath = null;
+  if (kind === 'claude') {
+    if (wrapper.length) startCommand = [...wrapper, agent].map(wordText).join(' ');
+    else if (hasDir(agent)) agentPath = wordText(agent); // 경로로 준 claude는 PATH의 claude로(이어 가기 명령의 첫 낱말은 명령 이름이어야 한다)
+    else if (exeBase(agent) !== 'claude') startCommand = wordText(agent);
+    if (startCommand.toLowerCase() === 'claude') startCommand = '';
+  }
+  const harness = kind;
+  const label = kind === 'claude' ? 'Claude' : kind === 'codex' ? 'Codex' : kind;
+  const name = [startCommand || (kind === 'claude' && !out.model ? 'Claude Code' : label), out.model].filter(Boolean).join(' ');
+  const launcher = { ...blank, harness, model: out.model, effort: kind === 'claude' ? out.effort : '', permissionMode: kind === 'claude' ? out.permissionMode || 'manual' : '', args: out.args.join(' '), env: kind === 'claude' ? env : {}, startCommand };
+  // claude 밖은 환경 변수를 받지 않는다(herdr에 넘길 길이 없다): 있으면 명령 한 줄로
+  if (kind !== 'claude' && envNames.length) return asCommand('envNotClaude');
+  return { launcher, name, recognized: { ...rec, as: kind === 'claude' || kind === 'codex' ? kind : 'kind', harness, board: kind === 'claude', startCommand, mapped, dropped, ...(agentPath ? { agentPath } : {}) } };
+}
+// 겹치지 않는 이름(대소문자 무시). 40자까지 자르고 겹치면 " 2", " 3"…
+export function uniqueName(want, items = []) {
+  const base = (String(want || '').trim() || 'Launcher').slice(0, NAME_MAX);
+  const taken = new Set(items.map((x) => String(x.name).toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let i = 2; i < 100; i++) { const n = `${base.slice(0, NAME_MAX - 1 - String(i).length)} ${i}`; if (!taken.has(n.toLowerCase())) return n; }
+  return base;
 }
 
 // 게이트웨이가 닿는가. health면 2xx이고 status가 ok여야 하고, 아니면 무슨 HTTP 답이든 닿은 것으로 본다. 안 닿으면 gateway_down

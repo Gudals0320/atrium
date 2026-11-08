@@ -13,6 +13,7 @@ import { EventEmitter } from 'node:events';
 import { spawn, execFile } from 'node:child_process';
 import { HERDR_PROTOCOLS, HERDR_TESTED } from '../config.mjs';
 import { discoverHerdr, parseWhere, herdrCompat, herdrServerExe, withPathFirst } from './discover.mjs';
+import { psLine } from '../launch.mjs'; // P97: 실행 명령 줄
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SUB_OVERLAP_MS = 1500; // 구독을 바꿀 때 옛 구독을 더 열어 두는 시간
@@ -327,9 +328,30 @@ export class HerdrAdapter extends EventEmitter {
   async waitShellReady(paneId, timeoutMs = 15000) {
     try { await this.call('pane.wait_for_output', { pane_id: paneId, source: 'visible', match: { type: 'regex', value: 'PS [^\\n]*>' }, timeout_ms: timeoutMs }, timeoutMs + 2000); return true; } catch (e) { return false; }
   }
-  async startAgent({ name, paneId, args, kind = 'claude' }) {
+  // command: P97 실행 명령의 낱말들(예: ['ocx', 'claude']). herdr agent.start는 그 종류의 정해진 실행 파일만 띄우므로, 있으면 셸 프롬프트에 `<명령> <인자>`를 치고
+  // herdr가 그 패널에서 에이전트를 알아보기를 기다린 뒤 이름을 붙인다(ocx → node → claude.exe도 claude로 알아본다, P97 실험)
+  async startAgent({ name, paneId, args, kind = 'claude', command = null, timeoutMs = 60000 }) {
+    if (command && command.length) return this.typeAgent({ name, paneId, args, kind, command, timeoutMs });
     const r = await this.call('agent.start', { name, kind, pane_id: paneId, args, timeout_ms: 60000 }, 70000);
     return { agent: agentInfo(r.agent), argv: r.argv };
+  }
+  async typeAgent({ name, paneId, args, kind, command, timeoutMs = 60000, pollMs = 500 }) {
+    const argv = [...command, ...args];
+    await this.call('pane.send_text', { pane_id: paneId, text: psLine(argv) });
+    await sleep(150);
+    await this.call('pane.send_keys', { pane_id: paneId, keys: ['enter'] });
+    const t0 = Date.now();
+    let p = null;
+    while (Date.now() - t0 < timeoutMs) {
+      p = await this.getPane(paneId).catch((e) => { if (e.code === 'unreachable') throw e; return null; });
+      if (p && p.agent === kind) break;
+      p = null;
+      await sleep(pollMs);
+    }
+    if (!p) throw Object.assign(new HerdrError('agent_not_detected', `${kind} did not appear in ${paneId} within ${timeoutMs}ms after typing ${command.join(' ')}`, 'agent.start'), { argv });
+    let agent = null;
+    if (name) agent = agentInfo((await this.call('agent.rename', { target: paneId, name })).agent);
+    return { agent: agent || (await this.getAgent(name || paneId)), argv, typed: true };
   }
   // P4: 패널 하나(foreground_cwd는 셸이나 에이전트가 지금 있는 폴더), 작업 공간의 패널들
   async getPane(paneId) { const r = await this.call('pane.get', { pane_id: paneId }); const p = r.pane || {}; return { paneId: p.pane_id, workspaceId: p.workspace_id, tabId: p.tab_id, cwd: p.foreground_cwd || p.cwd || null, agent: p.agent || null, status: p.agent_status }; }
@@ -362,6 +384,8 @@ export class HerdrAdapter extends EventEmitter {
     if (!found) return { found: false };
     return { found: true, argv: found.agent_resume ? found.agent_resume.argv : null, agentName: found.agent_name };
   }
+  // P97: 에이전트 이름 붙이기(대상은 패널 ID나 지금 이름). herdr는 agent.start로 띄운 에이전트만 다시 켤 때 이름을 되살린다
+  async renameAgent(target, name) { const r = await this.call('agent.rename', { target, name }); return agentInfo(r.agent); }
   async getAgent(target) { try { const r = await this.call('agent.get', { target }); return agentInfo(r.agent); } catch (e) { if (e.code === 'unreachable') throw e; return null; } }
   async listAgents() { const r = await this.call('agent.list', {}); return (r.agents || []).map(agentInfo); }
   async prompt(target, text) { return this.call('agent.prompt', { target, text }, 120000); }

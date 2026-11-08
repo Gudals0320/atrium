@@ -181,12 +181,12 @@ const TABS = [
   { key: 'devices', has: () => true, label: 'webDevices.tab' }, // P48
 ];
 
-export function SettingsDialog({ onClose }) {
+export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false }) {
   const t = useT();
   const settings = useStore((st) => st.settings);
   const launchers = useStore((st) => st.launchers);
   const [schema, setSchema] = useState(null);
-  const [tab, setTab] = useState('general');
+  const [tab, setTab] = useState(tab0 || 'general'); // P97: 연 곳이 정한 탭(레일 + → 런처)
   useEffect(() => { api.call('settings.get').then((r) => setSchema(r.schema)).catch((e) => toast(t('settings.saveFailed', { error: errText(e) }), 'error')); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const box = useDialog(onClose); // P52: Esc 닫기는 공용(dialog.js). 열면 상자에 초점, Tab은 안에서 돈다
   const tabs = TABS.filter((x) => x.has(settings, launchers));
@@ -201,7 +201,7 @@ export function SettingsDialog({ onClose }) {
         <div className="mt-set-body" role="tabpanel">
           {!settings && <div className="dim">{t('settings.loading')}</div>}
           {cur === 'general' && <GeneralTab settings={settings} />}
-          {cur === 'launchers' && <LaunchersTab />}
+          {cur === 'launchers' && <LaunchersTab startNew={newLauncher} />}
           {settings && cur === 'sleep' && <SleepSetting settings={settings} schema={schema} />}
           {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}
           {cur === 'devices' && <DevicesTab />}

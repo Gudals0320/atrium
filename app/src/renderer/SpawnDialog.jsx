@@ -3,7 +3,7 @@
 // P5: 폴더는 지금 워크스페이스의 저장소 루트가 기본이다. 다른 저장소의 폴더를 고르면 그 세션은 그 저장소의 워크스페이스에 생긴다(G1).
 //     종류 "셸(PowerShell)"은 에이전트 없이 패널만 연다(G2).
 // P33: 띄우는 방법은 호출자(설정의 호출자 탭)다. 창 맨 위에서 호출자를 고르면 그 값으로 띄우고, 여기서 바꾼 모델은 호출자 값을 덮는다(session.spawn { launcher, model }).
-//     "직접 고르기"는 옛 방식(종류, 모델, 권한 모드, 인자)이다. 왼쪽 레일의 즐겨찾기 호출자는 이 창 없이 quickSpawn으로 바로 띄우고, Shift+누르기는 그 호출자를 채워 이 창을 연다.
+//     "직접 고르기"는 옛 방식(종류, 모델, 권한 모드, 인자)이다. 왼쪽 레일의 즐겨찾기 호출자는 이 창 없이 quickSpawn으로 띄우고(P97: 먼저 이름 칸 QuickName.jsx), Shift+누르기는 그 호출자를 채워 이 창을 연다.
 //     칩 "새 세션…"과 영역의 "+ 세션"은 첫 즐겨찾기 호출자를 고른 채로 연다.
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
@@ -22,18 +22,21 @@ export const devModel = (l) => (l && l.harness === 'claude' && !l.model ? (api.i
 
 let quickBusy = false;
 // 지금 워크스페이스의 폴더에 그 호출자로 띄우고 그 터미널로 들어간다. 지금 워크스페이스가 없으면 폴더를 묻는 창을 연다
-export async function quickSpawn(launcherId) {
+// P97: name은 레일 이름 칸에 친 세션 이름(없으면 판이 짓는다). 돌려주는 값: true(띄움), false(실패, 알림을 보였다), 'dialog'(새 세션 창을 열었다), null(이미 띄우는 중)
+export async function quickSpawn(launcherId, name) {
   const st = getState();
   const cur = st.workspaces.find((w) => w.key === st.currentWs);
-  if (!cur) { openDialog({ kind: 'spawn', launcher: launcherId }); return; }
-  if (quickBusy) return;
+  if (!cur) { openDialog({ kind: 'spawn', launcher: launcherId }); return 'dialog'; }
+  if (quickBusy) return null;
   quickBusy = true;
-  const p = { cwd: cur.root, launcher: launcherId };
+  const p = { cwd: cur.root, launcher: launcherId, ...(name ? { name } : {}) };
   const dm = devModel(findLauncher(launcherId));
   if (dm) p.model = dm;
-  try { const r = await api.call('session.spawn', p); toast(startedText(r)); goWhenOpen(r.sessionId); }
+  let ok = false;
+  try { const r = await api.call('session.spawn', p); toast(startedText(r)); goWhenOpen(r.sessionId); ok = true; }
   catch (e) { toast(t('spawn.failed', { error: errText(e) }), 'error'); }
   quickBusy = false;
+  return ok;
 }
 
 // cwd: 영역 이름표의 "+ 세션"에서 열면 그 워크스페이스의 폴더(P6a)

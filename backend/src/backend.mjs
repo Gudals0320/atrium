@@ -37,7 +37,7 @@ import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
 import { attachBranch } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { FLAVOR as DEEPSEEK, checkCommand, checkProxy } from './deepseek.mjs'; // P25: DeepSeek 바로 띄우기
-import { resolveLauncher, exampleDeepseek, checkGateway, splitArgs } from './launchers.mjs'; // P33: 호출자
+import { resolveLauncher, exampleDeepseek, checkGateway, splitArgs, startWords, startOpt } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
 import { attachUpdater } from './updater.mjs'; // P69: 앱 안 업데이트
@@ -78,7 +78,7 @@ export async function closeHttp(server, forceMs = 1000) {
 export function spawnPlanOf(b, p) {
   const L = b.features && b.features.launchers;
   const over = { model: p.model, effort: p.effort, permissionMode: p.permissionMode, allowHerdr: p.allowHerdr, args: Array.isArray(p.args) ? p.args.join(' ') : p.args, command: p.command };
-  if (p.launcherDef) return resolveLauncher(p.launcherDef, over);
+  if (p.launcherDef) { const r = resolveLauncher(p.launcherDef, over); return { ...r, startCommand: p.launcherDef.startCommand || null }; } // P97: 실행 명령이 없는 정의는 부모의 것을 물려받는다(spawn)
   if (p.launcher) {
     if (!L) throw keyed(apiError('no_launcher', `런처를 찾을 수 없습니다: ${p.launcher}`), 'launchers.err.notFound', { ref: String(p.launcher) });
     return resolveLauncher(L.get(p.launcher), over);
@@ -92,7 +92,7 @@ export function spawnPlanOf(b, p) {
     return resolveLauncher({ ...base, icon: DEEPSEEK }, { ...over, command: undefined });
   }
   const kind = p.kind || 'claude';
-  return { kind, flavor: null, launcher: null, command: '', model: p.model || null, effort: p.effort || null, permissionMode: p.permissionMode || 'manual', allowHerdr: !!p.allowHerdr, extraArgs: [], env: null, gateway: null, args: Array.isArray(p.args) ? p.args.map(String) : splitArgs(p.args) };
+  return { kind, flavor: null, launcher: null, command: '', model: p.model || null, effort: p.effort || null, permissionMode: p.permissionMode || 'manual', allowHerdr: !!p.allowHerdr, extraArgs: [], env: null, gateway: null, args: Array.isArray(p.args) ? p.args.map(String) : splitArgs(p.args), startCommand: null };
 }
 
 export class Backend {
@@ -213,7 +213,7 @@ export class Backend {
     this.adopting = new Set();
 
     this.queue = new DeliveryQueue({
-      store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.adapter.prompt(this.sessions.get(sid).agentName, text),
+      store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code만. 다른 종류와 셸은 손대지 않는다)
       inspect: async (sid, text) => { const s = this.sessions.get(sid); if (!s || !s.paneId || (s.kind || 'claude') !== 'claude') return null; return promptOnScreen(await this.adapter.readScreen(s.paneId, { source: 'visible' }), text); },
       pressEnter: async (sid) => { const s = this.sessions.get(sid); if (s && s.paneId) await this.adapter.paneKeys(s.paneId, ['enter']); },
@@ -769,6 +769,8 @@ export class Backend {
       applyAgentDetected(s.rt, now);
       this.store.addEvent(s.sessionId, 'herdr_agent', { detected: true });
       this.broadcastSession(s, { cause: 'herdr:agent_detected' });
+      // P97: 실행 명령으로 뜬 claude는 herdr가 새로 알아볼 때(다시 켠 뒤 이어 가기 등) 이름을 잃는다. 알아본 뒤 이름을 다시 맞춘다
+      if (s.startCommand && this.hooked(s)) for (const ms of [1500, 6000]) { const tm = setTimeout(() => { if (this.sessions.has(s.sessionId)) this.ensureAgentName(s); }, ms); if (tm.unref) tm.unref(); }
     } else if (e.type === 'agent_released') {
       applyAgentReleased(s.rt, now, { herdrStopping: this.herdrStopping });
       this.store.addEvent(s.sessionId, 'herdr_agent', { released: true, finalStatus: e.finalStatus, exit: s.rt.exit });
@@ -875,7 +877,7 @@ export class Backend {
     await this.adapter.waitShellReady(s.paneId, 5000);
     const args = buildStartArgs(this.launchOf(s));
     try {
-      await this.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args });
+      await this.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) });
       s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
       s.rt.herdr.launchPending = true; s.rt.herdr.agentSessionId = null;
       this.store.addEvent(s.sessionId, 'relaunched_fresh', { reason: 'resume found no conversation', args });
@@ -887,7 +889,7 @@ export class Backend {
   // 판이 다시 띄울 때의 실행 값. P4 전에 띄운 세션(이어 가기 명령에 --plugin-dir가 없음)은 그대로 둔다
   launchOf(s) {
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
-    return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], ...(withPlugin ? this.plugin : {}) };
+    return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.plugin : {}) };
   }
 
   async refreshAgent(s) {
@@ -1080,7 +1082,7 @@ export class Backend {
         const plan = recoveryPlan({ paneExists: panes.has(s.paneId), agentPresent: s.rt.herdr.present, argv, settingsPath: s.settingsPath, transcriptExists: fs.existsSync(tx), waitedMs: Date.now() - t0, graceMs: this.cfg.recoverGraceMs, releasedSinceRestart: releasedAt.has(sid) });
         if (plan === 'wait') continue;
         pending.delete(sid);
-        if (plan === 'ok' || plan === 'leave') { if (plan === 'ok') this.store.addEvent(sid, 'recover_check', { result: 'resumed with board args' }); continue; }
+        if (plan === 'ok' || plan === 'leave') { if (plan === 'ok') { this.store.addEvent(sid, 'recover_check', { result: 'resumed with board args' }); await this.ensureAgentName(s); } continue; }
         await this.recoverSession(s, plan).catch((e) => this.store.addEvent(sid, 'recover_failed', { plan, error: e.code || e.message }));
       }
       if (pending.size) await sleep(1000);
@@ -1091,6 +1093,32 @@ export class Backend {
       const a = await this.adapter.getAgent(s.agentName).catch(() => null);
       if (a && a.status && a.status !== 'unknown') { s.resumingAfterHerdr = null; applyHerdrStatus(s.rt, a.status, Date.now(), { launchPending: a.launchPending, agentSessionId: a.agentSessionId }); this.broadcastSession(s, { cause: 'resync:agent.get after resume' }); }
     }
+  }
+
+  // 판의 전달(agent.prompt). P97: 실행 명령으로 뜬 claude가 이름을 잃어 herdr가 찾지 못하면 이름을 다시 붙이고 한 번 더 보낸다
+  async sendPrompt(sid, text) {
+    const s = this.sessions.get(sid);
+    try { return await this.adapter.prompt(s.agentName, text); }
+    catch (e) {
+      if (e.code !== 'agent_not_found' || !s.startCommand || !(await this.ensureAgentName(s))) throw e;
+      return this.adapter.prompt(s.agentName, text);
+    }
+  }
+  // P97: herdr가 다시 뜨며 이어 가기 명령(ocx claude --resume …)으로 되살린 패널은 이름이 없다. herdr는 agent.start로 띄운 에이전트만
+  // 이름을 되살린다(P97 실험 3). 판의 주소(agentName)로 찾지 못하고 그 패널에 claude가 있으면 이름을 다시 붙인다(herdr 명령과 판의 전달이 이 이름을 쓴다)
+  async ensureAgentName(s) {
+    if (!s.agentName || s.agentName === s.paneId) return false;
+    try {
+      const a = await this.adapter.getAgent(s.agentName);
+      if (a && a.paneId === s.paneId) return false;
+      if (a) { this.store.addEvent(s.sessionId, 'agent_name_taken', { name: s.agentName, pane: a.paneId }); return false; } // 다른 패널이 그 이름을 쓴다: 손대지 않는다
+      const p = await this.adapter.getPane(s.paneId);
+      if (!p || p.agent !== (s.kind || 'claude')) return false;
+      await this.adapter.renameAgent(s.paneId, s.agentName);
+      this.store.addEvent(s.sessionId, 'agent_renamed', { name: s.agentName, why: 'name lost on herdr restart' });
+      return true;
+    } catch (e) { this.store.addEvent(s.sessionId, 'agent_rename_failed', { error: e.code || e.message }); }
+    return false;
   }
 
   async recoverSession(s, plan) {
@@ -1110,7 +1138,7 @@ export class Backend {
     await this.adapter.waitShellReady(s.paneId, 8000);
     const launch = this.launchOf(s);
     const args = resume ? buildResumeArgs(launch) : buildStartArgs(launch);
-    await this.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args });
+    await this.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) });
     s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
     s.rt.herdr.launchPending = true; s.resumingAfterHerdr = null;
     s.resumeVerified = false; this.store.updateSession(s.sessionId, { resumeVerified: false });
@@ -1196,6 +1224,9 @@ export class Backend {
       const effort = claude ? plan.effort || null : null;
       const allowHerdr = claude && !!plan.allowHerdr;
       const extraArgs = claude ? plan.extraArgs || [] : [];
+      // P97: 실행 명령(호출자의 startCommand, 예: ocx claude). 정하지 않은 하위 세션(atrium child의 물려받기·모델 풀기)은 부모 claude의 실행 명령을 물려받는다
+      const parentS = p.parentSessionId ? this.sessions.get(p.parentSessionId) : null;
+      const startCommand = !claude ? '' : plan.startCommand != null ? plan.startCommand : p.branch && parentS && parentS.kind === 'claude' ? parentS.startCommand || '' : '';
       // F5: herdr가 아는 에이전트 종류. Claude Code만 판의 hook과 이어 가기 등록을 붙인다
       if (!KIND_RE.test(kind)) throw apiError('bad_request', `에이전트 종류: ${kind}`);
       if (!shell) {
@@ -1223,7 +1254,7 @@ export class Backend {
         trust = predictTrust(cwd, this.cfg.claudeJson);
         const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.plugin };
         args = buildStartArgs(launch);
-        resumeArgv = buildResumeArgv({ claudeCommand: this.cfg.claudeCommand, ...launch });
+        resumeArgv = buildResumeArgv({ claudeCommand: this.cfg.claudeCommand, startCommand, ...launch });
       } else if (!shell) {
         // 다른 종류는 그 하네스의 인자를 그대로 넘긴다(예: codex -m 모델). 판은 규칙을 덧붙이지 않는다
         args = plan.args || [];
@@ -1234,7 +1265,7 @@ export class Backend {
       if (shell) rt.phase = 'running';
       let s;
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
-        s = { sessionId, name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs };
+        s = { sessionId, name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand };
         this.store.insertSession({ ...s, runtime: rt });
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
@@ -1248,7 +1279,7 @@ export class Backend {
       // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
       if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
-      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, allowHerdr, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
+      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, allowHerdr, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
       await this.adapter.refreshSubscription();
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
@@ -1266,8 +1297,11 @@ export class Backend {
 
       const shellReady = await this.adapter.waitShellReady(hw.paneId);
       let st = { agent: null, argv: [kind, ...args] };
-      try { st = await this.adapter.startAgent({ name, paneId: hw.paneId, args, kind }); }
-      catch (e) { if (e.code !== 'agent_not_ready') throw e; this.store.addEvent(sessionId, 'agent_not_ready', { kind }); } // 시작하자마자 대화상자(신뢰 등)에서 막혔다. 이름은 남는다
+      try { st = await this.adapter.startAgent({ name, paneId: hw.paneId, args, kind, ...(startCommand ? { command: startWords(startCommand) } : {}) }); }
+      catch (e) {
+        if (e.code === 'agent_not_detected') { this.store.addEvent(sessionId, 'start_command_failed', { startCommand, argv: e.argv || null }); throw keyed(apiError('start_command_failed', `실행 명령(${startCommand})으로 ${kind}가 뜨지 않았습니다. 세션 창의 터미널에서 오류를 확인하세요.`), 'launcherStart.failed', { cmd: startCommand, kind }); } // P97
+        if (e.code !== 'agent_not_ready') throw e; this.store.addEvent(sessionId, 'agent_not_ready', { kind });
+      } // 시작하자마자 대화상자(신뢰 등)에서 막혔다. 이름은 남는다
       rt.herdr.launchPending = st.agent ? st.agent.launchPending : true;
       // B3 4번: 이어 가기 명령 등록. agent.start 직후에는 herdr가 resume_not_accepted("reporter to hold the pane")로 거부하고,
       // herdr가 패널에서 claude를 찾은 뒤(약 1.5초)에는 받는다. 받은 등록은 agent_session을 남기므로 신뢰 대화상자가 끝나 ready가 된 뒤에 한다.

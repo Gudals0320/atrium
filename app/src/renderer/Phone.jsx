@@ -21,6 +21,7 @@ import { wakeSession } from './sleep.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago, STATE_LABEL, deliveryText } from './lib/labels.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
+import { checkLabel } from './lib/session-name.js'; // P97: 새 세션 이름 칸
 import { BRAND_WORDMARK } from './lib/icons.jsx';
 import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou } from './lib/phone.js';
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
@@ -494,13 +495,16 @@ function SpawnSheet({ onClose, onStarted }) {
   const [lid, setLid] = useState(() => (list[0] ? list[0].id : null));
   const [ws, setWs] = useState(() => currentWs || (workspaces[0] && workspaces[0].key) || null);
   const [busy, setBusy] = useState(false);
+  const [name, setName] = useState(''); // P97: 세션 이름(비우면 판이 짓는다). 레일 이름 칸과 같은 규칙
+  const sessions = useStore((st) => st.sessions);
+  const chk = checkLabel(name, [...sessions.values()], null);
   const W = workspaces.find((w) => w.key === ws) || null;
   const L = list.find((l) => l.id === lid) || null;
   async function start() {
-    if (!L || !W || busy) return;
+    if (!L || !W || busy || !chk.ok) return;
     setBusy(true);
     try {
-      const p = { cwd: W.root, launcher: L.id };
+      const p = { cwd: W.root, launcher: L.id, ...(chk.label ? { name: chk.label } : {}) };
       const dm = devModel(L); if (dm) p.model = dm;
       const r = await api.call('session.spawn', p);
       toast(startedText(r));
@@ -531,7 +535,12 @@ function SpawnSheet({ onClose, onStarted }) {
           ))}
           {!workspaces.length && <div className="mt-ph-empty">{t('phone.noRepos')}</div>}
         </div>
-        <button type="button" className="mt-ph-primary" data-action="phone-spawn-go" disabled={!L || !W || busy} onClick={start}>{busy ? t('phone.starting') : t('phone.start', { name: L ? L.name : '' })}</button>
+        <label className="mt-ph-label" htmlFor="mt-ph-spawn-name">{t('quickName.label')}</label>
+        <input id="mt-ph-spawn-name" className={`mt-ph-name${chk.ok ? '' : ' bad'}`} data-field="phone-spawn-name" value={name} maxLength={40} autoCapitalize="off" autoCorrect="off" spellCheck={false} enterKeyHint="go"
+          placeholder={t('quickName.ph')} aria-invalid={!chk.ok} aria-describedby="mt-ph-spawn-note" onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); start(); } }} />
+        <div id="mt-ph-spawn-note" className={`mt-ph-name-note${chk.ok ? '' : ' bad'}`} data-role="phone-spawn-note" role={chk.ok ? undefined : 'alert'}>{chk.ok ? t('quickName.hintPhone') : t(`backend.${chk.key}`, chk.vars)}</div>
+        <button type="button" className="mt-ph-primary" data-action="phone-spawn-go" disabled={!L || !W || busy || !chk.ok} onClick={start}>{busy ? t('phone.starting') : t('phone.start', { name: L ? L.name : '' })}</button>
       </div>
     </div>
   );

@@ -140,6 +140,8 @@ export function attachFeatures(b, { timers = true } = {}) {
     'launcher.favorite': (p) => f.launchers.favorite(p),
     'launcher.order': (p) => f.launchers.order(p),
     'launcher.preview': (p) => f.launchers.preview(p),
+    // P97: 붙여 넣은 명령줄 → 호출자 칸(herdr가 아는 에이전트 종류로 하네스를 알아본다)
+    'launcher.parse': async (p) => f.launchers.parse({ ...p, kinds: await b.adapter.agentKinds().then((ks) => ks.map((k) => k.kind)).catch(() => []) }),
   };
   // 세션 요약에 덧붙이는 값: 긴 답인지(출력 보기), 켜진 루프 수(노드 배지)
   f.summaryExtra = (s) => ({ output: { long: isLongAnswer(s.rt.lastAnswer), chars: typeof s.rt.lastAnswer === 'string' ? s.rt.lastAnswer.length : 0 }, loops: f.loops.activeCount(s.sessionId) });
