@@ -2218,7 +2218,7 @@ export default {
     sumTurn: '응답 필요',
     sumWork: '작업 중',
     sumReview: '결과',
-    sumRest: '쉼 · 끝남',
+    sumRest: '쉼 · 잠듦 · 끝남',
     sumNow: '지금: {text}',
     sumNone: '없음',
     sumFoot: '작업 중 {work} · 세션 {all} · 팀 {teams}',
@@ -2226,5 +2226,17 @@ export default {
     edgeTip: '@{from} → @{to}',
     restHidden: '외 {n}개',
     noModel: '셸',
+  },
+  // P100: 미션 맵 판(워크스페이스)·알약·요약 열
+  mmBoard: {
+    pillSleep: '잠듦 {age}',
+    pillDone: '끝남',
+    wsTitle: '{name}: 세션 {n}개. 누르면 이 워크스페이스를 접거나 폅니다. 접으면 선이 머리줄로 모입니다',
+    wsNeeds: '응답 필요 {n}',
+    wsWorking: '작업 중 {n}',
+    frameTitle: '그룹 {name}',
+    dots: '쉼 {n}',
+    goAnswer: '답하러 가기',
+    hint: '상자 하나가 워크스페이스입니다. 선은 리드에서 그 세션으로 이어지고, 점선은 다른 워크스페이스로 갑니다. 세션을 가리키면 그 세션의 연결만 보입니다.',
   },
 };

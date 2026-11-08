@@ -47,28 +47,32 @@ test('칸: 세로 휴대폰 2, 가로 4, 넓으면 6까지(짝수)', () => {
   assert.equal(lanesFor(1004), 4); assert.equal(lanesFor(1400), 6); assert.equal(lanesFor(200), 2);
 });
 
-test('팀은 두 칸: 리드는 왼쪽 칸, 하위는 오른쪽 칸(손자는 조금 들여), 리드는 하위들 세로 가운데, 선은 리드 오른쪽에서 나간다', () => {
+const nums = (s) => s.match(/-?[\d.]+/g).map(Number);
+test('팀은 두 칸(P100 판): 리드는 왼쪽 칸, 하위는 오른쪽 칸(손자는 조금 들여), 리드는 하위들 세로 가운데, 선은 리드 오른쪽에서 나간다, 다른 워크스페이스 하위는 자기 판', () => {
   const pm = phoneMission(board(), { order: ['wa', 'wb', 'wc'] });
   const g = phoneGraph(pm, { width: gw(P) });
   assert.equal(noOverlap(g), null); assert.ok(inWidth(g));
   const n = at(g);
-  for (const k of ['rev', 'test', 'help', 'port']) assert.ok(n[k].x > n.lead.x + n.lead.w, `${k}는 리드 오른쪽`);
+  for (const k of ['rev', 'test', 'help']) assert.ok(n[k].x > n.lead.x + n.lead.w, `${k}는 리드 오른쪽`);
   assert.ok(n.help.x > n.rev.x && n.help.y > n.rev.y, '손자는 부모 아래 들여');
-  assert.ok(n.rev.y < n.test.y && n.test.y < n.port.y, '띄운 순서로 위 → 아래');
-  assert.equal(n.port.group, 'wa', '다른 무리의 하위도 부모 팀 안'); assert.equal(n.port.cross, true);
-  const top = n.rev.y, bottom = Math.max(...['rev', 'test', 'help', 'port'].map((k) => n[k].y + n[k].h));
+  assert.ok(n.rev.y < n.test.y, '띄운 순서로 위 → 아래');
+  assert.equal(n.port.group, 'wc', 'P100: 다른 워크스페이스 하위는 자기 판(wc)');
+  const top = n.rev.y, bottom = Math.max(...['rev', 'test', 'help'].map((k) => n[k].y + n[k].h));
   assert.ok(Math.abs(n.lead.y + n.lead.h / 2 - (top + bottom) / 2) < 1, '리드는 하위들 가운데');
   const tree = g.edges.filter((e) => e.kind === 'tree').map((e) => e.id).sort();
   assert.deepEqual(tree, ['t:s:lead>s:port', 't:s:lead>s:rev', 't:s:lead>s:test', 't:s:rev>s:help']);
+  assert.equal(g.edges.find((x) => x.id === 't:s:lead>s:port').cross, true);
   const e = g.edges.find((x) => x.id === 't:s:lead>s:rev');
-  assert.match(e.d, new RegExp(`^M${n.lead.x + n.lead.w} ${n.lead.y + n.lead.h / 2}C`), '리드 오른쪽 가운데에서 시작하는 곡선');
-  assert.ok(e.d.endsWith(`${n.rev.x} ${n.rev.y + n.rev.h / 2}`), '하위 왼쪽 가운데에서 끝난다');
+  const p = nums(e.d);
+  assert.ok(e.d.startsWith('M') && Math.abs(p[0] - (n.lead.x + n.lead.w)) < 0.11 && Math.abs(p[1] - (n.lead.y + n.lead.h / 2)) < 0.11 && /C/.test(e.d), '리드 오른쪽 가운데에서 시작하는 곡선');
+  assert.ok(Math.abs(p.at(-2) - n.rev.x) < 0.11 && Math.abs(p.at(-1) - (n.rev.y + n.rev.h / 2)) < 0.11, '하위 왼쪽 가운데에서 끝난다');
   assert.equal(e.active, true); assert.equal(g.edges.find((x) => x.id === 't:s:lead>s:test').tier, 'turn', '선은 받는 쪽 등급');
   assert.ok(g.edges.find((x) => x.id === 't:s:rev>s:help').d.includes('V'), '손자는 같은 칸 안 둥근 꺾임');
-  // 혼자인 무리(wb solo, wc old)는 한 칸 기둥. 쉬는·끝난 세션은 한 줄
-  assert.equal(n.solo.kind, 'row'); assert.equal(n.old.kind, 'row'); assert.equal(n.lead.kind, 'card'); assert.equal(n.rev.kind, 'card');
+  // 혼자인 판(wb solo, wc old·port)은 한 칸. 쉬는·끝난 세션은 테두리 있는 알약
+  assert.equal(n.solo.kind, 'pill'); assert.equal(n.old.kind, 'pill'); assert.equal(n.lead.kind, 'card'); assert.equal(n.rev.kind, 'card');
   assert.ok(n.solo.w < g.width / 2 && n.old.w < g.width / 2);
   assert.deepEqual(g.groups.map((x) => [x.key, x.wide]), [['wa', true], ['wb', false], ['wc', false]]);
+  for (const x of g.groups) assert.ok(x.h > PG.head, `${x.key} 판에 높이`);
   assert.ok(n.solo.x !== n.old.x || n.solo.y !== n.old.y);
   assert.ok(g.width <= gw(P) + 0.5);
 });
@@ -88,8 +92,10 @@ test('세로 한 줄로 늘어서지 않는다: 워크스페이스 열 개, 세�
 test('접기·동그라미 줄·나무 밖 연결: 접은 무리는 머리 글만, 쉬는 하위가 많으면 동그라미 줄, 나무 밖은 옅은 선', () => {
   const pm = phoneMission(board(), { order: ['wa', 'wb', 'wc'] });
   const g = phoneGraph(pm, { width: gw(P) });
-  const link = g.edges.find((e) => e.kind === 'link');
-  assert.deepEqual([link.from, link.to, link.rel], ['s:test', 's:help', 'role']);
+  assert.ok(!g.edges.some((e) => e.kind === 'link'), 'P100: 같은 칸으로 되돌아가는 나무 밖 선(test → help)은 휴대폰에서 긋지 않는다(가리키기가 없다)');
+  const b2 = board(); b2.edges.push({ from: 's:lead', to: 's:help', kind: 'prompt', label: 'check' });
+  const link = phoneGraph(phoneMission(b2, { order: ['wa', 'wb', 'wc'] }), { width: gw(P) }).edges.find((e) => e.kind === 'link');
+  assert.deepEqual([link.from, link.to, link.rel], ['s:lead', 's:help', 'prompt'], '앞으로 가는 나무 밖 선은 옅은 선');
   // 접기: wa를 접으면 그 팀(다른 무리 하위 port 포함)과 선이 빠진다. 머리 글은 남는다
   const f = phoneGraph(phoneMission(board(), { order: ['wa', 'wb', 'wc'], folded: ['wa'] }), { width: gw(P) });
   assert.equal(f.groups[0].folded, true); assert.equal(f.groups[0].count, 4);
@@ -183,5 +189,5 @@ test('보기: 맞추기(폭에 맞추고 위에 붙인다), 옮기기·확대 �
   assert.ok(fv.zoom <= VIEW.FOCUS_MAX);
   assert.equal(focusView([], P), null);
   assert.equal(vpKey({ w: 393.4, h: 700.6 }), '393x701');
-  assert.ok(PG.CARD_H >= 56 && PG.ROW_H >= 30, '카드와 한 줄은 손가락으로 누를 만한 높이');
+  assert.ok(PG.cardH >= 56 && PG.pillH >= 32, '카드와 알약은 손가락으로 누를 만한 높이');
 });

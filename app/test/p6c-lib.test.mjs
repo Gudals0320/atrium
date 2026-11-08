@@ -70,7 +70,7 @@ test('I5: 루프 배지 — 돌고 있음·멈춤, 남은 횟수, 다음 시각.
   assert.equal(stopText({}), '직접 중지할 때까지');
 });
 
-test('I6: 미션 맵 배치(P32 나무 → P95) — 나 0열, 지시하는 세션 → 받는 세션, 리드가 아닌 세션으로 가는 나의 선은 가리킬 때만(quiet)', () => {
+test('I6: 미션 맵 배치(P32 나무 → P95 → P100) — 지시하는 세션 → 받는 세션, 나에게서 오는 선은 지도에 없다', () => {
   const graph = {
     nodes: [
       { id: 'human', kind: 'human', column: 0 },
@@ -83,12 +83,11 @@ test('I6: 미션 맵 배치(P32 나무 → P95) — 나 0열, 지시하는 세�
   };
   const lay = missionLayout(graph);
   const box = (id) => lay.boxes.get(id);
-  assert.ok(box('human').x < box('s:L').x && box('s:L').x < box('s:A').x, '나 → lead → a');
+  assert.ok(!lay.boxes.has('human') && box('s:L').x < box('s:A').x, 'P100: 나 동그라미 없이 lead → a');
   assert.equal(box('s:A').x, box('s:B').x);
   assert.ok(box('s:A').y < box('s:B').y, '이름 순');
   assert.deepEqual(lay.loose, ['s:C']);
-  assert.equal(lay.edges.length, 3, '나 → a, lead → a, lead → b(세션 → 나 선은 그리지 않는다)');
+  assert.equal(lay.edges.length, 2, 'lead → a, lead → b(P100: 나에게서 오는 선과 세션 → 나 선은 그리지 않는다)');
   assert.match(lay.edges[0].d, /^M/);
-  assert.equal(lay.edges.find((e) => e.from === 'human').quiet, true, 'a는 팀의 맨 위가 아니다');
   assert.ok(lay.edges.every((e) => lay.boxes.has(e.from) && lay.boxes.has(e.to)));
 });

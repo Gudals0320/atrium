@@ -7,6 +7,7 @@
 //   판의 세션 요약(live, 이미 받은 것)이 있으면 그 상태를 쓴다(mission.graph를 다시 받기 전에도 상태가 맞다).
 // - 순서는 띄운 순서(order, createdAt, 이름)로 고정한다. 상태가 바뀌어도 줄이 자리를 옮기지 않는다(돌아오면 자리가 그대로).
 // - P94: 나무와 역할·관계 분류는 PC와 같은 공용 모델(lib/mission-model.js)이다. 줄마다 rank·family·roleName·team·waiting·climb·rel을 단다. 무리는 가상 그룹(P44)끼리 붙이고 이름(vg)을 단다.
+// - P100: 이 파일은 줄 모델만 만든다. 놓기는 lib/phone-graph.js가 PC와 같은 엔진(lib/mission-layout.js boardLayout)으로 한다(무리 = 워크스페이스 판, fromId = 다른 판의 부모).
 import { missionTree, roleModel, relOf, tierFor, groupedOrder, bySpawn } from './mission-model.js';
 
 export const PM_INDENT_MAX = 4; // 이보다 깊으면 들여쓰기를 멈추고 깊이 숫자를 단다(390px 폭에 카드가 남게)
