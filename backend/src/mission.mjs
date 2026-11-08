@@ -71,7 +71,10 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
       // P8(K4): 나무(부모 아래에 들여 보인다). 판에 올린 에이전트도 부모가 있으면 같이 따른다
       parentId: s.parentSessionId && byId.has(s.parentSessionId) ? sid(s.parentSessionId) : null, depth: (s.branch && s.branch.depth) || 1, role: (s.branch && s.branch.child && s.branch.role) || null,
       order: (s.branch && s.branch.child && s.branch.order) || null, createdAt: s.createdAt || null, // P75: 형제는 띄운 순서로
-
+      // P95: 카드의 옅은 메타 줄(모델·노력 수준, 일한 시간 또는 마지막 활동, 워크트리 브랜치)
+      model: s.model || null, effort: s.effort || null,
+      turnAt: s.state === 'working' && s.turn && s.turn.startedAt ? s.turn.startedAt : null, activeAt: s.lastActivityAt || null,
+      gitBranch: (s.git && s.git.isWorktree && s.git.branch) || null,
     });
   }
   return { nodes, edges, counts, at: now };

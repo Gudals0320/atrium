@@ -223,8 +223,7 @@ html.mt-full-on, html.mt-full-on body { background: var(--chrome-bg); }
 .mt-ph-light-text span { color: var(--dim); font-size: 12.5px; }
 .mt-ph-light.floating { position: fixed; z-index: 60; top: calc(env(safe-area-inset-top) + 8px); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 24px)); margin: 0; border: 1px solid var(--warn); background: var(--chrome-bg); box-shadow: var(--chrome-shadow); }
 
-/* P87·P89: 휴대폰 작업 관계도(PhoneMission.jsx). 무리 상자 안에 노드 카드, 하위 세션은 곡선, 그 밖 연결은 점선(lib/phone-graph.js).
-   강조는 P85 등급: 일함은 초록 테두리와 빛(그림자), 응답 필요·오류는 주황·빨강, 쉼은 조금, 잠듦·끝남은 많이 물러난다.
+/* P87·P89: 휴대폰 작업 관계도(PhoneMission.jsx)의 머리줄, 요약 칩, 그래프 칸, 맞추기 단추. 지도 안의 생김새는 끝의 P95 덩어리.
    가볍게(iPhone Safari): 옮기기·확대는 .mt-pm-world의 transform 하나. filter·backdrop-filter·will-change·끝없는 움직임은 쓰지 않는다 */
 .mt-pm .mt-ph-head { gap: 8px; }
 .mt-pm-back { flex: none; height: 40px; display: inline-flex; align-items: center; gap: 2px; padding: 0 8px 0 2px; border: 0; border-radius: 10px; background: none; color: var(--chrome-text-2); font-size: 15px; }
@@ -244,55 +243,8 @@ button.mt-pm-chip:disabled { opacity: .5; }
   background-color: var(--canvas); background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1.2px); background-size: 22px 22px; }
 .mt-pm-stage .mt-ph-empty { position: absolute; inset: 0; display: grid; place-items: center; }
 .mt-pm-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-.mt-pm-group { position: absolute; box-sizing: border-box; border: 1px solid var(--panel-line); border-radius: 16px; background: color-mix(in srgb, var(--panel) 55%, transparent); }
-.mt-pm-group.folded { background: var(--panel); }
-.mt-pm-ghead { position: absolute; left: 0; right: 0; top: 0; height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 6px; border: 0; border-radius: 16px 16px 0 0; background: none; color: var(--text-2); font: 650 13px var(--font-ui); text-align: left; }
-.mt-pm-ghead .mt-ph-chev { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.mt-pm-gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-pm-gn { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 650; color: var(--text-2); }
-.mt-pm-gcount { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--chip-bg); color: var(--dim); font-size: 11.5px; line-height: 20px; text-align: center; }
-/* 선: 하위 세션은 실선 곡선, 그 밖 연결은 점선과 끝점 */
-.mt-pm-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.mt-pm-edge path { fill: none; stroke: var(--panel-line-2); stroke-width: 1.6; stroke-linecap: round; }
-.mt-pm-edge.link path, .mt-pm-edge.cross path { stroke: var(--dim-2); stroke-width: 1.3; stroke-dasharray: 4 4; opacity: .8; }
-.mt-pm-edge circle { fill: var(--dim-2); }
-.mt-pm-edge text { font: 600 10.5px var(--font-ui); fill: var(--dim); paint-order: stroke; stroke: var(--canvas); stroke-width: 3px; stroke-linejoin: round; }
-.mt-pm-edge.tree.t-work path, .mt-pm-edge.active path { stroke: color-mix(in srgb, var(--st-working) 75%, transparent); }
-.mt-pm-edge.active circle { fill: var(--st-working); }
-.mt-pm-edge.tree.t-turn path { stroke: color-mix(in srgb, var(--attn) 60%, transparent); }
-.mt-pm-edge.tree.t-sleep path, .mt-pm-edge.tree.t-done path { opacity: .5; }
-.mt-pm-edge.dim { opacity: .2; }
-/* 노드 카드 */
-.mt-pm-node { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 7px 10px; line-height: 1.2; margin: 0; border: 1px solid var(--panel-line-2); border-radius: 12px; background: var(--panel); color: var(--text); text-align: left; font-family: var(--font-ui); box-shadow: 0 2px 8px rgba(0, 0, 0, .35); overflow: hidden; }
-.mt-pm-node:active { background: var(--panel-2); }
-.mt-pm-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mt-pm-node .mt-ph-dot { width: 8px; height: 8px; animation: none; }
-.mt-pm-name { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-pm-kind { flex: none; width: 16px; height: 16px; object-fit: contain; }
-.mt-pm-kind.mark { display: inline-grid; place-items: center; font: 700 9.5px var(--font-mono); border-radius: 4px; background: var(--chip-bg); }
-.mt-pm-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mt-pm-role { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 650; padding: 1px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-text); }
-.mt-pm-state { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--dim); }
-.mt-pm-loop { flex: none; font-size: 11px; color: var(--dim); }
-.mt-pm-sub { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-pm-sub.ask { color: var(--attn-text); }
-.mt-pm-sub.branch { font-family: var(--font-mono); font-size: 10.5px; }
-/* 강조 등급 */
-.mt-pm-node.t-work { border-color: var(--st-working); box-shadow: 0 0 0 1px color-mix(in srgb, var(--st-working) 45%, transparent), 0 0 16px color-mix(in srgb, var(--st-working) 32%, transparent); }
-.mt-pm-node.t-work .mt-pm-state { color: var(--st-working); font-weight: 650; }
-.mt-pm-node.t-turn { border-color: var(--attn); background: var(--attn-bg); box-shadow: 0 0 0 1px var(--attn-line), 0 0 14px color-mix(in srgb, var(--attn) 30%, transparent); }
-.mt-pm-node.t-turn .mt-pm-state { color: var(--attn); font-weight: 700; }
-.mt-pm-node.t-alert { border-color: var(--bad); box-shadow: 0 0 0 1px color-mix(in srgb, var(--bad) 45%, transparent); }
-.mt-pm-node.t-alert .mt-pm-state { color: var(--bad); font-weight: 650; }
-.mt-pm-node.t-review .mt-pm-state { color: var(--st-review); }
-.mt-pm-node.t-rest { box-shadow: none; }
-.mt-pm-node.t-sleep, .mt-pm-node.t-done { opacity: .5; border-style: dashed; box-shadow: none; background: var(--canvas); }
-.mt-pm-node.dim { opacity: .28; box-shadow: none; }
 /* 아래 도구: 범례와 맞추기 */
 .mt-pm-tools { position: absolute; left: calc(env(safe-area-inset-left) + 10px); right: calc(env(safe-area-inset-right) + 10px); bottom: calc(env(safe-area-inset-bottom) + 10px); display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; pointer-events: none; }
-.mt-pm-legend { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 10px; background: var(--chrome-bg); border: 1px solid var(--chrome-line); color: var(--dim); font-size: 11.5px; }
-.mt-pm-legend i { width: 18px; height: 0; border-top: 1.6px solid var(--panel-line-2); }
-.mt-pm-legend i.link { margin-left: 4px; border-top: 1.4px dashed var(--dim-2); }
 .mt-pm-fit { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px 0 11px; border-radius: 20px; border: 1px solid var(--chrome-line-2); background: var(--chrome-bg); color: var(--chrome-text); box-shadow: var(--chrome-shadow); font: 600 13.5px var(--font-ui); -webkit-tap-highlight-color: transparent; }
 .mt-pm-fit:active { background: var(--chrome-bg-hi); }
 .mt-pm-fit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -317,28 +269,6 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-dot[data-tone=shell_running] { background: var(--st-shell_running); animation: mt-reconnect-pulse 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .mt-ph-dot[data-tone=shell_running] { animation: none; } }
 
-/* P94: 휴대폰 미션 맵의 역할과 관계(PC와 같은 모델·모양). 가볍게: filter·움직임 없이 테두리·안쪽 그림자만 */
-.mt-pm-role { display: inline-flex; align-items: center; gap: 3px; background: var(--panel-3); color: var(--text-2); }
-.mt-pm-role .mt-role-glyph { width: 10px; height: 10px; flex: none; }
-.mt-pm-role.f-lead { background: var(--accent-soft); color: var(--accent-2); }
-.mt-pm-role.f-review { background: var(--info-bg); color: var(--info); }
-.mt-pm-role.f-test { background: var(--teal-bg); color: var(--teal); }
-.mt-pm-role.f-docs { background: var(--violet-bg); color: var(--violet); }
-.mt-pm-node.r-lead, .mt-pm-node.r-sub { box-shadow: inset 3px 0 0 var(--accent); }
-.mt-pm-node.r-lead.t-work, .mt-pm-node.r-sub.t-work { box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px color-mix(in srgb, var(--st-working) 45%, transparent), 0 0 16px color-mix(in srgb, var(--st-working) 32%, transparent); }
-.mt-pm-node.r-lead.t-turn, .mt-pm-node.r-sub.t-turn { box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px var(--attn-line), 0 0 14px color-mix(in srgb, var(--attn) 30%, transparent); }
-.mt-pm-state.wait { color: var(--st-working); font-weight: 650; }
-.mt-pm-sub.team { color: var(--text-2); }
-.mt-pm-gvg { flex: none; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 8px; border: 1px dashed var(--panel-line-2); }
-.mt-pm-edge.rel-role path { stroke-dasharray: 6 4; }
-.mt-pm-edge.rel-prompt path { stroke: var(--wire-observed); stroke-dasharray: 1.5 4; stroke-width: 1.8; }
-.mt-pm-edge.link.rel-role path, .mt-pm-edge.cross.rel-role path { stroke: var(--wire-role); opacity: 0.85; }
-.mt-pm-edge.link.rel-role circle, .mt-pm-edge.cross.rel-role circle { fill: var(--wire-role); }
-.mt-pm-legend .mt-role-glyph.lead { width: 11px; height: 11px; color: var(--accent-2); }
-.mt-pm-legend i.role { margin-left: 4px; border-top: 1.6px dashed var(--wire-role); }
-.mt-pm-legend i.prompt { margin-left: 4px; border-top: 2px dotted var(--wire-observed); }
-.mt-pm-node[data-rank] .mt-pm-state.wait { color: var(--st-working); font-weight: 650; } /* 쉬는(검토 대기) 리드의 "워커 n 기다림"도 일함 색 */
-.mt-pm-legend { white-space: nowrap; gap: 5px; } /* P94: 범례 넷이어도 한 줄 */
 
 /* P92: 하위 세션(워커) 알림 고르기, 세션 화면의 이 세션 알림 끄기 */
 .mt-ph-subchoice { display: grid; gap: 10px; padding: 10px 14px 12px; border-radius: 12px; border: 1px solid var(--panel-line); background: var(--panel-2); color: var(--text); font-size: 15.5px; }
@@ -349,3 +279,63 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-seg button:disabled { cursor: default; }
 .mt-ph-mute { width: 36px; height: 36px; flex: none; }
 .mt-ph-mute.on { color: var(--dim); }
+
+/* ---------- P95: 휴대폰 미션 맵(PhoneMission.jsx, lib/phone-graph.js). PC와 같은 시각 언어: 옅은 워크스페이스 머리 글, 작은 카드, 한 줄, 동그라미 줄, 이름표 없는 가는 곡선.
+   무리 상자·띠·범례 없음. 가볍게(P89): filter·backdrop-filter·will-change·끝없는 움직임 없음, 빛(그림자) 대신 테두리 색과 왼쪽 띠 ---------- */
+.mt-pm-ws { position: absolute; display: flex; align-items: center; gap: 5px; height: 20px; margin: 0; padding: 0 2px; border: 0; background: none; color: var(--dim); font: 600 12px var(--font-ui); letter-spacing: .02em; white-space: nowrap; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.mt-pm-ws .mt-ph-chev { width: 13px; height: 13px; flex: none; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mt-pm-ws .vg { color: var(--dim-2); font-weight: 500; }
+.mt-pm-gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mt-pm-ws .n { font: 500 11px var(--font-mono); color: var(--dim-2); }
+.mt-pm-ws .needs { font: 650 11px var(--font-mono); color: var(--attn); }
+.mt-pm-ws.folded { color: var(--text-2); }
+.mt-pm-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.mt-pm-edge { fill: none; stroke: var(--mm-wire); stroke-width: 1.25; stroke-linecap: round; }
+.mt-pm-edge.link { stroke: var(--mm-wire-faint); stroke-dasharray: 4 4; }
+.mt-pm-edge.rel-prompt { stroke-dasharray: 1.5 4; }
+.mt-pm-edge.active { stroke: color-mix(in srgb, var(--st-working) 55%, transparent); }
+.mt-pm-edge.t-turn { stroke: color-mix(in srgb, var(--attn) 45%, transparent); }
+.mt-pm-edge.dim { opacity: 0.15; }
+/* 카드: 이름(팀 번호), 역할과 지금 하는 일, 옅은 메타. 오른쪽 끝에 종류 동그라미와 상태 배지 */
+.mt-pm-node { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 1px; margin: 0; padding: 0 16px 0 9px; border: 1px solid var(--mm-card-line); border-radius: 8px; background: var(--mm-card); color: var(--text); text-align: left; font-family: var(--font-ui); line-height: 1.25; -webkit-tap-highlight-color: transparent; }
+.mt-pm-node:active { background: var(--panel-2); }
+.mt-pm-node.lead { background: var(--mm-card-lead); }
+.mt-pm-top { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.mt-pm-no { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--dim-2); color: var(--text-2); font: 700 9px var(--font-mono); }
+.mt-pm-name { min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-pm-sub { font-size: 11.5px; line-height: 15px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-pm-sub b { color: var(--text-2); font-weight: 550; }
+.mt-pm-sub.ask { color: var(--attn-text); }
+.mt-pm-meta { font: 500 10px/13px var(--font-mono); color: var(--dim-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-pm-node.t-work { border-color: color-mix(in srgb, var(--st-working) 45%, transparent); box-shadow: inset 2px 0 0 var(--st-working); }
+.mt-pm-node.t-work.shell { border-color: color-mix(in srgb, var(--st-shell_running) 45%, transparent); box-shadow: inset 2px 0 0 var(--st-shell_running); }
+.mt-pm-node.t-turn { border-color: color-mix(in srgb, var(--attn) 65%, transparent); }
+.mt-pm-node.t-alert { border-color: color-mix(in srgb, var(--st-error) 60%, transparent); }
+.mt-pm-node.t-review { border-color: color-mix(in srgb, var(--st-review) 45%, transparent); }
+.mt-pm-node.t-rest, .mt-pm-node.t-sleep, .mt-pm-node.t-done { border-color: var(--mm-card-rest); }
+.mt-pm-av { position: absolute; right: -8px; top: 50%; margin-top: -8px; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--panel-line-2); background: var(--icon-bg); display: grid; place-items: center; }
+.mt-pm-av img { width: 11px; height: 11px; object-fit: contain; }
+.mt-pm-av .mark { font: 800 8px var(--font-mono); }
+.mt-pm-av.ring { border-style: dashed; border-color: var(--dim-2); }
+.mt-pm-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--canvas); display: grid; place-items: center; font: 900 5.5px/1 var(--font-ui); font-style: normal; color: var(--attn-ink); }
+.mt-pm-badge.b-work { background: var(--st-working); }
+.mt-pm-badge.b-shell { background: var(--st-shell_running); }
+.mt-pm-badge.b-turn { background: var(--attn); }
+.mt-pm-badge.b-alert { background: var(--st-error); }
+.mt-pm-badge.b-review { background: var(--st-review); }
+/* 한 줄(쉼·잠듦·끝남)과 동그라미 줄 */
+.mt-pm-row { position: absolute; box-sizing: border-box; display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 14px 0 8px; border: 0; border-radius: 6px; background: none; color: var(--dim); font: 400 12px var(--font-ui); text-align: left; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
+.mt-pm-row:active { background: var(--panel-2); }
+.mt-pm-row .o { flex: none; width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1.25px solid var(--dim-2); }
+.mt-pm-row .nm { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.mt-pm-row .rl { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim-2); }
+.mt-pm-row .rl::before { content: "· "; }
+.mt-pm-row.t-sleep .nm { color: var(--dim); }
+.mt-pm-row.t-done .nm { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--dim-2); }
+.mt-pm-row .mt-pm-av { right: -6px; margin-top: -7px; width: 14px; height: 14px; }
+.mt-pm-row .mt-pm-av img { width: 9px; height: 9px; }
+.mt-pm-dot { position: absolute; margin: 0; padding: 0; border: 0; background: none; -webkit-tap-highlight-color: transparent; }
+.mt-pm-dot .mt-pm-av { position: relative; right: auto; top: auto; margin: 0; }
+.mt-pm-dots-label { position: absolute; font: 500 10.5px/16px var(--font-mono); color: var(--dim-2); white-space: nowrap; pointer-events: none; }
+.mt-pm-node.dim, .mt-pm-row.dim, .mt-pm-dot.dim { opacity: 0.28; }
+.mt-pm-tools { justify-content: flex-end; }

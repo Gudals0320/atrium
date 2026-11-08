@@ -780,76 +780,6 @@ textarea.mt-kinput { width: 100%; resize: vertical; box-sizing: border-box; }
 .mt-loop-short { width: 70px; } .mt-loop-mid { width: 160px; }
 .mt-loop-dialog .mt-row { grid-template-columns: 1fr 1fr 2fr; }
 
-/* 미션 맵(I6, P32에서 다시 그림): 위쪽 알약 아래를 덮는다. 왼쪽 → 오른쪽 나무, 아래 "연결 없음" 격자. 빈 곳을 누르면 닫힌다 */
-.mt-mission { position: absolute; left: 0; right: 0; top: 0; bottom: 0; padding-top: 60px; z-index: 36; background: var(--mission-bg); backdrop-filter: blur(6px); display: flex; flex-direction: column; }
-.mt-mission-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 16px; border-bottom: 1px solid var(--panel-line); white-space: nowrap; }
-.mt-mission-title { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: .01em; }
-.mt-mission-filters { display: flex; gap: 4px; margin-left: 6px; }
-.mt-mm-filter { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--panel-line); background: none; color: var(--dim); font-size: 12.5px; font-weight: 600; cursor: pointer; }
-.mt-mm-filter:hover { color: var(--text); border-color: var(--panel-line-2); }
-.mt-mm-filter.on { color: var(--text); background: var(--panel-3); border-color: var(--panel-line-2); }
-.mt-mm-fdot { width: 7px; height: 7px; border-radius: 50%; background: var(--st-ready); flex: none; }
-.mt-mm-filter.c-needs_you .mt-mm-fdot { background: var(--attn); }
-.mt-mm-filter.c-working .mt-mm-fdot { background: var(--st-working); }
-.mt-mm-filter.c-done .mt-mm-fdot { background: var(--st-review); }
-.mt-mm-filter.c-exited .mt-mm-fdot { background: var(--st-exited); }
-.mt-mm-fn { font-family: var(--font-mono); font-size: 11.5px; color: var(--dim-2); margin-left: 2px; }
-.mt-mm-filter.on .mt-mm-fn { color: var(--text-2); }
-.mt-mm-legend { display: flex; align-items: center; gap: 12px; color: var(--dim); font-size: 12px; cursor: default; }
-.mt-mm-key { display: inline-flex; align-items: center; gap: 5px; }
-.mt-mm-key line { stroke-width: 2.4; }
-.mt-mission-body { flex: 1; overflow: auto; }
-.mt-mission-canvas { position: relative; margin: 8px auto 0; }
-.mt-mm-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
-/* 선: 판의 선과 같은 색(역할 파랑, 지시 초록 점선, 띄움 초록, 명령 바 강조 초록, 루프 청록 점선) */
-.mt-mm-edge path.line { fill: none; stroke-width: 2; }
-.mt-mm-edge path.hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: default; }
-.mt-mm-edge:hover path.line { stroke-width: 3; }
-.mt-mm-edge.back path.line { opacity: .55; }
-.mt-mm-edge .dot { stroke: var(--mission-bg); stroke-width: 2; }
-.mt-mm-edge.k-role path.line, .mt-mm-key.k-role line { stroke: var(--wire-role); }
-.mt-mm-edge.k-prompt path.line, .mt-mm-key.k-prompt line { stroke: var(--wire); stroke-dasharray: 7 5; }
-.mt-mm-edge.k-spawn path.line, .mt-mm-key.k-spawn line { stroke: var(--wire); }
-.mt-mm-edge.k-bar path.line, .mt-mm-key.k-bar line { stroke: var(--accent-2); }
-.mt-mm-edge.k-loop path.line, .mt-mm-key.k-loop line { stroke: var(--teal); stroke-dasharray: 2 4; }
-.mt-mm-edge.k-role .dot, .mt-mm-arrow.k-role path { fill: var(--wire-role); }
-.mt-mm-edge.k-prompt .dot, .mt-mm-edge.k-spawn .dot, .mt-mm-arrow.k-prompt path, .mt-mm-arrow.k-spawn path { fill: var(--wire-end); }
-.mt-mm-edge.k-bar .dot, .mt-mm-arrow.k-bar path { fill: var(--accent-2); }
-.mt-mm-edge.k-loop .dot, .mt-mm-arrow.k-loop path { fill: var(--teal); }
-.mt-mm-edge.active path.line { stroke-dasharray: 7 5; animation: mt-dash 0.8s linear infinite; stroke-width: 2.4; }
-/* 이름표: 받는 상자 바로 왼쪽, 선 끝 높이(오른쪽 끝이 그 점) */
-.mt-mm-label { position: absolute; transform: translate(-100%, -50%); height: 18px; line-height: 16px; padding: 0 7px; box-sizing: border-box; border-radius: 9px; border: 1px solid var(--panel-line-2); background: var(--panel); color: var(--text-2); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
-.mt-mm-label.k-role { border-color: color-mix(in srgb, var(--wire-role) 60%, transparent); color: var(--info); }
-.mt-mm-label.k-prompt, .mt-mm-label.k-spawn { border-color: color-mix(in srgb, var(--wire-end) 50%, transparent); color: var(--accent-text); }
-.mt-mm-label.k-bar { border-color: color-mix(in srgb, var(--accent-2) 55%, transparent); color: var(--accent-text); }
-.mt-mm-label.k-loop { border-color: color-mix(in srgb, var(--teal) 55%, transparent); color: var(--teal); }
-.mt-mm-section { position: absolute; display: flex; align-items: center; gap: 6px; height: 20px; color: var(--dim); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; border-top: 1px dashed var(--panel-line-2); padding-top: 6px; }
-.mt-mm-empty { position: absolute; left: 28px; top: 28px; }
-/* 상자: 판의 노드처럼 종류 아이콘, 이름, 상태 알약. 둘째 줄은 묻는 내용(주황) 또는 마지막 지시. 올리면 아래에 전체 글 */
-.mt-mm-box { position: absolute; box-sizing: border-box; border: 1.5px solid var(--con-line); border-radius: var(--con-radius); background: var(--con-bg); padding: 7px 10px; font-size: 12.5px; cursor: pointer; display: grid; align-content: center; gap: 4px; box-shadow: var(--con-shadow); }
-.mt-mm-box:hover { border-color: var(--panel-line-2); z-index: 2; }
-.mt-mm-box.human { cursor: default; border-color: var(--accent-line); background: var(--accent-bg); display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px; }
-.mt-mm-you { font-size: 14px; font-weight: 700; color: var(--accent-text); }
-.mt-mm-box.session.c-idle, .mt-mm-box.session.c-exited { background: var(--con-idle-bg); border-color: var(--con-idle-line); }
-.mt-mm-box.session.c-working { border-color: var(--con-line-working); }
-.mt-mm-box.session.c-done { border-color: var(--con-line-review); }
-.mt-mm-box.session.c-needs_you { border-color: var(--attn); box-shadow: var(--con-glow); }
-.mt-mm-box.session.c-exited .mt-mm-name { color: var(--con-idle-text); }
-.mt-mm-box.ghost { opacity: .45; }
-.mt-mm-line { display: flex; align-items: center; gap: 7px; white-space: nowrap; min-width: 0; }
-.mt-mm-kind { width: 18px; height: 18px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
-.mt-mm-kind .mt-kind-icon { width: 18px; height: 18px; }
-.mt-mm-name { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; margin-right: auto; }
-.mt-mm-line .mt-pill { font-size: 11px; flex: none; }
-.mt-mm-loop { font-size: 11px; color: var(--teal); flex: none; }
-.mt-mm-sub { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 25px; }
-.mt-mm-box.human .mt-mm-sub { padding-left: 0; }
-.mt-mm-sub.ask { color: var(--attn-text); }
-.mt-mm-sub.none { color: var(--dim-2); opacity: .7; }
-.mt-mm-more { display: none; position: absolute; left: -1.5px; right: -1.5px; top: calc(100% + 4px); z-index: 3; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--panel-line-2); background: var(--panel-2); box-shadow: var(--panel-shadow); color: var(--text-2); font-size: 12px; line-height: 1.45; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; max-height: 160px; overflow: hidden; pointer-events: none; }
-.mt-mm-more b { color: var(--dim); font-weight: 600; }
-.mt-mm-box.c-needs_you .mt-mm-more { border-color: var(--attn-line); }
-.mt-mm-box:hover .mt-mm-more { display: block; }
 /* P32: 연결 알약(세션 수)을 누르면 미션 맵. 열려 있으면 강조 테두리(.mt-cp.on) */
 .mt-cp.conn.click { cursor: pointer; }
 .mt-cp.conn.click:focus-visible { outline: 1px solid var(--accent-line); outline-offset: 1px; }
@@ -1126,18 +1056,6 @@ body.mt-term-selecting, body.mt-term-selecting * { cursor: text !important; }
 /* 마우스를 올리면 줄이지 않고 다 보인다(선을 따라 양쪽으로 늘어난다) */
 .mt-dl-bridge:not(.lv-mini):hover, .mt-dl-rlabel:hover, .mt-dl-chip:not(.lv-mini):hover { max-width: none; z-index: 4; }
 
-/* P46: 작업 관계도의 워크스페이스 무리(띠). 머리줄을 누르면 접고 펼친다 */
-.mt-mm-group { position: absolute; box-sizing: border-box; border: 1px solid var(--panel-line-2); border-radius: 12px; background: color-mix(in srgb, var(--panel) 45%, transparent); }
-.mt-mm-group.shut { background: var(--panel); }
-.mt-mm-ghead { position: absolute; left: 0; top: 0; right: 0; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: none; background: none; color: var(--text-2); font-size: 12.5px; cursor: pointer; text-align: left; border-radius: 12px 12px 0 0; }
-.mt-mm-ghead:hover { background: var(--panel-3); color: var(--text); }
-.mt-mm-gcaret { width: 14px; color: var(--dim); flex: none; font-size: 14px; line-height: 1; text-align: center; }
-.mt-mm-gname { color: var(--text); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
-.mt-mm-gcount { color: var(--dim); font-family: var(--font-mono); font-size: 11.5px; }
-.mt-mm-gneeds { color: var(--attn); font-weight: 700; font-size: 11.5px; padding: 0 7px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--attn) 55%, transparent); }
-.mt-mm-gloose { position: absolute; color: var(--dim); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-.mt-mm-edge.cross path.line { stroke-width: 2.8; }
-.mt-mm-label.cross { border-style: dashed; }
 /* P47: 한 백엔드에 창 여럿. 위쪽 "다른 기기 n" 알약, 다른 기기가 방금 친 터미널 표시, 다른 창이 크기를 정한 터미널의 모서리 표시 */
 .mt-peers { color: var(--chrome-text-2); font-size: 12px; cursor: default; }
 .mt-peers-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); flex: none; }
@@ -1561,78 +1479,6 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-return-tag.hot { border-color: var(--attn-line); color: var(--attn-text); }
 .mt-kcard-sess.hot, .mt-kcard-ask { color: var(--attn); }
 
-/* P94: 미션 맵의 역할과 관계(Mission.jsx, lib/mission-model.js). 색은 토큰만 쓴다. 덮개 화면이라 판 노드의 투명도 규칙(P28·P85)과 따로이고, 투명도는 0.x로 적는다 */
-.mt-role-glyph { width: 11px; height: 11px; flex: none; }
-.mt-mm-box.session { transition: opacity .15s ease, border-color .15s ease; }
-.mt-mm-box.session.r-lead, .mt-mm-box.session.r-sub { box-shadow: inset 3px 0 0 var(--accent), var(--con-shadow); }
-.mt-mm-box.session.r-lead.c-needs_you, .mt-mm-box.session.r-sub.c-needs_you { box-shadow: inset 3px 0 0 var(--accent), var(--con-glow); }
-.mt-mm-box.session.r-lead { background: color-mix(in srgb, var(--accent) 6%, var(--con-bg)); }
-.mt-mm-box.session:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
-.mt-mm-box.hot { z-index: 3; border-color: var(--panel-line-2); }
-.mt-mm-box.recede, .mt-mm-label.recede { opacity: 0.26; }
-.mt-mm-line.two { gap: 6px; }
-.mt-mm-line.two .mt-mm-sub { padding-left: 0; min-width: 0; flex: 1 1 auto; }
-.mt-mm-role { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px 0 5px; border-radius: 9px; font-size: 11px; font-weight: 700; flex: none; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--panel-3); color: var(--text-2); }
-.mt-mm-role.f-lead { background: var(--accent-soft); color: var(--accent-2); }
-.mt-mm-role.f-review { background: var(--info-bg); color: var(--info); }
-.mt-mm-role.f-test { background: var(--teal-bg); color: var(--teal); }
-.mt-mm-role.f-docs { background: var(--violet-bg); color: var(--violet); }
-.mt-mm-role.r-solo { background: none; color: var(--dim-2); padding-left: 0; }
-.mt-mm-team { color: var(--text-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.mt-mm-flags { position: absolute; right: 10px; top: -9px; display: flex; gap: 4px; pointer-events: none; }
-.mt-mm-flag { height: 16px; line-height: 14px; padding: 0 6px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--panel-line-2); background: var(--panel); font-size: 10.5px; font-weight: 700; white-space: nowrap; }
-.mt-mm-flag.climb { color: var(--st-waiting); border-color: color-mix(in srgb, var(--st-waiting) 60%, transparent); }
-.mt-mm-flag.wait { color: var(--st-working); border-color: color-mix(in srgb, var(--st-working) 55%, transparent); }
-/* 선: 관계 종류마다 모양 */
-.mt-mm-edge path.line { transition: opacity .15s ease; }
-.mt-mm-edge.rel-spawn path.line { stroke: color-mix(in srgb, var(--text) 52%, transparent); stroke-dasharray: none; stroke-width: 1.9; }
-.mt-mm-edge.rel-role path.line { stroke: var(--wire-role); stroke-dasharray: 7 4; stroke-width: 1.9; }
-.mt-mm-edge.rel-prompt path.line { stroke: var(--wire-observed); stroke-dasharray: 1.5 4.5; stroke-linecap: round; stroke-width: 2.4; }
-.mt-mm-edge.rel-human path.line { stroke: color-mix(in srgb, var(--accent-2) 55%, transparent); stroke-dasharray: 3 5; stroke-width: 1.2; opacity: 0.45; }
-.mt-mm-edge path.case { fill: none; stroke: color-mix(in srgb, var(--text) 14%, transparent); stroke-width: 8; stroke-linecap: round; }
-.mt-mm-edge.cross path.line { stroke-width: 2.4; }
-.mt-mm-arrow.rel-spawn path { fill: color-mix(in srgb, var(--text) 60%, transparent); }
-.mt-mm-arrow.rel-role path { fill: var(--wire-role); }
-.mt-mm-arrow.rel-prompt path { fill: var(--wire-observed); }
-.mt-mm-arrow.rel-human path { fill: color-mix(in srgb, var(--accent-2) 55%, transparent); }
-.mt-mm-edge.rel-spawn .dot { fill: color-mix(in srgb, var(--text) 60%, transparent); }
-.mt-mm-edge.rel-human .dot { fill: color-mix(in srgb, var(--accent-2) 55%, transparent); }
-.mt-mm-edge.hot path.line { stroke-width: 2.8; opacity: 1; }
-.mt-mm-edge.recede { opacity: 0.1; }
-.mt-mm-edge.active path.line { animation: mt-dash 0.8s linear infinite; }
-.mt-mm-edge.active.rel-spawn path.line { stroke-dasharray: 7 5; stroke: var(--st-working); }
-@media (prefers-reduced-motion:reduce) { .mt-mm-edge.active path.line { animation: none; } } /* 판 노드의 움직임 줄이기 블록(P85 시험이 맨 끝 블록을 본다)과 따로 둔다 */
-.mt-mm-label { display: inline-flex; align-items: center; gap: 3px; }
-.mt-mm-label .mt-role-glyph { width: 10px; height: 10px; }
-.mt-mm-label.rel-spawn { border-color: color-mix(in srgb, var(--text) 30%, transparent); color: var(--text-2); }
-.mt-mm-label.rel-role { border-color: color-mix(in srgb, var(--wire-role) 60%, transparent); color: var(--info); }
-.mt-mm-label.rel-prompt { border-color: color-mix(in srgb, var(--wire-observed) 60%, transparent); color: var(--violet); border-style: dotted; }
-.mt-mm-label.rel-human { color: var(--dim); border-color: var(--panel-line); }
-.mt-mm-label.hot { z-index: 4; }
-.mt-mm-lcross { color: var(--dim); font-weight: 600; }
-/* 가상 그룹 띠, 무리 머리줄의 그룹 이름, 팀 상자 */
-.mt-mm-band { position: absolute; box-sizing: border-box; border: 1px dashed var(--panel-line-2); border-radius: 16px; background: color-mix(in srgb, var(--panel-2) 35%, transparent); pointer-events: none; }
-.mt-mm-bandname { position: absolute; left: 14px; top: 4px; color: var(--dim); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.mt-mm-gvg { color: var(--dim); font-size: 11px; font-weight: 600; padding: 0 7px; border-radius: 9px; border: 1px dashed var(--panel-line-2); }
-.mt-mm-teambox { position: absolute; box-sizing: border-box; border: 1.5px dashed var(--accent-line); border-radius: 14px; background: color-mix(in srgb, var(--accent) 4%, transparent); pointer-events: none; }
-/* 범례(왼쪽 아래) */
-.mt-mission .mt-mm-legend { position: absolute; left: 16px; bottom: 14px; z-index: 5; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--panel-line-2); background: var(--panel); box-shadow: var(--panel-shadow); color: var(--dim); font-size: 12px; }
-.mt-mm-lrow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
-.mt-mm-lrow > b { color: var(--text-2); font-size: 11px; font-weight: 700; min-width: 34px; }
-.mt-mm-key.role.f-lead { color: var(--accent-2); }
-.mt-mm-key.role.f-review { color: var(--info); }
-.mt-mm-key.role.f-test { color: var(--teal); }
-.mt-mm-key.role.f-docs { color: var(--violet); }
-.mt-mm-key line { stroke-width: 2; }
-.mt-mm-key.rel-spawn line { stroke: color-mix(in srgb, var(--text) 52%, transparent); }
-.mt-mm-key.rel-role line { stroke: var(--wire-role); stroke-dasharray: 6 3; }
-.mt-mm-key.rel-prompt line { stroke: var(--wire-observed); stroke-dasharray: 1.5 4; stroke-linecap: round; stroke-width: 2.4; }
-.mt-mm-key.rel-human line { stroke: color-mix(in srgb, var(--accent-2) 55%, transparent); stroke-dasharray: 3 4; }
-.mt-mm-key.rel-cross line { stroke: var(--wire-role); stroke-width: 2.4; }
-.mt-mm-key.rel-cross line.case { stroke: color-mix(in srgb, var(--text) 18%, transparent); stroke-width: 7; }
-.mt-mm-lhint { color: var(--dim-2); font-size: 11px; }
-.mt-mission-body { padding-bottom: 96px; } /* 범례가 아래 상자를 가리지 않게 */
-.mt-mm-label.rel-human:not(.hot) { opacity: 0.5; } /* P94: 사용자 선의 이름표는 가리킬 때만 또렷하게 */
 
 /* ---------- P91: 묶음(가상 그룹) 테두리와 상대 경로 이름표 ---------- */
 /* 구성 영역 둘레의 옅은 바깥 띠(영역 테두리보다 흐리게), 위 왼쪽 이름표. filter·그림자·끝없는 움직임 없음 */
@@ -1647,3 +1493,124 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-wsgroup-auto { font-family: var(--font-ui); color: color-mix(in srgb, var(--term-dim) 80%, transparent); }
 .mt-wsgroup-meta { color: var(--term-dim); }
 .mt-region-name[data-label="rel"] { text-transform: none; letter-spacing: .02em; }
+
+/* ---------- P95: 미션 맵 다시 그림(Mission.jsx, lib/mission-layout.js). 왼쪽 → 오른쪽 열, 작은 카드, 이름표 없는 가는 곡선, 오른쪽 요약 열.
+   틀(무리 상자·그룹 띠·팀 상자·범례 카드)을 두지 않는다. 색은 토큰만. 덮개 화면이라 투명도는 0.x로 적는다(P85 시험은 .x를 판 노드 규칙으로 본다). 끝없는 움직임 없음 ---------- */
+.mt-mission { position: absolute; left: 0; right: 0; top: 0; bottom: 0; padding-top: 60px; z-index: 36; background: var(--mm-bg); display: flex; flex-direction: column; }
+.mt-mission-head { flex: none; display: flex; align-items: stretch; gap: 0 20px; height: 44px; padding: 0 16px 0 20px; border-bottom: 1px solid var(--panel-line); white-space: nowrap; }
+.mt-mission-title { align-self: center; font-size: 14px; font-weight: 650; color: var(--text); letter-spacing: .01em; }
+.mt-mission-filters { display: flex; gap: 18px; overflow: hidden; }
+.mt-mm-filter { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0 0; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--dim); font: 550 12.5px var(--font-ui); cursor: pointer; }
+.mt-mm-filter:hover { color: var(--text-2); }
+.mt-mm-filter.on { color: var(--text); border-bottom-color: var(--text-2); }
+.mt-mm-fn { font: 500 11.5px var(--font-mono); color: var(--dim-2); }
+.mt-mm-filter.c-needs_you:not([data-n="0"]) .mt-mm-fn { color: var(--attn); }
+.mt-mission-head .mt-x { align-self: center; }
+.mt-mission-main { flex: 1; min-height: 0; display: flex; }
+.mt-mission-body { flex: 1; min-width: 0; overflow: auto; position: relative; }
+.mt-mission-canvas { position: relative; }
+.mt-mm-empty { position: absolute; left: 24px; top: 24px; }
+/* 선 */
+.mt-mm-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.mt-mm-edge path.line { fill: none; stroke: var(--mm-wire); stroke-width: 1.25; stroke-linecap: round; transition: opacity .15s ease, stroke .15s ease; }
+.mt-mm-edge path.hit { fill: none; stroke: transparent; stroke-width: 10; pointer-events: stroke; }
+.mt-mm-edge.link path.line { stroke: var(--mm-wire-faint); stroke-dasharray: 4 4; }
+.mt-mm-edge.rel-prompt path.line { stroke-dasharray: 1.5 4; }
+.mt-mm-edge.cross path.line { stroke-dasharray: 6 4; }
+.mt-mm-edge.rel-human path.line { stroke: var(--mm-wire-faint); stroke-dasharray: none; }
+.mt-mm-edge.active path.line { stroke: color-mix(in srgb, var(--st-working) 55%, transparent); }
+.mt-mm-edge.turn path.line { stroke: color-mix(in srgb, var(--attn) 45%, transparent); }
+.mt-mm-edge.hot path.line { stroke: var(--mm-wire-hot); stroke-width: 1.75; }
+.mt-mm-edge.hot.active path.line { stroke: var(--st-working); }
+.mt-mm-edge.hot.turn path.line { stroke: var(--attn); }
+.mt-mm-edge.recede { opacity: 0.12; }
+/* 나, 워크스페이스 머리 글 */
+.mt-mm-you { position: absolute; box-sizing: border-box; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--accent-2) 60%, transparent); color: var(--accent-2); display: grid; place-items: center; font-size: 11.5px; font-weight: 650; cursor: default; transition: opacity .15s ease; }
+.mt-mm-ws { position: absolute; display: flex; align-items: center; gap: 6px; height: 18px; margin-left: -5px; padding: 0 5px; border: 0; border-radius: 5px; background: none; color: var(--dim); font: 600 11.5px var(--font-ui); letter-spacing: .02em; white-space: nowrap; overflow: hidden; cursor: pointer; }
+.mt-mm-ws:hover { color: var(--text-2); background: var(--panel-2); }
+.mt-mm-ws .caret:empty { display: none; }
+.mt-mm-ws .vg { color: var(--dim-2); font-weight: 500; }
+.mt-mm-ws .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-mm-ws .n { font: 500 11px var(--font-mono); color: var(--dim-2); }
+.mt-mm-ws .needs { font: 650 11px var(--font-mono); color: var(--attn); }
+.mt-mm-ws.shut { color: var(--text-2); }
+/* 카드: 이름, 역할과 지금 하는 일, 옅은 메타와 오른쪽 아래 경고. 상태는 테두리 색(일함은 왼쪽 띠), 오른쪽 끝에 종류 동그라미와 배지 */
+.mt-mm-card { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 22px 0 11px; border: 1px solid var(--mm-card-line); border-radius: 8px; background: var(--mm-card); cursor: pointer; transition: opacity .15s ease, border-color .15s ease; }
+.mt-mm-card:hover, .mt-mm-card.hot { border-color: var(--panel-line-2); z-index: 2; }
+.mt-mm-card:focus-visible, .mt-mm-row:focus-visible, .mt-mm-dot:focus-visible, .mt-mm-si:focus-visible, .mt-mm-ws:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.mt-mm-c1 { display: flex; align-items: center; gap: 6px; min-width: 0; height: 17px; }
+.mt-mm-name { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mt-mm-no { flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--dim-2); color: var(--text-2); font: 700 9.5px var(--font-mono); }
+.mt-mm-c2 { font-size: 12px; line-height: 16px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-mm-c2 b { color: var(--text-2); font-weight: 550; }
+.mt-mm-c3 { display: flex; align-items: baseline; gap: 8px; min-width: 0; font: 500 10.5px/14px var(--font-mono); color: var(--dim-2); white-space: nowrap; overflow: hidden; }
+.mt-mm-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mt-mm-warn { flex: none; margin-left: auto; font: 650 11px var(--font-ui); color: var(--attn); }
+.mt-mm-card.lead { background: var(--mm-card-lead); }
+.mt-mm-card.t-work { border-color: color-mix(in srgb, var(--st-working) 42%, transparent); box-shadow: inset 2px 0 0 var(--st-working); }
+.mt-mm-card.t-work.shell { border-color: color-mix(in srgb, var(--st-shell_running) 42%, transparent); box-shadow: inset 2px 0 0 var(--st-shell_running); }
+.mt-mm-card.starting { border-style: dashed; box-shadow: none; }
+.mt-mm-card.t-turn { border-color: color-mix(in srgb, var(--attn) 62%, transparent); }
+.mt-mm-card.t-turn .mt-mm-c2 { color: var(--attn-text); }
+.mt-mm-card.t-alert { border-color: color-mix(in srgb, var(--st-error) 60%, transparent); }
+.mt-mm-card.t-alert .mt-mm-warn { color: var(--st-error); }
+.mt-mm-card.t-review { border-color: color-mix(in srgb, var(--st-review) 45%, transparent); }
+.mt-mm-card.t-review .mt-mm-warn { color: var(--st-review); }
+.mt-mm-card.t-rest, .mt-mm-card.t-sleep, .mt-mm-card.t-done { border-color: var(--mm-card-rest); }
+.mt-mm-card.t-rest .mt-mm-name, .mt-mm-card.t-sleep .mt-mm-name, .mt-mm-card.t-done .mt-mm-name { color: var(--text-2); }
+.mt-mm-card.t-done .mt-mm-name { text-decoration: line-through; text-decoration-color: var(--dim-2); }
+/* 종류 동그라미와 상태 배지 */
+.mt-mm-av { position: absolute; right: -9px; top: 50%; margin-top: -9px; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--panel-line-2); background: var(--icon-bg); display: grid; place-items: center; }
+.mt-mm-av .mt-kind-icon { width: 12px; height: 12px; }
+.mt-mm-av.ring { border-style: dashed; border-color: var(--dim-2); }
+.mt-mm-av.sm { right: -7px; margin-top: -7.5px; width: 15px; height: 15px; }
+.mt-mm-av.sm .mt-kind-icon { width: 10px; height: 10px; }
+.mt-mm-badge { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--mm-bg); display: grid; place-items: center; font: 900 6px/1 var(--font-ui); font-style: normal; color: var(--attn-ink); }
+.mt-mm-badge.b-work { background: var(--st-working); }
+.mt-mm-badge.b-shell { background: var(--st-shell_running); }
+.mt-mm-badge.b-turn { background: var(--attn); }
+.mt-mm-badge.b-alert { background: var(--st-error); }
+.mt-mm-badge.b-review { background: var(--st-review); }
+/* 한 줄(쉼·잠듦·끝남), 동그라미 줄(쉬는 하위가 많을 때) */
+.mt-mm-row { position: absolute; box-sizing: border-box; display: flex; align-items: center; gap: 7px; padding: 0 22px 0 9px; border-radius: 6px; font-size: 12px; color: var(--dim); white-space: nowrap; cursor: pointer; transition: opacity .15s ease; }
+.mt-mm-row:hover, .mt-mm-row.hot { background: var(--panel-2); }
+.mt-mm-row .o { flex: none; width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1.25px solid var(--dim-2); }
+.mt-mm-row .nm { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.mt-mm-row .rl { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim-2); }
+.mt-mm-row .rl::before { content: "· "; }
+.mt-mm-row.t-sleep .nm { color: var(--dim); }
+.mt-mm-row.t-done .nm { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--dim-2); }
+.mt-mm-dot { position: absolute; cursor: pointer; border-radius: 50%; transition: opacity .15s ease; }
+.mt-mm-dot .mt-mm-av { position: relative; right: auto; top: auto; margin: 0; width: 18px; height: 18px; }
+.mt-mm-dot .mt-mm-av .mt-kind-icon { width: 12px; height: 12px; }
+.mt-mm-dots-label { position: absolute; font: 500 11px/18px var(--font-mono); color: var(--dim-2); white-space: nowrap; pointer-events: none; transition: opacity .15s ease; }
+/* 가리키기: 그 세션의 관계만 또렷하게, 거르기: 맞지 않는 세션은 흐리게(자리 그대로) */
+.mt-mm-card.recede, .mt-mm-row.recede, .mt-mm-dot.recede, .mt-mm-you.recede, .mt-mm-dots-label.recede { opacity: 0.26; }
+.mt-mm-card.fdim, .mt-mm-row.fdim, .mt-mm-dot.fdim { opacity: 0.3; }
+/* 오른쪽 요약 열 */
+.mt-mm-sum { flex: none; width: 288px; box-sizing: border-box; display: flex; flex-direction: column; padding: 18px 20px 14px; border-left: 1px solid var(--panel-line); overflow-y: auto; }
+.mt-mm-sec { margin-bottom: 18px; }
+.mt-mm-sech { display: flex; align-items: baseline; gap: 6px; margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--dim); }
+.mt-mm-sech i { font: 600 12px var(--font-mono); font-style: normal; color: var(--text); }
+.mt-mm-sec.turn .mt-mm-sech, .mt-mm-sec.turn .mt-mm-sech i { color: var(--attn); }
+.mt-mm-si { display: block; width: calc(100% + 12px); box-sizing: border-box; margin: 0 -6px 1px; padding: 4px 6px; border: 0; border-radius: 6px; background: none; text-align: left; font-family: var(--font-ui); cursor: pointer; }
+.mt-mm-si:hover, .mt-mm-si.hot { background: var(--panel-2); }
+.mt-mm-si .a { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 550; color: var(--text); white-space: nowrap; }
+.mt-mm-si .a .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-mm-si .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--dim-2); }
+.mt-mm-si.t-work .dot { background: var(--st-working); }
+.mt-mm-si.t-turn .dot { background: var(--attn); }
+.mt-mm-si.t-alert .dot { background: var(--st-error); }
+.mt-mm-si.t-review .dot { background: var(--st-review); }
+.mt-mm-si .b { display: block; margin-top: 1px; padding-left: 13px; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-mm-si.t-turn .b { color: var(--attn-text); }
+.mt-mm-si.t-alert .b { color: var(--st-error); }
+.mt-mm-none { font-size: 12px; color: var(--dim-2); }
+.mt-mm-rest { font-size: 12px; line-height: 1.8; color: var(--dim); }
+.mt-mm-rn { padding: 0; border: 0; background: none; color: var(--dim); font: inherit; cursor: pointer; }
+.mt-mm-rn:hover { color: var(--text); }
+.mt-mm-rn.t-done { text-decoration: line-through; text-decoration-color: var(--dim-2); }
+.mt-mm-sep { color: var(--dim-2); }
+.mt-mm-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--panel-line); font-size: 12px; color: var(--text-2); }
+.mt-mm-hint { margin-top: 6px; font-size: 11px; line-height: 1.5; color: var(--dim-2); }
+@media (max-width: 980px) { .mt-mm-sum { display: none; } }

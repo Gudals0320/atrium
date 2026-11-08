@@ -22,7 +22,7 @@ test('K4: 나무 순서 — 부모 바로 아래에 자식(형제는 주어진 �
   assert.deepEqual(out.map((o) => `${o.item.sessionId}:${o.indent}`), ['lead:0', 'w2:1', 'w1:1', 'g1:2', 'other:0', 'lost:0', 'x:0', 'y:1']);
 });
 
-test('K4: 미션 맵(P32 나무) — 하위 세션은 부모 오른쪽 열에, 형제는 위아래로 쌓이고 부모는 그 가운데', () => {
+test('K4: 미션 맵(P32 나무) — 하위 세션은 부모 오른쪽 열에, 형제는 위아래로 쌓이고 부모는 그 옆', () => {
   const sess = (id, name, depth, parentId, category = 'idle') => ({ id, kind: 'session', name, depth, parentId, category });
   const graph = { nodes: [{ id: 'human', kind: 'human', column: 0 }, sess('s:b', 'b-lead', 1, null), sess('s:a', 'a-lead', 1, null), sess('s:bw', 'zz', 2, 's:b'), sess('s:aw', 'yy', 2, 's:a'), sess('s:aw2', 'yz', 2, 's:a'), sess('s:solo', 'aaa', 1, null, 'working')], edges: [{ id: 'sp1', from: 's:a', to: 's:aw', kind: 'spawn' }, { id: 'sp2', from: 's:a', to: 's:aw2', kind: 'spawn' }, { id: 'sp3', from: 's:b', to: 's:bw', kind: 'spawn' }] };
   const lay = missionLayout(graph);
@@ -31,6 +31,6 @@ test('K4: 미션 맵(P32 나무) — 하위 세션은 부모 오른쪽 열에, �
   assert.equal(b('s:aw').depth, b('s:a').depth + 1);
   assert.ok(b('s:aw').x > b('s:a').x);
   assert.ok(b('s:aw').y < b('s:aw2').y && b('s:aw2').y < b('s:bw').y, '부모 순서대로 모인다');
-  assert.equal(b('s:a').y, (b('s:aw').y + b('s:aw2').y) / 2);
+  assert.ok(b('s:a').y <= b('s:aw2').y && b('s:a').y + b('s:a').h >= b('s:aw').y, '부모는 하위들 옆(P95: 쉬는 하위는 한 줄이라 부모 카드가 더 높다)');
   assert.deepEqual(lay.loose, ['s:solo'], '선이 없는 뿌리는 연결 없음 칸');
 });

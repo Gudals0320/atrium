@@ -1,85 +1,92 @@
-// 미션 맵(ARCH 4절 I6, P6c, P32에서 다시 그림): 덮개 화면. 왼쪽에서 오른쪽으로 펼친 나무(사람 → 지시하는 세션 → 받는 세션)와 아래 "연결 없음" 칸.
-// 배치는 lib/mission-layout.js(순수 함수). 한 쌍 사이의 선은 하나로 모으고 화살표로 방향을, 받는 상자 옆 이름표로 역할을 보인다.
-// 상자는 판의 노드와 같은 종류 아이콘(KindIcon)과 상태 알약(StatePill)을 쓴다. 내 차례는 노란 테두리(P93)와 묻는 내용.
-// 상자를 누르면 덮개를 닫고 그 노드로 간다. 상자·선·이름표·단추가 아닌 빈 곳을 누르거나 Esc를 누르면 닫힌다(P32). 위쪽 칩으로 거른다(맞는 세션과 그 조상만, 조상은 흐리게).
-// 연 동안 세션·연결·Thread·루프가 바뀌면 다시 읽는다(mission.graph).
-// P46: 세션 상자는 워크스페이스(저장소)별 무리 안에 놓인다. 무리 머리줄에 이름, 세션 수, 응답 필요 수. 머리줄을 누르면 접고 펼친다.
-//   다른 워크스페이스의 세션에게 시킨 선(cross)은 굵게 긋고 이름표 테두리를 점선으로, 풀이 글에 어느 워크스페이스에서 왔는지 적는다.
-// P94: 역할과 관계를 먼저 보인다(공용 모델 lib/mission-model.js). 카드에 역할 칩(리드·리뷰어·테스트·문서·워커 기호와 이름), 리드는 팀 요약과 "워커 n 기다림"·"아래 응답 필요 n".
-//   선은 관계 종류로 모양이 다르다: 하위 세션(실선), 역할 연결(파선), 요청(점선), 사용자(옅은 선), 다른 프로젝트(굵은 테두리 선과 → 프로젝트 이름).
-//   세션을 가리키거나 키보드로 고르면 그 세션·조상·팀·바로 이어진 세션만 또렷하고 나머지는 물러나며, 팀을 점선 상자로 두른다. 가상 그룹(P44)은 무리를 두르는 띠, 범례는 왼쪽 아래.
-import { useEffect, useMemo, useState } from 'react';
+// 미션 맵(ARCH 4절 I6, P6c → P32 → P95에서 다시 그림): 덮개 화면. 왼쪽 → 오른쪽 열(나 → 리드 → 하위 세션 → 그 아래)과 오른쪽 요약 열.
+// - 배치는 lib/mission-layout.js(순수 함수), 역할·관계·요약은 PC와 휴대폰이 같이 쓰는 lib/mission-model.js.
+// - 틀이 없다: 워크스페이스는 옅은 머리 글(누르면 접기)과 간격으로만 나눈다. 무리 상자, 가상 그룹 띠, 팀 상자, 범례 카드를 두지 않는다(가상 그룹 이름은 머리 글 앞에).
+// - 카드는 작고 정돈되게: 이름(팀 번호), 역할과 지금 하는 일 한 줄, 옅은 메타 한 줄(모델·노력 수준, 일한 시간 또는 마지막 활동, 워크트리 브랜치), 오른쪽 아래 작은 경고.
+//   카드 오른쪽 끝에 종류 기호 동그라미와 상태 배지(일함 점, 응답 필요 !, 오류 ✕, 결과 ✓, 쉼은 점선 고리). 쉬는·잠든·끝난 세션은 한 줄로 물러나고(끝남은 취소선),
+//   하위가 많으면 쉬는 하위들은 동그라미 줄로 접힌다.
+// - 선은 이름표 없는 가는 곡선. 관계 종류는 모양(나무 밖 연결은 옅은 점선, 요청은 점 선, 다른 프로젝트는 긴 점선)과 가리킬 때 뜨는 풀이로 구별한다. 일하는 쪽으로 가는 선은 일함 색.
+// - 세션(또는 요약 열의 줄)을 가리키거나 키보드로 고르면 그 세션·조상·팀·바로 이어진 세션만 또렷하다(P94). 누르면 덮개를 닫고 판의 그 노드로 간다.
+// - 위 거르기는 맞지 않는 세션을 흐리게만 한다(자리는 그대로). 빈 곳을 누르거나 Esc를 누르면 닫힌다(P32). 연 동안 판이 바뀌면 다시 읽는다(mission.graph).
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { missionLayout, edgeLabel, MISSION } from './lib/mission-layout.js';
-import { roleModel, focusOf, teamText, roleText, REL_ORDER, FAMILIES } from './lib/mission-model.js';
-import { RoleGlyph } from './RoleGlyph.jsx';
+import { missionLayout, mapOrder, edgeLabel, MISSION } from './lib/mission-layout.js';
+import { roleModel, focusOf, teamText, roleText, nodeTier, filterMatch, FILTERS, modelText, ageText, missionSummary } from './lib/mission-model.js';
+import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
-import { KindIcon, StatePill } from './SessionNode.jsx';
+import { KindIcon } from './SessionNode.jsx';
 
-const CATS = ['all', 'needs_you', 'working', 'idle', 'done', 'exited'];
 // 빈 곳 누르기에서 빼는 것
-const SOLID = '[data-role="mm-node"], [data-role="mm-edge"], [data-role="mm-label"], [data-role="mm-legend"], button, input, select, a';
+const SOLID = '[data-role="mm-node"], [data-role="mm-edge"], [data-role="mm-summary"], button, input, select, a';
+const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
+const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.git.branch) || null;
 
-function Box({ b, live, onGo, role, hot, recede, onHot }) {
-  const t = useT();
-  const n = b.node;
-  const style = { left: b.x, top: b.y, width: b.w, height: b.h };
-  if (n.kind === 'human') return (
-    <div className={`mt-mm-box human${recede ? ' recede' : ''}`} style={style} data-role="mm-node" data-kind="human" title={t('mmap.humanTitle')}>
-      <span className="mt-mm-you">{t('mission.human')}</span>
-      <span className="mt-mm-sub">{t('mission.edge.bar')}</span>
-    </div>
-  );
-  // 판의 세션(있으면)으로 상태 알약을 그려 노드와 같은 말·색을 쓴다
-  const s = live || { state: n.state, unseen: n.category === 'done' };
+// 세션 하나의 보일 글: 상태 글, 지금 하는 일, 메타, 경고
+function facts(n, live, m, tier, t, now) {
   const kind = (live && (live.flavor || live.kind)) || n.agentKind || 'claude';
-  const cmd = live && live.shell && !live.shell.atPrompt ? live.shell.command || (live.shell.procs || []).join(', ') : null; // 셸은 도는 명령
-  const sub = n.ask || (n.lastPrompt ? n.lastPrompt.replace(/\s+/g, ' ') : cmd ? `$ ${cmd}` : null);
-  const m = role || { rank: 'solo', family: 'worker' };
-  const team = m.team ? teamText(m, t) : null;
-  const tip = [`@${n.name} · ${roleText(m, t)}`, team, n.ask ? `${t('mmap.ask')} ${n.ask}` : null, n.lastPrompt ? `${t('mmap.prompt')} ${n.lastPrompt}` : null, t('mission.goSession')].filter(Boolean).join('\n');
+  const shell = kind === 'shell' || n.agentKind === 'shell';
+  const cmd = live && live.shell && live.shell.atPrompt === false ? live.shell.command || (live.shell.procs || []).join(', ') : null;
+  const ask = n.ask || (live && live.ask && (live.ask.summary || live.ask.kind)) || null;
+  const err = live && live.error ? (live.error.message || String(live.error)) : null;
+  const state = live ? live.state : n.state;
+  const stateText = shell && state !== 'exited' && state !== 'sleeping' ? (cmd ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[state] || state || '';
+  const doing = cmd ? `$ ${cmd}` : tier === 'work' && (n.lastPrompt || (live && live.lastPrompt)) ? clip(n.lastPrompt || live.lastPrompt, 90) : null;
+  const role = m ? roleText(m, t) : '';
+  const team = m && m.team ? teamText(m, t) : null;
+  const turnAt = n.turnAt || (live && live.state === 'working' && live.turn && live.turn.startedAt) || null;
+  const activeAt = n.activeAt || (live && live.lastActivityAt) || null;
+  const age = tier === 'work' && turnAt ? ageText(now - turnAt, t) : activeAt ? ageText(now - activeAt, t) : null;
+  const model = shell ? null : modelText(n.model || (live && live.model), n.effort || (live && live.effort));
+  const branch = n.gitBranch || branchOfLive(live);
+  const meta = [model, age, branch ? `⎇ ${branch}` : null, n.loops ? `⟳${n.loops}` : null].filter(Boolean).join(' · ');
+  const warn = tier === 'turn' ? t('mmMap.warnTurn') : tier === 'alert' ? t('mmMap.warnAlert') : tier === 'review' ? t('mmMap.warnReview') : m && m.climb ? t('mmMap.warnClimb', { n: m.climb }) : null;
+  // 둘째 줄: 응답 필요는 묻는 글, 오류는 오류, 팀이 있으면 팀 요약(쉬는 리드는 "워커 n 기다림"), 그 밖은 역할 · 지금 하는 일(없으면 상태)
+  const line = tier === 'turn' && ask ? { k: 'ask', main: null, text: clip(ask, 120) }
+    : tier === 'alert' ? { k: 'err', main: role, text: clip(err || stateText, 90) }
+    : team ? { k: 'team', main: role, text: [t('mmRole.team', { n: m.team.size }), m.waiting ? t('mmRole.waiting', { n: m.waiting }) : m.team.work ? t('mmRole.teamWork', { n: m.team.work }) : null].filter(Boolean).join(' · ') }
+    : { k: doing ? 'now' : 'state', main: role, text: doing || stateText };
+  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line };
+}
+
+function Avatar({ kind, tier, shell, small }) {
+  const ring = tier === 'rest' || tier === 'sleep' || tier === 'done';
+  const b = tier === 'work' ? (shell ? 'shell' : 'work') : tier === 'turn' || tier === 'alert' || tier === 'review' ? tier : null;
   return (
-    <div className={`mt-mm-box session c-${n.category} r-${m.rank} f-${m.family}${b.ghost ? ' ghost' : ''}${hot ? ' hot' : ''}${recede ? ' recede' : ''}`} style={style} data-role="mm-node" data-kind="session" data-name={n.name} data-category={n.category} data-rank={m.rank} data-family={m.family} data-ghost={b.ghost ? '1' : undefined}
-      tabIndex={0} onClick={() => onGo(n)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGo(n); } }}
-      onMouseEnter={() => onHot(n.id)} onMouseLeave={() => onHot(null)} onFocus={() => onHot(n.id)} onBlur={() => onHot(null)} title={tip}>
-      {(m.climb > 0 || m.waiting > 0) && (
-        <span className="mt-mm-flags">
-          {m.climb > 0 && <span className="mt-mm-flag climb" data-role="mm-climb" title={t('mmRole.climbTitle', { n: m.climb })}>↑ {t('mmRole.climb', { n: m.climb })}</span>}
-          {m.waiting > 0 && <span className="mt-mm-flag wait" data-role="mm-wait" title={t('mmRole.waitingTitle', { n: m.waiting })}>{t('mmRole.waiting', { n: m.waiting })}</span>}
-        </span>
-      )}
-      <div className="mt-mm-line">
-        <span className="mt-mm-kind"><KindIcon kind={kind} state={n.state} /></span>
-        <b className="mt-mm-name">@{n.name}</b>
-        {n.loops ? <span className="mt-mm-loop" title={t('mmap.loops', { n: n.loops })}>⟳{n.loops}</span> : null}
-        <StatePill s={s} />
-      </div>
-      <div className="mt-mm-line two">
-        <span className={`mt-mm-role f-${m.family} r-${m.rank}`} data-role="mm-role"><RoleGlyph family={m.family} />{roleText(m, t)}</span>
-        {team ? <span className="mt-mm-team" data-role="mm-team">{team}</span>
-          : sub ? <span className={`mt-mm-sub${n.ask ? ' ask' : ''}`} data-role={n.ask ? 'mm-ask' : 'mm-prompt'}>{sub}</span>
-          : <span className="mt-mm-sub none">{n.agentKind === 'shell' ? t('mission.shell') : t('mmap.noPrompt')}</span>}
-      </div>
-      {(n.ask || (n.lastPrompt && n.lastPrompt.length > 34) || team) && <div className="mt-mm-more" data-role="mm-more">{team ? <><b>{roleText(m, t)}</b> {team}{n.ask || n.lastPrompt ? <br /> : null}</> : null}{n.ask ? <><b>{t('mmap.ask')}</b> {n.ask}{n.lastPrompt ? <><br /><b>{t('mmap.prompt')}</b> {n.lastPrompt}</> : null}</> : n.lastPrompt ? <><b>{t('mmap.prompt')}</b> {n.lastPrompt}</> : null}</div>}
-    </div>
+    <span className={`mt-mm-av${ring ? ' ring' : ''}${small ? ' sm' : ''}`} data-role="mm-avatar" data-badge={b || undefined}>
+      <KindIcon kind={kind} />
+      {b && <i className={`mt-mm-badge b-${b}`} aria-hidden="true">{b === 'turn' ? '!' : b === 'alert' ? '✕' : b === 'review' ? '✓' : ''}</i>}
+    </span>
   );
 }
 
-const REL_KEY = { spawn: 'relSpawn', role: 'relRole', prompt: 'relPrompt', human: 'relHuman' };
-const FAM_KEY = { lead: 'keyLead', review: 'keyReview', test: 'keyTest', docs: 'keyDocs', worker: 'keyWorker' };
-function Legend() {
-  const t = useT();
+function Node({ b, live, m, tier, t, now, no, hot, recede, dim, onGo, onHot }) {
+  const n = b.node;
+  const f = facts(n, live, m, tier, t, now);
+  const style = { left: b.x, top: b.y, width: b.w, height: b.h };
+  const st = (live && live.state) || n.state;
+  const tip = [`@${n.name} · ${f.role}`, f.team, f.ask ? `${t('mmap.ask')} ${f.ask}` : null, n.lastPrompt ? `${t('mmap.prompt')} ${n.lastPrompt}` : null, b.cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null, f.meta || null, t('mission.goSession')].filter(Boolean).join('\n');
+  const common = {
+    'data-role': 'mm-node', 'data-kind': 'session', 'data-name': n.name, 'data-tier': tier, 'data-rank': m ? m.rank : undefined, 'data-family': m ? m.family : undefined, 'data-shape': b.kind,
+    tabIndex: 0, title: tip, onClick: () => onGo(n), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGo(n); } },
+    onMouseEnter: () => onHot(n.id), onMouseLeave: () => onHot(null), onFocus: () => onHot(n.id), onBlur: () => onHot(null),
+  };
+  const cls = `t-${tier}${f.shell ? ' shell' : ''}${st === 'starting' ? ' starting' : ''}${hot ? ' hot' : ''}${recede ? ' recede' : ''}${dim ? ' fdim' : ''}`;
+  if (b.kind === 'dot') return <div className={`mt-mm-dot ${cls}`} style={style} {...common}><Avatar kind={f.kind} tier={tier} shell={f.shell} small /></div>;
+  if (b.kind === 'row') return (
+    <div className={`mt-mm-row ${cls}`} style={style} {...common}>
+      <span className="o" aria-hidden="true" /><span className="nm">{n.name}</span>
+      {m && m.rank !== 'solo' && <span className="rl" data-role="mm-role">{f.role}</span>}
+      <Avatar kind={f.kind} tier={tier} shell={f.shell} small />
+    </div>
+  );
   return (
-    <div className="mt-mm-legend" data-role="mm-legend" aria-label={t('mmRole.legend')}>
-      <div className="mt-mm-lrow"><b>{t('mmRole.legendRoles')}</b>
-        {FAMILIES.map((f) => <span key={f} className={`mt-mm-key role f-${f}`} title={f === 'lead' ? t('mmRole.keyLeadTitle') : undefined}><RoleGlyph family={f} />{t(`mmRole.${FAM_KEY[f]}`)}</span>)}
+    <div className={`mt-mm-card ${cls}${m && m.team ? ' lead' : ''}`} style={style} {...common}>
+      <div className="mt-mm-c1">{no ? <span className="mt-mm-no" data-role="mm-team-no">{no}</span> : null}<b className="mt-mm-name">{n.name}</b></div>
+      <div className={`mt-mm-c2 k-${f.line.k}`} data-role={f.line.k === 'ask' ? 'mm-ask' : f.line.k === 'team' ? 'mm-team' : 'mm-line'}>
+        {f.line.main ? <b data-role="mm-role">{f.line.main}</b> : null}{f.line.main && f.line.text ? ' · ' : null}{f.line.text}
       </div>
-      <div className="mt-mm-lrow"><b>{t('mmRole.legendLines')}</b>
-        {REL_ORDER.map((k) => <span key={k} className={`mt-mm-key rel-${k}`} title={t(`mmRole.${REL_KEY[k]}Title`)}><svg width="24" height="8"><line x1="1" y1="4" x2="23" y2="4" /></svg>{t(`mmRole.${REL_KEY[k]}`)}</span>)}
-        <span className="mt-mm-key rel-cross" title={t('mmRole.relCrossTitle')}><svg width="24" height="8"><line className="case" x1="1" y1="4" x2="23" y2="4" /><line x1="1" y1="4" x2="23" y2="4" /></svg>{t('mmRole.relCross')}</span>
-      </div>
-      <div className="mt-mm-lhint">{t('mmRole.hint')}</div>
+      <div className="mt-mm-c3"><span className="mt-mm-meta" data-role="mm-meta">{f.meta || (f.shell ? t('mmMap.noModel') : '')}</span>{f.warn ? <span className="mt-mm-warn" data-role="mm-warn">{f.warn}</span> : null}</div>
+      <Avatar kind={f.kind} tier={tier} shell={f.shell} />
     </div>
   );
 }
@@ -91,12 +98,14 @@ export function MissionMap() {
   const links = useStore((st) => st.links);
   const thread = useStore((st) => st.thread);
   const loops = useStore((st) => st.loops);
+  const workspaces = useStore((st) => st.workspaces);
+  const vgroups = useStore((st) => st.groups); // P44 가상 그룹
   const [graph, setGraph] = useState(null);
   const [filter, setFilter] = useState('all');
-  const workspaces = useStore((st) => st.workspaces);
-  const [shut, setShut] = useState(() => new Set()); // P46: 접은 무리(워크스페이스 키)
-  const vgroups = useStore((st) => st.groups); // P44 가상 그룹
-  const [hot, setHot] = useState(null); // P94: 가리키거나 키보드로 고른 세션 id
+  const [shut, setShut] = useState(() => new Set()); // 접은 워크스페이스 키
+  const [hot, setHot] = useState(null); // 가리키거나 키보드로 고른 세션 id
+  const [width, setWidth] = useState(1300); // 지도 칸 폭(혼자인 워크스페이스를 채울 열 수)
+  const bodyRef = useRef(null);
   useEffect(() => {
     if (!open) return;
     let alive = true;
@@ -109,16 +118,31 @@ export function MissionMap() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
-  const order = useMemo(() => (workspaces || []).map((w) => w.key), [workspaces]);
-  const lay = useMemo(() => (graph ? missionLayout(graph, { filter, collapsed: [...shut], order, vgroups }) : null), [graph, filter, shut, order, vgroups]);
-  const roles = useMemo(() => (graph && lay ? roleModel(graph, { live: sessions, tree: lay.tree }) : new Map()), [graph, lay, sessions]);
-  const focus = useMemo(() => (lay && hot ? focusOf(lay.tree, hot, lay.edges.filter((e) => e.rel === 'human')) : null), [lay, hot]);
   useEffect(() => { if (!open) setHot(null); }, [open]);
-  const gName = (key) => (key ? wsName(key) : t('mmapGroup.noWorkspace'));
-  const wsLabel = (key) => (key ? wsName(key) : t('mmapGroup.noWorkspace'));
-  const toggle = (key) => setShut((cur) => { const n = new Set(cur); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  // 지도 칸 폭: 40px 단위로만 바꿔 다시 놓기를 줄인다
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!open || !el) return undefined;
+    const read = () => { const w = Math.max(480, Math.round(el.clientWidth / 40) * 40); setWidth((v) => (v === w ? v : w)); };
+    read();
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
+    if (ro) ro.observe(el); else window.addEventListener('resize', read);
+    return () => { if (ro) ro.disconnect(); else window.removeEventListener('resize', read); };
+  }, [open, !!graph]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const order = useMemo(() => (workspaces || []).map((w) => w.key), [workspaces]);
+  const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
+  const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (graph ? missionLayout(graph, { collapsed: [...shut], order, vgroups, tiers, width }) : null), [graph, shut, order, vgroups, tiers, width]);
+  const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
+  const focus = useMemo(() => (lay && hot ? focusOf(lay.tree, hot, lay.edges.filter((e) => e.rel === 'human')) : null), [lay, hot]);
+  const ids = useMemo(() => (lay ? mapOrder(lay) : []), [lay]);
+  const sum = useMemo(() => missionSummary(lay ? lay.tree.nodes.map((n) => n.id).sort((a, b) => (ids.indexOf(a) + 1 || 1e9) - (ids.indexOf(b) + 1 || 1e9)) : [], (id) => tiers.get(id)), [lay, ids, tiers]);
   if (!open) return null;
 
+  const now = Date.now();
+  const gName = (key) => (key ? wsName(key) : t('mmapGroup.noWorkspace'));
+  const toggle = (key) => setShut((cur) => { const n = new Set(cur); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const go = (n) => {
     setMissionOpen(false);
     const st = getState();
@@ -131,67 +155,103 @@ export function MissionMap() {
     if (sel && !sel.isCollapsed && String(sel).trim()) return;
     setMissionOpen(false);
   };
-  const c = (graph && graph.counts) || {};
+  const nameOf = (id) => { const n = lay && lay.tree.byId.get(id); return n ? n.name : id === 'human' ? t('mmMap.you') : id; };
   const tipOf = (e) => {
-    const kinds = e.kinds.map((k) => t(`mission.edge.${k}`)).join(' · ');
-    return [`${kinds}${e.role ? `: ${e.role}` : ''}`, e.cross ? `${t('mmapGroup.crossTitle')}: ${gName(e.fromGroup)} → ${gName(e.toGroup)}` : null, e.text ? `“${e.text}”` : null, e.count ? t('mission.edgeCount', { n: e.count }) : null, e.lastAt ? t('mission.edgeLast', { time: fmtTime(e.lastAt) }) : null].filter(Boolean).join('\n');
+    const rel = e.rel === 'human' ? t('mmRole.relHuman') : e.cross ? t('mmRole.relCross') : t(`mmRole.${{ spawn: 'relSpawn', role: 'relRole', prompt: 'relPrompt' }[e.rel] || 'relRole'}`);
+    const who = e.from.startsWith('g:') || e.to.startsWith('g:') || e.to.startsWith('dots:') ? null : t('mmMap.edgeTip', { from: nameOf(e.from), to: nameOf(e.to) });
+    return [who, `${rel}${e.role ? ` · ${e.role}` : ''}`, e.cross ? `${t('mmapGroup.crossTitle')}` : null, e.text ? `“${e.text}”` : null, e.count > 1 ? edgeLabel(e, t) : null, e.lastAt ? t('mission.edgeLast', { time: fmtTime(e.lastAt) }) : null].filter(Boolean).join('\n');
   };
+  const edgeHot = (e) => !!focus && (focus.pairs.has(e.id) || (e.members || []).some((x) => focus.pairs.has(x)));
+  const fdim = (id) => filter !== 'all' && !filterMatch(tiers.get(id), filter);
+  const counts = sum.counts;
+  const catN = { all: counts.all, needs_you: counts.turn, working: counts.work, idle: counts.idle, done: counts.review, exited: counts.gone };
+  const boxes = lay ? [...lay.boxes.values()] : [];
+  const dotLabels = boxes.filter((b) => b.kind === 'dots');
+  const sumItem = (id, text) => {
+    const n = lay.tree.byId.get(id), tier = tiers.get(id), no = lay.teamNo.get(id);
+    return (
+      <button key={id} type="button" className={`mt-mm-si t-${tier}${hot === id ? ' hot' : ''}`} data-role="mm-sum-item" data-name={n.name} onClick={() => go(n)} onMouseEnter={() => setHot(id)} onMouseLeave={() => setHot(null)} onFocus={() => setHot(id)} onBlur={() => setHot(null)}>
+        <span className="a"><i className="dot" aria-hidden="true" />{no ? <span className="mt-mm-no">{no}</span> : null}<span className="nm">{n.name}</span></span>
+        {text ? <span className="b">{text}</span> : null}
+      </button>
+    );
+  };
+  const nowText = (id) => {
+    const n = lay.tree.byId.get(id), live = liveOf(n), m = roles.get(id);
+    const f = facts(n, live, m, tiers.get(id), t, now);
+    return f.doing ? t('mmMap.sumNow', { text: f.doing }) : f.team ? `${f.role} · ${f.team}` : f.role ? `${f.role} · ${f.stateText}` : f.stateText;
+  };
+  const askText = (id) => { const n = lay.tree.byId.get(id), live = liveOf(n); const f = facts(n, live, roles.get(id), tiers.get(id), t, now); return f.line.k === 'ask' || f.line.k === 'err' ? f.line.text : f.stateText; };
+  const REST_MAX = 24;
   return (
     <div className="mt-mission" data-role="mission" onClick={onBackdrop}>
       <div className="mt-mission-head">
         <b className="mt-mission-title">{t('mission.title')}</b>
-        <span className="mt-mission-filters">
-          {CATS.map((k) => <button key={k} className={`mt-mm-filter c-${k}${filter === k ? ' on' : ''}`} data-filter={k} onClick={() => setFilter(k)}>{k !== 'all' && <i className="mt-mm-fdot" />}{t(`mission.cat.${k}`)}<span className="mt-mm-fn">{k === 'all' ? c.all ?? '' : c[k] ?? 0}</span></button>)}
+        <span className="mt-mission-filters" role="tablist">
+          {FILTERS.map((k) => <button key={k} role="tab" aria-selected={filter === k} className={`mt-mm-filter c-${k}${filter === k ? ' on' : ''}`} data-filter={k} data-n={catN[k] || 0} onClick={() => setFilter(k)}>{t(`mission.cat.${k}`)}<span className="mt-mm-fn">{catN[k] ?? 0}</span></button>)}
         </span>
         <span className="mt-node-sp" />
         <button className="mt-x" data-action="mission-close" title={t('mission.closeTitle')} onClick={() => setMissionOpen(false)}>×</button>
       </div>
-      <div className={`mt-mission-body nowheel${focus ? ' focusing' : ''}`}>
-        {!lay ? <div className="dim" style={{ padding: 20 }}>{t('common.loading')}</div> : (
-          <div className="mt-mission-canvas" style={{ width: lay.width, height: lay.height }}>
-            {lay.bands.map((bd) => (
-              <div key={`b:${bd.id}`} className="mt-mm-band" data-role="mm-band" data-group={bd.id} style={{ left: bd.x, top: bd.y, width: bd.w, height: bd.h }}>
-                <span className="mt-mm-bandname">{t('mmRole.groupTag', { name: bd.name })}</span>
-              </div>
-            ))}
-            {lay.groups.map((g) => (
-              <div key={`g:${g.key}`} className={`mt-mm-group${g.collapsed ? ' shut' : ''}`} data-role="mm-group" data-key={g.key} data-collapsed={g.collapsed ? '1' : undefined} style={{ left: g.x, top: g.y, width: g.w, height: g.h }}>
-                <button className="mt-mm-ghead" data-action="mm-group-toggle" title={t('mmapGroup.toggleTitle')} onClick={(ev) => { ev.stopPropagation(); toggle(g.key); }}>
-                  <span className="mt-mm-gcaret" aria-label={t(g.collapsed ? 'mmapGroup.expand' : 'mmapGroup.collapse')}>{g.collapsed ? '▸' : '▾'}</span>
-                  <b className="mt-mm-gname" data-role="mm-group-name">{gName(g.key)}</b>
-                  {g.vg && <span className="mt-mm-gvg" data-role="mm-vgroup">{g.vg.name}</span>}
-                  <span className="mt-mm-gcount">{t('mmapGroup.sessions', { n: g.count })}</span>
-                  {g.needs > 0 && <span className="mt-mm-gneeds" data-role="mm-group-needs">{t('mmapGroup.needs', { n: g.needs })}</span>}
+      <div className="mt-mission-main">
+        <div className={`mt-mission-body nowheel${focus ? ' focusing' : ''}`} ref={bodyRef}>
+          {!lay ? <div className="dim" style={{ padding: 20 }}>{t('common.loading')}</div> : (
+            <div className="mt-mission-canvas" style={{ width: lay.width, height: lay.height }}>
+              {lay.groups.map((g) => (
+                <button key={`g:${g.key}`} type="button" className={`mt-mm-ws${g.collapsed ? ' shut' : ''}`} data-role="mm-group" data-key={g.key} data-collapsed={g.collapsed ? '1' : undefined} data-packed={g.packed ? '1' : undefined}
+                  style={{ left: g.x, top: g.y, maxWidth: g.w + 40 }} title={t('mmapGroup.toggleTitle')} aria-expanded={!g.collapsed} onClick={(ev) => { ev.stopPropagation(); toggle(g.key); }}>
+                  <span className="caret" aria-hidden="true">{g.collapsed ? '▸' : ''}</span>
+                  {g.vg && <span className="vg" data-role="mm-vgroup">{g.vg.name} /</span>}
+                  <span className="nm" data-role="mm-group-name">{gName(g.key)}</span>
+                  <span className="n">{g.count}</span>
+                  {g.needs > 0 && <span className="needs" data-role="mm-group-needs" title={t('mmapGroup.needs', { n: g.needs })}>!{g.needs}</span>}
                 </button>
-                {g.looseAt && <div className="mt-mm-gloose" style={{ left: g.looseAt.x - g.x, top: g.looseAt.y - g.y }}>{t('mmap.loose')}</div>}
-              </div>
-            ))}
-            {focus && lay.teams.filter((tm) => tm.lead === focus.lead || tm.lead === hot).map((tm) => <div key={`t:${tm.lead}`} className="mt-mm-teambox" data-role="mm-team-box" data-lead={tm.lead} style={{ left: tm.x, top: tm.y, width: tm.w, height: tm.h }} />)}
-            <svg className="mt-mm-svg" width={lay.width} height={lay.height}>
-              <defs>
-                {REL_ORDER.map((k) => <marker key={k} id={`mm-arrow-${k}`} className={`mt-mm-arrow rel-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" /></marker>)}
-              </defs>
-              {lay.edges.map((e) => (
-                <g key={e.id} className={`mt-mm-edge k-${e.primary} rel-${e.rel}${e.active ? ' active' : ''}${e.back ? ' back' : ''}${e.kinds.length > 1 ? ' multi' : ''}${e.cross ? ' cross' : ''}${focus ? (focus.pairs.has(e.id) ? ' hot' : ' recede') : ''}`} data-role="mm-edge" data-kind={e.primary} data-rel={e.rel} data-kinds={e.kinds.join(' ')} data-from={e.from} data-to={e.to} data-cross={e.cross ? '1' : undefined}>
-                  <path className="hit" d={e.d} />
-                  {e.cross && <path className="case" d={e.d} />}
-                  <path className="line" d={e.d} markerEnd={`url(#mm-arrow-${e.rel})`} />
-                  {!e.label && <circle className="dot" cx={e.lx} cy={e.ly} r="3.5" />}
-                  <title>{tipOf(e)}</title>
-                </g>
               ))}
-            </svg>
-            {lay.edges.filter((e) => e.label && !(e.rel === 'spawn' && !e.role && !e.cross)).map((e) => ( // P94: 이름 없는 하위 세션 선은 모양이 말한다(이름표 없음)
-              <span key={`l:${e.id}`} className={`mt-mm-label k-${e.primary} rel-${e.rel}${e.cross ? ' cross' : ''}${focus ? (focus.pairs.has(e.id) ? ' hot' : ' recede') : ''}`} data-role="mm-label" data-kind={e.primary} data-rel={e.rel} style={{ left: e.lx, top: e.ly, maxWidth: e.cross ? MISSION.colGap - 14 : MISSION.labelW }} title={tipOf(e)}>
-                {e.role && <RoleGlyph family={roles.get(e.to) ? roles.get(e.to).family : 'worker'} />}{edgeLabel(e, t)}{e.cross ? <span className="mt-mm-lcross"> {t('mmRole.cross', { ws: wsLabel(e.toGroup) })}</span> : null}
-              </span>
-            ))}
-            {[...lay.boxes.values()].filter((b) => !b.proxy).map((b) => <Box key={b.node.id} b={b} live={b.node.sessionId ? sessions.get(b.node.sessionId) : null} onGo={go} role={roles.get(b.node.id)} hot={hot === b.node.id} recede={!!focus && !focus.nodes.has(b.node.id) && !(b.node.kind === 'human' && lay.edges.some((e) => e.rel === 'human' && focus.pairs.has(e.id)))} onHot={setHot} />)}
-            {lay.boxes.size === 0 && <div className="dim mt-mm-empty">{t('mission.empty')}{filter !== 'all' ? t('mission.emptyFiltered') : ''}</div>}
-          </div>
+              <svg className="mt-mm-svg" width={lay.width} height={lay.height}>
+                {lay.edges.filter((e) => !e.quiet || edgeHot(e)).map((e) => {
+                  const to = lay.boxes.get(e.to);
+                  const target = to && to.node && to.node.kind === 'session' ? tiers.get(e.to) : null;
+                  const hotE = edgeHot(e);
+                  return (
+                    <g key={e.id} className={`mt-mm-edge rel-${e.rel}${e.tree ? ' tree' : ' link'}${e.cross ? ' cross' : ''}${e.back ? ' back' : ''}${target === 'work' || e.active ? ' active' : ''}${target === 'turn' ? ' turn' : ''}${focus ? (hotE ? ' hot' : ' recede') : ''}`}
+                      data-role="mm-edge" data-kind={e.primary} data-rel={e.rel} data-from={e.from} data-to={e.to} data-cross={e.cross ? '1' : undefined} data-tree={e.tree ? '1' : undefined}>
+                      <path className="hit" d={e.d} />
+                      <path className="line" d={e.d} />
+                      <title>{tipOf(e)}</title>
+                    </g>
+                  );
+                })}
+              </svg>
+              {boxes.filter((b) => b.kind === 'you').map((b) => (
+                <div key="you" className={`mt-mm-you${focus && !lay.edges.some((e) => e.rel === 'human' && edgeHot(e)) ? ' recede' : ''}`} data-role="mm-node" data-kind="human" title={t('mmMap.youTitle')} style={{ left: b.x, top: b.y, width: b.w, height: b.h }}>{t('mmMap.you')}</div>
+              ))}
+              {dotLabels.map((b) => <span key={b.node.id} className={`mt-mm-dots-label${focus && !b.node.ids.some((x) => focus.nodes.has(x)) ? ' recede' : ''}`} style={{ left: b.x + 4 + Math.min(MISSION.dotsPerRow, b.node.ids.length) * (MISSION.dot + MISSION.dotGap) + 2, top: b.y + 4 }} data-role="mm-dots">{t('mmMap.dotsRest', { n: b.node.ids.length })}</span>)}
+              {boxes.filter((b) => b.node && b.node.kind === 'session').map((b) => (
+                <Node key={b.node.id} b={{ ...b, cross: b.group != null && (b.node.workspaceKey || '') !== b.group }} live={liveOf(b.node)} m={roles.get(b.node.id)} tier={tiers.get(b.node.id)} t={t} now={now} no={lay.teamNo.get(b.node.id)}
+                  hot={hot === b.node.id} recede={!!focus && !focus.nodes.has(b.node.id)} dim={fdim(b.node.id)} onGo={go} onHot={setHot} />
+              ))}
+              {boxes.length === 0 && <div className="dim mt-mm-empty">{t('mission.empty')}</div>}
+            </div>
+          )}
+        </div>
+        {lay && (
+          <aside className="mt-mm-sum" data-role="mm-summary" aria-label={t('mission.title')}>
+            {sum.turn.length > 0 && <section className="mt-mm-sec turn" data-role="mm-sum-turn"><h4 className="mt-mm-sech">{t('mmMap.sumTurn')}<i>{sum.turn.length}</i></h4>{sum.turn.map((id) => sumItem(id, askText(id)))}</section>}
+            <section className="mt-mm-sec" data-role="mm-sum-work"><h4 className="mt-mm-sech">{t('mmMap.sumWork')}<i>{sum.work.length}</i></h4>{sum.work.length ? sum.work.map((id) => sumItem(id, nowText(id))) : <div className="mt-mm-none">{t('mmMap.sumNone')}</div>}</section>
+            {sum.review.length > 0 && <section className="mt-mm-sec" data-role="mm-sum-review"><h4 className="mt-mm-sech">{t('mmMap.sumReview')}<i>{sum.review.length}</i></h4>{sum.review.map((id) => sumItem(id, nowText(id)))}</section>}
+            {sum.rest.length > 0 && (
+              <section className="mt-mm-sec" data-role="mm-sum-rest"><h4 className="mt-mm-sech">{t('mmMap.sumRest')}<i>{sum.rest.length}</i></h4>
+                <div className="mt-mm-rest">{sum.rest.slice(0, REST_MAX).map((id, i) => { const n = lay.tree.byId.get(id); return <span key={id}>{i ? <span className="mt-mm-sep"> · </span> : null}<button type="button" className={`mt-mm-rn t-${tiers.get(id)}`} data-role="mm-sum-rest-item" onClick={() => go(n)} onMouseEnter={() => setHot(id)} onMouseLeave={() => setHot(null)}>{n.name}</button></span>; })}
+                  {sum.rest.length > REST_MAX ? <span className="mt-mm-sep"> {t('mmMap.restHidden', { n: sum.rest.length - REST_MAX })}</span> : null}</div>
+              </section>
+            )}
+            <div className="mt-mm-foot" data-role="mm-sum-foot">
+              <div>{t('mmMap.sumFoot', { work: counts.work, all: counts.all, teams: lay.teamNo.size })}</div>
+              <div className="mt-mm-hint">{t('mmMap.hint')}</div>
+            </div>
+          </aside>
         )}
       </div>
-      {lay && lay.boxes.size > 0 && <Legend />}
     </div>
   );
 }

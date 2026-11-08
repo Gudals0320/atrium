@@ -163,3 +163,53 @@ export function roleText(m, t, { short = false } = {}) {
   const name = m.roleName || t('mmRole.worker');
   return m.rank === 'sub' && !short ? `${name} · ${t('mmRole.subLead')}` : name;
 }
+
+// ---- P95: 카드와 한 줄, 거르기, 요약 열(PC·휴대폰 같이) ----
+// 상태가 없는 노드(시험 자료, 옛 판)는 분류(category)로 등급을 고른다
+const CAT_TIER = { working: 'work', needs_you: 'turn', done: 'review', exited: 'done', idle: 'rest' };
+export const nodeTier = (n, live = null) => (live || (n && n.state) ? tierFor(n, live) : CAT_TIER[n && n.category] || 'rest');
+// 쉼·잠듦·끝남은 한 줄로 물러난다(하위가 있으면 카드)
+export const REST_TIERS = ['rest', 'sleep', 'done'];
+export const restTier = (t) => REST_TIERS.includes(t);
+// 위 거르기 칸(P32의 분류 열쇠 그대로)과 등급: 맞지 않는 세션은 자리는 그대로 두고 흐리게
+export const FILTERS = ['all', 'needs_you', 'working', 'idle', 'done', 'exited'];
+export function filterMatch(tier, filter) {
+  switch (filter) {
+    case 'needs_you': return tier === 'turn' || tier === 'alert';
+    case 'working': return tier === 'work';
+    case 'idle': return tier === 'rest';
+    case 'done': return tier === 'review';
+    case 'exited': return tier === 'done' || tier === 'sleep';
+    default: return true;
+  }
+}
+// 모델과 노력 수준 한 낱말: "claude-opus-5-5" + "high" → "opus 5.5·high"
+export function modelText(model, effort) {
+  let m = String(model || '').trim().replace(/^claude-/, '').replace(/\[.*\]$/, '');
+  m = m.replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-(\d+)$/, ' $1');
+  return [m, effort].filter(Boolean).join('·') || null;
+}
+// 지난 시간 짧게(사전 함수 t): 방금, 4분, 2시간, 3일
+export function ageText(ms, t) {
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return t('mmMap.ageNow');
+  if (m < 60) return t('mmMap.ageM', { n: m });
+  const h = Math.floor(m / 60);
+  if (h < 48) return t('mmMap.ageH', { n: h });
+  return t('mmMap.ageD', { n: Math.floor(h / 24) });
+}
+// 요약 열: ids(지도 차례)를 등급으로 나눈다 → { turn, work, review, rest, counts: { all, turn, work, review, rest, idle, gone } }
+export function missionSummary(ids, tierOfId) {
+  const out = { turn: [], work: [], review: [], rest: [] };
+  for (const id of ids) {
+    const t = tierOfId(id);
+    if (t === 'turn' || t === 'alert') out.turn.push(id);
+    else if (t === 'work') out.work.push(id);
+    else if (t === 'review') out.review.push(id);
+    else out.rest.push(id);
+  }
+  const gone = out.rest.filter((id) => tierOfId(id) !== 'rest').length;
+  out.counts = { all: ids.length, turn: out.turn.length, work: out.work.length, review: out.review.length, rest: out.rest.length, idle: out.rest.length - gone, gone };
+  return out;
+}

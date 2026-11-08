@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { roleFamily, missionTree, roleModel, relOf, focusOf, groupedOrder, teamText, roleText, mergeEdges } from '../src/renderer/lib/mission-model.js';
 import { missionLayout, MISSION, mergeEdges as layoutMerge } from '../src/renderer/lib/mission-layout.js';
 import { phoneMission } from '../src/renderer/lib/phone-mission.js';
-import { phoneGraph, PG } from '../src/renderer/lib/phone-graph.js';
+import { phoneGraph } from '../src/renderer/lib/phone-graph.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
 
@@ -126,7 +126,7 @@ test('가상 그룹 차례: 같은 그룹의 워크스페이스는 처음 나온
 
 const boxOverlap = (boxes) => { const bs = [...boxes.values()].filter((b) => !b.proxy); for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) { const a = bs[i], b = bs[j]; if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) return `${a.node.id}↔${b.node.id}`; } return null; };
 
-test('PC 배치: 겹침 없음, 리드 → 워커 순서, 선마다 관계 종류, 가상 그룹 띠, 팀 상자', () => {
+test('PC 배치: 겹침 없음, 리드 → 워커 순서, 선마다 관계 종류, 가상 그룹은 머리 글 앞 이름(P95: 띠·팀 상자 없음)', () => {
   const g = board();
   const lay = missionLayout(g, { order: ['wa', 'wc', 'wb', 'wd'], vgroups: [{ id: 'g1', name: 'product', members: ['wa', 'wb'] }] });
   assert.equal(boxOverlap(lay.boxes), null);
@@ -142,18 +142,12 @@ test('PC 배치: 겹침 없음, 리드 → 워커 순서, 선마다 관계 종�
   assert.equal(lay.edges.find((e) => e.from === 'human').rel, 'human');
   const cross = lay.edges.find((e) => e.from === 's:lead2' && e.to === 's:port');
   assert.ok(cross.cross, '다른 워크스페이스로 간 선은 cross');
-  // 무리 차례와 띠: wa, wb(product) 다음 wc, wd
-  assert.deepEqual(lay.groups.map((x) => x.key), ['wa', 'wb', 'wc', 'wd']);
-  assert.equal(lay.bands.length, 1);
-  const band = lay.bands[0], ga = lay.groups[0], gb = lay.groups[1];
-  assert.equal(band.name, 'product');
-  assert.ok(band.y < ga.y && band.x < ga.x && band.y + band.h >= gb.y + gb.h && band.x + band.w > ga.x + ga.w, '띠가 두 무리를 두른다');
-  assert.ok(lay.groups[2].y >= band.y + band.h, '띠 밖 무리는 띠 아래');
-  assert.equal(ga.vg.name, 'product'); assert.equal(lay.groups[2].vg, null);
-  // 팀 상자: 리드 A의 팀(같은 무리 안)
-  const team = lay.teams.find((x) => x.lead === 's:lead');
-  assert.ok(team && ['s:lead', 's:rev', 's:ui', 's:tests', 's:build', 's:copy'].every((id) => team.ids.includes(id)) && !team.ids.includes('s:old'), '다른 무리의 손자는 상자 밖');
-  for (const id of team.ids) { const x = lay.boxes.get(id); assert.ok(x.x >= team.x && x.y >= team.y && x.x + x.w <= team.x + team.w && x.y + x.h <= team.y + team.h, id); }
+  // 머리 글 차례: 팀이 있는 wa, wb(product끼리 붙는다), 다른 워크스페이스 하위만 있는 wc·wd는 머리 글이 없다(부모 팀 안에 놓인다)
+  assert.deepEqual(lay.groups.map((x) => x.key), ['wa', 'wb']);
+  assert.equal(lay.groups[0].vg.name, 'product'); assert.equal(lay.groups[1].vg.name, 'product');
+  assert.equal(b('docs').group, 'wb'); assert.equal(b('old').group, 'wa');
+  assert.equal(lay.bands, undefined); assert.equal(lay.teams, undefined);
+  assert.deepEqual([...lay.teamNo.entries()], [['s:lead', 1], ['s:lead2', 2]], '팀 번호(요약 열과 카드)');
 });
 
 test('휴대폰도 같은 분류: 줄마다 등급·묶음·팀·관계 종류, 무리에 가상 그룹, 그래프 선의 rel, 겹침 없음', () => {
@@ -166,14 +160,13 @@ test('휴대폰도 같은 분류: 줄마다 등급·묶음·팀·관계 종류, 
   assert.equal(rows.rev.rel, 'spawn'); assert.equal(rows.ui.rel, 'role'); assert.equal(rows.docs.rel, 'prompt');
   assert.deepEqual(pm.groups.map((x) => x.key), ['wa', 'wb', 'wc', 'wd']);
   assert.equal(pm.groups[1].vg.name, 'product');
-  const pg = phoneGraph(pm, { cols: 2 });
+  const pg = phoneGraph(pm, { width: 373 });
   assert.equal(pg.groups[0].vg.name, 'product');
   const er = (kind, a, z) => (pg.edges.find((e) => e.kind === kind && e.from === `s:${a}` && e.to === `s:${z}`) || {}).rel;
   assert.equal(er('tree', 'lead', 'rev'), 'spawn'); assert.equal(er('tree', 'lead', 'ui'), 'role');
   assert.equal(er('link', 'rev', 'ui'), 'role', '나무 밖 역할 연결');
-  assert.equal(er('cross', 'lead2', 'port'), 'spawn');
-  const { W, H } = PG;
-  for (let i = 0; i < pg.nodes.length; i++) for (let j = i + 1; j < pg.nodes.length; j++) { const a = pg.nodes[i], b = pg.nodes[j]; assert.ok(!(a.x < b.x + W && b.x < a.x + W && a.y < b.y + H && b.y < a.y + H), `${a.id}↔${b.id}`); }
+  assert.equal(er('tree', 'lead2', 'port'), 'spawn', 'P95: 다른 워크스페이스 하위도 부모 팀 안(나무 선)');
+  for (let i = 0; i < pg.nodes.length; i++) for (let j = i + 1; j < pg.nodes.length; j++) { const a = pg.nodes[i], b = pg.nodes[j]; assert.ok(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h), `${a.id}↔${b.id}`); }
 });
 
 test('사전: mmRole 열쇠가 두 언어에 모두 있다', () => {
