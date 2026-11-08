@@ -6,6 +6,8 @@
 // - 한 손가락으로 옮기고 두 손가락으로 확대·축소(lib/touch-board.js의 셈). 페이지는 늘어나거나 튀지 않는다(touch-action: none, gesture 막음).
 //   처음과 "맞추기"는 화면에 맞춘다. 카드를 누르면 세션 화면(Phone.jsx PhoneSession), 돌아오면 같은 자리·배율(화면 크기가 같을 때, 모듈에 둔다)
 // - 가볍게(iPhone Safari): 그래프는 DOM 카드와 SVG 한 장, 옮길 때는 한 요소의 transform만 바꾼다. filter·backdrop-filter·will-change·끝없는 움직임 없음
+// - P94: PC와 같은 역할·관계 모델(lib/mission-model.js). 카드에 역할 칩(기호와 이름), 리드는 왼쪽 띠와 팀 요약, 쉬는 리드는 "워커 n 기다림".
+//   선 모양도 PC와 같다: 하위 세션 실선, 역할 연결 파선, 요청 점선. 무리 머리띠에 가상 그룹 이름. 범례는 리드와 선 셋
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
@@ -14,6 +16,8 @@ import { STATE_LABEL } from './lib/labels.js';
 import { phoneMission, PM_FOLD_KEY } from './lib/phone-mission.js';
 import { phoneGraph, PG, colsFor, fitView, clampView, zoomRange, focusView, inFocus, vpKey, branchOf } from './lib/phone-graph.js';
 import { toneOf } from './lib/phone.js';
+import { roleText, teamText } from './lib/mission-model.js';
+import { RoleGlyph } from './RoleGlyph.jsx';
 import { kindOf, shownKind, logoFor } from './lib/kinds.js';
 import { TOUCH_SLOP_PX, pinchViewport, panViewport, mid, dist } from './lib/touch-board.js';
 
@@ -41,20 +45,22 @@ function Card({ n, live, dim, t }) {
   const r = n.row;
   const tone = toneOf(live || { state: r.state, kind: r.agentKind });
   const branch = branchOf(live);
+  const team = r.team ? teamText(r, t) : null;
   const sub = r.ask && (r.tier === 'turn' || r.tier === 'alert') ? { k: 'ask', text: r.ask }
+    : team ? { k: 'team', text: team }
     : r.from ? { k: 'from', text: t('phoneMission.from', { name: r.from.name, ws: r.from.key ? wsName(r.from.key) : t('phone.noRepo') }) }
     : branch ? { k: 'branch', text: `⎇ ${branch}` } : null;
   return (
-    <button type="button" className={`mt-pm-node t-${r.tier}${dim ? ' dim' : ''}`} style={{ left: n.x, top: n.y, width: PG.W, height: PG.H }}
-      data-role="pm-node" data-session={r.sessionId} data-name={r.name} data-tier={r.tier} data-depth={r.depth}>
+    <button type="button" className={`mt-pm-node t-${r.tier} r-${r.rank || 'solo'}${dim ? ' dim' : ''}`} style={{ left: n.x, top: n.y, width: PG.W, height: PG.H }}
+      data-role="pm-node" data-session={r.sessionId} data-name={r.name} data-tier={r.tier} data-depth={r.depth} data-rank={r.rank} data-family={r.family}>
       <span className="mt-pm-top">
         <span className="mt-ph-dot" data-tone={tone} />
         <b className="mt-pm-name">{r.name}</b>
         <Kind live={live} r={r} />
       </span>
       <span className="mt-pm-meta">
-        {r.role && <span className="mt-pm-role" data-role="pm-role">{r.role}</span>}
-        <span className="mt-pm-state" data-role="pm-state">{r.tier === 'turn' ? t('phoneMission.turn') : stateText(r, live)}</span>
+        {r.rank !== 'solo' && <span className={`mt-pm-role f-${r.family}`} data-role="pm-role"><RoleGlyph family={r.family} />{roleText(r, t, { short: true })}</span>}
+        <span className={`mt-pm-state${r.waiting && r.tier !== 'turn' ? ' wait' : ''}`} data-role="pm-state">{r.tier === 'turn' ? t('phoneMission.turn') : r.waiting ? t('mmRole.waiting', { n: r.waiting }) : stateText(r, live)}</span>
         {r.loops > 0 && <span className="mt-pm-loop">⟳{r.loops}</span>}
       </span>
       {sub && <span className={`mt-pm-sub ${sub.k}`} data-role={`pm-${sub.k}`}>{sub.text}</span>}
@@ -69,6 +75,7 @@ export function PhoneMission({ onBack, onOpen, conn }) {
   const thread = useStore((st) => st.thread);
   const loops = useStore((st) => st.loops);
   const workspaces = useStore((st) => st.workspaces);
+  const vgroups = useStore((st) => st.groups); // P44 가상 그룹
   const [graph, setGraph] = useState(cache);
   const [fail, setFail] = useState(null);
   const [folded, setFolded] = useState(readFolded);
@@ -96,7 +103,7 @@ export function PhoneMission({ onBack, onOpen, conn }) {
   }, []);
 
   const order = useMemo(() => (workspaces || []).map((w) => w.key), [workspaces]);
-  const lay = useMemo(() => (graph ? phoneMission(graph, { live: sessions, order, folded }) : null), [graph, sessions, order, folded]);
+  const lay = useMemo(() => (graph ? phoneMission(graph, { live: sessions, order, folded, vgroups }) : null), [graph, sessions, order, folded, vgroups]);
   const cols = vp ? colsFor(vp.w) : 2;
   const pg = useMemo(() => (lay ? phoneGraph(lay, { cols }) : null), [lay, cols]);
   sizeRef.current = pg && vp ? { size: pg, vp } : null;
@@ -199,6 +206,7 @@ export function PhoneMission({ onBack, onOpen, conn }) {
                 <button type="button" className="mt-pm-ghead" data-action="pm-fold" data-ws={g.key || ''} aria-expanded={!g.folded}>
                   <Chev dir={g.folded ? 'right' : 'down'} />
                   <span className="mt-pm-gname">{g.key ? wsName(g.key) : t('phone.noRepo')}</span>
+                  {g.vg && <span className="mt-pm-gvg" data-role="pm-vgroup">{g.vg.name}</span>}
                   {g.work > 0 && <span className="mt-pm-gn t-work" title={t('phoneMission.working', { n: g.work })}><i />{g.work}</span>}
                   {g.turn > 0 && <span className="mt-pm-gn t-turn" title={t('phoneMission.needs', { n: g.turn })}><i />{g.turn}</span>}
                   <span className="mt-pm-gcount">{g.count}</span>
@@ -209,7 +217,7 @@ export function PhoneMission({ onBack, onOpen, conn }) {
               {pg.edges.map((e) => {
                 const dim = focus && !(inFocus(focus, e.tier) || inFocus(focus, tierOfId.get(e.from)));
                 return (
-                  <g key={e.id} className={`mt-pm-edge ${e.kind} t-${e.tier}${e.active ? ' active' : ''}${dim ? ' dim' : ''}`} data-role="pm-edge" data-kind={e.kind} data-from={e.from} data-to={e.to}>
+                  <g key={e.id} className={`mt-pm-edge ${e.kind} rel-${e.rel || 'spawn'} t-${e.tier}${e.active ? ' active' : ''}${dim ? ' dim' : ''}`} data-role="pm-edge" data-kind={e.kind} data-rel={e.rel} data-from={e.from} data-to={e.to}>
                     <path d={e.d} />
                     {e.kind !== 'tree' && <circle cx={e.ex} cy={e.ey} r="3" />}
                     {e.kind !== 'tree' && e.role && <text x={e.lx} y={e.ly} textAnchor="middle" dominantBaseline="middle" transform={e.rot ? `rotate(-90 ${e.lx} ${e.ly})` : undefined}>{e.role.length > 16 ? `${e.role.slice(0, 15)}…` : e.role}</text>}
@@ -222,7 +230,7 @@ export function PhoneMission({ onBack, onOpen, conn }) {
         )}
         {pg && pg.nodes.length > 0 && (
           <div className="mt-pm-tools">
-            <span className="mt-pm-legend" data-role="pm-legend"><i className="tree" />{t('phoneMission.legendTree')}<i className="link" />{t('phoneMission.legendLink')}</span>
+            <span className="mt-pm-legend" data-role="pm-legend"><RoleGlyph family="lead" className="lead" />{t('mmRole.keyLead')}<i className="tree" />{t('mmRole.relSpawn')}<i className="role" />{t('mmRole.relRole')}{pg.edges.some((e) => e.rel === 'prompt') && <><i className="prompt" />{t('mmRole.relPrompt')}</>}</span>
             <button type="button" className="mt-pm-fit" data-action="pm-fit" aria-label={t('phoneMission.fit')} onClick={(e) => { e.stopPropagation(); fit(); }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg><span>{t('phoneMission.fitShort')}</span>
             </button>

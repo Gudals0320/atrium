@@ -117,7 +117,7 @@ export function phoneGraph(pm, { cols = 2 } = {}) {
   let y = PAD;
   for (const { g, lines, h } of laid) {
     const gh = GROUP_HEAD + (g.folded || !lines.length ? 0 : h + GROUP_PAD);
-    groups.push({ key: g.key, x: PAD, y, w: inner + 2 * GROUP_PAD, h: gh, folded: !!g.folded, count: g.count, work: g.work, turn: g.turn });
+    groups.push({ key: g.key, x: PAD, y, w: inner + 2 * GROUP_PAD, h: gh, folded: !!g.folded, count: g.count, work: g.work, turn: g.turn, vg: g.vg || null });
     if (!g.folded) {
       let ly = y + GROUP_HEAD;
       for (const ln of lines) {
@@ -133,7 +133,7 @@ export function phoneGraph(pm, { cols = 2 } = {}) {
     y += gh + GROUP_GAP;
   }
   // 나무 선의 강조: 받는 쪽 등급, 역할 선이 일하는 중이면 active
-  for (const e of edges) { const r = at.get(e.to).row; e.tier = r.tier; e.active = !!r.active; e.role = r.role || null; }
+  for (const e of edges) { const r = at.get(e.to).row; e.tier = r.tier; e.active = !!r.active; e.role = r.role || null; e.rel = r.rel || 'spawn'; } // P94: 관계 종류(공용 모델)
   // 나무 밖: 다른 무리 부모(cross)와 두 번째 지시자 등(link). 접은 무리의 카드로 가는 선은 긋지 않는다
   // 통로는 무리 상자 오른쪽 바깥. 선이 여럿이면 세 갈래로 나눠 겹치지 않게
   const right = PAD + inner + 2 * GROUP_PAD;
@@ -141,8 +141,8 @@ export function phoneGraph(pm, { cols = 2 } = {}) {
   const gx = () => right + 4 + (lane++ % 3) * 4;
   for (const nd of nodes) {
     const r = nd.row;
-    if (r.fromId && at.has(r.fromId)) edges.push({ id: `c:${r.fromId}>${r.id}`, from: r.fromId, to: r.id, kind: 'cross', tier: r.tier, active: !!r.active, role: r.role || null, ...linkPath(at.get(r.fromId), nd, gx()) });
-    for (const l of r.links || []) if (l.toId && at.has(l.toId)) edges.push({ id: `l:${r.id}>${l.toId}`, from: r.id, to: l.toId, kind: 'link', tier: at.get(l.toId).row.tier, active: !!l.active, role: l.role || null, ...linkPath(nd, at.get(l.toId), gx()) });
+    if (r.fromId && at.has(r.fromId)) edges.push({ id: `c:${r.fromId}>${r.id}`, from: r.fromId, to: r.id, kind: 'cross', rel: r.rel || 'spawn', tier: r.tier, active: !!r.active, role: r.role || null, ...linkPath(at.get(r.fromId), nd, gx()) });
+    for (const l of r.links || []) if (l.toId && at.has(l.toId)) edges.push({ id: `l:${r.id}>${l.toId}`, from: r.id, to: l.toId, kind: 'link', rel: l.rel || 'role', tier: at.get(l.toId).row.tier, active: !!l.active, role: l.role || null, ...linkPath(nd, at.get(l.toId), gx()) });
   }
   const width = n2(2 * PAD + inner + 2 * GROUP_PAD + GUTTER);
   const height = n2(groups.length ? y - GROUP_GAP + PAD : 2 * PAD);

@@ -2,6 +2,7 @@
 // - 0열은 사람(명령 바). 세션은 "지시하는 쪽" 오른쪽에 놓인다(부모 → 자식). 부모는 자식들의 가운데 높이에 온다(정돈된 나무라 상자가 겹치지 않는다).
 // - 한 쌍(A → B) 사이의 선 여럿(역할, 지시, 띄움, 명령 바, 루프)은 선 하나로 모은다. 모양은 가장 앞선 종류(역할 > 지시 > 띄움 > 명령 바 > 루프)를 따른다.
 // - 나무 부모: 하위 세션의 부모(parentId) > 역할 > 띄움 > 지시 > 사람(명령 바, 루프). 고리가 생기는 부모는 고르지 않는다.
+//   P94: 세션끼리의 부모는 휴대폰과 같은 공용 모델(lib/mission-model.js missionTree)이 고른다. 선마다 관계 종류(rel), 무리마다 가상 그룹(vg)과 그 띠(bands), 리드마다 팀 상자(teams).
 //   지시를 내리지만 받지는 않는 세션은 사람 아래(선 없이) 1열에 둔다. 선이 하나도 없는 세션은 아래 "연결 없음" 칸에 격자로 놓는다.
 // - 나무에 들지 못한 선(두 번째 지시자, 같은 열, 뒤로 가는 선)도 긋되 이름표 없이 점만 둔다(올리면 풀이).
 // - 이름표는 받는 상자 바로 왼쪽, 선의 끝 높이에 둔다. 받는 쪽마다 끝 높이를 나눠(최대 maxPorts) 이름표끼리 겹치지 않는다.
@@ -11,38 +12,17 @@
 //   선이 없는 세션은 그 무리 아래쪽 격자. 접은 무리(collapsed)는 머리줄만 남고, 그 세션들로 가는 선은 머리줄의 대리 상자(proxy)로 모인다.
 // → { boxes: Map id → { x, y, w, h, node, ghost, depth, group, proxy? }, edges: [... cross, fromGroup, toGroup], groups: [{ key, x, y, w, h, count, needs, shown, collapsed, looseAt }], loose: [id], width, height, columns }
 
-export const MISSION = { boxW: 236, boxH: 56, colGap: 156, rowGap: 12, pad: 28, sectionHead: 28, gridGap: 20, portGap: 18, maxPorts: 3, labelW: 116, minGridCols: 3, groupHead: 30, groupPad: 14, groupGap: 22, looseGap: 16 };
-export const EDGE_ORDER = ['role', 'prompt', 'spawn', 'bar', 'loop'];
-const PARENT_RANK = { parent: 0, role: 1, spawn: 2, prompt: 3, bar: 4, loop: 5 };
+import { EDGE_ORDER, mergeEdges, missionTree, relOf, groupedOrder } from './mission-model.js';
+
+export const MISSION = { boxW: 236, boxH: 64, colGap: 156, rowGap: 12, pad: 28, sectionHead: 28, gridGap: 20, portGap: 18, maxPorts: 3, labelW: 116, minGridCols: 3, groupHead: 30, groupPad: 14, groupGap: 22, looseGap: 16, bandHead: 24, bandPad: 8, teamPad: 7 };
+export { EDGE_ORDER, mergeEdges }; // P94: 공용 모델(lib/mission-model.js)로 옮겼다
 const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || '')) || String(a.id).localeCompare(String(b.id));
 const bySpawn = (a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || (a.createdAt || 0) - (b.createdAt || 0) || byName(a, b); // P75
-
-// 한 쌍의 선들을 하나로: { id, from, to, kinds, primary, role, text, count, lastAt, active, status }
-export function mergeEdges(edges, has = () => true) {
-  const pairs = new Map();
-  for (const e of edges || []) {
-    if (!e || e.from === e.to || !has(e.from) || !has(e.to)) continue;
-    const k = `${e.from}>${e.to}`;
-    const p = pairs.get(k) || { id: k, from: e.from, to: e.to, kinds: [], parts: [], role: null, text: null, count: 0, lastAt: 0, active: false };
-    if (!p.kinds.includes(e.kind)) p.kinds.push(e.kind);
-    p.parts.push(e);
-    if (e.kind === 'role' && e.label) p.role = e.label;
-    if ((e.kind === 'prompt' || e.kind === 'bar' || e.kind === 'loop') && e.label && (e.lastAt || 0) >= p.lastAt) p.text = e.label;
-    if (e.kind !== 'spawn') p.count += e.count || 0;
-    p.lastAt = Math.max(p.lastAt, e.lastAt || 0);
-    if (e.active) p.active = true;
-    pairs.set(k, p);
-  }
-  for (const p of pairs.values()) {
-    p.kinds.sort((a, b) => rank(a) - rank(b));
-    p.primary = p.kinds[0];
-  }
-  return [...pairs.values()];
-}
 const rank = (k) => { const i = EDGE_ORDER.indexOf(k); return i < 0 ? EDGE_ORDER.length : i; };
 
 // opt: filter(분류 거르기), collapsed(접은 무리의 워크스페이스 키들), order(무리 차례: 워크스페이스 키들, 판의 영역 차례)
-export function missionLayout(graph, { filter = 'all', collapsed = [], order = [] } = {}) {
+export function missionLayout(graph, { filter = 'all', collapsed = [], order: order0 = [], vgroups = [] } = {}) {
+  const { order, groupOf: vgOf } = groupedOrder(order0, vgroups);
   const L = MISSION;
   const all = graph.nodes || [];
   const human = all.find((n) => n.kind === 'human') || null;
@@ -52,16 +32,9 @@ export function missionLayout(graph, { filter = 'all', collapsed = [], order = [
   // 하위 세션인데 띄움 선이 없으면(옛 판) 부모 → 자식 쌍을 하나 만든다
   for (const s of sessions) if (s.parentId && byId.has(s.parentId) && !pairs.some((p) => p.from === s.parentId && p.to === s.id)) pairs.push({ id: `${s.parentId}>${s.id}`, from: s.parentId, to: s.id, kinds: ['spawn'], primary: 'spawn', parts: [], role: s.role || null, text: null, count: 0, lastAt: 0, active: false, synthetic: true });
 
-  // 나무 부모 고르기(고리 막기)
-  const parent = new Map();
-  const ancestorOf = (a, b) => { for (let x = b, i = 0; x && i < 1000; x = parent.get(x), i++) if (x === a) return true; return false; };
-  const incoming = new Map();
-  for (const p of pairs) push(incoming, p.to, p);
-  const pRank = (s, p) => (p.from === s.parentId ? PARENT_RANK.parent : Math.min(...p.kinds.map((k) => PARENT_RANK[k] ?? 9)));
-  for (const s of [...sessions].sort(byName)) {
-    const cands = (incoming.get(s.id) || []).slice().sort((a, b) => pRank(s, a) - pRank(s, b) || byName(byId.get(a.from), byId.get(b.from)));
-    for (const c of cands) if (!ancestorOf(s.id, c.from)) { parent.set(s.id, c.from); break; }
-  }
+  // 나무 부모: 세션끼리는 공용 모델, 그 밖(지시만 내리는 세션 등)은 사람 아래
+  const tree = missionTree(graph);
+  const parent = new Map(tree.parent);
   const touched = new Set();
   for (const p of pairs) { touched.add(p.from); touched.add(p.to); }
   const hid = human ? human.id : '__human';
@@ -96,7 +69,7 @@ export function missionLayout(graph, { filter = 'all', collapsed = [], order = [
     const members = sessions.filter((s) => (s.workspaceKey || '') === key);
     const shown = members.filter((s) => visible.has(s.id));
     if (!shown.length) continue;
-    groups.push({ key, count: members.length, needs: members.filter((s) => s.category === 'needs_you').length, shown: shown.length, collapsed: shut.has(key), _shown: shown });
+    groups.push({ key, count: members.length, needs: members.filter((s) => s.category === 'needs_you').length, shown: shown.length, collapsed: shut.has(key), vg: vgOf.get(key) || null, _shown: shown });
   }
   const treeMembers = sessions.filter(inTree);
   const hasTree = treeMembers.length > 0;
@@ -114,7 +87,14 @@ export function missionLayout(graph, { filter = 'all', collapsed = [], order = [
   const proxyOf = new Map(); // 접은 무리의 세션 → 그 무리의 대리 상자(머리줄)
   const step = L.boxH + L.rowGap;
   let y = L.pad;
+  const bands = [];
+  let prevVg = null;
   for (const g of groups) {
+    const vgId = g.vg ? g.vg.id : null;
+    if (prevVg && vgId !== prevVg) y += L.bandPad; // 띠가 끝나면 띠 아래 여백
+    if (vgId && vgId !== prevVg) { bands.push({ id: vgId, name: g.vg.name, x: innerX - L.groupPad - L.bandPad, y, w: innerW + 2 * (L.groupPad + L.bandPad), h: 0, keys: [] }); y += L.bandHead; }
+    prevVg = vgId;
+    if (vgId) bands[bands.length - 1].keys.push(g.key);
     g.x = innerX - L.groupPad; g.w = innerW + 2 * L.groupPad; g.y = y; g.looseAt = null;
     if (g.collapsed) {
       // 접힌 무리는 머리줄만. 그 세션으로 가는 선은 머리줄의 대리 상자(가장 얕은 열)로 모은다
@@ -151,6 +131,13 @@ export function missionLayout(graph, { filter = 'all', collapsed = [], order = [
     }
     g.h = bottom + L.groupPad - g.y;
     y += g.h + L.groupGap;
+  }
+
+  // P94: 가상 그룹의 띠는 그 무리들을 두른다
+  for (const bd of bands) {
+    const gs = groups.filter((g) => bd.keys.includes(g.key));
+    const last = gs[gs.length - 1];
+    bd.h = last.y + last.h + L.bandPad - bd.y;
   }
 
   // 선의 끝: 접힌 무리면 대리 상자. 끝이 바뀐 선은 같은 쌍끼리 다시 모은다
@@ -227,13 +214,26 @@ export function missionLayout(graph, { filter = 'all', collapsed = [], order = [
     const ga = groupOf(p.from), gb = groupOf(p.to);
     const cross = ga != null && gb != null && ga !== gb; // 다른 워크스페이스에게 시킴(사람에게서 오는 선은 빼고)
     const { parts, _labelled, ...rest } = p; // eslint-disable-line no-unused-vars
-    return { ...rest, d, lx, ly, label, back, tree: isTree(p), cross, fromGroup: ga, toGroup: gb };
+    return { ...rest, d, lx, ly, label, back, tree: isTree(p), cross, fromGroup: ga, toGroup: gb, rel: p.from === hid ? 'human' : relOf(p, tree) };
   });
   const out = groups.map(({ _shown, ...g }) => g); // eslint-disable-line no-unused-vars
   const right = Math.max(L.pad + L.boxW, ...out.map((g) => g.x + g.w), ...[...boxes.values()].map((b) => b.x + b.w));
   const bottom = Math.max(L.pad, ...out.map((g) => g.y + g.h), ...[...boxes.values()].map((b) => b.y + b.h));
   const loose = [...boxes.values()].filter((b) => b.loose).map((b) => b.node.id);
-  return { boxes, edges, groups: out, loose, width: right + L.pad, height: bottom + L.pad, columns: hasTree ? maxDepth + 1 : 0 };
+  // P94: 팀 상자. 하위가 있는 세션마다 그 세션과 같은 무리 안 자손 상자들을 두른다(가리킬 때 그린다)
+  const teams = [];
+  for (const [id, list] of tree.kids) {
+    const lb = boxes.get(id);
+    if (!lb || lb.proxy || !list.length) continue;
+    const ids = [id];
+    const walk = (x) => { for (const c of tree.kids.get(x) || []) { const cb = boxes.get(c.id); if (cb && !cb.proxy && cb.group === lb.group) ids.push(c.id); walk(c.id); } };
+    walk(id);
+    if (ids.length < 2) continue;
+    const bs = ids.map((x) => boxes.get(x)), P = L.teamPad;
+    const x0 = Math.min(...bs.map((b) => b.x)) - P, y0 = Math.min(...bs.map((b) => b.y)) - P;
+    teams.push({ lead: id, ids, x: x0, y: y0, w: Math.max(...bs.map((b) => b.x + b.w)) + P - x0, h: Math.max(...bs.map((b) => b.y + b.h)) + P - y0 });
+  }
+  return { boxes, edges, groups: out, bands, teams, loose, width: right + L.pad, height: bottom + L.pad, columns: hasTree ? maxDepth + 1 : 0, tree };
 }
 function push(m, k, v) { if (!m.has(k)) m.set(k, []); m.get(k).push(v); }
 
