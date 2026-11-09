@@ -1663,7 +1663,7 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 
 /* ---------- P101: 미션 맵 다듬기(Mission.jsx, lib/mission-layout.js, lib/mission-wire.js). P95 덩어리 위에 덮는다.
    워크스페이스 판(옅은 바탕 면), 테두리 있는 알약(쉼·잠듦·끝남), 카드 안 오른쪽 위 종류 동그라미, 글자 단계 13/12/11, 짧은 두 줄의 화살촉,
-   일하는 카드의 테두리 빛(위·아래 가장자리를 짧은 빛이 지나간다: transform만 움직이고 움직임 줄이기에서는 멈춘다) ---------- */
+   일하는 카드의 움직임은 P102 덩어리(번쩍임) ---------- */
 .mt-mm-plate { position: absolute; box-sizing: border-box; border-radius: 12px; background: var(--mm-plate); border: 1px solid var(--mm-plate-line); pointer-events: none; }
 .mt-mm-ws { height: 20px; margin-left: -4px; padding: 0 4px; color: var(--text-2); font: 650 12px var(--font-ui); letter-spacing: .01em; }
 .mt-mm-ws .vg { color: var(--dim); font-weight: 550; }
@@ -1701,16 +1701,19 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-mm-edge.hot .mt-mm-tip { fill: var(--mm-wire-hot); }
 .mt-mm-edge.hot.active .mt-mm-tip { fill: var(--st-working); }
 .mt-mm-edge.hot.turn .mt-mm-tip { fill: var(--attn); }
-/* 일하는 카드의 테두리 빛: 위 가장자리는 왼쪽 → 오른쪽, 아래는 반 박자 늦게 오른쪽 → 왼쪽(테두리를 따라 도는 것처럼). 여럿이어도 같은 박자 */
-.mt-mm-glint { position: absolute; inset: -1px; border-radius: 9px; overflow: hidden; pointer-events: none; }
-.mt-mm-glint i { position: absolute; left: 0; top: 0; width: 36%; height: 2px; background: linear-gradient(90deg, transparent, var(--st-working), transparent); opacity: 0; transform: translateX(-100%); }
-.mt-mm-glint i + i { top: auto; bottom: 0; }
-.mt-mm-card.shell .mt-mm-glint i { background: linear-gradient(90deg, transparent, var(--st-shell_running), transparent); }
-@media (prefers-reduced-motion: no-preference) {
-  .mt-mm-glint i { opacity: 1; animation: mt-mm-sweep 2.8s cubic-bezier(.45, 0, .55, 1) infinite; }
-  .mt-mm-glint i + i { animation-name: mt-mm-sweep-back; animation-delay: -1.4s; }
-}
-@keyframes mt-mm-sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
-@keyframes mt-mm-sweep-back { from { transform: translateX(300%); } to { transform: translateX(-100%); } }
+/* 일하는 카드의 테두리 빛(P101)은 P102의 번쩍임(끝 덩어리)으로 바꿨다 */
 .mt-mm-row .nm { flex: 0 0 auto; max-width: 68%; }
 .mt-mm-row .rl { flex: 1 1 auto; }
+
+/* ---------- P102: 미션 맵의 일하는 카드 번쩍임(Mission.jsx .mt-mm-flash, lib/mission-flash.js). 멀리서(맞추기 배율) 봐도 일하는 세션만 눈에 띄게.
+   카드 바탕 위·글 아래의 한 겹(상태 색 2px 테두리와 옅은 바탕)이 opacity만 움직인다: 0.2초에 차오르고 천천히 빠진다, 1.4초에 한 번(초당 0.71번, 광과민 기준 3번 아래).
+   응답 필요(노랑)·오류(빨강)는 움직이지 않는 테두리라 움직임과 색으로 갈린다. 일하는 셸은 초록. 모든 카드가 같은 박자(움직임 시작을 문서 시간 0에 맞춘다, lib/mission-flash.js).
+   기본(움직임 줄이기, 가벼운 판 html.mt-lite)은 움직이지 않는 강한 표시: 굵은 상태 색 테두리와 아주 옅은 바탕(메타 글 대비 4.5 이상). 움직임은 no-preference 안에서만 ---------- */
+.mt-mm-card.t-work { --mm-run: var(--st-working); isolation: isolate; }
+.mt-mm-card.t-work.shell { --mm-run: var(--st-shell_running); }
+.mt-mm-flash { position: absolute; inset: -1px; border-radius: 9px; border: 2px solid var(--mm-run); background-color: color-mix(in srgb, var(--mm-run) 6%, transparent); pointer-events: none; z-index: -1; }
+@media (prefers-reduced-motion: no-preference) {
+  .mt-mm-flash { background-color: color-mix(in srgb, var(--mm-run) 18%, transparent); opacity: 0.3; animation: mt-mm-flash 1.4s cubic-bezier(.3, 0, .2, 1) infinite; }
+}
+@keyframes mt-mm-flash { 0% { opacity: 0.3; } 14% { opacity: 1; animation-timing-function: cubic-bezier(.45, 0, .55, 1); } 100% { opacity: 0.3; } }
+html.mt-lite .mt-mm-flash { opacity: 1; background-color: color-mix(in srgb, var(--mm-run) 6%, transparent); }

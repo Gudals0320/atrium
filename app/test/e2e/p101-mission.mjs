@@ -189,7 +189,7 @@ const PC_PROBE = `(() => {
   const R = (e) => { const r = e.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
   const cs = (e) => getComputedStyle(e);
   const nodes = [...m.querySelectorAll('[data-role=mm-node][data-kind=session]')].map((e) => { const s = cs(e); return { name: e.dataset.name, rank: e.dataset.rank || null, family: e.dataset.family || null, tier: e.dataset.tier || null, shape: e.dataset.shape || null, roleText: (e.querySelector('[data-role=mm-role]') || {}).textContent || null, team: (e.querySelector('[data-role=mm-team]') || {}).textContent || null, meta: (e.querySelector('[data-role=mm-meta]') || {}).textContent || null, recede: e.classList.contains('recede'), fdim: e.classList.contains('fdim'),
-    border: { w: parseFloat(s.borderTopWidth) || 0, c: s.borderTopColor, style: s.borderTopStyle }, bg: s.backgroundColor, font: parseFloat(cs(e.querySelector('.mt-mm-name, .nm') || e).fontSize), glint: !!e.querySelector('[data-role=mm-glint]'), anims: e.getAnimations ? e.getAnimations({ subtree: true }).length : -1, ...R(e) }; });
+    border: { w: parseFloat(s.borderTopWidth) || 0, c: s.borderTopColor, style: s.borderTopStyle }, bg: s.backgroundColor, font: parseFloat(cs(e.querySelector('.mt-mm-name, .nm') || e).fontSize), glint: !!e.querySelector('[data-role=mm-flash]'), anims: e.getAnimations ? e.getAnimations({ subtree: true }).length : -1, ...R(e) }; });
   const edges = [...m.querySelectorAll('[data-role=mm-edge]')].map((e) => { const l = e.querySelector('path.line'); return { id: e.dataset.id || null, kind: e.dataset.kind, rel: e.dataset.rel || null, from: e.dataset.from, to: e.dataset.to, route: e.dataset.route || null, pair: e.dataset.pair === '1', cross: e.dataset.cross === '1', tree: e.dataset.tree === '1', back: e.classList.contains('back'), recede: e.classList.contains('recede'), hot: e.classList.contains('hot'), tip: !!e.querySelector('.mt-mm-tip'), box: l ? R(l) : null }; });
   const groups = [...m.querySelectorAll('[data-role=mm-group]')].map((g) => ({ key: g.dataset.key, name: (g.querySelector('[data-role=mm-group-name]') || {}).textContent, vg: (g.querySelector('[data-role=mm-vgroup]') || {}).textContent || null, packed: g.dataset.packed === '1', ...R(g) }));
   const plates = [...m.querySelectorAll('[data-role=mm-plate]')].map((g) => ({ key: g.dataset.key, bg: cs(g).backgroundColor, ...R(g) }));
@@ -302,7 +302,7 @@ async function desk(pg, E) {
     check(`[${E}] 쉬는·잠든 세션(알약)도 테두리가 보인다`, rows.length >= 5 && rows.every((x) => x.border.w >= 1 && !/rgba\(.*, 0\)$/.test(x.border.c)), rows.map((x) => `${x.name}:${x.border.w}/${x.border.c}`));
     check(`[${E}] 워크스페이스마다 옅은 판이 있다(머리 글 수와 같다, 9개: d의 잠든 old는 rev 팀 안)`, p.plates.length === p.groups.length && p.plates.length === 9 && p.plates.every((x) => !/rgba(0, 0, 0, 0)/.test(x.bg)), p.plates.map((x) => `${x.key}:${x.bg}`));
     const work = p.nodes.filter((x) => x.tier === 'work');
-    check(`[${E}] 일하는 카드(rev·port·tests)에 테두리 움직임`, work.length >= 3 && work.every((x) => x.glint && x.anims > 0) && p.nodes.filter((x) => x.tier !== 'work').every((x) => !x.glint), work.map((x) => `${x.name}:${x.glint}/${x.anims}`));
+    check(`[${E}] 일하는 카드(rev·port·tests)에 번쩍임 층과 움직임(P102)`, work.length >= 3 && work.every((x) => x.glint && x.anims > 0) && p.nodes.filter((x) => x.tier !== 'work').every((x) => !x.glint), work.map((x) => `${x.name}:${x.glint}/${x.anims}`));
     check(`[${E}] 글자: 카드 이름 13px`, p.nodes.filter((x) => x.shape === 'card').every((x) => x.font >= 13), p.nodes.map((x) => `${x.name}:${x.font}`));
     const s = p.summary || {};
     check(`[${E}] 요약 열: 응답 필요 1(lead), 작업 중 3(rev·tests·port), 아래 줄에 세션 17`, s.turn && s.turn.length === 1 && s.turn[0] === P('lead') && s.work.length === 3 && [P('rev'), P('tests'), P('port')].every((x) => s.work.includes(x)) && /17/.test(s.foot), s);
@@ -311,7 +311,7 @@ async function desk(pg, E) {
     if (w0.w) for (let i = 0; i < 4; i++) { await shot(pg, `${E}-${TAG}-11-glint-${i}`, { clip: { x: Math.max(0, w0.x - 12), y: Math.max(0, w0.y - 12), width: w0.w + 40, height: w0.h + 24 } }); await sleep(450); }
     // 움직임 줄이기: 움직임이 멈춘다
     await pg.emulateMedia({ reducedMotion: 'reduce' }); await sleep(400);
-    const still = await pg.evaluate(() => [...document.querySelectorAll('[data-role=mm-glint]')].map((e) => e.getAnimations({ subtree: true }).length));
+    const still = await pg.evaluate(() => [...document.querySelectorAll('[data-role=mm-flash]')].map((e) => e.getAnimations({ subtree: true }).length));
     check(`[${E}] 움직임 줄이기(prefers-reduced-motion)에서는 움직임이 없다`, still.length >= 3 && still.every((x) => x === 0), still);
     await pg.emulateMedia({ reducedMotion: 'no-preference' }); await sleep(300);
     // 가리키면 그 노드의 관계만 또렷, 선의 풀이(title)
@@ -406,7 +406,7 @@ async function cost(pg) {
   const take = async () => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.filter((m) => ['RecalcStyleCount', 'LayoutCount', 'TaskDuration', 'ScriptDuration', 'RecalcStyleDuration', 'LayoutDuration'].includes(m.name)).map((m) => [m.name, m.value]));
   const span = async () => { const a = await take(); await sleep(5000); const b = await take(); return Object.fromEntries(Object.keys(a).map((k) => [k, Math.round((b[k] - a[k]) * 1000) / 1000])); };
   const on = await span();
-  const tag = await pg.addStyleTag({ content: '.mt-mm-glint i { animation: none !important; }' }); await sleep(500);
+  const tag = await pg.addStyleTag({ content: '.mt-mm-flash { animation: none !important; }' }); await sleep(500);
   const off = await span();
   await tag.evaluate((el) => el.remove()); await sleep(300);
   await pg.emulateMedia({ reducedMotion: 'reduce' }); await sleep(500);
@@ -611,7 +611,7 @@ async function phone(E) {
       const big = p.edges.filter((e) => e.box.x + e.box.w > p.stage.x + p.stage.w - 2);
       check(`[${E}] 화면 오른쪽 밖으로 도는 선이 없다`, big.length === 0, big);
       const work = p.nodes.filter((x) => x.tier === 'work');
-      check(`[${E}] 휴대폰은 일하는 카드도 움직이지 않는다(P89 가벼움)`, work.length >= 3 && work.every((x) => x.anims === 0), work.map((x) => `${x.name}:${x.anims}`));
+      check(`[${E}] 휴대폰 일하는 카드는 번쩍임 하나(P102, steps로 가볍게)`, work.length >= 3 && work.every((x) => x.anims === 1), work.map((x) => `${x.name}:${x.anims}`));
     }
     if (AFTER) await gestures(pg, cdp, E, t0);
     await readMem('mission');
