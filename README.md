@@ -42,7 +42,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 ### Your turn
 
 - **Know who is waiting.** Every session is *working*, *ready*, *your turn* or *error*, computed from herdr events and Claude Code hooks. Finished answers you have not looked at yet count as *Review*.
-- **Answer on the node.** Permission prompts and `AskUserQuestion` questions open a card at the bottom of the node: allow, deny, pick an option, or type in the terminal.
+- **Answer in the terminal.** The board does not answer prompts for you. A waiting node turns yellow, joins the needs-you list and notifies you; click it (or press `N`) to land in its terminal. On a phone, a small key pad (arrows, Enter, Esc, Tab, Space, 1–4) opens when a session needs you and sends those keys to its terminal, for Claude Code, Codex and shells alike.
 - **One list for all repositories.** The **Your turn** pill lists every waiting session, oldest first, and `N` jumps to the next one. OS notifications and the tray icon tell you when the window is in the background.
 - **Changes since you looked.** Come back after a break and **Changes** sums up what each session did.
 
