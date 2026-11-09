@@ -407,7 +407,7 @@ export function LeftRail({ linking, setLinking }) {
       <Tool icon="note" label={t('rail.memo')} action="memo-new" onClick={() => createItem('memo')} />
       <Tool icon="kanban" label={t('rail.kanban')} action="kanban-new" onClick={() => createItem('kanban')} />
       <Sep />
-      <Tool icon="expand" label={t('rail.fitAll')} action="fit-all" onClick={() => getState().fitAll && getState().fitAll(250)} />
+      <Tool icon="expand" label={t('spaceFit.rail')} action="fit-all" onClick={() => getState().fitAll && getState().fitAll(250)} />
       {/* P85: 멀리 보기에서 일함·내 차례·오류 밖의 노드를 더 물린다. 이 창 프로필에 남는다(단축키 없음) */}
       <Tool icon="spot" on={spot} pressed={spot} label={t(spot ? 'spotlight.off' : 'spotlight.on')} action="spotlight" onClick={() => setSpotlight(!spot)} />
     </div>
@@ -455,7 +455,7 @@ export function ChipRow() {
     ...(boardArranged ? [[t('arrangeAll.undo'), 'chip-arrange-undo', t('arrangeAll.undoTitle'), () => arrangeBoard(true)]] : []),
     [t('chips.mission'), 'chip-mission', t('chips.missionTitle'), () => setMissionOpen(true)],
     [t('chips.changes'), 'chip-changes', t('chips.changesTitle'), () => getState().showChanges && getState().showChanges(60)],
-    [t('chips.fit'), 'chip-fit', t('chips.fitTitle'), () => getState().fitAll && getState().fitAll(250)],
+    [t('chips.fit'), 'chip-fit', t('spaceFit.chip'), () => getState().fitAll && getState().fitAll(250)],
   ];
   return (
     <div className="mt-chips" data-role="chips" data-hidden={shown ? undefined : '1'}>
@@ -472,7 +472,7 @@ export function ZoomPill() {
   return (
     <div className="mt-cp zoom" data-role="zoom">
       <button title={t('zoom.out')} data-action="zoom-out" onClick={() => by(1 / 1.25)}><Icon name="minus" /></button>
-      <button className="mt-zoom-n mono" title={t('zoom.fit')} data-action="zoom-fit" onClick={() => getState().fitAll && getState().fitAll(250)}>{Math.round(z * 100)}%</button>
+      <button className="mt-zoom-n mono" title={t('spaceFit.zoom')} data-action="zoom-fit" onClick={() => getState().fitAll && getState().fitAll(250)}>{Math.round(z * 100)}%</button>
       <button title={t('zoom.in')} data-action="zoom-in" onClick={() => by(1.25)}><Icon name="plus" /></button>
     </div>
   );

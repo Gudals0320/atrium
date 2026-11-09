@@ -43,7 +43,7 @@ import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
 import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';
-import { keyToData, closeKeyTargets, boardArrowKey, stepWorkspace } from './lib/keys.js';
+import { keyToData, closeKeyTargets, boardArrowKey, stepWorkspace, spaceHoldReady, spaceHoldStep, SPACE_HOLD_MS } from './lib/keys.js';
 import { wsTabs, tabKeys } from './lib/ws-tabs.js'; // P98
 import { renameKeyTarget } from './lib/session-name.js'; // P66: F2로 고른 노드의 이름 바꾸기
 import { ReturnSummary, useReturnSummary } from './ReturnSummary.jsx';
@@ -165,6 +165,39 @@ function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keydown', onKeyCapture, true); };
+  }, []);
+
+  useEffect(() => {
+    // P109: 고른 노드가 없을 때 판에서 Space를 살짝 길게 누르면 전체 보기(lib/keys.js spaceHoldReady·spaceHoldStep).
+    // 막지 않고 보기만 한다(React Flow의 Space 누른 채 휠로 옮기기, 그 자리의 Space는 그대로). 기준 전 마우스 누름·휠·다른 키는 취소
+    let hold = { phase: 'idle', at: 0 };
+    let timer = null;
+    const step = (ev) => {
+      const r = spaceHoldStep(hold, ev);
+      hold = r.s;
+      if (hold.phase !== 'armed' && timer) { clearTimeout(timer); timer = null; }
+      if (r.fire) { const st = getState(); if (st.fitAll) st.fitAll(250); }
+    };
+    const onDown = (e) => {
+      if (e.key !== ' ') { if (hold.phase === 'armed') step({ type: 'cancel' }); return; }
+      const st = getState();
+      const ready = !e.repeat && spaceHoldReady(e, { dialog: st.dialog, missionOpen: st.missionOpen, outputOpen: !!st.outputView, searchOpen: st.searchOpen, pending: !!(st.pendingInput && pendingFor(st.pendingInput.id)), selected: st.selected, rfSelected: !!document.querySelector('.mt-canvas .react-flow__node.selected') });
+      const was = hold.phase;
+      step({ type: 'down', ready, repeat: e.repeat, at: performance.now() });
+      if (hold.phase === 'armed' && was !== 'armed') timer = setTimeout(() => { timer = null; step({ type: 'tick', at: performance.now() }); }, SPACE_HOLD_MS + 5);
+    };
+    const onUp = (e) => { if (e.key === ' ') step({ type: 'up' }); };
+    const cancel = () => { if (hold.phase === 'armed') step({ type: 'cancel' }); };
+    window.addEventListener('keydown', onDown, true);
+    window.addEventListener('keyup', onUp, true);
+    window.addEventListener('pointerdown', cancel, true);
+    window.addEventListener('wheel', cancel, { capture: true, passive: true });
+    window.addEventListener('blur', cancel);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('keydown', onDown, true); window.removeEventListener('keyup', onUp, true);
+      window.removeEventListener('pointerdown', cancel, true); window.removeEventListener('wheel', cancel, { capture: true }); window.removeEventListener('blur', cancel);
+    };
   }, []);
 
   // P74: 웹 화면을 휴대폰 세로로 열면 캔버스 대신 휴대폰 화면(Phone.jsx). 가로·넓은 화면이나 "보드 화면"을 고르면 이 보드 화면

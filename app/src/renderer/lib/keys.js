@@ -75,3 +75,42 @@ export function stepWorkspace(keys, current, dir) {
   if (list.length === 1) return null;
   return list[(at + (dir < 0 ? -1 : 1) + list.length) % list.length];
 }
+
+// P109: 고른 노드가 없을 때 판에서 Space를 살짝 길게(SPACE_HOLD_MS) 누르면 전체 보기(Canvas fitAll)로 바꾼다. 떼어도 그 보기에 머문다.
+// 400ms: 빠른 누름(보통 100~200ms)과 넉넉히 떨어지고, Windows 키 되풀이 시작(기본 약 500ms)보다 먼저 와서 "살짝 꾹"으로 느껴진다.
+export const SPACE_HOLD_MS = 400;
+const NOT_PRESS = 'button, a[href], [role="button"], summary, label';
+
+// 이 Space keydown을 길게 누르기로 셀지. 판에 초점이 있다(boardArrowKey와 같은 뜻)에 더해 단추·링크·role=button이 아니고,
+// 고른 노드가 없고(판의 고름 selected, React Flow의 고름 rfSelected), 대화상자·미션 맵·출력 보기·검색이 닫혀 있고,
+// 노드에 들어가 터미널을 기다리는 중(pending)이 아닐 때만 → true | false(Space는 그 자리의 몫이다)
+export function spaceHoldReady(e, { dialog = null, missionOpen = false, outputOpen = false, searchOpen = false, pending = false, selected = [], rfSelected = false } = {}) {
+  if (!e || e.key !== ' ' || e.isComposing || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return false;
+  if (dialog || missionOpen || outputOpen || searchOpen || pending || rfSelected || (selected && selected.length)) return false;
+  const t = e.target;
+  const body = !t || t.tagName === 'BODY' || t.tagName === 'HTML' || t.nodeType === 9;
+  if (body) return true;
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable) return false;
+  if (!t.closest || t.closest('.xterm') || t.closest(NOT_BOARD) || t.closest(NOT_PRESS) || !t.closest('.mt-stage')) return false;
+  return true;
+}
+
+// 길게 누르기의 시간 판단. s: { phase: 'idle'|'armed'|'fired', at }. ev:
+//   { type: 'down', ready, repeat, at } Space keydown(ready = spaceHoldReady) · { type: 'tick', at } 타이머
+//   { type: 'up' } Space keyup · { type: 'cancel' } 기준 전 마우스 누름·휠·다른 키·창 초점 잃음
+// → { s, fire }. fire가 true인 때만 전체 보기를 한 번 한다. 되풀이 keydown은 처음 것 하나로 본다
+export function spaceHoldStep(s, ev, holdMs = SPACE_HOLD_MS) {
+  const cur = s || { phase: 'idle', at: 0 };
+  if (!ev) return { s: cur, fire: false };
+  if (ev.type === 'down') {
+    if (ev.repeat && cur.phase !== 'idle') return { s: cur, fire: false };
+    if (ev.repeat || !ev.ready) return { s: { phase: 'idle', at: 0 }, fire: false };
+    return { s: { phase: 'armed', at: ev.at }, fire: false };
+  }
+  if (ev.type === 'tick') {
+    if (cur.phase === 'armed' && ev.at - cur.at >= holdMs) return { s: { phase: 'fired', at: cur.at }, fire: true };
+    return { s: cur, fire: false };
+  }
+  if (ev.type === 'up' || ev.type === 'cancel') return { s: { phase: 'idle', at: 0 }, fire: false };
+  return { s: cur, fire: false };
+}
