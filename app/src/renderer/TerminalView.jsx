@@ -67,9 +67,8 @@ function fixMouseScale(term, sessionId) {
 
 // P11: 색은 tokens.css --term-…, 글꼴은 앱에 넣은 JetBrains Mono(한글 Nanum Gothic Coding). 글 크기와 줄 높이는 lib/tokens.js
 
-// reserve: P11 승인 줄이 붙으면 그 높이(월드 px)만큼 터미널 아래를 비운다. 패널 줄 수가 줄어 Claude Code 대화상자가 줄 위에 보인다
 // P74: fontScale을 주면 store의 터미널 글자 배율 대신 그 값(휴대폰 화면의 글자 크기). webgl = false면 DOM으로 그린다(휴대폰: 터미널 하나, 높은 DPR)
-export function TerminalView({ sessionId, width, height, reserve = 0, onActivate, onInput, focusTick, fontScale = null, webgl = true }) {
+export function TerminalView({ sessionId, width, height, onActivate, onInput, focusTick, fontScale = null, webgl = true }) {
   const t = useT();
   const flow = useStoreApi(); // P65: 판 배율·이동을 렌더 없이 구독한다
   const onInputRef = useRef(onInput);
@@ -484,13 +483,13 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
     };
     // P17: 덩어리 분할선·바깥 크기로 여러 노드 크기가 한꺼번에 바뀌면 120ms 때 아직 자리가 덜 잡혀 한 줄 모자라게 잴 때가 있다. 한 번 더 잰다
     const t = setTimeout(refit, 120), t2 = setTimeout(refit, 600);
-    // P47: 노드 크기 말고 터미널 칸의 크기가 바뀌어도(승인 줄, 웹 화면의 다른 배치) 다시 잰다. 같은 크기면 refit이 아무것도 하지 않는다
+    // P47: 노드 크기 말고 터미널 칸의 크기가 바뀌어도(휴대폰 키 패드, 웹 화면의 다른 배치) 다시 잰다. 같은 크기면 refit이 아무것도 하지 않는다
     let t3 = null;
     const host = hostRef.current;
     const ro = host && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { clearTimeout(t3); t3 = setTimeout(refit, 120); }) : null;
     if (ro) ro.observe(host);
     return () => { clearTimeout(t); clearTimeout(t2); clearTimeout(t3); if (ro) ro.disconnect(); };
-  }, [sessionId, width, height, reserve, termScale]);
+  }, [sessionId, width, height, termScale]);
 
   useEffect(() => {
     const st = ref.current;
@@ -516,7 +515,7 @@ export function TerminalView({ sessionId, width, height, reserve = 0, onActivate
 
   return (
     <div className="mt-term-wrap nodrag nowheel nopan" onMouseDown={() => onActivate && onActivate()}>
-      <div className="mt-term" ref={hostRef} data-session={sessionId} style={reserve ? { bottom: reserve } : undefined} />
+      <div className="mt-term" ref={hostRef} data-session={sessionId} />
       {status.kind === 'attaching' && <div className="mt-term-note">{t('terminal.attaching')}</div>}
       {(status.kind === 'detached' || status.kind === 'error') && (
         <div className="mt-term-cover">

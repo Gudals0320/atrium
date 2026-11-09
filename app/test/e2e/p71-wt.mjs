@@ -167,13 +167,11 @@ async function after() {
   step('후: w1 승인 줄이 워크트리 질문(커밋 수 읽음)', !!w1ok && w1.ask.commits === commitsOn('w1') && w1.ask.keep && w1.ask.remove, w1.ask);
   let el = await frame('w1'); await sleep(1200);
   await shot('p71-after-card', el);
-  const text = await el.locator('[data-role=approval]').innerText();
-  step('후: 카드 제목과 단추(남기기, 지우기)', /워크트리를 남길까요\?|Keep the worktree\?/.test(text) && (await el.locator('[data-choice=keep]').count()) === 1 && (await el.locator('[data-choice=remove]').count()) === 1, text.replace(/\s+/g, ' '));
-  await el.locator('[data-choice=remove]').click(); await sleep(500);
-  await shot('p71-after-card-remove-ask', el);
-  const warn = await el.locator('[data-role=wt-remove-warn]').innerText().catch(() => '');
-  step('후: 지우기는 커밋 수를 보이고 한 번 더 묻는다', new RegExp(`${commitsOn('w1')}`).test(warn) && fs.existsSync(wtDir('w1')), warn);
-  await el.locator('[data-action=wt-remove-confirm]').click();
+  // P104: 판의 승인 줄은 없다(사람은 터미널에서 고른다). 지우기는 CLI와 같은 session.answer(confirm: true)로 한다
+  step('P104: 노드에 승인 줄이 없다', (await el.locator('[data-role=approval]').count()) === 0);
+  const noConfirm = await call('session.answer', { session: w1.id, since: w1.ask.since, choice: 'remove' }).catch((e) => ({ error: e.message }));
+  step('후: 지우기는 한 번 더 확인해야 한다(confirm 없으면 거부)', !!noConfirm.error && fs.existsSync(wtDir('w1')), noConfirm);
+  await call('session.answer', { session: w1.id, since: w1.ask.since, choice: 'remove', confirm: true });
   const gone1 = await until(async () => !fs.existsSync(wtDir('w1')) && !branchExists('w1') && ['exited', undefined].includes((await sess('w1'))?.state), 60000, 1000);
   step('후: 승인 줄에서 지우기 → 워크트리와 브랜치가 지워지고 세션이 끝남', !!gone1, { dir: fs.existsSync(wtDir('w1')), branch: branchExists('w1'), state: (await sess('w1'))?.state });
 

@@ -122,12 +122,12 @@ try {
   ds = await waitState(page, ds.id, ['waiting'], 180000).catch(async () => byId(page, ds.id));
   step('DeepSeek 세션이 권한을 묻는다(hook의 PermissionRequest)', ds.state === 'waiting' && ds.ask && (ds.ask.kind === 'permission'), { state: ds.state, ask: ds.ask && { kind: ds.ask.kind, tool: ds.ask.tool, summary: ds.ask.summary } });
   await goNode(page, ds.id);
-  await page.waitForSelector(`.mt-node[data-session="${ds.id}"] [data-role="approval"] [data-choice="1"]`, { timeout: 15000 });
-  const bar = await page.$eval(`.mt-node[data-session="${ds.id}"] [data-role="approval"]`, (e) => e.innerText.replace(/\s+/g, ' '));
-  step('승인 줄이 보인다(허용, 거부, 터미널에서 답하기)', /허용/.test(bar) && /거부/.test(bar), { bar });
+  // P104: 판의 승인 줄은 없다(사람은 터미널에서 답한다). 시험은 CLI와 같은 session.answer로 답한다
+  const bars = await page.$$eval(`.mt-node[data-session="${ds.id}"] [data-role="approval"]`, (l) => l.length);
+  step('P104: 노드에 승인 줄이 없다', bars === 0, { bars });
   await sleep(800);
   await shot(page, 'p25-3-approval', await nodeBox(page, ds.id));
-  await page.click(`.mt-node[data-session="${ds.id}"] [data-role="approval"] [data-choice="1"]`);
+  await page.evaluate(([id, tu]) => window.__mt.api.call('session.answer', { session: id, toolUseId: tu, choice: 1 }), [ds.id, ds.ask && ds.ask.toolUseId]);
   ds = await waitState(page, ds.id, ['ready'], 180000).catch(async () => byId(page, ds.id));
   step('허용하면 턴을 마치고 DeepSeek의 답이 hook으로 온다', ds.state === 'ready' && /P25-DEEPSEEK/.test(ds.lastAnswer || ''), { state: ds.state, lastAnswer: (ds.lastAnswer || '').slice(0, 200) });
   step('hook 상태: hook이 왔고 토큰이 맞다', ds.hooks.count > hooks0 && ds.hooks.lastAuthOk === true, ds.hooks);

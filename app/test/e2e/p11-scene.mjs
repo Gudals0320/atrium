@@ -83,7 +83,6 @@ try {
         chips: box('[data-role="chips"]'), chip: box('.mt-qchip'), cmd: box('.mt-cmd'), mark: box('.mt-mark'), zoom: box('[data-role="zoom"]'),
         lead: box('.mt-node[data-name="lead"]'), leadHead: box('.mt-node[data-name="lead"] .mt-node-head'), leadName: box('.mt-node[data-name="lead"] .mt-node-name'), leadPill: box('.mt-node[data-name="lead"] .mt-node-head .mt-pill'),
         revPill: box('.mt-node[data-name="rev"] .mt-node-head .mt-pill'), rev: box('.mt-node[data-name="rev"]'), w1: box('.mt-node[data-name="w1"]'),
-        revBar: box('.mt-node[data-name="rev"] .mt-answer-bar'), revYes: box('.mt-node[data-name="rev"] .mt-a-yes'),
         regionBox: box('.mt-region-box'), regionHead: box('.mt-region-head'), regionName: box('.mt-region-name'),
         term: (() => { const t = document.querySelector('.mt-node[data-name="lead"] .xterm'); if (!t) return null; const cs = getComputedStyle(t.querySelector('.xterm-rows') || t); return { font: `${cs.fontSize} ${cs.fontFamily.split(',')[0]}`, lh: cs.lineHeight }; })(),
         fonts: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family).filter((v, i, a) => a.indexOf(v) === i),

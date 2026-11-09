@@ -1,4 +1,5 @@
-// 세션 노드(ARCH 7.1, 7.2): 머리줄(이름, 상태 필, 기다린 시간, 표시)과 본문(가까이·중간·멀리 세 얼굴), 승인 카드
+// 세션 노드(ARCH 7.1, 7.2): 머리줄(이름, 상태 필, 기다린 시간, 표시)과 본문(가까이·중간·멀리 세 얼굴)
+// P104: 노드 아래쪽 승인 줄과 그만큼 터미널을 줄이던 것을 뺐다. 응답이 필요하면 상태 색(노랑)·기다린 시간·먼 얼굴의 말풍선으로 알리고, 노드를 누르면 터미널로 가서 직접 답한다
 // P4: 잇기 손잡이(오른쪽에서 끌어 다른 노드 왼쪽에 놓는다), 에이전트 종류, 누가 띄웠는지, 워크트리와 브랜치
 // P5: 일반 셸(종류, 돌고 있는 명령), 다른 저장소에서 일하는 중 표시
 // P6a: 멀리 얼굴을 다시 그렸다(H3: 기다리는 질문을 가장 크게, 마지막 요청과 답 한 줄, 글자 크기는 화면 기준). 기다리는 노드는 줄여 보아도 테두리가 보이고,
@@ -10,7 +11,7 @@
 // P28: 닫기 확인에서 Delete를 한 번 더 누르면 삭제 단추에 초점과 표시가 가고 Enter로 확정한다. Esc는 취소. 멀리·아이콘 얼굴은 흐리게 하지 않는다(styles.css)
 import { memo, useEffect, useRef, useState } from 'react';
 import { NodeResizer, Handle, Position, useStore as useFlowStore } from '@xyflow/react';
-import { useStore, getState, saveNode, setNodeLocal, askKey, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk, setRenaming } from './store.js';
+import { useStore, getState, saveNode, setNodeLocal, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk, setRenaming } from './store.js';
 import { shellLine } from './Workspaces.jsx';
 import { api } from './api.js';
 import { faceFor } from './lib/faces.js';
@@ -19,7 +20,6 @@ import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { TerminalView } from './TerminalView.jsx';
 import { boardPlan } from './crash-watch.js'; // P86
-import { ApprovalCard } from './ApprovalCard.jsx';
 import { ChatView } from './ChatView.jsx';
 import { NodeBoundary } from './ErrorBoundary.jsx';
 import { InterruptedBanner } from './SessionExtras.jsx';
@@ -29,7 +29,6 @@ import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단�
 import { dockBranchOf } from './lib/dock-branch.js'; // P68: 워크트리끼리 붙인 덩어리의 칸마다 브랜치
 import { Icon } from './lib/icons.jsx';
 import { dotVar } from './lib/tokens.js';
-import { ANSWER_H } from './ApprovalCard.jsx';
 import { dt } from './lib/dock-text.js'; // P17
 import { wakeSession, fmtMB } from './sleep.js'; // P21(D4), P24: 잠재우기는 리포 단위(영역 이름표 메뉴)
 import { fmtTime } from './lib/i18n.js';
@@ -417,7 +416,6 @@ function SessionNodeInner({ id, selected }) {
   const t = useT();
   const s = useStore((st) => st.sessions.get(id));
   const attached = useStore((st) => st.attached && st.attached.includes(id));
-  const dismissed = useStore((st) => st.dismissedAsks);
   const focusTick = useStore((st) => (st.focusId === id ? st.focusTick : 0));
   const zoom = useFlowStore(zoomSel);
   const n = useStore((st) => st.nodes.get(id));
@@ -444,14 +442,12 @@ function SessionNodeInner({ id, selected }) {
   prevFace.current = face;
   const far = face === 'far' || face === 'icon';
   xVisible.current = face !== 'icon' && zoom >= SMALL_ZOOM; // 머리줄의 X가 보이는 조건(styles.css .z-small)
-  const showCard = (s.state === 'waiting' || s.state === 'trust_wait') && !(s.ask && dismissed.has(askKey(s.ask)));
-  const toTerminal = () => { const st = getState(); st.navigateTo && st.navigateTo(id, { focusTerminal: true }); };
   const idle = (s.state === 'ready' || s.state === 'shell_idle') && !s.unseen && s.lastActivityAt && Date.now() - s.lastActivityAt > IDLE_DIM_MS;
   const asleep = s.state === 'sleeping'; // P21: 터미널 대신 잠든 얼굴(아이콘 얼굴은 달 표시)
   const tier = tierOf(s); // P85
 
   return (
-    <div data-tier={tier} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${showCard && !far ? ' asking' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zoom < SMALL_ZOOM ? ' z-small' : ''}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-session={id} data-name={s.name} data-face={face} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
+    <div data-tier={tier} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zoom < SMALL_ZOOM ? ' z-small' : ''}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-session={id} data-name={s.name} data-face={face} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
       <NodeResizer isVisible={selected && face === 'close' && !docked} minWidth={420} minHeight={260} lineClassName="mt-resize-line" handleClassName="mt-resize-handle"
         onResize={(_e, p) => setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height })}
         onResizeEnd={(_e, p) => { setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height }); saveNode(id, 'resize'); }} />
@@ -467,11 +463,11 @@ function SessionNodeInner({ id, selected }) {
       {!far && <GitLine s={s} />}
       {far && (s.state === 'waiting' || s.state === 'trust_wait') && (face === 'icon' || n.h * zoom < 160) && <AskCallout s={s} />}
       {/* P31: 가까이(터미널)가 아닌 얼굴은 본문 어디를 끌어도 머리줄처럼 노드를 옮긴다(mt-drag, Canvas.jsx onNodeDragStart). 누르기만 하면 들어간다(H4).
-          단추·입력·답 카드·링크는 nodrag. 대화 보기의 스크롤 막대를 누른 것은 끌기로 넘기지 않는다 */}
+          단추·입력·링크는 nodrag. 대화 보기의 스크롤 막대를 누른 것은 끌기로 넘기지 않는다 */}
       <div className={`mt-node-body${face !== 'close' ? ' mt-drag' : ''}`} onMouseDownCapture={face === 'middle' ? onScrollbarDown : undefined}>
         <NodeBoundary id={id} label={face === 'close' ? 'terminal' : face} compact>
           {asleep && face !== 'icon' && <SleepFace s={s} zoom={zoom} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} />}
-          {!asleep && face === 'close' && (attached ? <TerminalView sessionId={id} width={n.w} height={n.h} reserve={showCard ? ANSWER_H : 0} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /> : NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />)}
+          {!asleep && face === 'close' && (attached ? <TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /> : NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />)}
           {!asleep && face === 'middle' && <ChatView s={s} />}
           {!asleep && face === 'far' && <FarFace s={s} zoom={zoom} w={n.w} h={n.h} />}
           {face === 'icon' && <IconFace s={s} />}
@@ -479,7 +475,6 @@ function SessionNodeInner({ id, selected }) {
         {!far && <div className="mt-node-overlays">
           {s.interruptedTurn && <InterruptedBanner s={s} />}
         </div>}
-        {showCard && !far && <ApprovalCard s={s} onTerminal={toTerminal} onAnswered={() => markInteracted(id)} />}
         {killing && <KillConfirm s={s} onClose={() => setKilling(false)} />}
         {menu && <NodeMenu s={s} docked={!!docked} onClose={() => setMenu(false)} />}
         {loopsOpen && <SessionLoopList s={s} onClose={() => setLoopsOpen(false)} />}

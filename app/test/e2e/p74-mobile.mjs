@@ -190,16 +190,17 @@ try {
   const wheels = await pA.evaluate(() => window.__p74in.filter((d) => /\x1b\[<64;/.test(d)).length);
   check('터미널을 손가락으로 아래로 끌면 위로 스크롤(SGR 휠 위)을 보낸다', wheels > 0, { wheels });
 
-  // ---- 5. 승인 카드에 답하기 ----
+  // ---- 5. 응답 필요에 답하기. P104: 카드 대신 키 패드(Enter = 1. Yes, 터미널을 보고 고른다) ----
   await pA.tap('[data-action=phone-next-need]');
-  await pA.waitForSelector(`[data-role=phone-session][data-session="${askR.sessionId}"] [data-role=phone-answer] [data-role=approval]`, { timeout: 15000 });
-  const card = await pA.evaluate(() => { const y = document.querySelector('[data-role=phone-answer] .mt-a-yes').getBoundingClientRect(); const n = document.querySelector('[data-role=phone-answer] .mt-a-no').getBoundingClientRect(); return { yesH: y.height, yesW: y.width, noH: n.height, what: document.querySelector('[data-role=phone-answer] .mt-answer-what').textContent }; });
-  check('"다음" 단추로 응답 필요 세션에 가고, 승인 카드의 허용·거부가 크다(48px, 화면 절반쯤)', card.yesH >= 44 && card.noH >= 44 && card.yesW >= 120 && /Bash/.test(card.what), card);
+  await pA.waitForSelector(`[data-role=phone-session][data-session="${askR.sessionId}"] [data-role=phone-pad]`, { timeout: 15000 });
+  await sleep(1200);
+  const card = await pA.evaluate(() => { const y = document.querySelector('[data-role=phone-pad] [data-pad-key=enter]').getBoundingClientRect(); const n = document.querySelector('[data-role=phone-pad] [data-pad-key=esc]').getBoundingClientRect(); return { enterH: y.height, enterW: y.width, escH: n.height, card: !!document.querySelector('[data-role=phone-answer]') }; });
+  check('"다음" 단추로 응답 필요 세션에 가고, 카드 없이 키 패드가 펼쳐진다(Enter·Esc 44px 이상)', card.enterH >= 44 && card.escH >= 44 && !card.card, card);
   await wshot(pA, '05-approval');
-  await pA.tap('[data-role=phone-answer] .mt-a-yes');
+  await pA.tap('[data-role=phone-pad] [data-pad-key=enter]');
   await until(() => fs.existsSync(path.join(PROJ, 'p74-approved.txt')), 60000, 500).catch(() => null);
-  check('허용을 누르면 에이전트가 이어서 명령을 실행한다(파일이 생김)', fs.existsSync(path.join(PROJ, 'p74-approved.txt')));
-  await pA.waitForFunction(() => !document.querySelector('[data-role=phone-answer]'), null, { timeout: 30000 }).catch(() => {});
+  check('Enter를 누르면 에이전트가 이어서 명령을 실행한다(파일이 생김)', fs.existsSync(path.join(PROJ, 'p74-approved.txt')));
+  await pA.waitForFunction(() => !document.querySelector('[data-role=phone-pad]'), null, { timeout: 30000 }).catch(() => {});
   await sleep(1000);
   await wshot(pA, '06-after-approve');
 

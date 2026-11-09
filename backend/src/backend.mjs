@@ -20,6 +20,7 @@ import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
 import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen } from './screen.mjs';
 import { parseTargets, toLF, clip } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
+import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
 import { newRuntime, applyHook, applyHerdrStatus, applyAgentDetected, applyAgentReleased, applyHerdrDisconnected, deriveState, flags, worktreeExitAsk } from './state.mjs';
 import { worktreeOf, waitClaudeExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
@@ -171,6 +172,7 @@ export class Backend {
     await this.resolveHerdr('start');
     // P21: 판 터미널에서 친 글로 보내지 않은 초안이 있는지 기억한다(초안이 있으면 잠재우지 않는다)
     this.relay = new TerminalRelay({ adapter: this.adapter, remoteBatchMs: envVar('REMOTE_BATCH_MS') != null ? Number(envVar('REMOTE_BATCH_MS')) : undefined, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
+    this.keyChain = keyChain(); // P104: session.keys를 세션마다 차례로
 
     for (const row of this.store.openSessions()) {
       const rt = row.runtime || newRuntime({ kind: row.kind, hooked: row.origin === 'board' && row.kind === 'claude' });
@@ -1491,6 +1493,21 @@ export class Backend {
     } finally { s.answering = false; }
   }
 
+  // P104: 휴대폰 키 줄의 키를 그 세션 패널에 그대로 보낸다(pane.send_keys). 허용 목록의 키만, 세션마다 차례로 보내고 이벤트 'keys'로 남긴다.
+  // 판이 답을 고르지 않으므로 상태(waiting 등)를 보지 않는다. 셸의 방향키처럼 언제나 보낸다
+  async sendKeysTo(p, c) {
+    const s = this.resolve(p.session ?? p.target);
+    const keys = checkKeys(p.keys);
+    this.requireHerdr();
+    if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name} 세션은 절전 중이라 터미널이 닫혀 있습니다. 먼저 작업을 재개하세요.`), 'sleepingNoPane', { name: s.name });
+    await this.keyChain(s.sessionId, () => this.adapter.paneKeys(s.paneId, keys));
+    s.lastUserInputAt = Date.now();
+    this.touch(s);
+    if (c) this.peers.touch(c);
+    this.store.addEvent(s.sessionId, 'keys', { keys, ...keysBy(c) });
+    return { sent: true, keys };
+  }
+
   // P71: 승인 줄의 워크트리 나가기 답. 보내기 직전에 화면을 다시 읽어 질문이 아직 있는지 보고 그 번호를 보낸다
   async answerWorktreeExit(s, p) {
     const cur = s.rt.worktreeExit;
@@ -1934,6 +1951,7 @@ export class Backend {
       'delivery.list': (p) => this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
       'session.kill': (p) => this.kill(p),
       'session.answer': (p) => this.answer(p),
+      'session.keys': (p, c) => this.sendKeysTo(p, c), // P104: 휴대폰 키 줄(원격 기기도 부른다)
       'session.markSeen': (p) => { const s = this.resolve(p.session); s.seenAt = Date.now(); this.store.updateSession(s.sessionId, { seenAt: s.seenAt }); this.touch(s); this.broadcastSession(s); return { seenAt: s.seenAt }; },
       'inbox.list': () => this.inbox(),
       'session.messages': (p) => { const s = this.resolve(p.session); return readMessages(s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId), { afterSeq: p.afterSeq ?? -1, limit: p.limit || 200 }); },

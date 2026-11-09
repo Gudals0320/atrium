@@ -58,12 +58,11 @@ try {
   s = await state(page);
   step('N을 누르면 rev로 간다', s.focus === 'rev', { focus: s.focus });
 
-  // 4. 승인 줄의 "허용"
-  await page.waitForSelector('.mt-node[data-name="rev"] [data-role="approval"] [data-choice="1"]', { timeout: 10000 });
-  const bar = await page.$eval('.mt-node[data-name="rev"] [data-role="approval"]', (e) => ({ text: e.innerText.replace(/\s+/g, ' '), h: Math.round(e.getBoundingClientRect().height) }));
-  step('승인 줄: 허용, 거부, 터미널에서 답하기, 기다린 시간', /허용/.test(bar.text) && /거부/.test(bar.text) && /터미널에서 답하기/.test(bar.text) && /째/.test(bar.text), bar);
+  // 4. 허용. P104: 판의 승인 줄은 없다(사람은 터미널에서 답한다). 시험은 CLI와 같은 session.answer로 답한다
+  const bars = await page.$$eval('.mt-node[data-name="rev"] [data-role="approval"], .mt-node[data-name="rev"] .mt-answer', (l) => l.length);
+  step('P104: rev 노드에 승인 줄이 없다', bars === 0, { bars });
   await shot(page, 'p11-turn-4-bar');
-  await page.click('.mt-node[data-name="rev"] [data-role="approval"] [data-choice="1"]');
+  await page.evaluate(() => { const s = [...window.__mt.getState().sessions.values()].find((x) => x.name === 'rev'); return window.__mt.api.call('session.answer', { session: s.sessionId, toolUseId: s.ask && s.ask.toolUseId, choice: 1 }); });
   await until(async () => { const x = await rev(page); return x && x.state !== 'waiting'; }, 30000, 500);
   r = await rev(page);
   step('허용을 누르면 rev가 기다림을 벗어난다', r.state !== 'waiting', { state: r.state });
@@ -78,9 +77,8 @@ try {
   if (r.state !== 'waiting') atrium('send', '@rev', 'Use the Bash tool to run exactly this command and nothing else: npm test -- pay --again');
   await until(async () => { const x = await rev(page); return x && x.state === 'waiting'; }, 120000, 1000);
   await sleep(1500);
-  await page.waitForSelector('.mt-node[data-name="rev"] [data-role="approval"] [data-choice="reject"]', { timeout: 10000 });
   await shot(page, 'p11-turn-6-asked-again');
-  await page.click('.mt-node[data-name="rev"] [data-role="approval"] .mt-a-no');
+  await page.evaluate(() => { const s = [...window.__mt.getState().sessions.values()].find((x) => x.name === 'rev'); return window.__mt.api.call('session.answer', { session: s.sessionId, toolUseId: s.ask && s.ask.toolUseId, choice: 'reject' }); });
   await until(async () => { const x = await rev(page); return x && x.state !== 'waiting'; }, 30000, 500);
   r = await rev(page);
   step('거부를 누르면 rev가 기다림을 벗어난다', r.state !== 'waiting', { state: r.state });

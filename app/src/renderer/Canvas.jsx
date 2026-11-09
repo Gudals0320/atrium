@@ -874,7 +874,7 @@ export function Canvas() {
   // H4: 노드 본문을 누르면(어느 얼굴이든) 들어간다. 단추, 입력칸, 카드를 누른 것과 여러 개 고르기(Ctrl, Shift)는 빼고.
   // P26: 머리줄, 본문, 터미널 안, 멀리·아이콘 얼굴 어디를 누르든 화면을 그 노드(덩어리 안이면 덩어리 전체)로 옮긴다(이미 보고 있으면 그대로).
   const onNodeClick = useCallback((e, node) => {
-    if (e.target.closest && e.target.closest('button, input, textarea, select, a, .mt-card, .mt-answer, .mt-kill, .mt-interrupted, .mt-menu')) return;
+    if (e.target.closest && e.target.closest('button, input, textarea, select, a, .mt-card, .mt-kill, .mt-interrupted, .mt-menu')) return;
     if (node.type === 'region' || node.type === 'wtarea') { selectWorkspace(node.data.wsKey); return; } // P27
     if (node.type !== 'session' || e.ctrlKey || e.shiftKey || e.metaKey) return;
     // 터미널 안을 누르면 화면만 옮긴다(초점은 터미널이 스스로 잡는다)
