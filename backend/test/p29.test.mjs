@@ -48,7 +48,7 @@ test('3 첫 시도의 working 신호를 다음 시도의 확인으로 쓰지 않
   const q = new DeliveryQueue({ store: fakeStore(), cfg, view: ready, send: async () => { if (++n === 1) { q.onAgentWorking('s'); throw Object.assign(new Error('blocked'), { code: 'agent_blocked' }); } } });
   const d = q.enqueue('s', 'hello');
   await tick(); await tick(); // 첫 시도 실패 → queued
-  q.pump(); await tick(); await tick(); // 두 번째 시도 성공, 새 working 없음
+  q.poke('s'); q.pump(); await tick(); await tick(); // 두 번째 시도 성공, 새 working 없음(P106: 거부 뒤에는 물러나므로 herdr 이벤트처럼 poke로 바로 다시 본다)
   assert.equal(d.status, 'sent');
 });
 

@@ -2261,4 +2261,9 @@ export default {
     digit: 'Number {n}',
     failed: 'Keys not sent: {error}',
   },
+  // P106: a delivery herdr keeps refusing (session node)
+  deliveryStuck: {
+    badge: 'Delivery stuck',
+    title: 'The message is not getting in (herdr: {code}, {n} tries). The board retries with growing gaps. Cancel it from the delivery line above the command bar.',
+  },
 };

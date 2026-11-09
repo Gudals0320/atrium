@@ -2261,4 +2261,9 @@ export default {
     digit: '숫자 {n}',
     failed: '키를 보내지 못했습니다: {error}',
   },
+  // P106: herdr가 오래 받지 않는 전달(세션 노드)
+  deliveryStuck: {
+    badge: '전달 막힘',
+    title: '보낸 글이 들어가지 않습니다(herdr: {code}, {n}번 시도). 보드가 간격을 늘려 다시 보냅니다. 명령 입력줄 위의 전달 줄에서 취소할 수 있습니다.',
+  },
 };

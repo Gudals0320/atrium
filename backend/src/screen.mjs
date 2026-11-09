@@ -76,7 +76,8 @@ export function shellPromptState(text) {
 // → { found, text(입력 칸 글, 앞 기호를 뗀 것), above(입력 칸 위의 줄들) }. 그런 가로줄 쌍이 없으면 found: false
 const RULE = /^\s*[─━]{12,}\s*$/;
 // P90: 대기 메시지가 있을 때 빈 입력 칸의 안내 글(흐린 글이라 글자로는 구별되지 않는다). 빈 칸으로 본다
-const BOX_HINTS = [/^Press up to edit queued messages$/i];
+// P106: 빈 입력 칸의 흐린 추천 글(예: Try "fix lint errors")도 빈 칸으로 본다
+const BOX_HINTS = [/^Press up to edit queued messages$/i, /^Try "[^"]*"$/];
 export function claudeInputBox(text) {
   const lines = String(text || '').split('\n').map((l) => l.replace(/\s+$/, ''));
   const rules = [];
@@ -90,17 +91,30 @@ export function claudeInputBox(text) {
   }
   return { found: false, text: '', above: lines };
 }
+// P106: Codex 입력 칸 읽기. 화면 아래쪽의 마지막 "› " 줄이 입력 칸이고, 꺾인 글은 그 아래 들여 쓴 줄로 이어지며 빈 줄에서 끝난다(그 아래는 모델·폴더 줄).
+// 빈 입력 칸은 흐린 안내 글(예: "Ask Codex to do anything")을 보인다. 글자로는 구별되지 않아 알려진 안내 글은 빈 칸으로 본다(Codex에는 다시 보내지 않으므로 틀려도 손대지 않을 뿐이다)
+const CODEX_HINTS = [/^Ask Codex to do anything$/i, /^Find and fix a bug in @filename$/i, /^Explain this codebase$/i, /^Summarize recent commits$/i, /^Implement \{feature\}$/i, /^Write tests for @filename$/i, /^Improve documentation in @filename$/i, /^Run \/review on my current changes$/i, /^Use \/skills to list available skills$/i];
+export function codexInputBox(text) {
+  const lines = String(text || '').split('\n').map((l) => l.replace(/\s+$/, ''));
+  let at = -1;
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 30); i--) if (/^\s*›(\s|$)/.test(lines[i])) { at = i; break; }
+  if (at < 0) return { found: false, text: '', above: lines };
+  const body = [lines[at].replace(/^\s*›\s?/, '')];
+  for (let i = at + 1; i < lines.length && lines[i].trim() && /^\s{2}/.test(lines[i]); i++) body.push(lines[i].trim());
+  const t = body.join(' ').replace(/\s+/g, ' ').trim();
+  return { found: true, text: CODEX_HINTS.some((re) => re.test(t)) ? '' : t, above: lines.slice(0, at) };
+}
 // 보낸 글(prompt)과 화면을 견준다 → { box: 'ours' | 'empty' | 'other' | 'unknown', seen(입력 칸 위에 보낸 글 첫머리가 보인다 = 이미 들어갔을 수 있다) }
-// 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines]) 잘릴 수 있어 첫머리(40자)로 본다
+// 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines], Codex는 [Pasted Content N chars]) 잘릴 수 있어 첫머리(40자)로 본다. kind: 'claude' | 'codex'
 const flatText = (s) => String(s || '').replace(/\s+/g, ' ').trim();
-export function promptOnScreen(screenText, prompt) {
-  const box = claudeInputBox(screenText);
+export function promptOnScreen(screenText, prompt, kind = 'claude') {
+  const box = kind === 'codex' ? codexInputBox(screenText) : claudeInputBox(screenText);
   const want = flatText(prompt);
   const head = want.slice(0, 40);
   const seen = !!head && box.above.some((l) => flatText(l).includes(head.slice(0, 30)));
   if (!box.found) return { box: 'unknown', seen };
   if (!box.text) return { box: 'empty', seen };
-  const pasted = /^\[Pasted text #\d+/.test(box.text) && (/\n/.test(String(prompt)) || want.length > 200);
+  const pasted = /^\[Past(ed text #\d+|ed Content)/.test(box.text) && (/\n/.test(String(prompt)) || want.length > 200);
   const bare = (s) => s.replace(/\s+/g, ''); // 화면 폭에서 꺾인 줄을 이을 때 낱말 가운데 빈칸이 생긴다
   const bx = bare(box.text), wn = bare(want);
   if (bx.startsWith(bare(head)) || (bx.length >= 12 && wn.startsWith(bx)) || pasted) return { box: 'ours', seen };

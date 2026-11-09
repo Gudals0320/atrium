@@ -61,7 +61,8 @@ function Badges({ s }) {
   const t = useT();
   return <>
     {s.unseen && !(s.state === 'ready' || s.state === 'shell_idle') && <span className="mt-badge review" data-flag="unseen">{t('node.review')}</span>}
-    {s.delivering > 0 && <span className="mt-badge deliver" title={t('node.deliverTitle')}>{t('node.deliver', { n: s.delivering })}</span>}
+    {s.delivering > 0 && !s.deliveryStuck && <span className="mt-badge deliver" title={t('node.deliverTitle')}>{t('node.deliver', { n: s.delivering })}</span>}
+    {s.deliveryStuck && <span className="mt-badge warn" data-role="delivery-stuck" title={t('deliveryStuck.title', { code: s.deliveryStuck.code || s.deliveryStuck.reason, n: s.deliveryStuck.attempts })}>{t('deliveryStuck.badge')}</span>}
     {s.quiet && <span className="mt-badge quiet">{t('node.quiet')}</span>}
     {s.interruptedTurn && (s.kind === 'shell' ? <span className="mt-badge warn" data-role="interrupted-badge" title={t('node.interruptedCmdTitle')}>{t('node.interruptedCmd')}</span> : <span className="mt-badge warn" data-role="interrupted-badge" title={t('node.interruptedTurnTitle')}>{t('node.interruptedTurn')}</span>)}
     {s.permissionMode && s.permissionMode !== 'default' && s.permissionMode !== 'manual' && s.hooked && <span className="mt-badge mode">{s.permissionMode}</span>}

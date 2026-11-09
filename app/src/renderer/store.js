@@ -270,7 +270,8 @@ api.on('$open', async (r) => {
   try {
     await loadBoard();
     const ds = await api.call('delivery.list', { limit: 10 });
-    state.deliveries = new Map(ds.reverse().filter((d) => state.sessions.has(d.sessionId)).map((d) => [d.deliveryId, d])); // 판에 있는 세션 것만
+    const live = await api.call('delivery.list', { active: true }).catch(() => []); // P106: 오래 막힌 전달도(최근 10개 밖) 보이고 취소할 수 있게
+    state.deliveries = new Map([...ds.reverse(), ...live].filter((d) => state.sessions.has(d.sessionId)).map((d) => [d.deliveryId, d])); // 판에 있는 세션 것만
     const st = await api.call('herdr.status');
     state.herdr = herdrStateOf(st);
     changed();
