@@ -2284,4 +2284,21 @@ export default {
     hintPhone: 'Leave empty to let the board name it.',
     addLauncher: 'New launcher: paste a command line and pin it here',
   },
+  // P103: tree sidebar (count beside the name, status counts on the right, tooltips)
+  sb3: {
+    closedN: { one: '{n} closed session', other: '{n} closed sessions' },
+    convosN: { one: '{n} outside chat', other: '{n} outside chats' },
+    extraTip: 'Closed sessions and chats outside the board for this workspace. Click to unfold or fold',
+    wsN: { one: '{n} workspace', other: '{n} workspaces' },
+    sessionsIn: { one: '{n} session', other: '{n} sessions' },
+    matchedIn: { one: '{n} session matches', other: '{n} sessions match' },
+    needN: { one: '{n} session needs you', other: '{n} sessions need you' },
+    errorN: { one: '{n} session has an error', other: '{n} sessions have errors' },
+    workingN: { one: '{n} session is working', other: '{n} sessions are working' },
+    repo: 'Git repository',
+    folder: 'Folder (not a Git repository)',
+    unseen: 'Has a result you have not looked at',
+    here: 'The session you have open',
+    pinned: 'Needs a look inside a folded workspace',
+  },
 };
