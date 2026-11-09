@@ -70,10 +70,10 @@ async function screens(app, page, l) {
   await shot(page, `p16-${l}-2-bottom`, { clip: { x: 0, y: H - 150, width: W, height: 150 } });
   // 위 알약의 펼침 목록
   await page.click('[data-role="inbox"]'); await sleep(300); await check('inbox-list'); await shot(page, `p16-${l}-3-inbox`, { clip: { x: W - 760, y: 0, width: 760, height: 260 } }); await page.click('[data-role="inbox"]');
-  // 승인 줄
+  // 응답이 필요한 노드. P104: 승인 줄은 없다(사람은 터미널에서 답한다)
   await goRev(page);
   const ap = await page.$('.mt-node[data-name="rev"] [data-role="approval"]');
-  step(`${l}: rev의 승인 줄이 보인다`, !!ap);
+  step(`${l}: rev에 승인 줄이 없다(P104)`, !ap);
   const node = await page.$('.mt-node[data-name="rev"]');
   if (node) await node.screenshot({ path: path.join(OUT, `p16-${l}-4-approval.png`) });
   await check('approval-console');

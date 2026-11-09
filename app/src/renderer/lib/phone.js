@@ -2,6 +2,7 @@
 // - 좁은 세로 화면인지(폭 430px 이하, 세로, 터치). 가로로 돌리거나 태블릿·노트북 폭이면 보드 화면을 그대로 쓴다
 // - 세션 목록: 응답 필요(오래 기다린 순) → 작업 중 → 나머지(프로젝트별). P90: 작업 중과 프로젝트별은 시작한 순(createdAt)이라 활동이 생겨도 자리가 그대로
 // - 줄마다 마지막 한 줄, 자주 쓰는 키의 바이트, 손가락 끌기 → 휠, 가상 키보드를 뺀 화면 높이
+// - P104: 키 패드의 키와 보내는 줄(keyQueue), 펼칠지(padOpen)
 
 export const PHONE_MAX_WIDTH = 430;
 export const LAYOUT_KEY = 'mt.phoneLayout'; // 'board'면 휴대폰에서도 보드 화면(사용자가 고름). 없으면 저절로
@@ -102,6 +103,31 @@ export function keyBytes(key, { appCursor = false } = {}) {
     default: return '';
   }
 }
+
+// P104: 키 패드(응답 키). 판은 답을 고르지 않고 누른 키를 그 세션 패널에 그대로 보낸다(백엔드 session.keys, 받는 키는 keys.mjs KEY_NAMES).
+// 그래서 Claude Code, Codex, 셸 어디서나 같다. 두 줄 일곱 칸: 위 [Esc 1 2 3 4 ↑ Tab], 아래 [닫기 Space Enter(두 칸) ← ↓ →]
+// 숫자는 1~4: Claude Code의 권한 질문(3개까지)·계획 승인(4개까지)·AskUserQuestion(선택지 2~4개)의 번호. 그 밖의 줄과 다른 하네스는 화살표와 Enter로 고른다
+export const PAD_KEYS = ['esc', '1', '2', '3', '4', 'up', 'tab', 'space', 'enter', 'left', 'down', 'right'];
+export const PAD_MAX = 32; // 요청 하나에 담는 키(keys.mjs KEYS_MAX)
+
+// 누른 키를 차례로 보낸다. 앞 요청이 돌아오기 전에 누른 키는 모아 다음 요청 하나로 보낸다(빠지지 않고 차례가 섞이지 않는다).
+// 실패하면 모아 둔 키를 버린다(끊긴 뒤 늦게 닿아 다음 질문에 답하지 않게). send(keys) → Promise. onError(e, 버린 키 수)
+export function keyQueue(send, onError = () => {}) {
+  let pending = [];
+  let busy = false;
+  const pump = async () => {
+    if (busy || !pending.length) return;
+    busy = true;
+    const batch = pending.splice(0, PAD_MAX);
+    try { await send(batch); } catch (e) { const n = batch.length + pending.length; pending = []; onError(e, n); } finally { busy = false; }
+    pump();
+  };
+  return { push(k) { pending.push(k); pump(); }, pending: () => pending.length, busy: () => busy };
+}
+
+// 키 패드를 펼칠까. 응답이 필요하면 펼친다. 사람이 열거나 닫았으면(pref) 그 뜻을 따르되, 기다리는 요청이 바뀌면(padKeyOf) 창이 pref를 비운다
+export const padKeyOf = (s, askKeyOf) => (needsYou(s) ? `need|${s.state}|${askKeyOf(s.ask)}` : 'calm');
+export const padOpen = (s, pref) => (pref != null ? !!pref : needsYou(s));
 
 // 손가락으로 끈 거리(px, 아래로 +) → 휠 deltaY(px). 손가락을 올리면 글이 올라가며 아래(뒤)를 본다.
 // 휠은 100px을 한 번으로 친다(lib/term-input.js). 손가락 33px쯤에 한 번

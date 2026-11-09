@@ -1,11 +1,11 @@
-// P71 단위 시험(창): 버전이 든 창 제목, 워크트리 나가기 질문의 글, 닫기에서 고른 답, 사이드바 메뉴 아이콘, 되돌리기가 없어진 것
+// P71 단위 시험(창): 버전이 든 창 제목, 워크트리 나가기 질문의 이름, 닫기에서 고른 답, 사이드바 메뉴 아이콘, 되돌리기가 없어진 것
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { windowTitle } from '../src/renderer/lib/update-notice.js';
-import { worktreeExitLine, removeWarning, killWorktreeParam } from '../src/renderer/lib/worktree-exit.js';
+import { killWorktreeParam } from '../src/renderer/lib/worktree-exit.js';
 import { translate } from '../src/renderer/lib/i18n.js';
 const ICONS = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer', 'lib', 'icons.jsx'), 'utf8'); // .jsx는 node로 불러오지 못한다
 import en from '../src/renderer/locales/en.js';
@@ -29,18 +29,10 @@ test('창 제목: 이름 뒤에 지금 창의 버전, 개발용 판은 (dev)', (
   assert.match(tray, /st\.tooltip = `\$\{windowTitle\(tr\('app\.name'\), appVersion, cfg\.profile\)\}/);
 });
 
-test('워크트리 나가기 질문: 한 줄과 지우기 경고(커밋 수)', () => {
-  const ask = { kind: 'worktree_exit', commits: 13, files: 0, branch: 'worktree-p9', keep: { n: 1, label: 'Keep worktree' }, remove: { n: 2, label: 'Remove worktree' }, since: 1 };
+test('워크트리 나가기 질문: 판은 이름만 보인다(응답 필요 목록·먼 얼굴). P104부터 답하는 줄은 없고 터미널에서 고른다', () => {
   assert.equal(tKo('wtExit.title'), '워크트리를 남길까요?');
-  assert.equal(worktreeExitLine(ask, tKo), 'worktree-p9 · 커밋 13개');
-  assert.equal(worktreeExitLine(ask, tEn), 'worktree-p9 · 13 commits');
-  assert.equal(removeWarning(ask, tKo), '브랜치와 커밋 13개도 지워집니다.');
-  assert.equal(removeWarning({ ...ask, commits: 1 }, tEn), 'The branch and its 1 commit will also be removed.');
-  assert.equal(removeWarning({ ...ask, commits: 2, files: 3 }, tKo), '브랜치와 커밋 2개도 지워집니다. 커밋하지 않은 파일 3개도 사라집니다.');
-  assert.equal(removeWarning({ ...ask, commits: null }, tKo), '브랜치와 그 브랜치의 커밋도 지워질 수 있습니다.');
-  assert.equal(removeWarning({ ...ask, commits: 0, files: 2 }, tKo), '커밋하지 않은 파일 2개도 사라집니다.');
-  assert.equal(removeWarning({ ...ask, commits: 0 }, tKo), '워크트리 폴더를 지웁니다.');
-  assert.equal(worktreeExitLine({ ...ask, branch: null, commits: null, files: 1 }, tEn), '1 uncommitted file');
+  assert.equal(tEn('wtExit.title'), 'Keep the worktree?');
+  for (const d of [en, ko]) for (const k of ['keep', 'remove', 'removeConfirm', 'removeWarn', 'commits', 'files']) assert.equal(d.wtExit[k], undefined, k);
 });
 
 test('닫기에서 고른 답: 워크트리 세션이면 고른 값, 고르지 않았으면 남기기, 아니면 넘기지 않는다', () => {
@@ -51,10 +43,8 @@ test('닫기에서 고른 답: 워크트리 세션이면 고른 값, 고르지 �
   assert.deepEqual(killWorktreeParam(undefined, 'keep'), {});
   assert.equal(tKo('wtExit.closeKeep', { name: 'p9' }), '워크트리 남기기(p9, 기본)');
   assert.equal(tKo('wtExit.closeRemove'), '워크트리와 브랜치 지우기');
-  // 승인 줄과 닫기 확인이 이 글과 값을 쓴다
-  const card = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'ApprovalCard.jsx'), 'utf8');
-  assert.match(card, /kind === 'worktree_exit'/);
-  assert.match(card, /answer\(\{ choice: 'remove', confirm: true \}\)/); // 지우기는 한 번 더 물은 뒤에만
+  // 닫기 확인이 이 글과 값을 쓴다(P104: 승인 줄은 없다)
+  assert.equal(fs.existsSync(path.join(ROOT, 'src', 'renderer', 'ApprovalCard.jsx')), false);
   const node = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'SessionNode.jsx'), 'utf8');
   assert.equal((node.match(/killWorktreeParam\(msg && msg\.worktree, wtChoice\)/g) || []).length, 2); // X의 확인과 Delete의 대화상자
   assert.equal(tKo('backend.chgWorktreeExit'), '워크트리를 남길지 확인 필요');

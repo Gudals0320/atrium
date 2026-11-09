@@ -1,7 +1,9 @@
 // P74: 휴대폰 세로 화면(폭 430px 이하, 세로, 터치)의 원격 웹 화면. 무한 캔버스 대신 한 손으로 쓰는 세 화면을 보인다.
 // - 목록: 응답 필요(오래 기다린 순) → 작업 중 → 나머지(프로젝트별로 접기). 줄마다 상태 점과 마지막 한 줄. 아래쪽에 "다음 응답 필요"와 "새 세션"
-// - 세션: 화면 전체 터미널(손가락으로 끌어 스크롤, 누르면 키보드가 뜨지 않는다), 승인·질문 카드(큰 단추),
+// - 세션: 화면 전체 터미널(손가락으로 끌어 스크롤, 누르면 키보드가 뜨지 않는다),
 //   자주 쓰는 키 줄(Enter, Esc, Ctrl+C, ↑↓, Tab, ⇧Tab, /, 글자 크기), 아래쪽 입력 줄(여러 줄, 에이전트는 전달 대기열, 셸은 터미널 입력)
+//   P104: 승인·질문 카드와 "카드 보기"를 뺐다. 응답이 필요하면 키 줄 자리에 키 패드(Esc 1~4 ↑ Tab / 닫기 Space Enter ← ↓ →)를 펼치고,
+//   누른 키를 session.keys로 그 패널에 그대로 보낸다(어느 하네스에서나 같다). 답은 터미널을 보며 사람이 고른다
 // - 새 세션: 왼쪽 레일의 런처(즐겨찾기, 없으면 모두)와 프로젝트를 골라 띄운다
 // - 위쪽에 연결 상태(연결됨·왕복 지연, 다시 연결 중 → 누르면 지금 다시). 원격 막음 화면과 업데이트 띠는 RemoteBar가 그대로 보인다
 // - 가상 키보드가 올라오면 보이는 높이(visualViewport)에 화면을 맞춰 입력 줄이 가려지지 않게 한다. 노치는 env(safe-area-inset-*)
@@ -13,7 +15,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, toast, markSeen, setFocus, setCloseIds, askKey } from './store.js';
 import { TerminalView, terms } from './TerminalView.jsx';
-import { ApprovalCard } from './ApprovalCard.jsx';
 import { LauncherIcon } from './Launchers.jsx';
 import { startedText, devModel } from './SpawnDialog.jsx';
 import { enterSession, markInteracted } from './touch.js';
@@ -23,7 +24,7 @@ import { ago, STATE_LABEL, deliveryText } from './lib/labels.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
 import { checkLabel } from './lib/session-name.js'; // P97: 새 세션 이름 칸
 import { BRAND_WORDMARK } from './lib/icons.jsx';
-import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou } from './lib/phone.js';
+import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou, PAD_KEYS, keyQueue, padKeyOf, padOpen } from './lib/phone.js';
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
 import { LIST_PREF } from './lib/touch-board.js'; // P76: 목록 단추(태블릿 보드에는 보이지 않는다)
@@ -335,6 +336,24 @@ function PhoneList({ onOpen, onNew, onMission }) {
 
 // ---------- 세션 하나 ----------
 const KEY_LABEL = { enter: '⏎', esc: 'Esc', ctrlc: 'Ctrl+C', up: '↑', down: '↓', tab: 'Tab', shifttab: '⇧Tab', slash: '/' };
+// P104: 키 패드. 키 줄 자리에 두 줄로 펼친다(phone.css .mt-ph-pad의 칸 배치). 누르면 화면 키보드와 입력 줄의 초점은 그대로 둔다
+const PAD_GLYPH = { esc: 'Esc', tab: 'Tab', space: 'Space', enter: '⏎ Enter', up: '↑', down: '↓', left: '←', right: '→' };
+const noFocus = (e) => e.preventDefault();
+function PadIcon() {
+  return <svg className="mt-ph-padicon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M7 9.5h.01M10.5 9.5h.01M14 9.5h.01M17.5 9.5h.01M8 14.5h8" /></svg>;
+}
+function PhoneKeyPad({ onKey, onClose, need }) {
+  const t = useT();
+  const label = (k) => (/^\d$/.test(k) ? t('phoneKeys.digit', { n: k }) : k === 'enter' || k === 'esc' || k === 'tab' ? t(`phone.key_${k}`) : t(`phoneKeys.${k}`));
+  return (
+    <div className={`mt-ph-pad${need ? ' need' : ''}`} role="group" aria-label={t('phoneKeys.group')} data-role="phone-pad">
+      <button type="button" className="mt-ph-pk close" data-action="phone-pad-close" aria-label={t('phoneKeys.close')} title={t('phoneKeys.close')} onPointerDown={noFocus} onClick={onClose}><Chev dir="down" /></button>
+      {PAD_KEYS.map((k) => (
+        <button key={k} type="button" className={`mt-ph-pk${k === 'enter' ? ' enter' : ''}`} data-pad-key={k} aria-label={label(k)} onPointerDown={noFocus} onClick={() => onKey(k)}>{PAD_GLYPH[k] || k}</button>
+      ))}
+    </div>
+  );
+}
 function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   const t = useT();
   const id = s.sessionId;
@@ -347,13 +366,19 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [scale, setScale] = useState(readPhoneScale);
-  const [cardHidden, setCardHidden] = useState(null); // 카드를 접은 요청(askKey). 새 요청이면 다시 보인다
+  const [padPref, setPadPref] = useState(null); // P104: 사람이 키 패드를 열었거나(true) 닫았으면(false). 기다리는 요청이 바뀌면 비운다
   const now = useNow(5000);
   const needIds = useMemo(() => phoneList([...sessions.values()]).needs.map((x) => x.sessionId), [sessions]);
   const next = nextNeed(needIds, id);
   const live = s.state !== 'sleeping' && s.state !== 'exited';
   const ask = needsYou(s);
-  const showCard = ask && cardHidden !== `${s.state}|${askKey(s.ask)}`;
+  const padKey = padKeyOf(s, askKey);
+  useEffect(() => { setPadPref(null); }, [padKey]);
+  const pad = live && padOpen(s, padPref);
+  // P104: 키 패드의 키는 차례로(앞 요청이 돌아오기 전에 누른 키는 모아 다음 요청 하나로). 실패하면 모아 둔 키를 버린다
+  const tRef = useRef(t); tRef.current = t;
+  const keys = useMemo(() => keyQueue((list) => api.call('session.keys', { session: id, keys: list }), (e) => { if (e.code !== 'disconnected') toast(tRef.current('phoneKeys.failed', { error: errText(e) }), 'error'); }), [id]);
+  const padPress = (k) => { markInteracted(id); keys.push(k); };
 
   // 터미널 칸의 크기(TerminalView가 패널 크기를 맞춘다)
   useEffect(() => {
@@ -452,14 +477,10 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
         )}
         {s.state === 'exited' && <div className="mt-ph-cover" data-role="phone-exited"><p>{t('phone.exited')}</p></div>}
       </div>
-      {showCard && (
-        <div className="mt-ph-answer" data-role="phone-answer">
-          <ApprovalCard s={s} onTerminal={() => setCardHidden(`${s.state}|${askKey(s.ask)}`)} />
-        </div>
-      )}
-      {ask && !showCard && <button type="button" className="mt-ph-cardback" data-action="phone-card" onClick={() => setCardHidden(null)}>{t('phone.showCard')}</button>}
-      {live && (
+      {pad && <PhoneKeyPad need={ask} onKey={padPress} onClose={() => setPadPref(false)} />}
+      {live && !pad && (
         <div className="mt-ph-keys" data-role="phone-keys">
+          <button type="button" className={`mt-ph-key mt-ph-padopen${ask ? ' need' : ''}`} data-action="phone-pad-open" aria-expanded="false" aria-label={t('phoneKeys.open')} title={t('phoneKeys.open')} onPointerDown={noFocus} onClick={() => setPadPref(true)}><PadIcon /></button>
           {KEY_ROW.map((k) => (
             <button key={k} type="button" className="mt-ph-key" data-key={k} aria-label={t(`phone.key_${k}`)} onPointerDown={(e) => e.preventDefault()} onClick={() => sendKey(k)}>{KEY_LABEL[k]}</button>
           ))}

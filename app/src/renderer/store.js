@@ -18,7 +18,6 @@ const state = {
   boardLoaded: false,
   viewport: null, // 저장한 캔버스 뷰포트(없으면 처음 열 때 모두 보이게 맞춘다)
   deliveries: new Map(), // deliveryId → delivery(+name, text)
-  dismissedAsks: new Set(), // 카드가 닫힌 요청(toolUseId 또는 since)
   focusId: null, // N과 칩으로 마지막에 간 세션
   focusTick: 0, // 바뀌면 그 세션의 터미널에 초점을 준다
   attached: [], // 제어기를 붙인 세션(가까이 얼굴이면서 보이는 노드, 상한까지)
@@ -176,7 +175,6 @@ export function saveNode(id, cause = 'unknown') {
   api.call('board.setNode', { session: id, x: Math.round(n.x), y: Math.round(n.y), w: Math.round(n.w), h: Math.round(n.h), z: n.z || 0, cause }).catch((e) => toast(t('store.saveNodeFailed', { error: errText(e) }), 'error'));
 }
 
-export function dismissAsk(key) { state.dismissedAsks = new Set(state.dismissedAsks); state.dismissedAsks.add(key); changed(); }
 // 새로 띄우거나 판으로 연 세션이 판에 올라오면 그 노드로 들어간다(터미널에 초점)
 export function goWhenOpen(sessionId) {
   const t0 = Date.now();
@@ -195,6 +193,7 @@ export function setAttached(list) {
   if (list.length === state.attached.length && list.every((x, i) => x === state.attached[i])) return;
   state.attached = list; changed();
 }
+// 기다리는 요청 하나를 가리키는 열쇠(toolUseId, 없으면 시작 시각). P104: 휴대폰 키 패드가 요청마다 펼침을 새로 정한다
 export const askKey = (ask) => (ask ? ask.toolUseId || String(ask.since || '') : '');
 
 export function markSeen(id) {
