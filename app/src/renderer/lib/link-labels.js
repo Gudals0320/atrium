@@ -95,35 +95,39 @@ export function spreadLabels(items, { gap = 6 } = {}) {
 }
 
 // 선 위 글이 놓일 틈(두 노드 사이). ra·rb: 두 끝 노드 사각형, sides: { sourceHandle, targetHandle }, others: 다른 세션 노드 사각형들(판 좌표)
-// → { gap, horizontal } 또는 { gap: 0, horizontal, blocked: true }(글 자리 = 두 손잡이의 가운데가 다른 세션 위)
+// → { gap, horizontal } 또는 { gap: 0, horizontal, blocked: true }(글 자리가 세션 위)
 // P98: 덩어리 밖 리드 → 덩어리 안쪽 칸 워커처럼 선이 다른 세션 뒤로 지나가면 글 자리가 그 세션 위다(blocked). 그런 이름표는 그리지 않는다(linkLabelHidden)
 export function edgeGap(ra, rb, sides, others = []) {
   const gx = Math.abs(rb.x + rb.w / 2 - (ra.x + ra.w / 2)) - (ra.w + rb.w) / 2, gy = Math.abs(rb.y + rb.h / 2 - (ra.y + ra.h / 2)) - (ra.h + rb.h) / 2;
   const p = handleAt(ra, sides.sourceHandle), q = handleAt(rb, sides.targetHandle), m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-  if (others.some((r) => r && m.x > r.x && m.x < r.x + r.w && m.y > r.y && m.y < r.y + r.h)) return { gap: 0, horizontal: gx >= gy, blocked: true };
+  if (pointInSessions(m.x, m.y, [ra, rb, ...others])) return { gap: 0, horizontal: gx >= gy, blocked: true };
   return gx >= gy ? { gap: gx, horizontal: true } : { gap: gy, horizontal: false };
 }
-// P98: 이름표 자리가 다른 세션 위면(blocked) 그 세션 가운데에 초록 점(줄인 이름표 ●)만 남으므로 그리지 않는다. 선은 노드 뒤로 지나가 보이지 않는다.
+// P98·P108: 이름표 자리가 세션 위면(blocked) 줄인 이름표 ●도 그리지 않는다. 선은 노드 뒤로 지나가 보이지 않는다.
 // 고른 선이나 그 연결 대화상자가 열려 있을 때는 그대로 보인다
-export const linkLabelHidden = (data, { hot = false } = {}) => !!(data && data.blocked) && !hot;
+// P108: 자기 끝 세션도 포함한다. 경계의 덩어리 탭과 바깥 둘레 장식은 안쪽이 아니다.
+export const pointInSessions = (x, y, rects = []) => rects.some((r) => r && x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h);
+// P108: 비켜 놓은 뒤의 실제 Bezier 이름표 자리도 검사한다. 고른 선·열린 대화상자는 그대로 보인다.
+export const linkLabelHidden = (data, { hot = false, x, y } = {}) => !hot && !!(data && (data.blocked || pointInSessions(x, y, data.labelRects)));
 // P98: 덩어리 안 칸에 닿는 선의 끝 점. 손잡이가 덩어리 바깥 둘레가 아니라 칸 사이 경계(덩어리 안쪽)에 있으면 그리지 않는다(outer: 덩어리 바깥 사각형)
 export function endInside(r, side, outer) {
   if (!r || !outer) return false;
   const p = handleAt(r, side);
   return p.x > outer.x + 1 && p.x < outer.x + outer.w - 1 && p.y > outer.y + 1 && p.y < outer.y + outer.h - 1;
 }
-export function innerEnds(ra, rb, sides, outerA = null, outerB = null) {
+export function innerEnds(ra, rb, sides, outerA = null, outerB = null, rects = []) {
   const o = {};
-  if (endInside(ra, sides.sourceHandle, outerA)) o.hideSource = true;
-  if (endInside(rb, sides.targetHandle, outerB)) o.hideTarget = true;
+  const p = handleAt(ra, sides.sourceHandle), q = handleAt(rb, sides.targetHandle);
+  if (endInside(ra, sides.sourceHandle, outerA) || pointInSessions(p.x, p.y, [ra, rb, ...rects])) o.hideSource = true;
+  if (endInside(rb, sides.targetHandle, outerB) || pointInSessions(q.x, q.y, [ra, rb, ...rects])) o.hideTarget = true;
   return o;
 }
 
 // 이름표 자리(getBezierPath의 가운데)를 비켜 놓은 만큼 옮긴다
 export const shifted = (lx, ly, data) => (data && data.shift ? [lx + data.shift.dx, ly + data.shift.dy] : [lx, ly]);
 
-// 손잡이 자리(Canvas의 facingSides 손잡이 ID t·r·b·l)
-const handleAt = (r, side) => (side === 'r' ? { x: r.x + r.w, y: r.y + r.h / 2 } : side === 'l' ? { x: r.x, y: r.y + r.h / 2 } : side === 't' ? { x: r.x + r.w / 2, y: r.y } : { x: r.x + r.w / 2, y: r.y + r.h });
+// 손잡이 자리(Canvas의 facingSides ID t·r·b·l, 덩어리 잇기의 가운데 c)
+const handleAt = (r, side) => (side === 'c' ? { x: r.x + r.w / 2, y: r.y + r.h / 2 } : side === 'r' ? { x: r.x + r.w, y: r.y + r.h / 2 } : side === 'l' ? { x: r.x, y: r.y + r.h / 2 } : side === 't' ? { x: r.x + r.w / 2, y: r.y } : { x: r.x + r.w / 2, y: r.y + r.h });
 const LABEL_H = 26; // 이름표 어림 높이(판 px)
 
 // Canvas가 만든 선 목록에 이름표 정보를 더한다(제자리에서 고친다).
@@ -149,6 +153,7 @@ export function decorateEdges(edges, { rectOf, links, sessions, now = Date.now()
       w = e.type === 'spawnc' ? 220 : 170;
       prio = e.type === 'spawnc' ? 1 : 0;
     } else continue;
+    if (linkLabelHidden(e.data)) continue; // 숨은 이름표가 보이는 이름표를 칸 안으로 밀지 않는다
     const ra = rectOf(e.source), rb = rectOf(e.target);
     if (!ra || !rb) continue;
     const p = handleAt(ra, e.sourceHandle), q = handleAt(rb, e.targetHandle);

@@ -54,8 +54,8 @@ export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
     {/* P11: 선 양 끝의 작은 점(목업의 가지 선). P98: 덩어리 안쪽 칸 사이 경계에 붙은 끝은 그리지 않는다(Canvas innerEnds) */}
     {!(data && data.hideSource) && <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={sourceX} cy={sourceY} r={4.5} />}
     {!(data && data.hideTarget) && <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={targetX} cy={targetY} r={4.5} />}
-    {/* P98: 글 자리가 다른 세션 위(blocked)면 이름표를 그리지 않는다(줄인 ● 점이 그 세션 가운데에 남았다) */}
-    {lab && !linkLabelHidden(data, { hot: !!selected || dialogOn }) && <EdgeLabelRenderer>
+    {/* P98·P108: 비켜 놓은 최종 글 자리가 세션 위면 줄인 ● 점도 그리지 않는다 */}
+    {lab && !linkLabelHidden(data, { hot: !!selected || dialogOn, x: lx, y: ly }) && <EdgeLabelRenderer>
       <div className={`mt-edge-label ${kind}${link.spawned ? ' spawn' : ''}${level === 'dot' ? ' compact' : ''} lv-${level}${lab.awake ? ' awake' : ' rest'}${hot ? ' hot' : ''} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, '--fitw': `${hot ? 460 : fit.maxWidth}px` }}
         data-link={id} data-kind={kind} data-level={level} data-awake={lab.awake ? lab.why : 'rest'} data-more={lab.more || 0} data-pair={lab.pair.length}
         onClick={(e) => { e.stopPropagation(); openDialog({ kind: 'link', linkId: id }); }} title={t('links.edgeTitle', { label: label || t('links.link') })} {...on}>
@@ -79,7 +79,7 @@ export function RepoEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const [path, lx0, ly0] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
   const [lx, ly] = shifted(lx0, ly0, data);
   const fit = labelFit(data);
-  if (fit.compact) return <BaseEdge id={id} path={path} className="mt-edge repo" />; // 틈이 좁으면 글 없이 점선만
+  if (fit.compact || linkLabelHidden(data, { x: lx, y: ly })) return <BaseEdge id={id} path={path} className="mt-edge repo" />; // 틈이 좁거나 세션 위면 글 없이 점선만
   return <>
     <BaseEdge id={id} path={path} className="mt-edge repo" />
     <EdgeLabelRenderer>
