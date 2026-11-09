@@ -2268,4 +2268,10 @@ export default {
     badge: 'Delivery stuck',
     title: 'The message is not getting in (herdr: {code}, {n} tries). The board retries with growing gaps. Cancel it from the delivery line above the command bar.',
   },
+  // P109: fit all tooltips with the hold-Space shortcut (nothing selected, focus on the board)
+  spaceFit: {
+    rail: 'Fit all: bring every area into view (hold Space with nothing selected)',
+    chip: 'Bring every area into view (hold Space with nothing selected)',
+    zoom: 'Click to fit all (or hold Space with nothing selected)',
+  },
 };
