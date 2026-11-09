@@ -162,9 +162,11 @@ function pushCommits(remote, stdin) {
     const [, localSha, , remoteSha] = line.split(' ');
     if (!localSha || zero.test(localSha)) continue; // 지우기
     let list;
+    // 그 원격의 다른 브랜치에 이미 있는 커밋은 새로 공개되지 않으므로 세지 않는다.
+    // 정식 릴리즈에서 main을 dev로 옮길 때, 이미 공개된 옛 dev 커밋(그때는 공개였던 docs/ 등)이 다시 걸리지 않게 한다
     try {
       list = !zero.test(remoteSha) && git(['cat-file', '-t', remoteSha]).trim() === 'commit'
-        ? git(['rev-list', `${remoteSha}..${localSha}`])
+        ? git(['rev-list', localSha, '--not', remoteSha, `--remotes=${remote || '*'}`])
         : git(['rev-list', localSha, '--not', `--remotes=${remote || '*'}`]);
     } catch { list = git(['rev-list', localSha, '--not', '--remotes']); }
     for (const c of list.split('\n').filter(Boolean)) commits.add(c);

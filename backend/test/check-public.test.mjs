@@ -175,6 +175,22 @@ test('스테이지된 글, 커밋 메시지, 푸시하는 커밋에 비공개 �
   assert.equal(r.check(['--push', 'origin'], { input: pushLine(inMsg), env: { ATRIUM_PRIVATE_WORDS: word } }).status, 1);
 });
 
+test('푸시: 그 원격의 다른 브랜치에 이미 있는 커밋은 다시 세지 않는다(정식 릴리즈에서 main을 dev로 옮길 때)', (t) => {
+  const r = makeRepo(t);
+  r.setList([word]);
+  const base = r.commit('a.txt', 'hello\n', 'init');
+  const pub = r.commit('b.txt', `${word}\n`, 'already on dev'); // 이미 공개된 dev 커밋
+  r.git(['update-ref', 'refs/remotes/origin/dev', pub]);
+  const line = (sha, remoteSha) => `refs/heads/main ${sha} refs/heads/main ${remoteSha}\n`;
+  let res = r.check(['--push', 'origin'], { input: line(pub, base) });
+  assert.equal(res.status, 0, res.stderr);
+  const fresh = r.commit('c.txt', `${word}\n`, 'new');
+  res = r.check(['--push', 'origin'], { input: line(fresh, base) });
+  assert.equal(res.status, 1, res.stderr);
+  assert.match(res.stderr, /c\.txt:1: 개인 낱말/);
+  assert.ok(!/b\.txt/.test(res.stderr), '이미 공개된 커밋은 세지 않는다');
+});
+
 test('기여자의 일반 메일 커밋은 받고, 관리자의 개인 메일(git 설정, 목록 파일)은 막는다', (t) => {
   const r = makeRepo(t);
   r.write('a.txt', 'hello\n');
