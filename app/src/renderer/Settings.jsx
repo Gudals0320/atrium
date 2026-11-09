@@ -14,6 +14,7 @@ import { LaunchersTab } from './Launchers.jsx'; // P33: 호출자 탭
 import { DevicesTab } from './WebDevices.jsx'; // P48: 연결된 기기(웹 화면)
 import { useDialog } from './dialog.js'; // P52
 import { UpdateSettings } from './Update.jsx'; // P69: 업데이트 묶음
+import { LIGHT_MODES, workLightOf, applyWorkLight } from './lib/work-light.js'; // P107: 작업 중 테두리 빛
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 export function SetRow({ name, hint, children, role }) {
@@ -82,7 +83,33 @@ function ScaleSetting({ kind }) {
   );
 }
 
-// 일반: 언어, 배율(P45), 트레이 상주
+// P107: 작업 중 테두리 빛(판 노드 둘레와 미션 맵 카드 테두리를 따라 도는 빛). 켬(기본) / Windows 설정 따름 / 끔. 판 설정이라 휴대폰도 따른다.
+// 누르면 백엔드 확인(settings.updated)을 기다리지 않고 곧바로 문서 뿌리에 적고, 저장이 실패하면 되돌린다
+function WorkLightSetting({ settings }) {
+  const t = useT();
+  const [pending, setPending] = useState(null);
+  const value = pending ?? workLightOf(settings);
+  const pick = async (mode) => {
+    setPending(mode);
+    applyWorkLight({ workLight: mode });
+    try { await api.call('settings.set', { key: 'workLight', value: mode }); } catch (e) { applyWorkLight(settings); toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
+    setPending(null);
+  };
+  return <>
+    <div className="mt-set-row" data-role="work-light-setting">
+      <span className="mt-set-name">{t('workLight.name')}</span>
+      <span className="mt-set-value mt-seg-lang" data-field="setting-workLight" data-value={value} role="radiogroup" aria-label={t('workLight.name')}>
+        {LIGHT_MODES.map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={value === m} className={`mt-btn small${value === m ? ' primary' : ' ghost'}`} data-light={m} onClick={() => value !== m && pick(m)}>{t(`workLight.${m}`)}</button>
+        ))}
+      </span>
+      <span className="mt-set-hint">{t('workLight.hint')}</span>
+    </div>
+    <SetNote>{t('workLight.note')}</SetNote>
+  </>;
+}
+
+// 일반: 언어, 배율(P45), 작업 중 테두리 빛(P107), 트레이 상주
 function GeneralTab({ settings }) {
   const t = useT();
   const [pending, setPending] = useState(null); // 누른 값(백엔드가 settings.updated로 확정할 때까지 먼저 보인다)
@@ -97,6 +124,7 @@ function GeneralTab({ settings }) {
       <ScaleSetting kind="ui" />
       <ScaleSetting kind="term" />
       {settings && <>
+        <WorkLightSetting settings={settings} />
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>
         {'herdrPath' in settings && <HerdrPathSetting settings={settings} />}

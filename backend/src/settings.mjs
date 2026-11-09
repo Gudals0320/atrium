@@ -7,6 +7,7 @@ export const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max']; // claude 
 export const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];
 
 export const LANGUAGES = ['en', 'ko']; // P16: 화면 언어. 새 판은 영어
+export const WORK_LIGHT = ['on', 'system', 'off']; // P107: 작업 중 테두리 빛(app lib/work-light.js LIGHT_MODES와 같다)
 
 export const SETTINGS = {
   language: { type: 'choice', default: 'en', options: LANGUAGES, label: '화면 언어 (en: 영어, ko: 한국어). 앱 창과 트레이 메뉴에 적용합니다.' },
@@ -31,6 +32,9 @@ export const SETTINGS = {
   // P70: 업데이트 채널. stable은 정식 릴리즈만, dev는 dev 브랜치의 사전 릴리즈(v<x.y.z>-dev.<n>)도 알린다. 바꾸면 백엔드가 곧바로 다시 확인한다
   updateChannel: { type: 'choice', default: 'stable', options: ['stable', 'dev'], label: '업데이트 채널 (stable: 정식 릴리즈, dev: dev 브랜치에 합친 기능을 먼저 받는 사전 릴리즈).' },
   sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '프로젝트에 지정한 시간(분) 동안 활동이 없으면 보드에서 시작한 Claude Code 세션을 모두 절전 모드로 전환합니다 (0: 자동 절전 사용 안 함).' },
+  // P107: 작업 중 테두리 빛. 보드의 작업 중 세션 노드 둘레와 미션 맵 카드 테두리를 따라 도는 빛. Windows "애니메이션 효과"가 꺼진 PC는 창이 늘 움직임 줄이기라
+  // 운영체제 설정만 따르면 보이지 않아 기본은 켬. 창·휴대폰이 문서 뿌리 data-work-light로 받아 CSS가 정한다(app lib/work-light.js). 끔이면 멈춘 상태 색 테두리
+  workLight: { type: 'choice', default: 'on', options: WORK_LIGHT, label: '보드의 작업 중 세션 노드와 미션 맵 카드의 테두리를 따라 빛을 돌립니다 (on: 항상, system: 운영체제의 동작 줄이기 설정을 따름, off: 멈춘 테두리만 표시).' },
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));
 

@@ -2274,4 +2274,13 @@ export default {
     chip: 'Bring every area into view (hold Space with nothing selected)',
     zoom: 'Click to fit all (or hold Space with nothing selected)',
   },
+  // P107: light along the border of working sessions on the board and the mission map (Settings › General)
+  workLight: {
+    name: 'Working session light',
+    on: 'On',
+    system: 'Follow Windows',
+    off: 'Off',
+    hint: 'A light runs along the border of working sessions on the board nodes and the mission map cards.',
+    note: 'Follow Windows stops the light while Windows animation effects are off (Settings › Accessibility › Visual effects) and shows a still colored border instead. Off always shows the still border. Phones use this setting too; there, Follow Windows uses the reduce motion setting of the phone.',
+  },
 };

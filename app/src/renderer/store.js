@@ -8,6 +8,7 @@ import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
+import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107: 작업 중 테두리 빛 설정과 미션 맵 덮개를 문서 뿌리에
 
 const state = {
   conn: 'connecting',
@@ -68,7 +69,8 @@ const state = {
 };
 const subs = new Set();
 // P16: 설정의 language를 화면 언어로. 언어가 바뀌면 사전을 쓰는 화면이 다시 그린다(lib/i18n.js)
-function putSettings(s) { state.settings = s; if (s && s.language) setLanguage(s.language); changed(); }
+// P107: workLight(작업 중 테두리 빛: 판 노드 둘레와 미션 맵 카드)를 문서 뿌리 data-work-light로(PC 창·웹·휴대폰 같은 판 설정)
+function putSettings(s) { state.settings = s; if (s && s.language) setLanguage(s.language); applyWorkLight(s); changed(); }
 function changed() { state.version++; for (const fn of [...subs]) fn(); }
 
 export function useStore(select) {
@@ -244,7 +246,8 @@ export function setConvoLocal(id, f) { const c = state.convoNodes.get(id); if (!
 export function setKanbanLocal(id, f) { const k = state.kanbans.get(id); if (!k) return; state.kanbans = new Map(state.kanbans); state.kanbans.set(id, { ...k, ...f }); changed(); }
 export function setThreadOpen(v) { state.threadOpen = v; changed(); }
 export function setOutputView(v) { state.outputView = v; changed(); }
-export function setMissionOpen(v) { state.missionOpen = v; changed(); }
+// P107: 덮개를 연 동안 문서 뿌리 data-mm-open(뒤의 판 노드 둘레를 멈춘다)
+export function setMissionOpen(v) { state.missionOpen = v; applyMissionOpen(v); changed(); }
 // 검색으로 간 칸반 카드를 2초 동안 빛낸다
 export function setFlashCard(id) { state.flashCard = id; changed(); setTimeout(() => { if (state.flashCard === id) { state.flashCard = null; changed(); } }, 2000); }
 function putThread(items, { front = false } = {}) {
