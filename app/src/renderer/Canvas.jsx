@@ -344,13 +344,14 @@ export function Canvas() {
     const dockIdOf = new Map();
     for (const d of docks.values()) for (const m of d.members) dockIdOf.set(m, d.dockId);
     const adjacent = (a, b) => dockIdOf.has(a) && dockIdOf.get(a) === dockIdOf.get(b);
-    // 선 위 글이 놓일 틈(두 노드 사이). 글 자리(두 손잡이의 가운데)가 다른 노드 위면 틈이 없는 것으로 본다(blocked, lib/link-labels.js edgeGap)
+    // 선 위 글이 놓일 틈. 자기 끝을 포함한 세션 위면 blocked, 최종 Bezier·이동 좌표도 렌더러에서 검사한다(P108).
     // P98: 덩어리 바깥 사각형(구성 노드 → 그 덩어리). 칸 사이 경계에 붙은 선 끝 점은 그리지 않는다(innerEnds)
     const outerOf = new Map();
     for (const d of docks.values()) { const r = bbox(d.members.map((m) => storeNodes.get(m))); if (r) for (const m of d.members) outerOf.set(m, r); }
+    const labelRects = [...storeNodes].filter(([id]) => sessions.has(id)).map(([, r]) => r);
     const gapOf = (a, b) => {
       const ra = rectId(a), rb = rectId(b), sd = facingSides(ra, rb);
-      return { ...edgeGap(ra, rb, sd, [...storeNodes].filter(([id]) => id !== a && id !== b && sessions.has(id)).map(([, r]) => r)), ...innerEnds(ra, rb, sd, outerOf.get(a), outerOf.get(b)) };
+      return { ...edgeGap(ra, rb, sd, labelRects), ...innerEnds(ra, rb, sd, outerOf.get(a), outerOf.get(b), labelRects), labelRects };
     };
     for (const l of links.values()) if (here(l.from) && here(l.to) && !adjacent(l.from, l.to)) out.push({ id: l.linkId, source: l.from, target: l.to, ...sides(l.from, l.to), type: 'link', data: gapOf(l.from, l.to) });
     const linked = (a, b) => [...links.values()].some((l) => l.from === a && l.to === b);

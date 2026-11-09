@@ -10,7 +10,7 @@ import { api } from './api.js';
 import { faceFor } from './lib/faces.js';
 import { convoTier } from './lib/overview.js'; // P85: 판 밖 대화 카드도 멀리 보기 규칙을 따른다(열린 대화는 쉼, 닫힌 대화는 끝남)
 import { ago, labelFit } from './lib/labels.js';
-import { shifted } from './lib/link-labels.js'; // P67
+import { shifted, linkLabelHidden } from './lib/link-labels.js'; // P67, P108
 import { useT, errText, tMsg, fmtDateTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
 import { openConvo, archiveItem } from './Sidebar.jsx';
@@ -154,7 +154,7 @@ export function SpawnEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositi
     <BaseEdge id={id} path={path} className="mt-edge spawned spawn convo" interactionWidth={12} />
     {!(data && data.hideSource) && <circle className="mt-edge-end spawn" cx={sourceX} cy={sourceY} r={4.5} />}
     {!(data && data.hideTarget) && <circle className="mt-edge-end spawn" cx={targetX} cy={targetY} r={4.5} />}
-    {!fit.compact && <EdgeLabelRenderer>
+    {!fit.compact && !linkLabelHidden(data, { x: lx, y: ly }) && <EdgeLabelRenderer>
       <div className="mt-edge-label spawn nodrag nopan" style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, pointerEvents: 'none', '--fitw': `${fit.maxWidth}px` }} data-spawn-edge={id}>
         <span className="mt-edge-tag">{t('convo.spawnTag')}</span><span className="mt-edge-text">{VIA[data && data.via] || (data && data.via) || ''}{data && data.name ? ` ${data.name}` : ''}</span>
       </div>
