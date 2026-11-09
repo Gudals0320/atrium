@@ -53,9 +53,9 @@ test('P79 Enter: 보낸 글이 입력 칸에 남았으면(제출 안 됨) Enter�
   const d = q.enqueue('s', ASK);
   await tick();
   assert.equal(d.status, 'sent');
-  await step(5000);
-  assert.equal(log.inspect, 0, '6초 전에는 보지 않는다');
-  await step(1500);
+  await step(2500);
+  assert.equal(log.inspect, 0, '3초 전에는 보지 않는다(P106: 입력 칸에 남은 글의 Enter는 submitEnterMs 3초 뒤)');
+  await step(1000);
   assert.equal(log.enter, 1);
   assert.deepEqual(log.recover, ['enter']);
   q.onUserPromptSubmit('s', ASK);
@@ -68,10 +68,12 @@ test('P79 다시 보내기: 입력 칸이 비었고 들어간 흔적도 없으�
   const d = q.enqueue('s', ASK);
   await tick();
   await step(6500);
+  assert.deepEqual(log.sent, [ASK], 'P106: 앞 번에도 비어 있었을 때만 다시 보낸다(그리기가 늦을 수 있다)');
+  await step(3100);
   assert.deepEqual(log.sent, [ASK, ASK], '한 번 다시 보냈다');
   await step(6500);
   assert.deepEqual(log.sent, [ASK, ASK], '두 번째 손쓰기에서는 다시 보내지 않는다');
-  assert.deepEqual(log.recover, ['resend', 'none']);
+  assert.deepEqual(log.recover, ['wait', 'resend', 'none']);
   await step(29000);
   assert.equal(d.status, 'sent', '마지막 손쓰기에서 30초를 다시 센다');
   await step(2000);
@@ -107,9 +109,9 @@ test('P79 사람 입력: 사람이 3초 안에 친 터미널은 기다리고, �
   await step(3000);
   assert.equal(log.inspect, 1);
   assert.equal(log.enter, 0); assert.deepEqual(log.sent, [ASK], '사람의 글을 건드리지 않는다');
-  await step(6500);
-  assert.equal(log.inspect, 1, '다른 글이면 더 보지 않는다');
-  await step(30000);
+  for (let i = 0; i < 70; i++) await step(1000);
+  assert.ok(log.inspect > 1, 'P106: 갓 뜬 화면은 붙여 넣은 글을 늦게 그리므로 다시 보기는 한다');
+  assert.equal(log.enter, 0); assert.deepEqual(log.sent, [ASK], '다른 글에는 끝내 손대지 않는다');
   assert.equal(d.status, 'unconfirmed');
 });
 

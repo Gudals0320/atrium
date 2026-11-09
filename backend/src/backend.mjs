@@ -17,7 +17,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen } from './screen.mjs';
+import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
 import { parseTargets, toLF, clip } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -216,11 +216,22 @@ export class Backend {
 
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
-      // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code만. 다른 종류와 셸은 손대지 않는다)
-      inspect: async (sid, text) => { const s = this.sessions.get(sid); if (!s || !s.paneId || (s.kind || 'claude') !== 'claude') return null; return promptOnScreen(await this.adapter.readScreen(s.paneId, { source: 'visible' }), text); },
+      // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
+      inspect: async (sid, text) => {
+        const s = this.sessions.get(sid); const k = s && (s.kind || 'claude');
+        if (!s || !s.paneId || (k !== 'claude' && k !== 'codex')) return null;
+        const scr = await this.adapter.readScreen(s.paneId, { source: 'visible' });
+        const r = promptOnScreen(scr, text, k);
+        if (r.box === 'other') r.peek = (k === 'codex' ? codexInputBox : claudeInputBox)(scr).text.slice(0, 60); // P106: 무엇이 보였는지 판 기록에 남긴다
+        return k === 'codex' ? { ...r, noResend: true } : r;
+      },
       pressEnter: async (sid) => { const s = this.sessions.get(sid); if (s && s.paneId) await this.adapter.paneKeys(s.paneId, ['enter']); },
     });
     this.queue.on('recover', (r) => { this.store.addEvent(r.sessionId, 'delivery_recover', r); this.log(`delivery recover ${this.nameOf(r.sessionId)} ${r.action} (${r.box}) #${r.n}`); });
+    // P106: herdr가 받지 않은 전달(처음 한 번과 까닭이 바뀔 때만 온다), 오래 막힌 전달(한 번), 취소한 뒤에 들어간 시도
+    this.queue.on('refused', (r) => this.log(`delivery refused ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} → ${r.reason}, retry in ${r.waitMs}ms (#${r.n})`));
+    this.queue.on('stuck', (r) => { this.store.addEvent(r.sessionId, 'delivery_stuck', r); this.log(`delivery stuck ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} (${r.attempts} tries)`); const s = this.sessions.get(r.sessionId); if (s) this.broadcastSession(s, { cause: 'delivery stuck' }); });
+    this.queue.on('late', (r) => { this.store.addEvent(r.sessionId, 'delivery_late', r); this.log(`delivery late ${this.nameOf(r.sessionId)} ${r.deliveryId}: went in after cancel`); });
     this.queue.on('delivery', (d) => {
       this.store.addEvent(d.sessionId, 'delivery', d);
       this.api.broadcast('delivery', { ...d, name: this.nameOf(d.sessionId) });
@@ -489,6 +500,7 @@ export class Backend {
       permissionMode: rt.permissionMode || s.permissionMode, model: s.model, effort: s.effort || null, // P95: 미션 맵 카드의 메타 줄
       lastPrompt: clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
       exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f,
+      deliveryStuck: this.queue && this.queue.stuckOf ? this.queue.stuckOf(s.sessionId) : null, // P106: herdr가 오래 받지 않는 맨 앞 전달 { deliveryId, reason, code, attempts, since }
       trust: { predictedDialog: rt.trustPredicted, seenOnScreen: !!rt.trustScreen },
       resume: this.hooked(s) ? { registered: !!s.resumeArgv, verified: !!s.resumeVerified } : null, // hook이 없는 세션은 herdr의 이어 가기에 맡긴다
       hooks: { count: s.hookCount || 0, lastAt: rt.lastHookAt, lastAuthOk: s.lastHookAuthOk ?? null },
@@ -751,6 +763,7 @@ export class Backend {
       else if (e.type === 'pane_closed' && !this.killing.has(s.sessionId)) this.closeSession(s, 'pane closed outside board');
       return;
     }
+    if (e.type === 'status' || e.type === 'agent_detected' || e.type === 'agent_released') this.queue.poke(s.sessionId); // P106: 에이전트가 바뀌었다. 물러나 있던 전달을 다시 본다
     if (e.type === 'status') {
       // 띄운 뒤 agent_detected를 놓쳤어도, 끝난 적 없는 세션에 상태가 오면 claude가 패널에 있다는 뜻이다(P2에서 더한 안전망).
       // 끝난 세션(exit)은 되살리지 않는다. 해제 직후에도 idle이 한 번 온다(E10 2.4).
@@ -771,8 +784,9 @@ export class Backend {
       applyAgentDetected(s.rt, now);
       this.store.addEvent(s.sessionId, 'herdr_agent', { detected: true });
       this.broadcastSession(s, { cause: 'herdr:agent_detected' });
-      // P97: 실행 명령으로 뜬 claude는 herdr가 새로 알아볼 때(다시 켠 뒤 이어 가기 등) 이름을 잃는다. 알아본 뒤 이름을 다시 맞춘다
-      if (s.startCommand && this.hooked(s)) for (const ms of [1500, 6000]) { const tm = setTimeout(() => { if (this.sessions.has(s.sessionId)) this.ensureAgentName(s); }, ms); if (tm.unref) tm.unref(); }
+      // P97: 실행 명령으로 뜬 claude는 herdr가 새로 알아볼 때(다시 켠 뒤 이어 가기 등) 이름을 잃는다. 알아본 뒤 이름을 다시 맞춘다.
+      // P106: 판이 띄운 Codex도 뜬 직후 herdr가 에이전트를 놓았다가(agent_released) 이름 없이 다시 알아본다(experiments/p106). 판이 띄운 세션이면 모두 맞춘다
+      if ((s.startCommand && this.hooked(s)) || s.origin === 'board') for (const ms of [1500, 6000]) { const tm = setTimeout(() => { if (this.sessions.has(s.sessionId)) this.ensureAgentName(s); }, ms); if (tm.unref) tm.unref(); }
     } else if (e.type === 'agent_released') {
       applyAgentReleased(s.rt, now, { herdrStopping: this.herdrStopping });
       this.store.addEvent(s.sessionId, 'herdr_agent', { released: true, finalStatus: e.finalStatus, exit: s.rt.exit });
@@ -1098,12 +1112,18 @@ export class Backend {
   }
 
   // 판의 전달(agent.prompt). P97: 실행 명령으로 뜬 claude가 이름을 잃어 herdr가 찾지 못하면 이름을 다시 붙이고 한 번 더 보낸다
+  // P106: blockReason은 에이전트가 있다고 보는데 herdr가 그 이름을 모르는(agent_not_found) 까닭은 이름을 잃은 에이전트다. 판이 띄운 Codex도
+  // 뜬 직후 herdr가 에이전트를 놓았다가 이름 없이 다시 알아본다. 판이 띄운 세션이면 이름을 다시 붙이고, 못 붙이면(다른 패널이 그 이름을 씀, 판에 올린 세션)
+  // 그 패널에 같은 종류의 에이전트가 있을 때 패널 ID로 보낸다
   async sendPrompt(sid, text) {
     const s = this.sessions.get(sid);
     try { return await this.adapter.prompt(s.agentName, text); }
     catch (e) {
-      if (e.code !== 'agent_not_found' || !s.startCommand || !(await this.ensureAgentName(s))) throw e;
-      return this.adapter.prompt(s.agentName, text);
+      if (e.code !== 'agent_not_found' || !s.paneId || s.agentName === s.paneId) throw e;
+      if ((s.startCommand || s.origin === 'board') && (await this.ensureAgentName(s))) return this.adapter.prompt(s.agentName, text);
+      const p = await this.adapter.getPane(s.paneId).catch(() => null);
+      if (!p || !p.agent || p.agent !== (s.kind || 'claude')) throw e;
+      return this.adapter.prompt(s.paneId, text);
     }
   }
   // P97: herdr가 다시 뜨며 이어 가기 명령(ocx claude --resume …)으로 되살린 패널은 이름이 없다. herdr는 agent.start로 띄운 에이전트만
@@ -1947,8 +1967,9 @@ export class Backend {
       'session.get': (p) => this.get(p),
       'session.send': (p) => this.send(p),
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
-      'delivery.cancel': (p) => this.queue.cancel(p.deliveryId),
-      'delivery.list': (p) => this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
+      'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
+      // P106: active면 아직 끝나지 않은 전달 모두(창이 다시 열려도 막힌 전달을 보이고 취소할 수 있게)
+      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
       'session.kill': (p) => this.kill(p),
       'session.answer': (p) => this.answer(p),
       'session.keys': (p, c) => this.sendKeysTo(p, c), // P104: 휴대폰 키 줄(원격 기기도 부른다)
