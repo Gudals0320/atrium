@@ -1,4 +1,4 @@
-// P107 창 시험: 미션 맵의 일하는 카드 테두리를 따라 도는 빛(P102 번쩍임을 갈음). PC 창 1920·2560, PC 웹, 휴대폰 WebKit·Chromium. 한 번에 한 화면만 돌린다(메모리).
+// P107 창 시험: 작업 중 테두리 빛. 미션 맵의 일하는 카드 테두리를 따라 도는 빛(P102 번쩍임을 갈음)과 판 노드 둘레(.mt-node-run)가 판 설정 workLight를 따르는지. PC 창 1920·2560, PC 웹, 휴대폰 WebKit·Chromium. 한 번에 한 화면만 돌린다(메모리).
 // 사용자의 PC는 Windows "애니메이션 효과"가 꺼져 있어 창이 prefers-reduced-motion: reduce다. PC 창·웹 시험은 reduce와 no-preference 둘 다로 돈다(넷째 인자).
 // 판: 따로 띄운 개발용 판(atrium-dev-p107, 47896, backend/.dev)만 쓴다. 흉내 원격(p59-lib.mjs, ts-sim-proxy.mjs) 47986·47985.
 //   판 A(실제 세션): 워크스페이스 10개(mtask-p107-a…j). 리드 p107-lead(a, haiku, 권한 질문 = 응답 필요), 하위 p107-rev(haiku, reviewer, ping = 일함),
@@ -7,7 +7,8 @@
 //   큰 판: mission.graph 답에 흉내 세션 25개를 더한다. 많은 판(값 재기): 일하는 카드 40개.
 // 목업(mockpc·mockphone): 고치기 전 빌드의 번쩍임 층(.mt-mm-flash·.mt-pm-flash) 안에 네 방법(S SVG dashoffset, O offset-path, C @property conic, T transform 키프레임)을 덧입혀
 //   같은 장면의 프레임·멀리서 본 값과 값(주 스레드, 프레임 시간, 창 렌더러·GPU 프로세스 CPU, WebKit CPU)을 잰다.
-// 실행(실제 판의 변수를 지운 셸로): sh backend/.dev/clean-env.sh node app/test/e2e/p107-mission.mjs <setup|stir|mockpc|mockphone|pc|pc2560|web|webkit|chromium|memwebkit|compose|stop> [before|after] [reduce|no-preference]
+// 판 둘레 값(ringcost): 판에 일하는 노드 40개(창 안 흉내)와 미션 맵 덮개(일하는 카드 40개)에서 덮개 뒤 둘레를 멈출 때·돌 때, 판 둘레 부드럽게·steps의 GPU를 잰다.
+// 실행(실제 판의 변수를 지운 셸로): sh backend/.dev/clean-env.sh node app/test/e2e/p107-mission.mjs <setup|stir|restart|mockpc|mockphone|tunepc|phonetune|pc|pc2560|web|webkit|chromium|ringcost|memwebkit|compose|stop> [before|after] [reduce|no-preference]
 // 결과는 주 체크아웃의 experiments/p107/(저장소 밖).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,8 +50,19 @@ const launchChromium = () => chromium.launch({ headless: true, ...(chromeExe ? {
 
 // 시험 창이 다른 창에 가려지거나 화면이 꺼져도 그리기를 늦추지 않는다(가려지면 rAF가 초당 1번이 되어 값과 박자가 틀렸다)
 const AWAKE = ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'];
-const MT = MOTION === 'reduce' ? 'rm' : 'np'; // 그림·값 이름의 움직임 표시
-const log = logger(`p107-${WHAT}-${TAG}${['pc', 'pc2560', 'web', 'webkit', 'chromium'].includes(WHAT) ? `-${MT}` : ''}`);
+const MT = MOTION === 'reduce' ? 'rm' : 'np';
+// 시험 창(Electron)을 모든 화면 밖에 둔다: 사용자가 PC를 쓰는 동안 앞에 뜬 시험 창을 최소화해 그리기가 멈췄다(P107). 가려져도 그리게 하는 스위치(AWAKE)와 함께 쓴다.
+// 최소화되면 화면 밖에서 되살린다(읽기 전에 부른다)
+let APP = null;
+async function awayWin(app) {
+  APP = app;
+  return app.evaluate(({ BrowserWindow, screen }) => { const w = BrowserWindow.getAllWindows()[0]; if (!w) return null; const ds = screen.getAllDisplays(); const left = Math.min(...ds.map((d) => d.bounds.x)); const b = w.getBounds(); w.setPosition(left - b.width - 200, 40); return w.getBounds(); }).catch((e) => ({ err: e.message }));
+}
+async function ensureShown() {
+  if (!APP) return null;
+  return APP.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; if (!w) return null; const was = w.isMinimized(); if (was) { w.restore(); w.showInactive(); } return { was, min: w.isMinimized() }; }).catch(() => null);
+} // 그림·값 이름의 움직임 표시
+const log = logger(`p107-${WHAT}-${TAG}${['pc', 'pc2560', 'web', 'webkit', 'chromium', 'ringcost'].includes(WHAT) ? `-${MT}` : ''}`);
 const atrium = (...a) => execFileSync(process.execPath, [path.join(REPO, 'backend', 'bin', 'atrium.mjs'), '--dev', ...a], { encoding: 'utf8', env: process.env, timeout: 120000 });
 const call = (m, p = {}) => JSON.parse(atrium('--json', 'call', m, JSON.stringify(p)));
 const results = [];
@@ -247,7 +259,7 @@ const PC_PROBE = `(() => {
   const sum = m.querySelector('[data-role=mm-summary]');
   const sec = (k) => (sum && sum.querySelector('[data-role=mm-sum-' + k + ']')) ? [...sum.querySelectorAll('[data-role=mm-sum-' + k + '] [data-role=mm-sum-item]')].map((e) => e.dataset.name) : [];
   const body = m.querySelector('.mt-mission-body');
-  return { nodes, summary: sum ? { turn: sec('turn'), work: sec('work') } : null, body: body ? { w: body.clientWidth, h: body.clientHeight, sh: body.scrollHeight, sw: body.scrollWidth } : null, mode: document.documentElement.dataset.mmLight || null, lite: document.documentElement.classList.contains('mt-lite'), reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  return { nodes, summary: sum ? { turn: sec('turn'), work: sec('work') } : null, body: body ? { w: body.clientWidth, h: body.clientHeight, sh: body.scrollHeight, sw: body.scrollWidth } : null, mode: document.documentElement.dataset.workLight || null, lite: document.documentElement.classList.contains('mt-lite'), reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
 })()`;
 // 휴대폰 지도 읽기
 const PH_PROBE = `(() => {
@@ -260,7 +272,7 @@ const PH_PROBE = `(() => {
       lightStyle: ls ? { opacity: ls.opacity, borderW: parseFloat(ls.borderTopWidth) || 0, borderC: ls.borderTopColor, bg: ls.backgroundColor } : null,
       anims: animOf(e), ...R(e) }; });
   const world = document.querySelector('[data-role=pm-world]');
-  return { nodes, stage: st ? R(st) : null, world: world ? R(world) : null, view: window.__mtPm ? window.__mtPm.view() : null, page: { sw: document.documentElement.scrollWidth, iw: innerWidth }, docAnims: document.getAnimations().length, mode: document.documentElement.dataset.mmLight || null, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  return { nodes, stage: st ? R(st) : null, world: world ? R(world) : null, view: window.__mtPm ? window.__mtPm.view() : null, page: { sw: document.documentElement.scrollWidth, iw: innerWidth }, docAnims: document.getAnimations().length, mode: document.documentElement.dataset.workLight || null, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
 })()`;
 const boxesOf = (p) => p.nodes.filter((n) => n.w > 0).map((n) => ({ name: n.name, tier: n.tier, x: n.x, y: n.y, w: n.w, h: n.h }));
 
@@ -271,6 +283,7 @@ const THAW = ([re]) => { const rx = new RegExp(re); for (const a of document.get
 
 // 같은 장면을 몇 순간으로 찍고 멀리서 본 값을 잰다
 async function frames(pg, E, label, p, { fracs = [0.2, 0.45], vw }) {
+  await ensureShown();
   const out = [];
   for (const frac of fracs) {
     await pg.evaluate(FREEZE, [frac, LIGHT_RE]); await sleep(250);
@@ -484,11 +497,13 @@ const p102Map = (arr) => (Array.isArray(arr) ? arr.map((x) => x.replace(/\bp102-
 // ---- 빛이 실제로 도는지: 돌아가는 원뿔(::before)의 transform을 시간을 두고 두 번 읽는다(멈추지 않은 실제 시간) ----
 const SPIN_NOW = `(() => [...document.querySelectorAll('[data-role=mm-light], [data-role=pm-light]')].map((li) => { const sp = li.querySelector('.mt-mm-lring .mt-mm-lspin'); const card = li.closest('[data-name]'); return { name: card ? card.dataset.name : null, shown: sp ? getComputedStyle(sp.parentElement).display !== 'none' : false, tf: sp ? getComputedStyle(sp, '::before').transform : null }; }))()`;
 async function spinning(pg) {
+  const sh = await ensureShown(); if (sh && sh.was) { log(`창이 최소화되어 있어 되살림 ${JSON.stringify(sh)}`); await sleep(800); }
   const a = await pg.evaluate(SPIN_NOW); await sleep(350); const b = await pg.evaluate(SPIN_NOW);
   return a.map((x, i) => ({ name: x.name, shown: x.shown, moved: !!(x.tf && b[i] && b[i].tf && x.tf !== 'none' && x.tf !== b[i].tf), tf0: x.tf, tf1: b[i] && b[i].tf }));
 }
 // 실제 시간 프레임: 카드 하나를 n장 찍고 서로 다른지(빛이 돌면 픽셀이 바뀐다)
 async function liveFrames(pg, box, name, n = 4, gap = 200, pad = 16) {
+  await ensureShown();
   const bufs = [];
   for (let i = 0; i < n; i++) { const b = await pg.screenshot({ clip: { x: Math.max(0, box.x - pad), y: Math.max(0, box.y - pad), width: box.w + pad * 2, height: box.h + pad * 2 } }); bufs.push(b); fs.writeFileSync(path.join(OUT, `${name}-${i}.png`), b); await sleep(gap); }
   let distinct = 0; for (let i = 1; i < bufs.length; i++) if (!bufs[i].equals(bufs[i - 1])) distinct++;
@@ -511,8 +526,8 @@ function farMotion(rows) {
   return { workMean: avg(work, 'mean'), workMax: avg(work, 'max'), otherMean: avg(other, 'mean'), otherMaxOf: Math.max(0, ...other.map((r) => r.max)), workMinMax: Math.min(...work.map((r) => r.max)), moved: other.filter((r) => r.max >= 8).map((r) => `${r.name}:${r.tier}:${r.max}`) };
 }
 const setLight = async (pg, mode) => {
-  call('settings.set', { missionLight: mode });
-  await pg.waitForFunction((m) => document.documentElement.dataset.mmLight === m, mode, { timeout: 8000 }).catch(() => {});
+  call('settings.set', { workLight: mode });
+  await pg.waitForFunction((m) => document.documentElement.dataset.workLight === m, mode, { timeout: 8000 }).catch(() => {});
   await sleep(700);
 };
 const workCards = (p) => p.nodes.filter((x) => x.tier === 'work');
@@ -534,6 +549,53 @@ function lightChecks(E, label, p, spin, want, { perCard = 1 } = {}) {
   check(`[${E}] ${label}: 응답 필요·오류는 움직이지 않는다`, turnAlert.length >= 1 && turnAlert.every((x) => !x.anims.length && !x.light), turnAlert.map((x) => `${x.name}:${x.tier}:${x.anims.length}`));
 }
 
+// ---- 판(캔버스) 노드 둘레(.mt-node-run, P85): 회전판 i의 움직임과 transform을 시간을 두고 두 번 읽는다. 화면 밖(data-off=1)은 P85가 멈추므로 뺀다 ----
+const RING_NOW = `(() => [...document.querySelectorAll('[data-role=run-ring]')].map((r) => { const i = r.firstElementChild; const node = r.closest('.mt-node'); const cs = i ? getComputedStyle(i) : null; const an = i && i.getAnimations ? i.getAnimations() : [];
+  return { name: node ? (node.dataset.name || null) : null, shown: getComputedStyle(r).display !== 'none', anim: cs ? cs.animationName : null, play: an.map((a) => a.playState).join(','), n: an.length, tf: cs ? cs.transform : null, bg: cs ? cs.backgroundColor : null, off: r.dataset.off || '' }; }))()`;
+async function rings(pg) {
+  const sh = await ensureShown(); if (sh && sh.was) { log(`창이 최소화되어 있어 되살림 ${JSON.stringify(sh)}`); await sleep(800); }
+  const a = await pg.evaluate(RING_NOW); await sleep(350); const b = await pg.evaluate(RING_NOW);
+  return a.map((x, i) => ({ ...x, moved: !!(x.tf && b[i] && b[i].tf && x.tf !== b[i].tf) })).filter((x) => x.off !== '1');
+}
+const ringText = (rs) => rs.map((r) => `${r.name}:${r.shown ? '' : 'hidden/'}${r.anim}/${r.play || '-'}/${r.moved ? 'moving' : 'still'}`);
+function ringCheck(E, label, rs, want) {
+  if (want === 'spin') check(`[${E}] 판 노드 둘레 ${label}: 돈다`, rs.length >= 1 && rs.every((r) => r.shown && r.anim === 'mt-run' && r.play === 'running' && r.moved), ringText(rs));
+  else if (want === 'still') check(`[${E}] 판 노드 둘레 ${label}: 멈춘 고리(움직임 없음, 상태 색 판)`, rs.length >= 1 && rs.every((r) => r.shown && r.anim === 'none' && r.n === 0 && !r.moved && !/rgba\(0, 0, 0, 0\)/.test(r.bg)), ringText(rs));
+  else if (want === 'paused') check(`[${E}] 판 노드 둘레 ${label}: 멈춰 있다(paused)`, rs.length >= 1 && rs.every((r) => r.play === 'paused' && !r.moved), ringText(rs));
+  else if (want === 'hidden') check(`[${E}] 판 노드 둘레 ${label}: 숨김`, rs.length >= 1 && rs.every((r) => !r.shown && !r.moved), ringText(rs));
+}
+// 판 둘레가 설정을 따른다(켬은 움직임 줄이기에서도 돎, Windows 설정 따름은 움직임 줄이기에서 멈춤, 끔은 늘 멈춤, 가벼운 판은 숨김), 미션 맵을 연 동안 멈추고 닫으면 다시 돈다
+async function boardRing(pg, E, vw) {
+  const K = `${E}-${TAG}-${MT}`;
+  if (await pg.$('[data-role="mission"]')) { await pg.keyboard.press('Escape'); await sleep(400); }
+  let rs = await rings(pg);
+  if (!rs.length) { await pg.evaluate(() => window.__mt.getState().fitAll && window.__mt.getState().fitAll(0)); await sleep(1200); rs = await rings(pg); }
+  log(`[${E}] 판 둘레 ${JSON.stringify(ringText(rs))}`);
+  ringCheck(E, `켬(기본, ${MOTION})`, rs, 'spin');
+  const box = await pg.evaluate(() => { const r = document.querySelector('[data-role=run-ring]'); const n = r && r.closest('.mt-node'); if (!n) return null; const b = n.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; });
+  if (box && box.w > 4) { const lf = await liveFrames(pg, box, `${K}-30-ring-live`, 4, 200, 12); check(`[${E}] 판 노드 둘레 켬(${MOTION}): 실제 시간 프레임이 바뀐다`, lf.distinct >= 2, lf.distinct); }
+  await shot(pg, `${K}-31-board-on`);
+  await setLight(pg, 'system');
+  ringCheck(E, `Windows 설정 따름(${MOTION})`, await rings(pg), MOTION === 'reduce' ? 'still' : 'spin');
+  await shot(pg, `${K}-32-board-system`);
+  await setLight(pg, 'off');
+  ringCheck(E, `끔(${MOTION})`, await rings(pg), 'still');
+  await shot(pg, `${K}-33-board-off`);
+  await setLight(pg, 'on');
+  await pg.evaluate(() => document.documentElement.classList.add('mt-lite')); await sleep(400);
+  const lite = await pg.evaluate(RING_NOW);
+  check(`[${E}] 판 노드 둘레 가벼운 판(켬): 그대로 숨김`, lite.length >= 1 && lite.every((r) => !r.shown), lite.map((r) => `${r.name}:${r.shown}`));
+  await pg.evaluate(() => document.documentElement.classList.remove('mt-lite')); await sleep(500);
+  // 미션 맵을 연 동안 뒤의 둘레는 멈추고, 닫으면 다시 돈다
+  await pg.click('[data-action="mission-rail"]');
+  await pg.waitForSelector('[data-role="mission"]', { timeout: 20000 }); await sleep(800);
+  check(`[${E}] 미션 맵을 열면 문서 뿌리 data-mm-open`, (await pg.evaluate(() => document.documentElement.dataset.mmOpen)) === '1');
+  ringCheck(E, `미션 맵 덮개 뒤(${MOTION})`, await rings(pg), 'paused');
+  await pg.keyboard.press('Escape'); await sleep(700);
+  check(`[${E}] 미션 맵을 닫으면 data-mm-open을 지운다`, (await pg.evaluate(() => document.documentElement.dataset.mmOpen)) === undefined);
+  ringCheck(E, `미션 맵을 닫은 뒤(${MOTION})`, await rings(pg), 'spin');
+}
+
 // ---- PC 창과 PC 웹이 같이 쓰는 지도 시험 ----
 async function desk(pg, E, vw) {
   const K = `${E}-${TAG}-${MT}`;
@@ -541,10 +603,11 @@ async function desk(pg, E, vw) {
   await pg.evaluate(FAKE_ERR); await sleep(400);
   log(`[${E}] 움직임 줄이기 ${await pg.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)} (요청 ${MOTION})`);
   check(`[${E}] 창의 움직임 설정이 ${MOTION}다`, await pg.evaluate((m) => matchMedia(`(prefers-reduced-motion: ${m})`).matches, MOTION));
+  await ensureShown(); await sleep(300);
   const fps = await pg.evaluate(async () => { let n = 0; const t0 = performance.now(); await new Promise((r) => { const f = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else r(); }; requestAnimationFrame(f); }); return { n, vis: document.visibilityState }; });
   log(`[${E}] 창 그리기 ${JSON.stringify(fps)}`);
   check(`[${E}] 시험 창이 그린다(가려지지 않음, rAF 초당 30번 넘음)`, fps.n > 30 && fps.vis === 'visible', fps);
-  call('settings.set', { missionLight: 'on' }); await sleep(600);
+  call('settings.set', { workLight: 'on' }); await sleep(600);
   await shot(pg, `${K}-00-board`);
   const nodePrint = await pg.evaluate(NODE_PRINT);
   fs.writeFileSync(path.join(OUT, `p107-board-${E}-${TAG}-${MT}.json`), JSON.stringify(nodePrint, null, 1));
@@ -553,6 +616,7 @@ async function desk(pg, E, vw) {
     check(`[${E}] PC 판(캔버스) 노드 틀 모양이 고치기 전과 같다(계산된 CSS)`, was && sameJson(was, nodePrint) && nodePrint.length >= 12, diffOf(was, nodePrint));
     const p102 = p102Map(readJson(path.join(P102, `p102-board-${E}-before.json`)));
     check(`[${E}] PC 판 노드 틀 모양이 P102 시험의 고치기 전 값과도 같다(세션 이름만 바꿈)`, p102 && sameJson(p102, nodePrint), diffOf(p102, nodePrint));
+    await boardRing(pg, E, vw);
   }
   // 판 A(실제 세션)
   await openMission(pg);
@@ -595,6 +659,7 @@ async function desk(pg, E, vw) {
     await pg.evaluate(() => { const s = [...window.__mt.getState().sessions.values()].find((x) => x.name === 'p107-e'); window.__p107e = s; window.__mt.api.emit('session.updated', { ...s, state: 'shell_running', shell: { ...(s.shell || {}), atPrompt: false, command: 'ping -n 50 127.0.0.1' } }); });
     await pg.waitForFunction(() => { const e = document.querySelector('[data-role=mission] [data-name="p107-e"]'); return e && e.dataset.tier === 'work' && e.querySelector('[data-role=mm-light]'); }, null, { timeout: 10000 }).catch(() => {});
     await sleep(700);
+    await ensureShown();
     p = await pg.evaluate(PC_PROBE);
     const sp = phaseSpread(workCards(p));
     check(`[${E}] 나중에 일하게 된 카드(e)도 같은 박자(한 바퀴 안 자리 차이 60ms 안)`, workCards(p).length >= 3 && workCards(p).some((x) => x.name === P('e')) && sp !== null && sp <= 60, { spread: sp, work: workCards(p).map((x) => x.name) });
@@ -648,21 +713,21 @@ async function desk(pg, E, vw) {
 async function settingsUi(pg, E) {
   const b = (await pg.$('[data-action=settings-open]')) || (await pg.$('[data-action=settings-rail]'));
   if (b) await b.click();
-  await pg.waitForSelector('[data-role=mission-light-setting]', { timeout: 10000 }).catch(() => {});
-  const row = await pg.$('[data-role=mission-light-setting]');
+  await pg.waitForSelector('[data-role=work-light-setting]', { timeout: 10000 }).catch(() => {});
+  const row = await pg.$('[data-role=work-light-setting]');
   if (!row) { check(`[${E}] 설정 › 일반에 미션 맵 테두리 빛 칸`, false, 'no row'); return; }
-  const buttons = await pg.$$eval('[data-role=mission-light-setting] button[data-light]', (bs) => bs.map((b) => ({ m: b.dataset.light, on: b.getAttribute('aria-checked'), text: b.textContent })));
+  const buttons = await pg.$$eval('[data-role=work-light-setting] button[data-light]', (bs) => bs.map((b) => ({ m: b.dataset.light, on: b.getAttribute('aria-checked'), text: b.textContent })));
   check(`[${E}] 설정 › 일반에 미션 맵 테두리 빛 칸: 켬·Windows 설정 따름·끔, 켬이 골라져 있다`, buttons.length === 3 && buttons.map((b) => b.m).join() === 'on,system,off' && buttons[0].on === 'true', buttons);
   await row.screenshot({ path: path.join(OUT, `${E}-${TAG}-${MT}-20-setting.png`) }).catch(() => {});
   await shot(pg, `${E}-${TAG}-${MT}-21-settings`);
-  await pg.click('[data-role=mission-light-setting] button[data-light=off]');
-  await pg.waitForFunction(() => document.documentElement.dataset.mmLight === 'off', null, { timeout: 5000 }).catch(() => {});
+  await pg.click('[data-role=work-light-setting] button[data-light=off]');
+  await pg.waitForFunction(() => document.documentElement.dataset.workLight === 'off', null, { timeout: 5000 }).catch(() => {});
   await sleep(800);
   const st = call('settings.get').settings;
-  check(`[${E}] 끔을 누르면 문서 뿌리와 판 설정이 끔`, (await pg.evaluate(() => document.documentElement.dataset.mmLight)) === 'off' && st.missionLight === 'off', st.missionLight);
-  await pg.click('[data-role=mission-light-setting] button[data-light=on]');
+  check(`[${E}] 끔을 누르면 문서 뿌리와 판 설정이 끔`, (await pg.evaluate(() => document.documentElement.dataset.workLight)) === 'off' && st.workLight === 'off', st.workLight);
+  await pg.click('[data-role=work-light-setting] button[data-light=on]');
   await sleep(800);
-  check(`[${E}] 켬으로 되돌린다`, call('settings.get').settings.missionLight === 'on' && (await pg.evaluate(() => document.documentElement.dataset.mmLight)) === 'on');
+  check(`[${E}] 켬으로 되돌린다`, call('settings.get').settings.workLight === 'on' && (await pg.evaluate(() => document.documentElement.dataset.workLight)) === 'on');
   await pg.keyboard.press('Escape'); await sleep(400);
 }
 
@@ -671,6 +736,7 @@ async function pc(w = 1920, h = 1080, E = 'pc') {
   const { app, page, mainPid } = await launch({ log, env: { ...ENV }, args: AWAKE });
   try {
     await page.setViewportSize({ width: w, height: h }).catch(() => {});
+    log(`[${E}] 창 자리(화면 밖) ${JSON.stringify(await awayWin(app))}`);
     await page.emulateMedia({ reducedMotion: MOTION });
     await sleep(3000);
     await desk(page, E, w);
@@ -706,7 +772,7 @@ async function pcCost(pg, mainPid, app) {
     }
   }
   await pg.evaluate(UNHOOK);
-  call('settings.set', { missionLight: 'on' });
+  call('settings.set', { workLight: 'on' });
   fs.writeFileSync(path.join(OUT, `p107-cost-pc-${MT}.json`), JSON.stringify(res, null, 1));
   const avg = (xs, f) => xs.reduce((a, x) => a + f(x), 0) / xs.length;
   const on = res.many.on, off = res.many.off;
@@ -728,7 +794,7 @@ async function tunepc() {
     await pg.setViewportSize({ width: 1920, height: 1080 }).catch(() => {});
     await pg.emulateMedia({ reducedMotion: 'reduce' }); // 판 노드 고리(RunRing)가 멈춰 빛만 잰다(사용자 PC와 같다)
     await sleep(2500);
-    call('settings.set', { missionLight: 'on' });
+    call('settings.set', { workLight: 'on' });
     const cdp = await pg.context().newCDPSession(pg);
     await cdp.send('Performance.enable');
     const keys = (process.argv[5] || Object.keys(PC_TUNE).join(',')).split(',');
@@ -758,6 +824,75 @@ async function tunepc() {
     }
     await pg.evaluate(UNHOOK);
     fs.writeFileSync(path.join(OUT, `p107-tunepc${process.argv[5] ? `-${process.argv[5].replace(/,/g, '')}` : ''}.json`), JSON.stringify(res, null, 1));
+  } finally { await closeApp(app); }
+}
+
+// ---- 판 둘레 값(PC 창 1920): 판에 일하는 노드 40개를 창 안에서 흉내 내고(p107-e를 본으로, 판 기록에는 쓰지 않는다) 맞추기 배율로 본다 ----
+const FAKE_BOARD = ([n]) => {
+  const st = window.__mt.getState();
+  const real = [...st.sessions.values()].find((x) => x.name === 'p107-e');
+  const base = real && st.nodes.get(real.sessionId);
+  if (!base) return 0;
+  st.nodes = new Map(st.nodes);
+  for (let i = 0; i < n; i++) st.nodes.set(`fkb${i}`, { x: base.x + (i % 8) * (base.w + 60), y: base.y + base.h + 120 + Math.floor(i / 8) * (base.h + 60), w: base.w, h: base.h, z: 1, area: base.area || '' });
+  for (let i = 0; i < n; i++) window.__mt.api.emit('session.updated', { ...real, sessionId: `fkb${i}`, name: `fkb-${String(i).padStart(2, '0')}`, state: 'shell_running', shell: { ...(real.shell || {}), atPrompt: false, command: 'ping -n 50 127.0.0.1' } });
+  return n;
+};
+async function ringcost() {
+  const { app, page: pg, mainPid } = await launch({ log, env: { ...ENV }, args: AWAKE });
+  const res = { motion: MOTION };
+  try {
+    await pg.setViewportSize({ width: 1920, height: 1080 }).catch(() => {});
+    log(`[ringcost] 창 자리(화면 밖) ${JSON.stringify(await awayWin(app))}`);
+    await pg.emulateMedia({ reducedMotion: MOTION });
+    await sleep(2500);
+    if (await pg.$('[data-action="return-close"]')) { await pg.click('[data-action="return-close"]').catch(() => {}); await sleep(300); }
+    call('settings.set', { workLight: 'on' });
+    const cdp = await pg.context().newCDPSession(pg);
+    await cdp.send('Performance.enable');
+    const win = async () => app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; return w ? { min: w.isMinimized(), vis: w.isVisible() } : null; }).catch(() => null);
+    const span = async () => { let c = null; for (let t = 0; t < 3; t++) { const w0 = await win(); if (w0 && w0.min) { await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; if (w) w.restore(); }).catch(() => {}); await sleep(800); } c = await costSpan(pg, cdp, { pid: mainPid }); const w1 = await win(); if (c.frames.mean < 20 && !(w1 && w1.min)) break; log(`[ringcost] 다시 잼(창 ${JSON.stringify(w1)}, 프레임 ${c.frames.mean}ms)`); } return c; };
+    log(`[ringcost] 흉내 노드 ${await pg.evaluate(FAKE_BOARD, [40])}`);
+    await sleep(1500);
+    await pg.evaluate(() => window.__mt.getState().fitAll && window.__mt.getState().fitAll(0)); await sleep(2000);
+    await pg.mouse.move(5, 600);
+    const rs = await rings(pg);
+    res.rings = { visible: rs.length, moving: rs.filter((r) => r.moved).length };
+    log(`[ringcost] 화면 안 둘레 ${rs.length}, 도는 것 ${res.rings.moving}`);
+    await shot(pg, `ringcost-${MT}-board`);
+    // 판만(미션 맵 닫힘): 둘레 부드럽게(지금) / steps(78)(초당 30번) / 끔(멈춘 고리)
+    const STEPS = '.mt-node-run > i { animation-timing-function: steps(78, end) !important; }';
+    res.board = {};
+    for (let r = 0; r < 2; r++) for (const k of ['smooth', 'steps78', 'steps156', 'off']) {
+      await setLight(pg, k === 'off' ? 'off' : 'on');
+      const tag = k === 'steps78' ? await pg.addStyleTag({ content: STEPS }) : k === 'steps156' ? await pg.addStyleTag({ content: STEPS.replace('78', '156') }) : null;
+      await sleep(700);
+      const c = await span(); (res.board[k] = res.board[k] || []).push(c); log(`[ringcost] 판 ${k} ${r + 1} ${JSON.stringify(c)}`);
+      if (tag) await tag.evaluate((el) => el.remove());
+    }
+    await setLight(pg, 'on');
+    // 미션 맵 덮개(일하는 카드 40) 뒤: 둘레를 멈춤(지금) / 돎(고치기 전과 같게 덮어씀) / 미션 맵만(판 둘레 끔)
+    await pg.evaluate(HOOK, ['many', 40]);
+    await openMission(pg); await pg.mouse.move(5, 600); await sleep(500);
+    // running = 고치기 전(덮개 뒤 판 움직임이 그대로 돈다), ringOnly = 둘레만 멈춤(첫 안), paused = 지금(판 움직임을 모두 멈춤)
+    const ALLRUN = 'html[data-mm-open="1"] .react-flow *, html[data-mm-open="1"] .react-flow *::before, html[data-mm-open="1"] .react-flow *::after { animation-play-state: running !important; }';
+    const RUN = `${ALLRUN} html[data-mm-open="1"] .react-flow .mt-node-run > i { animation-play-state: running !important; }`;
+    const RINGONLY = `${ALLRUN} html[data-mm-open="1"] .react-flow .mt-node-run > i { animation-play-state: paused !important; }`;
+    res.mission = {};
+    for (let r = 0; r < 2; r++) for (const k of ['paused', 'ringOnly', 'running']) {
+      const tag = k === 'running' ? await pg.addStyleTag({ content: RUN }) : k === 'ringOnly' ? await pg.addStyleTag({ content: RINGONLY }) : null;
+      await sleep(700);
+      if (r === 0) { const q = await rings(pg); const other = await pg.evaluate(() => [...document.querySelectorAll('.react-flow *')].flatMap((e) => e.getAnimations()).filter((a) => !/^mt-run$/.test(a.animationName || '')).map((a) => `${a.animationName}:${a.playState}`)); log(`[ringcost] 덮개 뒤 ${k}: ${JSON.stringify({ n: q.length, play: [...new Set(q.map((x) => x.play))], moving: q.filter((x) => x.moved).length, other: [...new Set(other)] })}`); }
+      const c = await span(); (res.mission[k] = res.mission[k] || []).push(c); log(`[ringcost] 덮개 ${k} ${r + 1} ${JSON.stringify(c)}`);
+      if (tag) await tag.evaluate((el) => el.remove());
+    }
+    await pg.evaluate(UNHOOK);
+    fs.writeFileSync(path.join(OUT, `p107-ringcost-${MT}.json`), JSON.stringify(res, null, 1));
+    const avg = (xs, f) => xs.reduce((a, x) => a + f(x), 0) / xs.length;
+    const g = (k) => Math.round(avg(res.mission[k], (x) => x.cpuMs['gpu-process']));
+    const t = (k) => Math.round(avg(res.mission[k], (x) => x.per5s.TaskDuration) * 1000);
+    log(`[ringcost] 덮개 뒤 GPU(5초 ms): 판 움직임 모두 멈춤 ${g('paused')} / 둘레만 멈춤 ${g('ringOnly')} / 고치기 전(돎) ${g('running')}; 주 스레드 ${t('paused')} / ${t('ringOnly')} / ${t('running')}`);
+    check(`[ringcost] 미션 맵을 연 동안 덮개 뒤 둘레를 멈추면 프레임이 그대로다(${MOTION})`, avg(res.mission.paused, (x) => x.frames.mean) < 8, res.mission.paused.map((x) => x.frames));
   } finally { await closeApp(app); }
 }
 
@@ -889,7 +1024,7 @@ async function phone(E) {
   const K = `${E}-${TAG}-${MT}`;
   try {
     for (const d of call('device.list').devices) call('device.revoke', { id: d.id });
-    call('settings.set', { missionLight: 'on' });
+    call('settings.set', { workLight: 'on' });
     const ctx = await browser.newContext({ ...PHONE, reducedMotion: MOTION });
     await ctx.addInitScript(WS_HOOK);
     const pg = await ctx.newPage();
@@ -1026,7 +1161,7 @@ async function phonetune() {
   const browser = await webkit.launch({ headless: true });
   try {
     for (const d of call('device.list').devices) call('device.revoke', { id: d.id });
-    call('settings.set', { missionLight: 'on' });
+    call('settings.set', { workLight: 'on' });
     const ctx = await browser.newContext({ ...PHONE, reducedMotion: 'no-preference' });
     const pg = await ctx.newPage();
     pg.on('pageerror', (e) => log(`[phonetune pageerror] ${e.message}`));
@@ -1070,7 +1205,7 @@ async function memwebkit() {
   const mem = {};
   try {
     for (const d of call('device.list').devices) call('device.revoke', { id: d.id });
-    call('settings.set', { missionLight: 'on' });
+    call('settings.set', { workLight: 'on' });
     const ctx = await browser.newContext({ ...PHONE, reducedMotion: 'no-preference' });
     const pg = await ctx.newPage();
     pg.on('pageerror', (e) => log(`[memwebkit pageerror] ${e.message}`));
@@ -1117,6 +1252,8 @@ async function compose() {
       'compare-phone-list-sheet': [['webkit-before-np-00-list', 'list before'], ['webkit-after-np-00-list', 'list after'], ['webkit-before-np-00-sheet', 'sheet before'], ['webkit-after-np-00-sheet', 'sheet after']],
       'compare-live-pc-rm': [0, 1, 2, 3].map((i) => [`pc-after-rm-11-live-${i}`, `PC reduce, live ${i * 200}ms`]),
       'compare-live-webkit': [0, 1, 2, 3].map((i) => [`webkit-after-rm-11-live-${i}`, `WebKit reduce, live ${i * 250}ms`]),
+      'compare-board-ring-rm': [['pc-after-rm-31-board-on', 'board, reduce, on: ring spins'], ['pc-after-rm-32-board-system', 'follow Windows (reduce): still'], ['pc-after-rm-33-board-off', 'off: still']],
+      'compare-board-ring-live-rm': [0, 1, 2, 3].map((i) => [`pc-after-rm-30-ring-live-${i}`, `board ring, reduce, live ${i * 200}ms`]),
     };
     for (const [name, list] of Object.entries(sets)) {
       const items = list.map(([f, label]) => ({ b64: b64(f), label })).filter((x) => x.b64);
@@ -1144,13 +1281,14 @@ try {
   else if (WHAT === 'webkit' || WHAT === 'chromium') { await stir(); await phone(WHAT); }
   else if (WHAT === 'phonetune') { await stir(); await phonetune(); }
   else if (WHAT === 'tunepc') { await stir(); await tunepc(); }
+  else if (WHAT === 'ringcost') { await stir(); await ringcost(); }
   else if (WHAT === 'memwebkit') { await stir(); await memwebkit(); }
   else if (WHAT === 'compose') await compose();
-  else if (WHAT === 'restart') { try { log(atrium('backend', 'stop').slice(0, 200)); } catch (e) { log(`backend stop ${e.message.slice(0, 120)}`); } await sleep(2000); log(atrium('backend', 'start').trim().slice(0, 300)); await sleep(3000); log(`설정 ${JSON.stringify(call('settings.get').settings.missionLight)}`); }
+  else if (WHAT === 'restart') { try { log(atrium('backend', 'stop').slice(0, 200)); } catch (e) { log(`backend stop ${e.message.slice(0, 120)}`); } await sleep(2000); log(atrium('backend', 'start').trim().slice(0, 300)); await sleep(3000); log(`설정 ${JSON.stringify(call('settings.get').settings.workLight)}`); }
   else if (WHAT === 'stop') await stopBoard();
   else throw new Error(`모르는 단계 ${WHAT}`);
 } catch (e) { log(`오류 ${e.stack || e.message}`); results.push({ name: 'run', ok: false, detail: e.message }); }
 const fails = results.filter((r) => !r.ok);
 log(`결과 ${results.length - fails.length}/${results.length}`);
-fs.writeFileSync(path.join(OUT, `p107-${WHAT}-${TAG}${['pc', 'pc2560', 'web', 'webkit', 'chromium'].includes(WHAT) ? `-${MT}` : ''}.json`), JSON.stringify(results, null, 1));
+fs.writeFileSync(path.join(OUT, `p107-${WHAT}-${TAG}${['pc', 'pc2560', 'web', 'webkit', 'chromium', 'ringcost'].includes(WHAT) ? `-${MT}` : ''}.json`), JSON.stringify(results, null, 1));
 process.exit(fails.length ? 1 : 0);

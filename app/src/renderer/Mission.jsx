@@ -10,7 +10,7 @@
 // - P101 다듬기: 워크스페이스마다 옅은 판(머리 글과 그 세션들을 감싸는 바탕 면), 쉬는·잠든·끝난 세션은 테두리 있는 알약, 종류 동그라미는 카드 안 오른쪽 위.
 //   서로 이은 두 세션은 마주 보는 가장자리 사이 짧은 두 줄과 화살촉(lib/mission-wire.js).
 // - P107: 일하는 카드는 테두리를 따라 상태 색 빛이 돈다(빛 층 .mt-mm-light: 2px 고리와 옅은 빛 무리, 원뿔 그라데이션을 transform으로만 돌린다, 2.4초에 한 바퀴·초당 30번,
-//   모두 같은 박자: lib/mission-light.js). 판 설정 missionLight(켬 기본 / Windows 설정 따름 / 끔)를 따르고, 끔·가벼운 판에서는 멈춘 굵은 상태 색 테두리다.
+//   모두 같은 박자: lib/work-light.js). 판 설정 workLight(작업 중 테두리 빛: 켬 기본 / Windows 설정 따름 / 끔, 판 노드 둘레도 따른다)를 따르고, 끔·가벼운 판에서는 멈춘 굵은 상태 색 테두리다.
 //   P102 번쩍임은 걷었다(사용자: 촌스럽다).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
@@ -20,7 +20,7 @@ import { roleModel, focusOf, teamText, roleText, nodeTier, filterMatch, FILTERS,
 import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
-import { onLightStart } from './lib/mission-light.js';
+import { onLightStart } from './lib/work-light.js';
 
 // 빈 곳 누르기에서 빼는 것
 const SOLID = '[data-role="mm-node"], [data-role="mm-edge"], [data-role="mm-summary"], button, input, select, a';

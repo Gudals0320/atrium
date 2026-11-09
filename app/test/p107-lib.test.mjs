@@ -1,13 +1,14 @@
-// P107 단위 시험: 미션 맵의 일하는 카드 테두리를 따라 도는 빛(styles.css·phone.css P107 덩어리, Mission.jsx MissionLight, lib/mission-light.js, 판 설정 missionLight).
-// P102 번쩍임을 갈음한다(p102-lib.test.mjs를 걷었다). transform만 움직임(합성), 2~3초에 한 바퀴, 설정 켬이면 움직임 줄이기에서도 돎(기본 켬),
-// Windows 설정 따름은 no-preference에서만, 끔·가벼운 판은 멈춘 굵은 테두리, 모든 카드가 같은 박자, 일하는 카드에만 층, 가벼움, 두 사전, 글 대비
+// P107 단위 시험: 작업 중 테두리 빛. 미션 맵의 일하는 카드 테두리를 따라 도는 빛(styles.css·phone.css P107 덩어리, Mission.jsx MissionLight, lib/work-light.js)과
+// 판 노드 둘레(.mt-node-run, P85)의 조건, 판 설정 workLight. P102 번쩍임을 갈음한다(p102-lib.test.mjs를 걷었다). transform만 움직임(합성), 2~3초에 한 바퀴,
+// 설정 켬이면 움직임 줄이기에서도 돎(기본 켬), Windows 설정 따름은 no-preference에서만, 끔·가벼운 판은 멈춘 굵은 테두리, 미션 맵을 연 동안 판 둘레는 멈춤,
+// 모든 카드가 같은 박자, 일하는 카드에만 층, 가벼움, 두 사전, 글 대비
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { alignLight, onLightStart, applyMissionLight, lightModeOf, LIGHT_MODES } from '../src/renderer/lib/mission-light.js';
-import { SETTINGS, MISSION_LIGHT, normalizePatch, DEFAULTS } from '../../backend/src/settings.mjs';
+import { alignLight, onLightStart, applyWorkLight, applyMissionOpen, workLightOf, LIGHT_MODES } from '../src/renderer/lib/work-light.js';
+import { SETTINGS, WORK_LIGHT, normalizePatch, DEFAULTS } from '../../backend/src/settings.mjs';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
 
@@ -35,37 +36,62 @@ test('박자: 빛 층 아래(가상 요소 포함) 움직임의 시작 시각을
   alignLight(null); alignLight({}); alignLight({ getAnimations: () => [Object.defineProperty({}, 'startTime', { get: () => 5, set: () => { throw new Error('no'); } })] });
 });
 
-test('설정 값: 기본 켬, 모르는 값은 켬, 문서 뿌리 data-mm-light에 적는다(문서가 없어도 던지지 않는다), 백엔드 선택지와 같다', () => {
+test('설정 값: 기본 켬, 모르는 값은 켬, 문서 뿌리 data-work-light에 적는다, 미션 맵 덮개는 data-mm-open(문서가 없어도 던지지 않는다), 백엔드 선택지와 같다', () => {
   assert.deepEqual(LIGHT_MODES, ['on', 'system', 'off']);
-  assert.deepEqual(MISSION_LIGHT, LIGHT_MODES, '백엔드 settings.mjs와 같은 선택지');
-  assert.equal(lightModeOf(null), 'on'); assert.equal(lightModeOf({}), 'on'); assert.equal(lightModeOf({ missionLight: 'blink' }), 'on');
-  for (const m of LIGHT_MODES) assert.equal(lightModeOf({ missionLight: m }), m);
+  assert.deepEqual(WORK_LIGHT, LIGHT_MODES, '백엔드 settings.mjs와 같은 선택지');
+  assert.equal(workLightOf(null), 'on'); assert.equal(workLightOf({}), 'on'); assert.equal(workLightOf({ workLight: 'blink' }), 'on');
+  assert.equal(workLightOf({ missionLight: 'off' }), 'on', '옛 이름(릴리즈 전)은 읽지 않는다');
+  for (const m of LIGHT_MODES) assert.equal(workLightOf({ workLight: m }), m);
   const doc = { documentElement: { dataset: {} } };
-  assert.equal(applyMissionLight({ missionLight: 'off' }, doc), 'off'); assert.equal(doc.documentElement.dataset.mmLight, 'off');
-  assert.equal(applyMissionLight(null, doc), 'on'); assert.equal(doc.documentElement.dataset.mmLight, 'on');
-  assert.equal(applyMissionLight({ missionLight: 'system' }, null), null);
-  assert.equal(applyMissionLight({ missionLight: 'system' }, {}), null);
+  assert.equal(applyWorkLight({ workLight: 'off' }, doc), 'off'); assert.equal(doc.documentElement.dataset.workLight, 'off');
+  assert.equal(applyWorkLight(null, doc), 'on'); assert.equal(doc.documentElement.dataset.workLight, 'on');
+  assert.equal(applyWorkLight({ workLight: 'system' }, null), null);
+  assert.equal(applyWorkLight({ workLight: 'system' }, {}), null);
+  assert.equal(applyMissionOpen(true, doc), true); assert.equal(doc.documentElement.dataset.mmOpen, '1');
+  assert.equal(applyMissionOpen(false, doc), false); assert.ok(!('mmOpen' in doc.documentElement.dataset), '닫으면 지운다');
+  assert.equal(applyMissionOpen(true, null), null);
 });
 
-test('판 설정 missionLight: 고르기(on 기본, system, off), 다른 값은 거부, 창이 settings.updated로 따른다', () => {
-  assert.equal(SETTINGS.missionLight.type, 'choice');
-  assert.equal(DEFAULTS.missionLight, 'on', '사용자의 PC는 늘 움직임 줄이기라 기본은 켬');
-  assert.deepEqual(normalizePatch({ missionLight: 'system' }), { missionLight: 'system' });
-  assert.deepEqual(normalizePatch({ missionLight: ' off ' }), { missionLight: 'off' });
-  assert.throws(() => normalizePatch({ missionLight: 'blink' }), (e) => e.code === 'bad_request');
+test('판 설정 workLight: 고르기(on 기본, system, off), 다른 값은 거부, 창이 settings.updated로 따른다, 미션 맵 덮개를 문서 뿌리에', () => {
+  assert.equal(SETTINGS.workLight.type, 'choice');
+  assert.equal(DEFAULTS.workLight, 'on', '사용자의 PC는 늘 움직임 줄이기라 기본은 켬');
+  assert.ok(!('missionLight' in SETTINGS), '옛 이름은 없다(릴리즈 전이라 옮기기 없음)');
+  assert.match(SETTINGS.workLight.label, /보드/); assert.match(SETTINGS.workLight.label, /미션 맵/);
+  assert.deepEqual(normalizePatch({ workLight: 'system' }), { workLight: 'system' });
+  assert.deepEqual(normalizePatch({ workLight: ' off ' }), { workLight: 'off' });
+  assert.throws(() => normalizePatch({ workLight: 'blink' }), (e) => e.code === 'bad_request');
+  assert.throws(() => normalizePatch({ missionLight: 'on' }), (e) => e.code === 'bad_request');
   const store = read('store.js');
-  assert.match(store, /function putSettings\(s\) \{[^\n]*applyMissionLight\(s\);/, '설정을 받으면(처음 읽기·settings.updated) 문서 뿌리에 적는다(PC 창·웹·휴대폰)');
+  assert.match(store, /function putSettings\(s\) \{[^\n]*applyWorkLight\(s\);/, '설정을 받으면(처음 읽기·settings.updated) 문서 뿌리에 적는다(PC 창·웹·휴대폰)');
+  assert.match(store, /export function setMissionOpen\(v\) \{ state\.missionOpen = v; applyMissionOpen\(v\);/, '미션 맵을 열고 닫을 때 문서 뿌리에');
   const st = read('Settings.jsx');
-  assert.match(st, /<MissionLightSetting settings=\{settings\} \/>/, '설정 › 일반에 칸');
-  assert.match(st, /api\.call\('settings\.set', \{ key: 'missionLight', value: mode \}\)/);
+  assert.match(st, /<WorkLightSetting settings=\{settings\} \/>/, '설정 › 일반에 칸');
+  assert.match(st, /api\.call\('settings\.set', \{ key: 'workLight', value: mode \}\)/);
   assert.match(st, /LIGHT_MODES\.map/, '켬 / Windows 설정 따름 / 끔 세 단추');
 });
 
-test('두 사전: missionLight 글이 같은 키로 둘 다 있다', () => {
+test('두 사전: workLight 글이 같은 키로 둘 다 있다(판 노드와 미션 맵을 함께 말한다)', () => {
   const keys = ['name', 'on', 'system', 'off', 'hint', 'note'];
-  for (const d of [en, ko]) for (const k of keys) assert.ok(typeof d.missionLight[k] === 'string' && d.missionLight[k].length > 0, k);
-  assert.deepEqual(Object.keys(en.missionLight).sort(), Object.keys(ko.missionLight).sort());
-  assert.match(ko.missionLight.system, /Windows/); assert.match(en.missionLight.system, /Windows/);
+  for (const d of [en, ko]) for (const k of keys) assert.ok(typeof d.workLight[k] === 'string' && d.workLight[k].length > 0, k);
+  assert.deepEqual(Object.keys(en.workLight).sort(), Object.keys(ko.workLight).sort());
+  assert.ok(!en.missionLight && !ko.missionLight, '옛 키는 지웠다');
+  assert.equal(en.workLight.name, 'Working session light'); assert.equal(ko.workLight.name, '작업 중 테두리 빛');
+  assert.match(ko.workLight.system, /Windows/); assert.match(en.workLight.system, /Windows/);
+  assert.match(ko.workLight.hint, /보드/); assert.match(ko.workLight.hint, /미션 맵/);
+  assert.match(en.workLight.hint, /board/); assert.match(en.workLight.hint, /mission map/);
+});
+
+test('CSS 판 노드 둘레: 설정을 따른다(켬은 움직임 줄이기에서도 돎, system은 움직임 줄이기에서 멈춤, 끔은 늘 멈춤), 미션 맵을 연 동안 멈춤, 모양·속도·가벼운 판은 그대로', () => {
+  const css = read('styles.css'), body = noComments(css);
+  assert.match(body, /\.mt-node-run > i \{[^}]*animation: mt-run 2\.6s linear infinite; \}/, '모양·속도(2.6초, 부드럽게) 그대로');
+  assert.match(body, /\nhtml\[data-work-light="off"\] \.mt-node-run > i \{ animation: none; background: var\(--run\); \}/, '끔: 늘 멈춘 고리(움직임 줄이기 모양)');
+  assert.match(body, /\nhtml\[data-mm-open="1"\] \.mt-node-run > i \{ animation-play-state: paused; \}/, '미션 맵을 연 동안 멈춤');
+  assert.match(body, /\nhtml\[data-mm-open="1"\] \.react-flow \*, html\[data-mm-open="1"\] \.react-flow \*::before, html\[data-mm-open="1"\] \.react-flow \*::after \{ animation-play-state: paused !important; \}/, '덮개 뒤 판의 다른 움직임(응답 필요 깜빡임 등)도 멈춤(no-preference GPU, 작업 기록)');
+  const reduced = body.slice(body.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+  assert.match(reduced, /html\[data-work-light="system"\] \.mt-node-run > i \{ animation: none; background: var\(--run\); \}/, 'system: 움직임 줄이기에서 멈춤');
+  assert.ok(!/\n\s*\.mt-node-run > i \{ animation: none/.test(reduced), '켬(값 없음 포함)은 움직임 줄이기에서도 돈다(조건 없는 멈춤 규칙이 없다)');
+  assert.match(body, /html\.mt-lite \.mt-node-run, html\.mt-lite \.mt-splash-lit \{ display: none !important; \}/, '가벼운 판은 그대로 숨긴다');
+  assert.ok(!/\.mt-node-run[^{]*\{[^}]*steps\(/.test(body), '판 둘레는 부드럽게(steps 없음)');
 });
 
 test('CSS PC: transform만 돈다(합성), 2.4초에 한 바퀴·초당 30번, 도는 조건은 설정 켬(값 없음 포함)과 system + no-preference, 가벼운 판은 빠진다', () => {
@@ -81,10 +107,10 @@ test('CSS PC: transform만 돈다(합성), 2.4초에 한 바퀴·초당 30번, �
   assert.match(body, /\.mt-mm-lspin::before \{[^}]*animation: mt-mm-lturn/, '돌아가는 것은 감싸개의 ::before(정사각형 원뿔)');
   assert.match(body, /\.mt-mm-lspin \{[^}]*transform: scaleX\(1\.86\);/, '가로로 늘린 공간에서 돈다(둘레 속도 차이를 줄인다)');
   // 조건 둘
-  const on = 'html:not(.mt-lite):not([data-mm-light="off"]):not([data-mm-light="system"]) .mt-mm-light';
+  const on = 'html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) .mt-mm-light';
   assert.match(ruleOf(body, on), /--mm-go: block;/, '켬(기본, 값 없음 포함): 움직임 줄이기와 상관없이 돈다');
   const media = (body.match(/@media \(prefers-reduced-motion: no-preference\) \{([^]*?)\n\}/) || [])[1] || '';
-  assert.match(media, /html:not\(\.mt-lite\)\[data-mm-light="system"\] \.mt-mm-light \{[^}]*--mm-go: block;/, 'system은 no-preference에서만');
+  assert.match(media, /html:not\(\.mt-lite\)\[data-work-light="system"\] \.mt-mm-light \{[^}]*--mm-go: block;/, 'system은 no-preference에서만');
   assert.equal((body.match(/--mm-go: block/g) || []).length, 2, '도는 조건은 둘뿐(끔·가벼운 판은 없다)');
   const ring = ruleOf(body, '.mt-mm-lring');
   assert.match(ring, /display: var\(--mm-go, none\);/, '조건 밖에서는 고리와 빛 무리를 그리지 않는다');
@@ -132,7 +158,7 @@ test('그리기: 일하는 카드에만 빛 층(PC 카드, 휴대폰 카드), �
   const card = ph.slice(ph.indexOf('<button type="button" className={`mt-pm-node'));
   assert.ok(card.indexOf('MissionLight') > 0 && card.indexOf('MissionLight') < card.indexOf('</button>'));
   assert.ok(!/MissionLight/.test(ph.slice(ph.indexOf("if (n.kind === 'dot')"), ph.indexOf('const team = r.team'))), '휴대폰 한 줄·동그라미에는 층이 없다');
-  assert.ok(!fs.existsSync(path.join(R, 'lib', 'mission-flash.js')), 'P102 박자 파일은 mission-light.js로 바뀌었다');
+  assert.ok(!fs.existsSync(path.join(R, 'lib', 'mission-flash.js')) && !fs.existsSync(path.join(R, 'lib', 'mission-light.js')), 'P102 박자 파일은 work-light.js로 바뀌었다');
 });
 
 test('글 대비: 멈춘 표시(바탕 6%)와 도는 동안(4%) 위에서 모든 카드 글 4.5 이상', () => {

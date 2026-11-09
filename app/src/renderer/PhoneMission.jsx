@@ -8,8 +8,8 @@
 //   처음과 "맞추기"는 폭에 맞추고 위에 붙인다. 카드를 누르면 세션 화면(Phone.jsx PhoneSession), 돌아오면 같은 자리·배율(화면 크기가 같을 때, 모듈에 둔다)
 // - 가볍게(iPhone Safari): 그래프는 DOM 카드와 SVG 한 장, 옮길 때는 한 요소의 transform만 바꾼다. filter·backdrop-filter·will-change 없음
 // - P101 다듬기: 워크스페이스마다 옅은 판, 쉬는·잠든 세션은 테두리 있는 알약, 종류 동그라미는 카드 안. 서로 이은 두 세션은 짧은 두 줄과 화살촉(lib/phone-graph.js).
-// - P107: 일하는 카드는 PC처럼 테두리를 따라 상태 색 빛이 돈다(Mission.jsx MissionLight, .mt-mm-light). 판 설정 missionLight를 따르고(끔이면 멈춘 굵은 테두리),
-//   휴대폰은 가볍게(P89) steps(36)으로 초당 15번만 바뀐다(phone.css P107 덩어리, WebKit에서 잰 값은 작업 기록). 모든 카드가 같은 박자(lib/mission-light.js).
+// - P107: 일하는 카드는 PC처럼 테두리를 따라 상태 색 빛이 돈다(Mission.jsx MissionLight, .mt-mm-light). 판 설정 workLight를 따르고(끔이면 멈춘 굵은 테두리),
+//   휴대폰은 가볍게(P89) steps(36)으로 초당 15번만 바뀐다(phone.css P107 덩어리, WebKit에서 잰 값은 작업 기록). 모든 카드가 같은 박자(lib/work-light.js).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
