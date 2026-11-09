@@ -168,6 +168,7 @@ async function allRows(page) {
 }
 const scene = () => JSON.parse(fs.readFileSync(SCENE, 'utf8'));
 const wsSel = (k) => `[data-sb="ws"][data-ws="${scene().key[k]}"]`;
+const foldSel = (k) => `${wsSel(k)} [data-action="fold"]`; // 줄 가운데를 누르면 긴 이름(옛 대문자 이름)에서는 이름 단추(영역으로 가기)에 닿는다
 const sessSel = (n) => `[data-sb="session"][data-name="${n}"]`;
 async function reveal(page, sel) {
   for (let i = 0; i < 120; i++) {
@@ -215,11 +216,15 @@ async function openSidebar(page) {
 }
 
 async function shots() {
+  call('workspace.select', { workspace: scene().key.api }); // 위 바의 지금 워크스페이스를 고정(전·뒤를 같은 상태로 견준다)
   const { app, page } = await openWindow();
   try {
     await call('board.arrange', { all: true, apply: true });
     await sleep(1200);
     await fake(page);
+    // 화면 배율과 초점 세션을 고정한다(노드 얼굴·터미널 붙음이 배율에 따라 바뀐다)
+    await page.evaluate(() => { const st = window.__mt.getState(); st.setViewport({ x: 60, y: 120, zoom: 0.22 }); window.__mt.setFocus(null); });
+    await sleep(2500);
     // 사이드바 밖 화면의 계산된 모양(사이드바를 열기 전)
     const outside = { nodes: await page.evaluate(`${STYLE_PRINT}('.mt-node')`), top: await page.evaluate(`${STYLE_PRINT}('[data-role="top-left"], [data-role="top-right"], [data-role="rail-right"]')`) };
     await page.click('[data-action="mission-rail"]').catch(() => {});
@@ -229,6 +234,8 @@ async function shots() {
     await page.click('[data-action="mission-rail"]').catch(() => {});
     await sleep(800);
     await openSidebar(page);
+    await sleep(1500);
+    outside.nodesOpen = await page.evaluate(`${STYLE_PRINT}('.mt-node')`); // 사이드바를 연 뒤(캔버스 폭만 줄고 배율은 그대로)
     await fake(page);
     const st = await rowsOf(page);
     log('줄', JSON.stringify(st.rows.map((r) => `${r.sb}:${r.text}`)));
@@ -242,10 +249,10 @@ async function shots() {
     await shotSide(page, '02-cursor-hover');
     // 접힘: core, tools(응답 필요가 남는다)
     await page.mouse.move(900, 500);
-    for (const k of ['core', 'tools']) await click(page, `${wsSel(k)}`);
+    for (const k of ['core', 'tools']) await click(page, foldSel(k));
     await sleep(300);
     await shotSide(page, '03-folded');
-    for (const k of ['core', 'tools']) await click(page, `${wsSel(k)}`);
+    for (const k of ['core', 'tools']) await click(page, foldSel(k));
     // 닫힌 세션·판 밖 대화 펼침
     for (const k of ['api', 'hub']) await click(page, `[data-sb="extra"][data-ws="${scene().key[k]}"]`).catch((e) => log('펼침 실패', k, e.message.slice(0, 100)));
     await sleep(300);
@@ -286,8 +293,6 @@ async function shots() {
     await sleep(300);
     await shotSide(page, '10-big-folded');
     await click(page, '[data-action="unfold-all"]');
-    // 사이드바를 연 뒤 판 노드의 계산된 모양(폭이 줄어든 것 말고 같아야 한다)
-    outside.nodesOpen = await page.evaluate(`${STYLE_PRINT}('.mt-node')`);
     fs.writeFileSync(path.join(OUT, `style-${TAG}.json`), JSON.stringify(outside, null, 1));
     fs.writeFileSync(path.join(OUT, `rows-${TAG}.json`), JSON.stringify({ small: st, big: { total: big.total, shown: big.shown } }, null, 1));
     check(`[${TAG}] 찍기`, true, { small: st.total, big: big.total });
@@ -303,17 +308,17 @@ async function func() {
     await fake(page);
     const k = scene().key;
     // 접기·펼치기(줄 누르기, 화살표 키)
-    await click(page, wsSel('hub'));
+    await click(page, foldSel('hub'));
     let r = await rowsOf(page);
     check('접기: 워크스페이스 줄을 누르면 그 세션 줄이 사라진다', !r.rows.some((x) => x.name === 'hub-main'), r.rows.map((x) => x.name).filter(Boolean));
-    await click(page, wsSel('hub'));
+    await click(page, foldSel('hub'));
     r = await rowsOf(page);
     check('펼치기: 다시 누르면 돌아온다', r.rows.some((x) => x.name === 'hub-main'));
-    await click(page, wsSel('tools'));
+    await click(page, foldSel('tools'));
     r = await rowsOf(page);
     const pin = r.rows.find((x) => x.name === 'tools-release');
     check('접힘: 접힌 워크스페이스 아래에도 응답 필요 세션은 남는다', pin && !r.rows.some((x) => x.name === 'tools-lint'), pin);
-    await click(page, wsSel('tools'));
+    await click(page, foldSel('tools'));
     // 키보드: 찾기 칸 ↓ → 목록, ←로 접고 →로 펴고, Enter로 세션에 들어간다
     await page.fill('[data-role="sidebar-filter"]', 'web-');
     await sleep(300);
@@ -334,7 +339,7 @@ async function func() {
     const hi = await page.evaluate((n) => { const e = document.querySelector(`[data-sb="session"][data-name="${n}"]`); return e ? { focused: e.dataset.focused || null, cls: e.className, color: getComputedStyle(e.querySelector('.mt-sb2-name')).color } : null; }, curName);
     check(`[${TAG}] 지금 연 세션 줄`, TAG === 'before' || (hi && hi.focused === '1'), hi);
     // 줄을 눌러 커서를 두고(접힘이 바뀐다) 다시 눌러 되돌린 뒤 ←·→
-    await click(page, wsSel('api')); await click(page, wsSel('api'));
+    await click(page, foldSel('api')); await click(page, foldSel('api'));
     const before = (await rowsOf(page)).rows.some((x) => x.name === 'api-lead');
     await page.focus('[data-role="sidebar-list"]');
     await page.keyboard.press('ArrowLeft'); await sleep(200);
