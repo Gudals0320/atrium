@@ -104,6 +104,8 @@ export default {
     sleepWhy_idle_short: '작업을 멈춘 뒤 자동 절전까지 필요한 시간이 아직 지나지 않았습니다.',
     sleepWhy_herdr_down: 'herdr 서버가 종료된 상태입니다.',
     sleepWhy_still_running: 'claude 프로세스가 아직 종료되지 않았습니다.',
+    sleepWhy_background: '백그라운드 작업(셸, 에이전트)이 실행 중입니다. 작업이 끝난 뒤 다시 시도하거나 세션에서 작업을 먼저 중지하세요.',
+    sleepWhy_sleep_failed: '조금 전 절전 모드 전환에 실패해 나중에 다시 시도합니다.',
     wsClose: '빈 프로젝트를 닫습니다: {name} ({root}). 폴더와 Git 저장소는 그대로 유지합니다.',
     wsCloseMany: '프로젝트 {n}개를 보드에서 제거합니다. 폴더와 대화 기록 파일은 그대로 유지합니다.',
     wsCloseSessions: '프로젝트 {n}개를 보드에서 제거합니다(세션 {sessions}개, 실행 중인 CLI {running}개). 세션을 보관할지 삭제할지 선택하세요. 폴더와 대화 기록 파일은 그대로 유지합니다.',

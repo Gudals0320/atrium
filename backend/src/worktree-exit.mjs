@@ -18,9 +18,9 @@ export function worktreeOf(s, info = null) {
   return m ? { name: m[1] } : null;
 }
 
-// 화면에 질문이 있으면 고른 답(keep|remove)의 번호를 보낸다. → 보낸 선택지 | null
-export async function answerWorktreeExitOnScreen(b, s, choice, by) {
-  const w = parseWorktreeExit(await visible(b, s));
+// 화면에 질문이 있으면 고른 답(keep|remove)의 번호를 보낸다. → 보낸 선택지 | null. screen을 주면 화면을 다시 읽지 않는다(P105)
+export async function answerWorktreeExitOnScreen(b, s, choice, by, screen = null) {
+  const w = parseWorktreeExit(screen != null ? screen : await visible(b, s));
   if (!w) return null;
   const c = choice === 'remove' ? w.remove : w.keep;
   await b.adapter.paneKeys(s.paneId, [String(c.n)]);
@@ -29,16 +29,25 @@ export async function answerWorktreeExitOnScreen(b, s, choice, by) {
 }
 
 // /exit를 보낸 뒤 claude가 끝나기를 ms까지 기다린다. 그동안 질문이 뜨면 고른 답(기본 남기기)을 한 번 보낸다. → 기다린 시간(ms)
-export async function waitClaudeExit(b, s, ms, { worktree = 'keep', by = 'close', steps = null } = {}) {
+export async function waitClaudeExit(b, s, ms, opts = {}) { return (await waitClaudeExitOr(b, s, ms, opts)).ms; }
+
+// P105: stopOn(화면 글 → 참 같은 값이면 멈춤)을 주면 기다리는 동안 화면을 계속 보고, 그 값이 나오면 그 자리에서 멈춘다
+// (잠재우기의 "뒤 일이 돈다" 확인 창). → { ms, stopped: stopOn이 돌려준 값 | null }
+export async function waitClaudeExitOr(b, s, ms, { worktree = 'keep', by = 'close', steps = null, stopOn = null } = {}) {
   const t0 = Date.now();
-  let answered = (s.kind || 'claude') !== 'claude', readAt = 0;
+  const claude = (s.kind || 'claude') === 'claude';
+  let answered = !claude, readAt = 0;
   while (s.rt.herdr.present && Date.now() - t0 < ms) {
-    if (!answered && Date.now() - readAt >= 400) {
+    if (claude && (!answered || stopOn) && Date.now() - readAt >= 400) {
       readAt = Date.now();
-      const c = await answerWorktreeExitOnScreen(b, s, worktree === 'remove' ? 'remove' : 'keep', by);
-      if (c) { answered = true; if (steps) steps.push(`worktree exit: ${c.n}. ${c.label}`); }
+      const screen = await visible(b, s);
+      if (stopOn) { const hit = stopOn(screen); if (hit) return { ms: Date.now() - t0, stopped: hit }; }
+      if (!answered) {
+        const c = await answerWorktreeExitOnScreen(b, s, worktree === 'remove' ? 'remove' : 'keep', by, screen);
+        if (c) { answered = true; if (steps) steps.push(`worktree exit: ${c.n}. ${c.label}`); }
+      }
     }
     await sleep(200);
   }
-  return Date.now() - t0;
+  return { ms: Date.now() - t0, stopped: null };
 }

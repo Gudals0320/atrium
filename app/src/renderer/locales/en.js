@@ -104,6 +104,8 @@ export default {
     sleepWhy_idle_short: 'not idle long enough',
     sleepWhy_herdr_down: 'herdr is down',
     sleepWhy_still_running: 'claude did not exit',
+    sleepWhy_background: 'background work (a shell or agent) is running in it; try again when it finishes, or stop it in the session first',
+    sleepWhy_sleep_failed: 'the last try to put it to sleep failed, so it will try again later',
     wsClose: 'Close empty workspace {name} ({root}). The folder and repo stay.',
     wsCloseMany: { one: 'Remove {n} workspace from the board. Folders and conversation files stay.', other: 'Remove {n} workspaces from the board. Folders and conversation files stay.' },
     wsCloseSessions: 'Remove {n} workspace(s) from the board ({sessions} sessions, {running} CLIs running). Choose whether to archive or delete the sessions. Folders and conversation files stay.',
