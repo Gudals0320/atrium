@@ -171,7 +171,7 @@ function fakeBoard({ withTranscript = true, wakeFails = null } = {}) {
   sessions.set(s.sessionId, s);
   if (withTranscript) { const f = transcriptPathFor(root, cwd, s.sessionId); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, '{}\n'); }
   const readTable = async () => ({ procs: new Map([[9001, { pid: 9001, ppid: 1, ws: 87 * 1048576, name: 'powershell.exe' }], [9002, { pid: 9002, ppid: 9001, ws: 310 * 1048576, name: 'claude.exe' }], [9003, { pid: 9003, ppid: 9002, ws: 85 * 1048576, name: 'aside.exe' }]]) });
-  const sl = new Sleeper(b, { timers: false, readTable, wakeReadyMs: 3000, settleMs: 50 });
+  const sl = new Sleeper(b, { timers: false, readTable, readChildren: async () => [], wakeReadyMs: 3000, settleMs: 50 }); // P105: 진짜 프로세스 표를 읽지 않는다
   b.sleeper = sl;
   return { b, s, sl, events, calls, queue };
 }

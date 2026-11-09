@@ -92,6 +92,7 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     // P3
     resourcesIntervalMs: Number(E('RESOURCES_MS') || 30000), // D1: 약 30초마다
     sleepTickMs: Number(E('SLEEP_TICK_MS') || 30000), // P21(D4): 저절로 잠재울 세션을 보는 간격(시험은 짧게)
+    sleepBgPrecheck: !(profile === 'dev' && E('SLEEP_BG_PRECHECK') === 'off'), // P105 판 시험만(개발용 판): 뒤 일 미리 보기를 끄고 /exit 확인 창 처리를 시험한다
     recoverGraceMs: 15000, // C3: herdr가 다시 뜬 뒤 이만큼 기다려도 claude가 없으면 판이 이어 간다
     // P4
     adoptSpawnMatchMs: 120000, // F3: 세션이 herdr로 새 에이전트를 띄운 명령(hook)과 새로 나타난 에이전트를 이 시간 안에서 맞춘다

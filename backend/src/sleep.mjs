@@ -5,15 +5,17 @@
 // - "아무 일"(sessionActivity): 그 리포의 어떤 세션이든 일하는 중·내 차례·신뢰 대기·시작 중, 전달 대기, 돌아가는 루프, 보내지 않은 초안,
 //   화면에서 보는 노드(초점, 가까이 얼굴), 다른 리포에서 일하는 하위 세션이 있는 부모(그리고 P21처럼 일하는 부모의 하위 세션).
 //   사람이 손댄 때(보기·입력·보내기)는 쉬기 시작한 때(idleSince)로 센다. 마지막 일이 끝난 뒤 정한 시간이 지나야 잠재운다(일이 보인 때를 tick마다 기억한다).
+//   P105: 도는 Claude Code 뒤 일(뒤 셸·뒤 하위 에이전트, backgroundOf)도 일이다. /exit에 뒤 일 확인 창이 뜨거나 claude가 끝나지 않으면 Esc로 화면을 돌리고
+//   그 세션은 다음 활동까지(또는 SLEEP_RETRY_MS, 실패마다 두 배) 다시 잠재우지 않는다. 셸 세션과 같은 작업 공간의 다른 패널은 끄지 않는다(이 패널만 닫는다).
 // - 깨우기: 잠든 리포의 노드 하나를 누르거나 그 리포의 세션 하나에 글을 보내면 그 리포에서 잠든 세션을 모두 깨운다.
 //   부른 세션을 먼저 깨우고 나머지는 WAKE_STAGGER_MS 간격으로 차례로 띄운다(claude 여럿이 한꺼번에 뜨는 부담을 나눈다). 글은 그 세션이 준비된 뒤 대기열이 보낸다.
 //   같은 대화 ID로 새 작업 공간을 만들어 판의 인자로 이어 간다(J1 recreate_resume과 같은 길, 갈라 열기 없음). 실패하면 까닭을 남기고 잠듦으로 둔다.
 import fs from 'node:fs';
 import { buildStartArgs, buildResumeArgs, transcriptPathFor } from './launch.mjs';
 import { deriveState } from './state.mjs';
-import { waitClaudeExit } from './worktree-exit.mjs'; // P71
+import { waitClaudeExitOr } from './worktree-exit.mjs'; // P71, P105
 import { startOpt } from './launchers.mjs'; // P97: 실행 명령
-import { readProcessTable, descendants, mb } from './resources.mjs';
+import { readProcessTable, descendants, mb, childCommands, isToolCommand } from './resources.mjs';
 import { workspaceNames } from './workspaces.mjs';
 import { m, keyed } from './msg.mjs';
 
@@ -26,10 +28,36 @@ export const WAKE_READY_MS = 90000; // 깨운 claude가 준비될 때까지 기�
 export const WAKE_SETTLE_MS = 2500; // 준비된 뒤 입력 칸이 Enter를 받을 때까지 더 기다리는 시간(그동안 전달은 기다린다)
 export const WAKE_STAGGER_MS = 1500; // 리포를 깨울 때 세션 사이 간격
 const BUSY = new Set(['working', 'waiting', 'trust_wait', 'starting']); // 하위·부모 세션이 "일하는 중"
-// 리포를 잠재우지 않는 까닭: 대상 없음(asleep, nothing), 일(sessionActivity), 시간(off, idle_short), herdr_down
-export const SLEEP_REASONS = ['asleep', 'nothing', 'waking', 'working', 'needs_you', 'draft', 'delivering', 'loop', 'child_busy', 'parent_busy', 'viewing', 'off', 'idle_short', 'herdr_down'];
-const ACTIVITY = new Set(['waking', 'working', 'needs_you', 'draft', 'delivering', 'loop', 'child_busy', 'parent_busy', 'viewing']);
+// P105: 잠재우기가 실패한 세션(/exit 뒤에도 claude가 남음, 뒤 일 확인 창)은 다음 활동까지, 또는 이 간격(실패할 때마다 두 배, 상한 MAX)이 지나야 다시 해 본다
+export const SLEEP_RETRY_MS = 30 * 60000;
+export const SLEEP_RETRY_MAX_MS = 4 * 60 * 60000;
+// P105: hook(Stop의 background_tasks)이 알려 준 뒤 일을 프로세스로 확인할 수 없을 때(뒤 하위 에이전트) 믿는 상한. 턴을 Esc로 끊어 Stop이 오지 않으면 기록이 낡는다
+export const BG_HOOK_MAX_MS = 2 * 60 * 60000;
+// 리포를 잠재우지 않는 까닭: 대상 없음(asleep, nothing), 일(sessionActivity), 시간(off, idle_short), herdr_down, 잠재우기 실패 뒤 기다림(sleep_failed, P105)
+export const SLEEP_REASONS = ['asleep', 'nothing', 'waking', 'working', 'needs_you', 'draft', 'delivering', 'loop', 'background', 'child_busy', 'parent_busy', 'viewing', 'off', 'idle_short', 'herdr_down', 'sleep_failed'];
+const ACTIVITY = new Set(['waking', 'working', 'needs_you', 'draft', 'delivering', 'loop', 'background', 'child_busy', 'parent_busy', 'viewing']);
 export const isActivity = (why) => ACTIVITY.has(why);
+
+// P105: 세션에 도는 Claude Code 뒤 일(뒤 셸·뒤 하위 에이전트)이 있는가. 순수 함수. → { n, via: 'process'|'hook' } | null
+// hook: rt.bg(마지막 Stop·SubagentStop의 background_tasks, P92), scan: claude 바로 아래 도구 명령을 센 것 { at, n } | null(모름)
+// - 도구 명령 프로세스(Bash·PowerShell 도구, MCP 서버 빼고)가 있으면 뒤 일이다(hook이 없는 옛 Claude Code도).
+// - hook 목록은 BG_HOOK_MAX_MS까지 믿는다. hook 뒤에 프로세스를 보았는데 도구 명령이 없으면 뒤 셸은 끝났다(목록이 낡음). 뒤 하위 에이전트는 프로세스가 따로 없어 hook만 본다.
+//   뒤 일이 끝나면 Claude Code가 새 턴(<task-notification>)을 돌리고 그 Stop이 목록을 줄이므로, 보통은 그 턴이 끝난 때부터 다시 쉰 시간을 센다.
+export function backgroundOf(hook, scan, now = Date.now()) {
+  if (scan && scan.n > 0) return { n: scan.n, via: 'process' };
+  const tasks = hook && Array.isArray(hook.tasks) ? hook.tasks : [];
+  if (!tasks.length || now - (hook.at || 0) > BG_HOOK_MAX_MS) return null;
+  const left = scan && scan.at >= (hook.at || 0) ? tasks.filter((t) => t.type !== 'shell') : tasks;
+  return left.length ? { n: left.length, via: 'hook' } : null;
+}
+
+// P105: /exit에 Claude Code가 띄우는 "뒤 일이 돈다" 확인 창(Background work is running … 1. Exit and stop tasks 2. Move to background and exit 3. Stay).
+// 그대로 두면 판이 "응답 필요"로 보이고, 사람이 Enter를 누르면 1번(뒤 일을 끄고 나감)이 골라진다. 순수 함수. → { tasks: 목록 줄 수 } | null
+export function parseExitBackground(screen) {
+  const t = String(screen || '');
+  if (!/Background work is running|will stop when you exit/i.test(t)) return null;
+  return { tasks: (t.match(/^\s*[a-z-]+ · /gim) || []).length };
+}
 
 // 판 터미널에서 친 글이 입력 칸에 남아 있는지(보내지 않은 초안). 잠재우기의 /exit와 Enter가 그 글 뒤에 붙어 초안을 제출하지 않게 한다.
 // 키 입력 덩어리 data를 차례로 본다: Enter(\r, \n)·Ctrl+C·Ctrl+U는 입력 칸을 비우거나 제출하므로 초안 없음,
@@ -46,8 +74,9 @@ export function draftAfterInput(prev, data) {
 }
 
 // 세션 하나가 리포를 잠재울 때의 대상인가(null이면 대상, 아니면 빠지는 까닭). 순수 함수
-// x: { kind, hooked, convKnown, state, sleeping, waking, closing }
-export function sleepTarget(x) {
+// x: { kind, hooked, convKnown, state, sleeping, waking, closing, blocked }
+// blocked(P105): 잠재우기가 실패해 다시 해 보기를 미룬 세션. 사람이 이 리포를 잠재울 때(hand)는 다시 해 본다
+export function sleepTarget(x, { mode = 'auto' } = {}) {
   if (x.sleeping) return 'sleeping';
   if (x.kind !== 'claude') return 'not_claude';
   if (!x.hooked) return 'not_board'; // 판에 올린 claude, 다른 종류, 셸은 잠재우지 않는다
@@ -55,11 +84,12 @@ export function sleepTarget(x) {
   if (x.waking) return 'waking';
   if (x.closing) return 'closing';
   if (x.state !== 'ready' && x.state !== 'error') return 'not_ready'; // 오류로 끝난 턴도 쉬는 중이다(안 본 답은 검토 대기로 남는다)
+  if (x.blocked && mode !== 'hand') return 'sleep_failed';
   return null;
 }
 
 // 세션 하나가 그 리포를 깨워 두는 일(없으면 null). 순수 함수.
-// x: { kind, state, waking, draft, delivering, loops, childBusy, parentBusy, viewed }
+// x: { kind, state, waking, draft, delivering, loops, bg, childBusy, parentBusy, viewed }
 // mode: auto(저절로), bulk(쉬는 리포 모두), hand(사람이 이 리포를 잠재움. 메뉴를 누르면 늘 보고 있으므로 보는 노드는 보지 않는다)
 export function sessionActivity(x, { mode = 'auto' } = {}) {
   if (x.waking) return 'waking';
@@ -68,6 +98,7 @@ export function sessionActivity(x, { mode = 'auto' } = {}) {
   if (x.draft && x.kind === 'claude') return 'draft'; // 손으로 잠재울 때도: /exit가 초안 뒤에 붙어 제출된다
   if (x.delivering) return 'delivering';
   if (x.loops) return 'loop';
+  if (x.bg) return 'background'; // P105: 뒤 셸·뒤 하위 에이전트. 손으로 잠재울 때도(잠재우면 claude와 함께 끝난다)
   if (x.childBusy) return 'child_busy';
   if (x.parentBusy) return 'parent_busy';
   if (x.viewed && mode !== 'hand') return 'viewing';
@@ -78,11 +109,15 @@ export function sessionActivity(x, { mode = 'auto' } = {}) {
 // list: 그 리포 세션들의 { name, ...sleepTarget·sessionActivity의 값, idleSince }, busyAt: 그 리포에 마지막으로 일이 보인 때
 // → { why, who, targets, since }. why가 null이면 targets(이름)를 잠재운다. who는 일이 있는 세션 이름
 export function repoSleepPlan(list, { mode = 'auto', now = Date.now(), afterMs = 0, busyAt = 0 } = {}) {
-  const targets = list.filter((x) => !sleepTarget(x)).map((x) => x.name);
+  const targets = list.filter((x) => !sleepTarget(x, { mode })).map((x) => x.name);
   const since = Math.max(busyAt || 0, ...list.map((x) => x.idleSince || 0));
   const base = { targets, since, who: null };
   for (const x of list) { const a = sessionActivity(x, { mode }); if (a) return { ...base, why: a, who: x.name }; }
-  if (!targets.length) return { ...base, why: list.some((x) => x.sleeping) ? 'asleep' : 'nothing' };
+  if (!targets.length) {
+    const blocked = list.find((x) => sleepTarget(x, { mode }) === 'sleep_failed'); // P105: 실패한 잠재우기를 미루는 중
+    if (blocked) return { ...base, why: 'sleep_failed', who: blocked.name };
+    return { ...base, why: list.some((x) => x.sleeping) ? 'asleep' : 'nothing' };
+  }
   if (mode === 'auto') {
     if (!afterMs) return { ...base, why: 'off' };
     if (now - since < afterMs) return { ...base, why: 'idle_short' };
@@ -119,12 +154,14 @@ export function attachSleep(b, opts) { return new Sleeper(b, opts); }
 const wsOf = (s) => s.workspaceKey || '';
 
 export class Sleeper {
-  constructor(b, { tickMs = SLEEP_TICK_MS, wakeReadyMs = WAKE_READY_MS, settleMs = WAKE_SETTLE_MS, staggerMs = WAKE_STAGGER_MS, readTable = readProcessTable, timers = true } = {}) {
-    this.b = b; this.tickMs = tickMs; this.wakeReadyMs = wakeReadyMs; this.settleMs = settleMs; this.staggerMs = staggerMs; this.readTable = readTable;
+  constructor(b, { tickMs = SLEEP_TICK_MS, wakeReadyMs = WAKE_READY_MS, settleMs = WAKE_SETTLE_MS, staggerMs = WAKE_STAGGER_MS, readTable = readProcessTable, readChildren = childCommands, timers = true } = {}) {
+    this.b = b; this.tickMs = tickMs; this.wakeReadyMs = wakeReadyMs; this.settleMs = settleMs; this.staggerMs = staggerMs; this.readTable = readTable; this.readChildren = readChildren;
     this.going = new Map(); // 세션 ID → 잠재우는 중인 Promise
     this.wakes = new Map(); // 세션 ID → 깨우는 중인 Promise
     this.focus = new Map(); // 창 연결 → 보는 노드 ID 목록(board.viewing: 초점 노드와 가까이 얼굴로 보이는 노드)
     this.busyAt = new Map(); // 리포 키 → 마지막으로 일이 보인 때(마지막 일이 끝난 뒤부터 쉰 시간을 센다)
+    this.bgScan = new Map(); // P105: 세션 ID → { at, n } claude 바로 아래 도구 명령(뒤 셸) 수를 센 때와 수
+    this.blocked = new Map(); // P105: 세션 ID → { why, at, idle, n, until } 실패한 잠재우기를 미루는 중
     // 백엔드가 잠재우던 중에 꺼졌다: 패널이 남았으면 깨어 있는 것으로 돌리고(resync가 상태를 맞춘다), 없으면 잠든 것으로 둔다
     for (const s of b.sessions.values()) {
       if (!s.rt.sleep || !s.rt.sleep.going) continue;
@@ -166,12 +203,55 @@ export class Sleeper {
     const kids = [...b.sessions.values()].filter((x) => x.parentSessionId === s.sessionId);
     const parent = s.parentSessionId ? b.sessions.get(s.parentSessionId) : null;
     const busy = (x) => BUSY.has(deriveState(x.rt).state) || this.wakes.has(x.sessionId) || (b.queue && b.queue.pending(x.sessionId) > 0);
+    const blk = this.blockOf(s);
     return {
       name: s.name, kind: s.kind || 'claude', hooked: b.hooked(s), convKnown: s.kind === 'claude' && b.hooked(s) && convoOf(s, b.cfg.claudeProjects).exists,
       state: deriveState(s.rt).state, sleeping: !!s.rt.sleep, waking: this.wakes.has(s.sessionId), closing: b.killing.has(s.sessionId) || this.going.has(s.sessionId),
       draft: !!s.draft, delivering: b.queue ? b.queue.pending(s.sessionId) : 0, loops: b.features ? b.features.loops.activeCount(s.sessionId) : 0,
+      bg: !s.rt.sleep && !!(this.bgOf(s) || (blk && blk.why === 'background')), blocked: blk && blk.why !== 'background' ? blk.why : null,
       childBusy: kids.some(busy), parentBusy: !!(parent && busy(parent)), viewed: this.viewed(s.sessionId), idleSince: idleSince(s),
     };
+  }
+
+  // ---------- P105: 뒤 일과 실패한 잠재우기 ----------
+  bgOf(s, now = Date.now()) {
+    if (this.b.cfg && this.b.cfg.sleepBgPrecheck === false) return null;
+    return (s.kind || 'claude') === 'claude' && s.paneId ? backgroundOf(s.rt.bg, this.bgScan.get(s.sessionId) || null, now) : null;
+  }
+  // 세션들의 claude 바로 아래 도구 명령(MCP 서버 빼고)을 센다. herdr pane.process_info로 claude PID를 얻고 PowerShell 한 번으로 그 자식을 읽는다.
+  // 읽지 못하면(null) 전 값을 둔다. claude가 없는 패널은 0으로 둔다
+  async scanBackground(list) {
+    const b = this.b, now = Date.now(), pids = new Map();
+    for (const s of list) {
+      if ((s.kind || 'claude') !== 'claude' || !s.paneId || s.rt.sleep || !b.adapter) continue;
+      const info = await b.adapter.processInfo(s.paneId).catch(() => null);
+      if (!info) continue;
+      const c = (info.foreground_processes || []).find((p) => /claude/i.test(p.name || ''));
+      pids.set(s.sessionId, c ? Number(c.pid) : null);
+    }
+    if (!pids.size) return;
+    const want = [...pids.values()].filter(Boolean);
+    const kids = want.length ? await this.readChildren(want).catch(() => null) : [];
+    if (!kids) return;
+    for (const [sid, pid] of pids) this.bgScan.set(sid, { at: now, n: pid ? kids.filter((k) => Number(k.ppid) === pid && isToolCommand(k)).length : 0 });
+  }
+  // 실패한 잠재우기를 미룬다. 같은 쉼(쉬기 시작한 때가 그대로)에서 또 실패하면 간격을 두 배로 늘린다
+  block(s, why, now = Date.now()) {
+    const prev = this.blocked.get(s.sessionId), idle = idleSince(s);
+    const n = prev && prev.idle === idle ? prev.n + 1 : 1;
+    const wait = Math.min(SLEEP_RETRY_MS * 2 ** (n - 1), SLEEP_RETRY_MAX_MS);
+    const e = { why, at: now, idle, n, until: now + wait };
+    this.blocked.set(s.sessionId, e);
+    this.b.store.addEvent(s.sessionId, 'sleep_blocked', { why, n, retryMs: wait });
+    this.b.log(`sleep blocked ${s.name} why=${why} n=${n} retry in ${Math.round(wait / 60000)}min`);
+    return e;
+  }
+  // 미루는 중인 기록. 그 뒤로 새 활동(쉬기 시작한 때가 늦어짐)이 있었으면 풀고, 간격이 지났으면 다시 해 본다(n은 남긴다)
+  blockOf(s, now = Date.now()) {
+    const e = this.blocked.get(s.sessionId);
+    if (!e) return null;
+    if (idleSince(s) > e.idle) { this.blocked.delete(s.sessionId); return null; }
+    return now < e.until ? e : null;
   }
   // 리포 하나의 판정. 일이 보이면 그 때를 기억한다(그 뒤로 쉰 시간을 센다)
   plan(key, mode = 'auto', now = Date.now()) {
@@ -196,7 +276,9 @@ export class Sleeper {
     const repos = this.repoKeys().map((key) => {
       const mem = this.members(key), p = this.plan(key, 'auto', now);
       const asleep = mem.filter((s) => s.rt.sleep);
-      return { key, name: this.repoName(key), sessions: mem.length, asleep: asleep.length, savedMB: Math.round(asleep.reduce((a, s) => a + (s.rt.sleep.memMB || 0), 0)), targets: p.targets, why: p.why, who: p.who, idleMs: now - p.since };
+      const blocked = mem.map((s) => [s, this.blockOf(s, now)]).filter(([, e]) => e).map(([s, e]) => ({ name: s.name, why: e.why, n: e.n, retryInMs: e.until - now })); // P105
+      const background = mem.map((s) => [s, this.bgOf(s, now)]).filter(([, g]) => g).map(([s, g]) => ({ name: s.name, ...g }));
+      return { key, name: this.repoName(key), sessions: mem.length, asleep: asleep.length, savedMB: Math.round(asleep.reduce((a, s) => a + (s.rt.sleep.memMB || 0), 0)), targets: p.targets, why: p.why, who: p.who, idleMs: now - p.since, blocked, background };
     });
     return { afterMin: this.afterMs() / 60000, sleeping: list.length, savedMB: Math.round(list.reduce((a, s) => a + (s.rt.sleep.memMB || 0), 0)), sessions: list.map((s) => ({ name: s.name, workspace: wsOf(s), at: s.rt.sleep.at, memMB: s.rt.sleep.memMB ?? null })), repos };
   }
@@ -209,6 +291,9 @@ export class Sleeper {
     try {
       // 잠든 세션에 보낼 글이 남았는데 깨우는 중이 아니면 그 리포를 깨운다(백엔드가 다시 떠 대기열이 되살아난 경우)
       for (const s of [...b.sessions.values()]) if (s.rt.sleep && !this.wakes.has(s.sessionId) && b.queue.pending(s.sessionId) > 0 && !s.rt.sleep.error) this.wakeFor(s, 'delivery').catch(() => {});
+      // P105: 곧 잠들 리포와 뒤 일이 보이는 리포만 프로세스를 다시 본다(뒤 셸이 끝났는지, 쉬는 claude 아래 도구 명령이 도는지)
+      const scan = this.repoKeys().filter((key) => { const w = this.plan(key, 'auto').why; return !w || w === 'background'; });
+      if (scan.length) await this.scanBackground(scan.flatMap((key) => this.members(key)));
       for (const key of this.repoKeys()) {
         if (this.plan(key, 'auto').why) continue;
         await this.sleepRepo(key, { by: 'auto', mode: 'auto' }).catch((e) => b.log(`auto sleep repo ${key} failed: ${e.code || e.message}`));
@@ -228,7 +313,7 @@ export class Sleeper {
       if (stop) { skipped.push({ name, reason: stop }); continue; }
       const p = this.plan(key, mode === 'auto' ? 'bulk' : mode); // 리포는 이미 쉰 시간을 넘었다. 도중에 일이 들어왔는지만 본다
       if (p.why) { stop = p.why; skipped.push({ name, reason: p.why, who: p.who }); continue; }
-      if (sleepTarget(this.info(s))) continue;
+      if (sleepTarget(this.info(s), { mode })) continue;
       try { const r = await this.sleep(s, { by, mode }); done.push({ name: s.name, memMB: r.memMB }); }
       catch (e) { skipped.push({ name: s.name, reason: e.code || e.message }); }
     }
@@ -249,10 +334,13 @@ export class Sleeper {
     const b = this.b;
     b.requireHerdr();
     const key = await this.resolveKey(p);
+    await this.scanBackground(this.members(key)); // P105: 뒤 셸이 도는지 지금 본다
     const pl = this.plan(key, 'hand');
     if (pl.why) {
       const repo = this.repoName(key);
-      throw keyed(apiError(`sleep_${pl.why}`, `리포 ${repo} 프로젝트를 지금 절전 모드로 전환할 수 없습니다: ${pl.who ? `@${pl.who} ` : ''}${pl.why}`), 'repoSleepRefused', { repo, name: pl.who ? `@${pl.who}` : '', reason: m(`sleepWhy_${pl.why}`) });
+      // P105: 뒤 일은 사람이 골라 멈추게 한다(잠재우면 claude와 함께 끝나고, 깨워도 되살아나지 않는다). CLI는 message를 찍으므로 할 일을 함께 적는다
+      const more = pl.why === 'background' ? ' (백그라운드 작업이 실행 중입니다. 작업이 끝난 뒤 다시 시도하거나 세션에서 작업을 먼저 중지하세요.)' : '';
+      throw keyed(apiError(`sleep_${pl.why}`, `리포 ${repo} 프로젝트를 지금 절전 모드로 전환할 수 없습니다: ${pl.who ? `@${pl.who} ` : ''}${pl.why}${more}`), 'repoSleepRefused', { repo, name: pl.who ? `@${pl.who}` : '', reason: m(`sleepWhy_${pl.why}`) });
     }
     return this.sleepRepo(key, { by: 'hand', mode: 'hand' });
   }
@@ -260,6 +348,7 @@ export class Sleeper {
   async sleepIdle() {
     this.b.requireHerdr();
     const repos = [], skipped = [];
+    await this.scanBackground([...this.b.sessions.values()]); // P105
     for (const key of this.repoKeys()) {
       const pl = this.plan(key, 'bulk');
       if (pl.why) { if (pl.why !== 'asleep' && pl.why !== 'nothing') skipped.push({ workspace: key, name: this.repoName(key), reason: pl.why, who: pl.who }); continue; }
@@ -319,6 +408,22 @@ export class Sleeper {
     return { shellPid: shell || null, memMB: tree.length ? mb(tree.reduce((a, x) => a + x.ws, 0)) : null, procs: tree.map((x) => ({ pid: x.pid, name: x.name })) };
   }
 
+  // P105: /exit가 claude를 끝내지 못했을 때 화면을 원래대로 돌린다. 확인 창(뒤 일 확인, 그 밖의 "Esc to cancel" 창)이 보이면
+  // Esc(그 창의 취소. 뒤 일 확인 창에서는 3. Stay와 같다)를 보내고 창이 사라질 때까지 잠깐 본다. Enter는 보내지 않는다(1번이 뒤 일을 끄고 나간다)
+  async restoreAfterExit(s, bgSeen) {
+    const b = this.b;
+    const read = () => b.adapter.readScreen(s.paneId, { source: 'visible' }).catch(() => '');
+    const open = (t) => !!parseExitBackground(t) || /Esc to cancel/i.test(t);
+    let scr = await read();
+    const background = bgSeen || !!parseExitBackground(scr);
+    let esc = 0;
+    for (let i = 0; i < 2 && s.rt.herdr.present && open(scr); i++) {
+      await b.adapter.paneKeys(s.paneId, ['esc']).catch(() => {}); esc++;
+      for (const t = Date.now(); Date.now() - t < 2000; ) { await sleep(200); scr = await read(); if (!open(scr)) break; }
+    }
+    return { background, esc, cleared: !open(scr) };
+  }
+
   sleep(s, { by, mode = by === 'hand' ? 'hand' : 'bulk' }) {
     if (this.going.has(s.sessionId)) return this.going.get(s.sessionId);
     const job = this._sleep(s, by, mode).finally(() => this.going.delete(s.sessionId));
@@ -330,9 +435,10 @@ export class Sleeper {
     b.killing.add(s.sessionId); // 판이 닫는 패널: pane_closed·workspace_closed를 "판 밖에서 닫음"으로 보지 않는다
     try {
       const mem = await this.measure(s);
+      await this.scanBackground([s]); // P105: /exit 바로 앞에서 뒤 셸이 도는지 다시 본다
       // 재는 동안 이 세션에 일이 들어왔으면 그만둔다(리포의 다른 세션은 sleepRepo가 세션마다 다시 본다)
       const x = { ...this.info(s), closing: false };
-      const why = sleepTarget(x) || sessionActivity(x, { mode });
+      const why = sleepTarget(x, { mode }) || sessionActivity(x, { mode });
       if (why) throw keyed(apiError(`sleep_${why}`, `@${s.name} 세션을 지금 절전 모드로 전환할 수 없습니다: ${why}`), 'sleepRefused', { name: s.name, reason: m(`sleepWhy_${why}`) });
       const conv = convoOf(s, b.cfg.claudeProjects);
       const prev = { state: deriveState(rt).state, lastPrompt: rt.lastPrompt, lastAnswer: rt.lastAnswer };
@@ -344,12 +450,23 @@ export class Sleeper {
         rt.exitRequested = true;
         await b.adapter.sendText(s.paneId, '/exit'); await sleep(150); await b.adapter.paneKeys(s.paneId, ['enter']);
         const t = Date.now();
-        await waitClaudeExit(b, s, b.cfg.killWaitMs, { by: 'sleep', steps }); // P71: `claude -w` 세션의 워크트리 나가기 질문에는 남기기로 답한다
-        if (rt.herdr.present) { rt.sleep = null; rt.exitRequested = false; b.broadcastSession(s, { cause: 'sleep:failed' }); throw apiError('still_running', `@${s.name} 세션의 claude 프로세스가 /exit 후에도 종료되지 않았습니다.`); }
+        // P71: `claude -w` 세션의 워크트리 나가기 질문에는 남기기로 답한다. P105: 뒤 일 확인 창이 뜨면 그 자리에서 멈춘다
+        const w = await waitClaudeExitOr(b, s, b.cfg.killWaitMs, { by: 'sleep', steps, stopOn: parseExitBackground });
+        const restored = w.stopped || rt.herdr.present ? await this.restoreAfterExit(s, !!w.stopped) : null;
+        if (restored && rt.herdr.present) {
+          // 확인 창을 Esc로 닫아(Stay) 원래 화면으로 돌렸다. 같은 세션을 곧바로 다시 잠재우지 않는다
+          rt.sleep = null; rt.exitRequested = false; b.broadcastSession(s, { cause: 'sleep:failed' });
+          const bg = !!(w.stopped || restored.background);
+          const e = this.block(s, bg ? 'background' : 'sleep_failed');
+          b.store.addEvent(s.sessionId, 'sleep_exit_screen', { background: bg, tasks: (w.stopped && w.stopped.tasks) || 0, esc: restored.esc, cleared: restored.cleared, retryMs: e.until - e.at });
+          if (bg) throw keyed(apiError('sleep_background', `@${s.name} 세션을 지금 절전 모드로 전환할 수 없습니다: background`), 'sleepRefused', { name: s.name, reason: m('sleepWhy_background') });
+          throw apiError('still_running', `@${s.name} 세션의 claude 프로세스가 /exit 후에도 종료되지 않았습니다.`);
+        }
         steps.push(`/exit ${Date.now() - t}ms`);
       }
-      const shared = await b.adapter.workspacePanes(s.herdrWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => []);
-      if (shared.length) await b.adapter.closePane(s.paneId).then(() => steps.push(`pane ${s.paneId} closed`)).catch((e) => steps.push(`pane.close failed ${e.code}`));
+      // P105: 작업 공간의 패널 목록을 읽지 못하면 이 패널만 닫는다(같은 작업 공간에 나눈 패널의 명령이 함께 죽지 않게)
+      const shared = await b.adapter.workspacePanes(s.herdrWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => null);
+      if (!shared || shared.length) await b.adapter.closePane(s.paneId).then(() => steps.push(`pane ${s.paneId} closed`)).catch((e) => steps.push(`pane.close failed ${e.code}`));
       else await b.adapter.closeWorkspace(s.herdrWorkspaceId).then(() => steps.push(`workspace ${s.herdrWorkspaceId} closed`)).catch((e) => steps.push(`workspace.close failed ${e.code}`));
       try { b.relay.detach(s.sessionId); } catch {}
       const pane = s.paneId;
@@ -364,6 +481,7 @@ export class Sleeper {
       let left = mem.procs;
       for (const tw = Date.now(); left.length && Date.now() - tw < 5000; ) { await sleep(250); left = left.filter((x) => pidAlive(x.pid)); }
       const out = { slept: true, name: s.name, by, memMB: mem.memMB, procs: mem.procs.map((x) => x.name), left: left.map((x) => `${x.name}:${x.pid}`), convId: conv.convId, steps, ms: Date.now() - t0 };
+      this.blocked.delete(s.sessionId); // P105
       b.store.addEvent(s.sessionId, 'slept', out);
       b.log(`slept ${s.name} by=${by} mem=${mem.memMB}MB procs=${mem.procs.length} left=${left.length} in ${out.ms}ms`);
       b.broadcastSession(s, { cause: `sleep:${by}` });
