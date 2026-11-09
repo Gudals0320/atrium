@@ -2268,4 +2268,13 @@ export default {
     badge: 'Delivery stuck',
     title: 'The message is not getting in (herdr: {code}, {n} tries). The board retries with growing gaps. Cancel it from the delivery line above the command bar.',
   },
+  // P107: mission map light along the border of working sessions (Settings › General)
+  missionLight: {
+    name: 'Mission map light',
+    on: 'On',
+    system: 'Follow Windows',
+    off: 'Off',
+    hint: 'A light runs along the border of working session cards on the mission map.',
+    note: 'Follow Windows stops the light while Windows animation effects are off (Settings › Accessibility › Visual effects) and shows a solid colored border instead. Off always shows the solid border. Phones use this setting too; there, Follow Windows uses the reduce motion setting of the phone.',
+  },
 };

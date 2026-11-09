@@ -8,6 +8,7 @@ import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
+import { applyMissionLight } from './lib/mission-light.js'; // P107: 미션 맵 테두리 빛 설정을 문서 뿌리에
 
 const state = {
   conn: 'connecting',
@@ -68,7 +69,8 @@ const state = {
 };
 const subs = new Set();
 // P16: 설정의 language를 화면 언어로. 언어가 바뀌면 사전을 쓰는 화면이 다시 그린다(lib/i18n.js)
-function putSettings(s) { state.settings = s; if (s && s.language) setLanguage(s.language); changed(); }
+// P107: missionLight(미션 맵 테두리 빛)를 문서 뿌리 data-mm-light로(PC 창·웹·휴대폰 같은 판 설정)
+function putSettings(s) { state.settings = s; if (s && s.language) setLanguage(s.language); applyMissionLight(s); changed(); }
 function changed() { state.version++; for (const fn of [...subs]) fn(); }
 
 export function useStore(select) {

@@ -1628,7 +1628,7 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 
 /* ---------- P101: 미션 맵 다듬기(Mission.jsx, lib/mission-layout.js, lib/mission-wire.js). P95 덩어리 위에 덮는다.
    워크스페이스 판(옅은 바탕 면), 테두리 있는 알약(쉼·잠듦·끝남), 카드 안 오른쪽 위 종류 동그라미, 글자 단계 13/12/11, 짧은 두 줄의 화살촉,
-   일하는 카드의 움직임은 P102 덩어리(번쩍임) ---------- */
+   일하는 카드의 움직임은 P107 덩어리(테두리를 따라 도는 빛) ---------- */
 .mt-mm-plate { position: absolute; box-sizing: border-box; border-radius: 12px; background: var(--mm-plate); border: 1px solid var(--mm-plate-line); pointer-events: none; }
 .mt-mm-ws { height: 20px; margin-left: -4px; padding: 0 4px; color: var(--text-2); font: 650 12px var(--font-ui); letter-spacing: .01em; }
 .mt-mm-ws .vg { color: var(--dim); font-weight: 550; }
@@ -1666,19 +1666,30 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-mm-edge.hot .mt-mm-tip { fill: var(--mm-wire-hot); }
 .mt-mm-edge.hot.active .mt-mm-tip { fill: var(--st-working); }
 .mt-mm-edge.hot.turn .mt-mm-tip { fill: var(--attn); }
-/* 일하는 카드의 테두리 빛(P101)은 P102의 번쩍임(끝 덩어리)으로 바꿨다 */
+/* 일하는 카드의 테두리 빛(P101)은 P102 번쩍임을 거쳐 P107의 테두리를 따라 도는 빛(끝 덩어리)으로 바꿨다 */
 .mt-mm-row .nm { flex: 0 0 auto; max-width: 68%; }
 .mt-mm-row .rl { flex: 1 1 auto; }
 
-/* ---------- P102: 미션 맵의 일하는 카드 번쩍임(Mission.jsx .mt-mm-flash, lib/mission-flash.js). 멀리서(맞추기 배율) 봐도 일하는 세션만 눈에 띄게.
-   카드 바탕 위·글 아래의 한 겹(상태 색 2px 테두리와 옅은 바탕)이 opacity만 움직인다: 0.2초에 차오르고 천천히 빠진다, 1.4초에 한 번(초당 0.71번, 광과민 기준 3번 아래).
-   응답 필요(노랑)·오류(빨강)는 움직이지 않는 테두리라 움직임과 색으로 갈린다. 일하는 셸은 초록. 모든 카드가 같은 박자(움직임 시작을 문서 시간 0에 맞춘다, lib/mission-flash.js).
-   기본(움직임 줄이기, 가벼운 판 html.mt-lite)은 움직이지 않는 강한 표시: 굵은 상태 색 테두리와 아주 옅은 바탕(메타 글 대비 4.5 이상). 움직임은 no-preference 안에서만 ---------- */
+/* ---------- P107: 미션 맵의 일하는 카드 테두리를 따라 도는 빛(Mission.jsx MissionLight .mt-mm-light, lib/mission-light.js). P102 번쩍임을 갈음한다(사용자: 촌스럽다).
+   카드 바탕 위·글 아래의 한 겹. 가리개 하나(.mt-mm-lring: 2px 고리와 그 둘레 옅은 빛 무리)로 상태 색 원뿔 그라데이션(꼬리가 옅어지는 혜성)을 transform으로만 돌린다
+   (합성, 2.4초에 한 바퀴). 원뿔은 가로로 1.86배 늘린 감싸개(.mt-mm-lspin) 안에서 돈다: 216×64 카드에서 둘레 속도 차이가 11배에서 4배로 준다. 판 노드 고리(.mt-node-run)와 같은 방법.
+   값(일하는 카드 40개, 144Hz 창, 작업 기록): 가리개를 고리·빛 무리 둘로 나누면 GPU 프로세스 CPU가 5초에 5~6.6초라 하나로 합치고, steps(72)로 초당 30번만 바꾼다(0.6~0.7초).
+   모든 카드가 같은 박자(시작을 문서 시간 0에, lib/mission-light.js). 응답 필요(노랑)·오류(빨강)는 움직이지 않는 테두리라 움직임과 색으로 갈린다. 일하는 셸은 초록.
+   도는 조건: 판 설정 missionLight가 켬(기본, 문서 뿌리에 값이 없을 때도)이거나, Windows 설정 따름(system)이고 움직임 줄이기가 아닐 때. 끔·system의 움직임 줄이기·가벼운 판(html.mt-lite)은
+   멈춘 강한 표시(굵은 상태 색 테두리와 아주 옅은 바탕, 메타 글 대비 4.5 이상). 사용자의 PC는 Windows 애니메이션 효과가 꺼져 늘 reduce라 기본을 켬으로 했다 ---------- */
 .mt-mm-card.t-work { --mm-run: var(--st-working); isolation: isolate; }
 .mt-mm-card.t-work.shell { --mm-run: var(--st-shell_running); }
-.mt-mm-flash { position: absolute; inset: -1px; border-radius: 9px; border: 2px solid var(--mm-run); background-color: color-mix(in srgb, var(--mm-run) 6%, transparent); pointer-events: none; z-index: -1; }
+.mt-mm-light { position: absolute; inset: -1px; border-radius: 8px; border: 2px solid var(--mm-run); background-color: color-mix(in srgb, var(--mm-run) 6%, transparent); pointer-events: none; z-index: -1;
+  --mm-cone: conic-gradient(transparent 0turn 0.62turn, color-mix(in srgb, var(--mm-run) 30%, transparent) 0.8turn, var(--mm-run) 0.95turn, color-mix(in srgb, var(--mm-run) 45%, var(--white)) 0.99turn, transparent 1turn); }
+/* 도는 조건(둘): 빛 층이 테두리를 비우고(카드의 옅은 상태 색 테두리가 바탕) 고리와 빛 무리를 보인다 */
+html:not(.mt-lite):not([data-mm-light="off"]):not([data-mm-light="system"]) .mt-mm-light { --mm-go: block; border-color: transparent; background-color: color-mix(in srgb, var(--mm-run) 4%, transparent); }
 @media (prefers-reduced-motion: no-preference) {
-  .mt-mm-flash { background-color: color-mix(in srgb, var(--mm-run) 18%, transparent); opacity: 0.3; animation: mt-mm-flash 1.4s cubic-bezier(.3, 0, .2, 1) infinite; }
+  html:not(.mt-lite)[data-mm-light="system"] .mt-mm-light { --mm-go: block; border-color: transparent; background-color: color-mix(in srgb, var(--mm-run) 4%, transparent); }
 }
-@keyframes mt-mm-flash { 0% { opacity: 0.3; } 14% { opacity: 1; animation-timing-function: cubic-bezier(.45, 0, .55, 1); } 100% { opacity: 0.3; } }
-html.mt-lite .mt-mm-flash { opacity: 1; background-color: color-mix(in srgb, var(--mm-run) 6%, transparent); }
+.mt-mm-lring { display: var(--mm-go, none); position: absolute; inset: -6px; border: 4px solid transparent; border-radius: 12px; padding: 2px; pointer-events: none;
+  /* 가리개(위에서부터): 빛 무리(테두리 선에서 55%, 바깥 4px·안 7px로 옅어지는 네 변의 선형 그라데이션) + 고리(패딩 띠 = 카드 테두리 자리 2px, 안쪽 내용 상자를 뺀다) */
+  -webkit-mask: linear-gradient(to bottom, transparent 0, rgb(0 0 0 / 0.55) 4px, transparent 11px, transparent calc(100% - 11px), rgb(0 0 0 / 0.55) calc(100% - 4px), transparent 100%), linear-gradient(to right, transparent 0, rgb(0 0 0 / 0.55) 4px, transparent 11px, transparent calc(100% - 11px), rgb(0 0 0 / 0.55) calc(100% - 4px), transparent 100%), linear-gradient(black 0 0) content-box, linear-gradient(black 0 0) padding-box;
+  -webkit-mask-composite: source-over, source-over, xor, source-over; mask-composite: add, add, exclude, add; }
+.mt-mm-lspin { position: absolute; inset: 0; transform: scaleX(1.86); }
+.mt-mm-lspin::before { content: ""; position: absolute; left: 50%; top: 50%; width: 150px; height: 150px; margin: -75px 0 0 -75px; background: var(--mm-cone); animation: mt-mm-lturn 2.4s steps(72, end) infinite; }
+@keyframes mt-mm-lturn { to { transform: rotate(1turn); } }

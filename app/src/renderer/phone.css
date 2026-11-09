@@ -329,7 +329,7 @@ button.mt-pm-chip:disabled { opacity: .5; }
 
 /* ---------- P101: 휴대폰 미션 맵 다듬기(PhoneMission.jsx, lib/phone-graph.js). P95 덩어리 위에 덮는다: 워크스페이스 판(칸 폭 그대로), 테두리 있는 알약,
    카드 안 종류 동그라미, 짧은 두 줄의 화살촉. 점 격자 바탕은 걷었다(판이 묶음을 보인다). 가볍게(P89): filter·backdrop-filter·will-change·그림자·끝없는 움직임 없음.
-   PC의 일하는 카드 테두리 움직임은 넣지 않는다(WebKit에서 잰 CPU가 10초에 0.53 → 1.53초, 작업 기록). 일함은 움직이지 않는 주황 테두리와 왼쪽 띠 ---------- */
+   일하는 카드의 움직임은 끝의 P107 덩어리(테두리를 따라 도는 빛, P102 번쩍임을 갈음) ---------- */
 .mt-pm-stage { background-color: var(--mm-bg); background-image: none; }
 .mt-pm-plate { position: absolute; box-sizing: border-box; border-radius: 10px; background: var(--mm-plate); border: 1px solid var(--mm-plate-line); pointer-events: none; }
 .mt-pm-ws { height: 20px; color: var(--text-2); font: 650 12px var(--font-ui); letter-spacing: .01em; }
@@ -357,18 +357,6 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pm-tip.dim { opacity: 0.15; }
 .mt-pm-row .nm { flex: 0 0 auto; max-width: 68%; }
 .mt-pm-row .rl { flex: 1 1 auto; }
-
-/* ---------- P102: 휴대폰 미션 맵의 일하는 카드 번쩍임(PhoneMission.jsx .mt-pm-flash, lib/mission-flash.js). PC와 같은 한 겹(상태 색 2px 테두리와 옅은 바탕).
-   가볍게(P89): 부드럽게 끝없이 움직이지 않고 opacity를 steps로 두 번만 바꾼다(1.6초에 0.4초 밝게, 초당 0.63번). WebKit은 바뀌는 때에만 깨어나
-   10초 CPU가 거의 늘지 않았다(부드러운 opacity는 네 배, 작업 기록). filter·backdrop-filter·will-change·그림자 없음.
-   기본(움직임 줄이기)은 움직이지 않는 굵은 상태 색 테두리와 아주 옅은 바탕. 움직임은 no-preference 안에서만 ---------- */
-.mt-pm-node.t-work { --mm-run: var(--st-working); isolation: isolate; }
-.mt-pm-node.t-work.shell { --mm-run: var(--st-shell_running); }
-.mt-pm-flash { position: absolute; inset: -1px; border-radius: 9px; border: 2px solid var(--mm-run); background-color: color-mix(in srgb, var(--mm-run) 6%, transparent); pointer-events: none; z-index: -1; }
-@media (prefers-reduced-motion: no-preference) {
-  .mt-pm-flash { background-color: color-mix(in srgb, var(--mm-run) 18%, transparent); animation: mt-pm-flash 1.6s steps(1, end) infinite; }
-}
-@keyframes mt-pm-flash { 0% { opacity: 1; } 25% { opacity: 0.3; } 100% { opacity: 0.3; } }
 
 /* P104: 키 패드(응답 키). 응답이 필요하면 키 줄 자리에 펼친다. 두 줄 일곱 칸(375px 폭에서 칸 46px, 높이 48px, 사이 6px).
    위 [Esc 1 2 3 4 ↑ Tab], 아래 [닫기 Space Enter(두 칸) ← ↓ →]. 화살표는 뒤집은 T, Esc는 왼쪽 위 끝(화살표와 떨어뜨린다) */
@@ -400,3 +388,11 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-padicon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 /* 터미널 칸이 줄어든 뒤 xterm이 다시 잴 때까지(120ms) 옛 높이의 화면이 아래로 넘쳐 키 패드 위를 덮고 누름을 가져갔다. 칸 밖은 자른다 */
 .mt-ph-term { overflow: hidden; }
+
+/* ---------- P107: 휴대폰 미션 맵의 일하는 카드 테두리를 따라 도는 빛(PhoneMission.jsx MissionLight .mt-mm-light, styles.css P107 덩어리와 같은 층). P102 번쩍임을 갈음한다.
+   카드 폭이 칸마다 달라 도는 원뿔 정사각형을 카드 폭에 맞춰 잡는다(늘린 공간의 대각선보다 크게). 가볍게(P89): filter·backdrop-filter·will-change·그림자 없음, transform만.
+   부드럽게 돌리면 헤드리스 WebKit의 10초 CPU가 끔의 2.3배(1.54초 / 0.68초)라 steps(36)으로 초당 15번만 바꾼다(0.85초, 고치기 전 P102 번쩍임 0.66초, 작업 기록).
+   판 설정 missionLight를 따른다(PC와 같은 조건, 끔이면 멈춘 굵은 테두리) ---------- */
+.mt-pm-node.t-work { --mm-run: var(--st-working); isolation: isolate; }
+.mt-pm-node.t-work.shell { --mm-run: var(--st-shell_running); }
+.mt-pm-node .mt-mm-lspin::before { width: calc(100% / 1.86 + 72px); height: auto; aspect-ratio: 1 / 1; margin: calc(-50% / 1.86 - 36px) 0 0 calc(-50% / 1.86 - 36px); animation-timing-function: steps(36, end); }

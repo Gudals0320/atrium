@@ -1,6 +1,6 @@
 // P101 단위 시험: 미션 맵 다듬기. 서로 이은 두 세션은 마주 보는 가장자리 사이 짧은 두 줄(화살촉), 오른쪽으로 크게 도는 선 없음,
 // 나무 선 흐름(부모 오른쪽 → 하위 왼쪽), 하위 세션의 보고 선이 있어도 나무가 뒤집히지 않음, 겹침 없음, 워크스페이스 판, 이은 이웃 형제 사이 벌림,
-// 휴대폰도 같은 길, P101 덩어리는 가볍다(테두리 빛줄기는 P102 번쩍임으로 바뀜, p102-lib.test.mjs), 새 토큰(지금 값은 그대로)
+// 휴대폰도 같은 길, P101 덩어리는 가볍다(테두리 빛줄기는 P102 번쩍임을 거쳐 P107 테두리 빛으로 바뀜, p107-lib.test.mjs), 새 토큰(지금 값은 그대로)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -148,11 +148,11 @@ test('휴대폰: 같은 길 — 서로 이은 두 세션은 짧은 두 줄, 겹�
   assert.equal(two.length, 2); assert.ok(two.every((e) => e.pair && e.tip));
 });
 
-// P102: 일하는 카드의 테두리 빛줄기는 번쩍임(P102 덩어리)으로 바꿨다. 여기서는 P101 덩어리만 본다(다음 덩어리 머리 앞까지)
+// P102: 일하는 카드의 테두리 빛줄기는 P102 번쩍임을 거쳐 P107 테두리 빛(P107 덩어리)으로 바꿨다. 여기서는 P101 덩어리만 본다(다음 덩어리 머리 앞까지)
 const block = (css, tag) => { const a = css.indexOf(`/* ---------- ${tag}:`); const b = css.indexOf('/* ---------- P', a + 10); return css.slice(a, b < 0 ? undefined : b); };
-test('CSS: P101 덩어리는 가볍다(filter·will-change·그림자 없음), 빛줄기는 P102 번쩍임으로 바뀌었다', () => {
+test('CSS: P101 덩어리는 가볍다(filter·will-change·그림자 없음), 빛줄기는 P107 테두리 빛으로 바뀌었다', () => {
   const p101 = block(read('styles.css'), 'P101');
-  assert.ok(!/animation\s*:|@keyframes|mt-mm-glint/.test(p101.replace(/\/\*[^]*?\*\//g, '')), 'P101 덩어리에 남은 움직임·빛줄기 없음(P102 번쩍임으로 바뀜)');
+  assert.ok(!/animation\s*:|@keyframes|mt-mm-glint/.test(p101.replace(/\/\*[^]*?\*\//g, '')), 'P101 덩어리에 남은 움직임·빛줄기 없음(P107 테두리 빛으로 바뀜)');
   assert.ok(!/filter|backdrop-filter|will-change|box-shadow/.test(p101.replace(/\/\*[^]*?\*\//g, '')), 'P101 덩어리에 filter·will-change·그림자 없음');
   const pp = block(read('phone.css'), 'P101').replace(/\/\*[^]*?\*\//g, '');
   assert.ok(!/animation|@keyframes|filter|will-change|box-shadow/.test(pp), '휴대폰 P101 덩어리: 끝없는 움직임·filter·will-change·그림자 없음(P89)');
