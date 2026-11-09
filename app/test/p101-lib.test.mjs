@@ -1,6 +1,6 @@
 // P101 단위 시험: 미션 맵 다듬기. 서로 이은 두 세션은 마주 보는 가장자리 사이 짧은 두 줄(화살촉), 오른쪽으로 크게 도는 선 없음,
 // 나무 선 흐름(부모 오른쪽 → 하위 왼쪽), 하위 세션의 보고 선이 있어도 나무가 뒤집히지 않음, 겹침 없음, 워크스페이스 판, 이은 이웃 형제 사이 벌림,
-// 휴대폰도 같은 길, 테두리 움직임은 transform만·움직임 줄이기에서 멈춤·휴대폰은 움직이지 않음, 새 토큰(지금 값은 그대로)
+// 휴대폰도 같은 길, P101 덩어리는 가볍다(테두리 빛줄기는 P102 번쩍임으로 바뀜, p102-lib.test.mjs), 새 토큰(지금 값은 그대로)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -148,18 +148,15 @@ test('휴대폰: 같은 길 — 서로 이은 두 세션은 짧은 두 줄, 겹�
   assert.equal(two.length, 2); assert.ok(two.every((e) => e.pair && e.tip));
 });
 
-test('CSS: 테두리 움직임은 transform만, 움직임 줄이기에서 멈춘다(no-preference 안에서만 돈다), 휴대폰은 움직이지 않는다, 가벼움', () => {
-  const css = read('styles.css');
-  const p101 = css.slice(css.indexOf('/* ---------- P101:'));
-  for (const k of ['mt-mm-sweep', 'mt-mm-sweep-back']) { const m = p101.match(new RegExp(`@keyframes ${k} \\{([^]*?\\})\\s*\\}`)); assert.ok(m && /transform/.test(m[1]) && !/opacity|box-shadow|filter|width|height|left|top|stroke/.test(m[1]), `${k}는 transform만`); }
-  const outside = p101.replace(/@media \(prefers-reduced-motion: no-preference\) \{[^]*?\n\}/, '');
-  assert.ok(!/animation\s*:/.test(outside), '움직임은 no-preference 안에만(움직임 줄이기면 멈춘다)');
-  assert.match(outside, /\.mt-mm-glint i \{[^}]*opacity: 0;/, '움직임 줄이기면 빛줄기를 숨긴다');
+// P102: 일하는 카드의 테두리 빛줄기는 번쩍임(P102 덩어리)으로 바꿨다. 여기서는 P101 덩어리만 본다(다음 덩어리 머리 앞까지)
+const block = (css, tag) => { const a = css.indexOf(`/* ---------- ${tag}:`); const b = css.indexOf('/* ---------- P', a + 10); return css.slice(a, b < 0 ? undefined : b); };
+test('CSS: P101 덩어리는 가볍다(filter·will-change·그림자 없음), 빛줄기는 P102 번쩍임으로 바뀌었다', () => {
+  const p101 = block(read('styles.css'), 'P101');
+  assert.ok(!/animation\s*:|@keyframes|mt-mm-glint/.test(p101.replace(/\/\*[^]*?\*\//g, '')), 'P101 덩어리에 남은 움직임·빛줄기 없음(P102 번쩍임으로 바뀜)');
   assert.ok(!/filter|backdrop-filter|will-change|box-shadow/.test(p101.replace(/\/\*[^]*?\*\//g, '')), 'P101 덩어리에 filter·will-change·그림자 없음');
-  const ph = read('phone.css'), pp = ph.slice(ph.indexOf('/* ---------- P101:')).replace(/\/\*[^]*?\*\//g, '');
+  const pp = block(read('phone.css'), 'P101').replace(/\/\*[^]*?\*\//g, '');
   assert.ok(!/animation|@keyframes|filter|will-change|box-shadow/.test(pp), '휴대폰 P101 덩어리: 끝없는 움직임·filter·will-change·그림자 없음(P89)');
-  assert.ok(!/mt-pm-glint/.test(read('PhoneMission.jsx')), '휴대폰은 빛줄기를 그리지 않는다');
-  assert.match(read('Mission.jsx'), /tier === 'work' && <span className="mt-mm-glint"/);
+  assert.ok(!/mt-mm-glint/.test(read('Mission.jsx')), 'PC는 빛줄기를 그리지 않는다(번쩍임 층으로 바뀜)');
 });
 
 test('토큰: P101 토큰은 tokens.css 끝에 더했고 지금 값(P95)은 그대로', () => {
@@ -167,5 +164,5 @@ test('토큰: P101 토큰은 tokens.css 끝에 더했고 지금 값(P95)은 그�
   for (const k of ['--mm-plate', '--mm-plate-line', '--mm-card-2', '--mm-card-lead-2', '--mm-edge', '--mm-edge-rest', '--mm-edge-sleep', '--mm-edge-hot', '--mm-wire-2']) assert.match(tk, new RegExp(`${k}:`), k);
   assert.ok(tk.indexOf('--mm-plate:') > tk.indexOf('--mm-card-rest:'), '끝에 더했다');
   assert.match(tk, /--mm-wire: rgba\(233, 230, 220, 0\.2\);/); assert.match(tk, /--mm-card: #141310;/); assert.match(tk, /--mm-bg: #0f0f0b;/);
-  for (const f of ['styles.css', 'phone.css']) { const s = read(f); const blk = s.slice(s.indexOf('/* ---------- P101:')); assert.ok(!/#[0-9a-f]{3,8}\b/i.test(blk.replace(/\/\*[^]*?\*\//g, '')), `${f} P101 덩어리에 글자로 박은 색 없음`); }
+  for (const f of ['styles.css', 'phone.css']) { const blk = block(read(f), 'P101'); assert.ok(!/#[0-9a-f]{3,8}\b/i.test(blk.replace(/\/\*[^]*?\*\//g, '')), `${f} P101 덩어리에 글자로 박은 색 없음`); }
 });

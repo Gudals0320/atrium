@@ -8,7 +8,9 @@
 //   처음과 "맞추기"는 폭에 맞추고 위에 붙인다. 카드를 누르면 세션 화면(Phone.jsx PhoneSession), 돌아오면 같은 자리·배율(화면 크기가 같을 때, 모듈에 둔다)
 // - 가볍게(iPhone Safari): 그래프는 DOM 카드와 SVG 한 장, 옮길 때는 한 요소의 transform만 바꾼다. filter·backdrop-filter·will-change 없음
 // - P101 다듬기: 워크스페이스마다 옅은 판, 쉬는·잠든 세션은 테두리 있는 알약, 종류 동그라미는 카드 안. 서로 이은 두 세션은 짧은 두 줄과 화살촉(lib/phone-graph.js).
-//   일하는 카드의 테두리 움직임(PC)은 휴대폰에 넣지 않는다: P89 가벼움 규칙(끝없는 움직임 없음). WebKit에서 잰 CPU가 크게 늘었다(작업 기록). 움직이지 않는 표시(주황 테두리와 왼쪽 띠)
+// - P102: 일하는 카드는 PC처럼 바탕과 테두리가 상태 색으로 번쩍인다(.mt-pm-flash). 휴대폰은 가볍게 opacity 한 겹을 steps()로 두 번만 바꾼다
+//   (1.6초에 한 번 밝게, 부드러운 움직임은 WebKit CPU가 네 배였고 steps는 거의 늘지 않았다, 작업 기록). 모든 카드가 같은 박자(lib/mission-flash.js).
+//   움직임 줄이기에서는 굵은 상태 색 테두리로 멈춘다
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
@@ -19,6 +21,7 @@ import { phoneGraph, VIEW, fitView, clampView, zoomRange, focusView, inFocus, vp
 import { roleText, teamText, modelText, ageText } from './lib/mission-model.js';
 import { kindOf, shownKind, logoFor } from './lib/kinds.js';
 import { TOUCH_SLOP_PX, pinchViewport, panViewport, mid, dist } from './lib/touch-board.js';
+import { onFlashStart } from './lib/mission-flash.js';
 
 const REFRESH_MS = 600; // 판이 바뀌면 이만큼 모았다가 다시 받는다
 let cache = null; // 마지막 mission.graph
@@ -72,6 +75,7 @@ function Node({ n, live, dim, no, t, now }) {
   const meta = [shell ? null : modelText(r.model, r.effort), age, branch ? `⎇ ${branch}` : null, n.cross ? t('mmMap.crossWs', { ws: r.workspaceKey ? wsName(r.workspaceKey) : t('phone.noRepo') }) : null].filter(Boolean).join(' · ');
   return (
     <button type="button" className={`mt-pm-node ${cls}${r.team ? ' lead' : ''}`} {...common}>
+      {r.tier === 'work' && <span className="mt-pm-flash" data-role="pm-flash" aria-hidden="true" onAnimationStart={onFlashStart} />}
       <span className="mt-pm-top">{no ? <span className="mt-pm-no" data-role="pm-team-no">{no}</span> : null}<b className="mt-pm-name">{r.name}</b></span>
       <span className={`mt-pm-sub ${line.k}`} data-role={`pm-${line.k}`}>{line.main ? <b data-role="pm-role">{line.main}</b> : null}{line.main && line.text ? ' · ' : null}{line.text}</span>
       <span className="mt-pm-meta" data-role="pm-meta">{meta || (shell ? t('mmMap.noModel') : '')}</span>

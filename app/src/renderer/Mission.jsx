@@ -8,8 +8,9 @@
 // - 세션(또는 요약 열의 줄)을 가리키거나 키보드로 고르면 그 세션·조상·팀·바로 이어진 세션만 또렷하다(P94). 누르면 덮개를 닫고 판의 그 노드로 간다.
 // - 위 거르기는 맞지 않는 세션을 흐리게만 한다(자리는 그대로). 빈 곳을 누르거나 Esc를 누르면 닫힌다(P32). 연 동안 판이 바뀌면 다시 읽는다(mission.graph).
 // - P101 다듬기: 워크스페이스마다 옅은 판(머리 글과 그 세션들을 감싸는 바탕 면), 쉬는·잠든·끝난 세션은 테두리 있는 알약, 종류 동그라미는 카드 안 오른쪽 위.
-//   서로 이은 두 세션은 마주 보는 가장자리 사이 짧은 두 줄과 화살촉(lib/mission-wire.js). 일하는 카드는 위·아래 테두리를 따라 짧은 빛이 지나간다
-//   (transform만 움직인다, 움직임 줄이기에서는 멈춘다).
+//   서로 이은 두 세션은 마주 보는 가장자리 사이 짧은 두 줄과 화살촉(lib/mission-wire.js).
+// - P102: 일하는 카드는 바탕에 상태 색이 빠르게 차올랐다 천천히 빠진다(번쩍임 층 .mt-mm-flash, opacity만, 1.4초에 한 번, 모두 같은 박자: lib/mission-flash.js).
+//   멀리서(맞추기 배율) 봐도 일하는 세션만 눈에 띈다. 움직임 줄이기에서는 멈추고 굵은 상태 색 테두리로 남는다. P101의 테두리 빛줄기는 걷었다.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
@@ -18,6 +19,7 @@ import { roleModel, focusOf, teamText, roleText, nodeTier, filterMatch, FILTERS,
 import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
+import { onFlashStart } from './lib/mission-flash.js';
 
 // 빈 곳 누르기에서 빼는 것
 const SOLID = '[data-role="mm-node"], [data-role="mm-edge"], [data-role="mm-summary"], button, input, select, a';
@@ -85,7 +87,7 @@ function Node({ b, live, m, tier, t, now, no, hot, recede, dim, onGo, onHot }) {
   );
   return (
     <div className={`mt-mm-card ${cls}${m && m.team ? ' lead' : ''}`} style={style} {...common}>
-      {tier === 'work' && <span className="mt-mm-glint" data-role="mm-glint" aria-hidden="true"><i /><i /></span>}
+      {tier === 'work' && <span className="mt-mm-flash" data-role="mm-flash" aria-hidden="true" onAnimationStart={onFlashStart} />}
       <div className="mt-mm-c1">{no ? <span className="mt-mm-no" data-role="mm-team-no">{no}</span> : null}<b className="mt-mm-name">{n.name}</b></div>
       <div className={`mt-mm-c2 k-${f.line.k}`} data-role={f.line.k === 'ask' ? 'mm-ask' : f.line.k === 'team' ? 'mm-team' : 'mm-line'}>
         {f.line.main ? <b data-role="mm-role">{f.line.main}</b> : null}{f.line.main && f.line.text ? ' · ' : null}{f.line.text}
