@@ -167,7 +167,7 @@ test('P111 저절로: sessionSleepAfterMin 0이면 세션 규칙을 끈다(리�
   assert.equal(on.sl.sessionPlan(on.lead).why, 'child_busy');
 });
 
-test('P111 깨우기: 혼자 잠든 세션은 혼자 깬다(누르기·전달·atrium wake). 리포 규칙이 리포를 잠재우면 리포째가 되고, 하나를 누르면 리포째 깬다', async () => {
+test('P111 깨우기: 혼자 잠든 세션은 혼자 깬다(누르기·전달·atrium wake). 리포 규칙이 리포를 잠재워도 혼자 잠든 세션은 session 그대로이고, 리포를 깨워도 잔다', async () => {
   const { sl, lead, c1, c2, c3, calls } = board();
   work(lead);
   await sl.tick();
@@ -180,18 +180,23 @@ test('P111 깨우기: 혼자 잠든 세션은 혼자 깬다(누르기·전달·a
   await sl.wakeFor(c3, 'delivery');
   assert.deepEqual([st(c1), st(c3)], ['sleeping', 'ready']);
   assert.deepEqual(calls.filter((c) => c[0] === 'startAgent').map((c) => c[1]), ['c2', 'c3']);
-  // 모두 쉬면 리포 규칙: lead, c2, c3가 리포째 잠들고 앞서 혼자 잠든 c1도 리포째가 된다
+  // 모두 쉬면 리포 규칙: lead, c2, c3가 리포째 잠든다. 앞서 혼자 잠든 c1은 session 그대로
   for (const s of [lead, c2, c3]) { rest(s); s.rt.lastHookAt = Date.now() - 40 * MIN; s.touchedAt = Date.now() - 40 * MIN; s.wokeAt = Date.now() - 40 * MIN; s.rt.launchedAt = Date.now() - 40 * MIN; }
   sl.busyAt.set('ka', Date.now() - 40 * MIN);
   await sl.tick();
   assert.deepEqual([lead, c1, c2, c3].map(st), ['sleeping', 'sleeping', 'sleeping', 'sleeping']);
-  assert.deepEqual([lead, c1, c2, c3].map(sleepScope), ['repo', 'repo', 'repo', 'repo']);
-  // c1을 누르면 리포째 깬다(c1 먼저)
-  const r2 = await sl.wakeOne({ session: 'c1', why: 'click' });
-  assert.equal(r2.repo.waking, 4);
+  assert.deepEqual([lead, c1, c2, c3].map(sleepScope), ['repo', 'session', 'repo', 'repo']);
+  // lead를 누르면 리포 규칙이 잠재운 lead·c2·c3만 깬다(lead 먼저). c1은 잔다(깨우는 중도 아니다)
+  const r2 = await sl.wakeOne({ session: 'lead', why: 'click' });
+  assert.equal(r2.repo.waking, 3);
+  assert.ok(!c1.waking);
   await Promise.all([...sl.wakes.values()]);
-  assert.deepEqual([lead, c1, c2, c3].map(st), ['ready', 'ready', 'ready', 'ready']);
-  assert.equal(calls.filter((c) => c[0] === 'startAgent').map((c) => c[1])[2], 'c1');
+  assert.deepEqual([lead, c1, c2, c3].map(st), ['ready', 'sleeping', 'ready', 'ready']);
+  assert.equal(sleepScope(c1), 'session');
+  assert.equal(calls.filter((c) => c[0] === 'startAgent').map((c) => c[1])[2], 'lead');
+  // c1을 누르면 c1만
+  const r3 = await sl.wakeOne({ session: 'c1', why: 'click' });
+  assert.equal(r3.repo.waking, 1); assert.equal(st(c1), 'ready');
 });
 
 test('P111 깨우기 범위: 리포째 잠든 세션을 깨워도 혼자 잠든 세션은 그대로, 이름표 메뉴(workspace.wake)는 둘 다', async () => {

@@ -13,7 +13,7 @@
 // - P111 세션 규칙: 리포가 바빠도(지휘 세션이 일하는 동안) sessionSleepAfterMin(분, 0이면 끔) 동안 쉰 세션은 혼자 잠재운다(sessionSleepPlan).
 //   "쉼"은 sessionActivity를 그 세션 하나에 적용한 것이고, 일하는 자손(하위의 하위까지)이 있으면 잠재우지 않는다.
 //   일하는 부모는 막지 않는다(늘 일하는 지휘 세션 아래 끝난 워커가 남지 않게. 부모가 herdr로 부르면 PreToolUse hook이 그 세션을 깨운다).
-//   tick은 리포 규칙을 먼저 본다. 잠든 세션은 rt.sleep.scope에 까닭(repo | session)을 남긴다. 리포 규칙이 리포를 잠재우면 혼자 잠든 세션도 repo가 된다.
+//   tick은 리포 규칙을 먼저 본다. 잠든 세션은 rt.sleep.scope에 까닭(repo | session)을 남긴다. 리포 규칙이 리포를 잠재워도 혼자 잠든 세션은 session 그대로다.
 //   깨우기: 혼자 잠든 세션(scope session)은 그 세션만 깨운다. 리포째 잠든 세션을 깨우면 리포째 잠든 세션만 함께 깨운다(혼자 잠든 세션은 그대로).
 //   이름표 메뉴의 "이 리포 깨우기"(workspace.wake)는 사람이 리포를 고른 것이라 둘 다 깨운다.
 import fs from 'node:fs';
@@ -373,8 +373,7 @@ export class Sleeper {
       try { const r = await this.sleep(s, { by, mode }); done.push({ name: s.name, memMB: r.memMB }); }
       catch (e) { skipped.push({ name: s.name, reason: e.code || e.message }); }
     }
-    // P111: 리포가 통째로 잠들었다. 앞서 혼자 잠든 세션도 리포째 잠든 것으로 둔다(하나를 깨우면 리포째 깬다)
-    if (done.length && !stop) for (const s of this.members(key)) if (s.rt.sleep && s.rt.sleep.scope === 'session' && !s.rt.sleep.going) { s.rt.sleep.scope = 'repo'; this.b.store.saveRuntime(s.sessionId, s.rt); this.b.broadcastSession(s, { cause: `sleep:${by}` }); }
+    // P111: 앞서 혼자 잠든 세션은 scope session 그대로 둔다(리포를 깨워도 함께 깨지 않는다. 오래전에 끝난 워커가 한꺼번에 깨어 메모리가 튀지 않게)
     const out = { workspace: key, name: this.repoName(key), slept: done.length, savedMB: Math.round(done.reduce((a, x) => a + (x.memMB || 0), 0)), sessions: done, skipped };
     if (done.length) { this.b.store.addEvent(null, 'repo_slept', { ...out, by }); this.b.log(`repo slept ${out.name} by=${by} n=${done.length} mem=${out.savedMB}MB`); }
     return out;

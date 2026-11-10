@@ -3,7 +3,7 @@
 // 사용: node experiments/p111/tools/e2e.cjs p111-session.mjs
 // 차례: 0 준비 → 1 헤드가 일하는 동안 쉬는 하위 세션 셋이 하나씩 혼자 잠든다(헤드는 남는다) → 2 잠든 c1을 누르면 c1만 깨고 같은 대화로 이어진다
 //       → 3 잠든 c2에 명령 바로 글을 보내면 c2만 깨고 글이 들어간다 → 4 c1이 일하는 동안 쉬는 헤드는 잠들지 않는다(child_busy)
-//       → 5 모두 쉬면 리포 규칙으로 리포째 잠들고(혼자 잠든 세션도 리포째가 된다) 헤드를 누르면 리포째 깬다.
+//       → 5 모두 쉬면 리포 규칙으로 리포째 잠들되 앞서 혼자 잠든 세션은 session 그대로, 헤드를 누르면 리포째 잠든 세션만 깨고 혼자 잠든 c2는 눌러야 혼자 깬다.
 // 잠들 때마다 PC 커밋(Win32_OperatingSystem: 커밋 한도 - 남은 커밋)이 줄어든 값을 잰다(잠들기 전 3초 평균 - 잠든 뒤 7~11초 평균)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -199,7 +199,8 @@ try {
   step('4 일하는 자손: c1이 일하는 동안 쉰 헤드는 잠들지 않는다(까닭 child_busy)',s4.c1 === 'working' && !sleptSince('lead', t4).length && s4.lead === 'ready' && eachOf(r4, 'lead').why === 'child_busy', measures.phase4);
   await look(page, 'p111-4-lead-awake-child-working');
 
-  // 5. 모두 쉬면 리포 규칙(1분)이 세션 규칙(3분)보다 먼저 리포째 잠재우고, 헤드를 누르면 리포째 깬다
+  // 5. 모두 쉬면 리포 규칙(1분)이 세션 규칙(3분)보다 먼저 lead·c1을 리포째 잠재운다. 앞서 혼자 잠든 c2·c3는 session 그대로.
+  //    lead를 누르면 리포 규칙이 잠재운 lead·c1만 깨고 c2·c3는 잔다. 그 뒤 c2를 누르면 c2만 깬다
   await call(page, 'settings.set', { key: 'sessionSleepAfterMin', value: 3 });
   await call(page, 'settings.set', { key: 'sleepAfterMin', value: 1 });
   await waitState(page, 'c1', 'ready', 420000);
@@ -209,27 +210,45 @@ try {
   await sleep(12000); // 리포째 잠든 뒤 커밋을 잴 동안 깨우기를 미룬다
   const s5 = await states(page);
   const r5 = await status(page);
-  const repoEv = (await call(page, 'session.events', { session: 'lead', limit: 200 }).catch(() => [])).filter((e) => e.kind === 'slept').pop();
-  measures.phase5 = { states: s5, each: r5 && r5.each, why: r5 && r5.why, leadSlept: repoEv && repoEv.data };
-  step('5 리포 규칙: 모두 쉬면 리포째 잠들고 넷 모두 scope repo(앞서 혼자 잠든 세션도)', ALL.every((n) => s5[n] === 'sleeping' && eachOf(r5, n).scope === 'repo') && r5.why === 'asleep', measures.phase5);
-  step('5 리포 규칙: 헤드와 c1은 세션 규칙(3분)이 아니라 리포 규칙으로 잠들었다', repoEv && repoEv.data.scope === 'repo', repoEv && repoEv.data);
-  const g5 = ['lead', 'c1', 'c2', 'c3'].map((n) => sleptSince(n, t5)[0]).filter(Boolean).sort((a, b) => a.t - b.t);
+  const repoEv = {}; for (const n of ['lead', 'c1']) repoEv[n] = ((await sleptEvents(page, n)).pop() || {}).data;
+  measures.phase5 = { states: s5, each: r5 && r5.each, why: r5 && r5.why, slept: repoEv };
+  const scope5 = Object.fromEntries(ALL.map((n) => [n, eachOf(r5, n).scope]));
+  step('5 리포 규칙: 모두 쉬면 넷 모두 잠들고 리포 판정은 asleep', ALL.every((n) => s5[n] === 'sleeping') && r5.why === 'asleep', { s5, why: r5 && r5.why });
+  step('5 리포 규칙: lead·c1은 리포 규칙으로(scope repo), 앞서 혼자 잠든 c2·c3는 session 그대로', scope5.lead === 'repo' && scope5.c1 === 'repo' && scope5.c2 === 'session' && scope5.c3 === 'session' && repoEv.lead && repoEv.lead.scope === 'repo' && repoEv.c1 && repoEv.c1.scope === 'repo', { scope5, slept: repoEv });
+  const g5 = ['lead', 'c1'].map((n) => sleptSince(n, t5)[0]).filter(Boolean).sort((a, b) => a.t - b.t);
   if (g5.length) measures.sleeps.push({ phase: 5, name: g5.map((x) => x.n).join('+'), scope: 'repo', at: g5[0].t, commitDropMB: dropAt(g5[0].t, g5[g5.length - 1].t + 3000) });
   log('커밋(리포째)', measures.sleeps.filter((x) => x.phase === 5));
   await look(page, 'p111-5-repo-asleep');
   await viewNode(page, 'lead', 900);
   const t6 = Date.now();
   await page.click('.mt-node[data-name="lead"] [data-role="sleep-face"]');
-  await until(async () => (await sess(page, 'c3')).waking || null, 10000, 100).catch(() => {});
-  for (const n of ALL) await waitState(page, n, 'ready', 150000);
+  for (const n of ['lead', 'c1']) await waitState(page, n, 'ready', 150000);
+  await sleep(3000); // 늦게 깨는 세션이 없는지 잠깐 더 본다
   const s6 = await states(page);
-  const w6 = {}; for (const n of ALL) w6[n] = ((await wokeEvents(page, n)).pop() || {}).data;
-  step('5 리포째 깨우기: 헤드를 누르면 넷이 모두 깬다(헤드 먼저, 나머지 repo:click), 같은 대화 ID', ALL.every((n) => s6[n] === 'ready' && w6[n] && w6[n].convId === ids[n] && w6[n].plan === 'resume') && w6.lead.why === 'click' && KIDS.every((c) => /^repo:/.test(w6[c].why)), { s6, w6 });
-  measures.phase5.wake = Object.fromEntries(ALL.map((n) => [n, w6[n] && { why: w6[n].why, ms: w6[n].ms }]));
+  const w6 = {}; for (const n of ['lead', 'c1']) w6[n] = ((await wokeEvents(page, n)).pop() || {}).data;
+  const others6 = trans.filter((x) => (x.n === 'c2' || x.n === 'c3') && x.t >= t6);
+  step('5 리포째 깨우기: lead를 누르면 lead(click)와 c1(repo:click)만 같은 대화 ID로 깬다', ['lead', 'c1'].every((n) => s6[n] === 'ready' && w6[n] && w6[n].convId === ids[n] && w6[n].plan === 'resume') && w6.lead.why === 'click' && /^repo:/.test(w6.c1.why), { s6, w6 });
+  step('5 리포째 깨우기: 혼자 잠든 c2·c3는 깨지 않는다(깨우는 중도 아니다, scope session 그대로)', s6.c2 === 'sleeping' && s6.c3 === 'sleeping' && !others6.length && eachOf(await status(page), 'c2').scope === 'session', { s6, others6 });
+  measures.phase5.wake = Object.fromEntries(['lead', 'c1'].map((n) => [n, w6[n] && { why: w6[n].why, ms: w6[n].ms }]));
   await lookAway(page);
   const leadm = await askWord(page, 'lead', t6);
-  step('5 리포째 깨우기: 헤드가 잠들기 전 대화(암호)를 기억한다', !!leadm, leadm && leadm.lastAnswer);
+  step('5 리포째 깨우기: lead가 잠들기 전 대화(암호)를 기억한다', !!leadm, leadm && leadm.lastAnswer);
   await look(page, 'p111-5-repo-awake');
+  // 그 뒤 혼자 잠든 c2를 누르면 c2만 깬다
+  await viewNode(page, 'c2', 900);
+  const t7 = Date.now();
+  await page.click('.mt-node[data-name="c2"] [data-role="sleep-face"]');
+  await waitState(page, 'c2', 'ready', 120000);
+  await sleep(2000);
+  const s7 = await states(page);
+  const w7 = ((await wokeEvents(page, 'c2')).pop() || {}).data;
+  const others7 = trans.filter((x) => x.n === 'c3' && x.t >= t7);
+  step('5 혼자 깨우기: 그 뒤 c2를 누르면 c2만 같은 대화로 깨고 c3는 잔다', s7.c2 === 'ready' && s7.c3 === 'sleeping' && !others7.length && w7 && w7.why === 'click' && w7.convId === ids.c2, { s7, w7, others7 });
+  measures.phase5.wakeC2 = w7 && { why: w7.why, ms: w7.ms };
+  await lookAway(page);
+  const c2m7 = await askWord(page, 'c2', t7);
+  step('5 혼자 깨우기: 깬 c2가 잠들기 전 대화(암호)를 기억한다', !!c2m7, c2m7 && c2m7.lastAnswer);
+  await look(page, 'p111-5-c2-awake');
 } catch (e) {
   step('예외', false, e.stack);
   await shot(page, 'p111-error').catch(() => {});
