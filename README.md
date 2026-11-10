@@ -35,7 +35,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Launchers.** A launcher is a harness plus a model and options, or one command line you write. Paste the command you already use (for example `ocx claude --model …`) and the board splits it into fields; a Claude Code launcher can use another start command and still runs as a full board session. Star it and it sits on the left rail: click it, type a session name (or leave it empty) and press Enter.
 - **Sidebar and find.** The sidebar (`Ctrl+Shift+E`) is built for boards with 200+ sessions: virtual groups of repositories, filters by state and kind, and keyboard moves. `Ctrl+F` finds sessions by name, prompt, question or answer, plus memos and kanban cards.
 - **Pick up old work.** Past Claude Code CLI conversations in an open folder appear as cards you can resume. Unarchived Claude desktop app sessions can be imported as forks, so the app's copy is never touched.
-- **Easy on memory.** A repository that stays idle for 30 minutes (configurable) goes to sleep as a whole and wakes up when you click one of its nodes. Each node shows its memory use.
+- **Easy on memory.** A repository that stays idle for 30 minutes (configurable) goes to sleep as a whole, and a session that stays idle for 30 minutes sleeps alone even while its repository is busy. Click a sleeping node to wake it: a repository that slept as a whole wakes as a whole, a session that slept alone wakes alone. Each node shows its memory use.
 
 ![The sidebar with repositories and sessions, and the find window with results for "theme"](.github/images/sidebar.png)
 
