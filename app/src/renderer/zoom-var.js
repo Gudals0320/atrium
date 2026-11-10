@@ -1,6 +1,6 @@
 // P112: 판 배율을 React 렌더 없이 따라간다. 판을 끌거나 확대·축소하는 동안 노드가 배율을 구독하면 프레임마다 노드 전체(머리줄, 터미널 감싸개 등)가
 // 다시 그려져 렌더러 주 스레드가 거의 다 바빴다. 배율에 따라 바뀌는 값 가운데 CSS 변수는 여기서 요소에 바로 쓰고, 얼굴 같은 단계 값만 상태로 구독한다
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useStoreApi } from '@xyflow/react';
 
 // 요소의 --inv(1/배율, 화면 기준 크기로 키우는 글·테두리, styles.css)를 화면 변환이 바뀔 때마다 직접 쓴다.
@@ -19,4 +19,29 @@ export function useInvRef(min = 0.02) {
     put(flow.getState());
     return flow.subscribe(put);
   }, [flow, min]);
+}
+
+// 배율에 따라 바뀌는 인라인 style(화면 기준 크기의 이름표 글자, 손잡이 굵기)을 화면 변환이 바뀔 때마다 직접 쓴다.
+// styleOf(배율) → { 속성: 값 }. 숫자는 React처럼 px를 붙이고(`${값}px`), --로 시작하는 이름은 setProperty로 쓴다. 배율이 그대로면 쓰지 않는다
+export function useZoomStyle(styleOf) {
+  const flow = useStoreApi();
+  const fn = useRef(styleOf);
+  fn.current = styleOf;
+  return useCallback((el) => {
+    if (!el) return undefined;
+    let last = NaN;
+    const put = (st) => {
+      const z = st.transform[2];
+      if (z === last) return;
+      last = z;
+      const s = fn.current(z);
+      for (const k of Object.keys(s)) {
+        const v = s[k];
+        if (k.startsWith('--')) el.style.setProperty(k, v);
+        else el.style[k] = typeof v === 'number' ? `${v}px` : v;
+      }
+    };
+    put(flow.getState());
+    return flow.subscribe(put);
+  }, [flow]);
 }
