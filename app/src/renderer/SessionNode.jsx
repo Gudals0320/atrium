@@ -446,7 +446,7 @@ function SessionNodeInner({ id, selected }) {
   const face = useFlowStore((st) => faceFor(nw, st.transform[2], attached ? 'close' : prevFace.current)); // 경계에서 흔들리지 않게(faces.js 이력)
   const zSmall = useFlowStore((st) => st.transform[2] < SMALL_ZOOM);
   const shortNode = useFlowStore((st) => nh * st.transform[2] < 160);
-  const invRef = useInvRef();
+  const invRef = useInvRef(0.02, id); // 화면 밖이면 움직이는 동안 미룬다(zoom-var.js)
   if (boom) throw new Error(t('node.debugThrow', { name: s ? s.name : id })); // 오류 경계 시험(setDebugThrow)
   if (!s || !n) return null;
   prevFace.current = face;
