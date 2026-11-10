@@ -30,7 +30,7 @@ import { dockBranchOf } from './lib/dock-branch.js'; // P68: 워크트리끼리 
 import { Icon } from './lib/icons.jsx';
 import { dotVar } from './lib/tokens.js';
 import { dt } from './lib/dock-text.js'; // P17
-import { wakeSession, fmtMB } from './sleep.js'; // P21(D4), P24: 잠재우기는 리포 단위(영역 이름표 메뉴)
+import { wakeSession, fmtMB, sleptAlone } from './sleep.js'; // P21(D4), P24: 잠재우기는 리포 단위(영역 이름표 메뉴), P111: 혼자 잠든 세션
 import { fmtTime } from './lib/i18n.js';
 import { confirmKey } from './lib/keys.js'; // P28: 닫기 확인에서 Delete 한 번 더, Esc
 import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 판의 이름 바꾸기
@@ -222,7 +222,7 @@ function NodeMenu({ s, docked, onClose }) {
       {/* P66: 판의 이름 바꾸기(에이전트 주소는 그대로) */}
       <div className="mt-menu-row"><button className="mt-btn small" data-action="rename" onClick={() => { onClose(); setRenaming(s.sessionId, 'node'); }}>{t('rename.menu')}</button><span className="dim">{renamed(s) ? t('rename.address', { address: addressOf(s) }) : t('rename.menuHint')}</span></div>
       {/* P21(D4)·P24: 잠든 노드는 그 리포를 깨운다. 잠재우기는 리포 단위라 영역 이름표 메뉴에 있다 */}
-      {s.state === 'sleeping' && <div className="mt-menu-row"><button className="mt-btn small" data-action="wake" disabled={!!s.waking} onClick={() => { onClose(); wakeSession(s.sessionId); }}><Icon name="moon" />{t('sleep.menuWake')}</button><span className="dim">{t('sleep.menuWakeHint')}</span></div>}
+      {s.state === 'sleeping' && <div className="mt-menu-row"><button className="mt-btn small" data-action="wake" disabled={!!s.waking} onClick={() => { onClose(); wakeSession(s.sessionId); }}><Icon name="moon" />{t(sleptAlone(s) ? 'sessionSleep.menuWake' : 'sleep.menuWake')}</button><span className="dim">{t(sleptAlone(s) ? 'sessionSleep.menuWakeHint' : 'sleep.menuWakeHint')}</span></div>}
       {s.kind !== 'shell' && <div className="mt-menu-row"><button className="mt-btn small" data-action="loop-new" onClick={() => { onClose(); openDialog({ kind: 'loop', target: { session: s.sessionId } }); }}>{t('node.loopNew')}</button><span className="dim">{t('node.loopNewHint')}</span></div>}
       {/* P68: 리드의 하위 세션(워커)을 워크트리가 달라도 한 덩어리로 */}
       {s.branch && s.branch.children >= 2 && <div className="mt-menu-row"><button className="mt-btn small" data-action="dock-workers" onClick={() => api.call('dock.workers', { lead: s.sessionId }).then((r) => { onClose(); toast(t('dockWorkers.done', { n: (r.workers || []).length })); }, (e) => toast(errText(e), 'error'))}>{t('dockWorkers.action')}</button><span className="dim">{t('dockWorkers.hint', { n: s.branch.children })}</span></div>}
@@ -245,7 +245,7 @@ function SleepFace({ s, zoom, w, h, far, close }) { // 깨우기 단추는 가�
   const px = (n, frac, wfrac) => Math.min(n / Math.max(zoom, 0.02), h * frac, w * wfrac);
   const wake = (e) => { e.stopPropagation(); const st = getState(); if (st.navigateTo) st.navigateTo(s.sessionId, { focusTerminal: true }); else wakeSession(s.sessionId); };
   return (
-    <div className={`mt-sleepface${far ? ' far' : ''}${s.waking ? ' waking' : ''}`} data-role="sleep-face" style={{ fontSize: px(13, 0.17, 1 / 16) }}>
+    <div className={`mt-sleepface${far ? ' far' : ''}${s.waking ? ' waking' : ''}`} data-role="sleep-face" data-sleep-scope={z.scope || 'repo'} style={{ fontSize: px(13, 0.17, 1 / 16) }}>
       <div className="mt-sleep-head" style={{ fontSize: px(14, 0.2, 1 / 13) }}>
         <span className="mt-sleep-moon"><Icon name="moon" /></span>
         <b className="mt-far-nm">@{s.name}</b>
@@ -256,7 +256,7 @@ function SleepFace({ s, zoom, w, h, far, close }) { // 깨우기 단추는 가�
       {s.lastPrompt && <div className="mt-far-line one prompt" data-role="sleep-prompt"><span className="mt-far-k">{t('node.prompt')}</span> {oneLine(s.lastPrompt)}</div>}
       {s.lastAnswer && <div className="mt-far-line" data-role="sleep-answer"><span className="mt-far-k">{t('node.answer')}</span> {oneLine(s.lastAnswer).slice(0, 400)}</div>}
       {z.error && !s.waking && <div className="mt-far-line warn" data-role="wake-error">{t('sleep.failed', { error: z.error.message || z.error.code })}</div>}
-      {close && <div className="mt-sleep-actions"><button className="mt-btn nodrag" data-action="wake-face" disabled={!!s.waking} title={t('sleep.wakeTitle')} onClick={wake}>{s.waking ? t('sleep.waking') : t('sleep.wake')}</button></div>}
+      {close && <div className="mt-sleep-actions"><button className="mt-btn nodrag" data-action="wake-face" disabled={!!s.waking} title={t(sleptAlone(s) ? 'sessionSleep.wakeTitle' : 'sleep.wakeTitle')} onClick={wake}>{s.waking ? t('sleep.waking') : t('sleep.wake')}</button></div>}
     </div>
   );
 }

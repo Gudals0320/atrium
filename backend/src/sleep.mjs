@@ -10,6 +10,12 @@
 // - 깨우기: 잠든 리포의 노드 하나를 누르거나 그 리포의 세션 하나에 글을 보내면 그 리포에서 잠든 세션을 모두 깨운다.
 //   부른 세션을 먼저 깨우고 나머지는 WAKE_STAGGER_MS 간격으로 차례로 띄운다(claude 여럿이 한꺼번에 뜨는 부담을 나눈다). 글은 그 세션이 준비된 뒤 대기열이 보낸다.
 //   같은 대화 ID로 새 작업 공간을 만들어 판의 인자로 이어 간다(J1 recreate_resume과 같은 길, 갈라 열기 없음). 실패하면 까닭을 남기고 잠듦으로 둔다.
+// - P111 세션 규칙: 리포가 바빠도(지휘 세션이 일하는 동안) sessionSleepAfterMin(분, 0이면 끔) 동안 쉰 세션은 혼자 잠재운다(sessionSleepPlan).
+//   "쉼"은 sessionActivity를 그 세션 하나에 적용한 것이고, 일하는 자손(하위의 하위까지)이 있으면 잠재우지 않는다.
+//   일하는 부모는 막지 않는다(늘 일하는 지휘 세션 아래 끝난 워커가 남지 않게. 부모가 herdr로 부르면 PreToolUse hook이 그 세션을 깨운다).
+//   tick은 리포 규칙을 먼저 본다. 잠든 세션은 rt.sleep.scope에 까닭(repo | session)을 남긴다. 리포 규칙이 리포를 잠재워도 혼자 잠든 세션은 session 그대로다.
+//   깨우기: 혼자 잠든 세션(scope session)은 그 세션만 깨운다. 리포째 잠든 세션을 깨우면 리포째 잠든 세션만 함께 깨운다(혼자 잠든 세션은 그대로).
+//   이름표 메뉴의 "이 리포 깨우기"(workspace.wake)는 사람이 리포를 고른 것이라 둘 다 깨운다.
 import fs from 'node:fs';
 import { buildStartArgs, buildResumeArgs, transcriptPathFor } from './launch.mjs';
 import { deriveState } from './state.mjs';
@@ -105,6 +111,22 @@ export function sessionActivity(x, { mode = 'auto' } = {}) {
   return null;
 }
 
+// P111: 세션 하나를 혼자 잠재울지(리포가 바빠도). 순수 함수.
+// x: info()의 값(sleepTarget·sessionActivity의 값, idleSince, descBusy: 일하는 자손), busyAt: 그 세션에 마지막으로 일이 보인 때(보던 노드 등)
+// → { why, since, target }. why가 null이면 잠재운다. 일하는 부모(parentBusy)는 보지 않는다(머리 주석)
+export function sessionSleepPlan(x, { now = Date.now(), afterMs = 0, busyAt = 0 } = {}) {
+  const since = Math.max(busyAt || 0, x.idleSince || 0);
+  const a = sessionActivity({ ...x, childBusy: x.descBusy ?? x.childBusy, parentBusy: false }, { mode: 'auto' });
+  if (a) return { why: a, since, target: null };
+  const t = sleepTarget(x, { mode: 'auto' });
+  if (t) return { why: t === 'sleeping' ? 'asleep' : t === 'sleep_failed' || t === 'waking' ? t : 'nothing', since, target: t };
+  if (!afterMs) return { why: 'off', since, target: null };
+  if (now - since < afterMs) return { why: 'idle_short', since, target: null };
+  return { why: null, since, target: null };
+}
+// 잠든 세션이 왜 잠들었는가(P111). 옛 기록(scope 없음)과 손·모두 잠재우기는 리포째다
+export const sleepScope = (s) => (s && s.rt && s.rt.sleep && s.rt.sleep.scope) || 'repo';
+
 // 리포 하나를 지금 잠재울지. 순수 함수.
 // list: 그 리포 세션들의 { name, ...sleepTarget·sessionActivity의 값, idleSince }, busyAt: 그 리포에 마지막으로 일이 보인 때
 // → { why, who, targets, since }. why가 null이면 targets(이름)를 잠재운다. who는 일이 있는 세션 이름
@@ -160,6 +182,7 @@ export class Sleeper {
     this.wakes = new Map(); // 세션 ID → 깨우는 중인 Promise
     this.focus = new Map(); // 창 연결 → 보는 노드 ID 목록(board.viewing: 초점 노드와 가까이 얼굴로 보이는 노드)
     this.busyAt = new Map(); // 리포 키 → 마지막으로 일이 보인 때(마지막 일이 끝난 뒤부터 쉰 시간을 센다)
+    this.sessBusyAt = new Map(); // P111: 세션 ID → 그 세션에 마지막으로 일이 보인 때(세션 규칙)
     this.bgScan = new Map(); // P105: 세션 ID → { at, n } claude 바로 아래 도구 명령(뒤 셸) 수를 센 때와 수
     this.blocked = new Map(); // P105: 세션 ID → { why, at, idle, n, until } 실패한 잠재우기를 미루는 중
     // 백엔드가 잠재우던 중에 꺼졌다: 패널이 남았으면 깨어 있는 것으로 돌리고(resync가 상태를 맞춘다), 없으면 잠든 것으로 둔다
@@ -178,7 +201,7 @@ export class Sleeper {
           const prev = this.focus.get(c) || [];
           const ids = [...new Set([p.focus, ...(Array.isArray(p.close) ? p.close : [])].filter(Boolean).map(String))];
           if (ids.length) this.focus.set(c, ids); else this.focus.delete(c);
-          for (const id of [...prev, ...ids]) { const s = b.sessions.get(id); if (s) this.busyAt.set(wsOf(s), Date.now()); } // 보던 리포는 지금까지 일이 있었다
+          for (const id of [...prev, ...ids]) { const s = b.sessions.get(id); if (s) { this.busyAt.set(wsOf(s), Date.now()); this.sessBusyAt.set(id, Date.now()); } } // 보던 리포(와 세션)는 지금까지 일이 있었다
         }
         return { ok: true };
       },
@@ -187,9 +210,10 @@ export class Sleeper {
     if (timers) this.timer = setInterval(() => this.tick().catch((e) => b.log('sleep tick error', e.stack)), tickMs);
   }
   stop() { clearInterval(this.timer); }
-  dropClient(c) { for (const id of this.focus.get(c) || []) { const s = this.b.sessions.get(id); if (s) this.busyAt.set(wsOf(s), Date.now()); } this.focus.delete(c); }
+  dropClient(c) { for (const id of this.focus.get(c) || []) { const s = this.b.sessions.get(id); if (s) { this.busyAt.set(wsOf(s), Date.now()); this.sessBusyAt.set(id, Date.now()); } } this.focus.delete(c); }
 
   afterMs() { const st = this.b.features && this.b.features.settings ? this.b.features.settings.get() : {}; return Math.max(0, Number(st.sleepAfterMin ?? 30)) * 60000; }
+  sessionAfterMs() { const st = this.b.features && this.b.features.settings ? this.b.features.settings.get() : {}; return Math.max(0, Number(st.sessionSleepAfterMin ?? 30)) * 60000; } // P111
   viewed(sid) { return this.b.relay.stats().some((x) => x.sessionId === sid) || [...this.focus.values()].some((ids) => ids.includes(sid)); }
   members(key) { return [...this.b.sessions.values()].filter((s) => wsOf(s) === key); }
   repoKeys() { return [...new Set([...this.b.sessions.values()].map(wsOf))]; }
@@ -203,13 +227,16 @@ export class Sleeper {
     const kids = [...b.sessions.values()].filter((x) => x.parentSessionId === s.sessionId);
     const parent = s.parentSessionId ? b.sessions.get(s.parentSessionId) : null;
     const busy = (x) => BUSY.has(deriveState(x.rt).state) || this.wakes.has(x.sessionId) || (b.queue && b.queue.pending(x.sessionId) > 0);
+    // P111: 일하는 자손(하위의 하위까지). 세션 규칙이 본다(잠들면 워커의 herdr agent prompt <지휘 세션>이 실패한다)
+    const desc = [], seen = new Set([s.sessionId]);
+    for (const q = [s.sessionId]; q.length; ) { const id = q.shift(); for (const x of b.sessions.values()) if (x.parentSessionId === id && !seen.has(x.sessionId)) { seen.add(x.sessionId); desc.push(x); q.push(x.sessionId); } }
     const blk = this.blockOf(s);
     return {
       name: s.name, kind: s.kind || 'claude', hooked: b.hooked(s), convKnown: s.kind === 'claude' && b.hooked(s) && convoOf(s, b.cfg.claudeProjects).exists,
       state: deriveState(s.rt).state, sleeping: !!s.rt.sleep, waking: this.wakes.has(s.sessionId), closing: b.killing.has(s.sessionId) || this.going.has(s.sessionId),
       draft: !!s.draft, delivering: b.queue ? b.queue.pending(s.sessionId) : 0, loops: b.features ? b.features.loops.activeCount(s.sessionId) : 0,
       bg: !s.rt.sleep && !!(this.bgOf(s) || (blk && blk.why === 'background')), blocked: blk && blk.why !== 'background' ? blk.why : null,
-      childBusy: kids.some(busy), parentBusy: !!(parent && busy(parent)), viewed: this.viewed(s.sessionId), idleSince: idleSince(s),
+      childBusy: kids.some(busy), descBusy: desc.some(busy), parentBusy: !!(parent && busy(parent)), viewed: this.viewed(s.sessionId), idleSince: idleSince(s),
     };
   }
 
@@ -260,11 +287,18 @@ export class Sleeper {
     return p;
   }
 
+  // P111: 세션 하나의 세션 규칙 판정. 일이 보이면 그 때를 기억한다
+  sessionPlan(s, now = Date.now()) {
+    const p = sessionSleepPlan(this.info(s), { now, afterMs: this.sessionAfterMs(), busyAt: this.sessBusyAt.get(s.sessionId) || 0 });
+    if (isActivity(p.why)) this.sessBusyAt.set(s.sessionId, now);
+    return p;
+  }
+
   // 요약에 덧붙인다(창의 잠든 얼굴, 영역 이름표, 메모리 알약)
   summaryExtra(s) {
     const z = s.rt.sleep;
     return {
-      sleep: z ? { at: z.at, by: z.by, memMB: z.memMB ?? null, error: z.error || null } : null,
+      sleep: z ? { at: z.at, by: z.by, scope: z.scope || 'repo', memMB: z.memMB ?? null, error: z.error || null } : null, // P111: scope(repo | session)
       waking: s.waking ? { at: s.waking.at, why: s.waking.why } : null,
       sleepable: !z && s.kind === 'claude' && this.b.hooked(s),
     };
@@ -278,9 +312,11 @@ export class Sleeper {
       const asleep = mem.filter((s) => s.rt.sleep);
       const blocked = mem.map((s) => [s, this.blockOf(s, now)]).filter(([, e]) => e).map(([s, e]) => ({ name: s.name, why: e.why, n: e.n, retryInMs: e.until - now })); // P105
       const background = mem.map((s) => [s, this.bgOf(s, now)]).filter(([, g]) => g).map(([s, g]) => ({ name: s.name, ...g }));
-      return { key, name: this.repoName(key), sessions: mem.length, asleep: asleep.length, savedMB: Math.round(asleep.reduce((a, s) => a + (s.rt.sleep.memMB || 0), 0)), targets: p.targets, why: p.why, who: p.who, idleMs: now - p.since, blocked, background };
+      // P111: 세션 규칙의 판정(판이 띄운 Claude Code만). 잠든 세션은 scope(repo | session)
+      const each = mem.filter((s) => (s.kind || 'claude') === 'claude' && this.b.hooked(s)).map((s) => { const q = this.sessionPlan(s, now); return { name: s.name, why: q.why, idleMs: now - q.since, ...(s.rt.sleep ? { scope: sleepScope(s) } : {}) }; });
+      return { key, name: this.repoName(key), sessions: mem.length, asleep: asleep.length, savedMB: Math.round(asleep.reduce((a, s) => a + (s.rt.sleep.memMB || 0), 0)), targets: p.targets, why: p.why, who: p.who, idleMs: now - p.since, blocked, background, each };
     });
-    return { afterMin: this.afterMs() / 60000, sleeping: list.length, savedMB: Math.round(list.reduce((a, s) => a + (s.rt.sleep.memMB || 0), 0)), sessions: list.map((s) => ({ name: s.name, workspace: wsOf(s), at: s.rt.sleep.at, memMB: s.rt.sleep.memMB ?? null })), repos };
+    return { afterMin: this.afterMs() / 60000, sessionAfterMin: this.sessionAfterMs() / 60000, sleeping: list.length, savedMB: Math.round(list.reduce((a, s) => a + (s.rt.sleep.memMB || 0), 0)), sessions: list.map((s) => ({ name: s.name, workspace: wsOf(s), at: s.rt.sleep.at, scope: sleepScope(s), memMB: s.rt.sleep.memMB ?? null })), repos };
   }
 
   // ---------- 저절로 ----------
@@ -294,11 +330,31 @@ export class Sleeper {
       // P105: 곧 잠들 리포와 뒤 일이 보이는 리포만 프로세스를 다시 본다(뒤 셸이 끝났는지, 쉬는 claude 아래 도구 명령이 도는지)
       const scan = this.repoKeys().filter((key) => { const w = this.plan(key, 'auto').why; return !w || w === 'background'; });
       if (scan.length) await this.scanBackground(scan.flatMap((key) => this.members(key)));
+      const busyRepos = [];
       for (const key of this.repoKeys()) {
-        if (this.plan(key, 'auto').why) continue;
+        if (this.plan(key, 'auto').why) { busyRepos.push(key); continue; }
         await this.sleepRepo(key, { by: 'auto', mode: 'auto' }).catch((e) => b.log(`auto sleep repo ${key} failed: ${e.code || e.message}`));
       }
+      // P111: 리포 규칙에 걸리지 않은 리포에서 오래 쉰 세션을 혼자 잠재운다(리포 규칙이 먼저)
+      if (this.sessionAfterMs()) await this.sleepIdleSessions(busyRepos);
     } finally { this._ticking = false; }
+  }
+  // P111: 세션 규칙. 곧 잠들 세션과 뒤 일이 보이는 세션만 프로세스를 다시 보고, 판정을 다시 본 뒤 하나씩 잠재운다
+  async sleepIdleSessions(keys) {
+    const b = this.b, cand = [];
+    for (const key of keys) {
+      if (!this.plan(key, 'auto').why) continue; // 그새 리포가 쉬게 되었으면 다음 tick의 리포 규칙에 맡긴다
+      for (const s of this.members(key)) { const w = this.sessionPlan(s).why; if (!w || w === 'background') cand.push(s); }
+    }
+    if (!cand.length) return [];
+    await this.scanBackground(cand);
+    const done = [];
+    for (const s of cand) {
+      if (!b.sessions.has(s.sessionId) || this.sessionPlan(s).why) continue;
+      try { done.push(await this.sleep(s, { by: 'auto', mode: 'auto', scope: 'session' })); }
+      catch (e) { b.log(`auto sleep session ${s.name} failed: ${e.code || e.message}`); }
+    }
+    return done;
   }
 
   // 리포 하나의 대상 세션을 차례로 잠재운다. 도중에 일이 들어오면 남은 세션은 그대로 둔다
@@ -317,6 +373,7 @@ export class Sleeper {
       try { const r = await this.sleep(s, { by, mode }); done.push({ name: s.name, memMB: r.memMB }); }
       catch (e) { skipped.push({ name: s.name, reason: e.code || e.message }); }
     }
+    // P111: 앞서 혼자 잠든 세션은 scope session 그대로 둔다(리포를 깨워도 함께 깨지 않는다. 오래전에 끝난 워커가 한꺼번에 깨어 메모리가 튀지 않게)
     const out = { workspace: key, name: this.repoName(key), slept: done.length, savedMB: Math.round(done.reduce((a, x) => a + (x.memMB || 0), 0)), sessions: done, skipped };
     if (done.length) { this.b.store.addEvent(null, 'repo_slept', { ...out, by }); this.b.log(`repo slept ${out.name} by=${by} n=${done.length} mem=${out.savedMB}MB`); }
     return out;
@@ -365,16 +422,16 @@ export class Sleeper {
     const order = this.members(key).filter((s) => this.isAsleep(s));
     if (!order.length) return { workspace: key, name: this.repoName(key), woke: 0, sessions: [] };
     this.b.requireHerdr();
-    const jobs = this.wakeRepo(key, null, p.why || 'hand');
+    const jobs = this.wakeRepo(key, null, p.why || 'hand', { all: true }); // P111: 혼자 잠든 세션도(사람이 리포를 골랐다)
     if (p.wait === false) { for (const j of jobs) j.job.catch(() => {}); return { workspace: key, name: this.repoName(key), waking: jobs.length }; }
     const rs = await Promise.all(jobs.map((j) => j.job.then((r) => ({ name: j.name, ok: true, ms: r.ms }), (e) => ({ name: j.name, ok: false, error: e.message }))));
     return { workspace: key, name: this.repoName(key), woke: rs.filter((r) => r.ok).length, sessions: rs };
   }
-  // 노드를 누를 때(session.wake): 그 세션의 리포를 깨우고 그 세션이 준비될 때까지 기다린다
+  // 노드를 누를 때(session.wake): 그 세션의 리포를 깨우고 그 세션이 준비될 때까지 기다린다. P111: 혼자 잠든 세션은 그 세션만
   async wakeOne(p) {
     const s = this.b.resolve(p.session);
     const key = wsOf(s);
-    const others = this.members(key).filter((x) => this.isAsleep(x));
+    const others = this.wakeSet(key, s);
     if (!others.length) return { awake: true, name: s.name, state: deriveState(s.rt).state };
     this.b.requireHerdr();
     const job = this.wakeFor(s, p.why || 'hand');
@@ -385,13 +442,19 @@ export class Sleeper {
 
   // 리포 key에서 잠든 세션을 모두 깨운다. first(부른 세션)를 먼저, 나머지는 staggerMs 간격으로. → [{ name, job }]
   // P34: 데스크톱 앱에서 가져와 아직 한 번도 깨지 않은 세션(sleep.by import)은 리포를 깨울 때 함께 깨우지 않는다(수십 개가 한꺼번에 뜨지 않게). 그 노드를 누르거나 글을 보낼 때만 깬다
-  wakeRepo(key, first, why) {
-    const asleep = this.members(key).filter((s) => this.isAsleep(s) && (s === first || !(s.rt.sleep && s.rt.sleep.by === 'import')));
+  // P111: 혼자 잠든 세션(scope session)은 리포를 깨울 때 함께 깨우지 않는다(all이면 함께). first가 혼자 잠들었으면 first만 깬다
+  wakeSet(key, first, { all = false } = {}) {
+    if (first && !all && this.isAsleep(first) && sleepScope(first) === 'session') return [first];
+    return this.members(key).filter((s) => this.isAsleep(s) && (s === first || (!(s.rt.sleep && s.rt.sleep.by === 'import') && (all || sleepScope(s) !== 'session'))));
+  }
+  wakeRepo(key, first, why, { all = false } = {}) {
+    const asleep = this.wakeSet(key, first, { all });
     const order = first && asleep.includes(first) ? [first, ...asleep.filter((x) => x !== first)] : asleep;
-    this.busyAt.set(key, Date.now());
+    const alone = asleep.length === 1 && asleep[0] === first && sleepScope(first) === 'session';
+    if (!alone) this.busyAt.set(key, Date.now()); // 혼자 깨우는 세션은 리포의 시계를 다시 세지 않는다(그 세션의 깬 때가 센다)
     return order.map((s, i) => ({ name: s.name, sessionId: s.sessionId, job: this.wake(s, i === 0 ? why : `repo:${why}`, i * this.staggerMs) }));
   }
-  // 세션 s의 리포를 깨우고 s의 깨우기(Promise)를 돌려준다. s가 깨어 있으면 리포의 나머지만 깨운다
+  // 세션 s의 리포를 깨우고 s의 깨우기(Promise)를 돌려준다. s가 깨어 있으면 리포의 나머지만 깨운다. P111: s가 혼자 잠들었으면 s만(wakeSet)
   wakeFor(s, why) {
     const jobs = this.wakeRepo(wsOf(s), s, why);
     let mine = null;
@@ -424,13 +487,14 @@ export class Sleeper {
     return { background, esc, cleared: !open(scr) };
   }
 
-  sleep(s, { by, mode = by === 'hand' ? 'hand' : 'bulk' }) {
+  // scope(P111): repo(리포 규칙·손·모두) | session(세션 규칙, 혼자)
+  sleep(s, { by, mode = by === 'hand' ? 'hand' : 'bulk', scope = 'repo' }) {
     if (this.going.has(s.sessionId)) return this.going.get(s.sessionId);
-    const job = this._sleep(s, by, mode).finally(() => this.going.delete(s.sessionId));
+    const job = this._sleep(s, by, mode, scope).finally(() => this.going.delete(s.sessionId));
     this.going.set(s.sessionId, job);
     return job;
   }
-  async _sleep(s, by, mode) {
+  async _sleep(s, by, mode, scope = 'repo') {
     const b = this.b, rt = s.rt, t0 = Date.now();
     b.killing.add(s.sessionId); // 판이 닫는 패널: pane_closed·workspace_closed를 "판 밖에서 닫음"으로 보지 않는다
     try {
@@ -438,12 +502,13 @@ export class Sleeper {
       await this.scanBackground([s]); // P105: /exit 바로 앞에서 뒤 셸이 도는지 다시 본다
       // 재는 동안 이 세션에 일이 들어왔으면 그만둔다(리포의 다른 세션은 sleepRepo가 세션마다 다시 본다)
       const x = { ...this.info(s), closing: false };
-      const why = sleepTarget(x, { mode }) || sessionActivity(x, { mode });
+      // P111: 혼자 잠재울 때는 세션 규칙의 일(일하는 자손을 보고, 일하는 부모는 보지 않는다)
+      const why = sleepTarget(x, { mode }) || sessionActivity(scope === 'session' ? { ...x, childBusy: x.descBusy, parentBusy: false } : x, { mode });
       if (why) throw keyed(apiError(`sleep_${why}`, `@${s.name} 세션을 지금 절전 모드로 전환할 수 없습니다: ${why}`), 'sleepRefused', { name: s.name, reason: m(`sleepWhy_${why}`) });
       const conv = convoOf(s, b.cfg.claudeProjects);
       const prev = { state: deriveState(rt).state, lastPrompt: rt.lastPrompt, lastAnswer: rt.lastAnswer };
       // 지금부터 sleeping으로 보인다(전달은 기다리고 깨우기를 부른다. claude가 끝나는 동안 exited로 깜빡이지 않는다)
-      rt.sleep = { at: Date.now(), by, going: true, convId: conv.convId };
+      rt.sleep = { at: Date.now(), by, scope, going: true, convId: conv.convId };
       b.broadcastSession(s, { cause: `sleep:${by}` });
       const steps = [];
       if (rt.herdr.present) {
@@ -474,16 +539,16 @@ export class Sleeper {
       s.paneId = null; s.herdrWorkspaceId = null; s.resumeVerified = false;
       rt.exit = null; rt.exitRequested = false; rt.sessionEnd = null; rt.pendingAsk = null; rt.interruptedTurn = null;
       rt.herdr = { status: null, launchPending: false, agentSessionId: null, present: false, at: Date.now() };
-      rt.sleep = { at: rt.sleep.at, by, convId: conv.convId, memMB: mem.memMB, procs: mem.procs.length, prevState: prev.state, pane };
+      rt.sleep = { at: rt.sleep.at, by, scope: rt.sleep.scope || scope, convId: conv.convId, memMB: mem.memMB, procs: mem.procs.length, prevState: prev.state, pane };
       b.store.updateSession(s.sessionId, { paneId: null, herdrWorkspaceId: null, resumeVerified: false, runtime: rt });
       await b.adapter.refreshSubscription();
       // 패널의 프로세스(claude, 셸, MCP 서버)가 끝났는지 본다
       let left = mem.procs;
       for (const tw = Date.now(); left.length && Date.now() - tw < 5000; ) { await sleep(250); left = left.filter((x) => pidAlive(x.pid)); }
-      const out = { slept: true, name: s.name, by, memMB: mem.memMB, procs: mem.procs.map((x) => x.name), left: left.map((x) => `${x.name}:${x.pid}`), convId: conv.convId, steps, ms: Date.now() - t0 };
+      const out = { slept: true, name: s.name, by, scope: rt.sleep.scope, memMB: mem.memMB, procs: mem.procs.map((x) => x.name), left: left.map((x) => `${x.name}:${x.pid}`), convId: conv.convId, steps, ms: Date.now() - t0 };
       this.blocked.delete(s.sessionId); // P105
       b.store.addEvent(s.sessionId, 'slept', out);
-      b.log(`slept ${s.name} by=${by} mem=${mem.memMB}MB procs=${mem.procs.length} left=${left.length} in ${out.ms}ms`);
+      b.log(`slept ${s.name} by=${by} scope=${rt.sleep.scope} mem=${mem.memMB}MB procs=${mem.procs.length} left=${left.length} in ${out.ms}ms`);
       b.broadcastSession(s, { cause: `sleep:${by}` });
       if (b.resources && b.resources.sample) b.resources.sample().catch(() => {}); // 메모리 알약을 바로 줄인다(다음 30초 표본을 기다리지 않게)
       return out;

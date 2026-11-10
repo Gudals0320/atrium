@@ -193,7 +193,7 @@ test('D4 잠재우기: /exit 뒤 작업 공간을 닫고 패널 없이 sleeping�
   assert.ok(events.some((e) => e.kind === 'slept'));
   assert.ok(!calls.some((c) => c[0] === 'broadcast' && c[2] === 'exited'), 'claude가 끝나는 동안 exited로 보이지 않는다');
   const st = sl.status();
-  assert.deepEqual({ ...st, repos: undefined }, { afterMin: 30, sleeping: 1, savedMB: 482, sessions: [{ name: 'a1', workspace: '', at: s.rt.sleep.at, memMB: 482 }], repos: undefined });
+  assert.deepEqual({ ...st, repos: undefined }, { afterMin: 30, sessionAfterMin: 30, sleeping: 1, savedMB: 482, sessions: [{ name: 'a1', workspace: '', at: s.rt.sleep.at, scope: 'repo', memMB: 482 }], repos: undefined }); // P111: sessionAfterMin, scope
   assert.equal(st.repos[0].why, 'asleep'); assert.equal(st.repos[0].asleep, 1); assert.equal(st.repos[0].savedMB, 482);
   assert.equal(sl.summaryExtra(s).sleep.memMB, 482);
 });

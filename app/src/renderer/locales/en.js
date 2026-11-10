@@ -1216,11 +1216,11 @@ export default {
     memRepoAsleep: '{n} asleep · {mb} saved',
     trayItem: 'Put idle repos to sleep',
     trayDone: 'Put {repos} idle repo(s) to sleep ({n} sessions, {mb} saved)',
-    afterLabel: 'Sleep idle repos (min)',
+    afterLabel: 'Sleep a whole idle repo (min)',
     afterHint: '0 turns auto sleep off (default {n})',
     afterNote: 'When nothing happens in a repo for this long (no session working, waiting for you, being looked at, or typed in), all its board Claude Code sessions stop to free memory. Clicking one of its nodes or sending to one wakes the whole repo in the same conversations.',
-    afterSet: 'Repos sleep after {n} quiet minutes',
-    afterOff: 'Auto sleep is off',
+    afterSet: 'Whole repos sleep after {n} quiet minutes',
+    afterOff: 'Whole-repo sleep is off',
   },
   // P32: 미션 맵 다시 그리기, 연결 알약으로 열기
   mmap: {
@@ -2282,5 +2282,16 @@ export default {
     off: 'Off',
     hint: 'A light runs along the border of working sessions on the board nodes and the mission map cards.',
     note: 'Follow Windows stops the light while Windows animation effects are off (Settings › Accessibility › Visual effects) and shows a still colored border instead. Off always shows the still border. Phones use this setting too; there, Follow Windows uses the reduce motion setting of the phone.',
+  },
+  // P111: one idle session sleeps on its own even while its repo is busy (Settings › Sleep, sleeping node)
+  sessionSleep: {
+    afterLabel: 'Sleep an idle session (min)',
+    afterHint: '0 turns it off (default {n})',
+    afterNote: 'A board Claude Code session that stays idle this long sleeps on its own, even while other sessions in its repo work. It stays awake while it is working, waiting for you, being looked at, holding unsent text, running a loop or background work, or while a sub-session under it works. Clicking it or sending to it wakes only that session. The whole-repo rule above goes first.',
+    afterSet: 'Idle sessions sleep after {n} minutes',
+    afterOff: 'Per-session sleep is off',
+    menuWake: 'Wake this session',
+    menuWakeHint: 'It went to sleep on its own, so only this session wakes, in the same conversation',
+    wakeTitle: 'Wake only this session in the same conversation (it went to sleep on its own)',
   },
 };

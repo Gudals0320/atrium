@@ -235,7 +235,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 - herdr 명령에 \`--session\`, \`--machine\`, \`--remote\`를 붙이지 않는다. \`test "$HERDR_ENV"\` 확인은 하지 않는다.
 - 끝난 워커는 끄지 않고 둔다. 사람이 끄라고 할 때만 \`atrium child-kill <이름>\`으로 끈다(그 아래도 함께, 자기 자손만).
 - 워커가 권한을 묻고 멈추면(\`herdr agent prompt\`가 blocked) 대신 답하지 않는다. 사용자에게 "보드에서 @이름의 승인 카드에 답해 주세요"라고 알린다.
-- 잠든 워커는 \`atrium wake <이름>\`으로 깨운 뒤 시킨다.
+- 오래 쉰 워커는 혼자 잠든다. \`atrium wake <이름>\`으로 그 워커를(리포째 잠들었으면 그 리포를) 깨운 뒤 시킨다.
 - 워커가 모델 오류로 답하지 못하면(\`atrium children\`의 오류 줄) 사용자에게 알리고 \`atrium models\`의 다른 줄로 다시 띄운다.
 `;
 export function boardSkill(name = SKILL_NAME) {
@@ -765,7 +765,7 @@ export class Branch {
     const t = [...b.sessions.values()].find((x) => x.name === ref || x.agentName === ref || x.sessionId === ref);
     if (!t) throw apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`);
     const was = !!(t.rt.sleep || (b.sleeper && b.sleeper.wakes.has(t.sessionId)));
-    const r = was ? await b.sleeper.wakeFor(t, `atrium:${caller.name}`) : null; // P24: 그 리포의 잠든 세션을 모두 깨우고 이 세션이 준비될 때까지
+    const r = was ? await b.sleeper.wakeFor(t, `atrium:${caller.name}`) : null; // P24: 그 리포의 잠든 세션을 모두 깨우고 이 세션이 준비될 때까지. P111: 혼자 잠든 세션은 그 세션만
     let first = null;
     if (o.prompt != null && String(o.prompt).trim()) { const d = b.queue.enqueue(t.sessionId, String(o.prompt)); first = { deliveryId: d.deliveryId, status: d.status }; this.firstOf.set(d.deliveryId, t.sessionId); }
     b.store.addEvent(caller.sessionId, 'branch_wake', { target: t.name, woke: was, ms: r ? r.ms : null });
