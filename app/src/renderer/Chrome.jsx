@@ -466,13 +466,12 @@ export function ChipRow() {
 
 export function ZoomPill() {
   const t = useT();
-  const vp = useStore((st) => st.vpNow);
-  const z = vp ? vp.zoom : 1;
+  const pct = useStore((st) => Math.round((st.vpNow ? st.vpNow.zoom : 1) * 100)); // P112: 보이는 숫자(%)가 바뀔 때만 다시 그린다
   const by = (f) => getState().zoomBy && getState().zoomBy(f);
   return (
     <div className="mt-cp zoom" data-role="zoom">
       <button title={t('zoom.out')} data-action="zoom-out" onClick={() => by(1 / 1.25)}><Icon name="minus" /></button>
-      <button className="mt-zoom-n mono" title={t('spaceFit.zoom')} data-action="zoom-fit" onClick={() => getState().fitAll && getState().fitAll(250)}>{Math.round(z * 100)}%</button>
+      <button className="mt-zoom-n mono" title={t('spaceFit.zoom')} data-action="zoom-fit" onClick={() => getState().fitAll && getState().fitAll(250)}>{pct}%</button>
       <button title={t('zoom.in')} data-action="zoom-in" onClick={() => by(1.25)}><Icon name="plus" /></button>
     </div>
   );
