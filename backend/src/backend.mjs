@@ -242,7 +242,7 @@ export class Backend {
       // P6a(H3): hook이 없는 세션의 마지막 요청은 판이 보내 제출을 확인한 글로 둔다(멀리 얼굴, 검색)
       if (s && d.status === 'confirmed' && !this.hooked(s)) { const row = this.store.getDelivery(d.deliveryId); if (row) { s.rt.lastPrompt = row.text; s.rt.lastPromptAt = Date.now(); } }
       // P21(D4): 잠든 세션에 보낼 글이 생겼다. 깨운 뒤(ready) 대기열이 보낸다
-      if (s && d.status === 'queued' && d.reason === 'sleeping' && this.sleeper) this.sleeper.wakeFor(s, 'delivery').catch(() => {}); // P24: 그 리포의 잠든 세션을 모두 깨운다
+      if (s && d.status === 'queued' && d.reason === 'sleeping' && this.sleeper) this.sleeper.wakeFor(s, 'delivery').catch(() => {}); // P24: 그 리포의 잠든 세션을 모두 깨운다(P111: 혼자 잠든 세션은 그 세션만)
       if (s) this.broadcastSession(s);
     });
     // P27: 리포마다 살아 있는 워크트리의 영역. 대화 노드(recall)보다 먼저 한 번 읽어 처음부터 워크트리 영역에 놓는다
@@ -1708,7 +1708,7 @@ export class Backend {
       for (const c of mine) {
         this.store.addEvent(s.sessionId, 'herdr_call', { verb: c.verb, target: c.target || c.name || c.pane || null, text: clip(c.text, 200), toolUseId: id });
         // P21(D4): 다른 에이전트가 herdr로 잠든 세션을 부른다. 이 호출은 대상이 없어 실패하므로 깨워 두고, 다시 부르면 된다(판 안내에 적었다)
-        { const z = c.target && this.resolveAgentTarget(c.target); if (z && z !== s && z.rt.sleep && this.sleeper) this.sleeper.wakeFor(z, `herdr:${s.name}`).catch(() => {}); } // P24: 그 리포 전체
+        { const z = c.target && this.resolveAgentTarget(c.target); if (z && z !== s && z.rt.sleep && this.sleeper) this.sleeper.wakeFor(z, `herdr:${s.name}`).catch(() => {}); } // P24: 그 리포 전체(P111: 혼자 잠든 세션은 그 세션만)
         if (c.verb === 'agent.prompt') {
           const t = this.resolveAgentTarget(c.target);
           if (t && t !== s) { const l = this.ensureLink(s.sessionId, t.sessionId, { observed: true }); this.linkEvent(l, 'prompt', c.text, { toolUseId: id, wait: c.wait, via: 'hook' }); t.openPromptFrom = { linkId: l.linkId, at: now, text: c.text }; }

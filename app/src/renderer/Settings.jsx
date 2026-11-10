@@ -184,18 +184,28 @@ function RecallSettings({ settings, schema }) {
   );
 }
 
-// P21(D4): 쉬면 잠재우기(분)
-function SleepSetting({ settings, schema }) {
+// P21(D4): 쉬면 잠재우기(분). P111: 리포 전체(sleepAfterMin)와 세션 하나(sessionSleepAfterMin) 두 칸
+function SleepMinutes({ settings, schema, k, label, hint, set, off }) {
   const t = useT();
   const [v, setV] = useState(null);
-  const sc = (schema && schema.sleepAfterMin) || { min: 0, max: 1440, default: 30 };
-  const save = async (value) => { try { await api.call('settings.set', { key: 'sleepAfterMin', value }); setV(null); toast(value ? t('sleep.afterSet', { n: value }) : t('sleep.afterOff')); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); } };
+  const sc = (schema && schema[k]) || { min: 0, max: 1440, default: 30 };
+  const save = async (value) => { try { await api.call('settings.set', { key: k, value }); setV(null); toast(value ? t(set, { n: value }) : t(off)); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); } };
+  return (
+    <SetRow name={t(label)} hint={t(hint, { n: sc.default })}>
+      <input type="number" className="mt-set-num" min={sc.min} max={sc.max} data-field={`setting-${k}`} value={v ?? settings[k] ?? sc.default} onChange={(e) => setV(e.target.value)} onBlur={() => v != null && v !== '' && save(Number(v))} onKeyDown={(e) => { if (e.key === 'Enter' && v != null && v !== '') save(Number(v)); }} />
+    </SetRow>
+  );
+}
+function SleepSetting({ settings, schema }) {
+  const t = useT();
   return (
     <div className="mt-set-grid" data-role="sleep-settings">
-      <SetRow name={t('sleep.afterLabel')} hint={t('sleep.afterHint', { n: sc.default })}>
-        <input type="number" className="mt-set-num" min={sc.min} max={sc.max} data-field="setting-sleepAfterMin" value={v ?? settings.sleepAfterMin} onChange={(e) => setV(e.target.value)} onBlur={() => v != null && v !== '' && save(Number(v))} onKeyDown={(e) => { if (e.key === 'Enter' && v != null && v !== '') save(Number(v)); }} />
-      </SetRow>
+      <SleepMinutes settings={settings} schema={schema} k="sleepAfterMin" label="sleep.afterLabel" hint="sleep.afterHint" set="sleep.afterSet" off="sleep.afterOff" />
       <SetNote>{t('sleep.afterNote')}</SetNote>
+      {settings.sessionSleepAfterMin != null && <>
+        <SleepMinutes settings={settings} schema={schema} k="sessionSleepAfterMin" label="sessionSleep.afterLabel" hint="sessionSleep.afterHint" set="sessionSleep.afterSet" off="sessionSleep.afterOff" />
+        <SetNote>{t('sessionSleep.afterNote')}</SetNote>
+      </>}
     </div>
   );
 }

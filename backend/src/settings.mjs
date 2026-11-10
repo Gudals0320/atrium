@@ -31,7 +31,9 @@ export const SETTINGS = {
   updateCheck: { type: 'boolean', default: true, label: '새 릴리즈를 몇 시간마다 확인하고 알립니다. 업데이트는 직접 눌러야 합니다.' },
   // P70: 업데이트 채널. stable은 정식 릴리즈만, dev는 dev 브랜치의 사전 릴리즈(v<x.y.z>-dev.<n>)도 알린다. 바꾸면 백엔드가 곧바로 다시 확인한다
   updateChannel: { type: 'choice', default: 'stable', options: ['stable', 'dev'], label: '업데이트 채널 (stable: 정식 릴리즈, dev: dev 브랜치에 합친 기능을 먼저 받는 사전 릴리즈).' },
-  sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '프로젝트에 지정한 시간(분) 동안 활동이 없으면 보드에서 시작한 Claude Code 세션을 모두 절전 모드로 전환합니다 (0: 자동 절전 사용 안 함).' },
+  sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '프로젝트 전체에 지정한 시간(분) 동안 활동이 없으면 보드에서 시작한 Claude Code 세션을 모두 절전 모드로 전환합니다 (0: 사용 안 함).' },
+  // P111: 세션 하나가 이 시간(분) 동안 쉬면 그 리포가 바빠도 그 세션만 잠재운다(sleep.mjs sessionSleepPlan). 리포 규칙(sleepAfterMin)이 먼저다
+  sessionSleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '세션 하나에 지정한 시간(분) 동안 활동이 없으면 프로젝트의 다른 세션이 작업 중이어도 그 세션만 절전 모드로 전환합니다 (0: 사용 안 함).' },
   // P107: 작업 중 테두리 빛. 보드의 작업 중 세션 노드 둘레와 미션 맵 카드 테두리를 따라 도는 빛. Windows "애니메이션 효과"가 꺼진 PC는 창이 늘 움직임 줄이기라
   // 운영체제 설정만 따르면 보이지 않아 기본은 켬. 창·휴대폰이 문서 뿌리 data-work-light로 받아 CSS가 정한다(app lib/work-light.js). 끔이면 멈춘 상태 색 테두리
   workLight: { type: 'choice', default: 'on', options: WORK_LIGHT, label: '보드의 작업 중 세션 노드와 미션 맵 카드의 테두리를 따라 빛을 돌립니다 (on: 항상, system: 운영체제의 동작 줄이기 설정을 따름, off: 멈춘 테두리만 표시).' },

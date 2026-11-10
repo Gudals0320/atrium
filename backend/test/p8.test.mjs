@@ -136,8 +136,8 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   assert.ok(!skill.includes('mtask') && !skill.includes('multitask'));
   for (const w of ['atrium child', '--worktree', '--prompt', '--model', '--effort', 'herdr agent wait', 'herdr agent prompt', 'herdr agent read', 'atrium child-kill', 'atrium child-wait', 'needs_trust', 'needs_commit', '보드에서 @wt1 카드의 신뢰 질문에 답해 주세요.', 'git worktree add', '--session', '상한은 없다', '사용자가 말하지 않아도', '완료 기준']) assert.ok(skill.includes(w), w);
   for (const w of ['상한(', '개, 깊이', '판 밖 터미널을 열라고 한다']) assert.ok(!skill.includes(w), w);
-  // 길이: P8 delegate 글(3107바이트)의 두 배를 넘지 않는다
-  assert.ok(Buffer.byteLength(skill) <= 2 * 3107, `skill ${Buffer.byteLength(skill)}B`);
+  // 길이: P8 delegate 글(3107바이트)의 두 배를 넘지 않는다. P111: 잠든 워커 줄에 혼자 잠들기와 깨우기 범위(+77바이트)를 더해 80바이트를 더 둔다
+  assert.ok(Buffer.byteLength(skill) <= 2 * 3107 + 80, `skill ${Buffer.byteLength(skill)}B`);
   assert.match(skill.split('\n')[2], /사용자가 말하지 않아도/); // 설명에 스스로 쓰는 때
   assert.equal(boardSkill('delegate'), old);
   for (const c of ['atrium', 'mtask']) { // 옛 이름 mtask는 P18 전에 띄운 세션의 스킬 글이 말한다

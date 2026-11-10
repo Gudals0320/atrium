@@ -7,7 +7,7 @@
 //       atrium child-wait <이름> [--json]   (P36: 신뢰 관문을 지나 지시를 받을 수 있게 될 때까지)
 //       atrium children [--all] [--json]
 //       atrium child-kill <이름> [--only] [--json]
-//       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째)
+//       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째, P111: 혼자 잠든 세션은 그 세션만)
 import http from 'node:http';
 import path from 'node:path';
 import { envVar } from '../src/config.mjs';
@@ -26,7 +26,7 @@ const HELP = `atrium(보드가 띄운 세션의 하위 세션 명령. 옛 이름
   atrium children [--all]       너의 하위 세션(--all이면 그 아래까지) 상태와 마지막 응답
   atrium models                 띄울 수 있는 런처와 모델(하네스 모델, 별칭, 게이트웨이 모델)과 각각을 띄우는 atrium child 명령
   atrium child-kill <이름> [--only]   너의 하위 세션을 끈다(그 아래 하위 세션도 함께. --only면 그것만). 사람이 끄라고 할 때만 쓴다
-  atrium wake <이름>   잠든(sleeping) 세션과 그 리포에서 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. 잠든 세션은 herdr에 없으므로 herdr 명령이 그 이름을 못 찾으면 이것을 먼저 한다
+  atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. 잠든 세션은 herdr에 없으므로 herdr 명령이 그 이름을 못 찾으면 이것을 먼저 한다
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다.`;
 
 const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head']);

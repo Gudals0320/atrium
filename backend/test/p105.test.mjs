@@ -92,7 +92,7 @@ function fakeBoard({ exitScreen = null, kids = [], panes = [], panesFail = false
   const b = {
     cfg: { claudeProjects: root, killWaitMs: 600 }, sessions, store, queue, killing: new Set(), log: () => {},
     hooked: (s) => s.rt.hooked !== false, relay: { stats: () => [], detach: () => {} },
-    features: { loops: { activeCount: () => 0 }, settings: { get: () => ({ sleepAfterMin: 30 }) } },
+    features: { loops: { activeCount: () => 0 }, settings: { get: () => ({ sleepAfterMin: 30, sessionSleepAfterMin: 0 }) } }, // P111: 리포 규칙만 본다(세션 규칙은 p111.test.mjs)
     requireHerdr: () => {},
     resolve: (ref) => sessions.get(ref) || [...sessions.values()].find((s) => s.name === ref),
     broadcastSession: (s, o) => calls.push(['broadcast', s.name, deriveState(s.rt).state, o && o.cause]),
