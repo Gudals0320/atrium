@@ -11,7 +11,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { workspaceOf } from './git.mjs';
 import { writeSessionSettings, buildStartArgs, buildResumeArgs, buildResumeArgv, predictTrust, transcriptPathFor, slash } from './launch.mjs';
-import { FLAVOR as DEEPSEEK, proxyEnv as deepseekEnv, baseUrlOf } from './deepseek.mjs'; // P25
+import { legacyFlavorLauncher } from './launcher-migrate.mjs'; // P115: P25 세션(flavor만 남음)의 연결
 import { newRuntime } from './state.mjs';
 import { canvasItems, slotFor, settleRegions, regions as areaRegions } from './canvas-ops.mjs';
 import { areaKey, parseArea } from './worktree-areas.mjs'; // P27: 워크트리 영역
@@ -26,7 +26,7 @@ import { CONVO_CAP, placeCards, boardSpawnDup } from './convo-canvas.mjs';
 import { m, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { takenNames, keepLabel, findSession } from './session-label.mjs'; // P66
 import { startOpt } from './launchers.mjs'; // P97: 실행 명령
-import { adapterOf, harnessResumable } from './harness.mjs'; // P115: Claude Code 밖 하네스의 이어 가기
+import { adapterOf, harnessResumable, claudeConnection } from './harness.mjs'; // P115: Claude Code 밖 하네스의 이어 가기, Claude Code의 연결
 
 const SHELL = 'shell';
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
@@ -771,8 +771,13 @@ export class Recall {
     if (claude) {
       hookToken = crypto.randomBytes(24).toString('hex');
       const extra = b.branch ? b.branch.settingsExtra(id) : {}; // P8: 다시 연 세션도 하위 세션 명령을 쓴다
-      if (spec.env && Object.keys(spec.env).length) extra.env = { ...spec.env, ...(extra.env || {}) }; // P33: 띄울 때의 호출자 환경 변수
-      else if (spec.flavor === DEEPSEEK) extra.env = { ...(extra.env || {}), ...deepseekEnv(baseUrlOf({ baseUrl: cfg.ocxBaseUrl, healthUrl: cfg.ocxHealthUrl })) }; // P25: DeepSeek는 프록시 주소에 붙인다
+      // P115: 연결을 쓰던 세션은 그 연결의 지금 값으로(지운 연결이면 열지 않는다). P33: 연결이 없던 세션은 띄울 때의 호출자 환경 변수
+      const conn = spec.connectionId ? (b.connectionOf ? b.connectionOf(spec.connectionId) : null) : null;
+      if (spec.connectionId && !conn) throw keyed(apiError('connection_missing', `연결(${spec.connectionId})을 찾을 수 없어 열지 않았습니다. 설정에서 연결을 다시 만든 뒤 여세요.`), 'connections.err.missingStart', { launcher: spec.name || '', id: spec.connectionId });
+      const cc = claudeConnection(conn);
+      const env = conn ? { ...(spec.launcherEnv || {}), ...cc.env } : spec.env || {};
+      if (Object.keys(env).length) extra.env = { ...env, ...(extra.env || {}) };
+      if (Object.keys(cc.settings).length) extra.settings = cc.settings;
       settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, allowHerdr: !!spec.allowHerdr, ...extra });
       trust = predictTrust(cwd, cfg.claudeJson);
       const launch = { sessionId: id, settingsPath, permissionMode, model: spec.model || null, effort: spec.effort || null, extraArgs: spec.extraArgs || [], ...b.plugin };
@@ -833,7 +838,9 @@ export class Recall {
     if (row.reopenedAs) throw apiError('moved', `이 세션은 이미 다른 세션(${row.reopenedAs})으로 다시 열었습니다.`);
     const kind = row.kind || 'claude';
     const info = this.store.spawnInfo(row.sessionId) || {};
-    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, allowHerdr: !!info.allowHerdr, createdAt: row.createdAt, flavor: row.flavor || null, env: info.env || null, extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [], startCommand: row.startCommand || info.startCommand || '' }; // P97: 실행 명령. P33: 호출자의 환경 변수와 추가 인자도 그대로
+    // P115: 연결(spawn 이벤트의 connection). P25 세션(flavor만, env 기록 없음)은 그 아이콘의 런처가 쓰는 연결
+    const legacy = !info.connection && !info.env && kind === 'claude' && row.flavor && this.b.features && this.b.features.launchers ? legacyFlavorLauncher(this.b.features.launchers.data().items, row.flavor) : null;
+    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, allowHerdr: !!info.allowHerdr, createdAt: row.createdAt, flavor: row.flavor || null, env: info.env || null, connectionId: info.connection || (legacy ? legacy.connection : null), launcherEnv: info.launcherEnv || (legacy ? legacy.env : null), extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [], startCommand: row.startCommand || info.startCommand || '' }; // P97: 실행 명령. P33: 호출자의 환경 변수와 추가 인자도 그대로
     if (kind === 'claude') {
       const conv = convOf(row);
       if (conv) {

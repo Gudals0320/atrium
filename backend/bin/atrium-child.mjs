@@ -17,7 +17,7 @@ import { shortHelp, contractJson, VERB_NAMES } from '../src/cli-contract.mjs'; /
 const HELP = `atrium(보드가 띄운 세션의 하위 세션 명령. 옛 이름 mtask도 같다)
   atrium child [이름] [--prompt "첫 요청"] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 런처] [--effort 노력] [--kind 종류] [--no-wait]
       하위 세션(워커)을 만든다. 너의 폴더·모델·추론 수준·승인 방식·그룹을 물려받고(준 값이 덮는다), 너와 역할 선(기본 "워커")으로 이어진다.
-      --model은 말로 한 이름도 받는다("deepseek flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
+      --model은 말로 한 이름도 받는다("glm flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
       --launcher는 그 런처(도구 모음의 단추)의 하네스·모델·옵션·환경 변수 그대로 띄운다.
       --kind codex(다른 종류)는 보드 레일의 그 종류 런처 설정(추가 인자·모델, --model이 모델만 덮는다)으로 띄우고, 너의 승인 방식을 그 종류의 승인 인자로 옮긴다.
       준비될 때까지 기다린 뒤 herdr 이름과 패널, 일 시키기·응답 읽기 명령을 돌려준다. 수와 깊이에 상한은 없다.
@@ -82,8 +82,8 @@ async function main() {
   if (!E('PORT') || !E('SESSION_ID') || !TOKEN) fail('보드에서 시작한 세션이 아닙니다 (보드가 준 환경 변수나 세션 토큰 파일 없음). 보드에서 시작한 세션 안에서 호출하세요.');
   let r;
   if (cmd === 'child') {
-    // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model deepseek flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
-    if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "deepseek flash"`, 2);
+    // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
+    if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);
     const body = { name: rest[0] || null, prompt: flags.prompt ?? null, role: flags.role ?? null, cwd: flags.cwd ? path.resolve(flags.cwd) : null, worktree: flags.worktree || null, model: flags.model || null, launcher: flags.launcher || null, effort: flags.effort || null, kind: flags.kind || null, wait: !flags['no-wait'], ...(flags.head ? { head: true } : {}) };
     r = await call('child', body, 110000);
   } else if (cmd === 'me') r = await call('me', {}, 20000);
@@ -211,13 +211,14 @@ function printModels(x) {
     ${e.command}`);
   for (const g of x.gateways) {
     say('');
-    if (!g.ok) { say(`게이트웨이 ${g.url}${g.host ? `(런처 ${g.host})` : ''}: 닿지 않는다(${g.why}). 그 모델은 지금 띄우지 못한다`); continue; }
-    const list = x.entries.filter((e) => e.source === 'gateway' && e.gateway === g.url);
-    say(`게이트웨이 ${g.url}${g.host ? `(런처 ${g.host}의 env로 띄운다)` : ''}의 모델 ${list.length}개:`);
+    const label = `연결 ${g.connection || g.url}(${g.url}${g.protocol ? `, ${g.protocol}` : ''})`; // P115: 연결마다
+    if (!g.ok) { say(`${label}${g.host ? `, 런처 ${g.host}` : ''}: 닿지 않는다(${g.why}). 그 모델은 지금 띄우지 못한다`); continue; }
+    const list = x.entries.filter((e) => e.source === 'gateway' && e.gateway === g.url && (e.connection || null) === (g.connection || null));
+    say(`${label}의 모델 ${list.length}개${g.host ? `(런처 ${g.host}로 띄운다)` : ''}:`);
     for (const e of list) say(`  ${e.label || e.model}
     ${e.command}`);
   }
   say('');
-  say('사용자가 모델을 말로 하면(예: "deepseek flash") --model에 그 말을 그대로 줘도 보드가 이 목록에서 푼다. 여럿이 맞으면 보드가 후보를 돌려준다.');
+  say('사용자가 모델을 말로 하면(예: "glm flash") --model에 그 말을 그대로 줘도 보드가 이 목록에서 푼다. 여럿이 맞으면 보드가 후보를 돌려준다.');
 }
 main().catch((e) => fail(e.message));

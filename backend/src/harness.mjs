@@ -18,21 +18,46 @@ export const HARNESS_PROMPT = [
 ].join(' ');
 
 const hexOf = (id) => String(id || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+// 연결(connections.mjs)의 하네스 안 제공자 ID. 연결 ID에서 만들어 이어 가기에서도 같다(Codex·pi 세션은 이 ID를 기억한다)
+export const providerIdOf = (c) => `atrium_${c.id}`;
+const isAnthropic = (p) => p === 'anthropic-messages';
+// 연결의 모델 목록(판이 읽은 것) + 런처의 모델
+const modelsFor = (ctx) => [...new Set([...(ctx.connectionModels || []), ...(ctx.model ? [ctx.model] : [])])].filter(Boolean);
+// opencode의 제공자 패키지(설정의 package)
+const OPENCODE_PACKAGE = { 'openai-chat': '@ai-sdk/openai-compatible', 'openai-responses': '@ai-sdk/openai', 'anthropic-messages': '@ai-sdk/anthropic' };
+// pi 확장의 api 값
+const PI_API = { 'openai-chat': 'openai-completions', 'openai-responses': 'openai-responses', 'anthropic-messages': 'anthropic-messages' };
+// pi 확장 파일(판 데이터 폴더). 연결 + 모델 목록에서 만든다. 키는 환경 변수 이름만($이름). 키가 없는 연결은 아무 글자(pi가 키 칸을 요구한다)
+export function piExtensionText(c, models) {
+  const def = { name: c.name, baseUrl: c.baseUrl, apiKey: c.auth && c.auth.env ? `$${c.auth.env}` : 'atrium-no-key', api: PI_API[c.protocol], models: models.map((id) => ({ type: 'chat', id, name: id, reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8192 })) };
+  return `// Atrium 보드가 만든 pi 확장: 연결 ${JSON.stringify(c.name)}을 제공자로 등록한다. 보드가 다시 만든다(고치지 않는다)\nexport default function (pi) {\n  pi.registerProvider(${JSON.stringify(providerIdOf(c))}, ${JSON.stringify(def, null, 2)});\n}\n`;
+}
+// Claude Code의 연결: 세션 설정 파일의 env(ANTHROPIC_BASE_URL)와 apiKeyHelper(키는 env 이름에서 그때 읽는다. 값은 설정 파일에 쓰지 않는다)
+export function claudeConnection(c, { node = process.execPath } = {}) {
+  if (!c) return { env: {}, settings: {} };
+  const helper = c.auth && c.auth.env ? `"${String(node).split('\\').join('/')}" -e "process.stdout.write(process.env.${c.auth.env}||'')"` : null;
+  return { env: { ANTHROPIC_BASE_URL: c.baseUrl }, settings: helper ? { apiKeyHelper: helper } : {} };
+}
 
 // 하네스 어댑터. build(ctx) → { args(명령 낱말 뒤), env, files: [{ file, text }], harnessSessionId, resumed }
-// ctx: { sessionId(판 세션 ID), resume, harnessSessionId(알면), model, launcherArgs, instructions: { file, text } }
+// ctx: { sessionId(판 세션 ID), resume, harnessSessionId(알면), model, launcherArgs, instructions: { file, text }, connection, connectionModels, filesDir }
+// protocols: 그 하네스가 직접 쓰는 연결 프로토콜(1단계 E3에서 붙는 것을 본 것). 맞지 않는 연결을 고른 런처는 저장하지 않는다
 // reserved: 판이 정하므로 호출자 추가 인자·실행 명령에 두지 못하는 것. sessionIdFrom: board(판이 정한 ID로 만들고 이어 간다) | learned(뜬 뒤에 안다)
 export const ADAPTERS = {
   codex: {
     command: 'codex',
     sessionIdFrom: 'learned', // herdr의 agent_session(사용자의 Codex hook 연동) 또는 Codex rollout 파일(codexSessionOf)
-    mustRePass: ['instructions'], // 지시문은 rollout에 남지만(실험 E2) 판은 늘 다시 준다. 빠지면 막히는 것은 연결(3단계)
-    reserved: { flags: ['resume', 'fork'], configKeys: ['developer_instructions', 'check_for_update_on_startup'] },
+    protocols: ['openai-responses'], // wire_api = "chat"은 설정을 읽을 때 거부한다(1단계 E3)
+    mustRePass: ['connection', 'instructions'], // 연결 -c를 빼면 "Model provider unavailable"에서 막힌다. 지시문은 rollout에 남지만 다시 준다(실험 E2·E3)
+    reserved: { flags: ['resume', 'fork'], configKeys: ['developer_instructions', 'check_for_update_on_startup', 'model_provider', 'model_providers'] },
     modelArgs: (m) => ['-m', m],
     build(ctx) {
       const resumed = !!(ctx.resume && ctx.harnessSessionId);
+      const c = ctx.connection; const pid = c ? providerIdOf(c) : null;
+      // 연결: 세션 단위 -c로 제공자를 정의한다(사용자 config.toml은 고치지 않는다). 키는 env_key(변수 이름)
+      const conn = c ? ['-c', `model_provider=${pid}`, '-c', `model_providers.${pid}.name=${c.name}`, '-c', `model_providers.${pid}.base_url=${c.baseUrl}`, '-c', `model_providers.${pid}.wire_api=responses`, ...(c.auth && c.auth.env ? ['-c', `model_providers.${pid}.env_key=${c.auth.env}`] : [])] : [];
       // 시작할 때 업데이트 확인을 끈다(새 버전이 있으면 "Update now" 선택 창이 떠서 판의 첫 요청과 Enter가 그 창에 들어간다. 1단계 뒤 확인)
-      const args = [...(resumed ? ['resume', ctx.harnessSessionId] : []), '-c', 'check_for_update_on_startup=false', ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.instructions ? ['-c', `developer_instructions=${ctx.instructions.text}`] : []), ...(ctx.launcherArgs || [])];
+      const args = [...(resumed ? ['resume', ctx.harnessSessionId] : []), '-c', 'check_for_update_on_startup=false', ...conn, ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.instructions ? ['-c', `developer_instructions=${ctx.instructions.text}`] : []), ...(ctx.launcherArgs || [])];
       return { args, env: {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
     // herdr가 다시 뜨며 스스로 띄운 이어 가기(`codex resume <id>`)는 판의 인자가 없다. 판이 친 줄인가
@@ -41,12 +66,18 @@ export const ADAPTERS = {
   opencode: {
     command: 'opencode',
     sessionIdFrom: 'board', // -s <id>는 없으면 그 ID로 만든다(1단계 뒤 확인)
-    mustRePass: ['instructions'], // 지시문은 세션에 저장되지만 다시 준다. 설정은 env(OPENCODE_CONFIG_CONTENT)로만 들어간다
+    protocols: ['openai-chat', 'openai-responses', 'anthropic-messages'], // 설정의 package로(1단계 E3)
+    mustRePass: ['connection', 'instructions'], // 연결 설정 없이 이어 가면 모델이 "(unavailable)". 지시문은 세션에 저장되지만 다시 준다. 설정은 env(OPENCODE_CONFIG_CONTENT)로만 들어간다
     reserved: { flags: ['--standalone', '--server', '-s', '--session', '-c', '--continue', '--fork', '--prompt'] },
     modelArgs: () => [], // 대화형에는 --model이 없다. 설정(OPENCODE_CONFIG_CONTENT)의 model로 준다
     build(ctx) {
       const sid = `ses_${hexOf(ctx.sessionId)}`;
-      const config = { ...(ctx.instructions ? { instructions: [ctx.instructions.file] } : {}), ...(ctx.model ? { model: ctx.model } : {}) };
+      const c = ctx.connection; const pid = c ? providerIdOf(c) : null;
+      const models = c ? modelsFor(ctx) : [];
+      // 연결: 설정의 providers.<id>(package, settings.baseURL, env, models). 사용자 제공자는 모델을 손으로 적으므로 판이 연결에서 읽은 목록을 채운다
+      const providers = c ? { [pid]: { name: c.name, package: OPENCODE_PACKAGE[c.protocol], settings: { baseURL: isAnthropic(c.protocol) ? `${c.baseUrl}/v1` : c.baseUrl }, ...(c.auth && c.auth.env ? { env: [c.auth.env] } : {}), models: Object.fromEntries(models.map((m) => [m, { name: m }])) } } : null;
+      const model = c ? (ctx.model || models[0] ? `${pid}/${ctx.model || models[0]}` : null) : ctx.model || null;
+      const config = { ...(providers ? { providers } : {}), ...(ctx.instructions ? { instructions: [ctx.instructions.file] } : {}), ...(model ? { model } : {}) };
       // 판이 띄우는 opencode는 늘 --standalone(세션마다 설정과 env. 사용자의 공유 서버는 쓰지 않는다)
       return { args: ['--standalone', '-s', sid, ...(ctx.launcherArgs || [])], env: Object.keys(config).length ? { OPENCODE_CONFIG_CONTENT: JSON.stringify(config) } : {}, files: [], harnessSessionId: sid, resumed: !!ctx.resume };
     },
@@ -55,20 +86,32 @@ export const ADAPTERS = {
   pi: {
     command: 'pi',
     sessionIdFrom: 'board', // --session-id <id>는 이 폴더에 그 ID가 있으면 이어 가고 없으면 만든다(1단계 뒤 확인)
-    mustRePass: ['instructions'], // 이어 갈 때 --append-system-prompt를 빼면 안내문이 빠진다(실험 E2)
-    reserved: { flags: ['--session', '--session-id', '-c', '--continue', '-r', '--resume', '--fork', '--no-session', '--session-dir', '-p', '--print', '--mode'] },
+    protocols: ['openai-chat', 'openai-responses', 'anthropic-messages'], // 확장의 api로(1단계 E3)
+    // 연결 확장(-e)을 빼면 pi는 막히지 않고 사용자 env에 키가 있는 다른 제공자로 넘어간다(실험 E3). 판은 연결이 있는 세션을 -e 없이 띄우지 않는다
+    mustRePass: ['extension', 'instructions'], // 이어 갈 때 --append-system-prompt를 빼면 안내문이 빠진다(실험 E2)
+    reserved: { flags: ['--session', '--session-id', '-c', '--continue', '-r', '--resume', '--fork', '--no-session', '--session-dir', '-p', '--print', '--mode', '--provider'] },
     modelArgs: (m) => ['--model', m],
     build(ctx) {
       const sid = ctx.sessionId;
-      const args = ['--session-id', sid, ...(ctx.model ? ['--model', ctx.model] : []), ...(ctx.instructions ? ['--append-system-prompt', ctx.instructions.file] : []), ...(ctx.launcherArgs || [])];
-      return { args, env: {}, files: [], harnessSessionId: sid, resumed: !!ctx.resume };
+      const c = ctx.connection;
+      const files = [];
+      let ext = [];
+      if (c) {
+        if (!ctx.filesDir) throw Object.assign(new Error('pi 연결 확장 파일을 둘 폴더가 없어 띄우지 않았습니다.'), { code: 'pi_extension_missing', key: 'connections.err.piExtension' });
+        const file = path.join(ctx.filesDir, `pi-${c.id}.mjs`).split('\\').join('/');
+        files.push({ file, text: piExtensionText(c, modelsFor(ctx)) });
+        ext = ['-e', file];
+      }
+      const model = c ? (ctx.model ? `${providerIdOf(c)}/${ctx.model}` : null) : ctx.model || null;
+      const args = ['--session-id', sid, ...ext, ...(model ? ['--model', model] : []), ...(ctx.instructions ? ['--append-system-prompt', ctx.instructions.file] : []), ...(ctx.launcherArgs || [])];
+      return { args, env: {}, files, harnessSessionId: sid, resumed: !!ctx.resume };
     },
     isBoardLine: (argv) => argv.includes('--session-id'),
   },
 };
 // 표에 없는 종류(herdr가 아는 그 밖의 하네스): env와 PATH만 주고 지시문·이어 가기는 없다. 모델은 -m(P96과 같다)
 const GENERIC = {
-  command: null, sessionIdFrom: null, mustRePass: [], reserved: { flags: [] }, modelArgs: (m) => ['-m', m],
+  command: null, sessionIdFrom: null, protocols: [], mustRePass: [], reserved: { flags: [] }, modelArgs: (m) => ['-m', m],
   build: (ctx) => ({ args: [...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.launcherArgs || [])], env: {}, files: [], harnessSessionId: null, resumed: false }),
   isBoardLine: () => true,
 };
@@ -93,12 +136,17 @@ export function reservedArg(kind, words = []) {
   return null;
 }
 
-// 띄울 값 → 터미널 백엔드에 넘길 값. o: { kind, startWords, sessionId, resume, harnessSessionId, model, launcherArgs, instructions, boardEnv, binDir }
+// 그 하네스가 쓰는 연결 프로토콜(claude는 Anthropic messages)
+export const protocolsOf = (kind) => (kind === 'claude' ? ['anthropic-messages'] : (adapterOf(kind) || {}).protocols || []);
+// 띄울 값 → 터미널 백엔드에 넘길 값. o: { kind, startWords, sessionId, resume, harnessSessionId, model, launcherArgs, instructions, boardEnv, binDir, connection, connectionModels, filesDir }
 // → { command: [낱말], args, env(판의 env + 하네스 env), pathFirst: [폴더], files, harnessSessionId, resumed }
 export function harnessLaunch(o) {
   const a = adapterOf(o.kind);
   if (!a) throw Object.assign(new Error(`하네스가 아닙니다: ${o.kind}`), { code: 'bad_request' });
-  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null });
+  if (o.connection && !protocolsOf(o.kind).includes(o.connection.protocol)) throw Object.assign(new Error(`${o.kind}는 연결 프로토콜 ${o.connection.protocol}을 쓰지 않습니다.`), { code: 'connection_protocol', key: 'connections.err.protocolMismatch', vars: { harness: o.kind, protocol: o.connection.protocol } });
+  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, connection: o.connection || null, connectionModels: o.connectionModels || [], filesDir: o.filesDir || null });
+  // P115: 연결이 있는 pi는 -e 없이 띄우지 않는다(빠지면 pi가 조용히 다른 실제 제공자로 넘어간다)
+  if (o.kind === 'pi' && o.connection && !r.args.includes('-e')) throw Object.assign(new Error('pi 연결 확장(-e)이 없어 띄우지 않았습니다.'), { code: 'pi_extension_missing', key: 'connections.err.piExtension' });
   const command = o.startWords && o.startWords.length ? [...o.startWords] : [a.command];
   return { command, args: r.args, env: { ...(o.boardEnv || {}), ...r.env }, pathFirst: o.binDir ? [o.binDir] : [], files: r.files, harnessSessionId: r.harnessSessionId, resumed: r.resumed };
 }

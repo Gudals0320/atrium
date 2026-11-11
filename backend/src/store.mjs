@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS docks (dock_id TEXT PRIMARY KEY, workspace_key TEXT, 
 // P3에서 더한 열. P1·P2에서 만든 board.db에는 ALTER TABLE로 더한다.
 // P22: 그룹·묶음 실행·한 줄 메모를 뺐다. 옛 판의 sessions.group_id, deliveries.group_id, thread_results.group_id 열과 notes 표는 남지만 읽지도 쓰지도 않는다(dropGroups)
 const ADDED_COLUMNS = {
-  sessions: { touched_at: 'INTEGER', kind: 'TEXT', origin: 'TEXT', parent_session_id: 'TEXT', workspace_key: 'TEXT', flavor: 'TEXT', extra_args: 'TEXT', label: 'TEXT', start_command: 'TEXT', harness: 'TEXT' }, // harness(P115): Claude Code 밖 하네스를 다시 띄울 값(JSON: 모델, 추가 인자, 호출자, 연결, 하네스 세션 ID) // start_command(호출자의 실행 명령, 예: ocx claude)는 P97 // label(판의 이름, 사람이 정한 표시 이름)은 P66 // extra_args(호출자의 claude 추가 인자, JSON 배열)는 P33 // kind·origin·parent는 P4, workspace_key는 P5, flavor(띄운 방법, 예: deepseek)는 P25
+  sessions: { touched_at: 'INTEGER', kind: 'TEXT', origin: 'TEXT', parent_session_id: 'TEXT', workspace_key: 'TEXT', flavor: 'TEXT', extra_args: 'TEXT', label: 'TEXT', start_command: 'TEXT', harness: 'TEXT' }, // harness(P115): Claude Code 밖 하네스를 다시 띄울 값(JSON: 모델, 추가 인자, 호출자, 연결, 하네스 세션 ID) // start_command(호출자의 실행 명령, 예: mywrap claude)는 P97 // label(판의 이름, 사람이 정한 표시 이름)은 P66 // extra_args(호출자의 claude 추가 인자, JSON 배열)는 P33 // kind·origin·parent는 P4, workspace_key는 P5, flavor(띄운 방법: 런처의 아이콘)는 P25
   workspaces: { x: 'REAL', y: 'REAL' }, // P6a: 영역의 자리(빈 워크스페이스, 영역 옮기기)
   nodes: { size: 'TEXT', aspect: 'TEXT' }, // P6a: 크기 단계(large, normal, small). P73: aspect(고른 종횡비 16:9·4:3, 없으면 자유 비율)
   docks: { tree: 'TEXT', aspect: 'TEXT' }, // P17: 분할 나무(dock-tree.mjs). 없으면 옛 한 줄 덩어리(dir, members)이고 뜰 때 나무로 바꾼다(canvas-ops migrateDocks). P73: aspect(덩어리 바깥의 종횡비)

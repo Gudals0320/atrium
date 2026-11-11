@@ -9,6 +9,7 @@ import http from 'node:http';
 import { Store } from '../src/store.mjs';
 import { Backend } from '../src/backend.mjs';
 import { Launchers, HARNESSES, MODEL_RE } from '../src/launchers.mjs';
+import { Connections } from '../src/connections.mjs'; // P115
 import { DEFAULTS } from '../src/settings.mjs';
 import { Branch, APPROVAL_ARGS, approvalArgsOf, hasApprovalArgs, defaultLauncherOf, withoutModelArgs, otherKindPlan, boardSkill } from '../src/branch.mjs';
 import { isModelName, MODEL_MAX } from '../src/model-name.mjs';
@@ -115,12 +116,13 @@ const gatewayServer = () => server((req, res) => {
 async function board({ permissionMode = 'manual', gatewayUrl = null } = {}) {
   const dir = tmp();
   const { home } = codexHome();
-  const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, herdrSession: 'atrium-dev-p96test', profile: 'dev', dataDir: dir, ...(gatewayUrl ? { ocxHealthUrl: `${gatewayUrl}/healthz` } : {}) });
+  const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, herdrSession: 'atrium-dev-p96test', profile: 'dev', dataDir: dir });
   b.store = new Store(path.join(dir, 'board.db'));
   b.sessions = new Map(); b.herdrOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
-  b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null };
-  if (gatewayUrl) b.store.setMeta('settings', {}); // DeepSeek 예시 호출자가 있는 옛 판(게이트웨이 목록을 본다)
-  b.features.launchers = new Launchers({ store: b.store, codexModels: new CodexModels({ home, fallback: HARNESSES.codex.models }), gateway: gatewayUrl ? { healthUrl: `${gatewayUrl}/healthz` } : {} });
+  b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null, connections: null };
+  if (gatewayUrl) b.store.setMeta('settings', {}); // DeepSeek 예시 호출자가 있는 옛 판. P115: 그 호출자는 게이트웨이 연결을 쓰는 claude 런처로 옮겨진다
+  b.features.connections = new Connections({ store: b.store, inUse: (id) => b.features.launchers.usersOf(id) });
+  b.features.launchers = new Launchers({ store: b.store, codexModels: new CodexModels({ home, fallback: HARNESSES.codex.models }), gateway: gatewayUrl ? { healthUrl: `${gatewayUrl}/healthz` } : {}, connections: b.features.connections });
   b.queue = { enqueue: () => ({ deliveryId: 'd1', status: 'queued' }), pending: () => 0 };
   b.api = { broadcast() {} };
   b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {}; b.registerResume = () => {};

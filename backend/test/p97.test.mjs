@@ -74,7 +74,8 @@ test('P97 붙여 넣기: 모르는 명령, claude 밖의 감싸개, claude 밖�
   const a = parse('aider --model "gpt x" --yes');
   assert.deepEqual([a.recognized.as, a.recognized.why, a.launcher.harness, a.launcher.command, a.recognized.board], ['command', 'unknown', 'command', "aider --model 'gpt x' --yes", false]);
   valid(a);
-  assert.equal(parse('ocx codex -m x').recognized.why, 'wrapperNotClaude');
+  const w = parse('wrap codex -m x'); // P115: 래퍼 명령(실행 명령)은 모든 에이전트 하네스가 받는다
+  assert.deepEqual([w.recognized.as, w.launcher.harness, w.launcher.startCommand, w.launcher.model], ['codex', 'codex', 'wrap codex', 'x']);
   const e = parse("$env:OPENAI_BASE_URL='http://x'; codex -m y");
   assert.deepEqual([e.recognized.why, e.launcher.command, e.launcher.env], ['envNotClaude', 'codex -m y', { OPENAI_BASE_URL: 'http://x' }]);
   assert.equal(previewLauncher(valid(e)).line, "$env:OPENAI_BASE_URL='http://x'; codex -m y");

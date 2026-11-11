@@ -37,9 +37,9 @@ import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 
 import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
 import { attachBranch } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
-import { FLAVOR as DEEPSEEK, checkCommand, checkProxy } from './deepseek.mjs'; // P25: DeepSeek 바로 띄우기
-import { resolveLauncher, exampleDeepseek, checkGateway, splitArgs, startWords, startOpt } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
-import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf } from './harness.mjs'; // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
+import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
+import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, claudeConnection } from './harness.mjs';
+import { checkOf } from './connections.mjs'; // P115: 연결 시작 전 확인 // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
@@ -76,7 +76,7 @@ export async function closeHttp(server, forceMs = 1000) {
 }
 
 // P33: session.spawn 값 → 띄울 값. launcher를 주면 그 호출자를 풀고 함께 준 값이 덮는다.
-// 옛 길(P25): kind 또는 flavor가 deepseek면 DeepSeek 호출자(없으면 예시)를 쓰고, command를 주면 그 명령 한 줄로 띄운다
+// P115: 옛 길(P25의 kind·flavor 바로 띄우기)은 없앴다. 그 런처는 연결을 쓰는 보통 claude 런처로 옮겼다(launcher-migrate.mjs)
 // P41: launcherDef는 판 기록에 없는 호출자 값(atrium child가 게이트웨이 모델을 그 게이트웨이 호출자의 env로 띄울 때)
 export function spawnPlanOf(b, p) {
   const L = b.features && b.features.launchers;
@@ -85,14 +85,6 @@ export function spawnPlanOf(b, p) {
   if (p.launcher) {
     if (!L) throw keyed(apiError('no_launcher', `런처를 찾을 수 없습니다: ${p.launcher}`), 'launchers.err.notFound', { ref: String(p.launcher) });
     return resolveLauncher(L.get(p.launcher), over);
-  }
-  if (p.kind === DEEPSEEK || p.flavor === DEEPSEEK) {
-    const ex = exampleDeepseek({}, { healthUrl: b.cfg.ocxHealthUrl, baseUrl: b.cfg.ocxBaseUrl });
-    const found = L && (L.find(DEEPSEEK) || null);
-    const cmd = p.command != null ? checkCommand(p.command) : found && found.harness === 'command' ? found.command : '';
-    if (cmd) return { kind: SHELL, flavor: DEEPSEEK, launcher: found ? found.name : null, command: cmd };
-    const base = found && found.harness === 'claude' ? found : ex;
-    return resolveLauncher({ ...base, icon: DEEPSEEK }, { ...over, command: undefined });
   }
   const kind = p.kind || 'claude';
   return { kind, flavor: null, launcher: null, command: '', model: p.model || null, effort: p.effort || null, permissionMode: p.permissionMode || 'manual', allowHerdr: !!p.allowHerdr, extraArgs: [], env: null, gateway: null, args: Array.isArray(p.args) ? p.args.map(String) : splitArgs(p.args), startCommand: null };
@@ -512,7 +504,7 @@ export class Backend {
       memMB: this.memOf(s.sessionId),
       // P4
       kind: s.kind || 'claude', origin: s.origin || 'board', parentSessionId: s.parentSessionId || null, hooked: this.hooked(s), agentName: s.agentName,
-      flavor: s.flavor || null, // P25: 띄운 방법(deepseek). 창은 종류 대신 이것으로 로고와 이름을 보인다
+      flavor: s.flavor || null, // P25: 띄운 방법(런처의 아이콘). 창은 종류 대신 이것으로 로고와 이름을 보인다
       background: rt.bg ? { tasks: rt.bg.tasks.length, types: [...new Set(rt.bg.tasks.map((x) => x.type))], at: rt.bg.at } : null, // P92: 도는 Claude Code 뒤 일(마지막 Stop hook 기준)
 
       answerSource: rt.answerSource || (rt.lastAnswer ? 'hook' : null), cwdNow: rt.cwd || s.cwd,
@@ -922,12 +914,19 @@ export class Backend {
     return null;
   }
   // 띄울 값. 판의 env(토큰은 빼고 파일로), PATH 앞의 bin/, 안내문, 호출자 값(모델·추가 인자), 이어 가기
+  // P115: 연결 ID → 연결(없으면 null)
+  connectionOf(id) { if (!id) return null; const C = this.features && this.features.connections; return C ? C.find(id) : null; }
+  // 판이 연결에서 읽어 둔 모델 목록(opencode·pi 설정에 채운다). 없으면 []
+  connectionModels(id) { const hit = this.branch && this.branch.gwCache && this.branch.gwCache.get(id); return hit && hit.r && hit.r.ok ? hit.r.models.map((m) => m.id) : []; }
   harnessLaunchOf(s, { resume = false } = {}) {
     const plan = s.harnessPlan || {};
+    // P115: 연결을 쓰는 세션은 그 연결 없이 띄우지 않는다(pi는 -e 없이 다른 제공자로 샌다). 까닭은 오류로 보인다
+    const conn = this.connectionOf(plan.connectionId);
+    if (plan.connectionId && !conn) throw keyed(apiError('connection_missing', `${s.name}의 연결(${plan.connectionId})을 찾을 수 없어 띄우지 않았습니다. 설정에서 연결을 다시 만들거나 런처의 연결을 고른 뒤 다시 여세요.`), 'connections.err.missingStart', { launcher: s.name, id: plan.connectionId });
     const br = this.branch && typeof this.branch.token === 'function' ? this.branch : null; // 하위 세션 명령이 없는 판(시험의 가짜 판)은 env와 토큰 없이
     if (br) writeTokenFile(this.cfg.sessionsDir, s.sessionId, br.token(s.sessionId));
     const hf = this.harnessFiles || {};
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null });
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness') });
   }
   // 그 패널의 셸 프롬프트에 판의 줄을 친다(herdr: 친 줄 앞의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1171,7 +1170,7 @@ export class Backend {
       return this.adapter.prompt(s.paneId, text);
     }
   }
-  // P97: herdr가 다시 뜨며 이어 가기 명령(ocx claude --resume …)으로 되살린 패널은 이름이 없다. herdr는 agent.start로 띄운 에이전트만
+  // P97: herdr가 다시 뜨며 이어 가기 명령(래퍼 명령 claude --resume …)으로 되살린 패널은 이름이 없다. herdr는 agent.start로 띄운 에이전트만
   // 이름을 되살린다(P97 실험 3). 판의 주소(agentName)로 찾지 못하고 그 패널에 claude가 있으면 이름을 다시 붙인다(herdr 명령과 판의 전달이 이 이름을 쓴다)
   async ensureAgentName(s) {
     if (!s.agentName || s.agentName === s.paneId) return false;
@@ -1278,7 +1277,7 @@ export class Backend {
     const kind = plan.kind;
     const shell = kind === SHELL;
     let name = p.name;
-    const prefix = flavor === DEEPSEEK ? 'ds' : shell ? 'sh' : 's';
+    const prefix = shell ? 'sh' : 's';
     if (!name) { let i = 1; while (taken.has(`${prefix}${i}`)) i++; name = `${prefix}${i}`; }
     if (!NAME_RE.test(name) || name === 'all') throw apiError('bad_request', `이름에는 영문, 숫자, -, _만 사용할 수 있습니다 (all 제외): ${name}`);
     if (taken.has(name)) throw keyed(apiError('name_taken', `이미 사용 중인 이름입니다: ${name}`), 'nameTaken', { name });
@@ -1292,7 +1291,7 @@ export class Backend {
       const effort = claude ? plan.effort || null : null;
       const allowHerdr = claude && !!plan.allowHerdr;
       const extraArgs = claude ? plan.extraArgs || [] : [];
-      // P97: 실행 명령(호출자의 startCommand, 예: ocx claude). 정하지 않은 하위 세션(atrium child의 물려받기·모델 풀기)은 부모 claude의 실행 명령을 물려받는다
+      // P97: 실행 명령(호출자의 startCommand, 예: mywrap claude). 정하지 않은 하위 세션(atrium child의 물려받기·모델 풀기)은 부모 claude의 실행 명령을 물려받는다
       const parentS = p.parentSessionId ? this.sessions.get(p.parentSessionId) : null;
       // P115: 실행 명령은 모든 에이전트 하네스. 정하지 않은 하위 세션은 같은 종류 부모의 실행 명령을 물려받는다
       const startCommand = shell ? '' : plan.startCommand != null ? plan.startCommand : p.branch && parentS && parentS.kind === kind ? parentS.startCommand || '' : '';
@@ -1303,23 +1302,26 @@ export class Backend {
         const kinds = await this.adapter.agentKinds().catch(() => []);
         if (kinds.length && !kinds.some((k) => k.kind === kind)) throw apiError('bad_request', `herdr에서 지원하지 않는 에이전트 종류입니다: ${kind}`);
       }
-      if (command && p.prompt) throw keyed(apiError('not_agent', "직접 입력한 명령으로 실행하는 세션에는 첫 요청을 자동 전송하지 않습니다. 보드에서 에이전트의 준비 상태를 확인할 수 없으므로 세션이 시작된 뒤 요청을 보내세요."), 'deepseekCommandNoPrompt');
+      if (command && p.prompt) throw keyed(apiError('not_agent', "직접 입력한 명령으로 실행하는 세션에는 첫 요청을 자동 전송하지 않습니다. 보드에서 에이전트의 준비 상태를 확인할 수 없으므로 세션이 시작된 뒤 요청을 보내세요."), 'commandNoPrompt');
       if (shell && p.prompt) throw keyed(apiError('not_agent', "셸에는 첫 요청을 자동 전송하지 않습니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요."), 'shellNoPrompt');
-      // P25·P33: 게이트웨이를 거치는 호출자는 게이트웨이가 닿아야 답한다. 판이 켜지 않고 알린다(DeepSeek 예시는 옛 opencodex 안내)
-      if (claude && plan.gateway) {
-        if (flavor === DEEPSEEK && plan.gateway.health) await checkProxy({ url: plan.gateway.url });
-        else await checkGateway({ ...plan.gateway, name: plan.launcher || '' });
-      }
+      // P25·P33·P115: 연결을 쓰는 런처는 그 연결이 닿아야 띄운다(모든 하네스). 판이 켜지 않고 알린다. 지운 연결이면 띄우지 않는다(다른 곳으로 새지 않게)
+      const conn = plan.connectionId ? this.connectionOf(plan.connectionId) : null;
+      if (plan.connectionId && !conn) throw keyed(apiError('connection_missing', `런처 ${plan.launcher || ''}의 연결(${plan.connectionId})을 찾을 수 없어 띄우지 않았습니다. 설정에서 런처의 연결을 다시 고르세요.`), 'connections.err.missingStart', { launcher: plan.launcher || '', id: plan.connectionId });
+      if (conn) await checkGateway({ ...checkOf(conn), name: conn.name });
+      else if (claude && plan.gateway && plan.gateway.url) await checkGateway({ ...plan.gateway, name: plan.launcher || '' });
       // G1: 시작 폴더의 워크스페이스
       const ws = await workspaceOf(cwd);
 
       const sessionId = crypto.randomUUID();
       let hookToken = '', settingsPath = '', trust = { needsTrust: null, reason: `${kind}: 예상하지 않음` }, args = [], resumeArgv = null;
-      const env = claude && plan.env && Object.keys(plan.env).length ? plan.env : null;
+      const cc = claude ? claudeConnection(conn) : null; // P115: 연결 → 설정 파일의 ANTHROPIC_BASE_URL·apiKeyHelper
+      const envAll = claude ? { ...((plan.env && Object.keys(plan.env).length) ? plan.env : {}), ...cc.env } : {};
+      const env = claude && Object.keys(envAll).length ? envAll : null;
       if (claude) {
         hookToken = crypto.randomBytes(24).toString('hex');
         const extra = this.branch.settingsExtra(sessionId);
-        if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수(게이트웨이 등). 판의 값이 이긴다
+        if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수와 연결. 판의 값이 이긴다
+        if (Object.keys(cc.settings).length) extra.settings = cc.settings;
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, allowHerdr, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
         const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.plugin };
@@ -1327,7 +1329,7 @@ export class Backend {
         resumeArgv = buildResumeArgv({ claudeCommand: this.cfg.claudeCommand, startCommand, ...launch });
       }
       // P115: 다른 종류는 하네스 어댑터(harness.mjs)가 판의 env·안내문·세션 ID를 더한다. 다시 띄울 값(모델, 호출자 추가 인자, 호출자)은 세션에 남긴다
-      const harnessPlan = harness ? { model, args: (plan.args || []).map(String), launcher: plan.launcher || null, launcherId: plan.launcherId || null, harnessSessionId: null } : null;
+      const harnessPlan = harness ? { model, args: (plan.args || []).map(String), launcher: plan.launcher || null, launcherId: plan.launcherId || null, connectionId: plan.connectionId || null, harnessSessionId: null } : null;
 
       this.ensureWorkspace(ws, `spawn ${name}`);
       const rt = newRuntime({ trustPredicted: !!trust.needsTrust, kind, hooked: claude });
@@ -1348,7 +1350,7 @@ export class Backend {
       // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
       if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
-      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, allowHerdr, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
+      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, allowHerdr, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(claude && plan.connectionId ? { connection: plan.connectionId, launcherEnv: plan.env || {} } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
       await this.adapter.refreshSubscription();
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });

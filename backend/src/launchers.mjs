@@ -1,11 +1,12 @@
 // P33 호출자(launcher): 세션을 띄우는 방법 하나. 하네스(claude, codex, herdr가 아는 다른 종류, 셸) + 모델 + 옵션의 조합이거나, 셸 패널에 칠 명령 한 줄이다.
 // 목록은 판 기록(meta 표의 `launchers`)에 { v, items, favorites }로 둔다. favorites는 왼쪽 레일에 놓인 호출자 ID의 순서다.
 // 하네스마다 무엇을 받고 어떻게 띄우는지는 아래 HARNESSES 표 한곳에 둔다. session.spawn { launcher }는 resolveLauncher로 띄울 값을 얻는다.
-// P25의 DeepSeek(opencodex 게이트웨이)는 "Claude Code + 환경 변수(게이트웨이)" 호출자의 한 예다(exampleDeepseek). 판은 게이트웨이를 켜지 않고 닿는지만 본다.
-// P72: 새 판에는 DeepSeek 예시를 만들지 않는다(Claude Code, Codex, 셸 셋). 옛 판(P33 전의 설정·세션이 있던 판)은 그대로 DeepSeek를 옮긴다.
+// P115: 모델 연결(엔드포인트·프로토콜·인증)은 런처와 따로 둔 목록(connections.mjs)이고 런처가 ID로 참조한다(connection). 하네스마다 쓸 수 있는 프로토콜이 다르고
+//       맞지 않는 연결은 저장하지 않는다. 판은 연결을 켜지 않고 시작 전에 닿는지만 본다. 목록은 새 키(launchers.v2)에 두고 옛 키는 남긴다(launcher-migrate.mjs).
+// P72: 새 판은 Claude Code, Codex, 셸 셋으로 시작한다.
 // P72: Codex 모델은 Codex의 모델 목록 캐시(codex-models.mjs)를 읽는다. 읽지 못하면 아래 고정 목록이다.
 // 환경 변수 값은 판 기록에 평문으로 남는다. 기본·예시 호출자에는 키를 넣지 않는다(설정 탭에 풀이가 있다).
-// P97: Claude Code 호출자에 실행 명령(startCommand, 예: `ocx claude`)을 둔다. 비우면 `claude`. 판은 그 명령 뒤에 판의 인자를 붙여 패널에 치고(herdr agent.start는
+// P97: 호출자에 실행 명령(startCommand, 예: 래퍼 명령 `mywrap claude`)을 둔다. 비우면 그 하네스의 명령. P115: 모든 에이전트 하네스. 판은 그 명령 뒤에 판의 인자를 붙여 패널에 치고(herdr agent.start는
 //      정해진 실행 파일만 띄운다), herdr가 claude를 알아보면 이름을 붙인다(herdr/adapter.mjs startAgent). 이어 가기·되살리기·워크트리·하위 세션도 같은 실행 명령이다.
 //      명령줄 붙여 넣기(parseCommandLine)는 한 줄(여러 줄도)을 하네스·실행 명령·모델·옵션·추가 인자·환경 변수로 나눈다. 판이 모르는 명령이면 명령 한 줄 호출자다.
 import crypto from 'node:crypto';
@@ -15,10 +16,15 @@ import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
 import { unlistedModel } from './codex-models.mjs';
 import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는 launch.mjs(herdr 어댑터도 쓴다)
 import { adapterOf, reservedArg } from './harness.mjs'; // P115: 하네스 어댑터 표
-import { FLAVOR as DEEPSEEK, DEFAULT_MODEL as DEEPSEEK_MODEL, DEFAULT_HEALTH_URL, COMMAND_MAX, proxyEnv, baseUrlOf, checkCommand } from './deepseek.mjs';
+import { protocolsOf } from './harness.mjs'; // P115: 하네스가 쓰는 연결 프로토콜
+import { checkOf } from './connections.mjs'; // P115
+import { V2_KEY, migrateLaunchers, legacyInitialLaunchers, legacyGatewayConnection } from './launcher-migrate.mjs'; // P115: 옮기기(옛 이름은 그 파일에만)
+export { LEGACY_KEYS } from './launcher-migrate.mjs';
 
-export const META_KEY = 'launchers';
-export const VERSION = 1;
+export const META_KEY = V2_KEY; // P115: 연결 참조가 든 목록. 옛 키(launchers)는 옛 코드가 쓴다
+export const LEGACY_META_KEY = 'launchers';
+export const VERSION = 2;
+export const COMMAND_MAX = 400;
 export const NAME_MAX = 40;
 export const ARGS_MAX = 300;
 export const ENV_MAX = 20; // 이름 수
@@ -35,18 +41,19 @@ export const RESERVED_CLAUDE_ARGS = new Set(['--settings', '--session-id', '--re
 
 // 하네스 정의. fields는 설정 탭이 보일 칸, models는 알려진 모델(직접 입력도 받는다), kind는 판이 기록하는 herdr 종류
 export const HARNESSES = {
-  claude: { id: 'claude', kind: 'claude', label: 'Claude Code', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'allowHerdr', 'args', 'env', 'checkUrl'], models: ['haiku', 'sonnet', 'opus', 'claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'] },
-  codex: { id: 'codex', kind: 'codex', label: 'Codex', fields: ['startCommand', 'model', 'args'], models: ['gpt-6-astra'], warnUnlisted: true }, // P72: models는 Codex 캐시를 읽지 못할 때의 목록. 목록에 없는 이름은 경고만 한다
+  claude: { id: 'claude', kind: 'claude', label: 'Claude Code', fields: ['startCommand', 'connection', 'model', 'effort', 'permissionMode', 'allowHerdr', 'args', 'env'], models: ['haiku', 'sonnet', 'opus', 'claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'] },
+  codex: { id: 'codex', kind: 'codex', label: 'Codex', fields: ['startCommand', 'connection', 'model', 'args'], models: ['gpt-6-astra'], warnUnlisted: true }, // P72: models는 Codex 캐시를 읽지 못할 때의 목록. 목록에 없는 이름은 경고만 한다
   // P115: opencode·pi는 하네스 어댑터(harness.mjs)가 env·안내문·이어 가기를 맞춘다. 모델은 opencode가 "<제공자>/<모델>", pi가 --model 값
-  opencode: { id: 'opencode', kind: 'opencode', label: 'opencode', fields: ['startCommand', 'model', 'args'], models: [] },
-  pi: { id: 'pi', kind: 'pi', label: 'pi', fields: ['startCommand', 'model', 'args'], models: [] },
+  opencode: { id: 'opencode', kind: 'opencode', label: 'opencode', fields: ['startCommand', 'connection', 'model', 'args'], models: [] },
+  pi: { id: 'pi', kind: 'pi', label: 'pi', fields: ['startCommand', 'connection', 'model', 'args'], models: [] },
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };
 // herdr가 아는 그 밖의 종류(pi, grok 등)는 추가 인자만 받는다
 export const harnessOf = (id) => HARNESSES[id] || (KIND_RE.test(String(id || '')) ? { id, kind: id, label: id, fields: ['startCommand', 'args'], models: [] } : null); // P115: 실행 명령은 모든 에이전트 하네스
 // dyn: 하네스별로 읽어 온 목록 { codex: { models, hidden, labels, source } }(P72). 없으면 고정 목록
-export const describeHarnesses = (dyn = {}) => Object.values(HARNESSES).map((h) => (dyn[h.id] ? { ...h, models: [...dyn[h.id].models], hiddenModels: [...(dyn[h.id].hidden || [])], modelLabels: { ...(dyn[h.id].labels || {}) }, modelSource: dyn[h.id].source || null } : { ...h }));
+// P115: protocols는 그 하네스가 쓸 수 있는 연결 프로토콜(설정 탭이 맞지 않는 연결을 흐리게 보인다)
+export const describeHarnesses = (dyn = {}) => Object.values(HARNESSES).map((h) => ({ ...(dyn[h.id] ? { ...h, models: [...dyn[h.id].models], hiddenModels: [...(dyn[h.id].hidden || [])], modelLabels: { ...(dyn[h.id].labels || {}) }, modelSource: dyn[h.id].source || null } : { ...h }), protocols: protocolsOf(h.kind) }));
 // P72: 하네스가 경고하는 목록 밖 모델 이름인가(Codex). 막지는 않는다
 export function modelWarning(l, harnesses) {
   const h = (harnesses || []).find((x) => x.id === l.harness);
@@ -78,12 +85,24 @@ export function normalizeEnv(v) {
   return out;
 }
 
-function checkUrlOf(v) {
-  const u = String(v ?? '').trim();
-  if (!u) return '';
-  let x; try { x = new URL(u); } catch { x = null; }
-  if (!x || !/^https?:$/.test(x.protocol) || u.length > 300) throw err('bad_request', `확인 주소: ${u.slice(0, 60)}`, 'checkUrl', { url: u.slice(0, 60) });
-  return u;
+// 직접 명령 글 검사: 한 줄(줄바꿈과 제어 문자 없음), 길이 제한. 앞뒤 빈칸은 뗀다. 빈 글이면 ''
+export function checkCommand(text) {
+  const c = String(text ?? '').trim();
+  if (c.length > COMMAND_MAX) throw err('bad_request', `실행 명령이 너무 깁니다 (${c.length}자, ${COMMAND_MAX}자까지)`, 'commandLong', { n: c.length, max: COMMAND_MAX });
+  if (CTRL_RE.test(c)) throw err('bad_request', "실행 명령은 줄바꿈, 탭, 제어 문자 없이 한 줄로 입력하세요.", 'commandLine');
+  return c;
+}
+// P115: 런처의 연결 참조 검사. connections를 주면 있는 연결이어야 하고, 그 하네스가 쓰는 프로토콜이어야 한다
+function connectionOf(v, h, connections) {
+  const id = String(v ?? '').trim();
+  if (!id) return '';
+  const ps = protocolsOf(h.kind);
+  if (!ps.length) throw err('bad_request', `${h.label}는 연결을 쓰지 않습니다.`, 'connectionHarness', { harness: h.label });
+  if (!connections) return id;
+  const c = connections.find((x) => x.id === id);
+  if (!c) throw err('bad_request', `연결을 찾을 수 없습니다: ${id}`, 'connectionMissing', { id: id.slice(0, 40) });
+  if (!ps.includes(c.protocol)) throw err('bad_request', `${h.label}는 ${c.protocol} 연결을 쓸 수 없습니다(${ps.join(', ')}만).`, 'connectionProtocol', { harness: h.label, protocol: c.protocol, supported: ps.join(', ') });
+  return id;
 }
 
 // ---------- P97: 실행 명령 ----------
@@ -137,7 +156,8 @@ export function startWarning(l, find = onPath) {
 }
 
 // 호출자 하나를 확인하고 정리한다. others는 이름 겹침을 볼 다른 호출자들. 하네스가 받지 않는 칸은 비운다
-export function normalizeLauncher(input, { others = [] } = {}) {
+// connections: 연결 목록(주면 참조를 확인한다)
+export function normalizeLauncher(input, { others = [], connections = null } = {}) {
   if (!input || typeof input !== 'object') throw err('bad_request', "런처를 지정하세요.", 'empty');
   const name = String(input.name ?? '').trim();
   if (!name || name.length > NAME_MAX || CTRL_RE.test(name)) throw err('bad_request', `이름은 1~${NAME_MAX}자 한 줄`, 'name', { max: NAME_MAX });
@@ -159,27 +179,30 @@ export function normalizeLauncher(input, { others = [] } = {}) {
   else { const bad = reservedArg(h.kind, splitArgs(args)); if (bad) throw err('bad_request', `보드가 정하는 인자: ${bad}`, 'argsReserved', { arg: bad }); } // P115: 하네스 어댑터가 정하는 인자
   let command = '';
   if (has('command')) {
-    try { command = checkCommand(input.command); } catch (e) { throw err('bad_request', e.message, e.key === 'deepseekCommandLong' ? 'commandLong' : 'commandLine', { max: COMMAND_MAX, n: String(input.command || '').trim().length }); }
+    command = checkCommand(input.command);
     if (!command) throw err('bad_request', "명령을 입력하세요.", 'commandEmpty');
   }
   const env = has('env') ? normalizeEnv(input.env) : {};
-  const checkUrl = has('checkUrl') ? checkUrlOf(input.checkUrl) : '';
   const startCommand = has('startCommand') ? normalizeStartCommand(input.startCommand, h.id) : ''; // P97. P115: 모든 에이전트 하네스
-  return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, allowHerdr: has('allowHerdr') ? !!input.allowHerdr : false, args, env, command, checkUrl, ...(startCommand ? { startCommand } : {}) }; // 빈 실행 명령은 두지 않는다(옛 호출자와 모양이 같다)
+  const connection = has('connection') ? connectionOf(input.connection, h, connections) : ''; // P115
+  return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, allowHerdr: has('allowHerdr') ? !!input.allowHerdr : false, args, env, command, ...(connection ? { connection } : {}), ...(startCommand ? { startCommand } : {}) }; // 빈 실행 명령·연결은 두지 않는다
 }
 
 // 직접 명령에 환경 변수를 붙인다(PowerShell: $env:이름='값'; 작은따옴표는 두 번). P115: launch.mjs로 옮겼다
 export { psEnvPrefix };
 
-// 띄울 때 확인할 게이트웨이: 확인 주소를 주면 그 health(2xx, status ok), 아니면 ANTHROPIC_BASE_URL이 닿는지(무슨 HTTP 답이든)
-export function gatewayOf(l) {
-  if (l.harness !== 'claude') return null;
-  if (l.checkUrl) return { url: l.checkUrl, health: true };
-  const base = l.env && l.env.ANTHROPIC_BASE_URL;
+// 띄울 때 확인할 곳: 런처가 참조하는 연결(health 주소면 2xx·status ok, 아니면 base URL이 닿는지). connections가 없으면 연결 ID만 안다(url 없음).
+// 연결 없이 env에 ANTHROPIC_BASE_URL을 직접 둔 claude 런처는 그 주소가 닿는지만 본다(옮기기 뒤에 손으로 넣은 값)
+export function gatewayOf(l, connections = null) {
+  if (l.connection) {
+    const c = connections ? connections.find((x) => x.id === l.connection) : null;
+    return c ? { ...checkOf(c), connection: c.id, name: c.name, baseUrl: c.baseUrl } : { url: null, connection: l.connection, missing: !!connections };
+  }
+  const base = l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL;
   return base ? { url: base, health: false } : null;
 }
 
-// 보여줄 종류(노드 로고). 아이콘이 하네스 종류와 다르면 세션에 flavor로 남긴다(P25 flavor deepseek와 같은 길)
+// 보여줄 종류(노드 로고). 아이콘이 하네스 종류와 다르면 세션에 flavor로 남긴다(P25)
 export const flavorOf = (l) => (l.icon && l.icon !== harnessOf(l.harness).kind && l.icon !== l.harness ? l.icon : null);
 
 // 호출자 → session.spawn 값. over는 함께 준 값(모델, 노력 수준, 권한 모드, herdr 자동 승인, 추가 인자, 명령)이고 호출자 값을 덮는다
@@ -190,14 +213,14 @@ export function resolveLauncher(l, over = {}) {
   if (h.id === 'claude') {
     const model = String(pick('model') || '').trim();
     if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
-    return { ...base, model: model || null, effort: pick('effort') || null, permissionMode: pick('permissionMode') || 'manual', allowHerdr: over.allowHerdr != null ? !!over.allowHerdr : !!l.allowHerdr, extraArgs: splitArgs(pick('args')), env: { ...(l.env || {}) }, gateway: gatewayOf(l), command: '', startCommand: l.startCommand || '' }; // P97: 실행 명령(빈 값은 claude)
+    return { ...base, model: model || null, effort: pick('effort') || null, permissionMode: pick('permissionMode') || 'manual', allowHerdr: over.allowHerdr != null ? !!over.allowHerdr : !!l.allowHerdr, extraArgs: splitArgs(pick('args')), env: { ...(l.env || {}) }, gateway: gatewayOf(l), connectionId: l.connection || null, command: '', startCommand: l.startCommand || '' }; // P97: 실행 명령(빈 값은 claude). P115: 연결 참조
   }
   if (h.id === 'shell') return { ...base, command: '' };
   if (h.id === 'command') { const c = over.command ? checkCommand(over.command) : l.command; return { ...base, command: psEnvPrefix(l.env) + c }; }
   const model = h.fields.includes('model') ? String(pick('model') || '').trim() : '';
   if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
   // P115: 모델과 추가 인자를 따로 준다. 하네스 어댑터(harness.mjs)가 그 하네스의 모양(-m, --model, 설정의 model)으로 바꾼다
-  return { ...base, model: model || null, args: splitArgs(pick('args')), command: '', startCommand: l.startCommand || '' };
+  return { ...base, model: model || null, args: splitArgs(pick('args')), command: '', startCommand: l.startCommand || '', connectionId: l.connection || null, gateway: gatewayOf(l) };
 }
 
 // 명령 미리보기: 사람이 읽는 명령줄. claude는 판이 덧붙이는 값(hook 설정 파일, 세션 ID, herdr 스킬)을 빼고 보인다. 환경 변수는 이름만 따로
@@ -220,43 +243,53 @@ export function previewLauncher(l) {
 }
 
 // ---------- 기본값과 옮기기 ----------
-const claudeDefault = (o = {}) => ({ id: 'claude', name: 'Claude Code', harness: 'claude', icon: '', model: o.claudeModel || '', effort: o.claudeEffort || '', permissionMode: o.claudePermissionMode || 'manual', allowHerdr: !!o.claudeAllowHerdr, args: '', env: {}, command: '', checkUrl: '' });
-const codexDefault = (o = {}) => ({ id: 'codex', name: 'Codex', harness: 'codex', icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: o.codexArgs || '', env: {}, command: '', checkUrl: '' });
-const shellDefault = () => ({ id: 'shell', name: 'Shell', harness: 'shell', icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: '', checkUrl: '' });
-// P25 DeepSeek: Claude Code + opencodex 게이트웨이 환경 변수. 옛 판에 직접 명령이 있었으면 그 명령 호출자다(아이콘은 DeepSeek)
-export function exampleDeepseek(o = {}, gw = {}) {
-  const healthUrl = gw.healthUrl || DEFAULT_HEALTH_URL;
-  if (o.deepseekCommand) return { id: 'deepseek', name: 'DeepSeek', harness: 'command', icon: DEEPSEEK, model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: o.deepseekCommand, checkUrl: '' };
-  return { id: 'deepseek', name: 'DeepSeek', harness: 'claude', icon: DEEPSEEK, model: o.deepseekModel || DEEPSEEK_MODEL, effort: '', permissionMode: o.claudePermissionMode || 'manual', allowHerdr: !!o.claudeAllowHerdr, args: '', env: proxyEnv(baseUrlOf({ baseUrl: gw.baseUrl || null, healthUrl })), command: '', checkUrl: healthUrl };
-}
-export const LEGACY_KEYS = ['claudeModel', 'claudeEffort', 'claudePermissionMode', 'claudeAllowHerdr', 'codexArgs', 'deepseekModel', 'deepseekCommand'];
+const plain = (id, name, harness, x = {}) => ({ id, name, harness, icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: '', ...x });
 
-// 처음 켤 때의 호출자 목록. 옛 판(설정을 저장한 적이 있거나 세션 기록이 있음)은 옛 새 세션 기본값을 옮기고 레일 네 단추(Claude, Codex, DeepSeek, 셸)를 그 순서로 즐겨찾기에 둔다.
-// P72: 새 판은 Claude Code(권한 방식 manual), Codex, 셸 셋뿐이고 모두 즐겨찾기다. 게이트웨이 호출자는 설정 탭에서 직접 만든다. 같은 입력이면 같은 결과다(ID가 고정)
+// 처음 켤 때의 호출자 목록(옛 키 모양 v1). 옛 판(P33 전의 설정·세션이 있던 판)은 옛 새 세션 기본값을 옮긴다(launcher-migrate.mjs).
+// P72: 새 판은 Claude Code(권한 방식 manual), Codex, 셸 셋뿐이고 모두 즐겨찾기다. 같은 입력이면 같은 결과다(ID가 고정)
 export function initialLaunchers({ oldSettings = null, oldBoard = false, gateway = {} } = {}) {
-  if (!oldBoard) return { v: VERSION, items: [claudeDefault(), codexDefault(), shellDefault()], favorites: ['claude', 'codex', 'shell'] };
-  const o = oldSettings || {};
-  const items = [claudeDefault(o), codexDefault(o), shellDefault(), exampleDeepseek(o, gateway)];
-  return { v: VERSION, items, favorites: ['claude', 'codex', 'deepseek', 'shell'] };
+  if (!oldBoard) return { v: 1, items: [plain('claude', 'Claude Code', 'claude', { permissionMode: 'manual' }), plain('codex', 'Codex', 'codex'), plain('shell', 'Shell', 'shell')], favorites: ['claude', 'codex', 'shell'] };
+  return legacyInitialLaunchers(oldSettings || {}, gateway);
 }
+// P115: 런처 env에 평문으로 든 인증 값(이름에 KEY·TOKEN·SECRET·PASSWORD). 판은 옮기지 않고 설정 탭에서 연결의 환경 변수 이름으로 바꾸라고 알린다
+const AUTH_ENV_RE = /(KEY|TOKEN|SECRET|PASSWORD)/i;
+export const authNotices = (items) => items.map((l) => ({ id: l.id, name: l.name, env: Object.entries(l.env || {}).filter(([k, v]) => AUTH_ENV_RE.test(k) && String(v || '').trim()).map(([k]) => k) })).filter((x) => x.env.length);
 
 // 판 기록에 둔 호출자 목록
 export class Launchers {
   // codexModels: P72 Codex 모델 목록(codex-models.mjs CodexModels). 없으면 하네스의 고정 목록
-  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null }) {
-    this.store = store; this.broadcast = broadcast; this.gateway = gateway; this.codexModels = codexModels;
+  // connections: P115 연결 목록(connections.mjs Connections). legacyGateway: 옛 환경 변수의 게이트웨이 주소({ healthUrl, baseUrl }, 옮기기만 읽는다)
+  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null, connections = null, log = () => {} }) {
+    this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.connections = connections; this.log = log;
     this.migrated = this.ensure();
   }
-  // 한 번만: 목록이 없으면 만든다. 이미 있으면 아무것도 하지 않는다(여러 번 돌려도 같다). 옛 설정 키는 지우지 않는다(옛 판 코드로 돌아가도 그 값을 쓴다)
+  // 한 번만: 새 키(v2) 목록이 없으면 옛 키(없으면 처음 목록)를 옮겨 만든다. 이미 있으면 목록은 그대로(여러 번 돌려도 같다).
+  // 옛 키와 옛 설정 키는 지우지 않는다(옛 판 코드로 돌아가도 그 값을 쓴다). 옛 환경 변수의 게이트웨이는 뜰 때마다 연결로 있게 하고 경고한다(같은 ID라 겹치지 않는다)
   ensure() {
-    if (this.store.getMeta(META_KEY)) return null;
-    const oldSettings = this.store.getMeta('settings');
-    let anySession = false;
-    try { anySession = !!this.store.db.prepare('SELECT 1 AS x FROM sessions LIMIT 1').get(); } catch {}
-    const v = initialLaunchers({ oldSettings, oldBoard: !!oldSettings || anySession, gateway: this.gateway });
-    this.store.setMeta(META_KEY, v);
-    return { oldBoard: !!oldSettings || anySession, favorites: v.favorites };
+    const out = this.store.getMeta(META_KEY) ? null : this.migrateV2();
+    // 옛 환경 변수의 게이트웨이(런처에서 옮긴 연결이 먼저라 같은 주소면 그 이름이 남는다)
+    const lg = legacyGatewayConnection(this.gateway);
+    if (lg && this.connections) { const c = this.connections.ensure(lg); this.log(`ATRIUM_OCX_HEALTH/ATRIUM_OCX_BASE_URL are deprecated: kept as connection ${c.name} (${c.baseUrl}). Remove them and manage the connection in Settings.`); }
+    return out;
   }
+  migrateV2() {
+    let v1 = this.store.getMeta(LEGACY_META_KEY);
+    let created = null;
+    if (!v1) {
+      const oldSettings = this.store.getMeta('settings');
+      let anySession = false;
+      try { anySession = !!this.store.db.prepare('SELECT 1 AS x FROM sessions LIMIT 1').get(); } catch {}
+      v1 = initialLaunchers({ oldSettings, oldBoard: !!oldSettings || anySession, gateway: this.gateway });
+      this.store.setMeta(LEGACY_META_KEY, v1); // 옛 코드도 같은 목록으로 뜨게(P33 전 판)
+      created = { oldBoard: !!oldSettings || anySession, favorites: v1.favorites };
+    }
+    const m = migrateLaunchers(v1, { legacyGateway: this.gateway });
+    if (this.connections) for (const c of m.connections) this.connections.ensure(c);
+    this.store.setMeta(META_KEY, m.list);
+    if (m.report.moved.length || m.report.droppedCheckUrl.length) this.store.addEvent(null, 'launchers_migrated', m.report);
+    return { ...(created || { oldBoard: true, favorites: m.list.favorites }), v2: m.report };
+  }
+  connectionItems() { return this.connections ? this.connections.items() : null; }
   data() { const d = this.store.getMeta(META_KEY) || { v: VERSION, items: [], favorites: [] }; const ids = new Set(d.items.map((x) => x.id)); return { v: d.v, items: d.items, favorites: (d.favorites || []).filter((id) => ids.has(id)) }; }
   save(d) { this.store.setMeta(META_KEY, d); const out = this.list(); this.broadcast('launchers.updated', out); return out; }
   // 하네스별로 읽어 온 모델 목록(P72: codex)
@@ -264,11 +297,15 @@ export class Launchers {
   harnesses() { return describeHarnesses(this.modelLists()); }
   // P97: warns는 경고 모두(모델 목록 밖, 실행 명령이 PATH에 없음). warn은 첫 경고(옛 창)
   previewOf(l, hs) { const warns = [modelWarning(l, hs), startWarning(l)].filter(Boolean); return { ...previewLauncher(l), ...(warns.length ? { warn: warns[0], warns } : {}) }; }
+  // P115: notices는 env에 평문 인증 값이 든 런처(설정 탭이 알린다). connections는 설정 탭이 런처 틀의 연결 고르기에 쓴다
   list() {
     const d = this.data();
     const hs = this.harnesses();
-    return { launchers: d.items.map((l) => ({ ...l, favorite: d.favorites.includes(l.id), preview: this.previewOf(l, hs) })), favorites: d.favorites, harnesses: hs };
+    const cs = this.connectionItems();
+    return { launchers: d.items.map((l) => ({ ...l, favorite: d.favorites.includes(l.id), preview: this.previewOf(l, hs) })), favorites: d.favorites, harnesses: hs, notices: authNotices(d.items), ...(cs ? { connections: cs } : {}) };
   }
+  // P115: 그 연결을 참조하는 런처 이름들(연결 지우기를 막는다)
+  usersOf(connectionId) { return this.data().items.filter((l) => l.connection === connectionId).map((l) => l.name); }
   // 이름이나 ID(대소문자 무시)
   find(ref) {
     const r = String(ref ?? '').trim().toLowerCase();
@@ -279,7 +316,7 @@ export class Launchers {
   get(ref) { const l = this.find(ref); if (!l) throw err('no_launcher', `런처를 찾을 수 없습니다: ${ref}`, 'notFound', { ref: String(ref).slice(0, 40) }); return l; }
   create(p) {
     const d = this.data();
-    const l = normalizeLauncher({ ...(p && p.launcher ? p.launcher : p), id: null }, { others: d.items });
+    const l = normalizeLauncher({ ...(p && p.launcher ? p.launcher : p), id: null }, { others: d.items, connections: this.connectionItems() });
     l.id = 'l' + crypto.randomBytes(4).toString('hex');
     d.items.push(l);
     if (p && (p.favorite || (p.launcher && p.launcher.favorite))) d.favorites.push(l.id);
@@ -289,7 +326,7 @@ export class Launchers {
     const d = this.data();
     const cur = this.get(p && (p.id || p.launcher && p.launcher.id));
     const patch = (p && p.patch) || (p && p.launcher) || {};
-    const l = normalizeLauncher({ ...cur, ...patch, id: cur.id }, { others: d.items });
+    const l = normalizeLauncher({ ...cur, ...patch, id: cur.id }, { others: d.items, connections: this.connectionItems() });
     d.items = d.items.map((x) => (x.id === cur.id ? l : x));
     return { launcher: l, ...this.save(d) };
   }
@@ -320,7 +357,7 @@ export class Launchers {
   // 아직 저장하지 않은 호출자의 미리보기와 확인(설정 탭이 고르는 대로 부른다)
   preview(p) {
     const d = this.data();
-    const l = normalizeLauncher((p && p.launcher) || p, { others: d.items });
+    const l = normalizeLauncher((p && p.launcher) || p, { others: d.items, connections: this.connectionItems() });
     return { launcher: l, preview: this.previewOf(l, this.harnesses()) };
   }
   // P97: 붙여 넣은 명령줄을 호출자 칸으로 나눈다(저장하지 않는다). kinds: herdr가 아는 에이전트 종류. except: 고치는 중인 호출자 ID(이름 겹침에서 뺀다)
@@ -396,7 +433,7 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
     cmd = w;
   }
   const rec = { as: 'empty', harness: null, board: false, startCommand: '', mapped: [], dropped: [], env: envNames, skipped };
-  const blank = { name: '', harness: 'claude', icon: '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: '', env: {}, command: '', checkUrl: '', startCommand: '' };
+  const blank = { name: '', harness: 'claude', icon: '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: '', env: {}, command: '', startCommand: '' };
   if (!cmd) return { launcher: { ...blank, env }, name: '', recognized: rec };
   const known = new Set(kinds.filter((k) => k !== 'claude' && k !== 'codex'));
   const at = cmd.findIndex((w) => isClaudeWord(w) || exeBase(w) === 'codex' || known.has(exeBase(w)));
@@ -409,7 +446,7 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
   const agent = cmd[at];
   const rest = cmd.slice(at + 1);
   const kind = isClaudeWord(agent) ? 'claude' : exeBase(agent);
-  if (kind !== 'claude' && wrapper.length) return asCommand('wrapperNotClaude');
+  // P115: 래퍼 명령(실행 명령)은 모든 에이전트 하네스가 받는다
   if (wrapper.some(isSpaced) || isSpaced(agent)) return asCommand('quoted');
   const out = { model: '', effort: '', permissionMode: '', args: [] };
   const dropped = []; const mapped = [];
@@ -439,19 +476,22 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
   }
   if (out.args.length) mapped.push({ arg: out.args.join(' '), field: 'args' });
   let startCommand = ''; let agentPath = null;
-  if (kind === 'claude') {
-    if (wrapper.length) startCommand = [...wrapper, agent].map(wordText).join(' ');
-    else if (hasDir(agent)) agentPath = wordText(agent); // 경로로 준 claude는 PATH의 claude로(이어 가기 명령의 첫 낱말은 명령 이름이어야 한다)
-    else if (exeBase(agent) !== 'claude') startCommand = wordText(agent);
-    if (startCommand.toLowerCase() === 'claude') startCommand = '';
-  }
+  const exe = kind === 'claude' ? 'claude' : kind;
+  if (wrapper.length) startCommand = [...wrapper, agent].map(wordText).join(' ');
+  else if (hasDir(agent)) agentPath = wordText(agent); // 경로로 준 명령은 PATH의 그 명령으로(이어 가기 명령의 첫 낱말은 명령 이름이어야 한다)
+  else if (exeBase(agent) !== exe) startCommand = wordText(agent);
+  if (startCommand.toLowerCase() === exe) startCommand = '';
+  // 판이 정하는 인자(하네스 어댑터)는 뺀다
+  if (kind !== 'claude') { const words = out.args; const kept = []; for (let i = 0; i < words.length; i++) { if (reservedArg(kind, [words[i], words[i + 1] || ''])) { dropped.push(words[i]); continue; } kept.push(words[i]); } out.args = kept; }
   const harness = kind;
   const label = kind === 'claude' ? 'Claude' : kind === 'codex' ? 'Codex' : kind;
   const name = [startCommand || (kind === 'claude' && !out.model ? 'Claude Code' : label), out.model].filter(Boolean).join(' ');
   const launcher = { ...blank, harness, model: out.model, effort: kind === 'claude' ? out.effort : '', permissionMode: kind === 'claude' ? out.permissionMode || 'manual' : '', args: out.args.join(' '), env: kind === 'claude' ? env : {}, startCommand };
+  // P115: env의 ANTHROPIC_BASE_URL은 연결로 옮길 값이라 알린다(설정 탭에서 연결을 만들어 고른다)
+  const baseUrl = kind === 'claude' && env.ANTHROPIC_BASE_URL ? env.ANTHROPIC_BASE_URL : null;
   // claude 밖은 환경 변수를 받지 않는다(herdr에 넘길 길이 없다): 있으면 명령 한 줄로
   if (kind !== 'claude' && envNames.length) return asCommand('envNotClaude');
-  return { launcher, name, recognized: { ...rec, as: kind === 'claude' || kind === 'codex' ? kind : 'kind', harness, board: kind === 'claude', startCommand, mapped, dropped, ...(agentPath ? { agentPath } : {}) } };
+  return { launcher, name, recognized: { ...rec, as: kind === 'claude' || kind === 'codex' ? kind : 'kind', harness, board: kind === 'claude', startCommand, mapped, dropped, ...(agentPath ? { agentPath } : {}), ...(baseUrl ? { baseUrl } : {}) } };
 }
 // 겹치지 않는 이름(대소문자 무시). 40자까지 자르고 겹치면 " 2", " 3"…
 export function uniqueName(want, items = []) {
