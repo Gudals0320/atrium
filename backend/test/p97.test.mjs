@@ -94,7 +94,9 @@ test('P97 실행 명령 검사: 빈 칸·claude는 기본, 첫 낱말은 명령 
   const l = normalizeLauncher({ name: 'o', harness: 'claude', startCommand: 'ocx claude' });
   assert.equal(l.startCommand, 'ocx claude');
   assert.equal('startCommand' in normalizeLauncher({ name: 'c', harness: 'claude', startCommand: 'claude' }), false);
-  assert.equal('startCommand' in normalizeLauncher({ name: 'x', harness: 'codex', startCommand: 'ocx codex' }), false);
+  assert.equal(normalizeLauncher({ name: 'x', harness: 'codex', startCommand: 'wrap codex' }).startCommand, 'wrap codex', 'P115: 실행 명령은 모든 에이전트 하네스');
+  assert.equal('startCommand' in normalizeLauncher({ name: 'y', harness: 'codex', startCommand: 'codex' }), false, 'P115: 그 하네스의 기본 명령 하나면 비운다');
+  assert.throws(() => normalizeLauncher({ name: 'z', harness: 'codex', startCommand: 'wrap codex resume' }), (e) => e.key === 'launcherStart.reserved', 'P115: 하네스가 정하는 인자');
   assert.ok(HARNESSES.claude.fields.includes('startCommand'));
   assert.deepEqual(resolveLauncher(l).startCommand, 'ocx claude');
   assert.equal(resolveLauncher(normalizeLauncher({ name: 'c', harness: 'claude' })).startCommand, '');

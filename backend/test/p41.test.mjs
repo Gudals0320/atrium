@@ -174,7 +174,7 @@ test('P41 atrium child --launcher: 호출자의 하네스·모델·옵션·게�
     b.features.launchers.update({ id: 'codex', patch: { model: 'gpt-6-astra' } });
     const cx = await b.branch.spawnChild(lead, { name: 'cx1', launcher: 'Codex', wait: false });
     // P96: 부모(acceptEdits)의 권한을 Codex 승인 인자로 옮긴다
-    assert.equal(cx.kind, 'codex'); assert.deepEqual(startOf('cx1'), ['-m', 'gpt-6-astra', '--sandbox', 'workspace-write', '--ask-for-approval', 'on-request']);
+    assert.equal(cx.kind, 'codex'); assert.deepEqual(startOf('cx1'), ['-c', 'check_for_update_on_startup=false', '-m', 'gpt-6-astra', '--sandbox', 'workspace-write', '--ask-for-approval', 'on-request']);
     b.store.close();
   } finally { await gw.close(); }
 });

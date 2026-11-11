@@ -111,19 +111,21 @@ export function withoutModelArgs(args = []) {
   return out;
 }
 // 다른 종류 하위 세션의 띄울 값. route: routeOf의 값, lists: 호출자 목록 { items, favorites }
+// P115: route.type 'inherit-harness'(다른 종류 부모가 종류를 주지 않고 부름)는 부모의 하네스 값(호출자, 모델, 추가 인자)을 그대로 물려받는다. 승인 인자는 옮기지 않는다(이미 그 인자에 있다)
 export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) {
   const kind = route.kind;
-  const l = route.type === 'launcher' ? route.launcher : defaultLauncherOf(kind, lists);
+  const inherit = route.type === 'inherit-harness';
+  const l = route.type === 'launcher' ? route.launcher : inherit ? route.launcherDef : defaultLauncherOf(kind, lists);
   const h = l ? harnessOf(l.harness) : harnessOf(kind);
   const takesModel = !!h && h.fields.includes('model');
   const override = route.type === 'model' && route.model ? route.model : null;
   const model = override || (l && takesModel ? l.model || null : null);
   const largs = override ? withoutModelArgs(splitArgs(l ? l.args : '')) : splitArgs(l ? l.args : '');
-  const approval = approvalArgsOf(kind, permissionMode, largs);
+  const approval = inherit ? { args: [], from: 'parent-harness' } : approvalArgsOf(kind, permissionMode, largs);
   const args = [...largs, ...approval.args];
   return {
     launcher: l, model, args, argv: [...(model ? ['-m', model] : []), ...args],
-    record: { base: route.type === 'launcher' ? 'launcher' : l ? 'rail' : 'bare', launcher: l ? l.name : null, model, modelFrom: override ? 'model' : model ? 'launcher' : null, approvalArgs: approval.args, approvalFrom: approval.from, parentPermissionMode: permissionMode },
+    record: { base: route.type === 'launcher' ? 'launcher' : inherit ? 'parent' : l ? 'rail' : 'bare', launcher: l ? l.name : null, model, modelFrom: override ? 'model' : model ? 'launcher' : null, approvalArgs: approval.args, approvalFrom: approval.from, parentPermissionMode: permissionMode },
   };
 }
 
@@ -300,9 +302,10 @@ export class Branch {
 
   // ---------- 판을 찾아가기, 승인 규칙 ----------
   token(sessionId) { return crypto.createHmac('sha256', this.b.apiToken).update(`branch:${sessionId}`).digest('hex'); }
-  envFor(sessionId) {
+  // P115: token false면 토큰을 빼고 준다(패널에 치는 줄과 셸 기록에 남지 않게. atrium은 데이터 폴더 sessions/<ID>.token을 읽는다)
+  envFor(sessionId, { token = true } = {}) {
     const c = this.b.cfg;
-    return { ATRIUM_PROFILE: c.profile, ATRIUM_HERDR_SESSION: c.herdrSession, ATRIUM_PORT: String(c.port), ATRIUM_DATA_DIR: c.dataDir, ATRIUM_SESSION_ID: sessionId, ATRIUM_SESSION_TOKEN: this.token(sessionId) };
+    return { ATRIUM_PROFILE: c.profile, ATRIUM_HERDR_SESSION: c.herdrSession, ATRIUM_PORT: String(c.port), ATRIUM_DATA_DIR: c.dataDir, ATRIUM_SESSION_ID: sessionId, ...(token ? { ATRIUM_SESSION_TOKEN: this.token(sessionId) } : {}) };
   }
   // writeSessionSettings에 더할 값
   settingsExtra(sessionId) { return { env: this.envFor(sessionId), allow: BRANCH_ALLOW }; }
@@ -453,7 +456,8 @@ export class Branch {
     const want = this.token(sid);
     const ok = given.length === want.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want));
     if (!ok) { this.b.store.addEvent(sid, 'branch_rejected', { op, why: 'bad token' }); return { status: 401, error: { code: 'bad_token', message: "세션 토큰이 일치하지 않습니다." } }; }
-    if (!this.b.hooked(s)) return { status: 403, error: { code: 'not_board_session', message: "보드에서 시작한 Claude Code 세션에서만 하위 세션을 만들 수 있습니다." } };
+    // P115: hook 유무가 아니라 세션 토큰으로 본다(판이 띄운 에이전트 세션이면 종류와 상관없이). 셸은 에이전트가 아니다
+    if ((s.kind || 'claude') === 'shell') return { status: 403, error: { code: 'not_board_session', message: "보드에서 시작한 에이전트 세션에서만 호출할 수 있습니다." } };
     return { s };
   }
   dispatch(op, s, body, res) {
@@ -525,7 +529,7 @@ export class Branch {
       // P41: 호출자면 그 호출자의 하네스·모델·옵션·env를 그대로 쓴다(준 --effort만 덮는다). 게이트웨이 모델과 게이트웨이 물려받기는 그 게이트웨이 호출자의 env로, 권한 모드는 부모의 것
       const base = { cwd, name, worktree: gate ? null : worktree, parentSessionId: parent.sessionId, branch: info };
       // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
-      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: other.args.join(' ') }, permissionMode: parent.permissionMode } : { ...base, kind, args: other.argv, permissionMode: parent.permissionMode })
+      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: other.args.join(' ') }, permissionMode: parent.permissionMode } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
         : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined }
         : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode, allowHerdr }
         : { ...base, kind, model, effort, permissionMode: parent.permissionMode, allowHerdr, ...(route.args ? { args: route.args } : {}) };
@@ -643,6 +647,14 @@ export class Branch {
       const host = hostG && hostG.host ? hostG.host : null;
       if (!host) throw apiError('gateway_down', `게이트웨이 ${e.gateway}의 런처를 찾을 수 없습니다.`);
       return { type: 'gateway', kind: 'claude', model: e.model, launcherDef: { ...host, id: host.id || null, icon: e.provider === 'deepseek' ? 'deepseek' : '', model: e.model }, gateway: e.gateway, resolved };
+    }
+    // P115: 다른 종류 부모(codex 등)가 종류를 주지 않으면 같은 하네스와 그 호출자 값(모델, 추가 인자, 실행 명령)을 물려준다. 권한 모드는 옮기지 않는다
+    const pk = parent.kind || 'claude';
+    if (!o.kind && pk !== 'claude' && pk !== 'shell') {
+      const plan = parent.harnessPlan || {};
+      const found = plan.launcherId ? this.findLauncher(plan.launcherId) : null;
+      const def = found && harnessOf(found.harness) && harnessOf(found.harness).kind === pk ? found : { id: null, name: plan.launcher || pk, harness: pk, icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: '', checkUrl: '' };
+      return { type: 'inherit-harness', kind: pk, launcherDef: { ...def, model: plan.model || '', args: (plan.args || []).join(' '), startCommand: parent.startCommand || '' }, gateway: null, resolved: null };
     }
     // 물려받기: 부모가 게이트웨이를 거치는 세션이면(spawn 이벤트의 env) 하위 세션도 같은 env로 띄운다
     const kind = o.kind ? String(o.kind) : 'claude';

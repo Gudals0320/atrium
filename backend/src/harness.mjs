@@ -1,0 +1,135 @@
+// P115: 하네스 어댑터 표. 판이 띄우는 Claude Code 밖의 에이전트 하네스(codex, opencode, pi, herdr가 아는 그 밖의 종류)를
+// 판과 말하게(env, PATH의 atrium, 안내문) 띄우고, 이어 가기·되살리기에서 같은 값으로 돌아오게 한다.
+// 모양은 터미널 백엔드와 상관없다: 판은 { command, args, env, pathFirst, files }를 만들고, 터미널 백엔드가 env와 PATH를 준다
+// (herdr: 패널에 치는 줄 앞의 $env:…와 $env:PATH, herdr-core: terminal.run의 env. 실험은 docs/log/p115-harness-common.md 1단계).
+// Claude Code는 이 표를 쓰지 않는다. 세션 설정 파일(--settings)·플러그인·hook 길(launch.mjs)이 그대로다.
+// 이어 갈 때 다시 줄 것(mustRePass)은 실험에서 빠지면 무엇이 깨지는지 본 목록이다. 판은 이어 가기·되살리기마다 처음과 같은 값을 다시 준다.
+import fs from 'node:fs';
+import path from 'node:path';
+import { codexHomeOf } from './codex-models.mjs';
+
+// 하네스와 상관없는 안내문(한 줄). 줄바꿈·큰따옴표 없이: Codex는 -c 값으로 받고, 판은 이것을 패널에 한 줄로 친다
+export const HARNESS_PROMPT = [
+  '너는 Atrium 보드가 띄운 herdr 패널 안에서 돈다(HERDR_ENV=1).',
+  '보드와 말할 때는 셸에서 atrium 명령을 쓴다. 먼저 `atrium help`로 사용법을 본다(`atrium help --json`은 기계용 계약).',
+  '하위 세션(워커)은 `atrium child`, 부모·하위 세션·역할 연결의 지금 기록은 `atrium me`, 띄울 수 있는 모델은 `atrium models`.',
+  '다른 에이전트에게 일을 시키거나 답을 받아 올 때는 herdr 명령(herdr agent prompt, wait, read)을 쓰고 --session, --machine, --remote를 붙이지 않는다.',
+  '[Atrium 보드]로 시작하는 글은 보드가 알려 주는 연결(어느 에이전트가 너의 무슨 역할인지)이다.',
+].join(' ');
+
+const hexOf = (id) => String(id || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+
+// 하네스 어댑터. build(ctx) → { args(명령 낱말 뒤), env, files: [{ file, text }], harnessSessionId, resumed }
+// ctx: { sessionId(판 세션 ID), resume, harnessSessionId(알면), model, launcherArgs, instructions: { file, text } }
+// reserved: 판이 정하므로 호출자 추가 인자·실행 명령에 두지 못하는 것. sessionIdFrom: board(판이 정한 ID로 만들고 이어 간다) | learned(뜬 뒤에 안다)
+export const ADAPTERS = {
+  codex: {
+    command: 'codex',
+    sessionIdFrom: 'learned', // herdr의 agent_session(사용자의 Codex hook 연동) 또는 Codex rollout 파일(codexSessionOf)
+    mustRePass: ['instructions'], // 지시문은 rollout에 남지만(실험 E2) 판은 늘 다시 준다. 빠지면 막히는 것은 연결(3단계)
+    reserved: { flags: ['resume', 'fork'], configKeys: ['developer_instructions', 'check_for_update_on_startup'] },
+    modelArgs: (m) => ['-m', m],
+    build(ctx) {
+      const resumed = !!(ctx.resume && ctx.harnessSessionId);
+      // 시작할 때 업데이트 확인을 끈다(새 버전이 있으면 "Update now" 선택 창이 떠서 판의 첫 요청과 Enter가 그 창에 들어간다. 1단계 뒤 확인)
+      const args = [...(resumed ? ['resume', ctx.harnessSessionId] : []), '-c', 'check_for_update_on_startup=false', ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.instructions ? ['-c', `developer_instructions=${ctx.instructions.text}`] : []), ...(ctx.launcherArgs || [])];
+      return { args, env: {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
+    },
+    // herdr가 다시 뜨며 스스로 띄운 이어 가기(`codex resume <id>`)는 판의 인자가 없다. 판이 친 줄인가
+    isBoardLine: (argv) => argv.some((a) => String(a).startsWith('developer_instructions=')),
+  },
+  opencode: {
+    command: 'opencode',
+    sessionIdFrom: 'board', // -s <id>는 없으면 그 ID로 만든다(1단계 뒤 확인)
+    mustRePass: ['instructions'], // 지시문은 세션에 저장되지만 다시 준다. 설정은 env(OPENCODE_CONFIG_CONTENT)로만 들어간다
+    reserved: { flags: ['--standalone', '--server', '-s', '--session', '-c', '--continue', '--fork', '--prompt'] },
+    modelArgs: () => [], // 대화형에는 --model이 없다. 설정(OPENCODE_CONFIG_CONTENT)의 model로 준다
+    build(ctx) {
+      const sid = `ses_${hexOf(ctx.sessionId)}`;
+      const config = { ...(ctx.instructions ? { instructions: [ctx.instructions.file] } : {}), ...(ctx.model ? { model: ctx.model } : {}) };
+      // 판이 띄우는 opencode는 늘 --standalone(세션마다 설정과 env. 사용자의 공유 서버는 쓰지 않는다)
+      return { args: ['--standalone', '-s', sid, ...(ctx.launcherArgs || [])], env: Object.keys(config).length ? { OPENCODE_CONFIG_CONTENT: JSON.stringify(config) } : {}, files: [], harnessSessionId: sid, resumed: !!ctx.resume };
+    },
+    isBoardLine: (argv) => argv.includes('--standalone'),
+  },
+  pi: {
+    command: 'pi',
+    sessionIdFrom: 'board', // --session-id <id>는 이 폴더에 그 ID가 있으면 이어 가고 없으면 만든다(1단계 뒤 확인)
+    mustRePass: ['instructions'], // 이어 갈 때 --append-system-prompt를 빼면 안내문이 빠진다(실험 E2)
+    reserved: { flags: ['--session', '--session-id', '-c', '--continue', '-r', '--resume', '--fork', '--no-session', '--session-dir', '-p', '--print', '--mode'] },
+    modelArgs: (m) => ['--model', m],
+    build(ctx) {
+      const sid = ctx.sessionId;
+      const args = ['--session-id', sid, ...(ctx.model ? ['--model', ctx.model] : []), ...(ctx.instructions ? ['--append-system-prompt', ctx.instructions.file] : []), ...(ctx.launcherArgs || [])];
+      return { args, env: {}, files: [], harnessSessionId: sid, resumed: !!ctx.resume };
+    },
+    isBoardLine: (argv) => argv.includes('--session-id'),
+  },
+};
+// 표에 없는 종류(herdr가 아는 그 밖의 하네스): env와 PATH만 주고 지시문·이어 가기는 없다. 모델은 -m(P96과 같다)
+const GENERIC = {
+  command: null, sessionIdFrom: null, mustRePass: [], reserved: { flags: [] }, modelArgs: (m) => ['-m', m],
+  build: (ctx) => ({ args: [...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.launcherArgs || [])], env: {}, files: [], harnessSessionId: null, resumed: false }),
+  isBoardLine: () => true,
+};
+export const adapterOf = (kind) => (kind && kind !== 'claude' && kind !== 'shell' ? ADAPTERS[kind] || { ...GENERIC, command: kind } : null);
+// 판이 이어 갈 수 있는 종류인가(되살리기·다시 열기)
+export const resumable = (kind) => !!(ADAPTERS[kind] && ADAPTERS[kind].sessionIdFrom);
+// 판이 띄우고 다시 띄울 값을 남긴(P115 뒤) 하네스 세션인가
+export const harnessResumable = (s) => !!s && (s.origin || 'board') === 'board' && resumable(s.kind) && !!s.harnessPlan;
+
+// 호출자 추가 인자·실행 명령에 판이 정하는 인자가 있는가 → 그 인자 | null
+export function reservedArg(kind, words = []) {
+  const a = adapterOf(kind);
+  if (!a) return null;
+  const flags = new Set(a.reserved.flags || []);
+  const keys = a.reserved.configKeys || [];
+  for (let i = 0; i < words.length; i++) {
+    const w = String(words[i]); const flag = w.split('=')[0];
+    if (flags.has(flag)) return w;
+    if (keys.length && (w === '-c' || w === '--config') && keys.some((k) => String(words[i + 1] || '').trim().startsWith(`${k}=`))) return `${w} ${words[i + 1]}`;
+    if (keys.length && (w.startsWith('--config=') || (w.startsWith('-c') && w.length > 2)) && keys.some((k) => w.replace(/^(--config=|-c)/, '').startsWith(`${k}=`))) return w;
+  }
+  return null;
+}
+
+// 띄울 값 → 터미널 백엔드에 넘길 값. o: { kind, startWords, sessionId, resume, harnessSessionId, model, launcherArgs, instructions, boardEnv, binDir }
+// → { command: [낱말], args, env(판의 env + 하네스 env), pathFirst: [폴더], files, harnessSessionId, resumed }
+export function harnessLaunch(o) {
+  const a = adapterOf(o.kind);
+  if (!a) throw Object.assign(new Error(`하네스가 아닙니다: ${o.kind}`), { code: 'bad_request' });
+  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null });
+  const command = o.startWords && o.startWords.length ? [...o.startWords] : [a.command];
+  return { command, args: r.args, env: { ...(o.boardEnv || {}), ...r.env }, pathFirst: o.binDir ? [o.binDir] : [], files: r.files, harnessSessionId: r.harnessSessionId, resumed: r.resumed };
+}
+export function writeLaunchFiles(files = []) {
+  for (const f of files) { fs.mkdirSync(path.dirname(f.file), { recursive: true }); fs.writeFileSync(f.file, f.text); }
+}
+
+// Codex 세션 ID: 그 폴더(cwd)에서 since 뒤에 생긴 rollout(첫 줄 session_meta의 id·cwd). herdr가 세션 ID를 모를 때만(사용자 Codex hook 연동이 없을 때)
+// 오늘·어제 폴더만 본다. 첫 줄 앞부분만 읽는다(첫 줄에 기본 지시문이 들어 길다). 읽기만 한다
+export function codexSessionOf({ cwd, since = 0, home = codexHomeOf(), now = Date.now() } = {}) {
+  const want = path.resolve(String(cwd || '')).toLowerCase().replace(/[\\/]+$/, '');
+  const days = [0, 1].map((d) => new Date(now - d * 86400000));
+  const found = [];
+  for (const d of days) {
+    const dir = path.join(home, 'sessions', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
+    let names = [];
+    try { names = fs.readdirSync(dir).filter((n) => /^rollout-.*\.jsonl$/.test(n)); } catch { continue; }
+    for (const n of names) {
+      const file = path.join(dir, n);
+      let st; try { st = fs.statSync(file); } catch { continue; }
+      if (st.birthtimeMs < since - 5000 && st.mtimeMs < since) continue;
+      let head = '';
+      try { const fd = fs.openSync(file, 'r'); try { const buf = Buffer.alloc(65536); head = buf.toString('utf8', 0, fs.readSync(fd, buf, 0, buf.length, 0)); } finally { fs.closeSync(fd); } } catch { continue; }
+      const idm = /"payload":\{[^]*?"id":"([0-9a-f-]{36})"/.exec(head);
+      const cwdm = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(head);
+      if (!idm || !cwdm) continue;
+      let c; try { c = JSON.parse(`"${cwdm[1]}"`); } catch { continue; }
+      if (path.resolve(c).toLowerCase().replace(/[\\/]+$/, '') !== want) continue;
+      found.push({ id: idm[1], at: st.birthtimeMs || st.mtimeMs });
+    }
+  }
+  found.sort((x, y) => Math.abs(x.at - since) - Math.abs(y.at - since));
+  return found.length ? found[0].id : null;
+}

@@ -148,49 +148,49 @@ test('P96 atrium child --kind codex --model "<슬래시 이름>": 레일의 Code
   const r = await b.branch.spawnChild(lead, { name: 'cx1', kind: 'codex', model: 'deepseek/deepseek-flash', prompt: '한 줄로 답해', wait: false });
   const st = startOf('cx1');
   assert.equal(st.kind, 'codex');
-  assert.deepEqual(st.args, ['-m', 'deepseek/deepseek-flash', '-c', 'model_reasoning_effort=low'], '레일 Codex 호출자의 추가 인자, --model이 모델만 덮는다');
+  assert.deepEqual(st.args, ['-c', 'check_for_update_on_startup=false', '-m', 'deepseek/deepseek-flash', '-c', 'model_reasoning_effort=low'], '레일 Codex 호출자의 추가 인자, --model이 모델만 덮는다');
   assert.equal(r.model, 'deepseek/deepseek-flash'); assert.equal(r.launcher, 'Codex');
   assert.equal(r.resolved.source, 'harness'); assert.equal(r.resolved.how, 'exact');
-  assert.deepEqual(r.harness, { base: 'rail', launcher: 'Codex', model: 'deepseek/deepseek-flash', modelFrom: 'model', approvalArgs: [], approvalFrom: 'harness', parentPermissionMode: 'manual', argv: st.args });
+  assert.deepEqual(r.harness, { base: 'rail', launcher: 'Codex', model: 'deepseek/deepseek-flash', modelFrom: 'model', approvalArgs: [], approvalFrom: 'harness', parentPermissionMode: 'manual', argv: st.args.slice(2) }); // P115: 기록은 판이 덧붙인 인자(업데이트 확인 끄기 등)를 뺀 하네스 인자
   const ev = b.store.events({ sessionId: lead.sessionId }).find((e) => e.kind === 'branch_child' && e.data.child === 'cx1');
-  assert.equal(ev.data.model, 'deepseek/deepseek-flash'); assert.equal(ev.data.launcher, 'Codex'); assert.deepEqual(ev.data.harness.argv, st.args);
+  assert.equal(ev.data.model, 'deepseek/deepseek-flash'); assert.equal(ev.data.launcher, 'Codex'); assert.deepEqual(ev.data.harness.argv, st.args.slice(2));
   assert.equal(b.store.spawnInfo(r.sessionId).launcher, 'Codex', '판의 spawn 기록에도 호출자');
   // 말로 한 이름도 Codex 줄로 풀린다(--kind codex). 목록에 없는 v4 이름은 낱말이 모두 든 줄로 느슨하게 풀리고(P41), 맞는 줄이 없으면 띄우지 않는다
   const ds = await b.branch.spawnChild(lead, { name: 'cx2', kind: 'codex', model: 'deepseek flash', wait: false });
   assert.equal(ds.model, 'deepseek/deepseek-flash'); assert.equal(ds.resolved.how, 'loose');
   const glm = await b.branch.spawnChild(lead, { name: 'cx3', model: 'b.ai/glm-5.3-flash', wait: false });
-  assert.equal(glm.kind, 'codex', '--kind 없이도 Codex 목록의 이름이면 Codex'); assert.equal(startOf('cx3').args[1], 'b.ai/glm-5.3-flash');
+  assert.equal(glm.kind, 'codex', '--kind 없이도 Codex 목록의 이름이면 Codex'); assert.equal(startOf('cx3').args[3], 'b.ai/glm-5.3-flash'); // P115: 앞의 -c check_for_update_on_startup=false 뒤
   const v4 = await b.branch.spawnChild(lead, { name: 'cx4', kind: 'codex', model: 'deepseek/deepseek-v4-flash', wait: false });
   assert.deepEqual([v4.model, v4.resolved.how], ['b.ai/deepseek-v4.1-flash', 'loose']);
   await assert.rejects(b.branch.spawnChild(lead, { name: 'cx6', kind: 'codex', model: 'qwen/qwen-9', wait: false }), (e) => e.code === 'model_unknown');
   // --kind codex만: 레일 호출자의 모델
   const plain = await b.branch.spawnChild(lead, { name: 'cx5', kind: 'codex', wait: false });
-  assert.deepEqual(startOf('cx5').args, ['-m', 'gpt-6-astra', '-c', 'model_reasoning_effort=low']); assert.equal(plain.harness.modelFrom, 'launcher');
+  assert.deepEqual(startOf('cx5').args, ['-c', 'check_for_update_on_startup=false', '-m', 'gpt-6-astra', '-c', 'model_reasoning_effort=low']); assert.equal(plain.harness.modelFrom, 'launcher');
   b.store.close();
 });
 
 test('P96 부모 권한 옮기기: bypassPermissions·acceptEdits, 호출자 인자가 이긴다, 호출자가 없으면 맨 codex', async () => {
   const { b, lead, startOf, L } = await board({ permissionMode: 'bypassPermissions' });
   const r = await b.branch.spawnChild(lead, { name: 'cx1', kind: 'codex', model: 'deepseek/deepseek-flash', wait: false });
-  assert.deepEqual(startOf('cx1').args, ['-m', 'deepseek/deepseek-flash', '--dangerously-bypass-approvals-and-sandbox']);
+  assert.deepEqual(startOf('cx1').args, ['-c', 'check_for_update_on_startup=false', '-m', 'deepseek/deepseek-flash', '--dangerously-bypass-approvals-and-sandbox']);
   assert.equal(r.harness.approvalFrom, 'parent'); assert.equal(r.permissionMode, 'bypassPermissions', '판 기록의 권한 모드는 부모의 것');
   // 호출자 인자에 샌드박스가 있으면 그것만
   L.update({ id: 'codex', patch: { args: '--sandbox read-only' } });
   const ro = await b.branch.spawnChild(lead, { name: 'cx2', kind: 'codex', wait: false });
-  assert.deepEqual(startOf('cx2').args, ['--sandbox', 'read-only']); assert.equal(ro.harness.approvalFrom, 'launcher');
+  assert.deepEqual(startOf('cx2').args, ['-c', 'check_for_update_on_startup=false', '--sandbox', 'read-only']); assert.equal(ro.harness.approvalFrom, 'launcher');
   // --launcher로 고른 Codex 호출자도 같은 규칙
   L.update({ id: 'codex', patch: { args: '' } });
   await b.branch.spawnChild(lead, { name: 'cx3', launcher: 'Codex', wait: false });
-  assert.deepEqual(startOf('cx3').args, ['--dangerously-bypass-approvals-and-sandbox']);
+  assert.deepEqual(startOf('cx3').args, ['-c', 'check_for_update_on_startup=false', '--dangerously-bypass-approvals-and-sandbox']);
   // 레일 순서: 즐겨찾기의 첫 Codex 호출자
   const made = L.create({ launcher: { name: 'Codex fast', harness: 'codex', model: 'b.ai/glm-5.3-flash', args: '--search' }, favorite: true });
   L.order({ ids: [made.launcher.id, ...L.data().favorites.filter((x) => x !== made.launcher.id)] });
   const fav = await b.branch.spawnChild(lead, { name: 'cx4', kind: 'codex', wait: false });
-  assert.equal(fav.launcher, 'Codex fast'); assert.deepEqual(startOf('cx4').args, ['-m', 'b.ai/glm-5.3-flash', '--search', '--dangerously-bypass-approvals-and-sandbox']);
+  assert.equal(fav.launcher, 'Codex fast'); assert.deepEqual(startOf('cx4').args, ['-c', 'check_for_update_on_startup=false', '-m', 'b.ai/glm-5.3-flash', '--search', '--dangerously-bypass-approvals-and-sandbox']);
   // Codex 호출자가 하나도 없으면 맨 codex에 같은 인자
   L.delete({ id: made.launcher.id }); L.delete({ id: 'codex' });
   const bare = await b.branch.spawnChild(lead, { name: 'cx5', kind: 'codex', model: 'deepseek/deepseek-flash', wait: false });
-  assert.deepEqual(startOf('cx5').args, ['-m', 'deepseek/deepseek-flash', '--dangerously-bypass-approvals-and-sandbox']);
+  assert.deepEqual(startOf('cx5').args, ['-c', 'check_for_update_on_startup=false', '-m', 'deepseek/deepseek-flash', '--dangerously-bypass-approvals-and-sandbox']);
   assert.equal(bare.launcher, null); assert.equal(bare.harness.base, 'bare');
   b.store.close();
 });
@@ -198,7 +198,7 @@ test('P96 부모 권한 옮기기: bypassPermissions·acceptEdits, 호출자 인
 test('P96 acceptEdits 부모 → workspace-write + on-request. Claude 하위 세션은 그대로(권한 모드를 물려받음)', async () => {
   const { b, lead, startOf } = await board({ permissionMode: 'acceptEdits' });
   await b.branch.spawnChild(lead, { name: 'cx1', kind: 'codex', wait: false });
-  assert.deepEqual(startOf('cx1').args, ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request']);
+  assert.deepEqual(startOf('cx1').args, ['-c', 'check_for_update_on_startup=false', '--sandbox', 'workspace-write', '--ask-for-approval', 'on-request']);
   const c = await b.branch.spawnChild(lead, { name: 'c1', wait: false });
   assert.equal(c.harness, null); const a = startOf('c1').args;
   assert.equal(a[a.indexOf('--permission-mode') + 1], 'acceptEdits');
@@ -214,7 +214,7 @@ test('P96 슬래시 모델: Claude 하위 세션(게이트웨이 모델 ID)과 �
     const a = startOf('g1').args; assert.equal(a[a.indexOf('--model') + 1], 'zai/glm-5');
     // 판의 새 세션(session.spawn): Codex 호출자 + 슬래시 모델
     const s = await b.spawn({ cwd: dir, name: 'cx9', launcher: 'codex', model: 'b.ai/glm-5.3-flash' });
-    assert.equal(s.kind, 'codex'); assert.deepEqual(startOf('cx9').args, ['-m', 'b.ai/glm-5.3-flash']);
+    assert.equal(s.kind, 'codex'); assert.deepEqual(startOf('cx9').args, ['-c', 'check_for_update_on_startup=false', '-m', 'b.ai/glm-5.3-flash']);
     b.store.close();
   } finally { await gw.close(); }
 });

@@ -13,7 +13,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
 import { unlistedModel } from './codex-models.mjs';
-import { psLine } from './launch.mjs'; // P97
+import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는 launch.mjs(herdr 어댑터도 쓴다)
+import { adapterOf, reservedArg } from './harness.mjs'; // P115: 하네스 어댑터 표
 import { FLAVOR as DEEPSEEK, DEFAULT_MODEL as DEEPSEEK_MODEL, DEFAULT_HEALTH_URL, COMMAND_MAX, proxyEnv, baseUrlOf, checkCommand } from './deepseek.mjs';
 
 export const META_KEY = 'launchers';
@@ -35,12 +36,15 @@ export const RESERVED_CLAUDE_ARGS = new Set(['--settings', '--session-id', '--re
 // 하네스 정의. fields는 설정 탭이 보일 칸, models는 알려진 모델(직접 입력도 받는다), kind는 판이 기록하는 herdr 종류
 export const HARNESSES = {
   claude: { id: 'claude', kind: 'claude', label: 'Claude Code', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'allowHerdr', 'args', 'env', 'checkUrl'], models: ['haiku', 'sonnet', 'opus', 'claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'] },
-  codex: { id: 'codex', kind: 'codex', label: 'Codex', fields: ['model', 'args'], models: ['gpt-6-astra'], warnUnlisted: true }, // P72: models는 Codex 캐시를 읽지 못할 때의 목록. 목록에 없는 이름은 경고만 한다
+  codex: { id: 'codex', kind: 'codex', label: 'Codex', fields: ['startCommand', 'model', 'args'], models: ['gpt-6-astra'], warnUnlisted: true }, // P72: models는 Codex 캐시를 읽지 못할 때의 목록. 목록에 없는 이름은 경고만 한다
+  // P115: opencode·pi는 하네스 어댑터(harness.mjs)가 env·안내문·이어 가기를 맞춘다. 모델은 opencode가 "<제공자>/<모델>", pi가 --model 값
+  opencode: { id: 'opencode', kind: 'opencode', label: 'opencode', fields: ['startCommand', 'model', 'args'], models: [] },
+  pi: { id: 'pi', kind: 'pi', label: 'pi', fields: ['startCommand', 'model', 'args'], models: [] },
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };
 // herdr가 아는 그 밖의 종류(pi, grok 등)는 추가 인자만 받는다
-export const harnessOf = (id) => HARNESSES[id] || (KIND_RE.test(String(id || '')) ? { id, kind: id, label: id, fields: ['args'], models: [] } : null);
+export const harnessOf = (id) => HARNESSES[id] || (KIND_RE.test(String(id || '')) ? { id, kind: id, label: id, fields: ['startCommand', 'args'], models: [] } : null); // P115: 실행 명령은 모든 에이전트 하네스
 // dyn: 하네스별로 읽어 온 목록 { codex: { models, hidden, labels, source } }(P72). 없으면 고정 목록
 export const describeHarnesses = (dyn = {}) => Object.values(HARNESSES).map((h) => (dyn[h.id] ? { ...h, models: [...dyn[h.id].models], hiddenModels: [...(dyn[h.id].hidden || [])], modelLabels: { ...(dyn[h.id].labels || {}) }, modelSource: dyn[h.id].source || null } : { ...h }));
 // P72: 하네스가 경고하는 목록 밖 모델 이름인가(Codex). 막지는 않는다
@@ -92,17 +96,21 @@ const START_WORD_RE = /^[A-Za-z0-9_@%+=:,.\/\\~-]+$/;
 export const startWords = (s) => String(s || '').trim().split(/\s+/).filter(Boolean);
 // 판이 claude 세션을 다시 띄울 때 칠 실행 명령의 낱말들([]면 herdr agent.start로 claude)
 export const claudeStartOf = (s) => (s && s.kind === 'claude' ? startWords(s.startCommand) : []);
+// P115: 그 하네스의 기본 명령 이름(실행 명령이 이것 하나면 비운다)
+const defaultCommandOf = (harness) => { const h = harnessOf(harness); if (!h || h.id === 'claude') return 'claude'; const a = adapterOf(h.kind); return a ? a.command : h.kind; };
 // herdr startAgent에 넘길 값: 실행 명령이 있을 때만 { command }
 export const startOpt = (s) => { const w = claudeStartOf(s); return w.length ? { command: w } : {}; };
 // 실행 명령을 확인하고 정리한다. 빈칸이나 `claude` 하나면 ''(판의 기본)
-export function normalizeStartCommand(v) {
+// P115: 하네스마다 기본 명령(claude, codex …)과 판이 정하는 인자가 다르다
+export function normalizeStartCommand(v, harness = 'claude') {
   const s = String(v ?? '').trim().replace(/\s+/g, ' ');
   if (!s) return '';
   const w = s.split(' ');
   if (s.length > START_MAX || w.length > START_WORDS || CTRL_RE.test(s) || !START_FIRST_RE.test(w[0]) || w.slice(1).some((x) => !START_WORD_RE.test(x))) throw Object.assign(new Error(`실행 명령: 첫 낱말은 명령 이름, 따옴표·셸 기호 없이 ${START_MAX}자까지`), { code: 'bad_request', key: 'launcherStart.bad', vars: { max: START_MAX } });
-  const bad = w.find((x) => RESERVED_CLAUDE_ARGS.has(x.split('=')[0]));
+  const h = harnessOf(harness);
+  const bad = !h || h.id === 'claude' ? w.find((x) => RESERVED_CLAUDE_ARGS.has(x.split('=')[0])) : reservedArg(h.kind, w.slice(1));
   if (bad) throw Object.assign(new Error(`보드가 정하는 인자: ${bad}`), { code: 'bad_request', key: 'launcherStart.reserved', vars: { arg: bad } });
-  return s.toLowerCase() === 'claude' ? '' : s;
+  return s.toLowerCase() === defaultCommandOf(harness) ? '' : s;
 }
 // 명령 이름이 PATH에 있는가(Windows는 PATHEXT와 .ps1도). 30초 담아 둔다. 없어도 저장은 막지 않는다(PowerShell 별칭·함수일 수 있다)
 const pathSeen = new Map();
@@ -148,6 +156,7 @@ export function normalizeLauncher(input, { others = [] } = {}) {
   const args = has('args') ? String(input.args ?? '').trim() : '';
   if (args.length > ARGS_MAX || CTRL_RE.test(args)) throw err('bad_request', `추가 인자: 한 줄, ${ARGS_MAX}자까지`, 'args', { max: ARGS_MAX });
   if (h.id === 'claude') { const bad = splitArgs(args).find((a) => RESERVED_CLAUDE_ARGS.has(a.split('=')[0])); if (bad) throw err('bad_request', `보드가 정하는 인자: ${bad}`, 'argsReserved', { arg: bad }); }
+  else { const bad = reservedArg(h.kind, splitArgs(args)); if (bad) throw err('bad_request', `보드가 정하는 인자: ${bad}`, 'argsReserved', { arg: bad }); } // P115: 하네스 어댑터가 정하는 인자
   let command = '';
   if (has('command')) {
     try { command = checkCommand(input.command); } catch (e) { throw err('bad_request', e.message, e.key === 'deepseekCommandLong' ? 'commandLong' : 'commandLine', { max: COMMAND_MAX, n: String(input.command || '').trim().length }); }
@@ -155,12 +164,12 @@ export function normalizeLauncher(input, { others = [] } = {}) {
   }
   const env = has('env') ? normalizeEnv(input.env) : {};
   const checkUrl = has('checkUrl') ? checkUrlOf(input.checkUrl) : '';
-  const startCommand = has('startCommand') ? normalizeStartCommand(input.startCommand) : ''; // P97
+  const startCommand = has('startCommand') ? normalizeStartCommand(input.startCommand, h.id) : ''; // P97. P115: 모든 에이전트 하네스
   return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, allowHerdr: has('allowHerdr') ? !!input.allowHerdr : false, args, env, command, checkUrl, ...(startCommand ? { startCommand } : {}) }; // 빈 실행 명령은 두지 않는다(옛 호출자와 모양이 같다)
 }
 
-// 직접 명령에 환경 변수를 붙인다(PowerShell: $env:이름='값'; 작은따옴표는 두 번)
-export const psEnvPrefix = (env) => Object.entries(env || {}).map(([k, v]) => `$env:${k}='${String(v).replace(/'/g, "''")}'; `).join('');
+// 직접 명령에 환경 변수를 붙인다(PowerShell: $env:이름='값'; 작은따옴표는 두 번). P115: launch.mjs로 옮겼다
+export { psEnvPrefix };
 
 // 띄울 때 확인할 게이트웨이: 확인 주소를 주면 그 health(2xx, status ok), 아니면 ANTHROPIC_BASE_URL이 닿는지(무슨 HTTP 답이든)
 export function gatewayOf(l) {
@@ -187,7 +196,8 @@ export function resolveLauncher(l, over = {}) {
   if (h.id === 'command') { const c = over.command ? checkCommand(over.command) : l.command; return { ...base, command: psEnvPrefix(l.env) + c }; }
   const model = h.fields.includes('model') ? String(pick('model') || '').trim() : '';
   if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
-  return { ...base, args: [...(model ? ['-m', model] : []), ...splitArgs(pick('args'))], command: '' };
+  // P115: 모델과 추가 인자를 따로 준다. 하네스 어댑터(harness.mjs)가 그 하네스의 모양(-m, --model, 설정의 model)으로 바꾼다
+  return { ...base, model: model || null, args: splitArgs(pick('args')), command: '', startCommand: l.startCommand || '' };
 }
 
 // 명령 미리보기: 사람이 읽는 명령줄. claude는 판이 덧붙이는 값(hook 설정 파일, 세션 ID, herdr 스킬)을 빼고 보인다. 환경 변수는 이름만 따로
@@ -204,7 +214,9 @@ export function previewLauncher(l) {
   if (h.id === 'shell') return { line: '', env: [], board: false, shell: true };
   if (h.id === 'command') return { line: psEnvPrefix(l.env) + l.command, env: envNames, board: false, typed: true };
   const r = resolveLauncher(l);
-  return { line: [h.kind, ...r.args].join(' '), env: [], board: false };
+  const a = adapterOf(h.kind);
+  const s = startWords(l.startCommand); // P115: 실행 명령. 모델은 그 하네스의 모양(판이 덧붙이는 env·안내문·세션 ID는 빼고 보인다)
+  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a ? a.modelArgs(r.model) : []), ...r.args].join(' '), env: [], board: !!a };
 }
 
 // ---------- 기본값과 옮기기 ----------

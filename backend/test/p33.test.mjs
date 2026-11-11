@@ -29,12 +29,14 @@ test('P33 풀기: claude는 모델·노력 수준·권한 모드·herdr 자동 �
 });
 
 test('P33 풀기: codex는 -m 모델과 추가 인자, 다른 종류는 추가 인자만, 셸, 직접 명령(환경 변수는 PowerShell 앞머리)', () => {
+  // P115: 모델과 추가 인자를 따로 준다(하네스 어댑터가 -m·--model·설정의 model로 바꾼다)
   const cx = resolveLauncher(L({ harness: 'codex', model: 'gpt-6-astra', args: '-c model_reasoning_effort=low' }));
-  assert.equal(cx.kind, 'codex'); assert.deepEqual(cx.args, ['-m', 'gpt-6-astra', '-c', 'model_reasoning_effort=low']);
-  assert.deepEqual(resolveLauncher(L({ harness: 'codex', model: 'gpt-6-astra' }), { model: 'o9' }).args, ['-m', 'o9']);
-  const pi = L({ harness: 'pi', model: 'ignored', args: '--x 1' });
-  assert.equal(pi.model, '', '다른 종류는 모델 칸이 없다');
-  assert.deepEqual(resolveLauncher(pi), { kind: 'pi', flavor: null, launcher: 'x', launcherId: null, args: ['--x', '1'], command: '' });
+  assert.equal(cx.kind, 'codex'); assert.equal(cx.model, 'gpt-6-astra'); assert.deepEqual(cx.args, ['-c', 'model_reasoning_effort=low']);
+  assert.equal(resolveLauncher(L({ harness: 'codex', model: 'gpt-6-astra' }), { model: 'o9' }).model, 'o9');
+  const gk = L({ harness: 'grok', model: 'ignored', args: '--x 1' });
+  assert.equal(gk.model, '', '표에 없는 종류는 모델 칸이 없다');
+  assert.deepEqual(resolveLauncher(gk), { kind: 'grok', flavor: null, launcher: 'x', launcherId: null, model: null, args: ['--x', '1'], command: '', startCommand: '' });
+  assert.equal(L({ harness: 'pi', model: 'p/m' }).model, 'p/m', 'P115: pi는 모델 칸이 있다');
   assert.deepEqual(resolveLauncher(L({ harness: 'shell' })), { kind: 'shell', flavor: null, launcher: 'x', launcherId: null, command: '' });
   const cmd = resolveLauncher(L({ harness: 'command', command: 'echo hi', env: { A: "it's" }, icon: 'grok' }));
   assert.equal(cmd.kind, 'shell'); assert.equal(cmd.command, "$env:A='it''s'; echo hi"); assert.equal(cmd.flavor, 'grok');
@@ -260,6 +262,6 @@ test('P33 spawn { launcher }: codex 호출자는 -m 모델과 인자를 herdr에
   b.features.launchers.update({ id: 'codex', patch: { model: 'gpt-6-astra', args: '--full-auto' } });
   const r = await b.spawn({ cwd, launcher: 'Codex' });
   assert.equal(r.kind, 'codex');
-  assert.deepEqual(calls.find((c) => c[0] === 'startAgent')[1].args, ['-m', 'gpt-6-astra', '--full-auto']);
+  assert.deepEqual(calls.find((c) => c[0] === 'startAgent')[1].args, ['-c', 'check_for_update_on_startup=false', '-m', 'gpt-6-astra', '--full-auto']); // P115: 업데이트 확인 끄기
   b.store.close();
 });
