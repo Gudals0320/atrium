@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { HerdrAdapter, findHerdr, readServerExe } from './herdr/adapter.mjs';
+import { createTerminalAdapter } from './terminal-backend.mjs'; // P114: herdr | hc
 import { updateNotice } from './herdr/discover.mjs'; // P40: herdr 찾기와 업데이트 감지
 import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
@@ -160,8 +161,10 @@ export class Backend {
     // P18: 옮긴 옛 폴더의 backend.json도 이 백엔드를 가리킨다(열린 옛 창이 옛 백엔드를 다시 띄우지 않고 이 판에 붙는다)
     if (cfg.legacy && fs.existsSync(path.join(cfg.legacy.dataDir, MARKER))) writeTombstone(cfg.legacy.dataDir, { pid: process.pid, port: cfg.port, token: this.apiToken, herdrSession: cfg.herdrSession, movedTo: cfg.dataDir });
 
-    this.adapter = new HerdrAdapter({ herdrPath: cfg.herdrPath, session: cfg.herdrSession, logDir: cfg.logDir, protocols: cfg.herdrProtocols, tested: cfg.herdrTested });
-    this.adapter.on('log', (m) => this.log('[herdr]', m));
+    // P114: 터미널 백엔드는 herdr(기본) 또는 hc(숨은 설정 terminalBackend, ATRIUM_TERMINAL_BACKEND). 어댑터 바깥 모양은 같다(terminal-backend.mjs)
+    this.adapter = createTerminalAdapter(cfg, this.store.getMeta('settings') || {});
+    this.log(`terminal backend: ${this.adapter.backend} (${this.adapter.backendPick.source}${this.adapter.backendPick.invalid ? `, unknown value ${this.adapter.backendPick.invalid}` : ''})`);
+    this.adapter.on('log', (m) => this.log(`[${this.adapter.backend}]`, m));
     // P40: 쓸 herdr 실행 파일을 고른다(도는 판 서버의 실행 파일 → 찾기 결과). 못 찾아도 백엔드는 뜬다
     await this.resolveHerdr('start');
     // P21: 판 터미널에서 친 글로 보내지 않은 초안이 있는지 기억한다(초안이 있으면 잠재우지 않는다)
