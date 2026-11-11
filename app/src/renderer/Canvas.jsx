@@ -610,7 +610,17 @@ export function Canvas() {
   useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, schedule]);
   useEffect(() => { const t = setInterval(() => recompute(), HOLD_MS + 100); window.addEventListener('resize', () => schedule()); return () => clearInterval(t); }, [recompute, schedule]);
 
-  const sizeOf = () => { const el = wrapRef.current; return el ? { width: el.clientWidth, height: el.clientHeight } : null; };
+  // P112: 캔버스 크기는 ResizeObserver로 담아 둔다. 화면을 옮기는 프레임마다 clientWidth를 읽으면 그 프레임에 바뀐 스타일·레이아웃을 그 자리에서 다시 센다(강제 동기 레이아웃).
+  //   코드로 화면을 옮기면(터치 손가락, setViewport) d3가 프레임마다 이동 끝(onMoveEnd)을 낸다
+  const sizeRef = useRef(null);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => { sizeRef.current = { width: el.clientWidth, height: el.clientHeight }; });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const sizeOf = () => { const el = wrapRef.current; if (!el) return null; if (!sizeRef.current) sizeRef.current = { width: el.clientWidth, height: el.clientHeight }; return sizeRef.current; };
   const saveVp = useRef(null);
   const onMoveEnd = useCallback((e, vp) => {
     // 화면 이동이 사람 손(휠, 끌기)인지 코드인지 남긴다. 사람이 배율을 바꾸면 얼굴과 붙은 터미널이 바뀐다(E5 2.5 조사)

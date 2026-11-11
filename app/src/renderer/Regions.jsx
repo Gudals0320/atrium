@@ -3,8 +3,8 @@
 //   이름표 글자는 화면 기준 크기라 줄여 보아도 읽힌다. 이름표의 단추: 정리(연결을 따라 나무 배치, 사람이 누를 때만), 되돌리기(한 번), + 세션, 모두 보기.
 //   다른 영역과 겹치면 빨갛게 보인다(놓으면 되돌린다).
 import { memo, useMemo, useState } from 'react';
-import { useStore as useFlowStore } from '@xyflow/react';
 import { api } from './api.js';
+import { useInvRef, useZoomStyle } from './zoom-var.js'; // P112: 배율을 따르는 이름표 크기를 렌더 없이
 import { useStore, getState, openDialog, selectWorkspace, noteWorkspace, toast, markArranged } from './store.js';
 import { Icon } from './lib/icons.jsx';
 import { useT, t, errText } from './lib/i18n.js';
@@ -12,8 +12,6 @@ import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
 import { worktreeLabel } from '../../../backend/src/worktree-areas.mjs'; // P27: 워크트리 영역(P35: 리포 영역 안의 노란 상자)
-
-const zoomSel = (s) => s.transform[2];
 
 export async function arrangeWorkspace(key, undo = false) {
   try {
@@ -50,6 +48,14 @@ export async function arrangeBoard(undo = false) {
 // P11: 영역은 1.5px 얇은 테두리(안에 일하는 세션이 있으면 청록 회색)로 그리고, 이름표를 테두리 위에 단다(목업의 그룹 이름표: 점, 이름 대문자 굵게, 고정폭 회색 "6 · 3 일하는 중", ⌄).
 //   테두리는 영역 맨 위(REGION_HEAD 자리)가 아니라 안의 것 32px 위에 긋는다. 이름표의 단추(정리, 되돌리기, + 세션, 이 영역으로)는 ⌄를 누르거나 이름표에 마우스를 올리면 보인다
 export const BORDER_TOP = REGION_HEAD + 8; // 영역 위에서 테두리까지(안의 것보다 REGION_PAD - 8 위)
+// 화면에서 13px. 아주 멀리서는 영역 사이 틈(REGION_GAP)을 넘지 않게 줄인다(이름표가 위쪽 영역을 덮지 않게)
+// 이름표는 작을 때 테두리 한가운데에, 커지면 아래 끝이 테두리 조금 아래에 오게(안의 노드를 덜 덮게)
+// P112: 배율이 바뀔 때마다 영역 전체를 다시 그리지 않게 이름표 style만 useZoomStyle로 쓴다
+const regionHead = (zoom) => {
+  const fs = Math.max(13, Math.min((REGION_HEAD + REGION_GAP * 0.7) / 2.3, 13 / Math.max(zoom, 0.02)));
+  const head = fs * 2.1;
+  return { fontSize: fs, height: head, top: BORDER_TOP - head + Math.min(head / 2, fs * 0.9) };
+};
 function RegionNodeInner({ data }) {
   const t = useT();
   const key = data.wsKey;
@@ -58,20 +64,15 @@ function RegionNodeInner({ data }) {
   const arranged = useStore((st) => st.arranged.has(key));
   const current = useStore((st) => st.currentWs === key);
   const convos = useStore((st) => { let n = 0; for (const c of st.convoNodes.values()) if (c.workspaceKey === key) n++; return n; }); // P13: 판 밖 대화 노드 수
-  const zoom = useFlowStore(zoomSel);
+  const headRef = useZoomStyle(regionHead);
   const [acts, setActs] = useState(false);
   const c = useMemo(() => workspaceCounts([...sessions.values()], key), [sessions, key]);
   const z = useMemo(() => repoSleep(sessions.values(), key), [sessions, key]); // P24: 잠든 수, 아낀 메모리
   if (!w) return null;
-  // 화면에서 13px. 아주 멀리서는 영역 사이 틈(REGION_GAP)을 넘지 않게 줄인다(이름표가 위쪽 영역을 덮지 않게)
-  const fs = Math.max(13, Math.min((REGION_HEAD + REGION_GAP * 0.7) / 2.3, 13 / Math.max(zoom, 0.02)));
-  const head = fs * 2.1;
-  // 이름표는 작을 때 테두리 한가운데에, 커지면 아래 끝이 테두리 조금 아래에 오게(안의 노드를 덜 덮게)
-  const top = BORDER_TOP - head + Math.min(head / 2, fs * 0.9);
   return (
     <div className={`mt-region${data.warn ? ' warn' : ''}${c.needsYou ? ' hot' : ''}${c.working ? ' run' : ''}${current ? ' current' : ''}${z.all ? ' asleep' : ''}`} data-ws={key} data-name={w.name} data-asleep={z.asleep || undefined}>
       <div className="mt-region-box" style={{ top: BORDER_TOP }} />
-      <div className={`mt-region-head mt-rdrag${acts ? ' acts' : ''}`} style={{ fontSize: fs, height: head, top }} title={t('regions.headTitle', { kind: w.kind === 'repo' ? t('top.wsRepo') : t('top.wsFolder'), root: w.root })}>
+      <div className={`mt-region-head mt-rdrag${acts ? ' acts' : ''}`} ref={headRef} title={t('regions.headTitle', { kind: w.kind === 'repo' ? t('top.wsRepo') : t('top.wsFolder'), root: w.root })}>
         <span className="mt-region-dot" />
         <b className="mt-region-name" data-label={w.label ? 'rel' : undefined}>{w.label || w.name}</b>{/* P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로(전체 경로는 title) */}
         <span className="mt-region-meta"><span data-count="sessions">{c.sessions}</span>{c.working > 0 && <> · <span data-count="working">{t('regions.working', { n: c.working })}</span></>}{convos > 0 && <> · <span data-count="convos">{t('regions.convos', { n: convos })}</span></>}{w.kind !== 'repo' && <> · {t('regions.folder')}</>}</span>
@@ -97,17 +98,20 @@ export const RegionNode = memo(RegionNodeInner);
 // P27: 워크트리 영역. P35: 리포 영역 안의 노란 상자(테두리, 옅은 바탕, 이름표 글자 모두 노란 계열, tokens.css --wt-box-*).
 //   이름표는 ⎇ 브랜치(폴더 이름이 다르면 함께)와 세는 값. 이름표를 끌면 이 상자와 안의 노드·대화 노드가 함께 움직이고 자리를 저장한다(worktree.move). 누르면 그 리포로 간다.
 //   줌 아웃하면 이름표는 리포 영역 이름표처럼 화면 기준 크기로 커지되, 리포 영역 이름표보다 조금 작게 둔다
-function WorktreeAreaNodeInner({ data }) {
-  const t = useT();
-  const zoom = useFlowStore(zoomSel);
+const wtHead = (zoom) => {
   const fs = Math.max(12, Math.min((REGION_HEAD + REGION_GAP * 0.5) / 2.3, 12 / Math.max(zoom, 0.02)));
   const head = fs * 2.1;
-  const top = BORDER_TOP - head + Math.min(head / 2, fs * 0.9);
+  return { fontSize: fs, height: head, top: BORDER_TOP - head + Math.min(head / 2, fs * 0.9) };
+};
+function WorktreeAreaNodeInner({ data }) {
+  const t = useT();
+  const invRef = useInvRef(); // P112: --inv와 이름표 크기는 렌더 없이(RegionNode와 같다)
+  const headRef = useZoomStyle(wtHead);
   const { branch, folder } = worktreeLabel({ path: data.path, branch: data.branch });
   return (
-    <div className={`mt-region mt-wtarea${data.warn ? ' warn' : ''}${data.working || data.live ? ' run' : ' rest'}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-ws={data.wsKey} data-area={data.area} data-worktree={data.path} data-branch={branch}>
+    <div className={`mt-region mt-wtarea${data.warn ? ' warn' : ''}${data.working || data.live ? ' run' : ' rest'}`} ref={invRef} data-ws={data.wsKey} data-area={data.area} data-worktree={data.path} data-branch={branch}>
       <div className="mt-region-box" style={{ top: BORDER_TOP }} />
-      <div className="mt-region-head mt-wadrag" style={{ fontSize: fs, height: head, top }} title={t('regions.wtTitle', { path: data.path || '', branch })}>
+      <div className="mt-region-head mt-wadrag" ref={headRef} title={t('regions.wtTitle', { path: data.path || '', branch })}>
         <b className="mt-wtarea-name">⎇ {branch}</b>
         {folder && <span className="mt-wtarea-meta" data-role="wt-folder">({folder})</span>}
         <span className="mt-wtarea-meta"><span data-count="sessions">{t('regions.wtSessions', { n: data.n || 0 })}</span>{data.working > 0 && <> · <span data-count="working">{t('regions.working', { n: data.working })}</span></>}{data.convos > 0 && <> · <span data-count="convos">{t('regions.convos', { n: data.convos })}</span></>}</span>
@@ -120,21 +124,23 @@ export const WorktreeAreaNode = memo(WorktreeAreaNodeInner);
 // P91: 묶음(가상 그룹) 테두리. 구성 영역 둘레의 바깥 띠(점선 없는 옅은 선과 아주 옅은 바탕)와 위 왼쪽 이름표(대문자, 자간, 저절로 만든 묶음이면 ⌂ 표시).
 //   이름표를 끌면 구성 영역이 함께 움직인다(group.shift). 줌 아웃하면 이름표는 화면 기준 크기로 커지되 테두리 위 띠(GROUP_HEAD + GROUP_PAD)를 넘지 않는다.
 //   가볍게: filter·그림자·끝없는 움직임 없음
+// 화면에서 12px. 멀리서는 커지되 영역 사이 틈의 반(테두리 위 빈 곳)을 넘지 않게. 작을 때는 테두리 위 띠 안, 커지면 대부분 테두리 위로
+const groupHead = (zoom) => {
+  const fs = Math.max(12, Math.min((GROUP_HEAD + GROUP_PAD + REGION_GAP / 2) / 2.2, 12 / Math.max(zoom, 0.02)));
+  const headH = fs * 2;
+  return { fontSize: fs, height: headH, top: Math.min(Math.max(4, GROUP_HEAD / 2 - fs), -headH * 0.85 + GROUP_HEAD) };
+};
 function GroupFrameNodeInner({ data }) {
   const t = useT();
-  const zoom = useFlowStore(zoomSel);
+  const headRef = useZoomStyle(groupHead); // P112: 이름표 크기는 렌더 없이
   const groups = useStore((st) => st.groups);
   const wss = useStore((st) => st.workspaces);
   const g = (groups || []).find((x) => x.id === data.groupId);
-  // 화면에서 12px. 멀리서는 커지되 영역 사이 틈의 반(테두리 위 빈 곳)을 넘지 않게. 작을 때는 테두리 위 띠 안, 커지면 대부분 테두리 위로
-  const fs = Math.max(12, Math.min((GROUP_HEAD + GROUP_PAD + REGION_GAP / 2) / 2.2, 12 / Math.max(zoom, 0.02)));
-  const headH = fs * 2;
-  const headTop = Math.min(Math.max(4, GROUP_HEAD / 2 - fs), -headH * 0.85 + GROUP_HEAD);
   const title = g && g.auto ? t('groupFrame.autoTitle', { root: autoRootPath(g, wss) || '' }) : t('groupFrame.title');
   return (
     <div className={`mt-wsgroup${data.auto ? ' auto' : ''}`} data-group={data.groupId} data-auto={data.auto ? '1' : undefined}>
       <div className="mt-wsgroup-box" />
-      <div className="mt-wsgroup-head mt-gdrag" style={{ fontSize: fs, height: headH, top: headTop }} title={title}>
+      <div className="mt-wsgroup-head mt-gdrag" ref={headRef} title={title}>
         {data.auto && <span className="mt-wsgroup-auto" aria-hidden="true">⌂</span>}
         <b className="mt-wsgroup-name">{g ? g.name : data.name}</b>
         <span className="mt-wsgroup-meta">{t('groupFrame.count', { n: (data.keys || []).length })}</span>

@@ -37,6 +37,7 @@ import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 판의 이름 �
 import { addressOf, renamed } from './lib/session-name.js';
 import { killWorktreeParam } from './lib/worktree-exit.js'; // P71: 닫기 확인의 워크트리 선택
 import { tierOf, runsRing, ringDiag } from './lib/overview.js'; // P85: 멀리 보기 강조 등급과 도는 둘레
+import { useInvRef } from './zoom-var.js'; // P112: --inv를 렌더 없이
 
 const zoomSel = (s) => s.transform[2];
 const NO_BOARD_TERMS = !boardPlan().terms; // P86: 보드 단계 1부터 터미널 대신 대화 보기(얼굴)
@@ -143,8 +144,9 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
 const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 // 멀리 얼굴(H3): 이름, 상태, 기다리는 질문(가장 크게), 마지막 사용자 요청 한 줄, 마지막 답 한 줄. 글자 크기는 화면 기준(px / 배율)이고 노드 높이에 맞춰 줄인다.
 // P10: 노드 너비에도 맞춰 줄인다(한 줄에 열몇 자는 들어가게). 이름 줄은 한 줄로 자르고, 좁으면(화면 180px 아래) 표시는 상태 필만 남긴다. 줄은 넘치면 자른다(styles.css)
-function FarFace({ s, zoom, w, h }) {
+function FarFace({ s, w, h }) {
   const t = useT();
+  const zoom = useFlowStore(zoomSel); // P112: 글자 크기가 배율을 따르므로 이 얼굴만 배율을 구독한다(노드 전체는 다시 그리지 않는다)
   const px = (n, frac, wfrac) => Math.min(n / Math.max(zoom, 0.02), h * frac, w * wfrac);
   const waiting = s.state === 'waiting' || s.state === 'trust_wait';
   const narrow = w * zoom < 180;
@@ -239,8 +241,9 @@ function NodeMenu({ s, docked, onClose }) {
 
 // P21(D4): 잠든 노드의 요약 얼굴(가까이·중간·멀리 모두). 흐리게, 달, 이름, 마지막 요청과 답 앞부분, 잠든 시각, 아낀 메모리, 깨우기.
 // 멀리 얼굴이면 글자 크기를 FarFace처럼 화면 기준으로 둔다. 크기와 자리는 그대로라 깨면 같은 자리에서 터미널이 된다
-function SleepFace({ s, zoom, w, h, far, close }) { // 깨우기 단추는 가까이 얼굴에서만(작은 얼굴은 노드를 누르면 깨운다)
+function SleepFace({ s, w, h, far, close }) { // 깨우기 단추는 가까이 얼굴에서만(작은 얼굴은 노드를 누르면 깨운다)
   const t = useT();
+  const zoom = useFlowStore(zoomSel); // P112: FarFace와 같이 이 얼굴만 배율을 구독한다
   const z = s.sleep || {};
   const px = (n, frac, wfrac) => Math.min(n / Math.max(zoom, 0.02), h * frac, w * wfrac);
   const wake = (e) => { e.stopPropagation(); const st = getState(); if (st.navigateTo) st.navigateTo(s.sessionId, { focusTerminal: true }); else wakeSession(s.sessionId); };
@@ -270,10 +273,11 @@ const ringObserver = () => {
   ringIO = new IntersectionObserver((es) => { for (const e of es) e.target.dataset.off = e.isIntersecting ? '' : '1'; }, { rootMargin: '64px' });
   return ringIO;
 };
-function RunRing({ w, h, zoom }) {
+const ringStep = (st) => 1.25 ** Math.floor(Math.log(Math.max(st.transform[2], 0.02)) / Math.log(1.25)); // 줌마다 판 크기가 바뀌어 다시 그리지 않게 계단으로(작은 쪽으로 잡아 늘 덮는다)
+function RunRing({ w, h }) {
   const ref = useRef(null);
   useEffect(() => { const io = ringObserver(); const el = ref.current; if (!io || !el) return undefined; io.observe(el); return () => io.unobserve(el); }, []);
-  const zq = 1.25 ** Math.floor(Math.log(Math.max(zoom, 0.02)) / Math.log(1.25)); // 줌마다 판 크기가 바뀌어 다시 그리지 않게 계단으로(작은 쪽으로 잡아 늘 덮는다)
+  const zq = useFlowStore(ringStep); // P112: 계단이 바뀔 때만 다시 그린다
   return <span ref={ref} className="mt-node-run" aria-hidden="true" data-role="run-ring"><i style={{ '--diag': `${ringDiag(w, h, zq)}px` }} /></span>;
 }
 
@@ -418,7 +422,6 @@ function SessionNodeInner({ id, selected }) {
   const s = useStore((st) => st.sessions.get(id));
   const attached = useStore((st) => st.attached && st.attached.includes(id));
   const focusTick = useStore((st) => (st.focusId === id ? st.focusTick : 0));
-  const zoom = useFlowStore(zoomSel);
   const n = useStore((st) => st.nodes.get(id));
   const [killing, setKilling] = useState(false);
   const killAsk = useStore((st) => (st.killAsk && st.killAsk.id === id ? st.killAsk.at : 0));
@@ -437,18 +440,24 @@ function SessionNodeInner({ id, selected }) {
   const dockLinked = useStore((st) => { const d = dockOf(id); if (!d) return false; for (const l of st.links.values()) if (d.members.includes(l.from) && d.members.includes(l.to)) return true; return false; });
   const prevFace = useRef(null);
   const boom = useStore((st) => st.debugThrow === id);
+  // P112: 배율은 단계 값(얼굴, 작은 배율, 말풍선 조건)으로만 구독한다. 배율이 바뀌어도 단계가 그대로면 이 노드는 다시 그리지 않는다.
+  //   얼굴의 이력(faces.js)은 마지막으로 그린 얼굴(prevFace)로 본다(예전에 프레임마다 그리며 본 값과 같다). --inv는 useInvRef가 요소에 바로 쓴다
+  const nw = n ? n.w : 0, nh = n ? n.h : 0;
+  const face = useFlowStore((st) => faceFor(nw, st.transform[2], attached ? 'close' : prevFace.current)); // 경계에서 흔들리지 않게(faces.js 이력)
+  const zSmall = useFlowStore((st) => st.transform[2] < SMALL_ZOOM);
+  const shortNode = useFlowStore((st) => nh * st.transform[2] < 160);
+  const invRef = useInvRef(0.02, id); // 화면 밖이면 움직이는 동안 미룬다(zoom-var.js)
   if (boom) throw new Error(t('node.debugThrow', { name: s ? s.name : id })); // 오류 경계 시험(setDebugThrow)
   if (!s || !n) return null;
-  const face = faceFor(n.w, zoom, attached ? 'close' : prevFace.current); // 경계에서 흔들리지 않게(faces.js 이력)
   prevFace.current = face;
   const far = face === 'far' || face === 'icon';
-  xVisible.current = face !== 'icon' && zoom >= SMALL_ZOOM; // 머리줄의 X가 보이는 조건(styles.css .z-small)
+  xVisible.current = face !== 'icon' && !zSmall; // 머리줄의 X가 보이는 조건(styles.css .z-small)
   const idle = (s.state === 'ready' || s.state === 'shell_idle') && !s.unseen && s.lastActivityAt && Date.now() - s.lastActivityAt > IDLE_DIM_MS;
   const asleep = s.state === 'sleeping'; // P21: 터미널 대신 잠든 얼굴(아이콘 얼굴은 달 표시)
   const tier = tierOf(s); // P85
 
   return (
-    <div data-tier={tier} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zoom < SMALL_ZOOM ? ' z-small' : ''}`} style={{ '--inv': 1 / Math.max(zoom, 0.02) }} data-session={id} data-name={s.name} data-face={face} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
+    <div data-tier={tier} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zSmall ? ' z-small' : ''}`} ref={invRef} data-session={id} data-name={s.name} data-face={face} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
       <NodeResizer isVisible={selected && face === 'close' && !docked} minWidth={420} minHeight={260} lineClassName="mt-resize-line" handleClassName="mt-resize-handle"
         onResize={(_e, p) => setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height })}
         onResizeEnd={(_e, p) => { setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height }); saveNode(id, 'resize'); }} />
@@ -458,19 +467,19 @@ function SessionNodeInner({ id, selected }) {
       ))}
       {/* P23: 덩어리 안에서는 가장자리 손잡이 대신 가운데 점으로 잇는다(분할선과 겹치지 않게, 잇기 모드에서만 끈다) */}
       {docked && <Handle type="source" position={Position.Top} id="c" className="mt-handle h-c nodrag" title={t('dock.dotTitle')} />}
-      {runsRing(tier, face) && <RunRing w={n.w} h={n.h} zoom={zoom} />}
+      {runsRing(tier, face) && <RunRing w={n.w} h={n.h} />}
       {face !== 'icon' && <Header s={s} onKill={() => setKilling(true)} onMenu={() => setMenu((m) => !m)} onLoops={() => setLoopsOpen((o) => !o)} />}
       {face === 'icon' && <IconRename s={s} />}
       {!far && <GitLine s={s} />}
-      {far && (s.state === 'waiting' || s.state === 'trust_wait') && (face === 'icon' || n.h * zoom < 160) && <AskCallout s={s} />}
+      {far && (s.state === 'waiting' || s.state === 'trust_wait') && (face === 'icon' || shortNode) && <AskCallout s={s} />}
       {/* P31: 가까이(터미널)가 아닌 얼굴은 본문 어디를 끌어도 머리줄처럼 노드를 옮긴다(mt-drag, Canvas.jsx onNodeDragStart). 누르기만 하면 들어간다(H4).
           단추·입력·링크는 nodrag. 대화 보기의 스크롤 막대를 누른 것은 끌기로 넘기지 않는다 */}
       <div className={`mt-node-body${face !== 'close' ? ' mt-drag' : ''}`} onMouseDownCapture={face === 'middle' ? onScrollbarDown : undefined}>
         <NodeBoundary id={id} label={face === 'close' ? 'terminal' : face} compact>
-          {asleep && face !== 'icon' && <SleepFace s={s} zoom={zoom} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} />}
+          {asleep && face !== 'icon' && <SleepFace s={s} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} />}
           {!asleep && face === 'close' && (attached ? <TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /> : NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />)}
           {!asleep && face === 'middle' && <ChatView s={s} />}
-          {!asleep && face === 'far' && <FarFace s={s} zoom={zoom} w={n.w} h={n.h} />}
+          {!asleep && face === 'far' && <FarFace s={s} w={n.w} h={n.h} />}
           {face === 'icon' && <IconFace s={s} />}
         </NodeBoundary>
         {!far && <div className="mt-node-overlays">
@@ -487,9 +496,9 @@ function SessionNodeInner({ id, selected }) {
 // P66: 아이콘 얼굴에는 머리줄이 없다. F2로 이름을 바꿀 때만 노드 위에 입력칸을 띄운다(글자는 화면 기준 크기)
 function IconRename({ s }) {
   const editing = useRenaming(s.sessionId, 'node');
-  const zoom = useFlowStore(zoomSel);
+  const invRef = useInvRef(0.05); // P112: 이름을 고치지 않는 동안은 배율로 다시 그리지 않는다
   if (!editing) return null;
-  return <div className="mt-icon-rename nodrag" style={{ '--inv': 1 / Math.max(zoom, 0.05) }}><RenameInput s={s} where="node" /></div>;
+  return <div className="mt-icon-rename nodrag" ref={invRef}><RenameInput s={s} where="node" /></div>;
 }
 
 export const SessionNode = memo(SessionNodeInner);

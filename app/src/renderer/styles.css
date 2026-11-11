@@ -1700,3 +1700,7 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-mm-lspin { position: absolute; inset: 0; transform: scaleX(1.86); }
 .mt-mm-lspin::before { content: ""; position: absolute; left: 50%; top: 50%; width: 150px; height: 150px; margin: -75px 0 0 -75px; background: var(--mm-cone); animation: mt-mm-lturn 2.4s steps(72, end) infinite; }
 @keyframes mt-mm-lturn { to { transform: rotate(1turn); } }
+
+/* P112: 터미널 칸(.mt-term-wrap) 안에는 --inv를 쓰는 규칙이 없다. 여기서 값을 고정해 두면 판 배율이 바뀌어 노드의 --inv가 바뀔 때
+   xterm 하위 요소의 스타일을 다시 세지 않는다(브라우저는 상속 값이 그대로인 요소 아래로 내려가지 않는다) */
+.mt-term-wrap { --inv: 1; }
