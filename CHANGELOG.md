@@ -147,3 +147,4 @@ Atrium을 단계별로 만든 기록이다. 단계마다 맡긴 지시와 보고
 - dev 빌드(2026-11-11): v0.1.6-dev.1(P111·P112)
 - P113(2026-11-11): 창을 닫아 트레이에 둘 때 페이지를 내리고 메모리 압박 신호를 보내 GPU 프로세스가 쥔 메모리를 돌려줌(닫힌 동안 GPU private 중앙값 204 → 111MB), 다시 여는 시간은 그대로
 - dev 빌드(2026-11-11): v0.1.6-dev.2(P113)
+- P115(2026-11-11): 판과 세션의 소통·모델 연결을 하네스 공통으로. Codex·opencode·pi 세션도 PATH의 `atrium`, 판의 env(토큰은 데이터 폴더 파일), 안내문을 받아 `atrium me`·`atrium child`를 씀(`atrium help`, 기계용 계약 `atrium help --json`). 이어 가기·herdr 재시작 뒤·다시 열기도 같은 env·안내문·연결로 돌아옴(herdr가 스스로 띄운 Codex 이어 가기는 판의 줄로 바꿈). 설정에 모델 연결 목록(Anthropic Messages, OpenAI Responses·Chat Completions, 인증은 환경 변수 이름만)을 두고 런처가 골라 씀(하네스가 쓰는 프로토콜만, 시작 전 확인, `atrium models`에 연결 모델). 실행 명령을 모든 에이전트 하네스로. 특정 게이트웨이 전용 코드·설정·이름을 없애고 옛 런처·환경 변수는 연결로 옮김

@@ -1704,3 +1704,19 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 /* P112: 터미널 칸(.mt-term-wrap) 안에는 --inv를 쓰는 규칙이 없다. 여기서 값을 고정해 두면 판 배율이 바뀌어 노드의 --inv가 바뀔 때
    xterm 하위 요소의 스타일을 다시 세지 않는다(브라우저는 상속 값이 그대로인 요소 아래로 내려가지 않는다) */
 .mt-term-wrap { --inv: 1; }
+
+/* P115: 설정의 연결 탭(호출자 탭과 같은 틀). 줄: 이름, 프로토콜, 주소·인증 변수, 쓰는 런처, 단추. 확인 결과는 줄 아래 */
+.mt-cn { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; }
+.mt-cn .mt-set-note { margin: 0; }
+.mt-cn-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(90px, 150px) minmax(0, 1fr) minmax(0, 160px) auto; align-items: center; gap: 8px; min-height: 34px; padding: 0 6px; border-radius: 8px; }
+.mt-cn-row:hover { background: var(--panel-2); }
+.mt-cn-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-cn-proto { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-cn-url, .mt-cn-used { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-cn-url { color: var(--text-2); }
+.mt-cn-rowcheck { grid-column: 1 / -1; padding: 0 0 4px; }
+.mt-cn-check { font-size: 12px; }
+.mt-cn-check .ok { color: var(--ok, var(--text-2)); }
+.mt-cn-check .bad, .mt-set-hint.bad { color: var(--warn); }
+.mt-cn-form { height: 100%; display: grid; grid-template-rows: auto auto 1fr; gap: 8px; align-content: start; }
+.mt-ln-f > [data-role="launcher-connection-hint"] { grid-column: 1 / -1; }

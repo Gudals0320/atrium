@@ -22,7 +22,7 @@ import { ago, askLine, STATE_LABEL } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { archiveRows, SECTION_STEP, bindingText } from './lib/sidebar.js';
 import { buildRows, offsetsOf, windowOf, scrollFor, moveCursor, parentOf, dropTarget, adjustIndex, freshGroupName, clampWidth, SIDE_W, BUCKETS, bucketOf, kindOf, TREE, headBadges } from './lib/sidebar-tree.js'; // P44. P103: TREE, headBadges
-import { shownKind } from './lib/kinds.js'; // P25: DeepSeek(flavor)를 종류처럼 보인다
+import { shownKind } from './lib/kinds.js'; // P25: 띄운 방법(flavor, 런처 아이콘)을 종류처럼 보인다
 import { branchLabel } from './lib/branch.js'; // P8(K4): 하위 세션은 부모 아래에 들여 보인다
 import { Icon } from './lib/icons.jsx';
 import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 세션 줄 메뉴의 이름 바꾸기
