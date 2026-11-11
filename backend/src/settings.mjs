@@ -37,6 +37,8 @@ export const SETTINGS = {
   // P107: 작업 중 테두리 빛. 보드의 작업 중 세션 노드 둘레와 미션 맵 카드 테두리를 따라 도는 빛. Windows "애니메이션 효과"가 꺼진 PC는 창이 늘 움직임 줄이기라
   // 운영체제 설정만 따르면 보이지 않아 기본은 켬. 창·휴대폰이 문서 뿌리 data-work-light로 받아 CSS가 정한다(app lib/work-light.js). 끔이면 멈춘 상태 색 테두리
   workLight: { type: 'choice', default: 'on', options: WORK_LIGHT, label: '보드의 작업 중 세션 노드와 미션 맵 카드의 테두리를 따라 빛을 돌립니다 (on: 항상, system: 운영체제의 동작 줄이기 설정을 따름, off: 멈춘 테두리만 표시).' },
+  // P114: 터미널 백엔드(herdr | hc). 숨은 설정이라 설정 화면(describe)에 보이지 않는다. ATRIUM_TERMINAL_BACKEND가 이긴다. 다음에 백엔드가 뜰 때 적용(terminal-backend.mjs)
+  terminalBackend: { type: 'choice', default: 'herdr', options: ['herdr', 'hc'], hidden: true, label: '터미널 백엔드 (herdr: 지금의 herdr 서버, hc: herdr-core). 백엔드를 다시 시작하면 적용됩니다.' },
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));
 
@@ -76,7 +78,7 @@ export class Settings {
   constructor({ store, broadcast }) { this.store = store; this.broadcast = broadcast; }
   // 정의에 있는 키만 보인다(옛 키 claude* 등은 판 기록에만 남는다)
   get() { const raw = this.store.getMeta('settings') || {}; return Object.fromEntries(Object.keys(SETTINGS).map((k) => [k, k in raw ? raw[k] : DEFAULTS[k]])); }
-  describe() { return Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, { type: v.type, default: v.default, label: v.label, ...(v.type === 'number' ? { min: v.min, max: v.max } : {}), ...(v.type === 'choice' ? { options: v.options } : {}), ...(v.type === 'string' ? { max: v.max } : {}) }])); }
+  describe() { return Object.fromEntries(Object.entries(SETTINGS).filter(([, v]) => !v.hidden).map(([k, v]) => [k, { type: v.type, default: v.default, label: v.label, ...(v.type === 'number' ? { min: v.min, max: v.max } : {}), ...(v.type === 'choice' ? { options: v.options } : {}), ...(v.type === 'string' ? { max: v.max } : {}) }])); }
   // settings.set { tray: true } 또는 { key: 'tray', value: true }
   set(p) {
     const patch = normalizePatch(p && p.key ? { [p.key]: p.value } : p);

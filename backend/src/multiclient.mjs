@@ -68,14 +68,15 @@ export function shareJoin(st, { key, clientId = null, name = null, cols, rows, n
   const prev = st.subs.find((s) => s.key === key);
   const sub = { key, clientId, name, cols, rows, joinedAt: prev ? prev.joinedAt : now, activeAt: prev ? prev.activeAt : 0, needFull: true };
   const subs = [...st.subs.filter((s) => s.key !== key), sub];
-  return { subs, owner: st.owner && subs.some((s) => s.key === st.owner) ? st.owner : key };
+  return { subs, owner: st.owner && subs.some((s) => s.key === st.owner) ? st.owner : key, ...keepExternal(st) };
 }
 export function shareLeave(st, key) {
   const subs = st.subs.filter((s) => s.key !== key);
-  if (st.owner !== key) return { subs, owner: st.owner };
+  if (st.owner !== key) return { subs, owner: st.owner, ...keepExternal(st) };
   const b = bestRemaining(subs);
-  return { subs, owner: b ? b.key : null };
+  return { subs, owner: b ? b.key : null, ...keepExternal(st) };
 }
+const keepExternal = (st) => (st.external ? { external: st.external } : {}); // P114(hc): 들어오고 나가도 판 밖 크기 주인은 그대로
 // 입력이나 초점: 그 클라이언트가 크기를 가져간다
 export function shareActive(st, key, now) {
   if (!st.subs.some((s) => s.key === key)) return st;
@@ -97,6 +98,17 @@ export function shareFrame(st, full) {
 // full 프레임을 기다리는 클라이언트가 있는가(있으면 같은 크기 resize로 full을 받는다. P47 실험: 같은 크기 resize는 바로 full 프레임을 준다)
 export const shareNeedsFull = (st) => st.subs.some((s) => s.needFull);
 export function shareOwnerView(st) {
+  if (st.external) return { clientId: EXTERNAL_OWNER, name: null, cols: st.external.cols, rows: st.external.rows }; // P114
   const o = st.subs.find((s) => s.key === st.owner);
   return o ? { clientId: o.clientId, name: o.name, cols: o.cols, rows: o.rows } : null;
+}
+
+// P114(hc): 판 밖의 활성 보는 이(`hc attach` 등)가 터미널 크기를 가져갔다. hc는 마지막 활성 보는 이가 크기를 정한다.
+// 판 클라이언트는 모두 크기 주인이 아닌 쪽처럼 그 크기를 비율로 그린다. 판 클라이언트가 치거나 초점을 주면 hc가 판 스트림의 크기로 되돌리고(size 이벤트) external이 풀린다.
+// herdr에는 이 이벤트가 없어 늘 null이다
+export const EXTERNAL_OWNER = 'external';
+export function shareExternal(st, size) {
+  const ext = size && size.cols && size.rows ? { cols: size.cols, rows: size.rows } : null;
+  if (!ext && !st.external) return st;
+  return { ...st, external: ext };
 }
