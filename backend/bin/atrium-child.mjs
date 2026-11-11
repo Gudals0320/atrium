@@ -9,13 +9,15 @@
 //       atrium child-kill <이름> [--only] [--json]
 //       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째, P111: 혼자 잠든 세션은 그 세션만)
 import http from 'node:http';
+import fs from 'node:fs';
 import path from 'node:path';
 import { envVar } from '../src/config.mjs';
+import { shortHelp, contractJson, VERB_NAMES } from '../src/cli-contract.mjs'; // P115: 계약(atrium help --json)
 
 const HELP = `atrium(보드가 띄운 세션의 하위 세션 명령. 옛 이름 mtask도 같다)
   atrium child [이름] [--prompt "첫 요청"] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 런처] [--effort 노력] [--kind 종류] [--no-wait]
       하위 세션(워커)을 만든다. 너의 폴더·모델·추론 수준·승인 방식·그룹을 물려받고(준 값이 덮는다), 너와 역할 선(기본 "워커")으로 이어진다.
-      --model은 말로 한 이름도 받는다("deepseek flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
+      --model은 말로 한 이름도 받는다("glm flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
       --launcher는 그 런처(도구 모음의 단추)의 하네스·모델·옵션·환경 변수 그대로 띄운다.
       --kind codex(다른 종류)는 보드 레일의 그 종류 런처 설정(추가 인자·모델, --model이 모델만 덮는다)으로 띄우고, 너의 승인 방식을 그 종류의 승인 인자로 옮긴다.
       준비될 때까지 기다린 뒤 herdr 이름과 패널, 일 시키기·응답 읽기 명령을 돌려준다. 수와 깊이에 상한은 없다.
@@ -29,7 +31,7 @@ const HELP = `atrium(보드가 띄운 세션의 하위 세션 명령. 옛 이름
   atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. 잠든 세션은 herdr에 없으므로 herdr 명령이 그 이름을 못 찾으면 이것을 먼저 한다
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다.`;
 
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head']);
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long']);
 const argv = process.argv.slice(2);
 const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -39,6 +41,13 @@ for (let i = 0; i < argv.length; i++) {
 }
 const [cmd, ...rest] = pos;
 const E = (name) => envVar(name);
+// P115: 세션 토큰. Claude Code는 세션 설정 파일의 env, 다른 하네스는 판 데이터 폴더의 sessions/<세션 ID>.token(친 줄에 토큰을 싣지 않는다)
+function sessionToken() {
+  if (E('SESSION_TOKEN')) return E('SESSION_TOKEN');
+  if (!E('DATA_DIR') || !E('SESSION_ID')) return null;
+  try { return fs.readFileSync(path.join(E('DATA_DIR'), 'sessions', `${E('SESSION_ID')}.token`), 'utf8').trim() || null; } catch { return null; }
+}
+let TOKEN = null;
 const say = (s) => process.stdout.write(s + '\n');
 const fail = (msg, code = 1) => { process.stderr.write(`atrium: ${msg}\n`); process.exit(code); };
 
@@ -46,7 +55,7 @@ function call(op, body, timeoutMs) {
   return new Promise((resolve, reject) => {
     const data = Buffer.from(JSON.stringify(body));
     const req = http.request({ host: '127.0.0.1', port: Number(E('PORT')), path: `/branch/${op}`, method: 'POST', timeout: timeoutMs,
-      headers: { 'content-type': 'application/json', 'content-length': data.length, authorization: `Bearer ${E('SESSION_TOKEN')}`, 'x-mt-session': E('SESSION_ID'), 'x-mt-pane': process.env.HERDR_PANE_ID || '' } }, (res) => {
+      headers: { 'content-type': 'application/json', 'content-length': data.length, authorization: `Bearer ${TOKEN}`, 'x-mt-session': E('SESSION_ID'), 'x-mt-pane': process.env.HERDR_PANE_ID || '' } }, (res) => {
       let b = ''; res.setEncoding('utf8'); res.on('data', (d) => (b += d));
       res.on('end', () => { try { resolve(JSON.parse(b)); } catch { reject(new Error(`보드의 응답을 읽지 못했습니다 (HTTP ${res.statusCode})`)); } });
     });
@@ -66,13 +75,15 @@ function trustLines(x) {
 }
 
 async function main() {
-  if (!cmd || cmd === 'help' || flags.help) return say(HELP);
-  if (!['me', 'child', 'children', 'child-kill', 'child-wait', 'wake', 'models'].includes(cmd)) fail(`알 수 없는 명령입니다: ${cmd}. 이 atrium은 me, child, children, child-kill, child-wait, wake, models만 한다(다른 보드 명령은 사람의 atrium으로)`, 2);
-  if (!E('PORT') || !E('SESSION_ID') || !E('SESSION_TOKEN')) fail('보드에서 시작한 세션이 아닙니다 (세션 설정 파일의 환경 변수 없음). 보드에서 시작한 세션 안에서 호출하세요.');
+  // P115: help는 모델이 읽는 짧은 사용법, --json은 기계용 계약, --long은 예전의 긴 설명. 보드에 묻지 않는다
+  if (!cmd || cmd === 'help' || flags.help) return flags.json ? say(JSON.stringify(contractJson(), null, 2)) : say(flags.long ? HELP : shortHelp());
+  if (!VERB_NAMES.includes(cmd)) fail(`알 수 없는 명령입니다: ${cmd}. 이 atrium은 ${VERB_NAMES.join(', ')}만 한다(다른 보드 명령은 사람의 atrium으로). 사용법: atrium help`, 2);
+  TOKEN = sessionToken();
+  if (!E('PORT') || !E('SESSION_ID') || !TOKEN) fail('보드에서 시작한 세션이 아닙니다 (보드가 준 환경 변수나 세션 토큰 파일 없음). 보드에서 시작한 세션 안에서 호출하세요.');
   let r;
   if (cmd === 'child') {
-    // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model deepseek flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
-    if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "deepseek flash"`, 2);
+    // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
+    if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);
     const body = { name: rest[0] || null, prompt: flags.prompt ?? null, role: flags.role ?? null, cwd: flags.cwd ? path.resolve(flags.cwd) : null, worktree: flags.worktree || null, model: flags.model || null, launcher: flags.launcher || null, effort: flags.effort || null, kind: flags.kind || null, wait: !flags['no-wait'], ...(flags.head ? { head: true } : {}) };
     r = await call('child', body, 110000);
   } else if (cmd === 'me') r = await call('me', {}, 20000);
@@ -200,13 +211,14 @@ function printModels(x) {
     ${e.command}`);
   for (const g of x.gateways) {
     say('');
-    if (!g.ok) { say(`게이트웨이 ${g.url}${g.host ? `(런처 ${g.host})` : ''}: 닿지 않는다(${g.why}). 그 모델은 지금 띄우지 못한다`); continue; }
-    const list = x.entries.filter((e) => e.source === 'gateway' && e.gateway === g.url);
-    say(`게이트웨이 ${g.url}${g.host ? `(런처 ${g.host}의 env로 띄운다)` : ''}의 모델 ${list.length}개:`);
+    const label = `연결 ${g.connection || g.url}(${g.url}${g.protocol ? `, ${g.protocol}` : ''})`; // P115: 연결마다
+    if (!g.ok) { say(`${label}${g.host ? `, 런처 ${g.host}` : ''}: 닿지 않는다(${g.why}). 그 모델은 지금 띄우지 못한다`); continue; }
+    const list = x.entries.filter((e) => e.source === 'gateway' && e.gateway === g.url && (e.connection || null) === (g.connection || null));
+    say(`${label}의 모델 ${list.length}개${g.host ? `(런처 ${g.host}로 띄운다)` : ''}:`);
     for (const e of list) say(`  ${e.label || e.model}
     ${e.command}`);
   }
   say('');
-  say('사용자가 모델을 말로 하면(예: "deepseek flash") --model에 그 말을 그대로 줘도 보드가 이 목록에서 푼다. 여럿이 맞으면 보드가 후보를 돌려준다.');
+  say('사용자가 모델을 말로 하면(예: "glm flash") --model에 그 말을 그대로 줘도 보드가 이 목록에서 푼다. 여럿이 맞으면 보드가 후보를 돌려준다.');
 }
 main().catch((e) => fail(e.message));

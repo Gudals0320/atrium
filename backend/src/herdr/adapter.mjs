@@ -13,7 +13,7 @@ import { EventEmitter } from 'node:events';
 import { spawn, execFile } from 'node:child_process';
 import { HERDR_PROTOCOLS, HERDR_TESTED } from '../config.mjs';
 import { discoverHerdr, parseWhere, herdrCompat, herdrServerExe, withPathFirst } from './discover.mjs';
-import { psLine } from '../launch.mjs'; // P97: 실행 명령 줄
+import { psLine, psEnvPrefix, psPathPrefix } from '../launch.mjs'; // P97: 실행 명령 줄. P115: 친 줄 앞의 env와 PATH
 import { spawnDetached } from './detach.mjs'; // P114 e: job·프로세스 나무 밖에서 서버 띄우기
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -347,16 +347,18 @@ export class HerdrAdapter extends EventEmitter {
   async waitShellReady(paneId, timeoutMs = 15000) {
     try { await this.call('pane.wait_for_output', { pane_id: paneId, source: 'visible', match: { type: 'regex', value: 'PS [^\\n]*>' }, timeout_ms: timeoutMs }, timeoutMs + 2000); return true; } catch (e) { return false; }
   }
-  // command: P97 실행 명령의 낱말들(예: ['ocx', 'claude']). herdr agent.start는 그 종류의 정해진 실행 파일만 띄우므로, 있으면 셸 프롬프트에 `<명령> <인자>`를 치고
-  // herdr가 그 패널에서 에이전트를 알아보기를 기다린 뒤 이름을 붙인다(ocx → node → claude.exe도 claude로 알아본다, P97 실험)
-  async startAgent({ name, paneId, args, kind = 'claude', command = null, timeoutMs = 60000 }) {
-    if (command && command.length) return this.typeAgent({ name, paneId, args, kind, command, timeoutMs });
+  // command: P97 실행 명령의 낱말들(예: ['mywrap', 'claude']). herdr agent.start는 그 종류의 정해진 실행 파일만 띄우므로, 있으면 셸 프롬프트에 `<명령> <인자>`를 치고
+  // herdr가 그 패널에서 에이전트를 알아보기를 기다린 뒤 이름을 붙인다(래퍼 → node → claude.exe도 claude로 알아본다, P97 실험)
+  // P115: env·pathFirst를 주면(Claude Code 밖 하네스의 판 env와 PATH의 atrium) 친 줄 앞에 $env:…와 $env:PATH를 붙여 친다(herdr에는 패널마다 env를 줄 길이 없다)
+  async startAgent({ name, paneId, args, kind = 'claude', command = null, env = null, pathFirst = null, timeoutMs = 60000 }) {
+    const prefixed = (env && Object.keys(env).length) || (pathFirst && pathFirst.length);
+    if ((command && command.length) || prefixed) return this.typeAgent({ name, paneId, args, kind, command: command && command.length ? command : [kind], env, pathFirst, timeoutMs });
     const r = await this.call('agent.start', { name, kind, pane_id: paneId, args, timeout_ms: 60000 }, 70000);
     return { agent: agentInfo(r.agent), argv: r.argv };
   }
-  async typeAgent({ name, paneId, args, kind, command, timeoutMs = 60000, pollMs = 500 }) {
+  async typeAgent({ name, paneId, args, kind, command, env = null, pathFirst = null, timeoutMs = 60000, pollMs = 500 }) {
     const argv = [...command, ...args];
-    await this.call('pane.send_text', { pane_id: paneId, text: psLine(argv) });
+    await this.call('pane.send_text', { pane_id: paneId, text: psEnvPrefix(env) + psPathPrefix(pathFirst || []) + psLine(argv) });
     await sleep(150);
     await this.call('pane.send_keys', { pane_id: paneId, keys: ['enter'] });
     const t0 = Date.now();

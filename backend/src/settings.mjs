@@ -1,7 +1,7 @@
 // 판 설정(P6b, ARCH 4절 I7): 판 기록(meta 표의 `settings`)에 둔다. P16: 화면 언어(language, 기본 영어). 창과 Electron main이 settings.get으로 읽고 settings.updated 이벤트로 따라간다.
 // 트레이 상주(tray, P14부터 기본 켜짐), P10의 보관 기간(archiveDays)과 리포 스스로 찾기(autoOpenRepos). 창 쪽 설정 화면은 P6c가 만들었다.
 // P36: P8의 가지 펼치기 상한 셋(branchMaxChildren, branchMaxDepth, branchMaxTotal)을 없앴다. 판 기록에 남은 옛 값은 아래 옛 키처럼 읽지도 보이지도 않는다.
-// P33: 옛 새 세션 기본값(claude*, codexArgs, deepseek*)은 호출자(launchers.mjs)로 옮겼다. 옛 키는 판 기록에 남지만(옛 코드로 돌아갈 때) 읽지도 보이지도 않는다.
+// P33: 옛 새 세션 기본값(claude*, codexArgs 등, launcher-migrate.mjs LEGACY_KEYS)은 호출자(launchers.mjs)로 옮겼다. 옛 키는 판 기록에 남지만(옛 코드로 돌아갈 때) 읽지도 보이지도 않는다.
 
 export const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max']; // claude --effort. 빈 값이면 넘기지 않는다
 export const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];

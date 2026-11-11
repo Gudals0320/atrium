@@ -1,6 +1,7 @@
 // P33 단위 시험: 호출자(launchers.mjs). 하네스별 풀기와 명령 미리보기, 옛 설정 옮기기와 새 판 기본값(두 번 돌려도 같음),
 // 검사(이름 겹침, 잘못된 모델 글자, 줄바꿈 든 명령, 환경 변수 이름, 판이 정하는 인자), 즐겨찾기·순서, session.spawn { launcher }(가짜 herdr)
 import test from 'node:test';
+import { migrateLaunchers } from '../src/launcher-migrate.mjs'; // P115
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -29,12 +30,14 @@ test('P33 풀기: claude는 모델·노력 수준·권한 모드·herdr 자동 �
 });
 
 test('P33 풀기: codex는 -m 모델과 추가 인자, 다른 종류는 추가 인자만, 셸, 직접 명령(환경 변수는 PowerShell 앞머리)', () => {
+  // P115: 모델과 추가 인자를 따로 준다(하네스 어댑터가 -m·--model·설정의 model로 바꾼다)
   const cx = resolveLauncher(L({ harness: 'codex', model: 'gpt-6-astra', args: '-c model_reasoning_effort=low' }));
-  assert.equal(cx.kind, 'codex'); assert.deepEqual(cx.args, ['-m', 'gpt-6-astra', '-c', 'model_reasoning_effort=low']);
-  assert.deepEqual(resolveLauncher(L({ harness: 'codex', model: 'gpt-6-astra' }), { model: 'o9' }).args, ['-m', 'o9']);
-  const pi = L({ harness: 'pi', model: 'ignored', args: '--x 1' });
-  assert.equal(pi.model, '', '다른 종류는 모델 칸이 없다');
-  assert.deepEqual(resolveLauncher(pi), { kind: 'pi', flavor: null, launcher: 'x', launcherId: null, args: ['--x', '1'], command: '' });
+  assert.equal(cx.kind, 'codex'); assert.equal(cx.model, 'gpt-6-astra'); assert.deepEqual(cx.args, ['-c', 'model_reasoning_effort=low']);
+  assert.equal(resolveLauncher(L({ harness: 'codex', model: 'gpt-6-astra' }), { model: 'o9' }).model, 'o9');
+  const gk = L({ harness: 'grok', model: 'ignored', args: '--x 1' });
+  assert.equal(gk.model, '', '표에 없는 종류는 모델 칸이 없다');
+  assert.deepEqual(resolveLauncher(gk), { kind: 'grok', flavor: null, launcher: 'x', launcherId: null, model: null, args: ['--x', '1'], command: '', startCommand: '', connectionId: null, gateway: null });
+  assert.equal(L({ harness: 'pi', model: 'p/m' }).model, 'p/m', 'P115: pi는 모델 칸이 있다');
   assert.deepEqual(resolveLauncher(L({ harness: 'shell' })), { kind: 'shell', flavor: null, launcher: 'x', launcherId: null, command: '' });
   const cmd = resolveLauncher(L({ harness: 'command', command: 'echo hi', env: { A: "it's" }, icon: 'grok' }));
   assert.equal(cmd.kind, 'shell'); assert.equal(cmd.command, "$env:A='it''s'; echo hi"); assert.equal(cmd.flavor, 'grok');
@@ -69,7 +72,12 @@ test('P33 검사: 이름(빈 값, 겹침은 대소문자 무시), 모델 글자,
   assert.throws(() => L({ harness: 'claude', env: { A: 'a\nb' } }), (e) => e.key === 'launchers.err.envValue');
   assert.throws(() => L({ harness: 'claude', args: '--settings x.json' }), (e) => e.key === 'launchers.err.argsReserved');
   assert.throws(() => L({ harness: 'claude', args: '--model=opus' }), (e) => e.key === 'launchers.err.argsReserved');
-  assert.throws(() => L({ harness: 'claude', checkUrl: 'file:///x' }), (e) => e.key === 'launchers.err.checkUrl');
+  // P115: 확인 주소는 연결의 health 주소로 옮겼다. 연결 참조는 있는 연결이어야 하고 그 하네스의 프로토콜이어야 한다
+  const conns = [{ id: 'ca', protocol: 'anthropic-messages' }, { id: 'co', protocol: 'openai-responses' }];
+  assert.throws(() => normalizeLauncher({ name: 'c', harness: 'claude', connection: 'nope' }, { connections: conns }), (e) => e.key === 'launchers.err.connectionMissing');
+  assert.throws(() => normalizeLauncher({ name: 'c', harness: 'codex', connection: 'ca' }, { connections: conns }), (e) => e.key === 'launchers.err.connectionProtocol');
+  assert.equal(normalizeLauncher({ name: 'c', harness: 'claude', connection: 'ca' }, { connections: conns }).connection, 'ca');
+  assert.equal('checkUrl' in normalizeLauncher({ name: 'c', harness: 'claude', checkUrl: 'http://x' }), false);
   assert.throws(() => L({ harness: 'claude', icon: 'Bad Icon' }), (e) => e.key === 'launchers.err.icon');
   assert.throws(() => L({ harness: 'Bad Kind' }), (e) => e.key === 'launchers.err.harness');
   // 하네스가 받지 않는 칸은 비운다(codex는 환경 변수 없음, 셸은 모두 없음)
@@ -93,8 +101,10 @@ test('P33 옮기기: 옛 설정 → 호출자, 레일 네 단추 순서로 즐�
   // 옛 직접 명령이 있으면 DeepSeek는 명령 호출자
   const c = initialLaunchers({ oldSettings: { deepseekCommand: 'ocx claude' }, oldBoard: true }).items.find((l) => l.id === 'deepseek');
   assert.deepEqual([c.harness, c.command, c.icon], ['command', 'ocx claude', 'deepseek']);
-  // 모든 기본 호출자는 검사를 지난다
-  for (const l of v.items) assert.deepEqual(normalizeLauncher(l, { others: v.items }), l, l.id);
+  // P115: 옮긴 목록(v2)의 호출자는 검사를 지난다(DeepSeek는 연결을 쓰는 보통 claude 런처)
+  const m = migrateLaunchers(v);
+  for (const l of m.list.items) assert.deepEqual(normalizeLauncher(l, { others: m.list.items, connections: m.connections }), l, l.id);
+  assert.equal(m.list.items.find((l) => l.id === 'deepseek').connection, m.connections[0].id);
   assert.deepEqual(LEGACY_KEYS.sort(), Object.keys(old).sort());
 });
 
@@ -115,7 +125,8 @@ test('P33 옮기기: 판 기록에서 한 번만. 옛 설정이 있으면 옛 �
     const store = new Store(path.join(dir, 'board.db'));
     store.setMeta('settings', { tray: true, claudeModel: 'sonnet' });
     const a = new Launchers({ store });
-    assert.deepEqual(a.migrated, { oldBoard: true, favorites: ['claude', 'codex', 'deepseek', 'shell'] });
+    assert.deepEqual([a.migrated.oldBoard, a.migrated.favorites], [true, ['claude', 'codex', 'deepseek', 'shell']]);
+    assert.ok(store.getMeta('launchers'), 'P115: 옛 키(launchers)도 남는다(옛 코드가 쓴다)');
     const first = store.getMeta(META_KEY);
     assert.equal(first.items.find((l) => l.id === 'claude').model, 'sonnet');
     const b = new Launchers({ store });
@@ -133,7 +144,8 @@ test('P33 옮기기: 판 기록에서 한 번만. 옛 설정이 있으면 옛 �
     assert.equal(new Launchers({ store: s2 }).migrated.oldBoard, true);
     s2.close();
     const s3 = new Store(path.join(dir, 'b3.db'));
-    assert.deepEqual(new Launchers({ store: s3 }).migrated, { oldBoard: false, favorites: ['claude', 'codex', 'shell'] });
+    const m3 = new Launchers({ store: s3 }).migrated;
+    assert.deepEqual([m3.oldBoard, m3.favorites], [false, ['claude', 'codex', 'shell']]);
     s3.close();
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -260,6 +272,6 @@ test('P33 spawn { launcher }: codex 호출자는 -m 모델과 인자를 herdr에
   b.features.launchers.update({ id: 'codex', patch: { model: 'gpt-6-astra', args: '--full-auto' } });
   const r = await b.spawn({ cwd, launcher: 'Codex' });
   assert.equal(r.kind, 'codex');
-  assert.deepEqual(calls.find((c) => c[0] === 'startAgent')[1].args, ['-m', 'gpt-6-astra', '--full-auto']);
+  assert.deepEqual(calls.find((c) => c[0] === 'startAgent')[1].args, ['-c', 'check_for_update_on_startup=false', '-m', 'gpt-6-astra', '--full-auto']); // P115: 업데이트 확인 끄기
   b.store.close();
 });

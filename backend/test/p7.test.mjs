@@ -196,6 +196,8 @@ function fakeBackend({ convoRoots, sessionsDir = tmp(), desktop = null, workspac
     setPane: async (s, paneId, wid) => { s.paneId = paneId; s.herdrWorkspaceId = wid; store.updateSession(s.sessionId, { paneId, herdrWorkspaceId: wid }); },
     demoteToShell: (s) => { s.kind = 'shell'; calls.push(['demote', s.name]); },
     closeSession: (s, reason) => { store.updateSession(s.sessionId, { closedAt: Date.now(), runtime: s.rt, closeReason: reason }); b.sessions.delete(s.sessionId); calls.push(['close', s.name, reason]); },
+    // P115: 하네스 세션(codex 등)은 백엔드가 판의 줄(env·안내문·세션 ID)로 띄운다. 여기서는 무엇으로 불렀는지만 남긴다
+    startHarness: async (s, o) => { calls.push(['startHarness', s.name, { ...o }, { ...s.harnessPlan }]); return { agent: { name: s.agentName, launchPending: true }, argv: [s.kind], resumed: !!o.resume }; },
   };
   return b;
 }
@@ -321,7 +323,10 @@ test('J2: 대화 기록이 없는 claude는 같은 --session-id로 새로, 셸�
   assert.equal(sh.name, 'sh1-2'); assert.equal(sh.place, 'slot'); // s2가 그 자리에 다시 떴다
   assert.equal(b.sessions.get(ID(4)).agentName, sh.paneId);
   const cx = await r.reopen({ session: ID(5) });
-  assert.deepEqual(b.calls.filter((c) => c[0] === 'startAgent').pop()[1], { name: 'cx', paneId: cx.paneId, args: ['-m', 'o4'], kind: 'codex' });
+  // P115: 하네스 세션은 판의 줄로 이어 간다. P115 전 행은 띄운 인자를 호출자 추가 인자로 본다
+  const hs = b.calls.filter((c) => c[0] === 'startHarness').pop();
+  assert.equal(hs[1], 'cx'); assert.equal(hs[2].resume, true); assert.deepEqual(hs[3].args, ['-m', 'o4']);
+  assert.equal(cx.resumed, true);
 });
 
 test('J2·J4: 판에 올린 claude는 그 대화 ID의 판 세션으로 다시 연다(옛 행은 옮겨 갔다고 남김). 묶여 있으면 열지 않는다', async () => {

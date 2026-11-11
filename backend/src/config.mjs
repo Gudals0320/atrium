@@ -4,7 +4,6 @@
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_HEALTH_URL as DEEPSEEK_HEALTH_URL } from './deepseek.mjs';
 import { codexHomeOf } from './codex-models.mjs'; // P72
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -60,9 +59,8 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     herdrTested: E('HERDR_TESTED') ? listOf(E('HERDR_TESTED'), false) : HERDR_TESTED,
     herdrUpdateMs: Number(E('HERDR_UPDATE_MS') || 30 * 60 * 1000), // P40: 새 herdr가 설치됐는지 보는 간격
     claudeCommand: 'claude',
-    ocxHealthUrl: E('OCX_HEALTH') || DEEPSEEK_HEALTH_URL, // P25: DeepSeek 세션 전에 opencodex 프록시가 도는지 보는 주소(`ocx status`의 Health)
-    ocxBaseUrl: E('OCX_BASE_URL') || null, // P25: DeepSeek 세션의 ANTHROPIC_BASE_URL. 비우면 health 주소의 origin(deepseek.mjs baseUrlOf)
-    ocxConfigured: !!(E('OCX_HEALTH') || E('OCX_BASE_URL')), // P72: opencodex 주소를 직접 줬는가. 아니면 DeepSeek 호출자가 없는 판(새 판)의 atrium models는 opencodex를 묻지 않는다
+    // P115: 옛 게이트웨이 환경 변수(ATRIUM_*_HEALTH·_BASE_URL). 이번 릴리스 동안 읽어 연결로 옮기고 경고한다(launcher-migrate.mjs). 다음 릴리스에서 없앤다
+    legacyGateway: { healthUrl: E('OCX_HEALTH') || null, baseUrl: E('OCX_BASE_URL') || null },
     codexHome: codexHomeOf(env), // P72: Codex 모델 목록 캐시(models_cache.json)를 읽을 폴더. CODEX_HOME(Codex와 같은 변수), 없으면 ~/.codex
     claudeJson: E('CLAUDE_JSON') || path.join(os.homedir(), '.claude.json'),
     claudeProjects: path.join(os.homedir(), '.claude', 'projects'),

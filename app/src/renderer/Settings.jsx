@@ -11,6 +11,7 @@ import { useStore, toast, setTermScale, setUiScale } from './store.js';
 import { pctOf, parsePct, stepScale, SCALE_MIN, SCALE_MAX, SCALE_STEP } from './lib/scale.js'; // P45
 import { useT, errText, setLanguage, getLanguage, LANGUAGES } from './lib/i18n.js';
 import { LaunchersTab } from './Launchers.jsx'; // P33: 호출자 탭
+import { ConnectionsTab } from './Connections.jsx'; // P115: 연결 탭
 import { DevicesTab } from './WebDevices.jsx'; // P48: 연결된 기기(웹 화면)
 import { useDialog } from './dialog.js'; // P52
 import { UpdateSettings } from './Update.jsx'; // P69: 업데이트 묶음
@@ -213,7 +214,8 @@ function SleepSetting({ settings, schema }) {
 // 탭: 있는 설정만(옛 백엔드면 빠진다)
 const TABS = [
   { key: 'general', has: () => true },
-  { key: 'launchers', has: (s, l) => !!l, label: 'launchers.tab' }, // P33: 옛 "새 세션" 두 탭(Claude Code, Codex·DeepSeek)을 대신한다
+  { key: 'launchers', has: (s, l) => !!l, label: 'launchers.tab' }, // P33: 옛 "새 세션" 두 탭을 대신한다
+  { key: 'connections', has: (s, l) => !!(l && l.connections), label: 'connections.tab' }, // P115: 모델 연결(연결을 아는 백엔드만)
   { key: 'sleep', has: (s) => s && s.sleepAfterMin != null },
   { key: 'recall', has: (s) => s && s.archiveDays != null },
   { key: 'devices', has: () => true, label: 'webDevices.tab' }, // P48
@@ -240,6 +242,7 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
           {!settings && <div className="dim">{t('settings.loading')}</div>}
           {cur === 'general' && <GeneralTab settings={settings} />}
           {cur === 'launchers' && <LaunchersTab startNew={newLauncher} />}
+          {cur === 'connections' && <ConnectionsTab />}
           {settings && cur === 'sleep' && <SleepSetting settings={settings} schema={schema} />}
           {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}
           {cur === 'devices' && <DevicesTab />}

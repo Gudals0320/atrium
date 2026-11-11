@@ -14,9 +14,10 @@ export const HERDR_ALLOW = ['Bash(herdr:*)', 'Bash(herdr *)', 'PowerShell(herdr 
 
 // B3 1번: http hook(시간 제한 2초), hook 토큰, 세션 표시를 값으로 직접 쓴다. 작업 공간 env는 herdr 재시작 뒤 되살아나지 않는다(E7).
 // P8(K1·K2): env(하위 세션 명령이 판과 자기를 찾는 값)와 allow(하위 세션 명령, herdr 일 시키기·답 읽기 승인 규칙)를 더 받는다. 값은 branch.mjs가 만든다
-export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, allowHerdr = false, env = null, allow = [] }) {
+// P115: settings는 설정 파일에 더할 값(연결의 apiKeyHelper 등). 판의 hook·env·승인 규칙이 이긴다
+export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, allowHerdr = false, env = null, allow = [], settings: more = null }) {
   const hook = { type: 'http', url: hookUrl, timeout: timeoutSec, headers: { Authorization: `Bearer ${token}`, 'X-MT-Session': sessionId } };
-  const settings = { hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [hook] }]])) };
+  const settings = { ...(more || {}), hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [hook] }]])) };
   const rules = [...(allowHerdr ? HERDR_ALLOW : []), ...allow.filter((r) => !(allowHerdr && HERDR_ALLOW.includes(r)))];
   if (rules.length) settings.permissions = { allow: rules };
   if (env && Object.keys(env).length) settings.env = env;
@@ -65,10 +66,23 @@ export function writeBoardPlugin({ dir, skillText, skills = {}, bin = {} }) {
   fs.writeFileSync(promptFile, BOARD_SYSTEM_PROMPT + '\n');
   return { pluginDir: slash(root), systemPromptFile: slash(promptFile) };
 }
+// P115: Claude Code 밖 하네스에 주는 파일. binDir에 플러그인 bin/과 같은 명령(atrium, mtask)을 두고(그 세션의 PATH 앞에 둔다),
+// dir에 하네스와 상관없는 안내문 파일(harness-system-prompt.md)을 쓴다 → { binDir, promptFile }
+export function writeHarnessFiles({ dir, binDir, bin = {}, prompt }) {
+  fs.mkdirSync(binDir, { recursive: true });
+  for (const [name, text] of Object.entries(bin)) { const f = path.join(binDir, name); fs.writeFileSync(f, text); try { fs.chmodSync(f, 0o755); } catch {} }
+  fs.mkdirSync(dir, { recursive: true });
+  const promptFile = path.join(dir, 'harness-system-prompt.md');
+  fs.writeFileSync(promptFile, prompt + '\n');
+  return { binDir: path.resolve(binDir), promptFile: slash(promptFile) };
+}
+// P115: 세션 토큰 파일(Claude Code 밖 하네스의 atrium이 읽는다). 친 줄과 셸 기록에 토큰이 남지 않게 env 대신 판 데이터 폴더의 세션별 파일에 둔다
+export const tokenFileOf = (sessionsDir, sessionId) => path.join(sessionsDir, `${sessionId}.token`);
+export function writeTokenFile(sessionsDir, sessionId, token) { fs.mkdirSync(sessionsDir, { recursive: true }); const f = tokenFileOf(sessionsDir, sessionId); fs.writeFileSync(f, token); return f; }
 // P8(K1): worktree면 Claude Code가 자기 규칙으로 워크트리를 만든다(claude -w <이름>). 판은 워크트리를 만들지 않는다. 처음 띄울 때만 넣는다
 export function buildStartArgs({ sessionId, worktree = null, ...o }) { return ['--session-id', sessionId, ...(worktree ? ['--worktree', worktree] : []), ...commonArgs(o)]; }
 // B3 4번: 첫 요소는 명령 이름, 경로는 슬래시(E7 2.3)
-// P97: startCommand(호출자의 실행 명령, 예: `ocx claude`)가 있으면 그 낱말들로 시작한다. herdr는 다시 켤 때 이 명령을 패널 셸에서 그대로 돌린다(P97 실험)
+// P97: startCommand(호출자의 실행 명령, 예: 래퍼 명령 `mywrap claude`)가 있으면 그 낱말들로 시작한다. herdr는 다시 켤 때 이 명령을 패널 셸에서 그대로 돌린다(P97 실험)
 export function buildResumeArgv({ claudeCommand = 'claude', startCommand = '', sessionId, ...o }) {
   const head = String(startCommand || '').trim().split(/\s+/).filter(Boolean);
   return [...(head.length ? head : [claudeCommand]), '--resume', sessionId, ...commonArgs(o)];
@@ -77,6 +91,9 @@ export function buildResumeArgv({ claudeCommand = 'claude', startCommand = '', s
 const PS_SAFE = /^[A-Za-z0-9_\-.:/\\=]+$/;
 export const psQuote = (w) => (PS_SAFE.test(String(w)) ? String(w) : `'${String(w).replace(/'/g, "''")}'`);
 export const psLine = (words) => words.map(psQuote).join(' ');
+// PowerShell: 친 줄 앞에 env를 붙인다($env:이름='값'; 작은따옴표는 두 번). P115: PATH는 바꾸지 않고 앞에 더한다
+export const psEnvPrefix = (env) => Object.entries(env || {}).map(([k, v]) => `$env:${k}='${String(v).replace(/'/g, "''")}'; `).join('');
+export const psPathPrefix = (dirs = []) => (dirs.length ? `$env:PATH='${dirs.map((d) => String(d).replace(/'/g, "''")).join(';')};' + $env:PATH; ` : '');
 // C3 대책(P3): 판이 직접 이어 갈 때 agent.start에 넘기는 인자(명령 이름 없이)
 export function buildResumeArgs({ sessionId, ...o }) { return ['--resume', sessionId, ...commonArgs(o)]; }
 

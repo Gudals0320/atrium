@@ -30,7 +30,6 @@ import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
 import { harnessOf, splitArgs, startOpt } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { buildCatalog, resolveModel, gatewaysOf, fetchGatewayModels, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
-import { baseUrlOf, proxyEnv } from './deepseek.mjs'; // P41
 import { takenNames, shownName } from './session-label.mjs'; // P66
 import { workspaceNames } from './workspaces.mjs';
 import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy, detachedParentLine, detachedChildLine, childClosedLine } from './link-notice.mjs'; // P81
@@ -38,7 +37,7 @@ import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy, detachedParentLine, detachedC
 export const DEFAULT_ROLE = '워커';
 export const CHILD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/; // herdr 에이전트 이름 규칙과 같다(herdr --skill)
 export const WORKTREE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-export { isModelName } from './model-name.mjs'; // P96: 슬래시 든 이름(deepseek/deepseek-flash)도 받는다. 검사는 model-name.mjs 한 곳
+export { isModelName } from './model-name.mjs'; // P96: 슬래시 든 이름(zai/glm-flash)도 받는다. 검사는 model-name.mjs 한 곳
 export const CHILD_SIZE = 'wide-normal'; // P73: 새로 띄운 하위 세션도 16:9 가로 보통(1440×810. 전에는 정리처럼 작게 480×300). 사람이 크기를 바꾸면 그대로 둔다
 const READY_WAIT_MS = 75000; // atrium child가 하위 세션이 준비되기를 기다리는 시간. Claude Code Bash 도구의 기본 시간 제한(2분) 안쪽
 const SUBMIT_WAIT_MS = 20000; // --prompt를 준 경우 첫 지시가 들어가 일을 시작하기까지 더 기다리는 시간
@@ -56,9 +55,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // P18: 새 이름 atrium과 옛 이름 mtask(P18 전에 띄운 세션의 스킬 글이 말한다)를 함께 넣는다
 // Claude Code는 $변수, $(…) 같은 셸 확장이 든 명령은 규칙과 상관없이 묻는다(P4). 스킬은 그런 모양을 쓰지 말라고 한다
 export const BRANCH_ALLOW = [
-  ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`]), // P21: wake, P36: child-wait, P41: models, P81: me
+  ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`]), // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
   'Bash(herdr agent prompt:*)', 'Bash(herdr agent prompt *)', 'Bash(herdr agent wait:*)', 'Bash(herdr agent wait *)', 'Bash(herdr agent read:*)', 'Bash(herdr agent read *)',
-  ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`]),
+  ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`]),
   'PowerShell(herdr agent prompt *)', 'PowerShell(herdr agent wait *)', 'PowerShell(herdr agent read *)',
 ];
 
@@ -111,19 +110,22 @@ export function withoutModelArgs(args = []) {
   return out;
 }
 // 다른 종류 하위 세션의 띄울 값. route: routeOf의 값, lists: 호출자 목록 { items, favorites }
+// P115: route.type 'inherit-harness'(다른 종류 부모가 종류를 주지 않고 부름)는 부모의 하네스 값(호출자, 모델, 추가 인자)을 그대로 물려받는다. 승인 인자는 옮기지 않는다(이미 그 인자에 있다)
 export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) {
   const kind = route.kind;
-  const l = route.type === 'launcher' ? route.launcher : defaultLauncherOf(kind, lists);
+  const inherit = route.type === 'inherit-harness';
+  // P115: 연결 모델(route.type gateway)은 그 연결을 쓰는 런처를 바탕으로 모델만 덮는다
+  const l = route.type === 'launcher' ? route.launcher : inherit || route.type === 'gateway' ? route.launcherDef : defaultLauncherOf(kind, lists);
   const h = l ? harnessOf(l.harness) : harnessOf(kind);
   const takesModel = !!h && h.fields.includes('model');
-  const override = route.type === 'model' && route.model ? route.model : null;
+  const override = (route.type === 'model' || route.type === 'gateway') && route.model ? route.model : null;
   const model = override || (l && takesModel ? l.model || null : null);
   const largs = override ? withoutModelArgs(splitArgs(l ? l.args : '')) : splitArgs(l ? l.args : '');
-  const approval = approvalArgsOf(kind, permissionMode, largs);
+  const approval = inherit ? { args: [], from: 'parent-harness' } : approvalArgsOf(kind, permissionMode, largs);
   const args = [...largs, ...approval.args];
   return {
     launcher: l, model, args, argv: [...(model ? ['-m', model] : []), ...args],
-    record: { base: route.type === 'launcher' ? 'launcher' : l ? 'rail' : 'bare', launcher: l ? l.name : null, model, modelFrom: override ? 'model' : model ? 'launcher' : null, approvalArgs: approval.args, approvalFrom: approval.from, parentPermissionMode: permissionMode },
+    record: { base: route.type === 'launcher' ? 'launcher' : inherit ? 'parent' : l ? 'rail' : 'bare', launcher: l ? l.name : null, model, modelFrom: override ? 'model' : model ? 'launcher' : null, approvalArgs: approval.args, approvalFrom: approval.from, parentPermissionMode: permissionMode },
   };
 }
 
@@ -212,7 +214,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
    - 코드를 고치는 조각은 \`--worktree <이름>\`을 붙인다. Claude Code가 \`claude -w\`로 \`.claude/worktrees/<이름>\`과 브랜치 \`worktree-<이름>\`을 만든다. 직접 \`git worktree add\`를 하거나 보드 외부 형제 폴더를 만들지 않는다.
    - 다른 폴더는 \`--cwd C:/Workspace/x\`(슬래시로). 역할 이름 \`--role 리뷰어\`(기본 워커).
    - 모델과 추론 수준은 조각에 맞게 고른다: 찾기·요약·단순 수정은 \`--model haiku\`나 \`--effort low\`, 설계·어려운 디버깅은 \`--effort high\`. 빼면 너의 것을 물려받는다.
-   - 사용자가 모델을 말로 하면("deepseek flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "deepseek flash"\`처럼 들은 말을 줘도 보드가 푼다. 정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다. 보드의 워커 대신 너의 내부 하위 에이전트로 우회하지 않는다.
+   - 사용자가 모델을 말로 하면("glm flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "glm flash"\`처럼 들은 말을 줘도 보드가 푼다. 정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다. 보드의 워커 대신 너의 내부 하위 에이전트로 우회하지 않는다.
 2. 지시 쓰는 법(\`--prompt\`나 \`herdr agent prompt\`의 글): 목표, 할 것, 손대지 말 것, 완료 기준, 끝났음을 알리는 법("끝나면 바꾼 파일과 결과를 다섯 줄로 답한다", 워크트리면 "자기 브랜치에 커밋하고 커밋 해시를 답한다"). 워커는 너의 대화를 모른다. 필요한 파일 경로와 사실을 글에 넣는다.
 3. 기다리기: \`herdr agent wait <이름> --timeout 600000\`. 처음부터 시키지 않았으면 \`herdr agent prompt <이름> "<지시>" --wait --timeout 600000\`.
    - 여럿에게 함께 시킬 때는 한 응답에 Bash 호출을 여러 개 낸다(워커마다 하나).
@@ -300,9 +302,10 @@ export class Branch {
 
   // ---------- 판을 찾아가기, 승인 규칙 ----------
   token(sessionId) { return crypto.createHmac('sha256', this.b.apiToken).update(`branch:${sessionId}`).digest('hex'); }
-  envFor(sessionId) {
+  // P115: token false면 토큰을 빼고 준다(패널에 치는 줄과 셸 기록에 남지 않게. atrium은 데이터 폴더 sessions/<ID>.token을 읽는다)
+  envFor(sessionId, { token = true } = {}) {
     const c = this.b.cfg;
-    return { ATRIUM_PROFILE: c.profile, ATRIUM_HERDR_SESSION: c.herdrSession, ATRIUM_PORT: String(c.port), ATRIUM_DATA_DIR: c.dataDir, ATRIUM_SESSION_ID: sessionId, ATRIUM_SESSION_TOKEN: this.token(sessionId) };
+    return { ATRIUM_PROFILE: c.profile, ATRIUM_HERDR_SESSION: c.herdrSession, ATRIUM_PORT: String(c.port), ATRIUM_DATA_DIR: c.dataDir, ATRIUM_SESSION_ID: sessionId, ...(token ? { ATRIUM_SESSION_TOKEN: this.token(sessionId) } : {}) };
   }
   // writeSessionSettings에 더할 값
   settingsExtra(sessionId) { return { env: this.envFor(sessionId), allow: BRANCH_ALLOW }; }
@@ -453,7 +456,8 @@ export class Branch {
     const want = this.token(sid);
     const ok = given.length === want.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want));
     if (!ok) { this.b.store.addEvent(sid, 'branch_rejected', { op, why: 'bad token' }); return { status: 401, error: { code: 'bad_token', message: "세션 토큰이 일치하지 않습니다." } }; }
-    if (!this.b.hooked(s)) return { status: 403, error: { code: 'not_board_session', message: "보드에서 시작한 Claude Code 세션에서만 하위 세션을 만들 수 있습니다." } };
+    // P115: hook 유무가 아니라 세션 토큰으로 본다(판이 띄운 에이전트 세션이면 종류와 상관없이). 셸은 에이전트가 아니다
+    if ((s.kind || 'claude') === 'shell') return { status: 403, error: { code: 'not_board_session', message: "보드에서 시작한 에이전트 세션에서만 호출할 수 있습니다." } };
     return { s };
   }
   dispatch(op, s, body, res) {
@@ -525,7 +529,7 @@ export class Branch {
       // P41: 호출자면 그 호출자의 하네스·모델·옵션·env를 그대로 쓴다(준 --effort만 덮는다). 게이트웨이 모델과 게이트웨이 물려받기는 그 게이트웨이 호출자의 env로, 권한 모드는 부모의 것
       const base = { cwd, name, worktree: gate ? null : worktree, parentSessionId: parent.sessionId, branch: info };
       // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
-      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: other.args.join(' ') }, permissionMode: parent.permissionMode } : { ...base, kind, args: other.argv, permissionMode: parent.permissionMode })
+      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: other.args.join(' ') }, permissionMode: parent.permissionMode } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
         : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined }
         : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode, allowHerdr }
         : { ...base, kind, model, effort, permissionMode: parent.permissionMode, allowHerdr, ...(route.args ? { args: route.args } : {}) };
@@ -579,22 +583,16 @@ export class Branch {
   launchersList() { return this.launchersData().items; }
   launchersData() { const L = this.b.features && this.b.features.launchers; return L ? L.data() : { items: [], favorites: [] }; } // P96: 레일 순서(즐겨찾기)도
   findLauncher(ref) { const L = this.b.features && this.b.features.launchers; return L ? L.find(ref) : null; }
-  // 판 설정의 opencodex 주소(호출자가 없어도 게이트웨이 모델을 볼 수 있게). 그 env는 DeepSeek 예시 호출자와 같다
-  // P72: opencodex는 개인 설정이라, 주소를 환경 변수(ATRIUM_OCX_HEALTH·ATRIUM_OCX_BASE_URL)로 줬거나 판에 DeepSeek 호출자가 있을 때(옛 판)만 본다. 새 판은 묻지 않는다
-  defaultGateway(launchers = this.launchersList()) {
-    const c = this.b.cfg;
-    if (!c.ocxHealthUrl && !c.ocxBaseUrl) return null;
-    if (c.ocxConfigured === false && !launchers.some((l) => l.id === 'deepseek' || l.icon === 'deepseek')) return null;
-    let url; try { url = baseUrlOf({ baseUrl: c.ocxBaseUrl || null, healthUrl: c.ocxHealthUrl || undefined }); } catch { return null; }
-    return { url, host: { id: null, name: 'opencodex', harness: 'claude', icon: '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: '', env: proxyEnv(url), command: '', checkUrl: c.ocxHealthUrl || '' } };
-  }
+  // P115: 연결 목록(connections.mjs). 런처가 참조하는 연결마다 모델 목록을 읽는다(판 설정의 가상 게이트웨이는 없앴다)
+  connectionsList() { const C = this.b.features && this.b.features.connections; return C ? C.items() : []; }
   async catalog() {
-    const launchers = this.launchersList();
-    const gws = gatewaysOf(launchers, [this.defaultGateway(launchers)]);
+    const d = this.launchersData();
+    const launchers = d.items;
+    const gws = gatewaysOf(launchers, this.connectionsList(), d.favorites || []);
     const probed = await Promise.all(gws.map(async (g) => {
-      const hit = this.gwCache.get(g.url);
-      const r = hit && Date.now() - hit.at < CATALOG_TTL_MS ? hit.r : await this.fetchModels(g.url);
-      if (r.ok) this.gwCache.set(g.url, { at: Date.now(), r }); else this.gwCache.delete(g.url);
+      const hit = this.gwCache.get(g.connection);
+      const r = hit && Date.now() - hit.at < CATALOG_TTL_MS && hit.url === g.url ? hit.r : await this.fetchModels(g.conn);
+      if (r.ok) this.gwCache.set(g.connection, { at: Date.now(), url: g.url, r }); else this.gwCache.delete(g.connection);
       return { ...g, ...r };
     }));
     const L = this.b.features && this.b.features.launchers;
@@ -605,18 +603,18 @@ export class Branch {
   // atrium models: 띄울 수 있는 것과 그 명령
   async listModels(parent) {
     const cat = await this.catalog();
-    const row = (e) => ({ source: e.source, harness: e.harness, kind: e.kind, launcher: e.launcher, model: e.model || null, label: e.label || null, aliases: e.aliases || [], gateway: e.gateway, host: e.host || null, variants: e.variants, text: describeEntry(e), command: e.command });
+    const row = (e) => ({ source: e.source, harness: e.harness, kind: e.kind, launcher: e.launcher, model: e.model || null, label: e.label || null, aliases: e.aliases || [], gateway: e.gateway, connection: e.connection || null, host: e.host || null, variants: e.variants, text: describeEntry(e), command: e.command });
     const inherit = await this.routeOf(parent, {}).catch(() => null);
     return { entries: cat.entries.map(row), gateways: cat.gateways, parent: { name: parent.name, model: parent.model || null, effort: parent.effort || null, gateway: inherit && inherit.gateway ? inherit.gateway : null } };
   }
   // 풀지 못한 이름의 오류(후보와 고르는 명령을 글에 넣는다)
   modelError(query, r, cat) {
     const down = cat.gateways.filter((g) => !g.ok);
-    const downLine = down.length ? `\n게이트웨이가 닿지 않아 그 모델 목록은 보지 못했다: ${down.map((g) => `${g.url}(${g.why})`).join(', ')}` : '';
+    const downLine = down.length ? `\n연결이 닿지 않아 그 모델 목록은 보지 못했다: ${down.map((g) => `${g.connection || g.url}(${g.url}, ${g.why})`).join(', ')}` : '';
     if (r.code === 'model_ambiguous') return apiError('model_ambiguous', `모델 "${query}"에 맞는 것이 여럿이다. 띄우지 않았다. 사용자에게 어느 것인지 묻거나 아래 명령 가운데 하나로 띄운다:\n${candidateLines(r.candidates)}`, { candidates: r.candidates.map((e) => ({ text: describeEntry(e), command: e.command })) });
     return apiError('model_unknown', `보드가 모르는 모델: "${query}". 띄우지 않았다.${r.candidates.length ? ` 가까운 것:\n${candidateLines(r.candidates)}` : ''}\n전체 목록: atrium models${downLine}`, { candidates: r.candidates.map((e) => ({ text: describeEntry(e), command: e.command })) });
   }
-  // 무엇으로 띄우는가. type: launcher(호출자 그대로) | model(하네스 모델) | gateway(게이트웨이 모델, 그 호출자의 env) | inherit-gateway(부모가 게이트웨이 세션) | plain
+  // 무엇으로 띄우는가. type: launcher(호출자 그대로) | model(하네스 모델) | gateway(연결 모델, 그 연결을 쓰는 호출자로) | inherit-gateway(부모가 연결을 쓰는 claude) | inherit-harness(P115) | plain
   async routeOf(parent, o) {
     if (o.launcher) {
       const l = this.findLauncher(o.launcher);
@@ -625,7 +623,8 @@ export class Branch {
       if (!h || h.id === 'shell' || h.id === 'command') throw apiError('bad_request', `하위 세션에는 에이전트를 실행하는 런처만 사용할 수 있습니다: ${l.name}(${h ? h.label : l.harness})`);
       if (o.kind && o.kind !== h.kind) throw apiError('bad_request', `런처 ${l.name}은 종류 ${h.kind}다(--kind ${o.kind}와 다르다)`);
       if (o.model) throw apiError('bad_request', "--launcher와 --model은 함께 지정할 수 없습니다. 다른 모델을 사용하려면 atrium models에서 해당 모델의 실행 명령을 확인하세요.");
-      const gw = h.id === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL ? l.env.ANTHROPIC_BASE_URL : null;
+      const c = l.connection ? this.connectionsList().find((x) => x.id === l.connection) : null;
+      const gw = c ? c.baseUrl : h.id === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL ? l.env.ANTHROPIC_BASE_URL : null;
       return { type: 'launcher', launcher: l, kind: h.kind, gateway: gw, resolved: null };
     }
     if (o.model) {
@@ -639,20 +638,35 @@ export class Branch {
         return { type: 'launcher', launcher: l, kind: e.kind, gateway: e.gateway, resolved };
       }
       if (e.source === 'harness') return { type: 'model', kind: e.kind, model: e.model, args: e.kind === 'claude' ? null : ['-m', e.model], gateway: null, resolved };
-      const hostG = cat.hosts.find((g) => g.url === e.gateway);
+      const hostG = cat.hosts.find((g) => g.url === e.gateway && (g.name || null) === (e.connection || null));
       const host = hostG && hostG.host ? hostG.host : null;
-      if (!host) throw apiError('gateway_down', `게이트웨이 ${e.gateway}의 런처를 찾을 수 없습니다.`);
-      return { type: 'gateway', kind: 'claude', model: e.model, launcherDef: { ...host, id: host.id || null, icon: e.provider === 'deepseek' ? 'deepseek' : '', model: e.model }, gateway: e.gateway, resolved };
+      if (!host) throw apiError('gateway_down', `연결 ${e.connection || e.gateway}을 쓰는 런처를 찾을 수 없습니다.`);
+      return { type: 'gateway', kind: e.kind, model: e.model, launcherDef: { ...host, id: host.id || null, icon: '', model: e.model }, gateway: e.gateway, resolved }; // 런처의 아이콘은 그 런처 모델의 것이라 옮기지 않는다
     }
-    // 물려받기: 부모가 게이트웨이를 거치는 세션이면(spawn 이벤트의 env) 하위 세션도 같은 env로 띄운다
+    // P115: 다른 종류 부모(codex 등)가 종류를 주지 않으면 같은 하네스와 그 호출자 값(모델, 추가 인자, 실행 명령)을 물려준다. 권한 모드는 옮기지 않는다
+    const pk = parent.kind || 'claude';
+    if (!o.kind && pk !== 'claude' && pk !== 'shell') {
+      const plan = parent.harnessPlan || {};
+      const found = plan.launcherId ? this.findLauncher(plan.launcherId) : null;
+      const def = found && harnessOf(found.harness) && harnessOf(found.harness).kind === pk ? found : { id: null, name: plan.launcher || pk, harness: pk, icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: '' };
+      return { type: 'inherit-harness', kind: pk, launcherDef: { ...def, model: plan.model || '', args: (plan.args || []).join(' '), startCommand: parent.startCommand || '', ...(plan.connectionId ? { connection: plan.connectionId } : {}) }, gateway: null, resolved: null };
+    }
+    // 물려받기: 부모가 연결을 쓰는 claude 세션이면(spawn 이벤트의 연결, P115 전은 env) 하위 세션도 같은 연결로 띄운다
     const kind = o.kind ? String(o.kind) : 'claude';
     if (kind === 'claude' && this.b.hooked(parent)) {
       const sp = this.b.store.spawnInfo(parent.sessionId) || {};
+      const pc = sp.connection ? this.connectionsList().find((x) => x.id === sp.connection) : null;
+      if (pc) {
+        const found = sp.launcher ? this.findLauncher(sp.launcher) : null;
+        const def = found && found.harness === 'claude' && found.connection === pc.id ? found
+          : { id: null, name: sp.launcher || pc.name, harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: (sp.extraArgs || []).join(' '), env: sp.launcherEnv || {}, command: '', connection: pc.id };
+        return { type: 'inherit-gateway', kind, launcherDef: { ...def, icon: parent.flavor || '', model: parent.model || def.model || '' }, gateway: pc.baseUrl, resolved: null };
+      }
       const url = sp.env && sp.env.ANTHROPIC_BASE_URL;
       if (url) {
         const found = sp.launcher ? this.findLauncher(sp.launcher) : null;
         const def = found && found.harness === 'claude' && found.env && found.env.ANTHROPIC_BASE_URL === url ? found
-          : { id: null, name: sp.launcher || 'gateway', harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: (sp.extraArgs || []).join(' '), env: sp.env, command: '', checkUrl: '' };
+          : { id: null, name: sp.launcher || 'gateway', harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: (sp.extraArgs || []).join(' '), env: sp.env, command: '' };
         return { type: 'inherit-gateway', kind, launcherDef: { ...def, icon: parent.flavor || '', model: parent.model || def.model || '' }, gateway: url, resolved: null };
       }
     }

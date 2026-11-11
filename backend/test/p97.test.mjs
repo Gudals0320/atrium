@@ -74,7 +74,8 @@ test('P97 붙여 넣기: 모르는 명령, claude 밖의 감싸개, claude 밖�
   const a = parse('aider --model "gpt x" --yes');
   assert.deepEqual([a.recognized.as, a.recognized.why, a.launcher.harness, a.launcher.command, a.recognized.board], ['command', 'unknown', 'command', "aider --model 'gpt x' --yes", false]);
   valid(a);
-  assert.equal(parse('ocx codex -m x').recognized.why, 'wrapperNotClaude');
+  const w = parse('wrap codex -m x'); // P115: 래퍼 명령(실행 명령)은 모든 에이전트 하네스가 받는다
+  assert.deepEqual([w.recognized.as, w.launcher.harness, w.launcher.startCommand, w.launcher.model], ['codex', 'codex', 'wrap codex', 'x']);
   const e = parse("$env:OPENAI_BASE_URL='http://x'; codex -m y");
   assert.deepEqual([e.recognized.why, e.launcher.command, e.launcher.env], ['envNotClaude', 'codex -m y', { OPENAI_BASE_URL: 'http://x' }]);
   assert.equal(previewLauncher(valid(e)).line, "$env:OPENAI_BASE_URL='http://x'; codex -m y");
@@ -94,7 +95,9 @@ test('P97 실행 명령 검사: 빈 칸·claude는 기본, 첫 낱말은 명령 
   const l = normalizeLauncher({ name: 'o', harness: 'claude', startCommand: 'ocx claude' });
   assert.equal(l.startCommand, 'ocx claude');
   assert.equal('startCommand' in normalizeLauncher({ name: 'c', harness: 'claude', startCommand: 'claude' }), false);
-  assert.equal('startCommand' in normalizeLauncher({ name: 'x', harness: 'codex', startCommand: 'ocx codex' }), false);
+  assert.equal(normalizeLauncher({ name: 'x', harness: 'codex', startCommand: 'wrap codex' }).startCommand, 'wrap codex', 'P115: 실행 명령은 모든 에이전트 하네스');
+  assert.equal('startCommand' in normalizeLauncher({ name: 'y', harness: 'codex', startCommand: 'codex' }), false, 'P115: 그 하네스의 기본 명령 하나면 비운다');
+  assert.throws(() => normalizeLauncher({ name: 'z', harness: 'codex', startCommand: 'wrap codex resume' }), (e) => e.key === 'launcherStart.reserved', 'P115: 하네스가 정하는 인자');
   assert.ok(HARNESSES.claude.fields.includes('startCommand'));
   assert.deepEqual(resolveLauncher(l).startCommand, 'ocx claude');
   assert.equal(resolveLauncher(normalizeLauncher({ name: 'c', harness: 'claude' })).startCommand, '');
