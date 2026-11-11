@@ -149,3 +149,4 @@ Atrium을 단계별로 만든 기록이다. 단계마다 맡긴 지시와 보고
 - dev 빌드(2026-11-11): v0.1.6-dev.2(P113)
 - P115(2026-11-11): 판과 세션의 소통·모델 연결을 하네스 공통으로. Codex·opencode·pi 세션도 PATH의 `atrium`, 판의 env(토큰은 데이터 폴더 파일), 안내문을 받아 `atrium me`·`atrium child`를 씀(`atrium help`, 기계용 계약 `atrium help --json`). 이어 가기·herdr 재시작 뒤·다시 열기도 같은 env·안내문·연결로 돌아옴(herdr가 스스로 띄운 Codex 이어 가기는 판의 줄로 바꿈). 설정에 모델 연결 목록(Anthropic Messages, OpenAI Responses·Chat Completions, 인증은 환경 변수 이름만)을 두고 런처가 골라 씀(하네스가 쓰는 프로토콜만, 시작 전 확인, `atrium models`에 연결 모델). 실행 명령을 모든 에이전트 하네스로. 특정 게이트웨이 전용 코드·설정·이름을 없애고 옛 런처·환경 변수는 연결로 옮김
 - P114(2026-11-11): herdr 서버를 판의 프로세스 트리·job 밖에서 띄워 작업 관리자에서 앱의 트리를 끝내도 세션이 삶, 터미널 백엔드 herdr-core(hc)를 숨은 설정으로 고를 수 있게(기본 herdr, 세션 시작·이어 가기 잇기는 남음)
+- dev 빌드(2026-11-11): v0.1.6-dev.3(P114 2a·P115)
