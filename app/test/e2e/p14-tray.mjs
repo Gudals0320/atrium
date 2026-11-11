@@ -51,7 +51,7 @@ try {
   await page.evaluate(() => window.__mt.api.call('settings.set', { key: 'language', value: 'ko' }));
   await until(async () => (await tray()).lang === 'ko', 5000).catch(() => {});
   const tk = await tray();
-  step('언어를 한국어로 바꾸면 트레이 메뉴와 툴팁이 한국어', tk.menu.some((m) => m.startsWith('백엔드 켜짐')) && tk.menu.includes('열기') && /내 차례/.test(tk.tooltip), { menu: tk.menu, tooltip: tk.tooltip });
+  step('언어를 한국어로 바꾸면 트레이 메뉴와 툴팁이 한국어', tk.menu.some((m) => m.startsWith('앱 연결 서비스 실행 중')) && tk.menu.includes('열기') && /내 차례/.test(tk.tooltip), { menu: tk.menu, tooltip: tk.tooltip });
 
   // 1. 백엔드 다시 띄우기: pid가 바뀌고 창이 다시 붙는다
   const pid1 = backendPid();
@@ -65,7 +65,7 @@ try {
   await run('backend-stop'); await sleep(300); await idle();
   await until(async () => !(await tray()).connected, 15000).catch(() => {});
   const t2 = await tray();
-  step('백엔드 끄기: 창이 닫히고 백엔드가 꺼지며 앱은 트레이에 남는다', (await windows()) === 0 && !(await healthy()) && !exited && t2.menu.some((m) => m.startsWith('백엔드 꺼짐')) && t2.menu.includes('백엔드 켜기'), { windows: await windows(), menu: t2.menu });
+  step('백엔드 끄기: 창이 닫히고 백엔드가 꺼지며 앱은 트레이에 남는다', (await windows()) === 0 && !(await healthy()) && !exited && t2.menu.some((m) => m.startsWith('앱 연결 서비스 중지됨')) && t2.menu.includes('앱 연결 서비스 시작'), { windows: await windows(), menu: t2.menu });
   await sleep(4000);
   step('창이 없으면 꺼진 백엔드를 다시 띄우지 않는다', !(await healthy()));
 
