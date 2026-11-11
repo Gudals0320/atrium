@@ -13,9 +13,12 @@ import { HcAdapter } from '../src/hc/adapter.mjs';
 import { FramedConn, FRAME } from '../src/hc/rpc.mjs';
 import { hcConfigFile } from '../src/hc/core.mjs';
 import { HC_PIN } from '../src/hc/pin.mjs';
+// 2b: 버전 올리기 시험용 옛 고정(0.1.19, releases.herdr.dev manifest의 SHA-256)
+const OLD_PIN = Object.freeze({ ...HC_PIN, version: '0.1.19', url: 'https://releases.herdr.dev/core/0.1.19/herdr-core-windows-x86_64.zip', sha256: '1cf7de14c862abc49b8eaeed32dc6a60d8146740edb2c244570d1a9f07cb813a' });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SESSION = process.env.ATRIUM_P114_LIVE_SESSION || 'atrium-dev-p114';
+// 개발용 판의 hc 세션(atrium-dev-p114)과 겹치지 않게 -live를 붙인다(이 시험은 끝에 코어를 끄고 상태를 지운다. 2b에서 개발용 판 세션을 지운 실수)
+const SESSION = process.env.ATRIUM_P114_LIVE_SESSION || 'atrium-dev-p114-live';
 if (/^(atrium|multitask|default)$/.test(SESSION)) throw new Error('live test must not use the real board session');
 const DATA = path.resolve(HERE, '..', '.dev', 'p114-live');
 const FAKE = path.join(HERE, 'fixtures', 'p114-fake-agent.cjs');
@@ -110,11 +113,12 @@ test('P114 실시험: 고정 hc 받기, 코어, 이벤트, 셸 env, 가짜 에�
     });
     await t.test('코어 재시작(server.restart): disconnected 없음, 프로그램 PID 그대로, 스트림은 다시 붙음', async () => {
       const pidBefore = (await a.call('terminal.get', { terminal: shell.paneId })).pid;
-      const corePid = a.serverPid();
+      const corePid = a._corePid, holder = a.serverPid(); // 2b: 판의 "서버 PID"는 holder(프로그램이 산 동안 같다)
       const attaches = ctl.stats.attaches;
       const r = await a.restartServer();
       assert.equal(r.restarted, true);
-      assert.notEqual(a.serverPid(), corePid);
+      assert.notEqual(a._corePid, corePid);
+      assert.equal(a.serverPid(), holder);
       await until(() => ctl.stats.attaches > attaches, 15000, 'reattach');
       assert.equal((await a.call('terminal.get', { terminal: shell.paneId })).pid, pidBefore);
       await sleep(1500);
@@ -138,5 +142,36 @@ test('P114 실시험: 고정 hc 받기, 코어, 이벤트, 셸 env, 가짜 에�
     const s = await a.stopServer().catch((e) => ({ error: e.message }));
     const d = await a.deleteSession().catch((e) => ({ error: e.message }));
     fs.writeFileSync(path.join(DATA, 'live-log.json'), JSON.stringify({ stop: s, delete: d, logs: logs.slice(-50), events: ev.slice(-30).map((e) => ({ type: e.type, paneId: e.paneId, status: e.status })) }, null, 1));
+  }
+});
+
+// 2b 3번: 판이 붙을 때 떠 있는 코어가 고정 버전과 다르면 올린다(hc update --from staging). 터미널은 산다
+test('P114 2b 실시험: 옛 고정(0.1.19)으로 띄운 코어를 새 고정(0.1.20) 어댑터가 붙으며 올린다', { timeout: 240000 }, async () => {
+  const S = `${SESSION}-up`;
+  const DATA_UP = path.join(DATA, 'upgrade');
+  fs.mkdirSync(CWD, { recursive: true });
+  const old = new HcAdapter({ session: S, dataDir: DATA_UP, logDir: DATA_UP, pin: OLD_PIN, tested: ['0.1.19'] });
+  const neu = new HcAdapter({ session: S, dataDir: DATA_UP, logDir: DATA_UP });
+  const logs = [];
+  neu.on('log', (m) => logs.push(m));
+  try {
+    assert.equal((await old.probe()).running, false, `session ${S} already has a core`);
+    await old.startServer();
+    assert.equal((await old.probe()).pong.version, '0.1.19');
+    const sh = await old.createWorkspace({ cwd: CWD });
+    const pid = (await old.call('terminal.get', { terminal: sh.paneId })).pid;
+    const upgraded = new Promise((r) => neu.once('upgraded', r));
+    neu.startEvents();
+    const u = await upgraded;
+    assert.equal(u.upgraded, true); assert.equal(u.to, '0.1.20');
+    await until(async () => { const p = await neu.probe(); return p.running && p.pong.version === '0.1.20'; }, 30000, 'core 0.1.20');
+    const t = await neu.call('terminal.get', { terminal: sh.paneId });
+    assert.equal(t.state, 'live'); assert.equal(t.pid, pid); // 터미널은 그대로
+    assert.equal(fs.readFileSync(path.join(DATA_UP, 'hc', 'bin', 'VERSION'), 'utf8').trim(), '0.1.20');
+  } finally {
+    neu.stopEvents();
+    await neu.stopServer().catch(() => {});
+    await neu.deleteSession().catch(() => {});
+    fs.writeFileSync(path.join(DATA_UP, 'upgrade-log.json'), JSON.stringify({ logs }, null, 1));
   }
 });

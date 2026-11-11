@@ -1,18 +1,24 @@
-// P114: herdr-core(hc) 어댑터. herdr/adapter.mjs(HerdrAdapter)와 같은 바깥 모양이라 판(backend.mjs, relay.mjs)이 어느 쪽이든 같은 메서드를 부른다.
+// P114: herdr-core(hc) 어댑터. herdr/adapter.mjs(HerdrAdapter)와 같은 바깥 모양이라 판(backend.mjs, relay.mjs, recall.mjs)이 어느 쪽이든 같은 메서드를 부른다.
 // 터미널 백엔드는 숨은 설정 terminalBackend 또는 ATRIUM_TERMINAL_BACKEND로 고른다(terminal-backend.mjs). 기본은 herdr다.
-// - 코어: 판 전용 세션(HC_SESSION = 판의 터미널 세션 이름), 고정 버전을 판 폴더에(pin.mjs), 띄우기·다시 띄우기·끄기는 core.mjs
+// - 코어: 판 전용 세션(HC_SESSION = 판의 터미널 세션 이름), 고정 버전을 판 폴더에(pin.mjs), 띄우기·다시 띄우기·끄기는 core.mjs. 떠 있는 코어가 고정 버전과 다르면 붙을 때 올린다(2b)
 // - 모델: 패널 = hc 터미널(주소), 작업 공간 = 라벨, 에이전트 = 7501 상태의 앱 이름(model.mjs). 이벤트는 herdr 어댑터의 normalizeEvent 모양으로 낸다
+// - 세션 시작(2b): 판은 herdr처럼 셸 패널을 만들고(createWorkspace) 그 패널에서 에이전트를 띄운다(startAgent). hc에서는 셸 자리를 "에이전트가 첫 argv인 터미널"로
+//   바꿔 띄우고 pane_moved로 알린다. env는 판의 env + PATH(pathFirst, 판의 hc 폴더, 레지스트리 PATH) + XDG_CONFIG_HOME 빈 값(terminal.run env)
+// - 에이전트 끝(2b): herdr에서는 에이전트가 끝나도 패널 셸이 남고 판은 그 패널에서 다시 띄웠다(이어 가기·되살리기·깨우기). 판이 띄운 에이전트 터미널이
+//   스스로 끝나면(exited) 같은 자리(작업 공간·폴더·라벨)에 셸 터미널을 띄우고 pane_moved로 알린다. 화면 스트림은 새 터미널로 옮겨 붙는다
 // - 화면: 프레임 모드 attach(stream.mjs). 판 클라이언트의 키 패드·글은 attach DATA로 바로 넣는다(terminal.keys는 사람 입력 뒤 3초를 기다린다)
 // - 끊김: 코어 재시작(server.restart, hc update)이나 강제 종료 뒤 holder가 코어를 다시 띄우는 동안 프로그램은 산다. 그래서 짧은 끊김(GRACE_MS)은
-//   disconnected로 알리지 않고 다시 구독해 그새 바뀐 것만 이벤트로 낸다(herdr의 disconnected는 "서버와 세션이 꺼짐"이라 판이 끊긴 턴으로 표시한다)
-// 아직 없는 것(2b 이후): 세션 시작·이어 가기 연결(registerResume은 기록만), 스킬·승인 규칙(skillText는 null), 옛 판 옮기기
+//   disconnected로 알리지 않고 다시 구독해 그새 바뀐 것만 이벤트로 낸다(herdr의 disconnected는 "서버와 세션이 꺼짐"이라 판이 끊긴 턴으로 표시한다).
+//   코어가 터미널을 끝내고 꺼졌으면(서버 끔·holder 잃음) 바로 disconnected를 내고, 다시 붙으면 판이 되살린다(J1)
+// - 아는 한계: 터미널 안에서 에이전트가 `hc run`으로 띄운 터미널은 코어 env를 받아 판의 hc 설정 폴더(XDG_CONFIG_HOME)가 샌다(판이 띄우는 터미널만 빈 값으로 덮는다).
+//   줄 단위 ANSI 기록이 없다(terminal.history는 색 없는 줄). 스킬·승인 규칙(skillText null)과 옛 판 옮기기는 2b 밖
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { hcCall, hcSubscribe, hcPipe, HcError, FramedConn, FRAME } from './rpc.mjs';
-import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN } from './model.mjs';
+import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm } from './model.mjs';
 import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
@@ -23,9 +29,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const GRACE_MS = 8000; // holder가 코어를 다시 띄우는 데 약 4초(P114 1단계)
 const BEAT_MS = 45000; // heartbeat는 15초마다. 세 번 못 받으면 끊긴 것으로 본다
 const KEY_GAP_MS = 30; // 키 사이 틈(ESC 다음 키가 Alt 조합으로 읽히지 않게)
+const CLOSING_MS = 30000; // 판이 닫는 작업 공간: 이 동안 그 자리에 셸을 다시 띄우지 않는다
+const RELEASE_HOLD_MS = 300; // 상태 지움 뒤 터미널 끝(코어 쪽 까닭인지)을 기다리는 시간
+
+// 서버 PID 대신 쓸 값: 터미널을 쥔 holder 가운데 가장 오래된 것(터미널이 있는 것). holder는 코어 재시작·업데이트 뒤에도 같고,
+// 바뀌면 프로그램이 끝난 것이다(서버 끔·holder 잃음). 판은 이 값이 바뀌었는지로 "백엔드가 꺼진 동안 herdr가 다시 떴는가"를 본다(C3)
+export function holderIdentity(status) {
+  const hs = (status && status.holders) || [];
+  const withTerms = hs.filter((h) => h.terminals > 0).sort((a, b) => a.pid - b.pid);
+  const pick = withTerms[0] || hs.find((h) => h.current) || null;
+  return pick ? pick.pid : null;
+}
 
 export class HcAdapter extends EventEmitter {
-  constructor({ session, dataDir, logDir, hcPath = null, pipe = null, pin = HC_PIN, env = process.env, fetchImpl, graceMs = GRACE_MS, tested = [HC_PIN.version] }) {
+  constructor({ session, dataDir, logDir, hcPath = null, pipe = null, pin = HC_PIN, env = process.env, fetchImpl, graceMs = GRACE_MS, tested = [HC_PIN.version], moveWaitMs = 3000 }) {
     super();
     if (!session || session === 'default') throw new Error('이름이 지정된 터미널 세션만 사용할 수 있습니다.');
     this.backend = 'hc';
@@ -35,13 +52,17 @@ export class HcAdapter extends EventEmitter {
     this.exeDir = this.exe ? path.dirname(this.exe) : null;
     this.configHome = dataDir ? hcConfigHome(dataDir) : null;
     this.pipe = pipe || hcPipe(session, env);
-    this.graceMs = graceMs; this.policy = { generations: [pin.generation], tested };
-    this.connected = false; this.pong = null; this._corePid = null;
+    this.graceMs = graceMs; this.moveWaitMs = moveWaitMs; this.policy = { generations: [pin.generation], tested };
+    this.connected = false; this.pong = null; this._corePid = null; this._holderPid = null;
     this.model = new HcModel();
     this._watching = false; this._sub = null;
     this._ctls = new Map(); // paneId → Set(HcController)
     this._held = new Map(); // 판이 바꿔 띄우는 중인 터미널의 이벤트(launch 라벨 → 이벤트들)
-    this._replaced = new Set(); // 판이 에이전트 터미널로 바꾼 셸 자리(그 끝 이벤트는 내지 않는다)
+    this._replaced = new Set(); // 판이 다른 터미널로 바꾼 자리(그 끝 이벤트는 내지 않는다)
+    this._closing = new Set(); // 판이 닫는 패널
+    this._closingWs = new Map(); // 판이 닫는 작업 공간 → 시각
+    this._respawning = new Map(); // 셸을 다시 띄우는 중인 자리 → Promise<새 주소|null>
+    this._envOf = new Map(); // 판이 띄운 터미널의 env(셸을 다시 띄울 때 같은 env)
     this.subscribedPanes = [];
   }
   // 판은 herdrPath로 실행 파일이 있는지 본다(ensureHerdr). hc 실행 파일을 준다. 판이 찾은 herdr 경로는 따로 둔다(쓰지 않는다)
@@ -57,14 +78,22 @@ export class HcAdapter extends EventEmitter {
     try {
       const h = await this.ping();
       const st = await this.call('server.status', {}, 3000).catch(() => null);
-      if (st) this._corePid = st.pid;
+      if (st) { this._corePid = st.pid; this._holderPid = holderIdentity(st); }
       return { running: true, pong: { type: 'pong', version: h.version, protocol: h.generation, capabilities: { features: h.features || [], core: h.core || null } }, status: st };
     } catch (e) { return { running: false, error: e.code }; }
   }
   checkCompat(pong) { return hcCompat(pong, this.policy); }
   async cliVersion() { return this.exe ? cliVersion({ exe: this.exe, session: this.session, configHome: this.configHome, base: this.env }) : null; }
-  async skillText() { return null; } // 스킬·승인 규칙은 2a 밖(판은 herdr 스킬 글로 둔다)
-  serverPid() { return this._corePid; }
+  async skillText() { return null; } // 스킬·승인 규칙은 2b 밖(판은 herdr 스킬 글로 둔다)
+  // holder 기준(holderIdentity). 코어는 떠 있는데 holder가 없으면(터미널이 없음) -1, 코어를 모르면 null.
+  // 코어 PID를 쓰지 않는다: 코어는 server.restart·hc update·holder의 다시 띄우기로 바뀌어도 프로그램이 산다(판이 "다시 떴다"로 잘못 본다, 2b 끝 시험)
+  serverPid() { return this._holderPid || (this._corePid ? -1 : null); }
+  // 터미널이 생기거나 끝나면 holder가 생기거나 바뀔 수 있다. 잠깐 뒤 다시 읽는다(판은 heartbeat 때 이 값을 저장한다)
+  _refreshHolderSoon() {
+    clearTimeout(this._holderTimer);
+    this._holderTimer = setTimeout(() => this.call('server.status', {}, 3000).then((st) => { this._corePid = st.pid; this._holderPid = holderIdentity(st); }).catch(() => {}), 500);
+    if (this._holderTimer.unref) this._holderTimer.unref();
+  }
 
   // 고정한 hc를 판 폴더에 준비한다(없으면 받는다). 코어가 다른 버전으로 돌면 바꾸지 않고 pending을 남긴다(upgrade가 바꾼다)
   async ensureBinary({ coreRunning = false } = {}) {
@@ -74,7 +103,7 @@ export class HcAdapter extends EventEmitter {
   }
   async startServer() {
     const p0 = await this.probe();
-    if (p0.running) return { started: false, pong: p0.pong, pid: this._corePid };
+    if (p0.running) return { started: false, pong: p0.pong, pid: this.serverPid() };
     const t0 = Date.now();
     try { await this.ensureBinary(); } catch (e) { throw new HcError(e.code || 'not_found', e.message, 'server'); }
     writeBoardConfig(this.configHome);
@@ -83,7 +112,7 @@ export class HcAdapter extends EventEmitter {
     catch (e) { throw new HcError(e.code || 'start_failed', e.message, 'server'); }
     for (let i = 0; i < 100; i++) {
       const p = await this.probe();
-      if (p.running) return { started: true, pong: p.pong, pid: this._corePid || st.pid, ms: Date.now() - t0 };
+      if (p.running) return { started: true, pong: p.pong, pid: this.serverPid() || st.pid, ms: Date.now() - t0 };
       await sleep(100);
     }
     throw new HcError('start_failed', 'core did not answer hello in 10s', 'server');
@@ -98,21 +127,36 @@ export class HcAdapter extends EventEmitter {
   }
   // 코어만 다시 띄운다(프로그램은 산다). fresh면 판이 만든 env로(새 PATH 등)
   async restartServer({ fresh = false } = {}) {
+    if (this.configHome) writeBoardConfig(this.configHome);
     const params = fresh ? { environment: coreEnv(this.env, { session: this.session, configHome: this.configHome }) } : {};
     const r = await this.call('server.restart', params, 30000).catch((e) => ({ error: e.message }));
     for (let i = 0; i < 100; i++) { await sleep(100); const p = await this.probe(); if (p.running) return { restarted: !r.error, pid: this._corePid, result: r }; }
     return { restarted: false, result: r };
   }
-  // 고정 버전이 바뀌었으면 새 빌드를 받아 hc update로 바꾼다(코어만 다시 뜬다)
+  // 고정 버전이 바뀌었으면 새 빌드를 받아 hc update로 바꾼다(코어만 다시 뜬다). 놓인 파일은 고정 버전인데 코어만 옛 버전이면 코어를 다시 띄운다
   async upgrade() {
-    const running = (await this.probe()).running;
-    const r = await this.ensureBinary({ coreRunning: running });
-    if (r.source !== 'pending') return { upgraded: false, version: r.version, source: r.source };
-    const from = hcExeIn(r.pending.dir);
-    const u = await upgradeCore({ exe: this.exe, from, session: this.session, configHome: this.configHome, base: this.env });
-    fs.writeFileSync(path.join(this.exeDir, 'VERSION'), this.pin.version + '\n');
-    fs.rmSync(r.pending.staging, { recursive: true, force: true });
-    return { upgraded: true, from: r.version, to: this.pin.version, result: u };
+    const p = await this.probe();
+    const r = await this.ensureBinary({ coreRunning: p.running });
+    if (r.source === 'pending') {
+      const from = hcExeIn(r.pending.dir);
+      const u = await upgradeCore({ exe: this.exe, from, session: this.session, configHome: this.configHome, base: this.env });
+      fs.writeFileSync(path.join(this.exeDir, 'VERSION'), this.pin.version + '\n');
+      fs.rmSync(r.pending.staging, { recursive: true, force: true });
+      return { upgraded: true, from: r.version, to: this.pin.version, result: u };
+    }
+    if (p.running && p.pong && p.pong.version !== this.pin.version && r.version === this.pin.version && r.source !== 'env') {
+      const x = await this.restartServer();
+      return { upgraded: true, from: p.pong.version, to: this.pin.version, restarted: x };
+    }
+    return { upgraded: false, version: r.version, source: r.source };
+  }
+  async _maybeUpgrade() {
+    if (this._upgradeChecked || !this.dataDir || this.envExe) return;
+    this._upgradeChecked = true;
+    const p = await this.probe();
+    if (!p.running || !p.pong || p.pong.version === this.pin.version) return;
+    try { const r = await this.upgrade(); this.log(`hc upgrade on start: ${JSON.stringify(r).slice(0, 300)}`); this.emit('upgraded', r); }
+    catch (e) { this.log(`hc upgrade on start failed: ${e.code || ''} ${e.message}`); }
   }
   async deleteSession() {
     if ((await this.probe()).running) return { deleted: false, reason: 'running' };
@@ -138,6 +182,7 @@ export class HcAdapter extends EventEmitter {
         if (closed) {
           downSince = null;
           if (!this.connected) { this.connected = true; this.emit('connected', this.pong); }
+          this._maybeUpgrade().catch(() => {}); // 2b: 떠 있던 코어가 고정 버전과 다르면 올린다(한 번)
           await closed; // 구독이 끊길 때까지
           if (!this._watching) break;
           this.log('event subscription closed');
@@ -168,9 +213,9 @@ export class HcAdapter extends EventEmitter {
       const gone = this.model.live().filter((t) => !nowLive.has(t.address)).map((t) => t.address);
       let down = !!this._coreDown;
       if (!down && gone.length) down = (await this._list(true).catch(() => [])).some((t) => gone.includes(t.address) && CORE_DOWN.has(t.reason));
-      if (down) { this._coreDown = false; this.connected = false; this.log('core ended terminals while away; reporting a restart'); this.emit('disconnected'); this.model.load(terms); }
+      if (down) { this._coreDown = false; this.connected = false; this.log('core ended terminals while away; reporting a restart'); this.emit('disconnected'); this.model.load(terms); this._gcFinished().catch(() => {}); }
       else this._emitAll(this.model.diff(terms));
-    } else { this._coreDown = false; this.model.load(terms); }
+    } else { this._coreDown = false; this.model.load(terms); this._gcFinished().catch(() => {}); }
     this._sub = sub;
     this.subscribedPanes = this.model.live().map((t) => t.address);
     clearInterval(this._beatTimer);
@@ -186,17 +231,48 @@ export class HcAdapter extends EventEmitter {
   _emitAll(events) {
     for (const e of events) {
       if (e.type === 'terminal_finished' && CORE_DOWN.has(e.reason)) this._coreDown = true;
+      if (e.type === 'pane_created' || e.type === 'terminal_finished') this._refreshHolderSoon();
+      // 2b: hc는 터미널을 끝내기 바로 앞에 상태를 지운다(status null). 그 놓임을 잠깐 들고 있다가, 코어 쪽 까닭(서버 끔·holder 잃음)의 끝이 따라오면 버린다.
+      // 그러지 않으면 판 밖에서 코어를 껐을 때 판이 claude를 "스스로 끝남"으로 보고 되살리지 않는다(herdr에서는 서버가 꺼지면 끊김만 왔다)
+      if (e.type === 'agent_released' && e.raw && e.raw.type === 'status' && e.paneId) { this._holdRelease(e); continue; }
+      if (e.paneId && this._releases && this._releases.has(e.paneId)) {
+        if (e.type === 'terminal_finished' && CORE_DOWN.has(e.reason)) this._dropRelease(e.paneId);
+        else if (e.type === 'pane_exited' || e.type === 'terminal_finished') this._flushRelease(e.paneId);
+      }
       // 화면 스트림에 넘길 것
       const set = e.paneId && this._ctls.get(e.paneId);
-      if (set && ['size', 'pane_restarted', 'terminal_finished', 'pane_closed'].includes(e.type)) for (const c of set) c.onTerminalEvent(e);
+      if (set && ['size', 'pane_restarted', 'terminal_finished', 'pane_closed'].includes(e.type)) for (const c of [...set]) c.onTerminalEvent(e);
       // 판이 바꿔 띄우는 중인 터미널: 판이 pane_moved로 알기 전에는 내지 않는다(모르는 패널로 보고 판에 올리지 않게)
       const t = e.paneId && this.model.terms.get(e.paneId);
-      const launch = t && t.labels && t.labels['atrium-launch'];
+      const launch = t && t.labels && t.labels[LABEL.launch];
       if (launch && this._held.has(launch)) { this._held.get(launch).push(e); continue; }
       if (e.paneId && this._replaced.has(e.paneId) && ['pane_exited', 'terminal_finished', 'pane_closed', 'agent_released'].includes(e.type)) continue;
+      // 2b: 판이 띄운 에이전트가 스스로 끝났다 → 같은 자리에 셸(herdr의 남는 패널 셸). 판이 닫는 중이면 그대로 패널 끝
+      if (e.type === 'pane_exited' && e.agent && e.board && e.reason === 'exited' && !this._isClosing(e.paneId, e.workspaceId)) { this._respawnShell(e); continue; }
       if (['size', 'pane_restarted', 'pane_lost', 'turn', 'terminal_finished'].includes(e.type)) { this.emit('hc', e); continue; } // 판(herdr 모양)이 모르는 것
       this.emit('event', e);
     }
+  }
+  _holdRelease(e) {
+    this._releases ||= new Map();
+    this._flushRelease(e.paneId);
+    const timer = setTimeout(() => this._flushRelease(e.paneId), RELEASE_HOLD_MS);
+    if (timer.unref) timer.unref();
+    this._releases.set(e.paneId, { e, timer });
+  }
+  _flushRelease(paneId) {
+    const r = this._releases && this._releases.get(paneId);
+    if (!r) return;
+    clearTimeout(r.timer); this._releases.delete(paneId);
+    const e = r.e;
+    if (this._replaced.has(paneId)) return;
+    this.emit('event', e);
+  }
+  _dropRelease(paneId) { const r = this._releases.get(paneId); clearTimeout(r.timer); this._releases.delete(paneId); }
+  _isClosing(paneId, ws) {
+    if (this._closing.has(paneId)) return true;
+    const at = ws && this._closingWs.get(ws);
+    return !!(at && Date.now() - at < CLOSING_MS);
   }
 
   // ---------- 작업 공간, 패널, 에이전트 ----------
@@ -210,29 +286,34 @@ export class HcAdapter extends EventEmitter {
     const ws = [...new Set(panes.map((p) => p.workspaceId))].map((w) => { const t = live.find((x) => workspaceOf(x, by) === w); return { workspaceId: w, label: (t && t.labels && t.labels[LABEL.wsLabel]) || null }; });
     return { workspaces: ws, panes };
   }
-  // 판이 띄우는 터미널의 env(PATH는 레지스트리 PATH 앞에 판의 hc 폴더, XDG_CONFIG_HOME은 빈 값). P114 2a 관리자 결정
-  async paneEnv(extra = {}) {
+  // 판이 띄우는 터미널의 env: extra(판의 env, 하네스 env) + PATH(pathFirst, 판의 hc 폴더, 레지스트리 PATH) + XDG_CONFIG_HOME 빈 값. P114 2a·2b 관리자 결정
+  async paneEnv(extra = {}, pathFirst = []) {
     const reg = await registryPath().catch(() => null);
     const base = reg || this.env[Object.keys(this.env).find((k) => k.toUpperCase() === 'PATH')] || '';
-    return terminalEnv({ exeDir: this.exeDir, basePath: base, extra });
+    return terminalEnv({ exeDir: this.exeDir, basePath: base, extra, pathFirst });
   }
-  // 셸 터미널 하나 = 판의 작업 공간 하나(herdr workspace.create와 같은 자리)
+  // 셸 터미널 하나 = 판의 작업 공간 하나(herdr workspace.create와 같은 자리). 판이 만든 터미널이라 atrium-board 라벨
   async createWorkspace({ cwd, label, env = {} }) {
     const ws = `hw-${crypto.randomBytes(5).toString('hex')}`;
-    const labels = { [LABEL.ws]: ws };
+    const labels = { [LABEL.ws]: ws, [LABEL.board]: '1' };
     if (label) labels[LABEL.wsLabel] = String(label).slice(0, 120);
-    const r = await this.call('terminal.run', { cwd, env: await this.paneEnv(env), labels, no_parent: true }, 30000);
+    const tenv = await this.paneEnv(env);
+    const r = await this.call('terminal.run', { cwd, env: tenv, labels, no_parent: true }, 30000);
+    this._envOf.set(r.address, tenv);
     return { workspaceId: ws, paneId: r.address };
   }
   // hc가 바라는 띄우기: 에이전트를 터미널의 첫 argv로(셸에 치면 foreground가 셸로 남고, 강제로 끝나면 상태가 남는다. P114 1단계 3번)
-  async runAgent({ name = null, argv, cwd, env = {}, labels = {}, workspaceId = null }) {
-    const lab = { ...labels };
+  async runAgent({ name = null, argv, cwd, env = {}, pathFirst = [], labels = {}, workspaceId = null }) {
+    const lab = { ...labels, [LABEL.board]: '1' };
     if (workspaceId) lab[LABEL.ws] = workspaceId;
     if (name) lab[LABEL.name] = String(name);
-    const params = { argv, cwd, env: await this.paneEnv(env), labels: lab, no_parent: true };
+    const tenv = await this.paneEnv(env, pathFirst);
+    const params = { argv, cwd, env: tenv, labels: lab, no_parent: true };
     const n = hcName(name);
-    if (n) params.name = n;
-    return this.call('terminal.run', params, 60000);
+    if (n) { params.name = n; await this._gcFinished(n).catch(() => {}); } // 같은 이름의 끝난 기록(되살리기·이어 가기 전의 것)을 지운다
+    const r = await this.call('terminal.run', params, 60000);
+    this._envOf.set(r.address, tenv);
+    return r;
   }
   async waitShellReady(paneId, timeoutMs = 15000) {
     const t0 = Date.now();
@@ -243,29 +324,73 @@ export class HcAdapter extends EventEmitter {
     }
     return false;
   }
-  // herdr agent.start 자리: 판이 createWorkspace로 만든 셸 자리를 에이전트가 첫 argv인 터미널로 바꾸고 pane_moved로 새 패널을 알린다.
-  // 새 터미널의 이벤트는 pane_moved를 낸 뒤에 넘긴다(그 전에 판이 모르는 패널로 보고 판에 올리지 않게). 옛 셸 자리의 끝 이벤트는 내지 않는다
-  async startAgent({ name, paneId, args = [], kind = 'claude', command = null }) {
-    const t = await this.call('terminal.get', { terminal: paneId });
-    const by = this.model.terms.size ? this.model.terms : this._byAddress([t]);
-    const ws = workspaceOf(t, by);
-    const argv = [...(command && command.length ? command : [KIND_COMMAND[kind] || kind]), ...args];
+  // 판의 패널(paneId)을 새 터미널로 바꾼다: 새 터미널의 이벤트는 pane_moved를 낸 뒤에 넘기고, 화면 스트림을 옮겨 붙이고, 옛 자리의 끝 이벤트는 내지 않는다
+  async _replacePane(oldId, run, why) {
     const launch = crypto.randomBytes(6).toString('hex');
     this._held.set(launch, []);
     let r;
-    try {
-      r = await this.runAgent({ name, argv, cwd: t.cwd, labels: { ...(t.labels || {}), 'atrium-launch': launch }, workspaceId: ws });
-    } catch (e) { this._held.delete(launch); throw e; }
-    this._replaced.add(paneId);
-    this.emit('event', { type: 'pane_moved', paneId: r.address, workspaceId: ws, previousPaneId: paneId, raw: { hc: 'startAgent', argv } });
+    try { r = await run(launch); } catch (e) { this._held.delete(launch); throw e; }
+    const ws = (r.labels && r.labels[LABEL.ws]) || null;
+    this._replaced.add(oldId);
+    this._moveControllers(oldId, r.address);
+    this.emit('event', { type: 'pane_moved', paneId: r.address, workspaceId: ws, previousPaneId: oldId, raw: { hc: why } });
     const held = this._held.get(launch) || [];
     this._held.delete(launch);
     for (const e of held) if (e.type !== 'pane_created') this.emit('event', e);
-    await this.closePane(paneId).catch((e) => this.log(`close replaced shell ${paneId}: ${e.message}`));
-    const info = { name: name || r.name || r.address, paneId: r.address, workspaceId: ws, agent: kind, status: 'unknown', launchPending: true, agentSessionId: null, title: '', cwd: r.cwd || t.cwd, tabId: null };
+    return r;
+  }
+  _moveControllers(oldId, newId) {
+    const set = this._ctls.get(oldId);
+    if (!set) return;
+    this._ctls.delete(oldId);
+    const to = this._ctls.get(newId) || new Set();
+    for (const c of set) if (c.retarget(newId)) to.add(c);
+    if (to.size) this._ctls.set(newId, to);
+  }
+  // herdr agent.start 자리(판의 세션 시작, 이어 가기, 되살리기): 그 패널을 에이전트가 첫 argv인 터미널로 바꾼다. env·pathFirst는 하네스(harnessLaunch)가 준 값.
+  // 옛 자리가 같은 hc 이름을 쥔 에이전트면 먼저 끈다(hc 이름은 살아 있는 터미널 사이에서 겹치지 않는다. 끝난 기록은 막지 않는다)
+  async startAgent({ name, paneId, args = [], kind = 'claude', command = null, env = null, pathFirst = null }) {
+    let t = null;
+    try { t = await this.call('terminal.get', { terminal: paneId }); } catch (e) { if (e.code === 'unreachable') throw e; }
+    const by = this.model.terms.size ? this.model.terms : this._byAddress(t ? [t] : []);
+    const ws = t ? workspaceOf(t, by) : `hw-${crypto.randomBytes(5).toString('hex')}`;
+    const argv = [...(command && command.length ? command : [KIND_COMMAND[kind] || kind]), ...args];
+    const n = hcName(name);
+    const baseLabels = Object.fromEntries(Object.entries((t && t.labels) || {}).filter(([k]) => k !== LABEL.launch && k !== LABEL.name));
+    if (t && isLive(t) && n && t.name === n) { this._replaced.add(paneId); await this._kill(paneId); }
+    const cwd = (t && t.cwd) || undefined;
+    const r = await this._replacePane(paneId, (launch) => this.runAgent({ name, argv, cwd, env: env || {}, pathFirst: pathFirst || [], labels: { ...baseLabels, [LABEL.launch]: launch }, workspaceId: ws }), 'startAgent');
+    await this._kill(paneId).catch(() => {}); await this._rm(paneId);
+    this._envOf.delete(paneId);
+    const info = { name: name || r.name || r.address, paneId: r.address, workspaceId: ws, agent: kind, status: 'unknown', launchPending: true, agentSessionId: null, title: '', cwd: r.cwd || cwd || null, tabId: null };
     return { agent: info, argv: r.argv || argv, replacedPane: paneId };
   }
-  // P97 모양: 셸 프롬프트에 명령을 친다(판이 실행 명령을 쓰는 호출자). hc에서는 상태가 셸 안에서 오므로 앱 이름으로 알아본다
+  // 판이 띄운 에이전트가 스스로 끝났다: 같은 작업 공간·폴더·라벨로 셸을 띄워 그 자리를 잇는다. 판이 그새 닫으면 새 셸도 닫는다
+  _respawnShell(e) {
+    const old = e.paneId;
+    if (this._respawning.has(old)) return this._respawning.get(old);
+    const p = (async () => {
+      const t = this.model.terms.get(old) || {};
+      const labels = Object.fromEntries(Object.entries(t.labels || {}).filter(([k]) => k !== LABEL.launch && k !== LABEL.name));
+      labels[LABEL.board] = '1';
+      if (e.workspaceId) labels[LABEL.ws] = e.workspaceId;
+      try {
+        const env = this._envOf.get(old) || (await this.paneEnv());
+        const r = await this._replacePane(old, (launch) => this.call('terminal.run', { cwd: t.cwd, env, labels: { ...labels, [LABEL.launch]: launch }, no_parent: true }, 30000), 'agent exited, shell left');
+        this._envOf.set(r.address, env); this._envOf.delete(old);
+        await this._rm(old);
+        if (this._isClosing(old, e.workspaceId)) { this.log(`closing ${old} while its shell came back; closing ${r.address}`); await this.closePane(r.address).catch(() => {}); }
+        return r.address;
+      } catch (err) {
+        this.log(`shell after agent exit in ${old} failed: ${err.code || ''} ${err.message}`);
+        this.emit('event', e); // 셸을 못 띄우면 herdr에서 패널이 닫힌 것과 같게
+        return null;
+      } finally { this._respawning.delete(old); }
+    })();
+    this._respawning.set(old, p);
+    return p;
+  }
+  // P97 모양: 셸 프롬프트에 명령을 친다. hc에서는 상태가 셸 안에서 오므로 앱 이름으로 알아본다(판은 startAgent를 쓴다. 남겨 둔 모양)
   async typeAgent({ name, paneId, args, kind, command, timeoutMs = 60000 }) {
     const argv = [...command, ...args];
     await this.sendText(paneId, psLine(argv));
@@ -300,9 +425,9 @@ export class HcAdapter extends EventEmitter {
     this._kinds = kinds.map((k, i) => ({ kind: k, installed: !!found[i], path: found[i] }));
     return this._kinds;
   }
-  // hc에는 이어 가기 기록이 없다. 판이 쥔 세션 ID로 판이 다시 띄운다(2b). 여기서는 받았다고만 한다
-  async registerResume({ paneId, sessionId }) { this.log(`registerResume ignored for ${paneId} (${sessionId}): the board keeps resume records`); return { stored: 'board' }; }
-  readResumeRecord() { return { found: false }; }
+  // hc에는 이어 가기 기록이 없다. 판이 쥔 세션 ID와 판의 줄로 판이 다시 띄운다(되살리기·다시 열기). 판이 준 줄을 기억해 확인(verifyResume)에 돌려준다
+  async registerResume({ sessionId, argv } = {}) { if (sessionId) (this._resume ||= new Map()).set(sessionId, argv || null); return { stored: 'board' }; }
+  readResumeRecord(sessionId) { const m = this._resume; return m && m.has(sessionId) ? { found: true, argv: m.get(sessionId), agentName: null, by: 'board' } : { found: false }; }
   async renameAgent(target, name) {
     const list = await this._list();
     const t = findTerminal(list, target);
@@ -320,7 +445,9 @@ export class HcAdapter extends EventEmitter {
     if (!t) throw new HcError('agent_not_found', `no live terminal ${target}`, 'terminal');
     return t;
   }
-  // 판의 전달(B1)이 보낼 때를 정한 뒤 부른다. hc는 막힌(blocked) 프로그램에는 force 없이 거부하고(agent_blocked), 사람이 쓰다 만 글이 있으면 최대 60초 기다린다
+  // 판의 전달(B1)이 보낼 때를 정한 뒤 부른다. 판의 규칙을 바꾸지 않는다(2b):
+  // - 막힘: 판은 waiting이면 보내지 않는다. 그새 막혔으면 hc가 force 없이 거부하고(agent_blocked) 판은 waiting으로 물러나 풀리면 다시 보낸다(herdr agent.prompt와 같다)
+  // - 쓰다 만 글: 판의 hc 설정 draft_wait = 0이라 hc는 조용한 틈(약 3초)만 기다린다. 판의 "3초 안 입력이면 기다린다"와 같다(core.mjs)
   async prompt(target, text) {
     const t = await this._target(target);
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
@@ -340,7 +467,7 @@ export class HcAdapter extends EventEmitter {
   }
   // 붙어 있는 화면 스트림이 있으면 그것으로, 없으면 지금 크기로 잠깐 붙어서 친다(크기를 바꾸지 않는다)
   async _typeRaw(paneId, parts) {
-    const ctl = [...(this._ctls.get(paneId) || [])].find((c) => c.exited == null && c.conn && c.ch != null);
+    const ctl = [...(this._ctls.get(paneId) || [])].find((c) => c.exited == null && c.conn && c.ch != null && c.terminal === paneId);
     if (ctl) { for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); ctl.input(parts[i]); } return { typed: parts.length, via: 'stream' }; }
     const t = await this.call('terminal.get', { terminal: paneId });
     if (!isLive(t)) throw new HcError('pane_not_found', `${paneId} is ${t.state}`, 'terminal.attach');
@@ -355,39 +482,80 @@ export class HcAdapter extends EventEmitter {
       return { typed: parts.length, via: 'attach' };
     } finally { setTimeout(() => conn.close(), 100); }
   }
-  // 화면 읽기. hc는 화면 + 그 위 기록 줄 수(lines) 한 방식뿐이고 ANSI는 없다(format은 무시한다)
-  async readScreen(paneId, { source = 'visible', lines } = {}) {
+  // 화면 읽기:
+  // - visible + ansi(atrium screen): hc는 줄 단위 ANSI 읽기가 없다. 관찰 모드로 잠깐 붙어 받은 첫 화면(ANSI로 그린 지금 화면)을 준다
+  // - 그 밖(visible·recent·recent_unwrapped 글, terminal.history의 ansi): terminal.read {lines}. 색 없는 줄이다(hc가 기록을 ANSI 줄로 주지 않는다)
+  async readScreen(paneId, { source = 'visible', format = 'text', lines } = {}) {
+    if (source === 'visible' && format === 'ansi') return this._paint(paneId);
     const want = source === 'visible' ? 0 : Math.min(Math.max(Number(lines) || 200, 1), 10000);
     const r = await this.call('terminal.read', { terminal: paneId, lines: want });
     const text = (r && r.text) || '';
     if (source === 'visible' || !lines) return text;
     return text.split('\n').slice(-Number(lines)).join('\n');
   }
+  async _paint(paneId, { quietMs = 150, maxMs = 3000 } = {}) {
+    const t = await this.call('terminal.get', { terminal: paneId });
+    if (!isLive(t)) return '';
+    const conn = new FramedConn(this.pipe);
+    const parts = [];
+    try {
+      await conn.open();
+      const r = await conn.call('terminal.attach', { terminal: paneId, cols: t.cols || 120, rows: t.rows || 40, observe: true });
+      let last = Date.now();
+      conn.claim(r.channel, (f) => { if (f.kind === FRAME.DATA) { parts.push(f.payload); last = Date.now(); const b = Buffer.alloc(4); b.writeUInt32LE(f.payload.length, 0); conn.write(r.channel, FRAME.CREDIT, b); } });
+      const t0 = Date.now();
+      while (Date.now() - t0 < maxMs && (!parts.length || Date.now() - last < quietMs)) await sleep(30);
+      conn.write(r.channel, FRAME.CLOSE);
+    } finally { setTimeout(() => conn.close(), 50); }
+    return Buffer.concat(parts).toString('utf8').replace(/^\x18/, '');
+  }
   async closeWorkspace(workspaceId) {
+    this._closingWs.set(workspaceId, Date.now());
+    for (const [k, at] of this._closingWs) if (Date.now() - at > CLOSING_MS) this._closingWs.delete(k);
+    await Promise.all([...this._respawning.values()]).catch(() => {}); // 그새 셸을 다시 띄우는 자리가 있으면 그것까지 닫는다
     const panes = await this.workspacePanes(workspaceId);
     for (const p of panes) await this.closePane(p.paneId);
     return { closed: panes.length };
   }
-  // 끝내고 기록도 지운다(herdr에서 패널을 닫으면 없어지는 것과 같게)
+  // 끝내고 기록도 지운다(herdr에서 패널을 닫으면 없어지는 것과 같게). 셸을 다시 띄우는 중인 자리면 그것도 닫는다
   async closePane(paneId) {
-    try { await this.call('terminal.kill', { terminal: paneId }, 20000); } catch (e) { if (e.code !== 'agent_not_found') throw e; }
-    try { await this.call('terminal.rm', { terminal: paneId }, 10000); } catch {}
-    return { closed: true };
+    this._closing.add(paneId);
+    try {
+      const pending = this._respawning.get(paneId);
+      if (pending) { const nw = await pending.catch(() => null); if (nw) await this.closePane(nw); }
+      await this._kill(paneId);
+      await this._rm(paneId);
+      this._envOf.delete(paneId);
+      return { closed: true };
+    } finally { setTimeout(() => this._closing.delete(paneId), CLOSING_MS).unref?.(); }
   }
+  // 판이 만든 터미널 가운데 끝난 기록을 지운다(name을 주면 그 이름만). 코어가 꺼져 끝난 기록도 판이 다시 붙은 뒤에는 쓸 데가 없다.
+  // 같은 이름 기록이 쌓이지 않게(hc는 끝난 기록이 이름을 막지는 않지만 `hc read <이름>`·목록에 남는다). 판 밖 터미널(hc run)의 기록은 둔다
+  async _gcFinished(name = null) {
+    const all = await this._list(true);
+    for (const t of all) if (!isLive(t) && isBoardTerm(t) && (!name || t.name === name)) await this._rm(t.address);
+  }
+  async _kill(paneId) { try { await this.call('terminal.kill', { terminal: paneId }, 20000); } catch (e) { if (e.code === 'unreachable' || e.code === 'timeout') throw e; } }
+  async _rm(paneId) { try { await this.call('terminal.rm', { terminal: paneId }, 10000); } catch {} }
+  // 되살리기가 판의 줄인지 볼 argv(recall.mjs recoverHarness): foreground(셸에 친 경우)와 터미널의 첫 argv(.cmd 감싸개면 foreground가 cmd.exe라 이쪽에 있다)
   async processInfo(paneId) {
     const t = await this.call('terminal.get', { terminal: paneId });
     const f = t.foreground;
-    return { shell_pid: t.pid || null, foreground_processes: f ? [{ pid: f.pid, name: f.name }] : [], cwd: (f && f.cwd) || t.cwd };
+    const procs = [];
+    if (f) procs.push({ pid: f.pid, name: f.name, argv: f.argv || [] });
+    if (t.pid && (!f || f.pid !== t.pid)) procs.push({ pid: t.pid, name: path.basename(String((t.argv || [])[0] || '')), argv: t.argv || [] });
+    else if (f && t.argv && t.argv.length) procs[0].argv = [...new Set([...(f.argv || []), ...t.argv])];
+    return { shell_pid: t.pid || null, foreground_processes: procs, cwd: (f && f.cwd) || t.cwd };
   }
   // hc에는 붙은 보는 이 목록이 없다(D3). 판 밖 보는 이가 크기를 가져가면 화면 스트림의 size(external)로 안다
   readClients() { return { available: false, clients: [] }; }
 
   // ---------- 화면 제어기 ----------
   openController(paneId, cols, rows) {
-    const c = new HcController({ pipe: this.pipe, terminal: paneId, cols, rows, log: (m) => this.log(m) });
+    const c = new HcController({ pipe: this.pipe, terminal: paneId, cols, rows, log: (m) => this.log(m), moveWaitMs: this.moveWaitMs });
     if (!this._ctls.has(paneId)) this._ctls.set(paneId, new Set());
     this._ctls.get(paneId).add(c);
-    c.once('exit', () => { const s = this._ctls.get(paneId); if (s) { s.delete(c); if (!s.size) this._ctls.delete(paneId); } });
+    c.once('exit', () => { for (const [k, s] of this._ctls) { s.delete(c); if (!s.size) this._ctls.delete(k); } });
     return c;
   }
 }

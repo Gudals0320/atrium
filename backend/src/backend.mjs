@@ -294,7 +294,11 @@ export class Backend {
     this.updateTimer = setInterval(() => this.checkHerdrUpdate('timer').catch(() => {}), cfg.herdrUpdateMs);
 
     this.queue.start();
-    this.heartbeat = setInterval(() => this.store.setMeta('heartbeat', Date.now()), 2000);
+    this.heartbeat = setInterval(() => {
+      this.store.setMeta('heartbeat', Date.now());
+      // P114 2b: hc의 "서버 PID"는 터미널을 쥔 holder라 첫 세션이 생길 때 정해진다. 붙을 때만 저장하면 백엔드가 다시 뜰 때 옛 값과 견준다
+      if (this.adapter.backend === 'hc' && this.adapter.connected) { const pid = this.adapter.serverPid(); if (pid && pid !== this._hcPidSaved) { this._hcPidSaved = pid; this.store.setMeta('herdrServerPid', pid); } }
+    }, 2000);
     this.store.setMeta('heartbeat', Date.now());
     this.quietTimer = setInterval(() => { for (const s of this.sessions.values()) this.broadcastSession(s, { onlyIfFlagsChanged: true }); }, 10000);
 
@@ -305,7 +309,7 @@ export class Backend {
     this.shellTimer = setInterval(() => this.pollShells().catch((e) => this.log('shell poll error', e.stack)), SHELL_POLL_MS);
     // D1: 자원 감시, D3: 붙은 herdr 화면
     this.resources = new ResourceMonitor({
-      session: cfg.herdrSession, intervalMs: cfg.resourcesIntervalMs,
+      session: this.adapter.backend === 'hc' ? null : cfg.herdrSession, intervalMs: cfg.resourcesIntervalMs, // P114 2b: hc 모드는 herdr 화면(TUI) 프로세스를 찾지 않는다
       sessions: () => [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.herdr.present, state: deriveState(s.rt).state })),
       processInfo: (paneId) => this.adapter.processInfo(paneId),
       controllers: () => this.relay.stats(),
@@ -397,6 +401,12 @@ export class Backend {
   // P40: 쓸 herdr 실행 파일을 고른다. 판 서버가 돌면 그 서버의 실행 파일(CLI·제어기·--skill이 서버와 같은 버전이 되게), 아니면 찾기 결과.
   // 서버 실행 파일을 못 읽으면 찾기 결과를 쓰고 진단에 남긴다
   async resolveHerdr(why) {
+    // P114 2b: hc 모드는 herdr를 찾지 않는다. 실행 파일은 판 폴더의 고정 hc다(hc/pin.mjs)
+    if (this.adapter.backend === 'hc') {
+      const chosen = { path: this.adapter.herdrPath, source: 'hc', reason: 'pinned herdr-core in the board data folder' };
+      this.herdrFind = { why, at: Date.now(), chosen, serverRunning: null, serverExe: null, note: null, found: { path: chosen.path, version: this.adapter.pin.version, source: 'hc', reason: chosen.reason }, tried: [] };
+      return this.herdrFind;
+    }
     const found = await findHerdr({ envPath: this.cfg.herdrEnvPath, settingPath: this.herdrSettingPath() }).catch((e) => ({ path: null, tried: [], reason: `find failed: ${e.message}` }));
     const p = await this.adapter.probe();
     let serverExe = null, note = null;
@@ -434,6 +444,7 @@ export class Backend {
   }
   // P40: 판 서버가 도는 동안 찾기 결과가 더 새 버전을 가리키면 알린다(한 버전에 한 번). 저절로 다시 띄우지 않는다
   async checkHerdrUpdate(why) {
+    if (this.adapter.backend === 'hc') return null; // P114 2b: hc는 고정 버전을 판이 올린다(어댑터가 붙을 때 upgrade)
     if (!this.adapter.connected && !(this.herdrCompat && this.herdrCompat.version)) return null;
     this._updateCheckedAt = Date.now();
     const found = why === 'start' && this.lastFound ? this.lastFound : await findHerdr({ envPath: this.cfg.herdrEnvPath, settingPath: this.herdrSettingPath() }).catch(() => null);
@@ -452,6 +463,7 @@ export class Backend {
   herdrView() {
     const c = this.herdrCompat || {};
     return {
+      backend: this.adapter ? this.adapter.backend : 'herdr', hcVersion: c.hcVersion || null, // P114 2b: 터미널 백엔드와 hc 버전
       connected: !!(this.adapter && this.adapter.connected), session: this.cfg.herdrSession, path: this.adapter ? this.adapter.herdrPath : null,
       missing: this.herdrMissing || null, level: c.level || null, version: c.version || null, protocol: c.protocol ?? null, warning: c.warning || null, problems: c.problems || [],
       protocols: this.cfg.herdrProtocols, tested: this.cfg.herdrTested,
@@ -1640,6 +1652,7 @@ export class Backend {
     const compat = p.running ? this.adapter.checkCompat(p.pong) : null;
     const v = this.herdrView();
     return {
+      backend: this.adapter.backend || 'herdr', hcVersion: (compat && compat.hcVersion) || null, // P114 2b
       session: this.cfg.herdrSession, running: p.running, connected: this.adapter.connected, serverPid: p.running ? this.adapter.serverPid() : null, compat, cliVersion: await this.adapter.cliVersion(), subscribedPanes: this.adapter.subscribedPanes || [],
       path: v.path, missing: v.missing, level: compat ? compat.level : v.level, version: compat ? compat.version : v.version, protocol: compat ? compat.protocol : v.protocol, warning: compat ? compat.warning : v.warning, protocols: v.protocols, tested: v.tested, update: v.update,
       find: this.herdrFind || null,

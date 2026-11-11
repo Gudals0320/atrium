@@ -10,7 +10,7 @@ import { statusWord, statusDetail, kindOfApp, workspaceOf, HcModel, terminalEnv,
 import { FrameDecoder, encodeFrame, FRAME, FramedConn, hcPipe, rpcError } from '../src/hc/rpc.mjs';
 import { hcCompat, coreEnv, boardConfigText, writeBoardConfig, hcConfigFile } from '../src/hc/core.mjs';
 import { ensureHc, HC_PIN, hcBinDir, parseHcVersion } from '../src/hc/pin.mjs';
-import { HcAdapter } from '../src/hc/adapter.mjs';
+import { HcAdapter, holderIdentity } from '../src/hc/adapter.mjs';
 import { pickTerminalBackend, createTerminalAdapter } from '../src/terminal-backend.mjs';
 import { Settings, normalizePatch } from '../src/settings.mjs';
 import { TerminalRelay } from '../src/relay.mjs';
@@ -89,7 +89,10 @@ test('P114 터미널 env: PATH 앞에 판의 hc 폴더, XDG_CONFIG_HOME은 빈 �
   const e = terminalEnv({ exeDir: 'C:\\b\\hc\\bin', basePath: 'C:\\Windows;C:\\b\\hc\\bin\\;C:\\x' });
   assert.equal(e.PATH, 'C:\\b\\hc\\bin;C:\\Windows;C:\\x');
   assert.equal(e.XDG_CONFIG_HOME, '');
-  assert.equal(terminalEnv({ exeDir: 'C:\\h', basePath: 'C:\\w', extra: { Path: 'C:\\only', FOO: 1 } }).PATH, 'C:\\only');
+  // 2b: 판의 env(extra)의 PATH는 기본 PATH가 되고, pathFirst(판 bin/)가 맨 앞, 그다음 판의 hc 폴더. XDG_CONFIG_HOME은 extra에 있어도 빈 값
+  const h = terminalEnv({ exeDir: 'C:\\h', basePath: 'C:\\w', extra: { Path: 'C:\\only', FOO: 1, ATRIUM_SESSION_ID: 's1', XDG_CONFIG_HOME: 'C:\\leak' }, pathFirst: ['C:\\data\\bin'] });
+  assert.equal(h.PATH, 'C:\\data\\bin;C:\\h;C:\\only');
+  assert.equal(h.FOO, '1'); assert.equal(h.ATRIUM_SESSION_ID, 's1'); assert.equal(h.XDG_CONFIG_HOME, '');
   assert.equal(terminalEnv({ extra: { FOO: 1 } }).FOO, '1');
 });
 
@@ -124,6 +127,7 @@ test('P114 버전 정책·코어 env·판 설정(notes = false)', () => {
   assert.deepEqual(Object.keys(env).sort(), ['HC_SESSION', 'PATH', 'USERPROFILE', 'XDG_CONFIG_HOME']);
   assert.equal(env.HC_SESSION, 'atrium-dev-x'); assert.equal(env.XDG_CONFIG_HOME, 'C:\\d\\hc\\config');
   assert.match(boardConfigText(), /^notes = false$/m);
+  assert.match(boardConfigText(), /^draft_wait = 0$/m); // 2b: 판의 전달 규칙(3초)과 같게
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'p114-cfg-'));
   try { const f = writeBoardConfig(dir); assert.equal(f, hcConfigFile(dir)); assert.match(fs.readFileSync(f, 'utf8'), /notes = false/); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -178,7 +182,7 @@ test('P114 어댑터(가짜 hc): 붙기, 셸 작업 공간, 상태 이벤트, �
   a.on('event', (e) => events.push(e));
   try {
     const p = await a.probe();
-    assert.equal(p.running, true); assert.equal(a.serverPid(), 4242);
+    assert.equal(p.running, true); assert.equal(a.serverPid(), 4343); // 2b: 코어가 아니라 holder(프로그램이 산 동안 같다)
     assert.equal(a.checkCompat(p.pong).ok, true);
     a.startEvents();
     await until(() => a.connected);
@@ -228,7 +232,7 @@ test('P114 어댑터(가짜 hc): 붙기, 셸 작업 공간, 상태 이벤트, �
 
 test('P114 화면 스트림(가짜 hc): 첫 화면을 full로(응답과 한 덩어리여도), CREDIT, 입력, 같은 크기 resize는 새 첫 화면, 끝나면 exit', async () => {
   const fake = await startFakeHc();
-  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {} });
+  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {}, moveWaitMs: 100 });
   try {
     const t = fake.create({ argv: ['pwsh'] }).result;
     const c = a.openController(t.address, 100, 30);
@@ -263,7 +267,7 @@ test('P114 화면 스트림(가짜 hc): 첫 화면을 full로(응답과 한 덩�
 
 test('P114 화면 스트림 묶기: 잇달아 온 작은 DATA는 한 프레임(순서 그대로), 쉬다 온 첫 덩어리는 바로', async () => {
   const fake = await startFakeHc();
-  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {} });
+  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {}, moveWaitMs: 100 });
   try {
     const t = fake.create({ argv: ['pwsh'] }).result;
     const c = a.openController(t.address, 80, 24);
@@ -315,18 +319,22 @@ test('P114 서버 끔(server.stop): 패널 끝 없이 곧바로 disconnected, �
     fake.create({ argv: ['pwsh'] });
     a.startEvents();
     await until(() => a.connected);
+    fake.create({ argv: ['claude'], labels: { 'atrium-board': '1' } }); // 2b: 코어가 끄면 상태를 먼저 지운다. 그 놓임은 내지 않는다(끊김으로)
+    await until(() => seen.includes('agent_detected'));
     const t0 = Date.now();
     await a.call('server.stop', {}); // 가짜 코어는 끈 뒤 곧바로 다시 받는다(stopServer는 꺼질 때까지 기다리므로 직접 부른다)
     await until(() => seen.includes('DISCONNECTED'), 3000);
     assert.ok(Date.now() - t0 < 3000, 'no grace wait for a core that ended its terminals');
     assert.equal(seen.includes('pane_exited'), false);
+    await sleep(400);
+    assert.equal(seen.includes('agent_released'), false);
     await until(() => seen.filter((x) => x === 'CONNECTED').length === 2, 5000); // 가짜는 끊긴 뒤 곧 다시 받는다(코어가 다시 뜬 것)
   } finally { a.stopEvents(); await fake.close(); }
 });
 
 test('P114 에이전트로 바꿔 띄우기: pane_moved가 먼저, 옛 셸 자리의 끝은 내지 않고, 새 터미널은 판에 올리지 않는다', async () => {
   const fake = await startFakeHc();
-  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {} });
+  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {}, moveWaitMs: 100 });
   const ev = [];
   a.on('event', (e) => ev.push(e));
   try {
@@ -374,4 +382,111 @@ test('P114 중계: 판 밖 보는 이가 크기를 가지면 모두 주인이 �
   ctl.emit('size', { cols: 100, rows: 30, external: false });
   const back = sent.filter(([n]) => n === 'terminal.owner').pop()[1];
   assert.equal(back.ownerIsMe, true); assert.equal(back.shared, 1);
+});
+
+// ---------- P114 2b ----------
+test('P114 2b 세션 시작: 셸 자리 → 첫 argv 에이전트(판의 env, pathFirst, XDG 빈 값), 끝나면 같은 자리에 셸(pane_moved), 화면 스트림은 옮겨 붙음', async () => {
+  const fake = await startFakeHc();
+  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: { PATH: 'C:\\Windows' }, moveWaitMs: 2000 });
+  a.exeDir = 'C:\\board\\hc\\bin';
+  const ev = [];
+  a.on('event', (e) => ev.push(e));
+  try {
+    a.startEvents();
+    await until(() => a.connected);
+    const ws = await a.createWorkspace({ cwd: 'C:/w', label: 'demo' });
+    assert.equal(fake.terms.get(ws.paneId).labels['atrium-board'], '1');
+    const r = await a.startAgent({ name: 'cx', paneId: ws.paneId, args: ['resume', 'x'], kind: 'codex', command: ['codex'], env: { ATRIUM_SESSION_ID: 'sid-1', OPENCODE_CONFIG_CONTENT: '{}' }, pathFirst: ['C:\\data\\bin'] });
+    const nt = fake.terms.get(r.agent.paneId);
+    assert.deepEqual(nt.argv, ['codex', 'resume', 'x']);
+    assert.equal(nt.env.ATRIUM_SESSION_ID, 'sid-1'); assert.equal(nt.env.XDG_CONFIG_HOME, '');
+    assert.match(nt.env.PATH, /^C:\\data\\bin;C:\\board\\hc\\bin;/);
+    assert.equal(nt.labels['atrium-board'], '1'); assert.equal(nt.labels['atrium-ws'], ws.workspaceId);
+    await until(() => ev.find((e) => e.type === 'agent_detected' && e.paneId === r.agent.paneId));
+    // 되살리기가 판의 줄인지 볼 argv
+    const info = await a.processInfo(r.agent.paneId);
+    assert.ok(info.foreground_processes.flatMap((p) => p.argv).includes('resume'));
+    // 화면을 붙여 둔 채 에이전트가 스스로 끝난다 → 놓임, 같은 자리에 셸, 스트림은 새 셸로
+    const c = a.openController(r.agent.paneId, 80, 24);
+    const frames = [];
+    c.on('frame', (f) => frames.push(f));
+    await until(() => frames.length === 1);
+    ev.length = 0;
+    fake.finish(r.agent.paneId, 'exited', 0);
+    const moved = await until(() => ev.find((e) => e.type === 'pane_moved'));
+    assert.equal(ev[0].type, 'agent_released');
+    assert.equal(moved.previousPaneId, r.agent.paneId);
+    assert.equal(ev.some((e) => e.type === 'pane_exited'), false);
+    const sh = fake.terms.get(moved.paneId);
+    assert.deepEqual(sh.argv, ['pwsh.exe']); assert.equal(sh.labels['atrium-ws'], ws.workspaceId); assert.equal(sh.env.ATRIUM_SESSION_ID, 'sid-1');
+    await until(() => frames.filter((f) => f.full).length === 2); // 새 셸의 첫 화면
+    assert.equal(c.exited, null);
+    await until(() => !fake.terms.has(r.agent.paneId)); // 끝난 에이전트 기록은 지운다(같은 이름 기록이 쌓이지 않게)
+    // 그 자리에서 다시 띄우기(이어 가기): 같은 이름이 다시 쓰인다
+    const r2 = await a.startAgent({ name: 'cx', paneId: moved.paneId, args: ['resume', 'x'], kind: 'codex', command: ['codex'], env: { ATRIUM_SESSION_ID: 'sid-1' } });
+    assert.equal(fake.terms.get(r2.agent.paneId).name, 'cx');
+    await until(() => frames.filter((f) => f.full).length === 3);
+    c.close();
+  } finally { a.stopEvents(); await fake.close(); }
+});
+
+test('P114 2b 닫기: 셸을 다시 띄우는 중에 작업 공간을 닫으면 그 셸도 닫고, 판 밖에서 kill된 에이전트는 셸 없이 패널 끝', async () => {
+  const fake = await startFakeHc();
+  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {}, moveWaitMs: 100 });
+  const ev = [];
+  a.on('event', (e) => ev.push(e));
+  try {
+    a.startEvents();
+    await until(() => a.connected);
+    const ws = await a.createWorkspace({ cwd: 'C:/w' });
+    const r = await a.startAgent({ name: 'lead', paneId: ws.paneId, kind: 'claude' });
+    await until(() => ev.find((e) => e.type === 'agent_detected'));
+    fake.finish(r.agent.paneId, 'exited', 0); // /exit와 판의 closeWorkspace가 겹친다
+    await sleep(5);
+    await a.closeWorkspace(ws.workspaceId);
+    await sleep(300);
+    assert.deepEqual([...fake.terms.values()].filter((t) => t.state === 'live').map((t) => t.address), []);
+    const ws2 = await a.createWorkspace({ cwd: 'C:/w' });
+    const r2 = await a.startAgent({ name: 'lead2', paneId: ws2.paneId, kind: 'claude' });
+    await until(() => ev.find((e) => e.type === 'agent_detected' && e.paneId === r2.agent.paneId));
+    fake.finish(r2.agent.paneId, 'killed', 1);
+    await until(() => ev.find((e) => e.type === 'pane_exited' && e.paneId === r2.agent.paneId));
+  } finally { a.stopEvents(); await fake.close(); }
+});
+
+test('P114 2b 끝난 기록 정리: 붙을 때 판이 만든 끝난 터미널을 지우고(판 밖 것은 둔다), 같은 이름으로 띄우기 전에 그 이름의 끝난 기록을 지운다', async () => {
+  const fake = await startFakeHc();
+  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {} });
+  try {
+    const b = fake.create({ argv: ['claude'], name: 'old', labels: { 'atrium-board': '1' } }).result;
+    const o = fake.create({ argv: ['pwsh'], name: 'outside' }).result;
+    fake.finish(b.address, 'server_stop', null); fake.finish(o.address, 'exited', 0);
+    a.startEvents();
+    await until(() => a.connected);
+    await until(() => !fake.terms.has(b.address));
+    assert.equal(fake.terms.has(o.address), true);
+    const c = fake.create({ argv: ['claude'], name: 'lead', labels: { 'atrium-board': '1' } }).result;
+    fake.finish(c.address, 'exited', 0);
+    await sleep(50);
+    await a.runAgent({ name: 'lead', argv: ['claude'], cwd: 'C:/w' });
+    assert.equal(fake.terms.has(c.address), false);
+  } finally { a.stopEvents(); await fake.close(); }
+});
+
+test('P114 2b holder 기준 서버 PID, 이어 가기 기록, ANSI 화면(첫 화면)', async () => {
+  assert.equal(holderIdentity({ holders: [{ pid: 30, terminals: 0, current: true }, { pid: 20, terminals: 2 }, { pid: 25, terminals: 1 }] }), 20);
+  assert.equal(holderIdentity({ holders: [{ pid: 30, terminals: 0, current: true }] }), 30);
+  assert.equal(holderIdentity({ holders: [] }), null);
+  const fake = await startFakeHc();
+  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {} });
+  try {
+    await a.probe();
+    assert.equal(a.serverPid(), 4343); // 가짜의 holder
+    assert.deepEqual(a.readResumeRecord('s1'), { found: false });
+    await a.registerResume({ paneId: 't1', sessionId: 's1', argv: ['claude', '--resume', 's1', '--settings', 'x.json'] });
+    assert.deepEqual(a.readResumeRecord('s1').argv, ['claude', '--resume', 's1', '--settings', 'x.json']);
+    const t = fake.create({ argv: ['pwsh'] }).result;
+    assert.equal(await a.readScreen(t.address, { source: 'visible', format: 'ansi' }), FIRST_PAINT.replace(/^\x18/, ''));
+    assert.match(await a.readScreen(t.address, { source: 'recent', format: 'ansi', lines: 100 }), /PS /);
+  } finally { await fake.close(); }
 });
