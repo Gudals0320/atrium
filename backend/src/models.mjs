@@ -82,6 +82,9 @@ export function buildCatalog({ launchers = [], gateways = [], harnessModels = {}
       entries.push({ source: 'gateway', harness: hh.id, kind: hh.kind, launcher: null, host: g.host.name, hostId: g.host.id, model: p.id, label: p.label, gateway: g.url, connection: g.name || null, keys: { exact: [], exactModel: [p.id], alias: [`${p.base}${p.variants.includes('fast') ? '--fast' : ''}${p.variants.includes('1m') ? '[1m]' : ''}`, `${p.provider}/${p.base}`] }, target: `${p.provider}:${p.base.toLowerCase()}`, base: p.base, provider: p.provider, variants: p.variants, words: [p.base, p.provider, p.label].join(' '), command: `atrium child <이름> --model ${q(p.id)}` });
     }
   }
+  // P115: 같은 모델 ID를 여러 연결(하네스가 다른)이 알려 주면 명령에 --kind를 붙여 그 연결의 하네스로 띄우게 한다
+  const viaConn = entries.filter((e) => e.source === 'gateway');
+  for (const e of viaConn) if (viaConn.some((x) => x !== e && x.model === e.model && x.kind !== e.kind)) e.command = `atrium child <이름> --kind ${e.kind} --model ${q(e.model)}`;
   return { entries, gateways: gateways.map((g) => ({ url: g.url, connection: g.name || null, protocol: g.protocol || null, host: g.host ? g.host.name : null, ok: !!g.ok, why: g.why || null, count: g.ok ? (g.models || []).length : 0 })) };
 }
 

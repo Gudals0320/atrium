@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { workspaceOf } from '../src/git.mjs';
-import { Branch } from '../src/branch.mjs';
+import { Branch, BRANCH_ALLOW } from '../src/branch.mjs';
 import { Recall } from '../src/recall.mjs';
 import { ADAPTERS, adapterOf, harnessLaunch, reservedArg, codexSessionOf, harnessResumable, HARNESS_PROMPT } from '../src/harness.mjs';
 import { psEnvPrefix, psPathPrefix, psLine, writeHarnessFiles, writeTokenFile, tokenFileOf } from '../src/launch.mjs';
@@ -89,6 +89,7 @@ test('P115 계약: atrium help --json은 계약 버전·동사 일곱(+help)·�
   assert.deepEqual(VERB_NAMES, ['me', 'child', 'children', 'child-kill', 'child-wait', 'wake', 'models']);
   assert.ok(VERBS.every((v) => Array.isArray(v.args) && v.does && Array.isArray(v.out)));
   assert.deepEqual(j.exit, { ok: 0, refused: 1, usage: 2 });
+  for (const r of ['Bash(atrium help)', 'Bash(atrium help *)', 'PowerShell(atrium help)', 'Bash(mtask help)']) assert.ok(BRANCH_ALLOW.includes(r), r); // Claude Code가 묻지 않고 사용법을 읽는다
   const h = shortHelp();
   for (const v of VERBS) assert.ok(h.includes(`atrium ${v.name}`), v.name);
 });

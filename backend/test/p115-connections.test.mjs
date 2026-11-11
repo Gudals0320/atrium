@@ -195,6 +195,7 @@ test('P115 atrium models·child --model: 연결마다 모델 목록, 그 연결�
     assert.deepEqual(m.gateways.map((g) => [g.connection, g.protocol, g.host, g.ok]).sort(), [['fake anth', 'anthropic-messages', 'cl-fake', true], ['fake chat', 'openai-chat', 'oc-fake', true], ['fake oai', 'openai-responses', 'cx-fake', true]]);
     const om2 = m.entries.find((e) => e.source === 'gateway' && e.model === 'o-m2' && e.connection === 'fake chat');
     assert.equal(om2.harness, 'opencode', '그 연결을 쓰는 첫 런처의 하네스');
+    assert.equal(m.entries.find((e) => e.source === 'gateway' && e.model === 'm1' && e.connection === 'fake oai').command, 'atrium child <이름> --kind codex --model m1', '같은 모델 ID가 여러 연결에 있으면 --kind로 가른다');
     const r = await b.branch.spawnChild(lead, { name: 'w-cm2', model: 'claude-m2', wait: false });
     assert.equal(r.kind, 'claude'); assert.equal(r.resolved.source, 'gateway');
     const s = b.sessions.get(r.sessionId);
