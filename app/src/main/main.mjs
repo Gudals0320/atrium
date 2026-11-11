@@ -16,6 +16,7 @@ import { translate, DEFAULT_LANGUAGE } from '../renderer/lib/i18n.js'; // P16: �
 import { migrateAppProfile } from './profile.mjs'; // P18: 옛 창 프로필 옮기기
 import { noticeWay } from '../renderer/lib/remote.js'; // P58: 원격 붙음 알림은 창이 숨었을 때만 OS 알림
 import { windowTitle } from '../renderer/lib/update-notice.js'; // P71: 창 제목에 버전
+import { shouldPurgeOnClose, purgeAndDestroy } from './gpu-purge.mjs'; // P113: 창을 닫고 트레이에 남을 때 GPU 프로세스 메모리 돌려주기
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, '..', '..');
@@ -25,6 +26,9 @@ const NOTIFY_ICON = path.join(APP_ROOT, 'assets', 'atrium-icon-256.png');
 const cfg = loadConfig({ argv: process.argv });
 const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'package.json'), 'utf8')).version; } catch { return null; } })(); // P69
 let updating = false; // P69: 업데이트로 끝나는 중
+let quitting = false; // P113: 앱을 끝내는 중(트레이 끝내기 등). 이때 닫는 창은 GPU 메모리를 돌려주지 않고 바로 닫는다
+// P113: 창을 닫을 때 보낼 메모리 압박 단계. 기본 critical, 개발용 판의 비교 시험은 ATRIUM_GPU_PURGE=off|moderate
+const GPU_PURGE = envVar('GPU_PURGE') || 'critical';
 
 // 프로필마다 Electron 사용자 데이터를 따로 둔다(개발용 창과 실제 판 창이 섞이지 않게)
 app.setPath('userData', path.join(app.getPath('appData'), `${APP_ID}-app-${cfg.profile}`));
@@ -110,7 +114,7 @@ function showNode(sessionId) {
   if (sessionId) whenBoardReady(w.webContents).then((ok) => { if (ok && !w.isDestroyed()) w.webContents.send('mt:navigate', sessionId); });
 }
 function createWindow() {
-  win = new BrowserWindow({
+  const w = win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 900, minHeight: 600, icon: WINDOW_ICON,
     title: windowTitle(APP_NAME, APP_VERSION, cfg.profile), // P71: "Atrium 0.1.2", 개발용 판은 " (dev)"
     backgroundColor: '#070705', // P11·P28: 판 바탕(renderer tokens.css --canvas). 창이 뜰 때 다른 색이 번쩍이지 않게
@@ -126,9 +130,19 @@ function createWindow() {
   win.webContents.on('unresponsive', () => log('renderer unresponsive'));
   win.webContents.on('responsive', () => log('renderer responsive'));
   win.loadFile(path.join(APP_ROOT, 'dist', 'index.html'));
-  win.on('closed', () => { win = null; });
+  // P113: 트레이에 남으면 창을 없애기 전에 페이지를 내리고 GPU 프로세스에 메모리 압박을 알린다(gpu-purge.mjs).
+  // 그동안 창은 숨어 있고 win은 비워 둔다(트레이에서 다시 열면 새 창을 만든다)
+  win.on('close', (e) => {
+    if (w.mtPurging || !shouldPurgeOnClose({ keepRunning: tray && tray.keepRunning(), quitting, updating, level: GPU_PURGE })) return;
+    e.preventDefault();
+    w.mtPurging = true;
+    if (win === w) win = null;
+    purgeAndDestroy(w, { level: GPU_PURGE }).then((r) => log('window closed, gpu purge', JSON.stringify(r)));
+  });
+  win.on('closed', () => { if (win === w) win = null; });
 }
 
+app.on('before-quit', () => { quitting = true; }); // P113
 app.on('second-instance', () => { if (!updating) showNode(null); }); // 트레이에 남아 있을 때 다시 실행하면 창을 다시 연다(I7)
 // Windows 알림의 앱 이름. 실제 판과 개발용을 나눈다
 app.setAppUserModelId(`${APP_ID}.${cfg.profile}`);
