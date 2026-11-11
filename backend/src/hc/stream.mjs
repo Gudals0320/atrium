@@ -10,13 +10,18 @@ import { EventEmitter } from 'node:events';
 import { FramedConn, FRAME, u32, sizePayload } from './rpc.mjs';
 
 const FINAL = new Set(['exited', 'killed', 'server_stop', 'host_shutdown', 'holder_lost', 'stopped_by_restart', 'removed', 'not_found']);
+// 묶기: hc는 프로그램이 쓸 때마다(타자 메아리는 글자 하나씩) DATA를 보낸다. herdr는 그린 화면을 몇 ms마다 보냈다.
+// 이 간격 안에 온 바이트는 한 프레임으로 낸다(창의 프레임 처리와 WebSocket 메시지 수를 줄인다). 첫 화면과 쉬다가 온 첫 덩어리는 바로 낸다
+export const COALESCE_MS = 8;
+const COALESCE_MAX = 256 * 1024;
 const RETRY_MS = [200, 400, 800, 1600, 3000, 5000];
 const MAX_RETRY_MS = 60000; // 이만큼 붙지 못하면 끝(창은 detached를 보이고 다시 붙기를 고를 수 있다)
 let nextId = 1;
 
 export class HcController extends EventEmitter {
-  constructor({ pipe, terminal, cols, rows, log = () => {}, connect = (p) => new FramedConn(p) }) {
+  constructor({ pipe, terminal, cols, rows, log = () => {}, connect = (p) => new FramedConn(p), coalesceMs = COALESCE_MS }) {
     super();
+    this.coalesceMs = coalesceMs; this.pend = []; this.pendBytes = 0; this.pendTimer = null; this.lastEmit = 0;
     this.pipe = pipe; this.terminal = terminal; this.log = log; this.connect = connect;
     this.pid = `hc:${nextId++}`;
     this.paneId = terminal;
@@ -73,11 +78,15 @@ export class HcController extends EventEmitter {
   _frame(conn, f) {
     if (conn !== this.conn) return;
     if (f.kind === FRAME.DATA) {
-      const full = this.firstPending; this.firstPending = false;
       this.stats.bytes += f.payload.length;
-      this.emit('frame', { seq: ++this.seq, full, width: this.size.cols, height: this.size.rows, bytes: f.payload.toString('base64') });
       conn.write(this.ch, FRAME.CREDIT, u32(f.payload.length)); this.stats.credits += f.payload.length;
+      if (this.firstPending) { this.firstPending = false; this._flush(); this._emitFrame([f.payload], true); return; }
+      this.pend.push(f.payload); this.pendBytes += f.payload.length;
+      const idle = Date.now() - this.lastEmit >= this.coalesceMs;
+      if (this.coalesceMs <= 0 || this.pendBytes >= COALESCE_MAX || (idle && !this.pendTimer)) return this._flush();
+      if (!this.pendTimer) { this.pendTimer = setTimeout(() => this._flush(), this.coalesceMs); if (this.pendTimer.unref) this.pendTimer.unref(); }
     } else if (f.kind === FRAME.CLOSE) {
+      this._flush();
       let why = null; try { why = f.payload.length ? JSON.parse(f.payload.toString('utf8')) : null; } catch {}
       const reason = (why && why.reason) || 'closed';
       conn.release(this.ch); this.ch = null;
@@ -87,6 +96,16 @@ export class HcController extends EventEmitter {
     } else if (f.kind === FRAME.RESIZE && f.payload.length >= 4) {
       this.size = { cols: f.payload.readUInt16LE(0), rows: f.payload.readUInt16LE(2) };
     }
+  }
+  _emitFrame(parts, full) {
+    this.lastEmit = Date.now();
+    this.emit('frame', { seq: ++this.seq, full, width: this.size.cols, height: this.size.rows, bytes: (parts.length === 1 ? parts[0] : Buffer.concat(parts)).toString('base64') });
+  }
+  _flush() {
+    clearTimeout(this.pendTimer); this.pendTimer = null;
+    if (!this.pend.length) return;
+    const parts = this.pend; this.pend = []; this.pendBytes = 0;
+    this._emitFrame(parts, false);
   }
   _write(s) { if (this.conn && this.ch != null) this.conn.write(this.ch, FRAME.DATA, Buffer.from(s, 'utf8')); else if (this.queue.length < 256) this.queue.push(s); }
   // 판 클라이언트가 친 글(붙여넣기 감싸기·휠 변환은 창이 이미 했다)
@@ -99,7 +118,7 @@ export class HcController extends EventEmitter {
     if (same && this.conn && this.ch != null) return this.repaint();
     if (this.conn && this.ch != null) { this.conn.write(this.ch, FRAME.RESIZE, sizePayload(cols, rows)); this.size = { cols, rows }; }
   }
-  repaint() { if (this.exited != null) return; const old = this.conn; this.conn = null; this.ch = null; if (old) old.close(); this._attach(true); }
+  repaint() { if (this.exited != null) return; this._flush(); const old = this.conn; this.conn = null; this.ch = null; if (old) old.close(); this._attach(true); }
   focus(on) { if (this.conn && this.ch != null) this.conn.write(this.ch, FRAME.FOCUS, Buffer.from([on ? 1 : 0])); }
   // 어댑터가 넘기는 터미널 이벤트(size, restarted, finished)
   onTerminalEvent(e) {
@@ -113,6 +132,7 @@ export class HcController extends EventEmitter {
   }
   _end(reason) {
     if (this.exited != null) return;
+    this._flush(); // 모아 둔 바이트를 먼저
     this.exited = reason;
     clearTimeout(this._retryTimer);
     if (this.conn) { try { if (this.ch != null) this.conn.write(this.ch, FRAME.CLOSE); } catch {} this.conn.close(); }

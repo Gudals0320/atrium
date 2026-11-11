@@ -261,6 +261,24 @@ test('P114 화면 스트림(가짜 hc): 첫 화면을 full로(응답과 한 덩�
   } finally { await fake.close(); }
 });
 
+test('P114 화면 스트림 묶기: 잇달아 온 작은 DATA는 한 프레임(순서 그대로), 쉬다 온 첫 덩어리는 바로', async () => {
+  const fake = await startFakeHc();
+  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {} });
+  try {
+    const t = fake.create({ argv: ['pwsh'] }).result;
+    const c = a.openController(t.address, 80, 24);
+    const frames = [];
+    c.on('frame', (f) => frames.push(Buffer.from(f.bytes, 'base64').toString()));
+    await until(() => frames.length === 1);
+    await sleep(30);
+    for (const ch of 'echo hi') fake.output(t.address, ch); // 타자 메아리처럼 글자 하나씩
+    await until(() => frames.join('').endsWith('echo hi'));
+    assert.ok(frames.length - 1 <= 2, `coalesced into ${frames.length - 1} frames`);
+    assert.equal(frames.slice(1).join(''), 'echo hi');
+    c.close();
+  } finally { await fake.close(); }
+});
+
 test('P114 짧은 끊김(코어 재시작): disconnected 없이 다시 구독하고, 그새 바뀐 것을 이벤트로, 스트림은 다시 붙는다', async () => {
   const fake = await startFakeHc();
   const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {}, graceMs: 3000 });
