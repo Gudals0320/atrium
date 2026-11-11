@@ -14,6 +14,7 @@ import { spawn, execFile } from 'node:child_process';
 import { HERDR_PROTOCOLS, HERDR_TESTED } from '../config.mjs';
 import { discoverHerdr, parseWhere, herdrCompat, herdrServerExe, withPathFirst } from './discover.mjs';
 import { psLine } from '../launch.mjs'; // P97: 실행 명령 줄
+import { spawnDetached } from './detach.mjs'; // P114 e: job·프로세스 나무 밖에서 서버 띄우기
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SUB_OVERLAP_MS = 1500; // 구독을 바꿀 때 옛 구독을 더 열어 두는 시간
@@ -142,8 +143,9 @@ export function parseKinds(helpText) {
 }
 
 export class HerdrAdapter extends EventEmitter {
-  constructor({ herdrPath, session, logDir, protocols = HERDR_PROTOCOLS, tested = HERDR_TESTED }) {
+  constructor({ herdrPath, session, logDir, protocols = HERDR_PROTOCOLS, tested = HERDR_TESTED, detach = true }) {
     super();
+    this.detach = detach; // P114 e: 서버를 job·프로세스 나무 밖에서 띄운다(detach.mjs)
     if (!session || session === 'default') throw new Error("이름이 지정된 herdr 세션만 사용할 수 있습니다.");
     this.herdrPath = herdrPath || null; // P40: 백엔드가 찾은 실행 파일. 못 찾았으면 null(서버를 띄우지 않는다)
     this.policy = { protocols, tested };
@@ -176,24 +178,41 @@ export class HerdrAdapter extends EventEmitter {
     const p0 = await this.probe();
     if (p0.running) return { started: false, pong: p0.pong, pid: this.serverPid() };
     if (!this.herdrPath) throw new HerdrError('not_found', 'herdr executable not found', 'server'); // P40
+    if (path.isAbsolute(this.herdrPath) && !fs.existsSync(this.herdrPath)) throw new HerdrError('spawn_failed', 'ENOENT', 'server'); // P40: 15초를 기다리지 않는다
     fs.mkdirSync(this.logDir, { recursive: true });
-    const out = fs.openSync(path.join(this.logDir, `herdr-server-${this.session}.out`), 'a');
+    const logFile = path.join(this.logDir, `herdr-server-${this.session}.out`);
     // P40: 서버 env의 PATH 맨 앞에 이 herdr의 폴더를 넣는다. 패널 안 에이전트가 치는 `herdr`가 서버와 같은 실행 파일이 된다
     const env = withPathFirst(cleanEnv(), path.dirname(this.herdrPath));
-    let spawnErr = null, exitCode = null, proc;
-    try { proc = spawn(this.herdrPath, ['--session', this.session, 'server'], { env, detached: true, stdio: ['ignore', out, out], windowsHide: true }); }
-    catch (e) { fs.closeSync(out); throw new HerdrError('spawn_failed', e.code || e.message, 'server'); }
-    // P40: 실행 파일이 없거나 실행되지 않으면 error가 온다. 전에는 받지 않아 15초를 기다린 뒤에야 실패했다
-    proc.on('error', (e) => { spawnErr = e; });
-    proc.on('exit', (c) => { exitCode = c; });
-    proc.unref();
-    fs.closeSync(out);
+    const args = ['--session', this.session, 'server'];
     const t0 = Date.now();
+    // P114 e: Electron·백엔드의 job과 프로세스 나무 밖에서 띄운다(detach.mjs). 작업 관리자의 "프로세스 트리 끝내기"가 서버와 세션을 끄지 않게.
+    // 실행기를 못 쓰면(PowerShell 없음·막힘) 예전처럼 백엔드의 detached 자식으로 띄운다
+    let detached = null;
+    if (this.detach && process.platform === 'win32') {
+      try { detached = await spawnDetached({ file: this.herdrPath, args, env, logFile, workDir: this.logDir }); this.emit('log', `herdr server launched outside the backend tree (pid ${detached.pid}, ${detached.breakaway ? 'left the job' : 'job did not allow breakaway'}, ${detached.ms}ms)`); }
+      catch (e) {
+        if (e.win32 === 2 || e.win32 === 3) throw new HerdrError('spawn_failed', 'ENOENT', 'server');
+        this.emit('log', `detached launch failed (${e.code}: ${e.message}); starting herdr as a backend child`);
+      }
+    }
+    let spawnErr = null, exitCode = null, proc = null;
+    if (!detached) {
+      const out = fs.openSync(logFile, 'a');
+      try { proc = spawn(this.herdrPath, args, { env, detached: true, stdio: ['ignore', out, out], windowsHide: true }); }
+      catch (e) { fs.closeSync(out); throw new HerdrError('spawn_failed', e.code || e.message, 'server'); }
+      // P40: 실행 파일이 없거나 실행되지 않으면 error가 온다. 전에는 받지 않아 15초를 기다린 뒤에야 실패했다
+      proc.on('error', (e) => { spawnErr = e; });
+      proc.on('exit', (c) => { exitCode = c; });
+      proc.unref();
+      fs.closeSync(out);
+    }
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
     while (Date.now() - t0 < 15000) {
       if (spawnErr) throw new HerdrError('spawn_failed', spawnErr.code || spawnErr.message, 'server');
       if (exitCode !== null && exitCode !== 0) throw new HerdrError('server_exited', `server exited with code ${exitCode}`, 'server');
       const p = await this.probe();
-      if (p.running) return { started: true, pong: p.pong, pid: this.serverPid() || proc.pid, ms: Date.now() - t0 };
+      if (p.running) return { started: true, pong: p.pong, pid: this.serverPid() || (detached ? detached.pid : proc.pid), ms: Date.now() - t0, detached: detached ? { breakaway: detached.breakaway } : null };
+      if (detached && !alive(detached.pid)) throw new HerdrError('server_exited', 'server exited right after start', 'server');
       await sleep(100);
     }
     throw new HerdrError('start_failed', 'server did not answer ping in 15s', 'server');
