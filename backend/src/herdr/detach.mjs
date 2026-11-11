@@ -4,6 +4,8 @@
 // 방법: 잠깐 뜨는 PowerShell(5.1, Windows 기본)이 CreateProcessW를 DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB으로 부르고 끝난다.
 //   그래서 herdr 서버의 부모는 이미 끝난 프로세스다(나무 밖). breakaway를 막는 job이면(ERROR_ACCESS_DENIED) breakaway 없이 띄운다(job 안, 나무 밖).
 //   env는 판이 정한 값을 블록으로 넘긴다(PowerShell 자신의 PSModulePath 등이 섞이지 않게). stdout·stderr는 로그 파일, stdin은 NUL
+// 요청(명령 줄, 폴더, env, 로그 경로)은 실행기의 stdin으로 넘긴다(2a-fix). env에는 사용자 환경 변수의 API 키가 들어 있어 파일로 쓰지 않는다
+//   (전에는 요청 JSON을 로그 폴더에 썼고, 쓴 뒤 지우기 전에 백엔드가 죽으면 키가 디스크에 남았다). 결과 파일에는 PID와 breakaway만 쓴다
 // hc 코어도 같은 플래그로 뜬다(hc platform/windows.rs). 여기는 그것을 herdr에 쓰는 것이다
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,9 +32,11 @@ export function envList(env) {
   return [...by.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([, kv]) => kv);
 }
 
-const PS1 = String.raw`param([string]$Req)
+const PS1 = String.raw`param([string]$Result)
 $ErrorActionPreference = 'Stop'
-$r = Get-Content -Raw -Encoding UTF8 $Req | ConvertFrom-Json
+# 요청은 stdin의 UTF-8 바이트(콘솔 코드 페이지를 거치지 않게 바이트로 읽는다)
+$in = [Console]::OpenStandardInput(); $ms = New-Object System.IO.MemoryStream; $in.CopyTo($ms)
+$r = [System.Text.Encoding]::UTF8.GetString($ms.ToArray()) | ConvertFrom-Json
 Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices; using System.Text;
 public static class AtriumDetach {
@@ -62,7 +66,7 @@ public static class AtriumDetach {
 }
 "@
 $out = [AtriumDetach]::Run($r.cmd, $r.cwd, [string[]]@($r.env), $r.log)
-[System.IO.File]::WriteAllText($r.result, $out)
+[System.IO.File]::WriteAllText($Result, $out)
 `;
 
 // → { pid, breakaway, ms }. 실행기가 실패하면 던진다(부르는 쪽이 지금 방식으로 띄운다)
@@ -70,24 +74,26 @@ export async function spawnDetached({ file, args = [], cwd = process.cwd(), env 
   fs.mkdirSync(workDir, { recursive: true });
   const id = crypto.randomBytes(5).toString('hex');
   const ps1 = path.join(workDir, 'herdr-detach.ps1');
-  const req = path.join(workDir, `herdr-detach-${id}.req.json`);
-  const result = path.join(workDir, `herdr-detach-${id}.result.json`);
+  const result = path.join(workDir, `herdr-detach-${id}.result.json`); // PID와 breakaway만 쓴다(env 값 없음)
   if (!fs.existsSync(ps1) || fs.readFileSync(ps1, 'utf8') !== PS1) fs.writeFileSync(ps1, PS1);
-  fs.writeFileSync(req, JSON.stringify({ cmd: commandLine(file, args), cwd, env: envList(env), log: logFile, result }));
+  const request = Buffer.from(JSON.stringify({ cmd: commandLine(file, args), cwd, env: envList(env), log: logFile }), 'utf8');
   const t0 = Date.now();
   try {
     const code = await new Promise((resolve, reject) => {
       const sys = process.env.SystemRoot || 'C:\\Windows';
       // detached(콘솔 없음)로 띄운 PowerShell은 스크립트를 돌리지 않고 끝났다(P114 e). 실행기는 곧 끝나므로 보통 자식으로 띄운다.
       // libuv가 자식을 넣는 job은 BREAKAWAY_OK·SILENT_BREAKAWAY_OK라 실행기가 띄운 herdr는 그 job에 들지 않는다(P114 1단계)
-      const p = spawn(path.join(sys, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ps1, req], { stdio: 'ignore', windowsHide: true });
+      // 요청은 stdin으로(파일로 쓰지 않는다). 다 쓰고 닫아야 실행기가 읽기를 끝낸다
+      const p = spawn(path.join(sys, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ps1, result], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
       const timer = setTimeout(() => { try { p.kill(); } catch {} reject(Object.assign(new Error('detach launcher timed out'), { code: 'detach_timeout' })); }, 20000);
       p.on('error', (e) => { clearTimeout(timer); reject(Object.assign(e, { code: 'detach_spawn' })); });
       p.on('exit', (c) => { clearTimeout(timer); resolve(c); });
+      p.stdin.on('error', () => {}); // 실행기가 먼저 끝나면(EPIPE) exit로 판단한다
+      p.stdin.end(request);
     });
     let r = null;
     try { r = JSON.parse(fs.readFileSync(result, 'utf8')); } catch {}
     if (!r || r.error != null || !r.pid) throw Object.assign(new Error(`detach launcher failed (exit ${code}, ${r ? `win32 error ${r.error}` : 'no result'})`), { code: 'detach_failed', win32: r ? r.error : null });
     return { pid: r.pid, breakaway: !!r.breakaway, ms: Date.now() - t0 };
-  } finally { for (const f of [req, result]) fs.rmSync(f, { force: true }); }
+  } finally { fs.rmSync(result, { force: true }); }
 }
