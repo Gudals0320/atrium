@@ -3,7 +3,9 @@
 // - 판 세션 ID는 라벨 `atrium-session`, 판이 붙인 이름은 `atrium-name`(hc는 이름을 바꿀 수 없다)
 // - 상태: 프로그램이 OSC 7501로 알린 것만 있다. herdr 낱말로 옮긴다(아래 STATUS_WORD). 앱 이름(`claude-code`)이 에이전트 종류다
 // - 이벤트: hc 이벤트(created, status, finished, removed, lost, restarted …)를 herdr 어댑터의 normalizeEvent 모양으로 바꾼다
-export const LABEL = { session: 'atrium-session', ws: 'atrium-ws', name: 'atrium-name', wsLabel: 'atrium-ws-label' };
+export const LABEL = { session: 'atrium-session', ws: 'atrium-ws', name: 'atrium-name', wsLabel: 'atrium-ws-label', board: 'atrium-board', launch: 'atrium-launch' };
+// P114 2b: 판이 만든 터미널(createWorkspace의 셸과 그 자리에 띄운 에이전트)인가. 판 밖에서 `hc run`으로 생긴 터미널은 아니다
+export const isBoardTerm = (t) => !!(t && t.labels && t.labels[LABEL.board]);
 
 // 7501 상태 → herdr 상태 낱말. error는 턴이 끝난 것(done)으로 두고 자세한 것은 detail로 넘긴다. 상태가 없으면 unknown
 export const STATUS_WORD = { idle: 'idle', working: 'working', blocked: 'blocked', done: 'done', error: 'done' };
@@ -127,7 +129,8 @@ export class HcModel {
         // 판이 띄운 세션(2b)은 이 이벤트를 받아 exited로 둘지 정한다. agent: 에이전트가 돈 터미널이었나
         // 코어가 꺼져서 끝난 것(서버 끔, 재부팅, holder 잃음)은 herdr 서버가 꺼진 것과 같다: 패널 끝을 내지 않는다.
         // 판은 곧 오는 끊김(disconnected)으로 끊긴 턴을 표시하고, 다시 붙으면 되살리기(J1)를 한다
-        if (!CORE_DOWN.has(t.reason)) out.push({ type: 'pane_exited', ...this._base(t), reason: t.reason, exitCode: t.exit_code ?? null, agent: this.everAgent.has(id), raw });
+        // board: 판이 만든 터미널. 판이 띄운 에이전트가 스스로 끝났으면(exited) 어댑터가 그 자리에 셸을 띄워 pane_moved로 알린다(herdr의 패널 셸이 남음, 2b)
+        if (!CORE_DOWN.has(t.reason)) out.push({ type: 'pane_exited', ...this._base(t), reason: t.reason, exitCode: t.exit_code ?? null, agent: this.everAgent.has(id), board: isBoardTerm(t), raw });
         out.push({ type: 'terminal_finished', ...this._base(t), reason: t.reason, exitCode: t.exit_code ?? null, raw });
         break;
       }
@@ -180,13 +183,17 @@ export class HcModel {
 const isPathKey = (k) => k.toUpperCase() === 'PATH';
 // 판이 띄우는 터미널의 env(관리자 결정, P114 2a): PATH는 터미널 env로 넘기고(hc는 프로그램 env의 PATH를 레지스트리로 다시 만든다),
 // 코어에 준 XDG_CONFIG_HOME(판 전용 hc 설정)은 프로그램에 새지 않게 빈 값으로 덮는다(빈 값은 XDG 규약상 기본 폴더)
-export function terminalEnv({ exeDir, basePath = '', extra = {} } = {}) {
-  const parts = String(basePath || '').split(';').filter(Boolean);
-  const norm = (p) => p.replace(/[\\/]+$/, '').toLowerCase();
-  const pathValue = exeDir ? [exeDir, ...parts.filter((p) => norm(p) !== norm(exeDir))].join(';') : parts.join(';');
-  const out = { XDG_CONFIG_HOME: '' };
-  if (pathValue) out.PATH = pathValue;
-  for (const [k, v] of Object.entries(extra || {})) { if (isPathKey(k)) out.PATH = v; else out[k] = String(v); }
+// P114 2b: extra는 판의 env(하네스 env 포함), pathFirst는 PATH 맨 앞에 둘 폴더들(판 데이터 폴더의 bin/ 등, harnessLaunch). PATH = pathFirst + 판의 hc 폴더 + 기본 PATH
+// (extra에 PATH가 있으면 그것이 기본 PATH). 같은 폴더는 한 번만. XDG_CONFIG_HOME은 extra에 있어도 빈 값으로 둔다(판 hc 설정이 새지 않게)
+export function terminalEnv({ exeDir, basePath = '', extra = {}, pathFirst = [] } = {}) {
+  const norm = (p) => String(p).replace(/[\\/]+$/, '').toLowerCase();
+  const out = {};
+  let base = basePath;
+  for (const [k, v] of Object.entries(extra || {})) { if (v == null) continue; if (isPathKey(k)) base = String(v); else out[k] = String(v); }
+  const seen = new Set(), parts = [];
+  for (const p of [...(pathFirst || []), ...(exeDir ? [exeDir] : []), ...String(base || '').split(';')]) { if (!p) continue; const k = norm(p); if (seen.has(k)) continue; seen.add(k); parts.push(p); }
+  if (parts.length) out.PATH = parts.join(';');
+  out.XDG_CONFIG_HOME = '';
   return out;
 }
 

@@ -19,8 +19,9 @@ const MAX_RETRY_MS = 60000; // 이만큼 붙지 못하면 끝(창은 detached를
 let nextId = 1;
 
 export class HcController extends EventEmitter {
-  constructor({ pipe, terminal, cols, rows, log = () => {}, connect = (p) => new FramedConn(p), coalesceMs = COALESCE_MS }) {
+  constructor({ pipe, terminal, cols, rows, log = () => {}, connect = (p) => new FramedConn(p), coalesceMs = COALESCE_MS, moveWaitMs = 3000 }) {
     super();
+    this.moveWaitMs = moveWaitMs; this._moveTimer = null;
     this.coalesceMs = coalesceMs; this.pend = []; this.pendBytes = 0; this.pendTimer = null; this.lastEmit = 0;
     this.pipe = pipe; this.terminal = terminal; this.log = log; this.connect = connect;
     this.pid = `hc:${nextId++}`;
@@ -90,7 +91,12 @@ export class HcController extends EventEmitter {
       let why = null; try { why = f.payload.length ? JSON.parse(f.payload.toString('utf8')) : null; } catch {}
       const reason = (why && why.reason) || 'closed';
       conn.release(this.ch); this.ch = null;
-      if (FINAL.has(reason)) { this.emit('record', { type: 'terminal.closed', reason, exitCode: why && why.exit_code }); conn.close(); this.conn = null; return this._end(reason); }
+      if (FINAL.has(reason)) {
+        this.emit('record', { type: 'terminal.closed', reason, exitCode: why && why.exit_code }); conn.close(); this.conn = null;
+        // P114 2b: 판이 그 자리에 새 터미널을 띄울 수 있다(판이 띄운 에이전트가 끝나 셸이 남음, 에이전트로 바꿔 띄움). 잠깐 기다렸다가 옮겨 붙지 않으면 끝
+        if (this.moveWaitMs > 0 && (reason === 'exited' || reason === 'killed')) { clearTimeout(this._moveTimer); this._moveTimer = setTimeout(() => this._end(reason), this.moveWaitMs); if (this._moveTimer.unref) this._moveTimer.unref(); return; }
+        return this._end(reason);
+      }
       // lost(터미널을 남기는 keep)·그 밖: 새 셸이 뜨면 다시 붙는다
       this.conn = null; conn.close(); this._retry(`stream closed: ${reason}`);
     } else if (f.kind === FRAME.RESIZE && f.payload.length >= 4) {
@@ -118,6 +124,17 @@ export class HcController extends EventEmitter {
     if (same && this.conn && this.ch != null) return this.repaint();
     if (this.conn && this.ch != null) { this.conn.write(this.ch, FRAME.RESIZE, sizePayload(cols, rows)); this.size = { cols, rows }; }
   }
+  // P114 2b: 같은 판 세션의 새 터미널로 옮겨 붙는다(같은 controllerPid라 창은 이어서 받고, 새 첫 화면이 full로 온다)
+  retarget(terminal) {
+    if (this.exited != null) return false;
+    clearTimeout(this._moveTimer); this._moveTimer = null;
+    this._flush();
+    const old = this.conn; this.conn = null; this.ch = null; if (old) old.close();
+    this.terminal = terminal; this.paneId = terminal; this.retryStart = null; this.retryN = 0;
+    this._attach(false);
+    this.emit('moved', terminal);
+    return true;
+  }
   repaint() { if (this.exited != null) return; this._flush(); const old = this.conn; this.conn = null; this.ch = null; if (old) old.close(); this._attach(true); }
   focus(on) { if (this.conn && this.ch != null) this.conn.write(this.ch, FRAME.FOCUS, Buffer.from([on ? 1 : 0])); }
   // 어댑터가 넘기는 터미널 이벤트(size, restarted, finished)
@@ -128,13 +145,13 @@ export class HcController extends EventEmitter {
       this.size = { cols: e.cols, rows: e.rows };
       this.emit('size', { cols: e.cols, rows: e.rows, external });
     } else if (e.type === 'pane_restarted') { this.retryStart = null; this.retryN = 0; if (!this.conn) this._attach(true); }
-    else if (e.type === 'terminal_finished' || e.type === 'pane_closed') { if (!this.conn) this._end(e.reason || 'finished'); }
+    else if (e.type === 'terminal_finished' || e.type === 'pane_closed') { if (!this.conn && !this._moveTimer) this._end(e.reason || 'finished'); }
   }
   _end(reason) {
     if (this.exited != null) return;
     this._flush(); // 모아 둔 바이트를 먼저
     this.exited = reason;
-    clearTimeout(this._retryTimer);
+    clearTimeout(this._retryTimer); clearTimeout(this._moveTimer); this._moveTimer = null;
     if (this.conn) { try { if (this.ch != null) this.conn.write(this.ch, FRAME.CLOSE); } catch {} this.conn.close(); }
     this.conn = null; this.ch = null;
     setImmediate(() => this.emit('exit', reason));

@@ -10,7 +10,10 @@ import { execFile } from 'node:child_process';
 import { cleanEnv } from '../herdr/adapter.mjs';
 import { hcRoot } from './pin.mjs';
 
-export const BOARD_HC_CONFIG = { notes: false };
+// notes = false: hc가 부모 에이전트에게 메모를 치지 않는다(관리자 결정).
+// draft_wait = 0(P114 2b): 사람이 쓰다 만 글이 있을 때 hc의 terminal.send는 마지막 키 뒤 60초까지 기다린다. 판의 전달 규칙(B1 4번)은
+//   "3초 안에 입력했으면 기다린다"이고 판이 그 판단을 이미 했다. 0이면 hc는 조용한 틈(약 3초)만 기다려 판의 규칙과 같다
+export const BOARD_HC_CONFIG = { notes: false, draft_wait: 0 };
 export const hcConfigHome = (dataDir) => path.join(hcRoot(dataDir), 'config');
 export const hcConfigFile = (configHome) => path.join(configHome, 'herdr-core', 'config.toml');
 // hc 상태 폴더(%LOCALAPPDATA%\herdr-core\<세션>). XDG_STATE_HOME은 코어에 주지 않는다(프로그램에 샌다)
