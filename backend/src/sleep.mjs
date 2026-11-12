@@ -86,6 +86,22 @@ export function draftAfterInput(prev, data) {
   return draft;
 }
 
+// P126: 입력 덩어리가 터미널이 대신 보낸 보고뿐인가(사람이 친 키가 아니다). 마우스 보고(SGR·X10: 휠, 누르기, 움직임), 초점 알림(ESC[I, ESC[O),
+// 장치 속성·커서 자리 답(ESC[?…c, ESC[>…c, ESC[…R), OSC·DCS 답. 이런 입력은 전달 규칙 4("사람이 3초 안에 쳤으면 기다린다")의 사람 입력으로 세지 않는다.
+// 노드 위에서 휠을 굴리는 동안 판의 전달이 user_typing으로 계속 미뤄졌다. 순수 함수
+export function terminalReportsOnly(data) {
+  const s = String(data || '');
+  if (!s) return false;
+  const rest = s
+    .replace(/\x1b[\]P][\s\S]*?(\x07|\x1b\\|\x9c|$)/g, '') // OSC·DCS 답
+    .replace(/\x1b\[M[\s\S]{3}/g, '') // X10 마우스
+    .replace(/\x1b\[<\d+;\d+;\d+[Mm]/g, '') // SGR 마우스
+    .replace(/\x1b\[[IO]/g, '') // 초점 알림
+    .replace(/\x1b\[[?>=]?[\d;]*c/g, '') // 장치 속성 답(DA1·DA2·DA3)
+    .replace(/\x1b\[\d+;\d+R/g, ''); // 커서 자리 답(CPR)
+  return rest.length === 0;
+}
+
 // 세션 하나가 리포를 잠재울 때의 대상인가(null이면 대상, 아니면 빠지는 까닭). 순수 함수
 // x: { kind, hooked, convKnown, state, sleeping, waking, closing, blocked }
 // blocked(P105): 잠재우기가 실패해 다시 해 보기를 미룬 세션. 사람이 이 리포를 잠재울 때(hand)는 다시 해 본다
