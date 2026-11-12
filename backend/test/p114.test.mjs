@@ -162,15 +162,14 @@ test('P114 백엔드 고르기: 환경 변수가 이기고, 숨은 설정, 기�
   const cfg = { herdrSession: 'atrium-dev-x', dataDir: 'C:\\d', logDir: 'C:\\d\\logs', herdrPath: null, herdrProtocols: [22], herdrTested: ['0.9.5'] };
   assert.equal(createTerminalAdapter(cfg, {}, { env: {} }).backend, 'herdr');
   const hc = createTerminalAdapter(cfg, { terminalBackend: 'hc' }, { env: { USERNAME: 'u' } });
-  assert.equal(hc.backend, 'hc'); assert.equal(hc.pipe, '\\\\.\\pipe\\herdr-core-u-atrium-dev-x.sock');
+  assert.equal(hc.backend, 'hc'); assert.equal(hc.primary.pipe, '\\\\.\\pipe\\herdr-core-u-atrium-dev-x.sock');
   assert.equal(hc.herdrPath, path.join('C:\\d', 'hc', 'bin', 'herdr-core.exe'));
   hc.herdrPath = 'C:\\herdr.exe'; assert.equal(hc.herdrPath, path.join('C:\\d', 'hc', 'bin', 'herdr-core.exe')); // 판이 찾은 herdr 경로는 hc 경로를 덮지 않는다
-  // 숨은 설정: 바꿀 수 있지만 설정 화면(describe)에는 없다
-  assert.deepEqual(normalizePatch({ terminalBackend: 'hc' }), { terminalBackend: 'hc' });
-  assert.throws(() => normalizePatch({ terminalBackend: 'x' }));
+  // P117: 숨은 설정 terminalBackend는 없앴다(판 기록 meta terminalBackend와 옮기기가 정한다). 판의 어댑터는 라우터(주 어댑터 = hc)
+  assert.throws(() => normalizePatch({ terminalBackend: 'hc' }));
   const store = { meta: {}, getMeta(k) { return this.meta[k]; }, setMeta(k, v) { this.meta[k] = v; } };
   const s = new Settings({ store, broadcast: () => {} });
-  assert.equal(s.get().terminalBackend, 'herdr');
+  assert.equal('terminalBackend' in s.get(), false);
   assert.equal('terminalBackend' in s.describe(), false);
 });
 

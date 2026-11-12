@@ -18,7 +18,8 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { hcCall, hcSubscribe, hcPipe, HcError, FramedConn, FRAME } from './rpc.mjs';
-import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm } from './model.mjs';
+import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm, TRUST_STATUS, isSynthetic } from './model.mjs';
+import { isTrustDialog } from '../screen.mjs'; // P117: 신뢰 대화상자(7501 상태 전)
 import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
@@ -31,6 +32,9 @@ const BEAT_MS = 45000; // heartbeat는 15초마다. 세 번 못 받으면 끊긴
 const KEY_GAP_MS = 30; // 키 사이 틈(ESC 다음 키가 Alt 조합으로 읽히지 않게)
 const CLOSING_MS = 30000; // 판이 닫는 작업 공간: 이 동안 그 자리에 셸을 다시 띄우지 않는다
 const RELEASE_HOLD_MS = 300; // 상태 지움 뒤 터미널 끝(코어 쪽 까닭인지)을 기다리는 시간
+// P117: 판이 띄운 claude가 7501을 말하기 전에 화면을 보는 동안과 간격. 신뢰 대화상자는 뜨자마자(1~3초) 보이므로 이 안에 못 보면 그만 본다
+const TRUST_WATCH_MS = 30000;
+const TRUST_POLL_MS = 600;
 
 // 서버 PID 대신 쓸 값: 터미널을 쥔 holder 가운데 가장 오래된 것(터미널이 있는 것). holder는 코어 재시작·업데이트 뒤에도 같고,
 // 바뀌면 프로그램이 끝난 것이다(서버 끔·holder 잃음). 판은 이 값이 바뀌었는지로 "백엔드가 꺼진 동안 herdr가 다시 떴는가"를 본다(C3)
@@ -42,7 +46,7 @@ export function holderIdentity(status) {
 }
 
 export class HcAdapter extends EventEmitter {
-  constructor({ session, dataDir, logDir, hcPath = null, pipe = null, pin = HC_PIN, env = process.env, fetchImpl, graceMs = GRACE_MS, tested = [HC_PIN.version], moveWaitMs = 3000 }) {
+  constructor({ session, dataDir, logDir, hcPath = null, pipe = null, pin = HC_PIN, env = process.env, fetchImpl, graceMs = GRACE_MS, tested = [HC_PIN.version], moveWaitMs = 3000, trustWatchMs = TRUST_WATCH_MS, trustPollMs = TRUST_POLL_MS }) {
     super();
     if (!session || session === 'default') throw new Error('이름이 지정된 터미널 세션만 사용할 수 있습니다.');
     this.backend = 'hc';
@@ -63,6 +67,9 @@ export class HcAdapter extends EventEmitter {
     this._closingWs = new Map(); // 판이 닫는 작업 공간 → 시각
     this._respawning = new Map(); // 셸을 다시 띄우는 중인 자리 → Promise<새 주소|null>
     this._envOf = new Map(); // 판이 띄운 터미널의 env(셸을 다시 띄울 때 같은 env)
+    this._movedTo = new Map(); // P117: 판이 바꿔 띄운 자리(옛 주소 → 새 주소). 같은 패널을 부르는 판의 흐름(passGate 등)이 새 자리를 따라간다
+    this._trustWatch = new Map(); // P117: 신뢰 대화상자를 보는 터미널 → 타이머
+    this.trustWatchMs = trustWatchMs; this.trustPollMs = trustPollMs;
     this.subscribedPanes = [];
   }
   // 판은 herdrPath로 실행 파일이 있는지 본다(ensureHerdr). hc 실행 파일을 준다. 판이 찾은 herdr 경로는 따로 둔다(쓰지 않는다)
@@ -168,7 +175,7 @@ export class HcAdapter extends EventEmitter {
 
   // ---------- 이벤트 ----------
   startEvents() { this._watching = true; this._connectLoop(); }
-  stopEvents() { this._watching = false; if (this._sub) this._sub.close(); this._sub = null; clearInterval(this._beatTimer); }
+  stopEvents() { this._watching = false; if (this._sub) this._sub.close(); this._sub = null; clearInterval(this._beatTimer); for (const t of this._trustWatch.values()) clearTimeout(t); this._trustWatch.clear(); }
   async refreshSubscription() {} // hc 구독은 터미널을 거르지 않는다(모든 터미널의 이벤트가 온다)
 
   async _connectLoop() {
@@ -276,7 +283,12 @@ export class HcAdapter extends EventEmitter {
   }
 
   // ---------- 작업 공간, 패널, 에이전트 ----------
-  async _list(all = false) { return (await this.call('terminal.list', all ? { all: true } : {})).terminals || []; }
+  // P117: 코어의 목록에 흉내 낸 신뢰 상태(model)를 얹는다. 판의 getPane·listAgents·snapshot이 신뢰 대화상자 중인 claude를 에이전트로 본다(herdr와 같게)
+  async _list(all = false) {
+    const list = (await this.call('terminal.list', all ? { all: true } : {})).terminals || [];
+    return list.map((t) => this._overlay(t));
+  }
+  _overlay(t) { const m = t && !t.status && isLive(t) && this.model.terms.get(t.address); return m && isSynthetic(m.status) ? { ...t, status: m.status } : t; }
   _byAddress(list) { return new Map(list.map((t) => [t.address, t])); }
   async snapshot() {
     const list = await this._list();
@@ -303,22 +315,64 @@ export class HcAdapter extends EventEmitter {
     return { workspaceId: ws, paneId: r.address };
   }
   // hc가 바라는 띄우기: 에이전트를 터미널의 첫 argv로(셸에 치면 foreground가 셸로 남고, 강제로 끝나면 상태가 남는다. P114 1단계 3번)
-  async runAgent({ name = null, argv, cwd, env = {}, pathFirst = [], labels = {}, workspaceId = null }) {
+  async runAgent({ name = null, argv, cwd, env = {}, pathFirst = [], labels = {}, workspaceId = null, kind = null }) {
     const lab = { ...labels, [LABEL.board]: '1' };
     if (workspaceId) lab[LABEL.ws] = workspaceId;
     if (name) lab[LABEL.name] = String(name);
+    if (kind) lab[LABEL.agent] = String(kind); // P117: 7501을 말하기 전에도 에이전트 자리(신뢰 대화상자에서 끝나면 셸이 남는다)
     const tenv = await this.paneEnv(env, pathFirst);
     const params = { argv, cwd, env: tenv, labels: lab, no_parent: true };
     const n = hcName(name);
     if (n) { params.name = n; await this._gcFinished(n).catch(() => {}); } // 같은 이름의 끝난 기록(되살리기·이어 가기 전의 것)을 지운다
     const r = await this.call('terminal.run', params, 60000);
     this._envOf.set(r.address, tenv);
+    if (kind === 'claude') this._watchTrust(r.address);
     return r;
+  }
+  // P117: 판이 띄운 claude가 7501을 말하기 전에 화면을 본다. 신뢰 대화상자("Quick safety check … trust this folder")가 보이면 herdr처럼 막힘(blocked)을 흉내 낸다.
+  // 판은 그 뒤 화면을 읽어 trust_wait로 보이고(checkBlocked), 첫 지시는 기다린다(전달 규칙). 사람이 신뢰하면 claude가 7501 idle을 말해 풀리고,
+  // 거절하면 claude가 끝나 에이전트가 떠난 것으로(trust_declined) 보이고 같은 자리에 셸이 남는다(_respawnShell). 신뢰는 사람만 답한다(판은 키를 보내지 않는다)
+  _watchTrust(address, t0 = Date.now()) {
+    clearTimeout(this._trustWatch.get(address));
+    const tick = async () => {
+      this._trustWatch.delete(address);
+      const m = this.model.terms.get(address);
+      if (m && (!isLive(m) || (m.status && !isSynthetic(m.status)))) return; // 끝났거나 7501을 말했다
+      if (m && isSynthetic(m.status)) return; // 이미 막힘으로 알렸다(풀림은 7501 또는 끝남이 알린다)
+      if (Date.now() - t0 > this.trustWatchMs) return;
+      let text = '';
+      try { text = String((await this.call('terminal.read', { terminal: address, lines: 0 }, 5000)).text || ''); } catch (e) { if (e.code === 'agent_not_found' || e.code === 'pane_not_found') return; }
+      const now = this.model.terms.get(address);
+      if (now && isLive(now) && !now.status && isTrustDialog(text)) {
+        this.log(`trust dialog in ${address}: reporting blocked (no 7501 status yet)`);
+        this._emitAll(this.model.apply({ seq: null, type: 'status', terminal: address, data: { status: { ...TRUST_STATUS }, reported: false } }));
+        return;
+      }
+      const timer = setTimeout(tick, this.trustPollMs);
+      if (timer.unref) timer.unref();
+      this._trustWatch.set(address, timer);
+    };
+    const timer = setTimeout(tick, this.trustPollMs);
+    if (timer.unref) timer.unref();
+    this._trustWatch.set(address, timer);
+  }
+  // P117: 판이 부른 패널이 이미 다른 터미널로 바뀌었으면(에이전트가 끝나 셸이 남음 등) 그 자리를 따라간다. 셸을 띄우는 중이면 기다린다
+  async _follow(paneId) {
+    let id = paneId;
+    for (let i = 0; i < 8 && id; i++) {
+      const pending = this._respawning.get(id);
+      if (pending) { const nw = await pending.catch(() => null); if (!nw) return id; id = nw; continue; }
+      const nx = this._movedTo.get(id);
+      if (!nx) return id;
+      id = nx;
+    }
+    return id;
   }
   async waitShellReady(paneId, timeoutMs = 15000) {
     const t0 = Date.now();
     while (Date.now() - t0 < timeoutMs) {
-      const t = await this.readScreen(paneId, { source: 'visible' }).catch((e) => (e.code === 'unreachable' ? Promise.reject(e) : ''));
+      const at = await this._follow(paneId); // P117: 그새 셸 자리로 바뀌었으면 새 자리를 본다
+      const t = await this.readScreen(at, { source: 'visible' }).catch((e) => (e.code === 'unreachable' ? Promise.reject(e) : ''));
       if (/PS [^\n]*>/.test(t)) return true;
       await sleep(200);
     }
@@ -332,6 +386,7 @@ export class HcAdapter extends EventEmitter {
     try { r = await run(launch); } catch (e) { this._held.delete(launch); throw e; }
     const ws = (r.labels && r.labels[LABEL.ws]) || null;
     this._replaced.add(oldId);
+    this._movedTo.set(oldId, r.address);
     this._moveControllers(oldId, r.address);
     this.emit('event', { type: 'pane_moved', paneId: r.address, workspaceId: ws, previousPaneId: oldId, raw: { hc: why } });
     const held = this._held.get(launch) || [];
@@ -349,7 +404,8 @@ export class HcAdapter extends EventEmitter {
   }
   // herdr agent.start 자리(판의 세션 시작, 이어 가기, 되살리기): 그 패널을 에이전트가 첫 argv인 터미널로 바꾼다. env·pathFirst는 하네스(harnessLaunch)가 준 값.
   // 옛 자리가 같은 hc 이름을 쥔 에이전트면 먼저 끈다(hc 이름은 살아 있는 터미널 사이에서 겹치지 않는다. 끝난 기록은 막지 않는다)
-  async startAgent({ name, paneId, args = [], kind = 'claude', command = null, env = null, pathFirst = null }) {
+  async startAgent({ name, paneId: asked, args = [], kind = 'claude', command = null, env = null, pathFirst = null }) {
+    const paneId = await this._follow(asked); // P117: 그새 셸 자리로 바뀐 패널(passGate의 /exit 뒤 등)
     let t = null;
     try { t = await this.call('terminal.get', { terminal: paneId }); } catch (e) { if (e.code === 'unreachable') throw e; }
     const by = this.model.terms.size ? this.model.terms : this._byAddress(t ? [t] : []);
@@ -359,7 +415,7 @@ export class HcAdapter extends EventEmitter {
     const baseLabels = Object.fromEntries(Object.entries((t && t.labels) || {}).filter(([k]) => k !== LABEL.launch && k !== LABEL.name));
     if (t && isLive(t) && n && t.name === n) { this._replaced.add(paneId); await this._kill(paneId); }
     const cwd = (t && t.cwd) || undefined;
-    const r = await this._replacePane(paneId, (launch) => this.runAgent({ name, argv, cwd, env: env || {}, pathFirst: pathFirst || [], labels: { ...baseLabels, [LABEL.launch]: launch }, workspaceId: ws }), 'startAgent');
+    const r = await this._replacePane(paneId, (launch) => this.runAgent({ name, argv, cwd, env: env || {}, pathFirst: pathFirst || [], labels: { ...baseLabels, [LABEL.launch]: launch }, workspaceId: ws, kind }), 'startAgent');
     await this._kill(paneId).catch(() => {}); await this._rm(paneId);
     this._envOf.delete(paneId);
     const info = { name: name || r.name || r.address, paneId: r.address, workspaceId: ws, agent: kind, status: 'unknown', launchPending: true, agentSessionId: null, title: '', cwd: r.cwd || cwd || null, tabId: null };
@@ -406,7 +462,7 @@ export class HcAdapter extends EventEmitter {
   }
   async getPane(paneId) {
     let t;
-    try { t = await this.call('terminal.get', { terminal: paneId }); } catch (e) { if (e.code === 'agent_not_found') e.code = 'pane_not_found'; throw e; }
+    try { t = this._overlay(await this.call('terminal.get', { terminal: paneId })); } catch (e) { if (e.code === 'agent_not_found') e.code = 'pane_not_found'; throw e; }
     if (!isLive(t)) throw new HcError('pane_not_found', `${paneId} is ${t.state}`, 'terminal.get');
     return paneOf(t, this.model.terms.size ? this.model.terms : this._byAddress([t]));
   }
@@ -451,6 +507,8 @@ export class HcAdapter extends EventEmitter {
   async prompt(target, text) {
     const t = await this._target(target);
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
+    // P117: 신뢰 대화상자(흉내 낸 막힘). 코어는 모르므로 판이 거부한다(글이 신뢰 질문에 들어가지 않게. herdr의 agent_blocked와 같다)
+    if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
     return this.call('terminal.send', { terminal: t.address, text: String(text).replace(/\r\n?/g, '\n') }, 120000);
   }
   async sendKeys(target, keys) { const t = await this._target(target); return this.paneKeys(t.address, keys); }

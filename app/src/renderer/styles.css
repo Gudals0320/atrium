@@ -1720,3 +1720,13 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-cn-check .bad, .mt-set-hint.bad { color: var(--warn); }
 .mt-cn-form { height: 100%; display: grid; grid-template-rows: auto auto 1fr; gap: 8px; align-content: start; }
 .mt-ln-f > [data-role="launcher-connection-hint"] { grid-column: 1 / -1; }
+
+/* P117: 설정 › 터미널(옮기기 계획과 결과 목록) */
+.mt-tmove-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+.mt-tmove-confirm, [data-role="terminal-move-job"], [data-role="terminal-move-last"] { grid-column: 1 / -1; display: grid; gap: 8px; }
+.mt-tmove-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 240px; overflow-y: auto; font-size: 12px; }
+.mt-tmove-list li { display: grid; grid-template-columns: minmax(80px, 1fr) 70px minmax(120px, 1.4fr) minmax(0, 1.4fr); gap: 8px; align-items: baseline; padding: 3px 6px; border-radius: 6px; background: var(--surface-2, rgba(255, 255, 255, 0.03)); }
+.mt-tmove-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-tmove-kind, .mt-tmove-why { color: var(--text-3, var(--text-2)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-tmove-result.moved { color: var(--ok, var(--text-2)); }
+.mt-tmove-result.failed, .mt-tmove-result.skipped { color: var(--warn); }

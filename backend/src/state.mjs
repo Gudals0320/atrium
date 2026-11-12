@@ -185,6 +185,7 @@ export function worktreeExitAsk(w) {
 export function deriveState(rt) {
   const h = rt.herdr;
   if (rt.sleep) return { state: 'sleeping' }; // P21(D4): 판이 잠재움. 패널이 없다(J1·J2의 닫힘과 다르다)
+  if (rt.move) return { state: 'starting', moving: rt.move.to }; // P117: 다른 터미널 백엔드로 옮기는 중(옛 claude를 끄고 새 자리에서 이어 감). 전달은 기다린다
   if (rt.exit) return { state: 'exited' };
   // G2(P5): 에이전트 없는 일반 셸. 프롬프트에서 쉬는가(shell_idle), 명령을 돌리는가(shell_running). hook도 승인 카드도 없다
   if (rt.kind === 'shell') return { state: rt.shell && rt.shell.atPrompt === false ? 'shell_running' : 'shell_idle' };
