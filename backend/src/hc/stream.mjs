@@ -1,6 +1,6 @@
 // P114: hc 프레임 모드 attach 스트림 하나 = 판의 화면 제어기(relay.mjs가 쓴다).
 // - 이벤트: frame { seq, full, width, height, bytes(base64) }, record { type: 'terminal.closed', reason }, stderr(글), exit(까닭), size { cols, rows, external }
-// - 메서드: input(글), resize(cols, rows), focus(on), close(). pid는 프로세스가 없어 'hc:<n>'(창은 controllerPid로 스트림을 가린다)
+// - 메서드: input(글), inputAuto(글), resize(cols, rows), focus(on), close(). pid는 프로세스가 없어 'hc:<n>'(창은 controllerPid로 스트림을 가린다)
 // - 첫 화면: attach 응답 뒤 처음 오는 DATA가 첫 화면(CAN, 소프트 리셋, ESC[H ESC[2J로 시작)이라 full로 낸다. 같은 크기 resize는 다시 붙어 새 첫 화면을 낸다
 //   (같은 크기 resize로 full 프레임을 받는 뜻. relay.mjs의 shareNeedsFull이 부른다)
 // - 흐름 제어: 받은 바이트를 넘긴 뒤 곧바로 CREDIT로 알린다(시작 256KiB). 4MiB 넘게 밀리면 hc가 새 첫 화면을 보낸다
@@ -32,7 +32,8 @@ export class HcController extends EventEmitter {
     this.seq = 0;
     this.conn = null; this.ch = null;
     this.firstPending = false;
-    this.queue = []; // 붙기 전에 온 입력
+    this.queue = []; // 붙기 전에 온 입력([글, 판이 친 것인지])
+    this.autoInput = false; // attach 응답의 automatic_input: 이 길이 AUTOMATIC_INPUT(kind 6)을 받는다(P130)
     this.retryStart = null; this.retryN = 0;
     this.stats = { attaches: 0, bytes: 0, credits: 0 };
     this._attach(false);
@@ -51,12 +52,13 @@ export class HcController extends EventEmitter {
       const r = await conn.call('terminal.attach', { terminal: this.terminal, cols: this.want.cols, rows: this.want.rows, resumed: !!resumed }, 15000);
       if (this.exited != null || gen !== this._gen) { conn.close(); return; }
       this.ch = r.channel;
+      this.autoInput = !!r.automatic_input;
       this.stats.attaches++;
       const t = r.terminal || {};
       if (t.cols && t.rows) this.size = { cols: t.cols, rows: t.rows };
       this.retryStart = null; this.retryN = 0;
       conn.claim(this.ch, (f) => this._frame(conn, f));
-      for (const s of this.queue.splice(0)) this._write(s);
+      for (const [s, auto] of this.queue.splice(0)) this._write(s, auto);
       this.emit('attached', { channel: this.ch, cols: this.size.cols, rows: this.size.rows });
     } catch (e) {
       try { conn.close(); } catch {}
@@ -113,9 +115,16 @@ export class HcController extends EventEmitter {
     const parts = this.pend; this.pend = []; this.pendBytes = 0;
     this._emitFrame(parts, false);
   }
-  _write(s) { if (this.conn && this.ch != null) this.conn.write(this.ch, FRAME.DATA, Buffer.from(s, 'utf8')); else if (this.queue.length < 256) this.queue.push(s); }
-  // 판 클라이언트가 친 글(붙여넣기 감싸기·휠 변환은 창이 이미 했다)
+  // auto: 판이 친 키(AUTOMATIC_INPUT). hc는 DATA만 사람 입력으로 세어 terminal.send·keys가 그 뒤 약 3초 조용한 틈을 기다린다(P130).
+  // 이 길이 kind 6을 받지 않으면(automatic_input 없음) DATA로 보낸다
+  _write(s, auto = false) {
+    if (this.conn && this.ch != null) this.conn.write(this.ch, auto && this.autoInput ? FRAME.AUTOMATIC_INPUT : FRAME.DATA, Buffer.from(s, 'utf8'));
+    else if (this.queue.length < 256) this.queue.push([s, auto]);
+  }
+  // 판 클라이언트가 친 글(붙여넣기 감싸기·휠 변환은 창이 이미 했다). 사람 입력이다
   input(text) { if (this.exited == null) this._write(String(text)); }
+  // 판이 친 키(전달의 쓰다 만 글 비키기·되돌리기, 키 패드, 답하기, 끄기의 키). 사람 입력으로 세지 않는다(P130)
+  inputAuto(text) { if (this.exited == null) this._write(String(text), true); }
   // 크기 바꾸기. 같은 크기면 다시 붙어 새 첫 화면(full)을 낸다(새로 붙은 클라이언트가 앞 화면 없이 깨지지 않게)
   resize(cols, rows) {
     if (this.exited != null || !cols || !rows) return;

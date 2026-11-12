@@ -208,7 +208,8 @@ export function terminalEnv({ exeDir, basePath = '', extra = {}, pathFirst = [] 
 }
 
 // ---------- 키 ----------
-// 판의 키 이름 → 터미널에 보낼 바이트(attach DATA로 바로 넣는다. terminal.keys는 사람 입력 뒤 약 3초 조용해질 때까지 기다린다, P114 1단계 7번)
+// 판의 키 이름 → 터미널에 보낼 바이트(attach로 바로 넣는다. terminal.keys는 사람 입력 뒤 약 3초 조용해질 때까지 기다린다, P114 1단계 7번.
+// P130: 판 입력이라 AUTOMATIC_INPUT(kind 6)으로 보내 hc가 사람 입력으로 세지 않는다. adapter.mjs _typeRaw)
 // ConPTY는 win32-input-mode를 요청하지만 VT 키 바이트도 받는다(1단계에서 확인). 모르는 이름이 있으면 null(terminal.keys로 보낸다)
 export const KEY_BYTES = {
   enter: '\r', esc: '\x1b', escape: '\x1b', tab: '\t', 'shift+tab': '\x1b[Z', space: ' ', backspace: '\x7f',
