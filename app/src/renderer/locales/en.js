@@ -38,6 +38,7 @@ export default {
   },
   exit: {
     normal: 'Exited normally',
+    user: 'Closed by you',
     herdr_stopped: 'herdr stopped',
     trust_declined: 'Exited (not trusted)',
     other: 'Exited',
@@ -181,7 +182,7 @@ export default {
     parentBoard: 'Board session', parentBoardClosed: 'Closed board session', parentOther: 'Another conversation', parentDesktop: 'Desktop app conversation',
     parentMissed: 'Missed conversation', parentMissedIn: 'Missed conversation · {folder}', parentArchived: 'Archived conversation', parentArchivedTitle: 'Archived conversation · {title}', parentConvo: 'Conversation · {name}',
     chgQuestion: 'Question: {q}', chgPlan: 'Plan approval', chgUnknownDialog: 'Unknown dialog', chgWorktreeExit: 'Keep the worktree?', chgPermission: 'Permission: {what}', chgTrust: 'Trust check for a new folder',
-    chgTurnFailed: 'Turn failed', chgExitNormal: 'Exited normally', chgExitTrust: 'Exited (not trusted)', chgExited: 'Exited',
+    chgTurnFailed: 'Turn failed', chgExitNormal: 'Exited normally', chgExitUser: 'Closed by you', chgExitTrust: 'Exited (not trusted)', chgExited: 'Exited',
     chgCommand: 'Command: {p}', chgPrompt: 'Prompt: {p}', chgWasState: 'Was {state}', chgKilled: 'Stopped on the board', chgRemoved: 'Removed from the board ({reason})',
     chgHerdrDown: { one: 'herdr stopped unexpectedly {n} time{up}', other: 'herdr stopped unexpectedly {n} times{up}' }, chgReattached: ' (reconnected)',
     chgBackendRestarts: { one: 'Backend restarted {n} time{down}', other: 'Backend restarted {n} times{down}' }, chgDownFor: ' (down for {s}s)', chgList: '{items}',
@@ -2397,5 +2398,18 @@ export default {
   // P121: summary face of a session outside the chosen workspace (no terminal until clicked or zoomed in very close)
   brief: {
     hint: 'Session in another workspace. Click to show its terminal.',
+  },
+  // P125: a session you ended yourself (Ctrl+C twice, /exit) is not an error. It stays on the board and reopens in place from the sidebar
+  userClose: {
+    reopen: 'Reopen',
+    reopenTitle: 'Continue the same conversation in this node (same name, place and links)',
+    reopening: 'Reopening…',
+    reopened: 'Reopened @{name} as a new conversation (no transcript was found)',
+    reopenedResume: 'Reopened @{name} (same conversation)',
+    err: {
+      notExited: '@{name} is still running.',
+      cannot: '@{name} cannot be reopened.',
+      busy: 'Another agent is running in the @{name} pane.',
+    },
   },
 };

@@ -151,13 +151,20 @@ test('C3: herdr가 꺼지면 진행 중 턴을 끊긴 턴으로 남기고, 다�
   assert.equal(deriveState(rt).state, 'ready');
 });
 
-test('3절: /exit 정상 종료', () => {
+test('3절: /exit 정상 종료(판이 보냄), 사람이 친 /exit·Ctrl+C 두 번은 직접 종료(P125)', () => {
   const rt = newRuntime();
   rt.herdr.present = true;
   applyHerdrStatus(rt, 'idle', 1, { launchPending: false, agentSessionId: 'x' });
+  rt.exitRequested = true; // 판이 /exit를 보냈다
   applyHook(rt, { hook_event_name: 'SessionEnd', reason: 'prompt_input_exit' }, 2);
   applyAgentReleased(rt, 3);
   assert.equal(rt.exit.kind, 'normal');
+  const rt2 = newRuntime();
+  rt2.herdr.present = true;
+  applyHerdrStatus(rt2, 'idle', 1, { launchPending: false, agentSessionId: 'x' });
+  applyHook(rt2, { hook_event_name: 'SessionEnd', reason: 'prompt_input_exit' }, 2);
+  applyAgentReleased(rt2, 3);
+  assert.equal(rt2.exit.kind, 'user');
 });
 
 test('B1: 보낼 수 있는지와 기다리는 이유', () => {

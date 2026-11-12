@@ -6,6 +6,7 @@
 import { matches, sidebarRows, SECTION_STEP } from './sidebar.js';
 import { treeOrder, spawnOrder } from './branch.js';
 import { askLine } from './labels.js';
+import { problemExit } from './user-close.js'; // P125
 
 // 줄 높이(px). 창의 CSS(sidebar.css .mt-sb2-*)와 같아야 한다
 export const ROW_H = { group: 30, ws: 28, session: 28, attn: 44, extra: 24, sec: 22, closed: 28, convo: 28, more: 24, empty: 26 };
@@ -34,7 +35,7 @@ export function headBadges(c, open) {
 export function bucketOf(s) {
   const st = s && s.state;
   if (st === 'waiting' || st === 'trust_wait') return 'need';
-  if (st === 'error' || st === 'exited') return 'error';
+  if (st === 'error' || problemExit(s)) return 'error'; // P125: 사람이 닫은(user)·판이 끈(normal) 끝남은 오류가 아니다
   if (st === 'working' || st === 'shell_running' || st === 'starting') return 'working';
   if (st === 'sleeping') return 'sleeping';
   return 'idle';

@@ -149,8 +149,29 @@ export function applyAgentDetected(rt, now = Date.now()) {
   if (rt.exit) { rt.exit = null; rt.phase = 'starting'; rt.launchedAt = now; rt.hooksSinceLaunch = 0; rt.sessionEnd = null; }
 }
 
-// claude가 끝나 패널이 셸로 돌아감
-export function applyAgentReleased(rt, now = Date.now(), { herdrStopping = false } = {}) {
+// P125: 사람이 스스로 끝낸 것으로 보는 SessionEnd 까닭(입력 칸의 Ctrl+C 두 번·Ctrl+D·/exit, /logout)과 종료 코드.
+// 종료 코드는 hc만 준다(herdr는 주지 않는다). 0, 130(SIGINT), 0xC000013A(STATUS_CONTROL_C_EXIT: Windows 콘솔 Ctrl+C로 끝남)
+export const USER_END_REASONS = new Set(['prompt_input_exit', 'logout']);
+export const USER_EXIT_CODES = new Set([0, 130, 0xC000013A, -1073741510]);
+export const userExitCode = (code) => code != null && USER_EXIT_CODES.has(Number(code));
+
+// P125: claude(또는 다른 하네스)가 끝난 까닭(exit.kind)
+//   normal         판이 끄라고 했다(/exit, 끄기·잠재우기·옮기기)
+//   user           판이 끄라고 하지 않았는데 사람이 끝냈다(사람이 닫음). 오류가 아니고, 사이드바·노드에서 다시 연다
+//   herdr_stopped  터미널 서버가 꺼졌다(판이 되살린다)
+//   trust_declined 신뢰 질문에서 거절해 끝났다
+//   other          그 밖(오류 코드, 충돌, 까닭 모름)
+export function exitKind({ reason = null, herdrStopping = false, before = null, hooked = true, hooksSinceLaunch = 0, launchPending = false, requested = false, exitCode = null } = {}) {
+  if (herdrStopping) return 'herdr_stopped';
+  if (reason && USER_END_REASONS.has(reason)) return requested ? 'normal' : 'user';
+  if (reason === 'other') return !requested && userExitCode(exitCode) ? 'user' : 'other'; // 콘솔 Ctrl+C 신호 등으로 끝나면 까닭이 other다. 종료 코드가 사람의 끝이면 user
+  if (before === 'trust_wait' || (hooked !== false && !reason && hooksSinceLaunch === 0 && launchPending)) return 'trust_declined';
+  if (requested) return hooked === false ? 'normal' : 'other'; // hook이 없는 세션은 판이 끄라고 했을 때만 정상 종료로 본다(hook이 있는데 SessionEnd 없이 끝나면 지금처럼 other)
+  return userExitCode(exitCode) ? 'user' : 'other'; // hook·까닭이 없으면 종료 코드로 가른다(hc). 코드를 모르면(herdr) 지금처럼 other
+}
+
+// claude가 끝나 패널이 셸로 돌아감. exitCode: 끝난 프로그램의 종료 코드(hc만, 모르면 null)
+export function applyAgentReleased(rt, now = Date.now(), { herdrStopping = false, exitCode = null } = {}) {
   const before = deriveState(rt).state;
   rt.herdr.present = false;
   rt.herdr.status = 'unknown';
@@ -158,13 +179,18 @@ export function applyAgentReleased(rt, now = Date.now(), { herdrStopping = false
   rt.worktreeExit = null;
   rt.bg = null; // P92: claude가 끝나면 뒤 일도 끝난다
   const reason = rt.sessionEnd && rt.sessionEnd.reason;
-  let kind;
-  if (reason === 'prompt_input_exit') kind = 'normal';
-  else if (herdrStopping || reason === 'other') kind = herdrStopping ? 'herdr_stopped' : 'other';
-  else if (before === 'trust_wait' || (rt.hooked !== false && !reason && rt.hooksSinceLaunch === 0 && rt.herdr.launchPending)) kind = 'trust_declined';
-  else kind = rt.hooked === false && rt.exitRequested ? 'normal' : 'other'; // hook이 없는 세션은 판이 끄라고 했을 때만 정상 종료로 본다
+  const requested = !!(rt.exitRequested || rt.boardExit);
+  const kind = exitKind({ reason, herdrStopping, before, hooked: rt.hooked, hooksSinceLaunch: rt.hooksSinceLaunch, launchPending: rt.herdr.launchPending, requested, exitCode });
   rt.exitRequested = false;
-  rt.exit = { kind, reason: reason || null, at: now };
+  rt.exit = { kind, reason: reason || null, at: now, ...(exitCode != null ? { code: exitCode } : {}), ...(requested ? { requested: true } : {}) };
+}
+
+// P125: 놓임 뒤에 온 종료 코드(hc가 셸을 남기며 알림). 까닭을 몰라 other로 둔 끝남이 사람의 끝 코드면 user로 고친다. 바뀌면 true
+export function applyExitCode(rt, code) {
+  if (!rt.exit || code == null || rt.exit.code != null) return false;
+  rt.exit.code = code;
+  if (rt.exit.kind === 'other' && !rt.exit.requested && userExitCode(code)) rt.exit.kind = 'user';
+  return true;
 }
 
 // herdr 서버가 꺼짐(소켓 끊김). 진행 중이던 턴은 끊긴다(E7 2.4).

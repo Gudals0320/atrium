@@ -222,3 +222,8 @@ body.mt-sb2-resizing .mt-sb2-resize { pointer-events: auto; }
 .mt-sb2-tool.text { font-size: 11.5px; padding: 0 7px; border-color: var(--panel-line-2); }
 .mt-sb2-tool:hover { color: var(--text); background: var(--panel-2); }
 .mt-sb2-tool.on { color: var(--accent-2); border-color: var(--accent-line); }
+
+/* P125: 끝난 세션(직접 종료 등) 줄의 "다시 열기". 시간 자리에 늘 보이는 작은 글 단추(줄 자체는 단추라 span) */
+.mt-sb2-reopen { margin-left: auto; flex: none; height: 20px; padding: 0 7px; border: 1px solid var(--accent-line); border-radius: 6px; color: var(--accent-2); font-size: 11.5px; line-height: 18px; white-space: nowrap; cursor: pointer; }
+.mt-sb2-reopen:hover { background: var(--panel-3); color: var(--text); }
+.mt-sb2-reopen.busy { opacity: .6; cursor: default; }
