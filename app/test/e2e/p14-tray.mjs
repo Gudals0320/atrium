@@ -51,7 +51,7 @@ try {
   await page.evaluate(() => window.__mt.api.call('settings.set', { key: 'language', value: 'ko' }));
   await until(async () => (await tray()).lang === 'ko', 5000).catch(() => {});
   const tk = await tray();
-  step('언어를 한국어로 바꾸면 트레이 메뉴와 툴팁이 한국어', tk.menu.some((m) => m.startsWith('앱 연결 서비스 실행 중')) && tk.menu.includes('열기') && /내 차례/.test(tk.tooltip), { menu: tk.menu, tooltip: tk.tooltip });
+  step('언어를 한국어로 바꾸면 트레이 메뉴와 툴팁이 한국어', tk.menu.some((m) => m.startsWith('앱 연결 서비스 실행 중')) && tk.menu.includes('열기') && /응답 필요/.test(tk.tooltip), { menu: tk.menu, tooltip: tk.tooltip });
 
   // 1. 백엔드 다시 띄우기: pid가 바뀌고 창이 다시 붙는다
   const pid1 = backendPid();
