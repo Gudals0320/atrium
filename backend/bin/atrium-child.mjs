@@ -227,6 +227,8 @@ const REASON = {
   sleeping: (n) => `@${n}는 잠들어 있다. 보드가 깨운 뒤 넣는다`,
   starting: (n) => `@${n}는 뜨는 중이다. 준비되면 보드가 넣는다`,
 };
+// P126: 받는 쪽 입력 칸에 다른 글이 남아 보낸 글이 제출되지 않았다(판은 사람의 글일 수 있어 지우지 않는다)
+const boxOther = (n, next, id) => `@${n}의 입력 칸에 다른 글이 남아 있어 보낸 글이 제출되지 않았다${id ? `(${id})` : ''}. 보드가 그 글을 지우지 않는다. 사용자에게 "보드에서 @${n}의 입력 칸을 확인하고 Enter를 눌러 주세요"라고 알린다. 화면 보기: ${next.read}`;
 function printDelivery(x) {
   const d = x.delivery || {};
   const id = `전달 ${x.deliveryId}`;
@@ -234,6 +236,7 @@ function printDelivery(x) {
   if (d.status === 'confirmed') say(`@${x.name}에게 보냈다(들어감, ${id}).`);
   else if (d.status === 'sent' || d.status === 'sending') say(`@${x.name}에게 넣었다(들어갔는지 확인하는 중, ${id}).`);
   else if (d.status === 'queued') say(`${(REASON[d.reason] || ((n) => `아직 넣지 못했다(${d.reason || '대기'}). 보드가 다시 넣는다`))(x.name)} (${id}).`);
+  else if (d.status === 'unconfirmed' && d.reason === 'input_box_other') fail(boxOther(x.name, x.next, id));
   else if (d.status === 'unconfirmed') say(`@${x.name}에게 넣었지만 들어갔는지 확인하지 못했다(${id}). 화면 보기: ${x.next.read}`);
   else if (d.status === 'failed' || d.status === 'cancelled') fail(`@${x.name}에게 보낸 글이 들어가지 않았다(${d.status}${d.reason ? `: ${d.reason}` : ''}, ${id}).`);
 }
@@ -252,7 +255,9 @@ function printTurn(x, t) {
     case 'sleeping': say(`@${n}: 잠들어 있다(기다릴 턴 없음). 시키면 보드가 깨운 뒤 넣는다.`); printAnswer(x, t.answer); break;
     case 'waiting': say(`@${n}: 사람의 답을 기다린다${t.ask && t.ask.summary ? `(${t.ask.summary})` : ''}. 대신 답하지 않는다. 사용자에게 "보드에서 @${n}에 답해 주세요"라고 알린다. 답한 뒤 다시 기다리기: ${t.next.wait}`); break;
     case 'timeout': say(`@${n}: 아직 일하는 중이다(${secs(t.ms)} 기다림, 상태 ${t.state}). 일은 계속된다. 다시 기다리기: ${t.next.wait}`); break;
-    case 'unconfirmed': say(`@${n}: 넣은 글이 들어갔는지 확인하지 못했다. 화면 보기: ${t.next.read}`); printAnswer(x, t.answer); break;
+    case 'unconfirmed':
+      if (t.delivery && t.delivery.reason === 'input_box_other') fail(boxOther(n, t.next, t.delivery.deliveryId ? `전달 ${t.delivery.deliveryId}` : ''));
+      say(`@${n}: 넣은 글이 들어갔는지 확인하지 못했다. 화면 보기: ${t.next.read}`); printAnswer(x, t.answer); break;
     case 'failed': fail(`@${n}에게 보낸 글이 들어가지 않았다${t.delivery ? `(${t.delivery.status}${t.delivery.reason ? `: ${t.delivery.reason}` : ''})` : ''}.`); break;
     default: fail(`@${n}: ${t.status}(상태 ${t.state}). 받는 세션이 떠 있지 않다. 지금 연결: atrium me`);
   }

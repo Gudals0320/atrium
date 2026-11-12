@@ -1,6 +1,7 @@
 // 가까이 얼굴: 제어기 프레임을 xterm.js로 그리고 입력을 제어기로 넘긴다(ARCH 7.2, E4).
 // - allowProposedApi + unicode11(이모지 폭). 프레임의 크기가 바뀌면 쓰기 전에 xterm 크기를 맞춘다.
 // - 붙여넣기는 괄호 붙여넣기로 감싸고, 휠은 SGR 마우스 시퀀스로 바꾼다. ctrl+g(외부 편집기)는 막는다.
+//   P126: 프레임이 마우스 모드를 알려 주는 판(hc)에서 프로그램이 마우스 추적을 끈 동안은 휠을 보내지 않는다(lib/term-input.js wheelAction).
 // - WebGL 렌더러는 예산(기본 8) 안에서만 쓰고, 넘거나 컨텍스트를 잃으면 DOM으로 그린다(BRIEF 위험 2).
 // - P6a(H4): 노드를 눌러 들어간 뒤 붙기 전에 친 글(store.pendingInput)은 붙자마자 넣고 초점을 준다.
 // - P38: 판 배율 아래에서도 끌어 고르기가 마우스 밑 글자를 따라가게 xterm의 마우스 → 칸 계산에 확대·축소 전 자리를 넘긴다(unscalePoint).
@@ -20,7 +21,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
 import { useStore, getState, takePendingInput, pendingFor } from './store.js';
-import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, copyOnRelease, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
+import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, wheelAction, setsMouseMode, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, copyOnRelease, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
 import { findShift, bigChange, historyAbove, historyPrefill, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
 import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
@@ -224,11 +225,16 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       api.call('terminal.input', { session: sessionId, data }).catch((e) => setHint(t('terminal.inputFail', { error: errText(e) })));
     };
     const flash = (t) => { setHint(t); clearTimeout(st.hintTimer); st.hintTimer = setTimeout(() => setHint(null), 2500); };
+    // P126: 프레임에 마우스 모드(DECSET·DECRST)가 한 번이라도 오면 이 터미널은 모드를 아는 것으로 본다(hc 판은 전체 프레임마다 모드를 다시 적는다).
+    // 처리기는 false를 돌려 xterm이 모드를 그대로 바꾸게 한다
+    st.modesKnown = false;
+    const modeHooks = ['h', 'l'].map((final) => term.parser.registerCsiHandler({ prefix: '?', final }, (params) => { if (!st.modesKnown && setsMouseMode(params)) st.modesKnown = true; return false; }));
+    const wheelMode = () => wheelAction({ modesKnown: st.modesKnown, mouseTrackingMode: term.modes.mouseTrackingMode });
 
     // P42: 글 고르기(웹처럼). xterm 자체 선택 대신 문서 줄에 붙은 선택을 쓴다. 판(Canvas)과 시험이 보는 hasSelection·getSelection도 이것으로 답한다
     const sel = new TermSelection({
       term, host, mode: shell ? 'buffer' : 'live',
-      sendWheel: (steps, c) => send(sgrWheel(steps, c.cell + 1, c.row + 1, term.cols, term.rows)),
+      sendWheel: (steps, c) => { if (wheelMode() === 'report') send(sgrWheel(steps, c.cell + 1, c.row + 1, term.cols, term.rows)); }, // P126: 마우스 추적을 끈 프로그램에는 보내지 않는다
       onActivate: () => { if (onActivateRef.current) onActivateRef.current(); },
       onSelectEnd: () => { const text = sel.text(); if (copyOnRelease({ hasSelection: sel.has(), text })) copySel(text, 'select'); }, // P125: 끌어 고르면 바로 복사
       log: (name, d) => perfLog(name, { sessionId, ...d }),
@@ -258,6 +264,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     });
     term.attachCustomWheelEventHandler((ev) => {
       if (shell) return false; // 셸은 아래 onShellWheel이 먼저 받는다
+      if (wheelMode() === 'swallow') { st.acc = 0; ev.preventDefault(); return false; } // P126: 마우스 추적이 꺼진 프로그램(보고가 입력창에 글로 남는다)
       const screen = host.querySelector('.xterm-screen') || host;
       const r = wheelToSgr({ deltaY: ev.deltaY, deltaMode: ev.deltaMode, clientX: ev.clientX, clientY: ev.clientY, rect: screen.getBoundingClientRect(), cols: term.cols, rows: term.rows, acc: st.acc });
       st.acc = r.acc;
@@ -448,6 +455,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       host.removeEventListener('dragover', onDragOver, true);
       host.removeEventListener('drop', onDrop, true);
       host.removeEventListener('wheel', onShellWheel, { capture: true });
+      for (const h of modeHooks) h.dispose();
       sel.dispose();
       clearTimeout(st.syncTimer);
       if (shadow) shadow.dispose();

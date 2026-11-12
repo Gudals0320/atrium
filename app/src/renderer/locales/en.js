@@ -2412,4 +2412,6 @@ export default {
       busy: 'Another agent is running in the @{name} pane.',
     },
   },
+  // P126: other text left in the receiving session's input box, so the message was not submitted (delivery chip reason)
+  deliveryBox: { otherText: 'not submitted: other text in the input box' },
 };
