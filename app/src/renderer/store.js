@@ -38,6 +38,7 @@ const state = {
   workspaces: [], // [{ key, name, kind, root, createdAt, counts, x, y }] 처음 생긴 순서
   groups: [], // P44: 가상 그룹 [{ id, name, members: [워크스페이스 키] }](판 데이터 meta wsGroups)
   currentWs: null, // 마지막에 고른(가 본) 워크스페이스의 키
+  viewWs: null, // P121: 위 바·영역·사이드바·찾기·←→로 고른 워크스페이스. 이 워크스페이스의 세션만 터미널을 갖는다(노드를 눌러 가는 것으로는 바뀌지 않는다, lib/faces.js termAllowed)
   vpNow: null, // 지금 캔버스의 뷰포트
   canvasSize: null,
   // P6a
@@ -106,6 +107,7 @@ export async function loadBoard() {
   state.kanbans = new Map(kanbans.map((k) => [k.kanbanId, k]));
   if (b.convoNodes) { state.convoNodes = new Map(b.convoNodes.map((c) => [c.convId, c])); state.convoEdges = b.convoEdges || []; } // P13
   if (!state.boardLoaded || !state.workspaces.some((w) => w.key === state.currentWs)) state.currentWs = b.current || (state.workspaces[0] || {}).key || null;
+  if (!state.boardLoaded || !state.workspaces.some((w) => w.key === state.viewWs)) state.viewWs = state.currentWs; // P121: 판을 열면 판이 기억한 지금 워크스페이스
   if (!state.boardLoaded) { state.viewport = b.viewport || null; state.boardSeenAt = b.seenAt || null; }
   // P86: 판 상태 적용(종류별 수, 그리기 전). 웹 화면만 적는다
   step('board', { n: state.nodes.size, ss: state.sessions.size, cv: state.convoNodes.size, ce: state.convoEdges.length, m: state.memos.size, kb: state.kanbans.size, l: state.links.size, ws: state.workspaces.length });
@@ -120,6 +122,7 @@ export function selectWorkspace(key) {
   if (!key) return;
   const moved = key !== state.currentWs;
   state.currentWs = key;
+  state.viewWs = key; // P121
   changed();
   if (moved) api.call('workspace.select', { workspace: key }).catch(() => {});
   if (state.fitWorkspace) state.fitWorkspace(key);
@@ -129,6 +132,7 @@ export function selectGroup(keys, pick) {
   if (!pick) return;
   const moved = pick !== state.currentWs;
   state.currentWs = pick;
+  state.viewWs = pick; // P121: 묶음을 골라도 터미널은 그 안의 워크스페이스 하나(지금 구성)만. 묶음 전체는 노드가 많아 부하를 줄이려는 뜻에 맞지 않는다
   changed();
   if (moved) api.call('workspace.select', { workspace: pick }).catch(() => {});
   if (state.fitWorkspaces) state.fitWorkspaces(keys && keys.length ? keys : [pick]);
@@ -323,6 +327,7 @@ api.on('workspace.updated', (d) => {
   state.workspaces = d.workspaces || [];
   if (d.groups) state.groups = d.groups; // P44
   if (!state.workspaces.some((w) => w.key === state.currentWs)) state.currentWs = d.current || (state.workspaces[0] || {}).key || null;
+  if (!state.workspaces.some((w) => w.key === state.viewWs)) state.viewWs = state.currentWs; // P121: 고른 워크스페이스가 닫히거나 키가 바뀌면
   changed();
 });
 // P120: 판이 폴더가 없어진 빈 프로젝트 영역을 치웠다. 한 번 알린다(영역이 소리 없이 사라지면 사람이 찾게 된다)

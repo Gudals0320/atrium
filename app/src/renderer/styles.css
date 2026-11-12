@@ -1752,3 +1752,5 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-region-head > .mt-region-acts { flex: 0 100000 auto; min-width: 0; overflow: hidden; }
 .mt-region-head > .mt-region-acts > .mt-btn { flex: none; }
 .mt-wsgroup-head > * { flex: none; }
+/* P121: 고른 워크스페이스 밖 노드의 요약 얼굴(가까이 크기)에서 누르면 터미널이 열린다는 한 줄. 맨 아래에 옅게 */
+.mt-far .mt-brief-hint { margin-top: auto; color: var(--chrome-text-4); font-size: .9em; -webkit-line-clamp: 1; }

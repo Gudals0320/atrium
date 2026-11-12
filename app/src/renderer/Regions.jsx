@@ -63,7 +63,7 @@ function RegionNodeInner({ data }) {
   const w = useStore((st) => st.workspaces.find((x) => x.key === key));
   const sessions = useStore((st) => st.sessions);
   const arranged = useStore((st) => st.arranged.has(key));
-  const current = useStore((st) => st.currentWs === key);
+  const current = useStore((st) => (st.viewWs || st.currentWs) === key); // P121: 위 바의 켜진 칩과 같이 고른 워크스페이스(터미널이 붙는 곳)
   const convos = useStore((st) => { let n = 0; for (const c of st.convoNodes.values()) if (c.workspaceKey === key) n++; return n; }); // P13: 판 밖 대화 노드 수
   const headRef = useZoomStyle(regionHead);
   const actsRef = useRef(null);

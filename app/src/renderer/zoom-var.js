@@ -2,6 +2,7 @@
 // 다시 그려져 렌더러 주 스레드가 거의 다 바빴다. 배율에 따라 바뀌는 값 가운데 CSS 변수는 여기서 요소에 바로 쓰고, 얼굴 같은 단계 값만 상태로 구독한다
 import { useCallback, useRef } from 'react';
 import { useStoreApi } from '@xyflow/react';
+import { zoomStep } from './lib/faces.js';
 
 // 화면 밖 노드는 화면을 옮기는 동안 --inv 쓰기를 미룬다. --inv가 바뀌면 그 노드 하위 전체의 스타일과 머리줄 글자 배치를 다시 세므로,
 // 노드가 많으면 보이지 않는 노드가 프레임 일의 대부분이었다. 노드가 화면(둘레 AWAY_PX 여유) 가까이 오는 프레임에 바로 쓰고,
@@ -38,20 +39,22 @@ export function awayFromView(st, id, pad = AWAY_PX) {
 
 // 요소의 --inv(1/배율, 화면 기준 크기로 키우는 글·테두리, styles.css)를 화면 변환이 바뀔 때마다 직접 쓴다.
 // 예전처럼 React style로 쓴 것과 값·형식이 같다(style.setProperty에 숫자). 돌려주는 것은 ref 콜백(React 19의 정리 함수를 돌려준다).
-// id(React Flow 노드 id)를 주면 그 노드가 화면 밖일 때는 위처럼 미룬다
-export function useInvRef(min = 0.02, id = null) {
+// id(React Flow 노드 id)를 주면 그 노드가 화면 밖일 때는 위처럼 미룬다.
+// P121 stepped: 배율 대신 계단 값(lib/faces.js zoomStep, 1.1배마다)을 쓴다. 다른 워크스페이스 노드(요약 얼굴)는 계단이 바뀔 때만 스타일·글자 배치를 다시 센다
+export function useInvRef(min = 0.02, id = null, stepped = false) {
   const flow = useStoreApi();
   return useCallback((el) => {
     if (!el) return undefined;
     let last = NaN;
+    const zOf = stepped ? (st) => zoomStep(st.transform[2]) : (st) => st.transform[2];
     const write = () => {
-      const z = flow.getState().transform[2];
+      const z = zOf(flow.getState());
       if (z === last) return;
       last = z;
       el.style.setProperty('--inv', 1 / Math.max(z, min));
     };
     const put = (st) => {
-      if (st.transform[2] === last) return;
+      if (zOf(st) === last) return;
       if (id != null && awayFromView(st, id)) { late.add(write); settleLater(); return; }
       late.delete(write);
       write();
@@ -59,7 +62,7 @@ export function useInvRef(min = 0.02, id = null) {
     write();
     const off = flow.subscribe(put);
     return () => { off(); late.delete(write); };
-  }, [flow, min, id]);
+  }, [flow, min, id, stepped]);
 }
 
 // 배율에 따라 바뀌는 인라인 style(화면 기준 크기의 이름표 글자, 손잡이 굵기)을 화면 변환이 바뀔 때마다 직접 쓴다.

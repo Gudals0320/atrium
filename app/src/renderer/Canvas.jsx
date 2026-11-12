@@ -43,7 +43,7 @@ import { wsAt } from './lib/items.js';
 import { DividerNode, GhostNode, DockGrip, DockEdge, DockLinks } from './Docks.jsx';
 import { LinkEdge, RepoEdge } from './Links.jsx';
 import { withBoundary } from './ErrorBoundary.jsx';
-import { pickAttached, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
+import { pickAttached, termAllowed, veryClose, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
 import { perfLog } from './perf.js';
 import { enterView, dockRect, isViewing, NAV_GAP } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
 import { enterSession } from './touch.js';
@@ -582,9 +582,12 @@ export function Canvas() {
     // P76: 전체 보기가 연 세션은 전체 보기가 터미널을 붙인다(한 창에서 한 패널을 두 번 붙이지 않는다)
     const full = fullId();
     for (const id of held.current.keys()) if (id === full) held.current.delete(id);
-    const list = [...st.nodes].filter(([id]) => st.sessions.has(id) && st.sessions.get(id).state !== 'sleeping' && id !== full).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
+    const list = [...st.nodes].filter(([id]) => st.sessions.has(id) && st.sessions.get(id).state !== 'sleeping' && id !== full).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h, ws: st.sessions.get(id).workspaceKey || null }));
     // 이슈 #1-16: 상한보다 많이 보여도 고른 노드와 초점 노드는 터미널을 먼저 받는다
-    const want = pickAttached(list, vp, { width: el.clientWidth, height: el.clientHeight }, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus: st.focusId, selected: new Set(st.selected) });
+    // P121: 고른 워크스페이스(viewWs)의 노드, 초점·고른 노드, 아주 가까이 확대한 노드만 터미널을 받는다(lib/faces.js termAllowed)
+    const screen = { width: el.clientWidth, height: el.clientHeight };
+    const focus = st.focusId, selected = new Set(st.selected), wsLimit = { key: st.viewWs || null };
+    const want = pickAttached(list, vp, screen, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus, selected, wsLimit });
     // P24: 가까이 얼굴로 보이는 노드 모두(잠든 노드, 제어기 상한 밖 포함)는 그 리포를 보고 있는 것이다(저절로 잠재우지 않는다)
     const all = [...st.nodes].filter(([id]) => st.sessions.has(id)).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
     setCloseIds(pickAttached(all, vp, { width: el.clientWidth, height: el.clientHeight }, { max: Infinity }).sort());
@@ -593,7 +596,10 @@ export function Canvas() {
     const keep = [...want];
     for (const [id, t] of held.current) {
       if (keep.includes(id)) continue;
-      if (now - t < HOLD_MS && keep.length < MAX_CONTROLLERS && list.some((n) => n.id === id)) keep.push(id);
+      const n = list.find((x) => x.id === id);
+      // P121: 다른 워크스페이스로 바꾸었거나 초점이 떠난 노드는 기다리지 않고 놓는다(아주 가까이는 붙어 있던 기준 30%로 본다)
+      const ok = n && termAllowed({ id, ws: n.ws, viewWs: wsLimit.key, focus, selected, near: veryClose(n, vp, screen, true) });
+      if (now - t < HOLD_MS && keep.length < MAX_CONTROLLERS && ok) keep.push(id);
       else held.current.delete(id);
     }
     if (full) keep.length = 0; // P84: 전체 보기가 화면을 덮는 동안 판의 터미널은 붙이지 않는다(가려진 터미널의 메모리)
@@ -607,7 +613,8 @@ export function Canvas() {
   const schedule = useCallback((ms = 200) => { clearTimeout(timer.current); timer.current = setTimeout(recompute, ms); }, [recompute]);
   const focusId = useStore((st) => st.focusId);
   const selectedIds = useStore((st) => st.selected);
-  useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, schedule]);
+  const viewWs = useStore((st) => st.viewWs); // P121
+  useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, viewWs, schedule]);
   useEffect(() => { const t = setInterval(() => recompute(), HOLD_MS + 100); window.addEventListener('resize', () => schedule()); return () => clearInterval(t); }, [recompute, schedule]);
 
   // P112: 캔버스 크기는 ResizeObserver로 담아 둔다. 화면을 옮기는 프레임마다 clientWidth를 읽으면 그 프레임에 바뀐 스타일·레이아웃을 그 자리에서 다시 센다(강제 동기 레이아웃).
