@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // 하위 세션 명령(P8, ARCH 4절 K): 판이 띄운 세션 안에서 부른다. 판 플러그인의 bin/atrium(옛 이름 bin/mtask)이 이 파일을 부른다.
 // 판의 API 토큰(backend.json)을 읽지 않는다. 세션 설정 파일의 env(ATRIUM_PORT, ATRIUM_SESSION_ID, ATRIUM_SESSION_TOKEN 등. P18 전에 띄운 세션은 MTASK_*)로 그 판의 POST /branch/*만 부른다.
-// 사용: atrium child [이름] [--prompt 글] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 호출자] [--effort 노력] [--kind 종류] [--head] [--no-wait] [--json]
+// 사용: atrium prompt <이름> "<글>" [--wait] [--timeout ms] [--file 경로] [--json]   (P116: 다른 에이전트에게 일 시키기. 판의 전달 규칙으로 넣는다)
+//       atrium wait <이름> [--timeout ms] [--json]   (P116: 그 세션의 지금 턴이 끝날 때까지, 마지막 답)
+//       atrium read <이름> [--lines n] [--json]   (P116: 그 세션 화면의 최근 줄)
+//       atrium child [이름] [--prompt 글] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 호출자] [--effort 노력] [--kind 종류] [--head] [--no-wait] [--json]
 //       atrium me [--json]   (P81: 너의 지금 연결 — 부모, 하위 세션, 역할 연결, 마지막 지시)
 //       atrium models [--json]   (P41: 띄울 수 있는 호출자와 모델, 그 명령)
 //       atrium child-wait <이름> [--json]   (P36: 신뢰 관문을 지나 지시를 받을 수 있게 될 때까지)
@@ -14,13 +17,22 @@ import path from 'node:path';
 import { envVar } from '../src/config.mjs';
 import { shortHelp, contractJson, VERB_NAMES } from '../src/cli-contract.mjs'; // P115: 계약(atrium help --json)
 
-const HELP = `atrium(보드가 띄운 세션의 하위 세션 명령. 옛 이름 mtask도 같다)
+const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같다)
+  atrium prompt <이름> "<할 일>" [--wait] [--timeout ms] [--file 경로]
+      다른 에이전트에게 일을 시킨다. 이름은 보드의 세션 이름이다(@ 없이도). 보드가 받는 쪽 차례에 맞춰 넣는다: 일하는 중이거나 사람의 답을 기다리면 끝난 뒤,
+      사람이 그 터미널에 치는 중이면 3초 뒤, 잠들었으면 깨운 뒤. 보낸 쪽 → 받는 쪽 연결과 오간 기록이 판에 남는다.
+      --wait면 그 글로 시작한 턴이 끝날 때까지 기다려 마지막 답을 돌려준다(기본 100초. 더 길게는 --timeout 600000과 셸 도구의 시간 제한을 함께 늘린다).
+      --file은 글을 파일에서 읽는다(긴 글, 따옴표가 많은 글).
+  atrium wait <이름> [--timeout ms]
+      그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(Claude Code는 hook의 답, 다른 종류는 보드가 화면에서 고른 답).
+      사람의 답을 기다리면 바로 돌아온다(waiting). 시간이 끝나면 종료 코드 3이고 일은 계속된다. 다시 atrium wait
+  atrium read <이름> [--lines n]   그 세션 화면의 최근 줄(기본 80줄). 잠든 세션은 마지막 답
   atrium child [이름] [--prompt "첫 요청"] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 런처] [--effort 노력] [--kind 종류] [--no-wait]
       하위 세션(워커)을 만든다. 너의 폴더·모델·추론 수준·승인 방식·그룹을 물려받고(준 값이 덮는다), 너와 역할 선(기본 "워커")으로 이어진다.
       --model은 말로 한 이름도 받는다("glm flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
       --launcher는 그 런처(도구 모음의 단추)의 하네스·모델·옵션·환경 변수 그대로 띄운다.
       --kind codex(다른 종류)는 보드 레일의 그 종류 런처 설정(추가 인자·모델, --model이 모델만 덮는다)으로 띄우고, 너의 승인 방식을 그 종류의 승인 인자로 옮긴다.
-      준비될 때까지 기다린 뒤 herdr 이름과 패널, 일 시키기·응답 읽기 명령을 돌려준다. 수와 깊이에 상한은 없다.
+      준비될 때까지 기다린 뒤 워커 이름과 일 시키기·기다리기·읽기 명령을 돌려준다. 수와 깊이에 상한은 없다.
       --worktree는 claude -w로 워크트리를 만든다. 신뢰를 받지 않은 저장소면 신뢰 질문에서 멈추고(needs_trust) 사람에게 할 한 문장을 돌려준다.
       --head는 너의 워커가 아니라 따로 일을 이끄는 세션(헤드)으로 띄운다. 첫 요청 뒤 보드가 부모 관계를 뗀다. 그 뒤로 일을 시키거나 기다리지 않는다(--worktree와 함께 쓰지 않는다).
   atrium me                     너의 지금 연결(부모, 하위 세션, 역할 연결, 연결마다 마지막 지시). 보드의 지금 기록이라 예전 알림과 다르면 이것을 믿는다
@@ -28,10 +40,10 @@ const HELP = `atrium(보드가 띄운 세션의 하위 세션 명령. 옛 이름
   atrium children [--all]       너의 하위 세션(--all이면 그 아래까지) 상태와 마지막 응답
   atrium models                 띄울 수 있는 런처와 모델(하네스 모델, 별칭, 게이트웨이 모델)과 각각을 띄우는 atrium child 명령
   atrium child-kill <이름> [--only]   너의 하위 세션을 끈다(그 아래 하위 세션도 함께. --only면 그것만). 사람이 끄라고 할 때만 쓴다
-  atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. 잠든 세션은 herdr에 없으므로 herdr 명령이 그 이름을 못 찾으면 이것을 먼저 한다
-이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다.`;
+  atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. atrium prompt는 잠든 세션을 깨운 뒤 넣으므로 미리 깨울 때만 쓴다
+이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long']);
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait']); // P116: prompt --wait
 const argv = process.argv.slice(2);
 const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -70,7 +82,7 @@ function counts(c) { return c ? `너의 하위 세션 ${c.children}개, 판 전�
 function trustLines(x) {
   say(`  상태: needs_trust. 신뢰 질문에서 멈췄다. 보드는 대신 답하지 않고, 너도 키를 보내 답하지 않는다.`);
   say(`  사용자에게 이 한 문장만 말한다: "${x.tellHuman}"`);
-  if (x.gate || x.gated) say(`  사람이 답하면 보드가 그 카드에서 워크트리로 다시 띄운다${x.firstPrompt ? '. 첫 요청는 그 뒤에 들어간다' : ''}. 그동안 herdr로 시키지 말고 기다린다: atrium child-wait ${x.name}`);
+  if (x.gate || x.gated) say(`  사람이 답하면 보드가 그 카드에서 워크트리로 다시 띄운다${x.firstPrompt ? '. 첫 요청는 그 뒤에 들어간다' : ''}. 그동안 따로 시키지 말고 기다린다: atrium child-wait ${x.name}`);
   else say(`  사람이 답한 뒤 기다리기: atrium child-wait ${x.name}`);
 }
 
@@ -81,6 +93,8 @@ async function main() {
   TOKEN = sessionToken();
   if (!E('PORT') || !E('SESSION_ID') || !TOKEN) fail('보드에서 시작한 세션이 아닙니다 (보드가 준 환경 변수나 세션 토큰 파일 없음). 보드에서 시작한 세션 안에서 호출하세요.');
   let r;
+  // P116: 일 시키기·기다리기·읽기
+  if (cmd === 'prompt' || cmd === 'wait' || cmd === 'read') return verb(cmd);
   if (cmd === 'child') {
     // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
     if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);
@@ -111,14 +125,14 @@ async function main() {
     if (x.needsTrust) { say(`@${x.name}은 아직 신뢰 질문에서 멈춰 있다(${(x.ms / 1000).toFixed(0)}초 기다림).`); trustLines(x); return; }
     if (['exited', 'closed', 'error'].includes(x.state)) return say(`@${x.name}: ${x.state}. 하위 세션이 떠 있지 않다${x.state === 'exited' ? '(신뢰 질문에서 거절했거나 끝났다)' : ''}`);
     if (x.timeout) return say(`@${x.name}: 아직 ${x.state}${x.gated ? '(워크트리로 다시 띄우는 중)' : ''}. 다시 기다리기: atrium child-wait ${x.name}`);
-    say(`@${x.name}: ${x.state}${x.worktree ? ` · 워크트리 ${x.worktree}` : ''} (herdr 이름 ${x.agentName}, 패널 ${x.paneId})`);
-    say(`일 시키기: ${x.next.prompt}`); say(`끝나기 기다리기: herdr agent wait ${x.agentName} --timeout 600000`); say(`응답 읽기: ${x.next.read}`);
+    say(`@${x.name}: ${x.state}${x.worktree ? ` · 워크트리 ${x.worktree}` : ''}`);
+    say(`일 시키기: ${x.next.prompt}`); say(`끝나기 기다리기: atrium wait ${x.name} · 화면 읽기: ${x.next.read}`); // P116
     return;
   }
   if (cmd === 'wake' || (cmd === 'child' && x.woke !== undefined)) {
-    say(x.woke ? `@${x.name}을 깨웠다(${((x.ms || 0) / 1000).toFixed(1)}초, 같은 대화로 이어 감): herdr 이름 ${x.agentName}, 패널 ${x.paneId}, 상태 ${x.state}` : `@${x.name}은 이미 깨어 있다: herdr 이름 ${x.agentName}, 패널 ${x.paneId}, 상태 ${x.state}`);
+    say(x.woke ? `@${x.name}을 깨웠다(${((x.ms || 0) / 1000).toFixed(1)}초, 같은 대화로 이어 감): 상태 ${x.state}` : `@${x.name}은 이미 깨어 있다: 상태 ${x.state}`);
     if (x.firstPrompt) say(`지시를 보냈다(${x.firstPrompt.status}). 끝나기 기다리기: ${x.next.wait}`); else say(`일 시키기: ${x.next.prompt}`);
-    say(`응답 읽기: ${x.next.read}`);
+    say(`화면 읽기: ${x.next.read}`);
     return;
   }
   if (cmd === 'models') return printModels(x);
@@ -127,8 +141,8 @@ async function main() {
     if (x.resolved) say(`모델 "${x.resolved.from}" → ${x.resolved.to} (${{ exact: '정확한 이름', alias: '별칭', loose: '유사 이름 일치' }[x.resolved.how] || x.resolved.how})`);
     else if (x.launcher) say(`런처 ${x.launcher}로 실행했습니다.${x.gateway ? `(게이트웨이 경유 ${x.gateway})` : ''}`);
     else if (x.inheritedGateway) say(`너의 게이트웨이(${x.inheritedGateway})와 모델을 물려받았다`);
-    if (x.head) say(`헤드로 띄웠다: @${x.name} (herdr 이름 ${x.agentName}, 패널 ${x.paneId}, 종류 ${x.kind}). 너의 워커가 아니다. 첫 요청 뒤 보드가 부모 관계를 ${x.head.detached ? '뗐다' : '뗀다'}. 그 뒤로 일을 시키거나 기다리지 않는다`);
-    else say(`하위 세션을 생성했습니다: @${x.name} (herdr 이름 ${x.agentName}, 패널 ${x.paneId}, 종류 ${x.kind}, 역할 "${x.role}", ${x.depth}단계)`);
+    if (x.head) say(`헤드로 띄웠다: @${x.name} (종류 ${x.kind}). 너의 워커가 아니다. 첫 요청 뒤 보드가 부모 관계를 ${x.head.detached ? '뗐다' : '뗀다'}. 그 뒤로 일을 시키거나 기다리지 않는다`);
+    else say(`하위 세션을 생성했습니다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}", ${x.depth}단계)`);
     if (x.harness) {
       // P96: 다른 종류(codex 등). 무엇을 물려받았는지: 바탕 호출자, 띄운 명령, 승인
       const H = x.harness;
@@ -136,40 +150,119 @@ async function main() {
       const appr = { parent: `너의 승인 방식 ${H.parentPermissionMode}을 옮김`, launcher: '런처의 인자', harness: `${x.kind}의 사용자 설정(너의 승인 방식 ${H.parentPermissionMode}은 옮기지 않음)` }[H.approvalFrom] || '옮기지 않음';
       say(`  폴더 ${x.cwd}${x.model ? ` · 모델 ${x.model}` : ''} · ${base}`);
       say(`  명령 ${[x.kind, ...H.argv].join(' ')} · 승인: ${appr}`);
-      say(`  ${x.kind}는 hook이 없다. 끝났는지는 herdr agent wait로 본다`);
+      say(`  ${x.kind}는 hook이 없다. 보드가 화면으로 끝과 답을 보고, atrium wait가 같은 모양으로 돌려준다`);
     } else say(`  폴더 ${x.cwd}${x.worktree ? ` · 워크트리 ${x.worktree}(claude -w${x.gate ? ', 신뢰를 받은 뒤' : ''})` : ''}${x.model ? ` · 모델 ${x.model}` : ''}${x.effort ? ` · 노력 ${x.effort}` : ''} · 승인 방식 ${x.permissionMode}`);
     const w = x.waited;
     if (x.needsTrust) { trustLines(x); say(`응답 읽기: ${x.next.read}`); say(counts(x.counts)); return; }
-    if (!w) say('  상태: 기다리지 않음(--no-wait). 준비되기 전에는 herdr agent wait로 기다린다');
+    if (!w) say(`  상태: 기다리지 않음(--no-wait). 준비되면 보드가 첫 요청을 넣는다. 끝나기 기다리기: atrium wait ${x.name}`);
     else if (w.state === 'waiting') say('  상태: 승인을 기다린다. 사용자에게 보드의 승인 카드에 답해 달라고 알린다');
     else if (['error', 'exited', 'closed'].includes(w.state)) say(`  상태: ${w.state}. 하위 세션이 제대로 뜨지 않았다${x.error ? `(${x.error.type}: ${x.error.message || ''})` : ''}`);
-    else if (w.timeout) say(`  상태: ${w.state}(아직 준비 중). herdr agent wait ${x.agentName} --timeout 600000 으로 기다린다`);
+    else if (w.timeout) say(`  상태: ${w.state}(아직 준비 중). atrium wait ${x.name}으로 기다린다`);
     else say(`  상태: ${w.state}${x.firstPrompt ? `, 첫 요청 ${w.delivery || x.firstPrompt.status}` : ''} (${(w.ms / 1000).toFixed(1)}초)`);
     // P79: 첫 요청이 들어갔다고 확인하지 못했으면 그 사실과 다음 명령
     const fp = x.firstPrompt ? (w && w.delivery) || x.firstPrompt.status : null;
     if (fp && fp !== 'confirmed') {
-      if (['unconfirmed', 'failed', 'cancelled'].includes(fp)) say(`  첫 요청이 들어가지 않았다(${fp}). 화면 보기: herdr agent read ${x.agentName} --source recent-unwrapped --lines 40 · 다시 보내기: ${x.next.prompt}`);
+      if (['unconfirmed', 'failed', 'cancelled'].includes(fp)) say(`  첫 요청이 들어가지 않았다(${fp}). 화면 보기: atrium read ${x.name} --lines 40 · 다시 보내기: ${x.next.prompt}`);
       else say(`  첫 요청은 아직 확인되지 않았다(${fp}). 보드가 들어갈 때까지 보낸다. 확인: atrium children(들어가지 않으면 "첫 요청 안 들어감"이 보인다) · 다시 보내기: ${x.next.prompt}`);
     }
     if (x.head) { say(`화면 보기(필요할 때만): ${x.next.read}`); say('지금 연결: atrium me'); return; }
     if (x.firstPrompt) say(`끝나기 기다리기: ${x.next.wait}`); else say(`일 시키기: ${x.next.prompt}`);
-    say(`응답 읽기: ${x.next.read}`);
+    say(`화면 읽기: ${x.next.read}`);
     say(counts(x.counts));
     return;
   }
   if (cmd === 'children') {
     say(`@${x.parent}(${x.depth}단계)의 하위 세션 ${x.children.length}개. ${counts(x.counts)}`);
     for (const c of x.children) {
-      say(`${'  '.repeat(Math.max(1, c.depth - x.depth))}@${c.name} (herdr ${c.agentName}, 패널 ${c.paneId || '없음'}, "${c.role || '-'}", ${c.depth}단계) ${c.state}${c.state === 'sleeping' ? ` — 절전 중. 시키기 전에 atrium wake ${c.name}` : ''}${c.state === 'trust_wait' ? ` — 신뢰 질문(사람이 답한다). 기다리기: atrium child-wait ${c.name}` : c.gated ? ` — 워크트리로 다시 띄울 차례. 기다리기: atrium child-wait ${c.name}` : ''}${c.ask ? ` — 묻는 중: ${c.ask}` : ''}${c.error ? ` — 오류 ${c.error.type}: ${(c.error.message || '').replace(/\s+/g, ' ')}` : ''}${c.model ? ` · 모델 ${c.model}` : ''}${c.children ? ` · 하위 ${c.children}` : ''}`);
+      say(`${'  '.repeat(Math.max(1, c.depth - x.depth))}@${c.name} ("${c.role || '-'}", ${c.depth}단계${c.kind && c.kind !== 'claude' ? `, ${c.kind}` : ''}) ${c.state}${c.state === 'sleeping' ? ` — 절전 중. 시키기 전에 atrium wake ${c.name}` : ''}${c.state === 'trust_wait' ? ` — 신뢰 질문(사람이 답한다). 기다리기: atrium child-wait ${c.name}` : c.gated ? ` — 워크트리로 다시 띄울 차례. 기다리기: atrium child-wait ${c.name}` : ''}${c.ask ? ` — 묻는 중: ${c.ask}` : ''}${c.error ? ` — 오류 ${c.error.type}: ${(c.error.message || '').replace(/\s+/g, ' ')}` : ''}${c.model ? ` · 모델 ${c.model}` : ''}${c.children ? ` · 하위 ${c.children}` : ''}`);
       if (c.error && /model/i.test(c.error.type || '')) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}모델을 쓰지 못했다. 다른 모델로 다시 띄운다(atrium models). 끄기는 사람이 끄라고 할 때만`);
-      if (c.firstPromptLost) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}첫 요청 안 들어감(${c.firstPromptLost.status}${c.firstPromptLost.reason ? `: ${c.firstPromptLost.reason}` : ''}). 화면 보기: herdr agent read ${c.agentName} --source recent-unwrapped --lines 40 · 다시 보내기: herdr agent prompt ${c.agentName} "<할 일>"`); // P79
-      if (c.deliveryStuck) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}보낸 글이 ${Math.round((Date.now() - c.deliveryStuck.since) / 1000)}초째 들어가지 않음(herdr ${c.deliveryStuck.code || c.deliveryStuck.reason}, ${c.deliveryStuck.attempts}번 시도, 보드가 간격을 늘려 다시 보낸다). 화면 보기: herdr agent read ${c.agentName} --source recent-unwrapped --lines 40 · 취소: atrium cancel ${c.deliveryStuck.deliveryId}`); // P106
+      if (c.firstPromptLost) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}첫 요청 안 들어감(${c.firstPromptLost.status}${c.firstPromptLost.reason ? `: ${c.firstPromptLost.reason}` : ''}). 화면 보기: atrium read ${c.name} --lines 40 · 다시 보내기: atrium prompt ${c.name} "<할 일>"`); // P79
+      if (c.deliveryStuck) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}보낸 글이 ${Math.round((Date.now() - c.deliveryStuck.since) / 1000)}초째 들어가지 않음(${c.deliveryStuck.code || c.deliveryStuck.reason}, ${c.deliveryStuck.attempts}번 시도, 보드가 간격을 늘려 다시 보낸다). 화면 보기: atrium read ${c.name} --lines 40 · 취소는 사람이 보드에서 한다(전달 ${c.deliveryStuck.deliveryId})`); // P106. P116: 이 atrium에는 cancel이 없다
       if (c.lastAnswer) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}마지막 응답:${c.lastAnswer.replace(/\s+/g, ' ').slice(0, 400)}`);
     }
     return;
   }
   say(`껐다: ${x.killed.map((k) => `@${k.name}${k.closed ? '' : `(실패 ${k.error || ''})`}`).join(', ')}`);
 }
+// ---------- P116: atrium prompt | wait | read ----------
+const secs = (ms) => `${((ms || 0) / 1000).toFixed(1)}초`;
+const WAIT_HTTP_EXTRA = 20000;
+async function verb(cmd) {
+  const name = rest[0];
+  if (!name) fail(`받을 세션 이름을 준다: atrium ${cmd} <이름>${cmd === 'prompt' ? ' "<할 일>"' : ''}`, 2);
+  const timeoutMs = flags.timeout != null ? Number(flags.timeout) : null;
+  if (flags.timeout != null && !(timeoutMs > 0)) fail(`--timeout은 밀리초 수다: ${flags.timeout}`, 2);
+  let r;
+  if (cmd === 'prompt') {
+    let text = rest.slice(1).join(' ');
+    if (flags.file) { if (text) fail('글은 인자나 --file 가운데 하나로 준다', 2); try { text = fs.readFileSync(path.resolve(String(flags.file)), 'utf8'); } catch (e) { fail(`--file을 읽지 못했다: ${e.message}`, 2); } }
+    if (!text.trim()) fail('보낼 글을 준다: atrium prompt <이름> "<할 일>"', 2);
+    r = await call('prompt', { name, text, wait: !!flags.wait, timeoutMs }, flags.wait ? (timeoutMs || 100000) + WAIT_HTTP_EXTRA : 60000);
+  } else if (cmd === 'wait') r = await call('turn', { name, timeoutMs }, (timeoutMs || 100000) + WAIT_HTTP_EXTRA);
+  else {
+    const lines = flags.lines != null ? Number(flags.lines) : null;
+    if (flags.lines != null && !(lines > 0)) fail(`--lines는 줄 수다: ${flags.lines}`, 2);
+    r = await call('read', { name, lines }, 30000);
+  }
+  if (r.board && E('HERDR_SESSION') && r.board.herdrSession !== E('HERDR_SESSION')) fail(`다른 보드에서 응답했습니다 (${r.board.herdrSession}, 기대 ${E('HERDR_SESSION')})`);
+  const x = r.result;
+  const turn = cmd === 'wait' ? x : x && x.turn;
+  const code = r.error ? 1 : turn ? turnExit(turn.status) : x && x.delivery && ['failed', 'cancelled'].includes(x.delivery.status) ? 1 : 0;
+  process.exitCode = code; // 출력을 다 쓴 뒤 끝나게 exit를 부르지 않는다(파이프 출력)
+  if (flags.json) return say(JSON.stringify(x ?? { error: r.error }, null, 2));
+  if (r.error) fail(`${cmd === 'prompt' ? '보내지 않았다' : cmd === 'wait' ? '기다리지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`);
+  if (cmd === 'read') return printRead(x);
+  if (cmd === 'prompt') printDelivery(x);
+  if (turn) printTurn(x, turn);
+  else if (cmd === 'prompt') say(`끝나기 기다리기: ${x.next.wait} · 화면 보기: ${x.next.read}`);
+}
+// 기다린 결과의 종료 코드: 기다리는 시간이 끝남 3, 글이 들어가지 않음·받는 세션이 끝남 1
+function turnExit(status) { return status === 'timeout' ? 3 : ['failed', 'closed', 'exited', 'aborted'].includes(status) ? 1 : 0; }
+const REASON = {
+  working: (n) => `@${n}는 일하는 중이다. 보드가 이번 턴이 끝나면 넣는다(대기열)`,
+  waiting: (n) => `@${n}는 사람의 답을 기다린다. 보드가 사람이 답한 뒤 넣는다. 대신 답하지 않는다. 사용자에게 "보드에서 @${n}에 답해 주세요"라고 알린다`,
+  trust_wait: (n) => `@${n}는 신뢰 질문에서 멈춰 있다. 보드가 사람이 답한 뒤 넣는다. 사용자에게 "보드에서 @${n} 카드의 신뢰 질문에 답해 주세요"라고 알린다`,
+  user_typing: (n) => `사람이 @${n}의 터미널에 치는 중이다. 보드가 멈춘 뒤 넣는다`,
+  draft: (n) => `@${n}의 입력 칸에 쓰다 만 글이 있다. 보드가 비면 넣는다`,
+  sleeping: (n) => `@${n}는 잠들어 있다. 보드가 깨운 뒤 넣는다`,
+  starting: (n) => `@${n}는 뜨는 중이다. 준비되면 보드가 넣는다`,
+};
+function printDelivery(x) {
+  const d = x.delivery || {};
+  const id = `전달 ${x.deliveryId}`;
+  if (x.woke) say(`@${x.name}는 잠들어 있어 보드가 깨웠다(같은 대화로 이어 간다).`);
+  if (d.status === 'confirmed') say(`@${x.name}에게 보냈다(들어감, ${id}).`);
+  else if (d.status === 'sent' || d.status === 'sending') say(`@${x.name}에게 넣었다(들어갔는지 확인하는 중, ${id}).`);
+  else if (d.status === 'queued') say(`${(REASON[d.reason] || ((n) => `아직 넣지 못했다(${d.reason || '대기'}). 보드가 다시 넣는다`))(x.name)} (${id}).`);
+  else if (d.status === 'unconfirmed') say(`@${x.name}에게 넣었지만 들어갔는지 확인하지 못했다(${id}). 화면 보기: ${x.next.read}`);
+  else if (d.status === 'failed' || d.status === 'cancelled') fail(`@${x.name}에게 보낸 글이 들어가지 않았다(${d.status}${d.reason ? `: ${d.reason}` : ''}, ${id}).`);
+}
+function printAnswer(x, a, label = '마지막 답') {
+  if (!a || !a.text) return say(`  (${label} 없음. 화면 보기: ${x.next.read})`);
+  say(`--- @${x.name}의 ${label}(${a.source === 'hook' ? 'Claude Code가 준 답' : '보드가 화면에서 고른 답'}${a.clipped ? ', 앞부분만' : ''}) ---`);
+  say(a.text.replace(/\s+$/, ''));
+  say('---');
+}
+function printTurn(x, t) {
+  const n = x.name;
+  switch (t.status) {
+    case 'done': say(`@${n}: 턴이 끝났다(${secs(t.ms)} 기다림).`); printAnswer(x, t.answer); break;
+    case 'error': say(`@${n}: 턴이 오류로 끝났다${t.error ? `(${t.error.type}: ${t.error.message || ''})` : ''}.`); printAnswer(x, t.answer); break;
+    case 'idle': say(`@${n}: 지금 일하지 않는다(기다릴 턴 없음, 상태 ${t.state}).`); printAnswer(x, t.answer); break;
+    case 'sleeping': say(`@${n}: 잠들어 있다(기다릴 턴 없음). 시키면 보드가 깨운 뒤 넣는다.`); printAnswer(x, t.answer); break;
+    case 'waiting': say(`@${n}: 사람의 답을 기다린다${t.ask && t.ask.summary ? `(${t.ask.summary})` : ''}. 대신 답하지 않는다. 사용자에게 "보드에서 @${n}에 답해 주세요"라고 알린다. 답한 뒤 다시 기다리기: ${t.next.wait}`); break;
+    case 'timeout': say(`@${n}: 아직 일하는 중이다(${secs(t.ms)} 기다림, 상태 ${t.state}). 일은 계속된다. 다시 기다리기: ${t.next.wait}`); break;
+    case 'unconfirmed': say(`@${n}: 넣은 글이 들어갔는지 확인하지 못했다. 화면 보기: ${t.next.read}`); printAnswer(x, t.answer); break;
+    case 'failed': fail(`@${n}에게 보낸 글이 들어가지 않았다${t.delivery ? `(${t.delivery.status}${t.delivery.reason ? `: ${t.delivery.reason}` : ''})` : ''}.`); break;
+    default: fail(`@${n}: ${t.status}(상태 ${t.state}). 받는 세션이 떠 있지 않다. 지금 연결: atrium me`);
+  }
+}
+function printRead(x) {
+  if (x.text != null) { say(`@${x.name} (${x.kind}, ${x.state}) 화면 최근 ${x.lines}줄:`); say(x.text); return; }
+  say(`@${x.name} (${x.kind}, ${x.state}): ${x.why === 'sleeping' ? '잠들어 있어 화면이 없다' : `화면을 읽지 못했다(${x.why})`}.`);
+  printAnswer(x, x.answer);
+}
+
 // P81: atrium me. 보통 20줄 안. 하위 세션이 많으면 10개까지 보이고 나머지는 atrium children으로
 function ago(at, now) {
   if (!at) return '';
@@ -179,22 +272,23 @@ function ago(at, now) {
 function printMe(x) {
   const last = (l) => (l ? ` · 마지막 지시 ${ago(l.at, x.at)}${l.text ? ` "${l.text}"` : ''}` : '');
   const m = x.me;
-  say(`나: @${m.name} (herdr ${m.agentName}${m.paneId ? `, 패널 ${m.paneId}` : ''}, ${m.kind}) · 워크스페이스 ${m.workspace || '-'}${m.worktree ? ` · 워크트리 ${m.worktree}` : ''}${m.branch ? ` · 브랜치 ${m.branch}` : ''}`);
+  // P116: 이름은 보드의 세션 이름(atrium prompt|wait|read가 받는다). herdr 이름·패널은 보이지 않는다(--json에는 남는다)
+  say(`나: @${m.name} (${m.kind}) · 워크스페이스 ${m.workspace || '-'}${m.worktree ? ` · 워크트리 ${m.worktree}` : ''}${m.branch ? ` · 브랜치 ${m.branch}` : ''}`);
   const p = x.parent;
   if (!p) say('부모: 부모 없음');
   else if (p.closed) say(`부모: @${p.name} (닫힘)${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}`);
-  else say(`부모: @${p.name} (herdr ${p.agentName}, ${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}${last(p.last)}`);
+  else say(`부모: @${p.name} (${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}${last(p.last)}`);
   if (!x.children.length) say('하위 세션: 없음');
   else {
     say(`하위 세션 ${x.children.length}개:`);
-    for (const c of x.children.slice(0, 10)) say(`  @${c.name} (herdr ${c.agentName}) ${c.role || '-'}${c.order ? ` ${c.order}` : ''} · ${c.state}${c.state === 'sleeping' ? `(시키기 전에 atrium wake ${c.agentName})` : ''}${c.worktree ? ` · 워크트리 ${c.worktree}` : ''}${last(c.last)}`);
+    for (const c of x.children.slice(0, 10)) say(`  @${c.name} ${c.role || '-'}${c.order ? ` ${c.order}` : ''} · ${c.state}${c.state === 'sleeping' ? '(atrium prompt하면 보드가 깨운다)' : ''}${c.worktree ? ` · 워크트리 ${c.worktree}` : ''}${last(c.last)}`);
     if (x.children.length > 10) say(`  …외 ${x.children.length - 10}개(atrium children)`);
   }
   if (x.roles.length) {
     say('역할 연결:');
-    for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (herdr ${r.agentName}, ${r.state})${last(r.last)}`);
+    for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (${r.state})${last(r.last)}`);
   }
-  say(`일 시키기: ${x.commands.prompt} · 응답 읽기: ${x.commands.read}`);
+  say(`일 시키기: ${x.commands.prompt} · 끝나기 기다리기: ${x.commands.wait || 'atrium wait <이름>'} · 화면 읽기: ${x.commands.read}`);
   say('이것이 보드의 지금 기록이다. 예전 알림과 다르면 이것을 믿는다.');
 }
 // P41: atrium models

@@ -224,7 +224,7 @@ test('P96 슬래시 모델: Claude 하위 세션(게이트웨이 모델 ID)과 �
 test('P96 스킬 글: 다른 종류 워커 문단', () => {
   const s = boardSkill();
   assert.match(s, /--kind codex --model "<모델>" --prompt/);
-  assert.match(s, /hook이 없어 `herdr agent wait`/);
+  assert.match(s, /레일의 Codex 설정과 너의 승인 방식을 따른다\. 시키기·기다리기는 같다\./); // P116: hook이 없어도 atrium prompt|wait|read
 });
 
 test('P96 hook 없는 세션의 화면 답: Codex 0.167의 빈 입력칸(안내문 든 › 줄)과 상태 줄을 답으로 고르지 않는다', async () => {

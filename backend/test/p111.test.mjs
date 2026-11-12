@@ -58,7 +58,7 @@ test('P111 에이전트 글: 판 시스템 글, atrium 스킬, CLI 도움말이 
   assert.match(BOARD_SYSTEM_PROMPT, /`atrium wake <이름>`으로 그 세션을\(리포째 잠들었으면 그 리포를\) 깨운/);
   assert.doesNotMatch(BOARD_SYSTEM_PROMPT, /`atrium wake <이름>`으로 그 리포를 깨운 뒤/);
   assert.match(boardSkill(), /오래 쉰 워커는 혼자 잠든다/);
-  assert.match(boardSkill('delegate'), /리포째 잠들었으면 그 리포를/);
+  assert.match(boardSkill('delegate'), /미리 깨우려면 `atrium wake <이름>`/); // P116: 깨우기 범위는 판 시스템 글과 CLI 도움말이 말한다(atrium prompt가 깨운 뒤 넣으므로 스킬은 줄였다)
   const bin = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin');
   assert.match(fs.readFileSync(path.join(bin, 'atrium-child.mjs'), 'utf8'), /혼자 잠든 세션은 그 세션만, 리포째 잠들었으면/);
   assert.match(fs.readFileSync(path.join(bin, 'atrium.mjs'), 'utf8'), /이름이면 그 세션\(프로젝트 전체가 절전되었으면 그 프로젝트\)/);

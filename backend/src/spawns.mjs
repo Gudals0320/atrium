@@ -1,7 +1,8 @@
 // 대화끼리의 띄움 관계(P13, BRIEF "판 밖 대화", ARCH 5절 "판 밖 대화 노드·missed"). 순수 함수만 둔다(node 모듈을 부르지 않는다).
 // 한 대화의 셸 도구 호출(Bash, PowerShell, 터미널 MCP의 run_in_terminal 등 input.command가 글인 호출) 명령 글에서 새 claude를 띄운 줄을 찾고,
 // 그 뒤 짧은 시간 안에 시작한 다른 대화가 워크트리 이름·폴더나 첫 지시 글에 맞으면 그 대화를 하위로 본다. 기록만으로 알 수 있는 것만 쓴다.
-// - 띄움 명령: `claude … -w|--worktree <이름>`, `herdr agent start <이름>`(뒤따르는 `herdr agent prompt <이름> "…"`가 첫 지시), `atrium child|spawn`(옛 이름 mtask도)
+// - 띄움 명령: `claude … -w|--worktree <이름>`, `herdr agent start <이름>`(뒤따르는 `herdr agent prompt <이름> "…"`가 첫 지시), `atrium child|spawn`(옛 이름 mtask도.
+//   P116: --prompt 없이 띄웠으면 뒤따르는 `atrium prompt <이름> "…"`가 첫 지시)
 // - 글은 판 기록에 옮기지 않는다. 첫 지시는 앞 40자의 해시(promptKey)만 둔다
 import { splitCommands, parseHerdrCommands } from './links.mjs';
 
@@ -77,6 +78,11 @@ export function spawnsInCommand(command, { depth = 0 } = {}) {
         const worktree = typeof flags.worktree === 'string' ? flags.worktree : null;
         out.push({ kind: 'start', via: `atrium-${sub}`, name: (sub === 'child' ? pos[0] : flags.name) || worktree || null, worktree, cwd, promptKey: promptKey(typeof flags.prompt === 'string' ? flags.prompt : null) });
       }
+      // P116: atrium prompt <이름> "<글>"(atrium child를 첫 요청 없이 띄운 뒤의 첫 지시)
+      if (sub === 'prompt' && mi >= 0) {
+        const { flags, pos } = cliArgs(rest);
+        if (pos[0] && typeof flags.file !== 'string') out.push({ kind: 'prompt', via: 'atrium', name: String(pos[0]).replace(/^@/, ''), promptKey: promptKey(pos.slice(1).join(' ')) });
+      }
     }
     // 따옴표 안의 명령 글(claude가 든 낱말)은 한 번 더 푼다
     if (depth < 2) for (const w of words) if (/\s/.test(w) && MENTION.test(w) && w !== src) out.push(...spawnsInCommand(w, { depth: depth + 1 }));
@@ -124,7 +130,8 @@ export function matchSpawns(convos, { windowMs = SPAWN_WINDOW_MS, earlyMs = SPAW
     for (const s of list) {
       if (s.kind !== 'start') continue;
       const tries = [{ at: s.at, promptKey: s.promptKey }];
-      if (s.via === 'herdr' && s.name) { // 그 에이전트에 처음 보낸 지시
+      // 그 에이전트에 처음 보낸 지시(herdr agent prompt, P116: atrium child를 첫 요청 없이 띄운 뒤의 atrium prompt)
+      if (s.name && (s.via === 'herdr' || (s.via === 'atrium-child' && !s.promptKey))) {
         const p = list.find((x) => x.kind === 'prompt' && x.name === s.name && x.at >= s.at && x.at - s.at <= HERDR_PROMPT_MS);
         if (p) tries.push({ at: p.at, promptKey: p.promptKey });
       }

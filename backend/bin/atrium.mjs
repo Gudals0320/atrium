@@ -71,7 +71,7 @@ ${FEATURES_HELP}
   archived [--ws 프로젝트]                    보관된 세션과 보드 외부 대화
   convos [--ws 프로젝트]                      열린 프로젝트의 보드 외부 Claude Code 대화와 사용 중인 위치 확인
   open-convo <대화 ID> [--model m]          다른 곳에서 사용 중이지 않은 대화를 같은 ID로 보드에서 재개
-  tree                                    하위 세션 계층 (상위 세션, 깊이, 역할). 하위 세션 명령은 bin/atrium-child.mjs 참고
+  tree                                    하위 세션 계층 (상위 세션, 깊이, 역할). 보드가 띄운 세션 안의 atrium(일 시키기 prompt·wait·read, 하위 세션 child 등)은 bin/atrium-child.mjs 참고
   convo-nodes                             보드 외부 대화 카드와 생성 관계를 나타내는 연결선
   classify                                대화 기록의 분류별 수 (보드, 보관, 정리 대상, 실행 중, 데스크톱 등)
   missed                                  정리 대상 대화 (원래 폴더가 없거나 앱 테스트 폴더에서 생성된 대화)
