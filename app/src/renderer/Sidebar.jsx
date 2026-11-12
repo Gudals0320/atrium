@@ -27,6 +27,7 @@ import { branchLabel } from './lib/branch.js'; // P8(K4): 하위 세션은 부�
 import { Icon } from './lib/icons.jsx';
 import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 세션 줄 메뉴의 이름 바꾸기
 import { addressOf, renamed } from './lib/session-name.js';
+import { canReopen } from './lib/user-close.js'; // P125: 끝난 세션 다시 열기
 
 const KEY = 'mt.sidebar';
 function load() { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { return {}; } }
@@ -146,6 +147,13 @@ export function reopenClosed(c) {
     goWhenOpen(r.sessionId);
   });
 }
+// P125: 끝난 판 세션(사람이 닫음 등)을 같은 자리에서 같은 대화로 다시 연다(session.reopen). 닫힌 세션도 같은 API가 recall.reopen으로 넘긴다
+export function reopenSession(s) {
+  return run(s.sessionId, async () => {
+    const r = await api.call('session.reopen', { session: s.sessionId });
+    toast(r.resume ? t('userClose.reopenedResume', { name: r.name }) : t('userClose.reopened', { name: r.name }));
+  });
+}
 export function openConvo(c) {
   return run(c.convId, async () => {
     const r = await api.call('convo.open', { convo: c.convId, model: devModel() });
@@ -233,13 +241,15 @@ function sessionTitle(s, now, { here = false, pinned = false } = {}) {
 
 // 판 세션 한 줄: 상태 점, 이름, 역할·종류(claude가 아니면, 옅은 글), 지난 시간. 응답 필요·오류는 질문(또는 오류) 한 줄을 더 보인다.
 // P103: 안 본 결과는 이름 뒤 점 대신 상태 점을 보라로 하고 이름을 진하게, 지금 연 세션(here)은 이름을 강조색으로
-const SessionRow = memo(function SessionRow({ r, now, cur, here }) {
+const SessionRow = memo(function SessionRow({ r, now, cur, here, busy: rowBusy }) {
   const t = useT();
   const s = r.s;
   const b = bucketOf(s);
   const ask = r.attn ? (b === 'need' ? askLine(s) || t(`state.${s.state}`) : (s.error && (typeof s.error === 'string' ? s.error : s.error.message)) || t(`state.${s.state}`)) : '';
   const k = shownKind(s);
   const editing = useRenaming(s.sessionId, 'sidebar');
+  const reopen = canReopen(s); // P125: 끝난 세션(직접 종료 등)은 시간 자리에 "다시 열기"
+  const busy = reopen && !!rowBusy;
   // P66: 이름을 바꾸는 동안은 줄을 단추가 아닌 칸으로 그린다(단추 안의 입력칸은 초점을 받지 못한다)
   if (editing) return (
     <div className={`mt-sb2-row sess b-${b} cur editing`} style={pad(r)} data-sb="session" data-row={r.id} data-session={s.sessionId} data-name={s.name} data-state={s.state}>
@@ -259,7 +269,8 @@ const SessionRow = memo(function SessionRow({ r, now, cur, here }) {
         {s.branch && s.branch.role && <span className="mt-sb2-role">{s.branch.role}</span>}
         {k !== 'claude' && <span className="mt-sb2-kind">{kindText(k)}</span>}
         {r.attn && <span className={`mt-sb2-tag ${b}`}>{b === 'need' ? t('sb2.st_need') : t('sb2.st_error')}</span>}
-        <span className="mt-sb2-time">{ago(s.lastActivityAt || s.createdAt, now)}</span>
+        {reopen ? <span role="button" tabIndex={-1} className={`mt-sb2-reopen${busy ? ' busy' : ''}`} data-action="reopen-session" title={t('userClose.reopenTitle')} onClick={(e) => { e.stopPropagation(); setCursor(r.id); if (!busy) reopenSession(s); }}>{busy ? t('userClose.reopening') : t('userClose.reopen')}</span>
+          : <span className="mt-sb2-time">{ago(s.lastActivityAt || s.createdAt, now)}</span>}
         <span role="button" tabIndex={-1} className="mt-sb2-more" data-action="session-menu" title={t('sb2.menu')} onClick={(e) => { setCursor(r.id); openMenu(e, 'session', s.sessionId); }}><Icon name="more" /></span>
       </span>
       {r.attn && <span className="mt-sb2-ask">{ask}</span>}
@@ -360,7 +371,7 @@ function ClosedRow({ r, now, busy, cur }) {
       <span className="mt-sb2-time">{ago(c.closedAt, now)}</span>
       <span className="mt-sb2-acts">
         {why ? <span className="mt-sb-bound" data-bound={c.binding.where}>{why}</span>
-          : <button className="mt-btn small" data-action="reopen" disabled={busy} onClick={(e) => { e.stopPropagation(); reopenClosed(c); }}>{busy ? t('sidebar.opening') : t('sidebar.openOnBoard')}</button>}
+          : <button className="mt-btn small" data-action="reopen" disabled={busy} title={t('sidebar.openOnBoard')} onClick={(e) => { e.stopPropagation(); reopenClosed(c); }}>{busy ? t('sidebar.opening') : t('userClose.reopen')}</button>}
         <button className="mt-btn small ghost" data-action="archive" title={t('sidebar.archiveClosedTitle')} onClick={(e) => { e.stopPropagation(); archiveItem(c); }}>{t('common.archive')}</button>
       </span>
     </div>
@@ -389,7 +400,7 @@ function Row({ r, now, cur, busy, selecting, selected, renaming, dropAt, here })
   switch (r.type) {
     case 'group': return <GroupRow r={r} cur={cur} renaming={renaming} dropAt={dropAt} />;
     case 'ws': return <WsRow r={r} cur={cur} selecting={selecting} selected={selected} dropAt={dropAt} />;
-    case 'session': return <SessionRow r={r} now={now} cur={cur} here={here} />;
+    case 'session': return <SessionRow r={r} now={now} cur={cur} here={here} busy={busy} />;
     case 'extra': return <ExtraRow r={r} cur={cur} />;
     case 'sec': return <SecRow r={r} />;
     case 'closed': return <ClosedRow r={r} now={now} busy={busy} cur={cur} />;
@@ -442,6 +453,7 @@ function SideMenu() {
       <div className="mt-sb2-mh">{s.name}{renamed(s) ? <span className="mt-sb2-maddr"> · {addressOf(s)}</span> : null}</div>
       {item('menu-rename-session', t('rename.menu'), () => setRenaming(s.sessionId, 'sidebar'))}
       {item('menu-go-session', t('rename.goNode'), () => { const st = getState(); if (st.navigateTo) st.navigateTo(s.sessionId, { viewOnly: true }); })}
+      {canReopen(s) && item('menu-reopen-session', t('userClose.reopen'), () => reopenSession(s), { disabled: side.busy.has(s.sessionId) })}
     </>;
   } else if (menu.type === 'ws') {
     const w = workspaces.find((x) => x.key === menu.key);
@@ -548,7 +560,7 @@ function VirtualList({ rows, now, scroller }) {
   const out = [];
   for (let i = win.start; i < win.end; i++) {
     const r = rows[i];
-    const key = r.type === 'ws' ? r.w.key : r.type === 'closed' || r.type === 'convo' ? r.x.sessionId || r.x.convId : '';
+    const key = r.type === 'ws' ? r.w.key : r.type === 'closed' || r.type === 'convo' ? r.x.sessionId || r.x.convId : r.type === 'session' ? r.s.sessionId : ''; // P125: 세션 줄의 다시 열기
     out.push(
       <div key={r.id} className="mt-sb2-slot" style={{ top: off[i], height: r.h, '--lv': r.lv || 0 }} data-lv={r.lv || 0}>{/* P103: 칸이 단계 수만큼 세로 안내선을 그린다 */}
         <Row r={r} now={now} cur={cursor === r.id} busy={busy.has(key)} selecting={selecting} selected={r.type === 'ws' && selected.has(r.w.key)} renaming={r.type === 'group' && !!renaming && renaming === r.g.id} dropAt={dropAt && dropAt.id === r.id ? dropAt : null} here={r.type === 'session' && !!focusId && focusId === r.s.sessionId} />

@@ -7,8 +7,8 @@ import { m } from './msg.mjs'; // P16: 줄마다 화면 글 열쇠(msg)도 준�
 export const CHANGE_KINDS = ['state', 'hook', 'closed', 'turn_interrupted', 'herdr_disconnected', 'herdr_connected', 'backend_started'];
 const ORDER = { needs_you: 0, error: 1, interrupted: 2, exited: 3, turn_done: 4, herdr: 5, backend: 6 };
 
-const EXIT_TEXT = { normal: '정상 종료', trust_declined: "폴더 신뢰 거부로 종료", other: "종료됨" };
-const EXIT_KEY = { normal: 'chgExitNormal', trust_declined: 'chgExitTrust', other: 'chgExited' };
+const EXIT_TEXT = { normal: '정상 종료', user: '직접 종료', trust_declined: "폴더 신뢰 거부로 종료", other: "종료됨" };
+const EXIT_KEY = { normal: 'chgExitNormal', user: 'chgExitUser', trust_declined: 'chgExitTrust', other: 'chgExited' };
 function askMsg(ask) {
   if (!ask) return null;
   if (ask.kind === 'question') return m('chgQuestion', { q: (ask.questions || []).map((q) => q.question).join(' / ') });

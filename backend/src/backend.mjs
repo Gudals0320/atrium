@@ -23,8 +23,9 @@ import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptSta
 import { parseTargets, toLF, clip } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
+import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
-import { newRuntime, applyHook, applyHerdrStatus, applyAgentDetected, applyAgentReleased, applyHerdrDisconnected, deriveState, flags, worktreeExitAsk } from './state.mjs';
+import { newRuntime, applyHook, applyHerdrStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyHerdrDisconnected, deriveState, flags, worktreeExitAsk } from './state.mjs';
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
@@ -804,7 +805,13 @@ export class Backend {
 
   // ---------- herdr 이벤트 ----------
   async onHerdrEvent(e) {
-    if (e.type === 'pane_moved') { const m = e.previousPaneId && this.sessionByPane(e.previousPaneId); if (m && e.paneId) this.setPane(m, e.paneId, e.workspaceId, 'pane moved', { quiet: !!(e.raw && e.raw.hc) }); return; } // P117: hc가 같은 자리를 바꿔 띄운 것(에이전트 띄우기, 셸 남기기)은 알리지 않는다
+    if (e.type === 'pane_moved') {
+      const m = e.previousPaneId && this.sessionByPane(e.previousPaneId);
+      // P125: 셸을 남기며 온 종료 코드(놓임이 먼저 풀려 코드가 없던 끝남을 고친다: 콘솔 Ctrl+C면 직접 종료)
+      if (m && e.exitCode != null && applyExitCode(m.rt, e.exitCode)) { this.store.addEvent(m.sessionId, 'exit_code', { code: e.exitCode, exit: m.rt.exit }); this.store.saveRuntime(m.sessionId, m.rt); }
+      if (m && e.paneId) this.setPane(m, e.paneId, e.workspaceId, 'pane moved', { quiet: !!(e.raw && e.raw.hc) }); // P117: hc가 같은 자리를 바꿔 띄운 것(에이전트 띄우기, 셸 남기기)은 알리지 않는다
+      return;
+    } // P117: hc가 같은 자리를 바꿔 띄운 것(에이전트 띄우기, 셸 남기기)은 알리지 않는다
     // herdr 작업 공간이 판 밖에서 닫혔다. 작업 공간을 닫아도 패널마다 pane_closed가 오지 않는다(P5에서 확인)
     if (e.type === 'workspace_closed') {
       for (const x of [...this.sessions.values()]) if (x.herdrWorkspaceId === e.workspaceId && !this.killing.has(x.sessionId)) this.closeSession(x, 'workspace closed outside board');
@@ -847,7 +854,7 @@ export class Backend {
       // P106: 판이 띄운 Codex도 뜬 직후 herdr가 에이전트를 놓았다가(agent_released) 이름 없이 다시 알아본다(experiments/p106). 판이 띄운 세션이면 모두 맞춘다
       if ((s.startCommand && this.hooked(s)) || s.origin === 'board') for (const ms of [1500, 6000]) { const tm = setTimeout(() => { if (this.sessions.has(s.sessionId)) this.ensureAgentName(s); }, ms); if (tm.unref) tm.unref(); }
     } else if (e.type === 'agent_released') {
-      applyAgentReleased(s.rt, now, { herdrStopping: this.herdrStopping });
+      applyAgentReleased(s.rt, now, { herdrStopping: this.herdrStopping, exitCode: e.exitCode ?? null }); // P125: hc는 종료 코드를 준다
       this.store.addEvent(s.sessionId, 'herdr_agent', { released: true, finalStatus: e.finalStatus, exit: s.rt.exit });
       // G2: 판이 띄우지 않은 에이전트(판에 올린 것, 셸에서 띄운 것)가 끝나면 패널은 셸로 남는다. 같은 노드를 셸로 되돌린다.
       // 판이 띄운 에이전트가 끝난 것은 지금처럼 exited로 둔다(이어 가기 규칙 그대로)
@@ -1725,7 +1732,7 @@ export class Backend {
     const all = [...this.sessions.values()].map((s) => this.summary(s));
     const mine = all.filter((x) => x.state === 'waiting' || x.state === 'trust_wait').sort((a, b) => ((a.ask && a.ask.since) || a.createdAt) - ((b.ask && b.ask.since) || b.createdAt));
     const review = all.filter((x) => x.unseen).sort((a, b) => (a.turn.endedAt || 0) - (b.turn.endedAt || 0));
-    const errors = all.filter((x) => x.state === 'error' || (x.state === 'exited' && x.exit && x.exit.kind !== 'normal'));
+    const errors = all.filter((x) => x.state === 'error' || (x.state === 'exited' && x.exit && x.exit.kind !== 'normal' && x.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다
     return { needsYou: mine, review, problems: errors };
   }
 
@@ -2185,6 +2192,7 @@ export class Backend {
       'link.create': (p) => this.linkCreate(p),
       'link.delete': (p) => this.linkDelete(p),
       'session.detach': (p) => this.detachSession(p), // P81
+      'session.reopen': (p) => reopenSession(this, p), // P125: 사람이 닫은(끝난) 세션은 같은 자리에서, 닫힌 세션(J2)은 recall.reopen으로
       'link.log': (p) => { const l = this.store.getLink(p.link); if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`); return { link: this.linkView(l), events: this.store.linkEvents(l.linkId, p.limit || 200) }; },
       'agent.kinds': () => this.adapter.agentKinds(),
       // 자원과 붙은 클라이언트(D1·D3)

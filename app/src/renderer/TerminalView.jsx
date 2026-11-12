@@ -20,7 +20,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
 import { useStore, getState, takePendingInput, pendingFor } from './store.js';
-import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
+import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, copyOnRelease, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
 import { findShift, bigChange, historyAbove, historyPrefill, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
 import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
@@ -230,8 +230,14 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       term, host, mode: shell ? 'buffer' : 'live',
       sendWheel: (steps, c) => send(sgrWheel(steps, c.cell + 1, c.row + 1, term.cols, term.rows)),
       onActivate: () => { if (onActivateRef.current) onActivateRef.current(); },
+      onSelectEnd: () => { const text = sel.text(); if (copyOnRelease({ hasSelection: sel.has(), text })) copySel(text, 'select'); }, // P125: 끌어 고르면 바로 복사
       log: (name, d) => perfLog(name, { sessionId, ...d }),
     });
+    // P42·P125: 고른 글 전체(화면 밖으로 나간 부분까지)를 복사한다. 선택은 남긴다(clearsSelection: 복사로는 지우지 않음)
+    function copySel(raw, how) {
+      const text = copyText(raw);
+      navigator.clipboard.writeText(text).then(() => { perfLog('term_copy', { sessionId, chars: text.length, how }); flash(t('terminal.copied')); }, (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash(t('termSelect.copyFail')); });
+    }
     st.sel = sel;
     term._mtSel = sel; // 시험이 선택 기록(trace)을 읽는다
     term.hasSelection = () => sel.has();
@@ -243,11 +249,10 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       if (a === 'paste') return false; // 브라우저 붙여넣기 이벤트로 넘긴다(아래에서 감싼다)
       if (a === 'clear-selection') { e.preventDefault(); sel.clear('escape'); return false; } // P42: Esc는 선택만 끝낸다
       if (a === 'copy') {
-        // P42: 화면 밖으로 나간 부분까지 고른 글 전체. 일하는 중에도 프레임이 선택을 지우지 않는다
-        const text = copyText(sel.text());
-        navigator.clipboard.writeText(text).then(() => perfLog('term_copy', { sessionId, chars: text.length }), (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash(t('termSelect.copyFail')); });
-        if (clearsSelection('copy', { hasSelection: sel.has() })) sel.clear('copy');
-        e.preventDefault(); flash(t('terminal.copied')); return false;
+        // P42: 화면 밖으로 나간 부분까지 고른 글 전체. 일하는 중에도 프레임이 선택을 지우지 않는다.
+        // P125: 고른 글이 있으면 Ctrl+C는 복사만 하고 ^C를 보내지 않는다. 선택을 남겨 다시 눌러도 복사다(세션이 끝나지 않는다)
+        copySel(sel.text(), 'key');
+        e.preventDefault(); return false;
       }
       return true;
     });

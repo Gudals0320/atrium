@@ -38,6 +38,7 @@ export default {
   },
   exit: {
     normal: '정상 종료',
+    user: '직접 종료',
     herdr_stopped: 'herdr 서버 종료',
     trust_declined: '폴더 신뢰 거부로 종료',
     other: '종료됨',
@@ -181,7 +182,7 @@ export default {
     parentBoard: '보드의 세션', parentBoardClosed: '보드에서 닫힌 세션', parentOther: '다른 대화', parentDesktop: '데스크톱 앱 대화',
     parentMissed: '정리 대상 대화', parentMissedIn: '정리 대상 대화 · {folder}', parentArchived: '보관된 대화', parentArchivedTitle: '보관된 대화 · {title}', parentConvo: '대화 · {name}',
     chgQuestion: '질문: {q}', chgPlan: '계획 승인 요청', chgUnknownDialog: '유형을 알 수 없는 확인 창', chgWorktreeExit: '워크트리를 남길지 확인 필요', chgPermission: '권한 승인 요청: {what}', chgTrust: '새 폴더를 신뢰할지 확인 필요',
-    chgTurnFailed: '요청 처리 실패', chgExitNormal: '정상 종료', chgExitTrust: '폴더 신뢰 거부로 종료', chgExited: '종료됨',
+    chgTurnFailed: '요청 처리 실패', chgExitNormal: '정상 종료', chgExitUser: '직접 종료', chgExitTrust: '폴더 신뢰 거부로 종료', chgExited: '종료됨',
     chgCommand: '명령: {p}', chgPrompt: '요청: {p}', chgWasState: '중단 전 상태: {state}', chgKilled: '보드에서 종료', chgRemoved: '보드에서 제거됨 ({reason})',
     chgHerdrDown: 'herdr 서버가 예기치 않게 {n}회 종료되었습니다.{up}', chgReattached: ' (다시 연결됨)',
     chgBackendRestarts: '앱 연결 서비스가 {n}회 다시 시작되었습니다.{down}', chgDownFor: ' (중단 시간: {s}초)', chgList: '{items}',
@@ -2397,5 +2398,18 @@ export default {
   // P121: 고른 프로젝트 밖 세션의 요약 얼굴(누르거나 아주 가까이 확대하기 전에는 터미널을 붙이지 않음)
   brief: {
     hint: '다른 프로젝트의 세션입니다. 클릭하면 터미널을 표시합니다.',
+  },
+  // P125: 사용자가 직접 종료한 세션(Ctrl+C 두 번, /exit)은 오류가 아니다. 보드의 같은 자리에 남고 사이드바에서 다시 연다
+  userClose: {
+    reopen: '다시 열기',
+    reopenTitle: '이 카드에서 기존 대화를 이어 엽니다(이름·위치·연결 유지).',
+    reopening: '여는 중…',
+    reopened: '@{name} 세션을 새 대화로 다시 열었습니다(대화 기록을 찾지 못했습니다).',
+    reopenedResume: '@{name} 세션을 다시 열고 기존 대화를 이어갑니다.',
+    err: {
+      notExited: '@{name} 세션은 아직 실행 중입니다.',
+      cannot: '@{name} 세션은 다시 열 수 없습니다.',
+      busy: '@{name} 패널에서 다른 에이전트가 실행 중입니다.',
+    },
   },
 };

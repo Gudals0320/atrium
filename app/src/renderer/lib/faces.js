@@ -97,7 +97,7 @@ export function inboxOf(sessions) {
   const askSince = (s) => (s.ask && s.ask.since) || s.createdAt;
   const needsYou = sessions.filter((s) => s.state === 'waiting' || s.state === 'trust_wait').sort((a, b) => askSince(a) - askSince(b));
   const review = sessions.filter((s) => s.unseen && s.state !== 'waiting' && s.state !== 'trust_wait').sort((a, b) => ((a.turn && a.turn.endedAt) || 0) - ((b.turn && b.turn.endedAt) || 0));
-  const problems = sessions.filter((s) => s.state === 'error' || (s.state === 'exited' && s.exit && s.exit.kind !== 'normal'));
+  const problems = sessions.filter((s) => s.state === 'error' || (s.state === 'exited' && s.exit && s.exit.kind !== 'normal' && s.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다
   return { needsYou, review, problems };
 }
 
