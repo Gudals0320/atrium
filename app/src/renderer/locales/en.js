@@ -1855,7 +1855,7 @@ export default {
     },
     phaseRestarting: 'Restarting the backend and the window…',
     failed: 'Update failed: {error}',
-    note: 'The update downloads the release from GitHub, installs it next to the current version and switches only the backend and the window. Sessions in herdr keep running. If the new backend does not start, the board goes back to the current version.',
+    note: 'The update downloads the release from GitHub, installs it next to the current version and switches only the backend and the window. Sessions keep running in herdr-core (or in herdr on a board not moved yet). If the new backend does not start, the board goes back to the current version.',
     webBanner: 'Updating on the PC to {version}. This page reconnects when it is done.',
     toastAvailable: 'Atrium {version} is available. Update from Settings › General.',
     toastDone: 'Updated to {version}',

@@ -24,15 +24,17 @@
 
 Atrium is a Windows desktop app that puts every agent CLI session on one board. Each repository gets its own area, every session shows its live terminal and its state, working agents glow orange, and the sessions that need you glow yellow.
 
-Atrium does not replace your agents or tell them how to work. It starts sessions, connects them and shows the connections. The agents do the work and hand it to each other with the board's `atrium` command. [herdr](https://herdr.dev) owns the terminals, so sessions keep running when the window closes.
+Atrium does not replace your agents or tell them how to work. It starts sessions, connects them and shows the connections. The agents do the work and hand it to each other with the board's `atrium` command.
+
+The terminals live in [herdr-core](https://github.com/herdrdev/herdr-core), a terminal server that runs on its own. Close the window, restart the backend or update Atrium, and every session keeps running; the board attaches to them again when it starts. Atrium downloads a pinned herdr-core the first time it needs it, so there is nothing extra to install.
 
 ## Features
 
 ### The board
 
-- **Every session on one canvas.** Claude Code, Codex, other agents that herdr knows, and plain shells live side by side. Each repository is an area, and each live git worktree is a yellow box inside its repository's area.
+- **Every session on one canvas.** Claude Code, Codex, opencode, pi, other agent CLIs and plain shells live side by side. Each repository is an area, and each live git worktree is a yellow box inside its repository's area.
 - **Faces that follow the zoom.** Up close a node is its terminal. Further out it becomes a chat view, then a summary card: name, state, waiting question, last request and last answer. Click a node to fly to it.
-- **Launchers.** A launcher is a harness plus a connection, a model and options, or one command line you write. Paste the command you already use (for example `claude --model haiku` or a wrapper command) and the board splits it into fields; any agent launcher can use another start command and still runs as a full board session. Star it and it sits on the left rail: click it, type a session name (or leave it empty) and press Enter.
+- **Launchers.** A launcher is a harness plus a connection, a model and options, or one command line you write. Paste the command you already use (for example `claude --model haiku` or a wrapper command) and the board splits it into fields; any agent launcher can use another start command and still runs as a full board session. Star it and it sits on the left rail: click it, type a session name (or leave it empty) and press Enter. A new board starts with two launchers on the rail, Claude Code and Codex; add a shell or any other launcher with the **+** below them (it opens Settings › Launchers).
 - **Sidebar and find.** The sidebar (`Ctrl+Shift+E`) is built for boards with 200+ sessions: virtual groups of repositories, filters by state and kind, and keyboard moves. `Ctrl+F` finds sessions by name, prompt, question or answer, plus memos and kanban cards.
 - **Pick up old work.** Past Claude Code CLI conversations in an open folder appear as cards you can resume. Unarchived Claude desktop app sessions can be imported as forks, so the app's copy is never touched.
 - **Easy on memory.** A repository that stays idle for 30 minutes (configurable) goes to sleep as a whole, and a session that stays idle for 30 minutes sleeps alone even while its repository is busy. Click a sleeping node to wake it: a repository that slept as a whole wakes as a whole, a session that slept alone wakes alone. Each node shows its memory use.
@@ -41,7 +43,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 
 ### Your turn
 
-- **Know who is waiting.** Every session is *working*, *ready*, *your turn* or *error*, computed from herdr events and Claude Code hooks. Finished answers you have not looked at yet count as *Done*. A worker whose parent session is open on the board does not count; its parent becomes *Done* once it takes the report and ends its turn.
+- **Know who is waiting.** Every session is *working*, *ready*, *your turn* or *error*, computed from the terminal server's status events and Claude Code hooks. Finished answers you have not looked at yet count as *Done*. A worker whose parent session is open on the board does not count; its parent becomes *Done* once it takes the report and ends its turn.
 - **Answer in the terminal.** The board does not answer prompts for you. A waiting node turns yellow, joins the needs-you list and notifies you; click it (or press `N`) to land in its terminal. On a phone, a small key pad (arrows, Enter, Esc, Tab, Space, 1–4) opens when a session needs you and sends those keys to its terminal, for Claude Code, Codex and shells alike.
 - **One list for all repositories.** The **Your turn** pill lists every waiting session, oldest first, and `N` jumps to the next one. OS notifications and the tray icon tell you when the window is in the background.
 - **Changes since you looked.** Come back after a break and **Changes** sums up what each session did.
@@ -54,7 +56,7 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 - **Agents hand work to each other through the board.** `atrium prompt <name> "<task>" --wait` sends a task to another session and returns its final answer, `atrium wait <name>` waits for a session's current turn to end, and `atrium read <name>` shows its recent screen. The board delivers with the same rules as the command bar (it waits while the other agent is working or needs you, or while you are typing in its terminal, and wakes a sleeping session first), draws the link and keeps the exchange. The commands are the same on every terminal backend and every harness, and run without permission prompts in Claude Code sessions the board starts.
 - **Workers on demand.** Agents start their own workers with `atrium child`, with no limit on count or depth. The board's `atrium` skill tells them when to split work across workers and git worktrees. Workers line up to the right of their parent in the order they were started, and show their parent, role and number in the header.
 - **Models by name.** `atrium child --model "glm flash"` resolves a spoken model name against the models the board knows (`atrium models`), and model errors go back to the parent. A Claude Code session can start a Codex worker with `--kind codex`: it uses the rail's Codex launcher, model names with a slash such as `zai/glm-flash`, and the parent's permission mode as Codex approval flags.
-- **Every harness talks to the board.** Claude Code, Codex, opencode and pi sessions started by the board all get the `atrium` command on `PATH`, the board's environment and a short instruction (`atrium help`, `atrium help --json` for the machine contract), so any of them can run `atrium me` and start workers. Resume, recovery after a herdr restart and reopening a closed session bring back the same environment, instruction and connection.
+- **Every harness talks to the board.** Claude Code, Codex, opencode and pi sessions started by the board all get the `atrium` command on `PATH`, the board's environment and a short instruction (`atrium help`, `atrium help --json` for the machine contract), so any of them can run `atrium me` and start workers. Resume, recovery after a terminal server restart and reopening a closed session bring back the same environment, instruction and connection.
 - **Connections.** A connection is an endpoint, a protocol (Anthropic Messages, OpenAI Responses or OpenAI Chat Completions) and an auth environment variable name (the value stays in your environment). Launchers pick a connection; each harness only offers the protocols it speaks (Claude Code: Anthropic, Codex: Responses, opencode and pi: all three). The board checks the connection before a start, lists its models in `atrium models`, and never translates protocols.
 - **Links you can read.** A session runs `atrium me` to see its parent, workers and role links as the board has them now, and gets a short notice when they change. Detach a session from its parent on the board, or start one with `atrium child --head` to lead its own work.
 - **Mission map and Thread.** `M` opens a map of who directs whom: each workspace sits on a faint plate, teams flow left to right in small cards with model, effort and time, idle and asleep sessions are bordered pills, a light runs along the border of working cards in their state color so you can spot them from far away (it also runs around working nodes on the board; Settings › General › Working session light: On, Follow Windows, Off), thin unlabeled curves join a lead to its workers, two sessions linked both ways are joined by two short lines, a summary column lists who needs you and who is working, and pointing at a session keeps only its links. The phone map uses the same look in screen-width lanes. Thread keeps every prompt you sent from the command bar with its delivery state and the final report.
@@ -64,7 +66,8 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 
 ### Live terminals
 
-- **Real terminals.** Every near node is an xterm.js terminal attached to the herdr pane, so you can type in it directly.
+- **Real terminals.** Every near node is an xterm.js terminal attached to its herdr-core terminal, so you can type in it directly.
+- **Sessions outlive the board.** herdr-core runs the terminals outside Atrium's processes. Closing the window, stopping the backend or updating Atrium does not end a session.
 - **Select like a web page.** Drag to select at any zoom; the selection follows scrolling, scrolls at the edges and copies beyond the screen.
 - **Paste that works.** Bracketed paste for agents, multi-line paste for shells.
 - **Scale.** UI and terminal text scale from 70% to 150% (terminal text on phones down to 40%).
@@ -107,11 +110,13 @@ Atrium is **Windows only** for now (Windows 10 or 11, x64).
 | | |
 |---|---|
 | [Node.js](https://nodejs.org/) | 22.13 or later (tested on 22 and 24) |
-| [herdr-core](https://github.com/herdrdev/herdr-core) | Nothing to install: Atrium downloads a pinned herdr-core on first use and checks its SHA-256. A new board runs on herdr-core. |
+| [herdr-core](https://github.com/herdrdev/herdr-core) | Nothing to install. The first time a board needs it, Atrium downloads the herdr-core version it pins (0.1.20, about 4 MB) from `releases.herdr.dev`, checks its SHA-256 and keeps it in the board's data folder. It does not touch `PATH`, the registry or startup programs. Every new board runs on herdr-core. |
 | [herdr](https://herdr.dev) | Only for a board that still runs on herdr until you move it in Settings › Terminal. Tested with 0.9.5 (protocol 22). Atrium finds herdr in the herdr install folder or on `PATH`; set `ATRIUM_HERDR` or the path in Settings to use another file. |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`. |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`, for Claude Code sessions. |
 | Git | For repository and worktree detection. |
-| Optional | Codex CLI, opencode or pi for those sessions. A model gateway or endpoint for connections. Tailscale for remote access. |
+| Optional | Codex CLI for the Codex launcher. opencode or pi for those sessions. A model gateway or endpoint for connections. Tailscale for remote access. |
+
+The first start needs an internet connection to download herdr-core.
 
 ## Quick start
 
@@ -124,7 +129,7 @@ npm install
 npm run real
 ```
 
-`npm run real` builds the window and opens the board. The window starts the backend if it is not running (port 47800), and the backend starts its own herdr session named `atrium`. Your other herdr sessions are not touched. Board data lives in `%LOCALAPPDATA%\atrium`.
+`npm run real` builds the window and opens the board. The window starts the backend if it is not running (port 47800). On a new board the backend downloads herdr-core and starts its own herdr-core session named `atrium`. Your other herdr and herdr-core sessions are not touched. If the download fails, a band says herdr-core is not ready, with **Try again**; sessions cannot start until it is ready.
 
 To add a desktop shortcut:
 
@@ -132,7 +137,7 @@ To add a desktop shortcut:
 powershell -ExecutionPolicy Bypass -File app\scripts\make-shortcut.ps1
 ```
 
-Then open a folder from the board and start a session from the left rail.
+Then open a folder with **+** at the top left and start a session with **Claude Code** or **Codex** on the left rail.
 
 Keys on the board: `N` next session that needs you, `M` mission map, `Ctrl+F` or `↑` find, `↓` command bar, `←` `→` previous and next workspace, hold `Space` with nothing selected to fit the whole board, `Ctrl+Shift+E` sidebar, `Delete` close the selected sessions.
 
@@ -146,15 +151,26 @@ node backend\bin\atrium.mjs install
 
 This puts the latest release into `%LOCALAPPDATA%\atrium\versions` and adds a desktop shortcut that opens the installed version. Board data stays in `%LOCALAPPDATA%\atrium`.
 
-When a new release is out, the window tells you (Settings › General › Update, and the tray menu). Press Update to install it. Only the backend and the window restart. Your sessions keep running in herdr. If the new version does not start, the board goes back to the version you had.
+When a new release is out, the window tells you (Settings › General › Update, and the tray menu). Press Update to install it. Before it switches, the update downloads the herdr-core version the new release pins. Only the backend and the window restart. Your sessions keep running in herdr-core. If the new version does not start, the board goes back to the version you had.
 
 The update channel is Stable by default. Pick Dev in the same place to get features merged into the `dev` branch first, as pre-releases. Dev builds may be less polished. `node backend\bin\atrium.mjs install --channel dev` installs the newest dev build.
+
+### Boards from before herdr-core
+
+A board that has already run sessions on [herdr](https://herdr.dev) stays on herdr after an update, and keeps its launchers. To move it, open **Settings › Terminal** and press **Move to herdr-core**:
+
+1. The board lists every session with what it will do: start it again on herdr-core, keep it asleep, or leave it with the reason.
+2. Press **Move** to confirm. Each session starts again on herdr-core with the same conversation, name, environment, instructions and connection, in the same place on the board. The old pane closes only after the new one is up.
+3. A session that is working, waiting for you or holding an unsent message is waited for (up to 10 minutes) and then skipped. Press the button again later to move what is left. Sleeping sessions stay asleep and wake on herdr-core.
+
+**Move back to herdr** is in the same place. herdr is needed only until you move.
 
 ### Good to know
 
 - Atrium never edits your `~/.claude/settings.json`. Each Claude Code session it starts gets its own settings file through `--settings`, which holds the hooks that report state back to the board.
 - Atrium reads Claude Code conversation files under `%USERPROFILE%\.claude\projects` for the folders you open, so it can list and resume past conversations.
-- Everything runs on your machine. The window talks to the backend on `127.0.0.1`, and the backend talks to herdr.
+- Everything runs on your machine. The window talks to the backend on `127.0.0.1`, and the backend talks to the herdr-core server through a named pipe for your Windows user.
+- Where things live: board data (SQLite, settings, the downloaded herdr-core in `hc\bin`) in `%LOCALAPPDATA%\atrium`, herdr-core session state in `%LOCALAPPDATA%\herdr-core\atrium`, and installed releases in `%LOCALAPPDATA%\atrium\versions`.
 - Trust prompts ("Do you trust the files in this folder?") are left for you to answer. When an agent starts a worktree worker in a repository that Claude Code does not trust yet, the prompt appears on that worker's node.
 
 ## Remote access (Tailscale)
@@ -223,26 +239,26 @@ flowchart LR
   CLI["atrium CLI"]
   B["Backend<br/>Node 22+, 127.0.0.1"]
   DB[("SQLite")]
-  H["herdr session: atrium"]
+  H["herdr-core session: atrium"]
   A["claude, codex, shells"]
   UI <-->|WebSocket API| B
   WEB --> TS -->|web screen| B
   CLI -->|WebSocket| B
-  B <-->|socket API| H
+  B <-->|JSON-RPC, named pipe| H
   H --> A
   A -->|hooks over HTTP| B
   B --- DB
 ```
 
-- **herdr** owns the terminals and processes. Sessions keep running when the window or the backend stops, and the board picks them back up when it restarts.
-- **The backend** (`backend/`) computes session state from herdr events and Claude Code hooks, runs one delivery queue per session, records links and events, serves the web screen, and stores the board in SQLite (`node:sqlite`). Its only dependency is `ws`.
+- **herdr-core** owns the terminals and processes. Sessions keep running when the window or the backend stops, and the board picks them back up when it restarts. A board that has not moved yet uses herdr in the same place.
+- **The backend** (`backend/`) computes session state from herdr-core status events and Claude Code hooks, runs one delivery queue per session, records links and events, serves the web screen, and stores the board in SQLite (`node:sqlite`). Its only dependency is `ws`.
 - **The window** (`app/`) draws the board with React Flow and attaches xterm.js to the terminals in view. The PC window and paired browsers are all clients of the same backend.
 
 ## Development
 
 ```powershell
 cd app
-npm start            # dev profile: herdr session atrium-dev, port 47811, data in backend\.dev\
+npm start            # dev profile: herdr-core session atrium-dev, port 47811, data in backend\.dev\
 cd ..\backend
 npm test             # backend unit tests
 cd ..\app
@@ -259,7 +275,8 @@ Atrium is an early project. It was built in stages with Claude Code, and the int
 
 ## Acknowledgments
 
-- [herdr](https://herdr.dev), [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org) and [Electron](https://www.electronjs.org).
+- [herdr-core](https://github.com/herdrdev/herdr-core) (Apache-2.0), which Atrium downloads and runs but does not include, and [herdr](https://herdr.dev).
+- [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org) and [Electron](https://www.electronjs.org).
 - Korean UI translation by [Qualop](https://github.com/Qualop), adapted from [Qualop/atrium-macos](https://github.com/Qualop/atrium-macos).
 - Fonts: Geist, JetBrains Mono, Pretendard and Nanum Gothic Coding, under the SIL Open Font License.
 - Claude, Codex, DeepSeek, Grok and Pi names and logos are trademarks of their owners. Atrium uses them only to label session kinds and is not affiliated with or endorsed by them.

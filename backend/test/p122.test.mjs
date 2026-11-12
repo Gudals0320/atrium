@@ -1,0 +1,93 @@
+// P122: 새 판의 기본 런처는 Claude Code·Codex 둘이다. 옛 판의 런처는 그대로이고, 셸 런처는 사람이 "+"로 만든다
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Launchers, META_KEY, LEGACY_META_KEY, initialLaunchers, resolveLauncher } from '../src/launchers.mjs';
+import { Store } from '../src/store.mjs';
+
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p122-'));
+const plain = (id, name, harness, x = {}) => ({ id, name, harness, icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: '', ...x });
+
+test('P122 새 판: 런처와 레일 즐겨찾기는 Claude Code·Codex 둘', () => {
+  const v = initialLaunchers({});
+  assert.deepEqual(v.items.map((l) => [l.id, l.harness]), [['claude', 'claude'], ['codex', 'codex']]);
+  assert.deepEqual(v.favorites, ['claude', 'codex']);
+  const dir = tmp();
+  try {
+    const store = new Store(path.join(dir, 'board.db'));
+    const ls = new Launchers({ store });
+    assert.equal(ls.migrated.oldBoard, false);
+    const l = ls.list();
+    assert.deepEqual(l.launchers.map((x) => x.id), ['claude', 'codex']);
+    assert.deepEqual(l.favorites, ['claude', 'codex']);
+    assert.equal(ls.find('shell'), null, '셸 런처는 처음에 없다');
+    assert.ok(l.harnesses.some((h) => h.id === 'shell'), '셸 하네스는 런처 틀에서 고를 수 있다');
+    store.close();
+    // 다시 켜도 같다
+    const s2 = new Store(path.join(dir, 'board.db'));
+    assert.equal(new Launchers({ store: s2 }).migrated, null);
+    assert.deepEqual(s2.getMeta(META_KEY).favorites, ['claude', 'codex']);
+    s2.close();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('P122 옛 판: 이미 있는 런처 목록(셸 포함)은 바꾸지 않는다', () => {
+  const dir = tmp();
+  try {
+    // v2 목록이 있는 판(P115 뒤)
+    const store = new Store(path.join(dir, 'a.db'));
+    const saved = { v: 2, items: [plain('claude', 'Claude Code', 'claude', { permissionMode: 'manual' }), plain('codex', 'Codex', 'codex'), plain('shell', 'Shell', 'shell')], favorites: ['claude', 'codex', 'shell'] };
+    store.setMeta(META_KEY, saved);
+    const a = new Launchers({ store });
+    assert.equal(a.migrated, null);
+    assert.deepEqual(store.getMeta(META_KEY), saved);
+    assert.deepEqual(a.list().favorites, ['claude', 'codex', 'shell']);
+    store.close();
+    // 옛 키(v1)만 있는 판(P72~P114): 옮겨도 셸이 남는다
+    const s2 = new Store(path.join(dir, 'b.db'));
+    s2.setMeta(LEGACY_META_KEY, { v: 1, items: [plain('claude', 'Claude Code', 'claude', { permissionMode: 'manual' }), plain('codex', 'Codex', 'codex'), plain('shell', 'Shell', 'shell')], favorites: ['claude', 'codex', 'shell'] });
+    const b = new Launchers({ store: s2 });
+    assert.deepEqual(b.list().favorites, ['claude', 'codex', 'shell']);
+    assert.equal(b.get('shell').harness, 'shell');
+    s2.close();
+    // 세션 기록이 있는 판(P33 전)도 예전처럼 셸이 있다
+    const s3 = new Store(path.join(dir, 'c.db'));
+    s3.insertSession({ sessionId: 'x', name: 'x', cwd: dir, permissionMode: 'manual', createdAt: 1 });
+    const c = new Launchers({ store: s3 });
+    assert.equal(c.migrated.oldBoard, true);
+    assert.ok(c.list().favorites.includes('shell'));
+    s3.close();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('P122 새 판: 사람이 "+"로 셸 런처를 만들어 레일에 둘 수 있다', () => {
+  const dir = tmp();
+  try {
+    const store = new Store(path.join(dir, 'board.db'));
+    const ls = new Launchers({ store });
+    const c = ls.create({ launcher: { name: 'Shell', harness: 'shell' }, favorite: true });
+    assert.equal(c.launcher.harness, 'shell');
+    assert.deepEqual(ls.data().favorites, ['claude', 'codex', c.launcher.id]);
+    assert.equal(ls.list().launchers.find((x) => x.id === c.launcher.id).preview.shell, true);
+    assert.equal(resolveLauncher(ls.get('Shell')).kind, 'shell');
+    store.close();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('P122 hc 판에서 hc가 준비되지 않으면 세션 시작 오류는 herdr 설치 안내가 아니라 hc 띠와 같은 글', async () => {
+  const { Backend } = await import('../src/backend.mjs');
+  const b = Object.create(Backend.prototype);
+  Object.assign(b, { cfg: { herdrProtocols: [22] }, adapter: { backend: 'hc', connected: false }, herdrMissing: { reason: 'download_failed', error: 'download failed: ECONNREFUSED https://example.invalid/hc.zip', at: 1 }, herdrCompat: { level: 'missing' }, herdrFind: { tried: [] } });
+  assert.throws(() => b.requireHerdr(), (e) => e.code === 'herdr_missing' && e.key === 'terminalMove.hcBand.why' && /ECONNREFUSED/.test(e.vars.error) && !/herdr\.dev/.test(e.message));
+  // herdr 판은 그대로
+  b.adapter = { backend: 'herdr', connected: false };
+  assert.throws(() => b.requireHerdr(), (e) => e.code === 'herdr_missing' && e.key === 'herdrMissing');
+  // 창 사전 둘에 그 열쇠와 {error}가 있다
+  for (const lang of ['en', 'ko']) {
+    const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'app', 'src', 'renderer', 'locales', `${lang}.js`), 'utf8');
+    const block = src.slice(src.indexOf('hcBand: {'));
+    assert.match(block.slice(0, 600), /why: '[^']*\{error\}/, lang);
+  }
+});
