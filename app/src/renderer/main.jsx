@@ -135,7 +135,7 @@ function App() {
         e.preventDefault(); e.stopPropagation();
         if (arrow === 'command') cmd.current && cmd.current.focus();
         else if (arrow === 'search') { if (st.searchOpen) { const el = document.querySelector('[data-field="search"]'); if (el) el.select(); } else setSearchOpen(true); }
-        else if (arrow === 'prevWs' || arrow === 'nextWs') { const k = stepWorkspace(tabKeys(wsTabs(st.workspaces, st.groups)), st.currentWs, arrow === 'prevWs' ? -1 : 1); if (k) selectWorkspace(k); } // 탭을 누른 것과 같다(고르고 그 영역으로 화면을 맞춘다). P98: 위 바 칩 순서(묶음은 그 자리에서 구성 순서로 편다)
+        else if (arrow === 'prevWs' || arrow === 'nextWs') { const k = stepWorkspace(tabKeys(wsTabs(st.workspaces, st.groups)), st.viewWs || st.currentWs, arrow === 'prevWs' ? -1 : 1); if (k) selectWorkspace(k); } // 탭을 누른 것과 같다(고르고 그 영역으로 화면을 맞춘다). P98: 위 바 칩 순서(묶음은 그 자리에서 구성 순서로 편다)
         return;
       }
       if (!p) return;

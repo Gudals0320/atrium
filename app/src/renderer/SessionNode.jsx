@@ -14,7 +14,7 @@ import { NodeResizer, Handle, Position, useStore as useFlowStore } from '@xyflow
 import { useStore, getState, saveNode, setNodeLocal, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk, setRenaming } from './store.js';
 import { shellLine } from './Workspaces.jsx';
 import { api } from './api.js';
-import { faceFor } from './lib/faces.js';
+import { faceFor, termAllowed, veryClose, zoomStep } from './lib/faces.js';
 import { kindOf, SHAPES, stateColor, logoFor, shownKind } from './lib/kinds.js'; // P10: 아이콘 얼굴. P25: shownKind(flavor가 먼저)
 import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
@@ -40,6 +40,10 @@ import { tierOf, runsRing, ringDiag } from './lib/overview.js'; // P85: 멀리 �
 import { useInvRef } from './zoom-var.js'; // P112: --inv를 렌더 없이
 
 const zoomSel = (s) => s.transform[2];
+// P121: 다른 워크스페이스 노드(요약 얼굴)의 글자 크기. React로 배율을 구독하지 않고 노드 뿌리의 --inv(계단 값, zoom-var.js useInvRef stepped)로 CSS가 센다.
+//   min(n / 배율, 높이 비, 너비 비)는 아래 px()와 같은 식이다. 판을 확대·축소해도 이 얼굴은 다시 그리지 않고, 계단이 바뀔 때만 스타일을 다시 센다
+const cssPx = (n, frac, wfrac, w, h) => `min(calc(${n}px * var(--inv, 1)), ${+(h * frac).toFixed(2)}px, ${+(w * wfrac).toFixed(2)}px)`;
+const noZoom = () => 1;
 const NO_BOARD_TERMS = !boardPlan().terms; // P86: 보드 단계 1부터 터미널 대신 대화 보기(얼굴)
 // 이 배율보다 작으면 머리줄의 메모리·모델·작은 단추를 숨기고 이름과 상태만 화면 기준 크기로 보인다(사용성 평가 2026-10-31)
 const SMALL_ZOOM = 0.7;
@@ -144,12 +148,14 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
 const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 // 멀리 얼굴(H3): 이름, 상태, 기다리는 질문(가장 크게), 마지막 사용자 요청 한 줄, 마지막 답 한 줄. 글자 크기는 화면 기준(px / 배율)이고 노드 높이에 맞춰 줄인다.
 // P10: 노드 너비에도 맞춰 줄인다(한 줄에 열몇 자는 들어가게). 이름 줄은 한 줄로 자르고, 좁으면(화면 180px 아래) 표시는 상태 필만 남긴다. 줄은 넘치면 자른다(styles.css)
-function FarFace({ s, w, h }) {
+// P121 brief: 다른 워크스페이스의 노드라 터미널 대신 이 얼굴을 보인다. 글자 크기는 노드의 --inv(배율 계단, lib/faces.js zoomStep)를 쓰는 CSS로만 바뀌고, 가까이 크기면(open) 누르면 터미널이 열린다는 한 줄을 더한다
+function FarFace({ s, w, h, brief = false, open = false }) {
   const t = useT();
-  const zoom = useFlowStore(zoomSel); // P112: 글자 크기가 배율을 따르므로 이 얼굴만 배율을 구독한다(노드 전체는 다시 그리지 않는다)
-  const px = (n, frac, wfrac) => Math.min(n / Math.max(zoom, 0.02), h * frac, w * wfrac);
+  const zoom = useFlowStore(brief ? noZoom : zoomSel); // P112: 글자 크기가 배율을 따르므로 이 얼굴만 배율을 구독한다(노드 전체는 다시 그리지 않는다). P121: 요약 얼굴은 구독하지 않는다
+  const px = brief ? (n, frac, wfrac) => cssPx(n, frac, wfrac, w, h) : (n, frac, wfrac) => Math.min(n / Math.max(zoom, 0.02), h * frac, w * wfrac);
   const waiting = s.state === 'waiting' || s.state === 'trust_wait';
-  const narrow = w * zoom < 180;
+  const narrowBrief = useFlowStore((st) => brief && w * zoomStep(st.transform[2]) < 180); // P121: 요약 얼굴은 좁은지만(계단 값) 구독한다
+  const narrow = brief ? narrowBrief : w * zoom < 180;
   return (
     <div className="mt-far" style={{ fontSize: px(12, 0.17, 1 / 16) }} data-role="far">
       <div className="mt-far-name" style={{ fontSize: px(14, 0.2, 1 / 13) }}><span className="mt-far-nm">@{s.name}</span> <StatePill s={s} />{!narrow && <>{s.flavor ? <span className="mt-badge kind">{kindOf(s.flavor).label}</span> : s.kind && s.kind !== 'claude' ?<span className="mt-badge kind">{s.kind === 'shell' ? t('node.shell') : s.kind}</span> : null}{s.unseen && <span className="mt-badge review">{t('node.review')}</span>}<BranchBadge s={s} /></>}</div>
@@ -159,6 +165,7 @@ function FarFace({ s, w, h }) {
       {s.state === 'exited' && <div className="mt-far-line">{EXIT_LABEL[s.exit && s.exit.kind] || t('state.exited')}</div>}
       {s.lastPrompt && <div className="mt-far-line one prompt" data-role="far-prompt"><span className="mt-far-k">{t('node.prompt')}</span> {oneLine(s.lastPrompt)}</div>}
       {s.lastAnswer && <div className="mt-far-line one" data-role="far-answer"><span className="mt-far-k">{t('node.answer')}</span> {oneLine(s.lastAnswer)}</div>}
+      {open && <div className="mt-far-line mt-brief-hint" data-role="brief-hint">{t('brief.hint')}</div>}
     </div>
   );
 }
@@ -241,11 +248,11 @@ function NodeMenu({ s, docked, onClose }) {
 
 // P21(D4): 잠든 노드의 요약 얼굴(가까이·중간·멀리 모두). 흐리게, 달, 이름, 마지막 요청과 답 앞부분, 잠든 시각, 아낀 메모리, 깨우기.
 // 멀리 얼굴이면 글자 크기를 FarFace처럼 화면 기준으로 둔다. 크기와 자리는 그대로라 깨면 같은 자리에서 터미널이 된다
-function SleepFace({ s, w, h, far, close }) { // 깨우기 단추는 가까이 얼굴에서만(작은 얼굴은 노드를 누르면 깨운다)
+function SleepFace({ s, w, h, far, close, brief = false }) { // 깨우기 단추는 가까이 얼굴에서만(작은 얼굴은 노드를 누르면 깨운다)
   const t = useT();
-  const zoom = useFlowStore(zoomSel); // P112: FarFace와 같이 이 얼굴만 배율을 구독한다
+  const zoom = useFlowStore(brief ? noZoom : zoomSel); // P112: FarFace와 같이 이 얼굴만 배율을 구독한다. P121: 요약 얼굴은 CSS(--inv 계단 값)로
   const z = s.sleep || {};
-  const px = (n, frac, wfrac) => Math.min(n / Math.max(zoom, 0.02), h * frac, w * wfrac);
+  const px = brief ? (n, frac, wfrac) => cssPx(n, frac, wfrac, w, h) : (n, frac, wfrac) => Math.min(n / Math.max(zoom, 0.02), h * frac, w * wfrac);
   const wake = (e) => { e.stopPropagation(); const st = getState(); if (st.navigateTo) st.navigateTo(s.sessionId, { focusTerminal: true }); else wakeSession(s.sessionId); };
   return (
     <div className={`mt-sleepface${far ? ' far' : ''}${s.waking ? ' waking' : ''}`} data-role="sleep-face" data-sleep-scope={z.scope || 'repo'} style={{ fontSize: px(13, 0.17, 1 / 16) }}>
@@ -443,13 +450,22 @@ function SessionNodeInner({ id, selected }) {
   // P112: 배율은 단계 값(얼굴, 작은 배율, 말풍선 조건)으로만 구독한다. 배율이 바뀌어도 단계가 그대로면 이 노드는 다시 그리지 않는다.
   //   얼굴의 이력(faces.js)은 마지막으로 그린 얼굴(prevFace)로 본다(예전에 프레임마다 그리며 본 값과 같다). --inv는 useInvRef가 요소에 바로 쓴다
   const nw = n ? n.w : 0, nh = n ? n.h : 0;
-  const face = useFlowStore((st) => faceFor(nw, st.transform[2], attached ? 'close' : prevFace.current)); // 경계에서 흔들리지 않게(faces.js 이력)
-  const zSmall = useFlowStore((st) => st.transform[2] < SMALL_ZOOM);
-  const shortNode = useFlowStore((st) => nh * st.transform[2] < 160);
-  const invRef = useInvRef(0.02, id); // 화면 밖이면 움직이는 동안 미룬다(zoom-var.js)
+  const rawFace = useFlowStore((st) => faceFor(nw, st.transform[2], attached ? 'close' : prevFace.current)); // 경계에서 흔들리지 않게(faces.js 이력)
+  // P121: 고른 워크스페이스 밖의 노드는 터미널(가까이)과 대화 보기(중간) 대신 요약(멀리 얼굴)을 보인다. 초점·고른 노드, 아주 가까이 확대한 노드, 이미 붙은 노드는 그대로
+  const viewWs = useStore((st) => st.viewWs);
+  const isFocus = useStore((st) => st.focusId === id);
+  const picked = useStore((st) => st.selected.includes(id));
+  const prevNear = useRef(false);
+  const near = useFlowStore((st) => !!n && veryClose(n, { x: st.transform[0], y: st.transform[1], zoom: st.transform[2] }, { width: st.width, height: st.height }, prevNear.current));
+  prevNear.current = near;
+  const brief = !!s && !attached && !termAllowed({ id, ws: s.workspaceKey, viewWs, focus: isFocus ? id : null, selected: picked ? new Set([id]) : null, near });
+  const face = brief && (rawFace === 'close' || rawFace === 'middle') ? 'far' : rawFace;
+  const zSmall = useFlowStore((st) => (brief ? zoomStep(st.transform[2]) : st.transform[2]) < SMALL_ZOOM);
+  const shortNode = useFlowStore((st) => nh * (brief ? zoomStep(st.transform[2]) : st.transform[2]) < 160);
+  const invRef = useInvRef(0.02, id, brief); // 화면 밖이면 움직이는 동안 미룬다(zoom-var.js). P121: 다른 워크스페이스 노드는 계단 값
   if (boom) throw new Error(t('node.debugThrow', { name: s ? s.name : id })); // 오류 경계 시험(setDebugThrow)
   if (!s || !n) return null;
-  prevFace.current = face;
+  prevFace.current = rawFace;
   const far = face === 'far' || face === 'icon';
   xVisible.current = face !== 'icon' && !zSmall; // 머리줄의 X가 보이는 조건(styles.css .z-small)
   const idle = (s.state === 'ready' || s.state === 'shell_idle') && !s.unseen && s.lastActivityAt && Date.now() - s.lastActivityAt > IDLE_DIM_MS;
@@ -457,7 +473,7 @@ function SessionNodeInner({ id, selected }) {
   const tier = tierOf(s); // P85
 
   return (
-    <div data-tier={tier} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zSmall ? ' z-small' : ''}`} ref={invRef} data-session={id} data-name={s.name} data-face={face} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
+    <div data-tier={tier} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zSmall ? ' z-small' : ''}`} ref={invRef} data-session={id} data-name={s.name} data-face={face} data-brief={brief ? '1' : undefined} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
       <NodeResizer isVisible={selected && face === 'close' && !docked} minWidth={420} minHeight={260} lineClassName="mt-resize-line" handleClassName="mt-resize-handle"
         onResize={(_e, p) => setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height })}
         onResizeEnd={(_e, p) => { setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height }); saveNode(id, 'resize'); }} />
@@ -476,10 +492,10 @@ function SessionNodeInner({ id, selected }) {
           단추·입력·링크는 nodrag. 대화 보기의 스크롤 막대를 누른 것은 끌기로 넘기지 않는다 */}
       <div className={`mt-node-body${face !== 'close' ? ' mt-drag' : ''}`} onMouseDownCapture={face === 'middle' ? onScrollbarDown : undefined}>
         <NodeBoundary id={id} label={face === 'close' ? 'terminal' : face} compact>
-          {asleep && face !== 'icon' && <SleepFace s={s} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} />}
+          {asleep && face !== 'icon' && <SleepFace s={s} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} brief={brief} />}
           {!asleep && face === 'close' && (attached ? <TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /> : NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />)}
           {!asleep && face === 'middle' && <ChatView s={s} />}
-          {!asleep && face === 'far' && <FarFace s={s} w={n.w} h={n.h} />}
+          {!asleep && face === 'far' && <FarFace s={s} w={n.w} h={n.h} brief={brief} open={brief && rawFace === 'close'} />}
           {face === 'icon' && <IconFace s={s} />}
         </NodeBoundary>
         {!far && <div className="mt-node-overlays">

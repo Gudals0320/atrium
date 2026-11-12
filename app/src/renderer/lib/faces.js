@@ -27,16 +27,47 @@ export function faceFor(nodeWidth, zoom, prev = null) {
   return 'icon';
 }
 
-// nodes: [{ id, x, y, w, h }] (판 좌표), viewport: { x, y, zoom } (React Flow), screen: { width, height } (화면 px)
+// P121: 터미널은 고른 워크스페이스의 세션만 갖는다. 다른 워크스페이스의 세션은 가까이 크기여도 요약 얼굴(far)을 보이고,
+// 그 노드를 누르거나(초점) 고르거나, 노드가 화면을 아주 가깝게 채울 만큼 확대하면 터미널을 갖는다.
+// "아주 가까이": 노드가 화면에 보이는 넓이가 캔버스 넓이의 35% 이상(16:9 노드가 16:9 캔버스 너비의 60%쯤을 채울 때). 노드를 누르면 85%를 채우게 옮기므로(H4)
+// 그보다 작은 값이다. 노드 크기가 아니라 화면 안에 든 넓이로 보므로, 누른 노드 곁에 조금 걸친 이웃 노드는 아니다.
+// 이미 아주 가까이였던 노드는 30%까지 남는다(경계에서 터미널이 붙었다 떨어졌다 하지 않게)
+export const VERY_CLOSE_FRAC = 0.35;
+export const VERY_CLOSE_KEEP = 0.3;
+// rect: 노드 { x, y, w, h }(판 좌표), viewport: { x, y, zoom }, screen: { width, height }
+export function veryClose(rect, viewport, screen, prev = false) {
+  if (!rect || !viewport || !screen || !(screen.width > 0) || !(screen.height > 0)) return false;
+  const { x: vx, y: vy, zoom } = viewport;
+  const l = Math.max(0, rect.x * zoom + vx), t = Math.max(0, rect.y * zoom + vy);
+  const r = Math.min(screen.width, (rect.x + rect.w) * zoom + vx), b = Math.min(screen.height, (rect.y + rect.h) * zoom + vy);
+  if (r <= l || b <= t) return false;
+  return (r - l) * (b - t) >= screen.width * screen.height * (prev ? VERY_CLOSE_KEEP : VERY_CLOSE_FRAC);
+}
+// 이 세션 노드가 터미널을 가질 수 있나. viewWs: 고른 워크스페이스 키(null이면 고른 것 없음: 초점·고른 노드·아주 가까운 노드만).
+// ws: 노드의 워크스페이스 키, focus: 초점 노드 id, selected: 고른 노드 id 모음(Set), near: 아주 가까이(veryClose)
+export function termAllowed({ id, ws, viewWs, focus = null, selected = null, near = false }) {
+  if (near) return true;
+  if (id != null && id === focus) return true;
+  if (selected && selected.has(id)) return true;
+  return viewWs != null && (ws || null) === viewWs;
+}
+// 다른 워크스페이스 노드(요약 얼굴)의 글자 크기는 배율을 계단으로 따른다. 배율 1.1배마다 한 계단(가장 가까운 계단으로 반올림, 차이 ±5% 안).
+// 판을 확대·축소하는 동안 이 노드들은 계단이 바뀔 때만 다시 그린다(P112의 매 프레임 글자 크기 맞추기를 하지 않는다)
+export const ZOOM_STEP = 1.1;
+export const zoomStep = (z) => { const v = Math.max(Number.isFinite(z) ? z : 1, 0.02); return ZOOM_STEP ** Math.round(Math.log(v) / Math.log(ZOOM_STEP)); };
+
+// nodes: [{ id, x, y, w, h, ws? }] (판 좌표), viewport: { x, y, zoom } (React Flow), screen: { width, height } (화면 px)
 // 돌려줌: 제어기를 붙일 노드 id 목록(가까운 순). margin만큼 화면 밖도 보이는 것으로 친다(끌 때 깜빡이지 않게).
 // prev: 지금 붙어 있는 노드 id 모음. 그 노드에는 얼굴 이력을 적용한다(SessionNode와 같은 기준).
 // focus(초점 노드 id), selected(고른 노드 id 모음): 보이고 가까이 얼굴이면 거리와 상관없이 상한 안에 먼저 넣는다(이슈 #1-16). 초점이 먼저다
-export function pickAttached(nodes, viewport, screen, { max = DEFAULT_MAX_CONTROLLERS, margin = 80, prev = null, focus = null, selected = null } = {}) {
+// P121 wsLimit: { key } 를 주면 termAllowed를 따른다(key가 고른 워크스페이스, null이면 고른 것 없음). 주지 않으면 워크스페이스로 거르지 않는다
+export function pickAttached(nodes, viewport, screen, { max = DEFAULT_MAX_CONTROLLERS, margin = 80, prev = null, focus = null, selected = null, wsLimit = null } = {}) {
   const { x: vx, y: vy, zoom } = viewport;
   const cx = screen.width / 2, cy = screen.height / 2;
   const seen = [];
   for (const n of nodes) {
     if (faceFor(n.w, zoom, prev && prev.has(n.id) ? 'close' : null) !== 'close') continue;
+    if (wsLimit && !termAllowed({ id: n.id, ws: n.ws, viewWs: wsLimit.key ?? null, focus, selected, near: veryClose(n, viewport, screen, !!(prev && prev.has(n.id))) })) continue;
     const left = n.x * zoom + vx, top = n.y * zoom + vy, right = left + n.w * zoom, bottom = top + n.h * zoom;
     if (right < -margin || bottom < -margin || left > screen.width + margin || top > screen.height + margin) continue;
     const dx = clampDist(cx, left, right), dy = clampDist(cy, top, bottom);

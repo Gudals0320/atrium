@@ -150,7 +150,7 @@ function WorkspaceTabs() {
   const t = useT();
   const workspaces = useStore((st) => st.workspaces);
   const groups = useStore((st) => st.groups);
-  const current = useStore((st) => st.currentWs);
+  const current = useStore((st) => st.viewWs || st.currentWs); // P121: 켜진 칩은 고른 워크스페이스(터미널이 붙는 곳). 다른 워크스페이스 노드를 눌러도 옮기지 않는다
   const sessions = useStore((st) => st.sessions);
   const list = useMemo(() => [...sessions.values()], [sessions]);
   const tabs = useMemo(() => wsTabs(workspaces, groups), [workspaces, groups]); // P98: 묶음은 대표 칩 하나

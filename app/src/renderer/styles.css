@@ -1743,3 +1743,5 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 /* 머리의 거르기 탭: 작업 완료가 있으면 개수를 보라 알약으로 */
 .mt-mm-filter.c-done:not([data-n="0"]) .mt-mm-fn { padding: 0 6px; border-radius: 8px; background: var(--st-review); color: #1a1430; font-weight: 700; }
 .mt-mm-sec[data-role=mm-sum-review] .mt-mm-sech, .mt-mm-sec[data-role=mm-sum-review] .mt-mm-sech i { color: var(--st-review); }
+/* P121: 고른 워크스페이스 밖 노드의 요약 얼굴(가까이 크기)에서 누르면 터미널이 열린다는 한 줄. 맨 아래에 옅게 */
+.mt-far .mt-brief-hint { margin-top: auto; color: var(--chrome-text-4); font-size: .9em; -webkit-line-clamp: 1; }

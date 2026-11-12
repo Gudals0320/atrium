@@ -2389,4 +2389,8 @@ export default {
     tag: 'Done',
     phone: 'Done {n}',
   },
+  // P121: summary face of a session outside the chosen workspace (no terminal until clicked or zoomed in very close)
+  brief: {
+    hint: 'Session in another workspace. Click to show its terminal.',
+  },
 };
