@@ -1775,6 +1775,6 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-term-slot.hold { visibility: hidden; }
 .mt-term-slot.hold .mt-term-wrap { pointer-events: none; }
 
-/* P127: 판을 움직이는 동안(lib/work-light.js motionPauser, 문서 뿌리 data-board-moving) 판 노드의 작업 중 둘레 회전판을 멈춘다.
+/* ---------- P127: 판을 움직이는 동안(lib/work-light.js motionPauser, 문서 뿌리 data-board-moving) 판 노드의 작업 중 둘레 회전판을 멈춘다.
    회전판의 모양·색은 그대로라 작업 중 테두리는 보이고, 움직임이 멎고 400ms 뒤 멈춘 자리에서 이어서 돈다. 미션 맵 카드의 빛은 건드리지 않는다 */
 html[data-board-moving="1"] .mt-node-run > i { animation-play-state: paused; }

@@ -65,7 +65,7 @@ function RegionNodeInner({ data }) {
   const arranged = useStore((st) => st.arranged.has(key));
   const current = useStore((st) => (st.viewWs || st.currentWs) === key); // P121: 위 바의 켜진 칩과 같이 고른 워크스페이스(터미널이 붙는 곳)
   const convos = useStore((st) => { let n = 0; for (const c of st.convoNodes.values()) if (c.workspaceKey === key) n++; return n; }); // P13: 판 밖 대화 노드 수
-  const headRef = useZoomStyle(regionHead);
+  const headRef = useZoomStyle(regionHead, true); // P127: 글자 크기는 배율 계단(±5%)으로
   const actsRef = useRef(null);
   const [acts, setActs] = useState(false);
   const [menu, setMenu] = useState(null); // P120: 이름표 메뉴 { x, y }(⌄를 눌렀는데 단추가 다 들어가지 않을 때, 오른쪽 클릭)
@@ -151,7 +151,7 @@ const wtHead = (zoom) => {
 function WorktreeAreaNodeInner({ data }) {
   const t = useT();
   const invRef = useInvRef(); // P112: --inv와 이름표 크기는 렌더 없이(RegionNode와 같다)
-  const headRef = useZoomStyle(wtHead);
+  const headRef = useZoomStyle(wtHead, true); // P127: 계단
   const { branch, folder } = worktreeLabel({ path: data.path, branch: data.branch });
   return (
     <div className={`mt-region mt-wtarea${data.warn ? ' warn' : ''}${data.working || data.live ? ' run' : ' rest'}`} ref={invRef} data-ws={data.wsKey} data-area={data.area} data-worktree={data.path} data-branch={branch}>
@@ -177,7 +177,7 @@ const groupHead = (zoom) => {
 };
 function GroupFrameNodeInner({ data }) {
   const t = useT();
-  const headRef = useZoomStyle(groupHead); // P112: 이름표 크기는 렌더 없이
+  const headRef = useZoomStyle(groupHead, true); // P112: 이름표 크기는 렌더 없이. P127: 계단
   const groups = useStore((st) => st.groups);
   const wss = useStore((st) => st.workspaces);
   const g = (groups || []).find((x) => x.id === data.groupId);

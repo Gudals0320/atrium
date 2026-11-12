@@ -68,7 +68,8 @@ export function useInvRef(min = 0.02, id = null, stepped = false) {
 
 // 배율에 따라 바뀌는 인라인 style(화면 기준 크기의 이름표 글자, 손잡이 굵기)을 화면 변환이 바뀔 때마다 직접 쓴다.
 // styleOf(배율) → { 속성: 값 }. 숫자는 React처럼 px를 붙이고(`${값}px`), --로 시작하는 이름은 setProperty로 쓴다. 배율이 그대로면 쓰지 않는다
-export function useZoomStyle(styleOf) {
+// P127 stepped: 배율 대신 계단 값(lib/faces.js zoomStep, 1.1배마다)으로 센다. 영역·워크트리 상자·그룹 틀 이름표 글자는 계단이 바뀔 때만 글자 배치를 다시 센다
+export function useZoomStyle(styleOf, stepped = false) {
   const flow = useStoreApi();
   const fn = useRef(styleOf);
   fn.current = styleOf;
@@ -76,7 +77,7 @@ export function useZoomStyle(styleOf) {
     if (!el) return undefined;
     let last = NaN;
     const put = (st) => {
-      const z = st.transform[2];
+      const z = stepped ? zoomStep(st.transform[2]) : st.transform[2];
       if (z === last) return;
       last = z;
       const s = fn.current(z);
@@ -88,7 +89,7 @@ export function useZoomStyle(styleOf) {
     };
     put(flow.getState());
     return flow.subscribe(put);
-  }, [flow]);
+  }, [flow, stepped]);
 }
 
 // P127: 판 화면 변환(이동·배율)이 바뀌는 동안 문서 뿌리에 data-board-moving을 단다(lib/work-light.js motionPauser, 작업 중 둘레를 멈춤).

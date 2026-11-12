@@ -477,10 +477,11 @@ function SessionNodeInner({ id, selected }) {
   const brief = !!s && !allowed; // 다른 워크스페이스의 요약(data-brief)
   const face = faceOfTier(dist, allowed);
   // P124: 터미널이 아닌 얼굴(요약·틀)은 모두 배율 계단 값(lib/faces.js zoomStep, ±5%)을 쓴다. 판을 확대·축소해도 계단이 바뀔 때만 스타일을 다시 센다(P121 요약 얼굴과 같다)
-  const stepped = face !== 'close';
-  const zSmall = useFlowStore((st) => (stepped ? zoomStep(st.transform[2]) : st.transform[2]) < SMALL_ZOOM);
-  const shortNode = useFlowStore((st) => nh * (stepped ? zoomStep(st.transform[2]) : st.transform[2]) < 160);
-  const invRef = useInvRef(0.02, id, stepped); // 화면 밖이면 움직이는 동안 미룬다(zoom-var.js)
+  // P127: 터미널 얼굴도 노드 뿌리의 --inv(머리줄의 화면 크기 글자, 테두리·둘레 굵기)는 계단 값이다(P124 측정에서 휠 바쁨의 약 9%).
+  //   터미널 안 글자는 --inv를 쓰지 않는다(TerminalView가 배율에 맞춰 선명하게 다시 그린다, P65)
+  const zSmall = useFlowStore((st) => zoomStep(st.transform[2]) < SMALL_ZOOM);
+  const shortNode = useFlowStore((st) => nh * zoomStep(st.transform[2]) < 160);
+  const invRef = useInvRef(0.02, id, true); // 화면 밖이면 움직이는 동안 미룬다(zoom-var.js)
   if (boom) throw new Error(t('node.debugThrow', { name: s ? s.name : id })); // 오류 경계 시험(setDebugThrow)
   if (!s || !n) return null;
   prevTier.current = dist;
@@ -510,7 +511,7 @@ function SessionNodeInner({ id, selected }) {
           단추·입력·링크는 nodrag. 대화 보기의 스크롤 막대를 누른 것은 끌기로 넘기지 않는다 */}
       <div className={`mt-node-body${face !== 'close' ? ' mt-drag' : ''}`} onMouseDownCapture={face === 'middle' ? onScrollbarDown : undefined}>
         <NodeBoundary id={id} label={face === 'close' ? 'terminal' : face} compact>
-          {asleep && face !== 'icon' && <SleepFace s={s} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} stepped={stepped} />}
+          {asleep && face !== 'icon' && <SleepFace s={s} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} stepped />}
           {/* P124: 붙은 터미널은 얼굴이 요약·틀로 바뀌어도 판이 놓을 때까지(Canvas HOLD_MS) 숨겨 둔 채 남긴다. 휠로 배율이 단계 경계를 오갈 때마다
               xterm·WebGL을 새로 만들고 셸 기록을 다시 쓰던 것(한 번에 100ms 넘는 끊김)을 없앤다. 감싸개는 display: contents라 자리와 크기는 그대로다 */}
           {!asleep && (attached ? <div className={`mt-term-slot${face === 'close' ? '' : ' hold'}`} data-role="term-slot" data-hold={face === 'close' ? undefined : '1'}><TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /></div> : face === 'close' ? (NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />) : null)}
