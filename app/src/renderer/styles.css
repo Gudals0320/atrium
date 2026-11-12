@@ -1769,3 +1769,8 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-node.face-icon.t-turn { background: color-mix(in srgb, var(--attn) 14%, var(--icon-bg)); border-color: var(--attn); }
 .mt-node.face-icon.t-review { background: color-mix(in srgb, var(--st-review) 12%, var(--icon-bg)); }
 .mt-node.face-icon.t-alert { background: color-mix(in srgb, var(--st-error) 14%, var(--icon-bg)); }
+
+/* P124: 붙은 터미널을 얼굴이 바뀐 동안 숨겨 둔다(SessionNode .mt-term-slot.hold). 자리를 그대로 두어 크기를 다시 재지 않고, 그리지도 누르지도 않는다 */
+.mt-term-slot { display: contents; }
+.mt-term-slot.hold { visibility: hidden; }
+.mt-term-slot.hold .mt-term-wrap { pointer-events: none; }

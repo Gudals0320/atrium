@@ -509,7 +509,9 @@ function SessionNodeInner({ id, selected }) {
       <div className={`mt-node-body${face !== 'close' ? ' mt-drag' : ''}`} onMouseDownCapture={face === 'middle' ? onScrollbarDown : undefined}>
         <NodeBoundary id={id} label={face === 'close' ? 'terminal' : face} compact>
           {asleep && face !== 'icon' && <SleepFace s={s} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} stepped={stepped} />}
-          {!asleep && face === 'close' && (attached ? <TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /> : NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />)}
+          {/* P124: 붙은 터미널은 얼굴이 요약·틀로 바뀌어도 판이 놓을 때까지(Canvas HOLD_MS) 숨겨 둔 채 남긴다. 휠로 배율이 단계 경계를 오갈 때마다
+              xterm·WebGL을 새로 만들고 셸 기록을 다시 쓰던 것(한 번에 100ms 넘는 끊김)을 없앤다. 감싸개는 display: contents라 자리와 크기는 그대로다 */}
+          {!asleep && (attached ? <div className={`mt-term-slot${face === 'close' ? '' : ' hold'}`} data-role="term-slot" data-hold={face === 'close' ? undefined : '1'}><TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /></div> : face === 'close' ? (NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />) : null)}
           {!asleep && face === 'middle' && <ChatView s={s} />}
           {!asleep && face === 'far' && <FarFace s={s} w={n.w} h={n.h} open={brief && dist === 'term'} />}
           {face === 'icon' && <FrameFace s={s} tier={tier} />}
