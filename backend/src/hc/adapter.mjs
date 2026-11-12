@@ -1,5 +1,5 @@
 // P114: herdr-core(hc) 어댑터. herdr/adapter.mjs(HerdrAdapter)와 같은 바깥 모양이라 판(backend.mjs, relay.mjs, recall.mjs)이 어느 쪽이든 같은 메서드를 부른다.
-// 터미널 백엔드는 숨은 설정 terminalBackend 또는 ATRIUM_TERMINAL_BACKEND로 고른다(terminal-backend.mjs). 기본은 herdr다.
+// 판마다 정한 터미널 백엔드(terminal-backend.mjs). 새 판은 hc, herdr 세션 기록이 있는 옛 판은 옮기기(terminal-move.mjs)를 누를 때까지 herdr다(P117).
 // - 코어: 판 전용 세션(HC_SESSION = 판의 터미널 세션 이름), 고정 버전을 판 폴더에(pin.mjs), 띄우기·다시 띄우기·끄기는 core.mjs. 떠 있는 코어가 고정 버전과 다르면 붙을 때 올린다(2b)
 // - 모델: 패널 = hc 터미널(주소), 작업 공간 = 라벨, 에이전트 = 7501 상태의 앱 이름(model.mjs). 이벤트는 herdr 어댑터의 normalizeEvent 모양으로 낸다
 // - 세션 시작(2b): 판은 herdr처럼 셸 패널을 만들고(createWorkspace) 그 패널에서 에이전트를 띄운다(startAgent). hc에서는 셸 자리를 "에이전트가 첫 argv인 터미널"로

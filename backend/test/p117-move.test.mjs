@@ -18,6 +18,7 @@ test('P117 백엔드 정하기: 환경 변수 > 판 기록 > 옛 숨은 설정 h
   assert.equal(decideTerminalBackend({ env: {}, settings: { terminalBackend: 'herdr' } }).source, 'new-board'); // 기본값이 채워진 옛 설정은 정한 것이 아니다
   assert.deepEqual(decideTerminalBackend({ env: {}, oldBoard: true }), { backend: 'herdr', source: 'old-board', invalid: null, persist: true });
   assert.equal(decideTerminalBackend({ env: {} }).backend, NEW_BOARD_BACKEND);
+  assert.equal(NEW_BOARD_BACKEND, 'hc'); // 새 판은 herdr-core(기본 바꾸기 커밋)
   assert.equal(decideTerminalBackend({ env: {}, newBoard: 'hc' }).backend, 'hc');
   assert.equal(decideTerminalBackend({ env: { ATRIUM_TERMINAL_BACKEND: 'tmux' } }).invalid, 'tmux');
   // 옛 판: 세션 행, 저장한 herdr 서버 PID, herdr 세션 폴더 중 하나

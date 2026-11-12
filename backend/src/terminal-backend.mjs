@@ -13,8 +13,8 @@ import { envVar } from './config.mjs';
 import { TerminalRouter, TERMINAL_BACKENDS, paneBackend } from './terminal-router.mjs';
 
 export { TERMINAL_BACKENDS, paneBackend };
-// 새 판(herdr 세션 기록 없음)의 백엔드
-export const NEW_BOARD_BACKEND = 'herdr';
+// 새 판(herdr 세션 기록 없음)의 백엔드. P117: herdr-core(사용자 결정 2026-11-11). 옛 판은 옮기기를 누를 때까지 herdr다
+export const NEW_BOARD_BACKEND = 'hc';
 
 const norm = (v) => { const x = String(v || '').trim().toLowerCase(); return TERMINAL_BACKENDS.includes(x) ? x : null; };
 
