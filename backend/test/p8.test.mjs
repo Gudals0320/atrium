@@ -134,8 +134,9 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   assert.match(skill, /^---\nname: atrium\n/); assert.match(old, /^---\nname: delegate\n/);
   assert.equal(skill.split('\n---\n')[1], old.split('\n---\n')[1]); // 몸글이 같다(돌던 세션이 옛 이름을 불러도 새 글)
   assert.ok(!skill.includes('mtask') && !skill.includes('multitask'));
-  for (const w of ['atrium child', '--worktree', '--prompt', '--model', '--effort', 'herdr agent wait', 'herdr agent prompt', 'herdr agent read', 'atrium child-kill', 'atrium child-wait', 'needs_trust', 'needs_commit', '보드에서 @wt1 카드의 신뢰 질문에 답해 주세요.', 'git worktree add', '--session', '상한은 없다', '사용자가 말하지 않아도', '완료 기준']) assert.ok(skill.includes(w), w);
-  for (const w of ['상한(', '개, 깊이', '판 밖 터미널을 열라고 한다']) assert.ok(!skill.includes(w), w);
+  // P116: 일 시키기·기다리기·읽기는 atrium prompt|wait|read(herdr 명령과 --session 안내는 없다)
+  for (const w of ['atrium child', '--worktree', '--prompt', '--model', '--effort', 'atrium prompt <이름> "<지시>" --wait', 'atrium wait <이름>', 'atrium read <이름>', 'atrium child-kill', 'atrium child-wait', 'needs_trust', 'needs_commit', '보드에서 @wt1 카드의 신뢰 질문에 답해 주세요.', 'git worktree add', '상한은 없다', '사용자가 말하지 않아도', '완료 기준']) assert.ok(skill.includes(w), w);
+  for (const w of ['상한(', '개, 깊이', '판 밖 터미널을 열라고 한다', 'herdr', '--session']) assert.ok(!skill.includes(w), w);
   // 길이: P8 delegate 글(3107바이트)의 두 배를 넘지 않는다. P111: 잠든 워커 줄에 혼자 잠들기와 깨우기 범위(+77바이트)를 더해 80바이트를 더 둔다
   assert.ok(Buffer.byteLength(skill) <= 2 * 3107 + 80, `skill ${Buffer.byteLength(skill)}B`);
   assert.match(skill.split('\n')[2], /사용자가 말하지 않아도/); // 설명에 스스로 쓰는 때
@@ -149,7 +150,8 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   assert.ok(BRANCH_ALLOW.includes('Bash(atrium child-wait *)') && BRANCH_ALLOW.includes('PowerShell(atrium child-wait *)'));
   assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 7); // P21: 잠든 세션 깨우기 한 줄, P81: atrium me 한 줄
   assert.ok(pl.pluginDir.endsWith('atrium-herdr'));
-  assert.match(childNotice({ role: '워커', agentName: 'w1', paneId: 'w2:p1', depth: 2 }), /herdr agent prompt w1/);
+  assert.match(childNotice({ role: '워커', agentName: 'w1', paneId: 'w2:p1', depth: 2 }), /atrium prompt w1 "<할 일>" --wait/); // P116
+  assert.doesNotMatch(childNotice({ role: '워커', name: 'w1', depth: 2 }), /herdr/);
 });
 
 test('K3(P36): 상한 설정이 없다. 판 기록에 남은 옛 키는 오류 없이 무시한다', () => {
@@ -229,7 +231,7 @@ test('K1: 하위 세션은 부모의 폴더·모델·노력 수준·권한 모�
   const r = await b.branch.spawnChild(lead, { name: 'w1', wait: false });
   const p = b.spawned[0];
   assert.equal(p.cwd, dir); assert.equal(p.model, 'haiku'); assert.equal(p.effort, 'low'); assert.equal(p.permissionMode, 'acceptEdits'); assert.equal(p.group, undefined); assert.equal(p.parentSessionId, lead.sessionId);
-  assert.equal(r.role, '워커'); assert.equal(r.depth, 2); assert.equal(r.agentName, 'w1'); assert.match(r.notice, /herdr agent prompt w1/);
+  assert.equal(r.role, '워커'); assert.equal(r.depth, 2); assert.equal(r.agentName, 'w1'); assert.match(r.notice, /atrium prompt w1 "<할 일>" --wait/); // P116
   assert.deepEqual(b.links[0], { linkId: 'l0', from: lead.sessionId, to: r.sessionId, role: '워커', spawned: true });
   assert.ok(b.store.events({ sessionId: lead.sessionId }).some((e) => e.kind === 'branch_child' && e.data.child === 'w1'));
   // 다른 모델·역할·첫 지시
@@ -332,7 +334,7 @@ test('P36: 신뢰 관문 — ready가 되면 claude -w로 다시 띄우고, 관�
   // 관문을 지난 뒤 child-wait는 ready를 돌려준다
   child.rt.phase = 'running';
   const w2 = await b.branch.waitChild(lead, { name: 'wt1' });
-  assert.equal(w2.status, 'ready'); assert.equal(w2.needsTrust, false); assert.equal(w2.timeout, false); assert.equal(w2.next.wait, 'herdr agent wait wt1 --timeout 600000');
+  assert.equal(w2.status, 'ready'); assert.equal(w2.needsTrust, false); assert.equal(w2.timeout, false); assert.equal(w2.next.wait, 'atrium wait wt1'); // P116
   await assert.rejects(b.branch.waitChild(b.sessions.get(g.sessionId), { name: 'lead' }), (e) => e.code === 'not_parent');
 });
 
@@ -431,8 +433,9 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     assert.ok(env.ATRIUM_SESSION_TOKEN !== b.apiToken && env.ATRIUM_SESSION_TOKEN.length === 64); // 판 API 토큰이 아니다
     const ok = await runChild(['child', 'w1', '--no-wait'], env);
     assert.equal(ok.code, 0, ok.stderr);
-    assert.match(ok.stdout, /하위 세션을 생성했습니다: @w1 \(herdr 이름 w1/);
-    assert.match(ok.stdout, /일 시키기: herdr agent prompt w1/);
+    assert.match(ok.stdout, /하위 세션을 생성했습니다: @w1 \(종류 claude, 역할 "워커"/); // P116: herdr 이름·패널은 보이지 않는다
+    assert.match(ok.stdout, /일 시키기: atrium prompt w1/);
+    assert.doesNotMatch(ok.stdout, /herdr/);
     const ls = await runChild(['children'], env);
     assert.match(ls.stdout, /@lead\(1단계\)의 하위 세션 1개/);
     // P18 전에 띄운 세션: 옛 플러그인 shim이 부르는 mtask-child.mjs와 옛 env(MTASK_*)도 된다

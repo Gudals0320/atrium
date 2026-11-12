@@ -27,7 +27,7 @@ import { newRuntime, applyHook, applyHerdrStatus, applyAgentDetected, applyAgent
 import { worktreeOf, waitClaudeExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
-import { SHELL_TOOLS, LINK_VERBS, parseHerdrCommands, parseHerdrOutput, readTextOf, tailText, screenAnswerText, roleNotice, unlinkNotice, paneChangedNotice, ROLE_RE } from './links.mjs';
+import { SHELL_TOOLS, LINK_VERBS, parseHerdrCommands, parseHerdrOutput, readTextOf, tailText, screenAnswerText, roleNotice, unlinkNotice, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
@@ -200,7 +200,7 @@ export class Backend {
     this.branch = attachBranch(this);
     Object.assign(this.api.handlers, this.branch.handlers);
     this.branch.refreshSettings();
-    // P4: herdr 스킬을 쥐여 줄 플러그인 폴더(판이 띄우는 Claude Code에 --plugin-dir로 넘긴다)
+    // P4: 판 플러그인 폴더(판이 띄우는 Claude Code에 --plugin-dir로 넘긴다). herdr 스킬은 herdr 모드에서만(P116)
     this.plugin = writeBoardPlugin({ dir: path.join(cfg.dataDir, 'plugin'), skillText: await this.herdrSkillText(), ...this.branch.pluginExtra() });
     // P115: Claude Code 밖 하네스에 주는 것: 데이터 폴더 bin/의 atrium(그 세션의 PATH 앞)과 하네스와 상관없는 안내문 파일
     this.harnessFiles = writeHarnessFiles({ dir: path.join(cfg.dataDir, 'plugin'), binDir: path.join(cfg.dataDir, 'bin'), bin: this.branch.pluginExtra().bin, prompt: HARNESS_PROMPT });
@@ -472,7 +472,9 @@ export class Backend {
     };
   }
 
+  // P116: hc 모드에서는 herdr 스킬을 넘기지 않는다(null: 플러그인에 herdr 스킬이 없다). 일 시키기는 판의 atrium 명령이다
   async herdrSkillText() {
+    if (this.adapter && this.adapter.backend === 'hc') return null;
     const t = await this.adapter.skillText().catch(() => null);
     if (t) return t;
     try { return fs.readFileSync(path.join(process.env.USERPROFILE || '', '.agents', 'skills', 'herdr', 'SKILL.md'), 'utf8'); } catch { return '---\nname: herdr\ndescription: Control Herdr. Run `herdr --help`.\n---\n'; }
@@ -990,9 +992,10 @@ export class Backend {
     if (!was) this.store.addEvent(s.sessionId, 'worktree_exit_dialog', { commits: w.commits, files: w.files, choices: w.choices.map((c) => `${c.n}. ${c.label}`) });
     return true;
   }
+  // P116: 200줄(전에는 60줄). hc의 terminal.read는 화면의 빈 줄까지 세어서, 입력 칸이 아래에 붙은 Codex 화면은 60줄 안에 그 턴이 없었다(atrium wait의 답이 상태 줄이 됐다)
   async readScreenAnswer(s) {
     try {
-      const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 60 });
+      const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 200 });
       s.rt.lastAnswer = screenAnswerText(text, 20); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen';
       this.bus.emit('screenAnswer', s);
     } catch {}
@@ -1231,7 +1234,8 @@ export class Backend {
     this.registerResume(s);
   }
 
-  // 패널 ID가 바뀌었다(이어 가기로 작업 공간을 다시 만듦, herdr pane move). 판에서 정한 역할이 있으면 시킨 쪽에 알린다(F2)
+  // 패널 ID가 바뀌었다(이어 가기로 작업 공간을 다시 만듦, herdr pane move). 판에서 정한 역할이 있으면 그 연결 기록에 남긴다(F2)
+  // P116: 시킨 쪽에 알림(paneChangedNotice)을 보내지 않는다. atrium 명령은 판의 이름으로 부르므로 패널이 바뀌어도 할 일이 없다(턴을 쓰지 않는다)
   async setPane(s, paneId, herdrWorkspaceId, why) {
     const old = s.paneId;
     if (old === paneId) return;
@@ -1242,9 +1246,7 @@ export class Backend {
     await this.adapter.refreshSubscription();
     for (const l of this.store.links()) {
       if (l.to !== s.sessionId || !l.role || !this.sessions.has(l.from)) continue;
-      const text = paneChangedNotice({ role: l.role, agentName: s.agentName, paneId });
-      const d = this.queue.enqueue(l.from, text);
-      this.linkEvent(l, 'notice', text, { deliveryId: d.deliveryId, why }, { quiet: true });
+      this.linkEvent(l, 'pane_changed', null, { from: old, to: paneId, why }, { quiet: true });
     }
     this.broadcastSession(s, { cause: `pane:${why}` });
   }
@@ -1756,7 +1758,10 @@ export class Backend {
   }
 
   // F1·F3: 판이 띄운 Claude Code의 셸 도구 hook. 명령 글에서 herdr 호출을 읽는다(docs/log/p4-links.md 보고 4절)
+  // P116: 일 시키기는 판의 atrium prompt|wait|read가 판을 거치며 바로 남긴다(agent-verbs.mjs). 이 읽기는 herdr 모드 호환으로만 둔다
+  //   (지금 도는 세션과 사람이 쓴 지시가 아직 herdr agent prompt를 친다). hc 모드의 패널에서 친 herdr 명령은 판의 세션에 가지 않으므로 읽지 않는다
   onShellHook(s, ev, body) {
+    if (this.adapter && this.adapter.backend === 'hc') return;
     const cmd = body.tool_input && (body.tool_input.command || body.tool_input.script);
     if (!cmd || !/herdr/i.test(cmd)) return;
     const calls = parseHerdrCommands(cmd, { boardSession: this.cfg.herdrSession });
@@ -1921,9 +1926,23 @@ export class Backend {
     if (to === 'working' && !op.working) { op.working = true; this.linkEvent(l, 'target_working', null, { from }, { quiet: true }); }
     else if (to === 'waiting' || to === 'trust_wait') this.linkEvent(l, 'target_waiting', sum.ask ? clip(sum.ask.summary || sum.ask.kind, 200) : null, null, { quiet: true });
     else if ((to === 'ready' || to === 'error') && op.working) {
-      s.openPromptFrom = null;
-      this.linkEvent(l, 'target_done', s.rt.lastAnswer ? clip(s.rt.lastAnswer, 2000) : null, { state: to, answerSource: s.rt.answerSource || null }, { quiet: true });
+      // P116: hook이 없는 세션은 턴이 끝난 뒤 판이 화면에서 답을 고른다(readScreenAnswer). 그 답이 아직이면 오면 남긴다(5초까지)
+      const turn = s.rt.turn || {};
+      if (!this.hooked(s) && turn.endedAt && (s.rt.lastAnswerAt || 0) < turn.endedAt) {
+        if (op.doneTimer) return;
+        const done = () => { if (s.openPromptFrom !== op) return; clearTimeout(op.doneTimer); this.bus.off('screenAnswer', onAnswer); this.linkTargetDone(s, l, to); };
+        const onAnswer = (x) => { if (x === s) done(); };
+        this.bus.on('screenAnswer', onAnswer);
+        op.doneTimer = setTimeout(() => { this.bus.off('screenAnswer', onAnswer); done(); }, 5000);
+        if (op.doneTimer.unref) op.doneTimer.unref();
+        return;
+      }
+      this.linkTargetDone(s, l, to);
     } else if (to === 'exited') { s.openPromptFrom = null; this.linkEvent(l, 'target_exited', null, { exit: sum.exit }, { quiet: true }); }
+  }
+  linkTargetDone(s, l, to) {
+    s.openPromptFrom = null;
+    this.linkEvent(l, 'target_done', s.rt.lastAnswer ? clip(s.rt.lastAnswer, 2000) : null, { state: to, answerSource: s.rt.answerSource || null }, { quiet: true });
   }
   // 받는 쪽이 판의 hook이 붙은 Claude Code면 지시가 제출된 것을 hook으로 확인한다
   onLinkTargetPrompt(s, prompt) {
@@ -1935,14 +1954,14 @@ export class Backend {
     this.linkEvent(l, 'target_submitted', null, { matches: String(prompt || '').includes(String(op.text || '').slice(0, 40)) }, { quiet: true });
   }
 
-  // F2: 판에서 A → B 연결을 잇고 역할을 정한다. A에게 B의 herdr 이름, 패널, 역할을 B1 규칙으로 알린다
+  // F2: 판에서 A → B 연결을 잇고 역할을 정한다. A에게 B의 이름, 역할, atrium 명령(P116)을 B1 규칙으로 알린다
   linkCreate(p) {
     const a = this.resolve(p.from), b = this.resolve(p.to);
     if (a === b) throw apiError('bad_request', "세션을 자기 자신과 연결할 수 없습니다.");
     const role = String(p.role || '').trim();
     if (!ROLE_RE.test(role)) throw apiError('bad_request', "역할은 1~40자로 입력하세요. 줄바꿈, 따옴표, $, \\는 사용할 수 없습니다.");
     const l = this.ensureLink(a.sessionId, b.sessionId, { role });
-    const text = roleNotice({ role, agentName: b.agentName, paneId: b.paneId, kind: b.kind || 'claude' });
+    const text = roleNotice({ role, name: b.name, kind: b.kind || 'claude' });
     const d = this.queue.enqueue(a.sessionId, text);
     this.store.updateLink(l.linkId, { notifyDelivery: d.deliveryId });
     this.linkEvent(l, 'role', role, { deliveryId: d.deliveryId, notice: text });
@@ -1963,7 +1982,7 @@ export class Backend {
       return { removed: true, deliveryId: null, ...this.branch.detach(b, { by: 'user' }) };
     }
     let deliveryId = null;
-    if (l.role && a && b) { const d = this.queue.enqueue(a.sessionId, unlinkNotice({ role: l.role, agentName: b.agentName })); deliveryId = d.deliveryId; }
+    if (l.role && a && b) { const d = this.queue.enqueue(a.sessionId, unlinkNotice({ role: l.role, name: b.name })); deliveryId = d.deliveryId; }
     this.linkEvent(l, 'unlink', l.role || null, { deliveryId }, { quiet: true });
     this.store.updateLink(l.linkId, { role: null, removedAt: Date.now() });
     this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'user' });

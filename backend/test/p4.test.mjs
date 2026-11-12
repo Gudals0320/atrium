@@ -72,10 +72,12 @@ test('F3: 새 노드는 부모 오른쪽 빈자리, 차 있으면 다음 자리.
   assert.deepEqual(facingSides(right, { x: -900, y: -100, w: 720, h: 460 }), { sourceHandle: 'l', targetHandle: 'r' });
 });
 
-test('F2: 연결 알림 글에는 herdr 이름, 패널, 역할, 쓸 명령이 있고 --session·--machine은 없다', () => {
-  const t = roleNotice({ role: '리뷰어', agentName: 'rv', paneId: 'w4:p1', kind: 'claude' });
-  for (const x of ['`rv`', 'w4:p1', '"리뷰어"', 'herdr agent prompt rv', 'herdr agent read rv']) assert.ok(t.includes(x), x);
-  assert.ok(!/--session|--machine|--remote/.test(t + unlinkNotice({ role: '리뷰어', agentName: 'rv' }) + paneChangedNotice({ role: '리뷰어', agentName: 'rv', paneId: 'w5:p1' })));
+test('F2: 연결 알림 글에는 이름, 역할, 쓸 명령이 있고 --session·--machine은 없다(P116: atrium prompt|wait|read, 패널·herdr 명령 없음)', () => {
+  const t = roleNotice({ role: '리뷰어', name: 'rv', kind: 'claude' });
+  for (const x of ['`@rv`', '"리뷰어"', 'atrium prompt rv', 'atrium wait rv', 'atrium read rv']) assert.ok(t.includes(x), x);
+  assert.equal(roleNotice({ role: '리뷰어', agentName: 'rv', paneId: 'w4:p1' }), t, '옛 호출 모양(agentName)도 같은 글');
+  const all = t + unlinkNotice({ role: '리뷰어', name: 'rv' }) + paneChangedNotice({ role: '리뷰어', name: 'rv', paneId: 'w5:p1' });
+  assert.ok(!/--session|--machine|--remote|herdr/.test(all));
   assert.ok(ROLE_RE.test('리뷰어')); assert.ok(!ROLE_RE.test('a"b')); assert.ok(!ROLE_RE.test('')); assert.ok(!ROLE_RE.test('x\ny'));
   assert.equal(linkLabel({ role: '리뷰어', lastText: 'Reply with exactly: pong' }), '리뷰어 · "Reply with exactly: pong"');
   assert.equal(linkLabel({ spawned: true }), '세션 생성');
@@ -146,7 +148,8 @@ test('2: herdr 스킬은 --plugin-dir로, 안내는 --append-system-prompt-file�
   const pl = writeBoardPlugin({ dir, skillText: '---\nname: herdr\n---\nbody' });
   assert.ok(fs.existsSync(path.join(dir, 'atrium-herdr', '.claude-plugin', 'plugin.json')));
   assert.equal(fs.readFileSync(path.join(dir, 'atrium-herdr', 'skills', 'herdr', 'SKILL.md'), 'utf8'), '---\nname: herdr\n---\nbody');
-  assert.match(fs.readFileSync(pl.systemPromptFile, 'utf8'), /--session/); // 붙이지 말라는 안내
+  assert.match(fs.readFileSync(pl.systemPromptFile, 'utf8'), /atrium prompt <이름>/); // P116: 일 시키기는 판의 atrium 명령(전에는 herdr에 --session을 붙이지 말라는 안내)
+  assert.doesNotMatch(fs.readFileSync(pl.systemPromptFile, 'utf8'), /herdr (agent|pane|스킬|명령|패널)|HERDR_ENV|--session/); // 플러그인 이름(atrium-herdr:atrium)만 남는다
   const launch = { sessionId: 's', settingsPath: 'C:/x/s.json', permissionMode: 'manual', model: 'haiku', ...pl };
   const a = buildStartArgs(launch);
   assert.equal(a[a.indexOf('--plugin-dir') + 1], pl.pluginDir);
