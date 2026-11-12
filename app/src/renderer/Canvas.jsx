@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, Background, BackgroundVariant, useReactFlow, applyNodeChanges } from '@xyflow/react';
 import { shiftAreasLocal } from './store.js'; // P27
-import { useStore, getState, setNodeLocal, saveNode, setAttached, setCloseIds, setFocus, markSeen, toast, openDialog, selectWorkspace, noteWorkspace, setViewNow, setSelected, setPendingInput, dockOf, loadBoard, setMemoLocal, setKanbanLocal, setConvoLocal, wsName } from './store.js';
+import { useStore, getState, setNodeLocal, saveNode, setAttached, setCloseIds, setFocus, markSeen, toast, openDialog, selectWorkspace, noteWorkspace, matesNow, setViewNow, setSelected, setPendingInput, dockOf, loadBoard, setMemoLocal, setKanbanLocal, setConvoLocal, wsName } from './store.js';
 import { ConvoNode, WorktreeBox, SpawnEdge } from './ConvoNode.jsx'; // P13
 import { worktreeBoxes, boardSpawnDup } from '../../../backend/src/convo-canvas.mjs';
 import { decorateEdges, edgeGap, innerEnds } from './lib/link-labels.js'; // P67. P98: edgeGap, innerEnds
@@ -296,7 +296,8 @@ export function Canvas() {
   const [rev, setRev] = useState(0); // 바꾸면 저장소 자리로 다시 그린다(되돌리기)
   const [labelTick, setLabelTick] = useState(0); // P67: 선 이름표가 시간이 지나 물러나도록 다시 센다
   useEffect(() => { const i = setInterval(() => setLabelTick((n) => n + 1), 15000); return () => clearInterval(i); }, []);
-  const held = useRef(new Map()); // id → 마지막으로 붙일 대상이던 시각
+  const held = useRef(new Map()); // id → 붙일 대상에서 빠진 시각(대상인 동안 null). P124
+  const releaseTimer = useRef(null);
   const drag = useRef(null); // { id, type, mode, start, pointer, followers: [{ id, x, y }], live, snap }
   const ghostRef = useRef(null);
   const ctrlRef = useRef(null); // P17: Ctrl+끌기로 끄는 노드 ID
@@ -586,22 +587,29 @@ export function Canvas() {
     // 이슈 #1-16: 상한보다 많이 보여도 고른 노드와 초점 노드는 터미널을 먼저 받는다
     // P121: 고른 워크스페이스(viewWs)의 노드, 초점·고른 노드, 아주 가까이 확대한 노드만 터미널을 받는다(lib/faces.js termAllowed)
     const screen = { width: el.clientWidth, height: el.clientHeight };
-    const focus = st.focusId, selected = new Set(st.selected), wsLimit = { key: st.viewWs || null };
-    const want = pickAttached(list, vp, screen, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus, selected, wsLimit });
+    const focus = st.focusId, selected = new Set(st.selected), wsLimit = { key: st.viewWs || null }, mates = matesNow(st); // P124: 초점·고른 노드와 같은 덩어리, 부모·자식
+    const want = pickAttached(list, vp, screen, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus, selected, wsLimit, mates });
     // P24: 가까이 얼굴로 보이는 노드 모두(잠든 노드, 제어기 상한 밖 포함)는 그 리포를 보고 있는 것이다(저절로 잠재우지 않는다)
     const all = [...st.nodes].filter(([id]) => st.sessions.has(id)).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
     setCloseIds(pickAttached(all, vp, { width: el.clientWidth, height: el.clientHeight }, { max: Infinity }).sort());
     const now = Date.now();
-    for (const id of want) held.current.set(id, now);
+    // P124: 놓기 기다림(HOLD_MS)은 붙일 대상에서 처음 빠진 때부터 센다. 예전에는 마지막으로 대상이던 계산 시각부터 세어, 다시 세는 주기(1.6초)에 따라
+    //   실제 기다림이 0~1.5초로 들쭉날쭉했다(휠로 단계 경계를 오갈 때 터미널을 숨겨 두는 것이 운에 달렸다). 대상인 동안은 null, 빠지면 그때 시각
+    for (const id of want) held.current.set(id, null);
     const keep = [...want];
-    for (const [id, t] of held.current) {
+    let leaving = false;
+    for (const [id, t0] of held.current) {
       if (keep.includes(id)) continue;
+      const t = t0 == null ? now : t0;
+      held.current.set(id, t);
       const n = list.find((x) => x.id === id);
       // P121: 다른 워크스페이스로 바꾸었거나 초점이 떠난 노드는 기다리지 않고 놓는다(아주 가까이는 붙어 있던 기준 30%로 본다)
-      const ok = n && termAllowed({ id, ws: n.ws, viewWs: wsLimit.key, focus, selected, near: veryClose(n, vp, screen, true) });
-      if (now - t < HOLD_MS && keep.length < MAX_CONTROLLERS && ok) keep.push(id);
+      const ok = n && termAllowed({ id, ws: n.ws, viewWs: wsLimit.key, focus, selected, mates, near: veryClose(n, vp, screen, true) });
+      if (now - t < HOLD_MS && keep.length < MAX_CONTROLLERS && ok) { keep.push(id); leaving = true; }
       else held.current.delete(id);
     }
+    clearTimeout(releaseTimer.current);
+    if (leaving) releaseTimer.current = setTimeout(() => recompute(), HOLD_MS + 50); // 기다림이 끝나면 놓는다
     if (full) keep.length = 0; // P84: 전체 보기가 화면을 덮는 동안 판의 터미널은 붙이지 않는다(가려진 터미널의 메모리)
     if (!PLAN.terms) keep.length = 0; // P86 단계 1부터: 보드에는 터미널을 붙이지 않는다(얼굴만, 전체 보기는 그대로)
     const prev = st.attached;
@@ -614,7 +622,8 @@ export function Canvas() {
   const focusId = useStore((st) => st.focusId);
   const selectedIds = useStore((st) => st.selected);
   const viewWs = useStore((st) => st.viewWs); // P121
-  useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, viewWs, schedule]);
+  const docksNow = useStore((st) => st.docks); // P124: 덩어리가 바뀌면 짝도 바뀐다
+  useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, viewWs, docksNow, schedule]);
   useEffect(() => { const t = setInterval(() => recompute(), HOLD_MS + 100); window.addEventListener('resize', () => schedule()); return () => clearInterval(t); }, [recompute, schedule]);
 
   // P112: 캔버스 크기는 ResizeObserver로 담아 둔다. 화면을 옮기는 프레임마다 clientWidth를 읽으면 그 프레임에 바뀐 스타일·레이아웃을 그 자리에서 다시 센다(강제 동기 레이아웃).
@@ -727,7 +736,7 @@ export function Canvas() {
       if (!r) return;
       const el = wrapRef.current;
       const s = getState().sessions.get(id);
-      if (s) noteWorkspace(s.workspaceKey);
+      if (s) noteWorkspace(s.workspaceKey, { view: true }); // P124: 누른(초점을 준) 노드의 워크스페이스가 터미널을 갖는 워크스페이스가 된다
       if (focusTerminal) setPendingInput(id); // H4: 터미널이 붙기 전에 친 글을 모은다
       if (focusTerminal && s && s.state === 'sleeping') wakeSession(id, { why: 'click' }); // P21(D4): 눌러 들어가면 깨운다(깬 뒤 터미널이 붙는다)
       // P10: 덩어리 안의 노드면 덩어리 전체가 들어오게(lib/nav.js). 초점과 터미널 입력은 누른 노드로 간다
@@ -762,7 +771,7 @@ export function Canvas() {
       if (tapAction({ width: window.innerWidth, height: window.innerHeight, coarse: true }) === 'full') {
         const nodeEl = target && target.closest ? target.closest('.react-flow__node') : null;
         const r = nodeEl ? nodeEl.getBoundingClientRect() : null;
-        noteWorkspace(s.workspaceKey); enterSession(id); setFocus(id); markSeen(id);
+        noteWorkspace(s.workspaceKey, { view: true }); enterSession(id); setFocus(id); markSeen(id);
         perfLog('touch_full', { id });
         openFull(id, r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null);
         return;
@@ -894,7 +903,9 @@ export function Canvas() {
   const onNodeClick = useCallback((e, node) => {
     if (e.target.closest && e.target.closest('button, input, textarea, select, a, .mt-card, .mt-kill, .mt-interrupted, .mt-menu')) return;
     if (node.type === 'region' || node.type === 'wtarea') { selectWorkspace(node.data.wsKey); return; } // P27
-    if (node.type !== 'session' || e.ctrlKey || e.shiftKey || e.metaKey) return;
+    if (node.type !== 'session') return;
+    // P124: Ctrl·Shift로 고른 노드도 그 워크스페이스가 터미널을 갖는 워크스페이스가 된다(마지막에 고른 노드)
+    if (e.ctrlKey || e.shiftKey || e.metaKey) { const s = getState().sessions.get(node.id); if (s) noteWorkspace(s.workspaceKey, { view: true }); return; }
     // 터미널 안을 누르면 화면만 옮긴다(초점은 터미널이 스스로 잡는다)
     // P38: 끌어 고른 뒤의 click과 두세 번 누르기에서는 가지 않는다. 한 번 누르기도 잠깐 기다려 두 번째 누르기·선택이 없을 때만 간다
     if (e.target.closest && e.target.closest('.mt-term-wrap')) {
