@@ -160,7 +160,8 @@ test('P79 부모에게 알리기: 첫 요청이 unconfirmed·failed로 끝나면
   assert.equal(enq.length, 1);
   assert.equal(enq[0].sid, 'lead');
   assert.match(enq[0].text, /@w1에게 보낸 첫 요청이 들어가지 않았다\(unconfirmed/);
-  assert.match(enq[0].text, /herdr agent prompt w1 "<할 일>"/);
+  assert.match(enq[0].text, /atrium prompt w1 "<할 일>"/); // P116
+  assert.match(enq[0].text, /atrium read w1 --lines 40/);
   assert.equal(linkEv[0].data.why, 'first prompt lost');
   assert.equal(br.lost.get('w1').status, 'unconfirmed', 'atrium children에 보인다');
   br.onDeliveryEnd({ deliveryId: 'd1', status: 'unconfirmed', reason: 'x' });

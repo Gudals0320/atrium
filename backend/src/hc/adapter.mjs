@@ -91,7 +91,7 @@ export class HcAdapter extends EventEmitter {
   }
   checkCompat(pong) { return hcCompat(pong, this.policy); }
   async cliVersion() { return this.exe ? cliVersion({ exe: this.exe, session: this.session, configHome: this.configHome, base: this.env }) : null; }
-  async skillText() { return null; } // 스킬·승인 규칙은 2b 밖(판은 herdr 스킬 글로 둔다)
+  async skillText() { return null; } // P116: hc 모드는 herdr 스킬을 넘기지 않는다(일 시키기는 판의 atrium 명령). 판의 herdrSkillText도 hc에서는 null
   // holder 기준(holderIdentity). 코어는 떠 있는데 holder가 없으면(터미널이 없음) -1, 코어를 모르면 null.
   // 코어 PID를 쓰지 않는다: 코어는 server.restart·hc update·holder의 다시 띄우기로 바뀌어도 프로그램이 산다(판이 "다시 떴다"로 잘못 본다, 2b 끝 시험)
   serverPid() { return this._holderPid || (this._corePid ? -1 : null); }
@@ -546,11 +546,15 @@ export class HcAdapter extends EventEmitter {
   // - 그 밖(visible·recent·recent_unwrapped 글, terminal.history의 ansi): terminal.read {lines}. 색 없는 줄이다(hc가 기록을 ANSI 줄로 주지 않는다)
   async readScreen(paneId, { source = 'visible', format = 'text', lines } = {}) {
     if (source === 'visible' && format === 'ansi') return this._paint(paneId);
-    const want = source === 'visible' ? 0 : Math.min(Math.max(Number(lines) || 200, 1), 10000);
+    // P117(P116 인계): hc의 terminal.read는 화면 아래의 빈 줄까지 줄로 센다. 기록(recent·recent_unwrapped)은 끝의 빈 줄을 빼고 n줄을 센다
+    // (herdr의 recent처럼. Codex 화면 답 고르기가 빈 줄 때문에 답을 놓쳤다). 그래서 화면 높이만큼 더 읽고 끝의 빈 줄을 뗀 뒤 자른다
+    const want = source === 'visible' ? 0 : Math.min(Math.max(Number(lines) || 200, 1) + 200, 10000);
     const r = await this.call('terminal.read', { terminal: paneId, lines: want });
     const text = (r && r.text) || '';
-    if (source === 'visible' || !lines) return text;
-    return text.split('\n').slice(-Number(lines)).join('\n');
+    if (source === 'visible') return text;
+    const ls = text.split('\n');
+    while (ls.length && !ls[ls.length - 1].trim()) ls.pop();
+    return (lines ? ls.slice(-Number(lines)) : ls).join('\n');
   }
   async _paint(paneId, { quietMs = 150, maxMs = 3000 } = {}) {
     const t = await this.call('terminal.get', { terminal: paneId });

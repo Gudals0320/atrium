@@ -1,9 +1,10 @@
 // 세션끼리 연결(ARCH 4절 F, P4). 순수 함수만 둔다. 창(renderer)도 이 파일을 그대로 묶어 쓴다(node 모듈을 부르지 않는다).
 //
-// 판은 일을 시키지 않는다. 에이전트가 herdr 스킬로 직접 시킨다. 판은 그 일을 알아채 선으로 보여준다.
-// 알아채는 방법(docs/log/p4-links.md 보고 4절): 판이 띄운 Claude Code 세션의 hook(PreToolUse·PostToolUse)에서 셸 명령 글을 읽어
-// `herdr agent prompt`, `herdr agent read`, `herdr agent start`, `herdr pane split` 같은 호출을 찾는다(누가, 누구에게, 무엇을).
-// 받는 쪽의 상태와 새로 나타난 에이전트는 herdr 이벤트로 본다.
+// 판은 일을 시키지 않는다. 에이전트가 판의 atrium 명령(P116: atrium prompt|wait|read)으로 직접 시킨다. 판은 그 일을 선으로 보여준다.
+// P116: atrium 명령은 판을 거치므로 판이 바로 남긴다(agent-verbs.mjs). 아래 셸 명령 글 읽기는 herdr 모드 호환이다:
+// 판이 띄운 Claude Code 세션의 hook(PreToolUse·PostToolUse)에서 셸 명령 글을 읽어
+// `herdr agent prompt`, `herdr agent read`, `herdr agent start`, `herdr pane split` 같은 호출을 찾는다(누가, 누구에게, 무엇을. docs/log/p4-links.md 보고 4절).
+// 받는 쪽의 상태와 새로 나타난 에이전트는 터미널 백엔드 이벤트로 본다.
 
 export const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 
@@ -145,22 +146,23 @@ export function screenAnswerText(text, n = 20) {
   return body.length ? body.slice(-n).join('\n') : tailText(L.join('\n'), n);
 }
 
-// F2: 판에서 이은 연결을 A에게 알리는 글. 다음 지시("리뷰어에게 맡겨")를 알아듣도록 이름, 패널, 역할, 쓸 명령을 담는다.
-// --session·--machine은 쓰지 않는다. 패널 안의 herdr 명령은 판 전용 세션에 붙는다(HERDR_SESSION, HERDR_SOCKET_PATH).
-export function roleNotice({ role, agentName, paneId, kind = 'claude' }) {
+// F2: 판에서 이은 연결을 A에게 알리는 글. 다음 지시("리뷰어에게 맡겨")를 알아듣도록 이름, 역할, 쓸 명령을 담는다.
+// P116: 일 시키기·기다리기·읽기는 판의 atrium 명령이고 이름은 판의 세션 이름(name, 없으면 옛 호출의 agentName)이다. 패널 ID는 쓰지 않는다
+export function roleNotice({ role, agentName, name = agentName, kind = 'claude' }) {
   return [
-    `[Atrium 보드] 연결 알림: herdr 에이전트 \`${agentName}\`(패널 ${paneId}, 종류 ${kind})가 너의 "${role}"이다.`,
-    `앞으로 "${role}에게 맡겨"처럼 이 역할을 부르면, herdr 스킬로 이 에이전트에게 일을 시키고 답을 받아 와라.`,
-    `일 시키기: herdr agent prompt ${agentName} "<할 일>" --wait`,
-    `응답 읽기: herdr agent read ${agentName} --source recent-unwrapped --lines 80`,
+    `[Atrium 보드] 연결 알림: \`@${name}\`(종류 ${kind})가 너의 "${role}"이다.`,
+    `앞으로 "${role}에게 맡겨"처럼 이 역할을 부르면, atrium 명령으로 이 에이전트에게 일을 시키고 답을 받아 와라.`,
+    `일 시키기: atrium prompt ${name} "<할 일>" --wait`,
+    `끝나기 기다리기: atrium wait ${name} · 화면 읽기: atrium read ${name}`,
     '이 알림에는 "알겠다"고만 답해라.',
   ].join('\n');
 }
-export function unlinkNotice({ role, agentName }) {
-  return `[Atrium 보드] 연결 해제: herdr 에이전트 \`${agentName}\`는 더 이상 너의 "${role}"가 아니다. 이 역할로 일을 시키지 마라. 이 알림에는 "알겠다"고만 답해라.`;
+export function unlinkNotice({ role, agentName, name = agentName }) {
+  return `[Atrium 보드] 연결 해제: \`@${name}\`는 더 이상 너의 "${role}"가 아니다. 이 역할로 일을 시키지 마라. 이 알림에는 "알겠다"고만 답해라.`;
 }
-export function paneChangedNotice({ role, agentName, paneId }) {
-  return `[Atrium 보드] 연결 갱신: 너의 "${role}" \`${agentName}\`의 패널이 ${paneId}로 바뀌었다. 이름(${agentName})으로 부르면 그대로 된다. 이 알림에는 "알겠다"고만 답해라.`;
+// P116: 판은 이 알림을 보내지 않는다(이름으로 부르므로 패널이 바뀌어도 할 일이 없다). 옛 호출과 시험을 위해 글만 남긴다
+export function paneChangedNotice({ role, agentName, name = agentName, paneId }) {
+  return `[Atrium 보드] 연결 갱신: 너의 "${role}" \`@${name}\`의 터미널이 바뀌었다(${paneId}). 이름(${name})으로 부르면 그대로 된다. 이 알림에는 "알겠다"고만 답해라.`;
 }
 
 export const ROLE_RE = /^[^\n\r"`$\\]{1,40}$/;

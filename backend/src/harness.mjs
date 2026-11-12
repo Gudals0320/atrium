@@ -9,11 +9,12 @@ import path from 'node:path';
 import { codexHomeOf } from './codex-models.mjs';
 
 // 하네스와 상관없는 안내문(한 줄). 줄바꿈·큰따옴표 없이: Codex는 -c 값으로 받고, 판은 이것을 패널에 한 줄로 친다
+// P116: 일 시키기·기다리기·읽기는 판의 atrium 명령이다(터미널 백엔드와 상관없다). 터미널 명령을 직접 쓰라고 하지 않는다
 export const HARNESS_PROMPT = [
-  '너는 Atrium 보드가 띄운 herdr 패널 안에서 돈다(HERDR_ENV=1).',
+  '너는 Atrium 보드가 띄운 세션 안에서 돈다.',
   '보드와 말할 때는 셸에서 atrium 명령을 쓴다. 먼저 `atrium help`로 사용법을 본다(`atrium help --json`은 기계용 계약).',
+  '다른 에이전트에게 일을 시킬 때는 `atrium prompt <이름> <따옴표로 묶은 할 일>`(끝까지 기다려 답을 받으려면 --wait), 이미 시킨 일을 기다릴 때는 `atrium wait <이름>`, 그 화면은 `atrium read <이름>`. 이름은 보드의 세션 이름이다. 다른 에이전트에게는 이 명령으로만 보낸다.',
   '하위 세션(워커)은 `atrium child`, 부모·하위 세션·역할 연결의 지금 기록은 `atrium me`, 띄울 수 있는 모델은 `atrium models`.',
-  '다른 에이전트에게 일을 시키거나 답을 받아 올 때는 herdr 명령(herdr agent prompt, wait, read)을 쓰고 --session, --machine, --remote를 붙이지 않는다.',
   '[Atrium 보드]로 시작하는 글은 보드가 알려 주는 연결(어느 에이전트가 너의 무슨 역할인지)이다.',
 ].join(' ');
 

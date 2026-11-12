@@ -87,6 +87,18 @@ test('P117 신뢰(hc): 7501 없이 바로 끝난 판의 에이전트도 에이�
   assert.equal(m2.terms.get('t3').status.synthetic, true);
 });
 
+test('P117 hc 기록 읽기(P116 인계): 화면 아래 빈 줄은 n줄에 세지 않는다(recent_unwrapped)', async () => {
+  const fake = await startFakeHc();
+  const a = new HcAdapter({ session: 'p117-unit', dataDir: null, pipe: fake.pipe, env: {} });
+  try {
+    const t = fake.create({ argv: ['pwsh'] }).result;
+    fake.terms.get(t.address).screen = ['line 1', 'line 2', '• answer A', '• answer B', ...Array(30).fill('')].join('\n');
+    assert.equal(await a.readScreen(t.address, { source: 'recent_unwrapped', lines: 2 }), '• answer A\n• answer B');
+    assert.equal((await a.readScreen(t.address, { source: 'recent', lines: 60 })).split('\n').length, 4);
+    assert.ok(fake.calls.filter((c) => c.method === 'terminal.read').every((c) => c.params.lines >= 200)); // 화면 높이만큼 더 읽는다
+  } finally { await fake.close(); }
+});
+
 // ---------- 고정 hc 배포 ----------
 import fs from 'node:fs';
 import os from 'node:os';

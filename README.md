@@ -24,7 +24,7 @@
 
 Atrium is a Windows desktop app that puts every agent CLI session on one board. Each repository gets its own area, every session shows its live terminal and its state, working agents glow orange, and the sessions that need you glow yellow.
 
-Atrium does not replace your agents or tell them how to work. It starts sessions, connects them and shows the connections. The agents do the work and hand it to each other through [herdr](https://herdr.dev), which also owns the terminals, so sessions keep running when the window closes.
+Atrium does not replace your agents or tell them how to work. It starts sessions, connects them and shows the connections. The agents do the work and hand it to each other with the board's `atrium` command. [herdr](https://herdr.dev) owns the terminals, so sessions keep running when the window closes.
 
 ## Features
 
@@ -50,7 +50,8 @@ Atrium does not replace your agents or tell them how to work. It starts sessions
 
 ### Agents working together
 
-- **Role links.** Draw a link from one session to another and give it a role, such as `worker` or `reviewer`. The agent learns how to hand work to that role through herdr, and the link lights up while work moves along it. Handoffs that agents make on their own through herdr are drawn too.
+- **Role links.** Draw a link from one session to another and give it a role, such as `worker` or `reviewer`. The agent learns how to hand work to that role with `atrium prompt`, and the link lights up while work moves along it.
+- **Agents hand work to each other through the board.** `atrium prompt <name> "<task>" --wait` sends a task to another session and returns its final answer, `atrium wait <name>` waits for a session's current turn to end, and `atrium read <name>` shows its recent screen. The board delivers with the same rules as the command bar (it waits while the other agent is working or needs you, or while you are typing in its terminal, and wakes a sleeping session first), draws the link and keeps the exchange. The commands are the same on every terminal backend and every harness, and run without permission prompts in Claude Code sessions the board starts.
 - **Workers on demand.** Agents start their own workers with `atrium child`, with no limit on count or depth. The board's `atrium` skill tells them when to split work across workers and git worktrees. Workers line up to the right of their parent in the order they were started, and show their parent, role and number in the header.
 - **Models by name.** `atrium child --model "glm flash"` resolves a spoken model name against the models the board knows (`atrium models`), and model errors go back to the parent. A Claude Code session can start a Codex worker with `--kind codex`: it uses the rail's Codex launcher, model names with a slash such as `zai/glm-flash`, and the parent's permission mode as Codex approval flags.
 - **Every harness talks to the board.** Claude Code, Codex, opencode and pi sessions started by the board all get the `atrium` command on `PATH`, the board's environment and a short instruction (`atrium help`, `atrium help --json` for the machine contract), so any of them can run `atrium me` and start workers. Resume, recovery after a herdr restart and reopening a closed session bring back the same environment, instruction and connection.
@@ -209,7 +210,7 @@ The `atrium` CLI talks to the running backend. Run it as `node backend\bin\atriu
 | `kill <name> --yes` | Close a session |
 | `remote status`, `remote log`, `devices` | Remote access, connection log, paired devices |
 
-Sessions the board starts also get `atrium child`, `atrium children` and `atrium models` for their own workers, and `atrium me` for their links.
+Sessions the board starts also get `atrium prompt`, `atrium wait` and `atrium read` to hand work to other sessions, `atrium child`, `atrium children` and `atrium models` for their own workers, and `atrium me` for their links (`atrium help` lists them all).
 
 ## How it works
 
