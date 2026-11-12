@@ -1,4 +1,4 @@
-// P114 단위 시험: herdr-core(hc) 어댑터. 순수 함수(상태 대응, 이벤트 바꾸기, env, 키, 프레임), 고정 버전, 백엔드 고르기,
+// P114 단위 시험: herdr-core(hc) 어댑터. 순수 함수(상태 대응, 이벤트 바꾸기, env, 키, 프레임), 고정 버전, 판의 어댑터 만들기,
 // 가짜 hc 코어(test/fake-hc.mjs)로 돌린 어댑터(이벤트, 보내기, 키, 화면 스트림, 짧은 끊김, 에이전트로 바꿔 띄우기)와 중계의 판 밖 크기 주인
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +11,7 @@ import { FrameDecoder, encodeFrame, FRAME, FramedConn, hcPipe, rpcError } from '
 import { hcCompat, coreEnv, boardConfigText, writeBoardConfig, hcConfigFile } from '../src/hc/core.mjs';
 import { ensureHc, HC_PIN, hcBinDir, parseHcVersion } from '../src/hc/pin.mjs';
 import { HcAdapter, holderIdentity } from '../src/hc/adapter.mjs';
-import { pickTerminalBackend, createTerminalAdapter } from '../src/terminal-backend.mjs';
+import { createTerminalAdapter } from '../src/terminal-backend.mjs';
 import { Settings, normalizePatch } from '../src/settings.mjs';
 import { TerminalRelay } from '../src/relay.mjs';
 import { shareEmpty, shareJoin, shareLeave, shareExternal, shareOwnerView, EXTERNAL_OWNER } from '../src/multiclient.mjs';
@@ -153,19 +153,14 @@ test('P114 고정 버전: 받은 것이 SHA-256과 다르면 버리고, 이미 �
   assert.match(HC_PIN.sha256, /^[0-9a-f]{64}$/);
 });
 
-test('P114 백엔드 고르기: 환경 변수가 이기고, 숨은 설정, 기본은 herdr', () => {
-  assert.deepEqual(pickTerminalBackend({ env: {}, settings: {} }), { backend: 'herdr', source: 'default', invalid: null });
-  assert.equal(pickTerminalBackend({ env: {}, settings: { terminalBackend: 'hc' } }).backend, 'hc');
-  assert.equal(pickTerminalBackend({ env: { ATRIUM_TERMINAL_BACKEND: 'herdr' }, settings: { terminalBackend: 'hc' } }).backend, 'herdr');
-  assert.equal(pickTerminalBackend({ env: { ATRIUM_TERMINAL_BACKEND: 'HC' }, settings: {} }).source, 'env');
-  assert.deepEqual(pickTerminalBackend({ env: { ATRIUM_TERMINAL_BACKEND: 'tmux' } }), { backend: 'herdr', source: 'env', invalid: 'tmux' });
-  const cfg = { herdrSession: 'atrium-dev-x', dataDir: 'C:\\d', logDir: 'C:\\d\\logs', herdrPath: null, herdrProtocols: [22], herdrTested: ['0.9.5'] };
-  assert.equal(createTerminalAdapter(cfg, {}, { env: {} }).backend, 'herdr');
-  const hc = createTerminalAdapter(cfg, { terminalBackend: 'hc' }, { env: { USERNAME: 'u' } });
-  assert.equal(hc.backend, 'hc'); assert.equal(hc.primary.pipe, '\\\\.\\pipe\\herdr-core-u-atrium-dev-x.sock');
-  assert.equal(hc.herdrPath, path.join('C:\\d', 'hc', 'bin', 'herdr-core.exe'));
-  hc.herdrPath = 'C:\\herdr.exe'; assert.equal(hc.herdrPath, path.join('C:\\d', 'hc', 'bin', 'herdr-core.exe')); // 판이 찾은 herdr 경로는 hc 경로를 덮지 않는다
-  // P117: 숨은 설정 terminalBackend는 없앴다(판 기록 meta terminalBackend와 옮기기가 정한다). 판의 어댑터는 라우터(주 어댑터 = hc)
+test('P114·P129 판의 어댑터: 터미널 백엔드는 hc 하나. 숨은 설정 terminalBackend는 없다', () => {
+  const cfg = { terminalSession: 'atrium-dev-x', dataDir: 'C:\\d', logDir: 'C:\\d\\logs' };
+  const hc = createTerminalAdapter(cfg, { env: { USERNAME: 'u' } });
+  assert.ok(hc instanceof HcAdapter);
+  assert.equal(hc.backend, 'hc'); assert.equal(hc.pipe, '\\\\.\\pipe\\herdr-core-u-atrium-dev-x.sock');
+  assert.equal(hc.exePath, path.join('C:\\d', 'hc', 'bin', 'herdr-core.exe'));
+  assert.equal(createTerminalAdapter(cfg, { env: { USERNAME: 'u', ATRIUM_HC: 'D:\\x\\hc.exe' } }).exePath, 'D:\\x\\hc.exe'); // ATRIUM_HC로 바꾼다
+  // P117: 숨은 설정 terminalBackend는 없앴다(판 기록 meta terminalBackend와 옮기기가 정한다)
   assert.throws(() => normalizePatch({ terminalBackend: 'hc' }));
   const store = { meta: {}, getMeta(k) { return this.meta[k]; }, setMeta(k, v) { this.meta[k] = v; } };
   const s = new Settings({ store, broadcast: () => {} });
@@ -472,7 +467,7 @@ test('P114 2b 끝난 기록 정리: 붙을 때 판이 만든 끝난 터미널을
   } finally { a.stopEvents(); await fake.close(); }
 });
 
-test('P114 2b holder 기준 서버 PID, 이어 가기 기록, ANSI 화면(첫 화면)', async () => {
+test('P114 2b holder 기준 서버 PID, ANSI 화면(첫 화면)', async () => {
   assert.equal(holderIdentity({ holders: [{ pid: 30, terminals: 0, current: true }, { pid: 20, terminals: 2 }, { pid: 25, terminals: 1 }] }), 20);
   assert.equal(holderIdentity({ holders: [{ pid: 30, terminals: 0, current: true }] }), 30);
   assert.equal(holderIdentity({ holders: [] }), null);
@@ -481,9 +476,6 @@ test('P114 2b holder 기준 서버 PID, 이어 가기 기록, ANSI 화면(첫 �
   try {
     await a.probe();
     assert.equal(a.serverPid(), 4343); // 가짜의 holder
-    assert.deepEqual(a.readResumeRecord('s1'), { found: false });
-    await a.registerResume({ paneId: 't1', sessionId: 's1', argv: ['claude', '--resume', 's1', '--settings', 'x.json'] });
-    assert.deepEqual(a.readResumeRecord('s1').argv, ['claude', '--resume', 's1', '--settings', 'x.json']);
     const t = fake.create({ argv: ['pwsh'] }).result;
     assert.equal(await a.readScreen(t.address, { source: 'visible', format: 'ansi' }), FIRST_PAINT.replace(/^\x18/, ''));
     assert.match(await a.readScreen(t.address, { source: 'recent', format: 'ansi', lines: 100 }), /PS /);

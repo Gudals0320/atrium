@@ -165,7 +165,7 @@ export function pushKindOf(sum, from) {
   if (to === 'ready' && from === 'working') return 'done';
   if (to === 'waiting' || to === 'trust_wait') return 'need';
   if (to === 'error') return 'error';
-  if (to === 'exited' && sum.exit && sum.exit.kind === 'other') return 'exit'; // 사람이 끄거나 판이 끈 것(normal, herdr_stopped)은 알리지 않는다
+  if (to === 'exited' && sum.exit && sum.exit.kind === 'other') return 'exit'; // 사람이 끄거나 판이 끈 것(normal, terminal_stopped)은 알리지 않는다
   return null;
 }
 export const prefKind = (k) => (k === 'exit' ? 'error' : k);

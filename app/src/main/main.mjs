@@ -1,7 +1,7 @@
 // Atrium 창(Electron main). 창 하나에 판을 그린다(ARCH 1절).
 // - 프로필은 atrium CLI와 같은 방법으로 고른다: --dev 또는 ATRIUM_PROFILE=dev, ATRIUM_* 환경 변수(옛 이름 MTASK_*도)가 기본값을 덮는다(backend/src/config.mjs).
 // - P18: 실제 판 프로필은 처음 뜰 때 옛 창 프로필(multitask-app-real)을 새 프로필(atrium-app-real)로 복사한다(창 크기·사이드바 접힘 등 localStorage).
-// - 백엔드가 없으면 띄운다. 백엔드는 herdr 서버가 없으면 깨끗한 환경으로 띄운다. 창을 닫아도 백엔드와 herdr는 계속 돈다(ARCH 1절 "백엔드 수명", P2에서 정함).
+// - 백엔드가 없으면 띄운다. 백엔드는 터미널 서버(hc)가 없으면 깨끗한 환경으로 띄운다. 창을 닫아도 백엔드와 터미널 서버는 계속 돈다(ARCH 1절 "백엔드 수명", P2에서 정함).
 // - 창(renderer)은 백엔드 WebSocket API에 직접 붙는다. main은 주소와 토큰만 넘긴다.
 // - P69: 업데이트로 백엔드를 바꿀 때(update.restart) 앱을 끝낸다. 그동안 옛 백엔드를 다시 띄우지 않고, 다시 실행돼도 창을 열지 않는다. 새 창은 바꾸기 프로세스가 띄운다.
 import { app, BrowserWindow, ipcMain, shell, Notification, dialog } from 'electron';
@@ -52,7 +52,7 @@ async function ensureBackend() {
   const info = backendInfo(cfg);
   if (info && (await health(info.port))) return info;
   starting ||= startBackend(cfg, { nodePath: envVar('NODE') || 'node' })
-    .then((r) => { log('backend', JSON.stringify({ ...r, herdr: r.herdr && r.herdr.compat })); return backendInfo(cfg); })
+    .then((r) => { log('backend', JSON.stringify({ ...r, terminal: r.terminal && r.terminal.compat })); return backendInfo(cfg); })
     .catch((e) => { log('backend start failed', e.message); if (tray) tray.noteError(e.message); throw e; }) // P18: 옛 판을 옮기지 못한 까닭 등을 트레이에 보인다
     .finally(() => { starting = null; });
   return starting;
@@ -61,7 +61,7 @@ async function ensureBackend() {
 ipcMain.handle('mt:backend', async () => {
   const info = await ensureBackend();
   return {
-    port: info.port, token: info.token, pid: info.pid, profile: cfg.profile, herdrSession: cfg.herdrSession,
+    port: info.port, token: info.token, pid: info.pid, profile: cfg.profile, terminalSession: cfg.terminalSession,
     // 새 세션 대화상자의 기본 폴더. 개발용은 시험 프로젝트(신뢰된 폴더 아래, 따로 git 저장소가 아님, P1 5절 11)
     defaultCwd: cfg.profile === 'dev' ? path.join(BACKEND_ROOT, '.dev', 'proj') : app.getPath('home'),
     defaultModel: cfg.profile === 'dev' ? 'haiku' : '',
@@ -171,7 +171,7 @@ app.whenReady().then(() => {
   if (appMigration && appMigration.failed.length) tray.noteError(tr('tray.profileCopyFailed', { n: appMigration.failed.length }));
 });
 app.on('child-process-gone', (_e, d) => log('child-process-gone', JSON.stringify(d))); // GPU 프로세스를 잃으면 모든 WebGL 컨텍스트를 잃는다
-// 창을 닫으면 앱만 끝난다. 백엔드와 herdr, 그 안의 claude 세션은 계속 돈다(C1). 트레이 상주(기본 켜짐)면 앱은 트레이에 남는다(I7, P14)
+// 창을 닫으면 앱만 끝난다. 백엔드와 터미널 서버, 그 안의 claude 세션은 계속 돈다(C1). 트레이 상주(기본 켜짐)면 앱은 트레이에 남는다(I7, P14)
 app.on('window-all-closed', () => {
   if (tray && tray.keepRunning()) { log('window closed, app stays in tray'); tray.onWindowClosed(); return; }
   log('window closed, app quits (backend keeps running)'); app.quit();

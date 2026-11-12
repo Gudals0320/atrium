@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { workspaceOf } from '../src/git.mjs';
-import { Branch, BRANCH_ALLOW } from '../src/branch.mjs';
+import { Branch, ATRIUM_ALLOW } from '../src/branch.mjs';
 import { Recall } from '../src/recall.mjs';
 import { ADAPTERS, adapterOf, harnessLaunch, reservedArg, codexSessionOf, harnessResumable, HARNESS_PROMPT } from '../src/harness.mjs';
 import { psEnvPrefix, psPathPrefix, psLine, writeHarnessFiles, writeTokenFile, tokenFileOf } from '../src/launch.mjs';
@@ -89,7 +89,7 @@ test('P115 계약: atrium help --json은 계약 버전·동사(+help)·인자·�
   assert.deepEqual(VERB_NAMES, ['prompt', 'wait', 'read', 'me', 'child', 'children', 'child-kill', 'child-wait', 'wake', 'models']);
   assert.ok(VERBS.every((v) => Array.isArray(v.args) && v.does && Array.isArray(v.out)));
   assert.deepEqual(j.exit, { ok: 0, refused: 1, usage: 2, timeout: 3 });
-  for (const r of ['Bash(atrium help)', 'Bash(atrium help *)', 'PowerShell(atrium help)', 'Bash(mtask help)']) assert.ok(BRANCH_ALLOW.includes(r), r); // Claude Code가 묻지 않고 사용법을 읽는다
+  for (const r of ['Bash(atrium help)', 'Bash(atrium help *)', 'PowerShell(atrium help)', 'Bash(mtask help)']) assert.ok(ATRIUM_ALLOW.includes(r), r); // Claude Code가 묻지 않고 사용법을 읽는다
   const h = shortHelp();
   for (const v of VERBS) assert.ok(h.includes(`atrium ${v.name}`), v.name);
 });
@@ -110,9 +110,9 @@ async function board() {
   const ws = await workspaceOf(dir);
   store.insertWorkspace({ ...ws, createdAt: 1 });
   const b = {
-    cfg: { profile: 'dev', herdrSession: 'atrium-dev-p115test', port: 0, dataDir: dir, sessionsDir: path.join(dir, 'sessions') }, apiToken: 'board-api-token', store, sessions: new Map(), bus: new EventEmitter(),
+    cfg: { profile: 'dev', terminalSession: 'atrium-dev-p115test', port: 0, dataDir: dir, sessionsDir: path.join(dir, 'sessions') }, apiToken: 'board-api-token', store, sessions: new Map(), bus: new EventEmitter(),
     spawned: [], links: [], queued: [],
-    api: { broadcast: () => {} }, log: () => {}, requireHerdr: () => {},
+    api: { broadcast: () => {} }, log: () => {}, requireTerminal: () => {},
     hooked: (s) => s.kind === 'claude' && s.origin === 'board',
     summary: () => ({ state: 'ready', ask: null }),
     ensureLink: (from, to, patch) => { const l = { linkId: 'l' + b.links.length, from, to, ...patch }; b.links.push(l); return l; },
@@ -203,7 +203,7 @@ test('P115 되살리기: herdr 재시작 뒤 판이 띄운 하네스 세션 — 
   };
   const mk = (name, kind, extra = {}) => { const s = { sessionId: crypto.randomUUID(), name, kind, origin: 'board', paneId: `${name}:p1`, agentName: name, harnessPlan: {}, rt: newRuntime({ kind, hooked: false }), ...extra }; store.insertSession({ ...s, cwd: 'C:/x', permissionMode: 'manual', createdAt: 1, runtime: s.rt }); b.sessions.set(s.sessionId, s); return s; };
   const pi = mk('pi1', 'pi');
-  const cx = mk('cx1', 'codex'); cx.rt.herdr.agentSessionId = 'cx-sid';
+  const cx = mk('cx1', 'codex'); cx.rt.term.agentSessionId = 'cx-sid';
   panes.set(cx.paneId, 'codex'); panes.set(`${cx.paneId}#argv`, ['node', 'codex.js', 'resume', 'cx-sid']);
   const ok = mk('cx2', 'codex'); panes.set(ok.paneId, 'codex'); panes.set(`${ok.paneId}#argv`, ['node', 'codex.js', '-c', 'developer_instructions=x']);
   const r = new Recall(b, { timers: false, resolveCwd: async () => null, readProcs: async () => [] });

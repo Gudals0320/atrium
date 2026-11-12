@@ -17,7 +17,7 @@ const ASK = 'Reply with the single word ok-w1 and do nothing else.';
 function rig(t, { look = () => ({ box: 'ours', seen: false }), view = {} } = {}) {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
   const log = { sent: [], enter: 0, inspect: 0, recover: [] };
-  const v = { state: 'ready', agentPresent: true, herdrConnected: true, closed: false, lastUserInputAt: 0, ...view };
+  const v = { state: 'ready', agentPresent: true, termConnected: true, closed: false, lastUserInputAt: 0, ...view };
   const q = new DeliveryQueue({
     store: fakeStore(), cfg, view: () => v,
     send: async (sid, text) => { log.sent.push(text); },
@@ -124,7 +124,7 @@ test('P79 일하는 중이면(working) 손대지 않고 확인을 기다린다. 
   t.mock.timers.reset();
   t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
   const sent = [];
-  const plain = new DeliveryQueue({ store: fakeStore(), cfg, view: () => ({ state: 'ready', agentPresent: true, herdrConnected: true, closed: false }), send: async (s, x) => sent.push(x) });
+  const plain = new DeliveryQueue({ store: fakeStore(), cfg, view: () => ({ state: 'ready', agentPresent: true, termConnected: true, closed: false }), send: async (s, x) => sent.push(x) });
   const d = plain.enqueue('s', ASK);
   await tick();
   t.mock.timers.tick(30500); plain.pump();

@@ -21,7 +21,7 @@ const long = (n) => { let s = ''; let i = 0; while (s.length < n) s += `P126 del
 function rig(t, { look, view = {} }) {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
   const log = { sent: [], enter: 0, inspect: 0, recover: [], events: [], notSubmitted: [] };
-  const v = { state: 'ready', agentPresent: true, herdrConnected: true, closed: false, lastUserInputAt: 0, ...view };
+  const v = { state: 'ready', agentPresent: true, termConnected: true, closed: false, lastUserInputAt: 0, ...view };
   const q = new DeliveryQueue({
     store: fakeStore(), cfg, view: () => v,
     send: async (sid, text) => { log.sent.push(text); },

@@ -9,7 +9,7 @@ test('P126 마우스 모드를 아는 터미널(hc 판): 마우스 추적이 꺼
   for (const m of ['x10', 'vt200', 'drag', 'any']) assert.equal(wheelAction({ modesKnown: true, mouseTrackingMode: m }), 'report', m);
 });
 
-test('P126 마우스 모드를 모르는 터미널(herdr 판: 다시 그린 화면만 와서 xterm은 늘 none): 예전처럼 보낸다', () => {
+test('P126 마우스 모드를 모르는 터미널(모드를 적지 않는 서버: 다시 그린 화면만 와서 xterm은 늘 none): 예전처럼 보낸다', () => {
   assert.equal(wheelAction({ modesKnown: false, mouseTrackingMode: 'none' }), 'report');
   assert.equal(wheelAction({}), 'report');
 });

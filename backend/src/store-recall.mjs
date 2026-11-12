@@ -75,7 +75,7 @@ export function installRecall(Store) {
       const out = new Map();
       for (const r of this.st("SELECT session_id, kind, origin, closed_at, dismissed_at, reopened_as, runtime FROM sessions WHERE kind = 'claude'").all()) {
         const rt = P(r.runtime, {}) || {};
-        const ids = new Set([r.origin === 'board' || !r.origin ? r.session_id : null, rt.claudeSessionId, rt.herdr && rt.herdr.agentSessionId].filter(Boolean).map((x) => String(x).toLowerCase()));
+        const ids = new Set([r.origin === 'board' || !r.origin ? r.session_id : null, rt.claudeSessionId, rt.term && rt.term.agentSessionId].filter(Boolean).map((x) => String(x).toLowerCase()));
         for (const id of ids) { const prev = out.get(id); const v = { sessionId: r.session_id, open: r.closed_at == null, dismissed: r.dismissed_at != null, movedTo: r.reopened_as ?? null }; if (!prev || (v.open && !prev.open)) out.set(id, v); }
       }
       return out;

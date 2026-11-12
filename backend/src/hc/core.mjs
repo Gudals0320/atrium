@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { cleanEnv } from '../herdr/adapter.mjs';
+import { cleanEnv } from '../proc-env.mjs';
 import { hcRoot } from './pin.mjs';
 
 // notes = false: hc가 부모 에이전트에게 메모를 치지 않는다(관리자 결정).
@@ -36,7 +36,7 @@ export function writeBoardConfig(configHome, cfg = BOARD_HC_CONFIG) {
   return file;
 }
 
-// 코어와 CLI의 env: 부모 Claude Code·herdr·판 변수와 사용자의 HC_*·XDG_*를 빼고 판 세션과 설정 폴더를 넣는다
+// 코어와 CLI의 env: 부모 Claude Code·옛 터미널·판 변수와 사용자의 HC_*·XDG_*를 빼고 판 세션과 설정 폴더를 넣는다
 export function coreEnv(base = process.env, { session, configHome }) {
   const env = Object.fromEntries(Object.entries(cleanEnv(base)).filter(([k]) => !/^(HC_|XDG_|ELECTRON_RUN_AS_NODE)/i.test(k)));
   env.HC_SESSION = session;
@@ -72,8 +72,7 @@ export async function cliVersion({ exe, session, configHome, base = process.env 
   return r.code === 0 ? r.out : null;
 }
 
-// 버전 정책(herdr의 herdrCompat과 같은 모양): 프로토콜 세대가 맞으면 붙고, 고정 버전이 아니면 경고한다.
-// version은 비운다: 판의 herdr 업데이트 알림(checkHerdrUpdate)이 찾은 herdr 버전과 견주지 않게. hc 버전은 hcVersion
+// 버전 정책: 프로토콜 세대가 맞으면 붙고, 고정 버전이 아니면 경고한다. hc 버전은 hcVersion(version은 비운다)
 export function hcCompat(pong, { generations = [1], tested = [] } = {}) {
   const base = { version: null, protocols: generations, tested };
   if (!pong) return { ok: false, level: 'none', hcVersion: null, protocol: null, capabilities: null, problems: ['no hello'], warning: null, backend: 'hc', ...base };

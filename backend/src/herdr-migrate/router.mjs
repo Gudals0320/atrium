@@ -1,13 +1,11 @@
-// P117: 판의 터미널 어댑터. herdr 어댑터와 hc 어댑터(바깥 모양이 같다)를 함께 쥐고, 패널 ID 모양으로 갈라 보낸다.
-// - 옛 판을 hc로 옮기는 동안과, 옮기지 못한 세션(일하는 중·실패·판에 올린 에이전트)이 옛 백엔드에 남아 있는 동안 판은 두 백엔드의 세션을 함께 보인다
-// - 백엔드가 하나면(새 판, 다 옮긴 판) 모든 호출을 그 어댑터에 그대로 넘긴다(지금과 같다)
-// - 주(primary): 새 세션·새 패널(createWorkspace), 서버 PID, 버전 확인이 가는 곳. 옮기기(terminal-move.mjs)가 바꾼다
+// P117·P129: 옮기는 동안의 판 터미널 어댑터. 옛 herdr 판이 뜰 때(index.mjs) hc 어댑터(주)와 herdr 어댑터를 함께 쥐고, 패널 ID 모양으로 갈라 보낸다.
+// 옛 판 옮기기 모듈(herdr-migrate)의 일부다. 옮기기가 끝나면 판은 다음에 뜰 때부터 hc 어댑터 하나만 쓴다(이 라우터를 거치지 않는다).
+// - 주(primary)는 늘 hc다: 새 세션·새 패널(createWorkspace), 서버 PID, 버전 확인이 간다
 // - 패널 ID: herdr는 `<작업 공간>:<패널>`(콜론), hc는 터미널 주소(`t1b`). 작업 공간: hc는 `hw-…`. 이름(에이전트 주소)은 판이 준 resolveTarget으로 패널을 찾고, 못 찾으면 주부터 차례로 묻는다
 // - 이벤트: 어댑터마다의 event·log·hc·upgraded를 그대로 넘긴다. disconnected(어느 백엔드인지)는 백엔드마다 내고(판이 그 백엔드의 세션만 끊긴 턴으로 둔다),
 //   connected는 붙은 어댑터가 모두 붙었을 때 낸다(판이 다시 맞춘다)
 import { EventEmitter } from 'node:events';
 
-export const TERMINAL_BACKENDS = ['herdr', 'hc'];
 export const paneBackend = (paneId) => (paneId && String(paneId).includes(':') ? 'herdr' : 'hc');
 export const wsBackend = (ws) => (String(ws || '').startsWith('hw-') ? 'hc' : 'herdr');
 const FORWARD = ['event', 'hc', 'upgraded'];
@@ -23,7 +21,7 @@ export class TerminalRouter extends EventEmitter {
     this._getPanes = null;
     this.resolveTarget = null; // 판이 준다: 에이전트 이름·주소 → 패널 ID(없으면 null)
     this.add(primary);
-    this.primaryName = primary.backend || 'herdr';
+    this.primaryName = primary.backend || 'hc';
     for (const a of others) this.add(a);
   }
   get primary() { return this.adapters.get(this.primaryName); }
@@ -35,7 +33,7 @@ export class TerminalRouter extends EventEmitter {
   // ---------- 어댑터 붙이기·떼기 ----------
   // quiet: 판이 이미 도는 동안(옮기기) 붙인다. 이벤트 구독을 바로 열고, 처음 붙을 때 판 전체를 다시 맞추지 않는다
   add(a, { quiet = false } = {}) {
-    const name = a.backend || 'herdr';
+    const name = a.backend || 'hc';
     if (this.adapters.has(name)) return this.adapters.get(name);
     this.adapters.set(name, a);
     const w = {
@@ -92,20 +90,16 @@ export class TerminalRouter extends EventEmitter {
   get pin() { return this.primary.pin || (this.get('hc') && this.get('hc').pin) || null; }
   get backendPick() { return this.primary.backendPick; }
   set backendPick(v) { this.primary.backendPick = v; }
-  // 판이 herdr 찾기로 정한 경로. 주가 herdr면 주의 것, 주가 hc면 붙은 herdr 어댑터에 둔다(읽으면 주의 실행 파일)
-  get herdrPath() { return this.primary.herdrPath; }
-  set herdrPath(v) { const h = this.get('herdr'); if (h) h.herdrPath = v; else this.primary.herdrPath = v; }
+  get exePath() { return this.primary.exePath; }
   get _watching() { return [...this.adapters.values()].some((a) => a._watching); }
   get subscribedPanes() { return [...this.adapters.values()].flatMap((a) => a.subscribedPanes || []); }
   ping() { return this.primary.ping(); }
   probe() { return this.primary.probe(); }
   checkCompat(pong) { return this.primary.checkCompat(pong); }
   cliVersion() { return this.primary.cliVersion(); }
-  skillText() { const h = this.get('herdr'); return (h || this.primary).skillText(); }
   serverPid() { return this.primary.serverPid(); }
   agentKinds() { return this.primary.agentKinds(); }
-  readClients() { const h = this.get('herdr'); return (h || this.primary).readClients(); }
-  // 주의 서버를 띄운다(판의 ensureHerdr). 다른 백엔드는 판이 뜰 때·옮길 때 따로 본다(ensureOthers)
+  // 주의 서버를 띄운다(판의 ensureTerminal). 다른 백엔드는 판이 뜰 때·옮길 때 따로 본다(ensureOthers)
   startServer() { return this.primary.startServer(); }
   // 사람이 고른 "터미널 모두 끄기": 붙은 백엔드 모두
   async stopServer() {
@@ -136,10 +130,6 @@ export class TerminalRouter extends EventEmitter {
     return { workspaces: parts.flatMap((p) => p.workspaces || []), panes: parts.flatMap((p) => p.panes || []) };
   }
   async listAgents() { return (await Promise.all([...this.adapters.values()].map((a) => a.listAgents()))).flat(); }
-  readResumeRecord(sessionId) {
-    for (const a of [this.primary, ...this.adapters.values()]) { const r = a.readResumeRecord ? a.readResumeRecord(sessionId) : { found: false }; if (r && r.found) return r; }
-    return { found: false };
-  }
 
   // ---------- 패널·작업 공간으로 가르는 것 ----------
   // 새 작업 공간은 주에(backend를 주면 그 백엔드에. 옮기기가 쓴다)
@@ -156,7 +146,6 @@ export class TerminalRouter extends EventEmitter {
   waitShellReady(paneId, ms) { return this._by(paneId).waitShellReady(paneId, ms); }
   paneLayout(paneId) { return this._by(paneId).paneLayout(paneId); }
   openController(paneId, cols, rows) { return this._by(paneId).openController(paneId, cols, rows); }
-  registerResume(o) { return this._by(o.paneId).registerResume(o); }
   // 판이 부른 패널이 그 백엔드 안에서 다른 터미널로 바뀌었으면 새 자리(hc: 에이전트가 끝나 남은 셸). herdr는 그대로
   async follow(paneId) { const a = this._by(paneId); return a.follow ? a.follow(paneId) : paneId; }
   workspacePanes(ws) { return this._byWs(ws).workspacePanes(ws); }

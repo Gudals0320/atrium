@@ -1,8 +1,12 @@
-// P40: herdr 찾기, 버전 정책, 도는 서버의 실행 파일, 패널 PATH, 업데이트 감지. 모두 순수 함수이고 파일 시스템·실행·환경 변수는 넘겨받는다(단위 시험).
+// P129: 옛 판 옮기기 모듈(herdr-migrate)의 일부. P40의 herdr 찾기, 버전 정책, 도는 서버의 실행 파일, 패널 PATH. 모두 순수 함수이고 파일 시스템·실행·환경 변수는 넘겨받는다(단위 시험).
 // 찾는 순서: 1) ATRIUM_HERDR 2) 설정 herdrPath 3) herdr 설치기의 current 링크 4) PATH(where herdr 순서) 5) 알려진 설치 폴더.
 // 후보마다 `herdr --version`으로 버전을 읽어 확인하고, 처음 확인된 것을 고른다. 본 후보와 결과는 모두 남긴다(진단).
 // 이미 도는 판의 herdr 서버가 있으면 그 서버의 실행 파일을 쓴다(백엔드 쪽, herdrServerExe). 찾기 결과는 새 서버를 띄울 때만 쓴다.
 import path from 'node:path';
+
+// herdr 버전 정책(옛 config.mjs). 옮기기가 옛 herdr 서버에 붙을 때 본다. 업데이트 확인(update-verify)도 이 프로토콜을 낸다(옛 업데이터가 herdr 판에서 이 버전으로 올라오게)
+export const HERDR_PROTOCOLS = [22];
+export const HERDR_TESTED = ['0.9.5'];
 
 export const SOURCES = ['env', 'setting', 'installer', 'path', 'known'];
 const REASON = {
@@ -119,11 +123,4 @@ export function herdrCompat(pong, { protocols, tested }) {
   const untested = !problems.length && !tested.includes(pong.version);
   const warning = untested ? `검증하지 않은 herdr 버전 ${pong.version}(프로토콜 ${pong.protocol})` : null;
   return { ok: !problems.length, level: problems.length ? 'incompatible' : untested ? 'untested' : 'ok', version: pong.version, protocol: pong.protocol, capabilities: pong.capabilities, problems, warning, protocols, tested };
-}
-
-// 업데이트 감지: 찾기 결과가 도는 서버보다 새 버전이면 알림 내용, 아니면 null
-export function updateNotice({ serverVersion, found }) {
-  if (!serverVersion || !found || !found.version) return null;
-  if (compareVersions(found.version, serverVersion) <= 0) return null;
-  return { version: found.version, path: found.path, source: found.source, serverVersion, message: `새 herdr ${found.version}이 설치되었습니다. 보드 전용 서버는 ${serverVersion}로 실행 중입니다. 서버를 재시작하면 세션이 종료되므로 원하는 시점에 트레이 메뉴에서 재시작하세요.` };
 }

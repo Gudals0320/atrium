@@ -76,18 +76,17 @@ test('P122 새 판: 사람이 "+"로 셸 런처를 만들어 레일에 둘 수 �
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('P122 hc 판에서 hc가 준비되지 않으면 세션 시작 오류는 herdr 설치 안내가 아니라 hc 띠와 같은 글', async () => {
+test('P122·P129 hc가 준비되지 않으면 세션 시작 오류는 herdr 설치 안내가 아니라 hc를 받거나 띄우지 못했다는 글(terminalMissing)', async () => {
   const { Backend } = await import('../src/backend.mjs');
   const b = Object.create(Backend.prototype);
-  Object.assign(b, { cfg: { herdrProtocols: [22] }, adapter: { backend: 'hc', connected: false }, herdrMissing: { reason: 'download_failed', error: 'download failed: ECONNREFUSED https://example.invalid/hc.zip', at: 1 }, herdrCompat: { level: 'missing' }, herdrFind: { tried: [] } });
-  assert.throws(() => b.requireHerdr(), (e) => e.code === 'herdr_missing' && e.key === 'terminalMove.hcBand.why' && /ECONNREFUSED/.test(e.vars.error) && !/herdr\.dev/.test(e.message));
-  // herdr 판은 그대로
-  b.adapter = { backend: 'herdr', connected: false };
-  assert.throws(() => b.requireHerdr(), (e) => e.code === 'herdr_missing' && e.key === 'herdrMissing');
+  Object.assign(b, { cfg: {}, adapter: { backend: 'hc', connected: false }, termMissing: { reason: 'download_failed', error: 'download failed: ECONNREFUSED https://example.invalid/hc.zip', at: 1 }, termCompat: { level: 'missing' } });
+  assert.throws(() => b.requireTerminal(), (e) => e.code === 'terminal_missing' && e.key === 'terminalMissing' && /ECONNREFUSED/.test(e.vars.error) && !/herdr\.dev/.test(e.message));
+  // 까닭을 모르면 not ready
+  b.termMissing = null;
+  assert.throws(() => b.requireTerminal(), (e) => e.code === 'terminal_missing' && e.vars.error === 'not ready');
   // 창 사전 둘에 그 열쇠와 {error}가 있다
   for (const lang of ['en', 'ko']) {
     const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'app', 'src', 'renderer', 'locales', `${lang}.js`), 'utf8');
-    const block = src.slice(src.indexOf('hcBand: {'));
-    assert.match(block.slice(0, 600), /why: '[^']*\{error\}/, lang);
+    assert.match(src, /terminalMissing: '[^']*\{error\}/, lang);
   }
 });

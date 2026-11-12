@@ -1,6 +1,6 @@
 // 리포지토리 워크스페이스(ARCH 4절 G, P5). 순수 함수만 둔다. 창(renderer)도 이 파일을 그대로 묶어 쓴다(node 모듈을 부르지 않는다).
 //
-// 판의 "워크스페이스"는 리포지토리 하나다. herdr의 "작업 공간"(workspace_id, 코드에서는 herdrWorkspaceId)과 다르다.
+// 판의 "워크스페이스"는 리포지토리 하나다. 터미널의 "작업 공간"(workspace_id, 코드에서는 termWorkspaceId)과 다르다.
 // 코드에서 워크스페이스는 키(workspaceKey)로 가리킨다.
 // - git 저장소 안에서 시작한 세션: 시작 폴더의 git 공통 폴더(`rev-parse --git-common-dir`)를 절대 경로, 슬래시, 소문자로. 워크트리도 본 저장소와 같은 키다.
 // - git 저장소가 아닌 폴더: 그 폴더 자체를 같은 방식으로.

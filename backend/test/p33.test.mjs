@@ -15,16 +15,16 @@ import { DEFAULTS } from '../src/settings.mjs';
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p33-'));
 const L = (o) => normalizeLauncher({ name: 'x', ...o });
 
-test('P33 풀기: claude는 모델·노력 수준·권한 모드·herdr 자동 승인·추가 인자·환경 변수, 함께 준 값이 덮는다', () => {
-  const l = L({ harness: 'claude', model: 'haiku', effort: 'low', permissionMode: 'acceptEdits', allowHerdr: true, args: '--verbose', env: 'FOO=bar\nANTHROPIC_BASE_URL=http://127.0.0.1:9' });
+test('P33 풀기: claude는 모델·노력 수준·권한 모드·추가 인자·환경 변수, 함께 준 값이 덮는다', () => {
+  const l = L({ harness: 'claude', model: 'haiku', effort: 'low', permissionMode: 'acceptEdits', args: '--verbose', env: 'FOO=bar\nANTHROPIC_BASE_URL=http://127.0.0.1:9' });
   const r = resolveLauncher(l);
-  assert.equal(r.kind, 'claude'); assert.equal(r.model, 'haiku'); assert.equal(r.effort, 'low'); assert.equal(r.permissionMode, 'acceptEdits'); assert.equal(r.allowHerdr, true);
+  assert.equal(r.kind, 'claude'); assert.equal(r.model, 'haiku'); assert.equal(r.effort, 'low'); assert.equal(r.permissionMode, 'acceptEdits'); assert.equal('allowHerdr' in r, false);
   assert.deepEqual(r.extraArgs, ['--verbose']);
   assert.deepEqual(r.env, { FOO: 'bar', ANTHROPIC_BASE_URL: 'http://127.0.0.1:9' });
   assert.deepEqual(r.gateway, { url: 'http://127.0.0.1:9', health: false }, 'ANTHROPIC_BASE_URL이 있으면 닿는지 본다');
   assert.equal(r.flavor, null);
-  const o = resolveLauncher(l, { model: 'opus', effort: 'high', permissionMode: 'plan', allowHerdr: false });
-  assert.deepEqual([o.model, o.effort, o.permissionMode, o.allowHerdr], ['opus', 'high', 'plan', false]);
+  const o = resolveLauncher(l, { model: 'opus', effort: 'high', permissionMode: 'plan' });
+  assert.deepEqual([o.model, o.effort, o.permissionMode], ['opus', 'high', 'plan']);
   assert.equal(resolveLauncher(l, { model: '' }).model, 'haiku', '빈 값은 덮지 않는다');
   assert.throws(() => resolveLauncher(l, { model: 'a b' }), (e) => e.key === 'launchers.err.model');
 });
@@ -68,7 +68,7 @@ test('P33 검사: 이름(빈 값, 겹침은 대소문자 무시), 모델 글자,
   assert.throws(() => L({ harness: 'claude', permissionMode: 'yolo' }), (e) => e.key === 'launchers.err.permissionMode');
   assert.throws(() => L({ harness: 'claude', env: '1BAD=x' }), (e) => e.key === 'launchers.err.envName');
   assert.throws(() => L({ harness: 'claude', env: 'novalue' }), (e) => e.key === 'launchers.err.envLine');
-  assert.throws(() => L({ harness: 'claude', env: { HERDR_SESSION: 'x' } }), (e) => e.key === 'launchers.err.envReserved');
+  assert.throws(() => L({ harness: 'claude', env: { ATRIUM_PORT: 'x' } }), (e) => e.key === 'launchers.err.envReserved');
   assert.throws(() => L({ harness: 'claude', env: { A: 'a\nb' } }), (e) => e.key === 'launchers.err.envValue');
   assert.throws(() => L({ harness: 'claude', args: '--settings x.json' }), (e) => e.key === 'launchers.err.argsReserved');
   assert.throws(() => L({ harness: 'claude', args: '--model=opus' }), (e) => e.key === 'launchers.err.argsReserved');
@@ -91,7 +91,7 @@ test('P33 옮기기: 옛 설정 → 호출자, 레일 네 단추 순서로 즐�
   const v = initialLaunchers({ oldSettings: old, oldBoard: true });
   assert.deepEqual(v.favorites, ['claude', 'codex', 'deepseek', 'shell']);
   const by = Object.fromEntries(v.items.map((l) => [l.id, l]));
-  assert.deepEqual([by.claude.model, by.claude.effort, by.claude.permissionMode, by.claude.allowHerdr], ['opus', 'high', 'acceptEdits', true]);
+  assert.deepEqual([by.claude.model, by.claude.effort, by.claude.permissionMode, 'allowHerdr' in by.claude], ['opus', 'high', 'acceptEdits', false]); // P129: 옛 herdr 자동 승인은 옮기지 않는다
   assert.equal(by.codex.args, '-m gpt-6-astra');
   assert.equal(by.deepseek.harness, 'claude'); assert.equal(by.deepseek.model, 'ds-x[1m]'); assert.equal(by.deepseek.icon, 'deepseek');
   assert.equal(by.deepseek.permissionMode, 'acceptEdits', '옛 DeepSeek도 Claude 권한 모드를 썼다');
@@ -113,7 +113,7 @@ test('P33·P72·P122 옮기기: 새 판은 Claude Code(manual), Codex 둘뿐이�
   assert.deepEqual(v.favorites, ['claude', 'codex']);
   assert.deepEqual(v.items.map((l) => l.id), ['claude', 'codex']);
   const claude = v.items.find((l) => l.id === 'claude');
-  assert.deepEqual([claude.permissionMode, claude.model, claude.effort, claude.allowHerdr], ['manual', '', '', false]);
+  assert.deepEqual([claude.permissionMode, claude.model, claude.effort, 'allowHerdr' in claude], ['manual', '', '', false]);
   assert.ok(v.items.every((l) => !Object.keys(l.env).length && !l.checkUrl), '게이트웨이 env·확인 주소가 없다');
   assert.deepEqual(initialLaunchers({}), v, '같은 입력이면 같은 결과');
   assert.deepEqual(initialLaunchers({ gateway: { healthUrl: 'http://127.0.0.1:1/healthz' } }), v, '새 판은 게이트웨이 설정을 보지 않는다');
@@ -204,13 +204,13 @@ function spawnBackend() {
   const dir = tmp();
   const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2 });
   b.store = new Store(path.join(dir, 'board.db'));
-  b.sessions = new Map(); b.herdrOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {};
+  b.sessions = new Map(); b.termOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {};
   b.branch = { settingsExtra: () => ({}), noteChild() {}, placeChild: () => null };
   b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null };
   b.features.launchers = new Launchers({ store: b.store });
   b.queue = { enqueue() {}, pending: () => 0 };
   b.api = { broadcast() {} };
-  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {}; b.registerResume = () => {};
+  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {};
   const calls = []; let n = 0;
   b.adapter = {
     connected: true,

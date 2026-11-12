@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 import { sessionSleepPlan, sleepScope, Sleeper, SLEEP_REASONS } from '../src/sleep.mjs';
-import { newRuntime, deriveState, applyHerdrStatus, applyAgentDetected, applyAgentReleased } from '../src/state.mjs';
+import { newRuntime, deriveState, applyTermStatus, applyAgentDetected, applyAgentReleased } from '../src/state.mjs';
 import { transcriptPathFor, BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
 import { SETTINGS, DEFAULTS, normalizePatch } from '../src/settings.mjs';
 import { boardSkill } from '../src/branch.mjs';
@@ -78,31 +78,30 @@ function board({ repoMin = 30, sessMin = 30 } = {}) {
     cfg: { claudeProjects: root, killWaitMs: 2000 }, sessions, store, queue, killing: new Set(), log: () => {},
     hooked: (s) => s.kind === 'claude', relay: { stats: () => [], detach: () => {} },
     features: { loops: { activeCount: () => 0 }, settings: { get: () => settings } },
-    requireHerdr: () => {},
+    requireTerminal: () => {},
     resolve: (ref) => sessions.get(ref) || [...sessions.values()].find((s) => s.name === ref),
     resolveWorkspace: async (ref) => ({ key: ref === 'repo-a' ? 'ka' : ref === 'repo-b' ? 'kb' : ref }),
     broadcastSession: (s, o) => calls.push(['broadcast', s.name, deriveState(s.rt).state, !!s.waking, o && o.cause]),
     withNewPane: async (create, register) => { const r = await create(); await register(r); return r; },
     launchOf: (s) => ({ sessionId: s.sessionId, settingsPath: 'C:/d/x.json', permissionMode: 'manual', model: 'haiku', effort: null, pluginDir: 'C:/p', systemPromptFile: 'C:/p.md' }),
-    registerResume: () => {},
     adapter: {
       connected: true,
       processInfo: async () => null,
       sendText: async () => {},
-      paneKeys: async (pane) => { const s = [...sessions.values()].find((x) => x.paneId === pane); if (s) setTimeout(() => { applyAgentReleased(s.rt); for (const o of sessions.values()) if (o !== s && o.paneId && o.kind === 'claude' && o.rt.herdr.status) applyHerdrStatus(o.rt, o.rt.herdr.status); }, 10); },
+      paneKeys: async (pane) => { const s = [...sessions.values()].find((x) => x.paneId === pane); if (s) setTimeout(() => { applyAgentReleased(s.rt); for (const o of sessions.values()) if (o !== s && o.paneId && o.kind === 'claude' && o.rt.term.status) applyTermStatus(o.rt, o.rt.term.status); }, 10); },
       workspacePanes: async () => [], closeWorkspace: async () => {}, closePane: async () => {}, refreshSubscription: async () => {},
       createWorkspace: async () => { wsN++; return { paneId: `w${wsN}:p1`, workspaceId: `w${wsN}` }; },
       waitShellReady: async () => true,
-      startAgent: async ({ name, paneId }) => { calls.push(['startAgent', name]); const s = [...sessions.values()].find((x) => x.paneId === paneId); setTimeout(() => { applyAgentDetected(s.rt); applyHerdrStatus(s.rt, 'idle'); }, 20); return { agent: { launchPending: true } }; },
+      startAgent: async ({ name, paneId }) => { calls.push(['startAgent', name]); const s = [...sessions.values()].find((x) => x.paneId === paneId); setTimeout(() => { applyAgentDetected(s.rt); applyTermStatus(s.rt, 'idle'); }, 20); return { agent: { launchPending: true } }; },
     },
   };
   let n = 0;
   const add = (name, key, parent = null) => {
     const rt = newRuntime({ kind: 'claude', hooked: true });
-    applyAgentDetected(rt); applyHerdrStatus(rt, 'idle');
+    applyAgentDetected(rt); applyTermStatus(rt, 'idle');
     rt.lastActivityAt = Date.now() - 40 * MIN; rt.launchedAt = Date.now() - 60 * MIN; rt.lastHookAt = Date.now() - 40 * MIN;
     const cwd = dirs[key];
-    const s = { sessionId: ID(++n), name, cwd, kind: 'claude', origin: 'board', paneId: `w${n}:p1`, herdrWorkspaceId: `w${n}`, agentName: name, rt, touchedAt: Date.now() - 40 * MIN, workspaceKey: key, parentSessionId: parent ? parent.sessionId : null };
+    const s = { sessionId: ID(++n), name, cwd, kind: 'claude', origin: 'board', paneId: `w${n}:p1`, termWorkspaceId: `w${n}`, agentName: name, rt, touchedAt: Date.now() - 40 * MIN, workspaceKey: key, parentSessionId: parent ? parent.sessionId : null };
     sessions.set(s.sessionId, s);
     const f = transcriptPathFor(root, cwd, s.sessionId); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, '{}\n');
     return s;
@@ -115,8 +114,8 @@ function board({ repoMin = 30, sessMin = 30 } = {}) {
   return { b, sl, lead, c1, c2, c3, b1, add, events, calls, settings };
 }
 const st = (s) => deriveState(s.rt).state;
-const work = (s) => { s.rt.herdr.status = 'working'; };
-const rest = (s) => { s.rt.herdr.status = 'idle'; s.rt.lastHookAt = Date.now(); s.touchedAt = Date.now(); };
+const work = (s) => { s.rt.term.status = 'working'; };
+const rest = (s) => { s.rt.term.status = 'idle'; s.rt.lastHookAt = Date.now(); s.touchedAt = Date.now(); };
 
 test('P111 저절로: 헤드가 일하는 동안 쉬는 하위 세션은 혼자 잠들고(scope session) 헤드는 남는다. 쉰 리포는 리포 규칙이 먼저', async () => {
   const { sl, lead, c1, c2, c3, b1, events } = board();

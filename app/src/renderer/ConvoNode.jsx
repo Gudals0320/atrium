@@ -20,7 +20,7 @@ import { useInvRef, useZoomStyle } from './zoom-var.js'; // P112: 배율을 렌�
 
 const zoomSel = (s) => s.transform[2];
 const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
-const VIA = { claude: 'claude -w', herdr: 'herdr agent', 'atrium-child': 'atrium child', 'atrium-spawn': 'atrium spawn', 'mtask-child': 'atrium child', 'mtask-spawn': 'atrium spawn' }; // mtask-*는 P18 전 이름
+const VIA = { claude: 'claude -w', 'atrium-child': 'atrium child', 'atrium-spawn': 'atrium spawn', 'mtask-child': 'atrium child', 'mtask-spawn': 'atrium spawn' }; // mtask-*는 P18 전 이름
 
 function useNow(ms = 30000) { const [n, set] = useState(Date.now()); useEffect(() => { const t = setInterval(() => set(Date.now()), ms); return () => clearInterval(t); }, [ms]); return n; }
 

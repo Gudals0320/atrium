@@ -155,7 +155,7 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const fields = harnessFields(harnesses, d.harness);
   const has = (f) => fields.includes(f);
-  const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || 'manual', allowHerdr: d.allowHerdr, args: d.args, env: d.envText, command: d.command, connection: d.connection || '', startCommand: d.startCommand });
+  const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || 'manual', args: d.args, env: d.envText, command: d.command, connection: d.connection || '', startCommand: d.startCommand });
   const named = (harnesses || []).filter((h) => !['shell', 'command'].includes(h.id)).map((h) => h.id); // P115: 백엔드 하네스 표(Claude Code, Codex, opencode, pi)
   useEffect(() => { api.call('agent.kinds').then((ks) => setKinds(ks.map((k) => k.kind).filter((k) => !['claude', 'codex', 'opencode', 'pi'].includes(k)))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
   // 고르는 대로 미리보기(백엔드가 확인한다). 이름이 비었으면 이름 검사만 건너뛴다
@@ -212,7 +212,7 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
         </label>}
         {/* P97: 추가 인자는 고급 밖(드롭다운으로 시작해도 같은 화면에서 실행 명령과 함께 고친다) */}
         {has('args') && <label className="mt-ln-f"><span>{t('launchers.args')}</span><input className="mt-set-text mono" data-field="launcher-args" value={d.args} onChange={(e) => set('args', e.target.value)} placeholder={t('launchers.argsPh')} /></label>}
-        {has('allowHerdr') ? <label className="mt-ln-f check"><input type="checkbox" data-field="launcher-allowHerdr" checked={!!d.allowHerdr} onChange={(e) => set('allowHerdr', e.target.checked)} /><span>{t('settings.allowHerdrName')}</span></label> : has('args') ? <span /> : null}
+        {has('args') ? <span /> : null}
         <div className="mt-set-sub wide">{t('launchers.advanced')}</div>
         <label className="mt-ln-f"><span>{t('launchers.icon')}</span>
           <select data-field="launcher-icon" value={d.icon} onChange={(e) => set('icon', e.target.value)}>

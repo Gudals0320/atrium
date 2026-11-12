@@ -1,5 +1,5 @@
 // 저장소(ARCH 5절): 판 배치, 노드와 세션 ID 연결, 이벤트, 전달, 봤음 기록(P3), 세션끼리 연결과 오간 일(P4),
-// 리포지토리 워크스페이스(P5), 단일 캔버스의 영역 자리·붙여 묶기·크기 단계·검색(P6a). sessions.workspace_id는 herdr 작업 공간 ID다(코드에서는 herdrWorkspaceId). 판의 워크스페이스는 workspace_key다.
+// 리포지토리 워크스페이스(P5), 단일 캔버스의 영역 자리·붙여 묶기·크기 단계·검색(P6a). sessions.workspace_id는 터미널 작업 공간 ID다(코드에서는 termWorkspaceId). 판의 워크스페이스는 workspace_key다.
 // E8 결과로 Node 내장 node:sqlite를 쓴다(Node 22.13 이상, 22.5~22.12는 플래그가 필요해 받지 않는다). node:sqlite 호출과 SQL은 이 파일 안에만 둔다.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,7 +9,8 @@ import { BRANCH_COLUMNS, installBranch } from './store-branch.mjs'; // P8: 하�
 import { WORKTREE_SCHEMA, WORKTREE_COLUMNS, installWorktrees } from './store-worktrees.mjs'; // P27: 워크트리 영역
 import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: 데스크톱 앱 가져오기 장부
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
-import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs'; // P17: 덩어리 분할 나무
+import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
+import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
 let DatabaseSync;
 try { ({ DatabaseSync } = await import('node:sqlite')); } catch (e) { throw new Error(`node:sqlite를 불러오지 못했습니다 (Node 22.13 이상 필요): ${e.message}`); }
@@ -63,10 +64,10 @@ const plain = (r) => (r ? { ...r } : null); // node:sqlite 행은 프로토타�
 function sessionRow(r) {
   if (!r) return null;
   return {
-    sessionId: r.session_id, name: r.name, cwd: r.cwd, paneId: r.pane_id, herdrWorkspaceId: r.workspace_id, agentName: r.agent_name,
+    sessionId: r.session_id, name: r.name, cwd: r.cwd, paneId: r.pane_id, termWorkspaceId: r.workspace_id, agentName: r.agent_name,
     model: r.model, effort: r.effort, permissionMode: r.permission_mode, settingsPath: r.settings_path, hookToken: r.hook_token,
     resumeArgv: r.resume_argv ? JSON.parse(r.resume_argv) : null, resumeVerified: !!r.resume_verified,
-    createdAt: r.created_at, closedAt: r.closed_at, seenAt: r.seen_at, touchedAt: r.touched_at ?? null, runtime: r.runtime ? JSON.parse(r.runtime) : null,
+    createdAt: r.created_at, closedAt: r.closed_at, seenAt: r.seen_at, touchedAt: r.touched_at ?? null, runtime: r.runtime ? upgradeRuntime(JSON.parse(r.runtime)) : null,
     kind: r.kind || 'claude', origin: r.origin || 'board', parentSessionId: r.parent_session_id ?? null, workspaceKey: r.workspace_key ?? null, flavor: r.flavor ?? null, extraArgs: r.extra_args ? JSON.parse(r.extra_args) : [],
     label: r.label ?? null, // P66: 판의 이름. 없으면 name(에이전트 주소)이 보인다
     startCommand: r.start_command || '', // P97: 실행 명령(빈 값은 claude)
@@ -125,12 +126,12 @@ export class Store {
   insertSession(s) {
     this.st(`INSERT INTO sessions (session_id, name, cwd, pane_id, workspace_id, agent_name, model, effort, permission_mode, settings_path, hook_token, resume_argv, created_at, touched_at, runtime, kind, origin, parent_session_id, workspace_key, flavor, extra_args, start_command, harness)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      s.sessionId, s.name, s.cwd, s.paneId ?? null, s.herdrWorkspaceId ?? null, s.agentName ?? null, s.model ?? null, s.effort ?? null,
+      s.sessionId, s.name, s.cwd, s.paneId ?? null, s.termWorkspaceId ?? null, s.agentName ?? null, s.model ?? null, s.effort ?? null,
       s.permissionMode, s.settingsPath ?? '', s.hookToken ?? '', s.resumeArgv ? JSON.stringify(s.resumeArgv) : null, s.createdAt, s.touchedAt ?? null, JSON.stringify(s.runtime || null),
       s.kind || 'claude', s.origin || 'board', s.parentSessionId ?? null, s.workspaceKey ?? null, s.flavor ?? null, s.extraArgs && s.extraArgs.length ? JSON.stringify(s.extraArgs) : null, s.startCommand || null, s.harnessPlan ? JSON.stringify(s.harnessPlan) : null);
   }
   updateSession(sessionId, fields) {
-    const map = { paneId: 'pane_id', herdrWorkspaceId: 'workspace_id', agentName: 'agent_name', resumeVerified: 'resume_verified', closedAt: 'closed_at', seenAt: 'seen_at', touchedAt: 'touched_at', resumeArgv: 'resume_argv', runtime: 'runtime', cwd: 'cwd', parentSessionId: 'parent_session_id', workspaceKey: 'workspace_key', kind: 'kind', origin: 'origin', flavor: 'flavor', startCommand: 'start_command', harnessPlan: 'harness', ...RECALL_SESSION_FIELDS };
+    const map = { paneId: 'pane_id', termWorkspaceId: 'workspace_id', agentName: 'agent_name', resumeVerified: 'resume_verified', closedAt: 'closed_at', seenAt: 'seen_at', touchedAt: 'touched_at', resumeArgv: 'resume_argv', runtime: 'runtime', cwd: 'cwd', parentSessionId: 'parent_session_id', workspaceKey: 'workspace_key', kind: 'kind', origin: 'origin', flavor: 'flavor', startCommand: 'start_command', harnessPlan: 'harness', ...RECALL_SESSION_FIELDS };
     const sets = []; const vals = [];
     for (const [k, v] of Object.entries(fields)) {
       if (!map[k]) throw new Error('unknown field ' + k);
@@ -155,11 +156,6 @@ export class Store {
     }
     return n;
   }
-  // P18: 옛 herdr 세션의 패널 ID에 prefix를 붙인다(열린 세션만, 이미 붙은 것은 그대로). 새 herdr가 같은 ID를 다시 써도 판이 옛 패널로 착각하지 않게. 붙인 수
-  markPanesGone(prefix) {
-    return Number(this.st("UPDATE sessions SET pane_id = ? || pane_id WHERE closed_at IS NULL AND pane_id IS NOT NULL AND pane_id <> '' AND substr(pane_id, 1, length(?)) <> ?").run(prefix, prefix, prefix).changes);
-  }
-
   addEvent(sessionId, kind, data, t = Date.now()) { this.st('INSERT INTO events (t, session_id, kind, data) VALUES (?, ?, ?, ?)').run(t, sessionId ?? null, kind, data === undefined ? null : JSON.stringify(data)); }
   events({ sessionId, since = 0, limit = 200 } = {}) {
     const rows = sessionId

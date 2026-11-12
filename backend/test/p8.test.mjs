@@ -13,10 +13,10 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../src/store.mjs';
 import { newRuntime } from '../src/state.mjs';
-import { writeSessionSettings, writeBoardPlugin, buildStartArgs, buildResumeArgv, BOARD_SYSTEM_PROMPT, HERDR_ALLOW } from '../src/launch.mjs';
+import { writeSessionSettings, writeBoardPlugin, buildStartArgs, buildResumeArgv, BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
 import { normalizePatch, Settings } from '../src/settings.mjs';
 import * as branchMod from '../src/branch.mjs';
-import { Branch, BRANCH_ALLOW, depthOf, isDescendant, descendantsOf, childName, childNotice, boardSkill, childShims, CHILD_NAME_RE } from '../src/branch.mjs';
+import { Branch, ATRIUM_ALLOW, depthOf, isDescendant, descendantsOf, childName, childNotice, boardSkill, childShims, CHILD_NAME_RE } from '../src/branch.mjs';
 import { SIZE_STEPS, overlaps, GAP } from '../src/canvas.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { lineSlot, LINE_GAP_X, LINE_GAP_Y } from '../src/tree-line.mjs';
@@ -88,32 +88,28 @@ function allowed(rules, tool, cmd) {
     return cmd === p;
   });
 }
-test('K2: 승인 규칙 — 하위 세션 명령과 herdr 일 시키기·기다리기·답 읽기만. 다른 atrium·herdr 명령과 다른 판 호출은 묻는다', () => {
-  for (const c of ['atrium child w1', 'atrium child w1 --prompt "x"', 'atrium children', 'atrium children --all', 'atrium child-kill w1', 'mtask child w1', 'mtask child w1 --prompt "x"', 'mtask children', 'mtask children --all', 'mtask child-kill w1', 'herdr agent prompt w1 "do it" --wait --timeout 600000', 'herdr agent wait w1 --timeout 600000', 'herdr agent read w1 --source recent-unwrapped --lines 80']) {
-    assert.ok(allowed(BRANCH_ALLOW, 'Bash', c), `허용해야 한다: ${c}`);
+test('K2: 승인 규칙 — 하위 세션 명령과 atrium 일 시키기·기다리기·답 읽기만. 다른 atrium 명령, herdr 명령, 다른 판 호출은 묻는다(P129)', () => {
+  for (const c of ['atrium child w1', 'atrium child w1 --prompt "x"', 'atrium children', 'atrium children --all', 'atrium child-kill w1', 'mtask child w1', 'mtask child w1 --prompt "x"', 'mtask children', 'mtask children --all', 'mtask child-kill w1', 'atrium prompt w1 "do it"', 'atrium wait w1', 'atrium read w1']) {
+    assert.ok(allowed(ATRIUM_ALLOW, 'Bash', c), `허용해야 한다: ${c}`);
   }
-  for (const c of ['atrium kill w1', 'atrium settings set tray on', 'mtask kill w1', 'mtask settings set tray on', 'mtask call session.kill', 'node mtask.mjs kill w1', 'herdr pane split --current', 'herdr agent start x', 'herdr agent send-keys w1 enter', 'herdr --session other agent prompt w1 "x"', 'herdr server stop', 'mtaskchild']) {
-    assert.ok(!allowed(BRANCH_ALLOW, 'Bash', c), `묻어야 한다: ${c}`);
+  for (const c of ['atrium kill w1', 'atrium settings set tray on', 'mtask kill w1', 'mtask settings set tray on', 'mtask call session.kill', 'node mtask.mjs kill w1', 'herdr agent prompt w1 "do it" --wait', 'herdr agent read w1 --lines 80', 'herdr pane split --current', 'herdr agent start x', 'herdr agent send-keys w1 enter', 'herdr --session other agent prompt w1 "x"', 'herdr server stop', 'mtaskchild']) {
+    assert.ok(!allowed(ATRIUM_ALLOW, 'Bash', c), `묻어야 한다: ${c}`);
   }
-  assert.ok(allowed(BRANCH_ALLOW, 'PowerShell', 'mtask child w1'));
-  assert.ok(allowed(BRANCH_ALLOW, 'PowerShell', 'atrium child w1'));
-  assert.ok(!BRANCH_ALLOW.some((r) => /herdr:\*|herdr \*\)/.test(r)), 'herdr 전체 허용(P4 allowHerdr)은 넣지 않는다');
+  assert.ok(allowed(ATRIUM_ALLOW, 'PowerShell', 'mtask child w1'));
+  assert.ok(allowed(ATRIUM_ALLOW, 'PowerShell', 'atrium child w1'));
+  assert.ok(!ATRIUM_ALLOW.some((r) => /herdr/.test(r)), 'herdr 규칙은 넣지 않는다(P129)');
 });
 
-test('K1·K2: 세션 설정 파일에 env(판, 세션 ID, 세션 토큰)와 규칙이 들어가고 hook·allowHerdr는 그대로', () => {
+test('K1·K2: 세션 설정 파일에 env(판, 세션 ID, 세션 토큰)와 규칙이 들어가고 hook은 그대로', () => {
   const d = tmp();
   const f = path.join(d, 's.json');
-  writeSessionSettings({ file: f, hookUrl: 'http://127.0.0.1:47820/hooks/claude', token: 'h', sessionId: 'sid', env: { ATRIUM_PORT: '47820', ATRIUM_SESSION_ID: 'sid', ATRIUM_SESSION_TOKEN: 't' }, allow: BRANCH_ALLOW });
+  writeSessionSettings({ file: f, hookUrl: 'http://127.0.0.1:47820/hooks/claude', token: 'h', sessionId: 'sid', env: { ATRIUM_PORT: '47820', ATRIUM_SESSION_ID: 'sid', ATRIUM_SESSION_TOKEN: 't' }, allow: ATRIUM_ALLOW });
   const j = JSON.parse(fs.readFileSync(f, 'utf8'));
   assert.equal(j.env.ATRIUM_PORT, '47820'); assert.equal(j.env.ATRIUM_SESSION_ID, 'sid');
-  assert.deepEqual(j.permissions.allow, BRANCH_ALLOW);
+  assert.deepEqual(j.permissions.allow, ATRIUM_ALLOW);
   assert.ok(j.hooks.Stop);
   assert.ok(!Object.keys(j.env).some((k) => /ANTHROPIC|CLAUDE/.test(k)));
-  const g = path.join(d, 'g.json');
-  writeSessionSettings({ file: g, hookUrl: 'x', token: 'h', sessionId: 'sid', allowHerdr: true, allow: BRANCH_ALLOW });
-  const k = JSON.parse(fs.readFileSync(g, 'utf8')).permissions.allow;
-  assert.deepEqual(k.slice(0, HERDR_ALLOW.length), HERDR_ALLOW);
-  assert.equal(new Set(k).size, k.length);
+  assert.equal(new Set(j.permissions.allow).size, j.permissions.allow.length);
 });
 
 test('K1: 워크트리는 처음 띄울 때만 claude -w로 넘기고 이어 가기 명령에는 넣지 않는다. 하위 세션은 새 세션 ID로(갈라 열기 없음)', () => {
@@ -147,7 +143,7 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
     assert.match(fs.readFileSync(path.join(root, 'bin', `${c}.cmd`), 'utf8'), /"C:\\node\\node.exe" "C:\\m\\bin\\atrium-child.mjs" %\*/);
   }
   assert.match(BOARD_SYSTEM_PROMPT, /atrium-herdr:atrium/); assert.match(BOARD_SYSTEM_PROMPT, /delegate/); assert.match(BOARD_SYSTEM_PROMPT, /상한은 없다/);
-  assert.ok(BRANCH_ALLOW.includes('Bash(atrium child-wait *)') && BRANCH_ALLOW.includes('PowerShell(atrium child-wait *)'));
+  assert.ok(ATRIUM_ALLOW.includes('Bash(atrium child-wait *)') && ATRIUM_ALLOW.includes('PowerShell(atrium child-wait *)'));
   assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 7); // P21: 잠든 세션 깨우기 한 줄, P81: atrium me 한 줄
   assert.ok(pl.pluginDir.endsWith('atrium-herdr'));
   assert.match(childNotice({ role: '워커', agentName: 'w1', paneId: 'w2:p1', depth: 2 }), /atrium prompt w1 "<할 일>" --wait/); // P116
@@ -197,9 +193,9 @@ async function fakeBoard({ limits } = {}) {
   const ws = await workspaceOf(dir);
   store.insertWorkspace({ ...ws, createdAt: 1 });
   const b = {
-    cfg: { profile: 'dev', herdrSession: 'atrium-dev-p8test', port: 0, dataDir: dir }, apiToken: 'board-api-token', store, sessions: new Map(), bus: new EventEmitter(),
+    cfg: { profile: 'dev', terminalSession: 'atrium-dev-p8test', port: 0, dataDir: dir }, apiToken: 'board-api-token', store, sessions: new Map(), bus: new EventEmitter(),
     broadcasts: [], spawned: [], killed: [], links: [], queued: [],
-    api: { broadcast: (e, d) => b.broadcasts.push([e, d]) }, log: () => {}, requireHerdr: () => {},
+    api: { broadcast: (e, d) => b.broadcasts.push([e, d]) }, log: () => {}, requireTerminal: () => {},
     hooked: (s) => s.kind === 'claude' && s.origin === 'board',
     summary: (s) => ({ state: 'ready', ask: null }),
     ensureLink: (from, to, patch) => { const l = { linkId: 'l' + b.links.length, from, to, ...patch }; b.links.push(l); return l; },
@@ -294,18 +290,18 @@ test('P36: 신뢰 관문 — ready가 되면 claude -w로 다시 띄우고, 관�
   b.cfg.killWaitMs = 500;
   b.adapter = {
     sendKeys: async (n, k) => calls.push(['keys', n, k]),
-    sendText: async (p, t) => { calls.push(['text', p, t]); if (t === '/exit') child.rt.herdr.present = false; },
+    sendText: async (p, t) => { calls.push(['text', p, t]); if (t === '/exit') child.rt.term.present = false; },
     paneKeys: async (p, k) => calls.push(['paneKeys', p, k]),
     waitShellReady: async () => true,
-    startAgent: async (o) => { calls.push(['start', o]); child.rt.herdr.present = true; return { agent: null }; },
+    startAgent: async (o) => { calls.push(['start', o]); child.rt.term.present = true; return { agent: null }; },
   };
   b.launchOf = (s) => ({ sessionId: s.sessionId, settingsPath: 's.json', permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: [] });
-  b.broadcastSession = () => {}; b.registerResume = () => {};
+  b.broadcastSession = () => {};
   b.branch.childWaitMs = 300;
   const g = await b.branch.spawnChild(lead, { name: 'wt1', cwd: repo, worktree: 'wt1', prompt: 'first', wait: false });
   const child = b.sessions.get(g.sessionId);
   // 신뢰 질문에서 멈춤: child-wait는 needs_trust와 한 문장
-  child.rt.herdr = { ...child.rt.herdr, status: 'blocked', present: true, launchPending: true, agentSessionId: null };
+  child.rt.term = { ...child.rt.term, status: 'blocked', present: true, launchPending: true, agentSessionId: null };
   child.rt.trustScreen = { at: Date.now() };
   const w = await b.branch.waitChild(lead, { name: 'wt1' });
   assert.equal(w.status, 'needs_trust'); assert.equal(w.tellHuman, '보드에서 @wt1 카드의 신뢰 질문에 답해 주세요.'); assert.equal(w.gated, true); assert.equal(w.timeout, true);
@@ -314,7 +310,7 @@ test('P36: 신뢰 관문 — ready가 되면 claude -w로 다시 띄우고, 관�
   assert.ok(b.branch.holds(child.sessionId));
   // 사람이 수락: ~/.claude.json에 신뢰가 쓰이고 ready가 된다. 그 사이 herdr로 직접 들어간 지시가 하나 있다
   fs.writeFileSync(b.cfg.claudeJson, JSON.stringify({ projects: { [repo.split(path.sep).join('/')]: { hasTrustDialogAccepted: true } } }));
-  child.rt.trustScreen = null; child.rt.herdr.status = 'idle';
+  child.rt.trustScreen = null; child.rt.term.status = 'idle';
   child.rt.lastPrompt = 'slipped in'; child.rt.lastPromptAt = Date.now();
   const before = b.queued.length;
   b.bus.emit('session', child, { state: 'ready' });
@@ -429,7 +425,7 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
   const srv = await serve(b);
   try {
     const env = b.branch.envFor(lead.sessionId);
-    assert.equal(env.ATRIUM_HERDR_SESSION, 'atrium-dev-p8test'); assert.equal(env.ATRIUM_SESSION_ID, lead.sessionId);
+    assert.equal(env.ATRIUM_TERMINAL_SESSION, 'atrium-dev-p8test'); assert.equal(env.ATRIUM_HERDR_SESSION, 'atrium-dev-p8test'); assert.equal(env.ATRIUM_SESSION_ID, lead.sessionId);
     assert.ok(env.ATRIUM_SESSION_TOKEN !== b.apiToken && env.ATRIUM_SESSION_TOKEN.length === 64); // 판 API 토큰이 아니다
     const ok = await runChild(['child', 'w1', '--no-wait'], env);
     assert.equal(ok.code, 0, ok.stderr);
@@ -447,8 +443,11 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     assert.ok(b.store.events({}).some((e) => e.kind === 'branch_rejected'));
     const nobody = await runChild(['children'], { ...env, ATRIUM_SESSION_ID: 'nope' });
     assert.match(nobody.stderr, /not_on_board/);
-    const other = await runChild(['children'], { ...env, ATRIUM_HERDR_SESSION: 'atrium' });
+    const other = await runChild(['children'], { ...env, ATRIUM_TERMINAL_SESSION: 'atrium', ATRIUM_HERDR_SESSION: 'atrium' });
     assert.match(other.stderr, /다른 보드에서 응답했습니다/);
+    const { ATRIUM_TERMINAL_SESSION: _t, ...oldOnly } = env; // P129: 옛 이름만 있는 env(업데이트 전에 띄운 세션)도 같은 판을 본다
+    const other2 = await runChild(['children'], { ...oldOnly, ATRIUM_HERDR_SESSION: 'atrium' });
+    assert.match(other2.stderr, /다른 보드에서 응답했습니다/);
     const noenv = await runChild(['child'], {});
     assert.match(noenv.stderr, /보드에서 시작한 세션이 아닙니다/);
     const nope = await runChild(['kill', 'w1'], env);
@@ -458,15 +457,19 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
   } finally { srv.close(); }
 });
 
-test('K1: 판이 띄운 세션의 설정 파일을 다시 쓸 때(P8 전 세션) env와 규칙만 더하고 hook과 다른 규칙은 그대로', async () => {
+test('K1: 판이 띄운 세션의 설정 파일을 다시 쓸 때(P8 전 세션) env와 규칙만 더하고 hook과 다른 규칙은 그대로, 옛 herdr 규칙은 뺀다(P129)', async () => {
   const { b, dir, lead } = await fakeBoard();
   const f = path.join(dir, 'old.json');
-  writeSessionSettings({ file: f, hookUrl: 'http://127.0.0.1:1/hooks/claude', token: 'h', sessionId: lead.sessionId, allowHerdr: true });
+  writeSessionSettings({ file: f, hookUrl: 'http://127.0.0.1:1/hooks/claude', token: 'h', sessionId: lead.sessionId });
+  const j0 = JSON.parse(fs.readFileSync(f, 'utf8'));
+  j0.permissions = { allow: ['Bash(herdr:*)', 'PowerShell(herdr agent prompt *)', 'Bash(git status)'] }; // P4 allowHerdr·옛 일 시키기 규칙과 사용자 규칙
+  fs.writeFileSync(f, JSON.stringify(j0));
   lead.settingsPath = f;
   assert.equal(b.branch.refreshSettings(), 1);
   const j = JSON.parse(fs.readFileSync(f, 'utf8'));
   assert.equal(j.env.ATRIUM_SESSION_ID, lead.sessionId);
-  for (const r of [...HERDR_ALLOW, ...BRANCH_ALLOW]) assert.ok(j.permissions.allow.includes(r), r);
+  for (const r of ['Bash(git status)', ...ATRIUM_ALLOW]) assert.ok(j.permissions.allow.includes(r), r);
+  assert.ok(!j.permissions.allow.some((r) => /herdr/.test(r)));
   assert.ok(j.hooks.UserPromptSubmit);
   assert.equal(b.branch.refreshSettings(), 0); // 이미 있으면 다시 쓰지 않는다
 });

@@ -8,7 +8,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { Launchers, normalizeLauncher, normalizeStartCommand, parseCommandLine, shellStatements, previewLauncher, resolveLauncher, startWarning, onPath, uniqueName, claudeStartOf, startOpt, HARNESSES } from '../src/launchers.mjs';
 import { buildResumeArgv, buildStartArgs, psLine, psQuote } from '../src/launch.mjs';
-import { HerdrAdapter } from '../src/herdr/adapter.mjs';
 import { Store } from '../src/store.mjs';
 import { Backend } from '../src/backend.mjs';
 import { DEFAULTS } from '../src/settings.mjs';
@@ -132,44 +131,17 @@ test('P97 띄우기·이어 가기 인자: 실행 명령 + 판의 인자, 이어
   assert.deepEqual(startOpt({ kind: 'claude', startCommand: 'ocx claude' }), { command: ['ocx', 'claude'] });
 });
 
-test('P97 herdr: 실행 명령이 있으면 셸에 줄을 치고, 에이전트를 알아보면 이름을 붙인다. 끝내 안 보이면 agent_not_detected', async () => {
-  const a = new HerdrAdapter({ herdrPath: null, session: 'atrium-dev-p97test', logDir: tmp() });
-  const calls = []; let polls = 0;
-  a.call = async (m, p) => {
-    calls.push([m, p]);
-    if (m === 'pane.get') { polls++; return { pane: { pane_id: p.pane_id, agent: polls >= 3 ? 'claude' : null } }; }
-    if (m === 'agent.rename') return { agent: { name: p.name, pane_id: p.target, agent: 'claude', agent_status: 'unknown' } };
-    if (m === 'agent.start') throw new Error('agent.start는 부르지 않는다');
-    return {};
-  };
-  const r = await a.startAgent({ name: 's1', paneId: 'w1:p1', args: ['--session-id', 'S1', '--model', 'x[1m]'], command: ['ocx', 'claude'], timeoutMs: 2000 });
-  assert.equal(calls[0][0], 'pane.send_text'); assert.equal(calls[0][1].text, "ocx claude --session-id S1 --model 'x[1m]'");
-  assert.deepEqual(calls[1], ['pane.send_keys', { pane_id: 'w1:p1', keys: ['enter'] }]);
-  assert.deepEqual(calls.find((c) => c[0] === 'agent.rename')[1], { target: 'w1:p1', name: 's1' });
-  assert.deepEqual(r.argv, ['ocx', 'claude', '--session-id', 'S1', '--model', 'x[1m]']); assert.equal(r.agent.name, 's1'); assert.equal(r.typed, true);
-  // 실행 명령이 없으면 지금처럼 agent.start
-  const b = new HerdrAdapter({ herdrPath: null, session: 'atrium-dev-p97test', logDir: tmp() });
-  const bc = [];
-  b.call = async (m, p) => { bc.push(m); return { agent: { name: p.name }, argv: ['claude', ...p.args] }; };
-  await b.startAgent({ name: 's2', paneId: 'w2:p1', args: ['--x'] });
-  assert.deepEqual(bc, ['agent.start']);
-  // 끝내 안 보이면
-  const c = new HerdrAdapter({ herdrPath: null, session: 'atrium-dev-p97test', logDir: tmp() });
-  c.call = async (m, p) => (m === 'pane.get' ? { pane: { pane_id: p.pane_id, agent: null } } : {});
-  await assert.rejects(() => c.typeAgent({ name: 's3', paneId: 'w3:p1', args: [], kind: 'claude', command: ['nope'], timeoutMs: 120, pollMs: 20 }), (e) => e.code === 'agent_not_detected' && e.argv[0] === 'nope');
-});
-
 function spawnBackend() {
   const dir = tmp();
   const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2 });
   b.store = new Store(path.join(dir, 'board.db'));
-  b.sessions = new Map(); b.herdrOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {};
+  b.sessions = new Map(); b.termOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {};
   b.branch = { settingsExtra: () => ({}), noteChild() {}, placeChild: () => null };
   b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null };
   b.features.launchers = new Launchers({ store: b.store });
   b.queue = { enqueue() {}, pending: () => 0 };
   b.api = { broadcast() {} };
-  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {}; b.registerResume = () => {};
+  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {};
   const calls = []; let n = 0;
   b.adapter = {
     connected: true,

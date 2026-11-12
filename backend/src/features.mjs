@@ -28,8 +28,8 @@ export function attachFeatures(b, { timers = true } = {}) {
   const wsName = (key) => { if (!key) return null; const w = b.workspaceList().find((x) => x.key === key); return w ? w.name : null; };
   const transcriptOf = (s) => {
     if (b.hooked(s)) return s.rt.transcriptPath || transcriptPathFor(b.cfg.claudeProjects, s.cwd, s.sessionId);
-    // 판이 띄우지 않은 Claude Code(셸에서 띄움, 판에 올림)는 herdr가 아는 대화 ID로 대화 기록을 찾아 본다
-    const id = s.rt.herdr && s.rt.herdr.agentSessionId;
+    // 판이 띄우지 않은 Claude Code(셸에서 띄움, 판에 올림)는 터미널이 아는 대화 ID로 대화 기록을 찾아 본다
+    const id = s.rt.term && s.rt.term.agentSessionId;
     const f = s.kind === 'claude' && id ? transcriptPathFor(b.cfg.claudeProjects, s.rt.cwd || s.cwd, id) : null;
     return f && fs.existsSync(f) ? f : null;
   };
@@ -65,7 +65,7 @@ export function attachFeatures(b, { timers = true } = {}) {
     },
   });
   f.loops = new LoopEngine({
-    store, broadcast, log: (m) => b.log(m), canRun: () => !!(b.adapter && b.adapter.connected && b.herdrOk),
+    store, broadcast, log: (m) => b.log(m), canRun: () => !!(b.adapter && b.adapter.connected && b.termOk),
     targetsOf: (l) => {
       const toT = (s) => {
         const per = (l.per || {})[s.sessionId] || {};
@@ -155,7 +155,7 @@ export function attachFeatures(b, { timers = true } = {}) {
       const models = await fetchConnectionModels(c);
       return { health, models: models.ok ? { ok: true, count: models.models.length, ids: models.models.slice(0, 50).map((m) => m.id) } : { ok: false, why: models.why } };
     },
-    // P97: 붙여 넣은 명령줄 → 호출자 칸(herdr가 아는 에이전트 종류로 하네스를 알아본다)
+    // P97: 붙여 넣은 명령줄 → 호출자 칸(터미널이 아는 에이전트 종류로 하네스를 알아본다)
     'launcher.parse': async (p) => f.launchers.parse({ ...p, kinds: await b.adapter.agentKinds().then((ks) => ks.map((k) => k.kind)).catch(() => []) }),
   };
   // 세션 요약에 덧붙이는 값: 긴 답인지(출력 보기), 켜진 루프 수(노드 배지)

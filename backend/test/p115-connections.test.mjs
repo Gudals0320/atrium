@@ -115,15 +115,15 @@ test('P115 모델 목록: 프로토콜별(Anthropic식 /v1/models와 anthropic-v
 // ---------- 판: 시작 전 확인, 연결로 띄우기, atrium models ----------
 async function board(gwPort) {
   const dir = tmp();
-  const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, herdrSession: 'atrium-dev-p115test', profile: 'dev', dataDir: dir });
+  const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, terminalSession: 'atrium-dev-p115test', profile: 'dev', dataDir: dir });
   b.store = new Store(path.join(dir, 'board.db'));
-  b.sessions = new Map(); b.herdrOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
+  b.sessions = new Map(); b.termOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
   b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null, connections: null };
   b.features.connections = new Connections({ store: b.store, inUse: (id) => b.features.launchers.usersOf(id) });
   b.features.launchers = new Launchers({ store: b.store, connections: b.features.connections });
   b.queue = { enqueue: () => ({ deliveryId: 'd1', status: 'queued' }), pending: () => 0 };
   b.api = { broadcast() {} };
-  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {}; b.registerResume = () => {};
+  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {};
   b.ensureLink = (from, to, patch) => ({ linkId: 'l1', from, to, ...patch }); b.linkEvent = () => ({});
   b.summary = (s) => ({ state: deriveState(s.rt).state, ask: null, error: null });
   b.branch = new Branch(b, { readyWaitMs: 30, submitWaitMs: 10 });
@@ -137,7 +137,7 @@ async function board(gwPort) {
     startAgent: async (o) => { calls.push(o); return { agent: null, argv: [...(o.command || [o.kind]), ...o.args] }; },
     sendText: async () => {}, paneKeys: async () => {},
   };
-  b.requireHerdr = () => {};
+  b.requireTerminal = () => {};
   const C = b.features.connections;
   const oai = C.create({ name: 'fake oai', protocol: 'openai-responses', baseUrl: `http://127.0.0.1:${gwPort}/v1`, auth: { env: 'P115_FAKE_KEY' } }).connection;
   const chat = C.create({ name: 'fake chat', protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${gwPort}/v1` }).connection;

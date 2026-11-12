@@ -27,14 +27,14 @@ export function legacyGatewayConnection(g = {}) {
 // P33 전 판: 옛 새 세션 기본값 → 런처 목록(P33의 initialLaunchers 옛 판 길 그대로. DeepSeek 예시는 env의 게이트웨이 주소)
 export function legacyInitialLaunchers(o = {}, gw = {}) {
   const healthUrl = gw.healthUrl || LEGACY_HEALTH_URL;
-  const base = (id, name, harness, x = {}) => ({ id, name, harness, icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: '', checkUrl: '', ...x });
+  const base = (id, name, harness, x = {}) => ({ id, name, harness, icon: '', model: '', effort: '', permissionMode: '', args: '', env: {}, command: '', checkUrl: '', ...x });
   const items = [
-    base('claude', 'Claude Code', 'claude', { model: o.claudeModel || '', effort: o.claudeEffort || '', permissionMode: o.claudePermissionMode || 'manual', allowHerdr: !!o.claudeAllowHerdr }),
+    base('claude', 'Claude Code', 'claude', { model: o.claudeModel || '', effort: o.claudeEffort || '', permissionMode: o.claudePermissionMode || 'manual' }),
     base('codex', 'Codex', 'codex', { args: o.codexArgs || '' }),
     base('shell', 'Shell', 'shell'),
     o.deepseekCommand
       ? base(LEGACY_FLAVOR, 'DeepSeek', 'command', { icon: LEGACY_FLAVOR, command: o.deepseekCommand })
-      : base(LEGACY_FLAVOR, 'DeepSeek', 'claude', { icon: LEGACY_FLAVOR, model: o.deepseekModel || LEGACY_MODEL, permissionMode: o.claudePermissionMode || 'manual', allowHerdr: !!o.claudeAllowHerdr, env: { ANTHROPIC_BASE_URL: gw.baseUrl || originOf(healthUrl), CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1' }, checkUrl: healthUrl }),
+      : base(LEGACY_FLAVOR, 'DeepSeek', 'claude', { icon: LEGACY_FLAVOR, model: o.deepseekModel || LEGACY_MODEL, permissionMode: o.claudePermissionMode || 'manual', env: { ANTHROPIC_BASE_URL: gw.baseUrl || originOf(healthUrl), CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1' }, checkUrl: healthUrl }),
   ];
   return { v: 1, items, favorites: ['claude', 'codex', LEGACY_FLAVOR, 'shell'] };
 }

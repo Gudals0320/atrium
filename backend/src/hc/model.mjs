@@ -1,19 +1,19 @@
 // P114: herdr-core 터미널을 판의 세션 모델(herdr 어댑터와 같은 모양)로 옮기는 순수 함수들(단위 시험 p114.test.mjs).
 // - 패널 = hc 터미널(주소 t7). 작업 공간 = 라벨 `atrium-ws`, 없으면 부모 터미널의 작업 공간, 없으면 터미널마다 하나(`hw-<주소>`)
 // - 판 세션 ID는 라벨 `atrium-session`, 판이 붙인 이름은 `atrium-name`(hc는 이름을 바꿀 수 없다)
-// - 상태: 프로그램이 OSC 7501로 알린 것만 있다. herdr 낱말로 옮긴다(아래 STATUS_WORD). 앱 이름(`claude-code`)이 에이전트 종류다
-// - 이벤트: hc 이벤트(created, status, finished, removed, lost, restarted …)를 herdr 어댑터의 normalizeEvent 모양으로 바꾼다
+// - 상태: 프로그램이 OSC 7501로 알린 것만 있다. 판의 상태 낱말로 옮긴다(아래 STATUS_WORD). 앱 이름(`claude-code`)이 에이전트 종류다
+// - 이벤트: hc 이벤트(created, status, finished, removed, lost, restarted …)를 판이 아는 이벤트 모양으로 바꾼다
 export const LABEL = { session: 'atrium-session', ws: 'atrium-ws', name: 'atrium-name', wsLabel: 'atrium-ws-label', board: 'atrium-board', launch: 'atrium-launch', agent: 'atrium-agent' };
 // P114 2b: 판이 만든 터미널(createWorkspace의 셸과 그 자리에 띄운 에이전트)인가. 판 밖에서 `hc run`으로 생긴 터미널은 아니다
 export const isBoardTerm = (t) => !!(t && t.labels && t.labels[LABEL.board]);
 // P117: 판이 첫 argv로 띄운 에이전트 터미널의 종류(라벨 atrium-agent). 7501을 말하기 전(신뢰 대화상자)에도 에이전트 자리다
 export const boardAgentKind = (t) => (t && t.labels && t.labels[LABEL.agent]) || null;
 // P117: 신뢰 대화상자. claude는 신뢰를 받기 전에는 7501 상태를 내지 않는다(P114 2b 남은 것). 어댑터가 화면에서 대화상자를 보면
-// herdr처럼 "막힘"을 흉내 낸 상태를 둔다(synthetic). 판은 herdr와 같이 blocked + 묻는 hook 없음 + 화면 → trust_wait로 본다(state.mjs)
+// "막힘"을 흉내 낸 상태를 둔다(synthetic). 판은 blocked + 묻는 hook 없음 + 화면 → trust_wait로 본다(state.mjs)
 export const TRUST_STATUS = Object.freeze({ app: 'claude-code', state: 'blocked', kind: 'trust', msg: 'Quick safety check: trust this folder', synthetic: true });
 export const isSynthetic = (st) => !!(st && st.synthetic);
 
-// 7501 상태 → herdr 상태 낱말. error는 턴이 끝난 것(done)으로 두고 자세한 것은 detail로 넘긴다. 상태가 없으면 unknown
+// 7501 상태 → 판의 상태 낱말(idle, working, blocked, done, unknown). error는 턴이 끝난 것(done)으로 두고 자세한 것은 detail로 넘긴다. 상태가 없으면 unknown
 export const STATUS_WORD = { idle: 'idle', working: 'working', blocked: 'blocked', done: 'done', error: 'done' };
 export function statusWord(st) { return (st && STATUS_WORD[st.state]) || 'unknown'; }
 // 판이 더 쓸 수 있는 것: 무엇을 묻는지(kind, msg), error인지
@@ -50,12 +50,12 @@ export function workspaceOf(t, byAddress = new Map()) {
   return `hw-${root.address}`;
 }
 
-// herdr 어댑터 getPane과 같은 모양
+// 판이 읽는 getPane 모양
 export function paneOf(t, byAddress) {
   const f = fg(t);
   return { paneId: t.address, workspaceId: workspaceOf(t, byAddress), tabId: null, cwd: (f && f.cwd) || t.cwd || null, agent: kindOfApp(t.status && t.status.app), status: statusWord(t.status) };
 }
-// herdr 어댑터 agentInfo와 같은 모양. 상태를 알린 적 없는(에이전트가 아닌) 터미널은 null
+// 판이 읽는 agentInfo 모양. 상태를 알린 적 없는(에이전트가 아닌) 터미널은 null
 export function agentInfoOf(t, byAddress) {
   const app = t && t.status && t.status.app;
   if (!app) return null;
@@ -131,13 +131,13 @@ export class HcModel {
         const t = { ...prev, ...p.data, state: 'finished', foreground: null, status: null };
         this.terms.set(id, t);
         if (was) out.push({ type: 'agent_released', ...this._base(t), agent: kindOfApp(was), finalStatus: statusWord(prev.status), exitCode: t.exit_code ?? null, raw }); // P125: 종료 코드(사람이 끝냄·오류 가르기)
-        // P117: 판이 띄운 에이전트가 7501을 한 번도 말하지 않고 끝났다(띄우자마자 끝남). herdr처럼 에이전트가 떠난 것으로 알리고 같은 자리에 셸을 남긴다
+        // P117: 판이 띄운 에이전트가 7501을 한 번도 말하지 않고 끝났다(띄우자마자 끝남). 에이전트가 떠난 것으로 알리고 같은 자리에 셸을 남긴다
         else if (boardAgentKind(prev) && !this.everAgent.has(id) && !CORE_DOWN.has(t.reason)) { this.everAgent.add(id); out.push({ type: 'agent_released', ...this._base(t), agent: boardAgentKind(prev), finalStatus: 'unknown', exitCode: t.exit_code ?? null, raw }); }
-        // 터미널이 끝나면 패널도 없다(herdr에서는 에이전트가 끝나도 패널 셸이 남았다). 판에 올린 에이전트는 셸로 내린 뒤 닫힌다.
+        // 터미널이 끝나면 패널도 없다. 판에 올린 에이전트는 셸로 내린 뒤 닫힌다.
         // 판이 띄운 세션(2b)은 이 이벤트를 받아 exited로 둘지 정한다. agent: 에이전트가 돈 터미널이었나
-        // 코어가 꺼져서 끝난 것(서버 끔, 재부팅, holder 잃음)은 herdr 서버가 꺼진 것과 같다: 패널 끝을 내지 않는다.
+        // 코어가 꺼져서 끝난 것(서버 끔, 재부팅, holder 잃음)은 서버가 꺼진 것과 같다: 패널 끝을 내지 않는다.
         // 판은 곧 오는 끊김(disconnected)으로 끊긴 턴을 표시하고, 다시 붙으면 되살리기(J1)를 한다
-        // board: 판이 만든 터미널. 판이 띄운 에이전트가 스스로 끝났으면(exited) 어댑터가 그 자리에 셸을 띄워 pane_moved로 알린다(herdr의 패널 셸이 남음, 2b)
+        // board: 판이 만든 터미널. 판이 띄운 에이전트가 스스로 끝났으면(exited) 어댑터가 그 자리에 셸을 띄워 pane_moved로 알린다(패널 셸이 남음, 2b)
         if (!CORE_DOWN.has(t.reason)) out.push({ type: 'pane_exited', ...this._base(t), reason: t.reason, exitCode: t.exit_code ?? null, agent: this.everAgent.has(id), board: isBoardTerm(t), raw });
         out.push({ type: 'terminal_finished', ...this._base(t), reason: t.reason, exitCode: t.exit_code ?? null, raw });
         break;

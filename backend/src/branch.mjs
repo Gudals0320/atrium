@@ -1,11 +1,11 @@
 // 가지 펼치기(ARCH 4절 K, P8): 판이 띄운 세션이 부르는 하위 세션 명령(atrium child, atrium children, atrium child-kill. 옛 이름 mtask도 같다).
 // backend.mjs에는 이 파일을 부르는 몇 줄만 둔다(attachBranch, onHttp, spawn의 설정 파일·자리·부모, summary).
 //
-// - 판을 찾아가기(K1): 판은 세션 설정 파일의 env로 판의 값(프로필, herdr 세션, 포트, 데이터 폴더)과 그 세션의 ID, 그 세션만의 토큰을 넘긴다.
+// - 판을 찾아가기(K1): 판은 세션 설정 파일의 env로 판의 값(프로필, 터미널 세션, 포트, 데이터 폴더)과 그 세션의 ID, 그 세션만의 토큰을 넘긴다.
 //   명령은 판 플러그인의 bin/atrium과 별칭 bin/mtask(Bash 도구 PATH에 오른다)이고, node로 backend/bin/atrium-child.mjs를 부른다. 사용자의 PATH와 설정 파일은 고치지 않는다.
 // - 할 수 있는 일(보안): 명령은 판의 API 토큰(backend.json)을 쓰지 않는다. 세션 토큰(판 API 토큰과 세션 ID의 HMAC)으로 POST /branch/*만 부르고,
 //   백엔드는 부르는 세션을 부모로 정해 그 세션의 하위 세션 만들기·목록·끄기만 한다. 다른 판 API는 지금처럼 승인 카드로 묻는 atrium CLI(판 API 토큰)로만 된다.
-// - 하위 세션(K1): Backend.spawn으로 띄우는 정식 판 세션(hook, 스킬 플러그인, 짧은 안내, 권한 모드, herdr 이름, 이어 가기 등록). 부모의 폴더·모델·노력 수준·권한 모드·그룹을 물려받는다.
+// - 하위 세션(K1): Backend.spawn으로 띄우는 정식 판 세션(hook, 스킬 플러그인, 짧은 안내, 권한 모드, 에이전트 이름). 부모의 폴더·모델·노력 수준·권한 모드·그룹을 물려받는다.
 // - 상한(K3): P36에서 하위 세션 수, 깊이, 판 전체 상한을 없앴다(사용자 요청: 한 작업에 워커 30개 넘게). 자기 자손이 아니면 끄기를 not_parent로 거부한다. 고리는 depthOf가 끊는다.
 // - 신뢰 관문(P36): 신뢰를 받지 않은 저장소의 --worktree는 claude -w가 신뢰 대화상자 없이 바로 끝난다. 그래서 먼저 그 저장소에서 claude를 띄워 신뢰 질문을 노드에 보이고,
 //   사람이 답해 ready가 되면 같은 패널·같은 세션 ID로 claude -w를 다시 띄운다. 그동안 판의 전달(--prompt)은 멈춰 둔다(passGate).
@@ -25,7 +25,7 @@ import { lineSlot, bandOf, boxFrame, frameInner } from './tree-line.mjs'; // P75
 import { deriveState, isModelError } from './state.mjs';
 import { EFFORTS } from './settings.mjs';
 import { clip } from './text.mjs';
-import { BACKEND_ROOT } from './config.mjs';
+import { BACKEND_ROOT, terminalSessionEnv } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
 import { harnessOf, splitArgs, startOpt } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
@@ -36,7 +36,7 @@ import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy, detachedParentLine, detachedC
 import { AgentVerbs, verbLines } from './agent-verbs.mjs'; // P116: atrium prompt | wait | read
 
 export const DEFAULT_ROLE = '워커';
-export const CHILD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/; // herdr 에이전트 이름 규칙과 같다(herdr --skill)
+export const CHILD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/; // 에이전트 이름 규칙(P8 때 터미널의 에이전트 이름 규칙과 같게 정했다)
 export const WORKTREE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export { isModelName } from './model-name.mjs'; // P96: 슬래시 든 이름(zai/glm-flash)도 받는다. 검사는 model-name.mjs 한 곳
 export const CHILD_SIZE = 'wide-normal'; // P73: 새로 띄운 하위 세션도 16:9 가로 보통(1440×810. 전에는 정리처럼 작게 480×300). 사람이 크기를 바꾸면 그대로 둔다
@@ -62,12 +62,9 @@ export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
     `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`]), // P116
 ];
-// P4~P115의 herdr 일 시키기·답 읽기 규칙. P116: herdr 모드에서만 남긴다(지금 도는 세션과 사람이 쓴 지시가 아직 herdr agent prompt를 친다).
-// hc 모드의 패널에는 판의 herdr 세션이 없어 herdr 명령이 사용자의 다른 herdr 세션으로 가므로 묻지 않고 돌게 두지 않는다(refreshSettings가 뺀다)
-export const HERDR_AGENT_ALLOW = ['Bash(herdr agent prompt:*)', 'Bash(herdr agent prompt *)', 'Bash(herdr agent wait:*)', 'Bash(herdr agent wait *)', 'Bash(herdr agent read:*)', 'Bash(herdr agent read *)', 'PowerShell(herdr agent prompt *)', 'PowerShell(herdr agent wait *)', 'PowerShell(herdr agent read *)'];
-export const BRANCH_ALLOW = [...ATRIUM_ALLOW, ...HERDR_AGENT_ALLOW]; // herdr 모드의 규칙(P115까지의 이름)
-// 터미널 백엔드에 맞는 규칙
-export const branchAllow = (backend = 'herdr') => (backend === 'hc' ? ATRIUM_ALLOW : BRANCH_ALLOW);
+// P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
+const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
+export const branchAllow = () => ATRIUM_ALLOW;
 
 // ---------- P96: 다른 종류 하위 세션(Claude → Codex 등) ----------
 // 무엇으로 띄우는가: --launcher면 그 호출자, 아니면(--kind만, --model이 그 하네스 모델로 풀림) 판 레일의 그 종류 기본 호출자를 바탕으로 띄운다
@@ -165,7 +162,7 @@ export function descendantsOf(rootId, rows) {
   walk(rootId, 1);
   return out.sort((a, b) => b.rel - a.rel);
 }
-// 하위 세션 이름. want가 있으면 그대로(herdr 이름 규칙), 없으면 <부모>-w<n>(부모 이름이 규칙에 안 맞으면 w<n>)
+// 하위 세션 이름. want가 있으면 그대로(이름 규칙), 없으면 <부모>-w<n>(부모 이름이 규칙에 안 맞으면 w<n>)
 export function childName({ want, parentName, taken }) {
   if (want) {
     if (!CHILD_NAME_RE.test(want) || want === 'all') throw apiError('bad_request', `하위 세션 이름은 영문 소문자로 시작해야 하며 소문자, 숫자, -, _를 사용해 32자까지 입력할 수 있습니다: ${want}`);
@@ -316,11 +313,9 @@ export class Branch {
   // P115: token false면 토큰을 빼고 준다(패널에 치는 줄과 셸 기록에 남지 않게. atrium은 데이터 폴더 sessions/<ID>.token을 읽는다)
   envFor(sessionId, { token = true } = {}) {
     const c = this.b.cfg;
-    return { ATRIUM_PROFILE: c.profile, ATRIUM_HERDR_SESSION: c.herdrSession, ATRIUM_PORT: String(c.port), ATRIUM_DATA_DIR: c.dataDir, ATRIUM_SESSION_ID: sessionId, ...(token ? { ATRIUM_SESSION_TOKEN: this.token(sessionId) } : {}) };
+    return { ATRIUM_PROFILE: c.profile, ...terminalSessionEnv(c.terminalSession), ATRIUM_PORT: String(c.port), ATRIUM_DATA_DIR: c.dataDir, ATRIUM_SESSION_ID: sessionId, ...(token ? { ATRIUM_SESSION_TOKEN: this.token(sessionId) } : {}) };
   }
-  // P116: 터미널 백엔드(herdr | hc). 승인 규칙과 hook의 herdr 명령 읽기가 본다
-  backendKind() { return (this.b.adapter && this.b.adapter.backend) || 'herdr'; }
-  allowRules() { return branchAllow(this.backendKind()); }
+  allowRules() { return branchAllow(); }
   // writeSessionSettings에 더할 값
   settingsExtra(sessionId) { return { env: this.envFor(sessionId), allow: this.allowRules() }; }
   // writeBoardPlugin에 더할 것: 일 맡기기 스킬, atrium 명령(별칭 mtask)
@@ -328,11 +323,10 @@ export class Branch {
   pluginExtra() { return { skills: { [SKILL_NAME]: boardSkill(SKILL_NAME), [LEGACY_SKILL_NAME]: boardSkill(LEGACY_SKILL_NAME) }, bin: childShims() }; }
   // P8 전에 띄운 판 세션의 설정 파일에도 env와 규칙을 더한다(이어 갈 때 다시 읽힌다). hook과 다른 규칙은 그대로
   // P18: 옛 이름의 env(MTASK_*)는 빼고 ATRIUM_*로 바꾼다(옛 데이터 폴더를 가리키는 값이 남지 않게)
-  // P116: 판의 규칙(atrium prompt|wait|read)을 더하고, hc 모드면 herdr 일 시키기 규칙을 뺀다(그 패널의 herdr는 판의 세션이 아니다)
+  // P116: 판의 규칙(atrium prompt|wait|read)을 더한다. P129: 옛 터미널 명령 규칙은 뺀다
   refreshSettings() {
     let n = 0;
     const rules = this.allowRules();
-    const drop = this.backendKind() === 'hc' ? new Set(HERDR_AGENT_ALLOW) : new Set();
     for (const s of this.b.sessions.values()) {
       if (!this.b.hooked(s) || !s.settingsPath || !fs.existsSync(s.settingsPath)) continue;
       try {
@@ -340,7 +334,7 @@ export class Branch {
         const env = this.envFor(s.sessionId);
         const kept = Object.fromEntries(Object.entries(j.env || {}).filter(([k]) => !k.startsWith('MTASK_')));
         const before = (j.permissions && j.permissions.allow) || [];
-        const allow = [...new Set([...before, ...rules])].filter((r) => !drop.has(r));
+        const allow = [...new Set([...before, ...rules])].filter((r) => !OLD_TERMINAL_RULE.test(r));
         if (JSON.stringify(j.env || {}) === JSON.stringify({ ...kept, ...env }) && allow.length === before.length && allow.every((r, i) => r === before[i])) continue;
         j.env = { ...kept, ...env }; j.permissions = { ...(j.permissions || {}), allow }; // 순서: 원래 규칙, 새 규칙(빠진 것 없이 같으면 쓰지 않는다)
         fs.writeFileSync(s.settingsPath, JSON.stringify(j, null, 2)); n++;
@@ -446,7 +440,7 @@ export class Branch {
       if (caller.error) return send(caller.status, { error: caller.error });
       try {
         const result = await this.dispatch(op, caller.s, body, res);
-        send(200, { result, board: { herdrSession: this.b.cfg.herdrSession, port: this.b.cfg.port } });
+        send(200, { result, board: { terminalSession: this.b.cfg.terminalSession, port: this.b.cfg.port } });
       } catch (e) {
         if (!e.code) this.b.log(`branch ${op} failed: ${e.stack}`);
         send(e.code === 'not_parent' ? 403 : e.code === 'not_found' ? 404 : 400, { error: { code: e.code || 'error', message: e.message, ...(e.limit ? { limit: e.limit, now: e.now } : {}), ...(e.candidates ? { candidates: e.candidates } : {}) } });
@@ -469,7 +463,7 @@ export class Branch {
   auth(headers, op) {
     const sid = String(headers['x-mt-session'] || '');
     const s = this.b.sessions.get(sid);
-    if (!s) return { status: 404, error: { code: 'not_on_board', message: `이 보드(${this.b.cfg.herdrSession})에서 찾을 수 없는 세션입니다. 보드에서 시작한 세션에서만 호출할 수 있습니다.` } };
+    if (!s) return { status: 404, error: { code: 'not_on_board', message: `이 보드(${this.b.cfg.terminalSession})에서 찾을 수 없는 세션입니다. 보드에서 시작한 세션에서만 호출할 수 있습니다.` } };
     const given = String(headers.authorization || '').replace(/^Bearer /, '');
     const want = this.token(sid);
     const ok = given.length === want.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want));
@@ -495,7 +489,7 @@ export class Branch {
   // K1: 하위 세션 만들기. o: { name, prompt, role, cwd(절대 경로), worktree, model, kind, wait }
   async spawnChild(parent, o = {}, res = null) {
     const b = this.b;
-    b.requireHerdr();
+    b.requireTerminal();
     // P21(D4): 잠든 자기 하위 세션의 이름이면 새로 만들지 않고 깨운다(첫 지시가 있으면 깬 뒤 보낸다)
     const asleep = o.name && [...b.sessions.values()].find((x) => x.name === String(o.name).replace(/^@/, '') && x.parentSessionId === parent.sessionId && (x.rt.sleep || (b.sleeper && b.sleeper.wakes.has(x.sessionId))));
     if (asleep) return this.wakeAgent(parent, { name: asleep.name, prompt: o.prompt });
@@ -538,7 +532,6 @@ export class Branch {
     // K3: P36에서 상한을 없앴다
     const parentDepth = this.depth(parent.sessionId);
     const ws = await workspaceOf(cwd);
-    const allowHerdr = !!((b.store.spawnInfo(parent.sessionId) || {}).allowHerdr);
     const depth = parentDepth + 1;
     const viaLauncher = route.type === 'launcher';
     const info = { role, depth, by: parent.sessionId, at: Date.now(), order: this.nextOrder(parent.sessionId), worktree, ...(worktree ? { wtHome: 1 } : {}), kind, via: 'atrium child', inherited: { cwd: !o.cwd, model: claude && !o.model && !o.launcher, effort: claude && !o.effort && !viaLauncher && !!parent.effort, permissionMode: other ? other.record.approvalFrom === 'parent' : !viaLauncher }, ...(viaLauncher || (other && other.launcher) ? { launcher: (viaLauncher ? route.launcher : other.launcher).name } : {}), ...(other ? { harness: other.record } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(gate ? { gate: 'trust' } : {}), ...(head ? { head: true } : {}) };
@@ -552,8 +545,8 @@ export class Branch {
       // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
       const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: other.args.join(' ') }, permissionMode: parent.permissionMode } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
         : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined }
-        : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode, allowHerdr }
-        : { ...base, kind, model, effort, permissionMode: parent.permissionMode, allowHerdr, ...(route.args ? { args: route.args } : {}) };
+        : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode }
+        : { ...base, kind, model, effort, permissionMode: parent.permissionMode, ...(route.args ? { args: route.args } : {}) };
       out = await b.spawn(sp);
     } finally { this.pending.splice(this.pending.indexOf(parent.sessionId), 1); this.pendingNames.delete(name); }
     const child = b.sessions.get(out.sessionId);
@@ -670,7 +663,7 @@ export class Branch {
     if (!o.kind && pk !== 'claude' && pk !== 'shell') {
       const plan = parent.harnessPlan || {};
       const found = plan.launcherId ? this.findLauncher(plan.launcherId) : null;
-      const def = found && harnessOf(found.harness) && harnessOf(found.harness).kind === pk ? found : { id: null, name: plan.launcher || pk, harness: pk, icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: '' };
+      const def = found && harnessOf(found.harness) && harnessOf(found.harness).kind === pk ? found : { id: null, name: plan.launcher || pk, harness: pk, icon: '', model: '', effort: '', permissionMode: '', args: '', env: {}, command: '' };
       return { type: 'inherit-harness', kind: pk, launcherDef: { ...def, model: plan.model || '', args: (plan.args || []).join(' '), startCommand: parent.startCommand || '', ...(plan.connectionId ? { connection: plan.connectionId } : {}) }, gateway: null, resolved: null };
     }
     // 물려받기: 부모가 연결을 쓰는 claude 세션이면(spawn 이벤트의 연결, P115 전은 env) 하위 세션도 같은 연결로 띄운다
@@ -681,14 +674,14 @@ export class Branch {
       if (pc) {
         const found = sp.launcher ? this.findLauncher(sp.launcher) : null;
         const def = found && found.harness === 'claude' && found.connection === pc.id ? found
-          : { id: null, name: sp.launcher || pc.name, harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: (sp.extraArgs || []).join(' '), env: sp.launcherEnv || {}, command: '', connection: pc.id };
+          : { id: null, name: sp.launcher || pc.name, harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', args: (sp.extraArgs || []).join(' '), env: sp.launcherEnv || {}, command: '', connection: pc.id };
         return { type: 'inherit-gateway', kind, launcherDef: { ...def, icon: parent.flavor || '', model: parent.model || def.model || '' }, gateway: pc.baseUrl, resolved: null };
       }
       const url = sp.env && sp.env.ANTHROPIC_BASE_URL;
       if (url) {
         const found = sp.launcher ? this.findLauncher(sp.launcher) : null;
         const def = found && found.harness === 'claude' && found.env && found.env.ANTHROPIC_BASE_URL === url ? found
-          : { id: null, name: sp.launcher || 'gateway', harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: (sp.extraArgs || []).join(' '), env: sp.env, command: '' };
+          : { id: null, name: sp.launcher || 'gateway', harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', args: (sp.extraArgs || []).join(' '), env: sp.env, command: '' };
         return { type: 'inherit-gateway', kind, launcherDef: { ...def, icon: parent.flavor || '', model: parent.model || def.model || '' }, gateway: url, resolved: null };
       }
     }
@@ -731,24 +724,23 @@ export class Branch {
     // 신뢰가 ~/.claude.json에 쓰였는지(claude -w가 다시 묻지 않고 만들게)
     while (predictTrust(s.cwd, b.cfg.claudeJson).needsTrust && Date.now() - t0 < this.gateTrustWaitMs) await sleep(250);
     const trusted = !predictTrust(s.cwd, b.cfg.claudeJson).needsTrust;
-    // 그 사이 herdr로 직접 들어간 지시(UserPromptSubmit)는 워크트리에서 다시 보낸다
+    // 그 사이 터미널로 직접 들어간 지시(UserPromptSubmit)는 워크트리에서 다시 보낸다
     const slipped = s.rt.lastPromptAt && s.rt.lastPromptAt >= (info.at || 0) && s.rt.lastPrompt ? String(s.rt.lastPrompt) : null;
     const st = () => deriveState(s.rt).state;
     if (['working', 'waiting'].includes(st())) { await b.adapter.sendKeys(s.agentName, ['esc']).catch(() => {}); for (let i = 0; i < 25 && ['working', 'waiting'].includes(st()); i++) await sleep(200); }
     await b.adapter.sendText(s.paneId, '/exit'); await sleep(150); await b.adapter.paneKeys(s.paneId, ['enter']);
-    for (const t = Date.now(); s.rt.herdr.present && Date.now() - t < (b.cfg.killWaitMs || 8000);) await sleep(200);
+    for (const t = Date.now(); s.rt.term.present && Date.now() - t < (b.cfg.killWaitMs || 8000);) await sleep(200);
     if (!b.sessions.has(s.sessionId)) return;
     await b.adapter.waitShellReady(s.paneId, 8000);
     const args = buildStartArgs({ ...b.launchOf(s), worktree: info.worktree });
     await b.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) }); // P97: 실행 명령
     s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
-    s.rt.herdr.launchPending = true; s.rt.herdr.agentSessionId = null; s.rt.trustPredicted = false; s.rt.trustScreen = null;
+    s.rt.term.launchPending = true; s.rt.term.agentSessionId = null; s.rt.trustPredicted = false; s.rt.trustScreen = null;
     const next = { ...info, gate: null, gatePassedAt: Date.now() };
     this.noteChild(s.sessionId, next);
     b.store.addEvent(s.sessionId, 'trust_gate_passed', { worktree: info.worktree, trusted, slipped: !!slipped, ms: Date.now() - t0, args });
     b.log(`trust gate passed ${s.name}: relaunch with --worktree ${info.worktree} (trusted=${trusted})`);
     b.broadcastSession(s, { cause: 'trust_gate' });
-    b.registerResume(s);
     if (slipped) b.queue.enqueue(s.sessionId, slipped);
   }
   // atrium child-wait <이름>: 자기 자손이 지시를 받을 수 있게 될 때까지(ready, 관문을 지난 뒤). 신뢰 질문·승인 대기·끝남이면 그대로 돌려준다
@@ -786,7 +778,7 @@ export class Branch {
       if (first) {
         const d = b.store.getDelivery(first.deliveryId);
         if (d && ['failed', 'cancelled', 'unconfirmed'].includes(d.status)) return { state: s, delivery: d.status, ms: Date.now() - t0 };
-        if (d && d.status === 'confirmed' && (s === 'working' || child.rt.herdr.status === 'working' || (child.rt.turn && child.rt.turn.endedAt && child.rt.turn.endedAt > d.createdAt))) return { state: s, delivery: 'confirmed', ms: Date.now() - t0 };
+        if (d && d.status === 'confirmed' && (s === 'working' || child.rt.term.status === 'working' || (child.rt.turn && child.rt.turn.endedAt && child.rt.turn.endedAt > d.createdAt))) return { state: s, delivery: 'confirmed', ms: Date.now() - t0 };
         if (Date.now() - t0 > this.readyWaitMs - this.submitWaitMs && s === 'ready' && d && d.status === 'confirmed') return { state: s, delivery: 'confirmed', ms: Date.now() - t0 };
       }
       await sleep(250);
@@ -794,7 +786,7 @@ export class Branch {
     return { state: st(), timeout: true, ms: Date.now() - t0 };
   }
 
-  // P21(D4)·P24: atrium wake <이름>(또는 잠든 하위 세션 이름으로 atrium child). 판의 어느 세션이든 그 리포째 깨운다(herdr 명령도 대상을 가리지 않는다)
+  // P21(D4)·P24: atrium wake <이름>(또는 잠든 하위 세션 이름으로 atrium child). 판의 어느 세션이든 그 리포째 깨운다
   async wakeAgent(caller, o = {}) {
     const b = this.b;
     const ref = String(o.name || '').replace(/^@/, '');
@@ -813,7 +805,7 @@ export class Branch {
   childView(x) {
     const sum = this.b.summary(x);
     const info = this.info.get(x.sessionId) || {};
-    return { name: x.name, sessionId: x.sessionId, agentName: x.agentName, paneId: x.paneId, kind: x.kind || 'claude', role: info.role || null, depth: this.depth(x.sessionId), parent: (this.rowOf(x.parentSessionId) || {}).name || null, state: sum.state, ask: sum.ask ? clip(sum.ask.summary || sum.ask.kind, 160) : null, lastPrompt: clip(x.rt.lastPrompt, 300), lastAnswer: clip(x.rt.lastAnswer, 1500), lastAnswerAt: x.rt.lastAnswerAt || null, error: sum.error ? { type: sum.error.type || null, message: clip(sum.error.message, 300) || (isModelError(sum.error) ? modelErrorText(x.model) : null) } : null, model: x.model || null, cwd: x.rt.cwd || x.cwd, worktree: info.worktree || null, gated: this.gated(x.sessionId), children: this.openChildren(x.sessionId).length, firstPromptLost: this.lost.get(x.sessionId) || null, deliveryStuck: sum.deliveryStuck || null }; // P106: deliveryStuck(herdr가 오래 받지 않는 전달)
+    return { name: x.name, sessionId: x.sessionId, agentName: x.agentName, paneId: x.paneId, kind: x.kind || 'claude', role: info.role || null, depth: this.depth(x.sessionId), parent: (this.rowOf(x.parentSessionId) || {}).name || null, state: sum.state, ask: sum.ask ? clip(sum.ask.summary || sum.ask.kind, 160) : null, lastPrompt: clip(x.rt.lastPrompt, 300), lastAnswer: clip(x.rt.lastAnswer, 1500), lastAnswerAt: x.rt.lastAnswerAt || null, error: sum.error ? { type: sum.error.type || null, message: clip(sum.error.message, 300) || (isModelError(sum.error) ? modelErrorText(x.model) : null) } : null, model: x.model || null, cwd: x.rt.cwd || x.cwd, worktree: info.worktree || null, gated: this.gated(x.sessionId), children: this.openChildren(x.sessionId).length, firstPromptLost: this.lost.get(x.sessionId) || null, deliveryStuck: sum.deliveryStuck || null }; // P106: deliveryStuck(터미널이 오래 받지 않는 전달)
   }
   // P79: 하위 세션의 첫 요청이 끝내 들어가지 않았다(unconfirmed·failed). 판 이벤트로 남기고, 부모에게 그 사실과 다시 보낼 명령을 보낸다.
   //   첫 요청은 사람(리드)이 맡긴 일이라 조용히 사라지면 안 된다. 같은 전달은 한 번만 알린다

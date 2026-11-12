@@ -15,7 +15,7 @@ test('P125 끝남 가르기: 직접 종료(user)·판이 끈 것(normal)은 오�
   assert.equal(exitKindOf({ state: 'ready', exit: { kind: 'user' } }), null); // 다시 뜬 세션의 옛 값은 보지 않는다
   assert.equal(userClosed(ex('user')), true); assert.equal(userClosed(ex('other')), false);
   for (const k of ['user', 'normal']) assert.equal(problemExit(ex(k)), false, k);
-  for (const k of ['other', 'trust_declined', 'herdr_stopped']) assert.equal(problemExit(ex(k)), true, k);
+  for (const k of ['other', 'trust_declined', 'terminal_stopped']) assert.equal(problemExit(ex(k)), true, k);
   assert.equal(problemExit({ state: 'error' }), false); // 턴 오류는 따로(state error)
 });
 

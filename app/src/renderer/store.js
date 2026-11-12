@@ -14,7 +14,8 @@ import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107:
 const state = {
   conn: 'connecting',
   connDetail: null,
-  herdr: { connected: null },
+  terminal: { connected: null }, // 터미널 서버(hc) 상태(terminal.status, terminal 이벤트)
+  migration: null, // 옛 판(herdr)을 herdr-core로 옮기는 진행(terminal.migrate). 없으면 null
   sessions: new Map(), // sessionId → summary(backend summary)
   nodes: new Map(), // sessionId → { x, y, w, h, z, size }
   boardLoaded: false,
@@ -29,7 +30,6 @@ const state = {
   // P3
   boardSeenAt: null, // A3: 판을 마지막으로 본 시각(백엔드 기록)
   resources: null, // D1
-  clients: null, // D3: 판 전용 herdr 세션에 붙은 다른 화면
   peers: null, // P47: 이 백엔드에 붙은 창·웹 클라이언트 { clients, notify(알림 받을 클라이언트 ID), me }
   links: new Map(), // P4: linkId → 연결(누가 누구에게 시켰는지, 역할, 띄움)
   dialog: null, // { kind: 'spawn' | 'role' | 'link' | 'wsopen' | 'wsclose' | 'close', from?, to?, linkId?, cwd?, ids? }
@@ -300,11 +300,11 @@ api.on('$open', async (r) => {
     const ds = await api.call('delivery.list', { limit: 10 });
     const live = await api.call('delivery.list', { active: true }).catch(() => []); // P106: 오래 막힌 전달도(최근 10개 밖) 보이고 취소할 수 있게
     state.deliveries = new Map([...ds.reverse(), ...live].filter((d) => state.sessions.has(d.sessionId)).map((d) => [d.deliveryId, d])); // 판에 있는 세션 것만
-    const st = await api.call('herdr.status');
-    state.herdr = herdrStateOf(st);
+    const st = await api.call('terminal.status');
+    state.terminal = terminalStateOf(st);
+    if ('migration' in st) state.migration = st.migration || null;
     changed();
-    const [res, clients] = await Promise.all([api.call('resources.get'), api.call('herdr.clients')]);
-    state.resources = res; state.clients = clients;
+    state.resources = await api.call('resources.get');
     changed();
     // P6c: Thread, 루프, 설정. P6b 전 백엔드면 없다(조용히 넘어간다)
     await Promise.all([loadThread().catch(() => {}), loadLoops().catch(() => {}), api.call('settings.get').then((r) => { putSettings(r.settings); }).catch(() => {}), loadLaunchers()]);
@@ -328,14 +328,16 @@ api.on('delivery', (d) => {
 // P13: 판 밖 대화 노드가 바뀌었다(새 대화, 자리, 보관, 판 세션이 됨, 묶임 표시)
 export function setConvoNodes(nodes, edges) { state.convoNodes = new Map((nodes || []).map((c) => [c.convId, c])); state.convoEdges = edges || []; changed(); }
 api.on('convo.nodes', (d) => setConvoNodes(d.nodes, d.edges));
-api.on('herdr', (d) => { state.herdr = { ...state.herdr, ...herdrEventOf(d) }; changed(); });
-// P40: herdr 상태(herdr.status 결과, herdr 이벤트) → 창이 쓰는 값. 띠(못 찾음, 다른 프로토콜, 검증하지 않은 버전, 새 버전)와 알약이 읽는다
-export function herdrStateOf(st) {
-  return { connected: st.connected, running: st.running, session: st.session, version: (st.compat && st.compat.version) || null, ...herdrEventOf(st) };
+api.on('terminal', (d) => { state.terminal = { ...state.terminal, ...terminalEventOf(d) }; if (d && 'migration' in d) state.migration = d.migration || null; changed(); });
+// P129: 옛 판 옮기기 진행(판 위 띠와 설정 › 터미널 표가 읽는다)
+api.on('terminal.migrate', (v) => { state.migration = v || null; changed(); });
+// 터미널 상태(terminal.status 결과, terminal 이벤트) → 창이 쓰는 값. hc 띠와 알약이 읽는다
+export function terminalStateOf(st) {
+  return { connected: st.connected, running: st.running, session: st.session, version: (st.compat && st.compat.version) || null, ...terminalEventOf(st) };
 }
-export function herdrEventOf(d) {
+export function terminalEventOf(d) {
   const out = { connected: d.connected };
-  for (const k of ['missing', 'level', 'warning', 'problems', 'protocols', 'tested', 'update', 'path', 'find', 'backend', 'hcVersion', 'terminals']) if (k in d) out[k] = d[k]; // P117: 터미널 백엔드(hc 띠, 설정 › 터미널의 hc 버전)
+  for (const k of ['missing', 'level', 'warning', 'problems', 'path', 'backend', 'hcVersion', 'terminals']) if (k in d) out[k] = d[k]; // P117: 터미널 백엔드(hc 띠, 설정 › 터미널의 hc 버전)
   if (d.version) out.version = d.version;
   if (d.protocol != null) out.protocol = d.protocol;
   return out;
@@ -357,7 +359,6 @@ api.on('workspace.pruned', (d) => {
   if (list.length === 1) toast(t('regionPrune.single', { name: list[0].name, root: list[0].root }));
   else if (list.length > 1) toast(t('regionPrune.multiple', { n: list.length }));
 });
-api.on('herdr.clients', (v) => { state.clients = v; changed(); });
 api.on('clients.updated', (v) => { state.peers = { ...v, me: api.clientId }; changed(); }); // P47
 // P47: 다른 창이 노드를 옮기거나 크기를 바꿨다(board.setNode). 이 창이 보낸 것은 이미 그렸다
 api.on('board.node', (d) => { if (!d || (d.by && d.by === api.clientId) || !state.nodes.has(d.sessionId)) return; setNodeLocal(d.sessionId, { x: d.x, y: d.y, w: d.w, h: d.h, ...(d.z != null ? { z: d.z } : {}) }); });

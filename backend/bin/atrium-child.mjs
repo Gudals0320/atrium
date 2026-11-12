@@ -14,7 +14,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { envVar } from '../src/config.mjs';
+import { envVar, terminalSessionVar } from '../src/config.mjs';
 import { shortHelp, contractJson, VERB_NAMES } from '../src/cli-contract.mjs'; // P115: 계약(atrium help --json)
 
 const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같다)
@@ -67,7 +67,7 @@ function call(op, body, timeoutMs) {
   return new Promise((resolve, reject) => {
     const data = Buffer.from(JSON.stringify(body));
     const req = http.request({ host: '127.0.0.1', port: Number(E('PORT')), path: `/branch/${op}`, method: 'POST', timeout: timeoutMs,
-      headers: { 'content-type': 'application/json', 'content-length': data.length, authorization: `Bearer ${TOKEN}`, 'x-mt-session': E('SESSION_ID'), 'x-mt-pane': process.env.HERDR_PANE_ID || '' } }, (res) => {
+      headers: { 'content-type': 'application/json', 'content-length': data.length, authorization: `Bearer ${TOKEN}`, 'x-mt-session': E('SESSION_ID') } }, (res) => {
       let b = ''; res.setEncoding('utf8'); res.on('data', (d) => (b += d));
       res.on('end', () => { try { resolve(JSON.parse(b)); } catch { reject(new Error(`보드의 응답을 읽지 못했습니다 (HTTP ${res.statusCode})`)); } });
     });
@@ -113,8 +113,8 @@ async function main() {
     if (!rest[0]) fail('끌 하위 세션 이름을 준다: atrium child-kill <이름>', 2);
     r = await call('kill', { name: rest[0], only: !!flags.only }, 110000);
   }
-  // 판을 잘못 찾아가지 않았는지(설정 파일의 env와 응답한 판이 같은 herdr 세션인가)
-  if (r.board && E('HERDR_SESSION') && r.board.herdrSession !== E('HERDR_SESSION')) fail(`다른 보드에서 응답했습니다 (${r.board.herdrSession}, 기대 ${E('HERDR_SESSION')})`);
+  // 판을 잘못 찾아가지 않았는지(설정 파일의 env와 응답한 판이 같은 터미널 세션인가)
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
   if (r.error) {
     const e = r.error;
@@ -204,7 +204,7 @@ async function verb(cmd) {
     if (flags.lines != null && !(lines > 0)) fail(`--lines는 줄 수다: ${flags.lines}`, 2);
     r = await call('read', { name, lines }, 30000);
   }
-  if (r.board && E('HERDR_SESSION') && r.board.herdrSession !== E('HERDR_SESSION')) fail(`다른 보드에서 응답했습니다 (${r.board.herdrSession}, 기대 ${E('HERDR_SESSION')})`);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   const x = r.result;
   const turn = cmd === 'wait' ? x : x && x.turn;
   const code = r.error ? 1 : turn ? turnExit(turn.status) : x && x.delivery && ['failed', 'cancelled'].includes(x.delivery.status) ? 1 : 0;
@@ -277,7 +277,7 @@ function ago(at, now) {
 function printMe(x) {
   const last = (l) => (l ? ` · 마지막 지시 ${ago(l.at, x.at)}${l.text ? ` "${l.text}"` : ''}` : '');
   const m = x.me;
-  // P116: 이름은 보드의 세션 이름(atrium prompt|wait|read가 받는다). herdr 이름·패널은 보이지 않는다(--json에는 남는다)
+  // P116: 이름은 보드의 세션 이름(atrium prompt|wait|read가 받는다). 에이전트 주소·패널은 보이지 않는다(--json에는 남는다)
   say(`나: @${m.name} (${m.kind}) · 워크스페이스 ${m.workspace || '-'}${m.worktree ? ` · 워크트리 ${m.worktree}` : ''}${m.branch ? ` · 브랜치 ${m.branch}` : ''}`);
   const p = x.parent;
   if (!p) say('부모: 부모 없음');

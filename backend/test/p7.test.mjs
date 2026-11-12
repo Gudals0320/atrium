@@ -187,13 +187,13 @@ function fakeBackend({ convoRoots, sessionsDir = tmp(), desktop = null, workspac
     store, bus: new EventEmitter(), sessions: new Map(), adapter, events, calls, killing: new Set(),
     api: { broadcast: (ev, data) => events.push([ev, data]) },
     plugin: { pluginDir: 'P', systemPromptFile: 'S' }, hookUrl: 'http://127.0.0.1:1/hooks/claude',
-    log: () => {}, hooked: (s) => s.rt.hooked !== false, requireHerdr: () => {},
+    log: () => {}, hooked: (s) => s.rt.hooked !== false, requireTerminal: () => {},
     resolveWorkspace: async (r) => store.getWorkspace(r),
     ensureWorkspace: (ws) => { if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: Date.now() }); },
     withNewPane: async (create, register) => { const r = await create(); await register(r); return r; },
     broadcastSession: (s, o) => events.push(['session', s.name, o && o.cause]),
-    probeGit: () => {}, registerResume: (s) => calls.push(['registerResume', s.sessionId]),
-    setPane: async (s, paneId, wid) => { s.paneId = paneId; s.herdrWorkspaceId = wid; store.updateSession(s.sessionId, { paneId, herdrWorkspaceId: wid }); },
+    probeGit: () => {},
+    setPane: async (s, paneId, wid) => { s.paneId = paneId; s.termWorkspaceId = wid; store.updateSession(s.sessionId, { paneId, termWorkspaceId: wid }); },
     demoteToShell: (s) => { s.kind = 'shell'; calls.push(['demote', s.name]); },
     closeSession: (s, reason) => { store.updateSession(s.sessionId, { closedAt: Date.now(), runtime: s.rt, closeReason: reason }); b.sessions.delete(s.sessionId); calls.push(['close', s.name, reason]); },
     // P115: 하네스 세션(codex 등)은 백엔드가 판의 줄(env·안내문·세션 ID)로 띄운다. 여기서는 무엇으로 불렀는지만 남긴다
@@ -303,7 +303,6 @@ test('J2: 닫힌 claude를 다시 열면 같은 세션 ID로 이어 간다(--res
   assert.equal(row.closedAt, null); assert.ok(row.hookToken.length > 20);
   assert.ok(fs.readFileSync(row.settingsPath, 'utf8').includes(row.hookToken));
   assert.deepEqual(b.store.nodeOf(ID(2)), { session_id: ID(2), x: 100, y: 200, w: 1440, h: 810, z: 0, size: 'wide-normal', aspect: '16:9', area: '' }); // P27: area(본 저장소 영역). P73: 사람이 바꾸지 않은 옛 기본 크기(720×460)는 새 기본 크기로 연다
-  assert.ok(b.calls.some((c) => c[0] === 'registerResume'));
   await assert.rejects(r.reopen({ session: ID(2) }), /닫힌 세션이 아닙니다/);
 });
 
@@ -333,7 +332,7 @@ test('J2·J4: 판에 올린 claude는 그 대화 ID의 판 세션으로 다시 �
   const root = tmp(); const ws = tmp(); const W = folderWs(ws); const sdir = tmp();
   writeConvo(root, ws, ID(7), [L.user('지시', { cwd: ws })]);
   const b = fakeBackend({ convoRoots: [root], workspaces: [W], sessionsDir: sdir });
-  const rt = newRuntime({ kind: 'claude', hooked: false }); rt.herdr.agentSessionId = ID(7);
+  const rt = newRuntime({ kind: 'claude', hooked: false }); rt.term.agentSessionId = ID(7);
   addClosed(b, { id: ID(6), name: 'helper', cwd: ws, origin: 'adopted', rt, ws: W, reason: 'pane gone' });
   assert.equal(convOf(b.store.getSession(ID(6))), ID(7));
   const r = new Recall(b, { resolveCwd: fakeResolve({}), readProcs: async () => [{ pid: 77, cmd: `claude --resume ${ID(7)}` }] });
@@ -379,10 +378,10 @@ test('J1: herdr가 패널을 잃은 셸은 같은 폴더의 새 셸로, 판에 �
   const b = fakeBackend({ convoRoots: [root], workspaces: [W] });
   const r = new Recall(b, { resolveCwd: fakeResolve({}), readProcs: async () => [] });
   await r.scan({ wait: true });
-  const mk = (id, name, kind, origin, rt) => { const s = { sessionId: id, name, cwd: ws, kind, origin, paneId: 'old:p1', herdrWorkspaceId: 'old', agentName: name, rt, workspaceKey: W.key }; b.store.insertSession({ ...s, permissionMode: 'manual', createdAt: 1, runtime: rt }); b.sessions.set(id, s); return s; };
+  const mk = (id, name, kind, origin, rt) => { const s = { sessionId: id, name, cwd: ws, kind, origin, paneId: 'old:p1', termWorkspaceId: 'old', agentName: name, rt, workspaceKey: W.key }; b.store.insertSession({ ...s, permissionMode: 'manual', createdAt: 1, runtime: rt }); b.sessions.set(id, s); return s; };
   const shRt = newRuntime({ kind: 'shell', hooked: false }); shRt.interruptedTurn = { state: 'shell_running', prompt: 'ping' };
   const sh = mk(ID(1), 'sh1', 'shell', 'board', shRt);
-  const hRt = newRuntime({ kind: 'claude', hooked: false }); hRt.herdr.agentSessionId = ID(9); hRt.exit = { kind: 'herdr_stopped' };
+  const hRt = newRuntime({ kind: 'claude', hooked: false }); hRt.term.agentSessionId = ID(9); hRt.exit = { kind: 'terminal_stopped' };
   const helper = mk(ID(2), 'helper', 'claude', 'adopted', hRt);
   const nRt = newRuntime({ kind: 'claude', hooked: false });
   const noConv = mk(ID(3), 'h2', 'claude', 'adopted', nRt);
@@ -403,8 +402,8 @@ test('J1: herdr를 다시 띄운 뒤 패널은 남았는데 돌아오지 않은 
   const b = fakeBackend({ convoRoots: [root], workspaces: [W] });
   const r = new Recall(b, { resolveCwd: fakeResolve({}), readProcs: async () => [] });
   await r.scan({ wait: true });
-  const down = (kind, agentSessionId = null) => { const rt = newRuntime({ kind, hooked: false }); rt.exit = { kind: 'herdr_stopped' }; rt.herdr.agentSessionId = agentSessionId; return rt; };
-  const mk = (id, name, kind, origin, rt) => { const s = { sessionId: id, name, cwd: ws, kind, origin, paneId: `${name}:p1`, herdrWorkspaceId: name, agentName: name, rt, workspaceKey: W.key }; b.store.insertSession({ ...s, permissionMode: 'manual', createdAt: 1, runtime: rt }); b.sessions.set(id, s); return s; };
+  const down = (kind, agentSessionId = null) => { const rt = newRuntime({ kind, hooked: false }); rt.exit = { kind: 'terminal_stopped' }; rt.term.agentSessionId = agentSessionId; return rt; };
+  const mk = (id, name, kind, origin, rt) => { const s = { sessionId: id, name, cwd: ws, kind, origin, paneId: `${name}:p1`, termWorkspaceId: name, agentName: name, rt, workspaceKey: W.key }; b.store.insertSession({ ...s, permissionMode: 'manual', createdAt: 1, runtime: rt }); b.sessions.set(id, s); return s; };
   const helper = mk(ID(1), 'helper', 'claude', 'adopted', down('claude', ID(9)));
   const cx = mk(ID(2), 'cx', 'codex', 'board', down('codex'));
   const back = mk(ID(3), 'back', 'claude', 'adopted', down('claude', ID(9)));
@@ -414,7 +413,7 @@ test('J1: herdr를 다시 띄운 뒤 패널은 남았는데 돌아오지 않은 
   const starts = b.calls.filter((c) => c[0] === 'startAgent').map((c) => c[1]);
   assert.deepEqual(starts, [{ name: 'helper', paneId: 'helper:p1', args: ['--resume', ID(9)], kind: 'claude' }]);
   assert.deepEqual(b.calls.filter((c) => c[0] === 'closeWorkspace'), [['closeWorkspace', 'cx']]);
-  assert.ok(b.calls.some((c) => c[0] === 'close' && c[1] === 'cx' && c[2] === 'not resumed after herdr restart'));
+  assert.ok(b.calls.some((c) => c[0] === 'close' && c[1] === 'cx' && c[2] === 'not resumed after terminal restart'));
   assert.ok(b.calls.some((c) => c[0] === 'demote' && c[1] === 'ag'));
 });
 

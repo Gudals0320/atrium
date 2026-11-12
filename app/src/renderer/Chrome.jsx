@@ -187,7 +187,7 @@ export function TopLeft() {
     <div className="mt-cluster tl" data-role="top-left">
       <SidebarButton />
       {/* P9: 개발용 판이면 표시한다. 실제 판에는 없다 */}
-      {api.info && api.info.profile === 'dev' && <span className="mt-dev-badge" data-role="dev-badge" title={t('top.devBadge', { session: api.info.herdrSession, port: api.info.port })}>dev</span>}
+      {api.info && api.info.profile === 'dev' && <span className="mt-dev-badge" data-role="dev-badge" title={t('top.devBadge', { session: api.info.terminalSession, port: api.info.port })}>dev</span>}
       <WorkspaceTabs />
       <button className="mt-cp" data-action="search" title={`${t('top.searchTitle')}\n${t('boardKeys.search')}`} onClick={() => setSearchOpen(true)}>
         <Icon name="search" /><span className="dim">{t('top.search')}</span><span className="mt-kbd">Ctrl F</span>
@@ -257,26 +257,26 @@ function ConnPill() {
   const rawConn = useStore((st) => st.conn);
   const { grace } = useConnSteady(); // P82: 웹 화면은 짧은 끊김(2초 안)에 알약을 바꾸지 않는다
   const conn = isWeb && grace ? 'open' : rawConn;
-  const herdr = useStore((st) => st.herdr);
+  const term = useStore((st) => st.terminal);
   const count = useStore((st) => st.sessions.size);
   const links = useStore((st) => st.links.size);
   const [starting, setStarting] = useState(false);
-  const startHerdr = async () => { setStarting(true); try { await api.call('herdr.start'); toast(t('top.herdrStarted')); } catch (e) { toast(t('top.herdrStartFail', { error: errText(e) }), 'error'); } setStarting(false); };
-  const herdrBlocked = !!(herdr.missing || herdr.level === 'missing' || herdr.level === 'incompatible'); // P40: 띠가 까닭과 할 일을 보인다
-  const ok = conn === 'open' && herdr.connected && !herdrBlocked;
+  const startTerminal = async () => { setStarting(true); try { await api.call('terminal.start'); toast(t('top.terminalStarted')); } catch (e) { toast(t('top.terminalStartFail', { error: errText(e) }), 'error'); } setStarting(false); };
+  const termBlocked = !!(term.missing || term.level === 'missing' || term.level === 'incompatible'); // P40: 띠가 까닭과 할 일을 보인다
+  const ok = conn === 'open' && term.connected && !termBlocked;
   const connWord = (c) => t(c === 'open' ? 'top.connected' : c === 'connecting' ? 'top.connecting' : 'top.disconnected');
-  // P32: 누르면 미션 맵을 열고(열려 있으면 닫고) 올리면 연결 풀이. 백엔드와 끊겨 있으면 맵을 읽을 수 없으므로 누르기를 받지 않는다(herdr만 끊긴 때는 판 데이터로 연다)
+  // P32: 누르면 미션 맵을 열고(열려 있으면 닫고) 올리면 연결 풀이. 백엔드와 끊겨 있으면 맵을 읽을 수 없으므로 누르기를 받지 않는다(터미널 서버만 끊긴 때는 판 데이터로 연다)
   const mission = useStore((st) => st.missionOpen);
   const canOpen = conn === 'open';
-  const title = [t('top.connBackend', { state: connWord(conn) }), t('top.connHerdr', { session: herdr.session || '?', version: herdr.version ? ` (${herdr.version})` : '', state: connWord(herdr.connected ? 'open' : 'closed') }), t('top.connSessions', { n: count }), t('top.connLinks', { n: links }), canOpen ? t(mission ? 'mmap.pillClose' : 'mmap.pillOpen') : null].filter(Boolean).join('\n');
+  const title = [t('top.connBackend', { state: connWord(conn) }), t('top.connTerminal', { session: term.session || '?', version: term.hcVersion || term.version ? ` (${term.hcVersion || term.version})` : '', state: connWord(term.connected ? 'open' : 'closed') }), t('top.connSessions', { n: count }), t('top.connLinks', { n: links }), canOpen ? t(mission ? 'mmap.pillClose' : 'mmap.pillOpen') : null].filter(Boolean).join('\n');
   const toggle = () => { if (canOpen || mission) setMissionOpen(!mission); };
   return <>
     <span className={`mt-cp conn${ok ? '' : ' bad'}${canOpen ? ' click' : ''}${mission ? ' on' : ''}`} data-role="conn" data-action="conn-mission" title={title} role={canOpen ? 'button' : undefined} tabIndex={canOpen ? 0 : undefined} aria-pressed={canOpen ? mission : undefined} onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>
       <span className={`mt-dot ${ok ? 'ok' : 'bad'}`} />
-      {conn !== 'open' ? t('top.backendState', { state: connWord(conn) }) : herdrBlocked ? t(herdr.level === 'incompatible' ? 'top.herdrIncompatible' : herdr.backend === 'hc' ? 'terminalMove.top.hcMissing' : 'top.herdrMissing') : herdr.connected === false ? t('top.herdrDown') : <><span className="mono">{count}</span><span className="dim">{t('top.sessions', { n: count })}</span></>}
+      {conn !== 'open' ? t('top.backendState', { state: connWord(conn) }) : termBlocked ? t(term.level === 'incompatible' ? 'top.terminalIncompatible' : 'terminalMove.top.hcMissing') : term.connected === false ? t('top.terminalDown') : <><span className="mono">{count}</span><span className="dim">{t('top.sessions', { n: count })}</span></>}
       <span hidden data-role="links">{links}</span>
     </span>
-    {conn === 'open' && herdr.connected === false && !herdrBlocked && <button className="mt-cp accent" disabled={starting} onClick={startHerdr} data-action="herdr-start">{t('top.herdrStart')}</button>}
+    {conn === 'open' && term.connected === false && !termBlocked && <button className="mt-cp accent" disabled={starting} onClick={startTerminal} data-action="terminal-start">{t('top.terminalStart')}</button>}
   </>;
 }
 
@@ -298,7 +298,7 @@ function ResourcePill({ maxControllers }) {
     t('top.resSessions', { n: r.sessionCount, mb: fmtMB(r.sessionsMB) }),
     ...r.sessions.map((x) => t('top.resSession', { name: x.name, mb: fmtMB(x.memMB), claude: fmtMB(x.claudeMB), n: x.procs })),
     t('top.resControllers', { n: r.controllers.count, mb: fmtMB(r.controllers.memMB), attached, max: maxControllers }),
-    r.herdrServer ? t('top.resHerdr', { mb: fmtMB(r.herdrServer.memMB) }) : t('top.resNoHerdr'),
+    r.terminalServer ? t('top.resTerminal', { mb: fmtMB(r.terminalServer.memMB) }) : t('top.resNoTerminal'),
     t('top.resBackend', { mb: fmtMB(r.backend.memMB) }),
     t('top.resStates', { working: r.running, waiting: r.waiting }),
     t('top.resAt', { time: fmtTime(r.at), ms: r.ms }),

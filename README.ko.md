@@ -111,7 +111,6 @@ Atrium은 세션을 실행하고, 세션 사이의 연결을 만들고 표시합
 |---|---|
 | [Node.js](https://nodejs.org/) | 22.13 이상(22와 24에서 시험) |
 | [herdr-core](https://github.com/herdrdev/herdr-core) | 설치할 필요가 없습니다. 보드에서 처음 필요할 때 Atrium이 고정한 버전(0.1.20, 약 4MB)을 `releases.herdr.dev`에서 내려받아 SHA-256을 확인하고 보드 데이터 폴더에 둡니다. `PATH`, 레지스트리, 시작 프로그램은 변경하지 않습니다. 새 보드는 모두 herdr-core에서 실행됩니다. |
-| [herdr](https://herdr.dev) | 설정 › 터미널에서 옮기기 전까지 herdr에서 실행되는 보드에만 필요합니다. 0.9.5(프로토콜 22)로 테스트했습니다. herdr 설치 폴더와 `PATH`에서 실행 파일을 찾습니다. 다른 파일을 사용하려면 `ATRIUM_HERDR` 또는 설정의 herdr 경로로 지정하세요. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Claude Code 세션에 쓸, `PATH`에 있는 최근 `claude` CLI. |
 | Git | 저장소와 워크트리를 인식하는 데 사용합니다. |
 | 선택 | Codex 런처에 쓸 Codex CLI. 그 세션에 쓸 opencode, pi. 연결에 쓸 모델 게이트웨이나 엔드포인트. 원격 접속에는 Tailscale. |
@@ -129,7 +128,7 @@ npm install
 npm run real
 ```
 
-`npm run real`은 앱을 빌드한 뒤 보드를 엽니다. 백엔드가 실행 중이 아니면 앱에서 시작합니다(포트 47800). 새 보드에서는 백엔드가 herdr-core를 내려받고 전용 herdr-core 세션인 `atrium`을 시작합니다. 다른 herdr, herdr-core 세션은 변경하지 않습니다. 내려받지 못하면 herdr-core가 준비되지 않았다는 안내와 **다시 시도** 버튼이 표시되며, 준비될 때까지 세션을 시작할 수 없습니다.
+`npm run real`은 앱을 빌드한 뒤 보드를 엽니다. 백엔드가 실행 중이 아니면 앱에서 시작합니다(포트 47800). 새 보드에서는 백엔드가 herdr-core를 내려받고 전용 herdr-core 세션인 `atrium`을 시작합니다. 다른 herdr-core 세션은 변경하지 않습니다. 내려받지 못하면 herdr-core가 준비되지 않았다는 안내와 **다시 시도** 버튼이 표시되며, 준비될 때까지 세션을 시작할 수 없습니다.
 
 바탕화면 바로가기를 만들려면:
 
@@ -157,21 +156,13 @@ node backend\bin\atrium.mjs install
 
 ### herdr-core 이전의 보드
 
-[herdr](https://herdr.dev)에서 세션을 실행한 적이 있는 보드는 업데이트한 뒤에도 herdr를 쓰며, 런처도 그대로입니다. 옮기려면 **설정 › 터미널**에서 **herdr-core로 옮기기**를 누릅니다.
+[herdr](https://herdr.dev)에서 세션을 실행한 적이 있는 보드(Atrium 0.1.7 이하)는 새 버전이 처음 시작할 때 저절로 herdr-core로 옮겨집니다. 새 세션은 바로 herdr-core에서 시작하고, 보드 위의 안내 줄에 진행 상황이 표시됩니다.
 
-1. 보드가 세션마다 할 일(herdr-core에서 다시 시작, 절전 유지, 옮기지 않음과 그 이유)을 보여 줍니다.
-2. **옮기기**를 눌러 확인합니다. 세션마다 같은 대화, 이름, 환경 변수, 안내문, 연결로 herdr-core에서 다시 시작하고, 보드의 자리도 그대로입니다. 새 세션이 뜬 뒤에만 이전 창을 닫습니다.
-3. 작업 중이거나 응답을 기다리거나 보내지 않은 입력이 있는 세션은 최대 10분 기다린 뒤 건너뜁니다. 나중에 버튼을 다시 누르면 남은 세션만 옮깁니다. 절전 중인 세션은 그대로 두고, 깨울 때 herdr-core에서 시작합니다.
+1. 세션마다 같은 대화, 이름, 환경 변수, 안내문, 연결로 herdr-core에서 다시 시작하고, 보드의 자리도 그대로입니다. 새 세션이 뜬 뒤에만 이전 창을 닫습니다. 셸은 같은 폴더의 새 셸로 옮깁니다.
+2. 작업 중이거나 응답을 기다리거나 보내지 않은 입력이 있거나 명령을 실행 중인 세션은 쉴 때 옮깁니다. 그때까지는 herdr에서 계속 실행되고 보드에도 그대로 보입니다. 절전 중인 세션은 그대로 두고, 깨울 때 herdr-core에서 시작합니다.
+3. herdr 서버가 실행 중이 아니거나(예: 컴퓨터를 다시 시작한 뒤) herdr가 없으면, 보드가 그 세션들을 같은 대화로 herdr-core에서 다시 시작합니다.
 
-같은 곳의 **herdr로 되돌리기**로 되돌릴 수 있습니다. herdr는 옮기기 전까지만 필요합니다.
-
-### 알아 둘 것
-
-- Atrium은 `~/.claude/settings.json`을 수정하지 않습니다. 보드에서 시작하는 Claude Code 세션마다 설정 파일을 별도로 만들고 `--settings`로 전달합니다. 해당 파일에 지정한 hook이 상태를 보드에 알립니다.
-- 프로젝트 폴더의 이전 대화를 표시하고 이어가기 위해 `%USERPROFILE%\.claude\projects` 아래의 Claude Code 대화 파일을 읽습니다.
-- 모든 구성 요소는 사용자의 컴퓨터에서 실행됩니다. 앱 창은 `127.0.0.1`의 백엔드와 통신하고, 백엔드는 현재 Windows 사용자의 이름 있는 파이프로 herdr-core 서버와 통신합니다.
-- 저장 위치: 보드 데이터(SQLite, 설정, `hc\bin`에 받은 herdr-core)는 `%LOCALAPPDATA%\atrium`, herdr-core 세션 상태는 `%LOCALAPPDATA%\herdr-core\atrium`, 설치한 릴리즈는 `%LOCALAPPDATA%\atrium\versions`에 있습니다.
-- 폴더 신뢰 여부는 사용자가 직접 선택합니다. 보드가 대신 승인하지 않습니다. 아직 신뢰하지 않은 저장소에서 워크트리 하위 세션을 시작하면 해당 세션 창에 신뢰 확인 질문이 표시됩니다.
+모든 세션을 옮기면 보드 전용 herdr 서버를 끄고(다른 것이 실행 중이지 않을 때만) 보드의 herdr 세션을 지웁니다. 세션마다 어떻게 됐는지는 **설정 › 터미널**에서 볼 수 있습니다. herdr로 되돌리는 기능은 없습니다.
 
 ## 원격 접속(Tailscale)
 
@@ -250,7 +241,7 @@ flowchart LR
   B --- DB
 ```
 
-- **herdr-core**는 터미널과 프로세스를 관리합니다. 앱 창이나 백엔드가 종료되어도 세션은 계속 실행됩니다. 앱을 다시 시작하면 기존 세션에 연결합니다. 아직 옮기지 않은 보드는 같은 자리에 herdr를 씁니다.
+- **herdr-core**는 터미널과 프로세스를 관리합니다. 앱 창이나 백엔드가 종료되어도 세션은 계속 실행됩니다. 앱을 다시 시작하면 기존 세션에 연결합니다.
 - **백엔드**(`backend/`)는 herdr-core 상태 이벤트와 Claude Code hook으로 세션 상태를 판단하고 세션별 전달 대기열을 처리합니다. 연결과 이벤트를 기록하고 웹 화면을 제공하며, 보드 데이터를 SQLite(`node:sqlite`)에 저장합니다. 의존성은 `ws` 하나입니다.
 - **앱 창**(`app/`)은 React Flow로 보드를 표시하고 화면에 보이는 터미널을 xterm.js로 연결합니다. PC의 앱 창과 등록된 브라우저는 같은 백엔드에 연결됩니다.
 
@@ -275,7 +266,7 @@ Atrium은 초기 프로젝트입니다. Claude Code와 함께 단계별로 만�
 
 ## 기여 및 사용 기술
 
-- [herdr-core](https://github.com/herdrdev/herdr-core)(Apache-2.0, Atrium이 내려받아 실행하며 저장소에는 포함하지 않습니다), [herdr](https://herdr.dev).
+- [herdr-core](https://github.com/herdrdev/herdr-core)(Apache-2.0, Atrium이 내려받아 실행하며 저장소에는 포함하지 않습니다), herdr-core 이전의 보드가 쓰던 [herdr](https://herdr.dev).
 - [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org), [Electron](https://www.electronjs.org).
 - 한국어 화면 번역: [Qualop](https://github.com/Qualop). [Qualop/atrium-macos](https://github.com/Qualop/atrium-macos)의 번역을 바탕으로 다듬었습니다.
 - 글꼴: Geist, JetBrains Mono, Pretendard, 나눔고딕코딩(SIL Open Font License).

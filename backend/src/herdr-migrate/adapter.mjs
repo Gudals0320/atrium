@@ -1,4 +1,5 @@
-// herdr 어댑터. herdr를 부르는 코드는 이 파일 안에만 둔다(ARCH 1절, 5절).
+// herdr 어댑터. P129: 옛 판 옮기기 모듈(herdr-migrate)의 일부다. 판이 뜰 때 옛 herdr 판의 세션을 hc로 옮기는 동안만 쓴다(index.mjs).
+// 다음 정식 릴리스 뒤 이 폴더째 지운다. herdr를 부르는 코드는 이 폴더 안에만 둔다.
 // - 서버: 이름 있는 세션만 띄우고 끈다. 부모 Claude Code 환경 변수를 뺀 깨끗한 환경으로 띄운다(E0 1절, E1 3.2).
 // - 소켓 API: Windows 이름 있는 파이프, 줄 단위 JSON, 요청 하나마다 연결 하나(E0 2절).
 // - 이벤트: events.subscribe 연결 하나를 열어 두고, 끊기면 다시 붙는다. 닫힌 패널이 들어가면 구독 전체가 거부되므로 살아 있는 패널만 넣는다.
@@ -11,7 +12,9 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { spawn, execFile } from 'node:child_process';
-import { HERDR_PROTOCOLS, HERDR_TESTED } from '../config.mjs';
+import { HERDR_PROTOCOLS, HERDR_TESTED } from './discover.mjs';
+import { cleanEnv, registryPath } from '../proc-env.mjs';
+export { cleanEnv, registryPath };
 import { discoverHerdr, parseWhere, herdrCompat, herdrServerExe, withPathFirst } from './discover.mjs';
 import { psLine, psEnvPrefix, psPathPrefix } from '../launch.mjs'; // P97: 실행 명령 줄. P115: 친 줄 앞의 env와 PATH
 import { spawnDetached } from './detach.mjs'; // P114 e: job·프로세스 나무 밖에서 서버 띄우기
@@ -24,14 +27,11 @@ export class HerdrError extends Error {
     super(`${method || 'herdr'}: ${code}: ${message}`);
     this.code = code;
     this.herdrMessage = message;
+    this.detail = message; // 판은 터미널 오류의 글을 e.detail로 읽는다(hc와 같다)
     this.method = method;
   }
 }
 
-// 부모 Claude Code 세션 표시 변수와 백엔드 자신의 변수를 뺀 환경
-export function cleanEnv(base = process.env) {
-  return Object.fromEntries(Object.entries(base).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AGENT_SDK|HERDR_|MTASK_|ATRIUM_)/i.test(k)));
-}
 
 function execText(file, args, opts = {}) {
   return new Promise((res) => {
@@ -59,17 +59,6 @@ export async function readServerExe(session, serverPid = null) {
   const r = await execText('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 15000 });
   if (r.code !== 0) return null;
   try { return herdrServerExe([].concat(JSON.parse(r.stdout || '[]') || []).map((x) => ({ pid: x.i, exe: x.e || null, cmd: x.c || '' })), session, serverPid); } catch { return null; }
-}
-
-// P40: 레지스트리의 Machine+User PATH(펼친 값). herdr가 새 패널에 주는 PATH와 같은 출처다. 1분 동안 기억한다. 못 읽으면 null
-let regPathCache = null;
-export async function registryPath() {
-  if (regPathCache && Date.now() - regPathCache.at < 60000) return regPathCache.value;
-  const ps = "$m = [Environment]::GetEnvironmentVariable('Path','Machine'); $u = [Environment]::GetEnvironmentVariable('Path','User'); [Environment]::ExpandEnvironmentVariables((@($m, $u) | Where-Object { $_ }) -join ';')";
-  const r = await execText('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 10000 });
-  const value = r.code === 0 ? r.stdout.trim() : '';
-  regPathCache = { at: Date.now(), value: value || null };
-  return regPathCache.value;
 }
 
 // herdr 세션 폴더와 소켓(Windows 이름 있는 파이프). 기본 세션은 %APPDATA%\herdr, 이름 있는 세션은 그 아래 sessions\<이름>
@@ -170,8 +159,6 @@ export class HerdrAdapter extends EventEmitter {
   // P40: 프로토콜이 지원 목록에 있으면 붙는다. 시험한 버전이 아니면 level 'untested'로 경고한다(discover.mjs herdrCompat)
   checkCompat(pong) { return herdrCompat(pong, this.policy); }
   async cliVersion() { if (!this.herdrPath) return null; const r = await execText(this.herdrPath, ['--version'], { env: cleanEnv() }); return r.stdout.trim() || null; }
-  // P4: 고정한 herdr가 주는 에이전트 스킬 글(`herdr --skill`, ~/.agents/skills/herdr/SKILL.md와 같다)
-  async skillText() { const r = await execText(this.herdrPath, ['--skill'], { env: cleanEnv() }); return r.code === 0 && r.stdout.includes('name: herdr') ? r.stdout : null; }
   serverPid() { try { return parseInt(fs.readFileSync(path.join(this.sessionDir, 'herdr.sock'), 'utf8').split(':')[0], 10) || null; } catch { return null; } }
 
   async startServer() {
@@ -388,23 +375,6 @@ export class HerdrAdapter extends EventEmitter {
     this._kinds = kinds.map((k, i) => ({ kind: k, installed: !!found[i], path: found[i] }));
     return this._kinds;
   }
-  async registerResume({ paneId, sessionId, argv }) {
-    return this.call('pane.report_agent_session', { pane_id: paneId, source: 'herdr:claude', agent: 'claude', seq: Date.now(), agent_session_id: sessionId, resume_argv: argv });
-  }
-  // herdr가 판 전용 세션의 session.json에 저장한 이어 가기 명령을 읽는다(읽기만 한다)
-  readResumeRecord(sessionId) {
-    let j;
-    try { j = JSON.parse(fs.readFileSync(path.join(this.sessionDir, 'session.json'), 'utf8')); } catch { return null; }
-    let found = null;
-    const walk = (o) => {
-      if (found || !o || typeof o !== 'object') return;
-      if (o.agent_session && o.agent_session.value === sessionId) { found = o; return; }
-      for (const v of Object.values(o)) walk(v);
-    };
-    walk(j);
-    if (!found) return { found: false };
-    return { found: true, argv: found.agent_resume ? found.agent_resume.argv : null, agentName: found.agent_name };
-  }
   // P97: 에이전트 이름 붙이기(대상은 패널 ID나 지금 이름). herdr는 agent.start로 띄운 에이전트만 다시 켤 때 이름을 되살린다
   async renameAgent(target, name) { const r = await this.call('agent.rename', { target, name }); return agentInfo(r.agent); }
   async getAgent(target) { try { const r = await this.call('agent.get', { target }); return agentInfo(r.agent); } catch (e) { if (e.code === 'unreachable') throw e; return null; } }
@@ -424,44 +394,8 @@ export class HerdrAdapter extends EventEmitter {
   async closePane(paneId) { return this.call('pane.close', { pane_id: paneId }); }
   async processInfo(paneId) { const r = await this.call('pane.process_info', { pane_id: paneId }); return r.process_info; }
 
-  // ---------- 붙은 클라이언트(D3) ----------
-  // 소켓 API에는 붙은 클라이언트 목록이 없다(protocol 22 schema). 서버 로그(herdr-server.log)를 읽는다(읽기만 한다).
-  // herdr 화면(TUI)은 "client connected … surface_active=…"로, 판의 제어기는 "direct terminal client connected"·"terminal attach client connected"로 남는다.
-  // 나갈 때는 TUI가 "client disconnected", 제어기가 "client detached"다. 서버가 다시 뜨면("herdr server started") 목록을 비운다.
-  readClients() {
-    const file = path.join(this.sessionDir, 'herdr-server.log');
-    const st = (this._clientLog ||= { offset: 0, clients: new Map(), rest: '' });
-    let size;
-    try { size = fs.statSync(file).size; } catch { return { available: false, clients: [] }; }
-    if (size < st.offset) { st.offset = 0; st.clients.clear(); st.rest = ''; }
-    if (size > st.offset) {
-      const fd = fs.openSync(file, 'r');
-      try {
-        const from = size - st.offset > 4 * 1024 * 1024 ? size - 4 * 1024 * 1024 : st.offset; // 처음 읽을 때 너무 크면 끝 4MB만
-        const buf = Buffer.alloc(size - from);
-        fs.readSync(fd, buf, 0, buf.length, from);
-        const text = st.rest + buf.toString('utf8');
-        const lines = text.split('\n');
-        st.rest = lines.pop();
-        for (const l of lines) parseClientLogLine(l, st.clients);
-        st.offset = size;
-      } finally { fs.closeSync(fd); }
-    }
-    return { available: true, clients: [...st.clients.values()] };
-  }
-
   // ---------- 화면 제어기 ----------
   openController(paneId, cols, rows) { return new Controller(this, paneId, cols, rows); }
-}
-
-// 서버 로그 한 줄 → 붙은 화면 클라이언트 목록 갱신(D3). 단위 시험이 있다.
-export function parseClientLogLine(line, clients) {
-  if (/herdr server started/.test(line)) { clients.clear(); return; }
-  const at = Date.parse(line.split(/\s/)[0]) || null;
-  let m = line.match(/headless: client connected client_id=(\d+)(.*)$/);
-  if (m) { clients.set(m[1], { clientId: m[1], at, detail: m[2].trim().slice(0, 160) }); return; }
-  m = line.match(/headless: client (?:disconnected|detached) client_id=(\d+)/);
-  if (m) clients.delete(m[1]);
 }
 
 // `herdr --session <s> terminal session control <pane> --takeover`: stdout으로 프레임, stdin으로 입력과 크기 조정(E0 3.3)

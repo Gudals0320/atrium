@@ -1,7 +1,7 @@
 // P69: atrium install, atrium update [--check] [--yes]. P71: --rollback(손으로 앞 버전 되돌리기)은 뺐다
 // - install: 최신 릴리즈를 설치 폴더(ATRIUM_INSTALL_DIR, 기본 %LOCALAPPDATA%\atrium\versions)에 깔고 실행기(Atrium.cmd)와 바탕화면 바로가기를 만든다.
-//   바로가기는 실행기를 부르고 실행기는 current.json의 버전을 띄우므로, 업데이트 뒤에도 바로가기를 다시 만들 필요가 없다. 도는 백엔드와 herdr는 건드리지 않는다.
-// - update: 백엔드가 돌면 판 API(update.*)로 창의 "업데이트" 단추와 같은 일을 한다(백엔드만 바꾸고 herdr의 세션은 그대로). 돌지 않으면 받아서 current.json만 바꾼다.
+//   바로가기는 실행기를 부르고 실행기는 current.json의 버전을 띄우므로, 업데이트 뒤에도 바로가기를 다시 만들 필요가 없다. 도는 백엔드와 터미널 서버는 건드리지 않는다.
+// - update: 백엔드가 돌면 판 API(update.*)로 창의 "업데이트" 단추와 같은 일을 한다(백엔드만 바꾸고 터미널의 세션은 그대로). 돌지 않으면 받아서 current.json만 바꾼다.
 // - P70 --channel stable|dev: 그 한 번만 채널을 바꾼다. 없으면 백엔드가 돌 때는 판 설정 updateChannel을, 돌지 않을 때와 install은 stable을 따른다.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -68,7 +68,7 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
     console.log(`설치함: ${rel.tag}${r.already ? '(이미 있음)' : ''}\n실행기: ${launcher}${shortcut ? `\n바로가기: ${shortcut}` : ''}`);
     if (r.pruned && r.pruned.length) console.log(`지운 옛 버전: ${r.pruned.join(', ')}`);
     if (channel === 'dev') console.log('앱도 dev 빌드를 알리게 하려면 설정 › 일반 › 업데이트에서 dev 채널을 고르거나 atrium settings set updateChannel dev를 실행합니다.');
-    console.log('도는 백엔드와 터미널 서버(herdr-core, 옮기지 않은 보드는 herdr)는 그대로입니다. 바로가기로 열면 설치한 버전의 창이 뜹니다. 백엔드도 설치한 버전으로 바꾸려면 트레이 메뉴의 "백엔드 다시 시작"을 누릅니다(세션은 그대로).');
+    console.log('도는 백엔드와 터미널 서버(herdr-core)는 그대로입니다. 바로가기로 열면 설치한 버전의 창이 뜹니다. 백엔드도 설치한 버전으로 바꾸려면 트레이 메뉴의 "백엔드 다시 시작"을 누릅니다(세션은 그대로).');
     return;
   }
 
