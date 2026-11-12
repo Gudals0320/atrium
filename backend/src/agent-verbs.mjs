@@ -71,7 +71,9 @@ export function compactLines(text, n) {
     out.push(l);
   }
   while (out.length && !out[out.length - 1]) out.pop();
-  return out.slice(-n).join('\n');
+  const tail = out.slice(-n);
+  while (tail.length && !tail[0]) tail.shift();
+  return tail.join('\n');
 }
 
 // 다음에 칠 명령(사람과 모델이 그대로 친다). 이름은 판의 주소(바뀌지 않는다)
