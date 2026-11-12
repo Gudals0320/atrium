@@ -419,6 +419,24 @@ test('P116 알아채기: hc 모드에서는 hook의 herdr 명령 글을 읽지 �
   assert.ok(calls.some((c) => c[2] === 'herdr_call'), 'herdr 모드는 호환으로 읽는다');
 });
 
+// ---------- 연결 기록: hook 없는 세션의 target_done은 판이 화면에서 고른 답이 온 뒤 ----------
+test('P116 연결 기록: hook 없는 세션(codex)이 쉬게 되어도 화면 답이 아직이면 기다렸다가 그 답으로 target_done을 남긴다(hc는 화면 읽기가 늦다)', async () => {
+  const evs = [];
+  const fake = { bus: new EventEmitter(), store: { getLink: () => ({ linkId: 'l1' }) }, hooked: () => false, linkEvent: (l, kind, text, data) => evs.push({ kind, text, data }), linkTargetDone: Backend.prototype.linkTargetDone };
+  fake.linkTargetDone = fake.linkTargetDone.bind(fake);
+  const s = { rt: newRuntime({ kind: 'codex', hooked: false }), openPromptFrom: null };
+  s.rt.lastAnswer = '앞 턴 답'; s.rt.lastAnswerAt = 1;
+  s.openPromptFrom = { linkId: 'l1', at: Date.now(), text: 'x', working: true };
+  s.rt.turn = { startedAt: Date.now() - 100, endedAt: Date.now() };
+  Backend.prototype.onLinkTargetState.call(fake, s, 'working', { state: 'ready' });
+  Backend.prototype.onLinkTargetState.call(fake, s, 'working', { state: 'ready' }); // 같은 끝이 두 번 와도(herdr done·idle) 한 번
+  assert.equal(evs.length, 0, '화면 답 전에는 남기지 않는다');
+  s.rt.lastAnswer = '이번 턴 답'; s.rt.lastAnswerAt = Date.now() + 1;
+  fake.bus.emit('screenAnswer', s);
+  assert.deepEqual(evs.map((e) => [e.kind, e.text]), [['target_done', '이번 턴 답']]);
+  assert.equal(s.openPromptFrom, null); assert.equal(fake.bus.listenerCount('screenAnswer'), 0);
+});
+
 // ---------- 판 밖 대화의 띄움 선: atrium child 뒤 atrium prompt가 첫 지시 ----------
 test('P116 띄움 선: --prompt 없이 띄운 atrium child 뒤의 atrium prompt <이름> "…"를 그 워커의 첫 지시로 본다', () => {
   assert.deepEqual(spawnsInCommand('atrium prompt w1 "do the thing" --wait').map((x) => [x.kind, x.via, x.name, x.promptKey]), [['prompt', 'atrium', 'w1', promptKey('do the thing')]]);

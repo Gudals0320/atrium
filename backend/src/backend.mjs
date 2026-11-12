@@ -1926,9 +1926,23 @@ export class Backend {
     if (to === 'working' && !op.working) { op.working = true; this.linkEvent(l, 'target_working', null, { from }, { quiet: true }); }
     else if (to === 'waiting' || to === 'trust_wait') this.linkEvent(l, 'target_waiting', sum.ask ? clip(sum.ask.summary || sum.ask.kind, 200) : null, null, { quiet: true });
     else if ((to === 'ready' || to === 'error') && op.working) {
-      s.openPromptFrom = null;
-      this.linkEvent(l, 'target_done', s.rt.lastAnswer ? clip(s.rt.lastAnswer, 2000) : null, { state: to, answerSource: s.rt.answerSource || null }, { quiet: true });
+      // P116: hook이 없는 세션은 턴이 끝난 뒤 판이 화면에서 답을 고른다(readScreenAnswer). 그 답이 아직이면 오면 남긴다(5초까지)
+      const turn = s.rt.turn || {};
+      if (!this.hooked(s) && turn.endedAt && (s.rt.lastAnswerAt || 0) < turn.endedAt) {
+        if (op.doneTimer) return;
+        const done = () => { if (s.openPromptFrom !== op) return; clearTimeout(op.doneTimer); this.bus.off('screenAnswer', onAnswer); this.linkTargetDone(s, l, to); };
+        const onAnswer = (x) => { if (x === s) done(); };
+        this.bus.on('screenAnswer', onAnswer);
+        op.doneTimer = setTimeout(() => { this.bus.off('screenAnswer', onAnswer); done(); }, 5000);
+        if (op.doneTimer.unref) op.doneTimer.unref();
+        return;
+      }
+      this.linkTargetDone(s, l, to);
     } else if (to === 'exited') { s.openPromptFrom = null; this.linkEvent(l, 'target_exited', null, { exit: sum.exit }, { quiet: true }); }
+  }
+  linkTargetDone(s, l, to) {
+    s.openPromptFrom = null;
+    this.linkEvent(l, 'target_done', s.rt.lastAnswer ? clip(s.rt.lastAnswer, 2000) : null, { state: to, answerSource: s.rt.answerSource || null }, { quiet: true });
   }
   // 받는 쪽이 판의 hook이 붙은 Claude Code면 지시가 제출된 것을 hook으로 확인한다
   onLinkTargetPrompt(s, prompt) {
