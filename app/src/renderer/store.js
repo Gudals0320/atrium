@@ -325,6 +325,12 @@ api.on('workspace.updated', (d) => {
   if (!state.workspaces.some((w) => w.key === state.currentWs)) state.currentWs = d.current || (state.workspaces[0] || {}).key || null;
   changed();
 });
+// P120: 판이 폴더가 없어진 빈 프로젝트 영역을 치웠다. 한 번 알린다(영역이 소리 없이 사라지면 사람이 찾게 된다)
+api.on('workspace.pruned', (d) => {
+  const list = (d && d.workspaces) || [];
+  if (list.length === 1) toast(t('regionPrune.single', { name: list[0].name, root: list[0].root }));
+  else if (list.length > 1) toast(t('regionPrune.multiple', { n: list.length }));
+});
 api.on('herdr.clients', (v) => { state.clients = v; changed(); });
 api.on('clients.updated', (v) => { state.peers = { ...v, me: api.clientId }; changed(); }); // P47
 // P47: 다른 창이 노드를 옮기거나 크기를 바꿨다(board.setNode). 이 창이 보낸 것은 이미 그렸다

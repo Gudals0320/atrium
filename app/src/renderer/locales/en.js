@@ -2389,4 +2389,9 @@ export default {
     tag: 'Done',
     phone: 'Done {n}',
   },
+  // P120: the board removed empty project areas whose folder is gone (no sessions, no closed sessions to reopen)
+  regionPrune: {
+    single: 'Removed the empty project {name} from the board: its folder {root} no longer exists.',
+    multiple: 'Removed {n} empty projects from the board: their folders no longer exist.',
+  },
 };
