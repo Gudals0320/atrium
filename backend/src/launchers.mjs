@@ -3,7 +3,7 @@
 // 하네스마다 무엇을 받고 어떻게 띄우는지는 아래 HARNESSES 표 한곳에 둔다. session.spawn { launcher }는 resolveLauncher로 띄울 값을 얻는다.
 // P115: 모델 연결(엔드포인트·프로토콜·인증)은 런처와 따로 둔 목록(connections.mjs)이고 런처가 ID로 참조한다(connection). 하네스마다 쓸 수 있는 프로토콜이 다르고
 //       맞지 않는 연결은 저장하지 않는다. 판은 연결을 켜지 않고 시작 전에 닿는지만 본다. 목록은 새 키(launchers.v2)에 두고 옛 키는 남긴다(launcher-migrate.mjs).
-// P72: 새 판은 Claude Code, Codex, 셸 셋으로 시작한다.
+// P72: 새 판은 Claude Code, Codex, 셸 셋으로 시작했다. P122: 새 판은 Claude Code, Codex 둘이다(셸 런처는 사람이 "+"로 만든다).
 // P72: Codex 모델은 Codex의 모델 목록 캐시(codex-models.mjs)를 읽는다. 읽지 못하면 아래 고정 목록이다.
 // 환경 변수 값은 판 기록에 평문으로 남는다. 기본·예시 호출자에는 키를 넣지 않는다(설정 탭에 풀이가 있다).
 // P97: 호출자에 실행 명령(startCommand, 예: 래퍼 명령 `mywrap claude`)을 둔다. 비우면 그 하네스의 명령. P115: 모든 에이전트 하네스. 판은 그 명령 뒤에 판의 인자를 붙여 패널에 치고(herdr agent.start는
@@ -246,9 +246,10 @@ export function previewLauncher(l) {
 const plain = (id, name, harness, x = {}) => ({ id, name, harness, icon: '', model: '', effort: '', permissionMode: '', allowHerdr: false, args: '', env: {}, command: '', ...x });
 
 // 처음 켤 때의 호출자 목록(옛 키 모양 v1). 옛 판(P33 전의 설정·세션이 있던 판)은 옛 새 세션 기본값을 옮긴다(launcher-migrate.mjs).
-// P72: 새 판은 Claude Code(권한 방식 manual), Codex, 셸 셋뿐이고 모두 즐겨찾기다. 같은 입력이면 같은 결과다(ID가 고정)
+// P72·P122: 새 판은 Claude Code(권한 방식 manual), Codex 둘뿐이고 모두 즐겨찾기다. 같은 입력이면 같은 결과다(ID가 고정).
+// 셸 런처는 사람이 설정 › 런처의 "+"로 만들고, 옛 판의 목록(셸 포함)은 바꾸지 않는다
 export function initialLaunchers({ oldSettings = null, oldBoard = false, gateway = {} } = {}) {
-  if (!oldBoard) return { v: 1, items: [plain('claude', 'Claude Code', 'claude', { permissionMode: 'manual' }), plain('codex', 'Codex', 'codex'), plain('shell', 'Shell', 'shell')], favorites: ['claude', 'codex', 'shell'] };
+  if (!oldBoard) return { v: 1, items: [plain('claude', 'Claude Code', 'claude', { permissionMode: 'manual' }), plain('codex', 'Codex', 'codex')], favorites: ['claude', 'codex'] };
   return legacyInitialLaunchers(oldSettings || {}, gateway);
 }
 // P115: 런처 env에 평문으로 든 인증 값(이름에 KEY·TOKEN·SECRET·PASSWORD). 판은 옮기지 않고 설정 탭에서 연결의 환경 변수 이름으로 바꾸라고 알린다
