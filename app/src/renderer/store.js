@@ -200,7 +200,7 @@ export const askKey = (ask) => (ask ? ask.toolUseId || String(ask.since || '') :
 
 export function markSeen(id) {
   const s = state.sessions.get(id);
-  if (s && s.unseen) api.call('session.markSeen', { session: id }).catch(() => {});
+  if (s && (s.unseen || s.unseenSub)) api.call('session.markSeen', { session: id }).catch(() => {});
 }
 
 // P6a
