@@ -11,7 +11,7 @@
 // P28: 닫기 확인에서 Delete를 한 번 더 누르면 삭제 단추에 초점과 표시가 가고 Enter로 확정한다. Esc는 취소. 멀리·아이콘 얼굴은 흐리게 하지 않는다(styles.css)
 import { memo, useEffect, useRef, useState } from 'react';
 import { NodeResizer, Handle, Position, useStore as useFlowStore } from '@xyflow/react';
-import { useStore, getState, saveNode, setNodeLocal, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk, setRenaming } from './store.js';
+import { useStore, getState, matesNow, saveNode, setNodeLocal, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk, setRenaming } from './store.js';
 import { shellLine } from './Workspaces.jsx';
 import { api } from './api.js';
 import { tierFor, faceOfTier, termAllowed, veryClose, zoomStep } from './lib/faces.js'; // P124: 거리 단계(터미널·요약·틀)
@@ -468,10 +468,11 @@ function SessionNodeInner({ id, selected }) {
   const viewWs = useStore((st) => st.viewWs);
   const isFocus = useStore((st) => st.focusId === id);
   const picked = useStore((st) => st.selected.includes(id));
+  const mate = useStore((st) => matesNow(st).has(id)); // P124: 초점·고른 노드와 같은 덩어리, 부모·자식이면 터미널을 가질 수 있다
   const prevNear = useRef(false);
   const near = useFlowStore((st) => !!n && veryClose(n, { x: st.transform[0], y: st.transform[1], zoom: st.transform[2] }, { width: st.width, height: st.height }, prevNear.current));
   prevNear.current = near;
-  const allowed = !!s && (attached || termAllowed({ id, ws: s.workspaceKey, viewWs, focus: isFocus ? id : null, selected: picked ? new Set([id]) : null, near }));
+  const allowed = !!s && (attached || termAllowed({ id, ws: s.workspaceKey, viewWs, focus: isFocus ? id : null, selected: picked ? new Set([id]) : null, mates: mate ? new Set([id]) : null, near }));
   const brief = !!s && !allowed; // 다른 워크스페이스의 요약(data-brief)
   const face = faceOfTier(dist, allowed);
   // P124: 터미널이 아닌 얼굴(요약·틀)은 모두 배율 계단 값(lib/faces.js zoomStep, ±5%)을 쓴다. 판을 확대·축소해도 계단이 바뀔 때만 스타일을 다시 센다(P121 요약 얼굴과 같다)

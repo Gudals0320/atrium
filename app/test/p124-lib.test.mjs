@@ -112,3 +112,30 @@ test('틀 단계: 상태 표지는 응답 필요·작업 완료·오류·작업 
   const css = read('styles.css');
   for (const m of ['ask', 'done', 'error', 'work', 'sleep']) assert.match(css, new RegExp(`\\.mt-frame-mark\\[data-mark="${m}"\\]`));
 });
+
+test('사용자 보고(부모 곁에 붙은 하위 세션): 초점·고른 노드와 같은 덩어리, 부모·자식은 터미널을 가질 수 있다', async () => {
+  const { matesOf, termAllowed } = await import('../src/renderer/lib/faces.js');
+  const parent = { child: 'lead', w2: 'lead' };
+  const pOf = (id) => parent[id] || null;
+  const docks = [{ members: ['lead', 'child'] }, { members: ['x', 'y'] }];
+  const ids = ['lead', 'child', 'w2', 'x', 'y', 'z'];
+  assert.deepEqual([...matesOf({ seeds: ['child'], docks, parentOf: pOf, ids })].sort(), ['lead']); // 덩어리 짝이자 부모
+  assert.deepEqual([...matesOf({ seeds: ['lead'], docks, parentOf: pOf, ids })].sort(), ['child', 'w2']); // 덩어리 짝, 자식들
+  assert.deepEqual([...matesOf({ seeds: ['x'], docks, parentOf: pOf, ids })], ['y']);
+  assert.equal(matesOf({ seeds: [null], docks, parentOf: pOf, ids }).size, 0);
+  assert.equal(matesOf({ seeds: ['z'], docks, parentOf: pOf, ids }).size, 0);
+  // 다른 워크스페이스를 고른 상태에서도 짝은 터미널을 가질 수 있다
+  assert.equal(termAllowed({ id: 'lead', ws: 'A', viewWs: 'B', focus: 'child', mates: new Set(['lead']) }), true);
+  assert.equal(termAllowed({ id: 'lead', ws: 'A', viewWs: 'B', focus: 'child' }), false);
+});
+
+test('부모가 화면에 조금만 걸쳐도(보이는 넓이와 상관없이) 초점 하위 세션의 짝이면 터미널, 상한 안에서는 초점 다음 순서', () => {
+  const screen = { width: 1920, height: 1080 };
+  // 큰 부모(1920×1080)와 오른쪽에 붙은 작은 자식(1040×585). 자식을 가운데에 배율 1로: 부모는 왼쪽에 일부만 보인다
+  const nodes = [{ id: 'lead', x: 0, y: 0, w: 1920, h: 1080, ws: 'A' }, { id: 'child', x: 1920, y: 0, w: 1040, h: 585, ws: 'A' }, ...Array.from({ length: 8 }, (_, i) => ({ id: `o${i}`, x: 1920 + (i % 4) * 300, y: 700 + Math.floor(i / 4) * 200, w: 280, h: 160, ws: 'B' }))];
+  const vp = { x: 960 - (1920 + 520), y: 540 - 292, zoom: 1 };
+  const got = pickAttached(nodes, vp, screen, { wsLimit: { key: 'B' }, focus: 'child', mates: new Set(['lead']), max: 3 });
+  assert.deepEqual(got.slice(0, 2), ['child', 'lead']);
+  const without = pickAttached(nodes, vp, screen, { wsLimit: { key: 'B' }, focus: 'child', max: 3 });
+  assert.ok(!without.includes('lead'));
+});

@@ -3,6 +3,7 @@
 // currentWs는 "판을 바꾸는" 값이 아니라 마지막에 고른(가 본) 워크스페이스다. 새 세션 대화상자와 그룹의 기본 폴더에 쓴다.
 // P6c: 메모·칸반 노드(I3·I4), Thread(I2), 루프(I5), 설정(I7), 출력 보기(I1)와 미션 맵(I6) 창을 연 상태.
 import { useSyncExternalStore } from 'react';
+import { matesOf } from './lib/faces.js'; // P124
 import { api } from './api.js';
 import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
@@ -214,6 +215,20 @@ export function markSeen(id) {
 }
 
 // P6a
+// P124: 초점·고른 노드의 짝(같은 덩어리, 부모·자식). 이 노드들도 터미널을 가질 수 있다(lib/faces.js matesOf). 같은 값이면 같은 Set을 돌려준다(구독용)
+let matesMemo = { key: '', set: new Set() };
+let matesIn = null; // 마지막으로 센 입력(초점, 고른 목록, 덩어리, 세션 맵). 같으면 다시 세지 않는다(노드마다 구독한다)
+export function matesNow(st = state) {
+  if (matesIn && matesIn[0] === st.focusId && matesIn[1] === st.selected && matesIn[2] === st.docks && matesIn[3] === st.sessions) return matesMemo.set;
+  matesIn = [st.focusId, st.selected, st.docks, st.sessions];
+  const seeds = [st.focusId, ...st.selected].filter(Boolean);
+  if (!seeds.length) { if (matesMemo.key) matesMemo = { key: '', set: new Set() }; return matesMemo.set; }
+  const parentOf = (id) => { const s = st.sessions.get(id); return s ? s.parentSessionId || (s.branch && s.branch.parentSessionId) || null : null; };
+  const set = matesOf({ seeds, docks: [...st.docks.values()], parentOf, ids: [...st.sessions.keys()] });
+  const key = [...set].sort().join(',');
+  if (key !== matesMemo.key) matesMemo = { key, set };
+  return matesMemo.set;
+}
 export const dockOf = (id) => { for (const d of state.docks.values()) if (d.members.includes(id)) return d; return null; };
 // P17: 고른 순서를 지킨다(배치 틀이 그 순서로 칸을 채운다). 한 번에 새로 고른 것(상자 고르기)은 화면 왼쪽 위부터
 export function setSelected(ids) {
