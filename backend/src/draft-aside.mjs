@@ -10,11 +10,16 @@
 // - Codex: 치워 두기가 없다. Ctrl+C(글이 있을 때)가 입력 칸을 비운다(빈 칸의 Ctrl+C는 끝내기 안내라 글이 보일 때만 누른다).
 //   되돌릴 글은 판이 노드 터미널로 받은 사람 입력에서 다시 만든 글(draftEdit)이 화면의 입력 칸과 같을 때 그것을, 아니면 화면의 한 줄 입력 칸(꺾이지 않고
 //   접힌 붙여넣기·그림이 없는 것)을 쓴다. 둘 다 아니면 비키지 않는다. 되돌리기는 괄호 붙여넣기(Enter 없음)다.
-// - 그 밖의 종류(opencode, pi)와 셸: 입력 칸을 읽지 못하므로 손대지 않는다(전처럼 보낸다. 셸에는 판이 글을 보내지 않는다).
+// - opencode·pi(P131): Codex와 같은 길이다. 판이 그 글을 정확히 알 때만 Ctrl+C로 비우고(둘 다 Ctrl+C가 "입력 칸 비우기"다) 제출 뒤 괄호 붙여넣기로 되돌린다.
+//   opencode는 빈 칸의 Ctrl+C가 끝내기라 글이 보일 때만, 누르기 직전에 다시 보고 누른다. pi는 0.5초 안 두 번째 Ctrl+C가 끝내기라 판의 Ctrl+C 사이를 띄운다.
+//   붙여넣기는 하네스가 큰 붙여넣기를 접어 보이므로(opencode 3줄·150자, pi 10줄·1000자를 넘으면 [Pasted ~N lines]·[paste #N …]) 접히지 않는 크기로 나눠 넣는다.
+//   opencode의 입력 치워 두기(prompt.stash)는 기본 키가 없고(명령 팔레트로만) 사용자의 opencode 상태 폴더 파일에 남으므로 쓰지 않는다. pi는 치워 두기가 없다.
+//   사람이 그 하네스 설정에서 입력 비우기 키를 바꿨으면(opencode keybinds, pi keybindings.json) 비키지 않는다.
+// - 셸: 판이 글을 보내지 않는다. 그 밖의 종류는 입력 칸을 읽지 못하므로 손대지 않는다(전처럼 보낸다).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { claudeInputBox, codexInputBox, mouseNoise } from './screen.mjs';
+import { claudeInputBox, codexInputBox, opencodeInputBox, piInputBox, mouseNoise } from './screen.mjs';
 
 const MOUSE_NOISE_G = /\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
 const bare = (s) => String(s || '').replace(/\s+/g, '');
@@ -27,7 +32,8 @@ export const sameDraft = (a, b) => bare(a) === bare(b);
 // - 커서를 옮기거나(화살표, Home 등) 고치는 키(Tab, Ctrl+W, Esc, Ctrl+J…)를 치면 더는 정확히 모른다(exact: false). 다음 Enter·Ctrl+C까지
 // - 터미널이 대신 보낸 보고(마우스, 초점, 장치 속성, OSC·DCS 답)는 빼고 본다(P120·P126)
 // 순수 함수. 덩어리 경계에서 끊긴 붙여넣기는 paste로 이어 간다
-export function draftEdit(prev, data) {
+// opts.newlineKey: Ctrl+J가 줄바꿈인 하네스(opencode, pi)면 참. 아니면 Ctrl+J는 "모름"이다
+export function draftEdit(prev, data, opts = {}) {
   let text = prev ? prev.text : '', exact = prev ? prev.exact !== false : true, paste = !!(prev && prev.paste);
   const s = String(data || '')
     .replace(/\x1b[\]P_^X][\s\S]*?(\x07|\x1b\\|\x9c)/g, '') // OSC·DCS 답
@@ -54,47 +60,100 @@ export function draftEdit(prev, data) {
       if (seq !== '\x1b[3~') exact = false;
       i += seq.length || 1; continue;
     }
+    if (cp === 0x0a && opts.newlineKey) { add('\n'); i += n; continue; } // P131: opencode·pi의 Ctrl+J = 줄바꿈 넣기
     if (cp < 0x20) { exact = false; i += n; continue; } // Tab(완성), Ctrl+J(줄바꿈인지 제출인지 하네스마다 다르다), Ctrl+W 등
     add(ch); i += n;
   }
   return { text: exact ? text : '', exact, paste };
 }
 
-// 화면에서 읽은 입력 칸. → { found, text(마우스 보고 글을 뗀 것), rows(입력 칸 줄 수) }
+const READERS = { claude: claudeInputBox, codex: codexInputBox, opencode: opencodeInputBox, pi: piInputBox };
+// 화면에서 읽은 입력 칸. → { found, text(마우스 보고 글을 뗀 것), rows(입력 칸 줄 수), folded?, clipped? }
 export function readDraftBox(screen, kind) {
-  const b = kind === 'codex' ? codexInputBox(screen) : claudeInputBox(screen);
+  const b = (READERS[kind] || claudeInputBox)(screen);
   const noise = mouseNoise(b.text);
   const text = noise ? b.text.replace(MOUSE_NOISE_G, '').trim() : b.text;
-  return { found: b.found, text, rows: b.rows || (b.found ? 1 : 0) };
+  return { found: b.found, text, rows: b.rows || (b.found ? 1 : 0), ...(b.folded ? { folded: true } : {}), ...(b.clipped ? { clipped: true } : {}) };
 }
 
-const FOLDED = /\[(Pasted (text|Content)|Image)\b/i;
-// Codex에서 되돌릴 글을 정한다. → { text, from: 'typed'|'screen' } | null(정확히 모른다)
-export function codexDraftText(box, edit) {
-  if (!box || !box.found || !box.text) return null;
-  if (edit && edit.exact && edit.text && sameDraft(edit.text, box.text) && !FOLDED.test(box.text)) return { text: edit.text, from: 'typed' };
-  if (box.rows === 1 && !FOLDED.test(box.text)) return { text: box.text, from: 'screen' }; // 한 줄이면 꺾임이 없다(끝 빈칸만 잃는다)
+// 접힌 붙여넣기·그림 표시(Claude Code·Codex [Pasted text #N …]·[Pasted Content N chars]·[Image #N], opencode [Pasted ~N lines]·[SVG: …], pi [paste #N …])
+const FOLDED = /\[(Pasted (text|Content|~)|Image|SVG:|paste #\d)/i;
+// Ctrl+C로 비우는 하네스(Codex, opencode, pi)에서 되돌릴 글을 정한다. → { text, from: 'typed'|'screen' } | null(정확히 모른다)
+// 입력 칸 글이 다 보이지 않거나(clipped) 접힌 표시가 있으면 모른다
+export function clearDraftText(box, edit) {
+  if (!box || !box.found || !box.text || box.clipped || box.folded || FOLDED.test(box.text)) return null;
+  if (edit && edit.exact && edit.text && sameDraft(edit.text, box.text)) return { text: edit.text, from: 'typed' };
+  if (box.rows === 1) return { text: box.text, from: 'screen' }; // 한 줄이면 꺾임이 없다(끝 빈칸만 잃는다)
   return null;
 }
+export const codexDraftText = clearDraftText; // P128 이름
+
+// P131: 되돌릴 글을 하네스가 접지 않는 크기의 붙여넣기 조각으로 나눈다. lines: 한 조각의 줄 수, chars: 한 조각의 글자 수.
+// 조각은 줄바꿈 뒤에서 끊고, 한 줄이 chars보다 길면 그 줄 안에서 끊되 다음 조각이 / ~ . 로 시작하지 않게 한다(pi는 낱말 글자 뒤에 붙인 경로 꼴 붙여넣기 앞에 빈칸을 넣는다)
+export function pasteChunks(text, { lines = 2, chars = 150 } = {}) {
+  const out = [];
+  let cur = '', curLines = 0;
+  const flush = () => { if (cur) out.push(cur); cur = ''; curLines = 0; };
+  const parts = String(text).split('\n');
+  parts.forEach((line, i) => {
+    let rest = line + (i < parts.length - 1 ? '\n' : '');
+    while (rest) {
+      if (curLines >= lines || cur.length >= chars) flush();
+      const room = chars - cur.length;
+      if (rest.length <= room) { cur += rest; curLines++; rest = ''; break; }
+      if (cur) { flush(); continue; } // 긴 줄은 새 조각에서 시작한다
+      let cut = room;
+      while (cut > 1 && /[/~.]/.test(rest[cut])) cut--; // 다음 조각 첫 글자
+      out.push(rest.slice(0, cut)); rest = rest.slice(cut);
+    }
+  });
+  flush();
+  return out;
+}
+// 하네스마다 비우기 키와 되돌리기 조각 크기. gapMs: 판이 이어 누르는 비우기 키 사이(pi는 0.5초 안 두 번째 Ctrl+C가 끝내기)
+// recheck: 빈 칸에서 비우기 키가 끝내기라 누르기 직전에 입력 칸을 다시 본다(opencode)
+const CLEARS = {
+  codex: { key: '\x03' },
+  opencode: { key: '\x03', chunks: { lines: 2, chars: 150 }, recheck: true },
+  pi: { key: '\x03', chunks: { lines: 9, chars: 1000 }, gapMs: 700 },
+};
+export const draftKinds = ['claude', ...Object.keys(CLEARS)];
 
 // 사람이 Claude Code 입력 치워 두기 키(chat:stash)를 다른 키로 바꿨는가. 바꿨으면 판은 Ctrl+S를 쓰지 않는다(다른 일을 할 수 있다)
 export function stashKeyChanged(dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')) {
   try { const t = fs.readFileSync(path.join(dir, 'keybindings.json'), 'utf8'); return /ctrl\+s\b|chat:stash/i.test(t); } catch { return false; }
 }
 
-const CTRL_S = '\x13', CTRL_C = '\x03';
+// P131: 사람이 opencode·pi 설정에서 입력 비우기 키(Ctrl+C)를 바꿨는가. 바꿨으면 판은 그 하네스에서 비키지 않는다(읽기만 한다)
+// opencode: 사용자 설정(opencode.json(c), tui.json(c), OPENCODE_CONFIG)에 input_clear·prompt.clear·app_exit 키 설정이 있으면
+// pi: <agent-dir>/keybindings.json(PI_CODING_AGENT_DIR, 기본 ~/.pi/agent)에 app.clear나 ctrl+c가 있으면
+export function clearKeyChanged(kind, { env = process.env, home = os.homedir() } = {}) {
+  const has = (files, re) => files.some((f) => { try { return re.test(fs.readFileSync(f, 'utf8')); } catch { return false; } });
+  if (kind === 'opencode') {
+    const dir = path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode');
+    const files = ['opencode.json', 'opencode.jsonc', 'config.json', 'tui.json', 'tui.jsonc'].map((f) => path.join(dir, f)).concat(env.OPENCODE_CONFIG ? [env.OPENCODE_CONFIG] : []);
+    return has(files, /input_clear|prompt\.clear|app_exit|app\.exit/);
+  }
+  if (kind === 'pi') return has([path.join(env.PI_CODING_AGENT_DIR || path.join(home, '.pi', 'agent'), 'keybindings.json')], /app\.clear|ctrl\+c/i);
+  return false;
+}
+
+const CTRL_S = '\x13';
 
 // 비키기·되돌리기. io: { read(sid) → 화면 글, type(sid, 바이트) → Promise(키), paste(sid, 글) → Promise(괄호 붙여넣기, Enter 없음), kindOf(sid), edit(sid) → draftEdit 결과,
-//   userStash(sid) → 사람이 Ctrl+S로 치워 둔 글이 있을 수 있는가, stashKey: Ctrl+S를 써도 되는가 }
+//   userStash(sid) → 사람이 Ctrl+S로 치워 둔 글이 있을 수 있는가, stashKey: Ctrl+S를 써도 되는가,
+//   clearKey(kind) → 그 하네스에서 Ctrl+C를 비우기 키로 써도 되는가(P131, 없으면 참), typedSince(sid, t) → 사람이 t 뒤에 쳤는가(P131, 없으면 거짓) }
 export function draftMover(io, { pollMs = 250, polls = 8, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const look = async (sid, kind) => readDraftBox(await io.read(sid), kind);
   // 입력 칸이 바뀔 때까지(want(box)가 참) 몇 번 본다
+  const lastClear = new Map(); // 세션 → 판이 마지막으로 비우기 키를 누른 때(pi)
   const until = async (sid, kind, want) => { let b = null; for (let i = 0; i < polls; i++) { await sleep(pollMs); b = await look(sid, kind); if (want(b)) return { ok: true, box: b }; } return { ok: false, box: b }; };
   return {
     // → { state: 'clear' }(빈 칸이거나 손대지 않는 종류: 그대로 보낸다) | { state: 'moved', held } | { state: 'keep', why, text? }(비키지 못했다: 기다린다)
     async aside(sid) {
       const kind = io.kindOf(sid);
-      if (kind !== 'claude' && kind !== 'codex') return { state: 'clear', why: 'kind' };
+      if (!draftKinds.includes(kind)) return { state: 'clear', why: 'kind' };
+      const t0 = Date.now();
       const box = await look(sid, kind);
       if (!box.found) return { state: 'clear', why: 'no_box' }; // 입력 칸을 못 읽는다(다른 화면). 전처럼 보낸다
       if (!box.text) return { state: 'clear' };
@@ -107,9 +166,17 @@ export function draftMover(io, { pollMs = 250, polls = 8, sleep = (ms) => new Pr
         // 비지 않았다. 글이 그대로면 치워 두기가 안 된 것(옛 판 등), 다르면 무엇이 일어났는지 모른다. 어느 쪽이든 보내지 않는다
         return { state: 'keep', why: r.box && sameDraft(r.box.text, box.text) ? 'stash_no_effect' : 'stash_unclear', text: box.text };
       }
-      const want = codexDraftText(box, io.edit ? io.edit(sid) : null);
+      const c = CLEARS[kind];
+      if (io.clearKey && !io.clearKey(kind)) return { state: 'keep', why: 'clear_key_changed', text: box.text };
+      const want = clearDraftText(box, io.edit ? io.edit(sid) : null);
       if (!want) return { state: 'keep', why: 'inexact', text: box.text };
-      await io.type(sid, CTRL_C);
+      if (c.gapMs) { const wait = (lastClear.get(sid) || 0) + c.gapMs - Date.now(); if (wait > 0) await sleep(wait); }
+      if (c.recheck) { // 빈 칸의 비우기 키는 끝내기다: 누르기 직전에 글이 그대로 있고 그새 사람이 치지 않았는지 다시 본다
+        const again = await look(sid, kind);
+        if (!again.found || !again.text || !sameDraft(again.text, box.text) || (io.typedSince && io.typedSince(sid, t0))) return { state: 'keep', why: 'box_changed', text: box.text };
+      }
+      await io.type(sid, c.key);
+      lastClear.set(sid, Date.now());
       const r = await until(sid, kind, (b) => b.found && !b.text);
       if (r.ok) return { state: 'moved', held: { kind, how: 'clear', text: want.text, from: want.from, rows: box.rows } };
       if (r.box && r.box.found && r.box.text && !sameDraft(r.box.text, box.text)) return { state: 'keep', why: 'clear_unclear', text: box.text };
@@ -131,10 +198,11 @@ export function draftMover(io, { pollMs = 250, polls = 8, sleep = (ms) => new Pr
       if (!b || !b.found) return { result: kind === 'claude' ? 'stashed' : 'held', why: 'no_box' };
       if (b.text) return { result: kind === 'claude' ? 'stashed' : 'held', why: 'box_other' };
       if (kind === 'claude') await io.type(sid, CTRL_S); // 빈 칸의 Ctrl+S = 치워 둔 글 꺼내기
+      else if (CLEARS[kind] && CLEARS[kind].chunks) { for (const p of pasteChunks(held.text, CLEARS[kind].chunks)) await io.paste(sid, p); } // P131: 접히지 않는 조각으로
       else await io.paste(sid, held.text); // 괄호 붙여넣기(Enter 없음)
       const r = await until(sid, kind, (x) => x.found && !!x.text);
       if (r.ok && sameDraft(r.box.text, held.text)) return { result: 'restored', by: 'board' };
-      if (r.ok && kind === 'codex' && FOLDED.test(r.box.text)) return { result: 'restored', by: 'board', folded: true }; // 긴 붙여넣기는 Codex가 접어 보인다
+      if (r.ok && kind !== 'claude' && FOLDED.test(r.box.text)) return { result: 'restored', by: 'board', folded: true }; // 긴 붙여넣기는 Codex가 접어 보인다
       return { result: kind === 'claude' ? (r.ok ? 'restored' : 'stashed') : 'held', why: r.ok ? 'box_differs' : 'not_shown', ...(r.ok && kind === 'claude' ? { by: 'board', differs: true } : {}) };
     },
   };
