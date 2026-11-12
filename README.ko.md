@@ -107,7 +107,8 @@ Atrium은 세션을 실행하고, 세션 사이의 연결을 만들고 표시합
 | | |
 |---|---|
 | [Node.js](https://nodejs.org/) | 22.13 이상(22와 24에서 시험) |
-| [herdr](https://herdr.dev) | 0.9.5(프로토콜 22)로 테스트했습니다. herdr 설치 폴더와 `PATH`에서 실행 파일을 찾습니다. 다른 파일을 사용하려면 `ATRIUM_HERDR` 또는 설정의 herdr 경로로 지정하세요. 프로토콜 22를 사용하는 다른 버전에는 경고를 표시합니다. herdr가 없어도 보드는 열리지만 세션은 시작할 수 없습니다. |
+| [herdr-core](https://github.com/herdrdev/herdr-core) | 설치할 필요가 없습니다. 처음 사용할 때 Atrium이 고정된 버전을 내려받고 SHA-256을 확인합니다. 새 보드는 herdr-core에서 실행됩니다. |
+| [herdr](https://herdr.dev) | 설정 › 터미널에서 옮기기 전까지 herdr에서 실행되는 보드에만 필요합니다. 0.9.5(프로토콜 22)로 테스트했습니다. herdr 설치 폴더와 `PATH`에서 실행 파일을 찾습니다. 다른 파일을 사용하려면 `ATRIUM_HERDR` 또는 설정의 herdr 경로로 지정하세요. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `PATH`에 있는 최근 `claude` CLI. |
 | Git | 저장소와 워크트리를 인식하는 데 사용합니다. |
 | 선택 | 그 세션에 쓸 Codex CLI, opencode, pi. 연결에 쓸 모델 게이트웨이나 엔드포인트. 원격 접속에는 Tailscale. |

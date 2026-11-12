@@ -107,7 +107,8 @@ Atrium is **Windows only** for now (Windows 10 or 11, x64).
 | | |
 |---|---|
 | [Node.js](https://nodejs.org/) | 22.13 or later (tested on 22 and 24) |
-| [herdr](https://herdr.dev) | Tested with 0.9.5 (protocol 22). Atrium finds herdr in the herdr install folder or on `PATH`; set `ATRIUM_HERDR` or the path in Settings to use another file. Other versions with protocol 22 work, with a warning. Without herdr the board still opens, but sessions cannot start. |
+| [herdr-core](https://github.com/herdrdev/herdr-core) | Nothing to install: Atrium downloads a pinned herdr-core on first use and checks its SHA-256. A new board runs on herdr-core. |
+| [herdr](https://herdr.dev) | Only for a board that still runs on herdr until you move it in Settings › Terminal. Tested with 0.9.5 (protocol 22). Atrium finds herdr in the herdr install folder or on `PATH`; set `ATRIUM_HERDR` or the path in Settings to use another file. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`. |
 | Git | For repository and worktree detection. |
 | Optional | Codex CLI, opencode or pi for those sessions. A model gateway or endpoint for connections. Tailscale for remote access. |
