@@ -21,7 +21,7 @@ export async function startFakeHc({ version = '0.1.20', generation = 1, features
   const emit = (type, terminal, data) => { seq++; for (const s of subs) line(s, { jsonrpc: '2.0', method: 'event', params: { seq, type, terminal, data } }); };
   const err = (kind, message) => ({ code: -32000, message, data: { kind, hint: '' } });
   const live = (t) => t.state === 'live';
-  const rec = (t) => ({ ...t, sent: undefined, inputs: undefined, keys: undefined, env: undefined });
+  const rec = (t) => ({ ...t, sent: undefined, inputs: undefined, inputKinds: undefined, keys: undefined, env: undefined });
   const streamsOf = (addr) => [...streams.values()].filter((s) => s.terminal === addr);
 
   fake.setStatus = (addr, status) => { const t = terms.get(addr); t.status = status; t.reported = true; emit('status', addr, { status, records: {}, reported: true }); if (status && ['blocked', 'done'].includes(status.state)) { t.turn++; emit('turn', addr, { turn: t.turn, state: status.state }); } };
@@ -41,7 +41,7 @@ export async function startFakeHc({ version = '0.1.20', generation = 1, features
     if (p.name && [...terms.values()].some((x) => live(x) && x.name === p.name)) return { error: err('name_taken', `a live terminal is already named "${p.name}"`) };
     const address = `t${(++n).toString(36)}`;
     const argv = p.argv && p.argv.length ? p.argv : ['pwsh.exe'];
-    const t = { address, name: p.name || null, argv, cwd: p.cwd || 'C:/x', labels: p.labels || {}, parent: p.parent || null, pid: 1000 + n, state: 'live', status: null, reported: false, reason: null, exit_code: null, cols: 200, rows: 120, title: '', turn: 0, keep: !!p.keep, foreground: { pid: 1000 + n, name: argv[0], argv, cwd: p.cwd || 'C:/x' }, env: p.env || {}, sent: [], inputs: [], keys: [], screen: `PS ${p.cwd || 'C:/x'}> ` };
+    const t = { address, name: p.name || null, argv, cwd: p.cwd || 'C:/x', labels: p.labels || {}, parent: p.parent || null, pid: 1000 + n, state: 'live', status: null, reported: false, reason: null, exit_code: null, cols: 200, rows: 120, title: '', turn: 0, keep: !!p.keep, foreground: { pid: 1000 + n, name: argv[0], argv, cwd: p.cwd || 'C:/x' }, env: p.env || {}, sent: [], inputs: [], inputKinds: [], keys: [], screen: `PS ${p.cwd || 'C:/x'}> ` };
     terms.set(address, t);
     emit('created', address, rec(t));
     const app = APP[String(argv[0]).replace(/\.exe$/i, '')];
@@ -76,7 +76,7 @@ export async function startFakeHc({ version = '0.1.20', generation = 1, features
         streams.set(key, { key, sock: conn.sock, ch, terminal: t.address, conn, credit: 0 });
         if (!p.observe && !p.resumed) { t.cols = p.cols; t.rows = p.rows; }
         // 응답과 첫 화면을 한 번에 쓴다(클라이언트의 첫 프레임 모으기 시험)
-        return { result: { channel: ch, automatic_input: true, resize_notifications: false, terminal: rec(t) }, after: encodeFrame(ch, FRAME.DATA, Buffer.from(FIRST_PAINT)) };
+        return { result: { channel: ch, automatic_input: fake.automaticInput !== false, resize_notifications: false, terminal: rec(t) }, after: encodeFrame(ch, FRAME.DATA, Buffer.from(FIRST_PAINT)) };
       }
       default: return { error: err('usage', `unknown method ${method}`) };
     }
@@ -114,7 +114,8 @@ export async function startFakeHc({ version = '0.1.20', generation = 1, features
         const s = streams.get(`${conn.id}:${f.ch}`);
         if (!s) continue;
         const t = terms.get(s.terminal);
-        if (f.kind === FRAME.DATA) t.inputs.push(f.payload.toString('utf8'));
+        // P130: 사람 입력(DATA)과 판 입력(AUTOMATIC_INPUT, kind 6)을 함께 inputs에 두고 종류는 inputKinds에('data'|'auto')
+        if (f.kind === FRAME.DATA || f.kind === FRAME.AUTOMATIC_INPUT) { t.inputs.push(f.payload.toString('utf8')); t.inputKinds.push(f.kind === FRAME.DATA ? 'data' : 'auto'); }
         else if (f.kind === FRAME.CREDIT) s.credit += f.payload.readUInt32LE(0);
         else if (f.kind === FRAME.RESIZE) { t.cols = f.payload.readUInt16LE(0); t.rows = f.payload.readUInt16LE(2); emit('size', t.address, { cols: t.cols, rows: t.rows }); }
         else if (f.kind === FRAME.FOCUS) t.focus = f.payload[0];

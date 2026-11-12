@@ -524,16 +524,18 @@ export class HcAdapter extends EventEmitter {
     const s = String(text);
     return this._typeRaw(paneId, [/\n/.test(s) ? `\x1b[200~${s}\x1b[201~` : s]);
   }
-  // 키 이름 → 바이트를 attach DATA로 바로(키 패드, 답하기). 모르는 키가 있으면 hc의 terminal.keys(조용해질 때까지 기다림)
+  // 키 이름 → 바이트를 attach로 바로(키 패드, 답하기. 판 입력 AUTOMATIC_INPUT). 모르는 키가 있으면 hc의 terminal.keys(조용해질 때까지 기다림)
   async paneKeys(paneId, keys) {
     const bytes = keysToBytes(keys);
     if (!bytes) return this.call('terminal.keys', { terminal: paneId, keys }, 30000);
     return this._typeRaw(paneId, bytes);
   }
-  // 붙어 있는 화면 스트림이 있으면 그것으로, 없으면 지금 크기로 잠깐 붙어서 친다(크기를 바꾸지 않는다)
+  // 붙어 있는 화면 스트림이 있으면 그것으로, 없으면 지금 크기로 잠깐 붙어서 친다(크기를 바꾸지 않는다).
+  // P130: 판이 친 키는 AUTOMATIC_INPUT(kind 6)으로 보낸다. hc는 attach DATA를 사람 입력으로 세어, 그 뒤 terminal.send·keys가
+  // 약 3초 조용한 틈을 기다렸다(쓰다 만 글을 Ctrl+S로 비킨 뒤 지시가 3초 늦음). kind 6은 세지 않는다. 사람이 판 터미널로 친 키(relay)는 그대로 DATA
   async _typeRaw(paneId, parts) {
     const ctl = [...(this._ctls.get(paneId) || [])].find((c) => c.exited == null && c.conn && c.ch != null && c.terminal === paneId);
-    if (ctl) { for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); ctl.input(parts[i]); } return { typed: parts.length, via: 'stream' }; }
+    if (ctl) { for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); ctl.inputAuto(parts[i]); } return { typed: parts.length, via: 'stream', automatic: !!ctl.autoInput }; }
     const t = await this.call('terminal.get', { terminal: paneId });
     if (!isLive(t)) throw new HcError('pane_not_found', `${paneId} is ${t.state}`, 'terminal.attach');
     const conn = new FramedConn(this.pipe);
@@ -541,10 +543,11 @@ export class HcAdapter extends EventEmitter {
       await conn.open();
       const r = await conn.call('terminal.attach', { terminal: paneId, cols: t.cols || 120, rows: t.rows || 40, resumed: true });
       conn.claim(r.channel, (f) => { if (f.kind === FRAME.DATA) { const b = Buffer.alloc(4); b.writeUInt32LE(f.payload.length, 0); conn.write(r.channel, FRAME.CREDIT, b); } });
-      for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); conn.write(r.channel, FRAME.DATA, Buffer.from(parts[i], 'utf8')); }
+      const kind = r.automatic_input ? FRAME.AUTOMATIC_INPUT : FRAME.DATA;
+      for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); conn.write(r.channel, kind, Buffer.from(parts[i], 'utf8')); }
       await sleep(50);
       conn.write(r.channel, FRAME.CLOSE);
-      return { typed: parts.length, via: 'attach' };
+      return { typed: parts.length, via: 'attach', automatic: !!r.automatic_input };
     } finally { setTimeout(() => conn.close(), 100); }
   }
   // 화면 읽기:
