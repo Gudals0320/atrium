@@ -296,7 +296,8 @@ export function Canvas() {
   const [rev, setRev] = useState(0); // 바꾸면 저장소 자리로 다시 그린다(되돌리기)
   const [labelTick, setLabelTick] = useState(0); // P67: 선 이름표가 시간이 지나 물러나도록 다시 센다
   useEffect(() => { const i = setInterval(() => setLabelTick((n) => n + 1), 15000); return () => clearInterval(i); }, []);
-  const held = useRef(new Map()); // id → 마지막으로 붙일 대상이던 시각
+  const held = useRef(new Map()); // id → 붙일 대상에서 빠진 시각(대상인 동안 null). P124
+  const releaseTimer = useRef(null);
   const drag = useRef(null); // { id, type, mode, start, pointer, followers: [{ id, x, y }], live, snap }
   const ghostRef = useRef(null);
   const ctrlRef = useRef(null); // P17: Ctrl+끌기로 끄는 노드 ID
@@ -592,16 +593,23 @@ export function Canvas() {
     const all = [...st.nodes].filter(([id]) => st.sessions.has(id)).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
     setCloseIds(pickAttached(all, vp, { width: el.clientWidth, height: el.clientHeight }, { max: Infinity }).sort());
     const now = Date.now();
-    for (const id of want) held.current.set(id, now);
+    // P124: 놓기 기다림(HOLD_MS)은 붙일 대상에서 처음 빠진 때부터 센다. 예전에는 마지막으로 대상이던 계산 시각부터 세어, 다시 세는 주기(1.6초)에 따라
+    //   실제 기다림이 0~1.5초로 들쭉날쭉했다(휠로 단계 경계를 오갈 때 터미널을 숨겨 두는 것이 운에 달렸다). 대상인 동안은 null, 빠지면 그때 시각
+    for (const id of want) held.current.set(id, null);
     const keep = [...want];
-    for (const [id, t] of held.current) {
+    let leaving = false;
+    for (const [id, t0] of held.current) {
       if (keep.includes(id)) continue;
+      const t = t0 == null ? now : t0;
+      held.current.set(id, t);
       const n = list.find((x) => x.id === id);
       // P121: 다른 워크스페이스로 바꾸었거나 초점이 떠난 노드는 기다리지 않고 놓는다(아주 가까이는 붙어 있던 기준 30%로 본다)
       const ok = n && termAllowed({ id, ws: n.ws, viewWs: wsLimit.key, focus, selected, mates, near: veryClose(n, vp, screen, true) });
-      if (now - t < HOLD_MS && keep.length < MAX_CONTROLLERS && ok) keep.push(id);
+      if (now - t < HOLD_MS && keep.length < MAX_CONTROLLERS && ok) { keep.push(id); leaving = true; }
       else held.current.delete(id);
     }
+    clearTimeout(releaseTimer.current);
+    if (leaving) releaseTimer.current = setTimeout(() => recompute(), HOLD_MS + 50); // 기다림이 끝나면 놓는다
     if (full) keep.length = 0; // P84: 전체 보기가 화면을 덮는 동안 판의 터미널은 붙이지 않는다(가려진 터미널의 메모리)
     if (!PLAN.terms) keep.length = 0; // P86 단계 1부터: 보드에는 터미널을 붙이지 않는다(얼굴만, 전체 보기는 그대로)
     const prev = st.attached;
