@@ -122,7 +122,15 @@ export class HcController extends EventEmitter {
     const same = cols === this.want.cols && rows === this.want.rows && cols === this.size.cols && rows === this.size.rows;
     this.want = { cols, rows };
     if (same && this.conn && this.ch != null) return this.repaint();
-    if (this.conn && this.ch != null) { this.conn.write(this.ch, FRAME.RESIZE, sizePayload(cols, rows)); this.size = { cols, rows }; }
+    if (this.conn && this.ch != null) { this.conn.write(this.ch, FRAME.RESIZE, sizePayload(cols, rows)); this.size = { cols, rows }; this._repaintSoon(); }
+  }
+  // P117: 크기를 바꿨는데 프로그램이 아무것도 쓰지 않으면(쉬는 셸) 새 크기를 실은 프레임이 오지 않아 창의 터미널이 옛 크기로 남는다
+  // (herdr는 크기를 바꾸면 그린 화면을 보냈다. 판 밖 보는 이·CLI 클라이언트가 크기를 가져갔다 떠난 뒤 그랬다, P117 p113 창 시험). 잠깐 뒤에도 프레임이 없으면 새 첫 화면을 받는다
+  _repaintSoon(ms = 150) {
+    clearTimeout(this._repaintTimer);
+    const at = this.lastEmit;
+    this._repaintTimer = setTimeout(() => { if (this.exited == null && this.lastEmit === at && !this.pend.length) this.repaint(); }, ms);
+    if (this._repaintTimer.unref) this._repaintTimer.unref();
   }
   // P114 2b: 같은 판 세션의 새 터미널로 옮겨 붙는다(같은 controllerPid라 창은 이어서 받고, 새 첫 화면이 full로 온다)
   retarget(terminal) {
@@ -151,7 +159,7 @@ export class HcController extends EventEmitter {
     if (this.exited != null) return;
     this._flush(); // 모아 둔 바이트를 먼저
     this.exited = reason;
-    clearTimeout(this._retryTimer); clearTimeout(this._moveTimer); this._moveTimer = null;
+    clearTimeout(this._retryTimer); clearTimeout(this._moveTimer); clearTimeout(this._repaintTimer); this._moveTimer = null;
     if (this.conn) { try { if (this.ch != null) this.conn.write(this.ch, FRAME.CLOSE); } catch {} this.conn.close(); }
     this.conn = null; this.ch = null;
     setImmediate(() => this.emit('exit', reason));

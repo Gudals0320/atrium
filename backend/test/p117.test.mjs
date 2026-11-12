@@ -103,6 +103,28 @@ test('P117 신뢰(hc): 신뢰 질문 중에 백엔드가 다시 뜨면, 붙기(c
   } finally { a.stopEvents(); await fake.close(); }
 });
 
+test('P117 화면 스트림(hc): 크기를 바꾼 뒤 프로그램이 아무것도 쓰지 않아도(쉬는 셸) 새 크기의 첫 화면(full)을 낸다', async () => {
+  const fake = await startFakeHc();
+  const { HcController } = await import('../src/hc/stream.mjs');
+  try {
+    const t = fake.create({ argv: ['pwsh'] }).result;
+    const c = new HcController({ pipe: fake.pipe, terminal: t.address, cols: 120, rows: 40 });
+    const frames = [];
+    c.on('frame', (f) => frames.push(f));
+    await until(() => frames.length === 1);
+    assert.deepEqual([frames[0].width, frames[0].height, frames[0].full], [120, 40, true]);
+    c.resize(175, 33); // 판 밖 클라이언트가 떠나 창의 크기로 되돌림
+    const f = await until(() => frames.find((x) => x.width === 175 && x.height === 33));
+    assert.equal(f.full, true);
+    // 바로 출력이 오면 다시 붙지 않는다
+    const n = fake.calls.filter((x) => x.method === 'terminal.attach').length;
+    c.resize(100, 30); fake.output(t.address, 'PS> ');
+    await sleep(300);
+    assert.equal(fake.calls.filter((x) => x.method === 'terminal.attach').length, n);
+    c.close();
+  } finally { await fake.close(); }
+});
+
 test('P117 hc 기록 읽기(P116 인계): 화면 아래 빈 줄은 n줄에 세지 않는다(recent_unwrapped)', async () => {
   const fake = await startFakeHc();
   const a = new HcAdapter({ session: 'p117-unit', dataDir: null, pipe: fake.pipe, env: {} });
