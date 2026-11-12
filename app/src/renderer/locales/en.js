@@ -1855,7 +1855,7 @@ export default {
     },
     phaseRestarting: 'Restarting the backend and the window…',
     failed: 'Update failed: {error}',
-    note: 'The update downloads the release from GitHub, installs it next to the current version and switches only the backend and the window. Sessions in herdr keep running. If the new backend does not start, the board goes back to the current version.',
+    note: 'The update downloads the release from GitHub, installs it next to the current version and switches only the backend and the window. Sessions keep running in herdr-core (or in herdr on a board not moved yet). If the new backend does not start, the board goes back to the current version.',
     webBanner: 'Updating on the PC to {version}. This page reconnects when it is done.',
     toastAvailable: 'Atrium {version} is available. Update from Settings › General.',
     toastDone: 'Updated to {version}',
@@ -2388,6 +2388,11 @@ export default {
   doneMark: {
     tag: 'Done',
     phone: 'Done {n}',
+  },
+  // P120: the board removed empty project areas whose folder is gone (no sessions, no closed sessions to reopen)
+  regionPrune: {
+    single: 'Removed the empty project {name} from the board: its folder {root} no longer exists.',
+    multiple: 'Removed {n} empty projects from the board: their folders no longer exist.',
   },
   // P121: summary face of a session outside the chosen workspace (no terminal until clicked or zoomed in very close)
   brief: {

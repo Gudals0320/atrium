@@ -68,6 +68,8 @@ export function installRecall(Store) {
         return { sessionId: r.session_id, name: r.name, label: r.label ?? null, cwd: r.cwd, kind: r.kind || 'claude', origin: r.origin || 'board', workspaceKey: r.workspace_key ?? null, createdAt: r.created_at, closedAt: r.closed_at, dismissedAt: r.dismissed_at ?? null, reason, runtime: P(r.runtime, null), permissionMode: r.permission_mode, model: r.model, effort: r.effort };
       });
     },
+    // P120: 닫힌 세션 기록(보관 포함, 다시 열 수 있다)이 남은 워크스페이스 키. 폴더가 없어진 빈 영역을 치울 때 이 영역은 남긴다
+    closedWorkspaceKeys() { return new Set(this.st('SELECT DISTINCT workspace_key FROM sessions WHERE closed_at IS NOT NULL AND reopened_as IS NULL AND workspace_key IS NOT NULL').all().map((r) => r.workspace_key)); },
     // 판이 아는 대화 ID(열린 세션, 닫힌 세션, 목록에서 뺀 세션 모두): 판 밖 대화 목록에서 뺀다
     boardConversations() {
       const out = new Map();

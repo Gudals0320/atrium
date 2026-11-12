@@ -252,7 +252,7 @@ export class Backend {
       if (s) this.broadcastSession(s);
     });
     // P27: 리포마다 살아 있는 워크트리의 영역. 대화 노드(recall)보다 먼저 한 번 읽어 처음부터 워크트리 영역에 놓는다
-    this.worktrees = attachWorktrees(this, { tickMs: cfg.worktreePollMs ?? 10000 });
+    this.worktrees = attachWorktrees(this, { tickMs: cfg.worktreePollMs ?? 10000, ...(cfg.wsGoneGraceMs != null ? { goneGraceMs: cfg.wsGoneGraceMs } : {}) });
     Object.assign(this.api.handlers, this.worktrees.handlers);
     await this.worktrees.sync('start').catch((e) => this.log('worktree sync error', e.stack));
     this.features = attachFeatures(this);
@@ -672,15 +672,23 @@ export class Backend {
     return { closed: closed.length === named.length, removed: closed, kept, key: named[0].key, after: chk.after, sessions: done };
   }
   // 워크스페이스 행 하나를 판에서 뺀다(안에 세션이 없을 때)
-  removeWorkspace(key) {
+  // P120: why 'gone' = 폴더가 없어진 빈 영역을 판이 치운다(worktrees.mjs pruneGone). 사람이 닫은 것이 아니라 P10의 "다시 저절로 열지 않음"에 넣지 않는다
+  removeWorkspace(key, { why = null } = {}) {
     // P6c: 그 영역의 메모·칸반은 지우지 않고 소속만 푼다(자리는 그대로)
     for (const m of this.store.memos().filter((x) => x.workspaceKey === key)) { this.store.updateMemo(m.memoId, { workspaceKey: null }); this.api.broadcast('memo.updated', this.store.getMemo(m.memoId)); }
     for (const k of this.store.kanbans().filter((x) => x.workspaceKey === key)) { this.store.updateKanban(k.kanbanId, { workspaceKey: null }); if (this.features) this.features.kanbans.emit(this.store.getKanban(k.kanbanId)); }
     this.store.deleteWorkspace(key);
     if (this.store.getMeta('currentWorkspace') === key) this.store.setMeta('currentWorkspace', (this.store.workspaces()[0] || {}).key || null);
-    this.store.addEvent(null, 'workspace_closed', { key });
-    this.bus.emit('workspace_closed', key); // P10: 사람이 닫은 워크스페이스는 다시 저절로 열지 않는다
+    this.store.addEvent(null, 'workspace_closed', why ? { key, why } : { key });
+    if (why !== 'gone') this.bus.emit('workspace_closed', key); // P10: 사람이 닫은 워크스페이스는 다시 저절로 열지 않는다
+    if (why === 'gone') this.store.setMeta(GROUPS_META, dropWorkspaces(readGroups(this), [key])); // 묶음에서도 뺀다(사람이 지울 때는 workspaceClose가 뺀다)
     this.broadcastWorkspaces();
+  }
+  // P120: 폴더가 없어진 빈 영역을 치웠다. 창은 한 번 알린다(토스트). 판 밖 대화 노드는 다시 놓는다
+  onWorkspacesPruned(list) {
+    this.store.addEvent(null, 'workspace_pruned', { workspaces: list });
+    this.api.broadcast('workspace.pruned', { workspaces: list });
+    if (this.recall) this.recall.changed({ force: true }).catch(() => {});
   }
   // P44: 닫힌 세션 행만 판에서 지운다. 대화 기록 파일은 그대로다(노드 X의 "삭제"와 달리 휴지통으로 보내지 않는다)
   dropClosedRow(sessionId, why) {
@@ -1317,6 +1325,12 @@ export class Backend {
   // P40: herdr가 없으면 herdr_missing, 프로토콜이 다르면 herdr_incompatible(까닭과 할 일을 함께). 보드의 다른 기능은 막지 않는다
   requireHerdr() {
     if (this.herdrMissing || (this.herdrCompat && this.herdrCompat.level === 'missing')) {
+      // P122: hc 판은 herdr를 찾지 않는다. 고정 hc를 받거나 띄우지 못한 것이므로 창의 hc 띠와 같은 글(herdr 설치 안내가 아니다)
+      if (this.adapter && this.adapter.backend === 'hc') {
+        const m = this.herdrMissing || {};
+        const error = String(m.error || m.reason || 'not ready');
+        throw keyed(apiError('herdr_missing', `herdr-core를 받거나 시작하지 못했습니다(${error}). 인터넷 연결을 확인한 뒤 다시 시도하세요. 준비될 때까지 세션을 시작할 수 없습니다.`), 'terminalMove.hcBand.why', { error });
+      }
       const tried = ((this.herdrFind && this.herdrFind.tried) || []).length;
       throw keyed(apiError('herdr_missing', `herdr를 찾지 못해 세션을 시작할 수 없습니다 (후보 ${tried}곳 확인). herdr를 설치하거나(https://herdr.dev) 설정의 herdr 경로 또는 ATRIUM_HERDR로 실행 파일을 지정하세요.`), 'herdrMissing', { n: tried });
     }

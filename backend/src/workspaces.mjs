@@ -62,6 +62,25 @@ export function workspaceCounts(sessions, key) {
   return c;
 }
 
+// P120: 판이 스스로 치울 워크스페이스. 폴더(뿌리)가 디스크에 없고 세션(살아 있는 것, 잠든 것, 다시 열 수 있는 닫힌 기록)이 하나도 없는 것만이다.
+// 폴더가 잠깐 안 보이는 때(드라이브 연결, 이름 바꾸기 중)에 지우지 않게, 처음 없다고 본 뒤 graceMs가 지나도 없을 때만 고른다.
+// workspaces: [{ key, root }], exists(root) → bool, busyKeys: 세션(열린 것·닫힌 기록)이 든 워크스페이스 키, missingSince: Map 키 → 처음 없다고 본 시각(고쳐 쓴다).
+// 순수 함수(exists만 부른다) → 지울 키 목록
+export const GONE_GRACE_MS = 60000;
+export function goneWorkspaces(workspaces, { exists, busyKeys = new Set(), missingSince = new Map(), now = Date.now(), graceMs = GONE_GRACE_MS } = {}) {
+  const out = [];
+  const seen = new Set();
+  for (const w of workspaces || []) {
+    seen.add(w.key);
+    if (!w.root || exists(w.root)) { missingSince.delete(w.key); continue; }
+    if (!missingSince.has(w.key)) missingSince.set(w.key, now);
+    if (busyKeys.has(w.key)) continue;
+    if (now - missingSince.get(w.key) >= graceMs) out.push(w.key);
+  }
+  for (const k of [...missingSince.keys()]) if (!seen.has(k)) missingSince.delete(k);
+  return out;
+}
+
 // 세션이 지금 자기 워크스페이스 밖(다른 저장소, 저장소 밖 폴더)에서 일하는가. 노드에 표시만 하고 워크스페이스는 옮기지 않는다(G1)
 // ws: { key, kind, root }, git: 세션의 지금 폴더로 본 git(gitProbe 결과) → null 또는 { root, repo }
 export function elsewhereOf(ws, git) {

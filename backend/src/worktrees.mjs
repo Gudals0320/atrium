@@ -13,7 +13,7 @@ import { parseWorktreeList, liveWorktrees, worktreeOfPath, areaKey, wsOfArea, bo
 import { canvasItems, regions, settleRegions, dockOf, slotRegions, slotItems, anchorWorkspace, reflowLines } from './canvas-ops.mjs';
 import { slotInRegion } from './canvas.mjs';
 import { boxFrame } from './tree-line.mjs'; // P75
-import { pathKey } from './workspaces.mjs';
+import { pathKey, goneWorkspaces, workspaceNames, GONE_GRACE_MS } from './workspaces.mjs';
 
 const TICK_MS = 10000;
 
@@ -21,7 +21,7 @@ function gitWorktrees(root) {
   return new Promise((res) => execFile('git', ['-C', root, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (err, out) => res(err ? null : String(out))));
 }
 
-export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exists = (p) => fs.existsSync(p) } = {}) {
+export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exists = (p) => fs.existsSync(p), goneGraceMs = GONE_GRACE_MS, now = () => Date.now() } = {}) {
   const listOf = new Map(); // 워크스페이스 키 → 살아 있는 워크트리 [{ key, path, branch, ... }]
   const log = (m) => (b.log ? b.log(m) : null);
 
@@ -67,6 +67,31 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
     return list.length ? list[0].n : null;
   }
 
+  // P120: 폴더가 없어진 빈 워크스페이스를 판에서 치운다(BRIEF "워크스페이스", ARCH G). 판 밖 대화(P10 리포 스스로 찾기)로 연 영역이 시험 폴더·지운 워크트리를
+  //   가리키다 폴더가 사라지면 사람이 지우기 전까지 빈 영역과 빈 워크트리 상자로 남았다. 세션(열린 것, 잠든 것, 닫힌 기록)이 든 영역은 남긴다.
+  //   사람이 닫은 것이 아니므로 "다시 저절로 열지 않음"(P10 declined)에 넣지 않는다. 폴더가 돌아오고 대화가 있으면 다시 열린다
+  const missingSince = new Map(); // 워크스페이스 키 → 처음 폴더가 없다고 본 시각
+  const goneFor = (key) => (missingSince.has(key) ? now() - missingSince.get(key) : -1);
+  function pruneGone() {
+    const wss = b.store.workspaces();
+    if (!b.removeWorkspace || !wss.some((w) => w.root && !exists(w.root)) && !missingSince.size) return [];
+    const busy = new Set([...b.sessions.values()].map((s) => s.workspaceKey).filter(Boolean));
+    if (b.store.closedWorkspaceKeys) for (const k of b.store.closedWorkspaceKeys()) busy.add(k);
+    const gone = goneWorkspaces(wss, { exists, busyKeys: busy, missingSince, now: now(), graceMs: goneGraceMs });
+    if (!gone.length) return [];
+    const names = workspaceNames(wss);
+    const out = [];
+    for (const key of gone) {
+      const w = wss.find((x) => x.key === key);
+      out.push({ key, root: w.root, name: names.get(key) || key });
+      b.removeWorkspace(key, { why: 'gone' });
+      missingSince.delete(key);
+      log(`pruned workspace ${w.root} (folder gone, no sessions)`);
+    }
+    if (b.onWorkspacesPruned) b.onWorkspacesPruned(out);
+    return out;
+  }
+
   // 영역 행 맞추기. 바뀐 것이 있으면 true
   async function syncAreas() {
     let changed = false;
@@ -75,9 +100,11 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
     for (const a of b.store.worktreeAreas()) if (!keys.has(a.wsKey)) { b.store.deleteWorktreeArea(a.wsKey, a.wt); changed = true; } // 닫힌 워크스페이스
     for (const w of wss) {
       if (w.kind !== 'repo') { if (listOf.delete(w.key)) changed = true; continue; }
-      const out = await list(w.root);
+      // P120: 저장소 폴더가 없어진 지 오래면(세션이 남아 영역은 남았다) git을 부르지 않고 워크트리가 없다고 본다. 읽기 실패로 빈 상자가 남지 않게
+      const rootGone = goneFor(w.key) >= goneGraceMs;
+      const out = rootGone ? '' : await list(w.root);
       if (out == null) continue; // 읽지 못했으면 그대로 둔다(잠깐의 실패로 영역을 지우지 않는다)
-      const live = liveWorktrees(parseWorktreeList(out), exists);
+      const live = rootGone ? [] : liveWorktrees(parseWorktreeList(out), exists);
       listOf.set(w.key, live);
       const have = b.store.worktreeAreas().filter((a) => a.wsKey === w.key);
       for (const a of have) {
@@ -149,7 +176,8 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
     chain = chain.catch(() => {}).then(async () => {
       // P37: 폴더 워크스페이스가 저장소가 됐으면(반대도) 먼저 키를 옮긴다(workspace-merge-ops.mjs). 옮겼으면 영역 행도 다시 맞춘다
       const merged = b.reconcileWorkspaces ? await b.reconcileWorkspaces(cause).catch((e) => { log(`workspace merge error ${e.stack}`); return []; }) : [];
-      const changed = (await syncAreas()) || merged.length > 0;
+      const pruned = pruneGone();
+      const changed = (await syncAreas()) || merged.length > 0 || pruned.length > 0;
       const moved = relocateNodes();
       if (!changed && !moved) return { changed: false, moved: 0 };
       settleRegions(b, `worktrees ${cause}`);
@@ -170,7 +198,7 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
   const view = (wsKey) => b.store.worktreeAreas().filter((a) => a.wsKey === wsKey).map((a) => ({ wt: a.wt, area: areaKey(a.wsKey, a.wt), path: a.path, branch: a.branch, x: a.x, y: a.y, movedAt: a.movedAt }));
 
   return {
-    areaOf, sync, kick, view,
+    areaOf, sync, kick, view, pruneGone,
     live: (wsKey) => listOf.get(wsKey) || null,
     stop() { if (timer) clearInterval(timer); clearTimeout(kickTimer); },
     handlers: {

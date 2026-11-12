@@ -2,7 +2,8 @@
 // - 영역: 한 워크스페이스의 노드와 그룹 뒤에 깔리는 배경과 이름표(이름, ⎇ 저장소 / ▢ 폴더, 세는 값). 이름표를 끌면 안의 것이 모두 함께 움직인다.
 //   이름표 글자는 화면 기준 크기라 줄여 보아도 읽힌다. 이름표의 단추: 정리(연결을 따라 나무 배치, 사람이 누를 때만), 되돌리기(한 번), + 세션, 모두 보기.
 //   다른 영역과 겹치면 빨갛게 보인다(놓으면 되돌린다).
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from './api.js';
 import { useInvRef, useZoomStyle } from './zoom-var.js'; // P112: 배율을 따르는 이름표 크기를 렌더 없이
 import { useStore, getState, openDialog, selectWorkspace, noteWorkspace, toast, markArranged } from './store.js';
@@ -62,24 +63,34 @@ function RegionNodeInner({ data }) {
   const w = useStore((st) => st.workspaces.find((x) => x.key === key));
   const sessions = useStore((st) => st.sessions);
   const arranged = useStore((st) => st.arranged.has(key));
-  const current = useStore((st) => st.currentWs === key);
+  const current = useStore((st) => (st.viewWs || st.currentWs) === key); // P121: 위 바의 켜진 칩과 같이 고른 워크스페이스(터미널이 붙는 곳)
   const convos = useStore((st) => { let n = 0; for (const c of st.convoNodes.values()) if (c.workspaceKey === key) n++; return n; }); // P13: 판 밖 대화 노드 수
   const headRef = useZoomStyle(regionHead);
+  const actsRef = useRef(null);
   const [acts, setActs] = useState(false);
+  const [menu, setMenu] = useState(null); // P120: 이름표 메뉴 { x, y }(⌄를 눌렀는데 단추가 다 들어가지 않을 때, 오른쪽 클릭)
   const c = useMemo(() => workspaceCounts([...sessions.values()], key), [sessions, key]);
   const z = useMemo(() => repoSleep(sessions.values(), key), [sessions, key]); // P24: 잠든 수, 아낀 메모리
   if (!w) return null;
+  // P120: ⌄. 이름표에 단추가 다 들어가면 지금처럼 단추 줄을 펴고 접는다. 영역이 좁거나 이름이 길어 단추가 잘리면 메뉴로 모아 연다
+  const chev = (e) => {
+    const a = actsRef.current;
+    const clipped = a && getComputedStyle(a).display !== 'none' && a.scrollWidth > a.clientWidth + 1;
+    if (clipped) { const r = e.currentTarget.getBoundingClientRect(); setMenu({ x: r.left, y: r.bottom + 4 }); return; }
+    setActs((v) => !v);
+  };
+  const ctx = (e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }); };
   return (
     <div className={`mt-region${data.warn ? ' warn' : ''}${c.needsYou ? ' hot' : ''}${c.working ? ' run' : ''}${current ? ' current' : ''}${z.all ? ' asleep' : ''}`} data-ws={key} data-name={w.name} data-asleep={z.asleep || undefined}>
       <div className="mt-region-box" style={{ top: BORDER_TOP }} />
-      <div className={`mt-region-head mt-rdrag${acts ? ' acts' : ''}`} ref={headRef} title={t('regions.headTitle', { kind: w.kind === 'repo' ? t('top.wsRepo') : t('top.wsFolder'), root: w.root })}>
+      <div className={`mt-region-head mt-rdrag${acts ? ' acts' : ''}`} ref={headRef} onContextMenu={ctx} title={t('regions.headTitle', { kind: w.kind === 'repo' ? t('top.wsRepo') : t('top.wsFolder'), root: w.root })}>
         <span className="mt-region-dot" />
         <b className="mt-region-name" data-label={w.label ? 'rel' : undefined}>{w.label || w.name}</b>{/* P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로(전체 경로는 title) */}
         <span className="mt-region-meta"><span data-count="sessions">{c.sessions}</span>{c.working > 0 && <> · <span data-count="working">{t('regions.working', { n: c.working })}</span></>}{convos > 0 && <> · <span data-count="convos">{t('regions.convos', { n: convos })}</span></>}{w.kind !== 'repo' && <> · {t('regions.folder')}</>}</span>
         {c.needsYou > 0 && <span className="mt-ws-c need" data-count="needsYou">{t('top.turnN', { n: c.needsYou })}</span>}
         {c.review > 0 && <span className="mt-ws-c review" data-count="review">{t('regions.review', { n: c.review })}</span>}
         {z.asleep > 0 && <span className={`mt-ws-c asleep${z.all ? ' all' : ''}`} data-count="asleep" title={t('regions.asleepTitle', { n: z.asleep, mb: fmtMB(z.mb) })}><Icon name="moon" />{z.waking ? t('sleep.waking') : z.all ? t('regions.asleepAll', { mb: fmtMB(z.mb) }) : t('regions.asleepN', { n: z.asleep, mb: fmtMB(z.mb) })}</span>}
-        <span className="mt-region-acts">
+        <span className="mt-region-acts" ref={actsRef}>
           <button className="mt-btn small nodrag" data-action="arrange" title={t('regions.arrangeTitle')} onClick={() => arrangeWorkspace(key)}>{t('chips.arrange')}</button>
           {arranged && <button className="mt-btn small ghost nodrag" data-action="arrange-undo" onClick={() => arrangeWorkspace(key, true)}>{t('regions.undo')}</button>}
           {z.awake > 0 && <button className="mt-btn small nodrag" data-action="region-sleep" title={t('regions.sleepTitle')} onClick={() => sleepRepo(key)}><Icon name="moon" />{t('regions.sleep')}</button>}
@@ -88,9 +99,43 @@ function RegionNodeInner({ data }) {
           <button className="mt-btn small ghost nodrag" title={t('regions.fit')} data-action="region-fit" onClick={() => selectWorkspace(key)}>⤢</button>
           <button className="mt-btn small ghost nodrag" title={t('sbRemove.regionTitle')} data-action="region-remove" onClick={() => openDialog({ kind: 'wsclose', ws: [w] })}>{t('sbRemove.region')}</button>{/* P44: 판에서 지우기(세션이 있으면 모두 보관·삭제를 고른다) */}
         </span>
-        <button className="mt-region-chev nodrag" title={t('regions.acts')} data-action="region-acts" onClick={() => setActs((a) => !a)}><Icon name="chevDown" /></button>
+        <button className="mt-region-chev nodrag" title={t('regions.acts')} data-action="region-acts" onClick={chev}><Icon name="chevDown" /></button>
       </div>
+      {menu && <RegionMenu at={menu} close={() => setMenu(null)} w={w} arranged={arranged} z={z} />}
     </div>
+  );
+}
+// P120: 영역 이름표 메뉴. 이름표의 단추를 모두 담는다(영역이 좁거나 이름이 길어 단추가 잘려도 지우기에 닿게). 사이드바 메뉴와 같은 생김새
+function RegionMenu({ at, close, w, arranged, z }) {
+  const t = useT();
+  const box = useRef(null);
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => {
+    if (!box.current) return;
+    const r = box.current.getBoundingClientRect();
+    setPos({ left: Math.max(4, Math.min(window.innerWidth - r.width - 4, at.x)), top: Math.max(4, Math.min(window.innerHeight - r.height - 4, at.y)) });
+  }, [at]);
+  useEffect(() => {
+    const down = (e) => { if (box.current && !box.current.contains(e.target)) close(); };
+    const key = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('mousedown', down, true); window.addEventListener('keydown', key, true);
+    return () => { window.removeEventListener('mousedown', down, true); window.removeEventListener('keydown', key, true); };
+  }, [close]);
+  const key = w.key;
+  const item = (action, label, fn, extra = {}) => <button key={action} className={`mt-sb2-mi${extra.danger ? ' danger' : ''}`} data-action={action} disabled={extra.disabled} onClick={() => { close(); fn(); }}>{label}</button>;
+  return createPortal(
+    <div ref={box} className="mt-sb2-menu" data-role="region-menu" data-ws={key} style={pos || { left: -9999, top: -9999 }} onContextMenu={(e) => e.preventDefault()}>
+      <div className="mt-sb2-mh" title={w.root}>{w.label || w.name}</div>
+      {item('arrange', t('chips.arrange'), () => arrangeWorkspace(key))}
+      {arranged && item('arrange-undo', t('regions.undo'), () => arrangeWorkspace(key, true))}
+      {z.awake > 0 && item('region-sleep', t('regions.sleep'), () => sleepRepo(key))}
+      {z.asleep > 0 && item('region-wake', t('regions.wake'), () => wakeRepo(key), { disabled: z.waking > 0 })}
+      {item('region-spawn', t('regions.addSession'), () => { noteWorkspace(key); openDialog({ kind: 'spawn', cwd: w.root }); })}
+      {item('region-fit', t('regions.fit'), () => selectWorkspace(key))}
+      <div className="mt-sb2-msep" />
+      {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}
+    </div>,
+    document.body,
   );
 }
 export const RegionNode = memo(RegionNodeInner);

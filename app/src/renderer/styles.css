@@ -1743,5 +1743,14 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 /* 머리의 거르기 탭: 작업 완료가 있으면 개수를 보라 알약으로 */
 .mt-mm-filter.c-done:not([data-n="0"]) .mt-mm-fn { padding: 0 6px; border-radius: 8px; background: var(--st-review); color: #1a1430; font-weight: 700; }
 .mt-mm-sec[data-role=mm-sum-review] .mt-mm-sech, .mt-mm-sec[data-role=mm-sum-review] .mt-mm-sech i { color: var(--st-review); }
+
+/* ---------- P120: 영역·워크트리 상자·그룹 틀 이름표가 길거나 영역이 좁아도 단추에 닿게. 자리가 모자라면 단추 줄이 먼저 줄고
+   (잘린 단추는 ⌄·오른쪽 클릭 메뉴로 모은다), 다음에 세는 값, 마지막에 이름(경로)이 말줄임으로 준다. ⌄와 상태 칩은 줄지 않는다 ---------- */
+.mt-region-head > * { flex: none; }
+.mt-region-head > .mt-region-name, .mt-region-head > .mt-wtarea-name, .mt-wsgroup-head > .mt-wsgroup-name { flex: 0 1 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; }
+.mt-region-head > .mt-region-meta, .mt-region-head > .mt-wtarea-meta { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mt-region-head > .mt-region-acts { flex: 0 100000 auto; min-width: 0; overflow: hidden; }
+.mt-region-head > .mt-region-acts > .mt-btn { flex: none; }
+.mt-wsgroup-head > * { flex: none; }
 /* P121: 고른 워크스페이스 밖 노드의 요약 얼굴(가까이 크기)에서 누르면 터미널이 열린다는 한 줄. 맨 아래에 옅게 */
 .mt-far .mt-brief-hint { margin-top: auto; color: var(--chrome-text-4); font-size: .9em; -webkit-line-clamp: 1; }

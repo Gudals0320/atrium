@@ -108,10 +108,10 @@ test('P33 옮기기: 옛 설정 → 호출자, 레일 네 단추 순서로 즐�
   assert.deepEqual(LEGACY_KEYS.sort(), Object.keys(old).sort());
 });
 
-test('P33·P72 옮기기: 새 판은 Claude Code(manual), Codex, 셸 셋뿐이고 모두 즐겨찾기. DeepSeek 예시는 없다', () => {
+test('P33·P72·P122 옮기기: 새 판은 Claude Code(manual), Codex 둘뿐이고 모두 즐겨찾기. DeepSeek 예시는 없다', () => {
   const v = initialLaunchers({});
-  assert.deepEqual(v.favorites, ['claude', 'codex', 'shell']);
-  assert.deepEqual(v.items.map((l) => l.id), ['claude', 'codex', 'shell']);
+  assert.deepEqual(v.favorites, ['claude', 'codex']);
+  assert.deepEqual(v.items.map((l) => l.id), ['claude', 'codex']);
   const claude = v.items.find((l) => l.id === 'claude');
   assert.deepEqual([claude.permissionMode, claude.model, claude.effort, claude.allowHerdr], ['manual', '', '', false]);
   assert.ok(v.items.every((l) => !Object.keys(l.env).length && !l.checkUrl), '게이트웨이 env·확인 주소가 없다');
@@ -145,7 +145,7 @@ test('P33 옮기기: 판 기록에서 한 번만. 옛 설정이 있으면 옛 �
     s2.close();
     const s3 = new Store(path.join(dir, 'b3.db'));
     const m3 = new Launchers({ store: s3 }).migrated;
-    assert.deepEqual([m3.oldBoard, m3.favorites], [false, ['claude', 'codex', 'shell']]);
+    assert.deepEqual([m3.oldBoard, m3.favorites], [false, ['claude', 'codex']]); // P122
     s3.close();
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -254,6 +254,7 @@ test('P33 spawn { launcher }: 직접 명령은 셸 패널에 그 줄을 치고, 
   assert.deepEqual(calls.filter((c) => c[0] === 'sendText').map((c) => c[2]), ["$env:X='1'; echo p33; exit"]);
   assert.ok(!calls.some((c) => c[0] === 'startAgent'));
   await assert.rejects(() => b.spawn({ cwd, launcher: 'Echo', prompt: 'hi' }), (e) => e.code === 'not_agent');
+  b.features.launchers.create({ launcher: { name: 'Shell', harness: 'shell' } }); // P122: 새 판에는 셸 런처가 없다
   const sh = await b.spawn({ cwd, launcher: 'shell' });
   assert.equal(sh.kind, 'shell'); assert.equal(sh.command, undefined); assert.match(sh.name, /^sh\d/);
   b.store.close();

@@ -68,7 +68,7 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
     console.log(`설치함: ${rel.tag}${r.already ? '(이미 있음)' : ''}\n실행기: ${launcher}${shortcut ? `\n바로가기: ${shortcut}` : ''}`);
     if (r.pruned && r.pruned.length) console.log(`지운 옛 버전: ${r.pruned.join(', ')}`);
     if (channel === 'dev') console.log('앱도 dev 빌드를 알리게 하려면 설정 › 일반 › 업데이트에서 dev 채널을 고르거나 atrium settings set updateChannel dev를 실행합니다.');
-    console.log('도는 백엔드와 herdr는 그대로입니다. 바로가기로 열면 설치한 버전의 창이 뜹니다. 백엔드도 설치한 버전으로 바꾸려면 트레이 메뉴의 "백엔드 다시 시작"을 누릅니다(herdr의 세션은 그대로).');
+    console.log('도는 백엔드와 터미널 서버(herdr-core, 옮기지 않은 보드는 herdr)는 그대로입니다. 바로가기로 열면 설치한 버전의 창이 뜹니다. 백엔드도 설치한 버전으로 바꾸려면 트레이 메뉴의 "백엔드 다시 시작"을 누릅니다(세션은 그대로).');
     return;
   }
 
@@ -100,7 +100,7 @@ export async function updateCommand(cfg, cmd, flags, { out, json }) {
   c.on((ev, d) => {
     if (ev !== 'update.state' || !d.job) return;
     const j = d.job;
-    const line = j.phase === 'failed' ? `실패: ${j.error}` : j.phase === 'restarting' ? `바꾸는 중: 백엔드를 다시 띄웁니다(herdr는 그대로)` : `${STEP[j.step] || j.step}${j.part ? ` (${j.part})` : ''}`;
+    const line = j.phase === 'failed' ? `실패: ${j.error}` : j.phase === 'restarting' ? `바꾸는 중: 백엔드를 다시 띄웁니다(세션은 그대로)` : `${STEP[j.step] || j.step}${j.part ? ` (${j.part})` : ''}`;
     if (!job || line !== job.line) console.log(`  ${line}`);
     job = { ...j, line };
   });
