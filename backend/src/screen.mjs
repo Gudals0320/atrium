@@ -87,7 +87,7 @@ export function claudeInputBox(text) {
     const body = lines.slice(top + 1, bottom);
     if (!body.length || !/^\s*[❯>](\s|$)/.test(body[0])) continue;
     const t = body.map((l, i) => (i === 0 ? l.replace(/^\s*[❯>]\s?/, '') : l.trim())).join(' ').replace(/\s+/g, ' ').trim();
-    return { found: true, text: BOX_HINTS.some((re) => re.test(t)) ? '' : t, above: lines.slice(0, top) };
+    return { found: true, text: BOX_HINTS.some((re) => re.test(t)) ? '' : t, above: lines.slice(0, top), rows: body.length }; // P128: rows(입력 칸 줄 수)
   }
   return { found: false, text: '', above: lines };
 }
@@ -102,7 +102,7 @@ export function codexInputBox(text) {
   const body = [lines[at].replace(/^\s*›\s?/, '')];
   for (let i = at + 1; i < lines.length && lines[i].trim() && /^\s{2}/.test(lines[i]); i++) body.push(lines[i].trim());
   const t = body.join(' ').replace(/\s+/g, ' ').trim();
-  return { found: true, text: CODEX_HINTS.some((re) => re.test(t)) ? '' : t, above: lines.slice(0, at) };
+  return { found: true, text: CODEX_HINTS.some((re) => re.test(t)) ? '' : t, above: lines.slice(0, at), rows: body.length }; // P128: rows(입력 칸 줄 수)
 }
 // 보낸 글(prompt)과 화면을 견준다 → { box: 'ours' | 'empty' | 'other' | 'unknown', seen(입력 칸 위에 보낸 글 첫머리가 보인다 = 이미 들어갔을 수 있다) }
 // 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines], Codex는 [Pasted Content N chars]) 잘릴 수 있어 첫머리(40자)로 본다. kind: 'claude' | 'codex'

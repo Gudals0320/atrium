@@ -2414,4 +2414,11 @@ export default {
   },
   // P126: other text left in the receiving session's input box, so the message was not submitted (delivery chip reason)
   deliveryBox: { otherText: 'not submitted: other text in the input box' },
+  // P128: the receiving session had unsent text in its input box; the board moved it aside, sent only the instruction (delivery chip reason)
+  draftAside: {
+    moved: 'unsent text moved aside',
+    restored: 'unsent text moved aside and put back',
+    stashed: 'unsent text kept by Claude Code (Ctrl+S in an empty box)',
+    held: 'unsent text not put back (saved in the board log)',
+  },
 };

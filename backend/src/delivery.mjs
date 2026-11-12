@@ -49,9 +49,11 @@ export class DeliveryQueue extends EventEmitter {
   //   다른 글이 있거나(사람이 쓰는 중) 알 수 없으면 손대지 않는다. 사람이 3초 안에 친 터미널은 기다린다(B1 규칙 4). 둘 다 없으면 전처럼 기다리기만 한다
   //   P106: hook이 없는 종류(Codex 등)도 inspect가 그 종류의 입력 칸을 읽는다(noResend면 다시 보내지 않고 Enter만). 화면을 못 읽거나(unknown) 아직 뜨는 중이면
   //   손쓰기로 세지 않고 다시 본다(submitLooks번까지). 입력 칸에 보낸 글이 남았으면 submitEnterMs 뒤에 Enter, 다시 보내기는 submitRetryMs 뒤에만
-  constructor({ store, cfg, view, send, inspect = null, pressEnter = null }) {
+  // P128: drafts = { aside(sid, d) → { state: 'clear'|'moved'|'keep', held?, why? }, back(sid, held, d) → { result, why? } }(draft-aside.mjs draftMover).
+  //   보내기 직전에 입력 칸에 쓰다 만 글이 있으면 비키고(moved), 지시가 끝나면(확인·확인 못 함·실패·취소) 되돌린다. 비키지 못하면(keep) 'draft'로 기다리며 draftLookMs마다 다시 본다
+  constructor({ store, cfg, view, send, inspect = null, pressEnter = null, drafts = null }) {
     super();
-    this.store = store; this.cfg = cfg; this.view = view; this.send = send; this.inspect = inspect; this.pressEnter = pressEnter;
+    this.store = store; this.cfg = cfg; this.view = view; this.send = send; this.inspect = inspect; this.pressEnter = pressEnter; this.drafts = drafts;
     this.items = new Map();
     for (const d of store.activeDeliveries()) {
       // 백엔드가 보내는 중에 꺼졌다면 들어갔는지 모른다 → sent로 보고 확인을 기다린다(C2에서 대화 기록으로 맞춘다)
@@ -165,6 +167,7 @@ export class DeliveryQueue extends EventEmitter {
       if (reason === 'working' && d.typeNow && this.inspect) { const v = this.view(sid, d); if (canTypeNow(v)) { this._typeNow(d, v, now); continue; } }
       if (reason) { if (d.reason !== reason) this._set(d, 'queued', reason); continue; }
       if (d.retryAt && now < d.retryAt) { this._noteStuck(d, now); continue; } // P106: herdr가 앞 시도를 받지 않았다. 물러난 시간이 지날 때까지(또는 poke) 기다린다
+      if (d.draftLookAt && now < d.draftLookAt) continue; // P128: 쓰다 만 글을 비키지 못했다. 잠시 뒤 다시 본다(사람이 보내거나 지우면 그때 보낸다)
       this._deliver(d);
     }
   }
@@ -192,12 +195,13 @@ export class DeliveryQueue extends EventEmitter {
     d.workingSeen = false; // 앞 시도(실패) 중의 working 신호를 이 시도의 확인으로 쓰지 않는다(이슈 #1-3)
     d.typed = typed; // P90: Claude Code 대기 메시지로 넣었다(전달 기록의 이유 'typed')
     // P106: 앞 시도를 herdr가 받지 않았으면(물러남 중) 다시 보내기는 조용히 한다. 시도 수만 세고 이벤트는 쓰지 않는다(처음 한 번과 까닭이 바뀔 때만)
-    const quiet = !!d.refusals;
+    const quiet = !!d.refusals || d.reason === 'draft'; // P128: 쓰다 만 글 때문에 기다리며 다시 보는 시도도 조용히 한다
     if (quiet) { d.status = 'sending'; d.attempts = (d.attempts || 0) + 1; d.updatedAt = Date.now(); this.store.updateDelivery(d.deliveryId, { status: 'sending', reason: d.reason, attempt: true }); }
     else this._set(d, 'sending', typed ? 'typed' : null, { attempt: true });
     let done;
     d.inflight = new Promise((r) => { done = r; });
     try {
+      if (this.drafts && !typed && !(await this._aside(d))) return; // P128: 쓰다 만 글을 비키지 못했거나 그새 사람이 쳤다(대기열로 돌아갔다)
       await this.send(d.sessionId, d.text);
       if (d.status === 'sending') { this._clearRefusal(d); this._set(d, 'sent', typed ? 'typed' : null, { sentAt: Date.now() }); }
       else if (d.status === 'cancelled') this.emit('late', { deliveryId: d.deliveryId, sessionId: d.sessionId }); // P106: 취소한 뒤에 이 시도가 들어갔다(cancelWaitMs보다 오래 걸린 시도)
@@ -206,6 +210,7 @@ export class DeliveryQueue extends EventEmitter {
       // 그사이 hook 등으로 confirmed가 되었거나 상태가 바뀌었으면 늦은 오류로 되돌리지 않는다(이슈 #1-2)
       if (d.status !== 'sending' || !this.items.has(d.deliveryId)) return;
       const why = REFUSED[e.code]; // 막힌 패널은 herdr가 거부한다(agent_blocked, E0 3.2)
+      if (why && d.held) await this._putBack(d); // P128: 받지 않았으면 비켜 둔 글부터 되돌린다(물러나 있는 동안 사람이 볼 수 있게)
       if (why) this._refused(d, why, e.code, quiet);
       else this._set(d, 'failed', `${e.code || 'error'}: ${e.herdrMessage || e.message}`);
     } finally { d.inflight = null; done(); }
@@ -283,6 +288,7 @@ export class DeliveryQueue extends EventEmitter {
   }
 
   _set(d, status, reason, extra = {}) {
+    if (status === 'confirmed' && d.held) reason = 'draft_moved'; // P128: 쓰다 만 글을 잠시 비키고 보냈다(되돌린 뒤 draft_restored 등으로 바꾼다)
     d.status = status; d.reason = reason ?? null;
     if (extra.sentAt) d.sentAt = extra.sentAt;
     if (extra.confirmedAt) d.confirmedAt = extra.confirmedAt;
@@ -291,6 +297,51 @@ export class DeliveryQueue extends EventEmitter {
     this.store.updateDelivery(d.deliveryId, { status, reason, ...extra });
     if (FINAL.has(status)) this.items.delete(d.deliveryId);
     this._emit(d);
+    if (FINAL.has(status) && d.held) this._putBack(d).catch(() => {}); // P128: 지시가 끝났다. 비켜 둔 글을 입력 칸에 되돌린다
+  }
+
+  // P128: 보내기 직전에 입력 칸의 쓰다 만 글을 비킨다. → true(보낸다) | false(보내지 않고 대기열로 돌아갔다)
+  async _aside(d) {
+    const started = Date.now();
+    let a;
+    try { a = await this.drafts.aside(d.sessionId, d); } catch (e) { a = { state: 'clear', why: `error ${e.code || e.message}` }; }
+    if (!a || a.state === 'clear') { d.draftLookAt = 0; return true; }
+    if (a.state === 'moved') {
+      d.held = a.held; d.draftLookAt = 0;
+      this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'aside', how: a.held.how, kind: a.held.kind, chars: a.held.text.length, rows: a.held.rows || null, from: a.held.from || null });
+      // 비키는 동안 사람이 쳤으면 보내지 않는다(그 글과 지시가 섞인다). 비켜 둔 글을 되돌리고 사람이 멈추기를 기다린다(규칙 4)
+      const v = this.view(d.sessionId, d) || {};
+      if (v.lastUserInputAt && v.lastUserInputAt >= started) { await this._putBack(d); this._backToQueue(d, 'user_typing'); return false; }
+      if (d.status !== 'sending') { await this._putBack(d); return false; } // 그새 취소됐다
+      return true;
+    }
+    // keep: 정확히 되돌릴 수 없는 글이거나 비키지 못했다. 손대지 않고 기다린다(사람이 보내거나 지우면 다음에 보낸다)
+    d.draftLookAt = Date.now() + (this.cfg.draftLookMs ?? 2000);
+    if (d.draftWhy !== a.why) { d.draftWhy = a.why; this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'keep', why: a.why, chars: a.text ? a.text.length : null }); }
+    this._backToQueue(d, 'draft');
+    return false;
+  }
+  _backToQueue(d, reason) {
+    if (d.status !== 'sending') return;
+    if (d.reason === reason) { d.status = 'queued'; d.updatedAt = Date.now(); this.store.updateDelivery(d.deliveryId, { status: 'queued', reason }); return; }
+    this._set(d, 'queued', reason);
+  }
+  // P128: 비켜 둔 글을 입력 칸에 되돌린다(Enter 없음). 되돌리지 못하면 그 글을 판 기록(draft 이벤트 text)에 남긴다
+  async _putBack(d) {
+    const held = d.held;
+    if (!held) return null;
+    d.held = null;
+    let r;
+    try { r = await this.drafts.back(d.sessionId, held, d); } catch (e) { r = { result: held.kind === 'claude' ? 'stashed' : 'held', why: `error ${e.code || e.message}` }; }
+    r = r || { result: 'held' };
+    this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'back', result: r.result, by: r.by || null, why: r.why || null, how: held.how, kind: held.kind, status: d.status, chars: held.text.length, ...(r.result === 'restored' ? {} : { text: held.text }) });
+    if (d.status === 'confirmed' && d.reason === 'draft_moved') {
+      d.reason = r.result === 'restored' ? 'draft_restored' : r.result === 'stashed' ? 'draft_stashed' : 'draft_held';
+      d.updatedAt = Date.now();
+      this.store.updateDelivery(d.deliveryId, { status: d.status, reason: d.reason });
+      this._emit(d);
+    }
+    return r;
   }
   _emit(d) { this.emit('delivery', { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, createdAt: d.createdAt, sentAt: d.sentAt || null, confirmedAt: d.confirmedAt || null, attempts: d.attempts || 0, chars: d.text.length }); }
 }

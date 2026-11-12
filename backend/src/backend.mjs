@@ -47,7 +47,8 @@ import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
 import { attachUpdater } from './updater.mjs'; // P69: 앱 안 업데이트
-import { attachSleep, draftAfterInput, terminalReportsOnly } from './sleep.mjs'; // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
+import { attachSleep, draftAfterInput, terminalReportsOnly } from './sleep.mjs';
+import { draftEdit, draftMover, stashKeyChanged } from './draft-aside.mjs'; // P128: 쓰다 만 글을 비키고 지시를 보낸 뒤 되돌린다 // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
 import { migrateLegacyData, fixLegacyRecords, writeTombstone, checkLegacyDevHerdr, MARKER, PANE_PREFIX } from './rename-migrate.mjs'; // P18: 이름 옮기기(multitask → Atrium)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -176,7 +177,7 @@ export class Backend {
     await this.resolveHerdr('start');
     // P21: 판 터미널에서 친 글로 보내지 않은 초안이 있는지 기억한다(초안이 있으면 잠재우지 않는다)
     // P126: 휠·초점 알림처럼 터미널이 대신 보낸 보고뿐인 입력은 "사람이 치는 중"(전달 규칙 4)으로 세지 않는다
-    this.relay = new TerminalRelay({ adapter: this.adapter, remoteBatchMs: envVar('REMOTE_BATCH_MS') != null ? Number(envVar('REMOTE_BATCH_MS')) : undefined, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { if (!terminalReportsOnly(data)) s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
+    this.relay = new TerminalRelay({ adapter: this.adapter, remoteBatchMs: envVar('REMOTE_BATCH_MS') != null ? Number(envVar('REMOTE_BATCH_MS')) : undefined, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { if (!terminalReportsOnly(data)) s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.noteDraftKeys(s, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
     this.keyChain = keyChain(); // P104: session.keys를 세션마다 차례로
 
     for (const row of this.store.openSessions()) {
@@ -234,6 +235,16 @@ export class Backend {
         return k === 'codex' ? { ...r, noResend: true } : r;
       },
       pressEnter: async (sid) => { const s = this.sessions.get(sid); if (s && s.paneId) await this.adapter.paneKeys(s.paneId, ['enter']); },
+      drafts: this.draftIo(),
+    });
+    // P128: 쓰다 만 글을 비킴(aside)·비키지 못함(keep)·되돌림(back). 되돌리지 못한 글은 이 이벤트의 text로 판 기록에 남는다
+    this.queue.on('draft', (r) => {
+      this.store.addEvent(r.sessionId, 'delivery_draft', r);
+      this.log(`delivery draft ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.phase}${r.how ? ` ${r.how}` : ''}${r.result ? ` → ${r.result}${r.by ? ` (${r.by})` : ''}` : ''}${r.why ? ` [${r.why}]` : ''} ${r.chars ?? ''} chars`);
+      const s = this.sessions.get(r.sessionId);
+      if (!s) return;
+      if (r.phase === 'aside' && r.kind === 'codex') s.draftEdit = { text: '', exact: true, paste: false }; // 판이 Ctrl+C로 비웠다(판 터미널로 오지 않은 키)
+      if (r.phase === 'back' && r.result !== 'held') s.draft = true; // 쓰다 만 글이 입력 칸에 돌아왔거나 Claude Code가 쥐고 있다(잠재우지 않는다, P21)
     });
     this.queue.on('recover', (r) => { this.store.addEvent(r.sessionId, 'delivery_recover', r); this.log(`delivery recover ${this.nameOf(r.sessionId)} ${r.action} (${r.box}) #${r.n}`); });
     // P106: herdr가 받지 않은 전달(처음 한 번과 까닭이 바뀔 때만 온다), 오래 막힌 전달(한 번), 취소한 뒤에 들어간 시도
@@ -523,6 +534,38 @@ export class Backend {
     const s = findSession(this.sessions.values(), ref); // P66: 세션 ID, 주소(herdr 이름), 판의 이름
     if (s) return s;
     throw keyed(apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`), 'sessionNotFound', { ref });
+  }
+  // P128: 판 터미널로 받은 사람 입력에서 입력 칸의 글을 다시 만든다(Codex 되돌리기에 쓴다). 사람이 Claude Code 입력 치워 두기(Ctrl+S)를 눌렀으면
+  // 제출(Enter)할 때까지 판은 Ctrl+S를 쓰지 않는다(치워 둔 사람의 글을 덮는다)
+  noteDraftKeys(s, data) {
+    if (terminalReportsOnly(data)) return;
+    s.draftEdit = draftEdit(s.draftEdit, data);
+    const t = String(data || '');
+    if (t.includes('\x13')) s.userStash = true;
+    else if (t.includes('\r') && !t.includes('\x1b[200~')) s.userStash = false;
+  }
+  // P128: 전달 대기열의 쓰다 만 글 비키기·되돌리기(draft-aside.mjs). Claude Code와 Codex만(입력 칸을 읽을 수 있는 종류)
+  draftIo() {
+    const pane = (sid) => { const s = this.sessions.get(sid); if (!s || !s.paneId) throw Object.assign(new Error('no pane'), { code: 'pane_not_found' }); return s.paneId; };
+    const m = draftMover({
+      read: (sid) => this.adapter.readScreen(pane(sid), { source: 'visible' }),
+      type: (sid, raw) => this.adapter.sendText(pane(sid), raw),
+      // 여러 줄은 어댑터가 괄호 붙여넣기로 감싼다(hc sendText). 한 줄도 괄호로 감싸 하네스가 글자를 단축키로 읽지 않게 한다
+      paste: (sid, text) => this.adapter.sendText(pane(sid), /\n/.test(text) ? text : `\x1b[200~${text}\x1b[201~`),
+      kindOf: (sid) => { const s = this.sessions.get(sid); return s && s.paneId ? s.kind || 'claude' : null; },
+      edit: (sid) => { const s = this.sessions.get(sid); return s ? s.draftEdit || null : null; },
+      userStash: (sid) => { const s = this.sessions.get(sid); return !!(s && s.userStash); },
+      stashKey: !stashKeyChanged(),
+    }, { pollMs: this.cfg.draftPollMs ?? 250 });
+    return {
+      aside: (sid) => m.aside(sid),
+      back: async (sid, held, d) => {
+        const r = await m.back(sid, held, d);
+        const s = this.sessions.get(sid);
+        if (s && held.kind === 'codex' && r.result === 'restored' && !r.folded) s.draftEdit = { text: held.text, exact: true, paste: false };
+        return r;
+      },
+    };
   }
   deliveryView(sid, d) {
     const s = this.sessions.get(sid);
