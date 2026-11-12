@@ -70,8 +70,10 @@ test('움직임 멈춤 CSS: 회전판만 paused(모양·색 그대로), 미션 �
   const i = css.indexOf('html[data-board-moving="1"]');
   assert.ok(i >= 0, '규칙이 있다');
   const rules = css.slice(i).split('}').filter((r) => r.includes('data-board-moving'));
-  assert.equal(rules.length, 1);
+  // P128a: 움직이는 동안 회전판을 숨기는 규칙이 더해졌다(사용자 결정). 멈춤 규칙과 숨김 규칙 둘
+  assert.equal(rules.length, 2);
   assert.match(rules[0], /\.mt-node-run > i \{ animation-play-state: paused; $/);
+  assert.match(rules[1], /\.mt-node-run \{ visibility: hidden; $/);
   assert.ok(!/data-board-moving[^{]*mt-mm-light/.test(css), '미션 맵 카드 빛은 그대로');
   // workLight 끔·움직임 줄이기 따름은 animation: none이라 paused와 겹쳐도 그대로 멈춘 고리
   assert.match(css, /html\[data-work-light="off"\] \.mt-node-run > i \{ animation: none;/);
