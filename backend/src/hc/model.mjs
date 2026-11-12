@@ -130,9 +130,9 @@ export class HcModel {
         const was = prev.status && prev.status.app;
         const t = { ...prev, ...p.data, state: 'finished', foreground: null, status: null };
         this.terms.set(id, t);
-        if (was) out.push({ type: 'agent_released', ...this._base(t), agent: kindOfApp(was), finalStatus: statusWord(prev.status), raw });
+        if (was) out.push({ type: 'agent_released', ...this._base(t), agent: kindOfApp(was), finalStatus: statusWord(prev.status), exitCode: t.exit_code ?? null, raw }); // P125: 종료 코드(사람이 끝냄·오류 가르기)
         // P117: 판이 띄운 에이전트가 7501을 한 번도 말하지 않고 끝났다(띄우자마자 끝남). herdr처럼 에이전트가 떠난 것으로 알리고 같은 자리에 셸을 남긴다
-        else if (boardAgentKind(prev) && !this.everAgent.has(id) && !CORE_DOWN.has(t.reason)) { this.everAgent.add(id); out.push({ type: 'agent_released', ...this._base(t), agent: boardAgentKind(prev), finalStatus: 'unknown', raw }); }
+        else if (boardAgentKind(prev) && !this.everAgent.has(id) && !CORE_DOWN.has(t.reason)) { this.everAgent.add(id); out.push({ type: 'agent_released', ...this._base(t), agent: boardAgentKind(prev), finalStatus: 'unknown', exitCode: t.exit_code ?? null, raw }); }
         // 터미널이 끝나면 패널도 없다(herdr에서는 에이전트가 끝나도 패널 셸이 남았다). 판에 올린 에이전트는 셸로 내린 뒤 닫힌다.
         // 판이 띄운 세션(2b)은 이 이벤트를 받아 exited로 둘지 정한다. agent: 에이전트가 돈 터미널이었나
         // 코어가 꺼져서 끝난 것(서버 끔, 재부팅, holder 잃음)은 herdr 서버가 꺼진 것과 같다: 패널 끝을 내지 않는다.

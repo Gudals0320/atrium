@@ -96,13 +96,19 @@ export function unscalePoint({ clientX, clientY, rect, width, height }) {
 
 // 선택을 지우는 때. true면 지운다. P42(웹처럼): 선택은 문서 줄에 붙어 휠·자동 스크롤·새 프레임에 함께 움직이므로
 // 'wheel'·'scroll'·'frame'으로는 지우지 않는다. 고르기를 끝내는 것은 웹과 같다(밖 누르기, 글 입력, Esc).
-//   'copy'    고른 글을 복사했다(Ctrl+C, Ctrl+Shift+C). 다음 Ctrl+C가 ^C가 되게 지운다(Windows Terminal처럼)
+//   (P125) 복사(Ctrl+C, Ctrl+Shift+C, 끌어 고르기)로는 지우지 않는다. 고른 글이 남아 있는 동안 Ctrl+C는 몇 번을 눌러도 복사만 한다.
+//   복사하려고 Ctrl+C를 두 번 누르면 두 번째가 ^C가 되어 Claude Code가 끝나던 것을 막는다. ^C를 보내려면 Esc·밖 누르기·글 입력으로 먼저 고르기를 끝낸다
 //   'paste'   붙여넣었다(Ctrl+V, Shift+Insert)
 //   'input'   글을 쳤다
 //   'escape'  Esc
 //   'outside' 터미널 밖을 눌렀다
 //   'resize'  칸 수가 바뀌었다(줄이 다시 감겨 문서를 이어 갈 수 없다)
-const CLEARS = new Set(['copy', 'paste', 'input', 'escape', 'outside', 'resize']);
+const CLEARS = new Set(['paste', 'input', 'escape', 'outside', 'resize']);
+
+// P125: 끌어 고르기(두세 번 누르기 포함)를 놓을 때 클립보드로 복사할까. 고른 글이 있을 때만(그냥 누르기는 아니다)
+export function copyOnRelease({ hasSelection = false, text = '' } = {}) {
+  return !!hasSelection && copyText(text).trim().length > 0; // 빈칸·줄바꿈만이면 클립보드를 덮지 않는다
+}
 export function clearsSelection(event, { hasSelection = true } = {}) {
   return !!hasSelection && CLEARS.has(event);
 }

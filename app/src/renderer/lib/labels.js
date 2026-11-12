@@ -11,7 +11,7 @@ const labelMap = (ns, keys) => new Proxy({}, {
 });
 
 export const STATE_LABEL = labelMap('state', ['starting', 'trust_wait', 'ready', 'working', 'waiting', 'error', 'exited', 'shell_idle', 'shell_running', 'sleeping']);
-export const EXIT_LABEL = labelMap('exit', ['normal', 'herdr_stopped', 'trust_declined', 'other']);
+export const EXIT_LABEL = labelMap('exit', ['normal', 'user', 'herdr_stopped', 'trust_declined', 'other']);
 export const DELIVERY_LABEL = labelMap('delivery', ['queued', 'sending', 'sent', 'confirmed', 'unconfirmed', 'failed', 'cancelled']);
 export const WAIT_REASON_LABEL = labelMap('waitReason', ['waiting', 'starting', 'trust_wait', 'working', 'user_typing', 'no_agent', 'herdr_down', 'sleeping']);
 

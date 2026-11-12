@@ -244,7 +244,7 @@ export class HcAdapter extends EventEmitter {
       if (e.type === 'agent_released' && e.raw && e.raw.type === 'status' && e.paneId) { this._holdRelease(e); continue; }
       if (e.paneId && this._releases && this._releases.has(e.paneId)) {
         if (e.type === 'terminal_finished' && CORE_DOWN.has(e.reason)) this._dropRelease(e.paneId);
-        else if (e.type === 'pane_exited' || e.type === 'terminal_finished') this._flushRelease(e.paneId);
+        else if (e.type === 'pane_exited' || e.type === 'terminal_finished') this._flushRelease(e.paneId, e.exitCode); // P125: 끝난 프로그램의 종료 코드를 놓임에 붙인다(사람이 끝냄·오류 가르기)
       }
       // 화면 스트림에 넘길 것
       const set = e.paneId && this._ctls.get(e.paneId);
@@ -267,11 +267,11 @@ export class HcAdapter extends EventEmitter {
     if (timer.unref) timer.unref();
     this._releases.set(e.paneId, { e, timer });
   }
-  _flushRelease(paneId) {
+  _flushRelease(paneId, exitCode) {
     const r = this._releases && this._releases.get(paneId);
     if (!r) return;
     clearTimeout(r.timer); this._releases.delete(paneId);
-    const e = r.e;
+    const e = exitCode != null ? { ...r.e, exitCode } : r.e;
     if (this._replaced.has(paneId)) return;
     this.emit('event', e);
   }
@@ -391,7 +391,7 @@ export class HcAdapter extends EventEmitter {
     return false;
   }
   // 판의 패널(paneId)을 새 터미널로 바꾼다: 새 터미널의 이벤트는 pane_moved를 낸 뒤에 넘기고, 화면 스트림을 옮겨 붙이고, 옛 자리의 끝 이벤트는 내지 않는다
-  async _replacePane(oldId, run, why) {
+  async _replacePane(oldId, run, why, extra = {}) { // P125: extra는 pane_moved에 더한다(셸을 남길 때 끝난 에이전트의 종료 코드)
     const launch = crypto.randomBytes(6).toString('hex');
     this._held.set(launch, []);
     let r;
@@ -400,7 +400,7 @@ export class HcAdapter extends EventEmitter {
     this._replaced.add(oldId);
     this._movedTo.set(oldId, r.address);
     this._moveControllers(oldId, r.address);
-    this.emit('event', { type: 'pane_moved', paneId: r.address, workspaceId: ws, previousPaneId: oldId, raw: { hc: why } });
+    this.emit('event', { type: 'pane_moved', paneId: r.address, workspaceId: ws, previousPaneId: oldId, ...extra, raw: { hc: why } });
     const held = this._held.get(launch) || [];
     this._held.delete(launch);
     for (const e of held) if (e.type !== 'pane_created') this.emit('event', e);
@@ -444,7 +444,7 @@ export class HcAdapter extends EventEmitter {
       if (e.workspaceId) labels[LABEL.ws] = e.workspaceId;
       try {
         const env = this._envOf.get(old) || (await this.paneEnv());
-        const r = await this._replacePane(old, (launch) => this.call('terminal.run', { cwd: t.cwd, env, labels: { ...labels, [LABEL.launch]: launch }, no_parent: true }, 30000), 'agent exited, shell left');
+        const r = await this._replacePane(old, (launch) => this.call('terminal.run', { cwd: t.cwd, env, labels: { ...labels, [LABEL.launch]: launch }, no_parent: true }, 30000), 'agent exited, shell left', e.exitCode != null ? { exitCode: e.exitCode } : {}); // P125: 놓임이 먼저 풀렸어도(300ms) 판이 코드를 받는다
         this._envOf.set(r.address, env); this._envOf.delete(old);
         await this._rm(old);
         if (this._isClosing(old, e.workspaceId)) { this.log(`closing ${old} while its shell came back; closing ${r.address}`); await this.closePane(r.address).catch(() => {}); }
