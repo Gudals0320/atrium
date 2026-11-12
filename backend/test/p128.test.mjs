@@ -246,6 +246,6 @@ test('P128 빈 입력 칸, 입력 칸을 못 읽는 화면, 다른 종류는 전
   assert.deepEqual(log.sent, [ASK]); assert.deepEqual(h.keys, []); assert.deepEqual(log.drafts, []);
   const mover = draftMover({ read: async () => 'some dialog without a box', kindOf: () => 'claude', type: async () => assert.fail('no keys') }, { sleep: async () => {} });
   assert.equal((await mover.aside('s')).state, 'clear');
-  const other = draftMover({ read: async () => assert.fail('not read'), kindOf: () => 'opencode' });
+  const other = draftMover({ read: async () => assert.fail('not read'), kindOf: () => 'gemini' }); // P131: opencode·pi는 이제 읽는다. 표에 없는 종류는 손대지 않는다
   assert.equal((await other.aside('s')).state, 'clear');
 });

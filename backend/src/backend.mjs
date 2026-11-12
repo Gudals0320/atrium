@@ -46,7 +46,7 @@ import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; /
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
 import { attachUpdater } from './updater.mjs'; // P69: 앱 안 업데이트
 import { attachSleep, draftAfterInput, terminalReportsOnly } from './sleep.mjs'; // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
-import { draftEdit, draftMover, stashKeyChanged } from './draft-aside.mjs'; // P128: 쓰다 만 글을 비키고 지시를 보낸 뒤 되돌린다
+import { draftEdit, draftMover, stashKeyChanged, clearKeyChanged } from './draft-aside.mjs'; // P128: 쓰다 만 글을 비키고 지시를 보낸 뒤 되돌린다
 import { migrateLegacyData, fixLegacyRecords, writeTombstone, MARKER } from './rename-migrate.mjs'; // P18: 이름 옮기기(multitask → Atrium)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -231,7 +231,7 @@ export class Backend {
       this.log(`delivery draft ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.phase}${r.how ? ` ${r.how}` : ''}${r.result ? ` → ${r.result}${r.by ? ` (${r.by})` : ''}` : ''}${r.why ? ` [${r.why}]` : ''} ${r.chars ?? ''} chars`);
       const s = this.sessions.get(r.sessionId);
       if (!s) return;
-      if (r.phase === 'aside' && r.kind === 'codex') s.draftEdit = { text: '', exact: true, paste: false }; // 판이 Ctrl+C로 비웠다(판 터미널로 오지 않은 키)
+      if (r.phase === 'aside' && r.how === 'clear') s.draftEdit = { text: '', exact: true, paste: false }; // 판이 Ctrl+C로 비웠다(판 터미널로 오지 않은 키)
       if (r.phase === 'back' && r.result !== 'held') s.draft = true; // 쓰다 만 글이 입력 칸에 돌아왔거나 Claude Code가 쥐고 있다(잠재우지 않는다, P21)
     });
     this.queue.on('recover', (r) => { this.store.addEvent(r.sessionId, 'delivery_recover', r); this.log(`delivery recover ${this.nameOf(r.sessionId)} ${r.action} (${r.box}) #${r.n}`); });
@@ -420,12 +420,12 @@ export class Backend {
   // 제출(Enter)할 때까지 판은 Ctrl+S를 쓰지 않는다(치워 둔 사람의 글을 덮는다)
   noteDraftKeys(s, data) {
     if (terminalReportsOnly(data)) return;
-    s.draftEdit = draftEdit(s.draftEdit, data);
+    s.draftEdit = draftEdit(s.draftEdit, data, { newlineKey: s.kind === 'opencode' || s.kind === 'pi' }); // P131: opencode·pi의 Ctrl+J는 줄바꿈
     const t = String(data || '');
     if (t.includes('\x13')) s.userStash = true;
     else if (t.includes('\r') && !t.includes('\x1b[200~')) s.userStash = false;
   }
-  // P128: 전달 대기열의 쓰다 만 글 비키기·되돌리기(draft-aside.mjs). Claude Code와 Codex만(입력 칸을 읽을 수 있는 종류)
+  // P128: 전달 대기열의 쓰다 만 글 비키기·되돌리기(draft-aside.mjs). 입력 칸을 읽을 수 있는 종류만(Claude Code, Codex, P131: opencode, pi)
   draftIo() {
     const pane = (sid) => { const s = this.sessions.get(sid); if (!s || !s.paneId) throw Object.assign(new Error('no pane'), { code: 'pane_not_found' }); return s.paneId; };
     const m = draftMover({
@@ -440,13 +440,15 @@ export class Backend {
       edit: (sid) => { const s = this.sessions.get(sid); return s ? s.draftEdit || null : null; },
       userStash: (sid) => { const s = this.sessions.get(sid); return !!(s && s.userStash); },
       stashKey: !stashKeyChanged(),
+      clearKey: (kind) => !clearKeyChanged(kind), // P131: 사람이 opencode·pi의 입력 비우기 키를 바꿨으면 쓰지 않는다(설정 파일은 읽기만)
+      typedSince: (sid, t) => { const s = this.sessions.get(sid); return !!(s && s.lastUserInputAt && s.lastUserInputAt >= t); },
     }, { pollMs: this.cfg.draftPollMs ?? 250 });
     return {
       aside: (sid) => m.aside(sid),
       back: async (sid, held, d) => {
         const r = await m.back(sid, held, d);
         const s = this.sessions.get(sid);
-        if (s && held.kind === 'codex' && r.result === 'restored' && !r.folded) s.draftEdit = { text: held.text, exact: true, paste: false };
+        if (s && held.how === 'clear' && r.result === 'restored' && !r.folded) s.draftEdit = { text: held.text, exact: true, paste: false };
         return r;
       },
     };
