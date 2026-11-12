@@ -28,14 +28,14 @@ const CACHE = {
 };
 const writeCache = (home, v) => { fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(path.join(home, CACHE_FILE), typeof v === 'string' ? v : JSON.stringify(v)); };
 
-test('P72 새 판: 호출자는 Claude Code(manual), Codex, 셸 셋이고 모두 레일에 있다', () => {
+test('P72·P122 새 판: 호출자는 Claude Code(manual), Codex 둘이고 모두 레일에 있다', () => {
   const dir = tmp();
   try {
     const store = new Store(path.join(dir, 'board.db'));
     const ls = new Launchers({ store, gateway: { healthUrl: 'http://127.0.0.1:1/healthz' } });
-    assert.deepEqual([ls.migrated.oldBoard, ls.migrated.favorites], [false, ['claude', 'codex', 'shell']]);
+    assert.deepEqual([ls.migrated.oldBoard, ls.migrated.favorites], [false, ['claude', 'codex']]);
     const l = ls.list();
-    assert.deepEqual(l.launchers.map((x) => [x.id, x.harness, x.favorite]), [['claude', 'claude', true], ['codex', 'codex', true], ['shell', 'shell', true]]);
+    assert.deepEqual(l.launchers.map((x) => [x.id, x.harness, x.favorite]), [['claude', 'claude', true], ['codex', 'codex', true]]);
     assert.equal(l.launchers[0].preview.line, 'claude --permission-mode manual');
     assert.equal(ls.find('deepseek'), null, 'DeepSeek 예시가 없다');
     assert.ok(l.launchers.every((x) => !Object.keys(x.env).length && !x.checkUrl));

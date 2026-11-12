@@ -246,7 +246,7 @@ test('P97 API launcher.parse: 겹치지 않는 이름을 제안하고 미리보�
   assert.equal(r.launcher.name, 'ocx claude haiku 2');
   assert.equal(r.recognized.board, true);
   assert.match(r.preview.line, /^ocx claude --permission-mode manual --model haiku$/);
-  assert.equal(L.list().launchers.length, 4, '저장하지 않는다');
+  assert.equal(L.list().launchers.length, 3, '저장하지 않는다(P122: 새 판 런처 둘 + 만든 하나)');
   // 고치는 중인 호출자는 이름 겹침에서 뺀다
   const id = L.list().launchers.find((l) => l.name === 'ocx claude haiku').id;
   assert.equal(L.parse({ text: 'ocx claude --model haiku', except: id }).launcher.name, 'ocx claude haiku');

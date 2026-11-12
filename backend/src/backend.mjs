@@ -1325,6 +1325,12 @@ export class Backend {
   // P40: herdr가 없으면 herdr_missing, 프로토콜이 다르면 herdr_incompatible(까닭과 할 일을 함께). 보드의 다른 기능은 막지 않는다
   requireHerdr() {
     if (this.herdrMissing || (this.herdrCompat && this.herdrCompat.level === 'missing')) {
+      // P122: hc 판은 herdr를 찾지 않는다. 고정 hc를 받거나 띄우지 못한 것이므로 창의 hc 띠와 같은 글(herdr 설치 안내가 아니다)
+      if (this.adapter && this.adapter.backend === 'hc') {
+        const m = this.herdrMissing || {};
+        const error = String(m.error || m.reason || 'not ready');
+        throw keyed(apiError('herdr_missing', `herdr-core를 받거나 시작하지 못했습니다(${error}). 인터넷 연결을 확인한 뒤 다시 시도하세요. 준비될 때까지 세션을 시작할 수 없습니다.`), 'terminalMove.hcBand.why', { error });
+      }
       const tried = ((this.herdrFind && this.herdrFind.tried) || []).length;
       throw keyed(apiError('herdr_missing', `herdr를 찾지 못해 세션을 시작할 수 없습니다 (후보 ${tried}곳 확인). herdr를 설치하거나(https://herdr.dev) 설정의 herdr 경로 또는 ATRIUM_HERDR로 실행 파일을 지정하세요.`), 'herdrMissing', { n: tried });
     }
