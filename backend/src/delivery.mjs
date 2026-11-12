@@ -240,7 +240,7 @@ export class DeliveryQueue extends EventEmitter {
   //   입력 칸이 비었어도 화면에 보낸 글이 보이거나(이미 들어감) 다른 hook·working을 봤으면 다시 보내지 않는다
   async _recover(d) {
     d.recovering = true;
-    let action = 'none', box = null, peek = null;
+    let action = 'none', box = null, peek = null, noise = null;
     try {
       const look = await this.inspect(d.sessionId, d.text).catch(() => null);
       if (d.status !== 'sent') return; // 그사이 확인됐다
@@ -248,22 +248,37 @@ export class DeliveryQueue extends EventEmitter {
       peek = look && look.peek != null ? look.peek : null;
       // P106: 입력 칸을 아직 못 읽거나(뜨는 중, 다른 화면) 보낸 글이 아닌 것이 보인다(갓 뜬 화면은 붙여 넣은 글을 늦게 그린다). 손쓰기로 세지 않고 다시 본다(submitLooks번까지).
       //   다른 글에는 끝내 손대지 않는다(사람이 쓰는 글일 수 있다)
-      if ((box === 'unknown' || box === 'other') && look && (d.looks || 0) < this._looks()) { d.looks = (d.looks || 0) + 1; d.lastBox = box; action = 'wait'; return; }
+      // P126: 다른 글이 같은 모양으로 세 번 이어 보이면 늦게 그려지는 화면이 아니다. 더 기다리지 않는다(보낸 쪽이 오래 기다리지 않게)
+      d.sameOther = box === 'other' && peek != null && peek === d.lastPeek ? (d.sameOther || 0) + 1 : 0;
+      d.lastPeek = box === 'other' ? peek : null;
+      const settled = box === 'other' && d.sameOther >= 2;
+      if ((box === 'unknown' || box === 'other') && look && (d.looks || 0) < this._looks() && !settled) { d.looks = (d.looks || 0) + 1; d.lastBox = box; action = 'wait'; return; }
       const canResend = !!look && !look.noResend && !look.seen && !d.resent && !d.mismatchSeen && !d.workingSeen;
       // Enter만 이르게(submitEnterMs). 비었으면 다시 보내기는 submitRetryMs가 지난 뒤, 그리고 앞 번에도 비어 있었을 때만(hook이나 그리기가 늦을 수 있다)
       if (box === 'empty' && canResend && (Date.now() - d.sentAt < this._retryMs() || d.lastBox !== 'empty') && (d.looks || 0) < this._looks()) { d.looks = (d.looks || 0) + 1; d.lastBox = box; action = 'wait'; return; }
       d.lastBox = box;
       d.recoveries = (d.recoveries || 0) + 1;
+      if (look && look.noise) noise = look.noise;
+      // P126: 입력 칸 앞에 마우스 보고 글(noise)이 붙어 있어도 나머지가 보낸 글이면 Enter를 누른다. 그 글은 판의 휠이 남긴 것이라 보낸 글과 함께 제출된다
+      //   (사람의 글이 아니고, 지우려면 하네스마다 다른 커서 키가 필요해 사람의 글까지 지울 수 있다. 지시가 제출되지 않는 것보다 낫다)
       if (box === 'ours' && this.pressEnter) { await this.pressEnter(d.sessionId); action = 'enter'; }
       else if (box === 'empty' && canResend) { d.resent = true; await this.send(d.sessionId, d.text); action = 'resend'; }
-      else d.recoveries = this._retries(); // 다른 글, 알 수 없음, 이미 들어갔을 수 있음, 다시 보내지 않는 종류: 더 손대지 않는다
-      d.recoverNote = `${action}${box ? ' · ' + box : ''}`;
+      else if (box === 'other') {
+        // P126: 입력 칸에 보낸 글이 아닌 글이 끝까지 남았다(사람이 쓰던 글, 하네스가 보낸 글 앞에 붙인 글 등). 판은 지우지 않는다(사람의 글일 수 있다).
+        //   조용히 확인 기한을 기다리지 않고 곧바로 "제출 안 됨"으로 끝내 보낸 쪽(atrium prompt, 판 칩)에 까닭을 보인다
+        d.recoveries = this._retries(); action = 'give_up';
+        d.recoverNote = `${action} · ${box}`;
+        this._set(d, 'unconfirmed', 'input_box_other');
+        this.emit('not_submitted', { deliveryId: d.deliveryId, sessionId: d.sessionId, box, ...(peek ? { peek } : {}) });
+        return;
+      } else d.recoveries = this._retries(); // 알 수 없음, 이미 들어갔을 수 있음, 다시 보내지 않는 종류: 더 손대지 않는다
+      d.recoverNote = `${action}${box ? ' · ' + box : ''}${noise ? ' · noise' : ''}`;
     } catch (e) {
       action = 'error'; d.recoverNote = `error · ${e.code || e.message}`;
     } finally {
       d.triedAt = Date.now();
       d.recovering = false;
-      this.emit('recover', { deliveryId: d.deliveryId, sessionId: d.sessionId, action, box, n: d.recoveries || 0, ...(peek && box !== 'ours' ? { peek } : {}) }); // P106: peek(보낸 글이 아닐 때 입력 칸의 앞 60자, 판 기록에만)
+      this.emit('recover', { deliveryId: d.deliveryId, sessionId: d.sessionId, action, box, n: d.recoveries || 0, ...(peek && box !== 'ours' ? { peek } : {}), ...(noise ? { noise } : {}) }); // P106: peek(보낸 글이 아닐 때 입력 칸의 앞 60자, 판 기록에만)
     }
   }
 

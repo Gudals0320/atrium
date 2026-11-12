@@ -114,9 +114,16 @@ export function promptOnScreen(screenText, prompt, kind = 'claude') {
   const seen = !!head && box.above.some((l) => flatText(l).includes(head.slice(0, 30)));
   if (!box.found) return { box: 'unknown', seen };
   if (!box.text) return { box: 'empty', seen };
-  const pasted = /^\[Past(ed text #\d+|ed Content)/.test(box.text) && (/\n/.test(String(prompt)) || want.length > 200);
+  // P126: 입력 칸 앞뒤의 마우스 보고 글(ESC가 떨어져 글로 들어간 `[<65;101;61M`)은 사람의 글이 아니다. 떼고 견준다(noise에 남긴다)
+  const noise = (box.text.match(MOUSE_NOISE_G) || []).join('');
+  const text = noise ? box.text.replace(MOUSE_NOISE_G, '').trim() : box.text;
+  if (!text) return { box: 'empty', seen, ...(noise ? { noise } : {}) };
+  const pasted = /^\[Past(ed text #\d+|ed Content)/.test(text) && (/\n/.test(String(prompt)) || want.length > 200);
   const bare = (s) => s.replace(/\s+/g, ''); // 화면 폭에서 꺾인 줄을 이을 때 낱말 가운데 빈칸이 생긴다
-  const bx = bare(box.text), wn = bare(want);
-  if (bx.startsWith(bare(head)) || (bx.length >= 12 && wn.startsWith(bx)) || pasted) return { box: 'ours', seen };
-  return { box: 'other', seen };
+  const bx = bare(text), wn = bare(want);
+  if (bx.startsWith(bare(head)) || (bx.length >= 12 && wn.startsWith(bx)) || pasted) return { box: 'ours', seen, ...(noise ? { noise } : {}) };
+  return { box: 'other', seen, ...(noise ? { noise } : {}) };
 }
+// P126: ESC가 떨어져 글로 남은 SGR 마우스 보고(휠 64·65, 누르기·움직임). 숫자 셋과 M·m으로 끝나는 꼴이라 사람의 글과 헷갈리지 않는다
+const MOUSE_NOISE_G = /\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
+export const mouseNoise = (s) => (String(s || '').match(MOUSE_NOISE_G) || []).join('');
