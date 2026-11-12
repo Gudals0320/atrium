@@ -164,7 +164,7 @@ export class Updater {
       rel = this.fresh(m) ? m.latest : null;
     }
     if (!v.available || !rel) throw apiError('no_update', `새 버전이 없습니다(지금 ${v.current.version}, ${v.channel} 채널)`);
-    if (!p.confirm) return { needsConfirm: true, to: v.latest.tag, channel: v.channel, message: `${v.latest.tag}로 업데이트합니다(${v.channel} 채널). 준비가 끝나면 백엔드와 창이 다시 뜹니다. herdr의 세션은 그대로 이어집니다.` };
+    if (!p.confirm) return { needsConfirm: true, to: v.latest.tag, channel: v.channel, message: `${v.latest.tag}로 업데이트합니다(${v.channel} 채널). 준비가 끝나면 백엔드와 창이 다시 뜹니다. 세션은 그대로 이어집니다.` };
     this.job = null;
     this.setJob({ kind: 'update', phase: 'prepare', step: 'download', to: rel.tag, error: null, startedAt: Date.now() });
     this.runUpdate(rel).catch(() => {});
@@ -174,7 +174,9 @@ export class Updater {
     this.log(`update start ${this.running.version} → ${rel.tag}`);
     try {
       const protocol = this.b.herdrCompat && this.b.herdrCompat.ok ? this.b.herdrCompat.protocol : null;
-      const r = await this.prepare({ dir: this.dir, release: rel, apiUrl: this.apiUrl, protocol, step: (step, d) => { this.log(`step ${step}${d ? ` ${JSON.stringify(d)}` : ''}`); this.setJob({ step, part: null, bytes: null, ...(d || {}) }); }, log: (l) => this.log(l) });
+      // P123: hc 판이면 protocol은 hc 세대다. 새 버전의 herdr 프로토콜이 아니라 hc 세대에서 찾게 터미널 백엔드를 함께 넘긴다
+      const terminal = this.b.adapter && this.b.adapter.backend === 'hc' ? 'hc' : 'herdr';
+      const r = await this.prepare({ dir: this.dir, release: rel, apiUrl: this.apiUrl, protocol, terminal, step: (step, d) => { this.log(`step ${step}${d ? ` ${JSON.stringify(d)}` : ''}`); this.setJob({ step, part: null, bytes: null, ...(d || {}) }); }, log: (l) => this.log(l) });
       await this.prefetchHc(r.root);
       await this.swap({ kind: 'update', toRoot: r.root, to: { tag: rel.tag, version: rel.version }, currentAfter: { current: rel.tag, switchedAt: Date.now() } });
     } catch (e) {

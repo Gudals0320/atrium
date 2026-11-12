@@ -331,7 +331,8 @@ const runNpm = (args, cwd, o) => { const [c, a] = npmCommand(args); return run(c
 
 export const electronExe = (root) => path.join(root, 'app', 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
 // 새 버전이 뜰 수 있는지 미리 본다: 빌드한 창, Electron 실행 파일, 백엔드 모듈 불러오기, Node 버전, herdr 프로토콜(지금 도는 herdr와 맞는지)
-export async function verifyRoot(root, { protocol = null, node = process.execPath } = {}) {
+// P123: terminal은 지금 판의 터미널 백엔드(herdr | hc). hc 판은 protocol에 hc 세대가 오므로 새 버전의 hcGenerations에서 찾는다
+export async function verifyRoot(root, { protocol = null, terminal = 'herdr', node = process.execPath } = {}) {
   const problems = [];
   if (!fs.existsSync(path.join(root, 'app', 'dist', 'index.html'))) problems.push('app/dist 없음');
   if (!fs.existsSync(electronExe(root))) problems.push('Electron 실행 파일 없음');
@@ -343,14 +344,21 @@ export async function verifyRoot(root, { protocol = null, node = process.execPat
   } catch (e) { problems.push(`미리 보기 실패: ${String(e.message).slice(0, 300)}`); }
   if (info) {
     problems.push(...(info.problems || []));
-    if (protocol != null && Array.isArray(info.protocols) && !info.protocols.includes(protocol)) problems.push(`herdr 프로토콜 ${protocol}을 받지 않음(${info.protocols.join(', ')})`);
+    if (protocol != null && terminal === 'hc') {
+      // 세대 목록이 없는 버전(P114 전)은 herdr-core를 모른다
+      if (!Array.isArray(info.hcGenerations)) problems.push('herdr-core를 모르는 버전');
+      else if (!info.hcGenerations.includes(protocol)) problems.push(`herdr-core 세대 ${protocol}을 받지 않음(${info.hcGenerations.join(', ')})`);
+    } else if (protocol != null) {
+      const list = Array.isArray(info.herdrProtocols) ? info.herdrProtocols : info.protocols;
+      if (Array.isArray(list) && !list.includes(protocol)) problems.push(`herdr 프로토콜 ${protocol}을 받지 않음(${list.join(', ')})`);
+    }
   }
   return { ok: !problems.length, problems, info };
 }
 
 // 릴리즈를 받아 설치 폴더의 <태그>에 준비한다: 받기 → <태그>.staging에 풀기 → npm ci(backend, app) → Electron 받기 → 빌드 → 미리 보기 → <태그>로 이름 바꾸기.
 // 실패하면 준비 폴더를 지우고 던진다. step(name, detail)로 진행을 알린다
-export async function prepareRelease({ dir, release, apiUrl = DEFAULT_UPDATE_API, protocol = null, step = () => {}, log = () => {}, fetchBuf = download, npm = runNpm, verify = verifyRoot, node = process.execPath }) {
+export async function prepareRelease({ dir, release, apiUrl = DEFAULT_UPDATE_API, protocol = null, terminal = 'herdr', step = () => {}, log = () => {}, fetchBuf = download, npm = runNpm, verify = verifyRoot, node = process.execPath }) {
   if (!release || !release.tag || !release.tarball) throw new Error('받을 릴리즈가 없습니다');
   const cur = readCurrent(dir);
   if (cur && cur.current === release.tag) throw Object.assign(new Error(`이미 ${release.tag}입니다`), { code: 'already_current' });
@@ -378,7 +386,7 @@ export async function prepareRelease({ dir, release, apiUrl = DEFAULT_UPDATE_API
     step('build');
     await npm(['run', 'build'], path.join(staging, 'app'), { onLine });
     step('verify');
-    const v = await verify(staging, { protocol, node });
+    const v = await verify(staging, { protocol, terminal, node });
     if (!v.ok) throw Object.assign(new Error(`새 버전을 확인하지 못했습니다: ${v.problems.join('; ')}`), { code: 'verify_failed', problems: v.problems });
     const final = path.join(dir, release.tag);
     if (fs.existsSync(final)) { log(`replacing ${release.tag}`); rmRetry(final); } // 지난번에 지우지 못한 같은 버전 폴더
