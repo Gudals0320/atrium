@@ -50,6 +50,9 @@ function Avatar({ live, r }) {
   );
 }
 
+// P119: 작업 완료 카드의 끝 표식(위 가장자리 꼬리표 안의 체크). 색만으로 가르지 않게 모양과 글을 함께 둔다
+const DoneMark = () => <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3 5 8.7 9.6 3.6" /></svg>;
+
 function Node({ n, live, dim, no, t, now }) {
   const r = n.row;
   const shell = (live && live.kind === 'shell') || r.agentKind === 'shell';
@@ -75,6 +78,7 @@ function Node({ n, live, dim, no, t, now }) {
   return (
     <button type="button" className={`mt-pm-node ${cls}${r.team ? ' lead' : ''}`} {...common}>
       {r.tier === 'work' && <MissionLight role="pm-light" />}
+      {r.tier === 'review' && <span className="mt-pm-donetag" data-role="pm-done"><DoneMark />{t('doneMark.tag')}</span>}
       <span className="mt-pm-top">{no ? <span className="mt-pm-no" data-role="pm-team-no">{no}</span> : null}<b className="mt-pm-name">{r.name}</b></span>
       <span className={`mt-pm-sub ${line.k}`} data-role={`pm-${line.k}`}>{line.main ? <b data-role="pm-role">{line.main}</b> : null}{line.main && line.text ? ' · ' : null}{line.text}</span>
       <span className="mt-pm-meta" data-role="pm-meta">{meta || (shell ? t('mmMap.noModel') : '')}</span>
@@ -209,6 +213,7 @@ export function PhoneMission({ onBack, onOpen, conn }) {
         <div className="mt-pm-sum" data-role="pm-sum">
           <button type="button" className={`mt-pm-chip t-turn${focus === 'turn' ? ' on' : ''}`} data-n={c.turn} data-action="pm-focus-turn" aria-pressed={focus === 'turn'} disabled={!c.turn && focus !== 'turn'} title={t('phoneMission.focus')} onClick={() => pick('turn')}><i />{t('phoneMission.needs', { n: c.turn })}</button>
           <button type="button" className={`mt-pm-chip t-work${focus === 'work' ? ' on' : ''}`} data-n={c.work} data-action="pm-focus-work" aria-pressed={focus === 'work'} disabled={!c.work && focus !== 'work'} title={t('phoneMission.focus')} onClick={() => pick('work')}><i />{t('phoneMission.working', { n: c.work })}</button>
+          {c.review > 0 || focus === 'review' ? <button type="button" className={`mt-pm-chip t-review${focus === 'review' ? ' on' : ''}`} data-n={c.review} data-action="pm-focus-review" aria-pressed={focus === 'review'} title={t('phoneMission.focus')} onClick={() => pick('review')}><i />{t('doneMark.phone', { n: c.review })}</button> : null}
           <span className="mt-pm-chip">{t('phoneMission.all', { n: c.all })}</span>
         </div>
       )}

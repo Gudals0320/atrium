@@ -23,14 +23,14 @@ const HELP = `atrium [--dev] [--json] <명령>
   spawn <폴더> [--launcher 런처] [--name n] [--prompt 글] [--model m] [--effort e] [--mode 권한모드] [--kind 종류|shell] [--args "인자"] [--allow-herdr]   --launcher면 그 런처로 띄우고 준 값이 덮는다(P33)
   launchers                               런처 목록 (즐겨찾기 순서, 에이전트 종류, 실행 명령 미리보기)
   ls [--ws 프로젝트]                          프로젝트별 세션 목록과 상태
-  ws                                      프로젝트 목록과 세션·작업 중·응답 필요·확인할 결과 수
+  ws                                      프로젝트 목록과 세션·작업 중·응답 필요·작업 완료 수
   ws open <폴더> | ws close <이름|키> [--yes] [--after archive|delete] | ws select <이름|키>   빈 프로젝트 만들기, 보드에서 지우기(세션이 있으면 --after로 모두 보관·삭제), 지금 프로젝트 고르기
   get <이름>                                세션 상세 (질문, 마지막 응답, 최근 터미널 화면, Git, 요청 전달 상태)
   watch [--seconds n]                     상태 변화·hook·요청 전달 이벤트 실시간 확인
   send @이름 [@이름...] <글> [--wait] [--ws 프로젝트]   글 보내기. @all은 캔버스 전체의 에이전트 세션(--ws면 그 프로젝트만). --wait면 확인까지 기다림
   cancel <전달 ID>                          전송 대기 중인 요청 취소
   deliveries [이름]                         요청 전달 기록
-  inbox                                   응답 필요(waiting, trust_wait), 확인할 결과, 문제 목록
+  inbox                                   응답 필요(waiting, trust_wait), 작업 완료, 문제 목록
   last <이름>                               마지막 응답 전체 표시
   messages <이름> [--after seq]             대화 기록 (요청, 응답, 도구 호출)
   events [이름] [--limit n]                 보드 이벤트 기록
@@ -141,7 +141,7 @@ function fmtSession(s) {
     const run = sh.atPrompt === false ? `실행 중: ${sh.command || '?'}${sh.procs && sh.procs.length ? ` [${sh.procs.join(', ')}]` : ''}` : '프롬프트';
     return `${nameCol(s)} ${st.padEnd(13)} ${s.paneId || ''} (셸${s.origin === 'adopted' ? ', 보드에 올림' : ''}) ${run}${s.elsewhere ? ` ↪ 다른 곳: ${s.elsewhere.root}` : ''}`;
   }
-  const marks = [s.unseen && '확인할 결과', s.quiet && '조용함', s.delivering && `전달${s.delivering}`, s.interruptedTurn && '재시작으로끊긴턴', s.resume && !s.resume.verified && '이어가기미확인'].filter(Boolean).join(',');
+  const marks = [s.unseen && '작업 완료', s.quiet && '조용함', s.delivering && `전달${s.delivering}`, s.interruptedTurn && '재시작으로끊긴턴', s.resume && !s.resume.verified && '이어가기미확인'].filter(Boolean).join(',');
   const who = [s.kind && s.kind !== 'claude' && s.kind, s.origin === 'adopted' && '보드에 올림', s.git && s.git.isWorktree && `워크트리 ${s.git.branch}`].filter(Boolean).join(',');
   let line = `${nameCol(s)} ${st.padEnd(11)} herdr=${String(s.herdrStatus).padEnd(8)} ${s.paneId || ''} ${who ? `(${who}) ` : ''}${marks ? `[${marks}]` : ''}`;
   if (s.state === 'waiting') line += `\n         ↳ ${fmtAsk(s.ask)} (기다린 ${ago(s.ask && s.ask.since)})`;
@@ -248,7 +248,7 @@ async function main() {
         const r = await c.call('workspace.list');
         if (JSONOUT) return out(r);
         if (!r.workspaces.length) console.log('(프로젝트 없음)');
-        for (const w of r.workspaces) console.log(`${w.key === r.current ? '*' : ' '} ${w.name.padEnd(16)} 세션 ${w.counts.sessions}(셸 ${w.counts.shells}) 작업 중 ${w.counts.working} 응답 필요 ${w.counts.needsYou} 확인할 결과 ${w.counts.review}  ${w.kind === 'repo' ? '저장소' : '폴더'} ${w.root}`);
+        for (const w of r.workspaces) console.log(`${w.key === r.current ? '*' : ' '} ${w.name.padEnd(16)} 세션 ${w.counts.sessions}(셸 ${w.counts.shells}) 작업 중 ${w.counts.working} 응답 필요 ${w.counts.needsYou} 작업 완료 ${w.counts.review}  ${w.kind === 'repo' ? '저장소' : '폴더'} ${w.root}`);
         return;
       }
       case 'get': return out(await c.call('session.get', { session: rest[0] }));
@@ -256,7 +256,7 @@ async function main() {
         const r = await c.call('inbox.list');
         if (JSONOUT) return out(r);
         console.log(`응답 필요 ${r.needsYou.length}`); for (const s of r.needsYou) console.log('  ' + fmtSession(s).replace(/\n/g, '\n  '));
-        console.log(`확인할 결과 ${r.review.length}`); for (const s of r.review) console.log('  ' + fmtSession(s).replace(/\n/g, '\n  '));
+        console.log(`작업 완료 ${r.review.length}`); for (const s of r.review) console.log('  ' + fmtSession(s).replace(/\n/g, '\n  '));
         console.log(`문제 ${r.problems.length}`); for (const s of r.problems) console.log('  ' + fmtSession(s).replace(/\n/g, '\n  '));
         return;
       }

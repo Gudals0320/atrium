@@ -25,7 +25,7 @@ import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
 import { newRuntime, applyHook, applyHerdrStatus, applyAgentDetected, applyAgentReleased, applyHerdrDisconnected, deriveState, flags, worktreeExitAsk } from './state.mjs';
-import { worktreeOf, waitClaudeExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
+import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
 import { SHELL_TOOLS, LINK_VERBS, parseHerdrCommands, parseHerdrOutput, readTextOf, tailText, screenAnswerText, roleNotice, unlinkNotice, ROLE_RE } from './links.mjs';
@@ -181,6 +181,7 @@ export class Backend {
       const rt = row.runtime || newRuntime({ kind: row.kind, hooked: row.origin === 'board' && row.kind === 'claude' });
       // P1~P3에서 만든 세션의 runtime에는 종류가 없다(모두 판이 띄운 Claude Code)
       rt.kind ??= row.kind; rt.hooked ??= row.origin === 'board' && row.kind === 'claude';
+      delete rt.boardExit; // P119: 닫는 도중 백엔드가 꺼졌으면 그 닫기는 끝났다(남은 질문은 사람에게 보인다)
       this.sessions.set(row.sessionId, { ...row, rt, lastState: null });
     }
     // P22: 그룹과 묶음 실행을 뺐다. 옛 판의 그룹·묶음 항목·그룹 대상 루프를 지우고 무엇을 지웠는지 판 이벤트로 남긴다. 노드는 그 자리에 둔다
@@ -541,7 +542,7 @@ export class Backend {
       state: d.state, estimate: d.estimate || null, herdrStatus: rt.herdr.status, ask, error: d.error || rt.lastError || null,
       permissionMode: rt.permissionMode || s.permissionMode, model: s.model, effort: s.effort || null, // P95: 미션 맵 카드의 메타 줄
       lastPrompt: clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
-      exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f,
+      exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f, ...this.doneScope(s, f),
       deliveryStuck: this.queue && this.queue.stuckOf ? this.queue.stuckOf(s.sessionId) : null, // P106: herdr가 오래 받지 않는 맨 앞 전달 { deliveryId, reason, code, attempts, since }
       trust: { predictedDialog: rt.trustPredicted, seenOnScreen: !!rt.trustScreen },
       resume: this.hooked(s) ? { registered: !!s.resumeArgv, verified: !!s.resumeVerified } : null, // hook이 없는 세션은 herdr의 이어 가기에 맡긴다
@@ -566,6 +567,14 @@ export class Backend {
     };
   }
 
+  // P119: 작업 완료(unseen)는 맨 위 세션만. 판에 열린(잠든 것도) 부모가 있는 하위 세션의 끝난 턴은 사람의 작업 완료에 넣지 않는다.
+  // 워커는 부모에게 알리고, 부모가 그것을 받아 턴을 끝내면 부모가 작업 완료가 된다. 부모가 닫히면(또는 떼면) 하위 세션이 맨 위라 다시 들어간다.
+  // unseenSub = 하위 세션이라 뺀 안 본 턴(노드를 열면 봤음으로 친다, store.js)
+  doneScope(s, f) {
+    const pid = s.parentSessionId;
+    const sub = !!(f.unseen && pid && pid !== s.sessionId && this.sessions.has(pid));
+    return { unseen: f.unseen && !sub, unseenSub: sub };
+  }
   // P92: 웹 푸시가 보는 세션 나무(가볍게: 요약을 다 만들지 않는다). bg = 도는 뒤 일 수(Stop hook의 background_tasks, 모르면 null)
   pushTree() {
     return [...this.sessions.values()].map((s) => ({
@@ -1245,8 +1254,11 @@ export class Backend {
     }
     if (plan === 'restart_with_settings') {
       // herdr 기본 이어 가기(`claude --resume <ID>`)로 떠서 hook이 없다. 방금 이어 간 claude라 진행 중인 턴은 없다.
-      await this.adapter.sendText(s.paneId, '/exit'); await sleep(150); await this.adapter.paneKeys(s.paneId, ['enter']);
-      await waitClaudeExit(this, s, this.cfg.killWaitMs, { by: 'restart', steps }); // P71: 워크트리 나가기 질문은 남기기
+      const own = beginBoardExit(this, s, 'restart'); // P119
+      try {
+        await this.adapter.sendText(s.paneId, '/exit'); await sleep(150); await this.adapter.paneKeys(s.paneId, ['enter']);
+        await waitClaudeExit(this, s, this.cfg.killWaitMs, { by: 'restart', steps }); // P71: 워크트리 나가기 질문은 남기기
+      } finally { if (own) endBoardExit(this, s); }
       steps.push('/exit (no board settings)');
     }
     await this.adapter.waitShellReady(s.paneId, 8000);
@@ -1290,12 +1302,14 @@ export class Backend {
     // 이 세션이 낀 연결은 판에서 뺀다(기록은 남는다)
     for (const l of this.store.links()) if (l.from === s.sessionId || l.to === s.sessionId) { this.store.updateLink(l.linkId, { removedAt: Date.now() }); this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'session closed' }); }
     const closedAt = Date.now();
+    delete s.rt.boardExit; // P119: 닫는 동안만 쓰는 표시
     this.store.updateSession(s.sessionId, { closedAt, runtime: s.rt, closeReason: reason }); // P7: 닫힌 세션은 사이드바에 남아 다시 연다(J2)
     this.store.addEvent(s.sessionId, 'closed', { reason });
     this.sessions.delete(s.sessionId);
     this.api.broadcast('session.removed', { sessionId: s.sessionId, name: s.name, reason });
     this.bus.emit('closed', s, reason); // P81: 까닭(부모에게 보낼 닫힘 알림)
     onSessionClosed(this, s); // P6a: 덩어리에서 뺀다
+    for (const x of this.sessions.values()) if (x.parentSessionId === s.sessionId) this.broadcastSession(x, { onlyIfFlagsChanged: true }); // P119: 부모가 닫히면 하위 세션이 맨 위라 안 본 턴이 작업 완료로 들어간다
     this.adapter.refreshSubscription();
   }
 
@@ -1547,6 +1561,7 @@ export class Backend {
         }
         if (s.rt.herdr.present) {
           s.rt.exitRequested = true;
+          beginBoardExit(this, s, 'close'); // P119: 판이 답할 나가기 질문은 응답 필요로 보이지 않는다(finally에서 거둔다)
           // Claude Code는 /exit. 다른 종류는 하네스마다 끝내는 말이 달라 ctrl+c를 두 번 보낸다(codex는 두 번째에 끝난다)
           if (exiting) steps.push('worktree exit dialog open');
           else if (EXIT_TEXT[kindName]) {
@@ -1571,7 +1586,7 @@ export class Backend {
       if (p.after === 'archive') { this.recall.markArchive({ session: s.sessionId }, true, 'close'); after = { archived: true }; }
       else if (p.after === 'delete') after = await this.recall.forgetClosed(s.sessionId);
       return { closed: true, name: s.name, exit, steps, ...(after ? { after } : {}) };
-    } finally { this.killing.delete(s.sessionId); }
+    } finally { this.killing.delete(s.sessionId); endBoardExit(this, s); }
   }
 
   // A1 답하기(P2): 승인 카드의 답을 agent.send_keys(글은 pane.send_text)로 넣는다.

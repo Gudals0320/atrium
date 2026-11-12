@@ -46,7 +46,7 @@ function facts(n, live, m, tier, t, now, cross = false) {
   const branch = n.gitBranch || branchOfLive(live);
   const meta = [model, age, branch ? `⎇ ${branch}` : null, n.loops ? `⟳${n.loops}` : null].filter(Boolean).join(' · ');
   const away = cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null; // P101: 다른 워크스페이스의 하위 세션(부모 팀의 판 안에 놓였다)
-  const warn = tier === 'turn' ? t('mmMap.warnTurn') : tier === 'alert' ? t('mmMap.warnAlert') : tier === 'review' ? t('mmMap.warnReview') : m && m.climb ? t('mmMap.warnClimb', { n: m.climb }) : null;
+  const warn = tier === 'turn' ? t('mmMap.warnTurn') : tier === 'alert' ? t('mmMap.warnAlert') : m && m.climb ? t('mmMap.warnClimb', { n: m.climb }) : null;
   // 둘째 줄: 응답 필요는 묻는 글, 오류는 오류, 팀이 있으면 팀 요약(쉬는 리드는 "워커 n 기다림"), 그 밖은 역할 · 지금 하는 일(없으면 상태)
   const line = tier === 'turn' && ask ? { k: 'ask', main: null, text: clip(ask, 120) }
     : tier === 'alert' ? { k: 'err', main: role, text: clip(err || stateText, 90) }
@@ -76,6 +76,9 @@ export function MissionLight({ role }) {
   );
 }
 
+// P119: 작업 완료 카드의 끝 표식(위 가장자리 꼬리표 안의 체크). 색만으로 가르지 않게 모양과 글을 함께 둔다(휴대폰 PhoneMission.jsx도 같은 모양)
+const DoneMark = () => <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3 5 8.7 9.6 3.6" /></svg>;
+
 function Node({ b, live, m, tier, t, now, no, hot, recede, dim, onGo, onHot }) {
   const n = b.node;
   const f = facts(n, live, m, tier, t, now, b.cross);
@@ -99,6 +102,7 @@ function Node({ b, live, m, tier, t, now, no, hot, recede, dim, onGo, onHot }) {
   return (
     <div className={`mt-mm-card ${cls}${m && m.team ? ' lead' : ''}`} style={style} {...common}>
       {tier === 'work' && <MissionLight role="mm-light" />}
+      {tier === 'review' && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
       <div className="mt-mm-c1">{no ? <span className="mt-mm-no" data-role="mm-team-no">{no}</span> : null}<b className="mt-mm-name">{n.name}</b></div>
       <div className={`mt-mm-c2 k-${f.line.k}`} data-role={f.line.k === 'ask' ? 'mm-ask' : f.line.k === 'team' ? 'mm-team' : 'mm-line'}>
         {f.line.main ? <b data-role="mm-role">{f.line.main}</b> : null}{f.line.main && f.line.text ? ' · ' : null}{f.line.text}

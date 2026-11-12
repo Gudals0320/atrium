@@ -182,6 +182,12 @@ export function worktreeExitAsk(w) {
   return { kind: 'worktree_exit', commits: w.commits ?? null, files: w.files || 0, branch: w.branch || null, keep: w.keep, remove: w.remove, since: w.at };
 }
 
+// P119: 판이 닫는 세션(닫기, 다시 띄우기)의 /exit 뒤 막힘. rt.boardExit = { by, at, foreign? }은 판이 /exit를 보낼 때 두고 끝나면 지운다.
+// 판이 답하는 워크트리 나가기 질문은 사람의 일이 아니라 응답 필요(알림, 목록, 푸시, 트레이)로 보이지 않는다.
+// 판이 모르는 화면(foreign: 나가기 질문이 아닌 막힘)이면 지금처럼 응답 필요다.
+export const boardClosing = (rt) => !!(rt.boardExit && !rt.boardExit.foreign);
+const closingState = (rt) => ({ state: 'ready', closing: rt.boardExit.by || 'close', estimate: 'board closing' });
+
 export function deriveState(rt) {
   const h = rt.herdr;
   if (rt.sleep) return { state: 'sleeping' }; // P21(D4): 판이 잠재움. 패널이 없다(J1·J2의 닫힘과 다르다)
@@ -193,6 +199,7 @@ export function deriveState(rt) {
   if (rt.hooked === false) {
     if (s === 'blocked') {
       if (rt.kind === 'claude' && rt.trustScreen) return { state: 'trust_wait', confirmedByScreen: true };
+      if (boardClosing(rt)) return closingState(rt);
       if (rt.kind === 'claude' && rt.worktreeExit) return { state: 'waiting', ask: worktreeExitAsk(rt.worktreeExit) };
       return { state: 'waiting', ask: { kind: 'screen', tail: rt.screenAsk ? rt.screenAsk.tail : null, since: rt.screenAsk ? rt.screenAsk.at : h.at } };
     }
@@ -203,6 +210,8 @@ export function deriveState(rt) {
   }
   if (s === 'blocked') {
     if (rt.pendingAsk) return { state: 'waiting', ask: rt.pendingAsk };
+    // P119: 판이 스스로 닫는 중(/exit를 보내고 나가기 질문에 답한다)이면 응답 필요로 보이지 않는다. 신뢰 질문은 그대로다
+    if (boardClosing(rt) && (rt.worktreeExit || !(rt.trustScreen || (h.launchPending && !h.agentSessionId && rt.hooksSinceLaunch === 0)))) return closingState(rt);
     if (rt.worktreeExit) return { state: 'waiting', ask: worktreeExitAsk(rt.worktreeExit) }; // P71: 워크트리 나가기 질문(화면에서 읽음)
     // 신뢰 대화상자: 화면의 "Quick safety check", 또는 hook 없음 + launch_pending + agent_session 없음(E10)
     if (rt.trustScreen || (h.launchPending && !h.agentSessionId && rt.hooksSinceLaunch === 0)) return { state: 'trust_wait', confirmedByScreen: !!rt.trustScreen };

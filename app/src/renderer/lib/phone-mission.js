@@ -16,10 +16,10 @@ export const PM_FOLD_KEY = 'mt.phoneMissionFolded';
 export const phoneTier = tierFor;
 // 무리 머리줄과 위쪽 요약에 세는 것
 const pick = (m) => (m ? { rank: m.rank, family: m.family, roleName: m.roleName, team: m.team, waiting: m.waiting, climb: m.climb } : { rank: 'solo', family: 'worker', roleName: null, team: null, waiting: 0, climb: 0 });
-const tally = (rows) => ({ count: rows.length, work: rows.filter((r) => r.tier === 'work').length, turn: rows.filter((r) => r.tier === 'turn' || r.tier === 'alert').length });
+const tally = (rows) => ({ count: rows.length, work: rows.filter((r) => r.tier === 'work').length, turn: rows.filter((r) => r.tier === 'turn' || r.tier === 'alert').length, review: rows.filter((r) => r.tier === 'review').length }); // P119: review = 작업 완료
 
 // graph: mission.graph 결과. live: Map(sessionId → 판의 세션 요약), order: 무리 차례(워크스페이스 키들), folded: 접은 무리 키들(키가 없는 무리는 '-')
-// → { groups: [{ key, folded, count, work, turn, rows }], counts: { all, work, turn } }
+// → { groups: [{ key, folded, count, work, turn, review, rows }], counts: { all, work, turn, review } }
 //   row: { id, sessionId, name, agentKind, state, tier, depth, indent, last, guides, fromId, role, from, links, ask, active, loops }
 export function phoneMission(graph, { live = null, order: order0 = [], folded = [], vgroups = [] } = {}) {
   const tree = missionTree(graph);
@@ -75,5 +75,5 @@ export function phoneMission(graph, { live = null, order: order0 = [], folded = 
   const every = out.flatMap((g) => g.all);
   for (const g of out) delete g.all;
   const c = tally(every);
-  return { groups: out, counts: { all: c.count, work: c.work, turn: c.turn } };
+  return { groups: out, counts: { all: c.count, work: c.work, turn: c.turn, review: c.review } };
 }

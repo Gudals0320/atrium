@@ -1730,3 +1730,16 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-tmove-kind, .mt-tmove-why { color: var(--text-3, var(--text-2)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-tmove-result.moved { color: var(--ok, var(--text-2)); }
 .mt-tmove-result.failed, .mt-tmove-result.skipped { color: var(--warn); }
+
+/* ---------- P119: 작업 완료(끝난 턴을 아직 안 봄, 맨 위 세션만) 카드. 상태 색(일함 주황, 응답 필요, 오류 빨강, 쉼)과 겹치지 않는 보라에 모양을 더한다:
+   위 가장자리에 걸친 "✓ 작업 완료" 꼬리표(끝 표식), 굵은 보라 테두리와 왼쪽 3px 띠, 왼쪽에서 옅어지는 보라 바탕. 움직이지 않아 움직임 줄이기에서도 같다 */
+.mt-mm-card.t-review { border-color: var(--st-review); box-shadow: inset 3px 0 0 var(--st-review), 0 0 0 1px color-mix(in srgb, var(--st-review) 35%, transparent); background: linear-gradient(90deg, color-mix(in srgb, var(--st-review) 14%, var(--mm-card-2)) 0%, var(--mm-card-2) 62%); }
+.mt-mm-card.t-review.lead { background: linear-gradient(90deg, color-mix(in srgb, var(--st-review) 14%, var(--mm-card-lead-2)) 0%, var(--mm-card-lead-2) 62%); }
+.mt-mm-card.t-review .mt-mm-name { color: var(--text); }
+.mt-mm-donetag { position: absolute; top: -8px; right: 16px; z-index: 1; display: inline-flex; align-items: center; gap: 3px; height: 15px; padding: 0 6px 0 4px; border-radius: 8px; background: var(--st-review); color: #1a1430; font: 700 10px/15px var(--font-ui); letter-spacing: .01em; white-space: nowrap; pointer-events: none; }
+.mt-mm-donetag svg, .mt-pm-donetag svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mt-mm-av[data-badge=review] { border-color: var(--st-review); }
+.mt-mm-badge.b-review { width: 11px; height: 11px; right: -4px; bottom: -4px; font-size: 7px; color: #1a1430; }
+/* 머리의 거르기 탭: 작업 완료가 있으면 개수를 보라 알약으로 */
+.mt-mm-filter.c-done:not([data-n="0"]) .mt-mm-fn { padding: 0 6px; border-radius: 8px; background: var(--st-review); color: #1a1430; font-weight: 700; }
+.mt-mm-sec[data-role=mm-sum-review] .mt-mm-sech, .mt-mm-sec[data-role=mm-sum-review] .mt-mm-sech i { color: var(--st-review); }

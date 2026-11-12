@@ -396,3 +396,12 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pm-node.t-work { --mm-run: var(--st-working); isolation: isolate; }
 .mt-pm-node.t-work.shell { --mm-run: var(--st-shell_running); }
 .mt-pm-node .mt-mm-lspin::before { width: calc(100% / 1.86 + 72px); height: auto; aspect-ratio: 1 / 1; margin: calc(-50% / 1.86 - 36px) 0 0 calc(-50% / 1.86 - 36px); animation-timing-function: steps(36, end); }
+
+/* ---------- P119: 작업 완료 카드(PC 미션 맵과 같은 모양: 위 가장자리 꼬리표, 굵은 보라 테두리와 왼쪽 띠, 옅은 보라 바탕)와 머리 칩. 움직이지 않는다 */
+.mt-pm-node.t-review { border-color: var(--st-review); box-shadow: inset 3px 0 0 var(--st-review); background: linear-gradient(90deg, color-mix(in srgb, var(--st-review) 14%, var(--mm-card-2)) 0%, var(--mm-card-2) 62%); }
+.mt-pm-donetag { position: absolute; top: -7px; right: 12px; z-index: 1; display: inline-flex; align-items: center; gap: 2px; height: 13px; padding: 0 5px 0 3px; border-radius: 7px; background: var(--st-review); color: #1a1430; font: 700 9px/13px var(--font-ui); white-space: nowrap; pointer-events: none; }
+.mt-pm-av[data-badge=review] { border-color: var(--st-review); }
+.mt-pm-chip.t-review i { background: var(--st-review); }
+.mt-pm-chip.t-review { color: var(--st-review); border-color: color-mix(in srgb, var(--st-review) 45%, transparent); }
+.mt-pm-chip.t-review.on { border-color: var(--st-review); color: var(--text); background: color-mix(in srgb, var(--st-review) 18%, transparent); }
+.mt-pm-node.t-review.lead { background: linear-gradient(90deg, color-mix(in srgb, var(--st-review) 14%, var(--mm-card-lead-2)) 0%, var(--mm-card-lead-2) 62%); }
