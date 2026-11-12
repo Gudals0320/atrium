@@ -223,9 +223,16 @@ const REASON = {
   waiting: (n) => `@${n}는 사람의 답을 기다린다. 보드가 사람이 답한 뒤 넣는다. 대신 답하지 않는다. 사용자에게 "보드에서 @${n}에 답해 주세요"라고 알린다`,
   trust_wait: (n) => `@${n}는 신뢰 질문에서 멈춰 있다. 보드가 사람이 답한 뒤 넣는다. 사용자에게 "보드에서 @${n} 카드의 신뢰 질문에 답해 주세요"라고 알린다`,
   user_typing: (n) => `사람이 @${n}의 터미널에 치는 중이다. 보드가 멈춘 뒤 넣는다`,
-  draft: (n) => `@${n}의 입력 칸에 쓰다 만 글이 있다. 보드가 비면 넣는다`,
+  draft: (n) => `@${n}의 입력 칸에 쓰다 만 글이 있는데 보드가 그대로 되돌릴 수 없어 비키지 않았다(사람의 글을 지키려고). 사람이 그 글을 보내거나 지우면 보드가 넣는다`, // P128
   sleeping: (n) => `@${n}는 잠들어 있다. 보드가 깨운 뒤 넣는다`,
   starting: (n) => `@${n}는 뜨는 중이다. 준비되면 보드가 넣는다`,
+};
+// P128: 받는 쪽 입력 칸에 사람이 쓰다 만 글이 있어 잠시 비키고 보냈다(되돌리기 결과는 전달 기록의 까닭)
+const DRAFT_NOTE = {
+  draft_moved: '입력 칸에 쓰다 만 글이 있어 잠시 비키고 지시만 제출했다. 보드가 그 글을 입력 칸에 되돌린다.',
+  draft_restored: '입력 칸에 쓰다 만 글이 있어 잠시 비키고 지시만 제출한 뒤 되돌렸다.',
+  draft_stashed: '입력 칸에 쓰다 만 글이 있어 잠시 비키고 지시만 제출했다. 그 글은 Claude Code가 쥐고 있다(빈 입력 칸에서 Ctrl+S로 꺼낸다).',
+  draft_held: '입력 칸에 쓰다 만 글이 있어 잠시 비키고 지시만 제출했지만 되돌리지 못했다. 그 글은 보드 기록(delivery_draft)에 있다. 사용자에게 알린다.',
 };
 // P126: 받는 쪽 입력 칸에 다른 글이 남아 보낸 글이 제출되지 않았다(판은 사람의 글일 수 있어 지우지 않는다)
 const boxOther = (n, next, id) => `@${n}의 입력 칸에 다른 글이 남아 있어 보낸 글이 제출되지 않았다${id ? `(${id})` : ''}. 보드가 그 글을 지우지 않는다. 사용자에게 "보드에서 @${n}의 입력 칸을 확인하고 Enter를 눌러 주세요"라고 알린다. 화면 보기: ${next.read}`;
@@ -233,7 +240,7 @@ function printDelivery(x) {
   const d = x.delivery || {};
   const id = `전달 ${x.deliveryId}`;
   if (x.woke) say(`@${x.name}는 잠들어 있어 보드가 깨웠다(같은 대화로 이어 간다).`);
-  if (d.status === 'confirmed') say(`@${x.name}에게 보냈다(들어감, ${id}).`);
+  if (d.status === 'confirmed') say(`@${x.name}에게 보냈다(들어감, ${id}).${DRAFT_NOTE[d.reason] ? ` ${DRAFT_NOTE[d.reason]}` : ''}`);
   else if (d.status === 'sent' || d.status === 'sending') say(`@${x.name}에게 넣었다(들어갔는지 확인하는 중, ${id}).`);
   else if (d.status === 'queued') say(`${(REASON[d.reason] || ((n) => `아직 넣지 못했다(${d.reason || '대기'}). 보드가 다시 넣는다`))(x.name)} (${id}).`);
   else if (d.status === 'unconfirmed' && d.reason === 'input_box_other') fail(boxOther(x.name, x.next, id));
