@@ -222,7 +222,7 @@ export class HcAdapter extends EventEmitter {
       if (!down && gone.length) down = (await this._list(true).catch(() => [])).some((t) => gone.includes(t.address) && CORE_DOWN.has(t.reason));
       if (down) { this._coreDown = false; this.connected = false; this.log('core ended terminals while away; reporting a restart'); this.emit('disconnected'); this.model.load(terms); this._gcFinished().catch(() => {}); }
       else this._emitAll(this.model.diff(terms));
-    } else { this._coreDown = false; this.model.load(terms); this._gcFinished().catch(() => {}); }
+    } else { this._coreDown = false; this.model.load(terms); this._gcFinished().catch(() => {}); await this._scanTrust(); }
     this._sub = sub;
     this.subscribedPanes = this.model.live().map((t) => t.address);
     clearInterval(this._beatTimer);
@@ -357,6 +357,17 @@ export class HcAdapter extends EventEmitter {
     this._trustWatch.set(address, timer);
   }
   follow(paneId) { return this._follow(paneId); } // P117: 라우터·옮기기가 쓴다
+  // P117: 처음 붙을 때(백엔드가 다시 뜸) 판이 띄운 claude가 7501 없이 살아 있으면 신뢰 질문 중일 수 있다. connected를 내기 전에 화면을 한 번 보고
+  // 신뢰 질문이면 막힘을 흉내 낸 상태로 싣는다(판이 다시 맞출 때 "에이전트 없음"으로 보고 끝남으로 두지 않게). 아니면 지켜보기만 한다
+  async _scanTrust() {
+    for (const t of this.model.live()) {
+      if (t.status || !t.labels || t.labels[LABEL.agent] !== 'claude') continue;
+      let text = '';
+      try { text = String((await this.call('terminal.read', { terminal: t.address, lines: 0 }, 5000)).text || ''); } catch {}
+      if (isTrustDialog(text)) { this.model.terms.set(t.address, { ...t, status: { ...TRUST_STATUS } }); this.model.everAgent.add(t.address); this.log(`trust dialog in ${t.address} on connect: reporting blocked`); }
+      else this._watchTrust(t.address);
+    }
+  }
   // P117: 판이 부른 패널이 이미 다른 터미널로 바뀌었으면(에이전트가 끝나 셸이 남음 등) 그 자리를 따라간다. 셸을 띄우는 중이면 기다린다
   async _follow(paneId) {
     let id = paneId;

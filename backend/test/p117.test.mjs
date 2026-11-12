@@ -87,6 +87,22 @@ test('P117 신뢰(hc): 7501 없이 바로 끝난 판의 에이전트도 에이�
   assert.equal(m2.terms.get('t3').status.synthetic, true);
 });
 
+test('P117 신뢰(hc): 신뢰 질문 중에 백엔드가 다시 뜨면, 붙기(connected) 전에 화면을 보고 막힘으로 싣는다(판이 끝남으로 두지 않게)', async () => {
+  const fake = await startFakeHc();
+  fake.silent = (t) => t.argv[0] === 'claude';
+  fake.screenOf = (t) => (t.argv[0] === 'claude' ? TRUST_SCREEN : null);
+  const t = fake.create({ argv: ['claude'], labels: { [LABEL.board]: '1', [LABEL.ws]: 'hw-x', [LABEL.agent]: 'claude' } }).result;
+  const a = new HcAdapter({ session: 'p117-unit', dataDir: null, pipe: fake.pipe, env: {}, trustPollMs: 30 });
+  let atConnect = null;
+  a.on('connected', () => { atConnect = a.model.terms.get(t.address).status; });
+  try {
+    a.startEvents();
+    await until(() => a.connected);
+    assert.equal(atConnect && atConnect.synthetic, true);
+    assert.equal((await a.listAgents()).find((x) => x.paneId === t.address).status, 'blocked');
+  } finally { a.stopEvents(); await fake.close(); }
+});
+
 test('P117 hc 기록 읽기(P116 인계): 화면 아래 빈 줄은 n줄에 세지 않는다(recent_unwrapped)', async () => {
   const fake = await startFakeHc();
   const a = new HcAdapter({ session: 'p117-unit', dataDir: null, pipe: fake.pipe, env: {} });
