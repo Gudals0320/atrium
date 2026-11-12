@@ -57,7 +57,8 @@ function useTick(on) {
 export function StatePill({ s }) {
   const t = useT();
   const review = s.unseen && (s.state === 'ready' || s.state === 'shell_idle');
-  const label = s.waking ? t('sleep.waking') : review ? t('node.review') : STATE_LABEL[s.state] || s.state; // P21: 깨우는 동안
+  // P21: 깨우는 동안. P125: 사람이 스스로 끝낸 세션은 머리 알약도 "직접 종료"
+  const label = s.waking ? t('sleep.waking') : review ? t('node.review') : (s.state === 'exited' && s.exit && s.exit.kind === 'user' ? EXIT_LABEL.user : STATE_LABEL[s.state] || s.state);
   const title = `${s.state}${s.estimate ? t('node.estimate', { v: s.estimate }) : ''} · herdr ${s.herdrStatus ?? '-'}`;
   return <span className={`mt-pill st-${s.state}${review ? ' st-review' : ''}${s.estimate ? ' estimate' : ''}${s.waking ? ' st-waking' : ''}`} data-state={s.state} data-waking={s.waking ? '1' : undefined} title={title}>{s.state === 'sleeping' && !s.waking && <Icon name="moon" />}{label}{s.estimate ? '?' : ''}</span>;
 }
