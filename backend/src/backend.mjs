@@ -430,9 +430,12 @@ export class Backend {
     const pane = (sid) => { const s = this.sessions.get(sid); if (!s || !s.paneId) throw Object.assign(new Error('no pane'), { code: 'pane_not_found' }); return s.paneId; };
     const m = draftMover({
       read: (sid) => this.adapter.readScreen(pane(sid), { source: 'visible' }),
-      type: (sid, raw) => this.adapter.sendText(pane(sid), raw),
+      // P130: 비키는 키(Ctrl+S·Ctrl+C)는 판 입력(hc AUTOMATIC_INPUT)이라 뒤따르는 terminal.send가 조용한 틈을 기다리지 않는다.
+      // 되돌리는 키(Codex 붙여넣기, Claude Code 빈 칸의 Ctrl+S)는 사람의 글을 입력 칸에 돌려놓는 것이라 사람 입력(DATA)으로 친다:
+      // hc는 send 뒤 그 전달이 끝날 때까지 판 입력을 잡아 두어(턴이 곧 끝나면 3~10초) 되돌린 글이 늦게 보였다. 사람 입력은 곧 들어간다(약 1.7초)
+      type: (sid, raw, o) => this.adapter.sendText(pane(sid), raw, { person: !!(o && o.back) }),
       // 여러 줄은 어댑터가 괄호 붙여넣기로 감싼다(hc sendText). 한 줄도 괄호로 감싸 하네스가 글자를 단축키로 읽지 않게 한다
-      paste: (sid, text) => this.adapter.sendText(pane(sid), /\n/.test(text) ? text : `\x1b[200~${text}\x1b[201~`),
+      paste: (sid, text) => this.adapter.sendText(pane(sid), /\n/.test(text) ? text : `\x1b[200~${text}\x1b[201~`, { person: true }),
       kindOf: (sid) => { const s = this.sessions.get(sid); return s && s.paneId ? s.kind || 'claude' : null; },
       edit: (sid) => { const s = this.sessions.get(sid); return s ? s.draftEdit || null : null; },
       userStash: (sid) => { const s = this.sessions.get(sid); return !!(s && s.userStash); },

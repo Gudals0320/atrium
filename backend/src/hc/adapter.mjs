@@ -520,9 +520,10 @@ export class HcAdapter extends EventEmitter {
   }
   async sendKeys(target, keys) { const t = await this._target(target); return this.paneKeys(t.address, keys); }
   // 글을 Enter 없이 넣는다. 여러 줄이면 bracketed paste로 감싼다
-  async sendText(paneId, text) {
+  // person: 사람 입력(DATA)으로 친다(P130: 판이 사람의 쓰다 만 글을 입력 칸에 되돌릴 때만)
+  async sendText(paneId, text, { person = false } = {}) {
     const s = String(text);
-    return this._typeRaw(paneId, [/\n/.test(s) ? `\x1b[200~${s}\x1b[201~` : s]);
+    return this._typeRaw(paneId, [/\n/.test(s) ? `\x1b[200~${s}\x1b[201~` : s], { person });
   }
   // 키 이름 → 바이트를 attach로 바로(키 패드, 답하기. 판 입력 AUTOMATIC_INPUT). 모르는 키가 있으면 hc의 terminal.keys(조용해질 때까지 기다림)
   async paneKeys(paneId, keys) {
@@ -532,10 +533,11 @@ export class HcAdapter extends EventEmitter {
   }
   // 붙어 있는 화면 스트림이 있으면 그것으로, 없으면 지금 크기로 잠깐 붙어서 친다(크기를 바꾸지 않는다).
   // P130: 판이 친 키는 AUTOMATIC_INPUT(kind 6)으로 보낸다. hc는 attach DATA를 사람 입력으로 세어, 그 뒤 terminal.send·keys가
-  // 약 3초 조용한 틈을 기다렸다(쓰다 만 글을 Ctrl+S로 비킨 뒤 지시가 3초 늦음). kind 6은 세지 않는다. 사람이 판 터미널로 친 키(relay)는 그대로 DATA
-  async _typeRaw(paneId, parts) {
+  // 약 3초 조용한 틈을 기다렸다(쓰다 만 글을 Ctrl+S로 비킨 뒤 지시가 3초 늦음). kind 6은 세지 않는다. 사람이 판 터미널로 친 키(relay)는 그대로 DATA.
+  // person: 판이 사람의 글을 되돌리는 키(backend.mjs draftIo)는 DATA로 친다
+  async _typeRaw(paneId, parts, { person = false } = {}) {
     const ctl = [...(this._ctls.get(paneId) || [])].find((c) => c.exited == null && c.conn && c.ch != null && c.terminal === paneId);
-    if (ctl) { for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); ctl.inputAuto(parts[i]); } return { typed: parts.length, via: 'stream', automatic: !!ctl.autoInput }; }
+    if (ctl) { for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); if (person) ctl.input(parts[i]); else ctl.inputAuto(parts[i]); } return { typed: parts.length, via: 'stream', automatic: !person && !!ctl.autoInput }; }
     const t = await this.call('terminal.get', { terminal: paneId });
     if (!isLive(t)) throw new HcError('pane_not_found', `${paneId} is ${t.state}`, 'terminal.attach');
     const conn = new FramedConn(this.pipe);
@@ -543,11 +545,11 @@ export class HcAdapter extends EventEmitter {
       await conn.open();
       const r = await conn.call('terminal.attach', { terminal: paneId, cols: t.cols || 120, rows: t.rows || 40, resumed: true });
       conn.claim(r.channel, (f) => { if (f.kind === FRAME.DATA) { const b = Buffer.alloc(4); b.writeUInt32LE(f.payload.length, 0); conn.write(r.channel, FRAME.CREDIT, b); } });
-      const kind = r.automatic_input ? FRAME.AUTOMATIC_INPUT : FRAME.DATA;
+      const kind = r.automatic_input && !person ? FRAME.AUTOMATIC_INPUT : FRAME.DATA;
       for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); conn.write(r.channel, kind, Buffer.from(parts[i], 'utf8')); }
       await sleep(50);
       conn.write(r.channel, FRAME.CLOSE);
-      return { typed: parts.length, via: 'attach', automatic: !!r.automatic_input };
+      return { typed: parts.length, via: 'attach', automatic: kind === FRAME.AUTOMATIC_INPUT };
     } finally { setTimeout(() => conn.close(), 100); }
   }
   // 화면 읽기:

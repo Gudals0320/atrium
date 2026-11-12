@@ -86,10 +86,12 @@ const CTRL_S = '\x13', CTRL_C = '\x03';
 
 // 비키기·되돌리기. io: { read(sid) → 화면 글, type(sid, 바이트) → Promise(키), paste(sid, 글) → Promise(괄호 붙여넣기, Enter 없음), kindOf(sid), edit(sid) → draftEdit 결과,
 //   userStash(sid) → 사람이 Ctrl+S로 치워 둔 글이 있을 수 있는가, stashKey: Ctrl+S를 써도 되는가 }
-export function draftMover(io, { pollMs = 250, polls = 8, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+// pastePolls(P130): Codex에 되돌린 붙여넣기가 보이기까지 볼 횟수. hc는 terminal.send 뒤 그 전달이 끝날 때까지 들어온 입력을 잡아 두었다가 넣는다.
+//   턴이 곧바로 끝나면(가짜 모델) 사람 입력도 약 1.7초 뒤에 보여 2초(8번) 보기가 빠듯했다
+export function draftMover(io, { pollMs = 250, polls = 8, pastePolls = 16, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const look = async (sid, kind) => readDraftBox(await io.read(sid), kind);
   // 입력 칸이 바뀔 때까지(want(box)가 참) 몇 번 본다
-  const until = async (sid, kind, want) => { let b = null; for (let i = 0; i < polls; i++) { await sleep(pollMs); b = await look(sid, kind); if (want(b)) return { ok: true, box: b }; } return { ok: false, box: b }; };
+  const until = async (sid, kind, want, n = polls) => { let b = null; for (let i = 0; i < n; i++) { await sleep(pollMs); b = await look(sid, kind); if (want(b)) return { ok: true, box: b }; } return { ok: false, box: b }; };
   return {
     // → { state: 'clear' }(빈 칸이거나 손대지 않는 종류: 그대로 보낸다) | { state: 'moved', held } | { state: 'keep', why, text? }(비키지 못했다: 기다린다)
     async aside(sid) {
@@ -130,9 +132,12 @@ export function draftMover(io, { pollMs = 250, polls = 8, sleep = (ms) => new Pr
       }
       if (!b || !b.found) return { result: kind === 'claude' ? 'stashed' : 'held', why: 'no_box' };
       if (b.text) return { result: kind === 'claude' ? 'stashed' : 'held', why: 'box_other' };
-      if (kind === 'claude') await io.type(sid, CTRL_S); // 빈 칸의 Ctrl+S = 치워 둔 글 꺼내기
+      if (kind === 'claude') await io.type(sid, CTRL_S, { back: true }); // 빈 칸의 Ctrl+S = 치워 둔 글 꺼내기(back: 되돌리는 키, P130)
       else await io.paste(sid, held.text); // 괄호 붙여넣기(Enter 없음)
-      const r = await until(sid, kind, (x) => x.found && !!x.text);
+      // P130: Codex는 붙여넣기가 다 그려지기 전의 칸을 볼 수 있다(처음 보인 글에서 멈추면 box_differs). 같은 글이 보일 때까지 본다
+      const shown = kind === 'codex' ? (x) => x.found && !!x.text && (sameDraft(x.text, held.text) || FOLDED.test(x.text)) : (x) => x.found && !!x.text;
+      let r = await until(sid, kind, shown, kind === 'codex' ? pastePolls : polls);
+      if (!r.ok && kind === 'codex' && r.box && r.box.found && r.box.text) r = { ok: true, box: r.box }; // 끝까지 다른 글이 보였다
       if (r.ok && sameDraft(r.box.text, held.text)) return { result: 'restored', by: 'board' };
       if (r.ok && kind === 'codex' && FOLDED.test(r.box.text)) return { result: 'restored', by: 'board', folded: true }; // 긴 붙여넣기는 Codex가 접어 보인다
       return { result: kind === 'claude' ? (r.ok ? 'restored' : 'stashed') : 'held', why: r.ok ? 'box_differs' : 'not_shown', ...(r.ok && kind === 'claude' ? { by: 'board', differs: true } : {}) };

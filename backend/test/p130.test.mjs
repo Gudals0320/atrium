@@ -7,6 +7,9 @@ import { HcAdapter } from '../src/hc/adapter.mjs';
 import { HcController } from '../src/hc/stream.mjs';
 import { TerminalRelay } from '../src/relay.mjs';
 import { blockReason } from '../src/delivery.mjs';
+import { draftMover } from '../src/draft-aside.mjs';
+import { keysToBytes } from '../src/hc/model.mjs';
+import { KEY_NAMES } from '../src/keys.mjs';
 import { startFakeHc } from './fake-hc.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -28,6 +31,12 @@ test('P130 잠깐 붙어 치기: 판이 친 키·글은 kind 6(automatic_input),
     await until(() => kinds(fake, t.address).length === 2);
     assert.deepEqual(kinds(fake, t.address), ['auto', 'auto']);
     assert.equal(fake.terms.get(t.address).inputs[1], '\x1b[200~a\nb\x1b[201~');
+    // 사람의 글을 되돌리는 붙여넣기(person)는 DATA
+    const back = await a.sendText(t.address, 'half', { person: true });
+    assert.equal(back.automatic, false);
+    await until(() => kinds(fake, t.address).length === 3);
+    assert.equal(kinds(fake, t.address)[2], 'data');
+    fake.terms.get(t.address).inputs.pop(); fake.terms.get(t.address).inputKinds.pop();
     // 옛 hc(automatic_input 없음): DATA로 보낸다(키는 들어가고 3초 기다림만 남는다)
     fake.automaticInput = false;
     const old = await a.paneKeys(t.address, ['enter']); // 키 패드·Enter 되살리기
@@ -52,9 +61,10 @@ test('P130 붙은 화면 스트림: 사람 입력(relay·input)은 DATA, 판이 
     const r = await a.paneKeys(t.address, ['esc']);
     assert.equal(r.via, 'stream'); assert.equal(r.automatic, true);
     await a.sendText(t.address, 'draft');
-    await until(() => kinds(fake, t.address).length === 4);
-    assert.deepEqual(fake.terms.get(t.address).inputs, ['\x13', 'hi', '\x1b', 'draft']);
-    assert.deepEqual(kinds(fake, t.address), ['auto', 'data', 'auto', 'auto']);
+    await a.sendText(t.address, 'back', { person: true }); // 되돌리는 붙여넣기
+    await until(() => kinds(fake, t.address).length === 5);
+    assert.deepEqual(fake.terms.get(t.address).inputs, ['\x13', 'hi', '\x1b', 'draft', 'back']);
+    assert.deepEqual(kinds(fake, t.address), ['auto', 'data', 'auto', 'auto', 'data']);
     c.close();
   } finally { a.stopEvents(); await fake.close(); }
 });
@@ -86,4 +96,50 @@ test('P130 사람 입력 판단(B1 규칙 4)은 그대로: relay 입력은 ctl.i
   const view = { state: 'ready', agentPresent: true, termConnected: true, closed: false };
   assert.equal(blockReason({ ...view, lastUserInputAt: now - 1000 }, now, { inputQuietMs: 3000 }), 'user_typing');
   assert.equal(blockReason({ ...view, lastUserInputAt: now - 3500 }, now, { inputQuietMs: 3000 }), null);
+});
+
+test('P130 판이 쓰는 키 이름은 모두 바이트가 있다(hc terminal.keys의 3초 기다림으로 빠지지 않는다)', () => {
+  // 키 패드(session.keys), 끄기·깨우기(ctrl+c·ctrl+d·esc·enter), 답하기(숫자·tab·esc·enter)
+  for (const k of [...KEY_NAMES, 'ctrl+c', 'ctrl+d', 'ctrl+u', 'shift+tab', 'backspace']) assert.ok(keysToBytes([k]), k);
+});
+
+test('P130 Codex 되돌리는 붙여넣기: hc가 잡아 두었다가 늦게(2초 넘어) 넣어도 되돌림으로 본다', async () => {
+  const codexScreen = (line) => ['>_ OpenAI Codex', '', `› ${line}`, '', '  model-x default · C:\\repo'].join('\n');
+  let box = '', looks = 0, pending = null;
+  // 붙여넣기는 보낸 뒤 열 번째 보기(250ms씩이면 2.5초)에 입력 칸에 보인다
+  const io = { read: async () => { looks++; if (pending && looks >= pending.at) { box = pending.text; pending = null; } return codexScreen(box); }, kindOf: () => 'codex', type: async () => {}, paste: async (sid, text) => { pending = { text, at: looks + 10 }; } };
+  const r = await draftMover(io, { pollMs: 0, sleep: async () => {} }).back('s1', { kind: 'codex', how: 'clear', text: 'half typed' });
+  assert.deepEqual(r, { result: 'restored', by: 'board' });
+  // 옛 횟수(8번)였으면 보이기 전에 그만 보고 held(not_shown)였다
+  box = ''; looks = 0; pending = null;
+  const old = await draftMover(io, { pollMs: 0, pastePolls: 8, sleep: async () => {} }).back('s1', { kind: 'codex', how: 'clear', text: 'half typed' });
+  assert.equal(old.result, 'held'); assert.equal(old.why, 'not_shown');
+});
+
+test('P130 Codex 되돌리는 붙여넣기: 다 그려지기 전의 칸(글 일부)을 보면 더 보고, 끝까지 다르면 box_differs', async () => {
+  const codexScreen = (line) => ['>_ OpenAI Codex', '', `› ${line}`, '', '  model-x default · C:\\repo'].join('\n');
+  const frames = (seq) => { let i = 0; return async () => codexScreen(seq[Math.min(i++, seq.length - 1)]); };
+  const io = (seq) => ({ read: frames(seq), kindOf: () => 'codex', type: async () => {}, paste: async () => {} });
+  const ok = await draftMover(io(['', '', '쓰다 만', '쓰다 만 한 줄 draft']), { pollMs: 0, sleep: async () => {} }).back('s1', { kind: 'codex', how: 'clear', text: '쓰다 만 한 줄 draft' });
+  assert.deepEqual(ok, { result: 'restored', by: 'board' });
+  const other = await draftMover(io(['', '', 'someone typed']), { pollMs: 0, pastePolls: 3, sleep: async () => {} }).back('s1', { kind: 'codex', how: 'clear', text: 'half' });
+  assert.deepEqual(other, { result: 'held', why: 'box_differs' });
+});
+
+test('P130 비키는 키와 되돌리는 키: Claude Code 비키기 Ctrl+S는 표시 없이(판 입력), 빈 칸의 꺼내기 Ctrl+S는 back(사람 입력)', async () => {
+  const RULE = '─'.repeat(40);
+  const claudeScreen = (line) => ['▐▛███▛█   Claude Code', '', RULE, `❯ ${line}`, RULE, '  Haiku (medium)'].join('\n');
+  let box = 'half typed', stash = null;
+  const typed = [];
+  const io = {
+    read: async () => claudeScreen(box), kindOf: () => 'claude', stashKey: true, userStash: () => false,
+    type: async (sid, raw, o) => { typed.push([raw, !!(o && o.back)]); if (raw === '\x13') { if (box) { stash = box; box = ''; } else if (stash != null) { box = stash; stash = null; } } },
+  };
+  const m = draftMover(io, { pollMs: 0, sleep: async () => {} });
+  const a = await m.aside('s1');
+  assert.equal(a.state, 'moved');
+  // `/` 명령을 보낸 뒤처럼 Claude Code가 되돌리지 않았다: 판이 빈 칸에서 Ctrl+S로 꺼낸다
+  const r = await m.back('s1', a.held);
+  assert.deepEqual(r, { result: 'restored', by: 'board' });
+  assert.deepEqual(typed, [['\x13', false], ['\x13', true]]);
 });
