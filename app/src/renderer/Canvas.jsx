@@ -727,7 +727,7 @@ export function Canvas() {
       if (!r) return;
       const el = wrapRef.current;
       const s = getState().sessions.get(id);
-      if (s) noteWorkspace(s.workspaceKey);
+      if (s) noteWorkspace(s.workspaceKey, { view: true }); // P124: 누른(초점을 준) 노드의 워크스페이스가 터미널을 갖는 워크스페이스가 된다
       if (focusTerminal) setPendingInput(id); // H4: 터미널이 붙기 전에 친 글을 모은다
       if (focusTerminal && s && s.state === 'sleeping') wakeSession(id, { why: 'click' }); // P21(D4): 눌러 들어가면 깨운다(깬 뒤 터미널이 붙는다)
       // P10: 덩어리 안의 노드면 덩어리 전체가 들어오게(lib/nav.js). 초점과 터미널 입력은 누른 노드로 간다
@@ -762,7 +762,7 @@ export function Canvas() {
       if (tapAction({ width: window.innerWidth, height: window.innerHeight, coarse: true }) === 'full') {
         const nodeEl = target && target.closest ? target.closest('.react-flow__node') : null;
         const r = nodeEl ? nodeEl.getBoundingClientRect() : null;
-        noteWorkspace(s.workspaceKey); enterSession(id); setFocus(id); markSeen(id);
+        noteWorkspace(s.workspaceKey, { view: true }); enterSession(id); setFocus(id); markSeen(id);
         perfLog('touch_full', { id });
         openFull(id, r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null);
         return;
@@ -894,7 +894,9 @@ export function Canvas() {
   const onNodeClick = useCallback((e, node) => {
     if (e.target.closest && e.target.closest('button, input, textarea, select, a, .mt-card, .mt-kill, .mt-interrupted, .mt-menu')) return;
     if (node.type === 'region' || node.type === 'wtarea') { selectWorkspace(node.data.wsKey); return; } // P27
-    if (node.type !== 'session' || e.ctrlKey || e.shiftKey || e.metaKey) return;
+    if (node.type !== 'session') return;
+    // P124: Ctrl·Shift로 고른 노드도 그 워크스페이스가 터미널을 갖는 워크스페이스가 된다(마지막에 고른 노드)
+    if (e.ctrlKey || e.shiftKey || e.metaKey) { const s = getState().sessions.get(node.id); if (s) noteWorkspace(s.workspaceKey, { view: true }); return; }
     // 터미널 안을 누르면 화면만 옮긴다(초점은 터미널이 스스로 잡는다)
     // P38: 끌어 고른 뒤의 click과 두세 번 누르기에서는 가지 않는다. 한 번 누르기도 잠깐 기다려 두 번째 누르기·선택이 없을 때만 간다
     if (e.target.closest && e.target.closest('.mt-term-wrap')) {

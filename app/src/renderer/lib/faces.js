@@ -27,6 +27,23 @@ export function faceFor(nodeWidth, zoom, prev = null) {
   return 'icon';
 }
 
+// P124: 세션 노드의 거리 단계(노드가 화면에서 차지하는 너비 px로 정한다). 세 단계 사이는 뚜렷이 다르게 그린다.
+//   터미널(term)  240px 이상: 터미널을 가질 수 있는 노드(termAllowed)는 터미널, 아닌 노드는 요약. 기본 노드(1440px)면 배율 0.167 이상(예전 0.25보다 먼 곳부터)
+//   요약(brief)   120px 이상: 이름, 상태, 기다리는 질문, 마지막 요청과 답(멀리 얼굴). 대화 보기(중간 얼굴)는 판 노드에 쓰지 않는다
+//   틀(frame)     그보다 작으면: 글 없이 노드 외곽, 상태 색 바탕, 상태 표지(응답 필요·작업 중·작업 완료·오류)만. 이름도 그리지 않는다(마우스를 올리면 제목으로 보인다)
+// 경계 여유: 한 단계 위에 있던 노드는 경계의 88%까지 그 단계에 남는다(240 → 211px, 120 → 106px). 휠 한 칸(약 5%)으로는 넘나들지 않는다
+export const TIER_TERM_PX = 240;
+export const TIER_BRIEF_PX = 120;
+export const TIER_KEEP = 0.88;
+export function tierFor(px, prev = null) {
+  if (!(px >= 0)) px = 0;
+  if (px >= TIER_TERM_PX || (prev === 'term' && px >= TIER_TERM_PX * TIER_KEEP)) return 'term';
+  if (px >= TIER_BRIEF_PX || ((prev === 'term' || prev === 'brief') && px >= TIER_BRIEF_PX * TIER_KEEP)) return 'brief';
+  return 'frame';
+}
+// 단계와 터미널 허용으로 얼굴(styles.css face-*): term이면 close(터미널) 또는 far(요약), brief면 far, frame이면 icon(틀)
+export const faceOfTier = (tier, allowed) => (tier === 'term' ? (allowed ? 'close' : 'far') : tier === 'brief' ? 'far' : 'icon');
+
 // P121: 터미널은 고른 워크스페이스의 세션만 갖는다. 다른 워크스페이스의 세션은 가까이 크기여도 요약 얼굴(far)을 보이고,
 // 그 노드를 누르거나(초점) 고르거나, 노드가 화면을 아주 가깝게 채울 만큼 확대하면 터미널을 갖는다.
 // "아주 가까이": 노드가 화면에 보이는 넓이가 캔버스 넓이의 35% 이상(16:9 노드가 16:9 캔버스 너비의 60%쯤을 채울 때). 노드를 누르면 85%를 채우게 옮기므로(H4)
@@ -66,7 +83,7 @@ export function pickAttached(nodes, viewport, screen, { max = DEFAULT_MAX_CONTRO
   const cx = screen.width / 2, cy = screen.height / 2;
   const seen = [];
   for (const n of nodes) {
-    if (faceFor(n.w, zoom, prev && prev.has(n.id) ? 'close' : null) !== 'close') continue;
+    if (tierFor(n.w * zoom, prev && prev.has(n.id) ? 'term' : null) !== 'term') continue; // P124: 터미널 단계(예전 가까이 얼굴 360px)
     if (wsLimit && !termAllowed({ id: n.id, ws: n.ws, viewWs: wsLimit.key ?? null, focus, selected, near: veryClose(n, viewport, screen, !!(prev && prev.has(n.id))) })) continue;
     const left = n.x * zoom + vx, top = n.y * zoom + vy, right = left + n.w * zoom, bottom = top + n.h * zoom;
     if (right < -margin || bottom < -margin || left > screen.width + margin || top > screen.height + margin) continue;

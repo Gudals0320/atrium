@@ -1754,3 +1754,18 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-wsgroup-head > * { flex: none; }
 /* P121: 고른 워크스페이스 밖 노드의 요약 얼굴(가까이 크기)에서 누르면 터미널이 열린다는 한 줄. 맨 아래에 옅게 */
 .mt-far .mt-brief-hint { margin-top: auto; color: var(--chrome-text-4); font-size: .9em; -webkit-line-clamp: 1; }
+
+/* P124: 틀 단계(노드가 화면 120px 아래, SessionNode FrameFace). 글 없이 외곽·상태 색 바탕·가운데 상태 표지 하나.
+   표지는 색 원판 위 어두운 기호라 색만이 아니라 모양으로도 갈린다(! 응답 필요, ✓ 작업 완료, × 오류, 원호 작업 중, 달 잠듦). 크기는 화면 30px(계단 --inv), 노드 높이의 60%를 넘지 않는다 */
+.mt-frameface { gap: 0; padding: 0; }
+.mt-frame-mark { width: min(calc(30px * var(--inv, 1)), 34%); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; background: var(--mk, var(--dim)); color: var(--icon-bg); flex: none; }
+.mt-frame-mark svg { width: 72%; height: 72%; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.mt-frame-mark circle { fill: currentColor; }
+.mt-frame-mark[data-mark="ask"] { --mk: var(--attn); }
+.mt-frame-mark[data-mark="done"] { --mk: var(--st-review); }
+.mt-frame-mark[data-mark="error"] { --mk: var(--st-error); }
+.mt-frame-mark[data-mark="work"] { --mk: var(--run, var(--st-working)); }
+.mt-frame-mark[data-mark="sleep"] { --mk: var(--con-idle-line); color: var(--con-idle-text); }
+.mt-node.face-icon.t-turn { background: color-mix(in srgb, var(--attn) 14%, var(--icon-bg)); border-color: var(--attn); }
+.mt-node.face-icon.t-review { background: color-mix(in srgb, var(--st-review) 12%, var(--icon-bg)); }
+.mt-node.face-icon.t-alert { background: color-mix(in srgb, var(--st-error) 14%, var(--icon-bg)); }

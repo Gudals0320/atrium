@@ -74,7 +74,7 @@ test('아주 가까이: 노드가 화면에 보이는 넓이가 캔버스의 35%
 });
 
 test('가까이 얼굴이 아니거나 화면 밖이면 고른 워크스페이스여도 붙이지 않는다(예전 규칙 그대로)', () => {
-  assert.deepEqual(pickAttached(nodes, { x: 20, y: 20, zoom: 0.2 }, screen, { wsLimit: { key: A } }), []); // 288px: 중간
+  assert.deepEqual(pickAttached(nodes, { x: 20, y: 20, zoom: 0.15 }, screen, { wsLimit: { key: A } }), []); // 216px: 요약 단계(P124 터미널 240px)
   assert.deepEqual(pickAttached(nodes, { x: -50000, y: 0, zoom: 0.3 }, screen, { wsLimit: { key: A }, focus: 'a1' }), []);
 });
 

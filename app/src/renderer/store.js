@@ -38,7 +38,7 @@ const state = {
   workspaces: [], // [{ key, name, kind, root, createdAt, counts, x, y }] 처음 생긴 순서
   groups: [], // P44: 가상 그룹 [{ id, name, members: [워크스페이스 키] }](판 데이터 meta wsGroups)
   currentWs: null, // 마지막에 고른(가 본) 워크스페이스의 키
-  viewWs: null, // P121: 위 바·영역·사이드바·찾기·←→로 고른 워크스페이스. 이 워크스페이스의 세션만 터미널을 갖는다(노드를 눌러 가는 것으로는 바뀌지 않는다, lib/faces.js termAllowed)
+  viewWs: null, // P121: 위 바·영역·사이드바·찾기·←→로 고른 워크스페이스. 이 워크스페이스의 세션만 터미널을 갖는다(lib/faces.js termAllowed). P124: 세션 노드를 누르거나 초점을 주어도(navigateTo) 그 노드의 워크스페이스로 바뀐다
   vpNow: null, // 지금 캔버스의 뷰포트
   canvasSize: null,
   // P6a
@@ -139,10 +139,16 @@ export function selectGroup(keys, pick) {
   else if (state.fitWorkspace) state.fitWorkspace(pick);
 }
 // 노드로 갔을 때 그 워크스페이스를 기본으로(새 세션 대화상자의 폴더)
-export function noteWorkspace(key) {
-  if (!key || key === state.currentWs) return;
-  state.currentWs = key; changed();
-  api.call('workspace.select', { workspace: key }).catch(() => {});
+// P124 view: 세션 노드를 누르거나 초점을 주면(navigateTo) 그 워크스페이스가 고른 워크스페이스(viewWs, 터미널을 갖는 곳·위 바의 켜진 칩)도 된다
+export function noteWorkspace(key, { view = false } = {}) {
+  if (!key) return;
+  const viewMoved = view && key !== state.viewWs;
+  if (key === state.currentWs && !viewMoved) return;
+  const moved = key !== state.currentWs;
+  state.currentWs = key;
+  if (view) state.viewWs = key;
+  changed();
+  if (moved) api.call('workspace.select', { workspace: key }).catch(() => {});
 }
 export const wsOf = (id) => { const s = state.sessions.get(id); return s ? s.workspaceKey || null : null; };
 export const wsName = (key) => { const w = state.workspaces.find((x) => x.key === key); return w ? w.name : key ? String(key).split('/').filter(Boolean).slice(-2, -1)[0] || key : '?'; };
