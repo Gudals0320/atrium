@@ -1778,3 +1778,7 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 /* ---------- P127: 판을 움직이는 동안(lib/work-light.js motionPauser, 문서 뿌리 data-board-moving) 판 노드의 작업 중 둘레 회전판을 멈춘다.
    회전판의 모양·색은 그대로라 작업 중 테두리는 보이고, 움직임이 멎고 400ms 뒤 멈춘 자리에서 이어서 돈다. 미션 맵 카드의 빛은 건드리지 않는다 */
 html[data-board-moving="1"] .mt-node-run > i { animation-play-state: paused; }
+
+/* ---------- P128a: 판을 움직이는 동안 둘레 회전판을 숨긴다(사용자 결정 2026-11-12). 멈추기만 해서는 회전판이 층으로 남아 끌기 비용이 거의 줄지 않았다(P127 측정).
+   숨겨도 상태 색 테두리와 빛 그림자는 남고, 움직임이 멎고 400ms 뒤 다시 보여 돈다 */
+html[data-board-moving="1"] .mt-node-run { visibility: hidden; }
