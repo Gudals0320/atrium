@@ -73,7 +73,7 @@ function fakeHarness(kind, box) {
 function rig(t, h, { view = {}, edit = null, userStash = false, stashKey = true } = {}) {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
   const log = { sent: [], events: [], drafts: [] };
-  const v = { state: 'ready', agentPresent: true, herdrConnected: true, closed: false, lastUserInputAt: 0, ...view };
+  const v = { state: 'ready', agentPresent: true, termConnected: true, closed: false, lastUserInputAt: 0, ...view };
   const mover = draftMover({ read: async () => h.screen(), type: async (sid, raw) => h.type(raw), paste: async (sid, text) => h.paste(text), kindOf: () => h.kind, edit: () => edit, userStash: () => userStash, stashKey }, { pollMs: 0, polls: 4, sleep: async () => {} });
   const q = new DeliveryQueue({
     store: { rows: new Map(), activeDeliveries: () => [], insertDelivery(d) { this.rows.set(d.deliveryId, { ...d }); }, updateDelivery(id, p) { Object.assign(this.rows.get(id) || {}, { status: p.status, reason: p.reason ?? null }); }, getDelivery(id) { return this.rows.get(id) || null; } },
@@ -227,7 +227,7 @@ test('P128 지시가 제출되지 않으면(입력 칸에 남음) 덮지 않고 
   }
 });
 
-test('P128 받지 않으면(herdr·hc 거부) 비켜 둔 글부터 되돌리고 물러난다', async (t) => {
+test('P128 받지 않으면(터미널 거부) 비켜 둔 글부터 되돌리고 물러난다', async (t) => {
   const h = fakeHarness('codex', 'keep me');
   const { q, log } = rig(t, h);
   q.send = async () => { throw Object.assign(new Error('blocked'), { code: 'agent_blocked' }); };

@@ -1,4 +1,4 @@
-// 터미널 노드 입력 규칙(ARCH 7.2, E4). 제어기 프레임은 herdr가 다시 그린 화면이라 괄호 붙여넣기와 마우스 추적 모드가
+// 터미널 노드 입력 규칙(ARCH 7.2, E4). 제어기 프레임은 터미널 서버가 다시 그린 화면이라 괄호 붙여넣기와 마우스 추적 모드가
 // xterm.js에 오지 않는다. 그래서 창이 직접 감싸고 바꾼 뒤 terminal.input으로 보낸다. 순수 함수만 둔다(단위 시험 있음).
 
 export const PASTE_START = '\x1b[200~';
@@ -56,8 +56,8 @@ export function sgrWheel(steps, x, y, cols, rows) {
 
 // P126: 휠을 마우스 보고로 보낼지. 프로그램이 마우스 추적(DECSET 1000·1002·1003)을 켜지 않았는데 보내면 받는 쪽이 보고를 글로 읽어
 // 입력창에 `[<65;101;61M` 같은 글이 남을 수 있다(그 뒤 판이 넣은 지시가 제출되지 않았다).
-// - modesKnown: 이 터미널이 받는 프레임이 마우스 모드를 알려 준다(hc 판은 프레임마다 모드를 다시 적는다). herdr 판은 다시 그린 화면만 보내
-//   마우스 모드가 xterm에 오지 않는다(늘 'none'). 그때는 알 수 없으므로 예전처럼 보낸다(herdr가 입력을 받아 프로그램에 맞춰 넘긴다)
+// - modesKnown: 이 터미널이 받는 프레임이 마우스 모드를 알려 준다(hc 판은 프레임마다 모드를 다시 적는다). 프레임에 모드를 적지 않는 서버는 다시 그린 화면만 보내
+//   마우스 모드가 xterm에 오지 않는다(늘 'none'). 그때는 알 수 없으므로 예전처럼 보낸다(터미널 서버가 입력을 받아 프로그램에 맞춰 넘긴다)
 // - 모드가 꺼져 있으면 아무것도 보내지 않는다. 에이전트 노드는 판 안 기록이 없어(scrollback 0) 굴릴 것이 없고, xterm 기본(대체 화면이면
 //   위·아래 키)은 Codex·Claude Code에서 지난 지시 불러오기가 되어 입력창을 바꾼다
 // → 'report'(SGR 휠을 보낸다) | 'swallow'(삼킨다)
@@ -131,7 +131,7 @@ export function clearsSelection(event, { hasSelection = true } = {}) {
   return !!hasSelection && CLEARS.has(event);
 }
 
-// 복사할 글: herdr가 다시 그린 화면은 줄 끝까지 빈칸이 차 있어, 줄마다 끝의 빈칸을 뺀다(Windows Terminal처럼)
+// 복사할 글: 터미널 서버가 다시 그린 화면은 줄 끝까지 빈칸이 차 있어, 줄마다 끝의 빈칸을 뺀다(Windows Terminal처럼)
 export function copyText(sel) {
   return String(sel ?? '').replace(/[ \t]+(?=\r?\n|$)/g, '');
 }

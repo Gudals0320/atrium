@@ -162,7 +162,7 @@ export function LinkPanel({ linkId, onClose }) {
         <button className="mt-btn small ghost" onClick={() => { onClose(); getState().navigateTo && b && getState().navigateTo(b.sessionId); }} data-action="link-go">{t('links.goTo', { name: b ? b.name : '' })}</button>
         <button className="mt-x" onClick={onClose} title={t('common.close')}>×</button>
       </div>
-      <div className="mt-linkpanel-sub">{t('links.herdrName')} <span className="mono">{link.toAgentName}</span> · {t('links.panelInfo', { pane: link.toPaneId, n: link.count })}</div>
+      <div className="mt-linkpanel-sub">{t('links.agentName')} <span className="mono">{link.toAgentName}</span> · {t('links.panelInfo', { pane: link.toPaneId, n: link.count })}</div>
       <div className="mt-linkpanel-body">
         {events === null && <div className="mt-chat-empty">{t('common.loading')}</div>}
         {events && events.map((e) => (

@@ -8,17 +8,13 @@ export const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Po
 
 export const slash = (p) => path.resolve(p).split(path.sep).join('/');
 
-// P4: 세션 설정 파일에 넣는 "herdr 명령만 자동 승인" 규칙(새 세션 대화상자에서 고를 때만). herdr 스킬이 먼저 부르는 test·printf도 넣는다.
-// Claude Code는 ${…}나 $PWD 같은 셸 확장이 든 명령은 규칙과 상관없이 묻는다(P4 시험). 그때는 판의 승인 카드로 답한다.
-export const HERDR_ALLOW = ['Bash(herdr:*)', 'Bash(herdr *)', 'PowerShell(herdr *)', 'Bash(test:*)', 'Bash(printf:*)', 'Bash(echo:*)'];
-
-// B3 1번: http hook(시간 제한 2초), hook 토큰, 세션 표시를 값으로 직접 쓴다. 작업 공간 env는 herdr 재시작 뒤 되살아나지 않는다(E7).
+// B3 1번: http hook(시간 제한 2초), hook 토큰, 세션 표시를 값으로 직접 쓴다. 작업 공간 env는 터미널 재시작 뒤 되살아나지 않는다(E7).
 // P8(K1·K2): env(하위 세션 명령이 판과 자기를 찾는 값)와 allow(하위 세션 명령, 일 시키기·기다리기·읽기 승인 규칙. P116: atrium prompt|wait|read)를 더 받는다. 값은 branch.mjs가 만든다
 // P115: settings는 설정 파일에 더할 값(연결의 apiKeyHelper 등). 판의 hook·env·승인 규칙이 이긴다
-export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, allowHerdr = false, env = null, allow = [], settings: more = null }) {
+export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, env = null, allow = [], settings: more = null }) {
   const hook = { type: 'http', url: hookUrl, timeout: timeoutSec, headers: { Authorization: `Bearer ${token}`, 'X-MT-Session': sessionId } };
   const settings = { ...(more || {}), hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [hook] }]])) };
-  const rules = [...(allowHerdr ? HERDR_ALLOW : []), ...allow.filter((r) => !(allowHerdr && HERDR_ALLOW.includes(r)))];
+  const rules = [...allow];
   if (rules.length) settings.permissions = { allow: rules };
   if (env && Object.keys(env).length) settings.env = env;
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -40,9 +36,9 @@ function commonArgs({ settingsPath, permissionMode, model, effort, pluginDir, sy
   return a;
 }
 
-// P4: 판 플러그인 폴더(atrium 스킬, 옛 이름 delegate 스킬, bin/atrium). herdr 모드에서는 herdr 스킬(고정한 herdr의 `herdr --skill`)도 둔다.
-// P116: 이름 atrium-herdr는 그대로 둔다. 도는 세션의 이어 가기 인자(--plugin-dir)와 스킬 이름(atrium-herdr:atrium)이 이 이름을 쥐고 있고,
-//   사람과 지휘 세션이 쓰는 이름(atrium-herdr:herdr, atrium-herdr:atrium)도 그대로다. hc 모드에서는 herdr 스킬을 넣지 않는다(skillText null)
+// P4: 판 플러그인 폴더(atrium 스킬, 옛 이름 delegate 스킬, bin/atrium).
+// P116·P129: 플러그인 이름은 옛 이름 그대로 둔다. 도는 세션의 이어 가기 인자(--plugin-dir)와 스킬 이름(<플러그인>:atrium)이 이 이름을 쥐고 있고,
+//   사람과 지휘 세션이 쓰는 스킬 이름도 그대로다(옛 이름 받기)
 export const PLUGIN_NAME = 'atrium-herdr';
 export const LEGACY_PLUGIN_NAME = 'multitask-herdr'; // P18 전의 플러그인 폴더 이름(옮기기가 이어 가기 인자를 고칠 때 찾는다)
 // P116: 일 시키기·기다리기·읽기는 판의 atrium 명령이다(터미널 백엔드와 상관없다). 터미널 명령을 직접 쓰라고 하지 않는다
@@ -56,14 +52,13 @@ export const BOARD_SYSTEM_PROMPT = [
   '부모·하위 세션·역할 연결은 `atrium me`가 보드의 지금 기록이다. 누구의 무엇인지, 누구에게 맡길지 헷갈리면 먼저 치고, 예전 알림과 다르면 이것을 믿는다. 매 턴 치지는 않는다.', // P81
 ].join('\n');
 // P8(K2): skills는 더할 스킬 { 이름: SKILL.md 글 }, bin은 Bash 도구 PATH에 오르는 명령 { 파일 이름: 글 }(플러그인 bin/)
-// P116: skillText(herdr 스킬 글)가 없으면 herdr 스킬을 두지 않고, 앞서 둔 것은 지운다(hc 모드. 같은 데이터 폴더를 herdr 모드로 쓰다 바꿀 수 있다)
-export function writeBoardPlugin({ dir, skillText = null, skills = {}, bin = {} }) {
+// P129: 옛 터미널 스킬(P4~P116에 둔 것)은 지운다
+const OLD_TERMINAL_SKILL = 'herdr';
+export function writeBoardPlugin({ dir, skills = {}, bin = {} }) {
   const root = path.join(dir, PLUGIN_NAME);
   fs.mkdirSync(path.join(root, '.claude-plugin'), { recursive: true });
   fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: PLUGIN_NAME, version: '0.1.0', description: 'Atrium 보드가 띄운 에이전트에게 주는 보드 명령(atrium)과 스킬' }, null, 2));
-  const herdrDir = path.join(root, 'skills', 'herdr');
-  if (skillText) { fs.mkdirSync(herdrDir, { recursive: true }); fs.writeFileSync(path.join(herdrDir, 'SKILL.md'), skillText); }
-  else fs.rmSync(herdrDir, { recursive: true, force: true });
+  fs.rmSync(path.join(root, 'skills', OLD_TERMINAL_SKILL), { recursive: true, force: true });
   for (const [name, text] of Object.entries(skills)) { fs.mkdirSync(path.join(root, 'skills', name), { recursive: true }); fs.writeFileSync(path.join(root, 'skills', name, 'SKILL.md'), text); }
   if (Object.keys(bin).length) fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
   for (const [name, text] of Object.entries(bin)) { const f = path.join(root, 'bin', name); fs.writeFileSync(f, text); try { fs.chmodSync(f, 0o755); } catch {} }
@@ -87,7 +82,7 @@ export function writeTokenFile(sessionsDir, sessionId, token) { fs.mkdirSync(ses
 // P8(K1): worktree면 Claude Code가 자기 규칙으로 워크트리를 만든다(claude -w <이름>). 판은 워크트리를 만들지 않는다. 처음 띄울 때만 넣는다
 export function buildStartArgs({ sessionId, worktree = null, ...o }) { return ['--session-id', sessionId, ...(worktree ? ['--worktree', worktree] : []), ...commonArgs(o)]; }
 // B3 4번: 첫 요소는 명령 이름, 경로는 슬래시(E7 2.3)
-// P97: startCommand(호출자의 실행 명령, 예: 래퍼 명령 `mywrap claude`)가 있으면 그 낱말들로 시작한다. herdr는 다시 켤 때 이 명령을 패널 셸에서 그대로 돌린다(P97 실험)
+// P97: startCommand(호출자의 실행 명령, 예: 래퍼 명령 `mywrap claude`)가 있으면 그 낱말들로 시작한다. 판이 이어 갈 때 이 명령으로 시작한다
 export function buildResumeArgv({ claudeCommand = 'claude', startCommand = '', sessionId, ...o }) {
   const head = String(startCommand || '').trim().split(/\s+/).filter(Boolean);
   return [...(head.length ? head : [claudeCommand]), '--resume', sessionId, ...commonArgs(o)];
@@ -109,12 +104,11 @@ export function argvHasSettings(argv, settingsPath) {
   return i >= 0 && slash(argv[i + 1] || '').toLowerCase() === slash(settingsPath).toLowerCase();
 }
 
-// C3 대책(P3): herdr가 다시 뜬 뒤 판 세션 하나를 어떻게 되살릴지.
-// herdr는 session.json을 띄엄띄엄 저장한다. 저장 전에 서버가 죽으면 작업 공간째로, 또는 이어 가기 명령(resume_argv)만 잃는다(docs/log/p3-v02.md 보고 3.1).
-// - 패널이 없다: 작업 공간을 다시 만들고, 대화 기록이 있으면 판의 인자로 이어 가고 없으면 같은 세션 ID로 새로 띄운다.
-// - claude가 판의 설정 파일 없이 돈다(herdr 기본 이어 가기 `claude --resume <ID>`): hook을 잃었으므로 /exit 뒤 판의 인자로 다시 이어 간다.
-// - 기다려도 claude가 뜨지 않았다(herdr가 이어 가기를 시도하지 않음): 대화 기록이 있으면 판의 인자로 이어 가고, 없으면 새로 띄운다.
-// - herdr가 이어 가기를 시도했다가 실패한 경우(해제 이벤트)는 P1 규칙(relaunchIfEmpty)을 따른다.
+// C3 대책(P3): 터미널 서버가 다시 뜬 뒤 판 세션 하나를 어떻게 되살릴지.
+// - 패널이 없다(hc: 코어가 꺼지면 터미널도 끝난다): 작업 공간을 다시 만들고, 대화 기록이 있으면 판의 인자로 이어 가고 없으면 같은 세션 ID로 새로 띄운다.
+// - claude가 판의 설정 파일 없이 돈다(`claude --resume <ID>`): hook을 잃었으므로 /exit 뒤 판의 인자로 다시 이어 간다.
+// - 기다려도 claude가 뜨지 않았다: 대화 기록이 있으면 판의 인자로 이어 가고, 없으면 새로 띄운다.
+// - 이어 가기를 시도했다가 실패한 경우(해제 이벤트)는 P1 규칙(relaunchIfEmpty)을 따른다.
 export function recoveryPlan({ paneExists, agentPresent, argv = null, settingsPath, transcriptExists, waitedMs = 0, graceMs = 15000, releasedSinceRestart = false }) {
   if (!paneExists) return transcriptExists ? 'recreate_resume' : 'recreate_fresh';
   if (agentPresent) {

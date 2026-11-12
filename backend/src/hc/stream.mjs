@@ -1,8 +1,8 @@
-// P114: hc 프레임 모드 attach 스트림 하나 = 판의 화면 제어기(herdr `terminal session control`과 같은 바깥 모양, relay.mjs가 쓴다).
+// P114: hc 프레임 모드 attach 스트림 하나 = 판의 화면 제어기(relay.mjs가 쓴다).
 // - 이벤트: frame { seq, full, width, height, bytes(base64) }, record { type: 'terminal.closed', reason }, stderr(글), exit(까닭), size { cols, rows, external }
 // - 메서드: input(글), resize(cols, rows), focus(on), close(). pid는 프로세스가 없어 'hc:<n>'(창은 controllerPid로 스트림을 가린다)
 // - 첫 화면: attach 응답 뒤 처음 오는 DATA가 첫 화면(CAN, 소프트 리셋, ESC[H ESC[2J로 시작)이라 full로 낸다. 같은 크기 resize는 다시 붙어 새 첫 화면을 낸다
-//   (herdr에서 같은 크기 resize가 full 프레임을 주던 것과 같은 뜻. relay.mjs의 shareNeedsFull이 부른다)
+//   (같은 크기 resize로 full 프레임을 받는 뜻. relay.mjs의 shareNeedsFull이 부른다)
 // - 흐름 제어: 받은 바이트를 넘긴 뒤 곧바로 CREDIT로 알린다(시작 256KiB). 4MiB 넘게 밀리면 hc가 새 첫 화면을 보낸다
 // - 끊김: 연결이 끊기거나(코어 재시작·강제 종료) 스트림이 lost로 닫히면 물러나며 다시 붙는다. 터미널이 끝났으면(exited, killed …) exit
 // - 크기: 이 스트림이 활성이면 터미널 크기 = 우리가 보낸 크기. 판 밖의 활성 보는 이(hc attach)가 크기를 가져가면 size 이벤트(external)로 알린다
@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import { FramedConn, FRAME, u32, sizePayload } from './rpc.mjs';
 
 const FINAL = new Set(['exited', 'killed', 'server_stop', 'host_shutdown', 'holder_lost', 'stopped_by_restart', 'removed', 'not_found']);
-// 묶기: hc는 프로그램이 쓸 때마다(타자 메아리는 글자 하나씩) DATA를 보낸다. herdr는 그린 화면을 몇 ms마다 보냈다.
+// 묶기: hc는 프로그램이 쓸 때마다(타자 메아리는 글자 하나씩) DATA를 보낸다.
 // 이 간격 안에 온 바이트는 한 프레임으로 낸다(창의 프레임 처리와 WebSocket 메시지 수를 줄인다). 첫 화면과 쉬다가 온 첫 덩어리는 바로 낸다
 export const COALESCE_MS = 8;
 const COALESCE_MAX = 256 * 1024;
@@ -62,7 +62,7 @@ export class HcController extends EventEmitter {
       try { conn.close(); } catch {}
       if (this.conn === conn) { this.conn = null; this.ch = null; }
       if (e.code === 'agent_not_found' || e.kind === 'not_found') return this._end('not_found');
-      this._retry(`attach failed: ${e.code}: ${e.herdrMessage || e.message}`);
+      this._retry(`attach failed: ${e.code}: ${e.detail || e.message}`);
     }
   }
   _retry(why) {
@@ -125,7 +125,7 @@ export class HcController extends EventEmitter {
     if (this.conn && this.ch != null) { this.conn.write(this.ch, FRAME.RESIZE, sizePayload(cols, rows)); this.size = { cols, rows }; this._repaintSoon(); }
   }
   // P117: 크기를 바꿨는데 프로그램이 아무것도 쓰지 않으면(쉬는 셸) 새 크기를 실은 프레임이 오지 않아 창의 터미널이 옛 크기로 남는다
-  // (herdr는 크기를 바꾸면 그린 화면을 보냈다. 판 밖 보는 이·CLI 클라이언트가 크기를 가져갔다 떠난 뒤 그랬다, P117 p113 창 시험). 잠깐 뒤에도 프레임이 없으면 새 첫 화면을 받는다
+  // (판 밖 보는 이·CLI 클라이언트가 크기를 가져갔다 떠난 뒤 그랬다, P117 p113 창 시험). 잠깐 뒤에도 프레임이 없으면 새 첫 화면을 받는다
   _repaintSoon(ms = 150) {
     clearTimeout(this._repaintTimer);
     const at = this.lastEmit;

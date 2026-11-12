@@ -1,5 +1,5 @@
 // P116: 에이전트끼리 일 시키기(atrium prompt | wait | read, ARCH 4절 F1·K). 판이 띄운 세션이 세션 토큰으로 /branch/prompt, /branch/turn, /branch/read를 부른다.
-// 터미널 백엔드(herdr, hc)와 상관없다. 판은 자기 전달 대기열(B1)과 세션 상태, 어댑터의 readScreen만 쓴다.
+// 터미널 백엔드와 상관없다. 판은 자기 전달 대기열(B1)과 세션 상태, 어댑터의 readScreen만 쓴다.
 // - prompt: 판의 전달 규칙(B1 대기열: claude가 도는 패널, 응답 필요·막힘·시작 중이면 기다림, 사람이 3초 안에 친 터미널은 기다림, 제출 확인)으로 넣는다.
 //   잠든 세션(D4·P111)은 대기열에 넣으면 판이 깨운 뒤 넣는다. --wait면 그 글로 시작한 턴이 끝날 때까지 기다려 마지막 답을 돌려준다.
 // - wait: 받는 세션의 지금 턴(또는 대기열에 든 글로 시작할 턴)이 끝날 때까지. 판의 상태(working → ready·error)로 보고, 끝나면 마지막 답을 준다
@@ -101,7 +101,7 @@ export class AgentVerbs {
     const t = b.sessions.get(p.to);
     if (!l) return;
     if (d.status !== 'confirmed' || !t) { b.linkEvent(l, 'prompt_result', null, { via: 'atrium', deliveryId: d.deliveryId, ok: false, status: d.status, reason: d.reason || null }, { quiet: true }); return; }
-    const working = deriveState(t.rt).state === 'working'; // hook 없는 종류는 herdr working이 곧 제출 확인이다(그 상태 이벤트는 이미 지나갔다)
+    const working = deriveState(t.rt).state === 'working'; // hook 없는 종류는 터미널 상태 working이 곧 제출 확인이다(그 상태 이벤트는 이미 지나갔다)
     t.openPromptFrom = { linkId: l.linkId, at: Date.now(), text: p.text, submitted: true, working };
     b.linkEvent(l, 'target_submitted', null, { via: 'atrium', deliveryId: d.deliveryId, matches: true }, { quiet: true });
     if (working) b.linkEvent(l, 'target_working', null, { from: 'ready' }, { quiet: true });
@@ -119,7 +119,7 @@ export class AgentVerbs {
       if (closed) throw apiError('closed', `@${shownName(closed) || r}는 닫힌 세션이다(보드에서 끝났거나 꺼졌다). 보낼 수 없다. 지금 연결: atrium me`);
       const names = open.filter((x) => x !== caller && (x.kind || 'claude') !== 'shell').flatMap((x) => [shownName(x), x.name]);
       const near = similarNames(r, names);
-      throw apiError('not_found', `보드(${b.cfg.herdrSession})에서 세션을 찾을 수 없다: ${r}.${near.length ? ` 비슷한 이름: ${near.map((n) => '@' + n).join(', ')}.` : ''} 이름은 보드의 세션 이름이다(@ 없이도 된다). 지금 연결: atrium me`, { candidates: near });
+      throw apiError('not_found', `보드(${b.cfg.terminalSession})에서 세션을 찾을 수 없다: ${r}.${near.length ? ` 비슷한 이름: ${near.map((n) => '@' + n).join(', ')}.` : ''} 이름은 보드의 세션 이름이다(@ 없이도 된다). 지금 연결: atrium me`, { candidates: near });
     }
     if (t === caller) throw apiError('self', '자기 자신에게는 보낼 수 없다. 다른 세션의 이름을 준다.');
     if ((t.kind || 'claude') === 'shell') throw apiError('not_agent', `@${shownName(t)}는 일반 셸이다. atrium prompt|wait|read는 에이전트 세션에만 된다.`);

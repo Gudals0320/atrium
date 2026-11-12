@@ -1,8 +1,8 @@
 // P42: 터미널 노드의 웹 같은 글 고르기(DOM 쪽, ARCH 7.2, E12). 계산은 lib/term-select.js(단위 시험 p42-lib).
 // xterm 자체 선택은 쓰지 않는다. 선택은 "문서" 줄과 칸 경계로 들고, 보이는 부분만 term.select()로 그린다.
-// - live(claude 등): 화면은 herdr 프레임이고 앱이 스스로 스크롤한다(SGR 휠). 프레임마다 앞 화면과 견줘 움직인 줄 수를 찾아
+// - live(claude 등): 화면은 터미널 프레임이고 앱이 스스로 스크롤한다(SGR 휠). 프레임마다 앞 화면과 견줘 움직인 줄 수를 찾아
 //   본 줄을 문서(TermDoc)에 모은다. 그래서 고른 글이 화면 밖으로 나가도, 스피너가 돌아도 그대로이고 복사된다.
-// - buffer(셸): herdr 기록과 밀려난 줄이 xterm scrollback에 있다(TerminalView). 문서 줄 = 버퍼의 절대 줄, 스크롤은 판 안에서 한다.
+// - buffer(셸): 터미널 기록과 밀려난 줄이 xterm scrollback에 있다(TerminalView). 문서 줄 = 버퍼의 절대 줄, 스크롤은 판 안에서 한다.
 // 끄는 중 가장자리 가까이·밖으로 가면 거리만큼 빠르게 저절로 스크롤하고, 끄는 중 휠을 굴려도 선택이 따라 늘어난다.
 // 끝내기는 웹과 같다(밖 누르기, 글 입력, Esc). 붙여넣기 뒤에도 지운다(clearsSelection). P125: 놓으면 고른 글을 복사하고(onSelectEnd), 복사로는 지우지 않는다.
 import { cellAt, edgeSpeed, scrollStep, TermDoc, rangeText, visibleSpan, wordRange, lineRange, emptyRange } from './lib/term-select.js';

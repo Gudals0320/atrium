@@ -1,13 +1,11 @@
-// Atrium 백엔드: 모듈을 묶고 판 API를 구현한다. herdr는 어댑터로만 부른다.
+// Atrium 백엔드: 모듈을 묶고 판 API를 구현한다. 터미널은 어댑터로만 부른다.
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { HerdrAdapter, findHerdr, readServerExe } from './herdr/adapter.mjs';
-import { createTerminalAdapter, decideTerminalBackend, isOldBoard, paneBackend } from './terminal-backend.mjs'; // P114: herdr | hc. P117: 판마다 정한 백엔드, 두 백엔드를 함께 쥐는 라우터
-import { attachMove } from './terminal-move.mjs'; // P117: 옛 판 옮기기·되돌리기
-import { updateNotice } from './herdr/discover.mjs'; // P40: herdr 찾기와 업데이트 감지
+import { createTerminalAdapter } from './terminal-backend.mjs'; // P129: 터미널 백엔드는 hc 하나
+import { openTerminal, startMigration, stopMigration, migrationView } from './herdr-migrate/index.mjs'; // P129: 옛 판 옮기기(다음 정식 릴리스 뒤 지운다)
 import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
 import { TailscaleWatch, tailscaleHosts } from './tailscale.mjs'; // P49(R3): Tailscale 상태 읽기
@@ -25,11 +23,11 @@ import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
-import { newRuntime, applyHook, applyHerdrStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyHerdrDisconnected, deriveState, flags, worktreeExitAsk } from './state.mjs';
+import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyTermDisconnected, deriveState, flags, worktreeExitAsk } from './state.mjs';
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
-import { SHELL_TOOLS, LINK_VERBS, parseHerdrCommands, parseHerdrOutput, readTextOf, tailText, screenAnswerText, roleNotice, unlinkNotice, ROLE_RE } from './links.mjs';
+import { tailText, screenAnswerText, roleNotice, unlinkNotice, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
@@ -47,9 +45,9 @@ import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
 import { attachUpdater } from './updater.mjs'; // P69: 앱 안 업데이트
-import { attachSleep, draftAfterInput, terminalReportsOnly } from './sleep.mjs';
-import { draftEdit, draftMover, stashKeyChanged } from './draft-aside.mjs'; // P128: 쓰다 만 글을 비키고 지시를 보낸 뒤 되돌린다 // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
-import { migrateLegacyData, fixLegacyRecords, writeTombstone, checkLegacyDevHerdr, MARKER, PANE_PREFIX } from './rename-migrate.mjs'; // P18: 이름 옮기기(multitask → Atrium)
+import { attachSleep, draftAfterInput, terminalReportsOnly } from './sleep.mjs'; // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
+import { draftEdit, draftMover, stashKeyChanged } from './draft-aside.mjs'; // P128: 쓰다 만 글을 비키고 지시를 보낸 뒤 되돌린다
+import { migrateLegacyData, fixLegacyRecords, writeTombstone, MARKER } from './rename-migrate.mjs'; // P18: 이름 옮기기(multitask → Atrium)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
@@ -84,27 +82,27 @@ export async function closeHttp(server, forceMs = 1000) {
 // P41: launcherDef는 판 기록에 없는 호출자 값(atrium child가 게이트웨이 모델을 그 게이트웨이 호출자의 env로 띄울 때)
 export function spawnPlanOf(b, p) {
   const L = b.features && b.features.launchers;
-  const over = { model: p.model, effort: p.effort, permissionMode: p.permissionMode, allowHerdr: p.allowHerdr, args: Array.isArray(p.args) ? p.args.join(' ') : p.args, command: p.command };
+  const over = { model: p.model, effort: p.effort, permissionMode: p.permissionMode, args: Array.isArray(p.args) ? p.args.join(' ') : p.args, command: p.command };
   if (p.launcherDef) { const r = resolveLauncher(p.launcherDef, over); return { ...r, startCommand: p.launcherDef.startCommand || null }; } // P97: 실행 명령이 없는 정의는 부모의 것을 물려받는다(spawn)
   if (p.launcher) {
     if (!L) throw keyed(apiError('no_launcher', `런처를 찾을 수 없습니다: ${p.launcher}`), 'launchers.err.notFound', { ref: String(p.launcher) });
     return resolveLauncher(L.get(p.launcher), over);
   }
   const kind = p.kind || 'claude';
-  return { kind, flavor: null, launcher: null, command: '', model: p.model || null, effort: p.effort || null, permissionMode: p.permissionMode || 'manual', allowHerdr: !!p.allowHerdr, extraArgs: [], env: null, gateway: null, args: Array.isArray(p.args) ? p.args.map(String) : splitArgs(p.args), startCommand: null };
+  return { kind, flavor: null, launcher: null, command: '', model: p.model || null, effort: p.effort || null, permissionMode: p.permissionMode || 'manual', extraArgs: [], env: null, gateway: null, args: Array.isArray(p.args) ? p.args.map(String) : splitArgs(p.args), startCommand: null };
 }
 
 export class Backend {
   constructor(cfg) {
     this.cfg = cfg;
     this.sessions = new Map(); // sessionId → { ...행, rt, lastState }
-    this.herdrOk = false;
-    this.herdrCompat = null;
-    this.herdrStopping = false;
+    this.termOk = false;
+    this.termCompat = null;
+    this.termStopping = false;
     this.killing = new Set();
     this.logFile = path.join(cfg.logDir, 'backend.log');
     this.bus = new EventEmitter(); // P6b 기능(features.mjs)에 알린다: session, closed, screenAnswer
-    // P54: 판 API는 포트를 연 뒤 바로 요청을 받지만, 처리는 start()가 끝날 때까지 기다린다(뜨는 중의 relay 없음, herdr 실행 파일 고르기 전 herdr.stop)
+    // P54: 판 API는 포트를 연 뒤 바로 요청을 받지만, 처리는 start()가 끝날 때까지 기다린다(뜨는 중의 relay 없음, 터미널 서버에 붙기 전 terminal.stop)
     this.ready = new Promise((r) => { this._markReady = r; });
   }
 
@@ -126,18 +124,15 @@ export class Backend {
       const prev = JSON.parse(fs.readFileSync(cfg.backendFile, 'utf8'));
       if (prev.pid !== process.pid && pidAlive(prev.pid)) throw apiError('already_running', `백엔드가 이미 실행 중입니다 (PID ${prev.pid}, 포트 ${prev.port})`);
     } catch (e) { if (e.code === 'already_running') throw e; }
-    // P40: 옛 판 옮기기는 옛 herdr를 끌 때 실행 파일이 필요하다. 설정(판 기록)은 아직 못 읽으므로 설정 없이 찾는다
-    if (cfg.legacy && !cfg.herdrPath) cfg.herdrPath = (await findHerdr({ envPath: cfg.herdrEnvPath }).catch(() => ({}))).path || null;
     // P18: 옛 이름(multitask) 판을 옮긴다(실제 판 프로필에서 한 번). 옮기지 못하면 LegacyBlocked를 던져 뜨지 않는다(새 판을 빈 채로 만들지 않게)
     this.migration = await migrateLegacyData(cfg, { log: (m) => this.log(m) });
-    await checkLegacyDevHerdr(cfg); // 개발용 기본 판: 옛 개발용 herdr(multitask-dev)가 돌면 뜨지 않는다
 
     this.store = new Store(cfg.dbFile);
     if (this.migration) {
       this.migration.fixed = fixLegacyRecords(this.store, cfg, this.migration);
-      const { from, to, data, move, legacyBackend, herdr, problems, fixed } = this.migration;
-      if (data === 'moved' || herdr.pending || problems.length) this.store.addEvent(null, 'rename_migrated', { from, to, data, move, legacyBackend, herdr, problems, fixed });
-      this.log(`rename migration ${JSON.stringify({ data, herdr, problems, fixed })}`);
+      const { from, to, data, move, legacyBackend, problems, fixed } = this.migration;
+      if (data === 'moved' || problems.length) this.store.addEvent(null, 'rename_migrated', { from, to, data, move, legacyBackend, problems, fixed });
+      this.log(`rename migration ${JSON.stringify({ data, problems, fixed })}`);
     }
     const hb = this.store.getMeta('heartbeat');
     this.previousRun = hb ? { lastHeartbeatAt: hb, downMs: Date.now() - hb, cleanShutdown: !!this.store.getMeta('cleanShutdown') } : null;
@@ -160,21 +155,15 @@ export class Backend {
     this.http.on('upgrade', (req, sock, head) => this.api.handleUpgrade(req, sock, head));
     // 포트는 고정이다. 이미 띄운 세션의 hook 주소가 설정 파일 안에 있기 때문이다(ARCH 1절).
     await new Promise((res, rej) => { this.http.once('error', rej); this.http.listen(cfg.port, '127.0.0.1', res); });
-    fs.writeFileSync(cfg.backendFile, JSON.stringify({ pid: process.pid, port: cfg.port, token: this.apiToken, startedAt: this.startedAt, profile: cfg.profile, herdrSession: cfg.herdrSession }, null, 2));
+    fs.writeFileSync(cfg.backendFile, JSON.stringify({ pid: process.pid, port: cfg.port, token: this.apiToken, startedAt: this.startedAt, profile: cfg.profile, terminalSession: cfg.terminalSession }, null, 2));
     // P18: 옮긴 옛 폴더의 backend.json도 이 백엔드를 가리킨다(열린 옛 창이 옛 백엔드를 다시 띄우지 않고 이 판에 붙는다)
-    if (cfg.legacy && fs.existsSync(path.join(cfg.legacy.dataDir, MARKER))) writeTombstone(cfg.legacy.dataDir, { pid: process.pid, port: cfg.port, token: this.apiToken, herdrSession: cfg.herdrSession, movedTo: cfg.dataDir });
+    if (cfg.legacy && fs.existsSync(path.join(cfg.legacy.dataDir, MARKER))) writeTombstone(cfg.legacy.dataDir, { pid: process.pid, port: cfg.port, token: this.apiToken, terminalSession: cfg.terminalSession, movedTo: cfg.dataDir });
 
-    // P114: 터미널 백엔드는 herdr(기본) 또는 hc(숨은 설정 terminalBackend, ATRIUM_TERMINAL_BACKEND). 어댑터 바깥 모양은 같다(terminal-backend.mjs)
-    // P117: 판마다 정한 백엔드(판 기록). 처음 뜰 때 정한다: herdr 세션 기록이 있는 옛 판은 herdr, 새 판은 NEW_BOARD_BACKEND. 판에 다른 백엔드의 패널이 남았으면 그 백엔드도 붙인다
-    const decision = decideTerminalBackend({ meta: this.store.getMeta('terminalBackend'), settings: this.store.getMeta('settings') || {}, oldBoard: isOldBoard({ store: this.store, session: cfg.herdrSession }) });
-    if (decision.persist) this.store.setMeta('terminalBackend', { backend: decision.backend, by: decision.source, at: Date.now() });
-    const others = [...new Set(this.store.openSessions().filter((r) => r.paneId).map((r) => paneBackend(r.paneId)))];
-    this.adapter = createTerminalAdapter(cfg, {}, { decision, others });
+    // P129: 터미널 백엔드는 hc 하나다(terminal-backend.mjs). 옛 판이면 옮기기 모듈이 hc(주)와 옛 백엔드를 함께 쥐는 라우터를 준다(뜬 뒤 저절로 옮긴다)
+    this.adapter = await openTerminal(this, createTerminalAdapter(cfg));
     this.adapter.resolveTarget = (t) => { const s = this.sessions.get(t) || [...this.sessions.values()].find((x) => x.agentName === t || x.paneId === t); return s ? s.paneId : null; };
-    this.log(`terminal backend: ${this.adapter.backend} (${this.adapter.backendPick.source}${this.adapter.backendPick.invalid ? `, unknown value ${this.adapter.backendPick.invalid}` : ''})${this.adapter.mixed() ? `, also ${this.adapter.backends().filter((n) => n !== this.adapter.backend).join(',')}` : ''}`);
+    this.log(`terminal backend: hc${this.adapter.mixed && this.adapter.mixed() ? ` (moving from ${this.adapter.backends().filter((n) => n !== 'hc').join(',')})` : ''}`);
     this.adapter.on('log', (m) => this.log(`[${this.adapter.backend}]`, m));
-    // P40: 쓸 herdr 실행 파일을 고른다(도는 판 서버의 실행 파일 → 찾기 결과). 못 찾아도 백엔드는 뜬다
-    await this.resolveHerdr('start');
     // P21: 판 터미널에서 친 글로 보내지 않은 초안이 있는지 기억한다(초안이 있으면 잠재우지 않는다)
     // P126: 휠·초점 알림처럼 터미널이 대신 보낸 보고뿐인 입력은 "사람이 치는 중"(전달 규칙 4)으로 세지 않는다
     this.relay = new TerminalRelay({ adapter: this.adapter, remoteBatchMs: envVar('REMOTE_BATCH_MS') != null ? Number(envVar('REMOTE_BATCH_MS')) : undefined, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { if (!terminalReportsOnly(data)) s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.noteDraftKeys(s, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
@@ -210,17 +199,16 @@ export class Backend {
     this.branch = attachBranch(this);
     Object.assign(this.api.handlers, this.branch.handlers);
     this.branch.refreshSettings();
-    // P4: 판 플러그인 폴더(판이 띄우는 Claude Code에 --plugin-dir로 넘긴다). herdr 스킬은 herdr 모드에서만(P116)
-    this.plugin = writeBoardPlugin({ dir: path.join(cfg.dataDir, 'plugin'), skillText: await this.herdrSkillText(), ...this.branch.pluginExtra() });
+    // P4: 판 플러그인 폴더(판이 띄우는 Claude Code에 --plugin-dir로 넘긴다)
+    this.plugin = writeBoardPlugin({ dir: path.join(cfg.dataDir, 'plugin'), ...this.branch.pluginExtra() });
     // P115: Claude Code 밖 하네스에 주는 것: 데이터 폴더 bin/의 atrium(그 세션의 PATH 앞)과 하네스와 상관없는 안내문 파일
     this.harnessFiles = writeHarnessFiles({ dir: path.join(cfg.dataDir, 'plugin'), binDir: path.join(cfg.dataDir, 'bin'), bin: this.branch.pluginExtra().bin, prompt: HARNESS_PROMPT });
-    // P18: 데이터 폴더를 옮겼으면 --settings·--plugin-dir 경로가 바뀌었다. 이어 가기 인자를 다시 만든다(되살릴 때 herdr에 다시 등록한다)
+    // P18: 데이터 폴더를 옮겼으면 --settings·--plugin-dir 경로가 바뀌었다. 이어 가기 인자를 다시 만든다
     if (this.migration && this.migration.data === 'moved') {
       let n = 0;
       for (const s of this.sessions.values()) if (this.hooked(s) && s.resumeArgv) { s.resumeArgv = buildResumeArgv({ claudeCommand: cfg.claudeCommand, ...this.launchOf(s) }); s.resumeVerified = false; this.store.updateSession(s.sessionId, { resumeArgv: s.resumeArgv, resumeVerified: false }); n++; }
       this.migration.fixed.resumeArgv = n;
     }
-    this.spawnIntents = []; // F3: 세션이 herdr로 새 에이전트를 띄우려 한 명령(hook)
     this.adopting = new Set();
 
     this.queue = new DeliveryQueue({
@@ -247,7 +235,7 @@ export class Backend {
       if (r.phase === 'back' && r.result !== 'held') s.draft = true; // 쓰다 만 글이 입력 칸에 돌아왔거나 Claude Code가 쥐고 있다(잠재우지 않는다, P21)
     });
     this.queue.on('recover', (r) => { this.store.addEvent(r.sessionId, 'delivery_recover', r); this.log(`delivery recover ${this.nameOf(r.sessionId)} ${r.action} (${r.box}) #${r.n}`); });
-    // P106: herdr가 받지 않은 전달(처음 한 번과 까닭이 바뀔 때만 온다), 오래 막힌 전달(한 번), 취소한 뒤에 들어간 시도
+    // P106: 터미널이 받지 않은 전달(처음 한 번과 까닭이 바뀔 때만 온다), 오래 막힌 전달(한 번), 취소한 뒤에 들어간 시도
     this.queue.on('refused', (r) => this.log(`delivery refused ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} → ${r.reason}, retry in ${r.waitMs}ms (#${r.n})`));
     this.queue.on('stuck', (r) => { this.store.addEvent(r.sessionId, 'delivery_stuck', r); this.log(`delivery stuck ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} (${r.attempts} tries)`); const s = this.sessions.get(r.sessionId); if (s) this.broadcastSession(s, { cause: 'delivery stuck' }); });
     this.queue.on('not_submitted', (r) => { this.store.addEvent(r.sessionId, 'delivery_not_submitted', r); this.log(`delivery not submitted ${this.nameOf(r.sessionId)} ${r.deliveryId}: input box has other text ${JSON.stringify(r.peek || '')}`); }); // P126
@@ -277,28 +265,25 @@ export class Backend {
     Object.assign(this.api.handlers, this.sleeper.handlers);
     this.desktopImport = attachDesktopImport(this);
     Object.assign(this.api.handlers, this.desktopImport.handlers);
-    this.updater = attachUpdater(this); // P69: 새 릴리즈 확인과 업데이트(백엔드만 바꾸고 herdr는 그대로)
+    this.updater = attachUpdater(this); // P69: 새 릴리즈 확인과 업데이트(백엔드만 바꾸고 터미널 서버는 그대로)
     Object.assign(this.api.handlers, this.updater.handlers);
-    this.mover = attachMove(this); // P117: 옛 판 옮기기·되돌리기(terminal.status, terminal.move)
-    Object.assign(this.api.handlers, this.mover.handlers);
 
-    // herdr 서버가 백엔드가 꺼진 동안 다시 떴는가(재부팅 포함). 저장한 서버 PID와 비교한다(C3, P3)
-    const prevHerdrPid = this.store.getMeta('herdrServerPid');
-    await this.ensureHerdr();
+    // 터미널 서버가 백엔드가 꺼진 동안 다시 떴는가(재부팅 포함). 저장한 서버 PID와 비교한다(C3, P3)
+    const prevPid = this.store.getMeta('terminalServerPid');
+    await this.ensureTerminal();
     // P117: 주 밖의 백엔드(옮기다 남은 세션)의 서버가 없으면 떼고, 그 세션은 백엔드가 꺼진 것으로 본다(다시 붙으면 판이 주 백엔드에서 되살린다)
-    const goneBackends = await this.adapter.ensureOthers().catch(() => []);
-    if (goneBackends.length) { this.log(`terminal backends gone while board was down: ${goneBackends.join(',')}`); for (const s of this.sessions.values()) if (s.paneId && goneBackends.includes(paneBackend(s.paneId)) && !s.rt.exit) this.markHerdrStopped(s, 'terminal backend gone while board was down'); this.herdrWasDown = true; }
-    const nowHerdrPid = this.adapter.serverPid();
-    this.herdrRestartedWhileDown = !!(prevHerdrPid && nowHerdrPid && prevHerdrPid !== nowHerdrPid);
-    // P18: 판을 옮겼으면 새 herdr에는 판 세션이 없다. herdr가 다시 뜬 것으로 보고 J1 되살리기로 이어 간다
-    if (this.migration && (this.migration.data === 'moved' || this.migration.herdr.pending)) this.herdrRestartedWhileDown = true;
-    if (nowHerdrPid) this.store.setMeta('herdrServerPid', nowHerdrPid);
-    if (this.herdrRestartedWhileDown) this.log(`herdr server changed while backend was down: ${prevHerdrPid} → ${nowHerdrPid}`);
-    this.adapter.on('event', (e) => this.onHerdrEvent(e).catch((err) => this.log('herdr event error', err.stack)));
-    this.adapter.on('connected', () => this.onHerdrConnected().catch((err) => this.log('resync error', err.stack)));
-    this.adapter.on('disconnected', (which) => this.onHerdrDisconnected(which));
-    if (this.herdrCompat && this.herdrCompat.ok) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
-    // P40: herdr 경로 설정을 바꾸면 다시 찾는다(백엔드를 다시 켜지 않고 서버를 띄워 붙는다)
+    const goneBackends = this.adapter.ensureOthers ? await this.adapter.ensureOthers().catch(() => []) : [];
+    if (goneBackends.length) { this.log(`terminal backends gone while board was down: ${goneBackends.join(',')}`); for (const s of this.sessions.values()) if (s.paneId && goneBackends.includes(this.adapter.backendOfPane(s.paneId)) && !s.rt.exit) this.markTermStopped(s, 'terminal backend gone while board was down'); this.termWasDown = true; }
+    const nowPid = this.adapter.serverPid();
+    this.termRestartedWhileDown = !!(prevPid && nowPid && prevPid !== nowPid);
+    // P18: 판을 옮겼으면 새 터미널 서버에는 판 세션이 없다. 서버가 다시 뜬 것으로 보고 J1 되살리기로 이어 간다
+    if (this.migration && this.migration.data === 'moved') this.termRestartedWhileDown = true;
+    if (nowPid) this.store.setMeta('terminalServerPid', nowPid);
+    if (this.termRestartedWhileDown) this.log(`terminal server changed while backend was down: ${prevPid} → ${nowPid}`);
+    this.adapter.on('event', (e) => this.onTermEvent(e).catch((err) => this.log('terminal event error', err.stack)));
+    this.adapter.on('connected', () => this.onTermConnected().catch((err) => this.log('resync error', err.stack)));
+    this.adapter.on('disconnected', (which) => this.onTermDisconnected(which));
+    if (this.termCompat && this.termCompat.ok) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
     const setSettings = this.api.handlers['settings.set'];
     this.api.handlers['settings.set'] = async (p, c) => {
       // P49: 원격 접속 규칙(remote*)은 이 PC의 창·CLI만 바꾼다
@@ -312,44 +297,40 @@ export class Backend {
       if (nowAccepting !== wasAccepting) r.remote = this.web.accessChanged(nowAccepting); // P58: 원격 받기 끄기·켜기(끄면 붙은 원격 연결을 닫는다)
       const nowPasskey = this.web.passkeyOn();
       if (nowPasskey !== wasPasskey) r.passkey = this.web.passkeyChanged(nowPasskey); // P62: 패스키로 확인 켜기·끄기
-      if (p && ('herdrPath' in p || p.key === 'herdrPath')) r.herdr = await this.rediscoverHerdr('settings').catch((e) => { this.log('herdr rediscover error', e.stack); return null; });
       return r;
     };
-    // P40: 새 herdr가 설치됐는지 본다(뜰 때, 주기적으로, 진단 때). 알리기만 하고 다시 띄우지 않는다
-    this.checkHerdrUpdate('start').catch(() => {});
-    this.updateTimer = setInterval(() => this.checkHerdrUpdate('timer').catch(() => {}), cfg.herdrUpdateMs);
 
     this.queue.start();
     this.heartbeat = setInterval(() => {
       this.store.setMeta('heartbeat', Date.now());
       // P114 2b: hc의 "서버 PID"는 터미널을 쥔 holder라 첫 세션이 생길 때 정해진다. 붙을 때만 저장하면 백엔드가 다시 뜰 때 옛 값과 견준다
-      if (this.adapter.backend === 'hc' && this.adapter.connected) { const pid = this.adapter.serverPid(); if (pid && pid !== this._hcPidSaved) { this._hcPidSaved = pid; this.store.setMeta('herdrServerPid', pid); } }
+      if (this.adapter.connected) { const pid = this.adapter.serverPid(); if (pid && pid !== this._hcPidSaved) { this._hcPidSaved = pid; this.store.setMeta('terminalServerPid', pid); } }
     }, 2000);
     this.store.setMeta('heartbeat', Date.now());
     this.quietTimer = setInterval(() => { for (const s of this.sessions.values()) this.broadcastSession(s, { onlyIfFlagsChanged: true }); }, 10000);
 
-    // F4: 세션 폴더의 git(워크트리). hook이 없는 세션은 herdr가 아는 폴더를 주기적으로 본다
+    // F4: 세션 폴더의 git(워크트리). hook이 없는 세션은 터미널이 아는 폴더를 주기적으로 본다
     for (const s of this.sessions.values()) this.probeGit(s, s.rt.cwd || s.cwd);
     this.gitTimer = setInterval(() => this.pollCwd().catch(() => {}), cfg.gitPollMs);
     // G2: 일반 셸이 쉬는지, 무슨 명령을 돌리는지
     this.shellTimer = setInterval(() => this.pollShells().catch((e) => this.log('shell poll error', e.stack)), SHELL_POLL_MS);
-    // D1: 자원 감시, D3: 붙은 herdr 화면
+    // D1: 자원 감시
     this.resources = new ResourceMonitor({
-      session: this.adapter.backend === 'hc' ? null : cfg.herdrSession, intervalMs: cfg.resourcesIntervalMs, // P114 2b: hc 모드는 herdr 화면(TUI) 프로세스를 찾지 않는다
-      sessions: () => [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.herdr.present, state: deriveState(s.rt).state })),
+      intervalMs: cfg.resourcesIntervalMs,
+      sessions: () => [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.term.present, state: deriveState(s.rt).state })),
       processInfo: (paneId) => this.adapter.processInfo(paneId),
       controllers: () => this.relay.stats(),
-      herdrServerPid: () => this.adapter.serverPid(),
+      serverPid: () => this.adapter.serverPid(),
     });
-    this.resources.start((snap) => { this.api.broadcast('resources', snap); this.checkClients(); });
-    this.clientTimer = setInterval(() => this.checkClients(), 3000);
+    this.resources.start((snap) => this.api.broadcast('resources', snap));
     this.store.addEvent(null, 'backend_started', { pid: process.pid, previousRun: this.previousRun });
-    this.log(`backend up pid=${process.pid} port=${cfg.port} profile=${cfg.profile} herdr=${cfg.herdrSession} previousRun=${JSON.stringify(this.previousRun)}`);
+    this.log(`backend up pid=${process.pid} port=${cfg.port} profile=${cfg.profile} terminal=${cfg.terminalSession} previousRun=${JSON.stringify(this.previousRun)}`);
   }
 
   async stop(reason = 'stop') {
     this.log('backend stopping:', reason);
-    clearInterval(this.heartbeat); clearInterval(this.updateTimer); clearInterval(this.quietTimer); clearInterval(this.clientTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer);
+    clearInterval(this.heartbeat); clearInterval(this.quietTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer);
+    stopMigration(this);
     this.resources.stop();
     this.queue.stop();
     if (this.features) this.features.stop();
@@ -376,162 +357,62 @@ export class Backend {
     this.store.close();
   }
 
-  // herdr 서버가 없으면 띄우고(깨끗한 환경) 버전을 확인한다(ARCH 1절).
-  // P40: 프로토콜이 맞으면 붙고 시험하지 않은 버전이면 경고한다. herdr를 못 찾았거나 띄우지 못하면 던지지 않고 그 상태로 둔다(보드는 연다)
-  async ensureHerdr() {
+  // 터미널 서버(hc)가 없으면 띄우고(깨끗한 환경, 고정 빌드가 없으면 받는다) 버전을 확인한다(ARCH 1절).
+  // 받거나 띄우지 못하면 던지지 않고 그 상태로 둔다(보드는 연다. 세션 시작만 막는다, P122)
+  async ensureTerminal() {
     const p = await this.adapter.probe();
     let pong = p.pong;
-    this.herdrMissing = null;
+    this.termMissing = null;
     if (!p.running) {
-      if (!this.adapter.herdrPath) {
-        this.herdrMissing = { reason: 'not_found', at: Date.now() };
-        this.herdrCompat = { ok: false, level: 'missing', problems: ['herdr not found'], version: null, protocol: null, capabilities: null, warning: null };
-        this.herdrOk = false;
-        this.log(`herdr not found: ${JSON.stringify((this.herdrFind && this.herdrFind.tried) || [])}`);
-        this.store.addEvent(null, 'herdr_missing', { tried: (this.herdrFind && this.herdrFind.tried) || [] });
-        return this.herdrCompat;
-      }
       let r;
       try { r = await this.adapter.startServer(); }
       catch (e) {
-        this.herdrMissing = { reason: e.code || 'start_failed', error: e.herdrMessage || e.message, path: this.adapter.herdrPath, at: Date.now() };
-        this.herdrCompat = { ok: false, level: 'missing', problems: [`herdr server did not start: ${e.code}: ${e.herdrMessage || e.message}`], version: null, protocol: null, capabilities: null, warning: null };
-        this.herdrOk = false;
-        this.log(`herdr server start failed (${this.adapter.herdrPath}): ${e.message}`);
-        this.store.addEvent(null, 'herdr_missing', { reason: e.code, error: e.herdrMessage || e.message });
-        return this.herdrCompat;
+        this.termMissing = { reason: e.code || 'start_failed', error: e.detail || e.message, path: this.adapter.exePath || null, at: Date.now() };
+        this.termCompat = { ok: false, level: 'missing', problems: [`terminal server did not start: ${e.code}: ${e.detail || e.message}`], version: null, protocol: null, capabilities: null, warning: null };
+        this.termOk = false;
+        this.log(`terminal server start failed (${this.adapter.exePath || 'no exe'}): ${e.message}`);
+        this.store.addEvent(null, 'terminal_missing', { reason: e.code, error: e.detail || e.message });
+        return this.termCompat;
       }
       pong = r.pong;
-      this.log(`herdr server started pid=${r.pid} in ${r.ms}ms exe=${this.adapter.herdrPath}`);
-      this.store.addEvent(null, 'herdr_started', { pid: r.pid, by: 'backend' });
+      this.log(`terminal server started pid=${r.pid} in ${r.ms}ms exe=${this.adapter.exePath}`);
+      this.store.addEvent(null, 'terminal_started', { pid: r.pid, by: 'backend' });
     }
-    this.setHerdrCompat(this.adapter.checkCompat(pong));
-    return this.herdrCompat;
+    this.setTermCompat(this.adapter.checkCompat(pong));
+    return this.termCompat;
   }
-  // P40: 호환 결과를 두고, 시험하지 않은 버전·다른 프로토콜이면 판 이벤트와 로그로 한 번씩 알린다
-  setHerdrCompat(c) {
-    this.herdrCompat = c;
-    this.herdrOk = !!c.ok;
+  // P40: 호환 결과를 두고, 시험하지 않은 버전·다른 세대면 판 이벤트와 로그로 한 번씩 알린다
+  setTermCompat(c) {
+    this.termCompat = c;
+    this.termOk = !!c.ok;
     const key = `${c.level}:${c.version}:${c.protocol}`;
     if (key === this._compatNoted) return;
     this._compatNoted = key;
-    if (c.level === 'untested') { this.log(`herdr untested: ${c.warning}`); this.store.addEvent(null, 'herdr_untested', { version: c.version, protocol: c.protocol, tested: c.tested }); }
-    if (c.level === 'incompatible') { this.log('herdr incompatible:', c.problems.join('; ')); this.store.addEvent(null, 'herdr_incompatible', { version: c.version, protocol: c.protocol, problems: c.problems }); }
+    if (c.level === 'untested') { this.log(`terminal untested: ${c.warning}`); this.store.addEvent(null, 'terminal_untested', { version: c.version, protocol: c.protocol, tested: c.tested }); }
+    if (c.level === 'incompatible') { this.log('terminal incompatible:', c.problems.join('; ')); this.store.addEvent(null, 'terminal_incompatible', { version: c.version, protocol: c.protocol, problems: c.problems }); }
   }
-
-  // P40: 설정의 herdr 경로(따옴표는 뗀다)
-  herdrSettingPath() {
-    const v = ((this.features && this.features.settings.get()) || this.store.getMeta('settings') || {}).herdrPath;
-    return String(v || '').trim().replace(/^"(.*)"$/, '$1');
-  }
-  // P40: 쓸 herdr 실행 파일을 고른다. 판 서버가 돌면 그 서버의 실행 파일(CLI·제어기·--skill이 서버와 같은 버전이 되게), 아니면 찾기 결과.
-  // 서버 실행 파일을 못 읽으면 찾기 결과를 쓰고 진단에 남긴다
-  async resolveHerdr(why) {
-    // P114 2b: hc 모드는 herdr를 찾지 않는다. 실행 파일은 판 폴더의 고정 hc다(hc/pin.mjs)
-    if (this.adapter.backend === 'hc') {
-      const chosen = { path: this.adapter.herdrPath, source: 'hc', reason: 'pinned herdr-core in the board data folder' };
-      this.herdrFind = { why, at: Date.now(), chosen, serverRunning: null, serverExe: null, note: null, found: { path: chosen.path, version: this.adapter.pin.version, source: 'hc', reason: chosen.reason }, tried: [] };
-      // P117: 옮기다 남은 herdr 세션이 있으면 그 herdr 어댑터에 실행 파일을 준다(도는 서버의 것 → 찾기)
-      const h = this.adapter.get && this.adapter.get('herdr');
-      if (h && !h.herdrPath) {
-        const exe = (await readServerExe(this.cfg.herdrSession, h.serverPid()).catch(() => null)) || (await findHerdr({ envPath: this.cfg.herdrEnvPath, settingPath: this.herdrSettingPath() }).catch(() => ({}))).path || null;
-        h.herdrPath = exe; this.cfg.herdrPath ||= exe;
-      }
-      return this.herdrFind;
-    }
-    const found = await findHerdr({ envPath: this.cfg.herdrEnvPath, settingPath: this.herdrSettingPath() }).catch((e) => ({ path: null, tried: [], reason: `find failed: ${e.message}` }));
-    const p = await this.adapter.probe();
-    let serverExe = null, note = null;
-    if (p.running) {
-      serverExe = await readServerExe(this.cfg.herdrSession, this.adapter.serverPid()).catch(() => null);
-      if (!serverExe) note = 'running server executable unreadable; using discovered path';
-    }
-    const chosen = serverExe ? { path: serverExe, source: 'server', reason: 'running board herdr server' } : found.path ? { path: found.path, source: found.source, reason: found.reason } : null;
-    this.adapter.herdrPath = chosen ? chosen.path : null;
-    this.cfg.herdrPath = this.adapter.herdrPath;
-    this.herdrFind = { why, at: Date.now(), chosen, serverRunning: p.running, serverExe, note, found: { path: found.path, version: found.version, source: found.source, reason: found.reason }, tried: found.tried };
-    this.lastFound = found;
-    this.log(`herdr resolve (${why}): ${chosen ? `${chosen.source} ${chosen.path}` : 'none'}${note ? ` (${note})` : ''}`);
-    return this.herdrFind;
-  }
-  // P40: 다시 찾기(창의 단추, 설정 저장). 이미 붙어 있으면 진단만 고친다. 못 붙어 있으면 찾아서 서버를 띄우고 붙는다(백엔드를 다시 켜지 않는다)
-  async rediscoverHerdr(why = 'rediscover') {
-    if (this._rediscovering) return this._rediscovering;
-    this._rediscovering = (async () => {
-      await this.resolveHerdr(why);
-      if (!this.adapter.connected) {
-        await this.ensureHerdr();
-        if (this.herdrOk) {
-          if (!this.adapter._watching) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
-          for (let i = 0; i < 50 && !this.adapter.connected; i++) await sleep(100); // 이벤트 구독이 붙을 때까지 잠깐(답에 connected를 담는다)
-          // 처음에 herdr 없이 떴으면 플러그인의 herdr 스킬은 기본 글이다. 이 herdr의 글로 다시 쓴다
-          this.plugin = writeBoardPlugin({ dir: path.join(this.cfg.dataDir, 'plugin'), skillText: await this.herdrSkillText(), ...this.branch.pluginExtra() });
-        }
-      }
-      await this.checkHerdrUpdate(why).catch(() => {});
-      this.api.broadcast('herdr', this.herdrView());
-      return this.herdrStatus();
-    })().finally(() => { this._rediscovering = null; });
-    return this._rediscovering;
-  }
-  // P40: 판 서버가 도는 동안 찾기 결과가 더 새 버전을 가리키면 알린다(한 버전에 한 번). 저절로 다시 띄우지 않는다
-  async checkHerdrUpdate(why) {
-    if (this.adapter.backend === 'hc') return null; // P114 2b: hc는 고정 버전을 판이 올린다(어댑터가 붙을 때 upgrade)
-    if (!this.adapter.connected && !(this.herdrCompat && this.herdrCompat.version)) return null;
-    this._updateCheckedAt = Date.now();
-    const found = why === 'start' && this.lastFound ? this.lastFound : await findHerdr({ envPath: this.cfg.herdrEnvPath, settingPath: this.herdrSettingPath() }).catch(() => null);
-    if (found) this.lastFound = found;
-    const n = updateNotice({ serverVersion: this.herdrCompat && this.herdrCompat.version, found });
-    const prev = this.herdrUpdate;
-    this.herdrUpdate = n;
-    if (n && (!prev || prev.version !== n.version)) {
-      this.log(`herdr update available (${why}): ${n.message}`);
-      this.store.addEvent(null, 'herdr_update_available', { version: n.version, serverVersion: n.serverVersion, source: n.source });
-      this.api.broadcast('herdr', this.herdrView());
-    } else if (!n && prev) this.api.broadcast('herdr', this.herdrView());
-    return n;
-  }
-  // P40: 창이 띠와 표시에 쓰는 herdr 상태
-  herdrView() {
-    const c = this.herdrCompat || {};
+  // 창이 띠와 표시에 쓰는 터미널 상태(이벤트 terminal). P129: migration은 옛 판 옮기기 진행
+  terminalView() {
+    const c = this.termCompat || {};
     return {
-      backend: this.adapter ? this.adapter.backend : 'herdr', hcVersion: c.hcVersion || null, // P114 2b: 터미널 백엔드와 hc 버전
-      terminals: this.adapter && this.adapter.view ? this.adapter.view() : null, // P117: 붙은 백엔드(옮기다 남은 것 포함)
-      connected: !!(this.adapter && this.adapter.connected), session: this.cfg.herdrSession, path: this.adapter ? this.adapter.herdrPath : null,
-      missing: this.herdrMissing || null, level: c.level || null, version: c.version || null, protocol: c.protocol ?? null, warning: c.warning || null, problems: c.problems || [],
-      protocols: this.cfg.herdrProtocols, tested: this.cfg.herdrTested,
-      find: this.herdrFind ? { chosen: this.herdrFind.chosen, note: this.herdrFind.note, tried: this.herdrFind.tried } : null,
-      update: this.herdrUpdate || null,
+      backend: 'hc', hcVersion: c.hcVersion || null,
+      terminals: this.adapter && this.adapter.view ? this.adapter.view() : null, // 붙은 백엔드(옛 판을 옮기는 동안 둘)
+      connected: !!(this.adapter && this.adapter.connected), session: this.cfg.terminalSession, path: this.adapter ? this.adapter.exePath || null : null,
+      missing: this.termMissing || null, level: c.level || null, version: c.version || null, protocol: c.protocol ?? null, warning: c.warning || null, problems: c.problems || [],
+      migration: migrationView(this),
     };
   }
-
-  // P117: 옮기기가 주 백엔드를 바꿨다. 호환·서버 PID를 새 주의 것으로(다음에 뜰 때 "꺼진 동안 서버가 바뀜"으로 보지 않게), 창에 알린다
-  async onTerminalPrimaryChanged(to) {
-    const p = await this.adapter.probe().catch(() => ({ running: false }));
-    if (p.running) this.setHerdrCompat(this.adapter.checkCompat(p.pong));
-    this.herdrMissing = null;
-    const pid = this.adapter.serverPid();
-    if (pid) { this.store.setMeta('herdrServerPid', pid); this._hcPidSaved = pid; }
-    await this.resolveHerdr(`primary ${to}`).catch(() => {});
-    this.store.addEvent(null, 'terminal_primary', { backend: to, pid });
-    this.api.broadcast('herdr', this.herdrView());
-  }
-  // P116: hc 모드에서는 herdr 스킬을 넘기지 않는다(null: 플러그인에 herdr 스킬이 없다). 일 시키기는 판의 atrium 명령이다
-  async herdrSkillText() {
-    if (this.adapter && this.adapter.backend === 'hc') return null;
-    const t = await this.adapter.skillText().catch(() => null);
-    if (t) return t;
-    try { return fs.readFileSync(path.join(process.env.USERPROFILE || '', '.agents', 'skills', 'herdr', 'SKILL.md'), 'utf8'); } catch { return '---\nname: herdr\ndescription: Control Herdr. Run `herdr --help`.\n---\n'; }
-  }
+  // P129: 이벤트 terminal(새 창)과 옛 이름 herdr(업데이트 중의 옛 창)를 함께 낸다
+  broadcastTerminal(v = this.terminalView()) { this.api.broadcast('terminal', v); this.api.broadcast('herdr', v); }
 
   // ---------- 세션 표시 ----------
-  // 판의 hook이 붙은 세션(판이 띄운 Claude Code). 나머지는 herdr 상태와 화면으로만 본다(P4)
+  // 판의 hook이 붙은 세션(판이 띄운 Claude Code). 나머지는 터미널 상태(7501)와 화면으로만 본다(P4)
   hooked(s) { return s.rt.hooked !== false; }
   nameOf(sid) { return shownName(this.sessions.get(sid)); } // P66: 보이는 이름(판의 이름이 있으면 그것)
   sessionByPane(paneId) { for (const s of this.sessions.values()) if (s.paneId === paneId) return s; return null; }
   resolve(ref) {
     if (!ref) throw apiError('bad_request', 'session required');
-    const s = findSession(this.sessions.values(), ref); // P66: 세션 ID, 주소(herdr 이름), 판의 이름
+    const s = findSession(this.sessions.values(), ref); // P66: 세션 ID, 주소(에이전트 이름), 판의 이름
     if (s) return s;
     throw keyed(apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`), 'sessionNotFound', { ref });
   }
@@ -574,7 +455,7 @@ export class Backend {
     const st = deriveState(s.rt).state;
     // 깨우는 중에는 준비된 뒤 잠깐 더 기다린다(sleep.mjs WAKE_SETTLE_MS: 입력 칸이 Enter를 받기 전에 보내면 제출되지 않는다)
     const gated = this.branch && this.branch.holds(sid); // P36: 신뢰 관문을 지나 claude -w로 뜰 때까지 보내지 않는다
-    return { state: sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : st, agentPresent: s.rt.herdr.present, herdrConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s) }; // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
+    return { state: sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : st, agentPresent: s.rt.term.present, termConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s) }; // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
   }
 
   summary(s) {
@@ -583,15 +464,15 @@ export class Backend {
     const f = flags(rt, { seenAt: s.seenAt, delivering: this.queue ? this.queue.pending(s.sessionId) : 0, quietMs: this.cfg.quietMs });
     const ask = d.ask ? { ...d.ask, input: undefined, waitedMs: d.ask.since ? Date.now() - d.ask.since : null } : null;
     return {
-      sessionId: s.sessionId, name: shownName(s), cwd: s.cwd, paneId: s.paneId, herdrWorkspaceId: s.herdrWorkspaceId,
-      address: s.name, label: s.label || null, // P66: name은 보이는 이름, address는 에이전트가 쓰는 주소(herdr 이름), label은 사람이 정한 이름(없으면 null)
-      state: d.state, estimate: d.estimate || null, herdrStatus: rt.herdr.status, ask, error: d.error || rt.lastError || null,
+      sessionId: s.sessionId, name: shownName(s), cwd: s.cwd, paneId: s.paneId, termWorkspaceId: s.termWorkspaceId,
+      address: s.name, label: s.label || null, // P66: name은 보이는 이름, address는 에이전트가 쓰는 주소(에이전트 이름), label은 사람이 정한 이름(없으면 null)
+      state: d.state, estimate: d.estimate || null, termStatus: rt.term.status, ask, error: d.error || rt.lastError || null,
       permissionMode: rt.permissionMode || s.permissionMode, model: s.model, effort: s.effort || null, // P95: 미션 맵 카드의 메타 줄
       lastPrompt: clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
       exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f, ...this.doneScope(s, f),
-      deliveryStuck: this.queue && this.queue.stuckOf ? this.queue.stuckOf(s.sessionId) : null, // P106: herdr가 오래 받지 않는 맨 앞 전달 { deliveryId, reason, code, attempts, since }
+      deliveryStuck: this.queue && this.queue.stuckOf ? this.queue.stuckOf(s.sessionId) : null, // P106: 터미널이 오래 받지 않는 맨 앞 전달 { deliveryId, reason, code, attempts, since }
       trust: { predictedDialog: rt.trustPredicted, seenOnScreen: !!rt.trustScreen },
-      resume: this.hooked(s) ? { registered: !!s.resumeArgv, verified: !!s.resumeVerified } : null, // hook이 없는 세션은 herdr의 이어 가기에 맡긴다
+      resume: this.hooked(s) ? { registered: !!s.resumeArgv } : null, // 판이 이어 갈 줄이 있는가(hook이 없는 세션은 판이 이어 가기를 맡지 않는다). P129: 터미널에 등록·확인하던 것(verified)은 없앴다
       hooks: { count: s.hookCount || 0, lastAt: rt.lastHookAt, lastAuthOk: s.lastHookAuthOk ?? null },
       createdAt: s.createdAt, seenAt: s.seenAt, touchedAt: s.touchedAt || null, lastActivityAt: rt.lastActivityAt,
       memMB: this.memOf(s.sessionId),
@@ -631,7 +512,7 @@ export class Backend {
   }
 
   // ---------- 리포지토리 워크스페이스(P5, ARCH 4절 G) ----------
-  // 판의 워크스페이스는 리포지토리 하나다(workspaceKey). herdr의 작업 공간(herdrWorkspaceId)과 다르다.
+  // 판의 워크스페이스는 리포지토리 하나다(workspaceKey). 터미널의 작업 공간(termWorkspaceId)과 다르다.
   workspaceList() {
     const rows = this.store.workspaces();
     const names = workspaceNames(rows);
@@ -769,7 +650,7 @@ export class Backend {
       const from = s.lastState;
       s.lastState = sum.state;
       if (from !== null || cause) {
-        this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, herdr: sum.herdrStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined });
+        this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, term: sum.termStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined });
         this.api.broadcast('session.state', { sessionId: s.sessionId, name: shownName(s), from, to: sum.state, cause: cause || null, summary: sum });
         this.onLinkTargetState(s, from, sum);
         if (this.web) try { this.web.push.onState(sum, from); } catch (e) { this.log('push error', e.stack); } // P88: 휴대폰 웹 푸시(끝남, 응답 필요, 오류)
@@ -817,8 +698,6 @@ export class Backend {
     if (ev === 'Stop') s.rt.answerSource = 'hook';
     // F4: Claude Code는 워크트리로 들어가면 hook의 cwd가 바뀐다
     if (body.cwd && body.cwd !== s.rt.cwd) { s.rt.cwd = body.cwd; this.probeGit(s, body.cwd); }
-    // F1·F3: 셸 명령 글에서 herdr 호출(일 시키기, 답 읽기, 새 에이전트 띄우기)을 찾는다
-    if ((ev === 'PreToolUse' || ev === 'PostToolUse' || ev === 'PostToolUseFailure') && SHELL_TOOLS.has(body.tool_name)) { try { this.onShellHook(s, ev, body); } catch (e) { this.log('shell hook error', e.stack); } }
     if (ev === 'UserPromptSubmit') { s.draft = false; this.onLinkTargetPrompt(s, body.prompt); }
     const info = { ev, tool: body.tool_name || null, authOk, bytes: raw.length, sessionIdMatches: body.session_id === s.sessionId, permissionMode: body.permission_mode || null };
     if (ev === 'Stop') info.lastAnswer = clip(body.last_assistant_message, 300);
@@ -848,8 +727,8 @@ export class Backend {
     }
   }
 
-  // ---------- herdr 이벤트 ----------
-  async onHerdrEvent(e) {
+  // ---------- 터미널 이벤트 ----------
+  async onTermEvent(e) {
     if (e.type === 'pane_moved') {
       const m = e.previousPaneId && this.sessionByPane(e.previousPaneId);
       // P125: 셸을 남기며 온 종료 코드(놓임이 먼저 풀려 코드가 없던 끝남을 고친다: 콘솔 Ctrl+C면 직접 종료)
@@ -857,13 +736,13 @@ export class Backend {
       if (m && e.paneId) this.setPane(m, e.paneId, e.workspaceId, 'pane moved', { quiet: !!(e.raw && e.raw.hc) }); // P117: hc가 같은 자리를 바꿔 띄운 것(에이전트 띄우기, 셸 남기기)은 알리지 않는다
       return;
     } // P117: hc가 같은 자리를 바꿔 띄운 것(에이전트 띄우기, 셸 남기기)은 알리지 않는다
-    // herdr 작업 공간이 판 밖에서 닫혔다. 작업 공간을 닫아도 패널마다 pane_closed가 오지 않는다(P5에서 확인)
+    // 작업 공간이 판 밖에서 닫혔다. 작업 공간을 닫아도 패널마다 pane_closed가 오지 않는다(P5에서 확인)
     if (e.type === 'workspace_closed') {
-      for (const x of [...this.sessions.values()]) if (x.herdrWorkspaceId === e.workspaceId && !this.killing.has(x.sessionId)) this.closeSession(x, 'workspace closed outside board');
+      for (const x of [...this.sessions.values()]) if (x.termWorkspaceId === e.workspaceId && !this.killing.has(x.sessionId)) this.closeSession(x, 'workspace closed outside board');
       return;
     }
     const s = e.paneId ? this.sessionByPane(e.paneId) : null;
-    // F3·G2: 판 전용 herdr 세션에 판이 모르는 패널(새 셸, 에이전트가 나눈 패널)이나 에이전트가 나타났다. 판에 올린다.
+    // F3·G2: 판 전용 터미널 세션에 판이 모르는 패널(새 셸, 판 밖에서 띄운 터미널)이나 에이전트가 나타났다. 판에 올린다.
     if (!s) { if (e.type === 'agent_detected' || e.type === 'pane_created') this.adoptPane(e.paneId, { cwd: e.cwd }).catch((err) => this.log('adopt error', err.stack)); return; }
     const now = Date.now();
     // 패널의 셸이 끝났다(셸에서 exit). 패널이 없어진다. pane_closed는 오지 않는다(P5에서 확인)
@@ -878,48 +757,47 @@ export class Backend {
     if (e.type === 'status') {
       // 띄운 뒤 agent_detected를 놓쳤어도, 끝난 적 없는 세션에 상태가 오면 claude가 패널에 있다는 뜻이다(P2에서 더한 안전망).
       // 끝난 세션(exit)은 되살리지 않는다. 해제 직후에도 idle이 한 번 온다(E10 2.4).
-      if (!s.rt.herdr.present && !s.rt.exit && e.status !== 'unknown') { applyAgentDetected(s.rt, now); this.store.addEvent(s.sessionId, 'herdr_agent', { detected: true, by: 'status' }); }
-      const prev = applyHerdrStatus(s.rt, e.status, now);
-      if (e.status !== 'unknown') s.resumingAfterHerdr = null; // 이어 가기가 됐다
-      this.store.addEvent(s.sessionId, 'herdr_status', { from: prev, to: e.status });
+      if (!s.rt.term.present && !s.rt.exit && e.status !== 'unknown') { applyAgentDetected(s.rt, now); this.store.addEvent(s.sessionId, 'terminal_agent', { detected: true, by: 'status' }); }
+      const prev = applyTermStatus(s.rt, e.status, now);
+      if (e.status !== 'unknown') s.resumingAfterRestart = null; // 이어 가기가 됐다
+      this.store.addEvent(s.sessionId, 'terminal_status', { from: prev, to: e.status });
       if (e.status === 'blocked' && !s.rt.pendingAsk) await this.checkBlocked(s);
-      if ((e.status === 'idle' || e.status === 'done') && !s.rt.herdr.agentSessionId) this.refreshAgent(s);
+      if ((e.status === 'idle' || e.status === 'done') && !s.rt.term.agentSessionId) this.refreshAgent(s);
       if (!this.hooked(s)) {
-        // hook이 없는 세션: 제출 확인은 herdr working으로, 마지막 답은 턴이 끝난 화면 끝으로 대신한다(F5)
+        // hook이 없는 세션: 제출 확인은 터미널 상태 working으로, 마지막 답은 턴이 끝난 화면 끝으로 대신한다(F5)
         if (e.status === 'working') this.queue.onAgentWorking(s.sessionId);
         if ((prev === 'working' || prev === 'blocked') && (e.status === 'idle' || e.status === 'done')) await this.readScreenAnswer(s);
         if (!s.adoptNamed) this.refreshAdoptedName(s);
       }
-      this.broadcastSession(s, { cause: `herdr:${e.status}` });
+      this.broadcastSession(s, { cause: `term:${e.status}` });
     } else if (e.type === 'agent_detected') {
       applyAgentDetected(s.rt, now);
-      this.store.addEvent(s.sessionId, 'herdr_agent', { detected: true });
-      this.broadcastSession(s, { cause: 'herdr:agent_detected' });
-      // P97: 실행 명령으로 뜬 claude는 herdr가 새로 알아볼 때(다시 켠 뒤 이어 가기 등) 이름을 잃는다. 알아본 뒤 이름을 다시 맞춘다.
-      // P106: 판이 띄운 Codex도 뜬 직후 herdr가 에이전트를 놓았다가(agent_released) 이름 없이 다시 알아본다(experiments/p106). 판이 띄운 세션이면 모두 맞춘다
+      this.store.addEvent(s.sessionId, 'terminal_agent', { detected: true });
+      this.broadcastSession(s, { cause: 'term:agent_detected' });
+      // P97·P106: 터미널이 에이전트를 새로 알아볼 때(다시 켠 뒤 이어 가기, 뜬 직후 놓았다가 다시 알아봄) 이름을 잃을 수 있다. 판이 띄운 세션이면 알아본 뒤 이름을 다시 맞춘다
       if ((s.startCommand && this.hooked(s)) || s.origin === 'board') for (const ms of [1500, 6000]) { const tm = setTimeout(() => { if (this.sessions.has(s.sessionId)) this.ensureAgentName(s); }, ms); if (tm.unref) tm.unref(); }
     } else if (e.type === 'agent_released') {
-      applyAgentReleased(s.rt, now, { herdrStopping: this.herdrStopping, exitCode: e.exitCode ?? null }); // P125: hc는 종료 코드를 준다
-      this.store.addEvent(s.sessionId, 'herdr_agent', { released: true, finalStatus: e.finalStatus, exit: s.rt.exit });
+      applyAgentReleased(s.rt, now, { termStopping: this.termStopping, exitCode: e.exitCode ?? null }); // P125: hc는 종료 코드를 준다
+      this.store.addEvent(s.sessionId, 'terminal_agent', { released: true, finalStatus: e.finalStatus, exit: s.rt.exit });
       // G2: 판이 띄우지 않은 에이전트(판에 올린 것, 셸에서 띄운 것)가 끝나면 패널은 셸로 남는다. 같은 노드를 셸로 되돌린다.
       // 판이 띄운 에이전트가 끝난 것은 지금처럼 exited로 둔다(이어 가기 규칙 그대로)
-      if ((s.origin === 'adopted' || s.rt.shellBase) && !this.hooked(s) && !this.herdrStopping && !this.killing.has(s.sessionId)) return this.demoteToShell(s, 'agent released');
-      this.broadcastSession(s, { cause: 'herdr:agent_released' });
-      // P7(J1): 대화 기록이 없는 세션의 `claude --resume`은 잠깐 idle을 보인 뒤 끝나기도 한다(resumingAfterHerdr가 먼저 풀림). 되살리기 시작 30초 안의 해제도 이어 가기 실패로 본다
+      if ((s.origin === 'adopted' || s.rt.shellBase) && !this.hooked(s) && !this.termStopping && !this.killing.has(s.sessionId)) return this.demoteToShell(s, 'agent released');
+      this.broadcastSession(s, { cause: 'term:agent_released' });
+      // P7(J1): 대화 기록이 없는 세션의 `claude --resume`은 잠깐 idle을 보인 뒤 끝나기도 한다(resumingAfterRestart가 먼저 풀림). 되살리기 시작 30초 안의 해제도 이어 가기 실패로 본다
       const justRecovered = s.recoverStartedAt && Date.now() - s.recoverStartedAt < 30000;
-      if ((s.resumingAfterHerdr || justRecovered) && !this.herdrStopping && this.hooked(s)) { s.resumingAfterHerdr = null; s.recoverStartedAt = null; this.relaunchIfEmpty(s); }
+      if ((s.resumingAfterRestart || justRecovered) && !this.termStopping && this.hooked(s)) { s.resumingAfterRestart = null; s.recoverStartedAt = null; this.relaunchIfEmpty(s); }
     } else if (e.type === 'pane_closed') {
       if (!this.killing.has(s.sessionId)) this.closeSession(s, 'pane closed outside board');
     }
   }
 
   // ---------- 일반 셸(G2, P5) ----------
-  // 셸 패널에 에이전트가 나타났다(셸에서 claude를 침, herdr agent start --pane). 같은 노드의 종류를 바꾼다
+  // 셸 패널에 에이전트가 나타났다(셸에서 claude를 침). 같은 노드의 종류를 바꾼다
   async promoteShell(s, why) {
     if (s.kind !== SHELL || s._promoting) return;
     s._promoting = true;
     try {
-      await sleep(400); // herdr가 agent.start의 이름을 붙일 시간
+      await sleep(400); // 터미널이 에이전트를 알아볼 시간
       const a = (await this.adapter.listAgents()).find((x) => x.paneId === s.paneId);
       if (!a || !this.sessions.has(s.sessionId) || s.kind !== SHELL) return;
       const now = Date.now();
@@ -927,7 +805,7 @@ export class Backend {
       const rt = newRuntime({ kind, hooked: false });
       rt.shellBase = true; rt.cwd = s.rt.cwd;
       applyAgentDetected(rt, now);
-      applyHerdrStatus(rt, a.status || 'unknown', now, { launchPending: a.launchPending, agentSessionId: a.agentSessionId });
+      applyTermStatus(rt, a.status || 'unknown', now, { launchPending: a.launchPending, agentSessionId: a.agentSessionId });
       if (a.status && a.status !== 'unknown') rt.phase = 'running';
       const from = s.kind;
       s.rt = rt; s.kind = kind; s.agentName = a.name || s.paneId; s.adoptNamed = s.origin !== 'adopted' || !!a.name;
@@ -935,11 +813,8 @@ export class Backend {
         this.store.addEvent(s.sessionId, 'renamed', { from: s.name, to: a.name }); s.name = a.name; this.store.renameSession(s.sessionId, a.name);
       }
       this.store.updateSession(s.sessionId, { kind, agentName: s.agentName, runtime: rt });
-      // 띄운 명령(hook의 herdr agent start)이 있으면 그 세션이 부모다(F3)
-      const it = this.spawnIntents.filter((x) => now - x.at < this.cfg.adoptSpawnMatchMs).reverse().find((x) => x.verb === 'agent.start' && ((a.name && x.name === a.name) || x.pane === s.paneId));
-      if (it && !s.parentSessionId && this.sessions.has(it.from) && it.from !== s.sessionId) this.setParent(s, this.sessions.get(it.from), it);
       this.linkUnresolved(s, a.name);
-      this.store.addEvent(s.sessionId, 'shell_agent', { from, to: kind, herdrName: a.name || null, why });
+      this.store.addEvent(s.sessionId, 'shell_agent', { from, to: kind, agentName: a.name || null, why });
       this.log(`shell ${s.name} now runs ${kind}`);
       this.broadcastSession(s, { cause: `shell:${kind}` });
     } finally { s._promoting = false; }
@@ -994,22 +869,21 @@ export class Backend {
       if (changed) this.broadcastSession(s, { cause: 'shell:procs' });
     }
   }
-  // herdr 재시작 뒤 이어 가기가 실패한 세션: 한 턴도 돌지 않은 세션은 대화 기록이 없어 `claude --resume`이 "No conversation found"로 끝난다(P1).
+  // 터미널 서버를 다시 띄운 뒤 이어 가기가 실패한 세션: 한 턴도 돌지 않은 세션은 대화 기록이 없어 `claude --resume`이 "No conversation found"로 끝난다(P1).
   // 잃을 대화가 없으므로 같은 패널에서 같은 세션 ID와 설정 파일로 새로 띄운다. 대화 기록이 있는데 끝났으면 손대지 않고 exited로 둔다.
   async relaunchIfEmpty(s) {
     const tx = s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId);
     if (fs.existsSync(tx)) { this.store.addEvent(s.sessionId, 'resume_failed', { transcript: true }); return; }
     await sleep(500);
-    if (!this.sessions.has(s.sessionId) || s.rt.herdr.present) return;
+    if (!this.sessions.has(s.sessionId) || s.rt.term.present) return;
     await this.adapter.waitShellReady(s.paneId, 5000);
     const args = buildStartArgs(this.launchOf(s));
     try {
       await this.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) });
       s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
-      s.rt.herdr.launchPending = true; s.rt.herdr.agentSessionId = null;
+      s.rt.term.launchPending = true; s.rt.term.agentSessionId = null;
       this.store.addEvent(s.sessionId, 'relaunched_fresh', { reason: 'resume found no conversation', args });
       this.broadcastSession(s, { cause: 'relaunch' });
-      this.registerResume(s);
     } catch (e) { this.store.addEvent(s.sessionId, 'relaunch_failed', { error: e.code || e.message }); }
   }
 
@@ -1021,11 +895,11 @@ export class Backend {
 
   // ---------- P115: Claude Code 밖 하네스(harness.mjs) ----------
   harnessResumable(s) { return harnessResumable(s); }
-  // 하네스 세션 ID(이어 가기): 판이 정한 것(opencode·pi) → 기록 → herdr가 아는 것(Codex hook 연동) → Codex rollout(그 폴더, 띄운 뒤)
+  // 하네스 세션 ID(이어 가기): 판이 정한 것(opencode·pi) → 기록 → 터미널이 아는 것 → Codex rollout(그 폴더, 띄운 뒤)
   harnessSessionIdOf(s) {
     const plan = s.harnessPlan || {};
     if (plan.harnessSessionId) return plan.harnessSessionId;
-    if (s.kind === 'codex') return s.rt.herdr.agentSessionId || codexSessionOf({ cwd: s.cwd, since: plan.launchedAt || s.createdAt || 0 });
+    if (s.kind === 'codex') return s.rt.term.agentSessionId || codexSessionOf({ cwd: s.cwd, since: plan.launchedAt || s.createdAt || 0 });
     return null;
   }
   // 띄울 값. 판의 env(토큰은 빼고 파일로), PATH 앞의 bin/, 안내문, 호출자 값(모델·추가 인자), 이어 가기
@@ -1043,7 +917,7 @@ export class Backend {
     const hf = this.harnessFiles || {};
     return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness') });
   }
-  // 그 패널의 셸 프롬프트에 판의 줄을 친다(herdr: 친 줄 앞의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
+  // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
     const hl = this.harnessLaunchOf(s, { resume });
     writeLaunchFiles(hl.files);
@@ -1051,7 +925,7 @@ export class Backend {
     const st = await this.adapter.startAgent({ name, paneId: s.paneId, args: hl.args, kind: s.kind, command: hl.command, env: hl.env, pathFirst: hl.pathFirst });
     s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now() };
     this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
-    if (why !== 'start') { s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.herdr.launchPending = st.agent ? st.agent.launchPending : true; }
+    if (why !== 'start') { s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.term.launchPending = st.agent ? st.agent.launchPending : true; }
     this.store.addEvent(s.sessionId, why === 'start' ? 'harness_started' : 'recovered_by_board', { plan: why, resume, resumed: hl.resumed, harnessSessionId: hl.harnessSessionId, argv: [...hl.command, ...hl.args], env: Object.keys(hl.env) });
     return { ...st, resumed: hl.resumed };
   }
@@ -1066,11 +940,11 @@ export class Backend {
   async refreshAgent(s) {
     const a = await this.adapter.getAgent(s.agentName).catch(() => null);
     if (!a) return null;
-    s.rt.herdr.launchPending = a.launchPending;
-    s.rt.herdr.agentSessionId = a.agentSessionId;
+    s.rt.term.launchPending = a.launchPending;
+    s.rt.term.agentSessionId = a.agentSessionId;
     return a;
   }
-  // herdr blocked인데 묻는 hook이 없다 → 신뢰 대화상자인지 화면으로 한 번 더 본다(E10)
+  // 터미널 상태가 blocked인데 묻는 hook이 없다 → 신뢰 대화상자인지 화면으로 한 번 더 본다(E10)
   // hook이 없는 세션은 화면 끝을 묻는 내용으로 둔다(F5: 승인 카드는 "터미널에서 답하기")
   async checkBlocked(s) {
     await this.refreshAgent(s);
@@ -1099,85 +973,62 @@ export class Backend {
     } catch {}
   }
 
-  onHerdrDisconnected(which = null) {
-    this.log(`herdr disconnected${which ? ` (${which})` : ''}`);
-    this.store.addEvent(null, 'herdr_disconnected', { expected: this.herdrStopping, backend: which });
-    this.herdrWasDown = true; // P7(J1): 다시 붙으면 herdr가 잃은 패널을 판이 되살린다
+  onTermDisconnected(which = null) {
+    this.log(`terminal disconnected${which ? ` (${which})` : ''}`);
+    this.store.addEvent(null, 'terminal_disconnected', { expected: this.termStopping, backend: which });
+    this.termWasDown = true; // P7(J1): 다시 붙으면 터미널 서버가 잃은 패널을 판이 되살린다
     // P117: 두 백엔드를 함께 쥐면 끊긴 백엔드의 세션만 끊긴 턴으로 둔다
-    for (const s of this.sessions.values()) if (!(which && this.adapter.mixed && this.adapter.mixed() && s.paneId && paneBackend(s.paneId) !== which)) this.markHerdrStopped(s);
-    this.api.broadcast('herdr', { connected: false, expected: this.herdrStopping });
+    for (const s of this.sessions.values()) if (!(which && this.adapter.mixed && this.adapter.mixed() && s.paneId && this.adapter.backendOfPane(s.paneId) !== which)) this.markTermStopped(s);
+    this.broadcastTerminal({ connected: false, expected: this.termStopping });
   }
-  // herdr가 꺼짐: 진행 중이던 턴은 "재시작으로 끊긴 턴"으로 남긴다(C3)
-  markHerdrStopped(s, cause = 'herdr:disconnected') {
+  // 터미널 서버가 꺼짐: 진행 중이던 턴은 "재시작으로 끊긴 턴"으로 남긴다(C3)
+  markTermStopped(s, cause = 'term:disconnected') {
     const before = s.rt.interruptedTurn;
-    applyHerdrDisconnected(s.rt);
+    applyTermDisconnected(s.rt);
     if (s.rt.interruptedTurn && s.rt.interruptedTurn !== before) this.store.addEvent(s.sessionId, 'turn_interrupted', s.rt.interruptedTurn);
     this.broadcastSession(s, { cause });
   }
-  async onHerdrConnected() {
-    this.log('herdr connected');
-    this.setHerdrCompat(this.adapter.checkCompat(this.adapter.pong));
-    this.herdrMissing = null;
+  async onTermConnected() {
+    this.log('terminal connected');
+    this.setTermCompat(this.adapter.checkCompat(this.adapter.pong));
+    this.termMissing = null;
     const pid = this.adapter.serverPid();
-    if (pid) this.store.setMeta('herdrServerPid', pid);
-    this.store.addEvent(null, 'herdr_connected', { compat: this.herdrCompat, pid });
-    this.api.broadcast('herdr', { ...this.herdrView(), compat: this.herdrCompat });
-    // P40: 판 밖에서 다른 herdr로 서버가 다시 떴을 수 있다. 서버의 실행 파일을 다시 읽는다(기다리지 않는다)
-    if (this.herdrWasDown) this.resolveHerdr('reconnected').then(() => this.checkHerdrUpdate('reconnected')).then(() => this.api.broadcast('herdr', this.herdrView())).catch(() => {});
-    // 백엔드가 꺼진 동안 herdr가 다시 떴다(재부팅 포함): 그 전에 돌던 세션은 herdr가 꺼져서 끝난 것으로 본다
-    const afterRestart = !!(this.herdrWasDown || this.herdrRestartedWhileDown);
-    this.herdrWasDown = false;
-    if (this.herdrRestartedWhileDown) {
-      this.herdrRestartedWhileDown = false;
-      this.store.addEvent(null, 'herdr_restarted_while_down', { pid });
-      for (const s of this.sessions.values()) if (!s.rt.exit) this.markHerdrStopped(s, 'herdr:restarted while backend down');
+    if (pid) this.store.setMeta('terminalServerPid', pid);
+    this.store.addEvent(null, 'terminal_connected', { compat: this.termCompat, pid });
+    this.broadcastTerminal({ ...this.terminalView(), compat: this.termCompat });
+    // 백엔드가 꺼진 동안 터미널 서버가 다시 떴다(재부팅 포함): 그 전에 돌던 세션은 서버가 꺼져서 끝난 것으로 본다
+    const afterRestart = !!(this.termWasDown || this.termRestartedWhileDown);
+    this.termWasDown = false;
+    if (this.termRestartedWhileDown) {
+      this.termRestartedWhileDown = false;
+      this.store.addEvent(null, 'terminal_restarted_while_down', { pid });
+      for (const s of this.sessions.values()) if (!s.rt.exit) this.markTermStopped(s, 'term:restarted while backend down');
     }
-    await this.resync('herdr connected', { afterRestart });
-    if (this.migration && this.migration.herdr.pending && !this.migration.herdr.done) this.finishHerdrMigration().catch((e) => this.log('rename herdr error', e.stack));
+    await this.resync('terminal connected', { afterRestart });
+    startMigration(this); // P129: 옛 판이면 첫 resync 뒤 옮기기를 시작한다(한 번)
   }
 
-  // P18(이름 옮기기 2): 새 herdr에서 되살리기가 끝나면 옛 herdr 세션(멈춘 것)을 지운다. 되살리지 못한 세션이 있으면 지우지 않고 알린다
-  async finishHerdrMigration() {
-    const m = this.migration.herdr;
-    m.done = 'running';
-    await this.recoveryDone;
-    const open = [...this.sessions.values()];
-    const stuck = open.filter((s) => String(s.paneId || '').startsWith(PANE_PREFIX)).map((s) => s.name);
-    const resumed = open.filter((s) => s.recovered).map((s) => ({ name: s.name, plan: s.recovered.plan }));
-    const closed = this.store.events({ limit: 500 }).filter((e) => e.kind === 'closed' && e.t >= this.migration.at && e.data && /pane gone|not resumed/.test(e.data.reason || '')).map((e) => this.store.getSession(e.sessionId)?.name || e.sessionId);
-    let deleted = null;
-    if (!stuck.length) {
-      const legacy = new HerdrAdapter({ herdrPath: this.cfg.herdrPath, session: m.legacy, logDir: this.cfg.logDir });
-      deleted = await legacy.deleteSession().catch((e) => ({ deleted: false, out: e.message }));
-      if (!deleted.deleted) this.migration.problems.push(`옛 herdr 세션 ${m.legacy}을 삭제하지 못했습니다: ${deleted.reason || deleted.out || ''}`);
-    } else this.migration.problems.push(`복구하지 못한 세션이 있어 이전 herdr 세션 ${m.legacy}을 유지했습니다: ${stuck.join(', ')}`);
-    m.done = true;
-    m.result = { resumed, stuck, closed, deleted };
-    this.store.addEvent(null, 'rename_herdr_migrated', m.result);
-    this.log(`rename herdr migrated ${JSON.stringify(m.result)}`);
-    this.api.broadcast('backend.migration', this.migrationView());
-  }
   migrationView() {
     const m = this.migration;
-    return m ? { from: m.from, to: m.to, data: m.data, herdr: m.herdr, problems: m.problems, fixed: m.fixed } : null;
+    return m ? { from: m.from, to: m.to, data: m.data, problems: m.problems, fixed: m.fixed } : null;
   }
 
-  // C2·C3: herdr의 현재 상태로 판을 다시 맞추고, 놓친 hook은 대화 기록에서 메운다
+  // C2·C3: 터미널의 현재 상태로 판을 다시 맞추고, 놓친 hook은 대화 기록에서 메운다
   async resync(why, { afterRestart = false } = {}) {
     const [snap, agents] = await Promise.all([this.adapter.snapshot(), this.adapter.listAgents()]);
     const panes = new Set(snap.panes.map((p) => p.paneId));
     const report = [];
     const recovering = [];
-    const restoring = [], hookless = [], harnessed = []; // P7(J1): herdr가 잃은 셸·판에 올린 claude, 돌아오지 않은 hook 없는 에이전트. P115: 판이 이어 갈 하네스 세션
+    const restoring = [], hookless = [], harnessed = []; // P7(J1): 터미널 서버가 잃은 셸·판에 올린 claude, 돌아오지 않은 hook 없는 에이전트. P115: 판이 이어 갈 하네스 세션
     for (const s of [...this.sessions.values()]) {
       if (!s.paneId) continue;
-      const wasStopped = !!(s.rt.exit && s.rt.exit.kind === 'herdr_stopped'); // P115: 아래 applyAgentDetected가 지우기 전에
-      // 판이 되살리는 것은 판이 띄운 Claude Code 세션뿐이다. 판에 올린 에이전트는 herdr의 이어 가기에 맡긴다(P4)
-      const stoppedByHerdr = !!(s.rt.exit && s.rt.exit.kind === 'herdr_stopped') && this.hooked(s);
-      if (stoppedByHerdr && why === 'herdr connected') recovering.push(s);
+      const wasStopped = !!(s.rt.exit && s.rt.exit.kind === 'terminal_stopped'); // P115: 아래 applyAgentDetected가 지우기 전에
+      // 판이 이어 가는 것은 판이 띄운 Claude Code 세션이다(판에 올린 셸·claude·하네스는 아래 restoring·hookless·harnessed)
+      const stoppedByServer = !!(s.rt.exit && s.rt.exit.kind === 'terminal_stopped') && this.hooked(s);
+      if (stoppedByServer && why === 'terminal connected') recovering.push(s);
       if (!panes.has(s.paneId)) {
-        // herdr가 작업 공간을 저장하기 전에 죽으면 패널째로 잃는다(P3에서 확인). 판이 띄운 세션이면 되살린다.
-        if (stoppedByHerdr) { report.push({ name: s.name, result: 'pane gone, recreating' }); continue; }
+        // 서버가 꺼지면 패널째로 잃는다(hc: 터미널이 코어와 함께 끝난다). 판이 띄운 세션이면 되살린다.
+        if (stoppedByServer) { report.push({ name: s.name, result: 'pane gone, recreating' }); continue; }
         if (afterRestart && this.recall.restorable(s)) { report.push({ name: s.name, result: 'pane gone, restoring' }); restoring.push(s); continue; }
         report.push({ name: s.name, result: 'pane gone' }); this.closeSession(s, 'pane gone'); continue;
       }
@@ -1186,21 +1037,21 @@ export class Backend {
       // G2: 셸 노드. 백엔드가 꺼진 동안 그 패널에 에이전트가 떴으면 종류를 바꾼다
       if (s.kind === SHELL) { if (a) this.promoteShell(s, 'resync'); report.push({ name: s.name, shell: true, agent: a ? a.agent : null }); this.broadcastSession(s, { cause: `resync:${why}` }); continue; }
       // 셸에서 띄운 에이전트나 판에 올린 에이전트가 백엔드가 꺼진 동안 끝났으면 셸로 되돌린다
-      if (!a && !this.hooked(s) && (s.origin === 'adopted' || s.rt.shellBase) && s.rt.herdr.present && !stoppedByHerdr) { this.demoteToShell(s, 'resync: no agent'); report.push({ name: s.name, demoted: true }); continue; }
+      if (!a && !this.hooked(s) && (s.origin === 'adopted' || s.rt.shellBase) && s.rt.term.present && !stoppedByServer) { this.demoteToShell(s, 'resync: no agent'); report.push({ name: s.name, demoted: true }); continue; }
       if (a) {
-        // herdr가 다시 뜬 직후 agent.list는 이어 가기 전의 상태(idle)를 준다. 새 상태 이벤트가 올 때까지 starting으로 둔다(E7: 약 5초 unknown).
-        const resuming = stoppedByHerdr;
-        if (resuming) s.resumingAfterHerdr = Date.now();
+        // 서버가 다시 뜬 직후 agent.list는 이어 가기 전의 상태(idle)를 줄 수 있다. 새 상태 이벤트가 올 때까지 starting으로 둔다(E7).
+        const resuming = stoppedByServer;
+        if (resuming) s.resumingAfterRestart = Date.now();
         applyAgentDetected(s.rt, now);
-        s.rt.herdr.present = true;
-        applyHerdrStatus(s.rt, resuming ? 'unknown' : a.status, now, { launchPending: a.launchPending, agentSessionId: a.agentSessionId });
+        s.rt.term.present = true;
+        applyTermStatus(s.rt, resuming ? 'unknown' : a.status, now, { launchPending: a.launchPending, agentSessionId: a.agentSessionId });
         if (a.status === 'blocked' && !s.rt.pendingAsk) await this.checkBlocked(s);
-      } else if (s.rt.herdr.present || !s.rt.exit) {
+      } else if (s.rt.term.present || !s.rt.exit) {
         applyAgentReleased(s.rt, now);
       }
-      // P115: 판이 띄운 하네스 세션은 herdr가 스스로 띄운 이어 가기(codex resume, 판의 env·연결·안내문 없음)도 판의 줄로 바꾼다
+      // P115: 판이 띄운 하네스 세션은 서버가 다시 뜬 뒤 판의 줄로 이어 간다
       if (!this.hooked(s) && afterRestart && wasStopped && this.harnessResumable(s)) harnessed.push(s);
-      else if (!this.hooked(s) && !a && afterRestart && s.rt.exit && s.rt.exit.kind === 'herdr_stopped') hookless.push(s);
+      else if (!this.hooked(s) && !a && afterRestart && s.rt.exit && s.rt.exit.kind === 'terminal_stopped') hookless.push(s);
       if (!this.hooked(s)) { report.push({ name: s.name, agent: a ? a.status : 'none', hooked: false }); this.broadcastSession(s, { cause: `resync:${why}` }); continue; }
       const tx = lastExchange(s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId));
       let recovered = null;
@@ -1229,17 +1080,16 @@ export class Backend {
     }
     this.store.addEvent(null, 'resync', { why, report });
     const jobs = [];
-    if (recovering.length) jobs.push(this.recoverAfterHerdr(recovering, panes).catch((e) => this.log('recover error', e.stack)));
+    if (recovering.length) jobs.push(this.recoverAfterRestart(recovering, panes).catch((e) => this.log('recover error', e.stack)));
     if (restoring.length) jobs.push(this.recall.restoreGone(restoring).catch((e) => this.log('restore error', e.stack)));
     if (hookless.length) jobs.push(this.recall.recoverHookless(hookless).catch((e) => this.log('recover hookless error', e.stack)));
     if (harnessed.length) jobs.push(this.recall.recoverHarness(harnessed).catch((e) => this.log('recover harness error', e.stack))); // P115
-    this.recoveryDone = Promise.all(jobs); // P18: herdr 옮기기가 되살리기를 다 기다린 뒤 옛 세션을 지운다
+    this.recoveryDone = Promise.all(jobs); // P129: 옛 판 옮기기가 되살리기를 다 기다린 뒤 시작한다
     return report;
   }
 
-  // C3 대책(P3): herdr가 다시 뜬 뒤 판 세션이 판의 인자(--settings)로 돌아왔는지 확인하고, 아니면 판이 이어 간다.
-  // 이어 가기 명령을 잃는 경우: herdr는 session.json을 띄엄띄엄 저장한다. 등록 직후, 저장 전에 서버가 죽으면 작업 공간째로 잃었다(docs/log/p3-v02.md 보고 3.1).
-  async recoverAfterHerdr(list, panes) {
+  // C3 대책(P3): 터미널 서버가 다시 뜬 뒤 판 세션을 판의 인자(--settings)로 이어 간다. 패널을 잃었으면 작업 공간을 다시 만든다(recoveryPlan, launch.mjs).
+  async recoverAfterRestart(list, panes) {
     const t0 = Date.now();
     const releasedAt = new Map();
     const pending = new Set(list.map((s) => s.sessionId));
@@ -1248,15 +1098,15 @@ export class Backend {
       for (const sid of [...pending]) {
         const s = this.sessions.get(sid);
         if (!s || !this.adapter.connected) { pending.delete(sid); continue; }
-        if (s.rt.exit && s.rt.exit.kind !== 'herdr_stopped' && !releasedAt.has(sid)) releasedAt.set(sid, Date.now()); // 이어 가기를 시도했다가 끝남(P1 규칙이 다룬다)
+        if (s.rt.exit && s.rt.exit.kind !== 'terminal_stopped' && !releasedAt.has(sid)) releasedAt.set(sid, Date.now()); // 이어 가기를 시도했다가 끝남(P1 규칙이 다룬다)
         const tx = s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId);
         let argv = null;
-        if (s.rt.herdr.present) {
+        if (s.rt.term.present) {
           const info = await this.adapter.processInfo(s.paneId).catch(() => null);
           const c = info && (info.foreground_processes || []).find((p) => /claude/i.test(p.name || ''));
           argv = c ? c.argv : null;
         }
-        const plan = recoveryPlan({ paneExists: panes.has(s.paneId), agentPresent: s.rt.herdr.present, argv, settingsPath: s.settingsPath, transcriptExists: fs.existsSync(tx), waitedMs: Date.now() - t0, graceMs: this.cfg.recoverGraceMs, releasedSinceRestart: releasedAt.has(sid) });
+        const plan = recoveryPlan({ paneExists: panes.has(s.paneId), agentPresent: s.rt.term.present, argv, settingsPath: s.settingsPath, transcriptExists: fs.existsSync(tx), waitedMs: Date.now() - t0, graceMs: this.cfg.recoverGraceMs, releasedSinceRestart: releasedAt.has(sid) });
         if (plan === 'wait') continue;
         pending.delete(sid);
         if (plan === 'ok' || plan === 'leave') { if (plan === 'ok') { this.store.addEvent(sid, 'recover_check', { result: 'resumed with board args' }); await this.ensureAgentName(s); } continue; }
@@ -1266,15 +1116,14 @@ export class Backend {
     }
     // 다시 붙은 직후의 agent.list를 믿지 않아 starting으로 둔 세션: 새 상태 이벤트가 없으면 지금 상태로 맞춘다(백엔드가 꺼진 동안 이미 이어 간 경우)
     for (const s of list) {
-      if (!this.sessions.has(s.sessionId) || !s.resumingAfterHerdr) continue;
+      if (!this.sessions.has(s.sessionId) || !s.resumingAfterRestart) continue;
       const a = await this.adapter.getAgent(s.agentName).catch(() => null);
-      if (a && a.status && a.status !== 'unknown') { s.resumingAfterHerdr = null; applyHerdrStatus(s.rt, a.status, Date.now(), { launchPending: a.launchPending, agentSessionId: a.agentSessionId }); this.broadcastSession(s, { cause: 'resync:agent.get after resume' }); }
+      if (a && a.status && a.status !== 'unknown') { s.resumingAfterRestart = null; applyTermStatus(s.rt, a.status, Date.now(), { launchPending: a.launchPending, agentSessionId: a.agentSessionId }); this.broadcastSession(s, { cause: 'resync:agent.get after resume' }); }
     }
   }
 
-  // 판의 전달(agent.prompt). P97: 실행 명령으로 뜬 claude가 이름을 잃어 herdr가 찾지 못하면 이름을 다시 붙이고 한 번 더 보낸다
-  // P106: blockReason은 에이전트가 있다고 보는데 herdr가 그 이름을 모르는(agent_not_found) 까닭은 이름을 잃은 에이전트다. 판이 띄운 Codex도
-  // 뜬 직후 herdr가 에이전트를 놓았다가 이름 없이 다시 알아본다. 판이 띄운 세션이면 이름을 다시 붙이고, 못 붙이면(다른 패널이 그 이름을 씀, 판에 올린 세션)
+  // 판의 전달(agent.prompt). P97·P106: 터미널이 그 이름을 모르면(agent_not_found, 이름을 잃은 에이전트) 판이 띄운 세션이면 이름을 다시 붙이고 한 번 더 보내고,
+  // 못 붙이면(다른 패널이 그 이름을 씀, 판에 올린 세션)
   // 그 패널에 같은 종류의 에이전트가 있을 때 패널 ID로 보낸다
   async sendPrompt(sid, text) {
     const s = this.sessions.get(sid);
@@ -1287,8 +1136,7 @@ export class Backend {
       return this.adapter.prompt(s.paneId, text);
     }
   }
-  // P97: herdr가 다시 뜨며 이어 가기 명령(래퍼 명령 claude --resume …)으로 되살린 패널은 이름이 없다. herdr는 agent.start로 띄운 에이전트만
-  // 이름을 되살린다(P97 실험 3). 판의 주소(agentName)로 찾지 못하고 그 패널에 claude가 있으면 이름을 다시 붙인다(herdr 명령과 판의 전달이 이 이름을 쓴다)
+  // P97: 판의 주소(agentName)로 찾지 못하고 그 패널에 같은 종류의 에이전트가 있으면 이름을 다시 붙인다(판의 전달이 이 이름을 쓴다)
   async ensureAgentName(s) {
     if (!s.agentName || s.agentName === s.paneId) return false;
     try {
@@ -1298,7 +1146,7 @@ export class Backend {
       const p = await this.adapter.getPane(s.paneId);
       if (!p || p.agent !== (s.kind || 'claude')) return false;
       await this.adapter.renameAgent(s.paneId, s.agentName);
-      this.store.addEvent(s.sessionId, 'agent_renamed', { name: s.agentName, why: 'name lost on herdr restart' });
+      this.store.addEvent(s.sessionId, 'agent_renamed', { name: s.agentName, why: 'name lost on terminal restart' });
       return true;
     } catch (e) { this.store.addEvent(s.sessionId, 'agent_rename_failed', { error: e.code || e.message }); }
     return false;
@@ -1307,13 +1155,13 @@ export class Backend {
   async recoverSession(s, plan) {
     const resume = plan === 'recreate_resume' || plan === 'start_resume' || plan === 'restart_with_settings';
     const steps = [];
-    s.resumingAfterHerdr = null; // 여기서 끝나는 claude는 relaunchIfEmpty가 다루지 않는다
+    s.resumingAfterRestart = null; // 여기서 끝나는 claude는 relaunchIfEmpty가 다루지 않는다
     if (plan === 'recreate_resume' || plan === 'recreate_fresh') {
       const ws = await this.withNewPane(() => this.adapter.createWorkspace({ cwd: s.cwd, label: s.name }), (r) => this.setPane(s, r.paneId, r.workspaceId, 'workspace recreated'));
       steps.push(`workspace ${ws.workspaceId} recreated`);
     }
     if (plan === 'restart_with_settings') {
-      // herdr 기본 이어 가기(`claude --resume <ID>`)로 떠서 hook이 없다. 방금 이어 간 claude라 진행 중인 턴은 없다.
+      // 판의 설정 없이(`claude --resume <ID>`) 떠서 hook이 없다. 방금 이어 간 claude라 진행 중인 턴은 없다.
       const own = beginBoardExit(this, s, 'restart'); // P119
       try {
         await this.adapter.sendText(s.paneId, '/exit'); await sleep(150); await this.adapter.paneKeys(s.paneId, ['enter']);
@@ -1326,25 +1174,24 @@ export class Backend {
     const args = resume ? buildResumeArgs(launch) : buildStartArgs(launch);
     await this.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) });
     s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
-    s.rt.herdr.launchPending = true; s.resumingAfterHerdr = null;
+    s.rt.term.launchPending = true; s.resumingAfterRestart = null;
     s.resumeVerified = false; this.store.updateSession(s.sessionId, { resumeVerified: false });
     s.recovered = { plan, at: Date.now() };
     steps.push(`${resume ? 'resumed' : 'started fresh'} by board`);
     this.store.addEvent(s.sessionId, 'recovered_by_board', { plan, steps, args });
     this.log(`recovered ${s.name}: ${plan}`);
     this.broadcastSession(s, { cause: `recover:${plan}` });
-    this.registerResume(s);
   }
 
-  // 패널 ID가 바뀌었다(이어 가기로 작업 공간을 다시 만듦, herdr pane move). 판에서 정한 역할이 있으면 그 연결 기록에 남긴다(F2)
+  // 패널 ID가 바뀌었다(이어 가기로 작업 공간을 다시 만듦, hc가 같은 자리를 바꿔 띄움). 판에서 정한 역할이 있으면 그 연결 기록에 남긴다(F2)
   // P116: 시킨 쪽에 알림(paneChangedNotice)을 보내지 않는다. atrium 명령은 판의 이름으로 부르므로 패널이 바뀌어도 할 일이 없다(턴을 쓰지 않는다)
   // P117: quiet(옮기기, hc가 같은 자리를 바꿔 띄움)와 옮기는 중(rt.move)에는 연결 기록도 남기지 않는다
-  async setPane(s, paneId, herdrWorkspaceId, why, { quiet = false } = {}) {
+  async setPane(s, paneId, termWorkspaceId, why, { quiet = false } = {}) {
     const old = s.paneId;
     if (old === paneId) return;
-    s.paneId = paneId; if (herdrWorkspaceId) s.herdrWorkspaceId = herdrWorkspaceId;
+    s.paneId = paneId; if (termWorkspaceId) s.termWorkspaceId = termWorkspaceId;
     if (s.agentName === old) s.agentName = paneId; // 이름 없는 에이전트는 패널 ID로 부른다
-    this.store.updateSession(s.sessionId, { paneId, herdrWorkspaceId: s.herdrWorkspaceId, agentName: s.agentName });
+    this.store.updateSession(s.sessionId, { paneId, termWorkspaceId: s.termWorkspaceId, agentName: s.agentName });
     this.store.addEvent(s.sessionId, 'pane_changed', { from: old, to: paneId, why });
     await this.adapter.refreshSubscription();
     for (const l of quiet || (s.rt && s.rt.move) ? [] : this.store.links()) {
@@ -1374,27 +1221,23 @@ export class Backend {
   }
 
   // ---------- 명령 ----------
-  // P40: herdr가 없으면 herdr_missing, 프로토콜이 다르면 herdr_incompatible(까닭과 할 일을 함께). 보드의 다른 기능은 막지 않는다
-  requireHerdr() {
-    if (this.herdrMissing || (this.herdrCompat && this.herdrCompat.level === 'missing')) {
-      // P122: hc 판은 herdr를 찾지 않는다. 고정 hc를 받거나 띄우지 못한 것이므로 창의 hc 띠와 같은 글(herdr 설치 안내가 아니다)
-      if (this.adapter && this.adapter.backend === 'hc') {
-        const m = this.herdrMissing || {};
-        const error = String(m.error || m.reason || 'not ready');
-        throw keyed(apiError('herdr_missing', `herdr-core를 받거나 시작하지 못했습니다(${error}). 인터넷 연결을 확인한 뒤 다시 시도하세요. 준비될 때까지 세션을 시작할 수 없습니다.`), 'terminalMove.hcBand.why', { error });
-      }
-      const tried = ((this.herdrFind && this.herdrFind.tried) || []).length;
-      throw keyed(apiError('herdr_missing', `herdr를 찾지 못해 세션을 시작할 수 없습니다 (후보 ${tried}곳 확인). herdr를 설치하거나(https://herdr.dev) 설정의 herdr 경로 또는 ATRIUM_HERDR로 실행 파일을 지정하세요.`), 'herdrMissing', { n: tried });
+  // P40·P122: 터미널 서버(hc)를 받거나 띄우지 못했으면 terminal_missing, 세대가 다르면 terminal_incompatible, 끊겼으면 terminal_down. 보드의 다른 기능은 막지 않는다
+  requireTerminal() {
+    if (this.termMissing || (this.termCompat && this.termCompat.level === 'missing')) {
+      const m = this.termMissing || {};
+      const error = String(m.error || m.reason || 'not ready');
+      throw keyed(apiError('terminal_missing', `herdr-core를 받거나 시작하지 못했습니다(${error}). 인터넷 연결을 확인한 뒤 다시 시도하세요. 준비될 때까지 세션을 시작할 수 없습니다.`), 'terminalMissing', { error });
     }
-    if (!this.herdrOk) {
-      const c = this.herdrCompat || {};
-      throw keyed(apiError('herdr_incompatible', `herdr가 호환되지 않습니다: ${(c.problems || []).join('; ') || 'unknown'}. 지원하는 프로토콜(${this.cfg.herdrProtocols.join(', ')})의 herdr를 설치하거나 설정에서 호환되는 herdr의 경로를 지정하세요.`), 'herdrIncompatible', { version: c.version || '?', protocol: c.protocol ?? '?', supported: this.cfg.herdrProtocols.join(', ') });
+    if (!this.termOk) {
+      const c = this.termCompat || {};
+      const problems = (c.problems || []).join('; ') || 'unknown';
+      throw keyed(apiError('terminal_incompatible', `herdr-core가 호환되지 않습니다: ${problems}`), 'terminalIncompatible', { version: c.version || '?', problems });
     }
-    if (!this.adapter.connected) throw keyed(apiError('herdr_down', "herdr 서버에 연결되어 있지 않습니다."), 'herdrDown');
+    if (!this.adapter.connected) throw keyed(apiError('terminal_down', "터미널 서버에 연결되어 있지 않습니다."), 'terminalDown');
   }
   // B3: 새 세션 시작. P5: 시작 폴더의 리포지토리 워크스페이스에 생긴다(G1). 종류 shell은 에이전트 없는 일반 셸(G2)
   async spawn(p) {
-    this.requireHerdr();
+    this.requireTerminal();
     const cwd = path.resolve(String(p.cwd || ''));
     if (!p.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.cwd}`), 'noFolder', { path: p.cwd });
     const pending = this.spawningNames || (this.spawningNames = new Set()); // 만드는 중인 세션 이름
@@ -1417,18 +1260,17 @@ export class Backend {
       if (!PERMISSION_MODES.has(permissionMode)) throw apiError('bad_request', `승인 방식: ${permissionMode}`);
       const model = shell ? null : plan.model || null; // P115: Claude Code 밖 하네스도 모델을 기록한다(어댑터가 그 하네스 모양으로 넘긴다)
       const effort = claude ? plan.effort || null : null;
-      const allowHerdr = claude && !!plan.allowHerdr;
       const extraArgs = claude ? plan.extraArgs || [] : [];
       // P97: 실행 명령(호출자의 startCommand, 예: mywrap claude). 정하지 않은 하위 세션(atrium child의 물려받기·모델 풀기)은 부모 claude의 실행 명령을 물려받는다
       const parentS = p.parentSessionId ? this.sessions.get(p.parentSessionId) : null;
       // P115: 실행 명령은 모든 에이전트 하네스. 정하지 않은 하위 세션은 같은 종류 부모의 실행 명령을 물려받는다
       const startCommand = shell ? '' : plan.startCommand != null ? plan.startCommand : p.branch && parentS && parentS.kind === kind ? parentS.startCommand || '' : '';
       const harness = !claude && !shell && !!adapterOf(kind); // P115: 하네스 어댑터로 띄운다(env, PATH의 atrium, 안내문)
-      // F5: herdr가 아는 에이전트 종류. Claude Code만 판의 hook과 이어 가기 등록을 붙인다
+      // F5: 터미널이 아는 에이전트 종류. Claude Code만 판의 hook과 이어 가기 등록을 붙인다
       if (!KIND_RE.test(kind)) throw apiError('bad_request', `에이전트 종류: ${kind}`);
       if (!shell) {
         const kinds = await this.adapter.agentKinds().catch(() => []);
-        if (kinds.length && !kinds.some((k) => k.kind === kind)) throw apiError('bad_request', `herdr에서 지원하지 않는 에이전트 종류입니다: ${kind}`);
+        if (kinds.length && !kinds.some((k) => k.kind === kind)) throw apiError('bad_request', `지원하지 않는 에이전트 종류입니다: ${kind}`);
       }
       if (command && p.prompt) throw keyed(apiError('not_agent', "직접 입력한 명령으로 실행하는 세션에는 첫 요청을 자동 전송하지 않습니다. 보드에서 에이전트의 준비 상태를 확인할 수 없으므로 세션이 시작된 뒤 요청을 보내세요."), 'commandNoPrompt');
       if (shell && p.prompt) throw keyed(apiError('not_agent', "셸에는 첫 요청을 자동 전송하지 않습니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요."), 'shellNoPrompt');
@@ -1450,7 +1292,7 @@ export class Backend {
         const extra = this.branch.settingsExtra(sessionId);
         if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수와 연결. 판의 값이 이긴다
         if (Object.keys(cc.settings).length) extra.settings = cc.settings;
-        settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, allowHerdr, ...extra });
+        settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
         const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.plugin };
         args = buildStartArgs(launch);
@@ -1464,7 +1306,7 @@ export class Backend {
       if (shell) rt.phase = 'running';
       let s;
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
-        s = { sessionId, name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan };
+        s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan };
         this.store.insertSession({ ...s, runtime: rt });
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
@@ -1478,12 +1320,12 @@ export class Backend {
       // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
       if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
-      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, allowHerdr, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(claude && plan.connectionId ? { connection: plan.connectionId, launcherEnv: plan.env || {} } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
+      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(claude && plan.connectionId ? { connection: plan.connectionId, launcherEnv: plan.env || {} } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
       await this.adapter.refreshSubscription();
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
       this.probeGit(s, cwd);
-      const out = { sessionId, name, kind, flavor, paneId: hw.paneId, herdrWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
+      const out = { sessionId, name, kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
       if (command) {
         // P25 직접 명령: 셸 프롬프트가 뜨면 그 글을 그대로 치고 Enter. 에이전트가 나타나면 promoteShell이 같은 노드의 종류를 바꾼다(hook 없음)
         const ready = await this.adapter.waitShellReady(hw.paneId);
@@ -1501,10 +1343,7 @@ export class Backend {
         if (e.code === 'agent_not_detected') { this.store.addEvent(sessionId, 'start_command_failed', { startCommand, argv: e.argv || null }); throw keyed(apiError('start_command_failed', `실행 명령(${startCommand || kind})으로 ${kind}가 뜨지 않았습니다. 세션 창의 터미널에서 오류를 확인하세요.`), 'launcherStart.failed', { cmd: startCommand || kind, kind }); } // P97
         if (e.code !== 'agent_not_ready') throw e; this.store.addEvent(sessionId, 'agent_not_ready', { kind });
       } // 시작하자마자 대화상자(신뢰 등)에서 막혔다. 이름은 남는다
-      rt.herdr.launchPending = st.agent ? st.agent.launchPending : true;
-      // B3 4번: 이어 가기 명령 등록. agent.start 직후에는 herdr가 resume_not_accepted("reporter to hold the pane")로 거부하고,
-      // herdr가 패널에서 claude를 찾은 뒤(약 1.5초)에는 받는다. 받은 등록은 agent_session을 남기므로 신뢰 대화상자가 끝나 ready가 된 뒤에 한다.
-      if (claude) this.registerResume(s);
+      rt.term.launchPending = st.agent ? st.agent.launchPending : true;
       if (p.prompt) this.queue.enqueue(sessionId, p.prompt);
       this.log(`spawned ${name} ${kind} ${sessionId} pane=${hw.paneId} ws=${ws.key} shellReady=${shellReady} trust=${JSON.stringify(trust)}`);
       return { ...out, argv: st.argv };
@@ -1514,40 +1353,6 @@ export class Backend {
   async withNewPane(create, register) {
     this.creatingPanes = (this.creatingPanes || 0) + 1;
     try { const r = await create(); await register(r); return r; } finally { this.creatingPanes--; }
-  }
-
-  async registerResume(s) {
-    const t0 = Date.now(); let tries = 0; let lastErr = null;
-    while (Date.now() - t0 < 180000 && this.sessions.has(s.sessionId) && !s.rt.exit) {
-      // starting·trust_wait 중에는 보내지 않는다. 거부된 요청도 agent_session을 남겨 E10의 신뢰 대화상자 신호(agent_session 없음)를 지운다.
-      if (['ready', 'working', 'waiting', 'error'].includes(deriveState(s.rt).state)) {
-        tries++;
-        try {
-          await this.adapter.registerResume({ paneId: s.paneId, sessionId: s.sessionId, argv: s.resumeArgv });
-          this.store.addEvent(s.sessionId, 'resume_registered', { argv: s.resumeArgv, tries, ms: Date.now() - t0 });
-          return this.verifyResume(s);
-        } catch (e) { lastErr = e.code; if (e.code !== 'resume_not_accepted' && e.code !== 'unreachable') break; }
-      }
-      await sleep(1000);
-    }
-    this.store.addEvent(s.sessionId, 'resume_register_failed', { tries, lastErr });
-    return false;
-  }
-
-  // herdr가 session.json에 agent_resume을 저장했는지 읽어 본다. 사용자 설정의 herdr hook이 늦게 보고해 덮이면 다시 등록한다.
-  async verifyResume(s) {
-    const t0 = Date.now(); let reRegistered = 0;
-    while (Date.now() - t0 < 120000 && this.sessions.has(s.sessionId)) {
-      await sleep(2000);
-      const rec = this.adapter.readResumeRecord(s.sessionId);
-      if (rec && rec.found) {
-        const ok = Array.isArray(rec.argv) && rec.argv.includes('--settings') && rec.argv.includes(s.resumeArgv[s.resumeArgv.indexOf('--settings') + 1]);
-        if (ok) { s.resumeVerified = true; this.store.updateSession(s.sessionId, { resumeVerified: true }); this.store.addEvent(s.sessionId, 'resume_verified', { argv: rec.argv, ms: Date.now() - t0 }); this.broadcastSession(s); return true; }
-        if (reRegistered < 2 && s.rt.herdr.agentSessionId) { reRegistered++; await this.adapter.registerResume({ paneId: s.paneId, sessionId: s.sessionId, argv: s.resumeArgv }).catch(() => {}); this.store.addEvent(s.sessionId, 'resume_reregistered', { saw: rec.argv }); }
-      }
-    }
-    this.store.addEvent(s.sessionId, 'resume_unverified', {});
-    return false;
   }
 
   // B1·B2: 이름 하나 이상(@a @b) 또는 @all. P5: 셸에는 보내지 않는다(not_agent).
@@ -1592,9 +1397,9 @@ export class Backend {
   // D2: 판이 띄운 세션만 끈다. /exit로 정상 종료하고 작업 공간을 닫는다.
   async kill(p) {
     const s = this.resolve(p.session);
-    const shared = await this.adapter.workspacePanes(s.herdrWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => []);
+    const shared = await this.adapter.workspacePanes(s.termWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => []);
     const kindName = s.kind || 'claude';
-    const closeText = shared.length ? `패널 ${s.paneId}만 닫습니다 (같은 herdr 작업 공간의 다른 터미널 창 ${shared.length}개는 유지합니다).` : "터미널 창을 닫습니다.";
+    const closeText = shared.length ? `패널 ${s.paneId}만 닫습니다 (같은 작업 공간의 다른 터미널 창 ${shared.length}개는 유지합니다).` : "터미널 창을 닫습니다.";
     // G2: 셸은 패널만 닫는다. 돌고 있는 명령도 함께 끝난다
     const closeMsg = shared.length ? m('killClosePane', { pane: s.paneId, n: shared.length }) : m('killCloseAll');
     if (!p.confirm && kindName === SHELL) { const sh = s.rt.shell; const cmd = sh && !sh.atPrompt ? clip(sh.command || (sh.procs || []).join(', ') || '?', 60) : null; return confirmResult(`셸 ${s.name}: ${closeText}${cmd ? ` 실행 중인 명령(${cmd})도 종료합니다.` : ''}`, m('killShell', { name: s.name, close: closeMsg, running: cmd ? m('killShellRunning', { cmd }) : '' })); }
@@ -1604,7 +1409,7 @@ export class Backend {
     if (p.after && !['archive', 'delete'].includes(p.after)) throw apiError('bad_request', `after에는 archive 또는 delete를 지정하세요: ${p.after}`);
     if (p.worktree != null && !['keep', 'remove'].includes(p.worktree)) throw apiError('bad_request', `worktree에는 keep 또는 remove를 지정하세요: ${p.worktree}`);
     const wtChoice = p.worktree === 'remove' ? 'remove' : 'keep'; // 사람이 지우기를 고르지 않았으면 남긴다
-    // P21(D4): 잠든 세션은 패널이 없다. herdr 없이 판에서 닫고 보관·삭제한다
+    // P21(D4): 잠든 세션은 패널이 없다. 터미널 없이 판에서 닫고 보관·삭제한다
     if (s.rt.sleep && !s.paneId && !(this.sleeper && (this.sleeper.wakes.has(s.sessionId) || this.sleeper.going.has(s.sessionId)))) {
       s.rt.sleep = null; s.rt.exit = { kind: 'normal', reason: 'closed while sleeping', at: Date.now() };
       this.closeSession(s, 'killed');
@@ -1613,19 +1418,19 @@ export class Backend {
       else if (p.after === 'delete') after = await this.recall.forgetClosed(s.sessionId);
       return { closed: true, name: s.name, exit: null, steps: ['sleeping: no pane'], ...(after ? { after } : {}) };
     }
-    this.requireHerdr();
+    this.requireTerminal();
     this.killing.add(s.sessionId);
     const steps = [];
     try {
       const st = () => deriveState(s.rt).state;
-      if (s.rt.herdr.present && kindName !== SHELL) {
+      if (s.rt.term.present && kindName !== SHELL) {
         const exiting = !!s.rt.worktreeExit; // P71: 워크트리 나가기 질문이 이미 떠 있다. esc로 취소하지 않고 그 질문에 답한다
         if (!exiting && (st() === 'waiting' || st() === 'trust_wait' || st() === 'working')) {
           await this.adapter.sendKeys(s.agentName, ['esc']).catch((e) => steps.push(`esc failed ${e.code}`));
           steps.push(`esc (${st()})`);
-          for (let i = 0; i < 25 && s.rt.herdr.present && ['waiting', 'trust_wait', 'working'].includes(st()); i++) await sleep(200);
+          for (let i = 0; i < 25 && s.rt.term.present && ['waiting', 'trust_wait', 'working'].includes(st()); i++) await sleep(200);
         }
-        if (s.rt.herdr.present) {
+        if (s.rt.term.present) {
           s.rt.exitRequested = true;
           beginBoardExit(this, s, 'close'); // P119: 판이 답할 나가기 질문은 응답 필요로 보이지 않는다(finally에서 거둔다)
           // Claude Code는 /exit. 다른 종류는 하네스마다 끝내는 말이 달라 ctrl+c를 두 번 보낸다(codex는 두 번째에 끝난다)
@@ -1636,16 +1441,16 @@ export class Backend {
             await this.adapter.paneKeys(s.paneId, ['enter']);
             steps.push(EXIT_TEXT[kindName]);
           } else {
-            for (let i = 0; i < 2 && s.rt.herdr.present; i++) { await this.adapter.paneKeys(s.paneId, ['ctrl+c']).catch(() => {}); steps.push('ctrl+c'); await sleep(600); }
+            for (let i = 0; i < 2 && s.rt.term.present; i++) { await this.adapter.paneKeys(s.paneId, ['ctrl+c']).catch(() => {}); steps.push('ctrl+c'); await sleep(600); }
           }
           const waited = await waitClaudeExit(this, s, this.cfg.killWaitMs, { worktree: wtChoice, by: 'close', steps }); // claude가 아닌 종류는 기다리기만 한다
-          steps.push(s.rt.herdr.present ? `${kindName} still running` : `${kindName} exited in ${waited}ms`);
+          steps.push(s.rt.term.present ? `${kindName} still running` : `${kindName} exited in ${waited}ms`);
         }
       }
       const exit = s.rt.exit;
-      // 같은 작업 공간에 다른 패널이 있으면(세션이 herdr로 나눠 띄운 경우) 이 패널만 닫는다
+      // 같은 작업 공간에 다른 패널이 있으면 이 패널만 닫는다
       if (shared.length) await this.adapter.closePane(s.paneId).then(() => steps.push(`pane ${s.paneId} closed`)).catch((e) => steps.push(`pane.close failed ${e.code}`));
-      else await this.adapter.closeWorkspace(s.herdrWorkspaceId).then(() => steps.push(`workspace ${s.herdrWorkspaceId} closed`)).catch((e) => steps.push(`workspace.close failed ${e.code}`));
+      else await this.adapter.closeWorkspace(s.termWorkspaceId).then(() => steps.push(`workspace ${s.termWorkspaceId} closed`)).catch((e) => steps.push(`workspace.close failed ${e.code}`));
       this.closeSession(s, 'killed');
       // P15: 닫는 것은 보관이나 삭제다(노드의 X). 아무것도 하지 않으면 닫힌 세션으로 남고 판 밖 대화처럼 다시 보인다
       let after = null;
@@ -1656,11 +1461,11 @@ export class Backend {
   }
 
   // A1 답하기(P2): 승인 카드의 답을 agent.send_keys(글은 pane.send_text)로 넣는다.
-  // 보내기 직전 확인: herdr가 blocked인지, 카드의 요청(tool_use_id)이 아직 기다리는 요청인지(PostToolUse가 오면 pendingAsk가 풀린다).
+  // 보내기 직전 확인: 터미널 상태가 blocked인지, 카드의 요청(tool_use_id)이 아직 기다리는 요청인지(PostToolUse가 오면 pendingAsk가 풀린다).
   // 아니면 보내지 않는다. stale·no_pending_ask면 창은 카드를 닫고, not_blocked면 카드를 둔다.
   async answer(p) {
     const s = this.resolve(p.session);
-    this.requireHerdr();
+    this.requireTerminal();
     if (s.rt.worktreeExit && !s.rt.pendingAsk) return this.answerWorktreeExit(s, p); // P71: 화면에서 읽은 질문이라 hook이 없어도 답한다
     // 승인 카드의 키 순서는 판이 띄운 Claude Code만 안다(E9). 다른 종류와 판에 올린 에이전트는 터미널에서 답한다(F5)
     if (!this.hooked(s)) throw apiError('answer_in_terminal', `${s.name}(${s.kind})의 응답 키 입력 순서를 보드에서 확인할 수 없습니다. 터미널에서 직접 응답하세요.`);
@@ -1674,7 +1479,7 @@ export class Backend {
     s.answering = true;
     try {
       const a = await this.adapter.getAgent(s.agentName);
-      if (!a || a.status !== 'blocked') return { sent: false, reason: 'not_blocked', herdrStatus: a ? a.status : null };
+      if (!a || a.status !== 'blocked') return { sent: false, reason: 'not_blocked', termStatus: a ? a.status : null };
       if (s.rt.pendingAsk !== ask) return { sent: false, reason: 'stale' };
       for (let i = 0; i < plan.steps.length; i++) {
         const st = plan.steps[i];
@@ -1696,7 +1501,7 @@ export class Backend {
   async sendKeysTo(p, c) {
     const s = this.resolve(p.session ?? p.target);
     const keys = checkKeys(p.keys);
-    this.requireHerdr();
+    this.requireTerminal();
     if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name} 세션은 절전 중이라 터미널이 닫혀 있습니다. 먼저 작업을 재개하세요.`), 'sleepingNoPane', { name: s.name });
     await this.keyChain(s.sessionId, () => this.adapter.paneKeys(s.paneId, keys));
     s.lastUserInputAt = Date.now();
@@ -1728,48 +1533,40 @@ export class Backend {
     } finally { s.answering = false; }
   }
 
-  // herdr 서버 끄기·켜기·다시 띄우기(C3, D2). 끄면 claude도 함께 끝나고, 다시 띄우면 이어 가기로 다시 뜬다.
-  async herdrControl(op, confirm) {
-    const warn = "보드 전용 herdr 서버를 종료하면 모든 Claude Code 세션이 종료되고 진행 중인 작업이 중단됩니다. 서버를 다시 시작하면 기존 대화에서 세션을 재개합니다.";
-    if ((op === 'stop' || op === 'restart') && !confirm) return confirmResult(warn, m('herdrStop'));
+  // 터미널 서버 끄기·켜기·다시 띄우기(C3, D2). 끄면 그 안의 프로그램이 함께 끝나고, 다시 띄우면 판이 판 세션을 이어 간다(J1).
+  async terminalControl(op, confirm) {
+    const warn = "보드 전용 터미널 서버를 종료하면 모든 세션과 터미널이 종료되고 진행 중인 작업이 중단됩니다. 서버를 다시 시작하면 기존 대화에서 세션을 재개합니다.";
+    if ((op === 'stop' || op === 'restart') && !confirm) return confirmResult(warn, m('terminalStop'));
     const out = { op };
     if (op === 'stop' || op === 'restart') {
-      // P54: 끌 실행 파일을 모르면(찾기 실패) 다시 찾는다. 그래도 없으면 부르지 않고 까닭을 알린다(전에는 10초 기다린 뒤 'herdr not found'를 담아 돌려주었다)
-      if (!this.adapter.herdrPath) await this.resolveHerdr(op);
-      if (!this.adapter.herdrPath) throw apiError('herdr_missing', "herdr 실행 파일을 찾지 못해 보드 전용 herdr 서버를 종료할 수 없습니다. 설정의 herdr 경로 또는 ATRIUM_HERDR로 실행 파일을 지정하세요.");
-      this.herdrStopping = true;
+      this.termStopping = true;
       out.stop = await this.adapter.stopServer();
       await sleep(500);
-      this.herdrStopping = false;
+      this.termStopping = false;
     }
     if (op === 'start' || op === 'restart') {
-      // P40: 새 서버는 찾기 결과로 띄운다(업데이트한 herdr로 다시 띄우기). 못 찾으면 까닭과 함께 막는다
-      await this.resolveHerdr(op);
-      if (!this.adapter.herdrPath) { this.herdrMissing = { reason: 'not_found', at: Date.now() }; this.herdrCompat = { ok: false, level: 'missing', problems: ['herdr not found'] }; this.herdrOk = false; this.api.broadcast('herdr', this.herdrView()); this.requireHerdr(); }
       let r;
       try { r = await this.adapter.startServer(); }
-      catch (e) { await this.ensureHerdr(); this.api.broadcast('herdr', this.herdrView()); throw keyed(apiError(e.code || 'start_failed', `herdr 서버를 시작하지 못했습니다: ${e.message}`), 'herdrStartFailed', { error: e.herdrMessage || e.message }); }
-      this.herdrMissing = null;
-      this.store.addEvent(null, 'herdr_started', { pid: r.pid, by: op });
-      out.start = { started: r.started, pid: r.pid, ms: r.ms, version: r.pong && r.pong.version, protocol: r.pong && r.pong.protocol, exe: this.adapter.herdrPath };
-      this.setHerdrCompat(this.adapter.checkCompat(r.pong));
-      if (this.herdrOk && !this.adapter._watching) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
-      this.checkHerdrUpdate(op).catch(() => {});
+      catch (e) { await this.ensureTerminal(); this.broadcastTerminal(); throw keyed(apiError(e.code || 'start_failed', `터미널 서버를 시작하지 못했습니다: ${e.detail || e.message}`), 'terminalStartFailed', { error: e.detail || e.message }); }
+      this.termMissing = null;
+      this.store.addEvent(null, 'terminal_started', { pid: r.pid, by: op });
+      out.start = { started: r.started, pid: r.pid, ms: r.ms, version: r.pong && r.pong.version, protocol: r.pong && r.pong.protocol, exe: this.adapter.exePath || null };
+      this.setTermCompat(this.adapter.checkCompat(r.pong));
+      if (this.termOk && !this.adapter._watching) this.adapter.startEvents(() => [...this.sessions.values()].map((s) => s.paneId).filter(Boolean));
+      this.broadcastTerminal();
     }
     return out;
   }
 
-  // P40: 진단에 고른 경로, 까닭, 본 후보와 결과, 시험하지 않은 버전 경고, 업데이트 알림을 더한다. 진단 때 업데이트도 본다(1분에 한 번까지)
-  async herdrStatus() {
+  // 진단: 서버가 도는지, 붙었는지, 버전, 옛 판 옮기기 진행(P129)
+  async terminalStatus() {
     const p = await this.adapter.probe();
-    if (p.running && Date.now() - (this._updateCheckedAt || 0) > 60000) await this.checkHerdrUpdate('status').catch(() => {});
     const compat = p.running ? this.adapter.checkCompat(p.pong) : null;
-    const v = this.herdrView();
+    const v = this.terminalView();
     return {
-      backend: this.adapter.backend || 'herdr', hcVersion: (compat && compat.hcVersion) || null, // P114 2b
-      session: this.cfg.herdrSession, running: p.running, connected: this.adapter.connected, serverPid: p.running ? this.adapter.serverPid() : null, compat, cliVersion: await this.adapter.cliVersion(), subscribedPanes: this.adapter.subscribedPanes || [],
-      path: v.path, missing: v.missing, level: compat ? compat.level : v.level, version: compat ? compat.version : v.version, protocol: compat ? compat.protocol : v.protocol, warning: compat ? compat.warning : v.warning, protocols: v.protocols, tested: v.tested, update: v.update,
-      find: this.herdrFind || null,
+      ...v, hcVersion: (compat && compat.hcVersion) || v.hcVersion,
+      running: p.running, serverPid: p.running ? this.adapter.serverPid() : null, compat, cliVersion: await this.adapter.cliVersion(), subscribedPanes: this.adapter.subscribedPanes || [],
+      level: compat ? compat.level : v.level, version: compat ? compat.version : v.version, protocol: compat ? compat.protocol : v.protocol, warning: compat ? compat.warning : v.warning,
     };
   }
 
@@ -1804,24 +1601,8 @@ export class Backend {
     return { since, until: Date.now(), events: events.length, lines: summarizeChanges(events, { nameOf, current }) };
   }
 
-  // D3: 판 전용 herdr 세션에 다른 클라이언트(herdr 화면)가 붙었는가. 서버 로그와 프로세스 목록 두 가지로 본다.
-  checkClients() {
-    const log = this.adapter.readClients();
-    const procs = (this.resources && this.resources.last && this.resources.last.tuiProcesses) || [];
-    const v = { session: this.cfg.herdrSession, logAvailable: log.available, viaLog: log.clients, viaProcess: procs, attached: log.clients.length > 0 || procs.length > 0 };
-    const key = JSON.stringify([v.viaLog.map((c) => c.clientId), v.viaProcess.map((p) => p.pid)]);
-    if (key !== this._clientsKey) {
-      this._clientsKey = key;
-      this.clients = v;
-      this.store.addEvent(null, 'herdr_clients', { attached: v.attached, viaLog: v.viaLog.map((c) => c.clientId), viaProcess: v.viaProcess.map((p) => p.pid) });
-      this.api.broadcast('herdr.clients', v);
-      if (v.attached) this.log(`foreign herdr client attached: log=${key}`);
-    }
-    return v;
-  }
-
   // ---------- 세션끼리 연결(P4, ARCH 4절 F) ----------
-  // herdr 이름이나 패널 ID로 판의 세션을 찾는다(에이전트가 herdr 명령에 쓴 대상)
+  // 에이전트 이름이나 패널 ID로 판의 세션을 찾는다
   resolveAgentTarget(target) {
     if (!target) return null;
     const t = String(target).replace(/^@/, '');
@@ -1869,82 +1650,13 @@ export class Backend {
     return e;
   }
 
-  // F1·F3: 판이 띄운 Claude Code의 셸 도구 hook. 명령 글에서 herdr 호출을 읽는다(docs/log/p4-links.md 보고 4절)
-  // P116: 일 시키기는 판의 atrium prompt|wait|read가 판을 거치며 바로 남긴다(agent-verbs.mjs). 이 읽기는 herdr 모드 호환으로만 둔다
-  //   (지금 도는 세션과 사람이 쓴 지시가 아직 herdr agent prompt를 친다). hc 모드의 패널에서 친 herdr 명령은 판의 세션에 가지 않으므로 읽지 않는다
-  onShellHook(s, ev, body) {
-    if (this.adapter && this.adapter.backend === 'hc') return;
-    const cmd = body.tool_input && (body.tool_input.command || body.tool_input.script);
-    if (!cmd || !/herdr/i.test(cmd)) return;
-    const calls = parseHerdrCommands(cmd, { boardSession: this.cfg.herdrSession });
-    const foreign = calls.filter((c) => c.foreign);
-    if (foreign.length) this.store.addEvent(s.sessionId, 'herdr_foreign_call', { calls: foreign.map((c) => clip(c.raw, 200)) }); // 다른 herdr 세션·기계를 부른 호출은 판이 보지 않는다
-    const mine = calls.filter((c) => !c.foreign && LINK_VERBS.has(c.verb));
-    if (!mine.length) return;
-    const id = body.tool_use_id || null;
-    const now = Date.now();
-    s.herdrCalls ||= new Map();
-    if (ev === 'PreToolUse') {
-      s.herdrCalls.set(id, { calls: mine, at: now });
-      if (s.herdrCalls.size > 50) s.herdrCalls.delete(s.herdrCalls.keys().next().value);
-      for (const c of mine) {
-        this.store.addEvent(s.sessionId, 'herdr_call', { verb: c.verb, target: c.target || c.name || c.pane || null, text: clip(c.text, 200), toolUseId: id });
-        // P21(D4): 다른 에이전트가 herdr로 잠든 세션을 부른다. 이 호출은 대상이 없어 실패하므로 깨워 두고, 다시 부르면 된다(판 안내에 적었다)
-        { const z = c.target && this.resolveAgentTarget(c.target); if (z && z !== s && z.rt.sleep && this.sleeper) this.sleeper.wakeFor(z, `herdr:${s.name}`).catch(() => {}); } // P24: 그 리포 전체(P111: 혼자 잠든 세션은 그 세션만)
-        if (c.verb === 'agent.prompt') {
-          const t = this.resolveAgentTarget(c.target);
-          if (t && t !== s) { const l = this.ensureLink(s.sessionId, t.sessionId, { observed: true }); this.linkEvent(l, 'prompt', c.text, { toolUseId: id, wait: c.wait, via: 'hook' }); t.openPromptFrom = { linkId: l.linkId, at: now, text: c.text }; }
-          else if (!t) { (this.unresolved ||= []).push({ from: s.sessionId, target: c.target, text: c.text, at: now, toolUseId: id }); }
-        } else if (c.verb === 'agent.send_keys') {
-          const t = this.resolveAgentTarget(c.target);
-          if (t && t !== s) this.linkEvent(this.ensureLink(s.sessionId, t.sessionId, { observed: true }), 'keys', (c.keys || []).join(' '), { toolUseId: id });
-        } else if (c.verb === 'agent.start' || c.verb === 'pane.split' || c.verb === 'pane.run' || c.verb === 'worktree.create' || c.verb === 'workspace.create') {
-          const pane = c.pane === 'current' || c.pane === '$HERDR_PANE_ID' || c.pane === '"$HERDR_PANE_ID"' ? null : c.pane;
-          this.spawnIntents.push({ from: s.sessionId, verb: c.verb, name: c.name || null, pane: c.verb === 'agent.start' ? pane : null, kind: c.kind || null, at: now, toolUseId: id, raw: clip(c.raw, 200) });
-          this.spawnIntents = this.spawnIntents.filter((x) => now - x.at < this.cfg.adoptSpawnMatchMs);
-        }
-      }
-      return;
-    }
-    // PostToolUse: 명령의 결과(stdout의 JSON)로 지시가 들어갔는지, 받은 답, 새 패널 ID를 읽는다
-    const out = parseHerdrOutput(body.tool_response);
-    const failed = ev === 'PostToolUseFailure';
-    let reads = 0;
-    for (const c of mine) {
-      if (c.verb === 'agent.prompt' || c.verb === 'agent.wait') {
-        const t = this.resolveAgentTarget(c.target);
-        if (!t || t === s) continue;
-        const r = out.results.find((x) => x && (x.type === 'agent_prompted' || x.type === 'agent_wait' || x.agent));
-        const status = r && r.agent ? r.agent.agent_status : null;
-        this.linkEvent(this.ensureLink(s.sessionId, t.sessionId, { observed: true }), c.verb === 'agent.prompt' ? 'prompt_result' : 'wait_result', failed ? clip(body.error || out.text, 400) : null, { toolUseId: id, ok: !failed, status, type: r ? r.type : null }, { quiet: true });
-      } else if (c.verb === 'agent.read') {
-        const t = this.resolveAgentTarget(c.target);
-        if (!t || t === s) continue;
-        const text = reads++ === 0 ? readTextOf(out) : null; // 한 명령에 read가 여럿이면 첫 것만 글로 남긴다
-        this.linkEvent(this.ensureLink(s.sessionId, t.sessionId, { observed: true }), 'reply', text == null ? null : screenAnswerText(text, 40), { toolUseId: id, ok: !failed, screenTail: text == null ? null : tailText(text, 60) });
-      } else {
-        // 새 패널과 에이전트 ID를 띄운 명령에 붙인다(F3 맞추기)
-        const it = this.spawnIntents.find((x) => x.toolUseId === id && x.verb === c.verb);
-        for (const r of out.results) {
-          const pane = r && (r.pane ? r.pane.pane_id : r.root_pane ? r.root_pane.pane_id : r.agent ? r.agent.pane_id : null);
-          if (pane && it && !it.resultPanes) it.resultPanes = [];
-          if (pane && it) it.resultPanes.push(pane);
-          if (r && r.agent && r.agent.name && it) it.name ||= r.agent.name;
-        }
-        const adopted = it && it.resultPanes && it.resultPanes.map((p) => this.sessionByPane(p)).find((x) => x && x.origin === 'adopted' && !x.parentSessionId);
-        if (adopted) this.setParent(adopted, s, it);
-      }
-    }
-    if (id) s.herdrCalls.delete(id);
-  }
-
-  // F3·G2: 판 전용 herdr 세션에 나타난, 판이 모르는 패널을 판에 올린다. 에이전트가 있으면 그 종류로, 없으면 일반 셸(shell)로.
-  // 부모는 띄운 명령(hook의 agent start, pane split), 없으면 같은 작업 공간의 판 세션이다. 워크스페이스는 패널 폴더(herdr cwd)로 정한다.
+  // F3·G2: 판 전용 터미널 세션에 나타난, 판이 모르는 패널을 판에 올린다. 에이전트가 있으면 그 종류로, 없으면 일반 셸(shell)로.
+  // 부모는 같은 작업 공간의 판 세션이다. 워크스페이스는 패널 폴더(터미널 cwd)로 정한다.
   async adoptPane(paneId, { cwd: hintCwd = null } = {}) {
     if (!paneId || this.adopting.has(paneId) || this.sessionByPane(paneId)) return null;
     this.adopting.add(paneId);
     try {
-      await sleep(400); // herdr가 agent.start의 이름을 붙일 시간
+      await sleep(400); // 터미널이 에이전트를 알아볼 시간
       for (let i = 0; i < 25 && this.creatingPanes > 0 && !this.sessionByPane(paneId); i++) await sleep(200); // 판이 만드는 패널이면 그 세션이 등록될 때까지
       if (this.sessionByPane(paneId)) return null; // 판이 띄우는 중이던 세션
       const pane = await this.adapter.getPane(paneId).catch(() => null);
@@ -1953,10 +1665,8 @@ export class Backend {
       if (this.sessionByPane(paneId)) return null;
       const hw = (a && a.workspaceId) || pane.workspaceId;
       const now = Date.now();
-      const intents = this.spawnIntents.filter((x) => now - x.at < this.cfg.adoptSpawnMatchMs).reverse();
-      const it = intents.find((x) => (a && a.name && x.name === a.name) || x.pane === paneId || (x.resultPanes || []).includes(paneId))
-        || intents.find((x) => { const f = this.sessions.get(x.from); return f && f.herdrWorkspaceId === hw; });
-      const sameWs = [...this.sessions.values()].find((x) => x.herdrWorkspaceId === hw && x.paneId !== paneId);
+      const it = null;
+      const sameWs = [...this.sessions.values()].find((x) => x.termWorkspaceId === hw && x.paneId !== paneId);
       const parent = (it && this.sessions.get(it.from)) || sameWs || null;
       const taken = takenNames(this.sessions.values(), [...(this.spawningNames || [])]); // 만드는 중인 이름도 피한다(이슈 #1-7). P66: 판의 이름도
       const base = a ? (a.name && NAME_RE.test(a.name) ? a.name : `${a.agent || 'agent'}-${paneId.replace(/[^A-Za-z0-9]/g, '')}`) : `sh-${paneId.replace(/[^A-Za-z0-9]/g, '')}`;
@@ -1966,7 +1676,7 @@ export class Backend {
       const rt = newRuntime({ kind, hooked: false });
       if (a) {
         applyAgentDetected(rt, now);
-        applyHerdrStatus(rt, a.status || 'unknown', now, { launchPending: a.launchPending, agentSessionId: a.agentSessionId });
+        applyTermStatus(rt, a.status || 'unknown', now, { launchPending: a.launchPending, agentSessionId: a.agentSessionId });
         if (a.status && a.status !== 'unknown') rt.phase = 'running';
       } else rt.phase = 'running';
       const cwd = pane.cwd || (a && a.cwd) || hintCwd || (parent && parent.cwd) || '';
@@ -1975,7 +1685,7 @@ export class Backend {
       const wsKey = ws ? ws.key : parent ? parent.workspaceKey : this.currentWorkspace();
       if (this.sessionByPane(paneId)) return null;
       if (ws) this.ensureWorkspace(ws, `adopt ${name}`);
-      const s = { sessionId: crypto.randomUUID(), name, cwd, paneId, herdrWorkspaceId: hw, agentName: (a && a.name) || paneId, model: null, effort: null, permissionMode: 'manual', settingsPath: '', hookToken: '', resumeArgv: null, resumeVerified: false, createdAt: now, closedAt: null, seenAt: null, touchedAt: null, rt, lastState: null, kind, origin: 'adopted', parentSessionId: null, adoptNamed: !!(a && a.name), workspaceKey: wsKey };
+      const s = { sessionId: crypto.randomUUID(), name, cwd, paneId, termWorkspaceId: hw, agentName: (a && a.name) || paneId, model: null, effort: null, permissionMode: 'manual', settingsPath: '', hookToken: '', resumeArgv: null, resumeVerified: false, createdAt: now, closedAt: null, seenAt: null, touchedAt: null, rt, lastState: null, kind, origin: 'adopted', parentSessionId: null, adoptNamed: !!(a && a.name), workspaceKey: wsKey };
       this.store.insertSession({ ...s, runtime: rt });
       this.sessions.set(s.sessionId, s);
       // 새 노드는 그 워크스페이스 판의 빈자리. 부모가 같은 판에 있으면 부모 옆(F3). 사람이 보는 화면은 옮기지 않는다(G3)
@@ -1983,10 +1693,10 @@ export class Backend {
       const area = this.worktrees ? this.worktrees.areaOf(wsKey, cwd) : ''; // P27
       const slot = slotFor(this, { wsKey, size: NODE, near: anchor && (anchor.area || '') === area ? anchor : null, area });
       this.store.setNode({ session_id: s.sessionId, x: slot.x, y: slot.y, w: NODE.w, h: NODE.h, z: 0, size: NODE.size, aspect: NODE.aspect, area });
-      // P6a(H5): herdr에서 부모와 같은 탭에 나뉜 패널이면 나눈 방향대로 붙인다
+      // P6a(H5): 부모와 같은 탭에 나뉜 패널이면 나눈 방향대로 붙인다(탭 배치가 있는 터미널만)
       if (parent) await autoDockSplit(this, s, parent);
       settleRegions(this, 'adopt');
-      this.store.addEvent(s.sessionId, 'adopted', { paneId, agent: kind, herdrName: (a && a.name) || null, cwd, workspace: wsKey, parent: parent ? parent.name : null, by: it ? `hook:${it.verb}` : sameWs ? 'same workspace' : 'none', intent: it ? it.raw : null });
+      this.store.addEvent(s.sessionId, 'adopted', { paneId, agent: kind, agentName: (a && a.name) || null, cwd, workspace: wsKey, parent: parent ? parent.name : null, by: it ? `hook:${it.verb}` : sameWs ? 'same workspace' : 'none', intent: it ? it.raw : null });
       this.log(`adopted ${name} (${kind}) pane=${paneId} ws=${wsKey} parent=${parent ? parent.name : '-'}`);
       await this.adapter.refreshSubscription();
       this.api.broadcast('session.created', { sessionId: s.sessionId, name, adopted: true, workspaceKey: wsKey });
@@ -1998,9 +1708,9 @@ export class Backend {
     } finally { this.adopting.delete(paneId); }
   }
   // 받는 쪽이 판에 오르기 전에(또는 셸 노드에 에이전트가 뜨기 전에) 보낸 지시(띄우자마자 시킴)를 이제 잇는다
-  linkUnresolved(s, herdrName) {
+  linkUnresolved(s, agentName) {
     const now = Date.now();
-    const hit = (x) => (herdrName && x.target === herdrName) || x.target === s.paneId;
+    const hit = (x) => (agentName && x.target === agentName) || x.target === s.paneId;
     for (const u of (this.unresolved || []).filter(hit)) {
       const f = this.sessions.get(u.from);
       if (f && f !== s) this.linkEvent(this.ensureLink(f.sessionId, s.sessionId, { observed: true }), 'prompt', u.text, { toolUseId: u.toolUseId, via: 'hook', late: true });
@@ -2012,9 +1722,9 @@ export class Backend {
     s.parentSessionId = parent.sessionId;
     this.store.updateSession(s.sessionId, { parentSessionId: parent.sessionId });
     const l = this.ensureLink(parent.sessionId, s.sessionId, { spawned: true });
-    if (!this.store.linkEvents(l.linkId, 5).some((e) => e.kind === 'spawn')) this.linkEvent(l, 'spawn', intent ? intent.raw : `같은 작업 공간(${s.herdrWorkspaceId})에 나타남`, { by: intent ? `hook:${intent.verb}` : 'same workspace', paneId: s.paneId, kind: s.kind }, { quiet: true });
+    if (!this.store.linkEvents(l.linkId, 5).some((e) => e.kind === 'spawn')) this.linkEvent(l, 'spawn', intent ? intent.raw : `같은 작업 공간(${s.termWorkspaceId})에 나타남`, { by: intent ? `hook:${intent.verb}` : 'same workspace', paneId: s.paneId, kind: s.kind }, { quiet: true });
   }
-  // herdr agent start가 이름을 늦게 붙였으면 따라 바꾼다(자동으로 지은 이름일 때만)
+  // 터미널이 에이전트 이름을 늦게 알렸으면 따라 바꾼다(자동으로 지은 이름일 때만)
   async refreshAdoptedName(s) {
     if (s.origin !== 'adopted' || s._naming) return;
     s._naming = true;
@@ -2024,7 +1734,7 @@ export class Backend {
       s.adoptNamed = true; s.agentName = a.name;
       if (s.name !== a.name) { this.store.addEvent(s.sessionId, 'renamed', { from: s.name, to: a.name }); s.name = a.name; this.store.renameSession(s.sessionId, a.name); }
       this.store.updateSession(s.sessionId, { agentName: a.name });
-      this.broadcastSession(s, { cause: 'herdr:name' });
+      this.broadcastSession(s, { cause: 'term:name' });
     } finally { s._naming = false; }
   }
 
@@ -2125,7 +1835,7 @@ export class Backend {
       if (changed && this.worktrees) this.worktrees.kick('git'); // P27: 워크트리로 들어갔거나 새 워크트리가 생겼을 수 있다
     }).catch(() => {});
   }
-  // hook이 없는 세션은 herdr가 아는 패널 폴더(foreground_cwd)를, 모든 세션은 브랜치가 바뀌었는지를 주기적으로 본다
+  // hook이 없는 세션은 터미널이 아는 패널 폴더(foreground_cwd)를, 모든 세션은 브랜치가 바뀌었는지를 주기적으로 본다
   async pollCwd() {
     if (!this.adapter.connected) return;
     for (const s of [...this.sessions.values()]) {
@@ -2142,7 +1852,7 @@ export class Backend {
   async get(p) {
     const s = this.resolve(p.session);
     const out = { ...this.summary(s), ask: s.rt.pendingAsk ? { ...s.rt.pendingAsk } : null, lastPrompt: s.rt.lastPrompt, lastAnswer: s.rt.lastAnswer, lastAskResolved: s.rt.lastAskResolved, settingsPath: s.settingsPath, resumeArgv: s.resumeArgv, transcriptPath: s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId), git: s.git || null };
-    if (p.screen !== false && s.rt.herdr.present !== undefined) { try { out.screenTail = tailLines(await this.adapter.readScreen(s.paneId, { source: 'visible' }), p.lines || 12); } catch { out.screenTail = null; } }
+    if (p.screen !== false && s.rt.term.present !== undefined) { try { out.screenTail = tailLines(await this.adapter.readScreen(s.paneId, { source: 'visible' }), p.lines || 12); } catch { out.screenTail = null; } }
     if (!out.git) out.git = s.git = await gitProbe(s.rt.cwd || s.cwd);
     out.deliveries = this.store.deliveries({ sessionId: s.sessionId, limit: 10 }).map((d) => ({ ...d, text: clip(d.text, 80) }));
     out.lastActivityAt = s.rt.lastActivityAt;
@@ -2151,13 +1861,12 @@ export class Backend {
 
   handlers() {
     return {
-      'backend.status': async () => ({ pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, herdr: await this.herdrStatus(), sessions: this.sessions.size, relay: this.relay.stats(), clients: this.clients || null, plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null, version: this.updater ? this.updater.running : null }),
+      'backend.status': async () => { const terminal = await this.terminalStatus(); return { pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, terminal, herdr: terminal /* P129: 옛 이름(옛 CLI·업데이터) */, sessions: this.sessions.size, relay: this.relay.stats(), plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null, version: this.updater ? this.updater.running : null }; },
       'backend.shutdown': async () => { setTimeout(() => this.stop('api').then(() => process.exit(0)), 50); return { stopping: true }; },
-      'herdr.status': () => this.herdrStatus(),
-      'herdr.stop': (p) => this.herdrControl('stop', p.confirm),
-      'herdr.start': () => this.herdrControl('start', true),
-      'herdr.restart': (p) => this.herdrControl('restart', p.confirm),
-      'herdr.rediscover': () => this.rediscoverHerdr('rediscover'), // P40: 다시 찾기
+      'terminal.status': () => this.terminalStatus(),
+      'terminal.stop': (p) => this.terminalControl('stop', p.confirm),
+      'terminal.start': () => this.terminalControl('start', true),
+      'terminal.restart': (p) => this.terminalControl('restart', p.confirm),
       'session.spawn': (p) => this.spawn(p),
       'session.list': () => [...this.sessions.values()].map((s) => this.summary(s)),
       'session.get': (p) => this.get(p),
@@ -2174,9 +1883,9 @@ export class Backend {
       'session.messages': (p) => { const s = this.resolve(p.session); return readMessages(s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId), { afterSeq: p.afterSeq ?? -1, limit: p.limit || 200 }); },
       'session.events': (p) => this.store.events({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, since: p.since || 0, limit: p.limit || 200 }),
       'terminal.snapshot': async (p) => { const s = this.resolve(p.session); return { sessionId: s.sessionId, format: p.format || 'ansi', text: await this.adapter.readScreen(s.paneId, { source: 'visible', format: p.format || 'ansi' }) }; },
-      // P42: 셸 노드의 지난 출력(herdr 기록, 화면 너비로 감긴 줄, ANSI). 창이 xterm scrollback에 넣어 판 안에서 올려 보고 고른다
+      // P42: 셸 노드의 지난 출력(터미널 기록, 화면 너비로 감긴 줄, ANSI). 창이 xterm scrollback에 넣어 판 안에서 올려 보고 고른다
       'terminal.history': async (p) => { const s = this.resolve(p.session); if (!s.paneId) return { sessionId: s.sessionId, text: '' }; return { sessionId: s.sessionId, text: await this.adapter.readScreen(s.paneId, { source: 'recent', format: 'ansi', lines: Math.min(Math.max(Number(p.lines) || 3000, 1), 10000) }) }; },
-      'terminal.attach': (p, c) => { this.requireHerdr(); const s = this.resolve(p.session); if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name} 세션은 절전 중이라 터미널이 닫혀 있습니다. 먼저 작업을 재개하세요.`), 'sleepingNoPane', { name: s.name }); return this.relay.attach(s, p.cols || 120, p.rows || 40, c); },
+      'terminal.attach': (p, c) => { this.requireTerminal(); const s = this.resolve(p.session); if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name} 세션은 절전 중이라 터미널이 닫혀 있습니다. 먼저 작업을 재개하세요.`), 'sleepingNoPane', { name: s.name }); return this.relay.attach(s, p.cols || 120, p.rows || 40, c); },
       'terminal.input': (p, c) => { this.relay.input(this.resolve(p.session).sessionId, String(p.data ?? ''), c); return { ok: true }; },
       'terminal.resize': (p, c) => { this.relay.resize(this.resolve(p.session).sessionId, p.cols, p.rows, c); return { ok: true }; },
       'terminal.detach': (p, c) => { this.relay.detach(this.resolve(p.session).sessionId, c); return { ok: true }; },
@@ -2240,13 +1949,25 @@ export class Backend {
       'session.reopen': (p) => reopenSession(this, p), // P125: 사람이 닫은(끝난) 세션은 같은 자리에서, 닫힌 세션(J2)은 recall.reopen으로
       'link.log': (p) => { const l = this.store.getLink(p.link); if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`); return { link: this.linkView(l), events: this.store.linkEvents(l.linkId, p.limit || 200) }; },
       'agent.kinds': () => this.adapter.agentKinds(),
-      // 자원과 붙은 클라이언트(D1·D3)
+      // 자원(D1)
       'resources.get': async (p) => (p.fresh ? this.resources.sample() : this.resources.last),
-      'herdr.clients': () => this.checkClients(),
       // P6a: 단일 캔버스(검색, 붙여 묶기, 풀기, 정리, 크기 단계, 영역 옮기기)
       ...canvasHandlers(this),
       ...groupHandlers(this), // P44: 워크스페이스 가상 그룹
       ...peerHandlers(this), // P47: client.hello, client.active, clients.list
+      ...this.oldNameHandlers(),
+    };
+  }
+  // P129: 옛 이름 받기(이번 릴리스 동안. 업데이트 중의 옛 창·CLI가 부른다). 다음 릴리스에 지운다
+  oldNameHandlers() {
+    const H = 'herdr';
+    return {
+      [`${H}.status`]: () => this.terminalStatus(),
+      [`${H}.stop`]: (p) => this.terminalControl('stop', p.confirm),
+      [`${H}.start`]: () => this.terminalControl('start', true),
+      [`${H}.restart`]: (p) => this.terminalControl('restart', p.confirm),
+      [`${H}.rediscover`]: () => this.terminalStatus(),
+      [`${H}.clients`]: () => ({ attached: false, viaLog: [], viaProcess: [] }),
     };
   }
 }

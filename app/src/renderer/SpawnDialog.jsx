@@ -1,5 +1,5 @@
 // 새 세션 시작(ARCH 4절 B3): 이름, 폴더, 모델, 권한 모드, 첫 지시. 처음 쓰는 폴더면 신뢰 확인이 필요하다고 미리 보여준다.
-// P4(F5): herdr가 아는 에이전트 종류를 고른다. Claude Code가 아니면 판의 hook이 없으니 상태는 herdr로만, 인자는 그 하네스의 것을 그대로 넘긴다.
+// P4(F5): 터미널 백엔드가 아는 에이전트 종류를 고른다. Claude Code가 아니면 판의 hook이 없으니 상태는 터미널로만, 인자는 그 하네스의 것을 그대로 넘긴다.
 // P5: 폴더는 지금 워크스페이스의 저장소 루트가 기본이다. 다른 저장소의 폴더를 고르면 그 세션은 그 저장소의 워크스페이스에 생긴다(G1).
 //     종류 "셸(PowerShell)"은 에이전트 없이 패널만 연다(G2).
 // P33: 띄우는 방법은 호출자(설정의 호출자 탭)다. 창 맨 위에서 호출자를 고르면 그 값으로 띄우고, 여기서 바꾼 모델은 호출자 값을 덮는다(session.spawn { launcher, model }).
@@ -58,7 +58,6 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
   const [model, setModel] = useState(info.defaultModel || '');
   const [mode, setMode] = useState('manual');
   const [args, setArgs] = useState('');
-  const [allowHerdr, setAllowHerdr] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [trust, setTrust] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -86,7 +85,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
         if (MODEL_HARNESS.has(L.harness) && lmodel.trim() !== (L.model || '')) p.model = lmodel.trim() || undefined; // 바꾼 모델만 덮는다
       } else {
         p.kind = kind;
-        if (claude) Object.assign(p, { model: model.trim() || undefined, permissionMode: mode, allowHerdr });
+        if (claude) Object.assign(p, { model: model.trim() || undefined, permissionMode: mode });
         else if (!shell) p.args = args.trim();
       }
       const r = await api.call('session.spawn', p);
@@ -134,7 +133,6 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
                 </select>
               </label>
             </div>
-            <label className="mt-check"><input type="checkbox" checked={allowHerdr} onChange={(e) => setAllowHerdr(e.target.checked)} data-field="allow-herdr" />{t('spawn.allowHerdr')}</label>
           </> : <>
             <label>{t('spawn.args')}<input value={args} onChange={(e) => setArgs(e.target.value)} placeholder={kind === 'codex' ? t('spawn.codexArgsPh') : ''} data-field="args" /></label>
             <div className="mt-card-sub">{t('spawn.otherNote', { kind })}</div>

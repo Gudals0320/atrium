@@ -1,4 +1,4 @@
-// 세션 되찾기(ARCH 4절 J1·J2·J4, P7): herdr가 다시 뜬 뒤 판 세션 되살리기, 닫힌 세션 다시 열기, 판 밖 대화를 판으로 이어 가기.
+// 세션 되찾기(ARCH 4절 J1·J2·J4, P7): 터미널 서버가 다시 뜬 뒤 판 세션 되살리기, 닫힌 세션 다시 열기, 판 밖 대화를 판으로 이어 가기.
 // backend.mjs에는 이 파일을 부르는 몇 줄만 둔다(attachRecall, resync의 두 곳, closeSession의 닫힌 까닭). 대화 기록 색인과 묶임 판정은 convos.mjs다.
 // 판은 대화 ID를 새로 만들지 않는다. 판 밖 대화와 닫힌 claude는 늘 그 대화 ID로 이어 간다(`claude --resume <ID>`). 갈라 열기(--fork-session)는 쓰지 않는다.
 // P10: 보관(판정은 archive.mjs). 보관된 것은 recall.list에서 빠지고 보관함(archive.list)에만 보인다. 손으로 보관한 대화는 파일이 바뀌어도 다시 읽지 않는다.
@@ -43,14 +43,15 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 닫힌 까닭을 사람이 읽는 말로(사이드바)
 export const CLOSE_REASON = {
   killed: "보드에서 종료", 'pane gone': "터미널 창을 찾을 수 없음", 'pane exited': "셸 종료", 'pane closed outside board': "보드 외부에서 터미널 창 종료",
-  'workspace closed outside board': "보드 외부에서 herdr 작업 공간 종료", 'not resumed after herdr restart': "herdr 재시작 후 작업이 재개되지 않음",
+  'workspace closed outside board': "보드 외부에서 작업 공간 종료", 'not resumed after terminal restart': "터미널 재시작 후 작업이 재개되지 않음",
+  'not resumed after herdr restart': "터미널 재시작 후 작업이 재개되지 않음", // P129: 옛 까닭(업데이트 전 기록)
 };
-// 세션(열린 것이나 닫힌 행)의 Claude Code 대화 ID. 판이 띄운 claude는 세션 ID 그대로, 판에 올린 claude는 herdr가 아는 대화 ID
+// 세션(열린 것이나 닫힌 행)의 Claude Code 대화 ID. 판이 띄운 claude는 세션 ID 그대로, 판에 올린 claude는 터미널이 아는 대화 ID
 export function convOf(row) {
   if ((row.kind || 'claude') !== 'claude') return null;
   const rt = row.rt || row.runtime || {};
   if ((row.origin || 'board') === 'board') return String(row.sessionId).toLowerCase();
-  const id = rt.claudeSessionId || (rt.herdr && rt.herdr.agentSessionId);
+  const id = rt.claudeSessionId || (rt.term && rt.term.agentSessionId);
   return id ? String(id).toLowerCase() : null;
 }
 
@@ -754,10 +755,10 @@ export class Recall {
     const slot = slotFor(this.b, { wsKey, size, area });
     return { x: slot.x, y: slot.y, w: size.w, h: size.h, kept: false, ...tag };
   }
-  // 판 세션 하나를 새 herdr 작업 공간에 띄운다. 행이 있으면(닫힌 세션) 그 행을 다시 쓰고, 없으면(판 밖 대화) 만든다
+  // 판 세션 하나를 새 작업 공간에 띄운다. 행이 있으면(닫힌 세션) 그 행을 다시 쓰고, 없으면(판 밖 대화) 만든다
   async bring(spec) {
     const b = this.b, cfg = this.cfg;
-    b.requireHerdr();
+    b.requireTerminal();
     const cwd = path.resolve(String(spec.cwd || ''));
     if (!spec.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${spec.cwd}`), 'noFolder', { path: spec.cwd });
     const id = spec.id;
@@ -778,14 +779,14 @@ export class Recall {
       const env = conn ? { ...(spec.launcherEnv || {}), ...cc.env } : spec.env || {};
       if (Object.keys(env).length) extra.env = { ...env, ...(extra.env || {}) };
       if (Object.keys(cc.settings).length) extra.settings = cc.settings;
-      settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, allowHerdr: !!spec.allowHerdr, ...extra });
+      settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, ...extra });
       trust = predictTrust(cwd, cfg.claudeJson);
       const launch = { sessionId: id, settingsPath, permissionMode, model: spec.model || null, effort: spec.effort || null, extraArgs: spec.extraArgs || [], ...b.plugin };
       args = spec.resume ? buildResumeArgs(launch) : buildStartArgs(launch);
       resumeArgv = buildResumeArgv({ claudeCommand: cfg.claudeCommand, startCommand: spec.startCommand || '', ...launch }); // P97: 실행 명령
     } else if (!shell) args = (spec.args || []).map(String);
     const harness = !claude && !shell && !!adapterOf(kind); // P115
-    // P115 전에 띄운 행(harness 없음)은 띄운 인자(-m 모델이 든)를 호출자 추가 인자로 본다. Codex는 그때 herdr가 안 세션 ID가 runtime에 남아 있으면 이어 간다
+    // P115 전에 띄운 행(harness 없음)은 띄운 인자(-m 모델이 든)를 호출자 추가 인자로 본다. Codex는 그때 터미널이 안 세션 ID가 runtime에 남아 있으면 이어 간다
     const harnessPlan = harness ? { model: null, args, launcher: null, launcherId: null, ...(spec.harnessPlan || {}), harnessSessionId: (spec.harnessPlan && spec.harnessPlan.harnessSessionId) || spec.harnessSessionId || null } : null;
     b.ensureWorkspace(ws, `reopen ${name}`);
     const prev = this.store.nodeOf(spec.nodeFrom || id);
@@ -796,9 +797,9 @@ export class Recall {
     let s;
     const hw = await b.withNewPane(() => b.adapter.createWorkspace({ cwd, label: name }), (r) => {
       const now = Date.now();
-      s = { sessionId: id, name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model: claude ? spec.model || null : null, effort: claude ? spec.effort || null : null, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: spec.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, kind, origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: spec.flavor || null, extraArgs: claude ? spec.extraArgs || [] : [], startCommand: shell ? '' : spec.startCommand || '', harnessPlan }; // P97: 실행 명령(P115: 모든 에이전트 하네스). P25: flavor는 다시 열어도 남는다
+      s = { sessionId: id, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model: claude ? spec.model || null : null, effort: claude ? spec.effort || null : null, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: spec.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, kind, origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: spec.flavor || null, extraArgs: claude ? spec.extraArgs || [] : [], startCommand: shell ? '' : spec.startCommand || '', harnessPlan }; // P97: 실행 명령(P115: 모든 에이전트 하네스). P25: flavor는 다시 열어도 남는다
       if (spec.reuseRow) {
-        this.store.reopenRow(id, { name, cwd, paneId: r.paneId, herdrWorkspaceId: r.workspaceId, agentName: s.agentName, settingsPath, hookToken, resumeArgv, resumeVerified: false, runtime: rt, kind, origin: 'board', workspaceKey: ws.key, permissionMode, model: s.model, effort: s.effort, touchedAt: now, parentSessionId: null, startCommand: s.startCommand || null, harnessPlan });
+        this.store.reopenRow(id, { name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: s.agentName, settingsPath, hookToken, resumeArgv, resumeVerified: false, runtime: rt, kind, origin: 'board', workspaceKey: ws.key, permissionMode, model: s.model, effort: s.effort, touchedAt: now, parentSessionId: null, startCommand: s.startCommand || null, harnessPlan });
         if (spec.reuseRow.name !== name) this.store.addEvent(id, 'renamed', { from: spec.reuseRow.name, to: name, why: 'name taken on reopen' });
         // P66: 판의 이름은 다시 열어도 남는다. 그새 다른 세션이 그 이름을 쓰면 버린다
         s.label = keepLabel(spec.reuseRow.label, b.sessions.values(), s);
@@ -818,9 +819,8 @@ export class Recall {
     const out = { sessionId: id, name, kind, paneId: hw.paneId, workspaceKey: ws.key, resume: !!spec.resume, trust, place: at.kept ? 'last' : 'slot' };
     if (shell) return out;
     await b.adapter.waitShellReady(hw.paneId);
-    try { const st = harness ? await b.startHarness(s, { resume: true, why: 'start', name }) : await b.adapter.startAgent({ name, paneId: hw.paneId, args, kind, ...startOpt(s) }); out.argv = st.argv; if (harness) out.resumed = !!st.resumed; rt.herdr.launchPending = st.agent ? st.agent.launchPending : true; } // P115: 하네스는 같은 세션 ID로 이어 간다
+    try { const st = harness ? await b.startHarness(s, { resume: true, why: 'start', name }) : await b.adapter.startAgent({ name, paneId: hw.paneId, args, kind, ...startOpt(s) }); out.argv = st.argv; if (harness) out.resumed = !!st.resumed; rt.term.launchPending = st.agent ? st.agent.launchPending : true; } // P115: 하네스는 같은 세션 ID로 이어 간다
     catch (e) { if (e.code !== 'agent_not_ready') throw e; this.store.addEvent(id, 'agent_not_ready', { kind }); }
-    if (claude) b.registerResume(s);
     b.log(`reopened ${name} ${kind} ${id} from=${spec.from} resume=${!!spec.resume} pane=${hw.paneId}`);
     return out;
   }
@@ -840,7 +840,7 @@ export class Recall {
     const info = this.store.spawnInfo(row.sessionId) || {};
     // P115: 연결(spawn 이벤트의 connection). P25 세션(flavor만, env 기록 없음)은 그 아이콘의 런처가 쓰는 연결
     const legacy = !info.connection && !info.env && kind === 'claude' && row.flavor && this.b.features && this.b.features.launchers ? legacyFlavorLauncher(this.b.features.launchers.data().items, row.flavor) : null;
-    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, allowHerdr: !!info.allowHerdr, createdAt: row.createdAt, flavor: row.flavor || null, env: info.env || null, connectionId: info.connection || (legacy ? legacy.connection : null), launcherEnv: info.launcherEnv || (legacy ? legacy.env : null), extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [], startCommand: row.startCommand || info.startCommand || '' }; // P97: 실행 명령. P33: 호출자의 환경 변수와 추가 인자도 그대로
+    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, createdAt: row.createdAt, flavor: row.flavor || null, env: info.env || null, connectionId: info.connection || (legacy ? legacy.connection : null), launcherEnv: info.launcherEnv || (legacy ? legacy.env : null), extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [], startCommand: row.startCommand || info.startCommand || '' }; // P97: 실행 명령. P33: 호출자의 환경 변수와 추가 인자도 그대로
     if (kind === 'claude') {
       const conv = convOf(row);
       if (conv) {
@@ -864,7 +864,7 @@ export class Recall {
     }
     const args = kind === SHELL ? [] : Array.isArray(info.args) ? info.args : [];
     // P115: 하네스 세션은 띄울 때의 값(모델·추가 인자·호출자)과 하네스 세션 ID로 같은 대화를 이어 간다
-    const harnessSessionId = (row.runtime && row.runtime.herdr && row.runtime.herdr.agentSessionId) || null; // Codex: herdr가 알았던 세션 ID(기록이 없을 때)
+    const harnessSessionId = (row.runtime && row.runtime.term && row.runtime.term.agentSessionId) || null; // Codex: 터미널이 알았던 세션 ID(기록이 없을 때)
     return this.bring({ ...base, id: row.sessionId, reuseRow: row, from: 'closed', args, harnessPlan: row.harnessPlan || null, harnessSessionId });
   }
   // P7의 "빼기"는 보관으로 합쳤다(P10). 판 기록과 대화 기록 파일은 그대로
@@ -956,7 +956,7 @@ export class Recall {
   }
 
   // ---------- 다시 켜도 판이 그대로(J1) ----------
-  // herdr를 다시 띄운 뒤 패널이 없어진 세션 중 판이 되살릴 수 있는 것: 셸(같은 폴더에 새 셸), 대화 ID를 아는 판에 올린 claude(그 대화로 이어 가기)
+  // 터미널 서버를 다시 띄운 뒤 패널이 없어진 세션 중 판이 되살릴 수 있는 것: 셸(같은 폴더에 새 셸), 대화 ID를 아는 판에 올린 claude(그 대화로 이어 가기)
   restorable(s) {
     if (!s.cwd || !fs.existsSync(s.cwd)) return false;
     if (s.kind === SHELL) return true;
@@ -973,7 +973,7 @@ export class Recall {
   }
   async restoreInNewPane(s) {
     const b = this.b;
-    const r = await b.withNewPane(() => b.adapter.createWorkspace({ cwd: s.rt.cwd && fs.existsSync(s.rt.cwd) ? s.rt.cwd : s.cwd, label: s.name }), (x) => b.setPane(s, x.paneId, x.workspaceId, 'restored after herdr restart'));
+    const r = await b.withNewPane(() => b.adapter.createWorkspace({ cwd: s.rt.cwd && fs.existsSync(s.rt.cwd) ? s.rt.cwd : s.cwd, label: s.name }), (x) => b.setPane(s, x.paneId, x.workspaceId, 'restored after terminal restart'));
     if (s.kind === SHELL) {
       const rt = newRuntime({ kind: SHELL, hooked: false });
       rt.phase = 'running'; rt.cwd = s.rt.cwd; rt.interruptedTurn = s.rt.interruptedTurn || null;
@@ -987,7 +987,7 @@ export class Recall {
     if (harnessResumable(s)) { await b.startHarness(s, { resume: true, why: 'resume_new_pane' }); s.recovered = { plan: 'resume_new_pane', at: Date.now() }; b.broadcastSession(s, { cause: 'recover:resume_new_pane' }); return; } // P115
     await this.resumeHookless(s, 'resume_new_pane');
   }
-  // 판에 올린 claude를 그 대화 ID로 이어 간다(판의 hook 없이, 그 하네스의 사용자 설정 그대로. herdr의 기본 이어 가기와 같은 명령)
+  // 판에 올린 claude를 그 대화 ID로 이어 간다(판의 hook 없이, 그 하네스의 사용자 설정 그대로)
   async resumeHookless(s, plan) {
     const b = this.b;
     const conv = convOf(s);
@@ -1001,27 +1001,27 @@ export class Recall {
     b.log(`recovered ${s.name}: ${plan} (${conv})`);
     b.broadcastSession(s, { cause: `recover:${plan}` });
   }
-  // herdr를 다시 띄운 뒤 패널은 남았는데 hook이 없는 에이전트가 돌아오지 않은 세션. herdr가 이어 갈 시간(recoverGraceMs)을 준 뒤 판이 맞춘다
+  // 터미널 서버를 다시 띄운 뒤 패널은 남았는데 hook이 없는 에이전트가 돌아오지 않은 세션. 잠깐(recoverGraceMs) 기다린 뒤 판이 맞춘다
   async recoverHookless(list) {
     const b = this.b;
-    const down = (s) => b.sessions.has(s.sessionId) && s.rt.exit && s.rt.exit.kind === 'herdr_stopped';
+    const down = (s) => b.sessions.has(s.sessionId) && s.rt.exit && s.rt.exit.kind === 'terminal_stopped';
     const t0 = Date.now();
     while (list.some(down) && Date.now() - t0 < this.cfg.recoverGraceMs) await sleep(1000);
     for (const s of list) {
       if (!down(s) || !b.adapter.connected) continue;
       try {
         if (s.kind === 'claude' && convOf(s) && this.transcriptExists(convOf(s), s.rt.cwd || s.cwd)) await this.resumeHookless(s, 'resume_same_pane');
-        else if (s.origin === 'adopted' || s.rt.shellBase) b.demoteToShell(s, 'not resumed after herdr restart');
+        else if (s.origin === 'adopted' || s.rt.shellBase) b.demoteToShell(s, 'not resumed after terminal restart');
         else await this.closeUnresumed(s);
       } catch (e) { this.store.addEvent(s.sessionId, 'recover_failed', { plan: 'hookless', error: e.code || e.message }); }
     }
   }
-  // P115: herdr를 다시 띄운 뒤 판이 띄운 하네스 세션(codex·opencode·pi). herdr는 opencode·pi를 되살리지 않고(빈 셸), codex는 사용자의 Codex hook 연동이
+  // P115: 터미널 서버를 다시 띄운 뒤 판이 띄운 하네스 세션(codex·opencode·pi). 터미널이 스스로 되살리지 않거나(빈 셸), 판의 인자 없이 이어 갈 수 있어(codex)
   // 세션 ID를 보고했으면 스스로 `codex resume <id>`를 띄운다(판의 env·연결·안내문 없음, 1단계 E5). 판은 Claude Code의 restart_with_settings처럼
   // 그 패널 프로세스의 argv로 판이 친 줄인지 보고, 아니면 끄고 판의 줄로 같은 세션을 이어 간다. 빈 셸이면 바로 판의 줄을 친다
   async recoverHarness(list) {
     const b = this.b;
-    const settle = Math.min(this.cfg.recoverGraceMs || 15000, 15000); // herdr가 스스로 띄우는 이어 가기가 뜰 시간
+    const settle = Math.min(this.cfg.recoverGraceMs || 15000, 15000); // 터미널이 스스로 띄우는 이어 가기가 뜰 시간
     const t0 = Date.now();
     const agentOf = async (s) => { const p = await b.adapter.getPane(s.paneId).catch(() => null); return p && p.agent ? p.agent : null; };
     while (Date.now() - t0 < settle) { const present = await Promise.all(list.map(agentOf)); if (present.every(Boolean)) break; await sleep(1000); }
@@ -1034,11 +1034,11 @@ export class Recall {
           const argv = (info && info.foreground_processes || []).flatMap((p) => p.argv || []);
           const a = adapterOf(s.kind);
           if (a && a.isBoardLine(argv)) { this.store.addEvent(s.sessionId, 'recover_check', { result: 'resumed with board line' }); await b.ensureAgentName(s); continue; }
-          // herdr가 띄운 이어 가기: 그 세션 ID를 기록하고(Codex) 끈 뒤 판의 줄로
-          const sid = s.kind === 'codex' && s.rt.herdr.agentSessionId ? s.rt.herdr.agentSessionId : null;
+          // 터미널이 띄운 이어 가기: 그 세션 ID를 기록하고(Codex) 끈 뒤 판의 줄로
+          const sid = s.kind === 'codex' && s.rt.term.agentSessionId ? s.rt.term.agentSessionId : null;
           if (sid && !(s.harnessPlan || {}).harnessSessionId) { s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: sid }; this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan }); }
           const stopped = await b.stopHarnessAgent(s, steps);
-          steps.push(stopped ? 'stopped herdr resume' : 'herdr resume did not stop');
+          steps.push(stopped ? 'stopped terminal resume' : 'terminal resume did not stop');
           if (!stopped) { this.store.addEvent(s.sessionId, 'recover_failed', { plan: 'restart_with_board_line', steps, argv }); continue; }
         }
         await b.startHarness(s, { resume: true, why: steps.length ? 'restart_with_board_line' : 'start_resume' });
@@ -1048,15 +1048,15 @@ export class Recall {
       } catch (e) { this.store.addEvent(s.sessionId, 'recover_failed', { plan: 'harness', steps, error: e.code || e.message }); }
     }
   }
-  // 판이 띄운 다른 종류(codex 등)를 herdr가 이어 가지 않았다. 판은 그 하네스의 이어 가기를 모르므로 닫힘으로 남기고(다시 열면 같은 폴더에 같은 인자로 새로 띄운다),
+  // 판이 띄운 다른 종류(codex 등)를 터미널이 이어 가지 않았다. 판은 그 하네스의 이어 가기를 모르므로 닫힘으로 남기고(다시 열면 같은 폴더에 같은 인자로 새로 띄운다),
   // 남은 패널(셸)은 닫는다. 그대로 두면 판 밖 셸로 다시 올라온다
   async closeUnresumed(s) {
     const b = this.b;
     b.killing.add(s.sessionId);
     try {
-      const shared = await b.adapter.workspacePanes(s.herdrWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => []);
-      if (shared.length) await b.adapter.closePane(s.paneId).catch(() => {}); else await b.adapter.closeWorkspace(s.herdrWorkspaceId).catch(() => {});
-      b.closeSession(s, 'not resumed after herdr restart');
+      const shared = await b.adapter.workspacePanes(s.termWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => []);
+      if (shared.length) await b.adapter.closePane(s.paneId).catch(() => {}); else await b.adapter.closeWorkspace(s.termWorkspaceId).catch(() => {});
+      b.closeSession(s, 'not resumed after terminal restart');
     } finally { b.killing.delete(s.sessionId); }
   }
 }

@@ -15,7 +15,7 @@ import { Launchers, initialLaunchers } from '../src/launchers.mjs';
 import { Connections } from '../src/connections.mjs'; // P115: 게이트웨이는 연결이다
 import { migrateLaunchers } from '../src/launcher-migrate.mjs';
 import { DEFAULTS } from '../src/settings.mjs';
-import { Branch, BRANCH_ALLOW, boardSkill } from '../src/branch.mjs';
+import { Branch, ATRIUM_ALLOW, boardSkill } from '../src/branch.mjs';
 import { buildCatalog, resolveModel, parseGatewayModel, variantsOf, gatewaysOf } from '../src/models.mjs';
 import { newRuntime, applyHook, deriveState, isModelError } from '../src/state.mjs';
 import { BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
@@ -121,16 +121,16 @@ const gatewayServer = () => server((req, res) => {
 });
 async function board({ gatewayUrl }) {
   const dir = tmp();
-  const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, herdrSession: 'atrium-dev-p41test', profile: 'dev', dataDir: dir });
+  const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, terminalSession: 'atrium-dev-p41test', profile: 'dev', dataDir: dir });
   b.store = new Store(path.join(dir, 'board.db'));
-  b.sessions = new Map(); b.herdrOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
+  b.sessions = new Map(); b.termOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
   b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null, connections: null };
   b.store.setMeta('settings', {}); // DeepSeek 호출자가 있는 옛 판. P115: 그 호출자는 연결(게이트웨이 주소)을 쓰는 claude 런처로 옮겨진다
   b.features.connections = new Connections({ store: b.store, inUse: (id) => b.features.launchers.usersOf(id) });
   b.features.launchers = new Launchers({ store: b.store, gateway: { healthUrl: `${gatewayUrl}/healthz` }, connections: b.features.connections });
   b.queue = { enqueue: () => ({ deliveryId: 'd1', status: 'queued' }), pending: () => 0 };
   b.api = { broadcast() {} };
-  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {}; b.registerResume = () => {};
+  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {};
   b.ensureLink = (from, to, patch) => ({ linkId: 'l1', from, to, ...patch }); b.linkEvent = () => ({});
   b.summary = (s) => ({ state: deriveState(s.rt).state, ask: null, error: deriveState(s.rt).error || s.rt.lastError || null });
   b.branch = new Branch(b, { readyWaitMs: 30, submitWaitMs: 10 });
@@ -143,7 +143,7 @@ async function board({ gatewayUrl }) {
     startAgent: async (o) => { calls.push(['startAgent', o]); return { agent: null, argv: [o.kind, ...o.args] }; },
     sendText: async () => {}, paneKeys: async () => {},
   };
-  b.requireHerdr = () => {};
+  b.requireTerminal = () => {};
   // 판이 띄운 부모 세션(haiku, 노력 low, acceptEdits)
   const lead = await b.spawn({ cwd: dir, name: 'lead', kind: 'claude', model: 'haiku', effort: 'low', permissionMode: 'acceptEdits' });
   const startOf = (name) => calls.filter((c) => c[0] === 'startAgent' && c[1].name === name).at(-1)[1].args;
@@ -299,10 +299,10 @@ function allowed(rules, tool, cmd) {
   });
 }
 test('P41 승인 규칙: atrium models는 묻지 않는다(옛 이름 mtask도)', () => {
-  for (const c of ['atrium models', 'atrium models --json', 'mtask models']) assert.ok(allowed(BRANCH_ALLOW, 'Bash', c), c);
-  assert.ok(allowed(BRANCH_ALLOW, 'PowerShell', 'atrium models'));
-  assert.ok(allowed(BRANCH_ALLOW, 'Bash', 'atrium child ds1 --model "deepseek flash"'));
-  assert.ok(!allowed(BRANCH_ALLOW, 'Bash', 'atrium launchers'), '판 CLI의 다른 명령은 그대로 묻는다');
+  for (const c of ['atrium models', 'atrium models --json', 'mtask models']) assert.ok(allowed(ATRIUM_ALLOW, 'Bash', c), c);
+  assert.ok(allowed(ATRIUM_ALLOW, 'PowerShell', 'atrium models'));
+  assert.ok(allowed(ATRIUM_ALLOW, 'Bash', 'atrium child ds1 --model "deepseek flash"'));
+  assert.ok(!allowed(ATRIUM_ALLOW, 'Bash', 'atrium launchers'), '판 CLI의 다른 명령은 그대로 묻는다');
 });
 
 test('P41 스킬 글과 짧은 안내: 말로 한 모델은 atrium models로 골라 띄우고, ID를 묻지 않고, 내부 하위 에이전트로 우회하지 않는다', () => {
@@ -322,7 +322,7 @@ test('P41 모델 오류: 같은 밀리초에 연달아 난 두 오류도 각각 
   const b = { store: { branchRows: () => [], addEvent: (sid, kind, data) => added.push([sid, kind, data]) }, bus: { on() {} }, log() {} };
   const br = new Branch(b);
   const rt = newRuntime({ kind: 'claude', hooked: true });
-  rt.herdr.status = 'idle'; rt.herdr.present = true; rt.phase = 'running';
+  rt.term.status = 'idle'; rt.term.present = true; rt.phase = 'running';
   const s = { sessionId: 'k1', name: 'w1', model: 'haiku', rt };
   applyHook(rt, { hook_event_name: 'UserPromptSubmit', prompt: '1+1' });
   applyHook(rt, { hook_event_name: 'StopFailure', error: 'model_not_found', message: 'first' });
@@ -336,7 +336,7 @@ test('P41 모델 오류: 같은 밀리초에 연달아 난 두 오류도 각각 
 
 test('P41 모델 오류: StopFailure model_not_found나 Claude Code의 오류 글로 끝난 턴은 error, 인용한 답은 아니다. 판 이벤트와 atrium children', async () => {
   const rt = newRuntime({ kind: 'claude', hooked: true });
-  rt.herdr.status = 'idle'; rt.herdr.present = true; rt.phase = 'running';
+  rt.term.status = 'idle'; rt.term.present = true; rt.phase = 'running';
   applyHook(rt, { hook_event_name: 'UserPromptSubmit', prompt: '1+1' });
   applyHook(rt, { hook_event_name: 'Stop', last_assistant_message: "There's an issue with the selected model (deepseek-flash). It may not exist or you may not have access to it. Run /model to pick a different model." });
   assert.equal(deriveState(rt).state, 'error'); assert.equal(deriveState(rt).error.type, 'model_not_found');
@@ -353,7 +353,7 @@ test('P41 모델 오류: StopFailure model_not_found나 Claude Code의 오류 �
     const { b, lead } = await board({ gatewayUrl: gw.url });
     const k = await b.branch.spawnChild(lead, { name: 'w1', model: 'haiku', wait: false });
     const ks = b.sessions.get(k.sessionId);
-    ks.rt.herdr.status = 'idle'; ks.rt.herdr.present = true; ks.rt.phase = 'running';
+    ks.rt.term.status = 'idle'; ks.rt.term.present = true; ks.rt.phase = 'running';
     applyHook(ks.rt, { hook_event_name: 'UserPromptSubmit', prompt: '1+1' });
     applyHook(ks.rt, { hook_event_name: 'StopFailure', error: 'model_not_found', message: "There's an issue with the selected model (haiku)." });
     b.bus.emit('session', ks, b.summary(ks)); b.bus.emit('session', ks, b.summary(ks));

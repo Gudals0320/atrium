@@ -7,7 +7,7 @@
 // - P38: 판 배율 아래에서도 끌어 고르기가 마우스 밑 글자를 따라가게 xterm의 마우스 → 칸 계산에 확대·축소 전 자리를 넘긴다(unscalePoint).
 //   고르는 동안 포인터는 글 고르기 모양. 복사는 줄 끝 빈칸을 뺀다.
 // - P42: 글 고르기는 웹처럼 한다(term-selection.js). 선택은 글에 붙어 휠·가장자리 자동 스크롤·새 프레임에 함께 움직이고 풀리지 않는다.
-//   claude 등은 프레임을 이어 붙인 문서로, 셸은 herdr 기록과 밀려난 줄을 xterm scrollback에 넣어(판 안에서 스크롤) 화면 밖 글까지 고르고 복사한다.
+//   claude 등은 프레임을 이어 붙인 문서로, 셸은 터미널 기록과 밀려난 줄을 xterm scrollback에 넣어(판 안에서 스크롤) 화면 밖 글까지 고르고 복사한다.
 // - P45: 글자 크기 = TERM_FONT_SIZE × 터미널 글자 배율(설정 일반 탭, store.termScale). 바꾸면 곧바로 글자를 바꾸고 줄·칸 수를 다시 재 패널 크기를 맞춘다.
 // - P47: 창(클라이언트) 여럿이 한 패널을 함께 본다. 패널 크기는 마지막으로 입력했거나 초점을 준 창이 정하고(terminal.owner),
 //   다른 창은 같은 열×행을 노드 크기에 맞춰 비율로 그린다(fitScale). 다른 기기가 방금 친 터미널에는 짧게 표시한다(잠그지 않는다).
@@ -306,13 +306,13 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     host.addEventListener('dragover', onDragOver, true);
     host.addEventListener('drop', onDrop, true);
 
-    // P42: 셸은 그림자 터미널(herdr 화면과 같은 scrollback 0 화면)에 먼저 써서 새 출력으로 화면이 몇 줄 밀렸는지 보고,
-    // 프레임을 쓰기 전에 그만큼 xterm 영역을 올려 밀려난 줄을 scrollback으로 보낸다. 첫 프레임 앞에는 herdr 기록(지난 출력)을 넣는다
+    // P42: 셸은 그림자 터미널(터미널 서버 화면과 같은 scrollback 0 화면)에 먼저 써서 새 출력으로 화면이 몇 줄 밀렸는지 보고,
+    // 프레임을 쓰기 전에 그만큼 xterm 영역을 올려 밀려난 줄을 scrollback으로 보낸다. 첫 프레임 앞에는 터미널 기록(지난 출력)을 넣는다
     let shadow = null, chain = Promise.resolve(), history = 'wait';
     const writeP = (tm, data) => new Promise((res) => tm.write(data, res));
     const rowsOf = (tm) => { const b = tm.buffer.active, out = []; for (let r = 0; r < tm.rows; r++) { const l = b.getLine(b.viewportY + r); out.push(l ? l.translateToString(true) : ''); } return out; };
     if (shell) { shadow = new Terminal({ allowProposedApi: true, scrollback: 0, cols: 80, rows: 24 }); const su = new Unicode11Addon(); shadow.loadAddon(su); shadow.unicode.activeVersion = '11'; }
-    // herdr 기록 가운데 지금 화면 위의 줄(ANSI). 맞는 자리가 없으면 null
+    // 터미널 기록 가운데 지금 화면 위의 줄(ANSI). 맞는 자리가 없으면 null
     const readHistory = async (screen) => {
       const r = await Promise.race([api.call('terminal.history', { session: sessionId }).catch(() => null), new Promise((res) => setTimeout(() => res(null), HISTORY_WAIT))]);
       const ansi = r && r.text ? r.text.split(/\r?\n/) : [];
@@ -326,7 +326,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       const n = await runFill(plan, { write: (d) => writeP(term, d), alive: () => st.alive });
       perfLog('term_history_fill', { sessionId, what, lines: ansi.length, writes: plan.length, wrote: n, ms: Math.round(performance.now() - t0) });
     };
-    // 그림자(herdr 화면) 칸을 다시 그리는 글. 웹은 터미널 칸·줄이 상한으로 작을 수 있어 작은 쪽까지만
+    // 그림자(터미널 서버 화면) 칸을 다시 그리는 글. 웹은 터미널 칸·줄이 상한으로 작을 수 있어 작은 쪽까지만
     const shadowScreen = () => { const sb = shadow.buffer.active; return serializeScreen(sb, { base: sb.baseY, rows: Math.min(shadow.rows, term.rows), cols: Math.min(shadow.cols, term.cols), cursorX: sb.cursorX, cursorY: Math.min(sb.cursorY, term.rows - 1), cell: sb.getNullCell() }); };
     const prefill = async (screen) => {
       const h = await readHistory(screen);
@@ -334,8 +334,8 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       step('hist', { lines: h.lines, above: h.above }); // P86: 셸 기록(큰 메시지) 받은 뒤, 쓰기 전
       if (h.above > 0 && st.alive) await fillHistory(h.ansi, shadowScreen(), 'first');
     };
-    // 빠른 출력이 한 프레임에 지나가거나(화면에 한 번도 안 보인 줄), cls·크기 바뀜으로 판 안 기록이 herdr 기록과 어긋났다.
-    // 출력이 멈추면(그리고 고르는 중이나 위로 올려 보는 중이 아니면) herdr 기록으로 다시 맞춘다: 지금 화면을 칸 그대로 적어 두고 reset 뒤 기록 + 화면
+    // 빠른 출력이 한 프레임에 지나가거나(화면에 한 번도 안 보인 줄), cls·크기 바뀜으로 판 안 기록이 터미널 기록과 어긋났다.
+    // 출력이 멈추면(그리고 고르는 중이나 위로 올려 보는 중이 아니면) 터미널 기록으로 다시 맞춘다: 지금 화면을 칸 그대로 적어 두고 reset 뒤 기록 + 화면
     const resync = async () => {
       st.stale = false;
       const h = await readHistory(rowsOf(shadow));
@@ -367,8 +367,8 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       else if (!before) markStale();
       else {
         const s = findShift(before, after);
-        // 영역을 올려 밀려난 줄을 scrollback으로 보낸 뒤, 화면은 그림자(herdr의 새 화면)를 칸 그대로 다시 쓴다.
-        // herdr 프레임은 herdr 앞 화면에서 바뀐 칸만 쓰므로, 올린 화면에 그대로 쓰면 글이 깨진다. 그 뒤 프레임을 써도 같은 칸을 같은 글로 쓸 뿐이다
+        // 영역을 올려 밀려난 줄을 scrollback으로 보낸 뒤, 화면은 그림자(터미널 서버의 새 화면)를 칸 그대로 다시 쓴다.
+        // 터미널 프레임은 서버의 앞 화면에서 바뀐 칸만 쓰므로, 올린 화면에 그대로 쓰면 글이 깨진다. 그 뒤 프레임을 써도 같은 칸을 같은 글로 쓸 뿐이다
         if (s.d > 0) { const sb = shadow.buffer.active; term.write(scrollUpSeq(s.d, s.hi, term.rows) + serializeScreen(sb, { base: sb.baseY, rows: shadow.rows, cols: shadow.cols, cursorX: sb.cursorX, cursorY: sb.cursorY, cell: sb.getNullCell() })); }
         else if (bigChange(before, after)) markStale();
       }
@@ -523,18 +523,18 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     st.term.focus();
   }, [focusTick, sessionId]);
 
-  // herdr가 다시 뜨거나(C3) 백엔드가 다시 붙어 제어기가 끝났으면, 세션이 다시 살아난 뒤 저절로 다시 붙는다.
+  // 터미널 서버가 다시 뜨거나(C3) 백엔드가 다시 붙어 제어기가 끝났으면, 세션이 다시 살아난 뒤 저절로 다시 붙는다.
   // 다른 클라이언트가 이 패널을 가져간 경우(takeover)는 서로 빼앗지 않게 저절로 붙지 않는다. 같은 끊김에 다섯 번까지.
-  const herdrUp = useStore((st) => st.herdr.connected);
+  const termUp = useStore((st) => st.terminal.connected);
   const sstate = useStore((st) => (st.sessions.get(sessionId) || {}).state);
   const autoTries = useRef(0);
   useEffect(() => {
     if (status.kind === 'attached') { autoTries.current = 0; return; }
     if (status.kind !== 'detached' && status.kind !== 'error') return;
-    if (status.reason === 'takeover' || !herdrUp || !sstate || sstate === 'exited' || sstate === 'starting' || autoTries.current >= 5) return;
+    if (status.reason === 'takeover' || !termUp || !sstate || sstate === 'exited' || sstate === 'starting' || autoTries.current >= 5) return;
     const t = setTimeout(() => { autoTries.current++; perfLog('term_auto_reattach', { sessionId, reason: status.reason, state: sstate }); setStatus({ kind: 'attaching' }); setRetry((x) => x + 1); }, 800);
     return () => clearTimeout(t);
-  }, [status.kind, status.reason, herdrUp, sstate, sessionId]);
+  }, [status.kind, status.reason, termUp, sstate, sessionId]);
 
   return (
     <div className="mt-term-wrap nodrag nowheel nopan" onMouseDown={() => onActivate && onActivate()}>

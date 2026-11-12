@@ -7,7 +7,7 @@
 // - P30: 덩어리 안 세션끼리의 연결은 터미널 위를 지나지 않는다. 맞닿은 칸은 경계 위 다리, 같은 바깥 변에 닿는 칸은 괄호, 그 밖은 둘레 길,
 //   둘레에 닿지 않는 칸은 칩(DockLinks). 누르면 오간 기록. 그 덩어리 안에 연결이 있을 때만 그린다.
 //   잇기는 지금처럼 잇기 모드에서 가운데 점(SessionNode의 가운데 잇기 손잡이)끼리 끈다. 점은 잇기 모드에서만 보인다.
-// - herdr 레이아웃과 패널 크기는 바꾸지 않는다. 제어기는 지금처럼 노드 크기로 화면을 받는다.
+// - 터미널 서버의 레이아웃과 패널 크기는 바꾸지 않는다. 제어기는 지금처럼 노드 크기로 화면을 받는다.
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useStore as useFlowStore, useStoreApi } from '@xyflow/react';
 import { api } from './api.js';

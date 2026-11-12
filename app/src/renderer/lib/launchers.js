@@ -59,7 +59,7 @@ export function secretNames(envText) {
   return String(envText || '').split(/\r?\n/).map((l) => l.split('=')[0].trim()).filter((k) => k && SECRET_RE.test(k));
 }
 
-// 하네스가 보일 칸(백엔드 HARNESSES의 fields). 모르는 종류(herdr가 아는 그 밖)는 추가 인자만
+// 하네스가 보일 칸(백엔드 HARNESSES의 fields). 모르는 종류(터미널 백엔드가 아는 그 밖)는 추가 인자만
 export function harnessFields(harnesses, id) {
   const h = (harnesses || []).find((x) => x.id === id);
   return h ? h.fields : ['args'];
@@ -82,7 +82,7 @@ export function harnessModelLabels(harnesses, id) {
 }
 
 // 새 호출자의 빈 틀. P97: startCommand(실행 명령, 비면 그 하네스의 명령). P115: connection(연결 ID, 비면 하네스의 기본 로그인)
-export const blankLauncher = (harness = 'claude') => ({ id: null, name: '', harness, icon: '', model: '', effort: '', permissionMode: 'manual', allowHerdr: false, args: '', env: {}, command: '', connection: '', startCommand: '' });
+export const blankLauncher = (harness = 'claude') => ({ id: null, name: '', harness, icon: '', model: '', effort: '', permissionMode: 'manual', args: '', env: {}, command: '', connection: '', startCommand: '' });
 
 // P115: 런처 틀의 연결 고르기. 그 하네스가 쓰는 프로토콜이 아닌 연결은 고를 수 없게(흐리게) 까닭과 함께
 // → [{ id, name, protocol, baseUrl, ok }]. protocols는 그 하네스의 것(백엔드 harnesses[].protocols)

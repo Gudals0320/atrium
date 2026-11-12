@@ -208,15 +208,15 @@ test('받기: 넘겨 주기 주소도 검사한다(이 저장소 밖으로 넘�
   } finally { srv.close(); }
 });
 
-test('미리 보기: 빌드 결과·Electron·모듈이 없거나 herdr 프로토콜이 맞지 않으면 문제로 알린다', async () => {
+test('미리 보기: 빌드 결과·Electron·모듈이 없거나 터미널(hc) 세대가 맞지 않으면 문제로 알린다', async () => {
   const d = tmp('verify');
   try {
-    write(path.join(d, 'backend', 'src', 'update-verify.mjs'), "console.log('noise'); console.log(JSON.stringify({ version: '0.2.0', protocols: [23], problems: [] }));\n");
-    let v = await U.verifyRoot(d, { protocol: 22 });
+    write(path.join(d, 'backend', 'src', 'update-verify.mjs'), "console.log('noise'); console.log(JSON.stringify({ version: '0.2.0', protocols: [22, 2], hcGenerations: [2], problems: [] }));\n");
+    let v = await U.verifyRoot(d, { protocol: 1 });
     assert.equal(v.ok, false);
-    assert.ok(v.problems.some((p) => /app\/dist/.test(p)) && v.problems.some((p) => /Electron/.test(p)) && v.problems.some((p) => /프로토콜 22/.test(p)));
+    assert.ok(v.problems.some((p) => /app\/dist/.test(p)) && v.problems.some((p) => /Electron/.test(p)) && v.problems.some((p) => /세대 1/.test(p)));
     write(path.join(d, 'app', 'dist', 'index.html'), ''); write(U.electronExe(d), ''); write(path.join(d, 'backend', 'node_modules', 'ws', 'index.js'), '');
-    v = await U.verifyRoot(d, { protocol: 23 });
+    v = await U.verifyRoot(d, { protocol: 2 });
     assert.equal(v.ok, true, v.problems.join(';'));
     write(path.join(d, 'backend', 'src', 'update-verify.mjs'), 'process.exit(3);\n');
     v = await U.verifyRoot(d, {});
@@ -228,7 +228,7 @@ test('미리 보기: 빌드 결과·Electron·모듈이 없거나 herdr 프로�
 function fakeBoard(d, profile = 'real') {
   const meta = new Map(), events = [];
   const b = {
-    cfg: { profile, logDir: path.join(d, 'logs') }, herdrCompat: { ok: true, protocol: 22 }, features: null, stopped: null,
+    cfg: { profile, logDir: path.join(d, 'logs') }, termCompat: { ok: true, protocol: 22 }, features: null, stopped: null,
     store: { getMeta: (k) => (meta.has(k) ? JSON.parse(JSON.stringify(meta.get(k))) : null), setMeta: (k, v) => meta.set(k, JSON.parse(JSON.stringify(v))), addEvent() {} },
     api: { broadcast: (e, x) => events.push([e, x]) },
     stop: async (why) => { b.stopped = why; },
@@ -325,7 +325,7 @@ export async function startBackend() { fs.appendFileSync(LOG, '${tag}${bad ? ' f
 export const backendInfo = () => (${bad} ? null : { pid: 999999, port: 1, token: 't' });
 export const health = async () => !${bad};
 export const stopBackend = async () => ({});
-export class ApiClient { async open() {} close() {} async call() { return { pid: 999999, port: 1, herdr: { connected: true } }; } }
+export class ApiClient { async open() {} close() {} async call() { return { pid: 999999, port: 1, terminal: { connected: true } }; } }
 `);
   return root;
 }

@@ -129,43 +129,10 @@ function GeneralTab({ settings }) {
         <WorkLightSetting settings={settings} />
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>
-        {'herdrPath' in settings && <HerdrPathSetting settings={settings} />}
         {'updateCheck' in settings && <UpdateSettings settings={settings} />}
       </>}
     </div>
   );
-}
-
-// P40: herdr 실행 파일 경로. 비우면 찾는다(ATRIUM_HERDR 다음 순서). 저장하면 백엔드가 다시 찾고, 못 붙어 있었으면 서버를 띄워 붙는다
-function HerdrPathSetting({ settings }) {
-  const t = useT();
-  const herdr = useStore((st) => st.herdr);
-  const [v, setV] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const save = async () => {
-    if (v == null) return;
-    setBusy(true);
-    try {
-      const r = await api.call('settings.set', { key: 'herdrPath', value: v });
-      setV(null);
-      const h = r && r.herdr;
-      if (h && h.connected) toast(t('settings.herdrPathOk', { path: h.path || '' }));
-      else if (h && (h.missing || h.level === 'missing')) toast(t('warn.herdrStillMissing'), 'error');
-      else toast(t('settings.herdrPathSaved'));
-    } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
-    setBusy(false);
-  };
-  const chosen = herdr && herdr.find && herdr.find.chosen;
-  const now = herdr && herdr.path ? t('settings.herdrPathNow', { path: herdr.path, version: herdr.version ? ` ${herdr.version}` : '', source: chosen ? t(`settings.herdrFrom.${chosen.source}`) : '' }) : t('settings.herdrPathNone');
-  return <>
-    <SetRow name={t('settings.herdrPathName')} hint={t('settings.herdrPathHint')} role="herdr-path-setting">
-      <span className="mt-set-path">
-        <input type="text" className="mt-set-text" spellCheck={false} data-field="setting-herdrPath" placeholder={t('settings.herdrPathPlaceholder')} value={v ?? settings.herdrPath ?? ''} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }} />
-        <button type="button" className="mt-btn small" data-action="herdr-path-save" disabled={busy || v == null} onClick={save}>{t('settings.herdrPathSave')}</button>
-      </span>
-    </SetRow>
-    <SetNote><span data-role="herdr-path-now">{now}</span> {t('settings.herdrPathNote')}</SetNote>
-  </>;
 }
 
 // P10: 보관 기간(0이면 저절로 보관 끔)과 리포 스스로 찾기

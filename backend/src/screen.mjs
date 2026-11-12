@@ -57,7 +57,7 @@ export function parsePromptLine(text) {
 }
 
 
-// G2(P5): 일반 셸이 프롬프트에서 쉬는가, 명령을 돌리는가. Windows에서 herdr pane.process_info는 셸 프로세스만 주고
+// G2(P5): 일반 셸이 프롬프트에서 쉬는가, 명령을 돌리는가. Windows에서 터미널의 process_info는 셸 프로세스만 주고
 // 셸 아래에서 도는 명령은 주지 않는다(P5에서 확인). 그래서 화면 마지막 줄이 프롬프트인지 보고, 마지막 프롬프트 줄의 명령 글을 읽는다.
 // 프로세스 이름은 따로 프로세스 표(셸 PID의 자식)에서 얻는다. 이 결과는 셸의 표시에만 쓴다.
 const PROMPTS = [/^PS [^>]*>\s?(.*)$/, /^[A-Za-z]:\\[^>]*>(.*)$/]; // PowerShell, cmd

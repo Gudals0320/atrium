@@ -15,8 +15,6 @@ export const SETTINGS = {
   // P10: 보관과 리포 스스로 찾기(archive.mjs, recall.mjs). 0일이면 저절로 보관을 끈다(손 보관은 그대로)
   archiveDays: { type: 'number', default: 14, min: 0, max: 365, label: '마지막 활동 이후 지정한 일수가 지난 보드 외부 대화와 닫힌 세션을 자동 보관합니다 (0: 사용 안 함).' },
   autoOpenRepos: { type: 'boolean', default: true, label: '터미널(Claude Code CLI)에서 작업한 Git 저장소를 프로젝트로 자동으로 엽니다.' },
-  // P40: herdr 실행 파일 경로. 비우면 찾는다(ATRIUM_HERDR 다음, 설치기 current 링크·PATH·알려진 폴더보다 먼저). 바꾸면 백엔드가 다시 찾는다
-  herdrPath: { type: 'string', default: '', max: 1024, label: 'herdr 실행 파일 경로입니다. 비우면 herdr 설치 폴더와 PATH에서 찾습니다.' },
   // P49(R3): Tailscale로 온 요청의 로그인 사용자 제한. 켜져 있으면 이 PC에 로그인한 Tailscale 사용자와 허용 목록만 짝 맺고 연결한다. 이 PC의 창에서만 바꾼다
   remoteSameUser: { type: 'boolean', default: true, label: 'Tailscale을 통한 요청은 이 PC에 로그인한 사용자와 허용 목록의 사용자만 허용합니다.' },
   // P58(S4): 원격 받기. 끄면 이 PC 밖에서 온 요청(바깥 요청, 짝 맺은 기기 연결)을 모두 거부하고 붙은 원격 연결을 닫는다. 이 PC의 창과 CLI는 그대로. Tailscale serve 설정은 건드리지 않는다

@@ -6,7 +6,7 @@ import { STATE_LABEL, agoText } from './lib/labels.js';
 import { useT, t, errText } from './lib/i18n.js';
 import { markInteracted } from './touch.js';
 
-// C3: herdr 재시작으로 끊긴 턴. 그때의 상태와 지시, 지금의 대화 기록 꼬리를 보여준다.
+// C3: 터미널 서버 재시작으로 끊긴 턴. 그때의 상태와 지시, 지금의 대화 기록 꼬리를 보여준다.
 // P6c: 셸은 "끊긴 명령"이다(P6b I8: 그때 돌던 명령이 prompt에 있다). 셸에는 대화 기록이 없어 꼬리를 읽지 않는다
 export function InterruptedBanner({ s }) {
   const t = useT();

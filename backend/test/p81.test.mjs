@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
-import { Branch, BRANCH_ALLOW, boardSkill } from '../src/branch.mjs';
+import { Branch, ATRIUM_ALLOW, boardSkill } from '../src/branch.mjs';
 import { NoticeBatcher, noticeText, closeWhy, ME_LINE, ACK_LINE } from '../src/link-notice.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { Sleeper } from '../src/sleep.mjs';
@@ -29,9 +29,9 @@ async function fakeBoard({ batchMs = 30 } = {}) {
   const ws = await workspaceOf(dir);
   store.insertWorkspace({ ...ws, createdAt: 1 });
   const b = {
-    cfg: { profile: 'dev', herdrSession: 'atrium-dev-p81test', port: 0, dataDir: dir }, apiToken: 'board-api-token', store, sessions: new Map(), bus: new EventEmitter(),
+    cfg: { profile: 'dev', terminalSession: 'atrium-dev-p81test', port: 0, dataDir: dir }, apiToken: 'board-api-token', store, sessions: new Map(), bus: new EventEmitter(),
     broadcasts: [], spawned: [], killed: [], queued: [], killing: new Set(),
-    api: { broadcast: (e, d) => b.broadcasts.push([e, d]) }, log: () => {}, requireHerdr: () => {},
+    api: { broadcast: (e, d) => b.broadcasts.push([e, d]) }, log: () => {}, requireTerminal: () => {},
     hooked: (s) => s.kind === 'claude' && s.origin === 'board',
     summary: (s) => ({ state: s.rt.sleep ? 'sleeping' : s.rt.fakeState || 'ready', ask: null }),
     broadcastSession: (s) => b.broadcasts.push(['session', s.sessionId]),
@@ -383,5 +383,5 @@ test('P81 안내와 스킬: 짧은 안내에 atrium me 한 줄, 스킬에 atrium
   const skill = boardSkill('atrium');
   for (const w of ['atrium me', '--head', '첫 요청 뒤 보드가 떼므로', '시키거나 기다리지 않는다']) assert.ok(skill.includes(w), w);
   assert.equal(boardSkill('delegate').split('\n---\n')[1], skill.split('\n---\n')[1]);
-  for (const r of ['Bash(atrium me)', 'Bash(atrium me *)', 'PowerShell(atrium me)', 'Bash(mtask me)']) assert.ok(BRANCH_ALLOW.includes(r), r);
+  for (const r of ['Bash(atrium me)', 'Bash(atrium me *)', 'PowerShell(atrium me)', 'Bash(mtask me)']) assert.ok(ATRIUM_ALLOW.includes(r), r);
 });

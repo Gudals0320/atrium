@@ -7,7 +7,7 @@
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
 
-// hc 오류 종류(data.kind) → 판이 쓰는 오류 코드. 전달 대기열(delivery.mjs REFUSED)은 herdr 어댑터와 같은 코드를 본다
+// hc 오류 종류(data.kind) → 판이 쓰는 오류 코드. 전달 대기열(delivery.mjs REFUSED)이 이 코드를 본다
 export const CODE_OF_KIND = {
   blocked: 'agent_blocked', // 막힌 프로그램에 치면 대화상자에 답하게 된다(force 없이는 거부)
   not_found: 'agent_not_found',
@@ -19,7 +19,7 @@ export class HcError extends Error {
   constructor(code, message, method, data = null) {
     super(`${method || 'hc'}: ${code}: ${message}`);
     this.code = code;
-    this.herdrMessage = message; // 판은 herdr 오류와 같은 이름으로 읽는다(e.herdrMessage)
+    this.detail = message; // 판은 터미널 오류의 글을 e.detail로 읽는다
     this.method = method;
     this.kind = (data && data.kind) || null;
     this.hint = (data && data.hint) || null;

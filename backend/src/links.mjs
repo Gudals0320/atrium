@@ -1,14 +1,10 @@
 // 세션끼리 연결(ARCH 4절 F, P4). 순수 함수만 둔다. 창(renderer)도 이 파일을 그대로 묶어 쓴다(node 모듈을 부르지 않는다).
 //
 // 판은 일을 시키지 않는다. 에이전트가 판의 atrium 명령(P116: atrium prompt|wait|read)으로 직접 시킨다. 판은 그 일을 선으로 보여준다.
-// P116: atrium 명령은 판을 거치므로 판이 바로 남긴다(agent-verbs.mjs). 아래 셸 명령 글 읽기는 herdr 모드 호환이다:
-// 판이 띄운 Claude Code 세션의 hook(PreToolUse·PostToolUse)에서 셸 명령 글을 읽어
-// `herdr agent prompt`, `herdr agent read`, `herdr agent start`, `herdr pane split` 같은 호출을 찾는다(누가, 누구에게, 무엇을. docs/log/p4-links.md 보고 4절).
+// P116: atrium 명령은 판을 거치므로 판이 바로 남긴다(agent-verbs.mjs). P129: 셸 명령 글에서 옛 터미널 명령을 읽던 것(F1)은 없앴다.
 // 받는 쪽의 상태와 새로 나타난 에이전트는 터미널 백엔드 이벤트로 본다.
 
-export const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
-
-// 셸 명령 글을 명령 단위(단어 목록)로 나눈다. bash와 PowerShell을 대충 함께 다룬다.
+// 셸 명령 글을 명령 단위(단어 목록)로 나눈다(지난 대화의 띄움 줄 읽기, spawns.mjs). bash와 PowerShell을 대충 함께 다룬다.
 // 따옴표 밖의 &&, ||, ;, |, &, 줄바꿈에서 끊는다. 따옴표 안의 줄바꿈은 그대로 둔다. $(…)와 변수는 풀지 않는다.
 export function splitCommands(src) {
   const cmds = [];
@@ -37,86 +33,6 @@ export function splitCommands(src) {
   }
   end();
   return cmds;
-}
-
-const HERDR_WORD = /(^|[\\/])herdr(\.exe)?$/i;
-const isHerdrWord = (x) => HERDR_WORD.test(x) || /^\$\{?(env:)?HERDR_BIN_PATH\}?$/i.test(x);
-const GLOBAL_WITH_VALUE = new Set(['--session', '--machine', '--remote', '--remote-keybindings']);
-const BOOL_FLAGS = new Set(['--wait', '--ansi', '--focus', '--no-focus', '--current', '--trust-repository', '--json', '--force', '--toggle', '--on', '--off', '--raw', '--verbose', '--clear', '--new-tab', '--new-workspace', '--takeover']);
-
-// 명령 글에서 herdr 호출을 찾아 뜻을 읽는다.
-// boardSession: 판 전용 herdr 세션 이름. --session으로 다른 세션을, --machine·--remote로 다른 기계를 부른 호출은 foreign으로 표시한다(판은 보지 않는다).
-export function parseHerdrCommands(command, { boardSession = null } = {}) {
-  const out = [];
-  for (const words of splitCommands(command)) {
-    const at = words.findIndex(isHerdrWord);
-    if (at < 0) continue;
-    let i = at + 1;
-    let foreign = false;
-    while (i < words.length && words[i].startsWith('--') && GLOBAL_WITH_VALUE.has(words[i])) {
-      const k = words[i], v = words[i + 1];
-      if (k === '--session' ? v !== boardSession : true) foreign = true;
-      i += 2;
-    }
-    const group = words[i], sub = words[i + 1];
-    if (!group) continue;
-    const pos = []; const flags = {}; let native = null;
-    for (let j = i + 2; j < words.length; j++) {
-      const x = words[j];
-      if (x === '--') { native = words.slice(j + 1); break; }
-      if (x.startsWith('--') && x.length > 2) {
-        const eq = x.indexOf('=');
-        if (eq > 0) { flags[x.slice(2, eq)] = x.slice(eq + 1); continue; }
-        if (BOOL_FLAGS.has(x) || j + 1 >= words.length) { flags[x.slice(2)] = true; continue; }
-        const k = x.slice(2);
-        if (flags[k] !== undefined) flags[k] = [].concat(flags[k], words[++j]); else flags[k] = words[++j];
-        continue;
-      }
-      pos.push(x);
-    }
-    const verb = `${group}.${(sub || '').replace(/-/g, '_')}`;
-    const r = { verb, foreign, raw: words.slice(at).join(' ') };
-    switch (verb) {
-      case 'agent.prompt': Object.assign(r, { target: pos[0] || null, text: pos.slice(1).join(' '), wait: !!flags.wait, timeout: flags.timeout ? Number(flags.timeout) : null }); break;
-      case 'agent.read': Object.assign(r, { target: pos[0] || null, source: flags.source || null, lines: flags.lines ? Number(flags.lines) : null }); break;
-      case 'agent.wait': case 'agent.get': case 'agent.focus': case 'agent.attach': case 'agent.explain': Object.assign(r, { target: pos[0] || null }); break;
-      case 'agent.send_keys': Object.assign(r, { target: pos[0] || null, keys: pos.slice(1) }); break;
-      case 'agent.rename': Object.assign(r, { target: pos[0] || null, name: pos[1] || null }); break;
-      case 'agent.start': Object.assign(r, { name: pos[0] || null, kind: flags.kind || null, pane: flags.pane || null, args: native || [] }); break;
-      case 'pane.split': Object.assign(r, { pane: pos[0] || flags.pane || (flags.current ? 'current' : null), direction: flags.direction || null, cwd: flags.cwd || null }); break;
-      case 'pane.run': Object.assign(r, { pane: pos[0] || null, text: pos.slice(1).join(' ') }); break;
-      case 'pane.send_text': Object.assign(r, { pane: pos[0] || null, text: pos.slice(1).join(' ') }); break;
-      case 'pane.close': case 'pane.read': Object.assign(r, { pane: pos[0] || null }); break;
-      case 'worktree.create': case 'worktree.open': Object.assign(r, { branch: flags.branch || null, path: flags.path || null, cwd: flags.cwd || null, workspace: flags.workspace || null }); break;
-      case 'workspace.create': Object.assign(r, { cwd: flags.cwd || null, label: flags.label || null }); break;
-      default:
-    }
-    out.push(r);
-  }
-  return out;
-}
-
-// 일을 시키거나 띄우는 호출만(판이 선으로 보여줄 것)
-export const LINK_VERBS = new Set(['agent.prompt', 'agent.read', 'agent.wait', 'agent.send_keys', 'agent.start', 'pane.split', 'pane.run', 'worktree.create', 'workspace.create']);
-
-// PostToolUse의 셸 도구 결과(stdout)에서 herdr CLI의 JSON 응답들을 찾는다. JSON이 아닌 줄은 글로 모은다.
-export function parseHerdrOutput(resp) {
-  let text = '';
-  if (typeof resp === 'string') text = resp;
-  else if (resp && typeof resp === 'object') text = [resp.stdout, resp.output, resp.result, resp.stderr].filter((x) => typeof x === 'string').join('\n');
-  const results = []; const plain = [];
-  for (const line of text.split(/\r?\n/)) {
-    const t = line.trim();
-    if (t.startsWith('{') && t.endsWith('}')) { try { const j = JSON.parse(t); results.push(j.result ?? j); continue; } catch {} }
-    plain.push(line);
-  }
-  return { results, text: plain.join('\n').trim() };
-}
-
-// `herdr agent read` 결과의 글. CLI가 JSON으로 주면 그 안의 글을, 아니면 출력 그대로
-export function readTextOf(out) {
-  for (const r of out.results) { const t = r && (r.read ? r.read.text : r.text); if (typeof t === 'string') return t; }
-  return out.text;
 }
 
 // 화면 글에서 마지막 몇 줄(빈 줄 빼고)

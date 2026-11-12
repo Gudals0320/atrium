@@ -2,7 +2,7 @@
 // - 확인 결과와 마지막 확인 시각, 마지막 바꾸기 결과는 판 기록(meta 'update')에 둔다. 바뀌면 update.state 이벤트로 창·트레이·웹 화면에 알린다.
 // - 업데이트는 사람이 누를 때만 한다(창의 설정 › 일반 › 업데이트, 트레이 메뉴, atrium update). 원격 기기(웹 화면)는 보기만 한다.
 // - 바꾸기: update.restart 이벤트를 보내 창(Electron main)이 update.leaving으로 PID를 알리고 끝나게 한 뒤, 바꾸기 프로세스를 떼어 띄우고 이 백엔드만 끝난다.
-//   herdr 서버는 끄지 않는다. 바꾸기 프로세스가 새 백엔드를 띄우고, 건강 확인을 통과하지 못하면 옛 버전으로 돌린다.
+//   터미널 서버는 끄지 않는다. 바꾸기 프로세스가 새 백엔드를 띄우고, 건강 확인을 통과하지 못하면 옛 버전으로 돌린다.
 // - P70 채널(판 설정 updateChannel, stable|dev): 확인 결과에 채널을 남기고, 지금 채널과 다른 채널의 결과는 보이지도 알리지도 않는다. 채널을 바꾸면 곧바로 다시 확인한다.
 //   알림은 지금 버전보다 높을 때만이라 dev 빌드에서 stable로 돌리면 더 높은 정식 릴리즈가 나올 때까지 조용하다(내려가지 않는다).
 //   update.check·update.apply의 { channel }은 그 한 번만 다른 채널로 본다(atrium update --channel). 그 결과는 판 기록에 두지 않는다.
@@ -173,10 +173,8 @@ export class Updater {
   async runUpdate(rel) {
     this.log(`update start ${this.running.version} → ${rel.tag}`);
     try {
-      const protocol = this.b.herdrCompat && this.b.herdrCompat.ok ? this.b.herdrCompat.protocol : null;
-      // P123: hc 판이면 protocol은 hc 세대다. 새 버전의 herdr 프로토콜이 아니라 hc 세대에서 찾게 터미널 백엔드를 함께 넘긴다
-      const terminal = this.b.adapter && this.b.adapter.backend === 'hc' ? 'hc' : 'herdr';
-      const r = await this.prepare({ dir: this.dir, release: rel, apiUrl: this.apiUrl, protocol, terminal, step: (step, d) => { this.log(`step ${step}${d ? ` ${JSON.stringify(d)}` : ''}`); this.setJob({ step, part: null, bytes: null, ...(d || {}) }); }, log: (l) => this.log(l) });
+      const protocol = this.b.termCompat && this.b.termCompat.ok ? this.b.termCompat.protocol : null;
+      const r = await this.prepare({ dir: this.dir, release: rel, apiUrl: this.apiUrl, protocol, step: (step, d) => { this.log(`step ${step}${d ? ` ${JSON.stringify(d)}` : ''}`); this.setJob({ step, part: null, bytes: null, ...(d || {}) }); }, log: (l) => this.log(l) });
       await this.prefetchHc(r.root);
       await this.swap({ kind: 'update', toRoot: r.root, to: { tag: rel.tag, version: rel.version }, currentAfter: { current: rel.tag, switchedAt: Date.now() } });
     } catch (e) {
@@ -230,7 +228,7 @@ export class Updater {
     this.log(`swap ${kind} → ${to.tag} relaunch=${job.relaunch} wait=${JSON.stringify(job.waitPids)}`);
     this.spawnSwap(file, job);
     try { this.b.store.addEvent(null, 'update_swap', { kind, from: job.from, to }); } catch {}
-    // 이 백엔드만 끝낸다(herdr 서버는 그대로). 바꾸기 프로세스가 새 백엔드를 띄운다
+    // 이 백엔드만 끝낸다(터미널 서버는 그대로). 바꾸기 프로세스가 새 백엔드를 띄운다
     setTimeout(() => this.b.stop('update').catch(() => {}).then(() => this.exit(0)), 50);
     return { swapping: true };
   }

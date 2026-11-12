@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as U from '../src/update.mjs';
 import { Updater } from '../src/updater.mjs';
-import { HERDR_PROTOCOLS } from '../src/config.mjs';
+import { HERDR_PROTOCOLS } from '../src/herdr-migrate/index.mjs'; // P129: 옛 업데이터가 herdr 판에서 올라오게 내는 값
 import { HC_PIN } from '../src/hc/pin.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -29,28 +29,27 @@ test('미리 보기 출력: herdr 프로토콜과 hc 세대를 따로 내고, �
   for (const p of [...HERDR_PROTOCOLS, HC_PIN.generation]) assert.ok(info.protocols.includes(p), `protocols에 ${p}`);
 });
 
-test('verifyRoot: hc 판은 hc 세대에서, herdr 판은 herdr 프로토콜에서 찾는다', async () => {
+test('verifyRoot(P129): 판의 터미널은 hc 하나라 프로토콜은 hc 세대에서 찾는다', async () => {
   const d = tmp('verify');
   try {
     ready(d);
     verifyOut(d, { version: '0.1.7', protocols: [22, 1], herdrProtocols: [22], hcGenerations: [1], problems: [] });
-    assert.equal((await U.verifyRoot(d, { protocol: 1, terminal: 'hc' })).ok, true);
-    assert.equal((await U.verifyRoot(d, { protocol: 22, terminal: 'herdr' })).ok, true);
-    // herdr 판에 프로토콜 1은 hc 세대와 섞지 않는다
-    let v = await U.verifyRoot(d, { protocol: 1, terminal: 'herdr' });
-    assert.equal(v.ok, false); assert.ok(v.problems.some((p) => /herdr 프로토콜 1/.test(p)));
-    v = await U.verifyRoot(d, { protocol: 2, terminal: 'hc' });
+    assert.equal((await U.verifyRoot(d, { protocol: 1 })).ok, true);
+    // herdr 프로토콜(22)은 hc 세대와 섞지 않는다
+    let v = await U.verifyRoot(d, { protocol: 22 });
+    assert.equal(v.ok, false); assert.ok(v.problems.some((p) => /herdr-core 세대 22/.test(p)));
+    v = await U.verifyRoot(d, { protocol: 2 });
     assert.equal(v.ok, false); assert.ok(v.problems.some((p) => /herdr-core 세대 2/.test(p)));
-    // hc를 모르는 옛 버전(세대 목록 없음)으로는 hc 판을 바꾸지 않는다
+    // hc를 모르는 옛 버전(세대 목록 없음)으로는 판을 바꾸지 않는다
     verifyOut(d, { version: '0.1.5', protocols: [22], problems: [] });
-    v = await U.verifyRoot(d, { protocol: 1, terminal: 'hc' });
+    v = await U.verifyRoot(d, { protocol: 1 });
     assert.equal(v.ok, false); assert.ok(v.problems.some((p) => /herdr-core를 모르는/.test(p)));
-    // herdr 판은 새 칸이 없는 버전도 protocols로 본다(지금과 같다)
-    assert.equal((await U.verifyRoot(d, { protocol: 22 })).ok, true);
+    // 프로토콜을 모르면(터미널 서버가 붙지 않음) 세대를 보지 않는다
+    assert.equal((await U.verifyRoot(d, { protocol: null })).ok, true);
   } finally { rm(d); }
 });
 
-test('업데이터: hc 판이면 준비에 terminal hc를 넘긴다', async () => {
+test('업데이터: 준비에 hc 세대(protocol)를 넘긴다', async () => {
   const d = tmp('up');
   const inst = path.join(d, 'versions');
   const codeRoot = path.join(inst, 'v0.1.6');
@@ -59,7 +58,7 @@ test('업데이터: hc 판이면 준비에 terminal hc를 넘긴다', async () =
   write(path.join(inst, 'current.json'), JSON.stringify({ current: 'v0.1.6' }));
   const meta = new Map();
   const b = {
-    cfg: { profile: 'real', logDir: path.join(d, 'logs') }, herdrCompat: { ok: true, protocol: 1 }, adapter: { backend: 'hc' }, features: null,
+    cfg: { profile: 'real', logDir: path.join(d, 'logs') }, termCompat: { ok: true, protocol: 1 }, adapter: { backend: 'hc' }, features: null,
     store: { getMeta: (k) => (meta.has(k) ? JSON.parse(JSON.stringify(meta.get(k))) : null), setMeta: (k, v) => meta.set(k, JSON.parse(JSON.stringify(v))), addEvent() {} },
     api: { broadcast() {} }, stop: async () => {},
   };
@@ -68,12 +67,12 @@ test('업데이터: hc 판이면 준비에 terminal hc를 넘긴다', async () =
     const up = new Updater(b, {
       env: { ATRIUM_INSTALL_DIR: inst }, codeRoot, timers: false, leaveWaitMs: 50,
       fetchJson: async () => ({ tag_name: 'v0.1.7', prerelease: false, draft: false, tarball_url: 'https://api.github.com/repos/Gudals0320/atrium/tarball/v0.1.7', html_url: 'https://github.com/Gudals0320/atrium/releases/tag/v0.1.7', published_at: new Date().toISOString(), body: '' }),
-      prepare: async ({ release: rel, protocol, terminal }) => { prepared.push({ tag: rel.tag, protocol, terminal }); throw new Error('stop here'); },
+      prepare: async ({ release: rel, protocol }) => { prepared.push({ tag: rel.tag, protocol }); throw new Error('stop here'); },
       spawnSwap: () => {}, exit: () => {},
     });
     await up.check('timer');
     await up.handlers['update.apply']({ confirm: true }, { auth: { kind: 'local' } });
     const end = Date.now() + 3000; while (!prepared.length && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
-    assert.deepEqual(prepared, [{ tag: 'v0.1.7', protocol: 1, terminal: 'hc' }]);
+    assert.deepEqual(prepared, [{ tag: 'v0.1.7', protocol: 1 }]);
   } finally { rm(d); }
 });

@@ -116,16 +116,16 @@ const gatewayServer = () => server((req, res) => {
 async function board({ permissionMode = 'manual', gatewayUrl = null } = {}) {
   const dir = tmp();
   const { home } = codexHome();
-  const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, herdrSession: 'atrium-dev-p96test', profile: 'dev', dataDir: dir });
+  const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, terminalSession: 'atrium-dev-p96test', profile: 'dev', dataDir: dir });
   b.store = new Store(path.join(dir, 'board.db'));
-  b.sessions = new Map(); b.herdrOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
+  b.sessions = new Map(); b.termOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
   b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null, connections: null };
   if (gatewayUrl) b.store.setMeta('settings', {}); // DeepSeek 예시 호출자가 있는 옛 판. P115: 그 호출자는 게이트웨이 연결을 쓰는 claude 런처로 옮겨진다
   b.features.connections = new Connections({ store: b.store, inUse: (id) => b.features.launchers.usersOf(id) });
   b.features.launchers = new Launchers({ store: b.store, codexModels: new CodexModels({ home, fallback: HARNESSES.codex.models }), gateway: gatewayUrl ? { healthUrl: `${gatewayUrl}/healthz` } : {}, connections: b.features.connections });
   b.queue = { enqueue: () => ({ deliveryId: 'd1', status: 'queued' }), pending: () => 0 };
   b.api = { broadcast() {} };
-  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {}; b.registerResume = () => {};
+  b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {};
   b.ensureLink = (from, to, patch) => ({ linkId: 'l1', from, to, ...patch }); b.linkEvent = () => ({});
   b.summary = (s) => ({ state: deriveState(s.rt).state, ask: null, error: null });
   b.branch = new Branch(b, { readyWaitMs: 30, submitWaitMs: 10 });
@@ -138,7 +138,7 @@ async function board({ permissionMode = 'manual', gatewayUrl = null } = {}) {
     startAgent: async (o) => { calls.push(o); return { agent: null, argv: [o.kind, ...o.args] }; },
     sendText: async () => {}, paneKeys: async () => {},
   };
-  b.requireHerdr = () => {};
+  b.requireTerminal = () => {};
   const lead = await b.spawn({ cwd: dir, name: 'lead', kind: 'claude', model: 'haiku', permissionMode });
   const startOf = (name) => calls.filter((c) => c.name === name).at(-1);
   return { b, dir, lead: b.sessions.get(lead.sessionId), startOf, L: b.features.launchers };

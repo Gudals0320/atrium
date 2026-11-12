@@ -41,7 +41,7 @@ export async function waitClaudeExitOr(b, s, ms, { worktree = 'keep', by = 'clos
   let answered = !claude, readAt = 0, strange = 0;
   const own = beginBoardExit(b, s, by);
   try {
-    while (s.rt.herdr.present && Date.now() - t0 < ms) {
+    while (s.rt.term.present && Date.now() - t0 < ms) {
       if (claude && (!answered || stopOn) && Date.now() - readAt >= 400) {
         readAt = Date.now();
         const screen = await visible(b, s);
@@ -49,7 +49,7 @@ export async function waitClaudeExitOr(b, s, ms, { worktree = 'keep', by = 'clos
         if (!answered) {
           const c = await answerWorktreeExitOnScreen(b, s, worktree === 'remove' ? 'remove' : 'keep', by, screen);
           if (c) { answered = true; if (steps) steps.push(`worktree exit: ${c.n}. ${c.label}`); }
-          else if (s.rt.herdr.status === 'blocked' && !parseWorktreeExit(screen)) {
+          else if (s.rt.term.status === 'blocked' && !parseWorktreeExit(screen)) {
             if (++strange >= 2 && s.rt.boardExit && !s.rt.boardExit.foreign) { s.rt.boardExit.foreign = true; if (steps) steps.push('unknown dialog: left to the human'); if (b.broadcastSession) b.broadcastSession(s, { cause: `${by}:unknown_dialog` }); }
           } else strange = 0;
         }
@@ -64,12 +64,12 @@ export async function waitClaudeExitOr(b, s, ms, { worktree = 'keep', by = 'clos
 export function beginBoardExit(b, s, by) {
   if (s.rt.boardExit) return false;
   s.rt.boardExit = { by, at: Date.now() };
-  if (s.rt.herdr.status === 'blocked' && b.broadcastSession) b.broadcastSession(s, { cause: `${by}:board_exit` }); // 이미 떠 있는 나가기 질문을 바로 거둔다
+  if (s.rt.term.status === 'blocked' && b.broadcastSession) b.broadcastSession(s, { cause: `${by}:board_exit` }); // 이미 떠 있는 나가기 질문을 바로 거둔다
   return true;
 }
 export function endBoardExit(b, s) {
   if (!s.rt.boardExit) return;
-  const shown = s.rt.herdr.present && s.rt.herdr.status === 'blocked';
+  const shown = s.rt.term.present && s.rt.term.status === 'blocked';
   delete s.rt.boardExit;
   if (shown && b.broadcastSession) b.broadcastSession(s, { cause: 'board_exit:end' }); // 끝나지 않고 남은 질문은 사람에게 보인다
 }

@@ -1,8 +1,8 @@
-// P69 바꾸기: 업데이트의 마지막 단계(P71: 손으로 하는 되돌리기는 뺐다). 옛 백엔드가 떼어 띄우고 스스로 끝난다(updater.mjs). herdr 서버는 끄지 않는다.
+// P69 바꾸기: 업데이트의 마지막 단계(P71: 손으로 하는 되돌리기는 뺐다). 옛 백엔드가 떼어 띄우고 스스로 끝난다(updater.mjs). 터미널 서버는 끄지 않는다.
 // 사용: node update-swap.mjs <작업 파일(swap-job.json)>
 // 1. 옛 백엔드와 옛 창(Electron main)이 끝나기를 기다린다.
-// 2. current.json을 새 버전으로 바꾸고 새 버전의 백엔드를 띄운다. 새 백엔드는 다시 켤 때처럼 herdr 세션에 다시 붙는다(ARCH 4절 C3). 판 플러그인도 새 백엔드가 다시 만든다.
-// 3. 정해진 시간 안에 건강 확인(/health, herdr 연결)을 통과하지 못하면 current.json을 옛 것으로 돌리고 옛 백엔드를 다시 띄운다.
+// 2. current.json을 새 버전으로 바꾸고 새 버전의 백엔드를 띄운다. 새 백엔드는 다시 켤 때처럼 터미널 세션에 다시 붙는다(ARCH 4절 C3). 판 플러그인도 새 백엔드가 다시 만든다.
+// 3. 정해진 시간 안에 건강 확인(/health, 터미널 연결)을 통과하지 못하면 current.json을 옛 것으로 돌리고 옛 백엔드를 다시 띄운다.
 // 4. 결과를 설치 폴더의 last-update.json에 남기고(새 백엔드가 읽어 창에 알린다), 창이 있었으면 그 버전의 창을 다시 띄운다.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,7 +25,7 @@ async function load(root) {
   const [client, config] = await Promise.all([mod('client.mjs'), mod('config.mjs')]);
   return { client, cfg: config.loadConfig({ argv: job.profileArgv || [], env: process.env }) };
 }
-// root의 백엔드를 띄우고 ms 안에 건강 확인(/health, herdr 연결)을 통과하는지 본다
+// root의 백엔드를 띄우고 ms 안에 건강 확인(/health, 터미널 연결)을 통과하는지 본다
 async function startAt(root, ms) {
   const { client, cfg } = await load(root);
   const end = Date.now() + ms;
@@ -39,8 +39,9 @@ async function startAt(root, ms) {
     try {
       for (;;) {
         const st = await c.call('backend.status');
-        if (st.herdr && st.herdr.connected) return { pid: st.pid, port: st.port, already: !!r.already };
-        if (Date.now() > end) throw new Error('herdr에 다시 붙지 못함');
+        const t = st.terminal || st.herdr; // P129: 새 이름 terminal. 옛 버전으로 되돌릴 때 옛 이름
+        if (t && t.connected) return { pid: st.pid, port: st.port, already: !!r.already };
+        if (Date.now() > end) throw new Error('터미널 서버에 다시 붙지 못함');
         await sleep(300);
       }
     } finally { c.close(); }

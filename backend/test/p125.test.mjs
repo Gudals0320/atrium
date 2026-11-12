@@ -17,7 +17,7 @@ const until = async (fn, ms = 3000) => { const t0 = Date.now(); while (Date.now(
 // 판이 띄워 한 턴 돈 claude(ready)
 function running({ hooked = true } = {}) {
   const rt = newRuntime({ hooked, kind: hooked ? 'claude' : 'codex' });
-  rt.phase = 'running'; rt.herdr.present = true; rt.herdr.status = 'idle'; rt.herdr.launchPending = false; rt.hooksSinceLaunch = 3;
+  rt.phase = 'running'; rt.term.present = true; rt.term.status = 'idle'; rt.term.launchPending = false; rt.hooksSinceLaunch = 3;
   return rt;
 }
 const ended = (rt, reason) => applyHook(rt, { hook_event_name: 'SessionEnd', reason, session_id: 'x' });
@@ -38,7 +38,7 @@ test('P125 exitKind: 사람이 끝냄(user)과 오류(other)를 가른다', () =
   assert.equal(exitKind({ exitCode: 3221225477 }), 'other');
   assert.equal(exitKind({}), 'other');
   // 터미널 서버 꺼짐과 신뢰 거부는 그대로
-  assert.equal(exitKind({ reason: 'prompt_input_exit', herdrStopping: true }), 'herdr_stopped');
+  assert.equal(exitKind({ reason: 'prompt_input_exit', termStopping: true }), 'terminal_stopped');
   assert.equal(exitKind({ before: 'trust_wait', exitCode: 0 }), 'trust_declined');
   assert.equal(exitKind({ hooksSinceLaunch: 0, launchPending: true }), 'trust_declined');
   // hook 없는 하네스: 판이 끄라고 했으면 normal, 아니면 코드로
@@ -106,15 +106,14 @@ function fakeBoard({ paneAlive = true, transcript = true } = {}) {
   const calls = [], events = [];
   const rt = running(); ended(rt, 'prompt_input_exit'); applyAgentReleased(rt, 5, { exitCode: 0 });
   rt.transcriptPath = tx; rt.claudeSessionId = 'sid-1';
-  const s = { sessionId: 'sid-1', name: 'c1', kind: 'claude', cwd: dir, paneId: 't3', herdrWorkspaceId: 'w1', agentName: 'c1', settingsPath: path.join(dir, 's.json'), permissionMode: 'manual', model: 'haiku', effort: null, extraArgs: [], startCommand: '', resumeArgv: [], parentSessionId: 'lead', rt };
+  const s = { sessionId: 'sid-1', name: 'c1', kind: 'claude', cwd: dir, paneId: 't3', termWorkspaceId: 'w1', agentName: 'c1', settingsPath: path.join(dir, 's.json'), permissionMode: 'manual', model: 'haiku', effort: null, extraArgs: [], startCommand: '', resumeArgv: [], parentSessionId: 'lead', rt };
   const node = { x: 100, y: 200, w: 720, h: 460 };
   const links = [{ linkId: 'l1', from: 'lead', to: 'sid-1' }];
   const b = {
     cfg: { claudeProjects: dir }, plugin: {}, sessions: new Map([['sid-1', s]]),
     store: { updateSession: (id, f) => calls.push(['updateSession', id, Object.keys(f)]), addEvent: (id, type, d) => events.push([type, d]), nodeOf: () => node, links: () => links },
-    requireHerdr: () => {}, hooked: (x) => x.rt.hooked !== false, log: () => {},
+    requireTerminal: () => {}, hooked: (x) => x.rt.hooked !== false, log: () => {},
     launchOf: Backend.prototype.launchOf,
-    registerResume: () => calls.push(['registerResume']),
     broadcastSession: (x, o) => calls.push(['broadcast', deriveState(x.rt).state, o && o.cause]),
     withNewPane: async (create, reg) => { const r = await create(); reg(r); return r; },
     recall: { reopen: async (p) => { calls.push(['recall.reopen', p.session]); return { sessionId: p.session, name: 'old', resume: true }; } },
@@ -138,7 +137,6 @@ test('P125 다시 열기: 같은 패널(남은 셸)에서 같은 세션 ID로 �
   assert.equal(st[1], 't3'); assert.equal(st[2], 'c1');
   assert.deepEqual(st[3].slice(0, 2), ['--resume', 'sid-1']);
   assert.ok(st[3].includes('--settings') && st[3].includes('haiku'));
-  assert.ok(calls.some((c) => c[0] === 'registerResume'));
   assert.equal(s.rt.exit, null); assert.equal(deriveState(s.rt).state, 'starting');
   assert.equal(s.sessionId, 'sid-1'); assert.equal(s.name, 'c1'); assert.equal(s.parentSessionId, 'lead');
   assert.deepEqual(node, { x: 100, y: 200, w: 720, h: 460 }); assert.equal(links.length, 1);
@@ -149,7 +147,7 @@ test('P125 다시 열기: 같은 패널(남은 셸)에서 같은 세션 ID로 �
 test('P125 다시 열기: 패널이 없으면 같은 폴더에 새 패널, 대화 기록이 없으면 같은 세션 ID로 새로', async () => {
   const { b, s, calls } = fakeBoard({ paneAlive: false, transcript: false });
   const r = await reopenSession(b, { session: 'sid-1' });
-  assert.equal(r.newPane, true); assert.equal(r.paneId, 't9'); assert.equal(s.paneId, 't9'); assert.equal(s.herdrWorkspaceId, 'w9');
+  assert.equal(r.newPane, true); assert.equal(r.paneId, 't9'); assert.equal(s.paneId, 't9'); assert.equal(s.termWorkspaceId, 'w9');
   assert.equal(r.plan, 'fresh');
   const st = calls.find((c) => c[0] === 'startAgent');
   assert.deepEqual(st[3].slice(0, 2), ['--session-id', 'sid-1']);
@@ -161,7 +159,7 @@ test('P125 다시 열기: 띄우지 못하면 끝난 채로 되돌린다, 아직
   await assert.rejects(reopenSession(b, { session: 'sid-1' }), /boom/);
   assert.equal(s.rt.exit.kind, 'user');
   // 도는 세션
-  const f2 = fakeBoard(); resetForReopen(f2.s.rt); f2.s.rt.herdr.present = true; f2.s.rt.herdr.status = 'idle'; f2.s.rt.phase = 'running';
+  const f2 = fakeBoard(); resetForReopen(f2.s.rt); f2.s.rt.term.present = true; f2.s.rt.term.status = 'idle'; f2.s.rt.phase = 'running';
   await assert.rejects(reopenSession(f2.b, { session: 'sid-1' }), (e) => e.code === 'not_exited');
   // 셸 노드는 같은 자리 다시 열기가 아니다
   const f3 = fakeBoard(); f3.s.kind = 'shell';

@@ -64,7 +64,7 @@ function fakeB({ paneId = 'p1', delay = () => 0 } = {}) {
     sessions: new Map([['s1', s]]),
     keyChain: keyChain(),
     resolve: (q) => { if (q !== 's1' && q !== 'w1') throw Object.assign(new Error('no session'), { code: 'not_found' }); return s; },
-    requireHerdr: () => {},
+    requireTerminal: () => {},
     touch: (x) => touched.push(x.sessionId),
     peers: { touch: (c) => touched.push(c ? 'peer' : 'none') },
     store: { addEvent: (sid, kind, data) => events.push({ sid, kind, data }) },
@@ -111,17 +111,17 @@ test('session.keys: 겹쳐 불러도 부른 순서대로 패널에 닿는다(앞
 test('session.keys는 판 API에 있고, 원격 기기에도 막지 않는다(web.mjs에 같은 이름의 localOnly가 없다)', async () => {
   const dir = tmp();
   const store = new Store(path.join(dir, 'board.db'));
-  const web = new WebServer({ cfg: { port: 47999, dataDir: dir, profile: 'dev', herdrSession: 'atrium-dev-test' }, store, api: null });
+  const web = new WebServer({ cfg: { port: 47999, dataDir: dir, profile: 'dev', terminalSession: 'atrium-dev-test' }, store, api: null });
   try {
     const wh = web.handlers();
     assert.equal(wh['session.keys'], undefined, 'web.mjs가 session.keys를 덮지 않는다');
     // 같은 web의 localOnly 처리기는 기기를 막는다(대조)
     assert.throws(() => wh['device.code']({}, { auth: { kind: 'device', device: { id: 'd' } } }), (e) => e.code === 'forbidden');
-    const bh = Backend.prototype.handlers.call({});
+    const bh = Backend.prototype.handlers.call({ oldNameHandlers: Backend.prototype.oldNameHandlers });
     assert.equal(typeof bh['session.keys'], 'function');
     // 합친 처리기(backend.mjs ApiServer와 같은 순서)로 기기가 부르면 보낸다
     const { b, calls } = fakeB();
-    b.sendKeysTo = Backend.prototype.sendKeysTo;
+    b.sendKeysTo = Backend.prototype.sendKeysTo; b.oldNameHandlers = Backend.prototype.oldNameHandlers;
     const merged = { ...Backend.prototype.handlers.call(b), ...wh };
     const r = await merged['session.keys']({ session: 's1', keys: ['up'] }, { auth: { kind: 'device', device: { id: 'd1', name: 'p' }, remote: true } });
     assert.deepEqual(r, { sent: true, keys: ['up'] });

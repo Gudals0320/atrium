@@ -11,10 +11,10 @@ import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
-import { newRuntime, applyHook, applyHerdrStatus, deriveState } from '../src/state.mjs';
+import { newRuntime, applyHook, applyTermStatus, deriveState } from '../src/state.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { DeliveryQueue } from '../src/delivery.mjs';
-import { Branch, ATRIUM_ALLOW, HERDR_AGENT_ALLOW, BRANCH_ALLOW, branchAllow, boardSkill, childNotice, headNotice, childShims } from '../src/branch.mjs';
+import { Branch, ATRIUM_ALLOW, branchAllow, boardSkill, childNotice, headNotice, childShims } from '../src/branch.mjs';
 import { similarNames, verbLines, WAIT_DEFAULT_MS } from '../src/agent-verbs.mjs';
 import { CONTRACT_VERSION, VERB_NAMES, VERBS, EXIT, shortHelp, contractJson } from '../src/cli-contract.mjs';
 import { BOARD_SYSTEM_PROMPT, writeBoardPlugin } from '../src/launch.mjs';
@@ -29,16 +29,16 @@ const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, ms = 3000) { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) throw new Error('until: 시간 초과'); await tick(10); } }
 
 // ---------- 가짜 판: 진짜 저장소·전달 대기열(B1)·Branch, 가짜 에이전트 ----------
-async function board({ backend = 'herdr' } = {}) {
+async function board({ backend = 'hc' } = {}) {
   const dir = tmp();
   const store = new Store(path.join(dir, 'board.db'));
   const ws = await workspaceOf(dir);
   store.insertWorkspace({ ...ws, createdAt: 1 });
-  const cfg = { profile: 'dev', herdrSession: 'atrium-dev-p116test', port: 0, dataDir: dir, sessionsDir: path.join(dir, 'sessions'), inputQuietMs: 3000, submitConfirmMs: 3000, deliveryMaxWaitMs: 60000, submitRetries: 0 };
+  const cfg = { profile: 'dev', terminalSession: 'atrium-dev-p116test', port: 0, dataDir: dir, sessionsDir: path.join(dir, 'sessions'), inputQuietMs: 3000, submitConfirmMs: 3000, deliveryMaxWaitMs: 60000, submitRetries: 0 };
   const b = {
     cfg, apiToken: 'board-api-token', store, sessions: new Map(), bus: new EventEmitter(), killing: new Set(),
     sent: [], woke: [], reads: [], screens: new Map(),
-    api: { broadcast: () => {} }, log: () => {}, requireHerdr: () => {},
+    api: { broadcast: () => {} }, log: () => {}, requireTerminal: () => {},
     adapter: { backend, connected: true, readScreen: async (paneId, o) => { b.reads.push([paneId, o]); if (!b.screens.has(paneId)) throw Object.assign(new Error('no pane'), { code: 'pane_not_found' }); return b.screens.get(paneId); } },
     hooked: (s) => s.rt.hooked !== false,
     summary: (s) => { const d = deriveState(s.rt); return { state: d.state, ask: d.ask || null, error: d.error || s.rt.lastError || null }; },
@@ -53,7 +53,7 @@ async function board({ backend = 'herdr' } = {}) {
   };
   b.queue = new DeliveryQueue({
     store, cfg,
-    view: (sid) => { const s = b.sessions.get(sid); if (!s) return { closed: true }; return { state: deriveState(s.rt).state, agentPresent: s.rt.herdr.present, herdrConnected: true, lastUserInputAt: s.lastUserInputAt || 0, closed: false, kind: s.kind, hooked: b.hooked(s) }; },
+    view: (sid) => { const s = b.sessions.get(sid); if (!s) return { closed: true }; return { state: deriveState(s.rt).state, agentPresent: s.rt.term.present, termConnected: true, lastUserInputAt: s.lastUserInputAt || 0, closed: false, kind: s.kind, hooked: b.hooked(s) }; },
     send: async (sid, text) => { b.sent.push({ sid, text }); const s = b.sessions.get(sid); if (s && s.agent) setTimeout(() => s.agent(text), 5); },
   });
   b.queue.start();
@@ -66,18 +66,18 @@ async function board({ backend = 'herdr' } = {}) {
     b.sessions.set(s.sessionId, s);
     // 가짜 에이전트: 글을 받으면 일하고 답한다(Claude Code는 hook, 다른 종류는 herdr 상태 + 판이 화면에서 고른 답)
     s.agent = (text) => {
-      if (hooked) { applyHook(s.rt, { hook_event_name: 'UserPromptSubmit', prompt: text }); b.queue.onUserPromptSubmit(s.sessionId, text); applyHerdrStatus(s.rt, 'working'); }
-      else { applyHerdrStatus(s.rt, 'working'); b.queue.onAgentWorking(s.sessionId); }
+      if (hooked) { applyHook(s.rt, { hook_event_name: 'UserPromptSubmit', prompt: text }); b.queue.onUserPromptSubmit(s.sessionId, text); applyTermStatus(s.rt, 'working'); }
+      else { applyTermStatus(s.rt, 'working'); b.queue.onAgentWorking(s.sessionId); }
       setTimeout(() => {
-        if (hooked) { applyHook(s.rt, { hook_event_name: 'Stop', last_assistant_message: answer(text) }); applyHerdrStatus(s.rt, 'idle'); }
-        else { applyHerdrStatus(s.rt, 'idle'); setTimeout(() => { s.rt.lastAnswer = answer(text); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen'; }, 30); }
+        if (hooked) { applyHook(s.rt, { hook_event_name: 'Stop', last_assistant_message: answer(text) }); applyTermStatus(s.rt, 'idle'); }
+        else { applyTermStatus(s.rt, 'idle'); setTimeout(() => { s.rt.lastAnswer = answer(text); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen'; }, 30); }
       }, workMs);
     };
     return s;
   };
   return { b, dir, ws, add, stop: () => { b.queue.stop(); b.branch.notices.stop(); store.close(); } };
 }
-function idle(s) { s.rt.herdr.present = true; s.rt.phase = 'running'; applyHerdrStatus(s.rt, 'idle'); }
+function idle(s) { s.rt.term.present = true; s.rt.phase = 'running'; applyTermStatus(s.rt, 'idle'); }
 function serve(b) {
   const srv = http.createServer((req, res) => { if (!b.branch.handleHttp(req, res)) { res.writeHead(404); res.end(); } });
   return new Promise((r) => srv.listen(0, '127.0.0.1', () => { b.cfg.port = srv.address().port; r(srv); }));
@@ -119,36 +119,31 @@ test('P116 계약: 계약 2, 동사 prompt·wait·read(인자·출력 모양), �
 });
 
 // ---------- 승인 규칙 ----------
-test('P116 승인: atrium prompt|wait|read(옛 이름 mtask, PowerShell)는 묻지 않는다. herdr 일 시키기 규칙은 herdr 모드에서만, hc 모드면 판의 규칙에서 빠진다', () => {
+test('P116 승인: atrium prompt|wait|read(옛 이름 mtask, PowerShell)는 묻지 않는다. herdr 일 시키기 규칙은 판의 규칙에 없다(P129)', () => {
   for (const c of ['atrium prompt w1 "do it"', 'atrium prompt w1 "do it" --wait --timeout 600000', 'atrium wait w1', 'atrium wait w1 --timeout 600000', 'atrium read w1', 'atrium read w1 --lines 40', 'mtask prompt w1 "x"', 'mtask wait w1', 'mtask read w1']) {
     assert.ok(allowed(ATRIUM_ALLOW, 'Bash', c), `Bash ${c}`);
-    assert.ok(allowed(branchAllow('hc'), 'Bash', c), `hc ${c}`);
   }
   for (const c of ['atrium prompt w1 "x"', 'atrium wait w1', 'atrium read w1']) assert.ok(allowed(ATRIUM_ALLOW, 'PowerShell', c), `PowerShell ${c}`);
   for (const c of ['atrium kill w1', 'atrium send @w1 x', 'atrium settings set tray on']) assert.ok(!allowed(ATRIUM_ALLOW, 'Bash', c), `묻는다: ${c}`);
-  assert.deepEqual(branchAllow('herdr'), BRANCH_ALLOW);
-  assert.ok(HERDR_AGENT_ALLOW.every((r) => BRANCH_ALLOW.includes(r) && !branchAllow('hc').includes(r)));
-  assert.ok(!allowed(branchAllow('hc'), 'Bash', 'herdr agent prompt w1 "x"'), 'hc 모드: herdr 명령은 판의 세션에 가지 않는다');
-  assert.ok(allowed(branchAllow('herdr'), 'Bash', 'herdr agent prompt multitask-1 "done"'), 'herdr 모드: 지금 도는 세션의 습관은 그대로');
+  assert.deepEqual(branchAllow(), ATRIUM_ALLOW);
+  assert.ok(!allowed(branchAllow(), 'Bash', 'herdr agent prompt w1 "x"'), 'herdr 명령은 판의 세션에 가지 않는다');
 });
 
-test('P116 승인: refreshSettings가 도는 세션 설정 파일에 atrium 규칙을 더하고, hc 모드면 herdr 일 시키기 규칙을 뺀다(사람이 고른 herdr 전체 허용은 둔다)', async () => {
-  for (const backend of ['herdr', 'hc']) {
-    const { b, dir, add, stop } = await board({ backend });
-    try {
-      const s = add('lead');
-      s.settingsPath = path.join(dir, 's.json');
-      fs.writeFileSync(s.settingsPath, JSON.stringify({ hooks: {}, permissions: { allow: ['Bash(herdr:*)', 'Bash(atrium child *)', ...HERDR_AGENT_ALLOW] }, env: { MTASK_PORT: '1' } }));
-      assert.equal(b.branch.refreshSettings(), 1);
-      const j = JSON.parse(fs.readFileSync(s.settingsPath, 'utf8'));
-      assert.ok(j.permissions.allow.includes('Bash(atrium prompt *)') && j.permissions.allow.includes('PowerShell(atrium read *)'));
-      assert.ok(j.permissions.allow.includes('Bash(herdr:*)'), '새 세션 대화상자에서 사람이 고른 규칙');
-      assert.equal(j.permissions.allow.includes('Bash(herdr agent prompt *)'), backend === 'herdr', backend);
-      assert.equal(j.env.ATRIUM_SESSION_ID, s.sessionId); assert.equal(j.env.MTASK_PORT, undefined);
-      assert.equal(b.branch.refreshSettings(), 0, '두 번째는 바꾸지 않는다');
-      assert.deepEqual(b.branch.settingsExtra(s.sessionId).allow, branchAllow(backend));
-    } finally { stop(); }
-  }
+test('P116·P129 승인: refreshSettings가 도는 세션 설정 파일에 atrium 규칙을 더하고, 옛 herdr 규칙(일 시키기, 사람이 고른 herdr 전체 허용)은 뺀다', async () => {
+  const { b, dir, add, stop } = await board();
+  try {
+    const s = add('lead');
+    s.settingsPath = path.join(dir, 's.json');
+    fs.writeFileSync(s.settingsPath, JSON.stringify({ hooks: {}, permissions: { allow: ['Bash(herdr:*)', 'Bash(atrium child *)', 'Bash(herdr agent prompt *)', 'PowerShell(herdr agent read *)', 'Bash(git status)'] }, env: { MTASK_PORT: '1' } }));
+    assert.equal(b.branch.refreshSettings(), 1);
+    const j = JSON.parse(fs.readFileSync(s.settingsPath, 'utf8'));
+    assert.ok(j.permissions.allow.includes('Bash(atrium prompt *)') && j.permissions.allow.includes('PowerShell(atrium read *)'));
+    assert.ok(j.permissions.allow.includes('Bash(git status)'), '다른 규칙은 그대로');
+    assert.ok(!j.permissions.allow.some((r) => /herdr/.test(r)), j.permissions.allow.join(','));
+    assert.equal(j.env.ATRIUM_SESSION_ID, s.sessionId); assert.equal(j.env.MTASK_PORT, undefined);
+    assert.equal(b.branch.refreshSettings(), 0, '두 번째는 바꾸지 않는다');
+    assert.deepEqual(b.branch.settingsExtra(s.sessionId).allow, branchAllow());
+  } finally { stop(); }
 });
 
 // ---------- 이름 풀기와 오류 ----------
@@ -176,7 +171,7 @@ test('P116 prompt: 받는 쪽이 일하는 중이면 대기열(working)로 바�
   const { b, add, stop } = await board();
   try {
     const lead = add('lead'); const w1 = add('w1', { workMs: 40 });
-    applyHerdrStatus(w1.rt, 'working'); // 다른 턴을 도는 중
+    applyTermStatus(w1.rt, 'working'); // 다른 턴을 도는 중
     const r = await b.branch.verbs.prompt(lead, { name: 'w1', text: '두 번째 일' });
     assert.equal(r.delivery.status, 'queued'); assert.equal(r.delivery.reason, 'working');
     assert.equal(b.sent.length, 0, '일하는 중에는 넣지 않는다(B1)');
@@ -185,7 +180,7 @@ test('P116 prompt: 받는 쪽이 일하는 중이면 대기열(working)로 바�
     const ev = events(b, 'prompt');
     assert.equal(ev.length, 1); assert.equal(ev[0].text, '두 번째 일'); assert.equal(JSON.parse(ev[0].data).via, 'atrium');
     assert.ok(!w1.openPromptFrom, '아직 들어가지 않은 글은 받는 쪽의 지금 지시가 아니다');
-    applyHerdrStatus(w1.rt, 'idle');
+    applyTermStatus(w1.rt, 'idle');
     await until(() => (b.store.getDelivery(r.deliveryId) || {}).status === 'confirmed');
     assert.deepEqual(b.sent.map((x) => x.text), ['두 번째 일']);
     assert.ok(w1.openPromptFrom && w1.openPromptFrom.linkId === l.linkId, '들어가면 받는 쪽 상태(일하는 중, 끝남)를 이 지시 기록에 붙인다');
@@ -197,11 +192,11 @@ test('P116 prompt: 두 세션이 같은 세션에 잇달아 보내면(대기열)
   const { b, add, stop } = await board();
   try {
     const lead = add('lead'); const other = add('other'); const w1 = add('w1', { workMs: 80 });
-    applyHerdrStatus(w1.rt, 'working');
+    applyTermStatus(w1.rt, 'working');
     await b.branch.verbs.prompt(lead, { name: 'w1', text: '리드의 일' });
     await b.branch.verbs.prompt(other, { name: 'w1', text: '다른 세션의 일' });
     const la = b.store.linkByPair(lead.sessionId, w1.sessionId), lo = b.store.linkByPair(other.sessionId, w1.sessionId);
-    applyHerdrStatus(w1.rt, 'idle');
+    applyTermStatus(w1.rt, 'idle');
     await until(() => b.sent.length === 1 && w1.openPromptFrom);
     assert.equal(w1.openPromptFrom.linkId, la.linkId, '먼저 들어간 리드의 글');
     await until(() => b.sent.length === 2 && w1.openPromptFrom.linkId === lo.linkId, 4000);
@@ -234,7 +229,7 @@ test('P116 prompt: 사람이 3초 안에 친 터미널(user_typing)·응답 필�
     w1.lastUserInputAt = Date.now();
     const typing = await b.branch.verbs.prompt(lead, { name: 'w1', text: 'a' });
     assert.equal(typing.delivery.reason, 'user_typing');
-    w2.rt.pendingAsk = { kind: 'permission', summary: 'Bash: mkdir x', since: Date.now() }; applyHerdrStatus(w2.rt, 'blocked');
+    w2.rt.pendingAsk = { kind: 'permission', summary: 'Bash: mkdir x', since: Date.now() }; applyTermStatus(w2.rt, 'blocked');
     const asks = await b.branch.verbs.prompt(lead, { name: 'w2', text: 'b' });
     assert.equal(asks.delivery.reason, 'waiting');
     const ok = await b.branch.verbs.prompt(lead, { name: 'w3', text: 'c' });
@@ -279,8 +274,8 @@ test('P116 wait: 일하는 턴이 끝날 때까지, 쉬면 바로 idle(마지막
   try {
     const lead = add('lead'); const w1 = add('w1'); const w2 = add('w2'); const w3 = add('w3');
     // 일하는 턴
-    applyHook(w1.rt, { hook_event_name: 'UserPromptSubmit', prompt: '사람이 준 일' }); applyHerdrStatus(w1.rt, 'working');
-    setTimeout(() => { applyHook(w1.rt, { hook_event_name: 'Stop', last_assistant_message: '사람 일 끝' }); applyHerdrStatus(w1.rt, 'idle'); }, 80);
+    applyHook(w1.rt, { hook_event_name: 'UserPromptSubmit', prompt: '사람이 준 일' }); applyTermStatus(w1.rt, 'working');
+    setTimeout(() => { applyHook(w1.rt, { hook_event_name: 'Stop', last_assistant_message: '사람 일 끝' }); applyTermStatus(w1.rt, 'idle'); }, 80);
     const r1 = await b.branch.verbs.wait(lead, { name: 'w1' });
     assert.equal(r1.status, 'done'); assert.equal(r1.answer.text, '사람 일 끝');
     // 쉬는 중
@@ -288,11 +283,11 @@ test('P116 wait: 일하는 턴이 끝날 때까지, 쉬면 바로 idle(마지막
     const r2 = await b.branch.verbs.wait(lead, { name: 'w2' });
     assert.equal(r2.status, 'idle'); assert.equal(r2.answer.text, '어제 답'); assert.ok(r2.ms < 200);
     // 응답 필요
-    applyHook(w3.rt, { hook_event_name: 'UserPromptSubmit', prompt: 'x' }); applyHook(w3.rt, { hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'mkdir q' } }); applyHerdrStatus(w3.rt, 'blocked');
+    applyHook(w3.rt, { hook_event_name: 'UserPromptSubmit', prompt: 'x' }); applyHook(w3.rt, { hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'mkdir q' } }); applyTermStatus(w3.rt, 'blocked');
     const r3 = await b.branch.verbs.wait(lead, { name: 'w3' });
     assert.equal(r3.status, 'waiting'); assert.match(r3.ask.summary, /mkdir q/);
     // 시간 끝
-    applyHerdrStatus(w2.rt, 'working');
+    applyTermStatus(w2.rt, 'working');
     const r4 = await b.branch.verbs.wait(lead, { name: 'w2', timeoutMs: 1000 });
     assert.equal(r4.status, 'timeout'); assert.equal(r4.state, 'working'); assert.equal(r4.answer, null);
   } finally { stop(); }
@@ -302,10 +297,10 @@ test('P116 wait: prompt(--wait 없이) 뒤 atrium wait는 그 글의 턴(대기�
   const { b, add, stop } = await board();
   try {
     const lead = add('lead'); const w1 = add('w1', { workMs: 60 });
-    applyHerdrStatus(w1.rt, 'working'); // 앞 턴
+    applyTermStatus(w1.rt, 'working'); // 앞 턴
     const p = await b.branch.verbs.prompt(lead, { name: 'w1', text: '다음 일' });
     assert.equal(p.delivery.reason, 'working');
-    setTimeout(() => { applyHook(w1.rt, { hook_event_name: 'Stop', last_assistant_message: '앞 턴 답' }); applyHerdrStatus(w1.rt, 'idle'); }, 50);
+    setTimeout(() => { applyHook(w1.rt, { hook_event_name: 'Stop', last_assistant_message: '앞 턴 답' }); applyTermStatus(w1.rt, 'idle'); }, 50);
     const r = await b.branch.verbs.wait(lead, { name: 'w1' });
     assert.equal(r.status, 'done'); assert.equal(r.answer.text, '답: 다음 일', '앞 턴이 아니라 보낸 글의 턴');
     assert.equal(r.delivery.status, 'confirmed');
@@ -363,7 +358,7 @@ test('P116 CLI: atrium prompt|wait|read의 --json 모양과 글, 종료 코드(�
     assert.equal(JSON.parse(pf.stdout).turn.answer.text, '답: 파일에서 "따옴표" 글');
     const rd = await runCli(['read', 'w1', '--lines', '5'], env);
     assert.equal(rd.code, 0, rd.stderr); assert.match(rd.stdout, /^@w1 \(claude, ready\) 화면 최근 5줄:\nhello/);
-    applyHerdrStatus(w2.rt, 'working');
+    applyTermStatus(w2.rt, 'working');
     const to = await runCli(['wait', 'w2', '--timeout', '1000'], env);
     assert.equal(to.code, 3); assert.match(to.stdout, /@w2: 아직 일하는 중이다.*다시 기다리기: atrium wait w2/);
     const nf = await runCli(['prompt', 'w9', 'x'], env);
@@ -397,26 +392,15 @@ test('P116 안내 글: 판 시스템 글, 하네스 안내문, atrium 스킬(옛
   assert.ok(!/[\r\n"]/.test(HARNESS_PROMPT), '하네스 안내문은 한 줄, 큰따옴표 없이');
 });
 
-test('P116 플러그인: herdr 스킬 글이 없으면(hc 모드) skills/herdr를 두지 않고 앞서 둔 것은 지운다. 이름 atrium-herdr과 atrium·delegate 스킬은 그대로', () => {
+test('P116·P129 플러그인: skills/herdr를 두지 않고 앞서 둔 것은 지운다. 이름 atrium-herdr과 atrium·delegate 스킬은 그대로', () => {
   const d = tmp();
-  writeBoardPlugin({ dir: d, skillText: '---\nname: herdr\n---\n', skills: { atrium: boardSkill(), delegate: boardSkill('delegate') } });
-  assert.ok(fs.existsSync(path.join(d, 'atrium-herdr', 'skills', 'herdr', 'SKILL.md')), 'herdr 모드');
-  const pl = writeBoardPlugin({ dir: d, skillText: null, skills: { atrium: boardSkill(), delegate: boardSkill('delegate') } });
-  assert.ok(!fs.existsSync(path.join(d, 'atrium-herdr', 'skills', 'herdr')), 'hc 모드');
+  fs.mkdirSync(path.join(d, 'atrium-herdr', 'skills', 'herdr'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'atrium-herdr', 'skills', 'herdr', 'SKILL.md'), 'old herdr skill');
+  const pl = writeBoardPlugin({ dir: d, skills: { atrium: boardSkill(), delegate: boardSkill('delegate') } });
+  assert.ok(!fs.existsSync(path.join(d, 'atrium-herdr', 'skills', 'herdr')));
   assert.ok(fs.existsSync(path.join(d, 'atrium-herdr', 'skills', 'atrium', 'SKILL.md')) && fs.existsSync(path.join(d, 'atrium-herdr', 'skills', 'delegate', 'SKILL.md')));
   assert.ok(pl.pluginDir.endsWith('atrium-herdr'));
   assert.doesNotMatch(JSON.parse(fs.readFileSync(path.join(d, 'atrium-herdr', '.claude-plugin', 'plugin.json'), 'utf8')).description, /herdr/);
-});
-
-// ---------- 알아채기: hook의 셸 명령 글 읽기는 herdr 모드 호환만 ----------
-test('P116 알아채기: hc 모드에서는 hook의 herdr 명령 글을 읽지 않는다(그 패널의 herdr는 판의 세션이 아니다). herdr 모드는 그대로 읽는다', () => {
-  const calls = [];
-  const fake = (backend) => ({ adapter: { backend }, cfg: { herdrSession: 'atrium-dev-x', adoptSpawnMatchMs: 120000 }, spawnIntents: [], store: { addEvent: (...a) => calls.push(['event', ...a]) }, resolveAgentTarget: () => null, sleeper: null, ensureLink: () => { throw new Error('no'); } });
-  const body = { tool_input: { command: 'herdr agent prompt w1 "do it"' }, tool_use_id: 't1' };
-  Backend.prototype.onShellHook.call(fake('hc'), { sessionId: 's', name: 'lead' }, 'PreToolUse', body);
-  assert.equal(calls.length, 0, 'hc 모드');
-  Backend.prototype.onShellHook.call(fake('herdr'), { sessionId: 's', name: 'lead' }, 'PreToolUse', body);
-  assert.ok(calls.some((c) => c[2] === 'herdr_call'), 'herdr 모드는 호환으로 읽는다');
 });
 
 // ---------- 연결 기록: hook 없는 세션의 target_done은 판이 화면에서 고른 답이 온 뒤 ----------

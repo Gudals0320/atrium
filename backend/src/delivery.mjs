@@ -5,8 +5,8 @@ import { EventEmitter } from 'node:events';
 import { toLF, promptMatches } from './text.mjs';
 
 const FINAL = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']);
-// P106: herdr가 agent.prompt를 받지 않은 까닭(오류 코드) → 기다리는 이유. 같은 전달을 곧바로 다시 보내지 않고 물러난다
-const REFUSED = { agent_not_found: 'no_agent', agent_not_ready: 'no_agent', agent_blocked: 'waiting', unreachable: 'herdr_down' };
+// P106: 터미널이 agent.prompt를 받지 않은 까닭(오류 코드) → 기다리는 이유. 같은 전달을 곧바로 다시 보내지 않고 물러난다
+const REFUSED = { agent_not_found: 'no_agent', agent_not_ready: 'no_agent', agent_blocked: 'waiting', unreachable: 'terminal_down' };
 // P106: n번째 거부 뒤 다시 보내기까지 기다릴 시간(0.5초에서 두 배씩, 30초까지)
 export function retryDelay(n, cfg = {}) {
   const base = cfg.deliveryBackoffMs ?? 500, max = cfg.deliveryBackoffMaxMs ?? 30000;
@@ -16,7 +16,7 @@ export function retryDelay(n, cfg = {}) {
 // 세션 상태로 지금 보낼 수 있는지 판단한다. 보낼 수 없으면 기다리는 이유를 돌려준다.
 export function blockReason(view, now, cfg) {
   if (!view || view.closed) return 'closed';
-  if (!view.herdrConnected) return 'herdr_down';
+  if (!view.termConnected) return 'terminal_down';
   if (view.state === 'sleeping') return 'sleeping'; // P21(D4): 판이 깨운 뒤(ready) 보낸다. 이 이유로 기다리면 백엔드가 깨운다
   if (view.state === 'starting') return 'starting'; // 규칙 3(패널이 claude를 찾기 전도 시작 중으로 본다)
   if (!view.agentPresent) return 'no_agent'; // 규칙 1: claude가 돌고 있는 패널에만
@@ -34,16 +34,16 @@ export function blockReason(view, now, cfg) {
 
 // P90: 휴대폰 입력 줄은 "일하는 중이면 바로 넣기"(typeNow)로 보낸다. PC 터미널에서 Enter를 친 것처럼 Claude Code가 자기 대기 메시지로 받아 둔다.
 // 판이 띄운 Claude Code(hook 있음)가 working일 때만이다. waiting·trust_wait(권한·질문·신뢰 화면), starting, ready, 셸, 다른 종류, hook 없는 세션은 B1 그대로.
-// 입력 칸에 쓰던 글이 있거나 입력 칸을 못 읽으면 넣지 않는다(_typeNow). 막힌 패널은 herdr agent.prompt가 글을 넣기 전에 거부한다(agent_blocked)
+// 입력 칸에 쓰던 글이 있거나 입력 칸을 못 읽으면 넣지 않는다(_typeNow). 막힌 패널은 터미널의 prompt가 글을 넣기 전에 거부한다(agent_blocked)
 export function canTypeNow(view) {
-  return !!view && !view.closed && !!view.herdrConnected && !!view.agentPresent && view.state === 'working' && (view.kind || 'claude') === 'claude' && !!view.hooked;
+  return !!view && !view.closed && !!view.termConnected && !!view.agentPresent && view.state === 'working' && (view.kind || 'claude') === 'claude' && !!view.hooked;
 }
 // 바로 넣을 글: 줄바꿈은 LF(B1 5), 끝 줄바꿈은 뗀다(입력 칸에 빈 줄이 남지 않게). Enter는 agent.prompt가 마지막에 한 번 누른다
 export const typedText = (text) => toLF(text).replace(/\n+$/, '');
 
 export class DeliveryQueue extends EventEmitter {
-  // view(sessionId, delivery) → { state, agentPresent, herdrConnected, lastUserInputAt, closed }
-  // send(sessionId, text) → Promise. herdr 오류는 code를 가진 Error로 던진다.
+  // view(sessionId, delivery) → { state, agentPresent, termConnected, lastUserInputAt, closed }
+  // send(sessionId, text) → Promise. 터미널 오류는 code를 가진 Error로 던진다.
   // P79: inspect(sessionId, text) → { box: 'ours'|'empty'|'other'|'unknown', seen }(화면의 입력 칸), pressEnter(sessionId) → Promise.
   //   보낸 뒤 cfg.submitRetryMs 동안 제출 확인이 없으면 화면을 본다: 입력 칸에 보낸 글이 그대로면 Enter, 비었고 들어간 흔적도 없으면 한 번 다시 보낸다.
   //   다른 글이 있거나(사람이 쓰는 중) 알 수 없으면 손대지 않는다. 사람이 3초 안에 친 터미널은 기다린다(B1 규칙 4). 둘 다 없으면 전처럼 기다리기만 한다
@@ -77,7 +77,7 @@ export class DeliveryQueue extends EventEmitter {
     setImmediate(() => this.pump());
     return d;
   }
-  // P106: 막혀 물러난 전달(앞 시도를 herdr가 받지 않음)은 시도 중(sending)이어도 취소한다. 처음 보내는 짧은 순간(sending, 거부 없음)은 취소하지 않는다
+  // P106: 막혀 물러난 전달(앞 시도를 터미널이 받지 않음)은 시도 중(sending)이어도 취소한다. 처음 보내는 짧은 순간(sending, 거부 없음)은 취소하지 않는다
   cancel(id) {
     const d = this.items.get(id) || this.store.getDelivery(id);
     if (!d) throw Object.assign(new Error('no such delivery'), { code: 'not_found' });
@@ -85,18 +85,18 @@ export class DeliveryQueue extends EventEmitter {
     this._set(d, 'cancelled', 'user');
     return d;
   }
-  // P106: 사람의 취소(atrium cancel, 판 UI). 보내는 중이면 그 시도가 끝나기를 잠깐(cancelWaitMs) 기다린다. herdr가 받지 않았으면 대기열로 돌아와 취소된다
+  // P106: 사람의 취소(atrium cancel, 판 UI). 보내는 중이면 그 시도가 끝나기를 잠깐(cancelWaitMs) 기다린다. 터미널이 받지 않았으면 대기열로 돌아와 취소된다
   async cancelWait(id) {
     const d = this.items.get(id);
     if (d && d.status === 'sending' && d.inflight) await Promise.race([d.inflight, new Promise((r) => { const t = setTimeout(r, this.cfg.cancelWaitMs ?? 3000); if (t.unref) t.unref(); })]);
     return this.cancel(id);
   }
-  // P106: 에이전트 상태가 바뀌었다(herdr 이벤트) → 물러나 있던 전달을 바로 다시 본다
+  // P106: 에이전트 상태가 바뀌었다(터미널 이벤트) → 물러나 있던 전달을 바로 다시 본다
   poke(sessionId) {
     const d = this._head(sessionId);
     if (d && d.status === 'queued' && d.retryAt) { d.retryAt = 0; setImmediate(() => this.pump()); }
   }
-  // P106: 오래(deliveryStuckMs) herdr가 받지 않는 맨 앞 전달. 세션 노드와 atrium children이 그 까닭을 보인다
+  // P106: 오래(deliveryStuckMs) 터미널이 받지 않는 맨 앞 전달. 세션 노드와 atrium children이 그 까닭을 보인다
   stuckOf(sessionId, now = Date.now()) {
     const d = this._head(sessionId);
     if (!d || !d.refusedSince || (d.status !== 'queued' && d.status !== 'sending')) return null;
@@ -115,12 +115,12 @@ export class DeliveryQueue extends EventEmitter {
     d.mismatchSeen = true;
     return null;
   }
-  // hook이 없는 세션(판에 올린 에이전트, Claude Code가 아닌 종류)은 보낸 뒤 herdr가 working이 되면 제출 확인으로 친다(P4)
+  // hook이 없는 세션(판에 올린 에이전트, Claude Code가 아닌 종류)은 보낸 뒤 터미널 상태가 working이 되면 제출 확인으로 친다(P4)
   onAgentWorking(sessionId) {
     const d = this._head(sessionId);
     if (d && d.status === 'sending') { d.workingSeen = true; return null; } // agent.prompt 응답보다 working이 먼저 왔다
     if (!d || d.status !== 'sent') return null;
-    this._set(d, 'confirmed', 'herdr working', { confirmedAt: Date.now() });
+    this._set(d, 'confirmed', 'term working', { confirmedAt: Date.now() });
     setImmediate(() => this.pump());
     return d;
   }
@@ -166,7 +166,7 @@ export class DeliveryQueue extends EventEmitter {
       if (reason === 'closed') { this._set(d, 'failed', 'session closed'); continue; }
       if (reason === 'working' && d.typeNow && this.inspect) { const v = this.view(sid, d); if (canTypeNow(v)) { this._typeNow(d, v, now); continue; } }
       if (reason) { if (d.reason !== reason) this._set(d, 'queued', reason); continue; }
-      if (d.retryAt && now < d.retryAt) { this._noteStuck(d, now); continue; } // P106: herdr가 앞 시도를 받지 않았다. 물러난 시간이 지날 때까지(또는 poke) 기다린다
+      if (d.retryAt && now < d.retryAt) { this._noteStuck(d, now); continue; } // P106: 터미널이 앞 시도를 받지 않았다. 물러난 시간이 지날 때까지(또는 poke) 기다린다
       if (d.draftLookAt && now < d.draftLookAt) continue; // P128: 쓰다 만 글을 비키지 못했다. 잠시 뒤 다시 본다(사람이 보내거나 지우면 그때 보낸다)
       this._deliver(d);
     }
@@ -194,7 +194,7 @@ export class DeliveryQueue extends EventEmitter {
   async _deliver(d, typed = false) {
     d.workingSeen = false; // 앞 시도(실패) 중의 working 신호를 이 시도의 확인으로 쓰지 않는다(이슈 #1-3)
     d.typed = typed; // P90: Claude Code 대기 메시지로 넣었다(전달 기록의 이유 'typed')
-    // P106: 앞 시도를 herdr가 받지 않았으면(물러남 중) 다시 보내기는 조용히 한다. 시도 수만 세고 이벤트는 쓰지 않는다(처음 한 번과 까닭이 바뀔 때만)
+    // P106: 앞 시도를 터미널이 받지 않았으면(물러남 중) 다시 보내기는 조용히 한다. 시도 수만 세고 이벤트는 쓰지 않는다(처음 한 번과 까닭이 바뀔 때만)
     const quiet = !!d.refusals || d.reason === 'draft'; // P128: 쓰다 만 글 때문에 기다리며 다시 보는 시도도 조용히 한다
     if (quiet) { d.status = 'sending'; d.attempts = (d.attempts || 0) + 1; d.updatedAt = Date.now(); this.store.updateDelivery(d.deliveryId, { status: 'sending', reason: d.reason, attempt: true }); }
     else this._set(d, 'sending', typed ? 'typed' : null, { attempt: true });
@@ -205,17 +205,17 @@ export class DeliveryQueue extends EventEmitter {
       await this.send(d.sessionId, d.text);
       if (d.status === 'sending') { this._clearRefusal(d); this._set(d, 'sent', typed ? 'typed' : null, { sentAt: Date.now() }); }
       else if (d.status === 'cancelled') this.emit('late', { deliveryId: d.deliveryId, sessionId: d.sessionId }); // P106: 취소한 뒤에 이 시도가 들어갔다(cancelWaitMs보다 오래 걸린 시도)
-      if (d.workingSeen && d.status === 'sent') this._set(d, 'confirmed', 'herdr working', { confirmedAt: Date.now() });
+      if (d.workingSeen && d.status === 'sent') this._set(d, 'confirmed', 'term working', { confirmedAt: Date.now() });
     } catch (e) {
       // 그사이 hook 등으로 confirmed가 되었거나 상태가 바뀌었으면 늦은 오류로 되돌리지 않는다(이슈 #1-2)
       if (d.status !== 'sending' || !this.items.has(d.deliveryId)) return;
-      const why = REFUSED[e.code]; // 막힌 패널은 herdr가 거부한다(agent_blocked, E0 3.2)
+      const why = REFUSED[e.code]; // 막힌 패널은 터미널이 거부한다(agent_blocked, E0 3.2)
       if (why && d.held) await this._putBack(d); // P128: 받지 않았으면 비켜 둔 글부터 되돌린다(물러나 있는 동안 사람이 볼 수 있게)
       if (why) this._refused(d, why, e.code, quiet);
-      else this._set(d, 'failed', `${e.code || 'error'}: ${e.herdrMessage || e.message}`);
+      else this._set(d, 'failed', `${e.code || 'error'}: ${e.detail || e.message}`);
     } finally { d.inflight = null; done(); }
   }
-  // P106: herdr가 받지 않았다. 대기열로 되돌리고 retryDelay만큼 물러난다. 같은 까닭이 이어지면 이벤트 없이 저장만 한다
+  // P106: 터미널이 받지 않았다. 대기열로 되돌리고 retryDelay만큼 물러난다. 같은 까닭이 이어지면 이벤트 없이 저장만 한다
   _refused(d, why, code, quiet) {
     const now = Date.now();
     d.refusals = (d.refusals || 0) + 1;

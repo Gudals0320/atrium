@@ -128,7 +128,7 @@ export function decideTarget(loop, per, t, now, { due = false } = {}) {
 //   store, now(), broadcast(event, data), log(msg),
 //   targetsOf(loop) → [t…] (위 decideTarget의 t, name 포함) | null(대상이 없어짐: 세션이 닫힘),
 //   enqueue(sessionId, text) → delivery, deliveryOf(id) → { status, reason } | null, cancel(id),
-//   readScreen(sessionId) → Promise<string>, thread({ text, targets, deliveries, loopId }), canRun() → herdr에 붙어 있는가,
+//   readScreen(sessionId) → Promise<string>, thread({ text, targets, deliveries, loopId }), canRun() → 터미널 서버에 붙어 있는가,
 // }
 export class LoopEngine {
   constructor(ctx) {
@@ -255,7 +255,7 @@ export class LoopEngine {
   // 1초마다(또는 세션이 바뀔 때). 멈춤 조건 → 내 차례에 막힌 전달 정리 → 차례 판정 → 보내기
   tick(now = this.now()) {
     this.tickTime(now);
-    if (this.ctx.canRun && !this.ctx.canRun()) return; // herdr에 붙어 있지 않으면 보내지 않는다(시간은 센다)
+    if (this.ctx.canRun && !this.ctx.canRun()) return; // 터미널 서버에 붙어 있지 않으면 보내지 않는다(시간은 센다)
     for (const l of [...this.loops.values()]) {
       if (l.status !== 'active') continue;
       const targets = this.ctx.targetsOf(l);

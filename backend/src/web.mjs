@@ -528,7 +528,7 @@ export class WebServer {
   status() { return { url: this.url(), built: this.files.built(), devices: this.devices.all().length, hosts: [...this.hosts] }; }
   boot(device) {
     const dev = this.cfg.profile === 'dev';
-    return { device, port: this.cfg.port, profile: this.cfg.profile, herdrSession: this.cfg.herdrSession, defaultCwd: dev ? path.join(BACKEND_ROOT, '.dev', 'proj') : os.homedir(), defaultModel: dev ? 'haiku' : '' };
+    return { device, port: this.cfg.port, profile: this.cfg.profile, terminalSession: this.cfg.terminalSession, defaultCwd: dev ? path.join(BACKEND_ROOT, '.dev', 'proj') : os.homedir(), defaultModel: dev ? 'haiku' : '' };
   }
   // 판 API 토큰 클라이언트(PC 창, CLI)에만: 기기 목록과 허락 요청
   // P62: needsPasskey = 패스키 켬인데 패스키 없이 짝 맺은 기기(다음 접속 때 "패스키 등록" 화면을 본다)

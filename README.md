@@ -111,7 +111,6 @@ Atrium is **Windows only** for now (Windows 10 or 11, x64).
 |---|---|
 | [Node.js](https://nodejs.org/) | 22.13 or later (tested on 22 and 24) |
 | [herdr-core](https://github.com/herdrdev/herdr-core) | Nothing to install. The first time a board needs it, Atrium downloads the herdr-core version it pins (0.1.20, about 4 MB) from `releases.herdr.dev`, checks its SHA-256 and keeps it in the board's data folder. It does not touch `PATH`, the registry or startup programs. Every new board runs on herdr-core. |
-| [herdr](https://herdr.dev) | Only for a board that still runs on herdr until you move it in Settings › Terminal. Tested with 0.9.5 (protocol 22). Atrium finds herdr in the herdr install folder or on `PATH`; set `ATRIUM_HERDR` or the path in Settings to use another file. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`, for Claude Code sessions. |
 | Git | For repository and worktree detection. |
 | Optional | Codex CLI for the Codex launcher. opencode or pi for those sessions. A model gateway or endpoint for connections. Tailscale for remote access. |
@@ -129,7 +128,7 @@ npm install
 npm run real
 ```
 
-`npm run real` builds the window and opens the board. The window starts the backend if it is not running (port 47800). On a new board the backend downloads herdr-core and starts its own herdr-core session named `atrium`. Your other herdr and herdr-core sessions are not touched. If the download fails, a band says herdr-core is not ready, with **Try again**; sessions cannot start until it is ready.
+`npm run real` builds the window and opens the board. The window starts the backend if it is not running (port 47800). On a new board the backend downloads herdr-core and starts its own herdr-core session named `atrium`. Your other herdr-core sessions are not touched. If the download fails, a band says herdr-core is not ready, with **Try again**; sessions cannot start until it is ready.
 
 To add a desktop shortcut:
 
@@ -157,21 +156,13 @@ The update channel is Stable by default. Pick Dev in the same place to get featu
 
 ### Boards from before herdr-core
 
-A board that has already run sessions on [herdr](https://herdr.dev) stays on herdr after an update, and keeps its launchers. To move it, open **Settings › Terminal** and press **Move to herdr-core**:
+A board that ran sessions on [herdr](https://herdr.dev) (Atrium 0.1.7 and earlier) moves to herdr-core by itself the first time the new version starts. New sessions start on herdr-core right away, and a band on the board shows the progress.
 
-1. The board lists every session with what it will do: start it again on herdr-core, keep it asleep, or leave it with the reason.
-2. Press **Move** to confirm. Each session starts again on herdr-core with the same conversation, name, environment, instructions and connection, in the same place on the board. The old pane closes only after the new one is up.
-3. A session that is working, waiting for you or holding an unsent message is waited for (up to 10 minutes) and then skipped. Press the button again later to move what is left. Sleeping sessions stay asleep and wake on herdr-core.
+1. Each session starts again on herdr-core with the same conversation, name, environment, instructions and connection, in the same place on the board. The old pane closes only after the new one is up. A shell gets a new shell in the same folder.
+2. A session that is working, waiting for you, holding an unsent message or running a command moves when it is idle. Until then it keeps running on herdr and stays on the board. Sleeping sessions stay asleep and wake on herdr-core.
+3. If the herdr server is not running (for example after a restart) or herdr is gone, the board starts those sessions again on herdr-core from the same conversation.
 
-**Move back to herdr** is in the same place. herdr is needed only until you move.
-
-### Good to know
-
-- Atrium never edits your `~/.claude/settings.json`. Each Claude Code session it starts gets its own settings file through `--settings`, which holds the hooks that report state back to the board.
-- Atrium reads Claude Code conversation files under `%USERPROFILE%\.claude\projects` for the folders you open, so it can list and resume past conversations.
-- Everything runs on your machine. The window talks to the backend on `127.0.0.1`, and the backend talks to the herdr-core server through a named pipe for your Windows user.
-- Where things live: board data (SQLite, settings, the downloaded herdr-core in `hc\bin`) in `%LOCALAPPDATA%\atrium`, herdr-core session state in `%LOCALAPPDATA%\herdr-core\atrium`, and installed releases in `%LOCALAPPDATA%\atrium\versions`.
-- Trust prompts ("Do you trust the files in this folder?") are left for you to answer. When an agent starts a worktree worker in a repository that Claude Code does not trust yet, the prompt appears on that worker's node.
+When every session has moved, the board stops its herdr server (only if nothing else runs in it) and deletes its herdr session. **Settings › Terminal** shows what happened to each session. There is no way back to herdr.
 
 ## Remote access (Tailscale)
 
@@ -250,7 +241,7 @@ flowchart LR
   B --- DB
 ```
 
-- **herdr-core** owns the terminals and processes. Sessions keep running when the window or the backend stops, and the board picks them back up when it restarts. A board that has not moved yet uses herdr in the same place.
+- **herdr-core** owns the terminals and processes. Sessions keep running when the window or the backend stops, and the board picks them back up when it restarts.
 - **The backend** (`backend/`) computes session state from herdr-core status events and Claude Code hooks, runs one delivery queue per session, records links and events, serves the web screen, and stores the board in SQLite (`node:sqlite`). Its only dependency is `ws`.
 - **The window** (`app/`) draws the board with React Flow and attaches xterm.js to the terminals in view. The PC window and paired browsers are all clients of the same backend.
 
@@ -275,7 +266,7 @@ Atrium is an early project. It was built in stages with Claude Code, and the int
 
 ## Acknowledgments
 
-- [herdr-core](https://github.com/herdrdev/herdr-core) (Apache-2.0), which Atrium downloads and runs but does not include, and [herdr](https://herdr.dev).
+- [herdr-core](https://github.com/herdrdev/herdr-core) (Apache-2.0), which Atrium downloads and runs but does not include, and [herdr](https://herdr.dev), which boards used before herdr-core.
 - [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org) and [Electron](https://www.electronjs.org).
 - Korean UI translation by [Qualop](https://github.com/Qualop), adapted from [Qualop/atrium-macos](https://github.com/Qualop/atrium-macos).
 - Fonts: Geist, JetBrains Mono, Pretendard and Nanum Gothic Coding, under the SIL Open Font License.

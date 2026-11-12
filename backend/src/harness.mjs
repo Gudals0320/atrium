@@ -1,7 +1,7 @@
-// P115: 하네스 어댑터 표. 판이 띄우는 Claude Code 밖의 에이전트 하네스(codex, opencode, pi, herdr가 아는 그 밖의 종류)를
+// P115: 하네스 어댑터 표. 판이 띄우는 Claude Code 밖의 에이전트 하네스(codex, opencode, pi, 터미널이 아는 그 밖의 종류)를
 // 판과 말하게(env, PATH의 atrium, 안내문) 띄우고, 이어 가기·되살리기에서 같은 값으로 돌아오게 한다.
 // 모양은 터미널 백엔드와 상관없다: 판은 { command, args, env, pathFirst, files }를 만들고, 터미널 백엔드가 env와 PATH를 준다
-// (herdr: 패널에 치는 줄 앞의 $env:…와 $env:PATH, herdr-core: terminal.run의 env. 실험은 docs/log/p115-harness-common.md 1단계).
+// (herdr-core: terminal.run의 env. 실험은 docs/log/p115-harness-common.md 1단계).
 // Claude Code는 이 표를 쓰지 않는다. 세션 설정 파일(--settings)·플러그인·hook 길(launch.mjs)이 그대로다.
 // 이어 갈 때 다시 줄 것(mustRePass)은 실험에서 빠지면 무엇이 깨지는지 본 목록이다. 판은 이어 가기·되살리기마다 처음과 같은 값을 다시 준다.
 import fs from 'node:fs';
@@ -47,7 +47,7 @@ export function claudeConnection(c, { node = process.execPath } = {}) {
 export const ADAPTERS = {
   codex: {
     command: 'codex',
-    sessionIdFrom: 'learned', // herdr의 agent_session(사용자의 Codex hook 연동) 또는 Codex rollout 파일(codexSessionOf)
+    sessionIdFrom: 'learned', // 터미널이 아는 agent_session 또는 Codex rollout 파일(codexSessionOf)
     protocols: ['openai-responses'], // wire_api = "chat"은 설정을 읽을 때 거부한다(1단계 E3)
     mustRePass: ['connection', 'instructions'], // 연결 -c를 빼면 "Model provider unavailable"에서 막힌다. 지시문은 rollout에 남지만 다시 준다(실험 E2·E3)
     reserved: { flags: ['resume', 'fork'], configKeys: ['developer_instructions', 'check_for_update_on_startup', 'model_provider', 'model_providers'] },
@@ -61,7 +61,7 @@ export const ADAPTERS = {
       const args = [...(resumed ? ['resume', ctx.harnessSessionId] : []), '-c', 'check_for_update_on_startup=false', ...conn, ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.instructions ? ['-c', `developer_instructions=${ctx.instructions.text}`] : []), ...(ctx.launcherArgs || [])];
       return { args, env: {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
-    // herdr가 다시 뜨며 스스로 띄운 이어 가기(`codex resume <id>`)는 판의 인자가 없다. 판이 친 줄인가
+    // 판의 인자 없이 뜬 이어 가기(`codex resume <id>`, 옛 터미널이 스스로 띄움)인가. 판이 친 줄인가
     isBoardLine: (argv) => argv.some((a) => String(a).startsWith('developer_instructions=')),
   },
   opencode: {
@@ -110,7 +110,7 @@ export const ADAPTERS = {
     isBoardLine: (argv) => argv.includes('--session-id'),
   },
 };
-// 표에 없는 종류(herdr가 아는 그 밖의 하네스): env와 PATH만 주고 지시문·이어 가기는 없다. 모델은 -m(P96과 같다)
+// 표에 없는 종류(터미널이 아는 그 밖의 하네스): env와 PATH만 주고 지시문·이어 가기는 없다. 모델은 -m(P96과 같다)
 const GENERIC = {
   command: null, sessionIdFrom: null, protocols: [], mustRePass: [], reserved: { flags: [] }, modelArgs: (m) => ['-m', m],
   build: (ctx) => ({ args: [...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.launcherArgs || [])], env: {}, files: [], harnessSessionId: null, resumed: false }),
@@ -155,7 +155,7 @@ export function writeLaunchFiles(files = []) {
   for (const f of files) { fs.mkdirSync(path.dirname(f.file), { recursive: true }); fs.writeFileSync(f.file, f.text); }
 }
 
-// Codex 세션 ID: 그 폴더(cwd)에서 since 뒤에 생긴 rollout(첫 줄 session_meta의 id·cwd). herdr가 세션 ID를 모를 때만(사용자 Codex hook 연동이 없을 때)
+// Codex 세션 ID: 그 폴더(cwd)에서 since 뒤에 생긴 rollout(첫 줄 session_meta의 id·cwd). 터미널이 세션 ID를 모를 때만
 // 오늘·어제 폴더만 본다. 첫 줄 앞부분만 읽는다(첫 줄에 기본 지시문이 들어 길다). 읽기만 한다
 export function codexSessionOf({ cwd, since = 0, home = codexHomeOf(), now = Date.now() } = {}) {
   const want = path.resolve(String(cwd || '')).toLowerCase().replace(/[\\/]+$/, '');

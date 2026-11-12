@@ -193,7 +193,7 @@ export class DesktopImport {
     if (!L) return {};
     const d = L.data();
     const fav = d.favorites.map((id) => d.items.find((x) => x.id === id)).find((l) => l && l.harness === 'claude');
-    return fav ? { model: fav.model || null, effort: fav.effort || null, permissionMode: fav.permissionMode || 'manual', allowHerdr: !!fav.allowHerdr, name: fav.name } : {};
+    return fav ? { model: fav.model || null, effort: fav.effort || null, permissionMode: fav.permissionMode || 'manual', name: fav.name } : {};
   }
   summaryExtra(s) { const t = this.titles.get(s.sessionId); return t ? { imported: { from: 'desktop', title: t.title, gen: t.gen, at: t.at } } : {}; }
 
@@ -301,7 +301,7 @@ export class DesktopImport {
       taken.add(name);
       const vals = launchValues(info, fb);
       const sum = await readTranscriptSummary(dest).catch(() => null);
-      const s = this.createSleeping({ id: newId, cwd: plan.cwd, name, ws, ...vals, allowHerdr: !!fb.allowHerdr, summary: sum });
+      const s = this.createSleeping({ id: newId, cwd: plan.cwd, name, ws, ...vals, summary: sum });
       const gen = this.store.addDesktopImport({ appSessionId: c.appSessionId, sourceConv: info.cliSessionId, newConv: newId, sessionId: s.sessionId, pointUuid: fork.pointUuid, pointAt: fork.pointAt, pointLines: fork.lines, title: info.title, createdAt: Date.now() });
       this.titles.set(s.sessionId, { title: info.title, gen, at: Date.now() });
       this.store.addEvent(s.sessionId, 'desktop_imported', { appSessionId: c.appSessionId, sourceConv: info.cliSessionId, gen, folder: plan.folder, cwd: slash(plan.cwd), lines: fork.lines, dropped: fork.dropped, replaced: vals.replaced, prevGen: led ? led.gen : null });
@@ -314,26 +314,26 @@ export class DesktopImport {
   }
 
   // 잠든 판 세션 하나(패널 없음). 깨우면 sleep.mjs가 convoOf(세션 ID = 새 대화 ID)로 이어 간다
-  createSleeping({ id, cwd, name, ws, model, effort, permissionMode, allowHerdr, summary }) {
+  createSleeping({ id, cwd, name, ws, model, effort, permissionMode, summary }) {
     const b = this.b, cfg = this.cfg;
     b.ensureWorkspace(ws, `import ${name}`);
     const hookToken = crypto.randomBytes(24).toString('hex');
     const extra = b.branch ? b.branch.settingsExtra(id) : {};
-    const settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, allowHerdr, ...extra });
+    const settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, ...extra });
     const launch = { sessionId: id, settingsPath, permissionMode, model, effort, extraArgs: [], ...(b.plugin || {}) };
     const resumeArgv = buildResumeArgv({ claudeCommand: cfg.claudeCommand, ...launch });
     const now = Date.now();
     const rt = newRuntime({ kind: 'claude', hooked: true });
     rt.sleep = { at: now, by: 'import', convId: id };
-    rt.herdr = { status: null, launchPending: false, agentSessionId: null, present: false, at: now };
+    rt.term = { status: null, launchPending: false, agentSessionId: null, present: false, at: now };
     if (summary) { rt.lastPrompt = summary.lastPrompt || null; rt.lastPromptAt = summary.lastPromptAt || null; rt.lastAnswer = summary.lastAnswer || null; rt.lastAnswerAt = summary.lastAnswerAt || null; rt.lastActivityAt = summary.lastAt || null; }
-    const s = { sessionId: id, name, cwd, paneId: null, herdrWorkspaceId: null, agentName: name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: now, closedAt: null, seenAt: now, touchedAt: now, rt, lastState: null, kind: 'claude', origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: null, extraArgs: [] };
+    const s = { sessionId: id, name, cwd, paneId: null, termWorkspaceId: null, agentName: name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: now, closedAt: null, seenAt: now, touchedAt: now, rt, lastState: null, kind: 'claude', origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: null, extraArgs: [] };
     this.store.insertSession({ ...s, runtime: rt });
     b.sessions.set(id, s);
     const area = b.worktrees ? b.worktrees.areaOf(ws.key, cwd) : '';
     const slot = slotFor(b, { wsKey: ws.key, size: NODE, area });
     this.store.setNode({ session_id: id, x: slot.x, y: slot.y, w: NODE.w, h: NODE.h, z: 0, size: NEW_NODE_STEP, aspect: DEFAULT_ASPECT, area });
-    this.store.addEvent(id, 'spawn', { name, kind: 'claude', cwd: slash(cwd), workspace: ws.key, args: [], allowHerdr, imported: true });
+    this.store.addEvent(id, 'spawn', { name, kind: 'claude', cwd: slash(cwd), workspace: ws.key, args: [], imported: true });
     if (b.api) b.api.broadcast('session.created', { sessionId: id, name, workspaceKey: ws.key, imported: true });
     if (b.probeGit) b.probeGit(s, cwd);
     return s;

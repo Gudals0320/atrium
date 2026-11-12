@@ -536,18 +536,11 @@ img.mt-kind-icon { object-fit: contain; }
 .mt-warns { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); width: min(760px, calc(100% - 180px)); display: grid; gap: 6px; z-index: 41; }
 .mt-warnbar { background: var(--warn-band); color: var(--text); padding: 8px 12px; font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 10px; box-shadow: var(--chrome-shadow); }
 .mt-warnbar.bad { background: var(--bad-band); border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
-/* P40: 설정의 herdr 경로 칸 */
-.mt-set-path { display: flex; gap: 6px; align-items: center; min-width: 0; }
-.mt-set-path .mt-set-text { flex: 1 1 auto; min-width: 0; width: 100%; }
-/* P40: herdr 띠(못 찾음, 다른 프로토콜, 검증하지 않은 버전, 새 버전) */
-.mt-herdr-band { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.mt-herdr-band .mt-herdr-head { flex: 1 1 360px; min-width: 0; line-height: 1.45; }
+/* P40: 터미널 서버 띠(hc 준비 안 됨, 호환 안 됨)와 옛 판 옮기기 띠(P129) */
+.mt-term-band { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.mt-term-band .mt-term-band-head { flex: 1 1 360px; min-width: 0; line-height: 1.45; }
 .mt-warnbar-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .mt-warnbar-actions a.mt-btn { text-decoration: none; }
-.mt-herdr-tried { flex: 1 0 100%; font-size: 12px; }
-.mt-herdr-tried summary { cursor: pointer; color: var(--text-dim, inherit); }
-.mt-herdr-tried ul { margin: 4px 0 0; padding-left: 18px; max-height: 140px; overflow: auto; }
-.mt-herdr-tried li { overflow-wrap: anywhere; }
 
 /* 복귀 요약 */
 .mt-return { position: absolute; top: 60px; right: 74px; width: min(620px, 50vw); max-height: 60vh; overflow: auto; z-index: 37; background: var(--panel); border: 1px solid var(--panel-line); border-radius: var(--panel-radius); padding: 10px 12px; box-shadow: var(--panel-shadow); }
@@ -1721,15 +1714,14 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-cn-form { height: 100%; display: grid; grid-template-rows: auto auto 1fr; gap: 8px; align-content: start; }
 .mt-ln-f > [data-role="launcher-connection-hint"] { grid-column: 1 / -1; }
 
-/* P117: 설정 › 터미널(옮기기 계획과 결과 목록) */
-.mt-tmove-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
-.mt-tmove-confirm, [data-role="terminal-move-job"], [data-role="terminal-move-last"] { grid-column: 1 / -1; display: grid; gap: 8px; }
+/* P117: 설정 › 터미널(옛 판 옮기기 결과 목록, P129) */
+.mt-tmigrate { grid-column: 1 / -1; display: grid; gap: 8px; }
 .mt-tmove-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 240px; overflow-y: auto; font-size: 12px; }
 .mt-tmove-list li { display: grid; grid-template-columns: minmax(80px, 1fr) 70px minmax(120px, 1.4fr) minmax(0, 1.4fr); gap: 8px; align-items: baseline; padding: 3px 6px; border-radius: 6px; background: var(--surface-2, rgba(255, 255, 255, 0.03)); }
 .mt-tmove-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-tmove-kind, .mt-tmove-why { color: var(--text-3, var(--text-2)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-tmove-result.moved { color: var(--ok, var(--text-2)); }
-.mt-tmove-result.failed, .mt-tmove-result.skipped { color: var(--warn); }
+.mt-tmove-result.failed { color: var(--warn); }
 
 /* ---------- P119: 작업 완료(끝난 턴을 아직 안 봄, 맨 위 세션만) 카드. 상태 색(일함 주황, 응답 필요, 오류 빨강, 쉼)과 겹치지 않는 보라에 모양을 더한다:
    위 가장자리에 걸친 "✓ 작업 완료" 꼬리표(끝 표식), 굵은 보라 테두리와 왼쪽 3px 띠, 왼쪽에서 옅어지는 보라 바탕. 움직이지 않아 움직임 줄이기에서도 같다 */

@@ -1,17 +1,17 @@
-// P114: herdr-core(hc) 어댑터. herdr/adapter.mjs(HerdrAdapter)와 같은 바깥 모양이라 판(backend.mjs, relay.mjs, recall.mjs)이 어느 쪽이든 같은 메서드를 부른다.
-// 판마다 정한 터미널 백엔드(terminal-backend.mjs). 새 판은 hc, herdr 세션 기록이 있는 옛 판은 옮기기(terminal-move.mjs)를 누를 때까지 herdr다(P117).
+// P114: herdr-core(hc) 어댑터. 판(backend.mjs, relay.mjs, recall.mjs)이 터미널을 부르는 바깥 모양이다(옛 판 옮기기 모듈의 옛 어댑터도 같은 모양).
+// P129: 판의 터미널 백엔드는 hc 하나다(terminal-backend.mjs). 옛 판은 뜰 때 옛 판 옮기기 모듈이 이 어댑터로 옮긴다.
 // - 코어: 판 전용 세션(HC_SESSION = 판의 터미널 세션 이름), 고정 버전을 판 폴더에(pin.mjs), 띄우기·다시 띄우기·끄기는 core.mjs. 떠 있는 코어가 고정 버전과 다르면 붙을 때 올린다(2b)
-// - 모델: 패널 = hc 터미널(주소), 작업 공간 = 라벨, 에이전트 = 7501 상태의 앱 이름(model.mjs). 이벤트는 herdr 어댑터의 normalizeEvent 모양으로 낸다
-// - 세션 시작(2b): 판은 herdr처럼 셸 패널을 만들고(createWorkspace) 그 패널에서 에이전트를 띄운다(startAgent). hc에서는 셸 자리를 "에이전트가 첫 argv인 터미널"로
+// - 모델: 패널 = hc 터미널(주소), 작업 공간 = 라벨, 에이전트 = 7501 상태의 앱 이름(model.mjs). 이벤트는 판이 아는 모양(type: status, agent_detected, agent_released, pane_closed …)으로 낸다
+// - 세션 시작(2b): 판은 셸 패널을 만들고(createWorkspace) 그 패널에서 에이전트를 띄운다(startAgent). hc에서는 셸 자리를 "에이전트가 첫 argv인 터미널"로
 //   바꿔 띄우고 pane_moved로 알린다. env는 판의 env + PATH(pathFirst, 판의 hc 폴더, 레지스트리 PATH) + XDG_CONFIG_HOME 빈 값(terminal.run env)
-// - 에이전트 끝(2b): herdr에서는 에이전트가 끝나도 패널 셸이 남고 판은 그 패널에서 다시 띄웠다(이어 가기·되살리기·깨우기). 판이 띄운 에이전트 터미널이
+// - 에이전트 끝(2b): 판은 에이전트가 끝난 패널에서 다시 띄운다(이어 가기·되살리기·깨우기, 옛 터미널은 패널 셸이 남았다). 판이 띄운 에이전트 터미널이
 //   스스로 끝나면(exited) 같은 자리(작업 공간·폴더·라벨)에 셸 터미널을 띄우고 pane_moved로 알린다. 화면 스트림은 새 터미널로 옮겨 붙는다
 // - 화면: 프레임 모드 attach(stream.mjs). 판 클라이언트의 키 패드·글은 attach DATA로 바로 넣는다(terminal.keys는 사람 입력 뒤 3초를 기다린다)
 // - 끊김: 코어 재시작(server.restart, hc update)이나 강제 종료 뒤 holder가 코어를 다시 띄우는 동안 프로그램은 산다. 그래서 짧은 끊김(GRACE_MS)은
-//   disconnected로 알리지 않고 다시 구독해 그새 바뀐 것만 이벤트로 낸다(herdr의 disconnected는 "서버와 세션이 꺼짐"이라 판이 끊긴 턴으로 표시한다).
+//   disconnected로 알리지 않고 다시 구독해 그새 바뀐 것만 이벤트로 낸다(판의 disconnected는 "서버와 세션이 꺼짐"이라 판이 끊긴 턴으로 표시한다).
 //   코어가 터미널을 끝내고 꺼졌으면(서버 끔·holder 잃음) 바로 disconnected를 내고, 다시 붙으면 판이 되살린다(J1)
 // - 아는 한계: 터미널 안에서 에이전트가 `hc run`으로 띄운 터미널은 코어 env를 받아 판의 hc 설정 폴더(XDG_CONFIG_HOME)가 샌다(판이 띄우는 터미널만 빈 값으로 덮는다).
-//   줄 단위 ANSI 기록이 없다(terminal.history는 색 없는 줄). 스킬·승인 규칙(skillText null)과 옛 판 옮기기는 2b 밖
+//   줄 단위 ANSI 기록이 없다(terminal.history는 색 없는 줄). 승인 규칙과 옛 판 옮기기는 2b 밖
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -23,7 +23,7 @@ import { isTrustDialog } from '../screen.mjs'; // P117: 신뢰 대화상자(7501
 import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
-import { registryPath } from '../herdr/adapter.mjs';
+import { registryPath } from '../proc-env.mjs';
 import { psLine } from '../launch.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,7 +37,7 @@ const TRUST_WATCH_MS = 30000;
 const TRUST_POLL_MS = 600;
 
 // 서버 PID 대신 쓸 값: 터미널을 쥔 holder 가운데 가장 오래된 것(터미널이 있는 것). holder는 코어 재시작·업데이트 뒤에도 같고,
-// 바뀌면 프로그램이 끝난 것이다(서버 끔·holder 잃음). 판은 이 값이 바뀌었는지로 "백엔드가 꺼진 동안 herdr가 다시 떴는가"를 본다(C3)
+// 바뀌면 프로그램이 끝난 것이다(서버 끔·holder 잃음). 판은 이 값이 바뀌었는지로 "백엔드가 꺼진 동안 터미널 서버가 다시 떴는가"를 본다(C3)
 export function holderIdentity(status) {
   const hs = (status && status.holders) || [];
   const withTerms = hs.filter((h) => h.terminals > 0).sort((a, b) => a.pid - b.pid);
@@ -72,9 +72,8 @@ export class HcAdapter extends EventEmitter {
     this.trustWatchMs = trustWatchMs; this.trustPollMs = trustPollMs;
     this.subscribedPanes = [];
   }
-  // 판은 herdrPath로 실행 파일이 있는지 본다(ensureHerdr). hc 실행 파일을 준다. 판이 찾은 herdr 경로는 따로 둔다(쓰지 않는다)
-  get herdrPath() { return this.exe; }
-  set herdrPath(v) { this.herdrPathHint = v || null; }
+  // 판이 진단에 보이는 hc 실행 파일 경로
+  get exePath() { return this.exe; }
 
   call(method, params = {}, timeoutMs = 15000) { return hcCall(this.pipe, method, params, timeoutMs); }
   log(m) { this.emit('log', m); }
@@ -91,7 +90,6 @@ export class HcAdapter extends EventEmitter {
   }
   checkCompat(pong) { return hcCompat(pong, this.policy); }
   async cliVersion() { return this.exe ? cliVersion({ exe: this.exe, session: this.session, configHome: this.configHome, base: this.env }) : null; }
-  async skillText() { return null; } // P116: hc 모드는 herdr 스킬을 넘기지 않는다(일 시키기는 판의 atrium 명령). 판의 herdrSkillText도 hc에서는 null
   // holder 기준(holderIdentity). 코어는 떠 있는데 holder가 없으면(터미널이 없음) -1, 코어를 모르면 null.
   // 코어 PID를 쓰지 않는다: 코어는 server.restart·hc update·holder의 다시 띄우기로 바뀌어도 프로그램이 산다(판이 "다시 떴다"로 잘못 본다, 2b 끝 시험)
   serverPid() { return this._holderPid || (this._corePid ? -1 : null); }
@@ -124,7 +122,7 @@ export class HcAdapter extends EventEmitter {
     }
     throw new HcError('start_failed', 'core did not answer hello in 10s', 'server');
   }
-  // 프로그램도 끈다. 판은 사람이 고른 "터미널 모두 끄기"(트레이·herdr.stop)에서만 부른다
+  // 프로그램도 끈다. 판은 사람이 고른 "터미널 모두 끄기"(트레이·terminal.stop)에서만 부른다
   async stopServer() {
     let out = '';
     try { out = JSON.stringify(await this.call('server.stop', {}, 15000)); } catch (e) { out = e.message; }
@@ -215,7 +213,7 @@ export class HcAdapter extends EventEmitter {
     const snap = await sub.ready;
     const terms = snap.terminals || [];
     if (this.connected) {
-      // 짧은 끊김 뒤: 그새 코어가 터미널을 끝냈으면(서버 끔·재부팅·holder 잃음) herdr 서버가 꺼졌다 뜬 것과 같다. 끊김과 붙음으로 알린다
+      // 짧은 끊김 뒤: 그새 코어가 터미널을 끝냈으면(서버 끔·재부팅·holder 잃음) 서버가 꺼졌다 뜬 것과 같다. 끊김과 붙음으로 알린다
       const nowLive = new Set(terms.filter(isLive).map((t) => t.address));
       const gone = this.model.live().filter((t) => !nowLive.has(t.address)).map((t) => t.address);
       let down = !!this._coreDown;
@@ -240,7 +238,7 @@ export class HcAdapter extends EventEmitter {
       if (e.type === 'terminal_finished' && CORE_DOWN.has(e.reason)) this._coreDown = true;
       if (e.type === 'pane_created' || e.type === 'terminal_finished') this._refreshHolderSoon();
       // 2b: hc는 터미널을 끝내기 바로 앞에 상태를 지운다(status null). 그 놓임을 잠깐 들고 있다가, 코어 쪽 까닭(서버 끔·holder 잃음)의 끝이 따라오면 버린다.
-      // 그러지 않으면 판 밖에서 코어를 껐을 때 판이 claude를 "스스로 끝남"으로 보고 되살리지 않는다(herdr에서는 서버가 꺼지면 끊김만 왔다)
+      // 그러지 않으면 판 밖에서 코어를 껐을 때 판이 claude를 "스스로 끝남"으로 보고 되살리지 않는다(서버가 꺼지면 끊김만 와야 한다)
       if (e.type === 'agent_released' && e.raw && e.raw.type === 'status' && e.paneId) { this._holdRelease(e); continue; }
       if (e.paneId && this._releases && this._releases.has(e.paneId)) {
         if (e.type === 'terminal_finished' && CORE_DOWN.has(e.reason)) this._dropRelease(e.paneId);
@@ -254,9 +252,9 @@ export class HcAdapter extends EventEmitter {
       const launch = t && t.labels && t.labels[LABEL.launch];
       if (launch && this._held.has(launch)) { this._held.get(launch).push(e); continue; }
       if (e.paneId && this._replaced.has(e.paneId) && ['pane_exited', 'terminal_finished', 'pane_closed', 'agent_released'].includes(e.type)) continue;
-      // 2b: 판이 띄운 에이전트가 스스로 끝났다 → 같은 자리에 셸(herdr의 남는 패널 셸). 판이 닫는 중이면 그대로 패널 끝
+      // 2b: 판이 띄운 에이전트가 스스로 끝났다 → 같은 자리에 셸(남는 패널 셸). 판이 닫는 중이면 그대로 패널 끝
       if (e.type === 'pane_exited' && e.agent && e.board && e.reason === 'exited' && !this._isClosing(e.paneId, e.workspaceId)) { this._respawnShell(e); continue; }
-      if (['size', 'pane_restarted', 'pane_lost', 'turn', 'terminal_finished'].includes(e.type)) { this.emit('hc', e); continue; } // 판(herdr 모양)이 모르는 것
+      if (['size', 'pane_restarted', 'pane_lost', 'turn', 'terminal_finished'].includes(e.type)) { this.emit('hc', e); continue; } // 판이 모르는 것(hc 이벤트로 따로 넘긴다)
       this.emit('event', e);
     }
   }
@@ -283,7 +281,7 @@ export class HcAdapter extends EventEmitter {
   }
 
   // ---------- 작업 공간, 패널, 에이전트 ----------
-  // P117: 코어의 목록에 흉내 낸 신뢰 상태(model)를 얹는다. 판의 getPane·listAgents·snapshot이 신뢰 대화상자 중인 claude를 에이전트로 본다(herdr와 같게)
+  // P117: 코어의 목록에 흉내 낸 신뢰 상태(model)를 얹는다. 판의 getPane·listAgents·snapshot이 신뢰 대화상자 중인 claude를 에이전트로 본다
   async _list(all = false) {
     const list = (await this.call('terminal.list', all ? { all: true } : {})).terminals || [];
     return list.map((t) => this._overlay(t));
@@ -304,7 +302,7 @@ export class HcAdapter extends EventEmitter {
     const base = reg || this.env[Object.keys(this.env).find((k) => k.toUpperCase() === 'PATH')] || '';
     return terminalEnv({ exeDir: this.exeDir, basePath: base, extra, pathFirst });
   }
-  // 셸 터미널 하나 = 판의 작업 공간 하나(herdr workspace.create와 같은 자리). 판이 만든 터미널이라 atrium-board 라벨
+  // 셸 터미널 하나 = 판의 작업 공간 하나. 판이 만든 터미널이라 atrium-board 라벨
   async createWorkspace({ cwd, label, env = {} }) {
     const ws = `hw-${crypto.randomBytes(5).toString('hex')}`;
     const labels = { [LABEL.ws]: ws, [LABEL.board]: '1' };
@@ -329,7 +327,7 @@ export class HcAdapter extends EventEmitter {
     if (kind === 'claude') this._watchTrust(r.address);
     return r;
   }
-  // P117: 판이 띄운 claude가 7501을 말하기 전에 화면을 본다. 신뢰 대화상자("Quick safety check … trust this folder")가 보이면 herdr처럼 막힘(blocked)을 흉내 낸다.
+  // P117: 판이 띄운 claude가 7501을 말하기 전에 화면을 본다. 신뢰 대화상자("Quick safety check … trust this folder")가 보이면 막힘(blocked)을 흉내 낸다.
   // 판은 그 뒤 화면을 읽어 trust_wait로 보이고(checkBlocked), 첫 지시는 기다린다(전달 규칙). 사람이 신뢰하면 claude가 7501 idle을 말해 풀리고,
   // 거절하면 claude가 끝나 에이전트가 떠난 것으로(trust_declined) 보이고 같은 자리에 셸이 남는다(_respawnShell). 신뢰는 사람만 답한다(판은 키를 보내지 않는다)
   _watchTrust(address, t0 = Date.now()) {
@@ -414,7 +412,7 @@ export class HcAdapter extends EventEmitter {
     for (const c of set) if (c.retarget(newId)) to.add(c);
     if (to.size) this._ctls.set(newId, to);
   }
-  // herdr agent.start 자리(판의 세션 시작, 이어 가기, 되살리기): 그 패널을 에이전트가 첫 argv인 터미널로 바꾼다. env·pathFirst는 하네스(harnessLaunch)가 준 값.
+  // 에이전트 띄우기(판의 세션 시작, 이어 가기, 되살리기): 그 패널을 에이전트가 첫 argv인 터미널로 바꾼다. env·pathFirst는 하네스(harnessLaunch)가 준 값.
   // 옛 자리가 같은 hc 이름을 쥔 에이전트면 먼저 끈다(hc 이름은 살아 있는 터미널 사이에서 겹치지 않는다. 끝난 기록은 막지 않는다)
   async startAgent({ name, paneId: asked, args = [], kind = 'claude', command = null, env = null, pathFirst = null }) {
     const paneId = await this._follow(asked); // P117: 그새 셸 자리로 바뀐 패널(passGate의 /exit 뒤 등)
@@ -451,7 +449,7 @@ export class HcAdapter extends EventEmitter {
         return r.address;
       } catch (err) {
         this.log(`shell after agent exit in ${old} failed: ${err.code || ''} ${err.message}`);
-        this.emit('event', e); // 셸을 못 띄우면 herdr에서 패널이 닫힌 것과 같게
+        this.emit('event', e); // 셸을 못 띄우면 패널이 닫힌 것과 같게
         return null;
       } finally { this._respawning.delete(old); }
     })();
@@ -478,7 +476,7 @@ export class HcAdapter extends EventEmitter {
     if (!isLive(t)) throw new HcError('pane_not_found', `${paneId} is ${t.state}`, 'terminal.get');
     return paneOf(t, this.model.terms.size ? this.model.terms : this._byAddress([t]));
   }
-  // herdr의 탭 배치는 없다(판이 배치를 쥔다). 덩어리 자동 붙이기(canvas-ops autoDockSplit)는 이 오류를 기록하고 넘어간다
+  // 탭 배치는 없다(판이 배치를 쥔다). 덩어리 자동 붙이기(canvas-ops autoDockSplit)는 이 오류를 기록하고 넘어간다
   async paneLayout() { throw new HcError('not_supported', 'hc has no tab layout', 'pane.layout'); }
   async workspacePanes(workspaceId) {
     const list = await this._list();
@@ -493,9 +491,6 @@ export class HcAdapter extends EventEmitter {
     this._kinds = kinds.map((k, i) => ({ kind: k, installed: !!found[i], path: found[i] }));
     return this._kinds;
   }
-  // hc에는 이어 가기 기록이 없다. 판이 쥔 세션 ID와 판의 줄로 판이 다시 띄운다(되살리기·다시 열기). 판이 준 줄을 기억해 확인(verifyResume)에 돌려준다
-  async registerResume({ sessionId, argv } = {}) { if (sessionId) (this._resume ||= new Map()).set(sessionId, argv || null); return { stored: 'board' }; }
-  readResumeRecord(sessionId) { const m = this._resume; return m && m.has(sessionId) ? { found: true, argv: m.get(sessionId), agentName: null, by: 'board' } : { found: false }; }
   async renameAgent(target, name) {
     const list = await this._list();
     const t = findTerminal(list, target);
@@ -514,17 +509,17 @@ export class HcAdapter extends EventEmitter {
     return t;
   }
   // 판의 전달(B1)이 보낼 때를 정한 뒤 부른다. 판의 규칙을 바꾸지 않는다(2b):
-  // - 막힘: 판은 waiting이면 보내지 않는다. 그새 막혔으면 hc가 force 없이 거부하고(agent_blocked) 판은 waiting으로 물러나 풀리면 다시 보낸다(herdr agent.prompt와 같다)
+  // - 막힘: 판은 waiting이면 보내지 않는다. 그새 막혔으면 hc가 force 없이 거부하고(agent_blocked) 판은 waiting으로 물러나 풀리면 다시 보낸다
   // - 쓰다 만 글: 판의 hc 설정 draft_wait = 0이라 hc는 조용한 틈(약 3초)만 기다린다. 판의 "3초 안 입력이면 기다린다"와 같다(core.mjs)
   async prompt(target, text) {
     const t = await this._target(target);
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
-    // P117: 신뢰 대화상자(흉내 낸 막힘). 코어는 모르므로 판이 거부한다(글이 신뢰 질문에 들어가지 않게. herdr의 agent_blocked와 같다)
+    // P117: 신뢰 대화상자(흉내 낸 막힘). 코어는 모르므로 판이 거부한다(글이 신뢰 질문에 들어가지 않게. 같은 코드 agent_blocked)
     if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
     return this.call('terminal.send', { terminal: t.address, text: String(text).replace(/\r\n?/g, '\n') }, 120000);
   }
   async sendKeys(target, keys) { const t = await this._target(target); return this.paneKeys(t.address, keys); }
-  // 글을 Enter 없이 넣는다(herdr pane.send_text). 여러 줄이면 bracketed paste로 감싼다
+  // 글을 Enter 없이 넣는다. 여러 줄이면 bracketed paste로 감싼다
   async sendText(paneId, text) {
     const s = String(text);
     return this._typeRaw(paneId, [/\n/.test(s) ? `\x1b[200~${s}\x1b[201~` : s]);
@@ -558,7 +553,7 @@ export class HcAdapter extends EventEmitter {
   async readScreen(paneId, { source = 'visible', format = 'text', lines } = {}) {
     if (source === 'visible' && format === 'ansi') return this._paint(paneId);
     // P117(P116 인계): hc의 terminal.read는 화면 아래의 빈 줄까지 줄로 센다. 기록(recent·recent_unwrapped)은 끝의 빈 줄을 빼고 n줄을 센다
-    // (herdr의 recent처럼. Codex 화면 답 고르기가 빈 줄 때문에 답을 놓쳤다). 그래서 화면 높이만큼 더 읽고 끝의 빈 줄을 뗀 뒤 자른다
+    // (Codex 화면 답 고르기가 빈 줄 때문에 답을 놓쳤다). 그래서 화면 높이만큼 더 읽고 끝의 빈 줄을 뗀 뒤 자른다
     const want = source === 'visible' ? 0 : Math.min(Math.max(Number(lines) || 200, 1) + 200, 10000);
     const r = await this.call('terminal.read', { terminal: paneId, lines: want });
     const text = (r && r.text) || '';
@@ -591,7 +586,7 @@ export class HcAdapter extends EventEmitter {
     for (const p of panes) await this.closePane(p.paneId);
     return { closed: panes.length };
   }
-  // 끝내고 기록도 지운다(herdr에서 패널을 닫으면 없어지는 것과 같게). 셸을 다시 띄우는 중인 자리면 그것도 닫는다
+  // 끝내고 기록도 지운다(패널을 닫으면 없어지게). 셸을 다시 띄우는 중인 자리면 그것도 닫는다
   async closePane(paneId) {
     this._closing.add(paneId);
     try {

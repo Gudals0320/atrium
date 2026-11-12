@@ -22,14 +22,14 @@ const OTHER = ['> /exit', '', ' Something else is asking', ' ❯ 1. Yes', '   2.
 function fakeB(dialog = SCREEN, { answerEnds = true } = {}) {
   const calls = [], states = [];
   let shown = '';
-  const s = { sessionId: 's1', name: 'w1', kind: 'claude', paneId: 'p1', agentName: 'w1', herdrWorkspaceId: 'ws1', cwd: 'C:/r/.claude/worktrees/w1', rt: newRuntime({ hooked: true }) };
-  s.rt.herdr.present = true; s.rt.herdr.status = 'idle'; s.rt.phase = 'running'; s.rt.herdr.launchPending = false; s.rt.hooksSinceLaunch = 3;
+  const s = { sessionId: 's1', name: 'w1', kind: 'claude', paneId: 'p1', agentName: 'w1', termWorkspaceId: 'ws1', cwd: 'C:/r/.claude/worktrees/w1', rt: newRuntime({ hooked: true }) };
+  s.rt.term.present = true; s.rt.term.status = 'idle'; s.rt.phase = 'running'; s.rt.term.launchPending = false; s.rt.hooksSinceLaunch = 3;
   const b = {
     cfg: { killWaitMs: 3000 }, killing: new Set(), sessions: new Map([['s1', s]]),
     store: { addEvent: () => {} },
     branch: { info: new Map() },
     resolve: () => s,
-    requireHerdr: () => {},
+    requireTerminal: () => {},
     closeSession: (x, why) => calls.push(['closeSession', why]),
     recall: { markArchive: () => {} },
     broadcastSession: (x) => states.push(deriveState(x.rt).state),
@@ -39,7 +39,7 @@ function fakeB(dialog = SCREEN, { answerEnds = true } = {}) {
       readScreen: async () => shown,
       sendText: async (p, t) => {
         calls.push(['text', t]);
-        if (t === '/exit') setTimeout(() => { shown = dialog; s.rt.herdr.status = 'blocked'; b.noteWorktreeExit(s, shown); b.broadcastSession(s); }, 30);
+        if (t === '/exit') setTimeout(() => { shown = dialog; s.rt.term.status = 'blocked'; b.noteWorktreeExit(s, shown); b.broadcastSession(s); }, 30);
       },
       paneKeys: async (p, k) => { calls.push(['keys', k.join('+')]); if (/^\d$/.test(k[0]) && answerEnds) setTimeout(() => { shown = ''; applyAgentReleased(s.rt); b.broadcastSession(s); }, 20); },
       sendKeys: async () => {},
@@ -68,8 +68,8 @@ test('P119 닫기: 판이 답하는 워크트리 나가기 질문은 응답 필�
 });
 
 test('P119 닫기 중 상태: ready + closing, 푸시·미션 맵·응답 필요 수에 들지 않는다', () => {
-  const rt = newRuntime({ hooked: true }); rt.phase = 'running'; rt.herdr.present = true; rt.herdr.launchPending = false; rt.hooksSinceLaunch = 2;
-  rt.herdr.status = 'blocked'; rt.worktreeExit = { ...parseWorktreeExit(SCREEN), at: 1 };
+  const rt = newRuntime({ hooked: true }); rt.phase = 'running'; rt.term.present = true; rt.term.launchPending = false; rt.hooksSinceLaunch = 2;
+  rt.term.status = 'blocked'; rt.worktreeExit = { ...parseWorktreeExit(SCREEN), at: 1 };
   assert.equal(deriveState(rt).state, 'waiting'); // 사람이 판 밖 터미널에서 /exit하면 지금처럼 응답 필요
   rt.boardExit = { by: 'close', at: 2 };
   const d = deriveState(rt);
@@ -83,13 +83,13 @@ test('P119 닫기 중 상태: ready + closing, 푸시·미션 맵·응답 필요
   rt.boardExit.foreign = true;
   assert.equal(deriveState(rt).state, 'waiting');
   // 신뢰 질문은 대신 답하지 않으므로 그대로 보인다
-  const t = newRuntime({ hooked: true }); t.herdr.status = 'blocked'; t.trustScreen = { at: 1 }; t.boardExit = { by: 'close', at: 1 };
+  const t = newRuntime({ hooked: true }); t.term.status = 'blocked'; t.trustScreen = { at: 1 }; t.boardExit = { by: 'close', at: 1 };
   assert.equal(deriveState(t).state, 'trust_wait');
   // 묻는 hook(권한·질문)은 판이 답하지 않으므로 그대로
-  const q = newRuntime({ hooked: true }); q.herdr.status = 'blocked'; q.pendingAsk = { kind: 'permission', since: 1 }; q.boardExit = { by: 'close', at: 1 };
+  const q = newRuntime({ hooked: true }); q.term.status = 'blocked'; q.pendingAsk = { kind: 'permission', since: 1 }; q.boardExit = { by: 'close', at: 1 };
   assert.equal(deriveState(q).state, 'waiting');
   // hook 없는 세션도 같은 규칙
-  const h = newRuntime({ hooked: false }); h.herdr.status = 'blocked'; h.boardExit = { by: 'close', at: 1 };
+  const h = newRuntime({ hooked: false }); h.term.status = 'blocked'; h.boardExit = { by: 'close', at: 1 };
   assert.equal(deriveState(h).state, 'ready');
 });
 
@@ -117,7 +117,7 @@ test('P119 다시 띄우기·잠재우기의 기다림: 이미 둔 boardExit은 
   assert.equal(s2.rt.boardExit, undefined);
   // 이미 떠 있는 질문은 표시를 둘 때 바로 다시 보낸다
   const { b: b3, s: s3, states } = fakeB();
-  s3.rt.herdr.status = 'blocked'; s3.rt.worktreeExit = { ...parseWorktreeExit(SCREEN), at: 1 };
+  s3.rt.term.status = 'blocked'; s3.rt.worktreeExit = { ...parseWorktreeExit(SCREEN), at: 1 };
   assert.equal(beginBoardExit(b3, s3, 'close'), true);
   assert.deepEqual(states, ['ready']);
   assert.equal(beginBoardExit(b3, s3, 'close'), false);
