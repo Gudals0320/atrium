@@ -15,7 +15,7 @@ import { inFocus } from '../src/renderer/lib/phone-graph.js';
 
 const R = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer');
 const read = (f) => fs.readFileSync(path.join(R, f), 'utf8');
-const p119Block = (css) => { const i = css.lastIndexOf('/* ---------- P119'); assert.ok(i >= 0, 'P119 덩어리'); return css.slice(i); };
+const p119Block = (css) => { const i = css.lastIndexOf('/* ---------- P119'); assert.ok(i >= 0, 'P119 덩어리'); const j = css.indexOf('/* ---------- P', i + 10); return css.slice(i, j < 0 ? undefined : j); }; // P127: 뒤 덩어리(움직임 멈춤)는 빼고
 
 test('이름: 작업 완료 / Done (받은 함, 노드, 칸반, 미션 맵, 영역, 사이드바, 휴대폰)', () => {
   for (const k of ['top.review', 'node.review', 'kanban.review', 'mission.cat.done', 'mmMap.sumReview', 'doneMark.tag']) {

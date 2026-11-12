@@ -1,8 +1,9 @@
 // P112: 판 배율을 React 렌더 없이 따라간다. 판을 끌거나 확대·축소하는 동안 노드가 배율을 구독하면 프레임마다 노드 전체(머리줄, 터미널 감싸개 등)가
 // 다시 그려져 렌더러 주 스레드가 거의 다 바빴다. 배율에 따라 바뀌는 값 가운데 CSS 변수는 여기서 요소에 바로 쓰고, 얼굴 같은 단계 값만 상태로 구독한다
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useStoreApi } from '@xyflow/react';
 import { zoomStep } from './lib/faces.js';
+import { motionPauser } from './lib/work-light.js';
 
 // 화면 밖 노드는 화면을 옮기는 동안 --inv 쓰기를 미룬다. --inv가 바뀌면 그 노드 하위 전체의 스타일과 머리줄 글자 배치를 다시 세므로,
 // 노드가 많으면 보이지 않는 노드가 프레임 일의 대부분이었다. 노드가 화면(둘레 AWAY_PX 여유) 가까이 오는 프레임에 바로 쓰고,
@@ -67,7 +68,8 @@ export function useInvRef(min = 0.02, id = null, stepped = false) {
 
 // 배율에 따라 바뀌는 인라인 style(화면 기준 크기의 이름표 글자, 손잡이 굵기)을 화면 변환이 바뀔 때마다 직접 쓴다.
 // styleOf(배율) → { 속성: 값 }. 숫자는 React처럼 px를 붙이고(`${값}px`), --로 시작하는 이름은 setProperty로 쓴다. 배율이 그대로면 쓰지 않는다
-export function useZoomStyle(styleOf) {
+// P127 stepped: 배율 대신 계단 값(lib/faces.js zoomStep, 1.1배마다)으로 센다. 영역·워크트리 상자·그룹 틀 이름표 글자는 계단이 바뀔 때만 글자 배치를 다시 센다
+export function useZoomStyle(styleOf, stepped = false) {
   const flow = useStoreApi();
   const fn = useRef(styleOf);
   fn.current = styleOf;
@@ -75,7 +77,7 @@ export function useZoomStyle(styleOf) {
     if (!el) return undefined;
     let last = NaN;
     const put = (st) => {
-      const z = st.transform[2];
+      const z = stepped ? zoomStep(st.transform[2]) : st.transform[2];
       if (z === last) return;
       last = z;
       const s = fn.current(z);
@@ -87,5 +89,22 @@ export function useZoomStyle(styleOf) {
     };
     put(flow.getState());
     return flow.subscribe(put);
+  }, [flow, stepped]);
+}
+
+// P127: 판 화면 변환(이동·배율)이 바뀌는 동안 문서 뿌리에 data-board-moving을 단다(lib/work-light.js motionPauser, 작업 중 둘레를 멈춤).
+//   휠·끌기·코드(setViewport)·손가락 이동 모두 React Flow 변환으로 오므로 변환 하나만 본다. 판(Canvas)에 하나만 둔다
+export function useBoardMotion() {
+  const flow = useStoreApi();
+  useEffect(() => {
+    const p = motionPauser();
+    let last = flow.getState().transform;
+    const off = flow.subscribe((st) => {
+      const t = st.transform;
+      if (t === last || (t[0] === last[0] && t[1] === last[1] && t[2] === last[2])) return;
+      last = t;
+      p.moved();
+    });
+    return () => { off(); p.dispose(); };
   }, [flow]);
 }

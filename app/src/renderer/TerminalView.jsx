@@ -22,7 +22,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
 import { useStore, getState, takePendingInput, pendingFor } from './store.js';
 import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, wheelAction, setsMouseMode, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, copyOnRelease, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
-import { findShift, bigChange, historyAbove, historyPrefill, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
+import { findShift, bigChange, historyAbove, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
 import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
 import { onFrame, onWritten, markInput, setTerminal, perfLog } from './perf.js';
@@ -35,6 +35,7 @@ import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙�
 import { pathsText, filesOf, hasFiles } from './lib/upload.js';
 import { termBudgetNow, step } from './crash-watch.js'; // P84: 손가락 웹 화면은 WebGL 없이, 웹은 캔버스 픽셀 상한을 낮게. P86: 단계 기록
 import { capDims } from './lib/crumbs.js'; // P86: 웹 화면의 칸·줄 상한
+import { fillPlan, runFill } from './lib/term-fill.js'; // P127: 셸 기록을 여러 프레임에 나눠 쓴다(최근 화면 먼저)
 
 // P86: 단계 기록에 적는 터미널 값(잰 글자 폭·높이, 칸·줄, DOM 셀 수, 판 배율). 내용 없음
 const cellsOf = (term) => { const rows = term.element && term.element.querySelector('.xterm-rows'); return rows ? rows.getElementsByTagName('span').length + rows.children.length : 0; };
@@ -318,11 +319,20 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       const above = ansi.length ? historyAbove(ansi.map(stripAnsi), screen) : -1;
       return { lines: ansi.length, above, ansi: above >= 0 ? ansi.slice(0, above) : null };
     };
+    // P127: 기록 + 지금 화면을 나눠 쓴다(lib/term-fill.js). 첫 쓰기는 대체 화면에 지금 화면만이라 바로 보이고, 위쪽 기록은 뒤 프레임마다 한 조각씩 채운다
+    const fillHistory = async (ansi, screen, what) => {
+      const plan = fillPlan(ansi, term.rows, screen);
+      const t0 = performance.now();
+      const n = await runFill(plan, { write: (d) => writeP(term, d), alive: () => st.alive });
+      perfLog('term_history_fill', { sessionId, what, lines: ansi.length, writes: plan.length, wrote: n, ms: Math.round(performance.now() - t0) });
+    };
+    // 그림자(herdr 화면) 칸을 다시 그리는 글. 웹은 터미널 칸·줄이 상한으로 작을 수 있어 작은 쪽까지만
+    const shadowScreen = () => { const sb = shadow.buffer.active; return serializeScreen(sb, { base: sb.baseY, rows: Math.min(shadow.rows, term.rows), cols: Math.min(shadow.cols, term.cols), cursorX: sb.cursorX, cursorY: Math.min(sb.cursorY, term.rows - 1), cell: sb.getNullCell() }); };
     const prefill = async (screen) => {
       const h = await readHistory(screen);
       perfLog('term_history', { sessionId, lines: h.lines, above: h.above });
       step('hist', { lines: h.lines, above: h.above }); // P86: 셸 기록(큰 메시지) 받은 뒤, 쓰기 전
-      if (h.above > 0 && st.alive) term.write(historyPrefill(h.ansi, term.rows));
+      if (h.above > 0 && st.alive) await fillHistory(h.ansi, shadowScreen(), 'first');
     };
     // 빠른 출력이 한 프레임에 지나가거나(화면에 한 번도 안 보인 줄), cls·크기 바뀜으로 판 안 기록이 herdr 기록과 어긋났다.
     // 출력이 멈추면(그리고 고르는 중이나 위로 올려 보는 중이 아니면) herdr 기록으로 다시 맞춘다: 지금 화면을 칸 그대로 적어 두고 reset 뒤 기록 + 화면
@@ -333,7 +343,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       const b = term.buffer.active;
       const screen = serializeScreen(b, { base: b.baseY, rows: term.rows, cols: term.cols, cursorX: b.cursorX, cursorY: b.cursorY, cell: b.getNullCell() });
       term.reset();
-      term.write(historyPrefill(h.ansi, term.rows) + screen);
+      await fillHistory(h.ansi, screen, 'resync'); // P127: 나눠 쓴다(지금 화면이 먼저 보인다)
       perfLog('term_history_resync', { sessionId, lines: h.lines, above: h.above });
     };
     const trySync = () => {

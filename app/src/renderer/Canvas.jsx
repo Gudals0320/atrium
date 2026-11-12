@@ -58,6 +58,7 @@ import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regi
 import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 import { oneFinger, releaseKind, pinchViewport, panViewport, mid, dist as gap2, tapTarget, movableId, tapAction, TAP_CONTROL, LONG_PRESS_MS } from './lib/touch-board.js'; // P76
+import { useBoardMotion } from './zoom-var.js'; // P127: 판을 움직이는 동안 작업 중 둘레를 멈춘다
 import { openFull, fullId, onFull } from './full-view.js'; // P76
 import { termBudgetNow, boardPlan, step } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게. P86: 보드 단계(levelPlan)와 단계 기록
 import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
@@ -289,6 +290,7 @@ export function Canvas() {
   const currentWs = useStore((st) => (PLAN.allWs ? null : st.currentWs)); // P86 단계 4: 워크스페이스를 바꾸면 그 세션만 다시 그린다
   const initialViewport = useStore((st) => st.viewport);
   const rf = useReactFlow();
+  useBoardMotion(); // P127: 판을 움직이는 동안 작업 중 둘레를 멈춘다
   const wrapRef = useRef(null);
   const [nodes, setNodes] = useState([]);
   const nodesRef = useRef(nodes); // P76: 길게 눌러 옮길 노드를 찾는다
