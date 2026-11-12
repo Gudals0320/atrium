@@ -310,7 +310,7 @@ export function herdrStateOf(st) {
 }
 export function herdrEventOf(d) {
   const out = { connected: d.connected };
-  for (const k of ['missing', 'level', 'warning', 'problems', 'protocols', 'tested', 'update', 'path', 'find']) if (k in d) out[k] = d[k];
+  for (const k of ['missing', 'level', 'warning', 'problems', 'protocols', 'tested', 'update', 'path', 'find', 'backend', 'hcVersion', 'terminals']) if (k in d) out[k] = d[k]; // P117: 터미널 백엔드(hc 띠, 설정 › 터미널의 hc 버전)
   if (d.version) out.version = d.version;
   if (d.protocol != null) out.protocol = d.protocol;
   return out;
