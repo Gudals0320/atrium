@@ -157,6 +157,8 @@ export class TerminalRouter extends EventEmitter {
   paneLayout(paneId) { return this._by(paneId).paneLayout(paneId); }
   openController(paneId, cols, rows) { return this._by(paneId).openController(paneId, cols, rows); }
   registerResume(o) { return this._by(o.paneId).registerResume(o); }
+  // 판이 부른 패널이 그 백엔드 안에서 다른 터미널로 바뀌었으면 새 자리(hc: 에이전트가 끝나 남은 셸). herdr는 그대로
+  async follow(paneId) { const a = this._by(paneId); return a.follow ? a.follow(paneId) : paneId; }
   workspacePanes(ws) { return this._byWs(ws).workspacePanes(ws); }
   closeWorkspace(ws) { return this._byWs(ws).closeWorkspace(ws); }
   prompt(target, text) { return this._byTarget(target, (a) => a.prompt(target, text)); }

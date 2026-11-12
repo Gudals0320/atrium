@@ -356,6 +356,7 @@ export class HcAdapter extends EventEmitter {
     if (timer.unref) timer.unref();
     this._trustWatch.set(address, timer);
   }
+  follow(paneId) { return this._follow(paneId); } // P117: 라우터·옮기기가 쓴다
   // P117: 판이 부른 패널이 이미 다른 터미널로 바뀌었으면(에이전트가 끝나 셸이 남음 등) 그 자리를 따라간다. 셸을 띄우는 중이면 기다린다
   async _follow(paneId) {
     let id = paneId;
@@ -412,7 +413,7 @@ export class HcAdapter extends EventEmitter {
     const ws = t ? workspaceOf(t, by) : `hw-${crypto.randomBytes(5).toString('hex')}`;
     const argv = [...(command && command.length ? command : [KIND_COMMAND[kind] || kind]), ...args];
     const n = hcName(name);
-    const baseLabels = Object.fromEntries(Object.entries((t && t.labels) || {}).filter(([k]) => k !== LABEL.launch && k !== LABEL.name));
+    const baseLabels = Object.fromEntries(Object.entries((t && t.labels) || {}).filter(([k]) => k !== LABEL.launch && k !== LABEL.name && k !== LABEL.agent));
     if (t && isLive(t) && n && t.name === n) { this._replaced.add(paneId); await this._kill(paneId); }
     const cwd = (t && t.cwd) || undefined;
     const r = await this._replacePane(paneId, (launch) => this.runAgent({ name, argv, cwd, env: env || {}, pathFirst: pathFirst || [], labels: { ...baseLabels, [LABEL.launch]: launch }, workspaceId: ws, kind }), 'startAgent');
@@ -427,7 +428,7 @@ export class HcAdapter extends EventEmitter {
     if (this._respawning.has(old)) return this._respawning.get(old);
     const p = (async () => {
       const t = this.model.terms.get(old) || {};
-      const labels = Object.fromEntries(Object.entries(t.labels || {}).filter(([k]) => k !== LABEL.launch && k !== LABEL.name));
+      const labels = Object.fromEntries(Object.entries(t.labels || {}).filter(([k]) => k !== LABEL.launch && k !== LABEL.name && k !== LABEL.agent));
       labels[LABEL.board] = '1';
       if (e.workspaceId) labels[LABEL.ws] = e.workspaceId;
       try {

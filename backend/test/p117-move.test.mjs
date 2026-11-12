@@ -202,6 +202,37 @@ test('P117 옮기기(herdr → hc): 판의 claude는 옛 패널에서 /exit 뒤 
   r.stopEvents();
 });
 
+test('P117 되돌리기(hc → herdr): hc에서 에이전트를 끄면 그 자리에 셸이 남는다. 옛 작업 공간째 닫아 남은 셸도 닫고, 비면 hc 코어를 끈다', async () => {
+  const c = new FakeTerm('hc'), h = new FakeTerm('herdr');
+  // hc처럼: /exit로 에이전트가 끝나면 같은 작업 공간에 셸을 다시 띄우고, 옛 주소를 부르면 새 셸로 따라간다
+  const moved = new Map();
+  const paneKeys = c.paneKeys.bind(c);
+  c.paneKeys = async (paneId, keys) => {
+    const p = c.panes.get(paneId);
+    const had = p && p.agent && keys[0] === 'enter' && c._typed === '/exit';
+    await paneKeys(paneId, keys);
+    if (had) { c.n++; const id = `t${c.n}`; c.panes.set(id, { id, ws: p.ws, agent: null }); c.panes.delete(paneId); moved.set(paneId, id); }
+  };
+  c.follow = async (id) => moved.get(id) || id;
+  const r = new TerminalRouter({ primary: c });
+  r.startEvents(() => []);
+  await until(() => r.connected);
+  const b = fakeBoard(r);
+  c.panes.set('t1', { id: 't1', ws: 'hw-1', agent: 'claude' }); c.n = 1;
+  const lead = addSession(b, { sessionId: 'sid-lead', name: 'lead', paneId: 't1', ws: 'hw-1' });
+  r.add(h, { quiet: true });
+  const mover = new Mover(b, { waitMs: 100, pollMs: 20 });
+  await mover.start({ to: 'herdr', confirm: true });
+  await mover.job.done;
+  assert.deepEqual(mover.view().rows.map((x) => [x.name, x.result]), [['lead', 'moved']]);
+  assert.match(lead.paneId, /:/);
+  assert.deepEqual(c.calls.filter((x) => x[0] === 'closeWorkspace').map((x) => x[1]), ['hw-1']);
+  assert.equal(c.panes.size, 0); // 남은 셸까지 닫혔다
+  assert.ok(c.calls.find((x) => x[0] === 'stopServer'));
+  assert.equal(r.backend, 'herdr'); assert.equal(r.mixed(), false);
+  r.stopEvents();
+});
+
 test('P117 옮기기: 새 자리에서 뜨지 못하면 새 자리를 닫고 옛 패널에서 다시 이어 간다(그 세션은 herdr에 남는다). 바쁜 세션은 기다리다 건너뛴다. hc를 못 받으면 아무것도 바꾸지 않는다', async () => {
   const h = new FakeTerm('herdr'), c = new FakeTerm('hc', { fail: { agent: true } });
   const r = new TerminalRouter({ primary: h });

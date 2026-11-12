@@ -102,6 +102,7 @@ export class Mover {
     this.emit();
     job.done = this.run(job).catch((e) => { job.error = { code: e.code || 'error', message: e.message, key: e.key || null, vars: e.vars || null }; }).finally(() => {
       job.state = job.error ? 'failed' : 'done'; job.endedAt = Date.now();
+      for (const row of job.rows) if (row.result === 'pending' || row.result === 'moving') Object.assign(row, { result: 'skipped', reason: 'not_started' }); // 시작 전에 멈춘 옮기기
       job.remaining = [...this.b.sessions.values()].filter((s) => s.paneId && paneBackend(s.paneId) !== this.router().backend).length;
       this.last = this.view(job);
       this.b.store.setMeta('terminalMove', this.last);
@@ -227,7 +228,7 @@ export class Mover {
         await this.waitReady(s);
       }
       // 4. 옛 자리를 닫는다
-      await this.closeOld(old, steps);
+      await this.closeOld(s, old, steps);
       delete s.rt.move;
       b.store.addEvent(s.sessionId, 'terminal_moved', { to, plan, from: paneBackend(old.paneId), oldPane: old.paneId, newPane: s.paneId, steps });
       b.broadcastSession(s, { cause: `moved:${to}` });
@@ -271,11 +272,13 @@ export class Mover {
     }
     throw apiError('timeout', `not ready in ${Math.round(this.readyMs / 1000)}s`);
   }
-  async closeOld(old, steps) {
+  // 옛 자리를 닫는다. 그 작업 공간을 다른 판 세션이 쓰지 않으면 작업 공간째(hc에서 에이전트가 끝나 남은 셸까지), 쓰면 이 세션의 패널만(남은 셸을 따라가 함께)
+  async closeOld(s, old, steps) {
     const b = this.b;
-    const shared = await b.adapter.workspacePanes(old.ws).then((ps) => ps.filter((x) => x.paneId !== old.paneId)).catch(() => null);
-    if (!shared || shared.length) await b.adapter.closePane(old.paneId).then(() => steps.push(`old pane ${old.paneId} closed`));
-    else await b.adapter.closeWorkspace(old.ws).then(() => steps.push(`old workspace ${old.ws} closed`));
+    const cur = b.adapter.follow ? await b.adapter.follow(old.paneId).catch(() => old.paneId) : old.paneId;
+    const shared = [...b.sessions.values()].some((x) => x !== s && x.herdrWorkspaceId === old.ws && x.paneId && paneBackend(x.paneId) === paneBackend(old.paneId));
+    if (!shared) { await b.adapter.closeWorkspace(old.ws); steps.push(`old workspace ${old.ws} closed`); return; }
+    for (const id of new Set([cur, old.paneId])) await b.adapter.closePane(id).then(() => steps.push(`old pane ${id} closed`)).catch(() => {});
   }
   // 새 자리를 닫고 옛 패널로 돌아간다. 에이전트를 껐으면 옛 패널에서 판의 줄로 다시 이어 간다(그 세션은 옛 백엔드에 남는다)
   async rollback(s, plan, old, created, stopped, steps) {
@@ -287,7 +290,8 @@ export class Mover {
       await b.adapter.closeWorkspace(created.workspaceId).catch(() => {});
       steps.push(`new workspace ${created.workspaceId} closed`);
     }
-    if (s.paneId !== old.paneId) await b.setPane(s, old.paneId, old.ws, 'move failed', { quiet: true });
+    const back = b.adapter.follow ? await b.adapter.follow(old.paneId).catch(() => old.paneId) : old.paneId; // hc: 에이전트가 끝나 그 자리에 남은 셸
+    if (s.paneId !== back) await b.setPane(s, back, old.ws, 'move failed', { quiet: true });
     try { b.relay.detach(s.sessionId); } catch {}
     if (plan === 'shell' || plan === 'pane') { s.rt = old.rt; s.agentName = plan === 'shell' ? old.paneId : s.agentName; b.store.updateSession(s.sessionId, { agentName: s.agentName, runtime: s.rt }); return; }
     if (!stopped) return; // 에이전트를 끄기 전에 실패했다(그대로 돈다)
