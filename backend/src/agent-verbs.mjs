@@ -71,6 +71,27 @@ export class AgentVerbs {
   constructor(b, branch, { pollMs = 200, settleMs = PROMPT_SETTLE_MS, turnGraceMs = TURN_GRACE_MS, answerGraceMs = ANSWER_GRACE_MS } = {}) {
     this.b = b; this.branch = branch; this.pollMs = pollMs; this.settleMs = settleMs; this.turnGraceMs = turnGraceMs; this.answerGraceMs = answerGraceMs;
     this.sent = new Map(); // `${보낸 세션}>${받는 세션}` → 마지막으로 보낸 전달 ID(atrium wait가 그 글의 턴을 기다린다)
+    this.pendingLinks = new Map(); // 전달 ID → { linkId, to, text }(들어가면 받는 쪽 openPromptFrom으로)
+  }
+  // 보낸 세션의 마지막 글(atrium prompt, atrium child --prompt의 첫 요청, atrium wake --prompt). atrium wait가 그 글의 턴을 기다린다
+  noteSent(caller, t, deliveryId) {
+    this.sent.set(`${caller.sessionId}>${t.sessionId}`, deliveryId);
+    if (this.sent.size > 2000) this.sent.delete(this.sent.keys().next().value);
+  }
+  // 전달이 끝났다(Branch.onDeliveryEnd가 부른다). 들어갔으면 받는 쪽의 지금 지시로 두고(target_working·target_done이 이 연결에 붙는다), 못 들어갔으면 그 사실을 남긴다
+  onDeliveryEnd(d) {
+    const p = this.pendingLinks.get(d.deliveryId);
+    if (!p) return;
+    this.pendingLinks.delete(d.deliveryId);
+    const b = this.b;
+    const l = b.store.getLink(p.linkId);
+    const t = b.sessions.get(p.to);
+    if (!l) return;
+    if (d.status !== 'confirmed' || !t) { b.linkEvent(l, 'prompt_result', null, { via: 'atrium', deliveryId: d.deliveryId, ok: false, status: d.status, reason: d.reason || null }, { quiet: true }); return; }
+    const working = deriveState(t.rt).state === 'working'; // hook 없는 종류는 herdr working이 곧 제출 확인이다(그 상태 이벤트는 이미 지나갔다)
+    t.openPromptFrom = { linkId: l.linkId, at: Date.now(), text: p.text, submitted: true, working };
+    b.linkEvent(l, 'target_submitted', null, { via: 'atrium', deliveryId: d.deliveryId, matches: true }, { quiet: true });
+    if (working) b.linkEvent(l, 'target_working', null, { from: 'ready' }, { quiet: true });
   }
 
   // ---------- 이름 풀기 ----------
@@ -114,8 +135,9 @@ export class AgentVerbs {
     const d = b.queue.enqueue(t.sessionId, text); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
     const l = this.link(caller, t);
     b.linkEvent(l, 'prompt', text, { via: 'atrium', deliveryId: d.deliveryId, wait: !!o.wait });
-    t.openPromptFrom = { linkId: l.linkId, at: Date.now(), text }; // 받는 쪽 상태(일하는 중, 끝남)를 이 지시의 기록에 붙인다(onLinkTargetState)
-    this.sent.set(`${caller.sessionId}>${t.sessionId}`, d.deliveryId);
+    // 받는 쪽 상태(일하는 중, 끝남)는 이 글이 실제로 들어갈 때 이 지시의 기록에 붙인다(onDeliveryEnd). 대기열에 여럿이 쌓여도 들어간 순서대로 붙는다
+    this.pendingLinks.set(d.deliveryId, { linkId: l.linkId, to: t.sessionId, text });
+    this.noteSent(caller, t, d.deliveryId);
     b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: d.deliveryId, chars: text.length, wait: !!o.wait, woke });
     if (woke && b.sleeper && b.sleeper.wakeFor) b.sleeper.wakeFor(t, `atrium:${caller.name}`).catch(() => {}); // 대기열도 깨우지만 여기서 먼저 부른다(같은 깨우기로 묶인다)
     b.log(`atrium prompt ${caller.name} → ${t.name} (${d.deliveryId}${o.wait ? ', wait' : ''}${woke ? ', woke' : ''})`);
@@ -147,8 +169,9 @@ export class AgentVerbs {
     const t = this.target(caller, o.name);
     const deliveryId = this.sent.get(`${caller.sessionId}>${t.sessionId}`) || null;
     const row = deliveryId ? this.b.store.getDelivery(deliveryId) : null;
-    // 너의 마지막 글이 아직 대기열에 있거나 막 들어갔으면 그 글의 턴을 기다린다. 오래전에 끝난 글은 보지 않는다
-    const mine = row && (!FINAL.has(row.status) || (row.status === 'confirmed' && (row.confirmedAt || 0) > ((t.rt.turn && t.rt.turn.endedAt) || 0))) ? deliveryId : null;
+    // 너의 마지막 글이 아직 대기열에 있거나, 들어간 뒤 그 턴이 마지막 턴이면(끝났어도) 그 글의 턴이다. 그 뒤에 다른 턴이 시작했으면 지금 턴을 본다
+    const last = t.rt.turn || {};
+    const mine = row && (!FINAL.has(row.status) || (row.status === 'confirmed' && !(last.startedAt && last.startedAt > (row.confirmedAt || 0) + 5000))) ? deliveryId : null;
     const turn = await this.waitTurn(caller, t, { deliveryId: mine, timeoutMs: o.timeoutMs, res });
     return { ...this.head(t), ...turn };
   }

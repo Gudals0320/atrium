@@ -58,6 +58,7 @@ async function board({ backend = 'herdr' } = {}) {
   });
   b.queue.start();
   b.branch = new Branch(b, { readyWaitMs: 30, submitWaitMs: 10, verbs: { pollMs: 15, settleMs: 1500, turnGraceMs: 300, answerGraceMs: 300 } });
+  b.queue.on('delivery', (d) => { if (['confirmed', 'unconfirmed', 'failed', 'cancelled'].includes(d.status)) b.branch.onDeliveryEnd(d); }); // backend.mjs와 같다
   const add = (name, { kind = 'claude', hooked = kind === 'claude', state = 'ready', workMs = 60, answer = (t) => `답: ${t}`, ...extra } = {}) => {
     const s = { sessionId: crypto.randomUUID(), name, cwd: dir, paneId: `${name}:p1`, agentName: name, permissionMode: 'manual', kind, origin: 'board', parentSessionId: null, workspaceKey: ws.key, rt: newRuntime({ kind, hooked }), createdAt: Date.now(), ...extra };
     if (state === 'ready') idle(s);
@@ -183,10 +184,46 @@ test('P116 prompt: 받는 쪽이 일하는 중이면 대기열(working)로 바�
     assert.ok(l && l.observed);
     const ev = events(b, 'prompt');
     assert.equal(ev.length, 1); assert.equal(ev[0].text, '두 번째 일'); assert.equal(JSON.parse(ev[0].data).via, 'atrium');
-    assert.ok(w1.openPromptFrom && w1.openPromptFrom.linkId === l.linkId, '받는 쪽 상태(일하는 중, 끝남)를 이 지시 기록에 붙인다');
+    assert.ok(!w1.openPromptFrom, '아직 들어가지 않은 글은 받는 쪽의 지금 지시가 아니다');
     applyHerdrStatus(w1.rt, 'idle');
     await until(() => (b.store.getDelivery(r.deliveryId) || {}).status === 'confirmed');
     assert.deepEqual(b.sent.map((x) => x.text), ['두 번째 일']);
+    assert.ok(w1.openPromptFrom && w1.openPromptFrom.linkId === l.linkId, '들어가면 받는 쪽 상태(일하는 중, 끝남)를 이 지시 기록에 붙인다');
+    assert.equal(events(b, 'target_submitted').length, 1);
+  } finally { stop(); }
+});
+
+test('P116 prompt: 두 세션이 같은 세션에 잇달아 보내면(대기열) 들어간 순서대로 각 연결이 받는 쪽의 지금 지시가 된다', async () => {
+  const { b, add, stop } = await board();
+  try {
+    const lead = add('lead'); const other = add('other'); const w1 = add('w1', { workMs: 80 });
+    applyHerdrStatus(w1.rt, 'working');
+    await b.branch.verbs.prompt(lead, { name: 'w1', text: '리드의 일' });
+    await b.branch.verbs.prompt(other, { name: 'w1', text: '다른 세션의 일' });
+    const la = b.store.linkByPair(lead.sessionId, w1.sessionId), lo = b.store.linkByPair(other.sessionId, w1.sessionId);
+    applyHerdrStatus(w1.rt, 'idle');
+    await until(() => b.sent.length === 1 && w1.openPromptFrom);
+    assert.equal(w1.openPromptFrom.linkId, la.linkId, '먼저 들어간 리드의 글');
+    await until(() => b.sent.length === 2 && w1.openPromptFrom.linkId === lo.linkId, 4000);
+    const sub = events(b, 'target_submitted').map((e) => e.link_id);
+    assert.deepEqual(sub, [la.linkId, lo.linkId]);
+  } finally { stop(); }
+});
+
+test('P116 wait: 너의 글(atrium child --prompt의 첫 요청 포함)로 시작한 턴이 이미 끝났으면 idle이 아니라 done과 그 답', async () => {
+  const { b, add, stop } = await board();
+  try {
+    const lead = add('lead'); const w1 = add('w1', { workMs: 20 });
+    const d = b.queue.enqueue(w1.sessionId, '첫 요청');
+    b.branch.verbs.noteSent(lead, w1, d.deliveryId); // spawnChild가 하는 것
+    await until(() => w1.rt.lastAnswer === '답: 첫 요청' && deriveState(w1.rt).state === 'ready');
+    await tick(50);
+    const r = await b.branch.verbs.wait(lead, { name: 'w1' });
+    assert.equal(r.status, 'done'); assert.equal(r.answer.text, '답: 첫 요청'); assert.ok(r.ms < 200, `${r.ms}ms`);
+    // 그 뒤 다른 턴이 시작했으면(사람의 글) 그 턴을 본다
+    w1.rt.turn = { startedAt: Date.now() + 6000, endedAt: Date.now() + 6001 };
+    const r2 = await b.branch.verbs.wait(lead, { name: 'w1' });
+    assert.equal(r2.status, 'idle');
   } finally { stop(); }
 });
 
@@ -217,7 +254,7 @@ test('P116 prompt --wait: 그 글로 시작한 턴이 끝날 때까지 기다려
     assert.equal(r.turn.answer.text, '답: 목록을 정리해'); assert.equal(r.turn.answer.source, 'hook');
     assert.ok(r.turn.ms >= 100, `턴이 끝날 때까지 기다렸다(${r.turn.ms}ms)`);
     assert.equal(r.delivery.status, 'confirmed');
-    assert.deepEqual(events(b).map((e) => e.kind), ['prompt', 'wait_result', 'reply']);
+    assert.deepEqual(events(b).map((e) => e.kind), ['prompt', 'target_submitted', 'wait_result', 'reply']);
     assert.equal(events(b, 'reply')[0].text, '답: 목록을 정리해');
   } finally { stop(); }
 });
