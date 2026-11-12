@@ -329,8 +329,11 @@ test('P116 read: 받는 세션 화면의 최근 줄(recent_unwrapped, --lines), 
     const lead = add('lead'); add('w1'); const w2 = add('w2');
     b.screens.set('w1:p1', '줄 1\n❯ 해 줘\n● 했다   \n\n');
     const r = await b.branch.verbs.read(lead, { name: 'w1', lines: 40 });
-    assert.deepEqual(b.reads[0], ['w1:p1', { source: 'recent_unwrapped', lines: 40 }]);
+    assert.deepEqual(b.reads[0], ['w1:p1', { source: 'recent_unwrapped', lines: 240 }], '빈 줄을 줄일 만큼 더 읽는다');
     assert.equal(r.source, 'screen'); assert.equal(r.text, '줄 1\n❯ 해 줘\n● 했다'); assert.equal(r.lines, 40);
+    // hc의 terminal.read는 입력 칸 위의 빈 화면까지 준다(Codex): 빈 줄을 줄여 그 턴이 lines 안에 들게
+    b.screens.set('w1:p1', `• Ran atrium prompt head x\n  └ 보냈다\n${'\n'.repeat(60)}› Ask Codex to do anything\n\n  status`);
+    assert.equal((await b.branch.verbs.read(lead, { name: 'w1', lines: 5 })).text, '• Ran atrium prompt head x\n  └ 보냈다\n\n› Ask Codex to do anything\n\n  status'.split('\n').slice(-5).join('\n'));
     assert.equal(events(b, 'reply')[0].text, '했다');
     w2.rt.sleep = { at: Date.now() }; w2.paneId = null; w2.rt.lastAnswer = '자기 전 답'; w2.rt.lastAnswerAt = 1;
     const s = await b.branch.verbs.read(lead, { name: 'w2' });

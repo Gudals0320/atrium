@@ -63,6 +63,17 @@ export function similarNames(ref, names, max = 3) {
   return out.sort((a, b) => a[0] - b[0] || String(a[1]).localeCompare(String(b[1]))).slice(0, max).map((x) => x[1]);
 }
 
+// 화면 글: 줄 끝 공백을 떼고, 빈 줄이 이어지면 하나로, 앞뒤 빈 줄을 빼고 끝 n줄
+export function compactLines(text, n) {
+  const out = [];
+  for (const l of String(text ?? '').split(/\r?\n/).map((x) => x.replace(/\s+$/, ''))) {
+    if (!l && (!out.length || !out[out.length - 1])) continue;
+    out.push(l);
+  }
+  while (out.length && !out[out.length - 1]) out.pop();
+  return out.slice(-n).join('\n');
+}
+
 // 다음에 칠 명령(사람과 모델이 그대로 친다). 이름은 판의 주소(바뀌지 않는다)
 export const verbLines = (name) => ({ prompt: `atrium prompt ${name} "<할 일>" --wait`, wait: `atrium wait ${name}`, read: `atrium read ${name}` });
 
@@ -241,11 +252,12 @@ export class AgentVerbs {
     let text = null, why = null;
     if (!t.paneId || st === 'sleeping') why = 'sleeping';
     else {
-      try { text = await b.adapter.readScreen(t.paneId, { source: 'recent_unwrapped', lines }); }
+      // 화면의 빈 줄(입력 칸 위의 빈 화면 등)은 줄 수에 넣지 않는다: 더 넉넉히 읽고 빈 줄을 줄인 뒤 끝 lines줄
+      try { text = compactLines(await b.adapter.readScreen(t.paneId, { source: 'recent_unwrapped', lines: Math.min(lines + 200, READ_MAX_LINES) }), lines); }
       catch (e) { why = e.code || 'read_failed'; }
     }
     const answer = this.answerOf(t);
-    const out = { ...this.head(t), state: st, lines, source: text != null ? 'screen' : 'answer', text: text != null ? String(text).split(/\r?\n/).map((x) => x.replace(/\s+$/, '')).join('\n').replace(/\n+$/, '') : null, why, answer, next: verbLines(t.name) };
+    const out = { ...this.head(t), state: st, lines, source: text != null ? 'screen' : 'answer', text, why, answer, next: verbLines(t.name) };
     const l = this.link(caller, t);
     b.linkEvent(l, 'reply', text != null ? screenAnswerText(text, 40) : answer ? answer.text : null, { via: 'atrium', verb: 'read', source: out.source, ...(text != null ? { screenTail: tailText(text, 60) } : {}) });
     b.store.addEvent(caller.sessionId, 'atrium_read', { target: t.name, sessionId: t.sessionId, lines, source: out.source, why });

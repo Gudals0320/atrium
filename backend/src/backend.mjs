@@ -992,9 +992,10 @@ export class Backend {
     if (!was) this.store.addEvent(s.sessionId, 'worktree_exit_dialog', { commits: w.commits, files: w.files, choices: w.choices.map((c) => `${c.n}. ${c.label}`) });
     return true;
   }
+  // P116: 200줄(전에는 60줄). hc의 terminal.read는 화면의 빈 줄까지 세어서, 입력 칸이 아래에 붙은 Codex 화면은 60줄 안에 그 턴이 없었다(atrium wait의 답이 상태 줄이 됐다)
   async readScreenAnswer(s) {
     try {
-      const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 60 });
+      const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 200 });
       s.rt.lastAnswer = screenAnswerText(text, 20); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen';
       this.bus.emit('screenAnswer', s);
     } catch {}
