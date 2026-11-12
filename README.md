@@ -66,7 +66,7 @@ The terminals live in [herdr-core](https://github.com/herdrdev/herdr-core), a te
 
 ### Live terminals
 
-- **Real terminals.** Every near node is an xterm.js terminal attached to its herdr-core terminal, so you can type in it directly.
+- **Real terminals.** Every near node in the project you pick in the top bar is an xterm.js terminal attached to its herdr-core terminal, so you can type in it directly. Sessions in other projects show a summary until you click one or zoom right in, which keeps a busy board smooth.
 - **Sessions outlive the board.** herdr-core runs the terminals outside Atrium's processes. Closing the window, stopping the backend or updating Atrium does not end a session.
 - **Select like a web page.** Drag to select at any zoom; the selection follows scrolling, scrolls at the edges and copies beyond the screen.
 - **Paste that works.** Bracketed paste for agents, multi-line paste for shells.
