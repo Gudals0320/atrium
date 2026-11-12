@@ -248,11 +248,16 @@ test('P129 판이 뜰 때: 새 판은 hc 어댑터 그대로(판 기록 hc). 옛
   assert.equal(await openTerminal(b1, hc), hc);
   assert.equal(b1.store.meta.terminalBackend.backend, 'hc'); assert.equal(b1.store.meta.terminalBackend.by, 'new-board');
   assert.equal(migrationView(b1), null);
+  // 이미 hc였던 판(P117로 옮김): 옛 이름의 hc 서버 PID를 새 이름으로 옮긴다. herdr 판의 옛 값(herdr 서버 PID)은 옮기지 않는다
+  const b3 = { store: mkStore([{ sessionId: 's', paneId: 't1' }], { terminalBackend: { backend: 'hc', by: 'move' }, herdrServerPid: 4343 }), cfg: { terminalSession: 'x', logDir: os.tmpdir() }, log() {} };
+  assert.equal(await openTerminal(b3, hc), hc);
+  assert.equal(b3.store.meta.terminalServerPid, 4343);
   const h = new FakeTerm('herdr');
   const b2 = { store: mkStore([{ sessionId: 's1', paneId: 'w1:p1' }], { terminalBackend: { backend: 'herdr', by: 'old-board' } }), cfg: { terminalSession: 'x', logDir: os.tmpdir() }, log() {}, sessions: new Map(), killing: new Set(), api: { broadcast() {} } };
   const r = await openTerminal(b2, hc, { makeHerdr: () => h });
   assert.ok(r instanceof TerminalRouter); assert.equal(r.backend, 'hc'); assert.deepEqual(r.backends(), ['hc', 'herdr']);
   assert.equal(b2.store.meta.terminalBackend.backend, 'hc'); assert.equal(b2.store.meta.terminalBackend.by, 'migrate');
+  assert.equal(b2.store.meta.terminalServerPid, undefined);
   assert.equal(migrationView(b2).state, 'preparing');
   b2.adapter = r;
   const m = startMigration(b2, { pollMs: 10 });

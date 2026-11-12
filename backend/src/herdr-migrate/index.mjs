@@ -35,6 +35,9 @@ export async function openTerminal(b, hc, { env = process.env, makeHerdr = null 
   const meta = store.getMeta('terminalBackend');
   const openRows = store.openSessions();
   const l = legacyOf({ meta, openRows, oldBoard: !meta && isOldBoard({ store, session: cfg.terminalSession }) });
+  // 이미 hc였던 판(P117로 옮김, 새 판): 옛 이름으로 저장한 hc 서버 PID를 새 이름으로 옮긴다(판이 "꺼진 동안 서버가 바뀜"을 견준다, C3).
+  // herdr 판의 옛 값은 herdr 서버 PID라 옮기지 않는다
+  if (meta && meta.backend === 'hc' && store.getMeta('herdrServerPid') && !store.getMeta('terminalServerPid')) store.setMeta('terminalServerPid', store.getMeta('herdrServerPid'));
   if (!l.legacy) {
     if (!meta || meta.backend !== 'hc') store.setMeta('terminalBackend', { backend: 'hc', by: 'new-board', at: Date.now() });
     return hc;
