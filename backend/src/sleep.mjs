@@ -68,9 +68,16 @@ export function parseExitBackground(screen) {
 // 판 터미널에서 친 글이 입력 칸에 남아 있는지(보내지 않은 초안). 잠재우기의 /exit와 Enter가 그 글 뒤에 붙어 초안을 제출하지 않게 한다.
 // 키 입력 덩어리 data를 차례로 본다: Enter(\r, \n)·Ctrl+C·Ctrl+U는 입력 칸을 비우거나 제출하므로 초안 없음,
 // 글자(붙여 넣기 포함)는 초안 있음, 지우기·화살표·초점 알림 같은 이스케이프 열은 그대로. 순수 함수
+// P120: 터미널(xterm.js)이 프로그램의 물음에 대신 답하는 열도 사람의 입력이 아니다. 배경색(OSC 11 → ESC ]11;rgb:… ST),
+//   터미널 이름(XTVERSION → DCS ESC P>|… ST), 두 번째 장치 속성(DA2 → ESC [>0;276;0c), SGR 마우스(ESC [<0;3;4M), X10 마우스(ESC [M + 세 바이트)를
+//   전에는 이스케이프 머리만 지우고 나머지 글자를 친 글로 세었다
 export function draftAfterInput(prev, data) {
   let draft = !!prev;
-  const s = String(data || '').replace(/\x1b\[20[01]~/g, '').replace(/\x1b(\[[0-9;?]*[ -\/]*[@-~]|O.|.)/g, '');
+  const s = String(data || '')
+    .replace(/\x1b\[20[01]~/g, '') // 붙여 넣기 괄호(안의 글은 남긴다)
+    .replace(/\x1b[\]P_^X][\s\S]*?(\x07|\x1b\\|\x9c|$)/g, '') // OSC·DCS·APC·PM·SOS 문자열(BEL이나 ST까지, 덩어리 끝에서 잘린 것도)
+    .replace(/\x1b\[M[\s\S]{0,3}/g, '') // X10 마우스 보고
+    .replace(/\x1b(\[[0-?]*[ -\/]*[@-~]|O.|.)/g, ''); // CSI(인자 0x30~0x3f: < = > ? 포함), SS3, 두 글자 이스케이프
   for (const ch of s) {
     const c = ch.codePointAt(0);
     if (ch === '\r' || ch === '\n' || c === 0x03 || c === 0x15) draft = false;
