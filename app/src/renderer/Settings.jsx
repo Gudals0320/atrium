@@ -16,6 +16,7 @@ import { DevicesTab } from './WebDevices.jsx'; // P48: 연결된 기기(웹 화�
 import { useDialog } from './dialog.js'; // P52
 import { UpdateSettings } from './Update.jsx'; // P69: 업데이트 묶음
 import { LIGHT_MODES, workLightOf, applyWorkLight } from './lib/work-light.js'; // P107: 작업 중 테두리 빛
+import { TerminalTab } from './Terminal.jsx'; // P117: 터미널 백엔드와 옮기기
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 export function SetRow({ name, hint, children, role }) {
@@ -219,6 +220,7 @@ const TABS = [
   { key: 'sleep', has: (s) => s && s.sleepAfterMin != null },
   { key: 'recall', has: (s) => s && s.archiveDays != null },
   { key: 'devices', has: () => true, label: 'webDevices.tab' }, // P48
+  { key: 'terminal', has: (s) => !!s, label: 'terminalMove.tab' }, // P117
 ];
 
 export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false }) {
@@ -246,6 +248,7 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
           {settings && cur === 'sleep' && <SleepSetting settings={settings} schema={schema} />}
           {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}
           {cur === 'devices' && <DevicesTab />}
+          {cur === 'terminal' && <TerminalTab />}
         </div>
         <div className="mt-card-actions"><button className="mt-btn" data-action="settings-close" onClick={onClose}>{t('common.close')}</button></div>
       </div>

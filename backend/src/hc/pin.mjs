@@ -41,10 +41,37 @@ export function sha256File(file) {
 // 폴더에 hc가 다 있는가(실행 파일과 ConPTY 두 파일)
 export const hasHcFiles = (dir) => HC_FILES.every((f) => { try { return fs.statSync(path.join(dir, f)).isFile(); } catch { return false; } });
 
+// P117: 네트워크 오류(오프라인, 이름 풀기 실패)도 download_failed로(판의 띠가 "받지 못함"을 보인다)
 async function download(url, file, fetchImpl = globalThis.fetch) {
-  const r = await fetchImpl(url, { redirect: 'follow' });
+  let r;
+  try { r = await fetchImpl(url, { redirect: 'follow' }); }
+  catch (e) { throw Object.assign(new Error(`download failed: ${(e.cause && (e.cause.code || e.cause.message)) || e.message} ${url}`), { code: 'download_failed' }); }
   if (!r.ok) throw Object.assign(new Error(`download failed: HTTP ${r.status} ${url}`), { code: 'download_failed' });
   fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+}
+// P117: 앱 업데이트가 새 버전의 고정 hc를 미리 받아 두는 곳(<데이터>\hc\cache\<버전>-<sha 앞 8자>). 검증한 뒤 푼 폴더다. ensureHc가 받기 전에 먼저 본다
+export const hcCacheDir = (dataDir, pin = HC_PIN) => path.join(hcRoot(dataDir), 'cache', `${pin.version}-${pin.sha256.slice(0, 8)}`);
+export async function prefetchHc({ dataDir, pin = HC_PIN, fetchImpl, log = () => {} }) {
+  const dir = hcCacheDir(dataDir, pin);
+  if (hasHcFiles(dir) && (await hcVersionOf(hcExeIn(dir))) === pin.version) return { dir, version: pin.version, cached: true };
+  const st = await stageHc({ dataDir, pin, fetchImpl, log });
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  fs.renameSync(st.dir, dir);
+  fs.rmSync(st.staging, { recursive: true, force: true });
+  // 다른 버전의 미리 받은 것은 지운다(하나만 둔다)
+  for (const n of fs.readdirSync(path.dirname(dir))) if (path.join(path.dirname(dir), n) !== dir) fs.rmSync(path.join(path.dirname(dir), n), { recursive: true, force: true });
+  log(`hc ${pin.version} prefetched at ${dir}`);
+  return { dir, version: pin.version, cached: false };
+}
+// 미리 받은 것이 있으면 staging 모양으로 돌려준다(없으면 null)
+async function fromCache(dataDir, pin) {
+  const dir = hcCacheDir(dataDir, pin);
+  if (!hasHcFiles(dir) || (await hcVersionOf(hcExeIn(dir))) !== pin.version) return null;
+  const staging = path.join(hcRoot(dataDir), `staging-${pin.version}-${crypto.randomBytes(4).toString('hex')}`);
+  fs.mkdirSync(staging, { recursive: true });
+  fs.renameSync(dir, path.join(staging, 'x'));
+  return { dir: path.join(staging, 'x'), staging, version: pin.version, cached: true };
 }
 function extract(zip, dir) {
   const tar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'); // Git Bash의 tar는 zip을 못 연다
@@ -92,7 +119,15 @@ export async function ensureHc({ dataDir, pin = HC_PIN, envExe = null, coreRunni
   let current = null;
   if (hasHcFiles(bin)) current = (fs.existsSync(path.join(bin, 'VERSION')) ? fs.readFileSync(path.join(bin, 'VERSION'), 'utf8').trim() : null) || (await hcVersionOf(hcExeIn(bin)));
   if (current === pin.version) { if (!fs.existsSync(path.join(bin, 'hc.exe'))) linkHcName(bin); return { exe: hcExeIn(bin), dir: bin, version: current, source: 'installed' }; }
-  const st = await stageHc({ dataDir, pin, fetchImpl, log });
+  let st = await fromCache(dataDir, pin).catch(() => null); // P117: 앱 업데이트가 미리 받아 둔 것
+  if (!st) {
+    try { st = await stageHc({ dataDir, pin, fetchImpl, log }); }
+    catch (e) {
+      // P117: 새 고정 버전을 받지 못했다(오프라인 등). 전에 놓인 hc가 온전하면 그것으로 돈다(판은 검증하지 않은 버전으로 경고하고, 다음에 뜰 때 다시 받는다)
+      if (current && hasHcFiles(bin)) { log(`hc ${pin.version} not available (${e.code || e.message}); running ${current} from ${bin}`); if (!fs.existsSync(path.join(bin, 'hc.exe'))) linkHcName(bin); return { exe: hcExeIn(bin), dir: bin, version: current, source: 'stale', error: e.message }; }
+      throw e;
+    }
+  }
   if (current && coreRunning) { log(`hc ${current} is running from ${bin}; ${pin.version} staged at ${st.dir}`); return { exe: hcExeIn(bin), dir: bin, version: current, source: 'pending', pending: st }; }
   // 코어가 쓰지 않는 bin: 옛 것을 비키고 새 것을 놓는다
   if (fs.existsSync(bin)) { const old = path.join(hcRoot(dataDir), `old-${Date.now()}`); fs.renameSync(bin, old); fs.rmSync(old, { recursive: true, force: true }); }
@@ -102,4 +137,41 @@ export async function ensureHc({ dataDir, pin = HC_PIN, envExe = null, coreRunni
   linkHcName(bin);
   log(`hc ${pin.version} installed at ${bin}`);
   return { exe: hcExeIn(bin), dir: bin, version: pin.version, source: 'fetched' };
+}
+
+// ---------- P117: 릴리스 검사(scripts/release-check.mjs) ----------
+// 실행 파일의 Authenticode 서명(Windows PowerShell). → { status: 'Valid' 등, subject: 'CN=herdr, …' } | null
+export async function authenticodeOf(exe) {
+  const ps = `$s = Get-AuthenticodeSignature -LiteralPath '${String(exe).replace(/'/g, "''")}'; Write-Output ("{0}|{1}" -f $s.Status, $s.SignerCertificate.Subject)`;
+  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 30000 });
+  if (r.code !== 0 || !r.out) return null;
+  const [status, subject] = r.out.split(/\r?\n/).pop().trim().split('|');
+  return { status: status || null, subject: subject || null };
+}
+// 고정 hc가 맞는지(순수 함수): 받은 zip의 SHA-256, 푼 빌드의 버전, 서명 상태와 서명자(CN)
+export function checkHcPin({ pin = HC_PIN, sha256 = null, version = null, signature = null }) {
+  const problems = [];
+  if (sha256 !== pin.sha256) problems.push(`고정 hc zip의 SHA-256이 다릅니다: ${sha256 || '없음'} (고정 ${pin.sha256})`);
+  if (version !== pin.version) problems.push(`고정 hc 빌드의 버전이 다릅니다: ${version || '없음'} (고정 ${pin.version})`);
+  if (!signature || signature.status !== 'Valid') problems.push(`herdr-core.exe의 Authenticode 서명이 유효하지 않습니다: ${signature ? signature.status : '읽지 못함'}`);
+  else if (!String(signature.subject || '').split(',').map((x) => x.trim()).includes(pin.signer)) problems.push(`herdr-core.exe의 서명자가 ${pin.signer}가 아닙니다: ${signature.subject || '없음'}`);
+  return problems;
+}
+// 고정 주소에서 받아(임시 폴더) 확인하고 지운다 → { problems, sha256, version, signature }
+export async function verifyPinnedHc({ pin = HC_PIN, tmpRoot, fetchImpl, signatureOf = authenticodeOf, log = () => {} }) {
+  const root = fs.mkdtempSync(path.join(tmpRoot, 'atrium-hc-check-'));
+  try {
+    const zip = path.join(root, 'hc.zip');
+    let sha256 = null, version = null, signature = null;
+    try { await download(pin.url, zip, fetchImpl); sha256 = await sha256File(zip); }
+    catch (e) { return { problems: [`고정 hc를 받지 못했습니다: ${e.message}`], sha256, version, signature }; }
+    if (sha256 === pin.sha256) {
+      const out = path.join(root, 'x'); fs.mkdirSync(out);
+      const x = await extract(zip, out);
+      if (x.code === 0 && hasHcFiles(out)) { version = await hcVersionOf(hcExeIn(out)); signature = await signatureOf(hcExeIn(out)); }
+      else return { problems: [`고정 hc zip에 hc가 다 들어 있지 않습니다(${x.err || x.code})`], sha256, version, signature };
+    }
+    log(`hc ${pin.version}: sha256 ${sha256}, version ${version}, signature ${signature && signature.status} ${signature && signature.subject}`);
+    return { problems: checkHcPin({ pin, sha256, version, signature }), sha256, version, signature };
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }

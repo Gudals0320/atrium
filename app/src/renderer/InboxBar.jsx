@@ -55,9 +55,29 @@ function HerdrActions({ t }) {
     </span>
   );
 }
+// P117: herdr-core 다시 받기·시작(판의 herdr.rediscover가 hc 모드에서 서버를 다시 띄운다)
+function HcRetry({ t }) {
+  const [busy, setBusy] = useState(false);
+  const again = async () => {
+    setBusy(true);
+    try { const r = await api.call('herdr.rediscover'); if (r && r.connected) toast(t('terminalMove.hcBand.ok')); else toast(t('terminalMove.hcBand.title'), 'error'); } catch (e) { toast(errText(e), 'error'); }
+    setBusy(false);
+  };
+  return <span className="mt-warnbar-actions"><button type="button" className="mt-btn small primary" data-action="hc-retry" disabled={busy} onClick={again}>{busy ? t('terminalMove.hcBand.retrying') : t('terminalMove.hcBand.retry')}</button></span>;
+}
 const SOURCE_KEY = { env: 'ATRIUM_HERDR', setting: 'setting', installer: 'installer', path: 'PATH', known: 'known' };
 export function herdrBands(h, t, hidden = new Set(), hide = () => {}) {
   const out = [];
+  // P117: herdr-core(hc)는 판이 고정 버전을 받아 쓴다. 받기·시작 실패는 설치·경로가 아니라 다시 시도로 푼다
+  if (h.backend === 'hc' && (h.missing || h.level === 'missing')) {
+    out.push(
+      <div key="hc-missing" className="mt-warnbar bad mt-herdr-band" data-role="hc-missing">
+        <div className="mt-herdr-head"><b>{t('terminalMove.hcBand.title')}</b> {t('terminalMove.hcBand.why', { error: (h.missing && (h.missing.error || h.missing.reason)) || (h.problems || []).join('; ') })}</div>
+        <HcRetry t={t} />
+      </div>,
+    );
+    return out;
+  }
   if (h.missing || h.level === 'missing') {
     const tried = (h.find && h.find.tried) || [];
     const failed = h.missing && h.missing.reason && h.missing.reason !== 'not_found';

@@ -45,7 +45,9 @@ export async function startFakeHc({ version = '0.1.20', generation = 1, features
     terms.set(address, t);
     emit('created', address, rec(t));
     const app = APP[String(argv[0]).replace(/\.exe$/i, '')];
-    if (app) setTimeout(() => { if (live(t)) fake.setStatus(address, { app, state: 'idle' }); }, 20);
+    // P117: fake.silent(t)가 참이면 7501을 말하지 않는다(신뢰 대화상자 중인 claude). fake.screenOf(t)로 화면 글을 정한다
+    if (fake.screenOf) t.screen = fake.screenOf(t) ?? t.screen;
+    if (app && !(fake.silent && fake.silent(t))) setTimeout(() => { if (live(t)) fake.setStatus(address, { app, state: 'idle' }); }, 20);
     return { result: rec(t) };
   }
   const find = (target) => [...terms.values()].find((t) => live(t) && (t.address === target || t.name === target)) || terms.get(target);

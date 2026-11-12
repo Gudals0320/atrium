@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { BACKEND_ROOT, envVar } from './config.mjs';
 import * as U from './update.mjs';
 
@@ -174,11 +175,30 @@ export class Updater {
     try {
       const protocol = this.b.herdrCompat && this.b.herdrCompat.ok ? this.b.herdrCompat.protocol : null;
       const r = await this.prepare({ dir: this.dir, release: rel, apiUrl: this.apiUrl, protocol, step: (step, d) => { this.log(`step ${step}${d ? ` ${JSON.stringify(d)}` : ''}`); this.setJob({ step, part: null, bytes: null, ...(d || {}) }); }, log: (l) => this.log(l) });
+      await this.prefetchHc(r.root);
       await this.swap({ kind: 'update', toRoot: r.root, to: { tag: rel.tag, version: rel.version }, currentAfter: { current: rel.tag, switchedAt: Date.now() } });
     } catch (e) {
       this.log(`update failed ${e.stack || e.message}`);
       this.setJob({ phase: 'failed', error: String(e.message || e).slice(0, 500) });
     }
+  }
+
+  // P117: 새 버전이 고정한 herdr-core를 바꾸기 전에 미리 받아 둔다(판 데이터의 hc\cache). 새 백엔드는 받지 않고 그것으로 올린다.
+  // 받는 함수는 새 버전의 것(backend/src/hc/pin.mjs)을 부른다. 받지 못해도 업데이트는 이어 간다(새 백엔드가 뜰 때 다시 받고, 못 받으면 놓인 hc로 돈다)
+  async prefetchHc(root) {
+    const dataDir = this.b.cfg && this.b.cfg.dataDir;
+    const file = path.join(root, 'backend', 'src', 'hc', 'pin.mjs');
+    if (!dataDir || !fs.existsSync(file)) return null;
+    try {
+      const mod = await import(pathToFileURL(file).href);
+      if (!mod.HC_PIN || typeof mod.prefetchHc !== 'function') return null;
+      let have = null; try { have = fs.readFileSync(path.join(dataDir, 'hc', 'bin', 'VERSION'), 'utf8').trim(); } catch {}
+      if (have === mod.HC_PIN.version) return { skipped: 'installed', version: have };
+      this.setJob({ step: 'verify', part: `herdr-core ${mod.HC_PIN.version}` });
+      const r = await mod.prefetchHc({ dataDir, pin: mod.HC_PIN, log: (l) => this.log(l) });
+      this.log(`hc ${mod.HC_PIN.version} ready for the new version (${r.cached ? 'cached' : 'downloaded'})`);
+      return r;
+    } catch (e) { this.log(`hc prefetch failed (update goes on): ${e.code || ''} ${e.message}`); return { error: e.message }; }
   }
 
   // 창(Electron main)이 끝나기 전에 PID와 다시 띄울 때 쓸 인자를 알린다

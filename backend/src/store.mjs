@@ -144,6 +144,7 @@ export class Store {
   saveRuntime(sessionId, runtime) { this.st('UPDATE sessions SET runtime = ? WHERE session_id = ?').run(JSON.stringify(runtime), sessionId); }
   getSession(sessionId) { return sessionRow(this.st('SELECT * FROM sessions WHERE session_id = ?').get(sessionId)); }
   openSessions() { return this.st('SELECT * FROM sessions WHERE closed_at IS NULL ORDER BY created_at').all().map(sessionRow); }
+  anySessionRow() { return !!this.st('SELECT 1 AS x FROM sessions LIMIT 1').get(); } // P117: 세션을 띄운 적 있는 판인가(새 판의 터미널 백엔드 정하기)
   // P18(이름 옮기기): 데이터 폴더를 옮긴 뒤 세션 행의 글(settings_path, resume_argv, runtime)을 fix(글) → 글로 고친다. 닫힌 세션도. 고친 행 수
   rewriteSessionText(fix) {
     let n = 0;

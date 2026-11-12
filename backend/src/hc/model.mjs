@@ -3,9 +3,15 @@
 // - 판 세션 ID는 라벨 `atrium-session`, 판이 붙인 이름은 `atrium-name`(hc는 이름을 바꿀 수 없다)
 // - 상태: 프로그램이 OSC 7501로 알린 것만 있다. herdr 낱말로 옮긴다(아래 STATUS_WORD). 앱 이름(`claude-code`)이 에이전트 종류다
 // - 이벤트: hc 이벤트(created, status, finished, removed, lost, restarted …)를 herdr 어댑터의 normalizeEvent 모양으로 바꾼다
-export const LABEL = { session: 'atrium-session', ws: 'atrium-ws', name: 'atrium-name', wsLabel: 'atrium-ws-label', board: 'atrium-board', launch: 'atrium-launch' };
+export const LABEL = { session: 'atrium-session', ws: 'atrium-ws', name: 'atrium-name', wsLabel: 'atrium-ws-label', board: 'atrium-board', launch: 'atrium-launch', agent: 'atrium-agent' };
 // P114 2b: 판이 만든 터미널(createWorkspace의 셸과 그 자리에 띄운 에이전트)인가. 판 밖에서 `hc run`으로 생긴 터미널은 아니다
 export const isBoardTerm = (t) => !!(t && t.labels && t.labels[LABEL.board]);
+// P117: 판이 첫 argv로 띄운 에이전트 터미널의 종류(라벨 atrium-agent). 7501을 말하기 전(신뢰 대화상자)에도 에이전트 자리다
+export const boardAgentKind = (t) => (t && t.labels && t.labels[LABEL.agent]) || null;
+// P117: 신뢰 대화상자. claude는 신뢰를 받기 전에는 7501 상태를 내지 않는다(P114 2b 남은 것). 어댑터가 화면에서 대화상자를 보면
+// herdr처럼 "막힘"을 흉내 낸 상태를 둔다(synthetic). 판은 herdr와 같이 blocked + 묻는 hook 없음 + 화면 → trust_wait로 본다(state.mjs)
+export const TRUST_STATUS = Object.freeze({ app: 'claude-code', state: 'blocked', kind: 'trust', msg: 'Quick safety check: trust this folder', synthetic: true });
+export const isSynthetic = (st) => !!(st && st.synthetic);
 
 // 7501 상태 → herdr 상태 낱말. error는 턴이 끝난 것(done)으로 두고 자세한 것은 detail로 넘긴다. 상태가 없으면 unknown
 export const STATUS_WORD = { idle: 'idle', working: 'working', blocked: 'blocked', done: 'done', error: 'done' };
@@ -125,6 +131,8 @@ export class HcModel {
         const t = { ...prev, ...p.data, state: 'finished', foreground: null, status: null };
         this.terms.set(id, t);
         if (was) out.push({ type: 'agent_released', ...this._base(t), agent: kindOfApp(was), finalStatus: statusWord(prev.status), raw });
+        // P117: 판이 띄운 에이전트가 7501을 한 번도 말하지 않고 끝났다(띄우자마자 끝남). herdr처럼 에이전트가 떠난 것으로 알리고 같은 자리에 셸을 남긴다
+        else if (boardAgentKind(prev) && !this.everAgent.has(id) && !CORE_DOWN.has(t.reason)) { this.everAgent.add(id); out.push({ type: 'agent_released', ...this._base(t), agent: boardAgentKind(prev), finalStatus: 'unknown', raw }); }
         // 터미널이 끝나면 패널도 없다(herdr에서는 에이전트가 끝나도 패널 셸이 남았다). 판에 올린 에이전트는 셸로 내린 뒤 닫힌다.
         // 판이 띄운 세션(2b)은 이 이벤트를 받아 exited로 둘지 정한다. agent: 에이전트가 돈 터미널이었나
         // 코어가 꺼져서 끝난 것(서버 끔, 재부팅, holder 잃음)은 herdr 서버가 꺼진 것과 같다: 패널 끝을 내지 않는다.
@@ -169,8 +177,10 @@ export class HcModel {
     for (const [id, prev] of [...this.terms]) {
       const t = next.get(id);
       if (!t) { out.push(...this.apply({ type: 'removed', terminal: id, data: {} })); continue; }
-      if (isLive(prev) && !isLive(t)) { if (JSON.stringify(prev.status) !== JSON.stringify(t.status)) out.push(...this.apply({ type: 'status', terminal: id, data: { status: null, reported: t.reported } })); out.push(...this.apply({ type: 'finished', terminal: id, data: { reason: t.reason, exit_code: t.exit_code, signal: t.signal, finished_ms: t.finished_ms } })); this.terms.set(id, t); continue; }
+      if (isLive(prev) && !isLive(t)) { if (JSON.stringify(prev.status) !== JSON.stringify(t.status) && !isSynthetic(prev.status)) out.push(...this.apply({ type: 'status', terminal: id, data: { status: null, reported: t.reported } })); out.push(...this.apply({ type: 'finished', terminal: id, data: { reason: t.reason, exit_code: t.exit_code, signal: t.signal, finished_ms: t.finished_ms } })); this.terms.set(id, t); continue; }
       if (prev.pid && t.pid && prev.pid !== t.pid) { out.push(...this.apply({ type: 'restarted', terminal: id, data: t })); continue; }
+      // P117: 흉내 낸 신뢰 상태는 코어에 없다. 코어가 아직 상태를 모르면(신뢰 대화상자 그대로) 들고 있는다
+      if (isSynthetic(prev.status) && !t.status) { this.terms.set(id, { ...t, status: prev.status }); continue; }
       if (JSON.stringify(prev.status) !== JSON.stringify(t.status)) out.push(...this.apply({ type: 'status', terminal: id, data: { status: t.status, reported: t.reported } }));
       this.terms.set(id, { ...t, status: this.terms.get(id).status });
     }
