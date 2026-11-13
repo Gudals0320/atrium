@@ -20,7 +20,8 @@ import { wire, facing, pairOff, blocked, portY } from './mission-wire.js';
 
 // P101: 4·8 단위로 고르게. plate = 판 안 여백, wsGap = 판 여백 둘 + 판 사이 16, slotGap = 기둥 사이(판 사이도 16), linkGap = 이은 이웃 형제 사이(짧은 줄 자리)
 // P134: 폴더 상자. m = 상자 안 여백(워크스페이스 판 바깥 ~ 상자 테두리), head = 상자 위 가장자리 ~ 첫 판 위 가장자리(폴더 이름 줄)
-export const FOLDER = { m: 8, head: 30 };
+// P137: 폴더 상자 안 워크스페이스 상자(판)가 두 겹으로 읽히게 안 여백 8 → 12, 머리 30 → 32(폴더 이름 글이 한 단 크다)
+export const FOLDER = { m: 12, head: 32 };
 export const MISSION = { boxW: 216, boxH: 64, rowH: 28, dot: 18, dotGap: 6, dotsPerRow: 8, dotsMin: 6, dotsFold: 3, colGap: 72, cardGap: 8, rowGap: 8, linkGap: 24, pad: 28, you: 40, youGap: 52, wsHead: 30, wsGap: 36, slotGap: 36, plate: 10, quietSpan: 240 };
 export { EDGE_ORDER, mergeEdges }; // P94: 공용 모델(lib/mission-model.js)로 옮겼다
 const rank = (k) => { const i = EDGE_ORDER.indexOf(k); return i < 0 ? EDGE_ORDER.length : i; };

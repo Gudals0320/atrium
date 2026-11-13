@@ -2405,4 +2405,7 @@ export default {
   mmFolder: {
     folderTitle: { one: 'Folder {name} · 1 session', other: 'Folder {name} · {n} sessions' },
   },
+  mmMap2: {
+    launchedWith: 'Launched with {model}',
+  },
 };
