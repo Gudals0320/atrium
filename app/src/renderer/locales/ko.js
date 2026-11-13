@@ -2125,7 +2125,6 @@ export default {
     sumRest: '쉼 · 끝남',
     sumNow: '지금: {text}',
     sumNone: '없음',
-    sumFoot: '작업 중 {work} · 세션 {all} · 팀 {teams}',
     hint: '가는 실선은 하위 세션이나 역할, 점선은 요청이나 다른 프로젝트입니다. 세션을 가리키면 그 세션의 연결만 보입니다.',
     edgeTip: '@{from} → @{to}',
     restHidden: '외 {n}개',
@@ -2408,5 +2407,16 @@ export default {
   },
   mmMap2: {
     launchedWith: '처음 띄운 모델: {model}',
+  },
+  // P141(#17): 판이 저장하는 기본 역할 이름(백엔드 branch.mjs)을 지금 언어로
+  roles: {
+    worker: '워커',
+    head: '헤드',
+  },
+  // P141(#17): 미션 맵 바닥 줄(수마다 따로)
+  mmFoot: {
+    work: '작업 중 {n}',
+    sessions: '세션 {n}',
+    teams: '팀 {n}',
   },
 };

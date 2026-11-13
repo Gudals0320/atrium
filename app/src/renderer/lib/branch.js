@@ -2,12 +2,13 @@
 // 세션 요약의 branch(백엔드 branch.mjs summaryExtra): { depth, parentSessionId, parentName, parentOpen, child, role, worktree, children }
 
 import { t } from './i18n.js';
+import { shownRole } from './roles.js';
 
 // 머리줄 글. atrium child로 만든 하위 세션만 "@lead의 워커 · 2단계". 판에 올린 에이전트(F3)는 지금처럼 "@x가 띄움"으로 둔다
 export function branchLabel(s) {
   const b = s && s.branch;
   if (!b || !b.child) return null;
-  const role = b.role || t('branch.child');
+  const role = shownRole(b.role) || t('branch.child'); // P141(#17): 기본 역할은 지금 언어로
   // P75: 띄운 순서(같은 부모 안 번호)를 역할 뒤에 붙인다("@lead의 워커 3")
   const n = b.order || null;
   const who = n ? (b.parentName ? t('branchOrder.who', { parent: b.parentName, role, n }) : t('branchOrder.whoOrphan', { role, n }))

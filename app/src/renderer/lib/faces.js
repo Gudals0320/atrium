@@ -125,7 +125,7 @@ export class RendererBudget {
 
 // N 이동 순서: 내 차례(waiting, trust_wait)를 오래 기다린 순서로, 그다음 오류(ARCH 4절 A1, 참고 제품의 needs you는 오류도 포함)
 export function inboxOf(sessions) {
-  const askSince = (s) => (s.ask && s.ask.since) || s.createdAt;
+  const askSince = (s) => s.waitingSince || (s.ask && s.ask.since) || s.createdAt;
   const needsYou = sessions.filter((s) => s.state === 'waiting' || s.state === 'trust_wait').sort((a, b) => askSince(a) - askSince(b));
   const review = sessions.filter((s) => s.unseen && s.state !== 'waiting' && s.state !== 'trust_wait').sort((a, b) => ((a.turn && a.turn.endedAt) || 0) - ((b.turn && b.turn.endedAt) || 0));
   const problems = sessions.filter((s) => s.state === 'error' || (s.state === 'exited' && s.exit && s.exit.kind !== 'normal' && s.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다

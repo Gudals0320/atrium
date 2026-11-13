@@ -8,6 +8,7 @@
 // - 순서는 띄운 순서(order, createdAt, 이름)로 고정한다. 상태가 바뀌어도 줄이 자리를 옮기지 않는다(돌아오면 자리가 그대로).
 // - P94: 나무와 역할·관계 분류는 PC와 같은 공용 모델(lib/mission-model.js)이다. 줄마다 rank·family·roleName·team·waiting·climb·rel을 단다. 무리는 가상 그룹(P44)끼리 붙이고 이름(vg)을 단다.
 import { missionTree, roleModel, relOf, tierFor, groupedOrder, bySpawn } from './mission-model.js';
+import { shownRole } from './roles.js'; // P141(#17)
 
 export const PM_INDENT_MAX = 4; // 이보다 깊으면 들여쓰기를 멈추고 깊이 숫자를 단다(390px 폭에 카드가 남게)
 export const PM_FOLD_KEY = 'mt.phoneMissionFolded';
@@ -41,7 +42,7 @@ export function phoneMission(graph, { live = null, order: order0 = [], folded = 
       id: n.id, sessionId: n.sessionId, name: (l && l.name) || n.name, agentKind: n.agentKind || 'claude', state: (l && l.state) || n.state, tier: tiers.get(n.id),
       depth, indent: Math.min(depth, PM_INDENT_MAX), last, guides: guides.slice(0, PM_INDENT_MAX),
       fromId: cross ? pn.id : null, // P89: 그래프(lib/phone-graph.js)의 다른 무리 부모 선
-      role: (p && p.role) || n.role || null, active: !!(p && p.active),
+      role: (p && p.role) || shownRole(n.role) || null, active: !!(p && p.active),
       from: cross ? { name: pn.name, key: groupOf(pn) } : null, // 다른 무리의 부모
       links: pairs.filter((x) => x.from === n.id && !treeEdge.has(x.id)).sort((a, b) => bySpawn(byId.get(a.to), byId.get(b.to))).map((x) => ({ to: byId.get(x.to).name, toId: x.to, role: x.role || null, kind: x.primary, rel: relOf(x, tree), active: !!x.active })),
       ask: n.ask || null, loops: n.loops || 0,

@@ -202,7 +202,7 @@ function Row({ s, now, showRepo, wsName, onOpen }) {
   const t = useT();
   const tone = toneOf(s);
   const line = lastLineOf(s);
-  const at = line.kind === 'ask' ? s.ask && s.ask.since : s.lastActivityAt || s.lastAnswerAt;
+  const at = line.kind === 'ask' ? s.waitingSince || (s.ask && s.ask.since) : s.lastActivityAt || s.lastAnswerAt;
   const label = s.kind === 'shell' && s.state !== 'exited' && s.state !== 'sleeping' ? (s.shell && s.shell.atPrompt === false ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[s.state] || s.state;
   const lead = line.kind === 'ask' ? t(`phone.ask_${line.key}`, { tool: line.tool || '' }) : line.kind === 'prompt' ? t('phone.youSaid') : line.kind === 'error' ? t('state.error') : '';
   return (

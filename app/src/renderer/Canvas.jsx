@@ -690,6 +690,8 @@ export function Canvas() {
   useEffect(() => {
     const st = getState();
     st.setViewport = (vp) => { rf.setViewport(vp); schedule(100); }; // 시험(E5)에서 쓴다
+    // P141(#16): 판을 화면 픽셀만큼 옮긴다(배율 그대로). 선택 막대가 고른 노드 머리줄을 덮을 때 쓴다
+    st.panBy = (dx, dy, duration = 150) => { const vp = rf.getViewport(); rf.setViewport({ x: vp.x + dx, y: vp.y + dy, zoom: vp.zoom }, { duration }); setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), duration + 50); schedule(duration + 50); };
     st.viewCenter = () => { const el = wrapRef.current; const r = el.getBoundingClientRect(); return rf.screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); };
     st.fitAll = fitAll;
     // P11: 줌 알약의 − +. 화면 가운데를 축으로 배율만 바꾼다

@@ -26,7 +26,7 @@ const NEED = new Set(['waiting', 'trust_wait']);
 const BUSY = new Set(['working', 'starting']);
 export const needsYou = (s) => !!s && NEED.has(s.state);
 export const isBusy = (s) => !!s && (BUSY.has(s.state) || !!s.waking || (s.kind === 'shell' && s.shell && s.shell.atPrompt === false && s.state !== 'exited' && s.state !== 'sleeping'));
-const askSince = (s) => (s.ask && s.ask.since) || s.lastActivityAt || s.createdAt || 0;
+const askSince = (s) => s.waitingSince || (s.ask && s.ask.since) || s.lastActivityAt || s.createdAt || 0;
 // P90: 시작한 지 오래된 것부터(세션을 띄운 시각). 같으면 이름, 그다음 ID 순으로 늘 같은 자리
 const byStart = (a, b) => (a.createdAt || 0) - (b.createdAt || 0) || String(a.name).localeCompare(String(b.name)) || String(a.sessionId).localeCompare(String(b.sessionId));
 // 나머지 안에서는 살아 있는 세션 먼저, 끝났거나 잠든 세션은 아래로

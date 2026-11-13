@@ -217,7 +217,7 @@ function TurnPill({ needsYou }) {
           <div className="mt-dropdown-head"><span>{t('top.turn')}</span>{n > 0 && <span className="mt-kbd">{t('top.nextKey')}</span>}</div>
           {needsYou.map((s) => (
             <button key={s.sessionId} className={`mt-chip need${focusId === s.sessionId ? ' current' : ''}`} data-session={s.sessionId} data-name={s.name} onClick={() => { setOpen(false); go(s.sessionId); }} title={askLine(s)}>
-              <span className="mt-chip-line"><b>@{s.name}</b> {wsTag(s, currentWs)} <span className="mt-chip-time">{ago((s.ask && s.ask.since) || s.createdAt, now)}</span></span>
+              <span className="mt-chip-line"><b>@{s.name}</b> {wsTag(s, currentWs)} <span className="mt-chip-time">{ago(s.waitingSince || (s.ask && s.ask.since) || s.createdAt, now)}</span></span>
               <span className="mt-chip-what">{askLine(s)}</span>
             </button>
           ))}
