@@ -68,8 +68,8 @@ ${FEATURES_HELP}
   archive <대화 ID|이름> [--ws w --old [--days n] --yes]   보드 외부 대화나 닫힌 세션을 보관. --old는 그 리포의 오래된 것(P10)
   unarchive <대화 ID|이름>                    보관함에서 복원
   archived [--ws 프로젝트]                    보관된 세션과 보드 외부 대화
-  convos [--ws 프로젝트]                      열린 프로젝트의 보드 외부 Claude Code 대화와 사용 중인 위치 확인
-  open-convo <대화 ID> [--model m]          다른 곳에서 사용 중이지 않은 대화를 같은 ID로 보드에서 재개
+  convos [--ws 프로젝트]                      열린 프로젝트의 보드 외부 Claude Code·Codex 대화와 사용 중인 위치 확인
+  open-convo <대화 ID> [--model m] [--fork] 다른 곳에서 사용 중이지 않은 대화를 같은 ID로 보드에서 재개 (Codex 앱 대화는 --fork로 갈라 열기)
   tree                                    하위 세션 계층 (상위 세션, 깊이, 역할). 보드가 띄운 세션 안의 atrium(일 시키기 prompt·wait·read, 하위 세션 child 등)은 bin/atrium-child.mjs 참고
   convo-nodes                             보드 외부 대화 카드와 생성 관계를 나타내는 연결선
   classify                                대화 기록의 분류별 수 (보드, 보관, 정리 대상, 실행 중, 데스크톱 등)
@@ -81,15 +81,13 @@ ${FEATURES_HELP}
   install [--channel stable|dev] [--shortcut <폴더>] [--no-shortcut]   최신 릴리즈(dev: dev 빌드 포함)를 설치 폴더에 설치하고 바탕화면 바로가기 생성 (P69, P70)
   update [--check] [--channel stable|dev] [--yes]   새 릴리즈 확인, 업데이트. 채널은 판 설정 updateChannel을 따르고 --channel은 이번 한 번만 바꿈. 백엔드만 다시 시작하며 터미널 세션은 유지 (P69, P70)`;
 
-// P129: 옛 이름 받기(이번 릴리스 동안): `atrium herdr …`는 `atrium terminal …`, --allow-herdr는 무시한다(옛 터미널 명령 자동 승인을 없앴다)
-const OLD_TERMINAL_CMD = 'herdr', OLD_ALLOW_FLAG = 'allow-herdr';
 const argv = process.argv.slice(2);
 const cfg = loadConfig({ argv });
 const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--dev') continue;
-  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', OLD_ALLOW_FLAG, 'apply', 'undo', 'old', 'all', 'clear', 'check', 'no-shortcut', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
+  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', 'apply', 'undo', 'old', 'all', 'clear', 'check', 'no-shortcut', 'fork', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
   else pos.push(a);
 }
 const JSONOUT = !!flags.json;
@@ -197,8 +195,8 @@ async function main() {
         if (st.relay.length) console.log(`  붙은 제어기: ${JSON.stringify(st.relay)}`);
         return;
       }
-      case 'terminal': case OLD_TERMINAL_CMD: {
-        const op = rest[0] === 'rediscover' ? 'status' : rest[0] || 'status';
+      case 'terminal': {
+        const op = rest[0] || 'status';
         const r = op === 'status' ? await c.call('terminal.status') : await c.call(`terminal.${op}`, { confirm: !!flags.yes });
         if (r && r.needsConfirm) { console.log(`확인 필요: ${r.message}\n계속하려면 --yes`); process.exitCode = 2; return; }
         return out(r);
@@ -373,10 +371,10 @@ async function main() {
         const r = await c.call('convo.list', { workspace: flags.ws, refresh: true });
         if (JSONOUT) return out(r);
         if (!r.length) console.log('(보드 외부 대화 없음)');
-        for (const x of r) console.log(`${x.convId}  ${ts(x.lastAt)} ${(x.binding.bound ? `[${x.binding.label}]` : '열 수 있음').padEnd(20)} ${x.branch ? `⎇ ${x.branch} ` : ''}${String(x.title || '').replace(/\s+/g, ' ').slice(0, 70)}`);
+        for (const x of r) console.log(`${x.convId}  ${ts(x.lastAt)} ${x.harness === 'codex' ? 'codex  ' : ''}${(x.binding.bound ? `[${x.binding.label}]` : '열 수 있음').padEnd(20)} ${x.branch ? `⎇ ${x.branch} ` : ''}${String(x.title || '').replace(/\s+/g, ' ').slice(0, 70)}`);
         return;
       }
-      case 'open-convo': return out(await c.call('convo.open', { convo: rest[0], model: flags.model }));
+      case 'open-convo': return out(await c.call('convo.open', { convo: rest[0], model: flags.model, ...(flags.fork ? { fork: true } : {}) })); // P133: --fork(Codex 앱 대화)
       // P13: 캔버스의 판 밖 대화 노드와 띄움 선, 분류별 수, missed(지울 대화) 보기와 지우기(휴지통)
       case 'convo-nodes': {
         const r = await c.call('convo.nodes');

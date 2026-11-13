@@ -207,6 +207,7 @@ export default {
     bound: 'Held by another terminal',
     not_missed: 'Not missed',
     not_found: 'Not in the index',
+    codex: 'Codex conversation (the board does not delete it)',
   },
   errors: {
     disconnected: 'Not connected to the backend',
@@ -2387,5 +2388,21 @@ export default {
     summary: '{done} of {total} done, {waiting} waiting, {failed} failed.',
     result: { pending: 'not moved yet', moving: 'moving…', moved: 'moved', waiting: 'waiting until idle', asleep: 'stays asleep', failed: 'failed', recreated: 'restarted (old server was gone)' },
     reason: { working: 'working', needs_you: 'needs you', draft: 'unsent text in the input box', delivering: 'message being delivered', loop: 'loop running', background: 'background task', running: 'command running', waking: 'waking up', closing: 'closing', adopted: 'agent started outside the board, until it ends', not_resumable: 'agent that cannot resume, until it ends', restoring: 'starting again', not_restored: 'could not start again', closed: 'closed' },
+  },
+  // P133: Codex conversations outside the board (Codex CLI, Codex app)
+  codexConvo: {
+    kind: 'Codex',
+    kindTitle: 'Codex conversation (outside the board, read-only)',
+    open: 'In use in Codex',
+    app: 'Codex app',
+    appOpen: 'Codex app · open',
+    fork: 'Fork',
+    forkTitle: 'Keep the original in the Codex app and open a copy of the conversation as a board session',
+    forked: '@{name}: board session forking Codex conversation {id}',
+    forkOnlyDesktop: 'Fork is only for Codex app conversations',
+  },
+  // P134: mission map folder boxes (sidebar folder = virtual group)
+  mmFolder: {
+    folderTitle: { one: 'Folder {name} · 1 session', other: 'Folder {name} · {n} sessions' },
   },
 };

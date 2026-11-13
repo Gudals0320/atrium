@@ -392,15 +392,28 @@ test('P116 안내 글: 판 시스템 글, 하네스 안내문, atrium 스킬(옛
   assert.ok(!/[\r\n"]/.test(HARNESS_PROMPT), '하네스 안내문은 한 줄, 큰따옴표 없이');
 });
 
-test('P116·P129 플러그인: skills/herdr를 두지 않고 앞서 둔 것은 지운다. 이름 atrium-herdr과 atrium·delegate 스킬은 그대로', () => {
+test('P116·P129·P132 플러그인: 이름 atrium(스킬 atrium:atrium). 남은 옛 이름 폴더(atrium-herdr)는 같은 스킬·명령으로 다시 쓰고 skills/herdr는 지운다', () => {
   const d = tmp();
   fs.mkdirSync(path.join(d, 'atrium-herdr', 'skills', 'herdr'), { recursive: true });
   fs.writeFileSync(path.join(d, 'atrium-herdr', 'skills', 'herdr', 'SKILL.md'), 'old herdr skill');
-  const pl = writeBoardPlugin({ dir: d, skills: { atrium: boardSkill(), delegate: boardSkill('delegate') } });
-  assert.ok(!fs.existsSync(path.join(d, 'atrium-herdr', 'skills', 'herdr')));
-  assert.ok(fs.existsSync(path.join(d, 'atrium-herdr', 'skills', 'atrium', 'SKILL.md')) && fs.existsSync(path.join(d, 'atrium-herdr', 'skills', 'delegate', 'SKILL.md')));
-  assert.ok(pl.pluginDir.endsWith('atrium-herdr'));
-  assert.doesNotMatch(JSON.parse(fs.readFileSync(path.join(d, 'atrium-herdr', '.claude-plugin', 'plugin.json'), 'utf8')).description, /herdr/);
+  fs.mkdirSync(path.join(d, 'atrium-herdr', 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'atrium-herdr', 'bin', 'atrium'), 'old shim');
+  const pl = writeBoardPlugin({ dir: d, skills: { atrium: boardSkill(), delegate: boardSkill('delegate') }, bin: { atrium: 'new shim' } });
+  assert.ok(pl.pluginDir.endsWith('/atrium'));
+  const manifest = (n) => JSON.parse(fs.readFileSync(path.join(d, n, '.claude-plugin', 'plugin.json'), 'utf8'));
+  assert.equal(manifest('atrium').name, 'atrium'); assert.doesNotMatch(manifest('atrium').description, /herdr/);
+  // 옛 이름으로 띄워 아직 도는 세션(--plugin-dir …/atrium-herdr)이 같은 스킬과 새 명령을 쓴다
+  assert.equal(manifest('atrium-herdr').name, 'atrium-herdr');
+  for (const n of ['atrium', 'atrium-herdr']) {
+    assert.ok(!fs.existsSync(path.join(d, n, 'skills', 'herdr')), n);
+    assert.equal(fs.readFileSync(path.join(d, n, 'skills', 'atrium', 'SKILL.md'), 'utf8'), boardSkill(), n);
+    assert.ok(fs.existsSync(path.join(d, n, 'skills', 'delegate', 'SKILL.md')), n);
+    assert.equal(fs.readFileSync(path.join(d, n, 'bin', 'atrium'), 'utf8'), 'new shim', n);
+  }
+  // 옛 이름 폴더가 없던 판에는 만들지 않는다
+  const d2 = tmp();
+  writeBoardPlugin({ dir: d2, skills: { atrium: boardSkill() } });
+  assert.deepEqual(fs.readdirSync(d2).filter((x) => !x.endsWith('.md')), ['atrium']);
 });
 
 // ---------- 연결 기록: hook 없는 세션의 target_done은 판이 화면에서 고른 답이 온 뒤 ----------

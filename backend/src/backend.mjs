@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createTerminalAdapter } from './terminal-backend.mjs'; // P129: 터미널 백엔드는 hc 하나
-import { openTerminal, startMigration, stopMigration, migrationView } from './herdr-migrate/index.mjs'; // P129: 옛 판 옮기기(다음 정식 릴리스 뒤 지운다)
+import { openTerminal, startMigration, stopMigration, migrationView } from './herdr-migrate/index.mjs'; // P129·P132: 옛 판 옮기기(herdr → herdr-core, 계속 지원)
 import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
 import { TailscaleWatch, tailscaleHosts } from './tailscale.mjs'; // P49(R3): Tailscale 상태 읽기
@@ -402,8 +402,8 @@ export class Backend {
       migration: migrationView(this),
     };
   }
-  // P129: 이벤트 terminal(새 창)과 옛 이름 herdr(업데이트 중의 옛 창)를 함께 낸다
-  broadcastTerminal(v = this.terminalView()) { this.api.broadcast('terminal', v); this.api.broadcast('herdr', v); }
+  // P129·P132: 이벤트 terminal. 옛 이름 herdr는 P132에서 뺐다(업데이트는 옛 창을 끄고 새 버전의 창을 띄운다, update-swap.mjs)
+  broadcastTerminal(v = this.terminalView()) { this.api.broadcast('terminal', v); }
 
   // ---------- 세션 표시 ----------
   // 판의 hook이 붙은 세션(판이 띄운 Claude Code). 나머지는 터미널 상태(7501)와 화면으로만 본다(P4)
@@ -907,7 +907,12 @@ export class Backend {
   harnessSessionIdOf(s) {
     const plan = s.harnessPlan || {};
     if (plan.harnessSessionId) return plan.harnessSessionId;
-    if (s.kind === 'codex') return s.rt.term.agentSessionId || codexSessionOf({ cwd: s.cwd, since: plan.launchedAt || s.createdAt || 0 });
+    // P133: 갈라 열 Codex 세션은 처음 띄울 때 ID가 없다(fork). 그 뒤에는 원본 ID를 빼고 찾는다
+    if (s.kind === 'codex') {
+      if (plan.forkFrom && !plan.launchedAt) return null;
+      const id = s.rt.term.agentSessionId || codexSessionOf({ cwd: s.cwd, since: plan.launchedAt || s.createdAt || 0, exclude: plan.forkFrom ? [plan.forkFrom] : [], ...(plan.forkFrom ? { forkedFrom: plan.forkFrom } : {}), ...(this.cfg.codexConvoHome ? { home: this.cfg.codexConvoHome } : {}) });
+      return plan.forkFrom && id && String(id).toLowerCase() === String(plan.forkFrom).toLowerCase() ? null : id;
+    }
     return null;
   }
   // 띄울 값. 판의 env(토큰은 빼고 파일로), PATH 앞의 bin/, 안내문, 호출자 값(모델·추가 인자), 이어 가기
@@ -923,7 +928,7 @@ export class Backend {
     const br = this.branch && typeof this.branch.token === 'function' ? this.branch : null; // 하위 세션 명령이 없는 판(시험의 가짜 판)은 env와 토큰 없이
     if (br) writeTokenFile(this.cfg.sessionsDir, s.sessionId, br.token(s.sessionId));
     const hf = this.harnessFiles || {};
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness') });
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null }); // P133: 갈라 열기는 처음 한 번만
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -931,7 +936,7 @@ export class Backend {
     writeLaunchFiles(hl.files);
     await this.adapter.waitShellReady(s.paneId, 8000);
     const st = await this.adapter.startAgent({ name, paneId: s.paneId, args: hl.args, kind: s.kind, command: hl.command, env: hl.env, pathFirst: hl.pathFirst });
-    s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now() };
+    s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now(), firstLaunchedAt: (s.harnessPlan || {}).firstLaunchedAt || Date.now() }; // P133: firstLaunchedAt(처음 띄운 때, 대화 ID 배우기)
     this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
     if (why !== 'start') { s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.term.launchPending = st.agent ? st.agent.launchPending : true; }
     this.store.addEvent(s.sessionId, why === 'start' ? 'harness_started' : 'recovered_by_board', { plan: why, resume, resumed: hl.resumed, harnessSessionId: hl.harnessSessionId, argv: [...hl.command, ...hl.args], env: Object.keys(hl.env) });
@@ -1869,7 +1874,7 @@ export class Backend {
 
   handlers() {
     return {
-      'backend.status': async () => { const terminal = await this.terminalStatus(); return { pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, terminal, herdr: terminal /* P129: 옛 이름(옛 CLI·업데이터) */, sessions: this.sessions.size, relay: this.relay.stats(), plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null, version: this.updater ? this.updater.running : null }; },
+      'backend.status': async () => { const terminal = await this.terminalStatus(); return { pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, terminal, herdr: terminal /* P129·P132: 옛 이름. 0.1.7까지의 바꾸기(update-swap.mjs)가 새 백엔드의 건강을 st.herdr.connected로 본다(옛 판에서 올라오는 길) */, sessions: this.sessions.size, relay: this.relay.stats(), plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null, version: this.updater ? this.updater.running : null }; },
       'backend.shutdown': async () => { setTimeout(() => this.stop('api').then(() => process.exit(0)), 50); return { stopping: true }; },
       'terminal.status': () => this.terminalStatus(),
       'terminal.stop': (p) => this.terminalControl('stop', p.confirm),
@@ -1963,19 +1968,6 @@ export class Backend {
       ...canvasHandlers(this),
       ...groupHandlers(this), // P44: 워크스페이스 가상 그룹
       ...peerHandlers(this), // P47: client.hello, client.active, clients.list
-      ...this.oldNameHandlers(),
-    };
-  }
-  // P129: 옛 이름 받기(이번 릴리스 동안. 업데이트 중의 옛 창·CLI가 부른다). 다음 릴리스에 지운다
-  oldNameHandlers() {
-    const H = 'herdr';
-    return {
-      [`${H}.status`]: () => this.terminalStatus(),
-      [`${H}.stop`]: (p) => this.terminalControl('stop', p.confirm),
-      [`${H}.start`]: () => this.terminalControl('start', true),
-      [`${H}.restart`]: (p) => this.terminalControl('restart', p.confirm),
-      [`${H}.rediscover`]: () => this.terminalStatus(),
-      [`${H}.clients`]: () => ({ attached: false, viaLog: [], viaProcess: [] }),
     };
   }
 }
