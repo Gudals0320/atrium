@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createTerminalAdapter } from './terminal-backend.mjs'; // P129: 터미널 백엔드는 hc 하나
@@ -66,6 +67,8 @@ function apiError(code, message) { return Object.assign(new Error(message), { co
 import { m, confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이스 지우기 판단
 import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META, syncWsGroups, wsLabels } from './ws-groups.mjs'; // P44: 가상 그룹. P91: 폴더 위계 묶음(저절로)
+import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
+import { codexHomeOf } from './codex-models.mjs';
 import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs'; // P66: 판의 이름(표시 이름)과 에이전트 주소
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 // HTTP 서버 닫기(2026-11-07): http.close는 열린 연결이 모두 끝나야 끝나므로, 쉬는 연결은 바로, 나머지는 forceMs 뒤 끊는다
@@ -313,6 +316,8 @@ export class Backend {
     for (const s of this.sessions.values()) this.probeGit(s, s.rt.cwd || s.cwd);
     this.gitTimer = setInterval(() => this.pollCwd().catch(() => {}), cfg.gitPollMs);
     // G2: 일반 셸이 쉬는지, 무슨 명령을 돌리는지
+    // P137: 하네스가 지금 쓰는 모델(/model, Codex 모델 바꾸기). 기록 파일이 늘어난 만큼만 읽는다
+    this.modelTimer = setInterval(() => this.pollModels(), cfg.modelPollMs ?? 5000);
     this.shellTimer = setInterval(() => this.pollShells().catch((e) => this.log('shell poll error', e.stack)), SHELL_POLL_MS);
     // D1: 자원 감시
     this.resources = new ResourceMonitor({
@@ -329,7 +334,7 @@ export class Backend {
 
   async stop(reason = 'stop') {
     this.log('backend stopping:', reason);
-    clearInterval(this.heartbeat); clearInterval(this.quietTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer);
+    clearInterval(this.heartbeat); clearInterval(this.quietTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer); clearInterval(this.modelTimer);
     stopMigration(this);
     this.resources.stop();
     this.queue.stop();
@@ -475,7 +480,8 @@ export class Backend {
       sessionId: s.sessionId, name: shownName(s), cwd: s.cwd, paneId: s.paneId, termWorkspaceId: s.termWorkspaceId,
       address: s.name, label: s.label || null, // P66: name은 보이는 이름, address는 에이전트가 쓰는 주소(에이전트 이름), label은 사람이 정한 이름(없으면 null)
       state: d.state, estimate: d.estimate || null, termStatus: rt.term.status, ask, error: d.error || rt.lastError || null,
-      permissionMode: rt.permissionMode || s.permissionMode, model: s.model, effort: s.effort || null, // P95: 미션 맵 카드의 메타 줄
+      permissionMode: rt.permissionMode || s.permissionMode, ...shownModel({ model: s.model, effort: s.effort }, s.rt.modelNow), // P95: 미션 맵 카드의 메타 줄. P137: 하네스가 지금 쓰는 값(모르면 띄운 값)
+      launchModel: s.model || null, launchEffort: s.effort || null,
       lastPrompt: clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
       exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f, ...this.doneScope(s, f),
       deliveryStuck: this.queue && this.queue.stuckOf ? this.queue.stuckOf(s.sessionId) : null, // P106: 터미널이 오래 받지 않는 맨 앞 전달 { deliveryId, reason, code, attempts, since }
@@ -648,6 +654,47 @@ export class Backend {
     if (now - prev > TOUCH_WRITE_MS) this.store.updateSession(s.sessionId, { touchedAt: now });
   }
 
+  // ---------- P137: 하네스가 지금 쓰는 모델 ----------
+  // 기록 파일(Claude Code 대화 기록, Codex rollout, pi 세션 파일). 못 찾으면 null(찾기는 30초에 한 번만 다시)
+  modelFileOf(s) {
+    const kind = s.kind || 'claude';
+    if (kind === 'claude') return s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.rt.claudeSessionId || s.sessionId);
+    const c = s._modelFind;
+    if (c && c.file && fs.existsSync(c.file)) return c.file;
+    if (c && Date.now() - c.at < 30000) return null;
+    let file = null;
+    try {
+      if (kind === 'codex') { const id = this.harnessSessionIdOf(s); file = id ? findCodexRollout(this.cfg.codexConvoHome || codexHomeOf(), id) : null; }
+      else if (kind === 'pi') { const id = (s.harnessPlan || {}).harnessSessionId; file = id ? findPiSession(this.cfg.piSessionsDir || path.join(os.homedir(), '.pi', 'agent', 'sessions'), id) : null; }
+    } catch { file = null; }
+    s._modelFind = { file, at: Date.now() };
+    return file;
+  }
+  // 바뀌었으면 true. 보이는 값이 바뀐 것은 판 이벤트(model_changed)로 남긴다
+  refreshModelNow(s) {
+    const kind = s.kind || 'claude';
+    if (!['claude', 'codex', 'pi'].includes(kind) || !s.paneId) return false;
+    let st;
+    try { const file = this.modelFileOf(s); if (!file) return false; st = refreshModel(kind, file, s._modelSt || null); } catch (e) { this.log('model read error', e.message); return false; }
+    if (!st) return false;
+    s._modelSt = st;
+    const prev = s.rt.modelNow || null;
+    if (!st.model && !st.effort) return false;
+    if (prev && prev.model === st.model && (prev.effort || null) === (st.effort || null)) return false;
+    const before = shownModel({ model: s.model, effort: s.effort }, prev);
+    s.rt.modelNow = { model: st.model || null, effort: st.effort || null, at: Date.now() };
+    const after = shownModel({ model: s.model, effort: s.effort }, s.rt.modelNow);
+    // 같은 모델의 다른 이름(haiku → claude-haiku-5-5)이나 처음 알게 된 노력 수준(없음 → xhigh)은 바뀐 것으로 치지 않는다
+    if (!sameModel(before.model, after.model) || (before.effort && before.effort !== after.effort)) this.store.addEvent(s.sessionId, 'model_changed', { from: before, to: after, launched: { model: s.model || null, effort: s.effort || null } });
+    return true;
+  }
+  pollModels() {
+    for (const s of this.sessions.values()) {
+      if (this.sleeper && this.sleeper.going.has(s.sessionId)) continue;
+      if (this.refreshModelNow(s)) this.broadcastSession(s, { cause: 'model' });
+    }
+  }
+
   broadcastSession(s, { cause, onlyIfFlagsChanged = false } = {}) {
     if (!this.sessions.has(s.sessionId)) return;
     const sum = this.summary(s);
@@ -717,6 +764,7 @@ export class Backend {
     this.api.broadcast('session.hook', { sessionId: s.sessionId, name: s.name, ...info });
     if (ev === 'UserPromptSubmit') this.queue.onUserPromptSubmit(s.sessionId, body.prompt);
     if (ev === 'PermissionRequest' && s.rt.pendingAsk && (s.rt.pendingAsk.kind === 'permission' || s.rt.pendingAsk.kind === 'plan')) this.readChoicesLater(s);
+    if (ev === 'Stop' || ev === 'SessionStart') this.refreshModelNow(s); // P137: 턴이 끝나면 지금 모델을 바로 본다(broadcast는 아래)
     if (ev === 'Stop') this.probeGit(s, s.rt.cwd || s.cwd); // A2: 바뀐 파일 수. F4: 지금 폴더(워크트리일 수 있다)로 본다
     this.broadcastSession(s, { cause: `hook:${ev}` });
   }

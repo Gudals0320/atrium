@@ -1786,3 +1786,11 @@ html[data-board-moving="1"] .mt-node-run { visibility: hidden; }
 .mt-mm-fhead .needs { font: 650 11px var(--font-mono); color: var(--attn); pointer-events: auto; }
 .mt-mm-plate.inf { border-color: transparent; }
 .mt-mm-edge.outside.link path.line { stroke: var(--mm-wire-2); }
+
+/* ---------- P137: 폴더 상자 안의 워크스페이스 상자. 두 겹(폴더 > 워크스페이스)이 읽히게 겹마다 테두리 밝기·여백·머리 글 크기를 달리한다.
+   폴더: 가장 밝은 테두리(--mm-folder-line-2), 바탕은 지도와 거의 같고, 머리 글 13px·굵게. 워크스페이스: 한 단 옅은 테두리(--mm-ws-line)와 판 바탕, 머리 글 12px.
+   폴더 밖 워크스페이스도 같은 워크스페이스 상자다(P101 판과 같은 모양, 테두리 토큰만 같게) ---------- */
+.mt-mm-plate, .mt-mm-plate.inf { border-color: var(--mm-ws-line); }
+.mt-mm-plate.inf { background: var(--mm-plate-in); }
+.mt-mm-folder { border-radius: 16px; border-color: var(--mm-folder-line-2); }
+.mt-mm-fhead { left: 14px; right: 14px; top: 7px; height: 18px; font: 700 13px var(--font-ui); }
