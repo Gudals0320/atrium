@@ -45,7 +45,7 @@ test('P18 경로 고치기: 역슬래시, 슬래시, JSON 두 역슬래시 꼴, 
   const argv = JSON.stringify(['claude', '--resume', 'id', '--settings', 'C:/Users/u/AppData/Local/multitask/sessions/id.json', '--plugin-dir', 'C:/Users/u/AppData/Local/multitask/plugin/multitask-herdr', '--append-system-prompt-file', 'C:/Users/u/AppData/Local/multitask/plugin/board-system-prompt.md']);
   const out = JSON.parse(fix(argv));
   assert.equal(out[4], 'C:/Users/u/AppData/Local/atrium/sessions/id.json');
-  assert.equal(out[6], 'C:/Users/u/AppData/Local/atrium/plugin/atrium-herdr');
+  assert.equal(out[6], 'C:/Users/u/AppData/Local/atrium/plugin/atrium'); // P132: 플러그인 이름 atrium
   assert.equal(out[8], 'C:/Users/u/AppData/Local/atrium/plugin/board-system-prompt.md');
   const json = JSON.stringify({ env: { MTASK_DATA_DIR: 'C:\\Users\\u\\AppData\\Local\\multitask' } });
   assert.equal(JSON.parse(fix(json)).env.MTASK_DATA_DIR, 'C:\\Users\\u\\AppData\\Local\\atrium');
@@ -169,7 +169,7 @@ test('P18 기록 고치기: 세션 행의 설정 파일·이어 가기 인자, �
     assert.equal(fixed.sessions, 3); assert.equal(fixed.settingsFiles, 1); assert.equal('panes' in fixed, false);
     const a = store.getSession('a');
     assert.equal(a.settingsPath, slash(path.join(cfg.dataDir, 'sessions', 'a.json')));
-    assert.equal(a.resumeArgv[4], a.settingsPath); assert.equal(a.resumeArgv[6], slash(path.join(cfg.dataDir, 'plugin', 'atrium-herdr')));
+    assert.equal(a.resumeArgv[4], a.settingsPath); assert.equal(a.resumeArgv[6], slash(path.join(cfg.dataDir, 'plugin', 'atrium')));
     assert.equal(a.paneId, 'w1:p1');
     assert.equal(store.getSession('closed').paneId, 'w1:p6');
     assert.equal(JSON.parse(fs.readFileSync(path.join(cfg.sessionsDir, 'a.json'), 'utf8')).env.MTASK_DATA_DIR, cfg.dataDir);

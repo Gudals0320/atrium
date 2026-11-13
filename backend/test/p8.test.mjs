@@ -124,7 +124,7 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   const d = tmp();
   const extra = new Branch({ store: { branchRows: () => [] }, bus: new EventEmitter() }).pluginExtra();
   const pl = writeBoardPlugin({ dir: d, skillText: '---\nname: herdr\n---\n', skills: extra.skills, bin: childShims({ node: 'C:\\node\\node.exe', script: 'C:\\m\\bin\\atrium-child.mjs' }) });
-  const root = path.join(d, 'atrium-herdr');
+  const root = path.join(d, 'atrium');
   const skill = fs.readFileSync(path.join(root, 'skills', 'atrium', 'SKILL.md'), 'utf8');
   const old = fs.readFileSync(path.join(root, 'skills', 'delegate', 'SKILL.md'), 'utf8');
   assert.match(skill, /^---\nname: atrium\n/); assert.match(old, /^---\nname: delegate\n/);
@@ -142,10 +142,10 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
     assert.match(sh, /^#!\/bin\/sh\n/); assert.match(sh, /exec "C:\/node\/node.exe" "C:\/m\/bin\/atrium-child.mjs" "\$@"/);
     assert.match(fs.readFileSync(path.join(root, 'bin', `${c}.cmd`), 'utf8'), /"C:\\node\\node.exe" "C:\\m\\bin\\atrium-child.mjs" %\*/);
   }
-  assert.match(BOARD_SYSTEM_PROMPT, /atrium-herdr:atrium/); assert.match(BOARD_SYSTEM_PROMPT, /delegate/); assert.match(BOARD_SYSTEM_PROMPT, /상한은 없다/);
+  assert.match(BOARD_SYSTEM_PROMPT, /atrium:atrium/); assert.doesNotMatch(BOARD_SYSTEM_PROMPT, /herdr/); assert.match(BOARD_SYSTEM_PROMPT, /delegate/); assert.match(BOARD_SYSTEM_PROMPT, /상한은 없다/);
   assert.ok(ATRIUM_ALLOW.includes('Bash(atrium child-wait *)') && ATRIUM_ALLOW.includes('PowerShell(atrium child-wait *)'));
   assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 7); // P21: 잠든 세션 깨우기 한 줄, P81: atrium me 한 줄
-  assert.ok(pl.pluginDir.endsWith('atrium-herdr'));
+  assert.ok(pl.pluginDir.endsWith('/atrium'));
   assert.match(childNotice({ role: '워커', agentName: 'w1', paneId: 'w2:p1', depth: 2 }), /atrium prompt w1 "<할 일>" --wait/); // P116
   assert.doesNotMatch(childNotice({ role: '워커', name: 'w1', depth: 2 }), /herdr/);
 });
