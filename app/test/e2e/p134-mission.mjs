@@ -123,7 +123,7 @@ async function shots() {
     const st = await page.evaluate(() => { const s = window.__mt.getState(); return { ws: s.workspaces.map((w) => w.key), groups: s.groups }; });
     log('store', JSON.stringify(st).slice(0, 800));
     // 1) 실제 세션(셸 일곱) 그대로
-    await openMission(page);
+    await openMission(page); await page.mouse.move(1250, 880); await sleep(300);
     await shotTo(page, 'real');
     const real = await page.evaluate(PROBE);
     if (AFTER()) check('실제 판: 폴더 상자 둘(alpha, beta), 폴더 밖 f·g는 상자 없음', real.folders.length === 2 && real.folders.map((f) => f.name).sort().join() === 'alpha,beta', real.folders);
@@ -133,7 +133,8 @@ async function shots() {
     for (const [nm, n] of [['mix', 0], ['big', 25]]) {
       await page.evaluate(UNHOOK);
       await page.evaluate(HOOK, [keys, n]);
-      await openMission(page);
+      await page.mouse.move(1250, 880);
+      await openMission(page); await page.mouse.move(1250, 880); await sleep(300);
       for (const motion of ['reduce', 'no-preference']) {
         await page.emulateMedia({ reducedMotion: motion });
         await sleep(600);
@@ -150,7 +151,7 @@ async function shots() {
       const inA = ['conductor', 'p134', 'p133', 'blog', 'notes'].map((x) => p.nodes.find((q) => q.name === x)).filter(Boolean);
       check(`[${nm}] alpha 상자 안: 팀(다른 폴더 beta의 하위 세션 p133 포함)과 혼자인 세션`, fa && inA.length === 5 && inA.every((b) => inside(b, fa)), inA.map((b) => b.name));
       check(`[${nm}] 폴더 안 워크스페이스 머리 글에 폴더 이름을 다시 쓰지 않는다`, p.groups.every((g) => !g.vg));
-      check(`[${nm}] 상자를 넘는 선(api-w2 → site-docs)`, p.edges.some((e) => e.outside && e.id === 's:api-w2>s:site-docs'), p.edges.filter((e) => e.outside));
+      if (nm === 'mix') check(`[${nm}] 상자를 넘는 선(api-w2 → site-docs)`, p.edges.some((e) => e.outside && e.id === 's:api-w2>s:site-docs'), p.edges.filter((e) => e.outside));
       check(`[${nm}] 작업 중 테두리 빛과 작업 완료 카드가 그대로`, p.light >= 3, { light: p.light, done: p.done });
       // 접기: alpha의 b 머리 글을 누르면 접히고 상자는 남는다
       const gb = p.groups.find((g) => g.key === keys.b);

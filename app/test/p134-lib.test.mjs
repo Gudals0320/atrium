@@ -15,6 +15,10 @@ const E = (a, b, kind = 'spawn') => ({ from: a === 'human' ? 'human' : `s:${a}`,
 const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const inside = (a, o) => a.x >= o.x - 0.01 && a.y >= o.y - 0.01 && a.x + a.w <= o.x + o.w + 0.01 && a.y + a.h <= o.y + o.h + 0.01;
 const pairsHit = (rs) => { for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) if (hit(rs[i], rs[j])) return `${rs[i].id}×${rs[j].id}`; return null; };
+// 상자·판 사이 틈: 겹치지 않을 뿐 아니라 판 사이 틈(16)만큼 떨어진다(붙어 있으면 한 상자처럼 읽힌다)
+const GUT = MISSION.slotGap - 2 * MISSION.plate;
+const grow = (a, g) => ({ ...a, x: a.x - g, y: a.y - g, w: a.w + 2 * g, h: a.h + 2 * g });
+const unitsHit = (rs) => pairsHit(rs.map((r) => grow(r, GUT / 2 - 0.01)));
 
 // 폴더 둘(alpha: a1 팀·a2 혼자, beta: b1·b2·b3 혼자) + 폴더 밖 o1(팀)·o2(혼자). a1의 리드가 beta의 b1에 하위 세션을 하나 둔다(팀이 폴더를 넘는다)
 function board() {
@@ -55,7 +59,7 @@ test('폴더 묶기: 폴더 둘 + 폴더 밖 워크스페이스. 폴더마다 �
   assert.ok(Math.min(...lay.groups.filter((g) => g.folder === 'fa').map((g) => g.plate.y)) - F.fa.y >= FOLDER.head - 0.01);
   // 상자끼리, 폴더 밖 판과 겹치지 않는다
   const rects = [...lay.folders.map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: f.h })), ...lay.groups.filter((g) => !g.folder).map((g) => ({ id: g.key, ...g.plate }))];
-  assert.equal(pairsHit(rects), null);
+  assert.equal(unitsHit(rects), null);
   const ss = [...lay.boxes.values()].filter((b) => !b.proxy).map((b) => ({ id: b.node.id, x: b.x, y: b.y, w: b.w, h: b.h }));
   assert.equal(pairsHit(ss.filter((b) => !String(b.id).startsWith('dots:'))), null, '세션 상자끼리 겹치지 않는다');
   // 지도 크기 안
@@ -100,7 +104,7 @@ test('폴더가 없으면 전과 같은 자리(P101 배치 그대로): 상자 �
 test('좁은 지도: 오른쪽에 자리가 없으면 팀이 없는 단위(폴더 포함)는 아래로, 그래도 겹치지 않는다. 폴더 상자는 너무 넓지 않다', () => {
   const lay = missionLayout(board(), { order: ORDER, vgroups: VG, width: 640 });
   const rects = [...lay.folders.map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: f.h })), ...lay.groups.filter((g) => !g.folder).map((g) => ({ id: g.key, ...g.plate }))];
-  assert.equal(pairsHit(rects), null);
+  assert.equal(unitsHit(rects), null);
   for (const f of lay.folders) assert.ok(f.w <= 3 * (MISSION.boxW + MISSION.slotGap) + 2 * FOLDER.m, `${f.id} 상자는 세 기둥까지`);
   const fb = lay.folders.find((f) => f.id === 'fb');
   const fa = lay.folders.find((f) => f.id === 'fa');
@@ -112,6 +116,18 @@ test('접기: 폴더 안 워크스페이스를 접어도 상자는 남고 수는
   const fb = lay.folders.find((f) => f.id === 'fb'), fa = lay.folders.find((f) => f.id === 'fa');
   assert.equal(fb.count, 4); assert.equal(fa.count, 6);
   assert.ok(inside(lay.boxes.get('g:b2'), fb)); assert.ok(inside(lay.boxes.get('g:a1'), fa));
+});
+
+test('팀이 없는 판(혼자인 세션뿐): 폴더 상자는 나란히 놓여도 서로 틈만큼 떨어진다(붙지 않는다), 폴더 밖 판도', () => {
+  clock = 0;
+  const ks = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+  const g = { nodes: ks.map((k) => node(`p-${k}`, k)), edges: [] };
+  for (const width of [1300, 1600, 2000]) {
+    const lay = missionLayout(g, { order: ks, vgroups: [{ id: 'fa', name: 'alpha', members: ['a', 'b', 'c'] }, { id: 'fb', name: 'beta', members: ['d', 'e'] }], width });
+    const rects = [...lay.folders.map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: f.h })), ...lay.groups.filter((x) => !x.folder).map((x) => ({ id: x.key, ...x.plate }))];
+    assert.equal(unitsHit(rects), null, `폭 ${width}`);
+    assert.ok(rects.every((r) => r.x + r.w <= lay.width), `폭 ${width}: 지도 안`);
+  }
 });
 
 test('세션이 많은 판(20개 넘게)도 상자끼리 겹치지 않는다', () => {
@@ -131,7 +147,7 @@ test('세션이 많은 판(20개 넘게)도 상자끼리 겹치지 않는다', (
     const lay = missionLayout({ nodes, edges }, { order, vgroups: vg, width });
     assert.equal(lay.folders.length, 3);
     const rects = [...lay.folders.map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: f.h })), ...lay.groups.filter((g) => !g.folder).map((g) => ({ id: g.key, ...g.plate }))];
-    assert.equal(pairsHit(rects), null, `폭 ${width}`);
+    assert.equal(unitsHit(rects), null, `폭 ${width}`);
     for (const g of lay.groups) if (g.folder) assert.ok(inside(g.plate, lay.folders.find((f) => f.id === g.folder)), `${g.key} 판은 제 상자 안(폭 ${width})`);
   }
 });

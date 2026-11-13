@@ -172,10 +172,17 @@ export function missionLayout(graph, { collapsed = [], order: order0 = [], vgrou
     if (!u.folder) { for (const k of u.keys) flowWs(k); continue; }
     // 폴더 상자: 위 가장자리(판이 놓일 자리 - 판 여백)에서 머리만큼 내려 첫 워크스페이스를 놓는다
     y = y - L.plate + F.head + L.plate;
+    const y0 = y;
     const tk = u.keys.filter(isTeamWs), sk = u.keys.filter((k) => !isTeamWs(k));
     for (const k of tk) flowWs(k);
-    // 같은 폴더의 혼자인 워크스페이스는 팀 아래, 팀이 차지한 폭 안의 기둥으로 채운다(상자가 옆으로 넓어지지 않게)
-    if (sk.length) y = packCols(sk, colX(1), y, Math.floor((teamRight(tk) - colX(1) + L.slotGap) / step));
+    // 같은 폴더의 혼자인 워크스페이스: 지도 칸에 자리가 있으면 팀 오른쪽(상자 안, 세 기둥까지)에 위부터 채워 상자가 길어지지 않게 하고,
+    // 자리가 없으면 팀 아래, 팀이 차지한 폭 안의 기둥으로 채운다(상자가 옆으로 넓어지지 않게)
+    if (sk.length) {
+      const x0 = teamRight(tk) + L.slotGap;
+      const room = Math.floor((width - L.pad - 20 - F.m - L.plate - x0 + L.slotGap) / step);
+      if (room >= 1) y = Math.max(y, packCols(sk, x0, y0, Math.min(room, sk.length, 3)));
+      else y = packCols(sk, colX(1), y, Math.floor((teamRight(tk) - colX(1) + L.slotGap) / step));
+    }
     y += F.m;
   }
   const flowOuter = flowUnits.map(outerOf).filter(Boolean);
@@ -197,11 +204,12 @@ export function missionLayout(graph, { collapsed = [], order: order0 = [], vgrou
       packCols(u.keys, m + L.plate, head + L.plate, u.folder ? Math.min(u.keys.length, 3, room) : 1);
       const o = outerOf(u);
       if (!o) continue;
+      // 자리 후보: 기둥 자리(ox0 + c × step)와 놓인 단위마다 그 오른쪽 끝 + 틈. 옆 단위와도 틈만큼 띄운다(폴더 상자는 기둥 폭의 배수가 아니다)
+      const xs = [...new Set([ox0, ...placed.map((r) => r.x + r.w + gut)].concat(Array.from({ length: Math.max(0, Math.floor((limit - ox0) / step)) + 1 }, (_, c) => ox0 + c * step)))].sort((p, q) => p - q);
       let best = null;
-      for (let c = 0; ; c++) {
-        const x = ox0 + c * step;
-        if (c > 0 && x + o.w > limit) break;
-        const yy = Math.max(oy0, ...placed.filter((r) => r.x < x + o.w && x < r.x + r.w).map((r) => r.y + r.h + gut));
+      for (const x of xs) {
+        if (x > ox0 && x + o.w > (u.folder ? width - L.pad - 20 : limit)) continue; // 폴더 상자는 지도 칸 안에(칸 폭은 40 단위로 반올림한 값이라 20을 남긴다)
+        const yy = Math.max(oy0, ...placed.filter((r) => r.x < x + o.w + gut && x < r.x + r.w + gut).map((r) => r.y + r.h + gut));
         if (!best || yy < best.y) best = { x, y: yy };
       }
       const dx = best.x - o.x, dy = best.y - o.y;
