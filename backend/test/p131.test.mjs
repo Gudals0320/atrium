@@ -119,6 +119,7 @@ function fakeHarness(kind, box) {
       h.clearAt.push(h.t);
       h.box = '';
     }
+    if (raw.startsWith('\x1b[F')) h.box = [...h.box].slice(0, Math.max(0, [...h.box].length - (raw.length - 3))).join(''); // P139: End, Backspace×n
   };
   h.paste = (text) => {
     const body = text.replace(/^\x1b\[200~/, '').replace(/\x1b\[201~$/, '');
@@ -186,30 +187,38 @@ for (const kind of ['opencode', 'pi']) {
     assert.equal(log.drafts[0].from, 'typed');
   });
 
-  test(`P131 ${kind}: 정확히 모르는 글(여러 줄인데 판 입력 없음, 접힌 붙여넣기)은 키를 누르지 않고 draft로 기다린다`, async (t) => {
+  test(`P139 ${kind}: 정확히 모르는 글(여러 줄인데 판 입력 없음, 접힌 붙여넣기)도 Ctrl+C로 비우고 지시만 제출, 화면에 보이던 대로 되돌린다`, async (t) => {
     for (const draft of ['wrapped or\nmulti line', kind === 'opencode' ? 'note [Pasted ~12 lines] tail' : 'note [paste #1 +12 lines] tail']) {
       const h = fakeHarness(kind, draft);
-      const { q, log, step } = rig(t, h);
+      const { q, log } = rig(t, h);
       const d = q.enqueue('s', ASK);
       await tick();
-      assert.deepEqual(h.keys, [], draft);
-      assert.deepEqual(log.sent, []);
-      assert.equal(d.status, 'queued'); assert.equal(d.reason, 'draft');
-      assert.equal(log.drafts[0].why, 'inexact');
-      h.box = ''; // 사람이 보내거나 지웠다
-      await step(2500);
-      assert.deepEqual(log.sent, [ASK]);
+      assert.deepEqual(h.keys, ['\x03'], draft);
+      assert.equal(h.submitted, ASK);
+      q.onAgentWorking('s');
+      await tick();
+      assert.equal(h.box.replace(/\s+/g, ''), draft.replace(/\s+/g, ''), '화면에 보이던 글');
+      assert.equal(d.reason, 'draft_partial');
+      const back = log.drafts.find((r) => r.phase === 'back');
+      assert.equal(back.partial, true); assert.ok(back.text, '원래 글은 판 기록에');
+      assert.equal(h.exited, false);
       t.mock.timers.reset();
     }
   });
 
-  test(`P131 ${kind}: 사람이 입력 비우기 키를 바꿨으면 비키지 않는다`, async (t) => {
+  test(`P139 ${kind}: 사람이 입력 비우기 키를 바꿨으면 끝으로 가서 지우고 보낸 뒤 되돌린다`, async (t) => {
     const h = fakeHarness(kind, 'one line');
     const { q, log } = rig(t, h, { clearKey: false });
-    q.enqueue('s', ASK);
+    const d = q.enqueue('s', ASK);
     await tick();
-    assert.deepEqual(h.keys, []);
-    assert.equal(log.drafts[0].why, 'clear_key_changed');
+    assert.ok(!h.keys.includes('\x03'), 'Ctrl+C를 누르지 않는다');
+    assert.ok(h.keys[0].startsWith('\x1b[F\x7f'));
+    assert.equal(h.submitted, ASK);
+    q.onAgentWorking('s');
+    await tick();
+    assert.equal(h.box, 'one line');
+    assert.equal(d.reason, 'draft_restored');
+    assert.equal(log.drafts[0].key, 'erase');
   });
 }
 

@@ -50,7 +50,7 @@ export class DeliveryQueue extends EventEmitter {
   //   P106: hook이 없는 종류(Codex 등)도 inspect가 그 종류의 입력 칸을 읽는다(noResend면 다시 보내지 않고 Enter만). 화면을 못 읽거나(unknown) 아직 뜨는 중이면
   //   손쓰기로 세지 않고 다시 본다(submitLooks번까지). 입력 칸에 보낸 글이 남았으면 submitEnterMs 뒤에 Enter, 다시 보내기는 submitRetryMs 뒤에만
   // P128: drafts = { aside(sid, d) → { state: 'clear'|'moved'|'keep', held?, why? }, back(sid, held, d) → { result, why? } }(draft-aside.mjs draftMover).
-  //   보내기 직전에 입력 칸에 쓰다 만 글이 있으면 비키고(moved), 지시가 끝나면(확인·확인 못 함·실패·취소) 되돌린다. 비키지 못하면(keep) 'draft'로 기다리며 draftLookMs마다 다시 본다
+  //   보내기 직전에 입력 칸에 쓰다 만 글이 있으면 비키고(moved), 지시가 끝나면(확인·확인 못 함·실패·취소) 되돌린다. 비우지 못하면(keep, P139) 'draft'로 기다리며 draftLookMs마다 다시 본다
   constructor({ store, cfg, view, send, inspect = null, pressEnter = null, drafts = null }) {
     super();
     this.store = store; this.cfg = cfg; this.view = view; this.send = send; this.inspect = inspect; this.pressEnter = pressEnter; this.drafts = drafts;
@@ -314,14 +314,14 @@ export class DeliveryQueue extends EventEmitter {
     }
     if (a.state === 'moved') {
       d.held = a.held; d.draftLookAt = 0;
-      this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'aside', how: a.held.how, kind: a.held.kind, chars: a.held.text.length, rows: a.held.rows || null, from: a.held.from || null });
+      this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'aside', how: a.held.how, kind: a.held.kind, chars: a.held.text.length, rows: a.held.rows || null, from: a.held.from || null, ...(a.held.key ? { key: a.held.key } : {}), ...(a.held.exact === false ? { exact: false } : {}) });
       // 비키는 동안 사람이 쳤으면 보내지 않는다(그 글과 지시가 섞인다). 비켜 둔 글을 되돌리고 사람이 멈추기를 기다린다(규칙 4)
       const v = this.view(d.sessionId, d) || {};
       if (v.lastUserInputAt && v.lastUserInputAt >= started) { await this._putBack(d); this._backToQueue(d, 'user_typing'); return false; }
       if (d.status !== 'sending') { await this._putBack(d); return false; } // 그새 취소됐다
       return true;
     }
-    // keep: 정확히 되돌릴 수 없는 글이거나 비키지 못했다. 손대지 않고 기다린다(사람이 보내거나 지우면 다음에 보낸다)
+    // keep(P139): 입력 칸을 비우지 못했다(비우기가 먹히지 않았거나 그새 칸이 바뀌었다). 지시가 사람의 글과 함께 제출되지 않게 기다리고 다시 본다
     d.draftLookAt = Date.now() + (this.cfg.draftLookMs ?? 2000);
     if (d.draftWhy !== a.why) { d.draftWhy = a.why; this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'keep', why: a.why, chars: a.text ? a.text.length : null, ...(a.error ? { error: a.error } : {}) }); }
     this._backToQueue(d, 'draft');
@@ -338,11 +338,11 @@ export class DeliveryQueue extends EventEmitter {
     if (!held) return null;
     d.held = null;
     let r;
-    try { r = await this.drafts.back(d.sessionId, held, d); } catch (e) { r = { result: held.kind === 'claude' ? 'stashed' : 'held', why: `error ${e.code || e.message}` }; }
+    try { r = await this.drafts.back(d.sessionId, held, d); } catch (e) { r = { result: held.how === 'stash' ? 'stashed' : 'held', why: `error ${e.code || e.message}` }; }
     r = r || { result: 'held' };
-    this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'back', result: r.result, by: r.by || null, why: r.why || null, how: held.how, kind: held.kind, status: d.status, chars: held.text.length, ...(r.result === 'restored' ? {} : { text: held.text }) });
+    this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'back', result: r.result, by: r.by || null, why: r.why || null, how: held.how, kind: held.kind, status: d.status, chars: held.text.length, ...(r.partial ? { partial: true } : {}), ...(r.result === 'restored' && !r.partial ? {} : { text: held.text }) }); // P139: 화면에 보이던 대로 되돌린 글도 판 기록에 남긴다
     if (d.status === 'confirmed' && d.reason === 'draft_moved') {
-      d.reason = r.result === 'restored' ? 'draft_restored' : r.result === 'stashed' ? 'draft_stashed' : 'draft_held';
+      d.reason = r.result === 'restored' ? (r.partial ? 'draft_partial' : 'draft_restored') : r.result === 'stashed' ? 'draft_stashed' : 'draft_held';
       d.updatedAt = Date.now();
       this.store.updateDelivery(d.deliveryId, { status: d.status, reason: d.reason });
       this._emit(d);

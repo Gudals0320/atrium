@@ -55,27 +55,20 @@ function rig(t, h, { pending = true, edit = null } = {}) {
   return { q, log, step };
 }
 
-test('P135 입력 칸을 못 읽는데(다시 그리는 중) 쓰다 만 글이 있으면 보내지 않고 기다린다. 다시 읽히면 비키고 지시만 제출한다', async (t) => {
-  const h = harness(['Claude Code redrawing the transcript…\nno box yet', 'box']);
-  const { q, log, step } = rig(t, h);
-  const d = q.enqueue('s', ASK);
-  await tick();
-  assert.deepEqual(log.sent, [], '보내지 않았다(전에는 여기서 보내 사람의 글 뒤에 붙었다)');
-  assert.equal(d.status, 'queued'); assert.equal(d.reason, 'draft');
-  assert.deepEqual(log.drafts.map((r) => `${r.phase}:${r.why}`), ['keep:no_box_draft']);
-  await step(2100); // draftLookMs 뒤 다시 본다
-  assert.deepEqual(h.keys, ['\x13']);
-  assert.equal(h.submitted, ASK, '지시만 제출됐다');
-  assert.equal(h.box, DRAFT, '쓰다 만 글은 입력 칸에 돌아왔다');
-});
-
-test('P135 읽기가 실패해도 쓰다 만 글이 있으면 기다린다. 글이 없으면 전처럼 보내고 까닭을 남긴다', async (t) => {
-  const h = harness([null, 'box']);
+test('P139 입력 칸을 못 읽으면(다시 그리는 중, 읽기 실패) 쓰다 만 글이 있어도 기다리지 않고 보낸다(까닭은 판 기록에)', async (t) => {
+  const h = harness(['Claude Code redrawing the transcript…\nno box yet']); h.box = '';
   const { q, log } = rig(t, h);
-  const d = q.enqueue('s', ASK);
+  q.enqueue('s', ASK);
   await tick();
-  assert.deepEqual(log.sent, []); assert.equal(d.reason, 'draft');
-  assert.equal(log.drafts[0].why, 'read_error_draft'); assert.equal(log.drafts[0].error, 'timeout');
+  assert.deepEqual(log.sent, [ASK]);
+  assert.deepEqual(log.drafts.map((r) => `${r.phase}:${r.why}`), ['clear:no_box_draft']);
+
+  const h1 = harness([null]); h1.box = '';
+  const r1 = rig(t, h1);
+  r1.q.enqueue('s', ASK);
+  await tick();
+  assert.deepEqual(r1.log.sent, [ASK]);
+  assert.equal(r1.log.drafts[0].why, 'read_error_draft'); assert.equal(r1.log.drafts[0].error, 'timeout');
 
   const h2 = harness(['no box here']); h2.box = '';
   const r2 = rig(t, h2, { pending: false });

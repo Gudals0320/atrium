@@ -438,6 +438,8 @@ export class Backend {
       //   이때 입력 칸을 못 읽으면 보내지 않고 기다린다
       pending: (sid) => { const s = this.sessions.get(sid); return !!(s && (s.draft || (s.draftEdit && s.draftEdit.text))); },
       read: (sid) => this.adapter.readScreen(pane(sid), { source: 'visible' }),
+      // P139: Claude Code의 다음 메시지 제안(흐린 글)을 사람의 글과 가르려고, 입력 칸에 글이 보일 때만 ANSI 화면을 읽는다
+      readAnsi: (sid) => this.adapter.readScreen(pane(sid), { source: 'visible', format: 'ansi' }),
       // P130: 비키는 키(Ctrl+S·Ctrl+C)는 판 입력(hc AUTOMATIC_INPUT)이라 뒤따르는 terminal.send가 조용한 틈을 기다리지 않는다.
       // 되돌리는 키(Codex 붙여넣기, Claude Code 빈 칸의 Ctrl+S)는 사람의 글을 입력 칸에 돌려놓는 것이라 사람 입력(DATA)으로 친다:
       // hc는 send 뒤 그 전달이 끝날 때까지 판 입력을 잡아 두어(턴이 곧 끝나면 3~10초) 되돌린 글이 늦게 보였다. 사람 입력은 곧 들어간다(약 1.7초)
@@ -456,7 +458,7 @@ export class Backend {
       back: async (sid, held, d) => {
         const r = await m.back(sid, held, d);
         const s = this.sessions.get(sid);
-        if (s && held.how === 'clear' && r.result === 'restored' && !r.folded) s.draftEdit = { text: held.text, exact: true, paste: false };
+        if (s && held.how === 'clear' && r.result === 'restored' && !r.folded) s.draftEdit = { text: held.text, exact: held.exact !== false, paste: false };
         return r;
       },
     };
