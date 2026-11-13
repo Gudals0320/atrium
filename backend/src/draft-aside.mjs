@@ -166,9 +166,9 @@ export function draftMover(io, { pollMs = 250, polls = 8, pastePolls = 16, sleep
       }
       if (!box.found) return pending ? { state: 'keep', why: 'no_box_draft' } : { state: 'clear', why: 'no_box' }; // 입력 칸을 못 읽고 쓰다 만 글도 없다. 전처럼 보낸다
       if (!box.text) {
-        // P135: 판이 다시 만든 글(draftEdit)이 있는데 빈 칸으로 읽혔다. 그리기가 늦은 칸일 수 있어 한 번 더 본다
+        // P135: 보내지 않은 글이 있을 수 있는데(pending, 다시 만든 글 draftEdit) 빈 칸으로 읽혔다. 다시 그리는 중인 칸일 수 있어 한 번 더 본다
         const e = io.edit ? io.edit(sid) : null;
-        if (!(e && e.exact && e.text)) return { state: 'clear', why: 'empty' };
+        if (!pending && !(e && e.exact && e.text)) return { state: 'clear', why: 'empty' };
         await sleep(pollMs);
         let again;
         try { again = await look(sid, kind); } catch (err) { return { state: 'keep', why: 'read_error_draft', error: err.code || err.message }; }

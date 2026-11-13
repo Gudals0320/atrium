@@ -95,9 +95,9 @@ test('P135 다시 만든 글이 있는데 빈 칸으로 읽히면 한 번 더 �
   const h2 = harness([claudeScreen('')]);
   const m2 = draftMover({ pending: () => true, read: () => h2.read(), type: async () => assert.fail('no keys'), kindOf: () => 'claude', edit: () => typed, stashKey: true }, { pollMs: 0, sleep: async () => {} });
   assert.deepEqual(await m2.aside('s'), { state: 'clear', why: 'empty_twice' });
-  // 다시 만든 글이 없으면 한 번만 본다
+  // 판이 받은 입력으로 보아 쓰다 만 글이 없으면 한 번만 본다
   const h3 = harness([claudeScreen('')]);
-  const m3 = draftMover({ pending: () => true, read: () => h3.read(), kindOf: () => 'claude', edit: () => null, stashKey: true }, { pollMs: 0, sleep: async () => {} });
+  const m3 = draftMover({ pending: () => false, read: () => h3.read(), kindOf: () => 'claude', edit: () => null, stashKey: true }, { pollMs: 0, sleep: async () => {} });
   assert.deepEqual(await m3.aside('s'), { state: 'clear', why: 'empty' });
   assert.equal(h3.i, 1);
 });
