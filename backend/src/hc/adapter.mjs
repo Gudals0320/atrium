@@ -23,6 +23,7 @@ import { isTrustDialog } from '../screen.mjs'; // P117: 신뢰 대화상자(7501
 import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
+import { InputTrace, inputSummary } from '../input-trace.mjs';
 import { registryPath } from '../proc-env.mjs';
 import { psLine } from '../launch.mjs';
 
@@ -71,6 +72,7 @@ export class HcAdapter extends EventEmitter {
     this._trustWatch = new Map(); // P117: 신뢰 대화상자를 보는 터미널 → 타이머
     this.trustWatchMs = trustWatchMs; this.trustPollMs = trustPollMs;
     this.subscribedPanes = [];
+    this.trace = new InputTrace({ log: (m) => this.log(m) }); // P136: 패널마다 최근 입력·초점·크기·모드·기록 읽기(값만). 입력 칸에 마우스 보고 글이 보이면 로그에 남긴다
   }
   // 판이 진단에 보이는 hc 실행 파일 경로
   get exePath() { return this.exe; }
@@ -244,6 +246,8 @@ export class HcAdapter extends EventEmitter {
         if (e.type === 'terminal_finished' && CORE_DOWN.has(e.reason)) this._dropRelease(e.paneId);
         else if (e.type === 'pane_exited' || e.type === 'terminal_finished') this._flushRelease(e.paneId, e.exitCode); // P125: 끝난 프로그램의 종료 코드를 놓임에 붙인다(사람이 끝냄·오류 가르기)
       }
+      if (e.type === 'size' && e.paneId) this.trace.note(e.paneId, 'size', { cols: e.cols, rows: e.rows }); // P136: 아무도 보지 않으면 hc가 200x120으로 되돌린다
+      if (e.type === 'status' && e.paneId) this.trace.note(e.paneId, 'status', { s: e.status });
       // 화면 스트림에 넘길 것
       const set = e.paneId && this._ctls.get(e.paneId);
       if (set && ['size', 'pane_restarted', 'terminal_finished', 'pane_closed'].includes(e.type)) for (const c of [...set]) c.onTerminalEvent(e);
@@ -516,6 +520,7 @@ export class HcAdapter extends EventEmitter {
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
     // P117: 신뢰 대화상자(흉내 낸 막힘). 코어는 모르므로 판이 거부한다(글이 신뢰 질문에 들어가지 않게. 같은 코드 agent_blocked)
     if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
+    this.trace.note(t.address, 'send', { chars: String(text).length }); // P136 진단 기록(길이만)
     return this.call('terminal.send', { terminal: t.address, text: String(text).replace(/\r\n?/g, '\n') }, 120000);
   }
   async sendKeys(target, keys) { const t = await this._target(target); return this.paneKeys(t.address, keys); }
@@ -538,6 +543,7 @@ export class HcAdapter extends EventEmitter {
   async _typeRaw(paneId, parts, { person = false } = {}) {
     const ctl = [...(this._ctls.get(paneId) || [])].find((c) => c.exited == null && c.conn && c.ch != null && c.terminal === paneId);
     if (ctl) { for (let i = 0; i < parts.length; i++) { if (i) await sleep(KEY_GAP_MS); if (person) ctl.input(parts[i]); else ctl.inputAuto(parts[i]); } return { typed: parts.length, via: 'stream', automatic: !person && !!ctl.autoInput }; }
+    this.trace.note(paneId, person ? 'keys_person' : 'keys', { parts: parts.length, ...inputSummary(parts.join('')) }); // P136 진단 기록(값만)
     const t = await this.call('terminal.get', { terminal: paneId });
     if (!isLive(t)) throw new HcError('pane_not_found', `${paneId} is ${t.state}`, 'terminal.attach');
     const conn = new FramedConn(this.pipe);
@@ -555,18 +561,27 @@ export class HcAdapter extends EventEmitter {
   // 화면 읽기:
   // - visible + ansi(atrium screen): hc는 줄 단위 ANSI 읽기가 없다. 관찰 모드로 잠깐 붙어 받은 첫 화면(ANSI로 그린 지금 화면)을 준다
   // - 그 밖(visible·recent·recent_unwrapped 글, terminal.history의 ansi): terminal.read {lines}. 색 없는 줄이다(hc가 기록을 ANSI 줄로 주지 않는다)
-  async readScreen(paneId, { source = 'visible', format = 'text', lines } = {}) {
+  // - P136: 기록 읽기(lines > 0)는 hc가 전체 화면 앱(Codex·opencode 등)을 휠 보고로 굴려 읽는다(ReadResult how: stitched). 보고가 수백 개(수 KB) 몰려
+  //   한 보고가 ESC와 나머지로 갈리면 `[<65;101;61M`(아무도 보지 않아 200x120인 터미널의 가운데)이 입력 칸에 글로 남고, 다음 전달과 함께 제출된다.
+  //   그래서 에이전트가 도는 터미널(7501 상태의 앱이 있다)은 scroll: true가 아니면 지금 화면만 읽는다. 셸은 예전대로 기록을 읽는다
+  async readScreen(paneId, { source = 'visible', format = 'text', lines, scroll = false } = {}) {
     if (source === 'visible' && format === 'ansi') return this._paint(paneId);
     // P117(P116 인계): hc의 terminal.read는 화면 아래의 빈 줄까지 줄로 센다. 기록(recent·recent_unwrapped)은 끝의 빈 줄을 빼고 n줄을 센다
     // (Codex 화면 답 고르기가 빈 줄 때문에 답을 놓쳤다). 그래서 화면 높이만큼 더 읽고 끝의 빈 줄을 뗀 뒤 자른다
-    const want = source === 'visible' ? 0 : Math.min(Math.max(Number(lines) || 200, 1) + 200, 10000);
+    const agentTerm = source !== 'visible' && !scroll && this.runsAgent(paneId);
+    const want = source === 'visible' || agentTerm ? 0 : Math.min(Math.max(Number(lines) || 200, 1) + 200, 10000);
+    const t0 = Date.now();
     const r = await this.call('terminal.read', { terminal: paneId, lines: want });
     const text = (r && r.text) || '';
+    if (want) this.trace.note(paneId, 'read', { lines: want, how: r && r.how, complete: r && r.complete, ms: Date.now() - t0 }); // P136: 기록 읽기(굴렸는가)
+    this.trace.checkScreen(paneId, text, source); // P136: 입력 칸에 마우스 보고 글이 보이면 최근 기록을 로그에 남긴다
     if (source === 'visible') return text;
     const ls = text.split('\n');
     while (ls.length && !ls[ls.length - 1].trim()) ls.pop();
     return (lines ? ls.slice(-Number(lines)) : ls).join('\n');
   }
+  // P136: 이 터미널에서 에이전트(7501 상태의 앱)가 도는가. 판이 띄운 에이전트와 셸 안에서 띄운 에이전트 모두
+  runsAgent(paneId) { const t = this.model.terms.get(paneId); return !!(t && t.status && t.status.app); }
   async _paint(paneId, { quietMs = 150, maxMs = 3000 } = {}) {
     const t = await this.call('terminal.get', { terminal: paneId });
     if (!isLive(t)) return '';
@@ -627,6 +642,16 @@ export class HcAdapter extends EventEmitter {
   // ---------- 화면 제어기 ----------
   openController(paneId, cols, rows) {
     const c = new HcController({ pipe: this.pipe, terminal: paneId, cols, rows, log: (m) => this.log(m), moveWaitMs: this.moveWaitMs });
+    // P136: 판 클라이언트가 이 스트림으로 넣은 입력·초점·크기와 프로그램의 모드 바뀜을 진단 기록에 값만 남긴다(input-trace.mjs)
+    const tr = this.trace;
+    tr.note(paneId, 'attach', { cols, rows });
+    const wrap = (name, kind, val) => { const f = c[name].bind(c); c[name] = (...a) => { tr.note(c.terminal, kind, val(...a)); return f(...a); }; };
+    wrap('input', 'input', (s) => inputSummary(s));
+    wrap('inputAuto', 'auto', (s) => inputSummary(s));
+    wrap('focus', 'focus', (on) => ({ on: !!on }));
+    wrap('resize', 'resize', (cc, rr) => ({ cols: cc, rows: rr }));
+    c.on('modes', (m) => tr.note(c.terminal, 'modes', { m: m.join(' ') }));
+    c.once('exit', (why) => tr.note(c.terminal, 'detach', { why }));
     if (!this._ctls.has(paneId)) this._ctls.set(paneId, new Set());
     this._ctls.get(paneId).add(c);
     c.once('exit', () => { for (const [k, s] of this._ctls) { s.delete(c); if (!s.size) this._ctls.delete(k); } });

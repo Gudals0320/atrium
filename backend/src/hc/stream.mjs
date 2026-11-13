@@ -8,6 +8,9 @@
 // - 크기: 이 스트림이 활성이면 터미널 크기 = 우리가 보낸 크기. 판 밖의 활성 보는 이(hc attach)가 크기를 가져가면 size 이벤트(external)로 알린다
 import { EventEmitter } from 'node:events';
 import { FramedConn, FRAME, u32, sizePayload } from './rpc.mjs';
+import { modeChanges } from '../input-trace.mjs';
+
+const DECPRIV = Buffer.from('\x1b[?');
 
 const FINAL = new Set(['exited', 'killed', 'server_stop', 'host_shutdown', 'holder_lost', 'stopped_by_restart', 'removed', 'not_found']);
 // 묶기: hc는 프로그램이 쓸 때마다(타자 메아리는 글자 하나씩) DATA를 보낸다.
@@ -82,6 +85,7 @@ export class HcController extends EventEmitter {
     if (conn !== this.conn) return;
     if (f.kind === FRAME.DATA) {
       this.stats.bytes += f.payload.length;
+      if (f.payload.indexOf(DECPRIV) >= 0) this._modes(f.payload); // P136: 마우스·초점·대체 화면 모드가 바뀌면 'modes'로 알린다(진단 기록)
       conn.write(this.ch, FRAME.CREDIT, u32(f.payload.length)); this.stats.credits += f.payload.length;
       if (this.firstPending) { this.firstPending = false; this._flush(); this._emitFrame([f.payload], true); return; }
       this.pend.push(f.payload); this.pendBytes += f.payload.length;
@@ -104,6 +108,16 @@ export class HcController extends EventEmitter {
     } else if (f.kind === FRAME.RESIZE && f.payload.length >= 4) {
       this.size = { cols: f.payload.readUInt16LE(0), rows: f.payload.readUInt16LE(2) };
     }
+  }
+  _modes(payload) {
+    const ch = modeChanges(payload);
+    if (!ch) return;
+    const before = { ...(this.modes || {}) };
+    this.modes ||= {};
+    for (const m of ch) this.modes[m.slice(0, -1)] = m.endsWith('h');
+    // 첫 화면은 모드를 모두 끈 뒤 다시 켠다. 끝 상태가 앞과 다른 것만 낸다(처음에는 켜진 것만)
+    const changed = Object.keys(this.modes).filter((n) => this.modes[n] !== (before[n] ?? false)).map((n) => `${n}${this.modes[n] ? 'h' : 'l'}`);
+    if (changed.length) this.emit('modes', changed);
   }
   _emitFrame(parts, full) {
     this.lastEmit = Date.now();

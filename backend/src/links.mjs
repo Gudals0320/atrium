@@ -53,12 +53,16 @@ export function screenAnswerText(text, n = 20) {
   for (let i = L.length - 1; i >= 0; i--) if (PROMPT.test(L[i])) { at = i; break; }
   // P96: Codex(0.167)의 빈 입력칸은 안내문("› Ask Codex to do anything")이 든 프롬프트 줄이고 그 아래는 상태 줄뿐이다.
   // 마지막 프롬프트 줄 뒤에 답 머리표(•●⏺) 줄이 없고 그 위에 프롬프트 줄이 또 있으면, 마지막 줄을 입력칸으로 보고 그 위 턴을 읽는다
+  let top = false;
   if (at > 0 && !L.slice(at + 1).some((l) => BULLET.test(l))) {
     let prev = -1;
     for (let i = at - 1; i >= 0; i--) if (PROMPT.test(L[i])) { prev = i; break; }
     if (prev >= 0) { end = at; at = prev; }
+    // P136: 판은 에이전트 화면을 지금 화면만 읽는다(기록 읽기가 전체 화면 앱을 휠로 굴려 입력 칸에 찌꺼기를 남겼다). 긴 답이면 그 턴의
+    // 프롬프트 줄이 화면 위로 지나가 없다. 그때는 입력 칸 위 화면 전체를 답의 끝 부분으로 본다(전에는 입력 칸 아래 상태 줄을 답으로 냈다)
+    else { end = at; top = true; }
   }
-  const body = (at >= 0 ? L.slice(at + 1, end) : []).filter((l) => l.trim()).map((l) => l.replace(/^\s*[●•⏺]\s?/, ''));
+  const body = (top ? L.slice(0, end) : at >= 0 ? L.slice(at + 1, end) : []).filter((l) => l.trim()).map((l) => l.replace(/^\s*[●•⏺]\s?/, ''));
   return body.length ? body.slice(-n).join('\n') : tailText(L.join('\n'), n);
 }
 
