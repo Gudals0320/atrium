@@ -1794,3 +1794,9 @@ html[data-board-moving="1"] .mt-node-run { visibility: hidden; }
 .mt-mm-plate.inf { background: var(--mm-plate-in); }
 .mt-mm-folder { border-radius: 16px; border-color: var(--mm-folder-line-2); }
 .mt-mm-fhead { left: 14px; right: 14px; top: 7px; height: 18px; font: 700 13px var(--font-ui); }
+
+/* ---------- P138: 종류 아이콘 글자(셸 >_ 등)는 HTML 글이다(SessionNode.jsx KindIcon). 새 Chromium은 판을 움직이는 매 프레임 SVG <text>를 다시 배치했다.
+   상자는 예전 svg처럼 정사각형(높이 %가 정해지지 않으면 너비만큼), 글 크기는 상자 너비의 비율(cqw) ---------- */
+.mt-kind-mk { position: relative; display: inline-block; aspect-ratio: 1; container-type: inline-size; vertical-align: middle; }
+.mt-kind-mk > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.mt-kind-mk > b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--font-ui); font-weight: 800; line-height: 1; white-space: nowrap; }

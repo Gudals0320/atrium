@@ -180,12 +180,16 @@ export function KindIcon({ kind, title, state, badge = false }) {
   if (logo) return <img className="mt-kind-icon" src={logo} alt={k.label} title={title || k.label} draggable={false} data-kind={k.id} />;
   const d = SHAPES[k.shape];
   const fs = k.mark.length > 1 ? 34 : 46;
+  // P138: 글자는 SVG <text>가 아니라 HTML 글이다. 새 Chromium(웹 화면의 브라우저)은 조상의 transform이 바뀔 때마다 SVG 글을 화면 배율에 맞춰
+  // 다시 배치해, 판을 움직이는 매 프레임 셸 아이콘마다 레이아웃이 돌았다(웹 각본 레이아웃 10배). HTML 글은 transform 아래에서 다시 배치하지 않는다.
+  // 글 크기는 아이콘 상자 너비의 비율(cqw, 예전 viewBox 100의 fs)이다
   return (
-    <svg className="mt-kind-icon" viewBox="0 0 100 100" role="img" aria-label={k.label} data-kind={k.id}>
-      <title>{title || k.label}</title>
-      {d ? <path d={d} style={{ fill: k.color }} /> : <circle cx="50" cy="50" r="44" style={{ fill: k.color }} />}
-      <text x="50" y="50" dy=".36em" textAnchor="middle" fontSize={fs} fontWeight="800" style={{ fill: k.ink, fontFamily: 'var(--font-ui)' }}>{k.mark}</text>
-    </svg>
+    <span className="mt-kind-icon mt-kind-mk" role="img" aria-label={k.label} title={title || k.label} data-kind={k.id}>
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        {d ? <path d={d} style={{ fill: k.color }} /> : <circle cx="50" cy="50" r="44" style={{ fill: k.color }} />}
+      </svg>
+      <b style={{ color: k.ink, fontSize: `${fs}cqw` }}>{k.mark}</b>
+    </span>
   );
 }
 // P124: 틀 단계(lib/faces.js tierFor, 화면 120px 아래). 노드를 가리고 외곽과 상태 색 바탕, 상태 표지 하나만 그린다(글 없음, 이름은 마우스를 올리면 제목).
