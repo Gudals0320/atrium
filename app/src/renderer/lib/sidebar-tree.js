@@ -9,7 +9,7 @@ import { askLine } from './labels.js';
 import { problemExit } from './user-close.js'; // P125
 
 // 줄 높이(px). 창의 CSS(sidebar.css .mt-sb2-*)와 같아야 한다
-export const ROW_H = { group: 30, ws: 28, session: 28, attn: 44, extra: 24, sec: 22, closed: 28, convo: 28, more: 24, empty: 26 };
+export const ROW_H = { group: 32, ws: 30, session: 30, attn: 46, extra: 25, sec: 23, closed: 30, convo: 30, more: 25, empty: 27 }; // P132: 글자를 키워 2px씩(작은 줄 1px) 높였다(sidebar.css 끝)
 export const ATTN_CAP = 6; // 접힌 묶음 아래에 남기는 사람이 봐야 하는 세션 수(넘으면 "n개 더")
 // P103: 나무 단계(들여쓰기와 세로 안내선 수). 그룹 → 워크스페이스 → 세션 → 그 하위 세션(최대 MAX_INDENT단계 더),
 // 닫힌 세션·판 밖 대화 펼침 줄은 세션과 같은 단계, 그 아래 절 이름과 항목은 한 단계 더

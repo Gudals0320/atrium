@@ -15,7 +15,7 @@ try {
   const { HC_PIN } = await import('./hc/pin.mjs');
   out.hcGenerations = [HC_PIN.generation];
   // P123·P129: 옛 업데이터(0.1.7까지)는 지금 도는 터미널 서버의 프로토콜 하나를 protocols(또는 herdrProtocols)에서 찾는다.
-  // 옛 판(옛 터미널 백엔드)의 업데이터도 이 버전으로 올라오게 옛 프로토콜을 함께 낸다. 이 버전은 뜰 때 그 판을 hc로 옮긴다(옛 판 옮기기 모듈이 지워질 때 함께 뺀다)
+  // 옛 판(옛 터미널 백엔드)의 업데이터도 이 버전으로 올라오게 옛 프로토콜을 함께 낸다. 이 버전은 뜰 때 그 판을 hc로 옮긴다(P132: 옛 판 옮기기와 함께 계속 둔다)
   const { HERDR_PROTOCOLS } = await import('./herdr-migrate/index.mjs');
   out.herdrProtocols = HERDR_PROTOCOLS;
   out.protocols = [...new Set([...HERDR_PROTOCOLS, ...out.hcGenerations])];
