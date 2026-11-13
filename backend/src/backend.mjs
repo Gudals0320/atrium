@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createTerminalAdapter } from './terminal-backend.mjs'; // P129: 터미널 백엔드는 hc 하나
-import { openTerminal, startMigration, stopMigration, migrationView } from './herdr-migrate/index.mjs'; // P129: 옛 판 옮기기(다음 정식 릴리스 뒤 지운다)
+import { openTerminal, startMigration, stopMigration, migrationView } from './herdr-migrate/index.mjs'; // P129·P132: 옛 판 옮기기(herdr → herdr-core, 계속 지원)
 import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
 import { TailscaleWatch, tailscaleHosts } from './tailscale.mjs'; // P49(R3): Tailscale 상태 읽기
@@ -402,8 +402,8 @@ export class Backend {
       migration: migrationView(this),
     };
   }
-  // P129: 이벤트 terminal(새 창)과 옛 이름 herdr(업데이트 중의 옛 창)를 함께 낸다
-  broadcastTerminal(v = this.terminalView()) { this.api.broadcast('terminal', v); this.api.broadcast('herdr', v); }
+  // P129·P132: 이벤트 terminal. 옛 이름 herdr는 P132에서 뺐다(업데이트는 옛 창을 끄고 새 버전의 창을 띄운다, update-swap.mjs)
+  broadcastTerminal(v = this.terminalView()) { this.api.broadcast('terminal', v); }
 
   // ---------- 세션 표시 ----------
   // 판의 hook이 붙은 세션(판이 띄운 Claude Code). 나머지는 터미널 상태(7501)와 화면으로만 본다(P4)
@@ -1871,7 +1871,7 @@ export class Backend {
 
   handlers() {
     return {
-      'backend.status': async () => { const terminal = await this.terminalStatus(); return { pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, terminal, herdr: terminal /* P129: 옛 이름(옛 CLI·업데이터) */, sessions: this.sessions.size, relay: this.relay.stats(), plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null, version: this.updater ? this.updater.running : null }; },
+      'backend.status': async () => { const terminal = await this.terminalStatus(); return { pid: process.pid, port: this.cfg.port, profile: this.cfg.profile, dataDir: this.cfg.dataDir, startedAt: this.startedAt, previousRun: this.previousRun, terminal, herdr: terminal /* P129·P132: 옛 이름. 0.1.7까지의 바꾸기(update-swap.mjs)가 새 백엔드의 건강을 st.herdr.connected로 본다(옛 판에서 올라오는 길) */, sessions: this.sessions.size, relay: this.relay.stats(), plugin: this.plugin, migration: this.migrationView(), web: this.web ? this.web.status() : null, version: this.updater ? this.updater.running : null }; },
       'backend.shutdown': async () => { setTimeout(() => this.stop('api').then(() => process.exit(0)), 50); return { stopping: true }; },
       'terminal.status': () => this.terminalStatus(),
       'terminal.stop': (p) => this.terminalControl('stop', p.confirm),
@@ -1965,19 +1965,6 @@ export class Backend {
       ...canvasHandlers(this),
       ...groupHandlers(this), // P44: 워크스페이스 가상 그룹
       ...peerHandlers(this), // P47: client.hello, client.active, clients.list
-      ...this.oldNameHandlers(),
-    };
-  }
-  // P129: 옛 이름 받기(이번 릴리스 동안. 업데이트 중의 옛 창·CLI가 부른다). 다음 릴리스에 지운다
-  oldNameHandlers() {
-    const H = 'herdr';
-    return {
-      [`${H}.status`]: () => this.terminalStatus(),
-      [`${H}.stop`]: (p) => this.terminalControl('stop', p.confirm),
-      [`${H}.start`]: () => this.terminalControl('start', true),
-      [`${H}.restart`]: (p) => this.terminalControl('restart', p.confirm),
-      [`${H}.rediscover`]: () => this.terminalStatus(),
-      [`${H}.clients`]: () => ({ attached: false, viaLog: [], viaProcess: [] }),
     };
   }
 }

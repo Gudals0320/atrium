@@ -4,7 +4,8 @@
 //   startMigration(b)    첫 resync 뒤: 옛 판이면 옮기기를 시작한다(move.mjs). 아니면 아무것도 하지 않는다
 //   migrationView(b)     설정 › 터미널과 판 위 띠가 보는 진행(없으면 null)
 // update-verify.mjs는 HERDR_PROTOCOLS를 낸다(옛 업데이터가 herdr 판에서 이 버전으로 올라오게).
-// 지우는 때: 옮기기가 든 정식 릴리스 다음 정식 릴리스 뒤. 이 폴더, backend.mjs의 세 호출, update-verify의 herdrProtocols, 창의 옮기기 띠·표를 함께 지운다.
+// P132: 계속 지원한다(사용자 결정, 2026-11-13). herdr가 깔려 있지 않아도 옮긴다(소켓으로 읽고 옮기며, 실행 파일은 있으면 끄기·세션 지우기에만 쓴다).
+// 판의 나머지 코드는 herdr를 부르지 않는다. 옛 판 옮기기에 필요한 것만 이 폴더에 둔다.
 import fs from 'node:fs';
 import { HerdrAdapter, findHerdr, readServerExe, herdrSessionDir } from './adapter.mjs';
 import { TerminalRouter, paneBackend } from './router.mjs';

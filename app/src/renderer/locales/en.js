@@ -2401,4 +2401,8 @@ export default {
     forked: '@{name}: board session forking Codex conversation {id}',
     forkOnlyDesktop: 'Fork is only for Codex app conversations',
   },
+  // P134: mission map folder boxes (sidebar folder = virtual group)
+  mmFolder: {
+    folderTitle: { one: 'Folder {name} · 1 session', other: 'Folder {name} · {n} sessions' },
+  },
 };

@@ -2401,4 +2401,8 @@ export default {
     forked: '@{name} 세션을 보드에서 열고 Codex 대화({id})를 갈라 이어갑니다.',
     forkOnlyDesktop: '갈라 열기는 Codex 앱 대화에만 사용할 수 있습니다.',
   },
+  // P134: 미션 맵의 폴더 상자(사이드바 폴더 = 가상 그룹)
+  mmFolder: {
+    folderTitle: '폴더 {name} · 세션 {n}개',
+  },
 };

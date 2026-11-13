@@ -138,10 +138,10 @@ test('2: 판 플러그인은 --plugin-dir로, 안내는 --append-system-prompt-f
   fs.mkdirSync(path.join(dir, 'atrium-herdr', 'skills', 'herdr'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'atrium-herdr', 'skills', 'herdr', 'SKILL.md'), 'old');
   const pl = writeBoardPlugin({ dir });
-  assert.ok(fs.existsSync(path.join(dir, 'atrium-herdr', '.claude-plugin', 'plugin.json')));
-  assert.equal(fs.existsSync(path.join(dir, 'atrium-herdr', 'skills', 'herdr')), false);
+  assert.ok(fs.existsSync(path.join(dir, 'atrium', '.claude-plugin', 'plugin.json'))); // P132: 플러그인 이름 atrium
+  assert.equal(fs.existsSync(path.join(dir, 'atrium-herdr', 'skills', 'herdr')), false); // 남은 옛 이름 폴더도 다시 쓴다
   assert.match(fs.readFileSync(pl.systemPromptFile, 'utf8'), /atrium prompt <이름>/); // P116: 일 시키기는 판의 atrium 명령
-  assert.doesNotMatch(fs.readFileSync(pl.systemPromptFile, 'utf8'), /herdr (agent|pane|스킬|명령|패널)|HERDR_ENV|--session/); // 플러그인 이름(atrium-herdr:atrium)만 남는다
+  assert.doesNotMatch(fs.readFileSync(pl.systemPromptFile, 'utf8'), /herdr (agent|pane|스킬|명령|패널)|HERDR_ENV|--session/);
   const launch = { sessionId: 's', settingsPath: 'C:/x/s.json', permissionMode: 'manual', model: 'haiku', ...pl };
   const a = buildStartArgs(launch);
   assert.equal(a[a.indexOf('--plugin-dir') + 1], pl.pluginDir);
