@@ -20,7 +20,8 @@ export function envVar(name, env = process.env) {
   const v = env[`ATRIUM_${name}`];
   return v !== undefined ? v : env[`MTASK_${name}`];
 }
-// P129: 판의 터미널 세션 이름(hc 세션). ATRIUM_TERMINAL_SESSION, 옛 이름 ATRIUM_HERDR_SESSION도 받는다(이번 릴리스 동안. 도는 세션의 설정 파일·시험 판이 옛 이름을 쓴다)
+// P129: 판의 터미널 세션 이름(hc 세션). ATRIUM_TERMINAL_SESSION, 옛 이름 ATRIUM_HERDR_SESSION도 받는다.
+// P132: 옛 이름은 계속 받는다(옛 판에서 올라오는 길: 0.1.7까지의 창·바꾸기·세션 설정 파일이 옛 이름만 준다)
 const OLD_SESSION_VAR = 'HERDR_SESSION';
 // 둘 다 있고 다르면 뜨지 않는다: 새 판의 세션 env(둘 다 같은 값)를 물려받은 셸에서 옛 이름만 바꿔 다른 판(시험 판)을 가리킨 경우, 새 이름이 이겨 실제 판을 건드리지 않게
 export function terminalSessionVar(env = process.env) {
@@ -28,7 +29,7 @@ export function terminalSessionVar(env = process.env) {
   if (now && old && now !== old) throw new Error(`ATRIUM_TERMINAL_SESSION(${now})과 옛 이름 ATRIUM_${OLD_SESSION_VAR}(${old})이 다릅니다. 하나만 주거나 같은 값으로 주세요.`);
   return now || old || '';
 }
-// 자식(판의 세션·CLI)에 넘길 터미널 세션 env: 새 이름과 옛 이름을 같은 값으로(이번 릴리스 동안. 옛 atrium·옛 이름만 읽는 것이 같은 판을 가리키게)
+// 자식(판의 세션·CLI)에 넘길 터미널 세션 env: 새 이름과 옛 이름을 같은 값으로(옛 버전으로 되돌린 판·옛 이름만 읽는 것이 같은 판을 가리키게)
 export const terminalSessionEnv = (v) => ({ ATRIUM_TERMINAL_SESSION: v, [`ATRIUM_${OLD_SESSION_VAR}`]: v });
 export const legacyTerminalSessionVar = (env = process.env) => env.ATRIUM_LEGACY_TERMINAL_SESSION || env[`ATRIUM_LEGACY_${OLD_SESSION_VAR}`] || '';
 

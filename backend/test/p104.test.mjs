@@ -117,11 +117,11 @@ test('session.keys는 판 API에 있고, 원격 기기에도 막지 않는다(we
     assert.equal(wh['session.keys'], undefined, 'web.mjs가 session.keys를 덮지 않는다');
     // 같은 web의 localOnly 처리기는 기기를 막는다(대조)
     assert.throws(() => wh['device.code']({}, { auth: { kind: 'device', device: { id: 'd' } } }), (e) => e.code === 'forbidden');
-    const bh = Backend.prototype.handlers.call({ oldNameHandlers: Backend.prototype.oldNameHandlers });
+    const bh = Backend.prototype.handlers.call({});
     assert.equal(typeof bh['session.keys'], 'function');
     // 합친 처리기(backend.mjs ApiServer와 같은 순서)로 기기가 부르면 보낸다
     const { b, calls } = fakeB();
-    b.sendKeysTo = Backend.prototype.sendKeysTo; b.oldNameHandlers = Backend.prototype.oldNameHandlers;
+    b.sendKeysTo = Backend.prototype.sendKeysTo;
     const merged = { ...Backend.prototype.handlers.call(b), ...wh };
     const r = await merged['session.keys']({ session: 's1', keys: ['up'] }, { auth: { kind: 'device', device: { id: 'd1', name: 'p' }, remote: true } });
     assert.deepEqual(r, { sent: true, keys: ['up'] });

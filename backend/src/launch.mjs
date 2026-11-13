@@ -37,9 +37,11 @@ function commonArgs({ settingsPath, permissionMode, model, effort, pluginDir, sy
 }
 
 // P4: 판 플러그인 폴더(atrium 스킬, 옛 이름 delegate 스킬, bin/atrium).
-// P116·P129: 플러그인 이름은 옛 이름 그대로 둔다. 도는 세션의 이어 가기 인자(--plugin-dir)와 스킬 이름(<플러그인>:atrium)이 이 이름을 쥐고 있고,
-//   사람과 지휘 세션이 쓰는 스킬 이름도 그대로다(옛 이름 받기)
-export const PLUGIN_NAME = 'atrium-herdr';
+// P132: 플러그인 이름은 atrium(스킬 atrium:atrium)이다. 판이 다시 띄우는 길(launchOf → 깨우기·되살리기·다시 시작)은 늘 이 폴더를 넘긴다.
+//   옛 이름 atrium-herdr(P18~P131) 폴더는 남아 있으면 같은 글로 계속 쓴다: 그 전에 띄워 아직 도는 Claude Code는 시작할 때 받은
+//   --plugin-dir(옛 폴더)의 bin/atrium과 스킬(atrium-herdr:atrium)을 쓰기 때문이다. 새로 만들지는 않는다
+export const PLUGIN_NAME = 'atrium';
+export const OLD_PLUGIN_NAMES = ['atrium-herdr'];
 export const LEGACY_PLUGIN_NAME = 'multitask-herdr'; // P18 전의 플러그인 폴더 이름(옮기기가 이어 가기 인자를 고칠 때 찾는다)
 // P116: 일 시키기·기다리기·읽기는 판의 atrium 명령이다(터미널 백엔드와 상관없다). 터미널 명령을 직접 쓰라고 하지 않는다
 export const BOARD_SYSTEM_PROMPT = [
@@ -47,21 +49,26 @@ export const BOARD_SYSTEM_PROMPT = [
   '다른 에이전트에게 일을 시키거나 답을 받아 오라는 말을 들으면 `atrium prompt <이름> "<할 일>" --wait`로 시키고 그 답을 받는다. 이미 시킨 일은 `atrium wait <이름>`으로 끝나기를 기다리고, 화면은 `atrium read <이름>`으로 본다. 이름은 보드의 세션 이름이다.',
   '다른 에이전트에게는 `atrium prompt`로만 보낸다. 보드가 받는 쪽 차례에 맞춰 넣고 그 연결을 판에 남긴다. 터미널 명령으로 직접 보내지 않는다.',
   '"[Atrium 보드]"으로 시작하는 글은 보드가 알려 주는 연결(어느 에이전트가 너의 무슨 역할인지)이다. 이 보드의 예전 이름으로 시작하는 지난 알림도 같다.',
-  '일이 서로 기다리지 않는 조각 여럿으로 나뉘거나 사용자가 워커·하위 세션·병렬·워크트리를 말하면 atrium 스킬(atrium-herdr:atrium, 옛 이름 delegate)대로 `atrium child`로 워커를 만들어 맡긴다. 수와 깊이에 상한은 없다. 워커의 모델을 말로 들으면 `atrium models`에서 골라 띄운다. 예전 이름 mtask도 같은 명령이다.', // P8(K2), P36, P41
+  '일이 서로 기다리지 않는 조각 여럿으로 나뉘거나 사용자가 워커·하위 세션·병렬·워크트리를 말하면 atrium 스킬(atrium:atrium, 옛 이름 delegate)대로 `atrium child`로 워커를 만들어 맡긴다. 수와 깊이에 상한은 없다. 워커의 모델을 말로 들으면 `atrium models`에서 골라 띄운다. 예전 이름 mtask도 같은 명령이다.', // P8(K2), P36, P41
   '보드는 오래 쉬는 리포의 세션을 모두 잠재우고, 리포가 바빠도 오래 쉰 세션은 혼자 잠재운다(sleeping). 잠든 세션에 `atrium prompt`하면 보드가 깨운 뒤 넣는다. 미리 깨우려면 `atrium wake <이름>`으로 그 세션을(리포째 잠들었으면 그 리포를) 깨운다.', // P21·P24(D4), P111, P116
   '부모·하위 세션·역할 연결은 `atrium me`가 보드의 지금 기록이다. 누구의 무엇인지, 누구에게 맡길지 헷갈리면 먼저 치고, 예전 알림과 다르면 이것을 믿는다. 매 턴 치지는 않는다.', // P81
 ].join('\n');
 // P8(K2): skills는 더할 스킬 { 이름: SKILL.md 글 }, bin은 Bash 도구 PATH에 오르는 명령 { 파일 이름: 글 }(플러그인 bin/)
 // P129: 옛 터미널 스킬(P4~P116에 둔 것)은 지운다
 const OLD_TERMINAL_SKILL = 'herdr';
+function writePluginAt(root, name, { skills, bin }) {
+  fs.mkdirSync(path.join(root, '.claude-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ name, version: '0.1.0', description: 'Atrium 보드가 띄운 에이전트에게 주는 보드 명령(atrium)과 스킬' }, null, 2));
+  fs.rmSync(path.join(root, 'skills', OLD_TERMINAL_SKILL), { recursive: true, force: true });
+  for (const [n, text] of Object.entries(skills)) { fs.mkdirSync(path.join(root, 'skills', n), { recursive: true }); fs.writeFileSync(path.join(root, 'skills', n, 'SKILL.md'), text); }
+  if (Object.keys(bin).length) fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
+  for (const [n, text] of Object.entries(bin)) { const f = path.join(root, 'bin', n); fs.writeFileSync(f, text); try { fs.chmodSync(f, 0o755); } catch {} }
+}
 export function writeBoardPlugin({ dir, skills = {}, bin = {} }) {
   const root = path.join(dir, PLUGIN_NAME);
-  fs.mkdirSync(path.join(root, '.claude-plugin'), { recursive: true });
-  fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: PLUGIN_NAME, version: '0.1.0', description: 'Atrium 보드가 띄운 에이전트에게 주는 보드 명령(atrium)과 스킬' }, null, 2));
-  fs.rmSync(path.join(root, 'skills', OLD_TERMINAL_SKILL), { recursive: true, force: true });
-  for (const [name, text] of Object.entries(skills)) { fs.mkdirSync(path.join(root, 'skills', name), { recursive: true }); fs.writeFileSync(path.join(root, 'skills', name, 'SKILL.md'), text); }
-  if (Object.keys(bin).length) fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
-  for (const [name, text] of Object.entries(bin)) { const f = path.join(root, 'bin', name); fs.writeFileSync(f, text); try { fs.chmodSync(f, 0o755); } catch {} }
+  writePluginAt(root, PLUGIN_NAME, { skills, bin });
+  // P132: 옛 이름 폴더가 있으면(그 이름으로 띄운 세션이 아직 돌 수 있다) 같은 스킬과 명령으로 다시 쓴다
+  for (const old of OLD_PLUGIN_NAMES) { const r = path.join(dir, old); if (fs.existsSync(r)) writePluginAt(r, old, { skills, bin }); }
   const promptFile = path.join(dir, 'board-system-prompt.md');
   fs.writeFileSync(promptFile, BOARD_SYSTEM_PROMPT + '\n');
   return { pluginDir: slash(root), systemPromptFile: slash(promptFile) };

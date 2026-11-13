@@ -81,15 +81,13 @@ ${FEATURES_HELP}
   install [--channel stable|dev] [--shortcut <폴더>] [--no-shortcut]   최신 릴리즈(dev: dev 빌드 포함)를 설치 폴더에 설치하고 바탕화면 바로가기 생성 (P69, P70)
   update [--check] [--channel stable|dev] [--yes]   새 릴리즈 확인, 업데이트. 채널은 판 설정 updateChannel을 따르고 --channel은 이번 한 번만 바꿈. 백엔드만 다시 시작하며 터미널 세션은 유지 (P69, P70)`;
 
-// P129: 옛 이름 받기(이번 릴리스 동안): `atrium herdr …`는 `atrium terminal …`, --allow-herdr는 무시한다(옛 터미널 명령 자동 승인을 없앴다)
-const OLD_TERMINAL_CMD = 'herdr', OLD_ALLOW_FLAG = 'allow-herdr';
 const argv = process.argv.slice(2);
 const cfg = loadConfig({ argv });
 const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--dev') continue;
-  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', OLD_ALLOW_FLAG, 'apply', 'undo', 'old', 'all', 'clear', 'check', 'no-shortcut', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
+  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx !== undefined && (!nx.startsWith('--') || k === 'args') && !['json', 'wait', 'yes', 'raw', 'text', 'apply', 'undo', 'old', 'all', 'clear', 'check', 'no-shortcut', ...FEATURE_BOOL_FLAGS].includes(k)) { flags[k] = nx; i++; } else flags[k] = true; }
   else pos.push(a);
 }
 const JSONOUT = !!flags.json;
@@ -197,8 +195,8 @@ async function main() {
         if (st.relay.length) console.log(`  붙은 제어기: ${JSON.stringify(st.relay)}`);
         return;
       }
-      case 'terminal': case OLD_TERMINAL_CMD: {
-        const op = rest[0] === 'rediscover' ? 'status' : rest[0] || 'status';
+      case 'terminal': {
+        const op = rest[0] || 'status';
         const r = op === 'status' ? await c.call('terminal.status') : await c.call(`terminal.${op}`, { confirm: !!flags.yes });
         if (r && r.needsConfirm) { console.log(`확인 필요: ${r.message}\n계속하려면 --yes`); process.exitCode = 2; return; }
         return out(r);
