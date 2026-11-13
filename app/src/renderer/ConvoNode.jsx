@@ -62,7 +62,7 @@ function CardFace({ c, now, narrow }) {
   return (
     <div className="mt-cv-card" data-role="convo-card">
       <div className="mt-cv-head mt-cdrag">
-        <span className="mt-cv-kind"><KindIcon kind="claude" title={t('convo.kindTitle')} /></span>
+        <span className="mt-cv-kind" data-harness={c.harness || 'claude'}><KindIcon kind={c.harness || 'claude'} title={c.harness === 'codex' ? t('codexConvo.kindTitle') : t('convo.kindTitle')} /></span>{/* P133: Codex 대화는 Codex 아이콘 */}
         <b className="mt-cv-title" title={`${title}\n${t('sidebar.convoId', { id: c.convId })}\n${c.cwd || ''}`}>{title}</b>
         <span className="mt-cv-time" title={fmtDateTime(c.lastAt || 0)}>{ago(c.lastAt, now)}</span>
       </div>
@@ -105,7 +105,7 @@ function IconFace({ c }) {
   const b = c.binding || {};
   return (
     <div className="mt-iconface mt-cdrag" data-role="convo-icon" title={c.title || c.convId}>
-      <KindIcon kind="claude" title={c.title || t('convo.kindShort')} />
+      <KindIcon kind={c.harness || 'claude'} title={c.title || t('convo.kindShort')} />
       <span className="mt-icon-name">{c.title || c.convId.slice(0, 8)}</span>
       {b.open && <span className="mt-icon-dot" data-state="working" style={{ '--sc': 'var(--st-working)' }} />}
     </div>

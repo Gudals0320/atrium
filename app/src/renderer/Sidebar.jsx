@@ -154,10 +154,11 @@ export function reopenSession(s) {
     toast(r.resume ? t('userClose.reopenedResume', { name: r.name }) : t('userClose.reopened', { name: r.name }));
   });
 }
-export function openConvo(c) {
+// P133: Codex 대화도 같은 길(판의 Codex 이어 가기 줄). fork: Codex 앱 대화를 갈라 연다(원본은 그대로)
+export function openConvo(c, { fork = false } = {}) {
   return run(c.convId, async () => {
-    const r = await api.call('convo.open', { convo: c.convId, model: devModel() });
-    if (!r.existing) toast(t('sidebar.convoOpened', { name: r.name, id: c.convId.slice(0, 8) }));
+    const r = await api.call('convo.open', { convo: c.convId, model: devModel(), ...(fork ? { fork: true } : {}) });
+    if (!r.existing) toast(fork ? t('codexConvo.forked', { name: r.name, id: c.convId.slice(0, 8) }) : t('sidebar.convoOpened', { name: r.name, id: c.convId.slice(0, 8) }));
     goWhenOpen(r.sessionId);
   });
 }
@@ -383,11 +384,13 @@ function ConvoRow({ r, now, busy, cur }) {
   const b = c.binding || { bound: false };
   const title = c.title || c.firstPrompt || c.convId.slice(0, 8);
   return (
-    <div className={`mt-sb2-row item convo${b.bound ? ' bound' : ''}${cur ? ' cur' : ''}`} style={pad(r, NAME)} data-sb="convo" data-row={r.id} data-convo={c.convId} data-bound={b.bound ? b.where : ''} onClick={() => setCursor(r.id)}
+    <div className={`mt-sb2-row item convo${b.bound ? ' bound' : ''}${cur ? ' cur' : ''}`} style={pad(r, NAME)} data-sb="convo" data-row={r.id} data-convo={c.convId} data-harness={c.harness || 'claude'} data-bound={b.bound ? b.where : ''} onClick={() => setCursor(r.id)}
       title={`${c.title || ''}\n${t('sidebar.convoId', { id: c.convId })}${c.cwd ? `\n${c.cwd}` : ''}${[c.folder, c.branch && `⎇ ${c.branch}`].filter(Boolean).length ? `\n${[c.folder, c.branch && `⎇ ${c.branch}`].filter(Boolean).join(' · ')}` : ''}${c.lastPrompt && c.lastPrompt !== c.title ? `\n${c.lastPrompt}` : ''}${b.bound ? `\n${bindingText(b)}` : ''}`}>
       {c.onCanvas ? <button className="mt-sb-title link mt-sb2-name" data-action="go-convo" title={t('sidebar.goConvo')} onClick={(e) => { e.stopPropagation(); getState().navigateToItem && getState().navigateToItem(`convo:${c.convId}`); }}>{title}</button> : <b className="mt-sb2-name">{title}</b>}
+      {c.harness === 'codex' && <span className="mt-sb2-kind" data-harness="codex" title={t('codexConvo.kindTitle')}>{t('codexConvo.kind')}</span>}
       <span className="mt-sb2-time">{ago(c.lastAt, now)}</span>
       <span className="mt-sb2-acts">
+        {b.bound && c.canFork && <button className="mt-btn small" data-action="fork-convo" disabled={busy} title={t('codexConvo.forkTitle')} onClick={(e) => { e.stopPropagation(); openConvo(c, { fork: true }); }}>{busy ? t('sidebar.opening') : t('codexConvo.fork')}</button>}
         {b.bound ? <span className="mt-sb-bound" data-bound={b.where} title={b.sure ? '' : t('sidebar.boundUnsure')}>{bindingText(b)}</span>
           : <button className="mt-btn small" data-action="open-convo" disabled={busy} onClick={(e) => { e.stopPropagation(); openConvo(c); }}>{busy ? t('sidebar.opening') : t('sidebar.openOnBoard')}</button>}
         <button className="mt-btn small ghost" data-action="archive" title={t('sidebar.archiveConvoTitle')} onClick={(e) => { e.stopPropagation(); archiveItem(c); }}>{t('common.archive')}</button>

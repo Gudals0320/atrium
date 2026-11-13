@@ -54,11 +54,12 @@ export const ADAPTERS = {
     modelArgs: (m) => ['-m', m],
     build(ctx) {
       const resumed = !!(ctx.resume && ctx.harnessSessionId);
+      const fork = !resumed && ctx.forkFrom ? ctx.forkFrom : null; // P133: Codex 앱 대화를 갈라 연다(원본은 그대로, 새 대화 ID는 뜬 뒤에 안다)
       const c = ctx.connection; const pid = c ? providerIdOf(c) : null;
       // 연결: 세션 단위 -c로 제공자를 정의한다(사용자 config.toml은 고치지 않는다). 키는 env_key(변수 이름)
       const conn = c ? ['-c', `model_provider=${pid}`, '-c', `model_providers.${pid}.name=${c.name}`, '-c', `model_providers.${pid}.base_url=${c.baseUrl}`, '-c', `model_providers.${pid}.wire_api=responses`, ...(c.auth && c.auth.env ? ['-c', `model_providers.${pid}.env_key=${c.auth.env}`] : [])] : [];
       // 시작할 때 업데이트 확인을 끈다(새 버전이 있으면 "Update now" 선택 창이 떠서 판의 첫 요청과 Enter가 그 창에 들어간다. 1단계 뒤 확인)
-      const args = [...(resumed ? ['resume', ctx.harnessSessionId] : []), '-c', 'check_for_update_on_startup=false', ...conn, ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.instructions ? ['-c', `developer_instructions=${ctx.instructions.text}`] : []), ...(ctx.launcherArgs || [])];
+      const args = [...(resumed ? ['resume', ctx.harnessSessionId] : fork ? ['fork', fork] : []), '-c', 'check_for_update_on_startup=false', ...conn, ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.instructions ? ['-c', `developer_instructions=${ctx.instructions.text}`] : []), ...(ctx.launcherArgs || [])];
       return { args, env: {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
     // 판의 인자 없이 뜬 이어 가기(`codex resume <id>`, 옛 터미널이 스스로 띄움)인가. 판이 친 줄인가
@@ -145,7 +146,7 @@ export function harnessLaunch(o) {
   const a = adapterOf(o.kind);
   if (!a) throw Object.assign(new Error(`하네스가 아닙니다: ${o.kind}`), { code: 'bad_request' });
   if (o.connection && !protocolsOf(o.kind).includes(o.connection.protocol)) throw Object.assign(new Error(`${o.kind}는 연결 프로토콜 ${o.connection.protocol}을 쓰지 않습니다.`), { code: 'connection_protocol', key: 'connections.err.protocolMismatch', vars: { harness: o.kind, protocol: o.connection.protocol } });
-  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, connection: o.connection || null, connectionModels: o.connectionModels || [], filesDir: o.filesDir || null });
+  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, connection: o.connection || null, connectionModels: o.connectionModels || [], filesDir: o.filesDir || null, forkFrom: o.forkFrom || null });
   // P115: 연결이 있는 pi는 -e 없이 띄우지 않는다(빠지면 pi가 조용히 다른 실제 제공자로 넘어간다)
   if (o.kind === 'pi' && o.connection && !r.args.includes('-e')) throw Object.assign(new Error('pi 연결 확장(-e)이 없어 띄우지 않았습니다.'), { code: 'pi_extension_missing', key: 'connections.err.piExtension' });
   const command = o.startWords && o.startWords.length ? [...o.startWords] : [a.command];
@@ -157,7 +158,9 @@ export function writeLaunchFiles(files = []) {
 
 // Codex 세션 ID: 그 폴더(cwd)에서 since 뒤에 생긴 rollout(첫 줄 session_meta의 id·cwd). 터미널이 세션 ID를 모를 때만
 // 오늘·어제 폴더만 본다. 첫 줄 앞부분만 읽는다(첫 줄에 기본 지시문이 들어 길다). 읽기만 한다
-export function codexSessionOf({ cwd, since = 0, home = codexHomeOf(), now = Date.now() } = {}) {
+// P133: exclude(갈라 연 원본·다른 판 세션이 가진 대화 ID)는 답에서 뺀다. forkedFrom: 문자열이면 그 대화를 갈라 연 rollout(session_meta의 forked_from_id)만,
+//   null이면 갈라 연 것이 아닌 것만, undefined면 가리지 않는다. bornOnly: since 뒤에 생긴 파일만(그새 기록된 옛 대화는 빼고)
+export function codexSessionOf({ cwd, since = 0, home = codexHomeOf(), now = Date.now(), exclude = [], forkedFrom = undefined, bornOnly = false } = {}) {
   const want = path.resolve(String(cwd || '')).toLowerCase().replace(/[\\/]+$/, '');
   const days = [0, 1].map((d) => new Date(now - d * 86400000));
   const found = [];
@@ -168,7 +171,7 @@ export function codexSessionOf({ cwd, since = 0, home = codexHomeOf(), now = Dat
     for (const n of names) {
       const file = path.join(dir, n);
       let st; try { st = fs.statSync(file); } catch { continue; }
-      if (st.birthtimeMs < since - 5000 && st.mtimeMs < since) continue;
+      if (st.birthtimeMs < since - 5000 && (bornOnly || st.mtimeMs < since)) continue;
       let head = '';
       try { const fd = fs.openSync(file, 'r'); try { const buf = Buffer.alloc(65536); head = buf.toString('utf8', 0, fs.readSync(fd, buf, 0, buf.length, 0)); } finally { fs.closeSync(fd); } } catch { continue; }
       const idm = /"payload":\{[^]*?"id":"([0-9a-f-]{36})"/.exec(head);
@@ -176,6 +179,8 @@ export function codexSessionOf({ cwd, since = 0, home = codexHomeOf(), now = Dat
       if (!idm || !cwdm) continue;
       let c; try { c = JSON.parse(`"${cwdm[1]}"`); } catch { continue; }
       if (path.resolve(c).toLowerCase().replace(/[\\/]+$/, '') !== want) continue;
+      if (exclude.some((x) => String(x).toLowerCase() === idm[1].toLowerCase())) continue;
+      if (forkedFrom !== undefined) { const fm = /"forked_from_id":"([0-9a-f-]{36})"/.exec(head); const from = fm ? fm[1].toLowerCase() : null; if (from !== (forkedFrom ? String(forkedFrom).toLowerCase() : null)) continue; }
       found.push({ id: idm[1], at: st.birthtimeMs || st.mtimeMs });
     }
   }

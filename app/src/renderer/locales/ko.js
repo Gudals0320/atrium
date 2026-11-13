@@ -207,6 +207,7 @@ export default {
     bound: '다른 터미널에서 사용 중인 대화',
     not_missed: '정리 대상이 아닌 대화',
     not_found: '대화 목록에서 찾을 수 없음',
+    codex: 'Codex 대화(보드는 지우지 않음)',
   },
   errors: {
     disconnected: '앱 연결 서비스와 연결이 끊겼습니다.',
@@ -2387,6 +2388,18 @@ export default {
     summary: '{total}개 가운데 {done}개 끝남, {waiting}개 기다림, {failed}개 실패.',
     result: { pending: '옮기기 전', moving: '옮기는 중…', moved: '옮김', waiting: '쉴 때까지 기다리는 중', asleep: '절전 그대로', failed: '실패', recreated: '다시 시작함(이전 서버 없음)' },
     reason: { working: '작업 중', needs_you: '응답 필요', draft: '입력칸에 보내지 않은 글', delivering: '메시지 전달 중', loop: '루프 실행 중', background: '백그라운드 작업', running: '명령 실행 중', waking: '깨우는 중', closing: '닫는 중', adopted: '보드 밖에서 실행한 에이전트, 끝날 때까지', not_resumable: '이어 갈 수 없는 에이전트, 끝날 때까지', restoring: '다시 시작하는 중', not_restored: '다시 시작하지 못함', closed: '닫힘' },
+  },
+  // P133: 보드 밖 Codex 대화(Codex CLI·Codex 앱)
+  codexConvo: {
+    kind: 'Codex',
+    kindTitle: '보드 밖 Codex 대화 (읽기 전용)',
+    open: 'Codex에서 사용 중',
+    app: 'Codex 앱',
+    appOpen: 'Codex 앱 · 열려 있음',
+    fork: '갈라 열기',
+    forkTitle: '원본 대화는 Codex 앱에 그대로 두고, 같은 내용으로 새 대화를 보드 세션으로 엽니다.',
+    forked: '@{name} 세션을 보드에서 열고 Codex 대화({id})를 갈라 이어갑니다.',
+    forkOnlyDesktop: '갈라 열기는 Codex 앱 대화에만 사용할 수 있습니다.',
   },
   // P134: 미션 맵의 폴더 상자(사이드바 폴더 = 가상 그룹)
   mmFolder: {
