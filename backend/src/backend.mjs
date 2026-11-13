@@ -429,6 +429,9 @@ export class Backend {
   draftIo() {
     const pane = (sid) => { const s = this.sessions.get(sid); if (!s || !s.paneId) throw Object.assign(new Error('no pane'), { code: 'pane_not_found' }); return s.paneId; };
     const m = draftMover({
+      // P135: 판이 받은 사람 입력으로 보아 보내지 않은 글이 있을 수 있다(s.draft: 글자를 친 뒤 Enter·Ctrl+C·제출 hook이 없었다, draftEdit: 다시 만든 글).
+      //   이때 입력 칸을 못 읽으면 보내지 않고 기다린다
+      pending: (sid) => { const s = this.sessions.get(sid); return !!(s && (s.draft || (s.draftEdit && s.draftEdit.text))); },
       read: (sid) => this.adapter.readScreen(pane(sid), { source: 'visible' }),
       // P130: 비키는 키(Ctrl+S·Ctrl+C)는 판 입력(hc AUTOMATIC_INPUT)이라 뒤따르는 terminal.send가 조용한 틈을 기다리지 않는다.
       // 되돌리는 키(Codex 붙여넣기, Claude Code 빈 칸의 Ctrl+S)는 사람의 글을 입력 칸에 돌려놓는 것이라 사람 입력(DATA)으로 친다:

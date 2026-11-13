@@ -2,6 +2,7 @@
 // - allowProposedApi + unicode11(이모지 폭). 프레임의 크기가 바뀌면 쓰기 전에 xterm 크기를 맞춘다.
 // - 붙여넣기는 괄호 붙여넣기로 감싸고, 휠은 SGR 마우스 시퀀스로 바꾼다. ctrl+g(외부 편집기)는 막는다.
 //   P126: 프레임이 마우스 모드를 알려 주는 판(hc)에서 프로그램이 마우스 추적을 끈 동안은 휠을 보내지 않는다(lib/term-input.js wheelAction).
+//   P135: 단추 없는 마우스 움직임 보고는 보내지 않고, 마우스 보고는 다음 프레임까지 REPORT_BUDGET바이트만 보낸다(filterMouse). 첫 프레임 전에는 휠을 삼킨다.
 // - WebGL 렌더러는 예산(기본 8) 안에서만 쓰고, 넘거나 컨텍스트를 잃으면 DOM으로 그린다(BRIEF 위험 2).
 // - P6a(H4): 노드를 눌러 들어간 뒤 붙기 전에 친 글(store.pendingInput)은 붙자마자 넣고 초점을 준다.
 // - P38: 판 배율 아래에서도 끌어 고르기가 마우스 밑 글자를 따라가게 xterm의 마우스 → 칸 계산에 확대·축소 전 자리를 넘긴다(unscalePoint).
@@ -21,7 +22,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
 import { useStore, getState, takePendingInput, pendingFor } from './store.js';
-import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, wheelAction, setsMouseMode, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, copyOnRelease, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
+import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, wheelAction, setsMouseMode, filterMouse, REPORT_BUDGET, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, copyOnRelease, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
 import { findShift, bigChange, historyAbove, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
 import { TermSelection } from './term-selection.js';
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
@@ -230,12 +231,21 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     // 처리기는 false를 돌려 xterm이 모드를 그대로 바꾸게 한다
     st.modesKnown = false;
     const modeHooks = ['h', 'l'].map((final) => term.parser.registerCsiHandler({ prefix: '?', final }, (params) => { if (!st.modesKnown && setsMouseMode(params)) st.modesKnown = true; return false; }));
-    const wheelMode = () => wheelAction({ modesKnown: st.modesKnown, mouseTrackingMode: term.modes.mouseTrackingMode });
+    // P135: 첫 프레임이 오기 전(새로 붙는 중)과 다시 붙어 첫 full 프레임을 기다리는 동안은 휠을 보내지 않는다
+    const wheelMode = () => wheelAction({ modesKnown: st.modesKnown, mouseTrackingMode: term.modes.mouseTrackingMode, framed: !!st.wrote && !st.again });
+    // P135: 마우스 보고는 프로그램이 다시 그리기 전까지 REPORT_BUDGET바이트만 보낸다(콘솔 호스트가 멈춘 동안 쌓여 보고가 글로 깨지지 않게). 프레임이 오면 다시 센다
+    st.unacked = 0;
+    const sendMouse = (data, how) => {
+      const f = filterMouse(data, { room: REPORT_BUDGET - st.unacked });
+      st.unacked += f.bytes;
+      if (f.held && !st.heldNoted) { st.heldNoted = true; perfLog('term_mouse_held', { sessionId, how, held: f.held, unacked: st.unacked }); }
+      send(f.data);
+    };
 
     // P42: 글 고르기(웹처럼). xterm 자체 선택 대신 문서 줄에 붙은 선택을 쓴다. 판(Canvas)과 시험이 보는 hasSelection·getSelection도 이것으로 답한다
     const sel = new TermSelection({
       term, host, mode: shell ? 'buffer' : 'live',
-      sendWheel: (steps, c) => { if (wheelMode() === 'report') send(sgrWheel(steps, c.cell + 1, c.row + 1, term.cols, term.rows)); }, // P126: 마우스 추적을 끈 프로그램에는 보내지 않는다
+      sendWheel: (steps, c) => { if (wheelMode() === 'report') sendMouse(sgrWheel(steps, c.cell + 1, c.row + 1, term.cols, term.rows), 'edge'); }, // P126: 마우스 추적을 끈 프로그램에는 보내지 않는다. P135: 보고 바이트 상한
       onActivate: () => { if (onActivateRef.current) onActivateRef.current(); },
       onSelectEnd: () => { const text = sel.text(); if (copyOnRelease({ hasSelection: sel.has(), text })) copySel(text, 'select'); }, // P125: 끌어 고르면 바로 복사
       log: (name, d) => perfLog(name, { sessionId, ...d }),
@@ -249,7 +259,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     term._mtSel = sel; // 시험이 선택 기록(trace)을 읽는다
     term.hasSelection = () => sel.has();
     term.getSelection = () => sel.text();
-    term.onData((d) => { if (clearsSelection('input', { hasSelection: sel.has() })) sel.clear('input'); send(d); });
+    term.onData((d) => { if (clearsSelection('input', { hasSelection: sel.has() })) sel.clear('input'); sendMouse(d, 'xterm'); }); // P135: 단추 없는 움직임 보고는 빼고, 마우스 보고는 상한까지
     term.attachCustomKeyEventHandler((e) => {
       const a = keyAction(e, sel.has());
       if (a === 'block-ctrl-g') { e.preventDefault(); flash(t('terminal.ctrlG')); return false; }
@@ -269,7 +279,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       const screen = host.querySelector('.xterm-screen') || host;
       const r = wheelToSgr({ deltaY: ev.deltaY, deltaMode: ev.deltaMode, clientX: ev.clientX, clientY: ev.clientY, rect: screen.getBoundingClientRect(), cols: term.cols, rows: term.rows, acc: st.acc });
       st.acc = r.acc;
-      send(r.seq); // P42: 선택은 지우지 않는다. 다음 프레임에서 글과 함께 움직인다(끄는 중이면 늘어난다)
+      sendMouse(r.seq, 'wheel'); // P135: 보고 바이트 상한. P42: 선택은 지우지 않는다. 다음 프레임에서 글과 함께 움직인다(끄는 중이면 늘어난다)
       ev.preventDefault();
       return false;
     });
@@ -383,6 +393,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       // P82: 다시 붙은 뒤 첫 full 프레임은 지금 화면 위에 그대로 다시 그린다(비우고 같은 쓰기에서 그려 빈 화면이 보이지 않는다)
       if (st.again && f.full) { st.again = false; bytes = joinBytes(REDRAW_PREFIX, bytes); }
       const t0 = onFrame(sessionId, bytes.length, f.width, f.height);
+      st.unacked = 0; st.heldNoted = false; // P135: 프로그램이 그렸다(콘솔 호스트가 돈다). 마우스 보고를 다시 센다
       if (shell) { chain = chain.then(() => shellFrame(f, bytes, t0)).catch((e) => window.mt.log(`shell frame ${sessionId}: ${e.stack || e.message}`)); return; }
       if (f.width && f.height && (f.width !== term.cols || f.height !== term.rows)) { const d = capDims({ cols: f.width, rows: f.height }, isWeb); term.resize(d.cols, d.rows); st.applyScale(); } // 쓰기 전에 크기 맞추기(E4). P86: 웹은 상한
       const first = !st.wrote; st.wrote = true;
