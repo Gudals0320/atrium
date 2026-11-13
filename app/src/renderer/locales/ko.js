@@ -2405,4 +2405,7 @@ export default {
   mmFolder: {
     folderTitle: '폴더 {name} · 세션 {n}개',
   },
+  mmMap2: {
+    launchedWith: '처음 띄운 모델: {model}',
+  },
 };

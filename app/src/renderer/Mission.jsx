@@ -44,7 +44,9 @@ function facts(n, live, m, tier, t, now, cross = false) {
   const turnAt = n.turnAt || (live && live.state === 'working' && live.turn && live.turn.startedAt) || null;
   const activeAt = n.activeAt || (live && live.lastActivityAt) || null;
   const age = tier === 'work' && turnAt ? ageText(now - turnAt, t) : activeAt ? ageText(now - activeAt, t) : null;
-  const model = shell ? null : modelText(n.model || (live && live.model), n.effort || (live && live.effort));
+  // P137: 모델은 하네스가 지금 쓰는 값(백엔드 요약). 세션 요약(live)이 지도 답보다 새로우므로 먼저 본다. 처음 띄운 값과 다르면 풍선 도움말에 띄운 값
+  const model = shell ? null : live && live.model ? modelText(live.model, live.effort) : modelText(n.model, n.effort);
+  const launched = !shell && live && live.launchModel && live.model && live.launchModel !== live.model ? t('mmMap2.launchedWith', { model: modelText(live.launchModel, live.launchEffort) }) : null;
   const branch = n.gitBranch || branchOfLive(live);
   const meta = [model, age, branch ? `⎇ ${branch}` : null, n.loops ? `⟳${n.loops}` : null].filter(Boolean).join(' · ');
   const away = cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null; // P101: 다른 워크스페이스의 하위 세션(부모 팀의 판 안에 놓였다)
@@ -54,7 +56,7 @@ function facts(n, live, m, tier, t, now, cross = false) {
     : tier === 'alert' ? { k: 'err', main: role, text: clip(err || stateText, 90) }
     : team ? { k: 'team', main: role, text: [t('mmRole.team', { n: m.team.size }), m.waiting ? t('mmRole.waiting', { n: m.waiting }) : m.team.work ? t('mmRole.teamWork', { n: m.team.work }) : null].filter(Boolean).join(' · ') }
     : { k: doing ? 'now' : 'state', main: role, text: doing || stateText };
-  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line, away };
+  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line, away, launched };
 }
 
 function Avatar({ kind, tier, shell, small }) {
@@ -86,7 +88,7 @@ function Node({ b, live, m, tier, t, now, no, hot, recede, dim, onGo, onHot }) {
   const f = facts(n, live, m, tier, t, now, b.cross);
   const style = { left: b.x, top: b.y, width: b.w, height: b.h };
   const st = (live && live.state) || n.state;
-  const tip = [`@${n.name} · ${f.role}`, f.team, f.ask ? `${t('mmap.ask')} ${f.ask}` : null, n.lastPrompt ? `${t('mmap.prompt')} ${n.lastPrompt}` : null, b.cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null, f.meta || null, t('mission.goSession')].filter(Boolean).join('\n');
+  const tip = [`@${n.name} · ${f.role}`, f.team, f.ask ? `${t('mmap.ask')} ${f.ask}` : null, n.lastPrompt ? `${t('mmap.prompt')} ${n.lastPrompt}` : null, b.cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null, f.meta || null, f.launched, t('mission.goSession')].filter(Boolean).join('\n');
   const common = {
     'data-role': 'mm-node', 'data-kind': 'session', 'data-id': n.id, 'data-name': n.name, 'data-tier': tier, 'data-rank': m ? m.rank : undefined, 'data-family': m ? m.family : undefined, 'data-shape': b.kind,
     tabIndex: 0, title: tip, onClick: () => onGo(n), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGo(n); } },

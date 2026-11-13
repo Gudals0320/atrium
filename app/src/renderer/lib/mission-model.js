@@ -194,7 +194,8 @@ export function filterMatch(tier, filter) {
 }
 // 모델과 노력 수준 한 낱말: "claude-opus-5-5" + "high" → "opus 5.5·high"
 export function modelText(model, effort) {
-  let m = String(model || '').trim().replace(/^claude-/, '').replace(/\[.*\]$/, '');
+  // P137: /model이 보인 이름(Sonnet 5.5)과 다음 답의 ID(claude-sonnet-5-5)가 같은 글로 보이게 소문자로
+  let m = String(model || '').trim().toLowerCase().replace(/^claude-/, '').replace(/\[.*\]$/, '');
   m = m.replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-(\d+)$/, ' $1');
   return [m, effort].filter(Boolean).join('·') || null;
 }
