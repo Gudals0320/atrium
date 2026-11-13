@@ -2388,4 +2388,8 @@ export default {
     result: { pending: 'not moved yet', moving: 'moving…', moved: 'moved', waiting: 'waiting until idle', asleep: 'stays asleep', failed: 'failed', recreated: 'restarted (old server was gone)' },
     reason: { working: 'working', needs_you: 'needs you', draft: 'unsent text in the input box', delivering: 'message being delivered', loop: 'loop running', background: 'background task', running: 'command running', waking: 'waking up', closing: 'closing', adopted: 'agent started outside the board, until it ends', not_resumable: 'agent that cannot resume, until it ends', restoring: 'starting again', not_restored: 'could not start again', closed: 'closed' },
   },
+  // P134: mission map folder boxes (sidebar folder = virtual group)
+  mmFolder: {
+    folderTitle: { one: 'Folder {name} · 1 session', other: 'Folder {name} · {n} sessions' },
+  },
 };

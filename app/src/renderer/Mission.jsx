@@ -9,6 +9,8 @@
 // - 위 거르기는 맞지 않는 세션을 흐리게만 한다(자리는 그대로). 빈 곳을 누르거나 Esc를 누르면 닫힌다(P32). 연 동안 판이 바뀌면 다시 읽는다(mission.graph).
 // - P101 다듬기: 워크스페이스마다 옅은 판(머리 글과 그 세션들을 감싸는 바탕 면), 쉬는·잠든·끝난 세션은 테두리 있는 알약, 종류 동그라미는 카드 안 오른쪽 위.
 //   서로 이은 두 세션은 마주 보는 가장자리 사이 짧은 두 줄과 화살촉(lib/mission-wire.js).
+// - P134: 같은 폴더(사이드바의 가상 그룹)의 워크스페이스들은 사각형 폴더 상자(옅은 테두리, 머리에 폴더 이름과 세션 수) 안에 모인다. 폴더 밖 워크스페이스는 상자 없이 판만.
+//   폴더 안 워크스페이스 머리 글에는 폴더 이름을 다시 쓰지 않는다. 상자를 넘는 선(outside)은 상자 위로 지나간다(선 층이 상자보다 위).
 // - P107: 일하는 카드는 테두리를 따라 상태 색 빛이 돈다(빛 층 .mt-mm-light: 2px 고리와 옅은 빛 무리, 원뿔 그라데이션을 transform으로만 돌린다, 2.4초에 한 바퀴·초당 30번,
 //   모두 같은 박자: lib/work-light.js). 판 설정 workLight(작업 중 테두리 빛: 켬 기본 / Windows 설정 따름 / 끔, 판 노드 둘레도 따른다)를 따르고, 끔·가벼운 판에서는 멈춘 굵은 상태 색 테두리다.
 //   P102 번쩍임은 걷었다(사용자: 촌스럽다).
@@ -219,12 +221,17 @@ export function MissionMap() {
         <div className={`mt-mission-body nowheel${focus ? ' focusing' : ''}`} ref={bodyRef}>
           {!lay ? <div className="dim" style={{ padding: 20 }}>{t('common.loading')}</div> : (
             <div className="mt-mission-canvas" style={{ width: lay.width, height: lay.height }}>
-              {lay.groups.map((g) => <div key={`p:${g.key}`} className={`mt-mm-plate${g.collapsed ? ' shut' : ''}`} data-role="mm-plate" data-key={g.key} style={{ left: g.plate.x, top: g.plate.y, width: g.plate.w, height: g.plate.h }} />)}
+              {lay.folders.map((f) => (
+                <div key={`f:${f.id}`} className="mt-mm-folder" data-role="mm-folder" data-id={f.id} style={{ left: f.x, top: f.y, width: f.w, height: f.h }} title={t('mmFolder.folderTitle', { name: f.name, n: f.count })}>
+                  <span className="mt-mm-fhead"><span className="nm" data-role="mm-folder-name">{f.name}</span><span className="n">{f.count}</span>{f.needs > 0 && <span className="needs" title={t('mmapGroup.needs', { n: f.needs })}>!{f.needs}</span>}</span>
+                </div>
+              ))}
+              {lay.groups.map((g) => <div key={`p:${g.key}`} className={`mt-mm-plate${g.collapsed ? ' shut' : ''}${g.folder ? ' inf' : ''}`} data-role="mm-plate" data-key={g.key} style={{ left: g.plate.x, top: g.plate.y, width: g.plate.w, height: g.plate.h }} />)}
               {lay.groups.map((g) => (
                 <button key={`g:${g.key}`} type="button" className={`mt-mm-ws${g.collapsed ? ' shut' : ''}`} data-role="mm-group" data-key={g.key} data-collapsed={g.collapsed ? '1' : undefined} data-packed={g.packed ? '1' : undefined}
                   style={{ left: g.x, top: g.y, maxWidth: g.w }} title={t('mmapGroup.toggleTitle')} aria-expanded={!g.collapsed} onClick={(ev) => { ev.stopPropagation(); toggle(g.key); }}>
                   <span className="caret" aria-hidden="true">{g.collapsed ? '▸' : ''}</span>
-                  {g.vg && <span className="vg" data-role="mm-vgroup">{g.vg.name} /</span>}
+                  {g.vg && !g.folder && <span className="vg" data-role="mm-vgroup">{g.vg.name} /</span>}
                   <span className="nm" data-role="mm-group-name">{gName(g.key)}</span>
                   <span className="n">{g.count}</span>
                   {g.needs > 0 && <span className="needs" data-role="mm-group-needs" title={t('mmapGroup.needs', { n: g.needs })}>!{g.needs}</span>}
@@ -236,7 +243,7 @@ export function MissionMap() {
                   const target = to && to.node && to.node.kind === 'session' ? tiers.get(e.to) : null;
                   const hotE = edgeHot(e);
                   return (
-                    <g key={e.id} className={`mt-mm-edge rel-${e.rel}${e.tree ? ' tree' : ' link'}${e.cross ? ' cross' : ''}${e.pair ? ' pair' : ''}${target === 'work' || e.active ? ' active' : ''}${target === 'turn' ? ' turn' : ''}${focus ? (hotE ? ' hot' : ' recede') : ''}`}
+                    <g key={e.id} className={`mt-mm-edge rel-${e.rel}${e.tree ? ' tree' : ' link'}${e.cross ? ' cross' : ''}${e.outside ? ' outside' : ''}${e.pair ? ' pair' : ''}${target === 'work' || e.active ? ' active' : ''}${target === 'turn' ? ' turn' : ''}${focus ? (hotE ? ' hot' : ' recede') : ''}`}
                       data-role="mm-edge" data-id={e.id} data-kind={e.primary} data-rel={e.rel} data-route={e.route} data-pair={e.pair ? '1' : undefined} data-from={e.from} data-to={e.to} data-cross={e.cross ? '1' : undefined} data-tree={e.tree ? '1' : undefined}>
                       <path className="hit" d={e.d} />
                       <path className="line" d={e.d} />
