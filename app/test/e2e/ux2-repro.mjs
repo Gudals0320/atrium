@@ -263,18 +263,32 @@ const cases = {
     if (did && !/confirmed/.test(d)) { try { L.atrium('cancel', did); } catch {} }
   },
   // S4·H6: 터미널에 초점이 있을 때 Ctrl+K가 명령 바로 가지 않고 그 터미널로 들어간다
+  // P140(#13): 셸과 Claude Code(haiku) 노드에 초점을 둔 채 Ctrl+K → 명령 바. 이어 친 `@ckt Reply with only OK` + Enter는 ckt에 전달되고
+  // 초점 있던 터미널에는 ^K도 친 글도 들어가지 않는다
   async ctrlKTerminal() {
     if (!await L.sessionId(page, 'sp1')) await sp.spawn(L.T.DIR, 'sp1', '--kind', 'shell');
-    const { id } = await L.focusTerm(page, 'sp1');
-    const before = await active();
-    await page.keyboard.press('Control+k'); await sleep(500);
-    const after = await active();
-    await page.keyboard.type('echo typed-after-ctrl-k'); await sleep(800);
-    const line = (await L.termView(page, id)).filter((l) => /typed-after-ctrl-k/.test(l));
-    await shot('ctrlk-1-terminal');
-    step('ctrlKTerminal: 터미널 안에서 Ctrl+K를 누르면 명령 바로 초점이 간다(H6)', !/terminal/.test(after), { focusBefore: before, focusAfterCtrlK: after, typedTextLandedInTerminal: line });
-    await L.call(page, 'terminal.input', { session: id, data: '\x03' }).catch(() => {});
-    await page.keyboard.press('Control+c').catch(() => {});
+    for (const n of ['ckt', 'ckf']) if (!await L.sessionId(page, n)) await sp.spawn(L.T.DIR, n, '--model', 'haiku');
+    for (const n of ['ckt', 'ckf']) await L.waitStateOf(page, n, ['ready'], 120000);
+    for (const [from, i] of [['sp1', 1], ['ckf', 2]]) {
+      const { id } = await L.focusTerm(page, from);
+      const before = await active();
+      const target = await L.sessionOf(page, 'ckt');
+      const answered = target.lastAnswer || null;
+      await page.keyboard.press('Control+k'); await sleep(500);
+      const after = await active();
+      const word = `ctrlk${i}x`;
+      await page.keyboard.type(`@ckt Reply with only the word ${word.toUpperCase()}`); await sleep(300);
+      const barText = await page.evaluate(() => { const e = document.querySelector('[data-role="command"]'); return e ? e.value : null; });
+      await page.keyboard.press('Enter');
+      let got = null;
+      await L.until(async () => { const s = await L.sessionOf(page, 'ckt'); got = s && s.lastAnswer; return got && got !== answered && new RegExp(word, 'i').test(got); }, 90000).catch(() => {});
+      const lines = (await L.termView(page, id)) || [];
+      const leaked = lines.filter((l) => /\^K|ckt Reply with only|ctrlk\dx/i.test(l));
+      await shot(`ctrlk-${i}-${from}`);
+      step(`ctrlKTerminal(${from}): 터미널 안에서 Ctrl+K를 누르면 명령 바로 초점이 가고, 친 글은 그 터미널이 아니라 @ckt로 간다(H6, #13)`,
+        !/terminal/.test(after) && /^TEXTAREA\{command\}$/.test(after) && !leaked.length && !!got && new RegExp(word, 'i').test(got),
+        { focusBefore: before, focusAfterCtrlK: after, barText, leakedIntoFocusedTerminal: leaked, targetAnswer: got });
+    }
   },
   // S1·H3: 사이드바 "새 그룹" 이름 칸의 기본 이름이 골라져 있지 않아 친 글이 뒤에 붙는다 + S1·H5: 전체 보기 뒤 그룹 띠 이름표가 위 알약 밑에 깔린다
   async groupName() {
