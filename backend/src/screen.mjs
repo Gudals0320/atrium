@@ -195,3 +195,59 @@ export function piInputBox(text) {
   const clipped = PI_SCROLL_RULE.test(lines[top].trim()) || PI_SCROLL_RULE.test(lines[bottom].trim());
   return { found: true, text: t, rows: t ? body.length : 0, above: lines.slice(0, top), ...(clipped ? { clipped: true } : {}), ...(/\[paste #\d+( \+\d+ lines| \d+ chars)?\]/.test(t) ? { folded: true } : {}) };
 }
+
+// P139: ANSI 화면(hc 관찰 붙기로 받은 지금 화면, adapter._paint)을 줄마다 글자와 그 글자의 흐림(SGR 2)·뒤집힘(SGR 7)으로 푼다.
+// 커서 옮기기 같은 다른 이스케이프는 버린다(hc는 지금 화면을 줄 단위로 그려 준다). → [{ text, cells: [{ ch, dim, inv }] }]
+export function ansiRows(ansi) {
+  const rows = [];
+  let dim = false, inv = false, cur = [];
+  const s = String(ansi || '');
+  const sgr = (params) => {
+    const p = params === '' ? [0] : params.split(/[;:]/).map((x) => (x === '' ? 0 : Number(x)));
+    for (let i = 0; i < p.length; i++) {
+      const v = p[i];
+      if (v === 0) { dim = false; inv = false; } else if (v === 2) dim = true; else if (v === 22) dim = false; else if (v === 7) inv = true; else if (v === 27) inv = false;
+      else if (v === 38 || v === 48 || v === 58) { if (p[i + 1] === 5) i += 2; else if (p[i + 1] === 2) i += 4; } // 색 값 안의 2·7을 흐림·뒤집힘으로 읽지 않는다
+    }
+  };
+  for (let i = 0; i < s.length;) {
+    const c = s[i];
+    if (c === '\x1b') {
+      const m = s.slice(i, i + 64).match(/^\x1b\[([0-?]*)([ -/]*)([@-~])/);
+      if (m) { if (m[3] === 'm' && !m[2] && !/[<=>?]/.test(m[1])) sgr(m[1]); i += m[0].length; continue; }
+      const o = s.slice(i).match(/^\x1b[\]P_^X][\s\S]*?(\x07|\x1b\\)/);
+      if (o) { i += o[0].length; continue; }
+      i += 2; continue;
+    }
+    if (c === '\n') { rows.push(cur); cur = []; i++; continue; }
+    const cp = s.codePointAt(i), ch = String.fromCodePoint(cp);
+    if (cp >= 0x20 && cp !== 0x7f) cur.push({ ch, dim, inv });
+    i += ch.length;
+  }
+  rows.push(cur);
+  return rows.map((cells) => ({ text: cells.map((x) => x.ch).join(''), cells }));
+}
+
+// P139: Claude Code의 다음 메시지 제안(턴이 끝난 뒤 입력 칸에 흐리게 보이는 글, Tab·→로 받는다)인가.
+// 2.1.323에서 본 모양: 빈 입력 칸의 자리 글(placeholder)로 그려 글 전체가 흐림(ESC[2m)이고, 창에 초점이 있으면 첫 글자만 커서(뒤집힘)다.
+// 사람이 친 글은 흐리지 않다. 입력 칸 글자 가운데 흐린 글자가 있고, 흐리지 않은 글자가 첫 글자(커서)뿐이면 제안이다. → 제안 글 | null
+export function claudeSuggestion(ansi) {
+  const rows = ansiRows(ansi);
+  const box = claudeInputBox(rows.map((r) => r.text).join('\n'));
+  if (!box.found || !box.text) return null;
+  const top = box.above.length + 1;
+  let dims = 0, plain = 0, first = true;
+  for (let k = 0; k < box.rows; k++) {
+    const cells = (rows[top + k] || { cells: [] }).cells;
+    let j = 0;
+    if (k === 0) { while (j < cells.length && /\s/.test(cells[j].ch)) j++; if (j < cells.length && /[❯>]/.test(cells[j].ch)) j++; } // 앞 기호
+    for (; j < cells.length; j++) {
+      const x = cells[j];
+      if (/\s/.test(x.ch)) continue;
+      if (x.dim) dims++;
+      else if (!(first && x.inv)) plain++; // 첫 글자의 뒤집힘은 커서다
+      first = false;
+    }
+  }
+  return dims > 0 && plain === 0 ? box.text : null;
+}

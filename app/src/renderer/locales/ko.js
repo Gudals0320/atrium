@@ -2369,6 +2369,7 @@ export default {
     restored: '작성 중인 글을 잠시 비키고 보낸 뒤 되돌림',
     stashed: '작성 중인 글은 Claude Code에 보관됨(빈 입력란에서 Ctrl+S)',
     held: '작성 중인 글을 되돌리지 못함(보드 기록에 있음)',
+    partial: '작성 중인 글을 화면에 보이던 대로 되돌림(원문은 보드 기록에 있음)', // P139
   },
   // P129: 옛 보드를 herdr에서 herdr-core로 옮기기(보드 위 띠, 설정 › 터미널의 표)
   terminalMigrate: {

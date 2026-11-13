@@ -2369,6 +2369,7 @@ export default {
     restored: 'unsent text moved aside and put back',
     stashed: 'unsent text kept by Claude Code (Ctrl+S in an empty box)',
     held: 'unsent text not put back (saved in the board log)',
+    partial: 'unsent text put back as shown (original in the board log)', // P139
   },
   // P129: moving an old board from herdr to herdr-core (band on the board, table in Settings › Terminal)
   terminalMigrate: {

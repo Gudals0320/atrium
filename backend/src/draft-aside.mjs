@@ -1,6 +1,7 @@
 // P128: 판이 세션에 지시를 보낼 때(B1 전달) 받는 세션의 입력 칸에 사람이 쓰다 만 글이 있으면, 그 글을 잠시 비키고 지시만 제출한 뒤 입력 칸에 되돌린다.
 // 되돌린 글은 제출하지 않는다(사람이 이어 쓰거나 보낸다). 사람이 3초 안에 치는 중이면 지금처럼 기다린다(B1 규칙 4, 대기열이 먼저 본다).
-// 정확히 되돌릴 수 없는 글은 비키지 않는다(대기열이 'draft'로 기다린다). 사람의 글을 잃지 않는 것이 먼저다.
+// P139: 정확히 되돌릴 수 없는 글도 비키고 보낸다(화면에 보이던 대로 되돌리고 원래 글은 판 기록에 남긴다). 기다리는 것은 입력 칸을 비우지 못했을 때뿐이다.
+//   아래 하네스별 설명의 "비키지 않는다"는 P128·P131 때 규칙이다. 지금은 그런 글도 끝으로 가서 지우기(End, Backspace)로 비킨다(draftMover 머리).
 //
 // 하네스마다:
 // - Claude Code: 입력 치워 두기(Ctrl+S, chat:stash). 글·커서·붙여넣기(접힌 [Pasted text]와 그림 포함)를 Claude Code가 쥐고,
@@ -19,7 +20,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { claudeInputBox, codexInputBox, opencodeInputBox, piInputBox, mouseNoise } from './screen.mjs';
+import { claudeInputBox, codexInputBox, opencodeInputBox, piInputBox, mouseNoise, claudeSuggestion } from './screen.mjs';
 
 const MOUSE_NOISE_G = /\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
 const bare = (s) => String(s || '').replace(/\s+/g, '');
@@ -88,6 +89,18 @@ export function clearDraftText(box, edit) {
 }
 export const codexDraftText = clearDraftText; // P128 이름
 
+// P139: 접힌 붙여넣기 표시가 있는 입력 칸이라도, 판이 받은 사람 입력에서 다시 만든 글(정확함)이 화면의 접히지 않은 부분을 모두 품으면 그 글이 원래 글이다
+//   (하네스가 접어 보일 뿐 판은 붙여넣은 글을 다 받았다). 다 보이지 않는 칸(clipped)은 견줄 수 없어 쓰지 않는다
+const FOLDED_G = /\[(Pasted (text|Content|~)[^\]]*|Image[^\]]*|SVG:[^\]]*|paste #\d+[^\]]*)\]/gi;
+export function foldedDraftText(box, edit) {
+  if (!box || !box.found || !box.text || box.clipped || !(box.folded || FOLDED.test(box.text))) return null;
+  if (!edit || !edit.exact || !edit.text) return null;
+  const whole = bare(edit.text);
+  if (/\[Image|\[SVG:/i.test(box.text)) return null; // 그림은 글로 되돌릴 수 없다
+  const parts = box.text.replace(FOLDED_G, '\u0000').split('\u0000').map(bare).filter(Boolean);
+  return parts.every((p) => whole.includes(p)) ? { text: edit.text, from: 'typed' } : null;
+}
+
 // P131: 되돌릴 글을 하네스가 접지 않는 크기의 붙여넣기 조각으로 나눈다. lines: 한 조각의 줄 수, chars: 한 조각의 글자 수.
 // 조각은 줄바꿈 뒤에서 끊고, 한 줄이 chars보다 길면 그 줄 안에서 끊되 다음 조각이 / ~ . 로 시작하지 않게 한다(pi는 낱말 글자 뒤에 붙인 경로 꼴 붙여넣기 앞에 빈칸을 넣는다)
 export function pasteChunks(text, { lines = 2, chars = 150 } = {}) {
@@ -139,94 +152,146 @@ export function clearKeyChanged(kind, { env = process.env, home = os.homedir() }
 }
 
 const CTRL_S = '\x13';
+const END = '\x1b[F', BS = '\x7f';
+
+// P139: 판이 되돌릴 글. 다시 만든 글(draftEdit)이 화면 글과 같으면 그것(정확함), 아니면 화면에서 읽은 글(꺾인 줄은 빈칸으로 이어진다).
+// 화면 글이 정확한 것은 한 줄이고 접힌 붙여넣기·그림이 없고 다 보일 때뿐이다(exact: false면 원래 글은 판 기록에도 남긴다)
+export function restoreText(box, edit) {
+  if (!box || !box.text) return null;
+  const want = clearDraftText(box, edit) || foldedDraftText(box, edit);
+  if (want) return { ...want, exact: true };
+  return { text: box.text, from: 'screen', exact: false };
+}
 
 // 비키기·되돌리기. io: { pending(sid) → 판이 받은 사람 입력으로 보아 보내지 않은 글이 있을 수 있는가(P135, 없으면 거짓), read(sid) → 화면 글, type(sid, 바이트) → Promise(키), paste(sid, 글) → Promise(괄호 붙여넣기, Enter 없음), kindOf(sid), edit(sid) → draftEdit 결과,
+//   readAnsi(sid) → ANSI 화면(P139, Claude Code 제안 글 가르기. 없으면 가르지 않는다),
 //   userStash(sid) → 사람이 Ctrl+S로 치워 둔 글이 있을 수 있는가, stashKey: Ctrl+S를 써도 되는가,
 //   clearKey(kind) → 그 하네스에서 Ctrl+C를 비우기 키로 써도 되는가(P131, 없으면 참), typedSince(sid, t) → 사람이 t 뒤에 쳤는가(P131, 없으면 거짓) }
-// pastePolls(P130): 되돌린 붙여넣기(Codex·opencode·pi)가 보이기까지 볼 횟수. hc는 terminal.send 뒤 그 전달이 끝날 때까지 들어온 입력을 잡아 두었다가 넣는다.
+// pastePolls(P130): 되돌린 붙여넣기가 보이기까지 볼 횟수. hc는 terminal.send 뒤 그 전달이 끝날 때까지 들어온 입력을 잡아 두었다가 넣는다.
 //   턴이 곧바로 끝나면(가짜 모델) 사람 입력도 약 1.7초 뒤에 보여 2초(8번) 보기가 빠듯했다
+//
+// P139(사용자 결정 2026-11-13): 사람이 지금 치는 중(3초 안, 대기열이 먼저 본다)이 아니면 입력 칸에 무엇이 있든 판의 지시만 제출하고 입력 칸을 되돌린다.
+//   쓰다 만 글 때문에 기다리지 않는다. 비우는 길은 차례로: Claude Code 치워 두기(Ctrl+S) → 하네스의 비우기 키(Ctrl+C, Claude Code는 쓰지 않는다:
+//   빈 칸의 두 번째 Ctrl+C가 끝내기다) → 끝으로 가서 지우기(End, Backspace). 판이 정확히 모르는 글(꺾인 여러 줄, 접힌 붙여넣기, 그림)은 화면에
+//   보이던 대로 되돌리고 원래 글은 판 기록(delivery_draft의 text)에 남긴다. 셋 다 입력 칸을 비우지 못했을 때만 기다린다(지시가 사람의 글과 함께 제출되지 않게).
+//   입력 칸을 못 읽으면(다른 화면, 읽기 실패) 기다리지 않고 보낸다.
+//   Claude Code의 다음 메시지 제안(흐린 글)은 사람의 글이 아니다. 빈 칸으로 보고 그대로 보낸다(친 글이 제안을 바꾼다. 되돌릴 것이 없다)
 export function draftMover(io, { pollMs = 250, polls = 8, pastePolls = 16, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
-  const look = async (sid, kind) => readDraftBox(await io.read(sid), kind);
+  const look = async (sid, kind) => {
+    const b = readDraftBox(await io.read(sid), kind);
+    if (kind === 'claude' && b.found && b.text && io.readAnsi) { // P139: 흐린 제안 글은 빈 칸이다
+      let sug = null;
+      try { sug = claudeSuggestion(await io.readAnsi(sid)); } catch {}
+      if (sug && sameDraft(sug, b.text)) return { ...b, text: '', suggestion: b.text };
+    }
+    return b;
+  };
   // 입력 칸이 바뀔 때까지(want(box)가 참) 몇 번 본다
   const lastClear = new Map(); // 세션 → 판이 마지막으로 비우기 키를 누른 때(pi)
   const until = async (sid, kind, want, n = polls) => { let b = null; for (let i = 0; i < n; i++) { await sleep(pollMs); b = await look(sid, kind); if (want(b)) return { ok: true, box: b }; } return { ok: false, box: b }; };
+  const emptied = (b) => b.found && !b.text;
+  // 끝으로 가서 글자 수만큼 지운다(빈 칸의 Backspace는 아무 일도 하지 않는다). 꺾인 줄을 이은 빈칸만큼 더 누르므로 넉넉하다
+  const erase = async (sid, kind, box) => {
+    const n = [...box.text].length + (box.rows || 1) + 4;
+    await io.type(sid, END + BS.repeat(n));
+    return until(sid, kind, emptied);
+  };
   return {
-    // → { state: 'clear', why }(빈 칸이거나 손대지 않는 종류: 그대로 보낸다. why: kind·empty·empty_twice·no_box·read_error) | { state: 'moved', held } | { state: 'keep', why, text? }(비키지 못했다: 기다린다)
+    // → { state: 'clear', why }(그대로 보낸다. why: kind·empty·empty_twice·suggestion·no_box·no_box_draft·read_error·read_error_draft)
+    //   | { state: 'moved', held }(비켰다. 제출 뒤 back으로 되돌린다) | { state: 'keep', why, text? }(입력 칸을 비우지 못했다: 기다린다)
     async aside(sid) {
       const kind = io.kindOf(sid);
       if (!draftKinds.includes(kind)) return { state: 'clear', why: 'kind' };
       const t0 = Date.now();
-      // P135: 판이 받은 사람 입력으로 보아 입력 칸에 보내지 않은 글이 있을 수 있는가(io.pending). 그런데 입력 칸을 못 읽으면(다시 그리는 중,
-      //   다른 화면, 읽기 실패) 보내지 않고 기다린다. 전에는 못 읽으면 보내서 지시가 사람의 글 뒤에 붙어 함께 제출됐다
+      // P135: 판이 받은 사람 입력으로 보아 보내지 않은 글이 있을 수 있는가(io.pending). P139: 그래도 입력 칸을 못 읽으면 기다리지 않고 보낸다(까닭은 판 기록에)
       const pending = !!(io.pending && io.pending(sid));
       let box;
-      try { box = await look(sid, kind); } catch (e) {
-        if (pending) return { state: 'keep', why: 'read_error_draft', error: e.code || e.message };
-        return { state: 'clear', why: 'read_error', error: e.code || e.message };
-      }
-      if (!box.found) return pending ? { state: 'keep', why: 'no_box_draft' } : { state: 'clear', why: 'no_box' }; // 입력 칸을 못 읽고 쓰다 만 글도 없다. 전처럼 보낸다
+      try { box = await look(sid, kind); } catch (e) { return { state: 'clear', why: pending ? 'read_error_draft' : 'read_error', error: e.code || e.message }; }
+      if (!box.found) return { state: 'clear', why: pending ? 'no_box_draft' : 'no_box' };
       if (!box.text) {
         // P135: 보내지 않은 글이 있을 수 있는데(pending, 다시 만든 글 draftEdit) 빈 칸으로 읽혔다. 다시 그리는 중인 칸일 수 있어 한 번 더 본다
         const e = io.edit ? io.edit(sid) : null;
-        if (!pending && !(e && e.exact && e.text)) return { state: 'clear', why: 'empty' };
+        if (!pending && !(e && e.exact && e.text)) return { state: 'clear', why: box.suggestion ? 'suggestion' : 'empty' };
         await sleep(pollMs);
         let again;
-        try { again = await look(sid, kind); } catch (err) { return { state: 'keep', why: 'read_error_draft', error: err.code || err.message }; }
-        if (!again.found) return { state: 'keep', why: 'no_box_draft' };
-        if (!again.text) return { state: 'clear', why: 'empty_twice' };
+        try { again = await look(sid, kind); } catch (err) { return { state: 'clear', why: 'read_error_draft', error: err.code || err.message }; }
+        if (!again.found) return { state: 'clear', why: 'no_box_draft' };
+        if (!again.text) return { state: 'clear', why: again.suggestion ? 'suggestion' : 'empty_twice' };
         box = again;
       }
+      const edit = io.edit ? io.edit(sid) : null;
+      const want = restoreText(box, edit);
+      const held = (how, extra = {}) => ({ state: 'moved', held: { kind, how, text: want.text, from: want.from, exact: want.exact, rows: box.rows, ...extra } });
       if (kind === 'claude') {
-        if (!io.stashKey) return { state: 'keep', why: 'stash_key_changed', text: box.text };
-        if (io.userStash && io.userStash(sid)) return { state: 'keep', why: 'user_stash', text: box.text }; // 덮으면 사람이 치워 둔 글을 잃는다
-        await io.type(sid, CTRL_S);
-        const r = await until(sid, kind, (b) => b.found && !b.text);
-        if (r.ok) return { state: 'moved', held: { kind, how: 'stash', text: box.text, rows: box.rows } };
-        // 비지 않았다. 글이 그대로면 치워 두기가 안 된 것(옛 판 등), 다르면 무엇이 일어났는지 모른다. 어느 쪽이든 보내지 않는다
-        return { state: 'keep', why: r.box && sameDraft(r.box.text, box.text) ? 'stash_no_effect' : 'stash_unclear', text: box.text };
+        // 1) 치워 두기: 글·커서·접힌 붙여넣기·그림을 Claude Code가 쥐고 다음 제출 뒤 스스로 되돌린다. 사람이 치워 둔 글이 있으면 덮으므로 쓰지 않는다
+        if (io.stashKey && !(io.userStash && io.userStash(sid))) {
+          await io.type(sid, CTRL_S);
+          const r = await until(sid, kind, emptied);
+          if (r.ok) return { state: 'moved', held: { kind, how: 'stash', text: box.text, rows: box.rows } };
+          // 비지 않았다(옛 판 등). 글이 바뀌었으면 무엇이 일어났는지 모른다: 손대지 않는다(다음 차례에 다시 본다)
+          if (r.box && r.box.found && r.box.text && !sameDraft(r.box.text, box.text)) return { state: 'keep', why: 'stash_unclear', text: box.text };
+        }
+        // 2) 지우기(Claude Code는 Ctrl+C를 쓰지 않는다). 되돌리기는 판이 아는 글의 붙여넣기다
+        const r = await erase(sid, kind, box);
+        if (r.ok) return held('clear', { key: 'erase', ...(io.userStash && io.userStash(sid) ? { userStash: true } : {}) });
+        return { state: 'keep', why: 'clear_failed', text: box.text };
       }
       const c = CLEARS[kind];
-      if (io.clearKey && !io.clearKey(kind)) return { state: 'keep', why: 'clear_key_changed', text: box.text };
-      const want = clearDraftText(box, io.edit ? io.edit(sid) : null);
-      if (!want) return { state: 'keep', why: 'inexact', text: box.text };
-      if (c.gapMs) { const wait = (lastClear.get(sid) || 0) + c.gapMs - Date.now(); if (wait > 0) await sleep(wait); }
-      if (c.recheck) { // 빈 칸의 비우기 키는 끝내기다: 누르기 직전에 글이 그대로 있고 그새 사람이 치지 않았는지 다시 본다
-        const again = await look(sid, kind);
-        if (!again.found || !again.text || !sameDraft(again.text, box.text) || (io.typedSince && io.typedSince(sid, t0))) return { state: 'keep', why: 'box_changed', text: box.text };
+      if (!io.clearKey || io.clearKey(kind)) {
+        if (c.gapMs) { const wait = (lastClear.get(sid) || 0) + c.gapMs - Date.now(); if (wait > 0) await sleep(wait); }
+        let go = true;
+        if (c.recheck) { // 빈 칸의 비우기 키는 끝내기다: 누르기 직전에 글이 그대로 있고 그새 사람이 치지 않았는지 다시 본다
+          const again = await look(sid, kind);
+          if (!again.found || !again.text || !sameDraft(again.text, box.text) || (io.typedSince && io.typedSince(sid, t0))) go = false;
+        }
+        if (go) {
+          await io.type(sid, c.key);
+          lastClear.set(sid, Date.now());
+          const r = await until(sid, kind, emptied);
+          if (r.ok) return held('clear');
+          if (r.box && r.box.found && r.box.text && !sameDraft(r.box.text, box.text)) return { state: 'keep', why: 'clear_unclear', text: box.text };
+        } else return { state: 'keep', why: 'box_changed', text: box.text };
       }
-      await io.type(sid, c.key);
-      lastClear.set(sid, Date.now());
-      const r = await until(sid, kind, (b) => b.found && !b.text);
-      if (r.ok) return { state: 'moved', held: { kind, how: 'clear', text: want.text, from: want.from, rows: box.rows } };
-      if (r.box && r.box.found && r.box.text && !sameDraft(r.box.text, box.text)) return { state: 'keep', why: 'clear_unclear', text: box.text };
-      return { state: 'keep', why: 'clear_no_effect', text: box.text };
+      // 비우기 키를 바꿨거나 먹히지 않았다: 끝으로 가서 지운다
+      const r = await erase(sid, kind, box);
+      if (r.ok) return held('clear', { key: 'erase' });
+      return { state: 'keep', why: 'clear_failed', text: box.text };
     },
     // 지시를 보낸 뒤(제출됐든 아니든) 쓰다 만 글을 입력 칸에 되돌린다. Enter는 누르지 않는다.
-    // → { result: 'restored'(입력 칸에 돌아왔다) | 'stashed'(Claude Code가 아직 쥐고 있다: 다음 제출이나 빈 칸의 Ctrl+S로 돌아온다) | 'held'(판 기록에만 있다), by, why? }
-    async back(sid, held) {
-      const kind = held.kind;
+    // → { result: 'restored'(입력 칸에 돌아왔다) | 'stashed'(Claude Code가 아직 쥐고 있다: 다음 제출이나 빈 칸의 Ctrl+S로 돌아온다) | 'held'(판 기록에만 있다), by, why?, partial? }
+    //   partial(P139): 판이 정확히 모르는 글을 화면에 보이던 대로 되돌렸다(원래 글은 판 기록에)
+    async back(sid, held, d = null) {
+      const kind = held.kind, stash = held.how === 'stash';
+      const partial = !stash && held.exact === false ? { partial: true } : {};
       let empties = 0, b = null;
       for (let i = 0; i < polls; i++) {
         if (i) await sleep(pollMs);
         b = await look(sid, kind);
         if (!b.found) { empties = 0; continue; }
-        if (b.text && bare(b.text).includes(bare(held.text))) return { result: 'restored', by: kind === 'claude' ? 'harness' : 'already' }; // Claude Code가 제출하며 되돌렸다(뒤에 사람이 더 친 글이 있어도)
+        if (b.text && bare(b.text).includes(bare(held.text))) return { result: 'restored', by: stash ? 'harness' : 'already', ...partial }; // Claude Code가 제출하며 되돌렸다(뒤에 사람이 더 친 글이 있어도)
         if (b.text) break; // 다른 글(제출되지 않은 지시, 그새 사람이 친 글): 덮지 않는다
         if (++empties >= 2) break; // 두 번 이어 빈 칸(그리기가 늦은 것이 아니다)
       }
-      if (!b || !b.found) return { result: kind === 'claude' ? 'stashed' : 'held', why: 'no_box' };
-      if (b.text) return { result: kind === 'claude' ? 'stashed' : 'held', why: 'box_other' };
-      if (kind === 'claude') await io.type(sid, CTRL_S, { back: true }); // 빈 칸의 Ctrl+S = 치워 둔 글 꺼내기(back: 되돌리는 키, P130)
+      if (!b || !b.found) return { result: stash ? 'stashed' : 'held', why: 'no_box' };
+      if (b.text && held.userStash && d && d.status === 'confirmed') {
+        // P139: 지시가 제출되자 Claude Code가 사람이 치워 둔 글을 입력 칸에 되돌렸다("Draft restored"). 그 글을 다시 치워 두고 판이 지운 글을 붙여 넣으면
+        //   원래 모양(입력 칸의 글 + 사람이 치워 둔 글)이다
+        await io.type(sid, CTRL_S, { back: true });
+        const r0 = await until(sid, kind, emptied);
+        if (r0.ok) b = r0.box;
+      }
+      if (b.text) return { result: stash ? 'stashed' : 'held', why: 'box_other' };
+      if (stash) await io.type(sid, CTRL_S, { back: true }); // 빈 칸의 Ctrl+S = 치워 둔 글 꺼내기(back: 되돌리는 키, P130)
       else if (CLEARS[kind] && CLEARS[kind].chunks) { for (const p of pasteChunks(held.text, CLEARS[kind].chunks)) await io.paste(sid, p); } // P131: 접히지 않는 조각으로
-      else await io.paste(sid, held.text); // 괄호 붙여넣기(Enter 없음)
+      else await io.paste(sid, held.text); // 괄호 붙여넣기(Enter 없음). Claude Code는 긴 붙여넣기를 접어 보이지만 글은 쥐고 있다
       // P130: 붙여넣기는 다 그려지기 전의 칸을 볼 수 있다(처음 보인 글에서 멈추면 box_differs). 같은 글이 보일 때까지 본다
-      const paste = kind !== 'claude';
+      const paste = !stash;
       const shown = paste ? (x) => x.found && !!x.text && (sameDraft(x.text, held.text) || FOLDED.test(x.text)) : (x) => x.found && !!x.text;
       let r = await until(sid, kind, shown, paste ? pastePolls : polls);
       if (!r.ok && paste && r.box && r.box.found && r.box.text) r = { ok: true, box: r.box }; // 끝까지 다른 글이 보였다
-      if (r.ok && sameDraft(r.box.text, held.text)) return { result: 'restored', by: 'board' };
-      if (r.ok && kind !== 'claude' && FOLDED.test(r.box.text)) return { result: 'restored', by: 'board', folded: true }; // 긴 붙여넣기는 Codex가 접어 보인다
-      return { result: kind === 'claude' ? (r.ok ? 'restored' : 'stashed') : 'held', why: r.ok ? 'box_differs' : 'not_shown', ...(r.ok && kind === 'claude' ? { by: 'board', differs: true } : {}) };
+      if (r.ok && sameDraft(r.box.text, held.text)) return { result: 'restored', by: 'board', ...partial };
+      if (r.ok && paste && FOLDED.test(r.box.text)) return { result: 'restored', by: 'board', folded: true, ...partial }; // 긴 붙여넣기는 하네스가 접어 보인다
+      return { result: stash ? (r.ok ? 'restored' : 'stashed') : 'held', why: r.ok ? 'box_differs' : 'not_shown', ...(r.ok && stash ? { by: 'board', differs: true } : {}) };
     },
   };
 }

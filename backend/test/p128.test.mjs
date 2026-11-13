@@ -64,6 +64,7 @@ function fakeHarness(kind, box) {
     h.keys.push(raw);
     if (raw === '\x13' && kind === 'claude') { if (h.box) { h.stash = h.box; h.box = ''; } else if (h.stash != null) { h.box = h.stash; h.stash = null; } }
     if (raw === '\x03' && kind === 'codex' && h.box) h.box = '';
+    if (raw.startsWith('\x1b[F')) h.box = [...h.box].slice(0, Math.max(0, [...h.box].length - (raw.length - 3))).join(''); // P139: End, Backspace×n
   };
   h.paste = (text) => { h.pastes.push(text); h.box += text; };
   // 판이 지시를 보낸다(hc terminal.send): 입력 칸이 비었으면 제출되고, Claude Code는 치워 둔 글을 되돌린다
@@ -152,45 +153,57 @@ test('P128 Codex: 한 줄 글은 판이 받은 입력이 없어도 화면 글로
   assert.equal(d.reason, 'draft_restored');
 });
 
-test('P128 정확히 되돌릴 수 없으면 비키지 않는다: Codex 여러 줄(입력 기록 없음)·접힌 붙여넣기 → draft로 기다리고, 사람이 비우면 보낸다', async (t) => {
+test('P139 정확히 모르는 글도 비키고 보낸다: Codex 여러 줄(입력 기록 없음)은 Ctrl+C로 비우고 지시만 제출, 화면에 보이던 대로 되돌린다(원래 글은 판 기록에)', async (t) => {
   const h = fakeHarness('codex', 'wrapped or\nmulti line');
-  const { q, log, step } = rig(t, h);
+  const { q, log } = rig(t, h);
   const d = q.enqueue('s', ASK);
   await tick();
-  assert.deepEqual(h.keys, [], '키를 누르지 않았다');
-  assert.deepEqual(log.sent, [], '보내지 않았다(사람의 글에 붙지 않는다)');
-  assert.equal(d.status, 'queued'); assert.equal(d.reason, 'draft');
-  assert.equal(log.drafts[0].phase, 'keep'); assert.equal(log.drafts[0].why, 'inexact');
-  await step(1000);
-  assert.deepEqual(log.sent, [], 'draftLookMs 전에는 다시 보지 않는다');
-  await step(1500);
-  assert.equal(log.drafts.length, 1, '같은 까닭은 한 번만 알린다');
-  h.box = ''; // 사람이 보내거나 지웠다
-  await step(2500);
-  assert.deepEqual(log.sent, [ASK]);
-  assert.equal(log.events.filter((e) => e === 'queued(draft)').length, 1, '다시 볼 때마다 이벤트를 쓰지 않는다');
+  assert.deepEqual(h.keys, ['\x03']);
+  assert.equal(h.submitted, ASK, '지시만 제출됐다');
+  q.onAgentWorking('s');
+  await tick();
+  assert.deepEqual(h.pastes, ['wrapped or multi line'], '화면에서 읽은 글(꺾인 줄은 빈칸으로 이어진다)');
+  assert.equal(d.reason, 'draft_partial');
+  assert.equal(log.drafts[0].exact, false);
+  const back = log.drafts.find((r) => r.phase === 'back');
+  assert.equal(back.result, 'restored'); assert.equal(back.partial, true); assert.equal(back.text, 'wrapped or multi line', '판 기록에 남긴다');
 });
 
-test('P128 Claude Code: 사람이 Ctrl+S로 치워 둔 글이 있을 수 있거나 치워 두기 키를 바꿨으면 비키지 않는다', async (t) => {
-  for (const o of [{ userStash: true, why: 'user_stash' }, { stashKey: false, why: 'stash_key_changed' }]) {
+test('P139 Claude Code: 사람이 치워 둔 글이 있을 수 있거나 치워 두기 키를 바꿨으면 Ctrl+S 대신 끝으로 가서 지우고 보낸 뒤 붙여넣기로 되돌린다', async (t) => {
+  for (const o of [{ userStash: true }, { stashKey: false }]) {
     const h = fakeHarness('claude', 'draft');
     const { q, log } = rig(t, h, o);
     const d = q.enqueue('s', ASK);
     await tick();
-    assert.deepEqual(h.keys, []); assert.deepEqual(log.sent, []);
-    assert.equal(d.reason, 'draft'); assert.equal(log.drafts[0].why, o.why);
+    assert.ok(!h.keys.includes('\x13'), 'Ctrl+S를 누르지 않는다');
+    assert.ok(h.keys[0].startsWith('\x1b[F\x7f'), '끝으로 가서 지운다');
+    assert.deepEqual(log.sent, [ASK]); assert.equal(h.submitted, ASK);
+    q.onUserPromptSubmit('s', ASK);
+    await tick();
+    assert.deepEqual(h.pastes, ['draft']); assert.equal(h.box, 'draft');
+    assert.equal(d.reason, 'draft_restored');
+    assert.equal(log.drafts[0].how, 'clear'); assert.equal(log.drafts[0].key, 'erase');
     t.mock.timers.reset();
   }
 });
 
-test('P128 Claude Code: Ctrl+S가 듣지 않으면(옛 판) 보내지 않는다', async (t) => {
+test('P139 Claude Code: Ctrl+S가 듣지 않으면(옛 판) 지우고 보낸다. 지우기도 듣지 않으면 기다린다(clear_failed)', async (t) => {
   const h = fakeHarness('claude', 'draft');
-  h.type = (raw) => h.keys.push(raw); // 아무 일도 없다
+  const type0 = h.type;
+  h.type = (raw) => { if (raw === '\x13') { h.keys.push(raw); return; } type0(raw); }; // 치워 두기만 듣지 않는다
   const { q, log } = rig(t, h);
-  const d = q.enqueue('s', ASK);
+  q.enqueue('s', ASK);
   await tick();
-  assert.deepEqual(log.sent, []);
-  assert.equal(d.reason, 'draft'); assert.equal(log.drafts[0].why, 'stash_no_effect');
+  assert.deepEqual(log.sent, [ASK]);
+  assert.equal(h.keys[0], '\x13'); assert.ok(h.keys[1].startsWith('\x1b[F'));
+  t.mock.timers.reset();
+  const h2 = fakeHarness('claude', 'draft');
+  h2.type = (raw) => h2.keys.push(raw); // 아무 키도 듣지 않는다
+  const r2 = rig(t, h2);
+  const d2 = r2.q.enqueue('s', ASK);
+  await tick();
+  assert.deepEqual(r2.log.sent, [], '사람의 글과 함께 제출되지 않게 보내지 않는다');
+  assert.equal(d2.reason, 'draft'); assert.equal(r2.log.drafts[0].why, 'clear_failed');
 });
 
 test('P128 사람이 3초 안에 쳤으면 비키지도 않고 기다린다(규칙 4). 비키는 사이에 치면 되돌리고 기다린다', async (t) => {
