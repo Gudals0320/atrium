@@ -1774,3 +1774,15 @@ html[data-board-moving="1"] .mt-node-run > i { animation-play-state: paused; }
 /* ---------- P128a: 판을 움직이는 동안 둘레 회전판을 숨긴다(사용자 결정 2026-11-12). 멈추기만 해서는 회전판이 층으로 남아 끌기 비용이 거의 줄지 않았다(P127 측정).
    숨겨도 상태 색 테두리와 빛 그림자는 남고, 움직임이 멎고 400ms 뒤 다시 보여 돈다 */
 html[data-board-moving="1"] .mt-node-run { visibility: hidden; }
+
+/* ---------- P134: 미션 맵 폴더 상자(Mission.jsx, lib/mission-layout.js FOLDER). 같은 폴더(사이드바 가상 그룹)의 워크스페이스 판들을 감싸는 사각형.
+   바탕은 지도 바탕과 거의 같고 테두리만 판보다 또렷하다. 머리(위 30px)에 폴더 이름과 세션 수. 상자 안 판은 조금 더 옅게(겹친 면이 무겁지 않게).
+   상자를 넘는 선(outside)은 선 층(.mt-mm-svg)이 상자 위라 그대로 지나가고, 나무 밖 선이라도 판 위 선 색으로 또렷하게 ---------- */
+.mt-mm-folder { position: absolute; box-sizing: border-box; border-radius: 14px; background: var(--mm-folder); border: 1px solid var(--mm-folder-line); pointer-events: none; }
+.mt-mm-fhead { position: absolute; left: 12px; right: 12px; top: 6px; height: 18px; display: flex; align-items: center; gap: 6px; color: var(--text); font: 650 12.5px var(--font-ui); letter-spacing: .01em; white-space: nowrap; overflow: hidden; }
+.mt-mm-fhead::before { content: ""; flex: none; width: 10px; height: 8px; border: 1.5px solid var(--dim); border-radius: 2px 2px 3px 3px; border-top-width: 3px; opacity: .8; }
+.mt-mm-fhead .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-mm-fhead .n { font: 500 11px var(--font-mono); color: var(--dim-2); }
+.mt-mm-fhead .needs { font: 650 11px var(--font-mono); color: var(--attn); pointer-events: auto; }
+.mt-mm-plate.inf { border-color: transparent; }
+.mt-mm-edge.outside.link path.line { stroke: var(--mm-wire-2); }

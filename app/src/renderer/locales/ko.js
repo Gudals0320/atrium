@@ -2388,4 +2388,8 @@ export default {
     result: { pending: '옮기기 전', moving: '옮기는 중…', moved: '옮김', waiting: '쉴 때까지 기다리는 중', asleep: '절전 그대로', failed: '실패', recreated: '다시 시작함(이전 서버 없음)' },
     reason: { working: '작업 중', needs_you: '응답 필요', draft: '입력칸에 보내지 않은 글', delivering: '메시지 전달 중', loop: '루프 실행 중', background: '백그라운드 작업', running: '명령 실행 중', waking: '깨우는 중', closing: '닫는 중', adopted: '보드 밖에서 실행한 에이전트, 끝날 때까지', not_resumable: '이어 갈 수 없는 에이전트, 끝날 때까지', restoring: '다시 시작하는 중', not_restored: '다시 시작하지 못함', closed: '닫힘' },
   },
+  // P134: 미션 맵의 폴더 상자(사이드바 폴더 = 가상 그룹)
+  mmFolder: {
+    folderTitle: '폴더 {name} · 세션 {n}개',
+  },
 };
