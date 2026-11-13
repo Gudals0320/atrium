@@ -305,7 +305,13 @@ export class DeliveryQueue extends EventEmitter {
     const started = Date.now();
     let a;
     try { a = await this.drafts.aside(d.sessionId, d); } catch (e) { a = { state: 'clear', why: `error ${e.code || e.message}` }; }
-    if (!a || a.state === 'clear') { d.draftLookAt = 0; return true; }
+    if (!a || a.state === 'clear') {
+      d.draftLookAt = 0;
+      // P135: 비키지 않고 보낸 까닭도 남긴다(입력 칸을 못 읽어 그대로 보냈는지 나중에 볼 수 있게). 손대지 않는 종류와 빈 칸으로 읽은 흔한 경우는 남기지 않는다
+      //   (전달 기록에 draft 이벤트가 없으면 입력 칸을 빈 칸으로 읽고 보낸 것이다)
+      if (a && a.why && a.why !== 'kind' && a.why !== 'empty') this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'clear', why: a.why, ...(a.error ? { error: a.error } : {}) });
+      return true;
+    }
     if (a.state === 'moved') {
       d.held = a.held; d.draftLookAt = 0;
       this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'aside', how: a.held.how, kind: a.held.kind, chars: a.held.text.length, rows: a.held.rows || null, from: a.held.from || null });
@@ -317,7 +323,7 @@ export class DeliveryQueue extends EventEmitter {
     }
     // keep: 정확히 되돌릴 수 없는 글이거나 비키지 못했다. 손대지 않고 기다린다(사람이 보내거나 지우면 다음에 보낸다)
     d.draftLookAt = Date.now() + (this.cfg.draftLookMs ?? 2000);
-    if (d.draftWhy !== a.why) { d.draftWhy = a.why; this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'keep', why: a.why, chars: a.text ? a.text.length : null }); }
+    if (d.draftWhy !== a.why) { d.draftWhy = a.why; this.emit('draft', { deliveryId: d.deliveryId, sessionId: d.sessionId, phase: 'keep', why: a.why, chars: a.text ? a.text.length : null, ...(a.error ? { error: a.error } : {}) }); }
     this._backToQueue(d, 'draft');
     return false;
   }

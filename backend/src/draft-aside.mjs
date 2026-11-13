@@ -140,7 +140,7 @@ export function clearKeyChanged(kind, { env = process.env, home = os.homedir() }
 
 const CTRL_S = '\x13';
 
-// 비키기·되돌리기. io: { read(sid) → 화면 글, type(sid, 바이트) → Promise(키), paste(sid, 글) → Promise(괄호 붙여넣기, Enter 없음), kindOf(sid), edit(sid) → draftEdit 결과,
+// 비키기·되돌리기. io: { pending(sid) → 판이 받은 사람 입력으로 보아 보내지 않은 글이 있을 수 있는가(P135, 없으면 거짓), read(sid) → 화면 글, type(sid, 바이트) → Promise(키), paste(sid, 글) → Promise(괄호 붙여넣기, Enter 없음), kindOf(sid), edit(sid) → draftEdit 결과,
 //   userStash(sid) → 사람이 Ctrl+S로 치워 둔 글이 있을 수 있는가, stashKey: Ctrl+S를 써도 되는가,
 //   clearKey(kind) → 그 하네스에서 Ctrl+C를 비우기 키로 써도 되는가(P131, 없으면 참), typedSince(sid, t) → 사람이 t 뒤에 쳤는가(P131, 없으면 거짓) }
 // pastePolls(P130): 되돌린 붙여넣기(Codex·opencode·pi)가 보이기까지 볼 횟수. hc는 terminal.send 뒤 그 전달이 끝날 때까지 들어온 입력을 잡아 두었다가 넣는다.
@@ -151,14 +151,31 @@ export function draftMover(io, { pollMs = 250, polls = 8, pastePolls = 16, sleep
   const lastClear = new Map(); // 세션 → 판이 마지막으로 비우기 키를 누른 때(pi)
   const until = async (sid, kind, want, n = polls) => { let b = null; for (let i = 0; i < n; i++) { await sleep(pollMs); b = await look(sid, kind); if (want(b)) return { ok: true, box: b }; } return { ok: false, box: b }; };
   return {
-    // → { state: 'clear' }(빈 칸이거나 손대지 않는 종류: 그대로 보낸다) | { state: 'moved', held } | { state: 'keep', why, text? }(비키지 못했다: 기다린다)
+    // → { state: 'clear', why }(빈 칸이거나 손대지 않는 종류: 그대로 보낸다. why: kind·empty·empty_twice·no_box·read_error) | { state: 'moved', held } | { state: 'keep', why, text? }(비키지 못했다: 기다린다)
     async aside(sid) {
       const kind = io.kindOf(sid);
       if (!draftKinds.includes(kind)) return { state: 'clear', why: 'kind' };
       const t0 = Date.now();
-      const box = await look(sid, kind);
-      if (!box.found) return { state: 'clear', why: 'no_box' }; // 입력 칸을 못 읽는다(다른 화면). 전처럼 보낸다
-      if (!box.text) return { state: 'clear' };
+      // P135: 판이 받은 사람 입력으로 보아 입력 칸에 보내지 않은 글이 있을 수 있는가(io.pending). 그런데 입력 칸을 못 읽으면(다시 그리는 중,
+      //   다른 화면, 읽기 실패) 보내지 않고 기다린다. 전에는 못 읽으면 보내서 지시가 사람의 글 뒤에 붙어 함께 제출됐다
+      const pending = !!(io.pending && io.pending(sid));
+      let box;
+      try { box = await look(sid, kind); } catch (e) {
+        if (pending) return { state: 'keep', why: 'read_error_draft', error: e.code || e.message };
+        return { state: 'clear', why: 'read_error', error: e.code || e.message };
+      }
+      if (!box.found) return pending ? { state: 'keep', why: 'no_box_draft' } : { state: 'clear', why: 'no_box' }; // 입력 칸을 못 읽고 쓰다 만 글도 없다. 전처럼 보낸다
+      if (!box.text) {
+        // P135: 보내지 않은 글이 있을 수 있는데(pending, 다시 만든 글 draftEdit) 빈 칸으로 읽혔다. 다시 그리는 중인 칸일 수 있어 한 번 더 본다
+        const e = io.edit ? io.edit(sid) : null;
+        if (!pending && !(e && e.exact && e.text)) return { state: 'clear', why: 'empty' };
+        await sleep(pollMs);
+        let again;
+        try { again = await look(sid, kind); } catch (err) { return { state: 'keep', why: 'read_error_draft', error: err.code || err.message }; }
+        if (!again.found) return { state: 'keep', why: 'no_box_draft' };
+        if (!again.text) return { state: 'clear', why: 'empty_twice' };
+        box = again;
+      }
       if (kind === 'claude') {
         if (!io.stashKey) return { state: 'keep', why: 'stash_key_changed', text: box.text };
         if (io.userStash && io.userStash(sid)) return { state: 'keep', why: 'user_stash', text: box.text }; // 덮으면 사람이 치워 둔 글을 잃는다
