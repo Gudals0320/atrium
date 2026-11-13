@@ -239,22 +239,23 @@ export function readDesktopSessions(base, cache = new Map()) {
   return out;
 }
 
-// (3) 돌고 있는 claude 프로세스의 명령줄에 든 대화 ID(--resume, --session-id). 세션 파일을 쓰기 전의 짧은 틈과 세션 파일이 없는 실행(-p 등)을 메운다.
+// (3) 돌고 있는 claude 프로세스의 명령줄에 든 대화 ID(--resume, --session-id). P133: 같은 PowerShell 한 번에 codex.exe 줄도 읽는다(name). 세션 파일을 쓰기 전의 짧은 틈과 세션 파일이 없는 실행(-p 등)을 메운다.
 //     PowerShell 한 번(약 0.3~0.5초)이라 열기 직전과 느린 주기에만 부른다
 export function parseClaudeCmdlines(rows) {
   const out = new Map();
   for (const r of rows || []) {
+    if (r.name && !/claude/i.test(r.name)) continue; // P133: codex 프로세스 줄은 codex-convos.mjs가 읽는다
     const cl = String(r.cmd || '');
     for (const m of cl.matchAll(ID_ARG_RE)) out.set(m[1].toLowerCase(), { pid: r.pid });
   }
   return out;
 }
 export function claudeProcesses() {
-  const ps = `$ErrorActionPreference = 'SilentlyContinue'; @(Get-CimInstance Win32_Process -Filter "Name='claude.exe'" -Property ProcessId,CommandLine | ForEach-Object { [pscustomobject]@{ i = $_.ProcessId; c = $_.CommandLine } }) | ConvertTo-Json -Compress`;
+  const ps = `$ErrorActionPreference = 'SilentlyContinue'; @(Get-CimInstance Win32_Process -Filter "Name='claude.exe' OR Name='codex.exe'" -Property ProcessId,Name,CommandLine | ForEach-Object { [pscustomobject]@{ i = $_.ProcessId; n = $_.Name; c = $_.CommandLine } }) | ConvertTo-Json -Compress`;
   return new Promise((resolve) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', windowsHide: true, timeout: 10000 }, (err, out) => {
       if (err) return resolve(null);
-      try { resolve([].concat(JSON.parse(out || '[]') || []).map((x) => ({ pid: x.i, cmd: x.c }))); } catch { resolve(null); }
+      try { resolve([].concat(JSON.parse(out || '[]') || []).map((x) => ({ pid: x.i, name: x.n || null, cmd: x.c }))); } catch { resolve(null); }
     });
   });
 }

@@ -3,6 +3,8 @@
 // 판은 대화 ID를 새로 만들지 않는다. 판 밖 대화와 닫힌 claude는 늘 그 대화 ID로 이어 간다(`claude --resume <ID>`). 갈라 열기(--fork-session)는 쓰지 않는다.
 // P10: 보관(판정은 archive.mjs). 보관된 것은 recall.list에서 빠지고 보관함(archive.list)에만 보인다. 손으로 보관한 대화는 파일이 바뀌어도 다시 읽지 않는다.
 //   리포 스스로 찾기(discover): 기간 안의 터미널(cli) 대화가 있는 리포를 빈 워크스페이스로 연다. 사람이 닫은 워크스페이스는 기억해 다시 열지 않는다(meta autoOpenDeclined).
+// P133: Codex 대화(cfg.codexConvoHome의 rollout)도 같은 색인(convo_index.harness = 'codex')에 넣어 같은 자리·같은 규칙으로 보인다. 묶임은 codex-convos.mjs,
+//   판으로 열기는 판의 Codex 이어 가기 줄(`codex resume <ID>`, P115)로 새 판 세션을 띄운다. Codex 앱 대화는 열지 않고 갈라 열기(`codex fork <ID>`)만 한다.
 // P13: 판 밖 대화를 캔버스에 읽기 전용 대화 노드로 올린다(리포 영역마다 최근 순 격자, 워크트리 블록, 상한 CONVO_CAP). 대화끼리의 띄움 관계(spawns.mjs)는 선과 "띄운 곳" 글로,
 //   하위 에이전트는 수로 보인다. 폴더가 없어졌거나 이 앱의 시험 폴더인 대화는 missed로 따로 모아(missed.mjs) 캔버스와 사이드바 기본 목록에서 빼고, 한꺼번에 휴지통으로 지운다.
 import fs from 'node:fs';
@@ -21,12 +23,13 @@ import { clip } from './text.mjs';
 import { archiveState, isOld, discoverable, itemKey, DISCOVER_DAYS, OLD_DAYS } from './archive.mjs';
 import { CONVO_PARSER, listTranscriptFiles, readTranscriptSummary, readLiveSessions, readDesktopSessions, claudeProcesses, parseClaudeCmdlines, bindingOf, inWorkspace, convoView, readSpawns, mergeSpawns, countSubagents, listSubagents, branchName } from './convos.mjs';
 import { matchSpawns } from './spawns.mjs';
+import { CODEX_HARNESS, CODEX_PARSER, listCodexFiles, readCodexSummary, readCodexTitles, readCodexLocks, parseCodexCmdlines, codexBindingOf } from './codex-convos.mjs'; // P133: 판 밖 Codex 대화
 import { classifyConvo, testDirKind, trashPlan, trashPaths, removeEmptyProjectDirs, REFUSE_LABEL } from './missed.mjs';
 import { CONVO_CAP, placeCards, boardSpawnDup } from './convo-canvas.mjs';
 import { m, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { takenNames, keepLabel, findSession } from './session-label.mjs'; // P66
 import { startOpt } from './launchers.mjs'; // P97: 실행 명령
-import { adapterOf, harnessResumable, claudeConnection } from './harness.mjs'; // P115: Claude Code 밖 하네스의 이어 가기, Claude Code의 연결
+import { adapterOf, harnessResumable, claudeConnection, codexSessionOf } from './harness.mjs'; // P115: Claude Code 밖 하네스의 이어 가기, Claude Code의 연결
 
 const SHELL = 'shell';
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
@@ -39,6 +42,10 @@ const MISSED_TITLE_MAX = 300; // P13: missed 목록에서 제목을 그때그때
 const fmtBytes = (n) => (n >= 1073741824 ? `${(n / 1073741824).toFixed(1)}GB` : n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round((n || 0) / 1024))}KB`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
+// P133: 색인 줄·파일 하나의 요약(종류마다 읽는 법이 다르다)
+const summaryOf = (f, o = {}) => (f.harness === CODEX_HARNESS ? readCodexSummary(f.path, o) : readTranscriptSummary(f.path, o));
+// Codex가 남긴 대화 이름(session_index.jsonl의 thread_name)이 있으면 제목으로
+function codexTitle(sum, name) { if (sum && name) { sum.title = name; sum.titleSource = 'codex'; } return sum; }
 
 // 닫힌 까닭을 사람이 읽는 말로(사이드바)
 export const CLOSE_REASON = {
@@ -77,6 +84,7 @@ export class Recall {
     this.wsCache = new Map(); // pathKey(cwd) → { ws, at }
     this.desktopCache = new Map();
     this.live = new Map(); this.procs = new Map(); this.desktop = new Map();
+    this.codexLocks = new Set(); this.codexTitleCache = {}; // P133
     this.views = new Map(); // workspaceKey → { closed, convos, digest }
     this.lastScan = null;
     this.timers = [];
@@ -105,6 +113,7 @@ export class Recall {
     this.canvas = { nodes: [], edges: [], digest: '' }; // P13: 캔버스의 대화 노드와 띄움 선(changeOnce가 만든다)
     this.titleCache = new Map(); // P13: missed 목록의 제목(경로|수정 시각 → 제목). 판 기록에는 남기지 않는다
     if (this.store.getMeta('convoParser') !== CONVO_PARSER) { this.store.clearConvos(); this.store.setMeta('convoParser', CONVO_PARSER); }
+    if (this.store.getMeta('codexParser') !== CODEX_PARSER) { this.store.clearConvos('codex'); this.store.setMeta('codexParser', CODEX_PARSER); } // P133
     b.bus.on('closed', () => this.changed());
     b.bus.on('workspace', () => { if (this.scanning) this._rescan = true; else this.scan().catch(() => {}); });
     // P10: 사람이 닫은 워크스페이스는 기억해 다시 저절로 열지 않는다. 사람이 다시 열면 잊는다
@@ -139,11 +148,38 @@ export class Recall {
   refreshBindings() {
     this.live = readLiveSessions(this.cfg.claudeSessionsDir);
     this.desktop = readDesktopSessions(this.cfg.desktopSessionsDir, this.desktopCache);
+    this.codexLocks = readCodexLocks(this.cfg.codexConvoHome); // P133: 잠금 파일 몇 개(1ms 안팎)
+    this.learnCodexIds();
   }
-  async refreshProcs() { const rows = await this.readProcs(); if (rows) this.procs = parseClaudeCmdlines(rows); return this.procs; }
+  // P133: 판이 띄운 Codex 세션(새로 띄움, 갈라 열기)은 뜬 뒤에야 대화 ID를 안다. 그 폴더에서 띄운 뒤 생긴 rollout을 찾아 판 기록(harnessPlan)에 남긴다.
+  // 그래야 판 밖 대화 목록에서 빠지고 이어 가기도 그 ID로 한다. 갈라 연 세션은 원본을 갈라 연 rollout(forked_from_id)만, 새로 띄운 세션은 갈라 연 것이 아닌 것만 본다.
+  // 다른 판 세션이 가진 ID는 뺀다. 세션마다 10초에 한 번(오늘·어제 폴더의 rollout 머리만 읽는다). Codex 첫 지시 전에는 rollout이 없어 다음에 다시 본다
+  learnCodexIds({ now = Date.now() } = {}) {
+    const home = this.cfg.codexConvoHome;
+    if (!home || !this.b.sessions) return 0;
+    const todo = [...this.b.sessions.values()].filter((s) => s.kind === CODEX_HARNESS && s.harnessPlan && !s.harnessPlan.harnessSessionId && s.cwd);
+    if (!todo.length) return 0;
+    this.codexLearnAt ||= new Map();
+    const claimed = [...this.store.boardConversations()].filter(([, v]) => v.kind === CODEX_HARNESS).map(([id]) => id);
+    let n = 0;
+    for (const s of todo) {
+      if (now - (this.codexLearnAt.get(s.sessionId) || 0) < 10000) continue;
+      this.codexLearnAt.set(s.sessionId, now);
+      const plan = s.harnessPlan;
+      const id = codexSessionOf({ cwd: s.cwd, since: plan.firstLaunchedAt || plan.launchedAt || s.createdAt || 0, home, now, bornOnly: true, forkedFrom: plan.forkFrom || null, exclude: [...claimed, ...(plan.forkFrom ? [plan.forkFrom] : [])] });
+      if (!id) continue;
+      s.harnessPlan = { ...plan, harnessSessionId: id.toLowerCase() };
+      this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
+      this.store.addEvent(s.sessionId, 'codex_session_learned', { harnessSessionId: id.toLowerCase(), forkFrom: plan.forkFrom || null });
+      claimed.push(id.toLowerCase()); n++;
+    }
+    return n;
+  }
+  // 명령줄의 대화 ID. P133: claude와 codex 줄을 한 지도에(대화 ID가 겹치지 않는다)
+  async refreshProcs() { const rows = await this.readProcs(); if (rows) this.procs = new Map([...parseClaudeCmdlines(rows), ...parseCodexCmdlines(rows)]); return this.procs; }
   // strict: 판 밖 대화(약한 신호까지 본다). 판이 아는 대화는 강한 신호(세션 파일, 명령줄, 데스크톱 앱)만 본다. 판이 띄운 claude가 막 끝난 대화가 "방금 기록됨"으로 막히지 않게
   bindingFor(convId, row, { strict = true } = {}) {
-    const bind = bindingOf({ convId, entrypoints: row ? row.entrypoints : [], mtime: row ? row.mtime : 0, live: this.live, procs: this.procs, desktop: this.desktop });
+    const bind = row && row.harness === CODEX_HARNESS ? codexBindingOf({ convId, entrypoints: row.entrypoints, mtime: row.mtime, locks: this.codexLocks, procs: this.procs }) : bindingOf({ convId, entrypoints: row ? row.entrypoints : [], mtime: row ? row.mtime : 0, live: this.live, procs: this.procs, desktop: this.desktop });
     if (!strict && bind.bound && !bind.sure) return { bound: false };
     return bind;
   }
@@ -179,7 +215,8 @@ export class Recall {
   }
   async _scan() {
     const t0 = Date.now();
-    const files = await listTranscriptFiles(this.cfg.convoRoots);
+    const files = [...(await listTranscriptFiles(this.cfg.convoRoots)), ...(await listCodexFiles(this.cfg.codexConvoHome))]; // P133: Codex 대화도
+    const codexTitles = this.cfg.codexConvoHome ? readCodexTitles(this.cfg.codexConvoHome, this.codexTitleCache) : new Map();
     const known = new Map(this.store.convoIndex().map((c) => [c.path, c]));
     const open = this.store.workspaces();
     const marks = this.store.archiveMarks();
@@ -209,8 +246,8 @@ export class Recall {
     const rows = [];
     for (let i = 0; i < todo.length; i += 8) {
       const part = todo.slice(i, i + 8);
-      const sums = await Promise.all(part.map((f) => readTranscriptSummary(f.path, { size: f.size }).catch(() => null)));
-      const subs = await Promise.all(part.map((f) => countSubagents(f.path))); // P13
+      const sums = await Promise.all(part.map((f) => summaryOf(f, { size: f.size, mtime: f.mtime }).catch(() => null)));
+      const subs = await Promise.all(part.map((f) => (f.harness === CODEX_HARNESS ? 0 : countSubagents(f.path)))); // P13
       await this.resolveMany(sums.map((x) => x && x.cwd));
       for (let j = 0; j < part.length; j++) {
         const f = part[j], sum = sums[j];
@@ -221,7 +258,8 @@ export class Recall {
         const k = known.get(f.path);
         // P13: 띄움 줄은 이어 읽는다(파일이 줄었으면 처음부터 다시). 글이 아니라 시각·이름·해시만 둔다
         const keep = k && f.size >= k.size ? { spawns: k.spawns, spawnOff: k.spawnOff } : { spawns: [], spawnOff: 0 };
-        rows.push({ path: f.path, convId: f.convId, size: f.size, mtime: f.mtime, cwd: sum.cwd, branch: sum.branch, entrypoints: sum.entrypoints, prompts: sum.prompts, answers: sum.answers, firstAt: sum.firstAt, lastAt: sum.lastAt,
+        if (f.harness === CODEX_HARNESS) codexTitle(sum, codexTitles.get(f.convId));
+        rows.push({ path: f.path, convId: f.convId, harness: f.harness || 'claude', size: f.size, mtime: f.mtime, cwd: sum.cwd, branch: sum.branch, entrypoints: sum.entrypoints, prompts: sum.prompts, answers: sum.answers, firstAt: sum.firstAt, lastAt: sum.lastAt,
           hasText: text, title: text ? sum.title : null, titleSource: text ? sum.titleSource : null, firstPrompt: text ? sum.firstPrompt : null, lastPrompt: text ? sum.lastPrompt : null, lastAnswer: text ? sum.lastAnswer : null, scannedAt: Date.now(),
           startAt: sum.startAt, promptKey: sum.promptKey, subagents: subs[j], ...keep });
       }
@@ -242,7 +280,7 @@ export class Recall {
     const t0 = Date.now();
     const idx = new Map(this.store.convoIndex().map((c) => [c.path, c]));
     const since = Date.now() - SPAWN_DAYS * 86400000;
-    const todo = files.filter((f) => { const c = idx.get(f.path); return c && f.mtime >= since && (c.spawnOff || 0) !== f.size; });
+    const todo = files.filter((f) => { const c = idx.get(f.path); return c && f.harness !== CODEX_HARNESS && f.mtime >= since && (c.spawnOff || 0) !== f.size; }); // P133: Codex 대화에는 띄움 줄이 없다
     let read = 0, bytes = 0, found = 0;
     for (let i = 0; i < todo.length; i += 4) {
       const part = todo.slice(i, i + 4);
@@ -263,10 +301,11 @@ export class Recall {
     let n = 0;
     for (let i = 0; i < rows.length; i += 8) {
       const part = rows.slice(i, i + 8);
-      const sums = await Promise.all(part.map((c) => readTranscriptSummary(c.path).catch(() => null)));
+      const sums = await Promise.all(part.map((c) => summaryOf(c).catch(() => null)));
       for (let j = 0; j < part.length; j++) {
         const c = part[j], sum = sums[j];
         if (!sum || !sum.cwd) continue;
+        if (c.harness === CODEX_HARNESS && this.cfg.codexConvoHome) codexTitle(sum, readCodexTitles(this.cfg.codexConvoHome, this.codexTitleCache).get(c.convId));
         const ws = await this.resolveWs(sum.cwd);
         if (!this.matchWorkspace(sum.cwd, ws, open)) continue;
         this.store.putConvo({ ...c, cwd: sum.cwd, branch: sum.branch, entrypoints: sum.entrypoints, prompts: sum.prompts, answers: sum.answers, firstAt: sum.firstAt, lastAt: Math.max(sum.lastAt || 0, c.lastAt || 0) || null, hasText: true, title: sum.title, titleSource: sum.titleSource, firstPrompt: sum.firstPrompt, lastPrompt: sum.lastPrompt, lastAnswer: sum.lastAnswer, scannedAt: Date.now() });
@@ -330,6 +369,8 @@ export class Recall {
     const worktree = !!(ws && ws.kind === 'repo' && !pathKey(c.cwd).startsWith(pathKey(ws.root)));
     const view = convoView({ ...c, worktree, branch: ws && ws.kind === 'repo' ? c.branch : null }, { binding: this.bindingFor(c.convId, c), root: w.root });
     if (worktree && !view.folder) view.folder = normPath(c.cwd).split('/').pop();
+    view.harness = c.harness || 'claude'; // P133: 종류 표시
+    if (view.harness === CODEX_HARNESS) view.canFork = !!(view.binding.bound && view.binding.where === 'desktop'); // Codex 앱 대화는 갈라 열기만
     return view;
   }
   // 워크스페이스마다 기본 목록(보관되지 않은 닫힌 세션과 판 밖 대화)과 보관된 수. archived: true면 보관된 것만 모은다(보관함). only: 워크스페이스 하나만
@@ -543,7 +584,7 @@ export class Recall {
         convId: n.convId, workspaceKey: n.workspaceKey, wsName: names.get(n.workspaceKey) || null, x: n.x, y: n.y, w: n.w, h: n.h,
         block: x && !x.area ? this.blockOf(c, x.w) : '', area: n.area || '', cwd: c.cwd ? normPath(c.cwd) : null, branch: branchName(c.branch), // P27: area(놓인 워크트리 영역)
         title: c.title || null, firstPrompt: c.firstPrompt || null, lastPrompt: c.lastPrompt || null, lastAnswer: c.lastAnswer || null, lastAt: c.lastAt || c.mtime || null, prompts: c.prompts || 0,
-        subagents: c.subagents || 0, binding: bind, canOpen: !bind.bound, children: kids.get(n.convId) || 0,
+        subagents: c.subagents || 0, binding: bind, canOpen: !bind.bound, children: kids.get(n.convId) || 0, harness: c.harness || 'claude', // P133
         spawnedBy: r ? { via: r.via, name: r.name, at: r.at, onCanvas: !!parentNode, label: parentNode ? null : this.parentLabel(r.parent, byId.get(r.parent), boardConvs, marks), labelMsg: parentNode ? null : this.parentLabelMsg(r.parent, byId.get(r.parent), boardConvs, marks) } : null,
       };
     }).filter(Boolean);
@@ -590,7 +631,7 @@ export class Recall {
   async subagents(p) {
     const row = this.store.getConvoById(String(p.convo || '').toLowerCase());
     if (!row) throw apiError('not_found', `대화 기록을 찾을 수 없습니다: ${p.convo}`);
-    return { convId: row.convId, subagents: await listSubagents(row.path) };
+    return { convId: row.convId, subagents: row.harness === CODEX_HARNESS ? [] : await listSubagents(row.path) };
   }
 
   // ---------- P13: missed(지울 대화) ----------
@@ -609,7 +650,7 @@ export class Recall {
   async titleOf(c) {
     const k = `${c.path}|${c.mtime}`;
     if (this.titleCache.has(k)) return this.titleCache.get(k);
-    const s = await readTranscriptSummary(c.path, { size: c.size }).catch(() => null);
+    const s = await summaryOf(c, { size: c.size }).catch(() => null);
     const t = s ? s.title || null : null;
     if (this.titleCache.size > 2000) this.titleCache.clear();
     this.titleCache.set(k, t);
@@ -655,9 +696,9 @@ export class Recall {
     const items = targets.map((c) => {
       if (c.notFound) return { convId: c.convId, path: '', cls: 'not_found' };
       const now = { ...c, mtime: this.mtimeNow(c) };
-      const bind = bindingOf({ convId: c.convId, entrypoints: ['cli'], mtime: now.mtime, live: this.live, procs: this.procs, desktop: this.desktop });
+      const bind = c.harness === CODEX_HARNESS ? this.bindingFor(c.convId, now) : bindingOf({ convId: c.convId, entrypoints: ['cli'], mtime: now.mtime, live: this.live, procs: this.procs, desktop: this.desktop });
       const cl = this.classOf(now, { bind, boardConvs, marks });
-      return { convId: c.convId, path: c.path, cwd: c.cwd, cls: cl.cls, binding: bind, boardKnown: boardConvs.has(c.convId), desktop: (c.entrypoints || []).some((e) => /desktop/i.test(e)) || bind.where === 'desktop' };
+      return { convId: c.convId, path: c.path, cwd: c.cwd, harness: c.harness || 'claude', cls: cl.cls, binding: bind, boardKnown: boardConvs.has(c.convId), desktop: (c.entrypoints || []).some((e) => /desktop/i.test(e)) || bind.where === 'desktop' };
     });
     const plan = trashPlan(items.filter((i) => i.cls !== 'not_found'), { roots: this.cfg.convoRoots, dirExists: (d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } } });
     plan.refused.push(...items.filter((i) => i.cls === 'not_found').map((i) => ({ convId: i.convId, reason: 'not_found' })));
@@ -946,13 +987,22 @@ export class Recall {
     if (!row || !row.cwd) throw apiError('not_found', `대화 기록을 찾을 수 없습니다: ${id}`);
     this.refreshBindings(); await this.refreshProcs();
     const bind = this.bindingFor(id, { ...row, mtime: this.mtimeNow(row) });
-    if (bind.bound) throw keyed(apiError('bound', `다른 곳에서 이 대화를 사용 중입니다: ${bind.label}`, { binding: bind }), 'bound', { where: bind.where || '' });
+    // P133: Codex 앱 대화는 그 대화를 이어 가지 않고 갈라 연다(`codex fork <ID>`, 원본은 그대로). 갈라 열기는 Codex 앱 대화에만 쓴다
+    const codex = row.harness === CODEX_HARNESS;
+    const fork = codex && !!p.fork;
+    if (p.fork && !(fork && bind.bound && bind.where === 'desktop')) throw keyed(apiError('bad_request', "갈라 열기는 Codex 앱 대화에만 쓸 수 있습니다."), 'codexConvo.forkOnlyDesktop');
+    if (bind.bound && !fork) throw keyed(apiError('bound', `다른 곳에서 이 대화를 사용 중입니다: ${bind.label}`, { binding: bind }), 'bound', { where: bind.where || '' });
     const ws = await this.resolveWs(row.cwd);
     if (!this.matchWorkspace(row.cwd, ws)) throw apiError('bad_request', "열린 프로젝트의 대화가 아닙니다.");
     const card = this.store.convoNodes().find((n) => n.convId === id && n.shown); // P13: 캔버스의 대화 노드에서 열면 그 자리에서 세션 노드가 된다
-    const out = await this.bring({ id, cwd: row.cwd, kind: 'claude', name: p.name || null, permissionMode: p.permissionMode || 'manual', model: p.model || null, effort: p.effort || null, from: 'convo', resume: true, near: card ? { x: card.x, y: card.y, w: card.w, h: card.h } : null });
-    this.store.addEvent(id, 'convo_opened', { convId: id, title: clip(row.title, 120), lastAt: row.lastAt });
-    return out;
+    const near = card ? { x: card.x, y: card.y, w: card.w, h: card.h } : null;
+    // P133: Codex는 판 세션 ID를 새로 만들고 하네스 세션 ID로 그 대화를 이어 간다(판의 Codex 줄: env·안내문·연결, P115). 연결과 모델은 사용자 Codex 설정 그대로
+    const out = codex
+      ? await this.bring({ id: crypto.randomUUID(), cwd: row.cwd, kind: CODEX_HARNESS, name: p.name || null, permissionMode: 'manual', from: fork ? 'convo_fork' : 'convo', near, harnessPlan: { model: null, args: [], launcher: null, launcherId: null, connectionId: null, harnessSessionId: fork ? null : id, ...(fork ? { forkFrom: id } : {}) } })
+      : await this.bring({ id, cwd: row.cwd, kind: 'claude', name: p.name || null, permissionMode: p.permissionMode || 'manual', model: p.model || null, effort: p.effort || null, from: 'convo', resume: true, near });
+    if (codex && near) { this.store.setConvoNodesShown([id], false); this.layoutCanvas().catch(() => {}); }
+    this.store.addEvent(out.sessionId || id, 'convo_opened', { convId: id, harness: row.harness || 'claude', fork, title: clip(row.title, 120), lastAt: row.lastAt });
+    return { ...out, harness: row.harness || 'claude', fork };
   }
 
   // ---------- 다시 켜도 판이 그대로(J1) ----------
