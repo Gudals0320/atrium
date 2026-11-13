@@ -43,7 +43,7 @@ import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
 import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';
-import { keyToData, closeKeyTargets, boardArrowKey, stepWorkspace, spaceHoldReady, spaceHoldStep, SPACE_HOLD_MS } from './lib/keys.js';
+import { keyToData, closeKeyTargets, boardArrowKey, boardShortcut, stepWorkspace, spaceHoldReady, spaceHoldStep, SPACE_HOLD_MS } from './lib/keys.js';
 import { wsTabs, tabKeys } from './lib/ws-tabs.js'; // P98
 import { renameKeyTarget } from './lib/session-name.js'; // P66: F2로 고른 노드의 이름 바꾸기
 import { ReturnSummary, useReturnSummary } from './ReturnSummary.jsx';
@@ -124,8 +124,9 @@ function App() {
   useEffect(() => {
     // H4: 노드를 눌러 들어간 직후 터미널이 붙기 전에 친 키(입력칸 밖)는 모아 둔다. 터미널에 초점이 가면 그만 모은다
     const onKeyCapture = (e) => {
-      // Ctrl+F는 판의 검색이다. 터미널에 초점이 있어도 터미널보다 먼저 받는다(H2)
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); e.stopPropagation(); setSearchOpen(true); return; }
+      // Ctrl+F는 판의 검색, Ctrl+K는 명령 바다. 터미널에 초점이 있어도 터미널보다 먼저 받는다(H2, P140 #13: ^K가 터미널로 가고 이어 친 글이 그 터미널에 들어갔다)
+      const short = boardShortcut(e);
+      if (short) { e.preventDefault(); e.stopPropagation(); if (short === 'command') { if (cmd.current) cmd.current.focus(); } else setSearchOpen(true); return; }
       const st = getState();
       const p = st.pendingInput && pendingFor(st.pendingInput.id);
       // P43: 판에 초점이 있을 때의 방향키(lib/keys.js boardArrowKey). 노드에 들어가 터미널을 기다리는 동안(p)은 터미널 몫이다.
@@ -148,8 +149,7 @@ function App() {
     };
     window.addEventListener('keydown', onKeyCapture, true);
     const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); cmd.current && cmd.current.focus(); return; }
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); setSearchOpen(true); return; }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); setSearchOpen(true); return; } // Ctrl+Shift+F(잡기 단계는 Shift 없는 것만 받는다)
       if (editable(e.target) || e.ctrlKey || e.altKey || e.metaKey) return;
       // P22: 고른 세션 노드를 Delete로 닫는다(X와 같은 확인). 터미널·입력 칸·메모 편집 중에는 위의 editable에서 그대로 글자를 지운다
       const close = closeKeyTargets(e, getState());

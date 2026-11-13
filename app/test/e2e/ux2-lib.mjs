@@ -10,12 +10,17 @@ import { APP_ROOT, REPO, OUT, sleep, until, logger, closeApp } from './harness.m
 import { assertTestBoard } from './p9-guard.mjs';
 
 export { APP_ROOT, REPO, OUT, sleep, until, logger, closeApp };
-if (process.env.MT_E2E_OUT !== 'ux2') throw new Error('MT_E2E_OUT=ux2를 명령줄에서 준다(experiments/ux2/tools/e2e.cjs)');
-export const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', 'ux2', 'tools', 'env.cjs'));
+// P140: 다른 워커가 자기 판에서 재현 사례를 다시 돌릴 수 있게, 판 값(터미널 세션, 포트, 창 원격 디버깅, 시험 폴더 접두어)은 env.cjs의 BOARD에서 읽는다.
+// BOARD가 없으면 ux2 판 값이다. 결과 폴더(MT_E2E_OUT)와 env.cjs 자리는 같은 이름(ux2, p140 …)을 쓴다
+const OUTNAME = process.env.MT_E2E_OUT || '';
+if (!/^(ux2|p\d+)$/.test(OUTNAME)) throw new Error('MT_E2E_OUT=ux2(또는 pNNN)를 명령줄에서 준다(experiments/<이름>/tools/e2e.cjs)');
+export const T = createRequire(import.meta.url)(path.join(REPO, 'experiments', OUTNAME, 'tools', 'env.cjs'));
 export const ENV = T.ENV;
+const BOARD = T.BOARD || { session: 'atrium-dev-ux2', port: '47908', cdp: 9388, prefix: 'mtask-ux2-' };
 assertTestBoard(ENV, { root: T.DEV });
-if (ENV.ATRIUM_TERMINAL_SESSION !== 'atrium-dev-ux2' || ENV.ATRIUM_PORT !== '47908') throw new Error('ux2 판(atrium-dev-ux2, 47908)만');
-for (const d of [T.DIR, T.DIR2, T.DIR3, T.REPO, T.CODEX_HOME]) if (!/^C:\\Workspace\\mtask-ux2-/.test(d)) throw new Error(`시험 폴더는 C:\\Workspace\\mtask-ux2-*만: ${d}`);
+if (ENV.ATRIUM_TERMINAL_SESSION !== BOARD.session || ENV.ATRIUM_PORT !== BOARD.port || !/^atrium-dev-/.test(BOARD.session) || BOARD.port === '47800') throw new Error(`시험 판(${BOARD.session}, ${BOARD.port})만`);
+if (!/^mtask-[a-z0-9]+-$/.test(BOARD.prefix)) throw new Error(`시험 폴더 접두어: ${BOARD.prefix}`);
+for (const d of [T.DIR, T.DIR2, T.DIR3, T.REPO, T.CODEX_HOME]) if (!d.startsWith(`C:\\Workspace\\${BOARD.prefix}`)) throw new Error(`시험 폴더는 C:\\Workspace\\${BOARD.prefix}*만: ${d}`);
 fs.mkdirSync(OUT, { recursive: true });
 
 export const env = (extra = {}) => T.cleanEnv(extra);
@@ -37,7 +42,7 @@ export function prepare() {
 
 // 창 띄우기: 창 안쪽 크기, 언어, 콘솔 오류 모으기. 창 원격 디버깅 포트는 9388(다른 판과 겹치지 않게)
 export async function open({ log = console.log, w = 1584, h = 921, lang = 'ko', bottomPin = false, extraEnv = {}, args = [] } = {}) {
-  const app = await electron.launch({ args: ['.', '--dev', '--remote-debugging-port=9388', ...args], cwd: APP_ROOT, env: env(extraEnv), timeout: 60000 });
+  const app = await electron.launch({ args: ['.', '--dev', `--remote-debugging-port=${BOARD.cdp}`, ...args], cwd: APP_ROOT, env: env(extraEnv), timeout: 60000 });
   const page = await app.firstWindow();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') { errors.push({ t: Date.now(), type: m.type(), text: m.text().slice(0, 400) }); log(`[console.${m.type()}] ${m.text().slice(0, 300)}`); } });
