@@ -847,7 +847,8 @@ export class Backend {
       for (const s of [...this.sessions.values()]) {
         if (s.kind !== SHELL || !s.paneId || s.rt.exit) continue;
         // 작은 노드나 나눈 패널처럼 좁으면 긴 프롬프트가 줄바꿈되어 프롬프트로 보이지 않는다. 줄바꿈을 푼 최근 줄로 읽는다(P6a, P6b가 따로 봄)
-        const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 40 }).catch(() => null);
+        // P136: 지금 화면만 읽는다. 기록 읽기는 셸 안의 전체 화면 프로그램(vim, 셸에서 띄운 에이전트 등)을 2초마다 휠 보고로 굴렸다(hc stitched)
+        const text = await this.adapter.readScreen(s.paneId, { source: 'visible' }).catch(() => null);
         if (text == null || !this.sessions.has(s.sessionId) || s.kind !== SHELL) continue;
         const st = shellPromptState(text);
         const prev = s.rt.shell;

@@ -238,7 +238,8 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     const sendMouse = (data, how) => {
       const f = filterMouse(data, { room: REPORT_BUDGET - st.unacked });
       st.unacked += f.bytes;
-      if (f.held && !st.heldNoted) { st.heldNoted = true; perfLog('term_mouse_held', { sessionId, how, held: f.held, unacked: st.unacked }); }
+      // P136: 창 로그(app-main.log)에도 남긴다. perfLog는 ?trace=1이 아니면 창 안에만 남아 실제 판에서 볼 수 없었다
+      if (f.held && !st.heldNoted) { st.heldNoted = true; perfLog('term_mouse_held', { sessionId, how, held: f.held, unacked: st.unacked }); try { window.mt.log(`term_mouse_held ${sessionId} how=${how} held=${f.held} unacked=${st.unacked}`); } catch {} }
       send(f.data);
     };
 
