@@ -112,7 +112,7 @@ function Header({ s, onKill, onMenu, onLoops }) {
   const t = useT();
   const waiting = s.state === 'waiting' || s.state === 'trust_wait';
   useTick(waiting);
-  const since = s.ask && s.ask.since;
+  const since = s.waitingSince || (s.ask && s.ask.since); // P141(#14): 다시 켜도 이어지는 시각
   // D1: 약 30초마다 오는 자원 이벤트에서 이 세션의 메모리
   const mem = useStore((st) => { const r = st.resources && st.resources.sessions.find((x) => x.sessionId === s.sessionId); return r ? r.memMB : null; });
   const editing = useRenaming(s.sessionId, 'node');
@@ -158,7 +158,8 @@ function FarFace({ s, w, h, open = false }) {
   const narrow = useFlowStore((st) => w * zoomStep(st.transform[2]) < 180); // 좁은지만(계단 값) 구독한다
   return (
     <div className="mt-far" style={{ fontSize: px(12, 0.17, 1 / 16) }} data-role="far">
-      <div className="mt-far-name" style={{ fontSize: px(14, 0.2, 1 / 13) }}><span className="mt-far-nm">@{s.name}</span> <StatePill s={s} />{!narrow && <>{s.flavor ? <span className="mt-badge kind">{kindOf(s.flavor).label}</span> : s.kind && s.kind !== 'claude' ?<span className="mt-badge kind">{s.kind === 'shell' ? t('node.shell') : s.kind}</span> : null}{s.unseen && <span className="mt-badge review">{t('node.review')}</span>}<BranchBadge s={s} /></>}</div>
+      {/* P141(#15): 상태 알약이 검토 대기(작업 완료)면 같은 칩을 또 두지 않는다. 이름은 칩보다 먼저 자리를 받는다(styles.css 끝) */}
+      <div className="mt-far-name" style={{ fontSize: px(14, 0.2, 1 / 13) }}><span className="mt-far-nm">@{s.name}</span> <StatePill s={s} />{!narrow && <>{s.flavor ? <span className="mt-badge kind">{kindOf(s.flavor).label}</span> : s.kind && s.kind !== 'claude' ?<span className="mt-badge kind">{s.kind === 'shell' ? t('node.shell') : s.kind}</span> : null}{s.unseen && !(s.state === 'ready' || s.state === 'shell_idle') && <span className="mt-badge review">{t('node.review')}</span>}<BranchBadge s={s} /></>}</div>
       {waiting && <div className="mt-far-ask" data-role="far-ask" style={{ fontSize: px(15, 0.21, 1 / 14) }}>{askLine(s) || t('node.waitingForYou')}</div>}
       {s.kind === 'shell' && <div className="mt-far-line" data-role="shell-line">{shellLine(s)}</div>}
       {s.elsewhere && <div className="mt-far-line warn">↪ {t('node.workingIn', { name: s.elsewhere.name })}</div>}

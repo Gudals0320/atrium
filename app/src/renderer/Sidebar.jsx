@@ -17,6 +17,7 @@
 import './sidebar.css';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api.js';
+import { shownRole } from './lib/roles.js'; // P141(#17)
 import { useStore, getState, selectWorkspace, toast, goWhenOpen, openDialog, setRenaming } from './store.js';
 import { ago, askLine, STATE_LABEL } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
@@ -267,11 +268,11 @@ const SessionRow = memo(function SessionRow({ r, now, cur, here, busy: rowBusy }
       <span className="mt-sb2-line">
         <span className={`mt-sb2-dot st-${s.state}`} data-state={s.state} />
         <b className="mt-sb2-name">{s.name}</b>
-        {s.branch && s.branch.role && <span className="mt-sb2-role">{s.branch.role}</span>}
+        {s.branch && s.branch.role && <span className="mt-sb2-role">{shownRole(s.branch.role)}</span>}
         {k !== 'claude' && <span className="mt-sb2-kind">{kindText(k)}</span>}
         {r.attn && <span className={`mt-sb2-tag ${b}`}>{b === 'need' ? t('sb2.st_need') : t('sb2.st_error')}</span>}
         {reopen ? <span role="button" tabIndex={-1} className={`mt-sb2-reopen${busy ? ' busy' : ''}`} data-action="reopen-session" title={t('userClose.reopenTitle')} onClick={(e) => { e.stopPropagation(); setCursor(r.id); if (!busy) reopenSession(s); }}>{busy ? t('userClose.reopening') : t('userClose.reopen')}</span>
-          : <span className="mt-sb2-time">{ago(s.lastActivityAt || s.createdAt, now)}</span>}
+          : <span className="mt-sb2-time">{ago(((s.state === 'waiting' || s.state === 'trust_wait') && s.waitingSince) || s.lastActivityAt || s.createdAt, now)}</span>}
         <span role="button" tabIndex={-1} className="mt-sb2-more" data-action="session-menu" title={t('sb2.menu')} onClick={(e) => { setCursor(r.id); openMenu(e, 'session', s.sessionId); }}><Icon name="more" /></span>
       </span>
       {r.attn && <span className="mt-sb2-ask">{ask}</span>}
@@ -303,13 +304,16 @@ function GroupRow({ r, cur, renaming, dropAt }) {
   const t = useT();
   const [val, setVal] = useState(r.g.name || '');
   useEffect(() => { if (renaming) setVal(r.g.name || ''); }, [renaming, r.g.name]);
+  // P141(#16): 이름 칸을 열면 지금 이름을 골라 둔다(치면 바뀐다. 새 그룹의 기본 이름 뒤에 붙지 않는다)
+  const inputRef = useRef(null);
+  useEffect(() => { if (!renaming) return; const id = requestAnimationFrame(() => { const el = inputRef.current; if (el) { el.focus(); el.select(); } }); return () => cancelAnimationFrame(id); }, [renaming]);
   const none = r.none;
   return (
     <div className={`mt-sb2-row grp${r.open ? '' : ' folded'}${cur ? ' cur' : ''}${none ? ' none' : ''}${dropAt ? ' drop' : ''}`} style={pad(r)} data-sb="group" data-row={r.id} data-group={r.g.id || ''} data-name={r.g.name || ''} {...dragProps(r)}
       onClick={() => { setCursor(r.id); if (!none && !renaming) toggleFold(r.id); }}>
       {none ? <span className="mt-sb2-fold" aria-hidden="true" /> : <Fold open={r.open} action="fold" />}
       {renaming
-        ? <input className="mt-sb2-rename" data-role="group-rename" autoFocus value={val} maxLength={40} onClick={(e) => e.stopPropagation()} onChange={(e) => setVal(e.target.value)} onBlur={() => (val.trim() && val.trim() !== r.g.name ? renameGroup(r.g.id, val) : (side.renaming = null, bump()))} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { side.renaming = null; bump(); } }} />
+        ? <input ref={inputRef} className="mt-sb2-rename" data-role="group-rename" autoFocus value={val} maxLength={40} onClick={(e) => e.stopPropagation()} onChange={(e) => setVal(e.target.value)} onBlur={() => (val.trim() && val.trim() !== r.g.name ? renameGroup(r.g.id, val) : (side.renaming = null, bump()))} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { side.renaming = null; bump(); } }} />
         : <span className="mt-sb2-gname" data-role="group-name" onDoubleClick={(e) => { if (!none) { e.stopPropagation(); side.renaming = r.g.id; bump(); } }}>{none ? t('sbGroups.none') : r.g.name}</span>}
       <Inside n={r.wsN} what="sb3.wsN" kind="workspaces" />
       <Counts c={r.c} open={r.open} />

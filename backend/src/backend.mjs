@@ -24,7 +24,7 @@ import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
-import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyTermDisconnected, deriveState, flags, worktreeExitAsk } from './state.mjs';
+import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyTermDisconnected, deriveState, flags, worktreeExitAsk, trackWaiting } from './state.mjs';
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
@@ -477,11 +477,12 @@ export class Backend {
     const rt = s.rt;
     const d = deriveState(rt);
     const f = flags(rt, { seenAt: s.seenAt, delivering: this.queue ? this.queue.pending(s.sessionId) : 0, quietMs: this.cfg.quietMs });
-    const ask = d.ask ? { ...d.ask, input: undefined, waitedMs: d.ask.since ? Date.now() - d.ask.since : null } : null;
+    const waitingSince = trackWaiting(rt, d); // P141(#14): 다시 켜도 이어지는 응답 필요 시작 시각
+    const ask = d.ask ? { ...d.ask, input: undefined, waitedMs: (waitingSince || d.ask.since) ? Date.now() - (waitingSince || d.ask.since) : null } : null;
     return {
       sessionId: s.sessionId, name: shownName(s), cwd: s.cwd, paneId: s.paneId, termWorkspaceId: s.termWorkspaceId,
       address: s.name, label: s.label || null, // P66: name은 보이는 이름, address는 에이전트가 쓰는 주소(에이전트 이름), label은 사람이 정한 이름(없으면 null)
-      state: d.state, estimate: d.estimate || null, termStatus: rt.term.status, ask, error: d.error || rt.lastError || null,
+      state: d.state, estimate: d.estimate || null, termStatus: rt.term.status, ask, waitingSince, error: d.error || rt.lastError || null,
       permissionMode: rt.permissionMode || s.permissionMode, ...shownModel({ model: s.model, effort: s.effort }, s.rt.modelNow), // P95: 미션 맵 카드의 메타 줄. P137: 하네스가 지금 쓰는 값(모르면 띄운 값)
       launchModel: s.model || null, launchEffort: s.effort || null,
       lastPrompt: clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
@@ -1636,7 +1637,7 @@ export class Backend {
 
   inbox() {
     const all = [...this.sessions.values()].map((s) => this.summary(s));
-    const mine = all.filter((x) => x.state === 'waiting' || x.state === 'trust_wait').sort((a, b) => ((a.ask && a.ask.since) || a.createdAt) - ((b.ask && b.ask.since) || b.createdAt));
+    const mine = all.filter((x) => x.state === 'waiting' || x.state === 'trust_wait').sort((a, b) => (a.waitingSince || (a.ask && a.ask.since) || a.createdAt) - (b.waitingSince || (b.ask && b.ask.since) || b.createdAt));
     const review = all.filter((x) => x.unseen).sort((a, b) => (a.turn.endedAt || 0) - (b.turn.endedAt || 0));
     const errors = all.filter((x) => x.state === 'error' || (x.state === 'exited' && x.exit && x.exit.kind !== 'normal' && x.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다
     return { needsYou: mine, review, problems: errors };

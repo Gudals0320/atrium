@@ -258,6 +258,29 @@ export function deriveState(rt) {
   return { state: 'starting' };
 }
 
+// P141(#14): 응답 필요(waiting, trust_wait)가 시작된 때. rt.waitingSince = { key, at }로 runtime에 남아
+// 백엔드·터미널 서버를 다시 켜도 같은 질문(같은 tool_use_id, 신뢰 질문, 화면 질문)이면 그 시각을 잇는다.
+// 다시 켜는 사이의 중간 상태(starting, 터미널 서버가 꺼져 끝남)에서는 지우지 않는다. 다른 상태가 되면 지운다.
+export function needKey(d) {
+  if (d.state === 'trust_wait') return 'trust';
+  if (d.state !== 'waiting') return null;
+  const a = d.ask || {};
+  if (a.toolUseId) return `ask:${a.toolUseId}`;
+  if (a.kind === 'screen' || a.kind === 'unknown_dialog') return 'screen';
+  return `ask:${a.kind || ''}:${a.tool || ''}:${a.summary || ''}`;
+}
+export function trackWaiting(rt, d = deriveState(rt), now = Date.now()) {
+  const key = needKey(d);
+  if (!key) {
+    const between = d.state === 'starting' || (d.state === 'exited' && rt.exit && rt.exit.kind === 'terminal_stopped');
+    if (!between) rt.waitingSince = null;
+    return null;
+  }
+  const w = rt.waitingSince;
+  if (!w || w.key !== key) rt.waitingSince = { key, at: Math.min(now, (d.ask && d.ask.since) || now) };
+  return rt.waitingSince.at;
+}
+
 // 상태에 덧붙이는 표시(3절): 검토 대기, 조용함, 전달 중
 export function flags(rt, { seenAt = null, delivering = 0, quietMs, now = Date.now() } = {}) {
   const st = deriveState(rt).state;

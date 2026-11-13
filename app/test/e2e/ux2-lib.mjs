@@ -21,6 +21,7 @@ assertTestBoard(ENV, { root: T.DEV });
 if (ENV.ATRIUM_TERMINAL_SESSION !== BOARD.session || ENV.ATRIUM_PORT !== BOARD.port || !/^atrium-dev-/.test(BOARD.session) || BOARD.port === '47800') throw new Error(`시험 판(${BOARD.session}, ${BOARD.port})만`);
 if (!/^mtask-[a-z0-9]+-$/.test(BOARD.prefix)) throw new Error(`시험 폴더 접두어: ${BOARD.prefix}`);
 for (const d of [T.DIR, T.DIR2, T.DIR3, T.REPO, T.CODEX_HOME]) if (!d.startsWith(`C:\\Workspace\\${BOARD.prefix}`)) throw new Error(`시험 폴더는 C:\\Workspace\\${BOARD.prefix}*만: ${d}`);
+export const WS_DIR2 = path.basename(T.DIR2); // P141: 각본이 이름으로 부르는 시험 폴더(워크스페이스) 이름(판마다 다르다)
 fs.mkdirSync(OUT, { recursive: true });
 
 export const env = (extra = {}) => T.cleanEnv(extra);

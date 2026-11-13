@@ -13,6 +13,7 @@ import { linkLabelLevel, shifted, linkLabelHidden } from './lib/link-labels.js';
 import { DOCK_LABEL_ZOOM, dockLabelParts } from './lib/dock-links.js';
 import { useT, tMsg, errText, fmtTime } from './lib/i18n.js';
 import { linkLabel } from '../../../backend/src/links.mjs';
+import { shownRole } from './lib/roles.js'; // P141(#17)
 import { useDialog } from './dialog.js';
 
 const ACTIVE_MS = 30 * 60 * 1000;
@@ -41,7 +42,7 @@ export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const [lx, ly] = shifted(lx0, ly0, data);
   const active = to && to.state === 'working' && link.lastAt && Date.now() - link.lastAt < ACTIVE_MS && ['prompt', 'target_submitted', 'target_working'].includes(link.lastKind);
   const kind = link.role ? 'role' : link.observed ? 'observed' : 'spawned';
-  const label = !link.role && link.spawned && !link.lastText ? t('links.spawned') : linkLabel(link); // 띄움만 있는 선은 사전의 글
+  const label = !link.role && link.spawned && !link.lastText ? t('links.spawned') : linkLabel({ ...link, role: shownRole(link.role) }); // 띄움만 있는 선은 사전의 글
   const fit = labelFit(data);
   const hot = hover || !!selected || dialogOn;
   const level = lab ? linkLabelLevel({ zoom, awake: lab.awake, hot, compact: fit.compact }) : null;
@@ -155,7 +156,7 @@ export function LinkPanel({ linkId, onClose }) {
     <div className="mt-linkpanel nowheel" data-role="link-panel" data-link={linkId}>
       <div className="mt-linkpanel-head">
         <b>@{a ? a.name : '?'} → @{b ? b.name : '?'}</b>
-        {link.role && <span className="mt-edge-tag role">{link.role}</span>}
+        {link.role && <span className="mt-edge-tag role">{shownRole(link.role)}</span>}
         {link.spawned && <span className="mt-edge-tag">{t('links.spawned')}</span>}
         {b && <Pill s={b} />}
         <span className="mt-node-sp" />

@@ -100,5 +100,5 @@ test('휴대폰: 실제 판 모양은 두 기둥(세로 한 줄이 아님), 팀�
 
 test('사전: mmMap 열쇠가 두 언어에 모두 있다', () => {
   assert.deepEqual(Object.keys(ko.mmMap).sort(), Object.keys(en.mmMap).sort());
-  for (const k of ['ageNow', 'ageM', 'ageH', 'ageD', 'warnTurn', 'warnAlert', 'warnReview', 'warnClimb', 'dotsRest', 'you', 'sumTurn', 'sumWork', 'sumReview', 'sumRest', 'sumNow', 'sumFoot', 'hint', 'crossWs']) assert.ok(en.mmMap[k] && ko.mmMap[k], k);
+  for (const k of ['ageNow', 'ageM', 'ageH', 'ageD', 'warnTurn', 'warnAlert', 'warnReview', 'warnClimb', 'dotsRest', 'you', 'sumTurn', 'sumWork', 'sumReview', 'sumRest', 'sumNow', 'hint', 'crossWs']) assert.ok(en.mmMap[k] && ko.mmMap[k], k); // P141: sumFoot은 mmFoot(수마다 복수형)으로 옮겼다
 });

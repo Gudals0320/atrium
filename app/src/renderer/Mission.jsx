@@ -279,7 +279,7 @@ export function MissionMap() {
               </section>
             )}
             <div className="mt-mm-foot" data-role="mm-sum-foot">
-              <div>{t('mmMap.sumFoot', { work: counts.work, all: counts.all, teams: lay.teamNo.size })}</div>
+              <div>{[t('mmFoot.work', { n: counts.work }), t('mmFoot.sessions', { n: counts.all }), t('mmFoot.teams', { n: lay.teamNo.size })].join(' · ')}</div>{/* P141(#17): 수마다 복수형 */}
               <div className="mt-mm-hint">{t('mmMap.hint')}</div>
             </div>
           </aside>

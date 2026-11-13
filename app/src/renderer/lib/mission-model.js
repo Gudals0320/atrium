@@ -6,6 +6,7 @@
 // - 팀 요약(team): 리드·sub 아래 모든 세션 수와 일함·응답 필요·잠듦 수. 리드가 일하지 않는데 팀이 일하면 "워커를 기다림"(waiting), 팀의 응답 필요는 리드에 올라온다(climb).
 // - 강조(focusOf): 한 세션을 가리키면 그 세션, 조상, 팀(자손), 바로 이어진 세션과 그 사이 선만 또렷하게.
 import { tierOf } from './overview.js';
+import { shownRole } from './roles.js'; // P141(#17)
 
 export const EDGE_ORDER = ['role', 'prompt', 'spawn', 'bar', 'loop'];
 export const REL_ORDER = ['spawn', 'role', 'prompt', 'human'];
@@ -25,7 +26,7 @@ export function mergeEdges(edges, has = () => true) {
     const p = pairs.get(k) || { id: k, from: e.from, to: e.to, kinds: [], parts: [], role: null, text: null, count: 0, lastAt: 0, active: false };
     if (!p.kinds.includes(e.kind)) p.kinds.push(e.kind);
     p.parts.push(e);
-    if (e.kind === 'role' && e.label) p.role = e.label;
+    if (e.kind === 'role' && e.label) p.role = shownRole(e.label); // P141(#17)
     if ((e.kind === 'prompt' || e.kind === 'bar' || e.kind === 'loop') && e.label && (e.lastAt || 0) >= p.lastAt) p.text = e.label;
     if (e.kind !== 'spawn') p.count += e.count || 0;
     p.lastAt = Math.max(p.lastAt, e.lastAt || 0);
@@ -59,7 +60,7 @@ export function missionTree(graph) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const pairs = mergeEdges((graph && graph.edges) || [], (id) => byId.has(id)).filter((p) => p.kinds.some((k) => SESSION_KINDS.includes(k)));
   // 하위 세션인데 띄움 선이 없으면(옛 판) 부모 → 하위 쌍을 하나 만든다
-  for (const n of nodes) if (n.parentId && byId.has(n.parentId) && !pairs.some((p) => p.from === n.parentId && p.to === n.id)) pairs.push({ id: `${n.parentId}>${n.id}`, from: n.parentId, to: n.id, kinds: ['spawn'], primary: 'spawn', parts: [], role: n.role || null, text: null, count: 0, lastAt: 0, active: false, synthetic: true });
+  for (const n of nodes) if (n.parentId && byId.has(n.parentId) && !pairs.some((p) => p.from === n.parentId && p.to === n.id)) pairs.push({ id: `${n.parentId}>${n.id}`, from: n.parentId, to: n.id, kinds: ['spawn'], primary: 'spawn', parts: [], role: shownRole(n.role) || null, text: null, count: 0, lastAt: 0, active: false, synthetic: true });
   // 실제 부모(parentId) 사슬의 깊이: 같은 등급의 후보 중 더 얕은 쪽(리드)을 고른다
   const realDepth = (id) => { let d = 0; for (let x = byId.get(id), i = 0; x && x.parentId && byId.has(x.parentId) && i < 100; x = byId.get(x.parentId), i++) d++; return d; };
   const parent = new Map(), via = new Map();
@@ -110,7 +111,7 @@ export function roleModel(graph, { live = null, tiers = null, tree = null } = {}
     const hasKids = (T.kids.get(n.id) || []).length > 0, hasParent = T.parent.has(n.id);
     const rank = hasKids ? (hasParent ? 'sub' : 'lead') : hasParent ? 'worker' : touched.has(n.id) ? 'worker' : 'solo';
     const via = T.via.get(n.id);
-    const roleName = (via && via.role) || n.role || null;
+    const roleName = (via && via.role) || shownRole(n.role) || null;
     const family = rank === 'lead' ? 'lead' : roleFamily(roleName);
     let team = null, waiting = 0, climb = 0;
     if (hasKids) {

@@ -29,7 +29,7 @@ export default {
     trust_wait: 'Trust check',
     ready: 'Ready',
     working: 'Working',
-    waiting: 'Your turn',
+    waiting: 'Needs you',
     error: 'Error',
     exited: 'Exited',
     shell_idle: 'Idle',
@@ -134,7 +134,7 @@ export default {
     kanbanColumnDelete: { one: 'Deletes column "{name}" and its card.', other: 'Deletes column "{name}" and its {n} cards.' },
     kanbanDelete: { one: 'Deletes kanban "{title}" and its card. Linked sessions stay.', other: 'Deletes kanban "{title}" and its {n} cards. Linked sessions stay.' },
     memoDelete: 'Deletes the memo ({text}…). This cannot be undone.',
-    loopConfirm: 'Sends "{prompt}" to {target} {when}. Stops: {stops} (you can stop it any time). Every send uses tokens. Sessions on your turn are skipped that round.',
+    loopConfirm: 'Sends "{prompt}" to {target} {when}. Stops: {stops} (you can stop it any time). Every send uses tokens. Sessions that need you are skipped that round.',
     loopEvery: 'every {every}',
     loopEveryNow: 'every {every} (once now first)',
     loopIdle: 'whenever the agent is idle (becomes ready)',
@@ -253,7 +253,7 @@ export default {
       spawn: 'Spawned',
       target_submitted: 'Target submitted',
       target_working: 'Target started working',
-      target_waiting: 'Target: your turn',
+      target_waiting: 'Target: needs you',
       target_done: 'Target done',
       target_exited: 'Target exited',
     },
@@ -293,10 +293,10 @@ export default {
     terminalDown: 'The board terminal server is off. Session screens and states are frozen. Click "{button}" at top right and sessions come back by resuming (turns in progress were cut off).',
   },
   top: {
-    wsTitle: '{kind} {root}\nSessions {sessions} (shells {shells}) · working {working} · your turn {needsYou} · done {review}\nClick to go to this area',
+    wsTitle: '{kind} {root}\nSessions {sessions} (shells {shells}) · working {working} · needs you {needsYou} · done {review}\nClick to go to this area',
     wsRepo: 'Repo',
     wsFolder: 'Folder (not git)',
-    turnN: 'Your turn {n}',
+    turnN: 'Needs you {n}',
     wsClose: 'Close empty workspace',
     wsEmpty: 'No workspaces',
     wsOpen: 'Open repo: pick a folder to open as a workspace',
@@ -306,7 +306,7 @@ export default {
     search: 'Search',
     turnTitle: 'Sessions waiting for you (longest first). Click for the list, N for next',
     turnNone: 'No sessions are waiting for you',
-    turn: 'Your turn',
+    turn: 'Needs you',
     nextKey: 'N next',
     turnEmpty: 'No sessions waiting',
     terminalStarted: 'Terminal server started. Sessions come back by resuming',
@@ -329,7 +329,7 @@ export default {
     resTerminal: 'Terminal server {mb}',
     resNoTerminal: 'No terminal server',
     resBackend: 'Backend {mb}',
-    resStates: 'Working {working}, your turn {waiting}',
+    resStates: 'Working {working}, needs you {waiting}',
     resAt: 'Measured at {time} (about every 30s, took {ms}ms)',
     memory: 'Memory',
     review: 'Done',
@@ -435,7 +435,7 @@ export default {
     maxTimePh: 'e.g. 2h',
     until: 'Answer contains this text (goal)',
     untilPh: 'e.g. ALL TESTS PASS',
-    note: 'Sessions on your turn (permission, question) skip that run. Every send uses tokens. Sent prompts stay in Thread as "Loop".',
+    note: 'Sessions that need you (permission, question) skip that run. Every send uses tokens. Sent prompts stay in Thread as "Loop".',
     check: 'Review',
     create: 'Create',
     pause: 'Pause',
@@ -580,7 +580,7 @@ export default {
     migrationProblems: 'Migration problems: {list}',
     migrationTitle: '{name}: moving the old board',
     open: 'Open',
-    turn: 'Your turn {n}',
+    turn: 'Needs you {n}',
     backendOn: { one: 'Backend on · {n} session', other: 'Backend on · {n} sessions' },
     backendOff: 'Backend off',
     backendRestart: 'Restart backend',
@@ -724,7 +724,7 @@ export default {
     appRedraw: 'Redraw board',
   },
   change: {
-    needs_you: 'Your turn',
+    needs_you: 'Needs you',
     error: 'Error',
     interrupted: 'Cut-off turn',
     exited: 'Exited',
@@ -803,7 +803,7 @@ export default {
   mission: {
     cat: {
       all: 'All',
-      needs_you: 'Your turn',
+      needs_you: 'Needs you',
       working: 'Working',
       idle: 'Idle',
       done: 'Done',
@@ -2125,7 +2125,6 @@ export default {
     sumRest: 'Idle · done',
     sumNow: 'Now: {text}',
     sumNone: 'Nothing here',
-    sumFoot: '{work} working · {all} sessions · {teams} teams',
     hint: 'Thin line: sub-session or role. Dashed: request or another project. Point at a session to see only its links.',
     edgeTip: '@{from} → @{to}',
     restHidden: 'and {n} more',
@@ -2133,7 +2132,7 @@ export default {
   },
   // P98: top bar chip for a group of workspaces (folder group or your group)
   wsGroupTab: {
-    title: '{name}: {kind} of {n} workspaces\nSessions {sessions} (shells {shells}) · working {working} · your turn {needsYou} · done {review}\nClick to see the whole group. ▾ picks one workspace',
+    title: '{name}: {kind} of {n} workspaces\nSessions {sessions} (shells {shells}) · working {working} · needs you {needsYou} · done {review}\nClick to see the whole group. ▾ picks one workspace',
     kindAuto: 'folder group in {root}',
     kindGroup: 'group',
     current: 'Now: {name}',
@@ -2408,5 +2407,16 @@ export default {
   },
   mmMap2: {
     launchedWith: 'Launched with {model}',
+  },
+  // P141(#17): default role names the board stores (backend branch.mjs), shown in the current language
+  roles: {
+    worker: 'worker',
+    head: 'head',
+  },
+  // P141(#17): mission map footer, one plural per count
+  mmFoot: {
+    work: '{n} working',
+    sessions: { one: '{n} session', other: '{n} sessions' },
+    teams: { one: '{n} team', other: '{n} teams' },
   },
 };

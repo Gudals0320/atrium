@@ -1800,3 +1800,20 @@ html[data-board-moving="1"] .mt-node-run { visibility: hidden; }
 .mt-kind-mk { position: relative; display: inline-block; aspect-ratio: 1; container-type: inline-size; vertical-align: middle; }
 .mt-kind-mk > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .mt-kind-mk > b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--font-ui); font-weight: 800; line-height: 1; white-space: nowrap; }
+
+/* ---------- P141(#15): 먼 얼굴 이름 줄. 이름이 먼저 자리를 받고(줄이 좁으면 이름만 말줄임), 알약·칩이 먼저 줄거나 잘린다 ---------- */
+.mt-far-name > .mt-far-nm { flex: 0 0 auto; max-width: 100%; }
+.mt-far-name > :not(.mt-far-nm) { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: clip; }
+
+/* ---------- P141(#17): 전달 칩의 상태 글은 한 줄. 좁으면 보낸 글이 먼저 줄고, 상태 글은 말줄임 ---------- */
+.mt-delivery > b { flex: none; white-space: nowrap; }
+.mt-delivery-st { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-delivery-text { flex: 1 1 0; min-width: 0; }
+
+/* ---------- P141(#15): 절전 얼굴. 머리줄·요청 줄은 줄어들지 않고(겹치던 것), 요청은 한 줄, 남은 높이는 답 줄이 쓴다.
+   머리줄은 이름이 먼저 자리를 받고 "…부터 절전 중"·아낀 메모리가 말줄임으로 준다 ---------- */
+.mt-sleepface > * { flex-shrink: 0; }
+.mt-sleepface > [data-role="sleep-answer"] { flex-shrink: 1; min-height: 0; }
+.mt-sleepface .mt-far-line.one { -webkit-line-clamp: 1; }
+.mt-sleep-head > .mt-far-nm, .mt-sleep-head > .mt-sleep-moon { flex: 0 0 auto; max-width: 100%; }
+.mt-sleep-head > .mt-sleep-at, .mt-sleep-head > .mt-sleep-saved { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

@@ -88,14 +88,14 @@ const cases = {
     await L.waitStateOf(page, 'sc1', ['ready'], 90000);
     await sleep(5000);
     const st = (await L.sessionOf(page, 'sc1')).state;
-    const ws = L.atrium('ws').split('\n').filter((l) => /mtask-ux2-dir2/.test(l)).join(' ');
+    const ws = L.atrium('ws').split('\n').filter((l) => l.includes(L.WS_DIR2)).join(' ');
     await sidebar(true);
-    const headTxt = await page.evaluate(() => [...document.querySelectorAll('.mt-sidebar [draggable=true]')].map((e) => e.innerText.replace(/\n/g, ' ')).filter((t) => /mtask-ux2-dir2/.test(t)));
+    const headTxt = await page.evaluate((w) => [...document.querySelectorAll('.mt-sidebar [draggable=true]')].map((e) => e.innerText.replace(/\n/g, ' ')).filter((t) => t.includes(w)), L.WS_DIR2);
     const storeCounts = await page.evaluate(() => (window.__mt.getState().workspaces || []).map((w) => ({ name: w.name, c: w.counts })));
     await shot('counts-1-sidebar');
     await page.keyboard.press('Control+Shift+E'); await sleep(300);
-    const d2 = storeCounts.find((w) => w.name === 'mtask-ux2-dir2');
-    const dt = during.find((w) => w.name === 'mtask-ux2-dir2');
+    const d2 = storeCounts.find((w) => w.name === L.WS_DIR2);
+    const dt = during.find((w) => w.name === L.WS_DIR2);
     // 턴 중에는 작업 중 1, 끝난 뒤에는 작업 중 0·확인할 결과 1이어야 한다(CLI ws는 백엔드의 실제 값)
     step('sidebarCounts: 창의 워크스페이스 세는 값(사이드바 머리)이 세션 상태를 따라간다', dt && dt.c.working === 1 && d2 && d2.c.working === 0 && d2.c.review === 1, { sessionState: st, cliWs: ws, sidebarHeads: headTxt, windowCountsAfter: d2 && d2.c, windowCountsDuringTurn: dt && dt.c });
   },
@@ -213,7 +213,7 @@ const cases = {
     await L.waitStateOf(page, 'sf1', ['working'], 30000).catch(() => null);
     await L.waitStateOf(page, 'sf1', ['ready'], 90000);
     await sleep(3000);
-    L.atrium('sleep', 'mtask-ux2-dir2');
+    L.atrium('sleep', L.WS_DIR2);
     await L.waitStateOf(page, 'sf1', ['sleeping'], 60000);
     const id = await L.sessionId(page, 'sf1');
     const r = await page.evaluate((i) => { const n = window.__mt.getState().nodes.get(i); const el = document.querySelector('.mt-canvas'); const z = 190 / n.w; window.__mt.getState().setViewport({ x: el.clientWidth / 2 - (n.x + n.w / 2) * z, y: el.clientHeight / 2 - (n.y + n.h / 2) * z, zoom: z }); return z; }, id);
@@ -361,9 +361,32 @@ const cases = {
     const inbox = L.atrium('inbox').split('\n').filter((l) => /tw1/.test(l)).slice(0, 2);
     step('waitAgeRestart: 백엔드를 다시 켜도 응답 필요의 기다린 시간이 이어진다(A1, C2)', t0 && t1 && !/^\d+(초|s)$/.test(t1), { sidebarBefore: t0, sidebarAfter: t1, stateBefore: a0, stateAfter: a1, inbox });
   },
+  // P141(#16)·H5: 선택 막대가 고른 노드의 머리줄을 덮고, 미션 맵을 열어도 그 위에 남아 탭을 가린다
+  async selBar() {
+    await sp.spawn(L.T.DIR, 'sbx', '--kind', 'shell');
+    await L.waitNode(page, 'sbx'); await sleep(1500);
+    const id = await L.sessionId(page, 'sbx');
+    await clickBlank();
+    // 노드 머리줄이 선택 막대 자리(맨 위 줄이 좁으면 그 아래 줄, top 60px) 밑에 오게 판을 옮긴다(배율 0.8)
+    await page.evaluate((i) => { const st = window.__mt.getState(); const n = st.nodes.get(i); const el = document.querySelector('.mt-canvas'); const z = 0.8; st.setViewport({ x: el.clientWidth / 2 - (n.x + n.w / 2) * z, y: 66 - n.y * z, zoom: z }); }, id);
+    await sleep(900);
+    const hb = await page.evaluate((i) => { const h = document.querySelector(`.react-flow__node[data-id="${i}"] .mt-node-head`).getBoundingClientRect(); return { x: Math.round(innerWidth / 2), y: h.y + h.height / 2, top: Math.round(h.top), hit: (document.elementFromPoint(innerWidth / 2, h.y + h.height / 2) || {}).className || null }; }, id); // 가운데(위 알약 사이, 막대가 뜰 자리)를 누른다
+    await page.keyboard.down('Control'); await page.mouse.click(hb.x, hb.y); await page.keyboard.up('Control'); await sleep(1200); // 고르기(Ctrl+누르기. 그냥 누르면 그 노드로 화면을 옮긴다)
+    const cover = () => page.evaluate((i) => { const b = document.querySelector('[data-role="selection"]'); const h = document.querySelector(`.react-flow__node[data-id="${i}"] .mt-node-head`); if (!b || !h) return { bar: !!b }; const r = b.getBoundingClientRect(), q = h.getBoundingClientRect(); const ox = Math.min(r.right, q.right) - Math.max(r.left, q.left), oy = Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top); return { bar: true, row: b.dataset.row, ox: Math.round(ox), oy: Math.round(oy), barBottom: Math.round(r.bottom), headTop: Math.round(q.top) }; }, id);
+    const c1 = await cover();
+    await shot('selbar-1-head');
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1366, 768)); await sleep(800);
+    await page.keyboard.press('m'); await sleep(1300);
+    const inMission = await page.evaluate(() => { const b = document.querySelector('[data-role="selection"]'); const sel = window.__mt.getState().selected.length; return { bar: !!(b && b.offsetParent), selected: sel }; });
+    await shot('selbar-2-mission');
+    await page.keyboard.press('Escape'); await sleep(500);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1584, 921)); await sleep(600);
+    await page.evaluate(() => window.__mt.getState().clearSelection());
+    step('selBar: 선택 막대가 고른 노드 머리줄을 덮지 않고, 미션 맵을 여는 동안 숨는다(H5)', c1.bar && !(c1.ox > 4 && c1.oy > 0) && !inMission.bar && inMission.selected > 0, { headTopBefore: hb.top, afterSelect: c1, mission: inMission });
+  },
   // S5·H5·U4: 먼 얼굴에서 칩이 많으면 세션 이름이 "@"만 남는다(작업 완료가 상태 알약과 칩으로 두 번)
   async farName() {
-    const c = await call('connection.create', { connection: { name: 'fake codex ux2r', protocol: 'openai-responses', baseUrl: 'http://127.0.0.1:47994/v1', auth: { env: 'P115_FAKE_KEY' } } });
+    const c = await call('connection.create', { connection: { name: 'fake codex ux2r', protocol: 'openai-responses', baseUrl: `http://127.0.0.1:${L.T.FAKE_PORT || 47994}/v1`, auth: { env: 'P115_FAKE_KEY' } } });
     const l = await call('launcher.create', { launcher: { name: 'Codex fake r', harness: 'codex', connection: c.connection.id, model: 'ux2-fake-model', args: '--dangerously-bypass-approvals-and-sandbox' }, favorite: false });
     await sp.spawn(L.T.DIR, 'cq', '--launcher', l.launcher.id);
     await L.waitStateOf(page, 'cq', ['ready'], 90000);
