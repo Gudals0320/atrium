@@ -45,7 +45,8 @@ export function partition(items, cols, costOf) {
     }
     return out;
   };
-  const total = sum(items.map((_, i) => costOf(i, true, -1)));
+  // P148: 위쪽 끝은 한 기둥에 차례대로 쌓은 실제 높이(틈·폴더 머리 포함). 머리 없는 값만 더하면 기둥 하나(휴대폰)일 때 둘로 넘쳤다
+  const total = Math.max(sum(items.map((_, i) => costOf(i, true, -1))), sum(items.map((_, i) => costOf(i, i === 0, i - 1))));
   let lo = Math.max(...items.map((_, i) => costOf(i, true, -1))), hi = total;
   while (hi - lo > 1) { const mid = Math.floor((lo + hi) / 2); if (place(mid).length <= cols) hi = mid; else lo = mid; }
   const a = place(lo);
