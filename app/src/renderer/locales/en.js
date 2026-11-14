@@ -2432,4 +2432,17 @@ export default {
     on: 'Performance trace on for 10 minutes',
     off: 'Performance trace off',
   },
+  // P147: mission map "squads" style (team cards, waiting strip) and the style switch
+  mmSquad: {
+    style_squads: 'Squads',
+    style_classic: 'Classic',
+    styleTitle: 'Mission map style. Classic is the earlier left-to-right map (setting missionStyle)',
+    dockTitle: 'Waiting on you',
+    dockNone: 'Nothing is waiting for you',
+    dockDone: 'Done · check the result',
+    teamBar: '{n} in the team · {work} working · {turn} need you',
+    inWs: 'Workspace {ws}',
+    cont: 'continued',
+    hint: 'Point at a session to see its team and links. ↑↓ to move, Enter to go.',
+  },
 };
