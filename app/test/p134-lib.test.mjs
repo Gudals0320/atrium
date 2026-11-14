@@ -78,27 +78,33 @@ test('팀이 폴더를 넘으면: 하위 세션은 부모 팀 안(부모 폴더 
   assert.ok(tree.cross, '다른 워크스페이스로 간 선'); assert.ok(!tree.outside, '같은 상자 안');
   const link = lay.edges.find((e) => e.from === 's:b2x' && e.to === 's:ow');
   assert.ok(link && link.outside, '폴더 상자를 넘는 선');
-  assert.ok(!lay.edges.find((e) => e.from === 'human').outside, '나에게서 가는 선은 상자 넘기로 셈하지 않는다');
+  assert.ok(!lay.edges.some((e) => e.from === 'human'), 'P145: 사람 선은 없다');
 });
 
-test('열은 지도 전체에서 같다: 폴더 안 팀과 폴더 밖 팀의 리드가 같은 x, 폴더가 있으면 상자 여백만큼 민다', () => {
-  const lay = missionLayout(board(), { order: ORDER, vgroups: VG, width: 1400 });
+test('열 자리: 위아래로 쌓이면 폴더 안 팀과 폴더 밖 팀의 리드가 같은 x, 폴더가 있으면 상자 여백만큼 민다(P145: 넓으면 팀 단위가 나란히)', () => {
+  const lay = missionLayout(board(), { order: ORDER, vgroups: VG, width: 700 });
   const b = (id) => lay.boxes.get(`s:${id}`);
   assert.equal(b('lead').x, b('olead').x);
   assert.equal(b('w1').x, b('ow').x);
-  const plain = missionLayout(board(), { order: ORDER, vgroups: [], width: 1400 });
+  // P145: 넓은 지도에서는 폴더 밖 팀(o1)이 폴더 상자 오른쪽에 같은 위 끝으로 선다. 팀 안 흐름(리드 → 하위)은 그대로
+  const wide = missionLayout(board(), { order: ORDER, vgroups: VG, width: 1400 });
+  const o1 = wide.groups.find((g) => g.key === 'o1'), fa = wide.folders.find((f) => f.id === 'fa');
+  assert.equal(o1.plate.y, fa.y); assert.ok(o1.plate.x > fa.x + fa.w);
+  assert.equal(wide.boxes.get('s:ow').x - wide.boxes.get('s:olead').x, MISSION.boxW + MISSION.colGap);
+  const plain = missionLayout(board(), { order: ORDER, vgroups: [], width: 700 });
   assert.equal(b('lead').x - plain.boxes.get('s:lead').x, FOLDER.m);
   assert.equal(plain.folders.length, 0);
 });
 
-test('폴더가 없으면 전과 같은 자리(P101 배치 그대로): 상자 없음, outside 없음', () => {
+test('폴더가 없으면: 상자 없음, outside 없음, 판끼리 틈(16)만큼 떨어져 빈 곳에 채운다(P145: 팀 판도 나란히)', () => {
   const lay = missionLayout(board(), { order: ORDER, width: 1400 });
   assert.deepEqual(lay.folders, []);
   assert.ok(lay.edges.every((e) => !e.outside));
-  // 팀 워크스페이스가 왼쪽, 혼자인 워크스페이스는 팀 흐름 오른쪽 기둥(판 사이 16)
+  assert.equal(unitsHit(lay.groups.map((x) => ({ id: x.key, ...x.plate }))), null);
   const g = Object.fromEntries(lay.groups.map((x) => [x.key, x]));
-  const flowRight = Math.max(g.a1.plate.x + g.a1.plate.w, g.o1.plate.x + g.o1.plate.w);
-  assert.equal(Math.min(...lay.groups.filter((x) => x.packed).map((x) => x.plate.x)) - flowRight, MISSION.slotGap - 2 * MISSION.plate);
+  assert.equal(g.o1.plate.y, g.a1.plate.y, '두 팀이 나란히');
+  assert.equal(g.o1.plate.x - (g.a1.plate.x + g.a1.plate.w), MISSION.slotGap - 2 * MISSION.plate);
+  assert.ok(lay.height < missionLayout(board(), { order: ORDER, width: 700 }).height, `높이 ${lay.height}: 쌓은 좁은 지도보다 낮다`);
 });
 
 test('좁은 지도: 오른쪽에 자리가 없으면 팀이 없는 단위(폴더 포함)는 아래로, 그래도 겹치지 않는다. 폴더 상자는 너무 넓지 않다', () => {
