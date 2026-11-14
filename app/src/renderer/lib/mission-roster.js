@@ -53,7 +53,7 @@ export function partition(items, cols, costOf) {
 }
 
 // opt: collapsed(접은 워크스페이스 키), order(판의 워크스페이스 차례), vgroups(P44 가상 그룹 = 사이드바 폴더), tiers(Map id → 등급), width(지도 칸 폭)
-export function rosterLayout(graph, { collapsed = [], order: order0 = [], vgroups = [], tiers = null, width = 1300 } = {}, R = ROSTER) {
+export function rosterLayout(graph, { collapsed = [], order: order0 = [], vgroups = [], tiers = null, width = 1300, fit = 0 } = {}, R = ROSTER) {
   const { order, groupOf: vgOf } = groupedOrder(order0, vgroups);
   const tree = missionTree(graph);
   const { byId } = tree;
@@ -122,7 +122,21 @@ export function rosterLayout(graph, { collapsed = [], order: order0 = [], vgroup
     if (!first) c += sameF ? R.blockGap : R.fGap;
     return c;
   };
-  const parts = partition(blocks0, cols, costOf);
+  // 지도 칸 높이(fit)가 주어지면, 그 안에 드는 나눔 중 폴더를 가장 적게 가르는 것(같으면 기둥이 많은 것: 한눈에 더 보인다)을 쓴다.
+  // 넓은 화면에서 폴더 하나를 쓸데없이 두 기둥에 나누지 않으면서, 기둥 하나로 길게 쌓지도 않는다
+  let parts = partition(blocks0, cols, costOf);
+  if (fit > 0) {
+    const tall = (p) => Math.max(...p.map((l) => l.reduce((s, i, j) => s + costOf(i, j === 0, j ? l[j - 1] : -1), 0))) + R.pad * 2 + R.fPad * 2;
+    const splits = (p) => p.slice(1).filter((l, c) => { const a = blocks0[p[c][p[c].length - 1]], b = blocks0[l[0]]; return a.vg && b.vg && a.vg.id === b.vg.id; }).length;
+    let best = null;
+    for (let k = 1; k <= cols; k++) {
+      const p = partition(blocks0, k, costOf);
+      if (tall(p) > fit) continue;
+      const score = splits(p) * 1000 - p.length;
+      if (!best || score < best.score) best = { p, score };
+    }
+    if (best) parts = best.p;
+  }
 
   // 자리 매기기
   const folders = [], blocks = [], squads = [], rows = [], guides = [];

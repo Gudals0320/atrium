@@ -164,6 +164,21 @@ test('큰 판 크기: 넓은 칸에서 기둥 여럿, 고르게 나눈다', () =
   assert.ok(lay.height <= 720, `큰 판 높이 ${lay.height}`);
 });
 
+test('지도 칸 높이(fit)에 들면 기둥을 덜 쓴다', () => {
+  const b = big();
+  const g = { nodes: b.nodes, edges: b.edges };
+  const tiers = tiersOf(g);
+  const full = rosterLayout(g, { order: b.order, vgroups: b.vg, tiers, width: 2520 });
+  const tall = rosterLayout(g, { order: b.order, vgroups: b.vg, tiers, width: 2520, fit: 1180 });
+  const short = rosterLayout(g, { order: b.order, vgroups: b.vg, tiers, width: 2520, fit: 300 });
+  assert.ok(tall.height <= 1180, `높이 ${tall.height} ≤ 칸`);
+  assert.ok(!tall.folders.some((f) => f.cont), '높은 칸에서는 폴더를 두 기둥에 나누지 않는다');
+  assert.ok(full.folders.some((f) => f.cont), '(칸 높이를 모르면 고르게 나누며 폴더가 걸칠 수 있다)');
+  assert.ok(tall.cols >= 3, `기둥 하나로 길게 쌓지 않는다(${tall.cols})`);
+  assert.equal(short.cols, full.cols, '들지 않으면 기둥을 모두 쓴다');
+  checkGeometry(tall, 2520);
+});
+
 test('선형 분할: 가장 높은 기둥을 가장 낮게, 차례 유지', () => {
   const hs = [5, 5, 5, 5, 20, 5, 5];
   const parts = partition(hs, 3, (i) => hs[i]);

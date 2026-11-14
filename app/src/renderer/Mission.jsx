@@ -59,7 +59,7 @@ export function facts(n, live, m, tier, t, now, cross = false) {
     : tier === 'alert' ? { k: 'err', main: role, text: clip(err || stateText, 90) }
     : team ? { k: 'team', main: role, text: [t('mmRole.team', { n: m.team.size }), m.waiting ? t('mmRole.waiting', { n: m.waiting }) : m.team.work ? t('mmRole.teamWork', { n: m.team.work }) : null].filter(Boolean).join(' · ') }
     : { k: doing ? 'now' : 'state', main: role, text: doing || stateText };
-  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line, away, launched };
+  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line, away, launched, model, age, branch, loops: n.loops || 0 }; // P147: 부대 지도가 메타를 나눠 쓴다(model·age·branch)
 }
 
 export function Avatar({ kind, tier, shell, small }) {

@@ -57,6 +57,7 @@ export function SquadMap({ switcher = null }) {
   const [shut, setShut] = useState(() => new Set());
   const [hot, setHot] = useState(null);
   const [width, setWidth] = useState(1300);
+  const [fit, setFit] = useState(0); // 지도 칸 높이: 그 안에 들면 기둥을 덜 쓴다
   const bodyRef = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -68,7 +69,7 @@ export function SquadMap({ switcher = null }) {
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!open || !el) return undefined;
-    const read = () => { const w = Math.max(420, Math.floor(el.clientWidth / 20) * 20); setWidth((v) => (v === w ? v : w)); };
+    const read = () => { const w = Math.max(420, Math.floor(el.clientWidth / 20) * 20), h = Math.floor(el.clientHeight / 20) * 20; setWidth((v) => (v === w ? v : w)); setFit((v) => (v === h ? v : h)); };
     read();
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
     if (ro) ro.observe(el); else window.addEventListener('resize', read);
@@ -82,7 +83,7 @@ export function SquadMap({ switcher = null }) {
     if (graph) for (const n of graph.nodes) if (n.kind === 'session') { const live = n.sessionId ? sessions.get(n.sessionId) : null; out.set(n.id, nodeTierOf(n, live)); }
     return out;
   }, [graph, sessions]);
-  const lay = useMemo(() => (graph ? rosterLayout(graph, { collapsed: [...shut], order, vgroups, tiers, width }) : null), [graph, shut, order, vgroups, tiers, width]);
+  const lay = useMemo(() => (graph ? rosterLayout(graph, { collapsed: [...shut], order, vgroups, tiers, width, fit }) : null), [graph, shut, order, vgroups, tiers, width, fit]);
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const focus = useMemo(() => (lay && hot ? focusOf(lay.tree, hot) : null), [lay, hot]);
   const sum = useMemo(() => missionSummary(lay ? lay.order : [], (id) => tiers.get(id)), [lay, tiers]);
@@ -158,6 +159,11 @@ export function SquadMap({ switcher = null }) {
     const chips = linkChips(id);
     const cross = r.cross;
     const text = f.line.k === 'team' ? (f.doing || f.line.text) : f.line.text;
+    // 메타: 줄은 리드와 다른 모델만(같으면 되풀이하지 않는다, 풍선 도움말에는 늘 있다), 시간, 브랜치. 머리·혼자인 줄은 모두
+    const leadF = r.squad && !head ? factsOf(r.squad) : null;
+    const meta = head || !leadF ? (f.meta || (f.shell ? t('mmMap.noModel') : '')) : [f.model && f.model !== leadF.model ? f.model : null, f.age, f.branch ? `⎇ ${f.branch}` : null, f.loops ? `⟳${f.loops}` : null].filter(Boolean).join(' · ');
+    // 역할 칩: 기본 이름(워커·하위 세션)은 되풀이하지 않는다. 하위 리드와 사람이 붙인 역할은 보인다
+    const plainRole = m && m.rank === 'worker' && (!m.roleName || [t('roles.worker'), 'worker', t('mmRole.worker')].includes(m.roleName));
     const cls = `mt-sq-row k-${r.kind} t-${tier}${f.shell ? ' shell' : ''}${hot === id ? ' hot' : ''}${recede(id) ? ' recede' : ''}${fdim(id) ? ' fdim' : ''}`;
     return (
       <div key={id} className={cls} style={{ left: r.x, top: r.y, width: r.w, height: r.h }} data-role="sq-row" data-sq-id={id} data-id={id} data-name={n.name} data-tier={tier} data-kind={r.kind} data-depth={r.depth}
@@ -167,12 +173,12 @@ export function SquadMap({ switcher = null }) {
           <span className="mt-sq-l1">
             {head && lay.teamNo.get(id) ? <span className="mt-sq-no" data-role="sq-team-no">{lay.teamNo.get(id)}</span> : null}
             <b className="mt-sq-name">{n.name}</b>
-            {m && m.rank !== 'solo' && <span className={`mt-sq-role f-${m.family}`} data-role="sq-role">{f.role}</span>}
+            {m && m.rank !== 'solo' && !plainRole && <span className={`mt-sq-role f-${m.family}`} data-role="sq-role">{f.role}</span>}
             {cross && <span className="mt-sq-chip cross" data-role="sq-cross" title={t('mmRole.relCrossTitle')}>↗ {wsName(n.workspaceKey)}</span>}
             {!head && <span className={`mt-sq-text k-${f.line.k}`} data-role={f.line.k === 'ask' ? 'sq-ask' : 'sq-line'}>{text}</span>}
             {chips.slice(0, 2).map(({ l, dir, other }) => <span key={`${l.id}:${dir}`} className={`mt-sq-chip rel-${l.rel}`} data-role="sq-link-chip" data-dir={dir} title={`${relName(l.rel)}${l.cross ? ` · ${t('mmRole.relCross')}` : ''}${l.text ? `\n“${clip(l.text, 80)}”` : ''}`}>{dir === 'to' ? '→' : '←'} {nameOf(other)}</span>)}
             {chips.length > 2 && <span className="mt-sq-chip">+{chips.length - 2}</span>}
-            <span className="mt-sq-meta" data-role="sq-meta">{f.meta || (f.shell ? t('mmMap.noModel') : '')}</span>
+            <span className="mt-sq-meta" data-role="sq-meta">{meta}</span>
           </span>
           {head && (
             <span className="mt-sq-l2">
