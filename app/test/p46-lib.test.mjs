@@ -91,20 +91,22 @@ test('P46 → P95: 워크스페이스 머리 글 — 판의 영역 차례(팀 �
   const bs = [...lay.boxes.values()];
   for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) assert.ok(!hit(bs[i], bs[j]), `${bs[i].node.id} × ${bs[j].node.id}`);
   for (const g of lay.groups) for (const b of bs) assert.ok(!hit(head(g), b), `머리 글 ${g.key} × ${b.node.id}`);
-  // 나는 머리 글들 왼쪽 0열
-  const h = lay.boxes.get('human');
-  assert.ok(lay.groups.every((g) => h.x + h.w < g.x));
+  // P145: 나는 없고, 팀 흐름의 머리 글은 지도 왼쪽 끝 열
+  assert.ok(!lay.boxes.has('human'));
+  assert.equal(lay.groups[0].x, MISSION.pad);
   // 열은 판 전체에서 같다: lead(1열)의 다른 워크스페이스 워커도 2열, 부모 팀 안에 놓인다
   assert.equal(lay.boxes.get('s:lead').depth, 1);
   for (const k of ['ui', 'api-tests', 'ko-copy']) assert.equal(lay.boxes.get(`s:${k}`).depth, 2, k);
   assert.equal(lay.boxes.get('s:reviewer').depth, 3);
   assert.equal(lay.boxes.get('s:api-tests').x, lay.boxes.get('s:ui').x);
   assert.equal(lay.boxes.get('s:api-tests').group, 'C:/w/app/', '다른 워크스페이스 하위도 부모 팀(머리 글) 아래');
-  assert.ok(lay.boxes.get('s:ko-copy').y < lay.groups[1].y, 'app 팀 안(api 머리 글 위)');
-  // 연결 없는 세션: 팀이 있는 워크스페이스면 그 팀 아래 1열, 혼자뿐인 워크스페이스(docs)는 오른쪽 기둥
+  const appPlate = lay.groups[0].plate, ko = lay.boxes.get('s:ko-copy');
+  assert.ok(ko.y + ko.h <= appPlate.y + appPlate.h && ko.x + ko.w <= appPlate.x + appPlate.w, 'app 팀 판 안');
+  // 연결 없는 세션: 팀이 있는 워크스페이스면 그 팀 아래(P145: 팀이 차지한 열들에 나눠, 첫 자리는 리드 열), 혼자뿐인 워크스페이스(docs)는 팀 판 밖 빈 곳
   assert.deepEqual(lay.loose.sort(), ['s:app-notes', 's:glossary', 's:perf']);
-  assert.ok(lay.boxes.get('s:app-notes').y > lay.boxes.get('s:ui-tests').y && lay.boxes.get('s:app-notes').x === lay.boxes.get('s:lead').x);
-  assert.ok(lay.boxes.get('s:glossary').x > Math.max(...bs.filter((b) => !b.loose || b.group !== 'C:/w/docs/').map((b) => b.x + b.w)) - 1, 'docs는 팀 흐름 오른쪽');
+  assert.ok(lay.boxes.get('s:app-notes').y > Math.max(lay.boxes.get('s:ui-tests').y, lay.boxes.get('s:reviewer').y) && lay.boxes.get('s:app-notes').x === lay.boxes.get('s:lead').x);
+  const docs = lay.groups.find((g) => g.key === 'C:/w/docs/');
+  for (const g of lay.groups) if (g !== docs) assert.ok(!hit(docs.plate, g.plate), `docs 판 × ${g.key}`);
   // 순서를 모르면 키 이름 순(팀 먼저)
   assert.deepEqual(missionLayout(three()).groups.map((g) => g.key), ['C:/w/api/', 'C:/w/app/', 'C:/w/docs/']);
 });
@@ -116,7 +118,7 @@ test('P46: 무리를 건너는 지시 — cross로 표시, 나무 선, 선이 �
   const ko = lay.edges.find((e) => e.to === 's:ko-copy');
   assert.ok(ko.tree, '나무 선');
   assert.ok(!lay.edges.find((e) => e.to === 's:ui').cross);
-  assert.ok(!lay.edges.find((e) => e.from === 'human' && e.to === 's:lead').cross, '나에게서 오는 선은 무리를 건너지 않는다');
+  assert.ok(!lay.edges.some((e) => e.from === 'human'), 'P145: 사람 선은 없다');
   // 앞으로 가는 선(왼쪽 → 오른쪽)은 시킨 상자의 오른쪽 끝에서 받는 상자의 왼쪽 끝까지 — 그 사이에 다른 상자가 없다
   for (const e of lay.edges.filter((x) => !x.back)) {
     const a = lay.boxes.get(e.from), b = lay.boxes.get(e.to);
@@ -133,11 +135,13 @@ test('P46: 접은 워크스페이스 — 머리 글만, 그 세션들로 가는 
   for (const k of ['lead', 'ui', 'ui-tests', 'api-tests', 'ko-copy', 'reviewer', 'app-notes']) assert.ok(!lay.boxes.has(`s:${k}`), k);
   const px = lay.boxes.get('g:C:/w/app/');
   assert.ok(px && px.proxy && px.y === app.y);
-  assert.ok(lay.edges.some((e) => e.from === 'human' && e.to === 'g:C:/w/app/'), '나 → 접은 워크스페이스');
   assert.ok(lay.edges.every((e) => e.from !== e.to));
   // 아래 워크스페이스는 위로 올라오고, 판 높이는 줄어든다
-  assert.ok(lay.boxes.get('s:api-lead').y < open.boxes.get('s:api-lead').y);
-  assert.ok(lay.height < open.height);
+  assert.ok(lay.boxes.get('s:api-lead').y <= open.boxes.get('s:api-lead').y);
+  assert.ok(lay.height <= open.height);
+  const narrowOpen = missionLayout(three(), { order: ORDER, width: 700 }), narrow = missionLayout(three(), { order: ORDER, collapsed: ['C:/w/app/'], width: 700 });
+  assert.ok(narrow.boxes.get('s:api-lead').y < narrowOpen.boxes.get('s:api-lead').y, '쌓인 지도에서는 위로 올라온다');
+  assert.ok(narrow.height < narrowOpen.height);
   // 혼자인 워크스페이스를 접으면 그 기둥에는 머리 글만
   const d = missionLayout(three(), { order: ORDER, collapsed: ['C:/w/docs/'] });
   assert.ok(!d.boxes.has('s:glossary') && d.boxes.get('g:C:/w/docs/').proxy);

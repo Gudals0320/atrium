@@ -1,4 +1,5 @@
-// 미션 맵(ARCH 4절 I6, P6c → P32 → P95에서 다시 그림): 덮개 화면. 왼쪽 → 오른쪽 열(나 → 리드 → 하위 세션 → 그 아래)과 오른쪽 요약 열.
+// 미션 맵(ARCH 4절 I6, P6c → P32 → P95에서 다시 그림): 덮개 화면. 왼쪽 → 오른쪽 열(리드 → 하위 세션 → 그 아래)과 오른쪽 요약 열.
+// - P145: 왼쪽 끝의 "나" 동그라미와 사람 선은 걷었다. 사람이 보낸 지시(명령 입력줄·반복 작업)는 받는 카드의 풍선 도움말 한 줄로만 남긴다.
 // - 배치는 lib/mission-layout.js(순수 함수), 역할·관계·요약은 PC와 휴대폰이 같이 쓰는 lib/mission-model.js.
 // - 틀이 없다: 워크스페이스는 옅은 머리 글(누르면 접기)과 간격으로만 나눈다. 무리 상자, 가상 그룹 띠, 팀 상자, 범례 카드를 두지 않는다(가상 그룹 이름은 머리 글 앞에).
 // - 카드는 작고 정돈되게: 이름(팀 번호), 역할과 지금 하는 일 한 줄, 옅은 메타 한 줄(모델·노력 수준, 일한 시간 또는 마지막 활동, 워크트리 브랜치), 오른쪽 아래 작은 경고.
@@ -83,12 +84,13 @@ export function MissionLight({ role }) {
 // P119: 작업 완료 카드의 끝 표식(위 가장자리 꼬리표 안의 체크). 색만으로 가르지 않게 모양과 글을 함께 둔다(휴대폰 PhoneMission.jsx도 같은 모양)
 const DoneMark = () => <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3 5 8.7 9.6 3.6" /></svg>;
 
-function Node({ b, live, m, tier, t, now, no, hot, recede, dim, onGo, onHot }) {
+function Node({ b, live, m, tier, t, now, no, human, hot, recede, dim, onGo, onHot }) {
   const n = b.node;
   const f = facts(n, live, m, tier, t, now, b.cross);
   const style = { left: b.x, top: b.y, width: b.w, height: b.h };
   const st = (live && live.state) || n.state;
-  const tip = [`@${n.name} · ${f.role}`, f.team, f.ask ? `${t('mmap.ask')} ${f.ask}` : null, n.lastPrompt ? `${t('mmap.prompt')} ${n.lastPrompt}` : null, b.cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null, f.meta || null, f.launched, t('mission.goSession')].filter(Boolean).join('\n');
+  const fromYou = human ? `${t('mmRole.relHuman')}${human.text ? `: “${clip(human.text, 80)}”` : ''}${human.count > 1 ? ` ×${human.count}` : ''}` : null; // P145
+  const tip = [`@${n.name} · ${f.role}`, f.team, fromYou, f.ask ? `${t('mmap.ask')} ${f.ask}` : null, n.lastPrompt ? `${t('mmap.prompt')} ${n.lastPrompt}` : null, b.cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null, f.meta || null, f.launched, t('mission.goSession')].filter(Boolean).join('\n');
   const common = {
     'data-role': 'mm-node', 'data-kind': 'session', 'data-id': n.id, 'data-name': n.name, 'data-tier': tier, 'data-rank': m ? m.rank : undefined, 'data-family': m ? m.family : undefined, 'data-shape': b.kind,
     tabIndex: 0, title: tip, onClick: () => onGo(n), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onGo(n); } },
@@ -161,7 +163,7 @@ export function MissionMap() {
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const lay = useMemo(() => (graph ? missionLayout(graph, { collapsed: [...shut], order, vgroups, tiers, width }) : null), [graph, shut, order, vgroups, tiers, width]);
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
-  const focus = useMemo(() => (lay && hot ? focusOf(lay.tree, hot, lay.edges.filter((e) => e.rel === 'human')) : null), [lay, hot]);
+  const focus = useMemo(() => (lay && hot ? focusOf(lay.tree, hot) : null), [lay, hot]);
   const ids = useMemo(() => (lay ? mapOrder(lay) : []), [lay]);
   const sum = useMemo(() => missionSummary(lay ? lay.tree.nodes.map((n) => n.id).sort((a, b) => (ids.indexOf(a) + 1 || 1e9) - (ids.indexOf(b) + 1 || 1e9)) : [], (id) => tiers.get(id)), [lay, ids, tiers]);
   if (!open) return null;
@@ -181,9 +183,9 @@ export function MissionMap() {
     if (sel && !sel.isCollapsed && String(sel).trim()) return;
     setMissionOpen(false);
   };
-  const nameOf = (id) => { const n = lay && lay.tree.byId.get(id); return n ? n.name : id === 'human' ? t('mmMap.you') : id; };
+  const nameOf = (id) => { const n = lay && lay.tree.byId.get(id); return n ? n.name : id; };
   const tipOf = (e) => {
-    const rel = e.rel === 'human' ? t('mmRole.relHuman') : e.cross ? t('mmRole.relCross') : t(`mmRole.${{ spawn: 'relSpawn', role: 'relRole', prompt: 'relPrompt' }[e.rel] || 'relRole'}`);
+    const rel = e.cross ? t('mmRole.relCross') : t(`mmRole.${{ spawn: 'relSpawn', role: 'relRole', prompt: 'relPrompt' }[e.rel] || 'relRole'}`);
     const who = e.from.startsWith('g:') || e.to.startsWith('g:') || e.to.startsWith('dots:') ? null : t('mmMap.edgeTip', { from: nameOf(e.from), to: nameOf(e.to) });
     return [who, `${rel}${e.role ? ` · ${e.role}` : ''}`, e.cross ? `${t('mmapGroup.crossTitle')}` : null, e.text ? `“${e.text}”` : null, e.count > 1 ? edgeLabel(e, t) : null, e.lastAt ? t('mission.edgeLast', { time: fmtTime(e.lastAt) }) : null].filter(Boolean).join('\n');
   };
@@ -255,12 +257,9 @@ export function MissionMap() {
                   );
                 })}
               </svg>
-              {boxes.filter((b) => b.kind === 'you').map((b) => (
-                <div key="you" className={`mt-mm-you${focus && !lay.edges.some((e) => e.rel === 'human' && edgeHot(e)) ? ' recede' : ''}`} data-role="mm-node" data-kind="human" title={t('mmMap.youTitle')} style={{ left: b.x, top: b.y, width: b.w, height: b.h }}>{t('mmMap.you')}</div>
-              ))}
               {dotLabels.map((b) => <span key={b.node.id} className={`mt-mm-dots-label${focus && !b.node.ids.some((x) => focus.nodes.has(x)) ? ' recede' : ''}`} style={{ left: b.x + 4 + Math.min(MISSION.dotsPerRow, b.node.ids.length) * (MISSION.dot + MISSION.dotGap) + 2, top: b.y + 4 }} data-role="mm-dots">{t('mmMap.dotsRest', { n: b.node.ids.length })}</span>)}
               {boxes.filter((b) => b.node && b.node.kind === 'session').map((b) => (
-                <Node key={b.node.id} b={{ ...b, cross: b.group != null && (b.node.workspaceKey || '') !== b.group }} live={liveOf(b.node)} m={roles.get(b.node.id)} tier={tiers.get(b.node.id)} t={t} now={now} no={lay.teamNo.get(b.node.id)}
+                <Node key={b.node.id} b={{ ...b, cross: b.group != null && (b.node.workspaceKey || '') !== b.group }} live={liveOf(b.node)} m={roles.get(b.node.id)} tier={tiers.get(b.node.id)} t={t} now={now} no={lay.teamNo.get(b.node.id)} human={lay.human.get(b.node.id)}
                   hot={hot === b.node.id} recede={!!focus && !focus.nodes.has(b.node.id)} dim={fdim(b.node.id)} onGo={go} onHot={setHot} />
               ))}
               {boxes.length === 0 && <div className="dim mt-mm-empty">{t('mission.empty')}</div>}

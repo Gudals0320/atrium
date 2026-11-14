@@ -18,17 +18,17 @@ const base = () => ({
   edges: [E('human', 'lead', 'bar', { count: 2, label: 'go' }), E('lead', 'w1', 'role', { label: 'worker' }), E('lead', 'w2', 'role', { label: 'worker' }), E('lead', 'rev', 'role', { label: 'reviewer' }), E('lead', 'helper', 'role', { label: 'helper', active: true }), E('lead', 'helper', 'spawn', { label: '띄움' })],
 });
 
-test('P32: 나무 — 나 0열, 지시하는 세션 1열, 받는 세션 2열. 부모는 하위들의 세로 가운데, 나는 선이 가는 리드 높이', () => {
+test('P32 → P145: 나무 — 지시하는 세션 1열(지도 왼쪽 끝), 받는 세션 2열. 부모는 하위들의 세로 가운데, 나는 없다', () => {
   const lay = missionLayout(base());
   const b = (id) => lay.boxes.get(id);
-  assert.equal(b('human').depth, 0); assert.equal(b('human').kind, 'you');
+  assert.equal(b('human'), undefined); assert.equal(b('s:lead').x, MISSION.pad);
   assert.equal(b('s:lead').depth, 1);
   for (const k of ['w1', 'w2', 'rev', 'helper']) assert.equal(b(`s:${k}`).depth, 2, k);
-  assert.ok(b('s:lead').x > b('human').x + b('human').w && b('s:w1').x > b('s:lead').x + b('s:lead').w, '왼쪽 → 오른쪽');
+  assert.ok(b('s:w1').x > b('s:lead').x + b('s:lead').w, '왼쪽 → 오른쪽');
   const kids = ['helper', 'rev', 'w1', 'w2'].map((k) => b(`s:${k}`));
   assert.deepEqual(kids.map((k) => k.y), kids.map((k) => k.y).sort((x, y) => x - y), '형제는 이름 순으로 위에서 아래');
   assert.equal(cy(b('s:lead')), (kids[0].y + kids[3].y + kids[3].h) / 2, '부모는 하위들의 세로 가운데');
-  assert.equal(cy(b('human')), cy(b('s:lead')), '나는 명령 바가 가는 lead 높이');
+  assert.deepEqual([...lay.human.entries()].map(([k, v]) => [k, v.count, v.text]), [['s:lead', 2, 'go']], '사람의 지시는 받는 세션 표시로');
   assert.equal(lay.columns, 3);
   assert.deepEqual(lay.loose, ['s:solo']);
   assert.ok(b('s:solo').x === b('s:lead').x && b('s:solo').y > b('s:w2').y, 'P95: 같은 워크스페이스의 연결 없는 세션은 팀 아래 1열(따로 칸이 없다)');
@@ -44,14 +44,13 @@ test('P32: 한 쌍의 선은 하나 — 역할 + 띄움, 풀이 글은 역할 �
   assert.equal(lh[0].active, true);
   const t = (k) => ({ 'mission.edge.bar': 'Command bar', 'mission.edge.prompt': 'Prompt' }[k] || k);
   assert.equal(edgeLabel(lh[0], t), 'helper');
-  const bar = lay.edges.find((e) => e.primary === 'bar');
-  assert.equal(edgeLabel(bar, t), 'Command bar ×2');
+  assert.equal(edgeLabel({ primary: 'bar', count: 2 }, t), 'Command bar ×2');
   const to = lay.boxes.get('s:helper');
   assert.match(lh[0].d, new RegExp(` ${to.x},${cy(to)}$`));
   // 한 부모의 선은 모두 부모 오른쪽 가장자리에서 나간다(P101: 받는 쪽으로 살짝 펼친 높이, 카드 안쪽)
   const lead = lay.boxes.get('s:lead');
   for (const e of lay.edges.filter((x) => x.from === 's:lead')) { const m = e.d.match(/^M([\d.]+),([\d.]+) /); assert.ok(m && Number(m[1]) === lead.x + lead.w && Number(m[2]) > lead.y + 8 && Number(m[2]) < lead.y + lead.h - 8, e.id); }
-  assert.ok(lay.edges.every((e) => !e.back && (e.tree || e.rel === 'human')));
+  assert.ok(lay.edges.every((e) => !e.back && e.tree));
 });
 
 test('P32: mergeEdges — 없는 노드와 자기 자신 선은 뺀다, 횟수는 띄움을 빼고 더한다', () => {
@@ -74,7 +73,7 @@ test('P32: 많은 세션(40개, 지시자 여럿, 두 번째 지시자, 고리)�
   }
   edges.push(E('human', 'n00', 'bar'), E('human', 'n05', 'loop'), E('n05', 'n00', 'prompt')); // 고리 하나
   const lay = missionLayout({ nodes, edges });
-  assert.equal([...lay.boxes.values()].filter((b) => b.node.kind === 'session' || b.node.kind === 'human').length, 41, '모든 세션과 나');
+  assert.equal([...lay.boxes.values()].filter((b) => b.node.kind === 'session').length, 40, '모든 세션(P145: 나는 없다)');
   assert.equal(noOverlap(lay), null);
   assert.ok(lay.width > 0 && lay.height >= Math.max(...[...lay.boxes.values()].map((b) => b.y + b.h)));
   assert.ok(lay.edges.every((e) => !/NaN|undefined/.test(e.d)));
