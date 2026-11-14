@@ -14,6 +14,7 @@ import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
 import { DeliveryQueue } from './delivery.mjs';
 import { TerminalRelay } from './relay.mjs';
+import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
@@ -262,6 +263,11 @@ export class Backend {
     await this.worktrees.sync('start').catch((e) => this.log('worktree sync error', e.stack));
     this.features = attachFeatures(this);
     Object.assign(this.api.handlers, this.features.handlers);
+    // P146: 성능 기록(진단 스위치). 켜면 창이 보낸 요약을 백엔드 로그에 남기고 10분 뒤 저절로 끈다
+    this.perfTrace = new PerfTrace({ settings: this.features.settings, log: (m) => this.log(m) });
+    this.perfTrace.start();
+    this.api.handlers['perf.report'] = (p, c) => this.perfTrace.report(p, c);
+    this.api.handlers['perf.status'] = () => this.perfTrace.status();
     this.recall = attachRecall(this);
     Object.assign(this.api.handlers, this.recall.handlers);
     this.sleeper = attachSleep(this, { tickMs: cfg.sleepTickMs });
@@ -295,6 +301,7 @@ export class Backend {
       const wasPasskey = this.web.passkeyOn();
       const wasChannel = this.updater ? this.updater.channel() : null;
       const r = await setSettings(p, c);
+      if (this.perfTrace) this.perfTrace.changed(); // P146: 성능 기록을 켜고 끈 때
       if (this.updater && this.updater.channel() !== wasChannel) this.updater.channelChanged(); // P70: 업데이트 채널을 바꾸면 곧바로 다시 확인한다(기다리지 않는다)
       const nowAccepting = this.web.accepting();
       if (nowAccepting !== wasAccepting) r.remote = this.web.accessChanged(nowAccepting); // P58: 원격 받기 끄기·켜기(끄면 붙은 원격 연결을 닫는다)
@@ -339,6 +346,7 @@ export class Backend {
     this.resources.stop();
     this.queue.stop();
     if (this.features) this.features.stop();
+    if (this.perfTrace) this.perfTrace.stop();
     if (this.recall) this.recall.stop();
     if (this.worktrees) this.worktrees.stop();
     if (this.sleeper) this.sleeper.stop();

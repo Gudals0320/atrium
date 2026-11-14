@@ -18,6 +18,7 @@ import { PairRequestBanner } from './WebDevices.jsx';
 import { PhoneApp, usePhoneLayout, useScreenFix, LightBanner, LevelBadge, phoneScreen } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P86: LevelBadge(가벼운 보드 단계)
 // P87: 휴대폰은 늘 세션 목록(Phone.jsx)이다. P76의 휴대폰 보드(목록 단추, 탭한 세션의 전체 보기 PhoneFull.jsx)는 휴대폰에 그리지 않는다
 import { startRemoteNotice, remoteNotices } from './remote-notice.js'; // P58
+import { watchPerfTrace } from './perf-trace.js'; // P146
 import { startPushClient } from './push.js'; // P88: 웹 푸시
 import '@xyflow/react/dist/style.css';
 import '@xterm/xterm/css/xterm.css';
@@ -269,6 +270,7 @@ function boot() {
   fontsReady.then(() => root.render(<ReactFlowProvider><App /></ReactFlowProvider>));
   api.connect();
   startNotifier();
+  watchPerfTrace(); // P146: 성능 기록(판 설정 perfTrace를 켠 동안만 모은다)
   if (!isWeb) startRemoteNotice(); // P58: 원격 기기가 붙으면 PC 창에 알린다
   if (isWeb) startPushClient(); // P88: 보이는 상태 알리기(보는 기기에는 푸시를 보내지 않는다), 알림을 누르면 그 세션으로
   startViewingReport(); // P21(D4): 초점 노드는 저절로 잠재우지 않는다

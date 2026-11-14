@@ -1850,6 +1850,18 @@ html[data-board-moving="1"] .mt-node-run { visibility: hidden; }
 /* 칩 줄은 바가 자란 만큼 위로 비킨다(CommandBar가 판에 --mt-cmd-grow를 둔다) */
 .mt-chips { bottom: calc(104px + var(--mt-cmd-grow, 0px)); }
 
+/* ---------- P146: 판 움직임 비용 줄이기(P144 원인 1·7) ---------- */
+/* 원인 1: xterm은 그릴 때마다 숨은 입력칸(.xterm-helper-textarea)의 left·top·width·height를 커서 자리로 다시 쓴다. 그 페인트 변화 하나에 판 문서 전체의
+   층 나누기(layerize)가 돌아, 터미널이 출력하는 동안 거의 매 프레임 주 스레드를 썼다. 초점 없는 터미널의 입력칸은 제자리(왼쪽 위 1px)에 묶는다.
+   초점 있는 터미널(xterm이 .focus를 단다)은 그대로 커서를 따라가므로 한국어 IME 후보창 자리는 그대로다. 초점이 오면 묶임이 풀리고 xterm이 쓴 자리로 간다 */
+.xterm:not(.focus) .xterm-helper-textarea { left: 0 !important; top: 0 !important; width: 1px !important; height: 1px !important; }
+/* 원인 7: 판을 움직이는 동안 대화 노드의 큰 그림자(--con-shadow 18px 흐림)를 뺀다(고른 테두리는 남긴다) */
+html[data-board-moving="1"] .mt-cv { box-shadow: none; }
+html[data-board-moving="1"] .mt-cv.selected { box-shadow: 0 0 0 calc(2px * var(--inv, 1)) var(--info); }
+html[data-board-moving="1"] .mt-cv.flash, html[data-board-moving="1"] .react-flow__node.flash .mt-cv { box-shadow: 0 0 0 calc(3px * var(--inv, 1)) var(--accent); }
+/* 화면에서 먼 대화 노드(ConvoNode.jsx away)는 얼굴 없이 틀만 그린다. 그림자도 뺀다 */
+.mt-cv.away { box-shadow: none; }
+
 /* ---------- P147: 미션 맵 "부대" 모양(MissionSquads.jsx, lib/mission-roster.js). 옛 지도(.mt-mm-*)는 그대로 두고 .mt-sq 아래에만 더한다.
    위 "기다리는 일" 줄(응답 필요·오류·작업 완료 카드), 신문식 기둥, 폴더 틀 > 워크스페이스 판 > 팀 부대 카드(리드 머리 + 하위 줄, 나무 선), 혼자인 줄, 쉬는 알약 묶음.
    나무 선의 모양이 관계 종류다: 실선 띄움(spawn), 긴 점선 역할 연결(role), 점선 시킴(prompt). 다른 워크스페이스는 파란 ↗ 칩.

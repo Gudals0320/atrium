@@ -2424,6 +2424,14 @@ export default {
     unknown: 'No session named @{name} on the canvas',
     shell: '@{name} is a shell. The command bar sends only to agents',
   },
+  // P146: performance trace switch (Settings > General)
+  perfTrace: {
+    name: 'Performance trace',
+    hint: 'For 10 minutes, write board frame and lag summaries to the backend log',
+    note: 'Turn this on when moving or zooming the board feels slow. Every window and browser on this board writes a summary every 30 seconds: frame timing, wheel delay, long tasks, and node and terminal counts. Only numbers are written, no screen text or conversations. It turns itself off after 10 minutes.',
+    on: 'Performance trace on for 10 minutes',
+    off: 'Performance trace off',
+  },
   // P147: mission map "squads" style (team cards, waiting strip) and the style switch
   mmSquad: {
     style_squads: 'Squads',

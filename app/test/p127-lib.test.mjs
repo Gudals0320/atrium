@@ -69,7 +69,7 @@ test('움직임 멈춤 CSS: 회전판만 paused(모양·색 그대로), 미션 �
   const css = noComments(read('styles.css'));
   const i = css.indexOf('html[data-board-moving="1"]');
   assert.ok(i >= 0, '규칙이 있다');
-  const rules = css.slice(i).split('}').filter((r) => r.includes('data-board-moving'));
+  const rules = css.slice(i).split('}').filter((r) => r.includes('data-board-moving') && r.includes('mt-node-run')); // P146: 대화 노드 그림자 규칙(.mt-cv)은 따로 본다(p146-lib)
   // P128a: 움직이는 동안 회전판을 숨기는 규칙이 더해졌다(사용자 결정). 멈춤 규칙과 숨김 규칙 둘
   assert.equal(rules.length, 2);
   assert.match(rules[0], /\.mt-node-run > i \{ animation-play-state: paused; $/);

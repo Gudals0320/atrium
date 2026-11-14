@@ -111,6 +111,18 @@ function WorkLightSetting({ settings }) {
   </>;
 }
 
+// P146: 성능 기록(진단 스위치). 판 설정이라 이 판에 붙은 창·웹이 모두 모은다. 10분 뒤 백엔드가 저절로 끈다(backend perf-trace.mjs)
+function PerfTraceSetting({ settings }) {
+  const t = useT();
+  const set = async (value) => {
+    try { await api.call('settings.set', { key: 'perfTrace', value }); toast(value ? t('perfTrace.on') : t('perfTrace.off')); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
+  };
+  return <>
+    <SetRow name={t('perfTrace.name')} hint={t('perfTrace.hint')} role="perf-trace-setting"><Toggle checked={!!settings.perfTrace} onChange={set} field="setting-perfTrace" /></SetRow>
+    <SetNote>{t('perfTrace.note')}</SetNote>
+  </>;
+}
+
 // 일반: 언어, 배율(P45), 작업 중 테두리 빛(P107), 트레이 상주
 function GeneralTab({ settings }) {
   const t = useT();
@@ -130,6 +142,7 @@ function GeneralTab({ settings }) {
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>
         {'updateCheck' in settings && <UpdateSettings settings={settings} />}
+        {'perfTrace' in settings && <PerfTraceSetting settings={settings} />}
       </>}
     </div>
   );
