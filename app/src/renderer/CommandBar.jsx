@@ -11,7 +11,11 @@
 // P83: 손가락 포인터(pointer: coarse)에는 마우스가 없어 아래 띠로 열 수 없다. 숨은 동안 아래 가운데에 손잡이 단추를 두고, 탭하면 입력칸에 초점을 줘
 //      바가 열리고 키보드가 올라온다(초점이 붙잡는다). 키보드가 올라오면 바를 키보드 바로 위로 올린다. 바 밖을 탭하면 초점을 풀어 닫는다.
 //      손가락의 pointermove는 아래 띠 판단에 쓰지 않는다. 마우스가 있는 PC·노트북은 그대로
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+// P142: 입력칸 다듬기(lib/cmd-input.js). textarea 밑에 같은 글을 그린 겹(mirror)을 두고 앞머리 @태그 자리에 알약 바탕을 그린다
+//      (글자는 textarea가 그대로 그려 커서·고르기·IME·되돌리기가 바뀌지 않는다). 받는 세션은 단추 옆 칩으로 보인다.
+//      높이는 그려진 글 높이(꺾인 줄 포함)로 정하고, 상한(18줄, 창 높이의 42%)에 닿으면 글칸 안쪽만 스크롤된다(위아래 여백은 그대로).
+//      Alt+Enter도 줄바꿈. 바는 아래 기준으로 위로 자라고 단추는 아래 줄에 붙어 있다. 칩 줄은 자란 만큼 위로 비킨다(--mt-cmd-grow)
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast, setBottomShown } from './store.js';
 import { deliveryText } from './lib/labels.js';
@@ -22,6 +26,7 @@ import { bandZone, bottomNext } from './lib/bottom.js'; // P43. P61: 들어가�
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
 import { kbLift } from './lib/touch-board.js'; // P83
+import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight } from './lib/cmd-input.js'; // P142
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
 
@@ -150,9 +155,23 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
 
   function onKeyDown(e) {
     if (e.nativeEvent.isComposing) return; // 한글 조합 중 Enter는 조합 확정이다
-    if (options.length && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && caretWord && caretWord.q !== options[pick]))) { e.preventDefault(); complete(options[pick] || options[0]); return; }
+    if (options.length && (e.key === 'Tab' || (e.key === 'Enter' && !isNewlineKey(e) && caretWord && caretWord.q !== options[pick]))) { e.preventDefault(); complete(options[pick] || options[0]); return; }
     if (options.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); setPick((p) => (p + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length); return; }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); return; }
+    // P142: Alt+Enter도 줄바꿈. 되돌리기(Ctrl+Z)에 남도록 insertText로 넣고, 안 되면 직접 넣는다. Shift+Enter는 textarea 기본 동작
+    if (isNewlineKey(e)) {
+      if (!e.altKey) return;
+      e.preventDefault();
+      const el = taRef.current;
+      let ok = false;
+      try { ok = document.execCommand('insertText', false, '\n'); } catch { ok = false; }
+      if (!ok && el) {
+        const r = insertNewline(el.value, el.selectionStart, el.selectionEnd);
+        setText(r.text);
+        requestAnimationFrame(() => el.setSelectionRange(r.caret, r.caret));
+      }
+      return;
+    }
+    if (e.key === 'Enter') { e.preventDefault(); send(); return; }
     if (e.key === 'Escape') { taRef.current.blur(); return; }
     const h = hist.current;
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !text.includes('\n')) {
@@ -210,6 +229,40 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     return () => { if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } window.removeEventListener('resize', fit); document.removeEventListener('focusin', fit); document.removeEventListener('focusout', fit); document.removeEventListener('touchstart', outside, { capture: true }); };
   }, [coarse]);
   const openByTouch = () => { const el = taRef.current; if (el) el.focus(); };
+
+  // P142: @태그 조각과 받는 세션
+  const sessList = useMemo(() => [...sessions.values()], [sessions]);
+  const tokens = useMemo(() => mentionTokens(text, sessList), [text, sessList]);
+  const toList = useMemo(() => recipients(text, sessList), [text, sessList]);
+  // P142: 높이. 겹의 안쪽(글과 같은 폭으로 그려진 글)의 높이를 재어 글칸 높이를 정한다. 그리기 전에 정해 깜빡이지 않는다
+  const mirRef = useRef(null), mirInRef = useRef(null), fieldRef = useRef(null);
+  const [fh, setFh] = useState({ height: 0, scroll: false });
+  const measure = useCallback(() => {
+    const ta = taRef.current, inner = mirInRef.current;
+    if (!ta || !inner) return;
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 22;
+    const next = fieldHeight({ contentHeight: inner.getBoundingClientRect().height, lineHeight: Math.ceil(lh), maxHeight: maxFieldHeight({ lineHeight: lh, viewportHeight: window.innerHeight }) });
+    setFh((o) => (o.height === next.height && o.scroll === next.scroll ? o : next));
+  }, []);
+  useLayoutEffect(measure, [text, measure]);
+  useEffect(() => {
+    const f = fieldRef.current;
+    if (!f || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(f);
+    window.addEventListener('resize', measure);
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+  }, [measure]);
+  const syncScroll = () => { const ta = taRef.current, m = mirRef.current; if (ta && m) m.scrollTop = ta.scrollTop; };
+  useLayoutEffect(() => {
+    syncScroll();
+    // 칩 줄(판의 .mt-chips)은 바가 자란 만큼 위로 비킨다
+    const root = rootRef.current, stage = root && root.closest('.mt-stage'), bar = root && root.querySelector('.mt-cmd');
+    if (stage && bar) stage.style.setProperty('--mt-cmd-grow', `${Math.max(0, Math.round(bar.offsetHeight - 60))}px`);
+  });
+  const parts = mirrorParts(text, tokens);
+  const toShown = toList.slice(0, 3), toMore = toList.length - toShown.length;
+  const toTitle = (r) => (r.state === 'all' ? t('cmdTo.all', { n: r.count }) : r.state === 'unknown' ? t('cmdTo.unknown', { name: r.ref }) : r.state === 'shell' ? t('cmdTo.shell', { name: r.name }) : t('cmdTo.ok', { name: r.name }));
   return (
     <>
     {/* P43: 숨은 동안 아래에 바가 있다는 얇은 표시. 마우스를 받지 않는다 */}
@@ -240,11 +293,25 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
           </div>
         )}
         <Mark />
-        <textarea ref={taRef} className="mt-cmd-input" rows={Math.min(6, text.split('\n').length)} value={text} placeholder={t('cmd.placeholder')} title={t('boardKeys.command')}
-          onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} spellCheck={false} data-role="command"
-          onPaste={(e) => { const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }}
-          onDragOver={(e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
-          onDrop={(e) => { const f = isWeb ? filesOf(e.dataTransfer) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }} />
+        {/* P142: 글칸. 위아래 여백은 이 틀이 쥐고, 상한에 닿으면 textarea 안쪽만 스크롤된다. 여백을 눌러도 입력칸에 초점 */}
+        <div className="mt-cmd-field" ref={fieldRef} data-scroll={fh.scroll ? '1' : undefined} onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); taRef.current && taRef.current.focus(); } }}>
+          <div className="mt-cmd-mirror" ref={mirRef} aria-hidden="true">
+            <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i}>{p.text}</span>))}{'\u200b'}</div>
+          </div>
+          <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={t('cmd.placeholder')} title={t('boardKeys.command')}
+            onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"
+            onPaste={(e) => { const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }}
+            onDragOver={(e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+            onDrop={(e) => { const f = isWeb ? filesOf(e.dataTransfer) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }} />
+        </div>
+        {/* P142: 이 글이 가는 세션. 없는 이름·셸은 다른 모양 */}
+        {toList.length > 0 && (
+          <div className="mt-cmd-to" data-role="cmd-to" aria-label={t('cmdTo.label')}>
+            <span className="mt-cmd-to-arrow" aria-hidden="true">→</span>
+            {toShown.map((r) => <span key={r.state + r.name} className={`mt-cmd-to-chip st-${r.state}`} data-to={r.name} data-state={r.state} title={toTitle(r)}>@{r.name}{r.state === 'all' ? <span className="n">{r.count}</span> : null}</span>)}
+            {toMore > 0 && <span className="mt-cmd-to-chip more" title={toList.slice(3).map((r) => '@' + r.name).join(' ')}>+{toMore}</span>}
+          </div>
+        )}
         <ThreadToggle />
         <button className={`mt-cmd-send${text.trim() ? ' on' : ''}`} onPointerDown={(e) => { if (e.pointerType === 'touch') e.preventDefault(); }} onClick={send} title={t('cmd.send')} data-action="send"><Icon name="arrowUp" /></button>
       </div>

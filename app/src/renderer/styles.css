@@ -1817,3 +1817,38 @@ html[data-board-moving="1"] .mt-node-run { visibility: hidden; }
 .mt-sleepface .mt-far-line.one { -webkit-line-clamp: 1; }
 .mt-sleep-head > .mt-far-nm, .mt-sleep-head > .mt-sleep-moon { flex: 0 0 auto; max-width: 100%; }
 .mt-sleep-head > .mt-sleep-at, .mt-sleep-head > .mt-sleep-saved { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- P142: 명령 바 입력칸 ----------
+   글칸(.mt-cmd-field)이 위아래 여백 18px를 쥐고, textarea는 여백 없이 높이만 JS가 정한다(그려진 글 높이, 상한 18줄·창 높이의 42%).
+   상한에 닿으면 textarea 안쪽만 스크롤되어 위아래 여백이 그대로다. 겹(.mt-cmd-mirror)은 textarea 밑에 같은 글을 같은 폭·줄 꺾임으로
+   투명하게 그리고, 앞머리 @태그 자리에만 알약 바탕을 칠한다(글자·커서·고르기·IME는 textarea가 그린다).
+   바는 아래 기준으로 위로 자라고, 마크·받는 세션·단추는 아래 줄에 붙어 흔들리지 않는다 */
+.mt-cmd { align-items: flex-end; }
+.mt-cmd > .mt-mark { margin-bottom: 16px; }
+.mt-cmd > .mt-cmd-thread, .mt-cmd > .mt-cmd-send { margin-bottom: 14px; }
+.mt-cmd-field { position: relative; flex: 1; min-width: 0; padding: 18px 0; cursor: text; }
+.mt-cmd-field > .mt-cmd-input, .mt-cmd-mirror { font-family: inherit; font-size: 15px; font-weight: 400; line-height: 1.45; letter-spacing: normal; tab-size: 4;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; scrollbar-gutter: stable;
+  scrollbar-width: auto; scrollbar-color: auto; } /* 판 전체의 표준 얇은 막대(화살표가 붙는다) 대신 아래 -webkit 막대(6px, 화살표 없음)를 쓴다. 겹과 입력칸의 폭이 같아야 한다 */
+.mt-cmd-field > .mt-cmd-input { position: relative; z-index: 1; display: block; width: 100%; min-height: 0; padding: 0; margin: 0; overflow-x: hidden; overflow-y: hidden; overscroll-behavior: contain; background: transparent; }
+.mt-cmd-field[data-scroll="1"] > .mt-cmd-input { overflow-y: auto; }
+.mt-cmd-mirror { position: absolute; left: 0; right: 0; top: 18px; bottom: 18px; overflow: hidden; color: transparent; pointer-events: none; user-select: none; }
+.mt-cmd-mirror-in { padding: 0; margin: 0; }
+.mt-cmd-input::-webkit-scrollbar, .mt-cmd-mirror::-webkit-scrollbar { width: 6px; background: transparent; }
+.mt-cmd-input::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--chrome-text-3) 70%, transparent); border-radius: 3px; }
+.mt-cmd-input::-webkit-scrollbar-thumb:hover { background: var(--chrome-text-3); }
+/* 앞머리 @태그: 알약 바탕과 테두리. 자리를 넓히지 않도록 바깥 그림자로만 그린다 */
+.mt-cmd-tag { border-radius: 4px; background: color-mix(in srgb, var(--accent) 20%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent); }
+.mt-cmd-tag.to-unknown, .mt-cmd-tag.to-shell { background: color-mix(in srgb, var(--bad) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--bad) 65%, transparent); }
+/* 글 중간의 @이름은 받지 않는다: 밑줄 점선만 */
+.mt-cmd-tag.inline { background: none; box-shadow: none; text-decoration: underline dotted color-mix(in srgb, var(--chrome-text) 45%, transparent); text-underline-offset: 3px; }
+/* 받는 세션 칩: 단추 옆, 아래 줄 */
+.mt-cmd-to { flex: none; display: flex; align-items: center; gap: 4px; max-width: 38%; min-width: 0; margin-bottom: 17px; overflow: hidden; }
+.mt-cmd-to-arrow { flex: none; font-size: 12px; color: var(--chrome-text-3); }
+.mt-cmd-to-chip { flex: 0 1 auto; min-width: 0; max-width: 140px; height: 22px; padding: 0 7px; border-radius: 11px; display: inline-flex; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; color: var(--accent-2); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.mt-cmd-to-chip .n { font-weight: 500; color: color-mix(in srgb, currentColor 75%, transparent); }
+.mt-cmd-to-chip.st-unknown, .mt-cmd-to-chip.st-shell { color: var(--bad); background: var(--bad-bg); border-color: color-mix(in srgb, var(--bad) 60%, transparent); border-style: dashed; text-decoration: line-through; }
+.mt-cmd-to-chip.more { flex: none; color: var(--chrome-text-2); background: none; border-color: var(--chrome-line-2); }
+/* 칩 줄은 바가 자란 만큼 위로 비킨다(CommandBar가 판에 --mt-cmd-grow를 둔다) */
+.mt-chips { bottom: calc(104px + var(--mt-cmd-grow, 0px)); }

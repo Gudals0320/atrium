@@ -2419,4 +2419,12 @@ export default {
     sessions: { one: '{n} session', other: '{n} sessions' },
     teams: { one: '{n} team', other: '{n} teams' },
   },
+  // P142: 명령 바의 받는 세션 칩
+  cmdTo: {
+    label: 'Sends to',
+    ok: 'Sends to @{name}',
+    all: { one: 'Sends to the {n} agent on the canvas', other: 'Sends to all {n} agents on the canvas' },
+    unknown: 'No session named @{name} on the canvas',
+    shell: '@{name} is a shell. The command bar sends only to agents',
+  },
 };

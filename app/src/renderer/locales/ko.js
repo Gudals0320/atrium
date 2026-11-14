@@ -2419,4 +2419,12 @@ export default {
     sessions: '세션 {n}',
     teams: '팀 {n}',
   },
+  // P142: 명령 바의 받는 세션 칩
+  cmdTo: {
+    label: '받는 세션',
+    ok: '@{name} 세션에 보냅니다',
+    all: '보드 전체 에이전트 {n}개에 보냅니다',
+    unknown: '보드에 @{name} 세션이 없습니다',
+    shell: '@{name} 세션은 셸입니다. 명령 바는 에이전트에게만 보냅니다',
+  },
 };
