@@ -105,14 +105,14 @@ test('P116 계약: 계약 2, 동사 prompt·wait·read(인자·출력 모양), �
   assert.equal(CONTRACT_VERSION, 2);
   for (const v of ['prompt', 'wait', 'read']) assert.ok(VERB_NAMES.includes(v), v);
   const by = Object.fromEntries(VERBS.map((v) => [v.name, v]));
-  assert.deepEqual(by.prompt.args, ['<이름>', '"<할 일>"', '[--wait]', '[--timeout ms]', '[--json]']);
+  assert.deepEqual(by.prompt.args, ['<이름>', '"<할 일>"', '[--wait | --now]', '[--timeout ms]', '[--json]']); // P143: --now(더하기만 해 계약은 그대로)
   assert.deepEqual(by.prompt.out, ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next']);
   assert.deepEqual(by.wait.out, ['name', 'agentName', 'kind', 'status', 'state', 'ms', 'answer', 'ask', 'error', 'delivery', 'next']);
   assert.deepEqual(by.read.out, ['name', 'agentName', 'kind', 'state', 'lines', 'source', 'text', 'answer', 'next']);
   assert.equal(EXIT.timeout, 3);
   assert.ok(contractJson().waitStatus.includes('waiting'));
   const h = shortHelp();
-  assert.match(h, /atrium prompt <이름> "<할 일>" \[--wait\]/);
+  assert.match(h, /atrium prompt <이름> "<할 일>" \[--wait \| --now\]/); // P143
   assert.match(h, /다른 에이전트에게는 atrium prompt로만 보낸다/);
   assert.equal(WAIT_DEFAULT_MS, 100000, '한 번에 기다리는 기본은 Claude Code Bash 도구의 2분 안쪽');
   assert.deepEqual(verbLines('w1'), { prompt: 'atrium prompt w1 "<할 일>" --wait', wait: 'atrium wait w1', read: 'atrium read w1' });

@@ -70,6 +70,7 @@ export class DeliveryQueue extends EventEmitter {
   enqueue(sessionId, text, opts = {}) {
     const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: opts.typeNow ? typedText(text) : toLF(text), status: 'queued', reason: null, createdAt: Date.now(), attempts: 0 };
     if (opts.typeNow) d.typeNow = true;
+    if (opts.typeNow && opts.aside) d.typeAside = true; // P143(atrium prompt --now): 입력 칸에 쓰다 만 글이 있으면 비키고(P128·P139) 바로 넣는다. 휴대폰 입력 줄(P90)은 그대로 기다린다
     this.store.insertDelivery(d);
     this.items.set(d.deliveryId, d);
     this._emit(d);
@@ -182,16 +183,18 @@ export class DeliveryQueue extends EventEmitter {
       if (d.status !== 'queued' || !this.items.has(d.deliveryId) || this._head(d.sessionId) !== d) return;
       const box = look ? look.box : 'unknown';
       const v2 = this.view(d.sessionId, d) || {};
-      if (box !== 'empty' || !canTypeNow(v2) || (v2.lastUserInputAt && Date.now() - v2.lastUserInputAt < this.cfg.inputQuietMs)) {
+      // P143: --now의 전달은 쓰다 만 글(other)을 비키고 넣는다. 비키지 못하면(keep) _aside가 'draft'로 대기열에 돌려 둔다
+      const aside = box === 'other' && d.typeAside && !!this.drafts;
+      if ((box !== 'empty' && !aside) || !canTypeNow(v2) || (v2.lastUserInputAt && Date.now() - v2.lastUserInputAt < this.cfg.inputQuietMs)) {
         const why = box === 'other' || box === 'ours' ? 'draft' : 'working'; // 입력 칸에 글이 있다 / 못 읽었거나 상태가 바뀌었다
         if (d.reason !== why) this._set(d, 'queued', why);
         return;
       }
-      await this._deliver(d, true);
+      await this._deliver(d, true, aside);
     } finally { d.checking = false; }
   }
 
-  async _deliver(d, typed = false) {
+  async _deliver(d, typed = false, aside = !typed) {
     d.workingSeen = false; // 앞 시도(실패) 중의 working 신호를 이 시도의 확인으로 쓰지 않는다(이슈 #1-3)
     d.typed = typed; // P90: Claude Code 대기 메시지로 넣었다(전달 기록의 이유 'typed')
     // P106: 앞 시도를 터미널이 받지 않았으면(물러남 중) 다시 보내기는 조용히 한다. 시도 수만 세고 이벤트는 쓰지 않는다(처음 한 번과 까닭이 바뀔 때만)
@@ -201,7 +204,7 @@ export class DeliveryQueue extends EventEmitter {
     let done;
     d.inflight = new Promise((r) => { done = r; });
     try {
-      if (this.drafts && !typed && !(await this._aside(d))) return; // P128: 쓰다 만 글을 비키지 못했거나 그새 사람이 쳤다(대기열로 돌아갔다)
+      if (this.drafts && aside && !(await this._aside(d))) return; // P128: 쓰다 만 글을 비키지 못했거나 그새 사람이 쳤다(대기열로 돌아갔다)
       await this.send(d.sessionId, d.text);
       if (d.status === 'sending') { this._clearRefusal(d); this._set(d, 'sent', typed ? 'typed' : null, { sentAt: Date.now() }); }
       else if (d.status === 'cancelled') this.emit('late', { deliveryId: d.deliveryId, sessionId: d.sessionId }); // P106: 취소한 뒤에 이 시도가 들어갔다(cancelWaitMs보다 오래 걸린 시도)

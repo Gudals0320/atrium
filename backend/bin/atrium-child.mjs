@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 하위 세션 명령(P8, ARCH 4절 K): 판이 띄운 세션 안에서 부른다. 판 플러그인의 bin/atrium(옛 이름 bin/mtask)이 이 파일을 부른다.
 // 판의 API 토큰(backend.json)을 읽지 않는다. 세션 설정 파일의 env(ATRIUM_PORT, ATRIUM_SESSION_ID, ATRIUM_SESSION_TOKEN 등. P18 전에 띄운 세션은 MTASK_*)로 그 판의 POST /branch/*만 부른다.
-// 사용: atrium prompt <이름> "<글>" [--wait] [--timeout ms] [--file 경로] [--json]   (P116: 다른 에이전트에게 일 시키기. 판의 전달 규칙으로 넣는다)
+// 사용: atrium prompt <이름> "<글>" [--wait | --now] [--timeout ms] [--file 경로] [--json]   (P116: 다른 에이전트에게 일 시키기. 판의 전달 규칙으로 넣는다)
 //       atrium wait <이름> [--timeout ms] [--json]   (P116: 그 세션의 지금 턴이 끝날 때까지, 마지막 답)
 //       atrium read <이름> [--lines n] [--json]   (P116: 그 세션 화면의 최근 줄)
 //       atrium child [이름] [--prompt 글] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 호출자] [--effort 노력] [--kind 종류] [--head] [--no-wait] [--json]
@@ -18,10 +18,12 @@ import { envVar, terminalSessionVar } from '../src/config.mjs';
 import { shortHelp, contractJson, VERB_NAMES } from '../src/cli-contract.mjs'; // P115: 계약(atrium help --json)
 
 const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같다)
-  atrium prompt <이름> "<할 일>" [--wait] [--timeout ms] [--file 경로]
+  atrium prompt <이름> "<할 일>" [--wait | --now] [--timeout ms] [--file 경로]
       다른 에이전트에게 일을 시킨다. 이름은 보드의 세션 이름이다(@ 없이도). 보드가 받는 쪽 차례에 맞춰 넣는다: 일하는 중이거나 사람의 답을 기다리면 끝난 뒤,
       사람이 그 터미널에 치는 중이면 3초 뒤, 잠들었으면 깨운 뒤. 보낸 쪽 → 받는 쪽 연결과 오간 기록이 판에 남는다.
       --wait면 그 글로 시작한 턴이 끝날 때까지 기다려 마지막 답을 돌려준다(기본 100초. 더 길게는 --timeout 600000과 셸 도구의 시간 제한을 함께 늘린다).
+      --now는 받는 쪽이 일하는 중인 Claude Code면 끝나기를 기다리지 않고 그 세션의 대기 메시지로 바로 넣는다(지금 턴 안에서 읽는다). 워커가 지휘 세션에 결과를 알릴 때 쓴다.
+      그 밖(쉬는 중, 다른 종류, 사람의 답을 기다림, 잠듦)은 위와 같다. --wait와 함께 쓰지 않는다.
       --file은 글을 파일에서 읽는다(긴 글, 따옴표가 많은 글).
   atrium wait <이름> [--timeout ms]
       그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(Claude Code는 hook의 답, 다른 종류는 보드가 화면에서 고른 답).
@@ -43,7 +45,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. atrium prompt는 잠든 세션을 깨운 뒤 넣으므로 미리 깨울 때만 쓴다
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait']); // P116: prompt --wait
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now']); // P116: prompt --wait, P143: prompt --now
 const argv = process.argv.slice(2);
 const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -197,7 +199,8 @@ async function verb(cmd) {
     let text = rest.slice(1).join(' ');
     if (flags.file) { if (text) fail('글은 인자나 --file 가운데 하나로 준다', 2); try { text = fs.readFileSync(path.resolve(String(flags.file)), 'utf8'); } catch (e) { fail(`--file을 읽지 못했다: ${e.message}`, 2); } }
     if (!text.trim()) fail('보낼 글을 준다: atrium prompt <이름> "<할 일>"', 2);
-    r = await call('prompt', { name, text, wait: !!flags.wait, timeoutMs }, flags.wait ? (timeoutMs || 100000) + WAIT_HTTP_EXTRA : 60000);
+    if (flags.now && flags.wait) fail('--now와 --wait는 함께 쓸 수 없다(--now는 받는 쪽의 지금 턴에 넣어 짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.', 2); // P143
+    r = await call('prompt', { name, text, wait: !!flags.wait, ...(flags.now ? { now: true } : {}), timeoutMs }, flags.wait ? (timeoutMs || 100000) + WAIT_HTTP_EXTRA : 60000);
   } else if (cmd === 'wait') r = await call('turn', { name, timeoutMs }, (timeoutMs || 100000) + WAIT_HTTP_EXTRA);
   else {
     const lines = flags.lines != null ? Number(flags.lines) : null;
@@ -214,6 +217,7 @@ async function verb(cmd) {
   if (cmd === 'read') return printRead(x);
   if (cmd === 'prompt') printDelivery(x);
   if (turn) printTurn(x, turn);
+  else if (cmd === 'prompt' && flags.now) say(`--now로 보냈으니 기다리지 않는다. 화면 보기: ${x.next.read}`); // P143: 밀어 넣기는 기다리지 않는다(한 길로)
   else if (cmd === 'prompt') say(`끝나기 기다리기: ${x.next.wait} · 화면 보기: ${x.next.read}`);
 }
 // 기다린 결과의 종료 코드: 기다리는 시간이 끝남 3, 글이 들어가지 않음·받는 세션이 끝남 1
@@ -242,9 +246,10 @@ function printDelivery(x) {
   const d = x.delivery || {};
   const id = `전달 ${x.deliveryId}`;
   if (x.woke) say(`@${x.name}는 잠들어 있어 보드가 깨웠다(같은 대화로 이어 간다).`);
-  if (d.status === 'confirmed') say(`@${x.name}에게 보냈다(들어감, ${id}).${DRAFT_NOTE[d.reason] ? ` ${DRAFT_NOTE[d.reason]}` : ''}`);
+  if (d.how === 'typed' && ['confirmed', 'sent', 'sending'].includes(d.status)) say(`@${x.name}는 일하는 중이라 Claude Code의 대기 메시지로 바로 넣었다(지금 턴 안에서 읽는다, ${d.status === 'confirmed' ? '들어감' : '들어갔는지 확인하는 중'}, ${id}).${DRAFT_NOTE[d.reason] ? ` ${DRAFT_NOTE[d.reason]}` : ''}`); // P143: --now
+  else if (d.status === 'confirmed') say(`@${x.name}에게 보냈다(들어감, ${id}).${DRAFT_NOTE[d.reason] ? ` ${DRAFT_NOTE[d.reason]}` : ''}`);
   else if (d.status === 'sent' || d.status === 'sending') say(`@${x.name}에게 넣었다(들어갔는지 확인하는 중, ${id}).`);
-  else if (d.status === 'queued') say(`${(REASON[d.reason] || ((n) => `아직 넣지 못했다(${d.reason || '대기'}). 보드가 다시 넣는다`))(x.name)} (${id}).`);
+  else if (d.status === 'queued') say(`${(REASON[d.reason] || ((n) => `아직 넣지 못했다(${d.reason || '대기'}). 보드가 다시 넣는다`))(x.name)} (${id}).${d.how === 'queue' && d.reason === 'working' ? ' --now로 바로 넣지 못했다(판이 띄운 Claude Code가 아니거나 입력 칸을 읽지 못했다). 판 대기열에 두었다.' : ''}`);
   else if (d.status === 'unconfirmed' && d.reason === 'input_box_other') fail(boxOther(x.name, x.next, id));
   else if (d.status === 'unconfirmed') say(`@${x.name}에게 넣었지만 들어갔는지 확인하지 못했다(${id}). 화면 보기: ${x.next.read}`);
   else if (d.status === 'failed' || d.status === 'cancelled') fail(`@${x.name}에게 보낸 글이 들어가지 않았다(${d.status}${d.reason ? `: ${d.reason}` : ''}, ${id}).`);

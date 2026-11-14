@@ -137,23 +137,26 @@ export class AgentVerbs {
   }
   link(caller, t) { return this.b.ensureLink(caller.sessionId, t.sessionId, { observed: true }); }
 
-  // ---------- atrium prompt <이름> "<글>" [--wait] [--timeout ms] ----------
+  // ---------- atrium prompt <이름> "<글>" [--wait | --now] [--timeout ms] ----------
+  // P143: --now면 받는 쪽이 판이 띄운 Claude Code(hook 있음)이고 일하는 중일 때 기다리지 않고 Claude Code의 대기 메시지로 바로 넣는다(P90 typeNow 길).
+  //   그 밖(쉬는 중, 다른 종류, 응답 필요, 시작 중, 잠듦)은 B1 그대로다. 턴을 새로 만들지 않아 짝지을 답이 없으므로 --wait와 함께 쓰지 않는다
   async prompt(caller, o = {}, res = null) {
     const b = this.b;
+    if (o.now && o.wait) throw apiError('bad_request', '--now와 --wait는 함께 쓸 수 없다. --now는 받는 쪽의 지금 턴에 대기 메시지로 넣어 그 글로 시작하는 턴이 없다(짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.');
     const t = this.target(caller, o.name);
     const text = o.text == null ? '' : String(o.text);
     if (!text.trim()) throw apiError('bad_request', '보낼 글을 주세요: atrium prompt <이름> "<할 일>"');
     if (text.length > TEXT_MAX) throw apiError('bad_request', `글이 너무 길다(${text.length}자, ${TEXT_MAX}자까지). 파일에 쓰고 그 경로를 보낸다.`);
     const woke = this.asleep(t);
-    const d = b.queue.enqueue(t.sessionId, text); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
+    const d = b.queue.enqueue(t.sessionId, text, o.now ? { typeNow: true, aside: true } : {}); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
     const l = this.link(caller, t);
-    b.linkEvent(l, 'prompt', text, { via: 'atrium', deliveryId: d.deliveryId, wait: !!o.wait });
+    b.linkEvent(l, 'prompt', text, { via: 'atrium', deliveryId: d.deliveryId, wait: !!o.wait, ...(o.now ? { now: true } : {}) });
     // 받는 쪽 상태(일하는 중, 끝남)는 이 글이 실제로 들어갈 때 이 지시의 기록에 붙인다(onDeliveryEnd). 대기열에 여럿이 쌓여도 들어간 순서대로 붙는다
     this.pendingLinks.set(d.deliveryId, { linkId: l.linkId, to: t.sessionId, text });
     this.noteSent(caller, t, d.deliveryId);
-    b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: d.deliveryId, chars: text.length, wait: !!o.wait, woke });
+    b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: d.deliveryId, chars: text.length, wait: !!o.wait, ...(o.now ? { now: true } : {}), woke });
     if (woke && b.sleeper && b.sleeper.wakeFor) b.sleeper.wakeFor(t, `atrium:${caller.name}`).catch(() => {}); // 대기열도 깨우지만 여기서 먼저 부른다(같은 깨우기로 묶인다)
-    b.log(`atrium prompt ${caller.name} → ${t.name} (${d.deliveryId}${o.wait ? ', wait' : ''}${woke ? ', woke' : ''})`);
+    b.log(`atrium prompt ${caller.name} → ${t.name} (${d.deliveryId}${o.wait ? ', wait' : ''}${o.now ? ', now' : ''}${woke ? ', woke' : ''})`);
     const out = { ...this.head(t), deliveryId: d.deliveryId, woke, next: verbLines(t.name) };
     if (o.wait) {
       const turn = await this.waitTurn(caller, t, { deliveryId: d.deliveryId, timeoutMs: o.timeoutMs, res });
@@ -161,7 +164,9 @@ export class AgentVerbs {
       return { ...out, state: turn.state, delivery: { status: row.status || d.status, reason: row.reason ?? null }, turn };
     }
     const row = await this.settle(d.deliveryId, res);
-    return { ...out, state: this.state(t), delivery: { status: row.status, reason: row.reason ?? null }, turn: null };
+    // P143: how — typed(일하는 중이라 Claude Code 대기 메시지로 넣음) | queue(판 대기열: 바로 들어갔거나 차례를 기다림). --now일 때만
+    const how = o.now ? (d.typed && row.status !== 'queued' ? 'typed' : 'queue') : undefined;
+    return { ...out, state: this.state(t), delivery: { status: row.status, reason: row.reason ?? null, ...(how ? { how } : {}) }, turn: null };
   }
   // 글이 들어가기(confirmed)나 끝내 못 들어가기를 잠깐 기다린다. 받는 쪽이 일하는 중이거나 사람의 답을 기다리면 바로 돌려준다(대기열이 나중에 넣는다)
   async settle(deliveryId, res) {

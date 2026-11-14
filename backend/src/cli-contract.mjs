@@ -7,7 +7,7 @@ export const CONTRACT_VERSION = 2;
 // out: --json일 때 result의 주요 칸. 사람이 읽는 출력(--json 없음)은 같은 내용의 글이다
 export const VERBS = [
   { name: 'help', args: ['[--json]'], does: '이 사용법. --json은 이 계약(동사, 인자, 출력, 종료 코드, 버전)', out: ['contract', 'verbs', 'exit'] },
-  { name: 'prompt', args: ['<이름>', '"<할 일>"', '[--wait]', '[--timeout ms]', '[--json]'], does: '다른 에이전트에게 일을 시킨다. 보드가 받는 쪽 차례에 맞춰 넣고(일하는 중·응답 대기면 끝난 뒤, 잠들었으면 깨운 뒤) 연결을 판에 남긴다. --wait면 그 턴이 끝날 때까지 기다려 마지막 답을 돌려준다(기본 100초)', out: ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next'] },
+  { name: 'prompt', args: ['<이름>', '"<할 일>"', '[--wait | --now]', '[--timeout ms]', '[--json]'], does: '다른 에이전트에게 일을 시킨다. 보드가 받는 쪽 차례에 맞춰 넣고(일하는 중·응답 대기면 끝난 뒤, 잠들었으면 깨운 뒤) 연결을 판에 남긴다. --wait면 그 턴이 끝날 때까지 기다려 마지막 답을 돌려준다(기본 100초). --now면 일하는 중인 Claude Code에 기다리지 않고 대기 메시지로 넣는다(워커의 보고용, --wait와 함께 쓰지 않는다)', out: ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next'] },
   { name: 'wait', args: ['<이름>', '[--timeout ms]', '[--json]'], does: '그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(기본 100초). 사람의 답을 기다리면 바로 돌아온다', out: ['name', 'agentName', 'kind', 'status', 'state', 'ms', 'answer', 'ask', 'error', 'delivery', 'next'] },
   { name: 'read', args: ['<이름>', '[--lines n]', '[--json]'], does: '그 세션 화면의 최근 줄(기본 80줄). 잠든 세션은 마지막 답', out: ['name', 'agentName', 'kind', 'state', 'lines', 'source', 'text', 'answer', 'next'] },
   { name: 'me', args: ['[--json]'], does: '너의 지금 연결(부모, 하위 세션, 역할 연결, 연결마다 마지막 지시). 보드의 지금 기록', out: ['name', 'parent', 'children', 'links'] },
