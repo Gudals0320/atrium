@@ -147,7 +147,9 @@ function judge(tag, p) {
   check(`[${tag}] 폴더 상자·폴더 밖 판이 겹치지 않고 떨어진다`, !bad, bad || '');
   const left = Math.min(...p.nodes.map((n) => n.x));
   check(`[${tag}] 맨 왼쪽 카드가 지도 칸 왼쪽 끝 가까이(나 자리 없음)`, left - p.body.x <= 40, { left, body: p.body.x });
-  check(`[${tag}] 지도 폭이 칸 안(가로 스크롤 없음)`, p.canvas && p.canvas.w <= p.body.w + 2, { canvas: p.canvas, body: p.body });
+  // 한 단위(폴더 상자·판)가 칸보다 넓으면(좁은 창의 3열 팀) 그 단위 폭 + 둘레까지만
+  const widest = Math.max(0, ...outer.map((o) => o.w));
+  check(`[${tag}] 지도 폭이 칸 안(가로 스크롤 없음, 칸보다 넓은 단위가 있으면 그 폭까지)`, p.canvas && p.canvas.w <= Math.max(p.body.w, widest + 40) + 2, { canvas: p.canvas, body: p.body, widest });
 }
 
 async function shots() {

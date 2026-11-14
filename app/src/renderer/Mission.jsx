@@ -147,11 +147,11 @@ export function MissionMap() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
   useEffect(() => { if (!open) setHot(null); }, [open]);
-  // 지도 칸 폭: 40px 단위로만 바꿔 다시 놓기를 줄인다
+  // 지도 칸 폭: 40px 단위로만 바꿔 다시 놓기를 줄인다. P145: 내림(반올림이면 칸보다 넓어져 가로 스크롤이 생겼다)
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!open || !el) return undefined;
-    const read = () => { const w = Math.max(480, Math.round(el.clientWidth / 40) * 40); setWidth((v) => (v === w ? v : w)); };
+    const read = () => { const w = Math.max(480, Math.floor(el.clientWidth / 40) * 40); setWidth((v) => (v === w ? v : w)); };
     read();
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
     if (ro) ro.observe(el); else window.addEventListener('resize', read);

@@ -74,7 +74,7 @@ test('P145: 팀 워크스페이스의 혼자인 세션은 팀 아래, 팀이 차
   const b = (id) => lay.boxes.get(`s:${id}`);
   const solo = ['app-notes', 'app-try', 'app-old'].map(b);
   const teamBottom = Math.max(...['lead', 'ui', 'tests', 'build', 'ui-a', 'ui-b'].map((k) => b(k).y + b(k).h));
-  for (const s of solo) assert.ok(s.y > teamBottom, '팀 아래');
+  for (const s of solo) assert.ok(s.y >= teamBottom + MISSION.cardGap + MISSION.looseGap, '팀 아래, 팀원으로 읽히지 않게 더 띄운다');
   assert.deepEqual(solo.map((s) => s.x), [b('lead').x, b('ui').x, b('ui-a').x], '세 열(리드·하위·그 아래 열)에 하나씩');
   assert.equal(new Set(solo.map((s) => s.y)).size, 1, '한 줄');
   for (const s of solo) assert.ok(s.loose);
@@ -123,7 +123,7 @@ test('P145: 섞은 판(폴더 둘·폴더 밖, 세션 30개) — 겹침 없음, 
 });
 
 test('P145: 촘촘함 — 같은 판에서 지도 높이가 예전 배치(나 자리, 열 사이 72, 혼자인 세션 1열, 팀은 한 기둥으로 쌓기)보다 15% 넘게 낮다', () => {
-  // 예전 배치의 높이는 git 밖 experiments/p145/measure.mjs로 잰 값(폭 1000: 1416, 1300: 1250, 1600: 860). 새 배치는 1278·1018·664
+  // 예전 배치의 높이는 git 밖 experiments/p145/measure.mjs로 잰 값(폭 1000: 1416, 1300: 1250, 1600: 860). 새 배치는 1310·1050·674
   for (const [width, old] of [[1300, 1250], [1600, 860]]) {
     const lay = missionLayout(mixed(), { order: ORDER, vgroups: VG, width });
     assert.ok(lay.height < old * 0.85, `${width}: ${lay.width} × ${lay.height}`);

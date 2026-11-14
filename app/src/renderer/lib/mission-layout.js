@@ -25,8 +25,9 @@ import { wire, facing, pairOff, blocked, portY } from './mission-wire.js';
 // P134: 폴더 상자. m = 상자 안 여백(워크스페이스 판 바깥 ~ 상자 테두리), head = 상자 위 가장자리 ~ 첫 판 위 가장자리(폴더 이름 줄)
 // P137: 폴더 상자 안 워크스페이스 상자(판)가 두 겹으로 읽히게 안 여백 8 → 12, 머리 30 → 32(폴더 이름 글이 한 단 크다)
 export const FOLDER = { m: 12, head: 32 };
-// P145: "나" 자리(you, youGap)를 걷고 열 사이 72 → 48(선 곡선은 이 폭이면 충분하다), 지도 둘레 28 → 20. packCap = 판 하나의 한 기둥에 놓는 혼자인 세션 수(넘으면 기둥을 나눈다)
-export const MISSION = { boxW: 216, boxH: 64, rowH: 28, dot: 18, dotGap: 6, dotsPerRow: 8, dotsMin: 6, dotsFold: 3, colGap: 48, cardGap: 8, rowGap: 8, linkGap: 24, pad: 20, wsHead: 30, wsGap: 36, slotGap: 36, plate: 10, quietSpan: 240, packCap: 6 };
+// P145: "나" 자리(you, youGap)를 걷고 열 사이 72 → 48(선 곡선은 이 폭이면 충분하다), 지도 둘레 28 → 20. packCap = 판 하나의 한 기둥에 놓는 혼자인 세션 수(넘으면 기둥을 나눈다),
+//   looseGap = 팀과 그 아래 혼자인 세션 줄 사이에 더 띄우는 틈(혼자인 세션이 하위 세션 열에 놓여도 팀원으로 읽히지 않게)
+export const MISSION = { boxW: 216, boxH: 64, rowH: 28, dot: 18, dotGap: 6, dotsPerRow: 8, dotsMin: 6, dotsFold: 3, colGap: 48, cardGap: 8, rowGap: 8, linkGap: 24, pad: 20, wsHead: 30, wsGap: 36, slotGap: 36, plate: 10, quietSpan: 240, packCap: 6, looseGap: 16 };
 export { EDGE_ORDER, mergeEdges }; // P94: 공용 모델(lib/mission-model.js)로 옮겼다
 const rank = (k) => { const i = EDGE_ORDER.indexOf(k); return i < 0 ? EDGE_ORDER.length : i; };
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -152,6 +153,7 @@ export function missionLayout(graph, { collapsed = [], order: order0 = [], vgrou
       let deep = 1;
       for (const bx of boxes.values()) if (bx.group === k && Number.isFinite(bx.depth)) deep = Math.max(deep, bx.depth);
       const n = Math.max(1, Math.min(deep, solo.length));
+      if (teams.length) y += L.looseGap;
       y = gridRoots(solo, Array.from({ length: n }, (_, c) => colX(c + 1)), y, k) + gapOf('card');
       last = 'card';
     }
@@ -214,7 +216,7 @@ export function missionLayout(graph, { collapsed = [], order: order0 = [], vgrou
     // 자리가 없으면 팀 아래, 팀이 차지한 폭 안의 기둥으로 채운다(상자가 옆으로 넓어지지 않게)
     if (sk.length) {
       const x0 = teamRight(tk) + L.slotGap;
-      const room = Math.floor((width - L.pad - 20 - F.m - L.plate - x0 + L.slotGap) / step);
+      const room = Math.floor((width - L.pad - F.m - L.plate - x0 + L.slotGap) / step);
       if (room >= 1) y = Math.max(y, packCols(sk, x0, y0, Math.min(room, spanOf(sk), 3)));
       else y = packCols(sk, colX(1), y, Math.floor((teamRight(tk) - colX(1) + L.slotGap) / step));
     }
@@ -224,14 +226,14 @@ export function missionLayout(graph, { collapsed = [], order: order0 = [], vgrou
   // 자리 후보: 기둥 자리(ox0 + c × step)와 놓인 단위마다 그 오른쪽 끝 + 틈(폴더 상자는 기둥 폭의 배수가 아니다). 가장 높이 놓이는 자리, 같으면 왼쪽
   const gut = L.slotGap - 2 * L.plate;
   const ox0 = L.pad - L.plate, oy0 = L.pad - L.plate; // P101: 판 사이 틈이 기둥 사이와 같다
-  const limit = width - L.pad + L.plate;
+  const limit = width - L.pad; // P145: 바깥 사각형 오른쪽 끝 + 둘레(pad)가 칸 폭을 넘지 않게(예전 + plate는 가로 스크롤을 냈다)
   const placed = [];
   // home: 맨 왼쪽 자리(팀 단위는 제 열 자리 그대로, 폴더 밖 판은 폴더 상자 여백만큼 안쪽)
   const spot = (o, folder, home = ox0) => {
     const xs = [...new Set([home, ...placed.map((r) => r.x + r.w + gut)].filter((x) => x <= limit && x >= home).concat(Array.from({ length: Math.max(0, Math.floor((limit - home) / step)) + 1 }, (_, c) => home + c * step)))].sort((p, q) => p - q);
     let best = null;
     for (const x of xs) {
-      if (x > home && x + o.w > (folder ? width - L.pad - 20 : limit)) continue; // 폴더 상자는 지도 칸 안에(칸 폭은 40 단위로 반올림한 값이라 20을 남긴다)
+      if (x > home && x + o.w > limit) continue; // 맨 왼쪽 자리가 아니면 지도 칸 안에
       const yy = Math.max(oy0, ...placed.filter((r) => r.x < x + o.w + gut && x < r.x + r.w + gut).map((r) => r.y + r.h + gut));
       if (!best || yy < best.y) best = { x, y: yy };
     }
