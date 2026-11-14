@@ -45,6 +45,8 @@ import { LinkEdge, RepoEdge } from './Links.jsx';
 import { withBoundary } from './ErrorBoundary.jsx';
 import { pickAttached, termAllowed, veryClose, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
 import { perfLog } from './perf.js';
+import { reuseNode, sameList, sameFields, sessionNode } from './lib/node-reuse.js'; // P146: 바뀐 노드만 다시 그리기
+import { noteRebuild } from './perf-trace.js'; // P146: 성능 기록
 import { enterView, dockRect, isViewing, NAV_GAP } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
 import { enterSession } from './touch.js';
 import { wakeSession } from './sleep.js'; // P21
@@ -214,7 +216,7 @@ function rederive(ns, ghost, ctrlId = null) {
   const content = ns.filter(isContent);
   const prev = new Map(ns.filter((n) => !isContent(n)).map((n) => [n.id, n]));
   const { regionsOut, backOut, extra } = backdrops(content, ghost, ctrlId);
-  const keep = (n) => { const o = prev.get(n.id); if (!o) return n; return o.dragging ? { ...o, data: n.data } : { ...o, ...n }; };
+  const keep = (n) => { const o = prev.get(n.id); if (!o) return n; return o.dragging ? reuseNode(o, { data: n.data }) : reuseNode(o, n); }; // P146: 값이 같으면 옛 객체(다시 그리지 않는다)
   return [...regionsOut.map(keep), ...backOut.map(keep), ...content, ...extra.map(keep)];
 }
 // 영역끼리 겹치는 워크스페이스 쌍(놓은 뒤 새로 겹치면 되돌린다). itemOver: 메모·칸반의 바꿔 볼 자리와 소속(P6c)
@@ -318,24 +320,28 @@ export function Canvas() {
         if (old && old.dragging) { sess.push(old); continue; }
         const d = dockOf(id);
         const p = live && live.get(id);
-        sess.push({ ...(old || {}), id, type: 'session', position: p || { x: r.x, y: r.y }, width: r.w, height: r.h, dragHandle: '.mt-drag', data: {}, zIndex: r.z || 0, className: d ? `docked dock-${d.dir}` : '' });
+        sess.push(sessionNode(old, id, r, p, d)); // P146: 값이 같으면 옛 객체(lib/node-reuse.js)
       }
       // P6c: 메모·칸반 노드
       const item = (fid, type, it, handle, data) => {
         const old = byId.get(fid);
         if (old && old.dragging) return old;
         const p = live && live.get(fid);
-        return { ...(old || {}), id: fid, type, position: p || { x: it.x, y: it.y }, width: it.w, height: it.h, dragHandle: handle, data, zIndex: 0 };
+        return reuseNode(old, { id: fid, type, position: p || { x: it.x, y: it.y }, width: it.w, height: it.h, dragHandle: handle, data, zIndex: 0 }); // P146
       };
       if (PLAN.items) { // P86 단계 2부터 메모·칸반·대화 노드를 뺀다
         for (const m of st.memos.values()) sess.push(item(`memo:${m.memoId}`, 'memo', m, '.mt-mdrag', { memoId: m.memoId }));
         for (const k of st.kanbans.values()) sess.push(item(`kanban:${k.kanbanId}`, 'kanban', k, '.mt-kdrag', { kanbanId: k.kanbanId }));
         for (const c of st.convoNodes.values()) sess.push(item(`convo:${c.convId}`, 'convo', c, '.mt-cdrag', { convId: c.convId })); // P13
       }
-      return rederive([...prev.filter((n) => !isContent(n)), ...sess], ghostRef.current, ctrlRef.current);
+      const next = rederive([...prev.filter((n) => !isContent(n)), ...sess], ghostRef.current, ctrlRef.current);
+      const same = sameList(prev, next); // P146: 바뀐 노드가 없으면 옛 배열 그대로(React Flow가 아무것도 다시 보지 않는다)
+      noteRebuild(prev, next, same); // P146: 성능 기록(켜져 있을 때만 센다)
+      return same ? prev : next;
     });
   }, [storeNodes, sessions, docks, links, workspaces, wsGroups, memos, kanbans, convoNodes, rev, currentWs]); // P23: links(덩어리 안 연결선). P91: wsGroups(묶음 테두리)
 
+  const edgesRef = useRef(null); // P146: 지난번 선(값이 같으면 다시 쓴다)
   // 연결선. 같은 덩어리 안 두 노드 사이의 연결은 노드 위에 겹친 선으로 보인다(H5, P23 DockLinks). 같은 저장소 선은 워크트리 세션이 있을 때만(F4)
   const edges = useMemo(() => {
     const out = [];
@@ -365,9 +371,14 @@ export function Canvas() {
     const linkedLive = (a, b) => [...links.values()].some((l) => l.from === a && l.to === b); // P67: 판의 연결이 있는 판 세션끼리의 띄움은 그 연결 하나로
     for (const e of convoEdges) if (hereAny(e.from) && hereAny(e.to) && !boardSpawnDup(e, linkedLive)) out.push({ id: e.id, source: e.from, target: e.to, ...sides(e.from, e.to), type: 'spawnc', data: { ...e, ...gapOf(e.from, e.to) }, selectable: false });
     // P86 단계 2부터: 선은 일 시키기 연결만, 이름표 없는 곧은 선으로
-    if (!PLAN.fancyEdges) return out.filter((e) => e.type === 'link').map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, type: 'straight', selectable: false }));
-    return decorateEdges(out, { rectOf: rectId, links, sessions, now: Date.now() }); // P67: 한 쌍에 이름표 하나, 물러나기, 비켜 놓기
+    const made = !PLAN.fancyEdges ? out.filter((e) => e.type === 'link').map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, type: 'straight', selectable: false }))
+      : decorateEdges(out, { rectOf: rectId, links, sessions, now: Date.now() }); // P67: 한 쌍에 이름표 하나, 물러나기, 비켜 놓기
+    // P146: 값이 같은 선은 옛 객체를 다시 쓴다(세션 갱신마다 선 전부를 다시 그리지 않게)
+    const prevById = new Map((edgesRef.current || []).map((e) => [e.id, e]));
+    const next = made.map((e) => { const o = prevById.get(e.id); return o && Object.keys(o).length === Object.keys(e).length && sameFields(o, e) ? o : e; });
+    return sameList(edgesRef.current, next) ? edgesRef.current : next;
   }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick, currentWs]);
+  edgesRef.current = edges;
 
   // 노드 손잡이를 끌어 이으면 역할을 묻는다(F2). 같은 쌍에 이미 역할이 있으면 고칠 수 있게 같은 대화상자를 연다
   const onConnect = useCallback((c) => { if (c.source && c.target && c.source !== c.target) openDialog({ kind: 'role', from: c.source, to: c.target }); }, []);
