@@ -82,14 +82,16 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
 
   const cards = new Map(), bands = [], rows = [], divs = [];
   const put = (id, depth, y, ws) => cards.set(id, { x: COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0 });
-  const place = (id, depth, top, ws) => {
+  // align: 하위 묶음 안에서 카드 자리. mid = 가운데, bottom = 아래 끝(바로 다음이 동료일 때), top = 위 끝(바로 앞이 동료일 때). 동료끼리 바로 위아래에 붙게
+  const alignOf = (list, i) => (i + 1 < list.length && peersOf(list[i]).includes(list[i + 1]) ? 'bottom' : i > 0 && peersOf(list[i]).includes(list[i - 1]) ? 'top' : 'mid');
+  const place = (id, depth, top, ws, align = 'mid') => {
     const ks = depth > 50 ? [] : visKids(id, depth);
     if (!ks.length) { put(id, depth, top, ws); return H(id); }
     let t = top;
-    ks.forEach((k, i) => { t += place(k, depth + 1, t, ws) + (i + 1 < ks.length && peersOf(k).includes(ks[i + 1]) ? L.PGY : L.GY); }); // 동료 사이는 조금 더 띄워 양끝 점 선이 보이게
+    ks.forEach((k, i) => { t += place(k, depth + 1, t, ws, alignOf(ks, i)) + (i + 1 < ks.length && peersOf(k).includes(ks[i + 1]) ? L.PGY : L.GY); }); // 동료 사이는 조금 더 띄워 양끝 점 선이 보이게
     const h = t - L.GY - top;
     const my = Math.max(h, H(id));
-    put(id, depth, top + (my - H(id)) / 2, ws);
+    put(id, depth, align === 'bottom' ? top + my - H(id) : align === 'top' ? top : top + (my - H(id)) / 2, ws);
     // 하위 묶음이 부모보다 낮으면 하위를 가운데로 내린다
     if (h < H(id)) { const dy = (H(id) - h) / 2; const shift = (x) => { for (const c of visKids(x, 0)) { const b = cards.get(c); if (b) b.y += dy; shift(c); } }; shift(id); }
     return my;
@@ -106,7 +108,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
       const away = nodes.filter((n) => crossIn(n.id)); // 부모가 다른 워크스페이스(1단계 칸에서 시작)
       const solos = nodes.filter((n) => isRoot(n) && !treeRoot(n));
       let cy = y + L.RT;
-      roots.forEach((r, i) => { const peerNext = i + 1 < roots.length && peersOf(r.id).includes(roots[i + 1].id); cy += place(r.id, 0, cy, key) + (peerNext ? L.PGY : L.GY * 2); });
+      roots.forEach((r, i) => { const peerNext = i + 1 < roots.length && peersOf(r.id).includes(roots[i + 1].id); cy += place(r.id, 0, cy, key, alignOf(roots.map((x) => x.id), i)) + (peerNext ? L.PGY : L.GY * 2); });
       for (const s of away) cy += place(s.id, 1, cy, key) + L.GY * 2;
       const treeH = cy - y - L.GY * 2;
       let sy = y + L.RT;
@@ -211,7 +213,13 @@ export function relationDrop(lay, dragId, wx, wy) {
   const desc = new Set([dragId]);
   const walk = (id, g) => { if (g > 100) return; for (const c of lay.tree.kids.get(id) || []) { desc.add(c.id); walk(c.id, g + 1); } };
   walk(dragId, 0);
-  const GX = LINE.GX, PEERY = 64;
+  const GX = LINE.GX, PEERY = 56;
+  // 동료: 같은 칸 카드 바로 위·아래 빈 틈(PEERY 안). 하위 자리(오른쪽 칸)와 겹치면 동료가 먼저(하위 칸 카드 바로 아래에 놓으면 그 카드의 동료)
+  for (const [id, c] of lay.cards) {
+    if (desc.has(id) || wx < c.x || wx > c.x + c.w) continue;
+    if (wy >= c.y - PEERY && wy < c.y) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y - 10 - me.h, w: c.w, h: me.h } };
+    if (wy > c.y + c.h && wy <= c.y + c.h + PEERY) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y + c.h + 10, w: c.w, h: me.h } };
+  }
   let best = null;
   for (const [id, c] of lay.cards) {
     if (desc.has(id)) continue;
@@ -222,11 +230,6 @@ export function relationDrop(lay, dragId, wx, wy) {
     }
   }
   if (best) return { kind: best.kind, target: best.target, row: best.row, box: best.box };
-  for (const [id, c] of lay.cards) {
-    if (desc.has(id) || wx < c.x || wx > c.x + c.w) continue;
-    if (wy >= c.y - PEERY && wy < c.y) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y - 10 - me.h, w: c.w, h: me.h } };
-    if (wy > c.y + c.h && wy <= c.y + c.h + PEERY) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y + c.h + 10, w: c.w, h: me.h } };
-  }
   const col0 = (lay.cols.find((c) => c.key === 'lv' && c.level === 0) || {}).x;
   const row = lay.rows.find((r) => wy >= r.y && wy <= r.y + r.h);
   if (row && col0 != null && wx >= col0 && wx <= col0 + lay.cw) {

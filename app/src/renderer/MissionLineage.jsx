@@ -39,8 +39,7 @@ const KINDS = ['spawn', 'role', 'prompt', 'cross'];
 const EXP_KEY = 'atrium.sessionMap.expanded';
 const loadExpanded = () => { try { const a = JSON.parse(localStorage.getItem(EXP_KEY) || '[]'); return new Set(Array.isArray(a) ? a.slice(0, 200) : []); } catch { return new Set(); } };
 const saveExpanded = (s) => { try { localStorage.setItem(EXP_KEY, JSON.stringify([...s].slice(-200))); } catch { /* 기억 못 해도 지금 화면은 된다 */ } };
-// P153 r11: 판이 relation.set을 모르면(P156 전, 'unknown_method') 정한 관계를 이 창에서만 그래프에 덮어 보인다(applyRelationStub). 맵을 닫았다 열어도 남는다
-const relStub = [];
+// P153 r12: 놓자마자 보이는 관계(판 답을 기다리는 동안, applyRelationStub = P156 그래프 모양)는 두 세션 쌍마다 하나
 const relKey = (x) => [x.a, x.b].sort().join('|');
 const putRel = (list, x) => [...list.filter((y) => relKey(y) !== relKey(x)), x];
 
@@ -178,7 +177,6 @@ export function LineageMap() {
   const justDragged = useRef(false);
   const layRef = useRef(null), sizeRef = useRef(null);
   const [expanded, setExpanded] = useState(loadExpanded); // 깊이 접기를 편 카드
-  const [stubN, setStubN] = useState(0); // relStub이 바뀐 횟수(다시 배치)
   const [pending, setPending] = useState([]); // 놓자마자 보이는 관계(판 답을 기다리는 동안). [{ a, b, relation, ok }]
   const [reloadN, setReloadN] = useState(0);
   const onFold = useCallback((id) => setExpanded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); saveExpanded(n); return n; }), []);
@@ -195,13 +193,15 @@ export function LineageMap() {
     commandDraft.addEventListener('text', onText);
     return () => commandDraft.removeEventListener('text', onText);
   }, []);
+  // P153 r12: 다른 곳(에이전트 atrium child --peer, 다른 창)에서 관계가 바뀌면 그래프를 다시 읽는다
+  useEffect(() => (open ? api.on('relation.updated', () => setReloadN((n) => n + 1)) : undefined), [open]);
 
   const order = useMemo(() => (workspaces || []).map((w) => w.key), [workspaces]);
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
-  // 판 그래프 + 이 창에서만 정한 관계(relStub) + 답을 기다리는 놓기(pending)
-  const g2 = useMemo(() => (graph ? applyRelationStub(graph, [...relStub, ...pending]) : null), [graph, pending, stubN]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
+  const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
   const lay = useMemo(() => (g2 ? lineageLayout(g2, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded }) : null), [g2, order, vgroups, tiers, names, t, expanded]);
   const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
   layRef.current = lay;
@@ -339,8 +339,8 @@ export function LineageMap() {
     api.call('group.move', { workspace: key, group: bandId || null }).then(() => toast(bandId ? t('mmTerr.movedTo', { ws: wsName(key), folder: name || '' }) : t('mmTerr.movedOut', { ws: wsName(key) }))).catch((e) => toast(t('mmTerr.moveFail', { error: errText(e) }), 'error'));
   }, [t]);
 
-  // ---- P153 r11: 관계 바꾸기(Alt+카드 끌기). 놓자마자 맵에 보이고(pending), 판 relation.set(P156 계약)을 부른다.
-  // 판이 모르면('unknown_method') 이 창에서만 정한 것으로 남기고(relStub), 다른 실패면 되돌리고 알린다 ----
+  // ---- P153 r11·r12: 관계 바꾸기(Alt+카드 끌기). 놓자마자 맵에 보이고(pending), 판 relation.set(P156)을 부른다(계보는 사실이라 그대로, session.detach는 쓰지 않는다).
+  // 실패하면 되돌리고 알린다. cycle(끈 세션 아래에 대상이 있다)은 따로 분명한 글 ----
   const setRelation = useCallback((dragId, drop) => {
     const L = layRef.current;
     const call = L && relationCall(L, dragId, drop);
@@ -354,12 +354,7 @@ export function LineageMap() {
       setReloadN((n) => n + 1);
     }).catch((e) => {
       setPending((p) => p.filter((x) => relKey(x) !== relKey(call)));
-      if (e && e.code === 'unknown_method') {
-        const next = putRel(relStub, call); relStub.length = 0; relStub.push(...next);
-        setStubN((n) => n + 1);
-        toast(`${t(call.relation === 'sub' ? 'mmLine.relSub' : call.relation === 'peer' ? 'mmLine.relPeer' : 'mmLine.relNone', { name: nm(call.b), up: nm(call.a) })} ${t('mmLine.relLocal')}`);
-        return;
-      }
+      if (e && e.code === 'cycle') { toast(t('mmLine.relCycle', { name: nm(call.b), up: nm(call.a) }), 'error'); return; }
       toast(t('mmLine.relFail', { error: errText(e) }), 'error');
     });
   }, [t]);

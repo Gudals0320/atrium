@@ -386,6 +386,8 @@ async function r9sidebar(page, agent) {
     await shotTo(page, 'pc-r9-map-ws');
     check('사이드바 워크스페이스 줄(세션 맵) → 그 줄에 맞춤 + 반짝임', w.blink && w.inView, w);
     const gRow = '[data-sb="group"][data-group="g2"]';
+    // 가상 목록이라 폴더 줄이 그려질 때까지 위로 올린다(판의 실제 세션이 늘면 아래로 밀린다)
+    for (let i = 0; i < 40 && !(await page.$(gRow)); i++) { await page.evaluate((top) => { const l = document.querySelector('[data-role="sidebar-list"]'); if (l) l.scrollTop = top ? 0 : l.scrollTop + 240; }, i === 0); await sleep(120); }
     const folded0 = await page.evaluate((s) => document.querySelector(s).classList.contains('folded'), gRow);
     await page.click(`${gRow} .mt-sb2-gname`); await sleep(700);
     const g = await page.evaluate((s) => ({ folded: document.querySelector(s).classList.contains('folded'), blink: !!document.querySelector('.mt-ln-band[data-id="g2"].blink') }), gRow);
@@ -651,11 +653,11 @@ async function r11() {
     if (await page.$('[data-role="sidebar"]')) { await page.click('[data-action="sidebar"]'); await sleep(500); }
     await page.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE_DEEP)), MIX, null, null]);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    // relation.set·group.move 흉내: 부른 것을 적고, 답은 window.__r11mode(unknown = P156 전, fail = 실패, ok)
+    // relation.set·group.move 가로채기: 부른 것을 적고, 답은 window.__r11mode(hold = 판이 아직 답하지 않음(놓은 자리가 바로 보임), fail·cycle = 실패, ok)
     await page.evaluate(() => {
-      const api = window.__mt.api; const orig = api.call; window.__r11calls = []; window.__r11moves = []; window.__r11mode = 'unknown';
+      const api = window.__mt.api; const orig = api.call; window.__r11calls = []; window.__r11moves = []; window.__r11mode = 'hold';
       api.call = (m, p) => {
-        if (m === 'relation.set') { window.__r11calls.push(p); const md = window.__r11mode; return md === 'ok' ? Promise.resolve({ ok: true }) : Promise.reject(Object.assign(new Error(md === 'fail' ? 'board said no' : 'unknown method: relation.set'), { code: md === 'fail' ? 'internal' : 'unknown_method' })); }
+        if (m === 'relation.set') { window.__r11calls.push(p); const md = window.__r11mode; if (md === 'hold') return new Promise(() => {}); return md === 'ok' ? Promise.resolve({ ok: true }) : Promise.reject(Object.assign(new Error(md === 'fail' ? 'board said no' : 'loop'), { code: md === 'fail' ? 'internal' : 'cycle' })); }
         if (m === 'group.move') { window.__r11moves.push(p); return Promise.resolve({ groups: [] }); }
         return orig(m, p);
       };
@@ -723,7 +725,7 @@ async function r11() {
     const el = await page.evaluate(() => { const L = window.__mtTa.lay(), c = L.cards.get('s:exam-lead'); return { x: c.x + c.w + 110 + c.w * 0.3, y: c.y + c.h / 2 }; });
     const d1 = await drag(await scr('s:media', 0.5, 0.5), await w2s(el.x, el.y), { shot: 'r11-drag-sub' });
     const k1 = await calls();
-    check('r11 Alt+카드 끌기 → 하위로: 미리 보기(하위로 + 대상 강조), relation.set {a: 위, b: 끈 세션, sub}, 판이 모르면 맵에만 남김', d1 && d1.kind === 'sub' && d1.target === 's:exam-lead' && /exam-lead/.test(d1.text) && k1.length === 1 && k1[0].a === 'fk-exam-lead' && k1[0].b === 'fk-media' && k1[0].relation === 'sub' && (await parentOf('s:media')) === 's:exam-lead', { d1, k1 });
+    check('r11 Alt+카드 끌기 → 하위로: 미리 보기(하위로 + 대상 강조), relation.set {a: 위, b: 끈 세션, sub}, 답을 기다리는 동안 맵에 바로 보임', d1 && d1.kind === 'sub' && d1.target === 's:exam-lead' && /exam-lead/.test(d1.text) && k1.length === 1 && k1[0].a === 'fk-exam-lead' && k1[0].b === 'fk-media' && k1[0].relation === 'sub' && (await parentOf('s:media')) === 's:exam-lead', { d1, k1 });
     // 2) 동료로 + Esc 취소: conductor → ex-notes 바로 위
     const xn = await page.evaluate(() => { const c = window.__mtTa.lay().cards.get('s:ex-notes'); return { x: c.x + 40, y: c.y - 20 }; });
     const d2 = await drag(await scr('s:conductor', 0.5, 0.5), await w2s(xn.x, xn.y), { shot: 'r11-drag-peer', esc: true });
@@ -746,20 +748,26 @@ async function r11() {
     await sleep(500);
     const f5 = await page.evaluate(() => ({ p: window.__mtTa.lay().tree.parent.get('s:ex-qa-c'), err: [...document.querySelectorAll('.mt-toast.error')].map((x) => x.textContent) }));
     check('r11 판이 실패로 답하면 되돌리고 알린다', (await calls()).length === 3 && f5.p === 's:exam-lead' && f5.err.some((x) => /board said no/.test(x)), f5);
+    // 5b) 고리(cycle) = 분명한 알림, 되돌림
+    await page.evaluate(() => { window.__r11mode = 'cycle'; });
+    await drag(await scr('s:ex-qa-a', 0.5, 0.5), await w2s(dl.x, dl.y));
+    await sleep(500);
+    const f5b = await page.evaluate(() => ({ p: window.__mtTa.lay().tree.parent.get('s:ex-qa-a'), err: [...document.querySelectorAll('.mt-toast.error')].map((x) => x.textContent) }));
+    check('r12 판이 cycle로 답하면 되돌리고 고리라고 알린다', (await calls()).length === 4 && f5b.p === 's:exam-lead' && f5b.err.some((x) => /loop|고리/.test(x) && /ex-qa-a/.test(x)), f5b);
     // 6) 판이 받으면(ok) 같은 인자로 부르고, 새 그래프를 다시 읽는다
     await page.evaluate(() => { window.__r11mode = 'ok'; window.__r11graphs = 0; const api = window.__mt.api, o = api.call; api.call = (m, p) => { if (m === 'mission.graph') window.__r11graphs++; return o(m, p); }; });
     const g1 = await page.evaluate(() => { const c = window.__mtTa.lay().cards.get('s:g1'); return { x: c.x + c.w + 110 + c.w * 0.3, y: c.y + c.h / 2 }; });
     await drag(await scr('s:ex-qa-b', 0.5, 0.5), await w2s(g1.x, g1.y));
     await sleep(900);
     const k6 = await calls(), g6 = await page.evaluate(() => window.__r11graphs);
-    check('r11 판이 받으면 relation.set 그대로, 그래프를 다시 읽는다', k6.length === 4 && k6[3].a === 'fk-g1' && k6[3].b === 'fk-ex-qa-b' && k6[3].relation === 'sub' && g6 >= 1, { k6: k6[3], g6 });
+    check('r11 판이 받으면 relation.set 그대로, 그래프를 다시 읽는다', k6.length === 5 && k6[4].a === 'fk-g1' && k6[4].b === 'fk-ex-qa-b' && k6[4].relation === 'sub' && g6 >= 1, { k6: k6[4], g6 });
     // 7) Alt 없이 카드 끌기 = 시점 이동(관계 그대로, 태그 없음)
     await setCmd('');
     const v0 = await page.evaluate(() => window.__mtTa.view());
     const s7 = await scr('s:exam-lead', 0.5, 0.5);
     await drag(s7, { x: s7.x + 140, y: s7.y + 60 }, { alt: false });
     const v1 = await page.evaluate(() => window.__mtTa.view());
-    check('r11 Alt 없이 카드 끌기 = 시점 이동(부르지 않고 태그도 없음)', Math.abs(v1.x - v0.x - 140) < 4 && (await calls()).length === 4 && !(await cmd()).trim(), { v0, v1 });
+    check('r11 Alt 없이 카드 끌기 = 시점 이동(부르지 않고 태그도 없음)', Math.abs(v1.x - v0.x - 140) < 4 && (await calls()).length === 5 && !(await cmd()).trim(), { v0, v1 });
     // 8) 줄 잡는 자리: 줄 머리 이름 아래 빈 곳(워크스페이스 칸)을 Alt+끌기 → 그 폴더로
     await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
     const gb = await page.evaluate(() => {
@@ -783,6 +791,80 @@ async function r11() {
   } finally { await closeApp(app); }
 }
 
+// ---- 라운드 12: 실제 세션(P156 relation.set)으로. 개발용 판에 p153-haiku(리드) + atrium child로 띄운 p153-sub·p153-sub2(하위)·p153-peer(--peer)가 있어야 한다 ----
+// 세션의 atrium me는 판이 그 세션에 준 설정 env(개발용 판 데이터 폴더의 sessions/<id>.json)로 부른다. 토큰은 찍지 않는다
+const meOf = (sid) => {
+  const j = JSON.parse(fs.readFileSync(path.join(ENV.ATRIUM_DATA_DIR, 'sessions', `${sid}.json`), 'utf8'));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(ATRIUM|HC|HERDR|MTASK)_/.test(k)));
+  return execFileSync(process.execPath, [path.join(REPO, 'backend', 'bin', 'atrium-child.mjs'), 'me'], { encoding: 'utf8', env: { ...env, ...(j.env || {}) } });
+};
+async function r12real() {
+  call('settings.set', { key: 'missionStyle', value: 'territories' });
+  const sess = Object.fromEntries(call('session.list').map((s) => [s.name, s.sessionId]));
+  for (const n of ['p153-haiku', 'p153-sub', 'p153-sub2', 'p153-peer']) if (!sess[n]) throw new Error(`${n} 세션이 없다(atrium child로 먼저 띄운다)`);
+  // 앞 실행이 사람으로 정한 관계(source user)는 모두 자동으로 되돌리고 시작한다(atrium child --peer의 동료는 에이전트가 정한 것이라 남는다)
+  const mine = new Set(Object.values(sess));
+  for (const x of call('relation.list').relations || []) if (x.source === 'user' && mine.has(x.a) && mine.has(x.b)) call('relation.set', { a: x.a, b: x.b, relation: 'auto' });
+  const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
+  try {
+    await awayWin(app);
+    await page.setViewportSize({ width: 1584, height: 921 }).catch(() => {});
+    await sleep(2500);
+    if (await page.$('[data-role="sidebar"]')) { await page.click('[data-action="sidebar"]'); await sleep(500); }
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await openMission(page);
+    const idOf = (name) => page.evaluate((n) => { const L = window.__mtTa.lay(); const hit = [...L.cards.entries()].find(([, b]) => b.node.name === n); return hit ? hit[0] : null; }, name);
+    const ids = {}; for (const n of ['p153-haiku', 'p153-sub', 'p153-sub2', 'p153-peer', 'p153-a']) ids[n] = await idOf(n);
+    const geo = () => page.evaluate((I) => {
+      const L = window.__mtTa.lay(), c = (n) => L.cards.get(I[n]) || null, col0 = L.cols.find((x) => x.key === 'lv' && x.level === 0).x;
+      const pe = [...document.querySelectorAll('.mt-ta-edge.k-peer')].map((e) => [e.dataset.from, e.dataset.to].sort().join('|'));
+      return { col0, cards: Object.fromEntries(Object.entries(I).map(([n, id]) => [n, c(n) && { x: c(n).x, y: c(n).y, h: c(n).h, depth: c(n).depth, parent: L.tree.parent.get(id) || null, peers: (L.tree.byId.get(id).peers || []) }])), peerEdges: pe,
+        lin: [...document.querySelectorAll('.mt-ta-edge.k-lineage')].map((e) => `${e.dataset.from}>${e.dataset.to}`) };
+    }, ids);
+    await page.evaluate((id) => window.__mtTa.flyTo(id, 0.6), ids['p153-haiku']); await sleep(800);
+    await shotTo(page, 'r12-real-open');
+    const g0 = await geo();
+    const H = g0.cards['p153-haiku'], P = g0.cards['p153-peer'];
+    check('r12 실제: atrium child --peer로 띄운 동료는 리드 옆(같은 칸, 바로 위아래), 양끝 점 선; 하위 둘은 1단계', H && P && H.x === P.x && H.x === g0.col0 && Math.abs((P.y > H.y ? P.y - (H.y + H.h) : H.y - (P.y + P.h))) <= 60 && g0.peerEdges.includes([ids['p153-haiku'], ids['p153-peer']].sort().join('|')) && g0.cards['p153-sub'].parent === ids['p153-haiku'] && g0.cards['p153-sub2'].depth === 1, g0);
+    // 끌기 도우미(세계 좌표 → 화면)
+    const w2s = (wx, wy) => page.evaluate(([a, b]) => { const v = window.__mtTa.view(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { x: vp.left + v.x + a * v.k, y: vp.top + v.y + b * v.k }; }, [wx, wy]);
+    const cen = (id) => page.evaluate((i) => { const L = window.__mtTa.lay(), v = window.__mtTa.view(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(), c = L.cards.get(i); return { x: vp.left + v.x + (c.x + c.w / 2) * v.k, y: vp.top + v.y + (c.y + c.h / 2) * v.k }; }, id);
+    const drag = async (from, to, shot) => {
+      await page.keyboard.down('Alt'); await page.mouse.move(from.x, from.y); await page.mouse.down();
+      for (let i = 1; i <= 16; i++) { await page.mouse.move(from.x + (to.x - from.x) * i / 16, from.y + (to.y - from.y) * i / 16); await sleep(16); }
+      const d = await page.evaluate(() => { const x = document.querySelector('[data-role=ln-drop]'); return x && !x.hidden ? { kind: x.dataset.kind, text: x.textContent } : null; });
+      if (shot) await shotTo(page, shot);
+      await page.mouse.up(); await page.keyboard.up('Alt'); await sleep(1500);
+      return d;
+    };
+    const reopen = async () => { await closeMission(page); await openMission(page); await page.evaluate((id) => window.__mtTa.flyTo(id, 0.5), ids['p153-haiku']); await sleep(800); return geo(); };
+    const rel = () => call('relation.list').relations || [];
+    // 1) 독립: sub2 → 줄의 빈 시작 칸
+    const s2 = await page.evaluate(([i, h]) => { const L = window.__mtTa.lay(), c = L.cards.get(i), r = L.rows.find((x) => x.key === c.ws), c0 = L.cols.find((x) => x.key === 'lv' && x.level === 0).x; const busy = [...L.cards.values()].filter((b) => b.ws === c.ws && Math.abs(b.x - c0) < 1).map((b) => [b.y, b.y + b.h]); let y = r.y + r.h - 30; for (let t = r.y + 20; t < r.y + r.h - 20; t += 10) if (!busy.some(([a, b]) => t >= a - 70 && t <= b + 70)) { y = t; break; } return { x: c0 + 60, y }; }, [ids['p153-sub2'], ids['p153-haiku']]);
+    const d2 = await drag(await cen(ids['p153-sub2']), await w2s(s2.x, s2.y), 'r12-real-drag-none');
+    const g2 = await reopen();
+    const me2 = meOf(sess['p153-sub2']);
+    check('r12 실제: Alt+끌기 독립 → 다시 열어도 시작 칸, 계보는 옅은 선, atrium me(sub2)에 상위 없음', d2 && d2.kind === 'none' && g2.cards['p153-sub2'].x === g2.col0 && !g2.cards['p153-sub2'].parent && g2.lin.includes(`${ids['p153-haiku']}>${ids['p153-sub2']}`) && /상위: 없음|parent: none/i.test(me2), { d2, c: g2.cards['p153-sub2'], lin: g2.lin, me2: me2.slice(0, 400) });
+    // 2) 동료로(독립한 sub2를 sub 옆으로): sub2 → sub 바로 아래
+    const s1 = await page.evaluate((i) => { const c = window.__mtTa.lay().cards.get(i); return { x: c.x + 40, y: c.y + c.h + 20 }; }, ids['p153-sub']);
+    const d1 = await drag(await cen(ids['p153-sub2']), await w2s(s1.x, s1.y), 'r12-real-drag-peer');
+    const g1 = await reopen();
+    const me1 = meOf(sess['p153-sub2']);
+    check('r12 실제: Alt+끌기 동료로 → relation.set이 판에 남고, 맵을 다시 열어도 sub 옆, atrium me(sub2)에 동료', d1 && d1.kind === 'peer' && g1.cards['p153-sub2'].peers.includes(ids['p153-sub']) && g1.cards['p153-sub2'].x === g1.cards['p153-sub'].x && /p153-sub\b/.test(me1) && /동료|peer/i.test(me1), { d1, rel: rel(), me1: me1.slice(0, 400) });
+    // 3) 하위로: peer → sub 오른쪽 칸
+    const s3 = await page.evaluate((i) => { const c = window.__mtTa.lay().cards.get(i); return { x: c.x + c.w + 110 + c.w * 0.3, y: c.y + c.h / 2 }; }, ids['p153-sub']);
+    const d3 = await drag(await cen(ids['p153-peer']), await w2s(s3.x, s3.y), 'r12-real-drag-sub');
+    const g3 = await reopen();
+    const me3 = meOf(sess['p153-peer']);
+    check('r12 실제: Alt+끌기 하위로 → 다시 열어도 sub의 하위(2단계), atrium me(peer)의 상위 = p153-sub', d3 && d3.kind === 'sub' && g3.cards['p153-peer'].parent === ids['p153-sub'] && g3.cards['p153-peer'].depth === 2 && /상위:[^\n]*p153-sub|parent:[^\n]*p153-sub/i.test(me3), { d3, c: g3.cards['p153-peer'], me3: me3.slice(0, 400) });
+    await shotTo(page, 'r12-real-after');
+    // 4) 고리: haiku를 peer(haiku > sub > peer)의 하위로 = 판이 cycle로 막는다(맵은 자기 하위 아래로 놓기를 고르지 않는다)
+    let cyc = null; try { call('relation.set', { a: sess['p153-peer'], b: sess['p153-haiku'], relation: 'sub' }); } catch (e) { cyc = String(e.message || e); }
+    check('r12 실제: 고리는 판이 cycle로 막는다(맵은 자기 하위 아래로 놓기를 고르지 않는다)', !!cyc && /cycle|고리|아래에 있어/.test(cyc), cyc && cyc.slice(-200));
+    await closeMission(page);
+  } finally { await closeApp(app); }
+}
+
 async function stopBoard() {
   for (const s of call('session.list').filter((x) => /^p153-/.test(x.name))) { try { atrium('kill', s.name, '--yes'); } catch (e) { log(`kill ${s.name} ${e.message.slice(0, 100)}`); } }
   await sleep(2000);
@@ -797,6 +879,7 @@ try {
   else if (WHAT === 'mock') await mock();
   else if (WHAT === 'perf') await perf();
   else if (WHAT === 'r11') await r11();
+  else if (WHAT === 'r12real') await r12real();
   else if (WHAT === 'compare') { await compareApp(); await mock(true); }
   else if (WHAT === 'stop') await stopBoard();
 } catch (e) {

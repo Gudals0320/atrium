@@ -470,9 +470,26 @@ test('P153 r11: Alt+카드 끌기 — 오른쪽 = 하위로, 위아래 = 동료�
   assert.ok(none, '빈 시작 칸이 있다');
   assert.deepEqual(relationCall(lay, 's:d3', none), { a: 'x-d2', b: 'x-d3', relation: 'none' });
   const src = read('MissionLineage.jsx');
-  assert.match(src, /api\.call\('relation\.set', call\)/); assert.match(src, /unknown_method/); assert.match(src, /mode: 'card'/);
+  assert.match(src, /api\.call\('relation\.set', call\)/); assert.match(src, /e.code === 'cycle'/); assert.doesNotMatch(src, /unknown_method|relStub/, 'r12: 흉내 길은 없앴다'); assert.match(src, /mode: 'card'/);
   assert.match(src, /e\.altKey && e\.pointerType === 'mouse'/, 'Alt 없이 끌면 시점 이동');
   assert.match(src, /mt-ln-grab/, '줄을 잡는 자리는 워크스페이스 칸 빈 곳까지');
-  for (const k of ['dropSub', 'dropPeer', 'dropNone', 'relFail', 'relLocal']) assert.ok(ko.mmLine[k] && en.mmLine[k], k);
+  for (const k of ['dropSub', 'dropPeer', 'dropNone', 'relFail', 'relCycle']) assert.ok(ko.mmLine[k] && en.mmLine[k], k);
   assert.equal(ko.mmLine.dropNone, '독립'); assert.match(ko.mmLine.dropSub, /하위로/); assert.match(ko.mmLine.dropPeer, /동료로/);
+});
+
+test('P153 r12: 하위가 있는 리드와 그 동료(하위 없음)도 바로 위아래에 붙는다, 하위 칸 카드 바로 아래 = 그 카드의 동료(하위로가 아니다)', () => {
+  const { g, order } = deepGraph();
+  // d0의 동료 dp(부모 없음, 하위 없음). d0은 하위(d1…)가 있어 묶음이 길다
+  g.nodes.push({ id: 's:dp', kind: 'session', sessionId: 'x-dp', name: 'dp', workspaceKey: DEEP_WS, state: 'sleeping', parentId: null, createdAt: 200 });
+  const s = applyRelationStub(g, [{ a: 'x-d0', b: 'x-dp', relation: 'peer' }]);
+  const lay = lineageLayout(s, { order, vgroups: FOLDERS });
+  const a = lay.cards.get('s:d0'), p = lay.cards.get('s:dp');
+  assert.equal(a.x, p.x);
+  assert.ok(Math.abs(p.y - (a.y + a.h) - LINE.PGY) < 0.01 || Math.abs(a.y - (p.y + p.h) - LINE.PGY) < 0.01, '리드와 동료 사이 = PGY');
+  const d1 = lay.cards.get('s:d1');
+  const below = relationDrop(lay, 's:d3', d1.x + 30, d1.y + d1.h + 20);
+  assert.equal(below.kind, 'peer'); assert.equal(below.target, 's:d1');
+  const src = read('MissionLineage.jsx');
+  assert.match(src, /api\.on\('relation\.updated'/, '다른 곳에서 바뀐 관계도 다시 읽는다');
+  assert.doesNotMatch(src, /api\.call\('session\.detach'/, '계보는 사실: 떼지 않는다');
 });

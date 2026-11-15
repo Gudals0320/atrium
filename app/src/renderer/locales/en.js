@@ -2474,7 +2474,7 @@ export default {
     relSub: '{name} is now under {up}',
     relPeer: '{name} is now a peer of {up}',
     relNone: '{name} is now independent',
-    relLocal: '(shown on this map only until the board supports relations)',
+    relCycle: 'Cannot put {name} under {up}: {up} already works under {name} (that would make a loop)',
     relFail: 'Could not change the relation: {error}',
     cardDragTip: 'Alt + drag: change who this session works under',
     lead: 'Lead',

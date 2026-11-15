@@ -2474,7 +2474,7 @@ export default {
     relSub: '{name} → {up}의 하위',
     relPeer: '{name} → {up}의 동료',
     relNone: '{name} → 독립',
-    relLocal: '(판이 관계를 지원하기 전까지 이 맵에서만 보입니다)',
+    relCycle: '고리가 생겨 하위로 둘 수 없습니다: {up} 세션이 이미 {name} 세션 아래에 있습니다',
     relFail: '관계를 바꾸지 못했습니다: {error}',
     cardDragTip: 'Alt + 끌기: 이 세션의 위계 바꾸기',
     lead: '리드',
