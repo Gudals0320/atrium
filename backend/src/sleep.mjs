@@ -58,6 +58,28 @@ export function backgroundOf(hook, scan, now = Date.now()) {
   return left.length ? { n: left.length, via: 'hook' } : null;
 }
 
+// P164: 세션 맵에 보일 "지금 도는 뒤 일" 목록. 순수 함수. → { n, kinds, items: [{ kind, label }], at, via } | null
+// hook·scan은 backgroundOf와 같다. 종류 kind: shell(뒤 셸) | agent(뒤 하위 에이전트) | other.
+// - 셸 수: hook 뒤에 프로세스를 보았으면 그 수(0이면 hook의 셸 항목은 끝났다), 아니면 hook 셸 항목 수와 본 수 가운데 큰 것. 설명은 hook 항목 차례로 붙이고 모자라면 빈 줄(프로세스만 앎)
+// - 셸이 아닌 항목(하위 에이전트)은 프로세스가 따로 없어 hook을 BG_HOOK_MAX_MS까지 믿는다. 끝나면 Claude Code가 새 턴을 돌리고 그 Stop이 목록을 줄인다
+// - 있다/없다는 backgroundOf와 같게 나온다(절전 판정과 화면이 어긋나지 않게)
+const BG_KIND = { shell: 'shell', subagent: 'agent' };
+export function backgroundList(hook, scan, now = Date.now()) {
+  const hat = (hook && hook.at) || 0;
+  const tasks = hook && Array.isArray(hook.tasks) && now - hat <= BG_HOOK_MAX_MS ? hook.tasks : [];
+  const after = !!(scan && scan.at >= hat);
+  const shells = tasks.filter((t) => t.type === 'shell'), others = tasks.filter((t) => t.type !== 'shell');
+  const seen = scan ? Math.max(0, Number(scan.n) || 0) : 0;
+  const nShell = after ? seen : Math.max(shells.length, seen);
+  const items = [];
+  for (let i = 0; i < nShell; i++) items.push({ kind: 'shell', label: (shells[i] && shells[i].label) || null });
+  for (const t of others) items.push({ kind: BG_KIND[t.type] || 'other', label: t.label || null });
+  if (!items.length) return null;
+  const kinds = [...new Set(items.map((x) => x.kind))];
+  const via = seen > 0 ? (others.length || shells.length ? 'both' : 'process') : 'hook';
+  return { n: items.length, kinds, items: items.slice(0, 20), at: Math.max(hat, after ? scan.at : 0) || null, via };
+}
+
 // P105: /exit에 Claude Code가 띄우는 "뒤 일이 돈다" 확인 창(Background work is running … 1. Exit and stop tasks 2. Move to background and exit 3. Stay).
 // 그대로 두면 판이 "응답 필요"로 보이고, 사람이 Enter를 누르면 1번(뒤 일을 끄고 나감)이 골라진다. 순수 함수. → { tasks: 목록 줄 수 } | null
 export function parseExitBackground(screen) {
@@ -209,6 +231,7 @@ export class Sleeper {
     this.sessBusyAt = new Map(); // P111: 세션 ID → 그 세션에 마지막으로 일이 보인 때(세션 규칙)
     this.bgScan = new Map(); // P105: 세션 ID → { at, n } claude 바로 아래 도구 명령(뒤 셸) 수를 센 때와 수
     this.blocked = new Map(); // P105: 세션 ID → { why, at, idle, n, until } 실패한 잠재우기를 미루는 중
+    this.bgShown = new Map(); // P164: 세션 ID → 마지막으로 보낸 뒤 일 표시 키(수·종류)
     // 백엔드가 잠재우던 중에 꺼졌다: 패널이 남았으면 깨어 있는 것으로 돌리고(resync가 상태를 맞춘다), 없으면 잠든 것으로 둔다
     for (const s of b.sessions.values()) {
       if (!s.rt.sleep || !s.rt.sleep.going) continue;
@@ -277,6 +300,25 @@ export class Sleeper {
   bgOf(s, now = Date.now()) {
     if (this.b.cfg && this.b.cfg.sleepBgPrecheck === false) return null;
     return (s.kind || 'claude') === 'claude' && s.paneId ? backgroundOf(s.rt.bg, this.bgScan.get(s.sessionId) || null, now) : null;
+  }
+  // P164: 세션 맵에 보일 뒤 일(판이 띄운 Claude Code, 깨어 있는 패널만). 절전 설정(sleepBgPrecheck)과 관계없이 보인다
+  bgView(s, now = Date.now()) {
+    if ((s.kind || 'claude') !== 'claude' || !s.paneId || s.rt.sleep) return null;
+    return backgroundList(s.rt.bg, this.bgScan.get(s.sessionId) || null, now);
+  }
+  // P164: 뒤 일이 보이는 세션은 tick마다(SLEEP_TICK_MS) 프로세스를 다시 보고, 보이는 수·종류가 바뀌면 요약을 다시 보낸다(뒤 셸이 끝나면 표시가 꺼진다).
+  // 일하는 중인 세션은 턴 끝의 Stop이 목록을 새로 준다
+  async refreshBackground(now = Date.now()) {
+    const b = this.b;
+    const key = (g) => (g ? `${g.n}|${g.kinds.join(',')}` : '');
+    const list = [...b.sessions.values()].filter((s) => { const g = this.bgView(s, now); return g && deriveState(s.rt).state !== 'working'; });
+    if (list.length) await this.scanBackground(list);
+    for (const s of b.sessions.values()) {
+      const k = key(this.bgView(s));
+      if (k === (this.bgShown.get(s.sessionId) || '')) continue;
+      if (k) this.bgShown.set(s.sessionId, k); else this.bgShown.delete(s.sessionId);
+      if (list.includes(s)) b.broadcastSession(s, { cause: 'background' });
+    }
   }
   // 세션들의 claude 바로 아래 도구 명령(MCP 서버 빼고)을 센다. 터미널의 process_info로 claude PID를 얻고 PowerShell 한 번으로 그 자식을 읽는다.
   // 읽지 못하면(null) 전 값을 둔다. claude가 없는 패널은 0으로 둔다
@@ -360,6 +402,7 @@ export class Sleeper {
     try {
       // 잠든 세션에 보낼 글이 남았는데 깨우는 중이 아니면 그 리포를 깨운다(백엔드가 다시 떠 대기열이 되살아난 경우)
       for (const s of [...b.sessions.values()]) if (s.rt.sleep && !this.wakes.has(s.sessionId) && b.queue.pending(s.sessionId) > 0 && !s.rt.sleep.error) this.wakeFor(s, 'delivery').catch(() => {});
+      await this.refreshBackground().catch((e) => b.log(`background refresh failed: ${e.message}`)); // P164: 세션 맵의 뒤 일 표시
       // P105: 곧 잠들 리포와 뒤 일이 보이는 리포만 프로세스를 다시 본다(뒤 셸이 끝났는지, 쉬는 claude 아래 도구 명령이 도는지)
       const scan = this.repoKeys().filter((key) => { const w = this.plan(key, 'auto').why; return !w || w === 'background'; });
       if (scan.length) await this.scanBackground(scan.flatMap((key) => this.members(key)));
