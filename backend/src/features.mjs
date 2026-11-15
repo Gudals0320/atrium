@@ -131,7 +131,7 @@ export function attachFeatures(b, { timers = true } = {}) {
     'loop.delete': (p) => f.loops.delete(loopRef(p)),
     'loop.list': (p) => f.loops.list({ sessionId: p.session ? b.resolve(p.session).sessionId : null }),
     // I6 미션 맵
-    'mission.graph': () => missionGraph({ sessions: [...b.sessions.values()].map((s) => b.summary(s)), links: b.linksOpen(), thread: f.thread.list({ limit: 500 }).items, loops: [...f.loops.loops.values()] }),
+    'mission.graph': () => missionGraph({ sessions: [...b.sessions.values()].map((s) => b.summary(s)), links: b.linksOpen(), thread: f.thread.list({ limit: 500 }).items, loops: [...f.loops.loops.values()], relations: b.store.relationRows ? b.store.relationRows() : [] }), // P156: 일 관계
     // I7 설정(트레이 상주)
     'settings.get': () => ({ settings: f.settings.get(), schema: f.settings.describe() }),
     'settings.set': (p) => ({ settings: f.settings.set(p) }),

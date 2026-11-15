@@ -2538,5 +2538,12 @@ export default {
     phoneNone: 'Nothing is waiting on you',
     phoneIsle: '{ws}',
   },
+  // P156: work relation between sessions (sub, peer, independent). Link log relation change and prompt tags, board peer role name
+  relations: {
+    peerRole: 'peer',
+    eventRelation: 'Relation changed',
+    rel: { sub: 'sub', peer: 'peer', none: 'independent', auto: 'auto' },
+    tag: { assign: 'assigned', report: 'report', share: 'shared' },
+  },
 };
 

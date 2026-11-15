@@ -2538,5 +2538,12 @@ export default {
     phoneNone: '응답을 기다리는 세션이 없습니다',
     phoneIsle: '{ws}',
   },
+  // P156: 세션 사이 일 관계(하위·동료·독립). 연결 기록의 관계 바뀜과 지시 꼬리표, 판이 정한 동료 역할 이름
+  relations: {
+    peerRole: '동료',
+    eventRelation: '관계 변경',
+    rel: { sub: '하위', peer: '동료', none: '독립', auto: '자동' },
+    tag: { assign: '지시', report: '보고', share: '공유' },
+  },
 };
 

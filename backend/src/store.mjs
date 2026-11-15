@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RECORDS_SCHEMA, installRecords } from './store-records.mjs'; // P6b: Thread, 메모, 칸반, 루프 표
 import { RECALL_SCHEMA, RECALL_COLUMNS, RECALL_SESSION_FIELDS, installRecall } from './store-recall.mjs'; // P7: 대화 기록 색인, 닫힌 세션
-import { BRANCH_COLUMNS, installBranch } from './store-branch.mjs'; // P8: 하위 세션 기록
+import { BRANCH_COLUMNS, BRANCH_SCHEMA, installBranch } from './store-branch.mjs'; // P8: 하위 세션 기록
 import { WORKTREE_SCHEMA, WORKTREE_COLUMNS, installWorktrees } from './store-worktrees.mjs'; // P27: 워크트리 영역
 import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: 데스크톱 앱 가져오기 장부
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
@@ -107,6 +107,7 @@ export class Store {
     this.db.exec(RECALL_SCHEMA);
     this.db.exec(WORKTREE_SCHEMA);
     this.db.exec(IMPORTS_SCHEMA);
+    this.db.exec(BRANCH_SCHEMA); // P156: 일 관계
     for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
