@@ -196,9 +196,9 @@ test('P152: 빈 곳을 눌러도 닫히지 않는다(누르기 뜻과 덮개 코
   for (const x of [false, true]) assert.notEqual(pressIntent({ onCard: x }), 'close');
   // 옛 "빈 곳 누르면 닫힘"(P32 onBackdrop)은 지웠다
   assert.ok(!/onBackdrop/.test(read('Mission.jsx')));
-  assert.ok(!/onBackdrop/.test(read('MissionTerr.jsx')));
+  assert.ok(!/onBackdrop/.test(read('MissionLineage.jsx')));
   // 덮개를 닫는 길은 닫기 단추·Esc·M(main.jsx)만
-  const terr = read('MissionTerr.jsx');
+  const terr = read('MissionLineage.jsx');
   const closes = terr.match(/setMissionOpen\(false\)/g) || [];
   assert.ok(closes.length >= 1);
   assert.ok(/'Escape'/.test(terr));

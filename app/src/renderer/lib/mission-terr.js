@@ -1,5 +1,5 @@
 // P152·P153: 미션 맵 A "Territories"(영토 지도) 배치와 무한 캔버스 셈. 순수 함수만 둔다(단위 시험 test/p152-lib.test.mjs, test/p153-lib.test.mjs).
-// 그리는 쪽은 MissionTerr.jsx(PC 창·PC 웹)와 PhoneTerr.jsx(휴대폰, phoneTerr).
+// 그리는 쪽: PC는 P153 r7부터 시안 B(lib/mission-lineage.js, MissionLineage.jsx)라 이 파일의 영토 배치(territoryLayout)는 휴대폰 지도(PhoneTerr.jsx, phoneTerr)만 쓴다. 길 찾기(routeOrtho)·카드 폭·높이·무한 캔버스 셈은 PC도 같이 쓴다.
 // - 폴더(사이드바 가상 그룹, P44) = 색 점선 영토, 워크스페이스 = 영토 안의 섬(머리에 이름과 상태 수 칩), 폴더 밖 워크스페이스 = 영토 없는 점선 섬.
 //   소속과 차례는 사이드바(lib/sidebar-tree.js groupLayout)와 같다: 폴더가 사이드바 차례로 먼저, 폴더 안은 폴더 목록 차례, 그 뒤에 폴더 밖 워크스페이스(판 차례).
 //   키는 맞출 때만 정규화한다(normKey: 역슬래시 → 슬래시, 끝 슬래시 뺌, 소문자). 폴더 목록에 없는 워크스페이스는 경로가 폴더 안이어도 폴더 밖이다(사이드바와 같다).
@@ -139,13 +139,14 @@ export const textW = (s, px, r = 0.58) => String(s || '').length * px * r;
 // 글자 수 × 크기(휴대폰 지도 폭 어림)
 const nameW = (s, px) => String(s || '').length * px;
 // 섬 머리 폭: 보통 단계(이름 26px + 칩 글)와 멀리 단계(이름 46px, 칩은 넘치면 숨는다) 중 큰 것
-const isleHeadW = (name, chips) => Math.max(36 * 2 + 40 + textW(name, 26) + chips.length * 112, 36 * 2 + 60 + textW(name, 58));
+const isleHeadW = (name, chips) => Math.max(28 * 2 + 32 + textW(name, 20) + chips.length * 92, 28 * 2 + 50 + textW(name, 48));
 
 // graph: mission.graph, opt: order(워크스페이스 차례), vgroups(가상 그룹), tiers(Map id → 등급), names(Map 워크스페이스 키 → 보일 이름),
 // aspect(세계 비율, 보통 보기 칸의 가로/세로), routing(다른 섬 선 길 찾기, 휴대폰은 끈다)
 export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, aspect = TERR.ASPECT, routing = true } = {}) {
-  const L = TERR;
   const tree = missionTree(graph);
+  // P153 r6: 카드 폭은 이 판의 가장 긴 이름(NAME_MAX자까지)이 멀리 타일에서 한 줄에 들게 정한다(모든 카드 같은 폭). 더 긴 이름만 말줄임
+  const L = { ...TERR, CW: cardWidth(tree.nodes.map((n) => n.name)) };
   const { byId } = tree;
   const tierOf = (id) => (tiers && tiers.has(id) ? tiers.get(id) : nodeTier(byId.get(id)));
   const wsOf = (id) => (byId.get(id) || {}).workspaceKey || '';
@@ -172,7 +173,7 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
 
   // ---- P153: 카드 높이는 내용을 따른다(cardHeight). 무리 안에서는 같은 깊이(한 줄)의 카드가 같은 높이 ----
   const own = new Map(); // id → 내용 높이
-  for (const n of tree.nodes) { const p = tree.parent.get(n.id); own.set(n.id, cardHeight(n, tierOf(n.id), !!p && wsOf(p) !== wsOf(n.id))); }
+  for (const n of tree.nodes) { const p = tree.parent.get(n.id); own.set(n.id, cardHeight(n, tierOf(n.id), !!p && wsOf(p) !== wsOf(n.id), L.CW)); }
   const rowH = new Map(); // id → 그 줄 높이(무리 안), 혼자는 자기 높이
   const setRows = (root) => {
     const depth = new Map([[root, 0]]), best = new Map();
@@ -259,7 +260,7 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   // ---- 영토(폴더)와 세계 ----
   // P153: 영토 안 섬 쌓기는 모양 후보 몇 개(가로로 긴 것 ~ 세로로 긴 것)를 만들어 두고, 세계 전체가 보기 칸에 가장 크게 들어가는 조합을 고른다(영토마다 차례로 바꿔 보기 두 번)
   const W0 = aspect > 0.2 ? aspect : L.ASPECT;
-  const headW = (t) => L.PT * 2 + textW(t.name, 72, 0.62) + 18 + textW('x'.repeat(26), 32, 0.5); // 머리 글 폭(멀리 단계 이름 72px + 요약 32px 26자 안팎)
+  const headW = (t) => L.PT * 2 + textW(t.name, 56, 0.6) + 18 + textW('x'.repeat(26), 26, 0.5); // 머리 글 폭(멀리 단계 이름 72px + 요약 32px 26자 안팎)
   for (const t of terrList) {
     const is = t.keys.map((k) => isleOf.get(k));
     t.sessions = is.reduce((a, i) => a + i.ids.length, 0);
@@ -391,22 +392,26 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   const bounds = Number.isFinite(x1) ? { x: x1, y: y1 - 60, w: x2 - x1, h: y2 - y1 + 60 } : { x: 0, y: 0, w: 1, h: 1 };
   const isleIdx = new Map(isles.map((i, n) => [i.key, n]));
   const order = [...cards.entries()].sort((a, b) => isleIdx.get(a[1].ws) - isleIdx.get(b[1].ws) || a[1].y - b[1].y || a[1].x - b[1].x).map(([id]) => id);
-  return { cards, rings, isles, terrs, edges, bounds, order, tree };
+  return { cards, rings, isles, terrs, edges, bounds, order, tree, cw: L.CW };
 }
 
-// P153: 카드 높이(보통 단계 내용, 줄 높이는 CSS 글 크기 × 1.38): 위아래 여백·테두리 30 + 이름 줄 27 + 메타 줄 19 + 일 줄(21씩, 셋까지) + 오류 줄(19씩, 둘까지) + 관계 줄 18, 줄 사이 5.
-// 일 줄 수는 머리말("질문" 등)을 더한 글자 수를 한 줄 CARD_CPL자로 어림(넉넉하게 잡는다: 잘리는 것보다 빈 칸 몇 px가 낫다). 오류가 있으면 일은 한 줄. 관계 줄은 다른 워크스페이스에서 왔거나 브랜치·루프가 있을 때만.
-// 멀리 타일(이름 + 상태)이 드는 높이 밑으로는 줄이지 않는다: 이름이 한 줄(LONG_NAME자 이하)이면 CARD_MIN, 길면 두 줄이 드는 CARD_MIN2(처음 화면 배율 0.285에서도 두 줄 + 상태)
-export const CARD_MIN = 122, CARD_MIN2 = 178, LONG_NAME = 10, CARD_CPL = 32;
-export function cardHeight(n, tier, cross = false) {
+// P153 r6: 카드 폭. 멀리 타일 이름(세계 NAME_PX px, 처음 화면 배율 0.27 안팎에서 화면 11.5px)이 한 줄에 드는 폭 = 글자 수 × NAME_PX × 0.55 + 여백 28.
+// 이름은 NAME_MAX자까지 맞추고(그보다 긴 것만 말줄임) TERR.CW(320)보다 좁지 않게, CW_MAX보다 넓지 않게
+export const NAME_PX = 42, NAME_MAX = 24, CW_MAX = 600;
+export const cardWidth = (names, px = NAME_PX) => Math.round(Math.min(CW_MAX, Math.max(TERR.CW, Math.min(NAME_MAX, Math.max(0, ...names.map((x) => String(x || '').length))) * px * 0.55 + 28)));
+// P153: 카드 높이(보통 단계 내용, 줄 높이는 CSS 글 크기 × 1.38, r6 글 크기): 위아래 여백·테두리 24 + 이름 줄 22 + 메타 줄 18 + 일 줄(19씩, 셋까지) + 오류 줄(18씩, 둘까지) + 관계 줄 17, 줄 사이 4.
+// 일 줄 수는 머리말을 더한 글자 수를 한 줄 글자 수(카드 폭에서 어림)로 나눈다(넉넉하게). 오류가 있으면 일은 한 줄. 관계 줄은 다른 워크스페이스에서 왔거나 브랜치·루프가 있을 때만.
+// 멀리 타일(이름 한 줄 + 상태)이 드는 CARD_MIN 밑으로는 줄이지 않는다
+export const CARD_MIN = 118;
+export function cardHeight(n, tier, cross = false, cw = TERR.CW) {
   const t = tier === 'turn' ? (n.ask || n.lastPrompt) : tier === 'alert' ? (n.lastPrompt || n.ask) : n.lastPrompt;
   const err = tier === 'alert' && n.error ? String(n.error) : null;
-  const lines = err ? 1 : Math.min(3, Math.max(1, Math.ceil((String(t || 'x').length + 7) / CARD_CPL)));
-  const errLines = err ? Math.min(2, Math.ceil(err.length / 36)) : 0;
+  const cpl = Math.max(20, Math.floor((cw - 30) / 7.4)); // 일 글 13.5px 한 줄 글자 수
+  const lines = err ? 1 : Math.min(3, Math.max(1, Math.ceil((String(t || 'x').length + 7) / cpl)));
+  const errLines = err ? Math.min(2, Math.ceil(err.length / (cpl + 2))) : 0;
   const more = cross || n.gitBranch || n.loops;
-  const body = 30 + 27 + 5 + 19 + 5 + lines * 21 + (err ? 5 + errLines * 19 : 0) + (more ? 5 + 18 : 0) + 2;
-  const tile = String(n.name || '').length > LONG_NAME ? CARD_MIN2 : CARD_MIN;
-  return Math.max(tile, Math.ceil(body));
+  const body = 24 + 22 + 4 + 18 + 4 + lines * 19 + (err ? 4 + errLines * 18 : 0) + (more ? 4 + 17 : 0) + 2;
+  return Math.max(CARD_MIN, Math.ceil(body));
 }
 
 // 꺾인 선의 이름표 자리: 가장 긴 가로 토막 가운데(가로가 없으면 가장 긴 토막)
@@ -472,7 +477,7 @@ export function routeOrtho(reqs, blocks, trees = [], { G = 16, margin = 10, maxS
     return null;
   };
   const out = [];
-  for (const { a, b, open = [] } of reqs) {
+  for (const { a, b, open = [], sides = null } of reqs) {
     // 이 선에만 열어 주는 길(섬 머리를 곧게 지나는 좁은 칸)
     const opened = [];
     for (const r of open) { if (!r) continue; const ca = Math.max(0, cellX(r.x)), cb = Math.min(C - 1, cellX(r.x + r.w)), ra = Math.max(0, cellY(r.y)), rb = Math.min(R - 1, cellY(r.y + r.h)); for (let rr = ra; rr <= rb; rr++) for (let cc = ca; cc <= cb; cc++) { const k = rr * C + cc; if (blocked[k]) { opened.push(k); blocked[k] = 0; } } }
@@ -489,7 +494,7 @@ export function routeOrtho(reqs, blocks, trees = [], { G = 16, margin = 10, maxS
       ];
     };
     let best = null;
-    for (const p of ports(a)) for (const q of ports(b).filter((x) => x.side !== 'bottom')) {
+    for (const p of ports(a)) for (const q of ports(b).filter((x) => (sides ? sides.includes(x.side) : x.side !== 'bottom'))) { // sides: 받는 쪽 변(세션 맵 B는 왼쪽·위)
       const sc = cellX(p.ox), sr = cellY(p.oy), tc = cellX(q.ox), tr = cellY(q.oy);
       if (sc < 0 || sr < 0 || sc >= C || sr >= R || tc < 0 || tr < 0 || tc >= C || tr >= R) continue;
       const saved = [blocked[sr * C + sc], blocked[tr * C + tc]];

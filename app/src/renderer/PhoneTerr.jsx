@@ -13,7 +13,7 @@ import { territoryLayout, phoneTerr, fitView, fitBox, tileTap } from './lib/miss
 import { roleModel, nodeTier } from './lib/mission-model.js';
 import { TOUCH_SLOP_PX, pinchViewport, panViewport, mid, dist } from './lib/touch-board.js';
 import { MissionLight } from './Mission.jsx';
-import { cardFacts } from './MissionTerr.jsx';
+import { cardFacts } from './MissionLineage.jsx';
 
 const REFRESH_MS = 600;
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };

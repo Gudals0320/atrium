@@ -28,12 +28,12 @@ import { useT, errText, fmtTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
 import { onLightStart } from './lib/work-light.js';
 import { missionStyleOf } from './lib/mission-terr.js';
-import { TerritoryMap } from './MissionTerr.jsx';
+import { LineageMap } from './MissionLineage.jsx';
 
-// P152: 기본은 영토 지도(MissionTerr.jsx). 이 파일의 열 지도(ClassicMission)는 숨은 판 설정 missionStyle: classic일 때만 쓴다(되돌릴 길)
+// P152·P153 r7: 기본은 세션 맵(시안 B Lineage, MissionLineage.jsx). 이 파일의 열 지도(ClassicMission)는 숨은 판 설정 missionStyle: classic일 때만 쓴다(되돌릴 길)
 export function MissionMap() {
   const style = useStore((st) => missionStyleOf(st.settings));
-  return style === 'classic' ? <ClassicMission /> : <TerritoryMap />;
+  return style === 'classic' ? <ClassicMission /> : <LineageMap />;
 }
 
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };

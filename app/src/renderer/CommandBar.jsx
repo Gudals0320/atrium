@@ -26,7 +26,7 @@ import { bandZone, bottomNext } from './lib/bottom.js'; // P43. P61: 들어가�
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
 import { kbLift } from './lib/touch-board.js'; // P83
-import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag } from './lib/cmd-input.js'; // P142. P153: toggleTag
+import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText } from './lib/cmd-input.js'; // P142. P153: toggleTag
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
 
@@ -117,6 +117,9 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   // P153: 세션 맵이 지금 글(태그된 카드 표시)을 듣는다
   useEffect(() => { commandDraft.dispatchEvent(new CustomEvent('text', { detail: text })); }, [text]);
   const missionOpen = useStore((st) => st.missionOpen);
+  // P153 r6: 판 ↔ 세션 맵을 오갈 때(열기·닫기·더블클릭 이동·M·Esc·닫기 단추 모두) 태그만 남은 명령줄은 비운다(switchText)
+  const wasOpen = useRef(missionOpen);
+  useEffect(() => { if (wasOpen.current === missionOpen) return; wasOpen.current = missionOpen; setText((cur) => switchText(cur)); }, [missionOpen]);
 
   // 커서 앞 낱말이 @로 시작하면 대상 메뉴(전체, 각 세션)
   const caretWord = (() => {
