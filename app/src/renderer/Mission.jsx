@@ -24,8 +24,6 @@ import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
 import { onLightStart } from './lib/work-light.js';
-import { missionStyleOf } from './lib/mission-style.js'; // P147
-import { SquadMap, MissionStyleSwitch } from './MissionSquads.jsx'; // P147
 
 // 빈 곳 누르기에서 빼는 것
 const SOLID = '[data-role="mm-node"], [data-role="mm-edge"], [data-role="mm-summary"], button, input, select, a';
@@ -33,7 +31,7 @@ const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); 
 const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.git.branch) || null;
 
 // 세션 하나의 보일 글: 상태 글, 지금 하는 일, 메타, 경고
-export function facts(n, live, m, tier, t, now, cross = false) {
+function facts(n, live, m, tier, t, now, cross = false) {
   const kind = (live && (live.flavor || live.kind)) || n.agentKind || 'claude';
   const shell = kind === 'shell' || n.agentKind === 'shell';
   const cmd = live && live.shell && live.shell.atPrompt === false ? live.shell.command || (live.shell.procs || []).join(', ') : null;
@@ -59,10 +57,10 @@ export function facts(n, live, m, tier, t, now, cross = false) {
     : tier === 'alert' ? { k: 'err', main: role, text: clip(err || stateText, 90) }
     : team ? { k: 'team', main: role, text: [t('mmRole.team', { n: m.team.size }), m.waiting ? t('mmRole.waiting', { n: m.waiting }) : m.team.work ? t('mmRole.teamWork', { n: m.team.work }) : null].filter(Boolean).join(' · ') }
     : { k: doing ? 'now' : 'state', main: role, text: doing || stateText };
-  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line, away, launched, model, age, branch, loops: n.loops || 0 }; // P147: 부대 지도가 메타를 나눠 쓴다(model·age·branch)
+  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line, away, launched };
 }
 
-export function Avatar({ kind, tier, shell, small }) {
+function Avatar({ kind, tier, shell, small }) {
   const ring = tier === 'rest' || tier === 'sleep' || tier === 'done';
   const b = tier === 'work' ? (shell ? 'shell' : 'work') : tier === 'turn' || tier === 'alert' || tier === 'review' ? tier : null;
   return (
@@ -121,7 +119,7 @@ function Node({ b, live, m, tier, t, now, no, human, hot, recede, dim, onGo, onH
   );
 }
 
-function ClassicMap({ switcher = null }) {
+export function MissionMap() {
   const t = useT();
   const open = useStore((st) => st.missionOpen);
   const sessions = useStore((st) => st.sessions);
@@ -220,7 +218,7 @@ function ClassicMap({ switcher = null }) {
         <span className="mt-mission-filters" role="tablist">
           {FILTERS.map((k) => <button key={k} role="tab" aria-selected={filter === k} className={`mt-mm-filter c-${k}${filter === k ? ' on' : ''}`} data-filter={k} data-n={catN[k] || 0} onClick={() => setFilter(k)}>{t(`mission.cat.${k}`)}<span className="mt-mm-fn">{catN[k] ?? 0}</span></button>)}
         </span>
-        <span className="mt-node-sp" />{switcher}
+        <span className="mt-node-sp" />
         <button className="mt-x" data-action="mission-close" title={t('mission.closeTitle')} onClick={() => setMissionOpen(false)}>×</button>
       </div>
       <div className="mt-mission-main">
@@ -288,14 +286,4 @@ function ClassicMap({ switcher = null }) {
       </div>
     </div>
   );
-}
-
-// P147: 미션 맵 모양 고르기. 기본은 새 "부대" 지도(MissionSquads.jsx), 옛 지도(ClassicMap)는 그대로 남겨 판 설정 missionStyle 한 줄(또는 머리의 단추)로 되돌린다
-export function MissionMap() {
-  const settings = useStore((st) => st.settings);
-  const [pick, setPick] = useState(null); // 설정을 저장하는 동안 먼저 바꿔 보인다
-  const style = pick || missionStyleOf(settings);
-  useEffect(() => { if (pick && missionStyleOf(settings) === pick) setPick(null); }, [settings, pick]);
-  const switcher = <MissionStyleSwitch value={style} onPick={setPick} />;
-  return style === 'classic' ? <ClassicMap switcher={switcher} /> : <SquadMap switcher={switcher} />;
 }

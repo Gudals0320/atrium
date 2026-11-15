@@ -2432,17 +2432,4 @@ export default {
     on: '성능 기록을 켰습니다. 10분 동안 기록합니다',
     off: '성능 기록을 껐습니다',
   },
-  // P147: 미션 맵 "부대" 모양(팀 카드, 기다리는 일 줄)과 모양 단추
-  mmSquad: {
-    style_squads: '부대',
-    style_classic: '예전 지도',
-    styleTitle: '미션 맵 모양입니다. 예전 지도는 왼쪽에서 오른쪽으로 펼친 지도입니다(설정 missionStyle)',
-    dockTitle: '기다리는 일',
-    dockNone: '기다리는 일이 없습니다',
-    dockDone: '작업 완료 · 결과 확인',
-    teamBar: '팀 {n} · 작업 중 {work} · 응답 필요 {turn}',
-    inWs: '워크스페이스 {ws}',
-    cont: '이어짐',
-    hint: '세션을 가리키면 그 팀과 연결이 보입니다. ↑↓로 옮기고 Enter로 갑니다.',
-  },
 };
