@@ -13,7 +13,7 @@ const labelMap = (ns, keys) => new Proxy({}, {
 export const STATE_LABEL = labelMap('state', ['starting', 'trust_wait', 'ready', 'working', 'waiting', 'error', 'exited', 'shell_idle', 'shell_running', 'sleeping']);
 export const EXIT_LABEL = labelMap('exit', ['normal', 'user', 'terminal_stopped', 'trust_declined', 'other']);
 export const DELIVERY_LABEL = labelMap('delivery', ['queued', 'sending', 'sent', 'confirmed', 'unconfirmed', 'failed', 'cancelled']);
-export const WAIT_REASON_LABEL = labelMap('waitReason', ['waiting', 'starting', 'trust_wait', 'working', 'user_typing', 'no_agent', 'terminal_down', 'sleeping']);
+export const WAIT_REASON_LABEL = labelMap('waitReason', ['waiting', 'starting', 'trust_wait', 'working', 'user_typing', 'no_agent', 'terminal_down', 'sleeping', 'editing']); // P158: editing(판 칩에서 고치는 중)
 
 export function deliveryText(d) {
   const base = DELIVERY_LABEL[d.status] || d.status;

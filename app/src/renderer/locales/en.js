@@ -62,6 +62,7 @@ export default {
     no_agent: 'no claude',
     terminal_down: 'terminal down',
     sleeping: 'asleep, waking it',
+    editing: 'editing',
   },
   time: {
     s: '{s}s',
@@ -2544,6 +2545,18 @@ export default {
     eventRelation: 'Relation changed',
     rel: { sub: 'sub', peer: 'peer', none: 'independent', auto: 'auto' },
     tag: { assign: 'assigned', report: 'report', share: 'shared' },
+  },
+  // P158: edit a queued chip above the command line
+  deliveryEdit: {
+    edit: 'Edit',
+    editTitle: 'Edit the message before it is sent. It is not sent while you edit.',
+    holding: 'editing · held, not sent',
+    inputLabel: 'Edit message',
+    hint: 'Enter to save · Shift+Enter for a new line · Esc to cancel',
+    alreadySent: 'Already sent. It can no longer be edited.',
+    notEditable: 'This delivery has ended and cannot be edited.',
+    empty: 'An empty message cannot be sent.',
+    failed: 'Could not edit: {error}',
   },
 };
 

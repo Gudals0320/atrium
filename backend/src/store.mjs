@@ -179,6 +179,7 @@ export class Store {
     this.st('UPDATE deliveries SET status = ?, reason = ?, updated_at = ?, sent_at = COALESCE(?, sent_at), confirmed_at = COALESCE(?, confirmed_at), attempts = attempts + ? WHERE delivery_id = ?')
       .run(f.status, f.reason ?? null, Date.now(), f.sentAt ?? null, f.confirmedAt ?? null, f.attempt ? 1 : 0, id);
   }
+  updateDeliveryText(id, text) { this.st('UPDATE deliveries SET text = ?, updated_at = ? WHERE delivery_id = ?').run(text, Date.now(), id); } // P158: 대기 중 수정
   getDelivery(id) { return deliveryRow(this.st('SELECT * FROM deliveries WHERE delivery_id = ?').get(id)); }
   activeDeliveries() { return this.st("SELECT * FROM deliveries WHERE status IN ('queued', 'sending', 'sent') ORDER BY created_at").all().map(deliveryRow); }
   deliveries({ sessionId, limit = 50 } = {}) {

@@ -92,6 +92,53 @@ export class DeliveryQueue extends EventEmitter {
     if (d && d.status === 'sending' && d.inflight) await Promise.race([d.inflight, new Promise((r) => { const t = setTimeout(r, this.cfg.cancelWaitMs ?? 3000); if (t.unref) t.unref(); })]);
     return this.cancel(id);
   }
+  // P158: 판 칩의 "수정". 대기 중(queued)인 전달을 붙잡아 고치는 동안 보내지 않는다(그 세션의 뒤 전달도 차례를 지켜 기다린다).
+  //   붙잡기는 메모리에만 둔다(백엔드가 다시 뜨면 놓인 채로 B1 그대로 보낸다). 창이 닫혀 놓지 못해도 editHoldMs(10분) 뒤 저절로 놓는다.
+  //   보내는 중이면 cancelWait처럼 그 시도를 잠깐 기다린다. 이미 들어갔으면 already_sent를 던진다
+  async holdWait(id) {
+    const d = this.items.get(id);
+    if (d && d.status === 'sending' && d.inflight) await Promise.race([d.inflight, new Promise((r) => { const t = setTimeout(r, this.cfg.cancelWaitMs ?? 3000); if (t.unref) t.unref(); })]);
+    return this.hold(id);
+  }
+  hold(id) {
+    const d = this._editable(id);
+    d.editing = true; d.editingAt = Date.now();
+    if (d.reason !== 'editing') { d.reasonBeforeEdit = d.reason; this._set(d, 'queued', 'editing'); }
+    return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, text: d.text };
+  }
+  // 고친 글로 바꾸고 놓는다. 차례(createdAt)는 그대로다. 붙잡지 않은 대기 중 전달도 바꿀 수 있다
+  update(id, text) {
+    const d = this._editable(id);
+    const t = d.typeNow ? typedText(String(text ?? '')) : toLF(String(text ?? ''));
+    if (!t.trim()) throw Object.assign(new Error('empty text'), { code: 'empty' });
+    d.text = t;
+    if (this.store.updateDeliveryText) this.store.updateDeliveryText(d.deliveryId, t);
+    d.mismatchSeen = false; d.checkedAt = 0;
+    this._release(d);
+    return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, text: d.text };
+  }
+  // 고치지 않고 놓는다(Esc). 이미 끝났거나 놓였으면 조용히 지금 상태를 돌려준다
+  release(id) {
+    const d = this.items.get(id) || this.store.getDelivery(id);
+    if (!d) throw Object.assign(new Error('no such delivery'), { code: 'not_found' });
+    if (d.editing) this._release(d);
+    return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason };
+  }
+  _editable(id) {
+    const d = this.items.get(id) || this.store.getDelivery(id);
+    if (!d) throw Object.assign(new Error('no such delivery'), { code: 'not_found' });
+    if (d.status === 'queued' && this.items.has(d.deliveryId)) return d;
+    if (['sending', 'sent', 'confirmed', 'unconfirmed'].includes(d.status)) throw Object.assign(new Error(`already sent: ${d.status}`), { code: 'already_sent' });
+    throw Object.assign(new Error(`cannot edit: ${d.status}`), { code: 'not_editable' });
+  }
+  _release(d) {
+    if (!d.editing) return;
+    d.pausedMs = (d.pausedMs || 0) + (Date.now() - d.editingAt); // 고치는 동안은 기다린 시간(deliveryMaxWaitMs)에 넣지 않는다
+    d.editing = false; d.editingAt = 0; d.retryAt = 0;
+    const back = d.reasonBeforeEdit ?? null; d.reasonBeforeEdit = undefined;
+    if (d.status === 'queued' && d.reason === 'editing') this._set(d, 'queued', back);
+    setImmediate(() => this.pump());
+  }
   // P106: 에이전트 상태가 바뀌었다(터미널 이벤트) → 물러나 있던 전달을 바로 다시 본다
   poke(sessionId) {
     const d = this._head(sessionId);
@@ -162,7 +209,9 @@ export class DeliveryQueue extends EventEmitter {
         if (now - last > this.cfg.submitConfirmMs) this._set(d, 'unconfirmed', d.recoveries ? `no UserPromptSubmit hook (${d.recoverNote || 'tried'})` : 'no UserPromptSubmit hook');
         continue;
       }
-      if (now - d.createdAt > this.cfg.deliveryMaxWaitMs) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
+      // P158: 고치는 중이면 보내지 않는다(이 세션의 뒤 전달도 기다린다). 오래 놓지 않으면 저절로 놓는다
+      if (d.editing) { if (now - d.editingAt > (this.cfg.editHoldMs ?? 600000)) this._release(d); continue; }
+      if (now - d.createdAt - (d.pausedMs || 0) > this.cfg.deliveryMaxWaitMs) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
       const reason = blockReason(this.view(sid, d), now, this.cfg);
       if (reason === 'closed') { this._set(d, 'failed', 'session closed'); continue; }
       if (reason === 'working' && d.typeNow && this.inspect) { const v = this.view(sid, d); if (canTypeNow(v)) { this._typeNow(d, v, now); continue; } }
@@ -180,7 +229,7 @@ export class DeliveryQueue extends EventEmitter {
     d.checking = true; d.checkedAt = now;
     try {
       const look = await this.inspect(d.sessionId, d.text).catch(() => null);
-      if (d.status !== 'queued' || !this.items.has(d.deliveryId) || this._head(d.sessionId) !== d) return;
+      if (d.status !== 'queued' || d.editing || !this.items.has(d.deliveryId) || this._head(d.sessionId) !== d) return; // P158: 그새 붙잡혔다
       const box = look ? look.box : 'unknown';
       const v2 = this.view(d.sessionId, d) || {};
       // P143: --now의 전달은 쓰다 만 글(other)을 비키고 넣는다. 비키지 못하면(keep) _aside가 'draft'로 대기열에 돌려 둔다
