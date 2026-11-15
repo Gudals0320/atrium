@@ -7,7 +7,8 @@
 //   하위가 많으면 쉬는 하위들은 동그라미 줄로 접힌다.
 // - 선은 이름표 없는 가는 곡선. 관계 종류는 모양(나무 밖 연결은 옅은 점선, 요청은 점 선, 다른 프로젝트는 긴 점선)과 가리킬 때 뜨는 풀이로 구별한다. 일하는 쪽으로 가는 선은 일함 색.
 // - 세션(또는 요약 열의 줄)을 가리키거나 키보드로 고르면 그 세션·조상·팀·바로 이어진 세션만 또렷하다(P94). 누르면 덮개를 닫고 판의 그 노드로 간다.
-// - 위 거르기는 맞지 않는 세션을 흐리게만 한다(자리는 그대로). 빈 곳을 누르거나 Esc를 누르면 닫힌다(P32). 연 동안 판이 바뀌면 다시 읽는다(mission.graph).
+// - P152: 이 열 지도는 숨은 설정 missionStyle: classic일 때만 쓰고, 기본은 영토 지도(MissionTerr.jsx)다. 빈 곳을 눌러 닫던 것(P32)은 지웠다(Esc·닫기 단추·M으로 닫는다).
+// - 위 거르기는 맞지 않는 세션을 흐리게만 한다(자리는 그대로). 연 동안 판이 바뀌면 다시 읽는다(mission.graph).
 // - P101 다듬기: 워크스페이스마다 옅은 판(머리 글과 그 세션들을 감싸는 바탕 면), 쉬는·잠든·끝난 세션은 테두리 있는 알약, 종류 동그라미는 카드 안 오른쪽 위.
 //   서로 이은 두 세션은 마주 보는 가장자리 사이 짧은 두 줄과 화살촉(lib/mission-wire.js).
 // - P134: 같은 폴더(사이드바의 가상 그룹)의 워크스페이스들은 사각형 폴더 상자(옅은 테두리, 머리에 폴더 이름과 세션 수) 안에 모인다. 폴더 밖 워크스페이스는 상자 없이 판만.
@@ -26,9 +27,15 @@ import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
 import { onLightStart } from './lib/work-light.js';
+import { missionStyleOf } from './lib/mission-terr.js';
+import { TerritoryMap } from './MissionTerr.jsx';
 
-// 빈 곳 누르기에서 빼는 것
-const SOLID = '[data-role="mm-node"], [data-role="mm-edge"], [data-role="mm-summary"], button, input, select, a';
+// P152: 기본은 영토 지도(MissionTerr.jsx). 이 파일의 열 지도(ClassicMission)는 숨은 판 설정 missionStyle: classic일 때만 쓴다(되돌릴 길)
+export function MissionMap() {
+  const style = useStore((st) => missionStyleOf(st.settings));
+  return style === 'classic' ? <ClassicMission /> : <TerritoryMap />;
+}
+
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
 const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.git.branch) || null;
 
@@ -132,7 +139,7 @@ function Node({ b, live, m, tier, t, now, no, human, hot, recede, dim, onGo, onH
   );
 }
 
-export function MissionMap() {
+function ClassicMission() {
   const t = useT();
   const open = useStore((st) => st.missionOpen);
   const sessions = useStore((st) => st.sessions);
@@ -196,13 +203,7 @@ export function MissionMap() {
     const st = getState();
     if (n.kind === 'session') setTimeout(() => st.navigateTo && st.navigateTo(n.sessionId), 30);
   };
-  // P32: 빈 곳을 누르면 닫는다(글을 고르며 끈 경우는 빼고)
-  const onBackdrop = (e) => {
-    if (e.button !== 0 || e.target.closest(SOLID)) return;
-    const sel = window.getSelection && window.getSelection();
-    if (sel && !sel.isCollapsed && String(sel).trim()) return;
-    setMissionOpen(false);
-  };
+  // P152: 빈 곳을 눌러 닫던 것(P32)은 지웠다. 닫기는 닫기 단추·Esc·M만
   const nameOf = (id) => { const n = lay && lay.tree.byId.get(id); return n ? n.name : id; };
   const tipOf = (e) => {
     const rel = e.cross ? t('mmRole.relCross') : t(`mmRole.${{ spawn: 'relSpawn', role: 'relRole', prompt: 'relPrompt' }[e.rel] || 'relRole'}`);
@@ -234,7 +235,7 @@ export function MissionMap() {
   const askText = (id) => { const n = lay.tree.byId.get(id), live = liveOf(n); const f = facts(n, live, roles.get(id), tiers.get(id), t, now); return f.task.k === 'ask' || f.task.k === 'err' ? f.task.text : f.stateText; };
   const REST_MAX = 24;
   return (
-    <div className="mt-mission" data-role="mission" data-scale={scale} ref={rootRef} style={{ '--mm-z': scale }} onClick={onBackdrop}>
+    <div className="mt-mission" data-role="mission" data-scale={scale} ref={rootRef} style={{ '--mm-z': scale }}>
       <div className="mt-mission-head">
         <b className="mt-mission-title">{t('mission.title')}</b>
         <span className="mt-mission-filters" role="tablist">
