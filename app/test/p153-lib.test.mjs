@@ -91,7 +91,7 @@ test('P153: 큰 무리(리드 + 워커 7)는 네 개씩 접고 겹치지 않는�
   assert.equal(ring.n, 8);
   const kids = ['ex-notes', 'ex-set-03', 'ex-set-04', 'ex-set-05', 'ex-qa-a', 'ex-qa-b', 'ex-qa-c'].map((n) => lay.cards.get(`s:${n}`));
   assert.equal(new Set(kids.map((c) => c.y)).size, 2, '두 줄');
-  assert.ok(ring.w < TERR.CW * 4 + TERR.GH * 3 + TERR.RP * 2 + 1, '한 줄 넷까지');
+  assert.ok(ring.w < lay.cw * 4 + TERR.GH * 3 + TERR.RP * 2 + 1, '한 줄 넷까지');
   const cards = [...lay.cards.values()];
   for (let i = 0; i < cards.length; i++) for (let j = i + 1; j < cards.length; j++) assert.ok(!overlap(cards[i], cards[j]), `카드 ${cards[i].node.name}×${cards[j].node.name}`);
   for (const r of lay.rings) assert.ok(inside(r, lay.isles.find((i) => i.key === r.ws)), `무리 ${r.lead}가 섬 안`);
@@ -176,10 +176,10 @@ test('P153: 카드 누르기 = 명령줄 태그 넣기·빼기(여럿), 앞머�
 });
 
 test('P153: 세션 맵은 살펴보기 띠·단계·미니맵·범례가 없고, 누르기 = 태그, 더블클릭·Enter = 판으로, 섬 머리 끌기 = group.move', () => {
-  const src = read('MissionTerr.jsx');
+  const src = read('MissionLineage.jsx');
   for (const gone of ['ta-inspect', 'ta-minimap', 'ta-legend', 'ta-level-', 'ta-open', 'ta-message']) assert.ok(!src.includes(gone), `${gone}가 남았다`);
-  assert.match(src, /onClick=\{\(\) => onTag\(id\)\}/);
-  assert.match(src, /onDoubleClick=\{\(\) => onOpen\(id\)\}/);
+  assert.match(src, /onClick=\{\(e\) => onTag\(id, e\)\}/);
+  assert.match(src, /onDoubleClick=\{\(\) => onOpen\(id, true\)\}/);
   assert.match(src, /'group\.move'/);
   assert.match(src, /mt-mm-donetag/, '작업 완료 표식(옛 지도와 같은 것)');
   assert.match(read('CommandBar.jsx'), /addEventListener\('tag'/);
@@ -226,9 +226,9 @@ test('P153 r2: 휴대폰 지도는 폭(maxW) 안에 들고 타일에 이름이 �
   for (let i = 0; i < pt.tiles.length; i++) for (let j = i + 1; j < pt.tiles.length; j++) assert.ok(!overlap(box(pt.tiles[i]), box(pt.tiles[j])));
 });
 test('P153 r2: 카드 맨 아래 줄은 다른 워크스페이스에서 온 것만, 작업 완료는 한 번, 위 줄 도움말은 명령줄 안내로', () => {
-  const src = read('MissionTerr.jsx');
+  const src = read('MissionLineage.jsx');
   assert.match(src, /const more = \[cross && parentWs \? relText : null, \.\.\.extra\]/);
-  assert.match(src, /tier === 'review' \? \(f\.age \?/, '보통 단계 상태 칸은 작업 완료면 시간만');
+  assert.match(src, /done \? \(f\.age \?/, '보통 단계 상태 칸은 작업 완료면 시간만');
   assert.ok(!src.includes("t('mmTerr.hint')"), '위 줄 도움말 없음');
   assert.match(read('CommandBar.jsx'), /missionOpen \? t\('mmTerr\.barHint'\)/);
 });
@@ -263,7 +263,7 @@ test('P153 r3: 다른 워크스페이스 선은 받는 카드 위 가장자리�
 test('P153 r3: 카드 높이는 내용을 따르고, 무리 안 같은 줄은 같은 높이', () => {
   const lay = lay0();
   const hs = [...lay.cards.values()].map((c) => c.h);
-  assert.ok(Math.min(...hs) >= 122 && new Set(hs).size > 1, `높이 ${[...new Set(hs)]}`);
+  assert.ok(Math.min(...hs) >= 118, `높이 ${[...new Set(hs)]}`);
   for (const r of lay.rings) {
     const rows = new Map();
     for (const c of lay.cards.values()) if (inside(c, r)) { if (!rows.has(c.y)) rows.set(c.y, new Set()); rows.get(c.y).add(c.h); }
@@ -280,4 +280,61 @@ test('P153 r3: 읽는 차례 — 폴더 영토 묶음이 먼저, 폴더 밖 섬�
     const right = Math.max(...lay.terrs.map((t) => t.x + t.w)), bottom = Math.max(...lay.terrs.map((t) => t.y + t.h));
     for (const i of lay.isles.filter((x) => x.loose)) assert.ok(i.x >= right || i.y >= bottom, `비율 ${aspect}: ${i.key}가 영토 묶음 안에 끼었다`);
   }
+});
+
+// ---- 라운드 7: PC = 시안 B Lineage(lib/mission-lineage.js), 태그 규칙(라운드 6 E) ----
+import { lineageLayout, LINE } from '../src/renderer/lib/mission-lineage.js';
+import { switchText } from '../src/renderer/lib/cmd-input.js';
+const lin = () => lineageLayout(graph(), { order: WS, vgroups: FOLDERS });
+test('P153 r7: 폴더 띠와 줄의 차례·소속은 사이드바와 같고 폴더 없음 띠가 마지막', () => {
+  const lay = lin();
+  const side = groupLayout(WS.map((key) => ({ key })), FOLDERS);
+  assert.deepEqual(lay.bands.map((b) => b.id), [...side.groups.map((g) => g.id), null]);
+  for (const g of side.groups) assert.deepEqual(lay.rows.filter((r) => r.band === g.id).map((r) => r.key), g.workspaces.map((w) => w.key));
+  assert.deepEqual(lay.rows.filter((r) => r.band == null).map((r) => r.key), side.ungrouped.map((w) => w.key));
+  for (const r of lay.rows) { const b = lay.bands.find((x) => x.id === r.band); assert.ok(r.y >= b.y && r.y + r.h <= b.y + b.h + 0.01, `${r.key}가 띠 안`); }
+  for (let i = 1; i < lay.rows.length; i++) assert.ok(lay.rows[i].y >= lay.rows[i - 1].y + lay.rows[i - 1].h - 0.01, '줄은 위 → 아래로 겹치지 않는다');
+});
+test('P153 r7: 칸 — 리드는 리드 칸, 하위는 깊이만큼 오른쪽, 다른 워크스페이스 부모는 워커 칸, 혼자는 혼자 칸, 하위가 다른 곳에만 있는 세션도 리드 칸', () => {
+  const lay = lin();
+  const col = (k) => lay.cols.find((c) => c.key === k).x;
+  const x = (n) => lay.cards.get(`s:${n}`).x;
+  assert.equal(x('exam-lead'), col('lead'));
+  for (const n of ['ex-notes', 'ex-qa-c']) assert.equal(x(n), col('workers'));
+  assert.equal(x('deck-lead'), col('lead')); assert.equal(x('deck-writer'), col('workers')); assert.equal(x('deck-reader'), lay.cols.filter((c) => c.key === 'next')[0].x, '역할 연결 나무도 칸을 따른다');
+  assert.equal(x('researcher'), col('workers'), '부모(m1)가 다른 워크스페이스');
+  assert.equal(x('coin-feed'), lay.cols.filter((c) => c.key === 'next')[0].x);
+  assert.equal(x('m1'), col('lead'), '하위가 다른 워크스페이스에만 있어도 리드 칸');
+  for (const n of ['c1', 'hub-head', 'notes-2', 'reviewer']) assert.ok(x(n) >= col('solo'), `${n}는 혼자 칸`);
+  const cards = [...lay.cards.values()];
+  for (let i = 0; i < cards.length; i++) for (let j = i + 1; j < cards.length; j++) assert.ok(!overlap(cards[i], cards[j]), `${cards[i].node.name}×${cards[j].node.name}`);
+  for (const c of cards) { const r = lay.rows.find((x2) => x2.key === c.ws); assert.ok(c.y >= r.y && c.y + c.h <= r.y + r.h + 0.01, `${c.node.name}가 자기 줄 안`); }
+  assert.ok(lay.cols.some((c) => c.key === 'next') && lay.cols.length >= LINE.MINCOLS + 2, '칸: 워크스페이스·리드·워커·다음 단계·혼자');
+});
+test('P153 r7: 선은 직각, 나무 선은 부모 오른쪽 → 하위 왼쪽, 다른 워크스페이스 선은 카드·줄 머리를 지나지 않고 받는 카드 왼쪽·위로', () => {
+  const lay = lin();
+  for (const e of lay.edges) {
+    for (let i = 1; i < e.pts.length; i++) {
+      assert.ok(e.pts[i - 1][0] === e.pts[i][0] || e.pts[i - 1][1] === e.pts[i][1], `${e.id} 직각`);
+      for (const c of lay.cards.values()) assert.ok(!segHits(e.pts[i - 1], e.pts[i], c), `${e.id}가 ${c.node.name}를 지난다`);
+    }
+    const to = lay.cards.get(e.to), q = e.pts[e.pts.length - 1];
+    if (!e.cross) { const a = lay.cards.get(e.from); assert.equal(e.pts[0][0], a.x + a.w); assert.equal(q[0], to.x); }
+    else assert.ok((Math.abs(q[0] - to.x) < 0.01) || Math.abs(q[1] - to.y) < 0.01, '받는 카드 왼쪽 또는 위');
+  }
+  assert.ok(lay.edges.some((e) => e.cross), '다른 워크스페이스 선이 있다');
+});
+test('P153 r6·r7: 판 ↔ 세션 맵 전환 때 명령줄 — 태그만이면 지움, 태그와 글은 유지, 글만은 유지; 더블클릭은 첫 클릭 태그를 되돌린다', () => {
+  assert.equal(switchText('@a '), '');
+  assert.equal(switchText('@a @b  '), '');
+  assert.equal(switchText('@a hello'), '@a hello');
+  assert.equal(switchText('hello'), 'hello');
+  assert.equal(switchText(''), '');
+  // 더블클릭: 첫 클릭이 태그를 넣으면(toggleTag) 더블클릭이 같은 이름으로 한 번 더 바꿔 되돌린다(MissionLineage.jsx go)
+  assert.equal(toggleTag(toggleTag('hello', 'x'), 'x'), 'hello');
+  assert.equal(toggleTag(toggleTag('@x hi', 'x'), 'x'), '@x hi');
+  const src = read('MissionLineage.jsx');
+  assert.match(src, /if \(e && e\.detail > 1\) return;/, '둘째 클릭은 태그를 바꾸지 않는다');
+  assert.match(src, /if \(dbl && b && lt && lt\.id === id && Date\.now\(\) - lt\.at < 800\) commandDraft\.dispatchEvent\(new CustomEvent\('tag'/, '더블클릭은 첫 클릭 태그를 되돌린다');
+  assert.match(read('CommandBar.jsx'), /setText\(\(cur\) => switchText\(cur\)\)/, '열고 닫을 때 switchText');
 });

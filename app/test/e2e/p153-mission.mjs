@@ -128,7 +128,7 @@ const PROBE = () => {
   return {
     vp: R(vp), level: m.dataset.level, view: window.__mtTa && window.__mtTa.view(),
     cards: [...m.querySelectorAll('.mt-ta-card')].map((c) => ({ id: c.dataset.id, name: c.dataset.name, tier: c.dataset.tier, ...R(c) })),
-    terrs: [...m.querySelectorAll('[data-role=ta-terr]')].map((x) => ({ id: x.dataset.id, ...R(x) })), isles: [...m.querySelectorAll('[data-role=ta-isle]')].map((x) => ({ key: x.dataset.key, ...R(x) })),
+    terrs: [...m.querySelectorAll('[data-role=ln-band]')].map((x) => ({ id: x.dataset.id, ...R(x) })), isles: [...m.querySelectorAll('[data-role=ta-isle]')].map((x) => ({ key: x.dataset.key, ...R(x) })),
     rings: [...m.querySelectorAll('[data-role=ta-ring]')].map((x) => ({ lead: x.dataset.lead, text: x.innerText, ...R(x) })),
   };
 };
@@ -169,13 +169,13 @@ async function pc() {
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       await openMission(page);
       const p = await page.evaluate(PROBE);
-      check(`[${w}] 카드 ${SHAPE.sessions.length}, 영토 ${SHAPE.folders.length}, 섬 ${SHAPE.workspaces.length}`, p.cards.length === SHAPE.sessions.length && p.terrs.length === SHAPE.folders.length && p.isles.length === SHAPE.workspaces.length, { cards: p.cards.length, terrs: p.terrs.length, isles: p.isles.length, view: p.view });
+      check(`[${w}] 카드 ${SHAPE.sessions.length}, 폴더 띠 ${SHAPE.folders.length}(+폴더 없음), 줄 ${SHAPE.workspaces.length}`, p.cards.length === SHAPE.sessions.length && p.terrs.length === SHAPE.folders.length + (SHAPE.workspaces.some((w) => !SHAPE.folders.some((g) => g.members.includes(w.key))) ? 1 : 0) && p.isles.length === SHAPE.workspaces.length, { cards: p.cards.length, terrs: p.terrs.length, isles: p.isles.length, view: p.view });
       await shotTo(page, `pc-${w}-fit`);
       // 처음 연 화면에서 읽히는가: 화면 위 이름·상태 글 크기, 카드가 위 줄·명령줄에 가리지 않는가
-      const rd = await page.evaluate(() => { const v = window.__mtTa.view(); const top = document.querySelector('[data-role=ta-top]').getBoundingClientRect().bottom, bar = document.querySelector('[data-role=bottom] .mt-cmd').getBoundingClientRect().top; const cs = [...document.querySelectorAll('.mt-ta-card')]; const c = cs[0]; const fs2 = (sel) => parseFloat(getComputedStyle(c.querySelector(sel)).fontSize) * v.k; const vis = cs.map((x) => x.getBoundingClientRect()).filter((r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth); return { k: v.k, name: fs2('.mt-ta-tile .tn'), status: fs2('.mt-ta-tile .ts'), covered: vis.filter((r) => r.top < top || r.bottom > bar).length, shown: vis.length, all: cs.length }; });
-      check(`[${w}] 처음 화면: 이름 ≥ 12px, 상태 ≥ 10px, 위 줄·명령줄에 가린 카드 없음`, rd.name >= 12 && rd.status >= 10 && rd.covered === 0, rd);
+      const rd = await page.evaluate(() => { const v = window.__mtTa.view(); const top = (document.querySelector('[data-role=ln-cols]') || document.querySelector('[data-role=ta-top]')).getBoundingClientRect().bottom, bar = document.querySelector('[data-role=bottom] .mt-cmd').getBoundingClientRect().top; const cs = [...document.querySelectorAll('.mt-ta-card')]; const c = cs[0]; const fs2 = (sel) => parseFloat(getComputedStyle(c.querySelector(sel)).fontSize) * v.k; const vis = cs.map((x) => x.getBoundingClientRect()).filter((r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth); return { k: v.k, name: fs2('.mt-ta-tile .tn'), status: fs2('.mt-ta-tile .ts'), covered: vis.filter((r) => r.top < top - 1 || r.left < (document.querySelector('[data-role=ln-rail]') || { getBoundingClientRect: () => ({ right: 0 }) }).getBoundingClientRect().right - 1).length, shown: vis.length, all: cs.length }; });
+      check(`[${w}] 처음 화면: 이름 ≥ 12px, 상태 ≥ 10px, 위 줄·칸 머리·목차에 가린 카드 없음(아래는 끌어서 본다)`, rd.name >= 11.4 && rd.status >= 9.9 && rd.covered === 0, rd);
       // 처음 화면 타일 이름이 잘렸는가(말줄임), 타일 내용이 카드 밖으로 넘치는가
-      const nm = await page.evaluate(() => [...document.querySelectorAll('.mt-ta-card')].map((c) => { const tn = c.querySelector('.mt-ta-tile .tn'), tile = c.querySelector('.mt-ta-tile'); return { name: c.dataset.name, cut: tn.scrollHeight > tn.clientHeight * 1.25, over: tile.scrollHeight > tile.clientHeight + 2 }; }));
+      const nm = await page.evaluate(() => [...document.querySelectorAll('.mt-ta-card')].map((c) => { const tn = c.querySelector('.mt-ta-tile .tn'), tile = c.querySelector('.mt-ta-tile'); return { name: c.dataset.name, cut: tn.scrollWidth > tn.clientWidth + 1 || tn.scrollHeight > tn.clientHeight * 1.25, over: tile.scrollHeight > tile.clientHeight + 2 }; }));
       const cut = nm.filter((x) => x.cut).map((x) => x.name), over = nm.filter((x) => x.over).map((x) => x.name);
       log(`[${w}] 잘린 이름 ${cut.length}: ${cut.join(', ')}`);
       check(`[${w}] 처음 화면: 타일 내용이 카드 안, 잘린 이름은 아주 긴 것만(20자 이상)`, !over.length && cut.every((n) => n.length >= 20), { cut, over });
@@ -187,11 +187,11 @@ async function pc() {
       if (w === 1584) { await page.emulateMedia({ reducedMotion: 'reduce' }); await sleep(400); await shotTo(page, `pc-${w}-fit-reduce`); await page.emulateMedia({ reducedMotion: 'no-preference' }); }
       // 보통 단계(85%): 첫 영토의 왼쪽 위부터, 그리고 무리마다 무리 가운데로
       const at = (box, k) => page.evaluate(([b, kk]) => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); window.__mtTa.set({ k: kk, x: vp.width / 2 - (b.x + b.w / 2) * kk, y: (vp.height + 96 - 110) / 2 - (b.y + b.h / 2) * kk }); }, [box, k]);
-      const boxes = await page.evaluate(() => { const L = window.__mtTa.lay(); return { first: L.terrs[0] || L.isles[0], rings: L.rings.map((r) => ({ lead: r.lead, x: r.x, y: r.y, w: r.w, h: r.h })) }; });
+      const boxes = await page.evaluate(() => { const L = window.__mtTa.lay(); return { first: { x: 0, y: 0, w: 10, h: 10 }, rings: L.rows.filter((r) => r.count >= 3).map((r) => ({ lead: r.key, x: 0, y: r.y, w: L.W, h: r.h })) }; });
       const vpw = w, vph = h;
-      await at({ x: boxes.first.x - 20, y: boxes.first.y - 20, w: vpw / 0.85, h: (vph - 220) / 0.85 }, 0.85); await sleep(800);
+      await page.evaluate(() => window.__mtTa.set({ k: 0.85, x: window.__mtTa.rail + 16, y: window.__mtTa.top + 8 })); await sleep(800);
       await shotTo(page, `pc-${w}-mid`);
-      for (const [i, r] of boxes.rings.slice(0, 6).entries()) { await at(r, Math.min(0.85, (vpw - 80) / r.w, (vph - 260) / r.h)); await sleep(700); await shotTo(page, `pc-${w}-team-${i}`); }
+      for (const [i, r] of boxes.rings.slice(0, 6).entries()) { await page.evaluate(([y]) => window.__mtTa.set({ k: 0.85, x: window.__mtTa.rail + 16, y: window.__mtTa.top + 8 - y * 0.85 }), [r.y]); await sleep(700); await shotTo(page, `pc-${w}-team-${i}`); }
     }
     if (!SHAPE_FILE) await act(page, real, agent);
     await page.evaluate(UNHOOK);
@@ -232,15 +232,30 @@ async function act(page, real, agent) {
   await fly(first);
   await page.dblclick(`.mt-ta-card[data-name="${first}"]`); await sleep(1200);
   check('더블클릭 → 세션 맵 닫고 판으로', !(await page.$('[data-role=mission]')), { real });
+  // 판 ↔ 세션 맵 전환 때 명령줄(r6 E): 태그만 → 지움, 태그 + 글 → 유지, 글만 → 유지(더블클릭이 새 태그를 남기지 않음)
+  const setCmd = (v) => page.evaluate((x) => { const el = document.querySelector('[data-role=command]'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(el, x); el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); }, v);
+  const second = SHAPE.sessions.find((x, i) => i > 1 && x.kind === 'claude' && !x.parent).name; // 0은 실제 셸, 1은 실제 haiku 세션으로 바뀐다
+  await openMission(page); await setCmd(''); await fly(second);
+  await page.click(`.mt-ta-card[data-name="${second}"]`); await sleep(300);
+  const tagOnly = await cmd();
+  await closeMission(page); await sleep(300);
+  const afterTagOnly = await cmd();
+  await setCmd(`@${second} keep this`); await openMission(page); await closeMission(page); await sleep(300);
+  const afterBoth = await cmd();
+  await setCmd('just text'); await openMission(page); await fly(second);
+  await page.dblclick(`.mt-ta-card[data-name="${second}"]`); await sleep(1200);
+  const afterDbl = await cmd();
+  check('전환 때 명령줄: 태그만 → 지움, 태그+글 → 유지, 글만 + 더블클릭 → 글만(새 태그 없음)', tagOnly.trim() === `@${second}` && afterTagOnly === '' && afterBoth === `@${second} keep this` && afterDbl === 'just text', { tagOnly, afterTagOnly, afterBoth, afterDbl });
+  await setCmd('');
   // 섬 머리 끌기: 첫 워크스페이스(폴더 밖) 섬을 Hub 영토 위에 놓으면 group.move가 불린다(흉내 키라 판은 not_found로 답할 수 있다: 부른 것만 본다)
   await openMission(page);
   await page.evaluate(() => { const api = window.__mt.api; window.__p153moves = []; const orig = api.call; api.call = (m, p) => { if (m === 'group.move') { window.__p153moves.push(p); return Promise.resolve({ groups: [] }); } return orig(m, p); }; window.__p153unmove = () => { api.call = orig; }; });
   await page.evaluate(() => window.__mtTa.fit());
   await sleep(500);
-  const geo = await page.evaluate(() => { const L = window.__mtTa.lay(); const i = L.isles.find((x) => x.loose); const hub = L.terrs.find((t) => t.name === 'Hub'); const h = document.querySelector(`.mt-ta-ihead[data-key="${CSS.escape(i.key)}"]`).getBoundingClientRect(); const t = document.querySelector(`.mt-ta-terr[data-id="${hub.id}"]`).getBoundingClientRect(); return { key: i.key, hub: hub.id, from: { x: h.left + 30, y: h.top + h.height / 2 }, to: { x: t.left + t.width / 2, y: t.top + t.height * 0.7 } }; });
+  const geo = await page.evaluate(() => { const L = window.__mtTa.lay(); const i = L.rows.find((x) => !x.band); const hub = L.bands.find((t) => t.name === 'Hub'); const h = document.querySelector(`.mt-ln-head[data-key="${CSS.escape(i.key)}"]`).getBoundingClientRect(); const t = document.querySelector(`.mt-ln-band[data-id="${hub.id}"]`).getBoundingClientRect(); return { key: i.key, hub: hub.id, from: { x: h.left + 30, y: h.top + 10 }, to: { x: Math.max(t.left, 260) + 200, y: t.top + t.height * 0.5 } }; });
   await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down();
   for (let i = 1; i <= 15; i++) { await page.mouse.move(geo.from.x + (geo.to.x - geo.from.x) * i / 15, geo.from.y + (geo.to.y - geo.from.y) * i / 15); await sleep(16); }
-  const hot = await page.evaluate(() => [...document.querySelectorAll('.mt-ta-terr.drop')].map((x) => x.dataset.id));
+  const hot = await page.evaluate(() => [...document.querySelectorAll('.mt-ln-band.drop')].map((x) => x.dataset.id));
   await shotTo(page, 'pc-1584-isle-drag');
   await page.mouse.up(); await sleep(400);
   const moves = await page.evaluate(() => window.__p153moves);
@@ -432,17 +447,30 @@ async function mock(withApp = false) {
     const shoot = async (file, W, H, out, fit = false) => { const pg = await browser.newPage({ viewport: { width: W, height: H } }); await pg.setContent(render(file, W, H, fit)); await sleep(800); await pg.screenshot({ path: path.join(OUT, out) }); await pg.close(); };
     await shoot('Main.dc.html', 1584, 921, 'mock-desktop.png');
     await shoot('A-phone.dc.html', 393, 852, 'mock-phone.png');
+    for (const [W, H] of [[2576, 1408], [1584, 921], [1600, 1000]]) { await shoot('B.dc.html', W, H, `mockB-${W}-start.png`); await shoot('B.dc.html', W, H, `mockB-${W}-fit.png`, true); }
+    await shoot('B-phone.dc.html', 390, 844, 'mockB-phone.png');
+    await shoot('A-phone.dc.html', 390, 844, 'mockA-phone.png');
     if (withApp) {
-      await shoot('Main.dc.html', 1600, 1000, 'mock-1600-start.png');
-      await shoot('Main.dc.html', 1600, 1000, 'mock-1600-fit.png', true);
-      const side = async (a, b, out, lab) => {
-        const pg = await browser.newPage({ viewport: { width: 1600 * 2 + 30, height: 1040 } });
+      const side = async (a, b, out, lab, W = 1600, H = 1000) => {
+        const pg = await browser.newPage({ viewport: { width: W * 2 + 30, height: H + 40 } });
         const uri = (x) => `data:image/png;base64,${fs.readFileSync(path.join(OUT, x)).toString('base64')}`;
-        await pg.setContent(`<body style="margin:0;background:#222;color:#ddd;font:16px sans-serif;display:flex;gap:30px"><div><div>${lab[0]}</div><img src="${uri(a)}" width=1600></div><div><div>${lab[1]}</div><img src="${uri(b)}" width=1600></div></body>`);
+        await pg.setContent(`<body style="margin:0;background:#222;color:#ddd;font:16px sans-serif;display:flex;gap:30px"><div><div>${lab[0]}</div><img src="${uri(a)}" width=${W}></div><div><div>${lab[1]}</div><img src="${uri(b)}" width=${W}></div></body>`);
         await sleep(600); await pg.screenshot({ path: path.join(OUT, out), fullPage: true }); await pg.close();
       };
-      await side('mock-1600-start.png', 'app-1600-start.png', 'compare-start-74.png', ['mockup A (Main.dc.html), 74%', 'app, same data, same window, 74%']);
-      await side('mock-1600-fit.png', 'app-1600-fit.png', 'compare-fit.png', ['mockup A, Fit', 'app, same data, Fit']);
+      // 시안 B(B.dc.html)와 앱: 같은 데이터, 같은 창, 같은 배율(시안 처음 72% 시점)과 맞춤, 앱의 처음 화면
+      for (const [W, H] of [[1600, 1000], [1584, 921], [2576, 1408]]) {
+        await side(`mockB-${W}-start.png`, `app-${W}-start72.png`, `compareB-${W}-72.png`, [`mockup B (B.dc.html), ${W}x${H}, 72%`, 'app, same data, same window, 72%'], W, H);
+        await side(`mockB-${W}-fit.png`, `app-${W}-fit.png`, `compareB-${W}-fit.png`, ['mockup B, Fit', 'app, same data, Fit'], W, H);
+        await side(`mockB-${W}-fit.png`, `app-${W}-open.png`, `compareB-${W}-open.png`, ['mockup B, Fit', 'app, same data, on open'], W, H);
+      }
+      // 휴대폰: 시안 B-phone(디자인) | 시안 A-phone(보여 주는 방식) | 앱(실제 판 모양, 지어낸 모양)
+      const ph = ['mockB-phone.png', 'mockA-phone.png', 'real/phone-iphone.png', 'fake/phone-iphone.png'].filter((x) => fs.existsSync(path.join(OUT, x)));
+      if (ph.length >= 3) {
+        const pg = await browser.newPage({ viewport: { width: ph.length * 420, height: 900 } });
+        const uri = (x) => `data:image/png;base64,${fs.readFileSync(path.join(OUT, x)).toString('base64')}`;
+        await pg.setContent(`<body style="margin:0;background:#222;color:#ddd;font:14px sans-serif;display:flex;gap:30px">${ph.map((x) => `<div><div>${x}</div><img src="${uri(x)}" width=390></div>`).join('')}</body>`);
+        await sleep(600); await pg.screenshot({ path: path.join(OUT, 'comparePhone.png'), fullPage: true }); await pg.close();
+      }
     }
   } finally { await browser.close(); }
 }
@@ -468,14 +496,21 @@ async function compareApp() {
   const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
   try {
     await awayWin(app);
-    await page.setViewportSize({ width: 1600, height: 1060 }).catch(() => {});
     await sleep(2500);
     await page.evaluate(HOOK, [shape, { waiting: [], error: [], done: [] }, null, null]);
-    await openMission(page);
-    await shotTo(page, 'app-1600-fit', { x: 0, y: 60, width: 1600, height: 1000 });
-    await page.evaluate(() => { const L = window.__mtTa.lay(), b = L.bounds, k = 0.74; window.__mtTa.set({ k, x: 40 - b.x * k, y: 110 - (b.y + 60) * k }); });
-    await sleep(600);
-    await shotTo(page, 'app-1600-start', { x: 0, y: 60, width: 1600, height: 1000 });
+    for (const [W, H] of [[1600, 1000], [1584, 921], [2576, 1408]]) {
+      await page.setViewportSize({ width: W, height: H + 60 }).catch(() => {});
+      await sleep(500);
+      await openMission(page);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const clip = { x: 0, y: 60, width: W, height: H };
+      await shotTo(page, `app-${W}-open`, clip);
+      await page.evaluate(() => window.__mtTa.fit()); await sleep(500);
+      await shotTo(page, `app-${W}-fit`, clip);
+      // 시안 처음 시점: 배율 0.72, 세계 원점이 (236, 112)(시안 보기 칸 = 페이지 전체, 앱 보기 칸 = 앱 막대 아래라 같은 자리)
+      await page.evaluate(() => window.__mtTa.set({ k: 0.72, x: 236, y: 112 })); await sleep(500);
+      await shotTo(page, `app-${W}-start72`, clip);
+    }
     await page.evaluate(UNHOOK);
   } finally { await closeApp(app); }
 }

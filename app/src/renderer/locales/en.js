@@ -2444,6 +2444,20 @@ export default {
     noTask: 'No task yet',
   },
   // P152: mission map A "Territories" (folders as territories, workspaces as islands, teams as rings, infinite canvas)
+  // P153 r7: session map columns (mockup B Lineage)
+  mmLine: {
+    colWs: 'Workspace',
+    colLead: 'Lead',
+    colWorkers: 'Workers',
+    colNext: 'Next level',
+    colSolo: 'On their own',
+    lead: 'Lead',
+    role: 'role',
+    task: 'task',
+    folder: 'Folder',
+    loose: 'No folder',
+    toc: 'Folders and workspaces',
+  },
   mmTerr: {
     summary: '{folders} · {workspaces} · {sessions}',
     folders: { one: '{n} folder', other: '{n} folders' },

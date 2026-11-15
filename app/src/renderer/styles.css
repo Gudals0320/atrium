@@ -2150,3 +2150,125 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-ta-zoom .zpct { min-width: 54px; text-align: center; font-variant-numeric: tabular-nums; font-size: 14px; }
 /* 세션 맵이 열린 동안 아래 통합 명령줄은 덮개 위에 늘 보인다(판의 칩 줄·도구는 덮개 밑에 남는다) */
 .mt-bottom[data-mission="1"] { z-index: 40; }
+
+/* ---------- P153 r7: 세션 맵 PC = 시안 B "Lineage"(MissionLineage.jsx, lib/mission-lineage.js). 위 P152·P153 덩어리(.mt-ta-*)를 .mt-ln 안에서 덮는다.
+   생김(띠·기둥·줄·칸·카드·선·위 줄·칸 머리·목차 레일)은 시안 B를 따르고, 사용자가 정한 것이 이긴다: 앱 기본 글꼴(강조는 굵기, 대문자·자간 없음), 무채색(제목·바탕·띠에 색 없음,
+   색은 상태 점·상태 글·응답 필요·오류 테두리·작업 중 빛·작업 완료 꼬리표·관계 선 종류만, 선 색은 채도를 낮춤), 얇은 선(1px 낮은 알파), 가벼운 글(이름 550), 판과 같은 배경 ---------- */
+.mt-ln { --ln-line: rgba(255, 252, 240, 0.09); --ln-line-2: rgba(255, 252, 240, 0.14); --ln-dim: #a3a097; --ln-text: #e6e3da; --ln-strong: #f3f0e8; --ln-hud: rgba(15, 15, 13, 0.95); color: var(--ln-text); }
+.mt-ln .mt-ta-vp { top: 60px; }
+/* 폴더 띠와 기둥 */
+.mt-ln-band { position: absolute; left: 0; box-sizing: border-box; border-top: 1px solid var(--ln-line-2); background: rgba(255, 252, 240, 0.012); pointer-events: none; transition: background-color .15s; }
+.mt-ln-band.odd { background: rgba(255, 252, 240, 0.024); }
+.mt-ln-band.drop { background: rgba(255, 252, 240, 0.07); box-shadow: inset 0 0 0 2px rgba(255, 252, 240, 0.28); }
+.mt-ln-spine { position: absolute; left: 0; top: 0; bottom: 0; width: 210px; box-sizing: border-box; padding: 26px 16px; border-right: 1px solid var(--ln-line); display: flex; flex-direction: column; gap: 7px; }
+.mt-ln-spine .fk { font-size: 12px; color: var(--ln-dim); }
+.mt-ln-spine .fn { font-size: 22px; font-weight: 600; color: var(--ln-strong); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-ln-spine .fs { font-size: 13.5px; color: var(--ln-dim); }
+.mt-ln-spine .fbar { margin-top: 6px; height: 6px; display: flex; gap: 2px; border-radius: 3px; overflow: hidden; }
+.mt-ln-spine .fbar i { display: block; height: 100%; background: var(--sc); flex-basis: 0; }
+.mt-ln .lv-far .mt-ln-spine .fk { font-size: clamp(18px, calc(9px * var(--ik, 1)), 26px); }
+.mt-ln .lv-far .mt-ln-spine .fn { font-size: clamp(26px, calc(11.5px * var(--ik, 1)), 32px); }
+.mt-ln .lv-far .mt-ln-spine .fs { font-size: clamp(18px, calc(9.5px * var(--ik, 1)), 24px); }
+.mt-ln .lv-far .mt-ln-spine .fbar { height: 16px; }
+/* 워크스페이스 줄과 머리(끌어 폴더 옮기기 손잡이) */
+.mt-ln-row { position: absolute; box-sizing: border-box; border-top: 1px dashed var(--ln-line); pointer-events: none; }
+.mt-ln-row.first { border-top: 0; }
+.mt-ln-row.moving { z-index: 6; background: rgba(255, 252, 240, 0.04); outline: 1px dashed var(--ln-line-2); }
+.mt-ln-head { position: absolute; left: 22px; top: 22px; width: 300px; display: flex; flex-direction: column; gap: 9px; pointer-events: auto; cursor: grab; }
+.mt-ln-head .wsn { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 600; color: var(--ln-strong); min-width: 0; }
+.mt-ln-head .wsn > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-ln-head:hover .wsn > span { text-decoration: underline; text-decoration-color: var(--ln-line-2); text-underline-offset: 4px; }
+.mt-ln-head .mt-ta-iico { width: 18px; height: 18px; stroke: var(--ln-dim); }
+.mt-ln-head .wsc { display: flex; flex-wrap: wrap; gap: 5px; }
+.mt-ln-head .wsc > span { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ln-dim); background: rgba(255, 252, 240, 0.05); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.mt-ln-head .wsc i { width: 7px; height: 7px; border-radius: 50%; background: var(--sc); display: block; }
+.mt-ln-head .wsc b { color: var(--ln-text); font-weight: 600; }
+.mt-ln .lv-far .mt-ln-head { width: 460px; top: 24px; gap: 14px; }
+.mt-ln .lv-far .mt-ln-head .wsn { font-size: clamp(30px, calc(12.5px * var(--ik, 1)), 46px); gap: 14px; }
+.mt-ln .lv-far .mt-ln-head .mt-ta-iico { width: 1em; height: 1em; }
+.mt-ln .lv-far .mt-ln-head .wsc > span { font-size: clamp(20px, calc(9.5px * var(--ik, 1)), 30px); padding: 4px 12px; gap: 9px; border-radius: 9px; }
+.mt-ln .lv-far .mt-ln-head .wsc i { width: 0.6em; height: 0.6em; }
+.mt-ln-div { position: absolute; width: 0; border-left: 1px dashed var(--ln-line-2); pointer-events: none; }
+/* 카드(시안 B: 각진 모서리 10, 얇은 테두리, 리드는 조금 밝게) */
+.mt-ln .mt-ta-card { padding: 12px 14px; border-radius: 10px; background: rgba(255, 252, 240, 0.04); border: 1px solid var(--ln-line-2); color: var(--ln-text); font-size: 13.5px; line-height: 1.38; }
+.mt-ln .mt-ta-slot { border-radius: 10px; }
+.mt-ln .mt-ta-slot.lead .mt-ta-card { background: rgba(255, 252, 240, 0.065); border-color: rgba(255, 252, 240, 0.2); }
+.mt-ln .mt-ta-slot.idle .mt-ta-card { background: rgba(255, 252, 240, 0.022); border-color: rgba(255, 252, 240, 0.07); }
+.mt-ln .mt-ta-slot.st-needs .mt-ta-card { border: 1px solid color-mix(in srgb, var(--st-waiting) 80%, transparent); background: color-mix(in srgb, var(--st-waiting) 7%, #121210); }
+.mt-ln .mt-ta-slot.st-error .mt-ta-card { border: 1px solid color-mix(in srgb, var(--st-error) 80%, transparent); background: color-mix(in srgb, var(--st-error) 7%, #121210); }
+.mt-ln .mt-ta-slot.st-done .mt-ta-card { border: 1px solid color-mix(in srgb, var(--st-review) 65%, transparent); }
+.mt-ln .mt-ta-slot.st-working .mt-ta-card { border-color: transparent; }
+.mt-ln .mt-ta-slot.tagged .mt-ta-card { outline: 2px solid var(--accent); outline-offset: 4px; }
+.mt-ln .lv-far .mt-ta-slot.tagged .mt-ta-card { outline-width: 6px; outline-offset: 7px; }
+.mt-ln .mt-ta-full { gap: 4px; }
+.mt-ln .mt-ta-full .c1 { gap: 8px; }
+.mt-ln-lead { flex: none; font-size: 10.5px; font-weight: 600; line-height: 15px; padding: 0 5px; border-radius: 4px; border: 1px solid rgba(255, 252, 240, 0.28); color: var(--ln-dim); }
+.mt-ln .mt-ta-full .cname { font-size: 15.5px; font-weight: 550; color: var(--ln-strong); white-space: nowrap; text-overflow: ellipsis; display: block; overflow: hidden; }
+.mt-ln .mt-ta-full .cst { font-size: 12.5px; font-weight: 500; }
+.mt-ln .mt-ta-full .cst i { width: 7px; height: 7px; }
+.mt-ln .mt-ta-full .c2 { font-size: 12px; color: var(--ln-dim); gap: 0 6px; }
+.mt-ln .mt-ta-full .crole { font-size: 12px; font-weight: 500; color: var(--ln-text); }
+.mt-ln .mt-ta-slot.lead .crole { color: var(--ln-text); }
+.mt-ln .mt-ta-full .hb { font-size: 10px; font-weight: 600; border: 0; background: rgba(255, 252, 240, 0.08); color: var(--ln-text); border-radius: 4px; padding: 0 5px; line-height: 16px; }
+.mt-ln .mt-ta-full .c3 { font-size: 13.5px; color: var(--ln-text); }
+.mt-ln .mt-ta-full .c3 b { font-weight: 550; }
+.mt-ln .mt-ta-slot.idle .c3 { color: #bcb8ae; }
+.mt-ln .mt-ta-full .cerr { font-size: 12.5px; }
+.mt-ln .mt-ta-full .c4 { font-size: 12px; color: var(--ln-dim); }
+.mt-ln .mt-ta-full .cago { color: var(--ln-dim); font-weight: 400; }
+/* 멀리 타일: 이름 한 줄(넘치면 말줄임) + 상태. 화면 글 하한(이름 11.5px·상태 10px)은 --ik(1/배율) */
+.mt-ln .mt-ta-world.lv-far .mt-ta-card { padding: 10px 14px; }
+.mt-ln .mt-ta-world.lv-far .mt-ta-tile { justify-content: center; gap: 6px; }
+.mt-ln .mt-ta-world.lv-far .mt-ta-tile .tn { display: block; font-size: clamp(30px, calc(11.5px * var(--ik, 1)), 48px); font-weight: 550; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0; -webkit-line-clamp: unset; }
+.mt-ln .mt-ta-world.lv-far .mt-ta-tile .ts { font-size: clamp(24px, calc(10px * var(--ik, 1)), 40px); font-weight: 500; line-height: 1.15; }
+/* 관계 선: 종류마다 모양과 채도를 낮춘 색, 화살촉 */
+.mt-ln .mt-ta-edge { stroke-width: 1.6; opacity: 0.9; }
+.mt-ln .mt-ta-edge.k-spawn, .mt-ln .mt-ln-tip.k-spawn, .mt-ln .mt-ta-elab.k-spawn { --ec: #5fa98a; }
+.mt-ln .mt-ta-edge.k-role, .mt-ln .mt-ln-tip.k-role, .mt-ln .mt-ta-elab.k-role { --ec: #7d97c6; }
+.mt-ln .mt-ta-edge.k-prompt, .mt-ln .mt-ln-tip.k-prompt, .mt-ln .mt-ta-elab.k-prompt { --ec: #c48d70; }
+.mt-ln .mt-ta-edge.k-cross, .mt-ln .mt-ln-tip.k-cross, .mt-ln .mt-ta-elab.k-cross { --ec: #a28fcc; }
+.mt-ln .mt-ta-edge.k-role { stroke-dasharray: 7 5; }
+.mt-ln .mt-ta-edge.k-cross { stroke-width: 2.2; stroke-dasharray: 0.1 6; stroke-linecap: round; }
+.mt-ln-tip path { fill: var(--ec); }
+.mt-ln .lv-far .mt-ta-edge { stroke-width: 3.5; }
+.mt-ln .lv-far .mt-ta-edge.k-cross { stroke-width: 5; stroke-dasharray: 0.1 12; }
+.mt-ln .mt-ta-elab { transform: translate(-50%, -50%); font-size: 11.5px; font-weight: 500; padding: 1px 7px; border-radius: 5px; background: var(--canvas); border: 1px solid color-mix(in srgb, var(--ec) 70%, transparent); color: var(--ln-text); max-width: 200px; }
+/* 위 줄: 제목, 나를 기다리는 것·작업 중·작업 완료 알약, 줌, 닫기 */
+.mt-ln .mt-ta-hud { background: var(--ln-hud); border: 0 solid var(--ln-line); border-radius: 0; box-shadow: none; }
+.mt-ln-top { left: 0; right: 0; top: 60px; height: 52px; border-bottom-width: 1px !important; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 20px; box-sizing: border-box; min-width: 0; }
+.mt-ln-top .mt-ta-title { font-size: 15px; font-weight: 600; margin-right: 6px; }
+.mt-ln-top .mt-ta-attn { display: flex; gap: 6px; min-width: 0; overflow: hidden; align-items: center; }
+.mt-ln-pill { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--ln-line-2); background: transparent; color: var(--ln-text); font: 500 12.5px var(--font-ui); cursor: pointer; white-space: nowrap; flex: none; }
+.mt-ln-pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--sc); display: block; flex: none; }
+.mt-ln-pill b { font-weight: 600; color: var(--ln-strong); }
+.mt-ln-pill span { color: var(--ln-dim); }
+.mt-ln-pill.st-needs { border-color: color-mix(in srgb, var(--st-waiting) 55%, transparent); }
+.mt-ln-pill.st-error { border-color: color-mix(in srgb, var(--st-error) 55%, transparent); }
+.mt-ln-pill.quiet { cursor: default; border-color: transparent; }
+.mt-ln-pill:not(.quiet):hover { background: rgba(255, 252, 240, 0.05); }
+.mt-ln-zgrp { display: flex; align-items: center; gap: 2px; border: 1px solid var(--ln-line); border-radius: 9px; padding: 2px; }
+.mt-ln-zgrp .zb { height: 28px; min-width: 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--ln-text); cursor: pointer; font: 500 12.5px var(--font-ui); padding: 0 8px; }
+.mt-ln-zgrp .zb:hover { background: rgba(255, 252, 240, 0.06); }
+.mt-ln-zgrp .zb svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.mt-ln-zgrp .zpct { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--ln-text); }
+.mt-ln .mt-ta-iconbtn { width: 36px; height: 36px; border-radius: 8px; color: var(--ln-text); }
+/* 칸 머리(세계 칸을 따라 옮겨 간다, paint가 transform) */
+.mt-ln-cols { left: 220px; right: 0; top: 112px; height: 34px; border-bottom-width: 1px !important; overflow: hidden; pointer-events: none; }
+.mt-ln-cols .colh { position: absolute; left: 0; top: 9px; font-size: 11.5px; font-weight: 500; letter-spacing: 0.04em; color: var(--ln-dim); white-space: nowrap; will-change: transform; }
+/* 왼쪽 목차 레일 */
+.mt-ln-rail { left: 0; top: 112px; bottom: 0; width: 220px; border-right-width: 1px !important; padding: 10px 8px 120px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
+.mt-ln-rail .grp { display: flex; flex-direction: column; gap: 1px; }
+.mt-ln-rail .rk { font-size: 11.5px; font-weight: 600; color: var(--ln-dim); padding: 10px 10px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-ln-rail .rbtn { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 7px; border: 0; background: transparent; color: var(--ln-text); font: 400 13px var(--font-ui); text-align: left; cursor: pointer; min-width: 0; }
+.mt-ln-rail .rbtn:hover { background: rgba(255, 252, 240, 0.05); }
+.mt-ln-rail .rbtn .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-ln-rail .rbtn .n { margin-left: auto; display: flex; gap: 4px; align-items: center; flex: none; }
+.mt-ln-rail .rbtn .n i { width: 6px; height: 6px; border-radius: 50%; background: var(--sc); display: block; }
+.mt-ln-rail .rbtn .n span { font-size: 11.5px; color: var(--ln-dim); margin-left: 2px; }
+.mt-ln .st-needs { --sc: var(--st-waiting); } .mt-ln .st-error { --sc: #ef8099; } .mt-ln .st-working { --sc: var(--st-working); } .mt-ln .st-working.shell { --sc: #3fd18a; }
+.mt-ln .st-done { --sc: var(--st-review); } .mt-ln .st-ready { --sc: #a9a69b; } .mt-ln .st-sleeping { --sc: var(--st-sleeping); } .mt-ln .st-exited { --sc: #8d8a80; }
+/* 진행 중 빛: 시안처럼 테두리 전체가 옅게 보이고 가는 혜성이 돈다 */
+.mt-ln .mt-ta-world { --lf: 0.8; }
+.mt-ln .mt-ta-world.lv-far { --lf: 2; }
+.mt-ln .mt-mm-light { border-radius: calc(10px + 1px * var(--lf)); }
+.mt-ln .mt-mm-lring { border-radius: calc(10px + 6px * var(--lf)); }

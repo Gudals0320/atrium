@@ -2444,6 +2444,20 @@ export default {
     noTask: '아직 시킨 일 없음',
   },
   // P152: 미션 맵 A "Territories"(폴더 = 영토, 워크스페이스 = 섬, 팀 = 무리, 무한 캔버스)
+  // P153 r7: 세션 맵 칸(시안 B Lineage)
+  mmLine: {
+    colWs: '워크스페이스',
+    colLead: '리드',
+    colWorkers: '워커',
+    colNext: '다음 단계',
+    colSolo: '혼자',
+    lead: '리드',
+    role: '역할',
+    task: '작업 요청',
+    folder: '폴더',
+    loose: '폴더 없음',
+    toc: '폴더와 워크스페이스',
+  },
   mmTerr: {
     summary: '{folders} · {workspaces} · {sessions}',
     folders: '폴더 {n}개',

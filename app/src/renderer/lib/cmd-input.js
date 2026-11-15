@@ -132,6 +132,14 @@ export function leadTags(text) {
   const m = String(text ?? '').match(LEAD_RE);
   return m ? (m[1].match(TOKEN_RE) || []).map((x) => x.slice(1)) : [];
 }
+// P153 r6: 판 ↔ 세션 맵을 오갈 때 명령줄 글 정리(사용자 규칙). 태그만 있으면(글 없음) 카드 누르기로 생긴 것으로 보고 지운다.
+// 태그와 글이 함께 있으면 그대로 둔다. 글만 있으면 그대로 둔다(더블클릭의 첫 클릭이 남긴 태그는 MissionLineage.jsx가 더블클릭을 알아보면 되돌린다)
+export function switchText(text) {
+  const s = String(text ?? '');
+  const m = s.match(LEAD_RE);
+  if (m && !s.slice(m[0].length).trim()) return '';
+  return s;
+}
 // 앞머리 태그에 name이 있으면 빼고 없으면 끝에 더한다. 뒤의 글은 그대로. 태그가 남으면 "@a @b " 꼴로 끝이 공백 하나
 export function toggleTag(text, name) {
   const s = String(text ?? '');
