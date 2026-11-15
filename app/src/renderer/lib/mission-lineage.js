@@ -5,7 +5,7 @@
 //   부모가 다른 워크스페이스에 있으면 자기 줄의 워커 칸(COL[1])에 놓고(그 하위는 다음 칸), 부모와는 다른 워크스페이스 선(cross)으로 잇는다. 부모가 닫힌 세션은 뿌리.
 // - 선: 나무 선은 부모 오른쪽 가운데 → 칸 사이 틈의 줄기 → 하위 왼쪽 가운데(화살촉). 다른 워크스페이스 선은 격자 길 찾기(lib/mission-terr.js routeOrtho)로 카드·줄 머리·기둥을 피해 받는 카드의 왼쪽(또는 위)으로.
 // - 카드 폭은 이 판의 가장 긴 이름이 멀리 타일에서 한 줄에 들게(lib/mission-terr.js cardWidth), 높이는 내용(cardHeight).
-// → { cards: Map id → { x, y, w, h, node, ws, depth }, bands, rows, cols, divs, edges, bounds, order, tree, cw }
+// → { cards: Map id → { x, y, w, h, node, ws, depth }, bands, rows, cols, divs, edges, bounds, order, tree, cw, seq(줄 키 → { roots, away, solos }), vkids(id → 보이는 하위 id들) }
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
 import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from './mission-terr.js';
 
@@ -101,11 +101,14 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const W = SOLO + (L.CW + L.SGX) * 2 + 60;
 
   const cards = new Map(), bands = [], rows = [], divs = [];
+  // P160: 휴대폰 세션 맵(lib/phone-lineage.js)이 같은 판정을 쓰도록 줄마다 놓은 차례(시작 칸 뿌리·다른 워크스페이스에서 온 것·솔로)와 보이는 하위 차례를 남긴다(PC 배치는 그대로)
+  const seq = new Map(), vkids = new Map();
   const put = (id, depth, y, ws) => cards.set(id, { x: COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0 });
   // align: 하위 묶음 안에서 카드 자리. mid = 가운데, bottom = 아래 끝(바로 다음이 동료일 때), top = 위 끝(바로 앞이 동료일 때). 동료끼리 바로 위아래에 붙게
   const alignOf = (list, i) => (i + 1 < list.length && peersOf(list[i]).includes(list[i + 1]) ? 'bottom' : i > 0 && peersOf(list[i]).includes(list[i - 1]) ? 'top' : 'mid');
   const place = (id, depth, top, ws, align = 'mid') => {
     const ks = depth > 50 ? [] : visKids(id, depth);
+    vkids.set(id, ks);
     if (!ks.length) { put(id, depth, top, ws); return H(id); }
     let t = top;
     ks.forEach((k, i) => { t += place(k, depth + 1, t, ws, alignOf(ks, i)) + (i + 1 < ks.length && peersOf(k).includes(ks[i + 1]) ? L.PGY : L.GY); }); // 동료 사이는 조금 더 띄워 양끝 점 선이 보이게
@@ -127,6 +130,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
       for (const r of roots0) { if (done.has(r.id)) continue; roots.push(r); done.add(r.id); for (const p of peersOf(r.id)) { const pn = byId.get(p); if (!done.has(p) && roots0.includes(pn)) { roots.push(pn); done.add(p); } } }
       const away = nodes.filter((n) => crossIn(n.id)); // 부모가 다른 워크스페이스(1단계 칸에서 시작)
       const solos = nodes.filter((n) => isRoot(n) && !treeRoot(n));
+      seq.set(key, { roots: roots.map((r) => r.id), away: away.map((n) => n.id), solos: solos.map((n) => n.id) });
       let cy = y + L.RT;
       roots.forEach((r, i) => { const peerNext = i + 1 < roots.length && peersOf(r.id).includes(roots[i + 1].id); cy += place(r.id, 0, cy, key, alignOf(roots.map((x) => x.id), i)) + (peerNext ? L.PGY : L.GY * 2); });
       for (const s of away) cy += place(s.id, 1, cy, key) + L.GY * 2;
@@ -212,7 +216,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const cols = [{ key: 'ws', x: L.HEADX }, ...COL.map((x, i) => ({ key: 'lv', level: i, x })), { key: 'solo', x: SOLO }];
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
-  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: W, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX };
+  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: W, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids };
 }
 
 // P159: 같은 칸에 위아래로 붙은 동료 카드 사이 선. 양끝은 각 카드의 가로 가운데(u 아래 변 → d 위 변, 틈 g).
@@ -226,7 +230,7 @@ export function peerPts(u, d, g = 0) {
 
 // P155: 세션 맵에서 누른 자리와 Alt로 끌기 종류를 정한다(단위 시험 test/p155-lib.test.mjs).
 // 줄 머리 옮기기(group.move)는 Alt를 누른 채 마우스 왼쪽 단추로 줄 머리를 누를 때만. 그 밖은 어디서 시작하든 시점 이동.
-// 손가락·펜은 옮기기가 없다(휴대폰은 PhoneTerr.jsx라 여기 오지 않지만 터치 PC도 같게). 끄기가 시작된 뒤에는 Alt를 떼도 놓을 때까지 옮기기다
+// 손가락·펜은 옮기기가 없다(휴대폰은 PhoneLineage.jsx라 여기 오지 않지만 터치 PC도 같게). 끄기가 시작된 뒤에는 Alt를 떼도 놓을 때까지 옮기기다
 export function headDrag({ onHead = false, altKey = false, button = 0, pointerType = 'mouse' } = {}) {
   return onHead && altKey && button === 0 && pointerType === 'mouse' ? 'row' : 'pan';
 }

@@ -24,7 +24,7 @@ const BOARD = `atrium-dev-${process.env.P153_BOARD || 'p153'}`, PORT = process.e
 for (const k of Object.keys(process.env)) if (/^(ATRIUM_|MTASK_|HERDR_|HC_)/.test(k)) delete process.env[k];
 process.env.MT_E2E_OUT = path.relative(path.join(REPO, 'experiments'), OUT);
 const L = await import('./p59-lib.mjs');
-const { NAME, LOGIN, LAPTOP_A } = L;
+const { NAME } = L;
 const SIM = 47994;
 const ENV = {
   ATRIUM_TERMINAL_SESSION: BOARD, ATRIUM_HERDR_SESSION: BOARD, ATRIUM_PORT: PORT,
@@ -463,63 +463,7 @@ async function perf() {
   fs.writeFileSync(path.join(OUT, 'p153-perf.json'), JSON.stringify(res, null, 2));
 }
 
-// ---- 휴대폰(웹, 흉내 프록시로 짝 맺기) ----
-const SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
-const IPHONE = { viewport: { width: 393, height: 852 }, screen: { width: 393, height: 852 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: 'en-US', userAgent: SAFARI };
-async function phone() {
-  const { chromium } = await import('playwright');
-  const toUrl = (p) => 'file:///' + p.replace(/\\/g, '/');
-  const { startTsSim } = await import(toUrl(path.join(REPO, 'backend', 'tools', 'ts-sim-proxy.mjs')));
-  const sim = startTsSim({ listen: SIM, target: 47922, name: NAME, login: LOGIN, keepOrigin: true }); sim.cfg.ip = LAPTOP_A;
-  await sim.ready;
-  const browser = await chromium.launch(chromiumOpts());
-  try {
-    const ctx = await browser.newContext({ ...IPHONE, reducedMotion: 'no-preference' });
-    const pg = await ctx.newPage();
-    pg.on('pageerror', (e) => log(`[phone pageerror] ${e.message}`));
-    await pg.goto(`http://localhost:${SIM}/`);
-    await pg.waitForSelector('[data-role=pair]', { timeout: 30000 });
-    await pg.fill('[data-field=pair-code]', call('device.code').code);
-    await pg.click('[data-action=pair-submit]');
-    await pg.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded && window.__mt.api.conn.phase === 'open', null, { timeout: 60000 });
-    await sleep(1500);
-    const real = await realId(pg);
-    await pg.evaluate(HOOK, [SHAPE, MIX, real]);
-    await pg.evaluate(() => window.__mtPhone.mission());
-    await pg.waitForSelector('[data-role=pt-tile]', { timeout: 20000 });
-    await sleep(1500);
-    await pg.screenshot({ path: path.join(OUT, 'phone-iphone.png') });
-    // (P152 휴대폰 창 시험에서 옮긴 검사) 이름 타일·빛·시트, 가로 넘침, 지도 칸 위 띠와 겹치지 않음, 한 번 누르면 열림, 끌기·두 손가락 확대
-    const info = await pg.evaluate(() => {
-      const st = document.querySelector('[data-role=pm-stage]').getBoundingClientRect(), row = document.querySelector('.mt-pt-zoomrow').getBoundingClientRect();
-      const tiles = [...document.querySelectorAll('[data-role=pt-tile]')];
-      const fs = tiles.length ? parseFloat(getComputedStyle(tiles[0].querySelector('.tn')).fontSize) * window.__mtPm.view().zoom : 0;
-      const under = tiles.map((x) => x.getBoundingClientRect()).filter((r) => r.top < row.bottom && r.bottom > row.top && r.right > row.left && r.left < row.right && r.top > st.top).length;
-      return { tiles: tiles.length, named: tiles.filter((x) => x.innerText.trim()).length, lights: document.querySelectorAll('[data-role=pt-light]').length, sheet: document.querySelectorAll('[data-role=pt-card]').length, scrollX: document.documentElement.scrollWidth > innerWidth + 1, nameFont: fs, underZoom: under, view: window.__mtPm.view() };
-    });
-    check('휴대폰: 타일마다 이름, 작업 중 빛, 시트, 가로 넘침 없음, 처음 이름 글 ≥ 10.5px, 줌 단추 밑 타일 없음', info.tiles === SHAPE.sessions.length && info.named === info.tiles && info.lights >= 1 && info.sheet >= 3 && !info.scrollX && info.nameFont >= 10.5 && info.underZoom === 0, info);
-    const cdp = await ctx.newCDPSession(pg);
-    const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
-    const s0 = await pg.evaluate(() => window.__mtPm.view());
-    await T('touchStart', [[200, 300]]); for (let i = 1; i <= 10; i++) { await T('touchMove', [[200 + i * 3, 300 + i * 5]]); await sleep(16); } await T('touchEnd', []);
-    await sleep(300);
-    const s1 = await pg.evaluate(() => window.__mtPm.view());
-    check('휴대폰: 한 손가락 끌기', Math.abs(s1.x - s0.x - 30) < 4 && Math.abs(s1.y - s0.y - 50) < 4, { s0, s1 });
-    await T('touchStart', [[150, 300], [250, 300]]); for (let i = 1; i <= 10; i++) { await T('touchMove', [[150 - i * 5, 300], [250 + i * 5, 300]]); await sleep(16); } await T('touchEnd', []);
-    await sleep(300);
-    const s2 = await pg.evaluate(() => window.__mtPm.view());
-    check('휴대폰: 두 손가락 확대', s2.zoom > s1.zoom * 1.5, { s1, s2 });
-    await pg.evaluate(() => window.__mtPm.fit()); await sleep(300);
-    // 첫 세션 타일은 실제 셸(p153-a): 한 번 누르면 바로 그 세션 화면
-    const first = SHAPE.sessions[0].name;
-    const tb = await (await pg.$(`[data-role=pt-tile][data-id="s:${first}"]`)).boundingBox();
-    await pg.touchscreen.tap(tb.x + tb.width / 2, tb.y + tb.height / 2); await sleep(1500);
-    const opened = await pg.evaluate(() => (document.querySelector('[data-role=phone]') || {}).dataset?.view);
-    check('휴대폰: 타일 한 번 누르면 그 세션 화면(맞춤 배율에서도)', opened === 'session', { opened, w: tb.width });
-    await pg.screenshot({ path: path.join(OUT, 'phone-iphone-session.png') });
-    await ctx.close();
-  } finally { await browser.close(); await sim.close?.(); }
-}
+// ---- 휴대폰: P160부터 휴대폰 세션 맵은 목록(PhoneLineage.jsx)이라 휴대폰 단계는 p160-phone.mjs로 옮겼다(타일 지도 검사는 지웠다) ----
 
 // ---- 시안 그림(실험 폴더의 Main.dc.html·A-phone.dc.html을 펴서 찍는다) ----
 async function mock(withApp = false) {
@@ -958,7 +902,7 @@ async function stopBoard() {
 try {
   if (WHAT === 'setup') await setupBoard();
   else if (WHAT === 'pc') await pc();
-  else if (WHAT === 'phone') await phone();
+  else if (WHAT === 'phone') log('P160: 휴대폰 단계는 app/test/e2e/p160-phone.mjs로 옮겼다');
   else if (WHAT === 'mock') await mock();
   else if (WHAT === 'perf') await perf();
   else if (WHAT === 'r11') await r11();
