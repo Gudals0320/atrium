@@ -280,17 +280,17 @@ async function act(page, real, agent) {
   await page.evaluate(() => window.__mtTa.fit());
   await sleep(500);
   const geo = await page.evaluate(() => { const L = window.__mtTa.lay(); const i = L.rows.find((x) => !x.band); const hub = L.bands.find((t) => t.name === 'Hub'); const h = document.querySelector(`.mt-ln-head[data-key="${CSS.escape(i.key)}"]`).getBoundingClientRect(); const t = document.querySelector(`.mt-ln-band[data-id="${hub.id}"]`).getBoundingClientRect(); return { key: i.key, hub: hub.id, from: { x: h.left + 30, y: h.top + 10 }, to: { x: Math.max(t.left, 260) + 200, y: t.top + t.height * 0.5 } }; });
-  await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down();
+  await page.keyboard.down('Alt'); await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down(); // P155: 줄 머리 옮기기는 Alt+끌기
   for (let i = 1; i <= 15; i++) { await page.mouse.move(geo.from.x + (geo.to.x - geo.from.x) * i / 15, geo.from.y + (geo.to.y - geo.from.y) * i / 15); await sleep(16); }
   const hot = await page.evaluate(() => [...document.querySelectorAll('.mt-ln-band.drop')].map((x) => x.dataset.id));
   await shotTo(page, 'pc-1584-isle-drag');
-  await page.mouse.up(); await sleep(400);
+  await page.mouse.up(); await page.keyboard.up('Alt'); await sleep(400);
   const moves = await page.evaluate(() => window.__p153moves);
   check('섬 머리를 끌어 영토에 놓으면 그 폴더로(group.move), 끄는 동안 영토 강조', hot.includes(geo.hub) && moves.length === 1 && moves[0].workspace === geo.key && moves[0].group === geo.hub, { hot, moves, geo });
   // Esc로 취소
-  await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down();
+  await page.keyboard.down('Alt'); await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down();
   for (let i = 1; i <= 10; i++) { await page.mouse.move(geo.from.x + 20 * i, geo.from.y + 10 * i); await sleep(16); }
-  await page.keyboard.press('Escape'); await page.mouse.up(); await sleep(300);
+  await page.keyboard.press('Escape'); await page.mouse.up(); await page.keyboard.up('Alt'); await sleep(300);
   check('끄는 중 Esc = 취소(옮기지 않고 세션 맵은 열린 채)', (await page.evaluate(() => window.__p153moves.length)) === 1 && !!(await page.$('[data-role=mission]')));
   await page.evaluate(() => window.__p153unmove());
   await page.keyboard.press('Escape'); await sleep(300);
@@ -342,6 +342,14 @@ async function r9sidebar(page, agent) {
   // 세션 줄(실제 haiku 세션: 흉내 지도의 둘째 카드) → 지금 배율 그대로 가운데 + 반짝임
   if (agent) {
     const k0 = (await page.evaluate(() => window.__mtTa.view())).k;
+    // 사이드바 목록은 가상 스크롤이라 보이는 줄만 그린다: 그 세션의 워크스페이스를 펴고 줄이 그려질 때까지 목록을 내린다
+    await page.evaluate((n) => { const st = window.__mt.getState(); const s = [...st.sessions.values()].find((x) => x.name === n); try { const k = 'mt.sidebar'; const v = JSON.parse(localStorage.getItem(k) || '{}'); if (v.collapsed && s) { delete v.collapsed[s.workspaceKey]; localStorage.setItem(k, JSON.stringify(v)); } } catch {} }, agent.name);
+    for (let i = 0; i < 40 && !(await page.$(`[data-sb="session"][data-name="${agent.name}"]`)); i++) {
+      const folded = await page.$(`[data-sb="ws"].folded[data-ws="c:/workspace/mtask-p153-a"] [data-action="fold"]`);
+      if (folded) await folded.click();
+      await page.evaluate(() => { const l = document.querySelector('[data-role="sidebar-list"]'); if (l) l.scrollTop += 240; }); await sleep(120);
+    }
+    await page.evaluate((n) => { const el = document.querySelector(`[data-sb="session"][data-name="${n}"]`); if (el) el.scrollIntoView({ block: 'center' }); }, agent.name); await sleep(200);
     await page.waitForSelector(`[data-sb="session"][data-name="${agent.name}"]`, { timeout: 20000 });
     await page.click(`[data-sb="session"][data-name="${agent.name}"]`); await sleep(700);
     const r = await page.evaluate((n) => { const el = document.querySelector(`.mt-ta-card[data-name="${n}"]`), slot = el.closest('.mt-ta-slot'); const b = el.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { k: window.__mtTa.view().k, dx: Math.round(b.left + b.width / 2 - (vp.left + vp.width / 2)), blink: slot.classList.contains('blink'), anim: getComputedStyle(el).animationName, open: !!document.querySelector('[data-role=mission]') }; }, agent.name);
@@ -393,6 +401,8 @@ async function r9sidebar(page, agent) {
   check('판: 워크스페이스 줄 → 그 영역(고른 워크스페이스), 세션 줄 → 그 노드(초점)', bw.view === realWs && !bw.mission && (!agent || bs.focus === agent.id), { realWs, bw, bs, before: before.slice(0, 60) });
   const real = await realId(page);
   await page.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE)), MIX, real, agent]);
+  // 사이드바는 처음 상태로 돌려놓는다(창 상태가 다음 시험에 남는다)
+  if (!sideOpen && (await page.$('[data-role="sidebar"]'))) { await page.click('[data-action="sidebar"]'); await sleep(400); }
 }
 
 // ---- 성능: 끌기·휠 프레임(P152 perf와 같은 재기). 지어낸 모양 32세션과 그 넷 겹(128세션), 작업 중 빛 켬·끔, 멀리(맞춤)·보통 ----
