@@ -318,9 +318,12 @@ test('P153 r7: 선은 직각, 나무 선은 부모 오른쪽 → 하위 왼쪽, 
       assert.ok(e.pts[i - 1][0] === e.pts[i][0] || e.pts[i - 1][1] === e.pts[i][1], `${e.id} 직각`);
       for (const c of lay.cards.values()) assert.ok(!segHits(e.pts[i - 1], e.pts[i], c), `${e.id}가 ${c.node.name}를 지난다`);
     }
+    assert.equal(e.label, null, '선 이름표는 없다(r8)');
     const to = lay.cards.get(e.to), q = e.pts[e.pts.length - 1];
-    if (!e.cross) { const a = lay.cards.get(e.from); assert.equal(e.pts[0][0], a.x + a.w); assert.equal(q[0], to.x); }
-    else assert.ok((Math.abs(q[0] - to.x) < 0.01) || Math.abs(q[1] - to.y) < 0.01, '받는 카드 왼쪽 또는 위');
+    // r8: 선 끝은 카드 강조 고리 바깥(틈 EDGEGAP, 작업 중이면 RING)
+    const near = (v, edge) => v - edge >= LINE.EDGEGAP - 0.01 && v - edge <= LINE.RING + 0.01;
+    if (!e.cross) { const a = lay.cards.get(e.from); assert.ok(near(e.pts[0][0], a.x + a.w), '부모 오른쪽 바깥에서'); assert.ok(near(to.x, q[0]), '하위 왼쪽 바깥으로'); }
+    else assert.ok(near(to.x, q[0]) || near(to.y, q[1]), '받는 카드 왼쪽 또는 위 바깥으로');
   }
   assert.ok(lay.edges.some((e) => e.cross), '다른 워크스페이스 선이 있다');
 });
@@ -337,4 +340,26 @@ test('P153 r6·r7: 판 ↔ 세션 맵 전환 때 명령줄 — 태그만이면 �
   assert.match(src, /if \(e && e\.detail > 1\) return;/, '둘째 클릭은 태그를 바꾸지 않는다');
   assert.match(src, /if \(dbl && b && lt && lt\.id === id && Date\.now\(\) - lt\.at < 800\) commandDraft\.dispatchEvent\(new CustomEvent\('tag'/, '더블클릭은 첫 클릭 태그를 되돌린다');
   assert.match(read('CommandBar.jsx'), /setText\(\(cur\) => switchText\(cur\)\)/, '열고 닫을 때 switchText');
+});
+
+// ---- 라운드 8 ----
+test('P153 r8: 폴더 띠 사이는 띄우고, 선 이름표는 없고, 선 끝은 카드 고리 바깥', () => {
+  const lay = lin();
+  for (let i = 1; i < lay.bands.length; i++) assert.ok(lay.bands[i].y - (lay.bands[i - 1].y + lay.bands[i - 1].h) >= LINE.BANDGAP - 0.01, '띠 사이 빈 칸');
+  assert.ok(lay.edges.every((e) => e.label == null));
+  const working = lay.edges.filter((e) => lay.cards.get(e.to).node.state === 'working');
+  for (const e of working) { const to = lay.cards.get(e.to), q = e.pts[e.pts.length - 1]; assert.ok(to.x - q[0] >= LINE.RING - 0.01, '작업 중 카드는 빛 고리 바깥에서 멈춘다'); }
+  assert.ok(working.length > 0);
+});
+test('P153 r8: 미리 보기·작업 완료·배경 점(소스)', () => {
+  const src = read('MissionLineage.jsx'), css = read('styles.css');
+  assert.match(src, /const HOVER_MS = 500/);
+  assert.match(src, /awake \? api\.call\('terminal\.snapshot', \{ session: sid, format: 'text' \}\)/, '터미널은 깨어 있을 때만, 지금 화면만(terminal.snapshot = visible)');
+  assert.match(src, /if \(pvRef\.current\) \{ pvRef\.current = null; setPv\(null\); \}/, '끌거나 확대하면 비킨다');
+  assert.match(src, /onFocus=\{\(e\) => onHover\(id, e\.currentTarget\)\}/, '키보드 초점도');
+  assert.match(css, /\.mt-ln-peek \{ position: absolute; z-index: 8; pointer-events: none;/, '마우스를 받지 않는다');
+  assert.match(css, /\.mt-ln \.mt-ta-world\.lv-far \.mt-mm-donetag \{ display: inline-flex;/, '멀리서도 작업 완료 꼬리표');
+  assert.match(css, /\.mt-ln \.mt-ta-slot\.st-done \.mt-ta-card \{[^}]*linear-gradient/, '작업 완료 그라데이션');
+  assert.match(src, /while \(gs < DOT_MIN_GAP\) gs \*= 2;/, '멀리서 점을 솎는다');
+  for (const k of ['asks', 'answer', 'events', 'asleep', 'noScreen']) { assert.ok(en.mmPeek[k], `en ${k}`); assert.ok(ko.mmPeek[k], `ko ${k}`); }
 });

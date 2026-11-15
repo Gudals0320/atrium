@@ -7,11 +7,11 @@
 // - 카드 폭은 이 판의 가장 긴 이름이 멀리 타일에서 한 줄에 들게(lib/mission-terr.js cardWidth), 높이는 내용(cardHeight).
 // → { cards: Map id → { x, y, w, h, node, ws, depth }, bands, rows, cols, divs, edges, bounds, order, tree, cw }
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
-import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho, longestMid } from './mission-terr.js';
+import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from './mission-terr.js';
 
 // SPINE = 폴더 기둥 폭, HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // SOLOGAP = 마지막 나무 칸과 혼자 칸 사이(구분선이 가운데), SGX = 혼자 칸 두 줄 사이, MINCOLS = 늘 보이는 나무 칸 수(리드·워커·다음 단계)
-export const LINE = { SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 3, ASPECT: 1.8, NAME_PX: 30 }; // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
+export const LINE = { SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 3, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4 }; // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
 
 export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder' } = {}) {
   const tree = missionTree(graph);
@@ -67,6 +67,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   };
   let y = 0;
   groups.forEach((g, gi) => {
+    if (gi) y += L.BANDGAP; // P153 r8: 폴더 사이를 띄운다
     const by = y;
     g.keys.forEach((key, wi) => {
       const nodes = tree.nodes.filter((n) => wsOf(n.id) === key).sort(bySpawn);
@@ -100,6 +101,14 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const r1 = (v) => Math.round(v * 10) / 10;
   const poly = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${r1(p[0])} ${r1(p[1])}`).join(' ');
   const edges = [], cross = [];
+  // 선 끝과 카드 사이 틈: 작업 중 카드는 빛 고리 바깥(RING), 그 밖은 테두리 바로 밖(EDGEGAP). 화살촉이 고리를 덮지 않는다
+  const gap = (id) => (tierOf(id) === 'work' ? L.RING : L.EDGEGAP);
+  // 꺾인 선의 처음(또는 끝) 점이 카드 변 위에 있으면 그 변의 바깥쪽으로 g만큼 민다(토막 방향 그대로라 직각은 유지된다)
+  const pushOut = (pts, box, g, first) => {
+    const out = pts.map((p) => [...p]), p = out[first ? 0 : out.length - 1]; // 첫·끝 토막은 늘 변에 수직이라 바깥으로 밀어도 직각
+    if (Math.abs(p[0] - box.x) < 0.5) p[0] -= g; else if (Math.abs(p[0] - (box.x + box.w)) < 0.5) p[0] += g; else if (Math.abs(p[1] - box.y) < 0.5) p[1] -= g; else if (Math.abs(p[1] - (box.y + box.h)) < 0.5) p[1] += g;
+    return out;
+  };
   for (const [child, via] of tree.via) {
     const parent = tree.parent.get(child);
     const a = cards.get(parent), b = cards.get(child);
@@ -108,8 +117,8 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     const base = { id: via.id, from: parent, to: child, rel, role: via.role || null, text: via.text || null, active: !!via.active, tree: true };
     if (wsOf(parent) !== wsOf(child)) { cross.push({ base, a, b }); continue; }
     const ay = a.y + a.h / 2, byy = b.y + b.h / 2, mx = a.x + a.w + L.GX / 2;
-    const pts = ay === byy ? [[a.x + a.w, ay], [b.x, byy]] : [[a.x + a.w, ay], [mx, ay], [mx, byy], [b.x, byy]];
-    const label = rel === 'role' || rel === 'prompt' ? { x: b.x - 30, y: byy - 14 } : null;
+    const pts = ay === byy ? [[a.x + a.w + gap(parent), ay], [b.x - gap(child), byy]] : [[a.x + a.w + gap(parent), ay], [mx, ay], [mx, byy], [b.x - gap(child), byy]];
+    const label = null; // P153 r8: 선 이름표는 없앴다(역할은 카드 둘째 줄, 다른 워크스페이스에서 온 것은 카드 맨 아래 줄이 말한다)
     edges.push({ ...base, cross: false, pts, d: poly(pts), label });
   }
   if (cross.length) {
@@ -120,7 +129,8 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     cross.forEach((c, i) => {
       let pts = routes && routes[i];
       if (!pts) { const ay = c.a.y + c.a.h / 2, by2 = c.b.y + c.b.h / 2, mx = c.a.x + c.a.w + 70; pts = [[c.a.x + c.a.w, ay], [mx, ay], [mx, by2], [c.b.x, by2]]; }
-      edges.push({ ...c.base, cross: true, pts, d: poly(pts), label: longestMid(pts) });
+      pts = pushOut(pts, c.a, gap(c.base.from), true); pts = pushOut(pts, c.b, gap(c.base.to), false);
+      edges.push({ ...c.base, cross: true, pts, d: poly(pts), label: null });
     });
   }
 
