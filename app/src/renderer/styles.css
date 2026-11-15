@@ -1861,3 +1861,44 @@ html[data-board-moving="1"] .mt-cv.selected { box-shadow: 0 0 0 calc(2px * var(-
 html[data-board-moving="1"] .mt-cv.flash, html[data-board-moving="1"] .react-flow__node.flash .mt-cv { box-shadow: 0 0 0 calc(3px * var(--inv, 1)) var(--accent); }
 /* 화면에서 먼 대화 노드(ConvoNode.jsx away)는 얼굴 없이 틀만 그린다. 그림자도 뺀다 */
 .mt-cv.away { box-shadow: none; }
+
+/* ---------- P149: 이전 미션 맵 다듬기(P147 부대 모양을 되돌린 뒤). 정보는 하나도 덜지 않는다(Mission.jsx 머리 주석).
+   1) 큰 창 맞춤 배율: 덮개(.mt-mission)의 --mm-z(lib/mission-layout.js missionScale, 1~1.35)를 머리줄·지도·요약 열에 zoom으로 준다. 지도는 칸 폭 ÷ 배율로 놓으므로 가로 스크롤이 없다.
+   2) 위계: 폴더 머리 16px 750 > 워크스페이스 머리 14px 650 > 카드 이름 13.5px 650. 3) 카드 네 줄(역할 · 상태 · 팀 / 일 / 메타)과 쉬는 알약 두 줄, 이름·상태·일은 또렷하게(본문 대비 4.5 넘게), 메타만 옅게.
+   4) 줄마다 min-width 0과 말줄임으로 카드 밖으로 넘지 않는다(일 줄은 두 줄까지 감싼 뒤 말줄임, 전체 글은 풍선 도움말). 5) 빛 원뿔을 카드 248×96에 맞춰 150 → 184px(모서리까지 닿게) ---------- */
+.mt-mission-head, .mt-mission-canvas, .mt-mm-sum { zoom: var(--mm-z, 1); }
+.mt-mm-fhead { top: 6px; height: 22px; font: 750 16px var(--font-ui); color: var(--text); }
+.mt-mm-fhead .n { font-size: 12px; }
+.mt-mm-fhead .needs { font-size: 12px; }
+.mt-mm-ws { height: 22px; font: 650 14px var(--font-ui); color: var(--text-2); }
+.mt-mm-ws .n, .mt-mm-ws .needs { font-size: 11.5px; }
+.mt-mm-card { gap: 3px; padding: 0 34px 0 12px; }
+.mt-mm-c1 { height: 18px; }
+.mt-mm-name { font-size: 13.5px; font-weight: 650; }
+.mt-mm-c2 { min-width: 0; font-size: 12px; line-height: 16px; color: var(--text-2); }
+.mt-mm-c2 b { color: var(--text); font-weight: 600; }
+.mt-mm-card.t-turn .mt-mm-c2 { color: var(--text-2); }
+.mt-mm-card.t-work .mt-mm-c2 .st { color: var(--st-working); }
+.mt-mm-card.t-work.shell .mt-mm-c2 .st { color: var(--st-shell_running); }
+.mt-mm-card.t-turn .mt-mm-c2 .st { color: var(--attn-text); }
+.mt-mm-card.t-alert .mt-mm-c2 .st { color: var(--st-error); }
+.mt-mm-card.t-review .mt-mm-c2 .st { color: var(--st-review); }
+.mt-mm-task { min-width: 0; font-size: 12.5px; line-height: 16px; max-height: 32px; color: var(--text); overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mt-mm-c2 .tm { color: var(--dim); }
+.mt-mm-c3 { font-family: var(--font-ui); font-size: 11.5px; }
+.mt-mm-task.k-last, .mt-mm-task.k-none { color: var(--dim); }
+.mt-mm-task.k-ask { color: var(--attn-text); }
+.mt-mm-task.k-err { color: var(--st-error); }
+.mt-mm-c3 { color: var(--dim-2); }
+.mt-mm-row { flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; padding: 0 30px 0 10px; }
+.mt-mm-r1 { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; line-height: 16px; white-space: nowrap; overflow: hidden; }
+.mt-mm-row .mt-mm-r1 .nm { flex: 0 1 auto; max-width: 60%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); font-weight: 600; }
+.mt-mm-row .mt-mm-r1 .rl { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+.mt-mm-r1 .st { flex: none; margin-left: auto; padding-left: 6px; font-size: 11.5px; color: var(--dim); }
+.mt-mm-rl2 { min-width: 0; font: 500 11.5px/14px var(--font-ui); color: var(--dim-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-mm-row .mt-mm-av.sm { top: 7px; margin-top: 0; }
+.mt-mm-row.t-sleep .mt-mm-r1 .nm, .mt-mm-row.t-done .mt-mm-r1 .nm { color: var(--dim); font-weight: 550; }
+.mt-mm-row.t-done .mt-mm-r1 .nm { text-decoration: line-through; text-decoration-color: var(--dim-2); }
+.mt-mm-lspin::before { width: 184px; height: 184px; margin: -92px 0 0 -92px; }
+/* P149: 가로로 늘린 원뿔(.mt-mm-lspin)이 카드 밖까지 스크롤 넓이를 늘려 오른쪽 끝 카드에서 가로 스크롤이 생겼다. 고리 안으로 자른다(보이는 것은 가리개가 이미 고리 안만) */
+.mt-mm-lring { overflow: hidden; }

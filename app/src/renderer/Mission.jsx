@@ -15,10 +15,12 @@
 // - P107: 일하는 카드는 테두리를 따라 상태 색 빛이 돈다(빛 층 .mt-mm-light: 2px 고리와 옅은 빛 무리, 원뿔 그라데이션을 transform으로만 돌린다, 2.4초에 한 바퀴·초당 30번,
 //   모두 같은 박자: lib/work-light.js). 판 설정 workLight(작업 중 테두리 빛: 켬 기본 / Windows 설정 따름 / 끔, 판 노드 둘레도 따른다)를 따르고, 끔·가벼운 판에서는 멈춘 굵은 상태 색 테두리다.
 //   P102 번쩍임은 걷었다(사용자: 촌스럽다).
+// - P149(P147 부대 모양을 되돌린 뒤 이전 지도를 다듬음): 카드는 네 줄(이름 / 역할 · 상태 · 팀 요약 / 지금 하는 일 또는 마지막 일 / 메타), 쉬는 알약은 두 줄(이름 · 역할 · 상태 / 모델 · 마지막 일).
+//   큰 창에서는 덮개 크기로 맞춤 배율(missionScale)을 정해 지도·머리줄·요약 열을 CSS zoom으로 함께 키운다(지도는 칸 폭 ÷ 배율로 놓는다). 위 거르기의 작업 완료 칸은 뺐다.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { missionLayout, mapOrder, edgeLabel, MISSION } from './lib/mission-layout.js';
+import { missionLayout, mapOrder, edgeLabel, MISSION, missionScale } from './lib/mission-layout.js';
 import { roleModel, focusOf, teamText, roleText, nodeTier, filterMatch, FILTERS, modelText, ageText, missionSummary } from './lib/mission-model.js';
 import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
@@ -39,8 +41,10 @@ function facts(n, live, m, tier, t, now, cross = false) {
   const err = live && live.error ? (live.error.message || String(live.error)) : null;
   const state = live ? live.state : n.state;
   const stateText = shell && state !== 'exited' && state !== 'sleeping' ? (cmd ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[state] || state || '';
-  const doing = cmd ? `$ ${cmd}` : tier === 'work' && (n.lastPrompt || (live && live.lastPrompt)) ? clip(n.lastPrompt || live.lastPrompt, 90) : null;
-  const role = m ? roleText(m, t) : '';
+  const lp = n.lastPrompt || (live && live.lastPrompt) || null;
+  const doing = cmd ? `$ ${cmd}` : tier === 'work' && lp ? clip(lp, 140) : null;
+  const last = !doing && lp ? clip(lp, 140) : null; // P149: 일하지 않는 세션은 마지막으로 시킨 일을 남긴다
+  const role = m ? roleText(m, t, { short: !!(m && m.team) }) : ''; // 팀이 있으면 "· 하위 리드" 대신 팀 요약이 붙는다
   const team = m && m.team ? teamText(m, t) : null;
   const turnAt = n.turnAt || (live && live.state === 'working' && live.turn && live.turn.startedAt) || null;
   const activeAt = n.activeAt || (live && live.lastActivityAt) || null;
@@ -51,13 +55,18 @@ function facts(n, live, m, tier, t, now, cross = false) {
   const branch = n.gitBranch || branchOfLive(live);
   const meta = [model, age, branch ? `⎇ ${branch}` : null, n.loops ? `⟳${n.loops}` : null].filter(Boolean).join(' · ');
   const away = cross ? t('mmMap.crossWs', { ws: wsName(n.workspaceKey) }) : null; // P101: 다른 워크스페이스의 하위 세션(부모 팀의 판 안에 놓였다)
-  const warn = tier === 'turn' ? t('mmMap.warnTurn') : tier === 'alert' ? t('mmMap.warnAlert') : m && m.climb ? t('mmMap.warnClimb', { n: m.climb }) : null;
-  // 둘째 줄: 응답 필요는 묻는 글, 오류는 오류, 팀이 있으면 팀 요약(쉬는 리드는 "워커 n 기다림"), 그 밖은 역할 · 지금 하는 일(없으면 상태)
-  const line = tier === 'turn' && ask ? { k: 'ask', main: null, text: clip(ask, 120) }
-    : tier === 'alert' ? { k: 'err', main: role, text: clip(err || stateText, 90) }
-    : team ? { k: 'team', main: role, text: [t('mmRole.team', { n: m.team.size }), m.waiting ? t('mmRole.waiting', { n: m.waiting }) : m.team.work ? t('mmRole.teamWork', { n: m.team.work }) : null].filter(Boolean).join(' · ') }
-    : { k: doing ? 'now' : 'state', main: role, text: doing || stateText };
-  return { kind, shell, ask, stateText, doing, role, team, meta, warn, line, away, launched };
+  const warn = m && m.climb ? t('mmMap.warnClimb', { n: m.climb }) : null; // P149: 응답 필요·오류는 둘째 줄 상태 글(색)에 있어 메타 줄에서 뺐다(같은 말이 세 번 겹쳤다)
+  // P149: 카드는 네 줄. 둘째 줄 = 역할 · 상태 · 팀 요약(쉬는 리드는 "워커 n 기다림"), 셋째 줄 = 일(응답 필요는 묻는 글, 오류는 오류, 일하면 지금 하는 일, 아니면 마지막 일).
+  // 예전 둘째 줄 하나에 역할·팀·지금 하는 일을 다 넣어 팀 요약이 지금 하는 일을 밀어냈다
+  const status = tier === 'review' ? t('doneMark.tag') : stateText;
+  const teamLine = team ? [t('mmRole.team', { n: m.team.size }), m.waiting ? t('mmRole.waiting', { n: m.waiting }) : m.team.work ? t('mmRole.teamWork', { n: m.team.work }) : null].filter(Boolean).join(' · ') : null;
+  const line = { k: team ? 'team' : 'state', main: role, text: status, team: teamLine };
+  const task = tier === 'turn' && ask ? { k: 'ask', text: clip(ask, 140) }
+    : tier === 'alert' && err ? { k: 'err', text: clip(err, 140) }
+    : doing ? { k: 'now', text: doing }
+    : last ? { k: 'last', text: t('mmMap3.lastDid', { text: last }) }
+    : { k: 'none', text: shell ? '' : t('mmMap3.noTask') };
+  return { kind, shell, ask, stateText, status, doing, last, role, team, meta, warn, line, task, away, launched };
 }
 
 function Avatar({ kind, tier, shell, small }) {
@@ -98,10 +107,13 @@ function Node({ b, live, m, tier, t, now, no, human, hot, recede, dim, onGo, onH
   };
   const cls = `t-${tier}${f.shell ? ' shell' : ''}${st === 'starting' ? ' starting' : ''}${hot ? ' hot' : ''}${recede ? ' recede' : ''}${dim ? ' fdim' : ''}`;
   if (b.kind === 'dot') return <div className={`mt-mm-dot ${cls}`} style={style} {...common}><Avatar kind={f.kind} tier={tier} shell={f.shell} small /></div>;
+  // P149: 쉬는·잠든·끝난 세션도 두 줄로 정보를 남긴다(이름 · 역할 · 상태 / 모델 · 마지막 활동 · 마지막 일). 예전 한 줄 알약은 이름과 역할만 있었다
   if (b.kind === 'row') return (
     <div className={`mt-mm-row ${cls}`} style={style} {...common}>
-      <span className="o" aria-hidden="true" /><span className="nm">{n.name}</span>
-      {m && m.rank !== 'solo' && <span className="rl" data-role="mm-role">{f.role}</span>}
+      <span className="mt-mm-r1"><span className="o" aria-hidden="true" /><span className="nm">{n.name}</span>
+        {m && m.rank !== 'solo' && <span className="rl" data-role="mm-role">{f.role}</span>}
+        <span className="st" data-role="mm-state">{f.status}</span></span>
+      <span className="mt-mm-rl2" data-role="mm-meta">{[f.away ? `↗ ${f.away}` : null, f.meta || (f.shell ? t('mmMap.noModel') : null), f.last ? t('mmMap3.lastDid', { text: f.last }) : null].filter(Boolean).join(' · ')}</span>
       <Avatar kind={f.kind} tier={tier} shell={f.shell} small />
     </div>
   );
@@ -110,9 +122,10 @@ function Node({ b, live, m, tier, t, now, no, human, hot, recede, dim, onGo, onH
       {tier === 'work' && <MissionLight role="mm-light" />}
       {tier === 'review' && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
       <div className="mt-mm-c1">{no ? <span className="mt-mm-no" data-role="mm-team-no">{no}</span> : null}<b className="mt-mm-name">{n.name}</b></div>
-      <div className={`mt-mm-c2 k-${f.line.k}`} data-role={f.line.k === 'ask' ? 'mm-ask' : f.line.k === 'team' ? 'mm-team' : 'mm-line'}>
-        {f.line.main ? <b data-role="mm-role">{f.line.main}</b> : null}{f.line.main && f.line.text ? ' · ' : null}{f.line.text}
+      <div className={`mt-mm-c2 k-${f.line.k}`} data-role={f.line.k === 'team' ? 'mm-team' : 'mm-status'}>
+        {f.line.main ? <b data-role="mm-role">{f.line.main}</b> : null}{f.line.main && f.line.text ? ' · ' : null}<span className="st">{f.line.text}</span>{f.line.team ? <span className="tm"> · {f.line.team}</span> : null}
       </div>
+      {f.task.text ? <div className={`mt-mm-task k-${f.task.k}`} data-role={f.task.k === 'ask' ? 'mm-ask' : 'mm-line'}>{f.task.text}</div> : null}
       <div className="mt-mm-c3"><span className="mt-mm-meta" data-role="mm-meta">{[f.away ? `↗ ${f.away}` : null, f.meta || (f.shell ? t('mmMap.noModel') : '')].filter(Boolean).join(' · ')}</span>{f.warn ? <span className="mt-mm-warn" data-role="mm-warn">{f.warn}</span> : null}</div>
       <Avatar kind={f.kind} tier={tier} shell={f.shell} />
     </div>
@@ -132,8 +145,10 @@ export function MissionMap() {
   const [filter, setFilter] = useState('all');
   const [shut, setShut] = useState(() => new Set()); // 접은 워크스페이스 키
   const [hot, setHot] = useState(null); // 가리키거나 키보드로 고른 세션 id
-  const [width, setWidth] = useState(1300); // 지도 칸 폭(혼자인 워크스페이스를 채울 열 수)
+  const [width, setWidth] = useState(1300); // 지도 칸 폭(혼자인 워크스페이스를 채울 열 수, 배율을 나눈 값)
+  const [scale, setScale] = useState(1); // P149: 큰 창 맞춤 배율(lib/mission-layout.js missionScale)
   const bodyRef = useRef(null);
+  const rootRef = useRef(null);
   useEffect(() => {
     if (!open) return;
     let alive = true;
@@ -148,13 +163,18 @@ export function MissionMap() {
   }, [open]);
   useEffect(() => { if (!open) setHot(null); }, [open]);
   // 지도 칸 폭: 40px 단위로만 바꿔 다시 놓기를 줄인다. P145: 내림(반올림이면 칸보다 넓어져 가로 스크롤이 생겼다)
+  // P149: 배율은 덮개 크기로 정하고, 지도는 칸 폭 ÷ 배율 폭으로 놓은 뒤 zoom으로 키운다
   useLayoutEffect(() => {
-    const el = bodyRef.current;
+    const el = bodyRef.current, root = rootRef.current;
     if (!open || !el) return undefined;
-    const read = () => { const w = Math.max(480, Math.floor(el.clientWidth / 40) * 40); setWidth((v) => (v === w ? v : w)); };
+    const read = () => {
+      const s = root ? missionScale(root.clientWidth, root.clientHeight) : 1;
+      setScale((v) => (v === s ? v : s));
+      const w = Math.max(480, Math.floor(el.clientWidth / s / 40) * 40); setWidth((v) => (v === w ? v : w));
+    };
     read();
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
-    if (ro) ro.observe(el); else window.addEventListener('resize', read);
+    if (ro) { ro.observe(el); if (root) ro.observe(root); } else window.addEventListener('resize', read);
     return () => { if (ro) ro.disconnect(); else window.removeEventListener('resize', read); };
   }, [open, !!graph]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -192,7 +212,7 @@ export function MissionMap() {
   const edgeHot = (e) => !!focus && (focus.pairs.has(e.id) || (e.members || []).some((x) => focus.pairs.has(x)));
   const fdim = (id) => filter !== 'all' && !filterMatch(tiers.get(id), filter);
   const counts = sum.counts;
-  const catN = { all: counts.all, needs_you: counts.turn, working: counts.work, idle: counts.idle, done: counts.review, exited: counts.gone };
+  const catN = { all: counts.all, needs_you: counts.turn, working: counts.work, idle: counts.idle, exited: counts.gone }; // P149: 작업 완료 칸은 뺐다
   const boxes = lay ? [...lay.boxes.values()] : [];
   const dotLabels = boxes.filter((b) => b.kind === 'dots');
   const sumItem = (id, text) => {
@@ -207,12 +227,14 @@ export function MissionMap() {
   const nowText = (id) => {
     const n = lay.tree.byId.get(id), live = liveOf(n), m = roles.get(id);
     const f = facts(n, live, m, tiers.get(id), t, now);
-    return f.doing ? t('mmMap.sumNow', { text: f.doing }) : f.team ? `${f.role} · ${f.team}` : f.role ? `${f.role} · ${f.stateText}` : f.stateText;
+    if (f.doing) return t('mmMap.sumNow', { text: f.doing });
+    if (tiers.get(id) === 'review' && f.last) return t('mmMap3.lastDid', { text: f.last }); // P149: 작업 완료 칸은 무엇을 끝냈는지
+    return f.team ? `${f.role} · ${f.team}` : f.role ? `${f.role} · ${f.stateText}` : f.stateText;
   };
-  const askText = (id) => { const n = lay.tree.byId.get(id), live = liveOf(n); const f = facts(n, live, roles.get(id), tiers.get(id), t, now); return f.line.k === 'ask' || f.line.k === 'err' ? f.line.text : f.stateText; };
+  const askText = (id) => { const n = lay.tree.byId.get(id), live = liveOf(n); const f = facts(n, live, roles.get(id), tiers.get(id), t, now); return f.task.k === 'ask' || f.task.k === 'err' ? f.task.text : f.stateText; };
   const REST_MAX = 24;
   return (
-    <div className="mt-mission" data-role="mission" onClick={onBackdrop}>
+    <div className="mt-mission" data-role="mission" data-scale={scale} ref={rootRef} style={{ '--mm-z': scale }} onClick={onBackdrop}>
       <div className="mt-mission-head">
         <b className="mt-mission-title">{t('mission.title')}</b>
         <span className="mt-mission-filters" role="tablist">

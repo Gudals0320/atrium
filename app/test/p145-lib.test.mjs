@@ -124,12 +124,17 @@ test('P145: 섞은 판(폴더 둘·폴더 밖, 세션 30개) — 겹침 없음, 
 
 test('P145: 촘촘함 — 같은 판에서 지도 높이가 예전 배치(나 자리, 열 사이 72, 혼자인 세션 1열, 팀은 한 기둥으로 쌓기)보다 15% 넘게 낮다', () => {
   // 예전 배치의 높이는 git 밖 experiments/p145/measure.mjs로 잰 값(폭 1000: 1416, 1300: 1250, 1600: 860). 새 배치는 1310·1050·674
-  for (const [width, old] of [[1300, 1250], [1600, 860]]) {
-    const lay = missionLayout(mixed(), { order: ORDER, vgroups: VG, width });
-    assert.ok(lay.height < old * 0.85, `${width}: ${lay.width} × ${lay.height}`);
-    assert.ok(lay.width <= width + 1);
-  }
-  assert.ok(missionLayout(mixed(), { order: ORDER, vgroups: VG, width: 1000 }).height < 1416);
+  // P149: 카드(216×64 → 232×84)와 알약(28 → 44)이 커졌으므로 이 견줌은 P145 때 크기로 돌린다(배치 방법의 촘촘함을 본다)
+  const keep = { ...MISSION };
+  Object.assign(MISSION, { boxW: 216, boxH: 64, rowH: 28 });
+  try {
+    for (const [width, old] of [[1300, 1250], [1600, 860]]) {
+      const lay = missionLayout(mixed(), { order: ORDER, vgroups: VG, width });
+      assert.ok(lay.height < old * 0.85, `${width}: ${lay.width} × ${lay.height}`);
+      assert.ok(lay.width <= width + 1);
+    }
+    assert.ok(missionLayout(mixed(), { order: ORDER, vgroups: VG, width: 1000 }).height < 1416);
+  } finally { Object.assign(MISSION, keep); }
 });
 
 test('P145: 창 — 나 동그라미와 그 사전 말이 없다, 사람의 지시는 카드 풍선 도움말 한 줄', () => {

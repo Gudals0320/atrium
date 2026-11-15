@@ -27,7 +27,16 @@ import { wire, facing, pairOff, blocked, portY } from './mission-wire.js';
 export const FOLDER = { m: 12, head: 32 };
 // P145: "나" 자리(you, youGap)를 걷고 열 사이 72 → 48(선 곡선은 이 폭이면 충분하다), 지도 둘레 28 → 20. packCap = 판 하나의 한 기둥에 놓는 혼자인 세션 수(넘으면 기둥을 나눈다),
 //   looseGap = 팀과 그 아래 혼자인 세션 줄 사이에 더 띄우는 틈(혼자인 세션이 하위 세션 열에 놓여도 팀원으로 읽히지 않게)
-export const MISSION = { boxW: 216, boxH: 64, rowH: 28, dot: 18, dotGap: 6, dotsPerRow: 8, dotsMin: 6, dotsFold: 3, colGap: 48, cardGap: 8, rowGap: 8, linkGap: 24, pad: 20, wsHead: 30, wsGap: 36, slotGap: 36, plate: 10, quietSpan: 240, packCap: 6, looseGap: 16 };
+// P149: 카드 한 장에 역할·상태·모델·지금(또는 마지막) 일이 다 읽히게 카드 216×64(세 줄) → 248×96(이름 / 역할·상태 / 일 두 줄까지 / 메타), 쉬는 알약 28 → 44(두 줄: 이름·역할·상태, 모델·마지막 일)
+export const MISSION = { boxW: 248, boxH: 96, rowH: 44, dot: 18, dotGap: 6, dotsPerRow: 8, dotsMin: 6, dotsFold: 3, colGap: 48, cardGap: 8, rowGap: 8, linkGap: 24, pad: 20, wsHead: 30, wsGap: 36, slotGap: 36, plate: 10, quietSpan: 240, packCap: 6, looseGap: 16 };
+// P149: 큰 창 맞춤 배율. 지도(카드·글자·간격)는 1584×921 창 기준 고정 크기라 2576×1408 창에서 화면의 3분의 1만 썼다.
+// 덮개 크기(w×h)에서 1600×940을 넘는 만큼 키운다(가로 4800px·세로 2300px마다 1배, 둘 중 작은 쪽). 1에서 1.35 사이, 0.05 단위(창을 조금 끌 때 다시 놓기를 줄인다).
+// 2576×1408 → 1.2(본문 12px이 14.4px로 보인다), 1584×921·1366×768 → 1(지금처럼). 그리는 쪽은 지도·머리줄·요약 열에 CSS zoom으로 준다
+export function missionScale(w, h) {
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return 1;
+  const s = 1 + Math.min((w - 1600) / 4800, (h - 940) / 2300);
+  return Math.round(Math.max(1, Math.min(1.35, s)) * 20) / 20;
+}
 export { EDGE_ORDER, mergeEdges }; // P94: 공용 모델(lib/mission-model.js)로 옮겼다
 const rank = (k) => { const i = EDGE_ORDER.indexOf(k); return i < 0 ? EDGE_ORDER.length : i; };
 const r1 = (v) => Math.round(v * 10) / 10;
