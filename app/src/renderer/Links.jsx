@@ -125,7 +125,8 @@ export function RoleDialog({ from, to, onClose }) {
 }
 
 const EVENT_KINDS = ['role', 'notice', 'unlink', 'prompt', 'prompt_result', 'wait_result', 'keys', 'reply', 'spawn', 'target_submitted', 'target_working', 'target_waiting', 'target_done', 'target_exited'];
-const eventLabel = (t, kind) => (EVENT_KINDS.includes(kind) ? t(`links.event.${kind}`) : kind);
+const eventLabel = (t, kind) => (EVENT_KINDS.includes(kind) ? t(`links.event.${kind}`) : kind === 'relation' ? t('relations.eventRelation') : kind); // P156: 관계 바뀜
+const REL_TAGS = ['assign', 'report', 'share']; // P156: 지시 꼬리표(위 → 하위 지시, 하위 → 위 보고, 동료끼리 공유)
 
 // 선을 누르면 뜨는 오간 기록과 끊기
 export function LinkPanel({ linkId, onClose }) {
@@ -168,7 +169,7 @@ export function LinkPanel({ linkId, onClose }) {
         {events === null && <div className="mt-chat-empty">{t('common.loading')}</div>}
         {events && events.map((e) => (
           <div key={e.id} className={`mt-linkev k-${e.kind}`} data-kind={e.kind}>
-            <div className="mt-linkev-head"><span className="mt-linkev-t">{fmtTime(e.t)}</span> <b>{eventLabel(t, e.kind)}</b>{e.data && e.data.status ? <span className="mt-card-sub"> · {e.data.status}</span> : null}{e.data && e.data.ok === false ? <span className="mt-card-sub bad"> · {t('delivery.failed')}</span> : null}</div>
+            <div className="mt-linkev-head"><span className="mt-linkev-t">{fmtTime(e.t)}</span> <b>{eventLabel(t, e.kind)}</b>{e.data && REL_TAGS.includes(e.data.tag) ? <span className={`mt-edge-tag tag-${e.data.tag}`} data-tag={e.data.tag}>{t(`relations.tag.${e.data.tag}`)}</span> : null}{e.kind === 'relation' && e.data && e.data.after ? <span className="mt-card-sub"> · {t(`relations.rel.${e.data.after.relation}`)}{e.data.relation === 'auto' ? ` (${t('relations.rel.auto')})` : ''}</span> : null}{e.data && e.data.status ? <span className="mt-card-sub"> · {e.data.status}</span> : null}{e.data && e.data.ok === false ? <span className="mt-card-sub bad"> · {t('delivery.failed')}</span> : null}</div>
             {e.text && <pre className="mt-linkev-text">{e.text}</pre>}
           </div>
         ))}

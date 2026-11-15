@@ -135,7 +135,8 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   for (const w of ['상한(', '개, 깊이', '판 밖 터미널을 열라고 한다', 'herdr', '--session']) assert.ok(!skill.includes(w), w);
   // 길이: P8 delegate 글(3107바이트)의 두 배를 넘지 않는다. P111: 잠든 워커 줄에 혼자 잠들기와 깨우기 범위(+77바이트)를 더해 80바이트를 더 둔다
   // P143: 결과를 한 길로 받기(당겨 오기·--now 밀어 넣기)로 시키기 줄을 바꿔(+223바이트) 230바이트를 더 둔다
-  assert.ok(Buffer.byteLength(skill) <= 2 * 3107 + 80 + 230, `skill ${Buffer.byteLength(skill)}B`);
+  // P156: 관계 고르기 절(하위·동료, relate)로 690바이트를 더 둔다
+  assert.ok(Buffer.byteLength(skill) <= 2 * 3107 + 80 + 230 + 690, `skill ${Buffer.byteLength(skill)}B`);
   assert.match(skill.split('\n')[2], /사용자가 말하지 않아도/); // 설명에 스스로 쓰는 때
   assert.equal(boardSkill('delegate'), old);
   for (const c of ['atrium', 'mtask']) { // 옛 이름 mtask는 P18 전에 띄운 세션의 스킬 글이 말한다
@@ -145,7 +146,7 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   }
   assert.match(BOARD_SYSTEM_PROMPT, /atrium:atrium/); assert.doesNotMatch(BOARD_SYSTEM_PROMPT, /herdr/); assert.match(BOARD_SYSTEM_PROMPT, /delegate/); assert.match(BOARD_SYSTEM_PROMPT, /상한은 없다/);
   assert.ok(ATRIUM_ALLOW.includes('Bash(atrium child-wait *)') && ATRIUM_ALLOW.includes('PowerShell(atrium child-wait *)'));
-  assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 7); // P21: 잠든 세션 깨우기 한 줄, P81: atrium me 한 줄
+  assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 8); // P21: 잠든 세션 깨우기 한 줄, P81: atrium me 한 줄, P156: 관계 고르기 한 줄
   assert.ok(pl.pluginDir.endsWith('/atrium'));
   assert.match(childNotice({ role: '워커', agentName: 'w1', paneId: 'w2:p1', depth: 2 }), /atrium prompt w1 "<할 일>" --wait/); // P116
   assert.doesNotMatch(childNotice({ role: '워커', name: 'w1', depth: 2 }), /herdr/);
@@ -234,7 +235,8 @@ test('K1: 하위 세션은 부모의 폴더·모델·노력 수준·권한 모�
   // 다른 모델·역할·첫 지시
   const r2 = await b.branch.spawnChild(lead, { name: 'w2', model: 'sonnet', role: '리뷰어', prompt: 'Reply with exactly: ok', wait: false });
   assert.equal(b.spawned[1].model, 'sonnet'); assert.equal(r2.role, '리뷰어');
-  assert.deepEqual(b.queued[0], { sid: r2.sessionId, text: 'Reply with exactly: ok' });
+  assert.equal(b.queued[0].sid, r2.sessionId); // P156: 첫 요청 앞에 관계 한 줄
+  assert.match(b.queued[0].text, /^\[Atrium 보드\] 관계: 너는 @lead의 하위 워커다\..*\n\nReply with exactly: ok$/s);
   // 요약: 깊이와 부모 이름
   const sum = b.branch.summaryExtra(b.sessions.get(r.sessionId)).branch;
   assert.equal(sum.depth, 2); assert.equal(sum.parentName, 'lead'); assert.equal(sum.role, '워커'); assert.equal(sum.child, true);
@@ -362,7 +364,7 @@ test('K2·K3(P36): 상한 없음 — 한 세션이 하위 세션 32개, 8단계 
   const kids = [];
   for (let i = 1; i <= 32; i++) kids.push(await b.branch.spawnChild(lead, { name: `w${i}`, wait: false }));
   assert.equal(b.branch.listChildren(lead, {}).children.length, 32);
-  assert.deepEqual(b.branch.listChildren(lead, {}).counts, { children: 32, total: 32 });
+  assert.deepEqual(b.branch.listChildren(lead, {}).counts, { children: 32, peers: 0, total: 32 }); // P156: 동료 수
   // 깊이 8단계
   let cur = lead, last = null;
   for (let d = 2; d <= 8; d++) { last = await b.branch.spawnChild(cur, { name: `d${d}`, wait: false }); cur = b.sessions.get(last.sessionId); }
@@ -452,7 +454,7 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     const noenv = await runChild(['child'], {});
     assert.match(noenv.stderr, /보드에서 시작한 세션이 아닙니다/);
     const nope = await runChild(['kill', 'w1'], env);
-    assert.equal(nope.code, 2); assert.match(nope.stderr, /child, children, child-kill, child-wait, wake, models만/);
+    assert.equal(nope.code, 2); assert.match(nope.stderr, /child, relate, children, child-kill, child-wait, wake, models만/);
     const five = await runChild(['child-kill', 'lead'], env);
     assert.match(five.stderr, /not_parent/);
   } finally { srv.close(); }

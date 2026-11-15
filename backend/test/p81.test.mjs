@@ -173,13 +173,13 @@ test('P81 명령: atrium me 글(20줄 안, 부모 없음·부모와 역할), --j
     assert.ok(lines.length <= 20, me.stdout);
     // P116: 이름은 판의 세션 이름, 명령은 atrium prompt|wait|read(herdr 이름·패널은 --json에만)
     assert.match(lines[0], /^나: @lead \(claude\)/);
-    assert.match(me.stdout, /부모: 부모 없음/);
+    assert.match(me.stdout, /상위: 없음/); // P156: 상위·동료·하위·독립
     assert.match(me.stdout, /하위 세션 1개:\n {2}@w1 워커 1 · ready · 마지막 지시 \d+초 전 "do the thing"/);
     assert.match(me.stdout, /일 시키기: atrium prompt <이름> "<할 일>" --wait · 끝나기 기다리기: atrium wait <이름> · 화면 읽기: atrium read <이름>/);
     assert.doesNotMatch(me.stdout, /herdr/);
     const w1 = [...b.sessions.values()].find((x) => x.name === 'w1');
     const meW = await runChild(['me'], b.branch.envFor(w1.sessionId));
-    assert.match(meW.stdout, /부모: @lead \(ready\) — 너는 @lead의 워커 1/);
+    assert.match(meW.stdout, /상위: @lead \(ready\) — 너는 @lead의 워커 1/);
     const js = await runChild(['me', '--json'], env);
     const j = JSON.parse(js.stdout);
     assert.equal(j.children[0].name, 'w1'); assert.equal(j.parent, null); assert.equal(j.me.name, 'lead');
@@ -191,7 +191,7 @@ test('P81 명령: atrium me 글(20줄 안, 부모 없음·부모와 역할), --j
     const bad = await runChild(['child', 'h2', '--head', '--worktree', 'x'], env);
     assert.notEqual(bad.code, 0); assert.match(bad.stderr, /--head와 --worktree는 함께 쓰지 않는다/);
     const nope = await runChild(['kill', 'w1'], env);
-    assert.match(nope.stderr, /me, child, children/);
+    assert.match(nope.stderr, /me, child, relate, children/);
   } finally { srv.close(); b.branch.notices.stop(); }
 });
 
