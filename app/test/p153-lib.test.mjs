@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { territoryLayout, TERR, normKey, keyName, bestShelf, shelf, routeOrtho, longestMid, phoneTerr, tileTap } from '../src/renderer/lib/mission-terr.js';
+import { territoryLayout, TERR, normKey, keyName, bestShelf, shelf, routeOrtho, longestMid, phoneTerr, tileTap, skyline, bestPack } from '../src/renderer/lib/mission-terr.js';
 import { groupLayout } from '../src/renderer/lib/sidebar-tree.js';
 import { leadTags, toggleTag } from '../src/renderer/lib/cmd-input.js';
 import en from '../src/renderer/locales/en.js';
@@ -194,5 +194,52 @@ test('P153: 이름은 세션 맵(Session map), 사전 두 벌의 새 글', () =>
   const strings = (o) => Object.values(o).flatMap((v) => (typeof v === 'string' ? [v] : v && typeof v === 'object' ? strings(v) : []));
   assert.ok(!strings(ko).some((s) => s.includes('관계도')), '한국어에 관계도가 남았다');
   assert.ok(!strings(en).some((s) => /mission map/i.test(s)), '영어에 mission map이 남았다');
-  for (const k of ['cardTip', 'cardTipShell', 'isleTip', 'movedTo', 'movedOut', 'moveFail', 'solo', 'hint']) { assert.ok(en.mmTerr[k], `en ${k}`); assert.ok(ko.mmTerr[k], `ko ${k}`); }
+  for (const k of ['cardTip', 'cardTipShell', 'isleTip', 'movedTo', 'movedOut', 'moveFail', 'solo', 'barHint']) { assert.ok(en.mmTerr[k], `en ${k}`); assert.ok(ko.mmTerr[k], `ko ${k}`); }
+});
+
+// ---- 라운드 2 ----
+test('P153 r2: 하늘선 쌓기는 겹치지 않고 키 작은 것 아래 빈 곳을 채운다, 선반보다 나쁘지 않다', () => {
+  const items = [{ w: 300, h: 100 }, { w: 600, h: 400 }, { w: 300, h: 100 }, { w: 300, h: 100 }, { w: 900, h: 200 }];
+  const s = skyline(items, 900, 20);
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) assert.ok(!overlap({ ...s.pos[i], ...items[i] }, { ...s.pos[j], ...items[j] }), `${i}·${j}`);
+  assert.ok(s.pos[2].y > 0 && s.pos[2].x === 0, '셋째는 첫째 아래 빈 곳으로');
+  for (const aspect of [1, 1.8, 3]) {
+    const score = (r) => Math.max(r.w / aspect, r.h);
+    assert.ok(score(bestPack(items, 20, aspect)) <= score(bestShelf(items, 20, aspect)) + 0.5, `비율 ${aspect}`);
+  }
+});
+test('P153 r2: 실제 판 짜임은 보기 칸 비율에서 처음 화면이 읽힌다(1584×921: 맞춤 배율 ≥ 0.3)', () => {
+  const vw = 1584 - 64, vh = 921 - 60 - 96 - 112 - 64; // 지도 칸: 위 막대·위 줄·명령줄·여백을 뺀다
+  const lay = lay0({ aspect: vw / vh });
+  const k = Math.min(vw / lay.bounds.w, vh / lay.bounds.h);
+  assert.ok(k >= 0.3, `맞춤 ${k.toFixed(3)}`);
+});
+test('P153 r2: 휴대폰 지도는 폭(maxW) 안에 들고 타일에 이름이 들어갈 폭이 있다', () => {
+  const lay = territoryLayout(graph(), { order: WS, vgroups: FOLDERS, routing: false });
+  const pt = phoneTerr(lay, { maxW: (393 - 16) / 0.88 });
+  assert.ok(pt.bounds.w <= (393 - 16) / 0.88 + 0.5, `폭 ${pt.bounds.w}`);
+  assert.ok(pt.tiles.every((t) => t.w >= 100 && t.h >= 26));
+  const box = (t) => ({ x: t.x, y: t.y, w: t.w, h: t.h });
+  for (let i = 0; i < pt.tiles.length; i++) for (let j = i + 1; j < pt.tiles.length; j++) assert.ok(!overlap(box(pt.tiles[i]), box(pt.tiles[j])));
+});
+test('P153 r2: 카드 맨 아래 줄은 다른 워크스페이스에서 온 것만, 작업 완료는 한 번, 위 줄 도움말은 명령줄 안내로', () => {
+  const src = read('MissionTerr.jsx');
+  assert.match(src, /const more = \[cross && parentWs \? relText : null, \.\.\.extra\]/);
+  assert.match(src, /tier === 'review' \? \(f\.age \?/, '보통 단계 상태 칸은 작업 완료면 시간만');
+  assert.ok(!src.includes("t('mmTerr.hint')"), '위 줄 도움말 없음');
+  assert.match(read('CommandBar.jsx'), /missionOpen \? t\('mmTerr\.barHint'\)/);
+});
+test('P153 r2: 다른 워크스페이스 선은 섬 머리 띠를 그 카드 위 좁은 길로만 지난다', () => {
+  const lay = lay0({ aspect: 2.4 });
+  const e = lay.edges.find((x) => x.cross);
+  for (const i of lay.isles) {
+    const band = { x: i.x + 10, y: i.y + 6, w: i.w - 20, h: TERR.HEAD - 22 };
+    for (let k = 1; k < e.pts.length; k++) {
+      const [a, b] = [e.pts[k - 1], e.pts[k]];
+      if (!segHits(a, b, band)) continue;
+      assert.equal(a[0], b[0], `${i.key} 머리를 가로로 지난다`);
+      const ends = [lay.cards.get(e.from), lay.cards.get(e.to)].map((c) => c.x + c.w / 2);
+      assert.ok(ends.some((x) => Math.abs(x - a[0]) < 1), '끝 카드 가운데 길만');
+    }
+  }
 });

@@ -19,7 +19,8 @@ const REFRESH_MS = 600;
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
 const IDLE = new Set(['rest', 'sleep', 'done']);
 const LIM = { minZoom: 0.2, maxZoom: 4 };
-const NAMES_AT = 1.6; // 이 배율부터 타일 아래 이름을 보인다
+const TOPBAR = 44; // 지도 칸 위 띠(안내 글, 줌 단추). 지도는 이 아래부터 맞춘다
+const READ_K = 0.88; // 타일 이름 12px이 화면에서 10.5px 이상
 let cache = null;
 const Chev = () => <svg className="mt-ph-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>;
 
@@ -74,7 +75,9 @@ export function PhoneTerr({ onBack, onOpen, conn }) {
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const lay = useMemo(() => (graph ? territoryLayout(graph, { order, vgroups, tiers, names, routing: false }) : null), [graph, order, vgroups, tiers, names]);
-  const pt = useMemo(() => (lay ? phoneTerr(lay, { names }) : null), [lay, names]);
+  const pAspect = vp ? Math.round(((vp.w - 16) / Math.max(120, vp.h - TOPBAR - 8)) * 10) / 10 : 0.9;
+  const pMaxW = vp ? (vp.w - 16) / READ_K : 0;
+  const pt = useMemo(() => (lay ? phoneTerr(lay, { names, aspect: pAspect, maxW: pMaxW }) : null), [lay, names, pAspect, pMaxW]);
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   ptRef.current = pt; vpRef.current = vp;
   const now = Date.now();
@@ -87,17 +90,18 @@ export function PhoneTerr({ onBack, onOpen, conn }) {
     view.current = v;
     const w = worldRef.current;
     if (w) w.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
-    const s = stageRef.current;
-    if (s) s.classList.toggle('names', v.k >= NAMES_AT);
     if (tagRef.current) tagRef.current.textContent = `${Math.round(v.k * 100)}%`; // 휴대폰은 늘 타일 지도라 단계 이름은 쓰지 않는다
   };
-  // 맞춤: 위 안내 글(24px)과 아래 줌 줄(60px)을 비운다
-  const fit = () => { const p = ptRef.current, s = vpRef.current; if (p && s) apply(fitView(p.bounds, s.w, s.h, { pad: 10, top: 22, bottom: 58, max: 2 })); };
+  // 맞춤: 위 띠(안내 글과 줌 단추, TOPBAR)를 비우고 전체를 칸에 넣는다
+  const fitOf = (p, s) => fitView(p.bounds, s.w, s.h, { pad: 8, top: TOPBAR, bottom: 0, max: 1.6 });
+  const fit = () => { const p = ptRef.current, s = vpRef.current; if (p && s) apply(fitOf(p, s)); };
+  // P153: 처음 연 화면. 전체가 읽히는 크기(이름 글 10.5px 이상, READ_K)로 들어가면 맞춤, 아니면 폭에 맞추고 위에 붙인다(아래는 끌어서 본다)
+  const openView = () => { const p = ptRef.current, s = vpRef.current; if (!p || !s) return; const f = fitOf(p, s); if (f.k >= READ_K) { apply(f); return; } const k = Math.min(1.2, Math.max(READ_K, (s.w - 16) / p.bounds.w)); apply({ k, x: (s.w - p.bounds.w * k) / 2, y: TOPBAR }); };
   const zoomBy = (f) => { const s = vpRef.current, v = view.current; if (!s || !v) return; const k = Math.max(LIM.minZoom, Math.min(LIM.maxZoom, v.k * f)), r = k / v.k; apply({ k, x: s.w / 2 - (s.w / 2 - v.x) * r, y: s.h / 2 - (s.h / 2 - v.y) * r }); };
   const toIsle = (key) => { const p = ptRef.current, s = vpRef.current, i = p && p.isles.find((x) => x.key === key); if (i && s) apply(fitBox(i, s.w, s.h, { pad: 16, max: 3 })); };
   useLayoutEffect(() => {
     if (!pt || !vp) return;
-    if (!view.current) fit(); else apply(view.current);
+    if (!view.current) openView(); else apply(view.current);
   }, [pt, vp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 손가락: 한 손가락 옮기기, 두 손가락 확대·축소(P95와 같다)
@@ -170,9 +174,9 @@ export function PhoneTerr({ onBack, onOpen, conn }) {
             {pt.tiles.map((x) => {
               const tier = tiers.get(x.id), b = lay.cards.get(x.id), live = liveOf(b.node), shell = (live && live.kind === 'shell') || b.node.agentKind === 'shell';
               return (
-                <span key={x.id} className={`mt-pt-tile st-${ST[tier] || 'ready'}${IDLE.has(tier) ? ' idle' : ''}${shell ? ' shell' : ''}`} data-role="pt-tile" data-id={x.id} data-session={b.node.sessionId} data-ws={x.ws} data-tier={tier} title={b.node.name} style={{ left: x.x, top: x.y, width: x.s, height: x.s }}>
+                <span key={x.id} className={`mt-pt-tile st-${ST[tier] || 'ready'}${IDLE.has(tier) ? ' idle' : ''}${shell ? ' shell' : ''}`} data-role="pt-tile" data-id={x.id} data-session={b.node.sessionId} data-ws={x.ws} data-tier={tier} title={b.node.name} style={{ left: x.x, top: x.y, width: x.w, height: x.h }}>
                   {tier === 'work' && <MissionLight role="pt-light" />}
-                  <span className="tn">{b.node.name}</span>
+                  <i className="dot" aria-hidden="true" /><span className="tn">{b.node.name}</span>
                 </span>
               );
             })}

@@ -2490,6 +2490,7 @@ export default {
     movedOut: '{ws}을(를) 폴더 밖으로 옮겼습니다',
     moveFail: '폴더를 옮기지 못했습니다: {error}',
     solo: '혼자',
+    barHint: '카드를 클릭해 세션을 태그하고 글을 쓴 뒤 Enter로 보냅니다 · 카드를 더블클릭하면 보드에서 봅니다',
     phoneHint: '두 손가락으로 확대·축소 · 끌어서 이동',
     phoneWaiting: '응답을 기다리는 세션',
     phoneWaitingSub: '{n}개 · 누르면 열립니다',

@@ -2490,6 +2490,7 @@ export default {
     movedOut: 'Moved {ws} out of its folder',
     moveFail: 'Could not move the folder: {error}',
     solo: 'solo',
+    barHint: 'Click cards to tag sessions, type, then Enter to send · double-click a card to see it on the board',
     phoneHint: 'Pinch to zoom · drag to move',
     phoneWaiting: 'Waiting on you',
     phoneWaitingSub: '{n} · tap to open',

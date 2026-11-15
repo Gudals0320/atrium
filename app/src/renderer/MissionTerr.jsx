@@ -24,7 +24,10 @@ import { MissionLight, DoneMark } from './Mission.jsx';
 import { commandDraft } from './Thread.jsx';
 
 const TOP = 96; // 위 떠 있는 줄 아래부터 맞춘다
-const BOTTOM = 110; // 아래 명령줄 자리
+const BOTTOM = 112; // 아래 명령줄 자리(명령줄이 카드를 가리지 않게)
+const FIT_PAD = 32;
+// 멀리 타일: 이름 12.5px·상태 10.5px(화면)를 지키는 배율 하한. 한 줄 이름 + 상태가 카드(150) 안에 드는 가장 작은 배율이 READ_K, 두 줄 이름이 드는 배율이 TWO_LINES_K
+const READ_K = 0.23, TWO_LINES_K = 0.34;
 const DOT_GAP = 92, DOT_R = 1.8; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다
 const ATTN_MAX = 4;
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
@@ -58,8 +61,11 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const rel = parentName ? t(`mmTerr.rel.${['spawn', 'role', 'prompt'].includes(n._rel) ? n._rel : 'spawn'}`, { name: parentName }) : kids ? t('mmTerr.leads', { n: kids }) : t('mmTerr.rel.none');
   const relText = cross && parentWs ? t('mmTerr.rel.inWs', { text: rel, ws: parentWs }) : rel;
   const branch = n.gitBranch || branchOfLive(live);
-  const more = [relText, branch ? `⎇ ${branch}` : null, n.loops ? `⟳${n.loops}` : null].filter(Boolean).join(' · ');
-  return { kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, harness: k.label };
+  // P153: 카드 맨 아래 줄은 다른 워크스페이스에서 온 것(선이 멀리 간다)·브랜치·루프만. 같은 나무 안 부모·'연결 없음'·'n개를 이끎'은 선과 무리가 말하니 뺀다(풍선 도움말에는 남긴다)
+  const extra = [branch ? `⎇ ${branch}` : null, n.loops ? `⟳${n.loops}` : null];
+  const more = [cross && parentWs ? relText : null, ...extra].filter(Boolean).join(' · ');
+  const relAll = [relText, ...extra].filter(Boolean).join(' · ');
+  return { kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label };
 }
 
 // 카드 하나. 멀리 타일(이름·상태 큰 글)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
@@ -67,20 +73,20 @@ const Card = memo(function Card({ id, b, f, tier, tagged, onTag, onOpen, t }) {
   const n = b.node;
   const st = ST[tier] || 'ready';
   const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${b.lead ? ' lead' : ''}${tagged ? ' tagged' : ''}`;
-  const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.err, f.more, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip')].filter(Boolean).join('\n');
+  const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip')].filter(Boolean).join('\n');
   return (
     <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws}>
       <div className="mt-ta-card" role="button" tabIndex={0} aria-pressed={tagged ? 'true' : 'false'} data-role="mm-node" data-kind="session" data-id={id} data-name={n.name} data-tier={tier} data-tagged={tagged ? '1' : undefined} title={tip} aria-label={tip.replace(/\n/g, ', ')}
         onClick={() => onTag(id)} onDoubleClick={() => onOpen(id)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpen(id); } else if (e.key === ' ') { e.preventDefault(); onTag(id); } }}>
         {tier === 'work' && <MissionLight role="ta-light" />}
         {tier === 'review' && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
-        <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts"><i />{f.stateText}</span></span>
+        <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{tier === 'review' ? <span className="mt-ta-tdone"><DoneMark />{f.stateText}</span> : <><i />{f.stateText}</>}</span></span>
         <span className="mt-ta-full">
-          <span className="c1"><span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state"><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</span></span>
+          <span className="c1"><span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{tier === 'review' ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span></span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">·</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">·</span><span>{f.model}</span></> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
-          <span className="c4" data-role="ta-more">{f.more}</span>
+          {f.more ? <span className="c4" data-role="ta-more">{f.more}</span> : null}
         </span>
       </div>
     </div>
@@ -106,7 +112,7 @@ export function TerritoryMap() {
   const [tags, setTags] = useState([]); // 명령줄 앞머리 태그 이름들
   const [vsize, setVsize] = useState(null); // 보기 칸 크기 { w, h }
   const [moveWs, setMoveWs] = useState(null); // 끄는 중인 섬 키(놓을 영토 강조)
-  const rootRef = useRef(null), vpRef = useRef(null), worldRef = useRef(null), pctRef = useRef(null);
+  const rootRef = useRef(null), vpRef = useRef(null), worldRef = useRef(null), pctRef = useRef(null), bgRef = useRef(null);
   const view = useRef(null); // { k, x, y }
   const fitted = useRef(false);
   const moveTimer = useRef(0), glideTimer = useRef(0);
@@ -131,7 +137,7 @@ export function TerritoryMap() {
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   // 세계 비율은 보기 칸(위 줄·명령줄을 뺀 칸)에 맞춘다. 0.1 단위로 둥글려 창 크기가 조금 바뀔 때마다 다시 짜지 않게
-  const aspect = vsize ? Math.round((vsize.w / Math.max(200, vsize.h - TOP - BOTTOM)) * 10) / 10 : TERR.ASPECT;
+  const aspect = vsize ? Math.round(((vsize.w - FIT_PAD * 2) / Math.max(200, vsize.h - TOP - BOTTOM - FIT_PAD * 2)) * 10) / 10 : TERR.ASPECT;
   const lay = useMemo(() => (graph ? territoryLayout(graph, { order, vgroups, tiers, names, aspect }) : null), [graph, order, vgroups, tiers, names, aspect]);
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   layRef.current = lay;
@@ -151,20 +157,29 @@ export function TerritoryMap() {
   const paint = useCallback((v, { glide = false } = {}) => {
     view.current = v;
     const w = worldRef.current, vp = vpRef.current, root = rootRef.current;
+    const lv = levelOf(v.k);
     if (w) {
       if (glide) { w.classList.add('glide'); clearTimeout(glideTimer.current); glideTimer.current = setTimeout(() => w.classList.remove('glide'), 480); } else w.classList.remove('glide');
       w.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
-      const lv = levelOf(v.k);
       if (!w.classList.contains(`lv-${lv}`)) { w.classList.remove('lv-far', 'lv-mid', 'lv-near'); w.classList.add(`lv-${lv}`); }
       if (root && root.dataset.level !== lv) root.dataset.level = lv;
     }
     // 배경: 판과 같은 점 격자(간격·점 크기가 배율을 따른다)
-    if (vp) { const gs = DOT_GAP * v.k; vp.style.backgroundSize = `${gs}px ${gs}px`; vp.style.backgroundPosition = `${v.x % gs - gs / 2}px ${v.y % gs - gs / 2}px`; vp.style.setProperty('--dot-r', `${Math.max(0.6, DOT_R * v.k)}px`); }
+    // 배경 점은 세계의 형제 층(.mt-ta-bg)에 쓴다(세계를 감싼 요소에 변수를 쓰면 카드 전부의 스타일을 다시 센다)
+    const bg = bgRef.current;
+    if (bg) { const gs = DOT_GAP * v.k; bg.style.backgroundSize = `${gs}px ${gs}px`; bg.style.backgroundPosition = `${v.x % gs - gs / 2}px ${v.y % gs - gs / 2}px`; bg.style.setProperty('--dot-r', `${Math.max(0.6, DOT_R * v.k)}px`); }
+    // P153: 멀리 타일 글은 화면에서 일정 크기 밑으로 줄지 않게(--ik = 1/배율, CSS가 글 크기를 키운다). 이름은 두 줄이 들어가는 배율부터 두 줄(--tl)
+    // --ik는 6% 계단으로만 바꾼다(휠 한 칸마다 모든 카드 글을 다시 재지 않게, 128세션 휠 p95)
+    // 끄는·휠 도는 동안은 글 크기를 그대로 두고(배율과 함께 커지고 작아진다) 멈춘 뒤(160ms) 한 번 맞춘다. 처음 그릴 때와 미끄러지기(glide)는 바로
+    const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = Math.pow(1.06, Math.round(Math.log(1 / kk) / Math.log(1.06))).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) { ww.style.setProperty('--ik', ik); ww.style.setProperty('--tl', kk >= TWO_LINES_K ? '2' : '1'); } };
+    if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
     // 움직이는 동안만 will-change(멈추면 떼어 또렷하게)
-    if (root && !glide) { if (root.dataset.moving !== '1') root.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; }, 160); }
+    if (root && !glide) { if (root.dataset.moving !== '1') root.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); }, 160); }
   }, []);
-  const fitOf = (L, s) => fitView(L.bounds, s.w, s.h, { top: TOP, bottom: BOTTOM, pad: 40 });
+  const fitOf = (L, s) => fitView(L.bounds, s.w, s.h, { top: TOP, bottom: BOTTOM, pad: FIT_PAD });
+  // P153: 처음 연 화면. 맞춤이 읽을 수 있는 배율(READ_K)보다 작으면 READ_K로 세계 왼쪽 위에 붙여 연다(맞춤 단추는 늘 전체)
+  const openOf = (L, s) => { const f = fitOf(L, s); return f.k >= READ_K ? f : { k: READ_K, x: FIT_PAD - L.bounds.x * READ_K, y: TOP + FIT_PAD / 2 - L.bounds.y * READ_K }; };
   const fit = useCallback((glide = true) => { const L = layRef.current, s = sizeRef.current; if (L && s) paint(fitOf(L, s), { glide }); }, [paint]);
   const zoomCenter = useCallback((k2) => { const s = sizeRef.current, v = view.current; if (s && v) paint(zoomAt(v, s.w / 2, (s.h + TOP - BOTTOM) / 2, k2), { glide: true }); }, [paint]);
   const flyTo = useCallback((id, k) => {
@@ -186,7 +201,7 @@ export function TerritoryMap() {
   // 처음은 맞춤. 판이 바뀌거나 창 크기가 바뀌면 보기는 그대로
   useLayoutEffect(() => {
     if (!open || !lay || !vsize) return;
-    if (!fitted.current) { fitted.current = true; paint(fitOf(lay, vsize)); }
+    if (!fitted.current) { fitted.current = true; paint(openOf(lay, vsize)); }
     else if (view.current) paint(view.current);
   }, [open, lay, vsize, paint]);
 
@@ -355,6 +370,7 @@ export function TerritoryMap() {
   return (
     <div className={`mt-mission mt-ta nowheel nopan${moveWs ? ' isle-moving' : ''}`} data-role="mission" data-style="territories" ref={rootRef}>
       <div className="mt-ta-vp" data-role="ta-viewport" ref={vpRef}>
+        <div className="mt-ta-bg" ref={bgRef} aria-hidden="true" />
         {!lay ? <div className="mt-ta-loading">{t('common.loading')}</div> : (
           <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef}>
             {lay.terrs.map((x) => (
@@ -373,7 +389,7 @@ export function TerritoryMap() {
             ))}
             {lay.rings.map((r) => (
               <div key={`r:${r.id}`} className="mt-ta-ring" data-role="ta-ring" data-lead={r.lead} data-ws={r.ws} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
-                <div className="mt-ta-rlabel">{t('mmTerr.team')} <b>{lay.tree.byId.get(r.lead).name}</b> · {t('mmTerr.sessions', { n: r.n })}{r.away ? ` ${t('mmTerr.away', { n: r.away })}` : ''}</div>
+                <div className="mt-ta-rlabel">{t('mmTerr.team')} <b>{lay.tree.byId.get(r.lead).name}</b> · {t('mmTerr.sessions', { n: r.n + r.away })}{r.away ? ` ${t('mmTerr.away', { n: r.away })}` : ''}</div>
               </div>
             ))}
             <svg className="mt-ta-edges" width={1} height={1} aria-hidden="true">
@@ -400,7 +416,6 @@ export function TerritoryMap() {
           {attn.length > ATTN_MAX && <span className="mt-ta-amore">{t('mmTerr.more', { n: attn.length - ATTN_MAX })}</span>}
         </span>
         <span className="mt-ta-spacer" />
-        <span className="mt-ta-hint" data-role="ta-hint">{t('mmTerr.hint')}</span>
         <button type="button" className="mt-ta-iconbtn" data-action="mission-close" title={t('mmTerr.close')} aria-label={t('mmTerr.close')} onClick={() => setMissionOpen(false)}><XIcon /></button>
       </div>
 

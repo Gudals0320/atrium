@@ -306,7 +306,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
           <div className="mt-cmd-mirror" ref={mirRef} aria-hidden="true">
             <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i}>{p.text}</span>))}{'\u200b'}</div>
           </div>
-          <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={t('cmd.placeholder')} title={t('boardKeys.command')}
+          <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={missionOpen ? t('mmTerr.barHint') : t('cmd.placeholder')} title={t('boardKeys.command')}
             onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"
             onPaste={(e) => { const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }}
             onDragOver={(e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}

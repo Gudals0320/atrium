@@ -20,7 +20,7 @@ import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
 // GH·GV = 카드 사이 가로·세로 틈(세로 틈에 버스 선이 지난다), PAD = 섬 안 여백, HEAD = 섬 머리(이름·칩) 높이, RP·RH = 무리 안 여백·무리 머리 높이,
 // RGAP = 무리 사이, SGAP·SVG = 혼자인 기둥의 가로·세로 틈, KCOLS = 잎 한 줄 수, PT·HT = 영토 안 여백·영토 머리, IGAP = 섬 사이, WGAP = 영토 사이,
 // ASPECT = 세계 비율(화면 비율을 주지 않을 때), G = 길 찾기 격자 칸
-export const TERR = { CW: 320, CH: 150, GH: 28, GV: 64, PAD: 32, HEAD: 80, RP: 22, RH: 44, RGAP: 28, SGAP: 24, SVG: 20, KCOLS: 4, SOLO_ROWS: 3, SOLO_MAX: 4, PT: 44, HT: 112, IGAP: 40, WGAP: 110, ISLE_MIN: 384, ASPECT: 1.8, G: 16 };
+export const TERR = { CW: 320, CH: 150, GH: 26, GV: 60, PAD: 24, HEAD: 72, RP: 20, RH: 42, RGAP: 24, SGAP: 20, SVG: 18, KCOLS: 4, SOLO_ROWS: 3, SOLO_MAX: 4, PT: 32, HT: 100, IGAP: 28, WGAP: 64, ISLE_MIN: 384, ASPECT: 1.8, G: 16 };
 // 확대 단계: 멀리 < 0.6 ≤ 보통 ≤ 1.2 < 가까이. 범위 0.08 ~ 2.4
 export const ZOOM = { min: 0.08, max: 2.4, far: 0.6, near: 1.2, step: 1.25, wheel: 0.0016 };
 export const LEVEL_K = { far: 0.42, mid: 0.85, near: 1.5 };
@@ -41,6 +41,66 @@ export function shelf(items, target, gapX, gapY = gapX) {
     W = Math.max(W, x - gapX);
   }
   return { pos, w: W, h: items.length ? y + rowH : 0 };
+}
+// P153: 하늘선 쌓기(skyline). 폭 width 안에서 차례대로 놓되, 각 상자를 지금 쌓인 높이가 가장 낮은 자리(같으면 왼쪽)에 놓는다.
+// 선반과 달리 키 작은 것 아래·옆 빈 곳을 다음 상자가 채운다. → 같은 차례의 [{ x, y }] 와 { w, h }
+export function skyline(items, width, gap) {
+  let sky = [{ x: 0, w: Math.max(width, 1) + gap, y: 0 }]; // 겹치지 않는 토막들(왼 → 오)
+  const pos = [];
+  let W = 0, H = 0;
+  const topOver = (x, w) => { let y = 0; for (const s of sky) if (s.x < x + w && s.x + s.w > x) y = Math.max(y, s.y); return y; };
+  for (const it of items) {
+    const need = it.w + gap;
+    let best = null;
+    for (const s of sky) {
+      const x = s.x;
+      if (x > 0 && x + it.w > width) continue;
+      const y = topOver(x, need);
+      if (!best || y < best.y - 0.5 || (Math.abs(y - best.y) <= 0.5 && x < best.x)) best = { x, y };
+    }
+    if (!best) best = { x: 0, y: topOver(0, need) };
+    pos.push(best);
+    W = Math.max(W, best.x + it.w); H = Math.max(H, best.y + it.h);
+    // 하늘선 고치기: [x, x + need) 구간을 y + h + gap으로
+    const a = best.x, b = best.x + need, top = best.y + it.h + gap;
+    const next = [];
+    for (const s of sky) {
+      if (s.x + s.w <= a || s.x >= b) { next.push(s); continue; }
+      if (s.x < a) next.push({ x: s.x, w: a - s.x, y: s.y });
+      if (s.x + s.w > b) next.push({ x: b, w: s.x + s.w - b, y: s.y });
+    }
+    next.push({ x: a, w: need, y: top });
+    next.sort((p, q) => p.x - q.x);
+    sky = next;
+  }
+  return { pos, w: W, h: items.length ? H : 0 };
+}
+// 가장 잘 맞는 하늘선 쌓기: 폭 후보(가장 넓은 것, 넓이에서 어림한 폭 여럿, 앞에서부터 이어 붙인 폭들) × 차례 둘(주어진 차례, 키 큰 차례)을 해 보고
+// 비율 aspect 상자에 가장 크게 들어가는 것을 고른다. 키 큰 차례는 5% 넘게 나을 때만(사이드바 차례를 되도록 지킨다)
+export function bestPack(items, gap, aspect) {
+  if (!items.length) return { pos: [], w: 0, h: 0 };
+  const maxW = Math.max(...items.map((it) => it.w));
+  const area = items.reduce((a, it) => a + (it.w + gap) * (it.h + gap), 0);
+  const cands = new Set([maxW]);
+  for (const f of [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5, 1.7]) cands.add(Math.max(maxW, Math.sqrt(area * aspect) * f));
+  let run = 0;
+  for (const it of items) { run += (run ? gap : 0) + it.w; cands.add(run); }
+  const score = (s) => Math.max(s.w / aspect, s.h);
+  const tryOrder = (list) => {
+    let best = null;
+    for (const t of cands) {
+      const s = skyline(list.map((i) => items[i]), t, gap);
+      if (!best || score(s) < score(best.s) - 0.5 || (Math.abs(score(s) - score(best.s)) <= 0.5 && s.w * s.h < best.s.w * best.s.h)) best = { s, list };
+    }
+    return best;
+  };
+  const idx = items.map((_, i) => i);
+  const a = tryOrder(idx);
+  const b = tryOrder([...idx].sort((p, q) => items[q].h - items[p].h || items[q].w - items[p].w || p - q));
+  const pick = score(b.s) < score(a.s) * 0.95 ? b : a;
+  const pos = new Array(items.length);
+  pick.list.forEach((i, j) => { pos[i] = pick.s.pos[j]; });
+  return { pos, w: pick.s.w, h: pick.s.h };
 }
 // 선반 목표 폭: 넓이의 제곱근 × 비율, 가장 넓은 것보다 좁지 않게(옛 셈, 휴대폰 지도가 쓴다)
 export const shelfTarget = (items, aspect, gap) => {
@@ -79,7 +139,7 @@ export const textW = (s, px, r = 0.58) => String(s || '').length * px * r;
 // 글자 수 × 크기(휴대폰 지도 폭 어림)
 const nameW = (s, px) => String(s || '').length * px;
 // 섬 머리 폭: 보통 단계(이름 26px + 칩 글)와 멀리 단계(이름 46px, 칩은 넘치면 숨는다) 중 큰 것
-const isleHeadW = (name, chips) => Math.max(36 * 2 + 40 + textW(name, 26) + chips.length * 112, 36 * 2 + 54 + textW(name, 46));
+const isleHeadW = (name, chips) => Math.max(36 * 2 + 40 + textW(name, 26) + chips.length * 112, 36 * 2 + 60 + textW(name, 58));
 
 // graph: mission.graph, opt: order(워크스페이스 차례), vgroups(가상 그룹), tiers(Map id → 등급), names(Map 워크스페이스 키 → 보일 이름),
 // aspect(세계 비율, 보통 보기 칸의 가로/세로), routing(다른 섬 선 길 찾기, 휴대폰은 끈다)
@@ -184,17 +244,42 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   }
 
   // ---- 영토(폴더)와 세계 ----
+  // P153: 영토 안 섬 쌓기는 모양 후보 몇 개(가로로 긴 것 ~ 세로로 긴 것)를 만들어 두고, 세계 전체가 보기 칸에 가장 크게 들어가는 조합을 고른다(영토마다 차례로 바꿔 보기 두 번)
+  const W0 = aspect > 0.2 ? aspect : L.ASPECT;
+  const headW = (t) => L.PT * 2 + textW(t.name, 72, 0.62) + 18 + textW('x'.repeat(26), 32, 0.5); // 머리 글 폭(멀리 단계 이름 72px + 요약 32px 26자 안팎)
   for (const t of terrList) {
     const is = t.keys.map((k) => isleOf.get(k));
-    t.inner = bestShelf(is, L.IGAP, 1.7);
     t.sessions = is.reduce((a, i) => a + i.ids.length, 0);
-    // 영토 머리: 멀리 단계 이름(72px)이 들어가게
-    // 머리 글 폭(멀리 단계: 이름 72px + 요약 32px "워크스페이스 n개 · 세션 n개" 안팎 26자)
-    t.w = Math.max(L.PT * 2 + t.inner.w, L.PT * 2 + textW(t.name, 72, 0.62) + 18 + textW("x".repeat(26), 32, 0.5));
-    t.h = L.HT + t.inner.h + L.PT;
+    const seen = new Set();
+    t.cands = [];
+    for (const a of [1.25, 0.6, 0.9, 2, 3.5, 6]) {
+      const p = bestPack(is, L.IGAP, a);
+      const key = `${Math.round(p.w)}x${Math.round(p.h)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      t.cands.push({ inner: p, w: Math.max(L.PT * 2 + p.w, headW(t)), h: L.HT + p.h + L.PT });
+    }
+    t.pick = 0;
   }
-  const items = [...terrList.map((t) => ({ kind: 'terr', t, w: t.w, h: t.h })), ...looseKeys.map((key) => ({ kind: 'isle', key, w: isleOf.get(key).w, h: isleOf.get(key).h }))];
-  const world = bestShelf(items, L.WGAP, aspect > 0.2 ? aspect : L.ASPECT);
+  const looseItems = looseKeys.map((key) => ({ kind: 'isle', key, w: isleOf.get(key).w, h: isleOf.get(key).h }));
+  const packWorld = () => bestPack([...terrList.map((t) => ({ w: t.cands[t.pick].w, h: t.cands[t.pick].h })), ...looseItems], L.WGAP, W0);
+  const wScore = (s) => Math.max(s.w / W0, s.h);
+  let world = packWorld();
+  for (let pass = 0; pass < 2; pass++) {
+    for (const t of terrList) {
+      let bestI = t.pick, bestS = wScore(world);
+      for (let i = 0; i < t.cands.length; i++) {
+        if (i === t.pick) continue;
+        const keep = t.pick; t.pick = i;
+        const s = packWorld();
+        if (wScore(s) < bestS - 0.5) { bestS = wScore(s); bestI = i; }
+        t.pick = keep;
+      }
+      if (bestI !== t.pick) { t.pick = bestI; world = packWorld(); }
+    }
+  }
+  for (const t of terrList) { const c = t.cands[t.pick]; t.inner = c.inner; t.w = c.w; t.h = c.h; }
+  const items = [...terrList.map((t) => ({ kind: 'terr', t, w: t.w, h: t.h })), ...looseItems];
   const cards = new Map(), rings = [], isles = [], terrs = [], off = new Map();
   const putIsle = (key, x, y, folder) => {
     const I = isleOf.get(key);
@@ -254,11 +339,14 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   if (cross.length) {
     const blocks = [];
     for (const c of cards.values()) blocks.push({ x: c.x, y: c.y, w: c.w, h: c.h });
-    for (const i of isles) blocks.push({ x: i.x + 16, y: i.y + 10, w: Math.min(i.w - 32, isleHeadW(i.name, i.chips) - 20), h: L.HEAD - 26 });
+    for (const i of isles) blocks.push({ x: i.x + 10, y: i.y + 6, w: i.w - 20, h: L.HEAD - 22 }); // 섬 머리 띠 전체(칩은 오른쪽 끝에 붙는다)
     for (const r of rings) blocks.push({ x: r.x + 14, y: r.y + 6, w: Math.min(r.w - 28, 420), h: L.RH - 16 });
     for (const t of terrs) blocks.push({ x: t.x + 30, y: t.y + 16, w: Math.min(t.w - 60, textW(t.name, 44, 0.62) + 340), h: L.HT - 44 });
     const trees = edges.map((e) => e.pts);
-    const routes = routing && cross.length <= 60 ? routeOrtho(cross.map((c) => ({ a: c.a, b: c.b })), blocks, trees, { G: L.G }) : null;
+    // 섬 맨 윗줄 카드로 드나드는 선만 그 카드 가운데 위의 좁은 길로 섬 머리를 지난다(시안처럼 섬 위 통로에서 곧게 내려온다)
+    const isleBy = new Map(isles.map((i) => [i.key, i]));
+    const gate = (c) => { const i = isleBy.get(c.ws); return i && c.y - i.y < L.HEAD + L.RH + 40 ? { x: c.x + c.w / 2 - 3, y: i.y - 24, w: 6, h: c.y - i.y + 24 } : null; };
+    const routes = routing && cross.length <= 60 ? routeOrtho(cross.map((c) => ({ a: c.a, b: c.b, open: [c.a, c.b].map(gate) })), blocks, trees, { G: L.G }) : null;
     cross.forEach((c, i) => {
       let pts = routes && routes[i];
       if (!pts) { const ay = c.a.y + c.a.h, by = c.b.y, my = Math.min(ay, by) - 30; pts = [[cx(c.a), c.a.y], [cx(c.a), my], [cx(c.b), my], [cx(c.b), by]]; }
@@ -338,7 +426,10 @@ export function routeOrtho(reqs, blocks, trees = [], { G = 16, margin = 10, maxS
     return null;
   };
   const out = [];
-  for (const { a, b } of reqs) {
+  for (const { a, b, open = [] } of reqs) {
+    // 이 선에만 열어 주는 길(섬 머리를 곧게 지나는 좁은 칸)
+    const opened = [];
+    for (const r of open) { if (!r) continue; const ca = Math.max(0, cellX(r.x)), cb = Math.min(C - 1, cellX(r.x + r.w)), ra = Math.max(0, cellY(r.y)), rb = Math.min(R - 1, cellY(r.y + r.h)); for (let rr = ra; rr <= rb; rr++) for (let cc = ca; cc <= cb; cc++) { const k = rr * C + cc; if (blocked[k]) { opened.push(k); blocked[k] = 0; } } }
     // 시작·끝 자리: 위(카드 위 가장자리에서 한 칸 바깥) 또는 아래
     const ports = (box) => [{ x: box.x + box.w / 2, y: box.y, oy: box.y - margin - G * 0.6, dir: -1 }, { x: box.x + box.w / 2, y: box.y + box.h, oy: box.y + box.h + margin + G * 0.6, dir: 1 }];
     let best = null;
@@ -356,6 +447,7 @@ export function routeOrtho(reqs, blocks, trees = [], { G = 16, margin = 10, maxS
       const cost = cells.length + turns * 6;
       if (!best || cost < best.cost) best = { cost, cells, p, q };
     }
+    for (const k of opened) blocked[k] = 1;
     if (!best) { out.push(null); continue; }
     // 칸 → 점(칸 가운데), 같은 방향은 하나로. 처음·끝의 세로 줄은 카드 가운데 x로 맞춘다
     let pts = best.cells.map((cell) => { const c = cell % C, r = (cell - c) / C; return [ox + c * G + G / 2, oy + r * G + G / 2]; });
@@ -442,19 +534,26 @@ export function stepCard(order, id, d) {
   return order[(i + d + order.length) % order.length];
 }
 
-// ---- 휴대폰(멀리 단계 지도): 섬마다 세션 타일 ----
-// 타일 TILE, 틈 TGAP, 한 줄 TCOLS개. 섬 머리 IHEAD, 섬 안 여백 IPAD, 영토 머리 THEAD·여백 TPAD, 섬 사이 IG, 영토 사이 WG
-export const PTERR = { TILE: 22, TGAP: 6, TCOLS: 6, IPAD: 8, IHEAD: 22, ISLE_MIN: 96, THEAD: 26, TPAD: 10, IG: 8, WG: 14, ASPECT: 1.3, TAP_MIN: 24 }; // ASPECT: 지도 칸(393×430 안팎)이 조금 가로로 길다
-// lay: territoryLayout 결과 → { tiles: [{ id, x, y, s, ws }], isles, terrs, bounds }. 타일 차례는 섬 안 카드 차례(위 → 아래, 왼 → 오른)
-export function phoneTerr(lay, { names = null } = {}) {
+// ---- 휴대폰 지도: 섬마다 세션 이름 타일 ----
+// P153: 타일은 이름이 든 알약(TW × TH, 상태 점·이름 12px, 작업 중은 빛). 섬 안 줄 수는 세션 수로(넷까지 한 줄, 열까지 두 줄, 더 많으면 세 줄).
+// 섬 머리 IHEAD, 섬 안 여백 IPAD, 영토 머리 THEAD·여백 TPAD, 섬 사이 IG, 영토 사이 WG. 세계는 지도 칸 비율(aspect)에 맞춰 하늘선 쌓기로 촘촘히
+export const PTERR = { TW: 112, TH: 28, TGAP: 5, IPAD: 7, IHEAD: 20, ISLE_MIN: 126, THEAD: 22, TPAD: 7, IG: 7, WG: 10, ASPECT: 0.9, TILE: 28 };
+// lay: territoryLayout 결과 → { tiles: [{ id, x, y, w, h, s, ws }], isles, terrs, bounds }. 타일 차례는 섬 안 카드 차례(위 → 아래, 왼 → 오른)
+// maxW: 이 폭(세계 px) 안에 들게 짠다(휴대폰 폭 ÷ 읽히는 배율). 비율을 좁혀 가며 처음 들어가는 것을 고른다
+export function phoneTerr(lay, { names = null, aspect = PTERR.ASPECT, maxW = 0 } = {}) {
+  if (maxW > 0) {
+    let last = null;
+    for (const a of [aspect, 0.8, 0.65, 0.5, 0.4, 0.3, 0.22]) { if (a > aspect) continue; last = phoneTerr(lay, { names, aspect: a }); if (last.bounds.w <= maxW) return last; }
+    return last;
+  }
   const P = PTERR;
-  const nameOf = (k) => (names && names.get(k)) || k || '';
+  const nameOf = (k) => (names && names.get(k)) || (k ? keyName(k) : '');
   const byIsle = new Map(lay.isles.map((i) => [i.key, []]));
   for (const id of lay.order) { const c = lay.cards.get(id); if (byIsle.has(c.ws)) byIsle.get(c.ws).push(id); }
   const isleSize = (key) => {
-    const n = byIsle.get(key).length, cols = Math.min(P.TCOLS, Math.max(1, n)), rows = Math.ceil(n / cols);
-    const w = Math.max(P.ISLE_MIN, Math.min(nameW(nameOf(key), 6.6) + P.IPAD * 2, 150), P.IPAD * 2 + cols * P.TILE + (cols - 1) * P.TGAP);
-    return { w, h: P.IPAD + P.IHEAD + rows * P.TILE + (rows - 1) * P.TGAP + P.IPAD, cols };
+    const n = byIsle.get(key).length, cols = n <= 4 ? 1 : n <= 10 ? 2 : 3, rows = Math.ceil(Math.max(1, n) / cols);
+    const w = Math.max(P.ISLE_MIN, Math.min(nameW(nameOf(key), 7) + P.IPAD * 2, 240), P.IPAD * 2 + cols * P.TW + (cols - 1) * P.TGAP);
+    return { w, h: P.IPAD + P.IHEAD + rows * P.TH + (rows - 1) * P.TGAP + P.IPAD, cols };
   };
   const items = [];
   const seenT = new Set();
@@ -468,16 +567,16 @@ export function phoneTerr(lay, { names = null } = {}) {
   for (const it of items) {
     if (it.kind === 'isle') { Object.assign(it, isleSize(it.key)); continue; }
     const is = it.keys.map(isleSize);
-    it.inner = shelf(is, shelfTarget(is, P.ASPECT, P.IG), P.IG);
+    it.inner = bestPack(is, P.IG, Math.min(1, aspect));
     it.sizes = is;
-    it.w = Math.max(P.TPAD * 2 + it.inner.w, nameW(it.name, 9) + P.TPAD * 2);
+    it.w = Math.max(P.TPAD * 2 + it.inner.w, nameW(it.name, 8) + P.TPAD * 2);
     it.h = P.THEAD + it.inner.h + P.TPAD;
   }
-  const world = shelf(items, shelfTarget(items, P.ASPECT, P.WG), P.WG);
+  const world = bestPack(items, P.WG, aspect > 0.2 ? aspect : P.ASPECT);
   const tiles = [], isles = [], terrs = [];
   const putIsle = (key, x, y, s, color) => {
     isles.push({ key, x, y, w: s.w, h: s.h, loose: color == null, color });
-    byIsle.get(key).forEach((id, j) => tiles.push({ id, ws: key, s: P.TILE, x: x + P.IPAD + (j % s.cols) * (P.TILE + P.TGAP), y: y + P.IPAD + P.IHEAD + Math.floor(j / s.cols) * (P.TILE + P.TGAP) }));
+    byIsle.get(key).forEach((id, j) => tiles.push({ id, ws: key, w: P.TW, h: P.TH, s: P.TH, x: x + P.IPAD + (j % s.cols) * (P.TW + P.TGAP), y: y + P.IPAD + P.IHEAD + Math.floor(j / s.cols) * (P.TH + P.TGAP) }));
   };
   items.forEach((it, i) => {
     const { x, y } = world.pos[i];
