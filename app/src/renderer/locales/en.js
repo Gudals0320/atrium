@@ -2570,5 +2570,11 @@ export default {
     none: 'Nothing waiting for you',
     open: 'Open session',
   },
+  // P161: empty state of the Connections tab (what it is for, how to add one)
+  connEmpty: {
+    title: 'No connections yet',
+    what: 'A connection points a launcher at a model endpoint other than the harness login (for example a local gateway or another provider).',
+    how: 'Press New connection, enter the base URL and the name of the environment variable that holds the key, then pick it in a launcher. Without one, launchers use the harness login.',
+  },
 };
 
