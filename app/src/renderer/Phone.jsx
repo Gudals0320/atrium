@@ -471,7 +471,7 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
         </button>
       </header>
       <div className="mt-ph-term" ref={boxRef} data-role="phone-term">
-        {live && box.w > 0 && <TerminalView sessionId={id} width={box.w} height={box.h} fontScale={scale} webgl={false} onInput={() => markInteracted(id)} />}
+        {live && box.w > 0 && <TerminalView sessionId={id} width={box.w} height={box.h} fontScale={scale} webgl={false} touchSelect onInput={() => markInteracted(id)} />}
         {s.state === 'sleeping' && (
           <div className="mt-ph-cover" data-role="phone-asleep"><p>{t('phone.asleep')}</p><button type="button" className="mt-ph-primary" data-action="phone-wake" onClick={() => wakeSession(id)}>{s.waking ? t('phone.waking') : t('phone.wake')}</button></div>
         )}

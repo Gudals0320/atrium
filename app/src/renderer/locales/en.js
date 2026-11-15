@@ -1291,6 +1291,11 @@ export default {
   // P42: web-like text selection in terminal nodes
   termSelect: {
     copyFail: 'Could not copy to the clipboard',
+    // P151: long-press selection on the phone
+    bar: 'Selected text',
+    copy: 'Copy',
+    selectAll: 'Select all',
+    close: 'Close',
   },
   // P44: sidebar for 200+ sessions (rows, filters, keyboard, width)
   sb2: {

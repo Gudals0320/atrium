@@ -40,7 +40,8 @@ export class TermSelection {
     this._down = (e) => this.onDown(e);
     this._move = (e) => this.onMove(e);
     this._up = (e) => this.onUp(e);
-    this._outside = (e) => { if (this.anchor && !this.host.contains(e.target)) this.clear('outside'); };
+    // P151: 손가락 고르기의 막대·손잡이(data-term-keep)를 누른 것은 밖 누르기가 아니다
+    this._outside = (e) => { if (this.anchor && !this.host.contains(e.target) && !(e.target && e.target.closest && e.target.closest('[data-term-keep]'))) this.clear('outside'); };
     host.addEventListener('mousedown', this._down, true);
     this._offScroll = term.onScroll(() => { if (this.mode === 'buffer') this.afterMove(); });
     this._offResize = term.onResize(() => { if (this.anchor) this.clear('resize'); });
@@ -64,7 +65,10 @@ export class TermSelection {
     window.removeEventListener('mousedown', this._outside, true);
     if (this.mode === 'buffer' && why === 'escape') this.term.scrollToBottom(); // 셸: 지금 화면으로 돌아온다
     this.log('term_selection_cleared', { why });
+    this.changed();
   }
+  // P151: 그린 선택이 바뀌었다(손가락 고르기의 손잡이·막대가 따라온다)
+  changed() { if (this.onRender) this.onRender(); }
 
   // ---------- 문서 ----------
   // 화면 줄의 스크롤 영역(live: 머리줄·입력칸 뺀 줄, 그 밖: 화면 전체)
@@ -82,6 +86,7 @@ export class TermSelection {
       else { const [lo, hi] = this.region(); span = visibleSpan(this.anchor, this.focus, { first: this.toLine(lo), last: this.toLine(hi), cols, rowBase: this.doc.top }); }
     }
     if (span) this.term.select(span.col, span.row, span.length); else this.term.clearSelection();
+    this.changed();
   }
   // live: 프레임을 쓴 뒤 부른다. 고르는 중일 때만 화면을 견준다
   onFrame() {
@@ -94,7 +99,7 @@ export class TermSelection {
   // 글이 움직였다(프레임, 판 안 스크롤): 끄는 중이면 마우스 밑 칸으로 끝을 다시 잡는다
   afterMove() {
     if (!this.anchor) return;
-    if (this.dragging && this.pt) this.focus = this.posAt(this.pt);
+    if (this.dragging && this.pt) { this.focus = this.posAt(this.pt); if (this.repin) this.repin(); } // P151 repin: 손가락으로 처음 고른 낱말을 품는다
     this.render();
   }
 
@@ -147,7 +152,7 @@ export class TermSelection {
   onUp() {
     const was = this.dragging;
     this.endDrag();
-    if (!this.has()) { this.anchor = this.focus = null; this.term.clearSelection(); window.removeEventListener('mousedown', this._outside, true); return; }
+    if (!this.has()) { this.anchor = this.focus = null; this.term.clearSelection(); window.removeEventListener('mousedown', this._outside, true); this.changed(); return; }
     if (was && this.onSelectEnd) this.onSelectEnd();
   }
   endDrag() {

@@ -184,7 +184,7 @@ function FullView({ s, from }) {
       </div>
       <div className="mt-full-wrap" ref={wrapRef}>
         <div className="mt-full-term" data-role="phone-full-term" style={box.term ? { height: box.term, top: box.open ? -shift : 'auto', bottom: box.open ? 'auto' : 0 } : undefined} data-shift={box.open ? shift : 0}>
-          {live && ready && box.w > 0 && box.term > 0 && <TerminalView sessionId={id} width={box.w} height={box.term} fontScale={scale} webgl={false} onInput={() => markInteracted(id)} />}
+          {live && ready && box.w > 0 && box.term > 0 && <TerminalView sessionId={id} width={box.w} height={box.term} fontScale={scale} webgl={false} touchSelect onInput={() => markInteracted(id)} />}
           {s.state === 'sleeping' && <div className="mt-ph-cover" data-role="phone-asleep"><p>{t('phone.asleep')}</p><button type="button" className="mt-ph-primary" data-action="phone-wake" onClick={() => wakeSession(id)}>{s.waking ? t('phone.waking') : t('phone.wake')}</button></div>}
           {s.state === 'exited' && <div className="mt-ph-cover" data-role="phone-exited"><p>{t('phone.exited')}</p></div>}
         </div>
