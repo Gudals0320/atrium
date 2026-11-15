@@ -21,9 +21,6 @@ import { roleText, teamText, modelText, ageText } from './lib/mission-model.js';
 import { kindOf, shownKind, logoFor } from './lib/kinds.js';
 import { TOUCH_SLOP_PX, pinchViewport, panViewport, mid, dist } from './lib/touch-board.js';
 import { MissionLight } from './Mission.jsx'; // P107: 테두리를 따라 도는 빛 층(PC와 같다)
-import { MissionStyleSwitch } from './MissionSquads.jsx'; // P148: 모양 단추(부대 / 옛 지도)
-import { PhoneSquads } from './PhoneSquads.jsx'; // P148: 휴대폰 부대 모양
-import { missionStyleOf } from './lib/mission-style.js';
 
 const REFRESH_MS = 600; // 판이 바뀌면 이만큼 모았다가 다시 받는다
 let cache = null; // 마지막 mission.graph
@@ -90,17 +87,7 @@ function Node({ n, live, dim, no, t, now }) {
   );
 }
 
-// P148: 판 설정 missionStyle을 따른다(PC와 같은 판 설정). 기본은 부대(PhoneSquads.jsx), classic이면 아래 옛 휴대폰 지도(P87~P145) 그대로
-export function PhoneMission(props) {
-  const settings = useStore((st) => st.settings);
-  const [pick, setPick] = useState(null); // 설정을 저장하는 동안 먼저 바꿔 보인다
-  const style = pick || missionStyleOf(settings);
-  useEffect(() => { if (pick && missionStyleOf(settings) === pick) setPick(null); }, [settings, pick]);
-  const switcher = <MissionStyleSwitch value={style} onPick={setPick} />;
-  return style === 'classic' ? <PhoneClassic {...props} switcher={switcher} /> : <PhoneSquads {...props} switcher={switcher} />;
-}
-
-function PhoneClassic({ onBack, onOpen, conn, switcher }) {
+export function PhoneMission({ onBack, onOpen, conn }) {
   const t = useT();
   const sessions = useStore((st) => st.sessions);
   const links = useStore((st) => st.links);
@@ -260,7 +247,7 @@ function PhoneClassic({ onBack, onOpen, conn, switcher }) {
         )}
         {pg && pg.nodes.length > 0 && (
           <div className="mt-pm-tools">
-            <span className="mt-pm-switch" onClick={(e) => e.stopPropagation()}>{switcher}</span>
+            <span />
             <button type="button" className="mt-pm-fit" data-action="pm-fit" aria-label={t('phoneMission.fit')} onClick={(e) => { e.stopPropagation(); fit(); }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg><span>{t('phoneMission.fitShort')}</span>
             </button>
