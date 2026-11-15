@@ -2206,6 +2206,7 @@ export default {
     group: '응답 키',
     open: '키 패드 열기',
     close: '키 패드 닫기',
+    backspace: '백스페이스',
     space: 'Space',
     left: '왼쪽 화살표',
     right: '오른쪽 화살표',

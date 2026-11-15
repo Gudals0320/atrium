@@ -105,9 +105,9 @@ export function keyBytes(key, { appCursor = false } = {}) {
 }
 
 // P104: 키 패드(응답 키). 판은 답을 고르지 않고 누른 키를 그 세션 패널에 그대로 보낸다(백엔드 session.keys, 받는 키는 keys.mjs KEY_NAMES).
-// 그래서 Claude Code, Codex, 셸 어디서나 같다. 두 줄 일곱 칸: 위 [Esc 1 2 3 4 ↑ Tab], 아래 [닫기 Space Enter(두 칸) ← ↓ →]
+// 그래서 Claude Code, Codex, 셸 어디서나 같다. 두 줄 일곱 칸: 위 [Esc 1 2 3 4 ↑ ⌫], 아래 [닫기 Tab Space Enter ← ↓ →](2026-11-15 사용자: 백스페이스 추가)
 // 숫자는 1~4: Claude Code의 권한 질문(3개까지)·계획 승인(4개까지)·AskUserQuestion(선택지 2~4개)의 번호. 그 밖의 줄과 다른 하네스는 화살표와 Enter로 고른다
-export const PAD_KEYS = ['esc', '1', '2', '3', '4', 'up', 'tab', 'space', 'enter', 'left', 'down', 'right'];
+export const PAD_KEYS = ['esc', '1', '2', '3', '4', 'up', 'backspace', 'tab', 'space', 'enter', 'left', 'down', 'right'];
 export const PAD_MAX = 32; // 요청 하나에 담는 키(keys.mjs KEYS_MAX)
 
 // 누른 키를 차례로 보낸다. 앞 요청이 돌아오기 전에 누른 키는 모아 다음 요청 하나로 보낸다(빠지지 않고 차례가 섞이지 않는다).

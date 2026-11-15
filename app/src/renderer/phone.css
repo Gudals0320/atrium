@@ -360,7 +360,7 @@ button.mt-pm-chip:disabled { opacity: .5; }
 
 /* P104: 키 패드(응답 키). 응답이 필요하면 키 줄 자리에 펼친다. 두 줄 일곱 칸(375px 폭에서 칸 46px, 높이 48px, 사이 6px).
    위 [Esc 1 2 3 4 ↑ Tab], 아래 [닫기 Space Enter(두 칸) ← ↓ →]. 화살표는 뒤집은 T, Esc는 왼쪽 위 끝(화살표와 떨어뜨린다) */
-.mt-ph-pad { flex: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 48px 48px; grid-template-areas: "esc k1 k2 k3 k4 up tab" "close space enter enter left down right"; gap: 6px; padding: 8px calc(env(safe-area-inset-right) + 8px) 6px calc(env(safe-area-inset-left) + 8px); background: var(--chrome-bg); border-top: 1px solid var(--chrome-line); }
+.mt-ph-pad { flex: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 48px 48px; grid-template-areas: "esc k1 k2 k3 k4 up bksp" "close tab space enter left down right"; gap: 6px; padding: 8px calc(env(safe-area-inset-right) + 8px) 6px calc(env(safe-area-inset-left) + 8px); background: var(--chrome-bg); border-top: 1px solid var(--chrome-line); }
 .mt-ph-pad.need { border-top-color: var(--attn-line); }
 .mt-ph-pk { min-width: 0; min-height: 44px; display: grid; place-items: center; padding: 0; border-radius: 10px; border: 1px solid var(--panel-line-2); background: var(--panel-2); color: var(--text); font: 600 18px/1 var(--font-mono); touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .mt-ph-pk:active { background: var(--accent-soft); border-color: var(--accent-line); }
@@ -372,6 +372,7 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-pk[data-pad-key="4"] { grid-area: k4; }
 .mt-ph-pk[data-pad-key="up"] { grid-area: up; }
 .mt-ph-pk[data-pad-key="tab"] { grid-area: tab; }
+.mt-ph-pk[data-pad-key="backspace"] { grid-area: bksp; }
 .mt-ph-pk[data-pad-key="space"] { grid-area: space; }
 .mt-ph-pk[data-pad-key="left"] { grid-area: left; }
 .mt-ph-pk[data-pad-key="down"] { grid-area: down; }

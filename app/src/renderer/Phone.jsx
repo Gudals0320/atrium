@@ -337,7 +337,7 @@ function PhoneList({ onOpen, onNew, onMission }) {
 // ---------- 세션 하나 ----------
 const KEY_LABEL = { enter: '⏎', esc: 'Esc', ctrlc: 'Ctrl+C', up: '↑', down: '↓', tab: 'Tab', shifttab: '⇧Tab', slash: '/' };
 // P104: 키 패드. 키 줄 자리에 두 줄로 펼친다(phone.css .mt-ph-pad의 칸 배치). 누르면 화면 키보드와 입력 줄의 초점은 그대로 둔다
-const PAD_GLYPH = { esc: 'Esc', tab: 'Tab', space: 'Space', enter: '⏎ Enter', up: '↑', down: '↓', left: '←', right: '→' };
+const PAD_GLYPH = { esc: 'Esc', tab: 'Tab', space: 'Space', backspace: '⌫', enter: '⏎ Enter', up: '↑', down: '↓', left: '←', right: '→' };
 const noFocus = (e) => e.preventDefault();
 function PadIcon() {
   return <svg className="mt-ph-padicon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M7 9.5h.01M10.5 9.5h.01M14 9.5h.01M17.5 9.5h.01M8 14.5h8" /></svg>;

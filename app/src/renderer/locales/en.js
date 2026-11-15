@@ -2206,6 +2206,7 @@ export default {
     group: 'Answer keys',
     open: 'Open the key pad',
     close: 'Close the key pad',
+    backspace: 'Backspace',
     space: 'Space',
     left: 'Left arrow',
     right: 'Right arrow',
