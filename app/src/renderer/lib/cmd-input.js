@@ -125,3 +125,20 @@ export function fieldHeight({ contentHeight, lineHeight, maxHeight }) {
   if (h > maxHeight) return { height: maxHeight, scroll: true };
   return { height: h, scroll: false };
 }
+
+// P153: 세션 맵에서 카드를 누르면 받는 세션을 넣고 뺀다(단위 시험 test/p153-lib.test.mjs).
+// 앞머리 @태그 이름들(@ 뺀 것, 차례대로)
+export function leadTags(text) {
+  const m = String(text ?? '').match(LEAD_RE);
+  return m ? (m[1].match(TOKEN_RE) || []).map((x) => x.slice(1)) : [];
+}
+// 앞머리 태그에 name이 있으면 빼고 없으면 끝에 더한다. 뒤의 글은 그대로. 태그가 남으면 "@a @b " 꼴로 끝이 공백 하나
+export function toggleTag(text, name) {
+  const s = String(text ?? '');
+  const m = s.match(LEAD_RE);
+  const tags = m ? (m[1].match(TOKEN_RE) || []).map((x) => x.slice(1)) : [];
+  const rest = m ? s.slice(m[0].length) : s.replace(/^\s+/, '');
+  const has = tags.some((x) => lc(x) === lc(name));
+  const next = has ? tags.filter((x) => lc(x) !== lc(name)) : [...tags, name];
+  return (next.length ? next.map((x) => `@${x}`).join(' ') + ' ' : '') + rest;
+}

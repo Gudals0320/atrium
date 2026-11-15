@@ -486,3 +486,25 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pt-pc .r3 b { color: var(--sc); font-weight: 600; margin-right: 4px; }
 .mt-pt-pslot.st-needs .r3 { color: var(--attn-text); }
 .mt-pt-pc .r4 { font-size: 12px; color: #ffb3c1; overflow-wrap: anywhere; }
+
+/* P153: 세션 맵 휴대폰. 폴더 이름도 앱 기본 글꼴 굵게(대문자·넓은 자간 없이) */
+.mt-pt-terr span { letter-spacing: normal; text-transform: none; font-size: 12px; }
+/* P153: 타일은 이름 알약(상태 점 + 이름, 상태 색 테두리·바탕, 작업 중은 빛). 배경은 판과 같은 점 격자. 안내 글과 줌 단추는 지도 위 띠(지도 내용과 겹치지 않는다) */
+.mt-pt-stage { background-color: var(--canvas); background-image: radial-gradient(circle, var(--canvas-dot) 1px, transparent 1.6px); background-size: 24px 24px; }
+.mt-pt-isl .n { font-size: 12px; }
+.mt-pt-tile { display: flex; align-items: center; gap: 5px; padding: 0 7px; box-sizing: border-box; border-radius: 8px; background: color-mix(in srgb, var(--sc) 14%, #141c1b); border: 1.5px solid color-mix(in srgb, var(--sc) 70%, transparent); color: #eef2f0; }
+.mt-pt-tile.idle { background: #121918; border: 1px solid rgba(220, 240, 232, 0.16); color: #c3cbc8; }
+.mt-pt-tile.st-sleeping { border-style: dashed; }
+.mt-pt-tile.st-working { background: #141c1b; border-color: color-mix(in srgb, var(--mm-run) 45%, transparent); }
+.mt-pt-tile.st-needs, .mt-pt-tile.st-error { border-width: 2px; }
+.mt-pt-tile .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sc); flex: none; }
+.mt-pt-tile.st-sleeping .dot { background: transparent; border: 1.5px solid var(--sc); box-sizing: border-box; }
+.mt-pt-tile .tn { display: block; position: static; transform: none; max-width: none; min-width: 0; font: 600 12px/16px var(--font-ui); color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-pt-tile .mt-mm-light { border-radius: 9px; }
+.mt-pt-tile .mt-mm-lring { border-radius: 11px; }
+.mt-pt-tile .mt-mm-lspin { transform: scaleX(3); }
+.mt-pt-tile .mt-mm-lspin::before { width: 60px; height: 60px; margin: -30px 0 0 -30px; }
+.mt-pt-hint { top: 0; height: 44px; display: flex; align-items: center; }
+.mt-pt-zoomrow { top: 4px; bottom: auto; gap: 5px; }
+.mt-pt-zb { width: 36px; height: 36px; border-radius: 10px; }
+.mt-pt-lvtag { height: 36px; padding: 0 9px; border-radius: 10px; }

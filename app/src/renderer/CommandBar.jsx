@@ -26,7 +26,7 @@ import { bandZone, bottomNext } from './lib/bottom.js'; // P43. P61: 들어가�
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
 import { kbLift } from './lib/touch-board.js'; // P83
-import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight } from './lib/cmd-input.js'; // P142
+import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag } from './lib/cmd-input.js'; // P142. P153: toggleTag
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
 
@@ -106,9 +106,17 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       setText(v); setPick(0);
       requestAnimationFrame(() => { const el = taRef.current; if (el) { el.focus(); el.setSelectionRange(v.length, v.length); } });
     };
+    // P153: 세션 맵의 카드 누르기 = 받는 세션 태그 넣기·빼기(초점은 옮기지 않는다), 맵에서 친 글자 = 입력칸에 초점(그 글자는 입력칸이 받는다)
+    const onTag = (e) => setText((cur) => toggleTag(cur, String(e.detail || '')));
+    const onFocusBar = () => { const el = taRef.current; if (el && document.activeElement !== el) { el.focus(); const n = el.value.length; el.setSelectionRange(n, n); } };
     commandDraft.addEventListener('draft', onDraft);
-    return () => commandDraft.removeEventListener('draft', onDraft);
+    commandDraft.addEventListener('tag', onTag);
+    commandDraft.addEventListener('focus', onFocusBar);
+    return () => { commandDraft.removeEventListener('draft', onDraft); commandDraft.removeEventListener('tag', onTag); commandDraft.removeEventListener('focus', onFocusBar); };
   }, []);
+  // P153: 세션 맵이 지금 글(태그된 카드 표시)을 듣는다
+  useEffect(() => { commandDraft.dispatchEvent(new CustomEvent('text', { detail: text })); }, [text]);
+  const missionOpen = useStore((st) => st.missionOpen);
 
   // 커서 앞 낱말이 @로 시작하면 대상 메뉴(전체, 각 세션)
   const caretWord = (() => {
@@ -201,7 +209,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const now = useTick(2000);
   const recent = [...deliveries.values()].filter((d) => !FINAL.has(d.status) || (d._at && now - d._at < (d.status === 'failed' || d.status === 'unconfirmed' ? FAILED_SHOW_MS : DONE_SHOW_MS))).slice(-6).reverse();
   const threadOpen = useStore((st) => st.threadOpen);
-  const shown = useAutoHide(rootRef, { draft: text.trim().length > 0, popup: options.length > 0 || threadOpen });
+  const shown = useAutoHide(rootRef, { draft: text.trim().length > 0, popup: options.length > 0 || threadOpen || missionOpen }); // P153: 세션 맵이 열린 동안 늘 보인다
   // P83: 손가락 화면. 손잡이 단추, 키보드 위로 올리기, 바 밖을 탭하면 닫기
   const [coarse] = useState(isCoarse);
   const [lift, setLift] = useState(0);
@@ -268,7 +276,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     {/* P43: 숨은 동안 아래에 바가 있다는 얇은 표시. 마우스를 받지 않는다 */}
     <div className="mt-bottom-hint" data-role="bottom-hint" data-on={shown || coarse ? undefined : '1'} aria-hidden="true" />
     {coarse && !shown && <button type="button" className="mt-bottom-handle" data-action="bottom-open" aria-label={t('phoneExit.cmdOpen')} onClick={openByTouch}><Mark /><span>{t('phoneExit.cmdShort')}</span></button>}
-    <div className="mt-bottom" ref={rootRef} data-role="bottom" data-hidden={shown ? undefined : '1'} data-kb={lift > 0 ? '1' : undefined} style={lift > 0 ? { '--mt-kb-lift': `${lift}px` } : undefined}>
+    <div className="mt-bottom" ref={rootRef} data-role="bottom" data-hidden={shown ? undefined : '1'} data-mission={missionOpen ? '1' : undefined} data-kb={lift > 0 ? '1' : undefined} style={lift > 0 ? { '--mt-kb-lift': `${lift}px` } : undefined}>
       {/* P11: Thread와 전달 칩은 칩 줄 위로 띄운다 */}
       <div className="mt-bottom-above">
       <ThreadPanel />
@@ -298,7 +306,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
           <div className="mt-cmd-mirror" ref={mirRef} aria-hidden="true">
             <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i}>{p.text}</span>))}{'\u200b'}</div>
           </div>
-          <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={t('cmd.placeholder')} title={t('boardKeys.command')}
+          <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={missionOpen ? t('mmTerr.barHint') : t('cmd.placeholder')} title={t('boardKeys.command')}
             onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"
             onPaste={(e) => { const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }}
             onDragOver={(e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}

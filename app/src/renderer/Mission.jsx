@@ -98,7 +98,7 @@ export function MissionLight({ role }) {
 }
 
 // P119: 작업 완료 카드의 끝 표식(위 가장자리 꼬리표 안의 체크). 색만으로 가르지 않게 모양과 글을 함께 둔다(휴대폰 PhoneMission.jsx도 같은 모양)
-const DoneMark = () => <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3 5 8.7 9.6 3.6" /></svg>;
+export const DoneMark = () => <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3 5 8.7 9.6 3.6" /></svg>;
 
 function Node({ b, live, m, tier, t, now, no, human, hot, recede, dim, onGo, onHot }) {
   const n = b.node;
