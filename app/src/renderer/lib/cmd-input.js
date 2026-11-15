@@ -150,3 +150,24 @@ export function toggleTag(text, name) {
   const next = has ? tags.filter((x) => lc(x) !== lc(name)) : [...tags, name];
   return (next.length ? next.map((x) => `@${x}`).join(' ') + ' ' : '') + rest;
 }
+
+// P155: 태그 칩 한 번에 지우기(단위 시험 test/p155-lib.test.mjs). 커서가 칩 바로 뒤에서 Backspace, 바로 앞에서 Delete를 누르면
+// 그 칩(@이름)과 뒤따르는 빈칸 하나를 통째로 지운다 → 지울 범위 { start, end } 또는 null(기본 동작).
+// 칩은 겹에 그려지는 태그(mentionTokens) 가운데 판에 있는 이름·@all이다(앞머리의 없는 이름은 치는 중일 수 있어 뺀다).
+// Backspace는 "@a |"처럼 칩 뒤 빈칸 하나 다음의 커서에서도 그 칩을 지운다(카드로 태그를 넣으면 커서가 거기 남는다).
+// 고른 글이 있으면(start≠end) 기본 동작. 함께 지우는 빈칸은 ' ' 하나뿐이다(줄바꿈은 남긴다)
+export function tagDeleteRange(text, start, end, key, tokens) {
+  const s = String(text ?? '');
+  if (start == null || start !== end) return null;
+  const list = (tokens || []).filter((x) => x.state !== 'unknown'); // 판에 없는 이름(치는 중인 "@al", 오타)은 한 글자씩 고친다
+  const span =(tk) => ({ start: tk.start, end: s[tk.end] === ' ' ? tk.end + 1 : tk.end });
+  if (key === 'Backspace') {
+    const tk = list.find((x) => x.end === start || (x.end + 1 === start && s[x.end] === ' '));
+    return tk ? span(tk) : null;
+  }
+  if (key === 'Delete') {
+    const tk = list.find((x) => x.start === start);
+    return tk ? span(tk) : null;
+  }
+  return null;
+}
