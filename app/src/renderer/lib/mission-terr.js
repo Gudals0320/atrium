@@ -372,14 +372,12 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   if (cross.length) {
     const blocks = [];
     for (const c of cards.values()) blocks.push({ x: c.x, y: c.y, w: c.w, h: c.h });
-    for (const i of isles) blocks.push({ x: i.x + 10, y: i.y + 6, w: i.w - 20, h: L.HEAD - 22 }); // 섬 머리 띠 전체(칩은 오른쪽 끝에 붙는다)
-    for (const r of rings) blocks.push({ x: r.x + 14, y: r.y + 6, w: Math.min(r.w - 28, 420), h: L.RH - 16 });
+    // P153 r5: 섬 머리 띠 전체(이름·칩, 멀리 단계 큰 글 높이까지)와 무리 이름표(멀리 단계 34px 글 폭)는 선이 지나지 않는다
+    for (const i of isles) blocks.push({ x: i.x + 6, y: i.y + 4, w: i.w - 12, h: L.HEAD - 10 });
+    for (const r of rings) { const lab = `Team ${byId.get(r.lead).name} · ${r.n + r.away} sessions${r.away ? ` (${r.away} work elsewhere)` : ''}`; blocks.push({ x: r.x + 10, y: r.y + 2, w: Math.min(r.w - 20, textW(lab, 34, 0.56) + 24), h: L.RH - 6 }); }
     for (const t of terrs) blocks.push({ x: t.x + 30, y: t.y + 16, w: Math.min(t.w - 60, textW(t.name, 44, 0.62) + 340), h: L.HT - 44 });
     const trees = edges.map((e) => e.pts);
-    // 섬 맨 윗줄 카드로 드나드는 선만 그 카드 가운데 위의 좁은 길로 섬 머리를 지난다(시안처럼 섬 위 통로에서 곧게 내려온다)
-    const isleBy = new Map(isles.map((i) => [i.key, i]));
-    const gate = (c) => { const i = isleBy.get(c.ws); return i && c.y - i.y < L.HEAD + L.RH + 40 ? { x: c.x + c.w / 2 - 3, y: i.y - 24, w: 6, h: c.y - i.y + 24 } : null; };
-    const routes = routing && cross.length <= 60 ? routeOrtho(cross.map((c) => ({ a: c.a, b: c.b, open: [c.a, c.b].map(gate) })), blocks, trees, { G: L.G }) : null;
+    const routes = routing && cross.length <= 60 ? routeOrtho(cross.map((c) => ({ a: c.a, b: c.b })), blocks, trees, { G: L.G }) : null;
     cross.forEach((c, i) => {
       let pts = routes && routes[i];
       if (!pts) { const ay = c.a.y + c.a.h, by = c.b.y, my = Math.min(ay, by) - 30; pts = [[cx(c.a), c.a.y], [cx(c.a), my], [cx(c.b), my], [cx(c.b), by]]; }
@@ -478,31 +476,39 @@ export function routeOrtho(reqs, blocks, trees = [], { G = 16, margin = 10, maxS
     // 이 선에만 열어 주는 길(섬 머리를 곧게 지나는 좁은 칸)
     const opened = [];
     for (const r of open) { if (!r) continue; const ca = Math.max(0, cellX(r.x)), cb = Math.min(C - 1, cellX(r.x + r.w)), ra = Math.max(0, cellY(r.y)), rb = Math.min(R - 1, cellY(r.y + r.h)); for (let rr = ra; rr <= rb; rr++) for (let cc = ca; cc <= cb; cc++) { const k = rr * C + cc; if (blocked[k]) { opened.push(k); blocked[k] = 0; } } }
-    // 시작·끝 자리: 위(카드 위 가장자리에서 한 칸 바깥) 또는 아래
-    const ports = (box) => [{ x: box.x + box.w / 2, y: box.y, oy: box.y - margin - G * 0.6, dir: -1 }, { x: box.x + box.w / 2, y: box.y + box.h, oy: box.y + box.h + margin + G * 0.6, dir: 1 }];
+    // 시작·끝 자리: 카드 네 변의 가운데(가장자리에서 한 칸 바깥 칸에서 시작한다). arrive = 끝 칸에 닿을 때의 방향(0 +x, 1 -x, 2 +y, 3 -y)
+    // P153 r5: 끝은 받는 카드의 위·왼쪽·오른쪽 가장자리(아래로 들어가면 그 카드의 나무 버스와 겹친다). 섬 머리·무리 이름표는 막혀 있어 맨 윗줄 카드에는 보통 옆으로 들어간다
+    const d0 = margin + G * 0.6;
+    const ports = (box) => {
+      const cx0 = box.x + box.w / 2, cy0 = box.y + box.h / 2;
+      return [
+        { side: 'top', x: cx0, y: box.y, ox: cx0, oy: box.y - d0, axis: 'v', arrive: 2 },
+        { side: 'bottom', x: cx0, y: box.y + box.h, ox: cx0, oy: box.y + box.h + d0, axis: 'v', arrive: 3 },
+        { side: 'left', x: box.x, y: cy0, ox: box.x - d0, oy: cy0, axis: 'h', arrive: 0 },
+        { side: 'right', x: box.x + box.w, y: cy0, ox: box.x + box.w + d0, oy: cy0, axis: 'h', arrive: 1 },
+      ];
+    };
     let best = null;
-    // 끝은 늘 받는 카드의 위 가장자리(아래로 들어가면 그 카드의 나무 버스와 겹쳐 하위들과 이어진 것처럼 보인다)
-    for (const p of ports(a)) for (const q of ports(b).filter((x) => x.dir < 0)) {
-      const sc = cellX(p.x), sr = cellY(p.oy), tc = cellX(q.x), tr = cellY(q.oy);
+    for (const p of ports(a)) for (const q of ports(b).filter((x) => x.side !== 'bottom')) {
+      const sc = cellX(p.ox), sr = cellY(p.oy), tc = cellX(q.ox), tr = cellY(q.oy);
       if (sc < 0 || sr < 0 || sc >= C || sr >= R || tc < 0 || tr < 0 || tc >= C || tr >= R) continue;
-      // 끝 칸에는 카드 쪽으로 들어가는 방향으로 닿아야 한다(위 자리 = 아래로, 아래 자리 = 위로)
       const saved = [blocked[sr * C + sc], blocked[tr * C + tc]];
       blocked[sr * C + sc] = 0; blocked[tr * C + tc] = 0;
-      const cells = search(sc, sr, tc, tr, q.dir < 0 ? 2 : 3);
+      const cells = search(sc, sr, tc, tr, q.arrive);
       blocked[sr * C + sc] = saved[0]; blocked[tr * C + tc] = saved[1];
       if (!cells) continue;
       let turns = 0;
       for (let i = 2; i < cells.length; i++) { const d1 = cells[i - 1] - cells[i - 2], d2 = cells[i] - cells[i - 1]; if (d1 !== d2) turns++; }
-      const cost = cells.length + turns * 6;
+      const cost = cells.length + turns * 6 + (q.side === 'top' ? 0 : 2); // 같으면 위로 들어가는 것
       if (!best || cost < best.cost) best = { cost, cells, p, q };
     }
     for (const k of opened) blocked[k] = 1;
     if (!best) { out.push(null); continue; }
-    // 칸 → 점(칸 가운데), 같은 방향은 하나로. 처음·끝의 세로 줄은 카드 가운데 x로 맞춘다
+    // 칸 → 점(칸 가운데), 같은 방향은 하나로. 처음·끝 토막은 카드 변의 가운데(세로 자리는 x, 가로 자리는 y)에 맞춘다
     let pts = best.cells.map((cell) => { const c = cell % C, r = (cell - c) / C; return [ox + c * G + G / 2, oy + r * G + G / 2]; });
-    const snap = (list, x) => { const x0 = list[0][0]; for (let i = 0; i < list.length && list[i][0] === x0; i++) list[i] = [x, list[i][1]]; };
-    snap(pts, best.p.x);
-    pts.reverse(); snap(pts, best.q.x); pts.reverse();
+    const snap = (list, port) => { const k = port.axis === 'v' ? 0 : 1, v = port.axis === 'v' ? port.x : port.y, v0 = list[0][k]; for (let i = 0; i < list.length && list[i][k] === v0; i++) { const q2 = [...list[i]]; q2[k] = v; list[i] = q2; } };
+    snap(pts, best.p);
+    pts.reverse(); snap(pts, best.q); pts.reverse();
     pts = [[best.p.x, best.p.y], ...pts, [best.q.x, best.q.y]];
     const simple = [pts[0]];
     for (let i = 1; i < pts.length - 1; i++) {
