@@ -520,12 +520,19 @@ export class Backend {
   }
 
   // P119: 작업 완료(unseen)는 맨 위 세션만. 판에 열린(잠든 것도) 부모가 있는 하위 세션의 끝난 턴은 사람의 작업 완료에 넣지 않는다.
-  // 워커는 부모에게 알리고, 부모가 그것을 받아 턴을 끝내면 부모가 작업 완료가 된다. 부모가 닫히면(또는 떼면) 하위 세션이 맨 위라 다시 들어간다.
+  // 워커는 부모에게 알리고, 부모가 그것을 받아 턴을 끝내면 부모가 작업 완료가 된다. 부모가 닫히면(또는 독립으로 두면) 하위 세션이 맨 위라 다시 들어간다.
+  // P159: 부모는 일 부모(relations.mjs workParentOf)다. 동료·독립의 끝난 턴은 맨 위 세션처럼 센다. 사람이 하위로 둔 세션은 뺀다
   // unseenSub = 하위 세션이라 뺀 안 본 턴(노드를 열면 봤음으로 친다, store.js)
-  doneScope(s, f) {
-    const pid = s.parentSessionId;
+  doneScope(s, f, idx = null) {
+    const pid = this.workParentOf(s.sessionId, idx);
     const sub = !!(f.unseen && pid && pid !== s.sessionId && this.sessions.has(pid));
     return { unseen: f.unseen && !sub, unseenSub: sub };
+  }
+  // P159: 일 부모(가지 기능이 없으면 계보 부모)
+  workParentOf(id, idx = null) {
+    if (idx) return idx.workParentOf(id);
+    if (this.branch && this.branch.relIndex) return this.branch.relIndex().workParentOf(id);
+    const s = this.sessions.get(id); return s ? s.parentSessionId || null : null;
   }
   // P92: 웹 푸시가 보는 세션 나무(가볍게: 요약을 다 만들지 않는다). bg = 도는 뒤 일 수(Stop hook의 background_tasks, 모르면 null)
   pushTree() {
@@ -1289,7 +1296,8 @@ export class Backend {
     this.api.broadcast('session.removed', { sessionId: s.sessionId, name: s.name, reason });
     this.bus.emit('closed', s, reason); // P81: 까닭(부모에게 보낼 닫힘 알림)
     onSessionClosed(this, s); // P6a: 덩어리에서 뺀다
-    for (const x of this.sessions.values()) if (x.parentSessionId === s.sessionId) this.broadcastSession(x, { onlyIfFlagsChanged: true }); // P119: 부모가 닫히면 하위 세션이 맨 위라 안 본 턴이 작업 완료로 들어간다
+    { const idx = this.branch && this.branch.relIndex ? this.branch.relIndex() : null; // P119·P159: 일 부모가 닫히면 하위 세션이 맨 위라 안 본 턴이 작업 완료로 들어간다
+      for (const x of this.sessions.values()) if (this.workParentOf(x.sessionId, idx) === s.sessionId) this.broadcastSession(x, { onlyIfFlagsChanged: true }); }
     this.adapter.refreshSubscription();
   }
 
@@ -1869,12 +1877,17 @@ export class Backend {
     if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`);
     const a = this.sessions.get(l.from), b = this.sessions.get(l.to);
     // P81: 부모 → 하위 세션의 선이면 확인에서 "선만 끊기"와 "부모에서도 떼기"를 고른다. 떼기는 선 끊기를 겸한다(알림은 떼기의 것만)
-    const parentLink = !!(a && b && b.parentSessionId === a.sessionId);
-    const pl = parentLink ? { parentLink: { parent: a.name, child: b.name }, parentMsg: m('linkCutParent', { from: a.name, to: b.name }), parentMessage: `@${a.name} → @${b.name}는 부모와 하위 세션의 선입니다. 선만 끊으면 @${b.name}는 여전히 @${a.name}의 하위 세션입니다. 부모에서도 떼면 부모 없는 세션이 됩니다.` } : {};
+    // P159: 부모는 일 부모이고 "떼기"는 독립으로 두기다(계보는 남는다)
+    const parentLink = !!(a && b && this.workParentOf(b.sessionId) === a.sessionId);
+    const pl = parentLink ? { parentLink: { parent: a.name, child: b.name }, parentMsg: m('linkCutParent', { from: a.name, to: b.name }), parentMessage: `@${a.name} → @${b.name}는 위 세션과 하위 세션의 선입니다. 선만 끊으면 @${b.name}는 여전히 @${a.name}의 하위 세션입니다. 독립으로도 두면 @${b.name}는 @${a.name}의 하위가 아닌 독립 세션이 됩니다(띄운 기록은 남습니다).` } : {};
     if (!p.confirm) return l.role && a ? confirmResult(`@${a.name} → @${b ? b.name : '?'} 연결("${l.role}")을 끊는다. @${a.name}에 연결 해제를 알립니다. 주고받은 기록은 유지합니다.`, m('linkCut', { from: a.name, to: b ? b.name : '?', role: l.role }), pl) : confirmResult("보드에서 이 연결선을 제거합니다. 주고받은 기록은 유지합니다.", m('linkRemove'), pl);
     if (p.detach) {
-      if (!parentLink) throw apiError('bad_request', "부모와 하위 세션의 선이 아닙니다. 선만 끊을 수 있습니다.");
-      return { removed: true, deliveryId: null, ...this.branch.detach(b, { by: 'user' }) };
+      if (!parentLink) throw apiError('bad_request', "위 세션과 하위 세션의 선이 아닙니다. 선만 끊을 수 있습니다.");
+      const r = this.branch.detach(b, { by: 'user' });
+      // P159: 독립으로 두면서 선도 끊는다(관계 줄은 남아 세션 맵에는 독립으로 보인다)
+      const nl = this.store.getLink(l.linkId);
+      if (nl && !nl.removedAt) { this.linkEvent(nl, 'unlink', null, { why: 'detach', by: 'user' }, { quiet: true }); this.store.updateLink(l.linkId, { role: null, removedAt: Date.now() }); this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'detach' }); }
+      return { removed: true, deliveryId: null, ...r };
     }
     let deliveryId = null;
     if (l.role && a && b) { const d = this.queue.enqueue(a.sessionId, unlinkNotice({ role: l.role, name: b.name })); deliveryId = d.deliveryId; }
@@ -1883,13 +1896,14 @@ export class Backend {
     this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'user' });
     return { removed: true, deliveryId };
   }
-  // P81: 판에서 부모에서 떼기(노드 메뉴). 확인 글은 무엇이 바뀌는지(머리줄, 사이드바, 끄기와 잠재우기 묶음)
+  // P81: 판에서 부모에서 떼기(노드 메뉴) → P159: 독립으로 두기(relation none, 계보는 남는다). 확인 글은 무엇이 바뀌는지
   detachSession(p) {
     const s = this.resolve(p.session);
-    if (!s.parentSessionId) throw keyed(apiError('no_parent', `@${s.name}에게는 부모가 없습니다.`), 'detachNoParent', { name: s.name });
-    const parent = this.sessions.get(s.parentSessionId);
-    const pname = parent ? parent.name : (this.branch.rowOf(s.parentSessionId) || {}).name || '?';
-    if (!p.confirm) return confirmResult(`@${s.name}을 @${pname}에서 뗍니다. 머리줄과 사이드바에서 @${pname}의 하위 세션 표시가 빠지고, @${pname}가 끄거나 함께 깨어 있게 하는 묶음도 풀립니다. 되돌릴 수 없습니다.`, m('detach', { name: s.name, parent: pname }));
+    const pid = this.workParentOf(s.sessionId);
+    if (!pid) throw keyed(apiError('no_parent', `@${s.name}에게는 부모(위 세션)가 없습니다.`), 'detachNoParent', { name: s.name });
+    const parent = this.sessions.get(pid);
+    const pname = parent ? shownName(parent) : (this.branch.rowOf(pid) || {}).name || '?';
+    if (!p.confirm) return confirmResult(`@${s.name}을 @${pname}의 하위에서 빼고 독립으로 둡니다. @${pname}가 끄거나(child-kill) 함께 잠들고 깨게 하는 묶음이 풀리고, 끝난 턴은 작업 완료로 셉니다. 띄운 기록은 남습니다. 되돌리려면 세션 맵에서 다시 하위로 둡니다.`, m('detach', { name: s.name, parent: pname }));
     return this.branch.detach(s, { by: 'user' });
   }
 

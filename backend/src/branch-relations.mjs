@@ -1,7 +1,7 @@
 // 일 관계(P156, ARCH 4절 K): Branch에 붙는 메서드. 계산 규칙은 relations.mjs(순수 함수), 저장은 store-branch.mjs(표 relations)다.
 // - 정하는 길: 띄울 때 atrium child --peer(출처 agent), 나중에 atrium relate(에이전트, 자기와 이어진 세션만), 판 API relation.set(사람, 출처 user).
 // - 바뀌면: 저장, 연결 기록(link_events kind 'relation'), 판 이벤트, 'relation.updated'와 두 세션(과 그 일 자손) 요약 방송, 받는 쪽에 짧은 알림(link-notice 묶음).
-// - 계보(parent_session_id)는 건드리지 않는다. 잠재우기·알림·작업 완료 세기는 계보 그대로다(바꿀지는 P156 보고에 제안만).
+// - 계보(parent_session_id)는 건드리지 않는다. P159부터 잠재우기 묶음·닫힘 알림·작업 완료 세기도 일 부모를 따르고, 사람의 "떼기"는 독립(none)으로 두기다.
 import { relationIndex, RELATIONS, RELATION_SET, promptTag } from './relations.mjs';
 import { shownName } from './session-label.mjs';
 
@@ -69,7 +69,9 @@ export function installRelations(Branch) {
       this._relRows = null;
       const after = this.relIndex({ withLinks: true }).between(a.sessionId, b.sessionId);
       // 연결 기록: 명시한 관계면 a → b 연결을 연다(세션 맵에 선이 생긴다). 자동으로 되돌리면 있는 연결에만 남긴다
-      const l = relation === 'auto' ? (B.store.linkByPair(a.sessionId, b.sessionId) || B.store.linkByPair(b.sessionId, a.sessionId)) : B.ensureLink(a.sessionId, b.sessionId, {});
+      // P159: 한쪽이 닫혀 있으면(사람이 닫힌 일 부모에서 독립으로 둘 때) 선을 새로 열지 않는다
+      const open = B.sessions.has(a.sessionId) && B.sessions.has(b.sessionId);
+      const l = relation === 'auto' || !open ? (B.store.linkByPair(a.sessionId, b.sessionId) || B.store.linkByPair(b.sessionId, a.sessionId)) : B.ensureLink(a.sessionId, b.sessionId, {});
       const data = { relation, source, by, before: before ? { relation: before.relation, source: before.source, up: before.up } : null, after: after ? { relation: after.relation, source: after.source, up: after.up } : null };
       if (l) B.linkEvent(l, 'relation', relation, data, { quiet: true });
       B.store.addEvent(a.sessionId, 'relation_set', { other: b.name, otherSessionId: b.sessionId, ...data });

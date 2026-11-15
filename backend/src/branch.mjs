@@ -320,9 +320,10 @@ export class Branch {
   }
   asleep(s) { return !!(s.rt && s.rt.sleep) || !!(this.b.sleeper && this.b.sleeper.isAsleep && this.b.sleeper.isAsleep(s)); }
   // P81: 하위 세션이 부모의 child-kill이 아닌 까닭(사람이 닫음, 스스로 끝남, 패널 사라짐)으로 닫혔으면 부모에게
+  // P159: 받는 쪽은 일 부모(사람이 다른 세션 아래로 옮겼으면 그 세션). 일 부모가 없으면(동료·독립으로 둔 세션) 옛처럼 계보 부모(띄운 짝)에게
   onClosed(s, reason) {
     if (this.byParentKill.delete(s.sessionId)) return;
-    const pid = s.parentSessionId;
+    const pid = this.relIndex().workParentOf(s.sessionId) || s.parentSessionId;
     if (!pid || !this.b.sessions.has(pid)) return;
     this.notices.add(pid, childClosedLine(s.name, closeWhy(reason)));
   }
@@ -920,10 +921,12 @@ export class Branch {
     return { killed, kept };
   }
 
-  // ---------- P81: 부모에서 떼기 ----------
-  // 부모 관계(parent_session_id)와 하위 세션 기록(branch)을 지우고 부모 → 이 세션의 역할 선을 끊는다(오간 기록은 남긴다). 이 세션의 하위 세션은 그대로이고 단계 수만 다시 센다.
-  // by: user(사람이 판에서) | head(--head의 첫 요청 뒤). 사람이 뗐으면 옛 부모와 이 세션에게 알린다
+  // ---------- P81: 부모에서 떼기 → P159: 사람은 독립으로 두기 ----------
+  // by: user(사람이 판에서) | head(--head의 첫 요청 뒤).
+  // P159: 사람이 떼면 계보는 사실로 남기고 일 부모와의 관계를 독립(relation none, 출처 user)으로 둔다(independent). 되돌리기는 relation.set auto.
+  // --head는 처음부터 부모 없이 띄우는 것이라 옛처럼 계보를 지운다(아래)
   detach(s, { by = 'user', notify = by === 'user' } = {}) {
+    if (by === 'user') return this.independent(s, { notify });
     const b = this.b;
     const pid = s.parentSessionId;
     if (!pid) throw apiError('no_parent', `@${s.name}에게는 부모가 없습니다.`);
@@ -955,6 +958,29 @@ export class Branch {
       this.notices.add(s.sessionId, detachedChildLine(pname));
     }
     return { detached: true, name: s.name, from: pname, by };
+  }
+  // P159: 사람이 판에서 "독립으로 두기"(session.detach, link.delete의 detach). 일 부모(명시한 하위 줄이나 계보 부모)와의 관계를 none으로 정한다.
+  // 계보(parent_session_id)와 하위 세션 기록은 그대로다. 일 부모 → 이 세션 선의 역할 이름만 지운다(선은 독립 선으로 남는다)
+  independent(s, { notify = true } = {}) {
+    const b = this.b;
+    const pid = this.relIndex().workParentOf(s.sessionId);
+    if (!pid) throw apiError('no_parent', `@${s.name}에게는 부모(위 세션)가 없습니다.`);
+    if (this.gated(s.sessionId) || this.passing.has(s.sessionId)) throw apiError('gated', `@${s.name}은 신뢰 질문을 지나 워크트리로 다시 뜨는 중입니다. 다 뜬 뒤에 독립으로 두세요.`);
+    const parent = b.sessions.get(pid) || null;
+    const row = this.rowOf(pid) || {};
+    const pname = parent ? shownName(parent) : row.name || '?';
+    const up = parent || { sessionId: pid, name: row.name || '?' }; // 닫힌 일 부모: 관계 줄만 남긴다(선은 열지 않는다, setRelation)
+    this.setRelation(up, s, 'none', { source: 'user', by: 'user', quiet: true });
+    const l = parent ? b.store.linkByPair(pid, s.sessionId) : null;
+    if (l && l.role) b.ensureLink(pid, s.sessionId, { role: null });
+    b.store.addEvent(s.sessionId, 'detached', { from: pname, parentSessionId: pid, by: 'user', relation: 'none' });
+    if (parent) b.store.addEvent(pid, 'branch_detached', { child: s.name, sessionId: s.sessionId, by: 'user', relation: 'none' });
+    b.log(`branch independent ${s.name} from ${pname} (user)`);
+    if (notify) {
+      if (parent) this.notices.add(pid, detachedParentLine(s.name));
+      this.notices.add(s.sessionId, detachedChildLine(pname));
+    }
+    return { detached: true, name: s.name, from: pname, by: 'user', relation: 'none' };
   }
   // --head 세션: 첫 요청이 끝났으면(들어감, 못 들어감, 취소) 또는 첫 요청 없이 준비됐으면 뗀다. 신뢰 질문·관문 동안은 부모를 둔다
   maybeHead(s, state = null, delivery = null) {

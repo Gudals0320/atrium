@@ -126,7 +126,7 @@ test('P119 다시 띄우기·잠재우기의 기다림: 이미 둔 boardExit은 
 });
 
 test('P119 작업 완료는 맨 위 세션만: 살아 있는 부모(잠든 부모 포함)가 있으면 빠지고, 부모가 닫히면 들어간다', () => {
-  const ds = (sessions, s, unseen = true) => Backend.prototype.doneScope.call({ sessions }, s, { unseen });
+  const ds = (sessions, s, unseen = true) => Backend.prototype.doneScope.call({ sessions, workParentOf: Backend.prototype.workParentOf }, s, { unseen });
   const parent = { sessionId: 'p', rt: { sleep: { at: 1 } } };
   const child = { sessionId: 'c', parentSessionId: 'p' };
   const sessions = new Map([['p', parent], ['c', child]]);
@@ -154,7 +154,7 @@ test('P119 부모가 닫히면 하위 세션 요약을 다시 보낸다', () => 
     queue: { cancelSession: () => {} }, relay: { detach: () => {} }, cfg: { sessionsDir: 'nowhere' },
     store: { docks: () => [], links: () => [], updateSession: (id, v) => { assert.equal(v.runtime.boardExit, undefined); }, addEvent: () => {} },
     api: { broadcast: () => {} }, bus: { emit: () => {} }, adapter: { refreshSubscription: () => {} },
-    broadcastSession: (x, o) => sent.push([x.sessionId, o && o.onlyIfFlagsChanged]),
+    broadcastSession: (x, o) => sent.push([x.sessionId, o && o.onlyIfFlagsChanged]), workParentOf: Backend.prototype.workParentOf,
   };
   Backend.prototype.closeSession.call(b, parent, 'killed');
   assert.deepEqual(sent, [['c', true]]);

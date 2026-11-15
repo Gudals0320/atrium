@@ -4,6 +4,7 @@
 //   (노드, 자리, 덩어리, 연결, 부모·자식, 메모, 이름 그대로). 세션 하나만 잠드는 규칙은 없다(P24에서 뺌). 셸과 다른 종류는 그대로 둔다.
 // - "아무 일"(sessionActivity): 그 리포의 어떤 세션이든 일하는 중·내 차례·신뢰 대기·시작 중, 전달 대기, 돌아가는 루프, 보내지 않은 초안,
 //   화면에서 보는 노드(초점, 가까이 얼굴), 다른 리포에서 일하는 하위 세션이 있는 부모(그리고 P21처럼 일하는 부모의 하위 세션).
+//   P159: 부모·하위는 일 관계(일 부모)로 센다. 동료·독립은 서로를 깨어 있게 하지 않는다.
 //   사람이 손댄 때(보기·입력·보내기)는 쉬기 시작한 때(idleSince)로 센다. 마지막 일이 끝난 뒤 정한 시간이 지나야 잠재운다(일이 보인 때를 tick마다 기억한다).
 //   P105: 도는 Claude Code 뒤 일(뒤 셸·뒤 하위 에이전트, backgroundOf)도 일이다. /exit에 뒤 일 확인 창이 뜨거나 claude가 끝나지 않으면 Esc로 화면을 돌리고
 //   그 세션은 다음 활동까지(또는 SLEEP_RETRY_MS, 실패마다 두 배) 다시 잠재우지 않는다. 셸 세션과 같은 작업 공간의 다른 패널은 끄지 않는다(이 패널만 닫는다).
@@ -244,15 +245,24 @@ export class Sleeper {
     try { const rows = this.b.store.workspaces(); const n = workspaceNames(rows).get(key); if (n) return n; } catch {}
     return key ? key.split('/').filter(Boolean).pop() : '-';
   }
+  // P159: 일 부모 찾기(판의 일 관계). 가지 기능이 없으면(시험) 계보 부모
+  workParentFn() {
+    const br = this.b.branch;
+    if (br && br.relIndex) { const idx = br.relIndex(); return (id) => idx.workParentOf(id); }
+    return (id) => { const x = this.b.sessions.get(id); return x ? x.parentSessionId || null : null; };
+  }
   isAsleep(s) { return !!(s.rt.sleep || this.going.has(s.sessionId) || this.wakes.has(s.sessionId)); }
   info(s) {
     const b = this.b;
-    const kids = [...b.sessions.values()].filter((x) => x.parentSessionId === s.sessionId);
-    const parent = s.parentSessionId ? b.sessions.get(s.parentSessionId) : null;
+    // P159: 묶음은 일 관계(일 부모·일 자식, relations.mjs workParentOf)를 따른다. 동료·독립은 혼자 잠들고 혼자 깬다. 사람이 하위로 둔 세션(계보 없음)은 묶음에 든다
+    const wp = this.workParentFn();
+    const kids = [...b.sessions.values()].filter((x) => wp(x.sessionId) === s.sessionId);
+    const pid = wp(s.sessionId);
+    const parent = pid ? b.sessions.get(pid) : null;
     const busy = (x) => BUSY.has(deriveState(x.rt).state) || this.wakes.has(x.sessionId) || (b.queue && b.queue.pending(x.sessionId) > 0);
     // P111: 일하는 자손(하위의 하위까지). 세션 규칙이 본다(잠들면 워커가 지휘 세션에 보낸 글이 깨울 때까지 기다린다)
     const desc = [], seen = new Set([s.sessionId]);
-    for (const q = [s.sessionId]; q.length; ) { const id = q.shift(); for (const x of b.sessions.values()) if (x.parentSessionId === id && !seen.has(x.sessionId)) { seen.add(x.sessionId); desc.push(x); q.push(x.sessionId); } }
+    for (const q = [s.sessionId]; q.length; ) { const id = q.shift(); for (const x of b.sessions.values()) if (wp(x.sessionId) === id && !seen.has(x.sessionId)) { seen.add(x.sessionId); desc.push(x); q.push(x.sessionId); } }
     const blk = this.blockOf(s);
     return {
       name: s.name, kind: s.kind || 'claude', hooked: b.hooked(s), convKnown: s.kind === 'claude' && b.hooked(s) && convoOf(s, b.cfg.claudeProjects).exists,
