@@ -155,7 +155,7 @@ test('P105 저절로: 뒤 셸 프로세스가 도는 세션의 리포는 잠들�
 test('P105 hook: Stop의 background_tasks가 있으면 잠들지 않고, 그 뒤 프로세스에 도구 명령이 없으면 끝난 것으로 본다(낡은 목록)', async () => {
   const { s, sl, calls, proc } = fakeBoard({ kids: [BASH] });
   applyHook(s.rt, { hook_event_name: 'Stop', background_tasks: [{ id: 'b1', type: 'shell', status: 'running', command: 'ping -n 900 localhost' }] }, Date.now() - 40 * MIN);
-  assert.deepEqual(s.rt.bg.tasks, [{ id: 'b1', type: 'shell' }], '명령 글은 남기지 않는다(P92)');
+  assert.deepEqual(s.rt.bg.tasks, [{ id: 'b1', type: 'shell', label: 'ping -n 900 localhost' }], 'P164: 세션 맵에 보일 한 줄만 남긴다');
   assert.equal(sl.plan('', 'auto').why, 'background');
   await sl.tick();
   assert.equal(exits(calls), 0);

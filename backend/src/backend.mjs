@@ -47,7 +47,7 @@ import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
 import { attachUpdater } from './updater.mjs'; // P69: 앱 안 업데이트
-import { attachSleep, draftAfterInput, terminalReportsOnly } from './sleep.mjs'; // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
+import { attachSleep, draftAfterInput, terminalReportsOnly, backgroundList } from './sleep.mjs'; // P21: 쉬는 Claude 세션 잠재우기와 깨우기(ARCH 5절 잠재우기, 기능 번호 D4 제안)
 import { draftEdit, draftMover, stashKeyChanged, clearKeyChanged } from './draft-aside.mjs'; // P128: 쓰다 만 글을 비키고 지시를 보낸 뒤 되돌린다
 import { migrateLegacyData, fixLegacyRecords, writeTombstone, MARKER } from './rename-migrate.mjs'; // P18: 이름 옮기기(multitask → Atrium)
 
@@ -504,7 +504,8 @@ export class Backend {
       // P4
       kind: s.kind || 'claude', origin: s.origin || 'board', parentSessionId: this.workParentOf(s.sessionId), lineageParentSessionId: s.parentSessionId || null, hooked: this.hooked(s), agentName: s.agentName, // P159: 보이는 부모는 일 부모, 계보(띄운 세션)는 사실로 따로
       flavor: s.flavor || null, // P25: 띄운 방법(런처의 아이콘). 창은 종류 대신 이것으로 로고와 이름을 보인다
-      background: rt.bg ? { tasks: rt.bg.tasks.length, types: [...new Set(rt.bg.tasks.map((x) => x.type))], at: rt.bg.at } : null, // P92: 도는 Claude Code 뒤 일(마지막 Stop hook 기준)
+      // P92: 도는 Claude Code 뒤 일. P164: Stop hook 목록과 claude 아래 도구 명령 프로세스를 합친 것 { n, kinds, items: [{ kind, label }], at, via } | null(세션 맵 표시)
+      background: this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !rt.sleep ? backgroundList(rt.bg, null) : null,
 
       answerSource: rt.answerSource || (rt.lastAnswer ? 'hook' : null), cwdNow: rt.cwd || s.cwd,
       git: s.git ? { isRepo: s.git.isRepo, root: s.git.root, commonDir: s.git.commonDir, mainRoot: s.git.mainRoot, isWorktree: s.git.isWorktree, branch: s.git.branch, cwd: s.git.cwd, changedFiles: s.git.changedFiles } : null,

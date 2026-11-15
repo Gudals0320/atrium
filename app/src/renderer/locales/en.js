@@ -2583,4 +2583,12 @@ export default {
     what: 'A connection points a launcher at a model endpoint other than the harness login (for example a local gateway or another provider).',
     how: 'Press New connection, enter the base URL and the name of the environment variable that holds the key, then pick it in a launcher. Without one, launchers use the harness login.',
   },
+  // P164: background work shown on session map cards (background shells and subagents of an idle session)
+  mmBg: {
+    badge: 'Background {n}',
+    title: 'Background work',
+    kindN: '{kind} {n}',
+    kind: { shell: 'Shell', agent: 'Agent', other: 'Other' },
+    noLabel: 'No description',
+  },
 };

@@ -47,3 +47,15 @@ test('P153 r13: 판 전달 확인과 세션 요약도 같은 규칙(옛 기록�
   assert.match(b, /if \(row && !isBoardNotice\(row\.text\)\)/);
   assert.match(b, /lastPrompt: clip\(promptTask\(rt\.lastPrompt\), 300\)/); // P159: 알림이면 null, 관계 줄 + 지시면 줄을 뗀 지시
 });
+
+test('P164 뒤: Claude Code 뒤 일 끝남 알림(<task-notification>)도 마지막 지시가 되지 않는다', () => {
+  const TN = '<task-notification>\n<task-id>a7f283cf586047f56</task-id>\n<status>completed</status>\n<summary>Background command "sleep 150" completed</summary>\n</task-notification>';
+  assert.ok(isBoardNotice(TN)); assert.ok(isBoardNotice(`  ${TN}`));
+  assert.ok(!isBoardNotice('Explain what <task-notification> means'), '글 가운데 나오면 지시다');
+  const rt = newRuntime({ now: 1 });
+  applyHook(rt, { hook_event_name: 'UserPromptSubmit', prompt: 'Run sleep 150 in the background' }, 10);
+  applyHook(rt, { hook_event_name: 'Stop' }, 20);
+  applyHook(rt, { hook_event_name: 'UserPromptSubmit', prompt: TN }, 30);
+  assert.equal(rt.lastPrompt, 'Run sleep 150 in the background');
+  assert.equal(rt.turn.startedAt, 30, '알림에 답하는 턴은 그대로 돈다');
+});
