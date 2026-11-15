@@ -2019,6 +2019,8 @@ export class Backend {
       'link.create': (p) => this.linkCreate(p),
       'link.delete': (p) => this.linkDelete(p),
       'session.detach': (p) => this.detachSession(p), // P81
+      'relation.set': (p) => this.branch.relationSetUser(p), // P156: 일 관계(사람, 출처 user). { a, b, relation: sub|peer|none|auto }
+      'relation.list': () => this.branch.relationList(), // P156
       'session.reopen': (p) => reopenSession(this, p), // P125: 사람이 닫은(끝난) 세션은 같은 자리에서, 닫힌 세션(J2)은 recall.reopen으로
       'link.log': (p) => { const l = this.store.getLink(p.link); if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`); return { link: this.linkView(l), events: this.store.linkEvents(l.linkId, p.limit || 200) }; },
       'agent.kinds': () => this.adapter.agentKinds(),

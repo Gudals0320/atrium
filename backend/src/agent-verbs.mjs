@@ -150,14 +150,16 @@ export class AgentVerbs {
     const woke = this.asleep(t);
     const d = b.queue.enqueue(t.sessionId, text, o.now ? { typeNow: true, aside: true } : {}); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
     const l = this.link(caller, t);
-    b.linkEvent(l, 'prompt', text, { via: 'atrium', deliveryId: d.deliveryId, wait: !!o.wait, ...(o.now ? { now: true } : {}) });
+    // P156: 두 세션의 일 관계로 본 꼬리표(assign 위 → 하위 지시, report 하위 → 위 보고, share 동료끼리). 선·Thread가 보고와 공유를 가른다
+    const tag = this.branch && this.branch.promptTagOf ? this.branch.promptTagOf(caller.sessionId, t.sessionId) : null;
+    b.linkEvent(l, 'prompt', text, { via: 'atrium', deliveryId: d.deliveryId, wait: !!o.wait, ...(o.now ? { now: true } : {}), ...(tag ? { tag } : {}) });
     // 받는 쪽 상태(일하는 중, 끝남)는 이 글이 실제로 들어갈 때 이 지시의 기록에 붙인다(onDeliveryEnd). 대기열에 여럿이 쌓여도 들어간 순서대로 붙는다
     this.pendingLinks.set(d.deliveryId, { linkId: l.linkId, to: t.sessionId, text });
     this.noteSent(caller, t, d.deliveryId);
     b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: d.deliveryId, chars: text.length, wait: !!o.wait, ...(o.now ? { now: true } : {}), woke });
     if (woke && b.sleeper && b.sleeper.wakeFor) b.sleeper.wakeFor(t, `atrium:${caller.name}`).catch(() => {}); // 대기열도 깨우지만 여기서 먼저 부른다(같은 깨우기로 묶인다)
     b.log(`atrium prompt ${caller.name} → ${t.name} (${d.deliveryId}${o.wait ? ', wait' : ''}${o.now ? ', now' : ''}${woke ? ', woke' : ''})`);
-    const out = { ...this.head(t), deliveryId: d.deliveryId, woke, next: verbLines(t.name) };
+    const out = { ...this.head(t), deliveryId: d.deliveryId, woke, tag, next: verbLines(t.name) };
     if (o.wait) {
       const turn = await this.waitTurn(caller, t, { deliveryId: d.deliveryId, timeoutMs: o.timeoutMs, res });
       const row = b.store.getDelivery(d.deliveryId) || {};

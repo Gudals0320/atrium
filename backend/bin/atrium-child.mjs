@@ -4,7 +4,8 @@
 // 사용: atrium prompt <이름> "<글>" [--wait | --now] [--timeout ms] [--file 경로] [--json]   (P116: 다른 에이전트에게 일 시키기. 판의 전달 규칙으로 넣는다)
 //       atrium wait <이름> [--timeout ms] [--json]   (P116: 그 세션의 지금 턴이 끝날 때까지, 마지막 답)
 //       atrium read <이름> [--lines n] [--json]   (P116: 그 세션 화면의 최근 줄)
-//       atrium child [이름] [--prompt 글] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 호출자] [--effort 노력] [--kind 종류] [--head] [--no-wait] [--json]
+//       atrium relate <이름> sub|peer|none|auto [--json]   (P156: 나와 그 세션의 일 관계)
+//       atrium child [이름] [--peer] [--prompt 글] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 호출자] [--effort 노력] [--kind 종류] [--head] [--no-wait] [--json]
 //       atrium me [--json]   (P81: 너의 지금 연결 — 부모, 하위 세션, 역할 연결, 마지막 지시)
 //       atrium models [--json]   (P41: 띄울 수 있는 호출자와 모델, 그 명령)
 //       atrium child-wait <이름> [--json]   (P36: 신뢰 관문을 지나 지시를 받을 수 있게 될 때까지)
@@ -15,7 +16,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { envVar, terminalSessionVar } from '../src/config.mjs';
-import { shortHelp, contractJson, VERB_NAMES } from '../src/cli-contract.mjs'; // P115: 계약(atrium help --json)
+import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP } from '../src/cli-contract.mjs'; // P115: 계약(atrium help --json). P156: 관계 고르기 안내
 
 const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같다)
   atrium prompt <이름> "<할 일>" [--wait | --now] [--timeout ms] [--file 경로]
@@ -29,23 +30,30 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(Claude Code는 hook의 답, 다른 종류는 보드가 화면에서 고른 답).
       사람의 답을 기다리면 바로 돌아온다(waiting). 시간이 끝나면 종료 코드 3이고 일은 계속된다. 다시 atrium wait
   atrium read <이름> [--lines n]   그 세션 화면의 최근 줄(기본 80줄). 잠든 세션은 마지막 답
-  atrium child [이름] [--prompt "첫 요청"] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 런처] [--effort 노력] [--kind 종류] [--no-wait]
-      하위 세션(워커)을 만든다. 너의 폴더·모델·추론 수준·승인 방식·그룹을 물려받고(준 값이 덮는다), 너와 역할 선(기본 "워커")으로 이어진다.
+  atrium child [이름] [--peer] [--prompt "첫 요청"] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 런처] [--effort 노력] [--kind 종류] [--no-wait]
+      세션을 띄운다. 너의 폴더·모델·추론 수준·승인 방식·그룹을 물려받고(준 값이 덮는다), 너와 역할 선(기본 "워커", --peer면 "동료")으로 이어진다.
+      관계: 기본은 하위 워커다(끝나면 너에게 보고한다. atrium children에 보이고 child-kill로 함께 꺼진다).
+      --peer는 동료다(같은 위계의 협력자. 필요한 것을 서로 주고받고, 끝나면 결과를 너에게 공유하며, 사람에게 직접 답해도 된다. child-kill 연쇄에서 빠진다).
+      누가 띄웠는지(계보)는 둘 다 남는다. 보드가 첫 요청 앞에 관계 한 줄을 붙이고, 응답 첫 줄에 관계를 쓴다.
       --model은 말로 한 이름도 받는다("glm flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
       --launcher는 그 런처(도구 모음의 단추)의 하네스·모델·옵션·환경 변수 그대로 띄운다.
       --kind codex(다른 종류)는 보드 레일의 그 종류 런처 설정(추가 인자·모델, --model이 모델만 덮는다)으로 띄우고, 너의 승인 방식을 그 종류의 승인 인자로 옮긴다.
       준비될 때까지 기다린 뒤 워커 이름과 일 시키기·기다리기·읽기 명령을 돌려준다. 수와 깊이에 상한은 없다.
       --worktree는 claude -w로 워크트리를 만든다. 신뢰를 받지 않은 저장소면 신뢰 질문에서 멈추고(needs_trust) 사람에게 할 한 문장을 돌려준다.
       --head는 너의 워커가 아니라 따로 일을 이끄는 세션(헤드)으로 띄운다. 첫 요청 뒤 보드가 부모 관계를 뗀다. 그 뒤로 일을 시키거나 기다리지 않는다(--worktree와 함께 쓰지 않는다).
-  atrium me                     너의 지금 연결(부모, 하위 세션, 역할 연결, 연결마다 마지막 지시). 보드의 지금 기록이라 예전 알림과 다르면 이것을 믿는다
+  atrium relate <이름> sub|peer|none|auto
+      나와 그 세션의 관계를 바꾼다: 그 세션이 나의 sub(하위), peer(동료), none(독립: 서로 보고하거나 맡기지 않음), auto(자동: 띄움·역할 선 = 하위).
+      너와 이어진 세션(띄움, 역할 선, 지시, 정한 관계)만 바꾼다. 사람이 판에서 정한 관계는 바꾸지 않는다(사람에게 묻는다). 상대에게 보드가 짧게 알린다.
+  atrium me                     너의 지금 연결: 상위(너를 하위로 둔 세션)·동료·하위·독립, 역할 연결, 연결마다 마지막 지시. 보드의 지금 기록이라 예전 알림과 다르면 이것을 믿는다
   atrium child-wait <이름>      그 하위 세션이 지시를 받을 수 있게 될 때까지 기다린다(신뢰 질문에 사람이 답한 뒤 워크트리에서 다시 뜰 때까지. 한 번에 100초)
-  atrium children [--all]       너의 하위 세션(--all이면 그 아래까지) 상태와 마지막 응답
+  atrium children [--all]       너의 하위 세션(--all이면 그 아래까지) 상태와 마지막 응답. 하위 관계만 보이고 동료는 따로 한 줄
   atrium models                 띄울 수 있는 런처와 모델(하네스 모델, 별칭, 게이트웨이 모델)과 각각을 띄우는 atrium child 명령
-  atrium child-kill <이름> [--only]   너의 하위 세션을 끈다(그 아래 하위 세션도 함께. --only면 그것만). 사람이 끄라고 할 때만 쓴다
+  atrium child-kill <이름> [--only]   너의 하위 세션을 끈다(하위 관계로만 그 아래도 함께. --only면 그것만). 동료·독립은 끄지 않고 남긴 이름을 적는다. 사람이 끄라고 할 때만 쓴다
   atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. atrium prompt는 잠든 세션을 깨운 뒤 넣으므로 미리 깨울 때만 쓴다
+${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now']); // P116: prompt --wait, P143: prompt --now
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'peer']); // P156: child --peer // P116: prompt --wait, P143: prompt --now
 const argv = process.argv.slice(2);
 const flags = {}; const pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -79,7 +87,7 @@ function call(op, body, timeoutMs) {
   });
 }
 
-function counts(c) { return c ? `너의 하위 세션 ${c.children}개, 판 전체 ${c.total}개(상한 없음)` : ''; }
+function counts(c) { return c ? `너의 하위 세션 ${c.children}개${c.peers ? `, 동료 ${c.peers}명` : ''}, 판 전체 ${c.total}개(상한 없음)` : ''; } // P156: 하위는 하위 관계만
 // P36: 신뢰 질문에서 멈춘 하위 세션. 사람에게 할 말은 한 문장이다(판 밖 터미널을 열라고 하지 않는다)
 function trustLines(x) {
   say(`  상태: needs_trust. 신뢰 질문에서 멈췄다. 보드는 대신 답하지 않고, 너도 키를 보내 답하지 않는다.`);
@@ -100,10 +108,15 @@ async function main() {
   if (cmd === 'child') {
     // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
     if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);
-    const body = { name: rest[0] || null, prompt: flags.prompt ?? null, role: flags.role ?? null, cwd: flags.cwd ? path.resolve(flags.cwd) : null, worktree: flags.worktree || null, model: flags.model || null, launcher: flags.launcher || null, effort: flags.effort || null, kind: flags.kind || null, wait: !flags['no-wait'], ...(flags.head ? { head: true } : {}) };
+    const body = { name: rest[0] || null, prompt: flags.prompt ?? null, role: flags.role ?? null, cwd: flags.cwd ? path.resolve(flags.cwd) : null, worktree: flags.worktree || null, model: flags.model || null, launcher: flags.launcher || null, effort: flags.effort || null, kind: flags.kind || null, wait: !flags['no-wait'], ...(flags.head ? { head: true } : {}), ...(flags.peer ? { peer: true } : {}) };
     r = await call('child', body, 110000);
   } else if (cmd === 'me') r = await call('me', {}, 20000);
   else if (cmd === 'models') r = await call('models', {}, 20000); else if (cmd === 'children') r = await call('children', { all: !!flags.all }, 20000);
+  else if (cmd === 'relate') {
+    if (!rest[0] || !rest[1]) fail('사용법: atrium relate <이름> sub|peer|none|auto (그 세션이 나의 하위·동료·독립, auto는 자동으로 되돌림)', 2);
+    if (!['sub', 'peer', 'none', 'auto'].includes(rest[1])) fail(`관계는 sub(하위), peer(동료), none(독립), auto(자동) 가운데 하나다: ${rest[1]}`, 2);
+    r = await call('relate', { name: rest[0], relation: rest[1] }, 20000);
+  }
   else if (cmd === 'child-wait') {
     if (!rest[0]) fail("대기할 하위 세션 이름을 지정하세요: atrium child-wait <이름>", 2);
     r = await call('wait', { name: rest[0] }, 110000);
@@ -120,7 +133,7 @@ async function main() {
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
   if (r.error) {
     const e = r.error;
-    fail(`${cmd === 'child' ? '하위 세션을 생성하지 않았습니다.' : cmd === 'child-kill' ? '종료하지 않았습니다.' : cmd === 'wake' ? '작업을 재개하지 못했습니다.' : '실패'}(${e.code}): ${e.message}`);
+    fail(`${cmd === 'child' ? '하위 세션을 생성하지 않았습니다.' : cmd === 'child-kill' ? '종료하지 않았습니다.' : cmd === 'wake' ? '작업을 재개하지 못했습니다.' : cmd === 'relate' ? '관계를 바꾸지 않았다.' : '실패'}(${e.code}): ${e.message}`);
   }
   const x = r.result;
   if (cmd === 'child-wait') {
@@ -139,12 +152,14 @@ async function main() {
   }
   if (cmd === 'models') return printModels(x);
   if (cmd === 'me') return printMe(x);
+  if (cmd === 'relate') return printRelate(x);
   if (cmd === 'child') {
     if (x.resolved) say(`모델 "${x.resolved.from}" → ${x.resolved.to} (${{ exact: '정확한 이름', alias: '별칭', loose: '유사 이름 일치' }[x.resolved.how] || x.resolved.how})`);
     else if (x.launcher) say(`런처 ${x.launcher}로 실행했습니다.${x.gateway ? `(게이트웨이 경유 ${x.gateway})` : ''}`);
     else if (x.inheritedGateway) say(`너의 게이트웨이(${x.inheritedGateway})와 모델을 물려받았다`);
     if (x.head) say(`헤드로 띄웠다: @${x.name} (종류 ${x.kind}). 너의 워커가 아니다. 첫 요청 뒤 보드가 부모 관계를 ${x.head.detached ? '뗐다' : '뗀다'}. 그 뒤로 일을 시키거나 기다리지 않는다`);
-    else say(`하위 세션을 생성했습니다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}", ${x.depth}단계)`);
+    else if (x.relation === 'peer') { say(`관계: 동료. @${x.name}는 너의 하위 워커가 아니다(같은 위계의 협력자). 필요한 것을 주고받고, 끝나면 결과를 너에게 공유한다. child-kill 연쇄에서 빠진다`); say(`동료를 띄웠다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}")`); }
+    else { say(`관계: 하위 워커. @${x.name}는 너의 워커다. 끝나면 너에게 보고하고(보고 방법은 네 지시를 따른다), child-kill로 함께 꺼진다`); say(`하위 세션을 생성했습니다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}", ${x.depth}단계)`); }
     if (x.harness) {
       // P96: 다른 종류(codex 등). 무엇을 물려받았는지: 바탕 호출자, 띄운 명령, 승인
       const H = x.harness;
@@ -168,13 +183,16 @@ async function main() {
       else say(`  첫 요청은 아직 확인되지 않았다(${fp}). 보드가 들어갈 때까지 보낸다. 확인: atrium children(들어가지 않으면 "첫 요청 안 들어감"이 보인다) · 다시 보내기: ${x.next.prompt}`);
     }
     if (x.head) { say(`화면 보기(필요할 때만): ${x.next.read}`); say('지금 연결: atrium me'); return; }
-    if (x.firstPrompt) say(`끝나기 기다리기: ${x.next.wait}`); else say(`일 시키기: ${x.next.prompt}`);
+    if (x.relation === 'peer') say(`동료는 끝나면 결과를 너에게 공유한다(--now로 들어온다). atrium wait·--wait로 기다리지 않는다(같은 결과가 두 번 온다). 주고받기: atrium prompt ${x.name} "<할 일>"`);
+    else if (x.firstPrompt) say(`끝나기 기다리기: ${x.next.wait}`); else say(`일 시키기: ${x.next.prompt}`);
     say(`화면 읽기: ${x.next.read}`);
     say(counts(x.counts));
     return;
   }
   if (cmd === 'children') {
     say(`@${x.parent}(${x.depth}단계)의 하위 세션 ${x.children.length}개. ${counts(x.counts)}`);
+    // P156: 하위 관계만 나무로, 동료는 따로 한 줄. 들여쓰기는 부르는 세션에서 몇 단계 아래인지(level)
+    for (const c of x.children) c.depth = x.depth + (c.level || Math.max(1, c.depth - x.depth));
     for (const c of x.children) {
       say(`${'  '.repeat(Math.max(1, c.depth - x.depth))}@${c.name} ("${c.role || '-'}", ${c.depth}단계${c.kind && c.kind !== 'claude' ? `, ${c.kind}` : ''}) ${c.state}${c.state === 'sleeping' ? ` — 절전 중. 시키기 전에 atrium wake ${c.name}` : ''}${c.state === 'trust_wait' ? ` — 신뢰 질문(사람이 답한다). 기다리기: atrium child-wait ${c.name}` : c.gated ? ` — 워크트리로 다시 띄울 차례. 기다리기: atrium child-wait ${c.name}` : ''}${c.ask ? ` — 묻는 중: ${c.ask}` : ''}${c.error ? ` — 오류 ${c.error.type}: ${(c.error.message || '').replace(/\s+/g, ' ')}` : ''}${c.model ? ` · 모델 ${c.model}` : ''}${c.children ? ` · 하위 ${c.children}` : ''}`);
       if (c.error && /model/i.test(c.error.type || '')) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}모델을 쓰지 못했다. 다른 모델로 다시 띄운다(atrium models). 끄기는 사람이 끄라고 할 때만`);
@@ -182,9 +200,11 @@ async function main() {
       if (c.deliveryStuck) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}보낸 글이 ${Math.round((Date.now() - c.deliveryStuck.since) / 1000)}초째 들어가지 않음(${c.deliveryStuck.code || c.deliveryStuck.reason}, ${c.deliveryStuck.attempts}번 시도, 보드가 간격을 늘려 다시 보낸다). 화면 보기: atrium read ${c.name} --lines 40 · 취소는 사람이 보드에서 한다(전달 ${c.deliveryStuck.deliveryId})`); // P106. P116: 이 atrium에는 cancel이 없다
       if (c.lastAnswer) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}마지막 응답:${c.lastAnswer.replace(/\s+/g, ' ').slice(0, 400)}`);
     }
+    if (x.peers && x.peers.length) say(`동료(하위가 아니다, 결과를 서로 공유): ${x.peers.map((p) => `@${p.name} ${p.state}`).join(', ')}`);
     return;
   }
   say(`껐다: ${x.killed.map((k) => `@${k.name}${k.closed ? '' : `(실패 ${k.error || ''})`}`).join(', ')}`);
+  if (x.kept && x.kept.length) say(`남겼다(하위가 아니라 끄지 않음): ${x.kept.map((k) => `@${k.name}(${REL_WORD[k.relation] || k.relation})`).join(', ')}`); // P156
 }
 // ---------- P116: atrium prompt | wait | read ----------
 const secs = (ms) => `${((ms || 0) / 1000).toFixed(1)}초`;
@@ -294,21 +314,34 @@ function printMe(x) {
   // P116: 이름은 보드의 세션 이름(atrium prompt|wait|read가 받는다). 에이전트 주소·패널은 보이지 않는다(--json에는 남는다)
   say(`나: @${m.name} (${m.kind}) · 워크스페이스 ${m.workspace || '-'}${m.worktree ? ` · 워크트리 ${m.worktree}` : ''}${m.branch ? ` · 브랜치 ${m.branch}` : ''}`);
   const p = x.parent;
-  if (!p) say('부모: 부모 없음');
-  else if (p.closed) say(`부모: @${p.name} (닫힘)${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}`);
-  else say(`부모: @${p.name} (${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}${last(p.last)}`);
+  const src = (s) => (s === 'user' ? ' · 사람이 정함' : s === 'agent' ? ' · 에이전트가 정함' : '');
+  // P156: 상위(너를 하위로 둔 세션)·동료·하위·독립. 끝나면 상위에게 보고, 동료와는 공유
+  if (!p) say('상위: 없음');
+  else if (p.closed) say(`상위: @${p.name} (닫힘)${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}`);
+  else say(`상위: @${p.name} (${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${src(p.source)}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}. 끝나면 @${p.name}에게 보고한다${last(p.last)}`);
+  const peers = x.peers || [], indep = x.independent || [];
+  if (peers.length) { say(`동료 ${peers.length}명(하위가 아니다. 필요한 것을 주고받고 끝나면 결과를 공유한다):`); for (const c of peers.slice(0, 10)) say(`  @${c.name} · ${c.state}${c.spawnedBy ? ' · 너를 띄운 세션' : c.spawned ? ' · 네가 띄움' : ''}${src(c.source)}${last(c.last)}`); }
   if (!x.children.length) say('하위 세션: 없음');
   else {
     say(`하위 세션 ${x.children.length}개:`);
     for (const c of x.children.slice(0, 10)) say(`  @${c.name} ${c.role || '-'}${c.order ? ` ${c.order}` : ''} · ${c.state}${c.state === 'sleeping' ? '(atrium prompt하면 보드가 깨운다)' : ''}${c.worktree ? ` · 워크트리 ${c.worktree}` : ''}${last(c.last)}`);
     if (x.children.length > 10) say(`  …외 ${x.children.length - 10}개(atrium children)`);
   }
+  if (indep.length) say(`독립(서로 보고하거나 맡기지 않는다): ${indep.slice(0, 10).map((c) => `@${c.name} ${c.state}${c.spawnedBy ? '(너를 띄운 세션)' : c.spawned ? '(네가 띄움)' : ''}`).join(', ')}`);
   if (x.roles.length) {
     say('역할 연결:');
     for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (${r.state})${last(r.last)}`);
   }
   say(`일 시키기: ${x.commands.prompt} · 끝나기 기다리기: ${x.commands.wait || 'atrium wait <이름>'} · 화면 읽기: ${x.commands.read}`);
   say('이것이 보드의 지금 기록이다. 예전 알림과 다르면 이것을 믿는다.');
+}
+// P156: atrium relate
+const REL_WORD = { sub: '하위', peer: '동료', none: '독립', auto: '자동' };
+function printRelate(x) {
+  const e = x.effective || {};
+  const now = e.relation === 'sub' ? (e.up === x.a ? `@${x.b}는 너의 하위 워커다` : `너는 @${x.b}의 하위 워커다`) : e.relation === 'peer' ? `@${x.b}와 너는 동료다` : `@${x.b}와 너는 독립이다`;
+  say(`관계를 바꿨다: ${x.before ? `${REL_WORD[x.before.relation]}(${x.before.source === 'auto' ? '자동' : x.before.source === 'user' ? '사람' : '에이전트'})` : '없음'} → ${REL_WORD[x.relation]}. 지금: ${now}${x.relation === 'auto' ? '(자동)' : ''}.`);
+  say(`보드가 @${x.b}에게 짧게 알린다. 지금 연결: atrium me`);
 }
 // P41: atrium models
 function printModels(x) {
