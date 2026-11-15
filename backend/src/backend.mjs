@@ -502,7 +502,7 @@ export class Backend {
       createdAt: s.createdAt, seenAt: s.seenAt, touchedAt: s.touchedAt || null, lastActivityAt: rt.lastActivityAt,
       memMB: this.memOf(s.sessionId),
       // P4
-      kind: s.kind || 'claude', origin: s.origin || 'board', parentSessionId: s.parentSessionId || null, hooked: this.hooked(s), agentName: s.agentName,
+      kind: s.kind || 'claude', origin: s.origin || 'board', parentSessionId: this.workParentOf(s.sessionId), lineageParentSessionId: s.parentSessionId || null, hooked: this.hooked(s), agentName: s.agentName, // P159: 보이는 부모는 일 부모, 계보(띄운 세션)는 사실로 따로
       flavor: s.flavor || null, // P25: 띄운 방법(런처의 아이콘). 창은 종류 대신 이것으로 로고와 이름을 보인다
       background: rt.bg ? { tasks: rt.bg.tasks.length, types: [...new Set(rt.bg.tasks.map((x) => x.type))], at: rt.bg.at } : null, // P92: 도는 Claude Code 뒤 일(마지막 Stop hook 기준)
 
@@ -1696,6 +1696,9 @@ export class Backend {
   linksOpen() { return this.store.links().filter((l) => this.sessions.has(l.from) && this.sessions.has(l.to)).map((l) => this.linkView(l)); }
   linkView(l) {
     const a = this.sessions.get(l.from), b = this.sessions.get(l.to);
+    // P159: 동료·독립으로 정한 쌍의 선에는 띄울 때 역할 이름(워커 등)을 보이지 않는다(저장은 그대로, storedRole)
+    const ex = l.role && this.branch && this.branch.relIndex ? this.branch.relIndex().explicitOf(l.from, l.to) : null;
+    if (ex && ex.relation !== 'sub') l = { ...l, role: null, storedRole: l.role };
     return { ...l, fromName: shownName(a), toName: shownName(b), toAgentName: b ? b.agentName : null, toPaneId: b ? b.paneId : null, ...this.linkPromptView(l) };
   }
   // P67: prompts(지시 수, 이름표의 +n), promptAt(마지막 지시 시각, 이름표가 물러나는 기준)

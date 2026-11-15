@@ -1,5 +1,6 @@
 // P8(K4) 창 쪽 순수 규칙: 하위 세션 머리줄 글, 사이드바·미션 맵의 나무 순서(부모 아래에 자식, 들여 쓰기). 단위 시험이 있다(test/p8-lib.test.mjs).
 // 세션 요약의 branch(백엔드 branch.mjs summaryExtra): { depth, parentSessionId, parentName, parentOpen, child, role, worktree, children }
+// P159: 모두 일 관계 기준(부모 = 일 부모, 단계 = 일 단계, 역할 = 일 역할, children = 일 자식 수). 띄운 세션은 lineageParentSessionId
 
 import { t } from './i18n.js';
 import { shownRole } from './roles.js';

@@ -2,7 +2,7 @@
 // - 정하는 길: 띄울 때 atrium child --peer(출처 agent), 나중에 atrium relate(에이전트, 자기와 이어진 세션만), 판 API relation.set(사람, 출처 user).
 // - 바뀌면: 저장, 연결 기록(link_events kind 'relation'), 판 이벤트, 'relation.updated'와 두 세션(과 그 일 자손) 요약 방송, 받는 쪽에 짧은 알림(link-notice 묶음).
 // - 계보(parent_session_id)는 건드리지 않는다. P159부터 잠재우기 묶음·닫힘 알림·작업 완료 세기도 일 부모를 따르고, 사람의 "떼기"는 독립(none)으로 두기다.
-import { relationIndex, RELATIONS, RELATION_SET, promptTag } from './relations.mjs';
+import { relationIndex, RELATIONS, RELATION_SET, promptTag, workDescendantsOf } from './relations.mjs';
 import { shownName } from './session-label.mjs';
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
@@ -47,6 +47,24 @@ export function installRelations(Branch) {
       return { workParentSessionId: wp, workParentName: wp ? shownName(this.rowOf(wp)) : null, lineageParentSessionId: lp,
         parentRelation: pr ? { relation: pr.relation, source: pr.source } : null, peers: idx.peersOf(s.sessionId).map((p) => p.id).filter((id) => this.b.sessions.has(id)) };
     },
+    // P159: 화면에 보이는 위아래(머리줄·사이드바·atrium tree·children)는 일 관계를 따른다. 계보는 사실(lineageParentSessionId)과 옅은 띄움 선으로만 남는다
+    // 일 자식인가: 일 부모가 있고, 하위 세션 기록이 있거나(atrium child) 명시한 하위 줄이 있다(판에 올린 에이전트 F3는 옛 판처럼 아니다)
+    isWorkChild(id, wp, idx = this.relIndex()) { return !!wp && (this.info.has(id) || !!idx.explicitOf(wp, id)); },
+    // 일 단계: 일 부모를 따라 올라간 수 + 1(닫힌 세션도 따라간다). 고리는 끊는다
+    workDepth(id, idx = this.relIndex()) {
+      let d = 1; const seen = new Set([id]);
+      for (let cur = idx.workParentOf(id); cur && !seen.has(cur); cur = idx.workParentOf(cur)) { seen.add(cur); d++; }
+      return d;
+    },
+    // 일 역할: 띄운 부모 아래 하위면 띄울 때 역할(워커 등), 사람·에이전트가 다른 세션 아래로 둔 하위면 그 선의 역할 이름(없으면 null = 창은 "하위"),
+    // 동료·독립·맨 위면 null(독립으로 둔 세션에 "워커"가 남지 않는다)
+    workRole(s, wp, idx = this.relIndex()) {
+      if (!wp) return null;
+      const info = this.info.get(s.sessionId);
+      if (wp === (s.parentSessionId || null) && info) return info.role || null;
+      const l = this.b.store.linkByPair ? this.b.store.linkByPair(wp, s.sessionId) : null;
+      return l && !l.removedAt && l.role ? l.role : null;
+    },
     // 일 자식(열린 세션). 계보로만 이어지고 하위 세션 기록이 없는 세션(판에 올린 에이전트 F3)은 옛 판처럼 빼고, 명시한 하위 줄은 넣는다
     workChildren(parentId, idx = this.relIndex()) {
       return [...this.b.sessions.values()].filter((x) => idx.workParentOf(x.sessionId) === parentId && (this.info.has(x.sessionId) || idx.explicitOf(parentId, x.sessionId)));
@@ -81,6 +99,9 @@ export function installRelations(Branch) {
       if (B.broadcastSession) {
         const touched = new Set([a.sessionId, b.sessionId]);
         for (const x of B.sessions.values()) if (touched.has(x.parentSessionId || '')) touched.add(x.sessionId);
+        const idx2 = this.relIndex(), ids = [...B.sessions.keys()]; // P159: 일 단계·일 부모가 바뀌는 일 자손과 옛 일 부모(하위 수)
+        for (const id of [a.sessionId, b.sessionId]) { for (const d of workDescendantsOf(id, ids, idx2)) touched.add(d.sessionId); }
+        if (before && before.up) touched.add(before.up);
         for (const id of touched) { const x = B.sessions.get(id); if (x) B.broadcastSession(x, { cause: 'relation' }); }
       }
       if (!quiet) for (const s of notify || [a, b]) {

@@ -242,3 +242,85 @@ test('P159 웹 푸시 사이클: pushTree의 부모는 일 부모, 동료·독�
   assert.equal(t.isSub(w1.sessionId), true);
   b.branch.notices.stop();
 });
+
+// ---------- 3차: 보이는 위아래·하위 수·역할 이름은 일 관계 ----------
+test('P159 요약 branch: 부모·단계·역할·하위 수·순서는 일 관계, 계보는 lineageParentSessionId에만', async () => {
+  const { b, lead, w1, p1, w2, x } = await team();
+  await b.branch.spawnChild(w1, { name: 'g1', wait: false }); // w1의 하위(일 단계 3)
+  const g1 = byName(b, 'g1');
+  const br = (s) => b.branch.summaryExtra(s).branch;
+  assert.deepEqual([br(w1).parentSessionId, br(w1).parentName, br(w1).child, br(w1).role, br(w1).depth], [lead.sessionId, 'lead', true, '워커', 2]);
+  assert.ok(br(w1).order >= 1);
+  assert.deepEqual([br(x).parentSessionId, br(x).child, br(x).role, br(x).depth, br(x).order], [lead.sessionId, true, null, 2, null], '사람이 정한 하위(계보 없음, 역할 이름 없음 = 창의 "하위")');
+  for (const s of [p1, w2]) {
+    const v = br(s);
+    assert.deepEqual([v.parentSessionId, v.child, v.role, v.depth, v.order], [null, false, null, 1, null], `${s.name}: 동료·독립은 맨 위, "워커"·"동료" 역할 이름 없음`);
+    assert.equal(v.lineageParentSessionId, lead.sessionId, '띄운 기록은 사실로');
+  }
+  assert.equal(br(lead).children, 2, '리드의 하위 수 = w1, x(동료·독립은 세지 않는다)');
+  assert.equal(br(g1).depth, 3);
+  // 사람이 다른 세션 아래로 옮긴 하위는 그 선의 역할 이름
+  b.ensureLink(x.sessionId, w2.sessionId, { role: '검토' });
+  setUser(b, x, w2, 'sub');
+  assert.deepEqual([br(w2).parentSessionId, br(w2).role, br(w2).depth], [x.sessionId, '검토', 3]);
+  assert.equal(br(x).children, 1);
+  // 관계가 바뀌면 일 자손(단계가 바뀜)과 옛 일 부모(하위 수)도 다시 보낸다
+  b.broadcasts.length = 0;
+  setUser(b, lead, w1, 'none');
+  const sent = new Set(b.broadcasts.filter((e) => e[0] === 'session').map((e) => e[1]));
+  for (const s of [lead, w1, g1]) assert.ok(sent.has(s.sessionId), s.name);
+  assert.equal(br(g1).depth, 2);
+  b.branch.notices.stop();
+});
+
+test('P159 atrium tree·children: 일 관계 나무(동료·독립은 맨 위, 동료 이름), 역할은 일 역할', async () => {
+  const { b, lead, w1, p1, w2, x } = await team();
+  const tr = b.branch.tree(), rows = tr.rows;
+  assert.equal(tr.total, 2, '하위 세션 수 = 일 하위(w1, x). 동료·독립은 세지 않는다');
+  const r = (s) => rows.find((y) => y.sessionId === s.sessionId);
+  assert.deepEqual([r(w1).parentSessionId, r(w1).role, r(w1).depth], [lead.sessionId, '워커', 2]);
+  assert.deepEqual([r(x).parentSessionId, r(x).role, r(x).adopted], [lead.sessionId, null, false]);
+  assert.deepEqual([r(p1).parentSessionId, r(p1).role, r(p1).depth, r(p1).lineageParentSessionId], [null, null, 1, lead.sessionId]);
+  assert.deepEqual(r(p1).peers, ['lead']); assert.deepEqual(r(lead).peers, ['p1']);
+  assert.deepEqual([r(w2).parentSessionId, r(w2).role], [null, null], '독립은 "워커"가 아니다');
+  // children 한 줄: 사람이 정한 하위는 역할 없이, 부모·단계는 일 관계
+  const kids = b.branch.listChildren(lead, {}).children;
+  const k = (n) => kids.find((c) => c.name === n);
+  assert.deepEqual([k('w1').role, k('w1').parent, k('w1').depth], ['워커', 'lead', 2]);
+  assert.deepEqual([k('x').role, k('x').parent, k('x').depth], [null, 'lead', 2]);
+  assert.ok(!k('p1') && !k('w2'));
+  const cli = fs.readFileSync(path.join(HERE, '..', 'bin', 'atrium.mjs'), 'utf8');
+  assert.match(cli, /x\.adopted \? ' \(보드에 올림\)' : x\.parentSessionId \? ' \(하위\)'/);
+  assert.match(cli, /동료: \$\{x\.peers/);
+  b.branch.notices.stop();
+});
+
+test('P159 세션 요약과 세션 맵: 요약 parentSessionId = 일 부모, lineageParentSessionId = 계보, 세션 맵은 계보를 lineageParentSessionId로 읽는다', async () => {
+  const src = fs.readFileSync(path.join(HERE, '..', 'src', 'backend.mjs'), 'utf8');
+  assert.match(src, /parentSessionId: this\.workParentOf\(s\.sessionId\), lineageParentSessionId: s\.parentSessionId \|\| null/);
+  const { missionGraph } = await import('../src/mission.mjs');
+  const sums = [
+    { sessionId: 'L', name: 'lead', state: 'ready', parentSessionId: null, lineageParentSessionId: null, branch: { depth: 1 } },
+    { sessionId: 'P', name: 'p1', state: 'ready', parentSessionId: null, lineageParentSessionId: 'L', branch: { depth: 1, child: false } },
+  ];
+  const g = missionGraph({ sessions: sums, relations: [{ a: 'L', b: 'P', relation: 'peer', source: 'agent', at: 1 }] });
+  const p = g.nodes.find((n) => n.name === 'p1');
+  assert.equal(p.parentId, null); assert.equal(p.lineageParent, 's:L');
+  assert.deepEqual(p.peers, ['s:L']);
+});
+
+test('P159 선의 역할 이름: 동료·독립으로 정한 쌍은 역할 이름(워커)을 보이지 않는다(저장은 그대로), 하위는 그대로', async () => {
+  const { missionGraph } = await import('../src/mission.mjs');
+  const sums = [{ sessionId: 'L', name: 'lead', state: 'ready', lineageParentSessionId: null }, { sessionId: 'W', name: 'w', state: 'ready', lineageParentSessionId: 'L' }, { sessionId: 'V', name: 'v', state: 'ready', lineageParentSessionId: 'L' }];
+  const links = [{ linkId: 'a', from: 'L', to: 'W', role: '워커', spawned: true }, { linkId: 'b', from: 'L', to: 'V', role: '워커', spawned: true }];
+  const g = missionGraph({ sessions: sums, links, relations: [{ a: 'L', b: 'V', relation: 'none', source: 'user', at: 1 }] });
+  const roleOf = (to) => (g.edges.find((e) => e.kind === 'role' && e.to === `s:${to}`) || {}).label;
+  assert.equal(roleOf('W'), '워커'); assert.equal(roleOf('V'), null);
+  // linkView: 판의 가지 기능으로
+  const { b, lead, w1, w2 } = await team();
+  const me = { sessions: b.sessions, branch: b.branch, store: { linkPromptStats: () => ({ n: 0, at: null }) }, linkPromptView: Backend.prototype.linkPromptView };
+  const view = (s) => Backend.prototype.linkView.call(me, b.store.linkByPair(lead.sessionId, s.sessionId));
+  assert.equal(view(w1).role, '워커');
+  assert.equal(view(w2).role, null); assert.equal(view(w2).storedRole, '워커');
+  b.branch.notices.stop();
+});

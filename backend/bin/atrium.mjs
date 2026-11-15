@@ -428,7 +428,8 @@ async function main() {
         if (JSONOUT) return out(r);
         console.log(`하위 세션 ${r.total}개(상한 없음, P36)`);
         const kids = (id) => r.rows.filter((x) => x.parentSessionId === id);
-        const walk = (x, ind) => { console.log(`${'  '.repeat(ind)}@${x.name}${x.label ? ` (보드 이름 ${x.label})` : ''} ${x.depth}단계 ${x.state}${x.role ? ` "${x.role}"` : x.parentSessionId ? ' (보드에 올림)' : ''}`); for (const k of kids(x.sessionId)) walk(k, ind + 1); };
+        // P159: 일 관계 나무. 역할이 없는 하위는 "하위", 판에 올린 에이전트는 "(보드에 올림)", 동료는 이름을 붙인다
+        const walk = (x, ind) => { console.log(`${'  '.repeat(ind)}@${x.name}${x.label ? ` (보드 이름 ${x.label})` : ''} ${x.depth}단계 ${x.state}${x.role ? ` "${x.role}"` : x.adopted ? ' (보드에 올림)' : x.parentSessionId ? ' (하위)' : ''}${x.peers && x.peers.length ? ` 동료: ${x.peers.map((p) => '@' + p).join(' ')}` : ''}`); for (const k of kids(x.sessionId)) walk(k, ind + 1); };
         for (const x of r.rows.filter((y) => !y.parentSessionId || !r.rows.some((z) => z.sessionId === y.parentSessionId))) walk(x, 0);
         return;
       }
