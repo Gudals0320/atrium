@@ -2375,3 +2375,19 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 .mt-sm .mt-ta-world.lv-far .mt-sm-thin { font-size: clamp(19px, calc(10px * var(--ik, 1)), 23px); gap: 12px; }
 .mt-sm .mt-ta-world.lv-far .mt-sm-thin i { width: 12px; height: 12px; border-width: 2.5px; }
 .mt-sm .mt-ta-world.lv-far .mt-sm-thin .cago { font-size: 18px; }
+
+/* ---------- P165: 음성 입력(Voice.jsx) ----------
+   명령줄 왼쪽 마크 옆의 마이크 단추. 듣는 중은 빨간 점(고정 표시, 움직이지 않는다), 연결 중은 흐리게, 오류는 빨간 테두리.
+   녹음 중에는 textarea 글자를 투명하게 하고 겹(.mt-cmd-mirror)이 글을 그려 미확정 들은 글(.mt-cmd-live)을 흐리게 보인다(커서는 textarea 그대로) */
+.mt-voice-btn { position: relative; width: 30px; height: 30px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+  border: 1.3px solid var(--cmd-btn-line); background: none; color: var(--chrome-text); }
+.mt-voice-btn .mt-i { width: 16px; height: 16px; }
+.mt-voice-btn:hover { border-color: var(--chrome-text-3); }
+.mt-voice-btn[data-state="connecting"], .mt-voice-btn[data-state="stopping"] { color: var(--chrome-text-3); border-style: dashed; }
+.mt-voice-btn[data-state="listening"] { border-color: var(--badge); color: var(--badge-text); background: var(--badge-bg); }
+.mt-voice-btn[data-state="error"] { border-color: var(--bad); color: var(--bad); }
+.mt-voice-dot { position: absolute; top: -1px; right: -1px; width: 9px; height: 9px; border-radius: 50%; background: var(--badge); box-shadow: 0 0 0 2px var(--chrome-bg-2); }
+.mt-cmd > .mt-voice-btn { margin-bottom: 14px; margin-left: -4px; }
+.mt-cmd-field[data-voice="1"] > .mt-cmd-input { color: transparent; caret-color: var(--chrome-text); }
+.mt-cmd-field[data-voice="1"] .mt-cmd-mirror { color: var(--chrome-text); }
+.mt-cmd-field[data-voice="1"] .mt-cmd-live { color: color-mix(in srgb, var(--chrome-text) 45%, transparent); }

@@ -4,7 +4,7 @@
 // - 백엔드가 없으면 띄운다. 백엔드는 터미널 서버(hc)가 없으면 깨끗한 환경으로 띄운다. 창을 닫아도 백엔드와 터미널 서버는 계속 돈다(ARCH 1절 "백엔드 수명", P2에서 정함).
 // - 창(renderer)은 백엔드 WebSocket API에 직접 붙는다. main은 주소와 토큰만 넘긴다.
 // - P69: 업데이트로 백엔드를 바꿀 때(update.restart) 앱을 끝낸다. 그동안 옛 백엔드를 다시 띄우지 않고, 다시 실행돼도 창을 열지 않는다. 새 창은 바꾸기 프로세스가 띄운다.
-import { app, BrowserWindow, ipcMain, shell, Notification, dialog, clipboard, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, Notification, dialog, clipboard, nativeImage, session } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,6 +17,7 @@ import { migrateAppProfile } from './profile.mjs'; // P18: 옛 창 프로필 옮
 import { noticeWay } from '../renderer/lib/remote.js'; // P58: 원격 붙음 알림은 창이 숨었을 때만 OS 알림
 import { windowTitle } from '../renderer/lib/update-notice.js'; // P71: 창 제목에 버전
 import { shouldPurgeOnClose, purgeAndDestroy } from './gpu-purge.mjs';
+import { permissionAllowed } from './media-permission.mjs'; // P165: 음성 입력 마이크 권한
 import { uriListPaths, splitFolders } from '../renderer/lib/desktop-paste.js'; // P162: 붙여 넣은 파일 목록
 import { uploadDirOf, uploadPath, cleanupUploads, UPLOAD_MAX_BYTES } from '../../../backend/src/uploads.mjs'; // P162: 붙여 넣은 그림 자리와 정리(P48 웹 업로드와 같은 곳·규칙) // P113: 창을 닫고 트레이에 남을 때 GPU 프로세스 메모리 돌려주기
 
@@ -197,6 +198,13 @@ function onUpdateRestart(d) {
 app.whenReady().then(() => {
   log(`app start profile=${cfg.profile} pid=${process.pid} version=${APP_VERSION} root=${path.basename(path.resolve(APP_ROOT, '..'))}`);
   for (const l of early) log(l);
+  // P165: 마이크는 판 창의 첫 쪽이 소리만 청할 때 허락한다(media-permission.mjs). 다른 권한은 기본 그대로
+  const boardFile = path.join(APP_ROOT, 'dist', 'index.html');
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
+    const ok = permissionAllowed({ permission, mediaTypes: details && details.mediaTypes, url: (details && (details.requestingUrl || details.securityOrigin)) || (wc && wc.getURL()), boardFile, fromBoard: !!(win && !win.isDestroyed() && wc === win.webContents) });
+    if (permission === 'media') log(`media permission ${ok ? 'allowed' : 'denied'} (${(details && details.mediaTypes || []).join(',') || '-'})`);
+    cb(ok);
+  });
   createWindow();
   tray = startTray({ cfg, log, hasWindow: () => !!win, showNode, quit: () => app.quit(), notifications, closeWindow: () => { if (win) win.close(); }, startBackend: ensureBackend, stopBackend: () => stopBackend(cfg), confirm: trayConfirm, onUpdateRestart, appVersion: APP_VERSION });
   global.__mtTray = tray;

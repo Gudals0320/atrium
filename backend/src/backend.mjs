@@ -9,6 +9,7 @@ import { createTerminalAdapter } from './terminal-backend.mjs'; // P129: 터미�
 import { openTerminal, startMigration, stopMigration, migrationView } from './herdr-migrate/index.mjs'; // P129·P132: 옛 판 옮기기(herdr → herdr-core, 계속 지원)
 import { Store } from './store.mjs';
 import { ApiServer } from './api.mjs';
+import { VoiceRelay } from './voice.mjs'; // P165
 import { TailscaleWatch, tailscaleHosts } from './tailscale.mjs'; // P49(R3): Tailscale 상태 읽기
 import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
@@ -150,8 +151,11 @@ export class Backend {
     // P49(R3): Tailscale 상태 읽기(바꾸지 않는다). 이름을 Host 허용 목록에 넣고 로그인 사용자를 제한한다
     this.tailscale = new TailscaleWatch({ port: cfg.port, log: (m) => this.log(m), onChange: (ts) => this.log(`tailscale: ${ts.status && ts.status.running ? 'running' : 'not running'}, hosts ${tailscaleHosts(ts).length}`) });
     this.web = new WebServer({ cfg, store: this.store, api: null, log: (m) => this.log(m), recentDirs: () => this.recentDirs(), tailscale: this.tailscale, settings: () => (this.features ? this.features.settings.get() : {}), wsName: (k) => workspaceNames(this.store.workspaces()).get(k) || null }); // P88: wsName = 푸시 알림의 프로젝트 이름
-    this.api = new ApiServer({ token: this.apiToken, ready: this.ready, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: (c) => { this.web.clientOpened(c); if (this.peers) this.peers.opened(); }, onClose: (c) => { this.web.clientClosed(c); if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.peers) this.peers.closed(); }, log: (m) => this.log(m) });
+    this.api = new ApiServer({ token: this.apiToken, ready: this.ready, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: (c) => { this.web.clientOpened(c); if (this.peers) this.peers.opened(); }, onClose: (c) => { this.web.clientClosed(c); if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.voice) this.voice.dropClient(c); if (this.peers) this.peers.closed(); }, onBinary: (c, d) => this.voice.onBinary(c, d), log: (m) => this.log(m) });
     this.web.api = this.api;
+    // P165: 음성 입력 중계(Soniox). 키는 SONIOX_API_KEY에서 백엔드만 읽는다. ATRIUM_SONIOX_URL은 개발용 판의 가짜 서버 시험용
+    this.voice = new VoiceRelay({ log: (m) => this.log(m), ...(cfg.profile === 'dev' && process.env.ATRIUM_SONIOX_URL ? { url: process.env.ATRIUM_SONIOX_URL } : {}) });
+    Object.assign(this.api.handlers, this.voice.handlers);
     this.web.push.tree = () => this.pushTree(); // P92: 작업 사이클 끝 판단(하위 세션 나무, 전달·루프·뒤 일)
     this.tailscale.start();
     this.peers = new Peers({ api: this.api, log: (m) => this.log(m) });
@@ -352,6 +356,7 @@ export class Backend {
     if (this.sleeper) this.sleeper.stop();
     if (this.updater) this.updater.stop();
     this.relay.closeAll();
+    if (this.voice) this.voice.closeAll(); // P165
     this.peers.stop();
     this.adapter.stopEvents();
     for (const s of this.sessions.values()) this.store.saveRuntime(s.sessionId, s.rt);

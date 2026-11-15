@@ -17,6 +17,7 @@ import { fullLayout, kbShift, lastContentRow, linePlan, lineEnterSends, FULL_KEY
 import { useFull, closeFull } from './full-view.js';
 import { readPhoneScale, writePhoneScale, screenNow } from './Phone.jsx';
 import { clampPhoneScale, PHONE_SCALE_MIN, SCALE_MAX } from './lib/scale.js';
+import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx'; // P165: 음성 입력
 
 const KEY_LABEL = { enter: '⏎', esc: 'Esc', ctrlc: '^C', up: '↑', down: '↓', left: '←', right: '→', tab: 'Tab', shifttab: '⇧Tab', slash: '/' };
 const ATTACH_DELAY_MS = 200; // 판의 노드가 터미널을 뗀 뒤 붙인다(한 창이 한 패널을 두 번 붙이지 않게)
@@ -40,6 +41,7 @@ function FullView({ s, from }) {
   const closedTerm = useRef(null);
   const [ready, setReady] = useState(false);
   const [text, setText] = useState('');
+  const voice = useVoice({ text, setText, taRef, inline: false }); // P165: 확정 글만 입력 줄에, 미확정 글은 위에 흐리게
   const [scale, setScale] = useState(readPhoneScale);
   const live = s.state !== 'sleeping' && s.state !== 'exited';
   const [shift, setShift] = useState(0); // 키보드가 열렸을 때 터미널을 위로 올린 양(px)
@@ -152,14 +154,16 @@ function FullView({ s, from }) {
   const input = (data) => api.call('terminal.input', { session: id, data }).catch((e) => { if (e.code !== 'disconnected') toast(errText(e), 'error'); }); // P82: 끊긴 동안은 띠가 알린다
   const sendKey = (k) => {
     markInteracted(id);
-    if (k === 'enter' && text) return sendLine();
+    if (k === 'enter' && (text || voice.active)) return sendLine();
     const term = terms.get(id);
     const data = keyBytes(k, { appCursor: !!(term && term.modes && term.modes.applicationCursorKeysMode) });
     if (data) input(data);
   };
   async function sendLine() {
     if (api.status !== 'open') return; // P82: 끊긴 동안은 보내지 않고 글을 둔다(다시 붙으면 다시 누른다. 오래 끊기면 띠가 알린다)
-    const plan = linePlan(text);
+    let cur = text;
+    if (voice.active) { await voice.finish(1000); cur = voice.current(); } // P165: 녹음 중이면 끝내고 남은 글을 받은 뒤
+    const plan = linePlan(cur);
     setText('');
     if (taRef.current) taRef.current.style.height = '';
     markInteracted(id);
@@ -167,6 +171,7 @@ function FullView({ s, from }) {
   }
   const bump = (d) => setScale((v) => { const n = clampPhoneScale(Math.round((v + d) * 100) / 100); writePhoneScale(n); return n; });
   const grow = (el) => { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 96)}px`; };
+  useEffect(() => { if (taRef.current && text) grow(taRef.current); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
   const stateText = s.kind === 'shell' && live ? (s.shell && s.shell.atPrompt === false ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[s.state] || s.state;
 
   return (
@@ -191,6 +196,8 @@ function FullView({ s, from }) {
       </div>
       {live && (
         <div className="mt-full-line" ref={lineRef} data-role="phone-line">
+          <VoiceInterim voice={voice} />
+          <VoiceButton voice={voice} className="mt-full-voice" />
           <textarea ref={taRef} rows={1} value={text} data-field="phone-line" enterKeyHint="send" autoCapitalize="off" autoCorrect="off" spellCheck={false}
             placeholder={t('phoneBoard.fullType', { name: s.name })}
             onChange={(e) => { setText(e.target.value); grow(e.target); }}

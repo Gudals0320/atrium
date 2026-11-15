@@ -650,3 +650,13 @@ html[data-work-light="off"] .mt-pl-slot.blink .mt-pl-card, html.mt-lite .mt-pl-s
 .mt-pl-card.thin .r1 > i { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--sc); box-sizing: border-box; }
 .mt-pl-card.thin .nm { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--pl-text); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
 .mt-pl-card.thin .ago { flex: none; font-size: 12px; }
+
+/* P165: 음성 입력. 휴대폰은 확정 글만 입력칸에 넣고 미확정 글은 입력칸 위 한 줄에 흐리게 보인다(움직임 없음) */
+.mt-ph-input .mt-voice-btn, .mt-full-line .mt-voice-btn { width: 44px; height: 44px; border-color: var(--panel-line-2); color: var(--text); }
+.mt-full-line .mt-voice-btn { width: 38px; height: 38px; margin-right: 6px; }
+.mt-ph-input .mt-voice-btn .mt-i, .mt-full-line .mt-voice-btn .mt-i { width: 19px; height: 19px; }
+.mt-ph-input .mt-voice-btn[data-state="listening"], .mt-full-line .mt-voice-btn[data-state="listening"] { border-color: var(--badge); color: var(--badge-text); background: var(--badge-bg); }
+.mt-ph-input .mt-voice-dot, .mt-full-line .mt-voice-dot { box-shadow: 0 0 0 2px var(--chrome-bg); }
+.mt-voice-live { flex: 0 0 100%; padding: 0 14px; font-size: 13px; line-height: 1.35; color: var(--text); opacity: .5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.mt-full-line { position: relative; }
+.mt-full-line .mt-voice-live { position: absolute; left: 0; right: 0; bottom: 100%; padding: 4px 14px; background: var(--chrome-bg); }
