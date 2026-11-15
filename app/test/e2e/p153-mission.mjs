@@ -1,4 +1,4 @@
-// P153 창 시험: 미션 맵 영토 지도 다듬기(라운드마다 그림).
+// P153 창 시험: 세션 맵(영토 지도) 다듬기(라운드마다 그림). P152 창 시험(p152-mission.mjs, 단계 단추·살펴보기 띠·미니맵을 보던 것)을 갈음한다: 아직 유효한 검사(휴대폰 끌기·핀치·탭, 숨은 설정 classic)는 여기로 옮겼다.
 // 판: 따로 띄운 개발용 판(atrium-dev-p153, 47922, backend/.dev)만 쓴다. 창의 원격 디버깅 포트 9402, 휴대폰 흉내 프록시 47994. 한 번에 한 창·브라우저만(메모리).
 //   셸 세션 하나(p153-a, 시험 폴더 C:\Workspace\mtask-p153-a)만 실제로 띄운다. 지도는 페이지 안에서 mission.graph 답과 판의 워크스페이스·폴더를 흉내로 바꾼다.
 //   흉내 모양: 아래 SHAPE(지어낸 이름, 폴더 3·워크스페이스 11·세션 32·연결 36. 역할·주고받은 연결로만 이어진 무리, 닫힌 부모, 다른 워크스페이스의 부모, 큰 무리).
@@ -132,9 +132,11 @@ const PROBE = () => {
     rings: [...m.querySelectorAll('[data-role=ta-ring]')].map((x) => ({ lead: x.dataset.lead, text: x.innerText, ...R(x) })),
   };
 };
+// 명령줄에 초점이 있으면 첫 Esc는 초점만 푼다(명령줄 동작). 닫힐 때까지 몇 번
+async function closeMission(pg) { for (let i = 0; i < 3 && (await pg.$('[data-role="mission"]')); i++) { await pg.keyboard.press('Escape'); await sleep(400); } }
 async function openMission(pg) {
   if (await pg.$('[data-action="return-close"]')) { await pg.click('[data-action="return-close"]').catch(() => {}); await sleep(300); }
-  if (await pg.$('[data-role="mission"]')) { await pg.keyboard.press('Escape'); await sleep(400); }
+  await closeMission(pg);
   await pg.click('[data-action="mission-rail"]');
   await pg.waitForSelector('[data-role="mission"] .mt-ta-card', { timeout: 20000 });
   await sleep(1200);
@@ -153,6 +155,7 @@ async function setupBoard() {
 }
 
 async function pc() {
+  call('settings.set', { key: 'missionStyle', value: 'territories' }); // 앞 시험이 classic에서 멈췄어도
   const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
   try {
     await awayWin(app);
@@ -256,6 +259,22 @@ async function act(page, real, agent) {
     check('실제 세션: 태그 칩 정상 → 친 글 → Enter → 전달, 세션 맵은 열린 채, 입력칸 비움', chip.length === 1 && chip[0].state === 'ok' && d.length >= 1 && !d.includes('failed') && open && left === '', { chip, d, open, left });
     await page.keyboard.press('Escape'); await sleep(300);
   }
+  // (P152 창 시험에서 옮긴 검사) 숨은 설정 missionStyle=classic → 옛 열 지도(M으로 열고 닫힘, 빈 곳 눌러도 열린 채), 되돌리면 세션 맵
+  await closeMission(page);
+  call('settings.set', { key: 'missionStyle', value: 'classic' }); await sleep(1200);
+  await page.click('[data-action="mission-rail"]'); await sleep(1500);
+  const classic = await page.evaluate(() => ({ terr: !!document.querySelector('.mt-ta'), classic: !!document.querySelector('.mt-mission-body') }));
+  await page.mouse.click(300, 600); await sleep(300);
+  const still = !!(await page.$('[data-role=mission]'));
+  await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await page.keyboard.press('m'); await sleep(400);
+  const mClosed = !(await page.$('[data-role=mission]'));
+  await closeMission(page);
+  call('settings.set', { key: 'missionStyle', value: 'territories' }); await sleep(800);
+  await openMission(page);
+  const back = await page.evaluate(() => !!document.querySelector('.mt-ta'));
+  await page.keyboard.press('Escape'); await sleep(300);
+  check('숨은 설정 classic → 옛 지도(빈 곳 눌러도 열린 채, M 닫힘), 되돌리면 세션 맵', !classic.terr && classic.classic && still && mClosed && back, { classic, still, mClosed, back });
 }
 
 // ---- 성능: 끌기·휠 프레임(P152 perf와 같은 재기). 지어낸 모양 32세션과 그 넷 겹(128세션), 작업 중 빛 켬·끔, 멀리(맞춤)·보통 ----
@@ -328,6 +347,34 @@ async function phone() {
     await pg.waitForSelector('[data-role=pt-tile]', { timeout: 20000 });
     await sleep(1500);
     await pg.screenshot({ path: path.join(OUT, 'phone-iphone.png') });
+    // (P152 휴대폰 창 시험에서 옮긴 검사) 이름 타일·빛·시트, 가로 넘침, 지도 칸 위 띠와 겹치지 않음, 한 번 누르면 열림, 끌기·두 손가락 확대
+    const info = await pg.evaluate(() => {
+      const st = document.querySelector('[data-role=pm-stage]').getBoundingClientRect(), row = document.querySelector('.mt-pt-zoomrow').getBoundingClientRect();
+      const tiles = [...document.querySelectorAll('[data-role=pt-tile]')];
+      const fs = tiles.length ? parseFloat(getComputedStyle(tiles[0].querySelector('.tn')).fontSize) * window.__mtPm.view().zoom : 0;
+      const under = tiles.map((x) => x.getBoundingClientRect()).filter((r) => r.top < row.bottom && r.bottom > row.top && r.right > row.left && r.left < row.right && r.top > st.top).length;
+      return { tiles: tiles.length, named: tiles.filter((x) => x.innerText.trim()).length, lights: document.querySelectorAll('[data-role=pt-light]').length, sheet: document.querySelectorAll('[data-role=pt-card]').length, scrollX: document.documentElement.scrollWidth > innerWidth + 1, nameFont: fs, underZoom: under, view: window.__mtPm.view() };
+    });
+    check('휴대폰: 타일마다 이름, 작업 중 빛, 시트, 가로 넘침 없음, 처음 이름 글 ≥ 10.5px, 줌 단추 밑 타일 없음', info.tiles === SHAPE.sessions.length && info.named === info.tiles && info.lights >= 1 && info.sheet >= 3 && !info.scrollX && info.nameFont >= 10.5 && info.underZoom === 0, info);
+    const cdp = await ctx.newCDPSession(pg);
+    const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+    const s0 = await pg.evaluate(() => window.__mtPm.view());
+    await T('touchStart', [[200, 300]]); for (let i = 1; i <= 10; i++) { await T('touchMove', [[200 + i * 3, 300 + i * 5]]); await sleep(16); } await T('touchEnd', []);
+    await sleep(300);
+    const s1 = await pg.evaluate(() => window.__mtPm.view());
+    check('휴대폰: 한 손가락 끌기', Math.abs(s1.x - s0.x - 30) < 4 && Math.abs(s1.y - s0.y - 50) < 4, { s0, s1 });
+    await T('touchStart', [[150, 300], [250, 300]]); for (let i = 1; i <= 10; i++) { await T('touchMove', [[150 - i * 5, 300], [250 + i * 5, 300]]); await sleep(16); } await T('touchEnd', []);
+    await sleep(300);
+    const s2 = await pg.evaluate(() => window.__mtPm.view());
+    check('휴대폰: 두 손가락 확대', s2.zoom > s1.zoom * 1.5, { s1, s2 });
+    await pg.evaluate(() => window.__mtPm.fit()); await sleep(300);
+    // 첫 세션 타일은 실제 셸(p153-a): 한 번 누르면 바로 그 세션 화면
+    const first = SHAPE.sessions[0].name;
+    const tb = await (await pg.$(`[data-role=pt-tile][data-id="s:${first}"]`)).boundingBox();
+    await pg.touchscreen.tap(tb.x + tb.width / 2, tb.y + tb.height / 2); await sleep(1500);
+    const opened = await pg.evaluate(() => (document.querySelector('[data-role=phone]') || {}).dataset?.view);
+    check('휴대폰: 타일 한 번 누르면 그 세션 화면(맞춤 배율에서도)', opened === 'session', { opened, w: tb.width });
+    await pg.screenshot({ path: path.join(OUT, 'phone-iphone-session.png') });
     await ctx.close();
   } finally { await browser.close(); await sim.close?.(); }
 }
