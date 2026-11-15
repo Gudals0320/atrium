@@ -89,6 +89,7 @@ const HOOK = ([shape, real]) => {
     return { nodes: [{ id: 'human', kind: 'human', name: 'you' }, ...nodes], edges, counts: { all: nodes.length }, at: now };
   };
 };
+const ASLEEP = (real) => { const s = window.__mt.getState().sessions.get(real); if (s) s.state = 'sleeping'; };
 const realId = (pg) => pg.evaluate(() => ([...window.__mt.getState().sessions.values()].find((s) => s.name === 'p163-a') || {}).sessionId || null);
 const shot = (pg, name, clip) => pg.screenshot({ path: path.join(OUT, `${name}.png`), ...(clip ? { clip } : {}) }).catch((e) => log(`스크린숏 실패 ${name} ${e.message.slice(0, 80)}`));
 
@@ -119,6 +120,8 @@ async function pc() {
     if (await page.$('[data-role="sidebar"]')) { await page.click('[data-action="sidebar"]'); await sleep(500); }
     const real = await realId(page);
     check('실제 셸 세션(p163-a)이 판에 있다', !!real, { real });
+    // 첫 세션(w-sleep-1)은 실제 셸이라 창은 판의 실제 상태를 쓴다. 셸은 절전이 없어 페이지 안 상태만 절전으로 둔다(더블클릭으로 판에 가는 얇은 줄)
+    await page.evaluate(ASLEEP, real);
     await page.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE)), real]);
     await openMission(page);
     await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
@@ -159,15 +162,15 @@ async function pc() {
     check('다시 누르면 태그가 빠진다', !/@w-sleep-3/.test(await cmd()));
     // Alt+끌기: 얇은 줄을 잡아 견줄 리드(pair-lead) 오른쪽에 놓으면 relation.set(sub)
     c = await center('w-sleep-4');
-    const pl = await page.evaluate(() => { const r = document.querySelector('.mt-ta-slot[data-id="s:pair-lead"] .mt-ta-card').getBoundingClientRect(); return { x: r.right, y: r.top + r.height / 2, w: r.width }; });
-    const to = { x: pl.x + 0.85 * 110 + 40, y: pl.y };
+    const pl = await page.evaluate(() => { const r = document.querySelector('.mt-ta-slot[data-id="s:pair-lead"] .mt-ta-card').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom + 14 }; });
+    const to = { x: pl.x, y: pl.y }; // 견줄 리드 바로 아래 = 그 리드의 동료
     await page.keyboard.down('Alt'); await page.mouse.move(c.x, c.y); await page.mouse.down();
     for (let i = 1; i <= 15; i++) { await page.mouse.move(c.x + (to.x - c.x) * i / 15, c.y + (to.y - c.y) * i / 15); await sleep(16); }
     const moving = await page.evaluate(() => !!document.querySelector('.mt-ta-slot.moving'));
     await shot(page, 'pc-thin-drag');
     await page.mouse.up(); await page.keyboard.up('Alt'); await sleep(500);
     const calls = await page.evaluate(() => window.__p163calls);
-    check('얇은 줄 Alt+끌기 → 위계 바꾸기(relation.set sub, 대상 pair-lead)', moving && calls.some((x) => x.relation === 'sub' && x.a === 'fk-pair-lead' && x.b === 'fk-w-sleep-4'), { moving, calls });
+    check('얇은 줄 Alt+끌기 → 관계 바꾸기(relation.set, pair-lead 바로 아래 = 동료)', moving && calls.some((x) => x.relation === 'peer' && x.a === 'fk-pair-lead' && x.b === 'fk-w-sleep-4'), { moving, calls });
     // 더블클릭 = 판의 그 세션(실제 셸)
     await page.evaluate(() => { const el = document.querySelector('[data-role=command]'); if (el) { const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); } });
     if (!(await page.$('[data-role=mission]'))) await openMission(page);
@@ -199,6 +202,7 @@ async function phone() {
     await sleep(1200);
     const real = await realId(pg);
     await pg.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE)), real]);
+    await pg.evaluate(ASLEEP, real);
     await pg.evaluate(() => { try { localStorage.removeItem('atrium.phoneMap.expanded'); } catch {} window.__mtPhone.mission(); });
     await pg.waitForSelector('[data-role=pl-card]', { timeout: 20000 });
     await sleep(1200);
