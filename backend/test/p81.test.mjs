@@ -225,8 +225,11 @@ test('P81→P159 떼기 = 독립으로 두기: 계보·하위 세션 기록은 �
   assert.ok(b.store.linkEvents(l.linkId).some((e) => e.kind === 'prompt'), '오간 기록은 남는다');
   assert.deepEqual(b.branch.listChildren(lead, {}).children, []);
   const sx = b.branch.summaryExtra(B).branch;
-  assert.equal(sx.parentSessionId, lead.sessionId); assert.equal(sx.workParentSessionId, null); assert.deepEqual(sx.parentRelation, { relation: 'none', source: 'user' });
-  assert.equal(b.branch.summaryExtra(lead).branch.children, 1, '계보 자식 수(머리줄)는 그대로');
+  // P159: 머리줄·사이드바는 일 관계. 계보는 lineageParentSessionId에만
+  assert.equal(sx.parentSessionId, null); assert.equal(sx.lineageParentSessionId, lead.sessionId); assert.equal(sx.workParentSessionId, null); assert.deepEqual(sx.parentRelation, { relation: 'none', source: 'user' });
+  assert.equal(sx.child, false); assert.equal(sx.role, null, '독립에 "워커"가 남지 않는다'); assert.equal(sx.depth, 1);
+  assert.equal(b.branch.summaryExtra(G).branch.depth, 2, '아래는 일 단계로 다시 센다');
+  assert.equal(b.branch.summaryExtra(lead).branch.children, 0, '머리줄 하위 수는 일 자식');
   await assert.rejects(b.branch.killChild(lead, { name: 'b1' }), (e) => e.code === 'not_sub');
   await assert.rejects(b.branch.killChild(lead, { name: 'g1' }), (e) => ['not_sub', 'not_parent'].includes(e.code), '손자도 범위 밖');
   assert.equal(sl.info(lead).childBusy, false, '잠재우기 묶음이 풀린다');

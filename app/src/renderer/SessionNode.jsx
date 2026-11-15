@@ -79,7 +79,8 @@ function Badges({ s }) {
 // 에이전트 종류(Claude Code가 아니면), 누가 띄웠는지(F3)
 function Origin({ s }) {
   const t = useT();
-  const parent = useStore((st) => (s.parentSessionId ? st.sessions.get(s.parentSessionId) : null));
+  const lp = s.lineageParentSessionId !== undefined ? s.lineageParentSessionId : s.parentSessionId; // P159: "@x가 띄움"은 계보(사실)
+  const parent = useStore((st) => (lp ? st.sessions.get(lp) : null));
   return <>
     {/* P25: 띄운 방법(런처 아이콘). 판이 띄운 Claude Code면 hook이 붙고, 직접 명령이면 hook 없이 셸에서 뜬다 */}
     {s.flavor && <span className="mt-badge kind flavor" data-kind={s.flavor} data-role="flavor-badge" title={t(s.hooked ? 'node.flavorHookedTitle' : 'node.flavorCommandTitle', { kind: kindOf(s.flavor).label })}>{kindOf(s.flavor).label}</span>}

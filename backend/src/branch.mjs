@@ -376,17 +376,22 @@ export class Branch {
   openChildren(parentId) { return [...this.b.sessions.values()].filter((x) => x.parentSessionId === parentId && this.info.has(x.sessionId)); }
   openTotal() { return [...this.b.sessions.values()].filter((x) => this.info.has(x.sessionId)).length; }
   // 세션 요약에 붙인다(창의 머리줄·사이드바·미션 맵)
+  // P159: 부모·단계·역할·하위 수는 일 관계(일 부모)를 따른다. 계보 부모는 lineageParentSessionId(relationSummary)에만
   summaryExtra(s) {
     const info = this.info.get(s.sessionId) || null;
-    const parentId = s.parentSessionId || null;
-    const parent = parentId ? this.rowOf(parentId) : null;
-    return { branch: { depth: this.depth(s.sessionId), parentSessionId: parentId, parentName: shownName(parent), // P66: 보이는 이름
-      parentAddress: parent ? parent.name : null, parentOpen: !!(parentId && this.b.sessions.has(parentId)), child: !!info, role: info ? info.role : null, order: info ? this.orderOf(s.sessionId) : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.openChildren(s.sessionId).length,
-      ...this.relationSummary(s) } }; // P156: 일 부모(workParentSessionId), 계보 부모와의 관계(parentRelation), 동료(peers)
+    const idx = this.relIndex();
+    const wp = idx.workParentOf(s.sessionId);
+    const parent = wp ? this.rowOf(wp) : null;
+    const child = this.isWorkChild(s.sessionId, wp, idx);
+    return { branch: { depth: this.workDepth(s.sessionId, idx), parentSessionId: wp, parentName: shownName(parent), // P66: 보이는 이름
+      parentAddress: parent ? parent.name : null, parentOpen: !!(wp && this.b.sessions.has(wp)), child, role: child ? this.workRole(s, wp, idx) : null, order: child && info && wp === (s.parentSessionId || null) ? this.orderOf(s.sessionId) : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.workChildren(s.sessionId, idx).length,
+      ...this.relationSummary(s, idx) } }; // P156: 일 부모(workParentSessionId), 계보 부모와의 관계(parentRelation), 동료(peers)
   }
   tree() {
-    const rows = [...this.b.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, label: s.label || null, parentSessionId: s.parentSessionId || null, depth: this.depth(s.sessionId), child: this.info.has(s.sessionId), role: (this.info.get(s.sessionId) || {}).role || null, order: this.orderOf(s.sessionId), state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null }));
-    return { total: this.openTotal(), rows };
+    // P159: atrium tree는 일 관계 나무(하위는 일 부모 아래, 동료·독립은 맨 위에 서고 동료 이름을 붙인다). lineageParentSessionId는 사실
+    const idx = this.relIndex();
+    const rows = [...this.b.sessions.values()].map((s) => { const wp = idx.workParentOf(s.sessionId); const child = this.isWorkChild(s.sessionId, wp, idx); return { sessionId: s.sessionId, name: s.name, label: s.label || null, parentSessionId: wp, lineageParentSessionId: s.parentSessionId || null, depth: this.workDepth(s.sessionId, idx), child, adopted: !!wp && !child, role: child ? this.workRole(s, wp, idx) : null, order: child && wp === (s.parentSessionId || null) ? this.orderOf(s.sessionId) : null, peers: idx.peersOf(s.sessionId).map((p) => this.b.sessions.get(p.id)).filter(Boolean).map((x) => x.name), state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null }; });
+    return { total: rows.filter((r) => r.child).length, rows }; // P159: 하위 세션 수도 일 관계
   }
 
   // P75: 띄운 순서(같은 부모 안에서 1, 2, 3…). 띄울 때 기록(info.order)에 남겨 형제가 닫혀도 번호가 겹치지 않는다. P75 전 기록은 띄운 때(at) 차례
@@ -837,7 +842,7 @@ export class Branch {
   childView(x) {
     const sum = this.b.summary(x);
     const info = this.info.get(x.sessionId) || {};
-    return { name: x.name, sessionId: x.sessionId, agentName: x.agentName, paneId: x.paneId, kind: x.kind || 'claude', role: info.role || null, depth: this.depth(x.sessionId), parent: (this.rowOf(x.parentSessionId) || {}).name || null, state: sum.state, ask: sum.ask ? clip(sum.ask.summary || sum.ask.kind, 160) : null, lastPrompt: clip(promptTask(x.rt.lastPrompt), 300), lastAnswer: clip(x.rt.lastAnswer, 1500), lastAnswerAt: x.rt.lastAnswerAt || null, error: sum.error ? { type: sum.error.type || null, message: clip(sum.error.message, 300) || (isModelError(sum.error) ? modelErrorText(x.model) : null) } : null, model: x.model || null, cwd: x.rt.cwd || x.cwd, worktree: info.worktree || null, gated: this.gated(x.sessionId), children: this.workChildren(x.sessionId).length, firstPromptLost: this.lost.get(x.sessionId) || null, deliveryStuck: sum.deliveryStuck || null, workParent: (() => { const p = this.relIndex().workParentOf(x.sessionId); return p ? shownName(this.rowOf(p)) : null; })() }; // P106. P156: workParent(일 부모): deliveryStuck(터미널이 오래 받지 않는 전달)
+    return { name: x.name, sessionId: x.sessionId, agentName: x.agentName, paneId: x.paneId, kind: x.kind || 'claude', role: (() => { const i2 = this.relIndex(); return this.workRole(x, i2.workParentOf(x.sessionId), i2); })(), depth: this.workDepth(x.sessionId), parent: (() => { const p = this.relIndex().workParentOf(x.sessionId); return p ? (this.rowOf(p) || {}).name || null : null; })(), state: sum.state, ask: sum.ask ? clip(sum.ask.summary || sum.ask.kind, 160) : null, lastPrompt: clip(promptTask(x.rt.lastPrompt), 300), lastAnswer: clip(x.rt.lastAnswer, 1500), lastAnswerAt: x.rt.lastAnswerAt || null, error: sum.error ? { type: sum.error.type || null, message: clip(sum.error.message, 300) || (isModelError(sum.error) ? modelErrorText(x.model) : null) } : null, model: x.model || null, cwd: x.rt.cwd || x.cwd, worktree: info.worktree || null, gated: this.gated(x.sessionId), children: this.workChildren(x.sessionId).length, firstPromptLost: this.lost.get(x.sessionId) || null, deliveryStuck: sum.deliveryStuck || null, workParent: (() => { const p = this.relIndex().workParentOf(x.sessionId); return p ? shownName(this.rowOf(p)) : null; })() }; // P106. P156: workParent(일 부모): deliveryStuck(터미널이 오래 받지 않는 전달)
   }
   // P79: 하위 세션의 첫 요청이 끝내 들어가지 않았다(unconfirmed·failed). 판 이벤트로 남기고, 부모에게 그 사실과 다시 보낼 명령을 보낸다.
   //   첫 요청은 사람(리드)이 맡긴 일이라 조용히 사라지면 안 된다. 같은 전달은 한 번만 알린다

@@ -26,7 +26,8 @@ export const CALLED_MS = 7 * 24 * 3600 * 1000;
 //   세션마다 closedKids(CALLED_MS 안에 닫힌 계보 자식 수)와 assignAt(CALLED_MS 안의 마지막 assign 지시 시각)을 붙인다(세션 맵이 솔로 칸에 보내지 않는다)
 export function missionGraph({ sessions = [], links = [], thread = [], loops = [], relations = [], called = null, now = Date.now() }) {
   const byId = new Map(sessions.map((s) => [s.sessionId, s]));
-  const lineageOf = (id) => { const s = byId.get(id); return s ? s.parentSessionId || (s.branch && s.branch.parentSessionId) || null : null; };
+  // P159: 요약의 parentSessionId는 일 부모라 계보는 lineageParentSessionId(옛 요약·시험 자료는 parentSessionId)
+  const lineageOf = (id) => { const s = byId.get(id); if (!s) return null; if (s.lineageParentSessionId !== undefined) return s.lineageParentSessionId || null; return s.parentSessionId || (s.branch && s.branch.parentSessionId) || null; };
   const rel = relationIndex({ rows: relations, lineageOf, links });
   const relOf = (from, to) => { const r = rel.ofEdge(from, to); return { relation: r.relation, relationSource: r.source, relationUp: r.up ? sid(r.up) : null }; };
   const edges = [];
@@ -38,7 +39,7 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
     if (!byId.has(l.from) || !byId.has(l.to)) continue;
     const base = { from: sid(l.from), to: sid(l.to), linkId: l.linkId, count: l.count || 0, lastAt: l.lastAt || null, ...relOf(l.from, l.to) };
     const active = l.lastKind === 'prompt' || l.lastKind === 'target_working' || l.lastKind === 'target_submitted';
-    if (l.role) add({ ...base, kind: 'role', label: l.role, active });
+    if (l.role) add({ ...base, kind: 'role', label: base.relation === 'sub' ? l.role : null, active }); // P159: 동료·독립 쌍에는 역할 이름(워커 등)을 붙이지 않는다
     if (l.observed) add({ ...base, kind: 'prompt', label: clip(l.lastText, 80), active });
     if (l.spawned) add({ ...base, kind: 'spawn', label: "세션 생성", active: false });
     if (l.role || l.observed || l.spawned) drawn.add([l.from, l.to].sort().join('|'));

@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { lineageLayout, applyRelationStub, peerPts, LINE } from '../src/renderer/lib/mission-lineage.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
+import { buildRows } from '../src/renderer/lib/sidebar-tree.js';
+import { branchLabel } from '../src/renderer/lib/branch.js';
+import { setLanguage } from '../src/renderer/lib/i18n.js';
 
 const R = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer');
 const read = (f) => fs.readFileSync(path.join(R, f), 'utf8');
@@ -54,4 +57,39 @@ test('P159 창: 떼기는 "독립으로 두기"(일 부모가 있을 때만 메�
   const src = read('SessionNode.jsx');
   assert.match(src, /s\.branch && s\.branch\.workParentSessionId && \(detachAsk/);
   assert.match(src, /detach\.menuHint', \{ parent: s\.branch\.workParentName/);
+});
+
+// P159 3차: 창의 위아래(머리줄·사이드바)는 일 관계. 백엔드 요약이 parentSessionId = 일 부모, lineageParentSessionId = 계보, branch도 일 관계를 준다
+const WS2 = (key) => ({ key, name: key, kind: 'folder', root: `C:/${key}` });
+const S2 = (name, extra = {}) => ({ sessionId: `id-${name}`, name, kind: 'claude', state: 'ready', workspaceKey: 'a', lastActivityAt: 1000, ...extra });
+const team = () => [
+  S2('lead', { branch: { depth: 1, child: false, parentSessionId: null, children: 2 } }),
+  S2('w1', { parentSessionId: 'id-lead', lineageParentSessionId: 'id-lead', branch: { depth: 2, child: true, parentSessionId: 'id-lead', parentName: 'lead', parentOpen: true, role: '워커', order: 1 } }),
+  S2('x', { parentSessionId: 'id-lead', lineageParentSessionId: null, branch: { depth: 2, child: true, parentSessionId: 'id-lead', parentName: 'lead', parentOpen: true, role: null } }),
+  S2('p1', { parentSessionId: null, lineageParentSessionId: 'id-lead', branch: { depth: 1, child: false, parentSessionId: null, role: null } }),
+  S2('w2', { parentSessionId: null, lineageParentSessionId: 'id-lead', branch: { depth: 1, child: false, parentSessionId: null, role: null } }),
+];
+
+test('P159 사이드바: 하위(사람이 정한 것 포함)만 일 부모 아래 들여 쓰고, 동료·독립은 띄운 세션 아래가 아니다', () => {
+  const { rows } = buildRows({ workspaces: [WS2('a')], groups: [], sessions: team() });
+  const L = Object.fromEntries(rows.map((r) => [r.id, r.lv]));
+  assert.equal(L['s:id-lead'], 1);
+  assert.equal(L['s:id-w1'], 2); assert.equal(L['s:id-x'], 2);
+  assert.equal(L['s:id-p1'], 1, '동료는 맨 위 단계'); assert.equal(L['s:id-w2'], 1, '독립도');
+  const order = rows.filter((r) => r.type === 'session').map((r) => r.id);
+  const li = order.indexOf('s:id-lead');
+  assert.deepEqual(order.slice(li + 1, li + 3).sort(), ['s:id-w1', 's:id-x'], '리드 바로 아래는 일 하위 둘');
+});
+
+test('P159 머리줄: 일 역할·일 부모로 쓰고, 동료·독립은 하위 글이 없다("워커"가 남지 않는다), 띄운 세션 표시는 계보', () => {
+  setLanguage('ko');
+  try {
+    const [, w1, x, p1, w2] = team();
+    assert.match(branchLabel(w1).text, /^@lead의 워커 1 · 2단계/);
+    assert.match(branchLabel(x).text, /^@lead의 하위 세션 · 2단계/, '역할 이름이 없는 하위는 기본 낱말');
+    assert.equal(branchLabel(p1), null); assert.equal(branchLabel(w2), null);
+  } finally { setLanguage('en'); }
+  const src = read('SessionNode.jsx');
+  assert.match(src, /const lp = s\.lineageParentSessionId !== undefined \? s\.lineageParentSessionId : s\.parentSessionId;/);
+  assert.match(src, /dockWorkers\.hint', \{ n: s\.branch\.children \}/, '하위 수(일 자식)는 백엔드 branch.children');
 });
