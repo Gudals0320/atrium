@@ -297,19 +297,19 @@ test('P153 r7: 폴더 띠와 줄의 차례·소속은 사이드바와 같고 폴
 });
 test('P153 r7: 칸 — 리드는 리드 칸, 하위는 깊이만큼 오른쪽, 다른 워크스페이스 부모는 워커 칸, 혼자는 혼자 칸, 하위가 다른 곳에만 있는 세션도 리드 칸', () => {
   const lay = lin();
-  const col = (k) => lay.cols.find((c) => c.key === k).x;
+  const col = (k) => (k === 'lead' ? lay.cols.find((c) => c.key === 'lv' && c.level === 0) : k === 'workers' ? lay.cols.find((c) => c.key === 'lv' && c.level === 1) : k === 'next' ? lay.cols.find((c) => c.key === 'lv' && c.level === 2) : lay.cols.find((c) => c.key === k)).x; // r11: 칸은 숫자 단계(시작 = 0)
   const x = (n) => lay.cards.get(`s:${n}`).x;
   assert.equal(x('exam-lead'), col('lead'));
   for (const n of ['ex-notes', 'ex-qa-c']) assert.equal(x(n), col('workers'));
-  assert.equal(x('deck-lead'), col('lead')); assert.equal(x('deck-writer'), col('workers')); assert.equal(x('deck-reader'), lay.cols.filter((c) => c.key === 'next')[0].x, '역할 연결 나무도 칸을 따른다');
+  assert.equal(x('deck-lead'), col('lead')); assert.equal(x('deck-writer'), col('workers')); assert.equal(x('deck-reader'), col('next'), '역할 연결 나무도 칸을 따른다');
   assert.equal(x('researcher'), col('workers'), '부모(m1)가 다른 워크스페이스');
-  assert.equal(x('coin-feed'), lay.cols.filter((c) => c.key === 'next')[0].x);
+  assert.equal(x('coin-feed'), col('next'));
   assert.equal(x('m1'), col('lead'), '하위가 다른 워크스페이스에만 있어도 리드 칸');
   for (const n of ['c1', 'hub-head', 'notes-2', 'reviewer']) assert.ok(x(n) >= col('solo'), `${n}는 혼자 칸`);
   const cards = [...lay.cards.values()];
   for (let i = 0; i < cards.length; i++) for (let j = i + 1; j < cards.length; j++) assert.ok(!overlap(cards[i], cards[j]), `${cards[i].node.name}×${cards[j].node.name}`);
   for (const c of cards) { const r = lay.rows.find((x2) => x2.key === c.ws); assert.ok(c.y >= r.y && c.y + c.h <= r.y + r.h + 0.01, `${c.node.name}가 자기 줄 안`); }
-  assert.ok(lay.cols.some((c) => c.key === 'next') && lay.cols.length >= LINE.MINCOLS + 2, '칸: 워크스페이스·리드·워커·다음 단계·혼자');
+  assert.deepEqual(lay.cols.map((c) => c.key === 'lv' ? c.level : c.key), ['ws', 0, 1, 2, 'solo'], '칸: 워크스페이스·시작·1단계·2단계·혼자(보이는 가장 깊은 단계까지)');
 });
 test('P153 r7: 선은 직각, 나무 선은 부모 오른쪽 → 하위 왼쪽, 다른 워크스페이스 선은 카드·줄 머리를 지나지 않고 받는 카드 왼쪽·위로', () => {
   const lay = lin();
@@ -380,4 +380,99 @@ test('P153 r9: 세션 맵 목차 레일 없음, 사이드바 줄 누르기는 �
   assert.match(css, /html\[data-work-light="off"\] \.mt-ln \.blink/, '반짝임: 판 설정 끔이면 멈춘 강조');
   assert.ok(!/@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*\.mt-ln \.blink/.test(css), '움직임 줄이기(OS)만으로 끄지 않는다');
   assert.ok(en.sbFold.open && ko.sbFold.close);
+});
+
+// ---- 라운드 11: 숫자 단계 칸, 깊이 접기, 동료·독립, Alt+카드 끌기로 관계 바꾸기(P156 계약 흉내) ----
+import { relationDrop, relationCall, applyRelationStub } from '../src/renderer/lib/mission-lineage.js';
+// 깊이 6 사슬(d0 → d1 → … → d6)을 새 워크스페이스에
+const DEEP_WS = 'd:/work/deep/.git';
+const deepGraph = () => {
+  const g = graph();
+  const chain = ['d0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6'];
+  chain.forEach((n, i) => g.nodes.push({ id: `s:${n}`, kind: 'session', sessionId: `x-${n}`, name: n, workspaceKey: DEEP_WS, state: 'sleeping', parentId: i ? `s:${chain[i - 1]}` : null, createdAt: 100 + i }));
+  for (let i = 1; i < chain.length; i++) g.edges.push({ from: `s:${chain[i - 1]}`, to: `s:${chain[i]}`, kind: 'spawn', count: 1 });
+  return { g, order: [...WS, DEEP_WS] };
+};
+const deepLay = (expanded, sets = []) => { const { g, order } = deepGraph(); return lineageLayout(applyRelationStub(g, sets), { order, vgroups: FOLDERS, expanded }); };
+const colsOf = (lay) => lay.cols.map((c) => (c.key === 'lv' ? c.level : c.key));
+const lvX = (lay, n) => lay.cols.find((c) => c.key === 'lv' && c.level === n).x;
+
+test('P153 r11: 칸은 워크스페이스 · 시작 · 1단계 · … · 혼자, 4단계보다 깊은 가지는 접고(+n단계) 편 가지만 끝까지 편다', () => {
+  const lay = deepLay(new Set());
+  assert.deepEqual(colsOf(lay), ['ws', 0, 1, 2, 3, 4, 'solo'], '보이는 가장 깊은 단계(4)까지');
+  assert.equal(lay.cards.get('s:d4').fold, 2, 'd4 카드에 +2단계');
+  assert.ok(!lay.cards.has('s:d5') && !lay.cards.has('s:d6'), '접힌 카드는 그리지 않는다');
+  const open = deepLay(new Set(['s:d4']));
+  assert.deepEqual(colsOf(open), ['ws', 0, 1, 2, 3, 4, 5, 6, 'solo']);
+  assert.equal(open.cards.get('s:d4').fold, 0);
+  assert.equal(open.cards.get('s:d6').x, lvX(open, 6), '편 가지는 끝(6단계)까지');
+  assert.equal(ko.mmLine.colRoot, '시작'); assert.equal(ko.mmLine.colLevel, '{n}단계'); assert.equal(ko.mmLine.colSolo, '혼자'); assert.equal(ko.mmLine.fold, '+{n}단계');
+  assert.equal(en.mmLine.colRoot, 'Root'); assert.equal(en.mmLine.colLevel, 'Level {n}'); assert.equal(en.mmLine.colSolo, 'Solo');
+  for (const k of ['colLead', 'colWorkers', 'colNext']) assert.ok(!(k in ko.mmLine) && !(k in en.mmLine), `${k}는 없앴다`);
+  const src = read('MissionLineage.jsx');
+  assert.match(src, /data-action="ln-fold"/); assert.match(src, /localStorage\.setItem\(EXP_KEY/, '편 가지는 기억한다');
+});
+
+test('P153 r11: 동료는 같은 칸에 붙어 쌓이고 양끝 점 선(화살촉 없음), 독립은 시작 칸에서 옅은 계보 선만', () => {
+  const lp = deepLay(new Set(), [{ a: 'x-d1', b: 'x-d2', relation: 'peer' }]);
+  const d1 = lp.cards.get('s:d1'), d2 = lp.cards.get('s:d2');
+  assert.equal(d1.x, d2.x, '동료는 같은 칸');
+  const [u, d] = d1.y < d2.y ? [d1, d2] : [d2, d1];
+  assert.ok(Math.abs(d.y - (u.y + u.h) - LINE.PGY) < 0.01, '동료는 바로 위아래(틈 PGY)');
+  const pe = lp.edges.find((e) => e.peer);
+  assert.ok(pe && pe.rel === 'peer' && !pe.cross && pe.pts.every((p) => p[0] === pe.pts[0][0]), '동료 선 = 세로 한 줄');
+  assert.ok(!lp.edges.some((e) => e.tree && [e.from, e.to].sort().join() === 's:d1,s:d2'), '동료끼리는 나무 선이 없다');
+  const ind = deepLay(new Set(), [{ a: 'x-d2', b: 'x-d3', relation: 'none' }]);
+  assert.equal(ind.cards.get('s:d3').x, lvX(ind, 0), '독립 = 시작 칸');
+  assert.equal(ind.cards.get('s:d4').x, lvX(ind, 1), '하위는 함께 따라간다');
+  const le = ind.edges.find((e) => e.lineage);
+  assert.ok(le && le.from === 's:d2' && le.to === 's:d3' && le.rel === 'lineage' && !le.cross, '계보는 옅은 선으로만');
+  const src = read('MissionLineage.jsx');
+  assert.match(src, /mt-ln-end-peer/); assert.match(src, /markerStart=\{e\.peer \? tip/); assert.match(src, /e\.lineage \? undefined/);
+});
+
+test('P153 r11: 정한 동료·독립 쌍은 일 나무에서 빠지고, 정한 하위가 이긴다(applyRelationStub = P156 계약)', () => {
+  const { g, order } = deepGraph();
+  const s = applyRelationStub(g, [{ a: 'x-d0', b: 'x-d3', relation: 'sub' }, { a: 'x-d1', b: 'x-d2', relation: 'peer' }]);
+  const n = (id) => s.nodes.find((x) => x.id === id);
+  assert.equal(n('s:d3').parentId, 's:d0'); assert.equal(n('s:d3').lineageParent, 's:d2', '계보 부모는 그대로');
+  assert.deepEqual(n('s:d1').peers, ['s:d2']); assert.deepEqual(n('s:d2').peers, ['s:d1']); assert.equal(n('s:d2').parentId, null);
+  const e = s.edges.find((x) => x.from === 's:d1' && x.to === 's:d2');
+  assert.equal(e.relation, 'peer'); assert.equal(e.relationSource, 'user');
+  assert.ok(s.edges.some((x) => x.kind === 'relation' && x.from === 's:d0' && x.to === 's:d3' && x.relationUp === 's:d0'), '선 없는 쌍은 relation 선');
+  const lay = lineageLayout(s, { order, vgroups: FOLDERS });
+  assert.equal(lay.tree.parent.get('s:d3'), 's:d0'); assert.notEqual(lay.tree.parent.get('s:d2'), 's:d1');
+  assert.equal(applyRelationStub(g, []), g, '정한 것이 없으면 그대로');
+});
+
+test('P153 r11: Alt+카드 끌기 — 오른쪽 = 하위로, 위아래 = 동료로, 빈 시작 칸 = 독립, 제자리·자기 하위 = 없음, relation.set 인자', () => {
+  const lay = deepLay(new Set());
+  const c = (n) => lay.cards.get(`s:${n}`);
+  const el = c('exam-lead');
+  const sub = relationDrop(lay, 's:d3', el.x + el.w + LINE.GX + 20, el.y + el.h / 2);
+  assert.equal(sub.kind, 'sub'); assert.equal(sub.target, 's:exam-lead');
+  assert.deepEqual(relationCall(lay, 's:d3', sub), { a: 'x-exam-lead', b: 'x-d3', relation: 'sub' });
+  const xn = c('ex-notes');
+  const peer = relationDrop(lay, 's:d3', xn.x + 20, xn.y - 10);
+  assert.equal(peer.kind, 'peer'); assert.equal(peer.target, 's:ex-notes');
+  assert.deepEqual(relationCall(lay, 's:d3', peer), { a: 'x-ex-notes', b: 'x-d3', relation: 'peer' });
+  assert.equal(relationDrop(lay, 's:d3', c('d3').x + 10, c('d3').y + 10), null, '제자리 = 취소');
+  const d4 = c('d4'); const own = relationDrop(lay, 's:d3', d4.x + d4.w + LINE.GX + 20, d4.y + d4.h / 2);
+  assert.ok(!own || own.target !== 's:d4', '자기 하위 밑으로는 못 간다');
+  const d2 = c('d2');
+  assert.equal(relationDrop(lay, 's:d3', d2.x + d2.w + LINE.GX + 20, d2.y + d2.h / 2), null, '제자리(부모 오른쪽 자기 자리) = 취소');
+  assert.equal(relationCall(lay, 's:d3', { kind: 'sub', target: 's:d2' }), null, '이미 그 하위면 부를 것이 없다');
+  // 독립: 다른 줄(exam)의 빈 시작 칸(exam-lead 위아래가 아닌 곳)
+  const row = lay.rows.find((r) => r.key === c('exam-lead').ws);
+  const col0 = lvX(lay, 0);
+  let none = null;
+  for (let y = row.y + 10; y < row.y + row.h && !none; y += 10) { const d = relationDrop(lay, 's:d3', col0 + 30, y); if (d && d.kind === 'none') none = d; }
+  assert.ok(none, '빈 시작 칸이 있다');
+  assert.deepEqual(relationCall(lay, 's:d3', none), { a: 'x-d2', b: 'x-d3', relation: 'none' });
+  const src = read('MissionLineage.jsx');
+  assert.match(src, /api\.call\('relation\.set', call\)/); assert.match(src, /unknown_method/); assert.match(src, /mode: 'card'/);
+  assert.match(src, /e\.altKey && e\.pointerType === 'mouse'/, 'Alt 없이 끌면 시점 이동');
+  assert.match(src, /mt-ln-grab/, '줄을 잡는 자리는 워크스페이스 칸 빈 곳까지');
+  for (const k of ['dropSub', 'dropPeer', 'dropNone', 'relFail', 'relLocal']) assert.ok(ko.mmLine[k] && en.mmLine[k], k);
+  assert.equal(ko.mmLine.dropNone, '독립'); assert.match(ko.mmLine.dropSub, /하위로/); assert.match(ko.mmLine.dropPeer, /동료로/);
 });

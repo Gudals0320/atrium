@@ -103,16 +103,23 @@ const HOOK = ([shape, mix, real, agent]) => {
     const nm = i === 1 && agent ? agent.name : s.name;
     if (i === 1 && agent) { for (const l of shape.links) { if (l.src === s.name) l.src = nm; if (l.dst === s.name) l.dst = nm; } for (const x of shape.sessions) if (x.parent === s.name) x.parent = nm; }
     return { id: `s:${nm}`, kind: 'session', sessionId: i === 0 && real ? real : i === 1 && agent ? agent.id : `fk-${s.name}`, name: nm, agentKind: s.kind || 'claude', state, category, workspaceKey: s.workspace,
-      parentId: s.parent ? `s:${s.parent}` : null, role: null, order: null, createdAt: 1e12 + i, loops: 0, model: s.model, effort: s.effort, activeAt: now - (i + 1) * 9e5, turnAt: state === 'working' ? now - (i + 1) * 2e5 : null,
+      // r11(P156 계약): indep = 정한 독립(일 부모 없음, 계보만), peers = 정한 동료
+      parentId: s.parent && !s.indep ? `s:${s.parent}` : null, lineageParent: s.parent ? `s:${s.parent}` : null, peers: (shape.peers || []).filter((p) => p.includes(s.name)).map((p) => `s:${p[0] === s.name ? p[1] : p[0]}`), role: null, order: null, createdAt: 1e12 + i, loops: 0, model: s.model, effort: s.effort, activeAt: now - (i + 1) * 9e5, turnAt: state === 'working' ? now - (i + 1) * 2e5 : null,
       gitBranch: s.branch || null, ask, error, lastPrompt: s.task || ['Merge the workers and run the release check', 'Draft the slide notes', 'Collect the source tables', 'Review the parser diff'][i % 4], ...(s.ago ? { activeAt: now - s.ago, turnAt: state === 'working' ? now - s.ago : null } : {}) };
   });
   const edges = [];
   for (const l of shape.links) {
-    const b = { from: `s:${l.src}`, to: `s:${l.dst}`, count: l.count || 0, lastAt: now - 6e5 };
+    const pairOf = (p) => (p[0] === l.src && p[1] === l.dst) || (p[1] === l.src && p[0] === l.dst);
+    const isPeer = (shape.peers || []).some(pairOf);
+    const isNone = shape.sessions.some((s) => s.indep && s.parent && pairOf([s.parent, s.name]));
+    const relation = isPeer ? 'peer' : isNone ? 'none' : undefined;
+    const b = { from: `s:${l.src}`, to: `s:${l.dst}`, count: l.count || 0, lastAt: now - 6e5, ...(relation ? { relation, relationSource: 'user' } : {}) };
     if (l.role) edges.push({ ...b, kind: 'role', label: l.role });
     if (l.observed) edges.push({ ...b, kind: 'prompt', label: 'report back when done' });
     if (l.spawned) edges.push({ ...b, kind: 'spawn' });
   }
+  // 선 없는 정한 동료 쌍은 relation 선(P156)
+  for (const p of shape.peers || []) if (!shape.links.some((l) => (l.src === p[0] && l.dst === p[1]) || (l.src === p[1] && l.dst === p[0]))) edges.push({ from: `s:${p[0]}`, to: `s:${p[1]}`, kind: 'relation', relation: 'peer', relationSource: 'user', count: 0 });
   api.call = async (m, p) => {
     if (m !== 'mission.graph') return api.__p153orig(m, p);
     return { nodes: [{ id: 'human', kind: 'human', name: 'you' }, ...nodes], edges, counts: { all: nodes.length }, at: now };
@@ -618,6 +625,164 @@ async function compareApp() {
   } finally { await closeApp(app); }
 }
 
+// ---- 라운드 11: 숫자 단계 칸, 깊이 접기(+n단계), 동료·독립, Alt+카드 끌기(관계 바꾸기), 줄 잡는 자리 ----
+// 흉내 모양 + 깊이 6 사슬(plan-0 … plan-6) + 동료(lib-1·scribe 뿌리끼리, plan-2·plan-2b 같은 부모 아래) + 독립(trial, 계보 g1)
+const SHAPE_DEEP = (() => {
+  const s = JSON.parse(JSON.stringify(SHAPE_FAKE));
+  const key = 'd:/work/deep/.git';
+  s.workspaces.push(ws(key));
+  s.folders.find((f) => f.id === 'g2').members.push(key);
+  const chain = ['plan-0', 'plan-1', 'plan-2', 'plan-3', 'plan-4', 'plan-5', 'plan-6'];
+  chain.forEach((n, i) => s.sessions.push(ss(n, key, { parent: i ? chain[i - 1] : null, ...(i === 3 ? { asleep: false, term: 'working' } : {}) })));
+  s.sessions.push(ss('plan-2b', key, { kind: 'codex', model: 'gpt-6.1-sol' }));
+  for (let i = 1; i < chain.length; i++) s.links.push(ln(chain[i - 1], chain[i], { role: 'worker', spawned: true }));
+  s.peers = [['lib-1', 'scribe'], ['plan-2', 'plan-2b']];
+  s.sessions.find((x) => x.name === 'trial').indep = true;
+  return s;
+})();
+
+async function r11() {
+  call('settings.set', { key: 'missionStyle', value: 'territories' });
+  const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
+  try {
+    await awayWin(app);
+    await page.setViewportSize({ width: 1584, height: 921 }).catch(() => {});
+    await sleep(2500);
+    if (await page.$('[data-role="sidebar"]')) { await page.click('[data-action="sidebar"]'); await sleep(500); }
+    await page.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE_DEEP)), MIX, null, null]);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    // relation.set·group.move 흉내: 부른 것을 적고, 답은 window.__r11mode(unknown = P156 전, fail = 실패, ok)
+    await page.evaluate(() => {
+      const api = window.__mt.api; const orig = api.call; window.__r11calls = []; window.__r11moves = []; window.__r11mode = 'unknown';
+      api.call = (m, p) => {
+        if (m === 'relation.set') { window.__r11calls.push(p); const md = window.__r11mode; return md === 'ok' ? Promise.resolve({ ok: true }) : Promise.reject(Object.assign(new Error(md === 'fail' ? 'board said no' : 'unknown method: relation.set'), { code: md === 'fail' ? 'internal' : 'unknown_method' })); }
+        if (m === 'group.move') { window.__r11moves.push(p); return Promise.resolve({ groups: [] }); }
+        return orig(m, p);
+      };
+      window.__r11un = () => { api.call = orig; };
+    });
+    const cmd = () => page.evaluate(() => (document.querySelector('[data-role=command]') || {}).value || '');
+    const setCmd = (v) => page.evaluate((x) => { const el = document.querySelector('[data-role=command]'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(el, x); el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); }, v);
+    await openMission(page);
+    await setCmd('');
+    // 앞 실행이 편 가지가 남았으면 접는다(편 가지는 창에 기억된다)
+    if (await page.$('[data-action="ln-fold"].open[data-id="s:plan-4"]')) { await page.click('[data-action="ln-fold"].open[data-id="s:plan-4"]'); await sleep(600); }
+    await shotTo(page, 'r11-deep-open');
+    const info = await page.evaluate(() => {
+      const L = window.__mtTa.lay(), x = (n) => (L.cards.get(`s:${n}`) || {}).x;
+      const col0 = L.cols.find((c) => c.key === 'lv' && c.level === 0).x;
+      const peerE = [...document.querySelectorAll('.mt-ta-edge.k-peer')].map((e) => ({ from: e.dataset.from, to: e.dataset.to, ms: e.getAttribute('marker-start'), me: e.getAttribute('marker-end') }));
+      const linE = [...document.querySelectorAll('.mt-ta-edge.k-lineage')].map((e) => ({ from: e.dataset.from, to: e.dataset.to, me: e.getAttribute('marker-end') }));
+      const fold = document.querySelector('[data-action="ln-fold"][data-id="s:plan-4"]');
+      const l1 = L.cards.get('s:lib-1'), sc = L.cards.get('s:scribe'), p2 = L.cards.get('s:plan-2'), p2b = L.cards.get('s:plan-2b');
+      return {
+        cols: [...document.querySelectorAll('[data-role=ln-cols] .colh')].map((c) => c.dataset.col), heads: [...document.querySelectorAll('[data-role=ln-cols] .colh')].map((c) => c.textContent),
+        fold: fold && fold.textContent, has5: L.cards.has('s:plan-5'), peerE, linE,
+        libPeer: l1 && sc && l1.x === sc.x && l1.x === col0 && Math.abs(Math.abs(l1.y - sc.y) - (l1.y < sc.y ? l1.h : sc.h)) < 60,
+        planPeer: p2 && p2b && p2.x === p2b.x, trialRoot: x('trial') === col0,
+      };
+    });
+    check('r11 칸 머리: 워크스페이스 · 시작 · 1단계 · … · 4단계 · 혼자', info.cols.join() === 'ws,lv0,lv1,lv2,lv3,lv4,solo' && ['시작', 'Root'].includes(info.heads[1]) && /1/.test(info.heads[2]) && ['혼자', 'Solo'].includes(info.heads[6]), info);
+    check('r11 깊이 접기: 4단계 카드에 +2단계 칩, 그 아래는 그리지 않는다', /\+2/.test(info.fold || '') && !info.has5, info.fold);
+    check('r11 동료: 같은 칸에 붙어 쌓이고 선은 양끝 점(화살촉 없음)', info.libPeer && info.planPeer && info.peerE.length === 2 && info.peerE.every((e) => /end-peer/.test(e.ms || '') && /end-peer/.test(e.me || '')), info.peerE);
+    check('r11 독립: 시작 칸, 계보는 화살촉 없는 옅은 선', info.trialRoot && info.linE.some((e) => e.from === 's:g1' && e.to === 's:trial' && !e.me), info.linE);
+    // 접기 칩 누르기 = 그 가지만 편다(태그 아님), 다시 열어도 기억, 다시 누르면 접힘
+    await page.evaluate(() => window.__mtTa.flyTo('s:plan-4', 0.6)); await sleep(800);
+    await page.click('[data-action="ln-fold"][data-id="s:plan-4"]'); await sleep(700);
+    const ex = await page.evaluate(() => { const L = window.__mtTa.lay(); return { has6: L.cards.has('s:plan-6'), cols: L.cols.length, chip: (document.querySelector('[data-action="ln-fold"][data-id="s:plan-4"]') || {}).className || '' }; });
+    const c1 = await cmd();
+    await page.evaluate(() => window.__mtTa.flyTo('s:plan-5', 0.85)); await sleep(800);
+    await shotTo(page, 'r11-deep-expanded-85');
+    await openMission(page);
+    const kept = await page.evaluate(() => window.__mtTa.lay().cards.has('s:plan-6'));
+    await page.evaluate(() => window.__mtTa.flyTo('s:plan-4', 0.6)); await sleep(800);
+    await page.click('[data-action="ln-fold"][data-id="s:plan-4"]'); await sleep(700);
+    const back = await page.evaluate(() => window.__mtTa.lay().cards.has('s:plan-5'));
+    check('r11 +n단계 누르기: 그 가지만 끝까지 펴고(태그 아님), 닫았다 열어도 기억, 다시 누르면 접힘', ex.has6 && /open/.test(ex.chip) && !/@plan-4/.test(c1) && kept && !back, { ex, c1, kept, back });
+
+    // ---- Alt+카드 끌기 ----
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
+    // 세계 좌표 → 화면 좌표
+    const scr = (id, fx, fy) => page.evaluate(([i, a, b]) => { const L = window.__mtTa.lay(), v = window.__mtTa.view(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); const c = L.cards.get(i); return { x: vp.left + v.x + (c.x + c.w * a) * v.k, y: vp.top + v.y + (c.y + c.h * b) * v.k }; }, [id, fx, fy]);
+    const w2s = (wx, wy) => page.evaluate(([a, b]) => { const v = window.__mtTa.view(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { x: vp.left + v.x + a * v.k, y: vp.top + v.y + b * v.k }; }, [wx, wy]);
+    const drop = () => page.evaluate(() => { const d = document.querySelector('[data-role=ln-drop]'); return d && !d.hidden ? { kind: d.dataset.kind, text: d.textContent, target: (document.querySelector('.mt-ta-slot.drop-target') || {}).dataset?.id || null } : null; });
+    const drag = async (from, to, { alt = true, shot = null, esc = false, back = false } = {}) => {
+      if (alt) await page.keyboard.down('Alt');
+      await page.mouse.move(from.x, from.y); await page.mouse.down();
+      for (let i = 1; i <= 16; i++) { await page.mouse.move(from.x + (to.x - from.x) * i / 16, from.y + (to.y - from.y) * i / 16); await sleep(16); }
+      if (back) for (let i = 1; i <= 8; i++) { await page.mouse.move(to.x + (from.x - to.x) * i / 8, to.y + (from.y - to.y) * i / 8); await sleep(16); }
+      const d = await drop();
+      if (shot) await shotTo(page, shot);
+      if (esc) await page.keyboard.press('Escape');
+      await page.mouse.up(); if (alt) await page.keyboard.up('Alt'); await sleep(700);
+      return d;
+    };
+    const parentOf = (id) => page.evaluate((i) => window.__mtTa.lay().tree.parent.get(i) || null, id);
+    const calls = () => page.evaluate(() => window.__r11calls.slice());
+    // 1) 하위로(다른 워크스페이스): media → exam-lead 오른쪽 칸. 판이 모르면(unknown_method) 이 맵에서만 남긴다
+    const el = await page.evaluate(() => { const L = window.__mtTa.lay(), c = L.cards.get('s:exam-lead'); return { x: c.x + c.w + 110 + c.w * 0.3, y: c.y + c.h / 2 }; });
+    const d1 = await drag(await scr('s:media', 0.5, 0.5), await w2s(el.x, el.y), { shot: 'r11-drag-sub' });
+    const k1 = await calls();
+    check('r11 Alt+카드 끌기 → 하위로: 미리 보기(하위로 + 대상 강조), relation.set {a: 위, b: 끈 세션, sub}, 판이 모르면 맵에만 남김', d1 && d1.kind === 'sub' && d1.target === 's:exam-lead' && /exam-lead/.test(d1.text) && k1.length === 1 && k1[0].a === 'fk-exam-lead' && k1[0].b === 'fk-media' && k1[0].relation === 'sub' && (await parentOf('s:media')) === 's:exam-lead', { d1, k1 });
+    // 2) 동료로 + Esc 취소: conductor → ex-notes 바로 위
+    const xn = await page.evaluate(() => { const c = window.__mtTa.lay().cards.get('s:ex-notes'); return { x: c.x + 40, y: c.y - 20 }; });
+    const d2 = await drag(await scr('s:conductor', 0.5, 0.5), await w2s(xn.x, xn.y), { shot: 'r11-drag-peer', esc: true });
+    const k2 = await calls();
+    const after2 = await page.evaluate(() => ({ hidden: document.querySelector('[data-role=ln-drop]').hidden, moving: document.querySelectorAll('.mt-ta-slot.moving').length, tr: document.querySelector('.mt-ta-slot[data-id="s:conductor"]').style.transform, open: !!document.querySelector('[data-role=mission]') }));
+    check('r11 위아래 = 동료로 미리 보기, 끄는 중 Esc = 취소(부르지 않음, 카드 제자리, 세션 맵 열린 채)', d2 && d2.kind === 'peer' && d2.target === 's:ex-notes' && k2.length === 1 && after2.hidden && !after2.moving && !after2.tr && after2.open, { d2, after2 });
+    // 3) 독립: researcher → 자기 줄의 빈 시작 칸
+    const nz = await page.evaluate(() => { const L = window.__mtTa.lay(), c = L.cards.get('s:researcher'), r = L.rows.find((x) => x.key === c.ws), c0 = L.cols.find((x) => x.key === 'lv' && x.level === 0).x; return { x: c0 + 60, y: r.y + r.h / 2 }; });
+    const d3 = await drag(await scr('s:researcher', 0.5, 0.5), await w2s(nz.x, nz.y), { shot: 'r11-drag-none' });
+    const k3 = await calls();
+    const ind = await page.evaluate(() => { const L = window.__mtTa.lay(); return { x: L.cards.get('s:researcher').x, c0: L.cols.find((x) => x.key === 'lv' && x.level === 0).x, lin: !!document.querySelector('.mt-ta-edge.k-lineage[data-from="s:m1"][data-to="s:researcher"]') }; });
+    check('r11 빈 시작 칸 = 독립: relation.set {a: 일 부모, b, none}, 시작 칸으로, 계보는 옅은 선', d3 && d3.kind === 'none' && k3.length === 2 && k3[1].a === 'fk-m1' && k3[1].b === 'fk-researcher' && k3[1].relation === 'none' && ind.x === ind.c0 && ind.lin, { d3, k3: k3[1], ind });
+    // 4) 제자리로 돌아와 놓기 = 취소
+    const d4 = await drag(await scr('s:ex-set-03', 0.5, 0.5), await scr('s:ex-set-03', 0.5, 2.5), { back: true });
+    check('r11 제자리에 놓기 = 취소(부르지 않음)', (await calls()).length === 2, { d4 });
+    // 5) 실패 → 되돌림 + 알림
+    await page.evaluate(() => { window.__r11mode = 'fail'; });
+    const dl = await page.evaluate(() => { const c = window.__mtTa.lay().cards.get('s:deck-lead'); return { x: c.x + c.w + 110 + c.w * 0.3, y: c.y + c.h / 2 }; });
+    await drag(await scr('s:ex-qa-c', 0.5, 0.5), await w2s(dl.x, dl.y));
+    await sleep(500);
+    const f5 = await page.evaluate(() => ({ p: window.__mtTa.lay().tree.parent.get('s:ex-qa-c'), err: [...document.querySelectorAll('.mt-toast.error')].map((x) => x.textContent) }));
+    check('r11 판이 실패로 답하면 되돌리고 알린다', (await calls()).length === 3 && f5.p === 's:exam-lead' && f5.err.some((x) => /board said no/.test(x)), f5);
+    // 6) 판이 받으면(ok) 같은 인자로 부르고, 새 그래프를 다시 읽는다
+    await page.evaluate(() => { window.__r11mode = 'ok'; window.__r11graphs = 0; const api = window.__mt.api, o = api.call; api.call = (m, p) => { if (m === 'mission.graph') window.__r11graphs++; return o(m, p); }; });
+    const g1 = await page.evaluate(() => { const c = window.__mtTa.lay().cards.get('s:g1'); return { x: c.x + c.w + 110 + c.w * 0.3, y: c.y + c.h / 2 }; });
+    await drag(await scr('s:ex-qa-b', 0.5, 0.5), await w2s(g1.x, g1.y));
+    await sleep(900);
+    const k6 = await calls(), g6 = await page.evaluate(() => window.__r11graphs);
+    check('r11 판이 받으면 relation.set 그대로, 그래프를 다시 읽는다', k6.length === 4 && k6[3].a === 'fk-g1' && k6[3].b === 'fk-ex-qa-b' && k6[3].relation === 'sub' && g6 >= 1, { k6: k6[3], g6 });
+    // 7) Alt 없이 카드 끌기 = 시점 이동(관계 그대로, 태그 없음)
+    await setCmd('');
+    const v0 = await page.evaluate(() => window.__mtTa.view());
+    const s7 = await scr('s:exam-lead', 0.5, 0.5);
+    await drag(s7, { x: s7.x + 140, y: s7.y + 60 }, { alt: false });
+    const v1 = await page.evaluate(() => window.__mtTa.view());
+    check('r11 Alt 없이 카드 끌기 = 시점 이동(부르지 않고 태그도 없음)', Math.abs(v1.x - v0.x - 140) < 4 && (await calls()).length === 4 && !(await cmd()).trim(), { v0, v1 });
+    // 8) 줄 잡는 자리: 줄 머리 이름 아래 빈 곳(워크스페이스 칸)을 Alt+끌기 → 그 폴더로
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
+    const gb = await page.evaluate(() => {
+      const L = window.__mtTa.lay(), r = L.rows.find((x) => !x.band && x.key), hub = L.bands.find((b) => b.name === 'Hub');
+      const g = document.querySelector(`.mt-ln-grab[data-key="${CSS.escape(r.key)}"]`).getBoundingClientRect(), h = document.querySelector(`.mt-ln-head[data-key="${CSS.escape(r.key)}"]`).getBoundingClientRect(), t = document.querySelector(`.mt-ln-band[data-id="${hub.id}"]`).getBoundingClientRect();
+      return { key: r.key, hub: hub.id, from: { x: h.right + Math.min(40, (g.right - h.right) / 2), y: Math.min(g.bottom - 6, h.bottom + 20) }, to: { x: Math.max(t.left, 260) + 200, y: t.top + t.height * 0.5 }, grabW: g.width, headW: h.width };
+    });
+    await drag(gb.from, gb.to, { shot: 'r11-row-grab' });
+    const mv = await page.evaluate(() => window.__r11moves);
+    check('r11 Alt+끌기: 줄 머리 둘레 빈 곳에서도 줄을 잡아 다른 폴더로(group.move)', mv.length === 1 && mv[0].workspace === gb.key && mv[0].group === gb.hub && gb.grabW > gb.headW, { mv, gb });
+    // 그림: 맞춤, 85%
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
+    await shotTo(page, 'r11-deep-fit');
+    await page.evaluate(() => window.__mtTa.flyTo('s:plan-2', 0.85)); await sleep(800);
+    await shotTo(page, 'r11-deep-85');
+    await page.evaluate(() => window.__mtTa.flyTo('s:lib-1', 0.85)); await sleep(800);
+    await shotTo(page, 'r11-peers-85');
+    await page.evaluate(() => window.__r11un());
+    await closeMission(page);
+    await page.evaluate(UNHOOK);
+  } finally { await closeApp(app); }
+}
+
 async function stopBoard() {
   for (const s of call('session.list').filter((x) => /^p153-/.test(x.name))) { try { atrium('kill', s.name, '--yes'); } catch (e) { log(`kill ${s.name} ${e.message.slice(0, 100)}`); } }
   await sleep(2000);
@@ -631,6 +796,7 @@ try {
   else if (WHAT === 'phone') await phone();
   else if (WHAT === 'mock') await mock();
   else if (WHAT === 'perf') await perf();
+  else if (WHAT === 'r11') await r11();
   else if (WHAT === 'compare') { await compareApp(); await mock(true); }
   else if (WHAT === 'stop') await stopBoard();
 } catch (e) {

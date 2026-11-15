@@ -10,7 +10,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout, headDrag } from './lib/mission-lineage.js'; // P155: headDrag(Alt+끌기만 옮기기)
+import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, LINE } from './lib/mission-lineage.js'; // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
@@ -35,6 +35,14 @@ const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
 const IDLE = new Set(['rest', 'sleep', 'done']);
 const KINDS = ['spawn', 'role', 'prompt', 'cross'];
+// P153 r11: 깊이 접기를 편 카드(맵 노드 id)는 창에 기억한다(다시 열어도 그 가지만 펴져 있다)
+const EXP_KEY = 'atrium.sessionMap.expanded';
+const loadExpanded = () => { try { const a = JSON.parse(localStorage.getItem(EXP_KEY) || '[]'); return new Set(Array.isArray(a) ? a.slice(0, 200) : []); } catch { return new Set(); } };
+const saveExpanded = (s) => { try { localStorage.setItem(EXP_KEY, JSON.stringify([...s].slice(-200))); } catch { /* 기억 못 해도 지금 화면은 된다 */ } };
+// P153 r11: 판이 relation.set을 모르면(P156 전, 'unknown_method') 정한 관계를 이 창에서만 그래프에 덮어 보인다(applyRelationStub). 맵을 닫았다 열어도 남는다
+const relStub = [];
+const relKey = (x) => [x.a, x.b].sort().join('|');
+const putRel = (list, x) => [...list.filter((y) => relKey(y) !== relKey(x)), x];
 
 // 카드 사실(보통 단계 줄들, 풍선 도움말, 휴대폰 시트가 같이 쓴다)
 export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentWs = null, cross = false, kids = 0 } = {}) {
@@ -48,7 +56,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const activeAt = n.activeAt || (live && live.lastActivityAt) || null;
   const age = tier === 'work' && turnAt ? ageText(now - turnAt, t) : activeAt ? ageText(now - activeAt, t) : null;
   const model = shell ? null : live && live.model ? modelText(live.model, live.effort) : modelText(n.model, n.effort);
-  const role = m ? (m.rank === 'solo' ? t('mmTerr.solo') : roleText(m, t, { short: true })) : '';
+  const role = m ? (m.rank === 'solo' ? ((n.peers || []).length ? t('mmLine.peer') : t('mmTerr.solo')) : roleText(m, t, { short: true })) : ''; // r11: 정한 동료는 '동료'
   const lp = n.lastPrompt || (live && live.lastPrompt) || null;
   const ask = n.ask || (live && live.ask && (live.ask.summary || live.ask.kind)) || null;
   const err = live && live.error ? (live.error.message || String(live.error)) : n.error || null;
@@ -69,11 +77,11 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 }
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
-const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t }) {
+const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null }) {
   const n = b.node;
   const st = ST[tier] || 'ready';
   const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}`;
-  const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip')].filter(Boolean).join('\n');
+  const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip'), t('mmLine.cardDragTip')].filter(Boolean).join('\n');
   const done = tier === 'review';
   return (
     <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws}>
@@ -89,6 +97,13 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, o
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
           {f.more ? <span className="c4" data-role="ta-more">{f.more}</span> : null}
         </span>
+        {/* P153 r11: 깊이 접기 칩. 누르면 이 가지만 펴거나 다시 접는다(카드 태그·판으로 가기와 따로) */}
+        {onFold && (b.fold > 0 || unfold) ? (
+          <button type="button" className={`mt-ln-fold${unfold ? ' open' : ''}`} data-action="ln-fold" data-id={id} title={t(unfold ? 'mmLine.unfoldTip' : 'mmLine.foldTip')}
+            onClick={(e) => { e.stopPropagation(); onFold(id); }} onDoubleClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
+            {unfold ? t('mmLine.unfold') : t('mmLine.fold', { n: b.fold })}
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -162,13 +177,19 @@ export function LineageMap() {
   const moveTimer = useRef(0), glideTimer = useRef(0);
   const justDragged = useRef(false);
   const layRef = useRef(null), sizeRef = useRef(null);
+  const [expanded, setExpanded] = useState(loadExpanded); // 깊이 접기를 편 카드
+  const [stubN, setStubN] = useState(0); // relStub이 바뀐 횟수(다시 배치)
+  const [pending, setPending] = useState([]); // 놓자마자 보이는 관계(판 답을 기다리는 동안). [{ a, b, relation, ok }]
+  const [reloadN, setReloadN] = useState(0);
+  const onFold = useCallback((id) => setExpanded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); saveExpanded(n); return n; }), []);
 
   useEffect(() => {
     if (!open) { setGraph(null); fitted.current = false; view.current = null; return undefined; }
     let alive = true;
-    const timer = setTimeout(() => api.call('mission.graph').then((g) => alive && setGraph(g)).catch((e) => toast(t('mission.fail', { error: errText(e) }), 'error')), graph ? 300 : 0);
+    // 판이 바꾼 관계가 든 새 그래프가 오면 답을 받은(ok) 놓기 흉내는 걷는다
+    const timer = setTimeout(() => api.call('mission.graph').then((g) => { if (!alive) return; setGraph(g); setPending((p) => (p.some((x) => x.ok) ? p.filter((x) => !x.ok) : p)); }).catch((e) => toast(t('mission.fail', { error: errText(e) }), 'error')), graph ? 300 : 0);
     return () => { alive = false; clearTimeout(timer); };
-  }, [open, sessions, links, thread, loops]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, sessions, links, thread, loops, reloadN]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onText = (e) => { const next = leadTags(e.detail); setTags((cur) => (cur.join('\n') === next.join('\n') ? cur : next)); };
     commandDraft.addEventListener('text', onText);
@@ -179,8 +200,10 @@ export function LineageMap() {
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
-  const lay = useMemo(() => (graph ? lineageLayout(graph, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder') }) : null), [graph, order, vgroups, tiers, names, t]);
-  const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
+  // 판 그래프 + 이 창에서만 정한 관계(relStub) + 답을 기다리는 놓기(pending)
+  const g2 = useMemo(() => (graph ? applyRelationStub(graph, [...relStub, ...pending]) : null), [graph, pending, stubN]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (g2 ? lineageLayout(g2, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded }) : null), [g2, order, vgroups, tiers, names, t, expanded]);
+  const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
   layRef.current = lay;
   sizeRef.current = vsize;
   const now = Date.now();
@@ -316,6 +339,31 @@ export function LineageMap() {
     api.call('group.move', { workspace: key, group: bandId || null }).then(() => toast(bandId ? t('mmTerr.movedTo', { ws: wsName(key), folder: name || '' }) : t('mmTerr.movedOut', { ws: wsName(key) }))).catch((e) => toast(t('mmTerr.moveFail', { error: errText(e) }), 'error'));
   }, [t]);
 
+  // ---- P153 r11: 관계 바꾸기(Alt+카드 끌기). 놓자마자 맵에 보이고(pending), 판 relation.set(P156 계약)을 부른다.
+  // 판이 모르면('unknown_method') 이 창에서만 정한 것으로 남기고(relStub), 다른 실패면 되돌리고 알린다 ----
+  const setRelation = useCallback((dragId, drop) => {
+    const L = layRef.current;
+    const call = L && relationCall(L, dragId, drop);
+    if (!call) return;
+    const nm = (sid) => { const n = L.tree.nodes.find((x) => x.sessionId === sid); return n ? n.name : sid; };
+    const done = () => toast(t(call.relation === 'sub' ? 'mmLine.relSub' : call.relation === 'peer' ? 'mmLine.relPeer' : 'mmLine.relNone', { name: nm(call.b), up: nm(call.a) }));
+    setPending((p) => putRel(p, { ...call, ok: false }));
+    api.call('relation.set', call).then(() => {
+      done();
+      setPending((p) => p.map((x) => (relKey(x) === relKey(call) ? { ...x, ok: true } : x)));
+      setReloadN((n) => n + 1);
+    }).catch((e) => {
+      setPending((p) => p.filter((x) => relKey(x) !== relKey(call)));
+      if (e && e.code === 'unknown_method') {
+        const next = putRel(relStub, call); relStub.length = 0; relStub.push(...next);
+        setStubN((n) => n + 1);
+        toast(`${t(call.relation === 'sub' ? 'mmLine.relSub' : call.relation === 'peer' ? 'mmLine.relPeer' : 'mmLine.relNone', { name: nm(call.b), up: nm(call.a) })} ${t('mmLine.relLocal')}`);
+        return;
+      }
+      toast(t('mmLine.relFail', { error: errText(e) }), 'error');
+    });
+  }, [t]);
+
   // ---- 끌기·두 손가락·휠·줄 머리 끌기 ----
   useEffect(() => {
     const el = vpRef.current;
@@ -347,13 +395,38 @@ export function LineageMap() {
         moveRow(s.key, bb ? bb.id : null);
       }
     };
+    // P153 r11: 카드 끌기(관계 바꾸기). 놓을 자리 미리 보기(.mt-ln-drop)와 대상 카드 강조는 DOM에 바로(끄는 동안 다시 그리지 않는다)
+    const slotEl = (id) => el.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`);
+    const showDrop = (d) => {
+      const box = el.querySelector('.mt-ln-drop');
+      for (const x of el.querySelectorAll('.mt-ta-slot.drop-target')) if (!d || x.dataset.id !== d.target) x.classList.remove('drop-target');
+      if (!box) return;
+      if (!d) { box.hidden = true; delete box.dataset.kind; return; }
+      const L = layRef.current, tn = d.target && L ? (L.tree.byId.get(d.target) || {}).name : '';
+      box.hidden = false; box.dataset.kind = d.kind;
+      Object.assign(box.style, { left: `${d.box.x}px`, top: `${d.box.y}px`, width: `${d.box.w}px`, height: `${d.box.h}px` });
+      const lb = box.firstChild; if (lb) lb.textContent = t(d.kind === 'sub' ? 'mmLine.dropSub' : d.kind === 'peer' ? 'mmLine.dropPeer' : 'mmLine.dropNone', { name: tn });
+      if (d.target) { const te = slotEl(d.target); if (te) te.classList.add('drop-target'); }
+    };
+    const endCard = (commit) => {
+      const s = g; g = null;
+      const se = slotEl(s.id); if (se) { se.style.transform = ''; se.classList.remove('moving'); }
+      showDrop(null);
+      el.classList.remove('dragging', 'card-moving');
+      if (commit && s.moved && s.drop) setRelation(s.id, s.drop);
+    };
     const down = (e) => {
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       if (e.target.closest('.mt-ta-hud')) return;
       justDragged.current = false;
-      // P155: 줄 머리 옮기기는 Alt+끌기만(headDrag). Alt 없이 누르면 줄 머리에서도 시점 이동
-      const head = e.target.closest('.mt-ln-head');
+      if (e.target.closest('.mt-ln-fold')) return; // 접기 칩은 누르기만
       setAlt(e.altKey);
+      // P153 r11: Alt+카드 끌기 = 관계 바꾸기(마우스 왼쪽만). Alt 없이 끌면 시점 이동
+      const card = e.target.closest('.mt-ta-card');
+      if (card && !pts.size && e.altKey && e.pointerType === 'mouse' && e.button === 0) { const p = local(e); pts.set(e.pointerId, p); g = { mode: 'card', id: card.dataset.id, p0: p, moved: false, drop: null }; return; }
+      // P155: 줄 머리 옮기기는 Alt+끌기만(headDrag). Alt 없이 누르면 줄 머리에서도 시점 이동.
+      // P153 r11: 잡는 자리는 줄 머리 + 워크스페이스 칸 빈 곳 전체(.mt-ln-grab, Alt를 누르는 동안만 누를 수 있다)
+      const head = e.target.closest('.mt-ln-head, .mt-ln-grab');
       if (head && !pts.size && headDrag({ onHead: true, altKey: e.altKey, button: e.button, pointerType: e.pointerType }) === 'row') { const p = local(e); pts.set(e.pointerId, p); g = { mode: 'row', key: head.dataset.key, p0: p, moved: false }; return; }
       pts.set(e.pointerId, local(e));
       begin();
@@ -363,6 +436,18 @@ export function LineageMap() {
       if (!pts.has(e.pointerId) || !g) return;
       const lp = local(e);
       pts.set(e.pointerId, lp);
+      if (g.mode === 'card') {
+        const dx = lp.x - g.p0.x, dy = lp.y - g.p0.y, v = view.current;
+        if (!g.moved && pressIntent({ dx, dy }) !== 'drag') return;
+        if (!g.moved) { g.moved = true; el.classList.add('dragging', 'card-moving'); clearTimeout(hoverTimer.current); if (pvRef.current) setPv(null); try { el.setPointerCapture(e.pointerId); } catch { /* 잡지 못해도 끌기는 된다 */ } }
+        justDragged.current = true;
+        const se = slotEl(g.id);
+        if (se && v) { se.classList.add('moving'); se.style.transform = `translate(${dx / v.k}px, ${dy / v.k}px)`; }
+        const L = layRef.current;
+        g.drop = L && v ? relationDrop(L, g.id, (lp.x - v.x) / v.k, (lp.y - v.y) / v.k) : null;
+        showDrop(g.drop);
+        return;
+      }
       if (g.mode === 'row') {
         const dx = lp.x - g.p0.x, dy = lp.y - g.p0.y, v = view.current;
         if (!g.moved && pressIntent({ dx, dy }) !== 'drag') return;
@@ -392,6 +477,7 @@ export function LineageMap() {
       const lp = local(e);
       pts.delete(e.pointerId);
       if (g && g.mode === 'row') { endRow(e.type === 'pointerup', lp); return; }
+      if (g && g.mode === 'card') { endCard(e.type === 'pointerup'); return; }
       if (!pts.size) { g = null; el.classList.remove('dragging'); } else begin();
     };
     const wheel = (e) => {
@@ -402,7 +488,7 @@ export function LineageMap() {
       paint(zoomAt(v, p.x, p.y, wheelK(v.k, e.deltaY, e.deltaMode)));
     };
     const click = (e) => { if (justDragged.current) { e.stopPropagation(); e.preventDefault(); justDragged.current = false; } };
-    const esc = (e) => { if (e.key === 'Escape' && g && g.mode === 'row') { e.preventDefault(); e.stopPropagation(); pts.clear(); endRow(false); } };
+    const esc = (e) => { if (e.key === 'Escape' && g && g.mode === 'row') { e.preventDefault(); e.stopPropagation(); pts.clear(); endRow(false); } else if (e.key === 'Escape' && g && g.mode === 'card') { e.preventDefault(); e.stopPropagation(); pts.clear(); endCard(false); } };
     // P155: Alt를 누르고 있는 동안 보기 칸에 data-alt="1"(줄 머리에 옮기기 커서·강조, styles.css 끝).
     // Alt만 눌렀다 떼면 창 메뉴로 초점이 가는 일이 없게 기본 동작을 막는다(세션 맵이 열린 동안만). 창이 초점을 잃으면 끈다
     const altKey = (e) => {
@@ -425,7 +511,7 @@ export function LineageMap() {
       window.removeEventListener('keydown', altKey, true); window.removeEventListener('keyup', altKey, true); window.removeEventListener('blur', altOff);
       delete el.dataset.alt;
     };
-  }, [open, paint, moveRow]);
+  }, [open, paint, moveRow, setRelation, t]);
 
   // ---- 키: Esc 닫기, 친 글자는 명령줄로, 화살표 끌기, 카드에 초점이 있으면 ↑↓로 카드 다니기 ----
   useEffect(() => {
@@ -463,7 +549,9 @@ export function LineageMap() {
   const tagOf = (id) => { const b = lay.cards.get(id); return !!b && tagSet.has(String(b.node.name).toLowerCase()); };
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const edgeText = (e) => (e.cross ? t('mmTerr.edgeCross', { from: lay.tree.byId.get(e.from).name, ws: wsName(lay.tree.byId.get(e.to).workspaceKey || '') || t('mmTerr.noFolder') }) : e.rel === 'role' ? (e.role || t('mmLine.role')) : t('mmLine.task'));
-  const colLabel = { ws: t('mmLine.colWs'), lead: t('mmLine.colLead'), workers: t('mmLine.colWorkers'), next: t('mmLine.colNext'), solo: t('mmLine.colSolo') };
+  // 칸 머리: 워크스페이스 · 시작 · 1단계 · 2단계 · … · 혼자
+  const colLabel = (c) => (c.key === 'ws' ? t('mmLine.colWs') : c.key === 'solo' ? t('mmLine.colSolo') : c.level === 0 ? t('mmLine.colRoot') : t('mmLine.colLevel', { n: c.level }));
+  const col0 = lay ? (lay.cols.find((c) => c.key === 'lv') || { x: LINE.HEADX + LINE.HEADW + 208 }).x : 0;
 
   return (
     <div className={`mt-mission mt-ta mt-ln nowheel nopan${moveWs ? ' isle-moving' : ''}`} data-role="mission" data-style="territories" data-layout="lineage" ref={rootRef}>
@@ -483,6 +571,7 @@ export function LineageMap() {
             ))}
             {lay.rows.map((r) => (
               <div key={`r:${r.key || '-'}`} className={`mt-ln-row${r.first ? ' first' : ''}`} data-role="ta-isle" data-key={r.key} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
+                {r.key ? <div className="mt-ln-grab" data-key={r.key} data-role="ln-row-grab" style={{ width: Math.max(LINE.HEADW, col0 - r.x - 40) }} /> : null}
                 <div className="mt-ln-head" data-key={r.key} data-role="ta-isle-head" title={r.key ? t('mmTerr.isleTip', { ws: r.name }) : undefined}>
                   <span className="wsn"><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
                   <span className="wsc">{r.chips.map((c) => <span key={c.tier} className={`st-${ST[c.tier]}`} data-tier={c.tier}><i /><b>{c.n}</b> {t(`mmTerr.chip.${c.tier}`)}</span>)}</span>
@@ -491,11 +580,21 @@ export function LineageMap() {
             ))}
             {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-ln-div" style={{ left: d.x, top: d.y, height: d.h }} />)}
             <svg className="mt-ta-edges" width={1} height={1} aria-hidden="true">
-              <defs>{KINDS.map((k) => <marker key={k} id={`mt-ln-tip-${k}`} className={`mt-ln-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}</defs>
-              {lay.edges.map((e) => { const k = e.cross ? 'cross' : e.rel; return <path key={e.id} className={`mt-ta-edge k-${k}${e.active || tiers.get(e.to) === 'work' ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={`url(#mt-ln-tip-${KINDS.includes(k) ? k : 'spawn'})`} />; })}
+              <defs>
+                {KINDS.map((k) => <marker key={k} id={`mt-ln-tip-${k}`} className={`mt-ln-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}
+                {/* P153 r11: 동료 선은 양 끝에 작은 점(화살촉 없음, 위아래가 없다) */}
+                <marker id="mt-ln-end-peer" className="mt-ln-tip k-peer" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
+              </defs>
+              {lay.edges.map((e) => {
+                const k = e.peer ? 'peer' : e.lineage ? 'lineage' : e.cross ? 'cross' : e.rel;
+                const tip = e.peer ? 'url(#mt-ln-end-peer)' : e.lineage ? undefined : `url(#mt-ln-tip-${KINDS.includes(k) ? k : 'spawn'})`;
+                return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
+              })}
             </svg>
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}
-            {ids.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} />; })}
+            {ids.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} unfold={b.depth >= LINE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
+            {/* P153 r11: Alt+카드 끌기 때 놓을 자리(하위로·동료로·독립). 끄는 동안 DOM에 바로 쓴다 */}
+            <div className="mt-ln-drop" data-role="ln-drop" hidden><span className="lb" /></div>
           </div>
         )}
         {lay && lay.cards.size === 0 && <div className="mt-ta-loading">{t('mission.empty')}</div>}
@@ -523,7 +622,7 @@ export function LineageMap() {
         <button type="button" className="mt-ta-iconbtn" data-action="mission-close" title={t('mmTerr.close')} aria-label={t('mmTerr.close')} onClick={() => setMissionOpen(false)}><XIcon s={18} /></button>
       </div>
       <div className="mt-ta-hud mt-ln-cols" data-role="ln-cols" ref={colsRef} aria-hidden="true">
-        {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh">{colLabel[c.key]}</span>)}
+        {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key}>{colLabel(c)}</span>)}
       </div>
     </div>
   );

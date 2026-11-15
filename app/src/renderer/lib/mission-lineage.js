@@ -11,9 +11,10 @@ import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from 
 
 // SPINE = 폴더 기둥 폭, HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // SOLOGAP = 마지막 나무 칸과 혼자 칸 사이(구분선이 가운데), SGX = 혼자 칸 두 줄 사이, MINCOLS = 늘 보이는 나무 칸 수(리드·워커·다음 단계)
-export const LINE = { SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 3, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4 }; // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
+export const LINE = { SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46 }; // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
 
-export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder' } = {}) {
+// expanded: 깊이 접기를 편 카드 id들(Set). FOLD 단계보다 깊은 가지는 접는다
+export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set() } = {}) {
   const tree = missionTree(graph);
   const { byId } = tree;
   const L = { ...LINE, CW: cardWidth(tree.nodes.map((n) => n.name), LINE.NAME_PX) };
@@ -42,10 +43,37 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const own = new Map(tree.nodes.map((n) => [n.id, cardHeight(n, tierOf(n.id), crossIn(n.id), L.CW)]));
   const H = (id) => own.get(id) || 150;
 
-  // 나무 깊이(칸 수): 리드 0, 부모가 다른 워크스페이스면 1에서 시작
+  // P153 r11(P156 계약): 동료(node.peers)는 같은 칸에 곁에. 일 부모가 없는 동료는 그 동료의 부모 아래 바로 다음에 놓는다(배치만: 위계 선은 긋지 않는다)
+  const peersOf = (id) => [...new Set(((byId.get(id) || {}).peers || []))].filter((p) => p !== id && byId.has(p) && wsOf(p) === wsOf(id));
+  const layKids = new Map(tree.nodes.map((n) => [n.id, kidsIn(n.id).slice().sort(bySpawn).map((c) => c.id)]));
+  const attached = new Set();
+  const isAnc = (a, x) => { for (let i = 0; x && i < 100; i++) { if (x === a) return true; x = parentIn(x); } return false; };
+  for (const n of tree.nodes) {
+    if (parentIn(n.id) || crossIn(n.id)) continue;
+    for (const p of peersOf(n.id)) {
+      const pp = parentIn(p);
+      if (!pp || attached.has(n.id) || isAnc(n.id, pp)) continue;
+      const list = layKids.get(pp);
+      if (!list.includes(n.id)) { list.splice(list.indexOf(p) + 1, 0, n.id); attached.add(n.id); }
+    }
+  }
+  // 깊이 접기: 시작(0)부터 FOLD 단계까지 보이고, 그보다 깊은 가지는 FOLD 단계 카드의 '+n단계' 칩으로 접는다(expanded에 든 카드는 편다)
+  const below = (id, g = 0) => { const ks = layKids.get(id) || []; return !ks.length || g > 50 ? 0 : 1 + Math.max(...ks.map((k) => below(k, g + 1))); };
+  const folded = new Map();
+  // 편 카드 아래 가지는 끝까지 편다(그 가지만)
+  const opened = new Set();
+  const openWalk = (id, g) => { if (opened.has(id) || g > 50) return; opened.add(id); for (const k of layKids.get(id) || []) openWalk(k, g + 1); };
+  for (const id of expanded) if (layKids.has(id)) openWalk(id, 0);
+  const visKids = (id, depth) => { const ks = layKids.get(id) || []; if (ks.length && depth >= L.FOLD && !opened.has(id)) { folded.set(id, below(id)); return []; } return ks; };
+
   let maxDepth = 0;
-  const depthWalk = (id, d, g) => { maxDepth = Math.max(maxDepth, d); if (g > 50) return; for (const c of kidsIn(id)) depthWalk(c.id, d + 1, g + 1); };
-  for (const n of tree.nodes) if (!parentIn(n.id) && (kidsIn(n.id).length || crossIn(n.id))) depthWalk(n.id, crossIn(n.id) ? 1 : 0, 0);
+  const depthWalk = (id, d, g) => { maxDepth = Math.max(maxDepth, d); if (g > 50) return; for (const c of visKids(id, d)) depthWalk(c, d + 1, g + 1); };
+  const isRoot = (n, key) => !parentIn(n.id) && !crossIn(n.id) && !attached.has(n.id);
+  const leadsAway = (n) => (tree.kids.get(n.id) || []).some((c) => wsOf(c.id) !== wsOf(n.id));
+  // 독립으로 정했어도 계보 부모가 맵에 있으면 시작 칸(옅은 계보 선이 이어진다)
+  const lineageOnly = (n) => !!n.lineageParent && n.lineageParent !== tree.parent.get(n.id) && byId.has(n.lineageParent);
+  const treeRoot = (n) => isRoot(n) && ((layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || lineageOnly(n));
+  for (const n of tree.nodes) { if (treeRoot(n)) depthWalk(n.id, 0, 0); else if (crossIn(n.id)) depthWalk(n.id, 1, 0); }
   const nCols = Math.max(L.MINCOLS, maxDepth + 1);
   const COL = Array.from({ length: nCols }, (_, i) => L.HEADX + L.HEADW + 208 + i * (L.CW + L.GX)); // 시안: 리드 칸 740 = 232 + 300 + 208
   const DIV = COL[nCols - 1] + L.CW + L.SOLOGAP / 2;
@@ -53,16 +81,17 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const W = SOLO + (L.CW + L.SGX) * 2 + 60;
 
   const cards = new Map(), bands = [], rows = [], divs = [];
+  const put = (id, depth, y, ws) => cards.set(id, { x: COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0 });
   const place = (id, depth, top, ws) => {
-    const ks = depth > 50 ? [] : kidsIn(id).slice().sort(bySpawn);
-    if (!ks.length) { cards.set(id, { x: COL[Math.min(depth, nCols - 1)], y: top, w: L.CW, h: H(id), node: byId.get(id), ws, depth }); return H(id); }
+    const ks = depth > 50 ? [] : visKids(id, depth);
+    if (!ks.length) { put(id, depth, top, ws); return H(id); }
     let t = top;
-    for (const k of ks) t += place(k.id, depth + 1, t, ws) + L.GY;
+    ks.forEach((k, i) => { t += place(k, depth + 1, t, ws) + (i + 1 < ks.length && peersOf(k).includes(ks[i + 1]) ? L.PGY : L.GY); }); // 동료 사이는 조금 더 띄워 양끝 점 선이 보이게
     const h = t - L.GY - top;
     const my = Math.max(h, H(id));
-    cards.set(id, { x: COL[Math.min(depth, nCols - 1)], y: top + (my - H(id)) / 2, w: L.CW, h: H(id), node: byId.get(id), ws, depth });
+    put(id, depth, top + (my - H(id)) / 2, ws);
     // 하위 묶음이 부모보다 낮으면 하위를 가운데로 내린다
-    if (h < H(id)) { const dy = (H(id) - h) / 2; const shift = (x) => { for (const c of kidsIn(x)) { const b = cards.get(c.id); if (b) b.y += dy; shift(c.id); } }; shift(id); }
+    if (h < H(id)) { const dy = (H(id) - h) / 2; const shift = (x) => { for (const c of visKids(x, 0)) { const b = cards.get(c); if (b) b.y += dy; shift(c); } }; shift(id); }
     return my;
   };
   let y = 0;
@@ -71,20 +100,20 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     const by = y;
     g.keys.forEach((key, wi) => {
       const nodes = tree.nodes.filter((n) => wsOf(n.id) === key).sort(bySpawn);
-      // 리드 칸: 이 줄에 하위가 있는 뿌리, 그리고 하위가 다른 워크스페이스에만 있는 뿌리(이끄는 세션이라 혼자 칸에 두지 않는다)
-      const leadsAway = (n) => (tree.kids.get(n.id) || []).some((c) => wsOf(c.id) !== key);
-      const roots = nodes.filter((n) => !parentIn(n.id) && !crossIn(n.id) && (kidsIn(n.id).length || leadsAway(n)));
-      const away = nodes.filter((n) => crossIn(n.id)); // 부모가 다른 워크스페이스(워커 칸에서 시작)
-      const solos = nodes.filter((n) => !parentIn(n.id) && !crossIn(n.id) && !kidsIn(n.id).length && !leadsAway(n));
+      // 시작 칸: 이 줄에 하위가 있는 뿌리, 하위가 다른 워크스페이스에만 있는 뿌리, 동료가 있는 뿌리. 뿌리끼리 동료면 바로 아래에 붙인다
+      const roots0 = nodes.filter(treeRoot), roots = [], done = new Set();
+      for (const r of roots0) { if (done.has(r.id)) continue; roots.push(r); done.add(r.id); for (const p of peersOf(r.id)) { const pn = byId.get(p); if (!done.has(p) && roots0.includes(pn)) { roots.push(pn); done.add(p); } } }
+      const away = nodes.filter((n) => crossIn(n.id)); // 부모가 다른 워크스페이스(1단계 칸에서 시작)
+      const solos = nodes.filter((n) => isRoot(n) && !treeRoot(n));
       let cy = y + L.RT;
-      for (const r of roots) cy += place(r.id, 0, cy, key) + L.GY * 2;
+      roots.forEach((r, i) => { const peerNext = i + 1 < roots.length && peersOf(r.id).includes(roots[i + 1].id); cy += place(r.id, 0, cy, key) + (peerNext ? L.PGY : L.GY * 2); });
       for (const s of away) cy += place(s.id, 1, cy, key) + L.GY * 2;
       const treeH = cy - y - L.GY * 2;
       let sy = y + L.RT;
       const soloH = [];
       solos.forEach((s, i) => {
         if (i % 2 === 0 && i) sy += Math.max(H(solos[i - 2].id), H(solos[i - 1].id)) + L.GY;
-        cards.set(s.id, { x: SOLO + (i % 2) * (L.CW + L.SGX), y: sy, w: L.CW, h: H(s.id), node: s, ws: key, depth: -1 });
+        cards.set(s.id, { x: SOLO + (i % 2) * (L.CW + L.SGX), y: sy, w: L.CW, h: H(s.id), node: s, ws: key, depth: -1, fold: 0 });
         soloH.push(sy + H(s.id) - y);
       });
       const h = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0, L.ROWMIN) + L.RB;
@@ -121,20 +150,42 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     const label = null; // P153 r8: 선 이름표는 없앴다(역할은 카드 둘째 줄, 다른 워크스페이스에서 온 것은 카드 맨 아래 줄이 말한다)
     edges.push({ ...base, cross: false, pts, d: poly(pts), label });
   }
+  // P153 r11: 동료 = 같은 칸에서 위아래로 곁에 놓고 무채색 양방향 선(위계 화살촉 없음). 칸이 다르면(다른 줄 등) 길 찾기
+  const peerSeen = new Set();
+  for (const n of tree.nodes) for (const p of ((n.peers || []).filter((x) => byId.has(x)))) {
+    const k = [n.id, p].sort().join('|');
+    if (peerSeen.has(k)) continue;
+    peerSeen.add(k);
+    const a = cards.get(n.id), b = cards.get(p);
+    if (!a || !b) continue;
+    const base = { id: `peer:${k}`, from: n.id, to: p, rel: 'peer', peer: true, tree: false };
+    if (Math.abs(a.x - b.x) < 0.5) {
+      const [u, d] = a.y < b.y ? [a, b] : [b, a], x = u.x + 28;
+      const pts = [[x, u.y + u.h + L.EDGEGAP], [x, d.y - L.EDGEGAP]];
+      edges.push({ ...base, cross: false, pts, d: poly(pts), label: null });
+    } else cross.push({ base, a, b, kind: 'peer' });
+  }
+  // 독립(일 부모 없음)이나 동료로 정했어도 계보(띄운 세션)는 옅은 선으로만 남긴다(화살촉 없음)
+  for (const n of tree.nodes) {
+    const lp = n.lineageParent;
+    if (!lp || lp === tree.parent.get(n.id) || !cards.get(lp) || !cards.get(n.id) || (n.peers || []).includes(lp)) continue;
+    cross.push({ base: { id: `lineage:${lp}>${n.id}`, from: lp, to: n.id, rel: 'lineage', lineage: true, tree: false }, a: cards.get(lp), b: cards.get(n.id), kind: 'lineage' });
+  }
   if (cross.length) {
     const blocks = [...cards.values()].map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }));
     for (const r of rows) blocks.push({ x: L.HEADX - 8, y: r.y + 12, w: L.HEADW + 16, h: 96 }); // 줄 머리(이름·칩)
     for (const b of bands) blocks.push({ x: 0, y: b.y, w: L.SPINE, h: b.h }); // 폴더 기둥
-    const routes = routing && cross.length <= 60 ? routeOrtho(cross.map((c) => ({ a: c.a, b: c.b, sides: ['left', 'top'] })), blocks, edges.map((e) => e.pts), { G: 16 }) : null;
+    const routes = routing && cross.length <= 60 ? routeOrtho(cross.map((c) => ({ a: c.a, b: c.b, sides: c.kind === 'peer' ? ['left', 'top', 'right'] : ['left', 'top'] })), blocks, edges.map((e) => e.pts), { G: 16 }) : null;
     cross.forEach((c, i) => {
       let pts = routes && routes[i];
       if (!pts) { const ay = c.a.y + c.a.h / 2, by2 = c.b.y + c.b.h / 2, mx = c.a.x + c.a.w + 70; pts = [[c.a.x + c.a.w, ay], [mx, ay], [mx, by2], [c.b.x, by2]]; }
       pts = pushOut(pts, c.a, gap(c.base.from), true); pts = pushOut(pts, c.b, gap(c.base.to), false);
-      edges.push({ ...c.base, cross: true, pts, d: poly(pts), label: null });
+      edges.push({ ...c.base, cross: !c.kind, pts, d: poly(pts), label: null });
     });
   }
 
-  const cols = [{ key: 'ws', x: L.HEADX }, ...COL.map((x, i) => ({ key: i === 0 ? 'lead' : i === 1 ? 'workers' : 'next', x })), { key: 'solo', x: SOLO }];
+  // 칸: 워크스페이스 · 시작(0) · 1단계 · 2단계 · … · 혼자(보이는 가장 깊은 단계까지)
+  const cols = [{ key: 'ws', x: L.HEADX }, ...COL.map((x, i) => ({ key: 'lv', level: i, x })), { key: 'solo', x: SOLO }];
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: W, h: Math.max(1, y) }, order, tree, cw: L.CW, W };
@@ -145,4 +196,78 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
 // 손가락·펜은 옮기기가 없다(휴대폰은 PhoneTerr.jsx라 여기 오지 않지만 터치 PC도 같게). 끄기가 시작된 뒤에는 Alt를 떼도 놓을 때까지 옮기기다
 export function headDrag({ onHead = false, altKey = false, button = 0, pointerType = 'mouse' } = {}) {
   return onHead && altKey && button === 0 && pointerType === 'mouse' ? 'row' : 'pan';
+}
+
+// P153 r11: Alt+끌기로 세션 관계 바꾸기(단위 시험 test/p153-lib.test.mjs). 끄는 카드 dragId를 세계 점 (wx, wy)에 놓으면:
+// - 다른 카드의 오른쪽(그 다음 칸 자리) → 그 카드의 하위(sub)
+// - 같은 칸의 다른 카드 바로 위·아래 → 동료(peer)
+// - 줄의 빈 시작 칸 → 독립(none)
+// - 제자리(처음 카드 자리) 또는 그 밖 → 취소(null)
+// 끄는 카드와 그 일 하위들은 대상이 되지 않는다(고리). → { kind: 'sub'|'peer'|'none', target(카드 id, none은 null), row(줄 키), box(미리 보기 상자) } | null
+export function relationDrop(lay, dragId, wx, wy) {
+  const me = lay.cards.get(dragId);
+  if (!me) return null;
+  if (wx >= me.x && wx <= me.x + me.w && wy >= me.y && wy <= me.y + me.h) return null; // 제자리 = 취소
+  const desc = new Set([dragId]);
+  const walk = (id, g) => { if (g > 100) return; for (const c of lay.tree.kids.get(id) || []) { desc.add(c.id); walk(c.id, g + 1); } };
+  walk(dragId, 0);
+  const GX = LINE.GX, PEERY = 64;
+  let best = null;
+  for (const [id, c] of lay.cards) {
+    if (desc.has(id)) continue;
+    // 하위: 오른쪽 칸 자리(카드 오른쪽 끝 ~ 다음 칸 카드 폭의 80%), 위아래로 조금 여유
+    if (c.depth >= 0 && wx >= c.x + c.w && wx <= c.x + c.w + GX + c.w * 0.8 && wy >= c.y - 24 && wy <= c.y + c.h + 24) {
+      const d = Math.abs(wy - (c.y + c.h / 2));
+      if (!best || d < best.d) best = { kind: 'sub', target: id, row: c.ws, d, box: { x: c.x + c.w + GX, y: c.y, w: c.w, h: c.h } };
+    }
+  }
+  if (best) return { kind: best.kind, target: best.target, row: best.row, box: best.box };
+  for (const [id, c] of lay.cards) {
+    if (desc.has(id) || wx < c.x || wx > c.x + c.w) continue;
+    if (wy >= c.y - PEERY && wy < c.y) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y - 10 - me.h, w: c.w, h: me.h } };
+    if (wy > c.y + c.h && wy <= c.y + c.h + PEERY) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y + c.h + 10, w: c.w, h: me.h } };
+  }
+  const col0 = (lay.cols.find((c) => c.key === 'lv' && c.level === 0) || {}).x;
+  const row = lay.rows.find((r) => wy >= r.y && wy <= r.y + r.h);
+  if (row && col0 != null && wx >= col0 && wx <= col0 + lay.cw) {
+    const busy = [...lay.cards.entries()].some(([id, c]) => !desc.has(id) && c.ws === row.key && Math.abs(c.x - col0) < 0.5 && wy >= c.y - 8 && wy <= c.y + c.h + 8);
+    if (!busy) return { kind: 'none', target: null, row: row.key, box: { x: col0, y: Math.max(row.y + 8, wy - me.h / 2), w: lay.cw, h: me.h } };
+  }
+  return null;
+}
+// 놓은 자리 → 판 API relation.set 인자(P156 계약: "b는 a의 relation", a·b = 세션 id). 독립은 지금 일 부모(없으면 계보 부모)와의 관계를 none으로. 바꿀 것이 없으면 null
+export function relationCall(lay, dragId, drop) {
+  if (!drop) return null;
+  const sid = (id) => (lay.tree.byId.get(id) || {}).sessionId || String(id).replace(/^s:/, '');
+  const b = sid(dragId);
+  if (drop.kind === 'sub' || drop.kind === 'peer') {
+    if (drop.kind === 'sub' && lay.tree.parent.get(dragId) === drop.target) return null; // 이미 그 하위
+    return { a: sid(drop.target), b, relation: drop.kind };
+  }
+  if (drop.kind === 'none') {
+    const n = lay.tree.byId.get(dragId) || {};
+    const p = lay.tree.parent.get(dragId) || n.lineageParent || null;
+    return p ? { a: sid(p), b, relation: 'none' } : null;
+  }
+  return null;
+}
+// P156이 dev에 들어오기 전 흉내: 창에서 정한 관계 목록(sets: [{ a, b, relation }], 세션 id)을 그래프에 P156 계약 그대로 덮어씌운다.
+// 선마다 relation·relationSource·relationUp, 세션마다 parentId(일 부모: 정한 하위가 이김, 정한 동료·독립 쌍의 계보 부모는 빠짐), lineageParent, peers
+export function applyRelationStub(graph, sets) {
+  if (!graph || !sets || !sets.length) return graph;
+  const nodes = graph.nodes.map((n) => ({ ...n, peers: [...(n.peers || [])], lineageParent: n.lineageParent !== undefined ? n.lineageParent : n.parentId || null }));
+  const byS = new Map(nodes.filter((n) => n.kind === 'session').map((n) => [n.sessionId, n]));
+  const edges = graph.edges.map((e) => ({ ...e }));
+  for (const { a, b, relation } of sets) {
+    const A = byS.get(a), B = byS.get(b);
+    if (!A || !B) continue;
+    const pair = (e) => (e.from === A.id && e.to === B.id) || (e.from === B.id && e.to === A.id);
+    for (const e of edges) if (pair(e)) { e.relation = relation === 'auto' ? undefined : relation; e.relationSource = relation === 'auto' ? 'auto' : 'user'; e.relationUp = relation === 'sub' ? A.id : undefined; }
+    A.peers = A.peers.filter((x) => x !== B.id); B.peers = B.peers.filter((x) => x !== A.id);
+    if (relation === 'sub') B.parentId = A.id;
+    if (relation === 'peer' || relation === 'none') { if (B.parentId === A.id) B.parentId = null; if (A.parentId === B.id) A.parentId = null; }
+    if (relation === 'peer') { A.peers.push(B.id); B.peers.push(A.id); }
+    if (relation !== 'auto' && !edges.some(pair)) edges.push({ from: A.id, to: B.id, kind: 'relation', relation, relationSource: 'user', relationUp: relation === 'sub' ? A.id : undefined, count: 0 });
+  }
+  return { ...graph, nodes, edges };
 }
