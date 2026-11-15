@@ -2,7 +2,7 @@
 // 세션마다 runtime 객체 하나를 두고 아래 apply* 함수로 바꾼다. deriveState는 runtime만 보고 상태를 정한다(순수 함수).
 // P4: hook이 없는 세션(판이 띄우지 않은 에이전트, Claude Code가 아닌 종류)은 터미널 상태만으로 정한다(ARCH 4절 F3·F5).
 //   묻는 내용은 화면(pane.read)에서 읽고, 승인 카드는 "터미널에서 답하기"로 보낸다.
-import { unwrapPasted, clip } from './text.mjs';
+import { unwrapPasted, clip, isBoardNotice } from './text.mjs';
 import { bgTasksOf } from './push-cycle.mjs'; // P92
 
 // P41: Claude Code가 고른 모델을 쓰지 못할 때의 글("There's an issue with the selected model (x). It may not exist or you may not have access to it.")과 오류 종류
@@ -77,8 +77,7 @@ export function applyHook(rt, body, now = Date.now()) {
   const tool = body.tool_name;
   switch (ev) {
     case 'UserPromptSubmit':
-      rt.lastPrompt = unwrapPasted(body.prompt);
-      rt.lastPromptAt = now;
+      if (!isBoardNotice(body.prompt)) { rt.lastPrompt = unwrapPasted(body.prompt); rt.lastPromptAt = now; } // P153 r13: 판 알림은 마지막 지시가 아니다
       rt.turn = { startedAt: now, endedAt: null };
       rt.lastError = null;
       break;

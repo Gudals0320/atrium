@@ -8,6 +8,12 @@ export function unwrapPasted(s) {
   return s.replace(WRAP, (_, _id, inner) => inner);
 }
 
+// P153 r13: 판이 세션에 보낸 알림(연결·관계·하위 세션 알림. "[Atrium 보드] …", 옛 이름 "[Atrium 판]", "[multitask 판]")인가.
+// 알림은 그 세션의 일이 아니라서 마지막 지시(lastPrompt: 카드의 지금·마지막 일, 미리 보기, 휴대폰 대기 카드, 사이드바 일 줄)가 되지 않는다(그 앞 지시가 남는다).
+// 대화 보기·전달 기록에는 그대로 남는다
+const BOARD_NOTICE = /^\s*\[(?:atrium|multitask|mtask)\s*(?:보드|판)\]/i;
+export function isBoardNotice(s) { return typeof s === 'string' && BOARD_NOTICE.test(unwrapPasted(s)); }
+
 // 판이 보내기 전에 글을 맞춘다: 줄바꿈을 LF로(B1 규칙 5)
 export function toLF(s) { return String(s).replace(/\r\n?/g, '\n'); }
 
