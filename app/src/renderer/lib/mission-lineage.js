@@ -5,13 +5,13 @@
 //   부모가 다른 워크스페이스에 있으면 자기 줄의 워커 칸(COL[1])에 놓고(그 하위는 다음 칸), 부모와는 다른 워크스페이스 선(cross)으로 잇는다. 부모가 닫힌 세션은 뿌리.
 // - 선: 나무 선은 부모 오른쪽 가운데 → 칸 사이 틈의 줄기 → 하위 왼쪽 가운데(화살촉). 다른 워크스페이스 선은 격자 길 찾기(lib/mission-terr.js routeOrtho)로 카드·줄 머리·기둥을 피해 받는 카드의 왼쪽(또는 위)으로.
 // - 카드 폭은 이 판의 가장 긴 이름이 멀리 타일에서 한 줄에 들게(lib/mission-terr.js cardWidth), 높이는 내용(cardHeight).
-// → { cards: Map id → { x, y, w, h, node, ws, depth }, bands, rows, cols, divs, edges, bounds, order, tree, cw, seq(줄 키 → { roots, away, solos }), vkids(id → 보이는 하위 id들) }
+// → { cards: Map id → { x, y, w, h, node, ws, depth, fold, thin(P163 얇은 줄) }, bands, rows, cols, divs, edges, bounds, order, tree, cw, seq(줄 키 → { roots, away, solos }), vkids(id → 보이는 하위 id들) }
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
 import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from './mission-terr.js';
 
 // SPINE = 폴더 기둥 최소 폭(P157: 가장 긴 폴더 이름에 맞춰 넓어진다, spineWidth), BANDMIN = 폴더 띠 최소 높이(P157: 워크스페이스 하나인 폴더도 기둥 글이 잘리지 않게), HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // SOLOGAP = 마지막 나무 칸과 솔로 칸 사이(구분선이 가운데), SGX = 솔로 칸 두 줄 사이, MINCOLS = 늘 보이는 나무 칸 수(리드·워커·다음 단계)
-export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46 }; // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
+export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46, THIN: 30, TGY: 8, THINMIN: 3 }; // P163: THIN = 얇은 줄 높이, TGY = 얇은 줄끼리 간격, THINMIN = 하위가 이만큼 이상일 때 절전 하위를 얇은 줄로 // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
 
 // P157: 글 폭 어림(px). 한글·한자·가나는 글자 크기만큼, 대문자·숫자는 조금 넓게, 그 밖은 0.6
 export const glyphW = (s, px) => { let w = 0; for (const ch of String(s || '')) { const c = ch.codePointAt(0); w += (c >= 0x1100 && c <= 0x11ff) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xff00 && c <= 0xffef) ? 1 : /[A-Z0-9@#%&MW]/.test(ch) ? 0.7 : 0.6; } return w * px; };
@@ -103,15 +103,25 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const cards = new Map(), bands = [], rows = [], divs = [];
   // P160: 휴대폰 세션 맵(lib/phone-lineage.js)이 같은 판정을 쓰도록 줄마다 놓은 차례(시작 칸 뿌리·다른 워크스페이스에서 온 것·솔로)와 보이는 하위 차례를 남긴다(PC 배치는 그대로)
   const seq = new Map(), vkids = new Map();
-  const put = (id, depth, y, ws) => cards.set(id, { x: COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0 });
+  const put = (id, depth, y, ws) => cards.set(id, { x: COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0, thin: thin.has(id) });
+  // P163: 한 세션 아래 보이는 하위(곁에 붙은 동료 포함)가 THINMIN개 이상이면 절전 중인 하위만 얇은 줄(높이 THIN)로 줄이고 깨어 있는 카드 아래로 모은다(그 안은 지금 차례 = 만든 차례).
+  // 줄이지 않는 것: 절전이 아닌 것(작업 중·응답 필요·오류·완료 미확인 등), 자기 아래 보이는 하위가 있거나 깊이 접기 칩이 붙는 것(카드로 둔다), 형제 중 동료가 있는 것(동료 붙이기가 먼저라 제자리 카드)
+  const thin = new Set();
+  const thinOrder = (ks, d) => {
+    if (ks.length < L.THINMIN) return ks;
+    const slim = ks.filter((k) => tierOf(k) === 'sleep' && !visKids(k, d).length && !folded.get(k) && !peersOf(k).some((p) => ks.includes(p)));
+    if (!slim.length) return ks;
+    for (const k of slim) { thin.add(k); own.set(k, L.THIN); }
+    return [...ks.filter((k) => !thin.has(k)), ...slim];
+  };
   // align: 하위 묶음 안에서 카드 자리. mid = 가운데, bottom = 아래 끝(바로 다음이 동료일 때), top = 위 끝(바로 앞이 동료일 때). 동료끼리 바로 위아래에 붙게
   const alignOf = (list, i) => (i + 1 < list.length && peersOf(list[i]).includes(list[i + 1]) ? 'bottom' : i > 0 && peersOf(list[i]).includes(list[i - 1]) ? 'top' : 'mid');
   const place = (id, depth, top, ws, align = 'mid') => {
-    const ks = depth > 50 ? [] : visKids(id, depth);
+    const ks = depth > 50 ? [] : thinOrder(visKids(id, depth), depth + 1);
     vkids.set(id, ks);
     if (!ks.length) { put(id, depth, top, ws); return H(id); }
     let t = top;
-    ks.forEach((k, i) => { t += place(k, depth + 1, t, ws, alignOf(ks, i)) + (i + 1 < ks.length && peersOf(k).includes(ks[i + 1]) ? L.PGY : L.GY); }); // 동료 사이는 조금 더 띄워 양끝 점 선이 보이게
+    ks.forEach((k, i) => { t += place(k, depth + 1, t, ws, alignOf(ks, i)) + (i + 1 < ks.length && peersOf(k).includes(ks[i + 1]) ? L.PGY : thin.has(k) && thin.has(ks[i + 1]) ? L.TGY : L.GY); }); // 동료 사이는 조금 더 띄워 양끝 점 선이 보이게, 얇은 줄끼리는 좁게
     const h = t - L.GY - top;
     const my = Math.max(h, H(id));
     put(id, depth, align === 'bottom' ? top + my - H(id) : align === 'top' ? top : top + (my - H(id)) / 2, ws);
@@ -250,10 +260,17 @@ export function relationDrop(lay, dragId, wx, wy) {
   walk(dragId, 0);
   const GX = LINE.GX, PEERY = 56;
   // 동료: 같은 칸 카드 바로 위·아래 빈 틈(PEERY 안). 하위 자리(오른쪽 칸)와 겹치면 동료가 먼저(하위 칸 카드 바로 아래에 놓으면 그 카드의 동료)
+  // P163: 얇은 줄 묶음 안의 좁은 틈은 동료 자리가 아니다(묶음 위·아래 끝만). 동료 자리는 같은 칸의 얇은 줄 안으로 뻗지 않는다(얇은 줄 위·아래 끝에서 멈춘다).
+  // 틈에 놓으면 아래 하위 판정(부모 오른쪽 = 그 부모의 하위)으로 간다
+  const thins = [...lay.cards.values()].filter((o) => o.thin);
+  const thinNear = (c, up) => c.thin && thins.some((o) => o !== c && Math.abs(o.x - c.x) < 0.5 && (up ? o.y + o.h <= c.y && o.y + o.h > c.y - PEERY : o.y >= c.y + c.h && o.y < c.y + c.h + PEERY));
+  const col = (c) => thins.filter((o) => o !== c && Math.abs(o.x - c.x) < 0.5);
+  const upTo = (c) => Math.max(c.y - PEERY, ...col(c).filter((o) => o.y + o.h <= c.y).map((o) => o.y + o.h));
+  const downTo = (c) => Math.min(c.y + c.h + PEERY, ...col(c).filter((o) => o.y >= c.y + c.h).map((o) => o.y));
   for (const [id, c] of lay.cards) {
     if (desc.has(id) || wx < c.x || wx > c.x + c.w) continue;
-    if (wy >= c.y - PEERY && wy < c.y) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y - 10 - me.h, w: c.w, h: me.h } };
-    if (wy > c.y + c.h && wy <= c.y + c.h + PEERY) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y + c.h + 10, w: c.w, h: me.h } };
+    if (wy >= upTo(c) && wy < c.y && !thinNear(c, true)) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y - 10 - me.h, w: c.w, h: me.h } };
+    if (wy > c.y + c.h && wy <= downTo(c) && !thinNear(c, false)) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y + c.h + 10, w: c.w, h: me.h } };
   }
   let best = null;
   for (const [id, c] of lay.cards) {

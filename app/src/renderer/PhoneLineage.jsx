@@ -35,11 +35,16 @@ const FolderIcon = () => <svg className="mt-pl-wico" viewBox="0 0 24 24" aria-hi
 function Card({ it, b, f, tier, t, unfold, onFold }) {
   const st = ST[tier] || 'ready';
   const done = tier === 'review';
-  const cls = `mt-pl-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${it.lead ? ' lead' : ''}`;
+  const cls = `mt-pl-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${it.lead ? ' lead' : ''}${it.thin ? ' thin' : ''}`;
   const more = [it.from ? null : f.more, it.away ? t('phoneMap.away', { n: it.away }) : null].filter(Boolean).join(' · ');
   return (
     <div className={cls} data-role="pl-slot" data-id={it.id} data-tier={tier}>
-      <button type="button" className="mt-pl-card" data-role="pl-card" data-id={it.id} data-session={b.node.sessionId} data-name={b.node.name} data-depth={it.depth} data-kind={it.kind}>
+      {it.thin ? (
+        // P163: 얇은 줄(하위가 셋 이상인 세션 아래 절전 하위, PC와 같은 판정) = 상태 점 + 이름 + 지난 시간. 누르기·길게 누르기는 카드와 같다
+        <button type="button" className="mt-pl-card thin" data-role="pl-card" data-id={it.id} data-session={b.node.sessionId} data-name={b.node.name} data-depth={it.depth} data-kind={it.kind} data-thin="1">
+          <span className="r1"><i /><span className="nm" data-role="pl-name">{b.node.name}</span>{f.age ? <span className="ago">{f.age}</span> : null}</span>
+        </button>
+      ) : <button type="button" className="mt-pl-card" data-role="pl-card" data-id={it.id} data-session={b.node.sessionId} data-name={b.node.name} data-depth={it.depth} data-kind={it.kind}>
         {tier === 'work' && <MissionLight role="pl-light" />}
         {done && <span className="mt-mm-donetag" data-role="pl-done"><DoneMark />{t('doneMark.tag')}</span>}
         <span className="r1">{it.lead ? <span className="mt-pl-lead">{t('mmLine.lead')}</span> : null}<span className="nm" data-role="pl-name">{b.node.name}</span>
@@ -49,7 +54,7 @@ function Card({ it, b, f, tier, t, unfold, onFold }) {
         {f.err ? <span className="r4" data-role="pl-err">{f.err}</span> : null}
         {it.from ? <span className="xb" data-role="pl-from">{t('phoneMap.from', { name: it.from.name, ws: it.from.ws ? wsName(it.from.ws) : t('mmapGroup.noWorkspace') })}</span> : null}
         {more ? <span className="r5" data-role="pl-more">{more}</span> : null}
-      </button>
+      </button>}
       {it.fold > 0 || unfold ? (
         <button type="button" className={`mt-pl-fold${unfold ? ' open' : ''}`} data-action="pl-fold" data-id={it.id} onClick={(e) => { e.stopPropagation(); onFold(it.id); }}>
           {unfold ? t('mmLine.unfold') : t('mmLine.fold', { n: it.fold })}
@@ -232,7 +237,7 @@ export function PhoneLineage({ onBack, onOpen, conn }) {
                           if (it.kind === 'solo') soloSeen = true;
                           return [
                             divider ? <div key={`s:${it.id}`} className="mt-pl-solo" data-role="pl-solo-head">{t('mmLine.colSolo')}</div> : null,
-                            <div key={it.id} className="mt-pl-item" data-role="pl-item" data-id={it.id} data-depth={it.depth} style={{ paddingLeft: it.ind * PL.INDENT }}>
+                            <div key={it.id} className={`mt-pl-item${it.thin ? ' thin' : ''}`} data-role="pl-item" data-id={it.id} data-depth={it.depth} style={{ paddingLeft: it.ind * PL.INDENT }}>
                               <Card it={it} b={b} f={factsOf(it.id)} tier={tiers.get(it.id)} t={t} onFold={onFold} unfold={it.depth >= LINE.FOLD && expanded.has(it.id) && (lay.tree.kids.get(it.id) || []).length > 0} />
                             </div>,
                           ];
