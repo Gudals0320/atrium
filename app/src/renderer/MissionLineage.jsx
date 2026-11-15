@@ -27,7 +27,7 @@ const BOTTOM = 112; // 아래 명령줄 자리
 const PAD = 16;
 const OPEN_MAX = 0.85; // 처음 화면(폭 맞춤) 배율 상한
 const READ_K = 0.26; // 멀리 타일 이름 11.5px·상태 10px(화면)가 지켜지는 배율 하한(폭 맞춤이 이보다 작으면 이 배율로 왼쪽 위에서)
-const DOT_GAP = 92, DOT_R = 1.8; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다
+const DOT_GAP = 92, DOT_R = 1.8, DOT_MIN_GAP = 28; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다. 멀리서는 솎는다
 const ATTN_MAX = 4;
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
 const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.git.branch) || null;
@@ -69,7 +69,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 }
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
-const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, t }) {
+const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t }) {
   const n = b.node;
   const st = ST[tier] || 'ready';
   const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}`;
@@ -78,10 +78,10 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, t
   return (
     <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws}>
       <div className="mt-ta-card" role="button" tabIndex={0} aria-pressed={tagged ? 'true' : 'false'} data-role="mm-node" data-kind="session" data-id={id} data-name={n.name} data-tier={tier} data-tagged={tagged ? '1' : undefined} title={tip} aria-label={tip.replace(/\n/g, ', ')}
-        onClick={(e) => onTag(id, e)} onDoubleClick={() => onOpen(id, true)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpen(id); } else if (e.key === ' ') { e.preventDefault(); onTag(id); } }}>
+        onClick={(e) => onTag(id, e)} onDoubleClick={() => onOpen(id, true)} onPointerEnter={(e) => e.pointerType === 'mouse' && onHover(id, e.currentTarget)} onPointerLeave={() => onHover(null)} onFocus={(e) => onHover(id, e.currentTarget)} onBlur={() => onHover(null)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpen(id); } else if (e.key === ' ') { e.preventDefault(); onTag(id); } }}>
         {tier === 'work' && <MissionLight role="ta-light" />}
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
-        <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="mt-ta-tdone"><DoneMark />{f.stateText}</span> : <><i />{f.stateText}</>}</span></span>
+        <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}</span></span>
         <span className="mt-ta-full">
           <span className="c1">{lead ? <span className="mt-ln-lead">{t('mmLine.lead')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span></span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
@@ -93,6 +93,47 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, t
     </div>
   );
 });
+
+// P153 r8: 카드 미리 보기(마우스를 HOVER_MS 올리거나 키보드 초점). 카드 옆에 뜨고 마우스를 받지 않는다(누르기·끌기는 그대로 카드·판으로).
+// 사실은 카드 사실 + 판의 세션 요약(마지막 답, 질문과 선택지, 오류) + 최근 이벤트 몇 개 + 깨어 있는 세션이면 터미널 지금 화면 끝줄(읽기만, 화면만 읽음 P136, 휠 보고 없음).
+// 절전·끝난 세션은 저장된 정보만(터미널을 읽지 않는다). 이벤트·화면은 처음 볼 때 읽고 PEEK_TTL 동안 담아 둔다
+const HOVER_MS = 500, PEEK_TTL = 4000, PEEK_LINES = 10;
+const peekCache = new Map(); // sessionId → { at, events, screen }
+const lastLines = (text, n) => String(text || '').replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, '')).filter((l) => l.trim()).slice(-n);
+function Peek({ pv, f, b, live, tier, t, now, folder }) {
+  const sid = b.node.sessionId;
+  const awake = !!live && !['sleeping', 'exited'].includes(live.state) && !String(sid).startsWith('fk-');
+  const [data, setData] = useState(() => peekCache.get(sid) || null);
+  useEffect(() => {
+    const hit = peekCache.get(sid);
+    if (hit && Date.now() - hit.at < PEEK_TTL) { setData(hit); return undefined; }
+    let alive = true;
+    const real = !String(sid).startsWith('fk-');
+    Promise.all([
+      real ? api.call('session.events', { session: sid, limit: 6 }).catch(() => []) : Promise.resolve([]),
+      awake ? api.call('terminal.snapshot', { session: sid, format: 'text' }).then((r) => lastLines(r && r.text, PEEK_LINES)).catch(() => null) : Promise.resolve(null),
+    ]).then(([events, screen]) => { const d = { at: Date.now(), events: (events || []).slice(-4), screen }; peekCache.set(sid, d); if (alive) setData(d); });
+    return () => { alive = false; };
+  }, [sid, awake]);
+  const ask = live && live.ask;
+  const qs = ask && ask.kind === 'question' ? (ask.questions || []) : [];
+  const answer = live && live.lastAnswer;
+  const err = f.err || (live && live.error && (live.error.message || String(live.error))) || null;
+  const task = (b.node.lastPrompt || (live && live.lastPrompt) || f.task || '').trim();
+  const st = ST[tier] || 'ready';
+  return (
+    <div className={`mt-ln-peek st-${st}`} data-role="ln-peek" data-id={pv.id} style={{ left: pv.x, top: pv.y, width: pv.w }} aria-hidden="true">
+      <div className="pk1"><b>{b.node.name}</b><span className="pst"><i />{f.stateText}{f.age ? <span className="dim"> · {f.age}</span> : null}</span></div>
+      <div className="pk2">{[f.role, [f.harness, f.model].filter(Boolean).join(' · '), folder].filter(Boolean).join('  ·  ')}</div>
+      {task ? <div className="pkt"><span className="lb">{t(`mmTerr.kind.${f.taskKind}`)}</span>{clip(task, 600)}</div> : null}
+      {qs.length ? qs.slice(0, 2).map((q, i) => <div key={i} className="pkq"><span className="lb">{t('mmPeek.asks')}</span>{q.question}{(q.options || []).length ? <span className="opts">{q.options.slice(0, 6).map((o, j) => <span key={j}>{o.label || String(o)}</span>)}</span> : null}</div>) : ask && ask.summary ? <div className="pkq"><span className="lb">{t('mmPeek.asks')}</span>{ask.summary}</div> : null}
+      {err ? <div className="pke">{clip(err, 400)}</div> : null}
+      {answer ? <div className="pka"><span className="lb">{t('mmPeek.answer')}</span><span className="txt">{clip(answer, 400)}</span></div> : null}
+      {data && data.events && data.events.length ? <div className="pkv"><span className="lb">{t('mmPeek.events')}</span>{data.events.slice().reverse().map((e) => <span key={e.id} className="ev">{e.kind}{e.data && e.data.to ? ` → ${STATE_LABEL[e.data.to] || e.data.to}` : e.data && e.data.command ? ` ${clip(e.data.command, 40)}` : ''}<span className="dim"> · {ageText(now - e.t, t)}</span></span>)}</div> : null}
+      {awake ? (data && data.screen ? <pre className="pks" data-role="ln-peek-screen">{data.screen.join('\n')}</pre> : <div className="pkn dim">{data ? t('mmPeek.noScreen') : t('common.loading')}</div>) : <div className="pkn dim" data-role="ln-peek-asleep">{t('mmPeek.asleep')}</div>}
+    </div>
+  );
+}
 
 const FolderIcon = () => <svg className="mt-ta-iico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10l2 2.5h6.5A1.5 1.5 0 0 1 20 8v10.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" /></svg>;
 const XIcon = ({ s = 20 }) => <svg width={s} height={s} viewBox="0 0 24 24" aria-hidden="true" className="mt-ta-x"><path d="M6 6l12 12M18 6L6 18" /></svg>;
@@ -112,6 +153,9 @@ export function LineageMap() {
   const [tags, setTags] = useState([]); // 명령줄 앞머리 태그 이름들
   const [vsize, setVsize] = useState(null); // 보기 칸 크기 { w, h }
   const [moveWs, setMoveWs] = useState(null); // 끄는 중인 줄 키
+  const [pv, setPv] = useState(null); // 미리 보기 { id, x, y, w }(덮개 기준)
+  const pvRef = useRef(null), hoverTimer = useRef(0);
+  pvRef.current = pv;
   const rootRef = useRef(null), vpRef = useRef(null), worldRef = useRef(null), pctRef = useRef(null), bgRef = useRef(null), colsRef = useRef(null);
   const view = useRef(null); // { k, x, y }
   const fitted = useRef(false);
@@ -152,6 +196,8 @@ export function LineageMap() {
   // ---- 보기 쓰기(DOM에 바로) ----
   const paint = useCallback((v, { glide = false } = {}) => {
     view.current = v;
+    clearTimeout(hoverTimer.current);
+    if (pvRef.current) { pvRef.current = null; setPv(null); } // 끌거나 확대하면 미리 보기는 비킨다
     const w = worldRef.current, root = rootRef.current;
     const lv = levelOf(v.k);
     if (w) {
@@ -162,7 +208,13 @@ export function LineageMap() {
     }
     // 배경 점은 세계의 형제 층(.mt-ta-bg)에 쓴다(세계를 감싼 요소에 변수를 쓰면 카드 전부의 스타일을 다시 센다)
     const bg = bgRef.current;
-    if (bg) { const gs = DOT_GAP * v.k; bg.style.backgroundSize = `${gs}px ${gs}px`; bg.style.backgroundPosition = `${v.x % gs - gs / 2}px ${v.y % gs - gs / 2}px`; bg.style.setProperty('--dot-r', `${Math.max(0.6, DOT_R * v.k)}px`); }
+    // P153 r8: 점은 화면에서 크기가 정해져 있다(지름 DOT_R·배율, 1~1.8px). 멀리 줄이면 간격이 DOT_MIN_GAP보다 좁아지지 않게 두 배씩 솎고 옅게 한다(촘촘한 회색 무늬가 되지 않게)
+    if (bg) {
+      let gs = DOT_GAP * v.k; while (gs < DOT_MIN_GAP) gs *= 2;
+      bg.style.backgroundSize = `${gs}px ${gs}px`; bg.style.backgroundPosition = `${v.x % gs - gs / 2}px ${v.y % gs - gs / 2}px`;
+      bg.style.setProperty('--dot-r', `${Math.min(DOT_R, Math.max(1, DOT_R * v.k))}px`);
+      bg.style.opacity = String(Math.max(0.45, Math.min(1, v.k / 0.5)));
+    }
     // 칸 머리: 세계 칸 x를 화면으로(레일 오른쪽 띠 안의 자리)
     const cs = colsRef.current, L = layRef.current;
     if (cs && L) L.cols.forEach((c, i) => { const el = cs.children[i]; if (el) el.style.transform = `translateX(${Math.round(c.x * v.k + v.x - RAIL)}px)`; });
@@ -211,6 +263,20 @@ export function LineageMap() {
     if (!fitted.current) { fitted.current = true; paint(openOf(lay, vsize)); }
     else if (view.current) paint(view.current);
   }, [open, lay, vsize, paint]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 미리 보기: 카드 위에 HOVER_MS 머물면(또는 초점) 카드 옆에. 오른쪽에 자리가 없으면 왼쪽
+  const onHover = useCallback((id, el) => {
+    clearTimeout(hoverTimer.current);
+    if (!id || !el) { if (pvRef.current) setPv(null); return; }
+    hoverTimer.current = setTimeout(() => {
+      const root = rootRef.current; if (!root || !el.isConnected) return;
+      const r = el.getBoundingClientRect(), R = root.getBoundingClientRect(), w = 380;
+      let x = r.right - R.left + 12;
+      if (x + w > R.width - 8) x = Math.max(8, r.left - R.left - 12 - w);
+      const y = Math.max(60 + TOPH + COLH + 6, Math.min(r.top - R.top, R.height - 360));
+      setPv({ id, x, y, w });
+    }, HOVER_MS);
+  }, []);
 
   const lastTag = useRef(null); // { id, at }: 마지막 카드 누르기(더블클릭이면 되돌린다)
   const go = useCallback((id, dbl = false) => {
@@ -406,12 +472,13 @@ export function LineageMap() {
               {lay.edges.map((e) => { const k = e.cross ? 'cross' : e.rel; return <path key={e.id} className={`mt-ta-edge k-${k}${e.active || tiers.get(e.to) === 'work' ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={`url(#mt-ln-tip-${KINDS.includes(k) ? k : 'spawn'})`} />; })}
             </svg>
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}
-            {ids.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} t={t} />; })}
+            {ids.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} />; })}
           </div>
         )}
         {lay && lay.cards.size === 0 && <div className="mt-ta-loading">{t('mission.empty')}</div>}
       </div>
 
+      {pv && lay && lay.cards.get(pv.id) && (() => { const b = lay.cards.get(pv.id), row = lay.rows.find((r) => r.key === b.ws), band = row && lay.bands.find((x) => (x.id || null) === (row.band || null)); return <Peek pv={pv} b={b} f={factsOf(pv.id)} live={liveOf(b.node)} tier={tiers.get(pv.id)} t={t} now={now} folder={[band && band.name, row && row.name].filter(Boolean).join(' / ')} />; })()}
       <div className="mt-ta-hud mt-ln-top" data-role="ta-top">
         <span className="mt-ta-title">{t('mission.title')}</span>
         <span className="mt-ta-attn" data-role="ta-attn">

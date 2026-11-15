@@ -2444,6 +2444,14 @@ export default {
     noTask: 'No task yet',
   },
   // P152: mission map A "Territories" (folders as territories, workspaces as islands, teams as rings, infinite canvas)
+  // P153 r8: session map card preview (hover or focus)
+  mmPeek: {
+    asks: 'Asks',
+    answer: 'Last answer',
+    events: 'Recent events',
+    asleep: 'Asleep or closed: showing stored info only',
+    noScreen: 'Screen not available',
+  },
   // P153 r7: session map columns (mockup B Lineage)
   mmLine: {
     colWs: 'Workspace',

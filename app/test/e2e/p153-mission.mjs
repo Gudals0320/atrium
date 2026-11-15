@@ -185,6 +185,30 @@ async function pc() {
       check(`[${w}] 보통: 카드 내용(일·오류 글)이 잘리지 않는다`, !clip.length, clip);
       await page.evaluate(() => window.__mtTa.fit()); await sleep(300);
       if (w === 1584) { await page.emulateMedia({ reducedMotion: 'reduce' }); await sleep(400); await shotTo(page, `pc-${w}-fit-reduce`); await page.emulateMedia({ reducedMotion: 'no-preference' }); }
+      if (w === 1584) {
+        // r8: 작업 완료 카드는 멀리(처음 화면)에서도 꼬리표와 그라데이션
+        const dn = await page.evaluate(() => { const c = document.querySelector('.mt-ta-slot.st-done'); if (!c) return null; const r = c.getBoundingClientRect(), tag = c.querySelector('.mt-mm-donetag'); const tr = tag && tag.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, tag: !!tag && getComputedStyle(tag).display !== 'none' && tr.width > 20, bg: getComputedStyle(c.querySelector('.mt-ta-card')).backgroundImage }; });
+        if (dn) { await shotTo(page, `pc-${w}-done-far`, { x: Math.max(0, dn.x - 30), y: Math.max(0, dn.y - 30), width: dn.w + 60, height: dn.h + 60 }); }
+        check(`[${w}] 처음 화면(멀리): 작업 완료 꼬리표가 보이고 카드에 그라데이션`, !!dn && dn.tag && /gradient/.test(dn.bg), dn);
+        // r8: 미리 보기 — 깨어 있는 카드(첫 카드 = 실제 셸)와 잠든 카드에 마우스를 올려 0.5초
+        const hoverShot = async (sel, name) => {
+          await page.evaluate((s) => { const el = document.querySelector(s); if (el) el.scrollIntoView({ block: 'nearest' }); }, sel);
+          const box = await page.evaluate((s) => { const el = document.querySelector(s); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, vis: r.top > 150 && r.bottom < innerHeight - 120 }; }, sel);
+          if (!box) return null;
+          if (!box.vis) { await page.evaluate((s) => { const el = document.querySelector(s); window.__mtTa.flyTo(el.dataset.id, window.__mtTa.view().k); }, sel); await sleep(700); }
+          const b2 = await page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
+          await page.mouse.move(b2.x, b2.y); await sleep(1500);
+          const info = await page.evaluate(() => { const p = document.querySelector('[data-role=ln-peek]'); return p ? { text: p.innerText.slice(0, 400), screen: !!p.querySelector('[data-role=ln-peek-screen]'), asleep: !!p.querySelector('[data-role=ln-peek-asleep]'), pe: getComputedStyle(p).pointerEvents } : null; });
+          await shotTo(page, name);
+          await page.mouse.move(5, 300); await sleep(300);
+          return info;
+        };
+        const awake = await hoverShot(`.mt-ta-card[data-name="${SHAPE.sessions[0].name}"]`, `pc-${w}-peek-awake`);
+        const asleep = await hoverShot('.mt-ta-card[data-tier="sleep"]', `pc-${w}-peek-asleep`);
+        check('미리 보기: 깨어 있는 카드는 화면 끝줄, 잠든 카드는 저장된 정보만, 마우스를 받지 않는다', awake && awake.screen && awake.pe === 'none' && asleep && asleep.asleep && !asleep.screen, { awake, asleep });
+        // 끌면 미리 보기가 비킨다
+        await page.evaluate(() => window.__mtTa.fit()); await sleep(500);
+      }
       // 보통 단계(85%): 첫 영토의 왼쪽 위부터, 그리고 무리마다 무리 가운데로
       const at = (box, k) => page.evaluate(([b, kk]) => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); window.__mtTa.set({ k: kk, x: vp.width / 2 - (b.x + b.w / 2) * kk, y: (vp.height + 96 - 110) / 2 - (b.y + b.h / 2) * kk }); }, [box, k]);
       const boxes = await page.evaluate(() => { const L = window.__mtTa.lay(); return { first: { x: 0, y: 0, w: 10, h: 10 }, rings: L.rows.filter((r) => r.count >= 3).map((r) => ({ lead: r.key, x: 0, y: r.y, w: L.W, h: r.h })) }; });

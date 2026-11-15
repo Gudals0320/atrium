@@ -2444,6 +2444,14 @@ export default {
     noTask: '아직 시킨 일 없음',
   },
   // P152: 미션 맵 A "Territories"(폴더 = 영토, 워크스페이스 = 섬, 팀 = 무리, 무한 캔버스)
+  // P153 r8: 세션 맵 카드 미리 보기(마우스를 올리거나 초점)
+  mmPeek: {
+    asks: '질문',
+    answer: '마지막 답',
+    events: '최근 이벤트',
+    asleep: '절전 중이거나 닫힌 세션이라 저장된 정보만 보입니다',
+    noScreen: '화면을 읽지 못했습니다',
+  },
   // P153 r7: 세션 맵 칸(시안 B Lineage)
   mmLine: {
     colWs: '워크스페이스',
