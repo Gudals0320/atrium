@@ -22,7 +22,7 @@ import { commandDraft } from './Thread.jsx';
 
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
 const COLH = 34; // 칸 머리 띠 높이
-const RAIL = 220; // 왼쪽 목차 레일 폭
+const RAIL = 0; // P153 r9: 목차 레일은 없앴다(앱 사이드바를 같이 쓴다)
 const BOTTOM = 112; // 아래 명령줄 자리
 const PAD = 16;
 const OPEN_MAX = 0.85; // 처음 화면(폭 맞춤) 배율 상한
@@ -242,12 +242,20 @@ export function LineageMap() {
     const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, k || Math.max(0.9, v.k), s.w - RAIL, s.h, { top: TOPH + COLH, bottom: BOTTOM });
     paint({ ...c, x: c.x + RAIL }, { glide: true });
   }, [paint]);
-  // 목차: 그 줄을 위로(배율은 그대로, 줄 머리부터 보이게)
-  const toRow = useCallback((key) => {
-    const L = layRef.current, v = view.current, r = L && L.rows.find((x) => x.key === key);
-    if (!r || !v) return;
-    paint({ k: v.k, x: v.x, y: TOPH + COLH + 8 - r.y * v.k }, { glide: true });
-  }, [paint]);
+  // P153 r9: 앱 사이드바가 세션 맵을 움직인다(Sidebar.jsx가 getState().mapFocus를 부른다). 세션 = 지금 배율 그대로 가운데로, 워크스페이스 줄·폴더 띠 = 그 상자에 맞춤.
+  // 간 뒤 그 카드·줄·띠를 세 번 반짝인다(.blink, 움직임 줄이기에서도 판 설정 workLight가 끔이 아니면 돈다)
+  const blink = useCallback((sel) => { const root = rootRef.current, el = root && root.querySelector(sel); if (!el) return; el.classList.remove('blink'); void el.offsetWidth; el.classList.add('blink'); setTimeout(() => el.classList.remove('blink'), 2200); }, []);
+  const fitBoxTo = useCallback((r) => { const s = sizeRef.current; if (!s || !r) return; const f = fitView(r, s.w - RAIL, s.h, { top: TOPH + COLH, bottom: BOTTOM, pad: 40, max: OPEN_MAX }); paint({ ...f, x: f.x + RAIL }, { glide: true }); }, [paint]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const st = getState();
+    st.mapFocus = {
+      session: (sid) => { const L = layRef.current, v = view.current, s = sizeRef.current; if (!L || !v || !s) return false; const hit = [...L.cards.entries()].find(([, b]) => b.node.sessionId === sid); if (!hit) return false; const [id, b] = hit; const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, v.k, s.w - RAIL, s.h, { top: TOPH + COLH, bottom: BOTTOM }); paint({ ...c, x: c.x + RAIL }, { glide: true }); setTimeout(() => blink(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), 460); return true; },
+      ws: (key) => { const L = layRef.current, r = L && L.rows.find((x) => x.key === key); if (!r) return false; fitBoxTo({ x: 0, y: r.y, w: L.W, h: r.h }); setTimeout(() => blink(`.mt-ln-row[data-key="${CSS.escape(key)}"]`), 460); return true; },
+      group: (gid) => { const L = layRef.current, b = L && L.bands.find((x) => (x.id || null) === (gid || null)); if (!b) return false; fitBoxTo({ x: 0, y: b.y, w: L.W, h: b.h }); setTimeout(() => blink(`.mt-ln-band[data-id="${CSS.escape(b.id || 'none')}"]`), 460); return true; },
+    };
+    return () => { if (getState().mapFocus === st.mapFocus) getState().mapFocus = null; };
+  }, [open, paint, blink, fitBoxTo]);
 
   useLayoutEffect(() => {
     const el = vpRef.current;
@@ -502,19 +510,6 @@ export function LineageMap() {
       <div className="mt-ta-hud mt-ln-cols" data-role="ln-cols" ref={colsRef} aria-hidden="true">
         {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh">{colLabel[c.key]}</span>)}
       </div>
-      <nav className="mt-ta-hud mt-ln-rail" data-role="ln-rail" aria-label={t('mmLine.toc')}>
-        {lay && lay.bands.map((b) => (
-          <div key={b.id || 'none'} className="grp">
-            <span className="rk">{b.name}</span>
-            {lay.rows.filter((r) => (r.band || null) === (b.id || null)).map((r) => (
-              <button key={r.key || '-'} type="button" className="rbtn" data-role="ln-toc" data-key={r.key} onClick={() => toRow(r.key)} title={r.name}>
-                <span className="nm">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span>
-                <span className="n">{r.chips.filter((c) => ['turn', 'alert', 'work'].includes(c.tier)).flatMap((c) => Array.from({ length: Math.min(c.n, 4) }, (_, j) => <i key={`${c.tier}${j}`} className={`st-${ST[c.tier]}`} />))}<span>{r.count}</span></span>
-              </button>
-            ))}
-          </div>
-        ))}
-      </nav>
     </div>
   );
 }

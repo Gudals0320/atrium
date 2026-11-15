@@ -2253,18 +2253,8 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-ln-zgrp .zpct { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--ln-text); }
 .mt-ln .mt-ta-iconbtn { width: 36px; height: 36px; border-radius: 8px; color: var(--ln-text); }
 /* 칸 머리(세계 칸을 따라 옮겨 간다, paint가 transform) */
-.mt-ln-cols { left: 220px; right: 0; top: 112px; height: 34px; border-bottom-width: 1px !important; overflow: hidden; pointer-events: none; }
+.mt-ln-cols { left: 0; right: 0; top: 112px; height: 34px; border-bottom-width: 1px !important; overflow: hidden; pointer-events: none; }
 .mt-ln-cols .colh { position: absolute; left: 0; top: 9px; font-size: 11.5px; font-weight: 500; letter-spacing: 0.04em; color: var(--ln-dim); white-space: nowrap; will-change: transform; }
-/* 왼쪽 목차 레일 */
-.mt-ln-rail { left: 0; top: 112px; bottom: 0; width: 220px; border-right-width: 1px !important; padding: 10px 8px 120px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
-.mt-ln-rail .grp { display: flex; flex-direction: column; gap: 1px; }
-.mt-ln-rail .rk { font-size: 11.5px; font-weight: 600; color: var(--ln-dim); padding: 10px 10px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mt-ln-rail .rbtn { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 7px; border: 0; background: transparent; color: var(--ln-text); font: 400 13px var(--font-ui); text-align: left; cursor: pointer; min-width: 0; }
-.mt-ln-rail .rbtn:hover { background: rgba(255, 252, 240, 0.05); }
-.mt-ln-rail .rbtn .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-ln-rail .rbtn .n { margin-left: auto; display: flex; gap: 4px; align-items: center; flex: none; }
-.mt-ln-rail .rbtn .n i { width: 6px; height: 6px; border-radius: 50%; background: var(--sc); display: block; }
-.mt-ln-rail .rbtn .n span { font-size: 11.5px; color: var(--ln-dim); margin-left: 2px; }
 .mt-ln .st-needs { --sc: var(--st-waiting); } .mt-ln .st-error { --sc: #ef8099; } .mt-ln .st-working { --sc: var(--st-working); } .mt-ln .st-working.shell { --sc: #3fd18a; }
 .mt-ln .st-done { --sc: var(--st-review); } .mt-ln .st-ready { --sc: #a9a69b; } .mt-ln .st-sleeping { --sc: var(--st-sleeping); } .mt-ln .st-exited { --sc: #8d8a80; }
 /* 진행 중 빛: 시안처럼 테두리 전체가 옅게 보이고 가는 혜성이 돈다 */
@@ -2298,3 +2288,13 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-ln-peek .pkv { display: flex; flex-direction: column; gap: 1px; font-size: 11.5px; }
 .mt-ln-peek .pks { margin: 0; padding: 7px 9px; border-radius: 6px; background: #0c0c0a; border: 1px solid var(--ln-line); font: 11px/1.35 var(--font-mono); color: #cfcbc1; white-space: pre; overflow: hidden; max-height: 160px; }
 .mt-ln-peek .pkn { font-size: 11.5px; }
+
+/* P153 r9: 사이드바에서 고른 세션 카드·워크스페이스 줄·폴더 띠를 세 번 반짝인다. 사용자 PC는 늘 움직임 줄이기라 OS 값이 아니라 판 설정 workLight를 따른다(켬 기본 = 돈다, 끔 = 멈춘 강조) */
+@keyframes mt-ln-blink { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 45% { box-shadow: 0 0 0 4px var(--ln-blink), 0 0 26px 2px var(--ln-blink); } }
+@keyframes mt-ln-blink-area { 0%, 100% { background-color: transparent; } 45% { background-color: rgba(255, 252, 240, 0.09); } }
+.mt-ln { --ln-blink: color-mix(in srgb, var(--accent) 75%, transparent); }
+.mt-ln .mt-ta-slot.blink .mt-ta-card { animation: mt-ln-blink 0.6s ease-in-out 3; }
+.mt-ln .mt-ta-world.lv-far .mt-ta-slot.blink .mt-ta-card { animation-name: mt-ln-blink; outline: 6px solid var(--ln-blink); outline-offset: 6px; }
+.mt-ln-row.blink, .mt-ln-band.blink { animation: mt-ln-blink-area 0.6s ease-in-out 3; outline: 2px solid var(--ln-blink); outline-offset: -2px; }
+html[data-work-light="off"] .mt-ln .blink, html[data-work-light="off"] .mt-ln .blink .mt-ta-card, html.mt-lite .mt-ln .blink .mt-ta-card { animation: none !important; outline: 3px solid var(--ln-blink); outline-offset: 4px; }
+@media not (prefers-reduced-motion: no-preference) { html[data-work-light="system"] .mt-ln .blink, html[data-work-light="system"] .mt-ln .blink .mt-ta-card { animation: none; outline: 3px solid var(--ln-blink); outline-offset: 4px; } }

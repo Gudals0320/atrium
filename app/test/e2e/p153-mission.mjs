@@ -89,7 +89,8 @@ const HOOK = ([shape, mix, real, agent]) => {
   if (!api.__p153orig) { api.__p153orig = api.call.bind(api); window.__p153st = { workspaces: st.workspaces, groups: st.groups }; }
   const now = Date.now();
   const nameOf = (root) => root.split('/').filter(Boolean).pop();
-  st.workspaces = shape.workspaces.map((w, i) => ({ key: w.key, name: nameOf(w.root), kind: w.kind, root: w.root, createdAt: 1e12 + i, counts: {}, worktrees: [] }));
+  // 판의 실제 워크스페이스(실제 셸·haiku 세션이 든 곳)도 남긴다: 사이드바가 실제 세션 줄을 그린다(지도에는 그래프에 있는 키만 줄이 된다)
+  st.workspaces = [...shape.workspaces.map((w, i) => ({ key: w.key, name: nameOf(w.root), kind: w.kind, root: w.root, createdAt: 1e12 + i, counts: {}, worktrees: [] })), ...(window.__p153st.workspaces || [])];
   st.groups = shape.folders.map((f) => ({ id: f.id, name: f.name, members: [...f.members] }));
   const asks = ['Allow npm ci in the worktree?', 'Which section should the summary cover?'];
   const nodes = shape.sessions.map((s, i) => {
@@ -161,6 +162,8 @@ async function pc() {
     await awayWin(app);
     await page.setViewportSize({ width: 1584, height: 921 }).catch(() => {});
     await sleep(2500);
+    // 사이드바는 닫고 시작한다(앞 시험이 연 상태가 남는다). 사이드바를 연 경우는 r9sidebar가 따로 본다
+    if (await page.$('[data-role="sidebar"]')) { await page.click('[data-action="sidebar"]'); await sleep(500); }
     const real = await realId(page), agent = SHAPE_FILE ? null : await realAgentOf(page);
     await page.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE)), MIX, real, agent]);
     for (const [w, h] of [[2576, 1408], [1584, 921], [1366, 768]]) {
@@ -324,6 +327,72 @@ async function act(page, real, agent) {
   const back = await page.evaluate(() => !!document.querySelector('.mt-ta'));
   await page.keyboard.press('Escape'); await sleep(300);
   check('숨은 설정 classic → 옛 지도(빈 곳 눌러도 열린 채, M 닫힘), 되돌리면 세션 맵', !classic.terr && classic.classic && still && mClosed && back, { classic, still, mClosed, back });
+  await r9sidebar(page, agent);
+}
+
+// ---- 라운드 9: 앱 사이드바를 같이 쓴다(세션 맵 목차 레일 없음). 세션 줄 = 판: 노드로 확대 / 세션 맵: 지금 배율로 가운데 + 반짝임,
+//      워크스페이스·폴더 줄 = 판: 영역 맞춤 / 세션 맵: 줄·띠 맞춤 + 반짝임, 접기는 화살표로만 ----
+async function r9sidebar(page, agent) {
+  const sideOpen = await page.evaluate(() => !!document.querySelector('[data-role="sidebar"]'));
+  if (!sideOpen) { await page.click('[data-action="sidebar"]'); await sleep(600); }
+  await openMission(page);
+  await page.evaluate(() => window.__mt.getState().sessions.size && window.__mtTa.fit()); await sleep(400);
+  const lay0 = await page.evaluate(() => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(), sb = document.querySelector('[data-role="sidebar"]'); return { rail: !!document.querySelector('[data-role=ln-rail]'), vpLeft: vp.left, sbRight: sb ? sb.getBoundingClientRect().right : null }; });
+  check('세션 맵: 자체 목차 레일 없음, 앱 사이드바가 보이고 세션 맵은 그 오른쪽', !lay0.rail && lay0.sbRight != null && lay0.vpLeft >= lay0.sbRight - 1, lay0);
+  // 세션 줄(실제 haiku 세션: 흉내 지도의 둘째 카드) → 지금 배율 그대로 가운데 + 반짝임
+  if (agent) {
+    const k0 = (await page.evaluate(() => window.__mtTa.view())).k;
+    await page.waitForSelector(`[data-sb="session"][data-name="${agent.name}"]`, { timeout: 20000 });
+    await page.click(`[data-sb="session"][data-name="${agent.name}"]`); await sleep(700);
+    const r = await page.evaluate((n) => { const el = document.querySelector(`.mt-ta-card[data-name="${n}"]`), slot = el.closest('.mt-ta-slot'); const b = el.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { k: window.__mtTa.view().k, dx: Math.round(b.left + b.width / 2 - (vp.left + vp.width / 2)), blink: slot.classList.contains('blink'), anim: getComputedStyle(el).animationName, open: !!document.querySelector('[data-role=mission]') }; }, agent.name);
+    await shotTo(page, 'pc-r9-map-session');
+    check('사이드바 세션 줄(세션 맵) → 배율 그대로, 카드가 가운데, 반짝임(움직임 줄이기에서도), 세션 맵은 열린 채', Math.abs(r.k - k0) < 1e-6 && Math.abs(r.dx) < 30 && r.blink && r.anim === 'mt-ln-blink' && r.open, { ...r, k0 });
+  }
+  // 사이드바를 연 채로도: 카드 누르기 = 태그, 지도 빈 곳을 누르고 친 글자 = 명령줄(태그 뒤에)
+  {
+    const setCmd = (v) => page.evaluate((x) => { const el = document.querySelector('[data-role=command]'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(el, x); el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); }, v);
+    await setCmd('');
+    const nm = 'deck-lead';
+    await page.evaluate((n) => window.__mtTa.flyTo(`s:${n}`, 0.9), nm); await sleep(800);
+    await page.click(`.mt-ta-card[data-name="${nm}"]`); await sleep(400);
+    const vp = await page.evaluate(() => { const r = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+    await page.mouse.click(vp.x + 30, vp.y + vp.h / 2); await sleep(300);
+    await page.keyboard.type('side open'); await sleep(300);
+    const c = await page.evaluate(() => document.querySelector('[data-role=command]').value);
+    check('사이드바를 연 채로: 카드 태그 + 지도에서 친 글자 → 명령줄', c === `@${nm} side open`, c);
+    await setCmd('');
+  }
+  // 워크스페이스 줄·폴더 줄(흉내 지도의 키) → 맞춤 + 반짝임. 접기는 화살표로만
+  const wsKey = 'd:/work/campus/pbl/.git';
+  const hasWs = await page.$(`[data-sb="ws"][data-ws="${wsKey}"]`);
+  if (hasWs) {
+    await page.click(`[data-sb="ws"][data-ws="${wsKey}"] .mt-sb2-wname`); await sleep(700);
+    const w = await page.evaluate((k) => { const row = document.querySelector(`.mt-ln-row[data-key="${CSS.escape(k)}"]`), r = row.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { blink: row.classList.contains('blink'), inView: r.top >= vp.top + 80 && r.bottom <= vp.bottom - 100, k: window.__mtTa.view().k }; }, wsKey);
+    await shotTo(page, 'pc-r9-map-ws');
+    check('사이드바 워크스페이스 줄(세션 맵) → 그 줄에 맞춤 + 반짝임', w.blink && w.inView, w);
+    const gRow = '[data-sb="group"][data-group="g2"]';
+    const folded0 = await page.evaluate((s) => document.querySelector(s).classList.contains('folded'), gRow);
+    await page.click(`${gRow} .mt-sb2-gname`); await sleep(700);
+    const g = await page.evaluate((s) => ({ folded: document.querySelector(s).classList.contains('folded'), blink: !!document.querySelector('.mt-ln-band[data-id="g2"].blink') }), gRow);
+    await shotTo(page, 'pc-r9-map-group');
+    await page.click(`${gRow} .mt-sb2-fold.btn`); await sleep(300);
+    const folded1 = await page.evaluate((s) => document.querySelector(s).classList.contains('folded'), gRow);
+    await page.click(`${gRow} .mt-sb2-fold.btn`); await sleep(300);
+    check('폴더 줄 이름 누르기 = 띠 맞춤 + 반짝임(접지 않음), 화살표 = 접기·펴기', g.blink && g.folded === folded0 && folded1 !== folded0, { folded0, g, folded1 });
+  } else log('흉내 워크스페이스 줄이 사이드바에 없다(사이드바가 아직 흉내 목록으로 다시 그리지 않음)');
+  await closeMission(page);
+  await page.evaluate(UNHOOK); await sleep(1500);
+  // 판: 워크스페이스 줄 → 그 영역(고른 워크스페이스), 세션 줄 → 그 노드로
+  const realWs = await page.evaluate(() => (window.__mt.getState().workspaces[0] || {}).key);
+  const before = await page.evaluate(() => JSON.stringify(window.__mt.getState().viewport || null));
+  await page.click(`[data-sb="ws"][data-ws="${realWs}"]`); await sleep(800);
+  const bw = await page.evaluate(() => ({ view: window.__mt.getState().viewWs, mission: !!document.querySelector('[data-role=mission]') }));
+  if (agent) { await page.click(`[data-sb="session"][data-name="${agent.name}"]`); await sleep(1200); }
+  const bs = await page.evaluate(() => ({ focus: window.__mt.getState().focusId }));
+  await shotTo(page, 'pc-r9-board-session');
+  check('판: 워크스페이스 줄 → 그 영역(고른 워크스페이스), 세션 줄 → 그 노드(초점)', bw.view === realWs && !bw.mission && (!agent || bs.focus === agent.id), { realWs, bw, bs, before: before.slice(0, 60) });
+  const real = await realId(page);
+  await page.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE)), MIX, real, agent]);
 }
 
 // ---- 성능: 끌기·휠 프레임(P152 perf와 같은 재기). 지어낸 모양 32세션과 그 넷 겹(128세션), 작업 중 빛 켬·끔, 멀리(맞춤)·보통 ----

@@ -18,7 +18,7 @@ import './sidebar.css';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api.js';
 import { shownRole } from './lib/roles.js'; // P141(#17)
-import { useStore, getState, selectWorkspace, toast, goWhenOpen, openDialog, setRenaming } from './store.js';
+import { useStore, getState, selectWorkspace, selectGroup, toast, goWhenOpen, openDialog, setRenaming } from './store.js';
 import { ago, askLine, STATE_LABEL } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { archiveRows, SECTION_STEP, bindingText } from './lib/sidebar.js';
@@ -221,7 +221,24 @@ const dragProps = (r) => ({
 const NAME = 22;
 const pad = (r, extra = 0) => ({ paddingLeft: TREE.pad + (r.lv || 0) * TREE.step + extra });
 // 작은 펼침 화살표(펼치면 아래로 돈다)
-const Fold = ({ open, action }) => <span className={`mt-sb2-fold${open ? ' open' : ''}`} data-action={action} aria-hidden="true"><Icon name="chev" /></span>;
+// P153 r9: 폴더·워크스페이스 줄은 이 화살표(onToggle)로만 접고 편다. 줄의 나머지(이름·빈 곳)는 그 영역으로 간다(focusGroup·focusWs)
+const Fold = ({ open, action, onToggle, title }) => (onToggle
+  ? <span role="button" tabIndex={-1} className={`mt-sb2-fold btn${open ? ' open' : ''}`} data-action={action} title={title} aria-label={title} aria-expanded={open ? 'true' : 'false'} onClick={(e) => { e.stopPropagation(); onToggle(); }} onDoubleClick={(e) => e.stopPropagation()}><Icon name="chev" /></span>
+  : <span className={`mt-sb2-fold${open ? ' open' : ''}`} data-action={action} aria-hidden="true"><Icon name="chev" /></span>);
+
+// P153 r9: 사이드바 줄 누르기. 세션 맵이 열려 있으면 세션 맵을 움직이고(getState().mapFocus: 세션 = 지금 배율로 가운데, 줄·띠 = 맞춤, 반짝임), 아니면 판을 움직인다
+// (세션 = 그 노드로 확대해 맞춤, 워크스페이스 = 그 영역에 맞춤, 폴더 = 구성 영역 모두에 맞춤)
+function focusSession(sid) { const st = getState(); if (st.missionOpen && st.mapFocus && st.mapFocus.session(sid)) return; if (st.navigateTo) st.navigateTo(sid, { focusTerminal: true }); }
+function focusWs(key) { const st = getState(); if (st.missionOpen && st.mapFocus && st.mapFocus.ws(key)) return; selectWorkspace(key); }
+function focusGroup(r) {
+  const st = getState();
+  if (st.missionOpen && st.mapFocus && st.mapFocus.group(r.none ? null : r.g.id)) return;
+  const have = new Set((st.workspaces || []).map((w) => w.key));
+  const inGroup = new Set((st.groups || []).flatMap((g) => g.members || []));
+  const keys = r.none ? [...have].filter((k) => !inGroup.has(k)) : (r.g.members || []).filter((k) => have.has(k));
+  if (!keys.length) return;
+  selectGroup(keys, keys.includes(st.currentWs) ? st.currentWs : keys[0]);
+}
 
 function sessionTitle(s, now, { here = false, pinned = false } = {}) {
   const br = branchLabel(s);
@@ -263,7 +280,7 @@ const SessionRow = memo(function SessionRow({ r, now, cur, here, busy: rowBusy }
   );
   return (
     <button className={`mt-sb2-row sess b-${b}${r.attn ? ' attn' : ''}${r.pinned ? ' pinned' : ''}${cur ? ' cur' : ''}${s.unseen ? ' unseen' : ''}${here ? ' here' : ''}`} style={pad(r)} data-sb="session" data-row={r.id} data-session={s.sessionId} data-name={s.name} data-state={s.state} data-indent={r.indent || 0} data-pinned={r.pinned ? '1' : undefined} data-focused={here ? '1' : undefined}
-      title={sessionTitle(s, now, { here, pinned: r.pinned })} onClick={() => { setCursor(r.id); getState().navigateTo && getState().navigateTo(s.sessionId, { focusTerminal: true }); }}
+      title={sessionTitle(s, now, { here, pinned: r.pinned })} onClick={() => { setCursor(r.id); focusSession(s.sessionId); }}
       onContextMenu={(e) => { setCursor(r.id); openMenuAt(e, 'session', s.sessionId); }}>
       <span className="mt-sb2-line">
         <span className={`mt-sb2-dot st-${s.state}`} data-state={s.state} />
@@ -310,8 +327,8 @@ function GroupRow({ r, cur, renaming, dropAt }) {
   const none = r.none;
   return (
     <div className={`mt-sb2-row grp${r.open ? '' : ' folded'}${cur ? ' cur' : ''}${none ? ' none' : ''}${dropAt ? ' drop' : ''}`} style={pad(r)} data-sb="group" data-row={r.id} data-group={r.g.id || ''} data-name={r.g.name || ''} {...dragProps(r)}
-      onClick={() => { setCursor(r.id); if (!none && !renaming) toggleFold(r.id); }}>
-      {none ? <span className="mt-sb2-fold" aria-hidden="true" /> : <Fold open={r.open} action="fold" />}
+      onClick={() => { setCursor(r.id); if (!renaming) focusGroup(r); }}>
+      {none ? <span className="mt-sb2-fold" aria-hidden="true" /> : <Fold open={r.open} action="fold" title={t(r.open ? 'sbFold.close' : 'sbFold.open')} onToggle={() => { setCursor(r.id); toggleFold(r.id); }} />}
       {renaming
         ? <input ref={inputRef} className="mt-sb2-rename" data-role="group-rename" autoFocus value={val} maxLength={40} onClick={(e) => e.stopPropagation()} onChange={(e) => setVal(e.target.value)} onBlur={() => (val.trim() && val.trim() !== r.g.name ? renameGroup(r.g.id, val) : (side.renaming = null, bump()))} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { side.renaming = null; bump(); } }} />
         : <span className="mt-sb2-gname" data-role="group-name" onDoubleClick={(e) => { if (!none) { e.stopPropagation(); side.renaming = r.g.id; bump(); } }}>{none ? t('sbGroups.none') : r.g.name}</span>}
@@ -329,11 +346,11 @@ function WsRow({ r, cur, selecting, selected, dropAt }) {
     <div className={`mt-sb2-row ws${r.open ? '' : ' folded'}${cur ? ' cur' : ''}${selected ? ' sel' : ''}${dropAt ? (dropAt.after ? ' drop-after' : ' drop-before') : ''}`} style={pad(r)} data-sb="ws" data-row={r.id} data-ws={w.key} data-name={w.name} data-kind={w.kind}
       draggable={!selecting} onDragStart={(e) => { side.drag = w.key; try { e.dataTransfer.setData('text/plain', w.name); e.dataTransfer.effectAllowed = 'move'; } catch {} bump(); }} onDragEnd={() => { side.drag = null; side.dropAt = null; bump(); }} {...dragProps(r)}
       title={`${w.root}\n${t(w.kind === 'repo' ? 'sb3.repo' : 'sb3.folder')}\n${t('sb2.wsTip')}`}
-      onClick={() => { setCursor(r.id); if (selecting) toggleSelected(w.key); else toggleFold(w.key); }}>
+      onClick={() => { setCursor(r.id); if (selecting) toggleSelected(w.key); else focusWs(w.key); }}>
       {selecting
         ? <input type="checkbox" className="mt-sb2-check" data-action="ws-select" checked={selected} readOnly />
-        : <Fold open={r.open} action="fold" />}
-      <button className="mt-sb2-wname" data-action="go-ws" title={t('sidebar.goWs')} onClick={(e) => { e.stopPropagation(); setCursor(r.id); if (selecting) toggleSelected(w.key); else selectWorkspace(w.key); }}>{w.label || w.name}</button>{/* P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로 */}
+        : <Fold open={r.open} action="fold" title={t(r.open ? 'sbFold.close' : 'sbFold.open')} onToggle={() => { setCursor(r.id); toggleFold(w.key); }} />}
+      <button className="mt-sb2-wname" data-action="go-ws" title={t('sidebar.goWs')} onClick={(e) => { e.stopPropagation(); setCursor(r.id); if (selecting) toggleSelected(w.key); else focusWs(w.key); }}>{w.label || w.name}</button>{/* P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로 */}
       {r.matched != null ? <Inside n={r.matched} what="sb3.matchedIn" kind="matched" /> : <Inside n={r.c.sessions} what="sb3.sessionsIn" kind="sessions" />}
       <Counts c={r.c} open={r.open} />
       {!selecting && <button className="mt-sb2-more" data-action="ws-menu" title={t('sb2.menu')} onClick={(e) => openMenu(e, 'ws', w.key)}><Icon name="more" /></button>}
@@ -420,9 +437,9 @@ function Row({ r, now, cur, busy, selecting, selected, renaming, dropAt, here })
 // 고른 줄에서 Enter
 function activate(r) {
   if (!r) return;
-  if (r.type === 'group') { if (!r.none) toggleFold(r.id); }
-  else if (r.type === 'ws') { if (side.selecting) toggleSelected(r.w.key); else selectWorkspace(r.w.key); }
-  else if (r.type === 'session') { const st = getState(); if (st.navigateTo) st.navigateTo(r.s.sessionId, { focusTerminal: true }); }
+  if (r.type === 'group') focusGroup(r); // P153 r9: Enter = 그 영역으로(접기·펴기는 ←·→와 화살표 단추)
+  else if (r.type === 'ws') { if (side.selecting) toggleSelected(r.w.key); else focusWs(r.w.key); }
+  else if (r.type === 'session') focusSession(r.s.sessionId);
   else if (r.type === 'extra') toggleExtra(r.key);
   else if (r.type === 'more') { if (r.pinMore) toggleFold(r.key.slice(4), true); else showMore(r.key); }
   else if (r.type === 'closed' && !(r.x.binding && r.x.binding.bound)) reopenClosed(r.x);

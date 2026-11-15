@@ -26,7 +26,7 @@ import { bandZone, bottomNext } from './lib/bottom.js'; // P43. P61: 들어가�
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
 import { kbLift } from './lib/touch-board.js'; // P83
-import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText } from './lib/cmd-input.js'; // P142. P153: toggleTag
+import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, deleteTag } from './lib/cmd-input.js'; // P142. P153: toggleTag
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
 
@@ -181,6 +181,14 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
         requestAnimationFrame(() => el.setSelectionRange(r.caret, r.caret));
       }
       return;
+    }
+    // P153 r9: 태그 칩 바로 뒤 Backspace(바로 앞 Delete)는 태그를 통째로 지운다
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const el = taRef.current;
+      if (el && el.selectionStart === el.selectionEnd) {
+        const r = deleteTag(el.value, el.selectionStart, e.key);
+        if (r) { e.preventDefault(); setText(r.text); setPick(0); requestAnimationFrame(() => el.setSelectionRange(r.caret, r.caret)); return; }
+      }
     }
     if (e.key === 'Enter') { e.preventDefault(); send(); return; }
     if (e.key === 'Escape') { taRef.current.blur(); return; }

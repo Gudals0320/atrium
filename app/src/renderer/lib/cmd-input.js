@@ -150,3 +150,22 @@ export function toggleTag(text, name) {
   const next = has ? tags.filter((x) => lc(x) !== lc(name)) : [...tags, name];
   return (next.length ? next.map((x) => `@${x}`).join(' ') + ' ' : '') + rest;
 }
+
+// P153 r9: 태그 칩 한 번에 지우기. 커서(고른 글 없음) 바로 앞(Backspace) 또는 바로 뒤(Delete)가 @태그(뒤 공백 하나 포함)면 그 태그를 통째로 지운다.
+// 태그는 줄 처음이나 공백 뒤의 @이름. → { text, caret } 또는 null(평소처럼 한 글자)
+export function deleteTag(text, caret, key) {
+  const s = String(text ?? '');
+  if (key === 'Backspace') {
+    const m = s.slice(0, caret).match(/(^|\s)(@[^\s@]+ ?)$/);
+    if (!m) return null;
+    const start = caret - m[2].length;
+    return { text: s.slice(0, start) + s.slice(caret), caret: start };
+  }
+  if (key === 'Delete') {
+    if (caret > 0 && !/\s/.test(s[caret - 1])) return null;
+    const m = s.slice(caret).match(/^(@[^\s@]+ ?)/);
+    if (!m) return null;
+    return { text: s.slice(0, caret) + s.slice(caret + m[1].length), caret };
+  }
+  return null;
+}
