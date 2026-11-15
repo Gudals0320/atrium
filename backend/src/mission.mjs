@@ -75,6 +75,8 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
       model: s.model || null, effort: s.effort || null,
       turnAt: s.state === 'working' && s.turn && s.turn.startedAt ? s.turn.startedAt : null, activeAt: s.lastActivityAt || null,
       gitBranch: (s.git && s.git.isWorktree && s.git.branch) || null,
+      // P152: 오류 글(영토 지도 카드의 오류 줄, 휴대폰 시트). 판의 세션 요약이 없을 때도 보이게
+      error: s.state === 'error' && s.error ? clip(typeof s.error === 'string' ? s.error : s.error.message || String(s.error), 200) : null,
     });
   }
   return { nodes, edges, counts, at: now };

@@ -21,6 +21,8 @@ import { roleText, teamText, modelText, ageText } from './lib/mission-model.js';
 import { kindOf, shownKind, logoFor } from './lib/kinds.js';
 import { TOUCH_SLOP_PX, pinchViewport, panViewport, mid, dist } from './lib/touch-board.js';
 import { MissionLight } from './Mission.jsx'; // P107: 테두리를 따라 도는 빛 층(PC와 같다)
+import { missionStyleOf } from './lib/mission-terr.js';
+import { PhoneTerr } from './PhoneTerr.jsx'; // P152: 영토 지도(기본)
 
 const REFRESH_MS = 600; // 판이 바뀌면 이만큼 모았다가 다시 받는다
 let cache = null; // 마지막 mission.graph
@@ -87,7 +89,13 @@ function Node({ n, live, dim, no, t, now }) {
   );
 }
 
-export function PhoneMission({ onBack, onOpen, conn }) {
+// P152: 기본은 영토 지도(PhoneTerr.jsx). 이 파일의 지도(ClassicPhoneMission)는 숨은 판 설정 missionStyle: classic일 때만 쓴다
+export function PhoneMission(props) {
+  const style = useStore((st) => missionStyleOf(st.settings));
+  return style === 'classic' ? <ClassicPhoneMission {...props} /> : <PhoneTerr {...props} />;
+}
+
+function ClassicPhoneMission({ onBack, onOpen, conn }) {
   const t = useT();
   const sessions = useStore((st) => st.sessions);
   const links = useStore((st) => st.links);
