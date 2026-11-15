@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { unwrapPasted, clip } from './text.mjs';
+import { unwrapPasted, clip, isBoardNotice } from './text.mjs';
 import { promptKey } from './spawns.mjs';
 import { HEAD_BYTES, TAIL_BYTES, TAIL_MAX_BYTES, RECENT_WRITE_MS } from './convos.mjs';
 
@@ -97,9 +97,11 @@ export function parseCodexChunks(head, tail = '') {
   // 머리에서 읽은 지시 수(꼬리만 본 가운데는 모른다. Claude Code 쪽과 같이 읽은 것만 센다)
   out.prompts = us.length; out.answers = as.length; out.tailAnswers = as.filter((x) => x.isTail).length; out.tailPrompts = us.filter((x) => x.isTail).length;
   if (us.length) {
-    const f = unwrapPasted(us[0].text), l = unwrapPasted(us[us.length - 1].text);
+    const f = unwrapPasted(us[0].text);
     out.firstPrompt = clip(f, 300); out.firstAt = us[0].at; out.promptKey = promptKey(f);
-    out.lastPrompt = clip(l, 300); out.lastPromptAt = us[us.length - 1].at;
+    // P153 r13: 판 알림은 마지막 지시가 아니다(그 앞 지시)
+    const lu = [...us].reverse().find((x) => !isBoardNotice(x.text));
+    if (lu) { out.lastPrompt = clip(unwrapPasted(lu.text), 300); out.lastPromptAt = lu.at; }
   }
   // 마지막 답은 마지막 지시 뒤의 것만
   const lastU = us.length ? us[us.length - 1] : null;
