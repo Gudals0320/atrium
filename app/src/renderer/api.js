@@ -163,6 +163,11 @@ export class Api {
     this.retryTimer = setTimeout(() => this.connect(), d == null ? 0 : d);
   }
 
+  // P165: 음성 입력의 소리(바이너리 프레임). 열려 있을 때만 보내고 보냈는지 돌려준다
+  sendBinary(data) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    try { this.ws.send(data); return true; } catch { return false; }
+  }
   call(method, params = {}) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return Promise.reject(Object.assign(new Error('not connected to the backend'), { code: 'disconnected' }));
     const id = ++this.n;

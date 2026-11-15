@@ -33,6 +33,7 @@ import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 
 import { PushButton, PushSheet, SessionMuteButton } from './PhonePush.jsx'; // P88: 알림(웹 푸시), P92: 세션 하나 끄기
 import { setOpenHandler, launchOpen, clearLaunchOpen } from './push.js'; // P88: 알림을 누르면 그 세션으로
 import { reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록). P86: 보드 단계
+import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx'; // P165: 음성 입력
 import './phone.css';
 
 // ---------- 화면 고르기(main.jsx) ----------
@@ -431,8 +432,12 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
     api.call('terminal.input', { session: id, data }).catch((e) => { if (e.code !== 'disconnected') toast(errText(e), 'error'); }); // P82: 끊긴 동안은 띠가 알린다
   };
   const bump = (d) => setScale((v) => { const n = clampPhoneScale(Math.round((v + d) * 100) / 100); try { store().setItem(PHONE_SCALE_KEY, String(n)); } catch {} return n; });
+  const voice = useVoice({ text, setText, taRef, inline: false }); // P165: 확정 글만 입력칸에, 미확정 글은 위 한 줄에 흐리게
+  useEffect(() => { if (taRef.current && text) grow(taRef.current); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
   async function send() {
-    const plan = sendPlan(s, text);
+    let cur = text;
+    if (voice.active) { await voice.finish(1000); cur = voice.current(); } // P165: 녹음 중이면 끝내고 남은 글을 받은 뒤
+    const plan = sendPlan(s, cur);
     if (!plan || busy) return;
     setBusy(true);
     markInteracted(id);
@@ -491,12 +496,14 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
       )}
       {live && (
         <form className="mt-ph-input" data-role="phone-input" onSubmit={(e) => { e.preventDefault(); send(); }}>
-          {noteText && <div className="mt-ph-note" data-role="phone-note">{noteText}</div>}
+          {noteText && !voice.active && <div className="mt-ph-note" data-role="phone-note">{noteText}</div>}
+          <VoiceInterim voice={voice} />
+          <VoiceButton voice={voice} className="mt-ph-voice" />
           <textarea ref={taRef} rows={1} value={text} data-field="phone-text" enterKeyHint="enter" autoCapitalize="off" autoCorrect="off" spellCheck={false}
             placeholder={s.kind === 'shell' ? t('phone.inputShell') : t('phone.inputAgent', { name: s.name })}
             onChange={(e) => { setText(e.target.value); grow(e.target); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
-          <button type="submit" className="mt-ph-send" data-action="phone-send" disabled={busy || !text.trim()} aria-label={t('phone.send')}>
+          <button type="submit" className="mt-ph-send" data-action="phone-send" disabled={busy || (!text.trim() && !voice.active)} aria-label={t('phone.send')}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
           </button>
         </form>

@@ -2592,4 +2592,20 @@ export default {
     kind: { shell: '셸', agent: '에이전트', other: '기타' },
     noLabel: '설명 없음',
   },
+  // P165: 음성 입력(명령줄·휴대폰 입력칸의 마이크 단추)
+  voice: {
+    start: '음성 입력',
+    stop: '음성 입력 끝내기',
+    connecting: '마이크를 여는 중…',
+    listening: '듣는 중…',
+    stopping: '남은 글을 받는 중…',
+    noKey: '음성 입력을 쓰려면 환경 변수 SONIOX_API_KEY를 넣으세요.',
+    denied: '마이크를 쓸 권한이 없습니다.',
+    noMic: '마이크를 찾지 못했습니다.',
+    insecure: '음성 입력은 HTTPS 주소에서만 됩니다.',
+    busy: '음성 입력이 이미 여러 곳에서 돌고 있습니다. 잠시 뒤에 다시 하세요.',
+    limit: '10분이 지나 음성 입력을 끝냈습니다.',
+    dropped: '연결이 끊겨 음성 입력을 끝냈습니다.',
+    failed: '음성 입력을 하지 못했습니다.',
+  },
 };

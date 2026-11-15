@@ -17,6 +17,8 @@
 //      Alt+Enter도 줄바꿈. 바는 아래 기준으로 위로 자라고 단추는 아래 줄에 붙어 있다. 칩 줄은 자란 만큼 위로 비킨다(--mt-cmd-grow)
 // P162: 데스크톱 창에서 탐색기로 복사한 파일을 붙이면 그 경로가, 캡처한 그림을 붙이면 [Image 1] 칩이 들어간다(lib/desktop-paste.js, main.mjs mt:clipPaste).
 //      칩은 보낼 때 그림 파일 경로로 바뀌고, 마우스를 올리면 작은 미리보기, 칩 뒤 Backspace로 통째로 지운다. 웹 화면(P48 업로드)은 그대로
+// P165: 왼쪽 마이크 단추로 음성 입력(Voice.jsx). 들은 글은 녹음을 시작한 커서 자리에 들어가고, 녹음 중에는 겹이 글을 그려 미확정 글을 흐리게 보인다
+//      (textarea 글자는 투명, 커서는 그대로). 녹음 중 Enter는 녹음을 끝내고 남은 확정 글을 1초까지 받은 뒤 보낸다
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast, setBottomShown } from './store.js';
@@ -29,6 +31,8 @@ import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙�
 import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
 import { imageTokens, mergeTokens, nextImageNo, expandImages, imageLabel, pastePathsText, wantsDesktopPaste } from './lib/desktop-paste.js'; // P162
 import { kbLift } from './lib/touch-board.js'; // P83
+import { useVoice, VoiceButton } from './Voice.jsx'; // P165
+import { splitLive } from './lib/voice-text.js'; // P165
 import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
@@ -165,6 +169,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const hist = useRef({ list: [], i: -1 });
   const [images, setImages] = useState({}); // P162: 그림 칩 번호 → { path, thumb }
   const [preview, setPreview] = useState(null); // P162: 마우스를 올린 그림 칩 { n, x, y }
+  const voice = useVoice({ text, setText, taRef, inline: true }); // P165
   useImperativeHandle(ref, () => ({ focus: () => taRef.current && taRef.current.focus() }));
   useEffect(() => {
     const onDraft = (e) => {
@@ -215,7 +220,10 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   }
 
   async function send() {
-    const line = text.trim();
+    // P165: 녹음 중이면 끝내고 남은 확정 글을 잠깐 받은 뒤 그 글로 보낸다
+    let cur = text;
+    if (voice.active) { await voice.finish(1000); cur = voice.current(); }
+    const line = cur.trim();
     if (!line) return;
     if (!/^@\S/.test(line)) { toast(t('cmd.needTarget'), 'error'); return; }
     const out = expandImages(line, images); // P162: 그림 칩 → 파일 경로
@@ -405,7 +413,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     const root = rootRef.current, stage = root && root.closest('.mt-stage'), bar = root && root.querySelector('.mt-cmd');
     if (stage && bar) stage.style.setProperty('--mt-cmd-grow', `${Math.max(0, Math.round(bar.offsetHeight - 60))}px`);
   });
-  const parts = mirrorParts(text, tokens);
+  const parts = splitLive(mirrorParts(text, tokens), voice.live); // P165: 미확정 들은 글은 흐리게
   const toShown = toList.slice(0, 3), toMore = toList.length - toShown.length;
   const toTitle = (r) => (r.state === 'all' ? t('cmdTo.all', { n: r.count }) : r.state === 'unknown' ? t('cmdTo.unknown', { name: r.ref }) : r.state === 'shell' ? t('cmdTo.shell', { name: r.name }) : t('cmdTo.ok', { name: r.name }));
   return (
@@ -441,10 +449,11 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
           </div>
         )}
         <Mark />
+        <VoiceButton voice={voice} className="mt-cmd-voice" />
         {/* P142: 글칸. 위아래 여백은 이 틀이 쥐고, 상한에 닿으면 textarea 안쪽만 스크롤된다. 여백을 눌러도 입력칸에 초점 */}
-        <div className="mt-cmd-field" ref={fieldRef} data-scroll={fh.scroll ? '1' : undefined} onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); taRef.current && taRef.current.focus(); } }}>
+        <div className="mt-cmd-field" ref={fieldRef} data-scroll={fh.scroll ? '1' : undefined} data-voice={voice.active ? '1' : undefined} onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); taRef.current && taRef.current.focus(); } }}>
           <div className="mt-cmd-mirror" ref={mirRef} aria-hidden="true">
-            <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag && p.tag.img ? <span key={i} className="mt-cmd-img" data-img={p.tag.n}>{p.text}</span> : p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i}>{p.text}</span>))}{'\u200b'}</div>
+            <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag && p.tag.img ? <span key={i} className={`mt-cmd-img${p.live ? ' mt-cmd-live' : ''}`} data-img={p.tag.n}>{p.text}</span> : p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}${p.live ? ' mt-cmd-live' : ''}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i} className={p.live ? 'mt-cmd-live' : undefined} data-live={p.live ? '1' : undefined}>{p.text}</span>))}{'\u200b'}</div>
           </div>
           <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={missionOpen ? t('mmTerr.barHint') : t('cmd.placeholder')} title={t('boardKeys.command')}
             onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"

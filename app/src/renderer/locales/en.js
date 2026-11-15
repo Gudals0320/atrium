@@ -2592,4 +2592,20 @@ export default {
     kind: { shell: 'Shell', agent: 'Agent', other: 'Other' },
     noLabel: 'No description',
   },
+  // P165: voice input (mic button in the command line and phone inputs)
+  voice: {
+    start: 'Voice input',
+    stop: 'Stop voice input',
+    connecting: 'Opening the microphone…',
+    listening: 'Listening…',
+    stopping: 'Getting the last words…',
+    noKey: 'Set the SONIOX_API_KEY environment variable to use voice input.',
+    denied: 'Microphone access was denied.',
+    noMic: 'No microphone found.',
+    insecure: 'Voice input works only on an HTTPS address.',
+    busy: 'Voice input is already running in several places. Try again shortly.',
+    limit: 'Voice input stopped after 10 minutes.',
+    dropped: 'Voice input stopped because the connection was lost.',
+    failed: 'Voice input failed.',
+  },
 };
