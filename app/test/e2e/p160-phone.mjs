@@ -233,7 +233,7 @@ async function phone() {
             await pg.touchscreen.tap(pb.x + pb.width / 2, pb.y + pb.height / 2); await sleep(1100);
             const r = await pg.evaluate((cid) => { const el = document.querySelector(`[data-role=pl-slot][data-id="${CSS.escape(cid)}"]`), s = document.querySelector('.mt-pl-scroll').getBoundingClientRect(); const b = el.getBoundingClientRect(); return { blink: el.classList.contains('blink'), inView: b.top >= s.top && b.bottom <= s.bottom, anim: getComputedStyle(el.querySelector('.mt-pl-card')).animationName }; }, id);
             await shot(pg, 'iphone-pill');
-            check('[iphone] 알약을 누르면 그 카드로 스크롤하고 반짝인다', r.blink && r.inView && r.anim === 'mt-ln-blink', { id, ...r });
+            check('[iphone] 알약을 누르면 그 카드로 스크롤하고 반짝인다', r.blink && r.inView && r.anim === 'mt-sm-blink', { id, ...r });
             // 수 알약: 누를 때마다 다음 작업 중 카드
             const cnt = await pg.$('[data-role=pl-count][data-tier=work]');
             const seen = [];

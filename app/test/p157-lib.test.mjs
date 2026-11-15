@@ -55,19 +55,19 @@ test('카드에 마우스를 올리면 미리 보기 하나만(브라우저 풍�
   assert.ok(card.length > 50);
   assert.ok(!/\btitle=/.test(card), '카드에 title이 없다');
   assert.match(card, /aria-label=/);
-  const head = src.slice(src.indexOf('className="mt-ln-head"'), src.indexOf('className="wsc"'));
+  const head = src.slice(src.indexOf('className="mt-sm-head"'), src.indexOf('className="wsc"'));
   assert.ok(!/\btitle=/.test(head), '줄 머리에 옮기기 풍선이 없다');
-  assert.match(head, /mt-ln-althint/);
+  assert.match(head, /mt-sm-althint/);
   assert.equal((src.match(/<Peek /g) || []).length, 1, '미리 보기 그리는 곳은 하나');
 });
 
-test('Alt 없이 줄 머리를 지나가도 강조 없음(설정 목록의 .mt-ln-row:hover를 세션 맵에서 끈다), 안내 글은 Alt 동안만', () => {
+test('Alt 없이 줄 머리를 지나가도 강조 없음(P161부터 세션 맵은 .mt-sm-*라 설정 목록 규칙이 걸리지 않는다), 안내 글은 Alt 동안만', () => {
   const css = read('styles.css');
-  assert.match(css, /\.mt-ln\.mt-mission \.mt-ln-row, \.mt-ln\.mt-mission \.mt-ln-row:hover \{ background: none;/);
-  assert.match(css, /\.mt-ln-althint \{ display: none;/);
-  assert.match(css, /\.mt-ta-vp\[data-alt="1"\] \.mt-ln-althint \{ display: block; \}/);
+  assert.ok(!/\.mt-sm-row:hover/.test(css), '세션 맵 줄에는 hover 칠이 없다');
+  assert.match(css, /\.mt-sm-althint \{ display: none;/);
+  assert.match(css, /\.mt-ta-vp\[data-alt="1"\] \.mt-sm-althint \{ display: block; \}/);
   // 강조 규칙은 모두 data-alt 아래에만
-  for (const m of css.matchAll(/^.*\.mt-ln-(head|grab):hover.*\{(.*)\}/gm)) if (/outline|background:/.test(m[2])) assert.match(m[0], /data-alt="1"/, m[0]);
+  for (const m of css.matchAll(/^.*\.mt-sm-(head|grab):hover.*\{(.*)\}/gm)) if (/outline|background:/.test(m[2])) assert.match(m[0], /data-alt="1"/, m[0]);
 });
 
 test('폴더 기둥: 너비는 가장 긴 폴더 이름에 맞추고, 짧으면 최소 폭', () => {
@@ -87,10 +87,10 @@ test('폴더 기둥: 너비는 가장 긴 폴더 이름에 맞추고, 짧으면 
   assert.ok(lay.cards.get('s:a').x - base.cards.get('s:a').x === w - LINE.SPINE);
   // 말줄임 없음, 수는 두 줄
   const css = read('styles.css');
-  assert.match(css, /\.mt-ln-spine \.fn \{ overflow: visible; text-overflow: clip; \}/);
-  assert.match(css, /\.mt-ln-spine \.fs \{ display: flex; flex-direction: column;/);
+  assert.match(css, /\.mt-sm-spine \.fn \{ overflow: visible; text-overflow: clip; \}/);
+  assert.match(css, /\.mt-sm-spine \.fs \{ display: flex; flex-direction: column;/);
   const src = read('MissionLineage.jsx');
-  assert.match(src, /className="mt-ln-spine" style=\{\{ width: lay\.spine \}\}/);
+  assert.match(src, /className="mt-sm-spine" style=\{\{ width: lay\.spine \}\}/);
   assert.match(src, /data-role="ln-band-stat"><span>\{t\('mmTerr\.workspaces'/);
   assert.ok(!src.includes("t('mmTerr.workspaces', { n: b.nWs })} · ${"), '가운뎃점 없음');
 });

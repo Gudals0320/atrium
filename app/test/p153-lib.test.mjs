@@ -357,9 +357,9 @@ test('P153 r8: 미리 보기·작업 완료·배경 점(소스)', () => {
   assert.match(src, /awake \? api\.call\('terminal\.snapshot', \{ session: sid, format: 'text' \}\)/, '터미널은 깨어 있을 때만, 지금 화면만(terminal.snapshot = visible)');
   assert.match(src, /if \(pvRef\.current\) \{ pvRef\.current = null; setPv\(null\); \}/, '끌거나 확대하면 비킨다');
   assert.match(src, /onFocus=\{\(e\) => onHover\(id, e\.currentTarget\)\}/, '키보드 초점도');
-  assert.match(css, /\.mt-ln-peek \{ position: absolute; z-index: 8; pointer-events: none;/, '마우스를 받지 않는다');
-  assert.match(css, /\.mt-ln \.mt-ta-world\.lv-far \.mt-mm-donetag \{ display: inline-flex;/, '멀리서도 작업 완료 꼬리표');
-  assert.match(css, /\.mt-ln \.mt-ta-slot\.st-done \.mt-ta-card \{[^}]*linear-gradient/, '작업 완료 그라데이션');
+  assert.match(css, /\.mt-sm-peek \{ position: absolute; z-index: 8; pointer-events: none;/, '마우스를 받지 않는다');
+  assert.match(css, /\.mt-sm \.mt-ta-world\.lv-far \.mt-mm-donetag \{ display: inline-flex;/, '멀리서도 작업 완료 꼬리표');
+  assert.match(css, /\.mt-sm \.mt-ta-slot\.st-done \.mt-ta-card \{[^}]*linear-gradient/, '작업 완료 그라데이션');
   assert.match(src, /while \(gs < DOT_MIN_GAP\) gs \*= 2;/, '멀리서 점을 솎는다');
   for (const k of ['asks', 'answer', 'events', 'asleep', 'noScreen']) { assert.ok(en.mmPeek[k], `en ${k}`); assert.ok(ko.mmPeek[k], `ko ${k}`); }
 });
@@ -367,7 +367,7 @@ test('P153 r8: 미리 보기·작업 완료·배경 점(소스)', () => {
 // ---- 라운드 9: 앱 사이드바를 같이 쓴다 ----
 test('P153 r9: 세션 맵 목차 레일 없음, 사이드바 줄 누르기는 세션 맵(열렸을 때) 또는 판으로, 접기는 화살표로만, 반짝임은 판 설정을 따른다', () => {
   const sb = read('Sidebar.jsx'), mm = read('MissionLineage.jsx'), css = read('styles.css');
-  assert.ok(!/ln-rail|mt-ln-rail/.test(mm) && !/mt-ln-rail/.test(css), '목차 레일 없음');
+  assert.ok(!/ln-rail|mt-sm-rail/.test(mm) && !/mt-sm-rail/.test(css), '목차 레일 없음');
   assert.match(mm, /const RAIL = 0;/);
   assert.match(mm, /st\.mapFocus = \{\s*\n\s*session: /, '세션 맵이 사이드바 길을 연다');
   assert.match(mm, /centerOn\(b\.x \+ b\.w \/ 2, b\.y \+ b\.h \/ 2, v\.k,/, '세션: 지금 배율 그대로 가운데');
@@ -377,8 +377,8 @@ test('P153 r9: 세션 맵 목차 레일 없음, 사이드바 줄 누르기는 �
   assert.match(sb, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onToggle\(\); \}\}/, '화살표만 접기(줄 누르기로 번지지 않음)');
   assert.match(sb, /onClick=\{\(\) => \{ setCursor\(r\.id\); if \(!renaming\) focusGroup\(r\); \}\}/, '폴더 줄 누르기 = 그 영역');
   assert.ok(!/onClick=\{\(\) => \{ setCursor\(r\.id\); if \(selecting\) toggleSelected\(w\.key\); else toggleFold\(w\.key\); \}\}/.test(sb), '워크스페이스 줄 누르기는 더 이상 접지 않는다');
-  assert.match(css, /html\[data-work-light="off"\] \.mt-ln \.blink/, '반짝임: 판 설정 끔이면 멈춘 강조');
-  assert.ok(!/@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*\.mt-ln \.blink/.test(css), '움직임 줄이기(OS)만으로 끄지 않는다');
+  assert.match(css, /html\[data-work-light="off"\] \.mt-sm \.blink/, '반짝임: 판 설정 끔이면 멈춘 강조');
+  assert.ok(!/@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*\.mt-sm \.blink/.test(css), '움직임 줄이기(OS)만으로 끄지 않는다');
   assert.ok(en.sbFold.open && ko.sbFold.close);
 });
 
@@ -428,7 +428,7 @@ test('P153 r11: 동료는 같은 칸에 붙어 쌓이고 양끝 점 선(화살�
   const le = ind.edges.find((e) => e.lineage);
   assert.ok(le && le.from === 's:d2' && le.to === 's:d3' && le.rel === 'lineage' && !le.cross, '계보는 옅은 선으로만');
   const src = read('MissionLineage.jsx');
-  assert.match(src, /mt-ln-end-peer/); assert.match(src, /markerStart=\{e\.peer \? tip/); assert.match(src, /e\.lineage \? undefined/);
+  assert.match(src, /mt-sm-end-peer/); assert.match(src, /markerStart=\{e\.peer \? tip/); assert.match(src, /e\.lineage \? undefined/);
 });
 
 test('P153 r11: 정한 동료·독립 쌍은 일 나무에서 빠지고, 정한 하위가 이긴다(applyRelationStub = P156 계약)', () => {
@@ -472,7 +472,7 @@ test('P153 r11: Alt+카드 끌기 — 오른쪽 = 하위로, 위아래 = 동료�
   const src = read('MissionLineage.jsx');
   assert.match(src, /api\.call\('relation\.set', call\)/); assert.match(src, /e.code === 'cycle'/); assert.doesNotMatch(src, /unknown_method|relStub/, 'r12: 흉내 길은 없앴다'); assert.match(src, /mode: 'card'/);
   assert.match(src, /e\.altKey && e\.pointerType === 'mouse'/, 'Alt 없이 끌면 시점 이동');
-  assert.match(src, /mt-ln-grab/, '줄을 잡는 자리는 워크스페이스 칸 빈 곳까지');
+  assert.match(src, /mt-sm-grab/, '줄을 잡는 자리는 워크스페이스 칸 빈 곳까지');
   for (const k of ['dropSub', 'dropPeer', 'dropNone', 'relFail', 'relCycle']) assert.ok(ko.mmLine[k] && en.mmLine[k], k);
   assert.equal(ko.mmLine.dropNone, '독립'); assert.match(ko.mmLine.dropSub, /하위로/); assert.match(ko.mmLine.dropPeer, /동료로/);
 });

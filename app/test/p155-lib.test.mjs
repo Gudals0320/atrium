@@ -109,7 +109,7 @@ test('세션 맵: 줄 머리 누르기가 headDrag를 거치고, Esc 취소·Alt
   const mv = s.slice(s.indexOf("if (g.mode === 'row') {"), s.indexOf("const p = [...pts.values()];", s.indexOf("if (g.mode === 'row') {")));
   assert.doesNotMatch(mv, /altKey/);
   const css = src('styles.css');
-  assert.match(css, /\.mt-ta-vp\[data-alt="1"\] \.mt-ln-head \{ cursor: move; \}/);
+  assert.match(css, /\.mt-ta-vp\[data-alt="1"\] \.mt-sm-head \{ cursor: move; \}/);
 });
 
 test('도움말 글: 두 사전 모두 Alt+끌기', () => {

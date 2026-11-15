@@ -100,7 +100,7 @@ async function chipChecks(pg, where) {
 async function openMission(pg) {
   if (await pg.$('[data-role="mission"]')) return;
   await pg.click('[data-action="mission-rail"]');
-  await pg.waitForSelector('[data-role="mission"] .mt-ln-head', { timeout: 20000 });
+  await pg.waitForSelector('[data-role="mission"] .mt-sm-head', { timeout: 20000 });
   await sleep(1200);
 }
 async function closeMission(pg) { for (let i = 0; i < 3 && (await pg.$('[data-role="mission"]')); i++) { await pg.keyboard.press('Escape'); await sleep(400); } }
@@ -125,17 +125,17 @@ async function pc() {
     check('준비: 폴더에 -b만 있고 -a는 폴더 밖', folder && !folder.members.includes(ka), { ka, g0 });
     await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
     const geo = () => page.evaluate(([key, fid]) => {
-      const h = document.querySelector(`.mt-ln-head[data-key="${CSS.escape(key)}"]`).getBoundingClientRect();
-      const t = document.querySelector(`.mt-ln-band[data-id="${CSS.escape(fid)}"]`).getBoundingClientRect();
+      const h = document.querySelector(`.mt-sm-head[data-key="${CSS.escape(key)}"]`).getBoundingClientRect();
+      const t = document.querySelector(`.mt-sm-band[data-id="${CSS.escape(fid)}"]`).getBoundingClientRect();
       return { from: { x: h.left + 40, y: h.top + 10 }, to: { x: t.left + Math.min(t.width / 2, 400), y: t.top + Math.min(t.height / 2, 60) } };
     }, [ka, folder.id]);
     const drag = async (from, to, steps = 15) => { await page.mouse.move(from.x, from.y); await page.mouse.down(); for (let i = 1; i <= steps; i++) { await page.mouse.move(from.x + (to.x - from.x) * i / steps, from.y + (to.y - from.y) * i / steps); await sleep(16); } };
     // (가) Alt 없이 줄 머리 끌기 = 시점 이동
     let G = await geo();
-    const head0 = await page.evaluate((key) => getComputedStyle(document.querySelector(`.mt-ln-head[data-key="${CSS.escape(key)}"]`)).cursor, ka);
+    const head0 = await page.evaluate((key) => getComputedStyle(document.querySelector(`.mt-sm-head[data-key="${CSS.escape(key)}"]`)).cursor, ka);
     const v0 = await page.evaluate(() => window.__mtTa.view());
     await drag(G.from, { x: G.from.x + 120, y: G.from.y + 80 });
-    const moving0 = await page.evaluate(() => !!document.querySelector('.mt-ln-row.moving, .mt-ln-band.drop'));
+    const moving0 = await page.evaluate(() => !!document.querySelector('.mt-sm-row.moving, .mt-sm-band.drop'));
     await page.mouse.up(); await sleep(500);
     const v1 = await page.evaluate(() => window.__mtTa.view());
     const g1 = groupsNow();
@@ -147,12 +147,12 @@ async function pc() {
     await page.mouse.move(G.from.x, G.from.y); await sleep(100);
     await page.keyboard.down('Alt'); await sleep(50);
     await page.mouse.move(G.from.x + 2, G.from.y + 1); await sleep(200);
-    const hov = await page.evaluate((key) => { const vp = document.querySelector('[data-role=ta-viewport]'); const h = document.querySelector(`.mt-ln-head[data-key="${CSS.escape(key)}"]`); const cs = getComputedStyle(h); return { alt: vp.dataset.alt || null, cursor: cs.cursor, outline: cs.outlineStyle }; }, ka);
+    const hov = await page.evaluate((key) => { const vp = document.querySelector('[data-role=ta-viewport]'); const h = document.querySelector(`.mt-sm-head[data-key="${CSS.escape(key)}"]`); const cs = getComputedStyle(h); return { alt: vp.dataset.alt || null, cursor: cs.cursor, outline: cs.outlineStyle }; }, ka);
     check('Alt를 누른 채 줄 머리에 커서를 올리면 옮기기 커서(move)와 머리 강조', hov.alt === '1' && hov.cursor === 'move' && hov.outline === 'dashed', hov);
     await shotTo(page, 'map-alt-hover');
     // (다) Alt+끌기, Esc로 취소
     await drag(G.from, G.to);
-    const hot1 = await page.evaluate(() => [...document.querySelectorAll('.mt-ln-band.drop')].map((x) => x.dataset.id));
+    const hot1 = await page.evaluate(() => [...document.querySelectorAll('.mt-sm-band.drop')].map((x) => x.dataset.id));
     await page.keyboard.press('Escape'); await page.mouse.up(); await sleep(500);
     const gEsc = groupsNow();
     const still = await page.$('[data-role="mission"]');
@@ -162,7 +162,7 @@ async function pc() {
     await drag(G.from, { x: (G.from.x + G.to.x) / 2, y: (G.from.y + G.to.y) / 2 }, 8);
     await page.keyboard.up('Alt'); await sleep(100);
     for (let i = 1; i <= 8; i++) { await page.mouse.move((G.from.x + G.to.x) / 2 + (G.to.x - G.from.x) / 2 * i / 8, (G.from.y + G.to.y) / 2 + (G.to.y - G.from.y) / 2 * i / 8); await sleep(16); }
-    const hot2 = await page.evaluate(() => [...document.querySelectorAll('.mt-ln-band.drop')].map((x) => x.dataset.id));
+    const hot2 = await page.evaluate(() => [...document.querySelectorAll('.mt-sm-band.drop')].map((x) => x.dataset.id));
     await shotTo(page, 'map-alt-drag');
     await page.mouse.up(); await sleep(1500);
     const g2 = groupsNow();
