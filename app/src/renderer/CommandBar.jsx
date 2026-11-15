@@ -26,7 +26,7 @@ import { bandZone, bottomNext } from './lib/bottom.js'; // P43. P61: 들어가�
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
 import { kbLift } from './lib/touch-board.js'; // P83
-import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, deleteTag } from './lib/cmd-input.js'; // P142. P153: toggleTag
+import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
 
@@ -182,16 +182,26 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       }
       return;
     }
-    // P153 r9: 태그 칩 바로 뒤 Backspace(바로 앞 Delete)는 태그를 통째로 지운다
-    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.ctrlKey && !e.altKey && !e.metaKey) {
-      const el = taRef.current;
-      if (el && el.selectionStart === el.selectionEnd) {
-        const r = deleteTag(el.value, el.selectionStart, e.key);
-        if (r) { e.preventDefault(); setText(r.text); setPick(0); requestAnimationFrame(() => el.setSelectionRange(r.caret, r.caret)); return; }
-      }
-    }
     if (e.key === 'Enter') { e.preventDefault(); send(); return; }
     if (e.key === 'Escape') { taRef.current.blur(); return; }
+    // P155: 칩 바로 뒤 Backspace·바로 앞 Delete는 칩을 통째로 지운다(tagDeleteRange). 한글 조합 중(위의 isComposing, keyCode 229)과
+    // Ctrl·Alt·Meta 조합은 기본 동작. 되돌리기(Ctrl+Z)에 남도록 그 범위를 골라 execCommand('delete')로 지우고, 안 되면 직접 지운다
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.ctrlKey && !e.altKey && !e.metaKey && e.keyCode !== 229) {
+      const el = taRef.current;
+      const r = el && tagDeleteRange(el.value, el.selectionStart, el.selectionEnd, e.key, tokens);
+      if (r) {
+        e.preventDefault();
+        el.setSelectionRange(r.start, r.end);
+        let ok = false;
+        try { ok = document.execCommand('delete'); } catch { ok = false; }
+        if (!ok) {
+          const v = el.value.slice(0, r.start) + el.value.slice(r.end);
+          setText(v);
+          requestAnimationFrame(() => el.setSelectionRange(r.start, r.start));
+        }
+        return;
+      }
+    }
     const h = hist.current;
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !text.includes('\n')) {
       if (!h.list.length) return;

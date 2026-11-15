@@ -139,3 +139,10 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: W, h: Math.max(1, y) }, order, tree, cw: L.CW, W };
 }
+
+// P155: 세션 맵에서 누른 자리와 Alt로 끌기 종류를 정한다(단위 시험 test/p155-lib.test.mjs).
+// 줄 머리 옮기기(group.move)는 Alt를 누른 채 마우스 왼쪽 단추로 줄 머리를 누를 때만. 그 밖은 어디서 시작하든 시점 이동.
+// 손가락·펜은 옮기기가 없다(휴대폰은 PhoneTerr.jsx라 여기 오지 않지만 터치 PC도 같게). 끄기가 시작된 뒤에는 Alt를 떼도 놓을 때까지 옮기기다
+export function headDrag({ onHead = false, altKey = false, button = 0, pointerType = 'mouse' } = {}) {
+  return onHead && altKey && button === 0 && pointerType === 'mouse' ? 'row' : 'pan';
+}

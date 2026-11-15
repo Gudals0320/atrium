@@ -2512,7 +2512,7 @@ export default {
     clear: 'Clear selection',
     cardTip: 'Click: tag in the command bar (click again to untag) · double-click or Enter: show on board',
     cardTipShell: 'Shells do not take messages · double-click or Enter: show on board',
-    isleTip: '{ws}: drag onto another folder to move it there, or onto empty space for no folder',
+    isleTip: '{ws}: Alt+drag to move to another folder (drop on empty space for no folder)',
     movedTo: 'Moved {ws} to the {folder} folder',
     movedOut: 'Moved {ws} out of its folder',
     moveFail: 'Could not move the folder: {error}',

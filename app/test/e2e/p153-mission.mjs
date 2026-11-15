@@ -280,17 +280,17 @@ async function act(page, real, agent) {
   await page.evaluate(() => window.__mtTa.fit());
   await sleep(500);
   const geo = await page.evaluate(() => { const L = window.__mtTa.lay(); const i = L.rows.find((x) => !x.band); const hub = L.bands.find((t) => t.name === 'Hub'); const h = document.querySelector(`.mt-ln-head[data-key="${CSS.escape(i.key)}"]`).getBoundingClientRect(); const t = document.querySelector(`.mt-ln-band[data-id="${hub.id}"]`).getBoundingClientRect(); return { key: i.key, hub: hub.id, from: { x: h.left + 30, y: h.top + 10 }, to: { x: Math.max(t.left, 260) + 200, y: t.top + t.height * 0.5 } }; });
-  await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down();
+  await page.keyboard.down('Alt'); await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down(); // P155: 줄 머리 옮기기는 Alt+끌기
   for (let i = 1; i <= 15; i++) { await page.mouse.move(geo.from.x + (geo.to.x - geo.from.x) * i / 15, geo.from.y + (geo.to.y - geo.from.y) * i / 15); await sleep(16); }
   const hot = await page.evaluate(() => [...document.querySelectorAll('.mt-ln-band.drop')].map((x) => x.dataset.id));
   await shotTo(page, 'pc-1584-isle-drag');
-  await page.mouse.up(); await sleep(400);
+  await page.mouse.up(); await page.keyboard.up('Alt'); await sleep(400);
   const moves = await page.evaluate(() => window.__p153moves);
   check('섬 머리를 끌어 영토에 놓으면 그 폴더로(group.move), 끄는 동안 영토 강조', hot.includes(geo.hub) && moves.length === 1 && moves[0].workspace === geo.key && moves[0].group === geo.hub, { hot, moves, geo });
   // Esc로 취소
-  await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down();
+  await page.keyboard.down('Alt'); await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down();
   for (let i = 1; i <= 10; i++) { await page.mouse.move(geo.from.x + 20 * i, geo.from.y + 10 * i); await sleep(16); }
-  await page.keyboard.press('Escape'); await page.mouse.up(); await sleep(300);
+  await page.keyboard.press('Escape'); await page.mouse.up(); await page.keyboard.up('Alt'); await sleep(300);
   check('끄는 중 Esc = 취소(옮기지 않고 세션 맵은 열린 채)', (await page.evaluate(() => window.__p153moves.length)) === 1 && !!(await page.$('[data-role=mission]')));
   await page.evaluate(() => window.__p153unmove());
   await page.keyboard.press('Escape'); await sleep(300);

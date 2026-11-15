@@ -4,13 +4,13 @@
 //   칸 머리는 화면 위(위 줄 아래)에 붙어 있고 끌기·확대를 따라 옮겨 간다(paint가 DOM에 바로).
 // - 사용자가 정한 것(시안 B보다 이긴다): 이름 "세션 맵", 줌(− % + 맞춤)만(단계 단추·미니맵·범례·B의 오른쪽 서랍 없음), 빈 곳 눌러도 안 닫힘(닫기 Esc·단추),
 //   늘 떠 있는 명령줄(CommandBar), 카드 누르기 = 명령줄 @태그(여럿, 다시 누르면 뺌), 맵 안에서 친 글자 = 명령줄, 더블클릭·Enter = 판의 그 세션으로(첫 클릭 태그는 되돌림),
-//   워크스페이스 줄 머리를 끌어 다른 폴더 띠에 놓으면 그 폴더로(group.move, 띠 밖·폴더 없음 띠 = 폴더 없음), 옛 지도의 작업 완료 꼬리표, 판과 같은 배경, 앱 기본 글꼴(강조는 굵기),
+//   워크스페이스 줄 머리를 Alt+끌기로 다른 폴더 띠에 놓으면 그 폴더로(group.move, 띠 밖·폴더 없음 띠 = 폴더 없음. P155: Alt 없이 끌면 늘 시점 이동),옛 지도의 작업 완료 꼬리표, 판과 같은 배경, 앱 기본 글꼴(강조는 굵기),
 //   작업 중 테두리 빛(P107), 처음 열 때 읽힘(폭 맞춤으로 위에서부터), 사이드바 소속, 역할로 이어진 무리, 무채색(제목·바탕에 색 없음, 색은 상태와 선 종류만).
 // - 성능: 보기는 ref, 세계 한 요소의 transform만 바꾼다. 확대 단계 클래스(lv-far 등)·배율 글·칸 머리 자리·배경 격자는 DOM에 바로. 멀리 타일 글 하한(--ik)은 멈춘 뒤에.
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout } from './lib/mission-lineage.js';
+import { lineageLayout, headDrag } from './lib/mission-lineage.js'; // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
@@ -323,6 +323,7 @@ export function LineageMap() {
     const pts = new Map();
     let g = null; // { mode: 'press'|'drag'|'pinch'|'row', ... }
     const local = (e) => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    const setAlt = (on) => { if (on) { if (el.dataset.alt !== '1') el.dataset.alt = '1'; } else if (el.dataset.alt) delete el.dataset.alt; }; // P155
     const begin = () => {
       const v = view.current; if (!v) { g = null; return; }
       const p = [...pts.values()];
@@ -350,12 +351,15 @@ export function LineageMap() {
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       if (e.target.closest('.mt-ta-hud')) return;
       justDragged.current = false;
+      // P155: 줄 머리 옮기기는 Alt+끌기만(headDrag). Alt 없이 누르면 줄 머리에서도 시점 이동
       const head = e.target.closest('.mt-ln-head');
-      if (head && !pts.size) { const p = local(e); pts.set(e.pointerId, p); g = { mode: 'row', key: head.dataset.key, p0: p, moved: false }; return; }
+      setAlt(e.altKey);
+      if (head && !pts.size && headDrag({ onHead: true, altKey: e.altKey, button: e.button, pointerType: e.pointerType }) === 'row') { const p = local(e); pts.set(e.pointerId, p); g = { mode: 'row', key: head.dataset.key, p0: p, moved: false }; return; }
       pts.set(e.pointerId, local(e));
       begin();
     };
     const move = (e) => {
+      if (e.pointerType === 'mouse') setAlt(e.altKey); // 창 밖에서 Alt를 누르고 들어온 경우도 맞춘다
       if (!pts.has(e.pointerId) || !g) return;
       const lp = local(e);
       pts.set(e.pointerId, lp);
@@ -399,6 +403,14 @@ export function LineageMap() {
     };
     const click = (e) => { if (justDragged.current) { e.stopPropagation(); e.preventDefault(); justDragged.current = false; } };
     const esc = (e) => { if (e.key === 'Escape' && g && g.mode === 'row') { e.preventDefault(); e.stopPropagation(); pts.clear(); endRow(false); } };
+    // P155: Alt를 누르고 있는 동안 보기 칸에 data-alt="1"(줄 머리에 옮기기 커서·강조, styles.css 끝).
+    // Alt만 눌렀다 떼면 창 메뉴로 초점이 가는 일이 없게 기본 동작을 막는다(세션 맵이 열린 동안만). 창이 초점을 잃으면 끈다
+    const altKey = (e) => {
+      if (e.key !== 'Alt') return;
+      setAlt(e.type === 'keydown');
+      if (!e.ctrlKey && !e.shiftKey && !e.metaKey) e.preventDefault();
+    };
+    const altOff = () => setAlt(false);
     el.addEventListener('pointerdown', down);
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
@@ -406,9 +418,12 @@ export function LineageMap() {
     el.addEventListener('wheel', wheel, { passive: false });
     el.addEventListener('click', click, true);
     window.addEventListener('keydown', esc, true);
+    window.addEventListener('keydown', altKey, true); window.addEventListener('keyup', altKey, true); window.addEventListener('blur', altOff);
     return () => {
       el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
       el.removeEventListener('wheel', wheel); el.removeEventListener('click', click, true); window.removeEventListener('keydown', esc, true);
+      window.removeEventListener('keydown', altKey, true); window.removeEventListener('keyup', altKey, true); window.removeEventListener('blur', altOff);
+      delete el.dataset.alt;
     };
   }, [open, paint, moveRow]);
 

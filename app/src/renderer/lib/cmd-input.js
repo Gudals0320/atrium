@@ -151,21 +151,23 @@ export function toggleTag(text, name) {
   return (next.length ? next.map((x) => `@${x}`).join(' ') + ' ' : '') + rest;
 }
 
-// P153 r9: 태그 칩 한 번에 지우기. 커서(고른 글 없음) 바로 앞(Backspace) 또는 바로 뒤(Delete)가 @태그(뒤 공백 하나 포함)면 그 태그를 통째로 지운다.
-// 태그는 줄 처음이나 공백 뒤의 @이름. → { text, caret } 또는 null(평소처럼 한 글자)
-export function deleteTag(text, caret, key) {
+// P155: 태그 칩 한 번에 지우기(단위 시험 test/p155-lib.test.mjs). 커서가 칩 바로 뒤에서 Backspace, 바로 앞에서 Delete를 누르면
+// 그 칩(@이름)과 뒤따르는 빈칸 하나를 통째로 지운다 → 지울 범위 { start, end } 또는 null(기본 동작).
+// 칩은 겹에 그려지는 태그(mentionTokens) 가운데 판에 있는 이름·@all이다(앞머리의 없는 이름은 치는 중일 수 있어 뺀다).
+// Backspace는 "@a |"처럼 칩 뒤 빈칸 하나 다음의 커서에서도 그 칩을 지운다(카드로 태그를 넣으면 커서가 거기 남는다).
+// 고른 글이 있으면(start≠end) 기본 동작. 함께 지우는 빈칸은 ' ' 하나뿐이다(줄바꿈은 남긴다)
+export function tagDeleteRange(text, start, end, key, tokens) {
   const s = String(text ?? '');
+  if (start == null || start !== end) return null;
+  const list = (tokens || []).filter((x) => x.state !== 'unknown'); // 판에 없는 이름(치는 중인 "@al", 오타)은 한 글자씩 고친다
+  const span =(tk) => ({ start: tk.start, end: s[tk.end] === ' ' ? tk.end + 1 : tk.end });
   if (key === 'Backspace') {
-    const m = s.slice(0, caret).match(/(^|\s)(@[^\s@]+ ?)$/);
-    if (!m) return null;
-    const start = caret - m[2].length;
-    return { text: s.slice(0, start) + s.slice(caret), caret: start };
+    const tk = list.find((x) => x.end === start || (x.end + 1 === start && s[x.end] === ' '));
+    return tk ? span(tk) : null;
   }
   if (key === 'Delete') {
-    if (caret > 0 && !/\s/.test(s[caret - 1])) return null;
-    const m = s.slice(caret).match(/^(@[^\s@]+ ?)/);
-    if (!m) return null;
-    return { text: s.slice(0, caret) + s.slice(caret + m[1].length), caret };
+    const tk = list.find((x) => x.start === start);
+    return tk ? span(tk) : null;
   }
   return null;
 }

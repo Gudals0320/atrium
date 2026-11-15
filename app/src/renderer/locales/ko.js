@@ -2512,7 +2512,7 @@ export default {
     clear: '선택 해제',
     cardTip: '클릭: 명령줄에 태그(다시 클릭하면 뺌) · 더블클릭 또는 Enter: 보드에서 보기',
     cardTipShell: '셸은 메시지를 받지 않습니다 · 더블클릭 또는 Enter: 보드에서 보기',
-    isleTip: '{ws}: 끌어서 다른 폴더에 놓으면 소속이 바뀝니다. 빈 곳에 놓으면 폴더 없음',
+    isleTip: '{ws}: Alt+끌기로 다른 폴더로 옮기기 (빈 곳에 놓으면 폴더 없음)',
     movedTo: '{ws}을(를) {folder} 폴더로 옮겼습니다',
     movedOut: '{ws}을(를) 폴더 밖으로 옮겼습니다',
     moveFail: '폴더를 옮기지 못했습니다: {error}',
