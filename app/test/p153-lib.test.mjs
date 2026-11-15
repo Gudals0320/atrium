@@ -243,3 +243,43 @@ test('P153 r2: 다른 워크스페이스 선은 섬 머리 띠를 그 카드 위
     }
   }
 });
+
+// ---- 라운드 3 ----
+// 두 토막이 같은 줄 위에서 겹치는가(같은 세로줄 또는 가로줄에서 길이가 겹침)
+const share = (a, b, c, d) => {
+  if (a[0] === b[0] && c[0] === d[0] && Math.abs(a[0] - c[0]) < 1) return Math.min(Math.max(a[1], b[1]), Math.max(c[1], d[1])) - Math.max(Math.min(a[1], b[1]), Math.min(c[1], d[1])) > 2;
+  if (a[1] === b[1] && c[1] === d[1] && Math.abs(a[1] - c[1]) < 1) return Math.min(Math.max(a[0], b[0]), Math.max(c[0], d[0])) - Math.max(Math.min(a[0], b[0]), Math.min(c[0], d[0])) > 2;
+  return false;
+};
+test('P153 r3: 다른 워크스페이스 선은 받는 카드 위 가장자리로 들어가고 나무 선과 토막을 나누지 않는다', () => {
+  for (const aspect of [1.4, 2, 2.6]) {
+    const lay = lay0({ aspect });
+    for (const e of lay.edges.filter((x) => x.cross)) {
+      const to = lay.cards.get(e.to), n = e.pts.length;
+      const [p, q] = [e.pts[n - 2], e.pts[n - 1]];
+      assert.ok(p[0] === q[0] && q[1] === to.y && p[1] < q[1], '끝 토막은 위에서 아래로 받는 카드 위 가장자리에');
+      for (const t of lay.edges.filter((x) => !x.cross)) for (let i = 1; i < e.pts.length; i++) for (let j = 1; j < t.pts.length; j++) assert.ok(!share(e.pts[i - 1], e.pts[i], t.pts[j - 1], t.pts[j]), `${e.id}가 나무 선 ${t.id}와 겹친다`);
+    }
+  }
+});
+test('P153 r3: 카드 높이는 내용을 따르고, 무리 안 같은 줄은 같은 높이', () => {
+  const lay = lay0();
+  const hs = [...lay.cards.values()].map((c) => c.h);
+  assert.ok(Math.min(...hs) >= 116 && new Set(hs).size > 1, `높이 ${[...new Set(hs)]}`);
+  for (const r of lay.rings) {
+    const rows = new Map();
+    for (const c of lay.cards.values()) if (inside(c, r)) { if (!rows.has(c.y)) rows.set(c.y, new Set()); rows.get(c.y).add(c.h); }
+    for (const [y, set] of rows) assert.equal(set.size, 1, `무리 ${r.lead} 줄 ${y}`);
+  }
+  const g = graph();
+  g.nodes[0].lastPrompt = 'short'; Object.assign(g.nodes[1], { lastPrompt: 'a much longer task text that will wrap onto two lines', gitBranch: 'wt/long' });
+  const l2 = territoryLayout(g, { order: WS, vgroups: FOLDERS });
+  assert.ok(l2.cards.get('s:conductor').h < l2.cards.get('s:c1').h, '긴 일 글과 브랜치 줄이 있으면 카드가 높다');
+});
+test('P153 r3: 읽는 차례 — 폴더 영토 묶음이 먼저, 폴더 밖 섬은 그 뒤(섞이지 않는다)', () => {
+  for (const aspect of [1.2, 1.8, 2.6, 3.4]) {
+    const lay = lay0({ aspect });
+    const right = Math.max(...lay.terrs.map((t) => t.x + t.w)), bottom = Math.max(...lay.terrs.map((t) => t.y + t.h));
+    for (const i of lay.isles.filter((x) => x.loose)) assert.ok(i.x >= right || i.y >= bottom, `비율 ${aspect}: ${i.key}가 영토 묶음 안에 끼었다`);
+  }
+});

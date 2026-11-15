@@ -27,7 +27,7 @@ const TOP = 96; // 위 떠 있는 줄 아래부터 맞춘다
 const BOTTOM = 112; // 아래 명령줄 자리(명령줄이 카드를 가리지 않게)
 const FIT_PAD = 32;
 // 멀리 타일: 이름 12.5px·상태 10.5px(화면)를 지키는 배율 하한. 한 줄 이름 + 상태가 카드(150) 안에 드는 가장 작은 배율이 READ_K, 두 줄 이름이 드는 배율이 TWO_LINES_K
-const READ_K = 0.23, TWO_LINES_K = 0.34;
+const READ_K = 0.285, TWO_LINES_K = 0.43; // P153: 카드 높이가 내용을 따른 뒤(가장 작은 카드 CARD_MIN 116)
 const DOT_GAP = 92, DOT_R = 1.8; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다
 const ATTN_MAX = 4;
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };

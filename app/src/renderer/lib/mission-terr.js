@@ -170,11 +170,23 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   const kidsIn = (id) => (tree.kids.get(id) || []).filter((c) => wsOf(c.id) === wsOf(id));
   const kidsAway = (id) => (tree.kids.get(id) || []).filter((c) => wsOf(c.id) !== wsOf(id));
 
+  // ---- P153: 카드 높이는 내용을 따른다(cardHeight). 무리 안에서는 같은 깊이(한 줄)의 카드가 같은 높이 ----
+  const own = new Map(); // id → 내용 높이
+  for (const n of tree.nodes) { const p = tree.parent.get(n.id); own.set(n.id, cardHeight(n, tierOf(n.id), !!p && wsOf(p) !== wsOf(n.id))); }
+  const rowH = new Map(); // id → 그 줄 높이(무리 안), 혼자는 자기 높이
+  const setRows = (root) => {
+    const depth = new Map([[root, 0]]), best = new Map();
+    const walk = (id, d, guard) => { depth.set(id, d); best.set(d, Math.max(best.get(d) || 0, own.get(id))); if (guard > 50) return; for (const c of kidsIn(id)) walk(c.id, d + 1, guard + 1); };
+    walk(root, 0, 0);
+    for (const [id, d] of depth) rowH.set(id, best.get(d));
+  };
+  const H = (id) => rowH.get(id) || own.get(id) || L.CH;
+
   // ---- 무리 하나(나무)의 크기 재기와 놓기(섬 안 자리) ----
   const size = new Map(); // id → { w, h, kw(하위 묶음 폭) }
   const measure = (id, depth = 0) => {
     const kids = depth > 50 ? [] : kidsIn(id);
-    if (!kids.length) { const s = { w: L.CW, h: L.CH, kw: 0 }; size.set(id, s); return s; }
+    if (!kids.length) { const s = { w: L.CW, h: H(id), kw: 0 }; size.set(id, s); return s; }
     const branch = kids.filter((c) => kidsIn(c.id).length), leaf = kids.filter((c) => !kidsIn(c.id).length);
     let kw = 0, kh = 0;
     for (const c of branch) { const s = measure(c.id, depth + 1); kw += s.w + L.GH; kh = Math.max(kh, s.h); }
@@ -182,10 +194,10 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
       for (const c of leaf) measure(c.id, depth + 1);
       const cols = Math.min(L.KCOLS, leaf.length), rows = Math.ceil(leaf.length / cols);
       kw += cols * L.CW + (cols - 1) * L.GH + L.GH;
-      kh = Math.max(kh, rows * L.CH + (rows - 1) * L.GV);
+      kh = Math.max(kh, rows * H(leaf[0].id) + (rows - 1) * L.GV);
     }
     kw -= L.GH;
-    const s = { w: Math.max(L.CW, kw), h: L.CH + L.GV + kh, kw };
+    const s = { w: Math.max(L.CW, kw), h: H(id) + L.GV + kh, kw };
     size.set(id, s);
     return s;
   };
@@ -197,14 +209,14 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
     const kids = depth > 50 ? [] : kidsIn(id);
     if (!kids.length) return;
     const branch = kids.filter((c) => kidsIn(c.id).length), leaf = kids.filter((c) => !kidsIn(c.id).length);
-    const ky = y + L.CH + L.GV, bus0 = ky - L.GV / 2;
+    const ky = y + H(id) + L.GV, bus0 = ky - L.GV / 2;
     let cx = x + (s.w - s.kw) / 2;
     for (const c of branch) { place(c.id, cx, ky, depth + 1); route.set(c.id, { parent: id, row: 0, trunk: null, bus0 }); cx += size.get(c.id).w + L.GH; }
     if (leaf.length) {
       const cols = Math.min(L.KCOLS, leaf.length);
       leaf.forEach((c, i) => {
         const row = Math.floor(i / cols);
-        place(c.id, cx + (i % cols) * (L.CW + L.GH), ky + row * (L.CH + L.GV), depth + 1);
+        place(c.id, cx + (i % cols) * (L.CW + L.GH), ky + row * (H(c.id) + L.GV), depth + 1);
         route.set(c.id, { parent: id, row, trunk: row ? cx - L.GH / 2 : null, bus0 });
       });
     }
@@ -218,7 +230,7 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
     const roots = nodes.filter((n) => !parentIn(n.id) && kidsIn(n.id).length);
     const solos = nodes.filter((n) => !parentIn(n.id) && !kidsIn(n.id).length);
     // 무리 폭은 머리 글("팀 <리드> · 세션 n개", 15px)보다 좁지 않게. 넓히면 나무를 가운데에 둔다
-    const rs = roots.map((r) => { const s = measure(r.id); const lw = 44 + textW(`Team ${byId.get(r.id).name} · 99 sessions (9 work elsewhere)`, 15, 0.56); return { id: r.id, tw: s.w, w: Math.max(s.w + L.RP * 2, Math.min(lw, 760)), h: s.h + L.RH + L.RP }; });
+    const rs = roots.map((r) => { setRows(r.id); const s = measure(r.id); const lw = 44 + textW(`Team ${byId.get(r.id).name} · 99 sessions (9 work elsewhere)`, 15, 0.56); return { id: r.id, tw: s.w, w: Math.max(s.w + L.RP * 2, Math.min(lw, 760)), h: s.h + L.RH + L.RP }; });
     const rp = bestShelf(rs, L.RGAP, 2.2);
     const rings = [];
     rs.forEach((r, i) => {
@@ -235,10 +247,11 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
     const sy0 = L.HEAD + (rs.length ? L.RH : 0);
     const n = solos.length;
     const rows = !n ? 0 : rs.length ? Math.max(L.SOLO_ROWS, Math.floor((rp.h - L.RH + L.SVG) / (L.CH + L.SVG))) : n <= L.SOLO_MAX ? n : Math.ceil(n / Math.ceil(Math.sqrt(n / 2)));
-    solos.forEach((s, i) => local.set(s.id, { x: sx0 + Math.floor(i / rows) * (L.CW + L.SGAP), y: sy0 + (i % rows) * (L.CH + L.SVG) }));
+    let colBottom = 0;
+    { let y = sy0; solos.forEach((s, i) => { if (i % rows === 0) y = sy0; local.set(s.id, { x: sx0 + Math.floor(i / rows) * (L.CW + L.SGAP), y }); y += H(s.id) + L.SVG; colBottom = Math.max(colBottom, y - L.SVG); }); }
     const cols = rows ? Math.ceil(n / rows) : 0;
     const right = cols ? sx0 + cols * (L.CW + L.SGAP) - L.SGAP : L.PAD + rp.w;
-    const bottom = Math.max(rs.length ? L.HEAD + rp.h : 0, rows ? sy0 + Math.min(rows, n) * (L.CH + L.SVG) - L.SVG : 0, L.HEAD);
+    const bottom = Math.max(rs.length ? L.HEAD + rp.h : 0, colBottom, L.HEAD);
     const chips = chipCounts(ids.map(tierOf));
     isleOf.set(key, { key, w: Math.max(L.ISLE_MIN, right + L.PAD, isleHeadW(nameOf(key), chips)), h: bottom + L.PAD, rings, ids, chips });
   }
@@ -262,8 +275,28 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
     t.pick = 0;
   }
   const looseItems = looseKeys.map((key) => ({ kind: 'isle', key, w: isleOf.get(key).w, h: isleOf.get(key).h }));
-  const packWorld = () => bestPack([...terrList.map((t) => ({ w: t.cands[t.pick].w, h: t.cands[t.pick].h })), ...looseItems], L.WGAP, W0);
   const wScore = (s) => Math.max(s.w / W0, s.h);
+  // P153: 읽는 차례 = 폴더 영토 묶음이 먼저(왼쪽 위), 폴더 밖 섬 묶음은 그 뒤(아래 또는 오른쪽). 두 묶음은 섞지 않는다(소속이 흐려지지 않게). 묶음 안은 촘촘히
+  const packWorld = () => {
+    const A = bestPack(terrList.map((t) => ({ w: t.cands[t.pick].w, h: t.cands[t.pick].h })), L.WGAP, W0);
+    if (!looseItems.length) return A;
+    if (!terrList.length) return bestPack(looseItems, L.WGAP, W0);
+    const maxW = Math.max(...looseItems.map((it) => it.w));
+    const widths = new Set([maxW, Math.max(maxW, A.w)]);
+    let run = 0;
+    for (const it of looseItems) { run += (run ? L.WGAP : 0) + it.w; widths.add(run); }
+    let best = null;
+    for (const t of widths) {
+      const b = skyline(looseItems, t, L.WGAP);
+      for (const side of ['below', 'right']) {
+        const w = side === 'below' ? Math.max(A.w, b.w) : A.w + L.WGAP + b.w, h = side === 'below' ? A.h + L.WGAP + b.h : Math.max(A.h, b.h);
+        const sc = wScore({ w, h });
+        if (!best || sc < best.sc - 0.5) best = { sc, w, h, side, b };
+      }
+    }
+    const dx = best.side === 'right' ? A.w + L.WGAP : 0, dy = best.side === 'below' ? A.h + L.WGAP : 0;
+    return { pos: [...A.pos, ...best.b.pos.map((p) => ({ x: p.x + dx, y: p.y + dy }))], w: best.w, h: best.h };
+  };
   let world = packWorld();
   for (let pass = 0; pass < 2; pass++) {
     for (const t of terrList) {
@@ -286,7 +319,7 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
     off.set(key, { x, y });
     isles.push({ key, x, y, w: I.w, h: I.h, loose: !folder, folder: folder ? folder.id : null, color: folder ? folder.color : null, chips: I.chips, count: I.ids.length, name: nameOf(key) });
     for (const r of I.rings) rings.push({ ...r, x: x + r.x, y: y + r.y, ws: key });
-    for (const id of I.ids) { const p = local.get(id); cards.set(id, { x: x + p.x, y: y + p.y, w: L.CW, h: L.CH, node: byId.get(id), ws: key }); }
+    for (const id of I.ids) { const p = local.get(id); cards.set(id, { x: x + p.x, y: y + p.y, w: L.CW, h: H(id), node: byId.get(id), ws: key }); }
   };
   items.forEach((it, i) => {
     const { x, y } = world.pos[i];
@@ -363,6 +396,17 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   return { cards, rings, isles, terrs, edges, bounds, order, tree };
 }
 
+// P153: 카드 높이(보통 단계 내용): 위아래 여백 26 + 이름 줄 22 + 메타 줄 18 + 일 한두 줄(20씩) + 오류 줄 19 + 관계 줄 18, 줄 사이 5. 멀리 타일(이름 + 상태)이 드는 CARD_MIN 밑으로는 줄이지 않는다.
+// 일 글이 한 줄(약 36자)을 넘으면 두 줄. 오류가 있으면 일은 한 줄. 관계 줄은 다른 워크스페이스에서 왔거나 브랜치·루프가 있을 때만(카드 맨 아래 줄 규칙과 같다)
+export const CARD_MIN = 116;
+export function cardHeight(n, tier, cross = false) {
+  const t = tier === 'turn' ? (n.ask || n.lastPrompt) : tier === 'alert' ? (n.lastPrompt || n.ask) : n.lastPrompt;
+  const err = tier === 'alert' && n.error;
+  const lines = err ? 1 : String(t || 'x').length > 36 ? 2 : 1;
+  const more = cross || n.gitBranch || n.loops;
+  return Math.max(CARD_MIN, Math.ceil(26 + 22 + 5 + 18 + 5 + lines * 20 + (err ? 5 + 19 : 0) + (more ? 5 + 18 : 0)));
+}
+
 // 꺾인 선의 이름표 자리: 가장 긴 가로 토막 가운데(가로가 없으면 가장 긴 토막)
 export function longestMid(pts) {
   let best = null;
@@ -376,8 +420,8 @@ export function longestMid(pts) {
 
 // ---- 직각 길 찾기 ----
 // reqs: [{ a, b }](카드 상자), blocks: 피할 상자들(카드·머리), trees: 이미 그은 선(점 배열들, 겹치면 비용). → 같은 차례의 점 배열(못 찾으면 null)
-// 격자 G칸 위에서 A*(상태 = 칸 × 들어온 방향). 비용: 한 칸 1, 꺾기 6, 이미 선이 지나는 칸 5(옆 칸으로 비켜 나란히 간다).
-// 시작·끝은 카드 위·아래 가운데(네 짝 중 가장 싼 것). 처음과 끝의 세로 토막은 카드 가운데 x에 맞춘다.
+// 격자 G칸 위에서 A*(상태 = 칸 × 들어온 방향). 비용: 한 칸 1, 꺾기 6, 이미 선이 지나는 칸 30(겹쳐 가지 않고 옆 칸으로 비켜 나란히 간다, 가로지르기는 된다).
+// 시작은 카드 위·아래 가운데, 끝은 받는 카드 위 가운데(가장 싼 것). 처음과 끝의 세로 토막은 카드 가운데 x에 맞춘다.
 export function routeOrtho(reqs, blocks, trees = [], { G = 16, margin = 10, maxStates = 600000 } = {}) {
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
   for (const b of blocks) { x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h); }
@@ -418,7 +462,7 @@ export function routeOrtho(reqs, blocks, trees = [], { G = 16, margin = 10, maxS
         if (nc < 0 || nr < 0 || nc >= C || nr >= R) continue;
         const ncell = nr * C + nc;
         if (blocked[ncell] && !(nc === tc && nr === tr)) continue;
-        const cost = g[s] + 1 + (nd !== d ? 6 : 0) + (used[ncell] ? 5 : 0);
+        const cost = g[s] + 1 + (nd !== d ? 6 : 0) + (used[ncell] ? 30 : 0); // 이미 그은 선(나무 선 포함) 칸은 비싸다: 겹쳐 가지 않고 가로지르기만
         const ns = ncell * 4 + nd;
         if (cost < g[ns]) { g[ns] = cost; prev[ns] = s; push(cost + h(nc, nr), ns); }
       }
@@ -433,7 +477,8 @@ export function routeOrtho(reqs, blocks, trees = [], { G = 16, margin = 10, maxS
     // 시작·끝 자리: 위(카드 위 가장자리에서 한 칸 바깥) 또는 아래
     const ports = (box) => [{ x: box.x + box.w / 2, y: box.y, oy: box.y - margin - G * 0.6, dir: -1 }, { x: box.x + box.w / 2, y: box.y + box.h, oy: box.y + box.h + margin + G * 0.6, dir: 1 }];
     let best = null;
-    for (const p of ports(a)) for (const q of ports(b)) {
+    // 끝은 늘 받는 카드의 위 가장자리(아래로 들어가면 그 카드의 나무 버스와 겹쳐 하위들과 이어진 것처럼 보인다)
+    for (const p of ports(a)) for (const q of ports(b).filter((x) => x.dir < 0)) {
       const sc = cellX(p.x), sr = cellY(p.oy), tc = cellX(q.x), tr = cellY(q.oy);
       if (sc < 0 || sr < 0 || sc >= C || sr >= R || tc < 0 || tr < 0 || tc >= C || tr >= R) continue;
       // 끝 칸에는 카드 쪽으로 들어가는 방향으로 닿아야 한다(위 자리 = 아래로, 아래 자리 = 위로)
