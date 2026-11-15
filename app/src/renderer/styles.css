@@ -2289,6 +2289,15 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-ln-peek .pks { margin: 0; padding: 7px 9px; border-radius: 6px; background: #0c0c0a; border: 1px solid var(--ln-line); font: 11px/1.35 var(--font-mono); color: #cfcbc1; white-space: pre; overflow: hidden; max-height: 160px; }
 .mt-ln-peek .pkn { font-size: 11.5px; }
 
+/* P155: 줄 머리 옮기기는 Alt+끌기만. Alt 없이는 줄 머리도 보기 칸처럼 시점 이동 커서이고 밑줄이 없다.
+   Alt를 누르고 있으면(.mt-ta-vp[data-alt="1"], MissionLineage.jsx) 줄 머리에 옮기기 커서와 강조 */
+.mt-ln .mt-ln-head { cursor: inherit; }
+.mt-ln .mt-ln-head:hover .wsn > span { text-decoration: none; }
+.mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-head { cursor: move; }
+.mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-head:hover { outline: 1px dashed var(--ln-line-2); outline-offset: 6px; border-radius: 4px; background: rgba(255, 252, 240, 0.04); }
+.mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-head:hover .wsn > span { text-decoration: underline; text-decoration-color: var(--ln-line-2); text-underline-offset: 4px; }
+.mt-ln.isle-moving .mt-ta-vp, .mt-ln.isle-moving .mt-ln-head { cursor: grabbing; }
+
 /* P153 r9: 사이드바에서 고른 세션 카드·워크스페이스 줄·폴더 띠를 세 번 반짝인다. 사용자 PC는 늘 움직임 줄이기라 OS 값이 아니라 판 설정 workLight를 따른다(켬 기본 = 돈다, 끔 = 멈춘 강조) */
 @keyframes mt-ln-blink { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 45% { box-shadow: 0 0 0 4px var(--ln-blink), 0 0 26px 2px var(--ln-blink); } }
 @keyframes mt-ln-blink-area { 0%, 100% { background-color: transparent; } 45% { background-color: rgba(255, 252, 240, 0.09); } }
@@ -2298,11 +2307,3 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-ln-row.blink, .mt-ln-band.blink { animation: mt-ln-blink-area 0.6s ease-in-out 3; outline: 2px solid var(--ln-blink); outline-offset: -2px; }
 html[data-work-light="off"] .mt-ln .blink, html[data-work-light="off"] .mt-ln .blink .mt-ta-card, html.mt-lite .mt-ln .blink .mt-ta-card { animation: none !important; outline: 3px solid var(--ln-blink); outline-offset: 4px; }
 @media not (prefers-reduced-motion: no-preference) { html[data-work-light="system"] .mt-ln .blink, html[data-work-light="system"] .mt-ln .blink .mt-ta-card { animation: none; outline: 3px solid var(--ln-blink); outline-offset: 4px; } }
-/* P155: 줄 머리 옮기기는 Alt+끌기만. Alt 없이는 줄 머리도 보기 칸처럼 시점 이동 커서이고 밑줄이 없다.
-   Alt를 누르고 있으면(.mt-ta-vp[data-alt="1"], MissionLineage.jsx) 줄 머리에 옮기기 커서와 강조 */
-.mt-ln .mt-ln-head { cursor: inherit; }
-.mt-ln .mt-ln-head:hover .wsn > span { text-decoration: none; }
-.mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-head { cursor: move; }
-.mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-head:hover { outline: 1px dashed var(--ln-line-2); outline-offset: 6px; border-radius: 4px; background: rgba(255, 252, 240, 0.04); }
-.mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-head:hover .wsn > span { text-decoration: underline; text-decoration-color: var(--ln-line-2); text-underline-offset: 4px; }
-.mt-ln.isle-moving .mt-ta-vp, .mt-ln.isle-moving .mt-ln-head { cursor: grabbing; }
