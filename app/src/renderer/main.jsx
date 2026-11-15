@@ -152,11 +152,13 @@ function App() {
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); setSearchOpen(true); return; } // Ctrl+Shift+F(잡기 단계는 Shift 없는 것만 받는다)
       if (editable(e.target) || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (getState().missionOpen && document.querySelector('[data-style="territories"]')) return; // P153: 세션 맵의 키는 MissionTerr.jsx가 받는다(친 글자는 명령줄로)
       // P22: 고른 세션 노드를 Delete로 닫는다(X와 같은 확인). 터미널·입력 칸·메모 편집 중에는 위의 editable에서 그대로 글자를 지운다
       const close = closeKeyTargets(e, getState());
       if (close) { e.preventDefault(); if (close.one) setKillAsk(close.one); else openDialog({ kind: 'close', ids: close.many }); return; }
       const ren = !e.defaultPrevented && renameKeyTarget(e, getState()); // P66: 사이드바 목록의 F2는 그 줄이 먼저 받는다
       if (ren) { e.preventDefault(); setRenaming(ren, 'node'); return; }
+      // P153: 세션 맵이 열린 동안 친 글자는 명령줄로 간다(MissionTerr.jsx). M은 열기만, 닫기는 Esc·닫기 단추. 옛 지도(classic)는 M으로 닫는다
       if ((e.key === 'm' || e.key === 'M') && !getState().dialog) { e.preventDefault(); setMissionOpen(!getState().missionOpen); return; }
       if (e.key === 'n' || e.key === 'N') {
         // N: 내 차례(그다음 문제)를 차례로. 노드를 옮기지 않고 화면만 간다(BRIEF 4절)

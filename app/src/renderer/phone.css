@@ -486,3 +486,6 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pt-pc .r3 b { color: var(--sc); font-weight: 600; margin-right: 4px; }
 .mt-pt-pslot.st-needs .r3 { color: var(--attn-text); }
 .mt-pt-pc .r4 { font-size: 12px; color: #ffb3c1; overflow-wrap: anywhere; }
+
+/* P153: 세션 맵 휴대폰. 폴더 이름도 앱 기본 글꼴 굵게(대문자·넓은 자간 없이) */
+.mt-pt-terr span { letter-spacing: normal; text-transform: none; font-size: 12px; }

@@ -73,7 +73,7 @@ export function PhoneTerr({ onBack, onOpen, conn }) {
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
-  const lay = useMemo(() => (graph ? territoryLayout(graph, { order, vgroups, tiers, names }) : null), [graph, order, vgroups, tiers, names]);
+  const lay = useMemo(() => (graph ? territoryLayout(graph, { order, vgroups, tiers, names, routing: false }) : null), [graph, order, vgroups, tiers, names]);
   const pt = useMemo(() => (lay ? phoneTerr(lay, { names }) : null), [lay, names]);
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   ptRef.current = pt; vpRef.current = vp;

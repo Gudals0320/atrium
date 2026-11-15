@@ -34,11 +34,11 @@ export const SETTINGS = {
   sessionSleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '세션 하나에 지정한 시간(분) 동안 활동이 없으면 프로젝트의 다른 세션이 작업 중이어도 그 세션만 절전 모드로 전환합니다 (0: 사용 안 함).' },
   // P107: 작업 중 테두리 빛. 보드의 작업 중 세션 노드 둘레와 미션 맵 카드 테두리를 따라 도는 빛. Windows "애니메이션 효과"가 꺼진 PC는 창이 늘 움직임 줄이기라
   // 운영체제 설정만 따르면 보이지 않아 기본은 켬. 창·휴대폰이 문서 뿌리 data-work-light로 받아 CSS가 정한다(app lib/work-light.js). 끔이면 멈춘 상태 색 테두리
-  workLight: { type: 'choice', default: 'on', options: WORK_LIGHT, label: '보드의 작업 중 세션 노드와 미션 맵 카드의 테두리를 따라 빛을 돌립니다 (on: 항상, system: 운영체제의 동작 줄이기 설정을 따름, off: 멈춘 테두리만 표시).' },
+  workLight: { type: 'choice', default: 'on', options: WORK_LIGHT, label: '보드의 작업 중 세션 노드와 세션 맵 카드의 테두리를 따라 빛을 돌립니다 (on: 항상, system: 운영체제의 동작 줄이기 설정을 따름, off: 멈춘 테두리만 표시).' },
   // P146: 성능 기록(진단). 켜면 창(데스크톱·웹)이 30초마다 판 움직임 요약(프레임 간격, 긴 작업, 휠 지연, 노드·터미널 수)을 백엔드 로그에 남긴다. 10분 뒤 저절로 꺼진다(perf-trace.mjs)
   perfTrace: { type: 'boolean', default: false, label: '성능 기록: 켜면 10분 동안 보드 움직임의 프레임·지연 요약(값만)을 백엔드 로그에 남깁니다. 시간이 지나면 저절로 꺼집니다.' },
   // P152: 미션 맵 모양(숨은 설정, 창의 설정 화면에 줄이 없다). territories = 영토 지도(기본, 무한 캔버스), classic = P149까지의 열 지도(되돌릴 길)
-  missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '미션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
+  missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
   // P114의 숨은 설정 terminalBackend는 P117에서 없앴다. P129·P132: 터미널 백엔드는 herdr-core(hc) 하나다. 판 기록(meta terminalBackend)은 옛 판 옮기기(herdr-migrate)만 쓴다
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));

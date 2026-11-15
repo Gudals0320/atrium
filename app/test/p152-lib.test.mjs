@@ -120,7 +120,7 @@ test('P152: 폴더가 없는 판, 워크스페이스 없는 세션, 빈 판', ()
   assert.equal(territoryLayout(g).cards.size, 1);
 });
 
-test('P152: 역할 연결·지시 선은 종류와 이름표, 나무 밖 연결은 옅은 곡선', () => {
+test('P152: 역할 연결·지시 선은 종류와 이름표, 나무 밖 연결은 그리지 않는다(P153)', () => {
   const g = graphOf([['a', 'x', null], ['b', 'x', null], ['c', 'x', null]]);
   g.edges.push({ kind: 'role', from: 's:a', to: 's:b', label: 'reviewer' }, { kind: 'prompt', from: 's:b', to: 's:c', label: 'do it', count: 2 }, { kind: 'prompt', from: 's:c', to: 's:a', label: 'back', count: 1 });
   const lay = territoryLayout(g, { order: ['x'] });
@@ -129,7 +129,7 @@ test('P152: 역할 연결·지시 선은 종류와 이름표, 나무 밖 연결�
   const bc = lay.edges.find((e) => e.from === 's:b' && e.to === 's:c');
   assert.equal(bc.rel, 'prompt');
   const ca = lay.edges.find((e) => e.from === 's:c' && e.to === 's:a');
-  assert.ok(ca.link && !ca.label);
+  assert.equal(ca, undefined);
 });
 
 test('P152: 상태 칩은 정한 차례로 0을 빼고', () => {
@@ -217,7 +217,7 @@ test('P152: 키(+ − 0, 화살표)와 카드 차례', () => {
   assert.equal(stepCard([], 'a', 1), null);
 });
 
-test('P152: 휴대폰 타일 지도는 겹치지 않고, 작은 타일 누르기는 섬으로', () => {
+test('P152: 휴대폰 타일 지도는 겹치지 않고, 타일 누르기는 크기와 상관없이 연다(P153)', () => {
   const lay = territoryLayout(graphOf(BIG), { order: WS, vgroups: VG });
   const pt = phoneTerr(lay);
   assert.equal(pt.tiles.length, 28);
@@ -227,7 +227,7 @@ test('P152: 휴대폰 타일 지도는 겹치지 않고, 작은 타일 누르기
   for (const t of pt.tiles) assert.ok(inside({ x: t.x, y: t.y, w: t.s, h: t.s }, pt.isles.find((i) => i.key === t.ws)));
   // 390px 휴대폰에서 맞춘 배율이 너무 작지 않게(세로로 긴 지도)
   assert.ok(pt.bounds.w < pt.bounds.h * 2.5);
-  assert.equal(tileTap(0.8), 'isle');
+  assert.equal(tileTap(0.8), 'open');
   assert.equal(tileTap(PTERR.TAP_MIN / PTERR.TILE), 'open');
 });
 
