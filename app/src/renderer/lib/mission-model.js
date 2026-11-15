@@ -58,7 +58,9 @@ export function tierFor(node, live) {
 export function missionTree(graph) {
   const nodes = ((graph && graph.nodes) || []).filter((n) => n && n.kind === 'session');
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const pairs = mergeEdges((graph && graph.edges) || [], (id) => byId.has(id)).filter((p) => p.kinds.some((k) => SESSION_KINDS.includes(k)));
+  // P153 r11(P156 계약): 사람·에이전트가 정한 동료(peer)·독립(none) 쌍은 위계 후보가 아니다(그 선은 남지만 나무 부모를 고르지 않는다). 정한 하위(sub)는 백엔드가 node.parentId(일 부모)로 준다
+  const explicitOff = (p) => p.parts.some((e) => (e.relation === 'peer' || e.relation === 'none') && e.relationSource && e.relationSource !== 'auto');
+  const pairs = mergeEdges((graph && graph.edges) || [], (id) => byId.has(id)).filter((p) => p.kinds.some((k) => SESSION_KINDS.includes(k)) && !explicitOff(p));
   // 하위 세션인데 띄움 선이 없으면(옛 판) 부모 → 하위 쌍을 하나 만든다
   for (const n of nodes) if (n.parentId && byId.has(n.parentId) && !pairs.some((p) => p.from === n.parentId && p.to === n.id)) pairs.push({ id: `${n.parentId}>${n.id}`, from: n.parentId, to: n.id, kinds: ['spawn'], primary: 'spawn', parts: [], role: shownRole(n.role) || null, text: null, count: 0, lastAt: 0, active: false, synthetic: true });
   // 실제 부모(parentId) 사슬의 깊이: 같은 등급의 후보 중 더 얕은 쪽(리드)을 고른다
