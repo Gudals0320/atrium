@@ -133,8 +133,11 @@ test('P153: 선은 모두 직각이고 카드를 지나지 않는다', () => {
         assert.ok(a[0] === b[0] || a[1] === b[1], `${e.id} 토막 ${i}가 직각이 아니다`);
         for (const c of lay.cards.values()) assert.ok(!segHits(a, b, c), `${e.id}가 카드 ${c.node.name}를 지난다`);
       }
-      assert.ok(Math.abs(e.pts[0][0] - (lay.cards.get(e.from).x + TERR.CW / 2)) < 0.01, '부모 카드 가운데에서 나간다');
-      assert.ok(Math.abs(e.pts[e.pts.length - 1][0] - (lay.cards.get(e.to).x + TERR.CW / 2)) < 0.01, '하위 카드 가운데로 들어간다');
+      // 끝점은 카드 네 변 중 하나의 가운데(나무 선은 위·아래 가운데, 다른 워크스페이스 선은 옆 가운데도)
+      const mids = (c) => [[c.x + c.w / 2, c.y], [c.x + c.w / 2, c.y + c.h], [c.x, c.y + c.h / 2], [c.x + c.w, c.y + c.h / 2]];
+      const onMid = (pt, c) => mids(c).some(([x, y]) => Math.abs(pt[0] - x) < 0.01 && Math.abs(pt[1] - y) < 0.01);
+      assert.ok(onMid(e.pts[0], lay.cards.get(e.from)), '부모 카드 한 변의 가운데에서 나간다');
+      assert.ok(onMid(e.pts[e.pts.length - 1], lay.cards.get(e.to)), '하위 카드 한 변의 가운데로 들어간다');
     }
   }
 });
@@ -229,18 +232,12 @@ test('P153 r2: 카드 맨 아래 줄은 다른 워크스페이스에서 온 것�
   assert.ok(!src.includes("t('mmTerr.hint')"), '위 줄 도움말 없음');
   assert.match(read('CommandBar.jsx'), /missionOpen \? t\('mmTerr\.barHint'\)/);
 });
-test('P153 r2: 다른 워크스페이스 선은 섬 머리 띠를 그 카드 위 좁은 길로만 지난다', () => {
-  const lay = lay0({ aspect: 2.4 });
-  const e = lay.edges.find((x) => x.cross);
-  for (const i of lay.isles) {
-    const band = { x: i.x + 10, y: i.y + 6, w: i.w - 20, h: TERR.HEAD - 22 };
-    for (let k = 1; k < e.pts.length; k++) {
-      const [a, b] = [e.pts[k - 1], e.pts[k]];
-      if (!segHits(a, b, band)) continue;
-      assert.equal(a[0], b[0], `${i.key} 머리를 가로로 지난다`);
-      const ends = [lay.cards.get(e.from), lay.cards.get(e.to)].map((c) => c.x + c.w / 2);
-      assert.ok(ends.some((x) => Math.abs(x - a[0]) < 1), '끝 카드 가운데 길만');
-    }
+test('P153 r5: 다른 워크스페이스 선은 섬 머리 띠와 무리 이름표를 지나지 않는다', () => {
+  for (const aspect of [1.4, 2, 2.4, 2.6]) {
+    const lay = lay0({ aspect });
+    const bands = [...lay.isles.map((i) => ({ what: `섬 ${i.key} 머리`, x: i.x + 6, y: i.y + 4, w: i.w - 12, h: TERR.HEAD - 10 })),
+      ...lay.rings.map((r) => ({ what: `무리 ${r.lead} 이름표`, x: r.x + 10, y: r.y + 2, w: Math.min(r.w - 20, 420), h: TERR.RH - 6 }))];
+    for (const e of lay.edges.filter((x) => x.cross)) for (let k = 1; k < e.pts.length; k++) for (const b of bands) assert.ok(!segHits(e.pts[k - 1], e.pts[k], b), `비율 ${aspect}: ${e.id}가 ${b.what}를 지난다`);
   }
 });
 
@@ -257,7 +254,8 @@ test('P153 r3: 다른 워크스페이스 선은 받는 카드 위 가장자리�
     for (const e of lay.edges.filter((x) => x.cross)) {
       const to = lay.cards.get(e.to), n = e.pts.length;
       const [p, q] = [e.pts[n - 2], e.pts[n - 1]];
-      assert.ok(p[0] === q[0] && q[1] === to.y && p[1] < q[1], '끝 토막은 위에서 아래로 받는 카드 위 가장자리에');
+      const top = p[0] === q[0] && q[1] === to.y && p[1] < q[1], left = p[1] === q[1] && q[0] === to.x && p[0] < q[0], right = p[1] === q[1] && q[0] === to.x + to.w && p[0] > q[0];
+      assert.ok(top || left || right, '끝 토막은 받는 카드의 위·왼쪽·오른쪽 가장자리로 곧게 들어간다(아래로는 들어가지 않는다)');
       for (const t of lay.edges.filter((x) => !x.cross)) for (let i = 1; i < e.pts.length; i++) for (let j = 1; j < t.pts.length; j++) assert.ok(!share(e.pts[i - 1], e.pts[i], t.pts[j - 1], t.pts[j]), `${e.id}가 나무 선 ${t.id}와 겹친다`);
     }
   }
