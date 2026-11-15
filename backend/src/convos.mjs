@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { isSyntheticUserText } from './transcript.mjs';
-import { unwrapPasted, clip, isBoardNotice } from './text.mjs';
+import { unwrapPasted, clip, isBoardNotice, promptTask } from './text.mjs';
 import { pathKey, normPath } from './workspaces.mjs';
 import { promptKey, spawnsInLines, SPAWN_KEEP } from './spawns.mjs';
 
@@ -60,7 +60,7 @@ export function parseTranscriptChunks(head, tail = '') {
         out.prompts++;
         if (!out.firstPrompt) { out.firstPrompt = clip(t, 300); out.firstAt = at; out.promptKey = promptKey(t); }
         // P153 r13: 판 알림은 마지막 지시가 아니다(그 앞 지시가 남는다). 알림에 대한 답은 마지막 답으로 둔다
-        if (!isBoardNotice(t)) { out.lastPrompt = clip(t, 300); out.lastPromptAt = at; }
+        if (!isBoardNotice(t)) { out.lastPrompt = clip(promptTask(t), 300); out.lastPromptAt = at; } // P159: 관계 줄은 뗀다
         out.lastAnswer = null; out.lastAnswerAt = null;
       } else if (o.type === 'assistant' && o.message && Array.isArray(o.message.content)) {
         const t = textOf(o.message.content);
@@ -75,7 +75,7 @@ export function parseTranscriptChunks(head, tail = '') {
   else if (titles.ai) { out.title = clip(titles.ai, 120); out.titleSource = 'ai'; }
   else if (titles.summary) { out.title = clip(titles.summary, 120); out.titleSource = 'summary'; }
   else if (out.firstPrompt) { out.title = clip(out.firstPrompt.replace(/\s+/g, ' '), 80); out.titleSource = 'prompt'; }
-  if (!out.lastPrompt && out.lastPromptLine && !isBoardNotice(out.lastPromptLine)) out.lastPrompt = clip(out.lastPromptLine, 300);
+  if (!out.lastPrompt && out.lastPromptLine && !isBoardNotice(out.lastPromptLine)) out.lastPrompt = clip(promptTask(out.lastPromptLine), 300);
   return out;
 }
 

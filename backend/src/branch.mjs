@@ -24,7 +24,7 @@ import { parseArea, isBoxKey } from './worktree-areas.mjs'; // P27
 import { lineSlot, bandOf, boxFrame, frameInner } from './tree-line.mjs'; // P75: 하위 세션 줄
 import { deriveState, isModelError } from './state.mjs';
 import { EFFORTS } from './settings.mjs';
-import { clip } from './text.mjs';
+import { clip, promptTask } from './text.mjs';
 import { BACKEND_ROOT, terminalSessionEnv } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
 import { harnessOf, splitArgs, startOpt } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
@@ -837,7 +837,7 @@ export class Branch {
   childView(x) {
     const sum = this.b.summary(x);
     const info = this.info.get(x.sessionId) || {};
-    return { name: x.name, sessionId: x.sessionId, agentName: x.agentName, paneId: x.paneId, kind: x.kind || 'claude', role: info.role || null, depth: this.depth(x.sessionId), parent: (this.rowOf(x.parentSessionId) || {}).name || null, state: sum.state, ask: sum.ask ? clip(sum.ask.summary || sum.ask.kind, 160) : null, lastPrompt: clip(x.rt.lastPrompt, 300), lastAnswer: clip(x.rt.lastAnswer, 1500), lastAnswerAt: x.rt.lastAnswerAt || null, error: sum.error ? { type: sum.error.type || null, message: clip(sum.error.message, 300) || (isModelError(sum.error) ? modelErrorText(x.model) : null) } : null, model: x.model || null, cwd: x.rt.cwd || x.cwd, worktree: info.worktree || null, gated: this.gated(x.sessionId), children: this.workChildren(x.sessionId).length, firstPromptLost: this.lost.get(x.sessionId) || null, deliveryStuck: sum.deliveryStuck || null, workParent: (() => { const p = this.relIndex().workParentOf(x.sessionId); return p ? shownName(this.rowOf(p)) : null; })() }; // P106. P156: workParent(일 부모): deliveryStuck(터미널이 오래 받지 않는 전달)
+    return { name: x.name, sessionId: x.sessionId, agentName: x.agentName, paneId: x.paneId, kind: x.kind || 'claude', role: info.role || null, depth: this.depth(x.sessionId), parent: (this.rowOf(x.parentSessionId) || {}).name || null, state: sum.state, ask: sum.ask ? clip(sum.ask.summary || sum.ask.kind, 160) : null, lastPrompt: clip(promptTask(x.rt.lastPrompt), 300), lastAnswer: clip(x.rt.lastAnswer, 1500), lastAnswerAt: x.rt.lastAnswerAt || null, error: sum.error ? { type: sum.error.type || null, message: clip(sum.error.message, 300) || (isModelError(sum.error) ? modelErrorText(x.model) : null) } : null, model: x.model || null, cwd: x.rt.cwd || x.cwd, worktree: info.worktree || null, gated: this.gated(x.sessionId), children: this.workChildren(x.sessionId).length, firstPromptLost: this.lost.get(x.sessionId) || null, deliveryStuck: sum.deliveryStuck || null, workParent: (() => { const p = this.relIndex().workParentOf(x.sessionId); return p ? shownName(this.rowOf(p)) : null; })() }; // P106. P156: workParent(일 부모): deliveryStuck(터미널이 오래 받지 않는 전달)
   }
   // P79: 하위 세션의 첫 요청이 끝내 들어가지 않았다(unconfirmed·failed). 판 이벤트로 남기고, 부모에게 그 사실과 다시 보낼 명령을 보낸다.
   //   첫 요청은 사람(리드)이 맡긴 일이라 조용히 사라지면 안 된다. 같은 전달은 한 번만 알린다

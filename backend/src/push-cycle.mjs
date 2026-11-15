@@ -23,7 +23,7 @@ export function bgTasksOf(body) {
     .slice(0, BG_MAX).map((x) => ({ id: String(x.id || '').slice(0, 40), type: String(x.type || '').slice(0, 20) }));
 }
 
-// nodes: [{ sessionId, parentSessionId, state, kind, delivering, loops, bg }] → 나무 찾기
+// nodes: [{ sessionId, parentSessionId, state, kind, delivering, loops, bg }] → 나무 찾기. P159: parentSessionId는 일 부모(backend.pushTree)
 export function treeIndex(nodes) {
   const byId = new Map(); for (const n of nodes || []) if (n && n.sessionId) byId.set(n.sessionId, n);
   const kids = new Map();

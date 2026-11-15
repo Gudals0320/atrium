@@ -14,6 +14,10 @@ import { Branch } from '../src/branch.mjs';
 import { Sleeper } from '../src/sleep.mjs';
 import { Backend } from '../src/backend.mjs';
 import { workspaceOf } from '../src/git.mjs';
+import { promptTask, isBoardNotice } from '../src/text.mjs';
+import { applyHook } from '../src/state.mjs';
+import { treeIndex, cycleCheck } from '../src/push-cycle.mjs';
+import { relationHeader } from '../src/branch-relations.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p159-'));
@@ -194,4 +198,47 @@ test('P159 API 글: session.detach·link.delete는 일 부모를 보고, 떼기 
   const br = fs.readFileSync(path.join(HERE, '..', 'src', 'branch.mjs'), 'utf8');
   assert.match(br, /if \(by === 'user'\) return this\.independent\(s, \{ notify \}\);/);
   assert.match(br, /maybeHead[\s\S]*this\.detach\(s, \{ by: 'head'/);
+});
+
+// ---------- 2차: 관계 줄 + 지시는 지시, 웹 푸시 사이클은 일 관계 ----------
+test('P159 관계 줄 + 지시: 관계 줄만 떼고 나머지가 지시(lastPrompt), 알림뿐이면 걸러진다', () => {
+  const sub = `${relationHeader({ relation: 'sub', parent: 'lead' })}\n\nReply with exactly: worker ready`;
+  const peer = `${relationHeader({ relation: 'peer', parent: 'lead' })}\n\ncrawl the site\nsecond line`;
+  assert.equal(promptTask(sub), 'Reply with exactly: worker ready');
+  assert.equal(promptTask(peer), 'crawl the site\nsecond line');
+  assert.equal(isBoardNotice(sub), false); assert.equal(isBoardNotice(peer), false);
+  // 알림뿐: 관계 줄만, 연결 알림, 관계 줄 뒤가 또 알림, 옛 이름
+  for (const n of [relationHeader({ relation: 'peer', parent: 'lead' }), '[Atrium 보드] @w1가 닫혔다(사람이 닫음).\n지금 연결은 `atrium me`.', '[Atrium 보드] 관계: 너는 @x의 동료다.\n\n[Atrium 보드] 연결이 바뀌었다.', '[multitask 판] 옛 알림']) {
+    assert.equal(promptTask(n), null, n); assert.equal(isBoardNotice(n), true, n);
+  }
+  assert.equal(promptTask('보통 지시'), '보통 지시');
+  assert.equal(promptTask(`<pasted_content id="ab12">\n${sub}\n</pasted_content id="ab12">`), 'Reply with exactly: worker ready');
+  // hook: 관계 줄 + 지시는 마지막 지시가 되고(원문을 두고 보일 때 뗀다), 알림은 앞 지시를 남긴다
+  const rt = newRuntime({ kind: 'claude' });
+  applyHook(rt, { hook_event_name: 'UserPromptSubmit', prompt: sub });
+  assert.equal(promptTask(rt.lastPrompt), 'Reply with exactly: worker ready');
+  applyHook(rt, { hook_event_name: 'UserPromptSubmit', prompt: '[Atrium 보드] @x가 닫혔다(사람이 닫음).' });
+  assert.equal(promptTask(rt.lastPrompt), 'Reply with exactly: worker ready');
+  const src = fs.readFileSync(path.join(HERE, '..', 'src', 'backend.mjs'), 'utf8');
+  assert.match(src, /lastPrompt: clip\(promptTask\(rt\.lastPrompt\), 300\)/);
+  assert.match(src, /lastPrompt: promptTask\(s\.rt\.lastPrompt\), lastAnswer/);
+});
+
+test('P159 웹 푸시 사이클: pushTree의 부모는 일 부모, 동료·독립은 자기 사이클, 사람이 정한 하위는 위 사이클', async () => {
+  const { b, lead, w1, p1, w2, x } = await team();
+  const me = { sessions: b.sessions, branch: b.branch, workParentOf: Backend.prototype.workParentOf, queue: { pending: () => 0 } };
+  const nodes = Backend.prototype.pushTree.call(me);
+  const parent = (s) => nodes.find((n) => n.sessionId === s.sessionId).parentSessionId;
+  assert.equal(parent(w1), lead.sessionId); assert.equal(parent(x), lead.sessionId);
+  assert.equal(parent(p1), null); assert.equal(parent(w2), null);
+  const states = (busy) => nodes.map((n) => ({ ...n, state: busy.includes(n.sessionId) ? 'working' : 'ready' }));
+  let t = treeIndex(states([p1.sessionId]));
+  assert.equal(cycleCheck(lead.sessionId, t).ok, true, '동료가 일해도 리드 사이클은 닫힌다');
+  assert.equal(t.isSub(p1.sessionId), false, '동료는 맨 위 세션처럼(하위 알림 설정을 따르지 않는다)');
+  t = treeIndex(states([x.sessionId]));
+  assert.equal(cycleCheck(lead.sessionId, t).why, 'cycle-open', '사람이 정한 하위가 일하면 열려 있다');
+  t = treeIndex(states([w2.sessionId]));
+  assert.equal(cycleCheck(lead.sessionId, t).ok, true, '독립도 따로');
+  assert.equal(t.isSub(w1.sessionId), true);
+  b.branch.notices.stop();
 });

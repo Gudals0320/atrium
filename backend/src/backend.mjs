@@ -20,7 +20,7 @@ import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이�
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
 import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
-import { parseTargets, toLF, clip, isBoardNotice } from './text.mjs';
+import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
@@ -493,7 +493,7 @@ export class Backend {
       state: d.state, estimate: d.estimate || null, termStatus: rt.term.status, ask, waitingSince, error: d.error || rt.lastError || null,
       permissionMode: rt.permissionMode || s.permissionMode, ...shownModel({ model: s.model, effort: s.effort }, s.rt.modelNow), // P95: 미션 맵 카드의 메타 줄. P137: 하네스가 지금 쓰는 값(모르면 띄운 값)
       launchModel: s.model || null, launchEffort: s.effort || null,
-      lastPrompt: isBoardNotice(rt.lastPrompt) ? null : clip(rt.lastPrompt, 300), lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
+      lastPrompt: clip(promptTask(rt.lastPrompt), 300), // P159: 관계 줄은 떼고 보인다 lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
       exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f, ...this.doneScope(s, f),
       deliveryStuck: this.queue && this.queue.stuckOf ? this.queue.stuckOf(s.sessionId) : null, // P106: 터미널이 오래 받지 않는 맨 앞 전달 { deliveryId, reason, code, attempts, since }
       trust: { predictedDialog: rt.trustPredicted, seenOnScreen: !!rt.trustScreen },
@@ -535,9 +535,11 @@ export class Backend {
     const s = this.sessions.get(id); return s ? s.parentSessionId || null : null;
   }
   // P92: 웹 푸시가 보는 세션 나무(가볍게: 요약을 다 만들지 않는다). bg = 도는 뒤 일 수(Stop hook의 background_tasks, 모르면 null)
+  // P159: 나무의 부모는 일 부모다(잠재우기·작업 완료와 같은 기준). 동료·독립은 자기 사이클을 갖고, 사람이 정한 하위는 위 세션 사이클에 든다
   pushTree() {
+    const idx = this.branch && this.branch.relIndex ? this.branch.relIndex() : null;
     return [...this.sessions.values()].map((s) => ({
-      sessionId: s.sessionId, parentSessionId: s.parentSessionId || null, name: shownName(s), kind: s.kind || 'claude', state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null,
+      sessionId: s.sessionId, parentSessionId: this.workParentOf(s.sessionId, idx), name: shownName(s), kind: s.kind || 'claude', state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null,
       delivering: this.queue ? this.queue.pending(s.sessionId) : 0, loops: this.features && this.features.loops ? this.features.loops.activeCount(s.sessionId) : 0,
       bg: s.rt.bg ? s.rt.bg.tasks.length : null,
     }));
@@ -1665,7 +1667,7 @@ export class Backend {
     const s = this.resolve(p.session);
     const sum = this.summary(s);
     const tx = lastExchange(s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId));
-    const prompt = tx.exists && tx.lastPrompt ? tx.lastPrompt : isBoardNotice(s.rt.lastPrompt) ? null : s.rt.lastPrompt; // P153 r13
+    const prompt = (tx.exists && promptTask(tx.lastPrompt)) || promptTask(s.rt.lastPrompt); // P153 r13. P159: 관계 줄은 뗀다
     const answer = tx.exists && tx.lastAnswer && (tx.lastAnswerAt || 0) >= (s.rt.lastAnswerAt || 0) - 1000 ? tx.lastAnswer : s.rt.lastAnswer;
     return {
       sessionId: s.sessionId, name: s.name, state: sum.state, estimate: sum.estimate, ask: sum.ask, exit: sum.exit, error: sum.error, interruptedTurn: sum.interruptedTurn,
@@ -1938,7 +1940,7 @@ export class Backend {
 
   async get(p) {
     const s = this.resolve(p.session);
-    const out = { ...this.summary(s), ask: s.rt.pendingAsk ? { ...s.rt.pendingAsk } : null, lastPrompt: isBoardNotice(s.rt.lastPrompt) ? null : s.rt.lastPrompt, lastAnswer: s.rt.lastAnswer, lastAskResolved: s.rt.lastAskResolved, settingsPath: s.settingsPath, resumeArgv: s.resumeArgv, transcriptPath: s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId), git: s.git || null };
+    const out = { ...this.summary(s), ask: s.rt.pendingAsk ? { ...s.rt.pendingAsk } : null, lastPrompt: promptTask(s.rt.lastPrompt), lastAnswer: s.rt.lastAnswer, lastAskResolved: s.rt.lastAskResolved, settingsPath: s.settingsPath, resumeArgv: s.resumeArgv, transcriptPath: s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId), git: s.git || null };
     if (p.screen !== false && s.rt.term.present !== undefined) { try { out.screenTail = tailLines(await this.adapter.readScreen(s.paneId, { source: 'visible' }), p.lines || 12); } catch { out.screenTail = null; } }
     if (!out.git) out.git = s.git = await gitProbe(s.rt.cwd || s.cwd);
     out.deliveries = this.store.deliveries({ sessionId: s.sessionId, limit: 10 }).map((d) => ({ ...d, text: clip(d.text, 80) }));
