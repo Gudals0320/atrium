@@ -15,6 +15,7 @@
 // - P65: 판 배율·분수 DPR에서 글자가 흐리지 않게, 배율이 멈추면 WebGL 터미널을 화면 장치 픽셀에 맞춘 해상도로 다시 그리고
 //   캔버스를 장치 픽셀 경계에 맞춘다(lib/term-sharp.js). 패널 줄·칸 수는 배율 1 칸으로 잰다(배율을 바꿔도 패널 크기는 그대로).
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStoreApi } from '@xyflow/react';
 import { Terminal } from '@xterm/xterm';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -25,6 +26,7 @@ import { useStore, getState, takePendingInput, pendingFor } from './store.js';
 import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, wheelAction, setsMouseMode, filterMouse, REPORT_BUDGET, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, copyOnRelease, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
 import { findShift, bigChange, historyAbove, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
 import { TermSelection } from './term-selection.js';
+import { TouchSelect, writeClipboard } from './term-touch.js'; // P151: 휴대폰 웹의 길게 눌러 고르기
 import { RendererBudget, DEFAULT_WEBGL_BUDGET } from './lib/faces.js';
 import { onFrame, onWritten, markInput, setTerminal, perfLog } from './perf.js';
 import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/tokens.js';
@@ -71,7 +73,8 @@ function fixMouseScale(term, sessionId) {
 // P11: 색은 tokens.css --term-…, 글꼴은 앱에 넣은 JetBrains Mono(한글 Nanum Gothic Coding). 글 크기와 줄 높이는 lib/tokens.js
 
 // P74: fontScale을 주면 store의 터미널 글자 배율 대신 그 값(휴대폰 화면의 글자 크기). webgl = false면 DOM으로 그린다(휴대폰: 터미널 하나, 높은 DPR)
-export function TerminalView({ sessionId, width, height, onActivate, onInput, focusTick, fontScale = null, webgl = true }) {
+// P151: touchSelect = 손가락으로 길게 눌러 글 고르기(휴대폰 세션 화면·전체 보기). 태블릿 판은 길게 누르기가 노드 옮기기라 주지 않는다
+export function TerminalView({ sessionId, width, height, onActivate, onInput, focusTick, fontScale = null, webgl = true, touchSelect = false }) {
   const t = useT();
   const flow = useStoreApi(); // P65: 판 배율·이동을 렌더 없이 구독한다
   const onInputRef = useRef(onInput);
@@ -85,6 +88,8 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
   const [retry, setRetry] = useState(0);
   const [share, setShare] = useState({ shared: 1, ownerIsMe: true, ownerName: null }); // P47
   const [typing, setTyping] = useState(null); // P47: 다른 기기가 방금 입력
+  const [touchUi, setTouchUi] = useState(null); // P151: 손가락 고르기의 손잡이·막대 자리
+  const touchSelectRef = useRef(touchSelect);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -257,6 +262,18 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       navigator.clipboard.writeText(text).then(() => { perfLog('term_copy', { sessionId, chars: text.length, how }); flash(t('terminal.copied')); }, (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash(t('termSelect.copyFail')); });
     }
     st.sel = sel;
+    // P151: 손가락 고르기. 복사는 막대에서 하고(클립보드 API, 안 되면 execCommand), 복사하면 고르기를 끝낸다
+    if (touchSelectRef.current) {
+      const ts = new TouchSelect({ sel, wrap: host.parentElement || host, owner: sessionId, onUi: setTouchUi, log: (name, d) => perfLog(name, { sessionId, ...d }) });
+      ts.copy = () => {
+        const text = copyText(sel.text());
+        if (!text.trim()) { ts.close('touch-copy-empty'); return; }
+        writeClipboard(text).then((how) => { perfLog('term_copy', { sessionId, chars: text.length, how: `touch-${how}` }); flash(t('terminal.copied')); }, (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash(t('termSelect.copyFail')); });
+        ts.close('touch-copy');
+      };
+      st.touch = ts;
+      term._mtTouch = ts; // 시험이 읽는다
+    }
     term._mtSel = sel; // 시험이 선택 기록(trace)을 읽는다
     term.hasSelection = () => sel.has();
     term.getSelection = () => sel.text();
@@ -478,6 +495,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       host.removeEventListener('drop', onDrop, true);
       host.removeEventListener('wheel', onShellWheel, { capture: true });
       for (const h of modeHooks) h.dispose();
+      if (st.touch) { st.touch.dispose(); st.touch = null; }
       sel.dispose();
       clearTimeout(st.syncTimer);
       if (shadow) shadow.dispose();
@@ -549,7 +567,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
   }, [status.kind, status.reason, termUp, sstate, sessionId]);
 
   return (
-    <div className="mt-term-wrap nodrag nowheel nopan" onMouseDown={() => onActivate && onActivate()}>
+    <div className={`mt-term-wrap nodrag nowheel nopan${touchSelect ? ' mt-term-touch' : ''}${touchUi ? ' mt-term-touchsel' : ''}`} onMouseDown={() => onActivate && onActivate()}>
       <div className="mt-term" ref={hostRef} data-session={sessionId} />
       {status.kind === 'attaching' && <div className="mt-term-note">{t('terminal.attaching')}</div>}
       {(status.kind === 'detached' || status.kind === 'error') && (
@@ -560,6 +578,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       )}
       {hint && <div className="mt-term-hint">{hint}</div>}
       {typing && <div className="mt-term-typing" data-role="term-typing">{t('peers.typing', { name: typing })}</div>}
+      {touchUi && createPortal(<TouchSelectUi ui={touchUi} owner={sessionId} ctl={ref.current.touch} />, document.body)}
       {share.shared > 1 && !share.ownerIsMe && <div className="mt-term-sizeby" data-role="term-sizeby" title={t('peers.sizeBy', { name: share.ownerName || '?' })} />}
     </div>
   );
@@ -578,4 +597,25 @@ export function termStats() {
     } catch {}
   }
   return { terms: terms.size, px, atlas, gl: budget.used };
+}
+
+// P151: 손가락 고르기의 양 끝 손잡이와 떠 있는 막대(복사, 모두 선택, 닫기). 창 기준 자리라 body에 그린다(판의 변환 밖).
+// data-term-keep: 눌러도 P42 밖 누르기로 고르기가 풀리지 않는다. 단추는 tabIndex -1(초점을 받지 않는다).
+// pointerdown·mousedown에서 preventDefault를 하지 않는다: WebKit은 그러면 손가락 탭의 click을 만들지 않는다(P151 실험)
+function TouchSelectUi({ ui, owner, ctl }) {
+  const t = useT();
+  if (!ctl) return null;
+  return (
+    <div className="mt-tsel" data-term-keep="" onMouseDown={(e) => e.stopPropagation()} data-role="term-touch-select" data-session={owner}>
+      {ui.start && <span className="mt-tsel-h start" data-term-handle="start" data-owner={owner} style={{ left: ui.start.x, top: ui.start.y, '--lh': `${ui.lineH}px` }} />}
+      {ui.end && <span className="mt-tsel-h end" data-term-handle="end" data-owner={owner} style={{ left: ui.end.x, top: ui.end.y, '--lh': `${ui.lineH}px` }} />}
+      {!ui.dragging && (
+        <div className="mt-tsel-bar" role="toolbar" aria-label={t('termSelect.bar')} style={{ left: ui.bar.x, top: ui.bar.y }}>
+          <button type="button" data-action="term-touch-copy" tabIndex={-1} onClick={() => ctl.copy()}>{t('termSelect.copy')}</button>
+          <button type="button" data-action="term-touch-all" tabIndex={-1} onClick={() => ctl.selectAll()}>{t('termSelect.selectAll')}</button>
+          <button type="button" data-action="term-touch-close" tabIndex={-1} onClick={() => ctl.close()}>{t('termSelect.close')}</button>
+        </div>
+      )}
+    </div>
+  );
 }

@@ -406,3 +406,21 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pm-chip.t-review { color: var(--st-review); border-color: color-mix(in srgb, var(--st-review) 45%, transparent); }
 .mt-pm-chip.t-review.on { border-color: var(--st-review); color: var(--text); background: color-mix(in srgb, var(--st-review) 18%, transparent); }
 .mt-pm-node.t-review.lead { background: linear-gradient(90deg, color-mix(in srgb, var(--st-review) 14%, var(--mm-card-lead-2)) 0%, var(--mm-card-lead-2) 62%); }
+
+/* P151: 휴대폰 웹에서 길게 눌러 터미널 글 고르기(term-touch.js). iOS 확대경·글 메뉴가 끼어들지 않게 하고, 손잡이·막대는 body에 창 기준 자리로 그린다 */
+.mt-term-touch, .mt-term-touch * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.mt-term-touchsel { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.mt-tsel { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+.mt-tsel-h { position: fixed; width: 2px; height: var(--lh, 16px); margin-left: -1px; background: var(--accent); pointer-events: none; }
+/* 손가락으로 잡는 둥근 손잡이(보이는 점 14px, 잡는 자리 40px) */
+.mt-tsel-h::before { content: ''; position: absolute; left: 50%; width: 40px; height: 40px; transform: translateX(-50%); pointer-events: auto; touch-action: none; }
+.mt-tsel-h::after { content: ''; position: absolute; left: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); transform: translateX(-50%); }
+.mt-tsel-h.start::before { bottom: 100%; margin-bottom: -8px; }
+.mt-tsel-h.start::after { bottom: 100%; }
+.mt-tsel-h.end { transform: translateY(calc(-1 * var(--lh, 16px))); }
+.mt-tsel-h.end::before { top: 100%; margin-top: -8px; }
+.mt-tsel-h.end::after { top: 100%; }
+.mt-tsel-bar { position: fixed; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--panel-3); border: 1px solid var(--chrome-line); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); pointer-events: auto; touch-action: manipulation; white-space: nowrap; }
+.mt-tsel-bar button { min-height: 34px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font: inherit; font-size: 14px; -webkit-user-select: none; user-select: none; }
+.mt-tsel-bar button:active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.mt-tsel-bar button[data-action=term-touch-copy] { color: var(--accent); font-weight: 600; }
