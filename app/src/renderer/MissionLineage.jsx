@@ -14,6 +14,7 @@ import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub,
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
+import { bgShow, bgText, bgKindsText } from './lib/bg-work.js'; // P164
 import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText } from './lib/i18n.js';
 import { leadTags } from './lib/cmd-input.js';
@@ -30,6 +31,14 @@ const READ_K = 0.26; // 멀리 타일 이름 11.5px·상태 10px(화면)가 지�
 const DOT_GAP = 92, DOT_R = 1.8, DOT_MIN_GAP = 28; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다. 멀리서는 솎는다
 const ATTN_MAX = 4;
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
+// P164: 뒤 일 표시 아이콘(겹친 두 사각형 = 뒤에서 도는 일). 움직이지 않는다
+export const BgIcon = () => <svg className="mt-bg-ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="2.5" width="8" height="8" rx="1.5" /><path d="M10.5 13.5h-6a2 2 0 0 1-2-2v-6" /></svg>;
+export function BgBadge({ f, role }) { return f.bg ? <span className="mt-bg-badge" data-role={role} data-bg-n={f.bg.n} data-bg-kinds={f.bg.kinds.join(',')} title={f.bgKinds}><BgIcon />{f.bgText}</span> : null; }
+// P164: 미리 보기의 뒤 일 목록(종류와 설명·명령 한 줄)
+export function BgList({ f, t }) {
+  if (!f.bg) return null;
+  return <div className="pkbg" data-role="ln-peek-bg"><span className="lb">{t('mmBg.title')}</span>{f.bgKinds}{(f.bg.items || []).map((x, i) => <span key={i} className="it"><BgIcon /><b>{t(`mmBg.kind.${['shell', 'agent'].includes(x.kind) ? x.kind : 'other'}`)}</b>{x.label ? <span className="lbl">{clip(x.label, 120)}</span> : <span className="dim">{t('mmBg.noLabel')}</span>}</span>)}</div>;
+}
 const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.git.branch) || null;
 // 상태 색 클래스(시안 st-*): 등급 → 색
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
@@ -74,7 +83,8 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const extra = [branch ? `⎇ ${branch}` : null, n.loops ? `⟳${n.loops}` : null];
   const more = [cross && parentWs ? relText : null, ...extra].filter(Boolean).join(' · ');
   const relAll = [relText, ...extra].filter(Boolean).join(' · ');
-  return { kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label };
+  const bg = bgShow(n, live, tier); // P164: 쉬는 세션에 도는 뒤 일(뒤 셸·뒤 하위 에이전트)
+  return { kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label, bg, bgText: bg ? bgText(bg, t) : null, bgKinds: bg ? bgKindsText(bg, t) : null };
 }
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
@@ -83,7 +93,7 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, o
   const n = b.node;
   const st = ST[tier] || 'ready';
   const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}`;
-  const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip'), t('mmLine.cardDragTip')].filter(Boolean).join('\n');
+  const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.bg ? `${f.bgText} (${f.bgKinds})` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip'), t('mmLine.cardDragTip')].filter(Boolean).join('\n');
   const done = tier === 'review';
   return (
     <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws} data-thin={b.thin ? '1' : undefined}>
@@ -93,9 +103,9 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, o
         {b.thin ? <span className="mt-sm-thin" data-role="ta-thin"><i /><span className="cname" data-role="ta-name">{n.name}</span>{f.age ? <span className="cago">{f.age}</span> : null}</span> : null}
         {tier === 'work' && <MissionLight role="ta-light" />}
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
-        {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}</span></span>}
+        {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">
-          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span></span>
+          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" /></span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
@@ -146,6 +156,7 @@ export function Peek({ pv, f, b, live, tier, t, now, folder }) { // P160: 휴대
       <div className="pk2">{[f.role, [f.harness, f.model].filter(Boolean).join(' · '), folder].filter(Boolean).join('  ·  ')}</div>
       {task ? <div className="pkt"><span className="lb">{t(`mmTerr.kind.${f.taskKind}`)}</span>{clip(task, 600)}</div> : null}
       {qs.length ? qs.slice(0, 2).map((q, i) => <div key={i} className="pkq"><span className="lb">{t('mmPeek.asks')}</span>{q.question}{(q.options || []).length ? <span className="opts">{q.options.slice(0, 6).map((o, j) => <span key={j}>{o.label || String(o)}</span>)}</span> : null}</div>) : ask && ask.summary ? <div className="pkq"><span className="lb">{t('mmPeek.asks')}</span>{ask.summary}</div> : null}
+      <BgList f={f} t={t} />
       {err ? <div className="pke">{clip(err, 400)}</div> : null}
       {answer ? <div className="pka"><span className="lb">{t('mmPeek.answer')}</span><span className="txt">{clip(answer, 400)}</span></div> : null}
       {data && data.events && data.events.length ? <div className="pkv"><span className="lb">{t('mmPeek.events')}</span>{data.events.slice().reverse().map((e) => <span key={e.id} className="ev">{e.kind}{e.data && e.data.to ? ` → ${STATE_LABEL[e.data.to] || e.data.to}` : e.data && e.data.command ? ` ${clip(e.data.command, 40)}` : ''}<span className="dim"> · {ageText(now - e.t, t)}</span></span>)}</div> : null}

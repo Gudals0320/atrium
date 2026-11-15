@@ -111,6 +111,7 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
       gitBranch: (s.git && s.git.isWorktree && s.git.branch) || null,
       // P152: 오류 글(영토 지도 카드의 오류 줄, 휴대폰 시트). 판의 세션 요약이 없을 때도 보이게
       closedKids: closedKids.get(s.sessionId) || 0, assignAt: assignAt.get(s.sessionId) || null, parentClosed: !!lineageOf(s.sessionId) && !byId.has(lineageOf(s.sessionId)), // P157
+      background: s.background && s.background.n ? { n: s.background.n, kinds: s.background.kinds || [], items: (s.background.items || []).slice(0, 8), at: s.background.at || null } : null, // P164: 도는 뒤 일(쉬는 세션 카드의 표시)
       error: s.state === 'error' && s.error ? clip(typeof s.error === 'string' ? s.error : s.error.message || String(s.error), 200) : null,
     });
   }

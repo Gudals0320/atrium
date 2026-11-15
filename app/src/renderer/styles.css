@@ -2375,3 +2375,14 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 .mt-sm .mt-ta-world.lv-far .mt-sm-thin { font-size: clamp(19px, calc(10px * var(--ik, 1)), 23px); gap: 12px; }
 .mt-sm .mt-ta-world.lv-far .mt-sm-thin i { width: 12px; height: 12px; border-width: 2.5px; }
 .mt-sm .mt-ta-world.lv-far .mt-sm-thin .cago { font-size: 18px; }
+
+/* P164: 쉬는 세션 카드의 뒤 일 표시(뒤 셸·뒤 하위 에이전트). 작업 중 빛과 달리 조용한 무채색 알약, 움직이지 않는다. 끝나면 사라진다 */
+.mt-bg-ico { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.mt-bg-badge { flex: none; display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(255, 252, 240, 0.18); background: rgba(255, 252, 240, 0.05); color: #cfcbc1; font-size: 11.5px; font-weight: 500; line-height: 1.5; white-space: nowrap; }
+.mt-sm .mt-ta-full .c1 .mt-bg-badge { align-self: center; }
+.mt-bg-tile { display: inline-flex; align-items: center; gap: 0.2em; margin-left: 0.4em; color: #cfcbc1; font-size: 0.8em; font-weight: 500; }
+.mt-sm-peek .pkbg { display: flex; flex-direction: column; gap: 2px; color: var(--ln-text); }
+.mt-sm-peek .pkbg .it { display: flex; align-items: baseline; gap: 6px; font-size: 12px; min-width: 0; }
+.mt-sm-peek .pkbg .it .mt-bg-ico { align-self: center; color: var(--ln-dim); }
+.mt-sm-peek .pkbg .it b { font-weight: 600; flex: none; }
+.mt-sm-peek .pkbg .it .lbl { font-family: var(--font-mono); font-size: 11.5px; color: #cfcbc1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
