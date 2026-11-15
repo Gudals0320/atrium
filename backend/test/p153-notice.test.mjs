@@ -45,5 +45,5 @@ test('P153 r13: 대화 기록(Claude Code·Codex)의 마지막 지시는 알림�
 test('P153 r13: 판 전달 확인과 세션 요약도 같은 규칙(옛 기록에 남은 알림은 요약에서 뺀다)', () => {
   const b = fs.readFileSync(path.join(SRC, 'backend.mjs'), 'utf8');
   assert.match(b, /if \(row && !isBoardNotice\(row\.text\)\)/);
-  assert.match(b, /lastPrompt: isBoardNotice\(rt\.lastPrompt\) \? null : clip\(rt\.lastPrompt, 300\)/);
+  assert.match(b, /lastPrompt: clip\(promptTask\(rt\.lastPrompt\), 300\)/); // P159: 알림이면 null, 관계 줄 + 지시면 줄을 뗀 지시
 });

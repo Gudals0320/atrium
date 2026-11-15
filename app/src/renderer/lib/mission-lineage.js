@@ -184,8 +184,8 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     if (!a || !b) continue;
     const base = { id: `peer:${k}`, from: n.id, to: p, rel: 'peer', peer: true, tree: false };
     if (Math.abs(a.x - b.x) < 0.5) {
-      const [u, d] = a.y < b.y ? [a, b] : [b, a], x = u.x + 28;
-      const pts = [[x, u.y + u.h + L.EDGEGAP], [x, d.y - L.EDGEGAP]];
+      const [u, d] = a.y < b.y ? [a, b] : [b, a];
+      const pts = peerPts(u, d, L.EDGEGAP); // P159: 두 카드의 가로 가운데
       edges.push({ ...base, cross: false, pts, d: poly(pts), label: null });
     } else cross.push({ base, a, b, kind: 'peer' });
   }
@@ -213,6 +213,15 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: W, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX };
+}
+
+// P159: 같은 칸에 위아래로 붙은 동료 카드 사이 선. 양끝은 각 카드의 가로 가운데(u 아래 변 → d 위 변, 틈 g).
+// 폭이 같으면 세로 한 줄, 다르면 두 카드 사이 틈의 가운데에서 꺾는다(직각 유지). 옛 선은 카드 왼쪽 + 28에 서서 왼쪽으로 치우쳤다
+export function peerPts(u, d, g = 0) {
+  const ux = u.x + u.w / 2, dx = d.x + d.w / 2, y1 = u.y + u.h + g, y2 = d.y - g;
+  if (Math.abs(ux - dx) < 0.5) return [[ux, y1], [ux, y2]];
+  const my = (u.y + u.h + d.y) / 2;
+  return [[ux, y1], [ux, my], [dx, my], [dx, y2]];
 }
 
 // P155: 세션 맵에서 누른 자리와 Alt로 끌기 종류를 정한다(단위 시험 test/p155-lib.test.mjs).

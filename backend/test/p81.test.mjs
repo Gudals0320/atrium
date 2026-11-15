@@ -196,7 +196,7 @@ test('P81 명령: atrium me 글(20줄 안, 부모 없음·부모와 역할), --j
 });
 
 // ---------- 떼기 ----------
-test('P81 떼기: 부모 기록·하위 세션 기록·역할 선을 지우고(오간 기록은 남김), children·child-kill 범위·잠재우기 묶음에서 빠지고, 아래는 그대로(단계만 다시), 다시 켜도 그대로', async () => {
+test('P81→P159 떼기 = 독립으로 두기: 계보·하위 세션 기록은 남기고 일 관계만 none(출처 user), 역할 이름을 지우고, children·child-kill 범위·잠재우기 묶음에서 빠지고, 아래는 그대로, 다시 켜도 그대로, auto로 되돌린다', async () => {
   const { b, lead } = await fakeBoard();
   const r = await b.branch.spawnChild(lead, { name: 'b1', prompt: 'go', wait: false });
   const B = b.sessions.get(r.sessionId);
@@ -212,36 +212,41 @@ test('P81 떼기: 부모 기록·하위 세션 기록·역할 선을 지우고(�
   const l = b.store.linkByPair(lead.sessionId, B.sessionId);
   assert.equal(l.role, '워커');
   const out = b.branch.detach(B, { by: 'user' });
-  assert.deepEqual(out, { detached: true, name: 'b1', from: 'lead', by: 'user' });
-  assert.equal(B.parentSessionId, null);
-  assert.equal(b.store.getSession(B.sessionId).parentSessionId, null);
-  assert.equal(b.branch.info.has(B.sessionId), false);
-  assert.equal(b.store.branchRows().find((x) => x.sessionId === B.sessionId).branch, null);
+  assert.deepEqual(out, { detached: true, name: 'b1', from: 'lead', by: 'user', relation: 'none' });
+  // 계보는 사실로 남는다
+  assert.equal(B.parentSessionId, lead.sessionId);
+  assert.equal(b.store.getSession(B.sessionId).parentSessionId, lead.sessionId);
+  assert.equal(b.branch.info.has(B.sessionId), true);
+  const rel = b.branch.relIndex().between(lead.sessionId, B.sessionId);
+  assert.equal(rel.relation, 'none'); assert.equal(rel.source, 'user');
+  assert.equal(b.branch.relIndex().workParentOf(B.sessionId), null);
   const l2 = b.store.getLink(l.linkId);
-  assert.ok(l2.removedAt); assert.equal(l2.role, null);
+  assert.equal(l2.role, null, '역할 이름은 지운다');
   assert.ok(b.store.linkEvents(l.linkId).some((e) => e.kind === 'prompt'), '오간 기록은 남는다');
-  assert.ok(b.store.linkEvents(l.linkId).some((e) => e.kind === 'unlink' && e.data.why === 'detach'));
   assert.deepEqual(b.branch.listChildren(lead, {}).children, []);
   const sx = b.branch.summaryExtra(B).branch;
-  assert.equal(sx.parentSessionId, null); assert.equal(sx.role, null); assert.equal(sx.child, false); assert.equal(sx.depth, 1);
-  assert.equal(b.branch.summaryExtra(lead).branch.children, 0);
-  await assert.rejects(b.branch.killChild(lead, { name: 'b1' }), (e) => e.code === 'not_parent');
-  await assert.rejects(b.branch.killChild(lead, { name: 'g1' }), (e) => e.code === 'not_parent', '손자도 범위 밖');
-  await assert.rejects(b.branch.waitChild(lead, { name: 'b1' }), (e) => e.code === 'not_parent');
+  assert.equal(sx.parentSessionId, lead.sessionId); assert.equal(sx.workParentSessionId, null); assert.deepEqual(sx.parentRelation, { relation: 'none', source: 'user' });
+  assert.equal(b.branch.summaryExtra(lead).branch.children, 1, '계보 자식 수(머리줄)는 그대로');
+  await assert.rejects(b.branch.killChild(lead, { name: 'b1' }), (e) => e.code === 'not_sub');
+  await assert.rejects(b.branch.killChild(lead, { name: 'g1' }), (e) => ['not_sub', 'not_parent'].includes(e.code), '손자도 범위 밖');
   assert.equal(sl.info(lead).childBusy, false, '잠재우기 묶음이 풀린다');
+  assert.equal(sl.info(lead).descBusy, false);
   busy.clear(); busy.add(lead.sessionId);
   assert.equal(sl.info(B).parentBusy, false);
-  // B 아래는 그대로, 단계만 다시
+  // B 아래는 그대로
   assert.equal(G.parentSessionId, B.sessionId);
-  assert.equal(b.branch.depth(G.sessionId), 2);
-  assert.equal(b.branch.info.get(G.sessionId).depth, 2);
+  assert.equal(b.branch.relIndex().workParentOf(G.sessionId), B.sessionId);
   assert.deepEqual(b.branch.listChildren(B, {}).children.map((c) => c.name), ['g1']);
   // 다시 하면 no_parent, 다시 켜도 그대로
   assert.throws(() => b.branch.detach(B), (e) => e.code === 'no_parent');
   const again = new Branch(b, { readyWaitMs: 30 });
-  assert.equal(again.info.has(B.sessionId), false);
-  assert.equal(b.store.getSession(B.sessionId).parentSessionId, null);
-  assert.equal(again.depth(G.sessionId), 2);
+  assert.equal(again.relIndex().workParentOf(B.sessionId), null);
+  assert.equal(b.store.getSession(B.sessionId).parentSessionId, lead.sessionId);
+  // 되돌리기: relation.set auto면 다시 하위(계보를 따른다)
+  b.branch.setRelation(lead, B, 'auto', { source: 'user', by: 'user', quiet: true });
+  assert.equal(b.branch.relIndex().workParentOf(B.sessionId), lead.sessionId);
+  busy.clear(); busy.add(B.sessionId);
+  assert.equal(sl.info(lead).childBusy, true);
   b.branch.notices.stop(); again.notices.stop();
 });
 
@@ -267,14 +272,14 @@ test('P81 알림: 사람이 떼면 옛 부모와 뗀 세션에게, 하위 세션
   assert.equal(toLead.length, 1, '부모의 턴은 하나');
   const t = toLead[0].text;
   assert.match(t, /^\[Atrium 보드\] 연결이 바뀌었다\./);
-  assert.match(t, /- @k1는 이제 너의 하위 세션이 아니다\. 일을 시키지 마라\./);
+  assert.match(t, /- @k1는 이제 너의 하위 세션이 아니다\(사람이 독립으로 둠\)\. 일을 시키지 마라\./);
   assert.match(t, /- @k2가 닫혔다\(사람이 닫음\)\./);
   assert.match(t, /- @k3가 닫혔다\(스스로 끝남\)\./);
   assert.match(t, /- @k4가 닫혔다\(패널 사라짐\)\./);
   assert.ok(t.endsWith('지금 연결은 `atrium me`.\n이 알림에는 "알겠다"고만 답해라.'));
   const toK1 = notices(b, kids[0]);
   assert.equal(toK1.length, 1);
-  assert.equal(toK1[0].text.split('\n')[0], '[Atrium 보드] 너는 이제 부모 없는 세션이다(@lead에서 뗌).');
+  assert.equal(toK1[0].text.split('\n')[0], '[Atrium 보드] 너는 이제 @lead의 하위 세션이 아니다(사람이 독립으로 둠). 보고하지 않는다.');
   assert.ok(b.store.events({}).some((e) => e.kind === 'link_notice'));
   // child-kill이면 보내지 않는다
   const before = b.queued.length;

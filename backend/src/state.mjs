@@ -77,7 +77,7 @@ export function applyHook(rt, body, now = Date.now()) {
   const tool = body.tool_name;
   switch (ev) {
     case 'UserPromptSubmit':
-      if (!isBoardNotice(body.prompt)) { rt.lastPrompt = unwrapPasted(body.prompt); rt.lastPromptAt = now; } // P153 r13: 판 알림은 마지막 지시가 아니다
+      if (!isBoardNotice(body.prompt)) { rt.lastPrompt = unwrapPasted(body.prompt); rt.lastPromptAt = now; } // P153 r13: 판 알림은 마지막 지시가 아니다. P159: 관계 줄 + 지시는 지시다(원문을 두고 보일 때 promptTask로 줄을 뗀다)
       rt.turn = { startedAt: now, endedAt: null };
       rt.lastError = null;
       break;

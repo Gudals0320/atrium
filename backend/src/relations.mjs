@@ -6,7 +6,7 @@
 //   source = agent(에이전트의 atrium child --peer·atrium relate) | user(사람이 판·세션 맵에서). 자동은 줄이 없는 것이라 저장하지 않는다(auto).
 // 자동 규칙(옛 판과 같다): 띄움(계보 부모 → 하위)·역할 선 = 하위. 그 밖에 이어진 쌍(알아챈 지시만 오간 선)은 독립.
 // 일 부모(work parent): 그 세션을 하위로 둔 세션. 명시한 하위 줄이 이기고(여럿이면 가장 늦게 정한 것), 없으면 계보 부모(그 쌍에 명시한 관계가 없을 때).
-//   하위 끄기 연쇄(child-kill), atrium children, 세션 맵의 나무는 일 부모를 따른다. 잠재우기·알림·작업 완료 세기는 아직 계보를 따른다(P156 보고의 제안).
+//   하위 끄기 연쇄(child-kill), atrium children, 세션 맵의 나무, 잠재우기 묶음, 닫힘 알림, 작업 완료 세기(P159)는 일 부모를 따른다.
 
 export const RELATIONS = ['sub', 'peer', 'none'];
 export const RELATION_SET = [...RELATIONS, 'auto']; // POST relation.set·atrium relate가 받는 값(auto = 명시한 관계를 지운다)
