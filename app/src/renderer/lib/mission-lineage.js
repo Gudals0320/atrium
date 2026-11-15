@@ -1,6 +1,6 @@
 // P153 r7: 세션 맵 PC = 시안 B "Lineage"(experiments/mm-concepts/project/B.dc.html) 배치. 순수 함수만 둔다(단위 시험 test/p153-lib.test.mjs).
 // - 폴더(사이드바 가상 그룹) = 가로 띠(왼쪽 기둥 SPINE에 이름·세션 수·상태 비율 막대). 차례는 사이드바: 폴더들(사이드바 차례), 그 뒤 "폴더 없음" 띠(폴더 밖 워크스페이스, 판 차례).
-// - 워크스페이스 = 띠 안의 줄. 줄마다 고정 칸: 워크스페이스 머리(HEADW) · 리드(COL[0]) · 워커(COL[1]) · 다음 단계(COL[2] 이후, 나무 깊이만큼) · 혼자(구분선 오른쪽 두 줄 격자).
+// - 워크스페이스 = 띠 안의 줄. 줄마다 고정 칸: 워크스페이스 머리(HEADW) · 리드(COL[0]) · 워커(COL[1]) · 다음 단계(COL[2] 이후, 나무 깊이만큼) · 솔로(구분선 오른쪽 두 줄 격자).
 // - 팀 = 같은 워크스페이스 안의 나무(lib/mission-model.js missionTree: 부모 > 역할 > 띄움 > 시킴). 왼 → 오른으로 자란다. 하위는 위 → 아래로 쌓고 부모는 하위 묶음의 세로 가운데.
 //   부모가 다른 워크스페이스에 있으면 자기 줄의 워커 칸(COL[1])에 놓고(그 하위는 다음 칸), 부모와는 다른 워크스페이스 선(cross)으로 잇는다. 부모가 닫힌 세션은 뿌리.
 // - 선: 나무 선은 부모 오른쪽 가운데 → 칸 사이 틈의 줄기 → 하위 왼쪽 가운데(화살촉). 다른 워크스페이스 선은 격자 길 찾기(lib/mission-terr.js routeOrtho)로 카드·줄 머리·기둥을 피해 받는 카드의 왼쪽(또는 위)으로.
@@ -9,12 +9,22 @@
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
 import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from './mission-terr.js';
 
-// SPINE = 폴더 기둥 폭, HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
-// SOLOGAP = 마지막 나무 칸과 혼자 칸 사이(구분선이 가운데), SGX = 혼자 칸 두 줄 사이, MINCOLS = 늘 보이는 나무 칸 수(리드·워커·다음 단계)
-export const LINE = { SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46 }; // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
+// SPINE = 폴더 기둥 최소 폭(P157: 가장 긴 폴더 이름에 맞춰 넓어진다, spineWidth), BANDMIN = 폴더 띠 최소 높이(P157: 워크스페이스 하나인 폴더도 기둥 글이 잘리지 않게), HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
+// SOLOGAP = 마지막 나무 칸과 솔로 칸 사이(구분선이 가운데), SGX = 솔로 칸 두 줄 사이, MINCOLS = 늘 보이는 나무 칸 수(리드·워커·다음 단계)
+export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46 }; // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
+
+// P157: 글 폭 어림(px). 한글·한자·가나는 글자 크기만큼, 대문자·숫자는 조금 넓게, 그 밖은 0.6
+export const glyphW = (s, px) => { let w = 0; for (const ch of String(s || '')) { const c = ch.codePointAt(0); w += (c >= 0x1100 && c <= 0x11ff) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xff00 && c <= 0xffef) ? 1 : /[A-Z0-9@#%&MW]/.test(ch) ? 0.7 : 0.6; } return w * px; };
+// P157: 폴더 기둥 폭 = 가장 긴 폴더 이름(멀리 단계 글 32px·굵게)과 두 줄 수 글(멀리 24px)이 말줄임 없이 드는 폭. 좌우 여백 16씩 + 여유 12
+export const SPINE_PX = { NAME: 32, STAT: 24, KIND: 26, PAD: 44 };
+export function spineWidth(names = [], stats = []) {
+  const need = Math.max(0, ...names.map((x) => glyphW(x, SPINE_PX.NAME) * 1.06), ...stats.map((x) => glyphW(x, SPINE_PX.STAT)));
+  return Math.max(LINE.SPINE, Math.ceil(need + SPINE_PX.PAD));
+}
 
 // expanded: 깊이 접기를 편 카드 id들(Set). FOLD 단계보다 깊은 가지는 접는다
-export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set() } = {}) {
+// spineText(nWs, nSessions) → [윗줄, 아랫줄](P157: 기둥 폭을 셀 때 수 글도 넣는다. 창은 지금 언어 글을 준다)
+export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null } = {}) {
   const tree = missionTree(graph);
   const { byId } = tree;
   const L = { ...LINE, CW: cardWidth(tree.nodes.map((n) => n.name), LINE.NAME_PX) };
@@ -37,6 +47,10 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const loose = present.filter((k) => !k || !folderOf.has(normKey(k))).sort(byWsOrder);
   if (loose.length) groups.push({ id: null, name: noFolder, keys: loose });
 
+  // P157: 기둥 폭은 가장 긴 폴더 이름에 맞춘다. 워크스페이스 머리부터 오른쪽은 늘어난 만큼 민다
+  const stats = spineText ? groups.flatMap((g) => spineText(g.keys.length, tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).length)) : [];
+  L.SPINE = spineWidth(groups.map((g) => g.name), stats);
+  L.HEADX = LINE.HEADX + (L.SPINE - LINE.SPINE);
   const parentIn = (id) => { const p = tree.parent.get(id); return p && wsOf(p) === wsOf(id) ? p : null; };
   const crossIn = (id) => { const p = tree.parent.get(id); return !!p && wsOf(p) !== wsOf(id); };
   const kidsIn = (id) => (tree.kids.get(id) || []).filter((c) => wsOf(c.id) === wsOf(id));
@@ -72,7 +86,9 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const leadsAway = (n) => (tree.kids.get(n.id) || []).some((c) => wsOf(c.id) !== wsOf(n.id));
   // 독립으로 정했어도 계보 부모가 맵에 있으면 시작 칸(옅은 계보 선이 이어진다)
   const lineageOnly = (n) => !!n.lineageParent && n.lineageParent !== tree.parent.get(n.id) && byId.has(n.lineageParent);
-  const treeRoot = (n) => isRoot(n) && ((layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || lineageOnly(n));
+  // P157: 지금 하위가 없어도 하위를 불렀던 세션(닫힌 하위·최근 assign 지시, mission.mjs CALLED_MS)과 상위가 닫힌 세션은 시작 칸. 솔로는 어떤 관계도 없고 누구도 부르지 않은 세션만
+  const calledBefore = (n) => (n.closedKids || 0) > 0 || !!n.assignAt || !!n.parentClosed;
+  const treeRoot = (n) => isRoot(n) && ((layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || lineageOnly(n) || calledBefore(n));
   for (const n of tree.nodes) { if (treeRoot(n)) depthWalk(n.id, 0, 0); else if (crossIn(n.id)) depthWalk(n.id, 1, 0); }
   const nCols = Math.max(L.MINCOLS, maxDepth + 1);
   const COL = Array.from({ length: nCols }, (_, i) => L.HEADX + L.HEADW + 208 + i * (L.CW + L.GX)); // 시안: 리드 칸 740 = 232 + 300 + 208
@@ -124,6 +140,8 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
       divs.push({ x: DIV, y: y + 16, h: h - 32 });
       y += h;
     });
+    // P157: 띠 최소 높이. 모자라면 마지막 줄을 늘린다(기둥 글이 잘리지 않게)
+    if (y - by < L.BANDMIN) { const r = rows[rows.length - 1], d = divs[divs.length - 1], dy = L.BANDMIN - (y - by); r.h += dy; d.h += dy; y += dy; }
     const ids = tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).map((n) => n.id);
     bands.push({ id: g.id, name: g.name, loose: g.id == null, odd: gi % 2 === 1, y: by, h: y - by, nWs: g.keys.length, sessions: ids.length, bar: chipCounts(ids.map(tierOf)) });
   });
@@ -186,11 +204,11 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     });
   }
 
-  // 칸: 워크스페이스 · 시작(0) · 1단계 · 2단계 · … · 혼자(보이는 가장 깊은 단계까지)
+  // 칸: 워크스페이스 · 시작(0) · 1단계 · 2단계 · … · 솔로(보이는 가장 깊은 단계까지)
   const cols = [{ key: 'ws', x: L.HEADX }, ...COL.map((x, i) => ({ key: 'lv', level: i, x })), { key: 'solo', x: SOLO }];
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
-  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: W, h: Math.max(1, y) }, order, tree, cw: L.CW, W };
+  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: W, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX };
 }
 
 // P155: 세션 맵에서 누른 자리와 Alt로 끌기 종류를 정한다(단위 시험 test/p155-lib.test.mjs).

@@ -47,7 +47,7 @@ import { pickAttached, termAllowed, veryClose, DEFAULT_MAX_CONTROLLERS } from '.
 import { perfLog } from './perf.js';
 import { reuseNode, sameList, sameFields, sessionNode } from './lib/node-reuse.js'; // P146: 바뀐 노드만 다시 그리기
 import { noteRebuild } from './perf-trace.js'; // P146: 성능 기록
-import { enterView, dockRect, isViewing, NAV_GAP } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
+import { enterView, dockRect, isViewing, NAV_GAP, navDuration } from './lib/nav.js'; // P10: 덩어리 안의 노드로 들어갈 때 덩어리 전체. P26: 85% 채우기, 이미 보고 있으면 그대로
 import { enterSession } from './touch.js';
 import { wakeSession } from './sleep.js'; // P21
 import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t를 메모·칸반 종류 이름으로도 쓴다
@@ -746,7 +746,8 @@ export function Canvas() {
     st.clearSelection = () => setNodes((ns) => ns.map((n) => (n.selected ? { ...n, selected: false } : n)));
     // P26: 노드(덩어리 안이면 덩어리 전체)가 화면의 85%를 채우게(배율 상한 1, lib/nav.js). 이미 그 노드를 보고 있으면 화면은 그대로다.
     // viewOnly: 화면만 옮기고 터미널 초점은 건드리지 않는다(머리줄 누르기, 터미널 안 누르기)
-    st.navigateTo = (id, { focusTerminal = false, viewOnly = false } = {}) => {
+    // instant(P157): 날아가기 없이 한 번에(세션 맵에서 판의 세션으로 갈 때만)
+    st.navigateTo = (id, { focusTerminal = false, viewOnly = false, instant = false } = {}) => {
       const r = getState().nodes.get(id);
       if (!r) return;
       const el = wrapRef.current;
@@ -761,11 +762,14 @@ export function Canvas() {
       const vp = rf.getViewport();
       const v = enterView({ node: r, dock, screen, inset: insetNow(NAV_GAP, true) }); // P73: 크롬(과 NAV_GAP 틈)을 뺀 남은 칸을 NAV_FILL까지 채운다
       const seen = isViewing({ node: r, dock, view: v, viewport: vp, screen });
-      perfLog('navigate', { id, mode: v.mode, zoom: +v.zoom.toFixed(3), dock: d ? d.members.length : 0, seen, viewOnly });
+      perfLog('navigate', { id, mode: v.mode, zoom: +v.zoom.toFixed(3), dock: d ? d.members.length : 0, seen, viewOnly, instant });
       if (!seen) {
-        rf.setCenter(v.cx, v.cy, { zoom: v.zoom, duration: 250 });
-        setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), 300);
-        schedule(300);
+        const duration = navDuration({ instant });
+        if (duration) {
+          rf.setCenter(v.cx, v.cy, { zoom: v.zoom, duration });
+          setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), duration + 50);
+          schedule(duration + 50);
+        } else { rf.setCenter(v.cx, v.cy, { zoom: v.zoom }); setViewNow(rf.getViewport(), sizeOf()); schedule(0); }
       }
       enterSession(id);
       setFocus(id, { terminal: focusTerminal && !viewOnly });

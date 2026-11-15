@@ -12,7 +12,7 @@ import { Memos } from './memos.mjs';
 import { Kanbans } from './kanban.mjs';
 import { LoopEngine, normalizeTrigger, normalizeStop, describeLoop, describeLoopMsg } from './loops.mjs';
 import { confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
-import { missionGraph } from './mission.mjs';
+import { missionGraph, CALLED_MS } from './mission.mjs';
 import { Settings } from './settings.mjs';
 import { Launchers, HARNESSES, checkGateway } from './launchers.mjs'; // P33: 호출자
 import { Connections, checkOf, fetchConnectionModels } from './connections.mjs'; // P115: 모델 연결
@@ -131,7 +131,7 @@ export function attachFeatures(b, { timers = true } = {}) {
     'loop.delete': (p) => f.loops.delete(loopRef(p)),
     'loop.list': (p) => f.loops.list({ sessionId: p.session ? b.resolve(p.session).sessionId : null }),
     // I6 미션 맵
-    'mission.graph': () => missionGraph({ sessions: [...b.sessions.values()].map((s) => b.summary(s)), links: b.linksOpen(), thread: f.thread.list({ limit: 500 }).items, loops: [...f.loops.loops.values()], relations: b.store.relationRows ? b.store.relationRows() : [] }), // P156: 일 관계
+    'mission.graph': () => missionGraph({ sessions: [...b.sessions.values()].map((s) => b.summary(s)), links: b.linksOpen(), thread: f.thread.list({ limit: 500 }).items, loops: [...f.loops.loops.values()], relations: b.store.relationRows ? b.store.relationRows() : [], called: { kids: b.store.branchRows ? b.store.branchRows() : [], assigns: b.store.assignSenders ? b.store.assignSenders(Date.now() - CALLED_MS) : [] } }), // P156: 일 관계, P157: 하위를 불렀던 기록
     // I7 설정(트레이 상주)
     'settings.get': () => ({ settings: f.settings.get(), schema: f.settings.describe() }),
     'settings.set': (p) => ({ settings: f.settings.set(p) }),
