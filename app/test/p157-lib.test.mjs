@@ -112,3 +112,23 @@ test('세션 맵에서 판으로: 날아가기 없이 한 번에(instant)', () =
   assert.match(cv, /st\.navigateTo = \(id, \{ focusTerminal = false, viewOnly = false, instant = false \} = \{\}\)/);
   assert.match(cv, /const duration = navDuration\(\{ instant \}\);/);
 });
+
+test('다른 워크스페이스의 동료·정한 관계도 솔로가 아니다', () => {
+  const W2 = 'c:/work/other/.git';
+  const nodes = [
+    node('crawler', { peers: ['s:researcher'] }),
+    node('researcher', { workspaceKey: W2, peers: ['s:crawler'] }),
+    node('rkid', { workspaceKey: W2, parentId: 's:researcher' }),
+    node('indep'), node('owner', { workspaceKey: W2 }),
+    node('alone'),
+  ];
+  const edges = [
+    { from: 's:crawler', to: 's:researcher', kind: 'relation', relation: 'peer', relationSource: 'user' },
+    { from: 's:owner', to: 's:indep', kind: 'relation', relation: 'none', relationSource: 'user' },
+  ];
+  const lay = lineageLayout({ nodes, edges }, { order: [WS, W2] });
+  assert.equal(depthOf(lay, 'crawler'), 0, '다른 워크스페이스 동료 → 시작 칸');
+  assert.equal(depthOf(lay, 'researcher'), 0);
+  assert.equal(depthOf(lay, 'indep'), 0, '사람이 정한 관계(독립) → 솔로 아님');
+  assert.equal(depthOf(lay, 'alone'), -1);
+});

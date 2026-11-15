@@ -88,7 +88,11 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const lineageOnly = (n) => !!n.lineageParent && n.lineageParent !== tree.parent.get(n.id) && byId.has(n.lineageParent);
   // P157: 지금 하위가 없어도 하위를 불렀던 세션(닫힌 하위·최근 assign 지시, mission.mjs CALLED_MS)과 상위가 닫힌 세션은 시작 칸. 솔로는 어떤 관계도 없고 누구도 부르지 않은 세션만
   const calledBefore = (n) => (n.closedKids || 0) > 0 || !!n.assignAt || !!n.parentClosed;
-  const treeRoot = (n) => isRoot(n) && ((layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || lineageOnly(n) || calledBefore(n));
+  // 동료는 다른 워크스페이스에 있어도 솔로가 아니다(peersOf는 같은 줄 배치용이라 같은 워크스페이스만 본다). 사람·에이전트가 정한 관계(하위·동료·독립)가 맵 위 세션과 있으면 역시 솔로가 아니다
+  const anyPeer = (n) => (n.peers || []).some((p) => p !== n.id && byId.has(p));
+  const relTouch = new Set();
+  for (const e of graph.edges || []) if (e.relation && e.relationSource && e.relationSource !== 'auto' && byId.has(e.from) && byId.has(e.to)) { relTouch.add(e.from); relTouch.add(e.to); }
+  const treeRoot = (n) => isRoot(n) && ((layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || anyPeer(n) || relTouch.has(n.id) || lineageOnly(n) || calledBefore(n));
   for (const n of tree.nodes) { if (treeRoot(n)) depthWalk(n.id, 0, 0); else if (crossIn(n.id)) depthWalk(n.id, 1, 0); }
   const nCols = Math.max(L.MINCOLS, maxDepth + 1);
   const COL = Array.from({ length: nCols }, (_, i) => L.HEADX + L.HEADW + 208 + i * (L.CW + L.GX)); // 시안: 리드 칸 740 = 232 + 300 + 208
