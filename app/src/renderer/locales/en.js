@@ -2563,5 +2563,12 @@ export default {
     empty: 'An empty message cannot be sent.',
     failed: 'Could not edit: {error}',
   },
+  // P160: phone session map (folder > workspace > indented stages)
+  phoneMap: {
+    from: 'from @{name} ({ws})',
+    away: '{n} below in other workspaces',
+    none: 'Nothing waiting for you',
+    open: 'Open session',
+  },
 };
 

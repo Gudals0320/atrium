@@ -117,7 +117,7 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, o
 const HOVER_MS = 500, PEEK_TTL = 4000, PEEK_LINES = 10;
 const peekCache = new Map(); // sessionId → { at, events, screen }
 const lastLines = (text, n) => String(text || '').replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, '')).filter((l) => l.trim()).slice(-n);
-function Peek({ pv, f, b, live, tier, t, now, folder }) {
+export function Peek({ pv, f, b, live, tier, t, now, folder }) { // P160: 휴대폰 세션 맵의 길게 누르기 미리 보기도 같은 내용(PhoneLineage.jsx)
   const sid = b.node.sessionId;
   const awake = !!live && !['sleeping', 'exited'].includes(live.state) && !String(sid).startsWith('fk-');
   const [data, setData] = useState(() => peekCache.get(sid) || null);
