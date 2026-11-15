@@ -15,6 +15,7 @@ import { newRuntime, applyHook, applyTermStatus, deriveState } from '../src/stat
 import { workspaceOf } from '../src/git.mjs';
 import { DeliveryQueue } from '../src/delivery.mjs';
 import { Branch, ATRIUM_ALLOW, branchAllow, boardSkill, childNotice, headNotice, childShims } from '../src/branch.mjs';
+import { uploadsReadRule } from '../src/uploads.mjs'; // P162
 import { similarNames, verbLines, WAIT_DEFAULT_MS } from '../src/agent-verbs.mjs';
 import { CONTRACT_VERSION, VERB_NAMES, VERBS, EXIT, shortHelp, contractJson } from '../src/cli-contract.mjs';
 import { BOARD_SYSTEM_PROMPT, writeBoardPlugin } from '../src/launch.mjs';
@@ -142,7 +143,7 @@ test('P116·P129 승인: refreshSettings가 도는 세션 설정 파일에 atriu
     assert.ok(!j.permissions.allow.some((r) => /herdr/.test(r)), j.permissions.allow.join(','));
     assert.equal(j.env.ATRIUM_SESSION_ID, s.sessionId); assert.equal(j.env.MTASK_PORT, undefined);
     assert.equal(b.branch.refreshSettings(), 0, '두 번째는 바꾸지 않는다');
-    assert.deepEqual(b.branch.settingsExtra(s.sessionId).allow, branchAllow());
+    assert.deepEqual(b.branch.settingsExtra(s.sessionId).allow, [...branchAllow(), uploadsReadRule(b.cfg.dataDir)]); // P162: 업로드 자리 읽기
   } finally { stop(); }
 });
 

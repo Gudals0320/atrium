@@ -36,6 +36,7 @@ import { useT, errText } from './lib/i18n.js';
 import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles } from './lib/upload.js';
+import { wantsDesktopPaste, pastePathsText } from './lib/desktop-paste.js'; // P162: 데스크톱 창의 파일·그림 붙여 넣기
 import { termBudgetNow, step } from './crash-watch.js'; // P84: 손가락 웹 화면은 WebGL 없이, 웹은 캔버스 픽셀 상한을 낮게. P86: 단계 기록
 import { capDims } from './lib/crumbs.js'; // P86: 웹 화면의 칸·줄 상한
 import { fillPlan, runFill } from './lib/term-fill.js'; // P127: 셸 기록을 여러 프레임에 나눠 쓴다(최근 화면 먼저)
@@ -319,10 +320,24 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       uploadFiles(files).then((paths) => { send(wrapPaste(pathsText(paths))); flash(t('upload.done', { n: paths.length })); perfLog('term_upload', { sessionId, n: paths.length }); },
         (err) => { flash(t('upload.failed', { error: err.message })); window.mt.log(`upload failed ${sessionId}: ${err.message}`); });
     };
+    // P162: 데스크톱 창은 탐색기에서 복사한 파일의 경로를, 캡처한 그림은 판 데이터 폴더에 둔 PNG의 경로를 넣는다(main.mjs mt:clipPaste).
+    // 터미널에는 칩 대신 경로 그대로 보낸다. Claude Code·Codex는 붙여 넣은 그림 경로를 그림으로 붙인다
+    const pasteDesktop = () => window.mt.clipPaste().then((r) => {
+      if (!r) return;
+      if (r.kind === 'error') { flash(t('desktopPaste.tooBig')); return; }
+      if (r.kind === 'files' && r.folders && !r.paths.length) { flash(t('desktopPaste.foldersOnly')); return; }
+      const paths = r.kind === 'image' ? [r.path] : r.paths;
+      if (!paths || !paths.length) return;
+      send(wrapPaste(pastePathsText(paths)));
+      if (r.kind === 'image') flash(t('desktopPaste.image'));
+      else if (r.folders) flash(t('desktopPaste.foldersSkipped', { n: r.folders }));
+      perfLog('term_desktop_paste', { sessionId, kind: r.kind, n: paths.length });
+    }, (err) => { flash(t('desktopPaste.failed', { error: err.message })); window.mt.log(`desktop paste failed ${sessionId}: ${err.message}`); });
     const onPaste = (e) => {
       e.preventDefault(); e.stopPropagation();
       const files = isWeb ? filesOf(e.clipboardData) : [];
       if (clearsSelection('paste', { hasSelection: sel.has() })) sel.clear('paste');
+      if (wantsDesktopPaste(e.clipboardData, { desktop: !isWeb && typeof window.mt.clipPaste === 'function' })) return pasteDesktop();
       if (files.length) return uploadInto(files);
       const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
       // P51(#3): 셸 노드는 줄바꿈을 Shift+Enter로 보내 여러 줄이 입력줄에 쌓이게 한다(지금 종류로 본다. 셸 안에서 띄운 에이전트로 바뀔 수 있다)

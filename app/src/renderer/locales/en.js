@@ -2570,5 +2570,12 @@ export default {
     none: 'Nothing waiting for you',
     open: 'Open session',
   },
+  // P162: desktop window paste (files copied in Explorer become paths, screenshots become [Image n] chips)
+  desktopPaste: {
+    foldersOnly: 'Folders are not pasted',
+    foldersSkipped: { one: 'Left out a folder', other: 'Left out {n} folders' },
+    tooBig: 'The image is too large to paste',
+    failed: 'Paste failed: {error}',
+    image: 'Pasted the image path',
+  },
 };
-

@@ -4,7 +4,7 @@
 // - 백엔드가 없으면 띄운다. 백엔드는 터미널 서버(hc)가 없으면 깨끗한 환경으로 띄운다. 창을 닫아도 백엔드와 터미널 서버는 계속 돈다(ARCH 1절 "백엔드 수명", P2에서 정함).
 // - 창(renderer)은 백엔드 WebSocket API에 직접 붙는다. main은 주소와 토큰만 넘긴다.
 // - P69: 업데이트로 백엔드를 바꿀 때(update.restart) 앱을 끝낸다. 그동안 옛 백엔드를 다시 띄우지 않고, 다시 실행돼도 창을 열지 않는다. 새 창은 바꾸기 프로세스가 띄운다.
-import { app, BrowserWindow, ipcMain, shell, Notification, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, Notification, dialog, clipboard, nativeImage } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,7 +16,9 @@ import { translate, DEFAULT_LANGUAGE } from '../renderer/lib/i18n.js'; // P16: �
 import { migrateAppProfile } from './profile.mjs'; // P18: 옛 창 프로필 옮기기
 import { noticeWay } from '../renderer/lib/remote.js'; // P58: 원격 붙음 알림은 창이 숨었을 때만 OS 알림
 import { windowTitle } from '../renderer/lib/update-notice.js'; // P71: 창 제목에 버전
-import { shouldPurgeOnClose, purgeAndDestroy } from './gpu-purge.mjs'; // P113: 창을 닫고 트레이에 남을 때 GPU 프로세스 메모리 돌려주기
+import { shouldPurgeOnClose, purgeAndDestroy } from './gpu-purge.mjs';
+import { uriListPaths, splitFolders } from '../renderer/lib/desktop-paste.js'; // P162: 붙여 넣은 파일 목록
+import { uploadDirOf, uploadPath, cleanupUploads, UPLOAD_MAX_BYTES } from '../../../backend/src/uploads.mjs'; // P162: 붙여 넣은 그림 자리와 정리(P48 웹 업로드와 같은 곳·규칙) // P113: 창을 닫고 트레이에 남을 때 GPU 프로세스 메모리 돌려주기
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, '..', '..');
@@ -76,6 +78,37 @@ ipcMain.on('mt:log', (_e, line) => log('[renderer]', String(line).slice(0, 2000)
 ipcMain.handle('mt:pickFolder', async () => {
   const r = await dialog.showOpenDialog(win, { title: tr('main.pickFolder'), properties: ['openDirectory'] });
   return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
+});
+
+// P162: 데스크톱 창의 붙여 넣기. 창은 클립보드에 글이 없고 파일이 있을 때만 부른다(lib/desktop-paste.js wantsDesktopPaste).
+// - 탐색기에서 복사한 파일 → { kind: 'files', paths, folders }. 폴더는 넣지 않고 수만 센다
+// - 캡처한 그림 → 데이터 폴더 uploads/에 PNG로 두고 { kind: 'image', path, thumb }(thumb: 미리보기용 작은 data URL)
+// - 둘 다 아니면 null
+ipcMain.handle('mt:clipPaste', async () => {
+  let items;
+  try { items = await clipboard.read(); } catch (e) { log('clipPaste read failed', e.message); return null; }
+  for (const it of items) {
+    if (!it.types.includes('text/uri-list')) continue;
+    const all = uriListPaths(await (await it.getType('text/uri-list')).text());
+    if (!all.length) continue;
+    return { kind: 'files', ...splitFolders(all, (p) => fs.statSync(p).isDirectory()) };
+  }
+  for (const it of items) {
+    if (!it.types.includes('image/png')) continue;
+    const buf = Buffer.from(await (await it.getType('image/png')).arrayBuffer());
+    if (!buf.length) continue;
+    if (buf.length > UPLOAD_MAX_BYTES) return { kind: 'error', code: 'too_big' };
+    const dir = uploadDirOf(cfg.dataDir);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = uploadPath(dir, 'pasted.png', 'image/png');
+    fs.writeFileSync(file, buf);
+    try { cleanupUploads(dir, { keep: file }); } catch {}
+    let thumb = null;
+    try { const img = nativeImage.createFromBuffer(buf); const { width, height } = img.getSize(); const k = Math.min(1, 240 / Math.max(width, height, 1)); thumb = (k < 1 ? img.resize({ width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) }) : img).toDataURL(); } catch {}
+    log(`clipPaste image ${path.basename(file)} ${buf.length}B`);
+    return { kind: 'image', path: file, thumb };
+  }
+  return null;
 });
 
 // A1 OS 알림(P3). 띄울지는 창(renderer)이 정한다(같은 대기에 한 번, 창에 초점이 있고 그 노드가 보이면 띄우지 않음).

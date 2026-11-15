@@ -2570,5 +2570,12 @@ export default {
     none: '기다리는 세션 없음',
     open: '세션 열기',
   },
+  // P162: 데스크톱 창 붙여 넣기(탐색기에서 복사한 파일은 경로, 캡처한 그림은 [Image n] 칩)
+  desktopPaste: {
+    foldersOnly: '폴더는 붙여 넣지 않습니다.',
+    foldersSkipped: '폴더 {n}개는 뺐습니다.',
+    tooBig: '그림이 너무 커서 붙여 넣지 못했습니다.',
+    failed: '붙여 넣지 못했습니다: {error}',
+    image: '그림 경로를 붙여 넣었습니다.',
+  },
 };
-

@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { workspaceOf, gitProbe } from './git.mjs';
+import { uploadsReadRule } from './uploads.mjs'; // P162
 import { ROLE_RE } from './links.mjs';
 import { SIZE_STEPS } from './canvas.mjs';
 import { canvasItems, areaOfNode, lineTree, dockOf, dockOuter } from './canvas-ops.mjs';
@@ -335,7 +336,7 @@ export class Branch {
     const c = this.b.cfg;
     return { ATRIUM_PROFILE: c.profile, ...terminalSessionEnv(c.terminalSession), ATRIUM_PORT: String(c.port), ATRIUM_DATA_DIR: c.dataDir, ATRIUM_SESSION_ID: sessionId, ...(token ? { ATRIUM_SESSION_TOKEN: this.token(sessionId) } : {}) };
   }
-  allowRules() { return branchAllow(); }
+  allowRules() { return [...branchAllow(), uploadsReadRule(this.b.cfg.dataDir)]; } // P162: 업로드 자리(붙여 넣은 그림) 읽기
   // writeSessionSettings에 더할 값
   settingsExtra(sessionId) { return { env: this.envFor(sessionId), allow: this.allowRules() }; }
   // writeBoardPlugin에 더할 것: 일 맡기기 스킬, atrium 명령(별칭 mtask)

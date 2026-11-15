@@ -15,6 +15,8 @@
 //      (글자는 textarea가 그대로 그려 커서·고르기·IME·되돌리기가 바뀌지 않는다). 받는 세션은 단추 옆 칩으로 보인다.
 //      높이는 그려진 글 높이(꺾인 줄 포함)로 정하고, 상한(18줄, 창 높이의 42%)에 닿으면 글칸 안쪽만 스크롤된다(위아래 여백은 그대로).
 //      Alt+Enter도 줄바꿈. 바는 아래 기준으로 위로 자라고 단추는 아래 줄에 붙어 있다. 칩 줄은 자란 만큼 위로 비킨다(--mt-cmd-grow)
+// P162: 데스크톱 창에서 탐색기로 복사한 파일을 붙이면 그 경로가, 캡처한 그림을 붙이면 [Image 1] 칩이 들어간다(lib/desktop-paste.js, main.mjs mt:clipPaste).
+//      칩은 보낼 때 그림 파일 경로로 바뀌고, 마우스를 올리면 작은 미리보기, 칩 뒤 Backspace로 통째로 지운다. 웹 화면(P48 업로드)은 그대로
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast, setBottomShown } from './store.js';
@@ -25,6 +27,7 @@ import { useT, errText } from './lib/i18n.js';
 import { bandZone, bottomNext } from './lib/bottom.js'; // P43. P61: 들어가는·나가는 범위(bandZone)
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles, insertAt } from './lib/upload.js';
+import { imageTokens, mergeTokens, nextImageNo, expandImages, imageLabel, pastePathsText, wantsDesktopPaste } from './lib/desktop-paste.js'; // P162
 import { kbLift } from './lib/touch-board.js'; // P83
 import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
 
@@ -160,6 +163,8 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const taRef = useRef(null);
   const rootRef = useRef(null);
   const hist = useRef({ list: [], i: -1 });
+  const [images, setImages] = useState({}); // P162: 그림 칩 번호 → { path, thumb }
+  const [preview, setPreview] = useState(null); // P162: 마우스를 올린 그림 칩 { n, x, y }
   useImperativeHandle(ref, () => ({ focus: () => taRef.current && taRef.current.focus() }));
   useEffect(() => {
     const onDraft = (e) => {
@@ -213,15 +218,17 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     const line = text.trim();
     if (!line) return;
     if (!/^@\S/.test(line)) { toast(t('cmd.needTarget'), 'error'); return; }
+    const out = expandImages(line, images); // P162: 그림 칩 → 파일 경로
     try {
-      const r = await api.call('session.send', { text: line });
+      const r = await api.call('session.send', { text: out });
       const add = {};
-      const body = line.replace(/^(@\S+\s*)+/, '');
+      const body = out.replace(/^(@\S+\s*)+/, '');
       for (const d of r.deliveries) add[d.deliveryId] = body;
       setSentTexts((x) => ({ ...x, ...add }));
-      hist.current.list = [line, ...hist.current.list.filter((x) => x !== line)].slice(0, 50);
+      hist.current.list = [out, ...hist.current.list.filter((x) => x !== out)].slice(0, 50);
       hist.current.i = -1;
       setText('');
+      setPreview(null);
     } catch (e) { toast(t('cmd.sendFailed', { error: errText(e) }), 'error'); }
   }
 
@@ -287,6 +294,45 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     }, (err) => toast(t('upload.failed', { error: err.message }), 'error'));
   }
 
+  // P162: 데스크톱 창의 붙여 넣기. 탐색기에서 복사한 파일은 경로(폴더는 뺀다), 캡처한 그림은 [Image n] 칩을 커서 자리에 넣는다
+  const desktopPaste = !isWeb && typeof window !== 'undefined' && window.mt && typeof window.mt.clipPaste === 'function';
+  function pasteDesktop() {
+    const el = taRef.current;
+    const at = el ? [el.selectionStart, el.selectionEnd] : [text.length, text.length];
+    const put = (add) => setText((cur) => {
+      const r = insertAt(cur, at[0], at[1], add);
+      requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(r.caret, r.caret); } });
+      return r.text;
+    });
+    window.mt.clipPaste().then((r) => {
+      if (!r) return;
+      if (r.kind === 'error') { toast(t('desktopPaste.tooBig'), 'error'); return; }
+      if (r.kind === 'files') {
+        if (r.folders && !r.paths.length) { toast(t('desktopPaste.foldersOnly', { n: r.folders })); return; }
+        if (r.folders) toast(t('desktopPaste.foldersSkipped', { n: r.folders }));
+        put(pastePathsText(r.paths));
+        return;
+      }
+      if (r.kind === 'image') {
+        const n = nextImageNo(el ? el.value : text, images);
+        setImages((m) => ({ ...m, [n]: { path: r.path, thumb: r.thumb } }));
+        put(`${imageLabel(n)} `);
+      }
+    }, (e) => toast(t('desktopPaste.failed', { error: e.message }), 'error'));
+  }
+  // P162: 그림 칩 위에 마우스가 오면 미리보기. 칩은 textarea 밑 겹에 그려지므로 겹의 칩 자리로 찾는다
+  function hoverChip(e) {
+    const m = mirInRef.current, f = fieldRef.current;
+    if (!m || !f) return;
+    const fr = f.getBoundingClientRect(); // 미리보기는 글칸(.mt-cmd-field) 안에 둔다(바가 움직이는 동안에도 칩에 붙어 있게)
+    let hit = null;
+    for (const sp of m.querySelectorAll('[data-img]')) {
+      for (const rc of sp.getClientRects()) if (e.clientX >= rc.left && e.clientX <= rc.right && e.clientY >= rc.top && e.clientY <= rc.bottom) { hit = { n: Number(sp.dataset.img), x: rc.left - fr.left, y: rc.top - fr.top }; break; }
+      if (hit) break;
+    }
+    setPreview((o) => (!hit ? null : o && o.n === hit.n && o.x === hit.x && o.y === hit.y ? o : hit));
+  }
+
   // 명령 바 아래 칩: 아직 가는 중인 전달은 늘, 끝난 전달은 잠깐만(지난 기록은 Thread에 있다). 실패는 조금 더 오래 둔다
   const now = useTick(2000);
   const recent = [...deliveries.values()].filter((d) => !FINAL.has(d.status) || (d._at && now - d._at < (d.status === 'failed' || d.status === 'unconfirmed' ? FAILED_SHOW_MS : DONE_SHOW_MS))).slice(-6).reverse();
@@ -330,7 +376,8 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
 
   // P142: @태그 조각과 받는 세션
   const sessList = useMemo(() => [...sessions.values()], [sessions]);
-  const tokens = useMemo(() => mentionTokens(text, sessList), [text, sessList]);
+  const tagTokens = useMemo(() => mentionTokens(text, sessList), [text, sessList]);
+  const tokens = useMemo(() => mergeTokens(tagTokens, imageTokens(text, images)), [tagTokens, text, images]); // P162: 그림 칩도 겹에 그리고 통째로 지운다
   const toList = useMemo(() => recipients(text, sessList), [text, sessList]);
   // P142: 높이. 겹의 안쪽(글과 같은 폭으로 그려진 글)의 높이를 재어 글칸 높이를 정한다. 그리기 전에 정해 깜빡이지 않는다
   const mirRef = useRef(null), mirInRef = useRef(null), fieldRef = useRef(null);
@@ -397,13 +444,23 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
         {/* P142: 글칸. 위아래 여백은 이 틀이 쥐고, 상한에 닿으면 textarea 안쪽만 스크롤된다. 여백을 눌러도 입력칸에 초점 */}
         <div className="mt-cmd-field" ref={fieldRef} data-scroll={fh.scroll ? '1' : undefined} onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); taRef.current && taRef.current.focus(); } }}>
           <div className="mt-cmd-mirror" ref={mirRef} aria-hidden="true">
-            <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i}>{p.text}</span>))}{'\u200b'}</div>
+            <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag && p.tag.img ? <span key={i} className="mt-cmd-img" data-img={p.tag.n}>{p.text}</span> : p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i}>{p.text}</span>))}{'\u200b'}</div>
           </div>
           <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={missionOpen ? t('mmTerr.barHint') : t('cmd.placeholder')} title={t('boardKeys.command')}
             onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"
-            onPaste={(e) => { const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }}
+            onPaste={(e) => {
+              if (wantsDesktopPaste(e.clipboardData, { desktop: desktopPaste })) { e.preventDefault(); pasteDesktop(); return; } // P162
+              const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); }
+            }}
+            onMouseMove={hoverChip} onMouseLeave={() => setPreview(null)}
             onDragOver={(e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
             onDrop={(e) => { const f = isWeb ? filesOf(e.dataTransfer) : []; if (f.length) { e.preventDefault(); uploadInto(f); } }} />
+          {preview && images[preview.n] && (
+            <div className="mt-cmd-img-preview" data-role="img-preview" style={{ left: `${Math.round(preview.x)}px`, top: `${Math.round(preview.y)}px` }}>
+              {images[preview.n].thumb ? <img src={images[preview.n].thumb} alt={imageLabel(preview.n)} /> : null}
+              <span>{imageLabel(preview.n)}</span>
+            </div>
+          )}
         </div>
         {/* P142: 이 글이 가는 세션. 없는 이름·셸은 다른 모양 */}
         {toList.length > 0 && (
