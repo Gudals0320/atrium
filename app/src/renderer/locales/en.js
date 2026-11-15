@@ -1309,7 +1309,7 @@ export default {
     st_sleeping: 'Asleep',
     sessionsN: { one: '{n} session', other: '{n} sessions' },
     menu: 'More',
-    wsTip: 'Click to fold. Drag onto a group to move it. The name goes to its area',
+    wsTip: 'Click to go to its area (on the board or in the session map). The arrow folds it. Drag onto a group to move it',
     attnMore: { one: '{n} more needs a look', other: '{n} more need a look' },
     kindTitle: 'Filter by kind',
     kindAll: 'All kinds',
@@ -2444,6 +2444,11 @@ export default {
     noTask: 'No task yet',
   },
   // P152: mission map A "Territories" (folders as territories, workspaces as islands, teams as rings, infinite canvas)
+  // P153 r9: sidebar fold arrow (rows go to their area, the arrow folds)
+  sbFold: {
+    open: 'Expand',
+    close: 'Collapse',
+  },
   // P153 r8: session map card preview (hover or focus)
   mmPeek: {
     asks: 'Asks',
