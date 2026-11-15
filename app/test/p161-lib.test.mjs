@@ -18,7 +18,7 @@ test('세션 맵은 mt-sm, 설정 쪽은 mt-ln만 쓴다', () => {
   assert.ok(!/mt-ln/.test(map), '세션 맵에 mt-ln 이름이 남지 않는다');
   assert.match(map, /className=\{`mt-mission mt-ta mt-sm /);
   for (const f of SETTINGS) assert.ok(!/mt-sm/.test(read(f)), `${f}에 세션 맵 이름이 없다`);
-  assert.ok(!/mt-ln/.test(read('PhoneLineage.jsx')));
+  assert.ok(!/mt-ln/.test(read('PhoneMap.jsx')));
 });
 
 test('styles.css의 .mt-ln 규칙은 모두 설정 쪽 클래스만 가리킨다', () => {
@@ -37,7 +37,7 @@ test('세션 맵 규칙과 반짝임 키프레임은 mt-sm 이름', () => {
   assert.match(css, /^\.mt-sm \{ --ln-line:/m);
   assert.match(css, /^\.mt-sm-row \{ position: absolute;/m);
   assert.match(css, /@keyframes mt-sm-blink /);
-  assert.match(read('phone.css'), /animation: mt-sm-blink /);
+  assert.match(read('PhoneMap.jsx'), /className="mt-pmap-stage mt-ta mt-sm"/, 'P166: 휴대폰 맵도 .mt-sm 반짝임을 쓴다');
 });
 
 test('연결 칸 빈 상태: 무엇을 하는 칸인지와 더하는 법, 두 사전', () => {

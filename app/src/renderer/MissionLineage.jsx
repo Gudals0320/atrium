@@ -89,7 +89,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
 // P157: 카드에는 브라우저 풍선(title)을 달지 않는다. 마우스를 올리면 미리 보기(Peek) 하나만 뜬다(전에는 둘이 함께 떴다). 같은 사실은 aria-label에
-const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null }) {
+export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null }) {
   const n = b.node;
   const st = ST[tier] || 'ready';
   const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}`;
@@ -129,7 +129,7 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, o
 const HOVER_MS = 500, PEEK_TTL = 4000, PEEK_LINES = 10;
 const peekCache = new Map(); // sessionId → { at, events, screen }
 const lastLines = (text, n) => String(text || '').replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, '')).filter((l) => l.trim()).slice(-n);
-export function Peek({ pv, f, b, live, tier, t, now, folder }) { // P160: 휴대폰 세션 맵의 길게 누르기 미리 보기도 같은 내용(PhoneLineage.jsx)
+export function Peek({ pv, f, b, live, tier, t, now, folder }) { // P160·P166: 휴대폰 세션 맵의 길게 누르기 미리 보기도 같은 내용(PhoneMap.jsx)
   const sid = b.node.sessionId;
   const awake = !!live && !['sleeping', 'exited'].includes(live.state) && !String(sid).startsWith('fk-');
   const [data, setData] = useState(() => peekCache.get(sid) || null);

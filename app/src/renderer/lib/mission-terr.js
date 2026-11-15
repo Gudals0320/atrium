@@ -1,5 +1,5 @@
 // P152·P153: 미션 맵 A "Territories"(영토 지도) 배치와 무한 캔버스 셈. 순수 함수만 둔다(단위 시험 test/p152-lib.test.mjs, test/p153-lib.test.mjs).
-// 그리는 쪽: PC는 P153 r7부터 시안 B(lib/mission-lineage.js, MissionLineage.jsx)라 이 파일의 영토 배치(territoryLayout·phoneTerr)는 P160부터 창에서 쓰지 않는다(휴대폰도 PhoneLineage.jsx, 단위 시험만 남음). 길 찾기(routeOrtho)·카드 폭·높이·무한 캔버스 셈은 PC도 같이 쓴다.
+// 그리는 쪽: PC는 P153 r7부터 시안 B(lib/mission-lineage.js, MissionLineage.jsx)라 이 파일의 영토 배치(territoryLayout·phoneTerr)는 P160부터 창에서 쓰지 않는다(휴대폰은 P166부터 PhoneMap.jsx = lineageLayout phone, 단위 시험만 남음). 길 찾기(routeOrtho)·카드 폭·높이·무한 캔버스 셈은 PC도 같이 쓴다.
 // - 폴더(사이드바 가상 그룹, P44) = 색 점선 영토, 워크스페이스 = 영토 안의 섬(머리에 이름과 상태 수 칩), 폴더 밖 워크스페이스 = 영토 없는 점선 섬.
 //   소속과 차례는 사이드바(lib/sidebar-tree.js groupLayout)와 같다: 폴더가 사이드바 차례로 먼저, 폴더 안은 폴더 목록 차례, 그 뒤에 폴더 밖 워크스페이스(판 차례).
 //   키는 맞출 때만 정규화한다(normKey: 역슬래시 → 슬래시, 끝 슬래시 뺌, 소문자). 폴더 목록에 없는 워크스페이스는 경로가 폴더 안이어도 폴더 밖이다(사이드바와 같다).

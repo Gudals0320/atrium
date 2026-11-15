@@ -1,4 +1,4 @@
-// P163 단위 시험: 세션 맵(PC lib/mission-lineage.js, 휴대폰 lib/phone-lineage.js)에서 하위가 셋 이상인 세션 아래 절전 하위를 얇은 줄로 줄이는지.
+// P163 단위 시험: 세션 맵(PC lib/mission-lineage.js, 휴대폰은 P166부터 같은 함수의 phone 배치)에서 하위가 셋 이상인 세션 아래 절전 하위를 얇은 줄로 줄이는지.
 // 하위 2개는 모두 카드, 3개 이상이면 절전만 얇음, 작업 중·응답 필요·오류·완료 미확인은 카드, 자기 하위가 있거나 접기 칩이 붙는 절전 세션은 카드,
 // 얇은 줄은 깨어 있는 카드 아래로 모이고(그 안은 만든 차례), 높이·간격, 동료 붙이기가 먼저, 휴대폰도 같은 판정, 창 연결.
 import test from 'node:test';
@@ -7,7 +7,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lineageLayout, applyRelationStub, relationDrop, LINE } from '../src/renderer/lib/mission-lineage.js';
-import { phoneLineage } from '../src/renderer/lib/phone-lineage.js';
 
 const R = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer');
 const read = (f) => fs.readFileSync(path.join(R, f), 'utf8');
@@ -104,21 +103,21 @@ test('동료 붙이기가 먼저: 형제 중 동료가 있는 절전 하위는 �
 test('휴대폰: 같은 판정(얇은 줄 표시, 깨어 있는 카드 아래로 모음)', () => {
   seq = 0;
   const nodes = [node('lead'), node('w1', 'lead', sleep), node('w2', 'lead'), node('w3', 'lead', sleep), node('w4', 'lead'), node('a', 'lead', sleep), node('a1', 'a')];
-  const l = lay(nodes);
-  const items = phoneLineage(l).folders[0].ws[0].items;
-  assert.deepEqual(items.map((x) => [x.id, !!x.thin]), [['s:lead', false], ['s:w2', false], ['s:w4', false], ['s:a', false], ['s:a1', false], ['s:w1', true], ['s:w3', true]]);
+  const ph = (ns) => lineageLayout({ nodes: ns, edges: spawn(ns) }, { order: [A], phone: true });
+  const l = ph(nodes), pc = lay(nodes);
+  assert.deepEqual(thinIds(l), thinIds(pc), 'P166: 휴대폰 배치도 같은 얇은 줄');
+  assert.deepEqual(l.vkids.get('s:lead'), ['s:w2', 's:w4', 's:a', 's:w1', 's:w3'], '깨어 있는 카드 아래로 모음');
+  assert.ok(thinIds(l).every((id) => l.cards.get(id).h === LINE.THIN));
   seq = 0;
-  const two = lay([node('lead'), node('w1', 'lead', sleep), node('w2', 'lead', sleep)]);
-  assert.ok(phoneLineage(two).folders[0].ws[0].items.every((x) => !x.thin), '하위 2개면 휴대폰도 모두 카드');
+  assert.equal(thinIds(ph([node('lead'), node('w1', 'lead', sleep), node('w2', 'lead', sleep)])).length, 0, '하위 2개면 휴대폰도 모두 카드');
 });
 
-test('창 연결: PC 카드와 휴대폰 카드가 얇은 줄을 그리고 CSS가 있다', () => {
-  const pc = read('MissionLineage.jsx'), ph = read('PhoneLineage.jsx');
+test('창 연결: PC 카드가 얇은 줄을 그리고 휴대폰은 같은 카드(Card)를 쓴다, CSS가 있다', () => {
+  const pc = read('MissionLineage.jsx'), ph = read('PhoneMap.jsx');
   assert.match(pc, /b\.thin \? <span className="mt-sm-thin" data-role="ta-thin">/);
   assert.match(pc, /onDoubleClick=\{\(\) => onOpen\(id, true\)\}/, '얇은 줄도 같은 카드 판(누르기·더블클릭·미리보기)');
-  assert.match(ph, /it\.thin \?/);
+  assert.match(ph, /import \{ Card, Peek, cardFacts \} from '\.\/MissionLineage\.jsx'/);
   assert.match(read('styles.css'), /\.mt-sm \.mt-ta-slot\.thin \.mt-ta-card/);
-  assert.match(read('phone.css'), /\.mt-pl-card\.thin \{ height: 30px/);
 });
 
 test('Alt+끌기: 얇은 줄끼리 사이 틈은 동료 자리가 아니고(부모의 하위), 묶음 위·아래 끝은 동료 자리', () => {

@@ -22,7 +22,7 @@ import { kindOf, shownKind, logoFor } from './lib/kinds.js';
 import { TOUCH_SLOP_PX, pinchViewport, panViewport, mid, dist } from './lib/touch-board.js';
 import { MissionLight } from './Mission.jsx'; // P107: 테두리를 따라 도는 빛 층(PC와 같다)
 import { missionStyleOf } from './lib/mission-terr.js';
-import { PhoneLineage } from './PhoneLineage.jsx'; // P160: PC 세션 맵과 같은 톤의 목록(기본, P152 영토 지도 PhoneTerr.jsx를 갈음)
+import { PhoneMap } from './PhoneMap.jsx'; // P166: PC 세션 맵과 같은 무한 캔버스(기본, P160 세로 목록 PhoneLineage.jsx를 갈음)
 
 const REFRESH_MS = 600; // 판이 바뀌면 이만큼 모았다가 다시 받는다
 let cache = null; // 마지막 mission.graph
@@ -89,10 +89,10 @@ function Node({ n, live, dim, no, t, now }) {
   );
 }
 
-// P160: 기본은 PhoneLineage.jsx(폴더 > 워크스페이스 > 단계 들여쓰기 목록). 이 파일의 지도(ClassicPhoneMission)는 숨은 판 설정 missionStyle: classic일 때만 쓴다
+// P166: 기본은 PhoneMap.jsx(PC와 같은 무한 캔버스, 세로 화면 배치). 이 파일의 지도(ClassicPhoneMission)는 숨은 판 설정 missionStyle: classic일 때만 쓴다
 export function PhoneMission(props) {
   const style = useStore((st) => missionStyleOf(st.settings));
-  return style === 'classic' ? <ClassicPhoneMission {...props} /> : <PhoneLineage {...props} />;
+  return style === 'classic' ? <ClassicPhoneMission {...props} /> : <PhoneMap {...props} />;
 }
 
 function ClassicPhoneMission({ onBack, onOpen, conn }) {

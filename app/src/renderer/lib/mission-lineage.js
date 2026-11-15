@@ -25,10 +25,12 @@ export function spineWidth(names = [], stats = []) {
 
 // expanded: 깊이 접기를 편 카드 id들(Set). FOLD 단계보다 깊은 가지는 접는다
 // spineText(nWs, nSessions) → [윗줄, 아랫줄](P157: 기둥 폭을 셀 때 수 글도 넣는다. 창은 지금 언어 글을 준다)
-export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null } = {}) {
+// P166: phone = 휴대폰 세로 배치(PHONE 위 설명). view = 맵이 보이는 칸 { w, h }(주면 그 비율에 맞춰 단을 나눈다), pages = 단 수를 정해서(그림 비교·시험용)
+export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0 } = {}) {
   const tree = missionTree(graph);
   const { byId } = tree;
   const L = { ...LINE, CW: cardWidth(tree.nodes.map((n) => n.name), LINE.NAME_PX) };
+  if (phone) { L.CW = Math.min(PHONE.CW_MAX, Math.max(PHONE.CW_MIN, Math.round(L.CW * PHONE.CW_K))); L.GX = PHONE.GX; L.FOLD = PHONE.FOLD; }
   const tierOf = (id) => (tiers && tiers.has(id) ? tiers.get(id) : nodeTier(byId.get(id)));
   const wsOf = (id) => (byId.get(id) || {}).workspaceKey || '';
   const nameOf = (key) => (names && names.get(key)) || (key ? keyName(key) : '');
@@ -50,8 +52,8 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
 
   // P157: 기둥 폭은 가장 긴 폴더 이름에 맞춘다. 워크스페이스 머리부터 오른쪽은 늘어난 만큼 민다
   const stats = spineText ? groups.flatMap((g) => spineText(g.keys.length, tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).length)) : [];
-  L.SPINE = spineWidth(groups.map((g) => g.name), stats);
-  L.HEADX = LINE.HEADX + (L.SPINE - LINE.SPINE);
+  L.SPINE = phone ? 0 : spineWidth(groups.map((g) => g.name), stats);
+  L.HEADX = phone ? PHONE.PADX : LINE.HEADX + (L.SPINE - LINE.SPINE);
   const parentIn = (id) => { const p = tree.parent.get(id); return p && wsOf(p) === wsOf(id) ? p : null; };
   const crossIn = (id) => { const p = tree.parent.get(id); return !!p && wsOf(p) !== wsOf(id); };
   const kidsIn = (id) => (tree.kids.get(id) || []).filter((c) => wsOf(c.id) === wsOf(id));
@@ -96,13 +98,15 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const treeRoot = (n) => isRoot(n) && ((layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || anyPeer(n) || relTouch.has(n.id) || lineageOnly(n) || calledBefore(n));
   for (const n of tree.nodes) { if (treeRoot(n)) depthWalk(n.id, 0, 0); else if (crossIn(n.id)) depthWalk(n.id, 1, 0); }
   const nCols = Math.max(L.MINCOLS, maxDepth + 1);
-  const COL = Array.from({ length: nCols }, (_, i) => L.HEADX + L.HEADW + 208 + i * (L.CW + L.GX)); // 시안: 리드 칸 740 = 232 + 300 + 208
+  const COL = Array.from({ length: nCols }, (_, i) => (phone ? PHONE.PADX : L.HEADX + L.HEADW + 208) + i * (L.CW + L.GX)); // 시안: 리드 칸 740 = 232 + 300 + 208
   const DIV = COL[nCols - 1] + L.CW + L.SOLOGAP / 2;
   const SOLO = COL[nCols - 1] + L.CW + L.SOLOGAP;
-  const W = SOLO + (L.CW + L.SGX) * 2 + 60;
+  // P166: 휴대폰은 솔로가 나무 아래 격자라 폭 = 나무 칸 수(적어도 MINCOLS)만큼
+  const PCOLS = Math.max(L.MINCOLS, nCols);
+  const W = phone ? PHONE.PADX * 2 + PCOLS * L.CW + (PCOLS - 1) * L.GX : SOLO + (L.CW + L.SGX) * 2 + 60;
 
   const cards = new Map(), bands = [], rows = [], divs = [];
-  // P160: 휴대폰 세션 맵(lib/phone-lineage.js)이 같은 판정을 쓰도록 줄마다 놓은 차례(시작 칸 뿌리·다른 워크스페이스에서 온 것·솔로)와 보이는 하위 차례를 남긴다(PC 배치는 그대로)
+  // P160: 휴대폰 목록이 같은 판정을 쓰도록 남긴 줄마다 놓은 차례(시작 칸 뿌리·다른 워크스페이스에서 온 것·솔로)와 보이는 하위 차례를 남긴다(PC 배치는 그대로)
   const seq = new Map(), vkids = new Map();
   const put = (id, depth, y, ws) => cards.set(id, { x: COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0, thin: thin.has(id) });
   // P163: 한 세션 아래 보이는 하위(곁에 붙은 동료 포함)가 THINMIN개 이상이면 절전 중인 하위만 얇은 줄(높이 THIN)로 줄이고 깨어 있는 카드 아래로 모은다(그 안은 지금 차례 = 만든 차례).
@@ -132,8 +136,9 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   };
   let y = 0;
   groups.forEach((g, gi) => {
-    if (gi) y += L.BANDGAP; // P153 r8: 폴더 사이를 띄운다
+    if (gi) y += phone ? PHONE.BANDGAP : L.BANDGAP; // P153 r8: 폴더 사이를 띄운다
     const by = y;
+    if (phone) y += PHONE.FH; // P166: 휴대폰은 폴더 이름이 띠 위 머리(왼쪽 기둥 대신)
     g.keys.forEach((key, wi) => {
       const nodes = tree.nodes.filter((n) => wsOf(n.id) === key).sort(bySpawn);
       // 시작 칸: 이 줄에 하위가 있는 뿌리, 하위가 다른 워크스페이스에만 있는 뿌리, 동료가 있는 뿌리. 뿌리끼리 동료면 바로 아래에 붙인다
@@ -142,6 +147,8 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
       const away = nodes.filter((n) => crossIn(n.id)); // 부모가 다른 워크스페이스(1단계 칸에서 시작)
       const solos = nodes.filter((n) => isRoot(n) && !treeRoot(n));
       seq.set(key, { roots: roots.map((r) => r.id), away: away.map((n) => n.id), solos: solos.map((n) => n.id) });
+      const chips = chipCounts(nodes.map((n) => tierOf(n.id)));
+      if (phone) { y += phoneRow(key, g, wi, roots, away, solos, chips, nodes.length); return; }
       let cy = y + L.RT;
       roots.forEach((r, i) => { const peerNext = i + 1 < roots.length && peersOf(r.id).includes(roots[i + 1].id); cy += place(r.id, 0, cy, key, alignOf(roots.map((x) => x.id), i)) + (peerNext ? L.PGY : L.GY * 2); });
       for (const s of away) cy += place(s.id, 1, cy, key) + L.GY * 2;
@@ -154,16 +161,18 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
         soloH.push(sy + H(s.id) - y);
       });
       const h = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0, L.ROWMIN) + L.RB;
-      const chips = chipCounts(nodes.map((n) => tierOf(n.id)));
       rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: L.SPINE, w: W - L.SPINE, chips, count: nodes.length });
       divs.push({ x: DIV, y: y + 16, h: h - 32 });
       y += h;
     });
-    // P157: 띠 최소 높이. 모자라면 마지막 줄을 늘린다(기둥 글이 잘리지 않게)
-    if (y - by < L.BANDMIN) { const r = rows[rows.length - 1], d = divs[divs.length - 1], dy = L.BANDMIN - (y - by); r.h += dy; d.h += dy; y += dy; }
+    // P157: 띠 최소 높이. 모자라면 마지막 줄을 늘린다(기둥 글이 잘리지 않게). P166: 휴대폰은 머리가 위라 없다
+    if (!phone && y - by < L.BANDMIN) { const r = rows[rows.length - 1], d = divs[divs.length - 1], dy = L.BANDMIN - (y - by); r.h += dy; d.h += dy; y += dy; }
     const ids = tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).map((n) => n.id);
-    bands.push({ id: g.id, name: g.name, loose: g.id == null, odd: gi % 2 === 1, y: by, h: y - by, nWs: g.keys.length, sessions: ids.length, bar: chipCounts(ids.map(tierOf)) });
+    bands.push({ id: g.id, name: g.name, loose: g.id == null, odd: gi % 2 === 1, y: by, h: y - by, nWs: g.keys.length, sessions: ids.length, bar: chipCounts(ids.map(tierOf)), ...(phone ? { x: 0, w: W, gi, cont: false, page: 0 } : {}) });
   });
+  // P166: 휴대폰은 보이는 칸 비율에 맞춰 줄들을 단(page)으로 나눌 수 있다(신문처럼 위 → 아래, 왼 → 오른)
+  let nPages = 1;
+  if (phone) { nPages = flowPages(); y = Math.max(1, ...bands.map((b) => b.y + b.h)); }
 
   // ---- 선 ----
   const r1 = (v) => Math.round(v * 10) / 10;
@@ -212,8 +221,13 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   }
   if (cross.length) {
     const blocks = [...cards.values()].map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }));
-    for (const r of rows) blocks.push({ x: L.HEADX - 8, y: r.y + 12, w: L.HEADW + 16, h: 96 }); // 줄 머리(이름·칩)
-    for (const b of bands) blocks.push({ x: 0, y: b.y, w: L.SPINE, h: b.h }); // 폴더 기둥
+    if (phone) { // P166: 휴대폰 머리(위 띠)는 이름·칩 자리만 막는다(선이 줄 사이를 위아래로 지날 수 있게)
+      for (const r of rows) blocks.push({ x: r.x + PHONE.PADX - 6, y: r.y + 8, w: Math.min(r.w - PHONE.PADX * 2, L.CW * 1.3), h: PHONE.WH - 16 });
+      for (const b of bands) blocks.push({ x: b.x + PHONE.PADX - 6, y: b.y + 8, w: Math.min(b.w - PHONE.PADX * 2, L.CW * 1.3), h: PHONE.FH - 16 });
+    } else {
+      for (const r of rows) blocks.push({ x: L.HEADX - 8, y: r.y + 12, w: L.HEADW + 16, h: 96 }); // 줄 머리(이름·칩)
+      for (const b of bands) blocks.push({ x: 0, y: b.y, w: L.SPINE, h: b.h }); // 폴더 기둥
+    }
     const routes = routing && cross.length <= 60 ? routeOrtho(cross.map((c) => ({ a: c.a, b: c.b, sides: c.kind === 'peer' ? ['left', 'top', 'right'] : ['left', 'top'] })), blocks, edges.map((e) => e.pts), { G: 16 }) : null;
     cross.forEach((c, i) => {
       let pts = routes && routes[i];
@@ -224,11 +238,93 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   }
 
   // 칸: 워크스페이스 · 시작(0) · 1단계 · 2단계 · … · 솔로(보이는 가장 깊은 단계까지)
-  const cols = [{ key: 'ws', x: L.HEADX }, ...COL.map((x, i) => ({ key: 'lv', level: i, x })), { key: 'solo', x: SOLO }];
+  const cols = phone ? COL.map((x, i) => ({ key: 'lv', level: i, x })) : [{ key: 'ws', x: L.HEADX }, ...COL.map((x, i) => ({ key: 'lv', level: i, x })), { key: 'solo', x: SOLO }];
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
-  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: W, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids };
+  const BW = phone ? nPages * W + (nPages - 1) * PHONE.PGAP : W;
+  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: BW, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, ...(phone ? { phone: true, pages: nPages } : {}) };
+
+  // ---- P166: 휴대폰 줄 하나(머리 = 위 띠, 나무, 그 아래 솔로 격자). 줄 높이를 돌려준다 ----
+  function phoneRow(key, g, wi, roots, away, solos, chips, count) {
+    const top = y + PHONE.WH + PHONE.RT;
+    let cy = top;
+    roots.forEach((r, i) => { const peerNext = i + 1 < roots.length && peersOf(r.id).includes(roots[i + 1].id); cy += place(r.id, 0, cy, key, alignOf(roots.map((x) => x.id), i)) + (peerNext ? L.PGY : L.GY * 2); });
+    for (const s of away) cy += place(s.id, 1, cy, key) + L.GY * 2;
+    const hasTree = roots.length + away.length > 0;
+    const treeEnd = hasTree ? cy - L.GY * 2 : top;
+    let sy = hasTree ? treeEnd + PHONE.SOLOGAP : top, lineH = 0, bottom = treeEnd;
+    solos.forEach((s, i) => {
+      const c = i % PCOLS;
+      if (c === 0 && i) { sy += lineH + L.GY; lineH = 0; }
+      cards.set(s.id, { x: PHONE.PADX + c * (L.CW + L.GX), y: sy, w: L.CW, h: H(s.id), node: s, ws: key, depth: -1, fold: 0 });
+      lineH = Math.max(lineH, H(s.id));
+      bottom = Math.max(bottom, sy + H(s.id));
+    });
+    if (hasTree && solos.length) divs.push({ x: PHONE.PADX, y: treeEnd + PHONE.SOLOGAP / 2, w: W - PHONE.PADX * 2, h: 0, horiz: true, row: key });
+    const h = Math.max(bottom, top) + PHONE.RB - y;
+    rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: 0, w: W, chips, count, head: PHONE.WH, page: 0 });
+    return h;
+  }
+
+  // ---- P166: 단 나누기. 줄(워크스페이스)째로 옮긴다. 단마다 폴더 머리를 다시 단다(앞 단에서 이어지는 폴더는 cont) ----
+  function flowPages() {
+    if (!rows.length) return 1;
+    const bandOf = rows.map((r) => groups.findIndex((g) => (g.id || null) === (r.band || null)));
+    const headOf = (col, j) => (j === 0 ? PHONE.FH : bandOf[col[j]] !== bandOf[col[j - 1]] ? PHONE.FH + PHONE.BANDGAP : 0);
+    // n단으로 나눈 줄 차례(높이가 고르게): 지금 단에 이 줄을 더하면 목표 높이를 절반 넘게 넘길 때 다음 단으로
+    const split = (n) => {
+      const all = rows.map((_, i) => i);
+      const target = all.reduce((h, i, j) => h + rows[i].h + headOf(all, j), 0) / n;
+      const out = [[]];
+      let acc = 0;
+      for (const i of all) {
+        const cur = out[out.length - 1];
+        const add = rows[i].h + headOf([...cur, i], cur.length);
+        if (cur.length && out.length < n && acc + add / 2 > target) { out.push([i]); acc = rows[i].h + PHONE.FH; continue; }
+        cur.push(i); acc += add;
+      }
+      return out;
+    };
+    const heightOf = (col) => col.reduce((h, i, j) => h + rows[i].h + headOf(col, j), 0);
+    const plan = (n) => { const cs = split(n); return { cs, w: cs.length * W + (cs.length - 1) * PHONE.PGAP, h: Math.max(...cs.map(heightOf)) }; };
+    const kOf = (p) => Math.min(view.w / p.w, view.h / p.h);
+    let best = plan(1);
+    if (pages > 0) best = plan(Math.min(pages, rows.length));
+    else if (view && view.w > 0 && view.h > 0) {
+      for (let n = 2; n <= Math.min(PHONE.MAXPAGES, rows.length); n++) { const p = plan(n); if (p.cs.length === n && kOf(p) > kOf(best) * PHONE.GAIN) best = p; }
+    }
+    if (best.cs.length === 1) return 1;
+    // 다시 놓기: 단 c의 x = c × (W + PGAP), 단 안은 위에서부터
+    const segs = [];
+    best.cs.forEach((col, c) => {
+      const x0 = c * (W + PHONE.PGAP);
+      let cy = 0, seg = null;
+      col.forEach((i, j) => {
+        const r = rows[i], bi = bandOf[i], b0 = bands[bi];
+        if (headOf(col, j)) {
+          if (j) cy += PHONE.BANDGAP;
+          seg = { ...b0, x: x0, y: cy, h: PHONE.FH, cont: segs.some((s) => s.gi === b0.gi), page: c };
+          segs.push(seg);
+          cy += PHONE.FH;
+        }
+        const dx = x0 - r.x, dy = cy - r.y;
+        for (const cd of cards.values()) if (cd.ws === r.key) { cd.x += dx; cd.y += dy; }
+        for (const d of divs) if (d.row === r.key) { d.x += dx; d.y += dy; }
+        r.x += dx; r.y += dy; r.first = !!headOf(col, j); r.page = c;
+        cy += r.h; seg.h = cy - seg.y;
+      });
+    });
+    bands.length = 0;
+    bands.push(...segs);
+    return best.cs.length;
+  }
 }
+
+// P166: 휴대폰(짧은 변 430 이하) 세션 맵 배치. PC와 같은 판정·카드·선을 세로로 긴 화면에 맞춰 놓는다(lineageLayout phone: true).
+// - 폴더 이름: 왼쪽 기둥 대신 띠 위 머리(FH). 워크스페이스 이름·칩: 왼쪽 칸 대신 줄 위 머리(WH). 솔로: 오른쪽 두 줄 대신 나무 아래 격자(나무 칸 수만큼, 가로 점선으로 가른다).
+// - 카드 폭은 PC의 CW_K배(CW_MIN~CW_MAX), 단계 사이 GX(PC 110). 맞춤 보기에서 시작·1단계 두 칸이 화면 폭에 들게.
+// - 보이는 칸(view)을 주면 전체가 그 비율에 더 크게 들어가는 단 수(1~MAXPAGES)를 고른다(앞 단 수보다 GAIN배 이상 커질 때만). 단 사이 PGAP
+export const PHONE = { FOLD: 4, PADX: 20, GX: 56, FH: 84, WH: 68, RT: 8, RB: 26, SOLOGAP: 44, BANDGAP: 30, PGAP: 90, CW_K: 0.82, CW_MIN: 264, CW_MAX: 340, MAXPAGES: 3, GAIN: 1.2 };
 
 // P159: 같은 칸에 위아래로 붙은 동료 카드 사이 선. 양끝은 각 카드의 가로 가운데(u 아래 변 → d 위 변, 틈 g).
 // 폭이 같으면 세로 한 줄, 다르면 두 카드 사이 틈의 가운데에서 꺾는다(직각 유지). 옛 선은 카드 왼쪽 + 28에 서서 왼쪽으로 치우쳤다
@@ -241,7 +337,7 @@ export function peerPts(u, d, g = 0) {
 
 // P155: 세션 맵에서 누른 자리와 Alt로 끌기 종류를 정한다(단위 시험 test/p155-lib.test.mjs).
 // 줄 머리 옮기기(group.move)는 Alt를 누른 채 마우스 왼쪽 단추로 줄 머리를 누를 때만. 그 밖은 어디서 시작하든 시점 이동.
-// 손가락·펜은 옮기기가 없다(휴대폰은 PhoneLineage.jsx라 여기 오지 않지만 터치 PC도 같게). 끄기가 시작된 뒤에는 Alt를 떼도 놓을 때까지 옮기기다
+// 손가락·펜은 옮기기가 없다(휴대폰은 PhoneMap.jsx라 여기 오지 않지만 터치 PC도 같게). 끄기가 시작된 뒤에는 Alt를 떼도 놓을 때까지 옮기기다
 export function headDrag({ onHead = false, altKey = false, button = 0, pointerType = 'mouse' } = {}) {
   return onHead && altKey && button === 0 && pointerType === 'mouse' ? 'row' : 'pan';
 }

@@ -16,8 +16,9 @@ const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 const DEV = path.join(REPO, 'backend', '.dev');
 const OUT = path.join(REPO, 'experiments', 'p163', TAG);
 const CONVOS = path.join(REPO, 'experiments', 'p163', 'convos');
-const DIR = 'C:\\Workspace\\mtask-p163-a';
-const BOARD = 'atrium-dev-p163', PORT = '47932', DEBUG = '9412', SIM = 47997;
+const DIR = process.env.P163_DIR || 'C:\\Workspace\\mtask-p163-a';
+// P166: 다른 워커의 판에서 돌릴 때 P163_BOARD(atrium-dev-<이름>)·P163_PORT·P163_DEBUG·P163_SIM·P163_DIR로 덮는다
+const BOARD = `atrium-dev-${process.env.P163_BOARD || 'p163'}`, PORT = process.env.P163_PORT || '47932', DEBUG = process.env.P163_DEBUG || '9412', SIM = Number(process.env.P163_SIM || 47997);
 for (const k of Object.keys(process.env)) if (/^(ATRIUM_|MTASK_|HERDR_|HC_)/.test(k)) delete process.env[k];
 process.env.MT_E2E_OUT = path.relative(path.join(REPO, 'experiments'), OUT);
 const L = await import('./p59-lib.mjs');
@@ -203,17 +204,18 @@ async function phone() {
     const real = await realId(pg);
     await pg.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE)), real]);
     await pg.evaluate(ASLEEP, real);
-    await pg.evaluate(() => { try { localStorage.removeItem('atrium.phoneMap.expanded'); } catch {} window.__mtPhone.mission(); });
-    await pg.waitForSelector('[data-role=pl-card]', { timeout: 20000 });
+    await pg.evaluate(() => { try { localStorage.removeItem('atrium.phoneMap.expanded'); localStorage.removeItem('atrium.phoneMap.view'); } catch {} window.__mtPhone.mission(); });
+    // P166: 휴대폰 세션 맵은 PC와 같은 무한 캔버스(PhoneMap.jsx). 자리·높이는 세계 단위(배치 lay), 얇은 줄은 DOM에서
+    await pg.waitForSelector('.mt-pmap .mt-ta-card', { timeout: 20000 });
     await sleep(1200);
     const geo = await pg.evaluate(([kids]) => {
-      const box = (n) => document.querySelector(`[data-role=pl-card][data-name="${n}"]`).getBoundingClientRect();
+      const L = window.__mtPm.lay(), box = (n) => L.cards.get(`s:${n}`);
       const lead = box('lead'), ks = kids.map(box);
-      const items = [...document.querySelectorAll('[data-role=pl-item]')].map((x) => x.dataset.id.slice(2));
-      return { span: Math.round(Math.max(...ks.map((r) => r.bottom)) - lead.top), list: Math.round(document.querySelector('.mt-pl-scroll').scrollHeight), order: items, thin: [...document.querySelectorAll('[data-role=pl-card][data-thin="1"]')].map((x) => x.dataset.name), heights: Object.fromEntries(kids.map((n, i) => [n, Math.round(ks[i].height)])) };
+      const items = [...L.cards.entries()].filter(([, c]) => c.ws === lead.ws).sort((a, b) => a[1].x - b[1].x || a[1].y - b[1].y).map(([id]) => id.slice(2));
+      return { span: Math.round(Math.max(...ks.map((r) => r.y + r.h)) - lead.y), list: Math.round(L.bounds.h), order: items, thin: [...document.querySelectorAll('.mt-pmap .mt-ta-slot[data-thin="1"]')].map((x) => x.querySelector('.mt-ta-card').dataset.name), heights: Object.fromEntries(kids.map((n, i) => [n, Math.round(ks[i].h)])) };
     }, [KIDS]);
     facts.phone = geo;
-    log(`휴대폰 리드~마지막 하위 ${geo.span}, 목록 ${geo.list}, 차례 ${geo.order.join(',')}, 얇은 줄 ${geo.thin.join(',')}`);
+    log(`휴대폰 리드~마지막 하위 ${geo.span}(세계), 맵 높이 ${geo.list}, 차례 ${geo.order.join(',')}, 얇은 줄 ${geo.thin.join(',')}`);
     await shot(pg, 'phone-open');
     await pg.screenshot({ path: path.join(OUT, 'phone-full.png'), fullPage: true }).catch(() => {});
     if (!AFTER) { check('바꾸기 전: 얇은 줄 없음', geo.thin.length === 0, geo.thin); return; }
@@ -221,7 +223,7 @@ async function phone() {
     // 길게 누르기 = 미리 보기
     const cdp = await ctx.newCDPSession(pg);
     const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
-    const at = (n) => pg.evaluate((x) => { const el = document.querySelector(`[data-role=pl-card][data-name="${x}"]`); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, n);
+    const at = async (n) => { await pg.evaluate((x) => window.__mtPm.goTo(`s:${x}`), n); await sleep(700); return pg.evaluate((x) => { const r = document.querySelector(`.mt-pmap .mt-ta-card[data-name="${x}"]`).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, n); };
     let p = await at('w-sleep-3'); await sleep(300);
     await T('touchStart', [[p.x, p.y]]); await sleep(750); await T('touchEnd', []); await sleep(700);
     const pk = await pg.evaluate(() => ({ peek: !!document.querySelector('[data-role=pl-peek] [data-role=ln-peek]'), name: (document.querySelector('[data-role=pl-peek] .pk1 b') || {}).textContent || null }));
