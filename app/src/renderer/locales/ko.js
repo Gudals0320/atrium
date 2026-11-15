@@ -62,6 +62,7 @@ export default {
     no_agent: '실행 중인 에이전트 없음',
     terminal_down: '터미널 서버 연결 끊김',
     sleeping: '절전 모드에서 작업 재개 중',
+    editing: '수정 중',
   },
   time: {
     s: '{s}초',
@@ -2549,6 +2550,18 @@ export default {
     eventRelation: '관계 변경',
     rel: { sub: '하위', peer: '동료', none: '독립', auto: '자동' },
     tag: { assign: '지시', report: '보고', share: '공유' },
+  },
+  // P158: 명령줄 위 대기 중 칩의 수정
+  deliveryEdit: {
+    edit: '수정',
+    editTitle: '보내기 전에 글을 고칩니다. 고치는 동안에는 보내지 않습니다.',
+    holding: '수정 중 · 보내지 않고 대기',
+    inputLabel: '보낼 글 수정',
+    hint: 'Enter 저장 · Shift+Enter 줄바꿈 · Esc 취소',
+    alreadySent: '이미 보냈습니다. 고칠 수 없습니다.',
+    notEditable: '이미 끝난 전달이라 고칠 수 없습니다.',
+    empty: '빈 글은 보낼 수 없습니다.',
+    failed: '고치지 못했습니다: {error}',
   },
 };
 

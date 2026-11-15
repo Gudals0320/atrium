@@ -2342,3 +2342,15 @@ html[data-work-light="off"] .mt-ln .blink, html[data-work-light="off"] .mt-ln .b
 .mt-ln .lv-far .mt-ln-althint { font-size: clamp(18px, calc(9px * var(--ik, 1)), 26px); }
 .mt-ln-spine .fn { overflow: visible; text-overflow: clip; }
 .mt-ln-spine .fs { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+
+/* ---------- P158: 명령줄 위 전달 칩 다듬기 ----------
+   세션 맵이 열린 동안에는 판의 칩 줄(.mt-chips)이 덮개 밑에 숨으므로 그 자리(54px)를 비우지 않고 명령줄 바로 위(판의 칩 줄과 같은 8px 사이)에 붙인다.
+   bottom이 바 높이(100%)를 따르므로 명령줄이 여러 줄로 자라도, 사이드바·창 크기로 바 너비가 바뀌어도 따라간다. 너비는 바 너비 안(가장자리를 넘지 않음) */
+.mt-bottom[data-mission="1"] .mt-bottom-above { bottom: calc(100% + 8px); width: 100%; }
+/* 대기 중 칩의 수정: 칩이 글 칸으로 바뀐다(머리 줄 · 글 칸 · 단추 줄) */
+.mt-delivery.mt-delivery-edit { flex-direction: column; align-items: stretch; height: auto; width: min(560px, 100%); max-width: none; padding: 8px 10px; gap: 6px; border-radius: 14px; }
+.mt-delivery-edit-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mt-delivery-edit-input { width: 100%; box-sizing: border-box; resize: none; min-height: 30px; max-height: 220px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--chrome-line); background: color-mix(in srgb, var(--chrome-bg) 70%, #000); color: inherit; font: inherit; font-size: 13px; line-height: 1.45; outline: none; }
+.mt-delivery-edit-input:focus { border-color: color-mix(in srgb, var(--warn) 60%, transparent); }
+.mt-delivery-edit-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.mt-delivery-edit-hint { flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
