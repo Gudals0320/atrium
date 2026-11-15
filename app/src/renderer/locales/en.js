@@ -2570,6 +2570,14 @@ export default {
     none: 'Nothing waiting for you',
     open: 'Open session',
   },
+  // P162: desktop window paste (files copied in Explorer become paths, screenshots become [Image n] chips)
+  desktopPaste: {
+    foldersOnly: 'Folders are not pasted',
+    foldersSkipped: { one: 'Left out a folder', other: 'Left out {n} folders' },
+    tooBig: 'The image is too large to paste',
+    failed: 'Paste failed: {error}',
+    image: 'Pasted the image path',
+  },
   // P161: empty state of the Connections tab (what it is for, how to add one)
   connEmpty: {
     title: 'No connections yet',
@@ -2577,4 +2585,3 @@ export default {
     how: 'Press New connection, enter the base URL and the name of the environment variable that holds the key, then pick it in a launcher. Without one, launchers use the harness login.',
   },
 };
-
