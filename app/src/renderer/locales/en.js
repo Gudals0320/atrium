@@ -2432,4 +2432,9 @@ export default {
     on: 'Performance trace on for 10 minutes',
     off: 'Performance trace off',
   },
+  // P149: mission map card task line for sessions that are not working
+  mmMap3: {
+    lastDid: 'Last: {text}',
+    noTask: 'No task yet',
+  },
 };

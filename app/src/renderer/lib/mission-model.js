@@ -182,7 +182,8 @@ export const nodeTier = (n, live = null) => (live || (n && n.state) ? tierFor(n,
 export const REST_TIERS = ['rest', 'sleep', 'done'];
 export const restTier = (t) => REST_TIERS.includes(t);
 // 위 거르기 칸(P32의 분류 열쇠 그대로)과 등급: 맞지 않는 세션은 자리는 그대로 두고 흐리게
-export const FILTERS = ['all', 'needs_you', 'working', 'idle', 'done', 'exited'];
+// P149: 작업 완료 칸은 뺐다(작업 완료는 판 위 알약과 카드의 보라 표시로만 보인다, 사용자). filterMatch의 'done'은 옛 호출을 위해 남긴다
+export const FILTERS = ['all', 'needs_you', 'working', 'idle', 'exited'];
 export function filterMatch(tier, filter) {
   switch (filter) {
     case 'needs_you': return tier === 'turn' || tier === 'alert';

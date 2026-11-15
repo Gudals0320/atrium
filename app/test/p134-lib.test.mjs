@@ -87,7 +87,7 @@ test('열 자리: 위아래로 쌓이면 폴더 안 팀과 폴더 밖 팀의 리
   assert.equal(b('lead').x, b('olead').x);
   assert.equal(b('w1').x, b('ow').x);
   // P145: 넓은 지도에서는 폴더 밖 팀(o1)이 폴더 상자 오른쪽에 같은 위 끝으로 선다. 팀 안 흐름(리드 → 하위)은 그대로
-  const wide = missionLayout(board(), { order: ORDER, vgroups: VG, width: 1400 });
+  const wide = missionLayout(board(), { order: ORDER, vgroups: VG, width: 1520 }); // P149: 카드 폭 216 → 232라 1400 → 1520
   const o1 = wide.groups.find((g) => g.key === 'o1'), fa = wide.folders.find((f) => f.id === 'fa');
   assert.equal(o1.plate.y, fa.y); assert.ok(o1.plate.x > fa.x + fa.w);
   assert.equal(wide.boxes.get('s:ow').x - wide.boxes.get('s:olead').x, MISSION.boxW + MISSION.colGap);
