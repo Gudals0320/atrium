@@ -174,6 +174,16 @@ async function pc() {
       // 처음 연 화면에서 읽히는가: 화면 위 이름·상태 글 크기, 카드가 위 줄·명령줄에 가리지 않는가
       const rd = await page.evaluate(() => { const v = window.__mtTa.view(); const top = document.querySelector('[data-role=ta-top]').getBoundingClientRect().bottom, bar = document.querySelector('[data-role=bottom] .mt-cmd').getBoundingClientRect().top; const cs = [...document.querySelectorAll('.mt-ta-card')]; const c = cs[0]; const fs2 = (sel) => parseFloat(getComputedStyle(c.querySelector(sel)).fontSize) * v.k; const vis = cs.map((x) => x.getBoundingClientRect()).filter((r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth); return { k: v.k, name: fs2('.mt-ta-tile .tn'), status: fs2('.mt-ta-tile .ts'), covered: vis.filter((r) => r.top < top || r.bottom > bar).length, shown: vis.length, all: cs.length }; });
       check(`[${w}] 처음 화면: 이름 ≥ 12px, 상태 ≥ 10px, 위 줄·명령줄에 가린 카드 없음`, rd.name >= 12 && rd.status >= 10 && rd.covered === 0, rd);
+      // 처음 화면 타일 이름이 잘렸는가(말줄임), 타일 내용이 카드 밖으로 넘치는가
+      const nm = await page.evaluate(() => [...document.querySelectorAll('.mt-ta-card')].map((c) => { const tn = c.querySelector('.mt-ta-tile .tn'), tile = c.querySelector('.mt-ta-tile'); return { name: c.dataset.name, cut: tn.scrollHeight > tn.clientHeight * 1.25, over: tile.scrollHeight > tile.clientHeight + 2 }; }));
+      const cut = nm.filter((x) => x.cut).map((x) => x.name), over = nm.filter((x) => x.over).map((x) => x.name);
+      log(`[${w}] 잘린 이름 ${cut.length}: ${cut.join(', ')}`);
+      check(`[${w}] 처음 화면: 타일 내용이 카드 안, 잘린 이름은 아주 긴 것만(20자 이상)`, !over.length && cut.every((n) => n.length >= 20), { cut, over });
+      // 보통 단계(85%)에서 카드 내용(일 세 줄·오류 두 줄까지)이 잘리지 않는가
+      await page.evaluate(() => { const v = window.__mtTa.view(); window.__mtTa.set({ k: 0.85, x: v.x, y: v.y }); }); await sleep(500);
+      const clip = await page.evaluate(() => [...document.querySelectorAll('.mt-ta-card')].map((c) => { const f = c.querySelector('.mt-ta-full'); const sub = [...f.querySelectorAll('.c3, .cerr')].filter((x) => x.scrollHeight > x.clientHeight + 1).map((x) => x.className); return { name: c.dataset.name, box: f.scrollHeight > f.clientHeight + 1, sub }; }).filter((x) => x.box || x.sub.length));
+      check(`[${w}] 보통: 카드 내용(일·오류 글)이 잘리지 않는다`, !clip.length, clip);
+      await page.evaluate(() => window.__mtTa.fit()); await sleep(300);
       if (w === 1584) { await page.emulateMedia({ reducedMotion: 'reduce' }); await sleep(400); await shotTo(page, `pc-${w}-fit-reduce`); await page.emulateMedia({ reducedMotion: 'no-preference' }); }
       // 보통 단계(85%): 첫 영토의 왼쪽 위부터, 그리고 무리마다 무리 가운데로
       const at = (box, k) => page.evaluate(([b, kk]) => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); window.__mtTa.set({ k: kk, x: vp.width / 2 - (b.x + b.w / 2) * kk, y: (vp.height + 96 - 110) / 2 - (b.y + b.h / 2) * kk }); }, [box, k]);

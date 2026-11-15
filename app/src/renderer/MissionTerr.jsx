@@ -27,7 +27,7 @@ const TOP = 96; // 위 떠 있는 줄 아래부터 맞춘다
 const BOTTOM = 112; // 아래 명령줄 자리(명령줄이 카드를 가리지 않게)
 const FIT_PAD = 32;
 // 멀리 타일: 이름 12.5px·상태 10.5px(화면)를 지키는 배율 하한. 한 줄 이름 + 상태가 카드(150) 안에 드는 가장 작은 배율이 READ_K, 두 줄 이름이 드는 배율이 TWO_LINES_K
-const READ_K = 0.285, TWO_LINES_K = 0.43; // P153: 카드 높이가 내용을 따른 뒤(가장 작은 카드 CARD_MIN 116)
+const READ_K = 0.285, TWO_LINES_K = 0.285; // P153: 처음 화면 배율 하한. 이름이 긴 카드는 두 줄 + 상태가 드는 높이(CARD_MIN2)라 이 배율부터 이름 두 줄
 const DOT_GAP = 92, DOT_R = 1.8; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다
 const ATTN_MAX = 4;
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
@@ -169,9 +169,9 @@ export function TerritoryMap() {
     const bg = bgRef.current;
     if (bg) { const gs = DOT_GAP * v.k; bg.style.backgroundSize = `${gs}px ${gs}px`; bg.style.backgroundPosition = `${v.x % gs - gs / 2}px ${v.y % gs - gs / 2}px`; bg.style.setProperty('--dot-r', `${Math.max(0.6, DOT_R * v.k)}px`); }
     // P153: 멀리 타일 글은 화면에서 일정 크기 밑으로 줄지 않게(--ik = 1/배율, CSS가 글 크기를 키운다). 이름은 두 줄이 들어가는 배율부터 두 줄(--tl)
-    // --ik는 6% 계단으로만 바꾼다(휠 한 칸마다 모든 카드 글을 다시 재지 않게, 128세션 휠 p95)
+    // --ik는 멈춘 뒤에만 바꾼다(휠 한 칸마다 모든 카드 글을 다시 재지 않게, 128세션 휠 p95)
     // 끄는·휠 도는 동안은 글 크기를 그대로 두고(배율과 함께 커지고 작아진다) 멈춘 뒤(160ms) 한 번 맞춘다. 처음 그릴 때와 미끄러지기(glide)는 바로
-    const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = Math.pow(1.06, Math.round(Math.log(1 / kk) / Math.log(1.06))).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) { ww.style.setProperty('--ik', ik); ww.style.setProperty('--tl', kk >= TWO_LINES_K ? '2' : '1'); } };
+    const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) { ww.style.setProperty('--ik', ik); ww.style.setProperty('--tl', kk >= TWO_LINES_K ? '2' : '1'); } };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
     // 움직이는 동안만 will-change(멈추면 떼어 또렷하게)

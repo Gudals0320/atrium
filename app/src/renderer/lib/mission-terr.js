@@ -396,15 +396,19 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   return { cards, rings, isles, terrs, edges, bounds, order, tree };
 }
 
-// P153: 카드 높이(보통 단계 내용): 위아래 여백 26 + 이름 줄 22 + 메타 줄 18 + 일 한두 줄(20씩) + 오류 줄 19 + 관계 줄 18, 줄 사이 5. 멀리 타일(이름 + 상태)이 드는 CARD_MIN 밑으로는 줄이지 않는다.
-// 일 글이 한 줄(약 36자)을 넘으면 두 줄. 오류가 있으면 일은 한 줄. 관계 줄은 다른 워크스페이스에서 왔거나 브랜치·루프가 있을 때만(카드 맨 아래 줄 규칙과 같다)
-export const CARD_MIN = 116;
+// P153: 카드 높이(보통 단계 내용, 줄 높이는 CSS 글 크기 × 1.38): 위아래 여백·테두리 30 + 이름 줄 27 + 메타 줄 19 + 일 줄(21씩, 셋까지) + 오류 줄(19씩, 둘까지) + 관계 줄 18, 줄 사이 5.
+// 일 줄 수는 머리말("질문" 등)을 더한 글자 수를 한 줄 CARD_CPL자로 어림(넉넉하게 잡는다: 잘리는 것보다 빈 칸 몇 px가 낫다). 오류가 있으면 일은 한 줄. 관계 줄은 다른 워크스페이스에서 왔거나 브랜치·루프가 있을 때만.
+// 멀리 타일(이름 + 상태)이 드는 높이 밑으로는 줄이지 않는다: 이름이 한 줄(LONG_NAME자 이하)이면 CARD_MIN, 길면 두 줄이 드는 CARD_MIN2(처음 화면 배율 0.285에서도 두 줄 + 상태)
+export const CARD_MIN = 122, CARD_MIN2 = 178, LONG_NAME = 10, CARD_CPL = 32;
 export function cardHeight(n, tier, cross = false) {
   const t = tier === 'turn' ? (n.ask || n.lastPrompt) : tier === 'alert' ? (n.lastPrompt || n.ask) : n.lastPrompt;
-  const err = tier === 'alert' && n.error;
-  const lines = err ? 1 : String(t || 'x').length > 36 ? 2 : 1;
+  const err = tier === 'alert' && n.error ? String(n.error) : null;
+  const lines = err ? 1 : Math.min(3, Math.max(1, Math.ceil((String(t || 'x').length + 7) / CARD_CPL)));
+  const errLines = err ? Math.min(2, Math.ceil(err.length / 36)) : 0;
   const more = cross || n.gitBranch || n.loops;
-  return Math.max(CARD_MIN, Math.ceil(26 + 22 + 5 + 18 + 5 + lines * 20 + (err ? 5 + 19 : 0) + (more ? 5 + 18 : 0)));
+  const body = 30 + 27 + 5 + 19 + 5 + lines * 21 + (err ? 5 + errLines * 19 : 0) + (more ? 5 + 18 : 0) + 2;
+  const tile = String(n.name || '').length > LONG_NAME ? CARD_MIN2 : CARD_MIN;
+  return Math.max(tile, Math.ceil(body));
 }
 
 // 꺾인 선의 이름표 자리: 가장 긴 가로 토막 가운데(가로가 없으면 가장 긴 토막)

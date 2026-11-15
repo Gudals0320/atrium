@@ -2113,8 +2113,9 @@ html[data-board-moving="1"] .mt-cv.flash, html[data-board-moving="1"] .react-flo
 .mt-ta-card { padding: 13px 16px; }
 .mt-ta-full { gap: 5px; }
 .mt-ta-full .c2 { flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
+.mt-ta-full .c3 { -webkit-line-clamp: 3; } /* 카드 높이(lib/mission-terr.js cardHeight)가 세 줄까지 잡는다 */
 .mt-ta-full .c3.one { -webkit-line-clamp: 1; }
-.mt-ta-full .cerr { -webkit-line-clamp: 1; }
+.mt-ta-full .cerr { -webkit-line-clamp: 2; }
 .mt-ta-full .c4 { display: block; }
 .mt-ta-tile .tn { font-size: 38px; }
 .mt-ta-tile .ts { font-size: 26px; }
@@ -2127,9 +2128,9 @@ html[data-board-moving="1"] .mt-cv.flash, html[data-board-moving="1"] .react-flo
 .mt-ta-tdone { display: inline-flex; align-items: center; gap: 0.2em; color: var(--st-review); }
 .mt-ta-tdone svg { width: 0.85em; height: 0.85em; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 /* 멀리 타일 글은 화면 크기 하한을 지킨다(MissionTerr.jsx paint가 --ik = 1/배율, --tl = 이름 줄 수를 쓴다): 이름 12.5px, 상태 10.5px 이상 */
-.mt-ta-world.lv-far .mt-ta-card { padding: 10px 14px; }
+.mt-ta-world.lv-far .mt-ta-card { padding: 10px 10px; }
 .mt-ta-world.lv-far .mt-ta-tile { gap: 4px; justify-content: flex-end; }
-.mt-ta-world.lv-far .mt-ta-tile .tn { font-size: clamp(40px, calc(12.5px * var(--ik, 1)), 60px); line-height: 1.08; -webkit-line-clamp: var(--tl, 2); overflow-wrap: anywhere; }
+.mt-ta-world.lv-far .mt-ta-tile .tn { font-size: clamp(40px, calc(12.5px * var(--ik, 1)), 60px); line-height: 1.08; letter-spacing: -0.015em; -webkit-line-clamp: var(--tl, 2); overflow-wrap: anywhere; }
 .mt-ta-world.lv-far .mt-ta-tile .ts { font-size: clamp(32px, calc(10.5px * var(--ik, 1)), 48px); line-height: 1.2; gap: 0.35em; flex: none; }
 .mt-ta-world.lv-far .mt-ta-tile .ts i { width: 0.6em; height: 0.6em; }
 .mt-ta-world.lv-far .mt-ta-iname { font-size: clamp(46px, calc(14px * var(--ik, 1)), 58px); }

@@ -265,7 +265,7 @@ test('P153 r3: 다른 워크스페이스 선은 받는 카드 위 가장자리�
 test('P153 r3: 카드 높이는 내용을 따르고, 무리 안 같은 줄은 같은 높이', () => {
   const lay = lay0();
   const hs = [...lay.cards.values()].map((c) => c.h);
-  assert.ok(Math.min(...hs) >= 116 && new Set(hs).size > 1, `높이 ${[...new Set(hs)]}`);
+  assert.ok(Math.min(...hs) >= 122 && new Set(hs).size > 1, `높이 ${[...new Set(hs)]}`);
   for (const r of lay.rings) {
     const rows = new Map();
     for (const c of lay.cards.values()) if (inside(c, r)) { if (!rows.has(c.y)) rows.set(c.y, new Set()); rows.get(c.y).add(c.h); }
