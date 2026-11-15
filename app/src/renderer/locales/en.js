@@ -2563,10 +2563,9 @@ export default {
     empty: 'An empty message cannot be sent.',
     failed: 'Could not edit: {error}',
   },
-  // P160: phone session map (folder > workspace > indented stages)
+  // P160·P166: phone session map (same infinite canvas as the PC, laid out for a tall screen)
   phoneMap: {
-    from: 'from @{name} ({ws})',
-    away: '{n} below in other workspaces',
+    cont: '(continued)',
     none: 'Nothing waiting for you',
     open: 'Open session',
   },

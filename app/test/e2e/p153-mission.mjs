@@ -463,7 +463,7 @@ async function perf() {
   fs.writeFileSync(path.join(OUT, 'p153-perf.json'), JSON.stringify(res, null, 2));
 }
 
-// ---- 휴대폰: P160부터 휴대폰 세션 맵은 목록(PhoneLineage.jsx)이라 휴대폰 단계는 p160-phone.mjs로 옮겼다(타일 지도 검사는 지웠다) ----
+// ---- 휴대폰: P160부터 휴대폰 세션 맵 단계는 따로 옮겼다(P166부터 무한 캔버스 PhoneMap.jsx, app/test/e2e/p166-phone.mjs) ----
 
 // ---- 시안 그림(실험 폴더의 Main.dc.html·A-phone.dc.html을 펴서 찍는다) ----
 async function mock(withApp = false) {
@@ -902,7 +902,7 @@ async function stopBoard() {
 try {
   if (WHAT === 'setup') await setupBoard();
   else if (WHAT === 'pc') await pc();
-  else if (WHAT === 'phone') log('P160: 휴대폰 단계는 app/test/e2e/p160-phone.mjs로 옮겼다');
+  else if (WHAT === 'phone') log('P166: 휴대폰 단계는 app/test/e2e/p166-phone.mjs로 옮겼다');
   else if (WHAT === 'mock') await mock();
   else if (WHAT === 'perf') await perf();
   else if (WHAT === 'r11') await r11();
