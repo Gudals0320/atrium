@@ -86,7 +86,14 @@ export function ConnectionsTab() {
     <div className="mt-cn" data-role="connections-list">
       <p className="mt-set-note">{t('connections.note')}</p>
       <div className="mt-ln-rows">
-        {!data.connections.length && <div className="dim" data-role="connections-empty">{t('connections.empty')}</div>}
+        {/* P161: 연결이 없으면 흐린 한 줄 대신 무엇을 하는 칸이고 어떻게 더하는지 보인다 */}
+        {!data.connections.length && (
+          <div className="mt-cn-empty" data-role="connections-empty">
+            <b>{t('connEmpty.title')}</b>
+            <span>{t('connEmpty.what')}</span>
+            <span>{t('connEmpty.how')}</span>
+          </div>
+        )}
         {data.connections.map((c) => (
           <div key={c.id} className="mt-cn-row" data-role="connection-row" data-connection={c.id} data-protocol={c.protocol}>
             <span className="mt-cn-name" title={c.name}>{c.name}</span>

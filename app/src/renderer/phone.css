@@ -538,7 +538,7 @@ button.mt-pm-chip:disabled { opacity: .5; }
 
 /* ---------- P160: 휴대폰 세션 맵 = PC 세션 맵(시안 B Lineage)과 같은 톤의 세로 목록(PhoneLineage.jsx, lib/phone-lineage.js, 시안 B-phone).
    폴더 머리·워크스페이스 머리는 스크롤하는 동안 위에 붙는다. 들여 쓴 단계, 꺾인 레일(PC 선 색), 동료 괄호, 다른 워크스페이스에서 온 점선 꼬리.
-   카드는 PC .mt-ln 카드 생김(무채색 바탕, 얇은 테두리, 앱 기본 글꼴, 이름 굵게), 작업 중 빛(P107 층, 휴대폰은 steps(36)), 작업 완료 꼬리표·그라데이션, 응답 필요·오류 테두리.
+   카드는 PC .mt-sm 카드 생김(무채색 바탕, 얇은 테두리, 앱 기본 글꼴, 이름 굵게), 작업 중 빛(P107 층, 휴대폰은 steps(36)), 작업 완료 꼬리표·그라데이션, 응답 필요·오류 테두리.
    위 줄 알약(기다리는 세션·작업 중·작업 완료 수), 길게 누르면 아래 판에 미리 보기. 넓은 화면(태블릿)은 가운데 760px ---------- */
 .mt-pl { --pl-line: rgba(255, 252, 240, 0.09); --pl-line-2: rgba(255, 252, 240, 0.14); --pl-dim: #a3a097; --pl-text: #e6e3da; --pl-strong: #f3f0e8; --pl-head: #131210; --ln-blink: color-mix(in srgb, var(--accent) 75%, transparent); background: var(--canvas); color: var(--pl-text); }
 .mt-pl .mt-ph-head { background: #151412; border-bottom: 1px solid var(--pl-line); }
@@ -587,7 +587,7 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pl-peer circle { fill: #b4b0a5; }
 .mt-pl-item { position: relative; z-index: 1; }
 .mt-pl-solo { margin: 6px 0 -2px; padding-top: 8px; border-top: 1px dashed var(--pl-line-2); font-size: 11.5px; font-weight: 500; color: var(--pl-dim); }
-/* 카드(PC .mt-ln 카드 생김) */
+/* 카드(PC .mt-sm 카드 생김) */
 .mt-pl-slot { position: relative; border-radius: 10px; }
 .mt-pl-card { position: relative; isolation: isolate; width: 100%; display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 9px 11px; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--pl-line-2); background: #141311; color: var(--pl-text); text-align: left; font: 13.5px/1.38 var(--font-ui); -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .mt-pl-card:active { background: #1b1a17; }
@@ -629,15 +629,15 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-pl-fold { display: inline-flex; align-items: center; margin-top: 6px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px dashed var(--pl-line-2); background: transparent; color: var(--pl-text); font: 500 12.5px var(--font-ui); -webkit-tap-highlight-color: transparent; }
 .mt-pl-fold.open { border-style: solid; color: var(--pl-dim); }
 /* 알약을 누르면 그 카드가 세 번 반짝인다(PC 사이드바 반짝임과 같은 박자, 판 설정 workLight를 따른다) */
-.mt-pl-slot.blink .mt-pl-card { animation: mt-ln-blink 0.6s ease-in-out 3; }
+.mt-pl-slot.blink .mt-pl-card { animation: mt-sm-blink 0.6s ease-in-out 3; }
 html[data-work-light="off"] .mt-pl-slot.blink .mt-pl-card, html.mt-lite .mt-pl-slot.blink .mt-pl-card { animation: none !important; outline: 3px solid var(--ln-blink); outline-offset: 3px; }
 @media not (prefers-reduced-motion: no-preference) { html[data-work-light="system"] .mt-pl-slot.blink .mt-pl-card { animation: none; outline: 3px solid var(--ln-blink); outline-offset: 3px; } }
 /* 길게 누르기 미리 보기(PC Peek와 같은 내용)를 아래 판에 */
 .mt-pl-peekwrap { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, 0.5); }
 .mt-pl-peeksheet { width: 100%; max-width: 760px; max-height: 80%; overflow-y: auto; box-sizing: border-box; padding: 14px calc(env(safe-area-inset-right) + 14px) calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 14px); border-radius: 16px 16px 0 0; background: #141311; border-top: 1px solid var(--pl-line-2); display: flex; flex-direction: column; gap: 12px; }
-.mt-pl-peeksheet .mt-ln-peek { position: static !important; width: auto !important; max-height: none; overflow: visible; padding: 0; border: 0; background: transparent; box-shadow: none; font-size: 13px; --ln-dim: #a3a097; --ln-text: #e6e3da; --ln-strong: #f3f0e8; --ln-line: rgba(255, 252, 240, 0.09); --ln-line-2: rgba(255, 252, 240, 0.14); }
-.mt-pl-peeksheet .mt-ln-peek .pk1 b { white-space: normal; overflow-wrap: anywhere; font-size: 16px; }
-.mt-pl-peeksheet .mt-ln-peek .pks { overflow-x: auto; max-height: 220px; }
+.mt-pl-peeksheet .mt-sm-peek { position: static !important; width: auto !important; max-height: none; overflow: visible; padding: 0; border: 0; background: transparent; box-shadow: none; font-size: 13px; --ln-dim: #a3a097; --ln-text: #e6e3da; --ln-strong: #f3f0e8; --ln-line: rgba(255, 252, 240, 0.09); --ln-line-2: rgba(255, 252, 240, 0.14); }
+.mt-pl-peeksheet .mt-sm-peek .pk1 b { white-space: normal; overflow-wrap: anywhere; font-size: 16px; }
+.mt-pl-peeksheet .mt-sm-peek .pks { overflow-x: auto; max-height: 220px; }
 .mt-pl-peekact { display: flex; justify-content: flex-end; gap: 8px; }
 .mt-pl-peekact button { height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--pl-line-2); background: transparent; color: var(--pl-text); font: 500 14px var(--font-ui); }
 .mt-pl-peekact button.go { background: var(--pl-strong); color: #141311; border-color: transparent; font-weight: 600; }

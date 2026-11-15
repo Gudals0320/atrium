@@ -93,7 +93,7 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, o
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
         <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}</span></span>
         <span className="mt-ta-full">
-          <span className="c1">{lead ? <span className="mt-ln-lead">{t('mmLine.lead')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span></span>
+          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span></span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
@@ -101,7 +101,7 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, o
         </span>
         {/* P153 r11: 깊이 접기 칩. 누르면 이 가지만 펴거나 다시 접는다(카드 태그·판으로 가기와 따로) */}
         {onFold && (b.fold > 0 || unfold) ? (
-          <button type="button" className={`mt-ln-fold${unfold ? ' open' : ''}`} data-action="ln-fold" data-id={id} title={t(unfold ? 'mmLine.unfoldTip' : 'mmLine.foldTip')}
+          <button type="button" className={`mt-sm-fold${unfold ? ' open' : ''}`} data-action="ln-fold" data-id={id} title={t(unfold ? 'mmLine.unfoldTip' : 'mmLine.foldTip')}
             onClick={(e) => { e.stopPropagation(); onFold(id); }} onDoubleClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
             {unfold ? t('mmLine.unfold') : t('mmLine.fold', { n: b.fold })}
           </button>
@@ -139,7 +139,7 @@ export function Peek({ pv, f, b, live, tier, t, now, folder }) { // P160: 휴대
   const task = (b.node.lastPrompt || (live && live.lastPrompt) || f.task || '').trim();
   const st = ST[tier] || 'ready';
   return (
-    <div className={`mt-ln-peek st-${st}`} data-role="ln-peek" data-id={pv.id} style={{ left: pv.x, top: pv.y, width: pv.w }} aria-hidden="true">
+    <div className={`mt-sm-peek st-${st}`} data-role="ln-peek" data-id={pv.id} style={{ left: pv.x, top: pv.y, width: pv.w }} aria-hidden="true">
       <div className="pk1"><b>{b.node.name}</b><span className="pst"><i />{f.stateText}{f.age ? <span className="dim"> · {f.age}</span> : null}</span></div>
       <div className="pk2">{[f.role, [f.harness, f.model].filter(Boolean).join(' · '), folder].filter(Boolean).join('  ·  ')}</div>
       {task ? <div className="pkt"><span className="lb">{t(`mmTerr.kind.${f.taskKind}`)}</span>{clip(task, 600)}</div> : null}
@@ -277,8 +277,8 @@ export function LineageMap() {
     const st = getState();
     st.mapFocus = {
       session: (sid) => { const L = layRef.current, v = view.current, s = sizeRef.current; if (!L || !v || !s) return false; const hit = [...L.cards.entries()].find(([, b]) => b.node.sessionId === sid); if (!hit) return false; const [id, b] = hit; const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, v.k, s.w - RAIL, s.h, { top: TOPH + COLH, bottom: BOTTOM }); paint({ ...c, x: c.x + RAIL }, { glide: true }); setTimeout(() => blink(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), 460); return true; },
-      ws: (key) => { const L = layRef.current, r = L && L.rows.find((x) => x.key === key); if (!r) return false; fitBoxTo({ x: 0, y: r.y, w: L.W, h: r.h }); setTimeout(() => blink(`.mt-ln-row[data-key="${CSS.escape(key)}"]`), 460); return true; },
-      group: (gid) => { const L = layRef.current, b = L && L.bands.find((x) => (x.id || null) === (gid || null)); if (!b) return false; fitBoxTo({ x: 0, y: b.y, w: L.W, h: b.h }); setTimeout(() => blink(`.mt-ln-band[data-id="${CSS.escape(b.id || 'none')}"]`), 460); return true; },
+      ws: (key) => { const L = layRef.current, r = L && L.rows.find((x) => x.key === key); if (!r) return false; fitBoxTo({ x: 0, y: r.y, w: L.W, h: r.h }); setTimeout(() => blink(`.mt-sm-row[data-key="${CSS.escape(key)}"]`), 460); return true; },
+      group: (gid) => { const L = layRef.current, b = L && L.bands.find((x) => (x.id || null) === (gid || null)); if (!b) return false; fitBoxTo({ x: 0, y: b.y, w: L.W, h: b.h }); setTimeout(() => blink(`.mt-sm-band[data-id="${CSS.escape(b.id || 'none')}"]`), 460); return true; },
     };
     return () => { if (getState().mapFocus === st.mapFocus) getState().mapFocus = null; };
   }, [open, paint, blink, fitBoxTo]);
@@ -379,8 +379,8 @@ export function LineageMap() {
       else g = null;
     };
     // 끄는 줄과 그 안의 카드(세계에서 형제 요소라 함께 옮긴다)
-    const rowEls = (key) => [...el.querySelectorAll(`.mt-ln-row[data-key="${CSS.escape(key)}"], .mt-ta-slot[data-ws="${CSS.escape(key)}"]`)];
-    const hotBand = (id) => { for (const x of el.querySelectorAll('.mt-ln-band')) x.classList.toggle('drop', id != null && x.dataset.id === id); };
+    const rowEls = (key) => [...el.querySelectorAll(`.mt-sm-row[data-key="${CSS.escape(key)}"], .mt-ta-slot[data-ws="${CSS.escape(key)}"]`)];
+    const hotBand = (id) => { for (const x of el.querySelectorAll('.mt-sm-band')) x.classList.toggle('drop', id != null && x.dataset.id === id); };
     const bandKey = (b) => (b ? b.id || 'none' : 'none');
     const endRow = (commit, p) => {
       const s = g; g = null;
@@ -394,10 +394,10 @@ export function LineageMap() {
         moveRow(s.key, bb ? bb.id : null);
       }
     };
-    // P153 r11: 카드 끌기(관계 바꾸기). 놓을 자리 미리 보기(.mt-ln-drop)와 대상 카드 강조는 DOM에 바로(끄는 동안 다시 그리지 않는다)
+    // P153 r11: 카드 끌기(관계 바꾸기). 놓을 자리 미리 보기(.mt-sm-drop)와 대상 카드 강조는 DOM에 바로(끄는 동안 다시 그리지 않는다)
     const slotEl = (id) => el.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`);
     const showDrop = (d) => {
-      const box = el.querySelector('.mt-ln-drop');
+      const box = el.querySelector('.mt-sm-drop');
       for (const x of el.querySelectorAll('.mt-ta-slot.drop-target')) if (!d || x.dataset.id !== d.target) x.classList.remove('drop-target');
       if (!box) return;
       if (!d) { box.hidden = true; delete box.dataset.kind; return; }
@@ -418,14 +418,14 @@ export function LineageMap() {
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       if (e.target.closest('.mt-ta-hud')) return;
       justDragged.current = false;
-      if (e.target.closest('.mt-ln-fold')) return; // 접기 칩은 누르기만
+      if (e.target.closest('.mt-sm-fold')) return; // 접기 칩은 누르기만
       setAlt(e.altKey);
       // P153 r11: Alt+카드 끌기 = 관계 바꾸기(마우스 왼쪽만). Alt 없이 끌면 시점 이동
       const card = e.target.closest('.mt-ta-card');
       if (card && !pts.size && e.altKey && e.pointerType === 'mouse' && e.button === 0) { const p = local(e); pts.set(e.pointerId, p); g = { mode: 'card', id: card.dataset.id, p0: p, moved: false, drop: null }; return; }
       // P155: 줄 머리 옮기기는 Alt+끌기만(headDrag). Alt 없이 누르면 줄 머리에서도 시점 이동.
-      // P153 r11: 잡는 자리는 줄 머리 + 워크스페이스 칸 빈 곳 전체(.mt-ln-grab, Alt를 누르는 동안만 누를 수 있다)
-      const head = e.target.closest('.mt-ln-head, .mt-ln-grab');
+      // P153 r11: 잡는 자리는 줄 머리 + 워크스페이스 칸 빈 곳 전체(.mt-sm-grab, Alt를 누르는 동안만 누를 수 있다)
+      const head = e.target.closest('.mt-sm-head, .mt-sm-grab');
       if (head && !pts.size && headDrag({ onHead: true, altKey: e.altKey, button: e.button, pointerType: e.pointerType }) === 'row') { const p = local(e); pts.set(e.pointerId, p); g = { mode: 'row', key: head.dataset.key, p0: p, moved: false }; return; }
       pts.set(e.pointerId, local(e));
       begin();
@@ -553,14 +553,14 @@ export function LineageMap() {
   const col0 = lay ? (lay.cols.find((c) => c.key === 'lv') || { x: lay.headx + LINE.HEADW + 208 }).x : 0;
 
   return (
-    <div className={`mt-mission mt-ta mt-ln nowheel nopan${moveWs ? ' isle-moving' : ''}`} data-role="mission" data-style="territories" data-layout="lineage" ref={rootRef}>
+    <div className={`mt-mission mt-ta mt-sm nowheel nopan${moveWs ? ' isle-moving' : ''}`} data-role="mission" data-style="territories" data-layout="lineage" ref={rootRef}>
       <div className="mt-ta-vp" data-role="ta-viewport" ref={vpRef}>
         <div className="mt-ta-bg" ref={bgRef} aria-hidden="true" />
         {!lay ? <div className="mt-ta-loading">{t('common.loading')}</div> : (
           <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef}>
             {lay.bands.map((b) => (
-              <div key={`b:${b.id || 'none'}`} className={`mt-ln-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} style={{ top: b.y, height: b.h, width: lay.W }}>
-                <div className="mt-ln-spine" style={{ width: lay.spine }}>
+              <div key={`b:${b.id || 'none'}`} className={`mt-sm-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} style={{ top: b.y, height: b.h, width: lay.W }}>
+                <div className="mt-sm-spine" style={{ width: lay.spine }}>
                   <span className="fk">{b.loose ? t('mmLine.loose') : t('mmLine.folder')}</span>
                   <span className="fn" data-role="ln-band-name">{b.name}</span>
                   <span className="fs" data-role="ln-band-stat"><span>{t('mmTerr.workspaces', { n: b.nWs })}</span><span>{t('mmTerr.sessions', { n: b.sessions })}</span></span>
@@ -569,52 +569,52 @@ export function LineageMap() {
               </div>
             ))}
             {lay.rows.map((r) => (
-              <div key={`r:${r.key || '-'}`} className={`mt-ln-row${r.first ? ' first' : ''}`} data-role="ta-isle" data-key={r.key} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
-                {r.key ? <div className="mt-ln-grab" data-key={r.key} data-role="ln-row-grab" style={{ width: Math.max(LINE.HEADW, col0 - r.x - 40) }} /> : null}
-                {/* P157: 옮기기 안내는 풍선(title)이 아니라 Alt를 누른 동안에만 보이는 작은 글(.mt-ln-althint) */}
-                <div className="mt-ln-head" data-key={r.key} data-role="ta-isle-head">
+              <div key={`r:${r.key || '-'}`} className={`mt-sm-row${r.first ? ' first' : ''}`} data-role="ta-isle" data-key={r.key} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
+                {r.key ? <div className="mt-sm-grab" data-key={r.key} data-role="ln-row-grab" style={{ width: Math.max(LINE.HEADW, col0 - r.x - 40) }} /> : null}
+                {/* P157: 옮기기 안내는 풍선(title)이 아니라 Alt를 누른 동안에만 보이는 작은 글(.mt-sm-althint) */}
+                <div className="mt-sm-head" data-key={r.key} data-role="ta-isle-head">
                   <span className="wsn"><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
-                  {r.key ? <span className="mt-ln-althint" data-role="ln-alt-hint">{t('mmLine.altMoveHint')}</span> : null}
+                  {r.key ? <span className="mt-sm-althint" data-role="ln-alt-hint">{t('mmLine.altMoveHint')}</span> : null}
                   <span className="wsc">{r.chips.map((c) => <span key={c.tier} className={`st-${ST[c.tier]}`} data-tier={c.tier}><i /><b>{c.n}</b> {t(`mmTerr.chip.${c.tier}`)}</span>)}</span>
                 </div>
               </div>
             ))}
-            {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-ln-div" style={{ left: d.x, top: d.y, height: d.h }} />)}
+            {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-sm-div" style={{ left: d.x, top: d.y, height: d.h }} />)}
             <svg className="mt-ta-edges" width={1} height={1} aria-hidden="true">
               <defs>
-                {KINDS.map((k) => <marker key={k} id={`mt-ln-tip-${k}`} className={`mt-ln-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}
+                {KINDS.map((k) => <marker key={k} id={`mt-sm-tip-${k}`} className={`mt-sm-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}
                 {/* P153 r11: 동료 선은 양 끝에 작은 점(화살촉 없음, 위아래가 없다) */}
-                <marker id="mt-ln-end-peer" className="mt-ln-tip k-peer" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
+                <marker id="mt-sm-end-peer" className="mt-sm-tip k-peer" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
               </defs>
               {lay.edges.map((e) => {
                 const k = e.peer ? 'peer' : e.lineage ? 'lineage' : e.cross ? 'cross' : e.rel;
-                const tip = e.peer ? 'url(#mt-ln-end-peer)' : e.lineage ? undefined : `url(#mt-ln-tip-${KINDS.includes(k) ? k : 'spawn'})`;
+                const tip = e.peer ? 'url(#mt-sm-end-peer)' : e.lineage ? undefined : `url(#mt-sm-tip-${KINDS.includes(k) ? k : 'spawn'})`;
                 return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
               })}
             </svg>
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}
             {ids.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} unfold={b.depth >= LINE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
             {/* P153 r11: Alt+카드 끌기 때 놓을 자리(하위로·동료로·독립). 끄는 동안 DOM에 바로 쓴다 */}
-            <div className="mt-ln-drop" data-role="ln-drop" hidden><span className="lb" /></div>
+            <div className="mt-sm-drop" data-role="ln-drop" hidden><span className="lb" /></div>
           </div>
         )}
         {lay && lay.cards.size === 0 && <div className="mt-ta-loading">{t('mission.empty')}</div>}
       </div>
 
       {pv && lay && lay.cards.get(pv.id) && (() => { const b = lay.cards.get(pv.id), row = lay.rows.find((r) => r.key === b.ws), band = row && lay.bands.find((x) => (x.id || null) === (row.band || null)); return <Peek pv={pv} b={b} f={factsOf(pv.id)} live={liveOf(b.node)} tier={tiers.get(pv.id)} t={t} now={now} folder={[band && band.name, row && row.name].filter(Boolean).join(' / ')} />; })()}
-      <div className="mt-ta-hud mt-ln-top" data-role="ta-top">
+      <div className="mt-ta-hud mt-sm-top" data-role="ta-top">
         <span className="mt-ta-title">{t('mission.title')}</span>
         <span className="mt-ta-attn" data-role="ta-attn">
           {attn.slice(0, ATTN_MAX).map((id) => {
             const b = lay.cards.get(id), tier = tiers.get(id);
-            return <button key={id} type="button" className={`mt-ln-pill st-${ST[tier]}`} data-role="ta-attn-item" data-id={id} title={t('mmTerr.waitingTitle')} onClick={() => { flyTo(id); if (!tagOf(id)) tag(id); }}><i /><b>{b.node.name}</b><span>{t(`mmTerr.chip.${tier}`)}</span></button>;
+            return <button key={id} type="button" className={`mt-sm-pill st-${ST[tier]}`} data-role="ta-attn-item" data-id={id} title={t('mmTerr.waitingTitle')} onClick={() => { flyTo(id); if (!tagOf(id)) tag(id); }}><i /><b>{b.node.name}</b><span>{t(`mmTerr.chip.${tier}`)}</span></button>;
           })}
           {attn.length > ATTN_MAX && <span className="mt-ta-amore">{t('mmTerr.more', { n: attn.length - ATTN_MAX })}</span>}
-          {lay && nWork > 0 && <span className="mt-ln-pill quiet st-working" data-role="ln-count"><i /><b>{nWork}</b><span>{t('mmTerr.chip.work')}</span></span>}
-          {lay && nDone > 0 && <span className="mt-ln-pill quiet st-done" data-role="ln-count"><i /><b>{nDone}</b><span>{t('mmTerr.chip.review')}</span></span>}
+          {lay && nWork > 0 && <span className="mt-sm-pill quiet st-working" data-role="ln-count"><i /><b>{nWork}</b><span>{t('mmTerr.chip.work')}</span></span>}
+          {lay && nDone > 0 && <span className="mt-sm-pill quiet st-done" data-role="ln-count"><i /><b>{nDone}</b><span>{t('mmTerr.chip.review')}</span></span>}
         </span>
         <span className="mt-ta-spacer" />
-        <span className="mt-ln-zgrp" data-role="ta-dock">
+        <span className="mt-sm-zgrp" data-role="ta-dock">
           <button type="button" className="zb" data-action="ta-zoom-out" title={t('mmTerr.zoomOut')} aria-label={t('mmTerr.zoomOut')} onClick={() => zoomCenter(view.current.k / ZOOM.step)}><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg></button>
           <span className="zpct" ref={pctRef} data-role="ta-zoom">100%</span>
           <button type="button" className="zb" data-action="ta-zoom-in" title={t('mmTerr.zoomIn')} aria-label={t('mmTerr.zoomIn')} onClick={() => zoomCenter(view.current.k * ZOOM.step)}><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button>
@@ -622,7 +622,7 @@ export function LineageMap() {
         </span>
         <button type="button" className="mt-ta-iconbtn" data-action="mission-close" title={t('mmTerr.close')} aria-label={t('mmTerr.close')} onClick={() => setMissionOpen(false)}><XIcon s={18} /></button>
       </div>
-      <div className="mt-ta-hud mt-ln-cols" data-role="ln-cols" ref={colsRef} aria-hidden="true">
+      <div className="mt-ta-hud mt-sm-cols" data-role="ln-cols" ref={colsRef} aria-hidden="true">
         {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key}>{colLabel(c)}</span>)}
       </div>
     </div>

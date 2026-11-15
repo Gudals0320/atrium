@@ -291,10 +291,10 @@ async function act(page, real, agent) {
   await page.evaluate(() => { const api = window.__mt.api; window.__p153moves = []; const orig = api.call; api.call = (m, p) => { if (m === 'group.move') { window.__p153moves.push(p); return Promise.resolve({ groups: [] }); } return orig(m, p); }; window.__p153unmove = () => { api.call = orig; }; });
   await page.evaluate(() => window.__mtTa.fit());
   await sleep(500);
-  const geo = await page.evaluate(() => { const L = window.__mtTa.lay(); const i = L.rows.find((x) => !x.band); const hub = L.bands.find((t) => t.name === 'Hub'); const h = document.querySelector(`.mt-ln-head[data-key="${CSS.escape(i.key)}"]`).getBoundingClientRect(); const t = document.querySelector(`.mt-ln-band[data-id="${hub.id}"]`).getBoundingClientRect(); return { key: i.key, hub: hub.id, from: { x: h.left + 30, y: h.top + 10 }, to: { x: Math.max(t.left, 260) + 200, y: t.top + t.height * 0.5 } }; });
+  const geo = await page.evaluate(() => { const L = window.__mtTa.lay(); const i = L.rows.find((x) => !x.band); const hub = L.bands.find((t) => t.name === 'Hub'); const h = document.querySelector(`.mt-sm-head[data-key="${CSS.escape(i.key)}"]`).getBoundingClientRect(); const t = document.querySelector(`.mt-sm-band[data-id="${hub.id}"]`).getBoundingClientRect(); return { key: i.key, hub: hub.id, from: { x: h.left + 30, y: h.top + 10 }, to: { x: Math.max(t.left, 260) + 200, y: t.top + t.height * 0.5 } }; });
   await page.keyboard.down('Alt'); await page.mouse.move(geo.from.x, geo.from.y); await page.mouse.down(); // P155: 줄 머리 옮기기는 Alt+끌기
   for (let i = 1; i <= 15; i++) { await page.mouse.move(geo.from.x + (geo.to.x - geo.from.x) * i / 15, geo.from.y + (geo.to.y - geo.from.y) * i / 15); await sleep(16); }
-  const hot = await page.evaluate(() => [...document.querySelectorAll('.mt-ln-band.drop')].map((x) => x.dataset.id));
+  const hot = await page.evaluate(() => [...document.querySelectorAll('.mt-sm-band.drop')].map((x) => x.dataset.id));
   await shotTo(page, 'pc-1584-isle-drag');
   await page.mouse.up(); await page.keyboard.up('Alt'); await sleep(400);
   const moves = await page.evaluate(() => window.__p153moves);
@@ -366,7 +366,7 @@ async function r9sidebar(page, agent) {
     await page.click(`[data-sb="session"][data-name="${agent.name}"]`); await sleep(700);
     const r = await page.evaluate((n) => { const el = document.querySelector(`.mt-ta-card[data-name="${n}"]`), slot = el.closest('.mt-ta-slot'); const b = el.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { k: window.__mtTa.view().k, dx: Math.round(b.left + b.width / 2 - (vp.left + vp.width / 2)), blink: slot.classList.contains('blink'), anim: getComputedStyle(el).animationName, open: !!document.querySelector('[data-role=mission]') }; }, agent.name);
     await shotTo(page, 'pc-r9-map-session');
-    check('사이드바 세션 줄(세션 맵) → 배율 그대로, 카드가 가운데, 반짝임(움직임 줄이기에서도), 세션 맵은 열린 채', Math.abs(r.k - k0) < 1e-6 && Math.abs(r.dx) < 30 && r.blink && r.anim === 'mt-ln-blink' && r.open, { ...r, k0 });
+    check('사이드바 세션 줄(세션 맵) → 배율 그대로, 카드가 가운데, 반짝임(움직임 줄이기에서도), 세션 맵은 열린 채', Math.abs(r.k - k0) < 1e-6 && Math.abs(r.dx) < 30 && r.blink && r.anim === 'mt-sm-blink' && r.open, { ...r, k0 });
   }
   // 사이드바를 연 채로도: 카드 누르기 = 태그, 지도 빈 곳을 누르고 친 글자 = 명령줄(태그 뒤에)
   {
@@ -387,7 +387,7 @@ async function r9sidebar(page, agent) {
   const hasWs = await page.$(`[data-sb="ws"][data-ws="${wsKey}"]`);
   if (hasWs) {
     await page.click(`[data-sb="ws"][data-ws="${wsKey}"] .mt-sb2-wname`); await sleep(700);
-    const w = await page.evaluate((k) => { const row = document.querySelector(`.mt-ln-row[data-key="${CSS.escape(k)}"]`), r = row.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { blink: row.classList.contains('blink'), inView: r.top >= vp.top + 80 && r.bottom <= vp.bottom - 100, k: window.__mtTa.view().k }; }, wsKey);
+    const w = await page.evaluate((k) => { const row = document.querySelector(`.mt-sm-row[data-key="${CSS.escape(k)}"]`), r = row.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { blink: row.classList.contains('blink'), inView: r.top >= vp.top + 80 && r.bottom <= vp.bottom - 100, k: window.__mtTa.view().k }; }, wsKey);
     await shotTo(page, 'pc-r9-map-ws');
     check('사이드바 워크스페이스 줄(세션 맵) → 그 줄에 맞춤 + 반짝임', w.blink && w.inView, w);
     const gRow = '[data-sb="group"][data-group="g2"]';
@@ -395,7 +395,7 @@ async function r9sidebar(page, agent) {
     for (let i = 0; i < 40 && !(await page.$(gRow)); i++) { await page.evaluate((top) => { const l = document.querySelector('[data-role="sidebar-list"]'); if (l) l.scrollTop = top ? 0 : l.scrollTop + 240; }, i === 0); await sleep(120); }
     const folded0 = await page.evaluate((s) => document.querySelector(s).classList.contains('folded'), gRow);
     await page.click(`${gRow} .mt-sb2-gname`); await sleep(700);
-    const g = await page.evaluate((s) => ({ folded: document.querySelector(s).classList.contains('folded'), blink: !!document.querySelector('.mt-ln-band[data-id="g2"].blink') }), gRow);
+    const g = await page.evaluate((s) => ({ folded: document.querySelector(s).classList.contains('folded'), blink: !!document.querySelector('.mt-sm-band[data-id="g2"].blink') }), gRow);
     await shotTo(page, 'pc-r9-map-group');
     await page.click(`${gRow} .mt-sb2-fold.btn`); await sleep(300);
     const folded1 = await page.evaluate((s) => document.querySelector(s).classList.contains('folded'), gRow);
@@ -721,7 +721,7 @@ async function r11() {
     await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
     const gb = await page.evaluate(() => {
       const L = window.__mtTa.lay(), r = L.rows.find((x) => !x.band && x.key), hub = L.bands.find((b) => b.name === 'Hub');
-      const g = document.querySelector(`.mt-ln-grab[data-key="${CSS.escape(r.key)}"]`).getBoundingClientRect(), h = document.querySelector(`.mt-ln-head[data-key="${CSS.escape(r.key)}"]`).getBoundingClientRect(), t = document.querySelector(`.mt-ln-band[data-id="${hub.id}"]`).getBoundingClientRect();
+      const g = document.querySelector(`.mt-sm-grab[data-key="${CSS.escape(r.key)}"]`).getBoundingClientRect(), h = document.querySelector(`.mt-sm-head[data-key="${CSS.escape(r.key)}"]`).getBoundingClientRect(), t = document.querySelector(`.mt-sm-band[data-id="${hub.id}"]`).getBoundingClientRect();
       return { key: r.key, hub: hub.id, from: { x: h.right + Math.min(40, (g.right - h.right) / 2), y: Math.min(g.bottom - 6, h.bottom + 20) }, to: { x: Math.max(t.left, 260) + 200, y: t.top + t.height * 0.5 }, grabW: g.width, headW: h.width };
     });
     await drag(gb.from, gb.to, { shot: 'r11-row-grab' });
@@ -843,12 +843,12 @@ async function p157() {
       const solo = await page.evaluate((mk) => { const L = window.__mtTa.lay(); const d = (n) => { const b = n && L.cards.get(`s:${n}`); return b ? b.depth : null; }; return { closed: d(mk.closed), assign: d(mk.assign), soloN: [...L.cards.values()].filter((b) => b.depth === -1).length, head: (document.querySelector('.colh[data-col=solo]') || {}).textContent, role: mk.closed ? (document.querySelector(`.mt-ta-card[data-name="${mk.closed}"] .crole`) || {}).textContent : null }; }, marked);
       check(`[${w}] 솔로: 닫힌 하위·지시 기록이 있는 세션은 시작 칸, 칸 머리 '솔로'`, (!marked.closed || solo.closed === 0) && (!marked.assign || solo.assign === 0) && /솔로|Solo/.test(solo.head || ''), { marked, solo });
       // 2. 폴더 기둥: 이름이 잘리지 않고(…), 수는 두 줄, 기둥 글이 띠 안에
-      const sp = await page.evaluate(() => [...document.querySelectorAll('[data-role=ln-band]')].map((b) => { const s = b.querySelector('.mt-ln-spine'), fn = s.querySelector('.fn'), fs2 = s.querySelector('.fs'); const kids = [...fs2.children].map((x) => x.getBoundingClientRect()); const sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(); const last = [...s.children].reduce((m, x) => Math.max(m, x.getBoundingClientRect().bottom), 0); return { name: fn.textContent, cut: fn.scrollWidth > fn.clientWidth + 1 || fn.getBoundingClientRect().right > sr.right + 1, lines: kids.length === 2 && kids[1].top >= kids[0].bottom - 1, text: fs2.innerText, dot: fs2.innerText.includes('·'), fits: last <= br.bottom + 1, spineW: Math.round(sr.width), bandH: Math.round(br.height) }; }));
+      const sp = await page.evaluate(() => [...document.querySelectorAll('[data-role=ln-band]')].map((b) => { const s = b.querySelector('.mt-sm-spine'), fn = s.querySelector('.fn'), fs2 = s.querySelector('.fs'); const kids = [...fs2.children].map((x) => x.getBoundingClientRect()); const sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(); const last = [...s.children].reduce((m, x) => Math.max(m, x.getBoundingClientRect().bottom), 0); return { name: fn.textContent, cut: fn.scrollWidth > fn.clientWidth + 1 || fn.getBoundingClientRect().right > sr.right + 1, lines: kids.length === 2 && kids[1].top >= kids[0].bottom - 1, text: fs2.innerText, dot: fs2.innerText.includes('·'), fits: last <= br.bottom + 1, spineW: Math.round(sr.width), bandH: Math.round(br.height) }; }));
       check(`[${w}] 폴더 기둥: 이름 말줄임 없음, '워크스페이스 n개'·'세션 n개' 두 줄(가운뎃점 없음), 글이 띠 안`, sp.length && sp.every((x) => !x.cut && x.lines && !x.dot && x.fits), sp);
       // 가장 낮은 띠와 이름이 가장 긴 띠의 기둥 그림
       const bandNames = await page.evaluate(() => { const bs = [...document.querySelectorAll('[data-role=ln-band]')].map((b) => ({ n: b.querySelector('.fn').textContent, h: b.getBoundingClientRect().height })); const few = bs.slice().sort((a, b) => a.h - b.h)[0], long = bs.slice().sort((a, b) => b.n.length - a.n.length)[0]; return [...new Set([few && few.n, long && long.n].filter(Boolean))]; });
       for (const nm of bandNames) {
-        const r = await page.evaluate((n) => { const b = [...document.querySelectorAll('[data-role=ln-band]')].find((x) => x.querySelector('.fn').textContent === n); if (!b) return null; const r2 = b.getBoundingClientRect(), sr = b.querySelector('.mt-ln-spine').getBoundingClientRect(); const y = Math.max(0, r2.top); return { x: Math.max(0, r2.left), y, width: Math.min(innerWidth, sr.width + 520), height: Math.min(r2.bottom, innerHeight) - y }; }, nm);
+        const r = await page.evaluate((n) => { const b = [...document.querySelectorAll('[data-role=ln-band]')].find((x) => x.querySelector('.fn').textContent === n); if (!b) return null; const r2 = b.getBoundingClientRect(), sr = b.querySelector('.mt-sm-spine').getBoundingClientRect(); const y = Math.max(0, r2.top); return { x: Math.max(0, r2.left), y, width: Math.min(innerWidth, sr.width + 520), height: Math.min(r2.bottom, innerHeight) - y }; }, nm);
         if (r && r.height > 10) await shotTo(page, `p157-${w}-spine-${nm}`, r);
       }
       if (w !== 1584) continue;
@@ -863,9 +863,9 @@ async function p157() {
       await page.mouse.move(5, 300); await sleep(300);
       // 4. Alt 없이 워크스페이스 머리를 지나가기: 강조·안내 글·title 없음. Alt를 누르면 안내 글
       await page.evaluate(() => window.__mtTa.fit()); await sleep(500);
-      const hp = await page.evaluate(() => { const h = [...document.querySelectorAll('.mt-ln-head[data-key]')].find((x) => { const r = x.getBoundingClientRect(); return r.top > 120 && r.bottom < innerHeight - 140; }); const r = h.getBoundingClientRect(); return { x: r.left + 20, y: r.top + 10 }; });
+      const hp = await page.evaluate(() => { const h = [...document.querySelectorAll('.mt-sm-head[data-key]')].find((x) => { const r = x.getBoundingClientRect(); return r.top > 120 && r.bottom < innerHeight - 140; }); const r = h.getBoundingClientRect(); return { x: r.left + 20, y: r.top + 10 }; });
       await page.mouse.move(hp.x - 60, hp.y + 40); await page.mouse.move(hp.x, hp.y, { steps: 6 }); await sleep(1600);
-      const look = () => page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const row = el && el.closest('.mt-ln-row'), head = row && row.querySelector('.mt-ln-head'), grab = row && row.querySelector('.mt-ln-grab'), hint = row && row.querySelector('[data-role=ln-alt-hint]'); const cs = (e) => (e ? getComputedStyle(e) : null); const titles = []; for (let e = el; e; e = e.parentElement) if (e.getAttribute && e.getAttribute('title')) titles.push(String(e.className)); return { row: !!row, rowBg: cs(row) && cs(row).backgroundColor, headOutline: cs(head) && cs(head).outlineStyle, headBg: cs(head) && cs(head).backgroundColor, grabBg: cs(grab) && cs(grab).backgroundColor, hint: cs(hint) && cs(hint).display, alt: document.querySelector('[data-role=ta-viewport]').dataset.alt || null, titles }; }, [hp.x, hp.y]);
+      const look = () => page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const row = el && el.closest('.mt-sm-row'), head = row && row.querySelector('.mt-sm-head'), grab = row && row.querySelector('.mt-sm-grab'), hint = row && row.querySelector('[data-role=ln-alt-hint]'); const cs = (e) => (e ? getComputedStyle(e) : null); const titles = []; for (let e = el; e; e = e.parentElement) if (e.getAttribute && e.getAttribute('title')) titles.push(String(e.className)); return { row: !!row, rowBg: cs(row) && cs(row).backgroundColor, headOutline: cs(head) && cs(head).outlineStyle, headBg: cs(head) && cs(head).backgroundColor, grabBg: cs(grab) && cs(grab).backgroundColor, hint: cs(hint) && cs(hint).display, alt: document.querySelector('[data-role=ta-viewport]').dataset.alt || null, titles }; }, [hp.x, hp.y]);
       const clear = (c2) => !c2 || /rgba\(0, 0, 0, 0\)|transparent/.test(c2);
       const noAlt = await look();
       await shotTo(page, `p157-${w}-head-noalt`);
