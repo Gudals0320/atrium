@@ -17,9 +17,14 @@ export function categoryOf(s) {
   return 'idle';
 }
 
+// P157: 세션 맵의 솔로 판정에 보는 "하위를 불렀던" 기록의 기간. 이보다 옛날에 닫힌 하위, 옛날에 보낸 지시(assign)는 보지 않는다
+export const CALLED_MS = 7 * 24 * 3600 * 1000;
+
 // sessions: 세션 요약들, links: 열린 연결(link.list), thread: Thread 줄들(thread.list의 items, results 포함), loops: 루프들
 // relations(P156): 저장한 일 관계 줄들(store.relationRows). 선마다 실제 관계(relation, relationSource, relationUp), 세션마다 계보 부모(lineageParent)와 일 부모(parentId)
-export function missionGraph({ sessions = [], links = [], thread = [], loops = [], relations = [], now = Date.now() }) {
+// called(P157): { kids: 계보 기록(store.branchRows, 닫힌 세션 포함), assigns: 하위에게 지시를 보낸 세션(store.assignSenders) }.
+//   세션마다 closedKids(CALLED_MS 안에 닫힌 계보 자식 수)와 assignAt(CALLED_MS 안의 마지막 assign 지시 시각)을 붙인다(세션 맵이 솔로 칸에 보내지 않는다)
+export function missionGraph({ sessions = [], links = [], thread = [], loops = [], relations = [], called = null, now = Date.now() }) {
   const byId = new Map(sessions.map((s) => [s.sessionId, s]));
   const lineageOf = (id) => { const s = byId.get(id); return s ? s.parentSessionId || (s.branch && s.branch.parentSessionId) || null : null; };
   const rel = relationIndex({ rows: relations, lineageOf, links });
@@ -74,6 +79,15 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
   const directs = new Map();
   for (const e of edges) if ((e.kind === 'role' || e.kind === 'prompt' || e.kind === 'spawn') && e.from.startsWith('s:')) directs.set(e.from, (directs.get(e.from) || 0) + 1);
 
+  // P157: 하위를 불렀던 기록(닫힌 하위·최근 assign 지시)
+  const since = now - CALLED_MS;
+  const closedKids = new Map(), assignAt = new Map();
+  for (const r of (called && called.kids) || []) {
+    if (!r || !r.parentSessionId || byId.has(r.sessionId) || !r.closedAt || r.closedAt < since) continue;
+    closedKids.set(r.parentSessionId, (closedKids.get(r.parentSessionId) || 0) + 1);
+  }
+  for (const a of (called && called.assigns) || []) if (a && a.sessionId && a.at >= since && (assignAt.get(a.sessionId) || 0) < a.at) assignAt.set(a.sessionId, a.at);
+
   const counts = { all: 0, working: 0, needs_you: 0, idle: 0, done: 0, exited: 0 };
   const nodes = [{ id: HUMAN_ID, kind: 'human', name: "사용자 (명령 입력줄)", column: 0 }];
   for (const s of sessions) {
@@ -95,6 +109,7 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
       turnAt: s.state === 'working' && s.turn && s.turn.startedAt ? s.turn.startedAt : null, activeAt: s.lastActivityAt || null,
       gitBranch: (s.git && s.git.isWorktree && s.git.branch) || null,
       // P152: 오류 글(영토 지도 카드의 오류 줄, 휴대폰 시트). 판의 세션 요약이 없을 때도 보이게
+      closedKids: closedKids.get(s.sessionId) || 0, assignAt: assignAt.get(s.sessionId) || null, parentClosed: !!lineageOf(s.sessionId) && !byId.has(lineageOf(s.sessionId)), // P157
       error: s.state === 'error' && s.error ? clip(typeof s.error === 'string' ? s.error : s.error.message || String(s.error), 200) : null,
     });
   }

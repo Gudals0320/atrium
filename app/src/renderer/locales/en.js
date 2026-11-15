@@ -2483,6 +2483,11 @@ export default {
     folder: 'Folder',
     loose: 'No folder',
     toc: 'Folders and workspaces',
+    // P157: why a card is not solo (role slot), and the move hint shown on a workspace head while Alt is held
+    closedKids: 'Closed workers: {n}',
+    assigned: 'Assigned work',
+    parentClosed: 'Lead closed',
+    altMoveHint: 'Drag to move to another folder',
   },
   mmTerr: {
     summary: '{folders} · {workspaces} · {sessions}',

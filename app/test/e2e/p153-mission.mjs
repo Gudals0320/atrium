@@ -3,7 +3,9 @@
 //   셸 세션 하나(p153-a, 시험 폴더 C:\Workspace\mtask-p153-a)만 실제로 띄운다. 지도는 페이지 안에서 mission.graph 답과 판의 워크스페이스·폴더를 흉내로 바꾼다.
 //   흉내 모양: 아래 SHAPE(지어낸 이름, 폴더 3·워크스페이스 11·세션 32·연결 36. 역할·주고받은 연결로만 이어진 무리, 닫힌 부모, 다른 워크스페이스의 부모, 큰 무리).
 //   P153_SHAPE=<json 경로>를 주면 그 파일의 모양(같은 형식 { folders, workspaces, sessions, links })을 쓴다(git 밖 파일).
-// 실행: sh backend/.dev/clean-env.sh node app/test/e2e/p153-mission.mjs <setup|pc|phone|mock|stop> [round]
+// 실행: sh backend/.dev/clean-env.sh node app/test/e2e/p153-mission.mjs <setup|pc|phone|mock|p157|stop> [round]
+// P157: 다른 워커의 판에서 돌릴 때 P153_BOARD=<이름>(atrium-dev-<이름>), P153_PORT, P153_DEBUG(창 원격 디버깅 포트), P153_DIR(시험 폴더), P153_OUT(experiments 아래 결과 폴더 이름)로 덮는다.
+//   p157 단계: 솔로 칸·폴더 기둥(너비·두 줄·최소 높이)·미리 보기 하나·Alt 없이 줄 머리 강조 없음·더블클릭으로 판에 갈 때 날아가기 없음
 // 결과는 워크트리의 experiments/p153/<round>/(저장소 밖).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,19 +16,21 @@ const TAG = process.argv[3] || 'round-1';
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..', '..');
 const MAIN = /[\\/]\.claude[\\/]worktrees[\\/]/.test(REPO) ? path.resolve(REPO, '..', '..', '..') : REPO;
 const DEV = path.join(REPO, 'backend', '.dev');
-const OUT = path.join(REPO, 'experiments', 'p153', TAG);
-const CONVOS = path.join(REPO, 'experiments', 'p153', 'convos');
-const DIR = 'C:\\Workspace\\mtask-p153-a';
+const OUTN = process.env.P153_OUT || 'p153';
+const OUT = path.join(REPO, 'experiments', OUTN, TAG);
+const CONVOS = path.join(REPO, 'experiments', OUTN, 'convos');
+const DIR = process.env.P153_DIR || 'C:\\Workspace\\mtask-p153-a';
+const BOARD = `atrium-dev-${process.env.P153_BOARD || 'p153'}`, PORT = process.env.P153_PORT || '47922', DEBUG = process.env.P153_DEBUG || '9402';
 for (const k of Object.keys(process.env)) if (/^(ATRIUM_|MTASK_|HERDR_|HC_)/.test(k)) delete process.env[k];
 process.env.MT_E2E_OUT = path.relative(path.join(REPO, 'experiments'), OUT);
 const L = await import('./p59-lib.mjs');
 const { NAME, LOGIN, LAPTOP_A } = L;
 const SIM = 47994;
 const ENV = {
-  ATRIUM_TERMINAL_SESSION: 'atrium-dev-p153', ATRIUM_HERDR_SESSION: 'atrium-dev-p153', ATRIUM_PORT: '47922',
+  ATRIUM_TERMINAL_SESSION: BOARD, ATRIUM_HERDR_SESSION: BOARD, ATRIUM_PORT: PORT,
   ATRIUM_DATA_DIR: path.join(DEV, 'data'), ATRIUM_APP_USERDATA: path.join(DEV, 'app'),
   ATRIUM_CLAUDE_PROJECTS: CONVOS, ATRIUM_CLAUDE_DESKTOP: 'none', ATRIUM_TEST_PREFIX: 'p153-none-',
-  ATRIUM_TAILSCALE: path.join(REPO, 'app', 'test', 'e2e', 'p49-fake-tailscale.mjs'), P49_FAKE_TS_PORT: '47922',
+  ATRIUM_TAILSCALE: path.join(REPO, 'app', 'test', 'e2e', 'p49-fake-tailscale.mjs'), P49_FAKE_TS_PORT: PORT,
   ATRIUM_WEB_HOSTS: `${NAME}:${SIM},localhost:${SIM}`,
 };
 const SHAPE_FILE = process.env.P153_SHAPE || '';
@@ -105,6 +109,7 @@ const HOOK = ([shape, mix, real, agent]) => {
     return { id: `s:${nm}`, kind: 'session', sessionId: i === 0 && real ? real : i === 1 && agent ? agent.id : `fk-${s.name}`, name: nm, agentKind: s.kind || 'claude', state, category, workspaceKey: s.workspace,
       // r11(P156 계약): indep = 정한 독립(일 부모 없음, 계보만), peers = 정한 동료
       parentId: s.parent && !s.indep ? `s:${s.parent}` : null, lineageParent: s.parent ? `s:${s.parent}` : null, peers: (shape.peers || []).filter((p) => p.includes(s.name)).map((p) => `s:${p[0] === s.name ? p[1] : p[0]}`), role: null, order: null, createdAt: 1e12 + i, loops: 0, model: s.model, effort: s.effort, activeAt: now - (i + 1) * 9e5, turnAt: state === 'working' ? now - (i + 1) * 2e5 : null,
+      closedKids: s.closedKids || 0, assignAt: s.assignAt || null, parentClosed: !!s.parentClosed, // P157: 솔로 판정 기록(mission.graph와 같은 필드)
       gitBranch: s.branch || null, ask, error, lastPrompt: s.task || ['Merge the workers and run the release check', 'Draft the slide notes', 'Collect the source tables', 'Review the parser diff'][i % 4], ...(s.ago ? { activeAt: now - s.ago, turnAt: state === 'working' ? now - s.ago : null } : {}) };
   });
   const edges = [];
@@ -164,7 +169,7 @@ async function setupBoard() {
 
 async function pc() {
   call('settings.set', { key: 'missionStyle', value: 'territories' }); // 앞 시험이 classic에서 멈췄어도
-  const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
   try {
     await awayWin(app);
     await page.setViewportSize({ width: 1584, height: 921 }).catch(() => {});
@@ -419,7 +424,7 @@ const FRAMES = () => new Promise((res) => { const out = []; let last = performan
 const stat = (a) => { const s = [...a].sort((x, y) => x - y); const q = (p) => Math.round(s[Math.min(s.length - 1, Math.floor(p * s.length))] * 10) / 10; return { n: a.length, p50: q(0.5), p95: q(0.95), max: Math.round(s[s.length - 1] * 10) / 10, over20: a.filter((x) => x > 20).length }; };
 const bigShape = (sh, n) => { const out = { folders: [], workspaces: [], sessions: [], links: [] }; for (let i = 0; i < n; i++) { const k = (x) => (x ? `${x}#${i}` : x); out.folders.push(...sh.folders.map((f) => ({ id: `${f.id}-${i}`, name: `${f.name} ${i}`, members: f.members.map(k) }))); out.workspaces.push(...sh.workspaces.map((w) => ({ ...w, key: k(w.key) }))); out.sessions.push(...sh.sessions.map((x) => ({ ...x, name: `${x.name}-${i}`, workspace: k(x.workspace), parent: x.parent ? `${x.parent}-${i}` : null }))); out.links.push(...sh.links.map((l) => ({ ...l, src: `${l.src}-${i}`, dst: `${l.dst}-${i}` }))); } return out; };
 async function perf() {
-  const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
   const res = {};
   try {
     await awayWin(app);
@@ -605,7 +610,7 @@ async function compareApp() {
     links: D.S.filter((x) => x.parent).map((x) => ({ src: x.parent, dst: x.id, role: x.rel === 'spawn' || x.rel === 'cross' ? (x.role === 'worker' ? null : x.role) : x.rel === 'role' ? x.role : null, spawned: x.rel === 'spawn' || x.rel === 'cross', observed: x.rel === 'prompt' })),
   };
   for (const x of shape.sessions) if (shape.links.some((l) => l.dst === x.name && !l.spawned)) x.parent = null; // 역할·시킴 하위는 부모(띄움)가 아니다
-  const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
   try {
     await awayWin(app);
     await sleep(2500);
@@ -645,7 +650,7 @@ const SHAPE_DEEP = (() => {
 
 async function r11() {
   call('settings.set', { key: 'missionStyle', value: 'territories' });
-  const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
   try {
     await awayWin(app);
     await page.setViewportSize({ width: 1584, height: 921 }).catch(() => {});
@@ -805,7 +810,7 @@ async function r12real() {
   // 앞 실행이 사람으로 정한 관계(source user)는 모두 자동으로 되돌리고 시작한다(atrium child --peer의 동료는 에이전트가 정한 것이라 남는다)
   const mine = new Set(Object.values(sess));
   for (const x of call('relation.list').relations || []) if (x.source === 'user' && mine.has(x.a) && mine.has(x.b)) call('relation.set', { a: x.a, b: x.b, relation: 'auto' });
-  const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9402', ...AWAKE] });
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
   try {
     await awayWin(app);
     await page.setViewportSize({ width: 1584, height: 921 }).catch(() => {});
@@ -865,6 +870,84 @@ async function r12real() {
   } finally { await closeApp(app); }
 }
 
+// ---- P157: 솔로 칸·폴더 기둥·미리 보기 하나·Alt 없이 강조 없음·판으로 바로 ----
+async function p157() {
+  call('settings.set', { key: 'missionStyle', value: 'territories' });
+  const shape = JSON.parse(JSON.stringify(SHAPE));
+  // 솔로 판정 흉내: 하위도 연결도 없는 세션 둘에 닫힌 하위·지시 기록을 준다(시작 칸에 남아야 한다). 나머지 그런 세션은 솔로
+  const hasKid = new Set(shape.sessions.map((x) => x.parent).filter(Boolean));
+  const linked = new Set(shape.links.flatMap((l) => [l.src, l.dst]));
+  const lone = shape.sessions.filter((x, i) => i > 0 && !x.parent && !hasKid.has(x.name) && !linked.has(x.name) && !x.parentClosed);
+  const marked = { closed: lone[0] ? lone[0].name : null, assign: lone[1] ? lone[1].name : null };
+  if (lone[0]) lone[0].closedKids = 2;
+  if (lone[1]) lone[1].assignAt = Date.now() - 3600e3;
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
+  try {
+    await awayWin(app);
+    await page.setViewportSize({ width: 1584, height: 921 }).catch(() => {});
+    await sleep(2500);
+    if (await page.$('[data-role="sidebar"]')) { await page.click('[data-action="sidebar"]'); await sleep(500); }
+    const real = await realId(page);
+    await page.evaluate(HOOK, [shape, MIX, real, null]);
+    for (const [w, h] of [[1584, 921], [2576, 1408]]) {
+      await page.setViewportSize({ width: w, height: h }).catch(() => {});
+      await sleep(600);
+      await page.emulateMedia({ reducedMotion: 'reduce' }); // 사용자 PC(움직임 줄이기)
+      await openMission(page);
+      await shotTo(page, `p157-${w}-fit`);
+      // 1. 솔로: 기록이 있는 세션은 시작 칸(depth 0), 솔로 칸 머리는 '솔로'
+      const solo = await page.evaluate((mk) => { const L = window.__mtTa.lay(); const d = (n) => { const b = n && L.cards.get(`s:${n}`); return b ? b.depth : null; }; return { closed: d(mk.closed), assign: d(mk.assign), soloN: [...L.cards.values()].filter((b) => b.depth === -1).length, head: (document.querySelector('.colh[data-col=solo]') || {}).textContent, role: mk.closed ? (document.querySelector(`.mt-ta-card[data-name="${mk.closed}"] .crole`) || {}).textContent : null }; }, marked);
+      check(`[${w}] 솔로: 닫힌 하위·지시 기록이 있는 세션은 시작 칸, 칸 머리 '솔로'`, (!marked.closed || solo.closed === 0) && (!marked.assign || solo.assign === 0) && /솔로|Solo/.test(solo.head || ''), { marked, solo });
+      // 2. 폴더 기둥: 이름이 잘리지 않고(…), 수는 두 줄, 기둥 글이 띠 안에
+      const sp = await page.evaluate(() => [...document.querySelectorAll('[data-role=ln-band]')].map((b) => { const s = b.querySelector('.mt-ln-spine'), fn = s.querySelector('.fn'), fs2 = s.querySelector('.fs'); const kids = [...fs2.children].map((x) => x.getBoundingClientRect()); const sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(); const last = [...s.children].reduce((m, x) => Math.max(m, x.getBoundingClientRect().bottom), 0); return { name: fn.textContent, cut: fn.scrollWidth > fn.clientWidth + 1 || fn.getBoundingClientRect().right > sr.right + 1, lines: kids.length === 2 && kids[1].top >= kids[0].bottom - 1, text: fs2.innerText, dot: fs2.innerText.includes('·'), fits: last <= br.bottom + 1, spineW: Math.round(sr.width), bandH: Math.round(br.height) }; }));
+      check(`[${w}] 폴더 기둥: 이름 말줄임 없음, '워크스페이스 n개'·'세션 n개' 두 줄(가운뎃점 없음), 글이 띠 안`, sp.length && sp.every((x) => !x.cut && x.lines && !x.dot && x.fits), sp);
+      // 가장 낮은 띠와 이름이 가장 긴 띠의 기둥 그림
+      const bandNames = await page.evaluate(() => { const bs = [...document.querySelectorAll('[data-role=ln-band]')].map((b) => ({ n: b.querySelector('.fn').textContent, h: b.getBoundingClientRect().height })); const few = bs.slice().sort((a, b) => a.h - b.h)[0], long = bs.slice().sort((a, b) => b.n.length - a.n.length)[0]; return [...new Set([few && few.n, long && long.n].filter(Boolean))]; });
+      for (const nm of bandNames) {
+        const r = await page.evaluate((n) => { const b = [...document.querySelectorAll('[data-role=ln-band]')].find((x) => x.querySelector('.fn').textContent === n); if (!b) return null; const r2 = b.getBoundingClientRect(), sr = b.querySelector('.mt-ln-spine').getBoundingClientRect(); const y = Math.max(0, r2.top); return { x: Math.max(0, r2.left), y, width: Math.min(innerWidth, sr.width + 520), height: Math.min(r2.bottom, innerHeight) - y }; }, nm);
+        if (r && r.height > 10) await shotTo(page, `p157-${w}-spine-${nm}`, r);
+      }
+      if (w !== 1584) continue;
+      // 3. 미리 보기 하나: 카드에 마우스를 올려 1.5초 → 미리 보기 하나, 카드와 그 위 요소에 title(브라우저 풍선) 없음
+      const sel = `.mt-ta-card[data-name="${shape.sessions[0].name}"]`;
+      await page.evaluate((s2) => { const el = document.querySelector(s2); window.__mtTa.flyTo(el.dataset.id, 0.9); }, sel); await sleep(900);
+      const c = await page.evaluate((s2) => { const r = document.querySelector(s2).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
+      await page.mouse.move(c.x, c.y); await sleep(1500);
+      const pk = await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const titles = []; for (let e = el; e; e = e.parentElement) if (e.getAttribute && e.getAttribute('title')) titles.push(String(e.className)); return { peeks: document.querySelectorAll('[data-role=ln-peek]').length, titles }; }, [c.x, c.y]);
+      await shotTo(page, `p157-${w}-hover`);
+      check(`[${w}] 카드에 마우스: 미리 보기 하나, 브라우저 풍선(title) 없음`, pk.peeks === 1 && !pk.titles.length, pk);
+      await page.mouse.move(5, 300); await sleep(300);
+      // 4. Alt 없이 워크스페이스 머리를 지나가기: 강조·안내 글·title 없음. Alt를 누르면 안내 글
+      await page.evaluate(() => window.__mtTa.fit()); await sleep(500);
+      const hp = await page.evaluate(() => { const h = [...document.querySelectorAll('.mt-ln-head[data-key]')].find((x) => { const r = x.getBoundingClientRect(); return r.top > 120 && r.bottom < innerHeight - 140; }); const r = h.getBoundingClientRect(); return { x: r.left + 20, y: r.top + 10 }; });
+      await page.mouse.move(hp.x - 60, hp.y + 40); await page.mouse.move(hp.x, hp.y, { steps: 6 }); await sleep(1600);
+      const look = () => page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); const row = el && el.closest('.mt-ln-row'), head = row && row.querySelector('.mt-ln-head'), grab = row && row.querySelector('.mt-ln-grab'), hint = row && row.querySelector('[data-role=ln-alt-hint]'); const cs = (e) => (e ? getComputedStyle(e) : null); const titles = []; for (let e = el; e; e = e.parentElement) if (e.getAttribute && e.getAttribute('title')) titles.push(String(e.className)); return { row: !!row, rowBg: cs(row) && cs(row).backgroundColor, headOutline: cs(head) && cs(head).outlineStyle, headBg: cs(head) && cs(head).backgroundColor, grabBg: cs(grab) && cs(grab).backgroundColor, hint: cs(hint) && cs(hint).display, alt: document.querySelector('[data-role=ta-viewport]').dataset.alt || null, titles }; }, [hp.x, hp.y]);
+      const clear = (c2) => !c2 || /rgba\(0, 0, 0, 0\)|transparent/.test(c2);
+      const noAlt = await look();
+      await shotTo(page, `p157-${w}-head-noalt`);
+      check(`[${w}] Alt 없이 이름 칸을 지나가면 강조 없음, 오래 두어도 풍선 없음`, noAlt.row && clear(noAlt.rowBg) && noAlt.headOutline === 'none' && clear(noAlt.headBg) && clear(noAlt.grabBg) && noAlt.hint === 'none' && !noAlt.titles.length, noAlt);
+      await page.keyboard.down('Alt'); await page.mouse.move(hp.x + 2, hp.y + 1); await sleep(400);
+      const withAlt = await look();
+      await shotTo(page, `p157-${w}-head-alt`);
+      await page.keyboard.up('Alt'); await sleep(200);
+      check(`[${w}] Alt를 누른 동안만 안내 글`, withAlt.hint === 'block', withAlt);
+      // 5. 더블클릭 → 판의 그 세션 맞춤 보기로 한 번에(중간 화면 없음). 움직임 줄이기를 끄고 본다(날아가기가 있으면 여러 화면이 찍힌다)
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await closeMission(page);
+      await page.evaluate(() => window.__mt.getState().setViewport({ x: 30000, y: 30000, zoom: 0.2 })); await sleep(500);
+      await openMission(page);
+      await page.evaluate((s2) => { const el = document.querySelector(s2); window.__mtTa.flyTo(el.dataset.id, 0.9); }, sel); await sleep(900);
+      const c2 = await page.evaluate((s2) => { const r = document.querySelector(s2).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
+      await page.evaluate(() => { window.__p157vp = []; const tick = () => { const v = document.querySelector('.react-flow__viewport'); if (v) { const t = v.style.transform; const a = window.__p157vp; if (!a.length || a[a.length - 1] !== t) a.push(t); } if (window.__p157vp.length < 500) window.__p157raf = requestAnimationFrame(tick); }; tick(); });
+      await page.mouse.dblclick(c2.x, c2.y); await sleep(1500);
+      const nav = await page.evaluate(() => { cancelAnimationFrame(window.__p157raf); return { frames: window.__p157vp, open: !!document.querySelector('[data-role=mission]') }; });
+      await shotTo(page, `p157-${w}-after-open`);
+      check(`[${w}] 더블클릭: 세션 맵을 닫고 판 화면이 한 번에 바뀐다(중간 화면 없음)`, !nav.open && nav.frames.length === 2, { n: nav.frames.length, frames: nav.frames.slice(0, 6) });
+    }
+    await page.evaluate(UNHOOK);
+  } finally { await closeApp(app); }
+}
+
 async function stopBoard() {
   for (const s of call('session.list').filter((x) => /^p153-/.test(x.name))) { try { atrium('kill', s.name, '--yes'); } catch (e) { log(`kill ${s.name} ${e.message.slice(0, 100)}`); } }
   await sleep(2000);
@@ -881,6 +964,7 @@ try {
   else if (WHAT === 'r11') await r11();
   else if (WHAT === 'r12real') await r12real();
   else if (WHAT === 'compare') { await compareApp(); await mock(true); }
+  else if (WHAT === 'p157') await p157();
   else if (WHAT === 'stop') await stopBoard();
 } catch (e) {
   check('시험이 끝까지 돌았다', false, e.stack || e.message);

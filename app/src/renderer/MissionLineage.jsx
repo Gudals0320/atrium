@@ -1,6 +1,6 @@
 // P153 r7: 세션 맵 PC = 시안 B "Lineage"(experiments/mm-concepts/project/B.dc.html, ARCH 4절 I6). 무한 캔버스 덮개. 옛 열 지도(Mission.jsx ClassicMission)는 숨은 설정 missionStyle: classic으로만.
 // - 배치는 lib/mission-lineage.js(순수 함수): 폴더 = 가로 띠(왼쪽 기둥: 이름·워크스페이스·세션 수·상태 비율 막대), 워크스페이스 = 띠 안의 줄,
-//   줄마다 고정 칸(워크스페이스 · 리드 · 워커 · 다음 단계 · 혼자). 관계 선은 종류마다 모양·화살촉·작은 이름표. 왼쪽 레일은 폴더 > 워크스페이스 목차(누르면 그 줄로).
+//   줄마다 고정 칸(워크스페이스 · 리드 · 워커 · 다음 단계 · 솔로). 관계 선은 종류마다 모양·화살촉·작은 이름표. 왼쪽 레일은 폴더 > 워크스페이스 목차(누르면 그 줄로).
 //   칸 머리는 화면 위(위 줄 아래)에 붙어 있고 끌기·확대를 따라 옮겨 간다(paint가 DOM에 바로).
 // - 사용자가 정한 것(시안 B보다 이긴다): 이름 "세션 맵", 줌(− % + 맞춤)만(단계 단추·미니맵·범례·B의 오른쪽 서랍 없음), 빈 곳 눌러도 안 닫힘(닫기 Esc·단추),
 //   늘 떠 있는 명령줄(CommandBar), 카드 누르기 = 명령줄 @태그(여럿, 다시 누르면 뺌), 맵 안에서 친 글자 = 명령줄, 더블클릭·Enter = 판의 그 세션으로(첫 클릭 태그는 되돌림),
@@ -55,7 +55,9 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const activeAt = n.activeAt || (live && live.lastActivityAt) || null;
   const age = tier === 'work' && turnAt ? ageText(now - turnAt, t) : activeAt ? ageText(now - activeAt, t) : null;
   const model = shell ? null : live && live.model ? modelText(live.model, live.effort) : modelText(n.model, n.effort);
-  const role = m ? (m.rank === 'solo' ? ((n.peers || []).length ? t('mmLine.peer') : t('mmTerr.solo')) : roleText(m, t, { short: true })) : ''; // r11: 정한 동료는 '동료'
+  // P157: 하위를 불렀던 세션(닫힌 하위·최근 지시)·상위가 닫힌 세션은 솔로가 아니다. 역할 자리에 작게 그 까닭
+  const called = n.closedKids ? t('mmLine.closedKids', { n: n.closedKids }) : n.assignAt ? t('mmLine.assigned') : n.parentClosed ? t('mmLine.parentClosed') : null;
+  const role = m ? (m.rank === 'solo' ? ((n.peers || []).length ? t('mmLine.peer') : called || t('mmTerr.solo')) : roleText(m, t, { short: true })) : ''; // r11: 정한 동료는 '동료'
   const lp = n.lastPrompt || (live && live.lastPrompt) || null;
   const ask = n.ask || (live && live.ask && (live.ask.summary || live.ask.kind)) || null;
   const err = live && live.error ? (live.error.message || String(live.error)) : n.error || null;
@@ -76,6 +78,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 }
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
+// P157: 카드에는 브라우저 풍선(title)을 달지 않는다. 마우스를 올리면 미리 보기(Peek) 하나만 뜬다(전에는 둘이 함께 떴다). 같은 사실은 aria-label에
 const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null }) {
   const n = b.node;
   const st = ST[tier] || 'ready';
@@ -84,7 +87,7 @@ const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, o
   const done = tier === 'review';
   return (
     <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws}>
-      <div className="mt-ta-card" role="button" tabIndex={0} aria-pressed={tagged ? 'true' : 'false'} data-role="mm-node" data-kind="session" data-id={id} data-name={n.name} data-tier={tier} data-tagged={tagged ? '1' : undefined} title={tip} aria-label={tip.replace(/\n/g, ', ')}
+      <div className="mt-ta-card" role="button" tabIndex={0} aria-pressed={tagged ? 'true' : 'false'} data-role="mm-node" data-kind="session" data-id={id} data-name={n.name} data-tier={tier} data-tagged={tagged ? '1' : undefined} aria-label={tip.replace(/\n/g, ', ')}
         onClick={(e) => onTag(id, e)} onDoubleClick={() => onOpen(id, true)} onPointerEnter={(e) => e.pointerType === 'mouse' && onHover(id, e.currentTarget)} onPointerLeave={() => onHover(null)} onFocus={(e) => onHover(id, e.currentTarget)} onBlur={() => onHover(null)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpen(id); } else if (e.key === ' ') { e.preventDefault(); onTag(id); } }}>
         {tier === 'work' && <MissionLight role="ta-light" />}
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
@@ -202,7 +205,7 @@ export function LineageMap() {
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
   const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
-  const lay = useMemo(() => (g2 ? lineageLayout(g2, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded }) : null), [g2, order, vgroups, tiers, names, t, expanded]);
+  const lay = useMemo(() => (g2 ? lineageLayout(g2, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })] }) : null), [g2, order, vgroups, tiers, names, t, expanded]);
   const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
   layRef.current = lay;
   sizeRef.current = vsize;
@@ -318,7 +321,8 @@ export function LineageMap() {
     lastTag.current = null;
     setMissionOpen(false);
     const st = getState();
-    if (b && b.node.sessionId) setTimeout(() => st.navigateTo && st.navigateTo(b.node.sessionId), 30);
+    // P157: 날아가기(줌 아웃 → 이동 → 줌 인) 없이 그 세션 맞춤 보기로 한 번에
+    if (b && b.node.sessionId) setTimeout(() => st.navigateTo && st.navigateTo(b.node.sessionId, { instant: true }), 30);
   }, []);
   const tag = useCallback((id, e) => {
     const L = layRef.current, b = L && L.cards.get(id);
@@ -544,9 +548,9 @@ export function LineageMap() {
   const tagOf = (id) => { const b = lay.cards.get(id); return !!b && tagSet.has(String(b.node.name).toLowerCase()); };
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const edgeText = (e) => (e.cross ? t('mmTerr.edgeCross', { from: lay.tree.byId.get(e.from).name, ws: wsName(lay.tree.byId.get(e.to).workspaceKey || '') || t('mmTerr.noFolder') }) : e.rel === 'role' ? (e.role || t('mmLine.role')) : t('mmLine.task'));
-  // 칸 머리: 워크스페이스 · 시작 · 1단계 · 2단계 · … · 혼자
+  // 칸 머리: 워크스페이스 · 시작 · 1단계 · 2단계 · … · 솔로
   const colLabel = (c) => (c.key === 'ws' ? t('mmLine.colWs') : c.key === 'solo' ? t('mmLine.colSolo') : c.level === 0 ? t('mmLine.colRoot') : t('mmLine.colLevel', { n: c.level }));
-  const col0 = lay ? (lay.cols.find((c) => c.key === 'lv') || { x: LINE.HEADX + LINE.HEADW + 208 }).x : 0;
+  const col0 = lay ? (lay.cols.find((c) => c.key === 'lv') || { x: lay.headx + LINE.HEADW + 208 }).x : 0;
 
   return (
     <div className={`mt-mission mt-ta mt-ln nowheel nopan${moveWs ? ' isle-moving' : ''}`} data-role="mission" data-style="territories" data-layout="lineage" ref={rootRef}>
@@ -556,10 +560,10 @@ export function LineageMap() {
           <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef}>
             {lay.bands.map((b) => (
               <div key={`b:${b.id || 'none'}`} className={`mt-ln-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} style={{ top: b.y, height: b.h, width: lay.W }}>
-                <div className="mt-ln-spine">
+                <div className="mt-ln-spine" style={{ width: lay.spine }}>
                   <span className="fk">{b.loose ? t('mmLine.loose') : t('mmLine.folder')}</span>
                   <span className="fn" data-role="ln-band-name">{b.name}</span>
-                  <span className="fs">{`${t('mmTerr.workspaces', { n: b.nWs })} · ${t('mmTerr.sessions', { n: b.sessions })}`}</span>
+                  <span className="fs" data-role="ln-band-stat"><span>{t('mmTerr.workspaces', { n: b.nWs })}</span><span>{t('mmTerr.sessions', { n: b.sessions })}</span></span>
                   <span className="fbar" aria-hidden="true">{b.bar.map((c) => <i key={c.tier} className={`st-${ST[c.tier]}`} style={{ flexGrow: c.n }} />)}</span>
                 </div>
               </div>
@@ -567,8 +571,10 @@ export function LineageMap() {
             {lay.rows.map((r) => (
               <div key={`r:${r.key || '-'}`} className={`mt-ln-row${r.first ? ' first' : ''}`} data-role="ta-isle" data-key={r.key} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
                 {r.key ? <div className="mt-ln-grab" data-key={r.key} data-role="ln-row-grab" style={{ width: Math.max(LINE.HEADW, col0 - r.x - 40) }} /> : null}
-                <div className="mt-ln-head" data-key={r.key} data-role="ta-isle-head" title={r.key ? t('mmTerr.isleTip', { ws: r.name }) : undefined}>
+                {/* P157: 옮기기 안내는 풍선(title)이 아니라 Alt를 누른 동안에만 보이는 작은 글(.mt-ln-althint) */}
+                <div className="mt-ln-head" data-key={r.key} data-role="ta-isle-head">
                   <span className="wsn"><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
+                  {r.key ? <span className="mt-ln-althint" data-role="ln-alt-hint">{t('mmLine.altMoveHint')}</span> : null}
                   <span className="wsc">{r.chips.map((c) => <span key={c.tier} className={`st-${ST[c.tier]}`} data-tier={c.tier}><i /><b>{c.n}</b> {t(`mmTerr.chip.${c.tier}`)}</span>)}</span>
                 </div>
               </div>

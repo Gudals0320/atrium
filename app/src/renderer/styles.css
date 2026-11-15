@@ -2332,3 +2332,13 @@ html[data-work-light="off"] .mt-ln .blink, html[data-work-light="off"] .mt-ln .b
 .mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-grab { pointer-events: auto; cursor: move; }
 .mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-grab:hover, .mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-grab:has(+ .mt-ln-head:hover) { background: rgba(255, 252, 240, 0.04); outline: 1px dashed var(--ln-line-2); outline-offset: -6px; }
 .mt-ln.isle-moving .mt-ln-grab { cursor: grabbing; }
+
+/* P157 세션 맵: (1) 설정의 호출자 목록 .mt-ln-row:hover(위쪽)가 세션 맵 줄에도 걸려, Alt 없이 줄 머리를 지나가면 줄이 선택된 듯 칠해졌다. 세션 맵에서는 끈다.
+   (2) 옮기기 안내는 Alt를 누른 동안에만 작은 글로(풍선 title은 없앴다). (3) 폴더 기둥은 폭이 이름에 맞춰 늘고(style width, lib/mission-lineage.js spineWidth) 이름은 말줄임 없이, 수는 두 줄 */
+.mt-ln.mt-mission .mt-ln-row, .mt-ln.mt-mission .mt-ln-row:hover { background: none; border-radius: 0; display: block; padding: 0; min-height: 0; }
+.mt-ln.mt-mission .mt-ln-row.moving { background: rgba(255, 252, 240, 0.04); }
+.mt-ln-althint { display: none; font-size: 12px; color: var(--ln-dim); white-space: nowrap; }
+.mt-ln .mt-ta-vp[data-alt="1"] .mt-ln-althint { display: block; }
+.mt-ln .lv-far .mt-ln-althint { font-size: clamp(18px, calc(9px * var(--ik, 1)), 26px); }
+.mt-ln-spine .fn { overflow: visible; text-overflow: clip; }
+.mt-ln-spine .fs { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }

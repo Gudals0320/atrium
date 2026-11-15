@@ -397,7 +397,7 @@ const deepLay = (expanded, sets = []) => { const { g, order } = deepGraph(); ret
 const colsOf = (lay) => lay.cols.map((c) => (c.key === 'lv' ? c.level : c.key));
 const lvX = (lay, n) => lay.cols.find((c) => c.key === 'lv' && c.level === n).x;
 
-test('P153 r11: 칸은 워크스페이스 · 시작 · 1단계 · … · 혼자, 4단계보다 깊은 가지는 접고(+n단계) 편 가지만 끝까지 편다', () => {
+test('P153 r11: 칸은 워크스페이스 · 시작 · 1단계 · … · 솔로, 4단계보다 깊은 가지는 접고(+n단계) 편 가지만 끝까지 편다', () => {
   const lay = deepLay(new Set());
   assert.deepEqual(colsOf(lay), ['ws', 0, 1, 2, 3, 4, 'solo'], '보이는 가장 깊은 단계(4)까지');
   assert.equal(lay.cards.get('s:d4').fold, 2, 'd4 카드에 +2단계');
@@ -406,7 +406,7 @@ test('P153 r11: 칸은 워크스페이스 · 시작 · 1단계 · … · 혼자,
   assert.deepEqual(colsOf(open), ['ws', 0, 1, 2, 3, 4, 5, 6, 'solo']);
   assert.equal(open.cards.get('s:d4').fold, 0);
   assert.equal(open.cards.get('s:d6').x, lvX(open, 6), '편 가지는 끝(6단계)까지');
-  assert.equal(ko.mmLine.colRoot, '시작'); assert.equal(ko.mmLine.colLevel, '{n}단계'); assert.equal(ko.mmLine.colSolo, '혼자'); assert.equal(ko.mmLine.fold, '+{n}단계');
+  assert.equal(ko.mmLine.colRoot, '시작'); assert.equal(ko.mmLine.colLevel, '{n}단계'); assert.equal(ko.mmLine.colSolo, '솔로'); // P157: 혼자 → 솔로 assert.equal(ko.mmLine.fold, '+{n}단계');
   assert.equal(en.mmLine.colRoot, 'Root'); assert.equal(en.mmLine.colLevel, 'Level {n}'); assert.equal(en.mmLine.colSolo, 'Solo');
   for (const k of ['colLead', 'colWorkers', 'colNext']) assert.ok(!(k in ko.mmLine) && !(k in en.mmLine), `${k}는 없앴다`);
   const src = read('MissionLineage.jsx');
