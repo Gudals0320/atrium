@@ -5,7 +5,7 @@
 //   PC가 FOLD 단계보다 깊은 가지를 접으면(카드 fold = 접힌 단계 수) 휴대폰도 같은 카드에 "+n단계" 칩을 단다(편 카드 = expanded).
 // - 레일(꺾인 선)은 창이 그린 카드 자리를 재서 긋는다(PhoneLineage.jsx). 여기서는 누가 누구의 위인지(up)와 관계 종류(rel)만 준다.
 // → { folders: [{ id, name, loose, nWs, sessions, bar, ws: [{ key, name, chips, count, items, peers }] }], order: [id…], counts: { turn, alert, work, review, all } }
-//   item: { id, depth, ind, kind: 'tree'|'away'|'solo', up(같은 워크스페이스의 위 세션 id), rel(spawn|role|prompt), active, fold, from({ id, name, ws }), lead, away(다른 워크스페이스 하위 수) }
+//   item: { id, depth, ind, kind: 'tree'|'away'|'solo', up(같은 워크스페이스의 위 세션 id), rel(spawn|role|prompt), active, fold, thin(P163: PC와 같은 판정의 얇은 줄), from({ id, name, ws }), lead, away(다른 워크스페이스 하위 수) }
 import { nodeTier } from './mission-model.js';
 
 export const PL = { INDENT: 22, MAXIND: 4 }; // 단계마다 들여 쓰는 폭(px, 시안 B-phone과 같다)과 들여쓰기를 멈추는 단계(PC FOLD와 같다. 390px 폭에서 카드가 250px 넘게 남게)
@@ -40,7 +40,7 @@ export function phoneLineage(lay, { tiers = null } = {}) {
       items.push({
         id, depth, ind: Math.min(depth, PL.MAXIND), kind,
         up: up && wsOf(up.from) === row.key && lay.cards.has(up.from) ? up.from : null, rel: up ? up.rel : null, active: !!(up && up.active),
-        fold: card.fold || 0, from, lead: kidsAll.some((c) => wsOf(c.id) === row.key), away: kidsAll.filter((c) => wsOf(c.id) !== row.key).length,
+        fold: card.fold || 0, thin: !!card.thin, from, lead: kidsAll.some((c) => wsOf(c.id) === row.key), away: kidsAll.filter((c) => wsOf(c.id) !== row.key).length,
       });
       for (const k of vk) walk(k, depth + 1, 'tree', g + 1);
     };

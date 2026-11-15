@@ -2363,3 +2363,15 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 /* P161: 설정 "연결" 칸의 빈 상태 */
 .mt-cn-empty { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px dashed var(--panel-line); border-radius: 8px; font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
 .mt-cn-empty b { font-size: 13px; color: var(--text); }
+
+/* P163: 세션 맵 얇은 줄(하위가 셋 이상인 세션 아래 절전 하위). 카드와 같은 폭, 높이 LINE.THIN(30), 상태 점 + 이름 + 지난 시간(흐리게) 한 줄 */
+.mt-sm .mt-ta-slot.thin { border-radius: 7px; }
+.mt-sm .mt-ta-slot.thin .mt-ta-card { padding: 0 12px; border-radius: 7px; display: flex; align-items: center; }
+.mt-sm-thin { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; font-size: 13px; line-height: 1; }
+.mt-sm-thin i { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--sc); box-sizing: border-box; }
+.mt-sm-thin .cname { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ln-text); font-weight: 500; }
+.mt-sm-thin .cago { flex: none; color: var(--ln-dim); font-size: 12px; }
+.mt-sm .mt-ta-world.lv-far .mt-ta-slot.thin .mt-ta-card { padding: 0 12px; }
+.mt-sm .mt-ta-world.lv-far .mt-sm-thin { font-size: clamp(19px, calc(10px * var(--ik, 1)), 23px); gap: 12px; }
+.mt-sm .mt-ta-world.lv-far .mt-sm-thin i { width: 12px; height: 12px; border-width: 2.5px; }
+.mt-sm .mt-ta-world.lv-far .mt-sm-thin .cago { font-size: 18px; }

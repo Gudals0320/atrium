@@ -14,10 +14,12 @@ const TAG = process.argv[3] || 'fake';
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..', '..');
 const MAIN = /[\\/]\.claude[\\/]worktrees[\\/]/.test(REPO) ? path.resolve(REPO, '..', '..', '..') : REPO;
 const DEV = path.join(REPO, 'backend', '.dev');
-const OUT = path.join(REPO, 'experiments', 'p160', TAG);
-const CONVOS = path.join(REPO, 'experiments', 'p160', 'convos');
-const DIR = 'C:\\Workspace\\mtask-p160-a';
-const BOARD = 'atrium-dev-p160', PORT = '47929', SIM = 47995;
+// P163: 다른 워커의 판에서 돌릴 때 P160_BOARD(atrium-dev-<이름>), P160_PORT, P160_SIM(휴대폰 흉내 프록시), P160_DIR(시험 폴더), P160_OUT(experiments 아래 결과 폴더 이름)로 덮는다
+const OUTN = process.env.P160_OUT || 'p160';
+const OUT = path.join(REPO, 'experiments', OUTN, TAG);
+const CONVOS = path.join(REPO, 'experiments', OUTN, 'convos');
+const DIR = process.env.P160_DIR || 'C:\\Workspace\\mtask-p160-a';
+const BOARD = `atrium-dev-${process.env.P160_BOARD || 'p160'}`, PORT = process.env.P160_PORT || '47929', SIM = Number(process.env.P160_SIM || 47995);
 for (const k of Object.keys(process.env)) if (/^(ATRIUM_|MTASK_|HERDR_|HC_)/.test(k)) delete process.env[k];
 process.env.MT_E2E_OUT = path.relative(path.join(REPO, 'experiments'), OUT);
 const L = await import('./p59-lib.mjs');

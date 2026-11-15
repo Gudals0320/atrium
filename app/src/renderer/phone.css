@@ -641,3 +641,12 @@ html[data-work-light="off"] .mt-pl-slot.blink .mt-pl-card, html.mt-lite .mt-pl-s
 .mt-pl-peekact { display: flex; justify-content: flex-end; gap: 8px; }
 .mt-pl-peekact button { height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--pl-line-2); background: transparent; color: var(--pl-text); font: 500 14px var(--font-ui); }
 .mt-pl-peekact button.go { background: var(--pl-strong); color: #141311; border-color: transparent; font-weight: 600; }
+
+/* P163: 휴대폰 세션 맵 얇은 줄(PC와 같은 판정). 한 줄 높이 30px, 상태 점 + 이름 + 지난 시간(흐리게), 얇은 줄끼리는 간격을 좁힌다(목록 간격 9px → 4px) */
+.mt-pl-item.thin + .mt-pl-item.thin { margin-top: -5px; }
+.mt-pl-card.thin { height: 30px; padding: 0 11px; justify-content: center; border-radius: 7px; }
+.mt-pl-slot.thin { border-radius: 7px; }
+.mt-pl-card.thin .r1 { align-items: center; gap: 8px; }
+.mt-pl-card.thin .r1 > i { flex: none; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--sc); box-sizing: border-box; }
+.mt-pl-card.thin .nm { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--pl-text); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.mt-pl-card.thin .ago { flex: none; font-size: 12px; }
