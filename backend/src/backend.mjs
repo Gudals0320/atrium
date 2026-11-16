@@ -155,7 +155,9 @@ export class Backend {
     this.api = new ApiServer({ token: this.apiToken, ready: this.ready, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: (c) => { this.web.clientOpened(c); if (this.peers) this.peers.opened(); }, onClose: (c) => { this.web.clientClosed(c); if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.voice) this.voice.dropClient(c); if (this.peers) this.peers.closed(); }, onBinary: (c, d) => this.voice.onBinary(c, d), log: (m) => this.log(m) });
     this.web.api = this.api;
     // P165: 음성 입력 중계(Soniox). 키는 SONIOX_API_KEY에서 백엔드만 읽는다. ATRIUM_SONIOX_URL은 개발용 판의 가짜 서버 시험용
-    this.voice = new VoiceRelay({ log: (m) => this.log(m), ...(cfg.profile === 'dev' && process.env.ATRIUM_SONIOX_URL ? { url: process.env.ATRIUM_SONIOX_URL } : {}) });
+    // P176: ATRIUM_VOICE_IDLE_MS(개발용 판만)는 말 없음 자동 멈춤 시간을 줄이는 시험용
+    const voiceIdle = cfg.profile === 'dev' ? Number(process.env.ATRIUM_VOICE_IDLE_MS) : NaN;
+    this.voice = new VoiceRelay({ log: (m) => this.log(m), ...(cfg.profile === 'dev' && process.env.ATRIUM_SONIOX_URL ? { url: process.env.ATRIUM_SONIOX_URL } : {}), ...(voiceIdle > 0 ? { idleMs: voiceIdle } : {}) });
     Object.assign(this.api.handlers, this.voice.handlers);
     this.web.push.tree = () => this.pushTree(); // P92: 작업 사이클 끝 판단(하위 세션 나무, 전달·루프·뒤 일)
     this.tailscale.start();

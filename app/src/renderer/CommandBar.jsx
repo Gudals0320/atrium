@@ -17,6 +17,7 @@
 //      Alt+Enter도 줄바꿈. 바는 아래 기준으로 위로 자라고 단추는 아래 줄에 붙어 있다. 칩 줄은 자란 만큼 위로 비킨다(--mt-cmd-grow)
 // P162: 데스크톱 창에서 탐색기로 복사한 파일을 붙이면 그 경로가, 캡처한 그림을 붙이면 [Image 1] 칩이 들어간다(lib/desktop-paste.js, main.mjs mt:clipPaste).
 //      칩은 보낼 때 그림 파일 경로로 바뀌고, 마우스를 올리면 작은 미리보기, 칩 뒤 Backspace로 통째로 지운다. 웹 화면(P48 업로드)은 그대로
+// P176: 녹음 중에는 아래 바가 숨지 않는다(lib/bottom.js holdReason voice). 바가 가려지면 위에 녹음 알약(Voice.jsx VoicePill)
 // P165: 왼쪽 마이크 단추로 음성 입력(Voice.jsx). 들은 글은 녹음을 시작한 커서 자리에 들어가고, 녹음 중에는 겹이 글을 그려 미확정 글을 흐리게 보인다
 //      (textarea 글자는 투명, 커서는 그대로). 녹음 중 Enter는 녹음을 끝내고 남은 확정 글을 1초까지 받은 뒤 보낸다
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -46,7 +47,7 @@ function useTick(ms) { const [n, set] = useState(Date.now()); useEffect(() => { 
 // P43: 아래 바 자동 숨김(판단은 lib/bottom.js). 마우스가 아래 띠나 보이는 바·칩 위에 있는지, 명령 바·칩 줄에 초점이 있는지를 지켜보고
 // 보일지를 정한다. 칩 줄(Chrome.jsx ChipRow)은 store.bottomShown을 따른다. 숨은 동안 바와 칩은 마우스를 받지 않아 그 밑의 터미널이 눌린다
 const BAR_SEL = '.mt-bottom .mt-cmd, .mt-bottom .mt-mention, .mt-bottom-above, .mt-chips';
-function useAutoHide(rootRef, { draft, popup }) {
+function useAutoHide(rootRef, { draft, popup, voice }) {
   const pinned = useStore((st) => st.bottomPin);
   const [shown, setShown] = useState(false);
   const [zone, setZone] = useState('out');
@@ -87,12 +88,12 @@ function useAutoHide(rootRef, { draft, popup }) {
     };
   }, [rootRef]);
   useEffect(() => {
-    const next = bottomNext({ shown, zone, focused: focus.focused, menu: focus.menu, draft, popup, pinned });
+    const next = bottomNext({ shown, zone, focused: focus.focused, menu: focus.menu, draft, popup, pinned, voice });
     if (next.shown === shown) return undefined;
     if (!next.delay) { setShown(next.shown); return undefined; }
     const id = setTimeout(() => setShown(next.shown), next.delay);
     return () => clearTimeout(id);
-  }, [shown, zone, focus, draft, popup, pinned]);
+  }, [shown, zone, focus, draft, popup, pinned, voice]);
   useEffect(() => { setBottomShown(shown); }, [shown]);
   return shown;
 }
@@ -291,7 +292,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const edit = useDeliveryEditing(sentTexts);
   const { editing, startEdit } = edit;
   const setEditing = edit.stopEdit;
-  const shown = useAutoHide(rootRef, { draft: text.trim().length > 0, popup: options.length > 0 || threadOpen || missionOpen }); // P153: 세션 맵이 열린 동안 늘 보인다
+  const shown = useAutoHide(rootRef, { draft: text.trim().length > 0, popup: options.length > 0 || threadOpen || missionOpen, voice: voice.active }); // P153: 세션 맵이 열린 동안 늘 보인다. P176: 녹음 중에도
   // P83: 손가락 화면. 손잡이 단추, 키보드 위로 올리기, 바 밖을 탭하면 닫기
   const [coarse] = useState(isCoarse);
   const [lift, setLift] = useState(0);

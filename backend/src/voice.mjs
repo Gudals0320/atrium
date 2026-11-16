@@ -5,6 +5,8 @@
 // - 인증은 판 API 웹소켓 그대로다(이 PC의 판 API 토큰, 원격은 짝 맺은 기기의 세션 쿠키). 따로 끝점을 열지 않는다
 // - 한 클라이언트에 녹음 하나, 판 전체 동시 상한(maxStreams), 한 번 길이 상한(maxMs). 연결이 끊기면 그 녹음을 닫는다
 // - 소리와 전사 글은 판에 저장하지 않는다. 로그에는 시작·끝·까닭·길이만 남긴다
+// - P176: 들은 글이 말 없음 상한(idleMs) 동안 새로 오지 않으면 저절로 멈춘다(사람이 모르는 녹음으로 비용이 나가지 않게).
+//   창이 멈출 때는 까닭(user·send·hidden·unmount)을 voice.stop에 실어 보내고, 끝 줄(voice vN end <까닭>)에 남는다
 import { WebSocket } from 'ws';
 import { execFile } from 'node:child_process';
 
@@ -17,6 +19,14 @@ export const VOICE_MAX_FRAME = 64 * 1024; // 16kHz 16비트 한 채널 2초 = 64
 const OPEN_TIMEOUT_MS = 8000;
 const FINISH_WAIT_MS = 3000; // 멈춘 뒤 Soniox의 finished를 기다리는 시간
 const KEEPALIVE_MS = 10000; // 소리가 이만큼 끊기면 keepalive(Soniox는 20초 동안 아무것도 없으면 끊는다)
+export const VOICE_IDLE_MS = 30 * 1000; // P176: 들은 글이 이만큼 새로 오지 않으면 저절로 멈춘다
+// P176: 창이 voice.stop에 실어 보내는 멈춘 까닭(그 밖의 값은 user로 본다)
+export const VOICE_STOP_REASONS = ['user', 'send', 'hidden', 'unmount'];
+// P176: 창에 알리는 끝 까닭. 사람이 멈춘 것(user·send·hidden·unmount)은 done, 저절로 멈춘 것은 그 까닭 그대로
+export function voiceEndReason(cause) {
+  if (VOICE_STOP_REASONS.includes(cause) || cause === 'replaced') return 'done';
+  return cause;
+}
 
 // Soniox 시작 글. 지연이 짧은 쪽: 소리 형식은 그대로 넘기는 PCM(컨테이너 묶음 기다림 없음), 끝점 감지로 말이 끊기면 곧 확정
 export function sonioxConfig({ model = SONIOX_MODEL, sampleRate = VOICE_SAMPLE_RATE } = {}) {
@@ -67,8 +77,8 @@ const err = (code, message) => Object.assign(new Error(message), { code });
 
 export class VoiceRelay {
   // getKey: () => 키 | null. connect(url, opts): 바깥 웹소켓(시험은 가짜 서버로 바꾼다)
-  constructor({ getKey = makeKeyReader(), connect = (url, opts) => new WebSocket(url, opts), url = SONIOX_URL, model = SONIOX_MODEL, log = () => {}, maxMs = VOICE_MAX_MS, maxStreams = VOICE_MAX_STREAMS, maxFrame = VOICE_MAX_FRAME, finishWaitMs = FINISH_WAIT_MS, openTimeoutMs = OPEN_TIMEOUT_MS, keepaliveMs = KEEPALIVE_MS } = {}) {
-    Object.assign(this, { getKey, connect, url, model, log, maxMs, maxStreams, maxFrame, finishWaitMs, openTimeoutMs, keepaliveMs });
+  constructor({ getKey = makeKeyReader(), connect = (url, opts) => new WebSocket(url, opts), url = SONIOX_URL, model = SONIOX_MODEL, log = () => {}, maxMs = VOICE_MAX_MS, maxStreams = VOICE_MAX_STREAMS, maxFrame = VOICE_MAX_FRAME, finishWaitMs = FINISH_WAIT_MS, openTimeoutMs = OPEN_TIMEOUT_MS, keepaliveMs = KEEPALIVE_MS, idleMs = VOICE_IDLE_MS } = {}) {
+    Object.assign(this, { getKey, connect, url, model, log, maxMs, maxStreams, maxFrame, finishWaitMs, openTimeoutMs, keepaliveMs, idleMs });
     this.streams = new Map(); // client → stream
     this.n = 0;
   }
@@ -95,7 +105,7 @@ export class VoiceRelay {
     catch (e) { this.streams.delete(client); throw err('voice_failed', 'could not reach the speech service'); }
     s.ws = ws;
     ws.on('message', (raw) => this.onUpstream(s, raw));
-    ws.on('close', () => { if (s.opened && !s.ended) this.end(s, s.finishing ? (s.reason || 'done') : 'dropped'); });
+    ws.on('close', () => { if (s.opened && !s.ended) this.end(s, s.finishing ? (s.reason || 'user') : 'dropped'); });
     ws.on('error', (e) => { s.wsError = e && e.code ? String(e.code) : 'error'; });
     try {
       await new Promise((res, rej) => {
@@ -114,15 +124,19 @@ export class VoiceRelay {
     ws.send(JSON.stringify(sonioxConfig({ model: this.model })));
     s.timers.push(setTimeout(() => this.finish(s, 'limit'), this.maxMs));
     s.timers.push(setInterval(() => { if (!s.finishing && Date.now() - s.lastAudio >= this.keepaliveMs && ws.readyState === 1) ws.send(JSON.stringify({ type: 'keepalive' })); }, Math.max(1000, Math.floor(this.keepaliveMs / 2))));
+    // P176: 말 없음. 열린 때부터, 그 뒤로는 들은 글(확정·미확정)이 마지막으로 바뀐 때부터 잰다
+    s.lastText = Date.now();
+    if (this.idleMs > 0) s.timers.push(setInterval(() => { if (!s.finishing && !s.ended && Date.now() - s.lastText >= this.idleMs) this.finish(s, 'silence'); }, Math.max(50, Math.min(1000, Math.floor(this.idleMs / 10)))));
     this.log(`voice ${id} start (${client.kind || 'client'}${client.remote ? ', remote' : ''}, ${this.streams.size}/${this.maxStreams})`);
     return { id, sampleRate: VOICE_SAMPLE_RATE, maxMs: this.maxMs };
   }
 
-  // 멈춤: 빈 글 프레임으로 소리 끝을 알리고 finished(남은 확정 글)를 기다린다
+  // 멈춤: 빈 글 프레임으로 소리 끝을 알리고 finished(남은 확정 글)를 기다린다. p.reason: 창이 멈춘 까닭(P176)
   stop(p, client) {
     const s = this.streams.get(client);
     if (!s || (p && p.id && p.id !== s.id)) return { ok: false };
-    this.finish(s, 'done');
+    const why = p && VOICE_STOP_REASONS.includes(p.reason) ? p.reason : 'user';
+    this.finish(s, why);
     return { ok: true };
   }
   finish(s, reason) {
@@ -150,12 +164,13 @@ export class VoiceRelay {
     if (r.error) { s.upError = r.error; this.end(s, 'error'); return; }
     if (r.final || r.interim !== (s.lastInterim || '')) {
       s.lastInterim = r.interim;
+      s.lastText = Date.now(); // P176: 말이 들린다
       s.client.sendEvent('voice.text', { id: s.id, final: r.final, interim: r.interim });
     }
-    if (r.finished) this.end(s, s.reason || 'done');
+    if (r.finished) this.end(s, s.reason || 'user');
   }
 
-  // 끝: 클라이언트에 알리고(끊긴 클라이언트는 빼고) 바깥 연결을 닫는다
+  // 끝: 클라이언트에 알리고(끊긴 클라이언트는 빼고) 바깥 연결을 닫는다. reason은 멈춘 까닭(P176: 로그에는 그대로, 창에는 voiceEndReason)
   end(s, reason, { notify = true } = {}) {
     if (s.ended) return;
     s.ended = true;
@@ -163,7 +178,7 @@ export class VoiceRelay {
     if (this.streams.get(s.client) === s) this.streams.delete(s.client);
     try { if (s.ws && s.ws.readyState <= 1) s.ws.close(); } catch {}
     const error = reason === 'error' ? (s.upError ? s.upError.type : 'error') : null;
-    if (notify) s.client.sendEvent('voice.end', { id: s.id, reason: reason === 'replaced' ? 'done' : reason, ...(error ? { error } : {}) });
+    if (notify) s.client.sendEvent('voice.end', { id: s.id, reason: voiceEndReason(reason), ...(error ? { error } : {}) });
     const sec = ((Date.now() - s.at) / 1000).toFixed(1);
     this.log(`voice ${s.id} end ${reason}${error ? ` (${s.upError && s.upError.code != null ? s.upError.code + ' ' : ''}${error})` : ''} ${sec}s ${Math.round(s.bytes / 1024)}KB`);
   }

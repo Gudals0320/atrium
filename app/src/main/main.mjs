@@ -155,6 +155,8 @@ function createWindow() {
     webPreferences: { preload: path.join(HERE, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });
   win.setMenuBarVisibility(false);
+  // P176: 최소화·숨김(트레이)을 창에 알린다. 페이지 visibilitychange는 Chromium 플래그에 따라 오지 않을 수 있다(음성 입력을 멈춘다)
+  for (const ev of ['minimize', 'hide']) win.on(ev, () => { if (!w.isDestroyed()) w.webContents.send('mt:hidden'); });
   win.on('page-title-updated', (e) => e.preventDefault()); // P9: HTML <title>이 개발용 표시("(dev)")를 덮어쓰지 않게
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('render-process-gone', (_e, d) => log('render-process-gone', JSON.stringify(d)));

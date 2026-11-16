@@ -4,15 +4,21 @@
 // - 미확정 글은 inline이면 입력칸 안에 흐리게(명령줄의 겹), 아니면 입력칸 위 한 줄에 흐리게(휴대폰) 보이고 확정 글만 입력칸에 들어간다
 // - 창이 숨거나 판 연결이 끊기면 멈춘다. 키는 창에 오지 않는다(없으면 백엔드가 voice_no_key로 거절한다)
 // - 움직임은 넣지 않는다(듣는 중은 빨간 점 고정 표시, reduced motion에서도 같다)
+// - P176: 녹음이 사람 모르게 이어지지 않게. 마이크 단추가 안 보이면(바가 숨음, 덮개에 가림, 화면 밖) 화면 위에 녹음 알약(VoicePill:
+//   빨간 점·지난 시간·누르면 멈춤)을 띄운다. 창이 숨으면(최소화·트레이) 멈추고 알린다. 말 없음 자동 멈춤은 백엔드가 한다(voice.mjs idleMs).
+//   멈출 때 까닭(user·send·hidden·unmount)을 voice.stop에 실어 보내 판 기록의 끝 줄에 남긴다
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from './api.js';
 import { toast } from './store.js';
 import { useT, t as tNow } from './lib/i18n.js';
 import { Icon } from './lib/icons.jsx';
-import { voiceStart, voiceApply, voiceEdit, liveRange, shiftPos, toPcm16, voiceErrorKey } from './lib/voice-text.js';
+import { voiceStart, voiceApply, voiceEdit, liveRange, shiftPos, toPcm16, voiceErrorKey, pillWanted, voiceElapsed, stopOnHide } from './lib/voice-text.js';
 
 const ERROR_SHOW_MS = 4000;
 const PRE_BUFFER_MAX = 40; // 시작 응답 전 소리 토막(약 3초)
+const PILL_CHECK_MS = 500; // P176: 마이크 단추가 보이는지 다시 보는 간격(알약의 지난 시간도 이때 바뀐다)
+const INFO_ENDS = new Set(['limit', 'silence']); // P176: 저절로 멈춘 것은 오류가 아니라 알림
 
 // 마이크 열기 → { close(), rate }. onPcm(Int16Array)
 async function openMic(onPcm) {
@@ -44,12 +50,13 @@ async function openMic(onPcm) {
 }
 
 // 녹음 훅. text·setText: 입력칸 글 상태, taRef: 입력칸. inline: 미확정 글을 입력칸 안에 넣는가
-// → { state, live(흐린 범위, inline), interim(흐린 글, inline 아님), active, toggle, stop, finish(ms), current()(들은 글을 넣은 지금 글) }
+// → { state, live(흐린 범위, inline), interim(흐린 글, inline 아님), active, since(녹음 시작 때), toggle, stop(ms, 까닭), finish(ms), current()(들은 글을 넣은 지금 글) }
 export function useVoice({ text, setText, taRef, inline = true }) {
   const [state, setState] = useState('idle'); // idle | connecting | listening | stopping | error
   const [errKey, setErrKey] = useState(null);
   const [live, setLive] = useState(null);
   const [interim, setInterim] = useState('');
+  const [since, setSince] = useState(0); // P176
   const r = useRef({ reg: null, known: text, id: null, mic: null, pre: [], waiters: [], caret: null, gen: 0, endTimer: null, interim: '' });
   const textRef = useRef(text);
   textRef.current = text;
@@ -111,7 +118,7 @@ export function useVoice({ text, setText, taRef, inline = true }) {
     if (bad) {
       const key = voiceErrorKey(reason === 'error' ? error || 'error' : reason);
       setErrKey(key); setState('error');
-      toast(tNow(key), reason === 'limit' ? 'info' : 'error');
+      toast(tNow(key), INFO_ENDS.has(reason) ? 'info' : 'error');
       setTimeout(() => setState((s) => (s === 'error' ? 'idle' : s)), ERROR_SHOW_MS);
     } else setState('idle');
   }, [inline, setText]);
@@ -123,7 +130,7 @@ export function useVoice({ text, setText, taRef, inline = true }) {
     const el = taRef.current;
     const base = textRef.current;
     const caret = el && document.activeElement === el ? el.selectionEnd : base.length; // 초점이 없으면 글 끝
-    setErrKey(null); setState('connecting');
+    setErrKey(null); setState('connecting'); setSince(Date.now());
     v.pre = [];
     const onPcm = (pcm) => {
       if (gen !== r.current.gen) return;
@@ -147,8 +154,8 @@ export function useVoice({ text, setText, taRef, inline = true }) {
     }
   }, [taRef, finalize]);
 
-  // 멈춤: 소리를 끊고 남은 확정 글을 기다린다(voice.end). 오래 안 오면 그대로 끝
-  const stop = useCallback((waitMs = 1500) => {
+  // 멈춤: 소리를 끊고 남은 확정 글을 기다린다(voice.end). 오래 안 오면 그대로 끝. why: 멈춘 까닭(P176, 판 기록에 남는다)
+  const stop = useCallback((waitMs = 1500, why = 'user') => {
     const v = r.current;
     const st = stateRef.current;
     if (st === 'connecting') { v.gen++; finalize('cancel'); return Promise.resolve(); }
@@ -158,7 +165,7 @@ export function useVoice({ text, setText, taRef, inline = true }) {
       setState('stopping');
       if (v.mic) { v.mic.close(); v.mic = null; }
       const id = v.id;
-      api.call('voice.stop', { id }).catch(() => {});
+      api.call('voice.stop', { id, reason: why }).catch(() => {});
     }
     clearTimeout(v.endTimer);
     v.endTimer = setTimeout(() => finalize('done'), waitMs);
@@ -166,11 +173,11 @@ export function useVoice({ text, setText, taRef, inline = true }) {
   }, [finalize]);
 
   // Enter로 보내기 전: 녹음을 끝내고 남은 확정 글을 잠깐(ms) 받는다
-  const finish = useCallback((ms = 1000) => stop(ms), [stop]);
+  const finish = useCallback((ms = 1000) => stop(ms, 'send'), [stop]);
 
   const toggle = useCallback(() => {
     const st = stateRef.current;
-    if (st === 'listening' || st === 'connecting') stop();
+    if (st === 'listening' || st === 'connecting') stop(1500, 'user');
     else if (st !== 'stopping') start();
   }, [start, stop]);
 
@@ -178,13 +185,20 @@ export function useVoice({ text, setText, taRef, inline = true }) {
     const offText = api.on('voice.text', (d) => { if (d && d.id && d.id === r.current.id) apply(d); });
     const offEnd = api.on('voice.end', (d) => { if (d && d.id && d.id === r.current.id) finalize(d.reason, d.error); });
     const offClose = api.on('$close', () => { const st = stateRef.current; if (st === 'listening' || st === 'stopping' || st === 'connecting') { r.current.gen++; finalize('disconnected'); } });
-    const onVis = () => { if (document.visibilityState === 'hidden') stop(500); };
+    // 창이 숨으면(최소화·트레이·다른 화면) 멈추고 알린다(P176: 알림은 돌아왔을 때도 잠시 남는다)
+    const onHide = (vis) => {
+      if (!stopOnHide(vis, stateRef.current)) return;
+      stop(500, 'hidden');
+      toast(tNow('voice.hidden'), 'info');
+    };
+    const onVis = () => onHide(document.visibilityState);
     document.addEventListener('visibilitychange', onVis);
+    const offWin = typeof window !== 'undefined' && window.mt && window.mt.onWindowHidden ? window.mt.onWindowHidden(() => onHide('hidden')) : () => {}; // 창(Electron) 최소화·트레이
     return () => {
-      offText(); offEnd(); offClose();
+      offText(); offEnd(); offClose(); offWin();
       document.removeEventListener('visibilitychange', onVis);
       const v = r.current;
-      if (v.id) api.call('voice.stop', { id: v.id }).catch(() => {});
+      if (v.id) api.call('voice.stop', { id: v.id, reason: 'unmount' }).catch(() => {}); // 입력칸이 화면에서 사라짐(휴대폰 화면 바꿈 등)
       if (v.mic) v.mic.close();
       v.mic = null; v.id = null; v.gen++;
       clearTimeout(v.endTimer);
@@ -192,20 +206,68 @@ export function useVoice({ text, setText, taRef, inline = true }) {
   }, [apply, finalize, stop]);
 
   const active = state === 'connecting' || state === 'listening' || state === 'stopping';
-  return { state, errKey, live, interim, active, toggle, stop, finish, current: () => textRef.current };
+  return { state, errKey, live, interim, active, since, toggle, stop, finish, current: () => textRef.current };
 }
 
-// 마이크 단추. 듣는 중은 빨간 점(움직임 없음), 오류는 짧게 표시한다
+// P176: 마이크 단추가 지금 사람에게 보이는가(숨은 바·가린 덮개·화면 밖이면 아니다)
+function buttonVisible(el) {
+  if (!el || !el.isConnected || typeof document === 'undefined') return false;
+  const rect = el.getBoundingClientRect();
+  const view = { w: window.innerWidth, h: window.innerHeight };
+  const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+  let hit = false;
+  try { const at = document.elementFromPoint(cx, cy); hit = !!(at && (at === el || el.contains(at))); } catch {}
+  const hidden = !!el.closest('[data-hidden="1"]') || document.visibilityState === 'hidden';
+  return !pillWanted({ active: true, rect, view, hit, hidden });
+}
+
+// P176: 녹음 중 단추가 안 보이는가(PILL_CHECK_MS마다 다시 본다) → { away, now }
+function useAway(ref, active) {
+  const [s, set] = useState({ away: false, now: Date.now() });
+  useEffect(() => {
+    if (!active) { set((x) => (x.away ? { away: false, now: Date.now() } : x)); return undefined; }
+    const check = () => set({ away: !buttonVisible(ref.current), now: Date.now() });
+    const first = requestAnimationFrame(check);
+    const id = setInterval(check, PILL_CHECK_MS);
+    return () => { cancelAnimationFrame(first); clearInterval(id); };
+  }, [ref, active]);
+  return s;
+}
+
+// P176: 화면 위 녹음 알약. 빨간 점·지난 시간, 누르면 멈춘다. 어떤 덮개보다 위에 그린다(body에 붙인다)
+export function VoicePill({ voice, now }) {
+  const t = useT();
+  const st = voice.state;
+  const label = st === 'connecting' ? t('voice.connecting') : st === 'stopping' ? t('voice.stopping') : t('voice.listening');
+  const time = voiceElapsed((now || Date.now()) - (voice.since || Date.now()));
+  return createPortal(
+    <button type="button" className="mt-voice-pill" data-role="voice-pill" data-state={st} title={t('voice.pillStop')} aria-label={`${label} ${time}. ${t('voice.pillStop')}`}
+      onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => { if (st !== 'stopping') voice.stop(1500, 'user'); }}>
+      <span className="mt-voice-pill-dot" aria-hidden="true" />
+      <span className="mt-voice-pill-label">{label}</span>
+      <span className="mt-voice-pill-time">{time}</span>
+      <span className="mt-voice-pill-stop">{t('voice.pillStopShort')}</span>
+    </button>,
+    document.body,
+  );
+}
+
+// 마이크 단추. 듣는 중은 빨간 점(움직임 없음), 오류는 짧게 표시한다. P176: 녹음 중 단추가 안 보이면 위에 알약
 export function VoiceButton({ voice, className = '' }) {
   const t = useT();
   const st = voice.state;
+  const btnRef = useRef(null);
+  const away = useAway(btnRef, voice.active);
   const title = st === 'listening' ? t('voice.stop') : st === 'connecting' ? t('voice.connecting') : st === 'stopping' ? t('voice.stopping') : st === 'error' && voice.errKey ? t(voice.errKey) : t('voice.start');
   return (
-    <button type="button" className={`mt-voice-btn ${className}`} data-action="voice" data-state={st} aria-pressed={voice.active} aria-label={title} title={title}
+    <>
+    <button ref={btnRef} type="button" className={`mt-voice-btn ${className}`} data-action="voice" data-state={st} aria-pressed={voice.active} aria-label={title} title={title}
       onPointerDown={(e) => e.preventDefault() /* 입력칸 초점과 커서를 그대로 둔다 */} onMouseDown={(e) => e.preventDefault()} onClick={voice.toggle}>
       <Icon name="mic" />
       {(st === 'listening' || st === 'stopping') && <span className="mt-voice-dot" aria-hidden="true" />}
     </button>
+    {voice.active && away.away && <VoicePill voice={voice} now={away.now} />}
+    </>
   );
 }
 
