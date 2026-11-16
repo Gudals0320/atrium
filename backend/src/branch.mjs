@@ -62,9 +62,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
-    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`]), // P116. P156: relate. P180: done·item·items
+    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`]), // P116. P156: relate. P180: done·item·items. P182: guide
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
-    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`]), // P116. P156: relate. P180: done·item·items
+    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`]), // P116. P156: relate. P180: done·item·items. P182: guide
 ];
 // P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
 const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
@@ -548,12 +548,18 @@ export class Branch {
     if (op === 'turn') return this.verbs.wait(s, body, res); // P116: atrium wait(옛 /branch/wait는 child-wait)
     if (op === 'read') return this.verbs.read(s, body); // P116: atrium read
     if (op === 'relate') return this.relateVerb(s, body); // P156: atrium relate
-    if (op === 'done') return this.units.done(s, body); // P180: atrium done ok|failed "<글>"
+    if (op === 'done') return this.units.doneVerb(s, body); // P180: atrium done ok|failed "<글>". P182: rig done 훅을 지난다
+    if (op === 'guide') return this.guideVerb(s, body); // P182: atrium guide [주제]
     if (op === 'item') return this.units.item(s, body); // P180: atrium item
     if (op === 'items') return this.units.items(s, body); // P180: atrium items
     throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
   }
 
+  // P182: atrium guide [주제]. 부르는 세션의 워크스페이스 rig 안내(켜져 있을 때만 글, 잘못된 정의면 그 까닭). 판의 일반 안내(help --long)는 CLI가 붙인다
+  guideVerb(s, o = {}) {
+    const r = this.b.rig ? this.b.rig.guide(s, o.topic ? String(o.topic) : null) : { state: 'none', text: null };
+    return { rig: r };
+  }
   // K1: 하위 세션 만들기. o: { name, prompt, role, cwd(절대 경로), worktree, model, kind, wait }
   async spawnChild(parent, o = {}, res = null) {
     const b = this.b;
@@ -601,6 +607,14 @@ export class Branch {
     if (prompt != null) checkAgentText(prompt, '첫 요청'); // P180: 판 알림 머리로 시작할 수 없다
     const taken = takenNames(b.sessions.values(), [...this.pendingNames]); // P66: 판의 이름(label)도 피한다
     const name = childName({ want: o.name ? String(o.name) : null, parentName: parent.name, taken });
+    // P182: 첫 요청은 받는 쪽(띄울 세션의 워크스페이스) rig의 deliver 훅을 띄우기 전에 지난다. 거절이면 띄우지 않는다
+    let promptText = prompt;
+    if (prompt != null && b.rig) {
+      const pws = await workspaceOf(cwd);
+      const h = await b.rig.deliver({ target: { workspaceKey: pws.key, name, kind, model, cwd }, workspaceKey: pws.key, from: { kind: 'agent', session: parent }, text: prompt });
+      if (h.action === 'reject') throw apiError('rig_rejected', `rig의 deliver 훅이 첫 요청을 거절했다(세션을 띄우지 않았다): ${h.reason}`);
+      promptText = h.text;
+    }
 
     // K3: P36에서 상한을 없앴다
     const parentDepth = this.depth(parent.sessionId);
@@ -643,11 +657,11 @@ export class Branch {
       // 첫 지시는 ready 뒤 B1 규칙으로 보낸다
       // P156: 첫 요청 앞에 관계 한 줄(하위는 지시의 보고 방법을, 동료는 서로 공유를). 헤드는 따로 이끄는 세션이라 붙이지 않는다
       // P180: 하위로 띄우면 첫 요청은 일 단위다(머리: 관계 + 일 + 약속). 동료·헤드는 옛 그대로
-      const u = !head && !peer ? this.units.create(parent, child, prompt, 'child') : null;
+      const u = !head && !peer ? this.units.create(parent, child, promptText, 'child') : null;
       const header = head ? null : u ? u.header : relationHeader({ relation, parent: parent.name });
-      const d = u ? u.d : b.queue.enqueue(child.sessionId, header ? `${header}\n\n${prompt}` : prompt);
-      b.linkEvent(l, 'prompt', prompt, { via: 'board', deliveryId: d.deliveryId, ...(header ? { header, tag: 'assign' } : {}), ...(peer ? { tag: 'share' } : {}), ...(u ? { unitId: u.unit.id } : {}) });
-      child.openPromptFrom = { linkId: l.linkId, at: Date.now(), text: prompt };
+      const d = u ? u.d : b.queue.enqueue(child.sessionId, header ? `${header}\n\n${promptText}` : promptText, { origin: { kind: 'agent', session: parent.sessionId } }); // P182: 앞머리는 훅이 고친 글 앞에
+      b.linkEvent(l, 'prompt', promptText, { via: 'board', deliveryId: d.deliveryId, ...(header ? { header, tag: 'assign' } : {}), ...(peer ? { tag: 'share' } : {}), ...(u ? { unitId: u.unit.id } : {}) });
+      child.openPromptFrom = { linkId: l.linkId, at: Date.now(), text: promptText };
       first = { deliveryId: d.deliveryId, status: d.status, ...(u ? { unit: u.unit.id } : {}) };
       this.firstOf.set(d.deliveryId, child.sessionId);
       this.verbs.noteSent(parent, child, d.deliveryId); // P116: 부모의 atrium wait <이름>이 이 첫 요청의 턴을 기다린다
@@ -879,13 +893,19 @@ export class Branch {
     const r = was ? await b.sleeper.wakeFor(t, `atrium:${caller.name}`) : null; // P24: 그 리포의 잠든 세션을 모두 깨우고 이 세션이 준비될 때까지. P111: 혼자 잠든 세션은 그 세션만
     let first = null;
     if (o.prompt != null && String(o.prompt).trim()) {
-      const text = String(o.prompt);
+      let text = String(o.prompt);
+      // P182: 받는 쪽 rig의 deliver 훅
+      if (b.rig) {
+        const h = await b.rig.deliver({ target: t, from: { kind: 'agent', session: caller }, text });
+        if (h.action === 'reject') throw apiError('rig_rejected', `rig의 deliver 훅이 지시를 거절했다(넣지 않았다): ${h.reason}`);
+        text = h.text;
+      }
       // P180: 깨우며 맡긴 일. 일 하위면 일 단위(이어지는 지시면 그 시도에 붙는 글), 아니면 옛 그대로
       const plan = this.units.plan(caller, t);
       const u = plan.kind === 'unit' ? this.units.create(caller, t, text, 'wake') : null;
       if (u && u.held) first = { deliveryId: null, status: 'queued', reason: 'unit_wait', unit: u.unit.id };
       else {
-        const d = u ? u.d : b.queue.enqueue(t.sessionId, text);
+        const d = u ? u.d : b.queue.enqueue(t.sessionId, text, { origin: { kind: 'agent', session: caller.sessionId } });
         if (plan.kind === 'followup') this.units.noteFollowup(plan.tryRow, caller, d.deliveryId);
         first = { deliveryId: d.deliveryId, status: d.status, ...(u ? { unit: u.unit.id } : {}) }; this.firstOf.set(d.deliveryId, t.sessionId); this.verbs.noteSent(caller, t, d.deliveryId);
       }

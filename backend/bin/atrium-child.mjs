@@ -14,6 +14,7 @@
 //       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째, P111: 혼자 잠든 세션은 그 세션만)
 //       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다)
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
+//       atrium guide [주제] [--json]   (P182: 자세한 사용법 + 켜진 rig의 안내)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,6 +62,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       일이 보고하라는 것은 이 글에 넣고 다른 길로 따로 보내지 않는다. 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1
   atrium item                   너의 지금 일(맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수)
   atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
+  atrium guide [주제]           이 사용법에, 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json, 작업 규칙)가 있으면 그 안내를 붙인다. rig의 훅이 글이나 done을 거절하면 종료 코드 1과 까닭이 온다
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
@@ -117,6 +119,7 @@ async function main() {
   // P116: 일 시키기·기다리기·읽기
   if (cmd === 'prompt' || cmd === 'wait' || cmd === 'read') return verb(cmd);
   if (cmd === 'done' || cmd === 'item' || cmd === 'items') return unitVerb(cmd); // P180
+  if (cmd === 'guide') return guideVerb(); // P182
   if (cmd === 'child') {
     // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
     if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);
@@ -254,6 +257,26 @@ async function unitVerb(cmd) {
     say(`  ${it.id} → @${it.to} · ${it.queued ? 'open(줄 서 있음)' : it.status}${it.result ? ` · ${it.result}` : ''}${it.stopReason && it.status === 'open' ? ` · 멈춤(${it.stopReason})` : ''} · ${ago(it.createdAt, Date.now())} · "${it.spec}"`);
     if (it.text) say(`      보고: ${it.text.replace(/\s+/g, ' ').slice(0, 400)}`);
   }
+}
+// ---------- P182: atrium guide [주제] ----------
+async function guideVerb() {
+  const r = await call('guide', { topic: rest[0] || null }, 20000);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
+  if (r.error) fail(`읽지 않았다(${r.error.code}): ${r.error.message}`);
+  const g = (r.result && r.result.rig) || { state: 'none' };
+  say(HELP);
+  say('');
+  if (g.state === 'none') return say('rig: 이 워크스페이스에는 rig 정의(.atrium/rig.json)가 없다.');
+  if (g.state === 'off') return say(`rig: 정의(${g.file})는 있지만 사람이 켜지 않았다(꺼진 동안 훅은 돌지 않는다).${g.invalid ? ` 정의가 잘못됐다: ${g.invalid}` : ''}`);
+  if (g.state === 'invalid') return say(`rig: 켜졌지만 정의가 잘못돼 쓰지 않는다: ${g.invalid || '?'}`);
+  say(`rig: 켜짐(${g.file}${g.hash ? `, 해시 ${String(g.hash).slice(0, 12)}` : ''}). 보드가 이 워크스페이스의 글(atrium prompt 등)과 atrium done에 rig의 훅을 돌린다. 훅이 거절하면 종료 코드 1과 까닭이 온다.`);
+  if (g.invalid) say(`  정의 파일이 지금 잘못됐다(마지막으로 맞았던 정의를 쓰는 중): ${g.invalid}`);
+  if (g.missing) say(`  주제 "${g.topic}"의 안내는 없다. 있는 주제: ${(g.topics || []).join(', ') || '(없음)'}`);
+  if (g.error) say(`  ${g.error}`);
+  if (g.text) { say(`--- rig 안내${g.topic && g.topic !== 'default' ? `(${g.topic})` : ''} ---`); say(String(g.text).replace(/\s+$/, '')); say('---'); if (g.clipped) say('(안내가 2만 자를 넘어 잘랐다)'); }
+  else if (!g.missing && !g.error) say('  rig에 안내(guide)가 없다.');
+  if (g.topics && g.topics.length) say(`  다른 주제: ${g.topics.map((t) => `atrium guide ${t}`).join(', ')}`);
 }
 // ---------- P116: atrium prompt | wait | read ----------
 const secs = (ms) => `${((ms || 0) / 1000).toFixed(1)}초`;

@@ -40,6 +40,9 @@ export function canTypeNow(view) {
 }
 // 바로 넣을 글: 줄바꿈은 LF(B1 5), 끝 줄바꿈은 뗀다(입력 칸에 빈 줄이 남지 않게). Enter는 agent.prompt가 마지막에 한 번 누른다
 export const typedText = (text) => toLF(text).replace(/\n+$/, '');
+// P182: 전달의 출처 → 행의 칸
+const ORIGINS = new Set(['human', 'agent', 'board']);
+function originOf(o) { const kind = o && ORIGINS.has(o.kind) ? o.kind : 'board'; return { origin: kind, fromSession: kind === 'agent' && o.session ? String(o.session) : null }; }
 // P172: 세션 안 차례(작을수록 먼저). 차례 값이 없으면 넣은 시각
 const order = (d) => d.seq ?? d.createdAt;
 
@@ -70,8 +73,9 @@ export class DeliveryQueue extends EventEmitter {
   stop() { clearInterval(this.timer); }
 
   // opts.typeNow(P90): 세션이 일하는 중이면 기다리지 않고 바로 넣는다(canTypeNow). 저장하지 않으므로 백엔드가 다시 뜨면 B1 그대로 보낸다
+  // P182: opts.origin = { kind: human | agent | board, session?: 보낸 세션 ID }. 주지 않으면 board(판 알림·루프 등). deliveries.origin·from_session에 남는다
   enqueue(sessionId, text, opts = {}) {
-    const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: opts.typeNow ? typedText(text) : toLF(text), status: 'queued', reason: null, createdAt: Date.now(), attempts: 0 };
+    const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: opts.typeNow ? typedText(text) : toLF(text), status: 'queued', reason: null, createdAt: Date.now(), attempts: 0, ...originOf(opts.origin) };
     d.seq = d.createdAt; // P172: 세션 안 차례. 순서 바꾸기·바로 보내기가 고친다(작을수록 먼저)
     if (opts.typeNow) d.typeNow = true;
     if (opts.typeNow && opts.aside) d.typeAside = true; // P143(atrium prompt --now): 입력 칸에 쓰다 만 글이 있으면 비키고(P128·P139) 바로 넣는다. 휴대폰 입력 줄(P90)은 그대로 기다린다
@@ -80,6 +84,14 @@ export class DeliveryQueue extends EventEmitter {
     this._emit(d);
     this.poke(sessionId); // P106: 사람이 다시 보내면 물러나 있던 앞 전달도 바로 다시 본다
     setImmediate(() => this.pump());
+    return d;
+  }
+  // P182: rig의 deliver 훅이 사람의 글을 거절했다. 넣지 않고 실패한 전달 한 줄로 남긴다(창은 전달 실패와 같은 길로 까닭을 보인다)
+  refuse(sessionId, text, reason, opts = {}) {
+    const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: toLF(text), status: 'failed', reason, createdAt: Date.now(), attempts: 0, ...originOf(opts.origin) };
+    d.seq = d.createdAt;
+    this.store.insertDelivery(d);
+    this._emit(d);
     return d;
   }
   // P106: 막혀 물러난 전달(앞 시도를 터미널이 받지 않음)은 시도 중(sending)이어도 취소한다. 처음 보내는 짧은 순간(sending, 거부 없음)은 취소하지 않는다

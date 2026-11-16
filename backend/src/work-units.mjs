@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { UnitStops } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
+import { RIG_HEADER_LINE } from './rig.mjs'; // P182
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -19,11 +20,13 @@ export const DONE_RESULTS = ['ok', 'failed'];
 const DONE_TEXT_MAX = 100000;
 
 // 첫 요청 머리(세 줄). 맨 위 관계 줄은 text.mjs RELATION_LINE과 같은 꼴이라 카드에는 아래 할 일만 지시로 보인다
-export function unitHeader({ parent, unitId }) {
+// P182: rig가 켜진 워크스페이스면 rig 한 줄을 더한다(rig.mjs RIG_HEADER_LINE)
+export function unitHeader({ parent, unitId, rig = false }) {
   return [
     `[Atrium 보드] 관계: 너는 @${parent}의 하위 워커다. 아래 일은 @${parent}가 맡긴 일 ${unitId}이다(지금 일 보기: \`atrium item\`).`,
     `[Atrium 보드] 끝나면 \`atrium done ok "<보고>"\`(못 했으면 \`atrium done failed "<까닭>"\`)로 닫고 쉰다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다.`,
     '[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.',
+    ...(rig ? [RIG_HEADER_LINE] : []),
   ].join('\n');
 }
 // 위 세션이 받는 done 글(판 알림 꼴이라 위 세션 카드의 마지막 지시가 되지 않는다)
@@ -73,8 +76,8 @@ export class WorkUnits {
   // 일의 새 시도: 머리를 붙여 대기열에 넣고 시도를 적는다
   dispatch(unit, { later = false } = {}) {
     const b = this.b; const st = this.store();
-    const header = unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id });
-    const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}`);
+    const header = unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)) });
+    const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}`, { origin: { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션)
     const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: d.deliveryId, startedAt: Date.now() };
     st.insertTry(tr);
     st.addEvent(unit.to, 'unit_try', { unitId: unit.id, tryId: tr.id, deliveryId: d.deliveryId, later });
@@ -144,15 +147,35 @@ export class WorkUnits {
   }
 
   // ---------- atrium done ok|failed "<글>" ----------
-  done(caller, o = {}) {
-    const b = this.b; const st = this.store();
+  // 검사(값, 글, 열린 시도) → { result, text, tr }
+  doneCheck(caller, o = {}) {
     const result = String(o.result || '');
     if (!DONE_RESULTS.includes(result)) throw apiError('bad_request', `결과는 ok 또는 failed다: ${result || '(없음)'}. 사용: atrium done ok|failed "<보고>"`);
     const text = o.text == null ? '' : String(o.text);
     if (!text.trim()) throw apiError('bad_request', '보고 글을 준다: atrium done ok|failed "<보고>"');
     if (text.length > DONE_TEXT_MAX) throw apiError('bad_request', `글이 너무 길다(${text.length}자, ${DONE_TEXT_MAX}자까지). 파일에 쓰고 그 경로를 적는다.`);
-    const tr = st.openTryOf(caller.sessionId);
+    const tr = this.store().openTryOf(caller.sessionId);
     if (!tr) throw apiError('no_unit', '열린 일이 없다. atrium done은 보드가 맡긴 일(첫 요청 앞에 "[Atrium 보드] … 맡긴 일 u…" 머리가 붙은 일)을 닫는다. 지금 일 보기: atrium item. 머리 없이 받은 일은 지시에 적힌 방법으로 보고한다.');
+    return { result, text, tr };
+  }
+  // P182: 명령(/branch/done)의 길. 켜진 rig의 done 훅이 시도를 닫기 전에 돈다. 거절이면 시도는 열린 채 rig_rejected(종료 코드 1과 까닭)
+  async doneVerb(caller, o = {}) {
+    const { result, text, tr } = this.doneCheck(caller, o);
+    const rig = this.b.rig;
+    if (rig) {
+      const h = await rig.done({ caller, tryRow: tr, unit: this.store().getUnit(tr.unitId), result, text });
+      if (h.action === 'reject') {
+        this.store().addEvent(caller.sessionId, 'unit_done_rejected', { unitId: tr.unitId, tryId: tr.id, result, reason: h.reason });
+        throw apiError('rig_rejected', `rig의 done 훅이 닫기를 거절했다(일 ${tr.unitId}은 열린 채다): ${h.reason}`);
+      }
+      const again = this.store().openTryOf(caller.sessionId);
+      if (!again || again.id !== tr.id) throw apiError('no_unit', '훅이 도는 사이 그 일이 닫혔다. 지금 일 보기: atrium item');
+    }
+    return this.done(caller, o);
+  }
+  done(caller, o = {}) {
+    const b = this.b; const st = this.store();
+    const { result, text, tr } = this.doneCheck(caller, o);
     const unit = st.getUnit(tr.unitId);
     const now = Date.now();
     st.updateTry(tr.id, { result, doneText: text, endedAt: now });

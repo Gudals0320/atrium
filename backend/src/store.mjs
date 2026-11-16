@@ -9,7 +9,8 @@ import { BRANCH_COLUMNS, BRANCH_SCHEMA, installBranch } from './store-branch.mjs
 import { WORKTREE_SCHEMA, WORKTREE_COLUMNS, installWorktrees } from './store-worktrees.mjs'; // P27: 워크트리 영역
 import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: 데스크톱 앱 가져오기 장부
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
-import { UNITS_SCHEMA, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
+import { UNITS_SCHEMA, UNITS_COLUMNS, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
+import { RIG_SCHEMA, RIG_COLUMNS, installRig } from './store-rig.mjs'; // P182: rig 켜기와 훅 실행 기록
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -83,7 +84,7 @@ function linkRow(r) {
 }
 function deliveryRow(r) {
   if (!r) return null;
-  return { deliveryId: r.delivery_id, sessionId: r.session_id, text: r.text, status: r.status, reason: r.reason, createdAt: r.created_at, updatedAt: r.updated_at, sentAt: r.sent_at, confirmedAt: r.confirmed_at, attempts: r.attempts, seq: r.seq ?? r.created_at };
+  return { deliveryId: r.delivery_id, sessionId: r.session_id, text: r.text, status: r.status, reason: r.reason, createdAt: r.created_at, updatedAt: r.updated_at, sentAt: r.sent_at, confirmedAt: r.confirmed_at, attempts: r.attempts, seq: r.seq ?? r.created_at, origin: r.origin || 'board', fromSession: r.from_session ?? null }; // P182: 출처(옛 행은 board)
 }
 function workspaceRow(r) {
   if (!r) return null;
@@ -112,7 +113,8 @@ export class Store {
     this.db.exec(IMPORTS_SCHEMA);
     this.db.exec(BRANCH_SCHEMA); // P156: 일 관계
     this.db.exec(UNITS_SCHEMA); // P180: 일 단위와 시도
-    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS)]) {
+    this.db.exec(RIG_SCHEMA); // P182: 훅 실행 기록
+    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
     }
@@ -177,7 +179,7 @@ export class Store {
   }
 
   insertDelivery(d) {
-    this.st('INSERT INTO deliveries (delivery_id, session_id, text, status, reason, created_at, updated_at, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(d.deliveryId, d.sessionId, d.text, d.status, d.reason ?? null, d.createdAt, d.createdAt, d.seq ?? d.createdAt);
+    this.st('INSERT INTO deliveries (delivery_id, session_id, text, status, reason, created_at, updated_at, seq, origin, from_session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(d.deliveryId, d.sessionId, d.text, d.status, d.reason ?? null, d.createdAt, d.createdAt, d.seq ?? d.createdAt, d.origin ?? null, d.fromSession ?? null); // P182: 출처
   }
   updateDelivery(id, f) {
     this.st('UPDATE deliveries SET status = ?, reason = ?, updated_at = ?, sent_at = COALESCE(?, sent_at), confirmed_at = COALESCE(?, confirmed_at), attempts = attempts + ? WHERE delivery_id = ?')
@@ -283,3 +285,4 @@ installWorktrees(Store); // P27
 installImports(Store); // P34
 installMerge(Store); // P37
 installUnits(Store); // P180
+installRig(Store); // P182

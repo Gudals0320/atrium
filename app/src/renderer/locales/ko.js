@@ -2663,4 +2663,20 @@ export default {
     createdPeer: '@{a} → @{b}를 동료로 연결하고 두 세션에 알림을 보냈습니다.',
     setFail: '관계를 바꾸지 못했습니다: {error}',
   },
+  // P182: rig(.atrium/rig.json의 워크스페이스 규칙), 영역 이름표 메뉴
+  rig: {
+    loading: 'Rig: …',
+    stNone: 'Rig: 정의 없음(.atrium/rig.json)',
+    stOff: 'Rig: 꺼짐',
+    stOn: 'Rig: 켜짐(훅 {n}개)',
+    stOnStale: 'Rig: 켜짐. 정의 파일이 잘못되어 마지막으로 맞았던 정의를 씁니다: {reason}',
+    stInvalid: 'Rig: 잘못됨: {reason}',
+    stError: 'Rig: 상태를 읽지 못했습니다: {error}',
+    menuOn: 'Rig: 켜기',
+    menuOff: 'Rig: 끄기',
+    onTitle: '이 워크스페이스의 .atrium/rig.json 훅을 사용자 계정으로 실행합니다: {hooks}',
+    turnedOn: '{name}의 rig를 켰습니다.',
+    turnedOff: '{name}의 rig를 껐습니다.',
+    fail: 'rig를 바꾸지 못했습니다: {error}',
+  },
 };
