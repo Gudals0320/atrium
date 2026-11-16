@@ -9,6 +9,7 @@ export const RIG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS rig_hook_runs (id INTEGER PRIMARY KEY, t INTEGER NOT NULL, workspace_key TEXT, at TEXT NOT NULL, hook_index INTEGER NOT NULL, argv TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT, note TEXT, before_text TEXT, rig_hash TEXT, session_id TEXT, unit_id TEXT, try_id TEXT, ms INTEGER, error TEXT) STRICT;
 CREATE INDEX IF NOT EXISTS rig_hook_runs_t ON rig_hook_runs(t);
 CREATE INDEX IF NOT EXISTS rig_hook_runs_ws ON rig_hook_runs(workspace_key, t);
+CREATE INDEX IF NOT EXISTS rig_hook_runs_session ON rig_hook_runs(session_id, id);
 `;
 // P183: 도구 실행 장부(하네스 2단계, 13절 "도구"). 에이전트가 보고하지 않아도 판이 실행마다 한 줄을 쌓는다.
 // status: running | done(끝남, exit_code에 종료 코드) | timeout(시간 제한으로 끔) | error(띄우지 못함) | lost(백엔드가 다시 뜰 때 돌던 실행)
@@ -109,6 +110,8 @@ export function installRig(Store) {
       this.st('INSERT INTO rig_seat_counters (workspace_key, seat, n) VALUES (?, ?, 1) ON CONFLICT(workspace_key, seat) DO UPDATE SET n = n + 1').run(workspaceKey, seat);
       return Number(this.st('SELECT n FROM rig_seat_counters WHERE workspace_key = ? AND seat = ?').get(workspaceKey, seat).n);
     },
+    // P186: 한 세션의 최근 훅 실행(세션 맵 미리 보기)
+    hookRunsOfSession(sessionId, limit = 5) { return this.st('SELECT * FROM rig_hook_runs WHERE session_id = ? ORDER BY id DESC LIMIT ?').all(sessionId, limit).map(runRow); },
     hookRuns({ workspaceKey = null, limit = 50 } = {}) {
       const rows = workspaceKey ? this.st('SELECT * FROM rig_hook_runs WHERE workspace_key = ? ORDER BY id DESC LIMIT ?').all(workspaceKey, limit) : this.st('SELECT * FROM rig_hook_runs ORDER BY id DESC LIMIT ?').all(limit);
       return rows.map(runRow);

@@ -150,7 +150,7 @@ export class RigFlow {
     const st = this.store();
     return st.unitsOfCase(caseId).map((u) => {
       const tr = u.to ? st.lastTryOfUnit(u.id) : null;
-      return { unit: u.id, seat: u.seat, name: u.to ? this.nameOf(u.to) : '(줄)', status: u.status, result: tr ? tr.result : null, text: tr && tr.doneText ? firstLine(tr.doneText, 100) : null, via: u.via };
+      return { unit: u.id, seat: u.seat, sessionId: u.to || null, name: u.to ? this.nameOf(u.to) : '(줄)', status: u.status, result: tr ? tr.result : null, text: tr && tr.doneText ? firstLine(tr.doneText, 100) : null, via: u.via };
     });
   }
   changed(key) { if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.cases', { workspace: key }); } catch {} }
@@ -375,7 +375,7 @@ export class RigFlow {
           waiting: this.store().seatWaitingUnits(w.key, x.name).length })),
         flow: r.def.flow.map((l) => ({ index: l.index, from: l.from, on: l.on, to: l.to, max: l.max, else: l.else, passed: live ? live.edgeCounts[String(l.index)] || 0 : 0 })),
         manager: r.def.manager, results: r.def.results,
-        cases: cases.map((c) => { const v = this.caseView(c, r.def); return { id: v.id, owner: v.owner, ownerSessionId: v.ownerSessionId, state: v.state, activeSeats: v.activeSeats, handoffs: v.handoffs, blockedReason: v.blockedReason, createdAt: v.createdAt, closedAt: v.closedAt, lines: v.lines, units: v.units.map((u) => ({ unit: u.unit, seat: u.seat, name: u.name, status: u.status, result: u.result })) }; }),
+        cases: cases.map((c) => { const v = this.caseView(c, r.def); return { id: v.id, owner: v.owner, ownerSessionId: v.ownerSessionId, state: v.state, activeSeats: v.activeSeats, handoffs: v.handoffs, blockedReason: v.blockedReason, createdAt: v.createdAt, closedAt: v.closedAt, lines: v.lines, units: v.units.map((u) => ({ unit: u.unit, seat: u.seat, sessionId: u.sessionId, name: u.name, status: u.status, result: u.result })) }; }),
       };
     }
     return out;
@@ -412,9 +412,22 @@ export function rigFlowHandlers(b) {
       const s = b.resolve(p.session);
       return b.branch.flow.setSeat(s, p.seat ?? null, { by: 'human' });
     },
+    // P186: 세션 맵 미리 보기의 최근 훅 판정과 도구 실행(보기만). rig 밖 세션은 둘 다 빈 목록
+    'rig.recent': (p) => {
+      if (!p || !p.session) throw apiError('bad_request', 'session이 필요하다');
+      const s = b.resolve(p.session);
+      return recentOf(b.store, s.sessionId, Math.min(Math.max(Number(p.limit) || 5, 1), 20));
+    },
     'rig.cases': async (p) => {
       const key = (await b.resolveWorkspace(p && p.workspace)).key;
       return { workspace: key, cases: b.branch.flow.cases(key, { limit: Math.min(Math.max(Number(p && p.limit) || 50, 1), 200) }) };
     },
   };
+}
+
+// P186: 세션의 최근 훅 판정(rig_hook_runs)과 도구 실행(tool_runs), 최근 것부터
+export function recentOf(store, sessionId, limit = 5) {
+  const hooks = (store.hookRunsOfSession ? store.hookRunsOfSession(sessionId, limit) : []).map((h) => ({ t: h.t, at: h.at, hookIndex: h.hookIndex, run: (h.argv || []).slice(0, 3).join(' '), decision: h.decision, reason: h.reason, note: h.note, error: h.error, ms: h.ms, unitId: h.unitId }));
+  const tools = (store.toolRunsOf ? store.toolRunsOf(sessionId, limit) : []).map((x) => ({ id: x.id, tool: x.tool, args: x.args, status: x.status, exitCode: x.exitCode, startedAt: x.startedAt, endedAt: x.endedAt, error: x.error, unitId: x.unitId }));
+  return { session: sessionId, hooks, tools };
 }
