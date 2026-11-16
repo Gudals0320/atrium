@@ -60,6 +60,13 @@ export function installRig(Store) {
         .run(x.t ?? Date.now(), x.workspaceKey ?? null, x.at, x.hookIndex, JSON.stringify(x.argv || []), x.decision, x.reason ?? null, x.note ?? null, x.beforeText ?? null, x.rigHash ?? null, x.sessionId ?? null, x.unitId ?? null, x.tryId ?? null, x.ms ?? null, x.error ?? null, x.toolRunId ?? null);
       return Number(r.lastInsertRowid);
     },
+    // P187: 띄우기 전에 돈 deliver 훅 행(세션·일이 비어 있음)에 띄운 뒤의 세션과 일을 적는다. 이미 적힌 칸은 두고 빈 칸만
+    fillHookRuns(ids, { sessionId = null, unitId = null } = {}) {
+      const q = this.st('UPDATE rig_hook_runs SET session_id = COALESCE(session_id, ?), unit_id = COALESCE(unit_id, ?) WHERE id = ?');
+      for (const id of ids || []) if (id != null) q.run(sessionId, unitId, id);
+    },
+    // P187: 자리 줄에 섰다가 세션을 얻은 일의 훅 행(세션 칸이 비어 있음)
+    fillHookRunsOfUnit(unitId, sessionId) { if (unitId && sessionId) this.st('UPDATE rig_hook_runs SET session_id = ? WHERE unit_id = ? AND session_id IS NULL').run(sessionId, unitId); },
     // ---------- P183: 도구 실행 ----------
     insertToolRun(x) {
       this.st('INSERT INTO tool_runs (id, session_id, workspace_key, unit_id, try_id, tool, argv, args, args_given, cwd, rig_hash, status, exit_code, started_at, ended_at, log_path, log_bytes, log_cut, out_sha256, hooks, appended, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')

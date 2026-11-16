@@ -21,6 +21,7 @@ import { missionGraph } from '../src/mission.mjs';
 import { promptTask } from '../src/text.mjs';
 import { CONTRACT_VERSION, VERBS, shortHelp } from '../src/cli-contract.mjs';
 import { attachFeatures } from '../src/features.mjs';
+import { initialLaunchers } from '../src/launchers.mjs';
 import { linkRelationPlan } from '../src/relations.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -561,4 +562,140 @@ test('P185 함께 넣을 것: P175 사람이 이은 하위(Sub)에게 atrium pro
   // codex 승인 인자(사람의 atrium spawn --kind codex --mode bypassPermissions가 쓰는 표)
   assert.deepEqual(approvalArgsOf('codex', 'bypassPermissions', []).args, ['--dangerously-bypass-approvals-and-sandbox']);
   assert.deepEqual(approvalArgsOf('codex', 'bypassPermissions', ['--sandbox', 'read-only']).args, [], '호출자 인자가 이긴다');
+});
+
+// ---------- P187: 자리 세션이 건 주인(또는 런처)의 모델·노력·승인 방식을 물려받는다, 띄우기 전 훅 행에 세션·일 ----------
+// 새 판의 런처 목록(id claude = Claude Code manual 모델 없음, id codex)과 이름으로 고르는 런처를 판에 둔다
+function withLaunchers(b, extra = []) {
+  const items = [...initialLaunchers({ oldBoard: false }).items, ...extra];
+  const find = (ref) => { const r = String(ref ?? '').trim().toLowerCase(); return items.find((l) => l.id.toLowerCase() === r) || items.find((l) => l.name.toLowerCase() === r) || null; };
+  b.features = { launchers: { data: () => ({ items, favorites: ['claude', 'codex'] }), find } };
+  return items;
+}
+const spawnedOf = (b, name) => b.spawned.find((p) => p.name === name);
+
+test('P187 종류 이름 자리(claude): 같은 이름의 런처가 있어도 건 주인(haiku·low·acceptEdits)을 물려받는다. fresh·keep, 처음과 다시 띄울 때(keep 닫힘·자리 줄)', async () => {
+  const def = sampleDef();
+  def.seats.reviewer = { launcher: 'claude', session: 'fresh', may: ['main'] };
+  def.seats.worker.max_live = 1;
+  def.seats.helper = { launcher: 'claude', session: 'keep' };
+  def.flow.push({ from: 'main', on: 'assign', to: 'helper' });
+  const { b, add, seat, by, stop } = await board({ def });
+  try {
+    withLaunchers(b);
+    const main = add('lead', { model: 'haiku', effort: 'low', permissionMode: 'acceptEdits' }); seat(main, 'main');
+    const inherited = (sp, name) => {
+      assert.ok(sp, name);
+      assert.equal(sp.launcher, undefined, `${name}: 런처 claude 길이 아니다`);
+      assert.equal(sp.kind, 'claude'); assert.equal(sp.model, 'haiku'); assert.equal(sp.effort, 'low'); assert.equal(sp.permissionMode, 'acceptEdits');
+      assert.equal(sp.branch.inherited.model, true); assert.equal(sp.branch.inherited.permissionMode, true);
+    };
+    await V(b).prompt(main, { name: 'worker', text: '첫 일' });
+    const w1 = by('worker-1'); await gotUnit(w1); inherited(spawnedOf(b, 'worker-1'), 'worker-1');
+    // fresh 넘김(worker ok → reviewer)
+    await done(b, w1, 'ok', '했다');
+    const rv1 = by('reviewer-1'); assert.ok(rv1); await gotUnit(rv1); inherited(spawnedOf(b, 'reviewer-1'), 'reviewer-1');
+    // 자리 줄(max_live 1)에 섰다가 판이 띄울 때도 같다
+    await V(b).prompt(main, { name: 'worker', text: '둘째 일' });
+    const w2 = by('worker-2'); assert.ok(w2); await gotUnit(w2); inherited(spawnedOf(b, 'worker-2'), 'worker-2');
+    const q = await V(b).prompt(main, { name: 'worker', text: '셋째 일' });
+    assert.equal(q.unit.seatWait, true);
+    await done(b, w2, 'failed', '못 함');
+    await until(() => !!by('worker-3')); inherited(spawnedOf(b, 'worker-3'), 'worker-3');
+    // keep: 처음, 닫힌 뒤 다시
+    await V(b).prompt(main, { name: 'helper', text: '도와줘' });
+    const h1 = by('helper'); await gotUnit(h1); inherited(spawnedOf(b, 'helper'), 'helper');
+    b.closeSession(h1, 'user');
+    await V(b).prompt(main, { name: 'helper', text: '다시' });
+    const again = b.spawned.filter((p) => p.name === 'helper');
+    assert.equal(again.length, 2); inherited(again[1], 'helper(다시)');
+  } finally { await stop(); }
+});
+
+test('P187 런처 이름 자리: 그 런처의 모델·노력·승인 방식(주인 것을 물려받지 않음). 없는 이름은 막힘', async () => {
+  const def = sampleDef();
+  def.seats.worker.launcher = 'cheap';
+  def.seats.reviewer = { launcher: 'nobody', session: 'fresh', may: ['main'] };
+  const { b, add, seat, by, stop } = await board({ def });
+  try {
+    const [claudeL] = initialLaunchers({ oldBoard: false }).items;
+    withLaunchers(b, [{ ...claudeL, id: 'lcheap', name: 'cheap', model: 'sonnet', effort: 'medium', permissionMode: 'auto' }]);
+    const main = add('lead', { model: 'haiku', effort: 'low', permissionMode: 'acceptEdits' }); seat(main, 'main');
+    await V(b).prompt(main, { name: 'worker', text: '일' });
+    const w1 = by('worker-1'); await gotUnit(w1);
+    const sp = spawnedOf(b, 'worker-1');
+    assert.equal(sp.launcher, 'lcheap'); assert.equal(sp.model, undefined); assert.equal(sp.permissionMode, undefined, '모델·권한 모드는 판의 spawn이 런처에서 읽는다');
+    assert.equal(sp.branch.launcher, 'cheap'); assert.equal(sp.branch.inherited.permissionMode, false); assert.equal(sp.branch.inherited.model, false);
+    // 런처에도 종류에도 없는 이름: 넘김이 막히고 건이 blocked
+    await done(b, w1, 'ok', '했다');
+    const c = b.store.casesOf(main.workspaceKey)[0];
+    await until(() => b.store.getCase(c.id).state === 'blocked');
+    assert.match(b.store.getCase(c.id).blockedReason, /launcher "nobody"/);
+  } finally { await stop(); }
+});
+
+test('P187 Codex 자리의 승인 방식: Codex 주인이면 주인의 호출자·모델·승인 인자를 물려받고, Claude 주인(acceptEdits)이면 그 권한 모드를 Codex 승인 인자로 옮긴다', async () => {
+  const approval = ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request'];
+  const { b, add, seat, by, stop } = await board();
+  try {
+    withLaunchers(b);
+    // 견본: main keep codex, worker claude, reviewer codex
+    const main = add('lead', { kind: 'codex', hooked: false, harnessPlan: { launcher: 'Codex', launcherId: 'codex', model: 'gpt-test', args: [...approval] } });
+    seat(main, 'main');
+    await V(b).prompt(main, { name: 'worker', text: '일' });
+    const w1 = by('worker-1'); await gotUnit(w1);
+    const ws = spawnedOf(b, 'worker-1');
+    assert.equal(ws.kind, 'claude'); assert.equal(ws.model, null, 'Codex 주인의 모델 이름은 Claude Code에 물려주지 않는다');
+    await done(b, w1, 'ok', '했다');
+    const rv1 = by('reviewer-1'); assert.ok(rv1); assert.equal(rv1.kind, 'codex');
+    const rs = spawnedOf(b, 'reviewer-1');
+    assert.equal(rs.launcherDef.harness, 'codex'); assert.equal(rs.launcherDef.model, 'gpt-test');
+    assert.deepEqual(rs.launcherDef.args.split(' '), approval, '주인의 승인 인자를 그대로');
+    assert.equal(rs.branch.harness.base, 'parent');
+  } finally { await stop(); }
+  // Claude 주인(acceptEdits) → codex 자리: --kind codex 길(승인 인자 옮김)
+  const def = sampleDef(); def.seats.worker.launcher = 'codex';
+  const t = await board({ def });
+  try {
+    withLaunchers(t.b);
+    const main = t.add('lead', { model: 'haiku', permissionMode: 'acceptEdits' }); t.seat(main, 'main');
+    await V(t.b).prompt(main, { name: 'worker', text: '일' });
+    const sp = spawnedOf(t.b, 'worker-1');
+    assert.equal(sp.launcherDef.harness, 'codex');
+    assert.deepEqual(sp.branch.harness.approvalArgs, approval);
+    assert.equal(sp.branch.harness.approvalFrom, 'parent'); assert.equal(sp.branch.inherited.permissionMode, true);
+  } finally { await t.stop(); }
+});
+
+test('P187 띄우기 전에 돈 deliver 훅 행에 띄운 세션과 일: 흐름 넘김(fresh), 자리 줄에 섰다가 띄운 세션, atrium child 첫 요청', async () => {
+  const def = sampleDef();
+  def.seats.reviewer.launcher = 'claude'; def.seats.reviewer.max_live = 1;
+  def.hooks.push({ at: 'deliver', from: 'agent', run: ['node', '.atrium/hooks/flow-stamp.mjs'] });
+  const { b, add, seat, by, stop } = await board({ def });
+  try {
+    const main = add('lead'); seat(main, 'main');
+    await V(b).prompt(main, { name: 'worker', text: '일 하나' });
+    await V(b).prompt(main, { name: 'worker', text: '일 둘' });
+    const w1 = by('worker-1'); const w2 = by('worker-2'); await gotUnit(w1); await gotUnit(w2);
+    await done(b, w1, 'ok', '하나 했다');
+    const rv1 = by('reviewer-1'); assert.ok(rv1); await gotUnit(rv1);
+    const u1 = b.store.db.prepare('SELECT id FROM work_units WHERE to_session = ?').get(rv1.sessionId);
+    const r1 = b.store.hookRunsOfSession(rv1.sessionId, 5);
+    assert.equal(r1.length, 1, 'reviewer-1의 미리 보기에 넘김 훅 줄'); assert.equal(r1[0].unitId, u1.id); assert.equal(r1[0].decision, 'pass');
+    // 둘째 넘김은 자리 줄(max_live 1)에 선다 → 훅 행에 일만, 띄운 뒤 세션
+    await done(b, w2, 'ok', '둘 했다');
+    const waiting = b.store.seatWaitingUnits(main.workspaceKey, 'reviewer');
+    assert.equal(waiting.length, 1);
+    const row = b.store.hookRuns({ limit: 50 }).find((x) => x.unitId === waiting[0].id);
+    assert.ok(row); assert.equal(row.sessionId, null);
+    await done(b, rv1, 'ok', '좋다');
+    await until(() => !!by('reviewer-2'));
+    const rv2 = by('reviewer-2');
+    await until(() => b.store.hookRunsOfSession(rv2.sessionId, 5).length === 1);
+    assert.equal(b.store.hookRunsOfSession(rv2.sessionId, 5)[0].unitId, waiting[0].id);
+    // atrium child 첫 요청(from agent): 띄운 세션과 그 일
+    const out = await b.branch.spawnChild(main, { name: 'kid', prompt: '첫 요청', wait: false });
+    const rk = b.store.hookRunsOfSession(out.sessionId, 5);
+    assert.equal(rk.length, 1); assert.equal(rk[0].unitId, out.firstPrompt.unit);
+  } finally { await stop(); }
 });
