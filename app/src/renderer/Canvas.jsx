@@ -600,7 +600,7 @@ export function Canvas() {
     // 이슈 #1-16: 상한보다 많이 보여도 고른 노드와 초점 노드는 터미널을 먼저 받는다
     // P121: 고른 워크스페이스(viewWs)의 노드, 초점·고른 노드, 아주 가까이 확대한 노드만 터미널을 받는다(lib/faces.js termAllowed)
     const screen = { width: el.clientWidth, height: el.clientHeight };
-    const focus = st.focusId, selected = new Set(st.selected), wsLimit = { key: st.viewWs || null }, mates = matesNow(st); // P124: 초점·고른 노드와 같은 덩어리, 부모·자식
+    const focus = st.focusId, selected = new Set(st.selected), wsLimit = { key: st.viewWs || null }, mates = matesNow(st); // P124: 초점·고른 노드와 같은 덩어리, 부모·자식. P167: 선으로 바로 이어진 세션
     const want = pickAttached(list, vp, screen, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus, selected, wsLimit, mates });
     // P24: 가까이 얼굴로 보이는 노드 모두(잠든 노드, 제어기 상한 밖 포함)는 그 리포를 보고 있는 것이다(저절로 잠재우지 않는다)
     const all = [...st.nodes].filter(([id]) => st.sessions.has(id)).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
@@ -636,7 +636,7 @@ export function Canvas() {
   const selectedIds = useStore((st) => st.selected);
   const viewWs = useStore((st) => st.viewWs); // P121
   const docksNow = useStore((st) => st.docks); // P124: 덩어리가 바뀌면 짝도 바뀐다
-  useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, viewWs, docksNow, schedule]);
+  useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, viewWs, docksNow, links, schedule]); // P167: 연결이 바뀌면 짝도 바뀐다
   useEffect(() => { const t = setInterval(() => recompute(), HOLD_MS + 100); window.addEventListener('resize', () => schedule()); return () => clearInterval(t); }, [recompute, schedule]);
 
   // P112: 캔버스 크기는 ResizeObserver로 담아 둔다. 화면을 옮기는 프레임마다 clientWidth를 읽으면 그 프레임에 바뀐 스타일·레이아웃을 그 자리에서 다시 센다(강제 동기 레이아웃).
