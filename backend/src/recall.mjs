@@ -23,8 +23,9 @@ import { clip } from './text.mjs';
 import { archiveState, isOld, discoverable, itemKey, DISCOVER_DAYS, OLD_DAYS } from './archive.mjs';
 import { CONVO_PARSER, listTranscriptFiles, readTranscriptSummary, readLiveSessions, readDesktopSessions, claudeProcesses, parseClaudeCmdlines, bindingOf, inWorkspace, convoView, readSpawns, mergeSpawns, countSubagents, listSubagents, branchName } from './convos.mjs';
 import { matchSpawns } from './spawns.mjs';
-import { CODEX_HARNESS, CODEX_PARSER, listCodexFiles, readCodexSummary, readCodexTitles, readCodexLocks, parseCodexCmdlines, codexBindingOf } from './codex-convos.mjs'; // P133: 판 밖 Codex 대화
-import { classifyConvo, testDirKind, trashPlan, trashPaths, removeEmptyProjectDirs, REFUSE_LABEL } from './missed.mjs';
+import { CODEX_HARNESS, CODEX_PARSER, listCodexFiles, readCodexSummary, readCodexTitles, readCodexLocks, parseCodexCmdlines, codexBindingOf, indexCodexRollouts, codexRolloutName } from './codex-convos.mjs'; // P133: 판 밖 Codex 대화
+import { classifyConvo, testDirKind, trashPlan, trashPaths, removeEmptyProjectDirs, planPaths, REFUSE_LABEL } from './missed.mjs';
+import { findCodexRollout } from './model-now.mjs'; // P174: 판이 끈 Codex 세션의 rollout
 import { CONVO_CAP, placeCards, boardSpawnDup } from './convo-canvas.mjs';
 import { m, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { takenNames, keepLabel, findSession } from './session-label.mjs'; // P66
@@ -59,6 +60,14 @@ export function convOf(row) {
   const rt = row.rt || row.runtime || {};
   if ((row.origin || 'board') === 'board') return String(row.sessionId).toLowerCase();
   const id = rt.claudeSessionId || (rt.term && rt.term.agentSessionId);
+  return id ? String(id).toLowerCase() : null;
+}
+
+// P174: 판이 띄운 Codex 세션(열린 것이나 닫힌 행)의 대화 ID(이어 갈 ID, 터미널이 아는 ID)
+export function codexConvOf(row) {
+  if (row.kind !== CODEX_HARNESS) return null;
+  const rt = row.rt || row.runtime || {};
+  const id = (row.harnessPlan || {}).harnessSessionId || (rt.term && rt.term.agentSessionId);
   return id ? String(id).toLowerCase() : null;
 }
 
@@ -641,6 +650,15 @@ export class Recall {
     const boardConvs = this.store.boardConversations(), marks = this.store.archiveMarks();
     return this.store.convoIndex().filter((c) => { const cl = this.classOf(c, { boardConvs, marks }); if (cl.cls !== 'missed') return false; c.why = cl.why; return true; });
   }
+  // 대화 기록 옆 폴더(<대화 ID>/, 하위 에이전트 대화)의 크기. P174: Codex rollout은 옆 폴더가 없다
+  sideSize(c) { return c.harness === CODEX_HARNESS ? 0 : this.dirSize(c.path.slice(0, -6)); }
+  // P174: 지우기 계획의 뿌리와 Codex 대화의 함께 보낼 파일(지우는 순간 sessions를 한 번 훑는다)
+  async trashOpts(withCodex) {
+    const dirExists = (d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } };
+    const home = this.cfg.codexConvoHome;
+    const idx = withCodex && home ? await indexCodexRollouts(home) : new Map();
+    return { dirExists, codexRoots: home ? [path.join(home, 'sessions')] : [], codexFiles: (id) => idx.get(id) || [] };
+  }
   dirSize(dir) {
     let n = 0;
     const walk = (d, depth) => { let es; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const e of es) { const p = path.join(d, e.name); if (e.isDirectory()) { if (depth < 6) walk(p, depth + 1); } else { try { n += fs.statSync(p).size; } catch {} } } };
@@ -662,7 +680,7 @@ export class Recall {
     let bytes = 0, titled = 0;
     for (const c of rows) {
       const folder = c.cwd ? normPath(c.cwd) : "(폴더 확인 불가)";
-      const size = c.size + this.dirSize(c.path.slice(0, -6));
+      const size = c.size + this.sideSize(c);
       bytes += size;
       const title = p.titles === false || titled >= MISSED_TITLE_MAX ? null : (titled++, await this.titleOf(c));
       if (!groups.has(folder)) groups.set(folder, { folder, why: c.why, count: 0, bytes: 0, lastAt: 0, items: [] });
@@ -687,9 +705,9 @@ export class Recall {
     } else throw apiError('bad_request', "all, folder 또는 convos 중 하나를 지정하세요.");
     const folders = new Map();
     let bytes = 0;
-    for (const c of targets.filter((x) => !x.notMissed && !x.notFound)) { const f = c.cwd ? normPath(c.cwd) : "(폴더 확인 불가)"; const size = c.size + this.dirSize(c.path.slice(0, -6)); bytes += size; const g = folders.get(f) || { folder: f, count: 0, bytes: 0 }; g.count++; g.bytes += size; folders.set(f, g); }
+    for (const c of targets.filter((x) => !x.notMissed && !x.notFound)) { const f = c.cwd ? normPath(c.cwd) : "(폴더 확인 불가)"; const size = c.size + this.sideSize(c); bytes += size; const g = folders.get(f) || { folder: f, count: 0, bytes: 0 }; g.count++; g.bytes += size; folders.set(f, g); }
     const n = targets.filter((x) => !x.notMissed && !x.notFound).length;
-    if (!p.confirm) return { needsConfirm: true, count: n, bytes, folders: [...folders.values()], message: n ? `missed 대화 ${n}개(${fmtBytes(bytes)}, 폴더 ${folders.size}개)를 Windows 휴지통으로 보냅니다. 해당 대화의 기록 파일과 하위 에이전트 폴더만 이동합니다.` : "삭제할 정리 대상 대화가 없습니다.", msg: n ? m('missedTrash', { n, size: fmtBytes(bytes), folders: folders.size }) : m('missedNone') };
+    if (!p.confirm) return { needsConfirm: true, count: n, bytes, folders: [...folders.values()], message: n ? `missed 대화 ${n}개(${fmtBytes(bytes)}, 폴더 ${folders.size}개)를 Windows 휴지통으로 보냅니다. 해당 대화의 기록 파일과 하위 에이전트 기록만 이동합니다.` : "삭제할 정리 대상 대화가 없습니다.", msg: n ? m('missedTrash', { n, size: fmtBytes(bytes), folders: folders.size }) : m('missedNone') };
     // 지우기 직전 판정: 묶임은 출처 추측 없이(SDK 대화도 끝났으면 지운다) 세션 파일, 명령줄, 데스크톱 목록, 방금 기록됨으로
     this.refreshBindings(); await this.refreshProcs();
     const boardConvs = this.store.boardConversations(), marks = this.store.archiveMarks();
@@ -698,15 +716,16 @@ export class Recall {
       const now = { ...c, mtime: this.mtimeNow(c) };
       const bind = c.harness === CODEX_HARNESS ? this.bindingFor(c.convId, now) : bindingOf({ convId: c.convId, entrypoints: ['cli'], mtime: now.mtime, live: this.live, procs: this.procs, desktop: this.desktop });
       const cl = this.classOf(now, { bind, boardConvs, marks });
-      return { convId: c.convId, path: c.path, cwd: c.cwd, harness: c.harness || 'claude', cls: cl.cls, binding: bind, boardKnown: boardConvs.has(c.convId), desktop: (c.entrypoints || []).some((e) => /desktop/i.test(e)) || bind.where === 'desktop' };
+      return { convId: c.convId, path: c.path, cwd: c.cwd, harness: c.harness || 'claude', entrypoints: c.entrypoints || [], cls: cl.cls, binding: bind, boardKnown: boardConvs.has(c.convId), desktop: (c.entrypoints || []).some((e) => /desktop/i.test(e)) || bind.where === 'desktop' };
     });
-    const plan = trashPlan(items.filter((i) => i.cls !== 'not_found'), { roots: this.cfg.convoRoots, dirExists: (d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } } });
+    const live = items.filter((i) => i.cls !== 'not_found');
+    const plan = trashPlan(live, { roots: this.cfg.convoRoots, ...(await this.trashOpts(live.some((i) => i.harness === CODEX_HARNESS))) });
     plan.refused.push(...items.filter((i) => i.cls === 'not_found').map((i) => ({ convId: i.convId, reason: 'not_found' })));
-    const paths = plan.ok.flatMap((x) => [x.file, ...(x.dir ? [x.dir] : [])]);
+    const paths = plan.ok.flatMap(planPaths);
     const res = await this.trash(paths, { tmpDir: path.join(this.cfg.dataDir, 'tmp') });
     const trashedSet = new Set(res.trashed.map(pathKey));
     const done = plan.ok.filter((x) => trashedSet.has(pathKey(x.file)));
-    const emptied = removeEmptyProjectDirs(done.map((x) => x.file), this.cfg.convoRoots);
+    const emptied = removeEmptyProjectDirs(done.filter((x) => x.harness !== CODEX_HARNESS).map((x) => x.file), this.cfg.convoRoots); // Codex 날짜 폴더는 둔다(Codex가 쓰는 자리)
     this.store.tx(() => { this.store.dropConvos(done.map((x) => x.file)); this.store.deleteConvoNodes(done.map((x) => x.convId)); });
     this.store.addEvent(null, 'missed_trashed', { trashed: done.length, refused: plan.refused.length, failed: res.failed.length, emptied: emptied.length, by: p.all ? 'all' : p.folder ? 'folder' : 'items' });
     this.b.log(`missed trashed ${done.length} (refused ${plan.refused.length}, failed ${res.failed.length})`);
@@ -720,9 +739,15 @@ export class Recall {
   async forgetClosed(sessionId, { waitMs = 8000 } = {}) {
     const row = this.store.closedSession(sessionId);
     if (!row) throw apiError('not_found', `닫힌 세션이 아닙니다: ${sessionId}`);
-    const conv = convOf(row);
+    const codex = row.kind === CODEX_HARNESS; // P174: 판이 끈 Codex 세션도 그 rollout을 같은 규칙으로 지운다
+    const conv = codex ? codexConvOf(row) : convOf(row);
     let file = null;
-    if (conv) {
+    const opts = codex && conv ? await this.trashOpts(true) : null;
+    if (codex && conv) {
+      const idx = this.store.getConvoById(conv);
+      const cands = [idx && idx.harness === CODEX_HARNESS ? idx.path : null, findCodexRollout(this.cfg.codexConvoHome, conv), ...opts.codexFiles(conv).filter((f) => { const r = codexRolloutName(path.basename(f)); return r && !r.child; })].filter(Boolean);
+      file = cands.find((f) => { try { return fs.statSync(f).isFile(); } catch { return false; } }) || null;
+    } else if (conv) {
       const idx = this.store.getConvoById(conv);
       const roots = [...new Set([this.cfg.claudeProjects, ...(this.cfg.convoRoots || [])].filter(Boolean))];
       const cands = [idx && idx.path, ...roots.map((r) => transcriptPathFor(r, row.cwd, conv))].filter(Boolean);
@@ -738,20 +763,23 @@ export class Recall {
       let bind = { bound: true };
       for (const t0 = Date.now(); ; ) {
         this.refreshBindings(); await this.refreshProcs();
-        bind = bindingOf({ convId: conv, entrypoints: ['cli'], live: this.live, procs: this.procs, desktop: this.desktop, recentMs: 0 });
+        bind = codex ? codexBindingOf({ convId: conv, entrypoints: ['cli'], locks: this.codexLocks, procs: this.procs, recentMs: 0 }) : bindingOf({ convId: conv, entrypoints: ['cli'], live: this.live, procs: this.procs, desktop: this.desktop, recentMs: 0 });
         if (!bind.bound || Date.now() - t0 > waitMs) break;
         await sleep(500);
       }
       const roots = [...new Set([this.cfg.claudeProjects, ...(this.cfg.convoRoots || [])].filter(Boolean))];
       // 판이 끈 자기 세션은 missed와 같은 거부 규칙(뿌리 밖, UUID 아님, 도는·묶인·데스크톱)으로 지운다
-      const plan = trashPlan([{ convId: conv, path: file, cls: 'missed', binding: bind, boardKnown: false, desktop: bind.where === 'desktop' }], { roots, dirExists: (d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } } });
+      // Codex는 대화 기록의 출처(데스크톱 앱·편집기 확장)도 본다(색인 줄이 있으면 그 출처, 없으면 판이 띄운 터미널 codex)
+      const eps = codex ? ((this.store.getConvoById(conv) || {}).entrypoints || ['cli']) : null;
+      const desktop = bind.where === 'desktop' || (codex && eps.some((e) => /desktop/i.test(e)));
+      const plan = trashPlan([{ convId: conv, path: file, cls: 'missed', binding: bind, boardKnown: false, desktop, ...(codex ? { harness: CODEX_HARNESS, entrypoints: eps } : {}) }], { roots, ...(opts || await this.trashOpts(false)) });
       if (!plan.ok.length) return keep((plan.refused[0] && plan.refused[0].reason) || 'bound');
       const x = plan.ok[0];
-      const res = await this.trash([x.file, ...(x.dir ? [x.dir] : [])], { tmpDir: path.join(this.cfg.dataDir, 'tmp') });
+      const res = await this.trash(planPaths(x), { tmpDir: path.join(this.cfg.dataDir, 'tmp') });
       if (!res.trashed.map(pathKey).includes(pathKey(x.file))) return keep('trash_failed');
-      removeEmptyProjectDirs([x.file], roots);
+      if (!codex) removeEmptyProjectDirs([x.file], roots);
       this.store.tx(() => { this.store.dropConvos([x.file]); this.store.deleteConvoNodes([conv]); });
-      trashed = 1 + (x.dir ? 1 : 0);
+      trashed = res.trashed.length;
     }
     this.store.tx(() => { this.store.deleteClosedSession(sessionId); this.store.addEvent(sessionId, 'session_deleted', { name: row.name, kind: row.kind, convo: conv, trashed }); });
     this.b.log(`session deleted ${row.name} ${sessionId} trashed=${trashed}`);

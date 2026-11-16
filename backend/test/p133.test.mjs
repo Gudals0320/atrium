@@ -302,10 +302,10 @@ test('P133: 판이 띄운 Codex 세션(새로 띄움·갈라 열기)의 대화 I
   assert.deepEqual((await r.convoList()).map((c) => c.convId), []); // 둘 다 판이 아는 대화
 });
 
-test('P133: missed 지우기는 Codex 대화 기록을 지우지 않는다(Codex의 기록, 판은 읽기만)', () => {
+test('P133→P174: missed 지우기는 Claude 뿌리의 파일을 Codex 대화로 지우지 않는다(Codex는 $CODEX_HOME/sessions의 rollout만, p174.test.mjs)', () => {
   const root = tmp(); const f = path.join(root, 'x', `${CID(1)}.jsonl`);
   const plan = trashPlan([{ convId: CID(1), path: f, cls: 'missed', binding: { bound: false }, harness: 'codex' }], { roots: [root] });
-  assert.deepEqual(plan.refused, [{ convId: CID(1), reason: 'codex' }]); assert.equal(plan.ok.length, 0);
+  assert.deepEqual(plan.refused, [{ convId: CID(1), reason: 'outside_root' }]); assert.equal(plan.ok.length, 0);
   const plan2 = trashPlan([{ convId: CID(1), path: f, cls: 'missed', binding: { bound: false }, harness: 'claude' }], { roots: [root] });
   assert.equal(plan2.ok.length, 1);
 });
