@@ -7,10 +7,11 @@
 // - atrium done ok|failed "<글>": 부르는 세션의 열린 시도를 닫는다. 값과 글은 시도마다 정확히 한 번, 먼저 가져가는 길로 위 세션에 간다
 //   (그 하위를 atrium wait·prompt --wait로 기다리던 기다림이 받거나, 전달 대기열로 한 번). 어느 길로 갔는지 시도(claimed_by)에 적는다.
 //   대기열 것이 아직 들어가지 않았을 때 위 세션이 atrium wait를 치면 기다림이 가져가고 대기열 것은 취소한다. 들어간 뒤의 wait는 "이미 전함"을 붙여 돌려준다.
-// - 머리 없이 도는 세션(옛 세션)의 동작은 그대로다. 멈춤 알림(보고 없이 쉼, L4)은 P181이 이 표의 stop_reason·notified_at으로 한다.
+// - 머리 없이 도는 세션(옛 세션)의 동작은 그대로다. 멈춤 알림(보고 없이 쉼, L4)은 P181 unit-stops.mjs가 이 표의 stop_reason·notified_at으로 한다.
 import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
+import { UnitStops } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -36,12 +37,13 @@ export function checkAgentText(text, what = '보낼 글') {
 
 export class WorkUnits {
   // b: 백엔드(sessions, store, queue, linkEvent, ensureLink, log). branch: Branch(일 관계)
-  constructor(b, branch) {
+  constructor(b, branch, { noticeBatchMs } = {}) {
     this.b = b; this.branch = branch;
     this.waiters = new Map(); // `${위}>${하위}` → Set<{ got }>(그 하위를 기다리는 atrium wait·prompt --wait)
     this.prev = new Map(); // 세션 ID → 마지막으로 본 상태(턴 끝 판정)
     this.queued = new Set(b.store.queuedUnitSessions ? b.store.queuedUnitSessions() : []); // 판이 붙잡아 둔 일이 있는 세션
     this.onDispatch = null; // (unit, delivery, header) → 붙잡아 둔 일을 나중에 넣을 때(연결 기록)
+    this.stops = new UnitStops(b, this, noticeBatchMs != null ? { batchMs: noticeBatchMs } : {}); // P181
   }
   store() { return this.b.store; }
   nameOf(id) { const s = this.b.sessions.get(id); if (s) return shownName(s) || s.name; const r = this.branch && this.branch.rowOf ? this.branch.rowOf(id) : null; return r ? r.name : '?'; }
@@ -195,34 +197,33 @@ export class WorkUnits {
     return { items: rows, open: rows.filter((r) => r.status === 'open').length };
   }
 
-  // ---------- 상태 변화(L4 자리, 기록만) ----------
-  // 그 시도의 턴이 done 없이 끝나 쉬면 stop_reason을 적는다(알림은 P181). 자기 아래에 열린 일이 있으면 하위를 기다리는 것이라 적지 않는다.
-  // 붙잡아 둔 다른 일이 있으면 이 시도를 끝내고(일은 열린 채) 다음 일을 넣는다
+  // ---------- 상태 변화(L4 자리) ----------
+  // 그 시도의 턴이 done 없이 끝나 쉬면 stop_reason을 적는다. 자기 아래에 열린 일이 있으면 하위를 기다리는 것이라 적지 않는다.
+  // 붙잡아 둔 다른 일이 있으면 이 시도를 끝내고(일은 열린 채) 다음 일을 넣는다.
+  // P181: 멈춤(보고 없이 쉼, 오류, 사람이 필요함)을 상위에게 한 번 알린다(unit-stops.mjs)
   onSession(s, sum) {
     const sid = s.sessionId; const st = this.store();
     const prev = this.prev.get(sid);
     this.prev.set(sid, sum.state);
-    if (prev === 'working' && (sum.state === 'ready' || sum.state === 'error')) {
-      const tr = st.openTryOf(sid);
-      if (tr && tr.header) {
-        const d = tr.deliveryId ? st.getDelivery(tr.deliveryId) : null;
-        if (d && d.status === 'confirmed' && st.openUnitsFromCount(sid) === 0) {
-          const why = sum.state === 'error' ? 'turn_error' : 'idle_no_done';
-          st.updateTry(tr.id, { stopReason: why });
-          st.addEvent(sid, 'unit_stop', { unitId: tr.unitId, tryId: tr.id, why });
-          if (this.queued.has(sid)) { st.updateTry(tr.id, { endedAt: Date.now() }); this.pump(sid); }
-        }
-      }
+    const tr = prev !== sum.state ? st.openTryOf(sid) : null;
+    const why = this.stops.onState(s, sum, prev, tr);
+    if (why) {
+      st.updateTry(tr.id, { stopReason: why });
+      st.addEvent(sid, 'unit_stop', { unitId: tr.unitId, tryId: tr.id, why });
+      if (why !== 'needs_human' && this.queued.has(sid)) { st.updateTry(tr.id, { endedAt: Date.now() }); this.pump(sid); }
     }
     if (this.queued.has(sid) && (sum.state === 'ready' || sum.state === 'sleeping')) this.pump(sid); // 백엔드가 다시 뜬 뒤 등
   }
-  // 세션이 끝났다: 열린 시도는 closed로 끝나고 그 일과 붙잡아 둔 일은 취소된다
-  onClosed(s) {
+  // 세션이 끝났다: 열린 시도는 closed로 끝나고 그 일과 붙잡아 둔 일은 취소된다.
+  // P181: 상위에게 멈춤(closed)을 알린다(위 세션의 child-kill이면 알리지 않는다) → 알림을 건 상위 ID | null
+  onClosed(s, { reason = null, byParent = false } = {}) {
     const st = this.store(); const now = Date.now();
     const tr = st.openTryOf(s.sessionId);
+    const unit = tr ? st.getUnit(tr.unitId) : null;
     if (tr) { st.updateTry(tr.id, { endedAt: now, stopReason: 'closed' }); st.updateUnit(tr.unitId, { status: 'cancelled', closedAt: now }); }
     for (const u of st.queuedUnitsOf(s.sessionId)) st.updateUnit(u.id, { status: 'cancelled', closedAt: now });
     this.queued.delete(s.sessionId);
     this.prev.delete(s.sessionId);
+    return this.stops.onClosed(s, tr, unit, reason, { byParent });
   }
 }

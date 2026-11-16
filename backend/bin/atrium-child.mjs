@@ -20,27 +20,30 @@ import path from 'node:path';
 import { envVar, terminalSessionVar } from '../src/config.mjs';
 import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP } from '../src/cli-contract.mjs'; // P115: 계약(atrium help --json). P156: 관계 고르기 안내
 
+// P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
+const HAND_OFF = '기다리지 않고 턴을 끝낸다. 끝나면 보드가 done 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다.';
 const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같다)
   atrium prompt <이름> "<할 일>" [--wait | --now] [--timeout ms] [--file 경로]
-      다른 에이전트에게 일을 시킨다. 이름은 보드의 세션 이름이다(@ 없이도). 보드가 받는 쪽 차례에 맞춰 넣는다: 일하는 중이거나 사람의 답을 기다리면 끝난 뒤,
+      다른 에이전트에게 일을 맡긴다. 이름은 보드의 세션 이름이다(@ 없이도). 보드가 받는 쪽 차례에 맞춰 넣는다: 일하는 중이거나 사람의 답을 기다리면 끝난 뒤,
       사람이 그 터미널에 치는 중이면 3초 뒤, 잠들었으면 깨운 뒤. 보낸 쪽 → 받는 쪽 연결과 오간 기록이 판에 남는다.
-      --wait면 그 글로 시작한 턴이 끝날 때까지 기다려 마지막 답을 돌려준다(기본 100초. 더 길게는 --timeout 600000과 셸 도구의 시간 제한을 함께 늘린다).
-      --now는 받는 쪽이 일하는 중인 Claude Code면 끝나기를 기다리지 않고 그 세션의 대기 메시지로 바로 넣는다(지금 턴 안에서 읽는다). 워커가 지휘 세션에 결과를 알릴 때 쓴다.
+      하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 값과 보고를 네 차례에 한 번 넣고, 보고 없이 멈추면(쉼, 오류, 사람의 답 기다림, 닫힘) 한 번 알린다. 폴링하지 않는다.
+      --wait면 그 글로 시작한 턴(또는 done)까지 기다려 답을 돌려준다(지금 답이 꼭 필요할 때만. 기본 100초. 더 길게는 --timeout 600000과 셸 도구의 시간 제한을 함께 늘린다).
+      --now는 받는 쪽이 일하는 중인 Claude Code면 끝나기를 기다리지 않고 그 세션의 대기 메시지로 바로 넣는다(지금 턴 안에서 읽는다). 일하는 중인 상대에게 바로 알릴 것이 있을 때 쓴다.
       그 밖(쉬는 중, 다른 종류, 사람의 답을 기다림, 잠듦)은 위와 같다. --wait와 함께 쓰지 않는다.
       --file은 글을 파일에서 읽는다(긴 글, 따옴표가 많은 글).
   atrium wait <이름> [--timeout ms]
       그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(Claude Code는 hook의 답, 다른 종류는 보드가 화면에서 고른 답).
-      사람의 답을 기다리면 바로 돌아온다(waiting). 시간이 끝나면 종료 코드 3이고 일은 계속된다. 다시 atrium wait
+      사람의 답을 기다리면 바로 돌아온다(waiting). 시간이 끝나면 종료 코드 3이고 일은 계속된다. 맡긴 일의 보고는 보드가 가져다주므로 되풀이해 치지 않는다
   atrium read <이름> [--lines n]   그 세션 화면의 최근 줄(기본 80줄). 잠든 세션은 마지막 답
   atrium child [이름] [--peer] [--prompt "첫 요청"] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 런처] [--effort 노력] [--kind 종류] [--no-wait]
       세션을 띄운다. 너의 폴더·모델·추론 수준·승인 방식·그룹을 물려받고(준 값이 덮는다), 너와 역할 선(기본 "워커", --peer면 "동료")으로 이어진다.
-      관계: 기본은 하위 워커다(끝나면 너에게 보고한다. atrium children에 보이고 child-kill로 함께 꺼진다).
+      관계: 기본은 하위 워커다(--prompt의 일을 끝내면 atrium done으로 너에게 보고한다. atrium children에 보이고 child-kill로 함께 꺼진다).
       --peer는 동료다(같은 위계의 협력자. 필요한 것을 서로 주고받고, 끝나면 결과를 너에게 공유하며, 사람에게 직접 답해도 된다. child-kill 연쇄에서 빠진다).
       누가 띄웠는지(계보)는 둘 다 남는다. 보드가 첫 요청 앞에 관계 한 줄을 붙이고, 응답 첫 줄에 관계를 쓴다.
       --model은 말로 한 이름도 받는다("glm flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
       --launcher는 그 런처(도구 모음의 단추)의 하네스·모델·옵션·환경 변수 그대로 띄운다.
       --kind codex(다른 종류)는 보드 레일의 그 종류 런처 설정(추가 인자·모델, --model이 모델만 덮는다)으로 띄우고, 너의 승인 방식을 그 종류의 승인 인자로 옮긴다.
-      준비될 때까지 기다린 뒤 워커 이름과 일 시키기·기다리기·읽기 명령을 돌려준다. 수와 깊이에 상한은 없다.
+      준비될 때까지 기다린 뒤 워커 이름과 일 맡기기·읽기 명령을 돌려준다. --prompt로 맡겼으면 턴을 끝낸다(보고는 보드가 가져다준다). 수와 깊이에 상한은 없다.
       --worktree는 claude -w로 워크트리를 만든다. 신뢰를 받지 않은 저장소면 신뢰 질문에서 멈추고(needs_trust) 사람에게 할 한 문장을 돌려준다.
       --head는 너의 워커가 아니라 따로 일을 이끄는 세션(헤드)으로 띄운다. 첫 요청 뒤 보드가 부모 관계를 뗀다. 그 뒤로 일을 시키거나 기다리지 않는다(--worktree와 함께 쓰지 않는다).
   atrium relate <이름> sub|peer|none|auto
@@ -150,12 +153,12 @@ async function main() {
     if (['exited', 'closed', 'error'].includes(x.state)) return say(`@${x.name}: ${x.state}. 하위 세션이 떠 있지 않다${x.state === 'exited' ? '(신뢰 질문에서 거절했거나 끝났다)' : ''}`);
     if (x.timeout) return say(`@${x.name}: 아직 ${x.state}${x.gated ? '(워크트리로 다시 띄우는 중)' : ''}. 다시 기다리기: atrium child-wait ${x.name}`);
     say(`@${x.name}: ${x.state}${x.worktree ? ` · 워크트리 ${x.worktree}` : ''}`);
-    say(`일 시키기: ${x.next.prompt}`); say(`끝나기 기다리기: atrium wait ${x.name} · 화면 읽기: ${x.next.read}`); // P116
+    say(`일 맡기기: atrium prompt ${x.name} "<할 일>"(맡기고 턴을 끝낸다) · 화면 읽기: ${x.next.read}`); // P116, P181
     return;
   }
   if (cmd === 'wake' || (cmd === 'child' && x.woke !== undefined)) {
     say(x.woke ? `@${x.name}을 깨웠다(${((x.ms || 0) / 1000).toFixed(1)}초, 같은 대화로 이어 감): 상태 ${x.state}` : `@${x.name}은 이미 깨어 있다: 상태 ${x.state}`);
-    if (x.firstPrompt) say(`지시를 보냈다(${x.firstPrompt.status}). 끝나기 기다리기: ${x.next.wait}`); else say(`일 시키기: ${x.next.prompt}`);
+    if (x.firstPrompt) say(`지시를 보냈다(${x.firstPrompt.status}).${x.firstPrompt.unit ? ` 일 ${x.firstPrompt.unit}: ${HAND_OFF}` : ` 끝나기 기다리기: ${x.next.wait}`}`); else say(`일 맡기기: atrium prompt ${x.name} "<할 일>"`); // P181
     say(`화면 읽기: ${x.next.read}`);
     return;
   }
@@ -168,7 +171,7 @@ async function main() {
     else if (x.inheritedGateway) say(`너의 게이트웨이(${x.inheritedGateway})와 모델을 물려받았다`);
     if (x.head) say(`헤드로 띄웠다: @${x.name} (종류 ${x.kind}). 너의 워커가 아니다. 첫 요청 뒤 보드가 부모 관계를 ${x.head.detached ? '뗐다' : '뗀다'}. 그 뒤로 일을 시키거나 기다리지 않는다`);
     else if (x.relation === 'peer') { say(`관계: 동료. @${x.name}는 너의 하위 워커가 아니다(같은 위계의 협력자). 필요한 것을 주고받고, 끝나면 결과를 너에게 공유한다. child-kill 연쇄에서 빠진다`); say(`동료를 띄웠다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}")`); }
-    else { say(`관계: 하위 워커. @${x.name}는 너의 워커다. 끝나면 너에게 보고하고(보고 방법은 네 지시를 따른다), child-kill로 함께 꺼진다`); say(`하위 세션을 생성했습니다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}", ${x.depth}단계)`); }
+    else { say(`관계: 하위 워커. @${x.name}는 너의 워커다. 맡긴 일은 끝나면 atrium done으로 너에게 보고하고, child-kill로 함께 꺼진다`); say(`하위 세션을 생성했습니다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}", ${x.depth}단계)`); }
     if (x.harness) {
       // P96: 다른 종류(codex 등). 무엇을 물려받았는지: 바탕 호출자, 띄운 명령, 승인
       const H = x.harness;
@@ -192,8 +195,9 @@ async function main() {
       else say(`  첫 요청은 아직 확인되지 않았다(${fp}). 보드가 들어갈 때까지 보낸다. 확인: atrium children(들어가지 않으면 "첫 요청 안 들어감"이 보인다) · 다시 보내기: ${x.next.prompt}`);
     }
     if (x.head) { say(`화면 보기(필요할 때만): ${x.next.read}`); say('지금 연결: atrium me'); return; }
-    if (x.relation === 'peer') say(`동료는 끝나면 결과를 너에게 공유한다(--now로 들어온다). atrium wait·--wait로 기다리지 않는다(같은 결과가 두 번 온다). 주고받기: atrium prompt ${x.name} "<할 일>"`);
-    else if (x.firstPrompt) say(`끝나기 기다리기: ${x.next.wait}`); else say(`일 시키기: ${x.next.prompt}`);
+    if (x.relation === 'peer') say(`동료는 끝나면 결과를 너에게 공유한다(보드가 네 차례에 넣는다). 기다리지 않고 턴을 끝낸다. 주고받기: atrium prompt ${x.name} "<할 일>"`);
+    else if (x.firstPrompt && x.firstPrompt.unit) say(HAND_OFF); // P181: 맡기고 턴을 끝낸다
+    else if (x.firstPrompt) say(`끝나기 기다리기: ${x.next.wait}`); else say(`일 맡기기: atrium prompt ${x.name} "<할 일>"`);
     say(`화면 읽기: ${x.next.read}`);
     say(counts(x.counts));
     return;
@@ -284,6 +288,7 @@ async function verb(cmd) {
   if (cmd === 'prompt' && x.unit) say(x.unit.kind === 'followup' ? `@${x.name}가 맡은 일 ${x.unit.id}에 붙는 글로 보냈다(새 일이 아니다).` : `일 ${x.unit.id}로 맡겼다. @${x.name}는 끝나면 atrium done으로 닫고, 그 값이 너에게 한 번 온다.`); // P180
   if (turn) printTurn(x, turn);
   else if (cmd === 'prompt' && flags.now) say(`--now로 보냈으니 기다리지 않는다. 화면 보기: ${x.next.read}`); // P143: 밀어 넣기는 기다리지 않는다(한 길로)
+  else if (cmd === 'prompt' && x.unit) say(`${HAND_OFF} 화면 보기: ${x.next.read}`); // P181: 맡기고 턴을 끝낸다
   else if (cmd === 'prompt') say(`끝나기 기다리기: ${x.next.wait} · 화면 보기: ${x.next.read}`);
 }
 // 기다린 결과의 종료 코드: 기다리는 시간이 끝남 3, 글이 들어가지 않음·받는 세션이 끝남 1
@@ -385,7 +390,7 @@ function printMe(x) {
     say('역할 연결:');
     for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (${r.state})${last(r.last)}`);
   }
-  say(`일 시키기: ${x.commands.prompt} · 끝나기 기다리기: ${x.commands.wait || 'atrium wait <이름>'} · 화면 읽기: ${x.commands.read}`);
+  say(`일 맡기기: atrium prompt <이름> "<할 일>"(맡기고 턴을 끝내면 보드가 done 보고를 가져다준다) · 화면 읽기: ${x.commands.read}`); // P181
   say('이것이 보드의 지금 기록이다. 예전 알림과 다르면 이것을 믿는다.');
 }
 // P156: atrium relate

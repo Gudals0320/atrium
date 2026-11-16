@@ -433,7 +433,7 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     const ok = await runChild(['child', 'w1', '--no-wait'], env);
     assert.equal(ok.code, 0, ok.stderr);
     assert.match(ok.stdout, /하위 세션을 생성했습니다: @w1 \(종류 claude, 역할 "워커"/); // P116: herdr 이름·패널은 보이지 않는다
-    assert.match(ok.stdout, /일 시키기: atrium prompt w1/);
+    assert.match(ok.stdout, /일 맡기기: atrium prompt w1/); // P181
     assert.doesNotMatch(ok.stdout, /herdr/);
     const ls = await runChild(['children'], env);
     assert.match(ls.stdout, /@lead\(1단계\)의 하위 세션 1개/);
