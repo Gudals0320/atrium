@@ -141,7 +141,7 @@ test('P156 atrium child --peer: 계보는 남고 관계는 동료(출처 agent),
   const { b, lead } = await fakeBoard();
   const sub = await b.branch.spawnChild(lead, { name: 'w1', prompt: 'do it', wait: false });
   assert.equal(sub.relation, 'sub'); assert.match(sub.relationText, /^하위 워커/);
-  assert.match(b.queued[0].text, /^\[Atrium 보드\] 관계: 너는 @lead의 하위 워커다\. 보고는 아래 지시에 적힌 방법을 따른다/);
+  assert.match(b.queued[0].text, /^\[Atrium 보드\] 관계: 너는 @lead의 하위 워커다\. 아래 일은 @lead가 맡긴 일 u[0-9a-f]+이다/); // P180: 하위의 첫 요청은 일 단위 머리
   assert.ok(b.queued[0].text.endsWith('\n\ndo it'));
   const peer = await b.branch.spawnChild(lead, { name: 'p1', peer: true, prompt: 'crawl the site', wait: false });
   assert.equal(peer.relation, 'peer'); assert.equal(peer.role, '동료'); assert.match(peer.relationText, /^동료/);
