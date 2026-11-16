@@ -12,6 +12,8 @@
 //       atrium children [--all] [--json]
 //       atrium child-kill <이름> [--only] [--json]
 //       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째, P111: 혼자 잠든 세션은 그 세션만)
+//       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다)
+//       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,6 +52,12 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium models                 띄울 수 있는 런처와 모델(하네스 모델, 별칭, 게이트웨이 모델)과 각각을 띄우는 atrium child 명령
   atrium child-kill <이름> [--only]   너의 하위 세션을 끈다(하위 관계로만 그 아래도 함께. --only면 그것만). 동료·독립은 끄지 않고 남긴 이름을 적는다. 사람이 끄라고 할 때만 쓴다
   atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. atrium prompt는 잠든 세션을 깨운 뒤 넣으므로 미리 깨울 때만 쓴다
+  atrium done ok|failed "<보고>" [--file 경로]
+      보드가 맡긴 지금 일(첫 요청 앞에 "[Atrium 보드] … 맡긴 일 u…" 머리가 붙은 일)을 닫는다. ok는 끝냈다, failed는 못 했다.
+      값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 atrium wait로 기다리는 중이면 그 기다림이 받고, 아니면 보드가 그 세션 차례에 넣는다).
+      일이 보고하라는 것은 이 글에 넣고 다른 길로 따로 보내지 않는다. 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1
+  atrium item                   너의 지금 일(맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수)
+  atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
@@ -105,6 +113,7 @@ async function main() {
   let r;
   // P116: 일 시키기·기다리기·읽기
   if (cmd === 'prompt' || cmd === 'wait' || cmd === 'read') return verb(cmd);
+  if (cmd === 'done' || cmd === 'item' || cmd === 'items') return unitVerb(cmd); // P180
   if (cmd === 'child') {
     // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
     if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);
@@ -206,6 +215,42 @@ async function main() {
   say(`껐다: ${x.killed.map((k) => `@${k.name}${k.closed ? '' : `(실패 ${k.error || ''})`}`).join(', ')}`);
   if (x.kept && x.kept.length) say(`남겼다(하위가 아니라 끄지 않음): ${x.kept.map((k) => `@${k.name}(${REL_WORD[k.relation] || k.relation})`).join(', ')}`); // P156
 }
+// ---------- P180: atrium done | item | items ----------
+async function unitVerb(cmd) {
+  let r;
+  if (cmd === 'done') {
+    const result = rest[0];
+    if (!['ok', 'failed'].includes(result)) fail('사용법: atrium done ok|failed "<보고>" (ok 끝냈다, failed 못 했다)', 2);
+    let text = rest.slice(1).join(' ');
+    if (flags.file) { if (text) fail('글은 인자나 --file 가운데 하나로 준다', 2); try { text = fs.readFileSync(path.resolve(String(flags.file)), 'utf8'); } catch (e) { fail(`--file을 읽지 못했다: ${e.message}`, 2); } }
+    if (!text.trim()) fail('보고 글을 준다: atrium done ok|failed "<보고>"', 2);
+    r = await call('done', { result, text }, 30000);
+  } else r = await call(cmd, {}, 20000);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
+  if (r.error) fail(`${cmd === 'done' ? '닫지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`);
+  const x = r.result;
+  if (cmd === 'done') {
+    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, record: `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
+    say(`일 ${x.unit}을 닫았다(${x.result}). ${how}. 다른 길로 따로 보고하지 않는다.`);
+    if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else say('이제 쉰다.');
+    return;
+  }
+  if (cmd === 'item') {
+    if (!x.item) return say(`지금 보드가 맡긴 열린 일이 없다${x.queued ? `(줄 선 일 ${x.queued}개)` : ''}. 머리 없이 받은 일은 지시에 적힌 방법으로 보고한다.`);
+    const it = x.item;
+    say(`일 ${it.id}: @${it.from}가 맡김(${it.origin}) · ${ago(it.startedAt, Date.now())} 시작${x.queued ? ` · 뒤에 줄 선 일 ${x.queued}개` : ''}`);
+    say('--- 할 일 ---'); say(it.spec.replace(/\s+$/, '')); say('---');
+    say('끝나면: atrium done ok "<보고>" (못 했으면 atrium done failed "<까닭>")');
+    return;
+  }
+  if (!x.items.length) return say('네가 맡긴 일이 없다.');
+  say(`네가 맡긴 일 ${x.items.length}개(열림 ${x.open}):`);
+  for (const it of x.items) {
+    say(`  ${it.id} → @${it.to} · ${it.queued ? 'open(줄 서 있음)' : it.status}${it.result ? ` · ${it.result}` : ''}${it.stopReason && it.status === 'open' ? ` · 멈춤(${it.stopReason})` : ''} · ${ago(it.createdAt, Date.now())} · "${it.spec}"`);
+    if (it.text) say(`      보고: ${it.text.replace(/\s+/g, ' ').slice(0, 400)}`);
+  }
+}
 // ---------- P116: atrium prompt | wait | read ----------
 const secs = (ms) => `${((ms || 0) / 1000).toFixed(1)}초`;
 const WAIT_HTTP_EXTRA = 20000;
@@ -236,6 +281,7 @@ async function verb(cmd) {
   if (r.error) fail(`${cmd === 'prompt' ? '보내지 않았다' : cmd === 'wait' ? '기다리지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`);
   if (cmd === 'read') return printRead(x);
   if (cmd === 'prompt') printDelivery(x);
+  if (cmd === 'prompt' && x.unit) say(x.unit.kind === 'followup' ? `@${x.name}가 맡은 일 ${x.unit.id}에 붙는 글로 보냈다(새 일이 아니다).` : `일 ${x.unit.id}로 맡겼다. @${x.name}는 끝나면 atrium done으로 닫고, 그 값이 너에게 한 번 온다.`); // P180
   if (turn) printTurn(x, turn);
   else if (cmd === 'prompt' && flags.now) say(`--now로 보냈으니 기다리지 않는다. 화면 보기: ${x.next.read}`); // P143: 밀어 넣기는 기다리지 않는다(한 길로)
   else if (cmd === 'prompt') say(`끝나기 기다리기: ${x.next.wait} · 화면 보기: ${x.next.read}`);
@@ -250,6 +296,7 @@ const REASON = {
   // P139: 쓰다 만 글은 비키고 보낸다. 이 까닭은 입력 칸을 아직 비우지 못했을 때(또는 일하는 중에 바로 넣기를 못 할 때)뿐이다
   draft: (n) => `@${n}의 입력 칸에 글이 있어 보드가 아직 넣지 못했다(지시가 그 글과 함께 제출되지 않게). 보드가 그 칸을 비키고 곧 넣는다. 다시 보내지 않는다`,
   sleeping: (n) => `@${n}는 잠들어 있다. 보드가 깨운 뒤 넣는다`,
+  unit_wait: (n) => `@${n}는 다른 세션이 맡긴 일을 하는 중이다. 보드가 그 일이 끝나면 이 일을 넣는다`, // P180
   starting: (n) => `@${n}는 뜨는 중이다. 준비되면 보드가 넣는다`,
 };
 // P128: 받는 쪽 입력 칸에 사람이 쓰다 만 글이 있어 잠시 비키고 보냈다(되돌리기 결과는 전달 기록의 까닭)
@@ -282,6 +329,12 @@ function printAnswer(x, a, label = '마지막 답') {
 }
 function printTurn(x, t) {
   const n = x.name;
+  // P180: done 값. 기다림이 받았으면 그것이 보고다. 이미 전한 값이면 그렇다고 적는다
+  if (t.unit && t.unit.result) {
+    if (t.unit.alreadyDelivered) say(`@${n}가 마지막으로 닫은 일 ${t.unit.id}: ${t.unit.result}(이미 전함. 앞서 받은 보고와 같다).`);
+    else { say(`@${n}가 일 ${t.unit.id}을 닫았다: ${t.unit.result}(${secs(t.ms)} 기다림).`); say(`--- @${n}의 보고(atrium done) ---`); say(String(t.unit.text || '').replace(/\s+$/, '')); say('---'); }
+    if (t.status === 'done' && !t.unit.alreadyDelivered) return;
+  }
   switch (t.status) {
     case 'done': say(`@${n}: 턴이 끝났다(${secs(t.ms)} 기다림).`); printAnswer(x, t.answer); break;
     case 'error': say(`@${n}: 턴이 오류로 끝났다${t.error ? `(${t.error.type}: ${t.error.message || ''})` : ''}.`); printAnswer(x, t.answer); break;

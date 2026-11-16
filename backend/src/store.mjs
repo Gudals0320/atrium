@@ -9,6 +9,7 @@ import { BRANCH_COLUMNS, BRANCH_SCHEMA, installBranch } from './store-branch.mjs
 import { WORKTREE_SCHEMA, WORKTREE_COLUMNS, installWorktrees } from './store-worktrees.mjs'; // P27: 워크트리 영역
 import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: 데스크톱 앱 가져오기 장부
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
+import { UNITS_SCHEMA, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -110,6 +111,7 @@ export class Store {
     this.db.exec(WORKTREE_SCHEMA);
     this.db.exec(IMPORTS_SCHEMA);
     this.db.exec(BRANCH_SCHEMA); // P156: 일 관계
+    this.db.exec(UNITS_SCHEMA); // P180: 일 단위와 시도
     for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
@@ -280,3 +282,4 @@ installBranch(Store); // P8
 installWorktrees(Store); // P27
 installImports(Store); // P34
 installMerge(Store); // P37
+installUnits(Store); // P180

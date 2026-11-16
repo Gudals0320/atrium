@@ -36,6 +36,7 @@ import { workspaceNames } from './workspaces.mjs';
 import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy, detachedParentLine, detachedChildLine, childClosedLine } from './link-notice.mjs'; // P81
 import { AgentVerbs, verbLines } from './agent-verbs.mjs'; // P116: atrium prompt | wait | read
 import { installRelations, relationHeader, RELATION_WORD } from './branch-relations.mjs'; // P156: 일 관계
+import { WorkUnits, checkAgentText } from './work-units.mjs'; // P180: 일 단위와 시도
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 
 export const DEFAULT_ROLE = '워커';
@@ -61,9 +62,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
-    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`]), // P116. P156: relate
+    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`]), // P116. P156: relate. P180: done·item·items
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
-    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`]), // P116. P156: relate
+    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`]), // P116. P156: relate. P180: done·item·items
 ];
 // P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
 const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
@@ -314,8 +315,9 @@ export class Branch {
       send: (sid, text, lines) => { const d = b.queue.enqueue(sid, text); b.store.addEvent(sid, 'link_notice', { lines, deliveryId: d.deliveryId }); return d; },
       onDrop: (sid, lines) => { if (b.sessions.has(sid)) b.store.addEvent(sid, 'link_notice_dropped', { lines }); },
     });
-    b.bus.on('closed', (s, reason) => { this.closed.set(s.sessionId, { parentSessionId: s.parentSessionId || null, name: s.name }); this.onClosed(s, reason); });
-    b.bus.on('session', (s, sum) => this.onSession(s, sum)); // P36: 신뢰 관문
+    this.units = new WorkUnits(b, this); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다)
+    b.bus.on('closed', (s, reason) => { this.closed.set(s.sessionId, { parentSessionId: s.parentSessionId || null, name: s.name }); this.units.onClosed(s); this.onClosed(s, reason); });
+    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } }); // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read
     this.handlers = {
       'branch.tree': () => this.tree(),
@@ -526,6 +528,9 @@ export class Branch {
     if (op === 'turn') return this.verbs.wait(s, body, res); // P116: atrium wait(옛 /branch/wait는 child-wait)
     if (op === 'read') return this.verbs.read(s, body); // P116: atrium read
     if (op === 'relate') return this.relateVerb(s, body); // P156: atrium relate
+    if (op === 'done') return this.units.done(s, body); // P180: atrium done ok|failed "<글>"
+    if (op === 'item') return this.units.item(s, body); // P180: atrium item
+    if (op === 'items') return this.units.items(s, body); // P180: atrium items
     throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
   }
 
@@ -573,6 +578,7 @@ export class Branch {
     if (effort && !EFFORTS.includes(effort)) throw apiError('bad_request', `추론 수준은 ${EFFORTS.filter(Boolean).join(', ')} 가운데 하나: ${effort}`);
     const prompt = o.prompt == null ? null : String(o.prompt);
     if (prompt != null && !prompt.trim()) throw apiError('bad_request', "첫 요청을 입력하세요.");
+    if (prompt != null) checkAgentText(prompt, '첫 요청'); // P180: 판 알림 머리로 시작할 수 없다
     const taken = takenNames(b.sessions.values(), [...this.pendingNames]); // P66: 판의 이름(label)도 피한다
     const name = childName({ want: o.name ? String(o.name) : null, parentName: parent.name, taken });
 
@@ -616,11 +622,13 @@ export class Branch {
     if (prompt) {
       // 첫 지시는 ready 뒤 B1 규칙으로 보낸다
       // P156: 첫 요청 앞에 관계 한 줄(하위는 지시의 보고 방법을, 동료는 서로 공유를). 헤드는 따로 이끄는 세션이라 붙이지 않는다
-      const header = head ? null : relationHeader({ relation, parent: parent.name });
-      const d = b.queue.enqueue(child.sessionId, header ? `${header}\n\n${prompt}` : prompt);
-      b.linkEvent(l, 'prompt', prompt, { via: 'board', deliveryId: d.deliveryId, ...(header ? { header, tag: 'assign' } : {}), ...(peer ? { tag: 'share' } : {}) });
+      // P180: 하위로 띄우면 첫 요청은 일 단위다(머리: 관계 + 일 + 약속). 동료·헤드는 옛 그대로
+      const u = !head && !peer ? this.units.create(parent, child, prompt, 'child') : null;
+      const header = head ? null : u ? u.header : relationHeader({ relation, parent: parent.name });
+      const d = u ? u.d : b.queue.enqueue(child.sessionId, header ? `${header}\n\n${prompt}` : prompt);
+      b.linkEvent(l, 'prompt', prompt, { via: 'board', deliveryId: d.deliveryId, ...(header ? { header, tag: 'assign' } : {}), ...(peer ? { tag: 'share' } : {}), ...(u ? { unitId: u.unit.id } : {}) });
       child.openPromptFrom = { linkId: l.linkId, at: Date.now(), text: prompt };
-      first = { deliveryId: d.deliveryId, status: d.status };
+      first = { deliveryId: d.deliveryId, status: d.status, ...(u ? { unit: u.unit.id } : {}) };
       this.firstOf.set(d.deliveryId, child.sessionId);
       this.verbs.noteSent(parent, child, d.deliveryId); // P116: 부모의 atrium wait <이름>이 이 첫 요청의 턴을 기다린다
     }
@@ -846,10 +854,22 @@ export class Branch {
     if (!ref) throw apiError('bad_request', "작업을 재개할 세션 이름을 지정하세요: atrium wake <이름>");
     const t = [...b.sessions.values()].find((x) => x.name === ref || x.agentName === ref || x.sessionId === ref);
     if (!t) throw apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`);
+    if (o.prompt != null && String(o.prompt).trim()) checkAgentText(String(o.prompt), '지시'); // P180
     const was = !!(t.rt.sleep || (b.sleeper && b.sleeper.wakes.has(t.sessionId)));
     const r = was ? await b.sleeper.wakeFor(t, `atrium:${caller.name}`) : null; // P24: 그 리포의 잠든 세션을 모두 깨우고 이 세션이 준비될 때까지. P111: 혼자 잠든 세션은 그 세션만
     let first = null;
-    if (o.prompt != null && String(o.prompt).trim()) { const d = b.queue.enqueue(t.sessionId, String(o.prompt)); first = { deliveryId: d.deliveryId, status: d.status }; this.firstOf.set(d.deliveryId, t.sessionId); this.verbs.noteSent(caller, t, d.deliveryId); }
+    if (o.prompt != null && String(o.prompt).trim()) {
+      const text = String(o.prompt);
+      // P180: 깨우며 맡긴 일. 일 하위면 일 단위(이어지는 지시면 그 시도에 붙는 글), 아니면 옛 그대로
+      const plan = this.units.plan(caller, t);
+      const u = plan.kind === 'unit' ? this.units.create(caller, t, text, 'wake') : null;
+      if (u && u.held) first = { deliveryId: null, status: 'queued', reason: 'unit_wait', unit: u.unit.id };
+      else {
+        const d = u ? u.d : b.queue.enqueue(t.sessionId, text);
+        if (plan.kind === 'followup') this.units.noteFollowup(plan.tryRow, caller, d.deliveryId);
+        first = { deliveryId: d.deliveryId, status: d.status, ...(u ? { unit: u.unit.id } : {}) }; this.firstOf.set(d.deliveryId, t.sessionId); this.verbs.noteSent(caller, t, d.deliveryId);
+      }
+    }
     b.store.addEvent(caller.sessionId, 'branch_wake', { target: t.name, woke: was, ms: r ? r.ms : null });
     const v = this.childView(t);
     return { ...v, woke: was, ms: r ? r.ms : null, firstPrompt: first, next: verbLines(t.name) }; // P116
