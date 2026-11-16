@@ -54,7 +54,7 @@ test('#17 미션 맵 바닥 줄은 수마다 복수형', () => {
   assert.equal(translate('en', 'mmFoot.teams', { n: 3 }), '3 teams');
   assert.equal(translate('en', 'mmFoot.sessions', { n: 1 }), '1 session');
   assert.equal(translate('ko', 'mmFoot.teams', { n: 1 }), '팀 1');
-  assert.match(read('Mission.jsx'), /mmFoot\.teams/);
+  assert.match(read('SummaryColumn.jsx'), /mmFoot\.teams/);
   assert.ok(!('sumFoot' in en.mmMap) && !('sumFoot' in ko.mmMap));
   // 두 사전에 같은 키
   for (const k of ['roles', 'mmFoot']) assert.deepEqual(Object.keys(en[k]).sort(), Object.keys(ko[k]).sort());

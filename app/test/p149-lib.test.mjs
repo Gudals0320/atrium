@@ -34,7 +34,7 @@ test('P149: 위 거르기에 작업 완료 칸이 없다(작업 완료는 판 �
   assert.equal(filterMatch('review', 'all'), true);
   const src = read('Mission.jsx');
   assert.ok(!/done: counts\.review/.test(src), '거르기 수에도 작업 완료가 없다');
-  assert.ok(/data-role="mm-sum-review"/.test(src), '오른쪽 요약 열의 작업 완료 칸은 남는다(무엇을 끝냈는지)');
+  assert.ok(/data-role="mm-sum-review"/.test(read('SummaryColumn.jsx')), '오른쪽 요약 열의 작업 완료 칸은 남는다(무엇을 끝냈는지)');
 });
 
 let clock = 0;

@@ -2646,12 +2646,13 @@ export default {
   // P178: session map summary panel (right side, sessions by state)
   mmSum: {
     title: 'By state',
-    group: { turn: 'Needs you', work: 'Working', review: 'Done (unread)', rest: 'Idle', sleep: 'Asleep', done: 'Exited' },
-    none: 'Nothing here',
-    more: '+{n} more',
-    hide: 'Hide the state list',
-    show: 'Show the state list',
+    hide: 'Hide the state column',
+    show: 'Show the state column',
     itemTip: 'Click: fly to this card',
+    // P179: small split next to the Idle · done heading, and how to read the session map lines (foot of the column)
+    splitSleep: 'asleep {n}',
+    splitDone: 'exited {n}',
+    hint: 'Green line: sub-session. Blue dashes: role. Orange: request. Purple dots: to another workspace. Dots at both ends: peers. Faint dots: where an independent session came from.',
   },
   // P175: relation picked when linking and in the link history (sub / peer)
   linkRel: {

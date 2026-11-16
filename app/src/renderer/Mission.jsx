@@ -22,13 +22,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
 import { missionLayout, mapOrder, edgeLabel, MISSION, missionScale } from './lib/mission-layout.js';
-import { roleModel, focusOf, teamText, roleText, nodeTier, filterMatch, FILTERS, modelText, ageText, missionSummary } from './lib/mission-model.js';
+import { roleModel, focusOf, teamText, roleText, nodeTier, filterMatch, FILTERS, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
 import { onLightStart } from './lib/work-light.js';
 import { missionStyleOf } from './lib/mission-terr.js';
 import { LineageMap } from './MissionLineage.jsx';
+import { SummaryColumn } from './SummaryColumn.jsx';
 
 // P152·P153 r7: 기본은 세션 맵(시안 B Lineage, MissionLineage.jsx). 이 파일의 열 지도(ClassicMission)는 숨은 판 설정 missionStyle: classic일 때만 쓴다(되돌릴 길)
 export function MissionMap() {
@@ -192,7 +193,7 @@ function ClassicMission() {
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const focus = useMemo(() => (lay && hot ? focusOf(lay.tree, hot) : null), [lay, hot]);
   const ids = useMemo(() => (lay ? mapOrder(lay) : []), [lay]);
-  const sum = useMemo(() => missionSummary(lay ? lay.tree.nodes.map((n) => n.id).sort((a, b) => (ids.indexOf(a) + 1 || 1e9) - (ids.indexOf(b) + 1 || 1e9)) : [], (id) => tiers.get(id)), [lay, ids, tiers]);
+  const sum = useMemo(() => summaryColumn(lay ? lay.tree.nodes.map((n) => n.id).sort((a, b) => (ids.indexOf(a) + 1 || 1e9) - (ids.indexOf(b) + 1 || 1e9)) : [], (id) => tiers.get(id)), [lay, ids, tiers]);
   if (!open) return null;
 
   const now = Date.now();
@@ -216,15 +217,6 @@ function ClassicMission() {
   const catN = { all: counts.all, needs_you: counts.turn, working: counts.work, idle: counts.idle, exited: counts.gone }; // P149: 작업 완료 칸은 뺐다
   const boxes = lay ? [...lay.boxes.values()] : [];
   const dotLabels = boxes.filter((b) => b.kind === 'dots');
-  const sumItem = (id, text) => {
-    const n = lay.tree.byId.get(id), tier = tiers.get(id), no = lay.teamNo.get(id);
-    return (
-      <button key={id} type="button" className={`mt-mm-si t-${tier}${hot === id ? ' hot' : ''}`} data-role="mm-sum-item" data-name={n.name} onClick={() => go(n)} onMouseEnter={() => setHot(id)} onMouseLeave={() => setHot(null)} onFocus={() => setHot(id)} onBlur={() => setHot(null)}>
-        <span className="a"><i className="dot" aria-hidden="true" />{no ? <span className="mt-mm-no">{no}</span> : null}<span className="nm">{n.name}</span></span>
-        {text ? <span className="b">{text}</span> : null}
-      </button>
-    );
-  };
   const nowText = (id) => {
     const n = lay.tree.byId.get(id), live = liveOf(n), m = roles.get(id);
     const f = facts(n, live, m, tiers.get(id), t, now);
@@ -233,7 +225,6 @@ function ClassicMission() {
     return f.team ? `${f.role} · ${f.team}` : f.role ? `${f.role} · ${f.stateText}` : f.stateText;
   };
   const askText = (id) => { const n = lay.tree.byId.get(id), live = liveOf(n); const f = facts(n, live, roles.get(id), tiers.get(id), t, now); return f.task.k === 'ask' || f.task.k === 'err' ? f.task.text : f.stateText; };
-  const REST_MAX = 24;
   return (
     <div className="mt-mission" data-role="mission" data-scale={scale} ref={rootRef} style={{ '--mm-z': scale }}>
       <div className="mt-mission-head">
@@ -290,21 +281,8 @@ function ClassicMission() {
           )}
         </div>
         {lay && (
-          <aside className="mt-mm-sum" data-role="mm-summary" aria-label={t('mission.title')}>
-            {sum.turn.length > 0 && <section className="mt-mm-sec turn" data-role="mm-sum-turn"><h4 className="mt-mm-sech">{t('mmMap.sumTurn')}<i>{sum.turn.length}</i></h4>{sum.turn.map((id) => sumItem(id, askText(id)))}</section>}
-            <section className="mt-mm-sec" data-role="mm-sum-work"><h4 className="mt-mm-sech">{t('mmMap.sumWork')}<i>{sum.work.length}</i></h4>{sum.work.length ? sum.work.map((id) => sumItem(id, nowText(id))) : <div className="mt-mm-none">{t('mmMap.sumNone')}</div>}</section>
-            {sum.review.length > 0 && <section className="mt-mm-sec" data-role="mm-sum-review"><h4 className="mt-mm-sech">{t('mmMap.sumReview')}<i>{sum.review.length}</i></h4>{sum.review.map((id) => sumItem(id, nowText(id)))}</section>}
-            {sum.rest.length > 0 && (
-              <section className="mt-mm-sec" data-role="mm-sum-rest"><h4 className="mt-mm-sech">{t('mmMap.sumRest')}<i>{sum.rest.length}</i></h4>
-                <div className="mt-mm-rest">{sum.rest.slice(0, REST_MAX).map((id, i) => { const n = lay.tree.byId.get(id); return <span key={id}>{i ? <span className="mt-mm-sep"> · </span> : null}<button type="button" className={`mt-mm-rn t-${tiers.get(id)}`} data-role="mm-sum-rest-item" onClick={() => go(n)} onMouseEnter={() => setHot(id)} onMouseLeave={() => setHot(null)}>{n.name}</button></span>; })}
-                  {sum.rest.length > REST_MAX ? <span className="mt-mm-sep"> {t('mmMap.restHidden', { n: sum.rest.length - REST_MAX })}</span> : null}</div>
-              </section>
-            )}
-            <div className="mt-mm-foot" data-role="mm-sum-foot">
-              <div>{[t('mmFoot.work', { n: counts.work }), t('mmFoot.sessions', { n: counts.all }), t('mmFoot.teams', { n: lay.teamNo.size })].join(' · ')}</div>{/* P141(#17): 수마다 복수형 */}
-              <div className="mt-mm-hint">{t('mmMap.hint')}</div>
-            </div>
-          </aside>
+          <SummaryColumn sum={sum} t={t} nameOf={nameOf} tierOf={(id) => tiers.get(id)} noOf={(id) => lay.teamNo.get(id)} hot={hot} teams={lay.teamNo.size} hint={t('mmMap.hint')}
+            textOf={(id, key) => (key === 'turn' ? askText(id) : nowText(id))} onGo={(id) => go(lay.tree.byId.get(id))} onHot={setHot} />
         )}
       </div>
     </div>
