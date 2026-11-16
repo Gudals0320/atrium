@@ -1,0 +1,7 @@
+Flow sample rig.
+
+Seats: main (keep), worker (fresh), reviewer (fresh).
+main hands a task to worker with `atrium prompt worker "<task>"`.
+worker closes with `atrium done ok "<report>"`; the board passes it to a new reviewer.
+reviewer closes with `atrium done ok "<notes>"` (goes to main) or `atrium done rejected "<what to change>"` (goes back to a new worker, at most 2 times per case; the third time it goes to main).
+A seat may only send plain messages to the seats in its "may" list.

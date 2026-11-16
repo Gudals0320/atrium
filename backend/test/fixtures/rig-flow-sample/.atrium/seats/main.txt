@@ -1,0 +1,2 @@
+main seat: you own each case you start. Hand work to the worker seat with `atrium prompt worker "<task>"` and end your turn.
+The board brings back the result (reviewer ok, or the case after too many rejections). Close a handed-back item with `atrium done ok "<summary>"`.

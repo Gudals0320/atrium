@@ -56,6 +56,8 @@ export class RigFlow {
     this.spawning = new Map(); // `${워크스페이스}|${자리}` → 띄우는 중인 수(max_live를 함께 넘지 않게)
     this.pumping = false;
     b.bus.on('closed', (s) => { try { this.onClosed(s); } catch (e) { b.log('rig flow closed error', e.stack); } });
+    // 백엔드가 다시 뜬 뒤: 자리 줄(max_live)에 선 일을 다시 본다(세션이 다 붙은 뒤)
+    if (b.store.seatWaitingAll && b.store.seatWaitingAll().length) { const t = setTimeout(() => this.pumpSoon(), 5000); if (t.unref) t.unref(); }
   }
   store() { return this.b.store; }
   units() { return this.branch.units; }

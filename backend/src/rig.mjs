@@ -159,10 +159,11 @@ export function validateFlow(raw, { root = null, exists = isFile, tools = null }
   }
   const manager = raw.manager == null ? null : raw.manager;
   if (manager != null && !known(manager)) return bad(`manager가 없는 자리를 가리킨다: ${manager}`);
-  // 경고: 되돌아감(받는 자리에서 흐름을 따라 보낸 자리로 돌아올 수 있음)인데 상한이 없는 done 값 줄
+  // 경고: 상한 없는 되돌아감. 받는 자리에서 상한 없는 done 값 줄만 따라 보낸 자리로 돌아올 수 있으면 판이 끝없이 넘길 수 있다
+  //   (assign 줄은 에이전트가 보낼 때만 돌고, 상한 있는 줄이 낀 고리는 그 줄이 끊는다)
   const warnings = [];
   const next = new Map(seatNames.map((n) => [n, new Set()]));
-  for (const l of flow) for (const t of l.to) next.get(l.from).add(t);
+  for (const l of flow) if (l.on !== 'assign' && l.max == null) for (const t of l.to) next.get(l.from).add(t);
   const reach = (a, b) => { const seen = new Set(); const st = [a]; while (st.length) { const x = st.pop(); if (x === b) return true; if (seen.has(x)) continue; seen.add(x); for (const y of next.get(x) || []) st.push(y); } return false; };
   for (const l of flow) if (l.on !== 'assign' && l.max == null && l.to.some((t) => t === l.from || reach(t, l.from))) warnings.push(`flow[${l.index}](${l.from} ${l.on} → ${l.to.join(', ')})는 되돌아가는 줄인데 max(상한)가 없다. 끝없이 돌 수 있다`);
   return { ok: true, flow: { results, seats, flow, manager, warnings } };
