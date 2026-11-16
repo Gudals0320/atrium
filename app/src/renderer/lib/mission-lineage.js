@@ -26,8 +26,8 @@ export function spineWidth(names = [], stats = [], px = SPINE_PX) {
 
 // P178: 폴더 기둥 글(이름·종류·수·상태 막대)과 워크스페이스 줄 머리 글(이름·상태 알약·Alt 안내)은 배율이 작아져도 화면에서 거의 같은 크기로 읽힌다.
 // 세계 글 크기 = max(바탕 크기, 화면 목표 / 배율 계단). 배율 계단(lib/faces.js zoomStep, 1.1배마다)으로만 바뀌어 끌기·확대 중 매 프레임 다시 그리지 않는다.
-// 계단이 ON 이상이면(모든 글이 바탕 크기) 1(바뀜 없음). MIN = 맵의 가장 작은 배율(mission-terr ZOOM.min)
-export const LABEL = { ON: 0.88, MIN: 0.08, SCREEN: { name: 15, kind: 10.5, stat: 11.5, ws: 14.5, chip: 11, hint: 10.5, bar: 4 }, BASE: { name: 22, kind: 12, stat: 13.5, ws: 18, chip: 12.5, hint: 12, bar: 6 } };
+// 계단이 ON 이상이면(모든 글이 바탕 크기) 1(바뀜 없음). MIN = 글이 더 커지지 않는 계단(18%보다 멀면 글도 배율과 함께 작아진다: 좁은 창에서 이름표가 카드 자리를 다 먹지 않게)
+export const LABEL = { ON: 0.88, MIN: 0.18, SCREEN: { name: 15, kind: 10.5, stat: 11.5, ws: 14.5, chip: 11, hint: 10.5, bar: 4 }, BASE: { name: 22, kind: 12, stat: 13.5, ws: 18, chip: 12.5, hint: 12, bar: 6 } };
 export const labelStep = (k) => { const s = zoomStep(k); return s >= LABEL.ON ? 1 : Math.max(LABEL.MIN, s); };
 // 배율 계단 s → 세계 글 크기(px, 소수 한 자리)
 export function labelPx(s = 1) {

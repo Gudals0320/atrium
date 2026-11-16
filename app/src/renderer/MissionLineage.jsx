@@ -33,7 +33,9 @@ const ATTN_MAX = 4;
 // P178: 오른쪽 상태 요약 칸(옛 열 지도 요약 열을 되살림). 열려 있으면 맞춤·가운데 맞추기가 그 폭을 비워 둔다. 접힘은 이 기기(창)에 기억한다
 const SUM_W = 264, SUM_GAP = 12, SUM_MAX = 40;
 const SUM_KEY = 'atrium.sessionMap.summary';
-const loadSumOpen = () => { try { return localStorage.getItem(SUM_KEY) !== '0'; } catch { return true; } };
+// 정한 적이 없으면 넓은 창(1280px 이상)에서만 처음부터 연다(좁은 창·태블릿 세로에서는 카드 자리가 먼저)
+const SUM_WIDE = 1280;
+const loadSumOpen = () => { const wide = typeof window === 'undefined' || window.innerWidth >= SUM_WIDE; try { const v = localStorage.getItem(SUM_KEY); return v == null ? wide : v !== '0'; } catch { return wide; } };
 const saveSumOpen = (on) => { try { localStorage.setItem(SUM_KEY, on ? '1' : '0'); } catch { /* 기억 못 해도 지금 화면은 된다 */ } };
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
 // P164: 뒤 일 표시 아이콘(겹친 두 사각형 = 뒤에서 도는 일). 움직이지 않는다
@@ -204,6 +206,7 @@ export function LineageMap() {
   const [lstep, setLstep] = useState(1);
   const lstepRef = useRef(1), anchorRef = useRef(null), pendingView = useRef(null);
   const [sumOpen, setSumOpen] = useState(loadSumOpen);
+  useEffect(() => { if (open) setSumOpen(loadSumOpen()); }, [open]); // 열 때마다 이 기기의 기억(없으면 창 폭)을 다시 읽는다
   const sumRef = useRef(sumOpen);
   sumRef.current = sumOpen;
   const onFold = useCallback((id) => setExpanded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); saveExpanded(n); return n; }), []);
@@ -299,7 +302,22 @@ export function LineageMap() {
     let st = lstepRef.current, L = layRef.current;
     if (!L || !s) return;
     let v = mk(L, s);
-    for (let i = 0; i < 4; i++) { const st2 = labelStep(v.k); if (st2 === st) break; const L2 = layForRef.current(st2); if (!L2) break; st = st2; L = L2; v = mk(L, s); }
+    const seen = new Set([st]);
+    for (let i = 0; i < 6; i++) {
+      const st2 = labelStep(v.k);
+      if (st2 === st) break;
+      // 두 계단 사이를 오가면(좁은 창: 글이 커지면 맞춤이 작아지고, 작아지면 글이 커진다) 글이 더 큰(작은 계단) 쪽에 머문다
+      const next = seen.has(st2) ? Math.min(st, st2) : st2;
+      seen.add(next);
+      if (next === st) break;
+      const L2 = layForRef.current(next); if (!L2) break;
+      st = next; L = L2; v = mk(L, s);
+    }
+    // 보기 배율이 이 계단 밖이면 계단 안(가장 큰 배율)으로 줄인다. 그래야 멈춘 뒤 계단을 다시 바꾸지 않는다(배치가 그대로라 내용은 더 작게 들어간다)
+    if (labelStep(v.k) !== st && st < 1) {
+      const kk = st * Math.sqrt(1.1) * 0.995;
+      if (v.k > kk) v = zoomAt(v, v.x + L.bounds.x * v.k, v.y + L.bounds.y * v.k, kk);
+    }
     if (st !== lstepRef.current) { pendingView.current = { v, opts }; anchorRef.current = null; lstepRef.current = st; setLstep(st); } else paint(v, opts);
   };
   // 맞춤: 세계 전체를 레일 오른쪽·위 줄과 칸 머리 아래·명령줄 위 칸에

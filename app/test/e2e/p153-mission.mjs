@@ -931,6 +931,9 @@ async function p178() {
       check('판에서 Tab → 세션 맵 열림', !!(await page.$('[data-role="mission"]')));
     }
     await sleep(800);
+    await shotTo(page, `p178-2205-open`);
+    // 맞춤 단추(전체가 화면에)
+    await page.click('[data-action=ta-fit]'); await sleep(1500);
     const fit = await page.evaluate(P178_LABELS);
     await shotTo(page, `p178-2205-fit`);
     log(`[fit] ${JSON.stringify(fit)}`);
@@ -941,7 +944,7 @@ async function p178() {
     for (const k of [0.12, 0.2, 0.3, 0.5, 0.75, 1]) {
       // 닻: 바꾸기 바로 뒤와 계단이 바뀐 뒤 화면 가운데 가까운 카드의 화면 자리
       await page.evaluate(([c, kk]) => window.__mtTa.set({ k: kk, x: c.w / 2 - c.cx * kk, y: c.h / 2 - c.cy * kk }), [center, k]);
-      const a0 = await page.evaluate(() => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); let best = null; for (const s of document.querySelectorAll('.mt-ta-slot')) { const r = s.getBoundingClientRect(), d = Math.hypot(r.left + r.width / 2 - vp.width / 2, r.top + r.height / 2 - vp.height / 2); if (!best || d < best.d) best = { id: s.dataset.id, x: r.left, y: r.top, d }; } return best; });
+      const a0 = await page.evaluate(() => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); const cx = vp.left + (vp.width - window.__mtTa.sumW()) / 2, cy = vp.top + (vp.height + window.__mtTa.top - 112) / 2; let best = null; for (const s of document.querySelectorAll('.mt-ta-slot')) { const r = s.getBoundingClientRect(), d = Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy); /* 맵의 닻과 같은 자리(요약 칸·위 줄·명령줄을 뺀 칸의 가운데) */ if (!best || d < best.d) best = { id: s.dataset.id, x: r.left, y: r.top, d }; } return best; });
       await sleep(900);
       const a1 = await page.evaluate((id) => { const s = document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`); const r = s.getBoundingClientRect(); return { x: r.left, y: r.top }; }, a0.id);
       const m = await page.evaluate(P178_LABELS);
@@ -950,8 +953,8 @@ async function p178() {
       await shotTo(page, `p178-2205-zoom-${String(k).replace('.', '')}`);
     }
     if (!before) {
-      const far = [0.12, 0.2, 0.3, 0.5].map((k) => zooms[k]);
-      check('멀리(12~50%): 폴더 이름 13.5~17px, 워크스페이스 이름 13~16.5px로 거의 일정, 겹침·잘림 없음', far.every((m) => m.fn >= 13.5 && m.fn <= 17.5 && m.wsn >= 13 && m.wsn <= 16.5 && !m.overlap.length && !m.cut.length), far);
+      const far = [0.2, 0.3, 0.5].map((k) => zooms[k]);
+      check('멀리(20~50%, 18%보다 멀면 글도 배율과 함께 작아진다): 폴더 이름 13.5~17px, 워크스페이스 이름 13~16.5px로 거의 일정, 겹침·잘림 없음', far.every((m) => m.fn >= 13.5 && m.fn <= 17.5 && m.wsn >= 13 && m.wsn <= 16.5 && !m.overlap.length && !m.cut.length), far);
       check('가까이(75~100%): 바탕 크기 그대로(배율만큼 커진다)', zooms[1].label === 1 && zooms[1].fn >= 21.5 && zooms[1].wsn >= 17.5, zooms[1]);
       check('계단이 바뀌어도 보던 카드는 화면 같은 자리(±3px)', Object.values(zooms).every((m) => m.anchorMove <= 3), Object.fromEntries(Object.entries(zooms).map(([k, m]) => [k, m.anchorMove])));
     }
@@ -968,7 +971,7 @@ async function p178() {
     check('요약 칸: 상태 묶음(응답 필요·작업 중·작업 완료·쉼·절전…)과 모든 카드, 맞춤 보기에서 칸 아래 카드 없음', sm && sm.items === sm.cards && sm.groups[0].startsWith('turn') && sm.groups.some((g) => g.startsWith('sleep')) && sm.under === 0, sm);
     // 누르면 그 카드로(배율 그대로, 가운데, 반짝임). 올리면 강조
     const kBefore = await page.evaluate(() => window.__mtTa.view().k);
-    const tgt = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-role=ln-sum-item]')].pop(); const r = b.getBoundingClientRect(); return { id: b.dataset.id, x: r.left + 30, y: r.top + 8 }; });
+    const tgt = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-role=ln-sum-item]')].pop(); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { id: b.dataset.id, x: r.left + 30, y: r.top + 8 }; });
     await page.mouse.move(tgt.x, tgt.y); await sleep(300);
     const hot = await page.evaluate((id) => document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`).classList.contains('sum-hot'), tgt.id);
     await shotTo(page, 'p178-2205-summary-hover');
@@ -1001,12 +1004,15 @@ async function p178() {
     const cmdClose = !(await page.$('[data-role="mission"]'));
     check('명령줄(빈 것)에서 Tab → 열고, 다시 Tab → 닫는다', cmdOpen && cmdClose, { cmdOpen, cmdClose });
     await page.keyboard.press('Control+k'); await sleep(200);
-    await page.keyboard.type('@p153'); await sleep(500);
+    log(`[cmd focus] ${await page.evaluate(() => (document.activeElement || {}).dataset ? document.activeElement.dataset.role : null)} open=${!!(await page.$('[data-role="mission"]'))}`);
+    await page.focus('[data-role=command]');
+    await page.keyboard.type('@al'); await sleep(500); /* 셸은 @ 완성에 없다: @all */
     const ment = !!(await page.$('.mt-mention'));
     await page.keyboard.press('Tab'); await sleep(600);
     const done = await page.evaluate(() => ({ text: document.querySelector('[data-role=command]').value, open: !!document.querySelector('[data-role=mission]') }));
-    check('@ 완성 목록이 열려 있으면 Tab은 완성(맵을 열지 않는다)', ment && /@p153-a/.test(done.text) && !done.open, { ment, done });
+    check('@ 완성 목록이 열려 있으면 Tab은 완성(맵을 열지 않는다)', ment && /@all/.test(done.text) && !done.open, { ment, done });
     await page.keyboard.press('Control+a'); await page.keyboard.press('Backspace'); await page.keyboard.press('Escape'); await sleep(200);
+    await closeMission(page);
     await page.keyboard.press('Control+f'); await sleep(500);
     const sField = await page.evaluate(() => (document.activeElement || {}).tagName);
     await page.keyboard.press('Tab'); await sleep(500);
@@ -1027,6 +1033,19 @@ async function p178() {
         check('터미널에 초점이면 Tab은 셸로(자동 완성), 맵은 열리지 않는다', /Get-ChildItem/.test(txt) && !(await page.$('[data-role="mission"]')) && focusTerm, { tail: txt.trim().split('\n').slice(-3).join(' | ').slice(-240), focusTerm });
         await page.keyboard.press('Control+c'); await sleep(400);
       } else check('터미널 찾기', false, 'xterm 없음');
+    }
+    // 5. 좁은 창(정한 적 없음): 요약 칸은 접힌 채 시작, 맞춤 보기에서 내용이 칸 안(기둥이 왼쪽에서 잘리지 않는다), 멈춘 뒤 다시 옮기지 않는다
+    for (const [w, h] of [[1100, 800], [820, 1100]]) {
+      await closeMission(page);
+      await page.evaluate(() => { try { localStorage.removeItem('atrium.sessionMap.summary'); } catch { /* 없다 */ } });
+      await page.setViewportSize({ width: w, height: h }).catch(() => {}); await sleep(600);
+      await openMission(page);
+      await page.click('[data-action=ta-fit]'); await sleep(400);
+      const v0 = await page.evaluate(() => window.__mtTa.view());
+      await sleep(1500);
+      const nr = await page.evaluate(() => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(), sp = document.querySelector('.mt-sm-spine').getBoundingClientRect(), world = [...document.querySelectorAll('[data-role=ln-band]')].map((b) => b.getBoundingClientRect()); return { panel: !!document.querySelector('[data-role=ln-summary]'), spineLeft: Math.round(sp.left - vp.left), right: Math.round(Math.max(...world.map((r) => r.right)) - vp.right), view: window.__mtTa.view(), label: window.__mtTa.label() }; });
+      await shotTo(page, `p178-${w}-fit`);
+      check(`[${w}×${h}] 좁은 창: 요약 칸 접힘으로 시작, 맞춤 보기 내용이 칸 안, 멈춘 뒤 보기가 그대로`, !nr.panel && nr.spineLeft >= 0 && nr.right <= 0 && Math.abs(nr.view.k - v0.k) < 1e-9 && Math.abs(nr.view.x - v0.x) < 0.5, { ...nr, v0 });
     }
     await page.evaluate(UNHOOK);
   } finally { await closeApp(app); }

@@ -33,7 +33,7 @@ test('이름표 계단: 가까우면 1(바뀜 없음), 멀면 배율 계단(1.1�
 test('이름표 글 크기: 화면 크기 = 세계 크기 × 배율이 목표(이름 14~15px) 안팎, 가까우면 바탕 크기', () => {
   const base = labelPx(1);
   assert.deepEqual(base, LABEL.BASE);
-  for (const k of [0.6, 0.45, 0.34, 0.25, 0.15, 0.1]) {
+  for (const k of [0.6, 0.45, 0.34, 0.25, 0.2]) {
     const s = labelStep(k), px = labelPx(s);
     // 실제 배율 k에서 화면 글 크기(계단 반올림 ±5%)
     assert.ok(px.name * k >= 15 * 0.95 - 0.01 && px.name * k <= Math.max(15 * 1.06, LABEL.BASE.name * k) + 0.01, `name ${k} ${px.name * k}`);
@@ -42,6 +42,9 @@ test('이름표 글 크기: 화면 크기 = 세계 크기 × 배율이 목표(�
   }
   // 계단이 작을수록 글이 커진다
   assert.ok(labelPx(labelStep(0.2)).ws > labelPx(labelStep(0.4)).ws);
+  // 18%보다 멀면 세계 글은 더 커지지 않는다(화면 글은 배율과 함께 작아진다: 좁은 창에서 이름표가 카드 자리를 먹지 않게)
+  assert.deepEqual(labelPx(labelStep(0.1)), labelPx(labelStep(0.15)));
+  assert.equal(labelStep(0.12), LABEL.MIN);
 });
 
 test('배치: 계단 1이면 지금과 같고, 멀면 기둥·줄 머리·줄 높이가 조금씩 넓어진다(카드는 오른쪽으로 민다)', () => {
@@ -69,8 +72,8 @@ test('배치: 계단 1이면 지금과 같고, 멀면 기둥·줄 머리·줄 �
     prev = L;
   }
   // 아주 멀면 화면에서 기둥이 차지하는 폭은 적당하다(글 화면 크기에 맞춘 것이라 배율과 함께 줄지 않는다)
-  const far = lineageLayout(graph, { ...opts, label: labelStep(0.1) });
-  assert.ok(far.spine * 0.1 > 100 && far.spine * 0.1 < 400, `${far.spine * 0.1}`);
+  const far = lineageLayout(graph, { ...opts, label: LABEL.MIN });
+  assert.ok(far.spine * LABEL.MIN > 100 && far.spine * LABEL.MIN < 400, `${far.spine * LABEL.MIN}`);
 });
 
 test('휴대폰 배치는 이름표 계단을 따르지 않는다(지금대로)', () => {
