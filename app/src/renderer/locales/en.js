@@ -2663,4 +2663,20 @@ export default {
     createdPeer: 'Linked @{a} → @{b} as peers and notified both sessions',
     setFail: 'Could not change the relation: {error}',
   },
+  // P182: rig (workspace rules in .atrium/rig.json), region label menu
+  rig: {
+    loading: 'Rig: …',
+    stNone: 'Rig: no definition (.atrium/rig.json)',
+    stOff: 'Rig: off',
+    stOn: 'Rig: on ({n} hooks)',
+    stOnStale: 'Rig: on, the file is invalid so the last good definition runs: {reason}',
+    stInvalid: 'Rig: invalid: {reason}',
+    stError: 'Rig: could not read the status: {error}',
+    menuOn: 'Rig: turn on',
+    menuOff: 'Rig: turn off',
+    onTitle: "Runs this workspace's .atrium/rig.json hooks with your account: {hooks}",
+    turnedOn: 'Turned on the rig for {name}',
+    turnedOff: 'Turned off the rig for {name}',
+    fail: 'Could not change the rig: {error}',
+  },
 };

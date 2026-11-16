@@ -5,6 +5,7 @@
 // 3(P156): 일 관계(하위·동료·독립). child --peer와 응답 relation, relate 동사, children은 하위 관계만(동료는 peers), child-kill은 하위 관계로만 내려가고 남긴 세션(kept),
 //   me는 상위(parent)·동료(peers)·하위(children)·독립(independent)으로 나눈다(parent·children이 계보가 아니라 일 관계를 따른다)
 // P180: done·item·items 동사와 prompt·wait 응답의 unit 칸을 더했다(더하기만이라 3 그대로)
+// P182: guide 동사(판의 자세한 사용법 + 켜진 rig의 안내)와 rig 거절(rig_rejected, 종료 코드 1)을 더했다(더하기만이라 3 그대로)
 export const CONTRACT_VERSION = 3;
 
 // out: --json일 때 result의 주요 칸. 사람이 읽는 출력(--json 없음)은 같은 내용의 글이다
@@ -25,6 +26,8 @@ export const VERBS = [
   { name: 'done', args: ['ok|failed', '"<보고>"', '[--file 경로]', '[--json]'], does: '보드가 맡긴 지금 일을 닫는다(ok 끝냈다, failed 못 했다). 값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 기다리는 중이면 그 기다림이 받는다). 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1', out: ['unit', 'result', 'parent', 'claimedBy', 'next', 'queued'] },
   { name: 'item', args: ['[--json]'], does: '너의 지금 일: 맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수', out: ['item', 'queued'] },
   { name: 'items', args: ['[--json]'], does: '네가 맡긴 일들: 맡은 세션, 상태(open·done·failed·cancelled), 결과와 보고', out: ['items', 'open'] },
+  // P182: rig(워크스페이스의 작업 규칙)
+  { name: 'guide', args: ['[주제]', '[--json]'], does: '자세한 사용법(help --long). 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json)가 있으면 그 안내를 붙이고, 정의가 잘못됐으면 그 까닭을 보인다', out: ['rig'] },
 ];
 // 종료 코드: 0 성공, 1 보드가 거절하거나 실패(이유는 stderr와 --json의 error), 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(일은 계속된다. 다시 atrium wait)
 export const EXIT = { ok: 0, refused: 1, usage: 2, timeout: 3 };
