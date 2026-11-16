@@ -4,5 +4,5 @@
     { "at": "deliver", "from": "any", "run": ["node", ".atrium/hooks/stamp.mjs"] },
     { "at": "done", "run": ["node", ".atrium/hooks/evidence.mjs"], "onFail": "block" }
   ],
-  "guide": { "default": ".atrium/guide.md" }
+  "guide": { "default": ".atrium/guide.txt" }
 }

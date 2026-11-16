@@ -532,9 +532,9 @@ test('P182 atrium guide: 자세한 사용법 + 켜진 rig의 안내(주제), 꺼
     assert.match(none.stdout, /atrium prompt <이름>/, '판의 일반 안내(help --long)');
     assert.match(none.stdout, /rig 정의\(\.atrium\/rig\.json\)가 없다/);
     copySample(ws.root);
-    fs.writeFileSync(path.join(ws.root, '.atrium', 'more.md'), 'MORE TOPIC TEXT');
+    fs.writeFileSync(path.join(ws.root, '.atrium', 'more.txt'), 'MORE TOPIC TEXT');
     const def = JSON.parse(fs.readFileSync(path.join(ws.root, '.atrium', 'rig.json'), 'utf8'));
-    def.guide.more = '.atrium/more.md';
+    def.guide.more = '.atrium/more.txt';
     writeRig(ws.root, def, { tHook: false });
     assert.match((await runCli(['guide'], envOf(b, w))).stdout, /사람이 켜지 않았다/);
     enable();
@@ -545,7 +545,7 @@ test('P182 atrium guide: 자세한 사용법 + 켜진 rig의 안내(주제), 꺼
     const js = JSON.parse((await runCli(['guide', '--json'], envOf(b, w))).stdout);
     assert.equal(js.rig.state, 'on'); assert.deepEqual(js.rig.topics, ['more']);
     // 2만 자에서 자른다
-    fs.writeFileSync(path.join(ws.root, '.atrium', 'guide.md'), 'g'.repeat(GUIDE_MAX + 50));
+    fs.writeFileSync(path.join(ws.root, '.atrium', 'guide.txt'), 'g'.repeat(GUIDE_MAX + 50));
     const long = b.rig.guide(w); assert.equal(long.text.length, GUIDE_MAX); assert.equal(long.clipped, true);
     // 잘못된 정의
     writeRig(ws.root, '{bad', { tHook: false });
