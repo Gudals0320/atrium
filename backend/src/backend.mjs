@@ -247,6 +247,7 @@ export class Backend {
     this.queue.on('refused', (r) => this.log(`delivery refused ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} → ${r.reason}, retry in ${r.waitMs}ms (#${r.n})`));
     this.queue.on('stuck', (r) => { this.store.addEvent(r.sessionId, 'delivery_stuck', r); this.log(`delivery stuck ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} (${r.attempts} tries)`); const s = this.sessions.get(r.sessionId); if (s) this.broadcastSession(s, { cause: 'delivery stuck' }); });
     this.queue.on('not_submitted', (r) => { this.store.addEvent(r.sessionId, 'delivery_not_submitted', r); this.log(`delivery not submitted ${this.nameOf(r.sessionId)} ${r.deliveryId}: input box has other text ${JSON.stringify(r.peek || '')}`); }); // P126
+    this.queue.on('now', (r) => { this.store.addEvent(r.sessionId, 'delivery_now', r); this.log(`delivery now ${this.nameOf(r.sessionId)} ${r.deliveryId} (${r.state})`); }); // P172: 판에서 바로 보내기
     this.queue.on('late', (r) => { this.store.addEvent(r.sessionId, 'delivery_late', r); this.log(`delivery late ${this.nameOf(r.sessionId)} ${r.deliveryId}: went in after cancel`); });
     this.queue.on('delivery', (d) => {
       this.store.addEvent(d.sessionId, 'delivery', d);
@@ -1976,8 +1977,11 @@ export class Backend {
       'delivery.hold': (p) => this.queue.holdWait(p.deliveryId),
       'delivery.update': (p) => this.queue.update(p.deliveryId, p.text),
       'delivery.release': (p) => this.queue.release(p.deliveryId),
+      // P172: 바로 보내기(스티어링, --now와 같은 길)와 같은 세션 대기 글의 순서 바꾸기(ids = 바랄 차례)
+      'delivery.now': (p) => this.queue.sendNow(p.deliveryId),
+      'delivery.reorder': (p) => this.queue.reorder(p.ids),
       // P106: active면 아직 끝나지 않은 전달 모두(창이 다시 열려도 막힌 전달을 보이고 취소할 수 있게)
-      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
+      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, seq: d.seq ?? d.createdAt, editing: !!d.editing, name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
       'session.kill': (p) => this.kill(p),
       'session.answer': (p) => this.answer(p),
       'session.keys': (p, c) => this.sendKeysTo(p, c), // P104: 휴대폰 키 줄(원격 기기도 부른다)

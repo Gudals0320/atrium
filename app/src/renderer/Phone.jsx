@@ -21,6 +21,8 @@ import { enterSession, markInteracted } from './touch.js';
 import { wakeSession } from './sleep.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago, STATE_LABEL, deliveryText } from './lib/labels.js';
+import { QueueGroup, useDeliveryEditing } from './DeliveryQueue.jsx'; // P172: 이 세션의 대기 글 묶음(바로 보내기, 순서 바꾸기, 수정, 취소)
+import { queueView } from './lib/delivery-queue.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
 import { checkLabel } from './lib/session-name.js'; // P97: 새 세션 이름 칸
 import { BRAND_WORDMARK } from './lib/icons.jsx';
@@ -457,6 +459,8 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   }
   // 보낸 것의 전달 상태(대기열, 보냄, 확인 …)를 잠깐 보인다
   const d = note && note.deliveryId ? deliveries.get(note.deliveryId) : null;
+  const qGroup = queueView([...deliveries.values()].filter((x) => x.sessionId === id)).groups[0] || null; // P172
+  const qEdit = useDeliveryEditing();
   const noteText = note && now - note.at < 20000 ? (d ? deliveryText(d) : note.text || null) : null;
   const grow = (el) => { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 132)}px`; };
   const stateText = s.kind === 'shell' && live ? (s.shell && s.shell.atPrompt === false ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[s.state] || s.state;
@@ -494,6 +498,7 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
           <button type="button" className="mt-ph-key small" data-action="phone-font-up" aria-label={t('phone.fontUp')} onPointerDown={(e) => e.preventDefault()} onClick={() => bump(0.05)}>A+</button>
         </div>
       )}
+      {qGroup && <div className="mt-ph-queue" data-role="phone-queue"><QueueGroup g={qGroup} edit={qEdit} phone /></div>}
       {live && (
         <form className="mt-ph-input" data-role="phone-input" onSubmit={(e) => { e.preventDefault(); send(); }}>
           {noteText && !voice.active && <div className="mt-ph-note" data-role="phone-note">{noteText}</div>}

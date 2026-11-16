@@ -40,6 +40,8 @@ export function canTypeNow(view) {
 }
 // 바로 넣을 글: 줄바꿈은 LF(B1 5), 끝 줄바꿈은 뗀다(입력 칸에 빈 줄이 남지 않게). Enter는 agent.prompt가 마지막에 한 번 누른다
 export const typedText = (text) => toLF(text).replace(/\n+$/, '');
+// P172: 세션 안 차례(작을수록 먼저). 차례 값이 없으면 넣은 시각
+const order = (d) => d.seq ?? d.createdAt;
 
 export class DeliveryQueue extends EventEmitter {
   // view(sessionId, delivery) → { state, agentPresent, termConnected, lastUserInputAt, closed }
@@ -60,6 +62,7 @@ export class DeliveryQueue extends EventEmitter {
       // sentAt이 없으면 확인 기한을 셀 수 없어 영영 sent로 남는다 → 복구 시각을 넣는다(이슈 #1-1)
       if (d.status === 'sending') d.status = 'sent';
       if (d.status === 'sent' && !d.sentAt) { d.sentAt = Date.now(); store.updateDelivery(d.deliveryId, { status: 'sent', reason: d.reason ?? null, sentAt: d.sentAt }); }
+      if (d.seq == null) d.seq = d.createdAt; // P172: 옛 판의 전달(차례 열이 없다)은 넣은 순서
       this.items.set(d.deliveryId, d);
     }
   }
@@ -69,6 +72,7 @@ export class DeliveryQueue extends EventEmitter {
   // opts.typeNow(P90): 세션이 일하는 중이면 기다리지 않고 바로 넣는다(canTypeNow). 저장하지 않으므로 백엔드가 다시 뜨면 B1 그대로 보낸다
   enqueue(sessionId, text, opts = {}) {
     const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: opts.typeNow ? typedText(text) : toLF(text), status: 'queued', reason: null, createdAt: Date.now(), attempts: 0 };
+    d.seq = d.createdAt; // P172: 세션 안 차례. 순서 바꾸기·바로 보내기가 고친다(작을수록 먼저)
     if (opts.typeNow) d.typeNow = true;
     if (opts.typeNow && opts.aside) d.typeAside = true; // P143(atrium prompt --now): 입력 칸에 쓰다 만 글이 있으면 비키고(P128·P139) 바로 넣는다. 휴대폰 입력 줄(P90)은 그대로 기다린다
     this.store.insertDelivery(d);
@@ -153,7 +157,7 @@ export class DeliveryQueue extends EventEmitter {
   }
   cancelSession(sessionId, reason) { for (const d of this.items.values()) if (d.sessionId === sessionId && d.status === 'queued') this._set(d, 'cancelled', reason); }
   pending(sessionId) { let n = 0; for (const d of this.items.values()) if (d.sessionId === sessionId) n++; return n; }
-  list(sessionId) { return [...this.items.values()].filter((d) => !sessionId || d.sessionId === sessionId); }
+  list(sessionId) { return [...this.items.values()].filter((d) => !sessionId || d.sessionId === sessionId).sort((a, b) => order(a) - order(b)); }
 
   // B1 규칙 6: hook UserPromptSubmit이 오면 맞춰 보고 "제출 확인"
   onUserPromptSubmit(sessionId, prompt) {
@@ -181,8 +185,68 @@ export class DeliveryQueue extends EventEmitter {
 
   _head(sessionId) {
     let head = null;
-    for (const d of this.items.values()) if (d.sessionId === sessionId && (!head || d.createdAt < head.createdAt)) head = d;
+    for (const d of this.items.values()) if (d.sessionId === sessionId && (!head || order(d) < order(head))) head = d;
     return head;
+  }
+  // P172: 한 세션의 아직 끝나지 않은 전달(차례대로)
+  _ofSession(sessionId) { return [...this.items.values()].filter((d) => d.sessionId === sessionId).sort((a, b) => order(a) - order(b)); }
+
+  // P172: 순서 바꾸기. ids = 그 세션의 대기 중(queued) 전달을 바랄 차례대로. 보내는 중·보낸 전달은 맨 앞 그대로 두고,
+  //   대기 중 전달끼리 차례 값을 맞바꾼다(뒤에 들어온 전달은 여전히 맨 뒤). ids에 빠진 대기 중 전달은 원래 자리 순서대로 뒤에 붙인다.
+  //   붙잡은(고치는 중) 전달도 자리만 옮긴다(보내지 않는 규칙은 그대로). 바뀐 전달마다 delivery 이벤트(다른 창도 그 차례를 받는다)
+  reorder(ids) {
+    const list = (Array.isArray(ids) ? ids : []).map(String);
+    if (!list.length) throw Object.assign(new Error('no deliveries'), { code: 'bad_request' });
+    const first = this.items.get(list[0]) || this.store.getDelivery(list[0]);
+    if (!first) throw Object.assign(new Error('no such delivery'), { code: 'not_found' });
+    const sid = first.sessionId;
+    for (const id of list) {
+      const d = this.items.get(id) || this.store.getDelivery(id);
+      if (!d) throw Object.assign(new Error('no such delivery'), { code: 'not_found' });
+      if (d.sessionId !== sid) throw Object.assign(new Error('deliveries of different sessions'), { code: 'bad_request' });
+    }
+    const queued = this._ofSession(sid).filter((d) => d.status === 'queued');
+    const byId = new Map(queued.map((d) => [d.deliveryId, d]));
+    const wanted = [...new Set(list)].filter((id) => byId.has(id)).map((id) => byId.get(id)); // 그새 보내진 전달은 빼고 남은 것끼리
+    const next = [...wanted, ...queued.filter((d) => !wanted.includes(d))];
+    const slots = queued.map(order); // 있던 차례 값들을 새 순서로 나눠 준다
+    next.forEach((d, i) => {
+      if (d.seq === slots[i]) return;
+      d.seq = slots[i];
+      if (this.store.updateDeliverySeq) this.store.updateDeliverySeq(d.deliveryId, d.seq);
+      d.retryAt = 0; // 새 맨 앞은 물러남 없이 곧바로 본다
+      this._emit(d);
+    });
+    setImmediate(() => this.pump());
+    return { sessionId: sid, order: this._ofSession(sid).map((d) => ({ deliveryId: d.deliveryId, status: d.status, seq: d.seq })) };
+  }
+
+  // P172: 바로 보내기(스티어링). 대기 중 전달을 그 세션의 대기 중 맨 앞으로 옮기고 --now(P143)와 같은 길로 보낸다:
+  //   받는 쪽이 일하는 중인 판의 Claude Code면 입력 칸에 넣어 Claude Code의 대기 메시지가 되고(typeNow + aside), 쉬면 곧바로, 잠들었으면 깨운 뒤 보낸다.
+  //   일하는 중 입력을 받지 못하는 종류(hook 없는 세션, codex 등)가 일하는 중이면 cannot_steer로 거절한다(창은 단추를 끄고 까닭을 보인다).
+  //   보내는 중·보낸 전달(확인을 기다림)은 앞에 둔다(확인이 섞이지 않게). 붙잡은(고치는 중) 전달은 바로 보내지 않는다(editing)
+  sendNow(id) {
+    const d = this.items.get(id) || this.store.getDelivery(id);
+    if (!d) throw Object.assign(new Error('no such delivery'), { code: 'not_found' });
+    if (d.editing) throw Object.assign(new Error('being edited'), { code: 'editing' });
+    this._editable(id);
+    const v = this.view(d.sessionId, d);
+    if (v && v.state === 'working' && !canTypeNow(v)) throw Object.assign(new Error('this session cannot take input while working'), { code: 'cannot_steer' });
+    const all = this._ofSession(d.sessionId).filter((x) => x !== d);
+    const busy = all.filter((x) => x.status !== 'queued'), queued = all.filter((x) => x.status === 'queued');
+    const lo = busy.length ? Math.max(...busy.map(order)) : null, hi = queued.length ? Math.min(...queued.map(order)) : null;
+    const seq = hi == null ? (lo == null ? order(d) : Math.max(order(d), lo + 1)) : lo == null ? Math.min(order(d), hi - 1) : (lo + hi) / 2;
+    if (seq !== d.seq) { d.seq = seq; if (this.store.updateDeliverySeq) this.store.updateDeliverySeq(d.deliveryId, seq); }
+    if (!d.typeNow) {
+      d.typeNow = true;
+      const t = typedText(d.text);
+      if (t !== d.text && t.trim()) { d.text = t; if (this.store.updateDeliveryText) this.store.updateDeliveryText(d.deliveryId, t); }
+    }
+    d.typeAside = true; d.sentNow = true; d.retryAt = 0; d.checkedAt = 0; d.draftLookAt = 0;
+    this.emit('now', { deliveryId: d.deliveryId, sessionId: d.sessionId, state: v ? v.state : null });
+    this._emit(d);
+    setImmediate(() => this.pump());
+    return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, seq: d.seq, how: v && v.state === 'working' ? 'type' : 'send' };
   }
 
   pump() {
@@ -340,7 +404,8 @@ export class DeliveryQueue extends EventEmitter {
   }
 
   _set(d, status, reason, extra = {}) {
-    if (status === 'confirmed' && d.held) reason = 'draft_moved'; // P128: 쓰다 만 글을 잠시 비키고 보냈다(되돌린 뒤 draft_restored 등으로 바꾼다)
+    if (status === 'confirmed' && d.held) reason = 'draft_moved';
+    else if (d.sentNow && (status === 'sent' || status === 'confirmed') && (reason == null || reason === 'typed' || reason === 'term working' || reason === 'transcript')) reason = d.typed ? 'now_typed' : 'now'; // P172: 바로 보낸 글(전달 기록의 "바로 보냄") // P128: 쓰다 만 글을 잠시 비키고 보냈다(되돌린 뒤 draft_restored 등으로 바꾼다)
     d.status = status; d.reason = reason ?? null;
     if (extra.sentAt) d.sentAt = extra.sentAt;
     if (extra.confirmedAt) d.confirmedAt = extra.confirmedAt;
@@ -401,5 +466,5 @@ export class DeliveryQueue extends EventEmitter {
     }
     return r;
   }
-  _emit(d) { this.emit('delivery', { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, createdAt: d.createdAt, sentAt: d.sentAt || null, confirmedAt: d.confirmedAt || null, attempts: d.attempts || 0, chars: d.text.length }); }
+  _emit(d) { this.emit('delivery', { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, createdAt: d.createdAt, sentAt: d.sentAt || null, confirmedAt: d.confirmedAt || null, attempts: d.attempts || 0, chars: d.text.length, seq: d.seq ?? d.createdAt, editing: !!d.editing }); }
 }

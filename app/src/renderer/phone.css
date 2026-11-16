@@ -613,3 +613,13 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-voice-live { flex: 0 0 100%; padding: 0 14px; font-size: 13px; line-height: 1.35; color: var(--text); opacity: .5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 .mt-full-line { position: relative; }
 .mt-full-line .mt-voice-live { position: absolute; left: 0; right: 0; bottom: 100%; padding: 4px 14px; background: var(--chrome-bg); }
+
+/* P172: 휴대폰 세션 화면의 대기 글 묶음(입력 줄 바로 위). 단추는 손가락 크기 */
+.mt-ph-queue { flex: none; padding: 6px calc(env(safe-area-inset-right) + 8px) 0 calc(env(safe-area-inset-left) + 8px); background: var(--chrome-bg); }
+.mt-ph-queue .mt-dq { width: 100%; box-shadow: none; }
+.mt-ph-queue .mt-dq-list { max-height: 30vh; }
+.mt-ph-queue .mt-dq-item { flex-wrap: wrap; row-gap: 2px; padding: 4px; }
+.mt-ph-queue .mt-dq-st { max-width: none; }
+.mt-ph-queue .mt-dq-acts { flex: 1 0 100%; justify-content: flex-end; gap: 4px; }
+.mt-ph-queue .mt-dq-acts .mt-btn.small { height: 34px; padding: 0 10px; font-size: 13px; border-radius: 9px; }
+.mt-ph-queue .mt-dq-acts .mt-btn.icon { min-width: 36px; }

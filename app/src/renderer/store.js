@@ -321,10 +321,23 @@ api.on('delivery', (d) => {
   const prev = state.deliveries.get(d.deliveryId) || {};
   state.deliveries = new Map(state.deliveries);
   state.deliveries.set(d.deliveryId, { ...prev, ...d, _at: Date.now() }); // _at: 창이 마지막으로 바뀜을 받은 시각(명령 바 아래 칩을 잠깐만 보이는 데 쓴다)
-  // 최근 12개만 둔다
-  if (state.deliveries.size > 12) state.deliveries.delete(state.deliveries.keys().next().value);
+  // 최근 12개만 둔다. P172: 끝난 전달부터 버린다(대기 묶음의 글이 많아도 빠지지 않게)
+  for (const [id, x] of state.deliveries) { if (state.deliveries.size <= 12) break; if (DELIVERY_DONE.has(x.status)) state.deliveries.delete(id); }
   changed();
 });
+// P172: 대기 글의 본문. 이벤트에는 글이 없다(다른 창·atrium prompt가 넣은 글) → 아직 가는 중인 전달 목록을 한 번 받아 채운다
+const DELIVERY_DONE = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']);
+let fillingTexts = null;
+export function fillDeliveryTexts() {
+  if (fillingTexts) return fillingTexts;
+  fillingTexts = api.call('delivery.list', { active: true }).then((list) => {
+    let hit = false;
+    const next = new Map(state.deliveries);
+    for (const d of list || []) { const cur = next.get(d.deliveryId); if (cur && cur.text == null && d.text != null) { next.set(d.deliveryId, { ...cur, text: d.text }); hit = true; } }
+    if (hit) { state.deliveries = next; changed(); }
+  }).catch(() => {}).finally(() => { setTimeout(() => { fillingTexts = null; }, 1500); });
+  return fillingTexts;
+}
 // P13: 판 밖 대화 노드가 바뀌었다(새 대화, 자리, 보관, 판 세션이 됨, 묶임 표시)
 export function setConvoNodes(nodes, edges) { state.convoNodes = new Map((nodes || []).map((c) => [c.convId, c])); state.convoEdges = edges || []; changed(); }
 api.on('convo.nodes', (d) => setConvoNodes(d.nodes, d.edges));
