@@ -111,7 +111,9 @@ export function promptOnScreen(screenText, prompt, kind = 'claude') {
   const box = kind === 'codex' ? codexInputBox(screenText) : claudeInputBox(screenText);
   const want = flatText(prompt);
   const head = want.slice(0, 40);
-  const seen = !!head && box.above.some((l) => flatText(l).includes(head.slice(0, 30)));
+  // P184: 여러 줄 글은 화면에서 첫 줄 뒤가 다음 줄로 넘어간다. 첫 줄이 짧으면(30자 미만) 그 첫 줄(8자 이상)로도 본다
+  const first = flatText(String(prompt || '').split('\n').find((l) => l.trim()) || '').slice(0, 30);
+  const seen = !!head && box.above.some((l) => { const f = flatText(l); return f.includes(head.slice(0, 30)) || (first.length >= 8 && first.length < 30 && f.includes(first)); });
   if (!box.found) return { box: 'unknown', seen };
   if (!box.text) return { box: 'empty', seen };
   // P126: 입력 칸 앞뒤의 마우스 보고 글(ESC가 떨어져 글로 들어간 `[<65;101;61M`)은 사람의 글이 아니다. 떼고 견준다(noise에 남긴다)

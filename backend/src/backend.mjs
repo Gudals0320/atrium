@@ -41,7 +41,7 @@ import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSpli
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
-import { attachBranch } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
+import { attachBranch, childShims, childBundle } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, claudeConnection } from './harness.mjs';
 import { checkOf } from './connections.mjs'; // P115: 연결 시작 전 확인 // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
@@ -215,7 +215,9 @@ export class Backend {
     // P4: 판 플러그인 폴더(판이 띄우는 Claude Code에 --plugin-dir로 넘긴다)
     this.plugin = writeBoardPlugin({ dir: path.join(cfg.dataDir, 'plugin'), ...this.branch.pluginExtra() });
     // P115: Claude Code 밖 하네스에 주는 것: 데이터 폴더 bin/의 atrium(그 세션의 PATH 앞)과 하네스와 상관없는 안내문 파일
-    this.harnessFiles = writeHarnessFiles({ dir: path.join(cfg.dataDir, 'plugin'), binDir: path.join(cfg.dataDir, 'bin'), bin: this.branch.pluginExtra().bin, prompt: HARNESS_PROMPT });
+    // P184: 하네스의 atrium은 데이터 폴더 bin/lib/에 둔 코드를 부른다(샌드박스 Codex가 판 코드 폴더를 읽지 못해도 데이터 폴더만 읽히면 된다)
+    const hbin = path.join(cfg.dataDir, 'bin');
+    this.harnessFiles = writeHarnessFiles({ dir: path.join(cfg.dataDir, 'plugin'), binDir: hbin, bin: childShims({ script: path.join(hbin, 'lib', 'bin', 'atrium-child.mjs') }), lib: childBundle(), prompt: HARNESS_PROMPT });
     // P18: 데이터 폴더를 옮겼으면 --settings·--plugin-dir 경로가 바뀌었다. 이어 가기 인자를 다시 만든다
     if (this.migration && this.migration.data === 'moved') {
       let n = 0;
@@ -248,6 +250,7 @@ export class Backend {
       if (r.phase === 'aside' && r.how === 'clear') s.draftEdit = { text: '', exact: true, paste: false }; // 판이 Ctrl+C로 비웠다(판 터미널로 오지 않은 키)
       if (r.phase === 'back' && r.result !== 'held') s.draft = true; // 쓰다 만 글이 입력 칸에 돌아왔거나 Claude Code가 쥐고 있다(잠재우지 않는다, P21)
     });
+    this.queue.on('screen_check', (r) => { this.store.addEvent(r.sessionId, 'delivery_screen_check', r); this.log(`delivery screen check ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.why} (${r.box})${r.working ? ' after working' : ''}`); }); // P184: Codex 제출 확인을 못 한 까닭
     this.queue.on('recover', (r) => { this.store.addEvent(r.sessionId, 'delivery_recover', r); this.log(`delivery recover ${this.nameOf(r.sessionId)} ${r.action} (${r.box}) #${r.n}`); });
     // P106: 터미널이 받지 않은 전달(처음 한 번과 까닭이 바뀔 때만 온다), 오래 막힌 전달(한 번), 취소한 뒤에 들어간 시도
     this.queue.on('refused', (r) => this.log(`delivery refused ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} → ${r.reason}, retry in ${r.waitMs}ms (#${r.n})`));
@@ -866,7 +869,7 @@ export class Backend {
       if (!this.hooked(s)) {
         // hook이 없는 세션: 제출 확인은 터미널 상태 working으로, 마지막 답은 턴이 끝난 화면 끝으로 대신한다(F5)
         if (e.status === 'working') this.queue.onAgentWorking(s.sessionId);
-        if ((prev === 'working' || prev === 'blocked') && (e.status === 'idle' || e.status === 'done')) await this.readScreenAnswer(s);
+        if ((prev === 'working' || prev === 'blocked') && (e.status === 'idle' || e.status === 'done') && !this.queue.unsubmitted(s.sessionId)) await this.readScreenAnswer(s); // P184: 첫 요청이 입력 칸에 남은 채 끝난 시작 표시(MCP)는 답으로 읽지 않는다
         if (!s.adoptNamed) this.refreshAdoptedName(s);
       }
       this.broadcastSession(s, { cause: `term:${e.status}` });

@@ -76,8 +76,10 @@ export function writeBoardPlugin({ dir, skills = {}, bin = {} }) {
 }
 // P115: Claude Code 밖 하네스에 주는 파일. binDir에 플러그인 bin/과 같은 명령(atrium, mtask)을 두고(그 세션의 PATH 앞에 둔다),
 // dir에 하네스와 상관없는 안내문 파일(harness-system-prompt.md)을 쓴다 → { binDir, promptFile }
-export function writeHarnessFiles({ dir, binDir, bin = {}, prompt }) {
+// P184: lib = { '<상대 경로>': 글 }이면 binDir/lib/ 아래에 쓴다(atrium 명령의 코드. 샌드박스 Codex가 판 코드 폴더를 읽지 못해도 되게)
+export function writeHarnessFiles({ dir, binDir, bin = {}, prompt, lib = null }) {
   fs.mkdirSync(binDir, { recursive: true });
+  if (lib) for (const [rel, text] of Object.entries(lib)) { const f = path.join(binDir, 'lib', ...rel.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); }
   for (const [name, text] of Object.entries(bin)) { const f = path.join(binDir, name); fs.writeFileSync(f, text); try { fs.chmodSync(f, 0o755); } catch {} }
   fs.mkdirSync(dir, { recursive: true });
   const promptFile = path.join(dir, 'harness-system-prompt.md');

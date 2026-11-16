@@ -184,9 +184,42 @@ export class DeliveryQueue extends EventEmitter {
     const d = this._head(sessionId);
     if (d && d.status === 'sending') { d.workingSeen = true; return null; } // agent.prompt 응답보다 working이 먼저 왔다
     if (!d || d.status !== 'sent') return null;
+    if (this._screenConfirms(d)) { d.workingSeen = true; this._checkScreen(d); return null; } // P184: Codex는 화면으로 본 뒤에만
     this._set(d, 'confirmed', 'term working', { confirmedAt: Date.now() });
     setImmediate(() => this.pump());
     return d;
+  }
+  // P184: Codex(hook 없음)는 터미널 working만으로 제출 확인하지 않는다. 시작 화면 동안 넣은 첫 요청이 입력 칸에만 남았는데
+  //   Codex의 MCP 서버 시작 표시가 working으로 읽혀 확인으로 적혔다(P181). 입력 칸에 보낸 글이 없고(빈 칸 또는 다른 글) 그 위 대화에
+  //   보낸 글이 보일 때만 확인한다(이유 'screen'). 입력 칸에 남아 있으면 확인하지 않고, 쉬게 되면 P79·P106 손쓰기가 Enter를 누른다.
+  //   Claude Code(hook)·opencode·pi·그 밖의 종류는 그대로다
+  _screenConfirms(d) {
+    if (!this.inspect) return false;
+    const v = this.view(d.sessionId, d) || {};
+    return v.kind === 'codex' && !v.hooked;
+  }
+  _screenMs() { return this.cfg.screenCheckMs ?? 1500; }
+  // P184: 그 세션의 맨 앞 전달이 Codex 입력 칸에 남아 아직 제출되지 않았다(마지막으로 본 화면). 그동안 끝난 "턴"(MCP 시작)은 답이 아니다
+  unsubmitted(sessionId) {
+    const d = this._head(sessionId);
+    return !!d && d.status === 'sent' && d.screenWhy === 'in_box';
+  }
+  async _checkScreen(d) {
+    if (d.screenChecking) return;
+    d.screenChecking = true; d.screenAt = Date.now();
+    try {
+      const look = await this.inspect(d.sessionId, d.text).catch(() => null);
+      if (d.status !== 'sent' || !this.items.has(d.deliveryId)) return;
+      const box = look ? look.box : 'unknown';
+      if ((box === 'empty' || box === 'other') && look.seen) {
+        this._set(d, 'confirmed', 'screen', { confirmedAt: Date.now() });
+        setImmediate(() => this.pump());
+        return;
+      }
+      // 확인하지 못한 까닭(입력 칸에 남음 ours, 못 읽음 unknown, 대화에 보이지 않음)이 바뀔 때만 알린다(판 기록)
+      const why = box === 'ours' ? 'in_box' : box === 'unknown' ? 'unknown' : 'not_seen';
+      if (d.screenWhy !== why) { d.screenWhy = why; this.emit('screen_check', { deliveryId: d.deliveryId, sessionId: d.sessionId, box, why, working: !!d.workingSeen }); }
+    } finally { d.screenChecking = false; }
   }
   // 백엔드가 꺼진 동안 제출된 지시(대화 기록)로 확인한다(C2)
   reconcile(sessionId, submittedPrompts) {
@@ -269,10 +302,12 @@ export class DeliveryQueue extends EventEmitter {
       if (!d || d.status === 'sending') continue;
       if (d.status === 'sent') {
         if (!d.sentAt) d.sentAt = now; // 다른 길로 sentAt 없는 sent가 생겨도 여기서부터 기한을 센다
-        if (d.recovering) continue;
+        if (d.recovering || d.screenChecking) continue;
+        // P184: Codex는 보낸 뒤 screenCheckMs마다 화면을 보고 제출을 확인한다(working이 오면 곧바로도 본다)
+        if (this._screenConfirms(d) && now - (d.screenAt || d.sentAt) >= this._screenMs()) { this._checkScreen(d); continue; }
         const last = d.triedAt || d.sentAt;
         // P79: 제출 확인이 늦으면 화면을 보고 Enter나 다시 보내기(최대 submitRetries번). P106: 첫 번 보기는 submitEnterMs 뒤(입력 칸에 남은 글에 Enter)
-        if (this.inspect && (d.recoveries || 0) < this._retries() && now - last > (d.recoveries ? this._retryMs() : this._enterMs())) {
+        if (this.inspect && (d.recoveries || 0) < this._retries(d) && now - last > (d.recoveries ? this._retryMs() : this._enterMs())) {
           const v = this.view(sid, d) || {};
           if (v.closed) { this._set(d, 'failed', 'session closed'); continue; }
           if (v.lastUserInputAt && now - v.lastUserInputAt < this.cfg.inputQuietMs) continue; // 사람이 치는 중이면 기다린다(규칙 4)
@@ -333,7 +368,7 @@ export class DeliveryQueue extends EventEmitter {
       await this.send(d.sessionId, d.text);
       if (d.status === 'sending') { this._clearRefusal(d); this._set(d, 'sent', typed ? 'typed' : null, { sentAt: Date.now() }); }
       else if (d.status === 'cancelled') this.emit('late', { deliveryId: d.deliveryId, sessionId: d.sessionId }); // P106: 취소한 뒤에 이 시도가 들어갔다(cancelWaitMs보다 오래 걸린 시도)
-      if (d.workingSeen && d.status === 'sent') this._set(d, 'confirmed', 'term working', { confirmedAt: Date.now() });
+      if (d.workingSeen && d.status === 'sent') { if (this._screenConfirms(d)) this._checkScreen(d); else this._set(d, 'confirmed', 'term working', { confirmedAt: Date.now() }); }
     } catch (e) {
       // 그사이 hook 등으로 confirmed가 되었거나 상태가 바뀌었으면 늦은 오류로 되돌리지 않는다(이슈 #1-2)
       if (d.status !== 'sending' || !this.items.has(d.deliveryId)) return;
@@ -364,7 +399,12 @@ export class DeliveryQueue extends EventEmitter {
     this.emit('stuck', { deliveryId: d.deliveryId, sessionId: d.sessionId, reason: d.reason, code: d.refusedCode, attempts: d.attempts || 0, since: d.refusedSince });
   }
 
-  _retries() { return this.cfg.submitRetries ?? 2; }
+  // P184: Codex 입력 칸에 보낸 글이 남아 있으면 Enter를 더 여러 번 누른다(codexEnterRetries). 부하가 크면 Codex가 시작 직후 한동안
+  //   Enter를 줄바꿈으로 받았다(입력 칸 아래 빈 줄만 늘고 30초쯤 뒤에야 제출됨). Enter는 글을 두 번 넣지 않는다
+  _retries(d) {
+    const n = this.cfg.submitRetries ?? 2;
+    return d && d.lastBox === 'ours' && this._screenConfirms(d) ? Math.max(n, this.cfg.codexEnterRetries ?? 8) : n;
+  }
   _retryMs() { return this.cfg.submitRetryMs ?? 6000; }
   _enterMs() { return Math.min(this.cfg.submitEnterMs ?? 3000, this._retryMs()); }
   _looks() { return this.cfg.submitLooks ?? 8; }
@@ -399,12 +439,12 @@ export class DeliveryQueue extends EventEmitter {
       else if (box === 'other') {
         // P126: 입력 칸에 보낸 글이 아닌 글이 끝까지 남았다(사람이 쓰던 글, 하네스가 보낸 글 앞에 붙인 글 등). 판은 지우지 않는다(사람의 글일 수 있다).
         //   조용히 확인 기한을 기다리지 않고 곧바로 "제출 안 됨"으로 끝내 보낸 쪽(atrium prompt, 판 칩)에 까닭을 보인다
-        d.recoveries = this._retries(); action = 'give_up';
+        d.recoveries = this._retries(d); action = 'give_up';
         d.recoverNote = `${action} · ${box}`;
         this._set(d, 'unconfirmed', 'input_box_other');
         this.emit('not_submitted', { deliveryId: d.deliveryId, sessionId: d.sessionId, box, ...(peek ? { peek } : {}) });
         return;
-      } else d.recoveries = this._retries(); // 알 수 없음, 이미 들어갔을 수 있음, 다시 보내지 않는 종류: 더 손대지 않는다
+      } else d.recoveries = this._retries(d); // 알 수 없음, 이미 들어갔을 수 있음, 다시 보내지 않는 종류: 더 손대지 않는다
       d.recoverNote = `${action}${box ? ' · ' + box : ''}${noise ? ' · noise' : ''}`;
     } catch (e) {
       action = 'error'; d.recoverNote = `error · ${e.code || e.message}`;
@@ -417,7 +457,7 @@ export class DeliveryQueue extends EventEmitter {
 
   _set(d, status, reason, extra = {}) {
     if (status === 'confirmed' && d.held) reason = 'draft_moved';
-    else if (d.sentNow && (status === 'sent' || status === 'confirmed') && (reason == null || reason === 'typed' || reason === 'term working' || reason === 'transcript')) reason = d.typed ? 'now_typed' : 'now'; // P172: 바로 보낸 글(전달 기록의 "바로 보냄") // P128: 쓰다 만 글을 잠시 비키고 보냈다(되돌린 뒤 draft_restored 등으로 바꾼다)
+    else if (d.sentNow && (status === 'sent' || status === 'confirmed') && (reason == null || reason === 'typed' || reason === 'term working' || reason === 'screen' || reason === 'transcript')) reason = d.typed ? 'now_typed' : 'now'; // P172: 바로 보낸 글(전달 기록의 "바로 보냄") // P128: 쓰다 만 글을 잠시 비키고 보냈다(되돌린 뒤 draft_restored 등으로 바꾼다)
     d.status = status; d.reason = reason ?? null;
     if (extra.sentAt) d.sentAt = extra.sentAt;
     if (extra.confirmedAt) d.confirmedAt = extra.confirmedAt;
