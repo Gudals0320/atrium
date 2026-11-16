@@ -78,6 +78,23 @@ export function boardArrowKey(e, { dialog = null, missionOpen = false, outputOpe
   return ARROWS[e.key];
 }
 
+// P178: Tab = 세션 맵 열기·닫기(판에서 열고 맵에서 닫는다, M을 대신함). 창의 키 잡기 단계(main.jsx onKeyCapture)에서 부른다.
+// Tab이 원래 일을 하는 곳: 터미널(셸 자동 완성), 명령줄 밖 입력칸(대화상자·검색·설정·이름 바꾸기 등), 대화상자·메뉴·펼침 목록·검색 바 안,
+// 명령줄의 @ 자동 완성 목록이 열려 있을 때(completing, CommandBar.jsx Tab 완성). 명령줄이 비었거나 글만 있으면 명령줄에서도 맵을 열고 닫는다.
+// Shift+Tab·Ctrl+Tab 등 조합 키, 한글 조합 중, 누르고 있어 되풀이되는 키는 받지 않는다 → true(맵 열기·닫기) | false(그대로 둔다)
+const NOT_TAB = '.mt-modal, .mt-modal-bg, [role="dialog"], [role="menu"], [role="listbox"], .mt-menu, .mt-dropdown, .mt-search';
+export function mapTabKey(e, { dialog = null, completing = false } = {}) {
+  if (!e || e.key !== 'Tab' || (e.type && e.type !== 'keydown') || e.isComposing || e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return false;
+  if (dialog) return false;
+  const t = e.target;
+  if (!t || t.tagName === 'BODY' || t.tagName === 'HTML' || t.nodeType === 9) return true;
+  if (t.closest && t.closest('.xterm')) return false;
+  if (t.tagName === 'TEXTAREA' && t.classList && t.classList.contains('mt-cmd-input')) return !completing;
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable) return false;
+  if (t.closest && t.closest(NOT_TAB)) return false;
+  return true;
+}
+
 // ←·→로 갈 워크스페이스. keys: 탭 순서의 워크스페이스 키, dir: -1(이전)·1(다음). 끝에서 처음으로 돈다.
 // 지금 워크스페이스가 목록에 없으면 다음은 첫째, 이전은 마지막. 목록이 비었거나 하나뿐이고 그것이 지금이면 null(움직일 곳이 없다)
 export function stepWorkspace(keys, current, dir) {

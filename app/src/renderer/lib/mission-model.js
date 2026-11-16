@@ -227,3 +227,18 @@ export function missionSummary(ids, tierOfId) {
   out.counts = { all: ids.length, turn: out.turn.length, work: out.work.length, review: out.review.length, rest: out.rest.length, idle: out.rest.length - gone, gone };
   return out;
 }
+
+// P178: 세션 맵(Lineage) 오른쪽 요약 칸. ids(맵 차례)를 상태 묶음으로 나눈다(옛 열 지도 요약 열 missionSummary를 넓힌 것: 쉼·절전·끝남을 따로).
+// 차례 = 응답 필요(응답 필요·오류) · 작업 중 · 작업 완료(안 본 결과) · 쉼 · 절전 중 · 끝남. 빈 묶음은 뺀다(작업 중은 늘 둔다: "없음"을 보인다)
+// → [{ key: 'turn'|'work'|'review'|'rest'|'sleep'|'done', ids }]. 응답 필요 안은 응답 필요가 오류보다 먼저(그 밖은 맵 차례)
+export const SUMMARY_ORDER = ['turn', 'work', 'review', 'rest', 'sleep', 'done'];
+export function mapSummary(ids, tierOfId) {
+  const g = new Map(SUMMARY_ORDER.map((k) => [k, []]));
+  for (const id of ids || []) {
+    const t = tierOfId(id);
+    const k = t === 'alert' ? 'turn' : g.has(t) ? t : 'rest';
+    g.get(k).push(id);
+  }
+  g.get('turn').sort((a, b) => (tierOfId(a) === 'turn' ? 0 : 1) - (tierOfId(b) === 'turn' ? 0 : 1));
+  return SUMMARY_ORDER.filter((k) => k === 'work' || g.get(k).length).map((k) => ({ key: k, ids: g.get(k) }));
+}

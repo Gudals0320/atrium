@@ -207,7 +207,7 @@ try {
   // 6. 미션 맵·검색이 열렸을 때
   {
     await away(); await clickBackground();
-    await page.keyboard.press('m'); await sleep(900);
+    await page.keyboard.press('Tab'); await sleep(900);
     const st = await state();
     const before = await vp();
     await holdSpace(500); await sleep(700);

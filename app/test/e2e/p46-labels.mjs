@@ -135,7 +135,7 @@ async function testDock(page) {
 async function openMap(page) {
   await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
   await page.mouse.click(5, 400);
-  await page.keyboard.press('m');
+  await page.keyboard.press('Tab');
   await sleep(500);
   if (!(await page.$('[data-role="mission"]'))) await page.click('[data-action="mission-rail"]');
   await page.waitForSelector('[data-role="mission"] [data-role="mm-group"]', { timeout: 20000 });

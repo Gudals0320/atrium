@@ -333,7 +333,7 @@ const cases = {
     await page.evaluate(() => window.__mt.getState().fitAll(0)); await sleep(1200);
     const ko = await page.evaluate(() => [...new Set([...document.querySelectorAll('.react-flow__node-session *')].map((e) => [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join('').trim()).filter((t) => /[가-힣]/.test(t)))].slice(0, 6));
     await shot('enrole-1-board');
-    await page.keyboard.press('m'); await sleep(1300);
+    await page.keyboard.press('Tab'); await sleep(1300);
     const mm = await page.evaluate(() => [...new Set([...document.querySelectorAll('body *')].map((e) => [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join('').trim()).filter((t) => /워커/.test(t)))].slice(0, 6));
     await shot('enrole-2-mission');
     await page.keyboard.press('Escape'); await sleep(400);
@@ -376,7 +376,7 @@ const cases = {
     const c1 = await cover();
     await shot('selbar-1-head');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1366, 768)); await sleep(800);
-    await page.keyboard.press('m'); await sleep(1300);
+    await page.keyboard.press('Tab'); await sleep(1300);
     const inMission = await page.evaluate(() => { const b = document.querySelector('[data-role="selection"]'); const sel = window.__mt.getState().selected.length; return { bar: !!(b && b.offsetParent), selected: sel }; });
     await shot('selbar-2-mission');
     await page.keyboard.press('Escape'); await sleep(500);

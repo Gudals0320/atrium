@@ -83,7 +83,7 @@ const inbox = () => page.evaluate(() => { const ss = [...window.__mt.getState().
 async function missionShots(tag) {
   await page.keyboard.press('Escape').catch(() => {});
   await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
-  await page.keyboard.press('m'); await sleep(1500);
+  await page.keyboard.press('Tab'); await sleep(1500);
   if (!(await page.locator('[data-role=mm-node]').count())) { await page.keyboard.press('M'); await sleep(1500); }
   await shot(`p119-${BACK}-${tag}-mission`);
   const lead = page.locator('[data-role=mm-node][data-name=lead]').first();

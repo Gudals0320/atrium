@@ -91,7 +91,7 @@ test('폴더 기둥: 너비는 가장 긴 폴더 이름에 맞추고, 짧으면 
   assert.match(css, /\.mt-sm-spine \.fs \{ display: flex; flex-direction: column;/);
   const src = read('MissionLineage.jsx');
   assert.match(src, /className="mt-sm-spine" style=\{\{ width: lay\.spine \}\}/);
-  assert.match(src, /data-role="ln-band-stat"><span>\{t\('mmTerr\.workspaces'/);
+  assert.match(src, /data-role="ln-band-stat"(?: style=\{\{ fontSize: lay\.px\.stat \}\})?><span>\{t\('mmTerr\.workspaces'/); // P178: 글 크기는 배치(lay.px)
   assert.ok(!src.includes("t('mmTerr.workspaces', { n: b.nWs })} · ${"), '가운뎃점 없음');
 });
 

@@ -10,9 +10,9 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, LINE } from './lib/mission-lineage.js'; // P155: headDrag(Alt+끌기만 옮기기)
+import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE } from './lib/mission-lineage.js'; // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
-import { roleModel, nodeTier, roleText, modelText, ageText } from './lib/mission-model.js';
+import { roleModel, nodeTier, roleText, modelText, ageText, mapSummary } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
 import { bgShow, bgText, bgKindsText } from './lib/bg-work.js'; // P164
 import { STATE_LABEL } from './lib/labels.js';
@@ -30,6 +30,11 @@ const OPEN_MAX = 0.85; // 처음 화면(폭 맞춤) 배율 상한
 const READ_K = 0.26; // 멀리 타일 이름 11.5px·상태 10px(화면)가 지켜지는 배율 하한(폭 맞춤이 이보다 작으면 이 배율로 왼쪽 위에서)
 const DOT_GAP = 92, DOT_R = 1.8, DOT_MIN_GAP = 28; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다. 멀리서는 솎는다
 const ATTN_MAX = 4;
+// P178: 오른쪽 상태 요약 칸(옛 열 지도 요약 열을 되살림). 열려 있으면 맞춤·가운데 맞추기가 그 폭을 비워 둔다. 접힘은 이 기기(창)에 기억한다
+const SUM_W = 264, SUM_GAP = 12, SUM_MAX = 40;
+const SUM_KEY = 'atrium.sessionMap.summary';
+const loadSumOpen = () => { try { return localStorage.getItem(SUM_KEY) !== '0'; } catch { return true; } };
+const saveSumOpen = (on) => { try { localStorage.setItem(SUM_KEY, on ? '1' : '0'); } catch { /* 기억 못 해도 지금 화면은 된다 */ } };
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
 // P164: 뒤 일 표시 아이콘(겹친 두 사각형 = 뒤에서 도는 일). 움직이지 않는다
 export const BgIcon = () => <svg className="mt-bg-ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="2.5" width="8" height="8" rx="1.5" /><path d="M10.5 13.5h-6a2 2 0 0 1-2-2v-6" /></svg>;
@@ -195,6 +200,12 @@ export function LineageMap() {
   const [expanded, setExpanded] = useState(loadExpanded); // 깊이 접기를 편 카드
   const [pending, setPending] = useState([]); // 놓자마자 보이는 관계(판 답을 기다리는 동안). [{ a, b, relation, ok }]
   const [reloadN, setReloadN] = useState(0);
+  // P178: 이름표 배율 계단(lib/mission-lineage.js labelStep). 움직임이 멈춘 뒤에만 바꾸고(배치를 다시 센다), 바뀌면 보던 카드가 화면 같은 자리에 남게 보기를 옮긴다
+  const [lstep, setLstep] = useState(1);
+  const lstepRef = useRef(1), anchorRef = useRef(null), pendingView = useRef(null);
+  const [sumOpen, setSumOpen] = useState(loadSumOpen);
+  const sumRef = useRef(sumOpen);
+  sumRef.current = sumOpen;
   const onFold = useCallback((id) => setExpanded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); saveExpanded(n); return n; }), []);
 
   useEffect(() => {
@@ -218,7 +229,11 @@ export function LineageMap() {
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
   const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
-  const lay = useMemo(() => (g2 ? lineageLayout(g2, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })] }) : null), [g2, order, vgroups, tiers, names, t, expanded]);
+  const layOpts = useMemo(() => ({ order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}` }), [order, vgroups, tiers, names, t, expanded]);
+  const lay = useMemo(() => (g2 ? lineageLayout(g2, { ...layOpts, label: lstep }) : null), [g2, layOpts, lstep]);
+  // P178: 맞춤 보기를 셀 때 다른 계단의 배치(선 길 찾기 없이, 크기만)
+  const layForRef = useRef(null);
+  layForRef.current = (st) => (g2 ? lineageLayout(g2, { ...layOpts, label: st, routing: false }) : null);
   const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
   layRef.current = lay;
   sizeRef.current = vsize;
@@ -240,7 +255,7 @@ export function LineageMap() {
     const w = worldRef.current, root = rootRef.current;
     const lv = levelOf(v.k);
     if (w) {
-      if (glide) { w.classList.add('glide'); clearTimeout(glideTimer.current); glideTimer.current = setTimeout(() => w.classList.remove('glide'), 480); } else w.classList.remove('glide');
+      if (glide) { w.classList.add('glide'); clearTimeout(glideTimer.current); glideTimer.current = setTimeout(() => { w.classList.remove('glide'); checkStep(); }, 480); } else w.classList.remove('glide');
       w.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
       if (!w.classList.contains(`lv-${lv}`)) { w.classList.remove('lv-far', 'lv-mid', 'lv-near'); w.classList.add(`lv-${lv}`); }
       if (root && root.dataset.level !== lv) root.dataset.level = lv;
@@ -261,40 +276,73 @@ export function LineageMap() {
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
-    if (root && !glide) { if (root.dataset.moving !== '1') root.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); }, 160); }
-  }, []);
+    if (root && !glide) { if (root.dataset.moving !== '1') root.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); checkStep(); }, 160); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // P178: 움직임이 멈춘 뒤 이름표 계단이 바뀌었으면 배치를 다시 센다. 화면 가운데에 가장 가까운 카드를 닻으로 남겨, 새 배치에서도 그 카드가 같은 화면 자리에 있게 한다
+  function checkStep() {
+    const v = view.current, L = layRef.current, s = sizeRef.current;
+    if (!v || !L) return;
+    const st = labelStep(v.k);
+    if (st === lstepRef.current) return;
+    const cx = s ? (s.w - sumW()) / 2 : 0, cy = s ? (s.h + TOPH + COLH - BOTTOM) / 2 : 0;
+    let best = null;
+    for (const [id, b] of L.cards) { const sx = b.x * v.k + v.x, sy = b.y * v.k + v.y, d = Math.hypot(sx + b.w * v.k / 2 - cx, sy + b.h * v.k / 2 - cy); if (!best || d < best.d) best = { id, sx, sy, d }; }
+    anchorRef.current = best ? { id: best.id, sx: best.sx, sy: best.sy } : null;
+    lstepRef.current = st;
+    setLstep(st);
+  }
+  // 오른쪽 요약 칸이 차지하는 폭(접혀 있으면 0)
+  const sumW = () => (sumRef.current ? SUM_W + SUM_GAP : 0);
+  // P178: 보기를 정하는 함수 mk(배치, 칸 크기)를 이름표 계단과 맞을 때까지(몇 번) 다시 센다. 계단이 바뀌면 새 배치가 그려진 뒤 그 보기를 쓴다
+  const settle = (mk, opts) => {
+    const s = sizeRef.current;
+    let st = lstepRef.current, L = layRef.current;
+    if (!L || !s) return;
+    let v = mk(L, s);
+    for (let i = 0; i < 4; i++) { const st2 = labelStep(v.k); if (st2 === st) break; const L2 = layForRef.current(st2); if (!L2) break; st = st2; L = L2; v = mk(L, s); }
+    if (st !== lstepRef.current) { pendingView.current = { v, opts }; anchorRef.current = null; lstepRef.current = st; setLstep(st); } else paint(v, opts);
+  };
   // 맞춤: 세계 전체를 레일 오른쪽·위 줄과 칸 머리 아래·명령줄 위 칸에
-  const fitOf = (L, s) => { const f = fitView(L.bounds, s.w - RAIL, s.h, { top: TOPH + COLH, bottom: BOTTOM, pad: PAD }); return { ...f, x: f.x + RAIL }; };
+  const fitOf = (L, s) => { const f = fitView(L.bounds, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM, pad: PAD }); return { ...f, x: f.x + RAIL }; };
   // 처음 연 화면: 폭 맞춤(위에서부터, 아래는 끌어서 본다). 전체가 그보다 크게 들어가면 맞춤. 폭 맞춤이 READ_K보다 작으면 READ_K로 왼쪽 위에서
   const openOf = (L, s) => {
     const f = fitOf(L, s);
-    const kw = Math.min(OPEN_MAX, (s.w - RAIL - PAD * 2) / L.bounds.w);
+    const kw = Math.min(OPEN_MAX, (s.w - RAIL - sumW() - PAD * 2) / L.bounds.w);
     if (f.k >= kw) return f;
     const k = Math.max(READ_K, kw);
     return { k, x: RAIL + PAD - L.bounds.x * k, y: TOPH + COLH + 8 - L.bounds.y * k };
   };
-  const fit = useCallback((glide = true) => { const L = layRef.current, s = sizeRef.current; if (L && s) paint(fitOf(L, s), { glide }); }, [paint]);
-  const zoomCenter = useCallback((k2) => { const s = sizeRef.current, v = view.current; if (s && v) paint(zoomAt(v, (s.w + RAIL) / 2, (s.h + TOPH + COLH - BOTTOM) / 2, k2), { glide: true }); }, [paint]);
+  const fit = useCallback((glide = true) => settle(fitOf, { glide }), [paint]); // eslint-disable-line react-hooks/exhaustive-deps
+  const zoomCenter = useCallback((k2) => { const s = sizeRef.current, v = view.current; if (s && v) paint(zoomAt(v, (s.w - sumW() + RAIL) / 2, (s.h + TOPH + COLH - BOTTOM) / 2, k2), { glide: true }); }, [paint]); // eslint-disable-line react-hooks/exhaustive-deps
   const flyTo = useCallback((id, k) => {
     const L = layRef.current, s = sizeRef.current, v = view.current, b = L && L.cards.get(id);
     if (!b || !s || !v) return;
-    const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, k || Math.max(0.9, v.k), s.w - RAIL, s.h, { top: TOPH + COLH, bottom: BOTTOM });
+    const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, k || Math.max(0.9, v.k), s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM });
     paint({ ...c, x: c.x + RAIL }, { glide: true });
-  }, [paint]);
+  }, [paint]); // eslint-disable-line react-hooks/exhaustive-deps
   // P153 r9: 앱 사이드바가 세션 맵을 움직인다(Sidebar.jsx가 getState().mapFocus를 부른다). 세션 = 지금 배율 그대로 가운데로, 워크스페이스 줄·폴더 띠 = 그 상자에 맞춤.
   // 간 뒤 그 카드·줄·띠를 세 번 반짝인다(.blink, 움직임 줄이기에서도 판 설정 workLight가 끔이 아니면 돈다)
   const blink = useCallback((sel) => { const root = rootRef.current, el = root && root.querySelector(sel); if (!el) return; el.classList.remove('blink'); void el.offsetWidth; el.classList.add('blink'); setTimeout(() => el.classList.remove('blink'), 2200); }, []);
-  const fitBoxTo = useCallback((r) => { const s = sizeRef.current; if (!s || !r) return; const f = fitView(r, s.w - RAIL, s.h, { top: TOPH + COLH, bottom: BOTTOM, pad: 40, max: OPEN_MAX }); paint({ ...f, x: f.x + RAIL }, { glide: true }); }, [paint]);
+  // P178: 카드 하나로 가기(배율은 그대로, 그 카드를 가운데로, 세 번 반짝임). 사이드바 세션 줄과 오른쪽 요약 칸이 같이 쓴다
+  const focusCard = useCallback((id) => {
+    const L = layRef.current, v = view.current, s = sizeRef.current, b = L && L.cards.get(id);
+    if (!b || !v || !s) return false;
+    const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, v.k, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM });
+    paint({ ...c, x: c.x + RAIL }, { glide: true });
+    setTimeout(() => blink(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), 460);
+    return true;
+  }, [paint, blink]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fitBoxTo = useCallback((r) => { const s = sizeRef.current; if (!s || !r) return; const f = fitView(r, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM, pad: 40, max: OPEN_MAX }); paint({ ...f, x: f.x + RAIL }, { glide: true }); }, [paint]);
   useEffect(() => {
     if (!open) return undefined;
     const st = getState();
     st.mapFocus = {
-      session: (sid) => { const L = layRef.current, v = view.current, s = sizeRef.current; if (!L || !v || !s) return false; const hit = [...L.cards.entries()].find(([, b]) => b.node.sessionId === sid); if (!hit) return false; const [id, b] = hit; const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, v.k, s.w - RAIL, s.h, { top: TOPH + COLH, bottom: BOTTOM }); paint({ ...c, x: c.x + RAIL }, { glide: true }); setTimeout(() => blink(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), 460); return true; },
+      session: (sid) => { const L = layRef.current; const hit = L && [...L.cards.entries()].find(([, b]) => b.node.sessionId === sid); return hit ? focusCard(hit[0]) : false; },
       ws: (key) => { const L = layRef.current, r = L && L.rows.find((x) => x.key === key); if (!r) return false; fitBoxTo({ x: 0, y: r.y, w: L.W, h: r.h }); setTimeout(() => blink(`.mt-sm-row[data-key="${CSS.escape(key)}"]`), 460); return true; },
       group: (gid) => { const L = layRef.current, b = L && L.bands.find((x) => (x.id || null) === (gid || null)); if (!b) return false; fitBoxTo({ x: 0, y: b.y, w: L.W, h: b.h }); setTimeout(() => blink(`.mt-sm-band[data-id="${CSS.escape(b.id || 'none')}"]`), 460); return true; },
     };
     return () => { if (getState().mapFocus === st.mapFocus) getState().mapFocus = null; };
-  }, [open, paint, blink, fitBoxTo]);
+  }, [open, paint, blink, fitBoxTo, focusCard]);
 
   useLayoutEffect(() => {
     const el = vpRef.current;
@@ -307,8 +355,14 @@ export function LineageMap() {
   }, [open]);
   useLayoutEffect(() => {
     if (!open || !lay || !vsize) return;
-    if (!fitted.current) { fitted.current = true; paint(openOf(lay, vsize)); }
-    else if (view.current) paint(view.current);
+    if (!fitted.current) { fitted.current = true; settle(openOf); }
+    else if (pendingView.current) { const p = pendingView.current; pendingView.current = null; paint(p.v, p.opts); }
+    else if (anchorRef.current && view.current) {
+      // P178: 이름표 계단이 바뀌어 배치가 달라졌다. 닻 카드가 같은 화면 자리에 남게 옮긴다
+      const a = anchorRef.current, b = lay.cards.get(a.id), v = view.current;
+      anchorRef.current = null;
+      paint(b ? { k: v.k, x: a.sx - b.x * v.k, y: a.sy - b.y * v.k } : v);
+    } else if (view.current) paint(view.current);
   }, [open, lay, vsize, paint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 미리 보기: 카드 위에 HOVER_MS 머물면(또는 초점) 카드 옆에. 오른쪽에 자리가 없으면 왼쪽
@@ -552,13 +606,18 @@ export function LineageMap() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, flyTo, paint]);
-  window.__mtTa = { view: () => (view.current ? { ...view.current } : null), fit: () => fit(false), flyTo, lay: () => layRef.current, set: (v) => paint(v), tags: () => tags, rail: RAIL, top: TOPH + COLH }; // 시험이 읽는다
+  window.__mtTa = { view: () => (view.current ? { ...view.current } : null), fit: () => fit(false), flyTo, lay: () => layRef.current, set: (v) => paint(v), tags: () => tags, rail: RAIL, top: TOPH + COLH, label: () => lstepRef.current, sumW }; // 시험이 읽는다
 
   if (!open) return null;
   const ids = lay ? lay.order : [];
   const attn = ids.filter((id) => tiers.get(id) === 'turn' || tiers.get(id) === 'alert').sort((a, b) => (tiers.get(a) === 'turn' ? 0 : 1) - (tiers.get(b) === 'turn' ? 0 : 1));
   const nWork = ids.filter((id) => tiers.get(id) === 'work').length, nDone = ids.filter((id) => tiers.get(id) === 'review').length;
   const tagOf = (id) => { const b = lay.cards.get(id); return !!b && tagSet.has(String(b.node.name).toLowerCase()); };
+  const sum = lay ? mapSummary(ids, (id) => tiers.get(id)) : [];
+  // P178: 요약 칸 줄에 마우스를 올리면 그 카드를 강조한다(DOM에 바로, 다시 그리지 않는다)
+  const sumHot = (id) => { const root = rootRef.current; if (!root) return; for (const x of root.querySelectorAll('.mt-ta-slot.sum-hot')) if (x.dataset.id !== id) x.classList.remove('sum-hot'); if (id) { const el = root.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`); if (el) el.classList.add('sum-hot'); } };
+  const toggleSum = () => { const on = !sumOpen; saveSumOpen(on); setSumOpen(on); };
+  const sumLine = (id, key) => { const f = factsOf(id); return key === 'turn' || key === 'work' ? f.task || f.stateText : f.age || ''; };
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const edgeText = (e) => (e.cross ? t('mmTerr.edgeCross', { from: lay.tree.byId.get(e.from).name, ws: wsName(lay.tree.byId.get(e.to).workspaceKey || '') || t('mmTerr.noFolder') }) : e.rel === 'role' ? (e.role || t('mmLine.role')) : t('mmLine.task'));
   // 칸 머리: 워크스페이스 · 시작 · 1단계 · 2단계 · … · 솔로
@@ -570,14 +629,14 @@ export function LineageMap() {
       <div className="mt-ta-vp" data-role="ta-viewport" ref={vpRef}>
         <div className="mt-ta-bg" ref={bgRef} aria-hidden="true" />
         {!lay ? <div className="mt-ta-loading">{t('common.loading')}</div> : (
-          <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef}>
+          <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef} data-label={lay.label}>
             {lay.bands.map((b) => (
               <div key={`b:${b.id || 'none'}`} className={`mt-sm-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} style={{ top: b.y, height: b.h, width: lay.W }}>
                 <div className="mt-sm-spine" style={{ width: lay.spine }}>
-                  <span className="fk">{b.loose ? t('mmLine.loose') : t('mmLine.folder')}</span>
-                  <span className="fn" data-role="ln-band-name">{b.name}</span>
-                  <span className="fs" data-role="ln-band-stat"><span>{t('mmTerr.workspaces', { n: b.nWs })}</span><span>{t('mmTerr.sessions', { n: b.sessions })}</span></span>
-                  <span className="fbar" aria-hidden="true">{b.bar.map((c) => <i key={c.tier} className={`st-${ST[c.tier]}`} style={{ flexGrow: c.n }} />)}</span>
+                  <span className="fk" style={{ fontSize: lay.px.kind }}>{b.loose ? t('mmLine.loose') : t('mmLine.folder')}</span>
+                  <span className="fn" data-role="ln-band-name" style={{ fontSize: lay.px.name }}>{b.name}</span>
+                  <span className="fs" data-role="ln-band-stat" style={{ fontSize: lay.px.stat }}><span>{t('mmTerr.workspaces', { n: b.nWs })}</span><span>{t('mmTerr.sessions', { n: b.sessions })}</span></span>
+                  <span className="fbar" aria-hidden="true" style={{ height: lay.px.bar }}>{b.bar.map((c) => <i key={c.tier} className={`st-${ST[c.tier]}`} style={{ flexGrow: c.n }} />)}</span>
                 </div>
               </div>
             ))}
@@ -585,10 +644,10 @@ export function LineageMap() {
               <div key={`r:${r.key || '-'}`} className={`mt-sm-row${r.first ? ' first' : ''}`} data-role="ta-isle" data-key={r.key} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
                 {r.key ? <div className="mt-sm-grab" data-key={r.key} data-role="ln-row-grab" style={{ width: Math.max(LINE.HEADW, col0 - r.x - 40) }} /> : null}
                 {/* P157: 옮기기 안내는 풍선(title)이 아니라 Alt를 누른 동안에만 보이는 작은 글(.mt-sm-althint) */}
-                <div className="mt-sm-head" data-key={r.key} data-role="ta-isle-head">
-                  <span className="wsn"><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
-                  {r.key ? <span className="mt-sm-althint" data-role="ln-alt-hint">{t('mmLine.altMoveHint')}</span> : null}
-                  <span className="wsc">{r.chips.map((c) => <span key={c.tier} className={`st-${ST[c.tier]}`} data-tier={c.tier}><i /><b>{c.n}</b> {t(`mmTerr.chip.${c.tier}`)}</span>)}</span>
+                <div className="mt-sm-head" data-key={r.key} data-role="ta-isle-head" style={{ width: lay.headW, gap: (lay.heads.get(r.key) || {}).gap }}>
+                  <span className="wsn" style={{ fontSize: lay.px.ws }}><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
+                  {r.key ? <span className="mt-sm-althint" data-role="ln-alt-hint" style={{ fontSize: lay.px.hint }}>{t('mmLine.altMoveHint')}</span> : null}
+                  <span className="wsc" style={{ gap: (lay.heads.get(r.key) || {}).cgap }}>{r.chips.map((c) => <span key={c.tier} className={`st-${ST[c.tier]}`} data-tier={c.tier} style={{ fontSize: lay.px.chip }}><i /><b>{c.n}</b> {t(`mmTerr.chip.${c.tier}`)}</span>)}</span>
                 </div>
               </div>
             ))}
@@ -635,6 +694,31 @@ export function LineageMap() {
         </span>
         <button type="button" className="mt-ta-iconbtn" data-action="mission-close" title={t('mmTerr.close')} aria-label={t('mmTerr.close')} onClick={() => setMissionOpen(false)}><XIcon s={18} /></button>
       </div>
+      {lay && (sumOpen ? (
+        <aside className="mt-ta-hud mt-sm-sum" data-role="ln-summary" style={{ width: SUM_W }} aria-label={t('mmSum.title')}>
+          <div className="sh"><span>{t('mmSum.title')}</span><button type="button" className="mt-ta-iconbtn" data-action="ln-sum-hide" title={t('mmSum.hide')} aria-label={t('mmSum.hide')} onClick={toggleSum}><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg></button></div>
+          <div className="sb">
+            {sum.map((g) => (
+              <section key={g.key} className={`sg st-${ST[g.key]}`} data-role="ln-sum-group" data-key={g.key}>
+                <h4><i />{t(`mmSum.group.${g.key}`)}<b>{g.ids.length}</b></h4>
+                {g.ids.length ? g.ids.slice(0, SUM_MAX).map((id) => { const b = lay.cards.get(id), tr = tiers.get(id); return (
+                  <button key={id} type="button" className={`si st-${ST[tr]}`} data-role="ln-sum-item" data-id={id} data-name={b.node.name} title={t('mmSum.itemTip')}
+                    onClick={() => focusCard(id)} onMouseEnter={() => sumHot(id)} onMouseLeave={() => sumHot(null)} onFocus={() => sumHot(id)} onBlur={() => sumHot(null)}>
+                    <span className="a"><i /><span className="nm">{b.node.name}</span></span>
+                    {(() => { const x = sumLine(id, g.key); return x ? <span className="b">{x}</span> : null; })()}
+                  </button>
+                ); }) : <div className="none">{t('mmSum.none')}</div>}
+                {g.ids.length > SUM_MAX ? <div className="none">{t('mmSum.more', { n: g.ids.length - SUM_MAX })}</div> : null}
+              </section>
+            ))}
+          </div>
+        </aside>
+      ) : (
+        <button type="button" className="mt-ta-hud mt-sm-sum-show" data-action="ln-sum-show" title={t('mmSum.show')} aria-label={t('mmSum.show')} onClick={toggleSum}>
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+          {sum.filter((g) => g.ids.length && ['turn', 'work', 'review'].includes(g.key)).map((g) => <span key={g.key} className={`st-${ST[g.key]}`}><i /><b>{g.ids.length}</b></span>)}
+        </button>
+      ))}
       <div className="mt-ta-hud mt-sm-cols" data-role="ln-cols" ref={colsRef} aria-hidden="true">
         {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key}>{colLabel(c)}</span>)}
       </div>
