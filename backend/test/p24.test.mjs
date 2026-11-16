@@ -37,7 +37,7 @@ test('P24 판정: 리포의 어떤 세션이든 일이 있으면 리포 전체�
   // 셸의 쉬기 시작한 때는 사람이 손댄 때뿐. hook이 오는 세션은 herdr 상태 알림(lastActivityAt)이 아니라 마지막 hook으로 센다
   assert.equal(idleSince({ kind: 'shell', touchedAt: 7, rt: { lastActivityAt: 99 } }), 7);
   assert.equal(idleSince({ kind: 'claude', rt: { lastActivityAt: 99, lastHookAt: 20 } }), 20);
-  assert.equal(idleSince({ kind: 'codex', rt: { lastActivityAt: 99, lastHookAt: null } }), 99);
+  assert.equal(idleSince({ kind: 'codex', rt: { lastActivityAt: 99, lastHookAt: null } }), 0, 'P170: hook 없는 하네스는 터미널 알림이 아니라 턴 끝으로 센다');
 });
 
 // ---------- 가짜 판: 리포 A(a1, a2)와 리포 B(b1, b2) ----------

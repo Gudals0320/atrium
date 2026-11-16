@@ -174,7 +174,7 @@ export class Backend {
     this.adapter.on('log', (m) => this.log(`[${this.adapter.backend}]`, m));
     // P21: 판 터미널에서 친 글로 보내지 않은 초안이 있는지 기억한다(초안이 있으면 잠재우지 않는다)
     // P126: 휠·초점 알림처럼 터미널이 대신 보낸 보고뿐인 입력은 "사람이 치는 중"(전달 규칙 4)으로 세지 않는다
-    this.relay = new TerminalRelay({ adapter: this.adapter, remoteBatchMs: envVar('REMOTE_BATCH_MS') != null ? Number(envVar('REMOTE_BATCH_MS')) : undefined, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { if (!terminalReportsOnly(data)) s.lastUserInputAt = Date.now(); s.draft = draftAfterInput(s.draft, data); this.noteDraftKeys(s, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
+    this.relay = new TerminalRelay({ adapter: this.adapter, remoteBatchMs: envVar('REMOTE_BATCH_MS') != null ? Number(envVar('REMOTE_BATCH_MS')) : undefined, onInput: (sid, data, c) => { const s = this.sessions.get(sid); if (s) { if (!terminalReportsOnly(data)) s.lastUserInputAt = Date.now(); if (this.sleeper && !terminalReportsOnly(data)) this.sleeper.noteInput(c); s.draft = draftAfterInput(s.draft, data); this.noteDraftKeys(s, data); this.touch(s); } if (c) this.peers.touch(c); }, log: (m) => this.log(m) });
     this.keyChain = keyChain(); // P104: session.keys를 세션마다 차례로
 
     for (const row of this.store.openSessions()) {
