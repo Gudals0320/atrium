@@ -130,7 +130,30 @@ export function voiceErrorKey(code) {
     case 'NotFoundError': case 'nomic': return 'voice.noMic';
     case 'insecure': return 'voice.insecure';
     case 'limit': return 'voice.limit';
+    case 'silence': return 'voice.silence'; // P176
+    case 'hidden': return 'voice.hidden'; // P176
     case 'disconnected': case 'dropped': return 'voice.dropped';
     default: return 'voice.failed';
   }
+}
+
+// P176: 녹음 알약(화면 위)을 보일까. 녹음 중인데 마이크 단추가 안 보이면 보인다.
+// rect: 단추 자리(getBoundingClientRect), view: { w, h } 창 크기, hit: 단추 가운데를 누르면 단추에 닿는가(다른 덮개에 가리지 않음),
+// hidden: 단추가 숨은 바 안에 있다
+export function pillWanted({ active, rect, view, hit, hidden } = {}) {
+  if (!active) return false;
+  if (hidden || !rect || !(rect.width > 0) || !(rect.height > 0)) return true;
+  if (view && (rect.right <= 0 || rect.bottom <= 0 || rect.left >= view.w || rect.top >= view.h)) return true;
+  return !hit;
+}
+
+// P176: 지난 시간 → "0:07", "1:05", "10:00"
+export function voiceElapsed(ms) {
+  const sec = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
+// P176: 창이 숨을 때(visibilityState) 녹음을 멈추는가. 연결 중·듣는 중이면 멈춘다(멈추는 중은 이미 멈추고 있다)
+export function stopOnHide(visibility, state) {
+  return visibility === 'hidden' && (state === 'listening' || state === 'connecting');
 }

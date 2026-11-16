@@ -22,4 +22,5 @@ contextBridge.exposeInMainWorld('mt', {
   setZoom: (f) => webFrame.setZoomFactor(clampZoom(f)), // P45: 화면 배율
   zoomFactor: () => webFrame.getZoomFactor(),
   onNavigate: (fn) => { const h = (_e, id) => fn(id); ipcRenderer.on('mt:navigate', h); return () => ipcRenderer.removeListener('mt:navigate', h); },
+  onWindowHidden: (fn) => { const h = () => fn(); ipcRenderer.on('mt:hidden', h); return () => ipcRenderer.removeListener('mt:hidden', h); }, // P176: 창이 최소화되거나 숨음(음성 입력을 멈춘다)
 });

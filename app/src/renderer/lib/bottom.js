@@ -28,8 +28,10 @@ export function bandZone(p, rect, shown) {
 
 // 숨지 않게 붙잡는 까닭 하나(없으면 null). 마우스 자리는 보지 않는다
 // focused: 명령 바 안에 초점, draft: 입력칸에 쓰다 만 글, popup: 위 펼침(대상 후보, Thread), menu: 칩 줄 안에 초점, pinned: 시험 고정
-export function holdReason({ focused, draft, popup, menu, pinned } = {}) {
+// voice(P176): 음성 입력 중(연결 중·듣는 중·멈추는 중). 녹음 표시(마이크 단추)가 숨지 않게 붙잡는다
+export function holdReason({ focused, draft, popup, menu, pinned, voice } = {}) {
   if (pinned) return 'pinned';
+  if (voice) return 'voice';
   if (focused) return 'focus';
   if (draft) return 'draft';
   if (popup) return 'popup';
