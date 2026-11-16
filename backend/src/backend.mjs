@@ -36,7 +36,7 @@ import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 세션 크기
-import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines } from './canvas-ops.mjs';
+import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
@@ -2020,6 +2020,7 @@ export class Backend {
         this.store.setNode(n);
         // P73: 사람이 테두리를 끌어 크기를 바꾸면 고른 비율과 크기 단계를 끈다(자유 비율)
         if (before && (Math.round(before.w) !== Math.round(n.w) || Math.round(before.h) !== Math.round(n.h)) && (before.aspect || before.size)) this.store.setNodeAspect(s.sessionId, null, null);
+        if (p.cause === 'resize' && before && (Math.round(before.w) !== Math.round(n.w) || Math.round(before.h) !== Math.round(n.h))) markHandSize(this, s.sessionId); // P177: 사람이 끌어 정한 크기
         noteNodeMove(this, s, before, n, p.cause);
         // P47: 다른 창도 옮긴 자리를 바로 그린다(예전에는 다음 board.changed까지 옛 자리). 보낸 창은 by로 알아보고 무시한다
         this.api.broadcast('board.node', { sessionId: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z, by: (c && c.clientId) || null });

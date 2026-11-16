@@ -586,7 +586,8 @@ export function lineBlocks(b, wsKey, items = canvasItems(b)) {
   }
   return [...out.values()];
 }
-const sessionRow = (b) => (sid) => { const s = b.sessions.get(sid); return s ? { parentSessionId: s.parentSessionId || null, createdAt: s.createdAt || 0 } : null; };
+// P177: 줄의 부모는 일 부모(정리와 같다. 동료·독립으로 정한 계보 부모의 줄에 서지 않는다)
+const sessionRow = (b) => { const idx = relIndexOf(b); return (sid) => { const s = b.sessions.get(sid); return s ? { parentSessionId: (idx ? idx.workParentOf(sid) : s.parentSessionId) || null, createdAt: s.createdAt || 0 } : null; }; };
 export const lineTree = (b, wsKey, items = canvasItems(b)) => blockTree(lineBlocks(b, wsKey, items), sessionRow(b));
 // 블록 하나를 아래로 옮긴다(상자는 상자째)
 function lowerBlock(b, x, dy) {
@@ -689,6 +690,7 @@ export function setSize(b, p) {
     out = resolveSize(r, r.aspect, req);
     b.store.setNode({ ...r, w: out.w, h: out.h });
     b.store.setNodeAspect(s.sessionId, out.aspect, out.key);
+    markHandSize(b, s.sessionId); // P177
   }
   b.store.addEvent(s.sessionId, 'node_size', { size: out.key || p.size || null, dir: out.dir, aspect: out.aspect, level: out.level, dock: d ? d.dockId : undefined });
   reflowLines(b, s.sessionId, 'size'); // P75: 커졌으면 줄의 뒤 형제를 아래로
@@ -736,17 +738,26 @@ function planWorkspace(b, key, { avoid = true } = {}) {
   const blocks = blocksOf(b, key);
   if (!blocks.length) return { blocks, out: [], edges: [], moved: null };
   const ids = new Set(blocks.flatMap((x) => x.members));
-  const edges = b.store.links().filter((l) => ids.has(l.from) && ids.has(l.to) && !l.transient && (l.role || l.observed || l.spawned)).map((l) => [l.from, l.to]);
+  // P177: 정리의 나무는 일 관계를 따른다(relations.mjs). 동료·독립으로 정한 쌍의 선은 나무 줄이 아니다. 동료는 짝 옆에 같은 급으로 선다(arrangeTree peers)
+  const idx = relIndexOf(b);
+  const split = (f, t) => { const r = idx && idx.explicitOf(f, t); return !!r && (r.relation !== 'sub' || r.a !== f); }; // 명시한 하위는 위 → 아래 방향 선만
+  const edges = b.store.links().filter((l) => ids.has(l.from) && ids.has(l.to) && !l.transient && (l.role || l.observed || l.spawned) && !split(l.from, l.to)).map((l) => [l.from, l.to]);
   // P75: 하위 세션의 부모(띄운 쪽)도 연결로 본다(역할 선을 끊어도 줄은 부모 오른쪽). 부모 연결을 앞에 두어 나무 부모가 된다
+  // P177: 부모는 일 부모(명시한 하위가 계보를 이기고, 동료·독립으로 정한 계보 부모는 부모가 아니다)
   const born = (m) => (b.sessions.get(m) || {}).createdAt || 0;
-  const parents = [...ids].map((m) => [(b.sessions.get(m) || {}).parentSessionId, m]).filter(([p]) => p && ids.has(p)).sort((x, y) => born(x[1]) - born(y[1]));
+  const parentOf = (m) => (idx ? idx.workParentOf(m) : (b.sessions.get(m) || {}).parentSessionId);
+  const parents = [...ids].map((m) => [parentOf(m), m]).filter(([p]) => p && ids.has(p)).sort((x, y) => born(x[1]) - born(y[1]));
   edges.unshift(...parents.filter(([p, m]) => !edges.some(([f, t]) => f === p && t === m)));
+  const peers = [];
+  if (idx) for (const m of ids) for (const q of idx.peersOf(m)) if (ids.has(q.id) && m < q.id) peers.push([m, q.id]);
+  const hand = handSizes(b);
+  for (const x of blocks) if (x.kind === 'node' && hand[x.id]) { x.hand = true; x.handStep = (b.store.nodes().find((n) => n.session_id === x.id) || {}).size || null; }
   const start = bbox(blocks);
   // P73: 정리의 크게·보통·작게는 노드의 방향과 고른 비율을 지킨다(비율이 없으면 16:9)
   const stepOf = (x, level) => { const r = resolveSize(x, x.aspect, { level, aspect: aspectOf(x, x.aspect) || DEFAULT_ASPECT }); return { w: r.w, h: r.h, step: r.key }; };
   // P75: 형제는 띄운 순서(블록 안에서 가장 먼저 띄운 세션의 때)로 위에서 아래로
   const rank = new Map(blocks.map((x) => [x.id, x.members.length ? Math.min(...x.members.map(born)) : Infinity]));
-  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y }, stepOf, rank });
+  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y }, stepOf, rank, peers });
   let sx = 0, sy = 0;
   if (avoid) {
     // 정리한 영역이 다른 영역과 겹치면(맞닿는 것은 괜찮다) 영역째로 빈자리로 옮긴다
@@ -759,6 +770,15 @@ function planWorkspace(b, key, { avoid = true } = {}) {
   }
   const out = blocks.map((x) => { const q = plan.get(x.id); return { id: x.id, kind: x.kind, names: x.members.map((m) => b.nameOf(m)), from: { x: x.x, y: x.y, w: x.w, h: x.h }, to: { ...q, x: q.x + sx, y: q.y + sy } }; });
   return { blocks, out, edges, moved: sx || sy ? { dx: sx, dy: sy } : null };
+}
+// P177: 일 관계 색인(가지 기능이 없으면 null = 옛 계보 규칙)
+const relIndexOf = (b) => (b.branch && b.branch.relIndex ? b.branch.relIndex() : null);
+// P177: 사람이 손으로 정한 크기(노드 메뉴·atrium size의 크기 단계, 테두리 끌기). 정리가 동료를 맞출 때 지킨다. meta handSize { 세션: 때 }
+export const handSizes = (b) => b.store.getMeta('handSize') || {};
+export function markHandSize(b, sid, on = true) {
+  const m = { ...handSizes(b) };
+  if (on) m[sid] = Date.now(); else delete m[sid];
+  b.store.setMeta('handSize', m);
 }
 // 계획을 판에 쓴다(노드, 덩어리, 메모·칸반)
 function applyWorkspacePlan(b, { blocks, out }) {
