@@ -2599,7 +2599,7 @@ export default {
     connecting: '마이크를 여는 중…',
     listening: '듣는 중…',
     stopping: '남은 글을 받는 중…',
-    noKey: '음성 입력에는 SONIOX_API_KEY가 필요합니다. Atrium을 secret-run atrium으로 띄우세요.',
+    noKey: '음성 입력에는 SONIOX_API_KEY가 필요합니다. Atrium을 띄우는 환경에 이 변수를 넣고 Atrium을 다시 띄우세요.',
     denied: '마이크를 쓸 권한이 없습니다.',
     noMic: '마이크를 찾지 못했습니다.',
     insecure: '음성 입력은 HTTPS 주소에서만 됩니다.',

@@ -2599,7 +2599,7 @@ export default {
     connecting: 'Opening the microphone…',
     listening: 'Listening…',
     stopping: 'Getting the last words…',
-    noKey: 'Voice input needs SONIOX_API_KEY. Start Atrium via secret-run atrium.',
+    noKey: 'Voice input needs SONIOX_API_KEY in the environment Atrium starts with. Set it and restart Atrium.',
     denied: 'Microphone access was denied.',
     noMic: 'No microphone found.',
     insecure: 'Voice input works only on an HTTPS address.',

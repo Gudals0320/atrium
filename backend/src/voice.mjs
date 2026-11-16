@@ -1,6 +1,6 @@
 // P165: 음성 입력 중계. 창·휴대폰 브라우저가 마이크 소리(16kHz 16비트 PCM 한 채널)를 판 API 웹소켓의 바이너리 프레임으로 보내면
 // 백엔드가 Soniox 실시간 전사(WebSocket)로 넘기고, 돌아온 글 토막을 그 클라이언트에게 voice.text 이벤트로 돌려준다.
-// - 키는 이 프로세스의 환경 변수 SONIOX_API_KEY에서만 읽는다(레지스트리는 읽지 않는다. 판은 `secret-run atrium -- …`으로 띄워 키를 받는다).
+// - 키는 이 프로세스의 환경 변수 SONIOX_API_KEY에서만 읽는다(레지스트리는 읽지 않는다. 판을 띄우는 쪽이 환경으로 키를 넘긴다).
 //   키 값은 창·로그·응답에 내보내지 않고, 판이 띄우는 세션·터미널에도 넘기지 않는다(proc-env.mjs의 envDenyList)
 //   Soniox에는 연결 머리(Authorization: Bearer)로 보낸다(시작 글의 api_key는 옛 방식)
 // - 인증은 판 API 웹소켓 그대로다(이 PC의 판 API 토큰, 원격은 짝 맺은 기기의 세션 쿠키). 따로 끝점을 열지 않는다
@@ -61,7 +61,7 @@ export function makeKeyReader({ env = process.env } = {}) {
     return v && String(v).trim() ? String(v).trim() : null;
   };
 }
-export const NO_KEY_MESSAGE = 'SONIOX_API_KEY is not set in the Atrium backend environment. Start Atrium via secret-run (secret-run atrium -- <Atrium launcher>) so the key reaches the backend.';
+export const NO_KEY_MESSAGE = 'SONIOX_API_KEY is not set in the Atrium backend environment. Start Atrium with the key in its environment.';
 
 const err = (code, message) => Object.assign(new Error(message), { code });
 
