@@ -228,17 +228,20 @@ export function missionSummary(ids, tierOfId) {
   return out;
 }
 
-// P178: 세션 맵(Lineage) 오른쪽 요약 칸. ids(맵 차례)를 상태 묶음으로 나눈다(옛 열 지도 요약 열 missionSummary를 넓힌 것: 쉼·절전·끝남을 따로).
-// 차례 = 응답 필요(응답 필요·오류) · 작업 중 · 작업 완료(안 본 결과) · 쉼 · 절전 중 · 끝남. 빈 묶음은 뺀다(작업 중은 늘 둔다: "없음"을 보인다)
-// → [{ key: 'turn'|'work'|'review'|'rest'|'sleep'|'done', ids }]. 응답 필요 안은 응답 필요가 오류보다 먼저(그 밖은 맵 차례)
-export const SUMMARY_ORDER = ['turn', 'work', 'review', 'rest', 'sleep', 'done'];
-export function mapSummary(ids, tierOfId) {
-  const g = new Map(SUMMARY_ORDER.map((k) => [k, []]));
-  for (const id of ids || []) {
-    const t = tierOfId(id);
-    const k = t === 'alert' ? 'turn' : g.has(t) ? t : 'rest';
-    g.get(k).push(id);
-  }
-  g.get('turn').sort((a, b) => (tierOfId(a) === 'turn' ? 0 : 1) - (tierOfId(b) === 'turn' ? 0 : 1));
-  return SUMMARY_ORDER.filter((k) => k === 'work' || g.get(k).length).map((k) => ({ key: k, ids: g.get(k) }));
+// P179: 요약 열(옛 열 지도 P95와 세션 맵 Lineage가 같이 쓴다, SummaryColumn.jsx). missionSummary 위에
+// - 응답 필요 안은 응답 필요가 오류보다 먼저(그 밖은 맵 차례)
+// - 쉼 · 끝남 묶음은 이름을 이은 짧은 글: 쉼 → 절전 중 → 종료 차례(같은 등급 안은 맵 차례), 앞의 restMax개만 보이고 나머지는 "+n개 더"
+// → missionSummary 결과 + { restShown, restHidden, restSplit: { rest, sleep, done } }
+export const REST_MAX = 24;
+const REST_RANK = { rest: 0, sleep: 1, done: 2 };
+export function summaryColumn(ids, tierOfId, { restMax = REST_MAX } = {}) {
+  const s = missionSummary(ids || [], tierOfId);
+  s.turn = [...s.turn].sort((a, b) => (tierOfId(a) === 'turn' ? 0 : 1) - (tierOfId(b) === 'turn' ? 0 : 1));
+  s.rest = [...s.rest].sort((a, b) => (REST_RANK[tierOfId(a)] ?? 0) - (REST_RANK[tierOfId(b)] ?? 0));
+  s.restShown = s.rest.slice(0, restMax);
+  s.restHidden = Math.max(0, s.rest.length - restMax);
+  const split = { rest: 0, sleep: 0, done: 0 };
+  for (const id of s.rest) { const t = tierOfId(id); split[t === 'sleep' || t === 'done' ? t : 'rest']++; }
+  s.restSplit = split;
+  return s;
 }

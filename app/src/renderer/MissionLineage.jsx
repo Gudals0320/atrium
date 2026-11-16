@@ -12,13 +12,14 @@ import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
 import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE } from './lib/mission-lineage.js'; // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
-import { roleModel, nodeTier, roleText, modelText, ageText, mapSummary } from './lib/mission-model.js';
+import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
 import { bgShow, bgText, bgKindsText } from './lib/bg-work.js'; // P164
 import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText } from './lib/i18n.js';
 import { leadTags } from './lib/cmd-input.js';
 import { MissionLight, DoneMark } from './Mission.jsx';
+import { SummaryColumn } from './SummaryColumn.jsx';
 import { commandDraft } from './Thread.jsx';
 
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
@@ -30,8 +31,8 @@ const OPEN_MAX = 0.85; // 처음 화면(폭 맞춤) 배율 상한
 const READ_K = 0.26; // 멀리 타일 이름 11.5px·상태 10px(화면)가 지켜지는 배율 하한(폭 맞춤이 이보다 작으면 이 배율로 왼쪽 위에서)
 const DOT_GAP = 92, DOT_R = 1.8, DOT_MIN_GAP = 28; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다. 멀리서는 솎는다
 const ATTN_MAX = 4;
-// P178: 오른쪽 상태 요약 칸(옛 열 지도 요약 열을 되살림). 열려 있으면 맞춤·가운데 맞추기가 그 폭을 비워 둔다. 접힘은 이 기기(창)에 기억한다
-const SUM_W = 264, SUM_GAP = 12, SUM_MAX = 40;
+// P178·P179: 오른쪽 상태 요약 열(옛 열 지도 요약 열, SummaryColumn.jsx). 열려 있으면 맞춤·가운데 맞추기가 그 폭을 비워 둔다. 접힘은 이 기기(창)에 기억한다
+const SUM_W = 288, SUM_GAP = 12; // P179: 옛 요약 열 폭
 const SUM_KEY = 'atrium.sessionMap.summary';
 // 정한 적이 없으면 넓은 창(1280px 이상)에서만 처음부터 연다(좁은 창·태블릿 세로에서는 카드 자리가 먼저)
 const SUM_WIDE = 1280;
@@ -631,11 +632,18 @@ export function LineageMap() {
   const attn = ids.filter((id) => tiers.get(id) === 'turn' || tiers.get(id) === 'alert').sort((a, b) => (tiers.get(a) === 'turn' ? 0 : 1) - (tiers.get(b) === 'turn' ? 0 : 1));
   const nWork = ids.filter((id) => tiers.get(id) === 'work').length, nDone = ids.filter((id) => tiers.get(id) === 'review').length;
   const tagOf = (id) => { const b = lay.cards.get(id); return !!b && tagSet.has(String(b.node.name).toLowerCase()); };
-  const sum = lay ? mapSummary(ids, (id) => tiers.get(id)) : [];
+  const sum = summaryColumn(ids, (id) => tiers.get(id));
+  const nTeams = [...roles.values()].filter((m) => m.rank === 'lead').length; // 바닥 줄 팀 수 = 하위가 있는 맨 위 세션
   // P178: 요약 칸 줄에 마우스를 올리면 그 카드를 강조한다(DOM에 바로, 다시 그리지 않는다)
   const sumHot = (id) => { const root = rootRef.current; if (!root) return; for (const x of root.querySelectorAll('.mt-ta-slot.sum-hot')) if (x.dataset.id !== id) x.classList.remove('sum-hot'); if (id) { const el = root.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`); if (el) el.classList.add('sum-hot'); } };
   const toggleSum = () => { const on = !sumOpen; saveSumOpen(on); setSumOpen(on); };
-  const sumLine = (id, key) => { const f = factsOf(id); return key === 'turn' || key === 'work' ? f.task || f.stateText : f.age || ''; };
+  // P179: 줄의 둘째 글(옛 요약 열과 같이): 응답 필요 = 질문이나 오류, 작업 중 = "지금: …", 작업 완료 = 역할
+  const sumLine = (id, key) => {
+    const f = factsOf(id);
+    if (key === 'turn') return f.err || f.task || f.stateText;
+    if (key === 'work') return f.task ? t('mmMap.sumNow', { text: f.task }) : f.stateText;
+    return f.role || f.stateText;
+  };
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const edgeText = (e) => (e.cross ? t('mmTerr.edgeCross', { from: lay.tree.byId.get(e.from).name, ws: wsName(lay.tree.byId.get(e.to).workspaceKey || '') || t('mmTerr.noFolder') }) : e.rel === 'role' ? (e.role || t('mmLine.role')) : t('mmLine.task'));
   // 칸 머리: 워크스페이스 · 시작 · 1단계 · 2단계 · … · 솔로
@@ -712,32 +720,19 @@ export function LineageMap() {
         </span>
         <button type="button" className="mt-ta-iconbtn" data-action="mission-close" title={t('mmTerr.close')} aria-label={t('mmTerr.close')} onClick={() => setMissionOpen(false)}><XIcon s={18} /></button>
       </div>
-      {lay && (sumOpen ? (
-        <aside className="mt-ta-hud mt-sm-sum" data-role="ln-summary" style={{ width: SUM_W }} aria-label={t('mmSum.title')}>
-          <div className="sh"><span>{t('mmSum.title')}</span><button type="button" className="mt-ta-iconbtn" data-action="ln-sum-hide" title={t('mmSum.hide')} aria-label={t('mmSum.hide')} onClick={toggleSum}><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg></button></div>
-          <div className="sb">
-            {sum.map((g) => (
-              <section key={g.key} className={`sg st-${ST[g.key]}`} data-role="ln-sum-group" data-key={g.key}>
-                <h4><i />{t(`mmSum.group.${g.key}`)}<b>{g.ids.length}</b></h4>
-                {g.ids.length ? g.ids.slice(0, SUM_MAX).map((id) => { const b = lay.cards.get(id), tr = tiers.get(id); return (
-                  <button key={id} type="button" className={`si st-${ST[tr]}`} data-role="ln-sum-item" data-id={id} data-name={b.node.name} title={t('mmSum.itemTip')}
-                    onClick={() => focusCard(id)} onMouseEnter={() => sumHot(id)} onMouseLeave={() => sumHot(null)} onFocus={() => sumHot(id)} onBlur={() => sumHot(null)}>
-                    <span className="a"><i /><span className="nm">{b.node.name}</span></span>
-                    {(() => { const x = sumLine(id, g.key); return x ? <span className="b">{x}</span> : null; })()}
-                  </button>
-                ); }) : <div className="none">{t('mmSum.none')}</div>}
-                {g.ids.length > SUM_MAX ? <div className="none">{t('mmSum.more', { n: g.ids.length - SUM_MAX })}</div> : null}
-              </section>
-            ))}
-          </div>
-        </aside>
-      ) : (
-        <button type="button" className="mt-ta-hud mt-sm-sum-show" data-action="ln-sum-show" title={t('mmSum.show')} aria-label={t('mmSum.show')} onClick={toggleSum}>
-          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
-          {sum.filter((g) => g.ids.length && ['turn', 'work', 'review'].includes(g.key)).map((g) => <span key={g.key} className={`st-${ST[g.key]}`}><i /><b>{g.ids.length}</b></span>)}
+      {/* P179: 오른쪽 요약 열 = 옛 열 지도의 요약 열(SummaryColumn.jsx, 같은 부품). 창 오른쪽 끝에 위 줄 아래부터 바닥까지 붙는다. 접기는 열 가장자리의 작은 단추 */}
+      {lay && sumOpen ? (
+        <SummaryColumn role="ln-summary" className="mt-ta-hud mt-sm-sum" style={{ width: SUM_W }} sum={sum} t={t} nameOf={(id) => lay.cards.get(id).node.name} tierOf={(id) => tiers.get(id)}
+          textOf={sumLine} teams={nTeams} hint={t('mmSum.hint')} itemTip={t('mmSum.itemTip')} onGo={(id) => focusCard(id)} onHot={sumHot} />
+      ) : null}
+      {lay && (
+        <button type="button" className={`mt-ta-hud mt-sm-sum-edge${sumOpen ? ' on' : ''}`} data-action={sumOpen ? 'ln-sum-hide' : 'ln-sum-show'} style={sumOpen ? { right: SUM_W } : undefined}
+          title={t(sumOpen ? 'mmSum.hide' : 'mmSum.show')} aria-label={t(sumOpen ? 'mmSum.hide' : 'mmSum.show')} aria-expanded={sumOpen} onClick={toggleSum}>
+          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d={sumOpen ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'} /></svg>
+          {!sumOpen && sum.turn.length ? <b data-role="ln-sum-edge-turn">{sum.turn.length}</b> : null}
         </button>
-      ))}
-      <div className="mt-ta-hud mt-sm-cols" data-role="ln-cols" ref={colsRef} aria-hidden="true">
+      )}
+      <div className="mt-ta-hud mt-sm-cols" data-role="ln-cols" ref={colsRef} style={lay && sumOpen ? { right: SUM_W } : undefined} aria-hidden="true">
         {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key}>{colLabel(c)}</span>)}
       </div>
     </div>

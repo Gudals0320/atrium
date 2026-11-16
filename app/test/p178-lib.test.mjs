@@ -6,7 +6,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lineageLayout, labelStep, labelPx, headBox, LABEL, LINE } from '../src/renderer/lib/mission-lineage.js';
-import { mapSummary, SUMMARY_ORDER } from '../src/renderer/lib/mission-model.js';
 import { mapTabKey } from '../src/renderer/lib/keys.js';
 import { zoomStep } from '../src/renderer/lib/faces.js';
 import en from '../src/renderer/locales/en.js';
@@ -140,26 +139,12 @@ test('main.jsx: M 대신 Tab(잡기 단계), 사전의 M 표기는 Tab', () => {
   }
 });
 
-test('상태 요약 칸: 응답 필요(오류 포함, 응답 필요 먼저) · 작업 중 · 작업 완료 · 쉼 · 절전 중 · 끝남, 빈 묶음은 빼되 작업 중은 늘', () => {
-  const tiers = new Map([['a', 'sleep'], ['b', 'alert'], ['c', 'work'], ['d', 'turn'], ['e', 'review'], ['f', 'rest'], ['g', 'sleep'], ['h', 'done'], ['i', undefined]]);
-  const g = mapSummary([...tiers.keys()], (id) => tiers.get(id));
-  assert.deepEqual(g.map((x) => x.key), SUMMARY_ORDER);
-  assert.deepEqual(g.find((x) => x.key === 'turn').ids, ['d', 'b']);
-  assert.deepEqual(g.find((x) => x.key === 'sleep').ids, ['a', 'g'], '맵 차례 유지');
-  assert.deepEqual(g.find((x) => x.key === 'rest').ids, ['f', 'i'], '모르는 등급은 쉼');
-  const only = mapSummary(['a'], () => 'sleep');
-  assert.deepEqual(only.map((x) => x.key), ['work', 'sleep']);
-  assert.deepEqual(only[0].ids, []);
-  assert.deepEqual(mapSummary([], () => 'sleep').map((x) => x.key), ['work']);
-  for (const d of [en, ko]) for (const k of SUMMARY_ORDER) assert.ok(d.mmSum.group[k], k);
-});
-
 test('상태 요약 칸 창: 누르면 그 카드로(사이드바와 같은 focusCard), 올리면 강조, 접힘 기억, 맞춤이 폭을 비운다', () => {
   const src = read('MissionLineage.jsx');
-  assert.match(src, /data-role="ln-summary"/);
-  assert.match(src, /onClick=\{\(\) => focusCard\(id\)\}/);
+  assert.match(src, /role="ln-summary"/); // P179: SummaryColumn의 data-role
+  assert.match(src, /onGo=\{\(id\) => focusCard\(id\)\}/); // P179: 공용 요약 열(SummaryColumn)
   assert.match(src, /session: \(sid\) => \{[^\n]*focusCard\(hit\[0\]\)/);
-  assert.match(src, /onMouseEnter=\{\(\) => sumHot\(id\)\}/);
+  assert.match(src, /onHot=\{sumHot\}/);
   assert.match(src, /atrium\.sessionMap\.summary/);
   assert.match(src, /fitView\(L\.bounds, s\.w - RAIL - sumW\(\)/);
   assert.match(read('styles.css'), /\.mt-sm \.mt-ta-slot\.sum-hot \.mt-ta-card \{/);

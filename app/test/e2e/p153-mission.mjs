@@ -6,6 +6,7 @@
 // 실행: sh backend/.dev/clean-env.sh node app/test/e2e/p153-mission.mjs <setup|pc|phone|mock|p157|stop> [round]
 // P157: 다른 워커의 판에서 돌릴 때 P153_BOARD=<이름>(atrium-dev-<이름>), P153_PORT, P153_DEBUG(창 원격 디버깅 포트), P153_DIR(시험 폴더), P153_OUT(experiments 아래 결과 폴더 이름)로 덮는다.
 //   p157 단계: 솔로 칸·폴더 기둥(너비·두 줄·최소 높이)·미리 보기 하나·Alt 없이 줄 머리 강조 없음·더블클릭으로 판에 갈 때 날아가기 없음
+//   p179 단계: 오른쪽 요약 열(옛 열 지도의 요약 열 모양, SummaryColumn.jsx) 2205·2560·1100, 누르기·올리기, 접기, classic도 같은 부품
 // 결과는 워크트리의 experiments/p153/<round>/(저장소 밖).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -959,38 +960,7 @@ async function p178() {
       check('계단이 바뀌어도 보던 카드는 화면 같은 자리(±3px)', Object.values(zooms).every((m) => m.anchorMove <= 3), Object.fromEntries(Object.entries(zooms).map(([k, m]) => [k, m.anchorMove])));
     }
     if (before) { await page.evaluate(UNHOOK); return; }
-    // 3. 오른쪽 상태 요약 칸
-    await page.evaluate(() => window.__mtTa.fit()); await sleep(1200);
-    const sm = await page.evaluate(() => {
-      const p = document.querySelector('[data-role=ln-summary]'); if (!p) return null;
-      const pr = p.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect();
-      const under = [...document.querySelectorAll('.mt-ta-slot')].map((s) => s.getBoundingClientRect()).filter((r) => r.bottom > pr.top && r.top < pr.bottom && r.right > pr.left - 2 && r.left < innerWidth);
-      return { left: Math.round(pr.left), groups: [...p.querySelectorAll('[data-role=ln-sum-group]')].map((g) => `${g.dataset.key}:${g.querySelectorAll('[data-role=ln-sum-item]').length}`), items: p.querySelectorAll('[data-role=ln-sum-item]').length, under: under.length, cards: document.querySelectorAll('.mt-ta-slot').length, vpw: Math.round(vp.width) };
-    });
-    await shotTo(page, 'p178-2205-fit-summary');
-    check('요약 칸: 상태 묶음(응답 필요·작업 중·작업 완료·쉼·절전…)과 모든 카드, 맞춤 보기에서 칸 아래 카드 없음', sm && sm.items === sm.cards && sm.groups[0].startsWith('turn') && sm.groups.some((g) => g.startsWith('sleep')) && sm.under === 0, sm);
-    // 누르면 그 카드로(배율 그대로, 가운데, 반짝임). 올리면 강조
-    const kBefore = await page.evaluate(() => window.__mtTa.view().k);
-    const tgt = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-role=ln-sum-item]')].pop(); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { id: b.dataset.id, x: r.left + 30, y: r.top + 8 }; });
-    await page.mouse.move(tgt.x, tgt.y); await sleep(300);
-    const hot = await page.evaluate((id) => document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`).classList.contains('sum-hot'), tgt.id);
-    await shotTo(page, 'p178-2205-summary-hover');
-    await page.mouse.click(tgt.x, tgt.y); await sleep(700);
-    const fly = await page.evaluate(([id, sw]) => { const s = document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), r = s.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { k: window.__mtTa.view().k, dx: Math.round(r.left + r.width / 2 - (vp.width - window.__mtTa.sumW()) / 2), blink: s.classList.contains('blink') }; }, [tgt.id]);
-    await shotTo(page, 'p178-2205-summary-click');
-    check('요약 칸 줄: 올리면 카드 강조, 누르면 배율 그대로 그 카드를 가운데로 옮겨 반짝인다', hot && Math.abs(fly.k - kBefore) < 1e-6 && Math.abs(fly.dx) <= 4 && fly.blink, { hot, fly, kBefore });
-    await page.mouse.move(5, 400);
-    // 접기: 접으면 맞춤이 폭을 다 쓰고, 기억한다
-    const kOpen = await page.evaluate(() => { window.__mtTa.fit(); return window.__mtTa.view().k; }); await sleep(800);
-    await page.click('[data-action=ln-sum-hide]'); await sleep(400);
-    await page.evaluate(() => window.__mtTa.fit()); await sleep(1200);
-    const col = await page.evaluate(() => ({ k: window.__mtTa.view().k, panel: !!document.querySelector('[data-role=ln-summary]'), btn: !!document.querySelector('[data-action=ln-sum-show]'), saved: localStorage.getItem('atrium.sessionMap.summary') }));
-    await shotTo(page, 'p178-2205-fit-collapsed');
-    check('요약 칸 접기: 칸이 작은 단추가 되고 맞춤이 더 크게, 접힘을 기억', !col.panel && col.btn && col.saved === '0' && col.k >= kOpen, { kOpen, col });
-    await closeMission(page); await sleep(400); await openMission(page);
-    const still = await page.evaluate(() => !document.querySelector('[data-role=ln-summary]') && !!document.querySelector('[data-action=ln-sum-show]'));
-    check('다시 열어도 접힌 채', still);
-    await page.click('[data-action=ln-sum-show]'); await sleep(400);
+    // 3. 오른쪽 상태 요약 칸: P179에서 옛 요약 열 모양으로 바뀌어 p179 단계가 본다
     // 4. Tab: 맵에서 닫기, 명령줄(빈 것)에서 열고 닫기, @ 완성 목록이면 완성, 검색 입력칸·Shift+Tab은 아님
     await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
     await page.keyboard.press('Tab'); await sleep(600);
@@ -1051,6 +1021,112 @@ async function p178() {
   } finally { await closeApp(app); }
 }
 
+// P179: 세션 맵 오른쪽 요약 열 = 옛 열 지도의 요약 열(SummaryColumn.jsx). 2205×1291 맞춤(펼침·접힘), 2560×1440, 좁은 창, 누르기·올리기, 옛 열 지도도 같은 부품
+const P179_COL = () => {
+  const p = document.querySelector('[data-role=ln-summary]'); if (!p) return null;
+  const R = (el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), r: Math.round(r.right), b: Math.round(r.bottom) }; };
+  const cs = getComputedStyle(p), pr = p.getBoundingClientRect(), top = document.querySelector('[data-role=ta-top]').getBoundingClientRect();
+  const under = [...document.querySelectorAll('.mt-ta-slot')].map((s) => s.getBoundingClientRect()).filter((r) => r.bottom > pr.top && r.top < pr.bottom && r.right > pr.left - 2 && r.left < innerWidth);
+  const sec = (k) => p.querySelector(`[data-role=mm-sum-${k}]`);
+  const bar = document.querySelector('[data-role=bottom] .mt-cmd') || document.querySelector('[data-role=bottom]');
+  const edge = document.querySelector('[data-action=ln-sum-hide]');
+  const cols = document.querySelector('[data-role=ln-cols]');
+  return {
+    box: R(p), win: { w: innerWidth, h: innerHeight }, topBottom: Math.round(top.bottom), borderL: cs.borderLeftWidth, radius: cs.borderTopLeftRadius, shadow: cs.boxShadow,
+    heads: [...p.querySelectorAll('.mt-mm-sech')].map((h) => h.innerText.replace(/\s+/g, ' ').trim()),
+    turn: sec('turn') ? sec('turn').querySelectorAll('[data-role=mm-sum-item]').length : 0, work: sec('work') ? sec('work').querySelectorAll('[data-role=mm-sum-item]').length : 0,
+    review: sec('review') ? sec('review').querySelectorAll('[data-role=mm-sum-item]').length : 0, restNames: p.querySelectorAll('[data-role=mm-sum-rest-item]').length,
+    restMore: (p.querySelector('[data-role=mm-sum-rest-more]') || {}).innerText || null, split: (p.querySelector('[data-role=mm-sum-split]') || {}).innerText || null,
+    restText: sec('rest') ? sec('rest').querySelector('.mt-mm-rest').innerText.slice(0, 160) : null,
+    foot: (p.querySelector('[data-role=mm-sum-foot]') || {}).innerText || null, cards: document.querySelectorAll('.mt-ta-slot').length, under: under.length,
+    bar: bar ? R(bar) : null, edge: edge ? R(edge) : null, colsRight: cols ? Math.round(cols.getBoundingClientRect().right) : null, scrollH: p.scrollHeight, clientH: p.clientHeight,
+  };
+};
+async function p179() {
+  call('settings.set', { key: 'missionStyle', value: 'territories' });
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
+  try {
+    await awayWin(app);
+    await page.setViewportSize({ width: 2205, height: 1291 }).catch(() => {});
+    await sleep(2500);
+    if (await page.$('[data-role="sidebar"]')) { await page.click('[data-action="sidebar"]'); await sleep(500); }
+    const real = await realId(page);
+    await page.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE)), MIX, real, null]);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.evaluate(() => { try { localStorage.removeItem('atrium.sessionMap.summary'); } catch { /* 없다 */ } });
+    await openMission(page);
+    await page.click('[data-action=ta-fit]'); await sleep(1500);
+    const c = await page.evaluate(P179_COL);
+    log(`[2205 col] ${JSON.stringify(c)}`);
+    await shotTo(page, 'p179-2205-fit-summary');
+    const nRest = c ? c.cards - c.turn - c.work - c.review : 0;
+    check('[2205] 요약 열: 창 오른쪽 끝·위 줄 아래부터 바닥까지 붙은 열, 왼쪽 세로 줄 1px, 떠 있는 상자(둥근 모서리·그림자)·제목 없음, 폭 288',
+      c && c.box.r === c.win.w && c.box.b === c.win.h && c.box.y === c.topBottom && c.borderL === '1px' && c.radius === '0px' && c.shadow === 'none' && c.box.w === 288 && !c.heads.some((h) => /By state|상태별/.test(h)), c);
+    check('[2205] 묶음: 응답 필요(줄마다)·작업 중·작업 완료, 쉼·절전·종료는 이은 이름 묶음(머리에 절전·종료 수, 많으면 +n개 더), 모든 세션이 한 번씩',
+      c && c.heads[0].startsWith('Needs you') && c.turn >= 1 && /^Working/.test(c.heads[1]) && c.restNames === Math.min(24, nRest) && (nRest > 24 ? /more/.test(c.restMore || '') : !c.restMore) && /asleep \d+/.test(c.split || '') && / · /.test(c.restText || ''), c);
+    check('[2205] 바닥 줄: "작업 중 n · 세션 n · 팀 n"(세션 = 카드 수)과 선 읽는 법 한 줄', c && new RegExp(`working · ${c.cards} sessions · \\d+ teams?`).test(c.foot || '') && /Green line/.test(c.foot || ''), c && c.foot);
+    check('[2205] 맞춤 보기에서 열 아래 카드 없음, 칸 머리 띠·명령줄은 열 왼쪽에서 끝난다', c && c.under === 0 && c.colsRight <= c.box.x && c.bar && c.bar.r <= c.box.x, c && { under: c.under, colsRight: c.colsRight, bar: c.bar, x: c.box.x });
+    // 누르기·올리기: 응답 필요 줄, 쉼 묶음 이름
+    for (const sel of ['[data-role=mm-sum-turn] [data-role=mm-sum-item]', '[data-role=mm-sum-rest-item]']) {
+      await page.evaluate(() => window.__mtTa.fit()); await sleep(1000);
+      const kBefore = await page.evaluate(() => window.__mtTa.view().k);
+      const tgt = await page.evaluate((q) => { const b = [...document.querySelectorAll(q)].pop(); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { id: b.dataset.id, x: r.left + Math.min(20, r.width / 2), y: r.top + r.height / 2 }; }, sel);
+      await page.mouse.move(tgt.x, tgt.y); await sleep(300);
+      const hot = await page.evaluate((id) => document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`).classList.contains('sum-hot'), tgt.id);
+      const tag = sel.includes('rest') ? 'rest' : 'turn';
+      await shotTo(page, `p179-2205-hover-${tag}`);
+      await page.mouse.click(tgt.x, tgt.y); await sleep(700);
+      const fly = await page.evaluate((id) => { const s = document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), r = s.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { k: window.__mtTa.view().k, dx: Math.round(r.left + r.width / 2 - (vp.width - window.__mtTa.sumW()) / 2), blink: s.classList.contains('blink') }; }, tgt.id);
+      await shotTo(page, `p179-2205-click-${tag}`);
+      check(`[2205] 요약 열 ${tag === 'rest' ? '쉼 묶음 이름' : '응답 필요 줄'}: 올리면 카드 강조, 누르면 배율 그대로 그 카드를 가운데로 옮겨 반짝인다`, hot && Math.abs(fly.k - kBefore) < 1e-6 && Math.abs(fly.dx) <= 4 && fly.blink, { hot, fly, kBefore });
+      await page.mouse.move(5, 400);
+    }
+    // 접기: 열 가장자리 작은 단추
+    const kOpen = await page.evaluate(() => { window.__mtTa.fit(); return window.__mtTa.view().k; }); await sleep(900);
+    await page.click('[data-action=ln-sum-hide]'); await sleep(400);
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(1300);
+    const col = await page.evaluate(() => { const b = document.querySelector('[data-action=ln-sum-show]'), r = b && b.getBoundingClientRect(); return { k: window.__mtTa.view().k, panel: !!document.querySelector('[data-role=ln-summary]'), btn: r ? { r: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height), turn: (b.querySelector('b') || {}).innerText || null } : null, saved: localStorage.getItem('atrium.sessionMap.summary'), colsRight: Math.round(document.querySelector('[data-role=ln-cols]').getBoundingClientRect().right), w: innerWidth }; });
+    await shotTo(page, 'p179-2205-fit-collapsed');
+    check('[2205] 접기: 열이 사라지고 창 오른쪽 끝에 작은 단추(응답 필요 수), 맞춤이 더 크게, 칸 머리 띠가 끝까지, 접힘 기억', !col.panel && col.btn && col.btn.r === col.w && col.btn.w <= 24 && col.saved === '0' && col.k >= kOpen && col.colsRight === col.w, { kOpen, col });
+    await closeMission(page); await sleep(400); await openMission(page);
+    check('[2205] 다시 열어도 접힌 채', await page.evaluate(() => !document.querySelector('[data-role=ln-summary]') && !!document.querySelector('[data-action=ln-sum-show]')));
+    await page.click('[data-action=ln-sum-show]'); await sleep(500);
+    check('[2205] 펼치기 → 열과 가장자리 단추(열 왼쪽 끝)', await page.evaluate(() => { const p = document.querySelector('[data-role=ln-summary]'), e = document.querySelector('[data-action=ln-sum-hide]'); return !!p && !!e && Math.abs(e.getBoundingClientRect().right - p.getBoundingClientRect().left) <= 1 && localStorage.getItem('atrium.sessionMap.summary') === '1'; }));
+    // 2560×1440
+    await page.setViewportSize({ width: 2560, height: 1440 }).catch(() => {}); await sleep(800);
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(1300);
+    const c2 = await page.evaluate(P179_COL);
+    await shotTo(page, 'p179-2560-fit-summary');
+    check('[2560] 열이 오른쪽 끝·바닥까지, 열 아래 카드 없음, 명령줄이 열 왼쪽', c2 && c2.box.r === c2.win.w && c2.box.b === c2.win.h && c2.under === 0 && c2.bar.r <= c2.box.x, c2 && { box: c2.box, under: c2.under, bar: c2.bar });
+    // 좁은 창(정한 적 없음): 접힌 채 시작
+    await closeMission(page);
+    await page.evaluate(() => { try { localStorage.removeItem('atrium.sessionMap.summary'); } catch { /* 없다 */ } });
+    await page.setViewportSize({ width: 1100, height: 800 }).catch(() => {}); await sleep(600);
+    await openMission(page);
+    const narrow = await page.evaluate(() => ({ panel: !!document.querySelector('[data-role=ln-summary]'), btn: !!document.querySelector('[data-action=ln-sum-show]') }));
+    await shotTo(page, 'p179-1100-fit');
+    check('[1100] 좁은 창은 접힌 채 시작(가장자리 단추만)', !narrow.panel && narrow.btn, narrow);
+    await page.click('[data-action=ln-sum-show]'); await sleep(600);
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(1200);
+    const c3 = await page.evaluate(P179_COL);
+    await shotTo(page, 'p179-1100-fit-summary');
+    check('[1100] 펼치면 열이 보이고 명령줄과 겹치지 않는다', c3 && c3.bar && c3.bar.r <= c3.box.x && c3.under === 0, c3 && { box: c3.box, bar: c3.bar, under: c3.under });
+    await closeMission(page);
+    // 옛 열 지도(숨은 설정 classic)도 같은 부품
+    await page.setViewportSize({ width: 2205, height: 1291 }).catch(() => {}); await sleep(500);
+    call('settings.set', { key: 'missionStyle', value: 'classic' }); await sleep(1200);
+    if (await page.$('[data-action="return-close"]')) { await page.click('[data-action="return-close"]').catch(() => {}); await sleep(300); }
+    await page.click('[data-action="mission-rail"]');
+    await page.waitForSelector('[data-role="mm-summary"]', { timeout: 20000 }).catch(() => {});
+    await sleep(1200);
+    const cl = await page.evaluate(() => { const p = document.querySelector('[data-role=mm-summary]'); return p ? { heads: [...p.querySelectorAll('.mt-mm-sech')].map((h) => h.innerText.replace(/\s+/g, ' ').trim()), foot: (p.querySelector('[data-role=mm-sum-foot]') || {}).innerText || null, items: p.querySelectorAll('[data-role=mm-sum-item]').length } : null; });
+    await shotTo(page, 'p179-2205-classic');
+    check('옛 열 지도(classic)도 같은 요약 열(묶음 머리·바닥 줄)', cl && cl.heads.length >= 2 && /sessions/.test(cl.foot || ''), cl);
+    await closeMission(page);
+    await page.evaluate(UNHOOK);
+  } finally { await closeApp(app); call('settings.set', { key: 'missionStyle', value: 'territories' }); }
+}
+
 async function stopBoard() {
   for (const s of call('session.list').filter((x) => /^p153-/.test(x.name))) { try { atrium('kill', s.name, '--yes'); } catch (e) { log(`kill ${s.name} ${e.message.slice(0, 100)}`); } }
   await sleep(2000);
@@ -1069,6 +1145,7 @@ try {
   else if (WHAT === 'compare') { await compareApp(); await mock(true); }
   else if (WHAT === 'p157') await p157();
   else if (WHAT === 'p178') await p178();
+  else if (WHAT === 'p179') await p179();
   else if (WHAT === 'stop') await stopBoard();
 } catch (e) {
   check('시험이 끝까지 돌았다', false, e.stack || e.message);
