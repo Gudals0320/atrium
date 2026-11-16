@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, Background, BackgroundVariant, useReactFlow, applyNodeChanges } from '@xyflow/react';
 import { shiftAreasLocal } from './store.js'; // P27
 import { useStore, getState, setNodeLocal, saveNode, setAttached, setCloseIds, setFocus, markSeen, toast, openDialog, selectWorkspace, noteWorkspace, matesNow, setViewNow, setSelected, setPendingInput, dockOf, loadBoard, setMemoLocal, setKanbanLocal, setConvoLocal, wsName } from './store.js';
+import { commandDraft } from './Thread.jsx'; // P176
 import { ConvoNode, WorktreeBox, SpawnEdge } from './ConvoNode.jsx'; // P13
 import { worktreeBoxes, boardSpawnDup } from '../../../backend/src/convo-canvas.mjs';
 import { decorateEdges, edgeGap, innerEnds } from './lib/link-labels.js'; // P67. P98: edgeGap, innerEnds
@@ -917,8 +918,12 @@ export function Canvas() {
     };
   }, [rf, onMoveEnd, onNodeDragStart, onNodeDragStop, onNodesChange]);
 
+  // P176: 세션을 한 번 눌러 보면 빈 명령줄에 그 세션 태그(판단은 CommandBar.jsx, lib/cmd-input.js autoTag). 빈 판을 누르면 null
+  const autoTagFor = (id) => { const s = id ? getState().sessions.get(id) : null; commandDraft.dispatchEvent(new CustomEvent('autotag', { detail: s ? s.name : null })); };
+
   // H4: 노드 본문을 누르면(어느 얼굴이든) 들어간다. 단추, 입력칸, 카드를 누른 것과 여러 개 고르기(Ctrl, Shift)는 빼고.
   // P26: 머리줄, 본문, 터미널 안, 멀리·아이콘 얼굴 어디를 누르든 화면을 그 노드(덩어리 안이면 덩어리 전체)로 옮긴다(이미 보고 있으면 그대로).
+  // P176: 세션을 한 번 눌러 보면 빈 명령줄에 그 세션 태그(CommandBar.jsx가 판단, lib/cmd-input.js autoTag). 빈 판을 누르면 null
   const onNodeClick = useCallback((e, node) => {
     if (e.target.closest && e.target.closest('button, input, textarea, select, a, .mt-card, .mt-kill, .mt-interrupted, .mt-menu')) return;
     if (node.type === 'region' || node.type === 'wtarea') { selectWorkspace(node.data.wsKey); return; } // P27
@@ -931,13 +936,15 @@ export function Canvas() {
       clearTimeout(termClickTimer);
       const sel = () => { const tm = terms.get(node.id); return !!(tm && tm.hasSelection()); };
       if (!termClickNavigates({ detail: e.detail, hasSelection: sel() })) return;
-      termClickTimer = setTimeout(() => { if (termClickNavigates({ hasSelection: sel() })) getState().navigateTo(node.id, { viewOnly: true }); }, TERM_CLICK_WAIT);
+      termClickTimer = setTimeout(() => { if (termClickNavigates({ hasSelection: sel() })) { getState().navigateTo(node.id, { viewOnly: true }); autoTagFor(node.id); } }, TERM_CLICK_WAIT);
       return;
     }
     // 머리줄을 누르면 고르기만 한다(터미널에 초점을 주지 않아 Delete로 닫을 수 있다). 화면은 옮긴다. 본문을 누르면 들어간다
-    if (e.target.closest && e.target.closest('.mt-node-head')) { const a = document.activeElement; if (a && a.blur && a !== document.body) a.blur(); getState().navigateTo(node.id, { viewOnly: true }); return; }
+    if (e.target.closest && e.target.closest('.mt-node-head')) { const a = document.activeElement; if (a && a.blur && a !== document.body) a.blur(); getState().navigateTo(node.id, { viewOnly: true }); autoTagFor(node.id); return; }
     getState().navigateTo(node.id, { focusTerminal: true });
+    autoTagFor(node.id);
   }, []);
+  const onPaneClick = useCallback((e) => { if (!(e && (e.ctrlKey || e.shiftKey || e.metaKey))) autoTagFor(null); }, []); // P176
   const onSelectionChange = useCallback(({ nodes: sel }) => setSelected(sel.filter((n) => n.type === 'session').map((n) => n.id)), []);
 
   const defaultViewport = useMemo(() => initialViewport || { x: 40, y: 80, zoom: 0.75 }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -946,7 +953,7 @@ export function Canvas() {
     <div className="mt-canvas" ref={wrapRef}>
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onConnect={onConnect} connectionRadius={40} connectionMode="loose"
-        onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={onNodeClick} onSelectionChange={onSelectionChange}
+        onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={onNodeClick} onPaneClick={onPaneClick} onSelectionChange={onSelectionChange}
         onMove={onMove} onMoveEnd={onMoveEnd}
         defaultViewport={defaultViewport} minZoom={0.05} maxZoom={2}
         deleteKeyCode={null} selectionKeyCode="Shift" multiSelectionKeyCode="Control"

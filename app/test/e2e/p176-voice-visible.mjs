@@ -5,6 +5,7 @@
 //   setup: 백엔드를 가짜 Soniox 주소·말 없음 5초로 띄우고 셸 세션 하나(휴대폰 입력칸용)
 //   pc: 녹음 중 마우스를 치워도 명령줄이 보임, 세션 맵·검색을 연 채 녹음 표시, 말 없음 자동 멈춤과 알림, 창 숨김 멈춤, 판 기록의 까닭
 //   phone: 휴대폰 폭 웹에서 녹음, 녹음 중 다른 화면(목록)으로 가면 멈춤
+//   autotag(추가): 빈 명령줄에서 판의 세션 A를 누르면 @A, B를 누르면 @B, 글을 친 뒤 C를 누르면 그대로, 비우고 빈 판을 누르면 빈 채
 // 결과는 워크트리의 experiments/p176/(저장소 밖).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,6 +18,7 @@ const OUT = path.join(REPO, 'experiments', 'p176');
 const CONVOS = path.join(OUT, 'convos');
 const DIR = 'C:\\Workspace\\mtask-p176-a';
 const NAME = 'p176-sh';
+const TAGS = ['p176-ta', 'p176-tb']; // 자동 태그 시험의 세션(셋째는 NAME)
 const PORT = '47945', FAKE = 47986, SIM = 47987, IDLE_MS = 5000;
 for (const k of Object.keys(process.env)) if (/^(ATRIUM_|MTASK_|HERDR_|HC_)/.test(k)) delete process.env[k];
 process.env.MT_E2E_OUT = path.relative(path.join(REPO, 'experiments'), OUT);
@@ -77,7 +79,7 @@ async function fakeSoniox() {
 async function setupBoard() {
   fs.mkdirSync(DIR, { recursive: true });
   log(atrium('backend', 'start').trim().slice(0, 300));
-  if (!sess()) log(atrium('--json', 'spawn', DIR, '--name', NAME, '--kind', 'shell').slice(0, 200));
+  for (const n of [NAME, ...TAGS]) if (!call('session.list').some((x) => x.name === n)) log(atrium('--json', 'spawn', DIR, '--name', n, '--kind', 'shell').slice(0, 120));
   const s = await until(() => sess(), 30000, 1000);
   check('준비: 셸 세션', !!s, s && s.state);
 }
@@ -235,6 +237,53 @@ async function phone() {
   } finally { await browser.close().catch(() => {}); await sim.close?.(); await fake.close(); }
 }
 
+async function autotag() {
+  const { app, page } = await launch({ log, env: { ...ENV }, args: ['--remote-debugging-port=9425', ...AWAKE] });
+  try {
+    await awayWin(app);
+    await winSize(app, page, 1584, 921);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await sleep(2500);
+    const list = call('session.list');
+    const idOf = (n) => list.find((x) => x.name === n).sessionId;
+    const [A, B, C] = [TAGS[0], TAGS[1], NAME];
+    // 판 전체를 보이게 하고 머리줄을 누른다(화면은 그 노드로 옮겨 가지만 머리줄 자리는 다시 찾는다)
+    const fit = async () => { await page.keyboard.press('Escape'); await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur()); await page.click('[data-action="fit-all"], [data-chip="fit"]', { timeout: 1500 }).catch(() => {}); await sleep(900); };
+    const head = async (n) => { await fit(); const sel = `.react-flow__node[data-id="${idOf(n)}"] .mt-node-head`; await page.waitForSelector(sel, { timeout: 5000 }); await page.click(sel, { position: { x: 60, y: 8 } }); await sleep(700); };
+    const bar = () => page.$eval('[data-role="command"]', (el) => el.value);
+    await head(A);
+    const a = await bar();
+    check('빈 명령줄에서 세션 A를 누르면 @A', a === `@${A} `, a);
+    await shotTo(page, 'tag-1-click-a');
+    await head(B);
+    const b = await bar();
+    check('세션 B를 누르면 태그가 @B로 옮겨 간다', b === `@${B} `, b);
+    await shotTo(page, 'tag-2-click-b');
+    // 사람이 글을 친다 → 보통 태그가 된다
+    await page.click('[data-role="command"]'); await page.keyboard.press('End'); await page.keyboard.type('hello'); await sleep(300);
+    await head(C);
+    const c = await bar();
+    check('글을 친 뒤 세션 C를 누르면 그대로', c === `@${B} hello`, c);
+    await shotTo(page, 'tag-3-typed-click-c');
+    // 비우고 세션 A → @A, 빈 판을 누르면 지운다
+    await page.click('[data-role="command"]'); await page.keyboard.press('Control+A'); await page.keyboard.press('Delete'); await sleep(200);
+    await head(A);
+    const a2 = await bar();
+    await fit();
+    const spot = await page.evaluate(() => { for (let y = 120; y < 700; y += 37) for (let x = 120; x < 1500; x += 53) { const el = document.elementFromPoint(x, y); if (el && el.classList.contains('react-flow__pane')) return { x, y }; } return null; });
+    if (spot) await page.mouse.click(spot.x, spot.y);
+    await sleep(700);
+    const e = await bar();
+    check('비우고 A를 누르면 @A, 빈 판을 누르면 다시 빈 명령줄', a2 === `@${A} ` && !!spot && e === '', { a2, spot, e });
+    await shotTo(page, 'tag-4-pane-cleared');
+    // 손으로 넣은 태그는 건드리지 않는다
+    await page.click('[data-role="command"]'); await page.keyboard.type(`@${C} `); await sleep(200);
+    await head(A);
+    const m = await bar();
+    check('손으로 넣은 태그가 있으면 세션을 눌러도 그대로', m === `@${C} `, m);
+  } finally { await closeApp(app); }
+}
+
 async function stopBoard() {
   for (const s of call('session.list').filter((x) => /^p176-/.test(x.name))) { try { atrium('kill', s.name, '--yes'); } catch (e) { log(`kill ${s.name} ${e.message.slice(0, 100)}`); } }
   await sleep(2000);
@@ -246,6 +295,7 @@ try {
   if (WHAT === 'setup') await setupBoard();
   else if (WHAT === 'pc') await pc();
   else if (WHAT === 'phone') await phone();
+  else if (WHAT === 'autotag') await autotag();
   else if (WHAT === 'stop') await stopBoard();
 } catch (e) {
   check('시험이 끝까지 돌았다', false, e.stack || e.message);
