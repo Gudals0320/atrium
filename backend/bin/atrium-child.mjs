@@ -329,7 +329,7 @@ async function toolVerb() {
 // 도구 실행의 종료 코드: 아직 돈다 3, 도구가 0으로 끝남 0, 그 밖(0이 아님, 시간 제한, 띄우지 못함, lost) 1
 function toolExit(run) { return run.status === 'running' ? 3 : run.status === 'done' && run.exitCode === 0 ? 0 : 1; }
 function printToolRun(run) {
-  if (run.status === 'running') { say(`도구 ${run.tool} 실행 ${run.id}이 아직 돈다(${secs(run.durationMs)}). 보드가 계속 쥐고 기록한다. 이어 기다리기: atrium tool --wait ${run.id}`); return; }
+  if (run.status === 'running') { say(`도구 ${run.tool} 실행 ${run.id}이 아직 돈다(${secs(run.durationMs)}, 종료 코드 3). 보드가 계속 쥐고 기록한다. 이어 기다리기: atrium tool --wait ${run.id}`); return; }
   const how = { done: `끝났다. 종료 코드 ${run.exitCode}`, timeout: `시간 제한을 넘어 보드가 껐다${run.exitCode != null ? `(종료 코드 ${run.exitCode})` : ''}`, error: `띄우지 못했다: ${run.error}`, lost: `보드가 다시 뜨며 놓쳤다(lost)${run.error ? `: ${run.error}` : ''}`, rejected: `거절됐다: ${run.error}` }[run.status] || run.status;
   say(`도구 ${run.tool} 실행 ${run.id}: ${how} · ${secs(run.durationMs)}${run.logBytes != null ? ` · 출력 ${run.logBytes}바이트${run.logCut ? '(50MB에서 자름)' : ''}` : ''}`);
   if (run.tail) { say('--- 출력 꼬리 ---'); say(String(run.tail).replace(/\s+$/, '')); say('---'); }

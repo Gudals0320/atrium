@@ -2679,10 +2679,10 @@ export default {
     fail: 'rig를 바꾸지 못했습니다: {error}',
     // P183: 켜기 전 확인, 훅이 거절한 첫 요청
     confirmTitle: '{name}의 rig를 켤까요?',
-    confirmWarn: '켜면 이 저장소의 .atrium/rig.json이 이 PC에서 사용자 계정으로 프로그램을 실행합니다. 이 워크스페이스로 글을 보낼 때, 일을 닫을 때, 에이전트가 도구를 부를 때 실행합니다. 믿을 수 있는 저장소에서만 켜세요.',
+    confirmWarn: '켜면 이 저장소의 .atrium/rig.json이 이 PC에서 사용자 계정으로 프로그램을 실행합니다. 이 프로젝트의 세션에 글을 보낼 때, 작업을 닫을 때, 에이전트가 도구를 호출할 때 실행합니다. 믿을 수 있는 저장소에서만 켜세요.',
     confirmFile: '정의 파일: {file}',
     confirmHooks: '훅 {n}개',
-    confirmTools: '도구 {n}개(에이전트가 끝에 인자를 붙입니다)',
+    confirmTools: '도구 {n}개(에이전트가 끝에 인자를 덧붙입니다)',
     confirmNone: '없음',
     confirmLater: '켠 뒤에는 rig.json이 바뀌어도 다시 묻지 않습니다. 끄면 모든 훅과 도구가 멈춥니다.',
     confirmOn: '켜기',
