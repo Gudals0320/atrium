@@ -56,6 +56,7 @@ const ADDED_COLUMNS = {
   sessions: { touched_at: 'INTEGER', kind: 'TEXT', origin: 'TEXT', parent_session_id: 'TEXT', workspace_key: 'TEXT', flavor: 'TEXT', extra_args: 'TEXT', label: 'TEXT', start_command: 'TEXT', harness: 'TEXT' }, // harness(P115): Claude Code 밖 하네스를 다시 띄울 값(JSON: 모델, 추가 인자, 호출자, 연결, 하네스 세션 ID) // start_command(호출자의 실행 명령, 예: mywrap claude)는 P97 // label(판의 이름, 사람이 정한 표시 이름)은 P66 // extra_args(호출자의 claude 추가 인자, JSON 배열)는 P33 // kind·origin·parent는 P4, workspace_key는 P5, flavor(띄운 방법: 런처의 아이콘)는 P25
   workspaces: { x: 'REAL', y: 'REAL' }, // P6a: 영역의 자리(빈 워크스페이스, 영역 옮기기)
   nodes: { size: 'TEXT', aspect: 'TEXT' }, // P6a: 크기 단계(large, normal, small). P73: aspect(고른 종횡비 16:9·4:3, 없으면 자유 비율)
+  links: { transient: 'INTEGER', temp_until: 'INTEGER' }, // P171: 일시 연결(관계 없는 쌍의 atrium prompt). temp_until이 지나면 판에서 빠진다(temp-links.mjs)
   docks: { tree: 'TEXT', aspect: 'TEXT' }, // P17: 분할 나무(dock-tree.mjs). 없으면 옛 한 줄 덩어리(dir, members)이고 뜰 때 나무로 바꾼다(canvas-ops migrateDocks). P73: aspect(덩어리 바깥의 종횡비)
 };
 
@@ -76,7 +77,7 @@ function sessionRow(r) {
 }
 function linkRow(r) {
   if (!r) return null;
-  return { linkId: r.link_id, from: r.from_session, to: r.to_session, role: r.role ?? null, spawned: !!r.spawned, observed: !!r.observed, count: r.count, lastText: r.last_text ?? null, lastKind: r.last_kind ?? null, lastAt: r.last_at ?? null, notifyDelivery: r.notify_delivery ?? null, createdAt: r.created_at, updatedAt: r.updated_at, removedAt: r.removed_at ?? null };
+  return { linkId: r.link_id, from: r.from_session, to: r.to_session, role: r.role ?? null, spawned: !!r.spawned, observed: !!r.observed, count: r.count, lastText: r.last_text ?? null, lastKind: r.last_kind ?? null, lastAt: r.last_at ?? null, notifyDelivery: r.notify_delivery ?? null, createdAt: r.created_at, updatedAt: r.updated_at, removedAt: r.removed_at ?? null, transient: !!r.transient, tempUntil: r.temp_until ?? null };
 }
 function deliveryRow(r) {
   if (!r) return null;
@@ -199,11 +200,11 @@ export class Store {
   getLink(id) { return linkRow(this.st('SELECT * FROM links WHERE link_id = ?').get(id)); }
   links({ all = false } = {}) { return (all ? this.st('SELECT * FROM links ORDER BY created_at') : this.st('SELECT * FROM links WHERE removed_at IS NULL ORDER BY created_at')).all().map(linkRow); }
   insertLink(l) {
-    this.st('INSERT INTO links (link_id, from_session, to_session, role, spawned, observed, count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)')
-      .run(l.linkId, l.from, l.to, l.role ?? null, l.spawned ? 1 : 0, l.observed ? 1 : 0, l.createdAt, l.createdAt);
+    this.st('INSERT INTO links (link_id, from_session, to_session, role, spawned, observed, count, created_at, updated_at, transient, temp_until) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)')
+      .run(l.linkId, l.from, l.to, l.role ?? null, l.spawned ? 1 : 0, l.observed ? 1 : 0, l.createdAt, l.createdAt, l.transient ? 1 : 0, l.tempUntil ?? null);
   }
   updateLink(id, f) {
-    const map = { role: 'role', spawned: 'spawned', observed: 'observed', count: 'count', lastText: 'last_text', lastKind: 'last_kind', lastAt: 'last_at', notifyDelivery: 'notify_delivery', removedAt: 'removed_at' };
+    const map = { role: 'role', spawned: 'spawned', observed: 'observed', count: 'count', lastText: 'last_text', lastKind: 'last_kind', lastAt: 'last_at', notifyDelivery: 'notify_delivery', removedAt: 'removed_at', transient: 'transient', tempUntil: 'temp_until' };
     const sets = ['updated_at = ?']; const vals = [Date.now()];
     for (const [k, v] of Object.entries(f)) { if (!map[k]) throw new Error('unknown field ' + k); sets.push(`${map[k]} = ?`); vals.push(typeof v === 'boolean' ? Number(v) : v ?? null); }
     this.db.prepare(`UPDATE links SET ${sets.join(', ')} WHERE link_id = ?`).run(...vals, id);

@@ -2607,4 +2607,13 @@ export default {
     dropped: 'Voice input stopped because the connection was lost.',
     failed: 'Voice input failed.',
   },
+  // P171: temporary links (the line of a one-off request to an unrelated session)
+  tempLinks: {
+    tag: 'Temporary',
+    title: "Temporary link: the line disappears shortly after this request's work ends. The exchanged messages are kept.",
+    note: 'Temporary link. It leaves the board 2 minutes after the work ends. The exchanged messages are kept.',
+    keep: 'Keep link',
+    kept: 'The link line is kept.',
+    keepFail: 'Could not keep the link line: {error}',
+  },
 };

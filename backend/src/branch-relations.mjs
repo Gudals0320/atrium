@@ -89,7 +89,16 @@ export function installRelations(Branch) {
       // 연결 기록: 명시한 관계면 a → b 연결을 연다(세션 맵에 선이 생긴다). 자동으로 되돌리면 있는 연결에만 남긴다
       // P159: 한쪽이 닫혀 있으면(사람이 닫힌 일 부모에서 독립으로 둘 때) 선을 새로 열지 않는다
       const open = B.sessions.has(a.sessionId) && B.sessions.has(b.sessionId);
-      const l = relation === 'auto' || !open ? (B.store.linkByPair(a.sessionId, b.sessionId) || B.store.linkByPair(b.sessionId, a.sessionId)) : B.ensureLink(a.sessionId, b.sessionId, {});
+      // P171: 하위·동료를 얻으면 두 방향의 일시 선이 영구가 된다. 독립(none)은 일 관계가 아니라 있는 연결(일시 선 포함)에 기록만 남기고, 없을 때만 새로 연다
+      const anyLink = () => B.store.linkByPair(a.sessionId, b.sessionId) || B.store.linkByPair(b.sessionId, a.sessionId);
+      let l;
+      if (relation === 'auto' || !open) l = anyLink();
+      else if (relation === 'none') l = anyLink() || B.ensureLink(a.sessionId, b.sessionId, {});
+      else {
+        l = B.ensureLink(a.sessionId, b.sessionId, {});
+        const back = B.store.linkByPair(b.sessionId, a.sessionId);
+        if (back && back.transient && !back.removedAt) B.ensureLink(b.sessionId, a.sessionId, {});
+      }
       const data = { relation, source, by, before: before ? { relation: before.relation, source: before.source, up: before.up } : null, after: after ? { relation: after.relation, source: after.source, up: after.up } : null };
       if (l) B.linkEvent(l, 'relation', relation, data, { quiet: true });
       B.store.addEvent(a.sessionId, 'relation_set', { other: b.name, otherSessionId: b.sessionId, ...data });
@@ -134,7 +143,9 @@ export function installRelations(Branch) {
       if (!t) throw apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${ref}`);
       if (t === caller) throw apiError('self', '자기 자신과의 관계는 정할 수 없다.');
       const idx = this.relIndex({ withLinks: true });
-      const linked = !!idx.between(caller.sessionId, t.sessionId) || B.store.links().some((l) => !l.removedAt && ((l.from === caller.sessionId && l.to === t.sessionId) || (l.from === t.sessionId && l.to === caller.sessionId)));
+      // P171: 일시 선이 판에서 빠진 뒤에도(지시가 오간 기록이 남은 쌍) 관계를 정할 수 있다
+      const pairOf = (l) => (l.from === caller.sessionId && l.to === t.sessionId) || (l.from === t.sessionId && l.to === caller.sessionId);
+      const linked = !!idx.between(caller.sessionId, t.sessionId) || B.store.links().some((l) => !l.removedAt && pairOf(l)) || B.store.links({ all: true }).some((l) => l.transient && pairOf(l));
       if (!linked) throw apiError('not_linked', `@${shownName(t)}는 너와 이어진 세션이 아니다(띄움, 역할 선, 지시, 정한 관계가 없다). 에이전트는 자기와 이어진 세션의 관계만 바꾼다. 지금 연결: atrium me`);
       const ex = idx.explicitOf(caller.sessionId, t.sessionId);
       if (ex && ex.source === 'user') throw apiError('user_set', `@${shownName(t)}와의 관계(${RELATION_WORD[ex.relation]})는 사람이 판에서 정했다. 바꾸려면 사람에게 묻는다.`);

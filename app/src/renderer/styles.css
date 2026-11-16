@@ -2402,3 +2402,9 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 .mt-cmd-field[data-voice="1"] > .mt-cmd-input { color: transparent; caret-color: var(--chrome-text); }
 .mt-cmd-field[data-voice="1"] .mt-cmd-mirror { color: var(--chrome-text); }
 .mt-cmd-field[data-voice="1"] .mt-cmd-live { color: color-mix(in srgb, var(--chrome-text) 45%, transparent); }
+
+/* P171: 일시 연결(관계 없는 세션에 한 번 보낸 요청). 옅은 점선이고 작업이 끝나면 사라진다 */
+.react-flow__edge-path.mt-edge.transient { stroke-dasharray: 2 7; stroke-linecap: round; opacity: 0.55; }
+.mt-edge-end.transient { opacity: 0.55; }
+.mt-edge-label.transient { opacity: 0.8; border-style: dashed; }
+.mt-edge-tag.temp { border: 1px dashed currentColor; background: transparent; opacity: 0.85; }

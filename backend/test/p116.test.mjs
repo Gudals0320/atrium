@@ -322,7 +322,8 @@ test('P116 wait: hook 없는 종류(codex)는 herdr 상태로 턴을 보고, 판
 test('P116 read: 받는 세션 화면의 최근 줄(recent_unwrapped, --lines), 잠든 세션은 마지막 답. 받은 화면을 연결 기록(reply)에 남긴다', async () => {
   const { b, add, stop } = await board({ backend: 'hc' });
   try {
-    const lead = add('lead'); add('w1'); const w2 = add('w2');
+    const lead = add('lead'); const w1 = add('w1'); const w2 = add('w2');
+    b.ensureLink(lead.sessionId, w1.sessionId, { observed: true }); // P171: read는 이미 있는 연결에만 기록을 붙인다
     b.screens.set('w1:p1', '줄 1\n❯ 해 줘\n● 했다   \n\n');
     const r = await b.branch.verbs.read(lead, { name: 'w1', lines: 40 });
     assert.deepEqual(b.reads[0], ['w1:p1', { source: 'recent_unwrapped', lines: 240 }], '빈 줄을 줄일 만큼 더 읽는다');

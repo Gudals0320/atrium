@@ -736,7 +736,7 @@ function planWorkspace(b, key, { avoid = true } = {}) {
   const blocks = blocksOf(b, key);
   if (!blocks.length) return { blocks, out: [], edges: [], moved: null };
   const ids = new Set(blocks.flatMap((x) => x.members));
-  const edges = b.store.links().filter((l) => ids.has(l.from) && ids.has(l.to) && (l.role || l.observed || l.spawned)).map((l) => [l.from, l.to]);
+  const edges = b.store.links().filter((l) => ids.has(l.from) && ids.has(l.to) && !l.transient && (l.role || l.observed || l.spawned)).map((l) => [l.from, l.to]);
   // P75: 하위 세션의 부모(띄운 쪽)도 연결로 본다(역할 선을 끊어도 줄은 부모 오른쪽). 부모 연결을 앞에 두어 나무 부모가 된다
   const born = (m) => (b.sessions.get(m) || {}).createdAt || 0;
   const parents = [...ids].map((m) => [(b.sessions.get(m) || {}).parentSessionId, m]).filter(([p]) => p && ids.has(p)).sort((x, y) => born(x[1]) - born(y[1]));

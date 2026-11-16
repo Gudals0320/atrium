@@ -96,7 +96,7 @@ export function linkWeights({ links = [], parents = [], areaOf, now = Date.now()
   const pair = new Map(); // 세션 쌍 → 무게
   const put = (x, y, w) => { if (!x || !y || x === y) return; const k = x < y ? `${x}\n${y}` : `${y}\n${x}`; pair.set(k, Math.max(pair.get(k) || 0, w)); };
   for (const l of links) {
-    if (!l || l.removedAt) continue;
+    if (!l || l.removedAt || l.transient) continue; // P171: 일시 연결은 영역을 당기지 않는다
     if (l.role || l.spawned) { put(l.from, l.to, 2); continue; }
     if (!l.observed) continue;
     const last = l.lastAt ?? l.updatedAt ?? l.createdAt ?? 0;

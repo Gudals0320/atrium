@@ -71,6 +71,7 @@ import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이�
 import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META, syncWsGroups, wsLabels } from './ws-groups.mjs'; // P44: 가상 그룹. P91: 폴더 위계 묶음(저절로)
 import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
 import { codexHomeOf } from './codex-models.mjs';
+import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171: 일시 연결
 import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs'; // P66: 판의 이름(표시 이름)과 에이전트 주소
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 // HTTP 서버 닫기(2026-11-07): http.close는 열린 연결이 모두 끝나야 끝나므로, 쉬는 연결은 바로, 나머지는 forceMs 뒤 끊는다
@@ -330,6 +331,9 @@ export class Backend {
     // P137: 하네스가 지금 쓰는 모델(/model, Codex 모델 바꾸기). 기록 파일이 늘어난 만큼만 읽는다
     this.modelTimer = setInterval(() => this.pollModels(), cfg.modelPollMs ?? 5000);
     this.shellTimer = setInterval(() => this.pollShells().catch((e) => this.log('shell poll error', e.stack)), SHELL_POLL_MS);
+    // P171: 읽기 선 정리(한 번)와 일시 선 쓸기
+    this.tempLinks = new TempLinks(this);
+    try { this.tempLinks.start(); } catch (e) { this.log('temp links start error', e.stack); }
     // D1: 자원 감시
     this.resources = new ResourceMonitor({
       intervalMs: cfg.resourcesIntervalMs,
@@ -346,6 +350,7 @@ export class Backend {
   async stop(reason = 'stop') {
     this.log('backend stopping:', reason);
     clearInterval(this.heartbeat); clearInterval(this.quietTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer); clearInterval(this.modelTimer);
+    if (this.tempLinks) this.tempLinks.stop();
     stopMigration(this);
     this.resources.stop();
     this.queue.stop();
@@ -1713,19 +1718,12 @@ export class Backend {
     return { prompts: p.n, promptAt: p.at };
   }
   // 순서 있는 쌍마다 연결 하나. 지운 연결에 새 일이 오가면 다시 연다
+  // P171: patch.transient면 일시 연결(관계 없는 쌍의 atrium prompt)로 연다. 그 밖의 부름(역할·띄움·관계·연결 유지)은 일시 선을 영구로 바꾼다(temp-links.mjs)
   ensureLink(from, to, patch = {}) {
     let l = this.store.linkByPair(from, to);
-    if (!l) {
-      l = { linkId: 'l' + crypto.randomBytes(5).toString('hex'), from, to, role: patch.role ?? null, spawned: !!patch.spawned, observed: !!patch.observed, createdAt: Date.now() };
-      this.store.insertLink(l);
-    } else {
-      const f = {};
-      if (l.removedAt) f.removedAt = null;
-      if (patch.spawned && !l.spawned) f.spawned = true;
-      if (patch.observed && !l.observed) f.observed = true;
-      if (patch.role !== undefined && patch.role !== l.role) f.role = patch.role;
-      if (Object.keys(f).length) this.store.updateLink(l.linkId, f);
-    }
+    const op = linkPatch(l, { ...patch, from, to });
+    if (op.insert) { this.store.insertLink(op.insert); l = op.insert; }
+    else if (Object.keys(op.update).length) this.store.updateLink(l.linkId, op.update);
     l = this.store.getLink(l.linkId);
     this.api.broadcast('link.updated', this.linkView(l));
     return l;
@@ -1735,7 +1733,9 @@ export class Backend {
     const e = this.store.addLinkEvent(l.linkId, kind, text == null ? null : clip(String(text), 4000), data);
     const f = { lastKind: kind, lastAt: e.t, count: (l.count || 0) + 1 };
     if (kind === 'prompt') f.lastText = clip(String(text || ''), 300);
-    if (!quiet || kind === 'prompt') this.store.updateLink(l.linkId, f); else this.store.updateLink(l.linkId, { count: f.count });
+    // P171: 일시 선은 그 글의 턴이 열리면 늘리고 끝나면 여운(2분)만 남긴다
+    const until = l.transient && !l.removedAt ? tempUntilAfter(kind, data, e.t) : null;
+    if (!quiet || kind === 'prompt') this.store.updateLink(l.linkId, until ? { ...f, tempUntil: until } : f); else this.store.updateLink(l.linkId, until ? { count: f.count, tempUntil: until } : { count: f.count });
     const nl = this.store.getLink(l.linkId);
     this.api.broadcast('link.event', { ...e, from: l.from, to: l.to });
     this.api.broadcast('link.updated', this.linkView(nl));
@@ -2047,6 +2047,7 @@ export class Backend {
       'link.list': () => this.linksOpen(),
       'link.create': (p) => this.linkCreate(p),
       'link.delete': (p) => this.linkDelete(p),
+      'link.keep': (p) => this.tempLinks.keep(p), // P171: 일시 선을 영구로(선 메뉴 "연결 유지")
       'session.detach': (p) => this.detachSession(p), // P81
       'relation.set': (p) => this.branch.relationSetUser(p), // P156: 일 관계(사람, 출처 user). { a, b, relation: sub|peer|none|auto }
       'relation.list': () => this.branch.relationList(), // P156

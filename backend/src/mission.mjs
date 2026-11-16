@@ -37,6 +37,7 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
   const drawn = new Set();
   for (const l of links) {
     if (!byId.has(l.from) || !byId.has(l.to)) continue;
+    if (l.transient) continue; // P171: 일시 연결(관계 없는 쌍에 한 번 보낸 글)은 일 관계가 아니라 세션 맵에 긋지 않는다
     const base = { from: sid(l.from), to: sid(l.to), linkId: l.linkId, count: l.count || 0, lastAt: l.lastAt || null, ...relOf(l.from, l.to) };
     const active = l.lastKind === 'prompt' || l.lastKind === 'target_working' || l.lastKind === 'target_submitted';
     if (l.role) add({ ...base, kind: 'role', label: base.relation === 'sub' ? l.role : null, active }); // P159: 동료·독립 쌍에는 역할 이름(워커 등)을 붙이지 않는다
