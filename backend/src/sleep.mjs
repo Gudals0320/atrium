@@ -22,7 +22,7 @@ import { buildStartArgs, buildResumeArgs, transcriptPathFor } from './launch.mjs
 import { deriveState } from './state.mjs';
 import { waitClaudeExitOr } from './worktree-exit.mjs'; // P71, P105
 import { startOpt } from './launchers.mjs'; // P97: 실행 명령
-import { readProcessTable, descendants, mb, childCommands, isToolCommand } from './resources.mjs';
+import { readProcessTable, descendants, mb, childCommands, isToolCommand, suspectTree, logOnce } from './resources.mjs';
 import { workspaceNames } from './workspaces.mjs';
 import { m, keyed } from './msg.mjs';
 
@@ -544,6 +544,14 @@ export class Sleeper {
     const shell = info && info.shell_pid;
     const table = shell ? await this.readTable() : null;
     const tree = table ? descendants(table.procs, shell) : [];
+    // P168: 다른 세션의 셸(마지막 자원 표본)이나 시스템 프로세스가 든 나무는 값을 버린다(null = 모름). 같은 까닭은 기록에 한 번만
+    const others = ((this.b.resources && this.b.resources.last && this.b.resources.last.sessions) || []).filter((r) => r.sessionId !== s.sessionId).map((r) => r.shellPid);
+    const bad = suspectTree(tree, others);
+    if (bad) {
+      if (!this.warn) this.warn = logOnce((msg) => this.b.log && this.b.log(msg));
+      this.warn(`${s.sessionId}:${bad}`, `sleep: dropped memory of ${s.name} (shell ${shell}): ${bad}, ${tree.length} procs`);
+      return { shellPid: shell || null, memMB: null, procs: [], suspect: bad };
+    }
     return { shellPid: shell || null, memMB: tree.length ? mb(tree.reduce((a, x) => a + x.ws, 0)) : null, procs: tree.map((x) => ({ pid: x.pid, name: x.name })) };
   }
 
