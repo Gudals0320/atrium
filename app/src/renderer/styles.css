@@ -2426,3 +2426,8 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 .mt-dq-nowwrap { display: inline-flex; }
 .mt-dq-editrow { list-style: none; }
 .mt-dq-editrow .mt-delivery.mt-delivery-edit { width: 100%; box-shadow: none; }
+/* P171: 일시 연결(관계 없는 세션에 한 번 보낸 요청). 옅은 점선이고 작업이 끝나면 사라진다 */
+.react-flow__edge-path.mt-edge.transient { stroke-dasharray: 2 7; stroke-linecap: round; opacity: 0.55; }
+.mt-edge-end.transient { opacity: 0.55; }
+.mt-edge-label.transient { opacity: 0.8; border-style: dashed; }
+.mt-edge-tag.temp { border: 1px dashed currentColor; background: transparent; opacity: 0.85; }

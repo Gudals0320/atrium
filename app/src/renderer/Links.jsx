@@ -42,6 +42,7 @@ export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const [lx, ly] = shifted(lx0, ly0, data);
   const active = to && to.state === 'working' && link.lastAt && Date.now() - link.lastAt < ACTIVE_MS && ['prompt', 'target_submitted', 'target_working'].includes(link.lastKind);
   const kind = link.role ? 'role' : link.observed ? 'observed' : 'spawned';
+  const temp = link.transient ? ' transient' : ''; // P171: 일시 연결(옅은 점선)
   const label = !link.role && link.spawned && !link.lastText ? t('links.spawned') : linkLabel({ ...link, role: shownRole(link.role) }); // 띄움만 있는 선은 사전의 글
   const fit = labelFit(data);
   const hot = hover || !!selected || dialogOn;
@@ -50,22 +51,23 @@ export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const more = lab && lab.more > 0 ? <span className="mt-edge-more" data-role="link-more" title={t('linkLabel.moreTitle', { n: lab.more })}>{t('linkLabel.more', { n: lab.more })}</span> : null;
   const on = { onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) };
   return <>
-    <BaseEdge id={id} path={path} className={`mt-edge ${kind}${link.spawned ? ' spawn' : ''}${active ? ' active' : ''}`} interactionWidth={0} />
+    <BaseEdge id={id} path={path} className={`mt-edge ${kind}${link.spawned ? ' spawn' : ''}${active ? ' active' : ''}${temp}`} interactionWidth={0} />
     <path d={path} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={24} {...on} />
     {/* P11: 선 양 끝의 작은 점(목업의 가지 선). P98: 덩어리 안쪽 칸 사이 경계에 붙은 끝은 그리지 않는다(Canvas innerEnds) */}
-    {!(data && data.hideSource) && <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={sourceX} cy={sourceY} r={4.5} />}
-    {!(data && data.hideTarget) && <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}`} cx={targetX} cy={targetY} r={4.5} />}
+    {!(data && data.hideSource) && <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}${temp}`} cx={sourceX} cy={sourceY} r={4.5} />}
+    {!(data && data.hideTarget) && <circle className={`mt-edge-end ${kind}${link.spawned ? ' spawn' : ''}${temp}`} cx={targetX} cy={targetY} r={4.5} />}
     {/* P98·P108: 비켜 놓은 최종 글 자리가 세션 위면 줄인 ● 점도 그리지 않는다 */}
     {lab && !linkLabelHidden(data, { hot: !!selected || dialogOn, x: lx, y: ly }) && <EdgeLabelRenderer>
-      <div className={`mt-edge-label ${kind}${link.spawned ? ' spawn' : ''}${level === 'dot' ? ' compact' : ''} lv-${level}${lab.awake ? ' awake' : ' rest'}${hot ? ' hot' : ''} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, '--fitw': `${hot ? 460 : fit.maxWidth}px` }}
-        data-link={id} data-kind={kind} data-level={level} data-awake={lab.awake ? lab.why : 'rest'} data-more={lab.more || 0} data-pair={lab.pair.length}
-        onClick={(e) => { e.stopPropagation(); openDialog({ kind: 'link', linkId: id }); }} title={t('links.edgeTitle', { label: label || t('links.link') })} {...on}>
+      <div className={`mt-edge-label ${kind}${link.spawned ? ' spawn' : ''}${temp}${level === 'dot' ? ' compact' : ''} lv-${level}${lab.awake ? ' awake' : ' rest'}${hot ? ' hot' : ''} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, '--fitw': `${hot ? 460 : fit.maxWidth}px` }}
+        data-link={id} data-kind={kind} data-transient={link.transient ? '1' : undefined} data-level={level} data-awake={lab.awake ? lab.why : 'rest'} data-more={lab.more || 0} data-pair={lab.pair.length}
+        onClick={(e) => { e.stopPropagation(); openDialog({ kind: 'link', linkId: id }); }} title={link.transient ? `${t('links.edgeTitle', { label: label || t('links.link') })}\n${t('tempLinks.title')}` : t('links.edgeTitle', { label: label || t('links.link') })} {...on}>
         {level === 'chip' ? <>
           <span className="mt-edge-text">{chipText}</span>
           {more}
           {to && <i className={`mt-edge-dot st-${to.state}`} data-role="link-dot" />}
         </> : <>
           {link.spawned && <span className="mt-edge-tag">{t('links.spawned')}</span>}
+          {link.transient && <span className="mt-edge-tag temp" data-role="link-temp">{t('tempLinks.tag')}</span>}
           <span className="mt-edge-text">{label || t('links.link')}</span>
           {more}
           {(link.observed || link.role) && <Pill s={to} />}
@@ -152,6 +154,10 @@ export function LinkPanel({ linkId, onClose }) {
       onClose();
     } catch (e) { toast(t('links.unlinkFail', { error: errText(e) }), 'error'); }
   }
+  async function keep() { // P171: 일시 선을 영구로
+    try { await api.call('link.keep', { link: linkId }); toast(t('tempLinks.kept')); }
+    catch (e) { toast(t('tempLinks.keepFail', { error: errText(e) }), 'error'); }
+  }
   if (!link) return null;
   return (
     <div className="mt-linkpanel nowheel" data-role="link-panel" data-link={linkId}>
@@ -159,12 +165,14 @@ export function LinkPanel({ linkId, onClose }) {
         <b>@{a ? a.name : '?'} → @{b ? b.name : '?'}</b>
         {link.role && <span className="mt-edge-tag role">{shownRole(link.role)}</span>}
         {link.spawned && <span className="mt-edge-tag">{t('links.spawned')}</span>}
+        {link.transient && <span className="mt-edge-tag temp">{t('tempLinks.tag')}</span>}
         {b && <Pill s={b} />}
         <span className="mt-node-sp" />
         <button className="mt-btn small ghost" onClick={() => { onClose(); getState().navigateTo && b && getState().navigateTo(b.sessionId); }} data-action="link-go">{t('links.goTo', { name: b ? b.name : '' })}</button>
         <button className="mt-x" onClick={onClose} title={t('common.close')}>×</button>
       </div>
       <div className="mt-linkpanel-sub">{t('links.agentName')} <span className="mono">{link.toAgentName}</span> · {t('links.panelInfo', { pane: link.toPaneId, n: link.count })}</div>
+      {link.transient && <div className="mt-linkpanel-sub" data-role="link-temp-note">{t('tempLinks.note')}</div>}
       <div className="mt-linkpanel-body">
         {events === null && <div className="mt-chat-empty">{t('common.loading')}</div>}
         {events && events.map((e) => (
@@ -180,7 +188,7 @@ export function LinkPanel({ linkId, onClose }) {
           <button className="mt-btn danger" onClick={() => unlink(true)} data-action="unlink-confirm">{parentAsk ? t('detach.cutOnly') : t('links.unlinkConfirm')}</button>
           {parentAsk && <button className="mt-btn danger" onClick={() => unlink(true, true)} data-action="unlink-detach">{t('detach.cutDetach')}</button>}
           <button className="mt-btn ghost" onClick={() => setConfirm(null)}>{t('common.cancel')}</button>
-        </> : <button className="mt-btn danger" onClick={() => unlink(false)} data-action="unlink">{link.role ? t('links.unlink') : t('links.removeLine')}</button>}
+        </> : <>{link.transient && <button className="mt-btn primary" onClick={keep} data-action="link-keep">{t('tempLinks.keep')}</button>}<button className="mt-btn danger" onClick={() => unlink(false)} data-action="unlink">{link.role ? t('links.unlink') : t('links.removeLine')}</button></>}
         <span className="mt-card-sub">{link.lastAt ? t('links.last', { ago: agoText(link.lastAt) }) : ''}</span>
       </div>
     </div>

@@ -135,7 +135,18 @@ export class AgentVerbs {
     const text = String(rt.lastAnswer);
     return { text: text.length > ANSWER_MAX ? text.slice(0, ANSWER_MAX) : text, clipped: text.length > ANSWER_MAX, source: rt.answerSource || (this.b.hooked(t) ? 'hook' : 'screen'), at: rt.lastAnswerAt || null };
   }
-  link(caller, t) { return this.b.ensureLink(caller.sessionId, t.sessionId, { observed: true }); }
+  // P171: 보내기(prompt)의 연결. 일 관계(계보·역할 선·명시한 하위·동료)가 있는 쌍이면 영구, 없거나 독립이면 일시 연결(temp-links.mjs)
+  link(caller, t) {
+    const rel = this.branch && this.branch.relationBetween ? this.branch.relationBetween(caller.sessionId, t.sessionId) : null;
+    const work = !!rel && rel.relation !== 'none';
+    return this.b.ensureLink(caller.sessionId, t.sessionId, work ? { observed: true } : { observed: true, transient: true });
+  }
+  // P171: 읽기·기다리기는 선을 새로 만들지 않는다. 열린 연결(어느 방향이든 보낸 쪽 → 받는 쪽 먼저)이 있을 때만 기록을 붙인다
+  openLink(caller, t) {
+    const s = this.b.store;
+    for (const [x, y] of [[caller.sessionId, t.sessionId], [t.sessionId, caller.sessionId]]) { const l = s.linkByPair(x, y); if (l && !l.removedAt) return l; }
+    return null;
+  }
 
   // ---------- atrium prompt <이름> "<글>" [--wait | --now] [--timeout ms] ----------
   // P143: --now면 받는 쪽이 판이 띄운 Claude Code(hook 있음)이고 일하는 중일 때 기다리지 않고 Claude Code의 대기 메시지로 바로 넣는다(P90 typeNow 길).
@@ -244,9 +255,11 @@ export class AgentVerbs {
       error: status === 'error' && s && s.error ? { type: s.error.type || null, message: clip(s.error.message, 300) } : null,
       delivery: row ? { deliveryId, status: row.status, reason: row.reason ?? null } : null, next: verbLines(t.name) };
     if (status !== 'aborted' && b.sessions.has(caller.sessionId)) {
-      const l = this.link(caller, t);
-      b.linkEvent(l, 'wait_result', null, { via: 'atrium', status, state: st, ms, deliveryId }, { quiet: true });
-      if (answer && (status === 'done' || status === 'error')) b.linkEvent(l, 'reply', answer.text, { via: 'atrium', source: answer.source, verb: 'wait' });
+      const l = this.openLink(caller, t);
+      if (l) {
+        b.linkEvent(l, 'wait_result', null, { via: 'atrium', status, state: st, ms, deliveryId }, { quiet: true });
+        if (answer && (status === 'done' || status === 'error')) b.linkEvent(l, 'reply', answer.text, { via: 'atrium', source: answer.source, verb: 'wait' });
+      }
       b.store.addEvent(caller.sessionId, 'atrium_wait', { target: t.name, sessionId: t.sessionId, status, ms, deliveryId });
     }
     return out;
@@ -267,8 +280,8 @@ export class AgentVerbs {
     }
     const answer = this.answerOf(t);
     const out = { ...this.head(t), state: st, lines, source: text != null ? 'screen' : 'answer', text, why, answer, next: verbLines(t.name) };
-    const l = this.link(caller, t);
-    b.linkEvent(l, 'reply', text != null ? screenAnswerText(text, 40) : answer ? answer.text : null, { via: 'atrium', verb: 'read', source: out.source, ...(text != null ? { screenTail: tailText(text, 60) } : {}) });
+    const l = this.openLink(caller, t);
+    if (l) b.linkEvent(l, 'reply', text != null ? screenAnswerText(text, 40) : answer ? answer.text : null, { via: 'atrium', verb: 'read', source: out.source, ...(text != null ? { screenTail: tailText(text, 60) } : {}) });
     b.store.addEvent(caller.sessionId, 'atrium_read', { target: t.name, sessionId: t.sessionId, lines, source: out.source, why });
     return out;
   }
