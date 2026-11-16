@@ -26,10 +26,9 @@ import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { wsTabs, sumCounts, groupPick, memberLabel } from './lib/ws-tabs.js'; // P98: 위 바 묶음 칩
-import { sleepIdle, asleepStats, memByRepo } from './sleep.js'; // P21(D4), P24: 리포별로 묶는다
+import { sleepIdle, asleepStats, memByRepo, fmtMB } from './sleep.js'; // P21(D4), P24: 리포별로 묶는다. P168 뒤: fmtMB는 모르는 값(null)을 ?로
 
 function useNow(ms = 1000) { const [n, set] = useState(Date.now()); useEffect(() => { const t = setInterval(() => set(Date.now()), ms); return () => clearInterval(t); }, [ms]); return n; }
-const fmtMB = (x) => (x >= 1024 ? `${(x / 1024).toFixed(1)}GB` : `${Math.round(x)}MB`);
 const go = (id) => getState().navigateTo && getState().navigateTo(id);
 
 // 펼침 목록: 알약 아래로 펼치고 바깥을 누르거나 Esc면 닫는다

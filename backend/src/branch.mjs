@@ -271,7 +271,9 @@ export function boardSkill(name = SKILL_NAME) {
   const description = name === SKILL_NAME
     ? 'Atrium 보드에서 일하는 법: 워커(하위 세션)나 동료를 띄워 일을 나눠 맡기고, 코드 조각은 워크트리에서 시키고, 답을 모아 합친다. 사용자가 워커, 하위 세션, 병렬, 나눠 맡기기, 워크트리, 동료, 협력, spawn workers, sub-sessions를 말할 때, 그리고 일이 서로 기다리지 않는 조각 여럿으로 나뉠 때 사용자가 말하지 않아도 쓴다. Atrium 보드가 띄운 세션에서만 된다.'
     : 'atrium 스킬의 옛 이름(내용이 같다). 워커(하위 세션)를 만들어 일을 나눠 맡기고 답을 모아 온다. Atrium 보드가 띄운 세션에서만 된다.';
-  return `---\nname: ${name}\ndescription: ${description}\n---\n\n${SKILL_BODY}`;
+  // P169: 옛 이름은 모델이 보는 스킬 목록에서 뺀다(Claude Code 머리글 disable-model-invocation). 사람이 /atrium:delegate로 부르면 그대로 된다
+  const hidden = name === SKILL_NAME ? '' : 'disable-model-invocation: true\n';
+  return `---\nname: ${name}\ndescription: ${description}\n${hidden}---\n\n${SKILL_BODY}`;
 }
 export const delegateSkill = () => boardSkill(LEGACY_SKILL_NAME); // P8 이름(시험과 옛 호출)
 // 플러그인 bin/: Git Bash(Bash 도구)용 sh와 PowerShell·cmd용 .cmd. 이 판의 node와 명령 파일을 절대 경로로 부른다
