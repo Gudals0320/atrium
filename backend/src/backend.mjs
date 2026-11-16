@@ -1409,11 +1409,11 @@ export class Backend {
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
       });
       // 빈자리는 그 워크스페이스 영역 안이나 바로 옆(P6a H1). 사람이 보는 화면은 옮기지 않는다. P8(K4): 하위 세션은 부모 오른쪽 열에 형제끼리 쌓는다
-      const place = p.branch && !p.branch.head ? this.branch.placeChild(p.parentSessionId, ws.key, { worktree: p.branch.worktree || null }) : null; // P75: 워크트리 워커는 상자 테두리까지 비워 둔다
+      const place = p.branch && !p.branch.head ? this.branch.placeChild(p.parentSessionId, ws.key, { worktree: p.branch.worktree || null, peer: p.branch.relation === 'peer' }) : null; // P75: 워크트리 워커는 상자 테두리까지 비워 둔다
       const area = this.worktrees ? this.worktrees.areaOf(ws.key, cwd) : ''; // P27: 워크트리 폴더에서 띄우면 그 워크트리 영역
       const slot = place || slotFor(this, { wsKey: ws.key, size: NODE, area });
       this.store.setNode({ session_id: sessionId, x: slot.x, y: slot.y, w: place ? place.w : NODE.w, h: place ? place.h : NODE.h, z: 0, size: place ? place.size : NODE.size, aspect: place ? place.aspect : NODE.aspect, area: place ? place.area ?? area : area });
-      if (place) reflowLines(this, sessionId, 'spawn'); // P75: 부모 나무가 길어져 부모 줄의 뒤 형제와 겹치면 그 형제를 아래로
+      if (place && !place.peer) reflowLines(this, sessionId, 'spawn'); // P175: 동료 자리는 다른 노드를 옮기지 않는다(정리가 맞춘다) // P75: 부모 나무가 길어져 부모 줄의 뒤 형제와 겹치면 그 형제를 아래로
       // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
       if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
