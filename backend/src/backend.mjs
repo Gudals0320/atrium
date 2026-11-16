@@ -16,6 +16,7 @@ import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, �
 import { DeliveryQueue } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
 import { rigFlowHandlers } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
+import { rigAdminHandlers } from './rig-admin.mjs'; // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -385,6 +386,7 @@ export class Backend {
     // 2026-11-07: 열린 연결이 남아 있으면 http.close가 끝나지 않는다(하위 세션을 띄우며 기다리던 atrium child 요청이 업데이트를 1분 넘게 붙잡았다).
     // 기다리는 /branch 요청에 먼저 답하고, 쉬는 연결은 바로, 나머지는 1초 뒤 끊는다
     if (this.branch && this.branch.tools) this.branch.tools.stopAll(); // P183: 도는 도구 실행을 끝낸다(장부는 lost)
+    if (this.branch && this.branch.flow && this.branch.flow.stopCycles) this.branch.flow.stopCycles(); // P188: 느린 고리 타이머
     const aborted = this.branch && this.branch.abortInflight ? this.branch.abortInflight() : 0;
     if (aborted) this.log(`answered ${aborted} waiting /branch request(s) before stopping`);
     await closeHttp(this.http);
@@ -2033,6 +2035,7 @@ export class Backend {
       // P182: rig 켜기는 사람만(판 API 토큰으로 붙은 이 PC의 창·명령). 기기(휴대폰) 연결은 상태만 본다. 에이전트의 세션 토큰은 이 API에 붙지 못한다
       ...rigHandlers(this), // rig.status·rig.enable·rig.disable
       ...rigFlowHandlers(this), // P185: rig.seat(사람만, 이 PC의 창)·rig.cases
+      ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다

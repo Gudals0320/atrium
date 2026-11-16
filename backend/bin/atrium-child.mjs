@@ -16,6 +16,7 @@
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
 //       atrium guide [주제] [--json]   (P182: 자세한 사용법 + 켜진 rig의 안내)
 //       atrium tool [--json] · atrium tool <이름> [인자…] · atrium tool --wait <실행 ID> · atrium tool --runs   (P183: rig 도구)
+//       atrium rig check [파일] | log | rollback <n> | cleanup <건> [--json]   (P188: rig 정의 관리, 관리자 자리만)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -71,6 +72,9 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   rig 자리(seat): 사람이 정하거나 보드가 rig의 자리를 위해 띄운 세션은 정의(seats·flow)를 따른다(atrium me에 자리가 보인다).
       atrium prompt <자리 이름> "<할 일>"은 그 자리로 보낸다: flow의 assign 줄이면 일(keep 자리는 앉은 세션, fresh 자리는 새 세션), may면 글만, 그 밖은 보드가 거절한다(종료 코드 1, 쓸 수 있는 자리를 알린다).
       atrium done <값> "<보고>"의 값은 정의의 results 낱말이고, 보드가 값에 따라 다음 자리로 넘긴다(넘길 곳이 없으면 건의 주인에게). 자리 안내: atrium guide
+  atrium rig check [파일] | log | rollback <n> | cleanup <건>   rig의 관리자 자리(manager)만 쓴다. 관리자 자리는 .atrium/rig.json을 직접 고치고(보드가 새 해시를 버전으로 남긴다), check로 후보를 검사하고,
+      log로 버전과 버전마다 건·반려·훅 거절·상한 초과 수를 보고, rollback <n>으로 되돌리고(새 버전), cleanup <건>으로 끝난 건의 fresh 세션을 닫는다(워크트리는 목록만).
+      열린 건은 만들 때의 버전을 따르고 새 버전은 새 건부터 쓴다. 사람만 고치는 자리·파일(사람이 보드의 rig 메뉴에서 정함)을 바꾸면 보드가 그 정의를 쓰지 않거나 도구를 멈춘다
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
@@ -130,6 +134,7 @@ async function main() {
   if (cmd === 'done' || cmd === 'item' || cmd === 'items') return unitVerb(cmd); // P180
   if (cmd === 'guide') return guideVerb(); // P182
   if (cmd === 'tool') return toolVerb(); // P183
+  if (cmd === 'rig') return rigVerb(); // P188
   if (cmd === 'child') {
     // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
     if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);
@@ -342,6 +347,42 @@ async function toolVerb() {
   }
   printToolRun(run);
 }
+// ---------- P188: atrium rig check [파일] | log | rollback <n> | cleanup <건> (관리자 자리만) ----------
+async function rigVerb() {
+  const op = rest[0];
+  const ops = ['check', 'log', 'rollback', 'cleanup'];
+  if (!ops.includes(op)) fail(`사용: atrium rig check [파일] | log | rollback <n> | cleanup <건>`, 2);
+  const body = { op };
+  if (op === 'check' && rest[1]) {
+    const f = path.resolve(rest[1]);
+    try { body.text = fs.readFileSync(f, 'utf8'); body.file = rest[1]; } catch (e) { fail(`파일을 읽지 못했다: ${rest[1]} (${e.code || e.message})`, 2); }
+  }
+  if (op === 'rollback') { body.n = Number(rest[1]); if (!Number.isInteger(body.n) || body.n < 1) fail('되돌릴 버전 번호를 준다: atrium rig rollback <n> (번호는 atrium rig log)', 2); }
+  if (op === 'cleanup') { body.caseId = rest[1]; if (!body.caseId) fail('건 ID를 준다: atrium rig cleanup <건>', 2); }
+  const r = await call('rig', body, 60000);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  const x = r.result;
+  if (flags.json) { say(JSON.stringify(x ?? { error: r.error }, null, 2)); if (r.error || (op === 'check' && x && !x.ok)) process.exitCode = 1; return; }
+  if (r.error) fail(`${op === 'check' ? '검사하지' : op === 'log' ? '읽지' : op === 'rollback' ? '되돌리지' : '정리하지'} 않았다(${r.error.code}): ${r.error.message}`);
+  const when = (t) => new Date(t).toLocaleString();
+  if (op === 'check') {
+    if (x.ok) say(`맞다: ${x.from}(해시 ${String(x.hash).slice(0, 12)}${x.same ? ', 지금 버전과 같은 내용' : ''}). 지금 버전 ${x.current.n ?? '-'}. 자리 ${x.summary.seats.join(', ') || '없음'} · 흐름 줄 ${x.summary.flow} · 훅 ${x.summary.hooks} · 도구 ${x.summary.tools.join(', ') || '없음'} · 느린 고리 ${x.summary.cycles.join(', ') || '없음'} · manager ${x.summary.manager || '없음'}`);
+    else { say(`맞지 않다: ${x.from}: ${x.reason}`); process.exitCode = 1; }
+    for (const w of x.warnings || []) say(`  경고: ${w}`);
+    return;
+  }
+  if (op === 'log') {
+    say(`rig 정의 버전 ${x.versions.length}개(지금 ${x.current ?? '-'}):`);
+    for (const v of x.versions) say(`  ${v.current ? '*' : ' '}${v.n} ${String(v.hash).slice(0, 12)} · ${when(v.t)} · ${v.by}${v.note ? ` · ${v.note}` : ''} · 건 ${v.cases}${v.open ? `(열림 ${v.open})` : ''} · 반려 ${v.notOk} · 훅 거절 ${v.hookRejects} · 상한 초과 ${v.escalations}${v.blocked ? ` · 막힘 ${v.blocked}` : ''}`);
+    if (x.invalid) say(`정의 파일을 지금 쓰지 않는다(마지막 맞은 버전을 쓰는 중): ${x.invalid}`);
+    say('되돌리기: atrium rig rollback <n>');
+    return;
+  }
+  if (op === 'rollback') return say(x.unchanged ? `rig.json은 이미 버전 ${x.from}의 내용이다(지금 버전 ${x.n}).` : `rig.json을 버전 ${x.from}의 내용으로 다시 썼다. 새 버전 ${x.n}(해시 ${String(x.hash).slice(0, 12)}). 새 건부터 쓴다(열린 건은 만들 때의 버전 그대로).`);
+  say(`건 ${x.caseId} 정리: 닫음 ${x.closed.length ? x.closed.map((y) => `@${y.name}`).join(', ') : '없음'}${x.kept.length ? ` · 남김 ${x.kept.map((y) => `@${y.name}(${y.why})`).join(', ')}` : ''}`);
+  if (x.worktrees.length) { say('이 건의 워크트리(보드는 지우지 않는다. 합칠 것을 확인한 뒤 git worktree remove):'); for (const w of x.worktrees) say(`  ${w.name} ${w.path || ''}${w.exists ? '' : ' (없음)'}`); }
+  else say('이 건의 워크트리: 없음');
+}
 // 도구 실행의 종료 코드: 아직 돈다 3, 도구가 0으로 끝남 0, 그 밖(0이 아님, 시간 제한, 띄우지 못함, lost) 1
 function toolExit(run) { return run.status === 'running' ? 3 : run.status === 'done' && run.exitCode === 0 ? 0 : 1; }
 function printToolRun(run) {
@@ -498,6 +539,7 @@ function printSeat(r) {
   say(`rig 자리: ${r.seat}(${r.session}${r.worktree ? ', 일마다 워크트리' : ''})${r.case ? ` · 건 ${r.case.id} ${r.case.state}(주인 @${r.case.owner})` : ''}`);
   say(`  끝내기: atrium done <값> "<보고>". 값: ${r.results.join(', ')}${r.next && r.next.length ? ` · 다음: ${r.next.map((n) => `${n.on} → ${n.to.join(', ')}${n.max != null ? `(최대 ${n.max}번, 넘으면 ${n.else || 'manager'})` : ''}`).join(' · ')}` : ''}`);
   say(`  보낼 수 있는 자리: 일 맡기기 ${r.assign.length ? r.assign.join(', ') : '없음'} · 글만 ${r.may.length ? r.may.join(', ') : '없음'}(atrium prompt <자리> "…"). 그 밖은 보드가 거절한다${r.tools ? ` · 도구: ${r.tools.join(', ') || '없음'}` : ''}`);
+  if (r.manager) say(`  너는 관리자 자리다(정의 버전 ${r.version ?? '-'}): .atrium/rig.json을 직접 고치고, atrium rig check [파일] | log | rollback <n> | cleanup <건>을 쓴다`); // P188
 }
 // P156: atrium relate
 const REL_WORD = { sub: '하위', peer: '동료', none: '독립', auto: '자동' };

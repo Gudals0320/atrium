@@ -31,7 +31,7 @@ const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r
 
 // 정의를 검사하고 고른 모양으로 → { ok: true, def } | { ok: false, reason }
 // def: { hooks: [{ index, at, from, tool, run, onFail, timeoutMs }], guide: { default?, topics } | null, tools(2단계가 읽는다), name }
-export function validateRig(raw, { root, exists = isFile } = {}) {
+export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN_MS } = {}) {
   const bad = (reason) => ({ ok: false, reason });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad('정의는 JSON 객체여야 한다');
   const hooks = [];
@@ -88,8 +88,84 @@ export function validateRig(raw, { root, exists = isFile } = {}) {
   // P185: 자리·흐름(3단계, docs research harness-arch.md 14절)
   const fl = validateFlow(raw, { root, exists, tools });
   if (!fl.ok) return fl;
-  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow } };
+  // P188: 느린 고리(15절)
+  const cy = validateCycles(raw, fl.flow, { root, exists, cycleMinMs });
+  if (!cy.ok) return cy;
+  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, cycles: cy.cycles } };
 }
+
+// ---------- P188: 느린 고리(cycles), 정의 버전, 사람만 고치는 목록(15절 "5단계") ----------
+export const CYCLE_MIN_MS = 60 * 60 * 1000; // 주기는 1시간 이상
+export const CYCLE_STALE_MS = 24 * 60 * 60 * 1000; // 오래 열린 건: 마지막 넘김 뒤 이만큼(줄의 stale로 바꾼다)
+export const CYCLE_RUN_TIMEOUT_MS = 60000;
+const UNIT_MS = { s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 };
+// "7d", "12h", "90m", "30s" 또는 밀리초 수 → ms | null
+export function parseEvery(v) {
+  if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? Math.floor(v) : null;
+  const m = /^\s*(\d+(?:\.\d+)?)\s*([smhdw])\s*$/.exec(String(v || ''));
+  return m ? Math.floor(Number(m[1]) * UNIT_MS[m[2]]) : null;
+}
+// 주기의 하한. 개발용 판(profile dev)에서만 ATRIUM_RIG_CYCLE_MIN_MS로 줄인다(시험용)
+export function cycleMinOf(cfg, env = process.env) {
+  const v = Number(env.ATRIUM_RIG_CYCLE_MIN_MS);
+  return cfg && cfg.profile === 'dev' && v > 0 ? Math.floor(v) : CYCLE_MIN_MS;
+}
+// cycles: [{ every, to: <자리> | "manager", run?, stale?, timeoutMs? }] → { ok, cycles: [{ index, every, everyMs, to(자리 이름), run, staleMs, timeoutMs }] }
+export function validateCycles(raw, flow, { root = null, exists = isFile, cycleMinMs = CYCLE_MIN_MS } = {}) {
+  const bad = (reason) => ({ ok: false, reason });
+  if (raw.cycles == null) return { ok: true, cycles: [] };
+  if (!Array.isArray(raw.cycles)) return bad('cycles는 줄 배열이다(예: [{ "every": "7d", "to": "manager" }])');
+  if (!flow.seats) return bad('cycles는 seats(자리)와 함께 쓴다(주기마다 그 자리에 일을 만든다)');
+  const out = [];
+  for (let i = 0; i < raw.cycles.length; i++) {
+    const x = raw.cycles[i]; const at = `cycles[${i}]`;
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return bad(`${at}는 객체여야 한다({ "every", "to" })`);
+    const everyMs = parseEvery(x.every);
+    if (!everyMs) return bad(`${at}.every는 "7d", "12h", "90m" 꼴의 주기다: ${JSON.stringify(x.every)}`);
+    if (everyMs < cycleMinMs) return bad(`${at}.every는 ${Math.round(cycleMinMs / 60000)}분 이상이다: ${x.every}`);
+    let to = x.to == null ? 'manager' : x.to;
+    if (typeof to !== 'string') return bad(`${at}.to는 자리 이름이나 "manager"다`);
+    if (!Object.prototype.hasOwnProperty.call(flow.seats, to)) {
+      if (to !== 'manager') return bad(`${at}.to가 없는 자리를 가리킨다: ${to}. 자리: ${Object.keys(flow.seats).join(', ')}`);
+      if (!flow.manager) return bad(`${at}.to가 manager인데 정의에 manager(관리자 자리)가 없다`);
+      to = flow.manager;
+    }
+    if (x.run != null) {
+      if (!Array.isArray(x.run) || !x.run.length || x.run.some((w) => typeof w !== 'string' || !w)) return bad(`${at}.run은 빈 칸 없는 글 배열이어야 한다(예: ["node", ".atrium/tools/summary.mjs"])`);
+      if (root) {
+        if (pathish(x.run[0]) && !exists(path.resolve(root, x.run[0])) && !['.exe', '.cmd', '.bat', '.com'].some((e) => exists(path.resolve(root, x.run[0] + e)))) return bad(`${at}.run의 파일이 없다: ${x.run[0]}`);
+        if (!pathish(x.run[0]) && x.run[1] && /[\\/]/.test(x.run[1]) && path.extname(x.run[1]) && !x.run[1].startsWith('-') && !exists(path.resolve(root, x.run[1]))) return bad(`${at}.run의 스크립트가 없다: ${x.run[1]}`);
+      }
+    }
+    const staleMs = x.stale == null ? CYCLE_STALE_MS : parseEvery(x.stale);
+    if (!staleMs) return bad(`${at}.stale은 "1d", "12h" 꼴이다: ${JSON.stringify(x.stale)}`);
+    if (x.timeoutMs != null && !(Number(x.timeoutMs) > 0)) return bad(`${at}.timeoutMs는 양수다(최대 ${HOOK_TIMEOUT_MAX_MS * 5})`);
+    out.push({ index: i, every: String(x.every), everyMs, to, run: x.run ? x.run.slice() : null, staleMs, timeoutMs: Math.min(Number(x.timeoutMs) || CYCLE_RUN_TIMEOUT_MS, HOOK_TIMEOUT_MAX_MS * 5) });
+  }
+  return { ok: true, cycles: out };
+}
+
+// JSON 포인터(RFC 6901)로 값 읽기. 없으면 undefined
+export function pointerGet(obj, ptr) {
+  if (ptr === '') return obj;
+  if (typeof ptr !== 'string' || !ptr.startsWith('/')) return undefined;
+  let cur = obj;
+  for (const raw of ptr.slice(1).split('/')) {
+    const k = raw.replace(/~1/g, '/').replace(/~0/g, '~');
+    if (cur == null || typeof cur !== 'object' || !Object.prototype.hasOwnProperty.call(cur, k)) return undefined;
+    cur = cur[k];
+  }
+  return cur;
+}
+export const POINTER_RE = /^(\/[^\/]*)+$/;
+// 키 차례와 상관없이 같은 값인가
+const canon = (v) => JSON.stringify(v === undefined ? null : v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((kk) => [kk, x[kk]])) : x));
+export const samePointer = (a, b, p) => canon(pointerGet(a, p)) === canon(pointerGet(b, p)) && (pointerGet(a, p) === undefined) === (pointerGet(b, p) === undefined);
+// 후보 정의(raw)가 기준(base)에서 바꾼 보호 포인터
+export const protectedHits = (raw, base, pointers) => (base && pointers ? pointers.filter((p) => !samePointer(raw, base, p)) : []);
+const fileSha = (f) => { try { return sha(fs.readFileSync(f)); } catch { return null; } };
+// 데이터 폴더 rigs/ 아래 워크스페이스 폴더 이름(키에는 :, / 등이 있다)
+export const rigDirName = (key) => `${String(key).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(-60) || 'ws'}-${sha(String(key)).slice(0, 8)}`;
 
 // ---------- P185: 자리(seats)·흐름(flow)·results·manager ----------
 export const DEFAULT_RESULTS = ['ok', 'failed'];
@@ -176,8 +252,12 @@ export class Rig {
   // b: 백엔드(store, sessions, log). opts.env: 훅에 줄 환경(시험용. 기본 cleanEnv(process.env))
   constructor(b, { env = null } = {}) {
     this.b = b; this.envOverride = env;
-    this.cache = new Map(); // 워크스페이스 키 → { sig, hash, def, invalid, good: { def, hash } | null, noted }
+    this.cache = new Map(); // 워크스페이스 키 → { sig, hash, def, invalid, good: { def, hash, raw, n } | null, noted }
+    this.pendingBy = new Map(); // P188: 워크스페이스 키 → { hash, by, note }(rollback이 다시 쓴 내용을 다음 읽기가 그 누가로 적는다)
+    this.versionDefs = new Map(); // P188: `${키}|${n}` → { def, hash, raw, n }(건이 쥔 버전의 정의)
+    this.alertMarks = new Map(); // P188: 같은 보호 알림을 되풀이하지 않는다
   }
+  cycleMin() { return cycleMinOf(this.b.cfg); }
   store() { return this.b.store; }
   rootOf(key) { const w = key ? this.store().getWorkspace(key) : null; return w ? w.root : null; }
   fileOf(key) { const r = this.rootOf(key); return r ? path.join(r, RIG_FILE) : null; }
@@ -191,7 +271,8 @@ export class Rig {
     try { stat = fs.statSync(file); } catch { stat = null; }
     const c = this.cache.get(key) || { sig: null, good: null };
     if (!stat || !stat.isFile()) { this.cache.set(key, { ...c, sig: null, def: null, hash: null, invalid: null }); return { present: false, def: null, hash: null, invalid: null, file, root }; }
-    const sig = `${stat.mtimeMs}:${stat.size}`;
+    const on = this.enabled(key); // P188: 버전과 보호는 켜진 rig만(꺼진 워크스페이스는 지금과 같다). 켜면 다시 읽어 남긴다
+    const sig = `${stat.mtimeMs}:${stat.size}:${on ? 1 : 0}`;
     if (c.sig !== sig) {
       let next;
       try {
@@ -200,22 +281,142 @@ export class Rig {
         const hash = sha(buf);
         let raw;
         try { raw = JSON.parse(buf.toString('utf8').replace(/^﻿/, '')); } catch (e) { throw Object.assign(new Error(`JSON이 아니다: ${e.message}`), { hash }); }
-        const v = validateRig(raw, { root });
+        const v = validateRig(raw, { root, cycleMinMs: this.cycleMin() });
         if (!v.ok) throw Object.assign(new Error(v.reason), { hash });
-        next = { sig, hash, def: v.def, invalid: null, good: { def: v.def, hash } };
+        // P188: 새 해시면 버전으로 남긴다. 사람만 고치는 포인터를 바꿨으면 쓰지 않고 마지막 맞은 버전을 쓴다
+        const a = on ? this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs: stat.mtimeMs, prev: c.good }) : { ok: true, n: null };
+        if (!a.ok) throw Object.assign(new Error(a.reason), { hash, fallback: a.fallback, protectedHits: a.hits });
+        next = { sig, hash, def: v.def, invalid: null, good: { def: v.def, hash, raw, n: a.n } };
       } catch (e) {
-        next = { sig, hash: c.good ? c.good.hash : null, def: c.good ? c.good.def : null, invalid: e.message, badHash: e.hash || null, good: c.good };
+        const good = e.fallback || c.good || this.lastGood(key);
+        next = { sig, hash: good ? good.hash : null, def: good ? good.def : null, invalid: e.message, badHash: e.hash || null, good, protectedHits: e.protectedHits || null };
         const mark = `${e.hash || sig}:${e.message}`;
         if (c.noted !== mark) {
           next.noted = mark;
-          try { this.store().addEvent(null, 'rig_invalid', { workspace: key, reason: e.message, hash: e.hash || null, usingHash: c.good ? c.good.hash : null }); } catch {}
-          this.b.log && this.b.log(`rig_invalid ${key}: ${e.message}${c.good ? ' (using last good)' : ''}`);
+          if (e.protectedHits) this.alert(key, { kind: 'pointer', items: e.protectedHits, hash: e.hash, reason: e.message, usingN: good ? good.n : null });
+          else try { this.store().addEvent(null, 'rig_invalid', { workspace: key, reason: e.message, hash: e.hash || null, usingHash: good ? good.hash : null }); } catch {}
+          this.b.log && this.b.log(`rig_invalid ${key}: ${e.message}${good ? ' (using last good)' : ''}`);
         } else next.noted = c.noted;
       }
       this.cache.set(key, next);
     }
     const x = this.cache.get(key);
-    return { present: true, def: x.def, hash: x.hash, invalid: x.invalid, file, root };
+    return { present: true, def: x.def, hash: x.hash, invalid: x.invalid, file, root, n: x.good ? x.good.n ?? null : null, protectedHits: x.protectedHits || null };
+  }
+
+  // ---------- P188: 버전 ----------
+  dataDir() { return this.b.cfg && this.b.cfg.dataDir ? this.b.cfg.dataDir : null; }
+  versionPath(key, n, hash) { const d = this.dataDir(); return d ? path.join(d, 'rigs', rigDirName(key), `${n}-${hash}.json`) : null; }
+  // 맞는 정의의 새 해시 → { ok, n } | { ok: false, reason, hits, fallback }
+  adopt(key, { buf, hash, raw, def, mtimeMs, prev }) {
+    const st = this.store();
+    if (!st.lastRigVersion) return { ok: true, n: null };
+    const last = st.lastRigVersion(key);
+    if (last && last.hash === hash) return { ok: true, n: last.n };
+    const base = prev && prev.raw ? prev : this.lastGood(key);
+    const prot = st.rigProtected ? st.rigProtected(key) : null;
+    const hits = base && prot ? protectedHits(raw, base.raw, prot.pointers) : [];
+    if (hits.length) return { ok: false, hits, fallback: base, reason: `사람만 고치는 자리를 바꿔 이 정의를 쓰지 않는다(버전 ${base.n ?? '?'}을 그대로 쓴다): ${hits.join(', ')}. 바꾸려면 사람이 보드의 rig 메뉴에서 그 자리를 목록에서 뺀다.` };
+    const pend = this.pendingBy.get(key);
+    const by = pend && pend.hash === hash ? pend.by : this.byOf(key, mtimeMs, (base && base.def) || def);
+    const note = pend && pend.hash === hash ? pend.note || null : !last ? 'first' : null;
+    if (pend && pend.hash === hash) this.pendingBy.delete(key);
+    const n = st.insertRigVersion({ workspaceKey: key, hash, by, note });
+    const f = this.versionPath(key, n, hash);
+    if (f) {
+      try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, buf); st.setRigVersionFile(key, n, path.relative(this.dataDir(), f).split(path.sep).join('/')); }
+      catch (e) { this.b.log && this.b.log(`rig version file ${key} ${n}: ${e.message}`); }
+    }
+    this.versionDefs.set(`${key}|${n}`, { def, hash, raw, n });
+    try { st.addEvent(null, 'rig_version', { workspace: key, n, hash, by, note }); } catch {}
+    this.b.log && this.b.log(`rig version ${key} #${n} ${hash.slice(0, 12)} by ${by}`);
+    return { ok: true, n };
+  }
+  // 누가 바꿨나: 파일 수정 시각에 관리자 자리 세션이 일하는 턴 중이었으면 manager, 아니면 unknown(사람의 되돌리기는 pendingBy로 human)
+  byOf(key, mtimeMs, def) {
+    const seat = def && def.manager;
+    if (!seat || !this.b.sessions) return 'unknown';
+    const st = this.store();
+    for (const s of this.b.sessions.values()) {
+      if (s.workspaceKey !== key || s.rigSeat !== seat) continue;
+      const at = st.stateAt ? st.stateAt(s.sessionId, Math.ceil(mtimeMs)) : null;
+      if (at === 'working') return 'manager';
+      const now = this.b.summary ? this.b.summary(s) : null;
+      if (!at && now && now.state === 'working') return 'manager';
+    }
+    return 'unknown';
+  }
+  // 마지막으로 남긴 버전(프로세스가 다시 뜬 뒤 기준) → { def, hash, raw, n } | null
+  lastGood(key) {
+    const st = this.store();
+    const last = st.lastRigVersion ? st.lastRigVersion(key) : null;
+    return last ? this.loadVersion(key, last) : null;
+  }
+  loadVersion(key, row) {
+    const k = `${key}|${row.n}`;
+    if (this.versionDefs.has(k)) return this.versionDefs.get(k);
+    const d = this.dataDir();
+    if (!d || !row.file) return null;
+    try {
+      const buf = fs.readFileSync(path.join(d, row.file));
+      const raw = JSON.parse(buf.toString('utf8').replace(/^\uFEFF/, ''));
+      const v = validateRig(raw, { root: this.rootOf(key), cycleMinMs: this.cycleMin() });
+      if (!v.ok) return null;
+      const x = { def: v.def, hash: row.hash, raw, n: row.n };
+      this.versionDefs.set(k, x);
+      return x;
+    } catch { return null; }
+  }
+  // 건이 쥔 버전의 정의(지금 쓰는 버전이면 지금 정의) → def | null
+  versionDef(key, n) {
+    if (n == null) return null;
+    const r = this.read(key);
+    const c = this.cache.get(key);
+    if (c && c.good && c.good.n === n) return c.good.def;
+    const row = this.store().rigVersion ? this.store().rigVersion(key, n) : null;
+    const x = row ? this.loadVersion(key, row) : null;
+    return x ? x.def : r.def;
+  }
+  currentN(key) { const r = this.read(key); return r.n ?? null; }
+  versionContent(key, n) {
+    const row = this.store().rigVersion(key, n);
+    if (!row) return null;
+    const d = this.dataDir();
+    try { return { row, buf: fs.readFileSync(path.join(d, row.file)) }; } catch { return { row, buf: null }; }
+  }
+
+  // ---------- P188: 사람만 고치는 목록 ----------
+  // P189가 쓰는 읽기: { pointers, files: [{ path, sha256, at }] } | null
+  rigProtected(key) { return this.store().rigProtected ? this.store().rigProtected(key) : null; }
+  // 보호 파일 가운데 해시가 다른 것 → [{ path, want, got }]
+  changedFiles(key) {
+    const p = this.rigProtected(key); const root = this.rootOf(key);
+    if (!p || !p.files.length || !root) return [];
+    return p.files.map((f) => ({ path: f.path, want: f.sha256, got: fileSha(path.resolve(root, f.path)) })).filter((x) => x.got !== x.want);
+  }
+  // 알림: 판 이벤트 rig_protected, 관리자 자리 세션에 판 알림, 사람에게 응답 필요(복귀 요약의 needs_you 줄, rig 메뉴)
+  alert(key, { kind, items, hash = null, reason, usingN = null }) {
+    const mark = `${kind}:${JSON.stringify(items)}:${hash || ''}`;
+    if (this.alertMarks.get(key) === mark) return false;
+    this.alertMarks.set(key, mark);
+    const st = this.store();
+    const r = this.cache.get(key);
+    const def = (r && r.good && r.good.def) || null;
+    const seat = def && def.manager;
+    const to = seat && this.b.sessions ? [...this.b.sessions.values()].filter((s) => s.workspaceKey === key && s.rigSeat === seat) : [];
+    try { st.addEvent(to[0] ? to[0].sessionId : null, 'rig_protected', { workspace: key, kind, items, hash, reason, usingN, manager: to.map((s) => s.name) }); } catch {}
+    this.b.log && this.b.log(`rig_protected ${key} ${kind}: ${items.join ? items.join(', ') : items}`);
+    const text = kind === 'pointer'
+      ? `[Atrium 보드] rig: 정의(.atrium/rig.json)가 사람만 고치는 자리(${items.join(', ')})를 바꿔 보드가 그 정의를 쓰지 않는다(버전 ${usingN ?? '?'}을 그대로 쓴다). 그 자리는 되돌리고, 바꿔야 하면 사람에게 묻는다. 버전: atrium rig log`
+      : `[Atrium 보드] rig: 사람만 고치는 파일(${items.join(', ')})의 내용이 사람이 승인한 때와 달라 rig 도구가 돌지 않는다. 그 파일을 되돌리거나 사람에게 다시 승인해 달라고 한다(보드의 rig 메뉴).`;
+    for (const s of to) try { this.b.queue.enqueue(s.sessionId, text); } catch {}
+    if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.alert', { workspace: key, kind, items }); } catch {}
+    return true;
+  }
+  alerts(key, limit = 10) {
+    const st = this.store();
+    if (!st.db) return [];
+    return st.db.prepare("SELECT t, data FROM events WHERE kind = 'rig_protected' ORDER BY id DESC LIMIT 200").all().map((e) => ({ t: e.t, ...(JSON.parse(e.data || '{}')) })).filter((x) => x.workspace === key).slice(0, limit);
   }
   // 켜졌고 쓸 정의가 있으면 그 읽기 결과, 아니면 null
   active(key) {
@@ -238,10 +439,14 @@ export class Rig {
       state: !r.present ? 'none' : !def ? 'invalid' : st.enabled ? 'on' : 'off', // invalid가 있고 def도 있으면 마지막 맞은 정의를 쓰는 중
       hooks: def ? def.hooks.map((h) => ({ at: h.at, from: h.at === 'deliver' ? h.from : undefined, tool: h.tool || undefined, run: h.run, onFail: h.onFail })) : [],
       tools: def && def.tools ? Object.values(def.tools).map((x) => ({ name: x.name, run: x.run, desc: x.desc, timeoutMs: x.timeoutMs, parallel: x.parallel })) : [], // P183: 켜기 확인 창이 보인다
+      cycleRuns: def && def.cycles ? def.cycles.filter((x) => x.run).map((x) => ({ every: x.every, run: x.run })) : [], // P188: 느린 고리의 run도 사용자 계정으로 돈다
       guide: !!(def && def.guide), name: def ? def.name : null,
       // P185: 자리·흐름(켜기 확인 창과 노드 메뉴의 "자리 정하기"가 쓴다)
       seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide })) : [],
       flow: def ? def.flow || [] : [], results: def ? def.results || [] : [], manager: def ? def.manager || null : null, warnings: def ? def.warnings || [] : [],
+      // P188: 지금 버전, 느린 고리, 사람만 고치는 목록과 어긋난 것
+      version: r.n ?? null, cycles: def && def.cycles ? def.cycles.map((x) => ({ every: x.every, to: x.to, run: x.run })) : [],
+      protected: this.rigProtected(key) || { pointers: [], files: [] }, protectedHits: r.protectedHits || [], changedFiles: this.changedFiles(key).map((x) => x.path),
     };
   }
   setEnabled(key, on, by = 'human') {
@@ -362,6 +567,8 @@ export class Rig {
 
 // 켜진 rig가 있는 워크스페이스의 일 머리에 붙는 한 줄(짧게)
 export const RIG_HEADER_LINE = '[Atrium 보드] 이 워크스페이스에는 rig(작업 규칙)가 있다. 안내: `atrium guide`.';
+// P188: 일 머리를 세 줄 이하로 둘 때 셋째 줄 끝에 붙이는 rig 안내(짧게)
+export const RIG_HEADER_TAIL = '이 워크스페이스에는 rig(작업 규칙)가 있다: `atrium guide`.';
 
 // 판 API 처리기(backend.mjs handlers에 펼친다). 켜고 끄기는 판 API 토큰으로 붙은 연결(이 PC의 창·사람의 atrium 명령, auth.kind local)만.
 // 기기 토큰(휴대폰·원격)은 상태만 본다. 에이전트의 세션 토큰은 이 API에 붙지 못하고, /branch/*에는 rig를 켜는 명령이 없다
