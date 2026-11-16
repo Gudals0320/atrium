@@ -5,11 +5,13 @@
 //   부모가 다른 워크스페이스에 있으면 자기 줄의 워커 칸(COL[1])에 놓고(그 하위는 다음 칸), 부모와는 다른 워크스페이스 선(cross)으로 잇는다. 부모가 닫힌 세션은 뿌리.
 // - 선: 나무 선은 부모 오른쪽 가운데 → 칸 사이 틈의 줄기 → 하위 왼쪽 가운데(화살촉). 다른 워크스페이스 선은 격자 길 찾기(lib/mission-terr.js routeOrtho)로 카드·줄 머리·기둥을 피해 받는 카드의 왼쪽(또는 위)으로.
 // - 카드 폭은 이 판의 가장 긴 이름이 멀리 타일에서 한 줄에 들게(lib/mission-terr.js cardWidth), 높이는 내용(cardHeight).
-// → { cards: Map id → { x, y, w, h, node, ws, depth, fold, thin(P163 얇은 줄) }, bands, rows, cols, divs, edges, bounds, order, tree, cw, seq(줄 키 → { roots, away, solos }), vkids(id → 보이는 하위 id들) }
+// → { cards: Map id → { x, y, w, h, node, ws, depth, fold, thin(P163 얇은 줄), seat(P186 자리) }, bands, rows, cols, divs, edges, bounds, order, tree, cw, seq(줄 키 → { roots, away, solos }), vkids(id → 보이는 하위 id들),
+//     flows(P186 흐름 줄 그림), reps(워크스페이스 → 자리 → 대표 카드 id), rig(rigIndex) }
 import { keepCard } from './bg-work.js'; // P164
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
 import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from './mission-terr.js';
 import { zoomStep } from './faces.js'; // P178: 이름표 배율 계단
+import { rigIndex, seatThin, seatReps, flowLines, flowPaths } from './rig-map.js'; // P186: rig 자리·흐름 줄
 
 // SPINE = 폴더 기둥 최소 폭(P157: 가장 긴 폴더 이름에 맞춰 넓어진다, spineWidth), BANDMIN = 폴더 띠 최소 높이(P157: 워크스페이스 하나인 폴더도 기둥 글이 잘리지 않게), HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // SOLOGAP = 마지막 나무 칸과 솔로 칸 사이(구분선이 가운데), SGX = 솔로 칸 두 줄 사이, MINCOLS = 늘 보이는 나무 칸 수(리드·워커·다음 단계)
@@ -55,6 +57,7 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null } = {}) {
   const tree = missionTree(graph);
   const { byId } = tree;
+  const rix = rigIndex(graph); // P186: 켜진 rig의 자리 세션(없으면 빈 표라 배치가 전과 같다)
   const L = { ...LINE, CW: cardWidth(tree.nodes.map((n) => n.name), LINE.NAME_PX) };
   if (phone) { L.CW = Math.min(PHONE.CW_MAX, Math.max(PHONE.CW_MIN, Math.round(L.CW * PHONE.CW_K))); L.GX = PHONE.GX; L.FOLD = PHONE.FOLD; }
   const tierOf = (id) => (tiers && tiers.has(id) ? tiers.get(id) : nodeTier(byId.get(id)));
@@ -146,12 +149,17 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   // P163: 한 세션 아래 보이는 하위(곁에 붙은 동료 포함)가 THINMIN개 이상이면 절전 중인 하위만 얇은 줄(높이 THIN)로 줄이고 깨어 있는 카드 아래로 모은다(그 안은 지금 차례 = 만든 차례).
   // 줄이지 않는 것: 절전이 아닌 것(작업 중·응답 필요·오류·완료 미확인 등), 뒤 일이 도는 것(P164), 자기 아래 보이는 하위가 있거나 깊이 접기 칩이 붙는 것(카드로 둔다), 형제 중 동료가 있는 것(동료 붙이기가 먼저라 제자리 카드)
   const thin = new Set();
-  const thinOrder = (ks, d) => {
+  // P186: 그 전에 fresh 자리의 끝난 세션(열린 시도 없음)을 같은 자리의 일하는(또는 가장 늦은) 카드 바로 아래 얇은 줄로 모은다(하위 수와 상관없이, 바쁜 등급·뒤 일·하위가 있는 것은 카드로)
+  const thinOrder = (ks0, d) => {
+    const sr = seatThin(ks0, rix, (k) => !['work', 'turn', 'alert'].includes(tierOf(k)) && !keepCard(byId.get(k)) && !visKids(k, d).length && !folded.get(k) && !peersOf(k).some((p) => ks0.includes(p)));
+    for (const k of sr.thin) { thin.add(k); own.set(k, L.THIN); }
+    const ks = sr.order;
     if (ks.length < L.THINMIN) return ks;
-    const slim = ks.filter((k) => tierOf(k) === 'sleep' && !keepCard(byId.get(k)) && !visKids(k, d).length && !folded.get(k) && !peersOf(k).some((p) => ks.includes(p)));
+    const slim = ks.filter((k) => !thin.has(k) && !rix.byNode.has(k) && tierOf(k) === 'sleep' && !keepCard(byId.get(k)) && !visKids(k, d).length && !folded.get(k) && !peersOf(k).some((p) => ks.includes(p)));
     if (!slim.length) return ks;
     for (const k of slim) { thin.add(k); own.set(k, L.THIN); }
-    return [...ks.filter((k) => !thin.has(k)), ...slim];
+    const ss = new Set(slim);
+    return [...ks.filter((k) => !ss.has(k)), ...slim];
   };
   // align: 하위 묶음 안에서 카드 자리. mid = 가운데, bottom = 아래 끝(바로 다음이 동료일 때), top = 위 끝(바로 앞이 동료일 때). 동료끼리 바로 위아래에 붙게
   const alignOf = (list, i) => (i + 1 < list.length && peersOf(list[i]).includes(list[i + 1]) ? 'bottom' : i > 0 && peersOf(list[i]).includes(list[i - 1]) ? 'top' : 'mid');
@@ -271,12 +279,21 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     });
   }
 
+  // ---- P186: rig 자리 이름표와 흐름 줄(같은 rig의 자리 대표 카드 사이, 옅은 점선 곡선) ----
+  for (const [id, c] of cards) c.seat = rix.byNode.get(id) || null;
+  const flows = [], reps = new Map();
+  for (const [ws, R] of rix.rigs) {
+    const rp = seatReps(R, ws, tree.nodes.filter((n) => wsOf(n.id) === ws).sort(bySpawn), rix, (id) => cards.has(id) && !thin.has(id));
+    reps.set(ws, rp);
+    if (!phone) flows.push(...flowPaths(flowLines(R, rp), cards));
+  }
+
   // 칸: 워크스페이스 · 시작(0) · 1단계 · 2단계 · … · 솔로(보이는 가장 깊은 단계까지)
   const cols = phone ? COL.map((x, i) => ({ key: 'lv', level: i, x })) : [{ key: 'ws', x: L.HEADX }, ...COL.map((x, i) => ({ key: 'lv', level: i, x })), { key: 'solo', x: SOLO }];
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   const BW = phone ? nPages * W + (nPages - 1) * PHONE.PGAP : W;
-  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: BW, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
+  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: BW, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, flows, reps, rig: rix, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
 
   // ---- P166: 휴대폰 줄 하나(머리 = 위 띠, 나무, 그 아래 솔로 격자). 줄 높이를 돌려준다 ----
   function phoneRow(key, g, wi, roots, away, solos, chips, count) {

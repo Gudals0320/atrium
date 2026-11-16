@@ -14,6 +14,7 @@ import { roleModel, nodeTier } from './lib/mission-model.js';
 import { levelOf, zoomAt, ZOOM } from './lib/mission-terr.js';
 import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeKey } from './lib/phone-map.js';
 import { Card, Peek, cardFacts } from './MissionLineage.jsx';
+import { caseGroups } from './lib/rig-map.js'; // P186: rig 건(알약)
 
 const REFRESH_MS = 600;
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
@@ -228,6 +229,9 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const nWork = ids.filter((id) => tiers.get(id) === 'work').length, nDone = ids.filter((id) => tiers.get(id) === 'review').length;
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const pb = peek && lay ? lay.cards.get(peek) : null;
+  // P186: rig 건 알약(막힌 건·열린 건, 둘까지). 누르면 지금 일이 있는 자리의 카드로. rig가 없는 판은 없다
+  const rcases = lay ? caseGroups(graph, (ws, sid) => (sid && lay.cards.has(`s:${sid}`) ? `s:${sid}` : null), (ws, seat) => { const m = lay.reps.get(ws); return (m && m.get(seat)) || null; }) : null;
+  const rpills = rcases ? [...rcases.blocked, ...rcases.open].slice(0, 2) : [];
   return (
     <div className="mt-ph-list mt-pm mt-pl mt-pmap" data-role="phone-mission" data-style="canvas">
       <header className="mt-ph-head">
@@ -241,6 +245,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
           {attn.length > ATTN_MAX && <button type="button" className="mt-pl-pill st-needs more" data-role="pl-attn-more" onClick={() => goNext('attn', ['turn', 'alert'])}><span>{t('mmTerr.more', { n: attn.length - ATTN_MAX })}</span></button>}
           {!attn.length && <span className="mt-pl-pill quiet" data-role="pl-none"><span>{t('phoneMap.none')}</span></span>}
           {nWork > 0 && <button type="button" className="mt-pl-pill st-working count" data-role="pl-count" data-tier="work" onClick={() => goNext('work', ['work'])}><i /><b>{nWork}</b><span>{t('mmTerr.chip.work')}</span></button>}
+          {rpills.map((c) => <button key={`${c.ws}|${c.id}`} type="button" className={`mt-pl-pill case st-${c.state === 'blocked' ? 'error' : 'working'}`} data-role="pl-case" data-case={c.id} data-state={c.state} disabled={!c.go} onClick={() => c.go && goTo(c.go)}><i /><b>{t('rigMap.caseName', { id: c.id })}</b><span>{c.state === 'blocked' ? t('rigMap.blocked') : c.seats.join(', ') || t('rigMap.caseQueued')}</span></button>)}
           {nDone > 0 && <button type="button" className="mt-pl-pill st-done count" data-role="pl-count" data-tier="review" onClick={() => goNext('review', ['review'])}><i /><b>{nDone}</b><span>{t('mmTerr.chip.review')}</span></button>}
         </div>
       )}

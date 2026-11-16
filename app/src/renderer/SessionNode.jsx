@@ -9,6 +9,7 @@
 // P6c: 긴 답이면 머리줄에 "출력 보기"(I1). 루프 배지(I5)와 ⋯ 메뉴의 "루프 만들기"(셸 제외). 셸의 끊긴 명령은 "끊긴 명령"으로 보인다(P6b I8)
 // P22: 그룹 표시와 한 줄 메모 단추를 뺐다. 노드를 고르고 Delete를 누르면 X와 같은 닫기 확인을 연다(main.jsx가 store.killAsk로 알린다)
 // P28: 닫기 확인에서 Delete를 한 번 더 누르면 삭제 단추에 초점과 표시가 가고 Enter로 확정한다. Esc는 취소. 멀리·아이콘 얼굴은 흐리게 하지 않는다(styles.css)
+import { SeatPicker } from './RigSeat.jsx'; // P186: 노드 메뉴 자리 정하기
 import { memo, useEffect, useRef, useState } from 'react';
 import { countRender } from './perf-trace.js'; // P146
 import { NodeResizer, Handle, Position, useStore as useFlowStore } from '@xyflow/react';
@@ -247,6 +248,8 @@ function NodeMenu({ s, docked, onClose }) {
       </div>
       {/* P66: 판의 이름 바꾸기(에이전트 주소는 그대로) */}
       <div className="mt-menu-row"><button className="mt-btn small" data-action="rename" onClick={() => { onClose(); setRenaming(s.sessionId, 'node'); }}>{t('rename.menu')}</button><span className="dim">{renamed(s) ? t('rename.address', { address: addressOf(s) }) : t('rename.menuHint')}</span></div>
+      {/* P186: rig가 켜진 워크스페이스의 에이전트 세션이면 자리 정하기(이 PC의 창만) */}
+      <SeatPicker s={s} onDone={onClose} />
       {/* P21(D4)·P24: 잠든 노드는 그 리포를 깨운다. 잠재우기는 리포 단위라 영역 이름표 메뉴에 있다 */}
       {s.state === 'sleeping' && <div className="mt-menu-row"><button className="mt-btn small" data-action="wake" disabled={!!s.waking} onClick={() => { onClose(); wakeSession(s.sessionId); }}><Icon name="moon" />{t(sleptAlone(s) ? 'sessionSleep.menuWake' : 'sleep.menuWake')}</button><span className="dim">{t(sleptAlone(s) ? 'sessionSleep.menuWakeHint' : 'sleep.menuWakeHint')}</span></div>}
       {s.kind !== 'shell' && <div className="mt-menu-row"><button className="mt-btn small" data-action="loop-new" onClick={() => { onClose(); openDialog({ kind: 'loop', target: { session: s.sessionId } }); }}>{t('node.loopNew')}</button><span className="dim">{t('node.loopNewHint')}</span></div>}
