@@ -12,7 +12,7 @@
 //       atrium children [--all] [--json]
 //       atrium child-kill <이름> [--only] [--json]
 //       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째, P111: 혼자 잠든 세션은 그 세션만)
-//       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다)
+//       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다. P185: rig 자리 세션은 정의의 results 낱말)
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
 //       atrium guide [주제] [--json]   (P182: 자세한 사용법 + 켜진 rig의 안내)
 //       atrium tool [--json] · atrium tool <이름> [인자…] · atrium tool --wait <실행 ID> · atrium tool --runs   (P183: rig 도구)
@@ -68,6 +68,10 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       100초까지 기다려 도구의 종료 코드와 출력 꼬리를 돌려준다(도구가 0으로 끝나면 0, 아니면 1). 아직 돌면 종료 코드 3과 실행 ID: atrium tool --wait <ID>로 이어 기다린다.
       atrium tool --runs는 너의 최근 실행. 세션마다 한 번에 하나(정의가 parallel이면 여럿). rig의 훅이 거절하면 종료 코드 1과 까닭.
       도구를 정의하는 사람에게: 도구의 run에는 node, python, .exe를 바로 적는다(.cmd·.bat이면 cmd.exe를 거쳐 인자에 A-Z a-z 0-9 빈칸 _ . , : = / @ + - 밖의 글자를 쓰지 못한다)
+  rig 자리(seat): 사람이 정하거나 보드가 rig의 자리를 위해 띄운 세션은 정의(seats·flow)를 따른다(atrium me에 자리가 보인다).
+      atrium prompt <자리 이름> "<할 일>"은 그 자리로 보낸다: flow의 assign 줄이면 일(keep 자리는 앉은 세션, fresh 자리는 새 세션), may면 글만, 그 밖은 보드가 거절한다(종료 코드 1, 쓸 수 있는 자리를 알린다).
+      atrium done <값> "<보고>"의 값은 정의의 results 낱말이고, 보드가 값에 따라 다음 자리로 넘긴다(넘길 곳이 없으면 건의 주인에게). 자리 안내: atrium guide
+  PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
@@ -233,7 +237,8 @@ async function unitVerb(cmd) {
   let r;
   if (cmd === 'done') {
     const result = rest[0];
-    if (!['ok', 'failed'].includes(result)) fail('사용법: atrium done ok|failed "<보고>" (ok 끝냈다, failed 못 했다)', 2);
+    // P185: rig 자리 세션은 정의의 results 낱말(rejected 등)도 쓴다. 값 검사는 보드가 한다(자리 없는 세션은 ok|failed)
+    if (!result || !/^[a-z][a-z0-9_]{0,23}$/.test(result)) fail('사용법: atrium done ok|failed "<보고>" (ok 끝냈다, failed 못 했다. rig 자리 세션은 atrium me의 done 값)', 2);
     let text = rest.slice(1).join(' ');
     if (flags.file) { if (text) fail('글은 인자나 --file 가운데 하나로 준다', 2); try { text = fs.readFileSync(path.resolve(String(flags.file)), 'utf8'); } catch (e) { fail(`--file을 읽지 못했다: ${e.message}`, 2); } }
     if (!text.trim()) fail('보고 글을 준다: atrium done ok|failed "<보고>"', 2);
@@ -241,11 +246,13 @@ async function unitVerb(cmd) {
   } else r = await call(cmd, {}, 20000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
-  if (r.error) fail(`${cmd === 'done' ? '닫지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`);
+  if (r.error) fail(`${cmd === 'done' ? '닫지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`, cmd === 'done' && r.error.code === 'bad_request' ? 2 : 1); // P185: 값을 잘못 씀(rig 자리의 results 밖 등)은 2
   const x = r.result;
   if (cmd === 'done') {
-    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, record: `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
+    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, record: x.parentOpen ? '건의 주인(너)이 닫은 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다`, flow: '보드가 rig 흐름에 따라 다음 자리로 넘겼다' }[x.claimedBy] || x.claimedBy;
     say(`일 ${x.unit}을 닫았다(${x.result}). ${how}. 다른 길로 따로 보고하지 않는다.`);
+    if (x.flow && x.flow.length) say(`넘김: ${x.flow.map((f) => `${f.seat} 자리${f.to ? ` @${f.to}` : '(자리 줄에 섰다)'} 일 ${f.unit}`).join(', ')}`); // P185
+    if (x.case) say(`건 ${x.case.id}: ${x.case.state}${x.case.blockedReason ? ` — ${x.case.blockedReason}` : ''}`);
     if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else say('이제 쉰다.');
     return;
   }
@@ -254,13 +261,14 @@ async function unitVerb(cmd) {
     const it = x.item;
     say(`일 ${it.id}: @${it.from}가 맡김(${it.origin}) · ${ago(it.startedAt, Date.now())} 시작${x.queued ? ` · 뒤에 줄 선 일 ${x.queued}개` : ''}`);
     say('--- 할 일 ---'); say(it.spec.replace(/\s+$/, '')); say('---');
-    say('끝나면: atrium done ok "<보고>" (못 했으면 atrium done failed "<까닭>")');
+    if (it.caseId) say(`rig 건 ${it.caseId}의 일(${it.seat} 자리${it.by ? `, @${it.by}가 보냄` : ''})`); // P185
+    say(it.results ? `끝나면: atrium done <값> "<보고>". 값: ${it.results.join(', ')}` : '끝나면: atrium done ok "<보고>" (못 했으면 atrium done failed "<까닭>")');
     return;
   }
   if (!x.items.length) return say('네가 맡긴 일이 없다.');
   say(`네가 맡긴 일 ${x.items.length}개(열림 ${x.open}):`);
   for (const it of x.items) {
-    say(`  ${it.id} → @${it.to} · ${it.queued ? 'open(줄 서 있음)' : it.status}${it.result ? ` · ${it.result}` : ''}${it.stopReason && it.status === 'open' ? ` · 멈춤(${it.stopReason})` : ''}${it.toolRuns ? ` · 도구 실행 ${it.toolRuns}` : ''} · ${ago(it.createdAt, Date.now())} · "${it.spec}"`);
+    say(`  ${it.id} → ${it.to ? `@${it.to}` : `${it.seat} 자리(줄)`}${it.caseId ? ` · 건 ${it.caseId}` : ''} · ${it.queued ? 'open(줄 서 있음)' : it.status}${it.result ? ` · ${it.result}` : ''}${it.stopReason && it.status === 'open' ? ` · 멈춤(${it.stopReason})` : ''}${it.toolRuns ? ` · 도구 실행 ${it.toolRuns}` : ''} · ${ago(it.createdAt, Date.now())} · "${it.spec}"`);
     if (it.text) say(`      보고: ${it.text.replace(/\s+/g, ' ').slice(0, 400)}`);
   }
 }
@@ -273,6 +281,14 @@ async function guideVerb() {
   const g = (r.result && r.result.rig) || { state: 'none' };
   say(HELP);
   say('');
+  // P185: 자리 세션은 자리 요약과 자리 안내를 먼저
+  const seat = r.result && r.result.seat;
+  if (seat && seat.active) {
+    printSeat(seat);
+    if (seat.guide && seat.guide.text) { say(`--- ${seat.seat} 자리 안내(${seat.guide.path}) ---`); say(String(seat.guide.text).replace(/\s+$/, '')); say('---'); }
+    else if (seat.guide && seat.guide.error) say(`  자리 안내를 읽지 못했다(${seat.guide.path}): ${seat.guide.error}`);
+    say('');
+  }
   if (g.state === 'none') return say('rig: 이 워크스페이스에는 rig 정의(.atrium/rig.json)가 없다.');
   if (g.state === 'off') return say(`rig: 정의(${g.file})는 있지만 사람이 켜지 않았다(꺼진 동안 훅은 돌지 않는다).${g.invalid ? ` 정의가 잘못됐다: ${g.invalid}` : ''}`);
   if (g.state === 'invalid') return say(`rig: 켜졌지만 정의가 잘못돼 쓰지 않는다: ${g.invalid || '?'}`);
@@ -365,8 +381,9 @@ async function verb(cmd) {
   if (flags.json) return say(JSON.stringify(x ?? { error: r.error }, null, 2));
   if (r.error) fail(`${cmd === 'prompt' ? '보내지 않았다' : cmd === 'wait' ? '기다리지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`);
   if (cmd === 'read') return printRead(x);
+  if (cmd === 'prompt' && x.unit && x.unit.seatWait) return say(`${x.name} 자리에 일 ${x.unit.id}을 맡겼다(건 ${x.unit.caseId}). 그 자리의 열린 세션이 상한이라 줄에 섰다(앞에 ${x.unit.ahead}개). 자리가 비면 보드가 새 세션을 띄워 넣는다. ${HAND_OFF}`); // P185
   if (cmd === 'prompt') printDelivery(x);
-  if (cmd === 'prompt' && x.unit) say(x.unit.kind === 'followup' ? `@${x.name}가 맡은 일 ${x.unit.id}에 붙는 글로 보냈다(새 일이 아니다).` : `일 ${x.unit.id}로 맡겼다. @${x.name}는 끝나면 atrium done으로 닫고, 그 값이 너에게 한 번 온다.`); // P180
+  if (cmd === 'prompt' && x.unit) say(x.unit.kind === 'followup' ? `@${x.name}가 맡은 일 ${x.unit.id}에 붙는 글로 보냈다(새 일이 아니다).` : x.unit.caseId ? `rig 건 ${x.unit.caseId}의 일 ${x.unit.id}로 ${x.unit.seat} 자리 @${x.name}에게 맡겼다. 끝나면 보드가 done 값에 따라 다음 자리로 넘기고, 넘길 곳이 없으면 그 값이 건의 주인에게 온다.` : `일 ${x.unit.id}로 맡겼다. @${x.name}는 끝나면 atrium done으로 닫고, 그 값이 너에게 한 번 온다.`); // P180. P185: rig 건
   if (turn) printTurn(x, turn);
   else if (cmd === 'prompt' && flags.now) say(`--now로 보냈으니 기다리지 않는다. 화면 보기: ${x.next.read}`); // P143: 밀어 넣기는 기다리지 않는다(한 길로)
   else if (cmd === 'prompt' && x.unit) say(`${HAND_OFF} 화면 보기: ${x.next.read}`); // P181: 맡기고 턴을 끝낸다
@@ -471,8 +488,16 @@ function printMe(x) {
     say('역할 연결:');
     for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (${r.state})${last(r.last)}`);
   }
+  if (x.rig) printSeat(x.rig); // P185
   say(`일 맡기기: atrium prompt <이름> "<할 일>"(맡기고 턴을 끝내면 보드가 done 보고를 가져다준다) · 화면 읽기: ${x.commands.read}`); // P181
   say('이것이 보드의 지금 기록이다. 예전 알림과 다르면 이것을 믿는다.');
+}
+// P185: rig 자리 요약(atrium me·guide)
+function printSeat(r) {
+  if (!r.active) return say(`rig 자리: ${r.seat}(지금 rig가 꺼졌거나 정의에 그 자리가 없어 자리 규칙이 쓰이지 않는다)`);
+  say(`rig 자리: ${r.seat}(${r.session}${r.worktree ? ', 일마다 워크트리' : ''})${r.case ? ` · 건 ${r.case.id} ${r.case.state}(주인 @${r.case.owner})` : ''}`);
+  say(`  끝내기: atrium done <값> "<보고>". 값: ${r.results.join(', ')}${r.next && r.next.length ? ` · 다음: ${r.next.map((n) => `${n.on} → ${n.to.join(', ')}${n.max != null ? `(최대 ${n.max}번, 넘으면 ${n.else || 'manager'})` : ''}`).join(' · ')}` : ''}`);
+  say(`  보낼 수 있는 자리: 일 맡기기 ${r.assign.length ? r.assign.join(', ') : '없음'} · 글만 ${r.may.length ? r.may.join(', ') : '없음'}(atrium prompt <자리> "…"). 그 밖은 보드가 거절한다${r.tools ? ` · 도구: ${r.tools.join(', ') || '없음'}` : ''}`);
 }
 // P156: atrium relate
 const REL_WORD = { sub: '하위', peer: '동료', none: '독립', auto: '자동' };

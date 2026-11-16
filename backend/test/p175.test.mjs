@@ -73,10 +73,13 @@ const relNotices = (b) => { b.branch.notices.flushAll(); return b.queued.filter(
 // ---------- 규칙(순수) ----------
 test('P175 규칙: 고른 값 → 저장할 관계(하위는 자동에 맡기고, 어긋날 때만 사람이 정한 하위), 기본 역할', () => {
   assert.deepEqual(LINK_CHOICES, ['sub', 'peer']);
-  // 하위: 관계 없음·이미 a 아래 하위면 저장하지 않는다(역할 선 = 하위 자동 규칙)
-  assert.equal(linkRelationPlan('sub', null, 'a'), null);
-  assert.equal(linkRelationPlan(undefined, null, 'a'), null, '기본은 하위');
-  assert.equal(linkRelationPlan('sub', { relation: 'sub', up: 'a' }, 'a'), null);
+  // P185: 하위는 사람이 정한 하위 줄로 저장한다(역할 선만 있는 자동 하위는 일 부모가 아니라 atrium prompt가 일을 만들지 않았다).
+  //   이미 명시한 하위(사람·에이전트)로 a 아래면 저장하지 않는다
+  assert.equal(linkRelationPlan('sub', null, 'a'), 'sub');
+  assert.equal(linkRelationPlan(undefined, null, 'a'), 'sub', '기본은 하위');
+  assert.equal(linkRelationPlan('sub', { relation: 'sub', up: 'a', source: 'auto' }, 'a'), 'sub', '자동 하위(역할 선·계보)면 명시한다');
+  assert.equal(linkRelationPlan('sub', { relation: 'sub', up: 'a', source: 'user' }, 'a'), null);
+  assert.equal(linkRelationPlan('sub', { relation: 'sub', up: 'a', source: 'agent' }, 'a'), null);
   // 동료·독립·거꾸로 된 하위였으면 사람이 정한 하위로 바꾼다
   assert.equal(linkRelationPlan('sub', { relation: 'peer', up: null }, 'a'), 'sub');
   assert.equal(linkRelationPlan('sub', { relation: 'none', up: null }, 'a'), 'sub');
@@ -89,19 +92,21 @@ test('P175 규칙: 고른 값 → 저장할 관계(하위는 자동에 맡기고
   assert.equal(linkDefaultRole('sub'), null);
 });
 
-test('P175 하위로 잇기: 연결과 역할만 저장(관계 줄 없음), 지금 관계는 자동 하위, 관계 알림 없음', async () => {
+test('P175·P185 하위로 잇기: 연결과 역할, 사람이 정한 하위 줄(일 부모가 된다), 보이는 관계가 같으니 관계 알림 없음', async () => {
   const { b, A, B } = await fakeBoard();
   const r = b.linkCreate({ from: A.sessionId, to: B.sessionId, role: '리뷰어', relation: 'sub' });
-  assert.equal(r.relation, 'sub'); assert.equal(r.relationSet, null);
-  assert.deepEqual(b.store.relationRows(), [], '하위는 자동 규칙 그대로');
+  assert.equal(r.relation, 'sub'); assert.equal(r.relationSet, 'sub');
+  const rows = b.store.relationRows();
+  assert.deepEqual(rows.map((x) => [x.a, x.b, x.relation, x.source]), [[A.sessionId, B.sessionId, 'sub', 'user']], 'P185: 사람이 정한 하위 줄');
   assert.equal(r.link.role, '리뷰어');
-  assert.deepEqual(r.link.relation, { relation: 'sub', source: 'auto', up: A.sessionId });
+  assert.deepEqual(r.link.relation, { relation: 'sub', source: 'user', up: A.sessionId });
+  assert.equal(b.branch.relIndex().workParentOf(B.sessionId), A.sessionId, 'P185: 일 부모(atrium prompt가 일을 만든다)');
   assert.equal(b.queued.filter((q) => q.sid === A.sessionId && q.text.includes('"리뷰어"')).length, 1, 'A에 역할 알림');
-  assert.equal(relNotices(b).length, 0, '자동이라 관계 알림은 없다');
+  assert.equal(relNotices(b).length, 0, '보이는 관계가 같아 관계 알림은 없다');
   // relation 없이 부르면(옛 창·CLI) 하위와 같다
   const C = [...b.sessions.values()].find((x) => x.name === 'gamma');
   assert.equal(b.linkCreate({ from: A.sessionId, to: C.sessionId, role: '리뷰어' }).relation, 'sub');
-  assert.deepEqual(b.store.relationRows(), []);
+  assert.equal(b.store.relationRows().length, 2);
   b.branch.notices.stop();
 });
 

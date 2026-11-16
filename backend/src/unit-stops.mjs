@@ -60,6 +60,7 @@ export class UnitStops {
   // 상위의 묶음에 한 줄을 더한다
   add(tr, unit, why, detail = null) {
     if (!unit || !this.b.sessions.has(unit.from)) return false;
+    if (unit.from === tr.sessionId) return false; // P185: 건 주인이 자기 자리로 받은 일(자기에게 멈춤을 알리면 끝없이 돈다)
     if (why !== 'tree_quiet' && this.waited(unit.from, unit.to)) return false;
     const line = stopLine({ child: this.units.nameOf(tr.sessionId), unitId: unit.id, spec: unit.spec, why, detail });
     this.store().addEvent(tr.sessionId, 'unit_stop_seen', { unitId: unit.id, tryId: tr.id, why });

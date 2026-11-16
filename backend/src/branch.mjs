@@ -38,6 +38,7 @@ import { AgentVerbs, verbLines } from './agent-verbs.mjs'; // P116: atrium promp
 import { ToolRuns } from './tool-runs.mjs'; // P183: atrium tool
 import { installRelations, relationHeader, RELATION_WORD } from './branch-relations.mjs'; // P156: 일 관계
 import { WorkUnits, checkAgentText } from './work-units.mjs'; // P180: 일 단위와 시도
+import { RigFlow } from './rig-flow.mjs'; // P185: rig 자리·건·흐름
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 
 export const DEFAULT_ROLE = '워커';
@@ -340,6 +341,7 @@ export class Branch {
     b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } }); // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read
     this.tools = new ToolRuns(b, toolOpts); // P183: atrium tool(rig 도구 실행과 장부)
+    this.flow = new RigFlow(b, this); // P185: rig 자리·건·흐름(자리로 보내기, done 값에 따른 넘김, 되돌아감 상한)
     this.handlers = {
       'branch.tree': () => this.tree(),
     };
@@ -412,7 +414,7 @@ export class Branch {
     const child = this.isWorkChild(s.sessionId, wp, idx);
     return { branch: { depth: this.workDepth(s.sessionId, idx), parentSessionId: wp, parentName: shownName(parent), // P66: 보이는 이름
       parentAddress: parent ? parent.name : null, parentOpen: !!(wp && this.b.sessions.has(wp)), child, role: child ? this.workRole(s, wp, idx) : null, order: child && info && wp === (s.parentSessionId || null) ? this.orderOf(s.sessionId) : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.workChildren(s.sessionId, idx).length,
-      ...this.relationSummary(s, idx) } }; // P156: 일 부모(workParentSessionId), 계보 부모와의 관계(parentRelation), 동료(peers)
+      ...this.relationSummary(s, idx) }, rigSeat: s.rigSeat || null }; // P185: rig 자리 // P156: 일 부모(workParentSessionId), 계보 부모와의 관계(parentRelation), 동료(peers)
   }
   tree() {
     // P159: atrium tree는 일 관계 나무(하위는 일 부모 아래, 동료·독립은 맨 위에 서고 동료 이름을 붙인다). lineageParentSessionId는 사실
@@ -561,7 +563,10 @@ export class Branch {
   // P182: atrium guide [주제]. 부르는 세션의 워크스페이스 rig 안내(켜져 있을 때만 글, 잘못된 정의면 그 까닭). 판의 일반 안내(help --long)는 CLI가 붙인다
   guideVerb(s, o = {}) {
     const r = this.b.rig ? this.b.rig.guide(s, o.topic ? String(o.topic) : null) : { state: 'none', text: null };
-    return { rig: r };
+    // P185: 자리 세션은 자리 안내(정의 seats.<자리>.guide)와 자리 요약(atrium me의 rig 칸)을 함께
+    const seat = this.flow ? this.flow.meOf(s) : null;
+    const seatGuide = seat && seat.active ? this.flow.seatGuide(s) : null;
+    return { rig: r, ...(seat ? { seat: { ...seat, guide: seatGuide } } : {}) };
   }
   // K1: 하위 세션 만들기. o: { name, prompt, role, cwd(절대 경로), worktree, model, kind, wait }
   async spawnChild(parent, o = {}, res = null) {
@@ -1134,7 +1139,8 @@ export class Branch {
       if (!o) continue;
       roles.push({ dir: out ? 'out' : 'in', role: l.role, name: shownName(o), agentName: o.agentName, state: stateOf(o), last: lastOf(l) });
     }
-    return { at: Date.now(), me, parent, peers, children, independent, lineage, roles,
+    const rig = this.flow ? this.flow.meOf(s) : null; // P185: 자리, 건, 보낼 수 있는 자리
+    return { at: Date.now(), me, parent, peers, children, independent, lineage, roles, ...(rig ? { rig } : {}),
       commands: { prompt: 'atrium prompt <이름> "<할 일>" --wait', wait: 'atrium wait <이름>', read: 'atrium read <이름>' } }; // P116
   }
 }

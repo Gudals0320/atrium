@@ -432,7 +432,7 @@ test('P183 꺼진 워크스페이스·정의 없음·도구 없음·잘못된 �
 
 // ---------- 계약·승인 규칙·안내 ----------
 test('P183 계약: tool 동사를 더했고 계약은 3 그대로, 승인 규칙에 atrium tool(Bash·PowerShell), guide에 도구 이름', async () => {
-  assert.equal(CONTRACT_VERSION, 3);
+  assert.equal(CONTRACT_VERSION, 4); // P185: rig 자리로 4
   assert.ok(VERB_NAMES.includes('tool'));
   assert.ok(VERBS.find((v) => v.name === 'items').out.includes('toolRuns'));
   const allow = ATRIUM_ALLOW.join(' ');

@@ -165,26 +165,44 @@ export class AgentVerbs {
   async prompt(caller, o = {}, res = null) {
     const b = this.b;
     if (o.now && o.wait) throw apiError('bad_request', '--now와 --wait는 함께 쓸 수 없다. --now는 받는 쪽의 지금 턴에 대기 메시지로 넣어 그 글로 시작하는 턴이 없다(짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.');
-    const t = this.target(caller, o.name);
+    // P185: rig 자리 세션의 보내기는 정의가 정한다(assign 줄 → 일, may → 글만, 그 밖 거절 rig_refused). 자리 없는 세션·꺼진 rig는 null(옛 그대로)
+    const flow = this.branch && this.branch.flow ? this.branch.flow : null;
+    const fp = flow ? flow.planPrompt(caller, o, this) : null;
+    let t = fp ? fp.t : this.target(caller, o.name);
     let text = o.text == null ? '' : String(o.text);
     if (!text.trim()) throw apiError('bad_request', '보낼 글을 주세요: atrium prompt <이름> "<할 일>"');
     if (text.length > TEXT_MAX) throw apiError('bad_request', `글이 너무 길다(${text.length}자, ${TEXT_MAX}자까지). 파일에 쓰고 그 경로를 보낸다.`);
     checkAgentText(text); // P180: 판 알림 머리로 시작할 수 없다
     // P182: 받는 쪽 워크스페이스 rig의 deliver 훅(큐에 넣기 전). 거절이면 넣지 않고 종료 코드 1과 까닭. 앞머리(일 머리)는 고친 글 앞에 붙는다
+    // P185: 아직 앉은 세션이 없는 자리로 보내면 훅 입력의 session은 그 자리(이름 = 자리, id 없음)이고, 거절이면 띄우지 않는다
     if (b.rig) {
-      const h = await b.rig.deliver({ target: t, from: { kind: 'agent', session: caller }, text });
-      if (h.action === 'reject') throw apiError('rig_rejected', `rig의 deliver 훅이 글을 거절했다(@${shownName(t)}에게 넣지 않았다): ${h.reason}`);
+      const target = t || { workspaceKey: fp.ctx.key, name: fp.seatName, kind: null, model: null, cwd: fp.ctx.r.root };
+      const h = await b.rig.deliver({ target, workspaceKey: target.workspaceKey, from: { kind: 'agent', session: caller }, text });
+      if (h.action === 'reject') throw apiError('rig_rejected', `rig의 deliver 훅이 글을 거절했다(${t ? `@${shownName(t)}` : `${fp.seatName} 자리`}에게 넣지 않았다): ${h.reason}`);
       text = h.text;
     }
-    const woke = this.asleep(t);
     // P180: 일 하위에게 가는 글은 일 단위(머리를 붙인다). 자기에게서 열린 시도를 가진 하위에게는 이어지는 지시(보통 글). --now·동료·독립은 옛 그대로
     const U = this.units();
-    const plan = U ? U.plan(caller, t, { now: !!o.now }) : { kind: 'plain' };
-    const made = plan.kind === 'unit' ? U.create(caller, t, text, 'prompt') : null;
-    if (made && made.held) return this.heldPrompt(caller, t, made, o, res, woke);
+    let plan, made = null, caseInfo = null;
+    if (fp && fp.kind === 'unit') {
+      // P185: 자리로 맡기기. 보낸 세션이 쥔 건을 잇거나 새 건을 연다. keep은 앉은 세션(없으면 띄움), fresh는 새 세션(max_live면 자리 줄)
+      const c = flow.caseFor(caller, fp.ctx.key);
+      const a = await flow.assign({ ctx: fp.ctx, c, by: caller, seatName: fp.seatName, t: fp.t, spec: text, origin: 'prompt' });
+      caseInfo = { caseId: c.id, seat: fp.seatName };
+      if (a.seatWait) {
+        b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: fp.seatName, sessionId: null, deliveryId: null, unitId: a.unit.id, held: true, seatWait: true, chars: text.length, wait: !!o.wait });
+        return { name: fp.seatName, address: null, agentName: null, kind: null, deliveryId: null, woke: false, tag: 'assign', unit: { id: a.unit.id, kind: 'new', held: true, seatWait: true, ahead: a.ahead, ...caseInfo }, state: null, delivery: { status: 'queued', reason: 'seat_full' }, turn: null, next: null };
+      }
+      t = a.t; made = a.made; plan = { kind: 'unit' };
+    } else if (fp && fp.kind === 'followup') plan = { kind: 'followup', tryRow: fp.tryRow, unit: fp.unit };
+    else if (fp) plan = { kind: 'plain' };
+    else plan = U ? U.plan(caller, t, { now: !!o.now }) : { kind: 'plain' };
+    const woke = this.asleep(t);
+    if (!made && plan.kind === 'unit') made = U.create(caller, t, text, 'prompt');
+    if (made && made.held) return this.heldPrompt(caller, t, made, o, res, woke, caseInfo);
     const d = made ? made.d : b.queue.enqueue(t.sessionId, text, { ...(o.now ? { typeNow: true, aside: true } : {}), origin: { kind: 'agent', session: caller.sessionId } }); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
     if (plan.kind === 'followup') U.noteFollowup(plan.tryRow, caller, d.deliveryId, { now: !!o.now });
-    const unitOut = made ? { id: made.unit.id, kind: 'new', held: false } : plan.kind === 'followup' ? { id: plan.unit.id, kind: 'followup' } : null;
+    const unitOut = made ? { id: made.unit.id, kind: 'new', held: false, ...(caseInfo || {}) } : plan.kind === 'followup' ? { id: plan.unit.id, kind: 'followup' } : null;
     const l = this.link(caller, t);
     // P156: 두 세션의 일 관계로 본 꼬리표(assign 위 → 하위 지시, report 하위 → 위 보고, share 동료끼리). 선·Thread가 보고와 공유를 가른다
     const tag = this.branch && this.branch.promptTagOf ? this.branch.promptTagOf(caller.sessionId, t.sessionId) : null;
@@ -208,11 +226,11 @@ export class AgentVerbs {
   }
   // P180: 판이 붙잡아 둔 일(받는 세션에 다른 위 세션의 열린 시도가 있다). 앞 시도가 끝나면 판이 머리를 붙여 넣는다.
   //   --wait면 넣을 때까지 기다린 뒤 그 턴(또는 done)을 기다린다
-  async heldPrompt(caller, t, made, o, res, woke) {
+  async heldPrompt(caller, t, made, o, res, woke, caseInfo = null) {
     const b = this.b;
     const tag = this.branch && this.branch.promptTagOf ? this.branch.promptTagOf(caller.sessionId, t.sessionId) : null;
     b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: null, unitId: made.unit.id, held: true, chars: made.unit.spec.length, wait: !!o.wait });
-    const unit = { id: made.unit.id, kind: 'new', held: true, ahead: made.ahead };
+    const unit = { id: made.unit.id, kind: 'new', held: true, ahead: made.ahead, ...(caseInfo || {}) };
     const out = { ...this.head(t), deliveryId: null, woke, tag, unit, next: verbLines(t.name) };
     if (!o.wait) return { ...out, state: this.state(t), delivery: { status: 'queued', reason: 'unit_wait' }, turn: null };
     const t0 = Date.now(); const gone = watchGone(res);

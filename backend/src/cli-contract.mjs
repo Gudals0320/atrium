@@ -7,15 +7,18 @@
 // P180: done·item·items 동사와 prompt·wait 응답의 unit 칸을 더했다(더하기만이라 3 그대로)
 // P182: guide 동사(판의 자세한 사용법 + 켜진 rig의 안내)와 rig 거절(rig_rejected, 종료 코드 1)을 더했다(더하기만이라 3 그대로)
 // P183: tool 동사(rig 도구 실행, --wait, --runs)와 items의 toolRuns 칸을 더했다(더하기만이라 3 그대로)
-export const CONTRACT_VERSION = 3;
+// 4(P185): rig 자리(seat) 세션의 보내기와 끝내기가 정의를 따른다. 자리 세션의 prompt는 흐름의 assign 줄이면 받는 자리에 일, may면 글만, 그 밖은 거절(rig_refused, 종료 코드 1).
+//   prompt <자리 이름>은 그 자리로 보낸다(keep은 앉은 세션, fresh는 새 세션, 상한이면 줄). done은 정의의 results 낱말을 받고 값에 따라 보드가 다음 자리로 넘긴다.
+//   me·item·items·prompt·done 응답에 rig·case 칸을 더했다. 자리 없는 세션과 rig가 꺼진 워크스페이스는 3과 같다
+export const CONTRACT_VERSION = 4;
 
 // out: --json일 때 result의 주요 칸. 사람이 읽는 출력(--json 없음)은 같은 내용의 글이다
 export const VERBS = [
   { name: 'help', args: ['[--json]'], does: '이 사용법. --json은 이 계약(동사, 인자, 출력, 종료 코드, 버전)', out: ['contract', 'verbs', 'exit'] },
-  { name: 'prompt', args: ['<이름>', '"<할 일>"', '[--wait | --now]', '[--timeout ms]', '[--json]'], does: '다른 에이전트에게 일을 맡긴다. 보드가 받는 쪽 차례에 맞춰 넣고(일하는 중·응답 대기면 끝난 뒤, 잠들었으면 깨운 뒤) 연결을 판에 남긴다. 하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 보고를 너에게 넣고, 보고 없이 멈추면 알린다. --wait면 그 턴(또는 done)까지 기다려 답을 돌려준다(기본 100초, 지금 답이 꼭 필요할 때만). --now면 일하는 중인 Claude Code에 기다리지 않고 대기 메시지로 넣는다(--wait와 함께 쓰지 않는다)', out: ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next', 'unit'] },
+  { name: 'prompt', args: ['<이름>', '"<할 일>"', '[--wait | --now]', '[--timeout ms]', '[--json]'], does: '다른 에이전트에게 일을 맡긴다(rig 자리 세션이면 받는 자리를 정의가 정한다: assign 줄 → 일, may → 글만, 그 밖 거절. <이름>에 자리 이름을 주면 그 자리로). 보드가 받는 쪽 차례에 맞춰 넣고(일하는 중·응답 대기면 끝난 뒤, 잠들었으면 깨운 뒤) 연결을 판에 남긴다. 하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 보고를 너에게 넣고, 보고 없이 멈추면 알린다. --wait면 그 턴(또는 done)까지 기다려 답을 돌려준다(기본 100초, 지금 답이 꼭 필요할 때만). --now면 일하는 중인 Claude Code에 기다리지 않고 대기 메시지로 넣는다(--wait와 함께 쓰지 않는다)', out: ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next', 'unit'] },
   { name: 'wait', args: ['<이름>', '[--timeout ms]', '[--json]'], does: '그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(기본 100초). 사람의 답을 기다리면 바로 돌아온다. 맡긴 일의 보고는 보드가 가져다주므로 되풀이해 치지 않는다', out: ['name', 'agentName', 'kind', 'status', 'state', 'ms', 'answer', 'ask', 'error', 'delivery', 'next', 'unit'] },
   { name: 'read', args: ['<이름>', '[--lines n]', '[--json]'], does: '그 세션 화면의 최근 줄(기본 80줄). 잠든 세션은 마지막 답', out: ['name', 'agentName', 'kind', 'state', 'lines', 'source', 'text', 'answer', 'next'] },
-  { name: 'me', args: ['[--json]'], does: '너의 지금 연결: 상위(너를 하위로 둔 세션), 동료, 하위, 독립, 역할 연결, 연결마다 마지막 지시. 보드의 지금 기록', out: ['me', 'parent', 'peers', 'children', 'independent', 'lineage', 'roles'] },
+  { name: 'me', args: ['[--json]'], does: '너의 지금 연결: 상위(너를 하위로 둔 세션), 동료, 하위, 독립, 역할 연결, 연결마다 마지막 지시, rig 자리(자리, 건, done 값, 보낼 수 있는 자리). 보드의 지금 기록', out: ['me', 'parent', 'peers', 'children', 'independent', 'lineage', 'roles', 'rig'] },
   { name: 'child', args: ['[이름]', '[--peer]', '[--prompt "첫 요청"]', '[--role 역할]', '[--cwd 폴더]', '[--worktree 이름]', '[--model 모델]', '[--launcher 런처]', '[--effort 수준]', '[--kind 종류]', '[--head]', '[--no-wait]', '[--json]'], does: '세션을 띄우고 준비될 때까지 기다린다. 기본은 하위 워커(--prompt의 일을 atrium done으로 너에게 보고), --peer면 동료(같은 위계의 협력자, 결과를 서로 공유). 응답 첫 줄이 관계다', out: ['name', 'agentName', 'paneId', 'kind', 'relation', 'role', 'depth', 'state', 'status', 'next'] },
   { name: 'relate', args: ['<이름>', 'sub|peer|none|auto', '[--json]'], does: '나와 그 세션의 관계를 바꾼다(그 세션이 나의 sub 하위, peer 동료, none 독립, auto 자동 = 띄움·역할 선을 따름). 너와 이어진 세션만, 사람이 정한 관계는 바꾸지 않는다', out: ['a', 'b', 'relation', 'source', 'effective', 'before'] },
   { name: 'children', args: ['[--all]', '[--json]'], does: '너의 하위 세션(--all이면 그 아래까지) 상태와 마지막 응답. 하위 관계만, 동료는 따로 한 줄', out: ['children', 'peers'] },
@@ -24,7 +27,7 @@ export const VERBS = [
   { name: 'wake', args: ['<이름>', '[--json]'], does: '잠든 세션을 깨운다(같은 대화로 이어 간다). atrium prompt는 잠든 세션을 깨운 뒤 넣으므로 미리 깨울 때만', out: ['name', 'woke', 'state', 'next'] },
   { name: 'models', args: ['[--json]'], does: '띄울 수 있는 런처·모델과 각각을 띄우는 atrium child 명령', out: ['entries', 'gateways', 'parent'] },
   // P180: 일 단위. 첫 요청 앞에 "[Atrium 보드] … 맡긴 일 u…" 머리가 붙은 일을 받은 세션이 끝을 알린다
-  { name: 'done', args: ['ok|failed', '"<보고>"', '[--file 경로]', '[--json]'], does: '보드가 맡긴 지금 일을 닫는다(ok 끝냈다, failed 못 했다). 값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 기다리는 중이면 그 기다림이 받는다). 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1', out: ['unit', 'result', 'parent', 'claimedBy', 'next', 'queued'] },
+  { name: 'done', args: ['ok|failed|<rig 값>', '"<보고>"', '[--file 경로]', '[--json]'], does: '보드가 맡긴 지금 일을 닫는다(ok 끝냈다, failed 못 했다). 값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 기다리는 중이면 그 기다림이 받는다). 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1. rig 자리 세션은 정의의 results 낱말을 쓰고, 보드가 값에 따라 다음 자리로 넘긴다(flow, 맞는 줄이 없으면 건의 주인에게)', out: ['unit', 'result', 'parent', 'claimedBy', 'next', 'queued', 'caseId', 'flow', 'case'] },
   { name: 'item', args: ['[--json]'], does: '너의 지금 일: 맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수', out: ['item', 'queued'] },
   { name: 'items', args: ['[--json]'], does: '네가 맡긴 일들: 맡은 세션, 상태(open·done·failed·cancelled), 결과와 보고', out: ['items', 'open', 'toolRuns'] },
   // P182: rig(워크스페이스의 작업 규칙)
