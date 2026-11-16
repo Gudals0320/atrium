@@ -122,7 +122,8 @@ function RegionMenu({ at, close, w, arranged, z }) {
     return () => { window.removeEventListener('mousedown', down, true); window.removeEventListener('keydown', key, true); };
   }, [close]);
   const key = w.key;
-  const item = (action, label, fn, extra = {}) => <button key={action} className={`mt-sb2-mi${extra.danger ? ' danger' : ''}`} data-action={action} disabled={extra.disabled} onClick={() => { close(); fn(); }}>{label}</button>;
+  const rig = useRigStatus(key); // P182: rig 상태(메뉴를 열 때 묻는다)
+  const item = (action, label, fn, extra = {}) => <button key={action} className={`mt-sb2-mi${extra.danger ? ' danger' : ''}`} data-action={action} disabled={extra.disabled} title={extra.title} onClick={() => { close(); fn(); }}>{label}</button>;
   return createPortal(
     <div ref={box} className="mt-sb2-menu" data-role="region-menu" data-ws={key} style={pos || { left: -9999, top: -9999 }} onContextMenu={(e) => e.preventDefault()}>
       <div className="mt-sb2-mh" title={w.root}>{w.label || w.name}</div>
@@ -133,12 +134,36 @@ function RegionMenu({ at, close, w, arranged, z }) {
       {item('region-spawn', t('regions.addSession'), () => { noteWorkspace(key); openDialog({ kind: 'spawn', cwd: w.root }); })}
       {item('region-fit', t('regions.fit'), () => selectWorkspace(key))}
       <div className="mt-sb2-msep" />
+      <div className="mt-sb2-mh mt-rig-line" data-role="rig-status" data-rig={rig ? rig.state : 'loading'} title={rig && rig.invalid ? rig.invalid : undefined}>{rigLine(t, rig)}</div>
+      {rig && rig.state !== 'none' && (rig.enabled
+        ? item('rig-off', t('rig.menuOff'), () => setRig(w, false))
+        : item('rig-on', t('rig.menuOn'), () => setRig(w, true), { title: t('rig.onTitle', { hooks: (rig.hooks || []).map((h) => `${h.at}: ${h.run.join(' ')}`).join(' · ') || '-' }) }))}
+      <div className="mt-sb2-msep" />
       {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}
     </div>,
     document.body,
   );
 }
 export const RegionNode = memo(RegionNodeInner);
+
+// P182: rig(워크스페이스 뿌리의 .atrium/rig.json) 상태 한 줄과 켜기·끄기. 켜기는 사람만(판 API rig.enable·rig.disable)
+function useRigStatus(key) {
+  const [st, setSt] = useState(null);
+  useEffect(() => { let live = true; api.call('rig.status', { workspace: key }).then((r) => { if (live) setSt(r); }, (e) => { if (live) setSt({ state: 'error', error: errText(e) }); }); return () => { live = false; }; }, [key]);
+  return st;
+}
+function rigLine(t, r) {
+  if (!r) return t('rig.loading');
+  if (r.state === 'error') return t('rig.stError', { error: r.error });
+  if (r.state === 'none') return t('rig.stNone');
+  if (r.state === 'invalid') return t('rig.stInvalid', { reason: r.invalid || '?' });
+  if (r.state === 'on') return r.invalid ? t('rig.stOnStale', { reason: r.invalid }) : t('rig.stOn', { n: (r.hooks || []).length });
+  return r.invalid ? t('rig.stInvalid', { reason: r.invalid }) : t('rig.stOff');
+}
+async function setRig(w, on) {
+  try { await api.call(on ? 'rig.enable' : 'rig.disable', { workspace: w.key }); toast(t(on ? 'rig.turnedOn' : 'rig.turnedOff', { name: w.label || w.name })); }
+  catch (e) { toast(t('rig.fail', { error: errText(e) }), 'error'); }
+}
 
 // P27: 워크트리 영역. P35: 리포 영역 안의 노란 상자(테두리, 옅은 바탕, 이름표 글자 모두 노란 계열, tokens.css --wt-box-*).
 //   이름표는 ⎇ 브랜치(폴더 이름이 다르면 함께)와 세는 값. 이름표를 끌면 이 상자와 안의 노드·대화 노드가 함께 움직이고 자리를 저장한다(worktree.move). 누르면 그 리포로 간다.

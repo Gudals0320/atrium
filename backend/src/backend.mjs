@@ -14,6 +14,7 @@ import { TailscaleWatch, tailscaleHosts } from './tailscale.mjs'; // P49(R3): Ta
 import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
 import { DeliveryQueue } from './delivery.mjs';
+import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -223,6 +224,7 @@ export class Backend {
     }
     this.adopting = new Set();
 
+    this.rig = new Rig(this); // P182
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
@@ -1448,7 +1450,7 @@ export class Backend {
         if (e.code !== 'agent_not_ready') throw e; this.store.addEvent(sessionId, 'agent_not_ready', { kind });
       } // 시작하자마자 대화상자(신뢰 등)에서 막혔다. 이름은 남는다
       rt.term.launchPending = st.agent ? st.agent.launchPending : true;
-      if (p.prompt) this.queue.enqueue(sessionId, p.prompt);
+      if (p.prompt) this.queue.enqueue(sessionId, p.prompt, { origin: { kind: 'human' } }); // P182: 출처(사람이 띄우며 준 첫 요청. deliver 훅은 session.send에서만)
       this.log(`spawned ${name} ${kind} ${sessionId} pane=${hw.paneId} ws=${ws.key} shellReady=${shellReady} trust=${JSON.stringify(trust)}`);
       return { ...out, argv: st.argv };
     } finally { pending.delete(name); }
@@ -1488,11 +1490,19 @@ export class Backend {
       if (!one) throw keyed(apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${raw}`), 'targetNotFound', { ref: raw });
       picked.set(one.sessionId, one);
     }
-    const deliveries = [...picked.values()].map((s) => {
-      const d = this.queue.enqueue(s.sessionId, toLF(text), { typeNow: p.whileWorking === 'type' });
+    // P182: 대상마다 그 워크스페이스 rig의 deliver 훅(큐에 넣기 전). 거절이면 넣지 않고 실패한 전달로 남긴다(창은 전달 실패와 같은 길로 까닭을 보인다)
+    const deliveries = await Promise.all([...picked.values()].map(async (s) => {
+      let body = toLF(text);
+      const h = this.rig ? await this.rig.deliver({ target: s, from: { kind: 'human' }, text: body }) : { action: 'pass', text: body };
+      if (h.action === 'reject') {
+        const d = this.queue.refuse(s.sessionId, body, `rig: ${h.reason}`, { origin: { kind: 'human' } });
+        return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, rejected: true };
+      }
+      body = h.text;
+      const d = this.queue.enqueue(s.sessionId, body, { typeNow: p.whileWorking === 'type', origin: { kind: 'human' } });
       this.touch(s);
       return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status };
-    });
+    }));
     // I2(P6b): 명령 바에서 보낸 글은 Thread에 남긴다. source: bar(기본), output(출력 보기에서 답장)
     const item = this.features ? this.features.thread.add({ source: p.source || 'bar', text: toLF(text), targets: targets.map((t) => '@' + String(t).replace(/^@/, '')), deliveries }) : null;
     return { deliveries, threadItemId: item ? item.itemId : null };
@@ -1993,6 +2003,8 @@ export class Backend {
       'session.list': () => [...this.sessions.values()].map((s) => this.summary(s)),
       'session.get': (p) => this.get(p),
       'session.send': (p) => this.send(p),
+      // P182: rig 켜기는 사람만(판 API 토큰으로 붙은 이 PC의 창·명령). 기기(휴대폰) 연결은 상태만 본다. 에이전트의 세션 토큰은 이 API에 붙지 못한다
+      ...rigHandlers(this), // rig.status·rig.enable·rig.disable
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다

@@ -38,7 +38,7 @@ export class UnitStops {
   // units: WorkUnits
   constructor(b, units, { batchMs = NOTICE_BATCH_MS } = {}) {
     this.b = b; this.units = units;
-    this.quiet = new Set(); // 나무 전체가 쉼을 알린 맨 위 시도 ID(나무에 움직임이 생기면 지운다)
+    // P182: 나무 전체가 쉼을 알린 표시는 시도의 열(unit_tries.quiet_at)이다. 나무에 움직임이 생기면 지운다. 백엔드가 다시 떠도 되풀이하지 않는다
     this.timer = null;
     this.batch = new NoticeBatcher({
       batchMs,
@@ -123,18 +123,15 @@ export class UnitStops {
     const st = this.store(); const b = this.b;
     const tries = st.openTries().filter((t) => t.header && b.sessions.has(t.sessionId));
     const open = new Set(tries.map((t) => t.sessionId));
-    const ids = new Set(tries.map((t) => t.id));
-    for (const id of [...this.quiet]) if (!ids.has(id)) this.quiet.delete(id);
     let tree = null;
     for (const tr of tries) {
       const unit = st.getUnit(tr.unitId);
       if (!unit || !b.sessions.has(unit.from) || open.has(unit.from)) continue; // 위 세션도 열린 시도를 가졌으면 그 나무의 맨 위가 아니다
       tree = tree || treeIndex(b.pushTree());
       const q = this.treeQuiet(tr, tree);
-      if (q !== true) { this.quiet.delete(tr.id); continue; }
-      if (this.quiet.has(tr.id)) continue;
-      this.quiet.add(tr.id);
-      st.updateTry(tr.id, { stopReason: 'tree_quiet' });
+      if (q !== true) { if (tr.quietAt) st.updateTry(tr.id, { quietAt: null }); continue; }
+      if (tr.quietAt) continue;
+      st.updateTry(tr.id, { stopReason: 'tree_quiet', quietAt: Date.now() });
       this.add(tr, unit, 'tree_quiet');
     }
   }

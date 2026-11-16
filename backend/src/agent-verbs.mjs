@@ -166,17 +166,23 @@ export class AgentVerbs {
     const b = this.b;
     if (o.now && o.wait) throw apiError('bad_request', '--now와 --wait는 함께 쓸 수 없다. --now는 받는 쪽의 지금 턴에 대기 메시지로 넣어 그 글로 시작하는 턴이 없다(짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.');
     const t = this.target(caller, o.name);
-    const text = o.text == null ? '' : String(o.text);
+    let text = o.text == null ? '' : String(o.text);
     if (!text.trim()) throw apiError('bad_request', '보낼 글을 주세요: atrium prompt <이름> "<할 일>"');
     if (text.length > TEXT_MAX) throw apiError('bad_request', `글이 너무 길다(${text.length}자, ${TEXT_MAX}자까지). 파일에 쓰고 그 경로를 보낸다.`);
     checkAgentText(text); // P180: 판 알림 머리로 시작할 수 없다
+    // P182: 받는 쪽 워크스페이스 rig의 deliver 훅(큐에 넣기 전). 거절이면 넣지 않고 종료 코드 1과 까닭. 앞머리(일 머리)는 고친 글 앞에 붙는다
+    if (b.rig) {
+      const h = await b.rig.deliver({ target: t, from: { kind: 'agent', session: caller }, text });
+      if (h.action === 'reject') throw apiError('rig_rejected', `rig의 deliver 훅이 글을 거절했다(@${shownName(t)}에게 넣지 않았다): ${h.reason}`);
+      text = h.text;
+    }
     const woke = this.asleep(t);
     // P180: 일 하위에게 가는 글은 일 단위(머리를 붙인다). 자기에게서 열린 시도를 가진 하위에게는 이어지는 지시(보통 글). --now·동료·독립은 옛 그대로
     const U = this.units();
     const plan = U ? U.plan(caller, t, { now: !!o.now }) : { kind: 'plain' };
     const made = plan.kind === 'unit' ? U.create(caller, t, text, 'prompt') : null;
     if (made && made.held) return this.heldPrompt(caller, t, made, o, res, woke);
-    const d = made ? made.d : b.queue.enqueue(t.sessionId, text, o.now ? { typeNow: true, aside: true } : {}); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
+    const d = made ? made.d : b.queue.enqueue(t.sessionId, text, { ...(o.now ? { typeNow: true, aside: true } : {}), origin: { kind: 'agent', session: caller.sessionId } }); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
     if (plan.kind === 'followup') U.noteFollowup(plan.tryRow, caller, d.deliveryId, { now: !!o.now });
     const unitOut = made ? { id: made.unit.id, kind: 'new', held: false } : plan.kind === 'followup' ? { id: plan.unit.id, kind: 'followup' } : null;
     const l = this.link(caller, t);

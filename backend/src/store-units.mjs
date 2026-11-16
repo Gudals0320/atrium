@@ -16,9 +16,12 @@ CREATE INDEX IF NOT EXISTS unit_tries_session ON unit_tries(session_id, ended_at
 CREATE INDEX IF NOT EXISTS unit_tries_unit ON unit_tries(unit_id);
 `;
 
+// P182: 옛 board.db의 unit_tries에 더하는 열. quiet_at: 나무 전체가 쉼(tree_quiet)을 알린 때(나무에 움직임이 생기면 지운다. 다시 떠도 되풀이하지 않게)
+export const UNITS_COLUMNS = { unit_tries: { quiet_at: 'INTEGER' } };
+
 const unitRow = (r) => (r ? { id: r.id, from: r.from_session, to: r.to_session, origin: r.origin, spec: r.spec, status: r.status, createdAt: r.created_at, closedAt: r.closed_at ?? null } : null);
-const tryRow = (r) => (r ? { id: r.id, unitId: r.unit_id, sessionId: r.session_id, header: !!r.header, deliveryId: r.delivery_id ?? null, startedAt: r.started_at, endedAt: r.ended_at ?? null, result: r.result ?? null, doneText: r.done_text ?? null, stopReason: r.stop_reason ?? null, notifiedAt: r.notified_at ?? null, claimedBy: r.claimed_by ?? null, noticeDeliveryId: r.notice_delivery_id ?? null } : null);
-const TRY_COLS = { endedAt: 'ended_at', result: 'result', doneText: 'done_text', stopReason: 'stop_reason', notifiedAt: 'notified_at', claimedBy: 'claimed_by', noticeDeliveryId: 'notice_delivery_id', deliveryId: 'delivery_id', startedAt: 'started_at' };
+const tryRow = (r) => (r ? { id: r.id, unitId: r.unit_id, sessionId: r.session_id, header: !!r.header, deliveryId: r.delivery_id ?? null, startedAt: r.started_at, endedAt: r.ended_at ?? null, result: r.result ?? null, doneText: r.done_text ?? null, stopReason: r.stop_reason ?? null, notifiedAt: r.notified_at ?? null, claimedBy: r.claimed_by ?? null, noticeDeliveryId: r.notice_delivery_id ?? null, quietAt: r.quiet_at ?? null } : null);
+const TRY_COLS = { endedAt: 'ended_at', result: 'result', doneText: 'done_text', stopReason: 'stop_reason', notifiedAt: 'notified_at', claimedBy: 'claimed_by', noticeDeliveryId: 'notice_delivery_id', deliveryId: 'delivery_id', startedAt: 'started_at', quietAt: 'quiet_at' };
 const UNIT_COLS = { status: 'status', closedAt: 'closed_at' };
 
 function setter(table, cols, store, id, fields) {
