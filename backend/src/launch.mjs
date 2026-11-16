@@ -11,11 +11,15 @@ export const slash = (p) => path.resolve(p).split(path.sep).join('/');
 // B3 1번: http hook(시간 제한 2초), hook 토큰, 세션 표시를 값으로 직접 쓴다. 작업 공간 env는 터미널 재시작 뒤 되살아나지 않는다(E7).
 // P8(K1·K2): env(하위 세션 명령이 판과 자기를 찾는 값)와 allow(하위 세션 명령, 일 시키기·기다리기·읽기 승인 규칙. P116: atrium prompt|wait|read)를 더 받는다. 값은 branch.mjs가 만든다
 // P115: settings는 설정 파일에 더할 값(연결의 apiKeyHelper 등). 판의 hook·env·승인 규칙이 이긴다
-export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, env = null, allow = [], settings: more = null }) {
+// P189: amp는 rig 자리 세션의 증폭(rig-amp.mjs claudeSettingsAmp): { deny: [규칙], hooks: { <이벤트>: { timeout, onFailure? } } }.
+//   deny는 permissions.deny로, hooks는 그 이벤트의 hook 시간 제한(판이 기다려 답하는 PreToolUse·Stop)으로 들어간다. 없으면 지금과 같다
+export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, env = null, allow = [], settings: more = null, amp = null }) {
   const hook = { type: 'http', url: hookUrl, timeout: timeoutSec, headers: { Authorization: `Bearer ${token}`, 'X-MT-Session': sessionId } };
-  const settings = { ...(more || {}), hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [hook] }]])) };
+  const hookOf = (e) => { const a = amp && amp.hooks && amp.hooks[e]; return a ? { ...hook, timeout: a.timeout, ...(a.onFailure ? { onFailure: a.onFailure } : {}) } : hook; };
+  const settings = { ...(more || {}), hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [hookOf(e)] }]])) };
   const rules = [...allow];
   if (rules.length) settings.permissions = { allow: rules };
+  if (amp && amp.deny && amp.deny.length) settings.permissions = { ...(settings.permissions || {}), deny: [...amp.deny] };
   if (env && Object.keys(env).length) settings.env = env;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(settings, null, 2));
