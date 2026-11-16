@@ -189,8 +189,8 @@ export function childNotice({ role, agentName, name = agentName, kind = 'claude'
   const v = verbLines(name);
   return [
     `[Atrium 보드] 하위 세션: \`@${name}\`(종류 ${kind}, ${depth}단계)가 너의 "${role}"이다.`,
-    `일 시키기: ${v.prompt}`,
-    `끝나기 기다리기: ${v.wait} · 화면 읽기: ${v.read}`,
+    `일 맡기기: atrium prompt ${name} "<할 일>"(맡기고 턴을 끝내면 보드가 done 보고를 가져다준다) · 화면 읽기: ${v.read}`,
+    `지금 답이 꼭 필요할 때만: ${v.prompt} · ${v.wait}`,
     `끄기(사람이 끄라고 할 때만): atrium child-kill ${name}`,
   ].join('\n');
 }
@@ -207,7 +207,7 @@ export function peerNotice({ role = PEER_ROLE, agentName, name = agentName, kind
   return [
     `[Atrium 보드] 동료: \`@${name}\`(종류 ${kind})를 너의 "${role}"(동료)로 띄웠다. 하위 워커가 아니다.`,
     `필요한 것을 주고받기: atrium prompt ${name} "<할 일>" · 화면 읽기: atrium read ${name}`,
-    `@${name}는 끝나면 결과를 너에게 공유한다(--now로 들어온다). atrium wait·--wait로 기다리지 않는다(같은 결과가 두 번 온다). child-kill 연쇄에서 빠진다. 관계 바꾸기: atrium relate ${name} sub|peer|none|auto`,
+    `@${name}는 끝나면 결과를 너에게 공유한다(보드가 네 차례에 넣는다). 기다리지 말고 턴을 끝낸다. child-kill 연쇄에서 빠진다. 관계 바꾸기: atrium relate ${name} sub|peer|none|auto`,
   ].join('\n');
 }
 
@@ -228,8 +228,8 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 ## 관계 고르기
 
 띄울 때 관계를 고른다(누가 띄웠는지는 어느 쪽이든 남는다).
-- 하위 워커(기본): 워커·하위·맡겨·나눠·병렬, 또는 네 일의 한 조각. 끝나면 너에게 보고하고 child-kill로 함께 꺼진다.
-- 동료(\`--peer\`): 협력·동료·같이·파트너, 또는 같은 수준의 다른 일. \`atrium prompt\`로 주고받고 끝나면 결과를 서로 공유한다(\`--wait\`로 붙잡지 않는다). child-kill에서 빠진다.
+- 하위 워커(기본): 워커·하위·맡겨·나눠·병렬, 또는 네 일의 한 조각. 끝나면 \`atrium done\`으로 너에게 보고하고 child-kill로 함께 꺼진다.
+- 동료(\`--peer\`): 협력·동료·같이·파트너, 또는 같은 수준의 다른 일. \`atrium prompt\`로 주고받고 끝나면 결과를 서로 공유한다(기다리지 않고 턴을 끝낸다). child-kill에서 빠진다.
 - 말이 없으면 첫 지시와 역할로 판단한다. 바꾸기: \`atrium relate <이름> sub|peer|none|auto\`.
 
 ## 순서
@@ -242,10 +242,11 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
    - 다른 폴더는 \`--cwd C:/Workspace/x\`(슬래시로). 역할 이름 \`--role 리뷰어\`(기본 워커).
    - 모델과 추론 수준은 조각에 맞게 고른다: 찾기·요약·단순 수정은 \`--model haiku\`나 \`--effort low\`, 설계·어려운 디버깅은 \`--effort high\`. 빼면 너의 것을 물려받는다.
    - 사용자가 모델을 말로 하면("glm flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "glm flash"\`처럼 들은 말을 줘도 보드가 푼다. 정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다. 보드의 워커 대신 너의 내부 하위 에이전트로 우회하지 않는다.
-2. 지시 쓰는 법(\`--prompt\`나 \`atrium prompt\`의 글): 목표, 할 것, 손대지 말 것, 완료 기준, 끝났음을 알리는 법("끝나면 바꾼 파일과 결과를 다섯 줄로 답한다", 워크트리면 "자기 브랜치에 커밋하고 커밋 해시를 답한다"). 워커는 너의 대화를 모른다. 필요한 파일 경로와 사실을 글에 넣는다.
-3. 시키기와 기다리기: \`atrium prompt <이름> "<지시>" --wait\`가 글을 넣고 그 턴의 마지막 답을 돌려준다(한 번에 100초, 아직이면 \`atrium wait <이름>\`을 다시 친다). \`--prompt\`로 시켰으면 \`atrium wait <이름>\`.
-   - 결과는 한 길로 받는다: \`--wait\`·\`atrium wait\`로 당겨 오거나(워커에게 따로 보고시키지 않는다), 긴 일은 지시에 "끝나면 \`atrium prompt <너의 이름> --now "<결과>"\`로 알린다"를 넣고 기다리지 않는다(네가 일하는 중에도 들어온다). 섞으면 같은 보고가 늦게 한 번 더 온다.
+2. 지시 쓰는 법(\`--prompt\`나 \`atrium prompt\`의 글): 목표, 할 것, 손대지 말 것, 완료 기준, 보고에 담을 것(바꾼 파일과 결과 다섯 줄, 워크트리면 커밋 해시). 보고하는 길은 보드가 워커에게 알려 준다. 워커는 너의 대화를 모른다. 필요한 파일 경로와 사실을 글에 넣는다.
+3. 맡기고 턴을 끝낸다: \`--prompt\`나 \`atrium prompt <이름> "<지시>"\`로 맡기고 턴을 끝낸다. 워커가 \`atrium done\`으로 닫으면 보드가 그 보고를 넣어 주고, 보고 없이 멈추면(쉼, 오류, 사람의 답, 닫힘) 한 번 알린다. 폴링하지 않는다.
+   - 지금 답이 꼭 필요할 때만 \`atrium prompt <이름> "<지시>" --wait\`(한 번에 100초, 아직이면 \`atrium wait <이름>\`).
    - 여럿에게는 한 응답에 셸 호출을 여러 개 낸다. 일하는 중이거나 잠든 워커에게도 그냥 보낸다.
+   - 하위로 받은 일은 끝나면 \`atrium done ok|failed "<보고>"\`로 닫고 쉰다(네 하위를 기다리는 동안은 done 없이 쉰다).
 4. 응답: 화면은 \`atrium read <이름>\`, 목록·상태·마지막 응답은 \`atrium children\`(\`--all\`이면 그 아래까지).
 5. 모아 보고, 합치기: 워커마다 답을 확인하고(완료 기준을 채웠는지, 시험이 통과했는지) 정리해 사용자에게 보고한다. 워크트리 브랜치는 네가 합친다(\`git merge worktree-<이름>\`). 충돌이나 빠진 것은 그 워커에게 다시 시킨다.
 
@@ -264,7 +265,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 - 명령은 위 모양 그대로 한 줄씩 친다. \`$변수\`, \`$(…)\`, 파이프, \`&&\`, \`;\`를 섞지 않는다(섞으면 사람의 승인을 기다린다).
 - 다른 에이전트에게는 \`atrium prompt\`로만 보낸다(보드가 선과 기록을 남긴다).
 - 끝난 워커는 끄지 않고 둔다. 사람이 끄라고 할 때만 \`atrium child-kill <이름>\`으로 끈다(하위 관계로 그 아래도 함께, 자기 하위만. 동료·독립은 남는다).
-- 워커가 권한이나 질문으로 멈추면(\`atrium wait\`가 waiting) 대신 답하지 않는다. 사용자에게 "보드에서 @이름에 답해 주세요"라고 알린다.
+- 워커가 권한이나 질문으로 멈추면(보드의 멈춤 알림, \`atrium wait\`의 waiting) 대신 답하지 않는다. 사용자에게 "보드에서 @이름에 답해 주세요"라고 알린다.
 - 오래 쉰 워커는 혼자 잠든다. 미리 깨우려면 \`atrium wake <이름>\`.
 - 워커가 모델 오류로 답하지 못하면(\`atrium children\`의 오류 줄) 사용자에게 알리고 \`atrium models\`의 다른 줄로 다시 띄운다.
 `;
@@ -315,8 +316,12 @@ export class Branch {
       send: (sid, text, lines) => { const d = b.queue.enqueue(sid, text); b.store.addEvent(sid, 'link_notice', { lines, deliveryId: d.deliveryId }); return d; },
       onDrop: (sid, lines) => { if (b.sessions.has(sid)) b.store.addEvent(sid, 'link_notice_dropped', { lines }); },
     });
-    this.units = new WorkUnits(b, this); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다)
-    b.bus.on('closed', (s, reason) => { this.closed.set(s.sessionId, { parentSessionId: s.parentSessionId || null, name: s.name }); this.units.onClosed(s); this.onClosed(s, reason); });
+    this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
+    b.bus.on('closed', (s, reason) => {
+      this.closed.set(s.sessionId, { parentSessionId: s.parentSessionId || null, name: s.name });
+      const told = this.units.onClosed(s, { reason, byParent: this.byParentKill.has(s.sessionId) }); // P181: 열린 일이 있으면 그 상위에게 멈춤(closed) 알림
+      this.onClosed(s, reason, told);
+    });
     b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } }); // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read
     this.handlers = {
@@ -326,10 +331,11 @@ export class Branch {
   asleep(s) { return !!(s.rt && s.rt.sleep) || !!(this.b.sleeper && this.b.sleeper.isAsleep && this.b.sleeper.isAsleep(s)); }
   // P81: 하위 세션이 부모의 child-kill이 아닌 까닭(사람이 닫음, 스스로 끝남, 패널 사라짐)으로 닫혔으면 부모에게
   // P159: 받는 쪽은 일 부모(사람이 다른 세션 아래로 옮겼으면 그 세션). 일 부모가 없으면(동료·독립으로 둔 세션) 옛처럼 계보 부모(띄운 짝)에게
-  onClosed(s, reason) {
+  // P181: told = 일 멈춤 알림(closed)을 이미 건 상위. 같은 상위에게 닫힘 알림을 두 번 보내지 않는다
+  onClosed(s, reason, told = null) {
     if (this.byParentKill.delete(s.sessionId)) return;
     const pid = this.relIndex().workParentOf(s.sessionId) || s.parentSessionId;
-    if (!pid || !this.b.sessions.has(pid)) return;
+    if (!pid || !this.b.sessions.has(pid) || pid === told) return;
     this.notices.add(pid, childClosedLine(s.name, closeWhy(reason)));
   }
 
