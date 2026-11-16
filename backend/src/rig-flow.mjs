@@ -19,6 +19,8 @@ import path from 'node:path';
 import { shownName } from './session-label.mjs';
 import { clip } from './text.mjs';
 import { SEAT_KINDS, RIG_HEADER_LINE } from './rig.mjs';
+import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
+
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -222,7 +224,7 @@ export class RigFlow {
     let name = seat.session === 'keep' && !taken.has(seatName) ? seatName : null;
     for (let i = 0; !name && i < 1000; i++) { const n = `${seatName}-${st.nextSeatN(ctx.key, seatName)}`; if (!taken.has(n)) name = n; }
     const worktree = seat.worktree ? `${seatName}-${unitId}` : null;
-    const o = { name, role: seatName, cwd: ctx.r.root, wait: false, ...this.seatRoute(seat, seatName, owner), ...(worktree ? { worktree } : {}) };
+    const o = { name, role: seatName, cwd: ctx.r.root, wait: false, ...this.seatRoute(seat, seatName, owner), ...(worktree ? { worktree } : {}), [SEAT_SPAWN]: seatName }; // P189: 띄울 때부터 자리의 증폭(설정 파일·Codex 인자)
     const k = `${ctx.key}|${seatName}`;
     this.spawning.set(k, (this.spawning.get(k) || 0) + 1);
     let r;

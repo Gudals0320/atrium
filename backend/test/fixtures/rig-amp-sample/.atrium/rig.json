@@ -1,0 +1,22 @@
+{
+  "name": "amp-sample",
+  "hooks": [
+    { "at": "pre-tool", "match": "Bash", "seat": ["main", "gated"], "run": ["node", ".atrium/hooks/pre-gate.mjs"] }
+  ],
+  "results": ["ok", "failed"],
+  "stopVerify": true,
+  "seats": {
+    "main":   { "launcher": "claude", "session": "keep", "stopVerify": false },
+    "ro":     { "launcher": "claude", "session": "fresh", "writes": false },
+    "rocx":   { "launcher": "codex",  "session": "fresh", "writes": false },
+    "scoped": { "launcher": "claude", "session": "fresh", "writes": ["items/{item}/"] },
+    "gated":  { "launcher": "claude", "session": "fresh" }
+  },
+  "flow": [
+    { "from": "main", "on": "assign", "to": "ro" },
+    { "from": "main", "on": "assign", "to": "rocx" },
+    { "from": "main", "on": "assign", "to": "scoped" },
+    { "from": "main", "on": "assign", "to": "gated" }
+  ],
+  "manager": "main"
+}
