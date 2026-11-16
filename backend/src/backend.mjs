@@ -506,6 +506,7 @@ export class Backend {
       permissionMode: rt.permissionMode || s.permissionMode, ...shownModel({ model: s.model, effort: s.effort }, s.rt.modelNow), // P95: 미션 맵 카드의 메타 줄. P137: 하네스가 지금 쓰는 값(모르면 띄운 값)
       launchModel: s.model || null, launchEffort: s.effort || null,
       lastPrompt: clip(promptTask(rt.lastPrompt), 300), // P159: 관계 줄은 떼고 보인다 lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
+      work: rt.lastWork || null, // P173: 끝난 일 구간 { since, endedAt, turnless, compact? }. turnless면 턴이 아니다(압축). 웹 푸시·연결 알림이 본다
       exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f, ...this.doneScope(s, f),
       deliveryStuck: this.queue && this.queue.stuckOf ? this.queue.stuckOf(s.sessionId) : null, // P106: 터미널이 오래 받지 않는 맨 앞 전달 { deliveryId, reason, code, attempts, since }
       trust: { predictedDialog: rt.trustPredicted, seenOnScreen: !!rt.trustScreen },
@@ -738,10 +739,11 @@ export class Backend {
       const from = s.lastState;
       s.lastState = sum.state;
       if (from !== null || cause) {
-        this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, term: sum.termStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined });
+        const turnless = from === 'working' && sum.work && sum.work.turnless && sum.work.endedAt === s.rt.term.at ? sum.work : null; // P173: 턴 없이 끝난 일(압축)
+        this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, term: sum.termStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined, ...(turnless ? { turnless: true, compact: turnless.compact || null } : {}) });
         this.api.broadcast('session.state', { sessionId: s.sessionId, name: shownName(s), from, to: sum.state, cause: cause || null, summary: sum });
         this.onLinkTargetState(s, from, sum);
-        if (this.web) try { this.web.push.onState(sum, from); } catch (e) { this.log('push error', e.stack); } // P88: 휴대폰 웹 푸시(끝남, 응답 필요, 오류)
+        if (this.web) try { this.web.push.onState(sum, from, { turnless: !!turnless }); } catch (e) { this.log('push error', e.stack); } // P88: 휴대폰 웹 푸시(끝남, 응답 필요, 오류)
       }
     }
     this.api.broadcast('session.updated', sum);
@@ -799,7 +801,10 @@ export class Backend {
     if (ev === 'PermissionRequest' && s.rt.pendingAsk && (s.rt.pendingAsk.kind === 'permission' || s.rt.pendingAsk.kind === 'plan')) this.readChoicesLater(s);
     if (ev === 'Stop' || ev === 'SessionStart') this.refreshModelNow(s); // P137: 턴이 끝나면 지금 모델을 바로 본다(broadcast는 아래)
     if (ev === 'Stop') this.probeGit(s, s.rt.cwd || s.cwd); // A2: 바뀐 파일 수. F4: 지금 폴더(워크트리일 수 있다)로 본다
+    const late = s.rt.lastWork && s.rt.lastWork.late && !s.rt.lastWork.lateSeen ? s.rt.lastWork : null; // P173: 턴 hook이 턴 없는 일로 본 구간 뒤에 늦게 왔다
+    if (late) late.lateSeen = true;
     this.broadcastSession(s, { cause: `hook:${ev}` });
+    if (late && this.web) try { this.web.push.lateTurn(this.summary(s)); } catch (e) { this.log('push error', e.stack); }
   }
 
   // 권한 요청의 선택지는 도구마다 달라 화면에서 읽는다(E9 2.1). 화면이 그려질 시간을 조금 준다.
@@ -1841,6 +1846,7 @@ export class Backend {
     const to = sum.state;
     if (to === 'working' && !op.working) { op.working = true; this.linkEvent(l, 'target_working', null, { from }, { quiet: true }); }
     else if (to === 'waiting' || to === 'trust_wait') this.linkEvent(l, 'target_waiting', sum.ask ? clip(sum.ask.summary || sum.ask.kind, 200) : null, null, { quiet: true });
+    else if ((to === 'ready' || to === 'error') && op.working && from === 'working' && sum.work && sum.work.turnless && sum.work.endedAt === s.rt.term.at) op.working = false; // P173: 압축만 하고 끝났다. 턴 끝이 아니다
     else if ((to === 'ready' || to === 'error') && op.working) {
       // P116: hook이 없는 세션은 턴이 끝난 뒤 판이 화면에서 답을 고른다(readScreenAnswer). 그 답이 아직이면 오면 남긴다(5초까지)
       const turn = s.rt.turn || {};
