@@ -15,6 +15,7 @@ import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
 import { DeliveryQueue } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
+import { rigFlowHandlers } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -41,7 +42,7 @@ import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSpli
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
-import { attachBranch, childShims, childBundle } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
+import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, claudeConnection } from './harness.mjs';
 import { checkOf } from './connections.mjs'; // P115: 연결 시작 전 확인 // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
@@ -1354,6 +1355,12 @@ export class Backend {
     const taken = takenNames(this.sessions.values(), pending); // P66: 판의 이름(label)도 피한다. 대소문자 무시
     // P33: 띄울 값은 호출자(launchers.mjs)가 정한다. 함께 준 값(모델 등)이 호출자 값을 덮는다. 호출자 없이 부르면 준 값만 쓴다(atrium child, CLI --kind)
     const plan = spawnPlanOf(this, p);
+    // P185: 사람이 승인 방식을 주고 띄우는 다른 종류(atrium spawn --kind codex --mode bypassPermissions)는 그 방식을 하네스의 승인 인자로 옮긴다
+    //   (atrium child와 같은 표 APPROVAL_ARGS. 호출자의 추가 인자에 승인 인자가 있으면 호출자 것이 이긴다). 전에는 기록만 하고 인자를 붙이지 않았다
+    if (p.permissionMode && !p.branch && plan.kind !== 'claude' && plan.kind !== SHELL) {
+      const ap = approvalArgsOf(plan.kind, String(p.permissionMode), (plan.args || []).map(String));
+      if (ap.args.length) plan.args = [...(plan.args || []), ...ap.args];
+    }
     const { flavor, command } = plan;
     const kind = plan.kind;
     const shell = kind === SHELL;
@@ -1921,9 +1928,13 @@ export class Backend {
     if (!LINK_CHOICES.includes(choice)) throw apiError('bad_request', `관계는 ${LINK_CHOICES.join(', ')} 가운데 하나입니다: ${choice}`);
     const role = String(p.role || '').trim() || linkDefaultRole(choice) || '';
     if (!ROLE_RE.test(role)) throw apiError('bad_request', "역할은 1~40자로 입력하세요. 줄바꿈, 따옴표, $, \\는 사용할 수 없습니다.");
-    // 관계를 먼저 정한다(하위의 고리 검사가 실패하면 선도 만들지 않는다). 하위는 자동 규칙(역할 선 = 하위)으로 되면 저장하지 않는다
-    const plan = this.branch && this.branch.relationBetween ? linkRelationPlan(choice, this.branch.relationBetween(a.sessionId, b.sessionId), a.sessionId) : null;
-    const rel = plan ? this.branch.setRelation(a, b, plan, { source: 'user', by: 'user' }) : null;
+    // 관계를 먼저 정한다(하위의 고리 검사가 실패하면 선도 만들지 않는다)
+    // P185: 하위도 사람이 정한 하위 줄로 저장한다(역할 선만 있는 자동 하위는 일 부모가 아니라 atrium prompt가 일을 만들지 않았다).
+    //   보이는 관계가 바뀌지 않으면(없음·이미 a 아래 하위) 관계 알림은 보내지 않는다(역할 알림이 간다)
+    const cur = this.branch && this.branch.relationBetween ? this.branch.relationBetween(a.sessionId, b.sessionId) : null;
+    const plan = this.branch && this.branch.relationBetween ? linkRelationPlan(choice, cur, a.sessionId) : null;
+    const same = plan === 'sub' && (!cur || (cur.relation === 'sub' && cur.up === a.sessionId));
+    const rel = plan ? this.branch.setRelation(a, b, plan, { source: 'user', by: 'user', ...(same ? { quiet: true } : {}) }) : null;
     const l = this.ensureLink(a.sessionId, b.sessionId, { role });
     const text = roleNotice({ role, name: b.name, kind: b.kind || 'claude' });
     const d = this.queue.enqueue(a.sessionId, text);
@@ -2021,6 +2032,7 @@ export class Backend {
       'session.send': (p) => this.send(p),
       // P182: rig 켜기는 사람만(판 API 토큰으로 붙은 이 PC의 창·명령). 기기(휴대폰) 연결은 상태만 본다. 에이전트의 세션 토큰은 이 API에 붙지 못한다
       ...rigHandlers(this), // rig.status·rig.enable·rig.disable
+      ...rigFlowHandlers(this), // P185: rig.seat(사람만, 이 PC의 창)·rig.cases
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다

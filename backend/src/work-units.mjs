@@ -13,6 +13,7 @@ import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { UnitStops } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
 import { RIG_HEADER_LINE } from './rig.mjs'; // P182
+import { seatHeader } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -58,17 +59,18 @@ export class WorkUnits {
     const st = this.store();
     const open = st.openTryOf(t.sessionId);
     const ou = open ? st.getUnit(open.unitId) : null;
-    if (ou && ou.from === caller.sessionId) return { kind: 'followup', tryRow: open, unit: ou };
+    if (ou && (ou.from === caller.sessionId || (ou.via && ou.via.by === caller.sessionId))) return { kind: 'followup', tryRow: open, unit: ou }; // P185: 흐름의 일은 보낸 세션(via.by)도
     if (now || !this.isWorkSub(caller.sessionId, t.sessionId)) return { kind: 'plain' };
     return { kind: 'unit', hold: !!open || st.queuedUnitsOf(t.sessionId).length > 0 };
   }
   // 일을 만든다. hold면 판이 붙잡아 두고(앞 시도가 끝나면 넣는다), 아니면 바로 머리를 붙여 대기열에 넣는다 → { unit, d, header } | { unit, held: true, ahead }
-  create(caller, t, spec, origin) {
+  // P185: extra { id, fromId(상위 = 건 주인), caseId, seat, via } — rig 흐름의 일(rig-flow.mjs assign)
+  create(caller, t, spec, origin, extra = null) {
     const st = this.store();
     const hold = !!st.openTryOf(t.sessionId) || st.queuedUnitsOf(t.sessionId).length > 0;
-    const unit = { id: newId('u'), from: caller.sessionId, to: t.sessionId, origin, spec: String(spec), status: 'open', createdAt: Date.now() };
+    const unit = { id: (extra && extra.id) || newId('u'), from: (extra && extra.fromId) || caller.sessionId, to: t.sessionId, origin, spec: String(spec), status: 'open', createdAt: Date.now(), ...(extra ? { caseId: extra.caseId || null, seat: extra.seat || null, via: extra.via || null } : {}) };
     st.insertUnit(unit);
-    st.addEvent(t.sessionId, 'unit_open', { unitId: unit.id, from: caller.name, origin, held: hold, chars: unit.spec.length });
+    st.addEvent(t.sessionId, 'unit_open', { unitId: unit.id, from: caller.name, origin, held: hold, chars: unit.spec.length, ...(unit.caseId ? { caseId: unit.caseId, seat: unit.seat } : {}) });
     this.b.log(`unit ${unit.id} ${caller.name} → ${t.name} (${origin}${hold ? ', held' : ''})`);
     if (hold) { this.queued.add(t.sessionId); return { unit, held: true, ahead: st.queuedUnitsOf(t.sessionId).length - 1 + (st.openTryOf(t.sessionId) ? 1 : 0) }; }
     return { unit, ...this.dispatch(unit) };
@@ -76,7 +78,7 @@ export class WorkUnits {
   // 일의 새 시도: 머리를 붙여 대기열에 넣고 시도를 적는다
   dispatch(unit, { later = false } = {}) {
     const b = this.b; const st = this.store();
-    const header = unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)) });
+    const header = this.headerOf(unit);
     const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}`, { origin: { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션)
     const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: d.deliveryId, startedAt: Date.now() };
     st.insertTry(tr);
@@ -84,6 +86,19 @@ export class WorkUnits {
     if (!st.queuedUnitsOf(unit.to).length) this.queued.delete(unit.to);
     if (later && this.onDispatch) try { this.onDispatch(unit, d, header); } catch (e) { b.log('unit dispatch hook error', e.stack); }
     return { d, tryRow: st.getTry(tr.id), header };
+  }
+  // 일 머리. P185: 건의 일을 자리 세션이 받으면 자리 머리(자리, 건, done 값, 보낼 수 있는 자리)
+  headerOf(unit) {
+    const b = this.b;
+    const flow = this.branch && this.branch.flow;
+    const t = b.sessions.get(unit.to);
+    const ctx = flow && unit.caseId && t ? flow.seatCtx(t) : null;
+    if (ctx) {
+      const v = unit.via || {};
+      const by = v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
+      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, results: ctx.def.results, assign: flow.assignTargets(ctx), may: ctx.seat.may, guide: !!ctx.seat.guide });
+    }
+    return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)) });
   }
   // 붙잡아 둔 일을 넣을 차례인가(열린 시도가 없을 때 먼저 온 것 하나)
   pump(sessionId) {
@@ -150,7 +165,10 @@ export class WorkUnits {
   // 검사(값, 글, 열린 시도) → { result, text, tr }
   doneCheck(caller, o = {}) {
     const result = String(o.result || '');
-    if (!DONE_RESULTS.includes(result)) throw apiError('bad_request', `결과는 ok 또는 failed다: ${result || '(없음)'}. 사용: atrium done ok|failed "<보고>"`);
+    // P185: 자리 세션은 rig 정의의 results 낱말만(없으면 ok, failed)
+    const seatResults = this.branch && this.branch.flow ? this.branch.flow.resultsFor(caller) : null;
+    if (seatResults && !seatResults.includes(result)) throw apiError('bad_request', `rig 자리 ${caller.rigSeat}의 done 값은 ${seatResults.join(', ')} 가운데 하나다: ${result || '(없음)'}. 사용: atrium done <값> "<보고>"`, { results: seatResults });
+    if (!seatResults && !DONE_RESULTS.includes(result)) throw apiError('bad_request', `결과는 ok 또는 failed다: ${result || '(없음)'}. 사용: atrium done ok|failed "<보고>"`);
     const text = o.text == null ? '' : String(o.text);
     if (!text.trim()) throw apiError('bad_request', '보고 글을 준다: atrium done ok|failed "<보고>"');
     if (text.length > DONE_TEXT_MAX) throw apiError('bad_request', `글이 너무 길다(${text.length}자, ${DONE_TEXT_MAX}자까지). 파일에 쓰고 그 경로를 적는다.`);
@@ -171,20 +189,33 @@ export class WorkUnits {
       const again = this.store().openTryOf(caller.sessionId);
       if (!again || again.id !== tr.id) throw apiError('no_unit', '훅이 도는 사이 그 일이 닫혔다. 지금 일 보기: atrium item');
     }
-    return this.done(caller, o);
+    // P185: 자리 세션의 done은 흐름 줄({ from: 자리, on: 값 })을 따라 넘어간다. 맞는 줄이 없으면 0단계처럼 건 주인(일의 상위)에게
+    const flow = this.branch && this.branch.flow;
+    const unit = this.store().getUnit(tr.unitId);
+    const route = flow ? flow.routeFor(caller, unit, result) : null;
+    const out = this.done(caller, o, { flowClaim: !!(route && route.lines.length) });
+    if (route && route.lines.length) {
+      await flow.afterDone(caller, unit, result, text, route);
+      out.flow = this.store().unitsOfCase(unit.caseId).filter((u) => u.via && u.via.prevUnit === unit.id).map((u) => ({ unit: u.id, seat: u.seat, to: u.to ? this.nameOf(u.to) : null, waiting: !u.to }));
+      const c = this.store().getCase(unit.caseId);
+      out.case = c ? { id: c.id, state: c.state, blockedReason: c.blockedReason } : null;
+    } else if (route) { flow.caseCheck(unit.caseId); flow.pumpSoon(); const c = this.store().getCase(unit.caseId); out.case = c ? { id: c.id, state: c.state } : null; }
+    return out;
   }
-  done(caller, o = {}) {
+  // P185: opts.flowClaim — 흐름 줄이 값을 가져간다(상위에게 보내지 않는다, claimed_by flow)
+  done(caller, o = {}, { flowClaim = false } = {}) {
     const b = this.b; const st = this.store();
     const { result, text, tr } = this.doneCheck(caller, o);
     const unit = st.getUnit(tr.unitId);
     const now = Date.now();
     st.updateTry(tr.id, { result, doneText: text, endedAt: now });
-    st.updateUnit(unit.id, { status: result === 'ok' ? 'done' : 'failed', closedAt: now });
+    st.updateUnit(unit.id, { status: result === 'failed' ? 'failed' : 'done', closedAt: now }); // P185: rig의 다른 값(rejected 등)도 닫힘(done)
     const parent = b.sessions.get(unit.from) || null;
     const val = { result, text };
     let claimedBy, noticeDeliveryId = null;
     const ws = this.waiters.get(`${unit.from}>${unit.to}`);
-    if (!parent) claimedBy = 'record';
+    if (flowClaim) claimedBy = 'flow';
+    else if (!parent || unit.from === unit.to) claimedBy = 'record'; // P185: 건 주인이 자기 일을 닫음(주인에게 다시 보내지 않는다)
     else if (ws && ws.size) { claimedBy = 'wait'; for (const w of ws) w.got = { ...val, tryId: tr.id }; }
     else {
       const d = b.queue.enqueue(parent.sessionId, doneNotice({ child: this.nameOf(caller.sessionId), unitId: unit.id, result, text, spec: unit.spec }));
@@ -192,12 +223,12 @@ export class WorkUnits {
     }
     st.updateTry(tr.id, { claimedBy, noticeDeliveryId });
     // 연결 기록: 위 → 하위 선에 보고(답)로
-    const l = parent ? (st.linkByPair(unit.from, unit.to) || null) : null;
+    const l = parent && !flowClaim && unit.from !== unit.to ? (st.linkByPair(unit.from, unit.to) || null) : null;
     if (l && !l.removedAt) b.linkEvent(l, 'reply', text, { via: 'atrium', verb: 'done', result, unitId: unit.id, claimedBy, ...(noticeDeliveryId ? { deliveryId: noticeDeliveryId } : {}) });
     st.addEvent(caller.sessionId, 'unit_done', { unitId: unit.id, tryId: tr.id, result, chars: text.length, claimedBy, noticeDeliveryId });
     b.log(`unit ${unit.id} done ${result} by ${caller.name} → ${parent ? parent.name : '(closed)'} via ${claimedBy}`);
     const next = this.pump(caller.sessionId);
-    return { unit: unit.id, result, parent: this.nameOf(unit.from), parentOpen: !!parent, claimedBy, next: next ? { unit: next.tryRow.unitId } : null, queued: st.queuedUnitsOf(caller.sessionId).length };
+    return { unit: unit.id, result, parent: this.nameOf(unit.from), parentOpen: !!parent, claimedBy, next: next ? { unit: next.tryRow.unitId } : null, queued: st.queuedUnitsOf(caller.sessionId).length, ...(unit.caseId ? { caseId: unit.caseId, seat: caller.rigSeat || null } : {}) };
   }
 
   // ---------- atrium item | items ----------
@@ -207,7 +238,9 @@ export class WorkUnits {
     const queued = st.queuedUnitsOf(caller.sessionId).length;
     if (!tr) return { item: null, queued };
     const u = st.getUnit(tr.unitId);
-    return { item: { id: u.id, from: this.nameOf(u.from), origin: u.origin, spec: u.spec, createdAt: u.createdAt, startedAt: tr.startedAt, tries: st.triesOfUnit(u.id).length, stopReason: tr.stopReason }, queued };
+    const flow = this.branch && this.branch.flow;
+    const ctx = flow && u.caseId ? flow.seatCtx(caller) : null; // P185
+    return { item: { id: u.id, from: this.nameOf(u.from), origin: u.origin, spec: u.spec, createdAt: u.createdAt, startedAt: tr.startedAt, tries: st.triesOfUnit(u.id).length, stopReason: tr.stopReason, ...(u.caseId ? { caseId: u.caseId, seat: u.seat, by: u.via && u.via.by ? this.nameOf(u.via.by) : null, results: ctx ? ctx.def.results : null } : {}) }, queued };
   }
   items(caller, o = {}) {
     const st = this.store();
@@ -216,7 +249,8 @@ export class WorkUnits {
     const toolCounts = st.toolRunCounts ? st.toolRunCounts(units.map((u) => u.id)) : {}; // P183: 일마다 도구 실행 수
     const rows = units.map((u) => {
       const tr = st.lastTryOfUnit(u.id);
-      return { id: u.id, to: this.nameOf(u.to), status: u.status, origin: u.origin, spec: clip(u.spec.replace(/\s+/g, ' '), 120), createdAt: u.createdAt, closedAt: u.closedAt,
+      return { id: u.id, to: u.to ? this.nameOf(u.to) : null, status: u.status, origin: u.origin, spec: clip(u.spec.replace(/\s+/g, ' '), 120), createdAt: u.createdAt, closedAt: u.closedAt,
+        ...(u.caseId ? { caseId: u.caseId, seat: u.seat, waiting: !u.to } : {}), // P185
         queued: !tr && u.status === 'open', result: tr ? tr.result : null, text: tr && tr.doneText ? clip(tr.doneText, 1500) : null, stopReason: tr ? tr.stopReason : null, claimedBy: tr ? tr.claimedBy : null, toolRuns: toolCounts[u.id] || 0 };
     });
     return { items: rows, open: rows.filter((r) => r.status === 'open').length };

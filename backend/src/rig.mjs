@@ -15,7 +15,7 @@ import { shownName } from './session-label.mjs';
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after'];
-export const HOOK_FROMS = ['human', 'agent', 'any'];
+export const HOOK_FROMS = ['human', 'agent', 'flow', 'any']; // P185: flow(흐름 줄이 만든 넘김 글)
 export const GUIDE_MAX = 20000;
 // P183: 도구(2단계). 시간 제한 기본 30분, 상한 6시간(넘으면 깎는다). 이름은 글자·숫자·_·.·-
 export const TOOL_TIMEOUT_MS = 30 * 60 * 1000;
@@ -85,11 +85,92 @@ export function validateRig(raw, { root, exists = isFile } = {}) {
       tools[name] = { name, run: x.run.slice(), desc: x.desc || '', timeoutMs: Math.min(Number(x.timeoutMs) || TOOL_TIMEOUT_MS, TOOL_TIMEOUT_MAX_MS), parallel: x.parallel === true };
     }
   }
-  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools } };
+  // P185: 자리·흐름(3단계, docs research harness-arch.md 14절)
+  const fl = validateFlow(raw, { root, exists, tools });
+  if (!fl.ok) return fl;
+  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow } };
+}
+
+// ---------- P185: 자리(seats)·흐름(flow)·results·manager ----------
+export const DEFAULT_RESULTS = ['ok', 'failed'];
+export const SEAT_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/; // 세션 이름(<자리>-<n>)이 되므로 -는 받지 않는다
+export const RESULT_RE = /^[a-z][a-z0-9_]{0,23}$/;
+export const SEAT_MAX_LIVE = 3;
+export const SEAT_KINDS = ['claude', 'codex', 'opencode', 'pi'];
+// → { ok, flow: { results, seats, flow, manager, warnings } } | { ok: false, reason }
+//   seats: { <이름>: { name, launcher, session: keep|fresh, worktree, tools: [..] | null, may: [..], maxLive, guide } } | null(자리 없음: 1~2단계 rig)
+//   flow: [{ index, from, on, to: [..], max, else }]. warnings: 상한 없는 되돌아감 등(정의는 쓰인다)
+export function validateFlow(raw, { root = null, exists = isFile, tools = null } = {}) {
+  const bad = (reason) => ({ ok: false, reason });
+  const hasAny = raw.results != null || raw.seats != null || raw.flow != null || raw.manager != null;
+  if (!hasAny) return { ok: true, flow: { results: DEFAULT_RESULTS.slice(), seats: null, flow: [], manager: null, warnings: [] } };
+  let results = DEFAULT_RESULTS.slice();
+  if (raw.results != null) {
+    if (!Array.isArray(raw.results) || !raw.results.length) return bad('results는 낱말 배열이어야 한다(예: ["ok", "failed", "rejected"])');
+    for (const r of raw.results) if (typeof r !== 'string' || !RESULT_RE.test(r) || r === 'assign') return bad(`results의 낱말은 영문 소문자로 시작하는 24자까지의 낱말이다(assign은 쓸 수 없다): ${JSON.stringify(r)}`);
+    if (new Set(raw.results).size !== raw.results.length) return bad('results에 같은 낱말이 둘 있다');
+    results = raw.results.slice();
+  }
+  if (raw.seats == null) return bad('results·flow·manager는 seats(자리)와 함께 쓴다');
+  if (typeof raw.seats !== 'object' || Array.isArray(raw.seats) || !Object.keys(raw.seats).length) return bad('seats는 { "<자리>": { "launcher": …, "session": "keep" | "fresh" } } 객체다');
+  const seats = {};
+  for (const [name, x] of Object.entries(raw.seats)) {
+    const at = `seats.${name}`;
+    if (!SEAT_NAME_RE.test(name)) return bad(`${at}: 자리 이름은 영문 소문자로 시작하고 소문자·숫자·_로 24자까지다(세션 이름 <자리>-<n>이 된다)`);
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return bad(`${at}는 객체여야 한다`);
+    if (typeof x.launcher !== 'string' || !x.launcher.trim()) return bad(`${at}.launcher는 보드의 런처 이름이나 종류(${SEAT_KINDS.join(', ')})다`);
+    const session = x.session == null ? 'fresh' : x.session;
+    if (!['keep', 'fresh'].includes(session)) return bad(`${at}.session은 keep 또는 fresh다: ${x.session}`);
+    if (x.worktree != null && typeof x.worktree !== 'boolean') return bad(`${at}.worktree는 true 또는 false다`);
+    if (x.worktree && session !== 'fresh') return bad(`${at}.worktree는 fresh 자리에만 쓴다(일마다 새 워크트리)`);
+    if (x.worktree && SEAT_KINDS.includes(x.launcher) && x.launcher !== 'claude') return bad(`${at}.worktree는 Claude Code 자리에만 쓴다(claude -w)`);
+    if (x.tools != null) {
+      if (!Array.isArray(x.tools) || x.tools.some((t) => typeof t !== 'string')) return bad(`${at}.tools는 도구 이름 배열이다`);
+      const miss = x.tools.filter((t) => !tools || !tools[t]);
+      if (miss.length) return bad(`${at}.tools에 정의에 없는 도구가 있다: ${miss.join(', ')}`);
+    }
+    if (x.may != null && (!Array.isArray(x.may) || x.may.some((t) => typeof t !== 'string'))) return bad(`${at}.may는 자리 이름 배열이다`);
+    if (x.max_live != null && (session !== 'fresh' || !Number.isInteger(x.max_live) || x.max_live < 1)) return bad(`${at}.max_live는 fresh 자리의 1 이상 정수다`);
+    if (x.guide != null) {
+      if (typeof x.guide !== 'string' || !x.guide) return bad(`${at}.guide는 파일 경로 글이다`);
+      if (root && (!inside(root, path.resolve(root, x.guide)) || !exists(path.resolve(root, x.guide)))) return bad(`${at}.guide의 파일이 워크스페이스 안에 없다: ${x.guide}`);
+    }
+    seats[name] = { name, launcher: x.launcher.trim(), session, worktree: x.worktree === true, tools: x.tools ? x.tools.slice() : null, may: x.may ? x.may.slice() : [], maxLive: session === 'fresh' ? x.max_live || SEAT_MAX_LIVE : 1, guide: x.guide || null };
+  }
+  const seatNames = Object.keys(seats);
+  const known = (n) => Object.prototype.hasOwnProperty.call(seats, n);
+  for (const s of Object.values(seats)) { const miss = s.may.filter((n) => !known(n)); if (miss.length) return bad(`seats.${s.name}.may에 없는 자리가 있다: ${miss.join(', ')}`); }
+  const flow = [];
+  if (raw.flow != null) {
+    if (!Array.isArray(raw.flow)) return bad('flow는 줄 배열이다');
+    for (let i = 0; i < raw.flow.length; i++) {
+      const l = raw.flow[i]; const at = `flow[${i}]`;
+      if (!l || typeof l !== 'object' || Array.isArray(l)) return bad(`${at}는 객체여야 한다({ "from", "on", "to" })`);
+      if (!known(l.from)) return bad(`${at}.from이 없는 자리를 가리킨다: ${l.from}. 자리: ${seatNames.join(', ')}`);
+      if (l.on !== 'assign' && !results.includes(l.on)) return bad(`${at}.on은 assign 또는 results의 낱말(${results.join(', ')})이다: ${l.on}`);
+      const to = Array.isArray(l.to) ? l.to : [l.to];
+      if (!to.length || to.some((t) => !known(t))) return bad(`${at}.to가 없는 자리를 가리킨다: ${JSON.stringify(l.to)}. 자리: ${seatNames.join(', ')}`);
+      if (l.on === 'assign' && to.length !== 1) return bad(`${at}: assign 줄의 to는 자리 하나다`);
+      if (l.max != null && (!Number.isInteger(l.max) || l.max < 0)) return bad(`${at}.max는 0 이상 정수다`);
+      if (l.else != null && (!known(l.else) || l.max == null)) return bad(l.max == null ? `${at}.else는 max와 함께 쓴다` : `${at}.else가 없는 자리를 가리킨다: ${l.else}`);
+      if (l.max != null && l.on === 'assign') return bad(`${at}: max는 done 값 줄에 쓴다(assign 줄이 아니다)`);
+      flow.push({ index: i, from: l.from, on: l.on, to, max: l.max ?? null, else: l.else ?? null });
+    }
+  }
+  const manager = raw.manager == null ? null : raw.manager;
+  if (manager != null && !known(manager)) return bad(`manager가 없는 자리를 가리킨다: ${manager}`);
+  // 경고: 상한 없는 되돌아감. 받는 자리에서 상한 없는 done 값 줄만 따라 보낸 자리로 돌아올 수 있으면 판이 끝없이 넘길 수 있다
+  //   (assign 줄은 에이전트가 보낼 때만 돌고, 상한 있는 줄이 낀 고리는 그 줄이 끊는다)
+  const warnings = [];
+  const next = new Map(seatNames.map((n) => [n, new Set()]));
+  for (const l of flow) if (l.on !== 'assign' && l.max == null) for (const t of l.to) next.get(l.from).add(t);
+  const reach = (a, b) => { const seen = new Set(); const st = [a]; while (st.length) { const x = st.pop(); if (x === b) return true; if (seen.has(x)) continue; seen.add(x); for (const y of next.get(x) || []) st.push(y); } return false; };
+  for (const l of flow) if (l.on !== 'assign' && l.max == null && l.to.some((t) => t === l.from || reach(t, l.from))) warnings.push(`flow[${l.index}](${l.from} ${l.on} → ${l.to.join(', ')})는 되돌아가는 줄인데 max(상한)가 없다. 끝없이 돌 수 있다`);
+  return { ok: true, flow: { results, seats, flow, manager, warnings } };
 }
 
 // 훅 입력의 세션 칸
-export const sessionInfo = (s) => (s ? { id: s.sessionId || null, name: shownName(s) || s.name || null, kind: s.kind || 'claude', model: s.model || null, cwd: (s.rt && s.rt.cwd) || s.cwd || null } : null);
+export const sessionInfo = (s) => (s ? { id: s.sessionId || null, name: shownName(s) || s.name || null, kind: s.kind || 'claude', model: s.model || null, cwd: (s.rt && s.rt.cwd) || s.cwd || null, seat: s.rigSeat || null } : null); // P185: seat
 
 export class Rig {
   // b: 백엔드(store, sessions, log). opts.env: 훅에 줄 환경(시험용. 기본 cleanEnv(process.env))
@@ -158,6 +239,9 @@ export class Rig {
       hooks: def ? def.hooks.map((h) => ({ at: h.at, from: h.at === 'deliver' ? h.from : undefined, tool: h.tool || undefined, run: h.run, onFail: h.onFail })) : [],
       tools: def && def.tools ? Object.values(def.tools).map((x) => ({ name: x.name, run: x.run, desc: x.desc, timeoutMs: x.timeoutMs, parallel: x.parallel })) : [], // P183: 켜기 확인 창이 보인다
       guide: !!(def && def.guide), name: def ? def.name : null,
+      // P185: 자리·흐름(켜기 확인 창과 노드 메뉴의 "자리 정하기"가 쓴다)
+      seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide })) : [],
+      flow: def ? def.flow || [] : [], results: def ? def.results || [] : [], manager: def ? def.manager || null : null, warnings: def ? def.warnings || [] : [],
     };
   }
   setEnabled(key, on, by = 'human') {
@@ -231,7 +315,7 @@ export class Rig {
     const tr = target && target.sessionId ? this.store().openTryOf(target.sessionId) : null;
     const unit = tr ? this.store().getUnit(tr.unitId) : null;
     return this.runAt(r, {
-      key, at: 'deliver', session: sessionInfo(target), from: { kind: from.kind, ...(from.session ? { session: sessionInfo(from.session) } : {}) },
+      key, at: 'deliver', session: sessionInfo(target), from: { kind: from.kind, ...(from.seat ? { seat: from.seat } : {}), ...(from.session ? { session: sessionInfo(from.session) } : {}) }, // P185: flow면 보낸 자리(seat)
       unit: unit ? { id: unit.id, from: unit.from, spec: unit.spec, origin: unit.origin } : null, try: tr ? { id: tr.id, startedAt: tr.startedAt } : null,
       text, match: (h) => h.from === 'any' || h.from === from.kind,
     });

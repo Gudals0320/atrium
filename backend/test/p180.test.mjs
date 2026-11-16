@@ -131,11 +131,11 @@ test('P180 머리: 세 줄(관계·일·약속), done이 다른 보고 지시를
 });
 
 test('P180 계약: done·item·items를 더하고 계약은 3 그대로, 승인 규칙에 새 동사', () => {
-  assert.equal(CONTRACT_VERSION, 3);
+  assert.equal(CONTRACT_VERSION, 4); // P185: rig 자리로 4
   for (const v of ['done', 'item', 'items']) assert.ok(VERB_NAMES.includes(v), v);
   const done = VERBS.find((v) => v.name === 'done');
-  assert.deepEqual(done.args.slice(0, 2), ['ok|failed', '"<보고>"']);
-  assert.match(shortHelp(), /atrium done ok\|failed "<보고>"/);
+  assert.deepEqual(done.args.slice(0, 2), ['ok|failed|<rig 값>', '"<보고>"']); // P185
+  assert.match(shortHelp(), /atrium done ok\|failed\|<rig 값> "<보고>"/); // P185
   for (const r of ['Bash(atrium done *)', 'Bash(atrium item)', 'Bash(atrium items)', 'PowerShell(atrium done *)', 'PowerShell(atrium items)', 'Bash(mtask done *)']) assert.ok(ATRIUM_ALLOW.includes(r), r);
 });
 

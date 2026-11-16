@@ -78,6 +78,10 @@ export class ToolRuns {
     if (!rig.enabled(key)) throw apiError('rig_off', '이 워크스페이스의 rig는 사람이 켜지 않았다(꺼진 동안 도구는 돌지 않는다). 사람에게 보드의 영역 이름표 메뉴에서 켜 달라고 한다.');
     if (!r.def) throw apiError('rig_off', `rig 정의가 잘못돼 쓰지 않는다: ${r.invalid || '?'}`);
     if (!r.def.tools || !Object.keys(r.def.tools).length) throw apiError('rig_off', 'rig 정의에 도구(tools)가 없다.');
+    // P185: 자리 세션은 그 자리의 tools만(정의 seats.<자리>.tools, 없으면 모두)
+    const flow = this.b.branch && this.b.branch.flow;
+    const ctx = flow ? flow.seatCtx(caller) : null;
+    if (ctx && ctx.seat.tools) return { ...r, def: { ...r.def, tools: Object.fromEntries(Object.entries(r.def.tools).filter(([k]) => ctx.seat.tools.includes(k))) }, seatTools: ctx.seat.tools, seat: ctx.name };
     return r;
   }
 
@@ -94,7 +98,7 @@ export class ToolRuns {
     const r = this.gate(caller);
     const name = String(o.tool || '');
     const tool = r.def.tools[name];
-    if (!tool) throw apiError('unknown_tool', `rig에 도구 ${name || '(이름 없음)'}가 없다. 있는 도구: ${Object.keys(r.def.tools).join(', ')}`);
+    if (!tool) throw apiError('unknown_tool', r.seat && this.b.rig.read(caller.workspaceKey).def.tools[name] ? `rig의 ${r.seat} 자리는 도구 ${name}를 쓰지 못한다. 이 자리의 도구: ${r.seatTools.join(', ') || '(없음)'}` : `rig에 도구 ${name || '(이름 없음)'}가 없다. 있는 도구: ${Object.keys(r.def.tools).join(', ')}`);
     const given = Array.isArray(o.args) ? o.args.map(String) : [];
     if (!tool.parallel) {
       const busy = [...this.live.values()].find((x) => x.sessionId === caller.sessionId);

@@ -554,7 +554,7 @@ test('P182 atrium guide: 자세한 사용법 + 켜진 rig의 안내(주제), 꺼
     writeRig(ws.root, '{bad', { tHook: false });
     const bad = await runCli(['guide'], envOf(b, w));
     assert.match(bad.stdout, /지금 잘못됐다\(마지막으로 맞았던 정의를 쓰는 중\): JSON이 아니다/);
-    assert.equal(CONTRACT_VERSION, 3);
+    assert.equal(CONTRACT_VERSION, 4); // P185: rig 자리로 4
     assert.ok(VERB_NAMES.includes('guide'));
     for (const r of ['Bash(atrium guide)', 'Bash(atrium guide *)', 'PowerShell(atrium guide)', 'PowerShell(atrium guide *)']) assert.ok(ATRIUM_ALLOW.includes(r), r);
   } finally { srv.close(); await stop(); }

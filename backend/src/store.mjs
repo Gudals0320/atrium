@@ -10,7 +10,7 @@ import { WORKTREE_SCHEMA, WORKTREE_COLUMNS, installWorktrees } from './store-wor
 import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: 데스크톱 앱 가져오기 장부
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
 import { UNITS_SCHEMA, UNITS_COLUMNS, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
-import { RIG_SCHEMA, RIG_COLUMNS, TOOL_RUNS_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기와 훅 실행 기록
+import { RIG_SCHEMA, RIG_COLUMNS, TOOL_RUNS_SCHEMA, RIG_FLOW_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기와 훅 실행 기록
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -76,6 +76,7 @@ function sessionRow(r) {
     label: r.label ?? null, // P66: 판의 이름. 없으면 name(에이전트 주소)이 보인다
     startCommand: r.start_command || '', // P97: 실행 명령(빈 값은 claude)
     harnessPlan: r.harness ? JSON.parse(r.harness) : null, // P115
+    rigSeat: r.rig_seat ?? null, // P185: rig 자리
   };
 }
 function linkRow(r) {
@@ -115,6 +116,7 @@ export class Store {
     this.db.exec(UNITS_SCHEMA); // P180: 일 단위와 시도
     this.db.exec(RIG_SCHEMA); // P182: 훅 실행 기록
     this.db.exec(TOOL_RUNS_SCHEMA); // P183: 도구 실행 장부
+    this.db.exec(RIG_FLOW_SCHEMA); // P185: 건과 건이 만든 세션·워크트리
     for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);

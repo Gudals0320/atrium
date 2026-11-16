@@ -1,0 +1,20 @@
+{
+  "name": "flow-sample",
+  "hooks": [
+    { "at": "deliver", "from": "flow", "run": ["node", ".atrium/hooks/flow-stamp.mjs"] }
+  ],
+  "results": ["ok", "failed", "rejected"],
+  "seats": {
+    "main":     { "launcher": "codex",  "session": "keep",  "guide": ".atrium/seats/main.txt" },
+    "worker":   { "launcher": "claude", "session": "fresh", "may": ["main"], "max_live": 3, "guide": ".atrium/seats/worker.txt" },
+    "reviewer": { "launcher": "codex",  "session": "fresh", "may": ["main"], "guide": ".atrium/seats/reviewer.txt" }
+  },
+  "flow": [
+    { "from": "main",     "on": "assign",   "to": "worker" },
+    { "from": "worker",   "on": "ok",       "to": "reviewer" },
+    { "from": "reviewer", "on": "rejected", "to": "worker", "max": 2, "else": "main" },
+    { "from": "reviewer", "on": "ok",       "to": "main" }
+  ],
+  "manager": "main",
+  "guide": { "default": ".atrium/guide.txt" }
+}
