@@ -11,10 +11,10 @@ import { api } from './api.js';
 import { STATE_LABEL, agoText, labelFit } from './lib/labels.js';
 import { linkLabelLevel, shifted, linkLabelHidden } from './lib/link-labels.js'; // P67. P98: linkLabelHidden
 import { DOCK_LABEL_ZOOM, dockLabelParts } from './lib/dock-links.js';
-import { useT, tMsg, errText, fmtTime } from './lib/i18n.js';
+import { useT, tMsg, errText, fmtTime, translate, LANGUAGES } from './lib/i18n.js';
 import { linkLabel } from '../../../backend/src/links.mjs';
 import { shownRole } from './lib/roles.js'; // P141(#17)
-import { peerView, relValue } from './lib/link-relation.js'; // P175
+import { peerView, relValue, roleOnSwitch } from './lib/link-relation.js'; // P175
 import { PEER_ROLE } from '../../../backend/src/relations.mjs'; // P175
 import { useDialog } from './dialog.js';
 
@@ -186,7 +186,10 @@ export function LinkPanel({ linkId, onClose }) {
   const [relBusy, setRelBusy] = useState(false);
   async function setRelation(k) { // P175: 선 기록에서 하위·동료 바꾸기(세션 맵 관계와 같은 뜻, 사람이 정한 관계)
     setRelBusy(true);
-    try { await api.call('relation.set', { a: link.from, b: link.to, relation: k }); toast(t(k === 'peer' ? 'mmLine.relPeer' : 'mmLine.relSub', { name: b ? b.name : '?', up: a ? a.name : '?' })); }
+    // 역할이 옛 관계의 기본 이름이면 새 관계의 기본 이름으로 함께 바꾼다(link.create: 관계 + 역할 + A에게 새 역할 알림). 사람이 쓴 이름은 그대로(relation.set)
+    const all = (key) => LANGUAGES.map((l) => translate(l, key));
+    const next = roleOnSwitch(link.role || link.storedRole, k, { sub: all('links.defaultRole'), subNew: t('links.defaultRole'), peer: [PEER_ROLE, ...all('relations.peerRole')] });
+    try { await (next ? api.call('link.create', { from: link.from, to: link.to, role: next, relation: k }) : api.call('relation.set', { a: link.from, b: link.to, relation: k })); toast(t(k === 'peer' ? 'mmLine.relPeer' : 'mmLine.relSub', { name: b ? b.name : '?', up: a ? a.name : '?' })); }
     catch (e) { toast(t('linkRel.setFail', { error: errText(e) }), 'error'); }
     setRelBusy(false);
   }

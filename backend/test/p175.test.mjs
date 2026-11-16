@@ -148,6 +148,13 @@ test('P175 다시 잇기: 동료였던 쌍을 하위로 고르면 사람이 정�
   // 하위 → 동료
   const p = b.linkCreate({ from: A.sessionId, to: B.sessionId, role: '리뷰어', relation: 'peer' });
   assert.equal(p.relationSet, 'peer'); assert.equal(p.link.relation.relation, 'peer');
+  // 선 기록 토글이 기본 이름을 바꿀 때 부르는 모양: 관계 + 새 기본 이름이 한 번에, A에게 새 역할 알림
+  const before = b.queued.length;
+  const s2 = b.linkCreate({ from: A.sessionId, to: B.sessionId, role: 'Reviewer', relation: 'sub' });
+  assert.equal(s2.relationSet, 'sub'); assert.equal(s2.link.role, 'Reviewer');
+  assert.ok(b.queued.slice(before).some((q) => q.sid === A.sessionId && q.text.includes('"Reviewer"')));
+  const p2 = b.linkCreate({ from: A.sessionId, to: B.sessionId, role: PEER_ROLE, relation: 'peer' });
+  assert.equal(p2.relationSet, 'peer'); assert.equal(b.store.linkByPair(A.sessionId, B.sessionId).role, PEER_ROLE);
   // 이미 동료면 관계를 다시 쓰지 않는다
   assert.equal(b.linkCreate({ from: A.sessionId, to: B.sessionId, role: '리뷰어', relation: 'peer' }).relationSet, null);
   b.branch.notices.stop();
@@ -177,6 +184,7 @@ test('P175 창: 잇는 상자·선 기록 토글이 부르는 API, 동료 기본
   assert.match(src, /api\.call\('relation\.set', \{ a: link\.from, b: link\.to, relation: k \}\)/, '선 기록 토글은 relation.set(사람)');
   assert.match(src, /rel === 'peer' && typed === t\('relations\.peerRole'\) \? PEER_ROLE : typed/, '동료 기본 이름은 판의 낱말로 저장');
   assert.match(src, /if \(!edited\) setRole\(roleDefault\(t, k\)\)/, '사람이 쓴 이름은 관계를 바꿔도 그대로');
+  assert.match(src, /next \? api\.call\('link\.create', \{ from: link\.from, to: link\.to, role: next, relation: k \}\) : api\.call\('relation\.set'/, '선 기록 토글: 기본 이름이면 역할도 함께, 아니면 관계만');
   const ko = (await import('../../app/src/renderer/locales/ko.js')).default;
   const en = (await import('../../app/src/renderer/locales/en.js')).default;
   for (const d of [ko, en]) for (const k of ['as', 'asLabel', 'subHelp', 'peerHelp', 'createdPeer', 'setFail']) assert.ok(d.linkRel && d.linkRel[k], k);
