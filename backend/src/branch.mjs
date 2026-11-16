@@ -22,7 +22,7 @@ import { ROLE_RE } from './links.mjs';
 import { SIZE_STEPS } from './canvas.mjs';
 import { canvasItems, areaOfNode, lineTree, dockOf, dockOuter } from './canvas-ops.mjs';
 import { parseArea, isBoxKey } from './worktree-areas.mjs'; // P27
-import { lineSlot, bandOf, boxFrame, frameInner } from './tree-line.mjs'; // P75: 하위 세션 줄
+import { lineSlot, peerSlot, bandOf, boxFrame, frameInner, LINE_GAP_Y } from './tree-line.mjs'; // P75: 하위 세션 줄
 import { deriveState, isModelError } from './state.mjs';
 import { EFFORTS } from './settings.mjs';
 import { clip, promptTask } from './text.mjs';
@@ -415,13 +415,14 @@ export class Branch {
   // 줄은 격자로 접지 않는다. 그 자리에 다른 것이 있으면 그 아래로 잇는다(다른 노드를 옮기지 않는다. 부모 나무가 길어져 생기는 겹침은 spawn 뒤 reflowLines가 뒤 형제를 민다).
   // worktree를 주면(--worktree 워커) 상자가 들어설 테두리(이름표와 여백)까지 비워 두고 노드는 그 안에 놓는다. 노드는 본 저장소 쪽에 두고,
   // 워크트리가 생기면 상자가 그 노드 자리를 감싼다(worktrees.mjs). 그래서 상자도 줄에 선다
-  placeChild(parentId, wsKey, { worktree = null } = {}) {
+  // P175: peer(atrium child --peer)면 정리(arrangeTree P177)가 줄 자리와 크기: 짝(부모)과 같은 크기 단계, 짝의 나무 바로 아래(짝과 같은 x).
+  //   짝이 누군가의 하위면 같은 줄의 형제 사이만큼, 뿌리면 나무 사이만큼 띄운다. 다른 노드는 옮기지 않는다(답에 peer: true → spawn이 줄 밀기를 하지 않는다)
+  placeChild(parentId, wsKey, { worktree = null, peer = false } = {}) {
     const b = this.b;
     const parent = b.sessions.get(parentId);
     if (!parent || parent.workspaceKey !== wsKey) return null;
     const pn = b.store.nodes().find((n) => n.session_id === parentId);
     if (!pn) return null;
-    const size = SIZE_STEPS[CHILD_SIZE];
     const all = canvasItems(b);
     const ak = areaOfNode(b, parentId, all); // P27: 부모가 든 영역(워크트리 상자일 수 있다)
     const inBox = !worktree && isBoxKey(ak); // 워크트리 없는 하위 세션은 부모의 상자 안에 든다
@@ -429,6 +430,18 @@ export class Branch {
     const pRect = pd ? dockOuter(b, pd) : pn;
     const tree = lineTree(b, wsKey, all);
     const pid = tree.blockOf.get(parentId);
+    if (peer) {
+      const ps = { w: pn.w, h: pn.h }; // 짝의 크기 그대로(단계 열쇠와 비율도)
+      const wp = this.relIndex().workParentOf(parentId);
+      const sib = !!(wp && wp !== parentId && b.sessions.has(wp) && (b.sessions.get(wp).workspaceKey || null) === wsKey);
+      const frame = worktree ? boxFrame({ x: 0, y: 0, ...ps }) : ps;
+      const obstacles = all.filter((i) => !(inBox && i.box === ak));
+      const at = peerSlot({ partner: pRect, band: pid ? bandOf(tree, pid) : pRect, size: frame, obstacles: [...obstacles, pRect], gap: sib ? LINE_GAP_Y : LINE_GAP_Y * 2 });
+      if (!at) return null;
+      const pos = worktree ? frameInner(at) : at;
+      return { x: Math.round(pos.x), y: Math.round(pos.y), w: pn.w, h: pn.h, size: pn.size ?? null, aspect: pn.aspect ?? null, area: inBox ? parseArea(ak).wt : '', peer: true };
+    }
+    const size = SIZE_STEPS[CHILD_SIZE];
     // 이미 줄에 선 형제의 띠: 부모와 다른 블록이면 그 블록의 나무째, 부모 블록 안(부모 상자 안의 형제)이면 그 노드
     const kidIds = this.openChildren(parentId).map((x) => x.sessionId);
     const bands = [];

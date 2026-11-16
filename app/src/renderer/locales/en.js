@@ -2653,4 +2653,13 @@ export default {
     show: 'Show the state list',
     itemTip: 'Click: fly to this card',
   },
+  // P175: relation picked when linking and in the link history (sub / peer)
+  linkRel: {
+    as: 'Relation',
+    asLabel: "@{b} is @{a}'s",
+    subHelp: 'Sub: @{b} works under @{a}. @{a} hands off the work and @{b} reports back when done.',
+    peerHelp: 'Peer: @{b} does not work under @{a}. They exchange what they need and share results when done. Both sessions are told about the relation.',
+    createdPeer: 'Linked @{a} → @{b} as peers and notified both sessions',
+    setFail: 'Could not change the relation: {error}',
+  },
 };

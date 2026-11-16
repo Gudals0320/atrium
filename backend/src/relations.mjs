@@ -98,3 +98,17 @@ export function promptTag(rel, fromId) {
   if (rel.relation === 'sub') return rel.up === fromId ? 'assign' : 'report';
   return null;
 }
+
+// P175: 판에서 A → B를 이을 때 상자에서 고르는 관계(하위·동료). 기본은 하위(옛 판처럼 역할 선 = 하위)
+export const LINK_CHOICES = ['sub', 'peer'];
+// 고른 값과 지금 관계(between(a, b), 잇기 전) → 저장할 관계(relation.set 값) | null(자동 규칙 그대로 둔다)
+// - 하위: 지금 관계가 없거나 이미 "b는 a의 하위"면 자동 규칙(역할 선 = 하위)에 맡긴다. 동료·독립·거꾸로 된 하위면 사람이 정한 하위로 바꾼다
+// - 동료: 이미 동료가 아니면 사람이 정한 동료
+export function linkRelationPlan(choice, cur, aId) {
+  const c = LINK_CHOICES.includes(choice) ? choice : 'sub';
+  if (c === 'peer') return cur && cur.relation === 'peer' ? null : 'peer';
+  if (!cur || (cur.relation === 'sub' && cur.up === aId)) return null;
+  return 'sub';
+}
+// 고른 관계의 기본 역할 이름(저장하는 말. 창은 지금 언어로 바꿔 보인다). 역할을 비워 보내면 이 이름을 쓴다
+export const linkDefaultRole = (choice) => (choice === 'peer' ? PEER_ROLE : null);

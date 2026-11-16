@@ -2431,6 +2431,15 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 .mt-edge-end.transient { opacity: 0.55; }
 .mt-edge-label.transient { opacity: 0.8; border-style: dashed; }
 .mt-edge-tag.temp { border: 1px dashed currentColor; background: transparent; opacity: 0.85; }
+/* P175: 잇는 상자·선 기록의 하위 / 동료 토글 */
+.mt-reltoggle-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.mt-reltoggle-label { font-size: 13px; color: var(--text-2); }
+.mt-reltoggle { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--chrome-bg-hi); }
+.mt-reltoggle-opt { border: 0; background: none; color: var(--text-2); font: inherit; font-size: 13px; padding: 3px 12px; border-radius: 7px; cursor: pointer; }
+.mt-reltoggle-opt:hover:not(:disabled):not(.on) { color: var(--text); }
+.mt-reltoggle-opt.on { background: var(--info-bg); color: var(--info); font-weight: 600; }
+.mt-reltoggle-opt:disabled { cursor: default; opacity: 0.6; }
+.mt-edge-tag.peer { background: var(--info-bg); color: var(--info); }
 
 /* P176: 녹음 알약. 마이크 단추가 안 보이는 동안 화면 위 가운데에 뜬다(어떤 덮개보다 위). 움직임 없음 */
 .mt-voice-pill { position: fixed; top: calc(8px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 2147483000;

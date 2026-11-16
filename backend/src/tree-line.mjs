@@ -32,6 +32,23 @@ export function lineSlot({ parent, bands = [], size, obstacles = [], gapX = LINE
   return { x, y: Math.round(y) };
 }
 
+// P175: 동료로 띄운 세션(atrium child --peer)의 자리(왼쪽 위). 정리(arrangeTree P177)와 같은 자리: 짝(partner)과 같은 x, 짝의 나무 띠(band) 바로 아래.
+// gap: 짝이 누군가의 하위면 같은 줄의 형제 사이(LINE_GAP_Y), 짝이 뿌리면 나무 사이(정리의 gapY * 2). 그 자리에 다른 것이 있으면 그 아래로(다른 노드는 옮기지 않는다)
+export function peerSlot({ partner, band = null, size, obstacles = [], gap = LINE_GAP_Y }) {
+  if (!partner || !size) return null;
+  const x = Math.round(partner.x);
+  const top = band || partner;
+  let y = top.y + top.h + gap;
+  const os = obstacles.filter((r) => r && Number.isFinite(r.x) && Number.isFinite(r.w));
+  for (let i = 0; i < 10000; i++) {
+    const c = { x, y, w: size.w, h: size.h };
+    const hit = os.filter((r) => overlaps(c, r, LINE_GAP_Y - 1));
+    if (!hit.length) return { x, y: Math.round(y) };
+    y = Math.max(...hit.map((r) => r.y + r.h)) + LINE_GAP_Y;
+  }
+  return { x, y: Math.round(y) };
+}
+
 // 줄 밀기: units([{ id, rect }], 띄운 순서)를 차례로 보며, 앞의 것과 겹치면(gap 안) 그 아래로만 민다. 당기지 않는다(자리가 갑자기 움직이지 않게).
 // → Map id → dy(민 것만). 줄의 순서는 바뀌지 않는다(뒤의 것만 아래로 간다)
 export function pushLine(units, { gap = LINE_GAP_Y } = {}) {
