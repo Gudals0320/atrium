@@ -171,3 +171,18 @@ export function tagDeleteRange(text, start, end, key, tokens) {
   }
   return null;
 }
+
+// P176: 판(캔버스)에서 세션을 한 번 누르면 빈 명령줄에 그 세션 태그를 저절로 넣는다(단위 시험 test/p176-lib.test.mjs).
+// text: 지금 명령줄 글, auto: 저절로 넣은 태그의 세션 이름(사람이 고치면 null), name: 누른 세션 이름(빈 판을 누르면 null)
+// → { text, auto }. 명령줄이 완전히 비었거나 저절로 넣은 태그 하나만 있을 때만 바꾼다. 그 밖에는 손대지 않는다
+export const autoTagText = (name) => `@${name} `;
+export function autoTag({ text, auto }, name) {
+  const s = String(text ?? '');
+  const mine = !!auto && s === autoTagText(auto); // 사람이 아직 고치지 않은 저절로 넣은 태그
+  if (name) {
+    if (s === '' || mine) return { text: autoTagText(name), auto: name };
+    return { text: s, auto: null };
+  }
+  if (mine) return { text: '', auto: null };
+  return { text: s, auto: null };
+}

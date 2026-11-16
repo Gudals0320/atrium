@@ -17,6 +17,7 @@
 //      Alt+Enter도 줄바꿈. 바는 아래 기준으로 위로 자라고 단추는 아래 줄에 붙어 있다. 칩 줄은 자란 만큼 위로 비킨다(--mt-cmd-grow)
 // P162: 데스크톱 창에서 탐색기로 복사한 파일을 붙이면 그 경로가, 캡처한 그림을 붙이면 [Image 1] 칩이 들어간다(lib/desktop-paste.js, main.mjs mt:clipPaste).
 //      칩은 보낼 때 그림 파일 경로로 바뀌고, 마우스를 올리면 작은 미리보기, 칩 뒤 Backspace로 통째로 지운다. 웹 화면(P48 업로드)은 그대로
+// P176: 녹음 중에는 아래 바가 숨지 않는다(lib/bottom.js holdReason voice). 바가 가려지면 위에 녹음 알약(Voice.jsx VoicePill)
 // P165: 왼쪽 마이크 단추로 음성 입력(Voice.jsx). 들은 글은 녹음을 시작한 커서 자리에 들어가고, 녹음 중에는 겹이 글을 그려 미확정 글을 흐리게 보인다
 //      (textarea 글자는 투명, 커서는 그대로). 녹음 중 Enter는 녹음을 끝내고 남은 확정 글을 1초까지 받은 뒤 보낸다
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -35,7 +36,7 @@ import { imageTokens, mergeTokens, nextImageNo, expandImages, imageLabel, pasteP
 import { kbLift } from './lib/touch-board.js'; // P83
 import { useVoice, VoiceButton } from './Voice.jsx'; // P165
 import { splitLive } from './lib/voice-text.js'; // P165
-import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
+import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange, autoTag } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
 
@@ -46,7 +47,7 @@ function useTick(ms) { const [n, set] = useState(Date.now()); useEffect(() => { 
 // P43: 아래 바 자동 숨김(판단은 lib/bottom.js). 마우스가 아래 띠나 보이는 바·칩 위에 있는지, 명령 바·칩 줄에 초점이 있는지를 지켜보고
 // 보일지를 정한다. 칩 줄(Chrome.jsx ChipRow)은 store.bottomShown을 따른다. 숨은 동안 바와 칩은 마우스를 받지 않아 그 밑의 터미널이 눌린다
 const BAR_SEL = '.mt-bottom .mt-cmd, .mt-bottom .mt-mention, .mt-bottom-above, .mt-chips';
-function useAutoHide(rootRef, { draft, popup }) {
+function useAutoHide(rootRef, { draft, popup, voice }) {
   const pinned = useStore((st) => st.bottomPin);
   const [shown, setShown] = useState(false);
   const [zone, setZone] = useState('out');
@@ -87,12 +88,12 @@ function useAutoHide(rootRef, { draft, popup }) {
     };
   }, [rootRef]);
   useEffect(() => {
-    const next = bottomNext({ shown, zone, focused: focus.focused, menu: focus.menu, draft, popup, pinned });
+    const next = bottomNext({ shown, zone, focused: focus.focused, menu: focus.menu, draft, popup, pinned, voice });
     if (next.shown === shown) return undefined;
     if (!next.delay) { setShown(next.shown); return undefined; }
     const id = setTimeout(() => setShown(next.shown), next.delay);
     return () => clearTimeout(id);
-  }, [shown, zone, focus, draft, popup, pinned]);
+  }, [shown, zone, focus, draft, popup, pinned, voice]);
   useEffect(() => { setBottomShown(shown); }, [shown]);
   return shown;
 }
@@ -111,6 +112,9 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const [images, setImages] = useState({}); // P162: 그림 칩 번호 → { path, thumb }
   const [preview, setPreview] = useState(null); // P162: 마우스를 올린 그림 칩 { n, x, y }
   const voice = useVoice({ text, setText, taRef, inline: true }); // P165
+  const textRef = useRef(text); // P176: 저절로 넣는 태그가 지금 글을 본다
+  textRef.current = text;
+  const autoRef = useRef(null); // P176: 저절로 넣은 태그의 세션 이름(사람이 고치면 null)
   useImperativeHandle(ref, () => ({ focus: () => taRef.current && taRef.current.focus() }));
   useEffect(() => {
     const onDraft = (e) => {
@@ -120,11 +124,19 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     };
     // P153: 세션 맵의 카드 누르기 = 받는 세션 태그 넣기·빼기(초점은 옮기지 않는다), 맵에서 친 글자 = 입력칸에 초점(그 글자는 입력칸이 받는다)
     const onTag = (e) => setText((cur) => toggleTag(cur, String(e.detail || '')));
+    // P176: 판에서 세션을 한 번 누름(이름) · 빈 판을 누름(null). 명령줄이 비었거나 저절로 넣은 태그만 있을 때만 바꾼다. 데스크톱만
+    const onAutoTag = (e) => {
+      if (isCoarse()) return;
+      const r = autoTag({ text: textRef.current, auto: autoRef.current }, e.detail || null);
+      autoRef.current = r.auto;
+      if (r.text !== textRef.current) { textRef.current = r.text; setText(r.text); setPick(0); }
+    };
     const onFocusBar = () => { const el = taRef.current; if (el && document.activeElement !== el) { el.focus(); const n = el.value.length; el.setSelectionRange(n, n); } };
     commandDraft.addEventListener('draft', onDraft);
     commandDraft.addEventListener('tag', onTag);
     commandDraft.addEventListener('focus', onFocusBar);
-    return () => { commandDraft.removeEventListener('draft', onDraft); commandDraft.removeEventListener('tag', onTag); commandDraft.removeEventListener('focus', onFocusBar); };
+    commandDraft.addEventListener('autotag', onAutoTag);
+    return () => { commandDraft.removeEventListener('draft', onDraft); commandDraft.removeEventListener('tag', onTag); commandDraft.removeEventListener('focus', onFocusBar); commandDraft.removeEventListener('autotag', onAutoTag); };
   }, []);
   // P153: 세션 맵이 지금 글(태그된 카드 표시)을 듣는다
   useEffect(() => { commandDraft.dispatchEvent(new CustomEvent('text', { detail: text })); }, [text]);
@@ -291,7 +303,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const edit = useDeliveryEditing(sentTexts);
   const { editing, startEdit } = edit;
   const setEditing = edit.stopEdit;
-  const shown = useAutoHide(rootRef, { draft: text.trim().length > 0, popup: options.length > 0 || threadOpen || missionOpen }); // P153: 세션 맵이 열린 동안 늘 보인다
+  const shown = useAutoHide(rootRef, { draft: text.trim().length > 0, popup: options.length > 0 || threadOpen || missionOpen, voice: voice.active }); // P153: 세션 맵이 열린 동안 늘 보인다. P176: 녹음 중에도
   // P83: 손가락 화면. 손잡이 단추, 키보드 위로 올리기, 바 밖을 탭하면 닫기
   const [coarse] = useState(isCoarse);
   const [lift, setLift] = useState(0);
@@ -395,7 +407,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
             <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag && p.tag.img ? <span key={i} className={`mt-cmd-img${p.live ? ' mt-cmd-live' : ''}`} data-img={p.tag.n}>{p.text}</span> : p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}${p.live ? ' mt-cmd-live' : ''}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i} className={p.live ? 'mt-cmd-live' : undefined} data-live={p.live ? '1' : undefined}>{p.text}</span>))}{'\u200b'}</div>
           </div>
           <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={missionOpen ? t('mmTerr.barHint') : t('cmd.placeholder')} title={t('boardKeys.command')}
-            onChange={(e) => { setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"
+            onChange={(e) => { autoRef.current = null; setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"
             onPaste={(e) => {
               if (wantsDesktopPaste(e.clipboardData, { desktop: desktopPaste })) { e.preventDefault(); pasteDesktop(); return; } // P162
               const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); }

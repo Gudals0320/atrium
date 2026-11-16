@@ -2607,6 +2607,11 @@ export default {
     limit: 'Voice input stopped after 10 minutes.',
     dropped: 'Voice input stopped because the connection was lost.',
     failed: 'Voice input failed.',
+    // P176: stops nobody asked for, and the recording pill at the top
+    silence: 'Voice input stopped: no speech for 30 seconds.',
+    hidden: 'Voice input stopped because the window was hidden.',
+    pillStop: 'Stop voice input',
+    pillStopShort: 'Stop',
   },
   // P172: grouped queue per session, send now (steer), reorder
   deliveryQueue: {
