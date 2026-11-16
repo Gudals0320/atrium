@@ -41,6 +41,7 @@ import { CommandBar } from './CommandBar.jsx';
 import { SpawnDialog } from './SpawnDialog.jsx';
 import { RoleDialog, LinkPanel } from './Links.jsx';
 import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
+import { RigOnDialog } from './Regions.jsx'; // P183: rig 켜기 확인
 import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';
@@ -71,6 +72,7 @@ function Dialogs() {
   if (d.kind === 'wsopen') return <OpenRepoDialog onClose={close} />;
   if (d.kind === 'desktopImport') return <DesktopImportDialog onClose={close} />;
   if (d.kind === 'wsclose') return <CloseWsDialog ws={d.ws} onClose={close} />;
+  if (d.kind === 'rigon') return <RigOnDialog ws={d.ws} onClose={close} />; // P183
   if (d.kind === 'loop') return <LoopDialog target={d.target} onClose={close} />;
   if (d.kind === 'settings') return <SettingsDialog tab={d.tab} newLauncher={d.newLauncher} onClose={close} />; // P97: 레일 +는 런처 탭의 새 런처로
   return null;

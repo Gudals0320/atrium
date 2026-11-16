@@ -2,7 +2,12 @@
   "name": "sample",
   "hooks": [
     { "at": "deliver", "from": "any", "run": ["node", ".atrium/hooks/stamp.mjs"] },
-    { "at": "done", "run": ["node", ".atrium/hooks/evidence.mjs"], "onFail": "block" }
+    { "at": "done", "run": ["node", ".atrium/hooks/evidence.mjs"], "onFail": "block" },
+    { "at": "tool-before", "tool": "count", "run": ["node", ".atrium/hooks/gate.mjs"] },
+    { "at": "tool-after", "run": ["node", ".atrium/hooks/record.mjs"] }
   ],
+  "tools": {
+    "count": { "run": ["node", ".atrium/tools/count.mjs"], "desc": "Prints tick lines up to --to N (one per --every ms, default 1000).", "timeoutMs": 600000 }
+  },
   "guide": { "default": ".atrium/guide.txt" }
 }

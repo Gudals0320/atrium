@@ -17,6 +17,11 @@ export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after'];
 export const HOOK_FROMS = ['human', 'agent', 'any'];
 export const GUIDE_MAX = 20000;
+// P183: 도구(2단계). 시간 제한 기본 30분, 상한 6시간(넘으면 깎는다). 이름은 글자·숫자·_·.·-
+export const TOOL_TIMEOUT_MS = 30 * 60 * 1000;
+export const TOOL_TIMEOUT_MAX_MS = 6 * 60 * 60 * 1000;
+export const TOOL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
+export const TOOL_RUN_HINT = '도구의 run은 node, python, .exe를 바로 적는다(.cmd·.bat이면 cmd.exe를 거쳐 에이전트가 준 인자에 [A-Za-z0-9 _.,:=/@+-] 밖의 글자를 쓰지 못한다)';
 const RIG_MAX_BYTES = 1024 * 1024;
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
@@ -60,8 +65,27 @@ export function validateRig(raw, { root, exists = isFile } = {}) {
     const { default: dflt = null, ...topics } = files;
     guide = { default: dflt, topics };
   }
-  if (raw.tools != null && (typeof raw.tools !== 'object' || Array.isArray(raw.tools))) return bad('tools는 객체여야 한다');
-  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools: raw.tools || null } };
+  // P183: 도구. { "<이름>": { run: [...], desc?, timeoutMs?, parallel? } }
+  let tools = null;
+  if (raw.tools != null) {
+    if (typeof raw.tools !== 'object' || Array.isArray(raw.tools)) return bad('tools는 객체여야 한다');
+    tools = {};
+    for (const [name, x] of Object.entries(raw.tools)) {
+      const at = `tools.${name}`;
+      if (!TOOL_NAME_RE.test(name)) return bad(`${at}: 도구 이름은 글자·숫자로 시작하고 글자·숫자·_·.·-로 40자까지다`);
+      if (!x || typeof x !== 'object' || Array.isArray(x)) return bad(`${at}는 객체여야 한다({ "run": [...] })`);
+      if (!Array.isArray(x.run) || !x.run.length || x.run.some((w) => typeof w !== 'string' || !w)) return bad(`${at}.run은 빈 칸 없는 글 배열이어야 한다(예: ["node", "tools/x.mjs"]). ${TOOL_RUN_HINT}`);
+      if (x.desc != null && typeof x.desc !== 'string') return bad(`${at}.desc는 글이다`);
+      if (x.timeoutMs != null && !(Number(x.timeoutMs) > 0)) return bad(`${at}.timeoutMs는 양수다(최대 ${TOOL_TIMEOUT_MAX_MS})`);
+      if (x.parallel != null && typeof x.parallel !== 'boolean') return bad(`${at}.parallel은 true 또는 false다`);
+      if (root) {
+        if (pathish(x.run[0]) && !exists(path.resolve(root, x.run[0])) && !['.exe', '.cmd', '.bat', '.com'].some((e) => exists(path.resolve(root, x.run[0] + e)))) return bad(`${at}.run의 파일이 없다: ${x.run[0]}. ${TOOL_RUN_HINT}`);
+        if (!pathish(x.run[0]) && x.run[1] && /[\\/]/.test(x.run[1]) && path.extname(x.run[1]) && !x.run[1].startsWith('-') && !exists(path.resolve(root, x.run[1]))) return bad(`${at}.run의 스크립트가 없다: ${x.run[1]}`);
+      }
+      tools[name] = { name, run: x.run.slice(), desc: x.desc || '', timeoutMs: Math.min(Number(x.timeoutMs) || TOOL_TIMEOUT_MS, TOOL_TIMEOUT_MAX_MS), parallel: x.parallel === true };
+    }
+  }
+  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools } };
 }
 
 // 훅 입력의 세션 칸
@@ -132,6 +156,7 @@ export class Rig {
       present: r.present, valid: r.present && !r.invalid, invalid: r.invalid, hash: r.hash, usingLastGood: !!(r.invalid && def),
       state: !r.present ? 'none' : !def ? 'invalid' : st.enabled ? 'on' : 'off', // invalid가 있고 def도 있으면 마지막 맞은 정의를 쓰는 중
       hooks: def ? def.hooks.map((h) => ({ at: h.at, from: h.at === 'deliver' ? h.from : undefined, tool: h.tool || undefined, run: h.run, onFail: h.onFail })) : [],
+      tools: def && def.tools ? Object.values(def.tools).map((x) => ({ name: x.name, run: x.run, desc: x.desc, timeoutMs: x.timeoutMs, parallel: x.parallel })) : [], // P183: 켜기 확인 창이 보인다
       guide: !!(def && def.guide), name: def ? def.name : null,
     };
   }
@@ -149,43 +174,52 @@ export class Rig {
   env() { return this.envOverride || cleanEnv(process.env); }
   // 한 길목의 훅들을 차례로 → { action: pass | reject, text, reason, runs, hash }
   //   ctx: { key, at, session, from: { kind, session? }, unit, try, text?, result?, doneText?, match(h) }
+  //   P183: 도구 훅은 ctx.tool·args(tool-before는 args를 고칠 수 있다), tool-after는 ctx.after(exitCode·durationMs·outputTail·logPath). toolRunId는 기록에.
+  //   → tool-before는 고친 args, tool-after는 덧붙일 글들(appends)을 함께 돌려준다
   async runAt(r, ctx) {
     const st = this.store();
     const hooks = r.def.hooks.filter((h) => h.at === ctx.at && (!ctx.match || ctx.match(h)));
     let text = ctx.text;
+    let args = ctx.args != null ? ctx.args.slice() : null;
+    const appends = [];
     const runs = [];
+    const out = (extra) => ({ ...extra, text, ...(args ? { args } : {}), appends, runs, hash: r.hash });
     for (const h of hooks) {
       const input = {
         v: 1, at: ctx.at, rigHash: r.hash, workspace: { key: ctx.key, root: r.root },
         session: ctx.session || null, from: ctx.from || null, unit: ctx.unit || null, try: ctx.try || null,
         ...(text != null ? { text } : {}), ...(ctx.result != null ? { result: ctx.result } : {}), ...(ctx.doneText != null ? { doneText: ctx.doneText } : {}),
+        ...(ctx.tool != null ? { tool: ctx.tool } : {}), ...(args ? { args } : {}), ...(ctx.after || {}),
       };
       const res = await runHook({ run: h.run, cwd: r.root, env: this.env(), input, timeoutMs: h.timeoutMs });
-      const rec = { workspaceKey: ctx.key, at: ctx.at, hookIndex: h.index, argv: h.run, rigHash: r.hash, sessionId: ctx.session ? ctx.session.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.try ? ctx.try.id : null, ms: res.ms };
+      const rec = { workspaceKey: ctx.key, at: ctx.at, hookIndex: h.index, argv: h.run, rigHash: r.hash, sessionId: ctx.session ? ctx.session.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.try ? ctx.try.id : null, ms: res.ms, toolRunId: ctx.toolRunId || null };
       if (!res.ok) {
         const blocked = h.onFail === 'block';
         st.insertHookRun({ ...rec, decision: blocked ? 'blocked' : 'failed', error: res.error, reason: blocked ? `훅 실패(onFail block): ${res.error}` : null });
         try { st.addEvent(rec.sessionId, 'hook_failed', { workspace: ctx.key, at: ctx.at, hook: h.index, argv: h.run, error: res.error, onFail: h.onFail, rigHash: r.hash }); } catch {}
-        runs.push({ hook: h.index, decision: blocked ? 'blocked' : 'failed', error: res.error });
-        if (blocked) return { action: 'reject', text, reason: `rig 훅 ${h.index}(${h.run.join(' ')})이 실패했다: ${res.error}`, runs, hash: r.hash };
+        runs.push({ at: ctx.at, hook: h.index, decision: blocked ? 'blocked' : 'failed', error: res.error });
+        if (blocked) return out({ action: 'reject', reason: `rig 훅 ${h.index}(${h.run.join(' ')})이 실패했다: ${res.error}` });
         continue;
       }
       const o = res.out;
-      const before = text;
+      const before = text; const beforeArgs = args;
       if (o.action === 'reject') {
         st.insertHookRun({ ...rec, decision: 'reject', reason: o.reason || null, note: o.note || null });
-        runs.push({ hook: h.index, decision: 'reject', reason: o.reason || null });
-        return { action: 'reject', text, reason: o.reason || `rig 훅 ${h.index}이 거절했다(까닭 없음)`, runs, hash: r.hash };
+        runs.push({ at: ctx.at, hook: h.index, decision: 'reject', reason: o.reason || null });
+        return out({ action: 'reject', reason: o.reason || `rig 훅 ${h.index}이 거절했다(까닭 없음)` });
       }
       if (text != null && ctx.at === 'deliver') {
         if (o.action === 'rewrite' && typeof o.text === 'string' && o.text.trim()) text = o.text;
         if (o.append) text = `${text.replace(/\s+$/, '')}\n${o.append}`;
       }
+      if (ctx.at === 'tool-before' && o.action === 'rewrite' && Array.isArray(o.args)) args = o.args.map(String);
+      if (ctx.at === 'tool-after' && o.append) appends.push(o.append);
       const changed = before !== text;
-      st.insertHookRun({ ...rec, decision: o.action, reason: o.reason || null, note: o.note || null, beforeText: changed ? before : null });
-      runs.push({ hook: h.index, decision: o.action, ...(changed ? { changed: true } : {}) });
+      const argsChanged = beforeArgs !== args;
+      st.insertHookRun({ ...rec, decision: o.action, reason: o.reason || null, note: o.note || null, beforeText: changed ? before : argsChanged ? JSON.stringify(beforeArgs) : null });
+      runs.push({ at: ctx.at, hook: h.index, decision: o.action, ...(changed || argsChanged ? { changed: true } : {}), ...(o.reason ? { reason: o.reason } : {}) });
     }
-    return { action: 'pass', text, reason: null, runs, hash: r.hash };
+    return out({ action: 'pass', reason: null });
   }
 
   // deliver 훅: 받는 세션의 워크스페이스 rig. target: 받는 세션(띄우기 전 child면 { workspaceKey, name, kind, model, cwd }), from: { kind: human|agent, session? }
@@ -226,6 +260,7 @@ export class Rig {
     if (!r.def) return { ...base, state: 'invalid', text: null };
     const g = r.def.guide;
     const topics = g ? Object.keys(g.topics) : [];
+    base.tools = r.def.tools ? Object.keys(r.def.tools) : []; // P183: atrium tool로 부를 도구 이름
     if (!g) return { ...base, state: 'on', topics, text: null };
     const want = topic ? String(topic) : null;
     const rel = want ? g.topics[want] || (want === 'default' ? g.default : null) : g.default || (topics.length ? g.topics[topics[0]] : null);
@@ -252,7 +287,13 @@ export function rigHandlers(b) {
   const set = async (p, c, on) => { local(c); const r = b.rig.setEnabled(await keyOf(p), on, 'human'); if (b.broadcastWorkspaces) b.broadcastWorkspaces(); return r; };
   return {
     'rig.status': async (p) => b.rig.status(await keyOf(p)),
-    'rig.enable': (p, c) => set(p, c, true),
+    // P183: 켜기는 사람이 확인한 뒤에만(confirm: true). 없으면 켜지 않고 돌 훅·도구의 명령을 돌려준다(창의 확인 창이 보인다).
+    //   정의가 나중에 바뀌어도 다시 묻지 않고, 끌 때는 묻지 않는다
+    'rig.enable': async (p, c) => {
+      local(c);
+      if (!p || p.confirm !== true) return { ...b.rig.status(await keyOf(p || {})), needsConfirm: true };
+      return set(p, c, true);
+    },
     'rig.disable': (p, c) => set(p, c, false),
   };
 }

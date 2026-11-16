@@ -383,6 +383,7 @@ export class Backend {
     if (this.tailscale) this.tailscale.stop();
     // 2026-11-07: 열린 연결이 남아 있으면 http.close가 끝나지 않는다(하위 세션을 띄우며 기다리던 atrium child 요청이 업데이트를 1분 넘게 붙잡았다).
     // 기다리는 /branch 요청에 먼저 답하고, 쉬는 연결은 바로, 나머지는 1초 뒤 끊는다
+    if (this.branch && this.branch.tools) this.branch.tools.stopAll(); // P183: 도는 도구 실행을 끝낸다(장부는 lost)
     const aborted = this.branch && this.branch.abortInflight ? this.branch.abortInflight() : 0;
     if (aborted) this.log(`answered ${aborted} waiting /branch request(s) before stopping`);
     await closeHttp(this.http);
@@ -1390,6 +1391,9 @@ export class Backend {
       else if (claude && plan.gateway && plan.gateway.url) await checkGateway({ ...plan.gateway, name: plan.launcher || '' });
       // G1: 시작 폴더의 워크스페이스
       const ws = await workspaceOf(cwd);
+      // P183: 사람이 띄우며 준 첫 요청(창의 새 세션 대화상자, 사람의 atrium spawn --prompt)은 사람의 deliver다(session.send와 같은 규칙).
+      //   띄우기 전에 받는 쪽 워크스페이스 rig의 deliver 훅(from human)을 지나고, 거절이면 띄우지 않는다(child --prompt와 같은 차례). 하위 세션(p.branch)은 branch.mjs가 한다
+      const firstPrompt = p.prompt ? await this.humanFirstPrompt(p, { ws, name, kind, model, cwd }) : null;
 
       const sessionId = crypto.randomUUID();
       let hookToken = '', settingsPath = '', trust = { needsTrust: null, reason: `${kind}: 예상하지 않음` }, args = [], resumeArgv = null;
@@ -1453,10 +1457,19 @@ export class Backend {
         if (e.code !== 'agent_not_ready') throw e; this.store.addEvent(sessionId, 'agent_not_ready', { kind });
       } // 시작하자마자 대화상자(신뢰 등)에서 막혔다. 이름은 남는다
       rt.term.launchPending = st.agent ? st.agent.launchPending : true;
-      if (p.prompt) this.queue.enqueue(sessionId, p.prompt, { origin: { kind: 'human' } }); // P182: 출처(사람이 띄우며 준 첫 요청. deliver 훅은 session.send에서만)
+      if (firstPrompt) this.queue.enqueue(sessionId, firstPrompt, { origin: { kind: 'human' } }); // P182: 출처(사람이 띄우며 준 첫 요청). P183: 훅이 고친 글
       this.log(`spawned ${name} ${kind} ${sessionId} pane=${hw.paneId} ws=${ws.key} shellReady=${shellReady} trust=${JSON.stringify(trust)}`);
       return { ...out, argv: st.argv };
     } finally { pending.delete(name); }
+  }
+  // P183: 사람이 띄우며 준 첫 요청 → 넣을 글(훅이 고친 것) | null. rig가 거절하면 던진다(세션을 띄우지 않는다)
+  async humanFirstPrompt(p, { ws, name, kind, model, cwd }) {
+    if (!p.prompt) return null;
+    const text = toLF(String(p.prompt));
+    if (p.branch || !this.rig) return text;
+    const h = await this.rig.deliver({ target: { workspaceKey: ws.key, name, kind, model, cwd }, workspaceKey: ws.key, from: { kind: 'human' }, text });
+    if (h.action === 'reject') throw keyed(apiError('rig_rejected', `rig의 deliver 훅이 첫 요청을 거절해 세션을 띄우지 않았습니다: ${h.reason}`), 'rig.spawnRejected', { reason: h.reason });
+    return h.text;
   }
   // 판이 패널을 만드는 동안(작업 공간 만들기 → 세션 등록) 그 패널의 pane_created를 판에 올리지 않게 막는다(G2)
   async withNewPane(create, register) {
