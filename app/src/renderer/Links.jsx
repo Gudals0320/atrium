@@ -14,6 +14,8 @@ import { DOCK_LABEL_ZOOM, dockLabelParts } from './lib/dock-links.js';
 import { useT, tMsg, errText, fmtTime } from './lib/i18n.js';
 import { linkLabel } from '../../../backend/src/links.mjs';
 import { shownRole } from './lib/roles.js'; // P141(#17)
+import { peerView, relValue } from './lib/link-relation.js'; // P175
+import { PEER_ROLE } from '../../../backend/src/relations.mjs'; // P175
 import { useDialog } from './dialog.js';
 
 const ACTIVE_MS = 30 * 60 * 1000;
@@ -39,6 +41,10 @@ export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const [hover, setHover] = useState(false);
   const [path, lx0, ly0] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
   if (!link) return null;
+  return <LinkEdgeBody {...{ id, path, lx0, ly0, sourceX, sourceY, targetX, targetY, data, selected, t, link: peerView(link), to, lab, dialogOn, zoom, hover, setHover }} />;
+}
+
+function LinkEdgeBody({ id, path, lx0, ly0, sourceX, sourceY, targetX, targetY, data, selected, t, link, to, lab, dialogOn, zoom, hover, setHover }) {
   const [lx, ly] = shifted(lx0, ly0, data);
   const active = to && to.state === 'working' && link.lastAt && Date.now() - link.lastAt < ACTIVE_MS && ['prompt', 'target_submitted', 'target_working'].includes(link.lastKind);
   const kind = link.role ? 'role' : link.observed ? 'observed' : 'spawned';
@@ -59,7 +65,7 @@ export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
     {/* P98·P108: 비켜 놓은 최종 글 자리가 세션 위면 줄인 ● 점도 그리지 않는다 */}
     {lab && !linkLabelHidden(data, { hot: !!selected || dialogOn, x: lx, y: ly }) && <EdgeLabelRenderer>
       <div className={`mt-edge-label ${kind}${link.spawned ? ' spawn' : ''}${temp}${level === 'dot' ? ' compact' : ''} lv-${level}${lab.awake ? ' awake' : ' rest'}${hot ? ' hot' : ''} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, '--fitw': `${hot ? 460 : fit.maxWidth}px` }}
-        data-link={id} data-kind={kind} data-transient={link.transient ? '1' : undefined} data-level={level} data-awake={lab.awake ? lab.why : 'rest'} data-more={lab.more || 0} data-pair={lab.pair.length}
+        data-link={id} data-kind={kind} data-relation={link.relation ? link.relation.relation : undefined} data-transient={link.transient ? '1' : undefined} data-level={level} data-awake={lab.awake ? lab.why : 'rest'} data-more={lab.more || 0} data-pair={lab.pair.length}
         onClick={(e) => { e.stopPropagation(); openDialog({ kind: 'link', linkId: id }); }} title={link.transient ? `${t('links.edgeTitle', { label: label || t('links.link') })}\n${t('tempLinks.title')}` : t('links.edgeTitle', { label: label || t('links.link') })} {...on}>
         {level === 'chip' ? <>
           <span className="mt-edge-text">{chipText}</span>
@@ -68,6 +74,7 @@ export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
         </> : <>
           {link.spawned && <span className="mt-edge-tag">{t('links.spawned')}</span>}
           {link.transient && <span className="mt-edge-tag temp" data-role="link-temp">{t('tempLinks.tag')}</span>}
+          {link.peer && link.role !== PEER_ROLE && <span className="mt-edge-tag peer" data-role="link-peer">{t('relations.rel.peer')}</span>}
           <span className="mt-edge-text">{label || t('links.link')}</span>
           {more}
           {(link.observed || link.role) && <Pill s={to} />}
@@ -93,21 +100,41 @@ export function RepoEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   </>;
 }
 
-// 판에서 A → B를 이을 때 역할을 묻는다(F2)
+// P175: 하위 / 동료 토글(잇는 상자와 선 기록이 같은 모양). value: 'sub'|'peer'|그 밖(둘 다 꺼짐)
+export function RelToggle({ value, onChange, disabled }) {
+  const t = useT();
+  return (
+    <div className="mt-reltoggle" role="radiogroup" aria-label={t('linkRel.as')} data-role="rel-toggle" data-value={value || ''}>
+      {['sub', 'peer'].map((k) => (
+        <button key={k} type="button" role="radio" aria-checked={value === k} className={`mt-reltoggle-opt${value === k ? ' on' : ''}`} data-rel={k} disabled={disabled} onClick={() => value !== k && onChange(k)}>{t(`relations.rel.${k}`)}</button>
+      ))}
+    </div>
+  );
+}
+
+// 고른 관계의 기본 역할 이름(화면 글). 동료는 판의 "동료"(저장할 때 PEER_ROLE로 돌린다)
+const roleDefault = (t, rel) => (rel === 'peer' ? t('relations.peerRole') : t('links.defaultRole'));
+
+// 판에서 A → B를 이을 때 역할을 묻는다(F2). P175: 같은 자리에서 하위·동료를 고른다(기본 하위)
 export function RoleDialog({ from, to, onClose }) {
   const t = useT();
   const a = useStore((st) => st.sessions.get(from));
   const b = useStore((st) => st.sessions.get(to));
+  const [rel, setRel] = useState('sub');
   const [role, setRole] = useState(() => t('links.defaultRole'));
+  const [edited, setEdited] = useState(false); // 사람이 역할 이름을 고쳤으면 관계를 바꿔도 그대로
   const [busy, setBusy] = useState(false);
   const box = useDialog(() => onClose()); // P52
   if (!a || !b) return null;
+  function pickRel(k) { setRel(k); if (!edited) setRole(roleDefault(t, k)); }
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
+    const typed = role.trim();
+    const sent = rel === 'peer' && typed === t('relations.peerRole') ? PEER_ROLE : typed; // 판의 기본 낱말로 저장(창은 지금 언어로 보인다)
     try {
-      const r = await api.call('link.create', { from, to, role: role.trim() });
-      toast(t('links.created', { a: a.name, b: b.name, role: role.trim() }));
+      const r = await api.call('link.create', { from, to, role: sent, relation: rel });
+      toast(t(rel === 'peer' ? 'linkRel.createdPeer' : 'links.created', { a: a.name, b: b.name, role: typed }));
       onClose(r);
     } catch (err) { toast(t('links.createFail', { error: errText(err) }), 'error'); setBusy(false); }
   }
@@ -115,7 +142,9 @@ export function RoleDialog({ from, to, onClose }) {
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form ref={box} className="mt-modal" onSubmit={submit} data-role="link-role">
         <h3>{t('links.roleTitle', { a: a.name, b: b.name })}</h3>
-        <label>{t('links.roleLabel', { b: b.name })}<input autoFocus value={role} onChange={(e) => setRole(e.target.value)} data-field="role" maxLength={40} /></label>
+        <div className="mt-reltoggle-row"><span className="mt-reltoggle-label">{t('linkRel.asLabel', { b: b.name, a: a.name })}</span><RelToggle value={rel} onChange={pickRel} disabled={busy} /></div>
+        <div className="mt-card-sub" data-role="rel-help">{t(rel === 'peer' ? 'linkRel.peerHelp' : 'linkRel.subHelp', { a: a.name, b: b.name })}</div>
+        <label>{t('links.roleLabel', { b: b.name })}<input autoFocus value={role} onChange={(e) => { setRole(e.target.value); setEdited(true); }} data-field="role" maxLength={40} /></label>
         <div className="mt-card-sub">{t('links.roleHelp1', { a: a.name, b: b.name })}<span className="mono">{b.agentName}</span>{t('links.roleHelp2', { a: a.name, pane: b.paneId, role: role.trim() || t('links.role') })}</div>
         <div className="mt-card-actions">
           <button className="mt-btn primary" disabled={busy || !role.trim()} data-action="link-submit">{busy ? t('links.linking') : t('links.linkBtn')}</button>
@@ -154,6 +183,13 @@ export function LinkPanel({ linkId, onClose }) {
       onClose();
     } catch (e) { toast(t('links.unlinkFail', { error: errText(e) }), 'error'); }
   }
+  const [relBusy, setRelBusy] = useState(false);
+  async function setRelation(k) { // P175: 선 기록에서 하위·동료 바꾸기(세션 맵 관계와 같은 뜻, 사람이 정한 관계)
+    setRelBusy(true);
+    try { await api.call('relation.set', { a: link.from, b: link.to, relation: k }); toast(t(k === 'peer' ? 'mmLine.relPeer' : 'mmLine.relSub', { name: b ? b.name : '?', up: a ? a.name : '?' })); }
+    catch (e) { toast(t('linkRel.setFail', { error: errText(e) }), 'error'); }
+    setRelBusy(false);
+  }
   async function keep() { // P171: 일시 선을 영구로
     try { await api.call('link.keep', { link: linkId }); toast(t('tempLinks.kept')); }
     catch (e) { toast(t('tempLinks.keepFail', { error: errText(e) }), 'error'); }
@@ -170,6 +206,11 @@ export function LinkPanel({ linkId, onClose }) {
         <span className="mt-node-sp" />
         <button className="mt-btn small ghost" onClick={() => { onClose(); getState().navigateTo && b && getState().navigateTo(b.sessionId); }} data-action="link-go">{t('links.goTo', { name: b ? b.name : '' })}</button>
         <button className="mt-x" onClick={onClose} title={t('common.close')}>×</button>
+      </div>
+      <div className="mt-linkpanel-sub mt-reltoggle-row" data-role="link-relation">
+        <span className="mt-reltoggle-label">{t('linkRel.asLabel', { b: b ? b.name : '?', a: a ? a.name : '?' })}</span>
+        <RelToggle value={relValue(link)} onChange={setRelation} disabled={relBusy || !a || !b} />
+        {link.relation && link.relation.relation === 'none' && <span className="mt-card-sub">{t('relations.rel.none')}</span>}
       </div>
       <div className="mt-linkpanel-sub">{t('links.agentName')} <span className="mono">{link.toAgentName}</span> · {t('links.panelInfo', { pane: link.toPaneId, n: link.count })}</div>
       {link.transient && <div className="mt-linkpanel-sub" data-role="link-temp-note">{t('tempLinks.note')}</div>}

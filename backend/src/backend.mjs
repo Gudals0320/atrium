@@ -72,6 +72,7 @@ import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META, syncWsGroups, w
 import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
 import { codexHomeOf } from './codex-models.mjs';
 import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171: 일시 연결
+import { linkRelationPlan, linkDefaultRole, LINK_CHOICES } from './relations.mjs'; // P175: 잇는 자리에서 하위·동료
 import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs'; // P66: 판의 이름(표시 이름)과 에이전트 주소
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 // HTTP 서버 닫기(2026-11-07): http.close는 열린 연결이 모두 끝나야 끝나므로, 쉬는 연결은 바로, 나머지는 forceMs 뒤 끊는다
@@ -1706,13 +1707,20 @@ export class Backend {
     return null;
   }
   // 판에 보일 연결: 지우지 않았고 두 세션이 모두 판에 있는 것
-  linksOpen() { return this.store.links().filter((l) => this.sessions.has(l.from) && this.sessions.has(l.to)).map((l) => this.linkView(l)); }
-  linkView(l) {
+  linksOpen() {
+    const idx = this.branch && this.branch.relIndex ? this.branch.relIndex({ withLinks: true }) : null; // P175: 선마다 관계(한 번만 센다)
+    return this.store.links().filter((l) => this.sessions.has(l.from) && this.sessions.has(l.to)).map((l) => this.linkView(l, idx));
+  }
+  linkView(l, idx = null) {
     const a = this.sessions.get(l.from), b = this.sessions.get(l.to);
+    // P175: 선의 지금 관계(하위·동료·독립, 출처, 위 세션). 선 이름표와 선 기록의 하위·동료 토글이 쓴다
+    const ri = idx || (this.branch && this.branch.relIndex ? this.branch.relIndex({ withLinks: true }) : null);
+    const rel = ri ? ri.ofEdge(l.from, l.to) : null;
+    const relation = rel ? { relation: rel.relation, source: rel.source, up: rel.up } : null;
     // P159: 동료·독립으로 정한 쌍의 선에는 띄울 때 역할 이름(워커 등)을 보이지 않는다(저장은 그대로, storedRole)
-    const ex = l.role && this.branch && this.branch.relIndex ? this.branch.relIndex().explicitOf(l.from, l.to) : null;
+    const ex = l.role && ri ? ri.explicitOf(l.from, l.to) : null;
     if (ex && ex.relation !== 'sub') l = { ...l, role: null, storedRole: l.role };
-    return { ...l, fromName: shownName(a), toName: shownName(b), toAgentName: b ? b.agentName : null, toPaneId: b ? b.paneId : null, ...this.linkPromptView(l) };
+    return { ...l, relation, fromName: shownName(a), toName: shownName(b), toAgentName: b ? b.agentName : null, toPaneId: b ? b.paneId : null, ...this.linkPromptView(l) };
   }
   // P67: prompts(지시 수, 이름표의 +n), promptAt(마지막 지시 시각, 이름표가 물러나는 기준)
   linkPromptView(l) {
@@ -1874,15 +1882,21 @@ export class Backend {
   linkCreate(p) {
     const a = this.resolve(p.from), b = this.resolve(p.to);
     if (a === b) throw apiError('bad_request', "세션을 자기 자신과 연결할 수 없습니다.");
-    const role = String(p.role || '').trim();
+    // P175: 잇는 자리에서 고른 관계(sub 하위, 기본 | peer 동료). 동료면 역할을 비워도 "동료"
+    const choice = p.relation == null || p.relation === '' ? 'sub' : String(p.relation);
+    if (!LINK_CHOICES.includes(choice)) throw apiError('bad_request', `관계는 ${LINK_CHOICES.join(', ')} 가운데 하나입니다: ${choice}`);
+    const role = String(p.role || '').trim() || linkDefaultRole(choice) || '';
     if (!ROLE_RE.test(role)) throw apiError('bad_request', "역할은 1~40자로 입력하세요. 줄바꿈, 따옴표, $, \\는 사용할 수 없습니다.");
+    // 관계를 먼저 정한다(하위의 고리 검사가 실패하면 선도 만들지 않는다). 하위는 자동 규칙(역할 선 = 하위)으로 되면 저장하지 않는다
+    const plan = this.branch && this.branch.relationBetween ? linkRelationPlan(choice, this.branch.relationBetween(a.sessionId, b.sessionId), a.sessionId) : null;
+    const rel = plan ? this.branch.setRelation(a, b, plan, { source: 'user', by: 'user' }) : null;
     const l = this.ensureLink(a.sessionId, b.sessionId, { role });
     const text = roleNotice({ role, name: b.name, kind: b.kind || 'claude' });
     const d = this.queue.enqueue(a.sessionId, text);
     this.store.updateLink(l.linkId, { notifyDelivery: d.deliveryId });
     this.linkEvent(l, 'role', role, { deliveryId: d.deliveryId, notice: text });
-    this.store.addEvent(a.sessionId, 'link_created', { to: b.name, role });
-    return { link: this.linkView(this.store.getLink(l.linkId)), deliveryId: d.deliveryId, notice: text };
+    this.store.addEvent(a.sessionId, 'link_created', { to: b.name, role, relation: choice });
+    return { link: this.linkView(this.store.getLink(l.linkId)), deliveryId: d.deliveryId, notice: text, relation: choice, relationSet: rel ? rel.relation : null };
   }
   // 연결 끊기. 역할이 있었으면 A에게 끊겼다고 알린다. 선은 판에서 빠지고 기록은 남는다
   linkDelete(p) {
