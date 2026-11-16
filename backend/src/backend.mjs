@@ -341,6 +341,7 @@ export class Backend {
       processInfo: (paneId) => this.adapter.processInfo(paneId),
       controllers: () => this.relay.stats(),
       serverPid: () => this.adapter.serverPid(),
+      log: (m) => this.log(m), // P168: 버린 이상한 값
     });
     this.resources.start((snap) => this.api.broadcast('resources', snap));
     this.store.addEvent(null, 'backend_started', { pid: process.pid, previousRun: this.previousRun });
