@@ -85,19 +85,19 @@ test('정의 검사: writes·pre-tool·stopVerify를 받고, 잘못된 값은 �
 });
 
 // ---------- Claude Code 설정 파일 ----------
-test('쓰기 범위 false → 설정 파일 permissions.deny에 Edit·Write. 보호 파일 → Edit(//경로)·Write(//경로). 증폭이 없으면 설정 파일은 지금과 같다', () => {
+test('쓰기 범위 false → 설정 파일 permissions.deny에 Edit(//**). 보호 파일 → Edit(//경로)(Write(경로)는 Claude Code가 never matches로 본다). 증폭이 없으면 설정 파일은 지금과 같다', () => {
   const dir = tmp();
   const root = path.join(dir, 'repo');
   const ro = claudeSettingsAmp({ writes: false, stopVerify: false, preTool: [], protectedFiles: ['tools/judge.py'], root, cwd: root });
-  assert.deepEqual(ro.deny.slice(0, 2), ['Edit', 'Write']);
+  assert.deepEqual(ro.deny.slice(0, 1), ['Edit(//**)']);
   const r = rulePath(path.join(root, 'tools', 'judge.py'));
   assert.ok(r.startsWith('//'), r);
   if (process.platform === 'win32') assert.match(r, /^\/\/[a-z]\//, '드라이브 글자는 /c/ 꼴(문서: Windows는 POSIX 꼴로 맞춘다)');
-  assert.ok(ro.deny.includes(`Edit(${r})`) && ro.deny.includes(`Write(${r})`));
+  assert.ok(ro.deny.includes(`Edit(${r})`) && !ro.deny.some((x) => x.startsWith('Write(')));
   // 워크트리 세션은 그 워크트리 안의 같은 파일도 막는다
   const wt = path.join(root, '.claude', 'worktrees', 'w1');
   const inWt = claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: ['a.txt'], root, cwd: path.join(wt, 'sub') });
-  assert.deepEqual(inWt.deny, [`Edit(${rulePath(path.join(root, 'a.txt'))})`, `Write(${rulePath(path.join(root, 'a.txt'))})`, `Edit(${rulePath(path.join(wt, 'a.txt'))})`, `Write(${rulePath(path.join(wt, 'a.txt'))})`]);
+  assert.deepEqual(inWt.deny, [`Edit(${rulePath(path.join(root, 'a.txt'))})`, `Edit(${rulePath(path.join(wt, 'a.txt'))})`]);
   assert.deepEqual(inWt.hooks, {}, 'deny만 있으면 hook 시간은 그대로');
   assert.equal(claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: [], root, cwd: root }), null);
 
@@ -123,7 +123,7 @@ test('pre-tool 훅·쓰기 경로 목록 → PreToolUse hook 시간을 늘리고
   assert.deepEqual(b.hooks, { PreToolUse: { timeout: 65, onFailure: 'block' } });
   const c = claudeSettingsAmp({ writes: ['x/'], stopVerify: false, preTool: [], protectedFiles: [], root: dir, cwd: dir });
   assert.deepEqual(c, { deny: [], hooks: { PreToolUse: { timeout: 10 } } });
-  const f = writeSessionSettings({ file: path.join(dir, 's.json'), hookUrl: 'http://127.0.0.1:1/hooks/claude', token: 't', sessionId: 's', amp: { ...b, deny: ['Edit'] } });
+  const f = writeSessionSettings({ file: path.join(dir, 's.json'), hookUrl: 'http://127.0.0.1:1/hooks/claude', token: 't', sessionId: 's', amp: { ...b, deny: ['Edit(//**)'] } });
   const j = JSON.parse(fs.readFileSync(f, 'utf8'));
   assert.deepEqual({ t: j.hooks.PreToolUse[0].hooks[0].timeout, f: j.hooks.PreToolUse[0].hooks[0].onFailure }, { t: 65, f: 'block' });
   assert.equal(j.hooks.Stop[0].hooks[0].timeout, 2);
@@ -152,7 +152,7 @@ test('RigAmp: 자리 세션만 증폭한다(자리 없는 세션·꺼진 rig·�
   const cx = B.add('rocx-1', { seat: 'rocx', kind: 'codex' });
   const plain = B.add('loose');
   const gated = B.add('gated-1', { seat: 'gated' });
-  assert.deepEqual(B.b.rigAmp.claudeAmp(ro).deny.slice(0, 2), ['Edit', 'Write']);
+  assert.deepEqual(B.b.rigAmp.claudeAmp(ro).deny.slice(0, 1), ['Edit(//**)']);
   assert.ok(B.b.rigAmp.claudeAmp(ro).deny.some((r) => r.startsWith('Edit(') && r.endsWith('/secret/keep.txt)')), '보호 파일(rigProtected)');
   assert.ok(B.b.rigAmp.claudeAmp(gated).deny.every((r) => r.includes('secret/keep.txt')), '쓰기 제한 없는 자리도 보호 파일은 막는다');
   assert.equal(B.b.rigAmp.claudeAmp(plain), null);
@@ -185,7 +185,7 @@ test('RigAmp.syncSettings: 자리를 정한 뒤 설정 파일에 증폭을 넣�
   assert.equal(B.b.rigAmp.syncSettings(s), false);
   s.rigSeat = 'ro';
   assert.equal(B.b.rigAmp.syncSettings(s), true);
-  assert.deepEqual(JSON.parse(fs.readFileSync(s.settingsPath, 'utf8')).permissions.deny, ['Edit', 'Write']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(s.settingsPath, 'utf8')).permissions.deny, ['Edit(//**)']);
   assert.equal(B.b.rigAmp.syncSettings(s), false, '같은 증폭이면 다시 쓰지 않는다');
   s.rigSeat = null;
   assert.equal(B.b.rigAmp.syncSettings(s), true);

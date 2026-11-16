@@ -6,7 +6,7 @@
 //   hooks[].at "pre-tool": Claude Code 도구 호출 직전 관문. 거르는 칸은 match(도구 이름 정규식)와 seat(자리 이름 또는 배열)
 //   stopVerify: true(정의 전체) 또는 seats.<자리>.stopVerify(자리가 이긴다): 열린 시도를 쥔 자리 세션의 턴 끝을 한 번 돌려보낸다
 // - 종류별:
-//   Claude Code: 세션 설정 파일 permissions.deny(writes false → Edit·Write, 사람만 고치는 파일 → Edit(//경로)·Write(//경로)),
+//   Claude Code: 세션 설정 파일 permissions.deny(writes false → Edit(//**), 사람만 고치는 파일 → Edit(//경로)),
 //     PreToolUse를 판이 기다려 답함(pre-tool 훅, writes 경로 목록), Stop에 decision block(stopVerify).
 //   Codex: writes false → -s read-only(Windows에서 localhost HTTP는 막히지 않아 atrium done을 칠 수 있다, P189 확인).
 //     경로 목록은 Codex가 작업 폴더를 늘 쓰기 가능으로 두어 좁히지 못하므로 붙이지 않는다.
@@ -19,6 +19,7 @@ export const AMP_ATS = ['pre-tool'];
 // Symbol이라 에이전트의 /branch/child 본문(JSON)이나 판 API로는 넣지 못한다(에이전트는 자리를 정하지 못한다)
 export const SEAT_SPAWN = Symbol.for('atrium.rigSeatSpawn');
 export const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+export const EDIT_ALL = 'Edit(//**)'; // 모든 드라이브의 모든 파일(문서: Windows 경로는 /c/… 꼴로 맞춘 뒤 맞춘다)
 export const PRE_TOOL_TIMEOUT_PAD_SEC = 5; // 훅 시간 제한 위에 판이 답할 여유
 export const PRE_TOOL_TIMEOUT_MAX_SEC = 70;
 export const PRE_TOOL_WRITES_TIMEOUT_SEC = 10; // 쓰기 범위만 볼 때(판 안에서 끝난다)
@@ -112,8 +113,11 @@ function protectBases(root, cwd) {
 export function claudeSettingsAmp(x) {
   if (!x) return null;
   const deny = [];
-  if (x.writes === false) deny.push('Edit', 'Write');
-  for (const f of x.protectedFiles || []) for (const base of protectBases(x.root, x.cwd)) { const r = rulePath(path.resolve(base, f)); deny.push(`Edit(${r})`, `Write(${r})`); }
+  // writes false: 모든 경로의 Edit(파일을 고치는 모든 도구)을 거부한다. 도구 이름만 쓰면(Edit, Write) 도구가 맥락에서 빠져
+  //   모델이 막힌 줄 모르고 셸로 파일을 썼다(P189 개발용 판). 경로 규칙이면 도구는 남고 호출이 "denied by your permission settings"로 돌아온다
+  if (x.writes === false) deny.push(EDIT_ALL);
+  // 경로 규칙은 Edit(…)만: Claude Code는 Edit 규칙을 파일을 고치는 모든 도구(Write·MultiEdit·NotebookEdit)에 쓰고, Write(경로)는 "never matches"라고 경고한다(P189 개발용 판)
+  for (const f of x.protectedFiles || []) for (const base of protectBases(x.root, x.cwd)) deny.push(`Edit(${rulePath(path.resolve(base, f))})`);
   const hooks = {};
   const waitPre = x.preTool.length || Array.isArray(x.writes);
   if (waitPre) {
