@@ -2402,3 +2402,27 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 .mt-cmd-field[data-voice="1"] > .mt-cmd-input { color: transparent; caret-color: var(--chrome-text); }
 .mt-cmd-field[data-voice="1"] .mt-cmd-mirror { color: var(--chrome-text); }
 .mt-cmd-field[data-voice="1"] .mt-cmd-live { color: color-mix(in srgb, var(--chrome-text) 45%, transparent); }
+
+/* P172: 같은 받는 세션의 대기 글 묶음(DeliveryQueue.jsx QueueGroup). 머리(@이름·상태·대기 수) 아래에 보낼 차례대로 한 줄씩 */
+.mt-dq { display: flex; flex-direction: column; gap: 2px; width: min(620px, 100%); box-sizing: border-box; padding: 6px 8px 6px; border-radius: 14px; background: var(--chrome-bg); border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); box-shadow: var(--chrome-shadow); font-size: 12.5px; }
+.mt-dq-head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 4px 2px; }
+.mt-dq-head > b { flex: none; white-space: nowrap; }
+.mt-dq-state { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-dq-count { margin-left: auto; flex: none; font-weight: 650; color: var(--warn); white-space: nowrap; }
+.mt-dq-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; max-height: 40vh; overflow-y: auto; }
+.mt-dq-item { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 4px; border-radius: 8px; min-width: 0; outline: none; }
+.mt-dq-item:hover, .mt-dq-item:focus-within { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.mt-dq-item:focus-visible { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+.mt-dq-no { flex: none; width: 16px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+.mt-dq-text { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-dq-text i { color: var(--dim); }
+.mt-dq-st { flex: 0 1 auto; min-width: 0; max-width: 40%; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.mt-dq-item.ds-queued .mt-dq-st { color: var(--warn); }
+.mt-dq-item[data-editing="1"] .mt-dq-text { color: var(--dim); }
+.mt-dq-acts { flex: none; display: flex; align-items: center; gap: 2px; }
+.mt-dq-acts .mt-btn.icon { min-width: 24px; padding: 0 5px; }
+.mt-dq-acts .mt-btn.now { color: var(--accent, var(--text)); }
+.mt-dq-acts .mt-btn:disabled { color: color-mix(in srgb, var(--dim) 60%, transparent); cursor: default; }
+.mt-dq-nowwrap { display: inline-flex; }
+.mt-dq-editrow { list-style: none; }
+.mt-dq-editrow .mt-delivery.mt-delivery-edit { width: 100%; box-shadow: none; }

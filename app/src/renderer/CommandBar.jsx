@@ -23,6 +23,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import { api } from './api.js';
 import { useStore, toast, setBottomShown } from './store.js';
 import { deliveryText } from './lib/labels.js';
+import { DeliveryEdit, QueueGroup, useDeliveryEditing } from './DeliveryQueue.jsx'; // P158 고치기, P172 같은 세션 대기 묶음
+import { queueView } from './lib/delivery-queue.js'; // P172
 import { ThreadPanel, ThreadToggle, commandDraft } from './Thread.jsx';
 import { Icon, Mark } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
@@ -93,67 +95,6 @@ function useAutoHide(rootRef, { draft, popup }) {
   }, [shown, zone, focus, draft, popup, pinned]);
   useEffect(() => { setBottomShown(shown); }, [shown]);
   return shown;
-}
-
-// P158: 수정 실패 까닭(이미 보냄, 이미 끝남, 빈 글)
-function editErr(t, e) {
-  if (e && e.code === 'already_sent') return t('deliveryEdit.alreadySent');
-  if (e && e.code === 'not_editable') return t('deliveryEdit.notEditable');
-  if (e && e.code === 'empty') return t('deliveryEdit.empty');
-  return t('deliveryEdit.failed', { error: errText(e) });
-}
-
-// P158: 고치는 칩. Enter 저장(Shift·Alt+Enter 줄바꿈), Esc 되돌림. 저장하면 대기열 차례 그대로 새 글로 간다.
-//   저장하지 않고 사라지면(되돌림, 스레드 열기 등) 붙잡은 전달을 놓는다. 고치는 동안 그 전달이 끝나면(다른 곳에서 취소 등) 닫는다
-function DeliveryEdit({ d, text, onDone }) {
-  const t = useT();
-  const [val, setVal] = useState(text);
-  const [busy, setBusy] = useState(false);
-  const ref = useRef(null);
-  const settled = useRef(false);
-  useEffect(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, []);
-  useLayoutEffect(() => { const el = ref.current; if (!el) return; el.style.height = 'auto'; const full = el.scrollHeight + (el.offsetHeight - el.clientHeight); el.style.height = `${Math.min(full, 220)}px`; el.style.overflowY = full > 220 ? 'auto' : 'hidden'; }, [val]); // 테두리까지 더해 한 줄에 스크롤 막대가 생기지 않게
-  useEffect(() => () => { if (!settled.current) api.call('delivery.release', { deliveryId: d.deliveryId }).catch(() => {}); }, [d.deliveryId]);
-  useEffect(() => {
-    if (d.status === 'queued' || settled.current) return;
-    settled.current = true;
-    if (['sending', 'sent', 'confirmed', 'unconfirmed'].includes(d.status)) toast(t('deliveryEdit.alreadySent'), 'error');
-    onDone(null);
-  }, [d.status]); // eslint-disable-line react-hooks/exhaustive-deps
-  const cancel = () => { settled.current = true; api.call('delivery.release', { deliveryId: d.deliveryId }).catch(() => {}); onDone(null); };
-  async function save() {
-    if (busy) return;
-    if (!val.trim()) { toast(t('deliveryEdit.empty'), 'error'); return; }
-    if (val === text) { cancel(); return; }
-    setBusy(true);
-    try {
-      const r = await api.call('delivery.update', { deliveryId: d.deliveryId, text: val });
-      settled.current = true;
-      onDone(r.text ?? val);
-    } catch (e) {
-      setBusy(false);
-      toast(editErr(t, e), 'error');
-      if (e && (e.code === 'already_sent' || e.code === 'not_editable' || e.code === 'not_found')) { settled.current = true; onDone(null); }
-    }
-  }
-  const onKey = (e) => {
-    if (e.nativeEvent.isComposing) return;
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); return; }
-    if (e.key === 'Enter' && !e.shiftKey && !e.altKey) { e.preventDefault(); save(); return; }
-    if (e.key === 'Enter' && e.altKey) { e.preventDefault(); const el = e.currentTarget; const r = insertNewline(el.value, el.selectionStart, el.selectionEnd); setVal(r.text); requestAnimationFrame(() => el.setSelectionRange(r.caret, r.caret)); }
-  };
-  return (
-    <div className="mt-delivery mt-delivery-edit ds-queued" data-delivery={d.deliveryId} data-status={d.status} data-editing="1">
-      <div className="mt-delivery-edit-head"><b>@{d.name || '?'}</b><span className="mt-delivery-st">{t('deliveryEdit.holding')}</span></div>
-      <textarea ref={ref} className="mt-delivery-edit-input" rows={1} value={val} disabled={busy} spellCheck={false} data-role="delivery-edit-input" aria-label={t('deliveryEdit.inputLabel')}
-        onChange={(e) => setVal(e.target.value)} onKeyDown={onKey} />
-      <div className="mt-delivery-edit-foot">
-        <span className="mt-delivery-edit-hint">{t('deliveryEdit.hint')}</span>
-        <button className="mt-btn ghost small" data-action="delivery-edit-cancel" onClick={cancel} disabled={busy}>{t('common.cancel')}</button>
-        <button className="mt-btn small primary" data-action="delivery-edit-save" onClick={save} disabled={busy}>{t('common.save')}</button>
-      </div>
-    </div>
-  );
 }
 
 export const CommandBar = forwardRef(function CommandBar(_props, ref) {
@@ -343,16 +284,13 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
 
   // 명령 바 아래 칩: 아직 가는 중인 전달은 늘, 끝난 전달은 잠깐만(지난 기록은 Thread에 있다). 실패는 조금 더 오래 둔다
   const now = useTick(2000);
-  const recent = [...deliveries.values()].filter((d) => !FINAL.has(d.status) || (d._at && now - d._at < (d.status === 'failed' || d.status === 'unconfirmed' ? FAILED_SHOW_MS : DONE_SHOW_MS))).slice(-6).reverse();
+  // P172: 같은 받는 세션의 대기 글은 한 상자(groups), 나머지는 칩 하나씩(recent)
+  const { groups, chips: recent } = queueView(deliveries.values(), { now, doneMs: DONE_SHOW_MS, failedMs: FAILED_SHOW_MS });
   const threadOpen = useStore((st) => st.threadOpen);
   // P158: 대기 중 칩의 수정. 백엔드가 그 전달을 붙잡고(보내지 않음) 전체 글을 돌려주면 칩이 글 칸으로 바뀐다
-  const [editing, setEditing] = useState(null); // { id, text }
-  async function startEdit(d) {
-    try {
-      const r = await api.call('delivery.hold', { deliveryId: d.deliveryId });
-      setEditing({ id: d.deliveryId, text: r.text ?? sentTexts[d.deliveryId] ?? '' });
-    } catch (e) { toast(editErr(t, e), 'error'); }
-  }
+  const edit = useDeliveryEditing(sentTexts);
+  const { editing, startEdit } = edit;
+  const setEditing = edit.stopEdit;
   const shown = useAutoHide(rootRef, { draft: text.trim().length > 0, popup: options.length > 0 || threadOpen || missionOpen }); // P153: 세션 맵이 열린 동안 늘 보인다
   // P83: 손가락 화면. 손잡이 단추, 키보드 위로 올리기, 바 밖을 탭하면 닫기
   const [coarse] = useState(isCoarse);
@@ -425,10 +363,11 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       {/* P11: Thread와 전달 칩은 칩 줄 위로 띄운다 */}
       <div className="mt-bottom-above">
       <ThreadPanel />
-      {recent.length > 0 && !threadOpen && (
+      {(recent.length > 0 || groups.length > 0) && !threadOpen && (
         <div className="mt-deliveries">
+          {groups.map((g) => <QueueGroup key={g.sessionId} g={g} texts={sentTexts} edit={edit} onSaved={(id, text) => setSentTexts((x) => ({ ...x, [id]: text }))} />)}
           {recent.map((d) => (editing && editing.id === d.deliveryId ? (
-            <DeliveryEdit key={d.deliveryId} d={d} text={editing.text} onDone={(text) => { setEditing(null); if (text != null) setSentTexts((x) => ({ ...x, [d.deliveryId]: text })); }} />
+            <DeliveryEdit key={d.deliveryId} d={d} text={editing.text} onDone={(text) => { setEditing(); if (text != null) setSentTexts((x) => ({ ...x, [d.deliveryId]: text })); }} />
           ) : (
             <div key={d.deliveryId} className={`mt-delivery ds-${d.status}`} data-delivery={d.deliveryId} data-status={d.status}>
               <b>@{d.name || '?'}</b>

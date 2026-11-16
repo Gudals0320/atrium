@@ -56,6 +56,7 @@ const ADDED_COLUMNS = {
   sessions: { touched_at: 'INTEGER', kind: 'TEXT', origin: 'TEXT', parent_session_id: 'TEXT', workspace_key: 'TEXT', flavor: 'TEXT', extra_args: 'TEXT', label: 'TEXT', start_command: 'TEXT', harness: 'TEXT' }, // harness(P115): Claude Code 밖 하네스를 다시 띄울 값(JSON: 모델, 추가 인자, 호출자, 연결, 하네스 세션 ID) // start_command(호출자의 실행 명령, 예: mywrap claude)는 P97 // label(판의 이름, 사람이 정한 표시 이름)은 P66 // extra_args(호출자의 claude 추가 인자, JSON 배열)는 P33 // kind·origin·parent는 P4, workspace_key는 P5, flavor(띄운 방법: 런처의 아이콘)는 P25
   workspaces: { x: 'REAL', y: 'REAL' }, // P6a: 영역의 자리(빈 워크스페이스, 영역 옮기기)
   nodes: { size: 'TEXT', aspect: 'TEXT' }, // P6a: 크기 단계(large, normal, small). P73: aspect(고른 종횡비 16:9·4:3, 없으면 자유 비율)
+  deliveries: { seq: 'REAL' }, // P172: 세션 안 보낼 차례(순서 바꾸기·바로 보내기). 없으면 created_at
   docks: { tree: 'TEXT', aspect: 'TEXT' }, // P17: 분할 나무(dock-tree.mjs). 없으면 옛 한 줄 덩어리(dir, members)이고 뜰 때 나무로 바꾼다(canvas-ops migrateDocks). P73: aspect(덩어리 바깥의 종횡비)
 };
 
@@ -80,7 +81,7 @@ function linkRow(r) {
 }
 function deliveryRow(r) {
   if (!r) return null;
-  return { deliveryId: r.delivery_id, sessionId: r.session_id, text: r.text, status: r.status, reason: r.reason, createdAt: r.created_at, updatedAt: r.updated_at, sentAt: r.sent_at, confirmedAt: r.confirmed_at, attempts: r.attempts };
+  return { deliveryId: r.delivery_id, sessionId: r.session_id, text: r.text, status: r.status, reason: r.reason, createdAt: r.created_at, updatedAt: r.updated_at, sentAt: r.sent_at, confirmedAt: r.confirmed_at, attempts: r.attempts, seq: r.seq ?? r.created_at };
 }
 function workspaceRow(r) {
   if (!r) return null;
@@ -173,15 +174,16 @@ export class Store {
   }
 
   insertDelivery(d) {
-    this.st('INSERT INTO deliveries (delivery_id, session_id, text, status, reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(d.deliveryId, d.sessionId, d.text, d.status, d.reason ?? null, d.createdAt, d.createdAt);
+    this.st('INSERT INTO deliveries (delivery_id, session_id, text, status, reason, created_at, updated_at, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(d.deliveryId, d.sessionId, d.text, d.status, d.reason ?? null, d.createdAt, d.createdAt, d.seq ?? d.createdAt);
   }
   updateDelivery(id, f) {
     this.st('UPDATE deliveries SET status = ?, reason = ?, updated_at = ?, sent_at = COALESCE(?, sent_at), confirmed_at = COALESCE(?, confirmed_at), attempts = attempts + ? WHERE delivery_id = ?')
       .run(f.status, f.reason ?? null, Date.now(), f.sentAt ?? null, f.confirmedAt ?? null, f.attempt ? 1 : 0, id);
   }
   updateDeliveryText(id, text) { this.st('UPDATE deliveries SET text = ?, updated_at = ? WHERE delivery_id = ?').run(text, Date.now(), id); } // P158: 대기 중 수정
+  updateDeliverySeq(id, seq) { this.st('UPDATE deliveries SET seq = ?, updated_at = ? WHERE delivery_id = ?').run(seq, Date.now(), id); } // P172: 순서 바꾸기·바로 보내기
   getDelivery(id) { return deliveryRow(this.st('SELECT * FROM deliveries WHERE delivery_id = ?').get(id)); }
-  activeDeliveries() { return this.st("SELECT * FROM deliveries WHERE status IN ('queued', 'sending', 'sent') ORDER BY created_at").all().map(deliveryRow); }
+  activeDeliveries() { return this.st("SELECT * FROM deliveries WHERE status IN ('queued', 'sending', 'sent') ORDER BY COALESCE(seq, created_at)").all().map(deliveryRow); }
   deliveries({ sessionId, limit = 50 } = {}) {
     const rows = sessionId ? this.st('SELECT * FROM deliveries WHERE session_id = ? ORDER BY created_at DESC LIMIT ?').all(sessionId, limit) : this.st('SELECT * FROM deliveries ORDER BY created_at DESC LIMIT ?').all(limit);
     return rows.map(deliveryRow);
