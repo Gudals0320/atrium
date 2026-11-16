@@ -279,17 +279,17 @@ export class Rig {
       const rec = { workspaceKey: ctx.key, at: ctx.at, hookIndex: h.index, argv: h.run, rigHash: r.hash, sessionId: ctx.session ? ctx.session.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.try ? ctx.try.id : null, ms: res.ms, toolRunId: ctx.toolRunId || null };
       if (!res.ok) {
         const blocked = h.onFail === 'block';
-        st.insertHookRun({ ...rec, decision: blocked ? 'blocked' : 'failed', error: res.error, reason: blocked ? `훅 실패(onFail block): ${res.error}` : null });
+        const rowId = st.insertHookRun({ ...rec, decision: blocked ? 'blocked' : 'failed', error: res.error, reason: blocked ? `훅 실패(onFail block): ${res.error}` : null });
         try { st.addEvent(rec.sessionId, 'hook_failed', { workspace: ctx.key, at: ctx.at, hook: h.index, argv: h.run, error: res.error, onFail: h.onFail, rigHash: r.hash }); } catch {}
-        runs.push({ at: ctx.at, hook: h.index, decision: blocked ? 'blocked' : 'failed', error: res.error });
+        runs.push({ at: ctx.at, hook: h.index, decision: blocked ? 'blocked' : 'failed', error: res.error, rowId });
         if (blocked) return out({ action: 'reject', reason: `rig 훅 ${h.index}(${h.run.join(' ')})이 실패했다: ${res.error}` });
         continue;
       }
       const o = res.out;
       const before = text; const beforeArgs = args;
       if (o.action === 'reject') {
-        st.insertHookRun({ ...rec, decision: 'reject', reason: o.reason || null, note: o.note || null });
-        runs.push({ at: ctx.at, hook: h.index, decision: 'reject', reason: o.reason || null });
+        const rowId = st.insertHookRun({ ...rec, decision: 'reject', reason: o.reason || null, note: o.note || null });
+        runs.push({ at: ctx.at, hook: h.index, decision: 'reject', reason: o.reason || null, rowId });
         return out({ action: 'reject', reason: o.reason || `rig 훅 ${h.index}이 거절했다(까닭 없음)` });
       }
       if (text != null && ctx.at === 'deliver') {
@@ -300,8 +300,8 @@ export class Rig {
       if (ctx.at === 'tool-after' && o.append) appends.push(o.append);
       const changed = before !== text;
       const argsChanged = beforeArgs !== args;
-      st.insertHookRun({ ...rec, decision: o.action, reason: o.reason || null, note: o.note || null, beforeText: changed ? before : argsChanged ? JSON.stringify(beforeArgs) : null });
-      runs.push({ at: ctx.at, hook: h.index, decision: o.action, ...(changed || argsChanged ? { changed: true } : {}), ...(o.reason ? { reason: o.reason } : {}) });
+      const rowId = st.insertHookRun({ ...rec, decision: o.action, reason: o.reason || null, note: o.note || null, beforeText: changed ? before : argsChanged ? JSON.stringify(beforeArgs) : null });
+      runs.push({ at: ctx.at, hook: h.index, decision: o.action, rowId, ...(changed || argsChanged ? { changed: true } : {}), ...(o.reason ? { reason: o.reason } : {}) });
     }
     return out({ action: 'pass', reason: null });
   }

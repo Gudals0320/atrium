@@ -617,11 +617,13 @@ export class Branch {
     const name = childName({ want: o.name ? String(o.name) : null, parentName: parent.name, taken });
     // P182: 첫 요청은 받는 쪽(띄울 세션의 워크스페이스) rig의 deliver 훅을 띄우기 전에 지난다. 거절이면 띄우지 않는다
     let promptText = prompt;
+    let hookRows = []; // P187: 띄우기 전에 돈 훅 행(띄운 뒤 세션·일을 적는다)
     if (prompt != null && b.rig) {
       const pws = await workspaceOf(cwd);
       const h = await b.rig.deliver({ target: { workspaceKey: pws.key, name, kind, model, cwd }, workspaceKey: pws.key, from: { kind: 'agent', session: parent }, text: prompt });
       if (h.action === 'reject') throw apiError('rig_rejected', `rig의 deliver 훅이 첫 요청을 거절했다(세션을 띄우지 않았다): ${h.reason}`);
       promptText = h.text;
+      hookRows = (h.runs || []).map((x) => x.rowId).filter((x) => x != null);
     }
 
     // K3: P36에서 상한을 없앴다
@@ -671,6 +673,7 @@ export class Branch {
       b.linkEvent(l, 'prompt', promptText, { via: 'board', deliveryId: d.deliveryId, ...(header ? { header, tag: 'assign' } : {}), ...(peer ? { tag: 'share' } : {}), ...(u ? { unitId: u.unit.id } : {}) });
       child.openPromptFrom = { linkId: l.linkId, at: Date.now(), text: promptText };
       first = { deliveryId: d.deliveryId, status: d.status, ...(u ? { unit: u.unit.id } : {}) };
+      if (hookRows.length && b.store.fillHookRuns) b.store.fillHookRuns(hookRows, { sessionId: child.sessionId, unitId: u ? u.unit.id : null }); // P187
       this.firstOf.set(d.deliveryId, child.sessionId);
       this.verbs.noteSent(parent, child, d.deliveryId); // P116: 부모의 atrium wait <이름>이 이 첫 요청의 턴을 기다린다
     }

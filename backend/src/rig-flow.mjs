@@ -221,10 +221,8 @@ export class RigFlow {
     for (const n of this.branch.pendingNames || []) taken.add(String(n).toLowerCase());
     let name = seat.session === 'keep' && !taken.has(seatName) ? seatName : null;
     for (let i = 0; !name && i < 1000; i++) { const n = `${seatName}-${st.nextSeatN(ctx.key, seatName)}`; if (!taken.has(n)) name = n; }
-    const L = this.branch.findLauncher ? this.branch.findLauncher(seat.launcher) : null;
-    if (!L && !SEAT_KINDS.includes(seat.launcher)) throw apiError('rig_launcher', `rig ${seatName} 자리의 launcher "${seat.launcher}"를 보드의 런처에서 찾지 못했다(런처 이름이나 ${SEAT_KINDS.join(', ')}).`);
     const worktree = seat.worktree ? `${seatName}-${unitId}` : null;
-    const o = { name, role: seatName, cwd: ctx.r.root, wait: false, ...(L ? { launcher: seat.launcher } : { kind: seat.launcher }), ...(worktree ? { worktree } : {}) };
+    const o = { name, role: seatName, cwd: ctx.r.root, wait: false, ...this.seatRoute(seat, seatName, owner), ...(worktree ? { worktree } : {}) };
     const k = `${ctx.key}|${seatName}`;
     this.spawning.set(k, (this.spawning.get(k) || 0) + 1);
     let r;
@@ -238,6 +236,20 @@ export class RigFlow {
     b.log(`rig seat ${seatName} spawned ${s.name} for case ${c.id}${worktree ? ` (worktree ${worktree})` : ''}`);
     if (b.broadcastSession) b.broadcastSession(s, { cause: 'rig_seat' });
     return s;
+  }
+
+  // P187: 자리 세션을 무엇으로 띄우는가(spawnChild에 넘길 launcher·kind).
+  //   종류 이름(claude·codex·opencode·pi)이 먼저다. 새 판은 런처 목록에 id가 claude·codex인 런처를 만들어 두므로,
+  //   런처를 먼저 찾으면 종류 이름이 그 런처(모델 없음 = 사용자 기본 모델, manual)로 풀려 건 주인의 것을 물려받지 않았다(P186).
+  //   종류 이름이면 atrium child와 같이 건 주인에게서 물려받는다: 주인과 같은 종류면 --kind 없이(Claude Code는 주인의 모델·노력·권한 모드·연결,
+  //   Codex 등은 주인의 호출자·모델·추가 인자(승인 인자 포함)), 다른 종류면 --kind(주인의 권한 모드를 그 하네스의 승인 인자로 옮긴다).
+  //   런처 이름이면 그 런처의 모델·노력·승인 방식 그대로
+  seatRoute(seat, seatName, owner) {
+    const want = String(seat.launcher || '');
+    if (SEAT_KINDS.includes(want)) return (owner.kind || 'claude') === want ? {} : { kind: want };
+    const L = this.branch.findLauncher ? this.branch.findLauncher(want) : null;
+    if (!L) throw apiError('rig_launcher', `rig ${seatName} 자리의 launcher "${want}"를 보드의 런처에서 찾지 못했다(런처 이름이나 ${SEAT_KINDS.join(', ')}).`);
+    return { launcher: want };
   }
 
   // ---------- atrium done(자리 세션) ----------
@@ -283,10 +295,13 @@ export class RigFlow {
     const tSeat = ctx.def.seats[to];
     const seated = tSeat.session === 'keep' ? this.seatedOf(ctx.key, to)[0] || null : null;
     const h = await b.rig.deliver({ target: seated || { workspaceKey: ctx.key, name: to, kind: null, model: null, cwd: ctx.r.root }, workspaceKey: ctx.key, from: { kind: 'flow', seat: ctx.name, session: caller }, text });
+    const rowIds = (h.runs || []).map((x) => x.rowId).filter((x) => x != null);
     if (h.action === 'reject') return this.block(c, `넘김 글(${ctx.name} ${result} → ${to})을 deliver 훅이 거절했다: ${h.reason}`);
     let a;
     try { a = await this.assign({ ctx, c, by: caller, seatName: to, spec: h.text, origin: 'flow', via: { result, line: line.index, prevUnit: unit.id, ...(escalated ? { escalated: true } : {}) } }); }
     catch (e) { return this.block(st.getCase(c.id), `${to} 자리로 넘기지 못했다: ${e.message}`); }
+    // P187: 훅은 받을 세션을 띄우기 전에 돌았다. 그 행에 받은 세션(자리 줄에 섰으면 pump가 띄운 뒤)과 이 일을 적는다(세션 맵 미리 보기)
+    if (rowIds.length && st.fillHookRuns) st.fillHookRuns(rowIds, { sessionId: a.t ? a.t.sessionId : null, unitId: a.unit ? a.unit.id : null });
     st.addEvent(caller.sessionId, 'rig_handoff', { caseId: c.id, from: ctx.name, result, to, line: line.index, unitId: a.unit.id, target: a.t ? a.t.name : null, seatWait: !!a.seatWait, escalated: !!escalated });
     b.log(`rig handoff ${ctx.name}(${caller.name}) ${result} → ${to}${a.t ? ` @${a.t.name}` : ' (seat wait)'} case ${c.id}`);
     if (a.t) {
@@ -316,6 +331,7 @@ export class RigFlow {
           try { s = await this.spawnSeat(ctx, u.seat, owner, c, u.id); }
           catch (e) { st.updateUnit(u.id, { status: 'cancelled', closedAt: Date.now() }); this.block(st.getCase(c.id), `${u.seat} 자리 세션을 띄우지 못했다: ${e.message}`); continue; }
           st.setUnitTarget(u.id, s.sessionId);
+          if (st.fillHookRunsOfUnit) st.fillHookRunsOfUnit(u.id, s.sessionId); // P187: 줄에 설 때 돈 훅 행에 세션
           const unit = st.getUnit(u.id);
           if (st.openTryOf(s.sessionId)) { this.units().queued.add(s.sessionId); continue; }
           this.units().dispatch(unit, { later: true });
