@@ -1,5 +1,6 @@
 // P133: Codex 대화 기록(Codex CLI와 Codex 데스크톱 앱이 함께 쓰는 $CODEX_HOME/sessions/YYYY/MM/DD/rollout-<시각>-<대화 ID>.jsonl[.zst])을
-// Claude Code 대화(convos.mjs)와 같은 모양의 요약으로 읽고, 대화마다 다른 곳에 묶여 있는지 정한다. 모든 파일은 읽기만 한다.
+// Claude Code 대화(convos.mjs)와 같은 모양의 요약으로 읽고, 대화마다 다른 곳에 묶여 있는지 정한다. 이 모듈은 파일을 읽기만 한다
+// (P174부터 정리 대상 Codex 대화는 missed.mjs가 Claude 대화와 같은 규칙으로 휴지통에 보낸다. session_index.jsonl 등 Codex의 다른 파일은 고치지 않는다).
 // - 대화 기록 한 줄: { timestamp, ordinal?, type, payload }. 첫 줄은 session_meta(payload.id, cwd, originator, source, cli_version).
 //   사람이 쓴 지시는 event_msg의 item_completed(item.type UserMessage)나 옛 판의 user_message, 답은 AgentMessage나 agent_message·task_complete다.
 //   response_item의 user 메시지에는 Codex가 넣은 지시문(AGENTS.md, 환경)이 섞여 있어 다른 것이 없을 때만 본다(content_item_kinds 'user.text').
@@ -236,4 +237,29 @@ export function codexBindingOf({ convId, entrypoints = [], mtime = 0, now = Date
   if (entrypoints.some((e) => e !== 'cli' && !/^sdk/i.test(e))) return { bound: true, where: 'unknown', sure: false, harness: CODEX_HARNESS, label: `다른 곳에서 사용 중일 수 있음 · ${entrypoints.filter((e) => e !== 'cli').join(', ')}` };
   if (mtime && now - mtime < recentMs) return { bound: true, where: 'unknown', sure: false, harness: CODEX_HARNESS, label: '다른 곳에서 사용 중일 수 있음 · 최근 활동 감지' };
   return { bound: false };
+}
+
+// P174: rollout 파일 이름 → { id(대화 ID, 하위 에이전트면 부모 ID), child(하위 에이전트 대화 ID | null), zst } | null
+export function codexRolloutName(name) {
+  const m = ROLLOUT_RE.exec(String(name || ''));
+  return m ? { id: m[1].toLowerCase(), child: m[2] ? m[2].slice(1).toLowerCase() : null, zst: !!m[3] } : null;
+}
+// P174: 대화 ID → 그 대화의 rollout 파일 모두(눌린 것·안 눌린 것, 하위 에이전트 대화 rollout-…-<부모>_<자식>는 부모 ID 아래).
+// 지우기에서 함께 보낼 파일을 찾는다(읽기만). 하위 에이전트 대화는 부모 날짜 폴더 밖(다음 날)에도 있을 수 있어 sessions 전체를 본다
+export async function indexCodexRollouts(home) {
+  const out = new Map();
+  if (!home) return out;
+  const root = path.join(home, 'sessions');
+  const dirs = async (d) => { try { return (await fs.promises.readdir(d, { withFileTypes: true })).filter((e) => e.isDirectory() && /^\d+$/.test(e.name)).map((e) => path.join(d, e.name)); } catch { return []; } };
+  for (const y of await dirs(root)) for (const m of await dirs(y)) for (const d of await dirs(m)) {
+    let es; try { es = await fs.promises.readdir(d, { withFileTypes: true }); } catch { continue; }
+    for (const e of es) {
+      if (!e.isFile()) continue;
+      const r = codexRolloutName(e.name);
+      if (!r) continue;
+      if (!out.has(r.id)) out.set(r.id, []);
+      out.get(r.id).push(path.join(d, e.name));
+    }
+  }
+  return out;
 }
