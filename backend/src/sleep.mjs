@@ -35,7 +35,8 @@ function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { 
 export const SLEEP_TICK_MS = 30000; // 저절로 잠재울 리포를 보는 간격
 export const WAKE_READY_MS = 90000; // 깨운 claude가 준비될 때까지 기다리는 상한
 export const WAKE_SETTLE_MS = 2500; // 준비된 뒤 입력 칸이 Enter를 받을 때까지 더 기다리는 시간(그동안 전달은 기다린다)
-export const WAKE_STAGGER_MS = 1500; // 리포를 깨울 때 세션 사이 간격
+export const WAKE_STAGGER_MS = 1500;
+const LEARN_MS = 30000; // P170: 하네스 대화 ID 찾기 간격(세션마다) // 리포를 깨울 때 세션 사이 간격
 const BUSY = new Set(['working', 'waiting', 'trust_wait', 'starting']); // 하위·부모 세션이 "일하는 중"
 // P105: 잠재우기가 실패한 세션(/exit 뒤에도 claude가 남음, 뒤 일 확인 창)은 다음 활동까지, 또는 이 간격(실패할 때마다 두 배, 상한 MAX)이 지나야 다시 해 본다
 export const SLEEP_RETRY_MS = 30 * 60000;
@@ -354,6 +355,29 @@ export class Sleeper {
     };
   }
 
+  // P170: 대화 ID를 아직 모르는 하네스 세션(Codex는 뜬 뒤 첫 지시가 rollout을 만든다)을 backend.harnessSessionIdOf(터미널이 아는 ID, 그 폴더의 rollout)로 찾아
+  // 판 기록에 남긴다. 판 밖 대화 목록이 꺼진 판(recall.learnCodexIds가 돌지 않음)에서도 잠재울 수 있게. 세션마다 LEARN_MS에 한 번
+  learnHarnessIds(now = Date.now()) {
+    const b = this.b;
+    if (typeof b.harnessSessionIdOf !== 'function') return 0;
+    this.learnAt ||= new Map();
+    let n = 0;
+    for (const s of b.sessions.values()) {
+      if ((s.kind || 'claude') === 'claude' || !s.paneId || s.rt.sleep || !s.harnessPlan || s.harnessPlan.harnessSessionId || !this.harnessOk(s)) continue;
+      if (now - (this.learnAt.get(s.sessionId) || 0) < LEARN_MS) continue;
+      this.learnAt.set(s.sessionId, now);
+      let id = null; try { id = b.harnessSessionIdOf(s); } catch {}
+      if (!id) continue;
+      const lid = String(id).toLowerCase();
+      if ([...b.sessions.values()].some((o) => o !== s && String(((o.harnessPlan || {}).harnessSessionId) || '').toLowerCase() === lid)) continue; // 같은 폴더의 다른 판 세션이 가진 대화
+      s.harnessPlan = { ...s.harnessPlan, harnessSessionId: lid };
+      b.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
+      b.store.addEvent(s.sessionId, 'harness_session_learned', { harnessSessionId: lid, by: 'sleep' });
+      n++;
+    }
+    return n;
+  }
+
   // ---------- P105: 뒤 일과 실패한 잠재우기 ----------
   bgOf(s, now = Date.now()) {
     if (this.b.cfg && this.b.cfg.sleepBgPrecheck === false) return null;
@@ -463,6 +487,7 @@ export class Sleeper {
       // 잠든 세션에 보낼 글이 남았는데 깨우는 중이 아니면 그 리포를 깨운다(백엔드가 다시 떠 대기열이 되살아난 경우)
       for (const s of [...b.sessions.values()]) if (s.rt.sleep && !this.wakes.has(s.sessionId) && b.queue.pending(s.sessionId) > 0 && !s.rt.sleep.error) this.wakeFor(s, 'delivery').catch(() => {});
       await this.refreshBackground().catch((e) => b.log(`background refresh failed: ${e.message}`)); // P164: 세션 맵의 뒤 일 표시
+      this.learnHarnessIds(); // P170: 대화 ID를 아직 모르는 하네스 세션
       // P105: 곧 잠들 리포와 뒤 일이 보이는 리포만 프로세스를 다시 본다(뒤 셸이 끝났는지, 쉬는 claude 아래 도구 명령이 도는지)
       const scan = this.repoKeys().filter((key) => { const w = this.plan(key, 'auto').why; return !w || w === 'background'; });
       if (scan.length) await this.scanBackground(scan.flatMap((key) => this.members(key)));

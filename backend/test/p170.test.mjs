@@ -231,3 +231,21 @@ test('P170 보는 중 시간 제한: 붙은 터미널도 그 창에서 손댄 �
   sl.dropClient(c);
   assert.equal(sl.inputAt.has(c), false);
 });
+
+test('P170 대화 ID 찾기: 판 밖 대화 목록이 꺼진 판에서도 tick이 하네스 대화 ID를 찾아 판 기록에 남긴다. 다른 판 세션이 가진 ID는 쓰지 않는다', () => {
+  const { b, sl, cx, add, events } = board();
+  cx.rt.term.agentSessionId = null;
+  add('cx2', 'codex', { harnessPlan: { model: null, args: [], harnessSessionId: 'taken-id' } });
+  b.harnessSessionIdOf = (s) => (s === cx ? 'ROLL-ID' : null);
+  assert.equal(sl.info(cx).convKnown, false);
+  assert.equal(sl.learnHarnessIds(), 1);
+  assert.equal(cx.harnessPlan.harnessSessionId, 'roll-id');
+  assert.ok(events.some((e) => e.kind === 'harness_session_learned' && e.data.harnessSessionId === 'roll-id'));
+  assert.equal(sl.info(cx).convKnown, true);
+  assert.equal(sl.learnHarnessIds(), 0, '이미 알면 다시 찾지 않는다');
+  // 같은 폴더의 다른 판 세션이 가진 ID
+  const cx3 = add('cx3', 'codex', { harnessPlan: { model: null, args: [], harnessSessionId: null } });
+  b.harnessSessionIdOf = () => 'TAKEN-ID';
+  assert.equal(sl.learnHarnessIds(), 0);
+  assert.equal(cx3.harnessPlan.harnessSessionId, null);
+});
