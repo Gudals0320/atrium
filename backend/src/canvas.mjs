@@ -354,7 +354,11 @@ export function splitSide(parentRect, childRect) {
 //   부모는 첫 자식과 윗변을 맞춘다(가운데가 아니다. 새 워커를 띄울 때 놓이는 자리와 같다). 열 사이 200(LINE_GAP_X), 형제 띠 사이 80(LINE_GAP_Y)
 export const WRAP_ASPECT = 16 / 9; // P91: 정리에서 하위 세션 열을 접는 기준 비율
 const WRAP_COST = 0.15;
-export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200, gapY = GAP * 2, stepOf = null, rank = null, wrapAspect = WRAP_ASPECT } = {}) {
+// P177: peers: [[세션, 세션]](일 관계가 동료인 쌍). 동료는 하위 줄에 들어가지 않고 같은 급으로 짝 옆에 선다.
+//   짝 하나가 누군가의 하위면 그 부모의 줄에서 짝 바로 아래(형제), 짝이 뿌리면 짝의 나무 바로 아래에 뿌리로. 크기는 묶음에서 가장 큰 단계로 맞춘다.
+//   블록의 hand(사람이 손으로 정한 크기, 동료만 caller가 붙인다)는 그 크기를 지키고, 단계 비교에는 handStep(크기 열쇠)을 쓴다
+const levelRank = (step) => { const p = parseStep(step); return p ? SIZE_LEVELS.length - SIZE_LEVELS.indexOf(p.level) : 0; }; // large 3, normal 2, small 1
+export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200, gapY = GAP * 2, stepOf = null, rank = null, wrapAspect = WRAP_ASPECT, peers = [] } = {}) {
   const bySession = new Map();
   for (const b of blocks) for (const m of b.members) bySession.set(m, b.id);
   const kids = new Map(blocks.map((b) => [b.id, []]));
@@ -369,6 +373,28 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200
   if (rank) for (const list of kids.values()) list.sort((p, q) => (rank.get(p) ?? Infinity) - (rank.get(q) ?? Infinity));
   const byId = new Map(blocks.map((b) => [b.id, b]));
   const order = [...blocks].sort((a, b) => a.y - b.y || a.x - b.x); // 지금 위쪽에 있던 것부터
+  // P177: 동료 묶음(블록 단위, 이어진 동료 쌍을 하나로)
+  const up = new Map(blocks.map((b) => [b.id, b.id]));
+  const find = (x) => { while (up.get(x) !== x) { up.set(x, up.get(up.get(x))); x = up.get(x); } return x; };
+  for (const [f, t] of peers) { const a = bySession.get(f), c = bySession.get(t); if (a && c && a !== c) up.set(find(a), find(c)); }
+  const peerGroups = new Map();
+  for (const b of order) { const r = find(b.id); if (!peerGroups.has(r)) peerGroups.set(r, []); peerGroups.get(r).push(b.id); }
+  const groups = [...peerGroups.values()].filter((g) => g.length > 1);
+  const inGroup = new Set(groups.flat());
+  const follow = new Map(); // 뿌리 짝 → 그 바로 아래 뿌리로 설 동료들
+  const parentOf = (id) => { for (const [p, list] of kids) if (list.includes(id)) return p; return null; };
+  const ancestors = (id) => { const out = new Set(); for (let p = parentOf(id); p && !out.has(p); p = parentOf(p)) out.add(p); return out; };
+  for (const g of groups) {
+    const anchor = g.find((id) => indeg.get(id) > 0) || g[0];
+    const p = indeg.get(anchor) > 0 ? parentOf(anchor) : null;
+    const anc = ancestors(anchor);
+    let after = anchor;
+    for (const m of g) {
+      if (m === anchor || indeg.get(m) > 0 || anc.has(m)) continue; // 이미 누군가의 하위인 동료는 그 줄에 둔다
+      if (p) { const list = kids.get(p); list.splice(list.indexOf(after) + 1, 0, m); indeg.set(m, 1); after = m; }
+      else { if (!follow.has(anchor)) follow.set(anchor, []); follow.get(anchor).push(m); indeg.set(m, -1); } // -1: 짝을 따라 뿌리로 선다
+    }
+  }
   const visited = new Set();
   const trees = [];
   const walk = (id, depth, parent) => {
@@ -377,10 +403,11 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200
     for (const k of kids.get(id)) if (!visited.has(k)) node.children.push(walk(k, depth + 1, id));
     return node;
   };
-  for (const b of order) if (!visited.has(b.id) && indeg.get(b.id) === 0 && kids.get(b.id).length) trees.push(walk(b.id, 0, null));
-  for (const b of order) if (!visited.has(b.id) && kids.get(b.id).length) trees.push(walk(b.id, 0, null)); // 고리만 있는 경우
+  const root = (id) => { trees.push(walk(id, 0, null)); for (const m of follow.get(id) || []) if (!visited.has(m)) root(m); };
+  for (const b of order) if (!visited.has(b.id) && indeg.get(b.id) === 0 && (kids.get(b.id).length || inGroup.has(b.id))) root(b.id);
+  for (const b of order) if (!visited.has(b.id) && kids.get(b.id).length) root(b.id); // 고리만 있는 경우
   const lone = order.filter((b) => !visited.has(b.id) && !indeg.get(b.id));
-  for (const b of order) if (!visited.has(b.id) && !lone.includes(b)) trees.push(walk(b.id, 0, null));
+  for (const b of order) if (!visited.has(b.id) && !lone.includes(b)) root(b.id);
 
   // 크기: 뿌리는 크게, 가운데는 보통, 잎은 작게. 덩어리와 그룹은 그대로
   const size = new Map();
@@ -388,11 +415,23 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200
     const b = byId.get(t.id);
     let step = null;
     if (b.resizable) step = t.depth === 0 ? 'large' : t.children.length ? 'normal' : 'small';
-    const s = !step ? { w: b.w, h: b.h } : stepOf ? stepOf(b, step) : { ...SIZE_STEPS[step], step };
-    size.set(t.id, { w: s.w, h: s.h, step: step ? s.step || step : null });
+    if (b.resizable && b.hand && inGroup.has(t.id)) size.set(t.id, { w: b.w, h: b.h, step: b.handStep || null }); // P177: 사람이 정한 동료 크기는 그대로
+    else { const s = !step ? { w: b.w, h: b.h } : stepOf ? stepOf(b, step) : { ...SIZE_STEPS[step], step }; size.set(t.id, { w: s.w, h: s.h, step: step ? s.step || step : null }); }
     t.children.forEach(sizeOf);
   };
   trees.forEach(sizeOf);
+  // P177: 동료 묶음은 가장 큰 단계로(사람이 정한 크기는 비교에만 들고 바꾸지 않는다)
+  for (const g of groups) {
+    const top = Math.max(0, ...g.map((id) => levelRank(size.get(id) && size.get(id).step)));
+    if (!top) continue;
+    const level = SIZE_LEVELS[SIZE_LEVELS.length - top];
+    for (const id of g) {
+      const b = byId.get(id), cur = size.get(id);
+      if (!b.resizable || (b.hand && cur) || !cur || levelRank(cur.step) >= top) continue;
+      const s = stepOf ? stepOf(b, level) : { ...SIZE_STEPS[level], step: level };
+      size.set(id, { w: s.w, h: s.h, step: s.step || level });
+    }
+  }
   // P75: 열은 부모마다(자식 x = 부모 오른쪽 + gapX). 새 워커를 띄울 때 놓이는 자리(tree-line.mjs lineSlot)와 같다. 전에는 깊이마다 가장 넓은 블록에 맞춘 열이었다
   const out = new Map();
   // P78: pad { l, t, r, b }: 블록 둘레에 비워 둘 테두리(아직 상자가 없는 --worktree 워커는 상자 틀만큼). 줄은 테두리까지 차지하고 블록은 그 안에 놓는다
