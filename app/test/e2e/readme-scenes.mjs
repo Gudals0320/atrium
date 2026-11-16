@@ -57,7 +57,7 @@ export async function shoot(ctx) {
   // 3. 에이전트끼리: 미션 맵
   if (want('agents')) {
     await clear(); await fitAll(); await rest();
-    await page.keyboard.press('m');
+    await page.keyboard.press('Tab');
     await sleep(1500);
     // 미션 맵은 위쪽에 모이므로 내용이 있는 높이까지만 자른다
     const bottom = await st(() => { const els = [...document.querySelectorAll('[class*="mission"] *')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0 && r.height < 600); return Math.max(...els.map((r) => r.bottom)); });

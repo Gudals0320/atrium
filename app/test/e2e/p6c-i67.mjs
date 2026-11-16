@@ -19,7 +19,7 @@ try {
 
   // M으로 연다
   await page.locator('.mt-canvas').click({ position: { x: 20, y: 20 } });
-  await page.keyboard.press('m');
+  await page.keyboard.press('Tab');
   const mm = page.locator('[data-role="mission"]');
   await mm.waitFor();
   await page.locator('[data-role="mm-node"][data-kind="session"]').first().waitFor();

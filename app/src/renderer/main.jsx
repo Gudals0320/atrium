@@ -44,7 +44,7 @@ import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
 import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';
-import { keyToData, closeKeyTargets, boardArrowKey, boardShortcut, stepWorkspace, spaceHoldReady, spaceHoldStep, SPACE_HOLD_MS } from './lib/keys.js';
+import { keyToData, closeKeyTargets, boardArrowKey, boardShortcut, mapTabKey, stepWorkspace, spaceHoldReady, spaceHoldStep, SPACE_HOLD_MS } from './lib/keys.js';
 import { wsTabs, tabKeys } from './lib/ws-tabs.js'; // P98
 import { renameKeyTarget } from './lib/session-name.js'; // P66: F2로 고른 노드의 이름 바꾸기
 import { ReturnSummary, useReturnSummary } from './ReturnSummary.jsx';
@@ -128,6 +128,8 @@ function App() {
       // Ctrl+F는 판의 검색, Ctrl+K는 명령 바다. 터미널에 초점이 있어도 터미널보다 먼저 받는다(H2, P140 #13: ^K가 터미널로 가고 이어 친 글이 그 터미널에 들어갔다)
       const short = boardShortcut(e);
       if (short) { e.preventDefault(); e.stopPropagation(); if (short === 'command') { if (cmd.current) cmd.current.focus(); } else setSearchOpen(true); return; }
+      // P178: Tab = 세션 맵 열기·닫기(lib/keys.js mapTabKey). 터미널·다른 입력칸·대화상자·@ 완성 목록에서는 Tab이 원래 일을 한다
+      if (mapTabKey(e, { dialog: getState().dialog, completing: !!document.querySelector('.mt-mention') })) { e.preventDefault(); e.stopPropagation(); setMissionOpen(!getState().missionOpen); return; }
       const st = getState();
       const p = st.pendingInput && pendingFor(st.pendingInput.id);
       // P43: 판에 초점이 있을 때의 방향키(lib/keys.js boardArrowKey). 노드에 들어가 터미널을 기다리는 동안(p)은 터미널 몫이다.
@@ -158,8 +160,6 @@ function App() {
       if (close) { e.preventDefault(); if (close.one) setKillAsk(close.one); else openDialog({ kind: 'close', ids: close.many }); return; }
       const ren = !e.defaultPrevented && renameKeyTarget(e, getState()); // P66: 사이드바 목록의 F2는 그 줄이 먼저 받는다
       if (ren) { e.preventDefault(); setRenaming(ren, 'node'); return; }
-      // P153: 세션 맵이 열린 동안 친 글자는 명령줄로 간다(MissionLineage.jsx). M은 열기만, 닫기는 Esc·닫기 단추. 옛 지도(classic)는 M으로 닫는다
-      if ((e.key === 'm' || e.key === 'M') && !getState().dialog) { e.preventDefault(); setMissionOpen(!getState().missionOpen); return; }
       if (e.key === 'n' || e.key === 'N') {
         // N: 내 차례(그다음 문제)를 차례로. 노드를 옮기지 않고 화면만 간다(BRIEF 4절)
         const id = nextTarget(orderRef.current, getState().focusId);

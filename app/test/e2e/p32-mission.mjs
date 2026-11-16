@@ -44,7 +44,7 @@ async function measure(page) {
 
 async function openByKey(page) {
   await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
-  await page.keyboard.press('m');
+  await page.keyboard.press('Tab');
   await sleep(400);
   if (!(await isOpen(page))) await page.click('[data-action="mission-rail"]');
   await page.waitForSelector('[data-role="mission"] [data-role="mm-node"][data-kind="session"]', { timeout: 20000 });

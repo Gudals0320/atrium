@@ -331,7 +331,7 @@ async function act(page, real, agent) {
   await page.mouse.click(300, 600); await sleep(300);
   const still = !!(await page.$('[data-role=mission]'));
   await page.evaluate(() => document.activeElement && document.activeElement.blur());
-  await page.keyboard.press('m'); await sleep(400);
+  await page.keyboard.press('Tab'); await sleep(400);
   const mClosed = !(await page.$('[data-role=mission]'));
   await closeMission(page);
   call('settings.set', { key: 'missionStyle', value: 'territories' }); await sleep(800);
@@ -892,6 +892,165 @@ async function p157() {
   } finally { await closeApp(app); }
 }
 
+// ---- P178: 폴더·워크스페이스 이름표 화면 크기(맞춤·멀리·가까이), 오른쪽 상태 요약 칸, Tab으로 열고 닫기 ----
+// round에 before가 들면(고치기 전 빌드) 그림과 글 크기만 잰다(M으로 열던 때라 열기는 단추로)
+const P178_LABELS = () => {
+  const v = window.__mtTa.view();
+  const fz = (el) => (el ? Math.round(parseFloat(getComputedStyle(el).fontSize) * v.k * 10) / 10 : null);
+  const min = (sel) => { const a = [...document.querySelectorAll(sel)].map(fz).filter((x) => x != null); return a.length ? Math.min(...a) : null; };
+  const R = (e) => e.getBoundingClientRect();
+  const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  const cards = [...document.querySelectorAll('.mt-ta-slot')].map((s) => ({ ws: s.dataset.ws, r: R(s) }));
+  const overlap = [];
+  for (const row of document.querySelectorAll('.mt-sm-row')) { const h = row.querySelector('.mt-sm-head'); if (!h) continue; const hr = R(h); for (const c of cards) if (hit(hr, c.r)) overlap.push(row.dataset.key); }
+  const cut = [...document.querySelectorAll('[data-role=ln-band]')].filter((b) => { const s = b.querySelector('.mt-sm-spine'), sr = R(s), br = R(b); return [...s.children].some((x) => R(x).right > sr.right + 1 || R(x).bottom > br.bottom + 1); }).map((b) => b.dataset.id);
+  return { k: Math.round(v.k * 1000) / 1000, label: window.__mtTa.label ? window.__mtTa.label() : null, fn: min('.mt-sm-spine .fn'), fk: min('.mt-sm-spine .fk'), fs: min('.mt-sm-spine .fs'), wsn: min('.mt-sm-head .wsn'), chip: min('.mt-sm-head .wsc > span'), overlap: [...new Set(overlap)], cut, spineScreen: Math.round(R(document.querySelector('.mt-sm-spine')).width) };
+};
+async function p178() {
+  call('settings.set', { key: 'missionStyle', value: 'territories' });
+  const before = /before/.test(TAG);
+  const shape = SHAPE_FILE ? JSON.parse(JSON.stringify(SHAPE)) : JSON.parse(JSON.stringify(SHAPE));
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
+  try {
+    await awayWin(app);
+    await page.setViewportSize({ width: 2205, height: 1291 }).catch(() => {});
+    await sleep(2500);
+    if (await page.$('[data-role="sidebar"]')) { await page.click('[data-action="sidebar"]'); await sleep(500); }
+    const real = await realId(page);
+    await page.evaluate(HOOK, [shape, MIX, real, null]);
+    await page.emulateMedia({ reducedMotion: 'reduce' }); // 사용자 PC(움직임 줄이기)
+    await page.evaluate(() => { try { localStorage.removeItem('atrium.sessionMap.summary'); } catch { /* 없다 */ } });
+    await closeMission(page);
+    if (before) await openMission(page);
+    else {
+      // 1. 판에서 Tab → 세션 맵이 열린다
+      await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
+      await page.keyboard.press('Tab');
+      await page.waitForSelector('[data-role="mission"] .mt-ta-card', { timeout: 20000 }).catch(() => {});
+      await sleep(1500);
+      check('판에서 Tab → 세션 맵 열림', !!(await page.$('[data-role="mission"]')));
+    }
+    await sleep(800);
+    await shotTo(page, `p178-2205-open`);
+    // 맞춤 단추(전체가 화면에)
+    await page.click('[data-action=ta-fit]'); await sleep(1500);
+    const fit = await page.evaluate(P178_LABELS);
+    await shotTo(page, `p178-2205-fit`);
+    log(`[fit] ${JSON.stringify(fit)}`);
+    if (!before) check('맞춤 보기: 폴더 이름 ≥ 13.5px, 워크스페이스 이름 ≥ 13px, 알약·수 ≥ 10px(화면), 줄 머리가 카드와 겹치지 않고 기둥 글이 잘리지 않는다', fit.fn >= 13.5 && fit.wsn >= 13 && fit.chip >= 10 && fit.fs >= 10 && !fit.overlap.length && !fit.cut.length, fit);
+    // 2. 배율마다(멀리 ~ 가까이): 화면 가운데를 두고 배율만 바꾼 뒤 멈춘다
+    const center = await page.evaluate(() => { const v = window.__mtTa.view(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { cx: (vp.width / 2 - v.x) / v.k, cy: (vp.height / 2 - v.y) / v.k, w: vp.width, h: vp.height }; });
+    const zooms = {};
+    for (const k of [0.12, 0.2, 0.3, 0.5, 0.75, 1]) {
+      // 닻: 바꾸기 바로 뒤와 계단이 바뀐 뒤 화면 가운데 가까운 카드의 화면 자리
+      await page.evaluate(([c, kk]) => window.__mtTa.set({ k: kk, x: c.w / 2 - c.cx * kk, y: c.h / 2 - c.cy * kk }), [center, k]);
+      const a0 = await page.evaluate(() => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); const cx = vp.left + (vp.width - window.__mtTa.sumW()) / 2, cy = vp.top + (vp.height + window.__mtTa.top - 112) / 2; let best = null; for (const s of document.querySelectorAll('.mt-ta-slot')) { const r = s.getBoundingClientRect(), d = Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy); /* 맵의 닻과 같은 자리(요약 칸·위 줄·명령줄을 뺀 칸의 가운데) */ if (!best || d < best.d) best = { id: s.dataset.id, x: r.left, y: r.top, d }; } return best; });
+      await sleep(900);
+      const a1 = await page.evaluate((id) => { const s = document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`); const r = s.getBoundingClientRect(); return { x: r.left, y: r.top }; }, a0.id);
+      const m = await page.evaluate(P178_LABELS);
+      zooms[k] = { ...m, anchorMove: Math.round(Math.hypot(a1.x - a0.x, a1.y - a0.y)) };
+      log(`[zoom ${k}] ${JSON.stringify(zooms[k])}`);
+      await shotTo(page, `p178-2205-zoom-${String(k).replace('.', '')}`);
+    }
+    if (!before) {
+      const far = [0.2, 0.3, 0.5].map((k) => zooms[k]);
+      check('멀리(20~50%, 18%보다 멀면 글도 배율과 함께 작아진다): 폴더 이름 13.5~17px, 워크스페이스 이름 13~16.5px로 거의 일정, 겹침·잘림 없음', far.every((m) => m.fn >= 13.5 && m.fn <= 17.5 && m.wsn >= 13 && m.wsn <= 16.5 && !m.overlap.length && !m.cut.length), far);
+      check('가까이(75~100%): 바탕 크기 그대로(배율만큼 커진다)', zooms[1].label === 1 && zooms[1].fn >= 21.5 && zooms[1].wsn >= 17.5, zooms[1]);
+      check('계단이 바뀌어도 보던 카드는 화면 같은 자리(±3px)', Object.values(zooms).every((m) => m.anchorMove <= 3), Object.fromEntries(Object.entries(zooms).map(([k, m]) => [k, m.anchorMove])));
+    }
+    if (before) { await page.evaluate(UNHOOK); return; }
+    // 3. 오른쪽 상태 요약 칸
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(1200);
+    const sm = await page.evaluate(() => {
+      const p = document.querySelector('[data-role=ln-summary]'); if (!p) return null;
+      const pr = p.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect();
+      const under = [...document.querySelectorAll('.mt-ta-slot')].map((s) => s.getBoundingClientRect()).filter((r) => r.bottom > pr.top && r.top < pr.bottom && r.right > pr.left - 2 && r.left < innerWidth);
+      return { left: Math.round(pr.left), groups: [...p.querySelectorAll('[data-role=ln-sum-group]')].map((g) => `${g.dataset.key}:${g.querySelectorAll('[data-role=ln-sum-item]').length}`), items: p.querySelectorAll('[data-role=ln-sum-item]').length, under: under.length, cards: document.querySelectorAll('.mt-ta-slot').length, vpw: Math.round(vp.width) };
+    });
+    await shotTo(page, 'p178-2205-fit-summary');
+    check('요약 칸: 상태 묶음(응답 필요·작업 중·작업 완료·쉼·절전…)과 모든 카드, 맞춤 보기에서 칸 아래 카드 없음', sm && sm.items === sm.cards && sm.groups[0].startsWith('turn') && sm.groups.some((g) => g.startsWith('sleep')) && sm.under === 0, sm);
+    // 누르면 그 카드로(배율 그대로, 가운데, 반짝임). 올리면 강조
+    const kBefore = await page.evaluate(() => window.__mtTa.view().k);
+    const tgt = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-role=ln-sum-item]')].pop(); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { id: b.dataset.id, x: r.left + 30, y: r.top + 8 }; });
+    await page.mouse.move(tgt.x, tgt.y); await sleep(300);
+    const hot = await page.evaluate((id) => document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`).classList.contains('sum-hot'), tgt.id);
+    await shotTo(page, 'p178-2205-summary-hover');
+    await page.mouse.click(tgt.x, tgt.y); await sleep(700);
+    const fly = await page.evaluate(([id, sw]) => { const s = document.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), r = s.getBoundingClientRect(), vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(); return { k: window.__mtTa.view().k, dx: Math.round(r.left + r.width / 2 - (vp.width - window.__mtTa.sumW()) / 2), blink: s.classList.contains('blink') }; }, [tgt.id]);
+    await shotTo(page, 'p178-2205-summary-click');
+    check('요약 칸 줄: 올리면 카드 강조, 누르면 배율 그대로 그 카드를 가운데로 옮겨 반짝인다', hot && Math.abs(fly.k - kBefore) < 1e-6 && Math.abs(fly.dx) <= 4 && fly.blink, { hot, fly, kBefore });
+    await page.mouse.move(5, 400);
+    // 접기: 접으면 맞춤이 폭을 다 쓰고, 기억한다
+    const kOpen = await page.evaluate(() => { window.__mtTa.fit(); return window.__mtTa.view().k; }); await sleep(800);
+    await page.click('[data-action=ln-sum-hide]'); await sleep(400);
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(1200);
+    const col = await page.evaluate(() => ({ k: window.__mtTa.view().k, panel: !!document.querySelector('[data-role=ln-summary]'), btn: !!document.querySelector('[data-action=ln-sum-show]'), saved: localStorage.getItem('atrium.sessionMap.summary') }));
+    await shotTo(page, 'p178-2205-fit-collapsed');
+    check('요약 칸 접기: 칸이 작은 단추가 되고 맞춤이 더 크게, 접힘을 기억', !col.panel && col.btn && col.saved === '0' && col.k >= kOpen, { kOpen, col });
+    await closeMission(page); await sleep(400); await openMission(page);
+    const still = await page.evaluate(() => !document.querySelector('[data-role=ln-summary]') && !!document.querySelector('[data-action=ln-sum-show]'));
+    check('다시 열어도 접힌 채', still);
+    await page.click('[data-action=ln-sum-show]'); await sleep(400);
+    // 4. Tab: 맵에서 닫기, 명령줄(빈 것)에서 열고 닫기, @ 완성 목록이면 완성, 검색 입력칸·Shift+Tab은 아님
+    await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
+    await page.keyboard.press('Tab'); await sleep(600);
+    check('맵에서 Tab → 닫힘', !(await page.$('[data-role="mission"]')));
+    await page.keyboard.press('Shift+Tab'); await sleep(500);
+    check('Shift+Tab은 맵을 열지 않는다', !(await page.$('[data-role="mission"]')));
+    await page.keyboard.press('Control+k'); await sleep(300);
+    await page.keyboard.press('Tab'); await sleep(900);
+    const cmdOpen = !!(await page.$('[data-role="mission"]'));
+    await page.keyboard.press('Tab'); await sleep(600);
+    const cmdClose = !(await page.$('[data-role="mission"]'));
+    check('명령줄(빈 것)에서 Tab → 열고, 다시 Tab → 닫는다', cmdOpen && cmdClose, { cmdOpen, cmdClose });
+    await page.keyboard.press('Control+k'); await sleep(200);
+    log(`[cmd focus] ${await page.evaluate(() => (document.activeElement || {}).dataset ? document.activeElement.dataset.role : null)} open=${!!(await page.$('[data-role="mission"]'))}`);
+    await page.focus('[data-role=command]');
+    await page.keyboard.type('@al'); await sleep(500); /* 셸은 @ 완성에 없다: @all */
+    const ment = !!(await page.$('.mt-mention'));
+    await page.keyboard.press('Tab'); await sleep(600);
+    const done = await page.evaluate(() => ({ text: document.querySelector('[data-role=command]').value, open: !!document.querySelector('[data-role=mission]') }));
+    check('@ 완성 목록이 열려 있으면 Tab은 완성(맵을 열지 않는다)', ment && /@all/.test(done.text) && !done.open, { ment, done });
+    await page.keyboard.press('Control+a'); await page.keyboard.press('Backspace'); await page.keyboard.press('Escape'); await sleep(200);
+    await closeMission(page);
+    await page.keyboard.press('Control+f'); await sleep(500);
+    const sField = await page.evaluate(() => (document.activeElement || {}).tagName);
+    await page.keyboard.press('Tab'); await sleep(500);
+    check('검색 입력칸에서 Tab은 원래 일(맵을 열지 않는다)', sField === 'INPUT' && !(await page.$('[data-role="mission"]')), { sField });
+    await page.keyboard.press('Escape'); await sleep(300);
+    // 터미널(실제 셸)에 초점 → Tab은 셸 자동 완성
+    if (real) {
+      await page.evaluate((sid) => window.__mt.getState().navigateTo(sid, { instant: true }), real); await sleep(2500);
+      const term = await page.evaluate((sid) => { const n = document.querySelector(`.react-flow__node[data-id="${sid}"] .xterm`) || document.querySelector('.xterm'); if (!n) return null; const r = n.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, real);
+      if (term) {
+        await page.mouse.click(term.x, term.y); await sleep(600);
+        await page.keyboard.type('Get-ChildIte'); await sleep(300);
+        await page.keyboard.press('Tab'); await sleep(1800);
+        const snap = call('terminal.snapshot', { session: real, format: 'text' });
+        const txt = String((snap && snap.text) || '');
+        const focusTerm = await page.evaluate(() => !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('.xterm')));
+        await shotTo(page, 'p178-2205-terminal-tab');
+        check('터미널에 초점이면 Tab은 셸로(자동 완성), 맵은 열리지 않는다', /Get-ChildItem/.test(txt) && !(await page.$('[data-role="mission"]')) && focusTerm, { tail: txt.trim().split('\n').slice(-3).join(' | ').slice(-240), focusTerm });
+        await page.keyboard.press('Control+c'); await sleep(400);
+      } else check('터미널 찾기', false, 'xterm 없음');
+    }
+    // 5. 좁은 창(정한 적 없음): 요약 칸은 접힌 채 시작, 맞춤 보기에서 내용이 칸 안(기둥이 왼쪽에서 잘리지 않는다), 멈춘 뒤 다시 옮기지 않는다
+    for (const [w, h] of [[1100, 800], [820, 1100]]) {
+      await closeMission(page);
+      await page.evaluate(() => { try { localStorage.removeItem('atrium.sessionMap.summary'); } catch { /* 없다 */ } });
+      await page.setViewportSize({ width: w, height: h }).catch(() => {}); await sleep(600);
+      await openMission(page);
+      await page.click('[data-action=ta-fit]'); await sleep(400);
+      const v0 = await page.evaluate(() => window.__mtTa.view());
+      await sleep(1500);
+      const nr = await page.evaluate(() => { const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect(), sp = document.querySelector('.mt-sm-spine').getBoundingClientRect(), world = [...document.querySelectorAll('[data-role=ln-band]')].map((b) => b.getBoundingClientRect()); return { panel: !!document.querySelector('[data-role=ln-summary]'), spineLeft: Math.round(sp.left - vp.left), right: Math.round(Math.max(...world.map((r) => r.right)) - vp.right), view: window.__mtTa.view(), label: window.__mtTa.label() }; });
+      await shotTo(page, `p178-${w}-fit`);
+      check(`[${w}×${h}] 좁은 창: 요약 칸 접힘으로 시작, 맞춤 보기 내용이 칸 안, 멈춘 뒤 보기가 그대로`, !nr.panel && nr.spineLeft >= 0 && nr.right <= 0 && Math.abs(nr.view.k - v0.k) < 1e-9 && Math.abs(nr.view.x - v0.x) < 0.5, { ...nr, v0 });
+    }
+    await page.evaluate(UNHOOK);
+  } finally { await closeApp(app); }
+}
+
 async function stopBoard() {
   for (const s of call('session.list').filter((x) => /^p153-/.test(x.name))) { try { atrium('kill', s.name, '--yes'); } catch (e) { log(`kill ${s.name} ${e.message.slice(0, 100)}`); } }
   await sleep(2000);
@@ -909,6 +1068,7 @@ try {
   else if (WHAT === 'r12real') await r12real();
   else if (WHAT === 'compare') { await compareApp(); await mock(true); }
   else if (WHAT === 'p157') await p157();
+  else if (WHAT === 'p178') await p178();
   else if (WHAT === 'stop') await stopBoard();
 } catch (e) {
   check('시험이 끝까지 돌았다', false, e.stack || e.message);

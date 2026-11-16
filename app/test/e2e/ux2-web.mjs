@@ -70,7 +70,7 @@ if (which === 'pc' || which === 'both') {
   const zoomMs = Date.now() - t0;
   await pg.mouse.down(); for (let k = 0; k < 20; k++) await pg.mouse.move(800 + k * 10, 500 + k * 4); await pg.mouse.up();
   await L.sleep(800); await shot(pg, 'pc-03-panned');
-  await pg.keyboard.press('m'); await L.sleep(1500); await shot(pg, 'pc-04-mission');
+  await pg.keyboard.press('Tab'); await L.sleep(1500); await shot(pg, 'pc-04-mission');
   const mm = await pg.evaluate(() => !!window.__mt.getState().missionOpen);
   await pg.keyboard.press('Escape'); await L.sleep(500);
   const overflow = await pg.evaluate(() => ({ docW: document.documentElement.scrollWidth, vw: innerWidth }));
