@@ -16,6 +16,7 @@ import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, �
 import { DeliveryQueue } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
 import { rigFlowHandlers } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
+import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -228,6 +229,7 @@ export class Backend {
     this.adopting = new Set();
 
     this.rig = new Rig(this); // P182
+    this.rigAmp = new RigAmp(this); // P189
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
@@ -777,12 +779,36 @@ export class Backend {
     const chunks = []; let size = 0; let tooBig = false;
     req.on('data', (d) => { size += d.length; if (size > 8 * 1024 * 1024) tooBig = true; else chunks.push(d); });
     req.on('end', () => {
-      res.writeHead(200); res.end(); // 먼저 200을 돌려준다. Claude Code는 hook 응답을 기다린다(E2 2.3).
+      const raw = tooBig ? '' : Buffer.concat(chunks).toString('utf8');
+      // P189: rig 자리 세션의 PreToolUse(pre-tool 훅, 쓰기 범위)·Stop(stopVerify)은 판단을 끝낸 뒤 답한다(harness-arch 15절 6단계).
+      //   그 밖의 hook은 지금처럼 먼저 200을 돌려준다. Claude Code는 hook 응답을 기다린다(E2 2.3)
+      const wait = !tooBig && this.rigAmp ? this.ampTarget(req.headers, raw) : null;
+      if (!wait) { res.writeHead(200); res.end(); }
       if (tooBig) return this.log('hook body too large', size);
       setImmediate(() => {
-        try { this.processHook(req.headers, Buffer.concat(chunks).toString('utf8')); } catch (e) { this.log('hook error', e.stack); }
+        try { this.processHook(req.headers, raw); } catch (e) { this.log('hook error', e.stack); }
       });
+      if (wait) this.answerHook(wait, res);
     });
+  }
+  // P189: 판이 기다려 답할 hook인가 → { s, ev, body } | null(인증이 맞는 rig 자리 세션의 PreToolUse·Stop만)
+  ampTarget(headers, raw) {
+    try {
+      const body = JSON.parse(raw); const ev = body.hook_event_name;
+      if (ev !== 'PreToolUse' && ev !== 'Stop') return null;
+      const sid = headers['x-mt-session'] || body.session_id;
+      const s = this.sessions.get(sid);
+      if (!s || headers.authorization !== `Bearer ${s.hookToken}`) return null;
+      return this.rigAmp.wants(s, ev) ? { s, ev, body } : null;
+    } catch { return null; }
+  }
+  // 판단 → 응답 본문(JSON) 또는 빈 200(통과). 판의 오류는 통과(훅의 onFail block은 rig가 거절로 돌려준다)
+  async answerHook({ s, ev, body }, res) {
+    let out = null;
+    try { out = await this.rigAmp.answer(s, ev, body); } catch (e) { this.log('rig amp error', e.stack); out = null; }
+    if (res.writableEnded || res.destroyed) return;
+    if (out) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(out)); }
+    else { res.writeHead(200); res.end(); }
   }
   processHook(headers, raw) {
     let body; try { body = JSON.parse(raw); } catch { return this.log('hook bad json'); }
@@ -799,6 +825,7 @@ export class Backend {
     // F4: Claude Code는 워크트리로 들어가면 hook의 cwd가 바뀐다
     if (body.cwd && body.cwd !== s.rt.cwd) { s.rt.cwd = body.cwd; this.probeGit(s, body.cwd); }
     if (ev === 'UserPromptSubmit') { s.draft = false; this.onLinkTargetPrompt(s, body.prompt); }
+    if ((ev === 'UserPromptSubmit' || ev === 'Stop') && this.rigAmp) this.rigAmp.syncSettings(s); // P189: 자리를 정했거나 정의가 바뀌었으면 설정 파일의 증폭을 맞춘다
     const info = { ev, tool: body.tool_name || null, authOk, bytes: raw.length, sessionIdMatches: body.session_id === s.sessionId, permissionMode: body.permission_mode || null };
     if (ev === 'Stop') info.lastAnswer = clip(body.last_assistant_message, 300);
     if (ev === 'UserPromptSubmit') info.prompt = clip(s.rt.lastPrompt, 200);
@@ -994,6 +1021,7 @@ export class Backend {
 
   // 판이 다시 띄울 때의 실행 값. P4 전에 띄운 세션(이어 가기 명령에 --plugin-dir가 없음)은 그대로 둔다
   launchOf(s) {
+    if (this.rigAmp) this.rigAmp.syncSettings(s); // P189: 다시 띄우기 전에 설정 파일의 증폭을 지금 자리·정의에 맞춘다
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
     return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.plugin : {}) };
   }
@@ -1025,7 +1053,7 @@ export class Backend {
     const br = this.branch && typeof this.branch.token === 'function' ? this.branch : null; // 하위 세션 명령이 없는 판(시험의 가짜 판)은 env와 토큰 없이
     if (br) writeTokenFile(this.cfg.sessionsDir, s.sessionId, br.token(s.sessionId));
     const hf = this.harnessFiles || {};
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null }); // P133: 갈라 열기는 처음 한 번만
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: this.rigAmp ? this.rigAmp.launcherArgs(s, plan.args || []) : plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null }); // P133: 갈라 열기는 처음 한 번만
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1403,6 +1431,8 @@ export class Backend {
       const firstPrompt = p.prompt ? await this.humanFirstPrompt(p, { ws, name, kind, model, cwd }) : null;
 
       const sessionId = crypto.randomUUID();
+      // P189: 판이 rig 자리를 위해 띄우는 세션(rig-flow spawnSeat). 띄울 때부터 자리를 알아야 설정 파일·Codex 인자에 증폭이 들어간다
+      const seatSpawn = p[SEAT_SPAWN] && this.rig ? (() => { const r = this.rig.active(ws.key); return r && r.def.seats && r.def.seats[p[SEAT_SPAWN]] ? p[SEAT_SPAWN] : null; })() : null;
       let hookToken = '', settingsPath = '', trust = { needsTrust: null, reason: `${kind}: 예상하지 않음` }, args = [], resumeArgv = null;
       const cc = claude ? claudeConnection(conn) : null; // P115: 연결 → 설정 파일의 ANTHROPIC_BASE_URL·apiKeyHelper
       const envAll = claude ? { ...((plan.env && Object.keys(plan.env).length) ? plan.env : {}), ...cc.env } : {};
@@ -1412,6 +1442,7 @@ export class Backend {
         const extra = this.branch.settingsExtra(sessionId);
         if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수와 연결. 판의 값이 이긴다
         if (Object.keys(cc.settings).length) extra.settings = cc.settings;
+        if (seatSpawn) extra.amp = this.rigAmp.claudeAmp({ rigSeat: seatSpawn, workspaceKey: ws.key, kind: 'claude', cwd }); // P189
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
         const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.plugin };
@@ -1428,6 +1459,7 @@ export class Backend {
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
         s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan };
         this.store.insertSession({ ...s, runtime: rt });
+        if (seatSpawn) { s.rigSeat = seatSpawn; this.store.setSessionSeat(sessionId, seatSpawn); } // P189: rig-flow가 띄운 뒤 다시 적는다(같은 값)
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
       });

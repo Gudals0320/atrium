@@ -12,9 +12,10 @@ import path from 'node:path';
 import { runHook, pathish, HOOK_TIMEOUT_MS, HOOK_TIMEOUT_MAX_MS } from './hook-runner.mjs';
 import { cleanEnv } from './proc-env.mjs';
 import { shownName } from './session-label.mjs';
+import { AMP_ATS, validateAmp } from './rig-amp.mjs'; // P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
 
 export const RIG_FILE = '.atrium/rig.json';
-export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after'];
+export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
 export const HOOK_FROMS = ['human', 'agent', 'flow', 'any']; // P185: flow(흐름 줄이 만든 넘김 글)
 export const GUIDE_MAX = 20000;
 // P183: 도구(2단계). 시간 제한 기본 30분, 상한 6시간(넘으면 깎는다). 이름은 글자·숫자·_·.·-
@@ -88,7 +89,8 @@ export function validateRig(raw, { root, exists = isFile } = {}) {
   // P185: 자리·흐름(3단계, docs research harness-arch.md 14절)
   const fl = validateFlow(raw, { root, exists, tools });
   if (!fl.ok) return fl;
-  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow } };
+  const amp = validateAmp(raw, { seats: fl.flow.seats }); if (!amp.ok) return amp; // P189
+  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, amp: amp.amp } };
 }
 
 // ---------- P185: 자리(seats)·흐름(flow)·results·manager ----------
