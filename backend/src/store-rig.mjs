@@ -31,19 +31,29 @@ CREATE TABLE IF NOT EXISTS rig_case_items (id INTEGER PRIMARY KEY, case_id TEXT 
 CREATE INDEX IF NOT EXISTS rig_case_items_case ON rig_case_items(case_id);
 CREATE TABLE IF NOT EXISTS rig_seat_counters (workspace_key TEXT NOT NULL, seat TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (workspace_key, seat)) STRICT;
 `;
+// P188: 정의의 수명(5단계, 15절). rig_versions: 판이 맞는 정의로 처음 읽은 rig.json의 새 해시마다 한 줄(n은 워크스페이스마다 1부터).
+//   내용은 데이터 폴더 rigs/<워크스페이스>/<n>-<해시>.json(file). by: manager(관리자 자리) | human | unknown. note: 한 줄 메모
+// rig_cycles: 느린 고리(정의 cycles의 줄)마다 다음 시각(next_at). sig는 그 줄의 모양(every·to·run)이라 줄이 바뀌면 다시 센다
+export const RIG_ADMIN_SCHEMA = `
+CREATE TABLE IF NOT EXISTS rig_versions (workspace_key TEXT NOT NULL, n INTEGER NOT NULL, hash TEXT NOT NULL, t INTEGER NOT NULL, by TEXT NOT NULL, note TEXT, file TEXT, PRIMARY KEY (workspace_key, n)) STRICT;
+CREATE TABLE IF NOT EXISTS rig_cycles (workspace_key TEXT NOT NULL, line INTEGER NOT NULL, next_at INTEGER NOT NULL, last_at INTEGER, sig TEXT, PRIMARY KEY (workspace_key, line)) STRICT;
+`;
 export const RIG_COLUMNS = {
   sessions: { rig_seat: 'TEXT' }, // P185: 세션이 맡은 rig 자리(사람이 정하거나 판이 자리를 위해 띄움)
   // P185: 일의 건(case_id), 받는 자리(seat), 보낸 쪽 기록(via JSON: { by, fromSeat, result, line, escalated }). max_live 줄에 선 일은 to_session이 ''다
   work_units: { case_id: 'TEXT', seat: 'TEXT', via: 'TEXT' },
-  workspaces: { rig_enabled: 'INTEGER', rig_enabled_at: 'INTEGER' },
+  workspaces: { rig_enabled: 'INTEGER', rig_enabled_at: 'INTEGER', rig_protected: 'TEXT' }, // P188: rig_protected(사람만 고치는 목록)
   deliveries: { origin: 'TEXT', from_session: 'TEXT' },
   rig_hook_runs: { tool_run_id: 'TEXT' }, // P183: 도구 훅이면 그 실행
+  rig_cases: { version_n: 'INTEGER' }, // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다)
+  // P188: 사람만 고치는 목록. JSON { pointers: ["/seats/reviewer", …], files: [{ path, sha256, at }] } | null
 };
 const J = (s, d = null) => { if (s == null) return d; try { return JSON.parse(s); } catch { return d; } };
 const toolRow = (r) => (r ? { id: r.id, sessionId: r.session_id, workspaceKey: r.workspace_key ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, tool: r.tool, argv: J(r.argv, []), args: J(r.args, []), argsGiven: J(r.args_given), cwd: r.cwd ?? null, rigHash: r.rig_hash ?? null, status: r.status, exitCode: r.exit_code ?? null, startedAt: r.started_at, endedAt: r.ended_at ?? null, logPath: r.log_path ?? null, logBytes: r.log_bytes ?? null, logCut: !!r.log_cut, outSha256: r.out_sha256 ?? null, hooks: J(r.hooks, []), appended: r.appended ?? null, error: r.error ?? null } : null);
 const TOOL_COLS = { status: 'status', exitCode: 'exit_code', endedAt: 'ended_at', logBytes: 'log_bytes', logCut: 'log_cut', outSha256: 'out_sha256', hooks: 'hooks', appended: 'appended', error: 'error', args: 'args', argv: 'argv' };
 
-const caseRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, owner: r.owner_session, state: r.state, createdAt: r.created_at, closedAt: r.closed_at ?? null, edgeCounts: J(r.edge_counts, {}) || {}, blockedReason: r.blocked_reason ?? null } : null);
+const caseRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, owner: r.owner_session, state: r.state, createdAt: r.created_at, closedAt: r.closed_at ?? null, edgeCounts: J(r.edge_counts, {}) || {}, blockedReason: r.blocked_reason ?? null, versionN: r.version_n ?? null } : null);
+const versionRow = (r) => (r ? { workspaceKey: r.workspace_key, n: r.n, hash: r.hash, t: r.t, by: r.by, note: r.note ?? null, file: r.file ?? null } : null);
 // P185: 일 행 + 건 칸(store-units.mjs의 unitRow와 같은 모양). 자리 줄에 선 일은 to가 null
 const flowUnitRow = (r) => (r ? { id: r.id, from: r.from_session, to: r.to_session || null, origin: r.origin, spec: r.spec, status: r.status, createdAt: r.created_at, closedAt: r.closed_at ?? null, caseId: r.case_id ?? null, seat: r.seat ?? null, via: J(r.via) } : null);
 const runRow = (r) => (r ? { id: r.id, t: r.t, workspaceKey: r.workspace_key ?? null, at: r.at, hookIndex: r.hook_index, argv: JSON.parse(r.argv), decision: r.decision, reason: r.reason ?? null, note: r.note ?? null, beforeText: r.before_text ?? null, rigHash: r.rig_hash ?? null, sessionId: r.session_id ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, ms: r.ms ?? null, error: r.error ?? null } : null);
@@ -93,7 +103,7 @@ export function installRig(Store) {
     },
     // ---------- P185: 자리와 건 ----------
     setSessionSeat(sessionId, seat) { this.st('UPDATE sessions SET rig_seat = ? WHERE session_id = ?').run(seat || null, sessionId); },
-    insertCase(c) { this.st('INSERT INTO rig_cases (id, workspace_key, owner_session, state, created_at, closed_at, edge_counts, blocked_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(c.id, c.workspaceKey, c.owner, c.state || 'open', c.createdAt, c.closedAt ?? null, JSON.stringify(c.edgeCounts || {}), c.blockedReason ?? null); },
+    insertCase(c) { this.st('INSERT INTO rig_cases (id, workspace_key, owner_session, state, created_at, closed_at, edge_counts, blocked_reason, version_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(c.id, c.workspaceKey, c.owner, c.state || 'open', c.createdAt, c.closedAt ?? null, JSON.stringify(c.edgeCounts || {}), c.blockedReason ?? null, c.versionN ?? null); },
     getCase(id) { return caseRow(this.st('SELECT * FROM rig_cases WHERE id = ?').get(id)); },
     updateCase(id, fields) {
       const cols = { state: 'state', closedAt: 'closed_at', edgeCounts: 'edge_counts', blockedReason: 'blocked_reason' };
@@ -123,5 +133,68 @@ export function installRig(Store) {
       const rows = workspaceKey ? this.st('SELECT * FROM rig_hook_runs WHERE workspace_key = ? ORDER BY id DESC LIMIT ?').all(workspaceKey, limit) : this.st('SELECT * FROM rig_hook_runs ORDER BY id DESC LIMIT ?').all(limit);
       return rows.map(runRow);
     },
+    // ---------- P188: 정의 버전, 사람만 고치는 목록, 느린 고리 ----------
+    insertRigVersion(x) {
+      const n = Number(this.st('SELECT COALESCE(MAX(n), 0) AS n FROM rig_versions WHERE workspace_key = ?').get(x.workspaceKey).n) + 1;
+      this.st('INSERT INTO rig_versions (workspace_key, n, hash, t, by, note, file) VALUES (?, ?, ?, ?, ?, ?, ?)').run(x.workspaceKey, n, x.hash, x.t ?? Date.now(), x.by || 'unknown', x.note ?? null, x.file ?? null);
+      return n;
+    },
+    setRigVersionFile(key, n, file) { this.st('UPDATE rig_versions SET file = ? WHERE workspace_key = ? AND n = ?').run(file, key, n); },
+    rigVersions(key) { return this.st('SELECT * FROM rig_versions WHERE workspace_key = ? ORDER BY n').all(key).map(versionRow); },
+    rigVersion(key, n) { return versionRow(this.st('SELECT * FROM rig_versions WHERE workspace_key = ? AND n = ?').get(key, n)); },
+    lastRigVersion(key) { return versionRow(this.st('SELECT * FROM rig_versions WHERE workspace_key = ? ORDER BY n DESC LIMIT 1').get(key)); },
+    // 사람만 고치는 목록 → { pointers, files } | null
+    rigProtected(key) {
+      const r = this.st('SELECT rig_protected FROM workspaces WHERE workspace_key = ?').get(key);
+      const v = r ? J(r.rig_protected) : null;
+      return v && typeof v === 'object' ? { pointers: Array.isArray(v.pointers) ? v.pointers : [], files: Array.isArray(v.files) ? v.files : [] } : null;
+    },
+    setRigProtected(key, v) {
+      const empty = !v || (!(v.pointers || []).length && !(v.files || []).length);
+      this.st('UPDATE workspaces SET rig_protected = ?, updated_at = ? WHERE workspace_key = ?').run(empty ? null : JSON.stringify({ pointers: v.pointers || [], files: v.files || [] }), Date.now(), key);
+    },
+    // 버전마다 건 수, 상한 초과(edge_counts의 '<줄>>else' 합), blocked·open 수
+    caseStatsByVersion(key) {
+      const out = {};
+      for (const r of this.st('SELECT version_n, state, edge_counts FROM rig_cases WHERE workspace_key = ?').all(key)) {
+        const k = r.version_n ?? 0; const o = out[k] || (out[k] = { cases: 0, escalations: 0, blocked: 0, open: 0 });
+        o.cases++; if (r.state === 'blocked') o.blocked++; if (r.state === 'open') o.open++;
+        const ec = J(r.edge_counts, {}) || {};
+        for (const [kk, v] of Object.entries(ec)) if (kk.endsWith('>else')) o.escalations += Number(v) || 0;
+      }
+      return out;
+    },
+    // 해시마다 훅 거절 수(reject·blocked)
+    hookRejectsByHash(key) {
+      const rows = this.st("SELECT rig_hash, COUNT(*) AS n FROM rig_hook_runs WHERE workspace_key = ? AND decision IN ('reject', 'blocked') GROUP BY rig_hash").all(key);
+      return Object.fromEntries(rows.map((r) => [r.rig_hash, Number(r.n)]));
+    },
+    // 버전마다 done 값이 ok가 아닌 시도 수(반려·실패 등)
+    notOkByVersion(key) {
+      const rows = this.st("SELECT c.version_n AS v, COUNT(*) AS n FROM unit_tries t JOIN work_units u ON u.id = t.unit_id JOIN rig_cases c ON c.id = u.case_id WHERE c.workspace_key = ? AND t.result IS NOT NULL AND t.result != 'ok' GROUP BY c.version_n").all(key);
+      return Object.fromEntries(rows.map((r) => [r.v ?? 0, Number(r.n)]));
+    },
+    getCycle(key, line) { const r = this.st('SELECT * FROM rig_cycles WHERE workspace_key = ? AND line = ?').get(key, line); return r ? { workspaceKey: r.workspace_key, line: r.line, nextAt: r.next_at, lastAt: r.last_at ?? null, sig: r.sig ?? null } : null; },
+    setCycle(key, line, { nextAt, lastAt = null, sig = null }) { this.st('INSERT INTO rig_cycles (workspace_key, line, next_at, last_at, sig) VALUES (?, ?, ?, ?, ?) ON CONFLICT(workspace_key, line) DO UPDATE SET next_at = excluded.next_at, last_at = excluded.last_at, sig = excluded.sig').run(key, line, nextAt, lastAt, sig); },
+    dropCyclesFrom(key, line) { this.st('DELETE FROM rig_cycles WHERE workspace_key = ? AND line >= ?').run(key, line); },
+    // 느린 고리 요약의 재료(그 기간 [since, until))
+    rigPeriod(key, since, until) {
+      const casesOpened = this.st('SELECT * FROM rig_cases WHERE workspace_key = ? AND created_at >= ? AND created_at < ? ORDER BY created_at').all(key, since, until).map(caseRow);
+      const casesClosed = this.st('SELECT * FROM rig_cases WHERE workspace_key = ? AND closed_at >= ? AND closed_at < ? ORDER BY closed_at').all(key, since, until).map(caseRow);
+      const hooks = this.st('SELECT decision, COUNT(*) AS n FROM rig_hook_runs WHERE workspace_key = ? AND t >= ? AND t < ? GROUP BY decision ORDER BY n DESC').all(key, since, until).map((r) => ({ decision: r.decision, n: Number(r.n) }));
+      const rejectReasons = this.st("SELECT COALESCE(reason, error, '') AS why, COUNT(*) AS n FROM rig_hook_runs WHERE workspace_key = ? AND t >= ? AND t < ? AND decision IN ('reject', 'blocked', 'failed') GROUP BY why ORDER BY n DESC LIMIT 5").all(key, since, until).map((r) => ({ reason: r.why, n: Number(r.n) }));
+      const toolFails = this.st("SELECT tool, status, exit_code, error, started_at FROM tool_runs WHERE workspace_key = ? AND started_at >= ? AND started_at < ? AND status != 'running' AND NOT (status = 'done' AND exit_code = 0) ORDER BY started_at DESC LIMIT 50").all(key, since, until).map((r) => ({ tool: r.tool, status: r.status, exitCode: r.exit_code ?? null, error: r.error ?? null, at: r.started_at }));
+      const toolRuns = Number(this.st('SELECT COUNT(*) AS n FROM tool_runs WHERE workspace_key = ? AND started_at >= ? AND started_at < ?').get(key, since, until).n);
+      // 사람이 rig 자리 세션에 보낸 글(전달 출처 human)
+      const human = this.st("SELECT d.session_id, d.text, d.created_at, s.name, s.rig_seat FROM deliveries d JOIN sessions s ON s.session_id = d.session_id WHERE d.origin = 'human' AND s.rig_seat IS NOT NULL AND s.workspace_key = ? AND d.created_at >= ? AND d.created_at < ? ORDER BY d.created_at LIMIT 100").all(key, since, until).map((r) => ({ sessionId: r.session_id, name: r.name, seat: r.rig_seat, text: r.text, at: r.created_at }));
+      return { casesOpened, casesClosed, hooks, rejectReasons, toolFails, toolRuns, human };
+    },
+    // 열린(open·blocked) 건과 그 건의 마지막 일 시각(마지막 넘김)
+    liveCasesWithLast(key) {
+      return this.st("SELECT c.*, (SELECT MAX(u.created_at) FROM work_units u WHERE u.case_id = c.id) AS last_at FROM rig_cases c WHERE c.workspace_key = ? AND c.state IN ('open', 'blocked') ORDER BY c.created_at").all(key).map((r) => ({ ...caseRow(r), lastAt: r.last_at ?? r.created_at }));
+    },
+    // 그 세션의 그 시각 상태(마지막 state 이벤트의 to). 관리자 자리가 일하는 턴 중이었나를 본다
+    stateAt(sessionId, t) { const r = this.st("SELECT data FROM events WHERE session_id = ? AND kind = 'state' AND t <= ? ORDER BY id DESC LIMIT 1").get(sessionId, t); const d = r ? J(r.data) : null; return d ? d.to || null : null; },
   });
 }
+

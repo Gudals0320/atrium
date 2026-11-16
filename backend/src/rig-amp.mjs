@@ -195,16 +195,8 @@ export function stopReason(results) {
 export class RigAmp {
   constructor(b) { this.b = b; this.stopBlocks = new Map(); /* 시도 ID → 막은 수 */ }
 
-  // P188과 함께 쓰는 사람만 고치는 목록. P188 합치기 전에는 같은 이름·모양의 임시 읽기
-  protectedOf(key) {
-    const st = this.b.store;
-    if (st && typeof st.rigProtected === 'function') { try { return st.rigProtected(key); } catch { return null; } }
-    if (this.b.rig && typeof this.b.rig.rigProtected === 'function') { try { return this.b.rig.rigProtected(key); } catch { return null; } }
-    try {
-      const r = st.st('SELECT rig_protected FROM workspaces WHERE workspace_key = ?').get(key);
-      return r && r.rig_protected ? JSON.parse(r.rig_protected) : null;
-    } catch { return null; }
-  }
+  // 사람만 고치는 목록: P188 rig.mjs의 rigProtected(workspaceKey) 하나가 읽는다 → { pointers, files: [{ path, sha256, at }] } | null
+  protectedOf(key) { return this.b.rig ? this.b.rig.rigProtected(key) : null; }
 
   // 그 세션의 증폭 맥락 → null | { key, r, seat, kind, writes, stopVerify, preTool, protectedFiles, root, cwd }
   ctxOf(s) {

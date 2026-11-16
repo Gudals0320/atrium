@@ -99,6 +99,15 @@ export class ToolRuns {
     const name = String(o.tool || '');
     const tool = r.def.tools[name];
     if (!tool) throw apiError('unknown_tool', r.seat && this.b.rig.read(caller.workspaceKey).def.tools[name] ? `rig의 ${r.seat} 자리는 도구 ${name}를 쓰지 못한다. 이 자리의 도구: ${r.seatTools.join(', ') || '(없음)'}` : `rig에 도구 ${name || '(이름 없음)'}가 없다. 있는 도구: ${Object.keys(r.def.tools).join(', ')}`);
+    // P188: 사람만 고치는 파일의 해시가 사람이 넣을 때와 다르면 도구를 돌리지 않는다(알림: 관리자 자리와 사람). 장부에 rejected로 남긴다
+    const changed = rig.changedFiles ? rig.changedFiles(caller.workspaceKey) : [];
+    if (changed.length) {
+      const why = `사람만 고치는 파일이 사람이 승인한 때와 달라 rig 도구를 돌리지 않는다: ${changed.map((x) => `${x.path}${x.got ? '' : '(없음)'}`).join(', ')}. 그 파일을 되돌리거나 사람에게 보드의 rig 메뉴에서 다시 승인해 달라고 한다.`;
+      const tr0 = st.openTryOf(caller.sessionId);
+      st.insertToolRun({ id: 'tr' + crypto.randomBytes(5).toString('hex'), sessionId: caller.sessionId, workspaceKey: caller.workspaceKey, unitId: tr0 ? tr0.unitId : null, tryId: tr0 ? tr0.id : null, tool: name, argv: tool.run, args: Array.isArray(o.args) ? o.args.map(String) : [], cwd: null, rigHash: r.hash, status: 'rejected', startedAt: Date.now(), endedAt: Date.now(), hooks: [], error: 'rig_protected' });
+      rig.alert(caller.workspaceKey, { kind: 'file', items: changed.map((x) => x.path), hash: changed.map((x) => x.got || 'missing').join(','), reason: why });
+      throw apiError('rig_protected', why, { files: changed.map((x) => x.path) });
+    }
     const given = Array.isArray(o.args) ? o.args.map(String) : [];
     if (!tool.parallel) {
       const busy = [...this.live.values()].find((x) => x.sessionId === caller.sessionId);

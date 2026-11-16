@@ -16,5 +16,11 @@
     { "from": "reviewer", "on": "ok",       "to": "main" }
   ],
   "manager": "main",
+  "tools": {
+    "summary": { "run": ["node", ".atrium/tools/summary.mjs"], "desc": "sample summary: counts files under .atrium" }
+  },
+  "cycles": [
+    { "every": "1h", "to": "manager", "run": ["node", ".atrium/tools/summary.mjs"], "stale": "1h" }
+  ],
   "guide": { "default": ".atrium/guide.txt" }
 }

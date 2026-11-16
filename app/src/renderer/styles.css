@@ -2510,3 +2510,8 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-sm-peek .pkr .rr { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-sm-peek .pkr .rr b { font-weight: 600; margin-right: 6px; color: var(--ln-dim); }
 .mt-sm-peek .pkr .rr.bad { color: #ffb3c1; }
+/* P188: rig 메뉴의 사람만 고치는 목록 */
+.mt-rigprot .mt-rigon-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mt-rigprot .mt-rigon-list li code { flex: 1 1 auto; min-width: 0; word-break: break-all; }
+.mt-rigprot-add { display: flex; gap: 6px; margin: 4px 0 10px; }
+.mt-rigprot-in { flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line, #444); background: transparent; color: inherit; font: 12px var(--font-mono); }

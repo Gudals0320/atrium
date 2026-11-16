@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { UnitStops } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
-import { RIG_HEADER_LINE } from './rig.mjs'; // P182
+import { RIG_HEADER_TAIL } from './rig.mjs'; // P182. P188: 세 줄 머리의 셋째 줄 끝
 import { seatHeader } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
@@ -26,8 +26,7 @@ export function unitHeader({ parent, unitId, rig = false }) {
   return [
     `[Atrium 보드] 관계: 너는 @${parent}의 하위 워커다. 아래 일은 @${parent}가 맡긴 일 ${unitId}이다(지금 일 보기: \`atrium item\`).`,
     `[Atrium 보드] 끝나면 \`atrium done ok "<보고>"\`(못 했으면 \`atrium done failed "<까닭>"\`)로 닫고 쉰다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다.`,
-    '[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.',
-    ...(rig ? [RIG_HEADER_LINE] : []),
+    `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.${rig ? ` ${RIG_HEADER_TAIL}` : ''}`, // P188: 판 줄은 세 줄 이하라 rig 안내는 셋째 줄 끝에
   ].join('\n');
 }
 // 위 세션이 받는 done 글(판 알림 꼴이라 위 세션 카드의 마지막 지시가 되지 않는다)
@@ -92,11 +91,11 @@ export class WorkUnits {
     const b = this.b;
     const flow = this.branch && this.branch.flow;
     const t = b.sessions.get(unit.to);
-    const ctx = flow && unit.caseId && t ? flow.seatCtx(t) : null;
+    const ctx = flow && unit.caseId && t ? flow.seatCtx(t, { caseId: unit.caseId }) : null; // P188: 건의 버전
     if (ctx) {
       const v = unit.via || {};
-      const by = v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
-      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, results: ctx.def.results, assign: flow.assignTargets(ctx), may: ctx.seat.may, guide: !!ctx.seat.guide });
+      const by = v.cycle != null ? `보드의 느린 고리 cycles[${v.cycle}]가 만듦` : v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
+      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide }); // P188: 세 줄. 값과 자리 목록은 atrium me
     }
     return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)) });
   }

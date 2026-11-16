@@ -425,7 +425,7 @@ test('P183 꺼진 워크스페이스·정의 없음·도구 없음·잘못된 �
     writeRig(ws.root, { tools: { a: { run: 'bad' } } });
     b.rig.cache.clear();
     r = await runCli(['tool'], env);
-    assert.equal(r.code, 1); assert.match(r.stderr, /정의가 잘못돼/);
+    assert.equal(r.code, 1); assert.match(r.stderr, /도구\(tools\)가 없다/, 'P188: 캐시를 비워도 마지막 맞은 버전(rig_versions)을 쓴다'); assert.ok(b.rig.read(ws.key).invalid);
     assert.equal(toolRows(b).length, 0); assert.equal(hookRows(b).length, 0);
   } finally { srv.close(); await stop(); }
 });

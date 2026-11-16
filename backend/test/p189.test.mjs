@@ -37,7 +37,7 @@ async function board({ def = sampleDef(), enable = true, extraHooks = {}, protec
   const ws = await workspaceOf(dir);
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   if (enable) store.setRigEnabled(ws.key, true);
-  if (protectedFiles) { try { store.db.exec('ALTER TABLE workspaces ADD COLUMN rig_protected TEXT'); } catch {} store.db.prepare('UPDATE workspaces SET rig_protected = ? WHERE workspace_key = ?').run(JSON.stringify({ pointers: [], files: protectedFiles.map((p) => ({ path: p, sha256: 'x', at: 1 })) }), ws.key); }
+  if (protectedFiles) { store.setRigProtected(ws.key, { pointers: [], files: protectedFiles.map((p) => ({ path: p, sha256: 'x', at: 1 })) }); } // P188: 사람만 고치는 목록
   const b = { cfg: { hookTimeoutSec: 2, sessionsDir: path.join(dir, 'sessions') }, store, sessions: new Map(), log: () => {} };
   b.rig = new Rig(b);
   b.rigAmp = new RigAmp(b);

@@ -207,9 +207,10 @@ test('P185 흐름: 메인이 맡겨 건이 생김 → worker ok → reviewer →
     await gotUnit(w1);
     const head = w1.texts[0];
     assert.match(head, /^\[Atrium 보드\] 관계: 너는 rig의 worker 자리다\. 아래 일은 건 c\w+의 일 u\w+이다\(@lead가 맡김/);
-    assert.match(head, /값: ok, failed, rejected/);
-    assert.match(head, /일 맡기기 없음 · 글만 main/);
-    assert.ok(head.includes('이 자리의 안내(할 일과 값을 고르는 법)가 있다. 일을 시작하기 전에 `atrium guide`로 먼저 읽는다.'), '자리 안내가 있으면 먼저 읽으라고 한다');
+    // P188: 머리는 판 줄 세 줄 이하. 값과 보낼 수 있는 자리는 atrium me로
+    assert.equal(head.split('\n\n')[0].split('\n').length, 3);
+    assert.match(head, /끝나면 `atrium done <값> "<보고>"`로 닫고 쉰다\(값과 보낼 수 있는 자리는 `atrium me`\)/);
+    assert.ok(head.includes('일을 시작하기 전에 `atrium guide`로 이 자리의 안내를 먼저 읽는다.'), '자리 안내가 있으면 먼저 읽으라고 한다');
     assert.ok(!head.includes(RIG_HEADER_LINE));
     assert.equal(promptTask(head), '일: 목록을 세어 보고한다', '카드에는 할 일만');
     const c0 = b.store.getCase(caseId);
@@ -350,7 +351,7 @@ test('P185 done 값 검사: 자리 세션은 results 낱말만, 자리 없는 �
 test('P185 되돌아감 상한: else가 없으면 manager, manager도 없으면 건 blocked와 주인에게 판 알림(이력). 주인이 다시 맡기면 이어진다', async () => {
   const def = sampleDef();
   def.flow[2] = { from: 'reviewer', on: 'rejected', to: 'worker', max: 0 };
-  delete def.manager;
+  delete def.manager; delete def.cycles; // P188: 견본의 느린 고리는 manager로 간다
   const { b, add, seat, by, stop } = await board({ def });
   try {
     const main = add('lead'); seat(main, 'main');

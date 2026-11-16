@@ -16,7 +16,7 @@ import { workspaceOf } from '../src/git.mjs';
 import { DeliveryQueue } from '../src/delivery.mjs';
 import { Branch, ATRIUM_ALLOW } from '../src/branch.mjs';
 import { UnitStops } from '../src/unit-stops.mjs';
-import { Rig, rigHandlers, validateRig, RIG_HEADER_LINE, GUIDE_MAX } from '../src/rig.mjs';
+import { Rig, rigHandlers, validateRig, RIG_HEADER_LINE, RIG_HEADER_TAIL, GUIDE_MAX } from '../src/rig.mjs';
 import { runHook, findExe, cmdLine, parseHookOutput, spawnPlan } from '../src/hook-runner.mjs';
 import { Backend } from '../src/backend.mjs';
 import { VERB_NAMES, CONTRACT_VERSION } from '../src/cli-contract.mjs';
@@ -277,7 +277,7 @@ test('P182 켜기: rig.enable·disable은 판 API 토큰 연결(local)만, 기�
     for (const op of ['rig.enable', 'rig', 'enable']) {
       const body = JSON.stringify({ workspace: ws.key });
       const res = await new Promise((r) => { const q = http.request({ host: '127.0.0.1', port: b.cfg.port, path: `/branch/${op}`, method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${b.branch.token(w.sessionId)}`, 'x-mt-session': w.sessionId } }, (x) => { let t = ''; x.on('data', (d) => (t += d)); x.on('end', () => r(JSON.parse(t))); }); q.end(body); });
-      assert.equal(res.error.code, 'unknown_op', op);
+      assert.equal(res.error.code, op === 'rig' ? 'bad_request' : 'unknown_op', op); // P188: /branch/rig은 관리자 자리의 check·log·rollback·cleanup뿐(켜는 길은 없다)
     }
     assert.equal(b.store.rigState(ws.key).enabled, false);
   } finally { srv.close(); await stop(); }
@@ -386,7 +386,8 @@ test('P182 deliver(에이전트): atrium prompt는 큐에 넣기 전에 훅을 �
     const got = w1.texts[0];
     const [head, body] = got.split('\n\n');
     assert.match(head, /^\[Atrium 보드\] 관계: 너는 @lead의 하위 워커다/);
-    assert.ok(head.split('\n').includes(RIG_HEADER_LINE), '켜진 워크스페이스의 일 머리에 rig 한 줄');
+    assert.ok(head.split('\n')[2].endsWith(RIG_HEADER_TAIL), '켜진 워크스페이스의 일 머리에 rig 안내(P188: 셋째 줄 끝)');
+    assert.ok(head.split('\n').length <= 3, 'P188: 머리는 세 줄 이하');
     assert.equal(body, '코드를 고쳐라\n[rig sample] deliver hook saw this (from agent)');
     const unit = b.store.db.prepare('SELECT * FROM work_units').get();
     assert.equal(unit.spec, body, '일의 할 일은 고친 글');
