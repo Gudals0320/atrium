@@ -141,7 +141,7 @@ export function QueueGroup({ g, texts = {}, edit, onSaved, phone = false }) {
               tabIndex={queued && many ? 0 : undefined} onKeyDown={queued && many ? (e) => onRowKey(e, d) : undefined} title={queued && many ? t('deliveryQueue.keysHint') : undefined}>
               <span className="mt-dq-no" aria-hidden="true">{queued ? qi + 1 : ''}</span>
               <span className="mt-dq-text">{shortText(texts[d.deliveryId] ?? d.text, phone ? 60 : 90) || <i>{t('deliveryQueue.chars', { n: d.chars || 0 })}</i>}</span>
-              <span className="mt-dq-st">{d.editing ? t('deliveryQueue.editingElsewhere') : deliveryText(d)}</span>
+              <span className="mt-dq-st">{d.editing ? t('deliveryQueue.editingElsewhere') : deliveryText(queued && qi > 0 && d.reason !== 'editing' ? { ...d, reason: null } : d)}</span>{/* 기다리는 까닭은 맨 앞 글의 것이다(뒤 글은 차례를 기다린다) */}
               {!queued && <span className="mt-spin" />}
               {queued && (
                 <span className="mt-dq-acts">
