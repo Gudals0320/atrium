@@ -23,5 +23,5 @@ test('P133: Codex 대화의 묶임 글 — 잠금(Codex에서 사용 중), Codex
 test('P133: 두 사전에 같은 Codex 글 열쇠가 있다', () => {
   assert.deepEqual(Object.keys(ko.codexConvo).sort(), Object.keys(en.codexConvo).sort());
   for (const k of ['kind', 'kindTitle', 'open', 'app', 'appOpen', 'fork', 'forkTitle', 'forked', 'forkOnlyDesktop']) assert.ok(ko.codexConvo[k] && en.codexConvo[k], k);
-  assert.ok(ko.refuse.codex && en.refuse.codex);
+  assert.ok(ko.refuse.editor && en.refuse.editor && !ko.refuse.codex); // P174: Codex 대화도 지운다(편집기 확장 대화만 거절)
 });
