@@ -1,6 +1,7 @@
 // P165: 음성 입력 중계. 창·휴대폰 브라우저가 마이크 소리(16kHz 16비트 PCM 한 채널)를 판 API 웹소켓의 바이너리 프레임으로 보내면
 // 백엔드가 Soniox 실시간 전사(WebSocket)로 넘기고, 돌아온 글 토막을 그 클라이언트에게 voice.text 이벤트로 돌려준다.
-// - 키는 환경 변수 SONIOX_API_KEY에서 백엔드만 읽는다(없으면 Windows 사용자 환경 변수). 키 값은 창·로그·응답에 내보내지 않는다.
+// - 키는 이 프로세스의 환경 변수 SONIOX_API_KEY에서만 읽는다(레지스트리는 읽지 않는다. 판은 `secret-run atrium -- …`으로 띄워 키를 받는다).
+//   키 값은 창·로그·응답에 내보내지 않고, 판이 띄우는 세션·터미널에도 넘기지 않는다(proc-env.mjs의 envDenyList)
 //   Soniox에는 연결 머리(Authorization: Bearer)로 보낸다(시작 글의 api_key는 옛 방식)
 // - 인증은 판 API 웹소켓 그대로다(이 PC의 판 API 토큰, 원격은 짝 맺은 기기의 세션 쿠키). 따로 끝점을 열지 않는다
 // - 한 클라이언트에 녹음 하나, 판 전체 동시 상한(maxStreams), 한 번 길이 상한(maxMs). 연결이 끊기면 그 녹음을 닫는다
@@ -8,7 +9,6 @@
 // - P176: 들은 글이 말 없음 상한(idleMs) 동안 새로 오지 않으면 저절로 멈춘다(사람이 모르는 녹음으로 비용이 나가지 않게).
 //   창이 멈출 때는 까닭(user·send·hidden·unmount)을 voice.stop에 실어 보내고, 끝 줄(voice vN end <까닭>)에 남는다
 import { WebSocket } from 'ws';
-import { execFile } from 'node:child_process';
 
 export const SONIOX_URL = 'wss://stt-rt.soniox.com/transcribe-websocket';
 export const SONIOX_MODEL = 'stt-rt-v6';
@@ -54,24 +54,14 @@ export function sonioxTokens(msg) {
   return out;
 }
 
-// 키 읽기. 먼저 이 프로세스의 환경, 없으면 Windows 사용자 환경 변수(판이 뜬 뒤 키를 넣은 경우). 값은 돌려주기만 하고 적지 않는다
-export function readRegistryKey(name = 'SONIOX_API_KEY') {
-  if (process.platform !== 'win32') return Promise.resolve(null);
-  return new Promise((res) => {
-    execFile('reg.exe', ['query', 'HKCU\\Environment', '/v', name], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (err, stdout) => {
-      if (err) return res(null);
-      const m = String(stdout || '').match(new RegExp(`^\\s*${name}\\s+REG_(?:EXPAND_)?SZ\\s+(.*)$`, 'mi'));
-      res(m && m[1].trim() ? m[1].trim() : null);
-    });
-  });
-}
-export function makeKeyReader({ env = process.env, registry = readRegistryKey } = {}) {
+// 키 읽기: 이 프로세스의 환경만 본다. 값은 돌려주기만 하고 적지 않는다
+export function makeKeyReader({ env = process.env } = {}) {
   return async () => {
     const v = env.SONIOX_API_KEY;
-    if (v && String(v).trim()) return String(v).trim();
-    try { return (await registry('SONIOX_API_KEY')) || null; } catch { return null; }
+    return v && String(v).trim() ? String(v).trim() : null;
   };
 }
+export const NO_KEY_MESSAGE = 'SONIOX_API_KEY is not set in the Atrium backend environment. Start Atrium via secret-run (secret-run atrium -- <Atrium launcher>) so the key reaches the backend.';
 
 const err = (code, message) => Object.assign(new Error(message), { code });
 
@@ -95,7 +85,7 @@ export class VoiceRelay {
     const old = this.streams.get(client);
     if (old) this.close(old, 'replaced');
     const key = await this.getKey();
-    if (!key) throw err('voice_no_key', 'SONIOX_API_KEY is not set');
+    if (!key) throw err('voice_no_key', NO_KEY_MESSAGE);
     if (this.streams.size >= this.maxStreams) throw err('voice_busy', `too many voice streams (max ${this.maxStreams})`);
     const id = `v${++this.n}`;
     const s = { id, client, ws: null, at: Date.now(), lastAudio: Date.now(), frames: 0, bytes: 0, finishing: false, ended: false, timers: [] };

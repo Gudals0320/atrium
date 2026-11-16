@@ -195,15 +195,18 @@ const isPathKey = (k) => k.toUpperCase() === 'PATH';
 // 코어에 준 XDG_CONFIG_HOME(판 전용 hc 설정)은 프로그램에 새지 않게 빈 값으로 덮는다(빈 값은 XDG 규약상 기본 폴더)
 // P114 2b: extra는 판의 env(하네스 env 포함), pathFirst는 PATH 맨 앞에 둘 폴더들(판 데이터 폴더의 bin/ 등, harnessLaunch). PATH = pathFirst + 판의 hc 폴더 + 기본 PATH
 // (extra에 PATH가 있으면 그것이 기본 PATH). 같은 폴더는 한 번만. XDG_CONFIG_HOME은 extra에 있어도 빈 값으로 둔다(판 hc 설정이 새지 않게)
-export function terminalEnv({ exeDir, basePath = '', extra = {}, pathFirst = [] } = {}) {
+// deny: 넘기지 않는 비밀 변수 이름. 빈 값으로 덮는다(코어가 그 키를 가진 채 이미 떠 있어도 터미널에는 비어 간다)
+export function terminalEnv({ exeDir, basePath = '', extra = {}, pathFirst = [], deny = [] } = {}) {
   const norm = (p) => String(p).replace(/[\\/]+$/, '').toLowerCase();
   const out = {};
   let base = basePath;
-  for (const [k, v] of Object.entries(extra || {})) { if (v == null) continue; if (isPathKey(k)) base = String(v); else out[k] = String(v); }
+  const denied = new Set(deny.map((x) => String(x).toUpperCase()));
+  for (const [k, v] of Object.entries(extra || {})) { if (v == null || denied.has(k.toUpperCase())) continue; if (isPathKey(k)) base = String(v); else out[k] = String(v); }
   const seen = new Set(), parts = [];
   for (const p of [...(pathFirst || []), ...(exeDir ? [exeDir] : []), ...String(base || '').split(';')]) { if (!p) continue; const k = norm(p); if (seen.has(k)) continue; seen.add(k); parts.push(p); }
   if (parts.length) out.PATH = parts.join(';');
   out.XDG_CONFIG_HOME = '';
+  for (const k of denied) out[k] = '';
   return out;
 }
 

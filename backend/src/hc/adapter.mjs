@@ -24,7 +24,7 @@ import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
 import { InputTrace, inputSummary } from '../input-trace.mjs';
-import { registryPath } from '../proc-env.mjs';
+import { registryPath, envDenyList } from '../proc-env.mjs';
 import { psLine } from '../launch.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -304,7 +304,7 @@ export class HcAdapter extends EventEmitter {
   async paneEnv(extra = {}, pathFirst = []) {
     const reg = await registryPath().catch(() => null);
     const base = reg || this.env[Object.keys(this.env).find((k) => k.toUpperCase() === 'PATH')] || '';
-    return terminalEnv({ exeDir: this.exeDir, basePath: base, extra, pathFirst });
+    return terminalEnv({ exeDir: this.exeDir, basePath: base, extra, pathFirst, deny: envDenyList(this.env) });
   }
   // 셸 터미널 하나 = 판의 작업 공간 하나. 판이 만든 터미널이라 atrium-board 라벨
   async createWorkspace({ cwd, label, env = {} }) {

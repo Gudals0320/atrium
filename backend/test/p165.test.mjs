@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { VoiceRelay, sonioxTokens, sonioxConfig, makeKeyReader, SONIOX_MODEL } from '../src/voice.mjs';
+import * as voiceMod from '../src/voice.mjs';
 import { ApiServer } from '../src/api.mjs';
 
 const KEY = 'test-key-0123456789abcdef';
@@ -49,17 +50,17 @@ test('sonioxConfig: 실시간 모델, 16kHz PCM 한 채널, 한국어·영어 �
   assert.equal('api_key' in c, false);
 });
 
-test('makeKeyReader: 환경 변수 먼저, 없으면 사용자 환경 변수(레지스트리), 둘 다 없으면 null', async () => {
-  assert.equal(await makeKeyReader({ env: { SONIOX_API_KEY: ' a ' }, registry: async () => 'b' })(), 'a');
-  assert.equal(await makeKeyReader({ env: {}, registry: async () => 'b' })(), 'b');
-  assert.equal(await makeKeyReader({ env: {}, registry: async () => null })(), null);
-  assert.equal(await makeKeyReader({ env: {}, registry: async () => { throw new Error('x'); } })(), null);
+test('makeKeyReader: 이 프로세스의 환경만 본다(레지스트리는 읽지 않는다), 없으면 null', async () => {
+  assert.equal(await makeKeyReader({ env: { SONIOX_API_KEY: ' a ' } })(), 'a');
+  assert.equal(await makeKeyReader({ env: {} })(), null);
+  assert.equal(await makeKeyReader({ env: { SONIOX_API_KEY: '  ' } })(), null);
+  assert.equal(typeof voiceMod.readRegistryKey, 'undefined');
 });
 
 test('키가 없으면 voice_no_key로 거절하고 바깥에 붙지 않는다', async () => {
   let tried = 0;
   const v = new VoiceRelay({ getKey: async () => null, connect: () => { tried++; throw new Error('no'); } });
-  await assert.rejects(v.start({}, fakeClient()), (e) => e.code === 'voice_no_key' && /SONIOX_API_KEY/.test(e.message));
+  await assert.rejects(v.start({}, fakeClient()), (e) => e.code === 'voice_no_key' && /SONIOX_API_KEY/.test(e.message) && /secret-run atrium/.test(e.message));
   assert.equal(tried, 0);
 });
 
