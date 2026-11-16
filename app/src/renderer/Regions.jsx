@@ -9,6 +9,7 @@ import { useInvRef, useZoomStyle } from './zoom-var.js'; // P112: 배율을 따�
 import { useStore, getState, openDialog, selectWorkspace, noteWorkspace, toast, markArranged } from './store.js';
 import { Icon } from './lib/icons.jsx';
 import { useT, t, errText } from './lib/i18n.js';
+import { useDialog } from './dialog.js'; // P183: rig 켜기 확인 창
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
@@ -137,7 +138,7 @@ function RegionMenu({ at, close, w, arranged, z }) {
       <div className="mt-sb2-mh mt-rig-line" data-role="rig-status" data-rig={rig ? rig.state : 'loading'} title={rig && rig.invalid ? rig.invalid : undefined}>{rigLine(t, rig)}</div>
       {rig && rig.state !== 'none' && (rig.enabled
         ? item('rig-off', t('rig.menuOff'), () => setRig(w, false))
-        : item('rig-on', t('rig.menuOn'), () => setRig(w, true), { title: t('rig.onTitle', { hooks: (rig.hooks || []).map((h) => `${h.at}: ${h.run.join(' ')}`).join(' · ') || '-' }) }))}
+        : item('rig-on', t('rig.menuOn'), () => openDialog({ kind: 'rigon', ws: w })))}{/* P183: 켜기는 확인 창(돌 명령과 사용자 계정) 뒤에만 */}
       <div className="mt-sb2-msep" />
       {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}
     </div>,
@@ -161,8 +162,47 @@ function rigLine(t, r) {
   return r.invalid ? t('rig.stInvalid', { reason: r.invalid }) : t('rig.stOff');
 }
 async function setRig(w, on) {
-  try { await api.call(on ? 'rig.enable' : 'rig.disable', { workspace: w.key }); toast(t(on ? 'rig.turnedOn' : 'rig.turnedOff', { name: w.label || w.name })); }
-  catch (e) { toast(t('rig.fail', { error: errText(e) }), 'error'); }
+  try { await api.call(on ? 'rig.enable' : 'rig.disable', { workspace: w.key, ...(on ? { confirm: true } : {}) }); toast(t(on ? 'rig.turnedOn' : 'rig.turnedOff', { name: w.label || w.name })); return true; }
+  catch (e) { toast(t('rig.fail', { error: errText(e) }), 'error'); return false; }
+}
+// P183: rig 켜기 확인 창. 켜면 저장소의 내용(.atrium/rig.json)이 이 PC에서 사용자 계정으로 프로그램을 돌리므로, 돌 훅과 도구의 명령(인자 배열)을 보이고 확인을 받는다.
+//   정의가 나중에 바뀌어도 다시 묻지 않는다. 끌 때는 묻지 않는다. 원격 기기는 상태만 본다(백엔드가 막는다)
+export function RigOnDialog({ ws, onClose }) {
+  const t = useT();
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const box = useDialog(() => !busy && onClose());
+  useEffect(() => { api.call('rig.status', { workspace: ws.key }).then(setSt, (e) => setSt({ error: errText(e) })); }, [ws.key]);
+  const ok = st && !st.error && st.state !== 'none' && st.state !== 'invalid';
+  const argv = (run) => run.map((w) => (/[\s"]/.test(w) ? JSON.stringify(w) : w)).join(' ');
+  async function go() { setBusy(true); if (await setRig(ws, true)) onClose(); else setBusy(false); }
+  return (
+    <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
+      <div ref={box} className="mt-modal mt-rigon" data-role="rig-confirm" data-ws={ws.key}>
+        <h3>{t('rig.confirmTitle', { name: ws.label || ws.name })}</h3>
+        {!st ? <div>{t('rig.loading')}</div> : st.error ? <div>{st.error}</div> : (
+          <>
+            <div className="mt-rigon-warn" data-role="rig-confirm-warn">{t('rig.confirmWarn')}</div>
+            <div className="mt-rigon-root dim">{t('rig.confirmFile', { file: `${st.root}/${st.file}` })}</div>
+            {st.state === 'invalid' && <div className="mt-rigon-warn">{t('rig.stInvalid', { reason: st.invalid || '?' })}</div>}
+            <div className="mt-rigon-h">{t('rig.confirmHooks', { n: (st.hooks || []).length })}</div>
+            <ul className="mt-rigon-list" data-role="rig-confirm-hooks">
+              {(st.hooks || []).length ? st.hooks.map((h, i) => <li key={i}><span className="mt-rigon-at">{h.at}{h.from && h.from !== 'any' ? ` (${h.from})` : ''}{h.tool ? ` (${h.tool})` : ''}</span><code>{argv(h.run)}</code></li>) : <li className="dim">{t('rig.confirmNone')}</li>}
+            </ul>
+            <div className="mt-rigon-h">{t('rig.confirmTools', { n: (st.tools || []).length })}</div>
+            <ul className="mt-rigon-list" data-role="rig-confirm-tools">
+              {(st.tools || []).length ? st.tools.map((x) => <li key={x.name}><span className="mt-rigon-at">{x.name}</span><code>{argv(x.run)} …</code></li>) : <li className="dim">{t('rig.confirmNone')}</li>}
+            </ul>
+            <div className="mt-card-sub dim">{t('rig.confirmLater')}</div>
+          </>
+        )}
+        <div className="mt-card-actions">
+          <button className="mt-btn primary" disabled={busy || !ok} data-action="rig-confirm-on" onClick={go}>{t('rig.confirmOn')}</button>
+          <button className="mt-btn ghost" data-action="rig-confirm-cancel" onClick={onClose}>{t('common.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // P27: 워크트리 영역. P35: 리포 영역 안의 노란 상자(테두리, 옅은 바탕, 이름표 글자 모두 노란 계열, tokens.css --wt-box-*).

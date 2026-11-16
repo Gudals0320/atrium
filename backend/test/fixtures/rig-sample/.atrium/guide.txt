@@ -4,3 +4,4 @@ This workspace runs a sample rig.
 
 - Every message you receive ends with a stamp line added by the deliver hook.
 - `atrium done` needs a line `evidence: <what you checked>` in the report, or the board refuses to close the work.
+- Tool `count`: `atrium tool count --to N [--every ms]` prints N tick lines. The gate refuses it without `--to N` and adds `--every 1000` when you leave it out. The board adds one line after the output.

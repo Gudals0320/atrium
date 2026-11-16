@@ -212,10 +212,12 @@ export class WorkUnits {
   items(caller, o = {}) {
     const st = this.store();
     const limit = Math.min(Math.max(Number(o.limit) || 30, 1), 200);
-    const rows = st.unitsFrom(caller.sessionId, limit).map((u) => {
+    const units = st.unitsFrom(caller.sessionId, limit);
+    const toolCounts = st.toolRunCounts ? st.toolRunCounts(units.map((u) => u.id)) : {}; // P183: 일마다 도구 실행 수
+    const rows = units.map((u) => {
       const tr = st.lastTryOfUnit(u.id);
       return { id: u.id, to: this.nameOf(u.to), status: u.status, origin: u.origin, spec: clip(u.spec.replace(/\s+/g, ' '), 120), createdAt: u.createdAt, closedAt: u.closedAt,
-        queued: !tr && u.status === 'open', result: tr ? tr.result : null, text: tr && tr.doneText ? clip(tr.doneText, 1500) : null, stopReason: tr ? tr.stopReason : null, claimedBy: tr ? tr.claimedBy : null };
+        queued: !tr && u.status === 'open', result: tr ? tr.result : null, text: tr && tr.doneText ? clip(tr.doneText, 1500) : null, stopReason: tr ? tr.stopReason : null, claimedBy: tr ? tr.claimedBy : null, toolRuns: toolCounts[u.id] || 0 };
     });
     return { items: rows, open: rows.filter((r) => r.status === 'open').length };
   }

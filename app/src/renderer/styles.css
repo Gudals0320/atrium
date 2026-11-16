@@ -2473,3 +2473,13 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 .mt-sm-sum-edge b { font: 600 11px var(--font-mono); color: var(--attn); }
 /* 열이 펼쳐진 동안 아래 명령줄은 지도 칸(열을 뺀 폭) 가운데에 */
 body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 2); width: min(max(480px, 56%), 960px, calc(100% - 288px - 64px)); }
+
+/* P183: rig 켜기 확인 창(돌 훅과 도구의 명령) */
+.mt-rigon { width: min(620px, calc(100vw - 32px)); }
+.mt-rigon-warn { font-size: 13.5px; color: var(--attn-text); margin-bottom: 8px; }
+.mt-rigon-root { font: 12px var(--font-mono); margin-bottom: 8px; word-break: break-all; }
+.mt-rigon-h { font-weight: 600; font-size: 13px; margin: 8px 0 4px; }
+.mt-rigon-list { margin: 0 0 6px; padding: 0; list-style: none; max-height: 180px; overflow: auto; }
+.mt-rigon-list li { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 12.5px; }
+.mt-rigon-at { flex: 0 0 auto; min-width: 92px; color: var(--dim); }
+.mt-rigon-list code { font: 12px var(--font-mono); word-break: break-all; background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }

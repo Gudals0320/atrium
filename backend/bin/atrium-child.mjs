@@ -15,6 +15,7 @@
 //       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다)
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
 //       atrium guide [주제] [--json]   (P182: 자세한 사용법 + 켜진 rig의 안내)
+//       atrium tool [--json] · atrium tool <이름> [인자…] · atrium tool --wait <실행 ID> · atrium tool --runs   (P183: rig 도구)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,6 +64,10 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium item                   너의 지금 일(맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수)
   atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
   atrium guide [주제]           이 사용법에, 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json, 작업 규칙)가 있으면 그 안내를 붙인다. rig의 훅이 글이나 done을 거절하면 종료 코드 1과 까닭이 온다
+  atrium tool [<이름> [인자…]]   rig의 도구. 이름 없이는 목록과 설명, 이름이면 실행한다(인자는 정의의 run 뒤에 붙는다. 작업 폴더는 너의 폴더). 보드가 띄워 쥐고 출력을 기록한다.
+      100초까지 기다려 도구의 종료 코드와 출력 꼬리를 돌려준다(도구가 0으로 끝나면 0, 아니면 1). 아직 돌면 종료 코드 3과 실행 ID: atrium tool --wait <ID>로 이어 기다린다.
+      atrium tool --runs는 너의 최근 실행. 세션마다 한 번에 하나(정의가 parallel이면 여럿). rig의 훅이 거절하면 종료 코드 1과 까닭.
+      도구를 정의하는 사람에게: 도구의 run에는 node, python, .exe를 바로 적는다(.cmd·.bat이면 cmd.exe를 거쳐 인자에 A-Z a-z 0-9 빈칸 _ . , : = / @ + - 밖의 글자를 쓰지 못한다)
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
@@ -120,6 +125,7 @@ async function main() {
   if (cmd === 'prompt' || cmd === 'wait' || cmd === 'read') return verb(cmd);
   if (cmd === 'done' || cmd === 'item' || cmd === 'items') return unitVerb(cmd); // P180
   if (cmd === 'guide') return guideVerb(); // P182
+  if (cmd === 'tool') return toolVerb(); // P183
   if (cmd === 'child') {
     // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
     if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);
@@ -254,7 +260,7 @@ async function unitVerb(cmd) {
   if (!x.items.length) return say('네가 맡긴 일이 없다.');
   say(`네가 맡긴 일 ${x.items.length}개(열림 ${x.open}):`);
   for (const it of x.items) {
-    say(`  ${it.id} → @${it.to} · ${it.queued ? 'open(줄 서 있음)' : it.status}${it.result ? ` · ${it.result}` : ''}${it.stopReason && it.status === 'open' ? ` · 멈춤(${it.stopReason})` : ''} · ${ago(it.createdAt, Date.now())} · "${it.spec}"`);
+    say(`  ${it.id} → @${it.to} · ${it.queued ? 'open(줄 서 있음)' : it.status}${it.result ? ` · ${it.result}` : ''}${it.stopReason && it.status === 'open' ? ` · 멈춤(${it.stopReason})` : ''}${it.toolRuns ? ` · 도구 실행 ${it.toolRuns}` : ''} · ${ago(it.createdAt, Date.now())} · "${it.spec}"`);
     if (it.text) say(`      보고: ${it.text.replace(/\s+/g, ' ').slice(0, 400)}`);
   }
 }
@@ -272,11 +278,63 @@ async function guideVerb() {
   if (g.state === 'invalid') return say(`rig: 켜졌지만 정의가 잘못돼 쓰지 않는다: ${g.invalid || '?'}`);
   say(`rig: 켜짐(${g.file}${g.hash ? `, 해시 ${String(g.hash).slice(0, 12)}` : ''}). 보드가 이 워크스페이스의 글(atrium prompt 등)과 atrium done에 rig의 훅을 돌린다. 훅이 거절하면 종료 코드 1과 까닭이 온다.`);
   if (g.invalid) say(`  정의 파일이 지금 잘못됐다(마지막으로 맞았던 정의를 쓰는 중): ${g.invalid}`);
+  if (g.tools && g.tools.length) say(`  rig 도구: ${g.tools.join(', ')}. 목록과 설명: atrium tool, 실행: atrium tool <이름> [인자…]`); // P183
   if (g.missing) say(`  주제 "${g.topic}"의 안내는 없다. 있는 주제: ${(g.topics || []).join(', ') || '(없음)'}`);
   if (g.error) say(`  ${g.error}`);
   if (g.text) { say(`--- rig 안내${g.topic && g.topic !== 'default' ? `(${g.topic})` : ''} ---`); say(String(g.text).replace(/\s+$/, '')); say('---'); if (g.clipped) say('(안내가 2만 자를 넘어 잘랐다)'); }
   else if (!g.missing && !g.error) say('  rig에 안내(guide)가 없다.');
   if (g.topics && g.topics.length) say(`  다른 주제: ${g.topics.map((t) => `atrium guide ${t}`).join(', ')}`);
+}
+// ---------- P183: atrium tool ----------
+// 인자는 날것으로 읽는다(도구 이름 뒤의 --x는 도구의 인자다). 이름 앞에만 --json, --wait <ID>, --runs, --timeout ms
+async function toolVerb() {
+  const raw = argv.slice(argv.indexOf('tool') + 1);
+  const o = { json: false, wait: null, runs: false, timeout: null, name: null, args: [] };
+  for (let i = 0; i < raw.length; i++) {
+    const a = raw[i];
+    if (o.name != null) { o.args.push(a); continue; }
+    if (a === '--json') o.json = true;
+    else if (a === '--runs') o.runs = true;
+    else if (a === '--wait') { o.wait = raw[++i]; if (!o.wait) fail('실행 ID를 준다: atrium tool --wait <실행 ID>', 2); }
+    else if (a === '--timeout') { o.timeout = Number(raw[++i]); if (!(o.timeout > 0)) fail(`--timeout은 밀리초 수다: ${raw[i]}`, 2); }
+    else if (a.startsWith('--')) fail(`atrium tool의 이름 앞에는 --json, --wait <ID>, --runs, --timeout ms만 온다: ${a}`, 2);
+    else o.name = a;
+  }
+  if ([o.wait != null, o.runs, o.name != null].filter(Boolean).length > 1) fail('atrium tool은 <이름> [인자…], --wait <ID>, --runs 가운데 하나만 한다', 2);
+  const body = o.runs ? { op: 'runs' } : o.wait != null ? { op: 'wait', runId: o.wait, timeoutMs: o.timeout } : o.name != null ? { op: 'run', tool: o.name, args: o.args } : { op: 'list' };
+  const httpMs = (o.wait != null ? (o.timeout || 100000) : 100000) + WAIT_HTTP_EXTRA;
+  const r = await call('tool', body, body.op === 'list' || body.op === 'runs' ? 20000 : httpMs);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  const x = r.result;
+  const run = x && x.run;
+  const code = r.error ? 1 : run ? toolExit(run) : 0;
+  process.exitCode = code;
+  if (o.json) return say(JSON.stringify(x ?? { error: r.error }, null, 2));
+  if (r.error) fail(`${body.op === 'run' ? '돌리지 않았다' : body.op === 'wait' ? '기다리지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`);
+  if (body.op === 'list') {
+    say(`rig 도구 ${x.tools.length}개(${x.root}${x.hash ? `, 해시 ${String(x.hash).slice(0, 12)}` : ''}):`);
+    for (const t of x.tools) say(`  atrium tool ${t.name} [인자…]${t.desc ? `  ${t.desc}` : ''}\n      실행: ${t.run.join(' ')} [인자…] · 시간 제한 ${Math.round(t.timeoutMs / 1000)}초${t.parallel ? ' · 함께 돌 수 있음' : ''}`);
+    if (x.running && x.running.length) say(`지금 도는 실행: ${x.running.map((y) => `${y.id}(${y.tool})`).join(', ')}`);
+    if (x.invalid) say(`정의 파일이 지금 잘못됐다(마지막으로 맞았던 정의를 쓰는 중): ${x.invalid}`);
+    return;
+  }
+  if (body.op === 'runs') {
+    if (!x.runs.length) return say('너의 도구 실행이 없다.');
+    say(`너의 최근 도구 실행 ${x.runs.length}개:`);
+    for (const y of x.runs) say(`  ${y.id} ${y.tool}${y.args.length ? ' ' + y.args.join(' ') : ''} · ${y.status}${y.exitCode != null ? ` · 종료 코드 ${y.exitCode}` : ''} · ${ago(y.startedAt, Date.now())}${y.unitId ? ` · 일 ${y.unitId}` : ''}${y.error ? ` · ${y.error}` : ''}`);
+    return;
+  }
+  printToolRun(run);
+}
+// 도구 실행의 종료 코드: 아직 돈다 3, 도구가 0으로 끝남 0, 그 밖(0이 아님, 시간 제한, 띄우지 못함, lost) 1
+function toolExit(run) { return run.status === 'running' ? 3 : run.status === 'done' && run.exitCode === 0 ? 0 : 1; }
+function printToolRun(run) {
+  if (run.status === 'running') { say(`도구 ${run.tool} 실행 ${run.id}이 아직 돈다(${secs(run.durationMs)}). 보드가 계속 쥐고 기록한다. 이어 기다리기: atrium tool --wait ${run.id}`); return; }
+  const how = { done: `끝났다. 종료 코드 ${run.exitCode}`, timeout: `시간 제한을 넘어 보드가 껐다${run.exitCode != null ? `(종료 코드 ${run.exitCode})` : ''}`, error: `띄우지 못했다: ${run.error}`, lost: `보드가 다시 뜨며 놓쳤다(lost)${run.error ? `: ${run.error}` : ''}`, rejected: `거절됐다: ${run.error}` }[run.status] || run.status;
+  say(`도구 ${run.tool} 실행 ${run.id}: ${how} · ${secs(run.durationMs)}${run.logBytes != null ? ` · 출력 ${run.logBytes}바이트${run.logCut ? '(50MB에서 자름)' : ''}` : ''}`);
+  if (run.tail) { say('--- 출력 꼬리 ---'); say(String(run.tail).replace(/\s+$/, '')); say('---'); }
+  if (run.appended) say(String(run.appended).replace(/\s+$/, ''));
+  if (run.logPath) say(`전체 출력: ${run.logPath}`);
 }
 // ---------- P116: atrium prompt | wait | read ----------
 const secs = (ms) => `${((ms || 0) / 1000).toFixed(1)}초`;

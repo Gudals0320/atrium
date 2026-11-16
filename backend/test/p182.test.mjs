@@ -260,9 +260,12 @@ test('P182 켜기: rig.enable·disable은 판 API 토큰 연결(local)만, 기�
     await assert.rejects(h['rig.enable']({ workspace: ws.key }, { auth: { kind: 'device', device: { id: 'p' } } }), (e) => e.code === 'forbidden');
     await assert.rejects(h['rig.enable']({ workspace: ws.key }, null), (e) => e.code === 'forbidden');
     assert.equal(b.store.rigState(ws.key).enabled, false);
-    const on = await h['rig.enable']({ workspace: ws.key }, { auth: { kind: 'local' } });
+    // P183: 확인 없이는 켜지 않고 돌 명령을 돌려준다
+    const ask = await h['rig.enable']({ workspace: ws.key }, { auth: { kind: 'local' } });
+    assert.equal(ask.needsConfirm, true); assert.equal(ask.enabled, false); assert.equal(b.store.rigState(ws.key).enabled, false);
+    const on = await h['rig.enable']({ workspace: ws.key, confirm: true }, { auth: { kind: 'local' } });
     assert.equal(on.state, 'on'); assert.ok(on.enabledAt);
-    assert.equal(on.hooks.length, 2); assert.equal(on.guide, true);
+    assert.equal(on.hooks.length, 4); assert.equal(on.guide, true); assert.deepEqual(on.tools.map((x) => x.name), ['count']); // P183: 견본에 도구 훅 둘과 도구 하나
     assert.equal(eventsOf(b, 'rig_enabled').length, 1);
     const off = await h['rig.disable']({ workspace: ws.key }, { auth: { kind: 'local' } });
     assert.equal(off.state, 'off'); assert.equal(off.enabledAt, null);

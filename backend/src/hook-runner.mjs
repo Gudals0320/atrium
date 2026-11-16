@@ -73,7 +73,7 @@ export function parseHookOutput(stdout) {
 }
 
 // 프로세스 나무째 끈다(Windows는 cmd.exe 아래 node 같은 손자도)
-function killTree(child, platform = process.platform) {
+export function killTree(child, platform = process.platform) {
   if (!child || child.exitCode != null) return;
   if (platform === 'win32' && child.pid) {
     try { spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => {}); } catch {}
