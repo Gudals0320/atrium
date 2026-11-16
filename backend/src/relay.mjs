@@ -147,6 +147,8 @@ export class TerminalRelay {
     this.attached.delete(sessionId);
     e.ctl.close();
   }
+  // P170: 그 세션에 붙은 클라이언트(절전의 보는 중 시간 제한이 창마다 마지막 손댄 때를 본다)
+  clientsOf(sessionId) { const e = this.attached.get(sessionId); return e ? [...e.clients.values()] : []; }
   closeAll() { for (const sid of [...this.attached.keys()]) this._close(sid, 'backend stopping'); }
   stats() {
     return [...this.attached.entries()].map(([sid, e]) => {

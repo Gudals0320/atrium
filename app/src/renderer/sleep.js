@@ -45,8 +45,11 @@ export async function sleepIdle() {
 
 // "지금 보고 있는 노드"를 백엔드에 알린다. 초점 노드는 창에 초점이 있고 가려지지 않았을 때만,
 // 가까이 얼굴로 보이는 노드(P24: 제어기 상한 밖과 잠든 노드 포함)는 창이 가려지지 않았을 때. 터미널이 붙은 노드는 백엔드가 이미 안다
+// P170: 사람의 마지막 입력(누르기·키·휠·터치) 시각도 함께 알린다(inputAgoMs). 백엔드는 이 창에서 손대지 않은 지 절전 시간이 지나면
+// 이 창의 보기를 세지 않는다(다른 창 뒤에 떠 있는 판이 세션을 끝없이 깨워 두지 않게). 입력은 INPUT_NOTE_MS에 한 번만 알린다
+export const INPUT_NOTE_MS = 10000;
 export function startViewingReport() {
-  let last;
+  let last, lastInput = Date.now(), noted = 0;
   const send = (force = false) => {
     const st = getState();
     const shown = typeof document !== 'undefined' && !document.hidden;
@@ -55,13 +58,20 @@ export function startViewingReport() {
     const key = JSON.stringify([focus, close]);
     if (!force && key === last) return;
     last = key;
-    api.call('board.viewing', { focus, close }).catch(() => { last = undefined; });
+    api.call('board.viewing', { focus, close, inputAgoMs: Math.max(0, Date.now() - lastInput) }).catch(() => { last = undefined; });
+  };
+  const onInput = () => {
+    lastInput = Date.now();
+    if (lastInput - noted < INPUT_NOTE_MS) return;
+    noted = lastInput;
+    send(true);
   };
   subscribe(() => send());
   api.on('$open', () => send(true));
-  window.addEventListener('focus', () => send());
+  window.addEventListener('focus', () => onInput());
   window.addEventListener('blur', () => send());
   document.addEventListener('visibilitychange', () => send());
+  for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(ev, onInput, { capture: true, passive: true });
 }
 
 // 잠든 세션 수와 잠들기 전에 잰 메모리 합(메모리 알약 풀이). key를 주면 그 리포만

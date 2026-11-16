@@ -29,7 +29,8 @@ test('D4 판정: 저절로 잠재우는 것은 판이 띄운 claude가 있는 �
   assert.equal(plan1({ ...READY, idleSince: 0 }, { now, afterMs: 0 }).why, 'off', '0분이면 저절로 잠재우지 않는다');
   // 잠재우지 않는 종류: 대상이 없으면 리포를 잠재우지 않는다
   assert.equal(sleepTarget({ ...READY, kind: 'shell' }), 'not_claude');
-  assert.equal(sleepTarget({ ...READY, kind: 'codex' }), 'not_claude');
+  assert.equal(sleepTarget({ ...READY, kind: 'codex' }), 'not_board', 'P170: 이어 갈 값이 없는 codex');
+  assert.equal(sleepTarget({ ...READY, kind: 'aider' }), 'not_claude');
   assert.equal(sleepTarget({ ...READY, hooked: false }), 'not_board', '판에 올린 claude');
   assert.equal(sleepTarget({ ...READY, convKnown: false }), 'no_convo', '대화 기록이 없으면 이어 갈 수 없다');
   assert.equal(sleepTarget({ ...READY, sleeping: true }), 'sleeping');
