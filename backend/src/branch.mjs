@@ -280,6 +280,20 @@ export function boardSkill(name = SKILL_NAME) {
 export const delegateSkill = () => boardSkill(LEGACY_SKILL_NAME); // P8 이름(시험과 옛 호출)
 // 플러그인 bin/: Git Bash(Bash 도구)용 sh와 PowerShell·cmd용 .cmd. 이 판의 node와 명령 파일을 절대 경로로 부른다
 // P18: atrium이 본 이름이고, 옛 이름 mtask도 같은 명령이다(P18 전에 띄운 세션의 스킬 글이 mtask child를 말한다)
+// P184: atrium 명령의 코드(bin/atrium-child.mjs와 그것이 부르는 src 파일들)를 { '<backend 안 상대 경로>': 글 }로 모은다.
+//   판은 이것을 하네스 bin 폴더 안(lib/)에 함께 두고 거기를 부른다. 샌드박스 Codex(승인 모드)는 작업 폴더와 Codex가 권한을 준 폴더만 읽어서,
+//   판 코드가 그 밖(개발용 판의 C:\Workspace 등)이면 atrium을 부르지 못했다. 이렇게 하면 판 데이터 폴더만 읽히면 된다
+export function childBundle(root = BACKEND_ROOT, entry = 'bin/atrium-child.mjs') {
+  const out = {};
+  const walk = (rel) => {
+    if (out[rel] != null) return;
+    const text = fs.readFileSync(path.join(root, rel), 'utf8');
+    out[rel] = text;
+    for (const m of text.matchAll(/^\s*import\s[^'"]*?from\s+['"](\.{1,2}\/[^'"]+)['"]/gm)) walk(path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1])));
+  };
+  walk(entry);
+  return out;
+}
 export function childShims({ node = process.execPath, script = path.join(BACKEND_ROOT, 'bin', 'atrium-child.mjs') } = {}) {
   const fwd = (p) => p.split(path.sep).join('/');
   const out = {};
