@@ -96,7 +96,7 @@ export class WorkUnits {
     if (ctx) {
       const v = unit.via || {};
       const by = v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
-      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, results: ctx.def.results, assign: flow.assignTargets(ctx), may: ctx.seat.may });
+      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, results: ctx.def.results, assign: flow.assignTargets(ctx), may: ctx.seat.may, guide: !!ctx.seat.guide });
     }
     return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)) });
   }

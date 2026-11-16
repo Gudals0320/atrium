@@ -27,13 +27,14 @@ export const CASE_STATES = ['open', 'done', 'blocked', 'cancelled'];
 const SPEC_HEAD_LINES = 6; // 넘김 글에 붙이는 건의 첫 할 일 줄 수
 
 // 자리 세션의 일 머리(관계 줄 꼴이라 카드에는 아래 할 일만 지시로 보인다). 0단계 unitHeader 대신
-export function seatHeader({ seat, unitId, caseId, by, results, assign = [], may = [] }) {
+// guide: 그 자리의 안내 파일이 있으면 일을 시작하기 전에 읽으라고 한다(P185 개발용 판: 안내를 읽지 않은 모델이 자리의 일과 다르게 닫았다)
+export function seatHeader({ seat, unitId, caseId, by, results, assign = [], may = [], guide = false }) {
   return [
     `[Atrium 보드] 관계: 너는 rig의 ${seat} 자리다. 아래 일은 건 ${caseId}의 일 ${unitId}이다(${by}. 지금 일 보기: \`atrium item\`).`,
     `[Atrium 보드] 끝나면 \`atrium done <값> "<보고>"\`로 닫고 쉰다. 값: ${results.join(', ')}. 다음 자리는 보드가 값에 따라 정한다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다.`,
     `[Atrium 보드] 보낼 수 있는 자리: 일 맡기기 ${assign.length ? assign.join(', ') : '없음'} · 글만 ${may.length ? may.join(', ') : '없음'}(\`atrium prompt <자리> "…"\`). 그 밖은 보드가 거절한다. 내 자리: \`atrium me\`.`,
     '[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.',
-    RIG_HEADER_LINE,
+    guide ? '[Atrium 보드] 이 자리의 안내(할 일과 값을 고르는 법)가 있다. 일을 시작하기 전에 `atrium guide`로 먼저 읽는다.' : RIG_HEADER_LINE,
   ].join('\n');
 }
 // 넘김 글(판이 만든다): 보낸 자리와 세션, 값, done 글, 건의 첫 할 일 앞 몇 줄, 올릴 때는 건의 이력

@@ -605,7 +605,7 @@ export class Branch {
     // P41: 모델은 풀린 값(호출자면 호출자의 모델). 빼면 부모의 것
     // P96: 다른 종류(codex 등)는 판 레일의 그 종류 호출자를 바탕으로 띄우고, 부모의 권한 모드를 그 하네스의 승인 인자로 옮긴다
     const other = claude ? null : otherKindPlan({ route, permissionMode: parent.permissionMode || 'manual', lists: this.launchersData() });
-    const model = other ? other.model : route.type === 'launcher' ? route.launcher.model || null : route.type === 'model' || route.type === 'gateway' ? route.model : claude ? parent.model || null : null;
+    const model = other ? other.model : route.type === 'launcher' ? route.launcher.model || null : route.type === 'model' || route.type === 'gateway' ? route.model : claude && (parent.kind || 'claude') === 'claude' ? parent.model || null : null; // P185: 다른 종류 부모(codex)의 모델 이름을 Claude Code에 물려주지 않는다
     if (model && !isModelName(model)) throw apiError('bad_request', `모델: ${model}`);
     const launcherEffort = route.type === 'launcher' && harnessOf(route.launcher.harness).fields.includes('effort') ? route.launcher.effort || null : null;
     const effort = claude ? (o.effort ? String(o.effort) : route.type === 'launcher' ? launcherEffort : parent.effort || null) : null; // P36: --effort, 빼면 물려받는다. P41: 호출자면 호출자의 것

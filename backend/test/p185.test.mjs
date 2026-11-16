@@ -208,7 +208,8 @@ test('P185 흐름: 메인이 맡겨 건이 생김 → worker ok → reviewer →
     assert.match(head, /^\[Atrium 보드\] 관계: 너는 rig의 worker 자리다\. 아래 일은 건 c\w+의 일 u\w+이다\(@lead가 맡김/);
     assert.match(head, /값: ok, failed, rejected/);
     assert.match(head, /일 맡기기 없음 · 글만 main/);
-    assert.ok(head.includes(RIG_HEADER_LINE));
+    assert.ok(head.includes('이 자리의 안내(할 일과 값을 고르는 법)가 있다. 일을 시작하기 전에 `atrium guide`로 먼저 읽는다.'), '자리 안내가 있으면 먼저 읽으라고 한다');
+    assert.ok(!head.includes(RIG_HEADER_LINE));
     assert.equal(promptTask(head), '일: 목록을 세어 보고한다', '카드에는 할 일만');
     const c0 = b.store.getCase(caseId);
     assert.equal(c0.owner, main.sessionId); assert.equal(c0.state, 'open');

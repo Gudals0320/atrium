@@ -474,7 +474,7 @@ function printMe(x) {
   // P156: 상위(너를 하위로 둔 세션)·동료·하위·독립. 끝나면 상위에게 보고, 동료와는 공유
   if (!p) say('상위: 없음');
   else if (p.closed) say(`상위: @${p.name} (닫힘)${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}`);
-  else say(`상위: @${p.name} (${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${src(p.source)}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}. 끝나면 @${p.name}에게 보고한다${last(p.last)}`);
+  else say(`상위: @${p.name} (${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${src(p.source)}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}${x.rig && x.rig.active ? `. @${p.name}는 rig 건의 주인이다(끝내기는 atrium done, 다음 자리는 보드가 정한다)` : `. 끝나면 @${p.name}에게 보고한다`}${last(p.last)}`);
   const peers = x.peers || [], indep = x.independent || [];
   if (peers.length) { say(`동료 ${peers.length}명(하위가 아니다. 필요한 것을 주고받고 끝나면 결과를 공유한다):`); for (const c of peers.slice(0, 10)) say(`  @${c.name} · ${c.state}${c.spawnedBy ? ' · 너를 띄운 세션' : c.spawned ? ' · 네가 띄움' : ''}${src(c.source)}${last(c.last)}`); }
   if (!x.children.length) say('하위 세션: 없음');
