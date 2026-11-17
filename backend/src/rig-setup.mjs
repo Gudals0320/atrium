@@ -189,7 +189,7 @@ export class RigSetup {
     const res = await b.spawn({ cwd: r.root, name, ...L.spawn, [SEAT_SPAWN]: name0 });
     const s = b.sessions.get(res.sessionId);
     if (!s) throw apiError('spawn_failed', `${name0} 자리 세션이 보드에 등록되지 않았다.`);
-    b.branch.flow.setSeat(s, name0, { by: 'human' });
+    b.branch.flow.setSeat(s, name0, { by: 'human', notify: 'spawned' }); // P193: 첫 요청이 없어 자리 머리를 받지 못한다. 판 알림으로 자리를 알린다
     this.store().addEvent(s.sessionId, 'rig_seat_spawn', { seat: name0, by: 'human', launcher: L.ref, session: 'keep' });
     return { session: s.sessionId, name: s.name, seat: name0, launcher: L.ref };
   }
