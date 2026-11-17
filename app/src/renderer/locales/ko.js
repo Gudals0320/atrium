@@ -2883,4 +2883,9 @@ export default {
     noHistory: '아직 넘김이 없습니다',
     unit: { open: '일하는 중', done: '끝남', cancelled: '취소' },
   },
+  // P202: 세션 맵 폴더 칸 이름표(오늘 일한 폴더 · 그 밖)
+  mmSec: {
+    today: '오늘',
+    earlier: '이전',
+  },
 };

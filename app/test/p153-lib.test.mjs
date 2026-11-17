@@ -283,15 +283,17 @@ test('P153 r3: 읽는 차례 — 폴더 영토 묶음이 먼저, 폴더 밖 섬�
 });
 
 // ---- 라운드 7: PC = 시안 B Lineage(lib/mission-lineage.js), 태그 규칙(라운드 6 E) ----
-import { lineageLayout, LINE } from '../src/renderer/lib/mission-lineage.js';
+import { lineageLayout, LINE, nameCmp } from '../src/renderer/lib/mission-lineage.js';
 import { switchText } from '../src/renderer/lib/cmd-input.js';
 const lin = () => lineageLayout(graph(), { order: WS, vgroups: FOLDERS });
-test('P153 r7: 폴더 띠와 줄의 차례·소속은 사이드바와 같고 폴더 없음 띠가 마지막', () => {
+// P202: 소속은 사이드바와 같고, 차례는 이름순(오늘 일한 폴더가 없으면 모두 한 칸). 사이드바 손 차례(order)는 쓰지 않는다
+test('P153 r7·P202: 폴더 띠와 줄의 소속은 사이드바와 같고 차례는 이름순, 폴더 없음 띠가 마지막', () => {
   const lay = lin();
   const side = groupLayout(WS.map((key) => ({ key })), FOLDERS);
-  assert.deepEqual(lay.bands.map((b) => b.id), [...side.groups.map((g) => g.id), null]);
-  for (const g of side.groups) assert.deepEqual(lay.rows.filter((r) => r.band === g.id).map((r) => r.key), g.workspaces.map((w) => w.key));
-  assert.deepEqual(lay.rows.filter((r) => r.band == null).map((r) => r.key), side.ungrouped.map((w) => w.key));
+  const byName = (xs, f) => xs.slice().sort((p, q) => nameCmp(f(p), f(q)));
+  assert.deepEqual(lay.bands.map((b) => b.id), [...byName(side.groups, (g) => g.name).map((g) => g.id), null]);
+  for (const g of side.groups) assert.deepEqual(lay.rows.filter((r) => r.band === g.id).map((r) => r.key), byName(g.workspaces.map((w) => w.key), keyName));
+  assert.deepEqual(lay.rows.filter((r) => r.band == null).map((r) => r.key), byName(side.ungrouped.map((w) => w.key), keyName));
   for (const r of lay.rows) { const b = lay.bands.find((x) => x.id === r.band); assert.ok(r.y >= b.y && r.y + r.h <= b.y + b.h + 0.01, `${r.key}가 띠 안`); }
   for (let i = 1; i < lay.rows.length; i++) assert.ok(lay.rows[i].y >= lay.rows[i - 1].y + lay.rows[i - 1].h - 0.01, '줄은 위 → 아래로 겹치지 않는다');
 });
