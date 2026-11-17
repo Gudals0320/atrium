@@ -7,6 +7,9 @@ export function tailLines(text, n = 12) {
 
 // 신뢰 대화상자(E10 2.2)
 export function isTrustDialog(text) { return /Quick safety check/i.test(text) && /trust this folder/i.test(text); }
+// P192: AGY(1.5.9)의 작업 공간 신뢰 질문("Do you trust the contents of this project?" 아래 "Yes, I trust this folder" / "No, exit"). 7501은 blocked(kind permission, "Trust this folder?")
+export function isAgyTrustDialog(text) { return /Do you trust the contents of this project\?/i.test(text) && /Yes, I trust this folder/i.test(text); }
+export const trustDialogOf = (kind, text) => (kind === 'agy' ? isAgyTrustDialog(text) : (kind || 'claude') === 'claude' ? isTrustDialog(text) : false);
 
 // P71: 워크트리 나가기 질문. `claude -w`로 띄운 세션이 끝날 때 Claude Code가 묻는다(제목 "Exiting worktree session").
 // "You have 13 commits on worktree-x. The branch will be deleted if you remove the worktree." 아래에 "1. Keep worktree", "2. Remove worktree"
@@ -103,6 +106,13 @@ export function codexInputBox(text) {
   for (let i = at + 1; i < lines.length && lines[i].trim() && /^\s{2}/.test(lines[i]); i++) body.push(lines[i].trim());
   const t = body.join(' ').replace(/\s+/g, ' ').trim();
   return { found: true, text: CODEX_HINTS.some((re) => re.test(t)) ? '' : t, above: lines.slice(0, at), rows: body.length }; // P128: rows(입력 칸 줄 수)
+}
+// P192: AGY(1.5.9) 입력 칸 읽기. Claude Code처럼 가로줄(─) 둘 사이이고 첫 줄은 "> "다. 빈 칸은 ">" 한 글자이거나,
+// 시작 직후 흐린 모드 안내("Auto mode: edits & safe commands auto-approved (shift+tab to cycle)")를 보인다. 글자로는 구별되지 않아 그 꼴은 빈 칸으로 본다
+const AGY_HINT = /\(shift\+tab to cycle\)$/i;
+export function agyInputBox(text) {
+  const b = claudeInputBox(text);
+  return b.found && AGY_HINT.test(b.text) ? { ...b, text: '' } : b;
 }
 // 보낸 글(prompt)과 화면을 견준다 → { box: 'ours' | 'empty' | 'other' | 'unknown', seen(입력 칸 위에 보낸 글 첫머리가 보인다 = 이미 들어갔을 수 있다) }
 // 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines], Codex는 [Pasted Content N chars]) 잘릴 수 있어 첫머리(40자)로 본다. kind: 'claude' | 'codex'

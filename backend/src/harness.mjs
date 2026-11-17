@@ -5,6 +5,7 @@
 // Claude Code는 이 표를 쓰지 않는다. 세션 설정 파일(--settings)·플러그인·hook 길(launch.mjs)이 그대로다.
 // 이어 갈 때 다시 줄 것(mustRePass)은 실험에서 빠지면 무엇이 깨지는지 본 목록이다. 판은 이어 가기·되살리기마다 처음과 같은 값을 다시 준다.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { codexHomeOf } from './codex-models.mjs';
 
@@ -110,7 +111,45 @@ export const ADAPTERS = {
     },
     isBoardLine: (argv) => argv.includes('--session-id'),
   },
+  // P192: AGY(Antigravity CLI, 실행 파일 agy). 대화 ID는 뜬 뒤에 안다(agySessionOf), 이어 가기는 --conversation <ID>.
+  // 안내문: --settings에는 지시문 키가 없다(1.5.9: 모르는 키는 "unknown setting"으로 거부). AGY는 작업 공간 폴더의 AGENTS.md를 규칙으로 읽으므로
+  //   판 데이터 폴더에 안내문만 든 폴더(harness/agy/AGENTS.md)를 만들어 --add-dir로 더한다(사용자 폴더·~/.gemini 설정은 건드리지 않는다).
+  //   --add-dir은 그 폴더를 AGY 작업 공간에 더한다(그 폴더에는 안내문 파일 하나뿐이다)
+  // 연결(connections)은 쓰지 않는다: AGY는 자기 로그인·모델 목록(agy models)으로 돈다
+  // 노력 수준(--effort)과 승인 방식(--mode, --dangerously-skip-permissions)은 호출자 칸에서 추가 인자로 붙인다(launchers.mjs agyArgsOf, branch.mjs APPROVAL_ARGS)
+  agy: {
+    command: 'agy',
+    sessionIdFrom: 'learned', // 대화 기록 폴더의 새 대화(agySessionOf)
+    protocols: [],
+    mustRePass: ['instructions'], // --add-dir은 그 세션에만 든다. 이어 갈 때도 다시 준다
+    reserved: { flags: ['--conversation', '-c', '--continue', '-p', '--print', '--prompt', '-i', '--prompt-interactive', '--input-format', '--output-format', '--json-schema', '--print-timeout', '--remote-agent', '--new-project'] },
+    modelArgs: (m) => ['--model', m],
+    // atrium 명령과 승인(P192 개발용 판 시험, 1.5.9): AGY Auto 모드(이 PC 사용자 기본)는 명령을 터미널 샌드박스에서 먼저 돌리는데, 샌드박스는
+    //   판 데이터 폴더의 bin/·sessions/와 127.0.0.1 연결을 막는다. 그래서 atrium은 샌드박스 밖에서만 되고, 그때 AGY가 사람에게 묻는다(판은 waiting,
+    //   하위면 상위에 needs_human). accept-edits도 묻는다. 묻지 않고 되는 것은 --dangerously-skip-permissions(판의 dontAsk·bypassPermissions)뿐이다.
+    //   --settings의 permissions.allow는 명령 글 전체가 같을 때만 먹어(command(mkdir)·command(mkdir *)·command(node -e)는 안 먹음) atrium 허용 목록으로 쓸 수 없다
+    build(ctx) {
+      const resumed = !!(ctx.resume && ctx.harnessSessionId);
+      const files = [];
+      let rules = [];
+      if (ctx.instructions && ctx.filesDir) {
+        const dir = path.join(ctx.filesDir, 'agy').split('\\').join('/');
+        files.push({ file: `${dir}/AGENTS.md`, text: `${ctx.instructions.text}\n` });
+        rules = ['--add-dir', dir];
+      }
+      const args = [...(resumed ? ['--conversation', ctx.harnessSessionId] : []), ...(ctx.model ? ['--model', ctx.model] : []), ...rules, ...(ctx.launcherArgs || [])];
+      return { args, env: {}, files, harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
+    },
+    isBoardLine: (argv) => argv.some((a) => /[\\/]agy$/.test(String(a))),
+  },
 };
+// P192: AGY 승인 방식. 판의 권한 모드 → AGY 인자. manual은 덧붙이지 않는다(AGY 기본 Agent 모드: 묻는다)
+// auto는 AGY Auto 모드(Windows 11 24H2 이상·개인 계정에서만, 안 되면 AGY가 기본 모드로 돌아간다). dontAsk·bypassPermissions는 묻지 않음
+export const AGY_APPROVAL = {
+  manual: [], plan: ['--mode', 'plan'], acceptEdits: ['--mode', 'accept-edits'], auto: ['--mode', 'auto'],
+  dontAsk: ['--dangerously-skip-permissions'], bypassPermissions: ['--dangerously-skip-permissions'],
+};
+export const AGY_APPROVAL_FLAGS = new Set(['--mode', '--dangerously-skip-permissions']); // --sandbox(터미널 샌드박스)는 승인 방식과 따로다
 // 표에 없는 종류(터미널이 아는 그 밖의 하네스): env와 PATH만 주고 지시문·이어 가기는 없다. 모델은 -m(P96과 같다)
 const GENERIC = {
   command: null, sessionIdFrom: null, protocols: [], mustRePass: [], reserved: { flags: [] }, modelArgs: (m) => ['-m', m],
@@ -186,4 +225,42 @@ export function codexSessionOf({ cwd, since = 0, home = codexHomeOf(), now = Dat
   }
   found.sort((x, y) => Math.abs(x.at - since) - Math.abs(y.at - since));
   return found.length ? found[0].id : null;
+}
+
+// P192: AGY 대화 기록 폴더(~/.gemini/antigravity-cli). conversations/<대화 ID>.db(SQLite, 안은 protobuf)가 대화 하나다.
+// cache/last_conversations.json은 { 폴더: 그 폴더의 마지막 대화 ID }다. 읽기만 한다
+export const agyHomeOf = (env = process.env) => (env.ATRIUM_AGY_HOME ? path.resolve(env.ATRIUM_AGY_HOME) : path.join(os.homedir(), '.gemini', 'antigravity-cli'));
+const AGY_DB = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.db$/i;
+const normDir = (p) => path.resolve(String(p || '')).toLowerCase().replace(/[\\/]+$/, '');
+// 폴더 → AGY가 대화 기록에 적는 작업 공간 주소(file:///C:/x/y)
+export const agyWorkspaceUri = (cwd) => `file:///${path.resolve(String(cwd || '')).split('\\').join('/').replace(/\/+$/, '')}`;
+// AGY 대화 ID: 그 폴더(cwd)에서 since 뒤에 생긴 대화. 터미널이 대화 ID를 모르므로 판이 기록 폴더에서 찾는다.
+// 1) since 뒤에 생긴 conversations/*.db 가운데 그 폴더의 작업 공간 주소가 든 것(파일 앞 4MB. 주소 바로 뒤가 /면 하위 폴더라 뺀다)
+// 2) 그 가운데 last_conversations.json이 그 폴더의 마지막 대화로 적은 것이 있으면 그것, 없으면 생긴 때가 since에 가장 가까운 것
+// exclude: 다른 판 세션이 가진 대화 ID
+export function agySessionOf({ cwd, since = 0, home = agyHomeOf(), exclude = [] } = {}) {
+  let names = [];
+  try { names = fs.readdirSync(path.join(home, 'conversations')); } catch { return null; }
+  const uris = [...new Set([agyWorkspaceUri(cwd), encodeURI(agyWorkspaceUri(cwd))].map((u) => u.toLowerCase()))];
+  const ex = new Set(exclude.filter(Boolean).map((x) => String(x).toLowerCase()));
+  const hit = (text, u) => { for (let i = text.indexOf(u); i >= 0; i = text.indexOf(u, i + 1)) if (text[i + u.length] !== '/') return true; return false; };
+  const found = [];
+  for (const n of names) {
+    const m = AGY_DB.exec(n);
+    if (!m || ex.has(m[1].toLowerCase())) continue;
+    const file = path.join(home, 'conversations', n);
+    let st; try { st = fs.statSync(file); } catch { continue; }
+    const born = st.birthtimeMs || st.mtimeMs;
+    if (born < since - 5000) continue;
+    let text = '';
+    try { const fd = fs.openSync(file, 'r'); try { const buf = Buffer.alloc(Math.min(st.size, 4 * 1024 * 1024)); text = buf.toString('latin1', 0, fs.readSync(fd, buf, 0, buf.length, 0)).toLowerCase(); } finally { fs.closeSync(fd); } } catch { continue; }
+    if (!uris.some((u) => hit(text, u))) continue;
+    found.push({ id: m[1].toLowerCase(), at: born });
+  }
+  if (!found.length) return null;
+  let last = null;
+  try { const j = JSON.parse(fs.readFileSync(path.join(home, 'cache', 'last_conversations.json'), 'utf8')); for (const [k, v] of Object.entries(j || {})) if (normDir(k) === normDir(cwd) && typeof v === 'string') last = v.toLowerCase(); } catch {}
+  if (last && found.some((f) => f.id === last)) return last;
+  found.sort((x, y) => Math.abs(x.at - since) - Math.abs(y.at - since));
+  return found[0].id;
 }

@@ -46,7 +46,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   changes [--minutes n]                   마지막 확인 이후 또는 최근 n분의 변경 내역
   brief <이름>                              작업 재개를 위한 요약 (마지막 요청·응답, 상태, 질문)
   res                                     리소스 사용량 (세션별 메모리, 터미널 제어 프로세스, 동시 실행 수)
-  sleep [<리포>]                            프로젝트의 에이전트 세션(Claude Code, Codex, opencode, pi)을 절전 모드로 전환. 생략하면 대기 중인 프로젝트 전체에 적용
+  sleep [<리포>]                            프로젝트의 에이전트 세션(Claude Code, Codex, opencode, pi, AGY)을 절전 모드로 전환. 생략하면 대기 중인 프로젝트 전체에 적용
   wake <리포|이름>                            기존 대화로 재개. 리포면 절전 중인 모든 세션, 이름이면 그 세션(프로젝트 전체가 절전되었으면 그 프로젝트)
   sleep-status                            프로젝트별·세션별 자동 절전 제외 사유, 비활동 시간, 절전 중인 세션과 절전 범위(repo, session)
   links                                   세션 간 연결 (작업 위임, 역할 지정, 세션 생성)
