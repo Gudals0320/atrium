@@ -137,7 +137,7 @@ test('P194 주인에게 돌아오는 흐름은 보고: 일을 만들지 않고 �
     await until(() => main.texts.length === 1);
     const t = main.texts[0];
     const lines = t.split('\n');
-    assert.match(lines[0], /^\[Atrium 보드\] rig 건 c\w+: reviewer 자리\(@reviewer-1\)가 일 u\w+\("[^"]+"\)을 닫았다: ok$/, '보낸 자리, 값, 건 ID');
+    assert.match(lines[0], /^\[Atrium 보드\] rig 건 c\w+\("일: 하나를 만든다"\): reviewer 자리\(@reviewer-1\)가 일 u\w+을 닫았다: ok$/, '건 ID와 건의 첫 할 일, 보낸 자리, 값');
     assert.ok(lines[0].includes(caseId));
     assert.match(lines[1], /^\[Atrium 보드\] 이것은 보고다/);
     assert.deepEqual(lines.slice(2), ['좋다', '둘째 줄'], 'done 글');

@@ -69,8 +69,9 @@ export function seatNamed(rig, key, name) {
 }
 // P194: 흐름 줄의 받는 곳이 건 주인 세션 자신일 때 일 대신 넣는 보고(0단계 done 보고 doneNotice와 같은 판 알림 꼴).
 //   haiku 메인이 주인에게 돌아온 넘김 일을 done으로 닫지 않아 건이 열린 채 남았다(P193). 주인에게 가는 것은 일이 아니라 보고다
-export function ownerReportText({ caseId, fromSeat, fromName, unitId, spec, result, doneText, escalated = null, history = [] }) {
-  const lines = [`[Atrium 보드] rig 건 ${caseId}: ${fromSeat} 자리(@${fromName})가 일 ${unitId}("${clip(String(spec || '').replace(/\s+/g, ' '), 60)}")을 닫았다: ${result}`];
+//   머리에는 건의 첫 할 일을 인용한다(닫은 일의 글은 판이 만든 넘김 글이라 주인이 알아보기 어렵다)
+export function ownerReportText({ caseId, fromSeat, fromName, unitId, firstSpec, result, doneText, escalated = null, history = [] }) {
+  const lines = [`[Atrium 보드] rig 건 ${caseId}("${clip(String(firstSpec || '').replace(/\s+/g, ' '), 60)}"): ${fromSeat} 자리(@${fromName})가 일 ${unitId}을 닫았다: ${result}`];
   lines.push(escalated
     ? `[Atrium 보드] 이것은 보고다(atrium done으로 닫을 일이 아니다). 되돌아감 상한을 넘어 너에게 올라왔다: flow[${escalated.line}]은 이 건에서 이미 ${escalated.max}번 지났다. 건은 waiting_owner다. 다음 \`atrium prompt <자리> "<할 일>"\`이 이 건을 잇는다(건이 여럿이면 --case ${caseId}).`
     : '[Atrium 보드] 이것은 보고다(atrium done으로 닫을 일이 아니다). 건에 열린 일이 없으면 건은 done이다.');
@@ -388,7 +389,7 @@ export class RigFlow {
     const tSeat = ctx.def.seats[to];
     const seated = tSeat.session === 'keep' ? this.seatedOf(ctx.key, to)[0] || null : null;
     // P194: 받는 곳이 건 주인 세션 자신이면 일이 아니라 보고다. 주인이 아닌 keep 자리로 가는 줄은 그대로 일이다
-    if (seated && seated.sessionId === c.owner) return this.ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner: seated });
+    if (seated && seated.sessionId === c.owner) return this.ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner: seated, firstSpec });
     const h = await b.rig.deliver({ target: seated || { workspaceKey: ctx.key, name: to, kind: null, model: null, cwd: ctx.r.root }, workspaceKey: ctx.key, from: { kind: 'flow', seat: ctx.name, session: caller }, text });
     const rowIds = (h.runs || []).map((x) => x.rowId).filter((x) => x != null);
     if (h.action === 'reject') return this.block(c, `넘김 글(${ctx.name} ${result} → ${to})을 deliver 훅이 거절했다: ${h.reason}`);
@@ -406,13 +407,13 @@ export class RigFlow {
   }
 
   // P194: 주인에게 보고(일을 만들지 않는다). 상한을 넘어 올라온 것이면 건을 waiting_owner로 둔다(주인의 다음 맡기기가 잇는다)
-  ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner }) {
+  ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner, firstSpec }) {
     const b = this.b; const st = this.store();
     if (escalated) {
       st.updateCase(c.id, { state: 'waiting_owner' });
       st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId: c.id, line: line.index, max: escalated.max, from: ctx.name, result });
     }
-    const text = ownerReportText({ caseId: c.id, fromSeat: ctx.name, fromName: shownName(caller), unitId: unit.id, spec: unit.spec, result, doneText, escalated, history: escalated ? this.history(c.id) : [] });
+    const text = ownerReportText({ caseId: c.id, fromSeat: ctx.name, fromName: shownName(caller), unitId: unit.id, firstSpec, result, doneText, escalated, history: escalated ? this.history(c.id) : [] });
     const d = b.queue.enqueue(owner.sessionId, text);
     const tr = st.lastTryOfUnit(unit.id);
     if (tr) st.updateTry(tr.id, { noticeDeliveryId: d.deliveryId });
