@@ -5,13 +5,15 @@
 //   부모가 다른 워크스페이스에 있으면 자기 줄의 워커 칸(COL[1])에 놓고(그 하위는 다음 칸), 부모와는 다른 워크스페이스 선(cross)으로 잇는다. 부모가 닫힌 세션은 뿌리.
 // - 선: 나무 선은 부모 오른쪽 가운데 → 칸 사이 틈의 줄기 → 하위 왼쪽 가운데(화살촉). 다른 워크스페이스 선은 격자 길 찾기(lib/mission-terr.js routeOrtho)로 카드·줄 머리·기둥을 피해 받는 카드의 왼쪽(또는 위)으로.
 // - 카드 폭은 이 판의 가장 긴 이름이 멀리 타일에서 한 줄에 들게(lib/mission-terr.js cardWidth), 높이는 내용(cardHeight).
-// → { cards: Map id → { x, y, w, h, node, ws, depth, fold, thin(P163 얇은 줄), seat(P186 자리) }, bands, rows, cols, divs, edges, bounds, order, tree, cw, seq(줄 키 → { roots, away, solos }), vkids(id → 보이는 하위 id들),
-//     flows(P186 흐름 줄 그림), reps(워크스페이스 → 자리 → 대표 카드 id), rig(rigIndex) }
+// → { cards: Map id → { x, y, w, h, node, ws, depth, fold, thin(P163 얇은 줄), seat(P186 자리), band·chip·folded·caseId·keepHead(P198 rig 띠) }, bands, rows, cols, divs, edges, bounds, order, tree, cw, seq(줄 키 → { roots, away, solos }), vkids(id → 보이는 하위 id들),
+//     rig(rigIndex), rb(P198 rig 띠: { list(띠마다 bandLayout), marks, heads, lines, folds, chains }) }
+// P198: 켜진 rig가 있는 워크스페이스 줄은 맨 위에 rig 띠(lib/rig-band.js, 17절)를 두고 나무는 그 아래에서 시작한다. 띠 세션은 나무에서 빠지고, 띠 세션의 자리 없는 하위는 나무 뿌리가 되어 띠 가장자리에서 옅은 선을 받는다
 import { keepCard } from './bg-work.js'; // P164
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
 import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from './mission-terr.js';
 import { zoomStep } from './faces.js'; // P178: 이름표 배율 계단
-import { rigIndex, seatThin, seatReps, flowLines, flowPaths } from './rig-map.js'; // P186: rig 자리·흐름 줄
+import { rigIndex } from './rig-map.js'; // P186: rig 자리 이름표
+import { bandIndex, bandLayout, bandPhone, bandKidPts, treeToBandPts, inBandBox, BAND } from './rig-band.js'; // P198: rig 띠
 
 // SPINE = 폴더 기둥 최소 폭(P157: 가장 긴 폴더 이름에 맞춰 넓어진다, spineWidth), BANDMIN = 폴더 띠 최소 높이(P157: 워크스페이스 하나인 폴더도 기둥 글이 잘리지 않게), HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // SOLOGAP = 마지막 나무 칸과 솔로 칸 사이(구분선이 가운데), SGX = 솔로 칸 두 줄 사이, MINCOLS = 늘 보이는 나무 칸 수(리드·워커·다음 단계)
@@ -54,10 +56,13 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // expanded: 깊이 접기를 편 카드 id들(Set). FOLD 단계보다 깊은 가지는 접는다
 // spineText(nWs, nSessions) → [윗줄, 아랫줄](P157: 기둥 폭을 셀 때 수 글도 넣는다. 창은 지금 언어 글을 준다)
 // P166: phone = 휴대폰 세로 배치(PHONE 위 설명). view = 맵이 보이는 칸 { w, h }(주면 그 비율에 맞춰 단을 나눈다), pages = 단 수를 정해서(그림 비교·시험용)
-export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null } = {}) {
+export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null } = {}) {
   const tree = missionTree(graph);
   const { byId } = tree;
   const rix = rigIndex(graph); // P186: 켜진 rig의 자리 세션(없으면 빈 표라 배치가 전과 같다)
+  const bix = bandIndex(graph); // P198: rig 띠 세션(나무에서 빠진다). rig가 없는 판은 빈 표
+  const inBand = (id) => bix.member.has(id);
+  const sidOf = new Map(tree.nodes.map((n) => [n.sessionId, n.id]));
   const L = { ...LINE, CW: cardWidth(tree.nodes.map((n) => n.name), LINE.NAME_PX) };
   if (phone) { L.CW = Math.min(PHONE.CW_MAX, Math.max(PHONE.CW_MIN, Math.round(L.CW * PHONE.CW_K))); L.GX = PHONE.GX; L.FOLD = PHONE.FOLD; }
   const tierOf = (id) => (tiers && tiers.has(id) ? tiers.get(id) : nodeTier(byId.get(id)));
@@ -91,9 +96,11 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const heads = new Map();
   if (!phone) for (const g of groups) for (const key of g.keys) heads.set(key, headBox(key ? nameOf(key) : '', chipCounts(tree.nodes.filter((n) => wsOf(n.id) === key).map((n) => tierOf(n.id))).map(chipStr), px));
   L.HEADW2 = Math.max(LINE.HEADW, ...[...heads.values()].map((h) => h.w));
-  const parentIn = (id) => { const p = tree.parent.get(id); return p && wsOf(p) === wsOf(id) ? p : null; };
-  const crossIn = (id) => { const p = tree.parent.get(id); return !!p && wsOf(p) !== wsOf(id); };
-  const kidsIn = (id) => (tree.kids.get(id) || []).filter((c) => wsOf(c.id) === wsOf(id));
+  // P198: 띠 세션은 나무 밖. 부모가 띠에 있는 세션은 나무 뿌리(띠 가장자리에서 옅은 선)
+  const parentIn = (id) => { const p = tree.parent.get(id); return p && wsOf(p) === wsOf(id) && !inBand(p) && !inBand(id) ? p : null; };
+  const crossIn = (id) => { const p = tree.parent.get(id); return !!p && wsOf(p) !== wsOf(id) && !inBand(id); };
+  const kidsIn = (id) => (tree.kids.get(id) || []).filter((c) => wsOf(c.id) === wsOf(id) && !inBand(c.id));
+  const bandTouch = (n) => { const p = tree.parent.get(n.id); return (!!p && inBand(p) && wsOf(p) === wsOf(n.id)) || (tree.kids.get(n.id) || []).some((c) => inBand(c.id) && wsOf(c.id) === wsOf(n.id)); };
   const own = new Map(tree.nodes.map((n) => [n.id, cardHeight(n, tierOf(n.id), crossIn(n.id), L.CW)]));
   const H = (id) => own.get(id) || 150;
 
@@ -132,15 +139,30 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   const anyPeer = (n) => (n.peers || []).some((p) => p !== n.id && byId.has(p));
   const relTouch = new Set();
   for (const e of graph.edges || []) if (e.relation && e.relationSource && e.relationSource !== 'auto' && byId.has(e.from) && byId.has(e.to)) { relTouch.add(e.from); relTouch.add(e.to); }
-  const treeRoot = (n) => isRoot(n) && ((layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || anyPeer(n) || relTouch.has(n.id) || lineageOnly(n) || calledBefore(n));
-  for (const n of tree.nodes) { if (treeRoot(n)) depthWalk(n.id, 0, 0); else if (crossIn(n.id)) depthWalk(n.id, 1, 0); }
+  const treeRoot = (n) => !inBand(n.id) && isRoot(n) && (bandTouch(n) || (layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || anyPeer(n) || relTouch.has(n.id) || lineageOnly(n) || calledBefore(n));
+  for (const n of tree.nodes) { if (inBand(n.id)) continue; if (treeRoot(n)) depthWalk(n.id, 0, 0); else if (crossIn(n.id)) depthWalk(n.id, 1, 0); }
   const nCols = Math.max(L.MINCOLS, maxDepth + 1);
   const COL = Array.from({ length: nCols }, (_, i) => (phone ? PHONE.PADX : L.HEADX + Math.max(L.HEADW + 208, L.HEADW2 + 80)) + i * (L.CW + L.GX)); // 시안: 리드 칸 740 = 232 + 300 + 208. P178: 머리 글이 커지면 머리 폭 + 80
-  const DIV = COL[nCols - 1] + L.CW + L.SOLOGAP / 2;
-  const SOLO = COL[nCols - 1] + L.CW + L.SOLOGAP;
+  // P198: 띠 배치 재료(줄마다). 솔로 칸은 나무 너비와 띠 너비 가운데 넓은 쪽 뒤
+  const foldSet = foldOpen instanceof Set ? foldOpen : new Set(foldOpen || []);
+  const bandNodes = new Map();
+  for (const n of tree.nodes) if (inBand(n.id)) { const k = wsOf(n.id); if (!bandNodes.has(k)) bandNodes.set(k, []); bandNodes.get(k).push(n); }
+  for (const list of bandNodes.values()) list.sort(bySpawn);
+  const bandOf = (key, x0, y0) => {
+    const R = bix.rigs.get(key);
+    if (!R) return null;
+    const o = { ws: key, nodes: bandNodes.get(key) || [], member: bix.member, sidOf, tierOf, H: (id) => H(id), CW: L.CW, x0, y0, foldOpen: foldSet.has(key) };
+    return phone ? bandPhone(R, { ...o, W: W - PHONE.PADX * 2, textW: glyphW }) : bandLayout(R, o);
+  };
+  let bandRight = 0;
+  if (!phone) for (const key of bix.rigs.keys()) if (present.includes(key)) bandRight = Math.max(bandRight, bandOf(key, 0, 0).w);
+  const solo0 = Math.max(COL[nCols - 1] + L.CW, bandRight ? COL[0] + bandRight : 0);
+  const DIV = solo0 + L.SOLOGAP / 2;
+  const SOLO = solo0 + L.SOLOGAP;
   // P166: 휴대폰은 솔로가 나무 아래 격자라 폭 = 나무 칸 수(적어도 MINCOLS)만큼
   const PCOLS = Math.max(L.MINCOLS, nCols);
   const W = phone ? PHONE.PADX * 2 + PCOLS * L.CW + (PCOLS - 1) * L.GX : SOLO + (L.CW + L.SGX) * 2 + 60;
+  const rbs = []; // P198: 그린 띠들
 
   const cards = new Map(), bands = [], rows = [], divs = [];
   // P160: 휴대폰 목록이 같은 판정을 쓰도록 남긴 줄마다 놓은 차례(시작 칸 뿌리·다른 워크스페이스에서 온 것·솔로)와 보이는 하위 차례를 남긴다(PC 배치는 그대로)
@@ -149,13 +171,10 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   // P163: 한 세션 아래 보이는 하위(곁에 붙은 동료 포함)가 THINMIN개 이상이면 절전 중인 하위만 얇은 줄(높이 THIN)로 줄이고 깨어 있는 카드 아래로 모은다(그 안은 지금 차례 = 만든 차례).
   // 줄이지 않는 것: 절전이 아닌 것(작업 중·응답 필요·오류·완료 미확인 등), 뒤 일이 도는 것(P164), 자기 아래 보이는 하위가 있거나 깊이 접기 칩이 붙는 것(카드로 둔다), 형제 중 동료가 있는 것(동료 붙이기가 먼저라 제자리 카드)
   const thin = new Set();
-  // P186: 그 전에 fresh 자리의 끝난 세션(열린 시도 없음)을 같은 자리의 일하는(또는 가장 늦은) 카드 바로 아래 얇은 줄로 모은다(하위 수와 상관없이, 바쁜 등급·뒤 일·하위가 있는 것은 카드로)
-  const thinOrder = (ks0, d) => {
-    const sr = seatThin(ks0, rix, (k) => !['work', 'turn', 'alert'].includes(tierOf(k)) && !keepCard(byId.get(k)) && !visKids(k, d).length && !folded.get(k) && !peersOf(k).some((p) => ks0.includes(p)));
-    for (const k of sr.thin) { thin.add(k); own.set(k, L.THIN); }
-    const ks = sr.order;
+  // P198: rig 자리 세션은 띠로 가서 여기 오지 않는다(P186의 자리 얇은 줄은 걷었다)
+  const thinOrder = (ks, d) => {
     if (ks.length < L.THINMIN) return ks;
-    const slim = ks.filter((k) => !thin.has(k) && !rix.byNode.has(k) && tierOf(k) === 'sleep' && !keepCard(byId.get(k)) && !visKids(k, d).length && !folded.get(k) && !peersOf(k).some((p) => ks.includes(p)));
+    const slim = ks.filter((k) => tierOf(k) === 'sleep' && !keepCard(byId.get(k)) && !visKids(k, d).length && !folded.get(k) && !peersOf(k).some((p) => ks.includes(p)));
     if (!slim.length) return ks;
     for (const k of slim) { thin.add(k); own.set(k, L.THIN); }
     const ss = new Set(slim);
@@ -182,19 +201,23 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     const by = y;
     if (phone) y += PHONE.FH; // P166: 휴대폰은 폴더 이름이 띠 위 머리(왼쪽 기둥 대신)
     g.keys.forEach((key, wi) => {
-      const nodes = tree.nodes.filter((n) => wsOf(n.id) === key).sort(bySpawn);
+      const all = tree.nodes.filter((n) => wsOf(n.id) === key).sort(bySpawn);
+      const nodes = all.filter((n) => !inBand(n.id)); // P198: 띠 세션은 띠에서
       // 시작 칸: 이 줄에 하위가 있는 뿌리, 하위가 다른 워크스페이스에만 있는 뿌리, 동료가 있는 뿌리. 뿌리끼리 동료면 바로 아래에 붙인다
       const roots0 = nodes.filter(treeRoot), roots = [], done = new Set();
       for (const r of roots0) { if (done.has(r.id)) continue; roots.push(r); done.add(r.id); for (const p of peersOf(r.id)) { const pn = byId.get(p); if (!done.has(p) && roots0.includes(pn)) { roots.push(pn); done.add(p); } } }
       const away = nodes.filter((n) => crossIn(n.id)); // 부모가 다른 워크스페이스(1단계 칸에서 시작)
       const solos = nodes.filter((n) => isRoot(n) && !treeRoot(n));
       seq.set(key, { roots: roots.map((r) => r.id), away: away.map((n) => n.id), solos: solos.map((n) => n.id) });
-      const chips = chipCounts(nodes.map((n) => tierOf(n.id)));
-      if (phone) { y += phoneRow(key, g, wi, roots, away, solos, chips, nodes.length); return; }
-      let cy = y + L.RT;
+      const chips = chipCounts(all.map((n) => tierOf(n.id)));
+      if (phone) { y += phoneRow(key, g, wi, roots, away, solos, chips, all.length); return; }
+      // P198: rig 띠는 줄 맨 위(y + RT), 나무는 그 아래
+      const rb = bandOf(key, COL[0], y + L.RT);
+      if (rb) { rbs.push(rb); for (const [id, c] of rb.cards) cards.set(id, c); }
+      let cy = rb ? y + L.RT + rb.h + BAND.BELOW : y + L.RT;
       roots.forEach((r, i) => { const peerNext = i + 1 < roots.length && peersOf(r.id).includes(roots[i + 1].id); cy += place(r.id, 0, cy, key, alignOf(roots.map((x) => x.id), i)) + (peerNext ? L.PGY : L.GY * 2); });
       for (const s of away) cy += place(s.id, 1, cy, key) + L.GY * 2;
-      const treeH = cy - y - L.GY * 2;
+      const treeH = roots.length + away.length ? cy - y - L.GY * 2 : rb ? L.RT + rb.h : 0;
       let sy = y + L.RT;
       const soloH = [];
       solos.forEach((s, i) => {
@@ -203,7 +226,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
         soloH.push(sy + H(s.id) - y);
       });
       const h = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0, L.ROWMIN, heads.get(key).h + 10) + L.RB;
-      rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: L.SPINE, w: W - L.SPINE, chips, count: nodes.length });
+      rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: L.SPINE, w: W - L.SPINE, chips, count: all.length });
       divs.push({ x: DIV, y: y + 16, h: h - 32 });
       y += h;
     });
@@ -234,6 +257,15 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     if (!a || !b) continue;
     const rel = relOf(via, tree);
     const base = { id: via.id, from: parent, to: child, rel, role: via.role || null, text: via.text || null, active: !!via.active, tree: true };
+    // P198: 띠 안끼리는 띠의 선이 말한다. 띠 ↔ 아래 나무(같은 줄)는 띠 가장자리에 붙는 옅은 선
+    if (a.band && b.band && wsOf(parent) === wsOf(child)) continue;
+    if ((a.band || b.band) && wsOf(parent) === wsOf(child)) {
+      const rb = rbs.find((x) => x.ws === wsOf(child));
+      if (!rb || a.folded || b.folded || phone) continue;
+      const pts = a.band ? bandKidPts(a, rb, b, L.GX) : treeToBandPts(a, rb, b);
+      edges.push({ ...base, cross: false, bandEdge: true, pts, d: poly(pts), label: null });
+      continue;
+    }
     if (wsOf(parent) !== wsOf(child)) { cross.push({ base, a, b }); continue; }
     const ay = a.y + a.h / 2, byy = b.y + b.h / 2, mx = a.x + a.w + L.GX / 2;
     const pts = ay === byy ? [[a.x + a.w + gap(parent), ay], [b.x - gap(child), byy]] : [[a.x + a.w + gap(parent), ay], [mx, ay], [mx, byy], [b.x - gap(child), byy]];
@@ -247,7 +279,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     if (peerSeen.has(k)) continue;
     peerSeen.add(k);
     const a = cards.get(n.id), b = cards.get(p);
-    if (!a || !b) continue;
+    if (!a || !b || (a.band && b.band) || a.folded || b.folded) continue;
     const base = { id: `peer:${k}`, from: n.id, to: p, rel: 'peer', peer: true, tree: false };
     if (Math.abs(a.x - b.x) < 0.5) {
       const [u, d] = a.y < b.y ? [a, b] : [b, a];
@@ -259,10 +291,12 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
   for (const n of tree.nodes) {
     const lp = n.lineageParent;
     if (!lp || lp === tree.parent.get(n.id) || !cards.get(lp) || !cards.get(n.id) || (n.peers || []).includes(lp)) continue;
+    if ((cards.get(lp).band && cards.get(n.id).band) || cards.get(lp).folded || cards.get(n.id).folded) continue; // P198: 띠 안 계보는 띠 선이 말한다
     cross.push({ base: { id: `lineage:${lp}>${n.id}`, from: lp, to: n.id, rel: 'lineage', lineage: true, tree: false }, a: cards.get(lp), b: cards.get(n.id), kind: 'lineage' });
   }
   if (cross.length) {
-    const blocks = [...cards.values()].map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }));
+    const blocks = [...cards.values()].filter((c) => !c.band).map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }));
+    for (const rb of rbs) blocks.push({ ...rb.box }); // P198: 선 길은 띠 사각형을 피한다
     if (phone) { // P166: 휴대폰 머리(위 띠)는 이름·칩 자리만 막는다(선이 줄 사이를 위아래로 지날 수 있게)
       for (const r of rows) blocks.push({ x: r.x + PHONE.PADX - 6, y: r.y + 8, w: Math.min(r.w - PHONE.PADX * 2, L.CW * 1.3), h: PHONE.WH - 16 });
       for (const b of bands) blocks.push({ x: b.x + PHONE.PADX - 6, y: b.y + 8, w: Math.min(b.w - PHONE.PADX * 2, L.CW * 1.3), h: PHONE.FH - 16 });
@@ -279,25 +313,23 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     });
   }
 
-  // ---- P186: rig 자리 이름표와 흐름 줄(같은 rig의 자리 대표 카드 사이, 옅은 점선 곡선) ----
-  for (const [id, c] of cards) c.seat = rix.byNode.get(id) || null;
-  const flows = [], reps = new Map();
-  for (const [ws, R] of rix.rigs) {
-    const rp = seatReps(R, ws, tree.nodes.filter((n) => wsOf(n.id) === ws).sort(bySpawn), rix, (id) => cards.has(id) && !thin.has(id));
-    reps.set(ws, rp);
-    if (!phone) flows.push(...flowPaths(flowLines(R, rp), cards));
-  }
+  // ---- P186: rig 자리 이름표(띠 카드는 띠가 정했다) ----
+  for (const [id, c] of cards) if (!c.band) c.seat = rix.byNode.get(id) || null;
+  const rb = { list: rbs, marks: rbs.flatMap((b) => b.marks), heads: rbs.flatMap((b) => b.heads), lines: rbs.flatMap((b) => b.lines), folds: rbs.map((b) => b.fold).filter(Boolean), chains: rbs.flatMap((b) => b.chains || []) };
 
   // 칸: 워크스페이스 · 시작(0) · 1단계 · 2단계 · … · 솔로(보이는 가장 깊은 단계까지)
   const cols = phone ? COL.map((x, i) => ({ key: 'lv', level: i, x })) : [{ key: 'ws', x: L.HEADX }, ...COL.map((x, i) => ({ key: 'lv', level: i, x })), { key: 'solo', x: SOLO }];
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   const BW = phone ? nPages * W + (nPages - 1) * PHONE.PGAP : W;
-  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: BW, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, flows, reps, rig: rix, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
+  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: BW, h: Math.max(1, y) }, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, rig: rix, rb, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
 
   // ---- P166: 휴대폰 줄 하나(머리 = 위 띠, 나무, 그 아래 솔로 격자). 줄 높이를 돌려준다 ----
   function phoneRow(key, g, wi, roots, away, solos, chips, count) {
-    const top = y + PHONE.WH + PHONE.RT;
+    // P198: rig 띠 갈래(세로 건 목록과 지금 자리, lib/rig-band.js bandPhone)는 줄 머리 바로 아래, 나무는 그 아래
+    const rb = bandOf(key, PHONE.PADX, y + PHONE.WH + PHONE.RT);
+    if (rb) { rbs.push(rb); for (const [id, c] of rb.cards) cards.set(id, c); }
+    const top = y + PHONE.WH + PHONE.RT + (rb ? rb.h + L.GY : 0);
     let cy = top;
     roots.forEach((r, i) => { const peerNext = i + 1 < roots.length && peersOf(r.id).includes(roots[i + 1].id); cy += place(r.id, 0, cy, key, alignOf(roots.map((x) => x.id), i)) + (peerNext ? L.PGY : L.GY * 2); });
     for (const s of away) cy += place(s.id, 1, cy, key) + L.GY * 2;
@@ -312,7 +344,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
       bottom = Math.max(bottom, sy + H(s.id));
     });
     if (hasTree && solos.length) divs.push({ x: PHONE.PADX, y: treeEnd + PHONE.SOLOGAP / 2, w: W - PHONE.PADX * 2, h: 0, horiz: true, row: key });
-    const h = Math.max(bottom, top) + PHONE.RB - y;
+    const h = Math.max(bottom, top, rb ? rb.box.y + rb.h : 0) + PHONE.RB - y;
     rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: 0, w: W, chips, count, head: PHONE.WH, page: 0 });
     return h;
   }
@@ -360,6 +392,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
         }
         const dx = x0 - r.x, dy = cy - r.y;
         for (const cd of cards.values()) if (cd.ws === r.key) { cd.x += dx; cd.y += dy; }
+        for (const b of rbs) if (b.ws === r.key) { b.box.x += dx; b.box.y += dy; for (const it of [...b.marks, ...b.heads, ...(b.chains || []), ...(b.fold ? [b.fold] : [])]) { it.x += dx; it.y += dy; } }
         for (const d of divs) if (d.row === r.key) { d.x += dx; d.y += dy; }
         r.x += dx; r.y += dy; r.first = !!headOf(col, j); r.page = c;
         cy += r.h; seg.h = cy - seg.y;
@@ -401,7 +434,8 @@ export function headDrag({ onHead = false, altKey = false, button = 0, pointerTy
 // 끄는 카드와 그 일 하위들은 대상이 되지 않는다(고리). → { kind: 'sub'|'peer'|'none', target(카드 id, none은 null), row(줄 키), box(미리 보기 상자) } | null
 export function relationDrop(lay, dragId, wx, wy) {
   const me = lay.cards.get(dragId);
-  if (!me) return null;
+  if (!me || me.band) return null; // P198: 띠 카드는 Alt 끌기를 하지 않는다(자리는 rig 판에서 정한다)
+  if (lay.rb && inBandBox(lay.rb.list, wx, wy)) return null; // 띠는 놓을 곳이 아니다
   if (wx >= me.x && wx <= me.x + me.w && wy >= me.y && wy <= me.y + me.h) return null; // 제자리 = 취소
   const desc = new Set([dragId]);
   const walk = (id, g) => { if (g > 100) return; for (const c of lay.tree.kids.get(id) || []) { desc.add(c.id); walk(c.id, g + 1); } };
@@ -416,13 +450,13 @@ export function relationDrop(lay, dragId, wx, wy) {
   const upTo = (c) => Math.max(c.y - PEERY, ...col(c).filter((o) => o.y + o.h <= c.y).map((o) => o.y + o.h));
   const downTo = (c) => Math.min(c.y + c.h + PEERY, ...col(c).filter((o) => o.y >= c.y + c.h).map((o) => o.y));
   for (const [id, c] of lay.cards) {
-    if (desc.has(id) || wx < c.x || wx > c.x + c.w) continue;
+    if (desc.has(id) || c.band || wx < c.x || wx > c.x + c.w) continue;
     if (wy >= upTo(c) && wy < c.y && !thinNear(c, true)) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y - 10 - me.h, w: c.w, h: me.h } };
     if (wy > c.y + c.h && wy <= downTo(c) && !thinNear(c, false)) return { kind: 'peer', target: id, row: c.ws, box: { x: c.x, y: c.y + c.h + 10, w: c.w, h: me.h } };
   }
   let best = null;
   for (const [id, c] of lay.cards) {
-    if (desc.has(id)) continue;
+    if (desc.has(id) || c.band) continue;
     // 하위: 오른쪽 칸 자리(카드 오른쪽 끝 ~ 다음 칸 카드 폭의 80%), 위아래로 조금 여유
     if (c.depth >= 0 && wx >= c.x + c.w && wx <= c.x + c.w + GX + c.w * 0.8 && wy >= c.y - 24 && wy <= c.y + c.h + 24) {
       const d = Math.abs(wy - (c.y + c.h / 2));

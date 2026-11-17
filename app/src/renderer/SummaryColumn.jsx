@@ -3,7 +3,8 @@
 // 쉼 · 끝남(이름을 " · "로 이은 짧은 글, 머리에 절전·종료 수, 많으면 "+n개 더"). 맨 아래 바닥 줄: 작업 중·세션·팀 수와 선 읽는 법 한 줄.
 // 줄의 둘째 글(textOf)과 누르기(onGo)·올리기(onHot)는 쓰는 지도가 정한다. 모양은 styles.css .mt-mm-sum·.mt-mm-sec·.mt-mm-si·.mt-mm-rest·.mt-mm-foot
 // P186: rigCases(lib/rig-map.js caseGroups, rig가 없는 판은 null) = rig 건 묶음. 막힌 건 · 열린 건 · 최근 끝난 건. 누르면 지금 일이 있는 자리의 카드로(onGo)
-export function SummaryColumn({ sum, t, nameOf, tierOf, textOf, noOf = () => null, hot = null, onGo, onHot, teams = 0, hint, itemTip, role = 'mm-summary', className = '', style, children, rigCases = null }) {
+// P198: onCase(c)가 있으면 건 누르기는 그 건의 띠 행 머리로(세션 맵). 없으면 전처럼 지금 일이 있는 카드로(onGo)
+export function SummaryColumn({ sum, t, nameOf, tierOf, textOf, noOf = () => null, hot = null, onGo, onHot, teams = 0, hint, itemTip, role = 'mm-summary', className = '', style, children, rigCases = null, onCase = null }) {
   const enter = (id) => () => onHot(id);
   const leave = () => onHot(null);
   const item = (id, key) => {
@@ -25,8 +26,8 @@ export function SummaryColumn({ sum, t, nameOf, tierOf, textOf, noOf = () => nul
         : [t(c.state === 'cancelled' ? 'rigMap.caseCancelled' : 'rigMap.caseDone'), t('rigMap.handoffs', { n: c.handoffs })].join(' · ');
     const lim = c.state !== 'done' && c.state !== 'cancelled' ? c.lines.filter((l) => l.passed > 0).map((l) => `${l.on} ${l.passed}/${l.max}`).join(' · ') : '';
     return (
-      <button key={`${c.ws}|${c.id}`} type="button" className={`mt-mm-si mt-mm-case t-${st}${c.go && hot === c.go ? ' hot' : ''}`} data-role="mm-sum-case" data-case={c.id} data-state={c.state} data-go={c.go || undefined} title={t('rigMap.caseTip')}
-        disabled={!c.go} onClick={() => c.go && onGo(c.go)} onMouseEnter={enter(c.go)} onMouseLeave={leave} onFocus={enter(c.go)} onBlur={leave}>
+      <button key={`${c.ws}|${c.id}`} type="button" className={`mt-mm-si mt-mm-case t-${st}${c.go && hot === c.go ? ' hot' : ''}`} data-role="mm-sum-case" data-case={c.id} data-state={c.state} data-go={c.go || undefined} title={t(onCase ? 'rigBand.caseTip' : 'rigMap.caseTip')}
+        disabled={!c.go && !onCase} onClick={() => (onCase ? onCase(c) : c.go && onGo(c.go))} onMouseEnter={enter(c.go)} onMouseLeave={leave} onFocus={enter(c.go)} onBlur={leave}>
         <span className="a"><i className="dot" aria-hidden="true" /><span className="nm">{t('rigMap.caseName', { id: c.id })}</span><span className="mt-mm-own">@{c.owner}</span></span>
         <span className="b">{b}{lim ? <span className="mt-mm-lim"> · {lim}</span> : null}</span>
       </button>
