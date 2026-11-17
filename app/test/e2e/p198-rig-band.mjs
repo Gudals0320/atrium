@@ -1,6 +1,7 @@
 // P198 창 시험: 세션 맵 rig 띠(docs research harness-arch.md 17절). 판: 따로 띄운 개발용 판(P198_BOARD, P198_PORT, P198_DATA)만. 창 원격 디버깅 포트 P198_DEBUG. 한 번에 창 하나.
 // 띠 자료는 페이지 안에서 mission.graph 답을 바꿔 넣는다: P198_GRAPH(판 mission.graph 답 JSON, 예: P197이 개발용 판에서 저장한 그래프)가 있으면 그 rig와 노드를 쓰고,
 // 없으면 견본(test/fixtures/rig-band-graph.json = P197 견본)에 세션 노드를 지어 붙인다. rig 없는 워크스페이스 줄도 함께 둔다.
+// real 모드: P198_RIG(판 mission.graph의 rig 칸 하나, 예: P197이 개발용 판에서 저장한 graph-*.json)를 그 워크스페이스에 넣고, 자리 세션(seats[].sessions)으로 세션 노드를 짓는다.
 // 판에는 시험 폴더 워크스페이스 둘(P198_RIGWS, P198_OFFWS 이름)이 열려 있어야 한다(세션은 없어도 된다).
 // 실행: node app/test/e2e/p198-rig-band.mjs <pc|phone|perf>   (실제 판 변수를 지운 셸에서) 결과는 워크트리의 experiments/p198/shots/(저장소 밖).
 import fs from 'node:fs';
@@ -23,7 +24,8 @@ fs.mkdirSync(OUT, { recursive: true });
 const { logger, sleep, launch, closeApp, shot: shot0 } = await import('./harness.mjs');
 const { assertTestBoard } = await import('./p9-guard.mjs');
 assertTestBoard(ENV);
-const log = logger(`p198-rig-band-${WHAT}`);
+const RTAG = process.env.P198_RIG ? `-${path.basename(process.env.P198_RIG, '.json')}` : '';
+const log = logger(`p198-rig-band-${WHAT}${RTAG}`);
 const shot = (pg, n) => shot0(pg, n, log);
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok: !!ok, detail }); log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 1600)}` : ''}`); };
@@ -75,6 +77,89 @@ const box = (pg, sel) => pg.evaluate((s) => { const el = document.querySelector(
 const setLang = async (pg, lang) => { await pg.evaluate((l) => window.__mt.api.call('settings.set', { key: 'language', value: l }), lang); await sleep(1200); };
 // 띠 왼쪽 위로 확대(배율 k)
 const zoomBand = (pg, k = 0.85) => pg.evaluate((kk) => { const L = window.__mtTa.lay(), b = L.rb.list[0].box; window.__mtTa.set({ k: kk, x: window.__mtTa.rail + 30 - (b.x - 20) * kk, y: window.__mtTa.top + 20 - (b.y - 10) * kk }); }, k);
+
+// 실제 판 rig 칸 → 흉내 그래프(자리 세션 = 노드, 바쁨이면 working, 아니면 idle). 자리 없는 도우미(keep 주인의 하위)와 rig 없는 줄을 함께 둔다
+const LIVE = ['open', 'waiting_owner', 'blocked'];
+function realGraph(file, rigKey, offKey) {
+  const R = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const now = Date.now();
+  const nodes = [], edges = [];
+  let i = 0, owner = null;
+  for (const st of R.seats) for (const x of st.sessions || []) {
+    const id = `s:${x.sessionId}`;
+    if (st.session === 'keep' && !owner) owner = id;
+    nodes.push({ id, kind: 'session', sessionId: x.sessionId, name: x.name, agentKind: 'claude', state: x.busy ? 'working' : 'idle', category: x.busy ? 'working' : 'idle', workspaceKey: rigKey, parentId: null, lineageParent: null, peers: [], createdAt: now - 3600000 + i++ * 1000, rigSeat: st.name, activeAt: now - 60000 * i, turnAt: x.busy ? now - 90000 : null, lastPrompt: x.busy ? 'Work on the assigned unit' : null });
+  }
+  const keepSeat = (n) => R.seats.some((st) => st.name === n.rigSeat && st.session === 'keep');
+  for (const n of nodes) if (owner && n.id !== owner && !keepSeat(n)) { n.parentId = owner; n.lineageParent = owner; edges.push({ from: owner, to: n.id, kind: 'spawn', count: 0 }); }
+  const extra = (sid, name, ws, state, parent) => { nodes.push({ id: `s:${sid}`, kind: 'session', sessionId: sid, name, agentKind: 'claude', state, category: state, workspaceKey: ws, parentId: parent, lineageParent: parent, peers: [], createdAt: now - 1000 * i++, rigSeat: null, activeAt: now - 600000 }); if (parent) edges.push({ from: parent, to: `s:${sid}`, kind: 'spawn', count: 0 }); };
+  if (owner) extra('h', 'helper', rigKey, 'idle', owner);
+  extra('o-lead', 'off-lead', offKey, 'idle', null); extra('o-kid', 'off-kid', offKey, 'working', 's:o-lead'); extra('o-solo', 'off-solo', offKey, 'idle', null);
+  return { nodes, edges, counts: {}, at: now, rig: { [rigKey]: R } };
+}
+async function real() {
+  const tag = path.basename(process.env.P198_RIG, '.json');
+  const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
+  try {
+    await app.evaluate(({ BrowserWindow, screen }) => { const w = BrowserWindow.getAllWindows()[0]; const left = Math.min(...screen.getAllDisplays().map((d) => d.bounds.x)); const b = w.getBounds(); w.setPosition(left - b.width - 200, 40); }).catch(() => {});
+    await page.setViewportSize({ width: 2205, height: 1291 }).catch(() => {});
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.evaluate(() => { try { localStorage.setItem('atrium.sessionMap.summary', '1'); } catch { /* */ } });
+    await setLang(page, 'en');
+    const [rigKey, offKey] = await keysOf(page);
+    const g = realGraph(process.env.P198_RIG, rigKey, offKey), R = g.rig[rigKey];
+    await page.evaluate(HOOK, [g]);
+    await openMission(page);
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(900);
+    await shot(page, `real-${tag}-fit-en`);
+    await zoomBand(page, 0.8); await sleep(900);
+    await shot(page, `real-${tag}-zoom-en`);
+    const f = await page.evaluate(() => {
+      const L = window.__mtTa.lay(), q = (s) => [...document.querySelectorAll(s)];
+      return { seats: q('[data-role=rb-seat]').map((x) => x.dataset.seat + (x.classList.contains('old') ? '(old)' : '')), heads: q('[data-role=rb-head][data-case]').map((x) => x.dataset.case), counts: q('[data-role=rb-count]').map((x) => x.textContent),
+        marks: q('[data-role=rb-mark]').map((x) => x.dataset.kind), fold: (document.querySelector('[data-role=rb-fold]') || {}).textContent || null, cards: L.cards.size, folded: [...L.cards.values()].filter((c) => c.folded).map((c) => c.node.name), lines: q('[data-role=rb-line]').length };
+    });
+    log(JSON.stringify(f));
+    const closed = R.cases.filter((c) => !LIVE.includes(c.state));
+    const shownClosed = Math.min(3, closed.length), more = Math.max(0, R.doneCount - shownClosed);
+    check(`[${tag}] 자리 머리 = 판의 seats 차례(옛 자리 표시)`, f.seats.join() === R.seats.map((x) => x.name + (x.old ? '(old)' : '')).join(), f.seats);
+    check(`[${tag}] 행 = 끝나지 않은 건 + 끝난 최근 3`, f.heads.length === R.cases.length - closed.length + shownClosed, { heads: f.heads.length, cases: R.cases.length });
+    check(`[${tag}] 접힌 줄 수 = doneCount − 그린 끝난 건(${more})`, more ? (f.fold || '').includes(`+${more}`) : !f.fold || /more seat/.test(f.fold), f.fold);
+    check(`[${tag}] 모든 세션 노드가 카드 항목`, f.cards === g.nodes.length, { cards: f.cards, nodes: g.nodes.length });
+    const back = R.cases.some((c) => LIVE.includes(c.state) && c.units.some((u) => { const p = c.units.find((v) => v.unit === (u.via || {}).prevUnit); return p && R.seats.findIndex((x) => x.name === u.seat) < R.seats.findIndex((x) => x.name === p.seat) && (c.lines || []).some((l) => String(l.index) === String(u.via.line) && l.max != null); }));
+    if (back) check(`[${tag}] 되돌아감 호에 지금 셈(n/max, 올림 ↑k)`, f.counts.length >= 1, f.counts);
+    const c0 = R.cases[0];
+    const hb = await box(page, `[data-role=rb-head][data-case="${c0.id}"]`);
+    if (hb) { await page.mouse.click(hb.l + 30, hb.y); await sleep(700); }
+    const hist = await page.evaluate(() => { const h = document.querySelector('[data-role=rb-history]'); return h ? h.querySelectorAll('[data-role=rb-history-row]').length : -1; });
+    await shot(page, `real-${tag}-history`);
+    check(`[${tag}] 행 머리 → 넘김 이력(일 + 보고 = ${c0.units.length + (c0.reports || []).length})`, hist === c0.units.length + (c0.reports || []).length, hist);
+    await page.keyboard.press('Escape'); await sleep(300);
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
+    await page.click(`[data-role=mm-sum-case][data-case="${c0.id}"]`); await sleep(1300);
+    const hc = await page.evaluate((id) => { const el = document.querySelector(`[data-role=rb-head][data-case="${id}"]`); const r = el.getBoundingClientRect(); return { t: r.top, b: r.bottom, l: r.left, blink: el.classList.contains('blink') }; }, c0.id);
+    check(`[${tag}] 요약 열 건 → 행 머리(반짝임)`, hc.t > 80 && hc.b < 1291 - 100 && hc.blink, hc);
+    const target = f.folded[0] || null;
+    if (target) {
+      const sid = g.nodes.find((n) => n.name === target).sessionId;
+      await page.evaluate(() => window.__mtTa.fit()); await sleep(600);
+      await page.evaluate((s) => window.__mt.getState().mapFocus.session(s), sid); await sleep(1400);
+      const sf = await page.evaluate((s) => { const el = document.querySelector(`.mt-ta-slot[data-id="s:${s}"]`); return el ? { blink: el.classList.contains('blink'), chip: el.dataset.chip } : null; }, sid);
+      await shot(page, `real-${tag}-sidebar`);
+      check(`[${tag}] 사이드바 누르기(접힌 ${target}) → 줄을 펴고 칩 반짝임`, !!sf && sf.blink, sf);
+      await page.click('[data-role=rb-fold]'); await sleep(600);
+    }
+    await setLang(page, 'ko');
+    await page.evaluate(() => window.__mtTa.fit()); await sleep(900);
+    await shot(page, `real-${tag}-fit-ko`);
+    await zoomBand(page, 0.8); await sleep(900);
+    await shot(page, `real-${tag}-zoom-ko`);
+    await setLang(page, 'en');
+    await closeMission(page);
+  } finally {
+    await closeApp(app);
+  }
+}
 
 async function pc() {
   const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
@@ -309,8 +394,9 @@ try {
   if (WHAT === 'pc') await pc();
   else if (WHAT === 'phone') await phone();
   else if (WHAT === 'perf') await perf();
+  else if (WHAT === 'real') await real();
 } finally {
-  fs.writeFileSync(path.join(OUT, `results-${WHAT}.json`), JSON.stringify(results, null, 2));
+  fs.writeFileSync(path.join(OUT, `results-${WHAT}${RTAG}.json`), JSON.stringify(results, null, 2));
   log(`끝: ${results.filter((r) => r.ok).length}/${results.length}`);
   process.exit(0);
 }
