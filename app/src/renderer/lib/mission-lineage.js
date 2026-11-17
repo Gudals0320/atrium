@@ -152,7 +152,7 @@ export function lineageLayout(graph, { order: order0 = [], vgroups = [], tiers =
     const R = bix.rigs.get(key);
     if (!R) return null;
     const o = { ws: key, nodes: bandNodes.get(key) || [], member: bix.member, sidOf, tierOf, H: (id) => H(id), CW: L.CW, x0, y0, foldOpen: foldSet.has(key) };
-    return phone ? bandPhone(R, { ...o, W: W - PHONE.PADX * 2, textW: glyphW }) : bandLayout(R, o);
+    return phone ? bandPhone(R, { ...o, W: L.CW, textW: glyphW }) : bandLayout(R, o);
   };
   let bandRight = 0;
   if (!phone) for (const key of bix.rigs.keys()) if (present.includes(key)) bandRight = Math.max(bandRight, bandOf(key, 0, 0).w);

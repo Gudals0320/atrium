@@ -56,10 +56,10 @@ export function RigBandLayer({ rb, t, now, onMark, onHead, onFold, phone = false
         </button>
       ))}
       {(rb.chains || []).map((c) => (
-        <span key={`rc:${c.ws}:${c.caseId}:${c.unit}`} className={`mt-rb-link${c.queue ? ' queue' : ''}${c.open ? ' open' : ''}${c.up ? ' up' : ''}${c.arrow ? ' arrow' : ''}`} data-role="rb-link" data-seat={c.seat} style={{ left: c.x, top: c.y, width: c.w, height: c.h }}>{c.queue ? t('rigBand.queued') : c.seat}</span>
+        <span key={`rc:${c.ws}:${c.caseId}:${c.unit}`} className={`mt-rb-link${c.queue ? ' queue' : ''}${c.open ? ' open' : ''}${c.up ? ' up' : ''}${c.arrow ? ' arrow' : ''}${c.wrap ? ' wrap' : ''}`} data-role="rb-link" data-seat={c.seat} style={{ left: c.x, top: c.y, width: c.w, height: c.h }}>{c.queue ? t('rigBand.queued') : c.seat}</span>
       ))}
       {rb.folds.map((f) => (
-        <button key={`rf:${f.ws}`} type="button" className={`mt-rb-fold${f.open ? ' open' : ''}`} data-role="rb-fold" data-ws={f.ws} data-open={f.open ? '1' : undefined} style={{ left: f.x, top: f.y, width: f.w, height: f.h }} disabled={phone}
+        <button key={`rf:${f.ws}`} type="button" className={`mt-rb-fold${f.open ? ' open' : ''}`} data-role="rb-fold" data-ws={f.ws} data-open={f.open ? '1' : undefined} style={{ left: f.x, top: f.y, width: f.w, height: f.h }} aria-expanded={!!f.open}
           onClick={(e) => { e.stopPropagation(); if (onFold) onFold(f.ws); }}>
           {f.open ? t('rigBand.foldHide') : f.n ? t('rigBand.foldMore', { n: f.n }) : t('rigBand.foldOther', { n: f.sessions })}
         </button>

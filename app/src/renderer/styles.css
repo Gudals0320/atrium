@@ -2642,3 +2642,12 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rb-link.up { border-color: rgba(239, 128, 153, 0.7); }
 /* 띠 카드는 열 머리·사슬이 자리를 말하므로 멀리 타일의 자리 이름표를 숨긴다(이름을 덮지 않게) */
 .mt-sm .mt-ta-world.lv-far .mt-ta-slot.band .mt-ta-tile .mt-sm-seat.tile { display: none; }
+
+/* P199: 붙는 머리. 띠의 자리 머리가 고정 머리 막대 위로 지나가면 막대가 그 띠의 자리 이름을 띠 열 x에 보인다(MissionLineage.jsx paint, lib/rig-band.js stickyHead). 나무 칸 이름은 그동안 숨긴다(솔로·워크스페이스 칸은 그대로) */
+.mt-sm-cols[data-sticky] .colh[data-col^="lv"] { visibility: hidden; }
+.mt-sm-cols .rbst[hidden] { display: none; }
+.mt-sm-cols .colh.rbs { color: var(--ln-text, #e6e3da); font-weight: 600; letter-spacing: 0.02em; }
+.mt-sm-cols .colh.rbs i { font-style: normal; font-weight: 500; margin-left: 6px; color: var(--ln-dim, #a3a097); }
+.mt-sm-cols .colh.rbs.old { color: var(--ln-dim, #a3a097); }
+/* P199: 휴대폰 사슬의 꺾은 줄 첫 칩은 화살표 자리만큼 들여 시작하고, 그 화살표는 꺾임 표시(띠 안) */
+.mt-rb-link.wrap::before { content: '↳'; }

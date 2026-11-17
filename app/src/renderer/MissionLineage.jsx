@@ -24,6 +24,7 @@ import { commandDraft } from './Thread.jsx';
 import { caseGroups, recentLines } from './lib/rig-map.js'; // P186: rig 건 목록·미리 보기 훅·도구 줄
 import { SeatPicker, remoteView } from './RigSeat.jsx'; // P186: 노드 메뉴 자리 정하기
 import { RigBandLayer, RigBandLines, RigBandDefs, RigBandLabels, CaseHistory } from './RigBand.jsx'; // P198: rig 띠
+import { stickyHead } from './lib/rig-band.js'; // P199: 붙는 머리(띠의 자리 머리가 위로 지나가면 고정 머리 막대에 자리 이름)
 
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
 const COLH = 34; // 칸 머리 띠 높이
@@ -295,6 +296,16 @@ export function LineageMap() {
     // 칸 머리: 세계 칸 x를 화면으로(레일 오른쪽 띠 안의 자리)
     const cs = colsRef.current, L = layRef.current;
     if (cs && L) L.cols.forEach((c, i) => { const el = cs.children[i]; if (el) el.style.transform = `translateX(${Math.round(c.x * v.k + v.x - RAIL)}px)`; });
+    // P199: 붙는 머리. 띠의 자리 머리가 막대 위로 지나갔고 띠가 막대 선에 걸쳐 있으면, 나무 칸 이름 대신 그 띠의 자리 이름을 띠 열 x에(움직임 없이 자리만 바꾼다)
+    if (cs && L) {
+      const st = stickyHead(L.rb && L.rb.list, v, TOPH + COLH, RAIL), want = st ? st.ws : '';
+      if ((cs.dataset.sticky || '') !== want) { if (want) cs.dataset.sticky = want; else delete cs.dataset.sticky; }
+      for (const gEl of cs.querySelectorAll('.rbst')) {
+        const on = !!st && gEl.dataset.ws === st.ws;
+        if (gEl.hidden === on) gEl.hidden = !on;
+        if (on) st.seats.forEach((s2, i) => { const el = gEl.children[i]; if (el) el.style.transform = `translateX(${s2.x}px)`; });
+      }
+    }
     // 멀리 타일 글 하한(--ik = 1/배율): 움직이는 동안은 그대로, 멈춘 뒤(160ms)·처음·미끄러지기 때 한 번
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
@@ -810,6 +821,11 @@ export function LineageMap() {
       )}
       <div className="mt-ta-hud mt-sm-cols" data-role="ln-cols" ref={colsRef} style={lay && sumOpen ? { right: SUM_W } : undefined} aria-hidden="true">
         {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key}>{colLabel(c)}</span>)}
+        {lay && lay.rb && lay.rb.list.filter((b) => !b.phone).map((b) => (
+          <div key={`st:${b.ws}`} className="rbst" data-role="ln-cols-rig" data-ws={b.ws} hidden>
+            {b.seats.map((s) => <span key={s.name} className={`colh rbs${s.old ? ' old' : ''}`} data-seat={s.name}>{s.name}<i>{s.old ? t('rigBand.old') : s.mode ? t(`rigBand.${s.mode}`) : ''}</i></span>)}
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -46,6 +46,8 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const [expanded, setExpanded] = useState(loadExpanded);
   const [vsize, setVsize] = useState(null);
   const [peek, setPeek] = useState(null); // 길게 누른 카드 id
+  const [foldOpen, setFoldOpen] = useState(() => new Set()); // P199: rig 띠 "+n 끝남"을 편 워크스페이스(PC처럼 눌러 펴고 접는다)
+  const onBandFold = useCallback((ws) => setFoldOpen((cur) => { const n = new Set(cur); if (n.has(ws)) n.delete(ws); else n.add(ws); return n; }), []);
   const vpRef = useRef(null), worldRef = useRef(null), bgRef = useRef(null), pctRef = useRef(null);
   const view = useRef(null), sizeRef = useRef(null), layRef = useRef(null), opened = useRef(false);
   const moveTimer = useRef(0), glideTimer = useRef(0), saveTimer = useRef(0);
@@ -68,7 +70,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const vkey = sizeKey(vsize); // 단 나누기는 보이는 칸 비율을 따른다(크기가 조금 바뀌어도 다시 놓지 않게 20px 단위)
-  const lay = useMemo(() => (graph && vsize ? lineageLayout(graph, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize }) : null), [graph, order, vgroups, tiers, names, t, expanded, vkey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (graph && vsize ? lineageLayout(graph, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, foldOpen }) : null), [graph, order, vgroups, tiers, names, t, expanded, vkey, foldOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
@@ -289,7 +291,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
                   return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
                 })}
               </svg>
-              <RigBandLayer rb={lay.rb} t={t} now={now} phone />
+              <RigBandLayer rb={lay.rb} t={t} now={now} phone onFold={onBandFold} />
               {ids.filter((id) => !lay.cards.get(id).folded).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
             </div>
           )}
