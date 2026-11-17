@@ -33,25 +33,41 @@ export function goView(b, v, vw, vh) {
 // 시점 기억: 기기(브라우저 저장소)에 화면 크기마다 하나. 세로·가로 돌리면 따로. 저장소가 없거나 깨져도 맞춤으로 연다
 export const sizeKey = (s) => (s ? `${Math.round(s.w / 20) * 20}x${Math.round(s.h / 20) * 20}` : '');
 const ok = (v) => !!v && [v.k, v.x, v.y].every((x) => typeof x === 'number' && Number.isFinite(x)) && v.k > 0;
-export function loadView(store, size) {
+// P207: 탭(오늘 | 이전)이 있으면 탭마다 따로(열쇠 = 크기|탭). 탭이 없으면 전과 같은 열쇠
+const viewKey = (size, tab) => (tab ? `${sizeKey(size)}|${tab}` : sizeKey(size));
+export function loadView(store, size, tab = null) {
   try {
     const all = JSON.parse((store && store.getItem(VIEW_KEY)) || '{}');
-    const v = all && all[sizeKey(size)];
+    const v = all && all[viewKey(size, tab)];
     return ok(v) ? { k: clampK(v.k), x: v.x, y: v.y } : null;
   } catch { return null; }
 }
-export function saveView(store, size, v) {
+export function saveView(store, size, v, tab = null) {
   if (!store || !ok(v) || !size) return false;
   try {
     let all = {};
     try { all = JSON.parse(store.getItem(VIEW_KEY) || '{}') || {}; } catch { all = {}; }
-    const keys = Object.keys(all).filter((k) => k !== sizeKey(size)).slice(-5); // 화면 크기는 몇 개만 기억
+    const key = viewKey(size, tab);
+    const keys = Object.keys(all).filter((k) => k !== key).slice(-9); // 화면 크기(× 탭)는 몇 개만 기억
     const next = Object.fromEntries(keys.map((k) => [k, all[k]]));
-    next[sizeKey(size)] = { k: Math.round(v.k * 1e4) / 1e4, x: Math.round(v.x), y: Math.round(v.y) };
+    next[key] = { k: Math.round(v.k * 1e4) / 1e4, x: Math.round(v.x), y: Math.round(v.y) };
     store.setItem(VIEW_KEY, JSON.stringify(next));
     return true;
   } catch { return false; }
 }
-export const clearView = (store, size) => { try { const all = JSON.parse(store.getItem(VIEW_KEY) || '{}') || {}; delete all[sizeKey(size)]; store.setItem(VIEW_KEY, JSON.stringify(all)); } catch { /* 지우지 못해도 된다 */ } };
+export const clearView = (store, size, tab = null) => { try { const all = JSON.parse(store.getItem(VIEW_KEY) || '{}') || {}; delete all[viewKey(size, tab)]; store.setItem(VIEW_KEY, JSON.stringify(all)); } catch { /* 지우지 못해도 된다 */ } };
 // 처음 보기: 이 화면 크기에서 기억한 보기, 없으면 맞춤
-export const openView = (store, size, bounds) => loadView(store, size) || phoneFit(bounds, size.w, size.h);
+export const openView = (store, size, bounds, tab = null) => loadView(store, size, tab) || phoneFit(bounds, size.w, size.h);
+
+// P207: 고른 탭(오늘 | 이전)을 기기에 기억한다. 고른 날(자정 기준 day)이 지나면 잊고 기본 규칙(tabPick)을 따른다
+export const TAB_KEY = 'atrium.phoneMap.tab';
+export function loadTab(store, day) {
+  try {
+    const v = JSON.parse((store && store.getItem(TAB_KEY)) || 'null');
+    return v && (v.tab === 'today' || v.tab === 'earlier') && v.day === day ? v.tab : null;
+  } catch { return null; }
+}
+export function saveTab(store, tab, day) {
+  if (!store || (tab !== 'today' && tab !== 'earlier')) return false;
+  try { store.setItem(TAB_KEY, JSON.stringify({ tab, day })); return true; } catch { return false; }
+}

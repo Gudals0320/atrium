@@ -2894,4 +2894,8 @@ export default {
   launcherEffort: { // P205: 호출자 틀의 노력 수준 빈 값(하네스 이름)
     harnessDefault: '{harness} default',
   },
+  pmTab: { // P207: phone session map tabs (Today | Earlier)
+    label: 'Session map section',
+    attn: '{n} need you or failed',
+  },
 };

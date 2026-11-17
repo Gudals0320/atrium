@@ -9,10 +9,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
-import { lineageLayout, PHONE, todayWorkspaces, dayStart, msToMidnight } from './lib/mission-lineage.js'; // P202: 오늘 일한 폴더 먼저
+import { lineageLayout, PHONE, todayWorkspaces, dayStart, msToMidnight, tabOfId } from './lib/mission-lineage.js'; // P202: 오늘 일한 폴더 먼저. P207: 오늘 | 이전 탭
 import { roleModel, nodeTier } from './lib/mission-model.js';
 import { levelOf, zoomAt, ZOOM } from './lib/mission-terr.js';
-import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeKey } from './lib/phone-map.js';
+import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeKey, loadTab, saveTab } from './lib/phone-map.js';
 import { Card, Peek, cardFacts } from './MissionLineage.jsx';
 import { caseGroups } from './lib/rig-map.js'; // P186: rig 건(알약)
 import { RigBandLayer } from './RigBand.jsx'; // P198: rig 띠 휴대폰 갈래(세로 건 목록과 지금 자리)
@@ -70,14 +70,21 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   // P202: 오늘 일한 워크스페이스(폴더 차례, PC와 같은 규칙). 자정이 지나면 다시 센다
   const [day, setDay] = useState(() => dayStart());
   useEffect(() => { const id = setTimeout(() => setDay(dayStart()), msToMidnight() + 500); return () => clearTimeout(id); }, [day]);
+  // P207: 고른 탭(오늘 | 이전). 기기에 기억하고, 자정이 지나면 잊는다(기본 규칙으로)
+  const [tabSel, setTabSel] = useState(() => loadTab(store(), dayStart()));
+  useEffect(() => { setTabSel(loadTab(store(), day)); }, [day]);
+  const tabRef = useRef(null), pendingGo = useRef(null);
   const todayKey = graph ? [...todayWorkspaces(graph.nodes.filter((n) => n.kind === 'session'), { liveOf, tierOf: (n) => tiers.get(n.id), now: Math.max(Date.now(), day) })].sort().join('\n') : '';
   const today = useMemo(() => new Set(todayKey ? todayKey.split('\n') : []), [todayKey]);
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const vkey = sizeKey(vsize); // 단 나누기는 보이는 칸 비율을 따른다(크기가 조금 바뀌어도 다시 놓지 않게 20px 단위)
-  const lay = useMemo(() => (graph && vsize ? lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, foldOpen }) : null), [graph, vgroups, tiers, names, t, expanded, vkey, foldOpen, today]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (graph && vsize ? lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, foldOpen, tab: tabSel || 'auto' }) : null), [graph, vgroups, tiers, names, t, expanded, vkey, foldOpen, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
+  const tb = lay && lay.tabs && lay.tabs.split ? lay.tabs : null; // P207: 두 칸이 다 있을 때만 탭
+  const pick = tb ? tb.pick : null;
+  tabRef.current = pick;
   sizeRef.current = vsize;
   const now = Date.now();
   const factsOf = (id) => {
@@ -105,7 +112,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (vp && !glide) { if (vp.dataset.moving !== '1') vp.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete vp.dataset.moving; setIk(); }, 160); }
     // 이 기기에 기억(조금 모았다가)
-    if (save) { clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => saveView(store(), sizeRef.current, view.current), PM.SAVE_MS); }
+    if (save) { clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => saveView(store(), sizeRef.current, view.current, tabRef.current), PM.SAVE_MS); }
   }, []);
   const fit = useCallback((glide = true) => { const L = layRef.current, s = sizeRef.current; if (L && s) paint(phoneFit(L.bounds, s.w, s.h), { glide }); }, [paint]);
   const zoomBy = useCallback((f) => { const s = sizeRef.current, v = view.current; if (s && v) paint(zoomAt(v, s.w / 2, s.h / 2, v.k * f), { glide: true }); }, [paint]);
@@ -120,26 +127,40 @@ export function PhoneMap({ onBack, onOpen, conn }) {
     if (ro) ro.observe(el); else window.addEventListener('resize', read);
     return () => { if (ro) ro.disconnect(); else window.removeEventListener('resize', read); };
   }, []);
-  // 처음(또는 화면 크기가 바뀌면): 이 크기에서 기억한 보기, 없으면 맞춤. 그래프가 바뀌어도 보기는 그대로
+  // 처음(또는 화면 크기·탭이 바뀌면): 이 크기(탭)에서 기억한 보기, 없으면 맞춤. 그래프가 바뀌어도 보기는 그대로
+  // P207: 다른 탭의 카드로 가는 길이 탭을 바꿨으면(pendingGo) 그 탭을 연 뒤 그 카드로 간다
   const openedKey = useRef('');
   useLayoutEffect(() => {
     if (!lay || !vsize) return;
-    if (!opened.current || openedKey.current !== vkey) { opened.current = true; openedKey.current = vkey; paint(openView(store(), vsize, lay.bounds), { save: false }); }
+    const ok = `${vkey}|${pick || ''}`;
+    if (!opened.current || openedKey.current !== ok) { opened.current = true; openedKey.current = ok; paint(openView(store(), vsize, lay.bounds, pick), { save: false }); }
     else if (view.current) paint(view.current, { save: false });
-  }, [lay, vkey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const go = pendingGo.current;
+    if (go && lay.cards.has(go)) { pendingGo.current = null; goTo(go); }
+  }, [lay, vkey, pick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // P207: 탭 바꾸기. 지금 탭의 보기를 바로 남기고(모으던 것은 버린다) 고른 탭을 기기에 기억한다. goId = 바꾼 뒤 갈 카드
+  const switchTab = useCallback((k, goId = null) => {
+    clearTimeout(saveTimer.current);
+    if (view.current && sizeRef.current) saveView(store(), sizeRef.current, view.current, tabRef.current);
+    pendingGo.current = goId;
+    saveTab(store(), k, dayStart());
+    setTabSel(k);
+  }, []);
 
   // ---- 알약: 그 카드로 가서 반짝인다 ----
   const goTo = useCallback((id) => {
     const L = layRef.current, s = sizeRef.current, b = L && L.cards.get(id);
+    if (!b && L) { const k = tabOfId(L, id); if (k && k !== L.tabs.pick) { switchTab(k, id); return true; } } // P207: 다른 칸의 카드면 탭을 바꾼 뒤 간다
     if (!b || !s) return false;
     lastGoId = id;
     paint(goView(b, view.current, s.w, s.h), { glide: true });
     const el = vpRef.current && vpRef.current.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`);
     if (el) { el.classList.remove('blink'); void el.offsetWidth; el.classList.add('blink'); setTimeout(() => el.classList.remove('blink'), 2200); }
     return true;
-  }, [paint]);
+  }, [paint, switchTab]);
   const goNext = (key, want) => {
-    const list = (lay ? lay.order : []).filter((id) => want.includes(tiers.get(id)));
+    const list = allIds.filter((id) => want.includes(tiers.get(id)));
     if (!list.length) return;
     const i = list.indexOf(lastGo.current[key]);
     const id = list[(i + 1) % list.length];
@@ -229,17 +250,19 @@ export function PhoneMap({ onBack, onOpen, conn }) {
       el.removeEventListener('gesturestart', noGesture); el.removeEventListener('gesturechange', noGesture);
     };
   }, [paint, onOpen]);
-  useEffect(() => () => { clearTimeout(saveTimer.current); if (view.current && sizeRef.current) saveView(store(), sizeRef.current, view.current); }, []); // 떠날 때 마지막 보기를 남긴다
-  window.__mtPm = { style: 'canvas', fitView: () => { const L = layRef.current, s = sizeRef.current; return L && s ? phoneFit(L.bounds, s.w, s.h) : null; }, lay: () => layRef.current, view: () => (view.current ? { ...view.current } : null), set: (v) => paint(v), fit: () => fit(false), goTo, last: () => lastGoId, peek: (id) => setPeek(id), size: () => sizeRef.current }; // 시험이 읽는다
+  useEffect(() => () => { clearTimeout(saveTimer.current); if (view.current && sizeRef.current) saveView(store(), sizeRef.current, view.current, tabRef.current); }, []); // 떠날 때 마지막 보기를 남긴다
+  window.__mtPm = { style: 'canvas', fitView: () => { const L = layRef.current, s = sizeRef.current; return L && s ? phoneFit(L.bounds, s.w, s.h) : null; }, lay: () => layRef.current, view: () => (view.current ? { ...view.current } : null), set: (v) => paint(v), fit: () => fit(false), goTo, last: () => lastGoId, peek: (id) => setPeek(id), size: () => sizeRef.current, tab: () => tabRef.current, setTab: (k) => switchTab(k), tabs: () => { const x = layRef.current && layRef.current.tabs; return x ? { split: x.split, pick: x.pick, today: { n: x.today.n, attn: x.today.attn }, earlier: { n: x.earlier.n, attn: x.earlier.attn } } : null; } }; // 시험이 읽는다
 
   const ids = lay ? lay.order : [];
-  const attn = ids.filter((id) => tiers.get(id) === 'turn' || tiers.get(id) === 'alert').sort((a, b) => (tiers.get(a) === 'turn' ? 0 : 1) - (tiers.get(b) === 'turn' ? 0 : 1));
-  const nWork = ids.filter((id) => tiers.get(id) === 'work').length, nDone = ids.filter((id) => tiers.get(id) === 'review').length;
+  // P207: 위 알약(기다리는 세션·작업 중·완료·rig 건)은 두 칸 모두에서 센다. 다른 칸 카드는 누르면 탭을 바꾼 뒤 간다
+  const allIds = tb ? [...ids, ...tb[pick === 'today' ? 'earlier' : 'today'].ids] : ids;
+  const attn = allIds.filter((id) => tiers.get(id) === 'turn' || tiers.get(id) === 'alert').sort((a, b) => (tiers.get(a) === 'turn' ? 0 : 1) - (tiers.get(b) === 'turn' ? 0 : 1));
+  const nWork = allIds.filter((id) => tiers.get(id) === 'work').length, nDone = allIds.filter((id) => tiers.get(id) === 'review').length;
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const pb = peek && lay ? lay.cards.get(peek) : null;
   // P186: rig 건 알약(막힌 건·열린 건, 둘까지). 누르면 지금 일이 있는 자리의 카드로. rig가 없는 판은 없다
   const keepOf = (ws, seat) => { if (!lay) return null; for (const [id, b] of lay.cards) if (b.ws === ws && b.keepHead && b.seat && b.seat.seat === seat) return id; return null; }; // P198: keep 자리 머리 카드
-  const rcases = lay ? caseGroups(graph, (ws, sid) => (sid && lay.cards.has(`s:${sid}`) && !lay.cards.get(`s:${sid}`).folded ? `s:${sid}` : null), keepOf) : null;
+  const rcases = lay ? caseGroups(graph, (ws, sid) => (!sid ? null : lay.cards.has(`s:${sid}`) ? (!lay.cards.get(`s:${sid}`).folded ? `s:${sid}` : null) : tabOfId(lay, `s:${sid}`) ? `s:${sid}` : null), keepOf) : null; // P207: 다른 칸의 자리 카드도 간다
   const rpills = rcases ? [...rcases.blocked, ...rcases.open].slice(0, 2) : [];
   return (
     <div className="mt-ph-list mt-pm mt-pl mt-pmap" data-role="phone-mission" data-style="canvas">
@@ -248,9 +271,22 @@ export function PhoneMap({ onBack, onOpen, conn }) {
         <b className="mt-pm-title">{t('phoneMission.title')}</b>
         {conn}
       </header>
+      {tb && (
+        <div className="mt-pmap-tabs" role="tablist" aria-label={t('pmTab.label')} data-role="pm-tabs" data-pick={pick}>
+          {['today', 'earlier'].map((k) => {
+            const on = pick === k, sc = tb[k];
+            return (
+              <button key={k} type="button" role="tab" aria-selected={on} className={`mt-pmap-tab${on ? ' on' : ''}`} data-role="pm-tab" data-tab={k} data-on={on ? '1' : undefined} onClick={() => { if (!on) switchTab(k); }}>
+                <span className="tn">{t(`mmSec.${k}`)}</span><b className="tc">{sc.n}</b>
+                {!on && sc.attn > 0 && <span className="ta" data-role="pm-tab-attn" aria-label={t('pmTab.attn', { n: sc.attn })} title={t('pmTab.attn', { n: sc.attn })}><i aria-hidden="true" />{sc.attn}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {lay && ids.length > 0 && (
         <div className="mt-pl-pills" data-role="pl-pills">
-          {attn.slice(0, ATTN_MAX).map((id) => { const tr = tiers.get(id); return <button key={id} type="button" className={`mt-pl-pill st-${ST[tr]}`} data-role="pl-attn" data-id={id} onClick={() => goTo(id)}><i /><b>{lay.cards.get(id).node.name}</b><span>{t(`mmTerr.chip.${tr}`)}</span></button>; })}
+          {attn.slice(0, ATTN_MAX).map((id) => { const tr = tiers.get(id); return <button key={id} type="button" className={`mt-pl-pill st-${ST[tr]}`} data-role="pl-attn" data-id={id} onClick={() => goTo(id)}><i /><b>{lay.tree.byId.get(id).name}</b><span>{t(`mmTerr.chip.${tr}`)}</span></button>; })}
           {attn.length > ATTN_MAX && <button type="button" className="mt-pl-pill st-needs more" data-role="pl-attn-more" onClick={() => goNext('attn', ['turn', 'alert'])}><span>{t('mmTerr.more', { n: attn.length - ATTN_MAX })}</span></button>}
           {!attn.length && <span className="mt-pl-pill quiet" data-role="pl-none"><span>{t('phoneMap.none')}</span></span>}
           {nWork > 0 && <button type="button" className="mt-pl-pill st-working count" data-role="pl-count" data-tier="work" onClick={() => goNext('work', ['work'])}><i /><b>{nWork}</b><span>{t('mmTerr.chip.work')}</span></button>}

@@ -137,7 +137,7 @@ test('휴대폰 "+n 끝남" 숨은 건: 끝난 건이 셋 넘으면 펼 때 넷�
 
 test('화면: 휴대폰 접힌 줄 단추는 눌린다(PhoneMap이 foldOpen을 넘김), 맵은 붙는 머리를 막대에 그린다, 꺾은 줄 표시 CSS, 움직임 없음', () => {
   const pm = read('PhoneMap.jsx'), rb = read('RigBand.jsx'), ml = read('MissionLineage.jsx'), css = read('styles.css');
-  assert.ok(/foldOpen \}\)/.test(pm) && /onFold=\{onBandFold\}/.test(pm));
+  assert.ok(/foldOpen(, tab: tabSel \|\| 'auto')? \}\)/.test(pm) && /onFold=\{onBandFold\}/.test(pm));
   assert.ok(!/disabled=\{phone\}/.test(rb));
   assert.ok(/stickyHead\(/.test(ml) && /data-role="ln-cols-rig"/.test(ml));
   const p199 = css.slice(css.indexOf('/* P199'));

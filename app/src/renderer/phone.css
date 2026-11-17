@@ -630,3 +630,11 @@ button.mt-pm-chip:disabled { opacity: .5; }
 /* P202: 휴대폰 오늘·이전 구분 줄 글(세계 글 크기, 멀리서도 읽히게 --ik를 따른다) */
 .mt-pmap-sec .up, .mt-pmap-sec .dn { font-size: 15px; }
 .mt-sm .lv-far .mt-pmap-sec .up, .mt-sm .lv-far .mt-pmap-sec .dn { font-size: clamp(15px, calc(9px * var(--ik, 1)), 26px); }
+/* P207: 휴대폰 세션 맵 탭(오늘 | 이전). 고른 칸만 그린다. 고르지 않은 칸에 응답 필요·오류가 있으면 그 탭에 수 표시. 움직임 없음 */
+.mt-pmap-tabs { flex: none; display: flex; gap: 6px; padding: 8px calc(env(safe-area-inset-right) + 12px) 0 calc(env(safe-area-inset-left) + 12px); background: #151412; }
+.mt-pmap-tab { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--pl-line-2); background: transparent; color: var(--pl-dim); font: 500 14px var(--font-ui); -webkit-tap-highlight-color: transparent; }
+.mt-pmap-tab .tc { font-weight: 600; color: var(--pl-dim); font-variant-numeric: tabular-nums; }
+.mt-pmap-tab.on { background: color-mix(in srgb, var(--pl-strong) 10%, transparent); border-color: color-mix(in srgb, var(--pl-strong) 45%, transparent); color: var(--pl-strong); }
+.mt-pmap-tab.on .tc { color: var(--pl-strong); }
+.mt-pmap-tab .ta { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 10px; font: 600 12px var(--font-ui); color: var(--pl-strong); background: color-mix(in srgb, var(--st-waiting) 22%, transparent); border: 1px solid color-mix(in srgb, var(--st-waiting) 70%, transparent); }
+.mt-pmap-tab .ta i { width: 7px; height: 7px; border-radius: 50%; background: var(--st-waiting); display: block; }
