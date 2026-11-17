@@ -14,6 +14,7 @@
 //       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째, P111: 혼자 잠든 세션은 그 세션만)
 //       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다. P185: rig 자리 세션은 정의의 results 낱말)
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
+//       atrium log "<한 줄>" [--json] · atrium news [<이름>] [--all] [--json]   (P204: 동료 소식)
 //       atrium guide [주제] [--json]   (P182: 자세한 사용법 + 켜진 rig의 안내. P190: guide rig는 보드 내장 rig 만들기 안내)
 //       atrium tool [--json] · atrium tool <이름> [인자…] · atrium tool --wait <실행 ID> · atrium tool --runs   (P183: rig 도구)
 //       atrium rig check [파일] | log | rollback <n> | cleanup <건> [--json]   (P188: rig 정의 관리, 관리자 자리만. P190: check는 rig가 꺼진 워크스페이스면 누구나)
@@ -21,7 +22,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { envVar, terminalSessionVar } from '../src/config.mjs';
-import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP } from '../src/cli-contract.mjs'; // P115: 계약(atrium help --json). P156: 관계 고르기 안내
+import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP, PEER_RULE_SHORT, NEWS_LOG_MAX } from '../src/cli-contract.mjs'; // P204: 동료 소식 // P115: 계약(atrium help --json). P156: 관계 고르기 안내
 
 // P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
 const HAND_OFF = '기다리지 않고 턴을 끝낸다. 끝나면 보드가 done 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다.';
@@ -43,7 +44,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium child [이름] [--peer] [--prompt "첫 요청"] [--role 역할] [--cwd 폴더] [--worktree 이름] [--model 모델] [--launcher 런처] [--effort 노력] [--kind 종류] [--no-wait]
       세션을 띄운다. 너의 폴더·모델·추론 수준·승인 방식·그룹을 물려받고(준 값이 덮는다), 너와 역할 선(기본 "워커", --peer면 "동료")으로 이어진다.
       관계: 기본은 하위 워커다(--prompt의 일을 끝내면 atrium done으로 너에게 보고한다. atrium children에 보이고 child-kill로 함께 꺼진다).
-      --peer는 동료다(같은 위계의 협력자. 필요한 것을 서로 주고받고, 끝나면 결과를 너에게 공유하며, 사람에게 직접 답해도 된다. child-kill 연쇄에서 빠진다).
+      --peer는 동료다(같은 위계의 협력자. 질문·넘기기·상대 일을 바꾸는 변경 때만 서로 보내고, 한 일은 보드의 동료 소식에 남는다(atrium news). 사람에게 직접 답해도 된다. child-kill 연쇄에서 빠진다).
       누가 띄웠는지(계보)는 둘 다 남는다. 보드가 첫 요청 앞에 관계 한 줄을 붙이고, 응답 첫 줄에 관계를 쓴다.
       --model은 말로 한 이름도 받는다("glm flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
       --launcher는 그 런처(도구 모음의 단추)의 하네스·모델·옵션·환경 변수 그대로 띄운다.
@@ -65,6 +66,10 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 atrium wait로 기다리는 중이면 그 기다림이 받고, 아니면 보드가 그 세션 차례에 넣는다).
       일이 보고하라는 것은 이 글에 넣고 다른 길로 따로 보내지 않는다. 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1
   atrium item                   너의 지금 일(맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수)
+  atrium log "<한 줄>"          동료 소식에 너의 한 줄을 남긴다(${NEWS_LOG_MAX}자까지). 누구에게도 보내지 않고 누구도 깨우지 않는다. 동료가 알아 둘 결정·변경·상태를 남길 때
+  atrium news [<이름>] [--all]  동료 소식: 보드가 남긴 동료의 턴 끝 한 줄(받은 일 + 답 첫 줄), done, atrium log.
+      기본은 너의 동료가 네가 마지막으로 본 뒤 남긴 것을 오래된 것부터 20줄(읽은 자리를 옮긴다). <이름>이면 판의 어느 세션이든 그 세션의 최근 것(읽기만), --all은 동료의 최근 것(읽기만).
+      상대 일과 닿는 일을 시작할 때, 동료에게 묻기 전, 일을 넘겨받을 때 본다. 동료가 끝날 때마다 결과를 보내오지 않는 대신이다
   atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
   atrium guide [주제]           이 사용법에, 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json, 작업 규칙)가 있으면 그 안내를 붙인다. rig의 훅이 글이나 done을 거절하면 종료 코드 1과 까닭이 온다
   atrium guide rig              rig 만들기 안내(보드 내장): 정의 형식, 틀 셋의 예, atrium rig check로 검사하는 법
@@ -137,6 +142,7 @@ async function main() {
   if (cmd === 'done' || cmd === 'item' || cmd === 'items') return unitVerb(cmd); // P180
   if (cmd === 'guide') return guideVerb(); // P182
   if (cmd === 'tool') return toolVerb(); // P183
+  if (cmd === 'log' || cmd === 'news') return newsVerb(cmd); // P204
   if (cmd === 'rig') return rigVerb(); // P188
   if (cmd === 'child') {
     // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
@@ -191,7 +197,7 @@ async function main() {
     else if (x.launcher) say(`런처 ${x.launcher}로 실행했습니다.${x.gateway ? `(게이트웨이 경유 ${x.gateway})` : ''}`);
     else if (x.inheritedGateway) say(`너의 게이트웨이(${x.inheritedGateway})와 모델을 물려받았다`);
     if (x.head) say(`헤드로 띄웠다: @${x.name} (종류 ${x.kind}). 너의 워커가 아니다. 첫 요청 뒤 보드가 부모 관계를 ${x.head.detached ? '뗐다' : '뗀다'}. 그 뒤로 일을 시키거나 기다리지 않는다`);
-    else if (x.relation === 'peer') { say(`관계: 동료. @${x.name}는 너의 하위 워커가 아니다(같은 위계의 협력자). 필요한 것을 주고받고, 끝나면 결과를 너에게 공유한다. child-kill 연쇄에서 빠진다`); say(`동료를 띄웠다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}")`); }
+    else if (x.relation === 'peer') { say(`관계: 동료. @${x.name}는 너의 하위 워커가 아니다(같은 위계의 협력자). ${PEER_RULE_SHORT}. child-kill 연쇄에서 빠진다`); say(`동료를 띄웠다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}")`); }
     else { say(`관계: 하위 워커. @${x.name}는 너의 워커다. 맡긴 일은 끝나면 atrium done으로 너에게 보고하고, child-kill로 함께 꺼진다`); say(`하위 세션을 생성했습니다: @${x.name} (종류 ${x.kind}, 역할 "${x.role}", ${x.depth}단계)`); }
     if (x.harness) {
       // P96: 다른 종류(codex 등). 무엇을 물려받았는지: 바탕 호출자, 띄운 명령, 승인
@@ -216,7 +222,7 @@ async function main() {
       else say(`  첫 요청은 아직 확인되지 않았다(${fp}). 보드가 들어갈 때까지 보낸다. 확인: atrium children(들어가지 않으면 "첫 요청 안 들어감"이 보인다) · 다시 보내기: ${x.next.prompt}`);
     }
     if (x.head) { say(`화면 보기(필요할 때만): ${x.next.read}`); say('지금 연결: atrium me'); return; }
-    if (x.relation === 'peer') say(`동료는 끝나면 결과를 너에게 공유한다(보드가 네 차례에 넣는다). 기다리지 않고 턴을 끝낸다. 주고받기: atrium prompt ${x.name} "<할 일>"`);
+    if (x.relation === 'peer') say(`동료는 결과를 보내오지 않는다(한 일은 atrium news ${x.name}). 기다리지 않고 턴을 끝낸다. 보낼 때(질문·넘기기 등): atrium prompt ${x.name} "<글>"`); // P204
     else if (x.firstPrompt && x.firstPrompt.unit) say(HAND_OFF); // P181: 맡기고 턴을 끝낸다
     else if (x.firstPrompt) say(`끝나기 기다리기: ${x.next.wait}`); else say(`일 맡기기: atrium prompt ${x.name} "<할 일>"`);
     say(`화면 읽기: ${x.next.read}`);
@@ -234,12 +240,47 @@ async function main() {
       if (c.deliveryStuck) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}보낸 글이 ${Math.round((Date.now() - c.deliveryStuck.since) / 1000)}초째 들어가지 않음(${c.deliveryStuck.code || c.deliveryStuck.reason}, ${c.deliveryStuck.attempts}번 시도, 보드가 간격을 늘려 다시 보낸다). 화면 보기: atrium read ${c.name} --lines 40 · 취소는 사람이 보드에서 한다(전달 ${c.deliveryStuck.deliveryId})`); // P106. P116: 이 atrium에는 cancel이 없다
       if (c.lastAnswer) say(`${'  '.repeat(Math.max(1, c.depth - x.depth) + 1)}마지막 응답:${c.lastAnswer.replace(/\s+/g, ' ').slice(0, 400)}`);
     }
-    if (x.peers && x.peers.length) say(`동료(하위가 아니다, 결과를 서로 공유): ${x.peers.map((p) => `@${p.name} ${p.state}`).join(', ')}`);
+    if (x.peers && x.peers.length) say(`동료(하위가 아니다, 한 일은 atrium news): ${x.peers.map((p) => `@${p.name} ${p.state}`).join(', ')}`);
     return;
   }
   say(`껐다: ${x.killed.map((k) => `@${k.name}${k.closed ? '' : `(실패 ${k.error || ''})`}`).join(', ')}`);
   if (x.kept && x.kept.length) say(`남겼다(하위가 아니라 끄지 않음): ${x.kept.map((k) => `@${k.name}(${REL_WORD[k.relation] || k.relation})`).join(', ')}`); // P156
 }
+// ---------- P204: atrium log | news ----------
+const KIND_WORD = { turn: '턴', done: 'done', log: 'log' };
+function newsLine(r, now) {
+  const head = `  @${r.name} · ${ago(r.at, now)} · ${KIND_WORD[r.kind] || r.kind}`;
+  if (r.kind === 'turn') return `${head}: "${r.task}" → ${r.text}`;
+  if (r.kind === 'done') return `${head} ${r.result}${r.task ? ` "${r.task}"` : ''}: ${r.text}`;
+  return `${head}: ${r.text}`;
+}
+async function newsVerb(cmd) {
+  let r;
+  if (cmd === 'log') {
+    const text = rest.join(' ').replace(/\s+/g, ' ').trim();
+    if (!text) fail('남길 한 줄을 준다: atrium log "<한 줄>"', 2);
+    if (text.length > NEWS_LOG_MAX) fail(`한 줄이 너무 길다(${text.length}자, ${NEWS_LOG_MAX}자까지). 줄여서 다시 남긴다`, 2);
+    r = await call('log', { text }, 20000);
+  } else {
+    if (rest.length > 1) fail('사용법: atrium news [<이름>] [--all]', 2);
+    r = await call('news', { name: rest[0] || null, all: !!flags.all }, 20000);
+  }
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
+  if (r.error) fail(`${cmd === 'log' ? '남기지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`, r.error.code === 'too_long' || r.error.code === 'bad_request' ? 2 : 1);
+  const x = r.result;
+  if (cmd === 'log') return say(`동료 소식에 남겼다(${x.chars}자). 아무에게도 보내지 않았다. 너의 동료가 atrium news로 읽는다.`);
+  const now = Date.now();
+  if (x.name) {
+    if (!x.rows.length) return say(`@${x.name}의 소식이 없다.`);
+    say(`@${x.name}의 최근 소식 ${x.rows.length}줄(오래된 것부터):`);
+  } else if (!x.peers.length) return say('동료가 없다. 다른 세션의 소식은 atrium news <이름>');
+  else if (!x.rows.length) return say(`동료(${x.peers.map((p) => '@' + p).join(', ')})의 새 소식이 없다${flags.all ? '' : '. 최근 것: atrium news --all'}.`);
+  else say(`${flags.all ? '동료의 최근 소식' : '동료의 새 소식'} ${x.rows.length}줄(오래된 것부터):`);
+  for (const row of x.rows) say(newsLine(row, now));
+  if (!x.name && !flags.all && x.more > 0) say(`…새 소식 ${x.more}줄이 더 있다(다시 atrium news).`);
+}
+
 // ---------- P180: atrium done | item | items ----------
 async function unitVerb(cmd) {
   let r;
@@ -523,7 +564,7 @@ function printMe(x) {
   else if (p.closed) say(`상위: @${p.name} (닫힘)${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}`);
   else say(`상위: @${p.name} (${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${src(p.source)}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}${x.rig && x.rig.active ? `. @${p.name}는 rig 건의 주인이다(끝내기는 atrium done, 다음 자리는 보드가 정한다)` : `. 끝나면 @${p.name}에게 보고한다`}${last(p.last)}`);
   const peers = x.peers || [], indep = x.independent || [];
-  if (peers.length) { say(`동료 ${peers.length}명(하위가 아니다. 필요한 것을 주고받고 끝나면 결과를 공유한다):`); for (const c of peers.slice(0, 10)) say(`  @${c.name} · ${c.state}${c.spawnedBy ? ' · 너를 띄운 세션' : c.spawned ? ' · 네가 띄움' : ''}${src(c.source)}${last(c.last)}`); }
+  if (peers.length) { say(`동료 ${peers.length}명(하위가 아니다. ${PEER_RULE_SHORT}):`); for (const c of peers.slice(0, 10)) say(`  @${c.name} · ${c.state}${c.spawnedBy ? ' · 너를 띄운 세션' : c.spawned ? ' · 네가 띄움' : ''}${src(c.source)}${last(c.last)}`); }
   if (!x.children.length) say('하위 세션: 없음');
   else {
     say(`하위 세션 ${x.children.length}개:`);
@@ -536,6 +577,7 @@ function printMe(x) {
     for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (${r.state})${last(r.last)}`);
   }
   if (x.rig) printSeat(x.rig); // P185
+  if (x.news) say(`동료 소식: ${x.news.by.map((c) => `@${c.name} ${c.n}개`).join(', ')} 새로 → atrium news`); // P204: 읽지 않은 것이 있을 때만
   say(`일 맡기기: atrium prompt <이름> "<할 일>"(맡기고 턴을 끝내면 보드가 done 보고를 가져다준다) · 화면 읽기: ${x.commands.read}`); // P181
   say('이것이 보드의 지금 기록이다. 예전 알림과 다르면 이것을 믿는다.');
 }

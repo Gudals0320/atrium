@@ -136,7 +136,8 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   // 길이: P8 delegate 글(3107바이트)의 두 배를 넘지 않는다. P111: 잠든 워커 줄에 혼자 잠들기와 깨우기 범위(+77바이트)를 더해 80바이트를 더 둔다
   // P143: 결과를 한 길로 받기(당겨 오기·--now 밀어 넣기)로 시키기 줄을 바꿔(+223바이트) 230바이트를 더 둔다
   // P156: 관계 고르기 절(하위·동료, relate)로 690바이트를 더 둔다
-  assert.ok(Buffer.byteLength(skill) <= 2 * 3107 + 80 + 230 + 690, `skill ${Buffer.byteLength(skill)}B`);
+  // P204: 동료 줄을 보낼 때(다섯 경우)와 동료 소식(cli-contract PEER_RULE)으로 바꿔 700바이트를 더 둔다
+  assert.ok(Buffer.byteLength(skill) <= 2 * 3107 + 80 + 230 + 690 + 700, `skill ${Buffer.byteLength(skill)}B`);
   assert.match(skill.split('\n')[2], /사용자가 말하지 않아도/); // 설명에 스스로 쓰는 때
   assert.equal(boardSkill('delegate'), old);
   for (const c of ['atrium', 'mtask']) { // 옛 이름 mtask는 P18 전에 띄운 세션의 스킬 글이 말한다
@@ -457,7 +458,7 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     const noenv = await runChild(['child'], {});
     assert.match(noenv.stderr, /보드에서 시작한 세션이 아닙니다/);
     const nope = await runChild(['kill', 'w1'], env);
-    assert.equal(nope.code, 2); assert.match(nope.stderr, /child, relate, children, child-kill, child-wait, wake, models, done, item, items, guide, tool, rig만/); // P180. P183: tool. P188: rig
+    assert.equal(nope.code, 2); assert.match(nope.stderr, /child, relate, log, news, children, child-kill, child-wait, wake, models, done, item, items, guide, tool, rig만/); // P180. P183: tool. P188: rig. P204: log, news
     const five = await runChild(['child-kill', 'lead'], env);
     assert.match(five.stderr, /not_parent/);
   } finally { srv.close(); }

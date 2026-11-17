@@ -44,6 +44,8 @@ import { RigSetup } from './rig-setup.mjs'; // P190: 판 안에서 rig 만들기
 import { rigGuideText } from './rig-templates.mjs'; // P190: atrium guide rig
 import { RigAdmin } from './rig-admin.mjs'; // P188: atrium rig check|log|rollback|cleanup, 사람만 고치는 목록
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
+import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때와 동료 소식
+import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | news, 턴 끝·done 자동 기록)
 import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
 
 
@@ -70,9 +72,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
-    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} tool)`, `Bash(${c} tool:*)`, `Bash(${c} tool *)`, `Bash(${c} rig:*)`, `Bash(${c} rig *)`]), // P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P188: rig(관리자 자리만, 판이 거른다)
+    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} tool)`, `Bash(${c} tool:*)`, `Bash(${c} tool *)`, `Bash(${c} rig:*)`, `Bash(${c} rig *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`]), // P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P188: rig(관리자 자리만, 판이 거른다). P204: log·news
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
-    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} tool)`, `PowerShell(${c} tool *)`, `PowerShell(${c} rig *)`]), // P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P188: rig
+    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} tool)`, `PowerShell(${c} tool *)`, `PowerShell(${c} rig *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`]), // P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P188: rig. P204: log·news
 ];
 // P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
 const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
@@ -212,12 +214,13 @@ export function headNotice({ agentName, name = agentName, kind = 'claude' }) {
   ].join('\n');
 }
 
-// P156: --peer로 띄운 동료. 하위 워커가 아니다(child-kill 연쇄에서 빠지고, 끝나면 결과를 공유한다)
+// P156: --peer로 띄운 동료. 하위 워커가 아니다(child-kill 연쇄에서 빠진다). P204: 결과를 보내오지 않고 한 일은 동료 소식에 남는다
 export function peerNotice({ role = PEER_ROLE, agentName, name = agentName, kind = 'claude' }) {
   return [
     `[Atrium 보드] 동료: \`@${name}\`(종류 ${kind})를 너의 "${role}"(동료)로 띄웠다. 하위 워커가 아니다.`,
     `필요한 것을 주고받기: atrium prompt ${name} "<할 일>" · 화면 읽기: atrium read ${name}`,
-    `@${name}는 끝나면 결과를 너에게 공유한다(보드가 네 차례에 넣는다). 기다리지 말고 턴을 끝낸다. child-kill 연쇄에서 빠진다. 관계 바꾸기: atrium relate ${name} sub|peer|none|auto`,
+    `@${name}는 끝나도 결과를 보내오지 않는다. 한 일은 보드가 동료 소식에 남긴다(atrium news ${name}). 기다리지 말고 턴을 끝낸다. child-kill 연쇄에서 빠진다. 관계 바꾸기: atrium relate ${name} sub|peer|none|auto`,
+    PEER_RULE, // P204
   ].join('\n');
 }
 
@@ -239,7 +242,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 
 띄울 때 관계를 고른다(누가 띄웠는지는 어느 쪽이든 남는다).
 - 하위 워커(기본): 워커·하위·맡겨·나눠·병렬, 또는 네 일의 한 조각. 끝나면 \`atrium done\`으로 너에게 보고하고 child-kill로 함께 꺼진다.
-- 동료(\`--peer\`): 협력·동료·같이·파트너, 또는 같은 수준의 다른 일. \`atrium prompt\`로 주고받고 끝나면 결과를 서로 공유한다(기다리지 않고 턴을 끝낸다). child-kill에서 빠진다.
+- 동료(\`--peer\`): 협력·동료·같이·파트너, 또는 같은 수준의 다른 일. child-kill에서 빠진다. ${PEER_RULE}
 - 말이 없으면 첫 지시와 역할로 판단한다. 바꾸기: \`atrium relate <이름> sub|peer|none|auto\`.
 
 ## 순서
@@ -317,7 +320,7 @@ export function childShims({ node = process.execPath, script = path.join(BACKEND
 export function attachBranch(b, opts) { return new Branch(b, opts); }
 
 export class Branch {
-  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, fetchModels = fetchGatewayModels, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, tools: toolOpts = {} } = {}) {
+  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, fetchModels = fetchGatewayModels, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, tools: toolOpts = {}, news: newsOpts = {} } = {}) {
     this.b = b; this.readyWaitMs = readyWaitMs; this.submitWaitMs = submitWaitMs; this.childWaitMs = childWaitMs; this.gateTrustWaitMs = gateTrustWaitMs;
     this.fetchModels = fetchModels; this.gwCache = new Map(); // P41: 게이트웨이 주소 → { at, r }
     this.modelErrors = new Map(); // P41: 세션 ID → 마지막으로 알린 모델 오류(rt.lastError 객체. P55: 시각으로 가리면 같은 밀리초의 다음 오류를 놓친다)
@@ -340,13 +343,15 @@ export class Branch {
       send: (sid, text, lines) => { const d = b.queue.enqueue(sid, text); b.store.addEvent(sid, 'link_notice', { lines, deliveryId: d.deliveryId }); return d; },
       onDrop: (sid, lines) => { if (b.sessions.has(sid)) b.store.addEvent(sid, 'link_notice_dropped', { lines }); },
     });
+    this.news = new PeerNews(b, this, newsOpts); // P204: 동료 소식(턴 끝·done 자동 기록, atrium log | news)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
     b.bus.on('closed', (s, reason) => {
       this.closed.set(s.sessionId, { parentSessionId: s.parentSessionId || null, name: s.name });
       const told = this.units.onClosed(s, { reason, byParent: this.byParentKill.has(s.sessionId) }); // P181: 열린 일이 있으면 그 상위에게 멈춤(closed) 알림
       this.onClosed(s, reason, told);
+      this.news.onClosed(s); // P204
     });
-    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } }); // P36: 신뢰 관문. P180: 시도의 턴 끝
+    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read
     this.tools = new ToolRuns(b, toolOpts); // P183: atrium tool(rig 도구 실행과 장부)
     this.flow = new RigFlow(b, this); // P185: rig 자리·건·흐름(자리로 보내기, done 값에 따른 넘김, 되돌아감 상한)
@@ -569,6 +574,8 @@ export class Branch {
     if (op === 'item') return this.units.item(s, body); // P180: atrium item
     if (op === 'items') return this.units.items(s, body); // P180: atrium items
     if (op === 'tool') return this.tools.verb(s, body); // P183: atrium tool [이름 인자… | --wait ID | --runs]
+    if (op === 'log') return this.news.logVerb(s, body); // P204: atrium log "<한 줄>"
+    if (op === 'news') return this.news.newsVerb(s, body); // P204: atrium news [<이름>] [--all]
     if (op === 'rig') return this.rigAdmin.verb(s, body); // P188: atrium rig check|log|rollback|cleanup(관리자 자리만)
     throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
   }
@@ -689,7 +696,7 @@ export class Branch {
     let first = null;
     if (prompt) {
       // 첫 지시는 ready 뒤 B1 규칙으로 보낸다
-      // P156: 첫 요청 앞에 관계 한 줄(하위는 지시의 보고 방법을, 동료는 서로 공유를). 헤드는 따로 이끄는 세션이라 붙이지 않는다
+      // P156: 첫 요청 앞에 관계 한 줄(하위는 지시의 보고 방법을, 동료는 보낼 때와 동료 소식을. P204). 헤드는 따로 이끄는 세션이라 붙이지 않는다
       // P180: 하위로 띄우면 첫 요청은 일 단위다(머리: 관계 + 일 + 약속). 동료·헤드는 옛 그대로
       const u = !head && !peer ? this.units.create(parent, child, promptText, 'child') : null;
       const header = head ? null : u ? u.header : relationHeader({ relation, parent: parent.name });
@@ -711,7 +718,7 @@ export class Branch {
     const needsTrust = state === 'trust_wait' || (wait && wait.state === 'trust_wait') || (!!gate && !['exited', 'closed', 'error'].includes(state) && this.gated(child.sessionId));
     return {
       name, sessionId: child.sessionId, agentName: child.agentName, paneId: child.paneId, kind, role, depth,
-      relation: head ? null : relation, relationText: head ? null : peer ? `동료(@${name}는 너의 하위 워커가 아니다. 끝나면 결과를 너에게 공유한다)` : `하위 워커(@${name}는 너의 워커다. 끝나면 너에게 보고한다)`, /* P156 */ cwd: cwd.split(path.sep).join('/'), workspaceKey: ws.key, worktree, model: child.model || model, effort: child.effort || effort,
+      relation: head ? null : relation, relationText: head ? null : peer ? `동료(@${name}는 너의 하위 워커가 아니다. 결과를 보내오지 않고 한 일은 보드의 동료 소식에 남는다: atrium news ${name})` : `하위 워커(@${name}는 너의 워커다. 끝나면 너에게 보고한다)`, /* P156 */ cwd: cwd.split(path.sep).join('/'), workspaceKey: ws.key, worktree, model: child.model || model, effort: child.effort || effort,
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
       harness: other ? { ...other.record, argv: other.argv } : null, // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
@@ -1167,7 +1174,8 @@ export class Branch {
       roles.push({ dir: out ? 'out' : 'in', role: l.role, name: shownName(o), agentName: o.agentName, state: stateOf(o), last: lastOf(l) });
     }
     const rig = this.flow ? this.flow.meOf(s) : null; // P185: 자리, 건, 보낼 수 있는 자리
-    return { at: Date.now(), me, parent, peers, children, independent, lineage, roles, ...(rig ? { rig } : {}),
+    const news = this.news.meLine(s); // P204: 읽지 않은 동료 소식(없으면 칸이 없다)
+    return { at: Date.now(), me, parent, peers, children, independent, lineage, roles, ...(rig ? { rig } : {}), ...(news ? { news } : {}),
       commands: { prompt: 'atrium prompt <이름> "<할 일>" --wait', wait: 'atrium wait <이름>', read: 'atrium read <이름>' } }; // P116
   }
 }

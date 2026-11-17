@@ -13,7 +13,14 @@
 // P188: rig 동사(check·log·rollback·cleanup, 관리자 자리만)와 me의 rig.version·rig.manager 칸을 더했다. 자리 세션의 일 머리가 세 줄로 줄었다(값과 자리 목록은 me). 더하기만이라 4 그대로
 // P190: guide rig(보드 내장 rig 만들기 안내, 응답 builtin 칸)와 rig check를 rig가 꺼진 워크스페이스의 어느 세션이든 쓰게 넓혔다(더하기만이라 4 그대로)
 // P194: prompt --case <건>(rig 자리 세션이 이을 건을 고름), me의 rig.owned 칸, 건 상태 waiting_owner를 더했다. 건 주인 세션에게 돌아오는 흐름 줄은 일이 아니라 보고다(더하기만이라 4 그대로)
+// P204: log 동사(동료 소식에 한 줄)와 news 동사(동료 소식 읽기), me의 news 칸을 더했다(더하기만이라 4 그대로)
 export const CONTRACT_VERSION = 4;
+// P204: 동료 소식. atrium log 한 줄의 상한, atrium news가 한 번에 보이는 줄
+export const NEWS_LOG_MAX = 300;
+export const NEWS_LINES = 20;
+// P204: 동료에게 보낼 때와 안 보낼 때(한 원본. 스킬·help·관계 알림·띄움 답이 이 글을 쓴다. 판 안내문은 짧은 PEER_RULE_SHORT)
+export const PEER_RULE = '동료에게 `atrium prompt`로 보내는 것은 다섯 경우뿐이다: (1) 상대만 답하거나 정할 수 있는 질문, (2) 일·소유권 넘기기나 받기(넘길 때는 지금 상태와 다음 할 일을 함께), (3) 내 변경이 상대가 맡은 것(파일·설계·결정)이나 상대가 지금 하는 일을 깨거나 바꿀 때(바꾸기 전에), (4) 상대가 기다리는 답, (5) 사람이 전하라고 할 때. 끝날 때마다 결과 보고, 진행 알림, "받았다/알겠다" 답장, 상대 일과 상관없는 일은 보내지 않는다. 한 일은 보드가 동료 소식에 남긴다: 상대 일과 닿는 일을 시작할 때, 상대에게 묻기 전, 일을 넘겨받을 때 `atrium news`로 본다(남길 결정은 `atrium log "<한 줄>"`).';
+export const PEER_RULE_SHORT = '동료에게는 다섯 경우(상대만 답할 질문, 일 넘기기·받기, 상대 일을 깨기 전, 기다리는 답, 사람이 시킨 전달)만 보내고 결과 보고·진행·답장은 안 보낸다. 최신 상태는 `atrium news`';
 
 // out: --json일 때 result의 주요 칸. 사람이 읽는 출력(--json 없음)은 같은 내용의 글이다
 export const VERBS = [
@@ -21,9 +28,12 @@ export const VERBS = [
   { name: 'prompt', args: ['<이름>', '"<할 일>"', '[--wait | --now]', '[--timeout ms]', '[--case 건]', '[--json]'], does: '다른 에이전트에게 일을 맡긴다(rig 자리 세션이면 받는 자리를 정의가 정한다: assign 줄 → 일, may → 글만, 그 밖 거절. <이름>에 자리 이름을 주면 그 자리로. --case는 이을 건을 고른다: 없으면 쥔 일의 건, 아니면 너에게 올라와 기다리는 건(waiting_owner)이 하나면 그 건, 그 밖은 새 건). 보드가 받는 쪽 차례에 맞춰 넣고(일하는 중·응답 대기면 끝난 뒤, 잠들었으면 깨운 뒤) 연결을 판에 남긴다. 하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 보고를 너에게 넣고, 보고 없이 멈추면 알린다. --wait면 그 턴(또는 done)까지 기다려 답을 돌려준다(기본 100초, 지금 답이 꼭 필요할 때만). --now면 일하는 중인 Claude Code에 기다리지 않고 대기 메시지로 넣는다(--wait와 함께 쓰지 않는다)', out: ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next', 'unit'] },
   { name: 'wait', args: ['<이름>', '[--timeout ms]', '[--json]'], does: '그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(기본 100초). 사람의 답을 기다리면 바로 돌아온다. 맡긴 일의 보고는 보드가 가져다주므로 되풀이해 치지 않는다', out: ['name', 'agentName', 'kind', 'status', 'state', 'ms', 'answer', 'ask', 'error', 'delivery', 'next', 'unit'] },
   { name: 'read', args: ['<이름>', '[--lines n]', '[--json]'], does: '그 세션 화면의 최근 줄(기본 80줄). 잠든 세션은 마지막 답', out: ['name', 'agentName', 'kind', 'state', 'lines', 'source', 'text', 'answer', 'next'] },
-  { name: 'me', args: ['[--json]'], does: '너의 지금 연결: 상위(너를 하위로 둔 세션), 동료, 하위, 독립, 역할 연결, 연결마다 마지막 지시, rig 자리(자리, 건, done 값, 보낼 수 있는 자리). 보드의 지금 기록', out: ['me', 'parent', 'peers', 'children', 'independent', 'lineage', 'roles', 'rig'] },
-  { name: 'child', args: ['[이름]', '[--peer]', '[--prompt "첫 요청"]', '[--role 역할]', '[--cwd 폴더]', '[--worktree 이름]', '[--model 모델]', '[--launcher 런처]', '[--effort 수준]', '[--kind 종류]', '[--head]', '[--no-wait]', '[--json]'], does: '세션을 띄우고 준비될 때까지 기다린다. 기본은 하위 워커(--prompt의 일을 atrium done으로 너에게 보고), --peer면 동료(같은 위계의 협력자, 결과를 서로 공유). 응답 첫 줄이 관계다', out: ['name', 'agentName', 'paneId', 'kind', 'relation', 'role', 'depth', 'state', 'status', 'next'] },
+  { name: 'me', args: ['[--json]'], does: '너의 지금 연결: 상위(너를 하위로 둔 세션), 동료, 하위, 독립, 역할 연결, 연결마다 마지막 지시, rig 자리(자리, 건, done 값, 보낼 수 있는 자리). 보드의 지금 기록', out: ['me', 'parent', 'peers', 'children', 'independent', 'lineage', 'roles', 'rig', 'news'] },
+  { name: 'child', args: ['[이름]', '[--peer]', '[--prompt "첫 요청"]', '[--role 역할]', '[--cwd 폴더]', '[--worktree 이름]', '[--model 모델]', '[--launcher 런처]', '[--effort 수준]', '[--kind 종류]', '[--head]', '[--no-wait]', '[--json]'], does: '세션을 띄우고 준비될 때까지 기다린다. 기본은 하위 워커(--prompt의 일을 atrium done으로 너에게 보고), --peer면 동료(같은 위계의 협력자. 질문·넘기기·상대 일을 바꾸는 변경 때만 서로 보내고, 한 일은 보드의 동료 소식에 남는다). 응답 첫 줄이 관계다', out: ['name', 'agentName', 'paneId', 'kind', 'relation', 'role', 'depth', 'state', 'status', 'next'] },
   { name: 'relate', args: ['<이름>', 'sub|peer|none|auto', '[--json]'], does: '나와 그 세션의 관계를 바꾼다(그 세션이 나의 sub 하위, peer 동료, none 독립, auto 자동 = 띄움·역할 선을 따름). 너와 이어진 세션만, 사람이 정한 관계는 바꾸지 않는다', out: ['a', 'b', 'relation', 'source', 'effective', 'before'] },
+  // P204: 동료 소식(보드가 남기는 기록. 동료끼리 결과를 보고하지 않고 필요할 때 읽는다)
+  { name: 'log', args: ['"<한 줄>"', '[--json]'], does: `동료 소식에 너의 한 줄을 남긴다(${NEWS_LOG_MAX}자까지). 누구에게도 보내지 않고 누구도 깨우지 않는다. 동료가 알아 둘 결정·변경·상태를 남길 때`, out: ['id', 'at', 'chars'] },
+  { name: 'news', args: ['[<이름>]', '[--all]', '[--json]'], does: '동료 소식(보드가 남긴 동료의 턴 끝 한 줄, done, atrium log). 기본은 너의 동료가 네가 마지막으로 본 뒤 남긴 것을 오래된 것부터 20줄 보이고 읽은 자리를 옮긴다. <이름>이면 그 세션의 최근 것(판의 어느 세션이든, 읽기만), --all은 읽은 자리와 상관없이 동료의 최근 것', out: ['rows', 'more', 'unread', 'peers', 'name'] },
   { name: 'children', args: ['[--all]', '[--json]'], does: '너의 하위 세션(--all이면 그 아래까지) 상태와 마지막 응답. 하위 관계만, 동료는 따로 한 줄', out: ['children', 'peers'] },
   { name: 'child-kill', args: ['<이름>', '[--only]', '[--json]'], does: '너의 하위 세션을 끈다(하위 관계로만 그 아래도 함께, --only면 그것만). 동료·독립은 끄지 않고 남긴 이름을 적는다. 사람이 끄라고 할 때만', out: ['killed', 'kept'] },
   { name: 'child-wait', args: ['<이름>', '[--json]'], does: '그 하위 세션이 지시를 받을 수 있게 될 때까지 기다린다(한 번에 100초)', out: ['name', 'state', 'timeout', 'next'] },
@@ -48,7 +58,8 @@ export const WAIT_STATUS = ['done', 'idle', 'waiting', 'timeout', 'failed', 'unc
 
 // P156: 띄울 때 관계를 고르는 안내(짧은 help, --long, 스킬, 판의 짧은 안내가 같은 뜻을 말한다)
 export const RELATION_HELP = [
-  '띄울 때 관계를 고른다: 사용자가 협력·동료·같이·파트너·나란히를 말하면 --peer(동료: 같은 위계, 필요한 것을 주고받고 끝나면 결과를 서로 공유, 사람에게 직접 답해도 된다). 워커·하위·맡겨·나눠·병렬을 말하면 기본(하위 워커: 끝나면 atrium done으로 너에게 보고, child-kill로 함께 꺼진다). 그 밖에는 첫 지시와 역할 이름으로 판단한다(같은 수준의 다른 일을 맡은 상대면 동료, 네 일의 한 조각이면 하위). 나중에 바꾸기: atrium relate <이름> sub|peer|none|auto.',
+  '띄울 때 관계를 고른다: 사용자가 협력·동료·같이·파트너·나란히를 말하면 --peer(동료: 같은 위계, 사람에게 직접 답해도 된다). 워커·하위·맡겨·나눠·병렬을 말하면 기본(하위 워커: 끝나면 atrium done으로 너에게 보고, child-kill로 함께 꺼진다). 그 밖에는 첫 지시와 역할 이름으로 판단한다(같은 수준의 다른 일을 맡은 상대면 동료, 네 일의 한 조각이면 하위). 나중에 바꾸기: atrium relate <이름> sub|peer|none|auto.',
+  PEER_RULE, // P204
 ];
 
 // 모델이 읽는 짧은 사용법(동사마다 한 줄)

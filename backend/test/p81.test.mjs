@@ -191,7 +191,7 @@ test('P81 명령: atrium me 글(20줄 안, 부모 없음·부모와 역할), --j
     const bad = await runChild(['child', 'h2', '--head', '--worktree', 'x'], env);
     assert.notEqual(bad.code, 0); assert.match(bad.stderr, /--head와 --worktree는 함께 쓰지 않는다/);
     const nope = await runChild(['kill', 'w1'], env);
-    assert.match(nope.stderr, /me, child, relate, children/);
+    assert.match(nope.stderr, /me, child, relate, log, news, children/); // P204: log·news
   } finally { srv.close(); b.branch.notices.stop(); }
 });
 

@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { PEER_RULE_SHORT } from './cli-contract.mjs'; // P204: 동료에게 보낼 때
 
 // http hook으로 받을 이벤트. SessionStart는 http hook을 부르지 않으므로 넣지 않는다(E2 2.5).
 export const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'PermissionDenied', 'Notification', 'Stop', 'StopFailure', 'SubagentStop', 'SessionEnd', 'PreCompact', 'PostCompact']; // P173: 압축 시작·끝(턴이 아니다)
@@ -55,8 +56,8 @@ export const BOARD_SYSTEM_PROMPT = [
   '"[Atrium 보드]"으로 시작하는 글은 보드가 알려 주는 연결(어느 에이전트가 너의 무슨 역할인지)이다. 이 보드의 예전 이름으로 시작하는 지난 알림도 같다.',
   '일이 서로 기다리지 않는 조각 여럿으로 나뉘거나 사용자가 워커·하위 세션·병렬·워크트리를 말하면 atrium 스킬(atrium:atrium, 옛 이름 delegate)대로 `atrium child`로 워커를 만들어 맡긴다. 수와 깊이에 상한은 없다. 워커의 모델을 말로 들으면 `atrium models`에서 골라 띄운다. 예전 이름 mtask도 같은 명령이다.', // P8(K2), P36, P41
   '보드는 오래 쉬는 리포의 세션을 모두 잠재우고, 리포가 바빠도 오래 쉰 세션은 혼자 잠재운다(sleeping). 잠든 세션에 `atrium prompt`하면 보드가 깨운 뒤 넣는다. 미리 깨우려면 `atrium wake <이름>`으로 그 세션을(리포째 잠들었으면 그 리포를) 깨운다.', // P21·P24(D4), P111, P116
-  '세션을 띄울 때 관계를 고른다: 협력·동료·같이·파트너면 `atrium child <이름> --peer`(동료: 필요한 것을 주고받고 끝나면 결과를 공유), 워커·하위·맡겨·나눠면 기본(하위 워커: 끝나면 띄운 쪽에 보고), 그 밖에는 첫 지시와 역할로 판단한다. 첫 요청 앞의 "[Atrium 보드] 관계:" 줄이 너의 관계와 보고 방식이다. 맡은 일은 끝나면 `atrium done ok|failed "<보고>"`로 닫고 쉬고, 동료면 결과를 상대에게 공유하며 사람에게 직접 답해도 된다. 나중에 바꾸기: `atrium relate <이름> sub|peer|none|auto`.', // P156
-  '상위·동료·하위·독립과 역할 연결은 `atrium me`가 보드의 지금 기록이다. 누구의 무엇인지, 누구에게 맡길지 헷갈리면 먼저 치고, 예전 알림과 다르면 이것을 믿는다. 매 턴 치지는 않는다.', // P81
+  `세션을 띄울 때 관계를 고른다: 협력·동료·같이·파트너면 \`atrium child <이름> --peer\`(동료), 워커·하위·맡겨·나눠면 기본(하위 워커), 그 밖에는 첫 지시와 역할로 판단한다. 첫 요청 앞의 "[Atrium 보드] 관계:" 줄이 너의 관계와 보고 방식이다. 하위는 \`atrium done ok|failed "<보고>"\`로 닫고 쉰다. ${PEER_RULE_SHORT}. 바꾸기: \`atrium relate <이름> sub|peer|none|auto\`.`, // P156. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
+  '관계와 역할 연결은 `atrium me`가 보드의 지금 기록이다. 헷갈리면 먼저 치고, 예전 알림과 다르면 이것을 믿는다. 매 턴 치지는 않는다.', // P81. P204: 동료 줄을 넣으려고 줄였다
 ].join('\n');
 // P8(K2): skills는 더할 스킬 { 이름: SKILL.md 글 }, bin은 Bash 도구 PATH에 오르는 명령 { 파일 이름: 글 }(플러그인 bin/)
 // P129: 옛 터미널 스킬(P4~P116에 둔 것)은 지운다
