@@ -1,8 +1,32 @@
 // P33 호출자(백엔드 launchers.mjs)를 창에서 보여주는 순수 함수. 왼쪽 레일 즐겨찾기, 설정의 호출자 탭, 새 세션 창이 쓴다.
 // 단위 시험 app/test/p33-lib.test.mjs
+import { KINDS } from './kinds.js';
 
 // 고를 수 있는 아이콘(lib/kinds.js의 로고와 기호). 빈 값은 하네스를 따른다
 export const ICONS = ['claude', 'codex', 'deepseek', 'pi', 'agy', 'grok', 'shell']; // P192: agy
+// P196: 하네스가 판에 기본으로 드는 에이전트 종류(백엔드 HARNESSES와 같은 순서). 하네스 표를 아직 못 받았을 때도 드롭다운에 이것을 다 보인다
+export const AGENT_HARNESSES = ['claude', 'codex', 'opencode', 'pi', 'agy'];
+
+// P196: 드롭다운·목록에 보일 하네스 이름. 백엔드 하네스 표의 이름(Antigravity 등) → 종류 이름표(lib/kinds.js) → ID 그대로.
+// command·shell은 사전 글(t)
+export function harnessName(harnesses, id, t = (k) => k) {
+  if (id === 'command') return t('launchers.harness.command');
+  if (id === 'shell') return t('launchers.harness.shell');
+  const h = (harnesses || []).find((x) => x.id === id);
+  if (h && h.label) return h.label;
+  const k = KINDS[String(id || '').toLowerCase()];
+  return k ? k.label : String(id || '');
+}
+// P196: 하네스 드롭다운의 ID 순서. 백엔드 표(shell·command 밖) 뒤에 표가 빠뜨린 기본 종류, 그 뒤 터미널이 아는 그 밖의 종류, 지금 값(모르는 것)
+export function harnessOptions(harnesses, kinds = [], current = '') {
+  const named = (harnesses || []).map((h) => h.id).filter((id) => id !== 'shell' && id !== 'command');
+  const out = [...named];
+  for (const id of [...AGENT_HARNESSES, ...kinds]) if (!out.includes(id)) out.push(id);
+  if (current && current !== 'shell' && current !== 'command' && !out.includes(current)) out.push(current);
+  return out;
+}
+// P196: 아이콘 드롭다운의 보이는 이름(종류 이름표, 셸은 사전 글)
+export const iconName = (id, t = (k) => k) => (id === 'shell' ? t('kinds.shell') : KINDS[id] ? KINDS[id].label : id);
 
 // 그릴 종류 아이콘. 아이콘을 골랐으면 그것, 셸은 shell, 직접 명령은 null(터미널 그림 위에 첫 글자), 그 밖은 하네스 종류
 export function launcherIcon(l) {

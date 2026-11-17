@@ -2,7 +2,7 @@
 // 로고 그림이 있는 종류는 `logo`(내 차례일 때 다른 그림이면 `logoWait`, 왼쪽 레일 단추처럼 바탕이 있는 그림은 `logoBadge`)에
 // dist/index.html 기준 주소를 둔다. 그림은 app/src/renderer/assets/kinds/에 두고 빌드가 dist/assets/로 옮긴다.
 // Claude Code는 Claude 심볼(위키미디어 공용 Claude_AI_symbol.svg, 바탕 없음)과 그것을 주황 바탕에 흰색으로 얹은 레일 단추 그림이다.
-// 다른 로고는 사용자가 준 그림을 어두운 판에 맞게 다듬은 것이다. 로고가 없는 종류는 직접 정한 단순한 기호(모양, 색, 머리글자)를 그린다.
+// 다른 로고는 사용자가 준 그림(Antigravity는 사용자 PC의 앱 아이콘)을 어두운 판에 맞게 다듬은 것이다. 로고가 없는 종류는 직접 정한 단순한 기호(모양, 색, 머리글자)를 그린다.
 // 순수 함수와 자료만 둔다(단위 시험 app/test/p10-lib.test.mjs). 그리는 것은 SessionNode.jsx의 KindIcon
 
 import { t } from './i18n.js';
@@ -16,8 +16,9 @@ export const KINDS = {
   // 로고는 위키미디어 공용 DeepSeek-icon.svg(받은 그대로), 레일 단추는 같은 모양을 로고 파랑 바탕에 흰색으로 얹었다
   deepseek: { id: 'deepseek', label: 'DeepSeek', mark: 'DS', shape: 'circle', color: 'var(--kind-deepseek)', ink: 'var(--kind-deepseek-ink)', logo: LOGO('deepseek', 'svg'), logoBadge: LOGO('deepseek-badge', 'svg') },
   pi: { id: 'pi', label: 'Pi', mark: 'π', shape: 'diamond', color: 'var(--kind-pi)', ink: 'var(--kind-pi-ink)', logo: LOGO('pi') },
-  // P192: AGY(Antigravity CLI). 로고 그림은 넣지 않고(제품 에셋) 직접 정한 기호를 그린다
-  agy: { id: 'agy', label: 'AGY', mark: 'AG', shape: 'rounded', color: 'var(--kind-agy)', ink: 'var(--kind-agy-ink)', logo: null },
+  // P192: AGY(Antigravity CLI). P196: 로고는 사용자 PC에 깔린 Antigravity 앱 아이콘(흰 타일)을 128px로 다듬은 것이다(사용자 요청).
+  // 타일에 바탕이 있어 레일 단추도 같은 그림을 쓴다(logoBadge 없음). 화면 이름은 Antigravity
+  agy: { id: 'agy', label: 'Antigravity', mark: 'AG', shape: 'rounded', color: 'var(--kind-agy)', ink: 'var(--kind-agy-ink)', logo: LOGO('agy') },
   grok: { id: 'grok', label: 'Grok', mark: 'G', shape: 'circle', color: 'var(--kind-grok)', ink: 'var(--kind-grok-ink)', logo: LOGO('grok') },
   shell: { id: 'shell', get label() { return t('kinds.shell'); }, mark: '>_', shape: 'square', color: 'var(--kind-shell)', ink: 'var(--kind-shell-ink)', logo: null },
   other: { id: 'other', get label() { return t('ask.agent'); }, mark: '?', shape: 'rounded', color: 'var(--kind-other)', ink: 'var(--kind-other-ink)', logo: null },
