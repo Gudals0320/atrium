@@ -7,6 +7,9 @@ export function tailLines(text, n = 12) {
 
 // 신뢰 대화상자(E10 2.2)
 export function isTrustDialog(text) { return /Quick safety check/i.test(text) && /trust this folder/i.test(text); }
+// P192: AGY(1.5.9)의 작업 공간 신뢰 질문("Do you trust the contents of this project?" 아래 "Yes, I trust this folder" / "No, exit"). 7501은 blocked(kind permission, "Trust this folder?")
+export function isAgyTrustDialog(text) { return /Do you trust the contents of this project\?/i.test(text) && /Yes, I trust this folder/i.test(text); }
+export const trustDialogOf = (kind, text) => (kind === 'agy' ? isAgyTrustDialog(text) : (kind || 'claude') === 'claude' ? isTrustDialog(text) : false);
 
 // P71: 워크트리 나가기 질문. `claude -w`로 띄운 세션이 끝날 때 Claude Code가 묻는다(제목 "Exiting worktree session").
 // "You have 13 commits on worktree-x. The branch will be deleted if you remove the worktree." 아래에 "1. Keep worktree", "2. Remove worktree"

@@ -16,6 +16,8 @@ export const KINDS = {
   // 로고는 위키미디어 공용 DeepSeek-icon.svg(받은 그대로), 레일 단추는 같은 모양을 로고 파랑 바탕에 흰색으로 얹었다
   deepseek: { id: 'deepseek', label: 'DeepSeek', mark: 'DS', shape: 'circle', color: 'var(--kind-deepseek)', ink: 'var(--kind-deepseek-ink)', logo: LOGO('deepseek', 'svg'), logoBadge: LOGO('deepseek-badge', 'svg') },
   pi: { id: 'pi', label: 'Pi', mark: 'π', shape: 'diamond', color: 'var(--kind-pi)', ink: 'var(--kind-pi-ink)', logo: LOGO('pi') },
+  // P192: AGY(Antigravity CLI). 로고 그림은 넣지 않고(제품 에셋) 직접 정한 기호를 그린다
+  agy: { id: 'agy', label: 'AGY', mark: 'AG', shape: 'rounded', color: 'var(--kind-agy)', ink: 'var(--kind-agy-ink)', logo: null },
   grok: { id: 'grok', label: 'Grok', mark: 'G', shape: 'circle', color: 'var(--kind-grok)', ink: 'var(--kind-grok-ink)', logo: LOGO('grok') },
   shell: { id: 'shell', get label() { return t('kinds.shell'); }, mark: '>_', shape: 'square', color: 'var(--kind-shell)', ink: 'var(--kind-shell-ink)', logo: null },
   other: { id: 'other', get label() { return t('ask.agent'); }, mark: '?', shape: 'rounded', color: 'var(--kind-other)', ink: 'var(--kind-other-ink)', logo: null },

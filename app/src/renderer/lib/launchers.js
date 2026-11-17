@@ -2,7 +2,7 @@
 // 단위 시험 app/test/p33-lib.test.mjs
 
 // 고를 수 있는 아이콘(lib/kinds.js의 로고와 기호). 빈 값은 하네스를 따른다
-export const ICONS = ['claude', 'codex', 'deepseek', 'pi', 'grok', 'shell'];
+export const ICONS = ['claude', 'codex', 'deepseek', 'pi', 'agy', 'grok', 'shell']; // P192: agy
 
 // 그릴 종류 아이콘. 아이콘을 골랐으면 그것, 셸은 shell, 직접 명령은 null(터미널 그림 위에 첫 글자), 그 밖은 하네스 종류
 export function launcherIcon(l) {

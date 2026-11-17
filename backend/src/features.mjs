@@ -17,6 +17,7 @@ import { Settings } from './settings.mjs';
 import { Launchers, HARNESSES, checkGateway } from './launchers.mjs'; // P33: 호출자
 import { Connections, checkOf, fetchConnectionModels } from './connections.mjs'; // P115: 모델 연결
 import { CodexModels } from './codex-models.mjs'; // P72: Codex 모델 목록
+import { AgyModels, runAgyModels } from './agy-models.mjs'; // P192: AGY 모델 목록
 import { placeItem } from './canvas-ops.mjs';
 
 const SHELL = 'shell';
@@ -45,9 +46,11 @@ export function attachFeatures(b, { timers = true } = {}) {
   f.settings = new Settings({ store, broadcast });
   // P72: Codex 모델 목록은 Codex의 캐시 파일을 읽는다(설정 탭의 모델 고르기와 atrium models). 폴더를 주지 않은 판(시험)은 고정 목록
   f.codexModels = b.cfg.codexHome ? new CodexModels({ home: b.cfg.codexHome, fallback: HARNESSES.codex.models }) : null;
+  // P192: AGY 모델 목록(agy models). 명령을 주지 않은 판(시험)은 고정 목록
+  f.agyModels = b.cfg.agyCommand ? new AgyModels({ fallback: HARNESSES.agy.models, run: () => runAgyModels({ command: b.cfg.agyCommand }) }) : null;
   // P115: 연결 목록(런처가 ID로 참조). 쓰는 런처가 있으면 지우지 않는다
   f.connections = new Connections({ store, broadcast, inUse: (id) => (f.launchers ? f.launchers.usersOf(id) : []) });
-  f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, connections: f.connections, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록(연결)을 옮긴다
+  f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, agyModels: f.agyModels, connections: f.connections, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록(연결)을 옮긴다
   if (f.launchers.migrated) b.log(`launchers migrated to v2 (${f.launchers.migrated.oldBoard ? 'old board' : 'new board'}): favorites ${f.launchers.migrated.favorites.join(',')}, connections moved ${(f.launchers.migrated.v2 && f.launchers.migrated.v2.moved.length) || 0}`);
   f.outputs = new Outputs({ cfg: b.cfg, store, resolve: (r) => b.resolve(r), hooked: (s) => b.hooked(s), transcriptOf, readMessages, workspaceName: wsName, apiError });
   f.thread = new ThreadLog({

@@ -24,7 +24,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
+import { tailLines, isTrustDialog, trustDialogOf, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -46,7 +46,7 @@ import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
-import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, claudeConnection } from './harness.mjs';
+import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, claudeConnection } from './harness.mjs';
 import { checkOf } from './connections.mjs'; // P115: 연결 시작 전 확인 // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
@@ -1040,6 +1040,11 @@ export class Backend {
       const id = s.rt.term.agentSessionId || codexSessionOf({ cwd: s.cwd, since: plan.launchedAt || s.createdAt || 0, exclude: plan.forkFrom ? [plan.forkFrom] : [], ...(plan.forkFrom ? { forkedFrom: plan.forkFrom } : {}), ...(this.cfg.codexConvoHome ? { home: this.cfg.codexConvoHome } : {}) });
       return plan.forkFrom && id && String(id).toLowerCase() === String(plan.forkFrom).toLowerCase() ? null : id;
     }
+    // P192: AGY는 대화 기록 폴더에서 그 폴더·띄운 뒤에 생긴 대화를 찾는다. 판의 다른 AGY 세션이 가진 대화는 뺀다
+    if (s.kind === 'agy') {
+      const taken = [...this.sessions.values()].filter((x) => x !== s && x.kind === 'agy' && !x.closedAt).map((x) => (x.harnessPlan || {}).harnessSessionId).filter(Boolean);
+      return agySessionOf({ cwd: s.cwd, since: plan.firstLaunchedAt || plan.launchedAt || s.createdAt || 0, exclude: taken, ...(this.cfg.agyHome ? { home: this.cfg.agyHome } : {}) });
+    }
     return null;
   }
   // 띄울 값. 판의 env(토큰은 빼고 파일로), PATH 앞의 bin/, 안내문, 호출자 값(모델·추가 인자), 이어 가기
@@ -1086,11 +1091,12 @@ export class Backend {
   }
   // 터미널 상태가 blocked인데 묻는 hook이 없다 → 신뢰 대화상자인지 화면으로 한 번 더 본다(E10)
   // hook이 없는 세션은 화면 끝을 묻는 내용으로 둔다(F5: 승인 카드는 "터미널에서 답하기")
+  // P192: AGY의 신뢰 질문도 화면으로 본다(trust_wait)
   async checkBlocked(s) {
     await this.refreshAgent(s);
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'visible' });
-      if (s.kind === 'claude' && isTrustDialog(text)) { s.rt.trustScreen = { at: Date.now() }; this.store.addEvent(s.sessionId, 'trust_dialog', { tail: tailLines(text, 6) }); }
+      if ((s.kind === 'claude' || s.kind === 'agy') && trustDialogOf(s.kind, text)) { s.rt.trustScreen = { at: Date.now() }; this.store.addEvent(s.sessionId, 'trust_dialog', { tail: tailLines(text, 6) }); }
       else if ((s.kind || 'claude') === 'claude') this.noteWorktreeExit(s, text);
       if (!this.hooked(s)) s.rt.screenAsk = { tail: tailText(text, 14), at: Date.now() };
     } catch {}
@@ -1403,7 +1409,7 @@ export class Backend {
     pending.add(name);
     try {
       const claude = kind === 'claude';
-      const permissionMode = claude ? plan.permissionMode || 'manual' : p.permissionMode || 'manual';
+      const permissionMode = claude ? plan.permissionMode || 'manual' : p.permissionMode || plan.permissionMode || 'manual'; // P192: 승인 칸이 있는 하네스(AGY)는 호출자의 승인 방식
       if (!PERMISSION_MODES.has(permissionMode)) throw apiError('bad_request', `승인 방식: ${permissionMode}`);
       const model = shell ? null : plan.model || null; // P115: Claude Code 밖 하네스도 모델을 기록한다(어댑터가 그 하네스 모양으로 넘긴다)
       const effort = claude ? plan.effort || null : null;

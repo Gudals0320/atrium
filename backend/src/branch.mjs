@@ -30,6 +30,7 @@ import { BACKEND_ROOT, terminalSessionEnv } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
 import { harnessOf, splitArgs, startOpt } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
+import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192
 import { buildCatalog, resolveModel, gatewaysOf, fetchGatewayModels, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
 import { takenNames, shownName } from './session-label.mjs'; // P66
 import { workspaceNames } from './workspaces.mjs';
@@ -89,11 +90,13 @@ export const APPROVAL_ARGS = {
     dontAsk: ['--dangerously-bypass-approvals-and-sandbox'],
     bypassPermissions: ['--dangerously-bypass-approvals-and-sandbox'],
   },
+  agy: AGY_APPROVAL, // P192: AGY(manual은 덧붙이지 않음, plan·acceptEdits·auto는 --mode, dontAsk·bypassPermissions는 --dangerously-skip-permissions)
 };
 const CODEX_APPROVAL_FLAGS = new Set(['-a', '--ask-for-approval', '-s', '--sandbox', '--approve-for-me', '--dangerously-bypass-approvals-and-sandbox', '--full-auto', '--yolo']);
 const CODEX_APPROVAL_KEY = /^(approval_policy|sandbox_mode)\s*=/;
 // 호출자의 추가 인자에 승인·샌드박스 인자가 있는가(-c approval_policy=…, -c sandbox_mode=…도 센다)
 export function hasApprovalArgs(kind, args = []) {
+  if (kind === 'agy') return args.some((a) => AGY_APPROVAL_FLAGS.has(String(a).split('=')[0])); // P192
   if (kind !== 'codex') return false;
   return args.some((a, i) => CODEX_APPROVAL_FLAGS.has(a.split('=')[0])
     || ((a === '-c' || a === '--config') && CODEX_APPROVAL_KEY.test(args[i + 1] || ''))
@@ -721,7 +724,7 @@ export class Branch {
       return { ...g, ...r };
     }));
     const L = this.b.features && this.b.features.launchers;
-    const lists = L && L.modelLists ? L.modelLists() : {}; // P72: Codex 모델 목록(Codex 캐시)
+    const lists = L && L.freshModelLists ? await L.freshModelLists() : L && L.modelLists ? L.modelLists() : {}; // P72: Codex 모델 목록(Codex 캐시). P192: AGY 목록은 잠깐 기다린다
     const harnessModels = Object.fromEntries(Object.entries(lists).map(([k, v]) => [k, v.models]));
     return { ...buildCatalog({ launchers, gateways: probed, harnessModels }), hosts: probed };
   }
