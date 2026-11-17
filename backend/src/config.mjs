@@ -64,6 +64,9 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     // P115: 옛 게이트웨이 환경 변수(ATRIUM_*_HEALTH·_BASE_URL). 이번 릴리스 동안 읽어 연결로 옮기고 경고한다(launcher-migrate.mjs). 다음 릴리스에서 없앤다
     legacyGateway: { healthUrl: E('OCX_HEALTH') || null, baseUrl: E('OCX_BASE_URL') || null },
     codexHome: codexHomeOf(env), // P72: Codex 모델 목록 캐시(models_cache.json)를 읽을 폴더. CODEX_HOME(Codex와 같은 변수), 없으면 ~/.codex
+    // P192: AGY 모델 목록(agy models)을 띄울 명령. ATRIUM_AGY=none이면 띄우지 않고 고정 목록. AGY 대화 기록 폴더(ATRIUM_AGY_HOME, 없으면 ~/.gemini/antigravity-cli)
+    agyCommand: E('AGY') === 'none' ? null : E('AGY') || 'agy',
+    agyHome: E('AGY_HOME') ? path.resolve(E('AGY_HOME')) : null,
     claudeJson: E('CLAUDE_JSON') || path.join(os.homedir(), '.claude.json'),
     claudeProjects: path.join(os.homedir(), '.claude', 'projects'),
     // P7(J3·J4): 판 밖 대화 목록이 읽는 대화 기록 폴더(;로 여럿), Claude Code의 세션 파일 폴더, 데스크톱 앱 세션 목록 폴더. 시험은 고정 자료를 가리킨다.

@@ -269,7 +269,7 @@ export function deriveState(rt) {
   const s = h.status;
   if (rt.hooked === false) {
     if (s === 'blocked') {
-      if (rt.kind === 'claude' && rt.trustScreen) return { state: 'trust_wait', confirmedByScreen: true };
+      if ((rt.kind === 'claude' || rt.kind === 'agy') && rt.trustScreen) return { state: 'trust_wait', confirmedByScreen: true }; // P192: AGY 신뢰 질문
       if (boardClosing(rt)) return closingState(rt);
       if (rt.kind === 'claude' && rt.worktreeExit) return { state: 'waiting', ask: worktreeExitAsk(rt.worktreeExit) };
       return { state: 'waiting', ask: { kind: 'screen', tail: rt.screenAsk ? rt.screenAsk.tail : null, since: rt.screenAsk ? rt.screenAsk.at : h.at } };

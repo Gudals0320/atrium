@@ -16,7 +16,7 @@ import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
 import { unlistedModel } from './codex-models.mjs';
 import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는 launch.mjs
 import { adapterOf, reservedArg } from './harness.mjs'; // P115: 하네스 어댑터 표
-import { protocolsOf } from './harness.mjs'; // P115: 하네스가 쓰는 연결 프로토콜
+import { protocolsOf, AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P115: 하네스가 쓰는 연결 프로토콜. P192: AGY 승인 인자
 import { checkOf } from './connections.mjs'; // P115
 import { V2_KEY, migrateLaunchers, legacyInitialLaunchers, legacyGatewayConnection } from './launcher-migrate.mjs'; // P115: 옮기기(옛 이름은 그 파일에만)
 export { LEGACY_KEYS } from './launcher-migrate.mjs';
@@ -46,6 +46,8 @@ export const HARNESSES = {
   // P115: opencode·pi는 하네스 어댑터(harness.mjs)가 env·안내문·이어 가기를 맞춘다. 모델은 opencode가 "<제공자>/<모델>", pi가 --model 값
   opencode: { id: 'opencode', kind: 'opencode', label: 'opencode', fields: ['startCommand', 'connection', 'model', 'args'], models: [] },
   pi: { id: 'pi', kind: 'pi', label: 'pi', fields: ['startCommand', 'connection', 'model', 'args'], models: [] },
+  // P192: AGY(Antigravity CLI). 모델은 `agy models`(agy-models.mjs)를 읽고, 노력 수준·승인 방식은 AGY 인자(--effort, --mode·--dangerously-skip-permissions)로 붙인다
+  agy: { id: 'agy', kind: 'agy', label: 'AGY', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args'], models: ['gemini-3.8-flash-medium'] },
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };
@@ -220,7 +222,19 @@ export function resolveLauncher(l, over = {}) {
   const model = h.fields.includes('model') ? String(pick('model') || '').trim() : '';
   if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
   // P115: 모델과 추가 인자를 따로 준다. 하네스 어댑터(harness.mjs)가 그 하네스의 모양(-m, --model, 설정의 model)으로 바꾼다
-  return { ...base, model: model || null, args: splitArgs(pick('args')), command: '', startCommand: l.startCommand || '', connectionId: l.connection || null, gateway: gatewayOf(l) };
+  const args = splitArgs(pick('args'));
+  // P192: 노력 수준·승인 방식 칸이 있는 하네스(AGY)는 그 값을 그 하네스 인자로 붙인다(추가 인자에 이미 있으면 그것이 이긴다)
+  const extra = h.fields.includes('effort') || h.fields.includes('permissionMode') ? harnessOptionArgs(h.kind, { effort: pick('effort'), permissionMode: pick('permissionMode') }, args) : [];
+  return { ...base, model: model || null, args: [...args, ...extra], command: '', startCommand: l.startCommand || '', connectionId: l.connection || null, gateway: gatewayOf(l), ...(h.fields.includes('permissionMode') ? { permissionMode: pick('permissionMode') || 'manual' } : {}) };
+}
+// P192: 노력 수준·승인 방식 → 그 하네스 인자(지금은 AGY만). 추가 인자에 같은 인자가 있으면 붙이지 않는다
+export function harnessOptionArgs(kind, { effort = '', permissionMode = '' } = {}, args = []) {
+  if (kind !== 'agy') return [];
+  const has = (set) => args.some((a) => set.has(String(a).split('=')[0]));
+  const out = [];
+  if (effort && EFFORTS.includes(effort) && !has(new Set(['--effort']))) out.push('--effort', effort);
+  if (permissionMode && !has(AGY_APPROVAL_FLAGS)) out.push(...(AGY_APPROVAL[permissionMode] || []));
+  return out;
 }
 
 // 명령 미리보기: 사람이 읽는 명령줄. claude는 판이 덧붙이는 값(hook 설정 파일, 세션 ID, 플러그인)을 빼고 보인다. 환경 변수는 이름만 따로
@@ -260,8 +274,8 @@ export const authNotices = (items) => items.map((l) => ({ id: l.id, name: l.name
 export class Launchers {
   // codexModels: P72 Codex 모델 목록(codex-models.mjs CodexModels). 없으면 하네스의 고정 목록
   // connections: P115 연결 목록(connections.mjs Connections). legacyGateway: 옛 환경 변수의 게이트웨이 주소({ healthUrl, baseUrl }, 옮기기만 읽는다)
-  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null, connections = null, log = () => {} }) {
-    this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.connections = connections; this.log = log;
+  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null, agyModels = null, connections = null, log = () => {} }) {
+    this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.agyModels = agyModels; this.connections = connections; this.log = log; // P192: agyModels
     this.migrated = this.ensure();
   }
   // 한 번만: 새 키(v2) 목록이 없으면 옛 키(없으면 처음 목록)를 옮겨 만든다. 이미 있으면 목록은 그대로(여러 번 돌려도 같다).
@@ -294,7 +308,9 @@ export class Launchers {
   data() { const d = this.store.getMeta(META_KEY) || { v: VERSION, items: [], favorites: [] }; const ids = new Set(d.items.map((x) => x.id)); return { v: d.v, items: d.items, favorites: (d.favorites || []).filter((id) => ids.has(id)) }; }
   save(d) { this.store.setMeta(META_KEY, d); const out = this.list(); this.broadcast('launchers.updated', out); return out; }
   // 하네스별로 읽어 온 모델 목록(P72: codex)
-  modelLists() { const out = {}; if (this.codexModels) { try { out.codex = this.codexModels.read(); } catch {} } return out; }
+  modelLists() { const out = {}; if (this.codexModels) { try { out.codex = this.codexModels.read(); } catch {} } if (this.agyModels) { try { out.agy = this.agyModels.read(); } catch {} } return out; } // P192: agy
+  // P192: 뒤에서 받는 목록(AGY)을 잠깐 기다린다(atrium models). ms 안에 못 받으면 지금 아는 목록
+  async freshModelLists(ms = 8000) { if (this.agyModels) await Promise.race([this.agyModels.refresh().catch(() => {}), new Promise((r) => setTimeout(r, ms).unref?.())]); return this.modelLists(); }
   harnesses() { return describeHarnesses(this.modelLists()); }
   // P97: warns는 경고 모두(모델 목록 밖, 실행 명령이 PATH에 없음). warn은 첫 경고(옛 창)
   previewOf(l, hs) { const warns = [modelWarning(l, hs), startWarning(l)].filter(Boolean); return { ...previewLauncher(l), ...(warns.length ? { warn: warns[0], warns } : {}) }; }

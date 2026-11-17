@@ -43,7 +43,8 @@ export function tailText(text, n = 12) {
 // 화면 글에서 마지막 답 부분만. Claude Code 화면은 [대화] ──── ❯ 입력칸 ──── [아래 줄]이라 입력칸 위를 자르고,
 // 마지막 사용자 줄(❯ 또는 ›로 시작) 뒤를 답으로 본다. 모르는 화면이면 끝 몇 줄을 준다.
 const SEP = /^\s*[─━═-]{12,}\s*$/;
-export function screenAnswerText(text, n = 20) {
+// P192: kind 'agy'는 답에 머리표(•●⏺)가 없고 빈 입력 칸은 ">" 한 글자다(프롬프트 줄로 잡히지 않는다). 그래서 아래 Codex 규칙(머리표 없으면 마지막 프롬프트 줄을 입력 칸으로 봄)을 쓰지 않는다
+export function screenAnswerText(text, n = 20, { kind = null } = {}) {
   // ✻는 Claude Code의 턴 시간 줄, 앞이 30칸 넘게 빈 줄은 오른쪽에 붙인 상태 줄(◐ medium · /effort)
   let L = String(text || '').split(/\r?\n/).map((l) => l.replace(/\s+$/, '')).filter((l) => !/^\s*✻ /.test(l) && !/^\s{30,}\S/.test(l));
   const seps = L.map((l, i) => (SEP.test(l) ? i : -1)).filter((i) => i >= 0);
@@ -54,7 +55,7 @@ export function screenAnswerText(text, n = 20) {
   // P96: Codex(0.167)의 빈 입력칸은 안내문("› Ask Codex to do anything")이 든 프롬프트 줄이고 그 아래는 상태 줄뿐이다.
   // 마지막 프롬프트 줄 뒤에 답 머리표(•●⏺) 줄이 없고 그 위에 프롬프트 줄이 또 있으면, 마지막 줄을 입력칸으로 보고 그 위 턴을 읽는다
   let top = false;
-  if (at > 0 && !L.slice(at + 1).some((l) => BULLET.test(l))) {
+  if (kind !== 'agy' && at > 0 && !L.slice(at + 1).some((l) => BULLET.test(l))) {
     let prev = -1;
     for (let i = at - 1; i >= 0; i--) if (PROMPT.test(L[i])) { prev = i; break; }
     if (prev >= 0) { end = at; at = prev; }

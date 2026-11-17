@@ -366,7 +366,7 @@ export class AgentVerbs {
     const answer = this.answerOf(t);
     const out = { ...this.head(t), state: st, lines, source: text != null ? 'screen' : 'answer', text, why, answer, next: verbLines(t.name) };
     const l = this.openLink(caller, t);
-    if (l) b.linkEvent(l, 'reply', text != null ? screenAnswerText(text, 40) : answer ? answer.text : null, { via: 'atrium', verb: 'read', source: out.source, ...(text != null ? { screenTail: tailText(text, 60) } : {}) });
+    if (l) b.linkEvent(l, 'reply', text != null ? screenAnswerText(text, 40, { kind: t.kind }) : answer ? answer.text : null, { via: 'atrium', verb: 'read', source: out.source, ...(text != null ? { screenTail: tailText(text, 60) } : {}) });
     b.store.addEvent(caller.sessionId, 'atrium_read', { target: t.name, sessionId: t.sessionId, lines, source: out.source, why });
     return out;
   }

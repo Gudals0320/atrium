@@ -20,7 +20,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { claudeInputBox, codexInputBox, opencodeInputBox, piInputBox, mouseNoise, claudeSuggestion } from './screen.mjs';
+import { claudeInputBox, codexInputBox, opencodeInputBox, piInputBox, agyInputBox, mouseNoise, claudeSuggestion } from './screen.mjs';
 
 const MOUSE_NOISE_G = /\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
 const bare = (s) => String(s || '').replace(/\s+/g, '');
@@ -68,7 +68,7 @@ export function draftEdit(prev, data, opts = {}) {
   return { text: exact ? text : '', exact, paste };
 }
 
-const READERS = { claude: claudeInputBox, codex: codexInputBox, opencode: opencodeInputBox, pi: piInputBox };
+const READERS = { claude: claudeInputBox, codex: codexInputBox, opencode: opencodeInputBox, pi: piInputBox, agy: agyInputBox }; // P192: agy는 읽기만(비키기는 하지 않는다: draftKinds 밖)
 // 화면에서 읽은 입력 칸. → { found, text(마우스 보고 글을 뗀 것), rows(입력 칸 줄 수), folded?, clipped? }
 export function readDraftBox(screen, kind) {
   const b = (READERS[kind] || claudeInputBox)(screen);

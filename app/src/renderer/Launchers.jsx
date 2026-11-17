@@ -157,7 +157,7 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
   const has = (f) => fields.includes(f);
   const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || 'manual', args: d.args, env: d.envText, command: d.command, connection: d.connection || '', startCommand: d.startCommand });
   const named = (harnesses || []).filter((h) => !['shell', 'command'].includes(h.id)).map((h) => h.id); // P115: 백엔드 하네스 표(Claude Code, Codex, opencode, pi)
-  useEffect(() => { api.call('agent.kinds').then((ks) => setKinds(ks.map((k) => k.kind).filter((k) => !['claude', 'codex', 'opencode', 'pi'].includes(k)))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
+  useEffect(() => { api.call('agent.kinds').then((ks) => setKinds(ks.map((k) => k.kind).filter((k) => !['claude', 'codex', 'opencode', 'pi', 'agy'].includes(k)))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
   // 고르는 대로 미리보기(백엔드가 확인한다). 이름이 비었으면 이름 검사만 건너뛴다
   useEffect(() => {
     const tm = setTimeout(() => {
