@@ -177,7 +177,7 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
     if (r) onDone();
   };
   const secrets = secretNames(d.envText);
-  const models = harnessModels(harnesses, d.harness);
+  const models = harnessModels(harnesses, d.harness, { connection: d.connection }); // P201: 연결을 고른 pi는 목록 없음
   const labels = harnessModelLabels(harnesses, d.harness);
   const shellText = t('launchers.shellPreview');
   const warns = pv && !pv.error ? pv.warns || (pv.warn ? [pv.warn] : []) : [];

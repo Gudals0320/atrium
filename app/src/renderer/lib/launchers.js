@@ -88,8 +88,10 @@ export function harnessFields(harnesses, id) {
   const h = (harnesses || []).find((x) => x.id === id);
   return h ? h.fields : ['args'];
 }
-export function harnessModels(harnesses, id) {
+// P201: pi 목록은 pi 자기 설정의 모델(제공자/ID)이다. 연결을 고른 pi 호출자의 모델은 그 연결의 모델 ID라 목록을 보이지 않는다
+export function harnessModels(harnesses, id, { connection = '' } = {}) {
   const h = (harnesses || []).find((x) => x.id === id);
+  if (id === 'pi' && connection) return [];
   return h ? h.models || [] : [];
 }
 // P72: 모델 입력칸 아래 목록에 보일 모델. 비었거나 목록의 이름 그대로면 전부, 아니면 이름·보이는 이름에 든 글자로 거른다(대소문자 무시)
