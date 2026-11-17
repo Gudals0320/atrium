@@ -2515,3 +2515,58 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigprot .mt-rigon-list li code { flex: 1 1 auto; min-width: 0; word-break: break-all; }
 .mt-rigprot-add { display: flex; gap: 6px; margin: 4px 0 10px; }
 .mt-rigprot-in { flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line, #444); background: transparent; color: inherit; font: 12px var(--font-mono); }
+
+/* P191: rig 만들기 대화상자와 rig 판. 움직임 없음 */
+.mt-rigsetup { width: min(720px, calc(100vw - 32px)); }
+.mt-rigsetup-steps { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--dim); flex-wrap: wrap; }
+.mt-rigsetup-steps li { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--panel-line); }
+.mt-rigsetup-steps li.on { color: var(--text); border-color: var(--accent-line); background: var(--panel-2); font-weight: 600; }
+.mt-rigsetup-paths { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.mt-rigsetup-card { display: grid; gap: 4px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--panel-line); background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.mt-rigsetup-card:hover, .mt-rigsetup-card:focus-visible { border-color: var(--accent-line); }
+.mt-rigsetup-card .dim { font-size: 12px; }
+.mt-rigsetup-card-seats { font: 11.5px var(--font-mono); color: var(--text-2); }
+.mt-rigsetup-card.describe { border-style: dashed; }
+.mt-rigsetup-launchers, .mt-rigsetup-seats, .mt-rigsetup-describe { display: grid; gap: 8px; }
+.mt-modal label.mt-rigsetup-seatrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: 13px; font-weight: 400; flex-wrap: wrap; }
+.mt-rigsetup-seatrow select { min-width: 200px; max-width: 100%; }
+.mt-rigsetup-builder { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--panel-line); font-size: 13px; }
+.mt-rigsetup-builder.working { border-color: var(--st-working); }
+.mt-rigsetup-builder.failed, .mt-rigsetup-builder.stopped { border-color: var(--attn); }
+.mt-rigsetup-btext { flex: 1 1 100%; white-space: pre-wrap; font-size: 12px; }
+.mt-rigsetup-enable { display: grid; gap: 2px; }
+.mt-rigpv { overflow-x: auto; max-width: 100%; padding: 4px 0; }
+.mt-rigpv-canvas { position: relative; }
+.mt-rigpv-canvas svg { position: absolute; inset: 0; overflow: visible; }
+.mt-rigpv-arrow { fill: none; stroke: var(--dim); stroke-width: 1.5; }
+.mt-rigpv-arrow.back { stroke: var(--warn); stroke-dasharray: 4 3; }
+.mt-rigpv-head { fill: var(--dim); }
+.mt-rigpv-seat { position: absolute; box-sizing: border-box; display: grid; align-content: center; gap: 2px; padding: 0 10px; border-radius: 8px; border: 1.5px solid var(--panel-line-2); background: var(--panel-2); font-size: 13px; overflow: hidden; }
+.mt-rigpv-seat.keep { border-color: var(--accent-line); }
+.mt-rigpv-sub { font: 11px var(--font-mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-rigpv-label { position: absolute; transform: translate(-50%, -100%); font: 11px var(--font-mono); color: var(--text-2); background: var(--panel); padding: 0 4px; border-radius: 4px; white-space: nowrap; }
+.mt-rigpv-label.back { color: var(--warn); }
+.mt-rigpv-results { font-size: 12px; margin-top: 4px; }
+.mt-rigpanel { width: min(860px, calc(100vw - 32px)); }
+.mt-rigpanel-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.mt-rigpanel-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+.mt-rigpanel-dot.on { background: var(--st-working); }
+.mt-rigpanel-dot.invalid { background: var(--bad); }
+.mt-rigpanel-setup { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--accent-line); border-radius: 10px; }
+.mt-rigpanel-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mt-rigpanel-table th { text-align: left; font-weight: 600; color: var(--dim); padding: 2px 4px; }
+.mt-rigpanel-table td { padding: 2px 4px; vertical-align: middle; }
+.mt-rigpanel-table tr[data-locked] td { background: var(--panel-2); }
+.mt-rigpanel-table .mt-input, .mt-rigpanel-res .mt-input { height: 26px; padding: 0 6px; font-size: 12.5px; min-width: 0; width: 100%; box-sizing: border-box; }
+.mt-rigpanel-table td:first-child { display: flex; align-items: center; gap: 4px; }
+.mt-rigpanel-num { width: 64px !important; }
+.mt-rigpanel-lock { font-size: 11px; }
+.mt-rigpanel-seated { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mt-rigpanel-sess { display: inline-flex; align-items: center; gap: 4px; font: 12px var(--font-mono); }
+.mt-rigpanel-results { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mt-rigpanel-res { display: inline-flex; align-items: center; gap: 2px; }
+.mt-rigpanel-res .mt-input { width: 110px; }
+.mt-rigpanel-save { justify-content: flex-start; align-items: center; }
+.mt-rigpanel-say { display: grid; gap: 6px; }
+.mt-rigpanel-table { display: block; overflow-x: auto; max-width: 100%; }
+.mt-rigpanel > .mt-btn.small { justify-self: start; }
