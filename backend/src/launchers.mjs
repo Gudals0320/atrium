@@ -23,6 +23,7 @@ export { LEGACY_KEYS } from './launcher-migrate.mjs';
 
 export const META_KEY = V2_KEY; // P115: 연결 참조가 든 목록. 옛 키(launchers)는 옛 코드가 쓴다
 export const LEGACY_META_KEY = 'launchers';
+export const AGY_BYPASS_META = 'launchers.agyBypass'; // P205: AGY 승인 방식 옮김 표시(한 번만)
 export const VERSION = 2;
 export const COMMAND_MAX = 400;
 export const NAME_MAX = 40;
@@ -65,8 +66,37 @@ export function modelWarning(l, harnesses) {
 
 const err = (code, message, key, vars = {}) => Object.assign(new Error(message), { code, key: `launchers.err.${key}`, vars });
 
-// 추가 인자: 빈칸으로 나눈다(따옴표로 묶지 않는다)
-export const splitArgs = (s) => String(s || '').split(/\s+/).filter(Boolean);
+// 추가 인자 나누기. P205: 공백으로 나누되 따옴표를 안다: '...'는 글자 그대로, "..."는 안에서 \" \\만 이스케이프.
+// 따옴표 밖의 역슬래시는 글자 그대로 둔다(Windows 경로 C:\x\y가 그대로). 따옴표가 없는 옛 인자는 예전과 같이 나뉜다
+export function splitArgs(s) {
+  const str = String(s || '');
+  const out = [];
+  let cur = '', inTok = false, q = null;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (q === "'") { if (c === "'") q = null; else cur += c; continue; }
+    if (q === '"') {
+      if (c === '\\' && (str[i + 1] === '"' || str[i + 1] === '\\')) { cur += str[++i]; continue; }
+      if (c === '"') q = null; else cur += c;
+      continue;
+    }
+    if (/\s/.test(c)) { if (inTok) { out.push(cur); cur = ''; inTok = false; } continue; }
+    inTok = true;
+    if (c === "'" || c === '"') q = c; else cur += c;
+  }
+  if (inTok) out.push(cur); // 닫히지 않은 따옴표는 끝까지 한 인자
+  return out;
+}
+// splitArgs의 반대: 공백·따옴표가 든 인자만 따옴표로 싼다(다시 나누면 같은 배열)
+export function joinArgs(args = []) {
+  return args.map((a) => {
+    const x = String(a);
+    if (x && !/[\s'"]/.test(x)) return x;
+    return x.includes("'") ? `"${x.replace(/(["\\])/g, '\\$1')}"` : `'${x}'`;
+  }).join(' ');
+}
+// P205: 승인 방식 기본값. AGY는 권한 생략(샌드박스가 판 명령 atrium을 막아 다른 방식으로는 판 일을 못 한다), 나머지는 manual
+export const defaultPermission = (harness) => (harness === 'agy' ? 'bypassPermissions' : 'manual');
 
 // 환경 변수: { 이름: 값 } 또는 "이름=값" 줄 글. 이름 검사, 판이 쓰는 이름 거부, 값은 한 줄
 export function normalizeEnv(v) {
@@ -173,7 +203,7 @@ export function normalizeLauncher(input, { others = [], connections = null } = {
   if (model.length > 80 || !MODEL_RE.test(model)) throw err('bad_request', `모델: 영문·숫자·._:/[]-만, 80자까지`, 'model', { model: model.slice(0, 40) });
   const effort = has('effort') ? String(input.effort ?? '') : '';
   if (!EFFORTS.includes(effort)) throw err('bad_request', `추론 수준: ${effort}`, 'effort', { effort });
-  const permissionMode = has('permissionMode') ? String(input.permissionMode || 'manual') : '';
+  const permissionMode = has('permissionMode') ? String(input.permissionMode || defaultPermission(h.id)) : '';
   if (has('permissionMode') && !PERMISSION_MODES.includes(permissionMode)) throw err('bad_request', `승인 방식: ${permissionMode}`, 'permissionMode', { mode: permissionMode });
   const args = has('args') ? String(input.args ?? '').trim() : '';
   if (args.length > ARGS_MAX || CTRL_RE.test(args)) throw err('bad_request', `추가 인자: 한 줄, ${ARGS_MAX}자까지`, 'args', { max: ARGS_MAX });
@@ -224,8 +254,8 @@ export function resolveLauncher(l, over = {}) {
   // P115: 모델과 추가 인자를 따로 준다. 하네스 어댑터(harness.mjs)가 그 하네스의 모양(-m, --model, 설정의 model)으로 바꾼다
   const args = splitArgs(pick('args'));
   // P192: 노력 수준·승인 방식 칸이 있는 하네스(AGY)는 그 값을 그 하네스 인자로 붙인다(추가 인자에 이미 있으면 그것이 이긴다)
-  const extra = h.fields.includes('effort') || h.fields.includes('permissionMode') ? harnessOptionArgs(h.kind, { effort: pick('effort'), permissionMode: pick('permissionMode') }, args) : [];
-  return { ...base, model: model || null, args: [...args, ...extra], command: '', startCommand: l.startCommand || '', connectionId: l.connection || null, gateway: gatewayOf(l), ...(h.fields.includes('permissionMode') ? { permissionMode: pick('permissionMode') || 'manual' } : {}) };
+  const extra = h.fields.includes('effort') || h.fields.includes('permissionMode') ? harnessOptionArgs(h.kind, { effort: pick('effort'), permissionMode: pick('permissionMode') || defaultPermission(h.id) }, args) : [];
+  return { ...base, model: model || null, args: [...args, ...extra], command: '', startCommand: l.startCommand || '', connectionId: l.connection || null, gateway: gatewayOf(l), ...(h.fields.includes('permissionMode') ? { permissionMode: pick('permissionMode') || defaultPermission(h.id) } : {}) };
 }
 // P192: 노력 수준·승인 방식 → 그 하네스 인자(지금은 AGY만). 추가 인자에 같은 인자가 있으면 붙이지 않는다
 export function harnessOptionArgs(kind, { effort = '', permissionMode = '' } = {}, args = []) {
@@ -246,14 +276,14 @@ export function previewLauncher(l) {
     const a = [...(s.length ? s : ['claude']), '--permission-mode', l.permissionMode || 'manual'];
     if (l.model) a.push('--model', l.model);
     if (l.effort) a.push('--effort', l.effort);
-    return { line: [...a, ...splitArgs(l.args)].join(' '), env: envNames, board: true };
+    return { line: [a.join(' '), joinArgs(splitArgs(l.args))].filter(Boolean).join(' '), env: envNames, board: true };
   }
   if (h.id === 'shell') return { line: '', env: [], board: false, shell: true };
   if (h.id === 'command') return { line: psEnvPrefix(l.env) + l.command, env: envNames, board: false, typed: true };
   const r = resolveLauncher(l);
   const a = adapterOf(h.kind);
   const s = startWords(l.startCommand); // P115: 실행 명령. 모델은 그 하네스의 모양(판이 덧붙이는 env·안내문·세션 ID는 빼고 보인다)
-  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a ? a.modelArgs(r.model) : []), ...r.args].join(' '), env: [], board: !!a };
+  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a ? a.modelArgs(r.model) : [])].join(' ') + (r.args.length ? ' ' + joinArgs(r.args) : ''), env: [], board: !!a };
 }
 
 // ---------- 기본값과 옮기기 ----------
@@ -277,6 +307,20 @@ export class Launchers {
   constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null, agyModels = null, piModels = null, connections = null, log = () => {} }) {
     this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.agyModels = agyModels; this.piModels = piModels; this.connections = connections; this.log = log; // P192: agyModels
     this.migrated = this.ensure();
+    this.agyBypassMoved = this.migrateAgyBypass();
+  }
+  // P205: 한 번만, AGY 호출자 가운데 승인 방식이 manual(또는 빈 값)인 것을 권한 생략으로 옮긴다(P203: AGY 샌드박스가 판 명령을 막는다).
+  // meta에 옮김 표시를 남겨 사람이 그 뒤 manual로 되돌려도 다시 옮기지 않는다. 다른 하네스는 건드리지 않는다
+  migrateAgyBypass() {
+    if (this.store.getMeta(AGY_BYPASS_META)) return [];
+    const d = this.store.getMeta(META_KEY);
+    const moved = [];
+    if (d && Array.isArray(d.items)) {
+      const items = d.items.map((l) => { if (l.harness !== 'agy' || (l.permissionMode && l.permissionMode !== 'manual')) return l; moved.push(l.name); return { ...l, permissionMode: 'bypassPermissions' }; });
+      if (moved.length) { this.store.setMeta(META_KEY, { ...d, items }); this.store.addEvent(null, 'launchers_agy_bypass', { moved }); }
+    }
+    this.store.setMeta(AGY_BYPASS_META, { at: Date.now(), moved });
+    return moved;
   }
   // 한 번만: 새 키(v2) 목록이 없으면 옛 키(없으면 처음 목록)를 옮겨 만든다. 이미 있으면 목록은 그대로(여러 번 돌려도 같다).
   // 옛 키와 옛 설정 키는 지우지 않는다(옛 판 코드로 돌아가도 그 값을 쓴다). 옛 환경 변수의 게이트웨이는 뜰 때마다 연결로 있게 하고 경고한다(같은 ID라 겹치지 않는다)
@@ -491,7 +535,7 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
     }
     out.args.push(a);
   }
-  if (out.args.length) mapped.push({ arg: out.args.join(' '), field: 'args' });
+  if (out.args.length) mapped.push({ arg: joinArgs(out.args), field: 'args' });
   let startCommand = ''; let agentPath = null;
   const exe = kind === 'claude' ? 'claude' : kind;
   if (wrapper.length) startCommand = [...wrapper, agent].map(wordText).join(' ');
@@ -503,7 +547,7 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
   const harness = kind;
   const label = kind === 'claude' ? 'Claude' : kind === 'codex' ? 'Codex' : kind;
   const name = [startCommand || (kind === 'claude' && !out.model ? 'Claude Code' : label), out.model].filter(Boolean).join(' ');
-  const launcher = { ...blank, harness, model: out.model, effort: kind === 'claude' ? out.effort : '', permissionMode: kind === 'claude' ? out.permissionMode || 'manual' : '', args: out.args.join(' '), env: kind === 'claude' ? env : {}, startCommand };
+  const launcher = { ...blank, harness, model: out.model, effort: kind === 'claude' ? out.effort : '', permissionMode: kind === 'claude' ? out.permissionMode || 'manual' : '', args: joinArgs(out.args), env: kind === 'claude' ? env : {}, startCommand };
   // P115: env의 ANTHROPIC_BASE_URL은 연결로 옮길 값이라 알린다(설정 탭에서 연결을 만들어 고른다)
   const baseUrl = kind === 'claude' && env.ANTHROPIC_BASE_URL ? env.ANTHROPIC_BASE_URL : null;
   // claude 밖은 환경 변수를 받지 않는다(터미널에 넘길 길이 없다): 있으면 명령 한 줄로

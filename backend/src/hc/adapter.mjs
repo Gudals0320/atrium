@@ -46,6 +46,8 @@ export function holderIdentity(status) {
   return pick ? pick.pid : null;
 }
 
+export const KINDS_TTL_MS = 60_000; // P205: 에이전트 종류(where.exe) 결과를 쓰는 시간
+
 export class HcAdapter extends EventEmitter {
   constructor({ session, dataDir, logDir, hcPath = null, pipe = null, pin = HC_PIN, env = process.env, fetchImpl, graceMs = GRACE_MS, tested = [HC_PIN.version], moveWaitMs = 3000, trustWatchMs = TRUST_WATCH_MS, trustPollMs = TRUST_POLL_MS }) {
     super();
@@ -487,13 +489,19 @@ export class HcAdapter extends EventEmitter {
     const by = this._byAddress(list);
     return list.filter((t) => isLive(t) && workspaceOf(t, by) === workspaceId).map((t) => ({ paneId: t.address, tabId: null, agent: paneOf(t, by).agent }));
   }
-  async agentKinds() {
-    if (this._kinds) return this._kinds;
-    const where = (k) => new Promise((res) => execFile('where.exe', [k], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (e, so) => res(e ? null : String(so).split(/\r?\n/)[0].trim() || null)));
+  // P205: 찾은 결과는 KINDS_TTL_MS 동안만 쓴다(판이 도는 중에 깐 에이전트도 보이게). fresh면 바로 다시 찾는다(창이 호출자·띄우기 틀을 열 때).
+  // 겹친 찾기는 하나로 모은다. _where는 시험이 바꿔 끼운다
+  async agentKinds({ fresh = false } = {}) {
+    if (!fresh && this._kinds && Date.now() - (this._kindsAt || 0) < KINDS_TTL_MS) return this._kinds;
+    if (this._kindsP) return this._kindsP;
+    const where = this._where || ((k) => new Promise((res) => execFile('where.exe', [k], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (e, so) => res(e ? null : String(so).split(/\r?\n/)[0].trim() || null))));
     const kinds = Object.keys(KIND_COMMAND);
-    const found = await Promise.all(kinds.map(where));
-    this._kinds = kinds.map((k, i) => ({ kind: k, installed: !!found[i], path: found[i] }));
-    return this._kinds;
+    this._kindsP = Promise.all(kinds.map(where)).then((found) => {
+      this._kinds = kinds.map((k, i) => ({ kind: k, installed: !!found[i], path: found[i] }));
+      this._kindsAt = Date.now();
+      return this._kinds;
+    }).finally(() => { this._kindsP = null; });
+    return this._kindsP;
   }
   async renameAgent(target, name) {
     const list = await this._list();

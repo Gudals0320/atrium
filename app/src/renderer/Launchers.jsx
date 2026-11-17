@@ -12,7 +12,7 @@ import { useStore, toast, loadLaunchers, getState } from './store.js';
 import { KindIcon } from './SessionNode.jsx';
 import { Icon } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
-import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, connectionChoices, harnessProtocols, agySandboxNote } from './lib/launchers.js';
+import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, connectionChoices, harnessProtocols, agySandboxNote, defaultPermission, withHarness } from './lib/launchers.js';
 
 const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 const MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];
@@ -155,9 +155,9 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const fields = harnessFields(harnesses, d.harness);
   const has = (f) => fields.includes(f);
-  const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || 'manual', args: d.args, env: d.envText, command: d.command, connection: d.connection || '', startCommand: d.startCommand });
+  const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || defaultPermission(harnesses, d.harness), args: d.args, env: d.envText, command: d.command, connection: d.connection || '', startCommand: d.startCommand });
   const opts = harnessOptions(harnesses, kinds, d.harness); // P115: 백엔드 하네스 표. P196: 표가 빠뜨린 기본 종류(agy 등)와 지금 값도 빠짐없이
-  useEffect(() => { api.call('agent.kinds').then((ks) => setKinds(ks.map((k) => k.kind))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
+  useEffect(() => { api.call('agent.kinds', { fresh: true }).then((ks) => setKinds(ks.map((k) => k.kind))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
   // 고르는 대로 미리보기(백엔드가 확인한다). 이름이 비었으면 이름 검사만 건너뛴다
   useEffect(() => {
     const tm = setTimeout(() => {
@@ -167,7 +167,7 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
     return () => clearTimeout(tm);
   }, [d]); // eslint-disable-line react-hooks/exhaustive-deps
   // P97: 붙여 넣은 명령줄로 칸을 채운다(이름은 비었을 때만 제안 이름)
-  const onParsed = (r) => setD((x) => { const n = fillFromParse(x, r.launcher); return { ...n, permissionMode: n.permissionMode || 'manual', envText: envToText(n.env) }; });
+  const onParsed = (r) => setD((x) => { const n = fillFromParse(x, r.launcher); return { ...n, permissionMode: n.permissionMode || defaultPermission(harnesses, n.harness), envText: envToText(n.env) }; });
   const save = async () => {
     if (!d.name.trim()) { setPv({ error: t('launchers.err.name', { max: 40 }) }); return; }
     setBusy(true);
@@ -187,7 +187,7 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
         <PasteLine onParsed={onParsed} autoFocus={focusPaste || !init.id} except={d.id || undefined} />
         <label className="mt-ln-f"><span>{t('launchers.name')}</span><input className="mt-set-text" data-field="launcher-name" value={d.name} maxLength={40} onChange={(e) => set('name', e.target.value)} placeholder={t('launchers.namePh')} /></label>
         <label className="mt-ln-f"><span>{t('launchers.harnessLabel')}</span>
-          <select data-field="launcher-harness" value={d.harness} onChange={(e) => set('harness', e.target.value)}>
+          <select data-field="launcher-harness" value={d.harness} onChange={(e) => setD((x) => withHarness(x, e.target.value, harnesses))}>
             {opts.map((h) => <option key={h} value={h}>{harnessName(harnesses, h, t)}</option>)}
             <option value="shell">{t('launchers.harness.shell')}</option>
             <option value="command">{t('launchers.harness.command')}</option>
@@ -203,10 +203,10 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
           </label>
         ) : <span />}
         {has('effort') && <label className="mt-ln-f"><span>{t('settings.effort')}</span>
-          <select data-field="launcher-effort" value={d.effort} onChange={(e) => set('effort', e.target.value)}>{EFFORTS.map((o) => <option key={o} value={o}>{o === '' ? t('settings.effortDefault') : o}</option>)}</select>
+          <select data-field="launcher-effort" value={d.effort} onChange={(e) => set('effort', e.target.value)}>{EFFORTS.map((o) => <option key={o} value={o}>{o === '' ? t('launcherEffort.harnessDefault', { harness: harnessName(harnesses, d.harness, t) }) : o}</option>)}</select>
         </label>}
         {has('permissionMode') && <label className="mt-ln-f"><span>{t('settings.permissionMode')}</span>
-          <select data-field="launcher-permissionMode" value={d.permissionMode || 'manual'} onChange={(e) => set('permissionMode', e.target.value)}>{MODES.map((o) => <option key={o}>{o}</option>)}</select>
+          <select data-field="launcher-permissionMode" value={d.permissionMode || defaultPermission(harnesses, d.harness)} onChange={(e) => set('permissionMode', e.target.value)}>{MODES.map((o) => <option key={o}>{o}</option>)}</select>
         </label>}
         {/* P203: AGY는 권한 생략이 아니면 샌드박스가 atrium을 막는다(승인 칸 아래 한 줄) */}
         {has('permissionMode') && agySandboxNote(harnesses, d.harness, d.permissionMode) && <div className="mt-ln-agynote wide" data-role="launcher-agy-sandbox">{t('agySandbox.note')}</div>}

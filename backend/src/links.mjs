@@ -43,12 +43,18 @@ export function tailText(text, n = 12) {
 // 화면 글에서 마지막 답 부분만. Claude Code 화면은 [대화] ──── ❯ 입력칸 ──── [아래 줄]이라 입력칸 위를 자르고,
 // 마지막 사용자 줄(❯ 또는 ›로 시작) 뒤를 답으로 본다. 모르는 화면이면 끝 몇 줄을 준다.
 const SEP = /^\s*[─━═-]{12,}\s*$/;
+// P205: pi(kind 'pi')의 바닥 상태 줄은 글이 든 구분선이다("── ⠹ Working ──"). 양 끝이 선 글자 둘 이상이고 가운데에 글이 있는 줄
+const SEP_TEXT = /^\s*[─━═]{2,}\s+\S.*\s+[─━═]{2,}\s*$/;
 // P192: kind 'agy'는 답에 머리표(•●⏺)가 없고 빈 입력 칸은 ">" 한 글자다(프롬프트 줄로 잡히지 않는다). 그래서 아래 Codex 규칙(머리표 없으면 마지막 프롬프트 줄을 입력 칸으로 봄)을 쓰지 않는다
 export function screenAnswerText(text, n = 20, { kind = null } = {}) {
   // ✻는 Claude Code의 턴 시간 줄, 앞이 30칸 넘게 빈 줄은 오른쪽에 붙인 상태 줄(◐ medium · /effort)
   let L = String(text || '').split(/\r?\n/).map((l) => l.replace(/\s+$/, '')).filter((l) => !/^\s*✻ /.test(l) && !/^\s{30,}\S/.test(l));
-  const seps = L.map((l, i) => (SEP.test(l) ? i : -1)).filter((i) => i >= 0);
+  const isSep = (l) => SEP.test(l) || (kind === 'pi' && SEP_TEXT.test(l));
+  const seps = L.map((l, i) => (isSep(l) ? i : -1)).filter((i) => i >= 0);
   if (seps.length >= 2 && seps[seps.length - 1] - seps[seps.length - 2] <= 6) L = L.slice(0, seps[seps.length - 2]);
+  // P205: pi는 입력 칸 테두리 위에도 상태 줄(글 든 구분선)이 있다. 바닥 6줄 안의 글 든 구분선은 그 줄부터 자르고, 끝에 남은 구분선은 뺀다
+  else if (kind === 'pi' && seps.length && L.length - seps[seps.length - 1] <= 6) L = L.slice(0, seps[seps.length - 1]);
+  if (kind === 'pi') while (L.length && (isSep(L[L.length - 1]) || !L[L.length - 1].trim())) L.pop();
   const PROMPT = /^\s*[❯›>]\s+\S/, BULLET = /^\s*[●•⏺]/;
   let at = -1, end = L.length;
   for (let i = L.length - 1; i >= 0; i--) if (PROMPT.test(L[i])) { at = i; break; }

@@ -28,7 +28,7 @@ import { EFFORTS } from './settings.mjs';
 import { clip, promptTask } from './text.mjs';
 import { BACKEND_ROOT, terminalSessionEnv } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
-import { harnessOf, splitArgs, startOpt } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
+import { harnessOf, splitArgs, joinArgs, startOpt } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192
 import { buildCatalog, resolveModel, gatewaysOf, fetchGatewayModels, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
@@ -142,7 +142,11 @@ export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) 
   const override = (route.type === 'model' || route.type === 'gateway') && route.model ? route.model : null;
   const model = override || (l && takesModel ? l.model || null : null);
   const largs = override ? withoutModelArgs(splitArgs(l ? l.args : '')) : splitArgs(l ? l.args : '');
-  const approval = inherit ? { args: [], from: 'parent-harness' } : approvalArgsOf(kind, permissionMode, largs);
+  // P205: AGY 하위는 부모 권한 모드와 상관없이 권한 생략으로 띄운다(AGY 샌드박스가 판 명령 atrium을 막아 하위가 atrium done을 못 한다).
+  // 호출자 추가 인자에 AGY 승인 인자가 있으면(approvalArgsOf의 launcher) 그것을 따른다
+  const agyBypass = kind === 'agy' && !inherit;
+  const approval0 = inherit ? { args: [], from: 'parent-harness' } : approvalArgsOf(kind, agyBypass ? 'bypassPermissions' : permissionMode, largs);
+  const approval = agyBypass && approval0.from === 'parent' ? { ...approval0, from: 'agy-bypass' } : approval0;
   const args = [...largs, ...approval.args];
   return {
     launcher: l, model, args, argv: [...(model ? ['-m', model] : []), ...args],
@@ -671,7 +675,7 @@ export class Branch {
       // P41: 호출자면 그 호출자의 하네스·모델·옵션·env를 그대로 쓴다(준 --effort만 덮는다). 게이트웨이 모델과 게이트웨이 물려받기는 그 게이트웨이 호출자의 env로, 권한 모드는 부모의 것
       const base = { cwd, name, worktree: gate ? null : worktree, parentSessionId: parent.sessionId, branch: info, ...(o[SEAT_SPAWN] ? { [SEAT_SPAWN]: o[SEAT_SPAWN] } : {}) }; // P189: 판이 자리를 위해 띄움
       // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
-      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: other.args.join(' ') }, permissionMode: parent.permissionMode } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
+      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: joinArgs(other.args) }, permissionMode: parent.permissionMode } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
         : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined }
         : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode }
         : { ...base, kind, model, effort, permissionMode: parent.permissionMode, ...(route.args ? { args: route.args } : {}) };
@@ -810,14 +814,14 @@ export class Branch {
       if (pc) {
         const found = sp.launcher ? this.findLauncher(sp.launcher) : null;
         const def = found && found.harness === 'claude' && found.connection === pc.id ? found
-          : { id: null, name: sp.launcher || pc.name, harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', args: (sp.extraArgs || []).join(' '), env: sp.launcherEnv || {}, command: '', connection: pc.id };
+          : { id: null, name: sp.launcher || pc.name, harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', args: joinArgs(sp.extraArgs || []), env: sp.launcherEnv || {}, command: '', connection: pc.id };
         return { type: 'inherit-gateway', kind, launcherDef: { ...def, icon: parent.flavor || '', model: parent.model || def.model || '' }, gateway: pc.baseUrl, resolved: null };
       }
       const url = sp.env && sp.env.ANTHROPIC_BASE_URL;
       if (url) {
         const found = sp.launcher ? this.findLauncher(sp.launcher) : null;
         const def = found && found.harness === 'claude' && found.env && found.env.ANTHROPIC_BASE_URL === url ? found
-          : { id: null, name: sp.launcher || 'gateway', harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', args: (sp.extraArgs || []).join(' '), env: sp.env, command: '' };
+          : { id: null, name: sp.launcher || 'gateway', harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', args: joinArgs(sp.extraArgs || []), env: sp.env, command: '' };
         return { type: 'inherit-gateway', kind, launcherDef: { ...def, icon: parent.flavor || '', model: parent.model || def.model || '' }, gateway: url, resolved: null };
       }
     }

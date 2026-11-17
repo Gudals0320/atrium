@@ -87,22 +87,29 @@ test('P192 호출자: AGY는 모델·노력 수준·승인 방식·추가 인자
   // 추가 인자에 같은 인자가 있으면 그것이 이긴다
   const m = normalizeLauncher({ name: 'AGY m', harness: 'agy', effort: 'high', permissionMode: 'acceptEdits', args: '--effort max --mode auto' });
   assert.deepEqual(resolveLauncher(m).args, ['--effort', 'max', '--mode', 'auto']);
-  // manual·빈 노력은 아무것도 붙이지 않는다
-  assert.deepEqual(resolveLauncher(normalizeLauncher({ name: 'AGY', harness: 'agy' })).args, []);
+  // manual·빈 노력은 아무것도 붙이지 않는다. P205: 승인 방식을 비우면 AGY 기본은 권한 생략
+  assert.deepEqual(resolveLauncher(normalizeLauncher({ name: 'AGY', harness: 'agy', permissionMode: 'manual' })).args, []);
+  assert.deepEqual(resolveLauncher(normalizeLauncher({ name: 'AGY', harness: 'agy' })).args, ['--dangerously-skip-permissions']);
   assert.deepEqual(harnessOptionArgs('codex', { effort: 'high', permissionMode: 'plan' }), [], '다른 하네스는 그대로');
   // codex 호출자는 그대로(노력·승인 칸이 없다)
   const c = resolveLauncher(normalizeLauncher({ name: 'Codex', harness: 'codex', model: 'gpt-6-astra', args: '--search' }));
   assert.deepEqual(c.args, ['--search']); assert.equal(c.permissionMode, undefined);
 });
 
-test('P192 다른 종류 하위(atrium child --kind agy): 레일의 AGY 호출자를 바탕으로, 부모 권한 모드를 AGY 인자로', () => {
+test('P192 다른 종류 하위(atrium child --kind agy): 레일의 AGY 호출자를 바탕으로, P205: 부모 권한 모드와 상관없이 권한 생략', () => {
   const lists = { items: [{ id: 'a1', name: 'AGY', harness: 'agy', model: 'gemini-3.8-flash-medium', effort: '', permissionMode: 'manual', args: '' }], favorites: ['a1'] };
   const p = otherKindPlan({ route: { type: 'kind', kind: 'agy' }, permissionMode: 'bypassPermissions', lists });
   assert.equal(p.model, 'gemini-3.8-flash-medium');
   assert.deepEqual(p.args, ['--dangerously-skip-permissions']);
-  assert.equal(p.record.approvalFrom, 'parent');
+  assert.equal(p.record.approvalFrom, 'agy-bypass');
   const q = otherKindPlan({ route: { type: 'kind', kind: 'agy' }, permissionMode: 'manual', lists });
-  assert.deepEqual(q.args, []); assert.equal(q.record.approvalFrom, 'harness');
+  assert.deepEqual(q.args, ['--dangerously-skip-permissions']); assert.equal(q.record.approvalFrom, 'agy-bypass');
+  for (const mode of ['plan', 'acceptEdits', 'auto', 'dontAsk']) assert.deepEqual(otherKindPlan({ route: { type: 'kind', kind: 'agy' }, permissionMode: mode, lists }).args, ['--dangerously-skip-permissions'], mode);
+  // 호출자 추가 인자에 AGY 승인 인자가 있으면 그것을 따른다
+  const own = otherKindPlan({ route: { type: 'kind', kind: 'agy' }, permissionMode: 'bypassPermissions', lists: { ...lists, items: [{ ...lists.items[0], args: '--mode plan' }] } });
+  assert.deepEqual(own.args, ['--mode', 'plan']); assert.equal(own.record.approvalFrom, 'launcher');
+  // 다른 종류(codex)는 그대로 부모 권한 모드를 옮긴다
+  assert.deepEqual(otherKindPlan({ route: { type: 'kind', kind: 'codex' }, permissionMode: 'manual', lists: { items: [], favorites: [] } }).args, []);
   // 부모의 승인 인자가 붙으면 호출자 칸(manual)은 그 위에 붙지 않는다
   assert.deepEqual(resolveLauncher({ ...lists.items[0], args: p.args.join(' ') }, { permissionMode: 'bypassPermissions' }).args, ['--dangerously-skip-permissions']);
 });

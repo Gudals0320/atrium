@@ -19,6 +19,7 @@ import { Connections, checkOf, fetchConnectionModels } from './connections.mjs';
 import { CodexModels } from './codex-models.mjs'; // P72: Codex 모델 목록
 import { AgyModels, runAgyModels } from './agy-models.mjs'; // P192: AGY 모델 목록
 import { piModels } from './pi-models.mjs'; // P201: pi 모델 목록
+export const PI_PREFETCH_MS = 1500; // P205: 판이 켜진 뒤 pi 목록을 미리 받기까지
 import { placeItem } from './canvas-ops.mjs';
 
 const SHELL = 'shell';
@@ -51,6 +52,9 @@ export function attachFeatures(b, { timers = true } = {}) {
   f.agyModels = b.cfg.agyCommand ? new AgyModels({ fallback: HARNESSES.agy.models, run: () => runAgyModels({ command: b.cfg.agyCommand }) }) : null;
   // P201: pi 모델 목록(pi --list-models). 명령을 주지 않은 판(ATRIUM_PI=none)은 빈 목록
   f.piModels = b.cfg.piCommand ? piModels({ command: b.cfg.piCommand, fallback: HARNESSES.pi.models }) : null;
+  // P205: 판이 켜질 때 pi 목록을 한 번 미리 받는다(pi는 1초 안에 끝난다. 처음 연 호출자 틀이 빈 목록이 아니게). 켜기를 늦추지 않게 조금 뒤에
+  f.piPrefetch = f.piModels ? setTimeout(() => f.piModels.refresh().catch(() => {}), PI_PREFETCH_MS) : null;
+  if (f.piPrefetch && f.piPrefetch.unref) f.piPrefetch.unref();
   // P115: 연결 목록(런처가 ID로 참조). 쓰는 런처가 있으면 지우지 않는다
   f.connections = new Connections({ store, broadcast, inUse: (id) => (f.launchers ? f.launchers.usersOf(id) : []) });
   f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, agyModels: f.agyModels, piModels: f.piModels, connections: f.connections, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록(연결)을 옮긴다
@@ -177,6 +181,6 @@ export function attachFeatures(b, { timers = true } = {}) {
   };
   // 세션 요약에 덧붙이는 값: 긴 답인지(출력 보기), 켜진 루프 수(노드 배지)
   f.summaryExtra = (s) => ({ output: { long: isLongAnswer(s.rt.lastAnswer), chars: typeof s.rt.lastAnswer === 'string' ? s.rt.lastAnswer.length : 0 }, loops: f.loops.activeCount(s.sessionId) });
-  f.stop = () => f.loops.stop();
+  f.stop = () => { if (f.piPrefetch) clearTimeout(f.piPrefetch); f.loops.stop(); };
   return f;
 }

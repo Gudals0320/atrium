@@ -14,7 +14,7 @@
   },
   "scripts": {
     "backend": "node src/main.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node ../scripts/test-tmp.mjs test/*.test.mjs"
   },
   "dependencies": {
     "ws": "^8.22.0"

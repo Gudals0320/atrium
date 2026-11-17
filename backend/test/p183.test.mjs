@@ -228,7 +228,8 @@ test('P183 일 안의 실행: ATRIUM_UNIT_ID·TRY_ID가 그 일, tool_runs에 �
 
 // ---------- 100초(시험은 짧게), --wait, --runs, 종료 코드 ----------
 test('P183 오래 도는 실행: 기다리는 시간을 넘으면 종료 코드 3과 실행 ID, --wait로 이어 받고 --runs에 보인다. 도구의 종료 코드가 0이 아니면 1', async () => {
-  const { b, ws, add, enable, stop } = await board({ tools: { waitMs: 400 } });
+  // P205: 기다리는 시간 400ms는 전체 시험의 부하에서 짧은 실행(--fail)도 넘겨 3이 나왔다(흔들림). 넉넉히 두고 긴 실행을 그만큼 늘린다.
+  const { b, ws, add, enable, stop } = await board({ tools: { waitMs: 2500 } });
   const srv = await serve(b);
   try {
     copySample(ws.root); enable();
@@ -236,7 +237,7 @@ test('P183 오래 도는 실행: 기다리는 시간을 넘으면 종료 코드 
     const env = envOf(b, w);
     const list = await runCli(['tool'], env);
     assert.equal(list.code, 0, list.stderr); assert.match(list.stdout, /atrium tool count/);
-    const long = await runCli(['tool', 'count', '--to', '8', '--every', '150'], env);
+    const long = await runCli(['tool', 'count', '--to', '8', '--every', '700'], env);
     assert.equal(long.code, 3, long.stderr);
     const id = long.stdout.match(/실행 (tr[0-9a-f]+)이 아직 돈다/)[1];
     assert.match(long.stdout, new RegExp(`atrium tool --wait ${id}`));
@@ -244,7 +245,7 @@ test('P183 오래 도는 실행: 기다리는 시간을 넘으면 종료 코드 
     assert.equal(busy.code, 1); assert.match(busy.stderr, /tool_busy/); assert.match(busy.stderr, new RegExp(id));
     const w1 = await runCli(['tool', '--wait', id, '--timeout', '100'], env);
     assert.equal(w1.code, 3);
-    const w2 = await runCli(['tool', '--wait', id, '--timeout', '5000'], env);
+    const w2 = await runCli(['tool', '--wait', id, '--timeout', '20000'], env);
     assert.equal(w2.code, 0, w2.stderr);
     assert.match(w2.stdout, /끝났다\. 종료 코드 0/); assert.match(w2.stdout, /tick 8\/8/);
     assert.match(w2.stdout, /\[rig sample\] tool-after saw count exit 0/);
