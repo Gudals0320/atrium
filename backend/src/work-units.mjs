@@ -201,7 +201,7 @@ export class WorkUnits {
       if (ar && ar.reports && ar.reports.length) out.reports = ar.reports.map((x) => ({ seat: x.seat, to: x.to, escalated: x.escalated })); // P194: 건 주인에게 간 보고
       const c = this.store().getCase(unit.caseId);
       out.case = c ? { id: c.id, state: c.state, blockedReason: c.blockedReason } : null;
-    } else if (route) { flow.caseCheck(unit.caseId); flow.pumpSoon(); const c = this.store().getCase(unit.caseId); out.case = c ? { id: c.id, state: c.state } : null; }
+    } else if (route) { flow.caseCheck(unit.caseId); flow.pumpSoon(); if (flow.doneToOwner) flow.doneToOwner(caller, unit, result); const c = this.store().getCase(unit.caseId); out.case = c ? { id: c.id, state: c.state } : null; }
     return out;
   }
   // P185: opts.flowClaim — 흐름 줄이 값을 가져간다(상위에게 보내지 않는다, claimed_by flow)

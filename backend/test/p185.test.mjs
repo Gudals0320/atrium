@@ -512,7 +512,7 @@ test('P185 그래프와 계약: mission graph의 rig { seats, flow, cases }와 �
     assert.deepEqual(r.seats[1].sessions.map((x) => x.name), ['worker-1']);
     assert.equal(r.seats[1].sessions[0].busy, true);
     assert.deepEqual(r.flow.map((l) => `${l.from}-${l.on}-${l.to.join('+')}`), ['main-assign-worker', 'worker-ok-reviewer', 'reviewer-rejected-worker', 'reviewer-ok-main']);
-    assert.equal(r.flow[2].max, 2); assert.equal(r.flow[2].passed, 0);
+    assert.equal(r.flow[2].max, 2); assert.equal(r.flow[2].passed, undefined); assert.equal(r.cases[0].lines[0].passed, 0); // P197: 맵 전체 passed는 뺐다(건별 lines)
     assert.equal(r.cases.length, 1); assert.deepEqual(r.cases[0].activeSeats, ['worker']);
     assert.equal(g.nodes.find((n) => n.name === 'worker-1').rigSeat, 'worker');
     assert.deepEqual(missionGraph({ sessions: [] }).rig, {});
