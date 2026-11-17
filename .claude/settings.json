@@ -3,12 +3,12 @@
     "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
-        "hooks": [{ "type": "command", "command": "node scripts/docs-guard.mjs" }]
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/docs-guard.mjs\"" }]
       }
     ],
     "Stop": [
       {
-        "hooks": [{ "type": "command", "command": "node scripts/check-docs.mjs --stop" }]
+        "hooks": [{ "type": "command", "command": "cd \"$CLAUDE_PROJECT_DIR\" && node scripts/check-docs.mjs --stop" }]
       }
     ],
     "SessionStart": [
