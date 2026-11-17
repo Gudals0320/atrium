@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   menuEntry, launcherChoices, defaultLaunchers, wizardInit, wizardPickTemplate, wizardPickDescribe, wizardSetLauncher, wizardBack, wizardCanNext,
   wizardRequest, wizardAfterRequest, wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions,
-  previewModel, arrowLabel, seatList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit,
+  previewModel, arrowLabel, seatList, templateList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit,
 } from '../src/renderer/lib/rig-setup.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
@@ -35,7 +35,7 @@ function fakeApi() {
     calls, st,
     async call(m, p) {
       calls.push([m, p]);
-      if (m === 'rig.templates') return TEMPLATES;
+      if (m === 'rig.templates') return { templates: TEMPLATES };
       if (m === 'rig.get') return get();
       if (m === 'rig.create') {
         if (st.def) throw new Error('이미 정의가 있다');
@@ -173,6 +173,10 @@ test('P191: 미리보기 자료 — 자리 상자(차례, keep·fresh), 흐름 �
   // rig.status 모양(자리 배열, to 배열)도 받는다
   const m2 = previewModel({ seats: [{ name: 'a', session: 'keep' }, { name: 'b' }], flow: [{ from: 'a', on: 'assign', to: ['b'] }] });
   assert.equal(m2.arrows.length, 1);
+  // 같은 방향의 상한 없는 줄은 한 화살표(값 이름을 모은다)
+  const m3 = previewModel({ seats: { main: { session: 'keep' }, worker: {} }, flow: [{ from: 'main', on: 'assign', to: 'worker' }, { from: 'worker', on: 'ok', to: 'main' }, { from: 'worker', on: 'failed', to: 'main' }] });
+  assert.deepEqual(m3.arrows.map((a) => a.on), ['assign', 'ok · failed']);
+  assert.deepEqual(m3.arrows[1].ons, ['ok', 'failed']);
   assert.deepEqual(seatList({ seats: [{ name: 'a' }] }).map((s) => s.name), ['a']);
 });
 
@@ -190,7 +194,10 @@ test('P191: rig 판 표 — 정의 → 표 → 저장 자료가 세 칸 그대�
   assert.deepEqual(tb.flow.map((r) => [r.from, r.on, r.to, r.max, r.else]), [['main', 'assign', 'worker', '', ''], ['worker', 'ok', 'reviewer', '', ''], ['reviewer', 'rejected', 'worker', '2', 'main'], ['reviewer', 'ok', 'main', '', '']]);
   const d = tableToSave(tb);
   assert.deepEqual(Object.keys(d), ['seats', 'flow', 'results'], '저장은 세 칸만');
-  assert.deepEqual(d.seats, DEF.seats, '표에 없는 칸(tools, max_live)도 그대로');
+  const noNull = (o) => JSON.parse(JSON.stringify(o, (k, v) => (v === null ? undefined : v)));
+  assert.deepEqual(noNull(d.seats), DEF.seats, '표에 없는 칸(tools, max_live)도 그대로');
+  assert.deepEqual(Object.keys(d.seats), ['main', 'worker', 'reviewer'], '지키는 자리는 모두 보낸다(rig.save는 빠진 자리를 지운다)');
+  assert.equal(d.seats.main.worktree, null, 'worktree를 끈 자리는 null(rig.save가 그 칸을 뺀다)');
   assert.deepEqual(d.flow, DEF.flow);
   assert.deepEqual(d.results, DEF.results);
   assert.equal(tableDirty(tb, tb), false);
@@ -213,7 +220,10 @@ test('P191: rig 판 표 — 런처·max 바꾸기, 줄 더하기·지우기, 검
   assert.equal(tableToSave(tb).error.key, 'rigPanel.errSeatDup');
   tb = tableEdit(tb, 'seats', nk, 'name', 'tester');
   d = tableToSave(tb);
-  assert.deepEqual(d.seats.tester, { launcher: 'l-claude', session: 'fresh' });
+  assert.deepEqual(d.seats.tester, { launcher: 'l-claude', session: 'fresh', worktree: null });
+  tb = tableEdit(tb, 'seats', tb.seats[1].key, 'worktree', false);
+  assert.equal(tableToSave(tb).seats.worker.worktree, null, '워크트리를 끄면 null');
+  tb = tableEdit(tb, 'seats', tb.seats[1].key, 'worktree', true);
   tb = tableAdd(tb, 'flow');
   assert.equal(tableToSave(tb).error.key, 'rigPanel.errFlow');
   const fk = tb.flow[4].key;
@@ -280,4 +290,23 @@ test('P191: 창 코드 — 원격은 보기만, 이름표 메뉴, 판 이벤트 
     for (const k of ['none', 'off', 'on', 'invalid', 'loading']) assert.ok(d.rigPanel.st[k], k);
     for (const k of ['errSeatName', 'errSeatDup', 'errLauncher', 'errFlow', 'errMax']) assert.ok(d.rigPanel[k], k);
   }
+});
+
+test('P191(P190 모양): 틀 목록 {templates}와 영어 글, 워크트리 자리 기본 런처는 Claude, 멈춤 까닭은 stopWhy', () => {
+  const res = { templates: [{ id: 'a', title: '메인', desc: '설명', en: { title: 'Main', desc: 'Desc' }, seats: {} }] };
+  assert.equal(templateList(res, 'ko')[0].title, '메인');
+  assert.deepEqual([templateList(res, 'en')[0].title, templateList(res, 'en')[0].desc], ['Main', 'Desc']);
+  assert.deepEqual(templateList([{ id: 'b', title: 'x' }]).map((x) => x.id), ['b']);
+  assert.deepEqual(templateList({ error: 'e' }), []);
+  const ch = launcherChoices(LAUNCHERS);
+  assert.deepEqual(defaultLaunchers(TEMPLATES[2], 'l-codex', ch), { main: 'l-codex', worker: 'l-claude', reviewer: 'l-codex' });
+  assert.deepEqual(builderView({ state: 'stopped', stopReason: 'idle_no_done', stopWhy: '보고 없이 쉰다', text: null, name: 'rig-builder' }).text, '보고 없이 쉰다');
+  assert.equal(builderView({ state: 'done', result: 'failed', text: 'x' }).state, 'failed');
+  assert.equal(builderView({ state: 'done', result: 'ok', text: 'y' }).state, 'ok');
+  // rig.builder 이벤트 모양(working → done)으로 building이 넘어간다
+  let w = { step: 'building', builder: { session: 'b1', name: 'rig-builder', state: 'working' } };
+  w = wizardOnBuilder(w, { workspace: WS, session: 'b1', state: 'working' }, { state: 'none' });
+  assert.equal(w.step, 'building');
+  w = wizardOnBuilder(w, { workspace: WS, session: 'b1', state: 'done', result: 'ok', definitionStatus: 'off' }, { state: 'off' });
+  assert.equal(w.step, 'preview');
 });

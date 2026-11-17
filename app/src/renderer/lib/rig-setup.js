@@ -31,12 +31,20 @@ export function launcherChoices(data) {
   return ls.filter((l) => l && l.id && l.harness !== 'shell' && l.harness !== 'command').map((l) => ({ id: l.id, name: l.name || l.id, harness: l.harness }));
 }
 // 자리마다 런처 기본값: 틀이 정한 런처가 목록에 있으면 그것, 아니면 defaultLauncher(그 워크스페이스에서 마지막으로 쓴 것), 그것도 없으면 목록의 첫째
+//   워크트리 자리는 Claude Code 런처만 되므로(P190 rig.create 검사) 기본값이 Claude가 아니면 목록의 첫 Claude 런처
 export function defaultLaunchers(template, defaultLauncher, choices = []) {
   const ids = new Set(choices.map((c) => c.id));
   const fallback = defaultLauncher && (!choices.length || ids.has(defaultLauncher)) ? defaultLauncher : (choices[0] ? choices[0].id : defaultLauncher || '');
+  const isClaude = (id) => { const c = choices.find((x) => x.id === id); return c ? c.harness === 'claude' : id === 'claude'; };
+  const claude = isClaude(fallback) ? fallback : (choices.find((c) => c.harness === 'claude') || {}).id || fallback;
   const out = {};
-  for (const s of seatList(template)) out[s.name] = fallback;
+  for (const s of seatList(template)) out[s.name] = s.worktree ? claude : fallback;
   return out;
+}
+// 틀 목록(rig.templates 답: { templates } 또는 배열) → 화면 언어의 제목·설명
+export function templateList(res, lang = 'ko') {
+  const list = res && !res.error ? (Array.isArray(res) ? res : res.templates || []) : [];
+  return list.map((x) => (lang === 'en' && x.en ? { ...x, title: x.en.title || x.title, desc: x.en.desc || x.desc } : x));
 }
 
 // ---------- 만들기 대화상자 ----------
@@ -95,7 +103,7 @@ export function wizardSetSeat(w, seat, pick) { return { ...w, seatPick: { ...w.s
 export function builderView(b) {
   if (!b) return null;
   const state = b.state === 'done' ? (b.result === 'failed' ? 'failed' : 'ok') : b.state === 'stopped' ? 'stopped' : 'working';
-  return { state, name: b.name || '', session: b.session || null, text: b.text || b.why || '' };
+  return { state, name: b.name || '', session: b.session || null, text: (state === 'stopped' ? b.stopWhy || b.why || b.text : b.text || b.why) || '' };
 }
 
 // ---------- 앉히기 ----------
@@ -166,8 +174,15 @@ export function previewModel(def, { box = { w: 132, h: 54 }, gap = 72, pad = 16 
       }
     }
   }
+  // 같은 자리 사이 같은 방향의 상한 없는 줄은 한 화살표로 모은다(값 이름은 "ok · failed"). 겹쳐 그려지지 않게
+  const merged = [];
+  for (const a of arrows) {
+    const same = a.max == null && merged.find((x) => x.max == null && x.from === a.from && x.to === a.to);
+    if (same) { same.ons.push(a.on); same.on = same.ons.join(' · '); continue; }
+    merged.push({ ...a, ons: [a.on] });
+  }
   const results = Array.isArray(def && def.results) ? def.results : [];
-  return { seats: boxes, arrows, results, width: pad * 2 + order.length * box.w + (order.length - 1) * gap, height: top + box.h + pad + 18 };
+  return { seats: boxes, arrows: merged, results, width: pad * 2 + order.length * box.w + (order.length - 1) * gap, height: top + box.h + pad + 18 };
 }
 // 화살표 이름표 글: "값" 또는 "값 ≤max → else"
 export const arrowLabel = (a) => (a.max != null ? `${a.on} ≤${a.max}${a.else ? ` → ${a.else}` : ''}` : a.on);
@@ -240,9 +255,9 @@ export function tableToSave(tb) {
     if (!name) return { error: { key: 'rigPanel.errSeatName' } };
     if (seats[name]) return { error: { key: 'rigPanel.errSeatDup', vars: { name } } };
     if (!String(r.launcher || '').trim()) return { error: { key: 'rigPanel.errLauncher', vars: { name } } };
-    const s = { launcher: String(r.launcher).trim(), session: r.session === 'keep' ? 'keep' : 'fresh' };
-    if (r.worktree) s.worktree = true;
-    seats[name] = { ...s, ...(r.extra || {}) };
+    // rig.save는 자리마다 지금 칸 위에 준 칸을 얹는다(null은 그 칸을 뺀다). 그래서 worktree를 끈 자리는 null을 보낸다
+    const s = { launcher: String(r.launcher).trim(), session: r.session === 'keep' ? 'keep' : 'fresh', worktree: r.worktree && r.session !== 'keep' ? true : null };
+    seats[name] = { ...(r.extra || {}), ...s };
   }
   const flow = [];
   for (const r of tb.flow) {

@@ -4,13 +4,13 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from './api.js';
 import { useStore, toast, getState, openDialog } from './store.js';
-import { useT, errText } from './lib/i18n.js';
+import { useT, errText, getLanguage } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
 import {
   launcherChoices, wizardInit, wizardPickTemplate, wizardPickDescribe, wizardSetLauncher, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
   wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions, previewModel, arrowLabel, seatList,
-  tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit,
+  templateList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit,
 } from './lib/rig-setup.js';
 
 const argv = (run) => (Array.isArray(run) ? run.join(' ') : String(run || ''));
@@ -141,7 +141,7 @@ export function RigCreateDialog({ ws, onClose }) {
   useEffect(() => { api.call('rig.templates', {}).then(setTpls, (e) => setTpls({ error: errText(e) })); }, []);
   useEffect(() => { if (st && !w && st.status !== 'error') setW(wizardInit({ defaultLauncher: st.defaultLauncher, status: { state: st.status } })); }, [st, w]);
   // 제작 세션 소식: 이벤트의 builder와 새로 읽은 정의로 building을 넘긴다
-  const onBuilder = useCallback((ev) => { load().then((r) => setW((x) => (x ? wizardOnBuilder(x, { session: ev.session, state: 'done', result: ev.result, text: ev.text }, { state: r && r.status }) : x))); }, [load]);
+  const onBuilder = useCallback((ev) => { load().then((r) => setW((x) => (x ? wizardOnBuilder(x, ev, { state: (r && r.status) || ev.definitionStatus }) : x))); }, [load]); // P190: working·stopped·done(result가 가른다)
   useBuilderEvent(ws.key, onBuilder);
   useEffect(() => { if (w && w.step === 'building' && st && st.builder) setW((x) => wizardOnBuilder(x, st.builder, { state: st.status })); }, [st]); // eslint-disable-line react-hooks/exhaustive-deps
   if (remote) return null; // 원격 기기에는 만들기가 없다
@@ -154,7 +154,7 @@ export function RigCreateDialog({ ws, onClose }) {
     if (w.step === 'seat') { await runSeats(ws, st, w.seatPick); toast(t('rigSetup.seated')); onClose(); }
   });
   const step = w ? w.step : 'loading';
-  const tplList = tpls && !tpls.error ? (Array.isArray(tpls) ? tpls : tpls.templates || []) : [];
+  const tplList = templateList(tpls, getLanguage());
   const nextLabel = { launchers: t('rigSetup.create'), describe: t('rigSetup.startBuilder'), preview: t('rigSetup.toEnable'), enable: t('rig.confirmOn'), seat: t('rigSetup.seatGo') }[step];
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
@@ -303,7 +303,7 @@ export function RigPanel({ ws, onClose }) {
               <>
                 <div className="mt-rigon-h">{t('rigPanel.seats')}</div>
                 <table className="mt-rigpanel-table" data-role="rig-seats">
-                  <thead><tr><th>{t('rigPanel.colName')}</th><th>{t('rigPanel.colMode')}</th><th>{t('rigPanel.colLauncher')}</th><th>⎇</th><th>{t('rigPanel.colSeated')}</th><th /></tr></thead>
+                  <thead><tr><th>{t('rigPanel.colName')}</th><th>{t('rigPanel.colMode')}</th><th>{t('rigPanel.colLauncher')}</th><th>{t('rigPanel.colWorktree')}</th><th>{t('rigPanel.colSeated')}</th><th /></tr></thead>
                   <tbody>
                     {tb.seats.map((r) => {
                       const L = (f) => !edit || rowLocked(locked, 'seats', r, f);

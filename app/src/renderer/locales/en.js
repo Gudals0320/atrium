@@ -2794,7 +2794,7 @@ export default {
     seats: 'Seats',
     flow: 'Flow',
     results: 'Result values',
-    colName: 'Name', colMode: 'Session', colLauncher: 'Launcher', colSeated: 'Seated',
+    colName: 'Name', colMode: 'Session', colLauncher: 'Launcher', colWorktree: 'Worktree', colSeated: 'Seated',
     colFrom: 'From', colOn: 'Value', colTo: 'To', colMax: 'Max', colElse: 'Over max',
     unseat: 'Clear',
     seatPick: 'Seat…',

@@ -2794,7 +2794,7 @@ export default {
     seats: '자리',
     flow: '흐름',
     results: '결과 값',
-    colName: '이름', colMode: '세션', colLauncher: '런처', colSeated: '앉은 세션',
+    colName: '이름', colMode: '세션', colLauncher: '런처', colWorktree: '워크트리', colSeated: '앉은 세션',
     colFrom: '어디서', colOn: '값', colTo: '어디로', colMax: '최대', colElse: '넘으면',
     unseat: '비우기',
     seatPick: '앉히기…',

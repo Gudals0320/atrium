@@ -2569,3 +2569,4 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigpanel-save { justify-content: flex-start; align-items: center; }
 .mt-rigpanel-say { display: grid; gap: 6px; }
 .mt-rigpanel-table { display: block; overflow-x: auto; max-width: 100%; }
+.mt-rigpanel > .mt-btn.small { justify-self: start; }
