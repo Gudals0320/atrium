@@ -1,0 +1,139 @@
+// P190: rig 7단계 — 판에 내장한 rig 틀 셋과 판 내장 안내 `atrium guide rig`(docs research harness-arch.md 16절 "만들기").
+// - 틀: (1) 메인 keep + 워커 fresh, (2) + 검토자 fresh(반려 되돌아감 최대 2, 넘으면 메인), (3) (2)에서 워커가 일마다 워크트리.
+//   자리마다 런처는 사람이 고른다(rig.create의 launchers). 판이 .atrium/rig.json과 자리 안내 .atrium/seats/<자리>.txt를 쓴다.
+// - 자리 안내 글은 일반 말이다(분야 낱말 없음). 그 자리의 할 일과 done 값을 짧게 말한다.
+// - 안내(RIG_GUIDE)는 제작 세션(rig-builder)이 읽는다: 정의 형식, 틀 셋의 예, atrium rig check로 검사하는 법, 끝나면 atrium done.
+
+// 제작 세션(rig.describe)의 일: 상위 세션이 없고 사람이 주인이다(work_units.from_session = HUMAN_FROM, origin = BUILDER_ORIGIN).
+//   done 값은 판 이벤트 rig.builder로 창에 가고, 멈춤은 응답 필요 목록(판 이벤트 rig_builder_stop)으로 간다(rig-setup.mjs)
+export const HUMAN_FROM = 'human';
+export const BUILDER_ORIGIN = 'rig_builder';
+export const BUILDER_NAME = 'rig-builder';
+// 제작 세션의 일 머리(판 줄 세 줄, 관계 줄 꼴이라 카드에는 할 일만 보인다)
+export function builderHeader({ unitId }) {
+  return [
+    `[Atrium 보드] 관계: 사람이 보드에서 맡긴 rig 만들기 일 ${unitId}이다(상위 세션 없음. 보고는 보드가 사람에게 보인다).`,
+    '[Atrium 보드] 먼저 `atrium guide rig`를 읽는다. 정의를 쓰고 `atrium rig check`로 검사한 뒤 `atrium done ok "<요약>"`(못 했으면 `atrium done failed "<까닭>"`)로 닫고 쉰다. atrium 명령은 cd·&&·echo를 붙이지 않고 그대로 친다. rig는 켜지 않는다(사람이 켠다).',
+    '[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.',
+  ].join('\n');
+}
+
+export const TEMPLATE_IDS =['main-worker', 'main-worker-reviewer', 'main-worker-reviewer-worktree'];
+export const SEAT_GUIDE_DIR = '.atrium/seats';
+export const seatGuidePath = (seat) => `${SEAT_GUIDE_DIR}/${seat}.txt`;
+
+// 자리 안내(일반 말). results: 그 틀의 done 값
+const GUIDES = {
+  main: (t) => [
+    'main 자리: 사람의 요청을 받아 일을 나누고, 결과를 모아 사람에게 답한다.',
+    '- 일을 맡길 때: atrium prompt worker "<할 일>". 할 일에는 무엇을, 어디까지, 끝났음을 어떻게 확인하는지를 적는다.',
+    '- 맡긴 일의 결과는 보드가 가져다준다. 기다리며 폴링하지 않는다.',
+    t.reviewer ? '- 워커의 결과는 reviewer 자리가 먼저 본다. reviewer가 두 번 넘게 반려하면 그 건이 이 자리로 올라온다. 그때는 할 일을 다시 나누거나 사람에게 묻는다.' : '- 워커가 failed로 닫으면 까닭을 읽고 다시 맡기거나 사람에게 묻는다.',
+    '- 사람이 맡긴 일이면 끝나면 사람에게 결과를 답한다. 보드가 맡긴 일이면 atrium done ok "<요약>"(못 했으면 failed)로 닫는다.',
+  ],
+  worker: (t) => [
+    'worker 자리: 맡은 일 하나를 끝까지 한다.',
+    t.worktree ? '- 이 자리는 일마다 새 워크트리에서 돈다. 자기 브랜치에만 커밋하고, 합치는 것은 main 자리의 일이다.' : '- 맡은 일에 필요한 것만 고친다.',
+    '- 끝나면 확인한 방법과 결과를 적어 닫는다: atrium done ok "<한 것, 확인한 것>".',
+    '- 하지 못했으면 까닭과 막힌 곳을 적어 닫는다: atrium done failed "<까닭>".',
+    t.reviewer ? '- ok로 닫으면 reviewer 자리가 그 결과를 본다. 반려되어 다시 받으면 반려 글의 지적을 먼저 고친다.' : '',
+  ],
+  reviewer: () => [
+    'reviewer 자리: worker 자리가 끝낸 일을 확인한다. 직접 고치지 않는다.',
+    '- 넘겨받은 글의 할 일과 보고를 읽고, 결과가 할 일을 채우는지 실제로 확인한다.',
+    '- 채우면: atrium done ok "<확인한 것>". main 자리로 간다.',
+    '- 고칠 것이 있으면: atrium done rejected "<고칠 것을 하나씩>". 새 worker가 그 글을 받는다(같은 건에서 두 번까지, 그 뒤는 main으로).',
+    '- 확인할 수 없으면(필요한 것이 없음 등): atrium done failed "<까닭>". main 자리로 간다.',
+  ],
+};
+
+// 틀 하나의 모양(런처 빼고)
+function shape(id) {
+  const reviewer = id !== 'main-worker';
+  const worktree = id === 'main-worker-reviewer-worktree';
+  const seats = { main: { session: 'keep' }, worker: { session: 'fresh', ...(worktree ? { worktree: true } : {}) }, ...(reviewer ? { reviewer: { session: 'fresh' } } : {}) };
+  const results = reviewer ? ['ok', 'failed', 'rejected'] : ['ok', 'failed'];
+  const flow = reviewer
+    ? [
+      { from: 'main', on: 'assign', to: 'worker' },
+      { from: 'worker', on: 'ok', to: 'reviewer' },
+      { from: 'worker', on: 'failed', to: 'main' },
+      { from: 'reviewer', on: 'rejected', to: 'worker', max: 2, else: 'main' },
+      { from: 'reviewer', on: 'ok', to: 'main' },
+      { from: 'reviewer', on: 'failed', to: 'main' },
+    ]
+    : [
+      { from: 'main', on: 'assign', to: 'worker' },
+      { from: 'worker', on: 'ok', to: 'main' },
+      { from: 'worker', on: 'failed', to: 'main' },
+    ];
+  return { reviewer, worktree, seats, results, flow };
+}
+const TITLES = {
+  'main-worker': { title: '메인 + 워커', desc: '메인 자리(계속 쓰는 세션)가 일을 나눠 워커 자리(일마다 새 세션)에 맡기고 결과를 받는다.', en: { title: 'Main + worker', desc: 'The main seat (one kept session) splits work and hands it to the worker seat (a new session per task), then gets the results.' } },
+  'main-worker-reviewer': { title: '메인 + 워커 + 검토자', desc: '워커가 끝낸 일을 검토자가 확인한다. 반려되면 새 워커가 다시 하고, 두 번 넘게 반려되면 메인으로 올라간다.', en: { title: 'Main + worker + reviewer', desc: 'A reviewer checks what the worker finished. A rejection goes back to a new worker; after two rejections it goes up to main.' } },
+  'main-worker-reviewer-worktree': { title: '메인 + 워커(워크트리) + 검토자', desc: '두 번째 틀과 같고, 워커가 일마다 새 워크트리에서 일한다(Claude Code 런처만).', en: { title: 'Main + worker (worktree) + reviewer', desc: 'Like the second template, but each worker task runs in its own new worktree (Claude Code launchers only).' } },
+};
+
+// rig.templates → [{ id, title, desc, en, seats: { 이름: { session, worktree? } }, flow, results }]
+export function rigTemplates() {
+  return TEMPLATE_IDS.map((id) => { const s = shape(id); return { id, ...TITLES[id], seats: s.seats, flow: s.flow, results: s.results, manager: 'main' }; });
+}
+export const isTemplate = (id) => TEMPLATE_IDS.includes(id);
+
+// 틀 + 자리마다 런처 → { def(rig.json 내용), guides: { <경로>: 글 } }
+export function templateFiles(id, launchers = {}) {
+  if (!isTemplate(id)) throw Object.assign(new Error(`모르는 틀: ${id}. 틀: ${TEMPLATE_IDS.join(', ')}`), { code: 'bad_request' });
+  const s = shape(id);
+  const seats = {}; const guides = {};
+  for (const [name, x] of Object.entries(s.seats)) {
+    const launcher = launchers[name];
+    if (typeof launcher !== 'string' || !launcher.trim()) throw Object.assign(new Error(`${name} 자리의 런처를 준다(launchers.${name})`), { code: 'bad_request' });
+    seats[name] = { launcher: launcher.trim(), session: x.session, ...(x.worktree ? { worktree: true } : {}), guide: seatGuidePath(name) };
+    guides[seatGuidePath(name)] = GUIDES[name](s).filter(Boolean).join('\n') + '\n';
+  }
+  const def = { name: TITLES[id].en.title, results: s.results, seats, flow: s.flow.map((l) => ({ ...l })), manager: 'main' };
+  return { def, guides };
+}
+
+// ---------- atrium guide rig(판 내장 안내) ----------
+const example = (id) => JSON.stringify(templateFiles(id, { main: 'claude', worker: 'claude', reviewer: 'codex' }).def, null, 2);
+export function rigGuideText() {
+  return [
+    'rig 만들기 안내(보드 내장). rig는 이 워크스페이스의 작업 규칙이다: 자리(seats), 흐름(flow), done 값(results), 훅(hooks), 도구(tools), 느린 고리(cycles).',
+    '정의는 워크스페이스 뿌리의 .atrium/rig.json 한 파일(JSON 객체, 들여쓰기 2칸)이다. 자리 안내 글은 .atrium/seats/<자리>.txt에 둔다.',
+    '사람이 보드에서 켜야 돈다. 너는 켜지 않는다. 다 쓰면 사람이 보드에서 미리보기를 보고 켠다.',
+    '',
+    '## 칸',
+    '- results: 자리 세션이 atrium done에 쓰는 값. 영문 소문자 낱말 배열(assign은 못 씀). 없으면 ["ok", "failed"].',
+    '- seats: { "<자리>": { ... } }. 자리 이름은 영문 소문자로 시작하고 소문자·숫자·_로 24자까지(-는 못 씀).',
+    '  - launcher: 보드의 런처 id나 이름, 또는 종류(claude, codex, opencode, pi). 사람이 고른 런처를 쓴다. 모르면 사람의 설명에 적힌 것, 없으면 claude.',
+    '  - session: "keep"(세션 하나를 계속 쓴다, 사람이 앉히거나 보드가 띄운다) 또는 "fresh"(일마다 새 세션 <자리>-<n>).',
+    '  - worktree: true면 fresh 자리가 일마다 새 워크트리에서 돈다(Claude Code 런처만).',
+    '  - guide: 그 자리의 안내 파일 경로(워크스페이스 안). 자리 세션은 일을 시작하기 전에 이것을 읽는다. 할 일과 쓸 done 값을 짧게 적는다.',
+    '  - may: 일 없이 글만 보낼 수 있는 자리 목록. max_live: fresh 자리에서 함께 도는 세션 수(기본 3). tools: 그 자리가 부를 수 있는 도구 이름.',
+    '- flow: 줄 배열 [{ "from": 자리, "on": "assign" | <results 값>, "to": 자리 | [자리…], "max"?: n, "else"?: 자리 }].',
+    '  - on "assign": from 자리가 atrium prompt <to 자리>로 일을 맡길 수 있다(to는 자리 하나).',
+    '  - on <값>: from 자리가 atrium done <값>으로 닫으면 보드가 to 자리에 같은 건의 새 일을 만든다. 맞는 줄이 없으면 건의 주인에게 간다.',
+    '  - max: 같은 건에서 그 줄을 지날 수 있는 횟수. 넘으면 else 자리로(없으면 manager, 그것도 없으면 건이 막힌다). 되돌아가는 줄에는 max를 둔다.',
+    '- manager: 넘김이 풀지 못한 것을 받는 자리이자 관리자 자리(atrium rig check·log·rollback을 쓴다). 보통 메인 자리.',
+    '- hooks, tools, cycles: 프로그램을 사용자 계정으로 돌리는 칸이다. 사람의 설명이 분명히 원할 때만 넣고, 스크립트도 .atrium/ 아래에 함께 쓴다.',
+    '  - hooks: [{ "at": "deliver"|"done"|"tool-before"|"tool-after", "run": ["node", ".atrium/hooks/x.mjs"], "from"?, "tool"?, "onFail"?: "pass"|"block" }]. 입력은 stdin JSON, 출력은 stdout JSON { action: pass|rewrite|reject, text?, append?, reason? }.',
+    '  - tools: { "<이름>": { "run": ["node", ".atrium/tools/x.mjs"], "desc": "…" } }. run에는 node, python, .exe를 바로 쓴다.',
+    '  - cycles: [{ "every": "7d", "to": "manager" }]. 1시간 이상.',
+    '',
+    '## 틀 셋(보드가 만드는 것과 같은 모양, 런처는 예)',
+    '### 1. 메인 + 워커', example('main-worker'),
+    '### 2. 메인 + 워커 + 검토자(반려 되돌아감 최대 2, 넘으면 메인)', example('main-worker-reviewer'),
+    '### 3. 2에서 워커가 워크트리', example('main-worker-reviewer-worktree'),
+    '',
+    '## 차례',
+    '1. 사람의 설명을 읽고 자리, done 값, 흐름을 정한다. 설명이 틀 하나와 같으면 그 틀에서 시작한다. 정말 모르는 것이 있을 때만 사람에게 묻는다.',
+    '2. .atrium/rig.json과 자리마다 .atrium/seats/<자리>.txt(일반 말로 그 자리의 할 일과 done 값)를 쓴다. 이미 정의가 있으면 고칠 내용만 고치고 다른 칸은 그대로 둔다.',
+    '3. 검사한다: atrium rig check(지금 .atrium/rig.json) 또는 atrium rig check <파일>. "맞지 않다"면 까닭을 고치고 다시 검사한다. 경고(상한 없는 되돌아감 등)도 고친다.',
+    '4. 맞으면 atrium done ok "<만든 자리와 흐름 요약, 고친 것>"으로 닫고 쉰다. 못 했으면 atrium done failed "<까닭>". 보드가 그 보고를 사람에게 보이고 사람이 켠다.',
+    '',
+    'atrium 명령은 그대로 한 줄로 친다(cd, &&, ;, echo $? 같은 것을 붙이지 않는다. 붙이면 사람의 승인을 기다리게 된다). 작업 폴더가 이미 워크스페이스 뿌리다.',
+    'PowerShell 셸은 종료 코드를 1로 바꿀 수 있으니 atrium 명령의 첫 줄 글을 본다.',
+  ].join('\n');
+}

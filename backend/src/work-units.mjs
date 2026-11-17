@@ -14,6 +14,7 @@ import { clip, startsAsBoardNotice } from './text.mjs';
 import { UnitStops } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
 import { RIG_HEADER_TAIL } from './rig.mjs'; // P182. P188: 세 줄 머리의 셋째 줄 끝
 import { seatHeader } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리
+import { HUMAN_FROM, BUILDER_ORIGIN, builderHeader } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일(상위 세션 없음)
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -49,7 +50,7 @@ export class WorkUnits {
     this.stops = new UnitStops(b, this, noticeBatchMs != null ? { batchMs: noticeBatchMs } : {}); // P181
   }
   store() { return this.b.store; }
-  nameOf(id) { const s = this.b.sessions.get(id); if (s) return shownName(s) || s.name; const r = this.branch && this.branch.rowOf ? this.branch.rowOf(id) : null; return r ? r.name : '?'; }
+  nameOf(id) { if (id === HUMAN_FROM) return 'human'; const s = this.b.sessions.get(id); if (s) return shownName(s) || s.name; const r = this.branch && this.branch.rowOf ? this.branch.rowOf(id) : null; return r ? r.name : '?'; }
   // 그 세션이 caller의 일 하위인가(일 관계 P156 workParentOf)
   isWorkSub(callerId, targetId) { return !!this.branch && this.branch.relIndex().workParentOf(targetId) === callerId; }
 
@@ -78,7 +79,7 @@ export class WorkUnits {
   dispatch(unit, { later = false } = {}) {
     const b = this.b; const st = this.store();
     const header = this.headerOf(unit);
-    const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}`, { origin: { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션)
+    const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}`, { origin: unit.from === HUMAN_FROM ? { kind: 'human' } : { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션). P190: 사람이 맡긴 제작 일
     const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: d.deliveryId, startedAt: Date.now() };
     st.insertTry(tr);
     st.addEvent(unit.to, 'unit_try', { unitId: unit.id, tryId: tr.id, deliveryId: d.deliveryId, later });
@@ -89,6 +90,7 @@ export class WorkUnits {
   // 일 머리. P185: 건의 일을 자리 세션이 받으면 자리 머리(자리, 건, done 값, 보낼 수 있는 자리)
   headerOf(unit) {
     const b = this.b;
+    if (unit.origin === BUILDER_ORIGIN) return builderHeader({ unitId: unit.id }); // P190: rig 제작 세션의 일 머리
     const flow = this.branch && this.branch.flow;
     const t = b.sessions.get(unit.to);
     const ctx = flow && unit.caseId && t ? flow.seatCtx(t, { caseId: unit.caseId }) : null; // P188: 건의 버전
@@ -213,7 +215,9 @@ export class WorkUnits {
     const val = { result, text };
     let claimedBy, noticeDeliveryId = null;
     const ws = this.waiters.get(`${unit.from}>${unit.to}`);
+    const human = unit.from === HUMAN_FROM; // P190: 사람이 맡긴 rig 제작 일. 값은 판 이벤트(rig.builder)로 창에 간다
     if (flowClaim) claimedBy = 'flow';
+    else if (human) claimedBy = 'human';
     else if (!parent || unit.from === unit.to) claimedBy = 'record'; // P185: 건 주인이 자기 일을 닫음(주인에게 다시 보내지 않는다)
     else if (ws && ws.size) { claimedBy = 'wait'; for (const w of ws) w.got = { ...val, tryId: tr.id }; }
     else {
@@ -226,6 +230,7 @@ export class WorkUnits {
     if (l && !l.removedAt) b.linkEvent(l, 'reply', text, { via: 'atrium', verb: 'done', result, unitId: unit.id, claimedBy, ...(noticeDeliveryId ? { deliveryId: noticeDeliveryId } : {}) });
     st.addEvent(caller.sessionId, 'unit_done', { unitId: unit.id, tryId: tr.id, result, chars: text.length, claimedBy, noticeDeliveryId });
     b.log(`unit ${unit.id} done ${result} by ${caller.name} → ${parent ? parent.name : '(closed)'} via ${claimedBy}`);
+    if (human && b.rigSetup) try { b.rigSetup.onDone(unit, st.getTry(tr.id)); } catch (e) { b.log('rig builder done error', e.stack); }
     const next = this.pump(caller.sessionId);
     return { unit: unit.id, result, parent: this.nameOf(unit.from), parentOpen: !!parent, claimedBy, next: next ? { unit: next.tryRow.unitId } : null, queued: st.queuedUnitsOf(caller.sessionId).length, ...(unit.caseId ? { caseId: unit.caseId, seat: caller.rigSeat || null } : {}) };
   }

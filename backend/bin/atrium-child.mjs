@@ -14,9 +14,9 @@
 //       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째, P111: 혼자 잠든 세션은 그 세션만)
 //       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다. P185: rig 자리 세션은 정의의 results 낱말)
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
-//       atrium guide [주제] [--json]   (P182: 자세한 사용법 + 켜진 rig의 안내)
+//       atrium guide [주제] [--json]   (P182: 자세한 사용법 + 켜진 rig의 안내. P190: guide rig는 보드 내장 rig 만들기 안내)
 //       atrium tool [--json] · atrium tool <이름> [인자…] · atrium tool --wait <실행 ID> · atrium tool --runs   (P183: rig 도구)
-//       atrium rig check [파일] | log | rollback <n> | cleanup <건> [--json]   (P188: rig 정의 관리, 관리자 자리만)
+//       atrium rig check [파일] | log | rollback <n> | cleanup <건> [--json]   (P188: rig 정의 관리, 관리자 자리만. P190: check는 rig가 꺼진 워크스페이스면 누구나)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,6 +65,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium item                   너의 지금 일(맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수)
   atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
   atrium guide [주제]           이 사용법에, 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json, 작업 규칙)가 있으면 그 안내를 붙인다. rig의 훅이 글이나 done을 거절하면 종료 코드 1과 까닭이 온다
+  atrium guide rig              rig 만들기 안내(보드 내장): 정의 형식, 틀 셋의 예, atrium rig check로 검사하는 법
   atrium tool [<이름> [인자…]]   rig의 도구. 이름 없이는 목록과 설명, 이름이면 실행한다(인자는 정의의 run 뒤에 붙는다. 작업 폴더는 너의 폴더). 보드가 띄워 쥐고 출력을 기록한다.
       100초까지 기다려 도구의 종료 코드와 출력 꼬리를 돌려준다(도구가 0으로 끝나면 0, 아니면 1). 아직 돌면 종료 코드 3과 실행 ID: atrium tool --wait <ID>로 이어 기다린다.
       atrium tool --runs는 너의 최근 실행. 세션마다 한 번에 하나(정의가 parallel이면 여럿). rig의 훅이 거절하면 종료 코드 1과 까닭.
@@ -72,7 +73,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   rig 자리(seat): 사람이 정하거나 보드가 rig의 자리를 위해 띄운 세션은 정의(seats·flow)를 따른다(atrium me에 자리가 보인다).
       atrium prompt <자리 이름> "<할 일>"은 그 자리로 보낸다: flow의 assign 줄이면 일(keep 자리는 앉은 세션, fresh 자리는 새 세션), may면 글만, 그 밖은 보드가 거절한다(종료 코드 1, 쓸 수 있는 자리를 알린다).
       atrium done <값> "<보고>"의 값은 정의의 results 낱말이고, 보드가 값에 따라 다음 자리로 넘긴다(넘길 곳이 없으면 건의 주인에게). 자리 안내: atrium guide
-  atrium rig check [파일] | log | rollback <n> | cleanup <건>   rig의 관리자 자리(manager)만 쓴다. 관리자 자리는 .atrium/rig.json을 직접 고치고(보드가 새 해시를 버전으로 남긴다), check로 후보를 검사하고,
+  atrium rig check [파일] | log | rollback <n> | cleanup <건>   rig의 관리자 자리(manager)만 쓴다(check는 읽기만이라 rig가 꺼진 워크스페이스면 어느 세션이든 쓴다). 관리자 자리는 .atrium/rig.json을 직접 고치고(보드가 새 해시를 버전으로 남긴다), check로 후보를 검사하고,
       log로 버전과 버전마다 건·반려·훅 거절·상한 초과 수를 보고, rollback <n>으로 되돌리고(새 버전), cleanup <건>으로 끝난 건의 fresh 세션을 닫는다(워크트리는 목록만).
       열린 건은 만들 때의 버전을 따르고 새 버전은 새 건부터 쓴다. 사람만 고치는 자리·파일(사람이 보드의 rig 메뉴에서 정함)을 바꾸면 보드가 그 정의를 쓰지 않거나 도구를 멈춘다
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
@@ -283,6 +284,7 @@ async function guideVerb() {
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
   if (r.error) fail(`읽지 않았다(${r.error.code}): ${r.error.message}`);
+  if (r.result && r.result.builtin) return say(String(r.result.builtin.text).replace(/\s+$/, '')); // P190: atrium guide rig
   const g = (r.result && r.result.rig) || { state: 'none' };
   say(HELP);
   say('');
