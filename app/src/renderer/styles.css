@@ -2644,10 +2644,20 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-sm .mt-ta-world.lv-far .mt-ta-slot.band .mt-ta-tile .mt-sm-seat.tile { display: none; }
 
 /* P199: 붙는 머리. 띠의 자리 머리가 고정 머리 막대 위로 지나가면 막대가 그 띠의 자리 이름을 띠 열 x에 보인다(MissionLineage.jsx paint, lib/rig-band.js stickyHead). 나무 칸 이름은 그동안 숨긴다(솔로·워크스페이스 칸은 그대로) */
-.mt-sm-cols[data-sticky] .colh[data-col^="lv"] { visibility: hidden; }
+/* P202: 열마다(두 열이면 data-sticky0·1) 그 열의 나무 칸 이름만 숨긴다 */
+.mt-sm-cols[data-sticky0] .colh[data-c="0"][data-col^="lv"], .mt-sm-cols[data-sticky1] .colh[data-c="1"][data-col^="lv"] { visibility: hidden; }
 .mt-sm-cols .rbst[hidden] { display: none; }
 .mt-sm-cols .colh.rbs { color: var(--ln-text, #e6e3da); font-weight: 600; letter-spacing: 0.02em; }
 .mt-sm-cols .colh.rbs i { font-style: normal; font-weight: 500; margin-left: 6px; color: var(--ln-dim, #a3a097); }
 .mt-sm-cols .colh.rbs.old { color: var(--ln-dim, #a3a097); }
 /* P199: 휴대폰 사슬의 꺾은 줄 첫 칩은 화살표 자리만큼 들여 시작하고, 그 화살표는 꺾임 표시(띠 안) */
 .mt-rb-link.wrap::before { content: '↳'; }
+/* P202: 세션 맵 오늘·이전 이름표. 두 열 = 열 위 머리(이름 + 밑줄), 한 열·휴대폰 = 두 칸 사이 가로 줄(위 "오늘", 아래 "이전"). 움직임 없음 */
+.mt-sm-sec { position: absolute; box-sizing: border-box; pointer-events: none; color: var(--ln-dim); font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }
+.mt-sm-sec.head { display: flex; align-items: flex-end; padding: 0 0 18px 6px; border-bottom: 2px solid var(--ln-line-2); }
+.mt-sm-sec.head.today { color: var(--ln-strong); border-bottom-color: rgba(255, 252, 240, 0.32); }
+.mt-sm-sec.line { display: flex; flex-direction: column; justify-content: center; gap: 8px; padding-left: 6px; }
+.mt-sm-sec.line > i { display: block; height: 0; margin-left: -6px; border-top: 2px solid rgba(255, 252, 240, 0.26); }
+.mt-sm-sec.line .up { color: var(--ln-strong); }
+.mt-sm-sec.line .up::after { content: ' ↑'; }
+.mt-sm-sec.line .dn::after { content: ' ↓'; }

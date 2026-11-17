@@ -627,3 +627,6 @@ button.mt-pm-chip:disabled { opacity: .5; }
 /* P186: rig 건 알약 */
 .mt-pl-pill.case { border-style: dashed; }
 .mt-pl-pill.case:disabled { opacity: 0.7; }
+/* P202: 휴대폰 오늘·이전 구분 줄 글(세계 글 크기, 멀리서도 읽히게 --ik를 따른다) */
+.mt-pmap-sec .up, .mt-pmap-sec .dn { font-size: 15px; }
+.mt-sm .lv-far .mt-pmap-sec .up, .mt-sm .lv-far .mt-pmap-sec .dn { font-size: clamp(15px, calc(9px * var(--ik, 1)), 26px); }
