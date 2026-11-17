@@ -2661,3 +2661,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-sm-sec.line .up { color: var(--ln-strong); }
 .mt-sm-sec.line .up::after { content: ' ↑'; }
 .mt-sm-sec.line .dn::after { content: ' ↓'; }
+
+/* P203: AGY 승인 방식 안내(호출자 편집 틀, 승인 칸 아래 한 줄) */
+.mt-ln-agynote { font-size: 12px; line-height: 1.4; color: var(--warn); margin: -2px 0 2px 112px; }
