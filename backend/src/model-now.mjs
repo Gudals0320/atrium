@@ -3,7 +3,7 @@
 // - Claude Code: 대화 기록(.jsonl)의 assistant 줄 message.model(<synthetic> 빼고, 하위 에이전트 isSidechain 빼고),
 //   /model·/effort의 출력 줄(<local-command-stdout>Set model to `X` …, Set effort level to Y …). 둘 중 나중 줄이 이긴다
 // - Codex: rollout의 turn_context(payload.model, payload.effort)와 /model로 바꾼 그때의 event_msg thread_settings_applied(model, reasoning_effort)
-// - pi: 세션 파일의 model_change(modelId), thinking_level_change(thinkingLevel, off는 없음으로)
+// - pi: 세션 파일의 model_change(provider/modelId, P201: pi --model과 같은 꼴), thinking_level_change(thinkingLevel, off는 없음으로)
 // - opencode: 기록이 SQLite라 읽지 않는다(띄운 값을 보인다)
 // 파일은 처음에 끝에서부터 조각으로 거슬러 읽고(값을 찾을 때까지, 64MB까지), 그 뒤에는 늘어난 만큼만 읽는다.
 import fs from 'node:fs';
@@ -64,7 +64,7 @@ export function lineModel(kind, line) {
     if (!line.includes('model_change') && !line.includes('thinking_level_change')) return null;
     let o; try { o = JSON.parse(line); } catch { return null; }
     if (!isObj(o)) return null;
-    if (o.type === 'model_change' && clean(o.modelId)) return { model: clean(o.modelId) };
+    if (o.type === 'model_change' && clean(o.modelId)) return { model: clean(o.provider) && !clean(o.modelId).includes('/') ? `${clean(o.provider)}/${clean(o.modelId)}` : clean(o.modelId) };
     if (o.type === 'thinking_level_change' && typeof o.thinkingLevel === 'string') return { effort: o.thinkingLevel === 'off' ? null : o.thinkingLevel };
     return null;
   }
@@ -170,9 +170,38 @@ export function shownModel(launched = {}, now = null) {
 
 // 같은 모델을 다르게 쓴 이름인가(판 이벤트를 남길지): haiku ≈ claude-haiku-5-5 ≈ Haiku 5.5, Sonnet 5.5 ≈ claude-sonnet-5-5.
 // 짧은 이름(별명)이 긴 이름의 앞 낱말이면 같다고 본다
-const normModel = (m) => String(m || '').trim().toLowerCase().replace(/^claude-/, '').replace(/\[.*\]$/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-(\d+)$/, ' $1');
+const normModel = (m) => String(m || '').trim().toLowerCase().replace(/^[a-z0-9._-]+\//, '').replace(/^claude-/, '').replace(/\[.*\]$/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-(\d+)$/, ' $1');
 export function sameModel(a, b) {
   const x = normModel(a), y = normModel(b);
   if (!x || !y) return !x && !y;
   return x === y || y.startsWith(`${x} `) || x.startsWith(`${y} `);
+}
+
+// P201: pi 세션 파일의 마지막 답. pi는 hook이 없고 화면에는 머리 글·상태 줄이 섞여(답 앞 프롬프트 표시도 없다) 기록 파일에서 읽는다.
+// 끝에서 거슬러 첫 assistant 메시지(type message, message.role assistant)의 text 조각을 잇는다. 글이 없는 assistant(도구 부르기만)는
+// 건너뛰고, user 메시지를 만나면 멈춘다(그 턴에 글 답이 없음). → { text, at(ms) } | null
+export function readPiLastAnswer(file, { maxBytes = CHUNK } = {}) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, maxBytes);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString('utf8').split(/\r?\n/);
+    for (let i = lines.length - 1; i >= (len < size ? 1 : 0); i--) {
+      const line = lines[i];
+      if (!line || !line.includes('"message"')) continue;
+      let o; try { o = JSON.parse(line); } catch { continue; }
+      if (!isObj(o) || o.type !== 'message' || !isObj(o.message)) continue;
+      const m = o.message;
+      if (m.role === 'user') return null;
+      if (m.role !== 'assistant') continue;
+      const text = Array.isArray(m.content) ? m.content.filter((x) => isObj(x) && x.type === 'text' && typeof x.text === 'string').map((x) => x.text).join('\n').trim() : typeof m.content === 'string' ? m.content.trim() : '';
+      if (!text) continue;
+      const at = typeof m.timestamp === 'number' ? m.timestamp : Date.parse(o.timestamp) || null;
+      return { text, at };
+    }
+    return null;
+  } catch { return null; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
 }

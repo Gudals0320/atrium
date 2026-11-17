@@ -35,7 +35,7 @@ test('P137 Codex·pi 줄', () => {
   // /model로 바꾼 바로 그때 남는 줄(다음 턴 전)
   assert.deepEqual(lineModel('codex', J({ type: 'event_msg', payload: { type: 'thread_settings_applied', thread_settings: { model: 'gpt-6-luna', reasoning_effort: 'high', collaboration_mode: { settings: { model: 'gpt-6-luna', reasoning_effort: 'high' } } } } })), { model: 'gpt-6-luna', effort: 'high' });
   assert.equal(lineModel('codex', J({ type: 'event_msg', payload: { type: 'task_complete', thread_settings_applied: 1 } })), null);
-  assert.deepEqual(lineModel('pi', J({ type: 'model_change', provider: 'p', modelId: 'fake-2' })), { model: 'fake-2' });
+  assert.deepEqual(lineModel('pi', J({ type: 'model_change', provider: 'p', modelId: 'fake-2' })), { model: 'p/fake-2' }); // P201: 제공자/ID(pi --model과 같은 꼴)
   assert.deepEqual(lineModel('pi', J({ type: 'thinking_level_change', thinkingLevel: 'off' })), { effort: null });
   assert.deepEqual(lineModel('pi', J({ type: 'thinking_level_change', thinkingLevel: 'high' })), { effort: 'high' });
 });

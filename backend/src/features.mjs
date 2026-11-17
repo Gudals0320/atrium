@@ -18,6 +18,7 @@ import { Launchers, HARNESSES, checkGateway } from './launchers.mjs'; // P33: �
 import { Connections, checkOf, fetchConnectionModels } from './connections.mjs'; // P115: 모델 연결
 import { CodexModels } from './codex-models.mjs'; // P72: Codex 모델 목록
 import { AgyModels, runAgyModels } from './agy-models.mjs'; // P192: AGY 모델 목록
+import { piModels } from './pi-models.mjs'; // P201: pi 모델 목록
 import { placeItem } from './canvas-ops.mjs';
 
 const SHELL = 'shell';
@@ -48,9 +49,11 @@ export function attachFeatures(b, { timers = true } = {}) {
   f.codexModels = b.cfg.codexHome ? new CodexModels({ home: b.cfg.codexHome, fallback: HARNESSES.codex.models }) : null;
   // P192: AGY 모델 목록(agy models). 명령을 주지 않은 판(시험)은 고정 목록
   f.agyModels = b.cfg.agyCommand ? new AgyModels({ fallback: HARNESSES.agy.models, run: () => runAgyModels({ command: b.cfg.agyCommand }) }) : null;
+  // P201: pi 모델 목록(pi --list-models). 명령을 주지 않은 판(ATRIUM_PI=none)은 빈 목록
+  f.piModels = b.cfg.piCommand ? piModels({ command: b.cfg.piCommand, fallback: HARNESSES.pi.models }) : null;
   // P115: 연결 목록(런처가 ID로 참조). 쓰는 런처가 있으면 지우지 않는다
   f.connections = new Connections({ store, broadcast, inUse: (id) => (f.launchers ? f.launchers.usersOf(id) : []) });
-  f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, agyModels: f.agyModels, connections: f.connections, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록(연결)을 옮긴다
+  f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, agyModels: f.agyModels, piModels: f.piModels, connections: f.connections, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록(연결)을 옮긴다
   if (f.launchers.migrated) b.log(`launchers migrated to v2 (${f.launchers.migrated.oldBoard ? 'old board' : 'new board'}): favorites ${f.launchers.migrated.favorites.join(',')}, connections moved ${(f.launchers.migrated.v2 && f.launchers.migrated.v2.moved.length) || 0}`);
   f.outputs = new Outputs({ cfg: b.cfg, store, resolve: (r) => b.resolve(r), hooked: (s) => b.hooked(s), transcriptOf, readMessages, workspaceName: wsName, apiError });
   f.thread = new ThreadLog({

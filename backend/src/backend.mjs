@@ -75,7 +75,7 @@ function apiError(code, message) { return Object.assign(new Error(message), { co
 import { m, confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이스 지우기 판단
 import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META, syncWsGroups, wsLabels } from './ws-groups.mjs'; // P44: 가상 그룹. P91: 폴더 위계 묶음(저절로)
-import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
+import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel, readPiLastAnswer } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
 import { codexHomeOf } from './codex-models.mjs';
 import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171: 일시 연결
 import { linkRelationPlan, linkDefaultRole, LINK_CHOICES } from './relations.mjs'; // P175: 잇는 자리에서 하위·동료
@@ -1117,11 +1117,28 @@ export class Backend {
   }
   // P116: 200줄(전에는 60줄). hc의 terminal.read는 화면의 빈 줄까지 세어서, 입력 칸이 아래에 붙은 Codex 화면은 60줄 안에 그 턴이 없었다(atrium wait의 답이 상태 줄이 됐다)
   async readScreenAnswer(s) {
+    if (s.kind === 'pi' && await this.readPiAnswer(s)) return; // P201
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 200 });
       s.rt.lastAnswer = screenAnswerText(text, 20, { kind: s.kind }); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen'; // P192: 종류(AGY)
       this.bus.emit('screenAnswer', s);
     } catch {}
+  }
+
+  // P201: pi는 화면에 답 앞 프롬프트 표시가 없고 머리 글(시작 안내)·상태 줄이 섞여, 마지막 답을 pi 세션 파일에서 읽는다.
+  // 턴이 끝난 때 파일에 아직 답이 없을 수 있어 잠깐 다시 본다. 지난번에 쓴 답보다 새 답이 없으면 화면으로 돌아간다
+  async readPiAnswer(s, { tries = 6, gapMs = 300 } = {}) {
+    for (let i = 0; i < tries; i++) {
+      let a = null;
+      try { s._modelFind = s._modelFind && s._modelFind.file ? s._modelFind : null; const file = this.modelFileOf(s); a = file ? readPiLastAnswer(file) : null; } catch { a = null; }
+      if (a && (!s.rt.piAnswerAt || (a.at || 0) > s.rt.piAnswerAt)) {
+        s.rt.lastAnswer = a.text; s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'session'; s.rt.piAnswerAt = a.at || Date.now();
+        this.bus.emit('screenAnswer', s);
+        return true;
+      }
+      if (i < tries - 1) await new Promise((r) => setTimeout(r, gapMs));
+    }
+    return false;
   }
 
   onTermDisconnected(which = null) {
