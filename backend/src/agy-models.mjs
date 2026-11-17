@@ -32,18 +32,19 @@ export function runAgyModels({ command = 'agy', timeout = RUN_TIMEOUT_MS } = {})
 }
 
 export class AgyModels {
-  constructor({ fallback = [], run = runAgyModels, now = () => Date.now(), ttlMs = TTL_MS, failMs = FAIL_RETRY_MS } = {}) {
-    this.fallback = [...fallback]; this.run = run; this.now = now; this.ttlMs = ttlMs; this.failMs = failMs;
+  constructor({ fallback = [], run = runAgyModels, now = () => Date.now(), ttlMs = TTL_MS, failMs = FAIL_RETRY_MS, parse = parseAgyModels, source = 'agy' } = {}) {
+    this.fallback = [...fallback]; this.run = run; this.parse = parse; this.source = source; this.now = now; this.ttlMs = ttlMs; this.failMs = failMs; // P201: pi 목록도 같은 틀(parse·source)
     this.cur = null; this.at = -Infinity; this.failedAt = -Infinity; this.pending = null; this.why = null;
   }
-  stale() { const t = this.now(); return this.cur ? t - this.at >= this.ttlMs : t - this.failedAt >= this.failMs; }
+  // P201: 다시 받기가 실패한 뒤 failMs 동안은 오래되지 않은 것으로 본다(전에는 목록이 있을 때 실패하면 read()가 refresh()를 끝없이 다시 불렀다)
+  stale() { const t = this.now(); if (t - this.failedAt < this.failMs) return false; return this.cur ? t - this.at >= this.ttlMs : true; }
   // 다시 받기(동시에 하나). 실패하면 그때까지 아는 목록을 그대로 둔다
   refresh() {
     if (this.pending) return this.pending;
     if (!this.stale()) return Promise.resolve(this.read());
     this.pending = (async () => {
       try {
-        const r = parseAgyModels(await this.run());
+        const r = this.parse(await this.run());
         if (r.ok) { this.cur = r; this.at = this.now(); this.why = null; } else { this.failedAt = this.now(); this.why = r.why; }
       } catch (e) { this.failedAt = this.now(); this.why = e && e.code === 'ENOENT' ? 'missing' : 'failed'; }
       finally { this.pending = null; }
@@ -54,7 +55,7 @@ export class AgyModels {
   // 지금 아는 목록. 오래됐으면 뒤에서 다시 받는다(기다리지 않는다)
   read() {
     if (this.stale() && !this.pending) this.refresh().catch(() => {});
-    return this.cur ? { source: 'agy', models: [...this.cur.models], hidden: [], labels: { ...this.cur.labels } } : { source: 'default', why: this.why || 'pending', models: [...this.fallback], hidden: [], labels: {} };
+    return this.cur ? { source: this.source, models: [...this.cur.models], hidden: [], labels: { ...this.cur.labels } } : { source: 'default', why: this.why || 'pending', models: [...this.fallback], hidden: [], labels: {} };
   }
   models() { return this.read().models; }
 }

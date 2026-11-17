@@ -274,8 +274,8 @@ export const authNotices = (items) => items.map((l) => ({ id: l.id, name: l.name
 export class Launchers {
   // codexModels: P72 Codex 모델 목록(codex-models.mjs CodexModels). 없으면 하네스의 고정 목록
   // connections: P115 연결 목록(connections.mjs Connections). legacyGateway: 옛 환경 변수의 게이트웨이 주소({ healthUrl, baseUrl }, 옮기기만 읽는다)
-  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null, agyModels = null, connections = null, log = () => {} }) {
-    this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.agyModels = agyModels; this.connections = connections; this.log = log; // P192: agyModels
+  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null, agyModels = null, piModels = null, connections = null, log = () => {} }) {
+    this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.agyModels = agyModels; this.piModels = piModels; this.connections = connections; this.log = log; // P192: agyModels
     this.migrated = this.ensure();
   }
   // 한 번만: 새 키(v2) 목록이 없으면 옛 키(없으면 처음 목록)를 옮겨 만든다. 이미 있으면 목록은 그대로(여러 번 돌려도 같다).
@@ -308,9 +308,9 @@ export class Launchers {
   data() { const d = this.store.getMeta(META_KEY) || { v: VERSION, items: [], favorites: [] }; const ids = new Set(d.items.map((x) => x.id)); return { v: d.v, items: d.items, favorites: (d.favorites || []).filter((id) => ids.has(id)) }; }
   save(d) { this.store.setMeta(META_KEY, d); const out = this.list(); this.broadcast('launchers.updated', out); return out; }
   // 하네스별로 읽어 온 모델 목록(P72: codex)
-  modelLists() { const out = {}; if (this.codexModels) { try { out.codex = this.codexModels.read(); } catch {} } if (this.agyModels) { try { out.agy = this.agyModels.read(); } catch {} } return out; } // P192: agy
+  modelLists() { const out = {}; if (this.codexModels) { try { out.codex = this.codexModels.read(); } catch {} } if (this.agyModels) { try { out.agy = this.agyModels.read(); } catch {} } if (this.piModels) { try { out.pi = this.piModels.read(); } catch {} } return out; } // P192: agy. P201: pi
   // P192: 뒤에서 받는 목록(AGY)을 잠깐 기다린다(atrium models). ms 안에 못 받으면 지금 아는 목록
-  async freshModelLists(ms = 8000) { if (this.agyModels) await Promise.race([this.agyModels.refresh().catch(() => {}), new Promise((r) => setTimeout(r, ms).unref?.())]); return this.modelLists(); }
+  async freshModelLists(ms = 8000) { const w = [this.agyModels, this.piModels].filter(Boolean).map((m) => m.refresh().catch(() => {})); if (w.length) await Promise.race([Promise.all(w), new Promise((r) => setTimeout(r, ms).unref?.())]); return this.modelLists(); } // P201: pi도
   harnesses() { return describeHarnesses(this.modelLists()); }
   // P97: warns는 경고 모두(모델 목록 밖, 실행 명령이 PATH에 없음). warn은 첫 경고(옛 창)
   previewOf(l, hs) { const warns = [modelWarning(l, hs), startWarning(l)].filter(Boolean); return { ...previewLauncher(l), ...(warns.length ? { warn: warns[0], warns } : {}) }; }

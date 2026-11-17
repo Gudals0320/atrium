@@ -66,6 +66,8 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     codexHome: codexHomeOf(env), // P72: Codex 모델 목록 캐시(models_cache.json)를 읽을 폴더. CODEX_HOME(Codex와 같은 변수), 없으면 ~/.codex
     // P192: AGY 모델 목록(agy models)을 띄울 명령. ATRIUM_AGY=none이면 띄우지 않고 고정 목록. AGY 대화 기록 폴더(ATRIUM_AGY_HOME, 없으면 ~/.gemini/antigravity-cli)
     agyCommand: E('AGY') === 'none' ? null : E('AGY') || 'agy',
+    // P201: pi 모델 목록(pi --list-models)을 띄울 명령. ATRIUM_PI=none이면 띄우지 않는다(고정 목록, pi는 빈 목록)
+    piCommand: E('PI') === 'none' ? null : E('PI') || 'pi',
     agyHome: E('AGY_HOME') ? path.resolve(E('AGY_HOME')) : null,
     claudeJson: E('CLAUDE_JSON') || path.join(os.homedir(), '.claude.json'),
     claudeProjects: path.join(os.homedir(), '.claude', 'projects'),
