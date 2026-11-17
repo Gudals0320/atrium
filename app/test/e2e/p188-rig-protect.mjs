@@ -43,8 +43,10 @@ try {
   const items = menu ? await page.$$eval('[data-role=region-menu] [data-action]', (bs) => bs.map((b) => [b.dataset.action, b.textContent])) : [];
   await sleep(600);
   await shot(page, 'menu');
-  check('메뉴에 rig 끄기와 사람만 고치는 목록', items.some(([a]) => a === 'rig-off') && items.some(([a]) => a === 'rig-protect'), items);
-  await page.click('[data-role=region-menu] [data-action=rig-protect]');
+  check('메뉴에 Rig 보기·고치기(P191: 끄기와 사람만 고치는 목록은 rig 판 안)', items.some(([a]) => a === 'rig-panel'), items);
+  await page.click('[data-role=region-menu] [data-action=rig-panel]');
+  await until(() => page.$('[data-role=rig-panel] [data-action=rig-panel-protect]'), 6000);
+  await page.click('[data-role=rig-panel] [data-action=rig-panel-protect]');
   await until(() => page.$('[data-role=rig-protect] [data-role=rig-protect-files] li'), 6000);
   await sleep(500);
   await shot(page, 'dialog-changed');

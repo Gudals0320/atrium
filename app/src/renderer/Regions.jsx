@@ -10,6 +10,8 @@ import { useStore, getState, openDialog, selectWorkspace, noteWorkspace, toast, 
 import { Icon } from './lib/icons.jsx';
 import { useT, t, errText } from './lib/i18n.js';
 import { useDialog } from './dialog.js'; // P183: rig 켜기 확인 창
+import { menuEntry } from './lib/rig-setup.js'; // P191
+import { remoteView } from './RigSeat.jsx';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
@@ -136,10 +138,9 @@ function RegionMenu({ at, close, w, arranged, z }) {
       {item('region-fit', t('regions.fit'), () => selectWorkspace(key))}
       <div className="mt-sb2-msep" />
       <div className="mt-sb2-mh mt-rig-line" data-role="rig-status" data-rig={rig ? rig.state : 'loading'} title={rig && rig.invalid ? rig.invalid : undefined}>{rigLine(t, rig)}</div>
-      {rig && rig.state !== 'none' && (rig.enabled
-        ? item('rig-off', t('rig.menuOff'), () => setRig(w, false))
-        : item('rig-on', t('rig.menuOn'), () => openDialog({ kind: 'rigon', ws: w })))}{/* P183: 켜기는 확인 창(돌 명령과 사용자 계정) 뒤에만 */}
-      {rig && rig.state !== 'none' && rig.state !== 'error' && item('rig-protect', (rig.protectedHits || []).length || (rig.changedFiles || []).length ? t('rigAdmin.menuAlert') : t('rigAdmin.menu'), () => openDialog({ kind: 'rigprotect', ws: w }))}{/* P188: 사람만 고치는 목록 */}
+      {/* P191: 정의가 없으면 Rig 만들기, 있으면 Rig 보기·고치기(켜기·끄기·사람만 고치는 목록은 rig 판 안으로 모았다). 원격 기기는 보기만 */}
+      {menuEntry(rig, { remote: remoteView() }) === 'create' && item('rig-create', t('rigSetup.menuCreate'), () => openDialog({ kind: 'rigcreate', ws: w }))}
+      {menuEntry(rig, { remote: remoteView() }) === 'view' && item('rig-panel', (rig.protectedHits || []).length || (rig.changedFiles || []).length ? t('rigSetup.menuViewAlert') : t('rigSetup.menuView'), () => openDialog({ kind: 'rigpanel', ws: w }))}
       <div className="mt-sb2-msep" />
       {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}
     </div>,
