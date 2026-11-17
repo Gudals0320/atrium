@@ -112,13 +112,13 @@ test('P75·P200 판: 한 부모에 워커 다섯이 띄운 순서대로 열을 �
   const X0 = NODE.w + LINE_GAP_X, DX = KID.w + LINE_GAP_X, DY = KID.h + LINE_GAP_Y;
   assert.deepEqual(rs.map((r) => [r.x, r.y]), [[X0, 0], [X0, DY], [X0 + DX, 0], [X0 + DX, DY], [X0 + 2 * DX, 0]], '열마다 위에서 아래, 넘치면 오른쪽 새 열의 윗변');
   assert.ok(rs.every((r) => r.y <= NODE.h + LINE_REACH), '상한 안');
-  // w2가 손자 둘을 띄운다: w2 오른쪽 열(접힌 둘째 열과 같은 x)의 빈 칸. 손자 나무가 w4와 겹치면 줄 밀기가 w4를 w2 나무 아래로 민다
+  // w2가 손자 둘을 띄운다: w2 오른쪽 열(접힌 둘째 열과 같은 x)의 빈 칸(w4 아래). P206: 손자가 w4와 실제로 겹치지 않으면 줄 밀기가 w4를 밀지 않는다(P200까지는 w2 띠가 겹친다고 w4를 아래로 밀었다)
   const g = [kid(ws5[1], 'g1'), kid(ws5[1], 'g2')].map((s) => nodeOf(b, s.name));
   const w2 = nodeOf(b, 'w2');
   assert.ok(g.every((r) => r.x === w2.x + w2.w + LINE_GAP_X && r.y >= w2.y), '손자는 w2 오른쪽 열, w2 윗변 아래');
   const w4 = nodeOf(b, 'w4');
-  assert.equal(w4.x, X0 + DX);
-  assert.equal(w4.y, Math.max(...g.map((r) => r.y + r.h)) + LINE_GAP_Y, 'w4는 w2 나무(손자) 아래로 밀렸다');
+  assert.deepEqual([w4.x, w4.y], [X0 + DX, DY], 'w4는 제자리(밀리지 않음)');
+  assert.ok(g.every((r) => r.y >= w4.y + w4.h + LINE_GAP_Y), '손자는 w4 아래 빈 칸');
   assert.deepEqual([nodeOf(b, 'w3').y, nodeOf(b, 'w5').y], [0, 0], '겹치지 않은 형제는 그대로');
   assert.equal(noOverlap(b.store.nodes()), null, '겹치지 않는다');
   // 순서 번호: 같은 부모 안에서 1부터, 손자는 따로

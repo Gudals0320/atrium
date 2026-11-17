@@ -99,21 +99,31 @@ export function peerSlot({ partner, band = null, size, obstacles = [], gap = LIN
 
 // 줄 밀기: units([{ id, rect }], 띄운 순서)를 차례로 보며, 앞의 것과 겹치면(gap 안) 그 아래로만 민다. 당기지 않는다(자리가 갑자기 움직이지 않게).
 // → Map id → dy(민 것만). 줄의 순서는 바뀌지 않는다(뒤의 것만 아래로 간다)
+// P206: unit에 own(블록 자기 사각형)과 parts(자기 나무의 블록 사각형들)가 있으면, 블록끼리 가로로 겹치지 않는 형제(P200이 접어 연 다른 열)는
+//   띠(나무를 감싼 사각형)가 아니라 실제 블록이 겹칠 때만 민다. 앞 열 형제의 손자가 다음 열과 같은 x에 서도(빈 칸이라 겹치지 않으면) 다음 열 형제를 밀지 않는다
+const sameColumn = (a, b) => !a.own || !b.own || (a.own.x < b.own.x + b.own.w && b.own.x < a.own.x + a.own.w);
+const shiftY = (r, dy) => ({ ...r, y: r.y + dy });
 export function pushLine(units, { gap = LINE_GAP_Y } = {}) {
   const out = new Map();
   const placed = [];
   for (const u of units || []) {
     if (!u || !u.rect) continue;
-    const r = { ...u.rect };
     let dy = 0;
     for (let i = 0; i < 10000; i++) {
-      const hit = placed.filter((p) => overlaps(r, p, gap - 1));
-      if (!hit.length) break;
-      const need = Math.max(...hit.map((p) => p.y + p.h + gap)) - r.y;
+      const r = shiftY(u.rect, dy);
+      let need = 0;
+      for (const p of placed) {
+        if (sameColumn(u, p)) { if (overlaps(r, p.rect, gap - 1)) need = Math.max(need, p.rect.y + p.rect.h + gap - r.y); continue; }
+        // 다른 열: 실제 블록끼리만
+        for (const q of u.parts || [u.rect]) {
+          const qq = shiftY(q, dy);
+          for (const o of p.parts || [p.rect]) if (overlaps(qq, o, gap - 1)) need = Math.max(need, o.y + o.h + gap - qq.y);
+        }
+      }
       if (need <= 0) break;
-      r.y += need; dy += need;
+      dy += need;
     }
-    placed.push(r);
+    placed.push({ rect: shiftY(u.rect, dy), own: u.own ? shiftY(u.own, dy) : null, parts: u.parts ? u.parts.map((q) => shiftY(q, dy)) : null });
     if (dy) out.set(u.id, Math.round(dy));
   }
   return out;

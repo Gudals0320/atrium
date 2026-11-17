@@ -33,6 +33,7 @@ import { termTheme, TERM_FONT, TERM_FONT_SIZE, TERM_LINE_HEIGHT } from './lib/to
 import { termFontSize, clampScale, clampPhoneScale } from './lib/scale.js'; // P45. P83: 휴대폰 글자(fontScale)는 40%까지
 import { sharpPlan, compensate, phaseShift, paintedAt, samePlan, cssCanvas, fitDims } from './lib/term-sharp.js'; // P65
 import { useT, errText } from './lib/i18n.js';
+import { makeHint, hintNext, hintText } from './lib/term-hint.js'; // P206
 import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles } from './lib/upload.js';
@@ -85,7 +86,8 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
   const hostRef = useRef(null);
   const ref = useRef({});
   const [status, setStatus] = useState({ kind: 'attaching' });
-  const [hint, setHint] = useState(null);
+  const [hint, setHint] = useState(null); // P206: lib/term-hint.js의 { id, kind, key, vars, err }
+  const hintEv = (ev) => setHint((h) => hintNext(h, ev));
   const [retry, setRetry] = useState(0);
   const [share, setShare] = useState({ shared: 1, ownerIsMe: true, ownerName: null }); // P47
   const [typing, setTyping] = useState(null); // P47: 다른 기기가 방금 입력
@@ -230,9 +232,9 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       if (!data) return;
       markInput(sessionId);
       if (onInputRef.current) onInputRef.current();
-      api.call('terminal.input', { session: sessionId, data }).catch((e) => setHint(t('terminal.inputFail', { error: errText(e) })));
+      api.call('terminal.input', { session: sessionId, data }).then(() => hintEv({ type: 'input-ok' }), (e) => hintEv({ type: 'show', hint: makeHint('inputFail', 'terminal.inputFail', { err: e }) })); // P206: 다음 입력이 되면 실패 힌트를 지운다
     };
-    const flash = (t) => { setHint(t); clearTimeout(st.hintTimer); st.hintTimer = setTimeout(() => setHint(null), 2500); };
+    const flash = (key, vars) => hintEv({ type: 'show', hint: makeHint('flash', key, { vars }) }); // P206: 열쇠로 두고 그릴 때 번역
     // P126: 프레임에 마우스 모드(DECSET·DECRST)가 한 번이라도 오면 이 터미널은 모드를 아는 것으로 본다(hc 판은 전체 프레임마다 모드를 다시 적는다).
     // 처리기는 false를 돌려 xterm이 모드를 그대로 바꾸게 한다
     st.modesKnown = false;
@@ -260,7 +262,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     // P42·P125: 고른 글 전체(화면 밖으로 나간 부분까지)를 복사한다. 선택은 남긴다(clearsSelection: 복사로는 지우지 않음)
     function copySel(raw, how) {
       const text = copyText(raw);
-      navigator.clipboard.writeText(text).then(() => { perfLog('term_copy', { sessionId, chars: text.length, how }); flash(t('terminal.copied')); }, (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash(t('termSelect.copyFail')); });
+      navigator.clipboard.writeText(text).then(() => { perfLog('term_copy', { sessionId, chars: text.length, how }); flash('terminal.copied'); }, (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash('termSelect.copyFail'); });
     }
     st.sel = sel;
     // P151: 손가락 고르기. 복사는 막대에서 하고(클립보드 API, 안 되면 execCommand), 복사하면 고르기를 끝낸다
@@ -269,7 +271,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       ts.copy = () => {
         const text = copyText(sel.text());
         if (!text.trim()) { ts.close('touch-copy-empty'); return; }
-        writeClipboard(text).then((how) => { perfLog('term_copy', { sessionId, chars: text.length, how: `touch-${how}` }); flash(t('terminal.copied')); }, (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash(t('termSelect.copyFail')); });
+        writeClipboard(text).then((how) => { perfLog('term_copy', { sessionId, chars: text.length, how: `touch-${how}` }); flash('terminal.copied'); }, (err) => { window.mt.log(`clipboard write failed ${sessionId}: ${err && err.message}`); flash('termSelect.copyFail'); });
         ts.close('touch-copy');
       };
       st.touch = ts;
@@ -281,7 +283,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     term.onData((d) => { if (clearsSelection('input', { hasSelection: sel.has() })) sel.clear('input'); sendMouse(d, 'xterm'); }); // P135: 단추 없는 움직임 보고는 빼고, 마우스 보고는 상한까지
     term.attachCustomKeyEventHandler((e) => {
       const a = keyAction(e, sel.has());
-      if (a === 'block-ctrl-g') { e.preventDefault(); flash(t('terminal.ctrlG')); return false; }
+      if (a === 'block-ctrl-g') { e.preventDefault(); flash('terminal.ctrlG'); return false; }
       if (a === 'paste') return false; // 브라우저 붙여넣기 이벤트로 넘긴다(아래에서 감싼다)
       if (a === 'clear-selection') { e.preventDefault(); sel.clear('escape'); return false; } // P42: Esc는 선택만 끝낸다
       if (a === 'copy') {
@@ -316,23 +318,23 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     // 붙여넣기: xterm보다 먼저(캡처 단계) 받아 괄호 붙여넣기로 감싼다. 감싸지 않으면 줄마다 따로 제출된다(E4 2.5).
     // P48: 웹 화면은 붙여 넣거나 끌어 놓은 파일(그림 등)을 백엔드로 올리고 그 PC 경로를 넣는다
     const uploadInto = (files) => {
-      flash(t('upload.uploading', { n: files.length }));
-      uploadFiles(files).then((paths) => { send(wrapPaste(pathsText(paths))); flash(t('upload.done', { n: paths.length })); perfLog('term_upload', { sessionId, n: paths.length }); },
-        (err) => { flash(t('upload.failed', { error: err.message })); window.mt.log(`upload failed ${sessionId}: ${err.message}`); });
+      flash('upload.uploading', { n: files.length });
+      uploadFiles(files).then((paths) => { send(wrapPaste(pathsText(paths))); flash('upload.done', { n: paths.length }); perfLog('term_upload', { sessionId, n: paths.length }); },
+        (err) => { flash('upload.failed', { error: err.message }); window.mt.log(`upload failed ${sessionId}: ${err.message}`); });
     };
     // P162: 데스크톱 창은 탐색기에서 복사한 파일의 경로를, 캡처한 그림은 판 데이터 폴더에 둔 PNG의 경로를 넣는다(main.mjs mt:clipPaste).
     // 터미널에는 칩 대신 경로 그대로 보낸다. Claude Code·Codex는 붙여 넣은 그림 경로를 그림으로 붙인다
     const pasteDesktop = () => window.mt.clipPaste().then((r) => {
       if (!r) return;
-      if (r.kind === 'error') { flash(t('desktopPaste.tooBig')); return; }
-      if (r.kind === 'files' && r.folders && !r.paths.length) { flash(t('desktopPaste.foldersOnly')); return; }
+      if (r.kind === 'error') { flash('desktopPaste.tooBig'); return; }
+      if (r.kind === 'files' && r.folders && !r.paths.length) { flash('desktopPaste.foldersOnly'); return; }
       const paths = r.kind === 'image' ? [r.path] : r.paths;
       if (!paths || !paths.length) return;
       send(wrapPaste(pastePathsText(paths)));
-      if (r.kind === 'image') flash(t('desktopPaste.image'));
-      else if (r.folders) flash(t('desktopPaste.foldersSkipped', { n: r.folders }));
+      if (r.kind === 'image') flash('desktopPaste.image');
+      else if (r.folders) flash('desktopPaste.foldersSkipped', { n: r.folders });
       perfLog('term_desktop_paste', { sessionId, kind: r.kind, n: paths.length });
-    }, (err) => { flash(t('desktopPaste.failed', { error: err.message })); window.mt.log(`desktop paste failed ${sessionId}: ${err.message}`); });
+    }, (err) => { flash('desktopPaste.failed', { error: err.message }); window.mt.log(`desktop paste failed ${sessionId}: ${err.message}`); });
     const onPaste = (e) => {
       e.preventDefault(); e.stopPropagation();
       const files = isWeb ? filesOf(e.clipboardData) : [];
@@ -581,6 +583,14 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     return () => clearTimeout(t);
   }, [status.kind, status.reason, termUp, sstate, sessionId]);
 
+  // P206: 힌트는 제 시간 뒤 사라지고, 입력 실패 힌트는 다시 연결(터미널 서버·패널 붙음)되면 바로 지운다
+  useEffect(() => {
+    if (!hint) return;
+    const tm = setTimeout(() => hintEv({ type: 'expire', id: hint.id }), hint.ms);
+    return () => clearTimeout(tm);
+  }, [hint]);
+  useEffect(() => { if (termUp && status.kind === 'attached') hintEv({ type: 'connected' }); }, [termUp, status.kind]);
+
   return (
     <div className={`mt-term-wrap nodrag nowheel nopan${touchSelect ? ' mt-term-touch' : ''}${touchUi ? ' mt-term-touchsel' : ''}`} onMouseDown={() => onActivate && onActivate()}>
       <div className="mt-term" ref={hostRef} data-session={sessionId} />
@@ -591,7 +601,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
           <button className="mt-btn" onClick={() => { autoTries.current = 0; setStatus({ kind: 'attaching' }); setRetry((x) => x + 1); }} data-action="term-reattach">{t('terminal.reattach')}</button>
         </div>
       )}
-      {hint && <div className="mt-term-hint">{hint}</div>}
+      {hint && <div className="mt-term-hint" data-role="term-hint" data-kind={hint.kind}>{hintText(hint, t, errText)}</div>}
       {typing && <div className="mt-term-typing" data-role="term-typing">{t('peers.typing', { name: typing })}</div>}
       {touchUi && createPortal(<TouchSelectUi ui={touchUi} owner={sessionId} ctl={ref.current.touch} />, document.body)}
       {share.shared > 1 && !share.ownerIsMe && <div className="mt-term-sizeby" data-role="term-sizeby" title={t('peers.sizeBy', { name: share.ownerName || '?' })} />}

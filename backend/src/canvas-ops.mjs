@@ -608,7 +608,7 @@ export function reflowLines(b, sid, cause = 'unknown') {
     seen.add(cur);
     const p = tree.parent.get(cur);
     if (!p) break;
-    const shifts = pushLine(lineKids(tree, p).map((k) => ({ id: k, rect: bandOf(tree, k) })));
+    const shifts = pushLine(lineKids(tree, p).map((k) => ({ id: k, rect: bandOf(tree, k), own: tree.byId.get(k), parts: subtreeIds(tree, k).map((x) => tree.byId.get(x)) }))); // P206: 접힌 다른 열은 실제 블록이 겹칠 때만
     if (shifts.size) {
       const done = new Set();
       for (const [k, dy] of shifts) for (const x of subtreeIds(tree, k)) { if (done.has(x)) continue; done.add(x); lowerBlock(b, tree.byId.get(x), dy); moved.push({ block: x.startsWith('w:') || x.startsWith('d:') || !b.nameOf ? x : b.nameOf(x), dy }); }
