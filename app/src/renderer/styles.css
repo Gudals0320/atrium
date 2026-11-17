@@ -2574,3 +2574,8 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 /* P194: rig 판 자리 표 머리가 좁은 열(워크트리 확인란)에서 글자 하나로 잘렸다. 머리는 줄을 바꾸지 않고, 확인란 열은 머리 너비를 쓴다 */
 .mt-rigpanel-table th { white-space: nowrap; }
 .mt-rigpanel-table th.mt-rigpanel-cbh, .mt-rigpanel-table td.mt-rigpanel-cb { width: 1%; text-align: center; padding-left: 8px; padding-right: 8px; }
+
+/* P195: 워크트리 틀이 막힘(git 저장소·첫 커밋 없음), 원격 rig 판의 안내 한 줄 */
+.mt-rigsetup-card:disabled { cursor: not-allowed; opacity: 0.75; }
+.mt-rigsetup-card:disabled:hover { border-color: var(--panel-line); }
+.mt-rigpanel-remote { font-size: 12px; margin: 4px 0 8px; }

@@ -10,7 +10,7 @@
 // - 기본 런처: 그 워크스페이스에서 마지막으로 런처로 띄운 세션의 런처(spawn 이벤트), 없으면 판 레일의 첫 에이전트 런처, 없으면 claude.
 import fs from 'node:fs';
 import path from 'node:path';
-import { RIG_FILE, validateRig, protectedHits, SEAT_KINDS } from './rig.mjs';
+import { RIG_FILE, validateRig, protectedHits, SEAT_KINDS, gitStateOf, worktreeWarnings } from './rig.mjs';
 import { SEAT_SPAWN } from './rig-amp.mjs';
 import { harnessOf } from './launchers.mjs';
 import { shownName } from './session-label.mjs';
@@ -79,7 +79,7 @@ export class RigSetup {
     return {
       workspace: key, root, file: RIG_FILE, status: s0.state, enabled: s0.enabled, why: s0.invalid || null, usingLastGood: s0.usingLastGood,
       definition, hash: s0.hash, versionN, locked: (s0.protected && s0.protected.pointers) || [], protectedHits: s0.protectedHits, changedFiles: s0.changedFiles,
-      openCases: st.liveCasesCount(key), warnings: s0.warnings,
+      openCases: st.liveCasesCount(key), warnings: s0.warnings, worktreeGit: s0.worktreeGit || null,
       hooks: s0.hooks.map((h) => ({ at: h.at, run: h.run, ...(h.from ? { from: h.from } : {}), ...(h.tool ? { tool: h.tool } : {}) })),
       tools: s0.tools.map((x) => ({ name: x.name, run: x.run, desc: x.desc })),
       cycles: s0.cycles.map((x) => ({ every: x.every, to: x.to, ...(x.run ? { run: x.run } : {}) })),
@@ -106,6 +106,7 @@ export class RigSetup {
       if (x.worktree && L.kind !== 'claude') throw apiError('bad_request', `${seat} 자리는 일마다 워크트리에서 돈다. Claude Code 런처만 쓴다(고른 런처: ${L.ref}, 종류 ${L.kind}).`);
       picked[seat] = L.ref;
     }
+    if (Object.values(t.seats).some((x) => x.worktree)) { const g = gitStateOf(root); if (g !== 'ok') throw apiError('bad_request', worktreeWarnings(Object.entries(t.seats).map(([name, x]) => ({ name, ...x })), g)[0]); } // P195
     const { def, guides } = templateFiles(template, picked);
     const written = []; const kept = [];
     fs.mkdirSync(path.join(root, '.atrium', 'seats'), { recursive: true });
@@ -319,7 +320,15 @@ export function rigSetupHandlers(b) {
   const keyOf = async (p) => (await b.resolveWorkspace(p && p.workspace)).key;
   const S = () => { if (!b.rigSetup) throw apiError('rig_off', 'rig가 없다.'); return b.rigSetup; };
   return {
-    'rig.templates': () => ({ templates: rigTemplates() }),
+    // P195: 워크스페이스를 주면 워크트리 틀에 그 폴더의 git 상태(blocked: norepo | nocommit)를 붙인다. 창이 그 틀을 까닭과 함께 막는다
+    'rig.templates': async (p) => {
+      const list = rigTemplates();
+      if (!p || !p.workspace) return { templates: list };
+      const root = (await b.resolveWorkspace(p.workspace)).root;
+      const needs = list.some((t) => Object.values(t.seats).some((x) => x.worktree));
+      const g = needs ? gitStateOf(root) : 'ok';
+      return { templates: list.map((t) => (g !== 'ok' && Object.values(t.seats).some((x) => x.worktree) ? { ...t, blocked: g, blockedReason: worktreeWarnings(Object.entries(t.seats).map(([name, x]) => ({ name, ...x })), g)[0] } : t)), git: g };
+    },
     'rig.get': async (p) => S().get(await keyOf(p)),
     'rig.create': async (p, c) => { local(c, 'rig 만들기'); return S().create(await keyOf(p), p || {}); },
     'rig.describe': async (p, c) => { local(c, 'rig 말로 만들기·고치기'); return S().describe(await keyOf(p), p || {}); },

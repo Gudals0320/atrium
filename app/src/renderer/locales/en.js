@@ -2825,4 +2825,12 @@ export default {
     spawnRenamed: ' · renamed because {from} is a rig seat name here: @{name}',
     caseWaitingOwner: 'waiting for the owner',
   },
+  // P195: fixes from the first real rig run
+  rigP195: {
+    seatNoRepo: 'This rig has a seat that uses worktrees. Worktrees need a git repository with a first commit, and this folder is not a git repository. If you turn it on as is, the first assignment fails.',
+    seatNoCommit: 'This rig has a seat that uses worktrees. Worktrees need a git repository with a first commit, and this repository has no commit yet. If you turn it on as is, the first assignment fails.',
+    remoteNote: 'Turning a rig on and editing it can only be done in the board window on the PC that runs the board, because an enabled rig runs repository programs under the user account of that PC. You can turn it off here.',
+    wtNoRepo: 'This template runs the worker in worktrees. This folder is not a git repository. Run git init and make a first commit, then pick it.',
+    wtNoCommit: 'This template runs the worker in worktrees. This repository has no commit yet. Make a first commit, then pick it.',
+  },
 };
