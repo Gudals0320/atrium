@@ -256,9 +256,10 @@ export function bandLayout(R, o) {
 }
 
 // 휴대폰 띠(17절 "휴대폰"): keep 자리 카드를 위에 한 번, 그 아래 건마다 블록(머리, 자리 사슬 칩을 꺾어 이은 줄, 지금 일하는 세션의 카드). 흐름 선은 없다.
-// o: bandLayout과 같고 x0·W(띠 폭), textW(글, px) → 글 폭
+// o: bandLayout과 같고 x0·W(띠 폭 = 카드 폭, P199: 카드 하나가 화면 폭에 드는 배율에서 사슬·표시가 잘리지 않게), textW(글, px) → 글 폭, foldOpen(P199: "+n 끝남"을 편다)
+// 꺾은 줄은 화살표 자리(LGAP)만큼 들여 시작한다(화살표가 띠 밖으로 나가지 않게). 칩 하나가 폭보다 길면 폭에 맞춘다(글은 CSS가 줄임표로)
 export function bandPhone(R, o) {
-  const { ws, nodes, member, sidOf, tierOf, H, CW, x0, y0, W, textW = (s, px) => String(s || '').length * px * 0.62 } = o;
+  const { ws, nodes, member, sidOf, tierOf, H, CW, x0, y0, W, textW = (s, px) => String(s || '').length * px * 0.62, foldOpen = false } = o;
   const P = BAND_PHONE;
   const order = caseOrder(R);
   const nodeOf = (sid) => (sid && sidOf.get(sid)) || null;
@@ -266,47 +267,73 @@ export function bandPhone(R, o) {
   const cards = new Map(), marks = [], heads = [], chains = [], rowOf = new Map();
   const entry = (n, x, y, extra = {}) => { const m = member.get(n.id); const e = { x, y, w: CW, h: H(n.id), node: n, ws, depth: -2, fold: 0, band: true, chip: false, thin: false, folded: false, seat: { seat: m.seat, mode: m.mode }, caseId: null, ...extra }; cards.set(n.id, e); return e; };
   let cy = y0 + P.PAD;
-  for (const n of nodes) if (member.get(n.id).mode === 'keep') { const e = entry(n, x0, cy, { keepHead: true }); cy += e.h + P.GY; }
+  for (const n of nodes) if (member.get(n.id).mode === 'keep') { const e = entry(n, x0, cy, { keepHead: true, w: Math.min(CW, W) }); cy += e.h + P.GY; }
   const placed = new Set(nodes.filter((n) => member.get(n.id).mode === 'keep').map((n) => n.id));
   const hideAt = (id, b, caseId = null) => { if (placed.has(id)) return; const n = nodes.find((q) => q.id === id); if (!n) return; placed.add(id); entry(n, b.x, b.y, { w: b.w, h: b.h, folded: true, chip: true, thin: true, caseId }); };
-  for (const c of order.rows) {
-    const head = { ws, id: c.id, x: x0, y: cy, w: W, h: P.HEAD, c };
+  const block = (c, hiddenRow = false) => {
+    const head = { ws, id: c.id, x: x0, y: cy, w: W, h: P.HEAD, c, hidden: hiddenRow };
     heads.push(head); rowOf.set(c.id, head);
     cy += P.HEAD;
-    // 자리 사슬: 일 차례대로 자리 이름 칩, 폭이 넘치면 다음 줄로. 줄 선 일은 점선 칩
+    // 자리 사슬: 일 차례대로 자리 이름 칩, 폭이 넘치면 다음 줄로(화살표 자리만큼 들여). 줄 선 일은 점선 칩
     let x = x0, ly = cy;
     const us = unitsOf(c);
     us.forEach((u, k) => {
       const label = u.seat || '?';
-      const cw = Math.ceil(textW(label, 12) + 22);
-      if (k && x + P.LGAP + cw > x0 + W) { x = x0; ly += P.LINK + P.LGY; }
+      const cw = Math.min(W - P.LGAP, Math.ceil(textW(label, 12) + 22));
+      if (k && x + P.LGAP + cw > x0 + W) { x = x0 + P.LGAP; ly += P.LINK + P.LGY; }
       else if (k) x += P.LGAP;
-      chains.push({ ws, caseId: c.id, unit: u.unit, seat: label, x, y: ly, w: cw, h: P.LINK, queue: !!u.queued || (!u.sessionId && u.status === 'open'), open: u.status === 'open', up: !!(u.via && u.via.escalated), arrow: k > 0, result: u.result || null });
+      chains.push({ ws, caseId: c.id, unit: u.unit, seat: label, x, y: ly, w: cw, h: P.LINK, queue: !!u.queued || (!u.sessionId && u.status === 'open'), open: u.status === 'open', up: !!(u.via && u.via.escalated), arrow: k > 0, wrap: k > 0 && x === x0 + P.LGAP, result: u.result || null });
       x += cw;
     });
     cy = (us.length ? ly + P.LINK : cy) + P.GY;
     // 지금 일하는 세션의 카드(열린 일을 받은 fresh 세션). keep 자리가 일을 쥐면 표시 한 줄
     for (const u of us.filter((q) => q.status === 'open')) {
       const id = nodeOf(u.sessionId);
-      if (id && inBand(id) && member.get(id).mode !== 'keep' && !placed.has(id)) { placed.add(id); const e = entry(nodes.find((q) => q.id === id), x0, cy, { caseId: c.id }); cy += e.h + P.GY; }
+      if (id && inBand(id) && member.get(id).mode !== 'keep' && !placed.has(id)) { placed.add(id); const e = entry(nodes.find((q) => q.id === id), x0, cy, { caseId: c.id, w: Math.min(CW, W) }); cy += e.h + P.GY; }
       else if (id && inBand(id) && member.get(id).mode === 'keep') { marks.push({ kind: 'holds', ws, caseId: c.id, unit: u.unit, target: id, seat: u.seat, x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:${u.unit}` }); cy += BAND.MARK + P.GY; }
     }
     if (c.state === 'waiting_owner') { marks.push({ kind: 'wait', ws, caseId: c.id, key: 'wait', target: nodeOf(c.ownerSessionId), x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:wait` }); cy += BAND.MARK + P.GY; }
     // 이 건의 다른 세션은 머리 자리에 접힌 항목(요약 열·사이드바가 찾는다)
     for (const u of us) { const id = nodeOf(u.sessionId); if (id && inBand(id)) hideAt(id, head, c.id); }
     cy += P.GY;
-  }
+  };
+  for (const c of order.rows) block(c);
   // 건 밖에서 일하는 세션은 카드, 나머지는 접힌 줄
-  for (const n of nodes) if (!placed.has(n.id) && !isChipTier(tierOf(n.id))) { placed.add(n.id); const e = entry(n, x0, cy); cy += e.h + P.GY; }
-  const rest = nodes.filter((n) => !placed.has(n.id));
+  for (const n of nodes) if (!placed.has(n.id) && !isChipTier(tierOf(n.id))) { placed.add(n.id); const e = entry(n, x0, cy, { w: Math.min(CW, W) }); cy += e.h + P.GY; }
   let fold = null;
-  if (order.more > 0 || rest.length) {
-    fold = { ws, x: x0, y: cy, w: W, h: BAND.FOLD, n: order.more, sessions: rest.length, open: false };
-    for (const n of rest) hideAt(n.id, fold);
+  const restOf = () => nodes.filter((n) => !placed.has(n.id));
+  if (order.more > 0 || restOf().length) {
+    fold = { ws, x: x0, y: cy, w: W, h: BAND.FOLD, n: order.more, sessions: 0, open: !!foldOpen };
     cy += BAND.FOLD + P.GY;
+    if (foldOpen) {
+      // 편 줄: 숨은 건 블록(PC처럼), 그 뒤 건 없는 세션은 칩(얇은 카드) 한 줄씩
+      for (const c of order.hidden) block(c, true);
+      const rest = restOf();
+      for (const n of rest) { placed.add(n.id); entry(n, x0, cy, { w: W, h: BAND.CHIP, chip: true, thin: true }); cy += BAND.CHIP + P.LGY; }
+      if (rest.length) cy += P.GY - P.LGY;
+      fold.sessions = rest.length + order.hidden.reduce((s, c) => s + (c.units || []).filter((u) => u.sessionId).length, 0);
+    } else {
+      const rest = restOf();
+      fold.sessions = rest.length;
+      for (const n of rest) hideAt(n.id, fold);
+    }
   }
   const h = cy + P.PAD - y0;
   return { ws, box: { x: x0, y: y0, w: W, h }, seats: [], cards, marks, heads, lines: [], chains, fold, rowOf, w: W, h, phone: true };
+}
+
+// P199: 붙는 머리. 띠의 자리 머리가 고정 머리 막대(화면 y = top) 위로 지나갔는데 띠가 아직 그 선에 걸쳐 있으면, 그 띠의 자리 이름과 화면 x를 준다.
+// bands = lay.rb.list(PC), v = 보기 { x, y, k }, top = 고정 머리 막대 아래 변(보기 칸 기준), rail = 왼쪽 레일 폭. 없으면 null(나무 칸 이름 그대로)
+// 띠가 여럿이면 그 선에 걸친 띠(줄은 위아래로 쌓여 겹치지 않는다)
+export function stickyHead(bands, v, top, rail = 0) {
+  if (!bands || !v) return null;
+  for (const b of bands) {
+    if (b.phone || !b.seats || !b.seats.length) continue;
+    const headBottom = (b.seats[0].y + b.seats[0].h) * v.k + v.y;
+    const bandTop = b.box.y * v.k + v.y, bandBottom = (b.box.y + b.box.h) * v.k + v.y;
+    if (bandTop < top && headBottom <= top && bandBottom > top) return { ws: b.ws, seats: b.seats.map((s) => ({ name: s.name, old: !!s.old, mode: s.mode, x: Math.round(s.x * v.k + v.x - rail), w: s.w * v.k })) };
+  }
+  return null;
 }
 
 // 띠 사각형 안인가(Alt 끌기 놓을 곳·선 길에서 띠를 뺀다)
