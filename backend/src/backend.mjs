@@ -2193,7 +2193,7 @@ export class Backend {
       'relation.list': () => this.branch.relationList(), // P156
       'session.reopen': (p) => reopenSession(this, p), // P125: 사람이 닫은(끝난) 세션은 같은 자리에서, 닫힌 세션(J2)은 recall.reopen으로
       'link.log': (p) => { const l = this.store.getLink(p.link); if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`); return { link: this.linkView(l), events: this.store.linkEvents(l.linkId, p.limit || 200) }; },
-      'agent.kinds': () => this.adapter.agentKinds(),
+      'agent.kinds': (p = {}) => this.adapter.agentKinds({ fresh: !!(p && p.fresh) }), // P205: 창이 틀을 열 때 fresh(다시 찾기)
       // 자원(D1)
       'resources.get': async (p) => (p.fresh ? this.resources.sample() : this.resources.last),
       // P6a: 단일 캔버스(검색, 붙여 묶기, 풀기, 정리, 크기 단계, 영역 옮기기)

@@ -4,6 +4,7 @@
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { connect as connectTo, startBackend as startBackendFor, stopBackend as stopBackendFor } from '../src/client.mjs';
+import { fmtAsk } from './atrium-fmt.mjs'; // P205: 응답 필요 줄
 import { remoteCommand } from './atrium-remote.mjs'; // P49(R3): 원격 접속(Tailscale)
 import { updateCommand } from './atrium-update.mjs'; // P69: 설치와 업데이트
 import { FEATURES_HELP, FEATURE_BOOL_FLAGS, featureCommand, featureEvent } from './atrium-features.mjs'; // P6b
@@ -123,14 +124,6 @@ function roughText(buf, cols, rows) {
   return g.map((row) => row.join('').trimEnd()).filter((l) => l.trim()).join('\n');
 }
 
-function fmtAsk(a) {
-  if (!a) return '';
-  if (a.kind === 'question') return `질문: ${(a.questions || []).map((q) => `${q.question} [${q.options.join(' / ')}]${q.multiSelect ? ' (여러 개)' : ''}`).join(' | ')}`;
-  if (a.kind === 'plan') return `계획 승인: ${String(a.plan || '').slice(0, 120)}`;
-  if (a.kind === 'unknown_dialog') return '알 수 없는 대화상자(화면 확인 필요)';
-  const ch = a.choices ? `  선택지: ${a.choices.map((c) => `${c.n}.${c.label}`).join(' | ')}` : '';
-  return `권한 요청 ${a.summary || a.tool}${a.question ? ` — "${a.question}"` : ''}${ch}`;
-}
 // P66: 판의 이름을 바꾼 세션은 에이전트 주소를 함께 보인다
 const nameCol = (s) => (s.label && s.address && s.address !== s.name ? `${s.name} (주소 ${s.address})` : s.name).padEnd(8);
 function fmtSession(s) {

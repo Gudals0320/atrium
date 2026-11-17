@@ -70,7 +70,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
   const box = useDialog(onClose); // P52: 열면 첫 칸에 초점, Esc로 닫기, 닫으면 연 단추로 초점
   const pickLauncher = (id) => { setLid(id); const l = findLauncher(id); setLmodel(l ? l.model || devModel(l) : ''); };
 
-  useEffect(() => { api.call('agent.kinds').then((ks) => setKinds([...ks].sort((a, b) => (b.installed - a.installed) || (a.kind === 'claude' ? -1 : b.kind === 'claude' ? 1 : 0)))).catch(() => {}); }, []);
+  useEffect(() => { api.call('agent.kinds', { fresh: true }).then((ks) => setKinds([...ks].sort((a, b) => (b.installed - a.installed) || (a.kind === 'claude' ? -1 : b.kind === 'claude' ? 1 : 0)))).catch(() => {}); }, []);
   useEffect(() => {
     if (!cwd || !claude) return setTrust(null);
     const tm = setTimeout(() => api.call('trust.predict', { cwd }).then(setTrust).catch(() => setTrust(null)), 250);

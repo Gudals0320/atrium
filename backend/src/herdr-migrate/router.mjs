@@ -98,7 +98,7 @@ export class TerminalRouter extends EventEmitter {
   checkCompat(pong) { return this.primary.checkCompat(pong); }
   cliVersion() { return this.primary.cliVersion(); }
   serverPid() { return this.primary.serverPid(); }
-  agentKinds() { return this.primary.agentKinds(); }
+  agentKinds(o) { return this.primary.agentKinds(o); }
   // 주의 서버를 띄운다(판의 ensureTerminal). 다른 백엔드는 판이 뜰 때·옮길 때 따로 본다(ensureOthers)
   startServer() { return this.primary.startServer(); }
   // 사람이 고른 "터미널 모두 끄기": 붙은 백엔드 모두

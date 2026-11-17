@@ -159,3 +159,15 @@ export function agySandboxNote(harnesses, id, mode) {
   const kind = (h && h.kind) || id;
   return kind === 'agy' && AGY_SANDBOX_MODES.has(mode || 'manual');
 }
+
+// P205: 승인 방식 기본값. AGY는 권한 생략(샌드박스가 판 명령 atrium을 막는다), 나머지는 manual(백엔드 launchers.mjs defaultPermission과 같다)
+export function defaultPermission(harnesses, id) {
+  const h = (harnesses || []).find((x) => x.id === id);
+  return ((h && h.kind) || id) === 'agy' ? 'bypassPermissions' : 'manual';
+}
+// P205: 틀에서 하네스를 바꿀 때. 새 호출자이고 승인 방식이 앞 하네스의 기본값 그대로면 새 하네스의 기본값으로 바꾼다(사람이 고른 값은 둔다)
+export function withHarness(d, harness, harnesses) {
+  const n = { ...d, harness };
+  if (!d.id && (d.permissionMode || 'manual') === defaultPermission(harnesses, d.harness)) n.permissionMode = defaultPermission(harnesses, harness);
+  return n;
+}

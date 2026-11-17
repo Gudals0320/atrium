@@ -2891,4 +2891,7 @@ export default {
   agySandbox: { // P203
     note: 'The Antigravity sandbox blocks board commands (atrium). To hand it work from the board, choose a skip-permissions mode (dontAsk, bypassPermissions).',
   },
+  launcherEffort: { // P205: 호출자 틀의 노력 수준 빈 값(하네스 이름)
+    harnessDefault: '{harness} default',
+  },
 };
