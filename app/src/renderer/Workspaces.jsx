@@ -5,20 +5,33 @@ import { api } from './api.js';
 import { selectWorkspace, toast, openDialog } from './store.js';
 import { useT, t, errText, tMsg } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
+import { gitBoxView, openParams, gitResultNote } from './lib/ws-git.js'; // P195: Git 저장소로 시작
 
 // "+ 리포 열기": 폴더를 고르면 그 폴더의 리포지토리(저장소가 아니면 그 폴더)를 빈 워크스페이스로 만들고 그 영역으로 간다
 export function OpenRepoDialog({ onClose }) {
   const t = useT();
   const [dir, setDir] = useState('');
   const [busy, setBusy] = useState(false);
+  const [gitInit, setGitInit] = useState(false); // P195: Git 저장소로 시작(기본 끔)
+  const [gitState, setGitState] = useState(null);
   const box = useDialog(onClose); // P52
+  useEffect(() => {
+    const p = dir.trim(); setGitState(null);
+    if (!p) return undefined;
+    let live = true;
+    const h = setTimeout(() => { api.call('workspace.gitState', { path: p }).then((r) => { if (live) setGitState(r && r.state); }, () => {}); }, 250);
+    return () => { live = false; clearTimeout(h); };
+  }, [dir]);
+  const gbox = gitBoxView(gitState);
   async function browse() { try { const p = await window.mt.pickFolder(); if (p) setDir(p); } catch {} }
   async function submit(e) {
     e.preventDefault(); setBusy(true);
     try {
-      const r = await api.call('workspace.open', { path: dir.trim() });
+      const r = await api.call('workspace.open', openParams(dir, gitInit, gitState));
       const ws = r.workspace;
       toast(r.created ? t('workspaces.created', { name: ws.name }) : t('workspaces.exists', { name: ws.name }));
+      const gn = gitResultNote(r.git);
+      if (gn) toast(t(gn.key, { name: ws.name, error: (r.git && r.git.error) || '' }), gn.kind);
       selectWorkspace(ws.key); // 목록(workspace.updated)은 응답보다 먼저 온다
       onClose();
     } catch (err) { toast(t('workspaces.openFail', { error: errText(err) }), 'error'); setBusy(false); }
@@ -32,6 +45,11 @@ export function OpenRepoDialog({ onClose }) {
           <input value={dir} onChange={(e) => setDir(e.target.value)} placeholder={t('workspaces.pathPlaceholder')} data-field="path" autoFocus />
           <button type="button" className="mt-btn" onClick={browse} data-action="ws-browse">{t('workspaces.browse')}</button>
         </div>
+        <label className="mt-wsgit" data-role="ws-git-init" data-disabled={gbox.disabled ? '1' : undefined}>
+          <input type="checkbox" checked={gitInit && !gbox.disabled} disabled={gbox.disabled} data-field="git-init" onChange={(e) => setGitInit(e.target.checked)} />
+          <span>{t('wsGit.label')}</span>
+        </label>
+        <div className="mt-wsgit-hint dim" data-role="ws-git-hint">{gbox.reasonKey ? t(gbox.reasonKey) : t('wsGit.hint')}</div>
         <div className="mt-card-actions">
           <button className="mt-btn primary" disabled={busy || !dir.trim()} data-action="ws-open-submit">{t('common.open')}</button>
           <button type="button" className="mt-btn ghost" onClick={onClose}>{t('common.cancel')}</button>

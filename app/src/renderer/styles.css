@@ -2579,3 +2579,8 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigsetup-card:disabled { cursor: not-allowed; opacity: 0.75; }
 .mt-rigsetup-card:disabled:hover { border-color: var(--panel-line); }
 .mt-rigpanel-remote { font-size: 12px; margin: 4px 0 8px; }
+/* P195: 프로젝트 열기의 Git 저장소로 시작 */
+.mt-modal label.mt-wsgit { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; } /* 대화상자 label의 격자 대신 한 줄 */
+.mt-modal label.mt-wsgit input { width: auto; flex: none; margin: 0; }
+.mt-modal label.mt-wsgit[data-disabled] { cursor: not-allowed; color: var(--dim); }
+.mt-wsgit-hint { font-size: 12px; margin: 2px 0 4px 24px; }

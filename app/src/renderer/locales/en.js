@@ -155,6 +155,8 @@ export default {
     sessionNotFound: 'No such session on the board: {ref}',
     wsNotFound: 'No such workspace on the board: {ref}',
     targetNotFound: 'No such session on the board: {ref}',
+    wsGitInRepo: 'The folder is already inside a git repository, so git init was not run: {path}',
+    wsGitInitFail: 'git init failed: {error}',
     noFolder: 'Folder not found: {path}',
     wsNotEmpty: { one: 'A workspace with {n} session is not closed. Stop the session first', other: 'A workspace with {n} sessions is not closed. Stop the sessions first' },
     terminalDown: 'Not connected to the terminal server',
@@ -2832,5 +2834,15 @@ export default {
     remoteNote: 'Turning a rig on and editing it can only be done in the board window on the PC that runs the board, because an enabled rig runs repository programs under the user account of that PC. You can turn it off here.',
     wtNoRepo: 'This template runs the worker in worktrees. This folder is not a git repository. Run git init and make a first commit, then pick it.',
     wtNoCommit: 'This template runs the worker in worktrees. This repository has no commit yet. Make a first commit, then pick it.',
+  },
+  // P195: start as a git repository in the open-project dialog
+  wsGit: {
+    label: 'Start as a Git repository (git init + empty first commit)',
+    hint: 'Runs git init in the folder and makes an empty first commit. Worktrees (rig worktree seats) need a first commit. Your git config is not changed.',
+    inRepo: 'This folder is already inside a git repository, so git init is not run.',
+    noFolder: 'Folder not found.',
+    done: '{name}: ran git init and made an empty first commit.',
+    noIdentity: '{name}: git init ran, but the first commit was skipped because no git user name and email are set. In a terminal run git config --global user.name "Your Name" and git config --global user.email "you@example.com", then run git commit --allow-empty -m "Initial commit" in that folder. Rig worktree seats need a first commit.',
+    commitFail: '{name}: git init ran, but the first commit failed: {error}. Rig worktree seats need a first commit.',
   },
 };

@@ -15,6 +15,7 @@ import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
 import { DeliveryQueue } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
+import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { rigFlowHandlers, seatNamed } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
 import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·create·describe·get·save·spawnSeat
 import { rigAdminHandlers } from './rig-admin.mjs'; // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
@@ -618,11 +619,14 @@ export class Backend {
   async workspaceOpen(p) {
     const dir = path.resolve(String(p.path || ''));
     if (!p.path || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.path}`), 'noFolder', { path: p.path });
+    // P195: "Git 저장소로 시작" — git init과 빈 첫 커밋을 한 뒤 키를 잡는다(처음부터 저장소 키, 열쇠 옮기기 없음)
+    const git = p.gitInit === true ? await initRepo(dir) : null;
     const ws = await workspaceOf(dir);
+    if (git) this.store.addEvent(null, 'workspace_git_init', { key: ws.key, root: ws.root, commit: git.commit, why: git.why || null });
     const created = this.ensureWorkspace(ws, 'open');
     this.bus.emit('workspace_opened', ws.key); // P10: 사람이 연 워크스페이스는 저절로 연 것이 아니다(닫은 기억도 지운다)
     if (p.select !== false) { this.store.setMeta('currentWorkspace', ws.key); this.broadcastWorkspaces(); }
-    return { created, workspace: this.workspaceList().find((w) => w.key === ws.key) };
+    return { created, workspace: this.workspaceList().find((w) => w.key === ws.key), ...(git ? { git } : {}) };
   }
   // 워크스페이스를 판에서 지운다(빼기). P44: 여럿(workspaces)을 한 번에, 안에 세션이 있으면 after('archive' 모두 보관 | 'delete' 모두 삭제)를 골라야 한다.
   // confirm이 없으면 지울 것과 세션 수, 돌고 있는 CLI 수(plan)를 돌려준다. 디스크의 폴더와 대화 기록 파일은 건드리지 않는다(삭제도 판의 닫힌 세션 행만 지운다).
@@ -2150,6 +2154,8 @@ export class Backend {
       // 리포지토리 워크스페이스(P5, G1·G3)
       'workspace.list': () => (syncWsGroups(this, 'list') && this.broadcastWorkspaces(), { workspaces: this.workspaceList(), current: this.currentWorkspace(), groups: readGroups(this).groups }),
       'workspace.open': (p) => this.workspaceOpen(p),
+      // P195: 열 폴더의 git 상태(창의 "Git 저장소로 시작" 확인란). 'missing' | 'norepo' | 'nocommit' | 'ok'
+      'workspace.gitState': async (p) => { const dir = path.resolve(String((p && p.path) || '')); if (!p || !p.path || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return { state: 'missing' }; return { state: await gitStateAt(dir) }; },
       'workspace.close': (p) => this.workspaceClose(p),
       'workspace.select': (p) => this.workspaceSelect(p),
       // A3: 판을 마지막으로 본 시각. 창이 초점을 가진 동안 남긴다
