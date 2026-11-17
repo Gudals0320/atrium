@@ -1,5 +1,5 @@
 {
-  "_about": "P197: mission.graph rig entry for one workspace (harness-arch section 17 data). p197.test.mjs checks the keys of the real graph() output against this file. Values are a hand-picked example",
+  "_about": "P197: mission.graph rig entry for one workspace (harness-arch section 17 data). p197.test.mjs checks the keys of the real graph() output against this file. Values are a hand-picked example. doneCount = all closed (done + cancelled) cases in the workspace including the ones in cases[]; folded = doneCount - closed cases shown. openCount = all live cases, openMore = live cases not included. via is null for units that start from the owner (first unit, owner's resume, cycle unit). report.line is null when no flow line matched (plain done notice to the owner)",
   "version": 2,
   "manager": "manager",
   "results": ["ok", "failed", "rejected"],
