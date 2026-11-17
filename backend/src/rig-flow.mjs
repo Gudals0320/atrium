@@ -44,6 +44,27 @@ export function seatHeader({ seat, unitId, caseId, by, guide = false }) {
     `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다. ${guide ? '일을 시작하기 전에 `atrium guide`로 이 자리의 안내를 먼저 읽는다.' : '안내: `atrium guide`.'}`,
   ].join('\n');
 }
+// P193: 세션이 자리를 얻는 순간(사람의 rig.seat, rig.spawnSeat) 한 번 넣는 판 알림. 일 머리와 같이 세 줄 이하이고 모두 판 줄이라 카드의 지시가 되지 않는다.
+//   흐름이 띄운 자리 세션은 첫 일의 머리(seatHeader)가 같은 것을 알려 이 알림을 받지 않는다. P191: 머리 없이 앉은 keep 자리(main)가
+//   rig 흐름 대신 atrium child로 맡겨 건이 생기지 않았다
+export function seatNotice({ seat, assign = [], may = [], results = [], guide = false }) {
+  const where = [assign.length ? `일 맡기기: ${assign.join(', ')}` : null, may.length ? `글만: ${may.join(', ')}` : null].filter(Boolean).join(' · ');
+  return [
+    `[Atrium 보드] 관계: 사람이 너를 rig의 ${seat} 자리에 앉혔다. 이 워크스페이스의 일은 rig 흐름(자리와 건)으로 나눈다.`,
+    where
+      ? `[Atrium 보드] 일을 맡길 때는 \`atrium child\` 대신 \`atrium prompt <자리> "<할 일>"\`로 자리에 보낸다(${where}). 받는 자리의 세션은 보드가 띄운다.`
+      : '[Atrium 보드] 이 자리는 다른 자리에 일을 맡기지 않는다.',
+    `[Atrium 보드] 자리로 받은 일은 \`atrium done <값> "<보고>"\`로 닫는다(값: ${results.join(', ') || 'ok, failed'}). ${guide ? '먼저 `atrium guide`로 이 자리의 안내를 읽는다.' : '안내: `atrium guide`.'}`,
+  ].join('\n');
+}
+export const seatLeftNotice = (seat) => `[Atrium 보드] 관계: 사람이 너를 rig의 ${seat} 자리에서 뺐다. 이제 자리 없는 세션이다(\`atrium child\`·\`atrium prompt <세션>\`이 rig 밖 규칙대로 된다).`;
+
+// P193: 그 워크스페이스의 켜진 rig에 이 이름의 자리가 있으면 그 자리 이름(없으면 null). 자리 이름은 소문자·숫자·_라 <이름>-<n>은 겹치지 않는다
+export function seatNamed(rig, key, name) {
+  const r = rig && typeof rig.active === 'function' && key && name ? rig.active(key) : null;
+  const n = String(name || '').toLowerCase();
+  return r && r.def && r.def.seats && Object.prototype.hasOwnProperty.call(r.def.seats, n) ? n : null;
+}
 // 넘김 글(판이 만든다): 보낸 자리와 세션, 값, done 글, 건의 첫 할 일 앞 몇 줄, 올릴 때는 건의 이력
 export function handoffText({ fromSeat, fromName, result, doneText, firstSpec, escalated = null, history = [] }) {
   const lines = [`${fromSeat} 자리(@${fromName})가 done ${result}로 넘긴 일이다.`];
@@ -105,7 +126,9 @@ export class RigFlow {
   }
 
   // 판 API rig.seat(사람만, 이 PC의 창): 세션의 자리를 정하거나(seat) 뗀다(null)
-  setSeat(s, seat, { by = 'human' } = {}) {
+  // P193: notify면 자리를 얻을 때 판 알림 한 번(seatNotice), 비울 때 한 줄(seatLeftNotice). 같은 자리로 다시 정하면 알리지 않는다.
+  //   notify 'spawned'(rig.spawnSeat): 판이 띄울 때 이미 자리를 적었으므로(backend.spawn의 SEAT_SPAWN) 같은 자리여도 알린다
+  setSeat(s, seat, { by = 'human', notify = false } = {}) {
     const b = this.b; const st = this.store();
     const r = b.rig ? b.rig.active(s.workspaceKey) : null;
     if (!r) throw apiError('rig_off', `@${shownName(s)}의 워크스페이스에는 켜진 rig가 없다. 자리는 rig가 켜진 워크스페이스에서만 정한다.`);
@@ -124,7 +147,18 @@ export class RigFlow {
     st.addEvent(s.sessionId, 'rig_seat', { workspace: s.workspaceKey, seat: want, before, by });
     b.log(`rig seat ${s.name}: ${before || '-'} → ${want || '-'} (${by})`);
     if (b.broadcastSession) b.broadcastSession(s, { cause: 'rig_seat' });
-    return { session: shownName(s), sessionId: s.sessionId, seat: want, before, workspace: s.workspaceKey };
+    let noticeId = null;
+    if (notify && (want !== before || (notify === 'spawned' && want)) && (want || before)) {
+      const text = want ? this.seatNoticeOf(r.def, want) : seatLeftNotice(before);
+      const d = b.queue.enqueue(s.sessionId, text);
+      noticeId = d.deliveryId;
+      st.addEvent(s.sessionId, 'rig_seat_notice', { seat: want, before, deliveryId: d.deliveryId });
+    }
+    return { session: shownName(s), sessionId: s.sessionId, seat: want, before, workspace: s.workspaceKey, ...(noticeId ? { noticeId } : {}) };
+  }
+  seatNoticeOf(def, seat) {
+    const x = def.seats[seat] || {};
+    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide });
   }
 
   // ---------- 건 ----------
@@ -188,7 +222,7 @@ export class RigFlow {
     const ref = String(o.name ?? '').trim().replace(/^@/, '');
     const assign = this.assignTargets(ctx); const may = ctx.seat.may;
     let t = null, seatName = null;
-    if (ref && Object.prototype.hasOwnProperty.call(ctx.def.seats, ref)) seatName = ref;
+    if (ref && Object.prototype.hasOwnProperty.call(ctx.def.seats, ref.toLowerCase())) seatName = ref.toLowerCase(); // P193: 자리 이름이 같은 이름의 세션보다 먼저
     else {
       t = verbs.target(caller, ref);
       const open = st.openTryOf(t.sessionId); const ou = open ? st.getUnit(open.unitId) : null;
@@ -532,7 +566,7 @@ export function rigFlowHandlers(b) {
       local(c);
       if (!p || !p.session) throw apiError('bad_request', 'session이 필요하다');
       const s = b.resolve(p.session);
-      return b.branch.flow.setSeat(s, p.seat ?? null, { by: 'human' });
+      return b.branch.flow.setSeat(s, p.seat ?? null, { by: 'human', notify: true }); // P193: 자리를 얻으면 판 알림
     },
     // P186: 세션 맵 미리 보기의 최근 훅 판정과 도구 실행(보기만). rig 밖 세션은 둘 다 빈 목록
     'rig.recent': (p) => {

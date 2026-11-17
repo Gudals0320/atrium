@@ -15,7 +15,7 @@ import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
 import { DeliveryQueue } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
-import { rigFlowHandlers } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
+import { rigFlowHandlers, seatNamed } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
 import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·create·describe·get·save·spawnSeat
 import { rigAdminHandlers } from './rig-admin.mjs'; // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
@@ -1388,6 +1388,10 @@ export class Backend {
     this.requireTerminal();
     const cwd = path.resolve(String(p.cwd || ''));
     if (!p.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.cwd}`), 'noFolder', { path: p.cwd });
+    // P193: rig가 켜진 워크스페이스에서 사람이 자리 이름과 같은 이름으로 띄우면 <이름>-<n>으로 바꾼다(자리 세션의 atrium prompt <자리>는 자리로 가므로
+    //   같은 이름의 세션은 이름으로 닿지 않는다). 판이 그 자리를 위해 띄우는 keep 자리 세션(SEAT_SPAWN이 그 이름)과 하위 세션(branch.mjs가 거절)은 빼고.
+    //   이름 검사 앞에서 기다려 검사와 예약 사이에 await가 끼지 않게 한다
+    const seatClash = p.name && !p.branch && this.rig && p[SEAT_SPAWN] !== p.name ? seatNamed(this.rig, (await workspaceOf(cwd)).key, p.name) : null;
     const pending = this.spawningNames || (this.spawningNames = new Set()); // 만드는 중인 세션 이름
     const taken = takenNames(this.sessions.values(), pending); // P66: 판의 이름(label)도 피한다. 대소문자 무시
     // P33: 띄울 값은 호출자(launchers.mjs)가 정한다. 함께 준 값(모델 등)이 호출자 값을 덮는다. 호출자 없이 부르면 준 값만 쓴다(atrium child, CLI --kind)
@@ -1402,6 +1406,8 @@ export class Backend {
     const kind = plan.kind;
     const shell = kind === SHELL;
     let name = p.name;
+    let renamedFrom = null;
+    if (seatClash) { renamedFrom = name; let i = 1; while (taken.has(`${name}-${i}`)) i++; name = `${name}-${i}`; this.log(`spawn: ${renamedFrom} is a rig seat name, using ${name}`); }
     const prefix = shell ? 'sh' : 's';
     if (!name) { let i = 1; while (taken.has(`${prefix}${i}`)) i++; name = `${prefix}${i}`; }
     if (!NAME_RE.test(name) || name === 'all') throw apiError('bad_request', `이름에는 영문, 숫자, -, _만 사용할 수 있습니다 (all 제외): ${name}`);
@@ -1486,7 +1492,7 @@ export class Backend {
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
       this.probeGit(s, cwd);
-      const out = { sessionId, name, kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
+      const out = { sessionId, name, ...(renamedFrom ? { renamedFrom, renamedWhy: 'rig_seat' } : {}), kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
       if (command) {
         // P25 직접 명령: 셸 프롬프트가 뜨면 그 글을 그대로 치고 Enter. 에이전트가 나타나면 promoteShell이 같은 노드의 종류를 바꾼다(hook 없음)
         const ready = await this.adapter.waitShellReady(hw.paneId);

@@ -39,7 +39,7 @@ import { AgentVerbs, verbLines } from './agent-verbs.mjs'; // P116: atrium promp
 import { ToolRuns } from './tool-runs.mjs'; // P183: atrium tool
 import { installRelations, relationHeader, RELATION_WORD } from './branch-relations.mjs'; // P156: 일 관계
 import { WorkUnits, checkAgentText } from './work-units.mjs'; // P180: 일 단위와 시도
-import { RigFlow } from './rig-flow.mjs'; // P185: rig 자리·건·흐름
+import { RigFlow, seatNamed } from './rig-flow.mjs'; // P185: rig 자리·건·흐름
 import { RigSetup } from './rig-setup.mjs'; // P190: 판 안에서 rig 만들기(틀, 제작 세션, 표 저장, 자리 띄우기)
 import { rigGuideText } from './rig-templates.mjs'; // P190: atrium guide rig
 import { RigAdmin } from './rig-admin.mjs'; // P188: atrium rig check|log|rollback|cleanup, 사람만 고치는 목록
@@ -628,6 +628,15 @@ export class Branch {
     if (prompt != null) checkAgentText(prompt, '첫 요청'); // P180: 판 알림 머리로 시작할 수 없다
     const taken = takenNames(b.sessions.values(), [...this.pendingNames]); // P66: 판의 이름(label)도 피한다
     const name = childName({ want: o.name ? String(o.name) : null, parentName: parent.name, taken });
+    // P193: rig가 켜진 워크스페이스에서 자리 이름과 같은 하위 세션 이름은 거절한다(판이 그 자리를 위해 띄우는 것은 빼고).
+    //   P191: main이 atrium child worker로 띄워 rig 건이 생기지 않았고, 그 이름이 자리를 가렸다. 자리에 맡기는 길을 까닭에 적는다
+    if (o.name && !o[SEAT_SPAWN] && b.rig) {
+      const clash = seatNamed(b.rig, (await workspaceOf(cwd)).key, name);
+      if (clash) {
+        const seated = this.flow && this.flow.seatCtx(parent);
+        throw apiError('rig_seat_name', `하위 세션 이름 ${name}: 이 워크스페이스 rig의 자리 이름이라 쓰지 않는다. ${seated ? `${clash} 자리에 일을 맡기려면 \`atrium prompt ${clash} "<할 일>"\`(보드가 자리 세션을 띄우고 건을 연다). ` : ''}따로 하위 세션이 필요하면 다른 이름을 준다(예: ${name}-a).`, { seat: clash });
+      }
+    }
     // P182: 첫 요청은 받는 쪽(띄울 세션의 워크스페이스) rig의 deliver 훅을 띄우기 전에 지난다. 거절이면 띄우지 않는다
     let promptText = prompt;
     let hookRows = []; // P187: 띄우기 전에 돈 훅 행(띄운 뒤 세션·일을 적는다)
