@@ -2820,4 +2820,9 @@ export default {
     errFlow: '흐름 줄에는 어디서, 값, 어디로가 모두 있어야 합니다.',
     errMax: '최대는 1 이상의 정수입니다: {value}',
   },
+  // P194: rig 8단계 창 손질
+  rigMore: {
+    spawnRenamed: ' · rig 자리 이름과 겹쳐 세션 이름을 바꿨습니다: {from} → @{name}',
+    caseWaitingOwner: '주인의 답을 기다림',
+  },
 };

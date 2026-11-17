@@ -191,7 +191,7 @@ test('P185 자리 정하기: 사람(판 API 토큰, local)만, 켜진 rig만, �
 });
 
 // ---------- 흐름 전체(14절 "증거"의 모양) ----------
-test('P185 흐름: 메인이 맡겨 건이 생김 → worker ok → reviewer → 반려 두 번 뒤 세 번째는 main → main done → 건 done. 넘김 글, deliver 훅 from flow, 이름, 상위 = 건 주인', async () => {
+test('P185 흐름(P194 보고): 메인이 맡겨 건이 생김 → worker ok → reviewer → 반려 두 번 뒤 세 번째는 main에게 보고(waiting_owner) → main이 다시 맡겨 이음 → reviewer ok는 main에게 보고 → 건 done. 넘김 글, deliver 훅 from flow, 이름, 상위 = 건 주인', async () => {
   const { b, add, seat, by, F, stop } = await board();
   try {
     const main = add('lead', { kind: 'codex', hooked: false });
@@ -244,12 +244,19 @@ test('P185 흐름: 메인이 맡겨 건이 생김 → worker ok → reviewer →
       rv = by(`reviewer-${i + 1}`); assert.ok(rv); await gotUnit(rv);
     }
     d = await done(b, rv, 'rejected', '고칠 것 3');
-    assert.equal(d.flow[0].seat, 'main', '상한 2를 넘어 else(main)로');
-    assert.equal(d.flow[0].to, 'lead', 'keep 자리는 앉은 세션');
+    // P194: else(main)의 앉은 세션이 건 주인이라 일이 아니라 보고이고, 건은 waiting_owner
+    assert.deepEqual(d.flow, [], '주인에게는 일을 만들지 않는다');
+    assert.deepEqual(d.reports, [{ seat: 'main', to: 'lead', escalated: true }]);
+    assert.equal(d.case.state, 'waiting_owner');
     assert.equal(b.store.getCase(caseId).edgeCounts['2>else'], 1);
     await until(() => main.texts.length === 1);
     const up = main.texts[0];
-    assert.match(up, /되돌아감 상한을 넘어 올라옴/);
+    assert.match(up, /^\[Atrium 보드\] rig 건 c\w+\("일: 목록을 세어 보고한다"\): reviewer 자리\(@reviewer-3\)가 일 u\w+을 닫았다: rejected\n/);
+    assert.match(up, /이것은 보고다\(atrium done으로 닫을 일이 아니다\)\. 되돌아감 상한을 넘어 너에게 올라왔다/);
+    assert.match(up, /건은 waiting_owner다/);
+    assert.match(up, /\n고칠 것 3/);
+    assert.equal(U(b).item(main).item, null, '주인은 열린 일이 없다');
+    assert.equal(evs(b, 'rig_case_waiting_owner').length, 1);
     assert.match(up, /flow\[2\]은 이 건에서 이미 2번 지났다/);
     assert.match(up, /--- 건의 이력\(자리, 세션, 값, done 글 첫 줄\) ---/);
     assert.match(up, /worker\(@worker-1\) ok: 세었다: 3개/);
@@ -259,21 +266,18 @@ test('P185 흐름: 메인이 맡겨 건이 생김 → worker ok → reviewer →
     // main이 이 건을 이어 다시 맡김(같은 건) → 새 worker → ok → reviewer ok → main → main done → 건 done
     await until(() => main.rt.term.status === 'idle');
     const r2 = await V(b).prompt(main, { name: 'worker', text: '다시: 끝까지' });
-    assert.equal(r2.unit.caseId, caseId, '메인이 쥔 건의 열린 시도가 있으면 그 건을 잇는다');
+    assert.equal(r2.unit.caseId, caseId, 'P194: 주인의 waiting_owner 건이 하나면 다음 맡기기가 그 건을 잇는다');
+    assert.equal(b.store.getCase(caseId).state, 'open');
+    assert.equal(evs(b, 'rig_case_resume').at(-1).data.from, 'waiting_owner');
     const w4 = by('worker-4'); await gotUnit(w4);
-    // 주인 자신의 일은 아직 열려 있다(main이 done하기 전)
     await done(b, w4, 'ok', '끝까지 했다');
     const rv4 = by('reviewer-4'); await gotUnit(rv4);
     d = await done(b, rv4, 'ok', '좋다');
-    assert.equal(d.flow[0].seat, 'main');
-    // main은 두 일(올림 일, 검토 ok 일)을 차례로 받는다(한 세션에 열린 시도는 하나)
-    let md = await done(b, main, 'ok', '올림 처리함');
-    assert.equal(md.claimedBy, 'record', '주인이 자기 일을 닫음');
-    await until(() => main.texts.length === 2 && main.rt.term.status === 'idle');
-    assert.match(main.texts[1], /reviewer 자리\(@reviewer-4\)가 done ok로 넘긴 일이다/);
-    assert.equal(b.store.getCase(caseId).state, 'open');
-    md = await done(b, main, 'ok', '받았다');
-    assert.equal(md.case.state, 'done');
+    assert.deepEqual(d.reports, [{ seat: 'main', to: 'lead', escalated: false }]);
+    assert.equal(d.case.state, 'done', 'P194: 주인에게 간 것은 보고라 열린 일이 없어 건이 done(주인이 done을 칠 필요 없음)');
+    await until(() => main.texts.length === 2);
+    assert.match(main.texts[1], /^\[Atrium 보드\] rig 건 c\w+\("일: 목록을 세어 보고한다"\): reviewer 자리\(@reviewer-4\)가 일 u\w+을 닫았다: ok\n\[Atrium 보드\] 이것은 보고다\(atrium done으로 닫을 일이 아니다\)\. 건에 열린 일이 없으면 건은 done이다\.\n좋다$/);
+    assert.equal(evs(b, 'rig_case_done').length, 1);
     const c = b.store.getCase(caseId);
     assert.equal(c.state, 'done'); assert.ok(c.closedAt);
     // 건이 띄운 세션 기록(rig_case_items)과 rig.cases
@@ -284,7 +288,7 @@ test('P185 흐름: 메인이 맡겨 건이 생김 → worker ok → reviewer →
     assert.equal(cases.cases[0].items.length, 8);
     assert.equal(cases.cases[0].lines[0].passed, 2);
     assert.equal(cases.cases[0].lines[0].escalated, 1);
-    assert.ok(cases.cases[0].handoffs >= 8);
+    assert.ok(cases.cases[0].handoffs >= 6);
     // 이름: 다시 쓰지 않는 n(DB 셈)
     assert.equal(b.store.nextSeatN(c.workspaceKey, 'worker'), 5);
     // atrium me·items
@@ -376,7 +380,8 @@ test('P185 되돌아감 상한: else가 없으면 manager, manager도 없으면 
     await done(b, w2, 'ok', '했다');
     const rv2 = by('reviewer-2'); await gotUnit(rv2);
     const d2 = await done(b, rv2, 'rejected', '또 틀림');
-    assert.equal(d2.flow[0].seat, 'main');
+    assert.equal(d2.reports[0].seat, 'main', 'manager(main)의 앉은 세션이 주인이라 보고(P194)');
+    assert.equal(d2.case.state, 'waiting_owner');
   } finally { await stop(); }
 });
 

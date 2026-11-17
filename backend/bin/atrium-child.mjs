@@ -26,7 +26,7 @@ import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP } from '../src/cli-c
 // P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
 const HAND_OFF = '기다리지 않고 턴을 끝낸다. 끝나면 보드가 done 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다.';
 const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같다)
-  atrium prompt <이름> "<할 일>" [--wait | --now] [--timeout ms] [--file 경로]
+  atrium prompt <이름> "<할 일>" [--wait | --now] [--timeout ms] [--file 경로] [--case 건]
       다른 에이전트에게 일을 맡긴다. 이름은 보드의 세션 이름이다(@ 없이도). 보드가 받는 쪽 차례에 맞춰 넣는다: 일하는 중이거나 사람의 답을 기다리면 끝난 뒤,
       사람이 그 터미널에 치는 중이면 3초 뒤, 잠들었으면 깨운 뒤. 보낸 쪽 → 받는 쪽 연결과 오간 기록이 판에 남는다.
       하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 값과 보고를 네 차례에 한 번 넣고, 보고 없이 멈추면(쉼, 오류, 사람의 답 기다림, 닫힘) 한 번 알린다. 폴링하지 않는다.
@@ -34,6 +34,8 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       --now는 받는 쪽이 일하는 중인 Claude Code면 끝나기를 기다리지 않고 그 세션의 대기 메시지로 바로 넣는다(지금 턴 안에서 읽는다). 일하는 중인 상대에게 바로 알릴 것이 있을 때 쓴다.
       그 밖(쉬는 중, 다른 종류, 사람의 답을 기다림, 잠듦)은 위와 같다. --wait와 함께 쓰지 않는다.
       --file은 글을 파일에서 읽는다(긴 글, 따옴표가 많은 글).
+      --case는 rig 자리 세션이 자리에 일을 맡길 때 이을 건을 고른다(내가 주인인 끝나지 않은 건, atrium me에 보인다). 없으면 보드가 고른다:
+      쥔 일의 건, 아니면 너에게 올라와 기다리는 건(waiting_owner)이 하나면 그 건, 그 밖은 새 건.
   atrium wait <이름> [--timeout ms]
       그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(Claude Code는 hook의 답, 다른 종류는 보드가 화면에서 고른 답).
       사람의 답을 기다리면 바로 돌아온다(waiting). 시간이 끝나면 종료 코드 3이고 일은 계속된다. 맡긴 일의 보고는 보드가 가져다주므로 되풀이해 치지 않는다
@@ -258,6 +260,7 @@ async function unitVerb(cmd) {
     const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, record: x.parentOpen ? '건의 주인(너)이 닫은 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다`, flow: '보드가 rig 흐름에 따라 다음 자리로 넘겼다' }[x.claimedBy] || x.claimedBy;
     say(`일 ${x.unit}을 닫았다(${x.result}). ${how}. 다른 길로 따로 보고하지 않는다.`);
     if (x.flow && x.flow.length) say(`넘김: ${x.flow.map((f) => `${f.seat} 자리${f.to ? ` @${f.to}` : '(자리 줄에 섰다)'} 일 ${f.unit}`).join(', ')}`); // P185
+    if (x.reports && x.reports.length) say(`보고: ${x.reports.map((f) => `${f.seat} 자리 @${f.to}(건의 주인${f.escalated ? ', 상한을 넘어 올라감' : ''})`).join(', ')}`); // P194
     if (x.case) say(`건 ${x.case.id}: ${x.case.state}${x.case.blockedReason ? ` — ${x.case.blockedReason}` : ''}`);
     if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else say('이제 쉰다.');
     return;
@@ -409,7 +412,8 @@ async function verb(cmd) {
     if (flags.file) { if (text) fail('글은 인자나 --file 가운데 하나로 준다', 2); try { text = fs.readFileSync(path.resolve(String(flags.file)), 'utf8'); } catch (e) { fail(`--file을 읽지 못했다: ${e.message}`, 2); } }
     if (!text.trim()) fail('보낼 글을 준다: atrium prompt <이름> "<할 일>"', 2);
     if (flags.now && flags.wait) fail('--now와 --wait는 함께 쓸 수 없다(--now는 받는 쪽의 지금 턴에 넣어 짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.', 2); // P143
-    r = await call('prompt', { name, text, wait: !!flags.wait, ...(flags.now ? { now: true } : {}), timeoutMs }, flags.wait ? (timeoutMs || 100000) + WAIT_HTTP_EXTRA : 60000);
+    if (flags.case != null && !String(flags.case).trim()) fail('--case에는 건 ID를 준다(atrium me의 건)', 2); // P194
+    r = await call('prompt', { name, text, wait: !!flags.wait, ...(flags.now ? { now: true } : {}), ...(flags.case != null ? { caseId: String(flags.case).trim() } : {}), timeoutMs }, flags.wait ? (timeoutMs || 100000) + WAIT_HTTP_EXTRA : 60000);
   } else if (cmd === 'wait') r = await call('turn', { name, timeoutMs }, (timeoutMs || 100000) + WAIT_HTTP_EXTRA);
   else {
     const lines = flags.lines != null ? Number(flags.lines) : null;
@@ -541,6 +545,7 @@ function printSeat(r) {
   say(`rig 자리: ${r.seat}(${r.session}${r.worktree ? ', 일마다 워크트리' : ''})${r.case ? ` · 건 ${r.case.id} ${r.case.state}(주인 @${r.case.owner})` : ''}`);
   say(`  끝내기: atrium done <값> "<보고>". 값: ${r.results.join(', ')}${r.next && r.next.length ? ` · 다음: ${r.next.map((n) => `${n.on} → ${n.to.join(', ')}${n.max != null ? `(최대 ${n.max}번, 넘으면 ${n.else || 'manager'})` : ''}`).join(' · ')}` : ''}`);
   say(`  보낼 수 있는 자리: 일 맡기기 ${r.assign.length ? r.assign.join(', ') : '없음'} · 글만 ${r.may.length ? r.may.join(', ') : '없음'}(atrium prompt <자리> "…"). 그 밖은 보드가 거절한다${r.tools ? ` · 도구: ${r.tools.join(', ') || '없음'}` : ''}`);
+  if (r.owned && r.owned.length) say(`  네가 주인인 건: ${r.owned.map((c) => `${c.id} ${c.state}`).join(', ')}${r.owned.some((c) => c.state === 'waiting_owner') ? ' · waiting_owner는 너의 답을 기다린다: 다음 atrium prompt <자리>가 잇는다(여럿이면 --case <건>)' : ''}`); // P194
   if (r.manager) say(`  너는 관리자 자리다(정의 버전 ${r.version ?? '-'}): .atrium/rig.json을 직접 고치고, atrium rig check [파일] | log | rollback <n> | cleanup <건>을 쓴다`); // P188
 }
 // P156: atrium relate

@@ -214,8 +214,7 @@ test('P188 건 버전 고정: 열린 건은 만들 때의 흐름을 따르고 �
     assert.equal(b.store.getCase(r2.unit.caseId).versionN, 2);
     const w2 = by('worker-2'); await gotUnit(w2);
     const d2 = await done(b, w2, 'ok', '둘째 건 했다');
-    assert.equal(d2.flow[0].seat, 'main', '건 2는 버전 2의 흐름');
-    assert.equal(d2.flow[0].to, 'lead');
+    assert.deepEqual(d2.reports, [{ seat: 'main', to: 'lead', escalated: false }], '건 2는 버전 2의 흐름(P194: 주인 lead에게는 일이 아니라 보고)');
     // rig.cases와 me가 버전을 보인다
     const cs = await rigFlowHandlers(b)['rig.cases']({}, null);
     assert.deepEqual(cs.cases.map((c) => c.version).sort(), [1, 2]);

@@ -21,7 +21,7 @@ CREATE INDEX IF NOT EXISTS tool_runs_session ON tool_runs(session_id, started_at
 CREATE INDEX IF NOT EXISTS tool_runs_unit ON tool_runs(unit_id);
 `;
 // P185: 건(rig_cases)과 건이 만든 세션·워크트리(rig_case_items). 하네스 3단계(14절 "건").
-// rig_cases.state: open | done | blocked | cancelled. edge_counts: 흐름 줄마다 이 건에서 지난 횟수 JSON { "<줄 번호>": n }. blocked_reason: blocked의 까닭
+// rig_cases.state: open | done | blocked | waiting_owner | cancelled(P194: waiting_owner = 상한을 넘어 주인에게 보고로 올라감, 주인의 다음 맡기기가 잇는다). edge_counts: 흐름 줄마다 이 건에서 지난 횟수 JSON { "<줄 번호>": n }. blocked_reason: blocked의 까닭
 // rig_case_items: 흐름이 그 건을 위해 띄운 세션(자리, 워크트리 이름·경로). 판은 지우지 않는다(5단계 관리자 자리가 정리한다)
 // rig_seat_counters: fresh 자리 세션 이름 <자리>-<n>의 n(워크스페이스·자리마다, 다시 쓰지 않는다)
 export const RIG_FLOW_SCHEMA = `
@@ -112,7 +112,9 @@ export function installRig(Store) {
       if (sets.length) this.st(`UPDATE rig_cases SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     },
     casesOf(workspaceKey, limit = 50) { return this.st('SELECT * FROM rig_cases WHERE workspace_key = ? ORDER BY created_at DESC, rowid DESC LIMIT ?').all(workspaceKey, limit).map(caseRow); },
-    liveCasesOfOwner(sessionId) { return this.st("SELECT * FROM rig_cases WHERE owner_session = ? AND state IN ('open', 'blocked')").all(sessionId).map(caseRow); },
+    // P194: 주인 세션이 쥔 waiting_owner 건(그 워크스페이스)
+    waitingCasesOfOwner(sessionId, key) { return this.st("SELECT * FROM rig_cases WHERE owner_session = ? AND workspace_key = ? AND state = 'waiting_owner' ORDER BY created_at").all(sessionId, key).map(caseRow); },
+    liveCasesOfOwner(sessionId) { return this.st("SELECT * FROM rig_cases WHERE owner_session = ? AND state IN ('open', 'blocked', 'waiting_owner')").all(sessionId).map(caseRow); },
     insertCaseItem(x) { this.st('INSERT INTO rig_case_items (case_id, session_id, seat, worktree, worktree_path, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(x.caseId, x.sessionId, x.seat, x.worktree ?? null, x.worktreePath ?? null, x.createdAt ?? Date.now()); },
     caseItems(caseId) { return this.st('SELECT * FROM rig_case_items WHERE case_id = ? ORDER BY id').all(caseId).map((r) => ({ caseId: r.case_id, sessionId: r.session_id, seat: r.seat, worktree: r.worktree ?? null, worktreePath: r.worktree_path ?? null, createdAt: r.created_at })); },
     // 건의 일들(만든 차례)
@@ -191,7 +193,7 @@ export function installRig(Store) {
     },
     // 열린(open·blocked) 건과 그 건의 마지막 일 시각(마지막 넘김)
     liveCasesWithLast(key) {
-      return this.st("SELECT c.*, (SELECT MAX(u.created_at) FROM work_units u WHERE u.case_id = c.id) AS last_at FROM rig_cases c WHERE c.workspace_key = ? AND c.state IN ('open', 'blocked') ORDER BY c.created_at").all(key).map((r) => ({ ...caseRow(r), lastAt: r.last_at ?? r.created_at }));
+      return this.st("SELECT c.*, (SELECT MAX(u.created_at) FROM work_units u WHERE u.case_id = c.id) AS last_at FROM rig_cases c WHERE c.workspace_key = ? AND c.state IN ('open', 'blocked', 'waiting_owner') ORDER BY c.created_at").all(key).map((r) => ({ ...caseRow(r), lastAt: r.last_at ?? r.created_at }));
     },
     // ---------- P190: 판 안에서 rig 만들기(16절) ----------
     // 그 워크스페이스의 제작 일(사람이 맡긴 rig.describe 일, origin rig_builder), 최근 것부터. 받는 세션의 워크스페이스로 고른다
@@ -200,7 +202,7 @@ export function installRig(Store) {
     },
     // 최근에 띄운 세션의 spawn 이벤트(워크스페이스·런처 이름. 기본 런처 고르기)
     recentSpawns(limit = 500) { return this.st("SELECT data FROM events WHERE kind = 'spawn' ORDER BY id DESC LIMIT ?").all(limit).map((r) => J(r.data, {}) || {}); },
-    liveCasesCount(key) { return Number(this.st("SELECT COUNT(*) AS n FROM rig_cases WHERE workspace_key = ? AND state IN ('open', 'blocked')").get(key).n); },
+    liveCasesCount(key) { return Number(this.st("SELECT COUNT(*) AS n FROM rig_cases WHERE workspace_key = ? AND state IN ('open', 'blocked', 'waiting_owner')").get(key).n); },
     // 그 세션의 그 시각 상태(마지막 state 이벤트의 to). 관리자 자리가 일하는 턴 중이었나를 본다
     stateAt(sessionId, t) { const r = this.st("SELECT data FROM events WHERE session_id = ? AND kind = 'state' AND t <= ? ORDER BY id DESC LIMIT 1").get(sessionId, t); const d = r ? J(r.data) : null; return d ? d.to || null : null; },
   });

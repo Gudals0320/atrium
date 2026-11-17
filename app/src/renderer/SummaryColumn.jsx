@@ -18,8 +18,9 @@ export function SummaryColumn({ sum, t, nameOf, tierOf, textOf, noOf = () => nul
   };
   // P186: 건 한 줄. a = 건 ID와 주인, b = 일이 있는 자리·넘김 수(열림), 까닭(막힘), 끝남·넘김 수(끝남)
   const caseItem = (c) => {
-    const st = c.state === 'blocked' ? 'alert' : c.state === 'open' ? 'work' : 'done';
+    const st = c.state === 'blocked' || c.state === 'waiting_owner' ? 'alert' : c.state === 'open' ? 'work' : 'done';
     const b = c.state === 'blocked' ? t('rigMap.caseBlocked', { reason: c.reason || '?' })
+      : c.state === 'waiting_owner' ? [t('rigMore.caseWaitingOwner'), t('rigMap.handoffs', { n: c.handoffs })].join(' · ') // P194
       : c.state === 'open' ? [c.seats.length ? t('rigMap.caseAt', { seats: c.seats.join(', ') }) : t('rigMap.caseQueued'), t('rigMap.handoffs', { n: c.handoffs })].join(' · ')
         : [t(c.state === 'cancelled' ? 'rigMap.caseCancelled' : 'rigMap.caseDone'), t('rigMap.handoffs', { n: c.handoffs })].join(' · ');
     const lim = c.state !== 'done' && c.state !== 'cancelled' ? c.lines.filter((l) => l.passed > 0).map((l) => `${l.on} ${l.passed}/${l.max}`).join(' · ') : '';

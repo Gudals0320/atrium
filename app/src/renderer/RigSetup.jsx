@@ -3,18 +3,24 @@
 // 단계·표 편집·잠금·저장 자료는 lib/rig-setup.js(단위 시험 test/p191-lib.test.mjs). 원격 기기(웹 화면)는 보기만.
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from './api.js';
-import { useStore, toast, getState, openDialog } from './store.js';
+import { useStore, toast, getState, openDialog, loadLaunchers } from './store.js';
 import { useT, errText, getLanguage } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
 import {
-  launcherChoices, wizardInit, wizardPickTemplate, wizardPickDescribe, wizardSetLauncher, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
+  launcherChoices, launcherLabel, namedLaunchers, wizardInit, wizardPickTemplate, wizardPickDescribe, wizardSetLauncher, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
   wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions, previewModel, arrowLabel, seatList,
   templateList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit,
 } from './lib/rig-setup.js';
 
 const argv = (run) => (Array.isArray(run) ? run.join(' ') : String(run || ''));
-const launcherName = (choices, id) => { const l = choices.find((c) => c.id === id); return l ? l.name : id; };
+const launcherName = (choices, id) => launcherLabel(choices, id); // P194: id·이름 모두 판의 런처 이름으로
+// P194: 런처 목록이 아직 없으면(창이 막 열림, 원격 기기) 받아 온다. 없으면 미리보기·표에 런처 id가 보였다
+function useChoices() {
+  const data = useStore((s) => s.launchers);
+  useEffect(() => { if (!data) loadLaunchers(); }, [data]);
+  return useMemo(() => launcherChoices(data), [data]);
+}
 
 // rig.get을 읽고, 판 이벤트(rig.builder·rig.cases·rig.alert) 때 다시 읽는다
 function useRigGet(key) {
@@ -116,12 +122,13 @@ async function runSeats(ws, st, picks) {
 function BuilderLine({ b }) {
   const t = useT();
   const v = builderView(b);
+  const choices = useChoices(); // P194: 제작 세션 보고 글의 런처 id를 이름으로
   if (!v) return null;
   const go = () => { const s = getState(); if (v.session && s.navigateTo) { openDialog(null); s.navigateTo(v.session, { focusTerminal: true }); } };
   return (
     <div className={`mt-rigsetup-builder ${v.state}`} data-role="rig-builder" data-state={v.state}>
       <span>{t(`rigSetup.builder.${v.state}`, { name: v.name })}</span>
-      {v.text && <span className="dim mt-rigsetup-btext">{v.text}</span>}
+      {v.text && <span className="dim mt-rigsetup-btext">{namedLaunchers(v.text, choices)}</span>}
       {v.session && <button type="button" className="mt-btn small" data-action="rig-builder-go" onClick={go}>{t('rigSetup.builderGo')}</button>}
     </div>
   );
@@ -132,8 +139,7 @@ export function RigCreateDialog({ ws, onClose }) {
   const t = useT();
   const remote = remoteView();
   const box = useDialog(onClose);
-  const launchers = useStore((s) => s.launchers);
-  const choices = useMemo(() => launcherChoices(launchers), [launchers]);
+  const choices = useChoices();
   const [st, load] = useRigGet(ws.key);
   const [tpls, setTpls] = useState(null);
   const [w, setW] = useState(null);
@@ -231,7 +237,7 @@ function LauncherSelect({ choices, value, onChange, disabled }) {
   return (
     <select className="mt-input" data-role="rig-launcher" value={value || ''} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
       {!value && <option value="">{t('rigSetup.pickLauncher')}</option>}
-      {value && !known && <option value={value}>{value}</option>}
+      {value && !known && <option value={value}>{launcherLabel(choices, value)}</option>}
       {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
     </select>
   );
@@ -243,9 +249,8 @@ export function RigPanel({ ws, onClose }) {
   const remote = remoteView();
   const edit = canEdit({ remote });
   const box = useDialog(onClose);
-  const launchers = useStore((s) => s.launchers);
   const sessions = useStore((s) => s.sessions);
-  const choices = useMemo(() => launcherChoices(launchers), [launchers]);
+  const choices = useChoices();
   const [st, load] = useRigGet(ws.key);
   const [tb, setTb] = useState(null);
   const [base, setBase] = useState(null);
@@ -303,7 +308,7 @@ export function RigPanel({ ws, onClose }) {
               <>
                 <div className="mt-rigon-h">{t('rigPanel.seats')}</div>
                 <table className="mt-rigpanel-table" data-role="rig-seats">
-                  <thead><tr><th>{t('rigPanel.colName')}</th><th>{t('rigPanel.colMode')}</th><th>{t('rigPanel.colLauncher')}</th><th>{t('rigPanel.colWorktree')}</th><th>{t('rigPanel.colSeated')}</th><th /></tr></thead>
+                  <thead><tr><th>{t('rigPanel.colName')}</th><th>{t('rigPanel.colMode')}</th><th>{t('rigPanel.colLauncher')}</th><th className="mt-rigpanel-cbh">{t('rigPanel.colWorktree')}</th><th>{t('rigPanel.colSeated')}</th><th /></tr></thead>
                   <tbody>
                     {tb.seats.map((r) => {
                       const L = (f) => !edit || rowLocked(locked, 'seats', r, f);
@@ -314,7 +319,7 @@ export function RigPanel({ ws, onClose }) {
                           <td><Lk on={rowLocked(locked, 'seats', r)} /><input className="mt-input" value={r.name} disabled={L('name') || r.orig != null} data-field="name" onChange={(e) => setTb(tableEdit(tb, 'seats', r.key, 'name', e.target.value))} /></td>
                           <td><select className="mt-input" value={r.session} disabled={L('session')} data-field="session" onChange={(e) => setTb(tableEdit(tb, 'seats', r.key, 'session', e.target.value))}><option value="keep">keep</option><option value="fresh">fresh</option></select></td>
                           <td><LauncherSelect choices={choices} value={r.launcher} disabled={L('launcher')} onChange={(v) => setTb(tableEdit(tb, 'seats', r.key, 'launcher', v))} /></td>
-                          <td><input type="checkbox" checked={r.worktree} disabled={L('worktree') || r.session === 'keep'} data-field="worktree" onChange={(e) => setTb(tableEdit(tb, 'seats', r.key, 'worktree', e.target.checked))} /></td>
+                          <td className="mt-rigpanel-cb"><input type="checkbox" checked={r.worktree} disabled={L('worktree') || r.session === 'keep'} data-field="worktree" onChange={(e) => setTb(tableEdit(tb, 'seats', r.key, 'worktree', e.target.checked))} /></td>
                           <td className="mt-rigpanel-seated">
                             {seated.length ? seated.map((x) => <span key={x.sessionId} className="mt-rigpanel-sess">{x.name}{edit && r.session === 'keep' && <button className="mt-btn small ghost" data-action="rig-unseat" disabled={busy} onClick={() => seat(x.sessionId, null)}>{t('rigPanel.unseat')}</button>}</span>) : <span className="dim">-</span>}
                             {edit && status === 'on' && r.session === 'keep' && r.orig != null && !seated.length && (
