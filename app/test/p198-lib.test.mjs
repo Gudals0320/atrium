@@ -143,6 +143,11 @@ test('배치: 칩·카드 판정(쉼·잠듦·확인한 끝남만 칩), 행 머�
   const fromU10 = band.lines.filter((x) => x.caseId === 'c-open' && x.from === 'u10');
   assert.deepEqual(fromU10.map((x) => x.to).sort(), ['u11', 'u12']);
   assert.ok(fromU10.every((x) => x.kind === 'fwd'));
+  // 열을 건너뛰는 선(worker → docs)은 사이 칸(reviewer) 항목을 가로지르지 않고 칸 위 통로로 돈다
+  const skip = fromU10.find((x) => x.to === 'u12');
+  assert.ok(skip.skip);
+  const rv = l.cards.get('s:s-r2'), lane = Number(skip.d.split(' L')[2].split(' ')[1]);
+  assert.ok(lane < rv.y, '통로는 reviewer 칸 항목 위');
   // 되돌아감: u11(reviewer) → u13·u14(worker) 호. 마지막 호에만 지금 셈 2/2 ↑1
   const backs = band.lines.filter((x) => x.caseId === 'c-open' && x.kind === 'back');
   assert.deepEqual(backs.map((x) => x.to), ['u13', 'u14']);

@@ -2640,3 +2640,5 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rb-link.open { border-color: rgba(138, 180, 248, 0.7); color: #cfe0ff; }
 .mt-rb-link.queue { border-style: dashed; color: var(--ln-dim, #a3a097); }
 .mt-rb-link.up { border-color: rgba(239, 128, 153, 0.7); }
+/* 띠 카드는 열 머리·사슬이 자리를 말하므로 멀리 타일의 자리 이름표를 숨긴다(이름을 덮지 않게) */
+.mt-sm .mt-ta-world.lv-far .mt-ta-slot.band .mt-ta-tile .mt-sm-seat.tile { display: none; }

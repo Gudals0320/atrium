@@ -78,6 +78,13 @@ function fwdPath(a, b) {
   const dx = Math.max(24, (xb - xa) * 0.5);
   return { d: `M${r1(xa)} ${r1(ya)} C${r1(xa + dx)} ${r1(ya)} ${r1(xb - dx)} ${r1(yb)} ${r1(xb)} ${r1(yb)}`, lx: r1((xa + xb) / 2), ly: r1((ya + yb) / 2) };
 }
+// 열을 건너뛰는 앞 선: 사이 칸의 항목을 가로지르지 않게 앞 항목 오른쪽 틈 → 행 칸 위 통로(lane) → 받는 항목 왼쪽 틈 → 받는 항목 왼 변
+function skipPath(a, b, lane, gx) {
+  const ya = a.y + Math.min(a.h / 2, 22), yb = b.y + Math.min(b.h / 2, 22);
+  const x1 = a.x + a.w + gx / 2, x2 = b.x - gx / 2;
+  const pts = [[a.x + a.w, ya], [x1, ya], [x1, lane], [x2, lane], [x2, yb], [b.x, yb]];
+  return { d: pts.map((q, i) => `${i ? 'L' : 'M'}${r1(q[0])} ${r1(q[1])}`).join(' '), lx: r1((x1 + x2) / 2), ly: r1(lane) };
+}
 // 되돌아감 호: 칸 맨 위 항목이면 위 변 가운데, 아니면 위쪽 옆 변에서 나가 행 칸 위 호 자리(apex)로 솟았다가 받는 쪽으로 내려간다
 function backPath(a, b, aTop, bTop, apex) {
   const p = aTop ? [a.x + a.w / 2, a.y] : [a.x, a.y + 8];
@@ -194,6 +201,7 @@ export function bandLayout(R, o) {
       if (!a || !b) continue;
       const base = { id: `${ws}|${c.id}|${v.prevUnit}>${u.unit}`, ws, caseId: c.id, from: v.prevUnit, to: u.unit, up: !!v.escalated, line: v.line != null ? String(v.line) : null };
       if (a.i === b.i) { lines.push({ ...base, kind: 'same', ...samePath(a.b, b.b, same++) }); continue; }
+      if (b.i > a.i + 1) { lines.push({ ...base, kind: 'fwd', skip: true, ...skipPath(a.b, b.b, cellsTop - Math.max(4, B.CP / 2), B.GX) }); continue; }
       if (b.i > a.i) { lines.push({ ...base, kind: 'fwd', ...fwdPath(a.b, b.b) }); continue; }
       const apex = cellsTop - 6 - (lv++ % Math.max(1, levels)) * B.ARC;
       const ln = { ...base, kind: 'back', ...backPath(a.b, b.b, a.top, b.top, apex) };
@@ -209,7 +217,8 @@ export function bandLayout(R, o) {
       const a = src && box.get(src.unit);
       if (!a || a.i === t.i) return;
       const base = { id: `${ws}|${c.id}|${src.unit}>r${k}`, ws, caseId: c.id, from: src.unit, to: `r${k}`, up: !!r.escalated, report: true };
-      if (t.i > a.i) lines.push({ ...base, kind: 'fwd', ...fwdPath(a.b, t.b) });
+      if (t.i > a.i + 1) lines.push({ ...base, kind: 'fwd', skip: true, ...skipPath(a.b, t.b, cellsTop - Math.max(4, B.CP / 2), B.GX) });
+      else if (t.i > a.i) lines.push({ ...base, kind: 'fwd', ...fwdPath(a.b, t.b) });
       else lines.push({ ...base, kind: 'back', ...backPath(a.b, t.b, a.top, t.top, cellsTop - 6) });
     });
     return Math.max(bottom, cellsTop) + B.CP - top;
