@@ -2888,4 +2888,7 @@ export default {
     today: '오늘',
     earlier: '이전',
   },
+  agySandbox: { // P203
+    note: 'Antigravity 샌드박스가 보드 명령(atrium)을 막습니다. 보드에서 작업을 맡기려면 권한 생략 방식(dontAsk, bypassPermissions)을 선택하세요.',
+  },
 };

@@ -150,3 +150,12 @@ export function popoverAt(rect, { w = 300, h = 96, vw = 1280, vh = 800 } = {}) {
   const top = Math.min(Math.max(8, rect.top + rect.height / 2 - 26), Math.max(8, vh - h - 8));
   return { left, top, arrow: Math.max(10, Math.min(h - 16, rect.top + rect.height / 2 - top - 5)) };
 }
+
+// P203: AGY 승인 방식 안내. 권한 생략(dontAsk·bypassPermissions)이 아니면 AGY 터미널 샌드박스가 판 데이터 폴더와 127.0.0.1을 막아
+// atrium 명령(판에서 일 맡기기·보고)이 매번 사람에게 묻는다(P192 시험). manual은 AGY 기본 모드(Auto일 수 있다)로 돈다
+const AGY_SANDBOX_MODES = new Set(['manual', 'acceptEdits', 'plan', 'auto']);
+export function agySandboxNote(harnesses, id, mode) {
+  const h = (harnesses || []).find((x) => x.id === id);
+  const kind = (h && h.kind) || id;
+  return kind === 'agy' && AGY_SANDBOX_MODES.has(mode || 'manual');
+}

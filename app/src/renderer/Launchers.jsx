@@ -12,7 +12,7 @@ import { useStore, toast, loadLaunchers, getState } from './store.js';
 import { KindIcon } from './SessionNode.jsx';
 import { Icon } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
-import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, connectionChoices, harnessProtocols } from './lib/launchers.js';
+import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, connectionChoices, harnessProtocols, agySandboxNote } from './lib/launchers.js';
 
 const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 const MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];
@@ -208,6 +208,8 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
         {has('permissionMode') && <label className="mt-ln-f"><span>{t('settings.permissionMode')}</span>
           <select data-field="launcher-permissionMode" value={d.permissionMode || 'manual'} onChange={(e) => set('permissionMode', e.target.value)}>{MODES.map((o) => <option key={o}>{o}</option>)}</select>
         </label>}
+        {/* P203: AGY는 권한 생략이 아니면 샌드박스가 atrium을 막는다(승인 칸 아래 한 줄) */}
+        {has('permissionMode') && agySandboxNote(harnesses, d.harness, d.permissionMode) && <div className="mt-ln-agynote wide" data-role="launcher-agy-sandbox">{t('agySandbox.note')}</div>}
         {/* P97: 추가 인자는 고급 밖(드롭다운으로 시작해도 같은 화면에서 실행 명령과 함께 고친다) */}
         {has('args') && <label className="mt-ln-f"><span>{t('launchers.args')}</span><input className="mt-set-text mono" data-field="launcher-args" value={d.args} onChange={(e) => set('args', e.target.value)} placeholder={t('launchers.argsPh')} /></label>}
         {has('args') ? <span /> : null}
