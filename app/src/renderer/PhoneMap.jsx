@@ -9,7 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
-import { lineageLayout, PHONE } from './lib/mission-lineage.js';
+import { lineageLayout, PHONE, todayWorkspaces, dayStart, msToMidnight } from './lib/mission-lineage.js'; // P202: 오늘 일한 폴더 먼저
 import { roleModel, nodeTier } from './lib/mission-model.js';
 import { levelOf, zoomAt, ZOOM } from './lib/mission-terr.js';
 import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeKey } from './lib/phone-map.js';
@@ -65,12 +65,16 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   useEffect(() => api.on('relation.updated', () => setReloadN((n) => n + 1)), []);
   useEffect(() => api.on('rig.cases', () => setReloadN((n) => n + 1)), []); // P198: rig 건이 바뀌면 다시 읽는다
 
-  const order = useMemo(() => (workspaces || []).map((w) => w.key), [workspaces]);
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  // P202: 오늘 일한 워크스페이스(폴더 차례, PC와 같은 규칙). 자정이 지나면 다시 센다
+  const [day, setDay] = useState(() => dayStart());
+  useEffect(() => { const id = setTimeout(() => setDay(dayStart()), msToMidnight() + 500); return () => clearTimeout(id); }, [day]);
+  const todayKey = graph ? [...todayWorkspaces(graph.nodes.filter((n) => n.kind === 'session'), { liveOf, tierOf: (n) => tiers.get(n.id), now: Math.max(Date.now(), day) })].sort().join('\n') : '';
+  const today = useMemo(() => new Set(todayKey ? todayKey.split('\n') : []), [todayKey]);
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const vkey = sizeKey(vsize); // 단 나누기는 보이는 칸 비율을 따른다(크기가 조금 바뀌어도 다시 놓지 않게 20px 단위)
-  const lay = useMemo(() => (graph && vsize ? lineageLayout(graph, { order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, foldOpen }) : null), [graph, order, vgroups, tiers, names, t, expanded, vkey, foldOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (graph && vsize ? lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, foldOpen }) : null), [graph, vgroups, tiers, names, t, expanded, vkey, foldOpen, today]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
@@ -280,6 +284,12 @@ export function PhoneMap({ onBack, onOpen, conn }) {
                 </div>
               ))}
               {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-pmap-div" data-role="pm-solo-div" style={{ left: d.x, top: d.y, width: d.w }}><span>{t('mmLine.colSolo')}</span></span>)}
+              {/* P202: 오늘 일한 폴더와 그 밖 사이 구분 줄(위 "오늘", 아래 "이전") */}
+              {(lay.sections || []).map((s) => (
+                <div key={`sec:${s.kind}`} className="mt-sm-sec line mt-pmap-sec" data-role="ln-section" data-kind="split" style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
+                  <span className="up">{t('mmSec.today')}</span><i aria-hidden="true" /><span className="dn">{t('mmSec.earlier')}</span>
+                </div>
+              ))}
               <svg className="mt-ta-edges" width={1} height={1} aria-hidden="true">
                 <defs>
                   {KINDS.map((k) => <marker key={k} id={`mt-pmap-tip-${k}`} className={`mt-sm-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}
