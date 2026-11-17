@@ -124,6 +124,10 @@ export const ADAPTERS = {
     mustRePass: ['instructions'], // --add-dir은 그 세션에만 든다. 이어 갈 때도 다시 준다
     reserved: { flags: ['--conversation', '-c', '--continue', '-p', '--print', '--prompt', '-i', '--prompt-interactive', '--input-format', '--output-format', '--json-schema', '--print-timeout', '--remote-agent', '--new-project'] },
     modelArgs: (m) => ['--model', m],
+    // atrium 명령과 승인(P192 개발용 판 시험, 1.5.9): AGY Auto 모드(이 PC 사용자 기본)는 명령을 터미널 샌드박스에서 먼저 돌리는데, 샌드박스는
+    //   판 데이터 폴더의 bin/·sessions/와 127.0.0.1 연결을 막는다. 그래서 atrium은 샌드박스 밖에서만 되고, 그때 AGY가 사람에게 묻는다(판은 waiting,
+    //   하위면 상위에 needs_human). accept-edits도 묻는다. 묻지 않고 되는 것은 --dangerously-skip-permissions(판의 dontAsk·bypassPermissions)뿐이다.
+    //   --settings의 permissions.allow는 명령 글 전체가 같을 때만 먹어(command(mkdir)·command(mkdir *)·command(node -e)는 안 먹음) atrium 허용 목록으로 쓸 수 없다
     build(ctx) {
       const resumed = !!(ctx.resume && ctx.harnessSessionId);
       const files = [];

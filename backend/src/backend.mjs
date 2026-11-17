@@ -1114,7 +1114,7 @@ export class Backend {
   async readScreenAnswer(s) {
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 200 });
-      s.rt.lastAnswer = screenAnswerText(text, 20); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen';
+      s.rt.lastAnswer = screenAnswerText(text, 20, { kind: s.kind }); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen'; // P192: 종류(AGY)
       this.bus.emit('screenAnswer', s);
     } catch {}
   }

@@ -107,6 +107,13 @@ export function codexInputBox(text) {
   const t = body.join(' ').replace(/\s+/g, ' ').trim();
   return { found: true, text: CODEX_HINTS.some((re) => re.test(t)) ? '' : t, above: lines.slice(0, at), rows: body.length }; // P128: rows(입력 칸 줄 수)
 }
+// P192: AGY(1.5.9) 입력 칸 읽기. Claude Code처럼 가로줄(─) 둘 사이이고 첫 줄은 "> "다. 빈 칸은 ">" 한 글자이거나,
+// 시작 직후 흐린 모드 안내("Auto mode: edits & safe commands auto-approved (shift+tab to cycle)")를 보인다. 글자로는 구별되지 않아 그 꼴은 빈 칸으로 본다
+const AGY_HINT = /\(shift\+tab to cycle\)$/i;
+export function agyInputBox(text) {
+  const b = claudeInputBox(text);
+  return b.found && AGY_HINT.test(b.text) ? { ...b, text: '' } : b;
+}
 // 보낸 글(prompt)과 화면을 견준다 → { box: 'ours' | 'empty' | 'other' | 'unknown', seen(입력 칸 위에 보낸 글 첫머리가 보인다 = 이미 들어갔을 수 있다) }
 // 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines], Codex는 [Pasted Content N chars]) 잘릴 수 있어 첫머리(40자)로 본다. kind: 'claude' | 'codex'
 const flatText = (s) => String(s || '').replace(/\s+/g, ' ').trim();

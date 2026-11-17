@@ -8,7 +8,9 @@ import { ADAPTERS, adapterOf, harnessLaunch, reservedArg, resumable, harnessResu
 import { normalizeLauncher, resolveLauncher, previewLauncher, harnessOptionArgs, normalizeStartCommand, describeHarnesses, HARNESSES, parseCommandLine } from '../src/launchers.mjs';
 import { approvalArgsOf, hasApprovalArgs, otherKindPlan } from '../src/branch.mjs';
 import { parseAgyModels, AgyModels } from '../src/agy-models.mjs';
-import { isAgyTrustDialog, trustDialogOf, isTrustDialog } from '../src/screen.mjs';
+import { isAgyTrustDialog, trustDialogOf, isTrustDialog, agyInputBox } from '../src/screen.mjs';
+import { screenAnswerText } from '../src/links.mjs';
+import { readDraftBox } from '../src/draft-aside.mjs';
 import { kindOfApp, KIND_COMMAND } from '../src/hc/model.mjs';
 import { newRuntime, deriveState } from '../src/state.mjs';
 import { buildCatalog, resolveModel } from '../src/models.mjs';
@@ -230,4 +232,29 @@ test('P192 pi 회귀: 연결 확장(-e)·--session-id·--model <제공자>/<모�
   assert.deepEqual(w.args.slice(0, 2), ['--session-id', SID]);
   assert.equal(reservedArg('pi', ['--session-id', 'x']), '--session-id');
   assert.equal(adapterOf('pi').command, 'pi');
+});
+
+test('P192 화면 답: AGY 답에는 머리표가 없고 빈 입력 칸은 ">" 한 글자다. 마지막 프롬프트 줄 뒤를 답으로 읽고 머리 그림을 답으로 내지 않는다', () => {
+  const R = '─'.repeat(60), W = '─'.repeat(200);
+  const scr = ['', '      ▄▀▀▄        Antigravity CLI 1.5.9', '  ▄▀▀      ▀▀▄', '', R, '> Reply with exactly two words: hello board', '', '  hello board', '', W, '>', W, '? for shortcuts' + ' '.repeat(140) + 'auto · Gemini 3.8 Flash · low', ''].join('\n');
+  assert.equal(screenAnswerText(scr, 20, { kind: 'agy' }), '  hello board');
+  assert.match(screenAnswerText(scr, 20), /Antigravity CLI/, '종류를 모르면 옛 규칙(Codex 입력 칸 추정)');
+  const tool = ['', R, '> Run the shell command: mkdir x . Then reply done.', '● Ran (mkdir x) (ctrl+o to expand)', '  done', W, '>', W, '? for shortcuts', ''].join('\n');
+  assert.equal(screenAnswerText(tool, 20, { kind: 'agy' }), 'Ran (mkdir x) (ctrl+o to expand)\n  done');
+});
+
+test('P192 입력 칸: AGY는 가로줄 둘 사이 "> " 줄. 빈 칸 ">"와 모드 안내(shift+tab to cycle)는 빈 칸, 친 글은 그대로', () => {
+  const W = '─'.repeat(200);
+  const box = (line) => ['  hello board', W, line, W, '? for shortcuts'].join('\n');
+  assert.deepEqual([agyInputBox(box('>')).found, agyInputBox(box('>')).text], [true, '']);
+  assert.equal(agyInputBox(box('> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)')).text, '');
+  assert.equal(agyInputBox(box('> fix the bug please')).text, 'fix the bug please');
+  assert.equal(readDraftBox(box('> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)'), 'agy').text, '', '잠재우기의 입력 칸 검사가 안내 글을 쓰다 만 글로 보지 않는다');
+  assert.equal(readDraftBox(box('> half typed'), 'agy').text, 'half typed');
+});
+
+test('P192 AGY 어댑터는 --settings를 쓰지 않는다(허용 규칙이 앞 낱말로 맞지 않아 atrium 허용 목록이 될 수 없다). 사람이 추가 인자로 줄 수는 있다', () => {
+  const a = ADAPTERS.agy.build({ sessionId: SID, instructions: INSTR, filesDir: 'C:/d/harness' });
+  assert.ok(!a.args.includes('--settings'));
+  assert.equal(reservedArg('agy', ['--settings', 'x.json']), null);
 });
