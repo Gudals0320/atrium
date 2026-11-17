@@ -211,7 +211,9 @@ export class RigFlow {
       // P194 뒤(@fable-peer): 주인이 waiting_owner 건을 다시 맡기는 것은 새 결정이다. 줄별 지난 횟수를 0으로 되돌린다
       // (안 그러면 다음 반려 한 번에 곧바로 주인에게 돌아온다)
       const reset = c.state === 'waiting_owner' && c.owner === caller.sessionId;
-      st.updateCase(c.id, { state: 'open', blockedReason: null, ...(reset ? { edgeCounts: {} } : {}) });
+      // 지난 횟수(줄 번호 열쇠)만 0으로. 넘어간 이력(`<줄>>else`)은 남긴다(rig.cases의 escalated)
+      const kept = reset ? Object.fromEntries(Object.entries(c.edgeCounts || {}).filter(([k]) => k.includes('>'))) : null;
+      st.updateCase(c.id, { state: 'open', blockedReason: null, ...(reset ? { edgeCounts: kept } : {}) });
       st.addEvent(caller.sessionId, 'rig_case_resume', { caseId: c.id, from: c.state, why, ...(reset ? { countersReset: true } : {}) });
       this.b.log(`rig case ${c.id} resumed (${c.state} → open, ${why}) by ${caller.name}`);
       this.changed(c.workspaceKey);

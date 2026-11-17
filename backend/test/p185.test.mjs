@@ -286,7 +286,7 @@ test('P185 흐름(P194 보고): 메인이 맡겨 건이 생김 → worker ok →
     const cases = await rigFlowHandlers(b)['rig.cases']({}, null);
     assert.equal(cases.cases[0].id, caseId);
     assert.equal(cases.cases[0].items.length, 8);
-    assert.equal(cases.cases[0].lines[0].passed, 2);
+    assert.equal(cases.cases[0].lines[0].passed, 0); // P194 뒤: 주인이 waiting_owner 건을 이어 맡기면 줄별 지난 횟수를 0으로 되돌린다(넘어간 이력은 남음)
     assert.equal(cases.cases[0].lines[0].escalated, 1);
     assert.ok(cases.cases[0].handoffs >= 6);
     // 이름: 다시 쓰지 않는 n(DB 셈)

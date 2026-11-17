@@ -243,7 +243,9 @@ test('P194 뒤: 주인이 waiting_owner 건을 이어 맡기면 그 건의 줄�
     await until(() => main.rt.term.status === 'idle');
     const r2 = await V(b).prompt(main, { name: 'worker', text: '다시 A' });
     assert.equal(r2.unit.caseId, A);
-    assert.deepEqual(b.store.getCase(A).edgeCounts, {}, '주인이 이어 맡기면 0으로');
+    const after = b.store.getCase(A).edgeCounts;
+    assert.ok(Object.keys(after).every((k) => k.includes('>')), '주인이 이어 맡기면 지난 횟수는 0으로');
+    assert.equal(after['2>else'], 1, '넘어간 이력은 남는다');
     assert.equal(evs(b, 'rig_case_resume').at(-1).data.countersReset, true);
     d = await rejectOnce(r2.name);
     assert.equal(d.case.state, 'open', '이어 맡긴 뒤 첫 반려는 다시 worker로(곧바로 주인에게 가지 않는다)');
