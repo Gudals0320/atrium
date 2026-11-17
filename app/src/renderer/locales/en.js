@@ -2888,4 +2888,7 @@ export default {
     today: 'Today',
     earlier: 'Earlier',
   },
+  agySandbox: { // P203
+    note: 'The Antigravity sandbox blocks board commands (atrium). To hand it work from the board, choose a skip-permissions mode (dontAsk, bypassPermissions).',
+  },
 };

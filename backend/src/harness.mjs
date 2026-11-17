@@ -137,7 +137,7 @@ export const ADAPTERS = {
         files.push({ file: `${dir}/AGENTS.md`, text: `${ctx.instructions.text}\n` });
         rules = ['--add-dir', dir];
       }
-      const args = [...(resumed ? ['--conversation', ctx.harnessSessionId] : []), ...(ctx.model ? ['--model', ctx.model] : []), ...rules, ...(ctx.launcherArgs || [])];
+      const args = [...(resumed ? ['--conversation', ctx.harnessSessionId] : []), ...(ctx.model ? ['--model', ctx.model] : []), ...rules, ...agySettingsArgs(ctx.launcherArgs || [])]; // P203: 판 설정(대체 화면)과 사용자 --settings를 합친다
       return { args, env: {}, files, harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
     isBoardLine: (argv) => argv.some((a) => /[\\/]agy$/.test(String(a))),
@@ -149,6 +149,29 @@ export const AGY_APPROVAL = {
   manual: [], plan: ['--mode', 'plan'], acceptEdits: ['--mode', 'accept-edits'], auto: ['--mode', 'auto'],
   dontAsk: ['--dangerously-skip-permissions'], bypassPermissions: ['--dangerously-skip-permissions'],
 };
+// P203: 판이 AGY에 주는 그 세션만의 설정(--settings, 저장되지 않는다). altScreenMode always: AGY 1.5.x 기본(인라인)은 대체 화면을 쓰지 않아
+//   지난 대화가 터미널 기록으로 밀려 나가는데, 에이전트 노드는 판 안 기록이 없어(scrollback 0) 휠로 볼 수 없다. 대체 화면이면 AGY가 지난 대화를 스스로 굴린다
+export const AGY_BOARD_SETTINGS = Object.freeze({ altScreenMode: 'always' });
+// 호출자 추가 인자의 --settings(글 JSON 또는 파일 경로, --settings=값도)를 판의 것과 하나로 합친다. 같은 키는 사용자 값이 이긴다.
+// 사용자 값을 읽지 못하면(JSON 객체가 아님, 파일 없음) 사용자 인자를 그대로 두고 판의 것은 넣지 않는다(AGY가 그 값을 판정한다)
+export function agySettingsArgs(args = [], board = AGY_BOARD_SETTINGS, readFile = (f) => fs.readFileSync(f, 'utf8')) {
+  const rest = [];
+  const user = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = String(args[i]);
+    if (a === '--settings') { if (i + 1 < args.length) user.push(String(args[++i])); continue; } // 값 없는 마지막 --settings는 뺀다
+    if (a.startsWith('--settings=')) { user.push(a.slice('--settings='.length)); continue; }
+    rest.push(args[i]);
+  }
+  let merged = { ...board };
+  for (const v of user) {
+    let o = null;
+    try { o = JSON.parse(v.trim().startsWith('{') ? v : readFile(v)); } catch {}
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return [...args];
+    merged = { ...merged, ...o };
+  }
+  return [...rest, '--settings', JSON.stringify(merged)];
+}
 export const AGY_APPROVAL_FLAGS = new Set(['--mode', '--dangerously-skip-permissions']); // --sandbox(터미널 샌드박스)는 승인 방식과 따로다
 // 표에 없는 종류(터미널이 아는 그 밖의 하네스): env와 PATH만 주고 지시문·이어 가기는 없다. 모델은 -m(P96과 같다)
 const GENERIC = {

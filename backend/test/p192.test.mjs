@@ -23,7 +23,7 @@ const INSTR = { file: 'C:/d/plugin/harness-system-prompt.md', text: HARNESS_PROM
 
 test('P192 어댑터: agy는 --model, 안내문 폴더(--add-dir <데이터>/harness/agy, 그 안 AGENTS.md), 추가 인자. 이어 가기는 --conversation <ID>(모르면 새로)', () => {
   const a = ADAPTERS.agy.build({ sessionId: SID, model: 'gemini-3.8-flash-low', launcherArgs: ['--effort', 'low'], instructions: INSTR, filesDir: 'C:\\d\\harness' });
-  assert.deepEqual(a.args, ['--model', 'gemini-3.8-flash-low', '--add-dir', 'C:/d/harness/agy', '--effort', 'low']);
+  assert.deepEqual(a.args, ['--model', 'gemini-3.8-flash-low', '--add-dir', 'C:/d/harness/agy', '--effort', 'low', '--settings', '{"altScreenMode":"always"}']); // P203: 판 설정
   assert.deepEqual(a.files, [{ file: 'C:/d/harness/agy/AGENTS.md', text: `${HARNESS_PROMPT}\n` }]);
   assert.equal(a.harnessSessionId, null); assert.equal(a.resumed, false);
   const r = ADAPTERS.agy.build({ sessionId: SID, resume: true, harnessSessionId: CONV, model: 'm', instructions: INSTR, filesDir: 'C:/d/harness' });
@@ -31,7 +31,7 @@ test('P192 어댑터: agy는 --model, 안내문 폴더(--add-dir <데이터>/har
   assert.ok(r.args.includes('--add-dir'), '이어 갈 때도 안내문 폴더를 다시 준다(mustRePass)');
   assert.equal(r.resumed, true); assert.equal(r.harnessSessionId, CONV);
   assert.equal(ADAPTERS.agy.build({ sessionId: SID, resume: true, harnessSessionId: null }).resumed, false, '대화 ID를 모르면 새로');
-  assert.deepEqual(ADAPTERS.agy.build({ sessionId: SID }).args, [], '안내문·모델이 없으면 인자 없음');
+  assert.deepEqual(ADAPTERS.agy.build({ sessionId: SID }).args, ['--settings', '{"altScreenMode":"always"}'], '안내문·모델이 없으면 판 설정만(P203)');
   assert.equal(ADAPTERS.agy.sessionIdFrom, 'learned');
   assert.deepEqual(ADAPTERS.agy.mustRePass, ['instructions']);
   assert.ok(ADAPTERS.agy.isBoardLine(['agy', '--add-dir', 'C:/d/harness/agy']));
@@ -43,7 +43,7 @@ test('P192 어댑터: agy는 --model, 안내문 폴더(--add-dir <데이터>/har
 test('P192 harnessLaunch: agy는 판 env·PATH의 bin·실행 명령(래퍼) 그대로, 연결은 받지 않는다', () => {
   const r = harnessLaunch({ kind: 'agy', startWords: ['mywrap', 'agy'], sessionId: SID, model: 'gemini-3.8-flash-medium', launcherArgs: ['--dangerously-skip-permissions'], instructions: INSTR, boardEnv: { ATRIUM_SESSION_ID: SID }, binDir: 'C:/d/bin', filesDir: 'C:/d/harness' });
   assert.deepEqual(r.command, ['mywrap', 'agy']);
-  assert.deepEqual(r.args, ['--model', 'gemini-3.8-flash-medium', '--add-dir', 'C:/d/harness/agy', '--dangerously-skip-permissions']);
+  assert.deepEqual(r.args, ['--model', 'gemini-3.8-flash-medium', '--add-dir', 'C:/d/harness/agy', '--dangerously-skip-permissions', '--settings', '{"altScreenMode":"always"}']); // P203
   assert.deepEqual(r.env, { ATRIUM_SESSION_ID: SID });
   assert.deepEqual(r.pathFirst, ['C:/d/bin']);
   assert.equal(r.files.length, 1);
@@ -253,8 +253,8 @@ test('P192 입력 칸: AGY는 가로줄 둘 사이 "> " 줄. 빈 칸 ">"와 모�
   assert.equal(readDraftBox(box('> half typed'), 'agy').text, 'half typed');
 });
 
-test('P192 AGY 어댑터는 --settings를 쓰지 않는다(허용 규칙이 앞 낱말로 맞지 않아 atrium 허용 목록이 될 수 없다). 사람이 추가 인자로 줄 수는 있다', () => {
+test('P192 AGY 어댑터의 --settings에는 허용 목록(permissions)을 넣지 않는다(허용 규칙이 앞 낱말로 맞지 않아 atrium 허용 목록이 될 수 없다). P203: 판은 altScreenMode만 준다', () => {
   const a = ADAPTERS.agy.build({ sessionId: SID, instructions: INSTR, filesDir: 'C:/d/harness' });
-  assert.ok(!a.args.includes('--settings'));
+  const i = a.args.indexOf('--settings'); assert.deepEqual(JSON.parse(a.args[i + 1]), { altScreenMode: 'always' }); // P203
   assert.equal(reservedArg('agy', ['--settings', 'x.json']), null);
 });
