@@ -1,5 +1,6 @@
 // P182: rig(하네스 정의) 1단계. docs research harness-arch.md 13절("이름과 자리", "켜기", "정의 읽기", "훅", "deliver 훅의 자리", "done 훅", "atrium guide").
-// - 정의는 워크스페이스 뿌리(본 체크아웃, workspaces.root)의 .atrium/rig.json이다. 워크트리 세션도 본 체크아웃의 정의를 따른다. 판은 .atrium/을 만들지 않는다.
+// - 정의는 워크스페이스 뿌리(본 체크아웃, workspaces.root)의 .atrium/rig.json이다. 워크트리 세션도 본 체크아웃의 정의를 따른다.
+//   P190(16절): 판이 .atrium/을 쓰는 것은 사람이 고른 동작 rig.create·rig.save뿐이다(rig-setup.mjs). 제작 세션은 스스로 쓴다.
 // - 켜기는 사람만(판 API rig.enable·rig.disable, workspaces.rig_enabled). 꺼졌거나 정의가 없는 워크스페이스는 훅도 기록도 없다(오늘과 같다).
 // - 읽기: 부를 때마다 파일 수정 시각·크기로 캐시하고 바뀌면 다시 읽어 검사한다. 잘못된 정의는 마지막으로 맞았던 정의를 그대로 쓰고
 //   판 이벤트 rig_invalid(까닭)를 한 번 남긴다(같은 내용이면 다시 남기지 않는다). atrium guide와 rig.status가 그 까닭을 보인다.
@@ -335,7 +336,9 @@ export class Rig {
     return { ok: true, n };
   }
   // 누가 바꿨나: 파일 수정 시각에 관리자 자리 세션이 일하는 턴 중이었으면 manager, 아니면 unknown(사람의 되돌리기는 pendingBy로 human)
+  //   P190: 사람이 맡긴 제작 일(rig.describe: 만들기와 말로 고치기)이 열려 있던 때의 고침은 human
   byOf(key, mtimeMs, def) {
+    if (this.b.rigSetup && this.b.rigSetup.humanAt(key, mtimeMs)) return 'human';
     const seat = def && def.manager;
     if (!seat || !this.b.sessions) return 'unknown';
     const st = this.store();
@@ -347,6 +350,24 @@ export class Rig {
       if (!at && now && now.state === 'working') return 'manager';
     }
     return 'unknown';
+  }
+  // P190: 사람이 고른 동작(rig.create·rig.save, 제작 세션의 done)이 쓴 rig.json을 켜짐과 상관없이 지금 버전으로 남긴다(누가 by).
+  //   꺼진 rig는 read()가 버전을 남기지 않으므로(P188) 여기서 남긴다. 같은 해시면 그 버전. → { ok, n } | { ok: false, reason, hits? }
+  recordNow(key, { by = 'human', note = null } = {}) {
+    const root = this.rootOf(key); const file = root ? path.join(root, RIG_FILE) : null;
+    if (!file) return { ok: false, reason: '워크스페이스가 없다' };
+    let buf; try { buf = fs.readFileSync(file); } catch { return { ok: false, reason: `${RIG_FILE}이 없다` }; }
+    const hash = sha(buf);
+    let raw; try { raw = JSON.parse(buf.toString('utf8').replace(/^﻿/, '')); } catch (e) { return { ok: false, reason: `JSON이 아니다: ${e.message}` }; }
+    const v = validateRig(raw, { root, cycleMinMs: this.cycleMin() });
+    if (!v.ok) return { ok: false, reason: v.reason };
+    const c = this.cache.get(key);
+    let mtimeMs = Date.now(); try { mtimeMs = fs.statSync(file).mtimeMs; } catch {}
+    this.pendingBy.set(key, { hash, by, note });
+    const a = this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs, prev: c && c.good });
+    if (this.pendingBy.get(key) && this.pendingBy.get(key).hash === hash && a.ok) this.pendingBy.delete(key);
+    this.cache.delete(key); // 다음 읽기가 다시 본다(켜진 rig는 같은 해시라 같은 버전)
+    return a;
   }
   // 마지막으로 남긴 버전(프로세스가 다시 뜬 뒤 기준) → { def, hash, raw, n } | null
   lastGood(key) {

@@ -1,5 +1,6 @@
 // P188: rig 5단계 — 관리자 자리와 정의의 수명(docs research harness-arch.md 15절 "5단계").
 // - atrium rig check [파일] | log | rollback <n> | cleanup <건>: 관리자 자리 세션(켜진 rig의 manager 자리에 앉은 세션)과 사람(판 API 토큰: 창, 사람의 atrium call)만.
+//   P190: check(읽기만)는 rig가 꺼진 워크스페이스의 어느 판 세션이든, 켜진 rig에서는 사람이 맡긴 제작 일을 쥔 제작 세션도 쓴다.
 //   그 밖 세션은 거절(종료 코드 1과 까닭). 정의의 버전 기록은 rig.mjs(adopt), 건의 버전 고정은 rig-flow.mjs(seatCtx·defOfCase)다.
 // - check: 후보 정의(파일 내용 또는 지금 rig.json)를 적용하지 않고 검사한다(정의 검사 + 사람만 고치는 포인터).
 // - log: 버전 목록과 버전마다 건 수, 반려(ok가 아닌 done 값) 수, 훅 거절 수, 상한 초과 수.
@@ -34,6 +35,13 @@ export class RigAdmin {
   async verb(s, o = {}) {
     const op = String(o.op || '');
     if (!RIG_ADMIN_OPS.includes(op)) throw apiError('bad_request', `atrium rig: ${RIG_ADMIN_OPS.join(' | ')} 가운데 하나다: ${op || '(없음)'}`);
+    // P190(16절): check는 읽기만이라 rig가 꺼진(또는 없는) 워크스페이스의 어느 판 세션이든 쓴다. 켜진 rig에서는 관리자 자리와 사람,
+    //   그리고 사람이 맡긴 제작 일(rig.describe의 "말로 고치기")을 쥔 제작 세션
+    if (op === 'check' && !this.isManager(s)) {
+      const rig = this.b.rig;
+      const builder = this.b.rigSetup && this.b.rigSetup.isBuilder(s);
+      if (rig && (!rig.enabled(s.workspaceKey) || builder)) return this.check(s.workspaceKey, o);
+    }
     if (!this.isManager(s)) {
       const r = this.b.rig ? this.b.rig.active(s.workspaceKey) : null;
       const why = !r ? '이 워크스페이스에는 켜진 rig가 없다' : !r.def.manager ? 'rig 정의에 manager(관리자 자리)가 없다' : `관리자 자리(${r.def.manager})에 앉은 세션만 쓴다${s.rigSeat ? `(너는 ${s.rigSeat} 자리)` : '(너는 자리 없는 세션)'}`;

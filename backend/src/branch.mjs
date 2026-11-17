@@ -39,6 +39,8 @@ import { ToolRuns } from './tool-runs.mjs'; // P183: atrium tool
 import { installRelations, relationHeader, RELATION_WORD } from './branch-relations.mjs'; // P156: 일 관계
 import { WorkUnits, checkAgentText } from './work-units.mjs'; // P180: 일 단위와 시도
 import { RigFlow } from './rig-flow.mjs'; // P185: rig 자리·건·흐름
+import { RigSetup } from './rig-setup.mjs'; // P190: 판 안에서 rig 만들기(틀, 제작 세션, 표 저장, 자리 띄우기)
+import { rigGuideText } from './rig-templates.mjs'; // P190: atrium guide rig
 import { RigAdmin } from './rig-admin.mjs'; // P188: atrium rig check|log|rollback|cleanup, 사람만 고치는 목록
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
@@ -346,6 +348,7 @@ export class Branch {
     this.tools = new ToolRuns(b, toolOpts); // P183: atrium tool(rig 도구 실행과 장부)
     this.flow = new RigFlow(b, this); // P185: rig 자리·건·흐름(자리로 보내기, done 값에 따른 넘김, 되돌아감 상한)
     this.rigAdmin = new RigAdmin(b, this); // P188: 관리자 자리의 정의 관리(버전, 되돌리기, 정리)
+    b.rigSetup = new RigSetup(b); // P190: rig.templates·create·describe·get·save·spawnSeat와 제작 세션의 일
     this.handlers = {
       'branch.tree': () => this.tree(),
     };
@@ -567,6 +570,8 @@ export class Branch {
 
   // P182: atrium guide [주제]. 부르는 세션의 워크스페이스 rig 안내(켜져 있을 때만 글, 잘못된 정의면 그 까닭). 판의 일반 안내(help --long)는 CLI가 붙인다
   guideVerb(s, o = {}) {
+    // P190: atrium guide rig — 판 내장 rig 만들기 안내(정의 형식, 틀 셋의 예, 검사 방법). 정의의 같은 이름 주제보다 먼저다
+    if (o.topic && String(o.topic) === 'rig') return { builtin: { topic: 'rig', text: rigGuideText() } };
     const r = this.b.rig ? this.b.rig.guide(s, o.topic ? String(o.topic) : null) : { state: 'none', text: null };
     // P185: 자리 세션은 자리 안내(정의 seats.<자리>.guide)와 자리 요약(atrium me의 rig 칸)을 함께
     const seat = this.flow ? this.flow.meOf(s) : null;

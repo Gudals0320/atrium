@@ -193,6 +193,14 @@ export function installRig(Store) {
     liveCasesWithLast(key) {
       return this.st("SELECT c.*, (SELECT MAX(u.created_at) FROM work_units u WHERE u.case_id = c.id) AS last_at FROM rig_cases c WHERE c.workspace_key = ? AND c.state IN ('open', 'blocked') ORDER BY c.created_at").all(key).map((r) => ({ ...caseRow(r), lastAt: r.last_at ?? r.created_at }));
     },
+    // ---------- P190: 판 안에서 rig 만들기(16절) ----------
+    // 그 워크스페이스의 제작 일(사람이 맡긴 rig.describe 일, origin rig_builder), 최근 것부터. 받는 세션의 워크스페이스로 고른다
+    builderUnits(key, origin, limit = 20) {
+      return this.st('SELECT u.* FROM work_units u JOIN sessions s ON s.session_id = u.to_session WHERE u.origin = ? AND s.workspace_key = ? ORDER BY u.created_at DESC, u.rowid DESC LIMIT ?').all(origin, key, limit).map(flowUnitRow);
+    },
+    // 최근에 띄운 세션의 spawn 이벤트(워크스페이스·런처 이름. 기본 런처 고르기)
+    recentSpawns(limit = 500) { return this.st("SELECT data FROM events WHERE kind = 'spawn' ORDER BY id DESC LIMIT ?").all(limit).map((r) => J(r.data, {}) || {}); },
+    liveCasesCount(key) { return Number(this.st("SELECT COUNT(*) AS n FROM rig_cases WHERE workspace_key = ? AND state IN ('open', 'blocked')").get(key).n); },
     // 그 세션의 그 시각 상태(마지막 state 이벤트의 to). 관리자 자리가 일하는 턴 중이었나를 본다
     stateAt(sessionId, t) { const r = this.st("SELECT data FROM events WHERE session_id = ? AND kind = 'state' AND t <= ? ORDER BY id DESC LIMIT 1").get(sessionId, t); const d = r ? J(r.data) : null; return d ? d.to || null : null; },
   });
