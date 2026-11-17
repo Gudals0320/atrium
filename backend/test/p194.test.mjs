@@ -196,7 +196,7 @@ test('P194 상한 넘어 주인에게 = 보고 + waiting_owner. 다음 맡기기
     const r1 = await V(b).prompt(main, { name: 'worker', text: '다시 A' });
     assert.equal(r1.unit.caseId, A);
     assert.equal(b.store.getCase(A).state, 'open');
-    assert.deepEqual(evs(b, 'rig_case_resume').at(-1).data, { caseId: A, from: 'waiting_owner', why: 'waiting_owner' });
+    assert.deepEqual(evs(b, 'rig_case_resume').at(-1).data, { caseId: A, from: 'waiting_owner', why: 'waiting_owner', countersReset: true });
     d = await reject(r1.name); assert.equal(d.case.state, 'waiting_owner');
     d = await reject(rB.name); assert.equal(d.case.state, 'waiting_owner');
     // 둘 → 새 건
@@ -219,6 +219,35 @@ test('P194 상한 넘어 주인에게 = 보고 + waiting_owner. 다음 맡기기
     b.store.updateCase(r3.unit.caseId, { state: 'waiting_owner' });
     b.closeSession(main, 'test');
     assert.equal(b.store.getCase(r3.unit.caseId).state, 'cancelled');
+  } finally { await stop(); }
+});
+
+test('P194 뒤: 주인이 waiting_owner 건을 이어 맡기면 그 건의 줄별 지난 횟수를 0으로(다음 반려 한 번이 곧바로 주인에게 돌아오지 않는다)', async () => {
+  const def = sampleDef(); def.flow[2].max = 1; delete def.cycles; // 반려 한 번은 worker로, 두 번째는 상한을 넘어 main으로
+  const { b, add, seat, by, stop } = await board({ def });
+  try {
+    const main = add('lead'); seat(main, 'main');
+    const rejectOnce = async (wName) => {
+      const w = by(wName); await gotUnit(w);
+      const d1 = await done(b, w, 'ok', '했다');
+      const rv = by(d1.flow[0].to); await gotUnit(rv);
+      return done(b, rv, 'rejected', '틀렸다');
+    };
+    const r = await V(b).prompt(main, { name: 'worker', text: '건 A' });
+    const A = r.unit.caseId;
+    let d = await rejectOnce(r.name);
+    assert.equal(d.case.state, 'open', '첫 반려는 상한 안: worker로 되돌아간다');
+    d = await rejectOnce(d.flow[0].to);
+    assert.equal(d.case.state, 'waiting_owner', '두 번째 반려는 상한을 넘어 주인에게');
+    assert.ok(Object.values(b.store.getCase(A).edgeCounts).some((n) => n > 0), '넘기 전 횟수가 쌓여 있다');
+    await until(() => main.rt.term.status === 'idle');
+    const r2 = await V(b).prompt(main, { name: 'worker', text: '다시 A' });
+    assert.equal(r2.unit.caseId, A);
+    assert.deepEqual(b.store.getCase(A).edgeCounts, {}, '주인이 이어 맡기면 0으로');
+    assert.equal(evs(b, 'rig_case_resume').at(-1).data.countersReset, true);
+    d = await rejectOnce(r2.name);
+    assert.equal(d.case.state, 'open', '이어 맡긴 뒤 첫 반려는 다시 worker로(곧바로 주인에게 가지 않는다)');
+    assert.deepEqual(d.reports || [], []);
   } finally { await stop(); }
 });
 

@@ -208,8 +208,11 @@ export class RigFlow {
   resumeCase(c, caller, why) {
     const st = this.store();
     if (c.state !== 'open') {
-      st.updateCase(c.id, { state: 'open', blockedReason: null });
-      st.addEvent(caller.sessionId, 'rig_case_resume', { caseId: c.id, from: c.state, why });
+      // P194 뒤(@fable-peer): 주인이 waiting_owner 건을 다시 맡기는 것은 새 결정이다. 줄별 지난 횟수를 0으로 되돌린다
+      // (안 그러면 다음 반려 한 번에 곧바로 주인에게 돌아온다)
+      const reset = c.state === 'waiting_owner' && c.owner === caller.sessionId;
+      st.updateCase(c.id, { state: 'open', blockedReason: null, ...(reset ? { edgeCounts: {} } : {}) });
+      st.addEvent(caller.sessionId, 'rig_case_resume', { caseId: c.id, from: c.state, why, ...(reset ? { countersReset: true } : {}) });
       this.b.log(`rig case ${c.id} resumed (${c.state} → open, ${why}) by ${caller.name}`);
       this.changed(c.workspaceKey);
     }
