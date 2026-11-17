@@ -11,7 +11,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { RIG_FILE, validateRig, protectedHits, POINTER_RE } from './rig.mjs';
+import { RIG_FILE, validateRig, protectedHits, POINTER_RE, gitStateOf, worktreeWarnings } from './rig.mjs';
 import { shownName } from './session-label.mjs';
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
@@ -74,7 +74,7 @@ export class RigAdmin {
     const base = (c && c.good) || rig.lastGood(key);
     const prot = rig.rigProtected(key);
     const hits = base && prot ? protectedHits(raw, base.raw, prot.pointers) : [];
-    const out = { ok: v.ok && !hits.length, from, hash, current: { n: cur.n ?? null, hash: cur.hash || null }, same: !!(base && base.hash === hash), warnings: v.ok ? v.def.warnings || [] : [] };
+    const out = { ok: v.ok && !hits.length, from, hash, current: { n: cur.n ?? null, hash: cur.hash || null }, same: !!(base && base.hash === hash), warnings: v.ok ? [...(v.def.warnings || []), ...(v.def.seats && Object.values(v.def.seats).some((x) => x.worktree) ? worktreeWarnings(v.def.seats, gitStateOf(root)) : [])] : [] }; // P195: 워크트리 자리의 저장소 조건
     if (!v.ok) return { ...out, reason: v.reason };
     if (hits.length) return { ...out, protectedHits: hits, reason: `사람만 고치는 자리를 바꾼다: ${hits.join(', ')}. 이대로 쓰면 보드가 이 정의를 쓰지 않는다(지금 버전을 그대로 쓴다).` };
     return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), manager: v.def.manager } };

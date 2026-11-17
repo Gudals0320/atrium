@@ -155,6 +155,8 @@ export default {
     sessionNotFound: '보드에서 세션을 찾을 수 없습니다: {ref}',
     wsNotFound: '보드에서 프로젝트를 찾을 수 없습니다: {ref}',
     targetNotFound: '보드에서 대상 세션을 찾을 수 없습니다: {ref}',
+    wsGitInRepo: '이미 Git 저장소 안의 폴더라 git init을 하지 않았습니다: {path}',
+    wsGitInitFail: 'git init이 실패했습니다: {error}',
     noFolder: '폴더를 찾을 수 없습니다: {path}',
     wsNotEmpty: '세션 {n}개가 열려 있어 프로젝트를 닫을 수 없습니다. 먼저 세션을 종료하세요.',
     terminalDown: '터미널 서버에 연결되어 있지 않습니다.',
@@ -2824,5 +2826,23 @@ export default {
   rigMore: {
     spawnRenamed: ' · rig 자리 이름과 겹쳐 세션 이름을 바꿨습니다: {from} → @{name}',
     caseWaitingOwner: '주인의 답을 기다림',
+  },
+  // P195: rig를 처음 써 본 보고에서 고친 것
+  rigP195: {
+    seatNoRepo: '이 rig에는 워크트리를 쓰는 자리가 있습니다. 워크트리는 git 저장소와 첫 커밋이 필요한데, 이 폴더는 git 저장소가 아닙니다. 이대로 켜면 첫 맡기기가 실패합니다.',
+    seatNoCommit: '이 rig에는 워크트리를 쓰는 자리가 있습니다. 워크트리는 git 저장소와 첫 커밋이 필요한데, 이 저장소에는 아직 커밋이 없습니다. 이대로 켜면 첫 맡기기가 실패합니다.',
+    remoteNote: 'rig 켜기와 고치기는 판을 띄운 PC의 창에서만 할 수 있습니다. 켜면 저장소의 프로그램이 그 PC 사용자 계정으로 돌기 때문입니다. 끄기는 여기서도 됩니다.',
+    wtNoRepo: '이 틀은 워커가 워크트리를 씁니다. 이 폴더는 git 저장소가 아닙니다. git init과 첫 커밋을 한 뒤 고르세요.',
+    wtNoCommit: '이 틀은 워커가 워크트리를 씁니다. 이 저장소에는 아직 커밋이 없습니다. 첫 커밋을 한 뒤 고르세요.',
+  },
+  // P195: 프로젝트 열기의 Git 저장소로 시작
+  wsGit: {
+    label: 'Git 저장소로 시작 (git init + 빈 첫 커밋)',
+    hint: '켜면 폴더에 git init을 하고 빈 첫 커밋을 만듭니다. 워크트리(rig의 워크트리 자리)는 첫 커밋이 있어야 동작합니다. git 설정은 바꾸지 않습니다.',
+    inRepo: '이 폴더는 이미 Git 저장소 안에 있어 git init을 하지 않습니다.',
+    noFolder: '폴더를 찾을 수 없습니다.',
+    done: '{name}: git init과 빈 첫 커밋을 했습니다.',
+    noIdentity: '{name}: git init은 했지만 첫 커밋은 하지 못했습니다. git 사용자 이름과 메일이 설정되어 있지 않습니다. 터미널에서 git config --global user.name "이름"과 git config --global user.email "메일"을 설정한 뒤, 그 폴더에서 git commit --allow-empty -m "Initial commit"을 실행하세요. rig의 워크트리 자리는 첫 커밋이 있어야 동작합니다.',
+    commitFail: '{name}: git init은 했지만 첫 커밋이 실패했습니다: {error}. rig의 워크트리 자리는 첫 커밋이 있어야 동작합니다.',
   },
 };

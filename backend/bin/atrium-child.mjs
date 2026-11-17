@@ -73,7 +73,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       atrium tool --runs는 너의 최근 실행. 세션마다 한 번에 하나(정의가 parallel이면 여럿). rig의 훅이 거절하면 종료 코드 1과 까닭.
       도구를 정의하는 사람에게: 도구의 run에는 node, python, .exe를 바로 적는다(.cmd·.bat이면 cmd.exe를 거쳐 인자에 A-Z a-z 0-9 빈칸 _ . , : = / @ + - 밖의 글자를 쓰지 못한다)
   rig 자리(seat): 사람이 정하거나 보드가 rig의 자리를 위해 띄운 세션은 정의(seats·flow)를 따른다(atrium me에 자리가 보인다).
-      atrium prompt <자리 이름> "<할 일>"은 그 자리로 보낸다: flow의 assign 줄이면 일(keep 자리는 앉은 세션, fresh 자리는 새 세션), may면 글만, 그 밖은 보드가 거절한다(종료 코드 1, 쓸 수 있는 자리를 알린다).
+      atrium prompt <자리 이름> "<할 일>"은 그 자리로 보낸다: flow의 assign 줄이면 일(keep 자리는 앉은 세션, fresh 자리는 새 세션), may면 글만, 그 밖은 보드가 거절한다(종료 코드 1, 쓸 수 있는 자리를 알린다). rig 밖 세션(자리 없는 세션)에는 manager 자리, 또는 may에 "@<이름>"·"*"를 둔 자리가 글만 보낸다.
       atrium done <값> "<보고>"의 값은 정의의 results 낱말이고, 보드가 값에 따라 다음 자리로 넘긴다(넘길 곳이 없으면 건의 주인에게). 자리 안내: atrium guide
   atrium rig check [파일] | log | rollback <n> | cleanup <건>   rig의 관리자 자리(manager)만 쓴다(check는 읽기만이라 rig가 꺼진 워크스페이스면 어느 세션이든 쓴다). 관리자 자리는 .atrium/rig.json을 직접 고치고(보드가 새 해시를 버전으로 남긴다), check로 후보를 검사하고,
       log로 버전과 버전마다 건·반려·훅 거절·상한 초과 수를 보고, rollback <n>으로 되돌리고(새 버전), cleanup <건>으로 끝난 건의 fresh 세션을 닫는다(워크트리는 목록만).
@@ -544,7 +544,7 @@ function printSeat(r) {
   if (!r.active) return say(`rig 자리: ${r.seat}(지금 rig가 꺼졌거나 정의에 그 자리가 없어 자리 규칙이 쓰이지 않는다)`);
   say(`rig 자리: ${r.seat}(${r.session}${r.worktree ? ', 일마다 워크트리' : ''})${r.case ? ` · 건 ${r.case.id} ${r.case.state}(주인 @${r.case.owner})` : ''}`);
   say(`  끝내기: atrium done <값> "<보고>". 값: ${r.results.join(', ')}${r.next && r.next.length ? ` · 다음: ${r.next.map((n) => `${n.on} → ${n.to.join(', ')}${n.max != null ? `(최대 ${n.max}번, 넘으면 ${n.else || 'manager'})` : ''}`).join(' · ')}` : ''}`);
-  say(`  보낼 수 있는 자리: 일 맡기기 ${r.assign.length ? r.assign.join(', ') : '없음'} · 글만 ${r.may.length ? r.may.join(', ') : '없음'}(atrium prompt <자리> "…"). 그 밖은 보드가 거절한다${r.tools ? ` · 도구: ${r.tools.join(', ') || '없음'}` : ''}`);
+  say(`  보낼 수 있는 자리: 일 맡기기 ${r.assign.length ? r.assign.join(', ') : '없음'} · 글만 ${r.may.length ? r.may.join(', ') : '없음'}${r.manager && !r.may.includes('*') ? ' · rig 밖 세션에 글만(관리자 자리)' : ''}(atrium prompt <자리> "…"). 그 밖은 보드가 거절한다${r.tools ? ` · 도구: ${r.tools.join(', ') || '없음'}` : ''}`);
   if (r.owned && r.owned.length) say(`  네가 주인인 건: ${r.owned.map((c) => `${c.id} ${c.state}`).join(', ')}${r.owned.some((c) => c.state === 'waiting_owner') ? ' · waiting_owner는 너의 답을 기다린다: 다음 atrium prompt <자리>가 잇는다(여럿이면 --case <건>)' : ''}`); // P194
   if (r.manager) say(`  너는 관리자 자리다(정의 버전 ${r.version ?? '-'}): .atrium/rig.json을 직접 고치고, atrium rig check [파일] | log | rollback <n> | cleanup <건>을 쓴다`); // P188
 }

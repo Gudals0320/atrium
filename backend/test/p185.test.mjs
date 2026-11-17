@@ -457,7 +457,7 @@ test('P185 자리 없는 세션·꺼진 rig는 그대로: 자리를 정한 세�
     const kid = add('kid', { parentSessionId: main.sessionId }); b.branch.noteChild(kid.sessionId, { role: '워커', depth: 2, by: main.sessionId });
     const r = await V(b).prompt(main, { name: 'kid', text: '일' });
     assert.ok(r.unit && !r.unit.caseId);
-    await assert.rejects(V(b).prompt(main, { name: 'worker', text: 'x' }), (e) => e.code === 'not_found', '자리 이름은 세션 이름이 아니다');
+    await assert.rejects(V(b).prompt(main, { name: 'worker', text: 'x' }), (e) => e.code === 'rig_off' && /rig가 꺼져 있다/.test(e.message), '자리 이름은 세션 이름이 아니다(P195: 꺼진 rig의 자리 이름이면 그 까닭)');
     assert.equal(by('worker-1'), undefined);
     assert.deepEqual(b.store.casesOf(ws.key), []);
     assert.equal(b.branch.me(main).rig.active, false);
