@@ -2662,7 +2662,7 @@ export default {
     as: 'Relation',
     asLabel: "@{b} is @{a}'s",
     subHelp: 'Sub: @{b} works under @{a}. @{a} hands off the work and @{b} reports back when done.',
-    peerHelp: 'Peer: @{b} does not work under @{a}. They exchange what they need and share results when done. Both sessions are told about the relation.',
+    peerHelp: 'Peer: @{b} does not work under @{a}. They message each other only for questions, handovers, and changes that affect the other\'s work; what each one did is kept in the board\'s peer news. Both sessions are told about the relation.', // P204
     createdPeer: 'Linked @{a} → @{b} as peers and notified both sessions',
     setFail: 'Could not change the relation: {error}',
   },

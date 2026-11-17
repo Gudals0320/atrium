@@ -231,6 +231,7 @@ export class WorkUnits {
     if (l && !l.removedAt) b.linkEvent(l, 'reply', text, { via: 'atrium', verb: 'done', result, unitId: unit.id, claimedBy, ...(noticeDeliveryId ? { deliveryId: noticeDeliveryId } : {}) });
     st.addEvent(caller.sessionId, 'unit_done', { unitId: unit.id, tryId: tr.id, result, chars: text.length, claimedBy, noticeDeliveryId });
     b.log(`unit ${unit.id} done ${result} by ${caller.name} → ${parent ? parent.name : '(closed)'} via ${claimedBy}`);
+    if (this.branch && this.branch.news) this.branch.news.onDone(caller, unit, result, text); // P204: 동료 소식에 done 한 줄
     if (human && b.rigSetup) try { b.rigSetup.onDone(unit, st.getTry(tr.id)); } catch (e) { b.log('rig builder done error', e.stack); }
     const next = this.pump(caller.sessionId);
     return { unit: unit.id, result, parent: this.nameOf(unit.from), parentOpen: !!parent, claimedBy, next: next ? { unit: next.tryRow.unitId } : null, queued: st.queuedUnitsOf(caller.sessionId).length, ...(unit.caseId ? { caseId: unit.caseId, seat: caller.rigSeat || null } : {}) };

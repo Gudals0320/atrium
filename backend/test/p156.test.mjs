@@ -150,7 +150,7 @@ test('P156 atrium child --peer: 계보는 남고 관계는 동료(출처 agent),
   assert.equal(p1.parentSessionId, lead.sessionId, '계보는 남는다');
   assert.deepEqual(b.store.relationRows().map((r) => [r.a, r.b, r.relation, r.source]), [[lead.sessionId, p1.sessionId, 'peer', 'agent']]);
   const q = b.queued.find((x) => x.sid === p1.sessionId).text;
-  assert.match(q, /^\[Atrium 보드\] 관계: 너는 @lead의 동료다\(하위 워커가 아니다\)\. .*atrium prompt lead "<결과>"/);
+  assert.match(q, /^\[Atrium 보드\] 관계: 너는 @lead의 동료다\(하위 워커가 아니다\)\. .*atrium prompt lead "<글>"/); // P204: 결과 공유 대신 보낼 때(다섯 경우)
   assert.ok(q.endsWith('\n\ncrawl the site'));
   // 연결 기록: 지시는 원래 글, 꼬리표
   const l = b.store.linkByPair(lead.sessionId, p1.sessionId);
@@ -269,9 +269,9 @@ test('P156 명령 글: child --peer 첫 줄이 관계, relate 글, children의 �
     assert.equal(s.code, 0, s.stderr); assert.match(s.stdout.split('\n')[0], /^관계: 하위 워커\. @w1는 너의 워커다/);
     const p = await runChild(['child', 'p1', '--peer', '--no-wait', '--prompt', 'y'], env);
     assert.equal(p.code, 0, p.stderr); assert.match(p.stdout.split('\n')[0], /^관계: 동료\. @p1는 너의 하위 워커가 아니다/);
-    assert.match(p.stdout, /동료는 끝나면 결과를 너에게 공유한다/);
+    assert.match(p.stdout, /동료는 결과를 보내오지 않는다\(한 일은 atrium news p1\)/); // P204
     const ch = await runChild(['children'], env);
-    assert.match(ch.stdout, /하위 세션 1개/); assert.match(ch.stdout, /동료\(하위가 아니다, 결과를 서로 공유\): @p1 ready/);
+    assert.match(ch.stdout, /하위 세션 1개/); assert.match(ch.stdout, /동료\(하위가 아니다, 한 일은 atrium news\): @p1 ready/);
     const me = await runChild(['me'], env);
     assert.match(me.stdout, /상위: 없음/); assert.match(me.stdout, /동료 1명\(하위가 아니다.*\n {2}@p1 · ready · 네가 띄움 · 에이전트가 정함/);
     const meP = await runChild(['me'], b.branch.envFor(byName(b, 'p1').sessionId));
@@ -345,7 +345,7 @@ test('P156 계약과 안내: 계약 3, relate 동사·child --peer·me/children/
   assert.match(relationLine('a', 'b', { relation: 'sub', up: 'a' }, 'user'), /^@b는 이제 너의 하위 워커다\(사람이 판에서 정함\)/);
   assert.match(relationLine('a', 'b', { relation: 'sub', up: 'b' }, 'lead'), /^너는 이제 @b의 하위 워커다\(@lead가 정함\)/);
   assert.match(relationLine('a', 'b', null, 'user'), /자동으로 되돌렸다/);
-  assert.match(relationHeader({ relation: 'peer', parent: 'lead' }), /atrium prompt lead "<결과>"/); // P181: --now 대신 보드가 차례에 넣는다
+  assert.match(relationHeader({ relation: 'peer', parent: 'lead' }), /atrium prompt lead "<글>"/); // P181: --now 대신 보드가 차례에 넣는다. P204: 결과가 아니라 보낼 때의 글
 });
 
 test('P156 atrium prompt 꼬리표: 위 → 하위 assign, 하위 → 위 report, 동료끼리 share, 독립은 없음(연결 기록 data.tag와 응답 tag)', async () => {

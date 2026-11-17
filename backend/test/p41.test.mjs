@@ -311,7 +311,7 @@ test('P41 스킬 글과 짧은 안내: 말로 한 모델은 atrium models로 골
   assert.match(s, /정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다/);
   assert.match(s, /내부 하위 에이전트로 우회하지 않는다/);
   assert.match(s, /모델 오류로 답하지 못하면/);
-  assert.ok(Buffer.byteLength(s) < 7300, `스킬 글 ${Buffer.byteLength(s)}바이트`); // P156: 관계 고르기 절
+  assert.ok(Buffer.byteLength(s) < 8000, `스킬 글 ${Buffer.byteLength(s)}바이트`); // P156: 관계 고르기 절. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
   assert.match(BOARD_SYSTEM_PROMPT, /`atrium models`에서 골라 띄운다/);
 });
 
