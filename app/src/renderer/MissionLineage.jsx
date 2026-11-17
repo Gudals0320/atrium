@@ -10,7 +10,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE } from './lib/mission-lineage.js'; // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
+import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, todayWorkspaces, dayStart, msToMidnight } from './lib/mission-lineage.js'; // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
@@ -184,6 +184,19 @@ const XIcon = ({ s = 20 }) => <svg width={s} height={s} viewBox="0 0 24 24" aria
 // 글자 키인가(명령줄로 보낼 것): 한 글자 키, 또는 IME 조합 시작(Process)
 const typedKey = (e) => !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'Process' || (e.key && e.key.length === 1));
 
+// P202: 오늘·이전 이름표(세계 좌표). 머리(두 열) = 열 위 큰 이름표와 밑줄, 줄(한 열) = 가로 줄 위에 "오늘", 아래에 "이전". 움직임 없이 글과 줄만
+export function SectionMark({ s, px, t }) {
+  const fs = Math.round(px * 1.15 * 10) / 10;
+  if (s.mode === 'line') return (
+    <div className="mt-sm-sec line" data-role="ln-section" data-kind="split" style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
+      <span className="up" style={{ fontSize: fs }}>{t('mmSec.today')}</span><i aria-hidden="true" /><span className="dn" style={{ fontSize: fs }}>{t('mmSec.earlier')}</span>
+    </div>);
+  return (
+    <div className={`mt-sm-sec head ${s.kind}`} data-role="ln-section" data-kind={s.kind} data-col={s.col} style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
+      <span style={{ fontSize: fs * 1.25 }}>{t(s.kind === 'today' ? 'mmSec.today' : 'mmSec.earlier')}</span>
+    </div>);
+}
+
 export function LineageMap() {
   const t = useT();
   const open = useStore((st) => st.missionOpen);
@@ -245,13 +258,20 @@ export function LineageMap() {
   // P198: rig 건이 바뀌면(넘김·보고·올림·끝남) 다시 읽는다(세션 바뀜 없이 오는 보고도 바로 보이게)
   useEffect(() => (open ? api.on('rig.cases', () => setReloadN((n) => n + 1)) : undefined), [open]);
 
-  const order = useMemo(() => (workspaces || []).map((w) => w.key), [workspaces]);
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
   const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  // P202: 오늘 일한 워크스페이스(폴더 차례). 자정이 지나면 맵을 연 채로도 다시 센다(day가 바뀐다). 같은 모음이면 배치를 다시 세지 않게 글 열쇠로 묶는다
+  const [day, setDay] = useState(() => dayStart());
+  useEffect(() => { if (!open) return undefined; const id = setTimeout(() => setDay(dayStart()), msToMidnight() + 500); return () => clearTimeout(id); }, [open, day]);
+  const todayKey = graph ? [...todayWorkspaces(graph.nodes.filter((n) => n.kind === 'session'), { liveOf, tierOf: (n) => tiers.get(n.id), now: Math.max(Date.now(), day) })].sort().join('\n') : '';
+  const today = useMemo(() => new Set(todayKey ? todayKey.split('\n') : []), [todayKey]);
+  // P202: 두 열 판단에 쓰는 맞춤 칸(요약 열·머리·명령줄을 뺀 보기 칸)
+  const fitArea = vsize ? { w: vsize.w - RAIL - (sumOpen ? SUM_W + SUM_GAP : 0), h: vsize.h - TOPH - COLH - BOTTOM } : null;
+  const fitKey = fitArea ? `${fitArea.w}x${fitArea.h}` : '';
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
   const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
-  const layOpts = useMemo(() => ({ order, vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, foldOpen }), [order, vgroups, tiers, names, t, expanded, foldOpen]);
+  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, foldOpen, today, columns: 'auto', view: fitArea }), [vgroups, tiers, names, t, expanded, foldOpen, today, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const lay = useMemo(() => (g2 ? lineageLayout(g2, { ...layOpts, label: lstep }) : null), [g2, layOpts, lstep]);
   // P178: 맞춤 보기를 셀 때 다른 계단의 배치(선 길 찾기 없이, 크기만)
   const layForRef = useRef(null);
@@ -297,11 +317,15 @@ export function LineageMap() {
     const cs = colsRef.current, L = layRef.current;
     if (cs && L) L.cols.forEach((c, i) => { const el = cs.children[i]; if (el) el.style.transform = `translateX(${Math.round(c.x * v.k + v.x - RAIL)}px)`; });
     // P199: 붙는 머리. 띠의 자리 머리가 막대 위로 지나갔고 띠가 막대 선에 걸쳐 있으면, 나무 칸 이름 대신 그 띠의 자리 이름을 띠 열 x에(움직임 없이 자리만 바꾼다)
+    // P202: 두 열이면 열마다 따로 본다(data-sticky0·1이 그 열의 나무 칸 이름만 숨긴다). data-sticky는 붙은 띠가 하나라도 있을 때(첫 띠)
     if (cs && L) {
-      const st = stickyHead(L.rb && L.rb.list, v, TOPH + COLH, RAIL), want = st ? st.ws : '';
+      const list = (L.rb && L.rb.list) || [];
+      const sts = Array.from({ length: L.ncol || 1 }, (_, c) => stickyHead(list.filter((b) => (b.col || 0) === c), v, TOPH + COLH, RAIL));
+      const first = sts.find(Boolean), want = first ? first.ws : '';
       if ((cs.dataset.sticky || '') !== want) { if (want) cs.dataset.sticky = want; else delete cs.dataset.sticky; }
+      sts.forEach((st, c) => { const a = `sticky${c}`, w2 = st ? st.ws : ''; if ((cs.dataset[a] || '') !== w2) { if (w2) cs.dataset[a] = w2; else delete cs.dataset[a]; } });
       for (const gEl of cs.querySelectorAll('.rbst')) {
-        const on = !!st && gEl.dataset.ws === st.ws;
+        const st = sts.find((x) => x && x.ws === gEl.dataset.ws), on = !!st;
         if (gEl.hidden === on) gEl.hidden = !on;
         if (on) st.seats.forEach((s2, i) => { const el = gEl.children[i]; if (el) el.style.transform = `translateX(${s2.x}px)`; });
       }
@@ -400,8 +424,8 @@ export function LineageMap() {
     const st = getState();
     st.mapFocus = {
       session: (sid) => { const L = layRef.current; const hit = L && [...L.cards.entries()].find(([, b]) => b.node.sessionId === sid); return hit ? focusCard(hit[0]) : false; },
-      ws: (key) => { const L = layRef.current, r = L && L.rows.find((x) => x.key === key); if (!r) return false; fitBoxTo({ x: 0, y: r.y, w: L.W, h: r.h }); setTimeout(() => blink(`.mt-sm-row[data-key="${CSS.escape(key)}"]`), 460); return true; },
-      group: (gid) => { const L = layRef.current, b = L && L.bands.find((x) => (x.id || null) === (gid || null)); if (!b) return false; fitBoxTo({ x: 0, y: b.y, w: L.W, h: b.h }); setTimeout(() => blink(`.mt-sm-band[data-id="${CSS.escape(b.id || 'none')}"]`), 460); return true; },
+      ws: (key) => { const L = layRef.current, r = L && L.rows.find((x) => x.key === key); if (!r) return false; fitBoxTo({ x: r.ox || 0, y: r.y, w: L.W, h: r.h }); setTimeout(() => blink(`.mt-sm-row[data-key="${CSS.escape(key)}"]`), 460); return true; },
+      group: (gid) => { const L = layRef.current, b = L && L.bands.find((x) => (x.id || null) === (gid || null)); if (!b) return false; fitBoxTo({ x: b.x || 0, y: b.y, w: L.W, h: b.h }); setTimeout(() => blink(`.mt-sm-band[data-id="${CSS.escape(b.id || 'none')}"]`), 460); return true; },
     };
     return () => { if (getState().mapFocus === st.mapFocus) getState().mapFocus = null; };
   }, [open, paint, blink, fitBoxTo, focusCard]);
@@ -465,7 +489,7 @@ export function LineageMap() {
   }, []);
 
   // ---- 줄 옮기기(소속만): 놓은 자리의 폴더 띠 → group.move. 폴더 없음 띠·띠 밖 = 폴더 없음 ----
-  const bandAt = (L, wx, wy) => (wx >= 0 && wx <= L.W ? L.bands.find((x) => wy >= x.y && wy <= x.y + x.h) || null : null);
+  const bandAt = (L, wx, wy) => L.bands.find((x) => wx >= (x.x || 0) && wx <= (x.x || 0) + L.W && wy >= x.y && wy <= x.y + x.h) || null; // P202: 두 열이면 그 열의 띠
   const moveRow = useCallback((key, bandId) => {
     const L = layRef.current;
     const row = L && L.rows.find((r) => r.key === key);
@@ -727,12 +751,12 @@ export function LineageMap() {
 
   return (
     <div className={`mt-mission mt-ta mt-sm nowheel nopan${moveWs ? ' isle-moving' : ''}`} data-role="mission" data-style="territories" data-layout="lineage" ref={rootRef}>
-      <div className="mt-ta-vp" data-role="ta-viewport" ref={vpRef} onContextMenu={onCtx}>
+      <div className="mt-ta-vp" data-role="ta-viewport" ref={vpRef} onContextMenu={onCtx} data-ncol={lay ? lay.ncol || 1 : undefined}>
         <div className="mt-ta-bg" ref={bgRef} aria-hidden="true" />
         {!lay ? <div className="mt-ta-loading">{t('common.loading')}</div> : (
           <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef} data-label={lay.label}>
             {lay.bands.map((b) => (
-              <div key={`b:${b.id || 'none'}`} className={`mt-sm-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} style={{ top: b.y, height: b.h, width: lay.W }}>
+              <div key={`b:${b.id || 'none'}`} className={`mt-sm-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} data-today={b.today ? '1' : undefined} data-col={b.col || 0} style={{ left: b.x || 0, top: b.y, height: b.h, width: lay.W }}>
                 <div className="mt-sm-spine" style={{ width: lay.spine }}>
                   <span className="fk" style={{ fontSize: lay.px.kind }}>{b.loose ? t('mmLine.loose') : t('mmLine.folder')}</span>
                   <span className="fn" data-role="ln-band-name" style={{ fontSize: lay.px.name }}>{b.name}</span>
@@ -743,7 +767,7 @@ export function LineageMap() {
             ))}
             {lay.rows.map((r) => (
               <div key={`r:${r.key || '-'}`} className={`mt-sm-row${r.first ? ' first' : ''}`} data-role="ta-isle" data-key={r.key} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
-                {r.key ? <div className="mt-sm-grab" data-key={r.key} data-role="ln-row-grab" style={{ width: Math.max(LINE.HEADW, col0 - r.x - 40) }} /> : null}
+                {r.key ? <div className="mt-sm-grab" data-key={r.key} data-role="ln-row-grab" style={{ width: Math.max(LINE.HEADW, col0 + (r.ox || 0) - r.x - 40) }} /> : null}
                 {/* P157: 옮기기 안내는 풍선(title)이 아니라 Alt를 누른 동안에만 보이는 작은 글(.mt-sm-althint) */}
                 <div className="mt-sm-head" data-key={r.key} data-role="ta-isle-head" style={{ width: lay.headW, gap: (lay.heads.get(r.key) || {}).gap }}>
                   <span className="wsn" style={{ fontSize: lay.px.ws }}><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
@@ -753,6 +777,8 @@ export function LineageMap() {
               </div>
             ))}
             {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-sm-div" style={{ left: d.x, top: d.y, height: d.h }} />)}
+            {/* P202: 오늘·이전 이름표. 두 열 = 열마다 위 머리, 한 열 = 두 칸 사이 얇은 구분 줄(위 "오늘", 아래 "이전") */}
+            {(lay.sections || []).map((s) => <SectionMark key={`sec:${s.kind}`} s={s} px={lay.px.name} t={t} />)}
             <RigBandLayer rb={lay.rb} t={t} now={now} onMark={onMark} onHead={onHead} onFold={onBandFold} />
             <svg className="mt-ta-edges" width={1} height={1} aria-hidden="true">
               <defs>
@@ -820,7 +846,7 @@ export function LineageMap() {
         </button>
       )}
       <div className="mt-ta-hud mt-sm-cols" data-role="ln-cols" ref={colsRef} style={lay && sumOpen ? { right: SUM_W } : undefined} aria-hidden="true">
-        {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key}>{colLabel(c)}</span>)}
+        {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key} data-c={c.c || 0}>{colLabel(c)}</span>)}
         {lay && lay.rb && lay.rb.list.filter((b) => !b.phone).map((b) => (
           <div key={`st:${b.ws}`} className="rbst" data-role="ln-cols-rig" data-ws={b.ws} hidden>
             {b.seats.map((s) => <span key={s.name} className={`colh rbs${s.old ? ' old' : ''}`} data-seat={s.name}>{s.name}<i>{s.old ? t('rigBand.old') : s.mode ? t(`rigBand.${s.mode}`) : ''}</i></span>)}

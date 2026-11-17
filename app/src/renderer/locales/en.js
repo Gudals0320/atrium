@@ -2883,4 +2883,9 @@ export default {
     noHistory: 'No handoffs yet',
     unit: { open: 'working', done: 'done', cancelled: 'cancelled' },
   },
+  // P202: 세션 맵 폴더 칸 이름표(오늘 일한 폴더 · 그 밖)
+  mmSec: {
+    today: 'Today',
+    earlier: 'Earlier',
+  },
 };
