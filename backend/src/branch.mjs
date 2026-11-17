@@ -468,11 +468,15 @@ export class Branch {
     const pid = tree.blockOf.get(parentId);
     if (peer) {
       const ps = { w: pn.w, h: pn.h }; // 짝의 크기 그대로(단계 열쇠와 비율도)
-      const wp = this.relIndex().workParentOf(parentId);
+      const idx = this.relIndex();
+      const wp = idx.workParentOf(parentId);
       const sib = !!(wp && wp !== parentId && b.sessions.has(wp) && (b.sessions.get(wp).workspaceKey || null) === wsKey);
       const frame = worktree ? boxFrame({ x: 0, y: 0, ...ps }) : ps;
       const obstacles = all.filter((i) => !(inBox && i.box === ak));
-      const at = peerSlot({ partner: pRect, band: pid ? bandOf(tree, pid) : pRect, size: frame, obstacles: [...obstacles, pRect], gap: sib ? LINE_GAP_Y : LINE_GAP_Y * 2 });
+      const band = pid ? bandOf(tree, pid) : pRect;
+      // P200: 짝 나무 아래에 이미 선 동료들(동료 줄). 상한은 그 줄 끝부터 잰다
+      const line = idx.peersOf(parentId).map((p) => all.find((i) => i.kind === 'node' && i.id === p.id)).filter((r) => r && r.y >= band.y + band.h);
+      const at = peerSlot({ partner: pRect, band, line, size: frame, obstacles: [...obstacles, pRect], gap: sib ? LINE_GAP_Y : LINE_GAP_Y * 2 });
       if (!at) return null;
       const pos = worktree ? frameInner(at) : at;
       return { x: Math.round(pos.x), y: Math.round(pos.y), w: pn.w, h: pn.h, size: pn.size ?? null, aspect: pn.aspect ?? null, area: inBox ? parseArea(ak).wt : '', peer: true };

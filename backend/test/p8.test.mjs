@@ -58,7 +58,7 @@ test('K1: 하위 세션 이름 — 주면 herdr 이름 규칙대로, 없으면 <
   assert.ok(CHILD_NAME_RE.test(long) && long.length <= 32);
 });
 
-test('K4(P75): 나무 자리 — 부모 오른쪽 한 열, 형제는 앞 형제(의 띠) 아래, 막히면 열을 바꾸지 않고 그 아래로 잇는다', () => {
+test('K4(P75): 나무 자리 — 부모 오른쪽 한 열, 형제는 앞 형제(의 띠) 아래, 길게 막히면 오른쪽 새 열(P200)', () => {
   const size = SIZE_STEPS.small;
   const parent = { x: 0, y: 0, w: 720, h: 460 };
   const a = lineSlot({ parent, bands: [], size, obstacles: [parent] });
@@ -69,10 +69,10 @@ test('K4(P75): 나무 자리 — 부모 오른쪽 한 열, 형제는 앞 형제(
   // 앞 형제의 띠(손자까지)가 길면 그 아래
   const band = { x: a.x, y: 0, w: 3000, h: 2000 };
   assert.equal(lineSlot({ parent, bands: [band], size }).y, 2000 + LINE_GAP_Y);
-  // 열이 다른 노드로 막혀 있으면 같은 열에서 그 아래로(다음 열로 가지 않는다)
+  // P200: 열이 다른 노드로 길게(상한 LINE_REACH 넘게) 막혀 있으면 그 아래로 내려가지 않고 그것 오른쪽에 새 열을 연다(부모 위 끝 높이)
   const wall = { x: 840, y: -100, w: 480, h: 3000 };
   const d = lineSlot({ parent, bands: [], size, obstacles: [parent, wall] });
-  assert.equal(d.x, 720 + LINE_GAP_X); assert.equal(d.y, wall.y + wall.h + LINE_GAP_Y);
+  assert.equal(d.x, wall.x + wall.w + LINE_GAP_X); assert.equal(d.y, 0);
   assert.equal(lineSlot({ parent: null, size }), null);
 });
 
