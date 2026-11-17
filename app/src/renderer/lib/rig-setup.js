@@ -298,3 +298,9 @@ export function tableDirty(a, b) { return JSON.stringify(tableToSave(a)) !== JSO
 
 // 원격 기기는 보기만: 만들기·저장·켜기·앉히기·말로 고치기를 숨긴다
 export const canEdit = ({ remote = false } = {}) => !remote;
+// P195: 끄기는 원격 기기도 한다(저장소의 프로그램을 멈출 뿐이다). 켜기·고치기는 판을 띄운 PC의 창에서만
+export const canDisable = () => true;
+// P195: rig.templates가 붙인 막힘(워크트리 틀인데 git 저장소가 아니거나 커밋이 없음) → 사전 열쇠
+// P195: rig.get·status의 worktreeGit(정의에 워크트리 자리가 있는데 저장소 조건이 안 됨) → 사전 열쇠
+export const seatBlockKey = (g) => (g === 'norepo' ? 'rigP195.seatNoRepo' : g === 'nocommit' ? 'rigP195.seatNoCommit' : null);
+export const templateBlockKey = (blocked) => (blocked === 'norepo' ? 'rigP195.wtNoRepo' : blocked === 'nocommit' ? 'rigP195.wtNoCommit' : null);

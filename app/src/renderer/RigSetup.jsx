@@ -10,7 +10,7 @@ import { remoteView } from './RigSeat.jsx';
 import {
   launcherChoices, launcherLabel, namedLaunchers, wizardInit, wizardPickTemplate, wizardPickDescribe, wizardSetLauncher, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
   wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions, previewModel, arrowLabel, seatList,
-  templateList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit,
+  templateList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit, canDisable, templateBlockKey, seatBlockKey,
 } from './lib/rig-setup.js';
 
 const argv = (run) => (Array.isArray(run) ? run.join(' ') : String(run || ''));
@@ -72,6 +72,7 @@ function EnableBody({ st, ws }) {
   return (
     <div className="mt-rigsetup-enable" data-role="rig-setup-enable">
       <div className="mt-rigon-warn" data-role="rig-confirm-warn">{t('rig.confirmWarn')}</div>
+      {st.worktreeGit && <div className="mt-rigon-warn" data-role="rig-worktree-warn">{t(seatBlockKey(st.worktreeGit))}</div>}
       <div className="mt-rigon-root dim">{t('rig.confirmFile', { file: `${ws.root}/.atrium/rig.json` })}</div>
       <div className="mt-rigon-h">{t('rig.confirmHooks', { n: hooks.length })}</div>
       <ul className="mt-rigon-list" data-role="rig-confirm-hooks">{hooks.length ? hooks.map((h, i) => <li key={i}><span className="mt-rigon-at">{h.at}</span><code>{argv(h.run)}</code></li>) : <li className="dim">{t('rig.confirmNone')}</li>}</ul>
@@ -144,7 +145,7 @@ export function RigCreateDialog({ ws, onClose }) {
   const [tpls, setTpls] = useState(null);
   const [w, setW] = useState(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.call('rig.templates', {}).then(setTpls, (e) => setTpls({ error: errText(e) })); }, []);
+  useEffect(() => { api.call('rig.templates', { workspace: ws.key }).then(setTpls, (e) => setTpls({ error: errText(e) })); }, [ws.key]); // P195: 워크트리 틀은 git 저장소와 첫 커밋이 있어야 고른다
   useEffect(() => { if (st && !w && st.status !== 'error') setW(wizardInit({ defaultLauncher: st.defaultLauncher, status: { state: st.status } })); }, [st, w]);
   // 제작 세션 소식: 이벤트의 builder와 새로 읽은 정의로 building을 넘긴다
   const onBuilder = useCallback((ev) => { load().then((r) => setW((x) => (x ? wizardOnBuilder(x, ev, { state: (r && r.status) || ev.definitionStatus }) : x))); }, [load]); // P190: working·stopped·done(result가 가른다)
@@ -175,9 +176,10 @@ export function RigCreateDialog({ ws, onClose }) {
               <div className="mt-rigsetup-paths" data-role="rig-paths">
                 {tpls && tpls.error && <div className="mt-rigon-warn">{tpls.error}</div>}
                 {tplList.map((x) => (
-                  <button key={x.id} type="button" className="mt-rigsetup-card" data-action="rig-template" data-template={x.id} onClick={() => setW(wizardPickTemplate(w, x, st.defaultLauncher, choices))}>
+                  <button key={x.id} type="button" className="mt-rigsetup-card" data-action="rig-template" data-template={x.id} data-blocked={x.blocked || undefined} disabled={!!x.blocked} onClick={() => setW(wizardPickTemplate(w, x, st.defaultLauncher, choices))}>
                     <b>{x.title}</b><span className="dim">{x.desc}</span>
                     <span className="mt-rigsetup-card-seats">{seatList(x).map((s) => s.name).join(' · ')}</span>
+                    {x.blocked && <span className="mt-rigon-warn" data-role="rig-template-blocked">{t(templateBlockKey(x.blocked))}</span>}
                   </button>
                 ))}
                 <button type="button" className="mt-rigsetup-card describe" data-action="rig-describe" onClick={() => setW(wizardPickDescribe(w))}>
@@ -291,10 +293,12 @@ export function RigPanel({ ws, onClose }) {
               {st.versionN != null && <span className="dim">{t('rigPanel.version', { n: st.versionN })}</span>}
               <span className="dim" data-role="rig-open-cases">{t('rigPanel.openCases', { n: st.openCases || 0 })}</span>
               {st.why && <span className="mt-rigon-warn">{st.why}</span>}
-              {edit && status === 'on' && <button className="mt-btn small ghost" data-action="rig-panel-off" disabled={busy} onClick={disable}>{t('rig.menuOff')}</button>}
+              {canDisable({ remote }) && status === 'on' && <button className="mt-btn small ghost" data-action="rig-panel-off" disabled={busy} onClick={disable}>{t('rig.menuOff')}</button>}
               {edit && status === 'off' && !setup && <button className="mt-btn small primary" data-action="rig-panel-setup" disabled={busy} onClick={() => setSetup({ step: 'enable', picks: {} })}>{t('rigPanel.enableSteps')}</button>}
               {edit && status !== 'none' && <button className="mt-btn small ghost" data-action="rig-panel-protect" onClick={() => openDialog({ kind: 'rigprotect', ws })}>{t('rigAdmin.menu')}</button>}
             </div>
+            {remote && <div className="mt-rigpanel-remote dim" data-role="rig-remote-note">{t('rigP195.remoteNote')}</div>}
+            {st.worktreeGit && <div className="mt-rigon-warn" data-role="rig-worktree-warn">{t(seatBlockKey(st.worktreeGit))}</div>}
             {st.builder && <BuilderLine b={st.builder} />}
             {status === 'none' && !st.builder && <div className="dim">{t('rigPanel.none')}</div>}
             {setup && edit && (

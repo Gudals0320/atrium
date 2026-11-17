@@ -128,6 +128,8 @@ export class AgentVerbs {
     if (!t) {
       const closed = b.store.closedSessions ? findSession(b.store.closedSessions(), r) : null;
       if (closed) throw apiError('closed', `@${shownName(closed) || r}는 닫힌 세션이다(보드에서 끝났거나 꺼졌다). 보낼 수 없다. 지금 연결: atrium me`);
+      const off = this.rigSeatMiss(caller, r); // P195: 꺼졌거나 잘못된 rig의 자리 이름이면 비슷한 이름 대신 그 까닭
+      if (off) throw off;
       const names = open.filter((x) => x !== caller && (x.kind || 'claude') !== 'shell').flatMap((x) => [shownName(x), x.name]);
       const near = similarNames(r, names);
       throw apiError('not_found', `보드(${b.cfg.terminalSession})에서 세션을 찾을 수 없다: ${r}.${near.length ? ` 비슷한 이름: ${near.map((n) => '@' + n).join(', ')}.` : ''} 이름은 보드의 세션 이름이다(@ 없이도 된다). 지금 연결: atrium me`, { candidates: near });
@@ -135,6 +137,22 @@ export class AgentVerbs {
     if (t === caller) throw apiError('self', '자기 자신에게는 보낼 수 없다. 다른 세션의 이름을 준다.');
     if ((t.kind || 'claude') === 'shell') throw apiError('not_agent', `@${shownName(t)}는 일반 셸이다. atrium prompt|wait|read는 에이전트 세션에만 된다.`);
     return t;
+  }
+
+  // P195: 보내는 세션의 워크스페이스 rig 정의에 그 이름의 자리가 있는데 rig가 꺼졌거나 잘못되어 자리가 살아 있지 않다 → 오류(rig_off) | null
+  //   (rig-try 보고: 꺼진 rig에서 atrium prompt worker가 not_found와 엉뚱한 비슷한 이름을 돌려줬다)
+  rigSeatMiss(caller, ref) {
+    const rig = this.b.rig;
+    const key = caller && caller.workspaceKey;
+    if (!rig || !key || !rig.seatNamesLoose) return null;
+    const seat = rig.seatNamesLoose(key).find((n) => n === String(ref).toLowerCase());
+    if (!seat) return null;
+    const r = rig.read(key);
+    const on = rig.enabled(key);
+    if (on && r.def) return null; // 켜졌고 쓸 정의가 있다(잘못된 새 정의면 마지막 맞은 것): 자리 세션의 보내기는 rig 흐름이 다룬다
+    const state = !on ? 'rig가 꺼져 있다' : `rig 정의가 잘못되어 쓰이지 않는다(까닭: ${r.invalid || '?'})`;
+    const why = !on && r.invalid ? ` 정의도 잘못되어 있다(까닭: ${r.invalid}).` : '';
+    return apiError('rig_off', `${state}.${why} ${seat}는 이 워크스페이스 rig의 자리 이름이라 지금 받을 세션이 없다. rig 켜기와 고치기는 사람이 보드에서 한다(에이전트는 켜지 못한다). 지금 rig 상태: atrium guide`, { seat, rig: on ? 'invalid' : 'off' });
   }
 
   asleep(t) { return this.branch.asleep(t); }

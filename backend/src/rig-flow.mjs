@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { shownName } from './session-label.mjs';
 import { clip } from './text.mjs';
-import { SEAT_KINDS } from './rig.mjs';
+import { SEAT_KINDS, mayReachOutside } from './rig.mjs';
 import { spawnPlan, killTree } from './hook-runner.mjs'; // P188: 느린 고리의 run
 import { rootedRun } from './tool-runs.mjs';
 import { cleanEnv } from './proc-env.mjs';
@@ -49,8 +49,8 @@ export function seatHeader({ seat, unitId, caseId, by, guide = false }) {
 // P193: 세션이 자리를 얻는 순간(사람의 rig.seat, rig.spawnSeat) 한 번 넣는 판 알림. 일 머리와 같이 세 줄 이하이고 모두 판 줄이라 카드의 지시가 되지 않는다.
 //   흐름이 띄운 자리 세션은 첫 일의 머리(seatHeader)가 같은 것을 알려 이 알림을 받지 않는다. P191: 머리 없이 앉은 keep 자리(main)가
 //   rig 흐름 대신 atrium child로 맡겨 건이 생기지 않았다
-export function seatNotice({ seat, assign = [], may = [], results = [], guide = false }) {
-  const where = [assign.length ? `일 맡기기: ${assign.join(', ')}` : null, may.length ? `글만: ${may.join(', ')}` : null].filter(Boolean).join(' · ');
+export function seatNotice({ seat, assign = [], may = [], results = [], guide = false, manager = false }) {
+  const where = [assign.length ? `일 맡기기: ${assign.join(', ')}` : null, may.length ? `글만: ${may.join(', ')}` : null, manager && !may.includes('*') ? 'rig 밖 세션에 글만' : null].filter(Boolean).join(' · '); // P195: 관리자 자리는 rig 밖 세션에 글을 보낸다
   return [
     `[Atrium 보드] 관계: 사람이 너를 rig의 ${seat} 자리에 앉혔다. 이 워크스페이스의 일은 rig 흐름(자리와 건)으로 나눈다.`,
     where
@@ -172,7 +172,7 @@ export class RigFlow {
   }
   seatNoticeOf(def, seat) {
     const x = def.seats[seat] || {};
-    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide });
+    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide, manager: def.manager === seat });
   }
 
   // ---------- 건 ----------
@@ -267,6 +267,8 @@ export class RigFlow {
       const open = st.openTryOf(t.sessionId); const ou = open ? st.getUnit(open.unitId) : null;
       if (ou && (ou.from === caller.sessionId || (ou.via && ou.via.by === caller.sessionId))) return { kind: 'followup', t, tryRow: open, unit: ou };
       if (t.rigSeat && t.workspaceKey === ctx.key && ctx.def.seats[t.rigSeat]) seatName = t.rigSeat;
+      // P195: rig 밖 세션(이 rig의 자리가 아님)에는 관리자 자리, 또는 may에 "@<이름>"·"*"를 둔 자리가 글만 보낸다(일은 만들지 않는다)
+      else if (mayReachOutside(ctx.seat, ctx.def.manager, [shownName(t), t.name])) { if (t === caller) throw apiError('self', '자기 자신에게는 보낼 수 없다.'); return { kind: 'plain', t, outside: true }; }
     }
     if (seatName && assign.includes(seatName) && !o.now) return { kind: 'unit', ctx, seatName, t };
     if (seatName && may.includes(seatName)) {
@@ -283,7 +285,9 @@ export class RigFlow {
     const where = `일 맡기기: ${assign.length ? assign.join(', ') : '없음'} · 글만: ${may.length ? may.join(', ') : '없음'}`;
     const what = seatName ? `${seatName} 자리` : `@${ref}${t && !t.rigSeat ? '(자리 없는 세션)' : ''}`;
     const why = seatName && assign.includes(seatName) && o.now ? ' --now는 일을 만들지 않는다. --now 없이 보낸다.' : '';
-    throw apiError('rig_refused', `rig: ${ctx.name} 자리는 ${what}에 보낼 수 없다(보드가 넣지 않았다).${why} 쓸 수 있는 자리 — ${where}. 정의: .atrium/rig.json의 flow·may.`, { assign, may });
+    // P195: rig 밖 세션이면 두 길을 알린다(정의의 may에 "@이름"·"*"를 넣기, 관리자 자리에서 보내기)
+    const outside = !seatName && t ? ` rig 밖 세션에 글을 보내는 길은 둘이다: 사람이 정의의 seats.${ctx.name}.may에 "@${shownName(t) || ref}"(그 세션)나 "*"(자리 없는 세션 모두)를 넣거나, ${ctx.def.manager ? `관리자 자리(${ctx.def.manager})` : '관리자 자리(정의의 manager)'}에서 보낸다. rig 밖 세션에는 글만 가고 일은 만들지 않는다.` : '';
+    throw apiError('rig_refused', `rig: ${ctx.name} 자리는 ${what}에 보낼 수 없다(보드가 넣지 않았다).${why} 쓸 수 있는 자리 — ${where}.${outside} 정의: .atrium/rig.json의 flow·may.`, { assign, may });
   }
 
   // 받는 자리에 일을 만든다(자리 세션의 prompt와 흐름의 넘김). → { unit, t, made } | { unit, t: null, seatWait: true, ahead }

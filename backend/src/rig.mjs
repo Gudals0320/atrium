@@ -8,6 +8,7 @@
 // - 훅: 같은 길목의 훅은 정의 순서대로 돌고, 고친 글(rewrite·append)이 다음 훅으로 넘어가며, 첫 거절에서 멈춘다.
 //   실패(hook-runner.mjs)는 onFail을 따른다: 기본 pass(hook_failed 이벤트를 남기고 이어 간다), block이면 거절과 같다.
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { runHook, pathish, HOOK_TIMEOUT_MS, HOOK_TIMEOUT_MAX_MS } from './hook-runner.mjs';
@@ -97,6 +98,30 @@ export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN
   return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, cycles: cy.cycles, amp: amp.amp } };
 }
 
+// ---------- P195: 워크트리 자리의 저장소 조건 ----------
+// worktree 자리는 일마다 claude -w로 새 워크트리를 만든다. 워크스페이스가 git 저장소이고 커밋(HEAD)이 있어야 한다.
+// 폴더의 git 상태 → 'ok' | 'norepo' | 'nocommit'. 잠깐(3초) 기억한다(rig.get·status가 자주 부른다)
+const gitStateMemo = new Map();
+export function gitStateOf(root, { run = null, now = Date.now() } = {}) {
+  if (!root) return 'norepo';
+  const m = !run && gitStateMemo.get(root);
+  if (m && now - m.at < 3000) return m.v;
+  const exec = run || ((args) => execFileSync('git', ['-C', root, ...args], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).toString().trim());
+  let v;
+  try { v = exec(['rev-parse', '--is-inside-work-tree']) === 'true' ? 'nocommit' : 'norepo'; } catch { v = 'norepo'; }
+  if (v === 'nocommit') { try { exec(['rev-parse', '--verify', '-q', 'HEAD']); v = 'ok'; } catch { v = 'nocommit'; } }
+  if (!run) gitStateMemo.set(root, { at: now, v });
+  return v;
+}
+// 정의의 worktree 자리와 git 상태 → 경고 글 목록(없으면 []). state: gitStateOf 결과
+export function worktreeWarnings(seats, state) {
+  if (state === 'ok' || !seats) return [];
+  const list = (Array.isArray(seats) ? seats : Object.values(seats)).filter((x) => x && x.worktree).map((x) => x.name);
+  if (!list.length) return [];
+  const why = state === 'norepo' ? '워크스페이스가 git 저장소가 아니다(git init과 첫 커밋이 필요하다)' : '저장소에 커밋이 없다(첫 커밋이 필요하다)';
+  return [`이 자리는 워크트리를 쓴다(${list.join(', ')}): git 저장소와 첫 커밋이 필요하다. 지금은 ${why}. 이대로 켜면 첫 맡기기가 워크트리를 만들지 못해 실패한다.`];
+}
+
 // ---------- P188: 느린 고리(cycles), 정의 버전, 사람만 고치는 목록(15절 "5단계") ----------
 export const CYCLE_MIN_MS = 60 * 60 * 1000; // 주기는 1시간 이상
 export const CYCLE_STALE_MS = 24 * 60 * 60 * 1000; // 오래 열린 건: 마지막 넘김 뒤 이만큼(줄의 stale로 바꾼다)
@@ -170,6 +195,20 @@ const fileSha = (f) => { try { return sha(fs.readFileSync(f)); } catch { return 
 // 데이터 폴더 rigs/ 아래 워크스페이스 폴더 이름(키에는 :, / 등이 있다)
 export const rigDirName = (key) => `${String(key).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(-60) || 'ws'}-${sha(String(key)).slice(0, 8)}`;
 
+// ---------- P195: 자리가 rig 밖 세션에 보내기 ----------
+// may의 칸: 자리 이름 | "@<세션 이름>"(rig 밖 그 세션) | "*"(자리 없는 세션 모두). 관리자 자리(manager)는 적지 않아도 rig 밖 세션에 글을 보낸다
+export const OUTSIDE_NAME_RE = /^@[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+export const isOutsideMay = (n) => n === '*' || (typeof n === 'string' && n.startsWith('@'));
+// 자리(seat: 검사한 자리, manager: 정의의 manager)가 rig 밖 세션 t(shownName·name)에 글을 보내도 되나
+export function mayReachOutside(seat, manager, names = []) {
+  if (!seat) return false;
+  if (manager && seat.name === manager) return true;
+  const may = seat.may || [];
+  if (may.includes('*')) return true;
+  const want = new Set(names.filter(Boolean).map((x) => `@${String(x).toLowerCase()}`));
+  return may.some((m) => m.startsWith('@') && want.has(m.toLowerCase()));
+}
+
 // ---------- P185: 자리(seats)·흐름(flow)·results·manager ----------
 export const DEFAULT_RESULTS = ['ok', 'failed'];
 export const SEAT_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/; // 세션 이름(<자리>-<n>)이 되므로 -는 받지 않는다
@@ -208,7 +247,8 @@ export function validateFlow(raw, { root = null, exists = isFile, tools = null }
       const miss = x.tools.filter((t) => !tools || !tools[t]);
       if (miss.length) return bad(`${at}.tools에 정의에 없는 도구가 있다: ${miss.join(', ')}`);
     }
-    if (x.may != null && (!Array.isArray(x.may) || x.may.some((t) => typeof t !== 'string'))) return bad(`${at}.may는 자리 이름 배열이다`);
+    if (x.may != null && (!Array.isArray(x.may) || x.may.some((t) => typeof t !== 'string'))) return bad(`${at}.may는 자리 이름, "@<세션 이름>", "*"의 배열이다`);
+    if (x.may != null) { const badOut = x.may.find((t) => t.startsWith('@') && !OUTSIDE_NAME_RE.test(t)); if (badOut) return bad(`${at}.may의 rig 밖 세션 이름이 맞지 않다: ${badOut}. "@<보드의 세션 이름>"(영문·숫자로 시작, 영문·숫자·-·_ 32자까지) 또는 "*"(자리 없는 세션 모두)다`); }
     if (x.max_live != null && (session !== 'fresh' || !Number.isInteger(x.max_live) || x.max_live < 1)) return bad(`${at}.max_live는 fresh 자리의 1 이상 정수다`);
     if (x.guide != null) {
       if (typeof x.guide !== 'string' || !x.guide) return bad(`${at}.guide는 파일 경로 글이다`);
@@ -218,7 +258,8 @@ export function validateFlow(raw, { root = null, exists = isFile, tools = null }
   }
   const seatNames = Object.keys(seats);
   const known = (n) => Object.prototype.hasOwnProperty.call(seats, n);
-  for (const s of Object.values(seats)) { const miss = s.may.filter((n) => !known(n)); if (miss.length) return bad(`seats.${s.name}.may에 없는 자리가 있다: ${miss.join(', ')}`); }
+  // P195: may에는 자리 이름 말고 rig 밖 세션("@<이름>")과 "*"(자리 없는 세션 모두)도 쓴다. 그쪽에는 글만 간다(일은 만들지 않는다)
+  for (const s of Object.values(seats)) { const miss = s.may.filter((n) => !isOutsideMay(n) && !known(n)); if (miss.length) return bad(`seats.${s.name}.may에 없는 자리가 있다: ${miss.join(', ')}. rig 밖 세션이면 "@<이름>"이나 "*"로 쓴다`); }
   const flow = [];
   if (raw.flow != null) {
     if (!Array.isArray(raw.flow)) return bad('flow는 줄 배열이다');
@@ -408,6 +449,40 @@ export class Rig {
     try { return { row, buf: fs.readFileSync(path.join(d, row.file)) }; } catch { return { row, buf: null }; }
   }
 
+  // P195: 워크스페이스 키가 바뀌었다(폴더가 저장소가 됨, workspace-merge-ops.mjs). 표는 store.rekeyWorkspace가 옮겼고
+  //   여기서는 데이터 폴더 rigs/<옛 폴더>/의 버전 파일을 새 폴더로 옮기고 경로를 고치며, 옛 키의 기억을 버린다. → 옮긴 파일 수
+  rekey(from, to) {
+    let moved = 0;
+    const d = this.dataDir();
+    const a = rigDirName(from), z = rigDirName(to);
+    if (d && a !== z) {
+      const src = path.join(d, 'rigs', a), dst = path.join(d, 'rigs', z);
+      try {
+        if (fs.existsSync(src)) {
+          fs.mkdirSync(dst, { recursive: true });
+          for (const f of fs.readdirSync(src)) {
+            const t = path.join(dst, f);
+            if (fs.existsSync(t)) continue; // 대상에 같은 이름이 있으면(번호를 민 버전도 옛 파일 이름 그대로라 겹치지 않는다) 그대로 둔다
+            fs.renameSync(path.join(src, f), t); moved++;
+          }
+          try { fs.rmdirSync(src); } catch {}
+        }
+      } catch (e) { this.b.log && this.b.log(`rig rekey files ${from} → ${to}: ${e.message}`); }
+      if (this.store().retargetRigVersionFiles) this.store().retargetRigVersionFiles(to, `rigs/${a}/`, `rigs/${z}/`);
+    }
+    for (const m of [this.cache, this.pendingBy, this.alertMarks]) { m.delete(from); m.delete(to); }
+    for (const k of [...this.versionDefs.keys()]) if (k.startsWith(`${from}|`) || k.startsWith(`${to}|`)) this.versionDefs.delete(k);
+    return moved;
+  }
+
+  // P195: 정의에 적힌 자리 이름(잘못된 정의도 JSON이면 seats의 열쇠). rig가 꺼졌거나 잘못일 때 자리 이름으로 보낸 것을 알아보는 데 쓴다
+  seatNamesLoose(key) {
+    const r = this.read(key);
+    if (!r.present) return [];
+    if (r.def && r.def.seats) return Object.keys(r.def.seats);
+    try { const raw = JSON.parse(fs.readFileSync(r.file, 'utf8').replace(/^﻿/, '')); return raw && raw.seats && typeof raw.seats === 'object' && !Array.isArray(raw.seats) ? Object.keys(raw.seats) : []; } catch { return []; }
+  }
+
   // ---------- P188: 사람만 고치는 목록 ----------
   // P189가 쓰는 읽기: { pointers, files: [{ path, sha256, at }] } | null
   rigProtected(key) { return this.store().rigProtected ? this.store().rigProtected(key) : null; }
@@ -456,6 +531,7 @@ export class Rig {
     const st = this.store().rigState(key) || {};
     const r = this.read(key);
     const def = r.def;
+    const wtGit = def && def.seats && Object.values(def.seats).some((x) => x.worktree) ? gitStateOf(w.root) : null;
     return {
       workspace: key, root: w.root, file: RIG_FILE, enabled: !!st.enabled, enabledAt: st.enabledAt ?? null,
       present: r.present, valid: r.present && !r.invalid, invalid: r.invalid, hash: r.hash, usingLastGood: !!(r.invalid && def),
@@ -466,7 +542,8 @@ export class Rig {
       guide: !!(def && def.guide), name: def ? def.name : null,
       // P185: 자리·흐름(켜기 확인 창과 노드 메뉴의 "자리 정하기"가 쓴다)
       seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide })) : [],
-      flow: def ? def.flow || [] : [], results: def ? def.results || [] : [], manager: def ? def.manager || null : null, warnings: def ? def.warnings || [] : [],
+      flow: def ? def.flow || [] : [], results: def ? def.results || [] : [], manager: def ? def.manager || null : null,
+      warnings: def ? [...(def.warnings || []), ...worktreeWarnings(def.seats, wtGit || 'ok')] : [], worktreeGit: wtGit && wtGit !== 'ok' ? wtGit : null, // P195: 워크트리 자리의 저장소 조건(norepo | nocommit | null)
       // P188: 지금 버전, 느린 고리, 사람만 고치는 목록과 어긋난 것
       version: r.n ?? null, cycles: def && def.cycles ? def.cycles.map((x) => ({ every: x.every, to: x.to, run: x.run })) : [],
       protected: this.rigProtected(key) || { pointers: [], files: [] }, protectedHits: r.protectedHits || [], changedFiles: this.changedFiles(key).map((x) => x.path),
@@ -593,8 +670,8 @@ export const RIG_HEADER_LINE = '[Atrium 보드] 이 워크스페이스에는 rig
 // P188: 일 머리를 세 줄 이하로 둘 때 셋째 줄 끝에 붙이는 rig 안내(짧게)
 export const RIG_HEADER_TAIL = '이 워크스페이스에는 rig(작업 규칙)가 있다: `atrium guide`.';
 
-// 판 API 처리기(backend.mjs handlers에 펼친다). 켜고 끄기는 판 API 토큰으로 붙은 연결(이 PC의 창·사람의 atrium 명령, auth.kind local)만.
-// 기기 토큰(휴대폰·원격)은 상태만 본다. 에이전트의 세션 토큰은 이 API에 붙지 못하고, /branch/*에는 rig를 켜는 명령이 없다
+// 판 API 처리기(backend.mjs handlers에 펼친다). 켜기는 판 API 토큰으로 붙은 연결(이 PC의 창·사람의 atrium 명령, auth.kind local)만.
+// 기기 토큰(휴대폰·원격)은 상태를 보고 끄기만 한다(P195). 에이전트의 세션 토큰은 이 API에 붙지 못하고, /branch/*에는 rig를 켜는 명령이 없다
 export function rigHandlers(b) {
   const local = (c) => { if (!c || !c.auth || c.auth.kind !== 'local') throw apiError('forbidden', 'rig 켜기·끄기는 이 PC의 보드 창에서만 한다(판 API 토큰).'); };
   const keyOf = async (p) => (await b.resolveWorkspace(p.workspace)).key;
@@ -608,6 +685,12 @@ export function rigHandlers(b) {
       if (!p || p.confirm !== true) return { ...b.rig.status(await keyOf(p || {})), needsConfirm: true };
       return set(p, c, true);
     },
-    'rig.disable': (p, c) => set(p, c, false),
+    // P195: 끄기는 원격 기기(기기 토큰)도 한다. 끄면 저장소의 프로그램이 멈출 뿐이다. 켜기·고치기는 이 PC의 창에서만
+    'rig.disable': async (p, c) => {
+      if (!c || !c.auth || !['local', 'device'].includes(c.auth.kind)) throw apiError('forbidden', 'rig 끄기는 보드 창이나 연결한 기기에서 한다.');
+      const r = b.rig.setEnabled(await keyOf(p), false, c.auth.kind === 'device' ? 'remote' : 'human');
+      if (b.broadcastWorkspaces) b.broadcastWorkspaces();
+      return r;
+    },
   };
 }
