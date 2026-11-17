@@ -23,6 +23,8 @@ CREATE INDEX IF NOT EXISTS tool_runs_unit ON tool_runs(unit_id);
 // P185: 건(rig_cases)과 건이 만든 세션·워크트리(rig_case_items). 하네스 3단계(14절 "건").
 // rig_cases.state: open | done | blocked | waiting_owner | cancelled(P194: waiting_owner = 상한을 넘어 주인에게 보고로 올라감, 주인의 다음 맡기기가 잇는다). edge_counts: 흐름 줄마다 이 건에서 지난 횟수 JSON { "<줄 번호>": n }. blocked_reason: blocked의 까닭
 // rig_case_items: 흐름이 그 건을 위해 띄운 세션(자리, 워크트리 이름·경로). 판은 지우지 않는다(5단계 관리자 자리가 정리한다)
+// P197: rig_case_reports: 판이 건 주인에게 보낸 보고마다 한 줄(보낼 때 적는다, 세션 맵 rig 띠의 "보고 받음" 표시. 17절 "자료"). seat: 보낸 자리, session_id: 보낸 세션,
+//   unit_id: 닫힌 일, result: done 값, line: 흐름 줄 번호(맞는 줄 없이 주인에게 간 보고는 null), escalated: 상한을 넘어 올라옴
 // rig_seat_counters: fresh 자리 세션 이름 <자리>-<n>의 n(워크스페이스·자리마다, 다시 쓰지 않는다)
 export const RIG_FLOW_SCHEMA = `
 CREATE TABLE IF NOT EXISTS rig_cases (id TEXT PRIMARY KEY, workspace_key TEXT NOT NULL, owner_session TEXT NOT NULL, state TEXT NOT NULL, created_at INTEGER NOT NULL, closed_at INTEGER, edge_counts TEXT, blocked_reason TEXT) STRICT;
@@ -30,6 +32,8 @@ CREATE INDEX IF NOT EXISTS rig_cases_ws ON rig_cases(workspace_key, created_at);
 CREATE TABLE IF NOT EXISTS rig_case_items (id INTEGER PRIMARY KEY, case_id TEXT NOT NULL, session_id TEXT NOT NULL, seat TEXT NOT NULL, worktree TEXT, worktree_path TEXT, created_at INTEGER NOT NULL) STRICT;
 CREATE INDEX IF NOT EXISTS rig_case_items_case ON rig_case_items(case_id);
 CREATE TABLE IF NOT EXISTS rig_seat_counters (workspace_key TEXT NOT NULL, seat TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (workspace_key, seat)) STRICT;
+CREATE TABLE IF NOT EXISTS rig_case_reports (id INTEGER PRIMARY KEY, case_id TEXT NOT NULL, seat TEXT, session_id TEXT, unit_id TEXT, result TEXT, line INTEGER, escalated INTEGER NOT NULL DEFAULT 0, delivery_id TEXT, t INTEGER NOT NULL) STRICT;
+CREATE INDEX IF NOT EXISTS rig_case_reports_case ON rig_case_reports(case_id, id);
 `;
 // P188: 정의의 수명(5단계, 15절). rig_versions: 판이 맞는 정의로 처음 읽은 rig.json의 새 해시마다 한 줄(n은 워크스페이스마다 1부터).
 //   내용은 데이터 폴더 rigs/<워크스페이스>/<n>-<해시>.json(file). by: manager(관리자 자리) | human | unknown. note: 한 줄 메모
@@ -117,6 +121,33 @@ export function installRig(Store) {
     liveCasesOfOwner(sessionId) { return this.st("SELECT * FROM rig_cases WHERE owner_session = ? AND state IN ('open', 'blocked', 'waiting_owner')").all(sessionId).map(caseRow); },
     insertCaseItem(x) { this.st('INSERT INTO rig_case_items (case_id, session_id, seat, worktree, worktree_path, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(x.caseId, x.sessionId, x.seat, x.worktree ?? null, x.worktreePath ?? null, x.createdAt ?? Date.now()); },
     caseItems(caseId) { return this.st('SELECT * FROM rig_case_items WHERE case_id = ? ORDER BY id').all(caseId).map((r) => ({ caseId: r.case_id, sessionId: r.session_id, seat: r.seat, worktree: r.worktree ?? null, worktreePath: r.worktree_path ?? null, createdAt: r.created_at })); },
+    // ---------- P197: 세션 맵 rig 띠 자료(17절) ----------
+    insertCaseReport(x) { this.st('INSERT INTO rig_case_reports (case_id, seat, session_id, unit_id, result, line, escalated, delivery_id, t) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(x.caseId, x.seat ?? null, x.sessionId ?? null, x.unitId ?? null, x.result ?? null, x.line ?? null, x.escalated ? 1 : 0, x.deliveryId ?? null, x.t ?? Date.now()); },
+    // 건 여럿의 보고(한 번에) → { [건]: [{ seat, sessionId, unit, result, line, escalated, at, deliveryId }] }
+    reportsOfCases(caseIds) {
+      const out = {}; if (!caseIds.length) return out;
+      const rows = this.db.prepare(`SELECT * FROM rig_case_reports WHERE case_id IN (${caseIds.map(() => '?').join(',')}) ORDER BY t, id`).all(...caseIds);
+      for (const r of rows) (out[r.case_id] || (out[r.case_id] = [])).push({ seat: r.seat ?? null, sessionId: r.session_id ?? null, unit: r.unit_id ?? null, result: r.result ?? null, line: r.line ?? null, escalated: !!r.escalated, at: r.t, deliveryId: r.delivery_id ?? null });
+      return out;
+    },
+    // 건 여럿의 일과 일마다 마지막 시도의 값·done 글(한 질의, lastTryOfUnit을 일마다 부르지 않는다) → { [건]: [일 + { tryResult, tryDoneText }] }(만든 차례)
+    unitsOfCasesWithTry(caseIds) {
+      const out = {}; if (!caseIds.length) return out;
+      const rows = this.db.prepare(`SELECT u.*, t.result AS t_result, t.done_text AS t_done FROM work_units u LEFT JOIN unit_tries t ON t.id = (SELECT t2.id FROM unit_tries t2 WHERE t2.unit_id = u.id ORDER BY t2.started_at DESC LIMIT 1) WHERE u.case_id IN (${caseIds.map(() => '?').join(',')}) ORDER BY u.created_at, u.rowid`).all(...caseIds);
+      for (const r of rows) (out[r.case_id] || (out[r.case_id] = [])).push({ ...flowUnitRow(r), tryResult: r.t_result ?? null, tryDoneText: r.t_done ?? null });
+      return out;
+    },
+    // 끝나지 않은 건(open·blocked·waiting_owner), 최근 것부터 limit개와 전체 수
+    liveCasesOf(key, limit = 50) {
+      const rows = this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND state IN ('open', 'blocked', 'waiting_owner') ORDER BY created_at DESC, rowid DESC LIMIT ?").all(key, limit).map(caseRow);
+      return { rows, total: rows.length < limit ? rows.length : this.liveCasesCount(key) };
+    },
+    // 끝난(done·cancelled) 건, 나이와 상관없이 최근에 닫힌 것부터 n개와 전체 수
+    closedCasesOf(key, n = 3) {
+      const rows = this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND state NOT IN ('open', 'blocked', 'waiting_owner') ORDER BY COALESCE(closed_at, created_at) DESC, rowid DESC LIMIT ?").all(key, n).map(caseRow);
+      const total = Number(this.st("SELECT COUNT(*) AS n FROM rig_cases WHERE workspace_key = ? AND state NOT IN ('open', 'blocked', 'waiting_owner')").get(key).n);
+      return { rows, total };
+    },
     // 건의 일들(만든 차례)
     unitsOfCase(caseId) { return this.st('SELECT * FROM work_units WHERE case_id = ? ORDER BY created_at, rowid').all(caseId).map(flowUnitRow); },
     openUnitsOfCaseCount(caseId) { return Number(this.st("SELECT COUNT(*) AS n FROM work_units WHERE case_id = ? AND status = 'open'").get(caseId).n); },

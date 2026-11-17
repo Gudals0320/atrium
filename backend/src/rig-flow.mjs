@@ -34,6 +34,20 @@ export const CASE_STATES = ['open', 'done', 'blocked', 'waiting_owner', 'cancell
 // P194: 아직 끝나지 않은 건(흐름이 이어지고, 주인이 닫히면 cancelled). waiting_owner: 상한을 넘어 주인에게 보고로 올라가 주인의 다음 맡기기를 기다린다
 const LIVE_CASE = new Set(['open', 'blocked', 'waiting_owner']);
 const SPEC_HEAD_LINES = 6; // 넘김 글에 붙이는 건의 첫 할 일 줄 수
+const GRAPH_LIVE = 50; // P197: 세션 맵 그래프에 담는 끝나지 않은 건 상한(17절)
+const GRAPH_CLOSED = 3; // P197: 나이와 상관없이 담는 최근 끝난·취소된 건 수
+
+// P197: 세션 맵 rig 띠의 열 순서(17절 "열과 행"): assign 줄의 출발 자리(정의 순서) → 흐름 줄의 받는 자리를 따라 너비 우선(줄 순서)
+//   → 닿지 않는 자리, 주기·올림(else·manager)에만 쓰이는 자리(정의 순서). 지금 정의의 자리만(옛 자리는 graphOf가 뒤에 더한다)
+export function seatColumns(def) {
+  const seats = (def && def.seats) || {}; const flow = (def && def.flow) || [];
+  const order = []; const seen = new Set();
+  const push = (n) => { if (n && Object.prototype.hasOwnProperty.call(seats, n) && !seen.has(n)) { seen.add(n); order.push(n); } };
+  for (const n of Object.keys(seats)) if (flow.some((l) => l.from === n && l.on === 'assign')) push(n);
+  for (let i = 0; i < order.length; i++) for (const l of flow) if (l.from === order[i]) for (const t of l.to || []) push(t);
+  for (const n of Object.keys(seats)) push(n);
+  return order;
+}
 
 // 자리 세션의 일 머리(관계 줄 꼴이라 카드에는 아래 할 일만 지시로 보인다). 0단계 unitHeader 대신
 // P188: 판 줄 세 줄 이하(15절). done 값과 보낼 수 있는 자리의 자세한 목록은 `atrium me`·`atrium guide`로 보내고 머리에는 가리킴만 남긴다
@@ -389,6 +403,7 @@ export class RigFlow {
     }
     this.caseCheck(c.id);
     this.pumpSoon();
+    this.changed(ctx.key); // P197: done마다(건 상태가 그대로여도 일이 닫혔다) 맵이 다시 읽는다
     return { reports };
   }
   async handoff({ ctx, c, caller, unit, result, doneText, line, to, escalated, firstSpec }) {
@@ -431,9 +446,22 @@ export class RigFlow {
     if (l0 && !l0.removedAt) b.linkEvent(l0, 'reply', doneText, { via: 'flow', verb: 'done', tag: 'report', result, unitId: unit.id, caseId: c.id, deliveryId: d.deliveryId });
     else { const l = this.branch.verbs.link(caller, owner); b.linkEvent(l, 'prompt', text, { via: 'flow', tag: 'report', unitId: unit.id, caseId: c.id, result, deliveryId: d.deliveryId }); }
     st.addEvent(caller.sessionId, 'rig_handoff', { caseId: c.id, from: ctx.name, result, to, line: line.index, unitId: null, report: true, target: owner.name, deliveryId: d.deliveryId, escalated: !!escalated });
+    if (st.insertCaseReport) st.insertCaseReport({ caseId: c.id, seat: ctx.name, sessionId: caller.sessionId, unitId: unit.id, result, line: line.index, escalated: !!escalated, deliveryId: d.deliveryId }); // P197: 보낼 때 적는다(17절)
     b.log(`rig report ${ctx.name}(${caller.name}) ${result} → owner @${owner.name} case ${c.id}${escalated ? ' (waiting_owner)' : ''}`);
     this.changed(ctx.key);
     return { report: true, seat: to, to: shownName(owner), deliveryId: d.deliveryId, escalated: !!escalated };
+  }
+
+  // P197: 맞는 흐름 줄 없이 done 값이 건 주인에게 간 보고(0단계 done 알림 길, work-units doneVerb). 주인 자신의 일은 보고가 아니다
+  doneToOwner(caller, unit, result) {
+    const st = this.store();
+    const c = unit && unit.caseId ? st.getCase(unit.caseId) : null;
+    if (!c) return;
+    if (unit.from === c.owner && caller.sessionId !== c.owner && st.insertCaseReport) {
+      const tr = st.lastTryOfUnit(unit.id);
+      st.insertCaseReport({ caseId: c.id, seat: caller.rigSeat || null, sessionId: caller.sessionId, unitId: unit.id, result, line: null, escalated: false, deliveryId: tr ? tr.noticeDeliveryId : null });
+    }
+    this.changed(c.workspaceKey);
   }
 
   // ---------- 자리 줄(max_live) ----------
@@ -451,7 +479,7 @@ export class RigFlow {
           const r = b.rig ? b.rig.active(u.workspaceKey) : null;
           const cdef = r ? this.defOfCase(c, r) : null; // P188: 건의 버전
           const seat = cdef && cdef.seats ? cdef.seats[u.seat] : null;
-          if (!c || !owner || !seat || !LIVE_CASE.has(c.state)) { st.updateUnit(u.id, { status: 'cancelled', closedAt: Date.now() }); st.addEvent(c ? c.owner : null, 'unit_cancelled', { unitId: u.id, why: !seat ? 'seat gone' : 'case closed' }); if (c) this.caseCheck(c.id); continue; }
+          if (!c || !owner || !seat || !LIVE_CASE.has(c.state)) { st.updateUnit(u.id, { status: 'cancelled', closedAt: Date.now() }); st.addEvent(c ? c.owner : null, 'unit_cancelled', { unitId: u.id, why: !seat ? 'seat gone' : 'case closed' }); if (c) this.caseCheck(c.id); this.changed(u.workspaceKey); continue; }
           if (this.liveCount(u.workspaceKey, u.seat) >= seat.maxLive) continue;
           const ctx = { key: u.workspaceKey, r, def: cdef, seat, name: u.seat };
           let s;
@@ -463,6 +491,7 @@ export class RigFlow {
           if (st.openTryOf(s.sessionId)) { this.units().queued.add(s.sessionId); continue; }
           this.units().dispatch(unit, { later: true });
           st.addEvent(s.sessionId, 'rig_seat_dequeue', { unitId: u.id, seat: u.seat, caseId: c.id });
+          this.changed(u.workspaceKey); // P197: 줄 선 일이 세션을 얻었다
         }
       } while (this.again);
     } finally { this.pumping = false; }
@@ -479,6 +508,7 @@ export class RigFlow {
     }
     // 닫힌 세션의 일이 취소되었다(WorkUnits.onClosed가 먼저 돈다) → 그 건 확인
     for (const c of st.casesOf(s.workspaceKey || '', 200)) if (c.state === 'open') this.caseCheck(c.id);
+    if (s.rigSeat && s.workspaceKey) this.changed(s.workspaceKey); // P197: 자리 세션의 일이 취소되었다
     this.pumpSoon();
   }
 
@@ -583,26 +613,67 @@ export class RigFlow {
       units, items: st.caseItems(c.id).map((x) => ({ ...x, name: this.nameOf(x.sessionId), open: this.b.sessions.has(x.sessionId) })),
     };
   }
-  // 세션 맵 그래프의 rig 칸: 켜진 rig마다 { seats, flow, cases }(P186이 그린다)
+  // 세션 맵 그래프의 rig 칸(P197, harness-arch 17절 "자료"): 켜진 rig마다
+  //   { version, manager, results, seats(열 순서, 정의에서 빠진 자리는 old), flow(맵 전체 passed 없음), cases(정렬), openCount(끝나지 않은 건 전체), openMore(담지 못한 수), doneCount(끝난·취소된 건 전체, 담긴 것 포함) }
+  //   cases: 끝나지 않은 건(최근 GRAPH_LIVE개) + 나이와 상관없이 최근 끝난·취소된 건 GRAPH_CLOSED개. 일과 마지막 시도, 보고는 건 묶음마다 한 질의
+  //   (P197 전에는 일마다 lastTryOfUnit 한 번). 모양 견본: backend/test/fixtures/rig-band/graph-rig.json(p197.test.mjs가 실제 출력과 맞춰 본다)
   graph() {
     const out = {};
-    const b = this.b;
-    if (!b.rig || !b.store.workspaces) return out;
-    for (const w of b.store.workspaces()) {
+    const b = this.b; const st = this.store();
+    if (!b.rig || !st.workspaces) return out;
+    for (const w of st.workspaces()) {
       const r = b.rig.active(w.key);
       if (!r || !r.def.seats) continue;
-      const cases = this.store().casesOf(w.key, 20).filter((c) => LIVE_CASE.has(c.state) || Date.now() - (c.closedAt || 0) < 3600000);
-      const live = cases.find((c) => LIVE_CASE.has(c.state)) || null;
-      out[w.key] = {
-        seats: Object.values(r.def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, maxLive: x.maxLive, may: x.may,
-          sessions: this.seatedOf(w.key, x.name).map((s) => ({ sessionId: s.sessionId, name: shownName(s), open: true, busy: !!this.store().openTryOf(s.sessionId) })),
-          waiting: this.store().seatWaitingUnits(w.key, x.name).length })),
-        flow: r.def.flow.map((l) => ({ index: l.index, from: l.from, on: l.on, to: l.to, max: l.max, else: l.else, passed: live ? live.edgeCounts[String(l.index)] || 0 : 0 })),
-        manager: r.def.manager, results: r.def.results,
-        cases: cases.map((c) => { const v = this.caseView(c, r.def); return { id: v.id, owner: v.owner, ownerSessionId: v.ownerSessionId, state: v.state, activeSeats: v.activeSeats, handoffs: v.handoffs, blockedReason: v.blockedReason, createdAt: v.createdAt, closedAt: v.closedAt, lines: v.lines, units: v.units.map((u) => ({ unit: u.unit, seat: u.seat, sessionId: u.sessionId, name: u.name, status: u.status, result: u.result })) }; }),
-      };
+      out[w.key] = this.graphOf(w.key, r);
     }
     return out;
+  }
+  graphOf(key, r) {
+    const b = this.b; const st = this.store(); const def = r.def;
+    const live = st.liveCasesOf(key, GRAPH_LIVE); const closed = st.closedCasesOf(key, GRAPH_CLOSED);
+    const all = [...live.rows, ...closed.rows];
+    const ids = all.map((c) => c.id);
+    const unitsBy = st.unitsOfCasesWithTry(ids); const reportsBy = st.reportsOfCases(ids);
+    const name = (sid) => (sid ? this.nameOf(sid) : null);
+    const cases = all.map((c) => {
+      const cdef = (c.versionN != null ? this.defOfCase(c, r) : null) || def; // 건의 버전(줄의 상한)
+      const us = unitsBy[c.id] || [];
+      const reports = (reportsBy[c.id] || []).map((x) => ({ seat: x.seat, sessionId: x.sessionId, name: name(x.sessionId), unit: x.unit, result: x.result, line: x.line, escalated: x.escalated, at: x.at }));
+      const units = us.map((u) => ({ unit: u.id, seat: u.seat, sessionId: u.to || null, name: u.to ? name(u.to) : '(줄)', status: u.status, result: u.tryResult, queued: !u.to, createdAt: u.createdAt, closedAt: u.closedAt,
+        via: u.via && u.via.prevUnit ? { prevUnit: u.via.prevUnit, line: u.via.line ?? null, escalated: !!u.via.escalated, fromSeat: u.via.fromSeat ?? null, result: u.via.result ?? null } : null }));
+      const first = us[0] || null;
+      const lastHandoffAt = Math.max(c.createdAt, ...us.map((u) => u.createdAt || 0), ...reports.map((x) => x.at || 0));
+      const ec = c.edgeCounts || {};
+      return {
+        id: c.id, state: c.state, owner: this.nameOf(c.owner), ownerSessionId: c.owner, ownerOpen: b.sessions.has(c.owner),
+        cycle: first && first.via && first.via.cycle != null ? first.via.cycle : null, version: c.versionN ?? null,
+        firstTask: first ? firstLine(first.spec, 80) : '', createdAt: c.createdAt, closedAt: c.closedAt, lastHandoffAt,
+        handoffs: us.filter((u) => u.via && u.via.result).length, blockedReason: c.blockedReason,
+        // 줄별 지금 셈(주인이 이어 맡기면 0부터)과 올라간 횟수. 상한 있는 줄만
+        lines: (cdef && cdef.flow ? cdef.flow : []).filter((l) => l.max != null).map((l) => ({ index: l.index, from: l.from, on: l.on, to: l.to, max: l.max, passed: ec[String(l.index)] || 0, escalated: ec[`${l.index}>else`] || 0 })),
+        activeSeats: [...new Set(us.filter((u) => u.status === 'open').map((u) => u.seat).filter(Boolean))],
+        units, reports,
+      };
+    });
+    // 정렬: 주인 대기·막힘 → 열림(마지막 넘김이 최근인 것부터) → 끝난·취소된 건(최근에 닫힌 것부터)
+    const rank = (c) => (c.state === 'waiting_owner' || c.state === 'blocked' ? 0 : c.state === 'open' ? 1 : 2);
+    cases.sort((x, y) => rank(x) - rank(y) || (rank(x) < 2 ? y.lastHandoffAt - x.lastHandoffAt : (y.closedAt || y.createdAt) - (x.closedAt || x.createdAt)));
+    // 열: 지금 정의의 자리(seatColumns) 뒤에 옛 자리(보이는 건의 일이 부르거나 세션이 아직 앉은, 지금 정의에 없는 자리)
+    const seatSessions = (n) => this.seatedOf(key, n).map((s) => ({ sessionId: s.sessionId, name: shownName(s), open: true, busy: !!st.openTryOf(s.sessionId) }));
+    const old = [];
+    const addOld = (n) => { if (n && !Object.prototype.hasOwnProperty.call(def.seats, n) && !old.includes(n)) old.push(n); };
+    for (const c of cases) for (const u of c.units) addOld(u.seat);
+    for (const s of b.sessions.values()) if (s.workspaceKey === key && s.rigSeat) addOld(s.rigSeat);
+    const seats = [
+      ...seatColumns(def).map((n) => { const x = def.seats[n]; return { name: x.name || n, launcher: x.launcher ?? null, session: x.session ?? null, worktree: !!x.worktree, maxLive: x.maxLive ?? null, may: x.may || [], old: false, sessions: seatSessions(n), waiting: st.seatWaitingUnits(key, n).length }; }),
+      ...old.map((n) => ({ name: n, launcher: null, session: null, worktree: false, maxLive: null, may: [], old: true, sessions: seatSessions(n), waiting: st.seatWaitingUnits(key, n).length })),
+    ];
+    return {
+      version: r.n ?? null, manager: def.manager ?? null, results: def.results || [],
+      seats,
+      flow: def.flow.map((l) => ({ index: l.index, from: l.from, on: l.on, to: l.to, max: l.max ?? null, else: l.else ?? null })),
+      cases, openCount: live.total, openMore: Math.max(0, live.total - live.rows.length), doneCount: closed.total, // P198과 정함: 끝난·취소된 건 전체 수(cases에 담긴 최근 것 포함). 접힌 줄 수 = doneCount - 담긴 끝난 건
+    };
   }
   // atrium me의 rig 칸
   meOf(s) {
