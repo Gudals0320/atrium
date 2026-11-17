@@ -330,6 +330,8 @@ export function lineageLayout(graph, opts = {}) {
     } else {
       for (const r of rows) blocks.push({ x: (r.ox || 0) + L.HEADX - 8, y: r.y + 12, w: Math.max(L.HEADW, L.HEADW2) + 16, h: Math.max(96, heads.get(r.key).h) }); // 줄 머리(이름·칩)
       for (const b of bands) blocks.push({ x: b.x || 0, y: b.y, w: L.SPINE, h: b.h }); // 폴더 기둥
+      // P206: 두 열이면 열 위 머리(오늘·이전 이름표 칸)와 그 위를 막는다. 열 사이 선은 머리 아래 열 사이 틈으로 건넌다
+      if (two) blocks.push({ x: -L.SPINE, y: -240, w: W * 2 + COLS2.GAP + L.SPINE * 2, h: SEC.SECH + 240 });
     }
     const routes = routing && cross.length <= 60 ? routeOrtho(cross.map((c) => ({ a: c.a, b: c.b, sides: c.kind === 'peer' ? ['left', 'top', 'right'] : ['left', 'top'] })), blocks, edges.map((e) => e.pts), { G: 16 }) : null;
     cross.forEach((c, i) => {
