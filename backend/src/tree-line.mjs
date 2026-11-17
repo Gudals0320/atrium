@@ -1,6 +1,6 @@
 // P75: 하위 세션 줄(ARCH K4, H7). 순수 함수만 둔다. 창(renderer)도 그대로 묶어 쓸 수 있다(node 모듈을 부르지 않는다).
 // - 한 방향: 판의 나무는 왼쪽에서 오른쪽으로 자란다. 부모의 하위 세션은 부모 오른쪽 한 열에 위에서 아래로 띄운 순서대로 선다. 손자는 그 하위 세션 오른쪽 열.
-//   열이 길어져도 격자로 접지 않는다(화면에 맞추는 것은 사람이 확대·축소로 한다).
+//   P200: 새 하위가 설 칸이 부모 아래 끝 + LINE_REACH보다 아래면(형제 줄이 길거나 다른 것에 막혀서) 오른쪽에 새 열을 연다(정리 P91이 긴 열을 나누는 것과 같은 뜻).
 // - 블록: 줄에 서는 단위. 노드 하나, 붙여 묶은 덩어리, 워크트리 상자(상자째) 가운데 하나다. 블록 사각형은 바깥 테두리(상자면 이름표와 여백까지)다.
 // - 형제 블록은 저마다 자기 아래 나무(자손 블록)까지 감싼 띠(subtree)를 차지한다. 다음 형제는 앞 형제들 띠의 맨 아래 다음에 선다(정리 arrangeTree와 같은 모양).
 import { overlaps, bbox, REGION_PAD, REGION_HEAD } from './canvas.mjs';
@@ -66,7 +66,7 @@ function slideDown(x, y, size, os, gap) {
 // 새 하위 세션 블록의 자리(왼쪽 위). parent: 부모 블록 사각형(줄의 x와 시작 높이), bands: 이미 줄에 선 형제들의 띠(자기 나무까지 감싼 사각형),
 // size: 새 블록 크기, obstacles: 피할 사각형(노드, 메모·칸반, 상자 …). 다른 노드는 옮기지 않는다.
 // P200: 첫 열(부모 오른쪽 + gapX)에서 부모 위 끝부터 아래로 새 블록이 들어가는 가장 위 빈 칸을 고른다(형제 띠 사이의 빈 곳도 칸이다. 부모 위 끝보다 위는 보지 않는다).
-//   칸의 위 끝이 max(부모 아래 끝, 줄 끝) + reach보다 아래면 막힌 열로 보고, 그 열의 세로 창(부모 위 끝 ~ 그 상한)에 걸친 것들 오른쪽에 새 열을 연다(cols 열까지).
+//   칸의 위 끝이 부모 아래 끝 + reach보다 아래면 막힌 열로 보고(형제 줄이 길어서 그런 것도 같다: 정리 P91처럼 긴 열은 나눈다), 그 열의 세로 창(부모 위 끝 ~ 그 상한)에 걸친 것들 오른쪽에 새 열을 연다(cols 열까지).
 //   끝내 없으면 옛 자리(첫 열의 줄 끝, 그 자리에 다른 것이 있으면 그 아래로)
 export function lineSlot({ parent, bands = [], size, obstacles = [], gapX = LINE_GAP_X, gapY = LINE_GAP_Y, gap = gapY, reach = LINE_REACH, cols = LINE_COLS }) {
   if (!parent || !size) return null;
@@ -75,28 +75,24 @@ export function lineSlot({ parent, bands = [], size, obstacles = [], gapX = LINE
   const os = obstacles.filter(finite);
   // 형제 띠도 피한다(띠는 줄 밀기 pushLine이 보는 사각형이라, 그 안에 서면 다음 줄 밀기에 밀린다)
   const rects = [...bs.map((r) => ({ r, gap: gapY })), ...os.map((r) => ({ r, gap }))];
-  // 상한은 부모 아래 끝과 줄 끝(형제 띠 아래 끝) 가운데 아래쪽부터 잰다. 다른 것에 막히지 않은 긴 줄은 접지 않는다(P9·P75: 격자로 접지 않는다)
-  const end = bs.length ? Math.max(...bs.map((r) => r.y + r.h)) : -Infinity;
-  const at = searchColumns({ x0: x, size, rects, top: parent.y, limit: Math.max(parent.y + parent.h, end) + reach, winTop: parent.y, gapX, cols, reach });
+  const at = searchColumns({ x0: x, size, rects, top: parent.y, limit: parent.y + parent.h + reach, winTop: parent.y, gapX, cols, reach });
   if (at) return { x: at.x, y: at.y };
-  const y = bs.length ? end + gapY : parent.y;
+  const y = bs.length ? Math.max(...bs.map((r) => r.y + r.h)) + gapY : parent.y;
   return slideDown(x, y, size, os, gap);
 }
 
 // P175: 동료로 띄운 세션(atrium child --peer)의 자리(왼쪽 위). 정리(arrangeTree P177)와 같은 자리: 짝(partner)과 같은 x, 짝의 나무 띠(band) 바로 아래.
 // gap: 짝이 누군가의 하위면 같은 줄의 형제 사이(LINE_GAP_Y), 짝이 뿌리면 나무 사이(정리의 gapY * 2). 다른 노드는 옮기지 않는다.
-// P200: 짝 나무 아래(띠 아래 끝 + gap)부터 가장 위 빈 칸. line: 짝 아래에 이미 선 동료들. 칸의 위 끝이 max(띠 아래 끝, 동료 줄 끝) + reach보다 아래면 막힌 것으로 보고, 짝 나무 아래 창에 걸친 것들 오른쪽에 새 열을 연다
+// P200: 짝 나무 아래(띠 아래 끝 + gap)부터 가장 위 빈 칸. 칸의 위 끝이 띠 아래 끝 + reach보다 아래면 막힌 것으로 보고, 짝 나무 아래 창에 걸친 것들 오른쪽에 새 열을 연다
 //   (여전히 짝 나무 아래 높이라서 짝의 하위 줄에 끼어들지 않는다. 정리를 누르면 짝과 같은 x로 돌아간다). 끝내 없으면 옛 자리(짝 x, 그 아래로 잇기)
-export function peerSlot({ partner, band = null, line = [], size, obstacles = [], gap = LINE_GAP_Y, gapX = LINE_GAP_X, reach = LINE_REACH, cols = LINE_COLS }) {
+export function peerSlot({ partner, band = null, size, obstacles = [], gap = LINE_GAP_Y, gapX = LINE_GAP_X, reach = LINE_REACH, cols = LINE_COLS }) {
   if (!partner || !size) return null;
   const x = Math.round(partner.x);
   const top = band || partner;
   const bottom = top.y + top.h;
   const os = obstacles.filter(finite);
   const rects = os.map((r) => ({ r, gap: LINE_GAP_Y }));
-  const ls = line.filter(finite); // 짝 나무 아래에 이미 선 동료들. 상한은 그 줄 끝부터 잰다(다른 것에 막히지 않은 동료 줄은 접지 않는다)
-  const end = Math.max(bottom, ...ls.map((r) => r.y + r.h));
-  const at = searchColumns({ x0: x, size, rects, top: bottom + gap, limit: end + reach, winTop: bottom, gapX, cols, reach });
+  const at = searchColumns({ x0: x, size, rects, top: bottom + gap, limit: bottom + reach, winTop: bottom, gapX, cols, reach });
   if (at) return { x: at.x, y: at.y };
   return slideDown(x, bottom + gap, size, os, LINE_GAP_Y);
 }

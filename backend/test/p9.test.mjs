@@ -13,7 +13,7 @@ import { Backend } from '../src/backend.mjs';
 import * as ops from '../src/canvas-ops.mjs';
 import { Recall } from '../src/recall.mjs';
 import { Branch, CHILD_SIZE } from '../src/branch.mjs';
-import { lineSlot, LINE_GAP_X, LINE_GAP_Y } from '../src/tree-line.mjs';
+import { lineSlot, LINE_GAP_X, LINE_GAP_Y, LINE_REACH } from '../src/tree-line.mjs';
 import { pathKey, normPath } from '../src/workspaces.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p9-'));
@@ -220,14 +220,20 @@ test('P9 J2: 닫힌 동안 다른 영역이 그 자리로 왔으면 마지막 �
 });
 
 // ---------- 하위 세션(K4): 열 하나가 좁고 길게 늘어나지 않는다 ----------
-test('P9 K4(P75): 하위 세션이 여러 개여도 격자로 접지 않고 부모 오른쪽 한 열에 띄운 순서대로(화면 맞추기는 사람이 확대·축소로)', () => {
+// P200: 열이 부모 아래 끝 + LINE_REACH를 넘으면 오른쪽에 새 열(정리 P91이 긴 열을 나누는 것과 같은 뜻). 열 안에서는 띄운 순서대로 위에서 아래
+test('P9 K4(P75·P200): 하위 세션 여럿은 부모 오른쪽 열에 띄운 순서대로, 열이 상한(LINE_REACH)을 넘으면 오른쪽 새 열의 위부터', () => {
   const parent = R(0, 0);
   const size = { w: 480, h: 300 };
   const kids = [];
   for (let i = 0; i < 8; i++) { const c = lineSlot({ parent, bands: kids, size, obstacles: [parent, ...kids] }); assert.ok(c, `자식 ${i}`); kids.push({ ...c, ...size }); }
-  assert.equal(new Set(kids.map((k) => k.x)).size, 1, '한 열');
   assert.equal(kids[0].x, parent.w + LINE_GAP_X); assert.equal(kids[0].y, 0);
-  for (let i = 1; i < kids.length; i++) assert.equal(kids[i].y, kids[i - 1].y + size.h + LINE_GAP_Y);
+  for (let i = 1; i < kids.length; i++) {
+    const k = kids[i], p = kids[i - 1];
+    if (k.x === p.x) assert.equal(k.y, p.y + size.h + LINE_GAP_Y, '같은 열이면 앞 형제 바로 아래');
+    else { assert.equal(k.x, p.x + size.w + LINE_GAP_X, '다음 열은 앞 열 오른쪽'); assert.equal(k.y, 0, '새 열은 부모 위 끝부터'); assert.ok(p.y + size.h + LINE_GAP_Y > parent.h + LINE_REACH, '앞 열이 상한까지 찼다'); }
+    assert.ok(k.y <= parent.h + LINE_REACH, '상한 안');
+  }
+  assert.ok(new Set(kids.map((k) => k.x)).size >= 2, '여덟이면 두 열 이상');
 });
 
 test('P9 K4: 옆 영역에 막혀 나무 자리가 없으면 노드만 피해 부모 옆에 두고, 옆 영역을 밀어 겹침을 푼다(먼 빈자리로 보내지 않는다)', () => {

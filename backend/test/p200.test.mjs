@@ -23,17 +23,20 @@ const free = (at, size, rs) => !rs.some((r) => overlaps({ ...at, ...size }, r, L
 // 형제 n개(띄운 순서대로 첫 열에 쌓인 띠)
 const sibs = (n, size = S) => Array.from({ length: n }, (_, i) => ({ x: X0, y: i * (size.h + LINE_GAP_Y), ...size }));
 
-test('P200 (가) 빈 판: 지금과 같은 자리(부모 오른쪽, 부모 위 끝)', () => {
+test('P200 (가) 빈 판: 지금과 같은 자리(부모 오른쪽, 부모 위 끝). 형제 뒤는 상한 안이면 줄 끝, 넘으면 새 열', () => {
   assert.deepEqual(lineSlot({ parent: P, size: S, obstacles: [P] }), { x: X0, y: 0 });
-  // 형제 뒤에는 줄 끝 바로 아래(막히지 않은 긴 줄은 접지 않는다: P9·P75)
-  const bs = sibs(6);
-  assert.deepEqual(lineSlot({ parent: P, bands: bs, size: S, obstacles: [P, ...bs] }), { x: X0, y: 6 * (S.h + LINE_GAP_Y) });
+  // 상한(부모 아래 끝 810 + 1200 = 2010) 안: 셋째(1780)까지 줄 끝 바로 아래
+  const b2 = sibs(2);
+  assert.deepEqual(lineSlot({ parent: P, bands: b2, size: S, obstacles: [P, ...b2] }), { x: X0, y: 2 * (S.h + LINE_GAP_Y) });
+  // 넷째(2670)는 상한 밖: 막은 것이 형제 줄뿐이어도 오른쪽 새 열의 부모 위 끝(결정 B, 정리 P91이 긴 열을 나누는 것과 같은 뜻)
+  const b3 = sibs(3);
+  assert.deepEqual(lineSlot({ parent: P, bands: b3, size: S, obstacles: [P, ...b3] }), { x: X0 + S.w + LINE_GAP_X, y: 0 });
   assert.ok(LINE_REACH >= 1200 && LINE_COLS >= 2);
 });
 
 test('P200 (나) 줄 끝 바로 아래를 다른 나무가 길게 막으면 그 아래로 가지 않고 오른쪽 새 열(부모 위 끝 높이)', () => {
-  const bs = sibs(2);
-  const end = bs[1].y + bs[1].h;
+  const bs = sibs(1);
+  const end = bs[0].y + bs[0].h;
   const other = { x: X0 - 300, y: end + LINE_GAP_Y, w: 2000, h: 5000 }; // 다른 세션 나무(띠)
   const os = [P, ...bs, other];
   const at = lineSlot({ parent: P, bands: bs, size: S, obstacles: os });
@@ -51,26 +54,28 @@ test('P200 (나) 줄 끝 바로 아래를 다른 나무가 길게 막으면 그 
 });
 
 test('P200 (나) 실제 사례 모양: 부모 열 위 끝을 다른 나무가 막고 형제가 그 아래에 줄 선 경우', () => {
-  // 부모 높이 1080, 열 맨 위에 다른 세션 둘(0~875), 형제가 955부터 890 간격. 상한은 줄 끝부터 재므로 형제 줄은 그대로 잇는다
+  // 부모 높이 1080, 열 맨 위에 다른 세션(0~875), 형제가 955부터 890 간격. 상한 = 1080 + 1200 = 2280
   const p = { x: 0, y: 0, w: 1920, h: 1080 };
   const x = p.x + p.w + LINE_GAP_X;
   const others = [{ x, y: 0, w: 1440, h: 875 }];
-  const bs = [0, 1, 2].map((i) => ({ x, y: 955 + i * 890, w: 1440, h: 810 }));
-  const at = lineSlot({ parent: p, bands: bs, size: S, obstacles: [p, ...others, ...bs] });
-  assert.deepEqual(at, { x, y: 955 + 3 * 890 });
+  const one = [{ x, y: 955, w: 1440, h: 810 }];
+  assert.deepEqual(lineSlot({ parent: p, bands: one, size: S, obstacles: [p, ...others, ...one] }), { x, y: 955 + 890 }, '둘째(1845)는 상한 안');
+  const bs = [0, 1].map((i) => ({ x, y: 955 + i * 890, w: 1440, h: 810 }));
+  // 셋째(옛 규칙 2735)는 상한 밖 → 오른쪽 새 열의 부모 위 끝
+  assert.deepEqual(lineSlot({ parent: p, bands: bs, size: S, obstacles: [p, ...others, ...bs] }), { x: x + 1440 + LINE_GAP_X, y: 0 });
 });
 
 test('P200 (다) 형제 띠 사이에 비운 자리(지워진 하위)가 있으면 그 자리', () => {
-  const bs = sibs(4);
-  const left = [bs[0], bs[2], bs[3]]; // 둘째가 지워졌다
+  const bs = sibs(3);
+  const left = [bs[0], bs[2]]; // 둘째가 지워졌다
   const at = lineSlot({ parent: P, bands: left, size: S, obstacles: [P, ...left] });
   assert.deepEqual(at, { x: X0, y: bs[1].y });
   // 첫째 자리가 비어도 그 자리(부모 위 끝부터 찾는다)
   const tail = bs.slice(1);
   assert.deepEqual(lineSlot({ parent: P, bands: tail, size: S, obstacles: [P, ...tail] }), { x: X0, y: 0 });
-  // 비운 자리가 새 블록보다 작으면 쓰지 않는다
+  // 비운 자리가 새 블록보다 작으면 쓰지 않는다(그 아래나 새 열)
   const tight = [bs[0], { ...bs[1], y: bs[1].y + 400 }];
-  assert.deepEqual(lineSlot({ parent: P, bands: tight, size: S, obstacles: [P, ...tight] }), { x: X0, y: tight[1].y + S.h + LINE_GAP_Y });
+  assert.notEqual(lineSlot({ parent: P, bands: tight, size: S, obstacles: [P, ...tight] }).y, bs[1].y);
 });
 
 test('P200 (라) 워크트리 상자 테두리 크기로도 같다', () => {
@@ -115,9 +120,10 @@ test('P200 (바) 동료 자리도 상한: 짝 나무 아래가 길게 막히면 
   // 짧게 막히면 같은 x에서 그 아래(P175 그대로)
   const short = { x: 0, y: 2100, w: 2000, h: 500 };
   assert.deepEqual(peerSlot({ partner: P, band, size: S, gap: 160, obstacles: [short] }), { x: 0, y: 2600 + LINE_GAP_Y });
-  // 이미 선 동료 줄(line)은 상한을 그 줄 끝부터 잰다(막히지 않은 동료 줄은 접지 않는다)
-  const line = [0, 1, 2].map((i) => ({ x: 0, y: 2160 + i * 890, ...S }));
-  assert.deepEqual(peerSlot({ partner: P, band, line, size: S, gap: 160, obstacles: line }), { x: 0, y: 2160 + 3 * 890 });
+  // 이미 선 동료 줄: 상한(띠 아래 끝 2000 + 1200) 안이면 그 아래, 넘으면 오른쪽 새 열(짝 나무 아래 높이)
+  const line = [0, 1].map((i) => ({ x: 0, y: 2160 + i * 890, ...S }));
+  assert.deepEqual(peerSlot({ partner: P, band, size: S, gap: 160, obstacles: line.slice(0, 1) }), { x: 0, y: 2160 + 890 });
+  assert.deepEqual(peerSlot({ partner: P, band, size: S, gap: 160, obstacles: line }), { x: S.w + LINE_GAP_X, y: 2160 });
   // 모두 막히면 옛 자리
   const wall = { x: -500, y: 1000, w: 40000, h: 9000 };
   assert.deepEqual(peerSlot({ partner: P, band, size: S, gap: 160, obstacles: [wall] }), { x: 0, y: 10000 + LINE_GAP_Y });

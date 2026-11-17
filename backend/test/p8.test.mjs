@@ -19,7 +19,7 @@ import * as branchMod from '../src/branch.mjs';
 import { Branch, ATRIUM_ALLOW, depthOf, isDescendant, descendantsOf, childName, childNotice, boardSkill, childShims, CHILD_NAME_RE } from '../src/branch.mjs';
 import { SIZE_STEPS, overlaps, GAP } from '../src/canvas.mjs';
 import { workspaceOf } from '../src/git.mjs';
-import { lineSlot, LINE_GAP_X, LINE_GAP_Y } from '../src/tree-line.mjs';
+import { lineSlot, LINE_GAP_X, LINE_GAP_Y, LINE_COLS } from '../src/tree-line.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p8-'));
@@ -370,13 +370,16 @@ test('K2·K3(P36): 상한 없음 — 한 세션이 하위 세션 32개, 8단계 
   for (let d = 2; d <= 8; d++) { last = await b.branch.spawnChild(cur, { name: `d${d}`, wait: false }); cur = b.sessions.get(last.sessionId); }
   assert.equal(last.depth, 8);
   assert.equal(b.store.events({}).filter((e) => e.kind === 'branch_refused').length, 0);
-  // 자리: 32개 형제 모두 나무 자리(부모 오른쪽), 서로 겹치지 않고, P75: 격자로 접지 않고 한 열에 띄운 순서대로
+  // 자리: 32개 형제 모두 나무 자리(부모 오른쪽), 서로 겹치지 않고, 열 안에서는 띄운 순서대로.
+  // P200: 열이 상한(LINE_REACH)을 넘으면 오른쪽 새 열(LINE_COLS 열까지), 모두 차면 첫 열의 줄 끝 아래로 잇는다
   const places = b.spawned.slice(0, 32).map((x) => x.place);
   assert.ok(places.every(Boolean), 'all placed in the tree');
   assert.ok(places.every((p) => p.x >= 720 + 200));
   for (let i = 0; i < places.length; i++) for (let j = i + 1; j < places.length; j++) assert.ok(!overlaps(places[i], places[j], GAP - 1), `${i} ${j}`);
-  assert.equal(new Set(places.map((p) => p.x)).size, 1, 'P75: 격자로 접지 않고 한 열');
-  for (let i = 1; i < places.length; i++) assert.ok(places[i].y > places[i - 1].y, `띄운 순서 ${i}`);
+  const xs = [...new Set(places.map((p) => p.x))];
+  assert.ok(xs.length > 1 && xs.length <= LINE_COLS, `P200: 열 ${xs.length}개`);
+  for (const x of xs) { const col = places.filter((p) => p.x === x); for (let i = 1; i < col.length; i++) assert.ok(col[i].y > col[i - 1].y, `열 ${x} 띄운 순서 ${i}`); }
+  assert.equal(places.at(-1).x, places[0].x, '열이 모두 차면 첫 열 줄 끝 아래');
   // 깊이 사슬은 단계마다 오른쪽으로
   const chain = b.spawned.slice(32).map((x) => x.place);
   for (let i = 1; i < chain.length; i++) assert.ok(chain[i].x > chain[i - 1].x);

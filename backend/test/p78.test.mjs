@@ -95,7 +95,10 @@ test('P78 판: 요청 없이 띄운 --worktree 워커도 워크트리가 생기�
     assert.deepEqual(xy(nodeOf(b, n)), xy(placed[n]), `${n}는 제자리`);
     assert.deepEqual(regs.get(key(n)), boxFrame(nodeOf(b, n)), `${n} 상자는 노드 둘레`);
   }
-  assert.equal(new Set(names.map((n) => regs.get(key(n)).x)).size, 1, '상자 한 열');
+  // P200: 부모(720×460) 아래 끝 + LINE_REACH 안에 상자 둘, 셋째는 오른쪽 새 열의 부모 윗변
+  const [r1, r2, r3] = names.map((n) => regs.get(key(n)));
+  assert.equal(r2.x, r1.x, '둘째까지 첫 열');
+  assert.ok(r3.x >= r1.x + r1.w + 200 && r3.y === r1.y, '셋째는 오른쪽 새 열');
   assert.deepEqual(conflicts(b), []);
   assert.deepEqual(events(b, 'line_pushed'), [], '상자가 생겨도 뒤 형제를 밀 일이 없다(띄울 때 틀만큼 비웠다)');
   // 첫 요청(인계)으로 hook이 같은 워크트리를 알려도 그대로

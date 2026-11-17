@@ -15,7 +15,7 @@ import { Branch, CHILD_SIZE } from '../src/branch.mjs';
 import { pathKey, normPath } from '../src/workspaces.mjs';
 import { attachWorktrees } from '../src/worktrees.mjs';
 import { areaKey, regionConflicts, settleBoxes } from '../src/worktree-areas.mjs';
-import { lineSlot, pushLine, blockTree, boxFrame, LINE_GAP_X, LINE_GAP_Y } from '../src/tree-line.mjs';
+import { lineSlot, pushLine, blockTree, boxFrame, LINE_GAP_X, LINE_GAP_Y, LINE_REACH } from '../src/tree-line.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p75-'));
 const R = (x, y, w = NODE.w, h = NODE.h) => ({ x, y, w, h });
@@ -92,24 +92,34 @@ function board({ wts = [] } = {}) {
 const nodeOf = (b, name) => b.store.nodes().find((n) => n.session_id === 'id-' + name);
 const conflicts = (b) => [...regionConflicts(ops.regions(b), ops.canvasItems(b))];
 const noOverlap = (rects, gap = 0) => { for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (overlaps(rects[i], rects[j], gap - 1)) return [i, j]; return null; };
+// P200: 띄운 순서대로 열을 채운다. 같은 열이면 앞 것 아래, 열이 바뀌면 앞 열 오른쪽에서 윗변(top)부터
+const columnsInOrder = (rects, top) => {
+  assert.equal(rects[0].y, top, '첫 블록은 부모 윗변');
+  for (let i = 1; i < rects.length; i++) {
+    const r = rects[i], p = rects[i - 1];
+    if (r.x === p.x) assert.ok(r.y >= p.y + p.h + LINE_GAP_Y, `같은 열 순서 ${i}`);
+    else { assert.ok(r.x >= p.x + p.w + LINE_GAP_X, `새 열은 오른쪽 ${i}`); assert.equal(r.y, top, `새 열은 윗변부터 ${i}`); }
+  }
+};
 const snap = (b) => JSON.stringify({ n: b.store.nodes().map((n) => [n.session_id, n.x, n.y, n.w, n.h]), a: b.store.worktreeAreas().map((a) => [a.wt, a.x, a.y]) });
 
-test('P75 판: 한 부모에 워커 다섯이 한 열로 띄운 순서대로, 손자는 그 오른쪽 열. 부모 나무가 길어지면 뒤 형제가 아래로 밀린다', () => {
+// P200: 열이 부모 아래 끝 + LINE_REACH를 넘으면 오른쪽 새 열(부모 윗변부터). 부모 720×460, 워커 1440×810이면 열마다 둘
+test('P75·P200 판: 한 부모에 워커 다섯이 띄운 순서대로 열을 채우고 넘치면 오른쪽 새 열, 손자는 그 오른쪽 열. 부모 나무가 길어지면 뒤 형제가 아래로 밀린다', () => {
   const { b, add, kid } = board();
   const lead = add('lead', R(0, 0));
   const ws5 = [1, 2, 3, 4, 5].map((i) => kid(lead, `w${i}`));
   const rs = ws5.map((s) => nodeOf(b, s.name));
-  assert.equal(new Set(rs.map((r) => r.x)).size, 1, '한 열');
-  assert.equal(rs[0].x, NODE.w + LINE_GAP_X); assert.equal(rs[0].y, 0, '첫 워커는 부모 윗변');
-  for (let i = 1; i < 5; i++) assert.equal(rs[i].y, rs[i - 1].y + KID.h + LINE_GAP_Y, `띄운 순서 ${i}`);
-  // w2가 손자 둘을 띄운다: w2 오른쪽 열, w3 이후는 w2 나무 아래로
+  const X0 = NODE.w + LINE_GAP_X, DX = KID.w + LINE_GAP_X, DY = KID.h + LINE_GAP_Y;
+  assert.deepEqual(rs.map((r) => [r.x, r.y]), [[X0, 0], [X0, DY], [X0 + DX, 0], [X0 + DX, DY], [X0 + 2 * DX, 0]], '열마다 위에서 아래, 넘치면 오른쪽 새 열의 윗변');
+  assert.ok(rs.every((r) => r.y <= NODE.h + LINE_REACH), '상한 안');
+  // w2가 손자 둘을 띄운다: w2 오른쪽 열(접힌 둘째 열과 같은 x)의 빈 칸. 손자 나무가 w4와 겹치면 줄 밀기가 w4를 w2 나무 아래로 민다
   const g = [kid(ws5[1], 'g1'), kid(ws5[1], 'g2')].map((s) => nodeOf(b, s.name));
   const w2 = nodeOf(b, 'w2');
-  assert.deepEqual([g[0].x, g[0].y], [w2.x + w2.w + LINE_GAP_X, w2.y]);
-  assert.deepEqual([g[1].x, g[1].y], [g[0].x, g[0].y + KID.h + LINE_GAP_Y]);
-  const w3 = nodeOf(b, 'w3');
-  assert.equal(w3.y, g[1].y + g[1].h + LINE_GAP_Y, 'w3은 w2 나무(손자 둘) 아래');
-  assert.ok(nodeOf(b, 'w4').y > w3.y && nodeOf(b, 'w5').y > nodeOf(b, 'w4').y, '뒤 형제도 순서대로');
+  assert.ok(g.every((r) => r.x === w2.x + w2.w + LINE_GAP_X && r.y >= w2.y), '손자는 w2 오른쪽 열, w2 윗변 아래');
+  const w4 = nodeOf(b, 'w4');
+  assert.equal(w4.x, X0 + DX);
+  assert.equal(w4.y, Math.max(...g.map((r) => r.y + r.h)) + LINE_GAP_Y, 'w4는 w2 나무(손자) 아래로 밀렸다');
+  assert.deepEqual([nodeOf(b, 'w3').y, nodeOf(b, 'w5').y], [0, 0], '겹치지 않은 형제는 그대로');
   assert.equal(noOverlap(b.store.nodes()), null, '겹치지 않는다');
   // 순서 번호: 같은 부모 안에서 1부터, 손자는 따로
   assert.deepEqual(ws5.map((s) => b.branch.summaryExtra(s).branch.order), [1, 2, 3, 4, 5]);
@@ -136,9 +146,9 @@ for (const mode of ['after', 'each']) {
       assert.equal(r.area, pathKey(`C:/repo/.claude/worktrees/${n}`), `${n}는 자기 상자`);
       assert.deepEqual([r.x, r.y], [placed[n].x, placed[n].y], `${n}는 놓인 자리 그대로(상자가 노드를 감싼다)`);
     }
-    assert.equal(new Set(boxes.map((r) => r.x)).size, 1, '상자 다섯이 한 열');
     assert.equal(boxes[0].x, 40 + NODE.w + LINE_GAP_X, '부모 오른쪽 200');
-    for (let i = 1; i < 5; i++) assert.ok(boxes[i].y >= boxes[i - 1].y + boxes[i - 1].h + LINE_GAP_Y, `상자 순서 ${i}`);
+    columnsInOrder(boxes, 112); // P200: 상한을 넘으면 오른쪽 새 열
+    assert.ok(new Set(boxes.map((r) => r.x)).size > 1, 'P200: 다섯이면 열이 나뉜다');
     assert.deepEqual(boxes[0], boxFrame(nodeOf(b, 'a1')));
     assert.deepEqual(conflicts(b), []);
     assert.deepEqual(ops.settleRegions(b, 'check'), [], '겹침 풀기가 할 일이 없다');
@@ -151,7 +161,7 @@ for (const mode of ['after', 'each']) {
     state.wts = [...names, 'a6'];
     await b.worktrees.sync('t');
     const b6 = ops.regions(b).get(key('a6'));
-    assert.equal(b6.x, boxes[0].x); assert.ok(b6.y > boxes[4].y + boxes[4].h, '줄 끝');
+    columnsInOrder([...boxes, b6], 112); // 줄 끝(마지막 열의 다음 칸이나 그 오른쪽 새 열)
     assert.equal(b.branch.summaryExtra(a6).branch.order, 6);
     assert.ok(ws.key);
   });
@@ -214,10 +224,14 @@ test('P75 정리: 흩어진 워커(상자 포함)를 부모 → 띄운 순서 �
   const gn = nodeOf(b, 'g1'), pn = nodeOf(b, 'p1');
   assert.deepEqual([gn.x, gn.y], [pn.x + pn.w + LINE_GAP_X, pn.y], '손자는 그 오른쪽 열');
   assert.deepEqual(conflicts(b), []);
-  // 정리 뒤 새 워커는 줄 끝(정리와 띄우기가 같은 규칙)
+  // 정리 뒤 새 워커: 정리한 줄이 이미 상한(부모 아래 끝 + LINE_REACH)을 넘었으므로 P200: 그 창(부모 윗변 ~ 상한)에 걸친 줄 블록 오른쪽 새 열의 부모 윗변.
+  // 손자 g1은 창 아래에 있어 새 열을 더 밀지 않는다(겹치지도 않는다)
   const p2 = nodeOf(b, kid(lead, 'p2').name);
-  assert.equal(p2.x, blocks[0].x);
-  assert.equal(p2.y, Math.max(pn.y + pn.h, gn.y + gn.h) + LINE_GAP_Y);
+  assert.ok(Math.max(pn.y + pn.h, gn.y + gn.h) + LINE_GAP_Y > L.y + L.h + LINE_REACH, '줄 끝이 상한 밖');
+  const inWin = blocks.filter((r) => r.y < L.y + L.h + LINE_REACH + p2.h);
+  assert.equal(p2.x, Math.max(...inWin.map((r) => r.x + r.w)) + LINE_GAP_X);
+  assert.equal(p2.y, L.y);
+  assert.equal(noOverlap([p2, ...b.store.nodes().filter((n) => n.session_id !== 'id-p2')], LINE_GAP_Y), null);
   b.sessions.delete('id-p2'); b.store.deleteNode && b.store.deleteNode('id-p2');
   ops.arrange(b, { workspace: ws.key, undo: true });
   const back = JSON.parse(snap(b)); const was = JSON.parse(before);
@@ -254,12 +268,14 @@ test('P75 크기: 워크트리 상자 안의 워커를 키우면 뒤 상자가 �
   ['b1', 'b2', 'b3'].forEach((n) => kid(lead, n, { worktree: n }));
   state.wts = ['b1', 'b2', 'b3'];
   await b.worktrees.sync('t');
-  const x0 = ops.regions(b).get(key('b2')).x;
+  // P200: b1·b2는 첫 열, b3는 상한을 넘어 오른쪽 새 열에 섰다
+  const x0 = ops.regions(b).get(key('b2')).x, x3 = ops.regions(b).get(key('b3')).x;
+  assert.ok(x3 > x0);
   ops.setSize(b, { session: 'id-b1', size: 'wide-large' });
   const regs = ops.regions(b);
   const [r1, r2, r3] = ['b1', 'b2', 'b3'].map((n) => regs.get(key(n)));
-  assert.deepEqual([r2.x, r3.x], [x0, x0], '옆으로 가지 않는다');
-  assert.ok(r2.y >= r1.y + r1.h + LINE_GAP_Y && r3.y > r2.y + r2.h, '순서대로 아래로');
+  assert.deepEqual([r2.x, r3.x], [x0, x3], '옆으로 가지 않는다');
+  assert.ok(r2.y >= r1.y + r1.h + LINE_GAP_Y, '같은 열의 뒤 상자는 아래로');
   assert.deepEqual(conflicts(b), []);
 });
 
