@@ -16,6 +16,7 @@ import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, �
 import { DeliveryQueue } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
 import { rigFlowHandlers } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
+import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·create·describe·get·save·spawnSeat
 import { rigAdminHandlers } from './rig-admin.mjs'; // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
@@ -2068,6 +2069,7 @@ export class Backend {
       ...rigHandlers(this), // rig.status·rig.enable·rig.disable
       ...rigFlowHandlers(this), // P185: rig.seat(사람만, 이 PC의 창)·rig.cases
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만)
+      ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다
