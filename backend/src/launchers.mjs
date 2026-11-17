@@ -47,7 +47,7 @@ export const HARNESSES = {
   opencode: { id: 'opencode', kind: 'opencode', label: 'opencode', fields: ['startCommand', 'connection', 'model', 'args'], models: [] },
   pi: { id: 'pi', kind: 'pi', label: 'pi', fields: ['startCommand', 'connection', 'model', 'args'], models: [] },
   // P192: AGY(Antigravity CLI). 모델은 `agy models`(agy-models.mjs)를 읽고, 노력 수준·승인 방식은 AGY 인자(--effort, --mode·--dangerously-skip-permissions)로 붙인다
-  agy: { id: 'agy', kind: 'agy', label: 'AGY', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args'], models: ['gemini-3.8-flash-medium'] },
+  agy: { id: 'agy', kind: 'agy', label: 'Antigravity', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args'], models: ['gemini-3.8-flash-medium'] },
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };

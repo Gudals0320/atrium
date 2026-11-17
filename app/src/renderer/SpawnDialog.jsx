@@ -15,7 +15,7 @@ import { useDialog } from './dialog.js';
 
 // P194: 사람이 띄운 세션의 이름이 rig 자리 이름과 겹쳐 판이 <이름>-<n>으로 바꿨으면(renamedFrom) 그 까닭을 한 줄 덧붙인다
 export const renamedText = (r) => (r && r.renamedFrom ? t('rigMore.spawnRenamed', { from: r.renamedFrom, name: r.name }) : '');
-export const startedText = (r) => t('spawn.started', { name: r.name, kind: r.flavor ? t('spawn.startedKind', { kind: kindOf(r.flavor).label + (r.command ? t('spawn.startedCommand') : '') }) : r.command ? t('spawn.startedKind', { kind: t('launchers.harness.command') }) : r.kind !== 'claude' ? t('spawn.startedKind', { kind: r.kind === 'shell' ? t('spawn.shell') : r.kind }) : '', trust: r.trust && r.trust.needsTrust ? t('spawn.startedTrust') : '', ws: r.workspaceKey && r.workspaceKey !== getState().currentWs ? t('spawn.startedWs', { ws: wsName(r.workspaceKey) || r.workspaceRoot }) : '' }) + renamedText(r);
+export const startedText = (r) => t('spawn.started', { name: r.name, kind: r.flavor ? t('spawn.startedKind', { kind: kindOf(r.flavor).label + (r.command ? t('spawn.startedCommand') : '') }) : r.command ? t('spawn.startedKind', { kind: t('launchers.harness.command') }) : r.kind !== 'claude' ? t('spawn.startedKind', { kind: r.kind === 'shell' ? t('spawn.shell') : kindOf(r.kind).label }) : '', trust: r.trust && r.trust.needsTrust ? t('spawn.startedTrust') : '', ws: r.workspaceKey && r.workspaceKey !== getState().currentWs ? t('spawn.startedWs', { ws: wsName(r.workspaceKey) || r.workspaceRoot }) : '' }) + renamedText(r);
 
 const findLauncher = (id) => { const d = getState().launchers; return (d && d.launchers.find((l) => l.id === id)) || null; };
 const MODEL_HARNESS = new Set(['claude', 'codex']);
@@ -120,7 +120,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
             <label>{t('spawn.kind')}
               <select value={kind} onChange={(e) => { setKind(e.target.value); setArgs(''); }} data-field="kind">
                 <option value="shell">{t('spawn.shellOption')}</option>
-                {kinds.map((k) => <option key={k.kind} value={k.kind} disabled={!k.installed}>{k.kind}{k.installed ? '' : t('spawn.notInstalled')}</option>)}
+                {kinds.map((k) => <option key={k.kind} value={k.kind} disabled={!k.installed}>{kindOf(k.kind).label}{k.installed ? '' : t('spawn.notInstalled')}</option>)}
               </select>
             </label>
           )}
@@ -137,7 +137,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
             </div>
           </> : <>
             <label>{t('spawn.args')}<input value={args} onChange={(e) => setArgs(e.target.value)} placeholder={kind === 'codex' ? t('spawn.codexArgsPh') : ''} data-field="args" /></label>
-            <div className="mt-card-sub">{t('spawn.otherNote', { kind })}</div>
+            <div className="mt-card-sub">{t('spawn.otherNote', { kind: kindOf(kind).label })}</div>
           </>}
         {!shell && !typed && <label>{t('spawn.prompt')}<textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} data-field="prompt" /></label>}
         <div className="mt-card-actions">

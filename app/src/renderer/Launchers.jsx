@@ -8,11 +8,11 @@
 // P28 원칙: 최소 창(900×600)에서도 스크롤 없이 들어간다. 목록이 길면 목록 칸만 넘긴다.
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
-import { useStore, toast, loadLaunchers } from './store.js';
+import { useStore, toast, loadLaunchers, getState } from './store.js';
 import { KindIcon } from './SessionNode.jsx';
 import { Icon } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
-import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, recognizedChips, fillFromParse, connectionChoices, harnessProtocols } from './lib/launchers.js';
+import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, connectionChoices, harnessProtocols } from './lib/launchers.js';
 
 const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 const MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];
@@ -127,7 +127,7 @@ function PasteLine({ onParsed, autoFocus, except }) {
     </div>
   );
 }
-const harnessLabel = (h, t) => (h === 'claude' ? 'Claude Code' : h === 'codex' ? 'Codex' : h === 'command' ? t('launchers.harness.command') : h === 'shell' ? t('launchers.harness.shell') : h);
+const harnessLabel = (h, t) => harnessName(getState().launchers && getState().launchers.harnesses, h, t); // P196: 하네스 표·종류 이름표(Antigravity)
 // P115: 연결 고르기. 쓸 수 없는 연결은 disabled와 까닭(프로토콜)
 function ConnectionSelect({ value, onChange, connections, harnesses, harness }) {
   const t = useT();
@@ -156,8 +156,8 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
   const fields = harnessFields(harnesses, d.harness);
   const has = (f) => fields.includes(f);
   const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || 'manual', args: d.args, env: d.envText, command: d.command, connection: d.connection || '', startCommand: d.startCommand });
-  const named = (harnesses || []).filter((h) => !['shell', 'command'].includes(h.id)).map((h) => h.id); // P115: 백엔드 하네스 표(Claude Code, Codex, opencode, pi)
-  useEffect(() => { api.call('agent.kinds').then((ks) => setKinds(ks.map((k) => k.kind).filter((k) => !['claude', 'codex', 'opencode', 'pi', 'agy'].includes(k)))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
+  const opts = harnessOptions(harnesses, kinds, d.harness); // P115: 백엔드 하네스 표. P196: 표가 빠뜨린 기본 종류(agy 등)와 지금 값도 빠짐없이
+  useEffect(() => { api.call('agent.kinds').then((ks) => setKinds(ks.map((k) => k.kind))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
   // 고르는 대로 미리보기(백엔드가 확인한다). 이름이 비었으면 이름 검사만 건너뛴다
   useEffect(() => {
     const tm = setTimeout(() => {
@@ -188,9 +188,7 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
         <label className="mt-ln-f"><span>{t('launchers.name')}</span><input className="mt-set-text" data-field="launcher-name" value={d.name} maxLength={40} onChange={(e) => set('name', e.target.value)} placeholder={t('launchers.namePh')} /></label>
         <label className="mt-ln-f"><span>{t('launchers.harnessLabel')}</span>
           <select data-field="launcher-harness" value={d.harness} onChange={(e) => set('harness', e.target.value)}>
-            {(named.length ? named : ['claude', 'codex']).map((h) => <option key={h} value={h}>{(harnesses.find((x) => x.id === h) || {}).label || harnessLabel(h, t)}</option>)}
-            {kinds.map((k) => <option key={k} value={k}>{k}</option>)}
-            {![...named, 'claude', 'codex', 'shell', 'command', ...kinds].includes(d.harness) && <option value={d.harness}>{d.harness}</option>}
+            {opts.map((h) => <option key={h} value={h}>{harnessName(harnesses, h, t)}</option>)}
             <option value="shell">{t('launchers.harness.shell')}</option>
             <option value="command">{t('launchers.harness.command')}</option>
           </select>
@@ -217,7 +215,7 @@ function LauncherForm({ init, harnesses, connections = [], onDone, focusPaste = 
         <label className="mt-ln-f"><span>{t('launchers.icon')}</span>
           <select data-field="launcher-icon" value={d.icon} onChange={(e) => set('icon', e.target.value)}>
             <option value="">{t('launchers.iconAuto')}</option>
-            {ICONS.map((k) => <option key={k} value={k}>{k}</option>)}
+            {ICONS.map((k) => <option key={k} value={k}>{iconName(k, t)}</option>)}
           </select>
         </label>
         <span />
