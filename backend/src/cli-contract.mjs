@@ -11,6 +11,7 @@
 //   prompt <자리 이름>은 그 자리로 보낸다(keep은 앉은 세션, fresh는 새 세션, 상한이면 줄). done은 정의의 results 낱말을 받고 값에 따라 보드가 다음 자리로 넘긴다.
 //   me·item·items·prompt·done 응답에 rig·case 칸을 더했다. 자리 없는 세션과 rig가 꺼진 워크스페이스는 3과 같다
 // P188: rig 동사(check·log·rollback·cleanup, 관리자 자리만)와 me의 rig.version·rig.manager 칸을 더했다. 자리 세션의 일 머리가 세 줄로 줄었다(값과 자리 목록은 me). 더하기만이라 4 그대로
+// P190: guide rig(보드 내장 rig 만들기 안내, 응답 builtin 칸)와 rig check를 rig가 꺼진 워크스페이스의 어느 세션이든 쓰게 넓혔다(더하기만이라 4 그대로)
 export const CONTRACT_VERSION = 4;
 
 // out: --json일 때 result의 주요 칸. 사람이 읽는 출력(--json 없음)은 같은 내용의 글이다
@@ -32,11 +33,11 @@ export const VERBS = [
   { name: 'item', args: ['[--json]'], does: '너의 지금 일: 맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수', out: ['item', 'queued'] },
   { name: 'items', args: ['[--json]'], does: '네가 맡긴 일들: 맡은 세션, 상태(open·done·failed·cancelled), 결과와 보고', out: ['items', 'open', 'toolRuns'] },
   // P182: rig(워크스페이스의 작업 규칙)
-  { name: 'guide', args: ['[주제]', '[--json]'], does: '자세한 사용법(help --long). 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json)가 있으면 그 안내를 붙이고, 정의가 잘못됐으면 그 까닭을 보인다', out: ['rig'] },
+  { name: 'guide', args: ['[주제 | rig]', '[--json]'], does: '자세한 사용법(help --long). 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json)가 있으면 그 안내를 붙이고, 정의가 잘못됐으면 그 까닭을 보인다. guide rig는 보드 내장 rig 만들기 안내(정의 형식, 틀 셋의 예, atrium rig check로 검사하는 법)', out: ['rig', 'builtin'] },
   // P183: rig 도구
   { name: 'tool', args: ['[<이름> [인자…] | --wait <실행 ID> | --runs]', '[--json]'], does: '이 워크스페이스에 사람이 켠 rig의 도구. 이름 없이는 목록과 설명, 이름이면 실행(인자는 정의의 run 뒤에 붙는다. 보드가 띄워 쥐고 출력을 기록한다). 100초까지 기다려 종료 코드와 출력 꼬리를 돌려주고, 아직이면 종료 코드 3과 실행 ID(이어 기다리기 --wait <ID>). --runs는 최근 실행. 세션마다 한 번에 하나', out: ['tools', 'run', 'runs'] },
   // P188: rig 관리(관리자 자리 세션과 사람만. 그 밖 세션은 종료 코드 1과 까닭)
-  { name: 'rig', args: ['check [파일] | log | rollback <n> | cleanup <건>', '[--json]'], does: 'rig 정의 관리. 켜진 rig의 관리자 자리(manager)에 앉은 세션만 쓴다. check는 후보 정의(파일, 없으면 지금 .atrium/rig.json)를 적용하지 않고 검사하고(사람만 고치는 자리를 바꾸면 알린다), log는 정의 버전 목록과 버전마다 건·반려·훅 거절·상한 초과 수, rollback <n>은 버전 n의 내용으로 rig.json을 다시 쓰며(새 버전으로 적힌다), cleanup <건>은 끝난 건이 만든 fresh 세션을 닫고 워크트리 목록을 돌려준다(지우지 않는다)', out: ['ok', 'reason', 'versions', 'current', 'n', 'closed', 'kept', 'worktrees'] },
+  { name: 'rig', args: ['check [파일] | log | rollback <n> | cleanup <건>', '[--json]'], does: 'rig 정의 관리. 켜진 rig의 관리자 자리(manager)에 앉은 세션만 쓴다(check는 읽기만이라 rig가 꺼진 워크스페이스면 어느 세션이든, 켜진 rig에서는 사람이 맡긴 제작 세션도 쓴다). check는 후보 정의(파일, 없으면 지금 .atrium/rig.json)를 적용하지 않고 검사하고(사람만 고치는 자리를 바꾸면 알린다), log는 정의 버전 목록과 버전마다 건·반려·훅 거절·상한 초과 수, rollback <n>은 버전 n의 내용으로 rig.json을 다시 쓰며(새 버전으로 적힌다), cleanup <건>은 끝난 건이 만든 fresh 세션을 닫고 워크트리 목록을 돌려준다(지우지 않는다)', out: ['ok', 'reason', 'versions', 'current', 'n', 'closed', 'kept', 'worktrees'] },
 ];
 // 종료 코드: 0 성공, 1 보드가 거절하거나 실패(이유는 stderr와 --json의 error), 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(일은 계속된다. 다시 atrium wait)
 export const EXIT = { ok: 0, refused: 1, usage: 2, timeout: 3 };

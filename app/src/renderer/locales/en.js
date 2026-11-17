@@ -187,6 +187,7 @@ export default {
     chgCommand: 'Command: {p}', chgPrompt: 'Prompt: {p}', chgWasState: 'Was {state}', chgKilled: 'Stopped on the board', chgRemoved: 'Removed from the board ({reason})',
     chgTerminalDown: { one: 'The terminal server stopped unexpectedly {n} time{up}', other: 'The terminal server stopped unexpectedly {n} times{up}' }, chgReattached: ' (reconnected)',
     chgBackendRestarts: { one: 'Backend restarted {n} time{down}', other: 'Backend restarted {n} times{down}' }, chgDownFor: ' (down for {s}s)', chgList: '{items}',
+    chgRigBuilderStop: 'Rig builder stopped without finishing: {what}', chgRigBuilder_idle_no_done: 'idle without a report', chgRigBuilder_turn_error: 'the turn ended with an error', chgRigBuilder_needs_human: 'waiting for your answer', chgRigBuilder_closed: 'the session closed', // P190
   },
   closeReason: {
     killed: 'Stopped on the board',

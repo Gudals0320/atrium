@@ -11,6 +11,7 @@
 import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy } from './link-notice.mjs';
 import { treeIndex, cycleCheck } from './push-cycle.mjs';
 import { clip } from './text.mjs';
+import { HUMAN_FROM } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일의 멈춤은 응답 필요 목록으로
 
 export const STOP_REASONS = ['idle_no_done', 'turn_error', 'needs_human', 'closed', 'tree_quiet'];
 const WHY = {
@@ -59,6 +60,7 @@ export class UnitStops {
   waited(fromId, toId) { const ws = this.units.waiters.get(`${fromId}>${toId}`); return !!(ws && ws.size); }
   // 상위의 묶음에 한 줄을 더한다
   add(tr, unit, why, detail = null) {
+    if (unit && unit.from === HUMAN_FROM) return !!(this.b.rigSetup && this.b.rigSetup.onStop(tr, unit, why, detail)); // P190: 상위 세션이 없다(사람)
     if (!unit || !this.b.sessions.has(unit.from)) return false;
     if (unit.from === tr.sessionId) return false; // P185: 건 주인이 자기 자리로 받은 일(자기에게 멈춤을 알리면 끝없이 돈다)
     if (why !== 'tree_quiet' && this.waited(unit.from, unit.to)) return false;
@@ -103,7 +105,7 @@ export class UnitStops {
   onClosed(s, tr, unit, reason, { byParent = false } = {}) {
     this.scheduleTree();
     if (!tr || !tr.header || byParent || !unit) return null;
-    return this.add(tr, unit, 'closed', reason ? closeWhy(reason) : null) ? unit.from : null;
+    return this.add(tr, unit, 'closed', reason ? closeWhy(reason) : null) && unit.from !== HUMAN_FROM ? unit.from : null;
   }
 
   // ---------- 나무 전체가 쉬는가(중간 워커) ----------
