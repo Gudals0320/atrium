@@ -15,6 +15,7 @@ import { levelOf, zoomAt, ZOOM } from './lib/mission-terr.js';
 import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeKey } from './lib/phone-map.js';
 import { Card, Peek, cardFacts } from './MissionLineage.jsx';
 import { caseGroups } from './lib/rig-map.js'; // P186: rig 건(알약)
+import { RigBandLayer } from './RigBand.jsx'; // P198: rig 띠 휴대폰 갈래(세로 건 목록과 지금 자리)
 
 const REFRESH_MS = 600;
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
@@ -60,6 +61,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
     fetchT.current = setTimeout(run, fetched.current ? REFRESH_MS : 0);
   }, [sessions, links, thread, loops, reloadN]);
   useEffect(() => api.on('relation.updated', () => setReloadN((n) => n + 1)), []);
+  useEffect(() => api.on('rig.cases', () => setReloadN((n) => n + 1)), []); // P198: rig 건이 바뀌면 다시 읽는다
 
   const order = useMemo(() => (workspaces || []).map((w) => w.key), [workspaces]);
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
@@ -230,7 +232,8 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const pb = peek && lay ? lay.cards.get(peek) : null;
   // P186: rig 건 알약(막힌 건·열린 건, 둘까지). 누르면 지금 일이 있는 자리의 카드로. rig가 없는 판은 없다
-  const rcases = lay ? caseGroups(graph, (ws, sid) => (sid && lay.cards.has(`s:${sid}`) ? `s:${sid}` : null), (ws, seat) => { const m = lay.reps.get(ws); return (m && m.get(seat)) || null; }) : null;
+  const keepOf = (ws, seat) => { if (!lay) return null; for (const [id, b] of lay.cards) if (b.ws === ws && b.keepHead && b.seat && b.seat.seat === seat) return id; return null; }; // P198: keep 자리 머리 카드
+  const rcases = lay ? caseGroups(graph, (ws, sid) => (sid && lay.cards.has(`s:${sid}`) && !lay.cards.get(`s:${sid}`).folded ? `s:${sid}` : null), keepOf) : null;
   const rpills = rcases ? [...rcases.blocked, ...rcases.open].slice(0, 2) : [];
   return (
     <div className="mt-ph-list mt-pm mt-pl mt-pmap" data-role="phone-mission" data-style="canvas">
@@ -286,7 +289,8 @@ export function PhoneMap({ onBack, onOpen, conn }) {
                   return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
                 })}
               </svg>
-              {ids.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
+              <RigBandLayer rb={lay.rb} t={t} now={now} phone />
+              {ids.filter((id) => !lay.cards.get(id).folded).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
             </div>
           )}
         </div>
