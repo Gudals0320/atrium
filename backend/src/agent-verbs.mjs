@@ -168,6 +168,8 @@ export class AgentVerbs {
     // P185: rig 자리 세션의 보내기는 정의가 정한다(assign 줄 → 일, may → 글만, 그 밖 거절 rig_refused). 자리 없는 세션·꺼진 rig는 null(옛 그대로)
     const flow = this.branch && this.branch.flow ? this.branch.flow : null;
     const fp = flow ? flow.planPrompt(caller, o, this) : null;
+    // P194: --case는 rig 자리 세션이 자리에 일을 맡길 때만(이을 건을 고른다)
+    if (o.caseId != null && String(o.caseId).trim() && !(fp && fp.kind === 'unit')) throw apiError('bad_request', '--case는 rig 자리 세션이 자리에 일을 맡길 때만 쓴다(이을 건을 고른다). 이 보내기는 건의 일을 만들지 않는다.');
     let t = fp ? fp.t : this.target(caller, o.name);
     let text = o.text == null ? '' : String(o.text);
     if (!text.trim()) throw apiError('bad_request', '보낼 글을 주세요: atrium prompt <이름> "<할 일>"');
@@ -186,7 +188,7 @@ export class AgentVerbs {
     let plan, made = null, caseInfo = null;
     if (fp && fp.kind === 'unit') {
       // P185: 자리로 맡기기. 보낸 세션이 쥔 건을 잇거나 새 건을 연다. keep은 앉은 세션(없으면 띄움), fresh는 새 세션(max_live면 자리 줄)
-      const c = flow.caseFor(caller, fp.ctx.key);
+      const c = flow.caseFor(caller, fp.ctx.key, { caseId: o.caseId != null && String(o.caseId).trim() ? String(o.caseId).trim() : null }); // P194: --case
       const a = await flow.assign({ ctx: fp.ctx, c, by: caller, seatName: fp.seatName, t: fp.t, spec: text, origin: 'prompt' });
       caseInfo = { caseId: c.id, seat: fp.seatName };
       if (a.seatWait) {

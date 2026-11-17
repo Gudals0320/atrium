@@ -30,6 +30,22 @@ export function launcherChoices(data) {
   const ls = (data && data.launchers) || [];
   return ls.filter((l) => l && l.id && l.harness !== 'shell' && l.harness !== 'command').map((l) => ({ id: l.id, name: l.name || l.id, harness: l.harness }));
 }
+// P194: 정의의 launcher(런처 id, 런처 이름, 종류 이름)를 화면에 보일 이름으로. 런처 id·이름이면 판의 런처 이름, 종류 이름(claude 등)은 그대로
+export function launcherLabel(choices, ref) {
+  const v = String(ref || '');
+  if (!v) return '';
+  const c = (choices || []).find((x) => x.id === v) || (choices || []).find((x) => String(x.name || '').toLowerCase() === v.toLowerCase());
+  return c ? c.name : v;
+}
+// P194: 제작 세션의 보고 글처럼 사람이 읽는 글 안의 런처 id를 판의 런처 이름으로 바꾼다(id가 판의 런처일 때만)
+export function namedLaunchers(text, choices) {
+  const s = String(text || '');
+  const ids = (choices || []).filter((c) => c.id && c.name && c.name !== c.id);
+  if (!ids.length) return s;
+  const by = new Map(ids.map((c) => [c.id, c.name]));
+  const re = new RegExp(`\\b(${ids.map((c) => c.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'g');
+  return s.replace(re, (m) => by.get(m) || m);
+}
 // 자리마다 런처 기본값: 틀이 정한 런처가 목록에 있으면 그것, 아니면 defaultLauncher(그 워크스페이스에서 마지막으로 쓴 것), 그것도 없으면 목록의 첫째
 //   워크트리 자리는 Claude Code 런처만 되므로(P190 rig.create 검사) 기본값이 Claude가 아니면 목록의 첫 Claude 런처
 export function defaultLaunchers(template, defaultLauncher, choices = []) {

@@ -2820,4 +2820,9 @@ export default {
     errFlow: 'Each flow row needs from, value and to.',
     errMax: 'Max is a whole number of 1 or more: {value}',
   },
+  // P194: rig stage 8 window touches
+  rigMore: {
+    spawnRenamed: ' · renamed because {from} is a rig seat name here: @{name}',
+    caseWaitingOwner: 'waiting for the owner',
+  },
 };

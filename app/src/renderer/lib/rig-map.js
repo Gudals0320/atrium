@@ -140,7 +140,7 @@ export function caseGroups(graph, nodeOf = () => null, repOf = () => null) {
   if (!Object.keys(rig).length) return null;
   const by = (a, b) => b.at - a.at;
   return {
-    open: all.filter((c) => c.state === 'open').sort(by),
+    open: all.filter((c) => c.state === 'open' || c.state === 'waiting_owner').sort(by), // P194: waiting_owner(상한을 넘어 주인에게 보고로 올라감)도 끝나지 않은 건
     blocked: all.filter((c) => c.state === 'blocked').sort(by),
     done: all.filter((c) => c.state === 'done' || c.state === 'cancelled').sort(by).slice(0, 5),
     total: all.length,

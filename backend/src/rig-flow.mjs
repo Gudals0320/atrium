@@ -30,7 +30,9 @@ import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
 const firstLine = (t, n = 100) => clip(String(t || '').split('\n').find((x) => x.trim()) || '', n);
-export const CASE_STATES = ['open', 'done', 'blocked', 'cancelled'];
+export const CASE_STATES = ['open', 'done', 'blocked', 'waiting_owner', 'cancelled'];
+// P194: 아직 끝나지 않은 건(흐름이 이어지고, 주인이 닫히면 cancelled). waiting_owner: 상한을 넘어 주인에게 보고로 올라가 주인의 다음 맡기기를 기다린다
+const LIVE_CASE = new Set(['open', 'blocked', 'waiting_owner']);
 const SPEC_HEAD_LINES = 6; // 넘김 글에 붙이는 건의 첫 할 일 줄 수
 
 // 자리 세션의 일 머리(관계 줄 꼴이라 카드에는 아래 할 일만 지시로 보인다). 0단계 unitHeader 대신
@@ -64,6 +66,17 @@ export function seatNamed(rig, key, name) {
   const r = rig && typeof rig.active === 'function' && key && name ? rig.active(key) : null;
   const n = String(name || '').toLowerCase();
   return r && r.def && r.def.seats && Object.prototype.hasOwnProperty.call(r.def.seats, n) ? n : null;
+}
+// P194: 흐름 줄의 받는 곳이 건 주인 세션 자신일 때 일 대신 넣는 보고(0단계 done 보고 doneNotice와 같은 판 알림 꼴).
+//   haiku 메인이 주인에게 돌아온 넘김 일을 done으로 닫지 않아 건이 열린 채 남았다(P193). 주인에게 가는 것은 일이 아니라 보고다
+export function ownerReportText({ caseId, fromSeat, fromName, unitId, spec, result, doneText, escalated = null, history = [] }) {
+  const lines = [`[Atrium 보드] rig 건 ${caseId}: ${fromSeat} 자리(@${fromName})가 일 ${unitId}("${clip(String(spec || '').replace(/\s+/g, ' '), 60)}")을 닫았다: ${result}`];
+  lines.push(escalated
+    ? `[Atrium 보드] 이것은 보고다(atrium done으로 닫을 일이 아니다). 되돌아감 상한을 넘어 너에게 올라왔다: flow[${escalated.line}]은 이 건에서 이미 ${escalated.max}번 지났다. 건은 waiting_owner다. 다음 \`atrium prompt <자리> "<할 일>"\`이 이 건을 잇는다(건이 여럿이면 --case ${caseId}).`
+    : '[Atrium 보드] 이것은 보고다(atrium done으로 닫을 일이 아니다). 건에 열린 일이 없으면 건은 done이다.');
+  lines.push(String(doneText || '').replace(/\s+$/, ''));
+  if (escalated && history.length) lines.push('', '--- 건의 이력(자리, 세션, 값, done 글 첫 줄) ---', ...history.map((h, i) => `${i + 1}. ${h.seat || '-'}(@${h.name}) ${h.result || h.status}${h.text ? `: ${h.text}` : ''}`));
+  return lines.join('\n');
 }
 // 넘김 글(판이 만든다): 보낸 자리와 세션, 값, done 글, 건의 첫 할 일 앞 몇 줄, 올릴 때는 건의 이력
 export function handoffText({ fromSeat, fromName, result, doneText, firstSpec, escalated = null, history = [] }) {
@@ -169,17 +182,37 @@ export class RigFlow {
     this.b.log(`rig case ${c.id} open by ${owner.name}`);
     return this.store().getCase(c.id);
   }
-  // 보낸 세션이 어떤 건의 열린 시도를 쥐고 있으면 그 건(blocked였으면 다시 open), 아니면 새 건
-  caseFor(caller, key) {
+  // 보낸 세션이 어떤 건의 열린 시도를 쥐고 있으면 그 건(blocked·waiting_owner였으면 다시 open).
+  // P194: 아니면 보낸 세션이 주인인 waiting_owner 건이 정확히 하나일 때 그 건, 그 밖은 새 건.
+  //   caseId(atrium prompt --case): 그 건을 고른다(이 워크스페이스, 끝나지 않은 건, 주인이거나 그 건의 열린 시도를 쥔 세션)
+  caseFor(caller, key, { caseId = null } = {}) {
     const st = this.store();
+    if (caseId) {
+      const want = String(caseId).trim();
+      const c = st.getCase(want);
+      if (!c || c.workspaceKey !== key) throw apiError('rig_case', `이 워크스페이스에 건 ${want}이 없다. 내 건 보기: atrium me`);
+      if (!LIVE_CASE.has(c.state)) throw apiError('rig_case', `건 ${c.id}은 이미 ${c.state}다. 새 건은 --case 없이 보낸다.`);
+      if (c.owner !== caller.sessionId && this.openCaseOf(caller) !== c.id) throw apiError('rig_case', `건 ${c.id}의 주인(@${this.nameOf(c.owner)})이 아니라 이 건을 고를 수 없다.`);
+      return this.resumeCase(c, caller, 'case');
+    }
     const tr = st.openTryOf(caller.sessionId);
     const u = tr ? st.getUnit(tr.unitId) : null;
     const c = u && u.caseId ? st.getCase(u.caseId) : null;
-    if (c && (c.state === 'open' || c.state === 'blocked')) {
-      if (c.state === 'blocked') { st.updateCase(c.id, { state: 'open', blockedReason: null }); st.addEvent(caller.sessionId, 'rig_case_resume', { caseId: c.id }); }
-      return st.getCase(c.id);
-    }
+    if (c && LIVE_CASE.has(c.state)) return this.resumeCase(c, caller, 'held');
+    const waiting = st.waitingCasesOfOwner ? st.waitingCasesOfOwner(caller.sessionId, key) : [];
+    if (waiting.length === 1) return this.resumeCase(waiting[0], caller, 'waiting_owner');
     return this.newCase(key, caller);
+  }
+  // 끝나지 않은 건을 다시 open으로(blocked·waiting_owner였으면 기록)
+  resumeCase(c, caller, why) {
+    const st = this.store();
+    if (c.state !== 'open') {
+      st.updateCase(c.id, { state: 'open', blockedReason: null });
+      st.addEvent(caller.sessionId, 'rig_case_resume', { caseId: c.id, from: c.state, why });
+      this.b.log(`rig case ${c.id} resumed (${c.state} → open, ${why}) by ${caller.name}`);
+      this.changed(c.workspaceKey);
+    }
+    return st.getCase(c.id);
   }
   // 열린 일이 없으면 done
   caseCheck(caseId) {
@@ -316,7 +349,7 @@ export class RigFlow {
     const ctx = this.seatCtx(caller);
     if (!ctx || !unit || !unit.caseId) return null;
     const c = this.store().getCase(unit.caseId);
-    if (!c || (c.state !== 'open' && c.state !== 'blocked')) return null;
+    if (!c || !LIVE_CASE.has(c.state)) return null;
     return { ctx, c, lines: ctx.def.flow.filter((l) => l.from === ctx.name && l.on === result) };
   }
   // done이 닫힌 뒤: 맞는 줄마다 넘김(상한), 건 확인, 자리 줄 넣기
@@ -325,6 +358,7 @@ export class RigFlow {
     const { ctx } = route;
     let c = st.getCase(route.c.id);
     const firstSpec = (st.unitsOfCase(c.id)[0] || {}).spec || '';
+    const reports = []; // P194: 건 주인에게 간 보고(일이 아니다)
     for (const line of route.lines) {
       c = st.getCase(c.id);
       let targets = line.to; let escalated = null;
@@ -341,10 +375,11 @@ export class RigFlow {
           targets = [alt];
         } else { counts[k] = n + 1; st.updateCase(c.id, { edgeCounts: counts }); }
       }
-      for (const to of targets) await this.handoff({ ctx, c: st.getCase(c.id), caller, unit, result, doneText, line, to, escalated, firstSpec });
+      for (const to of targets) { const rep = await this.handoff({ ctx, c: st.getCase(c.id), caller, unit, result, doneText, line, to, escalated, firstSpec }); if (rep && rep.report) reports.push(rep); }
     }
     this.caseCheck(c.id);
     this.pumpSoon();
+    return { reports };
   }
   async handoff({ ctx, c, caller, unit, result, doneText, line, to, escalated, firstSpec }) {
     const b = this.b; const st = this.store();
@@ -352,6 +387,8 @@ export class RigFlow {
     const text = handoffText({ fromSeat: ctx.name, fromName: shownName(caller), result, doneText, firstSpec, escalated, history });
     const tSeat = ctx.def.seats[to];
     const seated = tSeat.session === 'keep' ? this.seatedOf(ctx.key, to)[0] || null : null;
+    // P194: 받는 곳이 건 주인 세션 자신이면 일이 아니라 보고다. 주인이 아닌 keep 자리로 가는 줄은 그대로 일이다
+    if (seated && seated.sessionId === c.owner) return this.ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner: seated });
     const h = await b.rig.deliver({ target: seated || { workspaceKey: ctx.key, name: to, kind: null, model: null, cwd: ctx.r.root }, workspaceKey: ctx.key, from: { kind: 'flow', seat: ctx.name, session: caller }, text });
     const rowIds = (h.runs || []).map((x) => x.rowId).filter((x) => x != null);
     if (h.action === 'reject') return this.block(c, `넘김 글(${ctx.name} ${result} → ${to})을 deliver 훅이 거절했다: ${h.reason}`);
@@ -366,6 +403,27 @@ export class RigFlow {
       const l = this.branch.verbs.link(caller, a.t);
       b.linkEvent(l, 'prompt', text, { via: 'flow', tag: 'flow', unitId: a.unit.id, caseId: c.id, result, ...(a.made && a.made.d ? { deliveryId: a.made.d.deliveryId } : {}) });
     }
+  }
+
+  // P194: 주인에게 보고(일을 만들지 않는다). 상한을 넘어 올라온 것이면 건을 waiting_owner로 둔다(주인의 다음 맡기기가 잇는다)
+  ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner }) {
+    const b = this.b; const st = this.store();
+    if (escalated) {
+      st.updateCase(c.id, { state: 'waiting_owner' });
+      st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId: c.id, line: line.index, max: escalated.max, from: ctx.name, result });
+    }
+    const text = ownerReportText({ caseId: c.id, fromSeat: ctx.name, fromName: shownName(caller), unitId: unit.id, spec: unit.spec, result, doneText, escalated, history: escalated ? this.history(c.id) : [] });
+    const d = b.queue.enqueue(owner.sessionId, text);
+    const tr = st.lastTryOfUnit(unit.id);
+    if (tr) st.updateTry(tr.id, { noticeDeliveryId: d.deliveryId });
+    // 연결 기록: 위(주인) → 하위 선에 보고(답)로(0단계 done과 같다). 선이 없으면 보낸 쪽 → 주인 선
+    const l0 = st.linkByPair(unit.from, unit.to);
+    if (l0 && !l0.removedAt) b.linkEvent(l0, 'reply', doneText, { via: 'flow', verb: 'done', tag: 'report', result, unitId: unit.id, caseId: c.id, deliveryId: d.deliveryId });
+    else { const l = this.branch.verbs.link(caller, owner); b.linkEvent(l, 'prompt', text, { via: 'flow', tag: 'report', unitId: unit.id, caseId: c.id, result, deliveryId: d.deliveryId }); }
+    st.addEvent(caller.sessionId, 'rig_handoff', { caseId: c.id, from: ctx.name, result, to, line: line.index, unitId: null, report: true, target: owner.name, deliveryId: d.deliveryId, escalated: !!escalated });
+    b.log(`rig report ${ctx.name}(${caller.name}) ${result} → owner @${owner.name} case ${c.id}${escalated ? ' (waiting_owner)' : ''}`);
+    this.changed(ctx.key);
+    return { report: true, seat: to, to: shownName(owner), deliveryId: d.deliveryId, escalated: !!escalated };
   }
 
   // ---------- 자리 줄(max_live) ----------
@@ -383,7 +441,7 @@ export class RigFlow {
           const r = b.rig ? b.rig.active(u.workspaceKey) : null;
           const cdef = r ? this.defOfCase(c, r) : null; // P188: 건의 버전
           const seat = cdef && cdef.seats ? cdef.seats[u.seat] : null;
-          if (!c || !owner || !seat || (c.state !== 'open' && c.state !== 'blocked')) { st.updateUnit(u.id, { status: 'cancelled', closedAt: Date.now() }); st.addEvent(c ? c.owner : null, 'unit_cancelled', { unitId: u.id, why: !seat ? 'seat gone' : 'case closed' }); if (c) this.caseCheck(c.id); continue; }
+          if (!c || !owner || !seat || !LIVE_CASE.has(c.state)) { st.updateUnit(u.id, { status: 'cancelled', closedAt: Date.now() }); st.addEvent(c ? c.owner : null, 'unit_cancelled', { unitId: u.id, why: !seat ? 'seat gone' : 'case closed' }); if (c) this.caseCheck(c.id); continue; }
           if (this.liveCount(u.workspaceKey, u.seat) >= seat.maxLive) continue;
           const ctx = { key: u.workspaceKey, r, def: cdef, seat, name: u.seat };
           let s;
@@ -523,8 +581,8 @@ export class RigFlow {
     for (const w of b.store.workspaces()) {
       const r = b.rig.active(w.key);
       if (!r || !r.def.seats) continue;
-      const cases = this.store().casesOf(w.key, 20).filter((c) => c.state === 'open' || c.state === 'blocked' || Date.now() - (c.closedAt || 0) < 3600000);
-      const live = cases.find((c) => c.state === 'open' || c.state === 'blocked') || null;
+      const cases = this.store().casesOf(w.key, 20).filter((c) => LIVE_CASE.has(c.state) || Date.now() - (c.closedAt || 0) < 3600000);
+      const live = cases.find((c) => LIVE_CASE.has(c.state)) || null;
       out[w.key] = {
         seats: Object.values(r.def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, maxLive: x.maxLive, may: x.may,
           sessions: this.seatedOf(w.key, x.name).map((s) => ({ sessionId: s.sessionId, name: shownName(s), open: true, busy: !!this.store().openTryOf(s.sessionId) })),
@@ -545,6 +603,7 @@ export class RigFlow {
     const c = u && u.caseId ? st.getCase(u.caseId) : null;
     return { seat: ctx.name, active: true, version: ctx.versionN ?? null, manager: !!(ctx.def.manager && ctx.def.manager === ctx.name), session: ctx.seat.session, worktree: ctx.seat.worktree, results: ctx.def.results, assign: this.assignTargets(ctx), may: ctx.seat.may, tools: ctx.seat.tools,
       case: c ? { id: c.id, state: c.state, owner: this.nameOf(c.owner) } : null,
+      owned: st.casesOf(ctx.key, 50).filter((x) => x.owner === s.sessionId && LIVE_CASE.has(x.state)).map((x) => ({ id: x.id, state: x.state })), // P194: 내가 주인인 끝나지 않은 건(--case로 고른다)
       next: ctx.def.flow.filter((l) => l.from === ctx.name && l.on !== 'assign').map((l) => ({ on: l.on, to: l.to, max: l.max, else: l.else })) };
   }
   // atrium guide: 자리 안내 파일

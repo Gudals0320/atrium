@@ -196,8 +196,9 @@ export class WorkUnits {
     const route = flow ? flow.routeFor(caller, unit, result) : null;
     const out = this.done(caller, o, { flowClaim: !!(route && route.lines.length) });
     if (route && route.lines.length) {
-      await flow.afterDone(caller, unit, result, text, route);
+      const ar = await flow.afterDone(caller, unit, result, text, route);
       out.flow = this.store().unitsOfCase(unit.caseId).filter((u) => u.via && u.via.prevUnit === unit.id).map((u) => ({ unit: u.id, seat: u.seat, to: u.to ? this.nameOf(u.to) : null, waiting: !u.to }));
+      if (ar && ar.reports && ar.reports.length) out.reports = ar.reports.map((x) => ({ seat: x.seat, to: x.to, escalated: x.escalated })); // P194: 건 주인에게 간 보고
       const c = this.store().getCase(unit.caseId);
       out.case = c ? { id: c.id, state: c.state, blockedReason: c.blockedReason } : null;
     } else if (route) { flow.caseCheck(unit.caseId); flow.pumpSoon(); const c = this.store().getCase(unit.caseId); out.case = c ? { id: c.id, state: c.state } : null; }
