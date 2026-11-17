@@ -2891,4 +2891,8 @@ export default {
   agySandbox: { // P203
     note: 'The Antigravity sandbox blocks board commands (atrium). To hand it work from the board, choose a skip-permissions mode (dontAsk, bypassPermissions).',
   },
+  pmTab: { // P207: phone session map tabs (Today | Earlier)
+    label: 'Session map section',
+    attn: '{n} need you or failed',
+  },
 };
