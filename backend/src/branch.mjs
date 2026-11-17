@@ -188,7 +188,7 @@ export function childName({ want, parentName, taken }) {
   for (let i = 1; i < 1000; i++) if (!taken.has(`${base}${i}`)) return `${base}${i}`;
   throw apiError('name_taken', "이름을 지정하지 못했습니다.");
 }
-// K4 자리 계산은 P75부터 tree-line.mjs(lineSlot: 부모 오른쪽 한 열, 띄운 순서, 격자로 접지 않는다). 옛 childSlot(열을 부모 높이 두 배에서 접어 격자로 쌓았다)은 뺐다
+// K4 자리 계산은 P75부터 tree-line.mjs(lineSlot: 부모 오른쪽 열, 띄운 순서, P200: 상한을 넘으면 오른쪽 새 열). 옛 childSlot(열을 부모 높이 두 배에서 접어 격자로 쌓았다)은 뺐다
 // P36: 하위 세션이 신뢰 질문에서 멈췄을 때 부모가 사람에게 할 한 문장
 // P41: Claude Code의 StopFailure(model_not_found)는 글 없이 온다. 판이 부모에게 보일 까닭
 export const modelErrorText = (model) => `사용할 수 없는 모델입니다: ${model || '(기본)'}. 모델이 없거나 현재 실행 설정으로 접근할 수 없습니다 (게이트웨이 환경 변수 누락 등).`;
@@ -448,7 +448,7 @@ export class Branch {
   }
 
   // K4·P75: 하위 세션 노드 자리. backend.spawn이 부른다. 부모와 같은 워크스페이스면 부모 오른쪽 한 열의 끝(형제 띠의 맨 아래 다음), 아니면 null(그 워크스페이스의 빈자리 규칙).
-  // 줄은 격자로 접지 않는다. 그 자리에 다른 것이 있으면 그 아래로 잇는다(다른 노드를 옮기지 않는다. 부모 나무가 길어져 생기는 겹침은 spawn 뒤 reflowLines가 뒤 형제를 민다).
+  // P200: 부모에게 가까운 빈 칸, 상한(LINE_REACH) 밖이면 오른쪽 새 열(다른 노드를 옮기지 않는다. 부모 나무가 길어져 생기는 겹침은 spawn 뒤 reflowLines가 뒤 형제를 민다).
   // worktree를 주면(--worktree 워커) 상자가 들어설 테두리(이름표와 여백)까지 비워 두고 노드는 그 안에 놓는다. 노드는 본 저장소 쪽에 두고,
   // 워크트리가 생기면 상자가 그 노드 자리를 감싼다(worktrees.mjs). 그래서 상자도 줄에 선다
   // P175: peer(atrium child --peer)면 정리(arrangeTree P177)가 줄 자리와 크기: 짝(부모)과 같은 크기 단계, 짝의 나무 바로 아래(짝과 같은 x).
@@ -468,11 +468,13 @@ export class Branch {
     const pid = tree.blockOf.get(parentId);
     if (peer) {
       const ps = { w: pn.w, h: pn.h }; // 짝의 크기 그대로(단계 열쇠와 비율도)
-      const wp = this.relIndex().workParentOf(parentId);
+      const idx = this.relIndex();
+      const wp = idx.workParentOf(parentId);
       const sib = !!(wp && wp !== parentId && b.sessions.has(wp) && (b.sessions.get(wp).workspaceKey || null) === wsKey);
       const frame = worktree ? boxFrame({ x: 0, y: 0, ...ps }) : ps;
       const obstacles = all.filter((i) => !(inBox && i.box === ak));
-      const at = peerSlot({ partner: pRect, band: pid ? bandOf(tree, pid) : pRect, size: frame, obstacles: [...obstacles, pRect], gap: sib ? LINE_GAP_Y : LINE_GAP_Y * 2 });
+      const band = pid ? bandOf(tree, pid) : pRect;
+      const at = peerSlot({ partner: pRect, band, size: frame, obstacles: [...obstacles, pRect], gap: sib ? LINE_GAP_Y : LINE_GAP_Y * 2 });
       if (!at) return null;
       const pos = worktree ? frameInner(at) : at;
       return { x: Math.round(pos.x), y: Math.round(pos.y), w: pn.w, h: pn.h, size: pn.size ?? null, aspect: pn.aspect ?? null, area: inBox ? parseArea(ak).wt : '', peer: true };

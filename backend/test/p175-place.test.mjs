@@ -12,7 +12,7 @@ import { newRuntime } from '../src/state.mjs';
 import { Branch } from '../src/branch.mjs';
 import { Backend } from '../src/backend.mjs';
 import { workspaceOf } from '../src/git.mjs';
-import { peerSlot, LINE_GAP_Y } from '../src/tree-line.mjs';
+import { peerSlot, LINE_GAP_Y, LINE_GAP_X, LINE_REACH } from '../src/tree-line.mjs';
 import * as ops from '../src/canvas-ops.mjs';
 
 // ---------- peerSlot(순수) ----------
@@ -97,7 +97,8 @@ test('P175 --peer 첫 자리: 하위인 짝이면 같은 줄에서 짝 나무 �
   assert.deepEqual([nq.x, nq.y, nq.w, nq.h, nq.size], [at.x, at.y, at.w, at.h, at.size], '정리해도 그대로');
 });
 
-test('P175 --peer 첫 자리: 짝 아래 자리가 막혀 있으면 그 아래로(다른 노드는 그대로), 두 번째 동료는 첫 동료 아래', async () => {
+// P200: 두 번째 동료 자리(첫 동료 아래)는 짝 나무 아래 끝 + LINE_REACH 밖이라 오른쪽 새 열(짝 나무 아래 높이)
+test('P175·P200 --peer 첫 자리: 짝 아래 자리가 막혀 있으면 그 아래로(다른 노드는 그대로), 두 번째 동료는 상한 밖이면 오른쪽 새 열', async () => {
   const { b, ws } = await fakeBoard();
   const A = mk(b, ws, 'lead', null, { x: 0, y: 0, w: 1440, h: 810, size: 'wide-normal' });
   const X = mk(b, ws, 'solo-x', null, { x: 0, y: 900, w: 1040, h: 585, size: 'wide-small' });
@@ -106,7 +107,10 @@ test('P175 --peer 첫 자리: 짝 아래 자리가 막혀 있으면 그 아래�
   const nx = node(b, X);
   assert.equal(a1.x, 0); assert.ok(a1.y >= nx.y + nx.h, '막힌 자리 아래로');
   const { at: a2 } = spawnPeer(b, ws, A, 'peer-2');
-  assert.ok(a2.y >= a1.y + a1.h, '두 번째 동료는 첫 동료 아래');
+  const na = node(b, A);
+  assert.ok(a1.y + a1.h + LINE_GAP_Y > na.y + na.h + LINE_REACH, '첫 동료 아래는 상한 밖');
+  assert.equal(a2.x, Math.max(a1.x + a1.w, nx.x + nx.w) + LINE_GAP_X, '두 번째 동료는 오른쪽 새 열');
+  assert.equal(a2.y, na.y + na.h + LINE_GAP_Y * 2, '짝 나무 아래 높이(짝이 뿌리면 나무 사이 간격)');
   assert.equal(JSON.stringify(JSON.parse(nodesSnap(b)).filter(([id]) => [A.sessionId, X.sessionId].includes(id))), before, '짝과 막은 노드는 그대로');
 });
 
