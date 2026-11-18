@@ -639,7 +639,8 @@ export class Rig {
     const appends = [];
     const runs = [];
     const artifacts = []; // P222: done 훅이 돌려준 산출물 경로
-    const out = (extra) => ({ ...extra, text, ...(args ? { args } : {}), appends, runs, hash: r.hash, ...(artifacts.length ? { artifacts } : {}) });
+    const accepts = []; // P224: done 훅의 받아들임 판정(accept "gate" 섹터): true | false | [경로]
+    const out = (extra) => ({ ...extra, text, ...(args ? { args } : {}), appends, runs, hash: r.hash, ...(artifacts.length ? { artifacts } : {}), ...(accepts.length ? { accepts } : {}) });
     for (const h of hooks) {
       const input = {
         v: 1, at: ctx.at, rigHash: r.hash, workspace: { key: ctx.key, root: r.root },
@@ -675,6 +676,7 @@ export class Rig {
       if (ctx.at === 'tool-before' && o.action === 'rewrite' && Array.isArray(o.args)) args = o.args.map(String);
       if (ctx.at === 'tool-after' && o.append) appends.push(o.append);
       if (ctx.at === 'done' && o.artifacts) artifacts.push(...o.artifacts);
+      if (ctx.at === 'done' && o.accept != null) accepts.push(o.accept); // P224
       const changed = before !== text;
       const argsChanged = beforeArgs !== args;
       const rowId = st.insertHookRun({ ...rec, decision: o.action, reason: o.reason || null, note: o.note || null, beforeText: changed ? before : argsChanged ? JSON.stringify(beforeArgs) : null });

@@ -69,6 +69,8 @@ export function parseHookOutput(stdout) {
   if (o.append != null) { if (typeof o.append !== 'string') return { ok: false, error: 'append는 글이어야 한다' }; out.append = o.append; }
   // P222: done 훅이 돌려주는 산출물 경로(저장소 기준). 다른 길목은 무시한다
   if (o.artifacts != null) { if (!Array.isArray(o.artifacts) || !o.artifacts.every((x) => typeof x === 'string')) return { ok: false, error: 'artifacts는 경로 글 배열이어야 한다' }; out.artifacts = o.artifacts.slice(0, 20); }
+  // P224: done 훅의 받아들임 판정(accept "gate" 섹터): true | false | [경로]
+  if (o.accept != null) { if (typeof o.accept !== 'boolean' && !(Array.isArray(o.accept) && o.accept.every((x) => typeof x === 'string'))) return { ok: false, error: 'accept는 true, false, 또는 경로 글 배열이어야 한다' }; out.accept = Array.isArray(o.accept) ? o.accept.slice(0, 20) : o.accept; }
   if (o.reason != null) out.reason = String(o.reason).slice(0, REASON_MAX);
   if (o.note != null) out.note = (typeof o.note === 'string' ? o.note : JSON.stringify(o.note)).slice(0, NOTE_MAX);
   return { ok: true, out };

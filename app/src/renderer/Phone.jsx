@@ -38,6 +38,7 @@ import { reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './
 import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx'; // P165: 음성 입력
 import './phone.css';
 import { UsagePill } from './Usage.jsx'; // P211: 위쪽 줄의 구독 사용량 알약
+import { useRigAsks, RigAskList } from './RigAsks.jsx'; // P224: rig 승인 카드
 
 // ---------- 화면 고르기(main.jsx) ----------
 const store = () => { try { return localStorage; } catch { return null; } };
@@ -285,6 +286,7 @@ function PhoneList({ onOpen, onNew, onMission }) {
   const [folded, setFolded] = useState(readFolded);
   const [pushOpen, setPushOpen] = useState(false); // P88
   const list = useMemo(() => phoneList([...sessions.values()], workspaces), [sessions, workspaces]);
+  const rigAsks = useRigAsks(); // P224
   const wsName = (k) => { const w = workspaces.find((x) => x.key === k); return w ? w.name : null; };
   const toggle = (k) => setFolded((f) => { const n = new Set(f); const key = k || '-'; if (n.has(key)) n.delete(key); else n.add(key); try { store().setItem('mt.phoneFolded', JSON.stringify([...n])); } catch {} return n; });
   const row = (s, showRepo) => <Row key={s.sessionId} s={s} now={now} showRepo={showRepo} wsName={wsName(s.workspaceKey)} onOpen={onOpen} />;
@@ -303,6 +305,12 @@ function PhoneList({ onOpen, onNew, onMission }) {
       </header>
       <InstallTip />
       <div className="mt-ph-scroll" data-role="phone-scroll">
+        {rigAsks.length > 0 && (
+          <section className="mt-ph-sec need rig" data-section="rig-asks">
+            <h4>{t('rigAsk.phoneHead', { n: rigAsks.length })}</h4>
+            <RigAskList asks={rigAsks} now={now} compact head={false} />
+          </section>
+        )}
         {list.needs.length > 0 && (
           <section className="mt-ph-sec need" data-section="needs">
             <h4>{t('phone.secNeeds', { n: list.needs.length })}</h4>

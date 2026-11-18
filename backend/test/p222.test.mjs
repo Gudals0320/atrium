@@ -144,7 +144,7 @@ test('P222 섹터 정의: intake(register 기본, move·copy는 받기만), keep
   assert.match(v((x) => { x.docs.reports.keep = 'forever'; }).reason, /keep은 개수/);
   assert.match(v((x) => { x.docs.reports.keep = 0; }).reason, /keep은 개수/);
   assert.match(v((x) => { x.docs.reports.intake = 'link'; }).reason, /intake는 register, move, copy/);
-  assert.match(v((x) => { x.docs['check-log'].keep = 3; }).reason, /intake·keep은 role "sector"/);
+  assert.match(v((x) => { x.docs['check-log'].keep = 3; }).reason, /intake·keep·accept는 role "sector"/);
   assert.match(v((x) => { x.loops.check.produces = ['nope']; }).reason, /produces에 docs에 없는 문서/);
   assert.match(v((x) => { x.loops.check.produces = ['check-log']; }).reason, /produces는 role "sector"/);
   const mv = v((x) => { x.docs.reports.intake = 'move'; x.docs.reports.keep = '30d'; });
@@ -273,7 +273,7 @@ test('P222 등록 상태: 같은 경로를 다시 내면 앞 줄은 밀려남(sa
     const sup = ledger(b, ws.key, { kinds: ['artifact_superseded'] });
     assert.deepEqual(sup.map((r) => r.value), ['same_path', 'keep']);
     assert.equal(sup[1].data.keep, 2);
-    assert.deepEqual(ARTIFACT_STATES, ['new', 'accepted', 'superseded']);
+    assert.deepEqual(ARTIFACT_STATES, ['new', 'accepted', 'superseded', 'pending_merge', 'lost']); // P224: 워크트리 산출물
     // 기간 keep: 정의를 1d로 바꾸고 읽으면 하루 넘은 것을 밀어낸다
     const d2 = defOf(dir); d2.docs.reports.keep = '1d'; fs.writeFileSync(path.join(dir, '.atrium', 'rig.json'), JSON.stringify(d2, null, 2));
     b.store.db.prepare('UPDATE rig_artifacts SET t = ? WHERE id = ?').run(Date.now() - 2 * DAY, ids[2]);

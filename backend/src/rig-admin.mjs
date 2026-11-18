@@ -18,11 +18,12 @@ import { harnessOf } from './launchers.mjs'; // P209: 런처 자리의 종류
 import { shownName } from './session-label.mjs';
 import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장부
 import { sectorsFor } from './rig-sectors.mjs'; // P222: 산출물 등록부
+import { proposalsFor } from './rig-proposals.mjs'; // P224: 제안과 승인
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
-export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name', 'artifacts']; // P222: artifacts(산출물 등록부, 읽기만) // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
+export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name', 'artifacts', 'propose', 'proposals', 'approve', 'reject']; // P224: 제안과 승인 // P222: artifacts(산출물 등록부, 읽기만) // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
 export const RIG_READ_OPS = ['check', 'log']; // P209: 읽기만(제작 세션도 쓴다)
 
 export class RigAdmin {
@@ -46,6 +47,10 @@ export class RigAdmin {
     if (op === 'status') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig status는 워크스페이스의 세션만 쓴다.'); return this.status(s.workspaceKey); }
     // P222: artifacts도 읽기만이라 그 워크스페이스의 어느 판 세션이든
     if (op === 'artifacts') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig artifacts는 워크스페이스의 세션만 쓴다.'); return this.artifacts(s.workspaceKey, o); }
+    // P224: propose는 켜진 rig의 자리 세션(보통 개선 고리의 입구), proposals는 읽기라 그 워크스페이스의 어느 세션이든.
+    //   approve·reject는 관리자 자리가 관리자 승인 길(정의 제안)만 정한다. 사람 승인 제안은 보드 창·휴대폰의 응답 필요 목록에서
+    if (op === 'propose') return proposalsFor(this.b).propose(s, { target: o.target, text: o.text, file: o.file, why: o.why });
+    if (op === 'proposals') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig proposals는 워크스페이스의 세션만 쓴다.'); return this.proposals(s.workspaceKey, o); }
     if (op === 'name' && !this.isManager(s)) {
       const c = this.store().getCase(String(o.caseId || o.case || '').trim());
       if (!c || c.workspaceKey !== s.workspaceKey || c.owner !== s.sessionId) throw apiError('forbidden', `atrium rig name은 관리자 자리와 그 회의 주인(입구 자리 세션)이 쓴다${c && c.workspaceKey === s.workspaceKey ? `: 회 ${c.id}의 주인은 @${this.branch.units.nameOf(c.owner)}다` : ''}.`);
@@ -78,9 +83,18 @@ export class RigAdmin {
     if (op === 'pause') return this.branch.flow.loops.pause(key, o.target, { by, who });
     if (op === 'resume') return this.branch.flow.loops.resume(key, o.target, { by, who });
     if (op === 'name') return this.branch.flow.loops.name(key, o.caseId || o.case, o.name, { by, who });
+    if (op === 'proposals') return this.proposals(key, o); // P224
+    if (op === 'approve' || op === 'reject') return proposalsFor(this.b).decide(key, o.id, op, { by, who, reason: o.reason }); // P224
     throw apiError('bad_request', `모르는 일: ${op}`);
   }
 
+  // P224: 제안 목록(atrium rig proposals [--id <제안>]) → { workspace, proposals } | { proposal }(diff 포함)
+  proposals(key, o = {}) {
+    this.rig();
+    const P = proposalsFor(this.b);
+    if (o.id) { const r = this.store().getProposal(String(o.id)); if (!r || r.workspaceKey !== key) throw apiError('not_found', `그런 제안이 없다: ${o.id}`); return { workspace: key, proposal: P.view(r) }; }
+    return P.list(key, { limit: o.limit });
+  }
   // P222: 산출물 등록부(atrium rig artifacts [--sector] [--run]) → rig-sectors list
   artifacts(key, o = {}) { this.rig(); return sectorsFor(this.b).list(key, { sector: o.sector != null ? String(o.sector) : null, run: o.run != null ? String(o.run) : null, limit: o.limit }); }
   // P221: 고리와 끝나지 않은 회(atrium rig status, 판 API rig.loops보다 넓게) → { workspace, state, version, loops, runs }

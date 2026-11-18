@@ -118,7 +118,8 @@ const DESIGN_KINDS = ['case_open', 'case_waiting_owner', 'case_resumed', 'case_b
   'doc_load', 'doc_changed', 'doc_foreign_write', 'doc_stale', // P219: rig 2 문서(rig2-design 5절)
   'loop_trigger', 'loop_skip', 'loop_next', 'loop_paused', 'loop_resumed', 'run_paused', 'run_resumed', 'run_named', // P221: rig 2 고리(rig2-design 5절)
   'artifact_filed', 'artifact_superseded', 'artifact_accepted', 'artifact_warning', // P222: rig 2 산출물 섹터(artifact_moved는 move가 들어올 때)
-  'seat_permission']; // P223: 자리 권한 결정
+  'seat_permission', // P223: 자리 권한 결정
+  'proposal_made', 'proposal_decided', 'proposal_applied', 'doc_unapproved', 'doc_reverted', 'doc_accepted', 'artifact_merged', 'artifact_lost']; // P224: 제안과 승인, 정본 지키기, 워크트리 산출물
 
 test('P217 소스 검사: rig_events에 쓰는 곳은 rigEvent 하나(store.insertRigEvent는 rig-ledger.mjs만 부른다), SQL은 store-rig.mjs에만(키 옮기기는 store-merge.mjs)', () => {
   const dirs = [path.join(HERE, '..', 'src'), path.join(HERE, '..', 'bin')];
