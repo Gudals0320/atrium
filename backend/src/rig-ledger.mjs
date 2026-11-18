@@ -18,6 +18,8 @@ export const RIG_EVENT_KINDS = [
   'seat_spawn', 'seat_queue', 'seat_set', 'human_message',
   // rig
   'rig_enabled', 'rig_disabled', 'rig_version', 'rig_invalid', 'rig_protected', 'rig_rollback', 'cycle', 'cleanup',
+  // P219: rig 2 문서(rig2-design 5절). doc_stale은 목록에만 있다(stale은 지금 표시만, 알림은 뒤)
+  'doc_load', 'doc_changed', 'doc_foreign_write', 'doc_stale',
 ];
 const KINDS = new Set(RIG_EVENT_KINDS);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];

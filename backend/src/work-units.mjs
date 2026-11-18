@@ -16,6 +16,7 @@ import { RIG_HEADER_TAIL } from './rig.mjs'; // P182. P188: 세 줄 머리의 �
 import { seatHeader } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리
 import { HUMAN_FROM, BUILDER_ORIGIN, builderHeader } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일(상위 세션 없음)
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
+import { seatDocsOf, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
 
 // P216: 에이전트만 끝나고 셸 패널이 남은 것을 멈춤(exited)으로 보는가. 판이 끄라고 한 것(잠재우기·끄기·child-kill·옮기기·다시 띄우기: normal),
 //   사람이 끝낸 것(/exit·Ctrl+C·종료 코드 0·130: user), 신뢰 거부(trust_declined), 터미널 서버가 꺼짐(terminal_stopped, 판이 되살린다)은 아니다.
@@ -94,6 +95,8 @@ export class WorkUnits {
     st.insertTry(tr);
     st.addEvent(unit.to, 'unit_try', { unitId: unit.id, tryId: tr.id, deliveryId: d.deliveryId, later });
     if (unit.caseId) { const t = b.sessions.get(unit.to); rigEvent(b, { kind: 'try_start', caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: unit.seat || (t && t.rigSeat) || null, session: unit.to, actor: 'board', ref: d.deliveryId, data: { queued_ms: Math.max(0, tr.startedAt - (unit.createdAt || tr.startedAt)), ...(later ? { later: true } : {}) } }); } // P217
+    // P219: 자리 머리에 문서 목록을 붙였으면 장부에 doc_load
+    if (unit.caseId && unit.origin !== BUILDER_ORIGIN && this.branch && this.branch.flow) { const t = b.sessions.get(unit.to); const ctx = t ? this.branch.flow.seatCtx(t, { caseId: unit.caseId }) : null; if (ctx) docLoadEvent(b, { caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: ctx.name, session: unit.to, docs: seatDocsOf(ctx.def, ctx.name), ref: d.deliveryId }); }
     if (!st.queuedUnitsOf(unit.to).length) this.queued.delete(unit.to);
     if (later && this.onDispatch) try { this.onDispatch(unit, d, header); } catch (e) { b.log('unit dispatch hook error', e.stack); }
     return { d, tryRow: st.getTry(tr.id), header };
@@ -108,7 +111,7 @@ export class WorkUnits {
     if (ctx) {
       const v = unit.via || {};
       const by = v.cycle != null ? `보드의 느린 고리 cycles[${v.cycle}]가 만듦` : v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
-      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide }); // P188: 세 줄. 값과 자리 목록은 atrium me
+      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide, docs: seatDocsOf(ctx.def, ctx.name) }); // P188: 세 줄. 값과 자리 목록은 atrium me. P219: 문서 목록 꼬리
     }
     return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)), kind: t ? t.kind || 'claude' : null }); // P208
   }
@@ -258,7 +261,7 @@ export class WorkUnits {
     const u = st.getUnit(tr.unitId);
     const flow = this.branch && this.branch.flow;
     const ctx = flow && u.caseId ? flow.seatCtx(caller) : null; // P185
-    return { item: { id: u.id, from: this.nameOf(u.from), origin: u.origin, spec: u.spec, createdAt: u.createdAt, startedAt: tr.startedAt, tries: st.triesOfUnit(u.id).length, stopReason: tr.stopReason, ...(u.caseId ? { caseId: u.caseId, seat: u.seat, by: u.via && u.via.by ? this.nameOf(u.via.by) : null, results: ctx ? ctx.def.results : null } : {}) }, queued };
+    return { item: { id: u.id, from: this.nameOf(u.from), origin: u.origin, spec: u.spec, createdAt: u.createdAt, startedAt: tr.startedAt, tries: st.triesOfUnit(u.id).length, stopReason: tr.stopReason, ...(u.caseId ? { caseId: u.caseId, seat: u.seat, by: u.via && u.via.by ? this.nameOf(u.via.by) : null, results: ctx ? ctx.def.results : null, docs: ctx ? seatDocsOf(ctx.def, ctx.name) : null } : {}) }, queued }; // P219: docs(머리의 문서 목록)
   }
   items(caller, o = {}) {
     const st = this.store();

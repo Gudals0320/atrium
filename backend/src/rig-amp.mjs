@@ -14,6 +14,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부(훅 아닌 관문)
+import { writesPaths, OWNS } from './rig-docs.mjs'; // P219: writes의 문서 이름 → 경로
 
 export const AMP_ATS = ['pre-tool'];
 // 판이 자리를 위해 띄울 때(rig-flow spawnSeat → branch.spawnChild → backend.spawn) 넘기는 자리 이름의 열쇠.
@@ -32,7 +33,8 @@ const badRel = (p) => isAbs(p) || String(p).split(/[\\/]+/).includes('..');
 
 // 정의 검사 → { ok: true, amp: null | { stopVerify, seats: { <자리>: { writes, stopVerify } }, preTool: [{ index, match, seats }] } } | { ok: false, reason }
 // raw: 정의 JSON, seats: validateFlow가 고른 자리(없으면 null)
-export function validateAmp(raw, { seats = null } = {}) {
+//   P219: docs(validateDocs의 문서)가 있으면 writes의 문서 이름을 그 문서 경로(저장소 기준)로 바꾼다. "{owns}"는 R5 전이라 뺀다(그것만 있으면 제한 없음)
+export function validateAmp(raw, { seats = null, docs = null } = {}) {
   const bad = (reason) => ({ ok: false, reason });
   const known = (n) => !!(seats && Object.prototype.hasOwnProperty.call(seats, n));
   if (raw.stopVerify != null && typeof raw.stopVerify !== 'boolean') return bad('stopVerify는 true 또는 false다');
@@ -48,7 +50,8 @@ export function validateAmp(raw, { seats = null } = {}) {
       else if (Array.isArray(x.writes) && x.writes.every((p) => typeof p === 'string' && p.trim())) {
         const off = x.writes.find(badRel);
         if (off) return bad(`${at}.writes의 경로는 세션 폴더 기준 상대 경로다(절대 경로·..는 쓰지 않는다): ${off}`);
-        writes = x.writes.map((p) => p.trim());
+        writes = writesPaths(x.writes.map((p) => p.trim()), docs);
+        if (!writes.length && x.writes.some((p) => p.trim() === OWNS)) writes = null;
       } else return bad(`${at}.writes는 false 또는 경로 배열이다(예: ["items/{item}/"])`);
     }
     if (x.stopVerify != null && typeof x.stopVerify !== 'boolean') return bad(`${at}.stopVerify는 true 또는 false다`);

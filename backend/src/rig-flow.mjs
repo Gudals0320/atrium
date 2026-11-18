@@ -27,6 +27,7 @@ import { rootedRun } from './tool-runs.mjs';
 import { cleanEnv } from './proc-env.mjs';
 import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
 import { rigEvent, OWNER } from './rig-ledger.mjs'; // P217: 장부
+import { seatDocsOf, docsTail, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -54,24 +55,26 @@ export function seatColumns(def) {
 // P188: 판 줄 세 줄 이하(15절). done 값과 보낼 수 있는 자리의 자세한 목록은 `atrium me`·`atrium guide`로 보내고 머리에는 가리킴만 남긴다
 //   (머리가 길면 Claude Code가 첫 지시를 붙여 넣은 자료로 감싸는 경계를 더 자주 넘는다)
 // guide: 그 자리의 안내 파일이 있으면 일을 시작하기 전에 읽으라고 한다(P185 개발용 판: 안내를 읽지 않은 모델이 자리의 일과 다르게 닫았다)
-export function seatHeader({ seat, unitId, caseId, by, guide = false }) {
+// P219: docs(seatDocsOf: 그 자리의 loads·reads)가 있으면 셋째 줄 끝에 늘 싣는 문서 경로와 `atrium item`(자세한 목록)을 붙인다(세 줄 그대로)
+export function seatHeader({ seat, unitId, caseId, by, guide = false, docs = null }) {
+  const tail = docsTail(docs);
   return [
     `[Atrium 보드] 관계: 너는 rig의 ${seat} 자리다. 아래 일은 건 ${caseId}의 일 ${unitId}이다(${by}).`,
     '[Atrium 보드] 끝나면 `atrium done <값> "<보고>"`로 닫고 쉰다(값과 보낼 수 있는 자리는 `atrium me`). 보고는 done 글에만 넣는다.',
-    `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다. ${guide ? '일을 시작하기 전에 `atrium guide`로 이 자리의 안내를 먼저 읽는다.' : '안내: `atrium guide`.'}`,
+    `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다. ${guide ? '일을 시작하기 전에 `atrium guide`로 이 자리의 안내를 먼저 읽는다.' : '안내: `atrium guide`.'}${tail ? ` ${tail}` : ''}`,
   ].join('\n');
 }
 // P193: 세션이 자리를 얻는 순간(사람의 rig.seat, rig.spawnSeat) 한 번 넣는 판 알림. 일 머리와 같이 세 줄 이하이고 모두 판 줄이라 카드의 지시가 되지 않는다.
 //   흐름이 띄운 자리 세션은 첫 일의 머리(seatHeader)가 같은 것을 알려 이 알림을 받지 않는다. P191: 머리 없이 앉은 keep 자리(main)가
 //   rig 흐름 대신 atrium child로 맡겨 건이 생기지 않았다
-export function seatNotice({ seat, assign = [], may = [], results = [], guide = false, manager = false }) {
+export function seatNotice({ seat, assign = [], may = [], results = [], guide = false, manager = false, docs = null }) { // P219: docs(머리의 문서 목록)
   const where = [assign.length ? `일 맡기기: ${assign.join(', ')}` : null, may.length ? `글만: ${may.join(', ')}` : null, manager && !may.includes('*') ? 'rig 밖 세션에 글만' : null].filter(Boolean).join(' · '); // P195: 관리자 자리는 rig 밖 세션에 글을 보낸다
   return [
     `[Atrium 보드] 관계: 사람이 너를 rig의 ${seat} 자리에 앉혔다. 이 워크스페이스의 일은 rig 흐름(자리와 건)으로 나눈다.`,
     where
       ? `[Atrium 보드] 일을 맡길 때는 \`atrium child\` 대신 \`atrium prompt <자리> "<할 일>"\`로 자리에 보낸다(${where}). 받는 자리의 세션은 보드가 띄운다.`
       : '[Atrium 보드] 이 자리는 다른 자리에 일을 맡기지 않는다.',
-    `[Atrium 보드] 자리로 받은 일은 \`atrium done <값> "<보고>"\`로 닫는다(값: ${results.join(', ') || 'ok, failed'}). ${guide ? '먼저 `atrium guide`로 이 자리의 안내를 읽는다.' : '안내: `atrium guide`.'}`,
+    `[Atrium 보드] 자리로 받은 일은 \`atrium done <값> "<보고>"\`로 닫는다(값: ${results.join(', ') || 'ok, failed'}). ${guide ? '먼저 `atrium guide`로 이 자리의 안내를 읽는다.' : '안내: `atrium guide`.'}${docs ? ` ${docsTail(docs)}` : ''}`,
   ].join('\n');
 }
 export const seatLeftNotice = (seat) => `[Atrium 보드] 관계: 사람이 너를 rig의 ${seat} 자리에서 뺐다. 이제 자리 없는 세션이다(\`atrium child\`·\`atrium prompt <세션>\`이 rig 밖 규칙대로 된다).`;
@@ -195,12 +198,13 @@ export class RigFlow {
       const d = b.queue.enqueue(s.sessionId, text);
       noticeId = d.deliveryId;
       st.addEvent(s.sessionId, 'rig_seat_notice', { seat: want, before, deliveryId: d.deliveryId });
+      if (want) docLoadEvent(b, { ws: s.workspaceKey, seat: want, session: s.sessionId, docs: seatDocsOf(r.def, want), where: 'seat', ref: d.deliveryId }); // P219
     }
     return { session: shownName(s), sessionId: s.sessionId, seat: want, before, workspace: s.workspaceKey, ...(noticeId ? { noticeId } : {}) };
   }
   seatNoticeOf(def, seat) {
     const x = def.seats[seat] || {};
-    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide, manager: def.manager === seat });
+    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide, manager: def.manager === seat, docs: seatDocsOf(def, seat) });
   }
 
   // ---------- 건 ----------
@@ -872,7 +876,8 @@ export class RigFlow {
     return { seat: ctx.name, active: true, version: ctx.versionN ?? null, manager: !!(ctx.def.manager && ctx.def.manager === ctx.name), session: ctx.seat.session, worktree: ctx.seat.worktree, results: ctx.def.results, assign: this.assignTargets(ctx), may: ctx.seat.may, tools: ctx.seat.tools,
       case: c ? { id: c.id, state: c.state, owner: this.nameOf(c.owner) } : null,
       owned: st.casesOf(ctx.key, 50).filter((x) => x.owner === s.sessionId && LIVE_CASE.has(x.state)).map((x) => ({ id: x.id, state: x.state })), // P194: 내가 주인인 끝나지 않은 건(--case로 고른다)
-      next: ctx.def.flow.filter((l) => l.from === ctx.name && l.on !== 'assign').map((l) => ({ on: l.on, to: l.to, max: l.max, else: l.else })) };
+      next: ctx.def.flow.filter((l) => l.from === ctx.name && l.on !== 'assign').map((l) => ({ on: l.on, to: l.to, max: l.max, else: l.else })),
+      docs: seatDocsOf(ctx.def, ctx.name), writesDocs: ((ctx.def.seatDocs || {})[ctx.name] || {}).writes || [] }; // P219
   }
   // atrium guide: 자리 안내 파일
   seatGuide(s) {

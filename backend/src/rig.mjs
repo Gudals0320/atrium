@@ -19,6 +19,7 @@ import { EFFORTS } from './settings.mjs'; // P209: 자리 effort(Claude Code)
 import { CODEX_EFFORTS } from './launchers.mjs'; // P209: 자리 effort(Codex, P208의 model_reasoning_effort 옮기기와 같은 표)
 import { AMP_ATS, validateAmp } from './rig-amp.mjs'; // P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
+import { validateDocs } from './rig-docs.mjs'; // P219: rig 2 문서(docs, loads·reads·writes·records)
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
@@ -41,6 +42,8 @@ const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r
 export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN_MS } = {}) {
   const bad = (reason) => ({ ok: false, reason });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad('정의는 JSON 객체여야 한다');
+  const dv = validateDocs(raw, { root, exists: root ? (f) => { try { fs.statSync(f); return true; } catch { return false; } } : null }); // P219
+  if (!dv.ok) return dv;
   const hooks = [];
   if (raw.hooks != null) {
     if (!Array.isArray(raw.hooks)) return bad('hooks는 배열이어야 한다');
@@ -98,8 +101,9 @@ export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN
   // P188: 느린 고리(15절)
   const cy = validateCycles(raw, fl.flow, { root, exists, cycleMinMs });
   if (!cy.ok) return cy;
-  const amp = validateAmp(raw, { seats: fl.flow.seats }); if (!amp.ok) return amp; // P189
-  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, cycles: cy.cycles, amp: amp.amp } };
+  const amp = validateAmp(raw, { seats: fl.flow.seats, docs: dv.docs }); if (!amp.ok) return amp; // P189. P219: writes의 문서 이름 → 경로
+  // P219: version, docs(문서), seatDocs(자리의 loads·reads·writes 문서), hookDocs·toolDocs(records·reads). 문서 경고는 정의 경고에 더한다
+  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, warnings: [...fl.flow.warnings, ...dv.warnings], cycles: cy.cycles, amp: amp.amp, version: dv.version, docs: dv.docs, seatDocs: dv.seatDocs, hookDocs: dv.hookDocs, toolDocs: dv.toolDocs } };
 }
 
 // ---------- P195: 워크트리 자리의 저장소 조건 ----------
@@ -568,8 +572,9 @@ export class Rig {
       tools: def && def.tools ? Object.values(def.tools).map((x) => ({ name: x.name, run: x.run, desc: x.desc, timeoutMs: x.timeoutMs, parallel: x.parallel })) : [], // P183: 켜기 확인 창이 보인다
       cycleRuns: def && def.cycles ? def.cycles.filter((x) => x.run).map((x) => ({ every: x.every, run: x.run })) : [], // P188: 느린 고리의 run도 사용자 계정으로 돈다
       guide: !!(def && def.guide), name: def ? def.name : null,
+      format: def ? def.version || 1 : null, docs: def && def.docs && this.b.rigDocs ? this.b.rigDocs.stateOf(key, def) : [], // P219: 문서(마지막 바뀜, stale)
       // P185: 자리·흐름(켜기 확인 창과 노드 메뉴의 "자리 정하기"가 쓴다)
-      seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide, effort: x.effort || null, model: x.model || null })) : [], // P209: effort·model
+      seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide, effort: x.effort || null, model: x.model || null, ...((def.seatDocs || {})[x.name] || {}) })) : [], // P209: effort·model. P219: loads·reads·writes(문서)
       flow: def ? def.flow || [] : [], results: def ? def.results || [] : [], manager: def ? def.manager || null : null,
       warnings: def ? [...(def.warnings || []), ...worktreeWarnings(def.seats, wtGit || 'ok')] : [], worktreeGit: wtGit && wtGit !== 'ok' ? wtGit : null, // P195: 워크트리 자리의 저장소 조건(norepo | nocommit | null)
       // P188: 지금 버전, 느린 고리, 사람만 고치는 목록과 어긋난 것
@@ -622,6 +627,7 @@ export class Rig {
         continue;
       }
       const o = res.out;
+      if (this.b.rigDocs && r.def.hookDocs && r.def.hookDocs[h.index]) this.b.rigDocs.noteRecords(ctx.key, r.def, { hook: h.index, sessionId: ctx.session ? ctx.session.id : null }); // P219: records 훅이 쓴 장부
       const before = text; const beforeArgs = args;
       if (o.action === 'reject') {
         const rowId = st.insertHookRun({ ...rec, decision: 'reject', reason: o.reason || null, note: o.note || null });

@@ -197,6 +197,7 @@ export class ToolRuns {
   async finish({ id, r, hctx, tool, args, startedAt, logPath, hooks, res }) {
     const st = this.store();
     if (this.kill) this.kill.delete(id);
+    if (this.b.rigDocs && r.def.toolDocs && r.def.toolDocs[tool.name]) this.b.rigDocs.noteRecords(hctx.key, r.def, { tool: tool.name, sessionId: hctx.session ? hctx.session.id : null }); // P219: records 도구가 쓴 장부
     const endedAt = Date.now();
     const tail = readTail(logPath);
     let appended = null;

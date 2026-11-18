@@ -90,7 +90,7 @@ export class RigAdmin {
     out.warnings.push(...sn.warnings);
     if (sn.reason) return { ...out, ok: false, reason: sn.reason };
     if (hits.length) return { ...out, protectedHits: hits, reason: `사람만 고치는 자리를 바꾼다: ${hits.join(', ')}. 이대로 쓰면 보드가 이 정의를 쓰지 않는다(지금 버전을 그대로 쓴다).` };
-    return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), manager: v.def.manager } };
+    return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), manager: v.def.manager, format: v.def.version || 1, docs: v.def.docs ? Object.values(v.def.docs).map((d) => ({ name: d.name, role: d.role, layer: d.layer, path: d.rel || d.path, watch: d.watch })) : [] } }; // P219: 문서
   }
 
   // P209: 자리 effort·model 검사(정의 검사가 모르는 것: 런처의 종류, 지금 앉은 세션) → { reason | null, warnings }

@@ -9,8 +9,10 @@ import { seatColumns } from './rig-flow.mjs';
 import { OWNER, HUMAN } from './rig-ledger.mjs';
 
 // P217 뒤(18.5): outside(rig 밖 대상: outside:@<이름>, outside:*), instruct 변(human → 자리), now blocked(건이 막힘. stopped는 자리 세션의 멈춤만)
-export const MAP_NODE_TYPES = ['seat', 'tool', 'cycle', 'file', 'human', 'builder', 'def', 'outside'];
-export const MAP_EDGE_TYPES = ['assign', 'result', 'else', 'report', 'may', 'uses', 'writes', 'cycle', 'edits', 'instruct'];
+// P219(rig 2 R1): doc(정의의 docs 문서: role, layer, 마지막 바뀜, stale), hook(records·reads가 있는 훅), loads·reads·records 변(10절: 이제 그린다).
+//   writes 변은 문서 이름이면 doc 마디로, 경로 꼴이면 지금처럼 file 마디로 간다
+export const MAP_NODE_TYPES = ['seat', 'tool', 'cycle', 'file', 'human', 'builder', 'def', 'outside', 'doc', 'hook'];
+export const MAP_EDGE_TYPES = ['assign', 'result', 'else', 'report', 'may', 'uses', 'writes', 'cycle', 'edits', 'instruct', 'loads', 'reads', 'records'];
 export const MAP_NOW_STATES = ['working', 'idle_no_done', 'human_turn', 'queued', 'stopped', 'waiting_owner', 'blocked'];
 const LIVE = new Set(['open', 'blocked', 'waiting_owner']);
 const STEP_KINDS = new Set(['assign', 'handoff', 'report', 'escalate', 'cycle']); // 넘김 차례(passed.steps)에 드는 kind
@@ -30,7 +32,11 @@ export const E = {
   cycle: (i) => `e:cycle:${i}`,
   edits: () => 'e:edits',
   instruct: (seat) => `e:instruct:${seat}`,
+  loads: (from, doc) => `e:loads:${from}:${doc}`, // P219: from은 마디 id(seat:…)
+  reads: (from, doc) => `e:reads:${from}:${doc}`,
+  records: (from, doc) => `e:records:${from}:${doc}`,
 };
+export const docId = (n) => `doc:${n}`; // P219
 export const outsideId = (m) => `outside:${m}`; // m: '@이름' | '*'
 const hookLabel = (h) => { const w = (h.run || []).slice(-1)[0] || ''; return `${h.at} · ${path.basename(String(w)) || h.at}`; };
 // 건 주인이 앉는 자리(정의만으로): manager, 없으면 assign 줄의 첫 출발 자리, 없으면 사람
@@ -43,7 +49,8 @@ export function ownerSeatOf(def) {
 
 // ---------- 정의 그래프 ----------
 // def: validateRig의 def. o: { n, hash, protectedFiles: [경로] } → { n, hash, nodes, edges, gates }
-export function defGraph(def, { n = null, hash = null, protectedFiles = [] } = {}) {
+// P219: docState(RigDocs.stateOf: 문서마다 지금 상태)를 주면 doc 마디의 meta에 마지막 바뀜·stale·있음을 얹는다
+export function defGraph(def, { n = null, hash = null, protectedFiles = [], docState = null } = {}) {
   const nodes = []; const edges = []; const gates = [];
   if (!def) return { n, hash, nodes, edges, gates };
   const seats = def.seats || {}; const flow = def.flow || []; const tools = def.tools || {};
@@ -90,10 +97,37 @@ export function defGraph(def, { n = null, hash = null, protectedFiles = [] } = {
     // tools가 없는 자리(모든 도구)는 정적 uses 변을 그리지 않는다(마디 meta.toolsAll, 건에서 부른 도구만 오버레이가 adhoc으로)
     for (const t of x.tools || []) if (tools[t]) edges.push({ id: E.uses(name, t), type: 'uses', from: seatId(name), to: `tool:${t}`, meta: {} });
     const w = (ampSeats[name] || {}).writes;
-    if (Array.isArray(w)) for (const p of w) edges.push({ id: E.writes(name, p), type: 'writes', from: seatId(name), to: fileNode(p, { writes: [name] }), meta: {} });
+    const dw = ((def.seatDocs || {})[name] || {}).writes || []; // P219: 문서 이름으로 쓴 쓰기 범위
+    const docOfPath = (p) => dw.find((d) => def.docs && def.docs[d] && def.docs[d].rel === p) || null;
+    if (Array.isArray(w)) for (const p of w) { const d = docOfPath(p); if (d) edges.push({ id: E.writes(name, docId(d)), type: 'writes', from: seatId(name), to: docId(d), meta: { path: p } }); else edges.push({ id: E.writes(name, p), type: 'writes', from: seatId(name), to: fileNode(p, { writes: [name] }), meta: {} }); }
   }
   for (const cy of def.cycles || []) edges.push({ id: E.cycle(cy.index), type: 'cycle', from: `cycle:${cy.index}`, to: seatId(cy.to), meta: { every: cy.every } });
   edges.push({ id: E.edits(), type: 'edits', from: 'builder', to: 'def', meta: {} });
+  // P219: 문서 마디와 loads·reads·records 변
+  if (def.docs) {
+    const live = new Map((docState || []).map((x) => [x.name, x]));
+    for (const d of Object.values(def.docs)) {
+      const x = live.get(d.name) || {};
+      nodes.push({ id: docId(d.name), type: 'doc', label: d.name, meta: { path: d.rel || d.path, role: d.role, layer: d.layer, load: d.load, owner: d.owner, git: d.git, watch: d.watch, dir: !!d.dir, exists: x.exists ?? null, mtimeMs: x.mtimeMs ?? null, last: x.last || null, stale: x.stale || null } });
+    }
+    for (const [seat, x] of Object.entries(def.seatDocs || {})) {
+      if (!seats[seat]) continue;
+      for (const dn of x.loads) edges.push({ id: E.loads(seatId(seat), dn), type: 'loads', from: seatId(seat), to: docId(dn), meta: { always: def.docs[dn].load === 'always' } });
+      for (const dn of x.reads) edges.push({ id: E.reads(seatId(seat), dn), type: 'reads', from: seatId(seat), to: docId(dn), meta: {} });
+    }
+    for (const [i, x] of Object.entries(def.hookDocs || {})) {
+      const h = (def.hooks || []).find((y) => y.index === Number(i)); if (!h) continue;
+      const hid = `hook:${i}`;
+      nodes.push({ id: hid, type: 'hook', label: hookLabel(h), meta: { index: Number(i), at: h.at, run: h.run } });
+      for (const dn of x.records) edges.push({ id: E.records(hid, dn), type: 'records', from: hid, to: docId(dn), meta: {} });
+      for (const dn of x.reads) edges.push({ id: E.reads(hid, dn), type: 'reads', from: hid, to: docId(dn), meta: {} });
+    }
+    for (const [t, x] of Object.entries(def.toolDocs || {})) {
+      if (!tools[t]) continue;
+      for (const dn of x.records) edges.push({ id: E.records(`tool:${t}`, dn), type: 'records', from: `tool:${t}`, to: docId(dn), meta: {} });
+      for (const dn of x.reads) edges.push({ id: E.reads(`tool:${t}`, dn), type: 'reads', from: `tool:${t}`, to: docId(dn), meta: {} });
+    }
+  }
   nodes.push(...files.values(), ...outsides.values());
   // 관문: 훅이 걸리는 변(또는 마디)
   const ids = (t) => edges.filter((e) => e.type === t).map((e) => e.id);
@@ -262,8 +296,8 @@ export function addAdhoc(graph, c, def) {
   }
 }
 // 장부 + 정의 → 지도(세션 상태 얹기 전). o: { ws, def, n, hash, caseId, protectedFiles, events, status }
-export function buildRigMap({ ws, def, n = null, hash = null, caseId = null, protectedFiles = [], events = [], status = {}, live = {} }) {
-  const graph = defGraph(def, { n, hash, protectedFiles });
+export function buildRigMap({ ws, def, n = null, hash = null, caseId = null, protectedFiles = [], events = [], status = {}, live = {}, docState = null }) { // P219: docState
+  const graph = defGraph(def, { n, hash, protectedFiles, docState });
   const folds = foldCases(events);
   const all = [...folds.values()];
   const open = all.filter((c) => LIVE.has(c.state));
@@ -318,7 +352,8 @@ export class RigMap {
       stateOf: (sid) => { const s = b.sessions.get(sid); if (!s) return null; try { return b.summary ? b.summary(s).state : null; } catch { return null; } },
       nameOf: (sid) => { const s = b.sessions.get(sid); if (s) return shownName(s) || s.name; const row = st.getSession ? st.getSession(sid) : null; return row ? shownName(row) || row.name : null; },
     };
-    const out = buildRigMap({ ws: key, def: base.def, n: base.n, hash: base.hash, caseId: want, protectedFiles: base.protectedFiles, events: base.events, status: base.status, live });
+    const docState = base.def && base.def.docs && b.rigDocs ? b.rigDocs.stateOf(key, base.def) : null; // P219: 부를 때마다(stale은 시간에 따라 바뀐다)
+    const out = buildRigMap({ ws: key, def: base.def, n: base.n, hash: base.hash, caseId: want, protectedFiles: base.protectedFiles, events: base.events, status: base.status, live, docState });
     for (const node of out.def.nodes) {
       if (node.type === 'seat') node.meta.sessions = [...b.sessions.values()].filter((s) => s.workspaceKey === key && s.rigSeat === node.label).map((s) => ({ sessionId: s.sessionId, name: shownName(s) || s.name, state: live.stateOf(s.sessionId) }));
       if (node.type === 'builder' && b.rigSetup && b.rigSetup.isWorkspaceBuilder) node.meta.sessions = [...b.sessions.values()].filter((s) => s.workspaceKey === key && (() => { try { return b.rigSetup.isWorkspaceBuilder(s); } catch { return false; } })()).map((s) => ({ sessionId: s.sessionId, name: shownName(s) || s.name, state: live.stateOf(s.sessionId) }));
