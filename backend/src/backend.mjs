@@ -20,6 +20,7 @@ import { rigFlowHandlers, seatNamed } from './rig-flow.mjs'; // P185: rig.seat·
 import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·create·describe·get·save·spawnSeat
 import { rigAdminHandlers } from './rig-admin.mjs';
 import { humanMessage } from './rig-ledger.mjs'; // P217: 장부(사람 글)
+import { rigLoopHandlers } from './rig-loops.mjs'; // P221: rig.loops·pause·resume·name
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
 import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
@@ -1616,6 +1617,19 @@ export class Backend {
         return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, rejected: true };
       }
       body = h.text;
+      // P221(rig 2 R2): request 고리의 입구 자리 세션에 사람이 보낸 글은 새 회를 연다(그 고리의 회를 쥐었으면 이어지는 지시, 멈췄으면 요청이 줄에 선다)
+      const rq = this.branch && this.branch.flow && this.branch.flow.loops && p.whileWorking !== 'type' ? this.branch.flow.loops.onRequest(s, { kind: 'human' }, body) : null;
+      if (rq && rq.held) {
+        const d = this.queue.refuse(s.sessionId, body, `rig: 고리 ${rq.loop}가 멈춰 있어 요청을 줄에 세웠다. 잇기(atrium rig resume ${rq.loop})에 회가 열린다.`, { origin: { kind: 'human' } });
+        humanMessage(this, s, d.deliveryId, body);
+        return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, held: true, loop: rq.loop };
+      }
+      if (rq && rq.made) {
+        this.touch(s);
+        const d0 = rq.made.d || null;
+        humanMessage(this, s, d0 ? d0.deliveryId : null, body);
+        return { deliveryId: d0 ? d0.deliveryId : null, sessionId: s.sessionId, name: shownName(s), status: d0 ? d0.status : 'queued', run: { caseId: rq.caseId, loop: rq.loop, name: rq.name, unitId: rq.made.unit.id, held: !!rq.made.held } };
+      }
       const d = this.queue.enqueue(s.sessionId, body, { typeNow: p.whileWorking === 'type', origin: { kind: 'human' } });
       this.touch(s);
       humanMessage(this, s, d.deliveryId, body); // P217: 사람이 rig 자리 세션에 보낸 글(장부)
@@ -2129,6 +2143,7 @@ export class Backend {
       ...rigHandlers(this), // rig.status·rig.enable·rig.disable
       ...rigFlowHandlers(this), // P185: rig.seat(사람만, 이 PC의 창)·rig.cases
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만)
+      ...rigLoopHandlers(this), // P221: 고리 목록, 멈추기·잇기, 회 이름 고치기
       ...rigMapHandlers(this), // P217: 장부 읽기(rig.events)와 구조 지도 데이터(rig.map)
       ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)

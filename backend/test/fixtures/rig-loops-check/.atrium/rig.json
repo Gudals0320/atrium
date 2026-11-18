@@ -1,0 +1,42 @@
+{
+  "version": 2,
+  "name": "regular-check",
+  "docs": {
+    "check-log": {
+      "path": "ledger/checks.jsonl",
+      "role": "ledger",
+      "git": false,
+      "owner": "check"
+    },
+    "reports": {
+      "path": "reports/",
+      "role": "sector",
+      "intake": "register"
+    }
+  },
+  "seats": {
+    "checker": {
+      "launcher": "claude",
+      "session": "fresh",
+      "max_live": 1,
+      "guide": ".atrium/seats/checker.txt",
+      "writes": [
+        "check-log",
+        "reports"
+      ]
+    }
+  },
+  "loops": {
+    "check": {
+      "kind": "work",
+      "trigger": {
+        "every": "7d"
+      },
+      "entry": "checker",
+      "produces": [
+        "reports"
+      ],
+      "task": "Weekly check: look at failing CI runs, stale issues and pull requests, and outdated dependencies. Write one report file under reports/ and append one line per finding to ledger/checks.jsonl. Do not fix anything; list what a person should pick. Then close with done."
+    }
+  }
+}

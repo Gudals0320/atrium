@@ -110,7 +110,7 @@ export class WorkUnits {
     const ctx = flow && unit.caseId && t ? flow.seatCtx(t, { caseId: unit.caseId }) : null; // P188: 건의 버전
     if (ctx) {
       const v = unit.via || {};
-      const by = v.cycle != null ? `보드의 느린 고리 cycles[${v.cycle}]가 만듦` : v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
+      const by = v.loop ? `보드의 ${v.loop} 고리(${v.every}마다)가 연 회` : v.request ? `${v.request} 고리의 요청(${v.by === HUMAN_FROM ? '사람' : `@${this.nameOf(v.by)}`})이 연 회` : v.cycle != null ? `보드의 느린 고리 cycles[${v.cycle}]가 만듦` : v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
       return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide, docs: seatDocsOf(ctx.def, ctx.name) }); // P188: 세 줄. 값과 자리 목록은 atrium me. P219: 문서 목록 꼬리
     }
     return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)), kind: t ? t.kind || 'claude' : null }); // P208
@@ -247,7 +247,7 @@ export class WorkUnits {
     if (unit.caseId) rigEvent(b, { kind: 'done', caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: caller.rigSeat || unit.seat || null, session: caller.sessionId, value: result, actor: 'agent', ref: noticeDeliveryId, text: clip(text.replace(/\s+/g, ' '), 200), data: { chars: text.length, claimedBy, ms: now - (tr.startedAt || now) } }); // P217
     b.log(`unit ${unit.id} done ${result} by ${caller.name} → ${parent ? parent.name : '(closed)'} via ${claimedBy}`);
     if (this.branch && this.branch.news) this.branch.news.onDone(caller, unit, result, text); // P204: 동료 소식에 done 한 줄
-    if (human && b.rigSetup) try { b.rigSetup.onDone(unit, st.getTry(tr.id)); } catch (e) { b.log('rig builder done error', e.stack); }
+    if (human && unit.origin === BUILDER_ORIGIN && b.rigSetup) try { b.rigSetup.onDone(unit, st.getTry(tr.id)); } catch (e) { b.log('rig builder done error', e.stack); }
     const next = this.pump(caller.sessionId);
     return { unit: unit.id, result, parent: this.nameOf(unit.from), parentOpen: !!parent, claimedBy, next: next ? { unit: next.tryRow.unitId } : null, queued: st.queuedUnitsOf(caller.sessionId).length, ...(unit.caseId ? { caseId: unit.caseId, seat: caller.rigSeat || null } : {}) };
   }

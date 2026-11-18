@@ -208,7 +208,7 @@ export class AgentVerbs {
     let plan, made = null, caseInfo = null;
     if (fp && fp.kind === 'unit') {
       // P185: 자리로 맡기기. 보낸 세션이 쥔 건을 잇거나 새 건을 연다. keep은 앉은 세션(없으면 띄움), fresh는 새 세션(max_live면 자리 줄)
-      const c = flow.caseFor(caller, fp.ctx.key, { caseId: o.caseId != null && String(o.caseId).trim() ? String(o.caseId).trim() : null }); // P194: --case
+      const c = flow.caseFor(caller, fp.ctx.key, { caseId: o.caseId != null && String(o.caseId).trim() ? String(o.caseId).trim() : null, spec: text }); // P194: --case. P221: 새 회면 글의 첫 줄이 회 이름
       const a = await flow.assign({ ctx: fp.ctx, c, by: caller, seatName: fp.seatName, t: fp.t, spec: text, origin: 'prompt' });
       caseInfo = { caseId: c.id, seat: fp.seatName };
       if (a.seatWait) {
@@ -219,6 +219,15 @@ export class AgentVerbs {
     } else if (fp && fp.kind === 'followup') plan = { kind: 'followup', tryRow: fp.tryRow, unit: fp.unit };
     else if (fp) plan = { kind: 'plain' };
     else plan = U ? U.plan(caller, t, { now: !!o.now }) : { kind: 'plain' };
+    // P221(rig 2 R2): rig 밖 세션이 request 고리의 입구 자리 세션에 보낸 글은 새 회를 연다(입구 세션이 그 고리의 회를 쥐었으면 이어지는 지시, 고리가 멈췄으면 요청이 줄에 선다)
+    if (!fp && !o.now && flow && flow.loops && plan.kind !== 'followup' && t.rigSeat && !(caller.rigSeat && caller.workspaceKey === t.workspaceKey)) {
+      const rq = flow.loops.onRequest(t, { kind: 'agent', session: caller }, text);
+      if (rq && rq.held) {
+        b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: null, held: true, loopPaused: rq.loop, chars: text.length });
+        return { ...this.head(t), deliveryId: null, woke: false, tag: null, unit: null, loop: { name: rq.loop, paused: true, held: rq.id }, delivery: { status: 'queued', reason: 'loop_paused' }, state: null, turn: null, next: null };
+      }
+      if (rq) { made = rq.made; plan = { kind: 'unit' }; caseInfo = { caseId: rq.caseId, seat: t.rigSeat, loop: rq.loop, name: rq.name }; }
+    }
     const woke = this.asleep(t);
     if (!made && plan.kind === 'unit') made = U.create(caller, t, text, 'prompt');
     if (made && made.held) return this.heldPrompt(caller, t, made, o, res, woke, caseInfo);

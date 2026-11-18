@@ -20,6 +20,7 @@ import { CODEX_EFFORTS } from './launchers.mjs'; // P209: 자리 effort(Codex, P
 import { AMP_ATS, validateAmp } from './rig-amp.mjs'; // P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { validateDocs } from './rig-docs.mjs'; // P219: rig 2 문서(docs, loads·reads·writes·records)
+import { spreadLoops, loopFlowReason, finishLoops } from './rig-loops.mjs'; // P221: rig 2 고리(loops)
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
@@ -95,15 +96,19 @@ export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN
       tools[name] = { name, run: x.run.slice(), desc: x.desc || '', timeoutMs: Math.min(Number(x.timeoutMs) || TOOL_TIMEOUT_MS, TOOL_TIMEOUT_MAX_MS), parallel: x.parallel === true };
     }
   }
-  // P185: 자리·흐름(3단계, docs research harness-arch.md 14절)
-  const fl = validateFlow(raw, { root, exists, tools });
-  if (!fl.ok) return fl;
+  // P185: 자리·흐름(3단계, docs research harness-arch.md 14절). P221: loops가 있으면 고리마다의 flow 줄을 펴서 같은 검사를 지난다
+  const sp = spreadLoops(raw);
+  if (!sp.ok) return sp;
+  const fl0 = validateFlow(sp.raw, { root, exists, tools });
+  if (!fl0.ok) return { ok: false, reason: loopFlowReason(fl0.reason, sp.lineOf) };
+  const fl = sp.lineOf ? { ...fl0, flow: { ...fl0.flow, warnings: fl0.flow.warnings.map((w) => loopFlowReason(w, sp.lineOf)) } } : fl0;
   // P188: 느린 고리(15절)
   const cy = validateCycles(raw, fl.flow, { root, exists, cycleMinMs });
   if (!cy.ok) return cy;
   const amp = validateAmp(raw, { seats: fl.flow.seats, docs: dv.docs }); if (!amp.ok) return amp; // P189. P219: writes의 문서 이름 → 경로
+  const lp = finishLoops(raw, fl.flow, cy.cycles, dv.docs, sp.lineOf, { cycleMinMs }); if (!lp.ok) return lp; // P221: 고리(loops 없으면 work·improve로 읽음)
   // P219: version, docs(문서), seatDocs(자리의 loads·reads·writes 문서), hookDocs·toolDocs(records·reads). 문서 경고는 정의 경고에 더한다
-  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, warnings: [...fl.flow.warnings, ...dv.warnings], cycles: cy.cycles, amp: amp.amp, version: dv.version, docs: dv.docs, seatDocs: dv.seatDocs, hookDocs: dv.hookDocs, toolDocs: dv.toolDocs } };
+  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, warnings: [...fl.flow.warnings, ...dv.warnings, ...lp.warnings], cycles: cy.cycles, loops: lp.loops, amp: amp.amp, version: dv.version, docs: dv.docs, seatDocs: dv.seatDocs, hookDocs: dv.hookDocs, toolDocs: dv.toolDocs } };
 }
 
 // ---------- P195: 워크트리 자리의 저장소 조건 ----------
@@ -579,6 +584,7 @@ export class Rig {
       warnings: def ? [...(def.warnings || []), ...worktreeWarnings(def.seats, wtGit || 'ok')] : [], worktreeGit: wtGit && wtGit !== 'ok' ? wtGit : null, // P195: 워크트리 자리의 저장소 조건(norepo | nocommit | null)
       // P188: 지금 버전, 느린 고리, 사람만 고치는 목록과 어긋난 것
       version: r.n ?? null, cycles: def && def.cycles ? def.cycles.map((x) => ({ every: x.every, to: x.to, run: x.run })) : [],
+      loops: def && this.b.branch && this.b.branch.flow && this.b.branch.flow.loops ? this.b.branch.flow.loops.view(key, def) : [], // P221: 고리와 상태
       protected: this.rigProtected(key) || { pointers: [], files: [] }, protectedHits: r.protectedHits || [], changedFiles: this.changedFiles(key).map((x) => x.path),
     };
   }

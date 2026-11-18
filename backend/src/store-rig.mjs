@@ -43,6 +43,14 @@ export const RIG_ADMIN_SCHEMA = `
 CREATE TABLE IF NOT EXISTS rig_versions (workspace_key TEXT NOT NULL, n INTEGER NOT NULL, hash TEXT NOT NULL, t INTEGER NOT NULL, by TEXT NOT NULL, note TEXT, file TEXT, PRIMARY KEY (workspace_key, n)) STRICT;
 CREATE TABLE IF NOT EXISTS rig_cycles (workspace_key TEXT NOT NULL, line INTEGER NOT NULL, next_at INTEGER NOT NULL, last_at INTEGER, sig TEXT, PRIMARY KEY (workspace_key, line)) STRICT;
 `;
+// P221(rig 2 R2): 고리. rig_loops: 고리마다 멈춤(paused_at·paused_by)과 every 계기의 다음·마지막 시각(next_at·last_at, sig는 계기의 모양).
+//   cycles에서 읽은 고리(정의에 loops가 없음)의 시각은 그대로 rig_cycles에 있고 여기에는 멈춤만 둔다.
+//   rig_loop_requests: 고리가 멈춘 동안 입구 자리에 온 요청(잇기에 그 차례대로 회를 연다). state: held | opened | dropped
+export const RIG_LOOPS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS rig_loops (workspace_key TEXT NOT NULL, loop TEXT NOT NULL, paused_at INTEGER, paused_by TEXT, next_at INTEGER, last_at INTEGER, sig TEXT, PRIMARY KEY (workspace_key, loop)) STRICT;
+CREATE TABLE IF NOT EXISTS rig_loop_requests (id INTEGER PRIMARY KEY, workspace_key TEXT NOT NULL, loop TEXT NOT NULL, session_id TEXT NOT NULL, from_kind TEXT NOT NULL, from_session TEXT, text TEXT NOT NULL, t INTEGER NOT NULL, state TEXT NOT NULL, case_id TEXT) STRICT;
+CREATE INDEX IF NOT EXISTS rig_loop_requests_ws ON rig_loop_requests(workspace_key, loop, state, id);
+`;
 // P217: rig 장부(18.1). 추가만 하는 표. seq는 AUTOINCREMENT라 지운 뒤에도 다시 쓰지 않는다(읽은 자리 커서의 기준).
 //   쓰는 곳은 rig-ledger.mjs rigEvent 하나(insertRigEvent). 지우는 곳은 보관 정리(pruneRigEvents) 하나
 export const RIG_EVENTS_SCHEMA = `
@@ -58,14 +66,14 @@ export const RIG_COLUMNS = {
   workspaces: { rig_enabled: 'INTEGER', rig_enabled_at: 'INTEGER', rig_protected: 'TEXT' }, // P188: rig_protected(사람만 고치는 목록)
   deliveries: { origin: 'TEXT', from_session: 'TEXT' },
   rig_hook_runs: { tool_run_id: 'TEXT' }, // P183: 도구 훅이면 그 실행
-  rig_cases: { version_n: 'INTEGER', owner_wait: 'TEXT', owner_wait_delivery: 'TEXT' }, // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다). P209: 주인 기다림의 종류(report | escalated)와 보고 전달 ID
+  rig_cases: { version_n: 'INTEGER', owner_wait: 'TEXT', owner_wait_delivery: 'TEXT', loop: 'TEXT', name: 'TEXT', name_by: 'TEXT', paused_at: 'INTEGER', paused_by: 'TEXT', held: 'TEXT' }, // P221(rig 2 R2): 회의 고리(loop), 회 이름(name·name_by: auto | human | owner | manager), 회 멈춤(paused_at·paused_by), 멈춘 동안 붙잡은 넘김(held JSON [{ unitId, session, seat, result, text }]) // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다). P209: 주인 기다림의 종류(report | escalated)와 보고 전달 ID
   // P188: 사람만 고치는 목록. JSON { pointers: ["/seats/reviewer", …], files: [{ path, sha256, at }] } | null
 };
 const J = (s, d = null) => { if (s == null) return d; try { return JSON.parse(s); } catch { return d; } };
 const toolRow = (r) => (r ? { id: r.id, sessionId: r.session_id, workspaceKey: r.workspace_key ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, tool: r.tool, argv: J(r.argv, []), args: J(r.args, []), argsGiven: J(r.args_given), cwd: r.cwd ?? null, rigHash: r.rig_hash ?? null, status: r.status, exitCode: r.exit_code ?? null, startedAt: r.started_at, endedAt: r.ended_at ?? null, logPath: r.log_path ?? null, logBytes: r.log_bytes ?? null, logCut: !!r.log_cut, outSha256: r.out_sha256 ?? null, hooks: J(r.hooks, []), appended: r.appended ?? null, error: r.error ?? null } : null);
 const TOOL_COLS = { status: 'status', exitCode: 'exit_code', endedAt: 'ended_at', logBytes: 'log_bytes', logCut: 'log_cut', outSha256: 'out_sha256', hooks: 'hooks', appended: 'appended', error: 'error', args: 'args', argv: 'argv' };
 
-const caseRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, owner: r.owner_session, state: r.state, createdAt: r.created_at, closedAt: r.closed_at ?? null, edgeCounts: J(r.edge_counts, {}) || {}, blockedReason: r.blocked_reason ?? null, versionN: r.version_n ?? null, ownerWait: r.owner_wait ?? null, ownerWaitDelivery: r.owner_wait_delivery ?? null } : null);
+const caseRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, owner: r.owner_session, state: r.state, createdAt: r.created_at, closedAt: r.closed_at ?? null, edgeCounts: J(r.edge_counts, {}) || {}, blockedReason: r.blocked_reason ?? null, versionN: r.version_n ?? null, ownerWait: r.owner_wait ?? null, ownerWaitDelivery: r.owner_wait_delivery ?? null, loop: r.loop ?? null, name: r.name ?? null, nameBy: r.name_by ?? null, pausedAt: r.paused_at ?? null, pausedBy: r.paused_by ?? null, held: J(r.held, []) || [] } : null);
 const versionRow = (r) => (r ? { workspaceKey: r.workspace_key, n: r.n, hash: r.hash, t: r.t, by: r.by, note: r.note ?? null, file: r.file ?? null } : null);
 // P185: 일 행 + 건 칸(store-units.mjs의 unitRow와 같은 모양). 자리 줄에 선 일은 to가 null
 const flowUnitRow = (r) => (r ? { id: r.id, from: r.from_session, to: r.to_session || null, origin: r.origin, spec: r.spec, status: r.status, createdAt: r.created_at, closedAt: r.closed_at ?? null, caseId: r.case_id ?? null, seat: r.seat ?? null, via: J(r.via) } : null);
@@ -153,12 +161,12 @@ export function installRig(Store) {
     },
     // ---------- P185: 자리와 건 ----------
     setSessionSeat(sessionId, seat) { this.st('UPDATE sessions SET rig_seat = ? WHERE session_id = ?').run(seat || null, sessionId); },
-    insertCase(c) { this.st('INSERT INTO rig_cases (id, workspace_key, owner_session, state, created_at, closed_at, edge_counts, blocked_reason, version_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(c.id, c.workspaceKey, c.owner, c.state || 'open', c.createdAt, c.closedAt ?? null, JSON.stringify(c.edgeCounts || {}), c.blockedReason ?? null, c.versionN ?? null); },
+    insertCase(c) { this.st('INSERT INTO rig_cases (id, workspace_key, owner_session, state, created_at, closed_at, edge_counts, blocked_reason, version_n, loop, name, name_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(c.id, c.workspaceKey, c.owner, c.state || 'open', c.createdAt, c.closedAt ?? null, JSON.stringify(c.edgeCounts || {}), c.blockedReason ?? null, c.versionN ?? null, c.loop ?? null, c.name ?? null, c.nameBy ?? null); },
     getCase(id) { return caseRow(this.st('SELECT * FROM rig_cases WHERE id = ?').get(id)); },
     updateCase(id, fields) {
-      const cols = { state: 'state', closedAt: 'closed_at', edgeCounts: 'edge_counts', blockedReason: 'blocked_reason', ownerWait: 'owner_wait', ownerWaitDelivery: 'owner_wait_delivery' };
+      const cols = { state: 'state', closedAt: 'closed_at', edgeCounts: 'edge_counts', blockedReason: 'blocked_reason', ownerWait: 'owner_wait', ownerWaitDelivery: 'owner_wait_delivery', loop: 'loop', name: 'name', nameBy: 'name_by', pausedAt: 'paused_at', pausedBy: 'paused_by', held: 'held' }; // P221
       const sets = []; const vals = [];
-      for (const [k, v] of Object.entries(fields)) { if (!cols[k]) throw new Error('unknown field ' + k); sets.push(`${cols[k]} = ?`); vals.push(k === 'edgeCounts' ? JSON.stringify(v || {}) : v ?? null); }
+      for (const [k, v] of Object.entries(fields)) { if (!cols[k]) throw new Error('unknown field ' + k); sets.push(`${cols[k]} = ?`); vals.push(k === 'edgeCounts' ? JSON.stringify(v || {}) : k === 'held' ? (v && v.length ? JSON.stringify(v) : null) : v ?? null); }
       if (sets.length) this.st(`UPDATE rig_cases SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     },
     casesOf(workspaceKey, limit = 50) { return this.st('SELECT * FROM rig_cases WHERE workspace_key = ? ORDER BY created_at DESC, rowid DESC LIMIT ?').all(workspaceKey, limit).map(caseRow); },
@@ -255,6 +263,25 @@ export function installRig(Store) {
     },
     getCycle(key, line) { const r = this.st('SELECT * FROM rig_cycles WHERE workspace_key = ? AND line = ?').get(key, line); return r ? { workspaceKey: r.workspace_key, line: r.line, nextAt: r.next_at, lastAt: r.last_at ?? null, sig: r.sig ?? null } : null; },
     setCycle(key, line, { nextAt, lastAt = null, sig = null }) { this.st('INSERT INTO rig_cycles (workspace_key, line, next_at, last_at, sig) VALUES (?, ?, ?, ?, ?) ON CONFLICT(workspace_key, line) DO UPDATE SET next_at = excluded.next_at, last_at = excluded.last_at, sig = excluded.sig').run(key, line, nextAt, lastAt, sig); },
+    // ---------- P221: 고리(rig_loops, rig_loop_requests) ----------
+    getLoopRow(key, loop) { const r = this.st('SELECT * FROM rig_loops WHERE workspace_key = ? AND loop = ?').get(key, loop); return r ? { loop: r.loop, pausedAt: r.paused_at ?? null, pausedBy: r.paused_by ?? null, nextAt: r.next_at ?? null, lastAt: r.last_at ?? null, sig: r.sig ?? null } : null; },
+    setLoopRow(key, loop, f) {
+      const cur = this.getLoopRow(key, loop) || { pausedAt: null, pausedBy: null, nextAt: null, lastAt: null, sig: null };
+      const x = { ...cur, ...f };
+      this.st('INSERT INTO rig_loops (workspace_key, loop, paused_at, paused_by, next_at, last_at, sig) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_key, loop) DO UPDATE SET paused_at = excluded.paused_at, paused_by = excluded.paused_by, next_at = excluded.next_at, last_at = excluded.last_at, sig = excluded.sig').run(key, loop, x.pausedAt ?? null, x.pausedBy ?? null, x.nextAt ?? null, x.lastAt ?? null, x.sig ?? null);
+    },
+    insertLoopRequest(x) { return Number(this.st('INSERT INTO rig_loop_requests (workspace_key, loop, session_id, from_kind, from_session, text, t, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(x.workspaceKey, x.loop, x.sessionId, x.fromKind, x.fromSession ?? null, x.text, x.t ?? Date.now(), 'held').lastInsertRowid); },
+    heldLoopRequests(key, loop) { return this.st("SELECT * FROM rig_loop_requests WHERE workspace_key = ? AND loop = ? AND state = 'held' ORDER BY id").all(key, loop).map((r) => ({ id: Number(r.id), workspaceKey: r.workspace_key, loop: r.loop, sessionId: r.session_id, fromKind: r.from_kind, fromSession: r.from_session ?? null, text: r.text, t: r.t })); },
+    setLoopRequest(id, state, caseId = null) { this.st('UPDATE rig_loop_requests SET state = ?, case_id = ? WHERE id = ?').run(state, caseId, id); },
+    // 고리의 회(건): 끝나지 않은 수, 전체 수, 마지막 회
+    loopRunStats(key) {
+      const out = {};
+      for (const r of this.st("SELECT loop, COUNT(*) AS n, SUM(CASE WHEN state IN ('open', 'blocked', 'waiting_owner') THEN 1 ELSE 0 END) AS live FROM rig_cases WHERE workspace_key = ? GROUP BY loop").all(key)) out[r.loop ?? ''] = { total: Number(r.n), live: Number(r.live || 0) };
+      for (const k of Object.keys(out)) { const c = this.st('SELECT * FROM rig_cases WHERE workspace_key = ? AND ' + (k === '' ? 'loop IS NULL' : 'loop = ?') + ' ORDER BY created_at DESC, rowid DESC LIMIT 1').get(...(k === '' ? [key] : [key, k])); out[k].last = caseRow(c); }
+      return out;
+    },
+    liveCasesOfLoop(key, loop) { return this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND loop = ? AND state IN ('open', 'blocked', 'waiting_owner') ORDER BY created_at").all(key, loop).map(caseRow); },
+    casesWithHeld(key) { return this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND held IS NOT NULL ORDER BY created_at").all(key).map(caseRow); },
     dropCyclesFrom(key, line) { this.st('DELETE FROM rig_cycles WHERE workspace_key = ? AND line >= ?').run(key, line); },
     // 느린 고리 요약의 재료(그 기간 [since, until))
     rigPeriod(key, since, until) {
