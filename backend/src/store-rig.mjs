@@ -179,8 +179,8 @@ export function installRig(Store) {
     // 건 여럿의 일과 일마다 마지막 시도의 값·done 글(한 질의, lastTryOfUnit을 일마다 부르지 않는다) → { [건]: [일 + { tryResult, tryDoneText }] }(만든 차례)
     unitsOfCasesWithTry(caseIds) {
       const out = {}; if (!caseIds.length) return out;
-      const rows = this.db.prepare(`SELECT u.*, t.result AS t_result, t.done_text AS t_done FROM work_units u LEFT JOIN unit_tries t ON t.id = (SELECT t2.id FROM unit_tries t2 WHERE t2.unit_id = u.id ORDER BY t2.started_at DESC LIMIT 1) WHERE u.case_id IN (${caseIds.map(() => '?').join(',')}) ORDER BY u.created_at, u.rowid`).all(...caseIds);
-      for (const r of rows) (out[r.case_id] || (out[r.case_id] = [])).push({ ...flowUnitRow(r), tryResult: r.t_result ?? null, tryDoneText: r.t_done ?? null });
+      const rows = this.db.prepare(`SELECT u.*, t.result AS t_result, t.done_text AS t_done, t.stop_reason AS t_stop, t.ended_at AS t_ended, t.id AS t_id FROM work_units u LEFT JOIN unit_tries t ON t.id = (SELECT t2.id FROM unit_tries t2 WHERE t2.unit_id = u.id ORDER BY t2.started_at DESC LIMIT 1) WHERE u.case_id IN (${caseIds.map(() => '?').join(',')}) ORDER BY u.created_at, u.rowid`).all(...caseIds);
+      for (const r of rows) (out[r.case_id] || (out[r.case_id] = [])).push({ ...flowUnitRow(r), tryResult: r.t_result ?? null, tryDoneText: r.t_done ?? null, tryStop: r.t_stop ?? null, tryEnded: r.t_ended ?? null, tryId: r.t_id ?? null });
       return out;
     },
     // 끝나지 않은 건(open·blocked·waiting_owner), 최근 것부터 limit개와 전체 수

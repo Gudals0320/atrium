@@ -7,7 +7,7 @@ import { m } from './msg.mjs'; // P16: 줄마다 화면 글 열쇠(msg)도 준�
 // P129: 터미널 서버 이벤트는 terminal_*이다. 옛 이름(herdr_*)은 업데이트 전 기록이라 함께 읽는다
 const OLD_DOWN = 'herdr_disconnected', OLD_UP = 'herdr_connected';
 export const CHANGE_KINDS = ['state', 'hook', 'closed', 'turn_interrupted', 'terminal_disconnected', 'terminal_connected', OLD_DOWN, OLD_UP, 'backend_started', 'rig_protected', 'rig_builder_stop']; // P190: rig_builder_stop(사람이 맡긴 rig 제작 일이 보고 없이 멈춤 → 사람의 차례) // P188: rig_protected(사람만 고치는 목록과 어긋남 → 사람의 차례)
-const BUILDER_WHY = { idle_no_done: '보고 없이 쉼', turn_error: '오류로 턴이 끝남', needs_human: '사람의 답을 기다림', closed: '세션이 닫힘' };
+const BUILDER_WHY = { idle_no_done: '보고 없이 쉼', turn_error: '오류로 턴이 끝남', needs_human: '사람의 답을 기다림', closed: '세션이 닫힘', exited: '에이전트가 끝남' }; // P216: exited
 const ORDER = { needs_you: 0, error: 1, interrupted: 2, exited: 3, turn_done: 4, terminal: 5, backend: 6 };
 
 const EXIT_TEXT = { normal: '정상 종료', user: '직접 종료', trust_declined: "폴더 신뢰 거부로 종료", other: "종료됨" };

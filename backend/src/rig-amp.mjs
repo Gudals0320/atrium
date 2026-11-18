@@ -249,7 +249,7 @@ export class RigAmp {
     const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
     const toolName = String(body.tool_name || ''); const toolInput = body.tool_input || {};
     const w = writesVerdict({ writes: x.writes, toolName, toolInput, base: x.cwd, unitId: tr ? tr.unitId : null });
-    if (w) { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'deny', why: 'writes', tool: toolName }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'writes', tool: toolName }, w); return denyBody(w); }
+    if (w) { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'deny', why: 'writes', tool: toolName }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'writes', tool: toolName, target: String(toolInput.file_path || toolInput.path || toolInput.notebook_path || '') || null }, w); return denyBody(w); }
     const hooks = x.preTool.filter((p) => !p.match || new RegExp(`^(?:${p.match})$`).test(toolName)).map((p) => p.index);
     if (!hooks.length) return null;
     const unit = tr && st.getUnit ? st.getUnit(tr.unitId) : null;

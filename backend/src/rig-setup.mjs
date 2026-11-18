@@ -22,7 +22,7 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 export const DESCRIBE_MAX = 20000;
 const SAVE_KEYS = ['seats', 'flow', 'results'];
 const HUMAN_GRACE_MS = 3000; // 제작 일이 닫힌 바로 뒤에 읽힌 고침도 그 일의 것으로 본다(파일 수정 시각과 닫힌 시각의 틈)
-const BUILDER_STOP_WHY = { idle_no_done: '보고(atrium done) 없이 쉰다', turn_error: '오류로 턴이 끝났다', needs_human: '사람의 답을 기다린다', closed: '세션이 닫혔다' };
+const BUILDER_STOP_WHY = { idle_no_done: '보고(atrium done) 없이 쉰다', turn_error: '오류로 턴이 끝났다', needs_human: '사람의 답을 기다린다', closed: '세션이 닫혔다', exited: '에이전트가 끝나 셸만 남았다' }; // P216: exited
 // 값이 null·undefined인 칸을 뺀 얕은 사본
 const compact = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== null && v !== undefined));
 const atomicWrite = (file, text) => { const tmp = `${file}.atrium-${process.pid}-${Date.now()}`; fs.writeFileSync(tmp, text); fs.renameSync(tmp, file); };

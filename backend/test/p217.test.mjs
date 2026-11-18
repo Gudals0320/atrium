@@ -10,14 +10,14 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
-import { newRuntime, applyHook, applyTermStatus, deriveState } from '../src/state.mjs';
+import { newRuntime, applyHook, applyTermStatus, deriveState, applyAgentReleased } from '../src/state.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { DeliveryQueue } from '../src/delivery.mjs';
 import { Branch } from '../src/branch.mjs';
 import { Rig, validateRig } from '../src/rig.mjs';
 import { RigAmp } from '../src/rig-amp.mjs';
 import { RIG_EVENT_KINDS, rigEvent, humanMessage, parseSince, eventLine } from '../src/rig-ledger.mjs';
-import { buildRigMap, defGraph, foldCases, RigMap, rigMapHandlers, MAP_NODE_TYPES, MAP_EDGE_TYPES, MAP_NOW_STATES, E } from '../src/rig-map.mjs';
+import { buildRigMap, defGraph, foldCases, RigMap, rigMapHandlers, MAP_NODE_TYPES, MAP_EDGE_TYPES, MAP_NOW_STATES, GATE_STATES, E } from '../src/rig-map.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE = path.join(HERE, 'fixtures', 'rig-flow-sample');
@@ -403,6 +403,10 @@ function mockLedger() {
   ev('try_start', { unitId: 'u9', seat: 'merger', session: 'S-m1' });
   ev('gate', { unitId: 'u9', seat: 'merger', value: 'reject', actor: 'hook', ref: '22', data: { at: 'tool-before', hook: 2, tool: 'merge' } });
   ev('try_stopped', { unitId: 'u9', seat: 'merger', session: 'S-m1', value: 'idle_no_done' });
+  ev('gate', { unitId: 'u5', seat: 'implementer', value: 'reject', actor: 'board', data: { at: 'pre-tool', hook: null, why: 'writes', target: 'src/outside.js' } });
+  ev('human_message', { unitId: 'u7', seat: 'security', session: 'S-s2', fromSeat: '@human', toSeat: 'security', actor: 'human', text: 'check the token path too' });
+  ev('tool_start', { seat: 'lead', session: 'S-lead', ref: 'trL', data: { tool: 'test' } });
+  ev('gate', { seat: 'lead', session: 'S-lead', value: 'pass', actor: 'hook', ref: '30', data: { at: 'tool-after', hook: 3, tool: 'test' } });
   // 건 K2: 자리 줄에 선 조사
   ev('case_open', { caseId: 'K2', seat: 'lead', session: 'S-lead', actor: 'agent' });
   ev('assign', { caseId: 'K2', unitId: 'v1', fromSeat: 'lead', toSeat: 'researcher', line: 0, value: 'assign', data: { queued: true } });
@@ -444,8 +448,14 @@ test('P217 rig.map 정의 그래프: 복잡한 견본(자리 7, 훅 5, 도구 2,
   assert.deepEqual(rep['seat:researcher'], ['ok', 'failed', 'rejected']);
   assert.deepEqual(rep['seat:security'], ['ok', 'failed']);
   assert.ok(!rep['seat:lead'], '주인 자리 자신은 보고 변이 없다');
-  assert.ok(by('uses').includes(E.uses('implementer', 'test')) && by('uses').includes(E.uses('merger', 'merge')));
-  assert.ok(!by('uses').includes(E.uses('implementer', 'merge')), '자리 tools만');
+  // tools가 없는 자리(모든 도구)는 정적 uses 변이 없다(18.5 9)
+  assert.deepEqual(by('uses'), [E.uses('implementer', 'test'), E.uses('merger', 'merge')].sort());
+  assert.equal(seats.find((n) => n.label === 'lead').meta.toolsAll, true); assert.equal(impl.toolsAll, false);
+  // 사람 → keep 자리(instruct), rig 밖 대상(outside)과 관리자의 암묵 변(18.5 1·2)
+  assert.deepEqual(by('instruct'), [E.instruct('lead')]);
+  assert.deepEqual(g.nodes.filter((n) => n.type === 'outside').map((n) => n.id).sort(), ['outside:*', 'outside:@release-bot']);
+  assert.ok(g.edges.some((e) => e.type === 'may' && e.from === 'seat:merger' && e.to === 'outside:@release-bot'));
+  const imp = g.edges.find((e) => e.id === E.may('lead', '*')); assert.equal(imp.to, 'outside:*'); assert.equal(imp.meta.implicit, true);
   assert.ok(by('writes').includes(E.writes('docs', 'docs/')));
   assert.deepEqual(by('cycle'), [E.cycle(0)]); assert.deepEqual(by('edits'), [E.edits()]);
   assert.ok(g.edges.some((e) => e.type === 'may' && e.from === 'seat:merger' && e.to === 'seat:lead'));
@@ -453,17 +463,21 @@ test('P217 rig.map 정의 그래프: 복잡한 견본(자리 7, 훅 5, 도구 2,
   const gate = (i) => g.gates.find((x) => x.hook === i);
   assert.ok(gate(0).on.includes(E.result(5, 'merger')) && !gate(0).on.includes(E.assign(0)), 'deliver from flow는 결과·else 변');
   assert.ok(gate(1).on.includes(E.result(2, 'reviewer')) && gate(1).on.includes(E.report('researcher')), 'done은 결과·보고 변');
-  assert.ok(gate(2).on.includes(E.uses('merger', 'merge')) && !gate(2).on.includes(E.uses('implementer', 'merge')) && !gate(2).on.some((x) => x.endsWith(':test')), 'tool 훅은 그 도구의 uses 변(tools 없는 자리는 모든 도구를 쓴다)');
-  assert.ok(gate(3).on.includes(E.uses('implementer', 'test')) && !gate(3).on.includes(E.uses('merger', 'test')));
+  assert.deepEqual(gate(2).on, [E.uses('merger', 'merge')]);
+  assert.equal(gate(0).meta.notOnReports, true, 'result 변의 deliver 관문은 주인 보고에는 돌지 않는다');
+  assert.deepEqual(gate(3).on, [E.uses('implementer', 'test')]);
   assert.deepEqual(gate(4).on, ['seat:implementer', 'seat:docs']);
   assert.equal(gate(4).label, 'pre-tool · guard-write.mjs');
   assert.deepEqual(g.gates.find((x) => x.at === 'stop-verify').on, ['seat:implementer']);
   const ids = new Set([...g.nodes.map((n) => n.id), ...g.edges.map((e) => e.id)]);
   for (const x of g.gates) for (const o of x.on) assert.ok(ids.has(o), `관문 ${x.label}의 ${o}`);
-  for (const e of g.edges) if (e.type !== 'may' || !e.meta.outside) { assert.ok(ids.has(e.from), e.id); assert.ok(ids.has(e.to), e.id); }
+  for (const e of g.edges) { assert.ok(ids.has(e.from), e.id); assert.ok(ids.has(e.to), e.id); }
+  // deliver from human은 instruct 변에
+  const h = defGraph({ ...def, hooks: [{ index: 0, at: 'deliver', from: 'human', run: ['node', 'x.mjs'], onFail: 'pass' }] });
+  assert.deepEqual(h.gates[0].on, [E.instruct('lead')]);
 });
 
-test('P217 rig.map 오버레이: 흉내 장부 → passed(차례 번호·횟수·마지막 관문), now, next, cases, others, state', () => {
+test('P217 rig.map 오버레이: 흉내 장부 → steps, passed(변마다 묶음), gates(변·마디, 상태·수), now, next, cases, others(state), 사람 차례, state', () => {
   const def = complexDef();
   const live = { stateOf: (sid) => (sid === 'S-s2' ? 'waiting' : 'working'), nameOf: (sid) => sid.replace('S-', '') };
   const m0 = buildRigMap({ ws: 'w', def, n: 7, hash: 'h7', events: mockLedger(), status: { enabled: true, defN: 7, valid: true }, live });
@@ -477,10 +491,23 @@ test('P217 rig.map 오버레이: 흉내 장부 → passed(차례 번호·횟수�
   assert.deepEqual(P[E.result(2, 'security')].steps, [5, 9]);
   assert.deepEqual(P[E.result(3, 'implementer')].steps, [7]);
   assert.deepEqual(P[E.result(5, 'merger')].steps, [11]);
-  assert.deepEqual(P[E.result(5, 'merger')].lastGate, { hook: 0, at: 'deliver', value: 'rewrite', t: P[E.result(5, 'merger')].lastGate.t });
-  assert.equal(P[E.uses('merger', 'merge')].lastGate.value, 'reject'); assert.deepEqual(P[E.uses('merger', 'merge')].steps, []);
-  assert.equal(P[E.uses('implementer', 'test')].lastGate.at, 'tool-after');
-  assert.equal(P[E.result(2, 'reviewer')].lastGate.at, 'done', 'done 훅은 그 자리에서 그 값으로 나간 변');
+  assert.ok(!P[E.uses('merger', 'merge')], '지나지 않은 변은 passed에 없다(관문은 overlay.gates)');
+  // 18.6 steps: 넘김을 차례로 펼친 것, 그 넘김 앞의 관문 판정
+  const S = m.overlay.steps;
+  assert.deepEqual(S.map((s) => s.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.deepEqual([S[3].kind, S[3].edge, S[3].from, S[3].to, S[3].value], ['handoff', E.result(2, 'reviewer'), 'implementer', 'reviewer', 'ok']);
+  assert.deepEqual(S[3].gates, [{ hook: 1, value: 'pass' }], 'done 훅은 그 자리에서 그 값으로 나간 변');
+  assert.deepEqual(S[10].gates, [{ hook: 0, value: 'rewrite' }]);
+  assert.ok(!S[0].gates);
+  // 18.6 gates: (훅, 길목, 자리, 상태)마다 수. 변과 마디 모두
+  const G = (on, at) => m.overlay.gates.filter((g) => g.on === on && (!at || g.at === at));
+  assert.deepEqual(G(E.uses('merger', 'merge')).map((g) => [g.hook, g.state, g.count, g.label]), [[2, 'block', 1, 'tool-before · merge-gate.mjs']]);
+  assert.deepEqual(G(E.result(2, 'reviewer'), 'done').map((g) => [g.state, g.count]), [['pass', 1]], '흉내 장부의 done 판정 한 번');
+  assert.deepEqual(G(E.result(5, 'merger')).map((g) => [g.state, g.count]), [['pass', 1]], 'rewrite는 pass');
+  const gw = G('seat:implementer', 'pre-tool');
+  assert.deepEqual(gw.map((g) => [g.hook, g.state, g.count, g.target]), [[null, 'block', 1, 'src/outside.js']], '마디에 걸린 관문(쓰기 범위)');
+  assert.ok(m.overlay.gates.every((g) => GATE_STATES.includes(g.state)));
+  assert.ok(m.overlay.passed.every((p) => !('lastGate' in p)));
   assert.ok(m.overlay.passed.every((p) => p.known), '모든 변이 정의에 있다');
   const now = Object.fromEntries(m.overlay.now.map((x) => [x.node, x]));
   assert.deepEqual(Object.keys(now).sort(), ['seat:merger', 'seat:security']);
@@ -493,8 +520,16 @@ test('P217 rig.map 오버레이: 흉내 장부 → passed(차례 번호·횟수�
   assert.ok(m.overlay.next.find((x) => x.edge === E.result(6, 'implementer')).label.startsWith('rejected → implementer'));
   assert.deepEqual(m.cases.map((c) => [c.id, c.state]), [['K0', 'done'], ['K2', 'open'], ['K1', 'open']]);
   assert.equal(m.cases.find((c) => c.id === 'K1').owner, 'lead');
-  assert.deepEqual(m.others, [{ case: 'K2', name: null, on: 'seat:researcher', label: '건 K2 · 자리 줄 대기 · researcher' }]);
-  assert.deepEqual(m.state, { enabled: true, defN: 7, valid: true, openCases: 2, humanTurns: 1, stopped: 1 });
+  assert.deepEqual(m.others, [{ case: 'K2', name: null, state: 'queued', on: 'seat:researcher', label: '건 K2 · 자리 줄 대기 · researcher' }]);
+  assert.deepEqual(m.state, { enabled: true, defN: 7, valid: true, openCases: 2, humanTurns: 1, stopped: 1, blocked: 0 });
+  // 보는 건에서만 생긴 변(adhoc): keep이 아닌 security로 간 사람 글, tools 없는 lead가 부른 test
+  const ad = m.def.edges.filter((e) => e.meta.adhoc).map((e) => e.id).sort();
+  assert.deepEqual(ad, [E.instruct('security'), E.uses('lead', 'test')].sort());
+  assert.ok(m.def.gates.find((x) => x.hook === 3).on.includes(E.uses('lead', 'test')), 'tool-after 관문이 adhoc 변에도');
+  assert.deepEqual(G(E.uses('lead', 'test')).map((g) => g.state), ['pass']);
+  // 18.6 사람 차례, others.state
+  assert.deepEqual(m.def.nodes.find((n) => n.id === 'human').meta.turns.map((x) => [x.case, x.seat]), [['K1', 'security']]);
+  assert.ok(!m0.def.edges.some((e) => e.meta.adhoc), '다른 건(K2)을 보면 adhoc 변이 없다');
   // 건을 고르면 그 건
   const m2 = buildRigMap({ ws: 'w', def, n: 7, events: mockLedger(), caseId: 'K2', live });
   assert.equal(m2.overlay.case, 'K2'); assert.deepEqual(m2.overlay.now.map((x) => [x.node, x.state]), [['seat:researcher', 'queued']]);
@@ -538,7 +573,69 @@ test('P217 rig.map 판 API: 장부와 세션 상태로 만들고, (워크스페�
     // 넘김: worker ok → reviewer
     await done(b, w, 'ok', 'made');
     m = await H['rig.map']({ workspace: key });
-    assert.ok(m.overlay.passed.some((p) => p.edge === E.result(1, 'reviewer') && p.steps[0] === 2 && p.lastGate && p.lastGate.at === 'deliver'));
+    assert.ok(m.overlay.passed.some((p) => p.edge === E.result(1, 'reviewer') && p.steps[0] === 2));
+    assert.ok(m.overlay.gates.some((g) => g.on === E.result(1, 'reviewer') && g.at === 'deliver' && g.state === 'pass' && g.count === 1));
+    assert.deepEqual(m.overlay.steps.find((s) => s.n === 2).gates, [{ hook: 0, value: 'pass' }]);
     assert.ok((b.casts || []).some((x) => x.n === 'rig.events' && x.d.ws === key));
   } finally { await stop(); }
+});
+
+test('P217 P216 자리: 자리 세션 종료(try_stopped exited)와 다시 맡기기(retried, case_resumed) 장부 줄, 지도', async () => {
+  const { b, ws, add, seat, by, stop } = await board({ def: sampleDef() });
+  try {
+    const key = ws.key;
+    const main = add('main'); seat(main, 'main');
+    const r1 = await V(b).prompt(main, { name: 'worker', text: 'Long job' });
+    const c = r1.unit.caseId; const w = by(r1.name); await gotUnit(w);
+    const tr0 = b.store.openTryOf(w.sessionId);
+    // 에이전트만 끝나고 셸 패널이 남는다(hc agent_released, 판이 끄라고 하지 않음)
+    w.rt.term.launchPending = false;
+    applyAgentReleased(w.rt, Date.now(), { exitCode: 1 });
+    b.broadcastSession(w);
+    await until(() => ledger(b, key, { caseIds: [c], kinds: ['try_stopped'] }).some((x) => x.value === 'exited'));
+    const st = ledger(b, key, { caseIds: [c], kinds: ['try_stopped'] }).filter((x) => x.value === 'exited');
+    assert.equal(st.length, 1, 'exited는 한 줄(work-units와 rig-flow가 겹쳐 쓰지 않는다)');
+    assert.deepEqual([st[0].tryId, st[0].unitId, st[0].seat, st[0].session], [tr0.id, r1.unit.id, 'worker', w.sessionId]);
+    const bl = ledger(b, key, { caseIds: [c], kinds: ['case_blocked'] });
+    assert.equal(bl.length, 1); assert.equal(bl[0].value, 'exited');
+    let m = await rigMapHandlers(b)['rig.map']({ workspace: key, case: c });
+    assert.ok(m.overlay.now.some((x) => x.node === 'seat:worker' && x.state === 'stopped' && x.reason === 'exited'), '자리 세션의 멈춤은 stopped');
+    assert.ok(m.overlay.now.some((x) => x.node === 'seat:main' && x.state === 'blocked'), '건의 막힘은 blocked');
+    // 다시 맡기기(사람)
+    const res = await b.branch.flow.retry(key, c, null, { by: 'human' });
+    assert.equal(res.retried.length, 1);
+    const L = ledger(b, key, { caseIds: [c] });
+    const rt = L.find((x) => x.kind === 'retried');
+    assert.ok(rt, kinds(L).join(','));
+    assert.deepEqual([rt.unitId, rt.data.from_try, rt.data.to_session, rt.actor], [r1.unit.id, tr0.id, res.retried[0].toSessionId, 'human']);
+    const after = L.filter((x) => x.seq > rt.seq).map((x) => x.kind);
+    assert.ok(after.includes('try_start'), '다시 맡긴 일의 새 시도');
+    assert.ok(L.some((x) => x.kind === 'case_resumed' && x.value === 'retry'), '건이 다시 열림');
+    m = await rigMapHandlers(b)['rig.map']({ workspace: key, case: c });
+    assert.deepEqual(m.overlay.now.map((x) => [x.node, x.state, x.session]), [['seat:worker', 'working', res.retried[0].toSessionId]]);
+  } finally { await stop(); }
+});
+
+test('P217 지도 접기: retried가 자리 줄에 서면 queued', () => {
+  const rows = [
+    { seq: 1, t: 1, kind: 'case_open', caseId: 'K', seat: 'lead', session: 'S' },
+    { seq: 2, t: 2, kind: 'assign', caseId: 'K', unitId: 'u', fromSeat: 'lead', toSeat: 'researcher', line: 0, data: { to: 'A' } },
+    { seq: 3, t: 3, kind: 'try_start', caseId: 'K', unitId: 'u', seat: 'researcher', session: 'A' },
+    { seq: 4, t: 4, kind: 'try_stopped', caseId: 'K', unitId: 'u', seat: 'researcher', session: 'A', value: 'exited' },
+    { seq: 5, t: 5, kind: 'retried', caseId: 'K', unitId: 'u', data: { from_try: 't', to_session: null, queued: true } },
+  ];
+  assert.equal(foldCases(rows).get('K').units.get('u').state, 'queued');
+  assert.equal(foldCases(rows.slice(0, 4)).get('K').units.get('u').state, 'stopped');
+});
+
+test('P217 now blocked(18.5 6): 막힌 건은 주인 자리에 blocked, 자리 세션 멈춤만 stopped', () => {
+  const rows = [
+    { seq: 1, t: 1, kind: 'case_open', caseId: 'B', seat: 'lead', session: 'S' },
+    { seq: 2, t: 2, kind: 'case_blocked', caseId: 'B', text: 'flow[3] 상한을 넘었고 else도 manager도 없다' },
+  ];
+  const m = buildRigMap({ ws: 'w', def: complexDef(), events: rows, caseId: 'B' });
+  assert.deepEqual(m.overlay.now.map((x) => [x.node, x.state, x.reason]), [['seat:lead', 'blocked', 'flow[3] 상한을 넘었고 else도 manager도 없다']]);
+  assert.equal(m.state.blocked, 1); assert.equal(m.state.stopped, 0);
+  assert.deepEqual(m.def.nodes.find((n) => n.id === 'human').meta.turns.map((x) => x.label), ['건 B 막힘: flow[3] 상한을 넘었고 else도 manager도 없다']);
+  assert.equal(buildRigMap({ ws: 'w', def: complexDef(), events: [{ ...rows[0], seat: null }, rows[1]], caseId: 'B' }).overlay.now[0].node, 'human', '주인 자리가 없으면 human');
 });

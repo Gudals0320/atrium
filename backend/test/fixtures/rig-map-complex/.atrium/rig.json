@@ -58,7 +58,8 @@
         "merge"
       ],
       "may": [
-        "lead"
+        "lead",
+        "@release-bot"
       ]
     }
   },

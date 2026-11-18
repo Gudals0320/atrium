@@ -7,6 +7,7 @@
 // - log: 버전 목록과 버전마다 건 수, 반려(ok가 아닌 done 값) 수, 훅 거절 수, 상한 초과 수.
 // - rollback <n>: 버전 n의 내용으로 rig.json을 다시 쓴다. 그것도 새 버전으로 적힌다(누가: 관리자 자리면 manager, 사람이면 human). 보호 포인터를 바꾸는 되돌리기도 쓰이지 않는다.
 // - cleanup <건>: 끝난(done·cancelled) 건이 만든 fresh 자리 세션을 닫고(rig_case_items. 열린 일을 쥔 세션은 남긴다) 워크트리 목록만 돌려준다(지우지 않는다).
+// - P216: retry <건> [<일>]: 종료된 자리 세션(exited)이 쥔 열린 일을 같은 자리의 새 세션으로 다시 맡긴다(rig-flow.mjs retry). 관리자 자리와 사람만.
 // - 사람만 고치는 목록(workspaces.rig_protected): 판 API rig.protect·rig.unprotect(판 API 토큰만)와 창의 rig 메뉴. 포인터는 JSON 포인터, 파일은 저장소 기준 경로와
 //   사람이 넣을 때의 SHA-256. 같은 파일을 다시 넣으면 다시 승인(새 해시). 보호 파일이 바뀌면 rig 도구가 돌지 않는다(tool-runs.mjs가 rig.changedFiles를 본다).
 import crypto from 'node:crypto';
@@ -20,7 +21,7 @@ import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
-export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup'];
+export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry']; // P216: retry
 export const RIG_READ_OPS = ['check', 'log']; // P209: 읽기만(제작 세션도 쓴다)
 
 export class RigAdmin {
@@ -61,6 +62,7 @@ export class RigAdmin {
     if (op === 'log') return this.log(key, o);
     if (op === 'rollback') return this.rollback(key, o.n, { by, who });
     if (op === 'cleanup') return this.cleanup(key, o.caseId || o.case, { by, who });
+    if (op === 'retry') return this.branch.flow.retry(key, o.caseId || o.case, o.unitId || o.unit || null, { by, who }); // P216
     throw apiError('bad_request', `모르는 일: ${op}`);
   }
 
@@ -276,6 +278,7 @@ export function rigAdminHandlers(b) {
     'rig.log': async (p, c) => { local(c, 'rig log'); return A().log(await keyOf(p), p || {}); },
     'rig.rollback': async (p, c) => { local(c, 'rig rollback'); return done(A().rollback(await keyOf(p), p && p.n, { by: 'human' })); },
     'rig.cleanup': async (p, c) => { local(c, 'rig cleanup'); return A().cleanup(await keyOf(p), p && (p.caseId || p.case), { by: 'human' }); },
+    'rig.retry': async (p, c) => { local(c, 'rig retry'); return b.branch.flow.retry(await keyOf(p), p && (p.caseId || p.case), p && (p.unitId || p.unit), { by: 'human' }); }, // P216: [다시 띄우기]
     'rig.protected': async (p) => A().protectedView(await keyOf(p)),
     'rig.protect': async (p, c) => { local(c, '사람만 고치는 목록 바꾸기'); return done(A().protect(await keyOf(p), p || {})); },
     'rig.unprotect': async (p, c) => { local(c, '사람만 고치는 목록 바꾸기'); return done(A().unprotect(await keyOf(p), p || {})); },

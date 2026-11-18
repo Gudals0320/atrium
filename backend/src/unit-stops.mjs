@@ -3,6 +3,8 @@
 // - 받는 쪽: 그 일을 맡긴 세션(work_units.from, 일 관계의 상위).
 // - 까닭(unit_tries.stop_reason과 같다): idle_no_done(done 없이 턴을 끝내고 쉼), turn_error(오류로 턴이 끝남),
 //   needs_human(승인·신뢰 질문 등 사람의 답을 기다림: waiting·trust_wait), closed(세션이 닫힘). 멈출 때마다 한 번.
+// - P216: exited(에이전트만 끝나고 셸 패널이 남음, 판이 끄라고 하지 않았고 사람이 끝낸 것도 아님: exit.kind other). 시도를 닫는다(work-units onExited).
+//   rig 건의 일이면 일은 열린 채 남아 `atrium rig retry`로 같은 자리의 새 세션에 다시 맡긴다(알림 줄에 그 명령을 붙인다). 그 밖의 일은 취소된다.
 // - 하위를 기다리며 쉬는 중간 워커(자기가 맡긴 열린 일이 있다)는 idle_no_done을 알리지 않는다. 대신 나무 전체(push-cycle cycleCheck)가
 //   쉬는데 열린 시도가 남았으면 그 나무의 맨 위 일의 상위에게 한 번 알린다(tree_quiet). 나무에 다시 움직임이 생기면 다음 쉼에 다시 알린다.
 // - 같은 상위로 가는 알림은 묶는다(link-notice NoticeBatcher). 보내기 전에 done이 왔거나 다시 일하기 시작했으면 그 줄은 보내지 않는다.
@@ -13,13 +15,14 @@ import { treeIndex, cycleCheck } from './push-cycle.mjs';
 import { clip } from './text.mjs';
 import { HUMAN_FROM } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일의 멈춤은 응답 필요 목록으로
 
-export const STOP_REASONS = ['idle_no_done', 'turn_error', 'needs_human', 'closed', 'tree_quiet'];
+export const STOP_REASONS = ['idle_no_done', 'turn_error', 'needs_human', 'closed', 'tree_quiet', 'exited'];
 const WHY = {
   idle_no_done: '보고(atrium done) 없이 턴을 끝내고 쉰다',
   turn_error: '오류로 턴이 끝났다',
   needs_human: '사람의 답(승인·신뢰 질문 등)을 기다린다',
   closed: '세션이 닫혔다',
   tree_quiet: '아래 하위까지 모두 쉬는데 일이 열려 있다',
+  exited: '에이전트가 끝나 셸만 남았다(종료). 일은 끝나지 않은 채 멈췄다', // P216
 };
 const STOPPED = new Set(['ready', 'error', 'sleeping']); // 쉼(보내기 전에 다시 일하기 시작했는지 볼 때)
 const HUMAN = new Set(['waiting', 'trust_wait']);
@@ -32,7 +35,8 @@ export function stopLine({ child, unitId, spec, why, detail = null }) {
 export function stopNoticeText(lines) {
   const ls = lines.map((l) => (typeof l === 'string' ? l : l.line));
   const head = ls.length === 1 ? [`[Atrium 보드] 맡긴 일이 멈췄다: ${ls[0]}`] : ['[Atrium 보드] 맡긴 일이 멈췄다.', ...ls.map((l) => `- ${l}`)];
-  return [...head, '할 수 있는 것: 화면 보기 `atrium read <이름>`, 다시 시키기 `atrium prompt <이름> "<할 일>"`, 사람이 답해야 하면 사람에게 알린다. 이 일을 기다리며 폴링하지 않는다.'].join('\n');
+  const exited = lines.some((l) => l && l.why === 'exited') ? ' 셸만 남은(종료) 세션에는 다시 시키지 않는다: rig 일은 그 줄의 `atrium rig retry`(관리자 자리·사람), 그 밖은 새 하위(`atrium child`)로 맡긴다.' : ''; // P216
+  return [...head, `할 수 있는 것: 화면 보기 \`atrium read <이름>\`, 다시 시키기 \`atrium prompt <이름> "<할 일>"\`, 사람이 답해야 하면 사람에게 알린다. 이 일을 기다리며 폴링하지 않는다.${exited}`].join('\n');
 }
 
 export class UnitStops {
@@ -73,6 +77,7 @@ export class UnitStops {
     const st = this.store(); const tr = st.getTry(l.tryId);
     if (!tr || tr.result != null) return false;
     if (l.why === 'closed') return true;
+    if (l.why === 'exited') { const u = st.getUnit(tr.unitId); if (!u || !u.caseId) return true; const last = st.lastTryOfUnit(u.id); return u.status === 'open' && (!last || last.id === tr.id); } // P216: 그새 다시 맡겼으면 보내지 않는다
     const unit = st.getUnit(tr.unitId);
     if (!unit || unit.status !== 'open') return false;
     if (l.why === 'tree_quiet') return this.treeQuiet(tr) === true;
@@ -106,6 +111,13 @@ export class UnitStops {
     this.scheduleTree();
     if (!tr || !tr.header || byParent || !unit) return null;
     return this.add(tr, unit, 'closed', reason ? closeWhy(reason) : null) && unit.from !== HUMAN_FROM ? unit.from : null;
+  }
+
+  // P216: 에이전트가 끝나 셸만 남았다(work-units onExited가 시도를 닫은 뒤). detail: 다시 맡기는 길 → 알림을 건 상위 ID | null
+  onExited(tr, unit, detail = null) {
+    this.scheduleTree();
+    if (!tr || !unit) return null;
+    return this.add(tr, unit, 'exited', detail) && unit.from !== HUMAN_FROM ? unit.from : null;
   }
 
   // ---------- 나무 전체가 쉬는가(중간 워커) ----------

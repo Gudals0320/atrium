@@ -16,6 +16,7 @@
 // P194: prompt --case <건>(rig 자리 세션이 이을 건을 고름), me의 rig.owned 칸, 건 상태 waiting_owner를 더했다. 건 주인 세션에게 돌아오는 흐름 줄은 일이 아니라 보고다(더하기만이라 4 그대로)
 // P204: log 동사(동료 소식에 한 줄)와 news 동사(동료 소식 읽기), me의 news 칸을 더했다(더하기만이라 4 그대로)
 // P211: usage 동사(구독 사용량 읽기)를 더했다(더하기만이라 4 그대로)
+// P216: rig retry <건> [<일>](종료된 자리 세션의 일을 같은 자리의 새 세션에 다시 맡김)와 멈춤 까닭 exited를 더했다(더하기만이라 4 그대로)
 export const CONTRACT_VERSION = 4;
 // P204: 동료 소식. atrium log 한 줄의 상한, atrium news가 한 번에 보이는 줄
 export const NEWS_LOG_MAX = 300;
@@ -50,7 +51,7 @@ export const VERBS = [
   // P183: rig 도구
   { name: 'tool', args: ['[<이름> [인자…] | --wait <실행 ID> | --runs]', '[--json]'], does: '이 워크스페이스에 사람이 켠 rig의 도구. 이름 없이는 목록과 설명, 이름이면 실행(인자는 정의의 run 뒤에 붙는다. 보드가 띄워 쥐고 출력을 기록한다). 100초까지 기다려 종료 코드와 출력 꼬리를 돌려주고, 아직이면 종료 코드 3과 실행 ID(이어 기다리기 --wait <ID>). --runs는 최근 실행. 세션마다 한 번에 하나', out: ['tools', 'run', 'runs'] },
   // P188: rig 관리(관리자 자리 세션과 사람만. 그 밖 세션은 종료 코드 1과 까닭)
-  { name: 'rig', args: ['check [파일] | log [--events [--case 건] [--since seq|시각] [--kinds a,b] [--limit n]] | rollback <n> | cleanup <건>', '[--json]'], does: 'rig 정의 관리. 켜진 rig의 관리자 자리(manager)에 앉은 세션만 쓴다(check는 읽기만이라 rig가 꺼진 워크스페이스면 어느 세션이든, 켜진 rig에서는 사람이 맡긴 제작 세션도 쓴다). check는 후보 정의(파일, 없으면 지금 .atrium/rig.json)를 적용하지 않고 검사하고(사람만 고치는 자리를 바꾸면 알린다), log는 정의 버전 목록과 버전마다 건·반려·훅 거절·상한 초과 수, rollback <n>은 버전 n의 내용으로 rig.json을 다시 쓰며(새 버전으로 적힌다), cleanup <건>은 끝난 건이 만든 fresh 세션을 닫고 워크트리 목록을 돌려준다(지우지 않는다). log --events는 rig 장부(한 꼴의 사건 줄, seq 커서)를 읽는다: 관리자 자리와 그 워크스페이스의 제작 세션은 전체, 자리 세션은 자기 건만', out: ['ok', 'reason', 'versions', 'current', 'n', 'closed', 'kept', 'worktrees', 'rows', 'last', 'more'] },
+  { name: 'rig', args: ['check [파일] | log [--events [--case 건] [--since seq|시각] [--kinds a,b] [--limit n]] | rollback <n> | cleanup <건> | retry <건> [<일>]', '[--json]'], does: 'rig 정의 관리. 켜진 rig의 관리자 자리(manager)에 앉은 세션만 쓴다(check는 읽기만이라 rig가 꺼진 워크스페이스면 어느 세션이든, 켜진 rig에서는 사람이 맡긴 제작 세션도 쓴다). check는 후보 정의(파일, 없으면 지금 .atrium/rig.json)를 적용하지 않고 검사하고(사람만 고치는 자리를 바꾸면 알린다), log는 정의 버전 목록과 버전마다 건·반려·훅 거절·상한 초과 수, rollback <n>은 버전 n의 내용으로 rig.json을 다시 쓰며(새 버전으로 적힌다), cleanup <건>은 끝난 건이 만든 fresh 세션을 닫고 워크트리 목록을 돌려준다(지우지 않는다). retry <건> [<일>]은 에이전트가 끝나 셸만 남은(exited) 자리 세션이 쥔 열린 일을 같은 자리의 새 세션에 다시 맡긴다(일을 주지 않으면 그 건의 그런 일 모두, fresh 자리가 한도면 자리 줄에 선다). log --events는 rig 장부(한 꼴의 사건 줄, seq 커서)를 읽는다: 관리자 자리와 그 워크스페이스의 제작 세션은 전체, 자리 세션은 자기 건만', out: ['ok', 'reason', 'versions', 'current', 'n', 'closed', 'kept', 'worktrees', 'retried', 'case', 'rows', 'last', 'more'] },
   // P211: 구독 사용량(보드가 로컬 출처에서 모은 마지막 값. 읽기만)
   { name: 'usage', args: ['[--json]'], does: '구독 사용량(Claude, Codex, AGY): 한도 창(5시간·주간 등)마다 사용률과 리셋까지 남은 시간, 크레딧, 요금제, 받은 때. 보드가 이 PC의 로컬 출처에서 모은 마지막 값이고 모르면 모름. 일을 크게 나누기 전에 남은 양을 볼 때', out: ['providers', 'alertsOn', 'at'] },
 ];

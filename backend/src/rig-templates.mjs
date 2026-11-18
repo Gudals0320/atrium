@@ -124,6 +124,7 @@ export function rigGuideText() {
     '  - 건 주인에게 가는 줄(to가 주인이 앉은 keep 자리, 예: reviewer rejected → main): 주인에게는 일이 아니라 보고가 간다. 건은 열린 일이 없어지면 done 대신 waiting_owner가 되어 그 보고를 받은 주인의 턴을 기다린다. 주인이 그 턴에 atrium prompt로 맡기면 같은 건을 잇고 흐름 줄의 지난 횟수도 이어 센다. 맡기지 않고 턴을 끝내면 건은 done이다.',
     '  - 그래서 주인을 지나는 반복(반려 → 주인 → 다시 맡김)도 그 줄의 max가 센다. 예: { "from": "reviewer", "on": "rejected", "to": "main", "max": 2, "else": "<다른 자리>" }. 상한을 넘어 주인에게 올라온 건(else가 없어 manager가 주인)은 주인의 다음 맡기기를 기다리고, 그때는 셈을 0부터 다시 센다.',
     '- manager: 넘김이 풀지 못한 것을 받는 자리이자 관리자 자리(atrium rig check·log·rollback을 쓴다). 보통 메인 자리. rig를 만든 제작 세션도 제작 일을 닫은 뒤 읽기만 하는 atrium rig check·log를 쓴다.',
+    '- 자리 세션의 에이전트가 끝나 셸만 남으면(exited) 보드가 그 시도를 닫고 자리 한도에서 빼고, 건을 막힘(blocked)으로 두고 건 주인에게 한 줄 알린다. 관리자 자리와 사람은 atrium rig retry <건> [<일>]로 같은 일을 같은 자리의 새 세션에 다시 맡긴다(사람은 보드의 [다시 띄우기]).',
     '- hooks, tools, cycles: 프로그램을 사용자 계정으로 돌리는 칸이다. 사람의 설명이 분명히 원할 때만 넣고, 스크립트도 .atrium/ 아래에 함께 쓴다.',
     '  - hooks: [{ "at": "deliver"|"done"|"tool-before"|"tool-after", "run": ["node", ".atrium/hooks/x.mjs"], "from"?, "tool"?, "onFail"?: "pass"|"block" }]. 입력은 stdin JSON, 출력은 stdout JSON { action: pass|rewrite|reject, text?, append?, reason? }.',
     '  - tools: { "<이름>": { "run": ["node", ".atrium/tools/x.mjs"], "desc": "…" } }. run에는 node, python, .exe를 바로 쓴다.',
