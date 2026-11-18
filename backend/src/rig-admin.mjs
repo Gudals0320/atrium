@@ -16,6 +16,7 @@ import path from 'node:path';
 import { RIG_FILE, validateRig, protectedHits, POINTER_RE, gitStateOf, worktreeWarnings, SEAT_KINDS, seatEffortError } from './rig.mjs';
 import { harnessOf } from './launchers.mjs'; // P209: 런처 자리의 종류
 import { shownName } from './session-label.mjs';
+import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장부
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
@@ -39,6 +40,7 @@ export class RigAdmin {
   async verb(s, o = {}) {
     const op = String(o.op || '');
     if (!RIG_ADMIN_OPS.includes(op)) throw apiError('bad_request', `atrium rig: ${RIG_ADMIN_OPS.join(' | ')} 가운데 하나다: ${op || '(없음)'}`);
+    if (op === 'log' && o.events) return this.eventsVerb(s, o); // P217: 장부(18.2)
     // P190(16절): check는 읽기만이라 rig가 꺼진(또는 없는) 워크스페이스의 어느 판 세션이든 쓴다. 켜진 rig에서는 관리자 자리와 사람,
     //   그리고 사람이 맡긴 제작 일(rig.describe의 "말로 고치기")을 쥔 제작 세션
     // P209: 제작 세션(그 워크스페이스의 rig.describe 일을 받은 세션)은 제작 일을 닫은 뒤에도, rig가 켜져 있어도 읽기만 하는 check·log를 쓴다.
@@ -113,6 +115,31 @@ export class RigAdmin {
     return { reason, warnings };
   }
 
+  // P217: atrium rig log --events(18.2). 읽는 쪽: 그 워크스페이스의 제작 세션(제작 일을 닫은 뒤에도), 관리자 자리 → 워크스페이스 전체.
+  //   자리 세션 → 자기 건만(--case 없이 부르면 지금 쥔 건, 쥔 건이 없으면 자기 건 모두). 그 밖 세션은 거절
+  eventsVerb(s, o = {}) {
+    const key = s.workspaceKey;
+    if (!key) throw apiError('forbidden', 'atrium rig log --events는 워크스페이스의 세션만 쓴다.');
+    const builder = this.b.rigSetup && this.b.rigSetup.isWorkspaceBuilder(s);
+    if (this.isManager(s) || builder) return this.events(key, o);
+    const flow = this.branch && this.branch.flow;
+    const ctx = flow ? flow.seatCtx(s) : null;
+    if (!ctx) throw apiError('forbidden', 'atrium rig log --events는 그 워크스페이스의 rig 제작 세션, 관리자 자리, 자리 세션(자기 건만)이 쓴다. 너는 자리 없는 세션이다.');
+    const mine = this.store().caseIdsOfSession(s.sessionId, key);
+    let cases;
+    if (o.case != null && String(o.case).trim()) {
+      const want = String(o.case).trim();
+      if (!mine.includes(want)) throw apiError('forbidden', `건 ${want}은 너의 건이 아니다(자리 세션은 자기가 받거나 주인인 건만 읽는다). 너의 건: ${mine.join(', ') || '(없음)'}`);
+      cases = [want];
+    } else { const held = flow.openCaseOf(s); cases = held ? [held] : mine; }
+    return this.events(key, { ...o, case: null, cases });
+  }
+  // 장부 읽기(판 API rig.events도 이 길) → { workspace, rows(+shown: 사람이 읽는 한 줄), last, more }
+  events(key, o = {}) {
+    const x = readEvents(this.b, key, o);
+    return { ...x, rows: x.rows.map((r) => ({ ...r, shown: eventLine(r) })) };
+  }
+
   // 버전 목록과 버전마다 건 수, 반려 수, 훅 거절 수, 상한 초과 수
   log(key, o = {}) {
     const rig = this.rig(); const st = this.store();
@@ -147,6 +174,7 @@ export class RigAdmin {
     rig.cache.delete(key); // 같은 크기·같은 시각 칸이라도 다시 읽는다(마지막 맞은 정의는 버전 파일에서 다시 얻는다)
     const after = rig.read(key);
     st.addEvent(who ? who.sessionId : null, 'rig_rollback', { workspace: key, from: want, n: after.n, by, ok: after.hash === hash && !after.invalid, reason: after.invalid || null });
+    rigEvent(this.b, { kind: 'rig_rollback', ws: key, defN: after.n ?? null, seat: who ? who.rigSeat || null : null, session: who ? who.sessionId : null, value: String(want), actor: by === 'manager' ? 'agent' : 'human', ref: after.n ?? null, text: `버전 ${want}으로 되돌림 → 버전 ${after.n ?? '?'}${after.invalid ? `: ${after.invalid}` : ''}`, data: { from: want, ok: after.hash === hash && !after.invalid } });
     this.b.log && this.b.log(`rig rollback ${key} to #${want} by ${by}${who ? ` (${who.name})` : ''}: now #${after.n}${after.invalid ? ` (${after.invalid})` : ''}`);
     if (after.invalid || after.hash !== hash) {
       rig.pendingBy.delete(key);
@@ -177,6 +205,7 @@ export class RigAdmin {
     }
     const worktrees = st.caseItems(id).filter((x) => x.worktree).map((x) => ({ name: x.worktree, path: x.worktreePath, exists: !!(x.worktreePath && fs.existsSync(x.worktreePath)) }));
     st.addEvent(who ? who.sessionId : null, 'rig_cleanup', { workspace: key, caseId: id, by, closed: closed.map((x) => x.name), kept: kept.map((x) => `${x.name}:${x.why}`) });
+    rigEvent(this.b, { kind: 'cleanup', ws: key, caseId: id, seat: who ? who.rigSeat || null : null, session: who ? who.sessionId : null, actor: by === 'manager' ? 'agent' : 'human', text: `닫음 ${closed.length} · 남김 ${kept.length} · 워크트리 ${worktrees.length}`, data: { closed: closed.map((x) => x.name), kept: kept.map((x) => `${x.name}:${x.why}`) } });
     b.log && b.log(`rig cleanup ${id} by ${by}: closed ${closed.length}, kept ${kept.length}, worktrees ${worktrees.length}`);
     return { workspace: key, caseId: id, closed, kept, worktrees };
   }

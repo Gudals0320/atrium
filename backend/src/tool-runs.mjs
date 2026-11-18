@@ -17,6 +17,7 @@ import { findExe, spawnPlan, killTree } from './hook-runner.mjs';
 import { cleanEnv } from './proc-env.mjs';
 import { sessionInfo, TOOL_RUN_HINT } from './rig.mjs';
 import { shownName } from './session-label.mjs';
+import { rigEvent } from './rig-ledger.mjs'; // P217: 장부(tool_start·tool_end)
 
 export const TOOL_WAIT_MS = 100000;
 export const TOOL_LOG_MAX = 50 * 1024 * 1024;
@@ -104,7 +105,9 @@ export class ToolRuns {
     if (changed.length) {
       const why = `사람만 고치는 파일이 사람이 승인한 때와 달라 rig 도구를 돌리지 않는다: ${changed.map((x) => `${x.path}${x.got ? '' : '(없음)'}`).join(', ')}. 그 파일을 되돌리거나 사람에게 보드의 rig 메뉴에서 다시 승인해 달라고 한다.`;
       const tr0 = st.openTryOf(caller.sessionId);
-      st.insertToolRun({ id: 'tr' + crypto.randomBytes(5).toString('hex'), sessionId: caller.sessionId, workspaceKey: caller.workspaceKey, unitId: tr0 ? tr0.unitId : null, tryId: tr0 ? tr0.id : null, tool: name, argv: tool.run, args: Array.isArray(o.args) ? o.args.map(String) : [], cwd: null, rigHash: r.hash, status: 'rejected', startedAt: Date.now(), endedAt: Date.now(), hooks: [], error: 'rig_protected' });
+      const rid = 'tr' + crypto.randomBytes(5).toString('hex');
+      st.insertToolRun({ id: rid, sessionId: caller.sessionId, workspaceKey: caller.workspaceKey, unitId: tr0 ? tr0.unitId : null, tryId: tr0 ? tr0.id : null, tool: name, argv: tool.run, args: Array.isArray(o.args) ? o.args.map(String) : [], cwd: null, rigHash: r.hash, status: 'rejected', startedAt: Date.now(), endedAt: Date.now(), hooks: [], error: 'rig_protected' });
+      { this.toolEvent('tool_end', { id: rid, workspaceKey: caller.workspaceKey, sessionId: caller.sessionId, unitId: tr0 ? tr0.unitId : null, tryId: tr0 ? tr0.id : null }, tr0 ? { id: tr0.unitId } : null, { value: 'rejected', text: `${name}: 사람만 고치는 파일이 바뀌었다`, data: { tool: name, why: 'rig_protected' } }); }
       rig.alert(caller.workspaceKey, { kind: 'file', items: changed.map((x) => x.path), hash: changed.map((x) => x.got || 'missing').join(','), reason: why });
       throw apiError('rig_protected', why, { files: changed.map((x) => x.path) });
     }
@@ -134,6 +137,7 @@ export class ToolRuns {
       hooks.push(...hb.runs);
       if (hb.action === 'reject') {
         st.insertToolRun({ ...base, argv: tool.run, args: given, status: 'rejected', endedAt: Date.now(), hooks, error: hb.reason });
+        this.toolEvent('tool_end', base, unit, { value: 'rejected', text: `${name}: ${hb.reason || '거절'}`, data: { tool: name } });
         st.addEvent(caller.sessionId, 'tool_rejected', { runId: id, tool: name, reason: hb.reason });
         throw apiError('rig_rejected', `rig의 tool-before 훅이 도구 ${name} 실행을 거절했다: ${hb.reason}`, { runId: id });
       }
@@ -145,6 +149,7 @@ export class ToolRuns {
     const logPath = path.join(this.dir(), `${id}.log`);
     st.insertToolRun({ ...base, argv, args, argsGiven, status: 'running', logPath, hooks });
     st.addEvent(caller.sessionId, 'tool_run', { runId: id, tool: name, args, rigHash: r.hash });
+    this.toolEvent('tool_start', base, unit, { value: 'running', text: `${name}${args.length ? ' ' + args.join(' ') : ''}`, data: { tool: name } });
     this.b.log && this.b.log(`tool ${name} ${id} by ${caller.name}: ${argv.join(' ')}`);
     const done = this.exec({ id, argv: [...runWords, ...args], cwd, env, tool, logPath }).then((res) => this.finish({ id, r, hctx, tool, args, startedAt, logPath, hooks, res }))
       .catch((e) => { try { st.updateToolRun(id, { status: 'error', endedAt: Date.now(), error: String(e && e.message || e) }); } catch {} })
@@ -182,6 +187,12 @@ export class ToolRuns {
     });
   }
 
+  // P217: 도구 실행의 장부 줄. base: 실행 행의 칸(id, workspaceKey, sessionId, unitId, tryId), unit: 그 일(건)
+  toolEvent(kind, base, unit, x) {
+    const u = unit && unit.id && this.store().getUnit ? this.store().getUnit(unit.id) : null;
+    const s = base.sessionId ? this.b.sessions.get(base.sessionId) : null;
+    rigEvent(this.b, { kind, ws: base.workspaceKey, caseId: u ? u.caseId || null : null, unitId: base.unitId || null, tryId: base.tryId || null, seat: base.seat !== undefined ? base.seat : s ? s.rigSeat || null : null, session: base.sessionId || null, actor: 'agent', ref: base.id, ...x });
+  }
   // 끝난 실행: tool-after 훅 → 장부
   async finish({ id, r, hctx, tool, args, startedAt, logPath, hooks, res }) {
     const st = this.store();
@@ -198,6 +209,7 @@ export class ToolRuns {
     }
     st.updateToolRun(id, { status: res.status, exitCode: res.exitCode ?? null, endedAt, logBytes: res.bytes, logCut: res.cut, outSha256: res.sha, hooks, appended, error: res.error || null });
     st.addEvent(hctx.session ? hctx.session.id : null, 'tool_done', { runId: id, tool: tool.name, status: res.status, exitCode: res.exitCode ?? null, ms: endedAt - startedAt, bytes: res.bytes, cut: res.cut });
+    this.toolEvent('tool_end', { id, workspaceKey: hctx.key, sessionId: hctx.session ? hctx.session.id : null, unitId: hctx.unit ? hctx.unit.id : null, tryId: hctx.try ? hctx.try.id : null, seat: hctx.session ? hctx.session.seat : null }, hctx.unit, { value: res.status, text: `${tool.name} ${res.status}${res.exitCode != null ? ` 종료 코드 ${res.exitCode}` : ''}`, data: { tool: tool.name, exit: res.exitCode ?? null, ms: endedAt - startedAt } });
     this.b.log && this.b.log(`tool ${tool.name} ${id} ${res.status} exit=${res.exitCode} ${endedAt - startedAt}ms ${res.bytes}B${res.cut ? ' (log cut)' : ''}`);
   }
 

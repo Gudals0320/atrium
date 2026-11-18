@@ -13,6 +13,7 @@
 //   opencode·pi: 붙이지 않는다(P189 보고의 표).
 import path from 'node:path';
 import fs from 'node:fs';
+import { rigEvent } from './rig-ledger.mjs'; // P217: 장부(훅 아닌 관문)
 
 export const AMP_ATS = ['pre-tool'];
 // 판이 자리를 위해 띄울 때(rig-flow spawnSeat → branch.spawnChild → backend.spawn) 넘기는 자리 이름의 열쇠.
@@ -248,7 +249,7 @@ export class RigAmp {
     const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
     const toolName = String(body.tool_name || ''); const toolInput = body.tool_input || {};
     const w = writesVerdict({ writes: x.writes, toolName, toolInput, base: x.cwd, unitId: tr ? tr.unitId : null });
-    if (w) { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'deny', why: 'writes', tool: toolName }); } catch {} return denyBody(w); }
+    if (w) { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'deny', why: 'writes', tool: toolName }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'writes', tool: toolName, target: String(toolInput.file_path || toolInput.path || toolInput.notebook_path || '') || null }, w); return denyBody(w); }
     const hooks = x.preTool.filter((p) => !p.match || new RegExp(`^(?:${p.match})$`).test(toolName)).map((p) => p.index);
     if (!hooks.length) return null;
     const unit = tr && st.getUnit ? st.getUnit(tr.unitId) : null;
@@ -260,6 +261,11 @@ export class RigAmp {
     });
     if (res.action === 'reject') return denyBody(`[Atrium rig] ${res.reason || '도구 호출 직전 관문이 거절했다'}`);
     return null;
+  }
+  // P217: 훅이 아닌 관문(쓰기 범위, stopVerify)의 장부 줄. 값은 reject(돌려보냄), ref는 없다(훅 실행 행이 없다)
+  gateEvent(s, x, tr, at, data, why) {
+    const u = tr && this.b.store.getUnit ? this.b.store.getUnit(tr.unitId) : null;
+    rigEvent(this.b, { kind: 'gate', ws: x.key || s.workspaceKey, caseId: u ? u.caseId || null : null, unitId: tr ? tr.unitId : null, tryId: tr ? tr.id : null, seat: x.seat || s.rigSeat || null, session: s.sessionId, value: 'reject', actor: 'board', text: `${at}: ${why}`, data: { at, hook: null, ...data } });
   }
   // 판이 다시 떴을 때: 기록(events rig_stop_block)에서 그 시도를 막은 수
   blocksFromLog(sessionId, tryId) {
@@ -274,6 +280,7 @@ export class RigAmp {
     if (n >= STOP_BLOCKS_PER_TRY) return null; // 시도마다 한 번. 그 뒤는 0단계 멈춤 알림이 상위에게 간다
     this.stopBlocks.set(tr.id, n + 1);
     try { st.addEvent(s.sessionId, 'rig_stop_block', { tryId: tr.id, unitId: tr.unitId, seat: x.seat, n: n + 1 }); } catch {}
+    this.gateEvent(s, x, tr, 'stop-verify', { n: n + 1 }, '턴 끝을 한 번 돌려보냈다(stopVerify)');
     return stopBlockBody(stopReason(x.r.def.results));
   }
 }

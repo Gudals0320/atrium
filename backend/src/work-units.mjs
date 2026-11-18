@@ -15,6 +15,7 @@ import { UnitStops } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알�
 import { RIG_HEADER_TAIL } from './rig.mjs'; // P182. P188: 세 줄 머리의 셋째 줄 끝
 import { seatHeader } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리
 import { HUMAN_FROM, BUILDER_ORIGIN, builderHeader } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일(상위 세션 없음)
+import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 
 // P216: 에이전트만 끝나고 셸 패널이 남은 것을 멈춤(exited)으로 보는가. 판이 끄라고 한 것(잠재우기·끄기·child-kill·옮기기·다시 띄우기: normal),
 //   사람이 끝낸 것(/exit·Ctrl+C·종료 코드 0·130: user), 신뢰 거부(trust_declined), 터미널 서버가 꺼짐(terminal_stopped, 판이 되살린다)은 아니다.
@@ -79,6 +80,8 @@ export class WorkUnits {
     st.insertUnit(unit);
     st.addEvent(t.sessionId, 'unit_open', { unitId: unit.id, from: caller.name, origin, held: hold, chars: unit.spec.length, ...(unit.caseId ? { caseId: unit.caseId, seat: unit.seat } : {}) });
     this.b.log(`unit ${unit.id} ${caller.name} → ${t.name} (${origin}${hold ? ', held' : ''})`);
+    // P217: 켜진 rig의 자리 세션이 일 하위에게 맡긴 일(건 밖. 건의 일은 rig-flow가 적는다)
+    if (!unit.caseId && caller.rigSeat && this.b.rig && this.b.rig.active(caller.workspaceKey)) rigEvent(this.b, { kind: 'assign', ws: caller.workspaceKey, unitId: unit.id, seat: caller.rigSeat, session: caller.sessionId, fromSeat: caller.rigSeat, toSeat: t.rigSeat || null, value: 'assign', actor: 'agent', text: clip(unit.spec.replace(/\s+/g, ' '), 120), data: { to: t.sessionId, origin } });
     if (hold) { this.queued.add(t.sessionId); return { unit, held: true, ahead: st.queuedUnitsOf(t.sessionId).length - 1 + (st.openTryOf(t.sessionId) ? 1 : 0) }; }
     return { unit, ...this.dispatch(unit) };
   }
@@ -90,6 +93,7 @@ export class WorkUnits {
     const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: d.deliveryId, startedAt: Date.now() };
     st.insertTry(tr);
     st.addEvent(unit.to, 'unit_try', { unitId: unit.id, tryId: tr.id, deliveryId: d.deliveryId, later });
+    if (unit.caseId) { const t = b.sessions.get(unit.to); rigEvent(b, { kind: 'try_start', caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: unit.seat || (t && t.rigSeat) || null, session: unit.to, actor: 'board', ref: d.deliveryId, data: { queued_ms: Math.max(0, tr.startedAt - (unit.createdAt || tr.startedAt)), ...(later ? { later: true } : {}) } }); } // P217
     if (!st.queuedUnitsOf(unit.to).length) this.queued.delete(unit.to);
     if (later && this.onDispatch) try { this.onDispatch(unit, d, header); } catch (e) { b.log('unit dispatch hook error', e.stack); }
     return { d, tryRow: st.getTry(tr.id), header };
@@ -237,6 +241,7 @@ export class WorkUnits {
     const l = parent && !flowClaim && unit.from !== unit.to ? (st.linkByPair(unit.from, unit.to) || null) : null;
     if (l && !l.removedAt) b.linkEvent(l, 'reply', text, { via: 'atrium', verb: 'done', result, unitId: unit.id, claimedBy, ...(noticeDeliveryId ? { deliveryId: noticeDeliveryId } : {}) });
     st.addEvent(caller.sessionId, 'unit_done', { unitId: unit.id, tryId: tr.id, result, chars: text.length, claimedBy, noticeDeliveryId });
+    if (unit.caseId) rigEvent(b, { kind: 'done', caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: caller.rigSeat || unit.seat || null, session: caller.sessionId, value: result, actor: 'agent', ref: noticeDeliveryId, text: clip(text.replace(/\s+/g, ' '), 200), data: { chars: text.length, claimedBy, ms: now - (tr.startedAt || now) } }); // P217
     b.log(`unit ${unit.id} done ${result} by ${caller.name} → ${parent ? parent.name : '(closed)'} via ${claimedBy}`);
     if (this.branch && this.branch.news) this.branch.news.onDone(caller, unit, result, text); // P204: 동료 소식에 done 한 줄
     if (human && b.rigSetup) try { b.rigSetup.onDone(unit, st.getTry(tr.id)); } catch (e) { b.log('rig builder done error', e.stack); }
@@ -283,9 +288,17 @@ export class WorkUnits {
     if (why) {
       st.updateTry(tr.id, { stopReason: why });
       st.addEvent(sid, 'unit_stop', { unitId: tr.unitId, tryId: tr.id, why });
+      this.stopEvent(s, tr, why);
       if (why !== 'needs_human' && this.queued.has(sid)) { st.updateTry(tr.id, { endedAt: Date.now() }); this.pump(sid); }
     }
     if (this.queued.has(sid) && (sum.state === 'ready' || sum.state === 'sleeping')) this.pump(sid); // 백엔드가 다시 뜬 뒤 등
+  }
+  // P217: 건의 시도가 보고 없이 멈춤(try_stopped). tree_quiet는 나무 전체의 쉼이라 장부 kind가 아니다
+  stopEvent(s, tr, why, detail = null) {
+    if (!tr || why === 'tree_quiet') return;
+    const u = this.store().getUnit(tr.unitId);
+    if (!u || !u.caseId) return;
+    rigEvent(this.b, { kind: 'try_stopped', caseId: u.caseId, unitId: u.id, tryId: tr.id, seat: s.rigSeat || u.seat || null, session: s.sessionId, value: why, actor: 'board', text: detail ? String(detail) : null });
   }
   // P216: 판이 띄운 세션의 에이전트가 끝나 셸만 남았다(exited). 열린 시도를 stop_reason exited로 닫고 위 세션(rig면 건 주인)에게 한 번 알린다.
   //   rig 건의 일은 열린 채 둔다(건은 blocked, 자리 한도에서 빠짐, `atrium rig retry`로 다시 맡긴다: rig-flow onTryExited). 그 밖의 일은 취소한다(다시 맡기기 대신 알리기만).
@@ -314,7 +327,7 @@ export class WorkUnits {
     const st = this.store(); const now = Date.now();
     const tr = st.openTryOf(s.sessionId);
     const unit = tr ? st.getUnit(tr.unitId) : null;
-    if (tr) { st.updateTry(tr.id, { endedAt: now, stopReason: 'closed' }); st.updateUnit(tr.unitId, { status: 'cancelled', closedAt: now }); }
+    if (tr) { st.updateTry(tr.id, { endedAt: now, stopReason: 'closed' }); st.updateUnit(tr.unitId, { status: 'cancelled', closedAt: now }); this.stopEvent(s, tr, 'closed', reason); }
     for (const u of st.queuedUnitsOf(s.sessionId)) st.updateUnit(u.id, { status: 'cancelled', closedAt: now });
     this.queued.delete(s.sessionId);
     this.prev.delete(s.sessionId);

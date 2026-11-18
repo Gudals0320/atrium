@@ -43,6 +43,14 @@ export const RIG_ADMIN_SCHEMA = `
 CREATE TABLE IF NOT EXISTS rig_versions (workspace_key TEXT NOT NULL, n INTEGER NOT NULL, hash TEXT NOT NULL, t INTEGER NOT NULL, by TEXT NOT NULL, note TEXT, file TEXT, PRIMARY KEY (workspace_key, n)) STRICT;
 CREATE TABLE IF NOT EXISTS rig_cycles (workspace_key TEXT NOT NULL, line INTEGER NOT NULL, next_at INTEGER NOT NULL, last_at INTEGER, sig TEXT, PRIMARY KEY (workspace_key, line)) STRICT;
 `;
+// P217: rig 장부(18.1). 추가만 하는 표. seq는 AUTOINCREMENT라 지운 뒤에도 다시 쓰지 않는다(읽은 자리 커서의 기준).
+//   쓰는 곳은 rig-ledger.mjs rigEvent 하나(insertRigEvent). 지우는 곳은 보관 정리(pruneRigEvents) 하나
+export const RIG_EVENTS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS rig_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER NOT NULL, ws TEXT NOT NULL, def_n INTEGER, kind TEXT NOT NULL, case_id TEXT, unit_id TEXT, try_id TEXT, seat TEXT, session TEXT, from_seat TEXT, to_seat TEXT, line INTEGER, value TEXT, n INTEGER, max INTEGER, actor TEXT, ref TEXT, text TEXT, data TEXT) STRICT;
+CREATE INDEX IF NOT EXISTS rig_events_ws ON rig_events(ws, seq);
+CREATE INDEX IF NOT EXISTS rig_events_case ON rig_events(case_id, seq);
+`;
+const eventRow = (r) => ({ seq: Number(r.seq), t: r.t, ws: r.ws, defN: r.def_n ?? null, kind: r.kind, caseId: r.case_id ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, seat: r.seat ?? null, session: r.session ?? null, fromSeat: r.from_seat ?? null, toSeat: r.to_seat ?? null, line: r.line ?? null, value: r.value ?? null, n: r.n ?? null, max: r.max ?? null, actor: r.actor ?? null, ref: r.ref ?? null, text: r.text ?? null, data: r.data ? J(r.data, null) : null });
 export const RIG_COLUMNS = {
   sessions: { rig_seat: 'TEXT' }, // P185: 세션이 맡은 rig 자리(사람이 정하거나 판이 자리를 위해 띄움)
   // P185: 일의 건(case_id), 받는 자리(seat), 보낸 쪽 기록(via JSON: { by, fromSeat, result, line, escalated }). max_live 줄에 선 일은 to_session이 ''다
@@ -105,6 +113,43 @@ export function installRig(Store) {
       if (!unitIds.length) return {};
       const rows = this.db.prepare(`SELECT unit_id, COUNT(*) AS n FROM tool_runs WHERE unit_id IN (${unitIds.map(() => '?').join(',')}) GROUP BY unit_id`).all(...unitIds);
       return Object.fromEntries(rows.map((r) => [r.unit_id, Number(r.n)]));
+    },
+    // ---------- P217: 장부(rig_events) ----------
+    // rig-ledger.mjs rigEvent만 부른다 → seq
+    insertRigEvent(x) {
+      const r = this.st('INSERT INTO rig_events (t, ws, def_n, kind, case_id, unit_id, try_id, seat, session, from_seat, to_seat, line, value, n, max, actor, ref, text, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(x.t, x.ws, x.defN ?? null, x.kind, x.caseId ?? null, x.unitId ?? null, x.tryId ?? null, x.seat ?? null, x.session ?? null, x.fromSeat ?? null, x.toSeat ?? null, x.line ?? null, x.value ?? null, x.n ?? null, x.max ?? null, x.actor ?? null, x.ref ?? null, x.text ?? null, x.data != null ? JSON.stringify(x.data) : null);
+      return Number(r.lastInsertRowid);
+    },
+    // 장부 읽기(seq 차례). q: { ws, caseIds?, kinds?, sinceSeq?(그 뒤), sinceT?(그 시각부터), limit, desc? }
+    rigEvents(q = {}) {
+      const where = ['ws = ?']; const vals = [q.ws];
+      if (q.caseIds) { if (!q.caseIds.length) return []; where.push(`case_id IN (${q.caseIds.map(() => '?').join(',')})`); vals.push(...q.caseIds); }
+      if (q.kinds && q.kinds.length) { where.push(`kind IN (${q.kinds.map(() => '?').join(',')})`); vals.push(...q.kinds); }
+      if (q.sinceSeq != null) { where.push('seq > ?'); vals.push(Number(q.sinceSeq)); }
+      if (q.sinceT != null) { where.push('t >= ?'); vals.push(Number(q.sinceT)); }
+      const lim = Math.max(1, Number(q.limit) || 200);
+      // 커서 없이 부르면 최근 limit줄(오래된 것부터 돌려준다). 커서가 있으면 그 뒤에서 limit줄
+      const tail = q.sinceSeq == null && q.sinceT == null;
+      const rows = this.db.prepare(`SELECT * FROM rig_events WHERE ${where.join(' AND ')} ORDER BY seq ${tail ? 'DESC' : 'ASC'} LIMIT ?`).all(...vals, lim).map(eventRow);
+      return tail ? rows.reverse() : rows;
+    },
+    // P217: 세션이 받았거나 주인인 건(그 워크스페이스)
+    caseIdsOfSession(sessionId, ws) { return this.st("SELECT id FROM rig_cases WHERE workspace_key = ? AND (owner_session = ? OR id IN (SELECT case_id FROM work_units WHERE to_session = ? AND case_id IS NOT NULL)) ORDER BY created_at").all(ws, sessionId, sessionId).map((r) => r.id); },
+    lastRigSeq(ws) { const r = this.st('SELECT MAX(seq) AS s FROM rig_events WHERE ws = ?').get(ws); return r && r.s != null ? Number(r.s) : 0; },
+    // 구조 지도의 재료: 최근 건(case_open이 있는 것) n개와 그 건들의 모든 줄, 건 밖 줄은 빼고. want: 반드시 담을 건
+    rigEventsForMap(ws, { cases = 50, want = null } = {}) {
+      const ids = this.st("SELECT case_id FROM rig_events WHERE ws = ? AND kind = 'case_open' ORDER BY seq DESC LIMIT ?").all(ws, cases).map((r) => r.case_id);
+      if (want && !ids.includes(want)) ids.push(want);
+      if (!ids.length) return [];
+      return this.db.prepare(`SELECT * FROM rig_events WHERE ws = ? AND case_id IN (${ids.map(() => '?').join(',')}) ORDER BY seq`).all(ws, ...ids).map(eventRow);
+    },
+    // 보관(18.1): 워크스페이스의 줄이 max를 넘으면 열린 건이 아닌 줄(건 밖 줄 포함)의 오래된 것부터 지운다 → 지운 수
+    pruneRigEvents(ws, max) {
+      const n = Number(this.st('SELECT COUNT(*) AS n FROM rig_events WHERE ws = ?').get(ws).n);
+      if (n <= max) return 0;
+      const r = this.db.prepare(`DELETE FROM rig_events WHERE seq IN (SELECT seq FROM rig_events WHERE ws = ? AND (case_id IS NULL OR case_id NOT IN (SELECT id FROM rig_cases WHERE workspace_key = ? AND state IN ('open', 'blocked', 'waiting_owner'))) ORDER BY seq LIMIT ?)`).run(ws, ws, n - max);
+      return Number(r.changes);
     },
     // ---------- P185: 자리와 건 ----------
     setSessionSeat(sessionId, seat) { this.st('UPDATE sessions SET rig_seat = ? WHERE session_id = ?').run(seat || null, sessionId); },
