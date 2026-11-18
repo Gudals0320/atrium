@@ -371,7 +371,8 @@ test('P188 느린 고리: 다음 시각은 DB, 놓친 회는 한 번, 요약(건
     for (const decision of ['reject', 'reject', 'pass']) b.store.insertHookRun({ t: t0 + 1000, workspaceKey: ws.key, at: 'done', hookIndex: 0, argv: ['node', 'x'], decision, reason: decision === 'reject' ? 'evidence 없음' : null });
     for (const [i, code] of [[1, 0], [2, 3]]) b.store.insertToolRun({ id: `trx${i}`, sessionId: lead.sessionId, workspaceKey: ws.key, tool: 'summary', argv: [], args: [], status: 'done', exitCode: code, startedAt: t0 + 1000 + i, endedAt: t0 + 2000 });
     // 판이 꺼져 있다가 다섯 주기 뒤에 돈다 → 한 번만
-    const t1 = t0 + 5 * 3600000 + 1000;
+    // 2분 여유: 건의 마지막 넘김은 t0 뒤 실제 시각(띄우기·기다림에 몇 초)이라 +1초면 부하에서 "4시간 전"으로 내려가 흔들렸다(2026-11-18)
+    const t1 = t0 + 5 * 3600000 + 120000;
     const fired = await F.cycleTick(t1);
     assert.equal(fired.length, 1); assert.equal(fired[0].to, 'lead');
     assert.equal(b.store.getCycle(ws.key, 0).nextAt, t1 + 3600000, '놓친 회는 한 번, 다음은 지금 + 주기');
