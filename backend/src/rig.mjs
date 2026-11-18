@@ -16,6 +16,7 @@ import { cleanEnv } from './proc-env.mjs';
 import { shownName } from './session-label.mjs';
 import { isModelName } from './model-name.mjs'; // P209: 자리 model
 import { EFFORTS } from './settings.mjs'; // P209: 자리 effort(Claude Code)
+import { CODEX_EFFORTS } from './launchers.mjs'; // P209: 자리 effort(Codex, P208의 model_reasoning_effort 옮기기와 같은 표)
 import { AMP_ATS, validateAmp } from './rig-amp.mjs'; // P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
 
 export const RIG_FILE = '.atrium/rig.json';
@@ -219,7 +220,7 @@ export const SEAT_MAX_LIVE = 3;
 export const SEAT_KINDS = ['claude', 'codex', 'opencode', 'pi'];
 // P209: 자리의 노력 수준(seats.<자리>.effort). 하네스마다 받는 값. Claude Code는 claude --effort, Codex는 model_reasoning_effort로 넘긴다.
 //   opencode·pi는 노력 수준 칸이 없다. 런처 이름 자리는 정의만으로 하네스를 모르므로 둘을 합친 값을 받고 atrium rig check가 런처의 종류로 다시 본다
-export const SEAT_EFFORTS = { claude: EFFORTS.filter(Boolean), codex: ['minimal', 'low', 'medium', 'high', 'xhigh'] };
+export const SEAT_EFFORTS = { claude: EFFORTS.filter(Boolean), codex: CODEX_EFFORTS.slice() };
 // 자리 effort가 그 종류에 맞나 → null(맞음) | 까닭
 export function seatEffortError(kind, effort) {
   const ok = SEAT_EFFORTS[kind];

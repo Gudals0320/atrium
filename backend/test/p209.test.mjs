@@ -171,12 +171,14 @@ test('P209 자리 effort·model 검사: 종류별 값, 틀린 값, model은 종�
   for (const e of ['low', 'medium', 'high', 'xhigh', 'max']) assert.equal(ok({ launcher: 'claude', effort: e }).ok, true, e);
   for (const e of ['minimal', 'low', 'medium', 'high', 'xhigh']) assert.equal(ok({ launcher: 'codex', effort: e }).ok, true, e);
   assert.match(ok({ launcher: 'claude', effort: 'minimal' }).reason, /seats\.w\.effort/);
-  assert.match(ok({ launcher: 'codex', effort: 'max' }).reason, /codex 자리의 effort/);
+  assert.match(ok({ launcher: 'codex', effort: 'turbo' }).reason, /codex 자리의 effort/);
+  assert.equal(ok({ launcher: 'codex', effort: 'max' }).ok, true, 'P208 Codex 표(none…ultra)');
   assert.match(ok({ launcher: 'opencode', effort: 'low' }).reason, /effort를 받지 않는다/);
   assert.match(ok({ launcher: 'claude', effort: 'turbo' }).reason, /effort/);
   assert.match(ok({ launcher: 'claude', effort: 3 }).reason, /effort/);
   assert.equal(ok({ launcher: 'my-launcher', effort: 'minimal' }).ok, true, '런처 자리는 둘을 합친 값(check가 종류로 다시 본다)');
-  assert.match(ok({ launcher: 'my-launcher', effort: 'ultra' }).reason, /effort/);
+  assert.match(ok({ launcher: 'my-launcher', effort: 'turbo' }).reason, /effort/);
+  assert.equal(ok({ launcher: 'my-launcher', effort: 'ultra' }).ok, true, 'Codex 값');
   const m = ok({ launcher: 'claude', model: 'haiku', effort: 'low' });
   assert.equal(m.ok, true); assert.equal(m.flow.seats.w.model, 'haiku'); assert.equal(m.flow.seats.w.effort, 'low');
   assert.equal(ok({ launcher: 'claude' }).flow.seats.w.effort, null);

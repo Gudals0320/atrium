@@ -113,7 +113,7 @@ export function rigGuideText() {
     '  - guide: 그 자리의 안내 파일 경로(워크스페이스 안). 자리 세션은 일을 시작하기 전에 이것을 읽는다. 할 일과 쓸 done 값을 짧게 적는다.',
     '  - may: 일 없이 글만 보낼 수 있는 곳의 목록. 자리 이름, "@<세션 이름>"(rig 밖의 그 세션), "*"(자리 없는 세션 모두). rig 밖 세션에는 글만 가고 일은 만들지 않는다. manager 자리는 적지 않아도 rig 밖 세션에 글을 보낸다.',
     '  - max_live: fresh 자리에서 함께 도는 세션 수(기본 3). tools: 그 자리가 부를 수 있는 도구 이름.',
-    '  - effort: 그 자리 세션의 노력 수준. 빼면 런처(또는 건 주인)의 것을 쓴다. Claude Code: low, medium, high, xhigh, max. Codex: minimal, low, medium, high, xhigh. opencode·pi는 받지 않는다. 비용을 줄이려면 "medium"이나 "low".',
+    '  - effort: 그 자리 세션의 노력 수준. 빼면 런처(또는 건 주인)의 것을 쓴다. Claude Code: low, medium, high, xhigh, max. Codex: none, minimal, low, medium, high, xhigh, max, ultra(model_reasoning_effort로 넘긴다). opencode·pi는 받지 않는다. 비용을 줄이려면 "medium"이나 "low".',
     '  - model: 그 자리 세션의 모델(예: "haiku", "gpt-6-astra"). launcher가 종류 이름(claude, codex 등)인 자리에만 쓴다. 런처 자리는 그 런처의 모델로 뜬다.',
     '  - effort·model은 자리 세션을 띄울 때 먹는다. 이미 앉아 있는 keep 자리 세션은 다음에 띄울 때부터 바뀐다(atrium rig check가 알린다).',
     '  - worktree 자리를 두면 워크스페이스가 git 저장소이고 첫 커밋이 있어야 한다(없으면 atrium rig check가 경고한다).',
