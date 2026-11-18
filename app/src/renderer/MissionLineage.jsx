@@ -24,12 +24,10 @@ import { commandDraft } from './Thread.jsx';
 import { caseGroups, recentLines } from './lib/rig-map.js'; // P186: rig 건 목록·미리 보기 훅·도구 줄
 import { SeatPicker, remoteView } from './RigSeat.jsx'; // P186: 노드 메뉴 자리 정하기
 import { RigBandLayer, RigBandLines, RigBandDefs, RigBandLabels, CaseHistory } from './RigBand.jsx'; // P198: rig 띠
-import { noteMap } from './perf-trace.js';
-import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤 // P210: 배치 셈·그래프 읽기·카드 그리기 세기(성능 기록 map 묶음)
+import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기·카드 그리기 세기(성능 기록 map 묶음)
+import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
 import { stickyHead } from './lib/rig-band.js'; // P199: 붙는 머리(띠의 자리 머리가 위로 지나가면 고정 머리 막대에 자리 이름)
 
-// P210: 배치 셈 하나를 재어 센다(성능 기록·시험)
-export const timedLayout = (g, o) => { const t0 = performance.now(); const r = lineageLayout(g, o); noteMap('layout', performance.now() - t0); return r; };
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
 const COLH = 34; // 칸 머리 띠 높이
 const RAIL = 0; // P153 r9: 목차 레일은 없앴다(앱 사이드바를 같이 쓴다)
@@ -290,10 +288,10 @@ export function LineageMap() {
   const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
   const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, foldOpen, today, columns: 'auto', view: fitArea }), [vgroups, tiers, names, t, expanded, foldOpen, today, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
-  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(g2, { ...layOpts, label: lstep }) : null)), [g2, layOpts, lstep]);
+  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
   // P178: 맞춤 보기를 셀 때 다른 계단의 배치(선 길 찾기 없이, 크기만)
   const layForRef = useRef(null);
-  layForRef.current = (st) => (g2 ? timedLayout(g2, { ...layOpts, label: st, routing: false }) : null);
+  layForRef.current = (st) => (g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: st, routing: false })) : null);
   const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
   layRef.current = lay;
   sizeRef.current = vsize;
@@ -353,7 +351,7 @@ export function LineageMap() {
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
-    if (root && !glide) { if (root.dataset.moving !== '1') { root.dataset.moving = '1'; holdLights(root, true); } clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; holdLights(root, false); setIk(); checkStep(); }, 160); }
+    if (root && !glide) { if (root.dataset.moving !== '1') { root.dataset.moving = '1'; holdLights(root, true); } clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); checkStep(); holdLights(root, false); }, 160); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // P178: 움직임이 멈춘 뒤 이름표 계단이 바뀌었으면 배치를 다시 센다. 화면 가운데에 가장 가까운 카드를 닻으로 남겨, 새 배치에서도 그 카드가 같은 화면 자리에 있게 한다
   function checkStep() {

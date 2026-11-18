@@ -23,6 +23,8 @@ export function noteMap(kind, ms = 0) {
   m[kind] = (m[kind] || 0) + 1;
   if (kind !== 'cards') { m[`${kind}Ms`] = (m[`${kind}Ms`] || 0) + ms; if (ms > (m[`${kind}Max`] || 0)) m[`${kind}Max`] = ms; }
 }
+// P210: 배치 셈 하나(fn)를 재어 센다
+export const timedLayout = (fn) => { const t0 = performance.now(); const r = fn(); noteMap('layout', performance.now() - t0); return r; };
 export function countRender(kind) { if (traceFlag.on && c) c.renders[kind] = (c.renders[kind] || 0) + 1; }
 // Canvas가 노드 배열을 다시 만들 때(세션·배치 갱신). same: 바뀐 노드가 없어 옛 배열을 그대로 썼다
 export function noteRebuild(prev, next, same) {

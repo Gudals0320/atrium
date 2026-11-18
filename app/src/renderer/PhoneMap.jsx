@@ -9,12 +9,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
-import { PHONE, todayWorkspaces, dayStart, msToMidnight, tabOfId, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: 다시 셀 것만 // P202: 오늘 일한 폴더 먼저. P207: 오늘 | 이전 탭
+import { lineageLayout, PHONE, todayWorkspaces, dayStart, msToMidnight, tabOfId, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: 다시 셀 것만 // P202: 오늘 일한 폴더 먼저. P207: 오늘 | 이전 탭
 import { roleModel, nodeTier } from './lib/mission-model.js';
 import { levelOf, zoomAt, ZOOM } from './lib/mission-terr.js';
 import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeKey, loadTab, saveTab } from './lib/phone-map.js';
-import { Card, Peek, cardFacts, timedLayout } from './MissionLineage.jsx';
-import { noteMap } from './perf-trace.js'; // P210
+import { Card, Peek, cardFacts } from './MissionLineage.jsx';
+import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기 세기
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
 import { caseGroups } from './lib/rig-map.js'; // P186: rig 건(알약)
 import { RigBandLayer } from './RigBand.jsx'; // P198: rig 띠 휴대폰 갈래(세로 건 목록과 지금 자리)
@@ -83,7 +83,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const vkey = sizeKey(vsize); // 단 나누기는 보이는 칸 비율을 따른다(크기가 조금 바뀌어도 다시 놓지 않게 20px 단위)
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
-  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, foldOpen, tab: tabSel || 'auto' }) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, foldOpen, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(() => lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, foldOpen, tab: tabSel || 'auto' })) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, foldOpen, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
