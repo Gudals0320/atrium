@@ -12,6 +12,11 @@ export const boardAgentKind = (t) => (t && t.labels && t.labels[LABEL.agent]) ||
 // "막힘"을 흉내 낸 상태를 둔다(synthetic). 판은 blocked + 묻는 hook 없음 + 화면 → trust_wait로 본다(state.mjs)
 export const TRUST_STATUS = Object.freeze({ app: 'claude-code', state: 'blocked', kind: 'trust', msg: 'Quick safety check: trust this folder', synthetic: true });
 export const isSynthetic = (st) => !!(st && st.synthetic);
+// P208: Codex도 신뢰 질문 동안 상태를 말하지 않는다. 같은 흉내 막힘을 그 종류 이름으로 둔다
+export const CODEX_TRUST_STATUS = Object.freeze({ app: 'codex', state: 'blocked', kind: 'trust', msg: 'Trust this folder?', synthetic: true });
+export const trustStatusOf = (kind) => (kind === 'codex' ? CODEX_TRUST_STATUS : TRUST_STATUS);
+// P208: 어댑터가 띄운 뒤 화면으로 신뢰 질문을 지켜보는 종류(AGY는 스스로 blocked를 말한다)
+export const TRUST_WATCH_KINDS = new Set(['claude', 'codex']);
 
 // 7501 상태 → 판의 상태 낱말(idle, working, blocked, done, unknown). error는 턴이 끝난 것(done)으로 두고 자세한 것은 detail로 넘긴다. 상태가 없으면 unknown
 export const STATUS_WORD = { idle: 'idle', working: 'working', blocked: 'blocked', done: 'done', error: 'done' };
