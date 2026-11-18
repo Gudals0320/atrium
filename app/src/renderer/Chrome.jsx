@@ -26,7 +26,7 @@ import { Icon } from './lib/icons.jsx';
 import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
-import { wsTabs, sumCounts, groupPick, memberLabel } from './lib/ws-tabs.js'; // P98: 위 바 묶음 칩
+import { wsTabs, sumCounts, groupPick, memberLabel, groupChipView } from './lib/ws-tabs.js'; // P98: 위 바 묶음 칩
 import { sleepIdle, asleepStats, memByRepo, fmtMB } from './sleep.js'; // P21(D4), P24: 리포별로 묶는다. P168 뒤: fmtMB는 모르는 값(null)을 ?로
 
 function useNow(ms = 1000) { const [n, set] = useState(Date.now()); useEffect(() => { const t = setInterval(() => set(Date.now()), ms); return () => clearInterval(t); }, [ms]); return n; }
@@ -71,7 +71,7 @@ function WsChip({ w, list, on }) {
 }
 
 // P98: 묶음 하나의 대표 칩. 이름은 묶음 이름, 수와 응답 필요는 구성의 합. 누르면 지금 워크스페이스를 고르고(groupPick) 묶음 전체로 화면을 맞춘다.
-// 끝의 ▾는 구성 목록을 펼친다(바는 가로 스크롤이라 목록은 body에 띄운다). 지금 워크스페이스가 묶음 안이면 켜지고 › 뒤에 안의 이름을 작게 보인다
+// 끝의 ▾는 구성 목록을 펼친다(바는 가로 스크롤이라 목록은 body에 띄운다). 지금 워크스페이스가 묶음 안이면 켜진다. 칩에는 묶음 이름만 보이고 안의 이름은 title에만 둔다(P212)
 function GroupChip({ tab, list, current }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -80,8 +80,7 @@ function GroupChip({ tab, list, current }) {
   const menu = useRef(null);
   const [at, setAt] = useState(null);
   const c = sumCounts(list, tab.keys);
-  const on = tab.keys.includes(current);
-  const cur = on ? tab.ws.find((w) => w.key === current) : null;
+  const { on, cur, text } = groupChipView(tab, current);
   const kind = tab.auto ? t('wsGroupTab.kindAuto', { root: tab.root || '' }) : t('wsGroupTab.kindGroup');
   const title = `${t('wsGroupTab.title', { name: tab.name, n: tab.keys.length, kind, sessions: c.sessions, shells: c.shells, working: c.working, needsYou: c.needsYou, review: c.review })}${cur ? `\n${t('wsGroupTab.current', { name: memberLabel(cur) })}` : ''}\n${t('boardKeys.ws')}`;
   const pickGroup = () => { setOpen(false); selectGroup(tab.keys, groupPick(tab, current, lastInGroup.get(tab.id))); };
@@ -121,8 +120,7 @@ function GroupChip({ tab, list, current }) {
       title={title} onClick={pickGroup} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter') pickGroup(); else if (e.key === 'ArrowDown' && e.altKey) toggle(e, true); }}>
       {c.needsYou > 0 && <span className="mt-ws-need" data-count="needsYou" title={t('top.turnN', { n: c.needsYou })}>{c.needsYou}</span>}
       <Icon name={tab.auto ? 'folder' : 'layers'} className="mt-wsgrp-ico" />
-      <span className="mt-ws-name">{tab.name}</span>
-      {cur && <><span className="mt-wsgrp-sep" aria-hidden="true">›</span><span className="mt-wsgrp-sub" data-role="ws-group-current">{memberLabel(cur)}</span></>}
+      <span className="mt-ws-name">{text}</span>
       <span className={`mt-ws-n${on ? ' badge' : ''}`} data-count="sessions">{c.sessions}</span>
       <span ref={chev} role="button" tabIndex={0} className={`mt-wsgrp-chev${open ? ' open' : ''}`} data-action="ws-group-open" aria-haspopup="menu" aria-expanded={!!open} aria-label={t('wsGroupTab.pick', { name: tab.name })} title={t('wsGroupTab.pick', { name: tab.name })}
         onClick={(e) => toggle(e)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); toggle(e, true); } }}><Icon name="chevDown" /></span>
