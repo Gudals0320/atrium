@@ -12,6 +12,17 @@ export const REPORT_MS = 30000;
 export const traceFlag = { on: false };
 let c = null; // 모으는 중인 값
 
+// P210: 세션 맵(PC·휴대폰)의 배치 셈(layout), 그래프 읽기(graph, 왕복 ms), 카드 그리기(cards). 정수 몇 개라 늘 센다(시험이 window.__mapStats로 읽는다).
+// 성능 기록이 켜져 있으면 30초 요약의 map 묶음에 그 사이 횟수·합·최대 ms를 넣는다(값만)
+export const mapStats = { layout: 0, layoutMs: 0, graph: 0, graphMs: 0, cards: 0 };
+export function noteMap(kind, ms = 0) {
+  mapStats[kind] = (mapStats[kind] || 0) + 1;
+  if (ms) mapStats[`${kind}Ms`] = (mapStats[`${kind}Ms`] || 0) + ms;
+  if (!traceFlag.on || !c) return;
+  const m = c.map;
+  m[kind] = (m[kind] || 0) + 1;
+  if (kind !== 'cards') { m[`${kind}Ms`] = (m[`${kind}Ms`] || 0) + ms; if (ms > (m[`${kind}Max`] || 0)) m[`${kind}Max`] = ms; }
+}
 export function countRender(kind) { if (traceFlag.on && c) c.renders[kind] = (c.renders[kind] || 0) + 1; }
 // Canvas가 노드 배열을 다시 만들 때(세션·배치 갱신). same: 바뀐 노드가 없어 옛 배열을 그대로 썼다
 export function noteRebuild(prev, next, same) {
@@ -24,7 +35,7 @@ export function noteRebuild(prev, next, same) {
   c.rebuild.changed += ch;
 }
 
-function fresh() { return { t0: performance.now(), gaps: [], wheel: [], longTasks: [], loafs: [], renders: {}, rebuild: { n: 0, same: 0, changed: 0 }, hiddenMs: 0 }; }
+function fresh() { return { t0: performance.now(), gaps: [], wheel: [], longTasks: [], loafs: [], renders: {}, rebuild: { n: 0, same: 0, changed: 0 }, hiddenMs: 0, map: {} }; }
 
 function nodesNow() {
   const canvas = document.querySelector('.mt-canvas');
@@ -60,7 +71,7 @@ function send(reason) {
   const vp = document.querySelector('.react-flow__viewport');
   const canvas = document.querySelector('.mt-canvas');
   const sum = summarize({
-    sec: (now - c.t0) / 1000, gaps: c.gaps, wheel: c.wheel, longTasks: c.longTasks, loafs: c.loafs, renders: c.renders, rebuild: c.rebuild, reason,
+    sec: (now - c.t0) / 1000, gaps: c.gaps, wheel: c.wheel, longTasks: c.longTasks, loafs: c.loafs, renders: c.renders, rebuild: c.rebuild, reason, map: { ...c.map, open: document.querySelector('[data-role=mission]') ? 1 : 0 },
     nodes: nodesNow(),
     view: { zoom: vp ? zoomOfTransform(vp.style.transform) : null, w: canvas ? canvas.clientWidth : innerWidth, h: canvas ? canvas.clientHeight : innerHeight, dpr: devicePixelRatio, hiddenMs: c.hiddenMs },
     phone: document.documentElement.classList.contains('mt-phone-on'),
@@ -116,4 +127,4 @@ export function watchPerfTrace() {
   return subscribe(sync);
 }
 
-if (typeof window !== 'undefined') window.__perfTrace = { send, start: startTrace, stop: stopTrace, flag: traceFlag }; // 시험이 읽는다
+if (typeof window !== 'undefined') { window.__perfTrace = { send, start: startTrace, stop: stopTrace, flag: traceFlag }; window.__mapStats = mapStats; } // 시험이 읽는다

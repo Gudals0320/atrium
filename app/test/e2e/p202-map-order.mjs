@@ -14,8 +14,9 @@ const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 const DEV = path.join(REPO, 'backend', '.dev');
 const OUT = path.join(REPO, 'experiments', 'p202', TAG);
 const CONVOS = path.join(REPO, 'experiments', 'p202', 'convos');
-const DIR = 'C:\\Workspace\\mtask-p202-a';
-const BOARD = 'atrium-dev-p202', PORT = '47971', DEBUG = '9451', SIM = 47973;
+// P210: 다른 워커의 판에서 돌릴 때 P202_BOARD(atrium-dev-<이름>), P202_PORT, P202_DEBUG, P202_SIM, P202_DIR로 덮는다
+const DIR = process.env.P202_DIR || 'C:\\Workspace\\mtask-p202-a';
+const BOARD = `atrium-dev-${process.env.P202_BOARD || 'p202'}`, PORT = process.env.P202_PORT || '47971', DEBUG = process.env.P202_DEBUG || '9451', SIM = Number(process.env.P202_SIM || 47973);
 for (const k of Object.keys(process.env)) if (/^(ATRIUM_|MTASK_|HERDR_|HC_)/.test(k)) delete process.env[k];
 process.env.MT_E2E_OUT = path.relative(path.join(REPO, 'experiments'), OUT);
 const L = await import('./p59-lib.mjs');

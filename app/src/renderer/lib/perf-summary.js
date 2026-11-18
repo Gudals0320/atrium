@@ -47,7 +47,14 @@ export function visibleCount(rects, view) {
   return n;
 }
 
-// 모은 값 → 보낼 요약. c: { sec, gaps, wheel, longTasks, loafs, renders, rebuild, nodes, view }
+// P210: 세션 맵 묶음(map). 횟수·ms 합·최대만, 소수 둘째 자리로
+export function mapOf(m) {
+  const out = {};
+  for (const [k, v] of Object.entries(m || {})) if (typeof v === 'number' && Number.isFinite(v)) out[k] = r2(v);
+  return out;
+}
+
+// 모은 값 → 보낼 요약. c: { sec, gaps, wheel, longTasks, loafs, renders, rebuild, nodes, view, map }
 export function summarize(c) {
   return {
     sec: r2(c.sec || 0),
@@ -59,6 +66,7 @@ export function summarize(c) {
     rebuild: { ...(c.rebuild || {}) },
     nodes: { ...(c.nodes || {}) },
     view: { ...(c.view || {}) },
+    ...(c.map ? { map: mapOf(c.map) } : {}),
     ...(c.reason ? { reason: c.reason } : {}),
     ...(c.phone ? { phone: true } : {}),
   };

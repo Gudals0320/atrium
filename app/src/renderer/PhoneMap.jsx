@@ -9,11 +9,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
-import { lineageLayout, PHONE, todayWorkspaces, dayStart, msToMidnight, tabOfId } from './lib/mission-lineage.js'; // P202: 오늘 일한 폴더 먼저. P207: 오늘 | 이전 탭
+import { PHONE, todayWorkspaces, dayStart, msToMidnight, tabOfId, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: 다시 셀 것만 // P202: 오늘 일한 폴더 먼저. P207: 오늘 | 이전 탭
 import { roleModel, nodeTier } from './lib/mission-model.js';
 import { levelOf, zoomAt, ZOOM } from './lib/mission-terr.js';
 import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeKey, loadTab, saveTab } from './lib/phone-map.js';
-import { Card, Peek, cardFacts } from './MissionLineage.jsx';
+import { Card, Peek, cardFacts, timedLayout } from './MissionLineage.jsx';
+import { noteMap } from './perf-trace.js'; // P210
+import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
 import { caseGroups } from './lib/rig-map.js'; // P186: rig 건(알약)
 import { RigBandLayer } from './RigBand.jsx'; // P198: rig 띠 휴대폰 갈래(세로 건 목록과 지금 자리)
 
@@ -55,18 +57,20 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const lastGo = useRef({});
 
   // 그래프 받기: 열 때 바로 한 번, 그 뒤 판이 바뀌면 REFRESH_MS 안에 한 번(바뀜이 잇따라도 미뤄지기만 하지 않게 모아서)
+  const gkey = useMemo(() => graphKey(sessions), [sessions]); // P210
   const fetchT = useRef(0), alive = useRef(true), fetched = useRef(false);
   useEffect(() => { alive.current = true; return () => { alive.current = false; clearTimeout(fetchT.current); fetchT.current = 0; }; }, []);
   useEffect(() => {
     if (fetchT.current) return;
-    const run = () => { fetchT.current = 0; fetched.current = true; api.call('mission.graph').then((g) => { cache = g; if (alive.current) { setGraph(g); setFail(null); } }).catch((e) => { if (alive.current) setFail(e); }); };
+    const run = () => { fetchT.current = 0; fetched.current = true; const t0 = performance.now(); api.call('mission.graph').then((g) => { noteMap('graph', performance.now() - t0); if (alive.current) { setGraph((prev) => (cache = keepSameGraph(prev, g))); setFail(null); } else cache = g; }).catch((e) => { if (alive.current) setFail(e); }); };
     fetchT.current = setTimeout(run, fetched.current ? REFRESH_MS : 0);
-  }, [sessions, links, thread, loops, reloadN]);
+  }, [gkey, links, thread, loops, reloadN]); // P210: 세션은 그래프에 닿는 값(graphKey)이 바뀔 때만
   useEffect(() => api.on('relation.updated', () => setReloadN((n) => n + 1)), []);
   useEffect(() => api.on('rig.cases', () => setReloadN((n) => n + 1)), []); // P198: rig 건이 바뀌면 다시 읽는다
 
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
-  const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tiersRef = useRef(null); // P210: 등급이 같으면 앞 표 그대로(배치를 다시 세지 않는다)
+  const tiers = useMemo(() => (tiersRef.current = keepSameMap(tiersRef.current, new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []))), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   // P202: 오늘 일한 워크스페이스(폴더 차례, PC와 같은 규칙). 자정이 지나면 다시 센다
   const [day, setDay] = useState(() => dayStart());
   useEffect(() => { const id = setTimeout(() => setDay(dayStart()), msToMidnight() + 500); return () => clearTimeout(id); }, [day]);
@@ -78,7 +82,8 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const today = useMemo(() => new Set(todayKey ? todayKey.split('\n') : []), [todayKey]);
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const vkey = sizeKey(vsize); // 단 나누기는 보이는 칸 비율을 따른다(크기가 조금 바뀌어도 다시 놓지 않게 20px 단위)
-  const lay = useMemo(() => (graph && vsize ? lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, foldOpen, tab: tabSel || 'auto' }) : null), [graph, vgroups, tiers, names, t, expanded, vkey, foldOpen, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
+  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, foldOpen, tab: tabSel || 'auto' }) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, foldOpen, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
@@ -87,11 +92,12 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   tabRef.current = pick;
   sizeRef.current = vsize;
   const now = Date.now();
+  const keepFacts = useMemo(() => factsKeeper(), []); // P210: 같은 사실이면 앞 객체(카드 memo)
   const factsOf = (id) => {
     const b = lay.cards.get(id), n = b.node, m = roles.get(id);
     const pid = m && m.parentId, p = pid ? lay.tree.byId.get(pid) : null;
     const pws = p ? p.workspaceKey || '' : null;
-    return cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length });
+    return keepFacts(id, cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length }));
   };
   const onFold = useCallback((id) => { quiet.current = Date.now() + 400; setExpanded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); saveExpanded(n); return n; }); }, []);
 
@@ -110,7 +116,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
-    if (vp && !glide) { if (vp.dataset.moving !== '1') vp.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete vp.dataset.moving; setIk(); }, 160); }
+    if (vp && !glide) { if (vp.dataset.moving !== '1') { vp.dataset.moving = '1'; holdLights(vp, true); } clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete vp.dataset.moving; holdLights(vp, false); setIk(); }, 160); }
     // 이 기기에 기억(조금 모았다가)
     if (save) { clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => saveView(store(), sizeRef.current, view.current, tabRef.current), PM.SAVE_MS); }
   }, []);

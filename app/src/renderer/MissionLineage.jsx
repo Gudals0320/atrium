@@ -10,7 +10,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, todayWorkspaces, dayStart, msToMidnight } from './lib/mission-lineage.js'; // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
+import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
@@ -24,8 +24,12 @@ import { commandDraft } from './Thread.jsx';
 import { caseGroups, recentLines } from './lib/rig-map.js'; // P186: rig 건 목록·미리 보기 훅·도구 줄
 import { SeatPicker, remoteView } from './RigSeat.jsx'; // P186: 노드 메뉴 자리 정하기
 import { RigBandLayer, RigBandLines, RigBandDefs, RigBandLabels, CaseHistory } from './RigBand.jsx'; // P198: rig 띠
+import { noteMap } from './perf-trace.js';
+import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤 // P210: 배치 셈·그래프 읽기·카드 그리기 세기(성능 기록 map 묶음)
 import { stickyHead } from './lib/rig-band.js'; // P199: 붙는 머리(띠의 자리 머리가 위로 지나가면 고정 머리 막대에 자리 이름)
 
+// P210: 배치 셈 하나를 재어 센다(성능 기록·시험)
+export const timedLayout = (g, o) => { const t0 = performance.now(); const r = lineageLayout(g, o); noteMap('layout', performance.now() - t0); return r; };
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
 const COLH = 34; // 칸 머리 띠 높이
 const RAIL = 0; // P153 r9: 목차 레일은 없앴다(앱 사이드바를 같이 쓴다)
@@ -73,7 +77,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const cmd = live && live.shell && live.shell.atPrompt === false ? live.shell.command || (live.shell.procs || []).join(', ') : null;
   const stateText = tier === 'review' ? t('doneMark.tag') : shell && state !== 'exited' && state !== 'sleeping' ? (cmd ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[state] || state || '';
   const turnAt = n.turnAt || (live && live.state === 'working' && live.turn && live.turn.startedAt) || null;
-  const activeAt = n.activeAt || (live && live.lastActivityAt) || null;
+  const activeAt = (live && live.lastActivityAt) || n.activeAt || null; // P210: 창이 가진 세션 값이 먼저(그래프는 활동 시각만 바뀌면 다시 읽지 않는다)
   const age = tier === 'work' && turnAt ? ageText(now - turnAt, t) : activeAt ? ageText(now - activeAt, t) : null;
   const model = shell ? null : live && live.model ? modelText(live.model, live.effort) : modelText(n.model, n.effort);
   // P157: 하위를 불렀던 세션(닫힌 하위·최근 지시)·상위가 닫힌 세션은 솔로가 아니다. 역할 자리에 작게 그 까닭
@@ -102,6 +106,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
 // P157: 카드에는 브라우저 풍선(title)을 달지 않는다. 마우스를 올리면 미리 보기(Peek) 하나만 뜬다(전에는 둘이 함께 떴다). 같은 사실은 aria-label에
 export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null }) {
+  noteMap('cards');
   const n = b.node;
   const st = ST[tier] || 'ready';
   const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}${b.chip ? ' chip' : ''}${b.band ? ' band' : ''}`;
@@ -241,13 +246,23 @@ export function LineageMap() {
   sumRef.current = sumOpen;
   const onFold = useCallback((id) => setExpanded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); saveExpanded(n); return n; }), []);
 
+  // P210: 그래프는 그래프에 닿는 세션 값(graphKey: 이름·상태·소속·관계·마지막 지시 등, 활동 시각 빼고)·연결·전달·루프가 바뀔 때만 다시 읽는다.
+  //   바뀜이 잇따라도 미뤄지기만 하지 않게 첫 바뀜에서 300ms 뒤 한 번 읽고 그 사이 바뀜은 같이 담는다(전에는 바뀔 때마다 다시 미뤄 바쁜 동안 읽지 않았다).
+  //   새 그래프가 시각 값만 다르면 앞 그래프를 그대로 쓴다(keepSameGraph, 배치를 다시 세지 않는다)
+  const gkey = useMemo(() => graphKey(sessions), [sessions]);
+  const fetchT = useRef(0), fetchGen = useRef(0);
+  useEffect(() => () => { clearTimeout(fetchT.current); fetchT.current = 0; fetchGen.current++; }, []);
   useEffect(() => {
-    if (!open) { setGraph(null); fitted.current = false; view.current = null; return undefined; }
-    let alive = true;
-    // 판이 바꾼 관계가 든 새 그래프가 오면 답을 받은(ok) 놓기 흉내는 걷는다
-    const timer = setTimeout(() => api.call('mission.graph').then((g) => { if (!alive) return; setGraph(g); setPending((p) => (p.some((x) => x.ok) ? p.filter((x) => !x.ok) : p)); }).catch((e) => toast(t('mission.fail', { error: errText(e) }), 'error')), graph ? 300 : 0);
-    return () => { alive = false; clearTimeout(timer); };
-  }, [open, sessions, links, thread, loops, reloadN]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!open) { clearTimeout(fetchT.current); fetchT.current = 0; fetchGen.current++; setGraph(null); fitted.current = false; view.current = null; return; }
+    if (fetchT.current) return; // 기다리는 읽기가 이 바뀜도 담는다
+    const gen = fetchGen.current;
+    fetchT.current = setTimeout(() => {
+      fetchT.current = 0;
+      const t0 = performance.now();
+      // 판이 바꾼 관계가 든 새 그래프가 오면 답을 받은(ok) 놓기 흉내는 걷는다
+      api.call('mission.graph').then((g) => { noteMap('graph', performance.now() - t0); if (gen !== fetchGen.current) return; setGraph((prev) => keepSameGraph(prev, g)); setPending((p) => (p.some((x) => x.ok) ? p.filter((x) => !x.ok) : p)); }).catch((e) => { if (gen === fetchGen.current) toast(t('mission.fail', { error: errText(e) }), 'error'); });
+    }, graph ? 300 : 0);
+  }, [open, gkey, links, thread, loops, reloadN]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onText = (e) => { const next = leadTags(e.detail); setTags((cur) => (cur.join('\n') === next.join('\n') ? cur : next)); };
     commandDraft.addEventListener('text', onText);
@@ -259,7 +274,9 @@ export function LineageMap() {
   useEffect(() => (open ? api.on('rig.cases', () => setReloadN((n) => n + 1)) : undefined), [open]);
 
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
-  const tiers = useMemo(() => new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  // P210: 등급이 하나도 바뀌지 않은 세션 갱신(활동 시각·턴 진행)은 앞 표 그대로(배치·역할 모델·카드가 다시 돌지 않는다)
+  const tiersRef = useRef(null);
+  const tiers = useMemo(() => (tiersRef.current = keepSameMap(tiersRef.current, new Map(graph ? graph.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, liveOf(n))]) : []))), [graph, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   // P202: 오늘 일한 워크스페이스(폴더 차례). 자정이 지나면 맵을 연 채로도 다시 센다(day가 바뀐다). 같은 모음이면 배치를 다시 세지 않게 글 열쇠로 묶는다
   const [day, setDay] = useState(() => dayStart());
   useEffect(() => { if (!open) return undefined; const id = setTimeout(() => setDay(dayStart()), msToMidnight() + 500); return () => clearTimeout(id); }, [open, day]);
@@ -272,20 +289,22 @@ export function LineageMap() {
   // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
   const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
   const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, foldOpen, today, columns: 'auto', view: fitArea }), [vgroups, tiers, names, t, expanded, foldOpen, today, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const lay = useMemo(() => (g2 ? lineageLayout(g2, { ...layOpts, label: lstep }) : null), [g2, layOpts, lstep]);
+  const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
+  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(g2, { ...layOpts, label: lstep }) : null)), [g2, layOpts, lstep]);
   // P178: 맞춤 보기를 셀 때 다른 계단의 배치(선 길 찾기 없이, 크기만)
   const layForRef = useRef(null);
-  layForRef.current = (st) => (g2 ? lineageLayout(g2, { ...layOpts, label: st, routing: false }) : null);
+  layForRef.current = (st) => (g2 ? timedLayout(g2, { ...layOpts, label: st, routing: false }) : null);
   const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
   layRef.current = lay;
   sizeRef.current = vsize;
   const now = Date.now();
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
+  const keepFacts = useMemo(() => factsKeeper(), []); // P210: 같은 사실이면 앞 객체(카드 memo)
   const factsOf = useCallback((id) => {
     const b = lay.cards.get(id), n = b.node, m = roles.get(id);
     const pid = m && m.parentId, p = pid ? lay.tree.byId.get(pid) : null;
     const pws = p ? p.workspaceKey || '' : null;
-    return cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length });
+    return keepFacts(id, cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length }));
   }, [lay, roles, tiers, sessions, t, relOfChild]); // eslint-disable-line react-hooks/exhaustive-deps
   const tagSet = useMemo(() => new Set(tags.map((x) => x.toLowerCase())), [tags]);
 
@@ -334,7 +353,7 @@ export function LineageMap() {
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
-    if (root && !glide) { if (root.dataset.moving !== '1') root.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); checkStep(); }, 160); }
+    if (root && !glide) { if (root.dataset.moving !== '1') { root.dataset.moving = '1'; holdLights(root, true); } clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; holdLights(root, false); setIk(); checkStep(); }, 160); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // P178: 움직임이 멈춘 뒤 이름표 계단이 바뀌었으면 배치를 다시 센다. 화면 가운데에 가장 가까운 카드를 닻으로 남겨, 새 배치에서도 그 카드가 같은 화면 자리에 있게 한다
   function checkStep() {

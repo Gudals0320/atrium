@@ -38,6 +38,25 @@ export function alignLight(el) {
 }
 export const onLightStart = (e) => alignLight(e.currentTarget);
 
+// P210: 세션 맵을 끌거나 휠·핀치로 움직이는 동안은 일하는 카드의 도는 빛(.mt-mm-light)을 멈춘다(on = true). 멈춘 뒤(on = false) 다시 돌릴 때는 시작 시각을 문서 시간 0에 맞춰 모든 빛이 같은 박자다.
+//   빛은 30번/초 바뀌는 주 스레드 일(스타일·Layerize)이라 움직이는 동안 세계 층을 다시 그리게 했다(작업 기록). 판 노드 둘레(P127)와 같은 뜻이지만,
+//   빛은 alignLight가 시작 시각을 바꾼 애니메이션이라 CSS animation-play-state가 듣지 않아 여기서 직접 멈춘다. 멈춰도 고리 모양·색은 그대로다. 멈춘 빛 수를 돌려준다
+export function holdLights(root, on) {
+  if (!root || typeof root.querySelectorAll !== 'function') return 0;
+  let n = 0;
+  for (const el of root.querySelectorAll('.mt-mm-light')) {
+    let list = [];
+    try { list = el.getAnimations({ subtree: true }); } catch { list = []; }
+    for (const a of list) {
+      try {
+        if (on && a.playState === 'running') { a.pause(); n++; }
+        else if (!on && a.playState === 'paused') { a.startTime = 0; n++; }
+      } catch { /* 옛 브라우저: 빛이 계속 돈다 */ }
+    }
+  }
+  return n;
+}
+
 // P127: 판을 움직이는 동안(휠 확대·축소, 끌기, 코드·손가락 이동) 판 노드의 작업 중 둘레(.mt-node-run)를 멈춘다.
 //   P124 측정에서 일하는 노드 여섯의 도는 둘레가 끌기 바쁨의 약 18%(스타일·프리페인트·layerize)였다. 움직이는 동안에는 둘레가 돌아도 눈에 잘 들지 않는다.
 //   문서 뿌리 data-board-moving="1"을 달면 CSS가 회전판을 animation-play-state: paused로 둔다(회전판의 모양·색은 그대로라 작업 중 테두리는 보인다).
