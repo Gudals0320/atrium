@@ -2929,7 +2929,7 @@ export default {
     alertsSetOn: 'Usage alerts on.',
     alertsSetOff: 'Usage alerts off.',
     short: { '5h': '5h', week: 'wk', day: 'day' }, // P214: short window names inside the top bar pill
-    agyWhat: 'What AGY CLI uses (Gemini model pool)',
+    agyWhat: 'What Antigravity CLI uses (Gemini model pool)',
   },
   topbar: { // P214: "+n" in the top bar tab row
     more: { one: 'Show {n} more workspace', other: 'Show {n} more workspaces' },

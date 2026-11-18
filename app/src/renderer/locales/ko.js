@@ -2929,7 +2929,7 @@ export default {
     alertsSetOn: '사용량 알림을 켰습니다.',
     alertsSetOff: '사용량 알림을 껐습니다.',
     short: { '5h': '5h', week: '주', day: '하루' }, // P214: 위 막대 알약 안 짧은 창 이름
-    agyWhat: 'AGY CLI가 쓰는 몫(Gemini 모델 묶음)',
+    agyWhat: 'Antigravity CLI가 쓰는 몫(Gemini 모델 묶음)',
   },
   topbar: { // P214: 위 막대 탭 줄의 "+n"
     more: '나머지 프로젝트 {n}개 보기',

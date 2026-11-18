@@ -5,7 +5,7 @@
 //     사용량은 usage.updated로 흉내 낸다. 창 폭 1920·1366 × 탭 5·12 × ko·en을 찍고, Ctrl+F 찾기 창, 사용량 펼침, "+n" 목록을 본다.
 //     목업 2차 그림(experiments/p213/crop)과 나란히 놓은 비교 그림을 만든다(Edge 헤드리스).
 //   sheet: 찍어 둔 그림으로 비교 그림만 다시 만든다.
-//   clean: 판 멈추기, 시험 폴더 지우기.
+//   clean: 판 멈추기, 시험 폴더·판 데이터·hc 상태 폴더 지우기(shot은 빈 판에서 시작한다).
 // 결과는 experiments/p214/(git 밖). 실행(워크트리 루트): P214_STAGE=shot node app/test/e2e/p214-topbar.mjs
 import fs from 'node:fs';
 import path from 'node:path';
@@ -47,6 +47,9 @@ if (STAGE === 'clean') {
   try { log('터미널 멈춤', atrium('terminal', 'stop', '--yes').trim().slice(0, 200)); } catch (e) { log('터미널 멈춤 실패', e.message.slice(0, 200)); }
   try { log('백엔드 멈춤', atrium('backend', 'stop').trim().slice(0, 200)); } catch (e) { log('백엔드 멈춤 실패', e.message.slice(0, 200)); }
   rmrf(ROOT);
+  // 판 데이터와 창 프로필, 이 판의 hc 상태 폴더(다음 실행이 빈 판에서 시작하게)
+  rmrf(path.join(DEV, 'data')); rmrf(path.join(DEV, 'app'));
+  if (process.env.LOCALAPPDATA) rmrf(path.join(process.env.LOCALAPPDATA, 'herdr-core', BOARD.session));
   process.exit(0);
 }
 
@@ -192,6 +195,7 @@ try {
   check('바깥을 누르면 닫힌다', !(await page.evaluate(() => !!document.querySelector('[data-role=search]'))));
   // 사용량 펼침(AGY 줄 둘)
   await size(1920, 1080);
+  await page.evaluate((u) => window.__mt.api.emit('usage.updated', u), USAGE); await sleep(300); // 판이 그새 보낸 값(빈 시험 판)을 덮는다
   await page.click('[data-role=usage]'); await sleep(500);
   const pop = await page.evaluate(() => { const l = document.querySelector('[data-role=usage-list]'); if (!l) return null; const b = l.getBoundingClientRect(); const agy = l.querySelector('[data-provider=agy]'); return { box: { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }, agy: agy ? [...agy.querySelectorAll('[data-window]')].map((e) => e.dataset.window + ':' + e.querySelector('.mt-usage-wname').textContent) : null, what: !!(agy && agy.querySelector('[data-role=usage-what]')), more: /더 보기|3p|argon/.test(l.innerText), claude: [...l.querySelectorAll('[data-provider=claude] [data-window]')].map((e) => e.dataset.window) }; });
   check('펼침: AGY는 Gemini 5시간·주간 두 줄(3p·세부·더 보기 없음)', pop && JSON.stringify(pop.agy) === JSON.stringify(['gemini-5h:5시간', 'gemini-weekly:주간']) && pop.what && !pop.more, pop);
