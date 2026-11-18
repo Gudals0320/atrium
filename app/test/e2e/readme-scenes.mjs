@@ -88,7 +88,7 @@ export async function shoot(ctx) {
     await clear(); await fitAll();
     await page.click('[data-action="sidebar"]').catch(() => page.keyboard.press('Control+Shift+E'));
     await sleep(1200);
-    await page.click('[data-action="search"]');
+    await page.keyboard.press('Control+f') /* P214: 위 막대 검색 칸이 없어 Ctrl+F로 연다 */;
     await sleep(400);
     await page.fill('[data-field="search"]', 'theme');
     await until(() => page.evaluate(() => document.querySelectorAll('.mt-search-item:not(.empty)').length >= 2), 10000, 200).catch(() => log('찾기 결과가 둘 넘게 오지 않았다'));

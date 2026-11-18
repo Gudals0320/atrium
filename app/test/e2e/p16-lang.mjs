@@ -105,7 +105,7 @@ async function screens(app, page, l) {
   // 그 밖의 창: 미션 맵, 검색, Thread, 루프 목록, 바뀐 것
   // 키를 누르지 않는다: 초점이 터미널에 있으면 Esc가 승인 줄의 거부가 된다
   await page.click('[data-action="mission-rail"]'); await sleep(800); await check('mission-map'); await shot(page, `p16-${l}-11-mission`); await page.click('[data-action="mission-close"]').catch(() => {}); await sleep(300);
-  await page.click('[data-action="search"]'); await sleep(300); await page.fill('[data-role="search"] input, .mt-search input', 're').catch(() => {}); await sleep(800); await check('search'); await shot(page, `p16-${l}-12-search`); await page.press('[data-role="search"] input', 'Escape').catch(() => {}); // 초점이 검색칸에 있을 때만 Esc await sleep(200);
+  await page.keyboard.press('Control+f') /* P214: 위 막대 검색 칸이 없어 Ctrl+F로 연다 */; await sleep(300); await page.fill('[data-role="search"] input, .mt-search input', 're').catch(() => {}); await sleep(800); await check('search'); await shot(page, `p16-${l}-12-search`); await page.press('[data-role="search"] input', 'Escape').catch(() => {}); // 초점이 검색칸에 있을 때만 Esc await sleep(200);
   await page.click('[data-action="thread-toggle"]').catch(() => {}); await sleep(600); await check('thread'); await shot(page, `p16-${l}-13-thread`); await page.click('[data-action="thread-toggle"]').catch(() => {});
   await page.click('[data-action="loops-open"]').catch(() => {}); await sleep(400); await check('loops'); await page.click('[data-action="loops-open"]').catch(() => {});
   await page.click('[data-action="chip-changes"]').catch(() => {}); await sleep(800); await check('changes'); await shot(page, `p16-${l}-14-changes`); await page.click('[data-action="return-close"]').catch(() => {});
