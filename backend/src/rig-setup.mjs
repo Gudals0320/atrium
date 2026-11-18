@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RIG_FILE, validateRig, protectedHits, SEAT_KINDS, gitStateOf, worktreeWarnings } from './rig.mjs';
 import { SEAT_SPAWN } from './rig-amp.mjs';
+import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { harnessOf } from './launchers.mjs';
 import { shownName } from './session-label.mjs';
 import { clip } from './text.mjs';
@@ -192,6 +193,7 @@ export class RigSetup {
     if (!s) throw apiError('spawn_failed', `${name0} 자리 세션이 보드에 등록되지 않았다.`);
     b.branch.flow.setSeat(s, name0, { by: 'human', notify: 'spawned' }); // P193: 첫 요청이 없어 자리 머리를 받지 못한다. 판 알림으로 자리를 알린다
     this.store().addEvent(s.sessionId, 'rig_seat_spawn', { seat: name0, by: 'human', launcher: L.ref, session: 'keep', ...(x.effort ? { effort: x.effort } : {}), ...(x.model ? { model: x.model } : {}) });
+    rigEvent(b, { kind: 'seat_spawn', ws: key, seat: name0, session: s.sessionId, toSeat: name0, actor: 'human', text: `@${shownName(s) || s.name}`, data: { launcher: L.ref, session: 'keep', ...(x.effort ? { effort: x.effort } : {}), ...(x.model ? { model: x.model } : {}) } });
     return { session: s.sessionId, name: s.name, seat: name0, launcher: L.ref };
   }
   freeName(want, nextFn) {

@@ -82,6 +82,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   rig 자리(seat): 사람이 정하거나 보드가 rig의 자리를 위해 띄운 세션은 정의(seats·flow)를 따른다(atrium me에 자리가 보인다).
       atrium prompt <자리 이름> "<할 일>"은 그 자리로 보낸다: flow의 assign 줄이면 일(keep 자리는 앉은 세션, fresh 자리는 새 세션), may면 글만, 그 밖은 보드가 거절한다(종료 코드 1, 쓸 수 있는 자리를 알린다). rig 밖 세션(자리 없는 세션)에는 manager 자리, 또는 may에 "@<이름>"·"*"를 둔 자리가 글만 보낸다.
       atrium done <값> "<보고>"의 값은 정의의 results 낱말이고, 보드가 값에 따라 다음 자리로 넘긴다(넘길 곳이 없으면 건의 주인에게). 자리 안내: atrium guide
+  atrium rig log --events [--case 건] [--since seq|시각] [--kinds a,b] [--limit n]   rig 장부(건 열림·맡김·넘김·보고·관문·도구·멈춤 등 한 꼴의 줄). 관리자 자리와 제작 세션은 워크스페이스 전체, 자리 세션은 자기 건만
   atrium rig check [파일] | log | rollback <n> | cleanup <건>   rig의 관리자 자리(manager)만 쓴다(check는 읽기만이라 rig가 꺼진 워크스페이스면 어느 세션이든 쓴다). 관리자 자리는 .atrium/rig.json을 직접 고치고(보드가 새 해시를 버전으로 남긴다), check로 후보를 검사하고,
       log로 버전과 버전마다 건·반려·훅 거절·상한 초과 수를 보고, rollback <n>으로 되돌리고(새 버전), cleanup <건>으로 끝난 건의 fresh 세션을 닫는다(워크트리는 목록만).
       열린 건은 만들 때의 버전을 따르고 새 버전은 새 건부터 쓴다. 사람만 고치는 자리·파일(사람이 보드의 rig 메뉴에서 정함)을 바꾸면 보드가 그 정의를 쓰지 않거나 도구를 멈춘다
@@ -90,7 +91,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'peer']); // P156: child --peer // P116: prompt --wait, P143: prompt --now
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'peer', 'events']); // P217: rig log --events // P156: child --peer // P116: prompt --wait, P143: prompt --now
 // P208: PowerShell 꾸러미(atrium.ps1)는 인자를 JSON으로 env에 실어 준다(cmd를 거치지 않아 여러 줄·따옴표·<>|&%가 그대로 온다). 읽고 지운다
 function argvOf() {
   const j = process.env.ATRIUM_ARGV_JSON; const f = process.env.ATRIUM_ARGV_FILE;
@@ -423,6 +424,9 @@ async function rigVerb() {
   }
   if (op === 'rollback') { body.n = Number(rest[1]); if (!Number.isInteger(body.n) || body.n < 1) fail('되돌릴 버전 번호를 준다: atrium rig rollback <n> (번호는 atrium rig log)', 2); }
   if (op === 'cleanup') { body.caseId = rest[1]; if (!body.caseId) fail('건 ID를 준다: atrium rig cleanup <건>', 2); }
+  // P217: rig log --events [--case 건] [--since seq|시각] [--kinds a,b] [--limit n]
+  if (op === 'log' && flags.events) { body.events = true; for (const k of ['case', 'since', 'kinds', 'limit']) if (flags[k] != null) { if (flags[k] === undefined || flags[k] === '') fail(`--${k}에 값을 준다`, 2); body[k] = flags[k]; } }
+  else if (op === 'log' && ['case', 'since', 'kinds'].some((k) => flags[k] != null)) fail('--case·--since·--kinds는 --events와 함께 쓴다: atrium rig log --events [--case 건]', 2);
   const r = await call('rig', body, 60000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   const x = r.result;
@@ -433,6 +437,13 @@ async function rigVerb() {
     if (x.ok) say(`맞다: ${x.from}(해시 ${String(x.hash).slice(0, 12)}${x.same ? ', 지금 버전과 같은 내용' : ''}). 지금 버전 ${x.current.n ?? '-'}. 자리 ${x.summary.seats.join(', ') || '없음'} · 흐름 줄 ${x.summary.flow} · 훅 ${x.summary.hooks} · 도구 ${x.summary.tools.join(', ') || '없음'} · 느린 고리 ${x.summary.cycles.join(', ') || '없음'} · manager ${x.summary.manager || '없음'}`);
     else { say(`맞지 않다: ${x.from}: ${x.reason}`); process.exitCode = 1; }
     for (const w of x.warnings || []) say(`  경고: ${w}`);
+    return;
+  }
+  if (op === 'log' && body.events) { // P217: 장부
+    if (!x.rows.length) return say(`rig 장부에 줄이 없다${body.since != null ? `(${body.since} 뒤)` : ''}. 마지막 seq ${x.last}.`);
+    say(`rig 장부 ${x.rows.length}줄(오래된 것부터, 마지막 seq ${x.last}):`);
+    for (const y of x.rows) say(`  ${y.line}`);
+    if (x.more) say(`…더 있다. 이어 읽기: atrium rig log --events --since ${x.rows[x.rows.length - 1].seq}${body.case ? ` --case ${body.case}` : ''}`);
     return;
   }
   if (op === 'log') {

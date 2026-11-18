@@ -11,7 +11,7 @@ import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: �
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
 import { UNITS_SCHEMA, UNITS_COLUMNS, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
 import { NEWS_SCHEMA, installNews } from './store-news.mjs'; // P204: 동료 소식
-import { RIG_SCHEMA, RIG_COLUMNS, TOOL_RUNS_SCHEMA, RIG_FLOW_SCHEMA, RIG_ADMIN_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기와 훅 실행 기록
+import { RIG_SCHEMA, RIG_COLUMNS, TOOL_RUNS_SCHEMA, RIG_FLOW_SCHEMA, RIG_ADMIN_SCHEMA, RIG_EVENTS_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기와 훅 실행 기록
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -119,6 +119,7 @@ export class Store {
     this.db.exec(TOOL_RUNS_SCHEMA); // P183: 도구 실행 장부
     this.db.exec(RIG_FLOW_SCHEMA); // P185: 건과 건이 만든 세션·워크트리
     this.db.exec(RIG_ADMIN_SCHEMA); // P188: 정의 버전, 느린 고리
+    this.db.exec(RIG_EVENTS_SCHEMA); // P217: rig 장부(rig_events)
     this.db.exec(NEWS_SCHEMA); // P204: 동료 소식
     for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));

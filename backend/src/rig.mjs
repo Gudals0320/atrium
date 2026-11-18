@@ -18,6 +18,7 @@ import { isModelName } from './model-name.mjs'; // P209: 자리 model
 import { EFFORTS } from './settings.mjs'; // P209: 자리 effort(Claude Code)
 import { CODEX_EFFORTS } from './launchers.mjs'; // P209: 자리 effort(Codex, P208의 model_reasoning_effort 옮기기와 같은 표)
 import { AMP_ATS, validateAmp } from './rig-amp.mjs'; // P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
+import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
@@ -361,7 +362,7 @@ export class Rig {
         if (c.noted !== mark) {
           next.noted = mark;
           if (e.protectedHits) this.alert(key, { kind: 'pointer', items: e.protectedHits, hash: e.hash, reason: e.message, usingN: good ? good.n : null });
-          else try { this.store().addEvent(null, 'rig_invalid', { workspace: key, reason: e.message, hash: e.hash || null, usingHash: good ? good.hash : null }); } catch {}
+          else { try { this.store().addEvent(null, 'rig_invalid', { workspace: key, reason: e.message, hash: e.hash || null, usingHash: good ? good.hash : null }); } catch {} rigEvent(this.b, { kind: 'rig_invalid', ws: key, defN: good ? good.n ?? null : null, actor: 'board', text: e.message, data: { hash: e.hash || null, usingHash: good ? good.hash : null } }); }
           this.b.log && this.b.log(`rig_invalid ${key}: ${e.message}${good ? ' (using last good)' : ''}`);
         } else next.noted = c.noted;
       }
@@ -396,6 +397,7 @@ export class Rig {
     }
     this.versionDefs.set(`${key}|${n}`, { def, hash, raw, n });
     try { st.addEvent(null, 'rig_version', { workspace: key, n, hash, by, note }); } catch {}
+    rigEvent(this.b, { kind: 'rig_version', ws: key, defN: n, actor: by === 'manager' ? 'agent' : by === 'human' ? 'human' : 'board', ref: n, text: `버전 ${n} ${hash.slice(0, 12)} · ${by}${note ? ` · ${note}` : ''}`, data: { changed_by: by, hash, note } });
     this.b.log && this.b.log(`rig version ${key} #${n} ${hash.slice(0, 12)} by ${by}`);
     return { ok: true, n };
   }
@@ -465,6 +467,8 @@ export class Rig {
     return x ? x.def : r.def;
   }
   currentN(key) { const r = this.read(key); return r.n ?? null; }
+  // P217: 장부 줄의 지금 버전(정의를 새로 읽지 않는다: 읽기가 rig_version을 다시 부르지 않게)
+  cachedN(key) { const c = this.cache.get(key); if (c && c.good && c.good.n != null) return c.good.n; const v = this.store().lastRigVersion ? this.store().lastRigVersion(key) : null; return v ? v.n : null; }
   versionContent(key, n) {
     const row = this.store().rigVersion(key, n);
     if (!row) return null;
@@ -526,6 +530,7 @@ export class Rig {
     const seat = def && def.manager;
     const to = seat && this.b.sessions ? [...this.b.sessions.values()].filter((s) => s.workspaceKey === key && s.rigSeat === seat) : [];
     try { st.addEvent(to[0] ? to[0].sessionId : null, 'rig_protected', { workspace: key, kind, items, hash, reason, usingN, manager: to.map((s) => s.name) }); } catch {}
+    rigEvent(this.b, { kind: 'rig_protected', ws: key, defN: usingN, actor: 'board', value: kind, text: reason, data: { items, hash } });
     this.b.log && this.b.log(`rig_protected ${key} ${kind}: ${items.join ? items.join(', ') : items}`);
     const text = kind === 'pointer'
       ? `[Atrium 보드] rig: 정의(.atrium/rig.json)가 사람만 고치는 자리(${items.join(', ')})를 바꿔 보드가 그 정의를 쓰지 않는다(버전 ${usingN ?? '?'}을 그대로 쓴다). 그 자리는 되돌리고, 바꿔야 하면 사람에게 묻는다. 버전: atrium rig log`
@@ -578,6 +583,7 @@ export class Rig {
     this.store().setRigEnabled(key, !!on);
     const r = this.read(key);
     this.store().addEvent(null, on ? 'rig_enabled' : 'rig_disabled', { workspace: key, by, hash: r.hash, present: r.present });
+    rigEvent(this.b, { kind: on ? 'rig_enabled' : 'rig_disabled', ws: key, defN: r.n ?? null, actor: by === 'remote' || by === 'human' ? 'human' : 'board', text: `rig ${on ? '켜짐' : '꺼짐'}(${by})`, data: { by, hash: r.hash } });
     this.b.log && this.b.log(`rig ${on ? 'enabled' : 'disabled'} ${key}`);
     return this.status(key);
   }
@@ -605,11 +611,13 @@ export class Rig {
       };
       const res = await runHook({ run: h.run, cwd: r.root, env: this.env(), input, timeoutMs: h.timeoutMs });
       const rec = { workspaceKey: ctx.key, at: ctx.at, hookIndex: h.index, argv: h.run, rigHash: r.hash, sessionId: ctx.session ? ctx.session.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.try ? ctx.try.id : null, ms: res.ms, toolRunId: ctx.toolRunId || null };
+      const gate = (rowId, decision, why) => this.gateEvent(ctx, h, rowId, decision, why); // P217: 장부 줄(관문)
       if (!res.ok) {
         const blocked = h.onFail === 'block';
         const rowId = st.insertHookRun({ ...rec, decision: blocked ? 'blocked' : 'failed', error: res.error, reason: blocked ? `훅 실패(onFail block): ${res.error}` : null });
         try { st.addEvent(rec.sessionId, 'hook_failed', { workspace: ctx.key, at: ctx.at, hook: h.index, argv: h.run, error: res.error, onFail: h.onFail, rigHash: r.hash }); } catch {}
         runs.push({ at: ctx.at, hook: h.index, decision: blocked ? 'blocked' : 'failed', error: res.error, rowId });
+        gate(rowId, blocked ? 'blocked' : 'failed', res.error);
         if (blocked) return out({ action: 'reject', reason: `rig 훅 ${h.index}(${h.run.join(' ')})이 실패했다: ${res.error}` });
         continue;
       }
@@ -618,6 +626,7 @@ export class Rig {
       if (o.action === 'reject') {
         const rowId = st.insertHookRun({ ...rec, decision: 'reject', reason: o.reason || null, note: o.note || null });
         runs.push({ at: ctx.at, hook: h.index, decision: 'reject', reason: o.reason || null, rowId });
+        gate(rowId, 'reject', o.reason || null);
         return out({ action: 'reject', reason: o.reason || `rig 훅 ${h.index}이 거절했다(까닭 없음)` });
       }
       if (text != null && ctx.at === 'deliver') {
@@ -630,13 +639,27 @@ export class Rig {
       const argsChanged = beforeArgs !== args;
       const rowId = st.insertHookRun({ ...rec, decision: o.action, reason: o.reason || null, note: o.note || null, beforeText: changed ? before : argsChanged ? JSON.stringify(beforeArgs) : null });
       runs.push({ at: ctx.at, hook: h.index, decision: o.action, rowId, ...(changed || argsChanged ? { changed: true } : {}), ...(o.reason ? { reason: o.reason } : {}) });
+      gate(rowId, o.action, o.reason || o.note || null);
     }
     return out({ action: 'pass', reason: null });
   }
 
+  // P217: 훅 판정 한 줄을 장부에(gate). ctx.ledger: 부르는 쪽이 아는 건·넘김 자리(흐름의 넘김 글은 받을 세션이 아직 없다)
+  gateEvent(ctx, h, rowId, decision, why = null) {
+    const L = ctx.ledger || {};
+    let caseId = L.caseId || null;
+    if (!caseId && ctx.unit && ctx.unit.id && this.store().getUnit) { const u = this.store().getUnit(ctx.unit.id); caseId = u ? u.caseId || null : null; }
+    const seat = ctx.session ? ctx.session.seat || null : null;
+    rigEvent(this.b, {
+      kind: 'gate', ws: ctx.key, caseId, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.try ? ctx.try.id : null,
+      seat: L.seat !== undefined ? L.seat : seat, session: ctx.session ? ctx.session.id : null, fromSeat: L.fromSeat ?? null, toSeat: L.toSeat ?? null, line: L.line ?? null,
+      value: decision, actor: 'hook', ref: rowId, text: `${ctx.at} 훅 ${h.index}(${h.run.slice(-1)[0]})${why ? `: ${why}` : ''}`,
+      data: { at: ctx.at, hook: h.index, ...(ctx.from && ctx.from.kind ? { from: ctx.from.kind } : {}), ...(ctx.tool ? { tool: ctx.tool, toolRun: ctx.toolRunId || null } : {}), ...(ctx.result != null ? { result: ctx.result } : {}) },
+    });
+  }
   // deliver 훅: 받는 세션의 워크스페이스 rig. target: 받는 세션(띄우기 전 child면 { workspaceKey, name, kind, model, cwd }), from: { kind: human|agent, session? }
   //   → { action: pass | reject, text, reason } (rig가 없거나 꺼졌으면 그대로 pass, 기록 없음)
-  async deliver({ target, workspaceKey = null, from, text }) {
+  async deliver({ target, workspaceKey = null, from, text, ledger = null }) { // P217: ledger(장부 줄의 건·넘김 자리)
     const key = workspaceKey || (target && target.workspaceKey) || null;
     const r = this.active(key);
     if (!r || !r.def.hooks.some((h) => h.at === 'deliver')) return { action: 'pass', text, reason: null, runs: [] };
@@ -645,7 +668,7 @@ export class Rig {
     return this.runAt(r, {
       key, at: 'deliver', session: sessionInfo(target), from: { kind: from.kind, ...(from.seat ? { seat: from.seat } : {}), ...(from.session ? { session: sessionInfo(from.session) } : {}) }, // P185: flow면 보낸 자리(seat)
       unit: unit ? { id: unit.id, from: unit.from, spec: unit.spec, origin: unit.origin } : null, try: tr ? { id: tr.id, startedAt: tr.startedAt } : null,
-      text, match: (h) => h.from === 'any' || h.from === from.kind,
+      text, match: (h) => h.from === 'any' || h.from === from.kind, ledger,
     });
   }
   // done 훅: 부르는 세션의 워크스페이스 rig. → { action, reason }

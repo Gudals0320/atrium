@@ -26,6 +26,7 @@ import { spawnPlan, killTree } from './hook-runner.mjs'; // P188: 느린 고리�
 import { rootedRun } from './tool-runs.mjs';
 import { cleanEnv } from './proc-env.mjs';
 import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
+import { rigEvent, OWNER } from './rig-ledger.mjs'; // P217: 장부
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -185,6 +186,7 @@ export class RigFlow {
     st.setSessionSeat(s.sessionId, want);
     s.rigSeat = want;
     st.addEvent(s.sessionId, 'rig_seat', { workspace: s.workspaceKey, seat: want, before, by });
+    rigEvent(b, { kind: 'seat_set', ws: s.workspaceKey, seat: want, session: s.sessionId, value: want, actor: by === 'human' ? 'human' : 'board', text: `@${shownName(s)}: ${before || '-'} → ${want || '-'}`, data: { before, by } });
     b.log(`rig seat ${s.name}: ${before || '-'} → ${want || '-'} (${by})`);
     if (b.broadcastSession) b.broadcastSession(s, { cause: 'rig_seat' });
     let noticeId = null;
@@ -202,10 +204,11 @@ export class RigFlow {
   }
 
   // ---------- 건 ----------
-  newCase(key, owner) {
+  newCase(key, owner, actor = 'agent') { // P217: actor(장부. 느린 고리가 만들면 cycle)
     const c = { id: newId('c'), workspaceKey: key, owner: owner.sessionId, state: 'open', createdAt: Date.now(), edgeCounts: {}, versionN: this.b.rig ? this.b.rig.currentN(key) : null }; // P188: 건이 쥐는 버전
     this.store().insertCase(c);
     this.store().addEvent(owner.sessionId, 'rig_case_open', { caseId: c.id, workspace: key, version: c.versionN });
+    rigEvent(this.b, { kind: 'case_open', ws: key, defN: c.versionN, caseId: c.id, seat: owner.rigSeat || null, session: owner.sessionId, actor, text: `주인 @${shownName(owner) || owner.name}` });
     this.b.log(`rig case ${c.id} open by ${owner.name}`);
     return this.store().getCase(c.id);
   }
@@ -242,6 +245,7 @@ export class RigFlow {
       const kept = reset ? Object.fromEntries(Object.entries(c.edgeCounts || {}).filter(([k]) => k.includes('>'))) : null;
       st.updateCase(c.id, { state: 'open', blockedReason: null, ownerWait: null, ownerWaitDelivery: null, ...(reset ? { edgeCounts: kept } : {}) });
       st.addEvent(caller.sessionId, 'rig_case_resume', { caseId: c.id, from: c.state, why, ...(c.ownerWait ? { ownerWait: c.ownerWait } : {}), ...(reset ? { countersReset: true } : {}) });
+      rigEvent(this.b, { kind: 'case_resumed', caseId: c.id, seat: caller.rigSeat || null, session: caller.sessionId, value: why, actor: 'agent', text: `${c.state} → open`, data: { from: c.state, ...(c.ownerWait ? { ownerWait: c.ownerWait } : {}), ...(reset ? { countersReset: true } : {}) } });
       this.b.log(`rig case ${c.id} resumed (${c.state} → open, ${why}) by ${caller.name}`);
       this.changed(c.workspaceKey);
     } else if (c.ownerWait && c.owner === caller.sessionId) st.updateCase(c.id, { ownerWait: null, ownerWaitDelivery: null }); // P209: 열린 건에 주인이 맡겼다(받은 보고에 답했다)
@@ -255,6 +259,7 @@ export class RigFlow {
     if (c.ownerWait === 'report') {
       st.updateCase(caseId, { state: 'waiting_owner' });
       st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId, why: 'report', deliveryId: c.ownerWaitDelivery });
+      rigEvent(this.b, { kind: 'case_waiting_owner', caseId, session: c.owner, seat: this.seatOfSession(c.owner), value: 'report', actor: 'board', ref: c.ownerWaitDelivery });
       this.b.log(`rig case ${caseId} waiting_owner (owner report)`);
       this.changed(c.workspaceKey);
       return st.getCase(caseId);
@@ -265,6 +270,7 @@ export class RigFlow {
     const st = this.store(); const caseId = c.id;
     st.updateCase(caseId, { state: 'done', closedAt: Date.now(), ownerWait: null, ownerWaitDelivery: null });
     st.addEvent(c.owner, 'rig_case_done', { caseId, ...(why ? { why } : {}) });
+    rigEvent(this.b, { kind: 'case_done', caseId, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', text: why || null });
     this.b.log(`rig case ${caseId} done${why ? ` (${why})` : ''}`);
     this.changed(c.workspaceKey);
     return st.getCase(caseId);
@@ -290,6 +296,7 @@ export class RigFlow {
     const b = this.b; const st = this.store();
     st.updateCase(c.id, { state: 'blocked', blockedReason: reason });
     st.addEvent(c.owner, 'rig_case_blocked', { caseId: c.id, reason });
+    rigEvent(b, { kind: 'case_blocked', caseId: c.id, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', text: reason });
     b.log(`rig case ${c.id} blocked: ${reason}`);
     if (b.sessions.has(c.owner)) {
       const hist = this.history(c.id).map((h, i) => `${i + 1}. ${h.seat || '-'}(@${h.name}) ${h.result || h.status}${h.text ? `: ${h.text}` : ''}`);
@@ -305,6 +312,8 @@ export class RigFlow {
       return { unit: u.id, seat: u.seat, sessionId: u.to || null, name: u.to ? this.nameOf(u.to) : '(줄)', status: u.status, result: tr ? tr.result : null, text: tr && tr.doneText ? firstLine(tr.doneText, 100) : null, via: u.via };
     });
   }
+  // P217: 세션의 자리(닫힌 세션은 저장소에서)
+  seatOfSession(sid) { const s = this.b.sessions.get(sid); if (s) return s.rigSeat || null; const r = this.store().getSession ? this.store().getSession(sid) : null; return r ? r.rigSeat || null : null; }
   changed(key) { if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.cases', { workspace: key }); } catch {} }
 
   // ---------- atrium prompt(자리 세션) ----------
@@ -359,14 +368,23 @@ export class RigFlow {
       const unit = { id, from: owner.sessionId, to: '', origin, spec: String(spec), status: 'open', createdAt: Date.now(), caseId: c.id, seat: seatName, via: extra.via };
       st.insertUnit(unit);
       st.addEvent(owner.sessionId, 'unit_open', { unitId: id, from: by.name, origin, seat: seatName, seatWait: true, caseId: c.id, chars: unit.spec.length });
+      this.assignEvent({ ctx, c, by, seatName, unitId: id, origin, spec });
+      rigEvent(b, { kind: 'seat_queue', caseId: c.id, unitId: id, seat: seatName, toSeat: seatName, actor: 'board', n: st.seatWaitingUnits(ctx.key, seatName).length, max: seat.maxLive, text: `${seatName} 자리 줄(max_live ${seat.maxLive})` });
       b.log(`unit ${id} → seat ${seatName} waits (max_live ${seat.maxLive})`);
       this.changed(ctx.key);
       return { unit: st.getUnit(id), t: null, seatWait: true, ahead: st.seatWaitingUnits(ctx.key, seatName).length - 1 };
     }
     if (!t) t = await this.spawnSeat(ctx, seatName, owner, c, id);
     const made = U.create(by, t, spec, origin, extra);
+    this.assignEvent({ ctx, c, by, seatName, unitId: made.unit.id, origin, spec, t });
     this.changed(ctx.key);
     return { unit: made.unit, t, made };
+  }
+  // P217: 자리 세션의 assign 줄로 생긴 일(흐름의 넘김은 handoff가 적는다)
+  assignEvent({ ctx, c, by, seatName, unitId, origin, spec, t = null }) {
+    if (origin === 'flow') return;
+    const line = ctx.def.flow.find((l) => l.on === 'assign' && l.from === by.rigSeat && l.to[0] === seatName);
+    rigEvent(this.b, { kind: 'assign', caseId: c.id, unitId, seat: by.rigSeat || null, session: by.sessionId, fromSeat: by.rigSeat || null, toSeat: seatName, line: line ? line.index : null, value: 'assign', actor: 'agent', text: firstLine(spec, 120), data: t ? { to: t.sessionId } : { queued: true } });
   }
 
   // 자리를 위해 세션을 띄운다(건 주인의 하위로, atrium child와 같은 길: 런처·종류의 승인 방식, worktree면 claude -w)
@@ -389,6 +407,7 @@ export class RigFlow {
     st.setSessionSeat(s.sessionId, seatName); s.rigSeat = seatName;
     st.insertCaseItem({ caseId: c.id, sessionId: s.sessionId, seat: seatName, worktree, worktreePath: worktree ? path.join(ctx.r.root, '.claude', 'worktrees', worktree) : null });
     st.addEvent(s.sessionId, 'rig_seat_spawn', { seat: seatName, caseId: c.id, unitId, owner: owner.name, worktree, launcher: seat.launcher, session: seat.session, ...(seat.effort ? { effort: seat.effort } : {}), ...(seat.model ? { model: seat.model } : {}) });
+    rigEvent(b, { kind: 'seat_spawn', caseId: c.id, unitId, seat: seatName, session: s.sessionId, toSeat: seatName, actor: 'board', text: `@${shownName(s) || s.name}${worktree ? ` · 워크트리 ${worktree}` : ''}`, data: { launcher: seat.launcher, session: seat.session, worktree, ...(seat.effort ? { effort: seat.effort } : {}), ...(seat.model ? { model: seat.model } : {}) } });
     b.log(`rig seat ${seatName} spawned ${s.name} for case ${c.id}${worktree ? ` (worktree ${worktree})` : ''}`);
     if (b.broadcastSession) b.broadcastSession(s, { cause: 'rig_seat' });
     return s;
@@ -426,7 +445,7 @@ export class RigFlow {
     const reports = []; // P194: 건 주인에게 간 보고(일이 아니다)
     for (const line of route.lines) {
       c = st.getCase(c.id);
-      let targets = line.to; let escalated = null;
+      let targets = line.to; let escalated = null; let passN = null; // P217: 장부의 n(이 건에서 그 줄을 지난 횟수)
       if (line.max != null) {
         const k = String(line.index); const counts = { ...c.edgeCounts };
         const n = counts[k] || 0;
@@ -434,28 +453,28 @@ export class RigFlow {
           const alt = line.else || ctx.def.manager || null;
           counts[`${k}>else`] = (counts[`${k}>else`] || 0) + 1;
           st.updateCase(c.id, { edgeCounts: counts });
-          escalated = { line: line.index, max: line.max, to: alt };
+          escalated = { line: line.index, max: line.max, to: alt, n: counts[`${k}>else`] };
           st.addEvent(caller.sessionId, 'rig_escalate', { caseId: c.id, line: line.index, max: line.max, to: alt });
-          if (!alt) { this.block(st.getCase(c.id), `flow[${line.index}](${line.from} ${line.on} → ${line.to.join(', ')})이 상한 ${line.max}번을 넘었고 else도 manager도 없다`); continue; }
+          if (!alt) { rigEvent(this.b, { kind: 'escalate', caseId: c.id, unitId: unit.id, seat: ctx.name, session: caller.sessionId, fromSeat: ctx.name, toSeat: null, line: line.index, value: result, n: line.max, max: line.max, actor: 'board', text: `상한 ${line.max}번을 넘었고 else도 manager도 없다` }); this.block(st.getCase(c.id), `flow[${line.index}](${line.from} ${line.on} → ${line.to.join(', ')})이 상한 ${line.max}번을 넘었고 else도 manager도 없다`); continue; }
           targets = [alt];
-        } else { counts[k] = n + 1; st.updateCase(c.id, { edgeCounts: counts }); }
+        } else { counts[k] = n + 1; passN = n + 1; st.updateCase(c.id, { edgeCounts: counts }); }
       }
-      for (const to of targets) { const rep = await this.handoff({ ctx, c: st.getCase(c.id), caller, unit, result, doneText, line, to, escalated, firstSpec }); if (rep && rep.report) reports.push(rep); }
+      for (const to of targets) { const rep = await this.handoff({ ctx, c: st.getCase(c.id), caller, unit, result, doneText, line, to, escalated, firstSpec, passN }); if (rep && rep.report) reports.push(rep); }
     }
     this.caseCheck(c.id);
     this.pumpSoon();
     this.changed(ctx.key); // P197: done마다(건 상태가 그대로여도 일이 닫혔다) 맵이 다시 읽는다
     return { reports };
   }
-  async handoff({ ctx, c, caller, unit, result, doneText, line, to, escalated, firstSpec }) {
+  async handoff({ ctx, c, caller, unit, result, doneText, line, to, escalated, firstSpec, passN = null }) {
     const b = this.b; const st = this.store();
     const history = escalated ? this.history(c.id) : [];
     const text = handoffText({ fromSeat: ctx.name, fromName: shownName(caller), result, doneText, firstSpec, escalated, history });
     const tSeat = ctx.def.seats[to];
     const seated = tSeat.session === 'keep' ? this.seatedOf(ctx.key, to)[0] || null : null;
     // P194: 받는 곳이 건 주인 세션 자신이면 일이 아니라 보고다. 주인이 아닌 keep 자리로 가는 줄은 그대로 일이다
-    if (seated && seated.sessionId === c.owner) return this.ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner: seated, firstSpec });
-    const h = await b.rig.deliver({ target: seated || { workspaceKey: ctx.key, name: to, kind: null, model: null, cwd: ctx.r.root }, workspaceKey: ctx.key, from: { kind: 'flow', seat: ctx.name, session: caller }, text });
+    if (seated && seated.sessionId === c.owner) return this.ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner: seated, firstSpec, passN });
+    const h = await b.rig.deliver({ target: seated || { workspaceKey: ctx.key, name: to, kind: null, model: null, cwd: ctx.r.root }, workspaceKey: ctx.key, from: { kind: 'flow', seat: ctx.name, session: caller }, text, ledger: { caseId: c.id, fromSeat: ctx.name, toSeat: to, line: line.index, seat: ctx.name } });
     const rowIds = (h.runs || []).map((x) => x.rowId).filter((x) => x != null);
     if (h.action === 'reject') return this.block(c, `넘김 글(${ctx.name} ${result} → ${to})을 deliver 훅이 거절했다: ${h.reason}`);
     let a;
@@ -464,6 +483,8 @@ export class RigFlow {
     // P187: 훅은 받을 세션을 띄우기 전에 돌았다. 그 행에 받은 세션(자리 줄에 섰으면 pump가 띄운 뒤)과 이 일을 적는다(세션 맵 미리 보기)
     if (rowIds.length && st.fillHookRuns) st.fillHookRuns(rowIds, { sessionId: a.t ? a.t.sessionId : null, unitId: a.unit ? a.unit.id : null });
     st.addEvent(caller.sessionId, 'rig_handoff', { caseId: c.id, from: ctx.name, result, to, line: line.index, unitId: a.unit.id, target: a.t ? a.t.name : null, seatWait: !!a.seatWait, escalated: !!escalated });
+    // P217: 넘김(상한을 넘어 올라간 넘김은 escalate 한 줄. else 변을 지난다)
+    rigEvent(b, { kind: escalated ? 'escalate' : 'handoff', caseId: c.id, unitId: a.unit.id, seat: ctx.name, session: caller.sessionId, fromSeat: ctx.name, toSeat: to, line: line.index, value: result, n: escalated ? escalated.n : passN, max: line.max, actor: 'board', text: firstLine(doneText, 120), data: { prevUnit: unit.id, ...(a.seatWait ? { queued: true } : { to: a.t ? a.t.sessionId : null }) } });
     b.log(`rig handoff ${ctx.name}(${caller.name}) ${result} → ${to}${a.t ? ` @${a.t.name}` : ' (seat wait)'} case ${c.id}`);
     if (a.t) {
       const l = this.branch.verbs.link(caller, a.t);
@@ -472,11 +493,12 @@ export class RigFlow {
   }
 
   // P194: 주인에게 보고(일을 만들지 않는다). 상한을 넘어 올라온 것이면 건을 waiting_owner로 둔다(주인의 다음 맡기기가 잇는다)
-  ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner, firstSpec }) {
+  ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner, firstSpec, passN = null }) {
     const b = this.b; const st = this.store();
     if (escalated) {
       st.updateCase(c.id, { state: 'waiting_owner', ownerWait: 'escalated', ownerWaitDelivery: null });
       st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId: c.id, line: line.index, max: escalated.max, from: ctx.name, result });
+      rigEvent(b, { kind: 'case_waiting_owner', caseId: c.id, session: c.owner, seat: owner.rigSeat || null, line: line.index, value: 'escalated', max: escalated.max, actor: 'board', text: `${ctx.name} ${result}: flow[${line.index}] 상한 ${escalated.max}번` });
     }
     const text = ownerReportText({ caseId: c.id, fromSeat: ctx.name, fromName: shownName(caller), unitId: unit.id, firstSpec, result, doneText, escalated, history: escalated ? this.history(c.id) : [] });
     const d = b.queue.enqueue(owner.sessionId, text);
@@ -489,6 +511,7 @@ export class RigFlow {
     if (l0 && !l0.removedAt) b.linkEvent(l0, 'reply', doneText, { via: 'flow', verb: 'done', tag: 'report', result, unitId: unit.id, caseId: c.id, deliveryId: d.deliveryId });
     else { const l = this.branch.verbs.link(caller, owner); b.linkEvent(l, 'prompt', text, { via: 'flow', tag: 'report', unitId: unit.id, caseId: c.id, result, deliveryId: d.deliveryId }); }
     st.addEvent(caller.sessionId, 'rig_handoff', { caseId: c.id, from: ctx.name, result, to, line: line.index, unitId: null, report: true, target: owner.name, deliveryId: d.deliveryId, escalated: !!escalated });
+    rigEvent(b, { kind: escalated ? 'escalate' : 'report', caseId: c.id, unitId: unit.id, seat: ctx.name, session: caller.sessionId, fromSeat: ctx.name, toSeat: OWNER, line: line.index, value: result, n: escalated ? escalated.n : passN, max: line.max, actor: 'board', ref: d.deliveryId, text: firstLine(doneText, 120), data: { ownerSeat: to, owner: owner.sessionId, report: true } });
     if (st.insertCaseReport) st.insertCaseReport({ caseId: c.id, seat: ctx.name, sessionId: caller.sessionId, unitId: unit.id, result, line: line.index, escalated: !!escalated, deliveryId: d.deliveryId }); // P197: 보낼 때 적는다(17절)
     b.log(`rig report ${ctx.name}(${caller.name}) ${result} → owner @${owner.name} case ${c.id}${escalated ? ' (waiting_owner)' : ''}`);
     this.changed(ctx.key);
@@ -503,6 +526,7 @@ export class RigFlow {
     if (unit.from === c.owner && caller.sessionId !== c.owner && st.insertCaseReport) {
       const tr = st.lastTryOfUnit(unit.id);
       st.insertCaseReport({ caseId: c.id, seat: caller.rigSeat || null, sessionId: caller.sessionId, unitId: unit.id, result, line: null, escalated: false, deliveryId: tr ? tr.noticeDeliveryId : null });
+      rigEvent(this.b, { kind: 'report', caseId: c.id, unitId: unit.id, seat: caller.rigSeat || null, session: caller.sessionId, fromSeat: caller.rigSeat || null, toSeat: OWNER, value: result, actor: 'board', ref: tr ? tr.noticeDeliveryId : null, text: tr && tr.doneText ? firstLine(tr.doneText, 120) : null, data: { owner: c.owner, ownerSeat: this.seatOfSession(c.owner) } });
     }
     this.changed(c.workspaceKey);
   }
@@ -547,6 +571,7 @@ export class RigFlow {
       for (const u of st.unitsOfCase(c.id)) if (u.status === 'open' && !u.to) st.updateUnit(u.id, { status: 'cancelled', closedAt: now });
       st.updateCase(c.id, { state: 'cancelled', closedAt: now });
       st.addEvent(s.sessionId, 'rig_case_cancelled', { caseId: c.id, why: 'owner closed' });
+      rigEvent(this.b, { kind: 'case_cancelled', caseId: c.id, session: s.sessionId, seat: s.rigSeat || null, actor: 'board', value: 'owner closed', text: '주인 세션이 닫혔다' });
       this.changed(c.workspaceKey);
     }
     // 닫힌 세션의 일이 취소되었다(WorkUnits.onClosed가 먼저 돈다) → 그 건 확인
@@ -599,10 +624,11 @@ export class RigFlow {
       const out = await runCapture(cy.run, { root: r.root, env: cleanEnv(process.env), input: { v: 1, at: 'cycle', workspace: { key, root: r.root }, line: cy.index, since, until: now, rigHash: r.hash }, timeoutMs: cy.timeoutMs });
       text += `\n\n## run 출력(${cy.run.join(' ')})\n${out.ok ? out.text || '(출력 없음)' : `돌지 못했다: ${out.error}${out.text ? `\n${out.text}` : ''}`}`;
     }
-    const c = this.newCase(key, t);
+    const c = this.newCase(key, t, 'cycle');
     const ctx = { key, r, def: this.defOfCase(c, r), seat, name: cy.to };
     const made = this.units().create(t, t, text, 'cycle', { caseId: c.id, seat: cy.to, via: { by: t.sessionId, cycle: cy.index } });
     st.addEvent(t.sessionId, 'rig_cycle', { workspace: key, line: cy.index, caseId: c.id, unitId: made.unit.id, since, until: now, chars: text.length });
+    rigEvent(b, { kind: 'cycle', ws: key, caseId: c.id, unitId: made.unit.id, seat: cy.to, session: t.sessionId, toSeat: cy.to, value: cy.every, actor: 'cycle', ref: cy.index, text: `cycles[${cy.index}] ${cy.every} → ${cy.to}`, data: { cycle: cy.index, since, until: now } });
     b.log(`rig cycle ${key}[${cy.index}] → ${t.name} case ${c.id} unit ${made.unit.id}`);
     this.changed(key);
     return { line: cy.index, caseId: c.id, unitId: made.unit.id, to: t.name, seat: ctx.name };

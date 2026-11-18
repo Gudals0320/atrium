@@ -1,0 +1,176 @@
+{
+  "name": "complex-feature",
+  "results": [
+    "ok",
+    "failed",
+    "rejected"
+  ],
+  "seats": {
+    "lead": {
+      "launcher": "claude",
+      "session": "keep",
+      "effort": "medium"
+    },
+    "researcher": {
+      "launcher": "codex",
+      "session": "fresh",
+      "max_live": 3,
+      "writes": false,
+      "effort": "medium"
+    },
+    "implementer": {
+      "launcher": "claude",
+      "session": "fresh",
+      "worktree": true,
+      "tools": [
+        "test"
+      ],
+      "writes": [
+        "items/{item}/"
+      ],
+      "stopVerify": true,
+      "model": "sonnet"
+    },
+    "reviewer": {
+      "launcher": "codex",
+      "session": "fresh",
+      "writes": false,
+      "effort": "high"
+    },
+    "security": {
+      "launcher": "claude",
+      "session": "fresh",
+      "writes": false
+    },
+    "docs": {
+      "launcher": "claude",
+      "session": "fresh",
+      "writes": [
+        "docs/"
+      ],
+      "model": "haiku",
+      "effort": "low"
+    },
+    "merger": {
+      "launcher": "claude",
+      "session": "fresh",
+      "tools": [
+        "merge"
+      ],
+      "may": [
+        "lead"
+      ]
+    }
+  },
+  "flow": [
+    {
+      "from": "lead",
+      "on": "assign",
+      "to": "researcher"
+    },
+    {
+      "from": "lead",
+      "on": "assign",
+      "to": "implementer"
+    },
+    {
+      "from": "implementer",
+      "on": "ok",
+      "to": [
+        "reviewer",
+        "security"
+      ]
+    },
+    {
+      "from": "reviewer",
+      "on": "rejected",
+      "to": "implementer",
+      "max": 2,
+      "else": "lead"
+    },
+    {
+      "from": "reviewer",
+      "on": "ok",
+      "to": "docs"
+    },
+    {
+      "from": "docs",
+      "on": "ok",
+      "to": "merger"
+    },
+    {
+      "from": "security",
+      "on": "rejected",
+      "to": "implementer",
+      "max": 2
+    }
+  ],
+  "manager": "lead",
+  "hooks": [
+    {
+      "at": "deliver",
+      "from": "flow",
+      "run": [
+        "node",
+        ".atrium/hooks/brief-fix.mjs"
+      ]
+    },
+    {
+      "at": "done",
+      "run": [
+        "node",
+        ".atrium/hooks/check-done.mjs"
+      ]
+    },
+    {
+      "at": "tool-before",
+      "tool": "merge",
+      "run": [
+        "node",
+        ".atrium/hooks/merge-gate.mjs"
+      ]
+    },
+    {
+      "at": "tool-after",
+      "tool": "test",
+      "run": [
+        "node",
+        ".atrium/hooks/test-stamp.mjs"
+      ]
+    },
+    {
+      "at": "pre-tool",
+      "match": "Bash|Write|Edit",
+      "seat": [
+        "implementer",
+        "docs"
+      ],
+      "run": [
+        "node",
+        ".atrium/hooks/guard-write.mjs"
+      ]
+    }
+  ],
+  "tools": {
+    "test": {
+      "run": [
+        "node",
+        ".atrium/tools/test.mjs"
+      ],
+      "desc": "run the test suite"
+    },
+    "merge": {
+      "run": [
+        "node",
+        ".atrium/tools/merge.mjs"
+      ],
+      "desc": "merge the item branch into main"
+    }
+  },
+  "cycles": [
+    {
+      "every": "7d",
+      "to": "manager"
+    }
+  ]
+}

@@ -18,7 +18,9 @@ import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { rigFlowHandlers, seatNamed } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
 import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·create·describe·get·save·spawnSeat
-import { rigAdminHandlers } from './rig-admin.mjs'; // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
+import { rigAdminHandlers } from './rig-admin.mjs';
+import { humanMessage } from './rig-ledger.mjs'; // P217: 장부(사람 글)
+import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
@@ -1611,6 +1613,7 @@ export class Backend {
       body = h.text;
       const d = this.queue.enqueue(s.sessionId, body, { typeNow: p.whileWorking === 'type', origin: { kind: 'human' } });
       this.touch(s);
+      humanMessage(this, s, d.deliveryId, body); // P217: 사람이 rig 자리 세션에 보낸 글(장부)
       return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status };
     }));
     // I2(P6b): 명령 바에서 보낸 글은 Thread에 남긴다. source: bar(기본), output(출력 보기에서 답장)
@@ -2121,6 +2124,7 @@ export class Backend {
       ...rigHandlers(this), // rig.status·rig.enable·rig.disable
       ...rigFlowHandlers(this), // P185: rig.seat(사람만, 이 PC의 창)·rig.cases
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만)
+      ...rigMapHandlers(this), // P217: 장부 읽기(rig.events)와 구조 지도 데이터(rig.map)
       ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다

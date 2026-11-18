@@ -55,12 +55,14 @@ export function installMerge(Store) {
       const off = merged ? Number(this.st('SELECT COALESCE(MAX(n), 0) AS n FROM rig_versions WHERE workspace_key = ?').get(to).n) : 0;
       if (off) {
         run('rig_cases_version', 'UPDATE rig_cases SET version_n = version_n + ? WHERE workspace_key = ? AND version_n IS NOT NULL', off, from);
+        run('rig_events_def', 'UPDATE rig_events SET def_n = def_n + ? WHERE ws = ? AND def_n IS NOT NULL', off, from); // P217: 장부의 정의 버전도 민다
         // 번호를 미는 동안 PK가 겹치지 않게 음수로 한 번 거친다
         run('rig_versions_tmp', 'UPDATE rig_versions SET n = -(n + ?) WHERE workspace_key = ?', off, from);
         run('rig_versions', 'UPDATE rig_versions SET workspace_key = ?, n = -n WHERE workspace_key = ?', to, from);
         delete n.rig_versions_tmp;
       } else run('rig_versions', 'UPDATE OR IGNORE rig_versions SET workspace_key = ? WHERE workspace_key = ?', to, from);
       for (const t of ['rig_cases', 'rig_hook_runs', 'tool_runs']) run(t, `UPDATE ${t} SET workspace_key = ? WHERE workspace_key = ?`, to, from);
+      run('rig_events', 'UPDATE rig_events SET ws = ? WHERE ws = ?', to, from); // P217: 장부
       run('rig_seat_counters', 'INSERT INTO rig_seat_counters (workspace_key, seat, n) SELECT ?, seat, n FROM rig_seat_counters WHERE workspace_key = ? ON CONFLICT(workspace_key, seat) DO UPDATE SET n = MAX(n, excluded.n)', to, from);
       run('rig_cycles', 'UPDATE OR IGNORE rig_cycles SET workspace_key = ? WHERE workspace_key = ?', to, from);
       for (const t of ['rig_seat_counters', 'rig_cycles', 'rig_versions']) this.st(`DELETE FROM ${t} WHERE workspace_key = ?`).run(from);
