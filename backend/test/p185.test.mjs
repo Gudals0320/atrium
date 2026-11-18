@@ -274,9 +274,10 @@ test('P185 흐름(P194 보고): 메인이 맡겨 건이 생김 → worker ok →
     const rv4 = by('reviewer-4'); await gotUnit(rv4);
     d = await done(b, rv4, 'ok', '좋다');
     assert.deepEqual(d.reports, [{ seat: 'main', to: 'lead', escalated: false }]);
-    assert.equal(d.case.state, 'done', 'P194: 주인에게 간 것은 보고라 열린 일이 없어 건이 done(주인이 done을 칠 필요 없음)');
+    assert.equal(d.case.state, 'waiting_owner', 'P194·P209: 주인에게 간 것은 보고라 일이 없다. 건은 그 보고를 받은 주인의 턴을 기다린다(주인이 done을 칠 필요 없음)');
     await until(() => main.texts.length === 2);
-    assert.match(main.texts[1], /^\[Atrium 보드\] rig 건 c\w+\("일: 목록을 세어 보고한다"\): reviewer 자리\(@reviewer-4\)가 일 u\w+을 닫았다: ok\n\[Atrium 보드\] 이것은 보고다\(atrium done으로 닫을 일이 아니다\)\. 건에 열린 일이 없으면 건은 done이다\.\n좋다$/);
+    assert.match(main.texts[1], /^\[Atrium 보드\] rig 건 c\w+\("일: 목록을 세어 보고한다"\): reviewer 자리\(@reviewer-4\)가 일 u\w+을 닫았다: ok\n\[Atrium 보드\] 이것은 보고다\(atrium done으로 닫을 일이 아니다\)\. 건에 열린 일이 없으면 건은 waiting_owner다: .*맡기지 않고 턴을 끝내면 건은 done이다\.\n좋다$/);
+    await until(() => b.store.getCase(caseId).state === 'done', 4000); // P209: 주인의 턴이 맡기기 없이 끝났다
     assert.equal(evs(b, 'rig_case_done').length, 1);
     const c = b.store.getCase(caseId);
     assert.equal(c.state, 'done'); assert.ok(c.closedAt);

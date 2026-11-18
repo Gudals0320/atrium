@@ -88,7 +88,7 @@ export function ownerReportText({ caseId, fromSeat, fromName, unitId, firstSpec,
   const lines = [`[Atrium 보드] rig 건 ${caseId}("${clip(String(firstSpec || '').replace(/\s+/g, ' '), 60)}"): ${fromSeat} 자리(@${fromName})가 일 ${unitId}을 닫았다: ${result}`];
   lines.push(escalated
     ? `[Atrium 보드] 이것은 보고다(atrium done으로 닫을 일이 아니다). 되돌아감 상한을 넘어 너에게 올라왔다: flow[${escalated.line}]은 이 건에서 이미 ${escalated.max}번 지났다. 건은 waiting_owner다. 다음 \`atrium prompt <자리> "<할 일>"\`이 이 건을 잇는다(건이 여럿이면 --case ${caseId}).`
-    : '[Atrium 보드] 이것은 보고다(atrium done으로 닫을 일이 아니다). 건에 열린 일이 없으면 건은 done이다.');
+    : `[Atrium 보드] 이것은 보고다(atrium done으로 닫을 일이 아니다). 건에 열린 일이 없으면 건은 waiting_owner다: 이 턴에 \`atrium prompt <자리> "<할 일>"\`로 맡기면 같은 건을 잇고(흐름 줄의 지난 횟수도 이어 센다), 맡기지 않고 턴을 끝내면 건은 done이다.`);
   lines.push(String(doneText || '').replace(/\s+$/, ''));
   if (escalated && history.length) lines.push('', '--- 건의 이력(자리, 세션, 값, done 글 첫 줄) ---', ...history.map((h, i) => `${i + 1}. ${h.seat || '-'}(@${h.name}) ${h.result || h.status}${h.text ? `: ${h.text}` : ''}`));
   return lines.join('\n');
@@ -122,6 +122,9 @@ export class RigFlow {
     this.spawning = new Map(); // `${워크스페이스}|${자리}` → 띄우는 중인 수(max_live를 함께 넘지 않게)
     this.pumping = false;
     b.bus.on('closed', (s) => { try { this.onClosed(s); } catch (e) { b.log('rig flow closed error', e.stack); } });
+    // P209: 주인 보고를 기다리는 건(owner_wait report)은 그 보고를 받은 주인의 턴이 맡기기 없이 끝나면 done
+    this.prevState = new Map();
+    b.bus.on('session', (s, sum) => { try { this.onSessionTurn(s, sum); } catch (e) { b.log('rig flow session error', e.stack); } });
     // 백엔드가 다시 뜬 뒤: 자리 줄(max_live)에 선 일을 다시 본다(세션이 다 붙은 뒤)
     if (b.store.seatWaitingAll && b.store.seatWaitingAll().length) { const t = setTimeout(() => this.pumpSoon(), 5000); if (t.unref) t.unref(); }
     // P188: 느린 고리. 다음 시각은 DB(rig_cycles)에 있고, 판이 꺼져 있던 동안 놓친 회는 한 번만 돈다
@@ -233,26 +236,55 @@ export class RigFlow {
     if (c.state !== 'open') {
       // P194 뒤(@fable-peer): 주인이 waiting_owner 건을 다시 맡기는 것은 새 결정이다. 줄별 지난 횟수를 0으로 되돌린다
       // (안 그러면 다음 반려 한 번에 곧바로 주인에게 돌아온다)
-      const reset = c.state === 'waiting_owner' && c.owner === caller.sessionId;
+      // P209: 주인 보고를 기다리던 건(owner_wait report)은 되돌리지 않는다(주인을 지나는 반복도 흐름 줄 max가 센다). 상한을 넘어 올라온 건만 0으로
+      const reset = c.state === 'waiting_owner' && c.owner === caller.sessionId && c.ownerWait !== 'report';
       // 지난 횟수(줄 번호 열쇠)만 0으로. 넘어간 이력(`<줄>>else`)은 남긴다(rig.cases의 escalated)
       const kept = reset ? Object.fromEntries(Object.entries(c.edgeCounts || {}).filter(([k]) => k.includes('>'))) : null;
-      st.updateCase(c.id, { state: 'open', blockedReason: null, ...(reset ? { edgeCounts: kept } : {}) });
-      st.addEvent(caller.sessionId, 'rig_case_resume', { caseId: c.id, from: c.state, why, ...(reset ? { countersReset: true } : {}) });
+      st.updateCase(c.id, { state: 'open', blockedReason: null, ownerWait: null, ownerWaitDelivery: null, ...(reset ? { edgeCounts: kept } : {}) });
+      st.addEvent(caller.sessionId, 'rig_case_resume', { caseId: c.id, from: c.state, why, ...(c.ownerWait ? { ownerWait: c.ownerWait } : {}), ...(reset ? { countersReset: true } : {}) });
       this.b.log(`rig case ${c.id} resumed (${c.state} → open, ${why}) by ${caller.name}`);
       this.changed(c.workspaceKey);
-    }
+    } else if (c.ownerWait && c.owner === caller.sessionId) st.updateCase(c.id, { ownerWait: null, ownerWaitDelivery: null }); // P209: 열린 건에 주인이 맡겼다(받은 보고에 답했다)
     return st.getCase(c.id);
   }
-  // 열린 일이 없으면 done
+  // 열린 일이 없으면 done. P209: 흐름 줄이 주인에게 보고를 넣었으면(owner_wait report) done 대신 waiting_owner(주인의 그 턴을 기다린다)
   caseCheck(caseId) {
     const st = this.store(); const c = st.getCase(caseId);
     if (!c || c.state !== 'open') return c;
     if (st.openUnitsOfCaseCount(caseId) > 0) return c;
-    st.updateCase(caseId, { state: 'done', closedAt: Date.now() });
-    st.addEvent(c.owner, 'rig_case_done', { caseId });
-    this.b.log(`rig case ${caseId} done`);
+    if (c.ownerWait === 'report') {
+      st.updateCase(caseId, { state: 'waiting_owner' });
+      st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId, why: 'report', deliveryId: c.ownerWaitDelivery });
+      this.b.log(`rig case ${caseId} waiting_owner (owner report)`);
+      this.changed(c.workspaceKey);
+      return st.getCase(caseId);
+    }
+    return this.closeDone(c);
+  }
+  closeDone(c, why = null) {
+    const st = this.store(); const caseId = c.id;
+    st.updateCase(caseId, { state: 'done', closedAt: Date.now(), ownerWait: null, ownerWaitDelivery: null });
+    st.addEvent(c.owner, 'rig_case_done', { caseId, ...(why ? { why } : {}) });
+    this.b.log(`rig case ${caseId} done${why ? ` (${why})` : ''}`);
     this.changed(c.workspaceKey);
     return st.getCase(caseId);
+  }
+  // P209: 주인의 턴 끝(working → ready·error). 주인 보고를 기다리는 건 가운데 그 보고가 이미 들어간 것(confirmed·unconfirmed)은 done.
+  //   보고가 아직 줄에 있으면(다른 턴이 끝났다) 기다린다. 보고가 못 들어갔으면(failed·cancelled) 기다릴 턴이 없으니 done
+  onSessionTurn(s, sum) {
+    const sid = s.sessionId; const prev = this.prevState.get(sid);
+    this.prevState.set(sid, sum.state);
+    if (prev === sum.state || sum.state === 'working' || sum.state === 'starting') return;
+    const st = this.store();
+    if (!st.liveCasesOfOwner) return;
+    const turnEnded = prev === 'working' && (sum.state === 'ready' || sum.state === 'error');
+    for (const c of st.liveCasesOfOwner(sid)) {
+      if (c.state !== 'waiting_owner' || c.ownerWait !== 'report') continue;
+      const d = c.ownerWaitDelivery && st.getDelivery ? st.getDelivery(c.ownerWaitDelivery) : null;
+      const status = d ? d.status : null;
+      if (status === 'failed' || status === 'cancelled' || (!d && turnEnded)) this.closeDone(c, 'owner report not delivered');
+      else if (turnEnded && (status === 'confirmed' || status === 'unconfirmed')) this.closeDone(c, 'owner turn ended');
+    }
   }
   block(c, reason) {
     const b = this.b; const st = this.store();
@@ -443,11 +475,13 @@ export class RigFlow {
   ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner, firstSpec }) {
     const b = this.b; const st = this.store();
     if (escalated) {
-      st.updateCase(c.id, { state: 'waiting_owner' });
+      st.updateCase(c.id, { state: 'waiting_owner', ownerWait: 'escalated', ownerWaitDelivery: null });
       st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId: c.id, line: line.index, max: escalated.max, from: ctx.name, result });
     }
     const text = ownerReportText({ caseId: c.id, fromSeat: ctx.name, fromName: shownName(caller), unitId: unit.id, firstSpec, result, doneText, escalated, history: escalated ? this.history(c.id) : [] });
     const d = b.queue.enqueue(owner.sessionId, text);
+    // P209: 상한 아래의 주인 보고. 건은 열린 일이 없어지면 done 대신 waiting_owner(caseCheck), 이 보고를 받은 주인의 턴이 끝나면 done(onSessionTurn)
+    if (!escalated) st.updateCase(c.id, { ownerWait: 'report', ownerWaitDelivery: d.deliveryId });
     const tr = st.lastTryOfUnit(unit.id);
     if (tr) st.updateTry(tr.id, { noticeDeliveryId: d.deliveryId });
     // 연결 기록: 위(주인) → 하위 선에 보고(답)로(0단계 done과 같다). 선이 없으면 보낸 쪽 → 주인 선

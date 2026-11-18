@@ -272,10 +272,129 @@ test('P209 정의 해시·버전: effort를 더하면 새 버전, 보호 포인�
   } finally { await stop(); }
 });
 
-test('P209 atrium guide rig: 자리 effort·model 줄, 주인을 지나는 반복의 한계 줄, 제작 세션의 check·log', () => {
+test('P209 atrium guide rig: 자리 effort·model 줄, 주인을 지나는 반복 설명(임시 한계 줄을 바꿈), 제작 세션의 check·log', () => {
   const t = rigGuideText();
-  assert.ok(t.includes('흐름 줄 max는 한 건 안에서만 센다. 반려가 건 주인에게 돌아와 건이 닫히면 주인이 다시 맡기는 일은 새 건이다. 주인을 지나는 반복의 상한은 주인 자리 안내(guide)에 적는다.'));
+  assert.ok(!t.includes('주인을 지나는 반복의 상한은 주인 자리 안내(guide)에 적는다'), '임시 줄은 없다');
+  assert.match(t, /주인에게 가는 줄/); assert.match(t, /waiting_owner/); assert.match(t, /이어 센다/); assert.match(t, /done이다/);
   assert.match(t, /- effort: /); assert.match(t, /- model: /); assert.match(t, /minimal/);
   assert.match(t, /다음에 띄울 때부터/);
   assert.match(t, /제작 세션도 제작 일을 닫은 뒤 읽기만 하는 atrium rig check·log/);
+});
+
+// ---------- P209 뒤(@fable-peer): 주인을 지나는 반복을 흐름 줄 max가 센다 ----------
+const loopDef = ({ withElse = true } = {}) => ({
+  results: ['ok', 'failed', 'rejected'],
+  seats: {
+    main: { launcher: 'claude', session: 'keep' },
+    worker: { launcher: 'claude', session: 'fresh' },
+    reviewer: { launcher: 'claude', session: 'fresh' },
+    judge: { launcher: 'claude', session: 'fresh' },
+  },
+  flow: [
+    { from: 'main', on: 'assign', to: 'worker' },
+    { from: 'worker', on: 'ok', to: 'reviewer' },
+    { from: 'reviewer', on: 'rejected', to: 'main', max: 2, ...(withElse ? { else: 'judge' } : {}) },
+    { from: 'reviewer', on: 'ok', to: 'main' },
+  ],
+  manager: 'main',
+});
+const gotUnit = (s) => until(() => s && s.texts.some((t) => /rig의 \w+ 자리다/.test(t)) && s.rt.term.status === 'idle', 4000);
+const doneV = (b, s, result, text) => U(b).doneVerb(s, { result, text });
+const isReport = (t) => t.startsWith('[Atrium 보드] rig 건');
+
+test('P209 주인 보고: (a) 건은 done 대신 waiting_owner, (c) 그 턴에 맡기면 같은 건을 잇고 셈이 쌓인다, (d) 상한을 넘으면 else로', async () => {
+  const { b, add, seat, by, stop } = await board({ def: loopDef() });
+  try {
+    const main = add('lead'); seat(main, 'main');
+    const assigned = [];
+    // 주인: 반려 보고를 받으면 그 턴 안에서 워커에게 다시 맡긴다
+    main.onText = async (text) => { if (isReport(text) && /: rejected$/.test(text.split('\n')[0])) assigned.push(await V(b).prompt(main, { name: 'worker', text: `고쳐라 ${assigned.length + 1}` })); };
+    const r = await V(b).prompt(main, { name: 'worker', text: '일: 단추' });
+    const C = r.unit.caseId;
+    let wName = r.name;
+    const round = async () => {
+      const w = by(wName); await gotUnit(w);
+      const d1 = await doneV(b, w, 'ok', '했다');
+      const rv = by(d1.flow[0].to); await gotUnit(rv);
+      return doneV(b, rv, 'rejected', '틀렸다');
+    };
+    // 1회: 주인에게 보고 → waiting_owner(report) → 주인이 그 턴에 맡겨 같은 건, 셈 1 유지
+    let d = await round();
+    assert.deepEqual(d.reports, [{ seat: 'main', to: 'lead', escalated: false }]);
+    assert.equal(d.case.state, 'waiting_owner', '(a)');
+    await until(() => assigned.length === 1, 4000);
+    assert.equal(assigned[0].unit.caseId, C, '(c) 같은 건');
+    let c = b.store.getCase(C);
+    assert.equal(c.state, 'open'); assert.equal(c.ownerWait, null); assert.equal(c.edgeCounts['2'], 1, '(c) 셈은 0으로 돌아가지 않는다');
+    const res = evs(b, 'rig_case_resume').at(-1).data;
+    assert.equal(res.ownerWait, 'report'); assert.equal(res.countersReset, undefined);
+    // 2회: 셈 2
+    wName = assigned[0].name;
+    d = await round();
+    assert.equal(d.case.state, 'waiting_owner');
+    await until(() => assigned.length === 2, 4000);
+    assert.equal(assigned[1].unit.caseId, C);
+    assert.equal(b.store.getCase(C).edgeCounts['2'], 2);
+    // 3회: 상한 2를 넘어 else(judge)로. 주인에게 보고가 가지 않는다
+    wName = assigned[1].name;
+    const before = main.texts.filter(isReport).length;
+    d = await round();
+    assert.deepEqual(d.reports || [], []);
+    assert.deepEqual(d.flow.map((x) => x.seat), ['judge'], '(d) 주인을 지나는 반복이 상한에 걸린다');
+    c = b.store.getCase(C);
+    assert.equal(c.state, 'open'); assert.equal(c.edgeCounts['2>else'], 1);
+    assert.ok(evs(b, 'rig_escalate').some((e) => e.data.caseId === C && e.data.to === 'judge'));
+    await tick(150);
+    assert.equal(main.texts.filter(isReport).length, before);
+    assert.equal(assigned.length, 2);
+  } finally { await stop(); }
+});
+
+test('P209 주인 보고 (b): 보고를 받은 주인의 턴이 맡기기 없이 끝나면 done. 보고가 들어가기 전에 끝난 턴으로는 닫지 않는다', async () => {
+  const { b, add, seat, by, stop } = await board({ def: loopDef() });
+  try {
+    const main = add('lead'); seat(main, 'main');
+    const r = await V(b).prompt(main, { name: 'worker', text: '일: 표' });
+    const C = r.unit.caseId;
+    const w = by(r.name); await gotUnit(w);
+    const d1 = await doneV(b, w, 'ok', '했다');
+    const rv = by(d1.flow[0].to); await gotUnit(rv);
+    b.queue.stop(); // 보고가 줄에 머문다
+    const d = await doneV(b, rv, 'ok', '좋다');
+    assert.equal(d.case.state, 'waiting_owner');
+    const flow = b.branch.flow;
+    flow.prevState.set(main.sessionId, 'working');
+    flow.onSessionTurn(main, { ...b.summary(main), state: 'ready' }); // 다른 턴이 끝났다
+    assert.equal(b.store.getCase(C).state, 'waiting_owner', '보고가 아직 들어가지 않았다');
+    b.queue.start();
+    await until(() => b.store.getCase(C).state === 'done', 4000);
+    assert.equal(evs(b, 'rig_case_done').at(-1).data.why, 'owner turn ended');
+    await until(() => main.rt.term.status === 'idle');
+    const r2 = await V(b).prompt(main, { name: 'worker', text: '다음' });
+    assert.notEqual(r2.unit.caseId, C, '그 뒤 맡기기는 새 건');
+  } finally { await stop(); }
+});
+
+test('P209 P194 상한을 넘어 올라온 waiting_owner(else 없음 → manager=주인)는 턴이 끝나도 닫히지 않고, 주인이 다시 맡기면 셈이 0으로(그대로)', async () => {
+  const { b, add, seat, by, stop } = await board({ def: loopDef({ withElse: false }) });
+  try {
+    const main = add('lead'); seat(main, 'main');
+    const r = await V(b).prompt(main, { name: 'worker', text: '일: 셈' });
+    const C = r.unit.caseId;
+    b.store.updateCase(C, { edgeCounts: { 2: 2 } }); // 이미 두 번 지났다
+    const w = by(r.name); await gotUnit(w);
+    const d1 = await doneV(b, w, 'ok', '했다');
+    const rv = by(d1.flow[0].to); await gotUnit(rv);
+    const d = await doneV(b, rv, 'rejected', '틀렸다');
+    assert.deepEqual(d.reports, [{ seat: 'main', to: 'lead', escalated: true }]);
+    assert.equal(d.case.state, 'waiting_owner'); assert.equal(b.store.getCase(C).ownerWait, 'escalated');
+    await until(() => main.texts.some(isReport) && main.rt.term.status === 'idle', 4000);
+    await tick(100);
+    assert.equal(b.store.getCase(C).state, 'waiting_owner', '올라온 건은 다음 맡기기를 기다린다');
+    const r2 = await V(b).prompt(main, { name: 'worker', text: '다시' });
+    assert.equal(r2.unit.caseId, C);
+    const c = b.store.getCase(C);
+    assert.equal(c.edgeCounts['2'], undefined, '셈 0'); assert.equal(c.edgeCounts['2>else'], 1);
+    assert.equal(evs(b, 'rig_case_resume').at(-1).data.countersReset, true);
+  } finally { await stop(); }
 });
