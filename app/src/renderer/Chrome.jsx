@@ -21,8 +21,7 @@ import { useDialog } from './dialog.js'; // P52
 import { useInbox } from './InboxBar.jsx';
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
-import { UsagePill, UsageLeft, useUsageLeft } from './Usage.jsx'; // P211: 구독 사용량
-import { windowLabel } from './lib/usage.js';
+import { UsagePill } from './Usage.jsx'; // P211: 구독 사용량. 레일 호출자 단추에는 보이지 않는다(로고만, 2026-11-18 사용자 요청)
 import { Icon } from './lib/icons.jsx';
 import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
@@ -371,13 +370,11 @@ const Sep = () => <span className="mt-rail-sep" />;
 function LauncherTool({ l, open, onOpen }) {
   const t = useT();
   const kind = launcherIcon(l);
-  const left = useUsageLeft(l); // P211: 그 구독의 남은 양
-  const tip = launcherTooltip(l, { shellText: t('launchers.shellPreview'), envText: t('launchers.envShort') }) + (left ? `\n${t('usage.leftTitle', { pct: left.pct, win: windowLabel(left.window, t) })}` : '');
+  const tip = launcherTooltip(l, { shellText: t('launchers.shellPreview'), envText: t('launchers.envShort') });
   const go = (e) => (e && e.shiftKey ? openDialog({ kind: 'spawn', launcher: l.id }) : onOpen(open ? null : { id: l.id, el: e.currentTarget }));
   return (
     <button className={`mt-tool${open ? ' on' : ''}`} title={tip} aria-label={l.name} aria-haspopup="dialog" aria-expanded={open} data-action="launch" data-launcher={l.id} data-name={l.name} onClick={go}>
       {kind === 'shell' ? <Icon name="terminal" /> : kind ? <KindIcon kind={kind} title={tip} badge /> : <span className="mt-tool-mark" data-role="launcher-mark">{launcherMark(l)}</span>}
-      <UsageLeft l={l} compact />
     </button>
   );
 }

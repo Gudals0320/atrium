@@ -50,9 +50,9 @@ async function pc() {
       const tr = await page.locator('[data-role=top-right]').boundingBox();
       await page.screenshot({ path: path.join(OUT, `pc-dropdown-${lang}.png`), clip: { x: Math.min(box.x, tr.x) - 10, y: tr.y - 10, width: Math.max(box.x + box.width, tr.x + tr.width) - Math.min(box.x, tr.x) + 20, height: box.y + box.height - tr.y + 20 } });
       await page.keyboard.press('Escape');
-      // 레일: 즐겨찾기 호출자 옆 남은 양
+      // 레일: 즐겨찾기 호출자는 로고만(남은 양을 보이지 않는다, 2026-11-18 사용자 요청)
       const rail = await page.evaluate(() => [...document.querySelectorAll('[data-role=rail-favorites] [data-action=launch]')].map((b) => ({ name: b.dataset.name, left: b.querySelector('[data-role=usage-left]') ? Number(b.querySelector('[data-role=usage-left]').dataset.pct) : null, title: b.title.split('\n').pop() })));
-      check(`[${lang}] 레일 호출자(Claude Code, Codex) 옆에 남은 양`, rail.filter((r) => r.left != null).length >= 2, rail);
+      check(`[${lang}] 레일 호출자에 남은 양 없음(로고만)`, rail.length > 0 && rail.every((r) => r.left == null), rail);
       await page.screenshot({ path: path.join(OUT, `pc-rail-${lang}.png`), clip: await clipOf(page, '[data-role=rail-favorites]', 12) });
       // 새 세션 창: 호출자 드롭다운 줄과 미리보기 옆
       await page.click('[data-action=chip-spawn]');

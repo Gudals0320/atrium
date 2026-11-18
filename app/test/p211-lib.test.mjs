@@ -63,3 +63,12 @@ test('P211 시간·창·크레딧·알림 글(두 사전)', () => {
   assert.deepEqual(a.reset, { key: 'usage.spanHour', vars: { h: 2 } });
   assert.equal(translate('ko', 'usage.left', { pct: 19 }), '19% 남음');
 });
+
+// 2026-11-18 사용자 요청: 레일의 즐겨찾기 호출자 단추는 로고만 보인다(구독 남은 양 숫자를 붙이지 않는다)
+test('레일 호출자 단추에는 남은 양이 없다', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/renderer/Chrome.jsx', import.meta.url), 'utf8');
+  const tool = src.slice(src.indexOf('function LauncherTool('), src.indexOf('function Favorites('));
+  assert.ok(tool.length > 0);
+  assert.ok(!/UsageLeft|useUsageLeft/.test(tool), '레일 단추에 UsageLeft가 없다');
+});
