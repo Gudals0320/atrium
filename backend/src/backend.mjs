@@ -21,6 +21,7 @@ import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·crea
 import { rigAdminHandlers } from './rig-admin.mjs';
 import { humanMessage } from './rig-ledger.mjs'; // P217: 장부(사람 글)
 import { rigLoopHandlers } from './rig-loops.mjs'; // P221: rig.loops·pause·resume·name
+import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
 import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
@@ -2149,6 +2150,7 @@ export class Backend {
       ...rigFlowHandlers(this), // P185: rig.seat(사람만, 이 PC의 창)·rig.cases
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만)
       ...rigLoopHandlers(this), // P221: 고리 목록, 멈추기·잇기, 회 이름 고치기
+      ...rigSectorHandlers(this), // P222: 산출물 등록부
       ...rigMapHandlers(this), // P217: 장부 읽기(rig.events)와 구조 지도 데이터(rig.map)
       ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)

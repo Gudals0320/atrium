@@ -638,7 +638,8 @@ export class Rig {
     let args = ctx.args != null ? ctx.args.slice() : null;
     const appends = [];
     const runs = [];
-    const out = (extra) => ({ ...extra, text, ...(args ? { args } : {}), appends, runs, hash: r.hash });
+    const artifacts = []; // P222: done 훅이 돌려준 산출물 경로
+    const out = (extra) => ({ ...extra, text, ...(args ? { args } : {}), appends, runs, hash: r.hash, ...(artifacts.length ? { artifacts } : {}) });
     for (const h of hooks) {
       const input = {
         v: 1, at: ctx.at, rigHash: r.hash, workspace: { key: ctx.key, root: r.root },
@@ -673,6 +674,7 @@ export class Rig {
       }
       if (ctx.at === 'tool-before' && o.action === 'rewrite' && Array.isArray(o.args)) args = o.args.map(String);
       if (ctx.at === 'tool-after' && o.append) appends.push(o.append);
+      if (ctx.at === 'done' && o.artifacts) artifacts.push(...o.artifacts);
       const changed = before !== text;
       const argsChanged = beforeArgs !== args;
       const rowId = st.insertHookRun({ ...rec, decision: o.action, reason: o.reason || null, note: o.note || null, beforeText: changed ? before : argsChanged ? JSON.stringify(beforeArgs) : null });

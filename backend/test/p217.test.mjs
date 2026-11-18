@@ -117,6 +117,7 @@ const kinds = (rows) => rows.map((r) => r.kind);
 const DESIGN_KINDS = ['case_open', 'case_waiting_owner', 'case_resumed', 'case_blocked', 'case_done', 'case_cancelled', 'assign', 'handoff', 'report', 'escalate', 'try_start', 'done', 'try_stopped', 'retried', 'gate', 'tool_start', 'tool_end', 'seat_spawn', 'seat_queue', 'seat_set', 'human_message', 'rig_enabled', 'rig_disabled', 'rig_version', 'rig_invalid', 'rig_protected', 'rig_rollback', 'cycle', 'cleanup',
   'doc_load', 'doc_changed', 'doc_foreign_write', 'doc_stale', // P219: rig 2 문서(rig2-design 5절)
   'loop_trigger', 'loop_skip', 'loop_next', 'loop_paused', 'loop_resumed', 'run_paused', 'run_resumed', 'run_named', // P221: rig 2 고리(rig2-design 5절)
+  'artifact_filed', 'artifact_superseded', 'artifact_accepted', 'artifact_warning', // P222: rig 2 산출물 섹터(artifact_moved는 move가 들어올 때)
   'seat_permission']; // P223: 자리 권한 결정
 
 test('P217 소스 검사: rig_events에 쓰는 곳은 rigEvent 하나(store.insertRigEvent는 rig-ledger.mjs만 부른다), SQL은 store-rig.mjs에만(키 옮기기는 store-merge.mjs)', () => {

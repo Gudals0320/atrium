@@ -7,6 +7,7 @@ import path from 'node:path';
 import { shownName } from './session-label.mjs';
 import { seatColumns } from './rig-flow.mjs';
 import { OWNER, HUMAN } from './rig-ledger.mjs';
+import { sectorsFor } from './rig-sectors.mjs'; // P222: 섹터 마디의 산출물
 
 // P217 뒤(18.5): outside(rig 밖 대상: outside:@<이름>, outside:*), instruct 변(human → 자리), now blocked(건이 막힘. stopped는 자리 세션의 멈춤만)
 // P219(rig 2 R1): doc(정의의 docs 문서: role, layer, 마지막 바뀜, stale), hook(records·reads가 있는 훅), loads·reads·records 변(10절: 이제 그린다).
@@ -367,6 +368,16 @@ export class RigMap {
     // P221: 고리 목록과 상태(구조 지도 2(R4)가 그린다). 고리 멈춤은 장부가 아니라 지금 상태라 부를 때마다
     out.loops = b.branch && b.branch.flow && b.branch.flow.loops ? b.branch.flow.loops.view(key, base.def) : [];
     for (const c of out.cases || []) if (!c.paused && c.loop && out.loops.some((l) => l.name === c.loop && l.paused)) c.paused = { at: null, by: 'loop' };
+    // P222: 산출물 섹터. 섹터 마디(doc, role sector)의 meta.artifacts { live, total, more(+n), recent }, 회마다 산출물 수, 보는 회의 산출물(overlay.artifacts)
+    if (base.def && base.def.docs && st.artifacts) {
+      const S = sectorsFor(b);
+      if (enabled) S.sweep(key, base.def); // 기간 keep은 시간이 지나면 넘친다
+      const m = S.forMap(key, base.def);
+      for (const node of out.def.nodes) if (node.type === 'doc' && node.meta.role === 'sector') node.meta.artifacts = m.sectors[node.label] || { live: 0, total: 0, more: 0, recent: [] };
+      const byCase = st.artifactCountsByCase(key);
+      for (const c of out.cases || []) c.artifacts = byCase[c.id] || 0;
+      if (out.overlay) out.overlay.artifacts = S.ofRun(key, out.overlay.case);
+    }
     return out;
   }
 }

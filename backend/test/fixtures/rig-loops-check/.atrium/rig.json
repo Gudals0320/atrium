@@ -11,7 +11,8 @@
     "reports": {
       "path": "reports/",
       "role": "sector",
-      "intake": "register"
+      "intake": "register",
+      "keep": 12
     }
   },
   "seats": {
@@ -51,7 +52,7 @@
       "produces": [
         "reports"
       ],
-      "task": "Weekly check: look at failing CI runs, stale issues and pull requests, and outdated dependencies. Write one report file under reports/ and append one line per finding to ledger/checks.jsonl. Do not fix anything; list what a person should pick. Then close with done."
+      "task": "Weekly check: look at failing CI runs, stale issues and pull requests, and outdated dependencies. Write one report file under reports/ and append one line per finding to ledger/checks.jsonl. Do not fix anything; list what a person should pick. Then close with done and file the report as an artifact: atrium done ok \"<one-line summary>\" --artifact reports/<report file>."
     }
   }
 }

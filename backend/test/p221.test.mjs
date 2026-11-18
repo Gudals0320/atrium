@@ -158,7 +158,7 @@ test('P221 loops 해석: 바로가기 견본 둘이 맞고, 고리마다 계기�
   assert.equal(L.retro.kind, 'improve'); assert.equal(L.retro.trigger.every, '7d'); assert.equal(L.retro.trigger.everyMs, 7 * DAY); assert.equal(L.retro.trigger.notify, 'main');
   assert.deepEqual(L.retro.holds, ['corrections'], 'docs.corrections.owner retro → retro가 쥔다');
   assert.equal(L.retro.approve, 'human'); assert.deepEqual(L.retro.produces, ['proposals']);
-  assert.ok(g.def.warnings.some((w) => /approve\(human\)는 R6/.test(w)) && g.def.warnings.some((w) => /produces\(proposals\)는 R5/.test(w)));
+  assert.ok(g.def.warnings.some((w) => /approve\(human\)는 R6/.test(w)) && !g.def.warnings.some((w) => /R5/.test(w)), 'P222: produces는 이제 R5가 쓴다(받기만 경고 없음)');
   assert.ok(!g.def.warnings.some((w) => /R2/.test(w)), 'owner는 이제 고리 이름이다(R2 받기만 경고 없음)');
   assert.equal(g.def.seats.main.session, 'keep');
   const c = validateRig(defOf(CHECK), { root: CHECK, exists });

@@ -54,6 +54,15 @@ CREATE TABLE IF NOT EXISTS rig_permits (workspace_key TEXT NOT NULL, seat TEXT N
 `;
 // P223: rig_permits = 사람이 unattended(묻지 않음)를 승인한 자리(워크스페이스·자리마다 한 줄, by: enable | human).
 //   rig_loop_requests.delivery_id = 멈춘 고리에 붙잡은 전달(대기열의 loop_paused 전달, 잇기에 그 전달로 넣는다)
+// P222(rig 2 R5): 산출물 섹터의 등록부. 한 줄이 산출물 하나(섹터 폴더 안의 파일·폴더, path는 저장소 기준). state: new | accepted | superseded
+//   state_why: accepted는 run_done, superseded는 same_path(같은 경로의 새것, superseded_by) | keep(섹터의 keep을 넘음). 파일은 지우지 않는다. source: agent(--artifact) | hook(done 훅)
+export const RIG_ARTIFACTS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS rig_artifacts (id INTEGER PRIMARY KEY, workspace_key TEXT NOT NULL, sector TEXT NOT NULL, path TEXT NOT NULL, dir INTEGER NOT NULL DEFAULT 0, sha256 TEXT, size INTEGER, loop TEXT, case_id TEXT, unit_id TEXT, try_id TEXT, seat TEXT, session_id TEXT, source TEXT NOT NULL, state TEXT NOT NULL, state_at INTEGER, state_why TEXT, superseded_by INTEGER, t INTEGER NOT NULL) STRICT;
+CREATE INDEX IF NOT EXISTS rig_artifacts_ws ON rig_artifacts(workspace_key, sector, id);
+CREATE INDEX IF NOT EXISTS rig_artifacts_case ON rig_artifacts(case_id);
+CREATE INDEX IF NOT EXISTS rig_artifacts_path ON rig_artifacts(workspace_key, path);
+`;
+const artifactRow = (r) => (r ? { id: Number(r.id), workspaceKey: r.workspace_key, sector: r.sector, path: r.path, dir: !!r.dir, sha256: r.sha256 ?? null, size: r.size ?? null, loop: r.loop ?? null, caseId: r.case_id ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, seat: r.seat ?? null, sessionId: r.session_id ?? null, source: r.source, state: r.state, stateAt: r.state_at ?? null, stateWhy: r.state_why ?? null, supersededBy: r.superseded_by ?? null, t: r.t } : null);
 // P217: rig 장부(18.1). 추가만 하는 표. seq는 AUTOINCREMENT라 지운 뒤에도 다시 쓰지 않는다(읽은 자리 커서의 기준).
 //   쓰는 곳은 rig-ledger.mjs rigEvent 하나(insertRigEvent). 지우는 곳은 보관 정리(pruneRigEvents) 하나
 export const RIG_EVENTS_SCHEMA = `
@@ -267,6 +276,31 @@ export function installRig(Store) {
     },
     getCycle(key, line) { const r = this.st('SELECT * FROM rig_cycles WHERE workspace_key = ? AND line = ?').get(key, line); return r ? { workspaceKey: r.workspace_key, line: r.line, nextAt: r.next_at, lastAt: r.last_at ?? null, sig: r.sig ?? null } : null; },
     setCycle(key, line, { nextAt, lastAt = null, sig = null }) { this.st('INSERT INTO rig_cycles (workspace_key, line, next_at, last_at, sig) VALUES (?, ?, ?, ?, ?) ON CONFLICT(workspace_key, line) DO UPDATE SET next_at = excluded.next_at, last_at = excluded.last_at, sig = excluded.sig').run(key, line, nextAt, lastAt, sig); },
+    // ---------- P222: 산출물(rig_artifacts) ----------
+    insertArtifact(x) {
+      return Number(this.st('INSERT INTO rig_artifacts (workspace_key, sector, path, dir, sha256, size, loop, case_id, unit_id, try_id, seat, session_id, source, state, state_at, t) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(x.workspaceKey, x.sector, x.path, x.dir ? 1 : 0, x.sha256 ?? null, x.size ?? null, x.loop ?? null, x.caseId ?? null, x.unitId ?? null, x.tryId ?? null, x.seat ?? null, x.sessionId ?? null, x.source || 'agent', 'new', x.t ?? Date.now(), x.t ?? Date.now()).lastInsertRowid);
+    },
+    getArtifact(id) { return artifactRow(this.st('SELECT * FROM rig_artifacts WHERE id = ?').get(id)); },
+    setArtifactState(id, state, { why = null, by = null } = {}) { this.st('UPDATE rig_artifacts SET state = ?, state_at = ?, state_why = ?, superseded_by = COALESCE(?, superseded_by) WHERE id = ?').run(state, Date.now(), why, by, id); },
+    // 같은 경로의 살아 있는(new·accepted) 줄
+    liveArtifactsAt(ws, p) { return this.st("SELECT * FROM rig_artifacts WHERE workspace_key = ? AND path = ? AND state IN ('new', 'accepted') ORDER BY id").all(ws, p).map(artifactRow); },
+    // 최근 것부터. q: { ws, sector?, caseId?, states?, limit }
+    artifacts(q = {}) {
+      const where = ['workspace_key = ?']; const vals = [q.ws];
+      if (q.sector != null) { where.push('sector = ?'); vals.push(q.sector); }
+      if (q.caseId != null) { where.push('case_id = ?'); vals.push(q.caseId); }
+      if (q.states && q.states.length) { where.push(`state IN (${q.states.map(() => '?').join(',')})`); vals.push(...q.states); }
+      return this.db.prepare(`SELECT * FROM rig_artifacts WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`).all(...vals, Math.max(1, Number(q.limit) || 50)).map(artifactRow);
+    },
+    // 섹터마다 { total, live }
+    artifactCounts(ws) {
+      const out = {};
+      for (const r of this.st("SELECT sector, COUNT(*) AS n, SUM(CASE WHEN state IN ('new', 'accepted') THEN 1 ELSE 0 END) AS live FROM rig_artifacts WHERE workspace_key = ? GROUP BY sector").all(ws)) out[r.sector] = { total: Number(r.n), live: Number(r.live || 0) };
+      return out;
+    },
+    // 회마다 산출물 수(rig.map의 회 목록)
+    artifactCountsByCase(ws) { return Object.fromEntries(this.st('SELECT case_id, COUNT(*) AS n FROM rig_artifacts WHERE workspace_key = ? AND case_id IS NOT NULL GROUP BY case_id').all(ws).map((r) => [r.case_id, Number(r.n)])); },
     // ---------- P221: 고리(rig_loops, rig_loop_requests) ----------
     getLoopRow(key, loop) { const r = this.st('SELECT * FROM rig_loops WHERE workspace_key = ? AND loop = ?').get(key, loop); return r ? { loop: r.loop, pausedAt: r.paused_at ?? null, pausedBy: r.paused_by ?? null, nextAt: r.next_at ?? null, lastAt: r.last_at ?? null, sig: r.sig ?? null } : null; },
     setLoopRow(key, loop, f) {
