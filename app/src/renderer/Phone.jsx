@@ -37,6 +37,7 @@ import { setOpenHandler, launchOpen, clearLaunchOpen } from './push.js'; // P88:
 import { reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록). P86: 보드 단계
 import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx'; // P165: 음성 입력
 import './phone.css';
+import { UsagePill } from './Usage.jsx'; // P211: 위쪽 줄의 구독 사용량 알약
 
 // ---------- 화면 고르기(main.jsx) ----------
 const store = () => { try { return localStorage; } catch { return null; } };
@@ -294,6 +295,7 @@ function PhoneList({ onOpen, onNew, onMission }) {
       <header className="mt-ph-head">
         <img className="mt-ph-brand" src={BRAND_WORDMARK} alt="Atrium" draggable={false} />
         <ConnPill />
+        <UsagePill compact />
         <PushButton onClick={() => setPushOpen(true)} />
         <button type="button" className="mt-ph-icon" data-action="phone-mission" title={t('phoneMission.open')} aria-label={t('phoneMission.open')} onClick={onMission}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v5H9zM3 16h6v5H3zM15 16h6v5h-6zM12 8v4M6 16v-4h12v4" /></svg>

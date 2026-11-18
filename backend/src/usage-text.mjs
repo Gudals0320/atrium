@@ -20,7 +20,7 @@ export function usageLines(view, now = Date.now()) {
     const e = p[k];
     if (!e) { out.push(`  ${NAME[k]}: 모름(${k === 'codex' ? 'Codex 세션 기록에 사용량 줄이 아직 없다' : `보드가 띄운 ${NAME[k]} 세션의 상태 줄이 아직 알리지 않았다`})`); continue; }
     const wins = e.windows.map((w) => `${WIN[w.id] || w.id} ${Math.round(w.usedPct)}%${w.resetsAt ? (w.resetsAt > now ? `(리셋 ${spanText(w.resetsAt - now)} 뒤)` : '(리셋 지남)') : ''}`).join(' · ');
-    const c = e.credits ? (e.credits.unlimited ? ' · 크레딧 무제한' : e.credits.hasCredits ? ` · 크레딧 ${e.credits.balance ?? '있음'}` : ' · 크레딧 없음') : '';
+    const c = e.credits ? (e.credits.unlimited ? ' · 크레딧 무제한' : e.credits.hasCredits ? ` · 크레딧 ${Number.isFinite(Number(e.credits.balance)) ? Math.round(Number(e.credits.balance) * 100) / 100 : e.credits.balance ?? '있음'}` : ' · 크레딧 없음') : '';
     out.push(`  ${NAME[k]}${e.plan ? `(${e.plan})` : ''}: ${wins}${c} · 받은 때 ${spanText(now - e.at)} 전 · 출처 ${SRC[e.source] || e.source}`);
   }
   out.push(view && view.alertsOn === false ? '  90% 알림: 꺼짐' : '  90% 알림: 켜짐(한 창이 90%를 넘으면 그 창이 리셋될 때까지 한 번)');

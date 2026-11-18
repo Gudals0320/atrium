@@ -57,7 +57,8 @@ function ProviderBlock({ k, e, now }) {
 }
 
 // 위 막대 알약: 구독마다 가장 높은 창의 사용률(예 Claude 81% · Codex 81%), 가장 높은 값의 색. 누르면 펼침
-export function UsagePill() {
+// compact(휴대폰 위쪽 줄): 점과 가장 높은 값 하나만(81%). 구독별 값은 누르면 펼침에
+export function UsagePill({ compact = false }) {
   const t = useT();
   const v = useStore((st) => st.usage);
   const now = useNow();
@@ -67,9 +68,9 @@ export function UsagePill() {
   const title = pill.parts.map((x) => `${x.name} ${winName(t, x.window)} ${x.pct}%`).join('\n') || t('usage.none');
   return (
     <div className="mt-drop" ref={ref}>
-      <button className={`mt-cp usage lv-${pill.level}${open ? ' on' : ''}`} title={title} data-role="usage" data-level={pill.level} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button className={`mt-cp usage lv-${pill.level}${open ? ' on' : ''}${compact ? ' compact' : ''}`} title={title} data-role="usage" data-level={pill.level} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className={`mt-usage-dot lv-${pill.level}`} aria-hidden="true" />
-        {pill.parts.length ? pill.parts.map((x, i) => (
+        {compact && pill.parts.length ? (() => { const top = pill.parts.reduce((a, x) => (x.pct > a.pct ? x : a)); return <span className="mt-usage-part" data-provider={top.provider} data-pct={top.pct}><span className={`mono lv-${top.level}`}>{top.pct}%</span></span>; })() : pill.parts.length ? pill.parts.map((x, i) => (
           <span key={x.provider} className="mt-usage-part" data-provider={x.provider} data-pct={x.pct}>{i > 0 && <span className="dim">·</span>}<span className="dim">{x.name}</span><span className={`mono lv-${x.level}`}>{x.pct}%</span></span>
         )) : <span className="dim">{t('usage.label')}</span>}
       </button>

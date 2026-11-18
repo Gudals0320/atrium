@@ -641,3 +641,6 @@ button.mt-pm-chip:disabled { opacity: .5; }
 
 /* P211: 구독 사용량 알약은 휴대폰 위쪽 줄에도 보인다. 펼침은 화면 안에(줄이 .82로 줄어 있다) */
 .mt-app.phone-board .mt-cluster.tr .mt-usage-list { left: 0; right: auto; width: min(380px, calc((100vw - 24px) / .82)); }
+.mt-ph-head .mt-drop { flex: none; position: static; }
+.mt-ph-head .mt-cp.usage { height: 30px; padding: 0 9px; gap: 4px; font-size: 12px; border-radius: 15px; background: var(--chrome-bg); border: 1px solid var(--chrome-line); color: var(--chrome-text); }
+.mt-ph-head .mt-usage-list { position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top) + 52px); width: auto; max-height: 70vh; }
