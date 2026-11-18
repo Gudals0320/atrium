@@ -21,7 +21,7 @@ try {
     await page.evaluate(() => window.__mt.pinBottom(true)); await sleep(500);
     await b.shot(`${tag}-02-bottom`);
     await page.evaluate(() => window.__mt.pinBottom(false)); await sleep(500);
-    await page.click('[data-action="search"]'); await sleep(300);
+    await page.keyboard.press('Control+f') /* P214: 위 막대 검색 칸이 없어 Ctrl+F로 연다 */; await sleep(300);
     await page.fill('[data-field="search"]', ''); await sleep(300);
     await b.shot(`${tag}-03-search-idle`);
     await page.fill('[data-field="search"]', 'p61');

@@ -40,7 +40,7 @@ try {
   result.mission = await small(page, '.mt-mission');
   await shot(page, 'p11-panel-mission');
   await page.keyboard.press('Escape'); await sleep(300);
-  await page.click('[data-action="search"]'); await sleep(300);
+  await page.keyboard.press('Control+f') /* P214: 위 막대 검색 칸이 없어 Ctrl+F로 연다 */; await sleep(300);
   await page.keyboard.type('retry'); await sleep(1200);
   result.search = await small(page, '.mt-search');
   await shot(page, 'p11-panel-search');

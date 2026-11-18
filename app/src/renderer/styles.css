@@ -2698,3 +2698,40 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-usage-left.lv-high { color: var(--bad); }
 .mt-rail-favs .mt-tool { position: relative; }
 .mt-usage-left.compact { position: absolute; right: -3px; bottom: -3px; margin: 0; padding: 0 3px; min-width: 14px; line-height: 12px; font-size: 9.5px; text-align: center; border-radius: 6px; background: var(--chrome-bg); border: 1px solid var(--chrome-line); pointer-events: none; }
+
+/* ---------- P214: 위 막대(목업 2차) ---------- */
+/* 탭 줄: 넘칠 때만 2행(줄마다 띠 높이를 맞추려고 위아래 4.5px, 줄 사이 4px → 1행 37px, 2행 67px). 오른쪽 알약 묶음은 늘 첫 줄 */
+.mt-cluster.tl { align-items: flex-start; pointer-events: none; }
+.mt-cluster.tl > * { pointer-events: auto; }
+.mt-cluster.tl > .mt-cp.round { margin-top: 1px; }
+.mt-cluster.tl > .mt-dev-badge { margin-top: 7.5px; }
+.mt-seg { flex-wrap: wrap; height: auto; min-height: 35px; padding: 4.5px 5px; row-gap: 4px; overflow: hidden; align-content: flex-start; position: relative; z-index: 1; }
+.mt-seg > * { flex: none; }
+/* 2행: 상자 배경·테두리·그림자는 지우고 줄마다 폭을 따라가는 SVG 계단 모양(.mt-ws-shape)을 뒤에 깐다. 비는 자리는 판을 누를 수 있다 */
+.mt-cluster.tl > .mt-seg.shape { background: none; border-color: transparent; box-shadow: none; pointer-events: none; }
+.mt-seg.shape > * { pointer-events: auto; }
+.mt-ws-shape { position: absolute; z-index: 0; overflow: visible; pointer-events: none; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.45)); }
+.mt-ws-shape path { fill: var(--chrome-bg); stroke: var(--chrome-line); stroke-width: 1; }
+/* 두 줄에 들지 못한 칩은 폭만 재고 보이지 않는다 */
+.mt-seg > .mt-ws-hid { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; }
+/* "+n": 넘친 탭 목록을 펼친다 */
+.mt-ws-more { display: inline-flex; align-items: center; height: 26px; padding: 0 8px; border-radius: 9px; border: 1.3px dashed var(--chrome-line-2); background: none; color: var(--chrome-text-3); font-family: var(--font-mono); font-size: 12px; font-weight: 600; cursor: pointer; }
+.mt-ws-more:hover, .mt-ws-more.open { background: var(--chrome-bg-hi); color: var(--chrome-text); }
+/* 찾기 창과 고른 노드 막대의 아래 줄은 위 왼쪽 묶음 밑에(2행이면 더 내려간다) */
+.mt-search { top: max(62px, calc(var(--mt-tl-bottom, 54px) + 8px)); }
+.mt-selbar[data-row="below"] { top: max(60px, calc(var(--mt-tl-bottom, 54px) + 6px)); }
+
+/* 사용량 알약 한 줄 꼴: 구독마다 로고 + 보이는 창만(5h 42 · 주 88), 구독 사이 1px 세로 선. 색은 값마다, 테두리는 가장 높은 값(.lv-*) */
+.mt-cp.usage.line { gap: 8px; padding: 0 10px 0 9px; }
+.mt-usage-part.line { gap: 4px; align-items: baseline; }
+.mt-usage-part.line .mt-usage-logo { align-self: center; margin-right: 1px; }
+.mt-usage-logo { width: 14px; height: 14px; flex: none; object-fit: contain; border-radius: 3px; }
+.mt-usage-sep { width: 1px; height: 17px; background: var(--chrome-sep); flex: none; align-self: center; }
+.mt-usage-k { color: var(--chrome-text-2); font-weight: 500; font-size: 11.5px; }
+.mt-usage-v { font-weight: 600; font-size: 12.4px; }
+.mt-usage-v.lv-ok { color: var(--ok); }
+.mt-usage-v.lv-warn { color: var(--warn); }
+.mt-usage-v.lv-high { color: var(--bad); }
+.mt-usage-dotsep { color: var(--chrome-text-2); margin: 0 1px; }
+/* 펼침: AGY가 보이는 몫이 무엇인지 한 줄 */
+.mt-usage-what { font-size: 11.5px; margin-top: -2px; }

@@ -307,8 +307,6 @@ export default {
     wsOpen: 'Open repo: pick a folder to open as a workspace',
     sidebar: 'Sidebar (Ctrl+Shift+E): repos and their sessions, closed sessions, outside conversations',
     devBadge: 'Dev board (terminal session {session}, port {port})',
-    searchTitle: 'Search names, workspaces, pending questions, prompts, answers and memos',
-    search: 'Search',
     turnTitle: 'Sessions waiting for you (longest first). Click for the list, N for next',
     turnNone: 'No sessions are waiting for you',
     turn: 'Needs you',
@@ -2930,5 +2928,11 @@ export default {
     alertsHint: 'Alert once when a subscription limit window (5h, weekly, …) passes 90%, until that window resets.',
     alertsSetOn: 'Usage alerts on.',
     alertsSetOff: 'Usage alerts off.',
+    short: { '5h': '5h', week: 'wk', day: 'day' }, // P214: short window names inside the top bar pill
+    agyWhat: 'What AGY CLI uses (Gemini model pool)',
+  },
+  topbar: { // P214: "+n" in the top bar tab row
+    more: { one: 'Show {n} more workspace', other: 'Show {n} more workspaces' },
+    moreHead: 'More workspaces',
   },
 };

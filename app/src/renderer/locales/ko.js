@@ -307,8 +307,6 @@ export default {
     wsOpen: '프로젝트 열기: 사용할 폴더를 선택하세요.',
     sidebar: '사이드바 (Ctrl+Shift+E): 프로젝트별 세션, 닫힌 세션, 보드 외부 대화를 확인합니다.',
     devBadge: '개발용 보드 (터미널 세션 {session}, 포트 {port})',
-    searchTitle: '이름, 프로젝트, 응답을 기다리는 질문, 요청, 응답, 메모에서 검색합니다.',
-    search: '검색',
     turnTitle: '사용자 응답을 기다리는 세션을 오래 기다린 순서로 표시합니다. 클릭하면 목록을 열고, N을 누르면 다음 세션으로 이동합니다.',
     turnNone: '사용자 응답을 기다리는 세션이 없습니다.',
     turn: '응답 필요',
@@ -2930,5 +2928,11 @@ export default {
     alertsHint: '구독의 한 한도 창(5시간·주간 등)이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알립니다.',
     alertsSetOn: '사용량 알림을 켰습니다.',
     alertsSetOff: '사용량 알림을 껐습니다.',
+    short: { '5h': '5h', week: '주', day: '하루' }, // P214: 위 막대 알약 안 짧은 창 이름
+    agyWhat: 'AGY CLI가 쓰는 몫(Gemini 모델 묶음)',
+  },
+  topbar: { // P214: 위 막대 탭 줄의 "+n"
+    more: '나머지 프로젝트 {n}개 보기',
+    moreHead: '나머지 프로젝트',
   },
 };

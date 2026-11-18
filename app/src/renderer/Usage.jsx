@@ -1,15 +1,19 @@
 // P211: 구독 사용량 화면. 위 막대 알약(메모리 알약 옆, 휴대폰은 위쪽 줄)과 펼침, 호출자 옆 남은 양, 90% 알림.
 // 값은 백엔드 usage.get·usage.updated(store.usage). 움직임 없이 그린다(막대는 너비만, 전환 없음)
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useStore, getState } from './store.js';
 import { api } from './api.js';
 import { useT, t as tt } from './lib/i18n.js';
 import { notifyAllowed } from './lib/multiclient.js';
-import { PROVIDERS, PROVIDER_NAME, pillOf, livePct, levelOf, spanOf, windowKey, creditOf, windowLabel, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
+import { PROVIDERS, PROVIDER_NAME, pillOf, pillLine, shortKey, shownWindows, livePct, levelOf, spanOf, windowKey, creditOf, windowLabel, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
+import { KINDS } from './lib/kinds.js';
 
 function useNow(ms = 30000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
 const span = (t, ms) => { const s = spanOf(ms); return t(s.key, s.vars); };
 const winName = (t, id) => windowLabel(id, t);
+// P214: 보이는 창 이름. AGY의 gemini-5h·gemini-weekly도 5시간·주간(구독 이름 AGY 아래라 Gemini를 붙이지 않는다)
+const kindName = (t, w) => (windowKey(w.kind) ? t(windowKey(w.kind)) : winName(t, w.id));
+const shortName = (t, kind) => (shortKey(kind) ? t(shortKey(kind)) : kind);
 
 // 펼침: 바깥을 누르거나 Esc면 닫는다
 function useDrop() {
@@ -28,7 +32,8 @@ function useDrop() {
 
 function ProviderBlock({ k, e, now }) {
   const t = useT();
-  if (!e) return (
+  const wins = shownWindows(k, e); // P214: AGY는 Gemini 5시간·주간만. 보일 창이 없으면 모름과 같다
+  if (!e || !wins.length) return (
     <div className="mt-usage-prov unknown" data-role="usage-provider" data-provider={k}>
       <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b><span className="dim">{t('usage.unknown')}</span></div>
       <div className="mt-usage-src dim">{t(`usage.unknownWhy.${k}`)}</div>
@@ -38,12 +43,13 @@ function ProviderBlock({ k, e, now }) {
   return (
     <div className="mt-usage-prov" data-role="usage-provider" data-provider={k}>
       <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b>{e.plan && <span className="mt-usage-plan">{e.plan}</span>}<span className="dim mt-usage-ago" title={new Date(e.at).toLocaleString()}>{t('usage.ago', { span: span(t, now - e.at) })}</span></div>
-      {e.windows.map((w) => {
+      {k === 'agy' && <div className="mt-usage-what dim" data-role="usage-what">{t('usage.agyWhat')}</div>}
+      {wins.map((w) => {
         const p = livePct(w, now);
         const lv = levelOf(p);
         return (
           <div key={w.id} className={`mt-usage-win lv-${lv}`} data-role="usage-window" data-window={w.id} data-pct={Math.round(p)}>
-            <span className="mt-usage-wname" title={w.id}>{winName(t, w.id)}</span>
+            <span className="mt-usage-wname" title={w.id}>{kindName(t, w)}</span>
             <span className="mt-usage-bar" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, p))}%` }} /></span>
             <span className="mt-usage-pct mono">{Math.round(p)}%</span>
             <span className="mt-usage-reset dim">{w.resetsAt ? (w.resetsAt > now ? t('usage.resetIn', { span: span(t, w.resetsAt - now) }) : t('usage.resetPassed')) : ''}</span>
@@ -56,7 +62,7 @@ function ProviderBlock({ k, e, now }) {
   );
 }
 
-// 위 막대 알약: 구독마다 가장 높은 창의 사용률(예 Claude 81% · Codex 81%), 가장 높은 값의 색. 누르면 펼침
+// 위 막대 알약(P214 한 줄 꼴): 구독마다 로고 하나 + 보이는 창만(예 [로고] 5h 42 · 주 88), 값마다 색, 테두리는 가장 높은 값의 색. 누르면 펼침
 // compact(휴대폰 위쪽 줄): 점과 가장 높은 값 하나만(81%). 구독별 값은 누르면 펼침에
 export function UsagePill({ compact = false }) {
   const t = useT();
@@ -65,13 +71,25 @@ export function UsagePill({ compact = false }) {
   const [open, setOpen, ref] = useDrop();
   if (!v) return null;
   const pill = pillOf(v, now);
-  const title = pill.parts.map((x) => `${x.name} ${winName(t, x.window)} ${x.pct}%`).join('\n') || t('usage.none');
+  const line = pillLine(v, now);
+  const title = line.parts.map((x) => `${x.name} ${x.wins.map((w) => `${kindName(t, w)} ${w.pct}%`).join(' · ')}`).join('\n') || t('usage.none');
   return (
     <div className="mt-drop" ref={ref}>
-      <button className={`mt-cp usage lv-${pill.level}${open ? ' on' : ''}${compact ? ' compact' : ''}`} title={title} data-role="usage" data-level={pill.level} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className={`mt-usage-dot lv-${pill.level}`} aria-hidden="true" />
-        {compact && pill.parts.length ? (() => { const top = pill.parts.reduce((a, x) => (x.pct > a.pct ? x : a)); return <span className="mt-usage-part" data-provider={top.provider} data-pct={top.pct}><span className={`mono lv-${top.level}`}>{top.pct}%</span></span>; })() : pill.parts.length ? pill.parts.map((x, i) => (
-          <span key={x.provider} className="mt-usage-part" data-provider={x.provider} data-pct={x.pct}>{i > 0 && <span className="dim">·</span>}<span className="dim">{x.name}</span><span className={`mono lv-${x.level}`}>{x.pct}%</span></span>
+      <button className={`mt-cp usage lv-${pill.level}${open ? ' on' : ''}${compact ? ' compact' : ' line'}`} title={title} data-role="usage" data-level={pill.level} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {compact && <span className={`mt-usage-dot lv-${pill.level}`} aria-hidden="true" />}
+        {compact && pill.parts.length ? (() => { const top = pill.parts.reduce((a, x) => (x.pct > a.pct ? x : a)); return <span className="mt-usage-part" data-provider={top.provider} data-pct={top.pct}><span className={`mono lv-${top.level}`}>{top.pct}%</span></span>; })() : line.parts.length ? line.parts.map((x, i) => (
+          <Fragment key={x.provider}>
+            {i > 0 && <span className="mt-usage-sep" aria-hidden="true" />}
+            <span className="mt-usage-part line" data-provider={x.provider} data-pct={Math.max(...x.wins.map((w) => w.pct))}>
+              {KINDS[x.provider] && KINDS[x.provider].logo ? <img className="mt-usage-logo" src={KINDS[x.provider].logo} alt={x.name} draggable={false} /> : <span className="dim">{x.name}</span>}
+              {x.wins.map((w, j) => (
+                <Fragment key={w.id}>
+                  {j > 0 && <span className="mt-usage-dotsep" aria-hidden="true">·</span>}
+                  <span className="mt-usage-k">{shortName(t, w.kind)}</span><span className={`mono mt-usage-v lv-${w.level}`} data-window={w.id} data-pct={w.pct}>{w.pct}</span>
+                </Fragment>
+              ))}
+            </span>
+          </Fragment>
         )) : <span className="dim">{t('usage.label')}</span>}
       </button>
       {open && (

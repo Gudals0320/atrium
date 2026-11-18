@@ -134,7 +134,7 @@ async function pc() {
     if (mOpen) { await page.click('[data-action="mission-rail"]').catch(() => {}); await sleep(800); }
 
     // (3) 검색을 연 채
-    await page.click('[data-action="search"]'); await sleep(800);
+    await page.keyboard.press('Control+f') /* P214: 위 막대 검색 칸이 없어 Ctrl+F로 연다 */; await sleep(800);
     const srch = await ui(page);
     check('검색을 연 채 녹음 표시가 보인다', srch.state === 'listening' && (srch.btnHit || !!srch.pill), srch);
     await shotTo(page, 'pc-4-search-open');
