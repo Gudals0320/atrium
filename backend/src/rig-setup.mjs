@@ -187,11 +187,11 @@ export class RigSetup {
     if (sat) throw apiError('seat_taken', `keep 자리 ${name0}에는 이미 @${shownName(sat) || sat.name}가 앉아 있다.`);
     const L = this.launcherOf(x.launcher);
     const name = this.freeName(name0, () => `${name0}-${this.store().nextSeatN(key, name0)}`);
-    const res = await b.spawn({ cwd: r.root, name, ...L.spawn, [SEAT_SPAWN]: name0 });
+    const res = await b.spawn({ cwd: r.root, name, ...L.spawn, ...(x.effort ? { effort: x.effort } : {}), ...(x.model ? { model: x.model } : {}), [SEAT_SPAWN]: name0 }); // P209: 자리의 effort·model이 런처 값을 덮는다
     const s = b.sessions.get(res.sessionId);
     if (!s) throw apiError('spawn_failed', `${name0} 자리 세션이 보드에 등록되지 않았다.`);
     b.branch.flow.setSeat(s, name0, { by: 'human', notify: 'spawned' }); // P193: 첫 요청이 없어 자리 머리를 받지 못한다. 판 알림으로 자리를 알린다
-    this.store().addEvent(s.sessionId, 'rig_seat_spawn', { seat: name0, by: 'human', launcher: L.ref, session: 'keep' });
+    this.store().addEvent(s.sessionId, 'rig_seat_spawn', { seat: name0, by: 'human', launcher: L.ref, session: 'keep', ...(x.effort ? { effort: x.effort } : {}), ...(x.model ? { model: x.model } : {}) });
     return { session: s.sessionId, name: s.name, seat: name0, launcher: L.ref };
   }
   freeName(want, nextFn) {
@@ -209,6 +209,14 @@ export class RigSetup {
   builderSession(key) {
     for (const u of this.builderUnits(key, 20)) { const s = this.b.sessions.get(u.to); if (s) return s; }
     return null;
+  }
+  // P209: 이 세션이 그 워크스페이스의 제작 세션인가(열린 제작 일을 쥐었거나, 가장 최근 제작 일을 받은 세션이 아직 열려 있다).
+  //   제작 일을 닫은 뒤에도 rig 구조를 고치고 자리의 말을 읽는 세션이라 읽기만 하는 atrium rig check·log를 쓴다(rig-admin.mjs verb)
+  isWorkspaceBuilder(s) {
+    if (!s) return false;
+    if (this.isBuilder(s)) return true;
+    const b = s.workspaceKey ? this.builderSession(s.workspaceKey) : null;
+    return !!(b && b.sessionId === s.sessionId);
   }
   // 이 세션이 사람이 맡긴 열린 제작 일을 쥐었나
   isBuilder(s) {

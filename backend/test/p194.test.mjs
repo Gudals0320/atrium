@@ -132,7 +132,7 @@ test('P194 주인에게 돌아오는 흐름은 보고: 일을 만들지 않고 �
     assert.equal(d.claimedBy, 'flow');
     assert.deepEqual(d.flow, []);
     assert.deepEqual(d.reports, [{ seat: 'main', to: 'lead', escalated: false }]);
-    assert.equal(d.case.state, 'done');
+    assert.equal(d.case.state, 'waiting_owner', 'P209: 주인 보고를 기다린다(그 턴이 맡기기 없이 끝나면 done)');
     assert.equal(b.store.unitsOfCase(caseId).length, unitsBefore, '주인에게는 일이 없다');
     await until(() => main.texts.length === 1);
     const t = main.texts[0];
@@ -151,6 +151,7 @@ test('P194 주인에게 돌아오는 흐름은 보고: 일을 만들지 않고 �
     const le = b.store.db.prepare('SELECT * FROM link_events WHERE link_id = ? AND kind = ? ORDER BY rowid').all(l.linkId, 'reply');
     assert.ok(le.some((x) => /tag":"report/.test(x.data || '') || /report/.test(JSON.stringify(x))), '주인 선에 보고');
     // rig.cases·graph
+    await until(() => b.store.getCase(caseId).state === 'done', 4000); // P209: 보고를 받은 주인의 턴이 맡기기 없이 끝났다
     const cases = await rigFlowHandlers(b)['rig.cases']({}, null);
     assert.equal(cases.cases[0].state, 'done');
     // 주인이 그다음 맡기면 새 건
@@ -196,7 +197,7 @@ test('P194 상한 넘어 주인에게 = 보고 + waiting_owner. 다음 맡기기
     const r1 = await V(b).prompt(main, { name: 'worker', text: '다시 A' });
     assert.equal(r1.unit.caseId, A);
     assert.equal(b.store.getCase(A).state, 'open');
-    assert.deepEqual(evs(b, 'rig_case_resume').at(-1).data, { caseId: A, from: 'waiting_owner', why: 'waiting_owner', countersReset: true });
+    assert.deepEqual(evs(b, 'rig_case_resume').at(-1).data, { caseId: A, from: 'waiting_owner', why: 'waiting_owner', ownerWait: 'escalated', countersReset: true });
     d = await reject(r1.name); assert.equal(d.case.state, 'waiting_owner');
     d = await reject(rB.name); assert.equal(d.case.state, 'waiting_owner');
     // 둘 → 새 건

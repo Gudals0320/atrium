@@ -187,7 +187,9 @@ test('P197 그래프 rig 띠 자료: 건별 첫 할 일·마지막 넘김·이�
     const dz = by(fl.find((x) => x.seat === 'docs').to); await gotUnit(dz);
     n0 = casts(b);
     const dzr = await done(b, dz, 'ok', 'docs ok');
-    assert.equal(dzr.case.state, 'done'); assert.ok(casts(b) > n0, 'done에 이벤트');
+    assert.equal(dzr.case.state, 'waiting_owner'); // P209: 주인 보고를 기다린다
+    await until(() => b.store.getCase(Z).state === 'done', 4000); // 보고를 받은 주인의 턴이 맡기기 없이 끝났다
+    assert.ok(casts(b) > n0, 'done에 이벤트');
     // 4. 건 A: 반려 둘(2/2) 뒤 셋째 반려가 주인에게 올라감(waiting_owner) → --case로 이어 다시 2/2
     await until(() => main.rt.term.status === 'idle');
     const rA = await V(b).prompt(main, { name: 'worker', text: 'Add the export button' });

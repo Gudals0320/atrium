@@ -21,7 +21,8 @@ CREATE INDEX IF NOT EXISTS tool_runs_session ON tool_runs(session_id, started_at
 CREATE INDEX IF NOT EXISTS tool_runs_unit ON tool_runs(unit_id);
 `;
 // P185: 건(rig_cases)과 건이 만든 세션·워크트리(rig_case_items). 하네스 3단계(14절 "건").
-// rig_cases.state: open | done | blocked | waiting_owner | cancelled(P194: waiting_owner = 상한을 넘어 주인에게 보고로 올라감, 주인의 다음 맡기기가 잇는다). edge_counts: 흐름 줄마다 이 건에서 지난 횟수 JSON { "<줄 번호>": n }. blocked_reason: blocked의 까닭
+// rig_cases.state: open | done | blocked | waiting_owner | cancelled(P194: waiting_owner = 상한을 넘어 주인에게 보고로 올라감, 주인의 다음 맡기기가 잇는다.
+//   P209: 흐름 줄이 주인에게 보고를 넣고 열린 일이 없을 때도 waiting_owner(owner_wait report). 그 보고를 받은 주인의 턴이 맡기기 없이 끝나면 done). edge_counts: 흐름 줄마다 이 건에서 지난 횟수 JSON { "<줄 번호>": n }. blocked_reason: blocked의 까닭
 // rig_case_items: 흐름이 그 건을 위해 띄운 세션(자리, 워크트리 이름·경로). 판은 지우지 않는다(5단계 관리자 자리가 정리한다)
 // P197: rig_case_reports: 판이 건 주인에게 보낸 보고마다 한 줄(보낼 때 적는다, 세션 맵 rig 띠의 "보고 받음" 표시. 17절 "자료"). seat: 보낸 자리, session_id: 보낸 세션,
 //   unit_id: 닫힌 일, result: done 값, line: 흐름 줄 번호(맞는 줄 없이 주인에게 간 보고는 null), escalated: 상한을 넘어 올라옴
@@ -49,14 +50,14 @@ export const RIG_COLUMNS = {
   workspaces: { rig_enabled: 'INTEGER', rig_enabled_at: 'INTEGER', rig_protected: 'TEXT' }, // P188: rig_protected(사람만 고치는 목록)
   deliveries: { origin: 'TEXT', from_session: 'TEXT' },
   rig_hook_runs: { tool_run_id: 'TEXT' }, // P183: 도구 훅이면 그 실행
-  rig_cases: { version_n: 'INTEGER' }, // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다)
+  rig_cases: { version_n: 'INTEGER', owner_wait: 'TEXT', owner_wait_delivery: 'TEXT' }, // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다). P209: 주인 기다림의 종류(report | escalated)와 보고 전달 ID
   // P188: 사람만 고치는 목록. JSON { pointers: ["/seats/reviewer", …], files: [{ path, sha256, at }] } | null
 };
 const J = (s, d = null) => { if (s == null) return d; try { return JSON.parse(s); } catch { return d; } };
 const toolRow = (r) => (r ? { id: r.id, sessionId: r.session_id, workspaceKey: r.workspace_key ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, tool: r.tool, argv: J(r.argv, []), args: J(r.args, []), argsGiven: J(r.args_given), cwd: r.cwd ?? null, rigHash: r.rig_hash ?? null, status: r.status, exitCode: r.exit_code ?? null, startedAt: r.started_at, endedAt: r.ended_at ?? null, logPath: r.log_path ?? null, logBytes: r.log_bytes ?? null, logCut: !!r.log_cut, outSha256: r.out_sha256 ?? null, hooks: J(r.hooks, []), appended: r.appended ?? null, error: r.error ?? null } : null);
 const TOOL_COLS = { status: 'status', exitCode: 'exit_code', endedAt: 'ended_at', logBytes: 'log_bytes', logCut: 'log_cut', outSha256: 'out_sha256', hooks: 'hooks', appended: 'appended', error: 'error', args: 'args', argv: 'argv' };
 
-const caseRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, owner: r.owner_session, state: r.state, createdAt: r.created_at, closedAt: r.closed_at ?? null, edgeCounts: J(r.edge_counts, {}) || {}, blockedReason: r.blocked_reason ?? null, versionN: r.version_n ?? null } : null);
+const caseRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, owner: r.owner_session, state: r.state, createdAt: r.created_at, closedAt: r.closed_at ?? null, edgeCounts: J(r.edge_counts, {}) || {}, blockedReason: r.blocked_reason ?? null, versionN: r.version_n ?? null, ownerWait: r.owner_wait ?? null, ownerWaitDelivery: r.owner_wait_delivery ?? null } : null);
 const versionRow = (r) => (r ? { workspaceKey: r.workspace_key, n: r.n, hash: r.hash, t: r.t, by: r.by, note: r.note ?? null, file: r.file ?? null } : null);
 // P185: 일 행 + 건 칸(store-units.mjs의 unitRow와 같은 모양). 자리 줄에 선 일은 to가 null
 const flowUnitRow = (r) => (r ? { id: r.id, from: r.from_session, to: r.to_session || null, origin: r.origin, spec: r.spec, status: r.status, createdAt: r.created_at, closedAt: r.closed_at ?? null, caseId: r.case_id ?? null, seat: r.seat ?? null, via: J(r.via) } : null);
@@ -110,7 +111,7 @@ export function installRig(Store) {
     insertCase(c) { this.st('INSERT INTO rig_cases (id, workspace_key, owner_session, state, created_at, closed_at, edge_counts, blocked_reason, version_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(c.id, c.workspaceKey, c.owner, c.state || 'open', c.createdAt, c.closedAt ?? null, JSON.stringify(c.edgeCounts || {}), c.blockedReason ?? null, c.versionN ?? null); },
     getCase(id) { return caseRow(this.st('SELECT * FROM rig_cases WHERE id = ?').get(id)); },
     updateCase(id, fields) {
-      const cols = { state: 'state', closedAt: 'closed_at', edgeCounts: 'edge_counts', blockedReason: 'blocked_reason' };
+      const cols = { state: 'state', closedAt: 'closed_at', edgeCounts: 'edge_counts', blockedReason: 'blocked_reason', ownerWait: 'owner_wait', ownerWaitDelivery: 'owner_wait_delivery' };
       const sets = []; const vals = [];
       for (const [k, v] of Object.entries(fields)) { if (!cols[k]) throw new Error('unknown field ' + k); sets.push(`${cols[k]} = ?`); vals.push(k === 'edgeCounts' ? JSON.stringify(v || {}) : v ?? null); }
       if (sets.length) this.st(`UPDATE rig_cases SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
