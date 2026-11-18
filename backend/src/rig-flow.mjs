@@ -38,6 +38,7 @@ const firstLine = (t, n = 100) => clip(String(t || '').split('\n').find((x) => x
 export const CASE_STATES = ['open', 'done', 'blocked', 'waiting_owner', 'cancelled'];
 // P194: 아직 끝나지 않은 건(흐름이 이어지고, 주인이 닫히면 cancelled). waiting_owner: 상한을 넘어 주인에게 보고로 올라가 주인의 다음 맡기기를 기다린다
 const LIVE_CASE = new Set(['open', 'blocked', 'waiting_owner']);
+const RUN_CLOSE_BOOT_MS = 5000; // P226: 판이 다시 뜬 뒤 close run 대기를 처음 볼 때(세션이 다 붙은 뒤)
 const SPEC_HEAD_LINES = 6; // 넘김 글에 붙이는 건의 첫 할 일 줄 수
 const GRAPH_LIVE = 50; // P197: 세션 맵 그래프에 담는 끝나지 않은 건 상한(17절)
 const GRAPH_CLOSED = 3; // P197: 나이와 상관없이 담는 최근 끝난·취소된 건 수
@@ -137,8 +138,11 @@ export class RigFlow {
     // P188: 느린 고리. 다음 시각은 DB(rig_cycles)에 있고, 판이 꺼져 있던 동안 놓친 회는 한 번만 돈다
     this.cycleBusy = new Set(); this.cycleSkipNoted = new Set();
     this.loops = new RigLoops(b, this); // P221: 고리(every 계기는 같은 타이머가 돈다)
-    this.runClose = new Map(); // P225: 닫을 fresh 자리 세션(close run) → { caseId, seat, key }. 턴이 끝나면 닫는다(메모리만. 판이 다시 뜨면 rig cleanup이 맡는다)
+    this.runClose = new Map(); // P225: 닫을 fresh 자리 세션(close run) → { caseId, seat, key }. 턴이 끝나면 닫는다
     this.runClosing = false;
+    // P226(11.10의 4): 대기는 표(rig_run_close)에도 둔다. 판이 다시 뜨면 읽어 세션이 다 붙은 뒤 닫는다
+    try { for (const x of b.store.runCloseRows ? b.store.runCloseRows() : []) this.runClose.set(x.sessionId, { caseId: x.caseId, seat: x.seat, key: x.key }); } catch (e) { b.log('rig run close load error', e.message); }
+    if (this.runClose.size) { const t = setTimeout(() => this.sweepRunClose().catch((e) => b.log('rig run close error', e.stack)), RUN_CLOSE_BOOT_MS); if (t.unref) t.unref(); }
     const tickMs = Math.max(1000, Math.min(30000, Math.floor((b.rig && b.rig.cycleMin ? b.rig.cycleMin() : 3600000) / 4)));
     if (b.cfg && b.cfg.rigCycles !== false) { this.cycleTimer = setInterval(() => { this.cycleTick().catch((e) => b.log('rig cycle error', e.stack)); }, tickMs); if (this.cycleTimer.unref) this.cycleTimer.unref(); }
   }
@@ -309,9 +313,11 @@ export class RigFlow {
       const seat = def.seats[it.seat];
       if (!seat || seat.session !== 'fresh' || seat.close !== 'run' || !this.b.sessions.has(it.sessionId)) continue;
       this.runClose.set(it.sessionId, { caseId: c.id, seat: it.seat, key: c.workspaceKey }); n++;
+      try { this.store().addRunClose && this.store().addRunClose({ sessionId: it.sessionId, key: c.workspaceKey, caseId: c.id, seat: it.seat }); } catch (e) { this.b.log('rig run close save error', e.message); } // P226
     }
     if (n) setImmediate(() => this.sweepRunClose().catch((e) => this.b.log('rig run close error', e.stack)));
   }
+  dropRunClose(sid) { this.runClose.delete(sid); try { this.store().deleteRunClose && this.store().deleteRunClose(sid); } catch {} } // P226
   // 닫지 않는 까닭 | null(닫는다) | 'wait'(턴이 끝나기를 기다린다)
   runCloseWhy(s) {
     const st = this.store();
@@ -328,10 +334,15 @@ export class RigFlow {
     try {
       for (const [sid, x] of [...this.runClose]) {
         const s = this.b.sessions.get(sid);
-        if (!s) { this.runClose.delete(sid); continue; }
+        if (!s) {
+          // P226: 판이 막 다시 떠 세션이 아직 붙지 않았으면(기록상 열린 세션) 기다린다. 닫혔거나 없으면 대기를 지운다
+          const row = this.store().getSession ? this.store().getSession(sid) : null;
+          if (row && !row.closedAt && !this.bootSwept) continue;
+          this.dropRunClose(sid); continue;
+        }
         const why = this.runCloseWhy(s);
         if (why === 'wait') continue;
-        this.runClose.delete(sid);
+        this.dropRunClose(sid);
         const name = shownName(s) || s.name;
         if (why) { rigEvent(this.b, { kind: 'cleanup', ws: x.key, caseId: x.caseId, seat: x.seat, session: sid, value: 'run', actor: 'board', text: `@${name} 남김(close run, ${why === 'owner' ? '다른 회의 주인' : '다른 일을 쥠'})`, data: { closed: [], kept: [`${name}:${why}`], by: 'run' } }); continue; }
         try {
@@ -342,7 +353,7 @@ export class RigFlow {
           this.b.log(`rig run ${x.caseId} close ${name}: ${ok ? 'closed' : 'not closed'}`);
         } catch (e) { this.b.log(`rig run ${x.caseId} close ${name} failed: ${e.code || e.message}`); }
       }
-    } finally { this.runClosing = false; }
+    } finally { this.runClosing = false; this.bootSwept = true; }
     for (const k of new Set(closed)) this.changed(k);
     return closed.length;
   }

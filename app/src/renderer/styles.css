@@ -2772,3 +2772,5 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigask-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .mt-rigask-btn.danger { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
 .mt-rigask-btn:disabled { color: var(--dim); background: var(--panel-2); border-color: var(--panel-line); cursor: default; }
+/* P226: 무인 자리 승인 카드의 위험 한 줄(셸로 저장소 어디든 쓰고 지움) */
+.mt-rigask-risk { color: var(--attn-text); font-size: 12px; overflow-wrap: anywhere; }

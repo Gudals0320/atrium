@@ -12,11 +12,17 @@
 //     경로 목록은 Codex가 작업 폴더를 늘 쓰기 가능으로 두어 좁히지 못하므로 붙이지 않는다.
 //   opencode·pi: 붙이지 않는다(P189 보고의 표).
 // - P223(rig2-design 11.6의 12): seats.<자리>.permission = ask(기본, 지금 그대로) | scoped | unattended, seats.<자리>.allow = [Claude Code 권한 규칙](scoped에서 묻지 않는 명령).
-//   scoped: Claude Code는 --permission-mode acceptEdits + 세션 설정 파일 permissions.allow(allow) + 쓰기 범위 밖은 PreToolUse가 "ask"(질문이 응답 필요로 뜬다).
+//   scoped: Claude Code는 --permission-mode acceptEdits(P226부터 manual, 아래) + 세션 설정 파일 permissions.allow(allow) + 쓰기 범위 밖은 PreToolUse가 "ask"(질문이 응답 필요로 뜬다).
 //           Codex는 -s workspace-write -a on-request(writes false면 -s read-only).
 //   unattended: Claude Code는 bypassPermissions + 쓰기 범위 밖은 PreToolUse가 "deny". Codex는 -s workspace-write -a never.
 //     사람만 고른다: 켜기 확인(rig.enable confirm)이나 rig.permit이 그 자리를 승인한다(rig_permits). 승인 전 unattended 자리는 scoped로 돈다.
 // - P225(rig2-design 11.8의 1·2): 승인은 그 자리의 위험한 칸(permission·writes·allow·tools·launcher)의 해시(seatPermitHash)에 묶인다. 칸이 바뀌면 승인이 풀린다.
+// - P226(rig2-design 11.10): scoped는 acceptEdits를 쓰지 않는다(acceptEdits는 작업 폴더 안 셸 지우기·쓰기를 묻지 않고 허락했다).
+//   Claude Code scoped = 기본 권한 모드(manual) + allow: writes 경로마다 Edit(//<절대 경로>/**)(Edit 규칙이 모든 편집 도구를 덮는다. writes가 없으면 세션 폴더),
+//   자리의 allow. 셸로 하는 쓰기·지우기는 묻고 응답 필요로 뜬다. 셸로 감싼 PowerShell·cmd 허용 규칙(Bash(powershell …))은 정의 오류다.
+//   셸 안의 셸 거절(SHELL_IN_SHELL_DENY 규칙 + PreToolUse)은 판의 고정 기준이라 scoped·unattended에 늘 걸리고 정의로 끄지 못한다.
+//   seats.<자리>.deny(Claude Code 권한 규칙)로 더 막는다. Codex scoped는 그대로 -s workspace-write(경로를 좁히지 못한다: 좁은 writes면 검사기가 경고).
+//   승인 해시에는 런처가 푼 종류·모델·인자(launch)를 넣는다.
 //   Codex 자리의 allow는 쓰이지 않는다(Codex scoped는 샌드박스와 모델의 판단): 검사기가 경고한다(11.8의 4).
 import path from 'node:path';
 import fs from 'node:fs';
@@ -27,7 +33,10 @@ import { writesPaths, OWNS } from './rig-docs.mjs'; // P219: writes의 문서 �
 export const AMP_ATS = ['pre-tool'];
 export const SEAT_PERMISSIONS = ['ask', 'scoped', 'unattended']; // P223
 // P223: 자리 권한 → Claude Code 권한 모드(ask는 띄우는 값 그대로)
-export const CLAUDE_PERMISSION_MODE = { scoped: 'acceptEdits', unattended: 'bypassPermissions' };
+//   P226: scoped는 기본 모드(Claude Code의 manual). 묻지 않는 것은 설정 파일의 allow(writes의 Edit 규칙, 자리의 allow)뿐이다
+export const CLAUDE_PERMISSION_MODE = { scoped: 'manual', unattended: 'bypassPermissions' };
+// P226: 판의 고정 거절(scoped·unattended). Bash 도구로 부르는 셸 안의 셸. 정의로 끄지 못한다(PreToolUse의 nestedShell도 같은 것을 본다)
+export const SHELL_IN_SHELL_DENY = ['cmd', 'cmd.exe', 'powershell', 'powershell.exe', 'pwsh', 'pwsh.exe'].map((x) => `Bash(${x}:*)`);
 // P223: 자리 권한 → Codex 샌드박스·승인
 export const CODEX_APPROVAL = { scoped: 'on-request', unattended: 'never' };
 // P223: allow 규칙의 꼴(Claude Code 권한 규칙: 도구 이름, 괄호 안 지정자). 예: "Bash(git log:*)", "Read", "mcp__x__y"
@@ -80,16 +89,30 @@ export function validateAmp(raw, { seats = null, docs = null } = {}) {
       if (!Array.isArray(x.allow) || x.allow.some((r) => typeof r !== 'string' || !r.trim())) return bad(`${at}.allow는 Claude Code 권한 규칙 글의 배열이다(예: ["Bash(git log:*)", "Bash(gh pr list:*)"])`);
       const off = x.allow.find((r) => !ALLOW_RULE_RE.test(r.trim()));
       if (off) return bad(`${at}.allow의 규칙이 Claude Code 권한 규칙 꼴(도구 이름, 괄호 안 지정자)이 아니다: ${off}`);
+      // P226: 셸로 감싼 PowerShell·cmd 허용 규칙은 이어 붙인 명령을 통과시킨다(Bash(powershell -Command …:*)) → 정의 오류
+      const wrapped = x.allow.find((r) => wrappedShellRule(r.trim()));
+      if (wrapped) return bad(`${at}.allow에 셸로 감싼 ${wrappedShellRule(wrapped.trim())} 규칙이 있다: ${wrapped}. 그 안에 이어 붙인 명령(; Remove-Item 등)을 허용 목록이 보지 못한다. PowerShell 명령은 PowerShell(Get-ChildItem:*) 꼴로 쓴다`);
       allow = [...new Set(x.allow.map((r) => r.trim()))];
       if (permission !== 'scoped') warnings.push(`${at}.allow는 permission "scoped" 자리에서만 쓴다(${permission}에서는 쓰지 않는다)`);
       if (allow.length && typeof x.launcher === 'string' && x.launcher.trim() === 'codex') warnings.push(codexAllowWarning(at)); // P225
     }
+    // P226: 자리의 거절 규칙(Claude Code 권한 규칙 꼴). 판의 고정 거절(셸 안의 셸)에 더한다. 어느 권한에서나 쓴다
+    let deny = [];
+    if (x.deny != null) {
+      if (!Array.isArray(x.deny) || x.deny.some((r) => typeof r !== 'string' || !r.trim())) return bad(`${at}.deny는 Claude Code 권한 규칙 글의 배열이다(예: ["Bash(git push:*)", "PowerShell(Remove-Item:*)"])`);
+      const off = x.deny.find((r) => !ALLOW_RULE_RE.test(r.trim()));
+      if (off) return bad(`${at}.deny의 규칙이 Claude Code 권한 규칙 꼴(도구 이름, 괄호 안 지정자)이 아니다: ${off}`);
+      deny = [...new Set(x.deny.map((r) => r.trim()))];
+      if (typeof x.launcher === 'string' && x.launcher.trim() !== 'claude' && SEAT_KIND_NAMES.includes(x.launcher.trim())) warnings.push(`${at}.deny는 Claude Code 자리에서만 쓴다(${x.launcher.trim()}에서는 쓰지 않는다)`);
+    }
+    // P226(11.10): Codex scoped는 작업 폴더 전체를 쓸 수 있다. 좁은 writes는 지켜지지 않는다
+    if (permission !== 'ask' && Array.isArray(writes) && typeof x.launcher === 'string' && x.launcher.trim() === 'codex') warnings.push(codexWritesWarning(at));
     if (permission === 'unattended') {
       warnings.push(`${at}.permission "unattended"는 사람이 승인해야 쓰인다(rig 켜기 확인 창이나 창의 승인). 승인 전에는 scoped로 돈다`);
       if (writes === null) warnings.push(`${at}.permission "unattended"인데 writes(쓰기 범위)가 없다. 묻지 않고 어디든 쓴다`);
     }
     if (permission === 'scoped' && writes === null && !allow.length) warnings.push(`${at}.permission "scoped"인데 writes와 allow가 없다. 세션 폴더 안 파일 고치기만 묻지 않는다`);
-    if (writes !== null || x.stopVerify != null || permission !== 'ask') seatAmp[name] = { writes, stopVerify: x.stopVerify ?? null, ...(permission !== 'ask' ? { permission, allow } : {}) };
+    if (writes !== null || x.stopVerify != null || permission !== 'ask' || deny.length) seatAmp[name] = { writes, stopVerify: x.stopVerify ?? null, ...(permission !== 'ask' ? { permission, allow } : {}), ...(deny.length ? { deny } : {}) };
   }
   const preTool = [];
   const hooks = Array.isArray(raw.hooks) ? raw.hooks : [];
@@ -122,19 +145,29 @@ export function validateAmp(raw, { seats = null, docs = null } = {}) {
 // 그 자리의 증폭 값(정의만으로) → { writes, stopVerify, preTool: [hook 정의…] }
 //   P223: permission(정의의 값)과 allow
 export function seatAmpOf(def, seat) {
-  const a = def && def.amp; if (!a) return { writes: null, stopVerify: false, preTool: [], permission: 'ask', allow: [] };
+  const a = def && def.amp; if (!a) return { writes: null, stopVerify: false, preTool: [], permission: 'ask', allow: [], deny: [] };
   const sa = a.seats[seat] || {};
   const stopVerify = sa.stopVerify != null ? sa.stopVerify : a.stopVerify;
   const preTool = a.preTool.filter((p) => !p.seats || p.seats.includes(seat)).map((p) => ({ ...p, hook: def.hooks.find((h) => h.index === p.index) })).filter((p) => p.hook);
-  return { writes: sa.writes ?? null, stopVerify: !!stopVerify, preTool, permission: sa.permission || 'ask', allow: sa.allow || [] };
+  return { writes: sa.writes ?? null, stopVerify: !!stopVerify, preTool, permission: sa.permission || 'ask', allow: sa.allow || [], deny: sa.deny || [] };
 }
+const SEAT_KIND_NAMES = ['claude', 'codex', 'opencode', 'pi']; // rig.mjs SEAT_KINDS(서로 부르지 않게 따로 둔다)
+// P226: 셸로 감싼 셸 규칙인가 → 'powershell' | 'cmd' | 'pwsh' | null. Bash(…) 규칙의 지정자 앞이 셸이면
+export function wrappedShellRule(rule) {
+  const m = /^Bash\((.*)\)$/.exec(String(rule || '').trim());
+  if (!m) return null;
+  return nestedShell(m[1].replace(/:\*$/, '').replace(/\*$/, ''));
+}
+// P226: Codex 자리의 좁은 writes 경고
+export const codexWritesWarning = (at) => `${at}.writes: Codex에서는 작업 폴더 전체가 쓰기 범위다(-s workspace-write는 경로를 좁히지 못한다). 쓰지 않는 자리는 writes: false(-s read-only)로 둔다`;
 // P225: Codex 자리의 allow 경고(런처 이름 자리는 rig-admin seatNotes가 런처의 종류로 본다)
 export const codexAllowWarning = (at) => `${at}.allow는 Codex 자리에서 쓰지 않는다. Codex의 scoped는 샌드박스(-s workspace-write)와 모델의 판단(-a on-request)이라 허용 목록이 없다`;
 // P225: 무인 승인이 묶이는 자리의 해시. permission·writes(경로로 바꾼 값)·allow·tools·launcher. 이 가운데 하나라도 바뀌면 옛 승인은 쓰이지 않는다
-export function seatPermitHash(def, seat) {
+//   P226(11.10의 3): launch = 런처가 푼 실제 실행 값({ kind, model, args, … }, rig.mjs seatLaunchOf). 런처 정의를 고치면 승인이 풀린다. deny도 넣는다
+export function seatPermitHash(def, seat, launch = null) {
   const x = def && def.seats ? def.seats[seat] : null;
   const sa = def && def.amp && def.amp.seats ? def.amp.seats[seat] || {} : {};
-  const body = { permission: sa.permission || 'ask', writes: sa.writes === undefined ? null : sa.writes, allow: sa.allow || [], tools: x ? x.tools ?? null : null, launcher: x ? x.launcher || null : null };
+  const body = { permission: sa.permission || 'ask', writes: sa.writes === undefined ? null : sa.writes, allow: sa.allow || [], deny: sa.deny || [], tools: x ? x.tools ?? null : null, launcher: x ? x.launcher || null : null, model: x ? x.model || null : null, launch: launch || null };
   return crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 16);
 }
 // P223: 정의의 자리 권한 → 실제로 쓰는 권한. unattended는 사람이 승인한 자리만(아니면 scoped)
@@ -168,8 +201,11 @@ export function claudeSettingsAmp(x) {
   if (x.writes === false) deny.push(EDIT_ALL);
   // 경로 규칙은 Edit(…)만: Claude Code는 Edit 규칙을 파일을 고치는 모든 도구(Write·MultiEdit·NotebookEdit)에 쓰고, Write(경로)는 "never matches"라고 경고한다(P189 개발용 판)
   for (const f of x.protectedFiles || []) for (const base of protectBases(x.root, x.cwd)) deny.push(`Edit(${rulePath(path.resolve(base, f))})`);
+  // P226: 판의 고정 거절(셸 안의 셸)은 scoped·unattended에 늘. 자리의 deny는 어느 권한에서나
+  if (x.permission === 'scoped' || x.permission === 'unattended') deny.push(...SHELL_IN_SHELL_DENY);
+  deny.push(...(x.deny || []));
   const hooks = {};
-  const waitPre = x.preTool.length || Array.isArray(x.writes) || x.permission === 'scoped'; // P225: scoped는 셸 안의 셸을 거른다
+  const waitPre = x.preTool.length || Array.isArray(x.writes) || x.permission === 'scoped' || x.permission === 'unattended'; // P225: scoped는 셸 안의 셸을 거른다. P226: unattended도
   if (waitPre) {
     const maxMs = x.preTool.reduce((n, p) => n + (p.hook.timeoutMs || 0), 0); // 같은 도구에 여러 훅이 차례로 돌 수 있다
     const sec = x.preTool.length ? Math.min(Math.ceil(maxMs / 1000) + PRE_TOOL_TIMEOUT_PAD_SEC, PRE_TOOL_TIMEOUT_MAX_SEC) : PRE_TOOL_WRITES_TIMEOUT_SEC;
@@ -177,9 +213,22 @@ export function claudeSettingsAmp(x) {
   }
   if (x.stopVerify) hooks.Stop = { timeout: STOP_TIMEOUT_SEC };
   const uniq = [...new Set(deny)];
-  const allow = x.permission === 'scoped' ? [...new Set(x.allow || [])] : []; // P223: scoped 자리의 묻지 않는 규칙
+  const allow = x.permission === 'scoped' ? [...new Set([...scopedEditRules(x), ...(x.allow || [])])] : []; // P223: scoped 자리의 묻지 않는 규칙. P226: writes의 Edit 규칙
   if (!uniq.length && !allow.length && !Object.keys(hooks).length) return null;
   return { deny: uniq, ...(allow.length ? { allow } : {}), hooks };
+}
+// P226: scoped 자리의 범위 안 편집 허용 규칙. writes 경로마다 Edit(//<절대 경로>/**)(세션 폴더 기준. {item}은 그 앞까지: 일마다 좁히는 것은 PreToolUse가 묻는다).
+//   writes가 없으면(제한 없음) 세션 폴더, false면 없다(Edit(//**) 거절이 있다)
+export function scopedEditRules(x) {
+  if (!x || x.writes === false) return [];
+  const base = x.cwd || x.root;
+  if (!base) return [];
+  const dirs = Array.isArray(x.writes) ? x.writes.map((p) => p.split('{item}')[0]) : ['.'];
+  return [...new Set(dirs.map((p) => {
+    const abs = path.resolve(base, p || '.');
+    const file = !/[\\/]$/.test(p) && path.extname(p) && !p.includes('{item}'); // 파일 하나(docs/rules.md 꼴)는 그 파일만
+    return file ? `Edit(${rulePath(abs)})` : `Edit(${rulePath(abs)}/**)`;
+  }))];
 }
 // 설정 파일 JSON에 증폭을 덮어 쓴다(판이 만든 파일이라 deny는 모두 판의 것). 바뀌었으면 true
 //   P223: allow는 판의 기본 규칙(baseAllow, branch.settingsExtra의 allow) + 증폭의 allow. baseAllow를 주지 않으면 지금 allow에 더하기만 한다
@@ -245,7 +294,7 @@ export function codexArgsAmp(args = [], writes = null, permission = 'ask') {
 //   PowerShell 도구·Glob·Read를 쓰게 한다. 명령의 앞이나 &&·||·;·|·&·( 뒤에 오는 cmd(.exe)·powershell(.exe)·pwsh(.exe)만 본다(경로·따옴표가 붙어도)
 const NESTED_SHELL_RE = /(?:^|&&|\|\||[;|&\n(]|\$\()\s*["']?(?:[A-Za-z]:)?(?:[^\s;&|'"]*[\\/])?(cmd|powershell|pwsh)(?:\.exe)?["']?(?=\s|$)/i;
 export function nestedShell(command) { const m = NESTED_SHELL_RE.exec(String(command || '')); return m ? m[1].toLowerCase() : null; }
-export const NESTED_SHELL_REASON = '[Atrium rig] 이 자리(scoped)는 Bash 도구 안에서 cmd·powershell·pwsh를 부르지 않는다(허용 목록이 그 안의 명령을 보지 못한다). 파일 목록·내용·찾기는 PowerShell 도구(Get-ChildItem, Get-Content, Select-String, Test-Path)나 Glob·Read·Grep 도구로 한다.';
+export const NESTED_SHELL_REASON = '[Atrium rig] 이 자리(scoped·unattended)는 Bash 도구 안에서 cmd·powershell·pwsh를 부르지 않는다(허용 목록이 그 안의 명령을 보지 못한다). 파일 목록·내용·찾기는 PowerShell 도구(Get-ChildItem, Get-Content, Select-String, Test-Path)나 Glob·Read·Grep 도구로 한다.';
 // 쓰기 범위(경로 목록) 판정: 파일 쓰기 도구의 대상이 범위 밖이면 까닭, 안이면 null
 export function writesVerdict({ writes, toolName, toolInput, base, unitId = null }) {
   if (!Array.isArray(writes) || !EDIT_TOOLS.includes(toolName)) return null;
@@ -350,7 +399,7 @@ export class RigAmp {
     const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
     const toolName = String(body.tool_name || ''); const toolInput = body.tool_input || {};
     // P225: scoped 자리의 셸 안의 셸은 묻지 않고 거절한다(모델이 PowerShell 도구·Glob·Read로 다시 한다)
-    if (x.permission === 'scoped' && toolName === 'Bash') {
+    if ((x.permission === 'scoped' || x.permission === 'unattended') && toolName === 'Bash') { // P226: unattended도(판의 고정 기준)
       const sh = nestedShell(toolInput.command);
       if (sh) { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'deny', why: 'nested_shell', tool: toolName, shell: sh }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'nested_shell', tool: toolName, shell: sh }, `셸 안의 셸(${sh})을 거절(scoped: PowerShell 도구·Glob·Read로)`); return denyBody(NESTED_SHELL_REASON); }
     }

@@ -157,14 +157,14 @@ test('P223 permission 칸: 기본 ask, scoped·unattended와 allow를 받고, �
 });
 
 test('P223 Claude Code: scoped는 acceptEdits + 설정 파일 allow(판의 allow와 합침), unattended는 bypassPermissions(승인한 자리만, 아니면 scoped), ask는 그대로', () => {
-  assert.deepEqual(CLAUDE_PERMISSION_MODE, { scoped: 'acceptEdits', unattended: 'bypassPermissions' });
+  assert.deepEqual(CLAUDE_PERMISSION_MODE, { scoped: 'manual', unattended: 'bypassPermissions' }); // P226: scoped는 기본 모드(acceptEdits 아님)
   assert.equal(effectivePermission('unattended', false), 'scoped');
   assert.equal(effectivePermission('unattended', true), 'unattended');
   assert.equal(effectivePermission('ask', true), 'ask');
   assert.equal(effectivePermission(undefined, false), 'ask');
   const base = { writes: ['reports/'], stopVerify: false, preTool: [], protectedFiles: [], root: 'C:/r', cwd: 'C:/r' };
   const sc = claudeSettingsAmp({ ...base, permission: 'scoped', allow: ['Bash(git log:*)'] });
-  assert.deepEqual(sc.allow, ['Bash(git log:*)']);
+  assert.deepEqual(sc.allow, ['Edit(//c/r/reports/**)', 'Bash(git log:*)']); // P226: writes의 Edit 규칙
   assert.ok(sc.hooks.PreToolUse, '쓰기 범위 밖은 PreToolUse가 본다');
   const un = claudeSettingsAmp({ ...base, permission: 'unattended', allow: ['Bash(git log:*)'] });
   assert.equal(un.allow, undefined, 'unattended는 allow를 쓰지 않는다(묻지 않는다)');
@@ -173,7 +173,7 @@ test('P223 Claude Code: scoped는 acceptEdits + 설정 파일 allow(판의 allow
   const dir = tmp();
   const f = writeSessionSettings({ file: path.join(dir, 's.json'), hookUrl: 'http://127.0.0.1:1/hook', token: 't', sessionId: 'x', allow: ['Bash(atrium:*)'], amp: sc });
   const j = JSON.parse(fs.readFileSync(f, 'utf8'));
-  assert.deepEqual(j.permissions.allow, ['Bash(atrium:*)', 'Bash(git log:*)']);
+  assert.deepEqual(j.permissions.allow, ['Bash(atrium:*)', 'Edit(//c/r/reports/**)', 'Bash(git log:*)']);
   // 다시 맞추기: 판의 allow는 남기고 증폭 allow만 바꾼다
   applySettingsAmp(j, { deny: [], allow: ['Bash(gh pr list:*)'], hooks: {} }, 2, ['Bash(atrium:*)']);
   assert.deepEqual(j.permissions.allow, ['Bash(atrium:*)', 'Bash(gh pr list:*)']);
@@ -214,20 +214,20 @@ test('P223 자리 권한: 승인 전 unattended는 scoped로 돌고 경고, 켜�
     const w = A.seatPermission(ws.key, 'worker');
     assert.deepEqual([w.permission, w.claudeMode, w.pending], ['unattended', 'bypassPermissions', false]);
     const m = A.seatPermission(ws.key, 'main');
-    assert.deepEqual([m.permission, m.claudeMode, m.allow], ['scoped', 'acceptEdits', ['Bash(git log:*)', 'Bash(gh pr list:*)']]);
+    assert.deepEqual([m.permission, m.claudeMode, m.allow], ['scoped', 'manual', ['Bash(git log:*)', 'Bash(gh pr list:*)']]); // P226
     assert.deepEqual(A.seatPermission(ws.key, 'cx').codex, { sandbox: 'workspace-write', approval: 'on-request' });
     // 자리 세션을 띄운 뒤 장부에 권한 결정 한 줄(ask 자리는 적지 않는다)
-    const s = add('main'); seat(s, 'main'); s.permissionMode = 'acceptEdits';
+    const s = add('main'); seat(s, 'main'); s.permissionMode = 'manual';
     A.notePermission(s);
     const row = ledger(b, ws.key, { kinds: ['seat_permission'] }).at(-1);
-    assert.equal(row.value, 'scoped'); assert.equal(row.seat, 'main'); assert.match(row.text, /--permission-mode acceptEdits, allow 2/);
-    assert.equal(row.data.mode, 'acceptEdits');
+    assert.equal(row.value, 'scoped'); assert.equal(row.seat, 'main'); assert.match(row.text, /--permission-mode manual, allow 2/);
+    assert.equal(row.data.mode, 'manual');
     // 관리자 자리(에이전트)가 정의를 고쳐 새 unattended 자리를 넣었다: 승인 전이라 scoped, rig status·check에 경고
     const d = permDef(); d.seats.main.permission = 'unattended';
     const f = path.join(b.rig.rootOf(ws.key), '.atrium', 'rig.json');
     fs.writeFileSync(f, JSON.stringify(d, null, 2)); const t = new Date(Date.now() + 5000); fs.utimesSync(f, t, t);
     const p2 = A.seatPermission(ws.key, 'main');
-    assert.deepEqual([p2.asked, p2.permission, p2.pending, p2.claudeMode], ['unattended', 'scoped', true, 'acceptEdits']);
+    assert.deepEqual([p2.asked, p2.permission, p2.pending, p2.claudeMode], ['unattended', 'scoped', true, 'manual']);
     assert.ok(b.rig.status(ws.key).warnings.some((x) => /seats\.main\.permission "unattended"는 사람이 아직 승인하지 않아 scoped로 돈다/.test(x)));
     const chk = await b.branch.rigAdmin.run(ws.key, 'check');
     assert.ok(chk.warnings.some((x) => /seats\.main\.permission "unattended"는 사람이 아직 승인하지 않아/.test(x)));
@@ -261,7 +261,8 @@ test('P223 쓰기 범위 밖: scoped 자리는 묻고(ask, 응답 필요로 뜬�
     assert.deepEqual(gates.map((g) => g.value), ['ask', 'reject']);
     assert.equal(gates[0].data.ask, true);
     // 설정 파일의 증폭: main은 allow 둘, worker는 allow 없음
-    assert.deepEqual(A.claudeAmp(m).allow, ['Bash(git log:*)', 'Bash(gh pr list:*)']);
+    assert.deepEqual(A.claudeAmp(m).allow.filter((r) => !r.startsWith('Edit(')), ['Bash(git log:*)', 'Bash(gh pr list:*)']); // P226: 앞에 writes의 Edit 규칙
+    assert.ok(A.claudeAmp(m).allow.some((r) => /^Edit\(\/\/.+\/\*\*\)$/.test(r)));
     assert.equal(A.claudeAmp(w).allow, undefined);
     // Codex 자리: 띄우는 인자
     const c = add('cx-1', { kind: 'codex' }); seat(c, 'cx');
@@ -439,7 +440,7 @@ test('P223 "정기 점검" 견본: 입구 자리 scoped, allow는 읽기만 하�
   const { b, ws, stop } = await board({ from: CHECK });
   try {
     const p = b.rigAmp.seatPermission(ws.key, 'checker');
-    assert.deepEqual([p.permission, p.claudeMode], ['scoped', 'acceptEdits']);
+    assert.deepEqual([p.permission, p.claudeMode], ['scoped', 'manual']); // P226
     assert.deepEqual(p.writes, ['ledger/checks.jsonl', 'reports/']);
     assert.match(b.branch.flow.loops.view(ws.key, b.rig.active(ws.key).def)[0].task, /^Weekly check/, '고리 보기에 task');
     // 판이 자리 세션을 띄울 때 권한 모드를 자리 권한으로 바꾼다(backend.spawn)

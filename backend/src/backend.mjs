@@ -1499,7 +1499,7 @@ export class Backend {
       const sessionId = crypto.randomUUID();
       // P189: 판이 rig 자리를 위해 띄우는 세션(rig-flow spawnSeat). 띄울 때부터 자리를 알아야 설정 파일·Codex 인자에 증폭이 들어간다
       const seatSpawn = p[SEAT_SPAWN] && this.rig ? (() => { const r = this.rig.active(ws.key); return r && r.def.seats && r.def.seats[p[SEAT_SPAWN]] ? p[SEAT_SPAWN] : null; })() : null;
-      // P223: 자리 권한(scoped → acceptEdits, unattended(사람이 승인한 자리만) → bypassPermissions). ask는 띄우는 값 그대로
+      // P223: 자리 권한(scoped → manual(P226: 기본 모드 + allow 규칙), unattended(사람이 승인한 자리만) → bypassPermissions). ask는 띄우는 값 그대로
       const seatPerm = seatSpawn && this.rigAmp && this.rigAmp.seatPermission ? this.rigAmp.seatPermission(ws.key, seatSpawn) : null;
       if (claude && seatPerm && seatPerm.claudeMode) permissionMode = seatPerm.claudeMode;
       let hookToken = '', settingsPath = '', trust = { needsTrust: null, reason: `${kind}: 예상하지 않음` }, args = [], resumeArgv = null;

@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RIG_FILE, validateRig, protectedHits, POINTER_RE, gitStateOf, worktreeWarnings, SEAT_KINDS, seatEffortError } from './rig.mjs';
 import { harnessOf } from './launchers.mjs'; // P209: 런처 자리의 종류
-import { codexAllowWarning } from './rig-amp.mjs'; // P225
+import { codexAllowWarning, codexWritesWarning } from './rig-amp.mjs'; // P225. P226: Codex 좁은 writes
 
 // P225(rig2-design 11.9의 9): 제안을 내는 고리(kind improve, 또는 produces에 proposals 섹터)의 입구 자리가 초안(atrium rig propose --file)을 쓸 폴더가 없으면 경고.
 //   writes가 false거나, 경로 목록에 폴더(끝이 /)가 하나도 없으면 쓸 곳이 없다(writes 없음 = 제한 없음은 괜찮다). 만들기 대화상자가 .atrium/drafts/<자리>/를 넣는다
@@ -166,6 +166,12 @@ export class RigAdmin {
         const l = setup && setup.findLauncher ? setup.findLauncher(x.launcher) : null;
         const h = l ? harnessOf(l.harness) : null;
         if (h && h.kind === 'codex') warnings.push(`${codexAllowWarning(`seats.${x.name}`)}(런처 ${l.name || x.launcher})`);
+      }
+      // P226(11.10): 런처 이름 자리가 Codex인데 scoped·unattended에 좁은 writes(종류 이름 codex 자리는 validateAmp가 경고한다)
+      if (sa && sa.permission && sa.permission !== 'ask' && Array.isArray(sa.writes) && !SEAT_KINDS.includes(x.launcher)) {
+        const l = setup && setup.findLauncher ? setup.findLauncher(x.launcher) : null;
+        const h = l ? harnessOf(l.harness) : null;
+        if (h && h.kind === 'codex') warnings.push(`${codexWritesWarning(`seats.${x.name}`)}(런처 ${l.name || x.launcher})`);
       }
       if ((x.effort || x.model) && x.session === 'keep' && this.b.sessions) {
         // 앉은 세션이 띄울 때 받은 값(s.effort·s.model)과 다른 것만 알린다
