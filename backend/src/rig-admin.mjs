@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RIG_FILE, validateRig, protectedHits, POINTER_RE, gitStateOf, worktreeWarnings, SEAT_KINDS, seatEffortError } from './rig.mjs';
 import { harnessOf } from './launchers.mjs'; // P209: 런처 자리의 종류
+import { codexAllowWarning } from './rig-amp.mjs'; // P225
 import { shownName } from './session-label.mjs';
 import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장부
 import { sectorsFor } from './rig-sectors.mjs'; // P222: 산출물 등록부
@@ -112,15 +113,15 @@ export class RigAdmin {
     const out = { ok: v.ok && !hits.length, from, hash, current: { n: cur.n ?? null, hash: cur.hash || null }, same: !!(base && base.hash === hash), warnings: v.ok ? [...(v.def.warnings || []), ...(v.def.seats && Object.values(v.def.seats).some((x) => x.worktree) ? worktreeWarnings(v.def.seats, gitStateOf(root)) : [])] : [] }; // P195: 워크트리 자리의 저장소 조건
     if (!v.ok) return { ...out, reason: v.reason };
     // P209: 자리 effort·model. 런처 이름 자리는 그 런처의 종류로 effort를 다시 보고, 앉은 keep 자리 세션에는 다음에 띄울 때부터 먹는다고 적는다
-    const sn = this.seatNotes(key, v.def.seats);
+    const sn = this.seatNotes(key, v.def.seats, v.def);
     out.warnings.push(...sn.warnings, ...(rig.permitWarnings ? rig.permitWarnings(key, v.def) : [])); // P223: 승인 전 unattended 자리
     if (sn.reason) return { ...out, ok: false, reason: sn.reason };
     if (hits.length) return { ...out, protectedHits: hits, reason: `사람만 고치는 자리를 바꾼다: ${hits.join(', ')}. 이대로 쓰면 보드가 이 정의를 쓰지 않는다(지금 버전을 그대로 쓴다).` };
-    return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), loops: Object.values(v.def.loops || {}).map((l) => ({ name: l.name, kind: l.kind, implicit: !!l.implicit, trigger: l.trigger.type === 'request' ? `request → ${l.entry}` : l.trigger.type === 'every' ? `every ${l.trigger.every} → ${l.entry}` : `event ${l.trigger.event}`, entry: l.entry, lines: l.lines.length, holds: l.holds, ...(l.task ? { task: l.task } : {}) })), manager: v.def.manager, format: v.def.version || 1, docs: v.def.docs ? Object.values(v.def.docs).map((d) => ({ name: d.name, role: d.role, layer: d.layer, path: d.rel || d.path, watch: d.watch })) : [] } }; // P219: 문서
+    return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], closes: v.def.seats ? Object.values(v.def.seats).filter((x) => x.close).map((x) => ({ seat: x.name, close: x.close })) : [], /* P225: fresh 자리 close */ flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), loops: Object.values(v.def.loops || {}).map((l) => ({ name: l.name, kind: l.kind, implicit: !!l.implicit, trigger: l.trigger.type === 'request' ? `request → ${l.entry}` : l.trigger.type === 'every' ? `every ${l.trigger.every} → ${l.entry}` : `event ${l.trigger.event}`, entry: l.entry, lines: l.lines.length, holds: l.holds, ...(l.task ? { task: l.task } : {}) })), manager: v.def.manager, format: v.def.version || 1, docs: v.def.docs ? Object.values(v.def.docs).map((d) => ({ name: d.name, role: d.role, layer: d.layer, path: d.rel || d.path, watch: d.watch })) : [] } }; // P219: 문서
   }
 
   // P209: 자리 effort·model 검사(정의 검사가 모르는 것: 런처의 종류, 지금 앉은 세션) → { reason | null, warnings }
-  seatNotes(key, seats) {
+  seatNotes(key, seats, def = null) { // P225: def(자리 allow: 런처 이름 자리가 Codex면 경고)
     const warnings = []; let reason = null;
     if (!seats) return { reason, warnings };
     const setup = this.b.rigSetup;
@@ -130,6 +131,13 @@ export class RigAdmin {
         const h = l ? harnessOf(l.harness) : null;
         const why = h ? seatEffortError(h.kind, x.effort) : null;
         if (why && !reason) reason = `seats.${x.name}.effort: 런처 ${l.name || x.launcher}는 ${why}`;
+      }
+      // P225(rig2-design 11.8의 4): 런처 이름 자리가 Codex면 allow는 쓰이지 않는다(종류 이름 codex 자리는 validateAmp가 경고한다)
+      const sa = def && def.amp && def.amp.seats ? def.amp.seats[x.name] : null;
+      if (sa && sa.allow && sa.allow.length && !SEAT_KINDS.includes(x.launcher)) {
+        const l = setup && setup.findLauncher ? setup.findLauncher(x.launcher) : null;
+        const h = l ? harnessOf(l.harness) : null;
+        if (h && h.kind === 'codex') warnings.push(`${codexAllowWarning(`seats.${x.name}`)}(런처 ${l.name || x.launcher})`);
       }
       if ((x.effort || x.model) && x.session === 'keep' && this.b.sessions) {
         // 앉은 세션이 띄울 때 받은 값(s.effort·s.model)과 다른 것만 알린다

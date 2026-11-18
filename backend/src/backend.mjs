@@ -605,7 +605,11 @@ export class Backend {
     const names = workspaceNames(rows);
     const sums = [...this.sessions.values()].map((s) => this.summary(s));
     const labels = wsLabels(readGroups(this), rows); // P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로(영역 이름표, 사이드바)
-    return rows.map((w) => ({ key: w.key, name: names.get(w.key), ...(labels.has(w.key) ? { label: labels.get(w.key) } : {}), kind: w.kind, root: w.root, createdAt: w.createdAt, counts: workspaceCounts(sums, w.key), x: w.x, y: w.y, auto: !!w.auto, worktrees: this.worktrees ? this.worktrees.view(w.key) : [] })); // P27: 워크트리 영역
+    return rows.map((w) => ({ key: w.key, name: names.get(w.key), ...(labels.has(w.key) ? { label: labels.get(w.key) } : {}), kind: w.kind, root: w.root, createdAt: w.createdAt, counts: workspaceCounts(sums, w.key), x: w.x, y: w.y, auto: !!w.auto, worktrees: this.worktrees ? this.worktrees.view(w.key) : [], ...this.rigPermitsOf(w.key) })); // P27: 워크트리 영역. P225: rigPermits
+  }
+  // P225: 워크스페이스의 승인 전 무인 자리(창의 응답 필요 목록)
+  rigPermitsOf(key) {
+    try { const l = this.rig && this.rig.permitNeeds ? this.rig.permitNeeds(key) : []; return l.length ? { rigPermits: l.map((x) => x.seat) } : {}; } catch { return {}; }
   }
   // P48: 폴더 탐색기의 최근 폴더(워크스페이스 뿌리, 최근 세션 폴더)
   recentDirs() { const ss = [...this.sessions.values()].sort((a, b) => (b.touchedAt || b.createdAt || 0) - (a.touchedAt || a.createdAt || 0)); return [...this.store.workspaces().map((w) => w.root), ...ss.map((x) => x.cwd)].filter(Boolean); }
@@ -1827,7 +1831,10 @@ export class Backend {
     const mine = all.filter((x) => x.state === 'waiting' || x.state === 'trust_wait').sort((a, b) => (a.waitingSince || (a.ask && a.ask.since) || a.createdAt) - (b.waitingSince || (b.ask && b.ask.since) || b.createdAt));
     const review = all.filter((x) => x.unseen).sort((a, b) => (a.turn.endedAt || 0) - (b.turn.endedAt || 0));
     const errors = all.filter((x) => x.state === 'error' || (x.state === 'exited' && x.exit && x.exit.kind !== 'normal' && x.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다
-    return { needsYou: mine, review, problems: errors };
+    // P225: rig의 사람 차례(세션이 아닌 것): 무인 자리 승인(rig2-design 11.8의 1)
+    let rig = [];
+    try { rig = this.rig && this.rig.permitNeeds ? this.rig.permitNeeds().map((x) => ({ kind: 'seat_permit', ...x, text: `무인 자리 승인: ${x.seat}` })) : []; } catch {}
+    return { needsYou: mine, review, problems: errors, rig };
   }
 
   // ---------- 브리핑, 복귀 요약(E2·A3, P3). 한 줄 메모는 P22에서 뺐다 ----------

@@ -86,7 +86,7 @@ function linkRow(r) {
 }
 function deliveryRow(r) {
   if (!r) return null;
-  return { deliveryId: r.delivery_id, sessionId: r.session_id, text: r.text, status: r.status, reason: r.reason, createdAt: r.created_at, updatedAt: r.updated_at, sentAt: r.sent_at, confirmedAt: r.confirmed_at, attempts: r.attempts, seq: r.seq ?? r.created_at, origin: r.origin || 'board', fromSession: r.from_session ?? null }; // P182: 출처(옛 행은 board)
+  return { deliveryId: r.delivery_id, sessionId: r.session_id, text: r.text, status: r.status, reason: r.reason, createdAt: r.created_at, updatedAt: r.updated_at, sentAt: r.sent_at, confirmedAt: r.confirmed_at, attempts: r.attempts, seq: r.seq ?? r.created_at, origin: r.origin || 'board', fromSession: r.from_session ?? null, ...(r.park_loop ? { parkLoop: (() => { try { return JSON.parse(r.park_loop); } catch { return null; } })() } : {}) }; // P182: 출처(옛 행은 board). P225: parkLoop(멈춘 고리에 붙잡은 전달)
 }
 function workspaceRow(r) {
   if (!r) return null;

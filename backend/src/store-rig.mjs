@@ -76,8 +76,9 @@ export const RIG_COLUMNS = {
   // P185: 일의 건(case_id), 받는 자리(seat), 보낸 쪽 기록(via JSON: { by, fromSeat, result, line, escalated }). max_live 줄에 선 일은 to_session이 ''다
   work_units: { case_id: 'TEXT', seat: 'TEXT', via: 'TEXT' },
   workspaces: { rig_enabled: 'INTEGER', rig_enabled_at: 'INTEGER', rig_protected: 'TEXT' }, // P188: rig_protected(사람만 고치는 목록)
-  deliveries: { origin: 'TEXT', from_session: 'TEXT' },
   rig_loop_requests: { delivery_id: 'TEXT' }, // P223
+  rig_permits: { hash: 'TEXT' }, // P225: 승인한 때 그 자리의 위험한 칸 해시(rig-amp seatPermitHash). 다르면 승인이 풀린 것
+  deliveries: { origin: 'TEXT', from_session: 'TEXT', park_loop: 'TEXT' }, // P225: park_loop(멈춘 고리에 붙잡은 전달의 { loop, workspace }, 판이 다시 떠도 [잇기])
   rig_hook_runs: { tool_run_id: 'TEXT' }, // P183: 도구 훅이면 그 실행
   rig_cases: { version_n: 'INTEGER', owner_wait: 'TEXT', owner_wait_delivery: 'TEXT', loop: 'TEXT', name: 'TEXT', name_by: 'TEXT', paused_at: 'INTEGER', paused_by: 'TEXT', held: 'TEXT' }, // P221(rig 2 R2): 회의 고리(loop), 회 이름(name·name_by: auto | human | owner | manager), 회 멈춤(paused_at·paused_by), 멈춘 동안 붙잡은 넘김(held JSON [{ unitId, session, seat, result, text }]) // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다). P209: 주인 기다림의 종류(report | escalated)와 보고 전달 ID
   // P188: 사람만 고치는 목록. JSON { pointers: ["/seats/reviewer", …], files: [{ path, sha256, at }] } | null
@@ -312,8 +313,12 @@ export function installRig(Store) {
     setLoopRequestDelivery(id, deliveryId) { this.st('UPDATE rig_loop_requests SET delivery_id = ? WHERE id = ?').run(deliveryId, id); }, // P223
     heldLoopRequests(key, loop) { return this.st("SELECT * FROM rig_loop_requests WHERE workspace_key = ? AND loop = ? AND state = 'held' ORDER BY id").all(key, loop).map((r) => ({ id: Number(r.id), workspaceKey: r.workspace_key, loop: r.loop, sessionId: r.session_id, fromKind: r.from_kind, fromSession: r.from_session ?? null, text: r.text, t: r.t, deliveryId: r.delivery_id ?? null })); },
     // P223: unattended 승인
-    rigPermitted(key, seat) { return !!this.st('SELECT 1 FROM rig_permits WHERE workspace_key = ? AND seat = ?').get(key, seat); },
-    setRigPermit(key, seat, by) { this.st('INSERT INTO rig_permits (workspace_key, seat, t, by) VALUES (?, ?, ?, ?) ON CONFLICT(workspace_key, seat) DO UPDATE SET t = excluded.t, by = excluded.by').run(key, seat, Date.now(), by); },
+    // P225: hash를 주면 승인한 때의 해시와 같아야 승인이다(옛 줄은 hash가 없어 풀린 것으로 본다)
+    rigPermitted(key, seat, hash = null) { const r = this.st('SELECT hash FROM rig_permits WHERE workspace_key = ? AND seat = ?').get(key, seat); return !!r && (hash == null || r.hash === hash); },
+    setRigPermit(key, seat, by, hash = null) { this.st('INSERT INTO rig_permits (workspace_key, seat, t, by, hash) VALUES (?, ?, ?, ?, ?) ON CONFLICT(workspace_key, seat) DO UPDATE SET t = excluded.t, by = excluded.by, hash = excluded.hash').run(key, seat, Date.now(), by, hash); },
+    rigPermitRows(key) { return this.st('SELECT seat, hash, by, t FROM rig_permits WHERE workspace_key = ?').all(key).map((r) => ({ seat: r.seat, hash: r.hash ?? null, by: r.by, t: r.t })); }, // P225
+    deleteRigPermit(key, seat) { this.st('DELETE FROM rig_permits WHERE workspace_key = ? AND seat = ?').run(key, seat); }, // P225: 해시가 바뀐 승인을 지운다
+    setDeliveryParkLoop(id, park) { this.st('UPDATE deliveries SET park_loop = ? WHERE delivery_id = ?').run(park ? JSON.stringify(park) : null, id); }, // P225
     setLoopRequest(id, state, caseId = null) { this.st('UPDATE rig_loop_requests SET state = ?, case_id = ? WHERE id = ?').run(state, caseId, id); },
     // 고리의 회(건): 끝나지 않은 수, 전체 수, 마지막 회
     loopRunStats(key) {

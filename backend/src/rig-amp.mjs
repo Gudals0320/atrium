@@ -16,8 +16,11 @@
 //           Codex는 -s workspace-write -a on-request(writes false면 -s read-only).
 //   unattended: Claude Code는 bypassPermissions + 쓰기 범위 밖은 PreToolUse가 "deny". Codex는 -s workspace-write -a never.
 //     사람만 고른다: 켜기 확인(rig.enable confirm)이나 rig.permit이 그 자리를 승인한다(rig_permits). 승인 전 unattended 자리는 scoped로 돈다.
+// - P225(rig2-design 11.8의 1·2): 승인은 그 자리의 위험한 칸(permission·writes·allow·tools·launcher)의 해시(seatPermitHash)에 묶인다. 칸이 바뀌면 승인이 풀린다.
+//   Codex 자리의 allow는 쓰이지 않는다(Codex scoped는 샌드박스와 모델의 판단): 검사기가 경고한다(11.8의 4).
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부(훅 아닌 관문)
 import { writesPaths, OWNS } from './rig-docs.mjs'; // P219: writes의 문서 이름 → 경로
 
@@ -79,6 +82,7 @@ export function validateAmp(raw, { seats = null, docs = null } = {}) {
       if (off) return bad(`${at}.allow의 규칙이 Claude Code 권한 규칙 꼴(도구 이름, 괄호 안 지정자)이 아니다: ${off}`);
       allow = [...new Set(x.allow.map((r) => r.trim()))];
       if (permission !== 'scoped') warnings.push(`${at}.allow는 permission "scoped" 자리에서만 쓴다(${permission}에서는 쓰지 않는다)`);
+      if (allow.length && typeof x.launcher === 'string' && x.launcher.trim() === 'codex') warnings.push(codexAllowWarning(at)); // P225
     }
     if (permission === 'unattended') {
       warnings.push(`${at}.permission "unattended"는 사람이 승인해야 쓰인다(rig 켜기 확인 창이나 창의 승인). 승인 전에는 scoped로 돈다`);
@@ -123,6 +127,15 @@ export function seatAmpOf(def, seat) {
   const stopVerify = sa.stopVerify != null ? sa.stopVerify : a.stopVerify;
   const preTool = a.preTool.filter((p) => !p.seats || p.seats.includes(seat)).map((p) => ({ ...p, hook: def.hooks.find((h) => h.index === p.index) })).filter((p) => p.hook);
   return { writes: sa.writes ?? null, stopVerify: !!stopVerify, preTool, permission: sa.permission || 'ask', allow: sa.allow || [] };
+}
+// P225: Codex 자리의 allow 경고(런처 이름 자리는 rig-admin seatNotes가 런처의 종류로 본다)
+export const codexAllowWarning = (at) => `${at}.allow는 Codex 자리에서 쓰지 않는다. Codex의 scoped는 샌드박스(-s workspace-write)와 모델의 판단(-a on-request)이라 허용 목록이 없다`;
+// P225: 무인 승인이 묶이는 자리의 해시. permission·writes(경로로 바꾼 값)·allow·tools·launcher. 이 가운데 하나라도 바뀌면 옛 승인은 쓰이지 않는다
+export function seatPermitHash(def, seat) {
+  const x = def && def.seats ? def.seats[seat] : null;
+  const sa = def && def.amp && def.amp.seats ? def.amp.seats[seat] || {} : {};
+  const body = { permission: sa.permission || 'ask', writes: sa.writes === undefined ? null : sa.writes, allow: sa.allow || [], tools: x ? x.tools ?? null : null, launcher: x ? x.launcher || null : null };
+  return crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 16);
 }
 // P223: 정의의 자리 권한 → 실제로 쓰는 권한. unattended는 사람이 승인한 자리만(아니면 scoped)
 export const effectivePermission = (permission, approved) => (permission === 'unattended' && !approved ? 'scoped' : permission || 'ask');
@@ -267,17 +280,17 @@ export class RigAmp {
     const prot = this.protectedOf(s.workspaceKey);
     const protectedFiles = prot && Array.isArray(prot.files) ? prot.files.map((f) => f && f.path).filter((p) => typeof p === 'string' && p && !badRel(p)) : [];
     const asked = sa.permission;
-    const permission = effectivePermission(asked, asked === 'unattended' && this.approved(s.workspaceKey, s.rigSeat)); // P223
+    const permission = effectivePermission(asked, asked === 'unattended' && this.approved(s.workspaceKey, s.rigSeat, r.def)); // P223. P225: 그 정의의 해시
     return { key: s.workspaceKey, r, seat: s.rigSeat, kind: s.kind || 'claude', ...sa, asked, permission, protectedFiles, root: r.root, cwd: (s.rt && s.rt.cwd) || s.cwd || r.root };
   }
   // P223: 사람이 그 자리의 unattended를 승인했는가(rig.mjs rig_permits)
-  approved(key, seat) { return !!(this.b.rig && this.b.rig.permitted && this.b.rig.permitted(key, seat)); }
+  approved(key, seat, def = null) { return !!(this.b.rig && this.b.rig.permitted && this.b.rig.permitted(key, seat, def)); } // P225: def(그 정의의 자리 해시로 본다)
   // P223: 자리 세션을 띄울 때의 권한 → { asked, permission, claudeMode | null, codex: { sandbox, approval } | null, pending }
   seatPermission(key, seat) {
     const r = this.b.rig ? this.b.rig.active(key) : null;
     if (!r || !r.def.seats || !r.def.seats[seat]) return null;
     const sa = seatAmpOf(r.def, seat);
-    const approved = sa.permission === 'unattended' && this.approved(key, seat);
+    const approved = sa.permission === 'unattended' && this.approved(key, seat, r.def);
     const permission = effectivePermission(sa.permission, approved);
     return { asked: sa.permission, permission, pending: sa.permission === 'unattended' && !approved, claudeMode: CLAUDE_PERMISSION_MODE[permission] || null, codex: CODEX_APPROVAL[permission] ? { sandbox: sa.writes === false ? 'read-only' : 'workspace-write', approval: CODEX_APPROVAL[permission] } : null, allow: permission === 'scoped' ? sa.allow : [], writes: sa.writes };
   }

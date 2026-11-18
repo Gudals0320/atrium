@@ -2749,3 +2749,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 /* P223: rig 켜기 확인 창의 자리 권한(unattended 줄 강조), 대기열의 멈춘 고리에 붙잡은 요청 */
 .mt-rigon-perm-un .mt-rigon-at { color: var(--warn); }
 .mt-dq-item[data-parked] .mt-dq-text { color: var(--dim); }
+
+/* P225: 응답 필요 목록의 무인 자리 승인 항목(세션이 아닌 사람 차례) */
+.mt-chip.rig-permit { cursor: default; }
+.mt-rig-permit-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
