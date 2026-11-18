@@ -388,7 +388,8 @@ export class Branch {
   }
   allowRules() { return [...branchAllow(), uploadsReadRule(this.b.cfg.dataDir)]; } // P162: 업로드 자리(붙여 넣은 그림) 읽기
   // writeSessionSettings에 더할 값
-  settingsExtra(sessionId) { return { env: this.envFor(sessionId), allow: this.allowRules() }; }
+  // P211: statusLine(판의 상태 줄 명령, 구독 사용량)
+  settingsExtra(sessionId) { const sl = this.b.usage ? this.b.usage.claudeStatusLine() : null; return { env: this.envFor(sessionId), allow: this.allowRules(), ...(sl ? { statusLine: sl } : {}) }; }
   // writeBoardPlugin에 더할 것: 일 맡기기 스킬, atrium 명령(별칭 mtask)
   // P36: atrium 스킬과 옛 이름 delegate(같은 글)
   pluginExtra() { return { skills: { [SKILL_NAME]: boardSkill(SKILL_NAME), [LEGACY_SKILL_NAME]: boardSkill(LEGACY_SKILL_NAME) }, bin: childShims() }; }
@@ -406,8 +407,10 @@ export class Branch {
         const kept = Object.fromEntries(Object.entries(j.env || {}).filter(([k]) => !k.startsWith('MTASK_')));
         const before = (j.permissions && j.permissions.allow) || [];
         const allow = [...new Set([...before, ...rules])].filter((r) => !OLD_TERMINAL_RULE.test(r));
-        if (JSON.stringify(j.env || {}) === JSON.stringify({ ...kept, ...env }) && allow.length === before.length && allow.every((r, i) => r === before[i])) continue;
-        j.env = { ...kept, ...env }; j.permissions = { ...(j.permissions || {}), allow }; // 순서: 원래 규칙, 새 규칙(빠진 것 없이 같으면 쓰지 않는다)
+        const sl = this.b.usage ? this.b.usage.claudeStatusLine() : null; // P211: 판의 상태 줄 명령(이어 갈 때 다시 읽힌다)
+        if (JSON.stringify(j.env || {}) === JSON.stringify({ ...kept, ...env }) && allow.length === before.length && allow.every((r, i) => r === before[i]) && (!sl || JSON.stringify(j.statusLine || null) === JSON.stringify(sl))) continue;
+        j.env = { ...kept, ...env }; j.permissions = { ...(j.permissions || {}), allow };
+        if (sl) j.statusLine = sl; // 순서: 원래 규칙, 새 규칙(빠진 것 없이 같으면 쓰지 않는다)
         fs.writeFileSync(s.settingsPath, JSON.stringify(j, null, 2)); n++;
       } catch (e) { this.b.log(`branch settings refresh failed ${s.name}: ${e.message}`); }
     }
@@ -584,6 +587,8 @@ export class Branch {
     if (op === 'log') return this.news.logVerb(s, body); // P204: atrium log "<한 줄>"
     if (op === 'news') return this.news.newsVerb(s, body); // P204: atrium news [<이름>] [--all]
     if (op === 'rig') return this.rigAdmin.verb(s, body); // P188: atrium rig check|log|rollback|cleanup(관리자 자리만)
+    if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
+    if (op === 'usage-report') return this.b.usage ? this.b.usage.report(String(body.kind || ''), body.input) : { ok: false }; // P211: 판의 상태 줄 명령이 알린 사용량
     throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
   }
 

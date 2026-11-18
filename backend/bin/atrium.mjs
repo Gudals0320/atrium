@@ -8,6 +8,7 @@ import { fmtAsk } from './atrium-fmt.mjs'; // P205: 응답 필요 줄
 import { remoteCommand } from './atrium-remote.mjs'; // P49(R3): 원격 접속(Tailscale)
 import { updateCommand } from './atrium-update.mjs'; // P69: 설치와 업데이트
 import { FEATURES_HELP, FEATURE_BOOL_FLAGS, featureCommand, featureEvent } from './atrium-features.mjs'; // P6b
+import { usageLines } from '../src/usage-text.mjs'; // P211
 
 const HELP = `atrium [--dev] [--json] <명령>
   backend start|stop|status               백엔드 시작·중지·상태 확인 (시작 시 터미널 서버가 없으면 함께 시작)
@@ -47,6 +48,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   changes [--minutes n]                   마지막 확인 이후 또는 최근 n분의 변경 내역
   brief <이름>                              작업 재개를 위한 요약 (마지막 요청·응답, 상태, 질문)
   res                                     리소스 사용량 (세션별 메모리, 터미널 제어 프로세스, 동시 실행 수)
+  usage [--json]                          구독 사용량 (Claude·Codex·AGY의 한도 창 사용률, 리셋까지 남은 시간, 크레딧)
   sleep [<리포>]                            프로젝트의 에이전트 세션(Claude Code, Codex, opencode, pi, AGY)을 절전 모드로 전환. 생략하면 대기 중인 프로젝트 전체에 적용
   wake <리포|이름>                            기존 대화로 재개. 리포면 절전 중인 모든 세션, 이름이면 그 세션(프로젝트 전체가 절전되었으면 그 프로젝트)
   sleep-status                            프로젝트별·세션별 자동 절전 제외 사유, 비활동 시간, 절전 중인 세션과 절전 범위(repo, session)
@@ -296,6 +298,7 @@ async function main() {
       }
       case 'brief': return out(await c.call('session.briefing', { session: rest[0] }));
       case 'res': return out(await c.call('resources.get', { fresh: true }));
+      case 'usage': { const r = await c.call('usage.get'); if (JSONOUT) return out(r); for (const line of usageLines(r, r.at || Date.now())) console.log(line); return; } // P211: 구독 사용량
       // P24(D4): 리포 단위 잠재우기·깨우기
       case 'sleep': return out(rest[0] ? await c.call('workspace.sleep', { workspace: rest[0] }) : await c.call('workspace.sleepIdle'));
       case 'wake': {

@@ -2664,3 +2664,39 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 
 /* P203: AGY 승인 방식 안내(호출자 편집 틀, 승인 칸 아래 한 줄) */
 .mt-ln-agynote { font-size: 12px; line-height: 1.4; color: var(--warn); margin: -2px 0 2px 112px; }
+
+/* ---------- P211: 구독 사용량(위 막대 알약과 펼침, 호출자 옆 남은 양). 색은 사용자 상태 줄과 같은 기준(60 미만 초록, 60~84 노랑, 85 이상 빨강). 움직임 없음 ---------- */
+.mt-cp.usage { cursor: pointer; gap: 5px; }
+.mt-cp.usage.lv-warn { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.mt-cp.usage.lv-high { border-color: color-mix(in srgb, var(--bad) 60%, transparent); }
+.mt-usage-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chrome-text-2); flex: none; }
+.mt-usage-dot.lv-ok { background: var(--ok); }
+.mt-usage-dot.lv-warn { background: var(--warn); }
+.mt-usage-dot.lv-high { background: var(--bad); }
+.mt-usage-part { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.mt-usage-part .mono.lv-ok { color: var(--ok); }
+.mt-usage-part .mono.lv-warn { color: var(--warn); }
+.mt-usage-part .mono.lv-high { color: var(--bad); }
+.mt-usage-list { width: 380px; gap: 6px; }
+.mt-usage-prov { display: grid; gap: 5px; padding: 7px 10px; border-radius: 8px; background: var(--panel-2); }
+.mt-usage-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.mt-usage-plan { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--panel-3); color: var(--dim); }
+.mt-usage-ago { margin-left: auto; font-size: 12px; }
+.mt-usage-win { display: grid; grid-template-columns: minmax(56px, 118px) 1fr 42px minmax(88px, auto); align-items: center; gap: 8px; font-size: 12.5px; }
+.mt-usage-wname { color: var(--text-2, var(--text)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-usage-bar { height: 6px; border-radius: 3px; background: var(--panel-3); overflow: hidden; }
+.mt-usage-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--dim); }
+.mt-usage-win.lv-ok .mt-usage-bar > span { background: var(--ok); }
+.mt-usage-win.lv-warn .mt-usage-bar > span { background: var(--warn); }
+.mt-usage-win.lv-high .mt-usage-bar > span { background: var(--bad); }
+.mt-usage-win.lv-high .mt-usage-pct { color: var(--bad); }
+.mt-usage-pct { text-align: right; }
+.mt-usage-reset { font-size: 12px; white-space: nowrap; }
+.mt-usage-credit, .mt-usage-src { font-size: 12px; }
+.mt-usage-prov.unknown .mt-usage-head .dim { margin-left: auto; }
+.mt-usage-foot { padding: 4px 10px 2px; font-size: 12px; }
+.mt-usage-left { margin-left: 7px; font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--dim); white-space: nowrap; }
+.mt-usage-left.lv-warn { color: var(--warn); }
+.mt-usage-left.lv-high { color: var(--bad); }
+.mt-rail-favs .mt-tool { position: relative; }
+.mt-usage-left.compact { position: absolute; right: -3px; bottom: -3px; margin: 0; padding: 0 3px; min-width: 14px; line-height: 12px; font-size: 9.5px; text-align: center; border-radius: 6px; background: var(--chrome-bg); border: 1px solid var(--chrome-line); pointer-events: none; }

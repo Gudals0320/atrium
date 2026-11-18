@@ -123,6 +123,15 @@ function PerfTraceSetting({ settings }) {
   </>;
 }
 
+// P211: 구독 사용량 90% 알림(판 설정). 끄면 백엔드가 usage.alert를 보내지 않는다
+function UsageAlertSetting({ settings }) {
+  const t = useT();
+  const set = async (value) => {
+    try { await api.call('settings.set', { key: 'usageAlerts', value }); toast(value ? t('usage.alertsSetOn') : t('usage.alertsSetOff')); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
+  };
+  return <SetRow name={t('usage.alertsName')} hint={t('usage.alertsHint')} role="usage-alert-setting"><Toggle checked={settings.usageAlerts !== false} onChange={set} field="setting-usageAlerts" /></SetRow>;
+}
+
 // 일반: 언어, 배율(P45), 작업 중 테두리 빛(P107), 트레이 상주
 function GeneralTab({ settings }) {
   const t = useT();
@@ -141,6 +150,7 @@ function GeneralTab({ settings }) {
         <WorkLightSetting settings={settings} />
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>
+        {'usageAlerts' in settings && <UsageAlertSetting settings={settings} />}
         {'updateCheck' in settings && <UpdateSettings settings={settings} />}
         {'perfTrace' in settings && <PerfTraceSetting settings={settings} />}
       </>}

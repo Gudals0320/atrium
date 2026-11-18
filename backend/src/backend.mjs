@@ -36,6 +36,7 @@ import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentR
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
+import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
 import { tailText, screenAnswerText, roleNotice, unlinkNotice, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
@@ -49,7 +50,7 @@ import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 
 import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
-import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, claudeConnection } from './harness.mjs';
+import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, claudeConnection, agyHomeOf } from './harness.mjs';
 import { checkOf } from './connections.mjs'; // P115: 연결 시작 전 확인 // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
@@ -214,6 +215,14 @@ export class Backend {
     // P9: 이미 겹친 영역은 뜰 때 편다(영역째 오른쪽·아래로 밀어 상대 자리를 지킨다, H1)
     syncWsGroups(this, 'start'); // P91: 폴더가 안팎인 워크스페이스를 한 묶음으로(영역 겹침 풀기가 묶음을 한 덩어리로 본다)
     settleRegions(this, 'start');
+    // P211: 구독 사용량(판의 상태 줄 명령이 알린 Claude·AGY 값, Codex rollout). 상태 줄 명령 파일은 판 데이터 폴더 plugin/에 둔다.
+    //   하위 세션 명령(설정 파일의 statusLine)보다 먼저 만든다
+    this.usage = new UsageBook({
+      store: this.store, broadcast: (e, v) => this.api.broadcast(e, v), settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}),
+      codexHome: cfg.usageCodexHome, claudeUserSettings: cfg.claudeUserSettings, agyUserSettings: path.join(cfg.agyHome || agyHomeOf(), 'settings.json'),
+      script: writeStatusLineScript(path.join(cfg.dataDir, 'plugin')), node: process.execPath, agyShim: process.platform === 'win32' ? writeStatusLineShim(path.join(cfg.dataDir, 'plugin')) : null, pollMs: cfg.usagePollMs, log: (m) => this.log(m),
+    });
+    this.api.handlers['usage.get'] = () => this.usage.get();
     // P8: 하위 세션 명령. 플러그인에 일 맡기기 스킬과 atrium 명령을 더하고, 이미 띄운 세션의 설정 파일에 env와 승인 규칙을 더한다
     this.branch = attachBranch(this);
     Object.assign(this.api.handlers, this.branch.handlers);
@@ -363,6 +372,7 @@ export class Backend {
       log: (m) => this.log(m), // P168: 버린 이상한 값
     });
     this.resources.start((snap) => this.api.broadcast('resources', snap));
+    this.usage.start(); // P211
     this.store.addEvent(null, 'backend_started', { pid: process.pid, previousRun: this.previousRun });
     this.log(`backend up pid=${process.pid} port=${cfg.port} profile=${cfg.profile} terminal=${cfg.terminalSession} previousRun=${JSON.stringify(this.previousRun)}`);
   }
@@ -373,6 +383,7 @@ export class Backend {
     if (this.tempLinks) this.tempLinks.stop();
     stopMigration(this);
     this.resources.stop();
+    if (this.usage) this.usage.stop(); // P211
     this.queue.stop();
     if (this.features) this.features.stop();
     if (this.perfTrace) this.perfTrace.stop();
@@ -1069,7 +1080,7 @@ export class Backend {
     const br = this.branch && typeof this.branch.token === 'function' ? this.branch : null; // 하위 세션 명령이 없는 판(시험의 가짜 판)은 env와 토큰 없이
     if (br) writeTokenFile(this.cfg.sessionsDir, s.sessionId, br.token(s.sessionId));
     const hf = this.harnessFiles || {};
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: this.rigAmp ? this.rigAmp.launcherArgs(s, plan.args || []) : plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null }); // P133: 갈라 열기는 처음 한 번만
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: this.rigAmp ? this.rigAmp.launcherArgs(s, plan.args || []) : plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {

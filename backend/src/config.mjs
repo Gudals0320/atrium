@@ -81,6 +81,11 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     // 없으면 CODEX_HOME·~/.codex. 시험 판(ATRIUM_CLAUDE_PROJECTS로 대화 기록을 따로 준 판)은 ATRIUM_CODEX_HOME을 주지 않으면 Codex 대화를 읽지 않는다(실제 기록을 읽지 않게)
     codexConvoHome: E('CODEX_HOME') === 'none' ? null : E('CODEX_HOME') ? path.resolve(E('CODEX_HOME')) : E('CLAUDE_PROJECTS') ? null : codexHomeOf(env),
     convoScanMs: Number(E('CONVO_SCAN_MS') || 15000),
+    // P211: 구독 사용량. 사용자 Claude Code 설정 파일(상태 줄 명령을 읽기만, ATRIUM_CLAUDE_USER_SETTINGS), Codex 사용량을 읽을 Codex 홈
+    // (ATRIUM_USAGE_CODEX_HOME, none이면 읽지 않는다. 단위 시험은 주지 않으면 읽지 않는다), 다시 보는 간격(ATRIUM_USAGE_POLL_MS)
+    claudeUserSettings: E('CLAUDE_USER_SETTINGS') ? path.resolve(E('CLAUDE_USER_SETTINGS')) : path.join(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json'),
+    usageCodexHome: E('USAGE_CODEX_HOME') === 'none' ? null : E('USAGE_CODEX_HOME') ? path.resolve(E('USAGE_CODEX_HOME')) : env.NODE_TEST_CONTEXT ? null : codexHomeOf(env),
+    usagePollMs: Number(E('USAGE_POLL_MS') || 30000),
     // P13(BRIEF "판 밖 대화"): missed로 보는 이 앱의 시험 폴더. 판 코드 저장소(이 코드가 있는 저장소와 그 본 저장소)의 backend/.dev·experiments, OS 임시 폴더, 이름 접두어.
     // 시험 판은 고정 자료 폴더 이름(mtask-p13-*)이 접두어에 걸리지 않게 ATRIUM_TEST_PREFIX로 바꾼다(빈 글이면 접두어 규칙을 끈다).
     // 시험 폴더 접두어는 P18 뒤에도 mtask-다(옛 시험 폴더 이름과 같게 둔다)

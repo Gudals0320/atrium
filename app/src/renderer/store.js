@@ -30,6 +30,7 @@ const state = {
   // P3
   boardSeenAt: null, // A3: 판을 마지막으로 본 시각(백엔드 기록)
   resources: null, // D1
+  usage: null, // P211: 구독 사용량(usage.get, usage.updated)
   peers: null, // P47: 이 백엔드에 붙은 창·웹 클라이언트 { clients, notify(알림 받을 클라이언트 ID), me }
   links: new Map(), // P4: linkId → 연결(누가 누구에게 시켰는지, 역할, 띄움)
   dialog: null, // { kind: 'spawn' | 'role' | 'link' | 'wsopen' | 'wsclose' | 'close', from?, to?, linkId?, cwd?, ids? }
@@ -306,6 +307,7 @@ api.on('$open', async (r) => {
     changed();
     state.resources = await api.call('resources.get');
     changed();
+    api.call('usage.get').then((v) => { state.usage = v; changed(); }).catch(() => {}); // P211: 옛 백엔드면 없다
     // P6c: Thread, 루프, 설정. P6b 전 백엔드면 없다(조용히 넘어간다)
     await Promise.all([loadThread().catch(() => {}), loadLoops().catch(() => {}), api.call('settings.get').then((r) => { putSettings(r.settings); }).catch(() => {}), loadLaunchers()]);
   } catch (e) { toast(t('store.loadFailed', { error: errText(e) }), 'error'); }
@@ -359,6 +361,7 @@ api.on('board.changed', () => { loadBoard().catch(() => {}); });
 api.on('link.updated', (l) => { state.links = new Map(state.links); if (l.removedAt) state.links.delete(l.linkId); else state.links.set(l.linkId, l); changed(); });
 api.on('link.removed', (d) => { state.links = new Map(state.links); state.links.delete(d.linkId); changed(); });
 api.on('resources', (v) => { state.resources = v; changed(); });
+api.on('usage.updated', (v) => { state.usage = v; changed(); }); // P211
 api.on('workspace.updated', (d) => {
   state.workspaces = d.workspaces || [];
   if (d.groups) state.groups = d.groups; // P44

@@ -56,6 +56,7 @@ import { budget, terms, termStats } from './TerminalView.jsx';
 import { nextTarget } from './lib/faces.js';
 import { startViewingReport } from './sleep.js';
 import { startNotifier, notifyLog } from './notify.js';
+import { startUsageAlerts } from './Usage.jsx'; // P211: 구독 사용량 90% 알림
 import * as perf from './perf.js';
 import { useT } from './lib/i18n.js';
 import { BRAND_WORDMARK } from './lib/icons.jsx'; // 처음 화면의 텍스트 로고
@@ -278,6 +279,7 @@ function boot() {
   fontsReady.then(() => root.render(<ReactFlowProvider><App /></ReactFlowProvider>));
   api.connect();
   startNotifier();
+  startUsageAlerts(); // P211
   watchPerfTrace(); // P146: 성능 기록(판 설정 perfTrace를 켠 동안만 모은다)
   if (!isWeb) startRemoteNotice(); // P58: 원격 기기가 붙으면 PC 창에 알린다
   if (isWeb) startPushClient(); // P88: 보이는 상태 알리기(보는 기기에는 푸시를 보내지 않는다), 알림을 누르면 그 세션으로
