@@ -17,6 +17,7 @@ import { seatHeader } from './rig-flow.mjs'; // P185: 자리 세션의 일 머�
 import { HUMAN_FROM, BUILDER_ORIGIN, builderHeader } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일(상위 세션 없음)
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { seatDocsOf, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
+import { sectorsFor, sectorsOf } from './rig-sectors.mjs'; // P222: 산출물 섹터
 
 // P216: 에이전트만 끝나고 셸 패널이 남은 것을 멈춤(exited)으로 보는가. 판이 끄라고 한 것(잠재우기·끄기·child-kill·옮기기·다시 띄우기: normal),
 //   사람이 끝낸 것(/exit·Ctrl+C·종료 코드 0·130: user), 신뢰 거부(trust_declined), 터미널 서버가 꺼짐(terminal_stopped, 판이 되살린다)은 아니다.
@@ -195,8 +196,13 @@ export class WorkUnits {
   async doneVerb(caller, o = {}) {
     const { result, text, tr } = this.doneCheck(caller, o);
     const rig = this.b.rig;
+    // P222: --artifact(산출물)은 닫기 전에 본다. 섹터 밖이면 거절(일은 열린 채)
+    const sectors = sectorsFor(this.b);
+    let arts = o.artifacts != null && (!Array.isArray(o.artifacts) || o.artifacts.length) ? sectors.check(caller, o.artifacts) : [];
+    const artCtx = sectors.ctxOf(caller);
     if (rig) {
       const h = await rig.done({ caller, tryRow: tr, unit: this.store().getUnit(tr.unitId), result, text });
+      if (h.action !== 'reject' && h.artifacts && h.artifacts.length) arts = [...arts, ...sectors.fromHook(caller, h.artifacts)]; // P222
       if (h.action === 'reject') {
         this.store().addEvent(caller.sessionId, 'unit_done_rejected', { unitId: tr.unitId, tryId: tr.id, result, reason: h.reason });
         throw apiError('rig_rejected', `rig의 done 훅이 닫기를 거절했다(일 ${tr.unitId}은 열린 채다): ${h.reason}`);
@@ -209,6 +215,7 @@ export class WorkUnits {
     const unit = this.store().getUnit(tr.unitId);
     const route = flow ? flow.routeFor(caller, unit, result) : null;
     const out = this.done(caller, o, { flowClaim: !!(route && route.lines.length) });
+    if (arts.length) out.artifacts = sectors.file(caller, arts, artCtx).map((x) => ({ id: x.id, sector: x.sector, path: x.path, sha256: x.sha256, size: x.size })); // P222: 일을 닫은 뒤, 회를 닫기 전에 적는다
     if (route && route.lines.length) {
       const ar = await flow.afterDone(caller, unit, result, text, route);
       out.flow = this.store().unitsOfCase(unit.caseId).filter((u) => u.via && u.via.prevUnit === unit.id).map((u) => ({ unit: u.id, seat: u.seat, to: u.to ? this.nameOf(u.to) : null, waiting: !u.to }));
@@ -261,7 +268,7 @@ export class WorkUnits {
     const u = st.getUnit(tr.unitId);
     const flow = this.branch && this.branch.flow;
     const ctx = flow && u.caseId ? flow.seatCtx(caller) : null; // P185
-    return { item: { id: u.id, from: this.nameOf(u.from), origin: u.origin, spec: u.spec, createdAt: u.createdAt, startedAt: tr.startedAt, tries: st.triesOfUnit(u.id).length, stopReason: tr.stopReason, ...(u.caseId ? { caseId: u.caseId, seat: u.seat, by: u.via && u.via.by ? this.nameOf(u.via.by) : null, results: ctx ? ctx.def.results : null, docs: ctx ? seatDocsOf(ctx.def, ctx.name) : null } : {}) }, queued }; // P219: docs(머리의 문서 목록)
+    return { item: { id: u.id, from: this.nameOf(u.from), origin: u.origin, spec: u.spec, createdAt: u.createdAt, startedAt: tr.startedAt, tries: st.triesOfUnit(u.id).length, stopReason: tr.stopReason, ...(u.caseId ? { caseId: u.caseId, seat: u.seat, by: u.via && u.via.by ? this.nameOf(u.via.by) : null, results: ctx ? ctx.def.results : null, docs: ctx ? seatDocsOf(ctx.def, ctx.name) : null, produces: ctx ? producesOf(ctx.def, st.getCase(u.caseId)) : null } : {}) }, queued }; // P219: docs(머리의 문서 목록). P222: produces(이 회의 고리가 산출물을 내는 섹터)
   }
   items(caller, o = {}) {
     const st = this.store();
@@ -336,4 +343,12 @@ export class WorkUnits {
     this.prev.delete(s.sessionId);
     return this.stops.onClosed(s, tr, unit, reason, { byParent });
   }
+}
+
+// P222: 회의 고리가 산출물을 내는 섹터(atrium item) → [{ name, path }] | null
+function producesOf(def, c) {
+  const loop = def && def.loops && c && c.loop ? def.loops[c.loop] : null;
+  if (!loop || !loop.produces || !loop.produces.length) return null;
+  const secs = sectorsOf(def);
+  return loop.produces.map((n) => { const s = secs.find((x) => x.name === n); return { name: n, path: s ? s.rel : null }; });
 }

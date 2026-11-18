@@ -17,11 +17,12 @@ import { RIG_FILE, validateRig, protectedHits, POINTER_RE, gitStateOf, worktreeW
 import { harnessOf } from './launchers.mjs'; // P209: 런처 자리의 종류
 import { shownName } from './session-label.mjs';
 import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장부
+import { sectorsFor } from './rig-sectors.mjs'; // P222: 산출물 등록부
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
-export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name']; // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
+export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name', 'artifacts']; // P222: artifacts(산출물 등록부, 읽기만) // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
 export const RIG_READ_OPS = ['check', 'log']; // P209: 읽기만(제작 세션도 쓴다)
 
 export class RigAdmin {
@@ -43,6 +44,8 @@ export class RigAdmin {
     if (op === 'log' && o.events) return this.eventsVerb(s, o); // P217: 장부(18.2)
     // P221: status는 읽기만이라 그 워크스페이스의 어느 판 세션이든. name은 관리자 자리와 그 회의 주인(입구 자리 세션)
     if (op === 'status') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig status는 워크스페이스의 세션만 쓴다.'); return this.status(s.workspaceKey); }
+    // P222: artifacts도 읽기만이라 그 워크스페이스의 어느 판 세션이든
+    if (op === 'artifacts') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig artifacts는 워크스페이스의 세션만 쓴다.'); return this.artifacts(s.workspaceKey, o); }
     if (op === 'name' && !this.isManager(s)) {
       const c = this.store().getCase(String(o.caseId || o.case || '').trim());
       if (!c || c.workspaceKey !== s.workspaceKey || c.owner !== s.sessionId) throw apiError('forbidden', `atrium rig name은 관리자 자리와 그 회의 주인(입구 자리 세션)이 쓴다${c && c.workspaceKey === s.workspaceKey ? `: 회 ${c.id}의 주인은 @${this.branch.units.nameOf(c.owner)}다` : ''}.`);
@@ -71,12 +74,15 @@ export class RigAdmin {
     if (op === 'cleanup') return this.cleanup(key, o.caseId || o.case, { by, who });
     if (op === 'retry') return this.branch.flow.retry(key, o.caseId || o.case, o.unitId || o.unit || null, { by, who }); // P216
     if (op === 'status') return this.status(key); // P221
+    if (op === 'artifacts') return this.artifacts(key, o); // P222
     if (op === 'pause') return this.branch.flow.loops.pause(key, o.target, { by, who });
     if (op === 'resume') return this.branch.flow.loops.resume(key, o.target, { by, who });
     if (op === 'name') return this.branch.flow.loops.name(key, o.caseId || o.case, o.name, { by, who });
     throw apiError('bad_request', `모르는 일: ${op}`);
   }
 
+  // P222: 산출물 등록부(atrium rig artifacts [--sector] [--run]) → rig-sectors list
+  artifacts(key, o = {}) { this.rig(); return sectorsFor(this.b).list(key, { sector: o.sector != null ? String(o.sector) : null, run: o.run != null ? String(o.run) : null, limit: o.limit }); }
   // P221: 고리와 끝나지 않은 회(atrium rig status, 판 API rig.loops보다 넓게) → { workspace, state, version, loops, runs }
   status(key) {
     const rig = this.rig(); const st = this.store(); const flow = this.branch.flow;

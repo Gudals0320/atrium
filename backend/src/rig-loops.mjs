@@ -162,7 +162,8 @@ export function finishLoops(raw, fl, cycles, docs, lineOf, { cycleMinMs = 360000
     const ho = docNames(x.holds, `${at}.holds`); if (!ho.ok) return bad(ho.reason);
     const rd = docNames(x.reads, `${at}.reads`); if (!rd.ok) return bad(rd.reason);
     const pr = docNames(x.produces, `${at}.produces`, 'sector'); if (!pr.ok) return bad(pr.reason);
-    if (pr.list.length) warnings.push(`${at}.produces(${pr.list.join(', ')})는 R5(산출물 섹터) 전이라 받기만 한다`);
+    // P222(R5): produces는 이 고리의 회가 산출물을 내는 섹터다(회가 아무것도 내지 않고 끝나면 장부에 artifact_warning). 받지 못하는 섹터({owns}·저장소 밖)는 경고
+    for (const n of pr.list) if (!docs[n].rel || docs[n].layer !== 'project') warnings.push(`${at}.produces의 ${n}는 아직 산출물을 받지 못하는 섹터다(${docs[n].rel ? `${docs[n].layer} 층` : '경로 {owns}'})`);
     if (x.approve != null) { if (!LOOP_APPROVES.includes(x.approve)) return bad(`${at}.approve는 ${LOOP_APPROVES.join(', ')} 가운데 하나다: ${JSON.stringify(x.approve)}`); warnings.push(`${at}.approve(${x.approve})는 R6(제안과 승인) 전이라 받기만 한다`); }
     if (x.steps != null) { if (!strList(x.steps)) return bad(`${at}.steps는 글 배열이다`); warnings.push(`${at}.steps는 받기만 한다(보드가 돌리지 않는다)`); }
     if (x.task != null && (typeof x.task !== 'string' || !x.task.trim())) return bad(`${at}.task는 글이다(every 회의 첫 일 글)`);
@@ -184,6 +185,13 @@ export function finishLoops(raw, fl, cycles, docs, lineOf, { cycleMinMs = 360000
   return { ok: true, loops, warnings };
 }
 
+// P222: 회의 첫 일 글 끝에 붙이는 산출물 안내(produces가 있는 고리)
+export function producesLines(loop, docs) {
+  const ps = (loop.produces || []).filter((n) => docs[n] && docs[n].rel);
+  if (!ps.length) return [];
+  const dirs = ps.map((n) => `${n}(${docs[n].rel.endsWith('/') ? docs[n].rel : `${docs[n].rel}/`})`);
+  return ['', `산출물 섹터: ${dirs.join(', ')}. 만든 파일은 그 폴더 안에 두고 닫을 때 낸다: atrium done ok "<보고>" --artifact <경로>(여럿이면 --artifact를 되풀이).`];
+}
 const WHO = { human: '사람', manager: '관리자 자리', remote: '연결한 기기', owner: '회의 주인' };
 export const whoText = (by) => WHO[by] || by || '?';
 const IMPROVE_STALE_MS = 24 * 60 * 60 * 1000;
@@ -372,7 +380,7 @@ export class RigLoops {
       const intro = `${head} ${utc(since)}부터 ${utc(now)}까지(UTC)의 rig 장부 요약을 읽고, ${holds.length ? `이 고리가 쥔 문서(${holds.join(', ')})와 ` : ''}정의(.atrium/rig.json)·안내·정본에 고칠 것이 있으면 고친다(고친 정의는 버전으로 남는다: atrium rig log, atrium rig check). 끝나면 done으로 한 일을 보고한다.`;
       return body.replace(/^[^\n]*/, intro);
     }
-    return [head, loop.task || '이 자리의 안내(atrium guide)와 문서를 따라 이번 회의 일을 하고, 끝나면 done으로 한 일을 보고한다.', ...(holds.length ? ['', `이 고리가 쥔 문서: ${holds.join(', ')}`] : [])].join('\n');
+    return [head, loop.task || '이 자리의 안내(atrium guide)와 문서를 따라 이번 회의 일을 하고, 끝나면 done으로 한 일을 보고한다.', ...(holds.length ? ['', `이 고리가 쥔 문서: ${holds.join(', ')}`] : []), ...producesLines(loop, docs)].join('\n');
   }
 
   // ---------- 멈추기·잇기(옛 F1-4) ----------
