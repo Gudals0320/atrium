@@ -189,7 +189,7 @@ export default {
     chgCommand: 'Command: {p}', chgPrompt: 'Prompt: {p}', chgWasState: 'Was {state}', chgKilled: 'Stopped on the board', chgRemoved: 'Removed from the board ({reason})',
     chgTerminalDown: { one: 'The terminal server stopped unexpectedly {n} time{up}', other: 'The terminal server stopped unexpectedly {n} times{up}' }, chgReattached: ' (reconnected)',
     chgBackendRestarts: { one: 'Backend restarted {n} time{down}', other: 'Backend restarted {n} times{down}' }, chgDownFor: ' (down for {s}s)', chgList: '{items}',
-    chgRigBuilderStop: 'Rig builder stopped without finishing: {what}', chgRigBuilder_idle_no_done: 'idle without a report', chgRigBuilder_turn_error: 'the turn ended with an error', chgRigBuilder_needs_human: 'waiting for your answer', chgRigBuilder_closed: 'the session closed', // P190
+    chgRigBuilderStop: 'Rig builder stopped without finishing: {what}', chgRigBuilder_idle_no_done: 'idle without a report', chgRigBuilder_turn_error: 'the turn ended with an error', chgRigBuilder_needs_human: 'waiting for your answer', chgRigBuilder_closed: 'the session closed', chgRigBuilder_exited: 'the agent exited', // P190
   },
   closeReason: {
     killed: 'Stopped on the board',
@@ -2934,5 +2934,14 @@ export default {
   topbar: { // P214: "+n" in the top bar tab row
     more: { one: 'Show {n} more workspace', other: 'Show {n} more workspaces' },
     moreHead: 'More workspaces',
+  },
+  rigRetry: { // P216: a seat session whose agent exited (only the shell is left) and relaunching its work
+    exited: 'Exited',
+    seatExited: '{n} exited',
+    tip: 'The agent of this seat session exited and only the shell is left. The work is still open. Relaunch hands the same work to a new session in the same seat.',
+    button: 'Relaunch',
+    buttonN: { one: 'Relaunch {n} work item', other: 'Relaunch {n} work items' },
+    done: { one: 'Case {id}: handed {n} work item to a new session.', other: 'Case {id}: handed {n} work items to new sessions.' },
+    fail: 'Could not relaunch: {error}',
   },
 };

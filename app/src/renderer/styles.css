@@ -2735,3 +2735,13 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-usage-dotsep { color: var(--chrome-text-2); margin: 0 1px; }
 /* 펼침: AGY가 보이는 몫이 무엇인지 한 줄 */
 .mt-usage-what { font-size: 11.5px; margin-top: -2px; }
+
+/* P216: 종료된 자리 세션(에이전트가 끝나 셸만 남음) — rig 띠의 "종료됨" 표시와 [다시 띄우기], 자리 머리의 종료 수, 요약 열 건 줄 아래 단추 */
+.mt-rb-mark.k-exited { border-color: color-mix(in srgb, var(--st-error) 75%, transparent); background: color-mix(in srgb, var(--st-error) 12%, transparent); color: #ffb3c1; cursor: default; justify-content: space-between; padding-right: 4px; }
+.mt-rb-mark.k-exited .rt { flex: none; margin: 0; padding: 2px 8px; border-radius: 5px; border: 1px solid color-mix(in srgb, var(--st-error) 70%, transparent); background: color-mix(in srgb, var(--st-error) 22%, transparent); color: #ffd6de; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.mt-rb-mark.k-exited .rt:hover { background: color-mix(in srgb, var(--st-error) 34%, transparent); }
+.mt-rb-mark.k-exited .rt:focus-visible { outline: 2px solid var(--accent, #8ab4f8); outline-offset: 1px; }
+.mt-rb-seat .sm .ex { color: var(--st-error); font-weight: 600; }
+.mt-mm-retry { display: block; margin: -2px 0 6px 22px; padding: 3px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--st-error) 65%, transparent); background: color-mix(in srgb, var(--st-error) 14%, transparent); color: #ffd6de; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mt-mm-retry:hover { background: color-mix(in srgb, var(--st-error) 26%, transparent); }
+.mt-mm-retry:focus-visible { outline: 2px solid var(--accent, #8ab4f8); outline-offset: 1px; }
