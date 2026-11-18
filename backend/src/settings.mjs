@@ -38,6 +38,8 @@ export const SETTINGS = {
   // P146: 성능 기록(진단). 켜면 창(데스크톱·웹)이 30초마다 판 움직임 요약(프레임 간격, 긴 작업, 휠 지연, 노드·터미널 수)을 백엔드 로그에 남긴다. 10분 뒤 저절로 꺼진다(perf-trace.mjs)
   perfTrace: { type: 'boolean', default: false, label: '성능 기록: 켜면 10분 동안 보드 움직임의 프레임·지연 요약(값만)을 백엔드 로그에 남깁니다. 시간이 지나면 저절로 꺼집니다.' },
   // P152: 미션 맵 모양(숨은 설정, 창의 설정 화면에 줄이 없다). territories = 영토 지도(기본, 무한 캔버스), classic = P149까지의 열 지도(되돌릴 길)
+  // P211: 구독 사용량 알림. 한 한도 창이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알린다(usage.mjs)
+  usageAlerts: { type: 'boolean', default: true, label: '구독 사용량 알림: 한 한도 창(5시간·주간 등)이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알립니다.' },
   missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
   // P114의 숨은 설정 terminalBackend는 P117에서 없앴다. P129·P132: 터미널 백엔드는 herdr-core(hc) 하나다. 판 기록(meta terminalBackend)은 옛 판 옮기기(herdr-migrate)만 쓴다
 };

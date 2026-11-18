@@ -137,7 +137,7 @@ export const ADAPTERS = {
         files.push({ file: `${dir}/AGENTS.md`, text: `${ctx.instructions.text}\n` });
         rules = ['--add-dir', dir];
       }
-      const args = [...(resumed ? ['--conversation', ctx.harnessSessionId] : []), ...(ctx.model ? ['--model', ctx.model] : []), ...rules, ...agySettingsArgs(ctx.launcherArgs || [])]; // P203: 판 설정(대체 화면)과 사용자 --settings를 합친다
+      const args = [...(resumed ? ['--conversation', ctx.harnessSessionId] : []), ...(ctx.model ? ['--model', ctx.model] : []), ...rules, ...agySettingsArgs(ctx.launcherArgs || [], AGY_BOARD_SETTINGS, undefined, ctx.statusLine || null)]; // P203: 판 설정(대체 화면)과 사용자 --settings를 합친다. P211: 판의 상태 줄 명령
       return { args, env: {}, files, harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
     isBoardLine: (argv) => argv.some((a) => /[\\/]agy$/.test(String(a))),
@@ -154,7 +154,9 @@ export const AGY_APPROVAL = {
 export const AGY_BOARD_SETTINGS = Object.freeze({ altScreenMode: 'always' });
 // 호출자 추가 인자의 --settings(글 JSON 또는 파일 경로, --settings=값도)를 판의 것과 하나로 합친다. 같은 키는 사용자 값이 이긴다.
 // 사용자 값을 읽지 못하면(JSON 객체가 아님, 파일 없음) 사용자 인자를 그대로 두고 판의 것은 넣지 않는다(AGY가 그 값을 판정한다)
-export function agySettingsArgs(args = [], board = AGY_BOARD_SETTINGS, readFile = (f) => fs.readFileSync(f, 'utf8')) {
+// P211: statusLine(사용자 statusLine | null → 판의 statusLine | null, usage.mjs agyStatusLine)이 있으면 statusLine 키만은 사용자 값이 이기지 않고
+//   판의 상태 줄 명령이 사용자 명령을 이어 부르게 합친다(사용자가 enabled false로 껐으면 사용자 값 그대로)
+export function agySettingsArgs(args = [], board = AGY_BOARD_SETTINGS, readFile = (f) => fs.readFileSync(f, 'utf8'), statusLine = null) {
   const rest = [];
   const user = [];
   for (let i = 0; i < args.length; i++) {
@@ -169,6 +171,11 @@ export function agySettingsArgs(args = [], board = AGY_BOARD_SETTINGS, readFile 
     try { o = JSON.parse(v.trim().startsWith('{') ? v : readFile(v)); } catch {}
     if (!o || typeof o !== 'object' || Array.isArray(o)) return [...args];
     merged = { ...merged, ...o };
+  }
+  if (typeof statusLine === 'function') {
+    const u = merged.statusLine && typeof merged.statusLine === 'object' && !Array.isArray(merged.statusLine) ? merged.statusLine : null;
+    const sl = statusLine(u);
+    if (sl) merged.statusLine = sl;
   }
   return [...rest, '--settings', JSON.stringify(merged)];
 }
@@ -208,7 +215,7 @@ export function harnessLaunch(o) {
   const a = adapterOf(o.kind);
   if (!a) throw Object.assign(new Error(`하네스가 아닙니다: ${o.kind}`), { code: 'bad_request' });
   if (o.connection && !protocolsOf(o.kind).includes(o.connection.protocol)) throw Object.assign(new Error(`${o.kind}는 연결 프로토콜 ${o.connection.protocol}을 쓰지 않습니다.`), { code: 'connection_protocol', key: 'connections.err.protocolMismatch', vars: { harness: o.kind, protocol: o.connection.protocol } });
-  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, connection: o.connection || null, connectionModels: o.connectionModels || [], filesDir: o.filesDir || null, forkFrom: o.forkFrom || null });
+  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, connection: o.connection || null, connectionModels: o.connectionModels || [], filesDir: o.filesDir || null, forkFrom: o.forkFrom || null, statusLine: o.statusLine || null }); // P211: statusLine(AGY 상태 줄 명령 만들기)
   // P115: 연결이 있는 pi는 -e 없이 띄우지 않는다(빠지면 pi가 조용히 다른 실제 제공자로 넘어간다)
   if (o.kind === 'pi' && o.connection && !r.args.includes('-e')) throw Object.assign(new Error('pi 연결 확장(-e)이 없어 띄우지 않았습니다.'), { code: 'pi_extension_missing', key: 'connections.err.piExtension' });
   const command = o.startWords && o.startWords.length ? [...o.startWords] : [a.command];

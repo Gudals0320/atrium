@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { envVar, terminalSessionVar } from '../src/config.mjs';
 import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP, PEER_RULE_SHORT, NEWS_LOG_MAX } from '../src/cli-contract.mjs'; // P204: 동료 소식 // P115: 계약(atrium help --json). P156: 관계 고르기 안내
+import { usageLines } from '../src/usage-text.mjs'; // P211: atrium usage
 
 // P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
 const HAND_OFF = '기다리지 않고 턴을 끝낸다. 끝나면 보드가 done 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다.';
@@ -153,6 +154,13 @@ async function main() {
   if (cmd === 'tool') return toolVerb(); // P183
   if (cmd === 'log' || cmd === 'news') return newsVerb(cmd); // P204
   if (cmd === 'rig') return rigVerb(); // P188
+  if (cmd === 'usage') { // P211: 구독 사용량
+    const u = await call('usage', {}, 20000);
+    if (flags.json) { say(JSON.stringify(u.result ?? { error: u.error }, null, 2)); if (u.error) process.exit(1); return; }
+    if (u.error) fail(`읽지 않았다(${u.error.code}): ${u.error.message}`);
+    for (const line of usageLines(u.result, u.result.at || Date.now())) say(line); // 보드의 지금 시각으로
+    return;
+  }
   if (cmd === 'child') {
     // P41: 따옴표 없이 친 여러 낱말 모델 이름(--model glm flash)은 뒤 낱말이 이름 자리로 새므로 멈춘다
     if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 여러 낱말 모델 이름은 따옴표로 묶는다: --model "glm flash"`, 2);

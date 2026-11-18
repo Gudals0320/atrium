@@ -7,7 +7,8 @@
 //     칩 "새 세션…"과 영역의 "+ 세션"은 첫 즐겨찾기 호출자를 고른 채로 연다.
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
-import { toast, getState, wsName, openDialog, goWhenOpen } from './store.js';
+import { toast, getState, wsName, openDialog, goWhenOpen, useStore } from './store.js';
+import { usageLeftText, UsageLeft } from './Usage.jsx'; // P211: 호출자 옆 그 구독의 남은 양
 import { useT, t, errText } from './lib/i18n.js';
 import { kindOf } from './lib/kinds.js';
 import { favoriteLaunchers, orderedLaunchers, previewLine } from './lib/launchers.js';
@@ -48,6 +49,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
   const info = api.info || {};
   const data = getState().launchers;
   const list = orderedLaunchers(data);
+  const usage = useStore((st) => st.usage); // P211
   const first = favoriteLaunchers(data)[0] || list[0] || null;
   const cur = getState().workspaces.find((w) => w.key === getState().currentWs);
   const [cwd, setCwd] = useState(cwd0 || (cur && cur.root) || info.defaultCwd || '');
@@ -104,11 +106,11 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
         {data && <>
           <label>{t('launchers.pick')}
             <select value={lid} onChange={(e) => pickLauncher(e.target.value)} data-field="launcher">
-              {list.map((l) => <option key={l.id} value={l.id}>{l.favorite ? '★ ' : ''}{l.name}</option>)}
+              {list.map((l) => <option key={l.id} value={l.id}>{l.favorite ? '★ ' : ''}{l.name}{usageLeftText(l, usage)}</option>)}
               <option value="">{t('launchers.custom')}</option>
             </select>
           </label>
-          {L && <div className="mt-ln-preview mono" data-role="launcher-preview" title={previewLine(L.preview, t('launchers.shellPreview'))}>{previewLine(L.preview, t('launchers.shellPreview'))}{L.preview && L.preview.env && L.preview.env.length ? <span className="dim">  · {t('launchers.envShort')}: {L.preview.env.join(', ')}</span> : null}</div>}
+          {L && <div className="mt-ln-preview mono" data-role="launcher-preview" title={previewLine(L.preview, t('launchers.shellPreview'))}>{previewLine(L.preview, t('launchers.shellPreview'))}{L.preview && L.preview.env && L.preview.env.length ? <span className="dim">  · {t('launchers.envShort')}: {L.preview.env.join(', ')}</span> : null}<UsageLeft l={L} /></div>}
         </>}
         {/* P48: 찾아보기. Electron 창은 OS 대화상자, 웹 화면은 PC 폴더 탐색기(window.mt.pickFolder) */}
         <label>{t('spawn.folder')}<span className="mt-row-wide"><input value={cwd} onChange={(e) => setCwd(e.target.value)} data-field="cwd" /><button type="button" className="mt-btn" data-action="spawn-browse" onClick={async () => { try { const p = await window.mt.pickFolder(); if (p) setCwd(p); } catch {} }}>{t('workspaces.browse')}</button></span></label>

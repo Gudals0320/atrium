@@ -14,7 +14,8 @@ export const slash = (p) => path.resolve(p).split(path.sep).join('/');
 // P115: settings는 설정 파일에 더할 값(연결의 apiKeyHelper 등). 판의 hook·env·승인 규칙이 이긴다
 // P189: amp는 rig 자리 세션의 증폭(rig-amp.mjs claudeSettingsAmp): { deny: [규칙], hooks: { <이벤트>: { timeout, onFailure? } } }.
 //   deny는 permissions.deny로, hooks는 그 이벤트의 hook 시간 제한(판이 기다려 답하는 PreToolUse·Stop)으로 들어간다. 없으면 지금과 같다
-export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, env = null, allow = [], settings: more = null, amp = null }) {
+// P211: statusLine은 판의 상태 줄 명령(usage.mjs claudeStatusLine: 사용량을 판에 알리고 사용자 상태 줄을 이어 부른다). 없으면 넣지 않는다
+export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, env = null, allow = [], settings: more = null, amp = null, statusLine = null }) {
   const hook = { type: 'http', url: hookUrl, timeout: timeoutSec, headers: { Authorization: `Bearer ${token}`, 'X-MT-Session': sessionId } };
   const hookOf = (e) => { const a = amp && amp.hooks && amp.hooks[e]; return a ? { ...hook, timeout: a.timeout, ...(a.onFailure ? { onFailure: a.onFailure } : {}) } : hook; };
   const settings = { ...(more || {}), hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [hookOf(e)] }]])) };
@@ -22,6 +23,7 @@ export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutS
   if (rules.length) settings.permissions = { allow: rules };
   if (amp && amp.deny && amp.deny.length) settings.permissions = { ...(settings.permissions || {}), deny: [...amp.deny] };
   if (env && Object.keys(env).length) settings.env = env;
+  if (statusLine) settings.statusLine = statusLine;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(settings, null, 2));
   return slash(file);
