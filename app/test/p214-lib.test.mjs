@@ -91,8 +91,8 @@ test('사용량 한 줄 꼴: 구독마다 보이는 창만, 값마다 색, 테�
   assert.deepEqual(pillLine(null, NOW), { parts: [], level: 'none' });
   assert.equal(pillLine({ providers: { codex: { windows: [{ id: '5h', usedPct: 70 }] } } }, NOW).level, 'warn');
   // 짧은 이름(두 사전): ko 5h·주, en 5h·wk
-  assert.equal(translate('ko', shortKey('5h')), '5h'); assert.equal(translate('ko', shortKey('week')), '주');
-  assert.equal(translate('en', shortKey('week')), 'wk'); assert.equal(shortKey('odd'), null);
+  assert.equal(translate('ko', shortKey('5h')), '5h'); assert.equal(translate('ko', shortKey('week')), '1W');
+  assert.equal(translate('en', shortKey('week')), '1W'); assert.equal(shortKey('odd'), null);
   assert.ok(translate('ko', 'usage.agyWhat').includes('Gemini')); assert.ok(translate('en', 'usage.agyWhat').includes('Gemini'));
   // 알약은 한 줄 꼴로 그린다(로고 + 짧은 이름 + 값). 휴대폰(compact)은 지금 모양 그대로
   const src = read('Usage.jsx');

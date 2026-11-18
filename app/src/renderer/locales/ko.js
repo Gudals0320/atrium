@@ -2928,7 +2928,7 @@ export default {
     alertsHint: '구독의 한 한도 창(5시간·주간 등)이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알립니다.',
     alertsSetOn: '사용량 알림을 켰습니다.',
     alertsSetOff: '사용량 알림을 껐습니다.',
-    short: { '5h': '5h', week: '주', day: '하루' }, // P214: 위 막대 알약 안 짧은 창 이름
+    short: { '5h': '5h', week: '1W', day: '하루' }, // P214: 위 막대 알약 안 짧은 창 이름. 주간은 1W(2026-11-18 사용자 요청)
     agyWhat: 'Antigravity CLI가 쓰는 몫(Gemini 모델 묶음)',
   },
   topbar: { // P214: 위 막대 탭 줄의 "+n"

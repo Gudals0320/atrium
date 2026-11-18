@@ -109,5 +109,5 @@ export function pillLine(view, now = Date.now()) {
   }
   return { parts, level };
 }
-// 알약 안 짧은 창 이름(사전 usage.short.*: ko 5h·주·하루, en 5h·wk·day). 모르는 창은 이름 그대로
+// 알약 안 짧은 창 이름(사전 usage.short.*: ko 5h·1W·하루, en 5h·1W·day). 모르는 창은 이름 그대로
 export const shortKey = (kind) => (kind === '5h' || kind === 'week' || kind === 'day' ? `usage.short.${kind}` : null);

@@ -2928,7 +2928,7 @@ export default {
     alertsHint: 'Alert once when a subscription limit window (5h, weekly, …) passes 90%, until that window resets.',
     alertsSetOn: 'Usage alerts on.',
     alertsSetOff: 'Usage alerts off.',
-    short: { '5h': '5h', week: 'wk', day: 'day' }, // P214: short window names inside the top bar pill
+    short: { '5h': '5h', week: '1W', day: 'day' }, // P214: short window names inside the top bar pill. Weekly is 1W (user request 2026-11-18)
     agyWhat: 'What Antigravity CLI uses (Gemini model pool)',
   },
   topbar: { // P214: "+n" in the top bar tab row
