@@ -252,11 +252,12 @@ export function staleOf(doc, stats, now = Date.now()) {
   if (!o || !o.exists || o.mtimeMs == null) return null;
   return { stale: o.mtimeMs > me.mtimeMs, why: `${doc.stale.afterChangeOf}가 바뀐 뒤 그대로면 오래됨` };
 }
-// 바꾼 쪽 고르기(순수 함수). o: { doc, abs(문서 절대 경로), dir, mtimeMs, now, writes: [{ abs, sessionId?, hook?, tool?, t }], sessions: [{ sessionId, name, seat, working(mtime 무렵 일하던가), caseId?, unitId?, tryId? }] }
+// 바꾼 쪽 고르기(순수 함수). o: { doc, abs(문서 절대 경로), dir, mtimeMs, since(앞 바뀜의 수정 시각: 그 전에 난 신호는 쓰지 않는다), now, writes: [{ abs, sessionId?, hook?, tool?, t }], sessions: [{ sessionId, name, seat, working(mtime 무렵 일하던가), caseId?, unitId?, tryId? }] }
 //   → { by: seat | session | hook | tool | human | unknown, basis, seat?, sessionId?, name?, hook?, tool?, candidates? }
-export function pickChanger({ abs, dir, mtimeMs, now = Date.now(), writes = [], sessions = [] }) {
+export function pickChanger({ abs, dir, mtimeMs, since = null, now = Date.now(), writes = [], sessions = [] }) {
   const hit = (f) => (dir ? insideOrSame(abs, f) : path.resolve(f).toLowerCase() === path.resolve(abs).toLowerCase());
-  const win = (t) => mtimeMs == null || Math.abs(t - mtimeMs) <= WRITE_NOTE_MS;
+  // P219 개발용 판: 사람이 손으로 고친 것이 2분 안의 앞선 자리 쓰기 신호에 붙었다. 앞 바뀜 뒤의 신호만 쓴다(쓴 신호는 RigDocs가 지운다)
+  const win = (t) => (mtimeMs == null || Math.abs(t - mtimeMs) <= WRITE_NOTE_MS) && (since == null || t > since);
   const w = writes.filter((x) => x.abs && hit(x.abs) && win(x.t)).sort((a, b) => b.t - a.t)[0];
   if (w) {
     if (w.hook != null) return { by: 'hook', basis: 'hook_ran', hook: w.hook };
@@ -362,15 +363,18 @@ export class RigDocs {
             continue;
           }
           if (prev.sig === cur.sig) continue;
-          await this.changed(w.key, r, d, abs, cur, { now }); n++;
+          await this.changed(w.key, r, d, abs, cur, { now, since: prev.mtimeMs }); n++;
         }
       }
     } finally { this.busy = false; }
     return n;
   }
-  async changed(key, r, d, abs, cur, { away = false, now = Date.now() } = {}) {
+  async changed(key, r, d, abs, cur, { away = false, now = Date.now(), since = null } = {}) {
     const sessions = this.sessionsAt(key, cur.mtimeMs);
-    const who = away ? { by: 'unknown', basis: 'while_away' } : pickChanger({ abs, dir: d.dir, mtimeMs: cur.mtimeMs, now, writes: this.writes, sessions });
+    const who = away ? { by: 'unknown', basis: 'while_away' } : pickChanger({ abs, dir: d.dir, mtimeMs: cur.mtimeMs, since, now, writes: this.writes, sessions });
+    // 이 문서에 닿은 신호는 한 번 쓰고 지운다(다음 바뀜이 옛 신호에 붙지 않게)
+    const hitDoc = (f) => (d.dir ? insideOrSame(abs, f) : path.resolve(f).toLowerCase() === path.resolve(abs).toLowerCase());
+    this.writes = this.writes.filter((w) => !(w.abs && hitDoc(w.abs) && w.t <= now));
     const s = who.sessionId ? sessions.find((x) => x.sessionId === who.sessionId) || null : null;
     let git = null;
     if (d.git) {

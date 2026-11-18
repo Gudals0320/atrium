@@ -210,7 +210,9 @@ test('pickChanger: 도구 쓰기 신호 → 자리·rig 밖 세션·훅, 신호�
   assert.deepEqual(pickChanger({ abs, mtimeMs: 1000, writes: [{ abs, sessionId: 'a', t: 1000 }], sessions }), { by: 'seat', basis: 'post_tool', seat: 'keeper', sessionId: 'a', name: 'keeper' });
   assert.equal(pickChanger({ abs, mtimeMs: 1000, writes: [{ abs, sessionId: 'b', t: 900 }], sessions }).by, 'session');
   assert.deepEqual(pickChanger({ abs, mtimeMs: 1000, writes: [{ abs, hook: 0, t: 1000 }], sessions }), { by: 'hook', basis: 'hook_ran', hook: 0 });
-  // 다른 파일·오래된 신호는 쓰지 않는다
+  // 다른 파일·오래된 신호·앞 바뀜 전의 신호는 쓰지 않는다
+  assert.equal(pickChanger({ abs, mtimeMs: 5000, since: 2000, writes: [{ abs, sessionId: 'a', t: 1500 }], sessions }).by, 'human');
+  assert.equal(pickChanger({ abs, mtimeMs: 5000, since: 2000, writes: [{ abs, sessionId: 'a', t: 5100 }], sessions }).by, 'seat');
   assert.equal(pickChanger({ abs, mtimeMs: 1000, writes: [{ abs: path.resolve('/w/other.md'), sessionId: 'a', t: 1000 }], sessions }).by, 'human');
   assert.equal(pickChanger({ abs, mtimeMs: 10 * 60 * 1000, writes: [{ abs, sessionId: 'a', t: 0 }], sessions }).by, 'human');
   // 폴더 문서는 안의 파일
@@ -321,8 +323,9 @@ test('판: 문서 바뀜과 바꾼 쪽(자리·rig 밖 세션·사람), 쥔 쪽�
     await D.scan();
     rows = ledger(b, ws.key, { kinds: ['doc_changed', 'doc_foreign_write'] }).slice(3);
     assert.deepEqual(rows.map((r) => [r.kind, r.value]), [['doc_changed', 'session'], ['doc_foreign_write', '@outsider']]);
-    // 4) 신호 없이, 일하는 세션 없이 바뀜 → 사람(경고 없음)
-    D.writes = [];
+    // 4) 신호 없이, 일하는 세션 없이 바뀜 → 사람(경고 없음). 앞의 신호는 쓰였으니 남아 있지 않다
+    assert.equal(D.writes.length, 0, '쓴 신호는 지운다');
+    D.noteWrite({ abs: rules, sessionId: k.sessionId, t: Date.now() - 60000 }); // 앞 바뀜 전의 신호(지난 것)
     bump(rules, '- 사람이 고침\n');
     await D.scan();
     rows = ledger(b, ws.key, { kinds: ['doc_changed', 'doc_foreign_write'] }).slice(5);
