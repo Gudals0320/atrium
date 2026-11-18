@@ -12,13 +12,15 @@ const KINDS = new Set(['app', 'web', 'phone']);
 const num = (v, max = 1e7) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-max, Math.min(max, Math.round(v * 100) / 100)) : null);
 // 받는 필드와 그 모양. 숫자 묶음은 정한 키만, 그 밖의 것은 버린다
 const STAT_KEYS = ['n', 'p50', 'p95', 'max', 'over33', 'over50', 'ms', 'blockingMs', 'styleLayoutMs', 'scriptMs'];
-const GROUPS = ['frames', 'longTasks', 'loaf', 'wheel', 'nodes', 'renders', 'rebuild', 'view'];
+const GROUPS = ['frames', 'longTasks', 'loaf', 'wheel', 'nodes', 'renders', 'rebuild', 'view', 'map'];
 const GROUP_KEYS = {
   frames: STAT_KEYS, longTasks: STAT_KEYS, loaf: STAT_KEYS, wheel: STAT_KEYS,
   nodes: ['total', 'visible', 'sessions', 'convos', 'terms', 'attached', 'webgl', 'dom'],
   renders: ['session', 'convo', 'convoFar'],
   rebuild: ['n', 'same', 'changed'],
   view: ['zoom', 'w', 'h', 'dpr', 'hiddenMs', 'movingMs'],
+  // P210: 세션 맵(열려 있었는지, 배치 셈·그래프 읽기 횟수와 ms 합·최대, 카드 그리기 수)
+  map: ['open', 'layout', 'layoutMs', 'layoutMax', 'graph', 'graphMs', 'graphMax', 'cards'],
 };
 
 // 창이 보낸 요약에서 정한 숫자만 남긴다
