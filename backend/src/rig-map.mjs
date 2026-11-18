@@ -15,7 +15,7 @@ export const MAP_NODE_TYPES = ['seat', 'tool', 'cycle', 'file', 'human', 'builde
 export const MAP_EDGE_TYPES = ['assign', 'result', 'else', 'report', 'may', 'uses', 'writes', 'cycle', 'edits', 'instruct', 'loads', 'reads', 'records'];
 export const MAP_NOW_STATES = ['working', 'idle_no_done', 'human_turn', 'queued', 'stopped', 'waiting_owner', 'blocked'];
 const LIVE = new Set(['open', 'blocked', 'waiting_owner']);
-const STEP_KINDS = new Set(['assign', 'handoff', 'report', 'escalate', 'cycle']); // 넘김 차례(passed.steps)에 드는 kind
+const STEP_KINDS = new Set(['assign', 'handoff', 'report', 'escalate', 'cycle', 'loop_trigger']); // P221: loop_trigger(고리의 계기가 회를 엶) // 넘김 차례(passed.steps)에 드는 kind
 const HUMAN_STATES = new Set(['waiting', 'trust_wait']);
 const NOW_LABEL = { working: '일하는 중', idle_no_done: '보고 없이 쉼', human_turn: '사람 차례', queued: '자리 줄 대기', stopped: '멈춤', waiting_owner: '주인 차례', blocked: '막힘' };
 
@@ -160,7 +160,11 @@ export function foldCases(events) {
     if (!c) { c = { id: e.caseId, owner: null, ownerSeat: null, state: 'open', defN: e.defN ?? null, createdAt: e.t, lastAt: e.t, lastStepSeq: 0, steps: [], units: new Map(), gates: [], blocked: null, stateAt: e.t, humanSeats: new Set(), toolUses: new Set() }; out.set(e.caseId, c); }
     c.lastAt = e.t;
     const k = e.kind;
-    if (k === 'case_open') { c.owner = e.session; c.ownerSeat = e.seat; c.createdAt = e.t; c.defN = e.defN ?? c.defN; c.state = 'open'; c.stateAt = e.t; continue; }
+    if (k === 'case_open') { c.owner = e.session; c.ownerSeat = e.seat; c.createdAt = e.t; c.defN = e.defN ?? c.defN; c.state = 'open'; c.stateAt = e.t; c.loop = (e.data && e.data.loop) || null; c.name = (e.data && e.data.name) || null; continue; }
+    // P221: 회 이름(붙임·고침)과 회 멈춤·잇기
+    if (k === 'run_named') { c.name = (e.data && e.data.name) || c.name; continue; }
+    if (k === 'run_paused') { c.paused = { at: e.t, by: (e.data && e.data.by) || null }; continue; }
+    if (k === 'run_resumed') { c.paused = null; continue; }
     if (k.startsWith('case_')) {
       c.state = k === 'case_resumed' ? 'open' : k.slice(5); c.stateAt = e.t;
       c.blocked = k === 'case_blocked' ? e.text : k === 'case_resumed' ? null : c.blocked;
@@ -171,7 +175,7 @@ export function foldCases(events) {
       const edge = stepEdge(e);
       c.steps.push({ n: c.steps.length + 1, kind: k, edge, seq: e.seq, t: e.t, value: e.value, from: e.fromSeat || (k === 'cycle' && e.data && e.data.cycle != null ? `cycle:${e.data.cycle}` : null), to: e.toSeat, session: e.session || null });
       c.lastStepSeq = e.seq;
-      const to = k === 'cycle' ? e.toSeat || e.seat : e.toSeat;
+      const to = k === 'cycle' || k === 'loop_trigger' ? e.toSeat || e.seat : e.toSeat;
       if (e.unitId && to && to !== OWNER && k !== 'report') c.units.set(e.unitId, { unit: e.unitId, seat: to, session: (e.data && e.data.to) || (k === 'cycle' ? e.session : null), state: e.data && e.data.queued ? 'queued' : 'assigned', since: e.t, reason: null });
       continue;
     }
@@ -194,6 +198,7 @@ export function stepEdge(e) {
   if (e.kind === 'escalate') return e.line != null && e.toSeat ? E.else(e.line) : null;
   if (e.kind === 'report') { if (e.line != null) { const to = e.data && e.data.ownerSeat; return to ? E.result(e.line, to) : null; } return e.fromSeat ? E.report(e.fromSeat) : null; }
   if (e.kind === 'cycle') { const i = e.data && e.data.cycle != null ? e.data.cycle : e.ref; return i != null ? E.cycle(i) : null; }
+  if (e.kind === 'loop_trigger') return e.value === 'request' && e.data && e.data.from === 'human' && e.toSeat ? E.instruct(e.toSeat) : null; // P221: 사람의 요청 → 입구 자리
   return null;
 }
 // 관문 줄이 걸린 변이나 마디 → { edge } | { node } | null
@@ -306,8 +311,8 @@ export function buildRigMap({ ws, def, n = null, hash = null, caseId = null, pro
   if (pick) addAdhoc(graph, pick, def);
   const overlay = pick ? overlayOf(pick, graph, def, live) : null;
   const ovs = new Map(all.map((c) => [c.id, c === pick ? overlay : overlayOf(c, graph, def, live)]));
-  const cases = all.slice().sort((a, b) => b.createdAt - a.createdAt).map((c) => ({ id: c.id, name: null, state: c.state, owner: c.owner && live.nameOf ? live.nameOf(c.owner) : c.owner, ownerSession: c.owner, ownerSeat: c.ownerSeat, defN: c.defN, createdAt: c.createdAt, lastAt: c.lastAt, at: ovs.get(c.id).now.map((x) => x.node) }));
-  const others = open.filter((c) => c !== pick).map((c) => { const ov = ovs.get(c.id); return { case: c.id, name: null, state: ov.now[0] ? ov.now[0].state : c.state, ...whereOf(c, ov) }; });
+  const cases = all.slice().sort((a, b) => b.createdAt - a.createdAt).map((c) => ({ id: c.id, name: c.name || null, loop: c.loop || null, paused: c.paused || null, state: c.state, owner: c.owner && live.nameOf ? live.nameOf(c.owner) : c.owner, ownerSession: c.owner, ownerSeat: c.ownerSeat, defN: c.defN, createdAt: c.createdAt, lastAt: c.lastAt, at: ovs.get(c.id).now.map((x) => x.node) }));
+  const others = open.filter((c) => c !== pick).map((c) => { const ov = ovs.get(c.id); return { case: c.id, name: c.name || null, state: ov.now[0] ? ov.now[0].state : c.state, ...whereOf(c, ov) }; });
   // 사람 차례(18.6 human.meta.turns): 막힌 건, 사람의 답을 기다리는 자리 세션(F1-3 사람 자리도 여기에 더한다)
   const turns = [];
   for (const c of open) for (const x of ovs.get(c.id).now) {
@@ -359,6 +364,9 @@ export class RigMap {
       if (node.type === 'builder' && b.rigSetup && b.rigSetup.isWorkspaceBuilder) node.meta.sessions = [...b.sessions.values()].filter((s) => s.workspaceKey === key && (() => { try { return b.rigSetup.isWorkspaceBuilder(s); } catch { return false; } })()).map((s) => ({ sessionId: s.sessionId, name: shownName(s) || s.name, state: live.stateOf(s.sessionId) }));
     }
     out.seq = last;
+    // P221: 고리 목록과 상태(구조 지도 2(R4)가 그린다). 고리 멈춤은 장부가 아니라 지금 상태라 부를 때마다
+    out.loops = b.branch && b.branch.flow && b.branch.flow.loops ? b.branch.flow.loops.view(key, base.def) : [];
+    for (const c of out.cases || []) if (!c.paused && c.loop && out.loops.some((l) => l.name === c.loop && l.paused)) c.paused = { at: null, by: 'loop' };
     return out;
   }
 }

@@ -20,6 +20,10 @@ export const RIG_EVENT_KINDS = [
   'rig_enabled', 'rig_disabled', 'rig_version', 'rig_invalid', 'rig_protected', 'rig_rollback', 'cycle', 'cleanup',
   // P219: rig 2 문서(rig2-design 5절). doc_stale은 목록에만 있다(stale은 지금 표시만, 알림은 뒤)
   'doc_load', 'doc_changed', 'doc_foreign_write', 'doc_stale',
+  // P221: rig 2 고리(rig2-design 5절). 회 열림·끝남은 case_open·case_done에 data.loop(run_open·run_end를 따로 두지 않는다)
+  //   loop_trigger(계기가 걸림, value request | every), loop_skip(건너뜀·붙잡음, value paused | running | no_session | spawn_failed), loop_next(다음 실행 시각),
+  //   loop_paused·loop_resumed(고리 멈춤·잇기), run_paused·run_resumed(회 멈춤·잇기), run_named(회 이름 붙임·고침, value auto | human | owner | manager)
+  'loop_trigger', 'loop_skip', 'loop_next', 'loop_paused', 'loop_resumed', 'run_paused', 'run_resumed', 'run_named',
 ];
 const KINDS = new Set(RIG_EVENT_KINDS);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];

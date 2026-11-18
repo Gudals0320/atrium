@@ -1,0 +1,67 @@
+{
+  "version": 2,
+  "name": "rules-grow-loop",
+  "docs": {
+    "rules": {
+      "path": "docs/rules.md",
+      "role": "canon",
+      "load": "always"
+    },
+    "facts": {
+      "path": "docs/facts.md",
+      "role": "canon",
+      "stale": {
+        "after_change_of": "rules"
+      }
+    },
+    "corrections": {
+      "path": "ledger/corrections.jsonl",
+      "role": "ledger",
+      "git": false,
+      "owner": "retro"
+    },
+    "proposals": {
+      "path": ".atrium/proposals/",
+      "role": "sector",
+      "intake": "register"
+    }
+  },
+  "seats": {
+    "main": {
+      "launcher": "claude",
+      "session": "keep",
+      "guide": ".atrium/seats/main.txt",
+      "reads": [
+        "facts"
+      ],
+      "writes": [
+        "corrections"
+      ]
+    }
+  },
+  "loops": {
+    "work": {
+      "kind": "work",
+      "trigger": {
+        "request": "main"
+      },
+      "entry": "main"
+    },
+    "retro": {
+      "kind": "improve",
+      "trigger": {
+        "every": "7d",
+        "notify": "main"
+      },
+      "entry": "main",
+      "reads": [
+        "corrections"
+      ],
+      "produces": [
+        "proposals"
+      ],
+      "approve": "human"
+    }
+  },
+  "manager": "main"
+}

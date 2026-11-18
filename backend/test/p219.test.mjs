@@ -129,7 +129,7 @@ test('v2 정의: docs·loads·reads·writes·records를 읽고, load always는 �
   assert.deepEqual(d.docs.facts.stale, { afterChangeOf: 'rules' });
   assert.deepEqual(d.seatDocs.keeper, { loads: ['rules'], reads: ['facts'], writes: ['corrections'] });
   assert.deepEqual(d.hookDocs[0], { records: ['corrections'], reads: [] });
-  assert.ok(d.warnings.some((w) => /owner\(retro\)는 R2/.test(w)), '받기만 하는 owner 경고');
+  assert.ok(d.warnings.some((w) => /owner\(retro\)는 고리 이름이다\. 이 정의에는 그 고리가 없다/.test(w)), 'P221: owner는 고리 이름(loops 없는 정의에 retro 고리가 없다)');
   assert.deepEqual(holdersOf(d, 'corrections'), { seats: ['keeper'], hooks: [0], tools: [] });
   assert.deepEqual(holdersOf(d, 'rules'), { seats: [], hooks: [], tools: [] });
 });
@@ -309,7 +309,7 @@ test('판: 문서 바뀜과 바꾼 쪽(자리·rig 밖 세션·사람), 쥔 쪽�
     let rows = ledger(b, ws.key, { kinds: ['doc_changed', 'doc_foreign_write'] });
     assert.equal(rows.length, 1);
     assert.equal(rows[0].kind, 'doc_changed'); assert.equal(rows[0].value, 'seat'); assert.equal(rows[0].seat, 'keeper'); assert.equal(rows[0].session, k.sessionId); assert.equal(rows[0].actor, 'agent');
-    assert.equal(rows[0].data.doc, 'corrections'); assert.equal(rows[0].data.basis, 'post_tool');
+    assert.equal(rows[0].data.doc, 'corrections'); assert.equal(rows[0].data.signal, 'post_tool'); assert.equal(rows[0].data.basis, 'agent_working'); // P221: basis는 넷 가운데 하나, 고른 신호는 signal
     // 2) keeper가 정본(rules)을 씀(상대 경로 신호) → 자리 + 쥔 쪽 아님 경고
     D.noteToolHook(k, { tool_name: 'Edit', tool_input: { file_path: 'docs/rules.txt' } });
     bump(rules, '- 새 규칙\n');
@@ -335,14 +335,14 @@ test('판: 문서 바뀜과 바꾼 쪽(자리·rig 밖 세션·사람), 쥔 쪽�
     bump(rules, '- 셸로 고침\n');
     await D.scan();
     const w = ledger(b, ws.key, { kinds: ['doc_changed'] }).pop();
-    assert.equal(w.value, 'seat'); assert.equal(w.data.basis, 'working');
+    assert.equal(w.value, 'seat'); assert.equal(w.data.signal, 'working'); assert.ok(['agent_working', 'case_run'].includes(w.data.basis));
     applyTermStatus(k.rt, 'idle');
     // 6) 판이 다시 뜸(새 RigDocs): 장부의 마지막 서명과 다르면 쉬는 동안 바뀐 것(모름)
     const D2 = new RigDocs(b, { pollMs: 50 });
     bump(corr, '{"x":3}\n', Date.now() + 5000);
     assert.equal(await D2.scan(), 1);
     const away = ledger(b, ws.key, { kinds: ['doc_changed'] }).pop();
-    assert.equal(away.value, 'unknown'); assert.equal(away.data.basis, 'while_away');
+    assert.equal(away.value, 'unknown'); assert.equal(away.data.signal, 'while_away'); assert.ok(['no_agent_working', 'git_author'].includes(away.data.basis));
     assert.equal(await D2.scan(), 0, '같은 서명이면 다시 남기지 않는다');
     // rig가 꺼지면 보지 않는다
     b.store.setRigEnabled(ws.key, false);

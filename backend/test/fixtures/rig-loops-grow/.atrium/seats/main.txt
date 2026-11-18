@@ -1,0 +1,1 @@
+Main seat (keep): each request is one run. Follow docs/rules.md, check docs/facts.md when needed, append one line to ledger/corrections.jsonl when the person corrects you, then atrium done ok "<one line>".

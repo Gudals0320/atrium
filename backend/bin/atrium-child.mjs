@@ -17,7 +17,7 @@
 //       atrium log "<한 줄>" [--json] · atrium news [<이름>] [--all] [--json]   (P204: 동료 소식)
 //       atrium guide [주제] [--json]   (P182: 자세한 사용법 + 켜진 rig의 안내. P190: guide rig는 보드 내장 rig 만들기 안내)
 //       atrium tool [--json] · atrium tool <이름> [인자…] · atrium tool --wait <실행 ID> · atrium tool --runs   (P183: rig 도구)
-//       atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>] [--json]   (P188: rig 정의 관리, 관리자 자리만. P190: check는 rig가 꺼진 워크스페이스면 누구나. P216: retry)
+//       atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>] | status | pause|resume <고리|회> | name <회> "<이름>" [--json]   (P188: rig 정의 관리, 관리자 자리만. P190: check는 rig가 꺼진 워크스페이스면 누구나. P216: retry. P221: status는 누구나, pause·resume은 관리자 자리, name은 관리자 자리와 회의 주인)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -87,6 +87,9 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       log로 버전과 버전마다 건·반려·훅 거절·상한 초과 수를 보고, rollback <n>으로 되돌리고(새 버전), cleanup <건>으로 끝난 건의 fresh 세션을 닫는다(워크트리는 목록만).
       retry <건> [<일>]은 에이전트가 끝나 셸만 남은(exited) 자리 세션의 일을 같은 자리의 새 세션에 다시 맡긴다(보드가 건 주인에게 그 명령을 알린다).
       열린 건은 만들 때의 버전을 따르고 새 버전은 새 건부터 쓴다. 사람만 고치는 자리·파일(사람이 보드의 rig 메뉴에서 정함)을 바꾸면 보드가 그 정의를 쓰지 않거나 도구를 멈춘다
+  atrium rig status              rig의 고리(작업·개선, 계기, 상태: 돎·기다림·멈춤·쉼, 마지막 회, 다음 실행)와 끝나지 않은 회(이름, 멈춤·막힘). 그 워크스페이스의 어느 세션이든 쓴다
+  atrium rig pause|resume <고리|회>   고리를 멈추면 새 회·넘김·자리 띄우기를 막고(일하는 세션은 그대로, 멈춘 동안 온 요청은 줄에 선다), 회를 멈추면 그 회의 새 넘김만 막는다. 관리자 자리만
+  atrium rig name <회> "<이름>"   회 이름을 고친다(보드가 첫 요청의 첫 줄에서 붙인다). 관리자 자리와 그 회의 주인
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
   PowerShell에서 atrium은 atrium.exe로 여러 줄·< > | & %를 그대로 넘긴다. Windows PowerShell 5.1(Codex)은 글 안의 큰따옴표를 빼먹고, cmd를 거치면(atrium.cmd) 여러 줄이 첫 줄만 간다. 그런 글은 --file로 준다
 ${RELATION_HELP.join('\n')}
@@ -417,8 +420,8 @@ async function toolVerb() {
 // ---------- P188: atrium rig check [파일] | log | rollback <n> | cleanup <건> (관리자 자리만) ----------
 async function rigVerb() {
   const op = rest[0];
-  const ops = ['check', 'log', 'rollback', 'cleanup', 'retry']; // P216: retry
-  if (!ops.includes(op)) fail(`사용: atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>]`, 2);
+  const ops = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name']; // P216: retry. P221: status·pause·resume·name
+  if (!ops.includes(op)) fail(`사용: atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>] | status | pause <고리|회> | resume <고리|회> | name <회> "<이름>"`, 2);
   const body = { op };
   if (op === 'check' && rest[1]) {
     const f = path.resolve(rest[1]);
@@ -430,12 +433,18 @@ async function rigVerb() {
   if (op === 'log' && flags.events) { body.events = true; for (const k of ['case', 'since', 'kinds', 'limit']) if (flags[k] != null) { if (flags[k] === undefined || flags[k] === '') fail(`--${k}에 값을 준다`, 2); body[k] = flags[k]; } }
   else if (op === 'log' && ['case', 'since', 'kinds'].some((k) => flags[k] != null)) fail('--case·--since·--kinds는 --events와 함께 쓴다: atrium rig log --events [--case 건]', 2);
   if (op === 'retry') { body.caseId = rest[1]; if (rest[2]) body.unitId = rest[2]; if (!body.caseId) fail('건 ID를 준다: atrium rig retry <건> [<일>]', 2); } // P216
+  if (op === 'pause' || op === 'resume') { body.target = rest[1]; if (!body.target) fail(`고리 이름이나 회 ID를 준다: atrium rig ${op} <고리|회> (목록: atrium rig status)`, 2); } // P221
+  if (op === 'name') { body.caseId = rest[1]; body.name = rest.slice(2).join(' '); if (!body.caseId || !body.name.trim()) fail('회 ID와 이름을 준다: atrium rig name <회> "<이름>"', 2); }
   const r = await call('rig', body, 60000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   const x = r.result;
   if (flags.json) { say(JSON.stringify(x ?? { error: r.error }, null, 2)); if (r.error || (op === 'check' && x && !x.ok)) process.exitCode = 1; return; }
-  if (r.error) fail(`${op === 'check' ? '검사하지' : op === 'log' ? '읽지' : op === 'rollback' ? '되돌리지' : op === 'retry' ? '다시 맡기지' : '정리하지'} 않았다(${r.error.code}): ${r.error.message}`);
+  if (r.error) fail(`${op === 'check' ? '검사하지' : op === 'log' || op === 'status' ? '읽지' : op === 'rollback' ? '되돌리지' : op === 'retry' ? '다시 맡기지' : op === 'pause' ? '멈추지' : op === 'resume' ? '잇지' : op === 'name' ? '이름을 고치지' : '정리하지'} 않았다(${r.error.code}): ${r.error.message}`);
   const when = (t) => new Date(t).toLocaleString();
+  if (op === 'status') return printRigStatus(x); // P221
+  if (op === 'pause') return say(x.loop ? `고리 ${x.loop}${x.already ? '는 이미 멈춰 있다' : '를 멈췄다'}: 새 회(계기)·넘김·자리 띄우기를 막는다. 일하는 세션은 그대로 돈다. 잇기: atrium rig resume ${x.loop}` : `회 ${x.case}${x.name ? ` "${x.name}"` : ''}${x.already ? '는 이미 멈춰 있다' : '를 멈췄다'}: 이 회의 새 넘김만 막는다. 잇기: atrium rig resume ${x.case}`);
+  if (op === 'resume') return say(x.already ? `${x.loop ? `고리 ${x.loop}` : `회 ${x.case}`}는 멈춰 있지 않다.` : x.loop ? `고리 ${x.loop}를 이었다. 붙잡은 넘김 ${x.released}개를 넘기고, 줄 선 요청 ${x.opened.length}개로 회를 열었다${x.opened.length ? `(${x.opened.map((y) => y.case).join(', ')})` : ''}.` : `회 ${x.case}를 이었다. 붙잡은 넘김 ${x.released}개를 넘겼다${x.loopPaused ? `(고리 ${x.loopPaused}가 아직 멈춰 있어 넘김은 고리를 이을 때 간다)` : ''}.`);
+  if (op === 'name') return say(`회 ${x.case}의 이름: "${x.name}"${x.before ? `(전: "${x.before}")` : ''}`);
   if (op === 'check') {
     if (x.ok) say(`맞다: ${x.from}(해시 ${String(x.hash).slice(0, 12)}${x.same ? ', 지금 버전과 같은 내용' : ''}). 지금 버전 ${x.current.n ?? '-'}. 자리 ${x.summary.seats.join(', ') || '없음'} · 흐름 줄 ${x.summary.flow} · 훅 ${x.summary.hooks} · 도구 ${x.summary.tools.join(', ') || '없음'} · 느린 고리 ${x.summary.cycles.join(', ') || '없음'} · manager ${x.summary.manager || '없음'}`);
     else { say(`맞지 않다: ${x.from}: ${x.reason}`); process.exitCode = 1; }
@@ -462,6 +471,20 @@ async function rigVerb() {
   say(`건 ${x.caseId} 정리: 닫음 ${x.closed.length ? x.closed.map((y) => `@${y.name}`).join(', ') : '없음'}${x.kept.length ? ` · 남김 ${x.kept.map((y) => `@${y.name}(${y.why})`).join(', ')}` : ''}`);
   if (x.worktrees.length) { say('이 건의 워크트리(보드는 지우지 않는다. 합칠 것을 확인한 뒤 git worktree remove):'); for (const w of x.worktrees) say(`  ${w.name} ${w.path || ''}${w.exists ? '' : ' (없음)'}`); }
   else say('이 건의 워크트리: 없음');
+}
+// P221: atrium rig status(고리와 끝나지 않은 회)
+const LOOP_STATE = { running: '돎', waiting: '기다림', paused: '멈춤', idle: '쉼' };
+function printRigStatus(x) {
+  say(`rig: ${x.state}${x.version != null ? ` · 정의 v${x.version}` : ''}${x.format ? ` · 형식 ${x.format}` : ''}`);
+  if (!x.loops.length) say('  고리: 없음');
+  for (const l of x.loops) {
+    const trig = l.trigger.type === 'request' ? `요청 → ${l.entry}` : l.trigger.type === 'every' ? `${l.trigger.every}마다 → ${l.entry}` : `사건 ${l.trigger.event}(받기만)`;
+    const st = `${LOOP_STATE[l.state] || l.state}${l.paused ? `(${l.paused.by === 'manager' ? '관리자 자리' : '사람'}가 멈춤)` : l.why === 'no_session' ? '(입구 자리에 앉은 세션 없음)' : ''}`;
+    say(`  고리 ${l.name}(${l.kind === 'work' ? '작업' : '개선'}${l.implicit ? ', 정의의 flow·cycles에서 읽음' : ''}) · ${trig} · ${st} · 회 ${l.runs.live}/${l.runs.total}${l.lastRun ? ` · 마지막 회 ${l.lastRun.id}${l.lastRun.name ? ` "${l.lastRun.name}"` : ''} ${l.lastRun.state}` : ''}${l.nextAt ? ` · 다음 ${new Date(l.nextAt).toLocaleString()}` : ''}${l.held ? ` · 줄 선 요청 ${l.held}` : ''}${l.holds.length ? ` · 쥔 문서 ${l.holds.join(', ')}` : ''}`);
+  }
+  if (!x.runs.length) return say('  끝나지 않은 회: 없음');
+  say(`  끝나지 않은 회 ${x.runs.length}개:`);
+  for (const c of x.runs) say(`    ${c.id}${c.name ? ` "${c.name}"` : ''} · 고리 ${c.loop || '-'} · ${c.state === 'blocked' ? `막힘${c.blockedReason ? `(${c.blockedReason})` : ''}` : c.state}${c.paused ? ` · 멈춤(${c.paused.by === 'loop' ? `고리 ${c.paused.loop}가 멈춤` : '이 회를 멈춤'}${c.held ? `, 붙잡은 넘김 ${c.held}` : ''})` : ''} · 주인 @${c.owner}`);
 }
 // 도구 실행의 종료 코드: 아직 돈다 3, 도구가 0으로 끝남 0, 그 밖(0이 아님, 시간 제한, 띄우지 못함, lost) 1
 function toolExit(run) { return run.status === 'running' ? 3 : run.status === 'done' && run.exitCode === 0 ? 0 : 1; }
@@ -618,12 +641,13 @@ function printMe(x) {
 // P185: rig 자리 요약(atrium me·guide)
 function printSeat(r) {
   if (!r.active) return say(`rig 자리: ${r.seat}(지금 rig가 꺼졌거나 정의에 그 자리가 없어 자리 규칙이 쓰이지 않는다)`);
-  say(`rig 자리: ${r.seat}(${r.session}${r.worktree ? ', 일마다 워크트리' : ''})${r.case ? ` · 건 ${r.case.id} ${r.case.state}(주인 @${r.case.owner})` : ''}`);
+  say(`rig 자리: ${r.seat}(${r.session}${r.worktree ? ', 일마다 워크트리' : ''})${r.case ? ` · 회 ${r.case.id}${r.case.name ? ` "${r.case.name}"` : ''}${r.case.loop ? `(고리 ${r.case.loop})` : ''} ${r.case.state}${r.case.paused ? '·멈춤' : ''}(주인 @${r.case.owner})` : ''}`); // P221: 회 이름·고리
+  if (r.case && r.owner) say(`  너는 이 회의 주인이다: 회 이름 고치기 atrium rig name ${r.case.id} "<이름>"`);
   say(`  끝내기: atrium done <값> "<보고>". 값: ${r.results.join(', ')}${r.next && r.next.length ? ` · 다음: ${r.next.map((n) => `${n.on} → ${n.to.join(', ')}${n.max != null ? `(최대 ${n.max}번, 넘으면 ${n.else || 'manager'})` : ''}`).join(' · ')}` : ''}`);
   say(`  보낼 수 있는 자리: 일 맡기기 ${r.assign.length ? r.assign.join(', ') : '없음'} · 글만 ${r.may.length ? r.may.join(', ') : '없음'}${r.manager && !r.may.includes('*') ? ' · rig 밖 세션에 글만(관리자 자리)' : ''}(atrium prompt <자리> "…"). 그 밖은 보드가 거절한다${r.tools ? ` · 도구: ${r.tools.join(', ') || '없음'}` : ''}`);
   if (r.owned && r.owned.length) say(`  네가 주인인 건: ${r.owned.map((c) => `${c.id} ${c.state}`).join(', ')}${r.owned.some((c) => c.state === 'waiting_owner') ? ' · waiting_owner는 너의 답을 기다린다: 다음 atrium prompt <자리>가 잇는다(여럿이면 --case <건>)' : ''}`); // P194
   if (r.docs) say(`  문서: 먼저 읽음 ${r.docs.loads.map((d) => d.path).join(', ') || '없음'} · 필요할 때 ${r.docs.reads.map((d) => d.path).join(', ') || '없음'}${r.writesDocs && r.writesDocs.length ? ` · 쓰는 문서 ${r.writesDocs.join(', ')}` : ''}`); // P219
-  if (r.manager) say(`  너는 관리자 자리다(정의 버전 ${r.version ?? '-'}): .atrium/rig.json을 직접 고치고, atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>]을 쓴다`); // P188. P216: retry
+  if (r.manager) say(`  너는 관리자 자리다(정의 버전 ${r.version ?? '-'}): .atrium/rig.json을 직접 고치고, atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>] | status | pause|resume <고리|회> | name <회> "<이름>"을 쓴다`); // P188. P216: retry. P221: 고리
 }
 // P156: atrium relate
 const REL_WORD = { sub: '하위', peer: '동료', none: '독립', auto: '자동' };

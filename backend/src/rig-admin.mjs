@@ -21,7 +21,7 @@ import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
-export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry']; // P216: retry
+export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name']; // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
 export const RIG_READ_OPS = ['check', 'log']; // P209: 읽기만(제작 세션도 쓴다)
 
 export class RigAdmin {
@@ -41,6 +41,13 @@ export class RigAdmin {
     const op = String(o.op || '');
     if (!RIG_ADMIN_OPS.includes(op)) throw apiError('bad_request', `atrium rig: ${RIG_ADMIN_OPS.join(' | ')} 가운데 하나다: ${op || '(없음)'}`);
     if (op === 'log' && o.events) return this.eventsVerb(s, o); // P217: 장부(18.2)
+    // P221: status는 읽기만이라 그 워크스페이스의 어느 판 세션이든. name은 관리자 자리와 그 회의 주인(입구 자리 세션)
+    if (op === 'status') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig status는 워크스페이스의 세션만 쓴다.'); return this.status(s.workspaceKey); }
+    if (op === 'name' && !this.isManager(s)) {
+      const c = this.store().getCase(String(o.caseId || o.case || '').trim());
+      if (!c || c.workspaceKey !== s.workspaceKey || c.owner !== s.sessionId) throw apiError('forbidden', `atrium rig name은 관리자 자리와 그 회의 주인(입구 자리 세션)이 쓴다${c && c.workspaceKey === s.workspaceKey ? `: 회 ${c.id}의 주인은 @${this.branch.units.nameOf(c.owner)}다` : ''}.`);
+      return this.branch.flow.loops.name(s.workspaceKey, c.id, o.name, { by: 'owner', who: s });
+    }
     // P190(16절): check는 읽기만이라 rig가 꺼진(또는 없는) 워크스페이스의 어느 판 세션이든 쓴다. 켜진 rig에서는 관리자 자리와 사람,
     //   그리고 사람이 맡긴 제작 일(rig.describe의 "말로 고치기")을 쥔 제작 세션
     // P209: 제작 세션(그 워크스페이스의 rig.describe 일을 받은 세션)은 제작 일을 닫은 뒤에도, rig가 켜져 있어도 읽기만 하는 check·log를 쓴다.
@@ -63,7 +70,20 @@ export class RigAdmin {
     if (op === 'rollback') return this.rollback(key, o.n, { by, who });
     if (op === 'cleanup') return this.cleanup(key, o.caseId || o.case, { by, who });
     if (op === 'retry') return this.branch.flow.retry(key, o.caseId || o.case, o.unitId || o.unit || null, { by, who }); // P216
+    if (op === 'status') return this.status(key); // P221
+    if (op === 'pause') return this.branch.flow.loops.pause(key, o.target, { by, who });
+    if (op === 'resume') return this.branch.flow.loops.resume(key, o.target, { by, who });
+    if (op === 'name') return this.branch.flow.loops.name(key, o.caseId || o.case, o.name, { by, who });
     throw apiError('bad_request', `모르는 일: ${op}`);
+  }
+
+  // P221: 고리와 끝나지 않은 회(atrium rig status, 판 API rig.loops보다 넓게) → { workspace, state, version, loops, runs }
+  status(key) {
+    const rig = this.rig(); const st = this.store(); const flow = this.branch.flow;
+    const r = rig.read(key);
+    const on = rig.enabled(key);
+    const runs = st.liveCasesOf ? st.liveCasesOf(key, 50).rows.map((c) => { const p = flow.loops.pauseOf(c); return { id: c.id, name: c.name || null, loop: c.loop || null, state: c.state, owner: this.branch.units.nameOf(c.owner), createdAt: c.createdAt, paused: p ? { by: p.by, loop: p.loop || null, who: p.who || null, at: p.at || null } : null, held: (c.held || []).length, blockedReason: c.blockedReason || null }; }) : [];
+    return { workspace: key, state: !r.present ? 'none' : !r.def ? 'invalid' : on ? 'on' : 'off', version: r.n ?? null, format: r.def ? r.def.version || 1 : null, loops: flow.loops.view(key, r.def), runs };
   }
 
   // 후보 정의 검사. o.text: 후보 내용(없으면 지금 rig.json). 적용하지 않는다
@@ -90,7 +110,7 @@ export class RigAdmin {
     out.warnings.push(...sn.warnings);
     if (sn.reason) return { ...out, ok: false, reason: sn.reason };
     if (hits.length) return { ...out, protectedHits: hits, reason: `사람만 고치는 자리를 바꾼다: ${hits.join(', ')}. 이대로 쓰면 보드가 이 정의를 쓰지 않는다(지금 버전을 그대로 쓴다).` };
-    return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), manager: v.def.manager, format: v.def.version || 1, docs: v.def.docs ? Object.values(v.def.docs).map((d) => ({ name: d.name, role: d.role, layer: d.layer, path: d.rel || d.path, watch: d.watch })) : [] } }; // P219: 문서
+    return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), loops: Object.values(v.def.loops || {}).map((l) => ({ name: l.name, kind: l.kind, implicit: !!l.implicit, trigger: l.trigger.type === 'request' ? `request → ${l.entry}` : l.trigger.type === 'every' ? `every ${l.trigger.every} → ${l.entry}` : `event ${l.trigger.event}`, entry: l.entry, lines: l.lines.length, holds: l.holds })), manager: v.def.manager, format: v.def.version || 1, docs: v.def.docs ? Object.values(v.def.docs).map((d) => ({ name: d.name, role: d.role, layer: d.layer, path: d.rel || d.path, watch: d.watch })) : [] } }; // P219: 문서
   }
 
   // P209: 자리 effort·model 검사(정의 검사가 모르는 것: 런처의 종류, 지금 앉은 세션) → { reason | null, warnings }

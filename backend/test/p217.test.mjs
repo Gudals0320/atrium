@@ -115,7 +115,8 @@ const kinds = (rows) => rows.map((r) => r.kind);
 
 // 설계 18.1의 kind 목록(지금 + 로드맵 0단계). 1단계 기능은 여기에 더한다
 const DESIGN_KINDS = ['case_open', 'case_waiting_owner', 'case_resumed', 'case_blocked', 'case_done', 'case_cancelled', 'assign', 'handoff', 'report', 'escalate', 'try_start', 'done', 'try_stopped', 'retried', 'gate', 'tool_start', 'tool_end', 'seat_spawn', 'seat_queue', 'seat_set', 'human_message', 'rig_enabled', 'rig_disabled', 'rig_version', 'rig_invalid', 'rig_protected', 'rig_rollback', 'cycle', 'cleanup',
-  'doc_load', 'doc_changed', 'doc_foreign_write', 'doc_stale']; // P219: rig 2 문서(rig2-design 5절)
+  'doc_load', 'doc_changed', 'doc_foreign_write', 'doc_stale', // P219: rig 2 문서(rig2-design 5절)
+  'loop_trigger', 'loop_skip', 'loop_next', 'loop_paused', 'loop_resumed', 'run_paused', 'run_resumed', 'run_named']; // P221: rig 2 고리(rig2-design 5절)
 
 test('P217 소스 검사: rig_events에 쓰는 곳은 rigEvent 하나(store.insertRigEvent는 rig-ledger.mjs만 부른다), SQL은 store-rig.mjs에만(키 옮기기는 store-merge.mjs)', () => {
   const dirs = [path.join(HERE, '..', 'src'), path.join(HERE, '..', 'bin')];

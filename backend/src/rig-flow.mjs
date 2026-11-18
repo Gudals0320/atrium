@@ -28,6 +28,7 @@ import { cleanEnv } from './proc-env.mjs';
 import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
 import { rigEvent, OWNER } from './rig-ledger.mjs'; // P217: 장부
 import { seatDocsOf, docsTail, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
+import { RigLoops, runNameOf, implicitCycleLoop } from './rig-loops.mjs'; // P221: 고리(계기, 회 이름, 멈추기·잇기)
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -133,6 +134,7 @@ export class RigFlow {
     if (b.store.seatWaitingAll && b.store.seatWaitingAll().length) { const t = setTimeout(() => this.pumpSoon(), 5000); if (t.unref) t.unref(); }
     // P188: 느린 고리. 다음 시각은 DB(rig_cycles)에 있고, 판이 꺼져 있던 동안 놓친 회는 한 번만 돈다
     this.cycleBusy = new Set(); this.cycleSkipNoted = new Set();
+    this.loops = new RigLoops(b, this); // P221: 고리(every 계기는 같은 타이머가 돈다)
     const tickMs = Math.max(1000, Math.min(30000, Math.floor((b.rig && b.rig.cycleMin ? b.rig.cycleMin() : 3600000) / 4)));
     if (b.cfg && b.cfg.rigCycles !== false) { this.cycleTimer = setInterval(() => { this.cycleTick().catch((e) => b.log('rig cycle error', e.stack)); }, tickMs); if (this.cycleTimer.unref) this.cycleTimer.unref(); }
   }
@@ -208,18 +210,23 @@ export class RigFlow {
   }
 
   // ---------- 건 ----------
-  newCase(key, owner, actor = 'agent') { // P217: actor(장부. 느린 고리가 만들면 cycle)
-    const c = { id: newId('c'), workspaceKey: key, owner: owner.sessionId, state: 'open', createdAt: Date.now(), edgeCounts: {}, versionN: this.b.rig ? this.b.rig.currentN(key) : null }; // P188: 건이 쥐는 버전
+  // P221: o { loop, name, trigger, spec } — 회의 고리(없으면 주인 자리로 고름)와 이름(없으면 spec의 첫 줄에서 뽑음)
+  newCase(key, owner, actor = 'agent', o = {}) { // P217: actor(장부. 느린 고리가 만들면 cycle)
+    const r = this.b.rig ? this.b.rig.active(key) : null;
+    const loop = o.loop !== undefined ? o.loop : r ? this.loops.loopForSeat(r.def, owner.rigSeat || null) : null;
+    const name = o.name || (o.spec ? runNameOf(o.spec) : null);
+    const c = { id: newId('c'), workspaceKey: key, owner: owner.sessionId, state: 'open', createdAt: Date.now(), edgeCounts: {}, versionN: this.b.rig ? this.b.rig.currentN(key) : null, loop: loop || null, name: name || null, nameBy: name ? 'auto' : null }; // P188: 건이 쥐는 버전
     this.store().insertCase(c);
-    this.store().addEvent(owner.sessionId, 'rig_case_open', { caseId: c.id, workspace: key, version: c.versionN });
-    rigEvent(this.b, { kind: 'case_open', ws: key, defN: c.versionN, caseId: c.id, seat: owner.rigSeat || null, session: owner.sessionId, actor, text: `주인 @${shownName(owner) || owner.name}` });
+    this.store().addEvent(owner.sessionId, 'rig_case_open', { caseId: c.id, workspace: key, version: c.versionN, ...(loop ? { loop } : {}) });
+    rigEvent(this.b, { kind: 'case_open', ws: key, defN: c.versionN, caseId: c.id, seat: owner.rigSeat || null, session: owner.sessionId, actor, text: `주인 @${shownName(owner) || owner.name}`, data: { loop: loop || null, name: name || null, trigger: o.trigger || null } }); // P221: run_open = case_open + data.loop
+    if (name) rigEvent(this.b, { kind: 'run_named', ws: key, defN: c.versionN, caseId: c.id, seat: owner.rigSeat || null, session: owner.sessionId, value: 'auto', actor: 'board', text: `"${name}"`, data: { name, before: null, by: 'auto', loop: loop || null } });
     this.b.log(`rig case ${c.id} open by ${owner.name}`);
     return this.store().getCase(c.id);
   }
   // 보낸 세션이 어떤 건의 열린 시도를 쥐고 있으면 그 건(blocked·waiting_owner였으면 다시 open).
   // P194: 아니면 보낸 세션이 주인인 waiting_owner 건이 정확히 하나일 때 그 건, 그 밖은 새 건.
   //   caseId(atrium prompt --case): 그 건을 고른다(이 워크스페이스, 끝나지 않은 건, 주인이거나 그 건의 열린 시도를 쥔 세션)
-  caseFor(caller, key, { caseId = null } = {}) {
+  caseFor(caller, key, { caseId = null, spec = null } = {}) { // P221: spec(새 건이면 회 이름을 뽑는다)
     const st = this.store();
     if (caseId) {
       const want = String(caseId).trim();
@@ -235,7 +242,7 @@ export class RigFlow {
     if (c && LIVE_CASE.has(c.state)) return this.resumeCase(c, caller, 'held');
     const waiting = st.waitingCasesOfOwner ? st.waitingCasesOfOwner(caller.sessionId, key) : [];
     if (waiting.length === 1) return this.resumeCase(waiting[0], caller, 'waiting_owner');
-    return this.newCase(key, caller);
+    return this.newCase(key, caller, 'agent', { spec });
   }
   // 끝나지 않은 건을 다시 open으로(blocked·waiting_owner였으면 기록)
   resumeCase(c, caller, why) {
@@ -260,6 +267,7 @@ export class RigFlow {
     const st = this.store(); const c = st.getCase(caseId);
     if (!c || c.state !== 'open') return c;
     if (st.openUnitsOfCaseCount(caseId) > 0) return c;
+    if (c.held && c.held.length) return c; // P221: 멈춘 동안 붙잡은 넘김이 있다(잇기가 넘긴다)
     if (c.ownerWait === 'report') {
       st.updateCase(caseId, { state: 'waiting_owner' });
       st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId, why: 'report', deliveryId: c.ownerWaitDelivery });
@@ -366,6 +374,8 @@ export class RigFlow {
     const b = this.b; const st = this.store(); const U = this.units();
     const owner = b.sessions.get(c.owner);
     if (!owner) throw apiError('closed', `건 ${c.id}의 주인 세션이 닫혀 일을 만들지 않는다.`);
+    const paused = this.loops.pauseOf(c); // P221: 멈춘 회·고리는 새 넘김을 만들지 않는다(막힘 blocked과 다르다)
+    if (paused) throw apiError('rig_paused', `rig: ${this.loops.pausedText(c, paused)}`, { caseId: c.id, loop: paused.loop || null });
     const seat = ctx.def.seats[seatName];
     const id = newId('u');
     const extra = { id, fromId: owner.sessionId, caseId: c.id, seat: seatName, via: { by: by.sessionId, fromSeat: this.seatCtx(by) ? by.rigSeat : null, ...(via || {}) } };
@@ -442,13 +452,22 @@ export class RigFlow {
     if (!ctx || !unit || !unit.caseId) return null;
     const c = this.store().getCase(unit.caseId);
     if (!c || !LIVE_CASE.has(c.state)) return null;
-    return { ctx, c, lines: ctx.def.flow.filter((l) => l.from === ctx.name && l.on === result) };
+    return { ctx, c, lines: this.loops.linesOf(ctx.def, c, ctx.def.flow.filter((l) => l.from === ctx.name && l.on === result)) }; // P221: 고리가 있으면 그 회의 고리 줄만
   }
   // done이 닫힌 뒤: 맞는 줄마다 넘김(상한), 건 확인, 자리 줄 넣기
   async afterDone(caller, unit, result, doneText, route) {
     const st = this.store();
     const { ctx } = route;
     let c = st.getCase(route.c.id);
+    // P221: 회나 그 고리가 멈췄으면 넘김을 회에 붙잡아 둔다(잇기가 넘긴다). 일은 이미 닫혔다
+    const paused = this.loops.pauseOf(c);
+    if (paused && route.lines.length) {
+      st.updateCase(c.id, { held: [...(c.held || []), { unitId: unit.id, session: caller.sessionId, seat: ctx.name, result, text: String(doneText || '') }] });
+      rigEvent(this.b, { kind: 'loop_skip', caseId: c.id, unitId: unit.id, seat: ctx.name, session: caller.sessionId, value: 'paused', actor: 'board', text: `${ctx.name} ${result}의 넘김을 붙잡음: ${this.loops.pausedText(c, paused)}`, data: { loop: c.loop, held: 'handoff', by: paused.by } });
+      this.b.log(`rig handoff held (${paused.by} paused) ${ctx.name} ${result} case ${c.id}`);
+      this.changed(ctx.key);
+      return { reports: [], held: true, paused };
+    }
     const firstSpec = (st.unitsOfCase(c.id)[0] || {}).spec || '';
     const reports = []; // P194: 건 주인에게 간 보고(일이 아니다)
     for (const line of route.lines) {
@@ -554,6 +573,7 @@ export class RigFlow {
           const r = b.rig ? b.rig.active(u.workspaceKey) : null;
           const cdef = r ? this.defOfCase(c, r) : null; // P188: 건의 버전
           const seat = cdef && cdef.seats ? cdef.seats[u.seat] : null;
+          if (c && LIVE_CASE.has(c.state) && this.loops.pauseOf(c)) continue; // P221: 멈춘 회·고리는 자리 줄을 띄우지 않는다
           if (!c || !owner || !seat || !LIVE_CASE.has(c.state)) { st.updateUnit(u.id, { status: 'cancelled', closedAt: Date.now() }); st.addEvent(c ? c.owner : null, 'unit_cancelled', { unitId: u.id, why: !seat ? 'seat gone' : 'case closed' }); if (c) this.caseCheck(c.id); this.changed(u.workspaceKey); continue; }
           if (this.liveCount(u.workspaceKey, u.seat) >= seat.maxLive) continue;
           const ctx = { key: u.workspaceKey, r, def: cdef, seat, name: u.seat };
@@ -717,6 +737,9 @@ export class RigFlow {
         if (!row || row.sig !== sig) { st.setCycle(w.key, cy.index, { nextAt: now + cy.everyMs, lastAt: row ? row.lastAt : null, sig }); continue; }
         if (now < row.nextAt) continue;
         const k = `${w.key}|${cy.index}`;
+        // P221: cycles의 개선 고리(improve)가 멈췄으면 열지 않는다(다음 시각 그대로라 잇기 뒤 한 번 돈다)
+        const ln = implicitCycleLoop(cy.index);
+        if (this.loops.isPaused(w.key, ln)) { if (!this.cycleSkipNoted.has(`${k}|paused|${row.nextAt}`)) { this.cycleSkipNoted.add(`${k}|paused|${row.nextAt}`); rigEvent(b, { kind: 'loop_skip', ws: w.key, seat: cy.to, value: 'paused', actor: 'board', text: `${ln}: 고리가 멈춰 있어 이번 회를 열지 않는다(잇기 뒤 한 번 돈다)`, data: { loop: ln, trigger: 'every', cycle: cy.index } }); } continue; }
         if (this.cycleBusy.has(k)) continue;
         this.cycleBusy.add(k);
         try {
@@ -725,6 +748,7 @@ export class RigFlow {
         } finally { this.cycleBusy.delete(k); }
       }
     }
+    fired.push(...(await this.loops.tick(now))); // P221: loops의 every 고리
     return fired;
   }
   // 한 회: 받는 자리 세션에 새 건의 일. 앉은 세션이 없으면 돌지 않고(다음 시각은 그대로라 앉으면 돈다) 한 번 기록한다
@@ -742,7 +766,9 @@ export class RigFlow {
       const out = await runCapture(cy.run, { root: r.root, env: cleanEnv(process.env), input: { v: 1, at: 'cycle', workspace: { key, root: r.root }, line: cy.index, since, until: now, rigHash: r.hash }, timeoutMs: cy.timeoutMs });
       text += `\n\n## run 출력(${cy.run.join(' ')})\n${out.ok ? out.text || '(출력 없음)' : `돌지 못했다: ${out.error}${out.text ? `\n${out.text}` : ''}`}`;
     }
-    const c = this.newCase(key, t, 'cycle');
+    const ln = implicitCycleLoop(cy.index); // P221: cycles[i] = 개선 고리 improve(-n)
+    const d0 = new Date(now); const p2 = (n) => String(n).padStart(2, '0');
+    const c = this.newCase(key, t, 'cycle', { loop: ln, name: `${ln} ${d0.getFullYear()}-${p2(d0.getMonth() + 1)}-${p2(d0.getDate())} ${p2(d0.getHours())}:${p2(d0.getMinutes())}`, trigger: 'every' });
     const ctx = { key, r, def: this.defOfCase(c, r), seat, name: cy.to };
     const made = this.units().create(t, t, text, 'cycle', { caseId: c.id, seat: cy.to, via: { by: t.sessionId, cycle: cy.index } });
     st.addEvent(t.sessionId, 'rig_cycle', { workspace: key, line: cy.index, caseId: c.id, unitId: made.unit.id, since, until: now, chars: text.length });
@@ -793,7 +819,8 @@ export class RigFlow {
     const units = this.history(c.id);
     const open = units.filter((u) => u.status === 'open');
     return {
-      id: c.id, version: c.versionN ?? null, workspace: c.workspaceKey, owner: this.nameOf(c.owner), ownerSessionId: c.owner, ownerOpen: this.b.sessions.has(c.owner), state: c.state, createdAt: c.createdAt, closedAt: c.closedAt, blockedReason: c.blockedReason,
+      id: c.id, name: c.name || null, nameBy: c.nameBy || null, loop: c.loop || null, paused: c.pausedAt ? { at: c.pausedAt, by: c.pausedBy } : null, held: (c.held || []).length, // P221
+      version: c.versionN ?? null, workspace: c.workspaceKey, owner: this.nameOf(c.owner), ownerSessionId: c.owner, ownerOpen: this.b.sessions.has(c.owner), state: c.state, createdAt: c.createdAt, closedAt: c.closedAt, blockedReason: c.blockedReason,
       handoffs: units.filter((u) => u.via && u.via.result).length, edgeCounts: c.edgeCounts,
       lines: def ? def.flow.filter((l) => l.max != null).map((l) => ({ index: l.index, from: l.from, on: l.on, to: l.to, max: l.max, passed: c.edgeCounts[String(l.index)] || 0, escalated: c.edgeCounts[`${l.index}>else`] || 0 })) : [],
       activeSeats: [...new Set(open.map((u) => u.seat).filter(Boolean))],
@@ -834,8 +861,7 @@ export class RigFlow {
       const lastHandoffAt = Math.max(c.createdAt, ...us.map((u) => u.createdAt || 0), ...reports.map((x) => x.at || 0));
       const ec = c.edgeCounts || {};
       return {
-        id: c.id, state: c.state, owner: this.nameOf(c.owner), ownerSessionId: c.owner, ownerOpen: b.sessions.has(c.owner),
-        cycle: first && first.via && first.via.cycle != null ? first.via.cycle : null, version: c.versionN ?? null,
+        id: c.id, state: c.state, owner: this.nameOf(c.owner), ownerSessionId: c.owner, ownerOpen: b.sessions.has(c.owner),        cycle: first && first.via && first.via.cycle != null ? first.via.cycle : null, version: c.versionN ?? null,
         firstTask: first ? firstLine(first.spec, 80) : '', createdAt: c.createdAt, closedAt: c.closedAt, lastHandoffAt,
         handoffs: us.filter((u) => u.via && u.via.result).length, blockedReason: c.blockedReason,
         // 줄별 지금 셈(주인이 이어 맡기면 0부터)과 올라간 횟수. 상한 있는 줄만
@@ -874,7 +900,8 @@ export class RigFlow {
     const tr = st.openTryOf(s.sessionId); const u = tr ? st.getUnit(tr.unitId) : null;
     const c = u && u.caseId ? st.getCase(u.caseId) : null;
     return { seat: ctx.name, active: true, version: ctx.versionN ?? null, manager: !!(ctx.def.manager && ctx.def.manager === ctx.name), session: ctx.seat.session, worktree: ctx.seat.worktree, results: ctx.def.results, assign: this.assignTargets(ctx), may: ctx.seat.may, tools: ctx.seat.tools,
-      case: c ? { id: c.id, state: c.state, owner: this.nameOf(c.owner) } : null,
+      case: c ? { id: c.id, state: c.state, owner: this.nameOf(c.owner), name: c.name || null, loop: c.loop || null, paused: !!this.loops.pauseOf(c) } : null, // P221
+      owner: !!(c && c.owner === s.sessionId), // P221: 이 회의 주인(atrium rig name을 쓴다)
       owned: st.casesOf(ctx.key, 50).filter((x) => x.owner === s.sessionId && LIVE_CASE.has(x.state)).map((x) => ({ id: x.id, state: x.state })), // P194: 내가 주인인 끝나지 않은 건(--case로 고른다)
       next: ctx.def.flow.filter((l) => l.from === ctx.name && l.on !== 'assign').map((l) => ({ on: l.on, to: l.to, max: l.max, else: l.else })),
       docs: seatDocsOf(ctx.def, ctx.name), writesDocs: ((ctx.def.seatDocs || {})[ctx.name] || {}).writes || [] }; // P219

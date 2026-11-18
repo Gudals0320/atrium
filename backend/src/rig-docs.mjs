@@ -6,7 +6,10 @@
 // - 판이 문서를 본다(RigDocs): 켜진 rig의 project 층 문서 경로(파일·폴더)를 가벼운 주기 검사(수정 시각·크기)로 보고, 바뀌면 누가 바꿨는지 골라
 //   장부에 doc_changed를 남긴다. 고르는 신호: 도구 사용 뒤 hook(PostToolUse의 파일 쓰기 도구 대상 경로), records 훅이 돈 때, 그때 일하던 세션.
 //   모르면 unknown. 쥔 쪽(writes에 그 문서가 있는 자리, records가 그 문서인 훅·도구)이 아닌 에이전트가 쓰면 doc_foreign_write.
-// - stale(오래됨)은 계산해 rig.status·rig.map에 표시만 한다(알림·doc_stale 사건은 뒤).
+// - stale(오래됨)은 계산해 rig.status·rig.map에 표시한다. P221(rig2-design 11.5의 5): 문서가 신선 → 오래됨으로 넘어갈 때 장부에 doc_stale 한 줄을 쓰고,
+//   그 문서가 다시 바뀌기 전에는(서명이 같으면) 되풀이하지 않는다(판이 다시 떠도 장부의 마지막 doc_stale 서명으로 안다).
+// - P221(11.5의 2): doc_changed의 data.basis는 바꾼 쪽을 고른 근거 넷 가운데 하나다: agent_working(그때 일하던 에이전트·훅·도구), case_run(그 쪽이 rig 회의 일을 쥐고 있었다),
+//   no_agent_working(일하던 에이전트가 없었다: 사람 또는 바깥 프로그램으로 추정), git_author(판이 보지 못한 바뀜을 git 커밋 작성자로 추정). 고른 신호는 data.signal(post_tool, working 등)
 // - 머리의 문서 목록: 자리 세션의 일 머리 셋째 줄 끝에 loads 경로를 적고, 자세한 목록(loads·reads, 경로와 한 줄 안내)은 atrium item이 보인다(docLines).
 import fs from 'node:fs';
 import os from 'node:os';
@@ -101,7 +104,6 @@ export function validateDocs(raw, { root = null, exists = null } = {}) {
         if (loc.outside) return bad(`${at}.path가 저장소 밖이다: ${p}. project 층 문서는 워크스페이스 안 경로다(전역·유형 문서는 layer "global"·"type", R7 전에는 받기만 한다)`);
         if (!loc.owns && root && exists && !exists(loc.abs)) warnings.push(`${at}: ${loc.rel}이 아직 없다(만들면 보드가 그때부터 바뀜을 본다)`);
       } else warnings.push(`${at}: layer ${layer}는 R7(층) 전이라 받기만 한다. 보드가 이 문서의 바뀜을 보지 않고 머리에는 경로만 적는다`);
-      if (x.owner != null) warnings.push(`${at}.owner(${x.owner})는 R2(고리) 전이라 받기만 한다`);
       if (x.intake != null || x.keep != null) warnings.push(`${at}.intake·keep은 R5(산출물 섹터) 전이라 받기만 한다`);
       docs[name] = { name, path: p, rel: loc.owns ? null : loc.rel || null, dir: !!loc.dir, role: x.role, layer, load: x.load || null, owner: x.owner || null, stale, git: x.git !== false, intake: x.intake || null, keep: x.keep ?? null, watch: layer === 'project' && !loc.owns && !!loc.rel };
     }
@@ -270,6 +272,26 @@ export function pickChanger({ abs, dir, mtimeMs, since = null, now = Date.now(),
   if (working.length > 1) return { by: 'unknown', basis: 'several_working', candidates: working.map((x) => x.name || x.sessionId) };
   return { by: 'human', basis: 'no_agent_working' };
 }
+// P221(11.5의 2): 바꾼 쪽을 고른 근거 → agent_working | case_run | no_agent_working | git_author
+export const DOC_BASES = ['agent_working', 'case_run', 'no_agent_working', 'git_author'];
+export function basisOf(who, s = null, gitAuthor = null) {
+  if (who.by === 'human') return 'no_agent_working';
+  if (['seat', 'session', 'hook', 'tool'].includes(who.by)) return s && s.caseId ? 'case_run' : 'agent_working';
+  if (who.signal === 'several_working') return 'agent_working';
+  return gitAuthor ? 'git_author' : 'no_agent_working';
+}
+// 화면·장부 글의 바꾼 쪽. 일하던 에이전트가 없었으면 "사람 또는 바깥 프로그램(추정)"
+export const HUMAN_GUESS = '사람 또는 바깥 프로그램(추정)';
+export function changerLabel(who, gitAuthor = null) {
+  if (who.by === 'seat') return `${who.seat} 자리(@${who.name})`;
+  if (who.by === 'session') return `rig 밖 세션 @${who.name}`;
+  if (who.by === 'hook') return `훅 ${who.hook}`;
+  if (who.by === 'tool') return `도구 ${who.tool}`;
+  if (who.signal === 'while_away' && !gitAuthor) return '모름(보드가 꺼져 있던 동안 바뀜)';
+  if (who.by === 'human' || who.basis === 'no_agent_working') return HUMAN_GUESS;
+  if (who.basis === 'git_author' && gitAuthor) return `git 커밋 작성자 ${gitAuthor}(추정)`;
+  return '모름';
+}
 const ACTOR_OF = { seat: 'agent', session: 'agent', hook: 'hook', tool: 'board', human: 'human', unknown: 'board' };
 const gitRun = (root, args) => new Promise((resolve) => { execFile('git', ['-C', root, ...args], { timeout: 4000, windowsHide: true }, (e, out) => resolve(e ? null : String(out).trim())); });
 
@@ -362,16 +384,35 @@ export class RigDocs {
             if (was && was.sig && was.sig !== cur.sig) { await this.changed(w.key, r, d, abs, cur, { away: true, now }); n++; }
             continue;
           }
-          if (prev.sig === cur.sig) continue;
-          await this.changed(w.key, r, d, abs, cur, { now, since: prev.mtimeMs }); n++;
+          if (prev.sig !== cur.sig) { await this.changed(w.key, r, d, abs, cur, { now, since: prev.mtimeMs }); n++; }
+          if (d.stale) this.noteStale(w.key, r, d, cur, now); // P221: 신선 → 오래됨에 한 번(돌려주는 수는 바뀐 문서 수 그대로)
         }
       }
     } finally { this.busy = false; }
     return n;
   }
+  // P221: 문서가 오래됨이면 doc_stale 한 줄(그 서명에 한 번). → 썼으면 true
+  noteStale(key, r, d, cur, now = Date.now()) {
+    if (!cur.exists || cur.mtimeMs == null) return false;
+    const stats = { [d.name]: cur };
+    if (d.stale.afterChangeOf) { const o = r.def.docs[d.stale.afterChangeOf]; stats[o.name] = o && o.rel ? statDoc(path.resolve(r.root, o.rel), o.dir) : { exists: null, mtimeMs: null }; }
+    const sv = staleOf(d, stats, now);
+    if (!sv || !sv.stale) return false;
+    this.staleNoted = this.staleNoted || new Set();
+    const k = `${key}|${d.name}|${cur.sig}`;
+    if (this.staleNoted.has(k)) return false;
+    this.staleNoted.add(k);
+    const st = this.b.store;
+    const last = st.rigEvents ? st.rigEvents({ ws: key, kinds: ['doc_stale'], limit: 200 }).reverse().find((x) => x.data && x.data.doc === d.name) : null;
+    if (last && last.data && last.data.sig === cur.sig) return false; // 판이 다시 뜨기 전에 이미 썼다
+    rigEvent(this.b, { kind: 'doc_stale', ws: key, value: d.stale.afterChangeOf ? 'after_change_of' : 'age', actor: 'board', text: `문서 ${d.name}(${d.rel})가 오래됐다: ${sv.why}`, data: { doc: d.name, path: d.rel, role: d.role, why: sv.why, ...(d.stale.afterChangeOf ? { afterChangeOf: d.stale.afterChangeOf } : { ms: d.stale.ms }), ...(sv.ageMs != null ? { ageMs: sv.ageMs } : {}), sig: cur.sig, mtimeMs: cur.mtimeMs } });
+    if (this.b.log) this.b.log(`rig doc ${key} ${d.name} stale`);
+    return true;
+  }
   async changed(key, r, d, abs, cur, { away = false, now = Date.now(), since = null } = {}) {
     const sessions = this.sessionsAt(key, cur.mtimeMs);
     const who = away ? { by: 'unknown', basis: 'while_away' } : pickChanger({ abs, dir: d.dir, mtimeMs: cur.mtimeMs, since, now, writes: this.writes, sessions });
+    who.signal = who.basis; // P221: 고른 신호(자세히)는 signal, basis는 넷 가운데 하나(아래)
     // 이 문서에 닿은 신호는 한 번 쓰고 지운다(다음 바뀜이 옛 신호에 붙지 않게)
     const hitDoc = (f) => (d.dir ? insideOrSame(abs, f) : path.resolve(f).toLowerCase() === path.resolve(abs).toLowerCase());
     this.writes = this.writes.filter((w) => !(w.abs && hitDoc(w.abs) && w.t <= now));
@@ -381,10 +422,14 @@ export class RigDocs {
       const [status, log] = await Promise.all([gitRun(r.root, ['status', '--porcelain', '--', d.rel]), gitRun(r.root, ['log', '-1', '--format=%h %s', '--', d.rel])]);
       if (status != null || log != null) git = { dirty: !!status, last: log || null };
     }
-    const label = who.by === 'seat' ? `${who.seat} 자리(@${who.name})` : who.by === 'session' ? `rig 밖 세션 @${who.name}` : who.by === 'hook' ? `훅 ${who.hook}` : who.by === 'tool' ? `도구 ${who.tool}` : who.by === 'human' ? '사람(일하던 에이전트 없음)' : '모름';
+    // P221: 근거(basis) 넷. 판이 보지 못한 바뀜(모름)은 커밋된 것이면 git 커밋 작성자로 추정
+    let gitAuthor = null;
+    if (who.by === 'unknown' && who.signal !== 'several_working' && d.git && git && !git.dirty) gitAuthor = await gitRun(r.root, ['log', '-1', '--format=%an', '--', d.rel]);
+    who.basis = basisOf(who, s, gitAuthor);
+    const label = changerLabel(who, gitAuthor);
     const what = cur.exists ? (cur.dir ? `폴더 파일 ${cur.files}개` : '바뀜') : '지워짐';
     const base = { ws: key, caseId: s ? s.caseId : null, unitId: s ? s.unitId : null, tryId: s ? s.tryId : null, seat: who.seat || null, session: who.sessionId || null };
-    rigEvent(this.b, { ...base, kind: 'doc_changed', value: who.by, actor: ACTOR_OF[who.by] || 'board', text: `문서 ${d.name}(${d.rel}) ${what}: ${label}`, data: { doc: d.name, path: d.rel, role: d.role, by: who.by, basis: who.basis, name: who.name || null, ...(who.hook != null ? { hook: who.hook } : {}), ...(who.tool ? { tool: who.tool } : {}), ...(who.candidates ? { candidates: who.candidates } : {}), sig: cur.sig, mtimeMs: cur.mtimeMs, exists: cur.exists, ...(git ? { git } : {}) } });
+    rigEvent(this.b, { ...base, kind: 'doc_changed', value: who.by, actor: ACTOR_OF[who.by] || 'board', text: `문서 ${d.name}(${d.rel}) ${what}: ${label}`, data: { doc: d.name, path: d.rel, role: d.role, by: who.by, basis: who.basis, signal: who.signal, ...(gitAuthor ? { gitAuthor } : {}), name: who.name || null, ...(who.hook != null ? { hook: who.hook } : {}), ...(who.tool ? { tool: who.tool } : {}), ...(who.candidates ? { candidates: who.candidates } : {}), sig: cur.sig, mtimeMs: cur.mtimeMs, exists: cur.exists, ...(git ? { git } : {}) } });
     // 쥔 쪽이 아닌 에이전트·훅·도구가 씀(사람과 모름은 경고하지 않는다)
     const h = holdersOf(r.def, d.name);
     const foreign = (who.by === 'seat' && !h.seats.includes(who.seat)) || who.by === 'session' || (who.by === 'hook' && !h.hooks.includes(who.hook)) || (who.by === 'tool' && !h.tools.includes(who.tool));

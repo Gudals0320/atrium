@@ -65,7 +65,10 @@ export function installMerge(Store) {
       run('rig_events', 'UPDATE rig_events SET ws = ? WHERE ws = ?', to, from); // P217: 장부
       run('rig_seat_counters', 'INSERT INTO rig_seat_counters (workspace_key, seat, n) SELECT ?, seat, n FROM rig_seat_counters WHERE workspace_key = ? ON CONFLICT(workspace_key, seat) DO UPDATE SET n = MAX(n, excluded.n)', to, from);
       run('rig_cycles', 'UPDATE OR IGNORE rig_cycles SET workspace_key = ? WHERE workspace_key = ?', to, from);
-      for (const t of ['rig_seat_counters', 'rig_cycles', 'rig_versions']) this.st(`DELETE FROM ${t} WHERE workspace_key = ?`).run(from);
+      // P221: 고리(멈춤·시각)는 대상에 같은 고리가 있으면 대상 것, 멈춘 동안의 요청은 옮긴다(셈 n에는 넣지 않는다)
+      this.st('UPDATE OR IGNORE rig_loops SET workspace_key = ? WHERE workspace_key = ?').run(to, from);
+      this.st('UPDATE rig_loop_requests SET workspace_key = ? WHERE workspace_key = ?').run(to, from);
+      for (const t of ['rig_seat_counters', 'rig_cycles', 'rig_versions', 'rig_loops']) this.st(`DELETE FROM ${t} WHERE workspace_key = ?`).run(from);
       return n;
     },
     // P195: 버전 내용 파일 경로의 폴더 앞부분을 바꾼다(Rig.rekey가 rigs/<옛 폴더>/를 옮긴 뒤)
