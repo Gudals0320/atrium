@@ -434,7 +434,7 @@ test('P223 "정기 점검" 견본: 입구 자리 scoped, allow는 읽기만 하�
   const ck = d.seats.checker;
   assert.equal(ck.permission, 'scoped');
   assert.ok(ck.allow.length >= 6);
-  for (const r of ck.allow) assert.match(r, /^Bash\((git (status|log|diff|show|branch)|gh (run (list|view)|issue (list|view)|pr (list|view|checks))):\*\)$/, r);
+  for (const r of ck.allow) assert.match(r, /^Bash\((git (status|log|diff|show|branch)|gh (run (list|view)|issue (list|view)|pr (list|view|checks))):\*\)$|^PowerShell\((Get-ChildItem|Get-Content|Select-String|Test-Path|Get-Item|Resolve-Path|Measure-Object):\*\)$/, r); // P225: 읽기만 하는 PowerShell 규칙
   assert.deepEqual(ck.writes, ['check-log', 'reports']);
   const { b, ws, stop } = await board({ from: CHECK });
   try {

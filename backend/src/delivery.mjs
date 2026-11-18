@@ -73,6 +73,7 @@ export class DeliveryQueue extends EventEmitter {
       if (d.seq == null) d.seq = d.createdAt; // P172: 옛 판의 전달(차례 열이 없다)은 넣은 순서
       d.acctFree = true; // P215: 꺼진 동안 무엇을 기다렸는지 모른다. 짧은 상한은 다시 뜬 때부터 센다(큰 상한은 넣은 때부터)
       if (d.status === 'queued' && PARKED.has(d.reason)) d.parked = d.reason; // P223: 멈춘 고리에 붙잡은 요청은 다시 떠도 붙잡힌 채
+      if (!d.parked || !d.parkLoop) delete d.parkLoop; // P225: 붙잡힌 전달만 [잇기]의 고리(park_loop 열)를 쥔다
       this.items.set(d.deliveryId, d);
     }
   }
@@ -99,8 +100,9 @@ export class DeliveryQueue extends EventEmitter {
   park(sessionId, text, reason = 'loop_paused', opts = {}) {
     const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: toLF(text), status: 'queued', reason, createdAt: Date.now(), attempts: 0, ...originOf(opts.origin) };
     d.seq = d.createdAt; d.parked = reason;
-    if (opts.loop) d.parkLoop = { loop: String(opts.loop), workspace: opts.workspace || null }; // 창의 [잇기] 단추(메모리만. 다시 뜨면 단추 없이 까닭만 보인다)
+    if (opts.loop) d.parkLoop = { loop: String(opts.loop), workspace: opts.workspace || null }; // 창의 [잇기] 단추
     this.store.insertDelivery(d);
+    if (d.parkLoop && this.store.setDeliveryParkLoop) this.store.setDeliveryParkLoop(d.deliveryId, d.parkLoop); // P225: 전달 표에 남겨 판이 다시 떠도 [잇기]가 보인다
     this.items.set(d.deliveryId, d);
     this._emit(d);
     return d;
@@ -109,7 +111,7 @@ export class DeliveryQueue extends EventEmitter {
   unpark(id, text = null) {
     const d = this.items.get(id);
     if (!d || !d.parked || d.status !== 'queued') return null;
-    d.parked = null;
+    d.parked = null; this._unparkRow(d);
     if (text != null) { d.text = toLF(text); if (this.store.updateDeliveryText) this.store.updateDeliveryText(d.deliveryId, d.text); }
     const now = Date.now();
     d.pausedMs = (d.pausedMs || 0) + Math.max(0, now - d.createdAt); d.freeMs = 0; d.acctAt = now; d.acctFree = this._ofSession(d.sessionId).some((x) => x !== d);
@@ -119,11 +121,13 @@ export class DeliveryQueue extends EventEmitter {
     setImmediate(() => this.pump());
     return d;
   }
+  // P225: 붙잡힘이 풀리면 전달 표의 park_loop도 지운다
+  _unparkRow(d) { if (d.parkLoop) { delete d.parkLoop; if (this.store.setDeliveryParkLoop) this.store.setDeliveryParkLoop(d.deliveryId, null); } }
   // 붙잡은 전달을 넣지 않고 끝낸다(입구 세션이 없어 회를 열지 못했거나, 일이 그 세션의 줄에 섰다) → 전달 | null
   dropPark(id, status = 'cancelled', reason = 'loop_dropped') {
     const d = this.items.get(id);
     if (!d || !d.parked || d.status !== 'queued') return null;
-    d.parked = null;
+    d.parked = null; this._unparkRow(d);
     this._set(d, status, reason);
     return d;
   }
@@ -140,6 +144,7 @@ export class DeliveryQueue extends EventEmitter {
     const d = this.items.get(id) || this.store.getDelivery(id);
     if (!d) throw Object.assign(new Error('no such delivery'), { code: 'not_found' });
     if (d.status !== 'queued' && !(d.status === 'sending' && d.refusals)) throw Object.assign(new Error(`cannot cancel: ${d.status}`), { code: 'not_cancellable' });
+    if (d.parked) { d.parked = null; this._unparkRow(d); } // P225
     this._set(d, 'cancelled', 'user');
     return d;
   }

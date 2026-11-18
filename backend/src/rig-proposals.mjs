@@ -364,8 +364,13 @@ export class RigProposals {
       const r = b.rig ? b.rig.active(k) : null;
       if (!r) continue;
       const human = sectorsOf(r.def).filter((s) => s.accept === 'human').map((s) => s.name);
-      for (const a of st.newArtifactsIn ? st.newArtifactsIn(k, human) : []) out.push({ id: `artifact:${a.id}`, kind: 'artifact', workspace: k, wsName: wsName(k), t: a.t, artifact: { id: a.id, sector: a.sector, path: a.path, size: a.size, loop: a.loop, caseId: a.caseId, seat: a.seat, sessionName: this.nameOf(a.sessionId) } });
+      // P225(11.9의 10): gate 섹터에서 done 훅이 판정을 주지 않은 새것(state_why gate_none)도 같은 카드
+      const gate = sectorsOf(r.def).filter((s) => s.accept === 'gate').map((s) => s.name);
+      const gateNone = st.newArtifactsIn ? st.newArtifactsIn(k, gate).filter((a) => a.stateWhy === 'gate_none') : [];
+      for (const a of [...(st.newArtifactsIn ? st.newArtifactsIn(k, human) : []), ...gateNone]) out.push({ id: `artifact:${a.id}`, kind: 'artifact', workspace: k, wsName: wsName(k), t: a.t, artifact: { id: a.id, sector: a.sector, path: a.path, size: a.size, loop: a.loop, caseId: a.caseId, seat: a.seat, sessionName: this.nameOf(a.sessionId) } });
     }
+    // P225(rig2-design 11.8의 1·2): 무인 자리 승인(승인 전 unattended 자리. 승인은 이 PC의 창만)
+    for (const x of b.rig && b.rig.permitNeeds ? b.rig.permitNeeds(ws) : []) out.push({ id: `permit:${x.workspace}|${x.seat}`, kind: 'seat_permit', workspace: x.workspace, wsName: wsName(x.workspace), t: b.rig.pendingSince ? b.rig.pendingSince(x.workspace, x.seat) : Date.now(), seat: x.seat, defN: x.defN });
     return out.sort((x, y) => x.t - y.t);
   }
   // 응답 필요 카드의 단추 → 결과
@@ -385,6 +390,15 @@ export class RigProposals {
       const row = sectorsFor(this.b).acceptHuman(a.workspaceKey, a.id, { by });
       this.changed(a.workspaceKey);
       return { artifact: row };
+    }
+    if (s.startsWith('permit:')) { // P225: 무인 자리 승인(rig.permit과 같은 길, 이 PC의 창만)
+      const [key, seat] = s.slice(7).split('|');
+      if (by !== 'human') throw apiError('forbidden', '무인 자리 승인은 이 PC의 보드 창에서만 한다.');
+      if (action !== 'approve') throw apiError('bad_request', `approve다: ${action}`);
+      const approved = this.b.rig.permit(key, [seat], 'human');
+      this.changed(key);
+      if (this.b.broadcastWorkspaces) try { this.b.broadcastWorkspaces(); } catch {}
+      return { approved };
     }
     throw apiError('bad_request', `모르는 카드: ${s}`);
   }

@@ -306,7 +306,9 @@ export class RigLoops {
           catch (e) { b.log && b.log('rig loop tick error', e.stack); }
         }
         try { this.autoClose(w.key, r, now); } catch (e) { b.log && b.log('rig run auto close error', e.stack); } // P223
+        try { if (b.rig.watchPermits) b.rig.watchPermits(w.key); } catch (e) { b.log && b.log('rig permit watch error', e.stack); } // P225: 무인 자리 승인 기다림
       }
+      try { await this.flow.sweepRunClose(); } catch (e) { b.log && b.log('rig run close error', e.stack); } // P225: 턴이 끝나기를 기다리던 close run 세션
     } finally { this.ticking = false; }
     return fired;
   }
@@ -441,7 +443,11 @@ export class RigLoops {
         // 주인(입구 세션)의 열린 일을 닫는다(done 없이 쉬었다). 아니면 다음 사람 글이 그 일의 이어지는 지시가 되고, 새 회의 일이 줄에 선다
         const tr = st.openTryOf(c.owner);
         for (const u of st.unitsOfCase(c.id).filter((x) => x.status === 'open')) {
-          if (tr && tr.unitId === u.id) st.updateTry(tr.id, { endedAt: now, stopReason: 'auto' });
+          if (tr && tr.unitId === u.id) {
+            st.updateTry(tr.id, { endedAt: now, stopReason: 'auto' });
+            // P225(11.8의 5): done 없이 닫힌 일을 따로 센다(압축 장부의 재료). 회는 case_done auto 그대로
+            rigEvent(this.b, { kind: 'try_stopped', ws: key, caseId: c.id, unitId: u.id, tryId: tr.id, seat: u.seat || loop.entry, session: c.owner, value: 'auto_closed', actor: 'board', text: `입구 세션이 ${Math.round(idleMs / 60000)}분 쉬어 판이 done 없이 닫음`, data: { loop: loop.name } });
+          }
           st.updateUnit(u.id, { status: 'done', closedAt: now });
           st.addEvent(c.owner, 'unit_auto_done', { unitId: u.id, tryId: tr && tr.unitId === u.id ? tr.id : null, caseId: c.id });
         }

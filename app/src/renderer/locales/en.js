@@ -2997,4 +2997,12 @@ export default {
     reverted: 'Reverted.',
     accepted: 'Accepted.',
   },
+  rigPermitNeed: { // P225: unattended seat approval in the needs-you list
+    line: 'Approve unattended seat: {seat}',
+    what: 'Until approved it runs as "asks outside its scope"',
+    tip: 'This rig seat is "never asks" (unattended) in the definition. Its permission fields (permission, write scope, allowed commands, tools, launcher) are new or changed, so it waits for a person to approve. Once approved, its sessions run commands without asking (writes outside the scope stay blocked).',
+    approve: 'Approve',
+    done: 'Approved unattended seat {seat}. Its next session runs without asking.',
+    fail: 'Could not approve: {error}',
+  },
 };

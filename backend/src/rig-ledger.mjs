@@ -37,7 +37,8 @@ export const RIG_EVENT_KINDS = [
 const KINDS = new Set(RIG_EVENT_KINDS);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];
 // try_stopped의 value(18.1). P216이 exited를 더한다
-export const TRY_STOP_VALUES = ['idle_no_done', 'turn_error', 'needs_human', 'closed', 'exited'];
+// P225: auto_closed(회 저절로 닫기가 열린 시도를 닫음, rig2-design 11.8의 5)
+export const TRY_STOP_VALUES = ['idle_no_done', 'turn_error', 'needs_human', 'closed', 'exited', 'auto_closed'];
 export const GATE_ATS = ['deliver', 'done', 'tool-before', 'tool-after', 'pre-tool', 'stop-verify'];
 export const OWNER = '@owner';
 export const HUMAN = '@human';

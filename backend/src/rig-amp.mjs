@@ -16,8 +16,11 @@
 //           Codex는 -s workspace-write -a on-request(writes false면 -s read-only).
 //   unattended: Claude Code는 bypassPermissions + 쓰기 범위 밖은 PreToolUse가 "deny". Codex는 -s workspace-write -a never.
 //     사람만 고른다: 켜기 확인(rig.enable confirm)이나 rig.permit이 그 자리를 승인한다(rig_permits). 승인 전 unattended 자리는 scoped로 돈다.
+// - P225(rig2-design 11.8의 1·2): 승인은 그 자리의 위험한 칸(permission·writes·allow·tools·launcher)의 해시(seatPermitHash)에 묶인다. 칸이 바뀌면 승인이 풀린다.
+//   Codex 자리의 allow는 쓰이지 않는다(Codex scoped는 샌드박스와 모델의 판단): 검사기가 경고한다(11.8의 4).
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부(훅 아닌 관문)
 import { writesPaths, OWNS } from './rig-docs.mjs'; // P219: writes의 문서 이름 → 경로
 
@@ -79,6 +82,7 @@ export function validateAmp(raw, { seats = null, docs = null } = {}) {
       if (off) return bad(`${at}.allow의 규칙이 Claude Code 권한 규칙 꼴(도구 이름, 괄호 안 지정자)이 아니다: ${off}`);
       allow = [...new Set(x.allow.map((r) => r.trim()))];
       if (permission !== 'scoped') warnings.push(`${at}.allow는 permission "scoped" 자리에서만 쓴다(${permission}에서는 쓰지 않는다)`);
+      if (allow.length && typeof x.launcher === 'string' && x.launcher.trim() === 'codex') warnings.push(codexAllowWarning(at)); // P225
     }
     if (permission === 'unattended') {
       warnings.push(`${at}.permission "unattended"는 사람이 승인해야 쓰인다(rig 켜기 확인 창이나 창의 승인). 승인 전에는 scoped로 돈다`);
@@ -124,6 +128,15 @@ export function seatAmpOf(def, seat) {
   const preTool = a.preTool.filter((p) => !p.seats || p.seats.includes(seat)).map((p) => ({ ...p, hook: def.hooks.find((h) => h.index === p.index) })).filter((p) => p.hook);
   return { writes: sa.writes ?? null, stopVerify: !!stopVerify, preTool, permission: sa.permission || 'ask', allow: sa.allow || [] };
 }
+// P225: Codex 자리의 allow 경고(런처 이름 자리는 rig-admin seatNotes가 런처의 종류로 본다)
+export const codexAllowWarning = (at) => `${at}.allow는 Codex 자리에서 쓰지 않는다. Codex의 scoped는 샌드박스(-s workspace-write)와 모델의 판단(-a on-request)이라 허용 목록이 없다`;
+// P225: 무인 승인이 묶이는 자리의 해시. permission·writes(경로로 바꾼 값)·allow·tools·launcher. 이 가운데 하나라도 바뀌면 옛 승인은 쓰이지 않는다
+export function seatPermitHash(def, seat) {
+  const x = def && def.seats ? def.seats[seat] : null;
+  const sa = def && def.amp && def.amp.seats ? def.amp.seats[seat] || {} : {};
+  const body = { permission: sa.permission || 'ask', writes: sa.writes === undefined ? null : sa.writes, allow: sa.allow || [], tools: x ? x.tools ?? null : null, launcher: x ? x.launcher || null : null };
+  return crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 16);
+}
 // P223: 정의의 자리 권한 → 실제로 쓰는 권한. unattended는 사람이 승인한 자리만(아니면 scoped)
 export const effectivePermission = (permission, approved) => (permission === 'unattended' && !approved ? 'scoped' : permission || 'ask');
 
@@ -156,7 +169,7 @@ export function claudeSettingsAmp(x) {
   // 경로 규칙은 Edit(…)만: Claude Code는 Edit 규칙을 파일을 고치는 모든 도구(Write·MultiEdit·NotebookEdit)에 쓰고, Write(경로)는 "never matches"라고 경고한다(P189 개발용 판)
   for (const f of x.protectedFiles || []) for (const base of protectBases(x.root, x.cwd)) deny.push(`Edit(${rulePath(path.resolve(base, f))})`);
   const hooks = {};
-  const waitPre = x.preTool.length || Array.isArray(x.writes);
+  const waitPre = x.preTool.length || Array.isArray(x.writes) || x.permission === 'scoped'; // P225: scoped는 셸 안의 셸을 거른다
   if (waitPre) {
     const maxMs = x.preTool.reduce((n, p) => n + (p.hook.timeoutMs || 0), 0); // 같은 도구에 여러 훅이 차례로 돌 수 있다
     const sec = x.preTool.length ? Math.min(Math.ceil(maxMs / 1000) + PRE_TOOL_TIMEOUT_PAD_SEC, PRE_TOOL_TIMEOUT_MAX_SEC) : PRE_TOOL_WRITES_TIMEOUT_SEC;
@@ -228,6 +241,11 @@ export function codexArgsAmp(args = [], writes = null, permission = 'ask') {
   return out;
 }
 
+// P225: 셸 안의 셸(Bash 도구로 cmd·powershell·pwsh를 부름). 허용 목록 판단을 비켜 가므로(따옴표 안 스크립트는 한 명령으로 맞는다) scoped 자리는 묻지 않고 거절하고
+//   PowerShell 도구·Glob·Read를 쓰게 한다. 명령의 앞이나 &&·||·;·|·&·( 뒤에 오는 cmd(.exe)·powershell(.exe)·pwsh(.exe)만 본다(경로·따옴표가 붙어도)
+const NESTED_SHELL_RE = /(?:^|&&|\|\||[;|&\n(]|\$\()\s*["']?(?:[A-Za-z]:)?(?:[^\s;&|'"]*[\\/])?(cmd|powershell|pwsh)(?:\.exe)?["']?(?=\s|$)/i;
+export function nestedShell(command) { const m = NESTED_SHELL_RE.exec(String(command || '')); return m ? m[1].toLowerCase() : null; }
+export const NESTED_SHELL_REASON = '[Atrium rig] 이 자리(scoped)는 Bash 도구 안에서 cmd·powershell·pwsh를 부르지 않는다(허용 목록이 그 안의 명령을 보지 못한다). 파일 목록·내용·찾기는 PowerShell 도구(Get-ChildItem, Get-Content, Select-String, Test-Path)나 Glob·Read·Grep 도구로 한다.';
 // 쓰기 범위(경로 목록) 판정: 파일 쓰기 도구의 대상이 범위 밖이면 까닭, 안이면 null
 export function writesVerdict({ writes, toolName, toolInput, base, unitId = null }) {
   if (!Array.isArray(writes) || !EDIT_TOOLS.includes(toolName)) return null;
@@ -267,17 +285,17 @@ export class RigAmp {
     const prot = this.protectedOf(s.workspaceKey);
     const protectedFiles = prot && Array.isArray(prot.files) ? prot.files.map((f) => f && f.path).filter((p) => typeof p === 'string' && p && !badRel(p)) : [];
     const asked = sa.permission;
-    const permission = effectivePermission(asked, asked === 'unattended' && this.approved(s.workspaceKey, s.rigSeat)); // P223
+    const permission = effectivePermission(asked, asked === 'unattended' && this.approved(s.workspaceKey, s.rigSeat, r.def)); // P223. P225: 그 정의의 해시
     return { key: s.workspaceKey, r, seat: s.rigSeat, kind: s.kind || 'claude', ...sa, asked, permission, protectedFiles, root: r.root, cwd: (s.rt && s.rt.cwd) || s.cwd || r.root };
   }
   // P223: 사람이 그 자리의 unattended를 승인했는가(rig.mjs rig_permits)
-  approved(key, seat) { return !!(this.b.rig && this.b.rig.permitted && this.b.rig.permitted(key, seat)); }
+  approved(key, seat, def = null) { return !!(this.b.rig && this.b.rig.permitted && this.b.rig.permitted(key, seat, def)); } // P225: def(그 정의의 자리 해시로 본다)
   // P223: 자리 세션을 띄울 때의 권한 → { asked, permission, claudeMode | null, codex: { sandbox, approval } | null, pending }
   seatPermission(key, seat) {
     const r = this.b.rig ? this.b.rig.active(key) : null;
     if (!r || !r.def.seats || !r.def.seats[seat]) return null;
     const sa = seatAmpOf(r.def, seat);
-    const approved = sa.permission === 'unattended' && this.approved(key, seat);
+    const approved = sa.permission === 'unattended' && this.approved(key, seat, r.def);
     const permission = effectivePermission(sa.permission, approved);
     return { asked: sa.permission, permission, pending: sa.permission === 'unattended' && !approved, claudeMode: CLAUDE_PERMISSION_MODE[permission] || null, codex: CODEX_APPROVAL[permission] ? { sandbox: sa.writes === false ? 'read-only' : 'workspace-write', approval: CODEX_APPROVAL[permission] } : null, allow: permission === 'scoped' ? sa.allow : [], writes: sa.writes };
   }
@@ -317,7 +335,7 @@ export class RigAmp {
     if (ev !== 'PreToolUse' && ev !== 'Stop') return false;
     if ((s.kind || 'claude') !== 'claude') return false;
     const x = this.ctxOf(s); if (!x) return false;
-    if (ev === 'PreToolUse') return x.preTool.length > 0 || Array.isArray(x.writes);
+    if (ev === 'PreToolUse') return x.preTool.length > 0 || Array.isArray(x.writes) || x.permission === 'scoped'; // P225
     return x.stopVerify;
   }
   // → 응답 본문(객체) | null(빈 200 = 통과)
@@ -331,6 +349,11 @@ export class RigAmp {
     const st = this.b.store;
     const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
     const toolName = String(body.tool_name || ''); const toolInput = body.tool_input || {};
+    // P225: scoped 자리의 셸 안의 셸은 묻지 않고 거절한다(모델이 PowerShell 도구·Glob·Read로 다시 한다)
+    if (x.permission === 'scoped' && toolName === 'Bash') {
+      const sh = nestedShell(toolInput.command);
+      if (sh) { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'deny', why: 'nested_shell', tool: toolName, shell: sh }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'nested_shell', tool: toolName, shell: sh }, `셸 안의 셸(${sh})을 거절(scoped: PowerShell 도구·Glob·Read로)`); return denyBody(NESTED_SHELL_REASON); }
+    }
     const w = writesVerdict({ writes: x.writes, toolName, toolInput, base: x.cwd, unitId: tr ? tr.unitId : null });
     // P223: scoped 자리는 쓰기 범위 밖을 묻는다(응답 필요로 뜬다), 그 밖(ask·unattended)은 거부
     if (w && x.permission === 'scoped') { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'ask', why: 'writes', tool: toolName }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'writes', tool: toolName, ask: true, target: String(toolInput.file_path || toolInput.path || toolInput.notebook_path || '') || null }, `${w} (scoped: 사람에게 묻는다)`, 'ask'); return askBody(`[Atrium rig] ${w}. 이 자리(scoped)는 쓰기 범위 밖을 사람에게 묻는다.`); }

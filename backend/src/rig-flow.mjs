@@ -30,6 +30,7 @@ import { rigEvent, OWNER } from './rig-ledger.mjs'; // P217: 장부
 import { seatDocsOf, docsTail, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
 import { RigLoops, runNameOf, implicitCycleLoop } from './rig-loops.mjs'; // P221: 고리(계기, 회 이름, 멈추기·잇기)
 import { sectorsFor } from './rig-sectors.mjs'; // P222: 산출물 섹터
+import { deriveState } from './state.mjs'; // P225: 자리 세션 닫기(close run)는 턴이 끝난 뒤
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -136,6 +137,8 @@ export class RigFlow {
     // P188: 느린 고리. 다음 시각은 DB(rig_cycles)에 있고, 판이 꺼져 있던 동안 놓친 회는 한 번만 돈다
     this.cycleBusy = new Set(); this.cycleSkipNoted = new Set();
     this.loops = new RigLoops(b, this); // P221: 고리(every 계기는 같은 타이머가 돈다)
+    this.runClose = new Map(); // P225: 닫을 fresh 자리 세션(close run) → { caseId, seat, key }. 턴이 끝나면 닫는다(메모리만. 판이 다시 뜨면 rig cleanup이 맡는다)
+    this.runClosing = false;
     const tickMs = Math.max(1000, Math.min(30000, Math.floor((b.rig && b.rig.cycleMin ? b.rig.cycleMin() : 3600000) / 4)));
     if (b.cfg && b.cfg.rigCycles !== false) { this.cycleTimer = setInterval(() => { this.cycleTick().catch((e) => b.log('rig cycle error', e.stack)); }, tickMs); if (this.cycleTimer.unref) this.cycleTimer.unref(); }
   }
@@ -283,16 +286,71 @@ export class RigFlow {
     const st = this.store(); const caseId = c.id;
     st.updateCase(caseId, { state: 'done', closedAt: Date.now(), ownerWait: null, ownerWaitDelivery: null });
     st.addEvent(c.owner, 'rig_case_done', { caseId, ...(why ? { why } : {}), ...(value ? { value } : {}) });
-    rigEvent(this.b, { kind: 'case_done', caseId, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', ...(value ? { value } : {}), text: why || null, ...(value ? { data: { loop: c.loop || null, by: value } } : {}) });
+    // P225(rig2-design 11.9의 5): 개선 고리(kind improve)의 회가 산출물(제안 포함) 없이 끝나면 경고가 아니라 data.outcome "nothing"
+    let outcome = null;
+    try { const d = c.loop ? this.defOfCase(c) : null; const lp = d && d.loops ? d.loops[c.loop] : null; if (lp && lp.kind === 'improve' && st.artifacts && !st.artifacts({ ws: c.workspaceKey, caseId, limit: 1 }).length) outcome = 'nothing'; } catch {}
+    const data = value || outcome ? { loop: c.loop || null, ...(value ? { by: value } : {}), ...(outcome ? { outcome } : {}) } : null;
+    rigEvent(this.b, { kind: 'case_done', caseId, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', ...(value ? { value } : {}), text: why || null, ...(data ? { data } : {}) });
     try { sectorsFor(this.b).onRunDone(st.getCase(caseId)); } catch (e) { this.b.log('rig artifacts run done error', e.stack); } // P222: 새 산출물은 받아들임, produces인데 없으면 경고
+    try { this.queueRunClose(st.getCase(caseId)); } catch (e) { this.b.log('rig run close error', e.stack); } // P225: close run 자리 세션
     this.b.log(`rig case ${caseId} done${why ? ` (${why})` : ''}`);
     this.changed(c.workspaceKey);
     return st.getCase(caseId);
+  }
+  // ---------- P225: 자리 close(rig2-design 11.8의 8) ----------
+  // 회가 닫히면 그 회가 띄운 fresh 자리 세션(rig_case_items) 가운데 close "run"인 자리의 세션을 닫는다. 대화 기록은 남는다(보관·삭제하지 않는다).
+  //   회 도중에는 닫지 않는다(회가 닫힌 뒤에만). 세션이 일하는 중·사람의 답을 기다리는 중이면 턴이 끝난 뒤, 그 세션이 다른 일·회를 쥐면 남긴다
+  queueRunClose(c) {
+    if (!c || c.state !== 'done') return;
+    const def = this.defOfCase(c);
+    if (!def || !def.seats) return;
+    let n = 0;
+    for (const it of this.store().caseItems(c.id)) {
+      const seat = def.seats[it.seat];
+      if (!seat || seat.session !== 'fresh' || seat.close !== 'run' || !this.b.sessions.has(it.sessionId)) continue;
+      this.runClose.set(it.sessionId, { caseId: c.id, seat: it.seat, key: c.workspaceKey }); n++;
+    }
+    if (n) setImmediate(() => this.sweepRunClose().catch((e) => this.b.log('rig run close error', e.stack)));
+  }
+  // 닫지 않는 까닭 | null(닫는다) | 'wait'(턴이 끝나기를 기다린다)
+  runCloseWhy(s) {
+    const st = this.store();
+    const state = deriveState(s.rt || {}).state;
+    if (['working', 'starting', 'waiting', 'trust_wait'].includes(state) || (this.b.killing && this.b.killing.has(s.sessionId))) return 'wait';
+    if (st.openTryOf(s.sessionId) || (st.queuedUnitsOf && st.queuedUnitsOf(s.sessionId).length)) return 'busy';
+    if (st.liveCasesOfOwner && st.liveCasesOfOwner(s.sessionId).length) return 'owner';
+    if (this.b.queue && this.b.queue.list(s.sessionId).some((d) => !d.parked && d.status !== 'cancelled')) return 'wait'; // 갈 글이 남았다
+    return null;
+  }
+  async sweepRunClose() {
+    if (this.runClosing || !this.runClose.size) return [];
+    this.runClosing = true; const closed = [];
+    try {
+      for (const [sid, x] of [...this.runClose]) {
+        const s = this.b.sessions.get(sid);
+        if (!s) { this.runClose.delete(sid); continue; }
+        const why = this.runCloseWhy(s);
+        if (why === 'wait') continue;
+        this.runClose.delete(sid);
+        const name = shownName(s) || s.name;
+        if (why) { rigEvent(this.b, { kind: 'cleanup', ws: x.key, caseId: x.caseId, seat: x.seat, session: sid, value: 'run', actor: 'board', text: `@${name} 남김(close run, ${why === 'owner' ? '다른 회의 주인' : '다른 일을 쥠'})`, data: { closed: [], kept: [`${name}:${why}`], by: 'run' } }); continue; }
+        try {
+          const r = typeof this.b.kill === 'function' ? await this.b.kill({ session: sid, confirm: true }) : null;
+          const ok = !(r && r.closed === false);
+          rigEvent(this.b, { kind: 'cleanup', ws: x.key, caseId: x.caseId, seat: x.seat, session: sid, value: 'run', actor: 'board', text: ok ? `@${name} 닫음(close run: 회가 끝남. 대화 기록은 남음)` : `@${name} 닫지 못함`, data: { closed: ok ? [name] : [], kept: ok ? [] : [`${name}:not closed`], by: 'run' } });
+          if (ok) closed.push(x.key);
+          this.b.log(`rig run ${x.caseId} close ${name}: ${ok ? 'closed' : 'not closed'}`);
+        } catch (e) { this.b.log(`rig run ${x.caseId} close ${name} failed: ${e.code || e.message}`); }
+      }
+    } finally { this.runClosing = false; }
+    for (const k of new Set(closed)) this.changed(k);
+    return closed.length;
   }
   // P209: 주인의 턴 끝(working → ready·error). 주인 보고를 기다리는 건 가운데 그 보고가 이미 들어간 것(confirmed·unconfirmed)은 done.
   //   보고가 아직 줄에 있으면(다른 턴이 끝났다) 기다린다. 보고가 못 들어갔으면(failed·cancelled) 기다릴 턴이 없으니 done
   onSessionTurn(s, sum) {
     const sid = s.sessionId; const prev = this.prevState.get(sid);
+    if (this.runClose.has(sid) && sum.state !== 'working' && sum.state !== 'starting') setImmediate(() => this.sweepRunClose().catch((e) => this.b.log('rig run close error', e.stack))); // P225
     this.prevState.set(sid, sum.state);
     if (prev === sum.state || sum.state === 'working' || sum.state === 'starting') return;
     const st = this.store();

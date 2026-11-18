@@ -1829,7 +1829,10 @@ export class Backend {
     const mine = all.filter((x) => x.state === 'waiting' || x.state === 'trust_wait').sort((a, b) => (a.waitingSince || (a.ask && a.ask.since) || a.createdAt) - (b.waitingSince || (b.ask && b.ask.since) || b.createdAt));
     const review = all.filter((x) => x.unseen).sort((a, b) => (a.turn.endedAt || 0) - (b.turn.endedAt || 0));
     const errors = all.filter((x) => x.state === 'error' || (x.state === 'exited' && x.exit && x.exit.kind !== 'normal' && x.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다
-    return { needsYou: mine, review, problems: errors };
+    // P225: rig의 사람 차례(세션이 아닌 것): 무인 자리 승인(rig2-design 11.8의 1)
+    let rig = [];
+    try { rig = this.rig && this.rig.permitNeeds ? this.rig.permitNeeds().map((x) => ({ kind: 'seat_permit', ...x, text: `무인 자리 승인: ${x.seat}` })) : []; } catch {}
+    return { needsYou: mine, review, problems: errors, rig };
   }
 
   // ---------- 브리핑, 복귀 요약(E2·A3, P3). 한 줄 메모는 P22에서 뺐다 ----------

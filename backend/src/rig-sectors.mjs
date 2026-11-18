@@ -182,7 +182,8 @@ export class RigSectors {
     for (const x of rows.filter((y) => y.state === 'new' && y.source !== 'proposal' && acceptOf(y.sector) === 'auto')) this.accept(c.workspaceKey, x, { why: 'run_done', actor: 'board', text: '회가 끝나 받아들임' });
     if (this.b.rigProposals) this.b.rigProposals.changed(c.workspaceKey); // 받아들일 산출물(human 섹터)이 생겼을 수 있다
     const loop = def && def.loops && c.loop ? def.loops[c.loop] : null;
-    if (loop && loop.produces && loop.produces.length && !rows.length) rigEvent(this.b, { kind: 'artifact_warning', caseId: c.id, session: c.owner, value: 'produces_none', actor: 'board', text: `고리 ${loop.name}는 ${loop.produces.join(', ')}에 산출물을 내는 고리인데 이 회는 아무것도 내지 않고 끝났다(atrium done ok "<보고>" --artifact <경로>)`, data: { loop: loop.name, produces: loop.produces } });
+    // P225(11.9의 5): 개선 고리는 produces_none을 쓰지 않는다(case_done data.outcome "nothing", rig-flow closeDone)
+    if (loop && loop.kind !== 'improve' && loop.produces && loop.produces.length && !rows.length) rigEvent(this.b, { kind: 'artifact_warning', caseId: c.id, session: c.owner, value: 'produces_none', actor: 'board', text: `고리 ${loop.name}는 ${loop.produces.join(', ')}에 산출물을 내는 고리인데 이 회는 아무것도 내지 않고 끝났다(atrium done ok "<보고>" --artifact <경로>)`, data: { loop: loop.name, produces: loop.produces } });
     if (rows.length) this.changed(c.workspaceKey);
   }
   changed(key) { if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.artifacts', { workspace: key }); } catch {} }
@@ -196,7 +197,9 @@ export class RigSectors {
     const list = Array.isArray(verdicts) ? verdicts : [];
     const says = list.map((v) => (v === true || v === false ? v : Array.isArray(v) ? v.map(String).includes(row.path) : null)).filter((v) => v != null);
     if (says.length && says.every(Boolean)) return this.accept(key, row, { why: 'gate', actor: 'hook', text: 'done 훅(관문)이 받아들임' });
-    rigEvent(this.b, { kind: 'artifact_warning', ws: key, caseId: row.caseId, unitId: row.unitId, seat: row.seat, session: row.sessionId, value: says.length ? 'gate_rejected' : 'gate_none', actor: says.length ? 'hook' : 'board', ref: String(row.id), text: `${row.sector}: ${row.path} — ${says.length ? 'done 훅(관문)이 받아들이지 않았다' : 'accept "gate" 섹터인데 done 훅이 판정(accept)을 돌려주지 않았다'}. 새것으로 남는다`, data: { artifact: row.id, sector: row.sector, path: row.path } });
+    // P225(rig2-design 11.9의 10): 판정이 없으면 사람 받아들이기로 넘긴다(human 섹터와 같은 응답 필요 카드). 거절은 새것으로 남는다
+    if (!says.length) { this.store().setArtifactState(row.id, 'new', { why: 'gate_none' }); if (this.b.rigProposals) this.b.rigProposals.changed(key); }
+    rigEvent(this.b, { kind: 'artifact_warning', ws: key, caseId: row.caseId, unitId: row.unitId, seat: row.seat, session: row.sessionId, value: says.length ? 'gate_rejected' : 'gate_none', actor: says.length ? 'hook' : 'board', ref: String(row.id), text: `${row.sector}: ${row.path} — ${says.length ? 'done 훅(관문)이 받아들이지 않았다. 새것으로 남는다' : 'accept "gate" 섹터인데 done 훅이 판정(accept)을 돌려주지 않았다. 사람이 응답 필요 목록에서 받아들인다'}`, data: { artifact: row.id, sector: row.sector, path: row.path, ...(says.length ? {} : { fallback: 'human' }) } });
   }
   // 사람이 응답 필요 목록에서 받아들임(accept "human" 섹터) → 행
   acceptHuman(key, id, { by = 'human' } = {}) {
