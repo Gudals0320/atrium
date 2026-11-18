@@ -51,5 +51,12 @@ export function groupPick(tab, current, last = null) {
   return tab.keys[0];
 }
 
-// 묶음 칩에 작게 보일 안의 이름: 저절로 만든 묶음은 뿌리에서의 상대 경로(label), 그 밖은 워크스페이스 이름
+// 묶음 안 워크스페이스의 이름(펼친 목록과 칩 title에 쓴다): 저절로 만든 묶음은 뿌리에서의 상대 경로(label), 그 밖은 워크스페이스 이름
 export const memberLabel = (w) => (w && (w.label || w.name)) || '';
+
+// P212: 묶음 칩이 보일 것. 칩 글은 묶음(폴더) 이름뿐이고, 지금 워크스페이스(cur)는 켜짐과 title에만 쓴다(칩이 그 이름만큼 길어지지 않게)
+export function groupChipView(tab, current) {
+  const on = !!(tab && tab.type === 'group' && tab.keys.includes(current));
+  const cur = on ? tab.ws.find((w) => w.key === current) || null : null;
+  return { on, cur, text: (tab && tab.name) || '' };
+}

@@ -171,7 +171,7 @@ async function barStage(which) {
     check('수 합: lab 3, proj 2, proj 응답 필요 1', lab && lab.sessions === 3 && proj && proj.sessions === 2 && proj.need === 1 && !lab.need, { lab, proj });
     check('묶음 칩에는 ×가 없고 빈 empty 칩에는 있다', !lab.x && !proj.x && c.find((x) => x.name === 'empty').x);
     const pc = report.collector.chips.find((x) => x.name === 'proj');
-    check('지금이 묶음 안이면 대표 칩이 켜지고 안의 이름을 작게', pc && pc.on && pc.sub === 'web/collector' && pc.ws === key('collector'), pc);
+    check('지금이 묶음 안이면 대표 칩이 켜지고 칩 글은 묶음 이름뿐(P212: 안의 이름은 보이지 않음)', pc && pc.on && pc.sub === null && !pc.text.includes('collector') && pc.ws === key('collector'), pc);
     log('바 폭', report.core.width, '(고치기 전 값은 p98-bar-before.json)');
     // 3. ←·→: 칩 순서, 묶음 칩 자리에서는 그룹 순서로 편 것
     const flat = ['alpha', 'beta', 'gamma'].map(key).concat(groupKeys.lab, groupKeys.proj, ['empty', 'core', 'notes'].map(key));
