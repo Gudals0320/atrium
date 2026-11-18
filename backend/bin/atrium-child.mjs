@@ -480,7 +480,8 @@ function printRigStatus(x) {
   for (const l of x.loops) {
     const trig = l.trigger.type === 'request' ? `요청 → ${l.entry}` : l.trigger.type === 'every' ? `${l.trigger.every}마다 → ${l.entry}` : `사건 ${l.trigger.event}(받기만)`;
     const st = `${LOOP_STATE[l.state] || l.state}${l.paused ? `(${l.paused.by === 'manager' ? '관리자 자리' : '사람'}가 멈춤)` : l.why === 'no_session' ? '(입구 자리에 앉은 세션 없음)' : ''}`;
-    say(`  고리 ${l.name}(${l.kind === 'work' ? '작업' : '개선'}${l.implicit ? ', 정의의 flow·cycles에서 읽음' : ''}) · ${trig} · ${st} · 회 ${l.runs.live}/${l.runs.total}${l.lastRun ? ` · 마지막 회 ${l.lastRun.id}${l.lastRun.name ? ` "${l.lastRun.name}"` : ''} ${l.lastRun.state}` : ''}${l.nextAt ? ` · 다음 ${new Date(l.nextAt).toLocaleString()}` : ''}${l.held ? ` · 줄 선 요청 ${l.held}` : ''}${l.holds.length ? ` · 쥔 문서 ${l.holds.join(', ')}` : ''}`);
+    say(`  고리 ${l.name}(${l.kind === 'work' ? '작업' : '개선'}${l.implicit ? ', 정의의 flow·cycles에서 읽음' : ''}) · ${trig} · ${st} · 회 ${l.runs.live}/${l.runs.total}${l.lastRun ? ` · 마지막 회 ${l.lastRun.id}${l.lastRun.name ? ` "${l.lastRun.name}"` : ''} ${l.lastRun.state}` : ''}${l.nextAt ? ` · 다음 ${new Date(l.nextAt).toLocaleString()}` : ''}${l.held ? ` · 붙잡은 요청 ${l.held}(잇기에 들어간다)` : ''}${l.holds.length ? ` · 쥔 문서 ${l.holds.join(', ')}` : ''}`);
+    if (l.task) say(`    task: ${l.task.length > 120 ? `${l.task.slice(0, 119)}…` : l.task}`); // P223
   }
   if (!x.runs.length) return say('  끝나지 않은 회: 없음');
   say(`  끝나지 않은 회 ${x.runs.length}개:`);

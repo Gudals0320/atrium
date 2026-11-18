@@ -223,8 +223,9 @@ export class AgentVerbs {
     if (!fp && !o.now && flow && flow.loops && plan.kind !== 'followup' && t.rigSeat && !(caller.rigSeat && caller.workspaceKey === t.workspaceKey)) {
       const rq = flow.loops.onRequest(t, { kind: 'agent', session: caller }, text);
       if (rq && rq.held) {
-        b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: null, held: true, loopPaused: rq.loop, chars: text.length });
-        return { ...this.head(t), deliveryId: null, woke: false, tag: null, unit: null, loop: { name: rq.loop, paused: true, held: rq.id }, delivery: { status: 'queued', reason: 'loop_paused' }, state: null, turn: null, next: null };
+        const pd = rq.d ? rq.d.deliveryId : null; // P223: 대기열에 붙잡은 전달
+        b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: pd, held: true, loopPaused: rq.loop, chars: text.length });
+        return { ...this.head(t), deliveryId: pd, woke: false, tag: null, unit: null, loop: { name: rq.loop, paused: true, held: rq.id }, delivery: { status: 'queued', reason: 'loop_paused' }, state: null, turn: null, next: null };
       }
       if (rq) { made = rq.made; plan = { kind: 'unit' }; caseInfo = { caseId: rq.caseId, seat: t.rigSeat, loop: rq.loop, name: rq.name }; }
     }

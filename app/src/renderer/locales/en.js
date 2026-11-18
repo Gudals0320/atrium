@@ -2944,4 +2944,23 @@ export default {
     done: { one: 'Run {id}: handed {n} work item to a new session.', other: 'Run {id}: handed {n} work items to new sessions.' },
     fail: 'Could not relaunch: {error}',
   },
+  rigLoopHold: { // P223: a request to the entry of a paused rig loop (held in the delivery queue)
+    paused: 'held: loop paused',
+    pausedLoop: 'Held: loop {loop} is paused · waiting for resume',
+    tip: 'This request was held, not sent, because the rig loop is paused. Resuming the loop opens a new run with it.',
+    resume: 'Resume',
+    resumeTitle: 'Resume loop {loop}. Held requests open runs in order.',
+    resumed: 'Resumed loop {loop}.',
+    fail: 'Could not resume the loop: {error}',
+    unit_queued: 'loop resumed and run opened; goes in after the entry session finishes its current work',
+    dropped: 'loop resumed but no run was opened',
+    no_session: 'loop resumed but the entry seat has no session, so no run was opened',
+    moved: 'loop resumed and sent to another session in the entry seat',
+  },
+  rigPerm: { // P223: seat permissions in the rig enable confirmation
+    confirmHead: { one: '{n} seat changes permissions', other: '{n} seats change permissions' },
+    scoped: { one: 'Edits inside its write scope and {n} allowed command run without asking. Everything else asks', other: 'Edits inside its write scope and {n} allowed commands run without asking. Everything else asks' },
+    unattended: 'Never asks (writes outside its scope are blocked)',
+    unattendedWarn: 'This confirmation turns on the "never asks" seats. Their sessions run commands without asking a person. A "never asks" seat added to the definition later runs as "asks outside its scope" until you approve it again.',
+  },
 };

@@ -24,6 +24,8 @@ export const RIG_EVENT_KINDS = [
   //   loop_trigger(계기가 걸림, value request | every), loop_skip(건너뜀·붙잡음, value paused | running | no_session | spawn_failed), loop_next(다음 실행 시각),
   //   loop_paused·loop_resumed(고리 멈춤·잇기), run_paused·run_resumed(회 멈춤·잇기), run_named(회 이름 붙임·고침, value auto | human | owner | manager)
   'loop_trigger', 'loop_skip', 'loop_next', 'loop_paused', 'loop_resumed', 'run_paused', 'run_resumed', 'run_named',
+  // P223: 자리 권한 결정(value: scoped | unattended | approved). 자리 세션을 띄울 때와 사람이 unattended를 승인할 때
+  'seat_permission',
 ];
 const KINDS = new Set(RIG_EVENT_KINDS);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];

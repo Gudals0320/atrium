@@ -5,6 +5,8 @@ import { EventEmitter } from 'node:events';
 import { toLF, promptMatches } from './text.mjs';
 
 const FINAL = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']);
+// P223: 보내지 않고 붙잡아 두는 까닭(멈춘 rig 고리의 입구로 온 요청). 잇기에 놓인다
+export const PARKED = new Set(['loop_paused']);
 // P106: 터미널이 agent.prompt를 받지 않은 까닭(오류 코드) → 기다리는 이유. 같은 전달을 곧바로 다시 보내지 않고 물러난다
 const REFUSED = { agent_not_found: 'no_agent', agent_not_ready: 'no_agent', agent_blocked: 'waiting', unreachable: 'terminal_down' };
 // P215: 이 까닭으로 맨 앞에서 기다리는 시간은 짧은 상한(deliveryMaxWaitMs, 15분)에 넣지 않는다. 받는 세션이 턴을 도는 중(working)이거나
@@ -70,6 +72,7 @@ export class DeliveryQueue extends EventEmitter {
       if (d.status === 'sent' && !d.sentAt) { d.sentAt = Date.now(); store.updateDelivery(d.deliveryId, { status: 'sent', reason: d.reason ?? null, sentAt: d.sentAt }); }
       if (d.seq == null) d.seq = d.createdAt; // P172: 옛 판의 전달(차례 열이 없다)은 넣은 순서
       d.acctFree = true; // P215: 꺼진 동안 무엇을 기다렸는지 모른다. 짧은 상한은 다시 뜬 때부터 센다(큰 상한은 넣은 때부터)
+      if (d.status === 'queued' && PARKED.has(d.reason)) d.parked = d.reason; // P223: 멈춘 고리에 붙잡은 요청은 다시 떠도 붙잡힌 채
       this.items.set(d.deliveryId, d);
     }
   }
@@ -89,6 +92,39 @@ export class DeliveryQueue extends EventEmitter {
     this._emit(d);
     this.poke(sessionId); // P106: 사람이 다시 보내면 물러나 있던 앞 전달도 바로 다시 본다
     setImmediate(() => this.pump());
+    return d;
+  }
+  // P223: 멈춘 고리의 입구로 온 요청을 붙잡아 둔다(까닭 loop_paused). 대기 중(queued)으로 남지만 보내지 않고, 그 세션의 다른 전달의 차례도 막지 않는다
+  //   (고치는 중 붙잡기 P158과 같은 꼴, 다만 맨 앞을 쥐지 않는다). 잇기가 unpark로 넣거나(rig-loops) dropPark로 끝낸다. 사람은 취소할 수 있다
+  park(sessionId, text, reason = 'loop_paused', opts = {}) {
+    const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: toLF(text), status: 'queued', reason, createdAt: Date.now(), attempts: 0, ...originOf(opts.origin) };
+    d.seq = d.createdAt; d.parked = reason;
+    if (opts.loop) d.parkLoop = { loop: String(opts.loop), workspace: opts.workspace || null }; // 창의 [잇기] 단추(메모리만. 다시 뜨면 단추 없이 까닭만 보인다)
+    this.store.insertDelivery(d);
+    this.items.set(d.deliveryId, d);
+    this._emit(d);
+    return d;
+  }
+  // 붙잡은 전달을 놓는다. text를 주면 그 글로 바꾼다(잇기가 일 머리를 붙인 글). 붙잡은 동안은 기다린 시간에 넣지 않는다 → 전달 | null(이미 붙잡힌 것이 아님)
+  unpark(id, text = null) {
+    const d = this.items.get(id);
+    if (!d || !d.parked || d.status !== 'queued') return null;
+    d.parked = null;
+    if (text != null) { d.text = toLF(text); if (this.store.updateDeliveryText) this.store.updateDeliveryText(d.deliveryId, d.text); }
+    const now = Date.now();
+    d.pausedMs = (d.pausedMs || 0) + Math.max(0, now - d.createdAt); d.freeMs = 0; d.acctAt = now; d.acctFree = this._ofSession(d.sessionId).some((x) => x !== d);
+    d.seq = now; if (this.store.updateDeliverySeq) this.store.updateDeliverySeq(d.deliveryId, d.seq); // 잇기 때 차례(그동안 들어간 전달 뒤)
+    this._set(d, 'queued', null);
+    this.poke(d.sessionId);
+    setImmediate(() => this.pump());
+    return d;
+  }
+  // 붙잡은 전달을 넣지 않고 끝낸다(입구 세션이 없어 회를 열지 못했거나, 일이 그 세션의 줄에 섰다) → 전달 | null
+  dropPark(id, status = 'cancelled', reason = 'loop_dropped') {
+    const d = this.items.get(id);
+    if (!d || !d.parked || d.status !== 'queued') return null;
+    d.parked = null;
+    this._set(d, status, reason);
     return d;
   }
   // P182: rig의 deliver 훅이 사람의 글을 거절했다. 넣지 않고 실패한 전달 한 줄로 남긴다(창은 전달 실패와 같은 길로 까닭을 보인다)
@@ -148,6 +184,7 @@ export class DeliveryQueue extends EventEmitter {
   _editable(id) {
     const d = this.items.get(id) || this.store.getDelivery(id);
     if (!d) throw Object.assign(new Error('no such delivery'), { code: 'not_found' });
+    if (d.parked) throw Object.assign(new Error('held by a paused rig loop'), { code: 'loop_paused' }); // P223: 고리 잇기를 기다린다(취소는 된다)
     if (d.status === 'queued' && this.items.has(d.deliveryId)) return d;
     if (['sending', 'sent', 'confirmed', 'unconfirmed'].includes(d.status)) throw Object.assign(new Error(`already sent: ${d.status}`), { code: 'already_sent' });
     throw Object.assign(new Error(`cannot edit: ${d.status}`), { code: 'not_editable' });
@@ -235,11 +272,11 @@ export class DeliveryQueue extends EventEmitter {
 
   _head(sessionId) {
     let head = null;
-    for (const d of this.items.values()) if (d.sessionId === sessionId && (!head || order(d) < order(head))) head = d;
+    for (const d of this.items.values()) if (d.sessionId === sessionId && !d.parked && (!head || order(d) < order(head))) head = d; // P223: 붙잡은 요청은 차례를 쥐지 않는다
     return head;
   }
-  // P172: 한 세션의 아직 끝나지 않은 전달(차례대로)
-  _ofSession(sessionId) { return [...this.items.values()].filter((d) => d.sessionId === sessionId).sort((a, b) => order(a) - order(b)); }
+  // P172: 한 세션의 아직 끝나지 않은 전달(차례대로). P223: 붙잡은 요청은 빼고
+  _ofSession(sessionId) { return [...this.items.values()].filter((d) => d.sessionId === sessionId && !d.parked).sort((a, b) => order(a) - order(b)); }
 
   // P172: 순서 바꾸기. ids = 그 세션의 대기 중(queued) 전달을 바랄 차례대로. 보내는 중·보낸 전달은 맨 앞 그대로 두고,
   //   대기 중 전달끼리 차례 값을 맞바꾼다(뒤에 들어온 전달은 여전히 맨 뒤). ids에 빠진 대기 중 전달은 원래 자리 순서대로 뒤에 붙인다.
@@ -305,7 +342,7 @@ export class DeliveryQueue extends EventEmitter {
     for (const d of this.items.values()) {
       const last = d.acctAt ?? d.createdAt;
       d.acctAt = now;
-      if (d.status !== 'queued' || d.editing) continue;
+      if (d.status !== 'queued' || d.editing || d.parked) continue;
       if (d.acctFree) d.freeMs = (d.freeMs || 0) + Math.max(0, now - last);
       d.acctFree = this._head(d.sessionId) !== d || LONG_WAIT.has(d.reason);
     }
@@ -543,5 +580,5 @@ export class DeliveryQueue extends EventEmitter {
     }
     return r;
   }
-  _emit(d) { this.emit('delivery', { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, createdAt: d.createdAt, sentAt: d.sentAt || null, confirmedAt: d.confirmedAt || null, attempts: d.attempts || 0, chars: d.text.length, seq: d.seq ?? d.createdAt, editing: !!d.editing }); }
+  _emit(d) { this.emit('delivery', { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, createdAt: d.createdAt, sentAt: d.sentAt || null, confirmedAt: d.confirmedAt || null, attempts: d.attempts || 0, chars: d.text.length, seq: d.seq ?? d.createdAt, editing: !!d.editing, ...(d.parked ? { parked: d.parked, ...(d.parkLoop ? { parkLoop: d.parkLoop } : {}) } : {}) }); } // P223: parked(멈춘 고리에 붙잡음)
 }

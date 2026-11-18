@@ -19,7 +19,7 @@ export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutS
   const hook = { type: 'http', url: hookUrl, timeout: timeoutSec, headers: { Authorization: `Bearer ${token}`, 'X-MT-Session': sessionId } };
   const hookOf = (e) => { const a = amp && amp.hooks && amp.hooks[e]; return a ? { ...hook, timeout: a.timeout, ...(a.onFailure ? { onFailure: a.onFailure } : {}) } : hook; };
   const settings = { ...(more || {}), hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [hookOf(e)] }]])) };
-  const rules = [...allow];
+  const rules = [...new Set([...allow, ...((amp && amp.allow) || [])])]; // P223: scoped 자리의 allow
   if (rules.length) settings.permissions = { allow: rules };
   if (amp && amp.deny && amp.deny.length) settings.permissions = { ...(settings.permissions || {}), deny: [...amp.deny] };
   if (env && Object.keys(env).length) settings.env = env;

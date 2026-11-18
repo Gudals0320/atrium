@@ -278,11 +278,11 @@ export class RigFlow {
     }
     return this.closeDone(c);
   }
-  closeDone(c, why = null) {
+  closeDone(c, why = null, value = null) { // P223: value(auto = 입구 세션이 쉬어 판이 닫음)
     const st = this.store(); const caseId = c.id;
     st.updateCase(caseId, { state: 'done', closedAt: Date.now(), ownerWait: null, ownerWaitDelivery: null });
-    st.addEvent(c.owner, 'rig_case_done', { caseId, ...(why ? { why } : {}) });
-    rigEvent(this.b, { kind: 'case_done', caseId, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', text: why || null });
+    st.addEvent(c.owner, 'rig_case_done', { caseId, ...(why ? { why } : {}), ...(value ? { value } : {}) });
+    rigEvent(this.b, { kind: 'case_done', caseId, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', ...(value ? { value } : {}), text: why || null, ...(value ? { data: { loop: c.loop || null, by: value } } : {}) });
     this.b.log(`rig case ${caseId} done${why ? ` (${why})` : ''}`);
     this.changed(c.workspaceKey);
     return st.getCase(caseId);

@@ -50,7 +50,10 @@ export const RIG_LOOPS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS rig_loops (workspace_key TEXT NOT NULL, loop TEXT NOT NULL, paused_at INTEGER, paused_by TEXT, next_at INTEGER, last_at INTEGER, sig TEXT, PRIMARY KEY (workspace_key, loop)) STRICT;
 CREATE TABLE IF NOT EXISTS rig_loop_requests (id INTEGER PRIMARY KEY, workspace_key TEXT NOT NULL, loop TEXT NOT NULL, session_id TEXT NOT NULL, from_kind TEXT NOT NULL, from_session TEXT, text TEXT NOT NULL, t INTEGER NOT NULL, state TEXT NOT NULL, case_id TEXT) STRICT;
 CREATE INDEX IF NOT EXISTS rig_loop_requests_ws ON rig_loop_requests(workspace_key, loop, state, id);
+CREATE TABLE IF NOT EXISTS rig_permits (workspace_key TEXT NOT NULL, seat TEXT NOT NULL, t INTEGER NOT NULL, by TEXT NOT NULL, PRIMARY KEY (workspace_key, seat)) STRICT;
 `;
+// P223: rig_permits = 사람이 unattended(묻지 않음)를 승인한 자리(워크스페이스·자리마다 한 줄, by: enable | human).
+//   rig_loop_requests.delivery_id = 멈춘 고리에 붙잡은 전달(대기열의 loop_paused 전달, 잇기에 그 전달로 넣는다)
 // P217: rig 장부(18.1). 추가만 하는 표. seq는 AUTOINCREMENT라 지운 뒤에도 다시 쓰지 않는다(읽은 자리 커서의 기준).
 //   쓰는 곳은 rig-ledger.mjs rigEvent 하나(insertRigEvent). 지우는 곳은 보관 정리(pruneRigEvents) 하나
 export const RIG_EVENTS_SCHEMA = `
@@ -65,6 +68,7 @@ export const RIG_COLUMNS = {
   work_units: { case_id: 'TEXT', seat: 'TEXT', via: 'TEXT' },
   workspaces: { rig_enabled: 'INTEGER', rig_enabled_at: 'INTEGER', rig_protected: 'TEXT' }, // P188: rig_protected(사람만 고치는 목록)
   deliveries: { origin: 'TEXT', from_session: 'TEXT' },
+  rig_loop_requests: { delivery_id: 'TEXT' }, // P223
   rig_hook_runs: { tool_run_id: 'TEXT' }, // P183: 도구 훅이면 그 실행
   rig_cases: { version_n: 'INTEGER', owner_wait: 'TEXT', owner_wait_delivery: 'TEXT', loop: 'TEXT', name: 'TEXT', name_by: 'TEXT', paused_at: 'INTEGER', paused_by: 'TEXT', held: 'TEXT' }, // P221(rig 2 R2): 회의 고리(loop), 회 이름(name·name_by: auto | human | owner | manager), 회 멈춤(paused_at·paused_by), 멈춘 동안 붙잡은 넘김(held JSON [{ unitId, session, seat, result, text }]) // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다). P209: 주인 기다림의 종류(report | escalated)와 보고 전달 ID
   // P188: 사람만 고치는 목록. JSON { pointers: ["/seats/reviewer", …], files: [{ path, sha256, at }] } | null
@@ -271,7 +275,11 @@ export function installRig(Store) {
       this.st('INSERT INTO rig_loops (workspace_key, loop, paused_at, paused_by, next_at, last_at, sig) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_key, loop) DO UPDATE SET paused_at = excluded.paused_at, paused_by = excluded.paused_by, next_at = excluded.next_at, last_at = excluded.last_at, sig = excluded.sig').run(key, loop, x.pausedAt ?? null, x.pausedBy ?? null, x.nextAt ?? null, x.lastAt ?? null, x.sig ?? null);
     },
     insertLoopRequest(x) { return Number(this.st('INSERT INTO rig_loop_requests (workspace_key, loop, session_id, from_kind, from_session, text, t, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(x.workspaceKey, x.loop, x.sessionId, x.fromKind, x.fromSession ?? null, x.text, x.t ?? Date.now(), 'held').lastInsertRowid); },
-    heldLoopRequests(key, loop) { return this.st("SELECT * FROM rig_loop_requests WHERE workspace_key = ? AND loop = ? AND state = 'held' ORDER BY id").all(key, loop).map((r) => ({ id: Number(r.id), workspaceKey: r.workspace_key, loop: r.loop, sessionId: r.session_id, fromKind: r.from_kind, fromSession: r.from_session ?? null, text: r.text, t: r.t })); },
+    setLoopRequestDelivery(id, deliveryId) { this.st('UPDATE rig_loop_requests SET delivery_id = ? WHERE id = ?').run(deliveryId, id); }, // P223
+    heldLoopRequests(key, loop) { return this.st("SELECT * FROM rig_loop_requests WHERE workspace_key = ? AND loop = ? AND state = 'held' ORDER BY id").all(key, loop).map((r) => ({ id: Number(r.id), workspaceKey: r.workspace_key, loop: r.loop, sessionId: r.session_id, fromKind: r.from_kind, fromSession: r.from_session ?? null, text: r.text, t: r.t, deliveryId: r.delivery_id ?? null })); },
+    // P223: unattended 승인
+    rigPermitted(key, seat) { return !!this.st('SELECT 1 FROM rig_permits WHERE workspace_key = ? AND seat = ?').get(key, seat); },
+    setRigPermit(key, seat, by) { this.st('INSERT INTO rig_permits (workspace_key, seat, t, by) VALUES (?, ?, ?, ?) ON CONFLICT(workspace_key, seat) DO UPDATE SET t = excluded.t, by = excluded.by').run(key, seat, Date.now(), by); },
     setLoopRequest(id, state, caseId = null) { this.st('UPDATE rig_loop_requests SET state = ?, case_id = ? WHERE id = ?').run(state, caseId, id); },
     // 고리의 회(건): 끝나지 않은 수, 전체 수, 마지막 회
     loopRunStats(key) {
