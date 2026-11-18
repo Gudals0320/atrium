@@ -7,6 +7,9 @@ import { toLF, promptMatches } from './text.mjs';
 const FINAL = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']);
 // P106: 터미널이 agent.prompt를 받지 않은 까닭(오류 코드) → 기다리는 이유. 같은 전달을 곧바로 다시 보내지 않고 물러난다
 const REFUSED = { agent_not_found: 'no_agent', agent_not_ready: 'no_agent', agent_blocked: 'waiting', unreachable: 'terminal_down' };
+// P215: 이 까닭으로 맨 앞에서 기다리는 시간은 짧은 상한(deliveryMaxWaitMs, 15분)에 넣지 않는다. 받는 세션이 턴을 도는 중(working)이거나
+//   그 턴 안에서 사람의 답(권한·질문, waiting)을 기다린다: 턴이 끝나면 넣는다. 아주 긴 턴은 큰 상한(deliveryLongWaitMs, 12시간)이 끊는다
+export const LONG_WAIT = new Set(['working', 'waiting']);
 // P106: n번째 거부 뒤 다시 보내기까지 기다릴 시간(0.5초에서 두 배씩, 30초까지)
 export function retryDelay(n, cfg = {}) {
   const base = cfg.deliveryBackoffMs ?? 500, max = cfg.deliveryBackoffMaxMs ?? 30000;
@@ -66,6 +69,7 @@ export class DeliveryQueue extends EventEmitter {
       if (d.status === 'sending') d.status = 'sent';
       if (d.status === 'sent' && !d.sentAt) { d.sentAt = Date.now(); store.updateDelivery(d.deliveryId, { status: 'sent', reason: d.reason ?? null, sentAt: d.sentAt }); }
       if (d.seq == null) d.seq = d.createdAt; // P172: 옛 판의 전달(차례 열이 없다)은 넣은 순서
+      d.acctFree = true; // P215: 꺼진 동안 무엇을 기다렸는지 모른다. 짧은 상한은 다시 뜬 때부터 센다(큰 상한은 넣은 때부터)
       this.items.set(d.deliveryId, d);
     }
   }
@@ -78,6 +82,7 @@ export class DeliveryQueue extends EventEmitter {
     const d = { deliveryId: 'd' + crypto.randomBytes(5).toString('hex'), sessionId, text: opts.typeNow ? typedText(text) : toLF(text), status: 'queued', reason: null, createdAt: Date.now(), attempts: 0, ...originOf(opts.origin) };
     d.seq = d.createdAt; // P172: 세션 안 차례. 순서 바꾸기·바로 보내기가 고친다(작을수록 먼저)
     if (opts.typeNow) d.typeNow = true;
+    if (this._ofSession(sessionId).length) d.acctFree = true; // P215: 앞 전달 뒤에서 기다리는 시간은 짧은 상한에 넣지 않는다(맨 앞이 된 뒤 그 까닭으로 센다)
     if (opts.typeNow && opts.aside) d.typeAside = true; // P143(atrium prompt --now): 입력 칸에 쓰다 만 글이 있으면 비키고(P128·P139) 바로 넣는다. 휴대폰 입력 줄(P90)은 그대로 기다린다
     this.store.insertDelivery(d);
     this.items.set(d.deliveryId, d);
@@ -294,8 +299,27 @@ export class DeliveryQueue extends EventEmitter {
     return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, seq: d.seq, how: v && v.state === 'working' ? 'type' : 'send' };
   }
 
+  // P215: 기다린 시간 나누기. 지난 pump부터 지금까지를 지난번에 본 까닭으로 센다: 앞 전달 뒤에 줄 섰거나 LONG_WAIT면 freeMs(짧은 상한에서 뺀다).
+  //   고치는 중(붙잡음)은 pausedMs가 따로 센다. sent 뒤(확인 기다림)는 세지 않는다
+  _account(now) {
+    for (const d of this.items.values()) {
+      const last = d.acctAt ?? d.createdAt;
+      d.acctAt = now;
+      if (d.status !== 'queued' || d.editing) continue;
+      if (d.acctFree) d.freeMs = (d.freeMs || 0) + Math.max(0, now - last);
+      d.acctFree = this._head(d.sessionId) !== d || LONG_WAIT.has(d.reason);
+    }
+  }
+  // P215: 기다림 상한. 짧은 상한(15분)은 LONG_WAIT·줄 선 시간을 빼고, 큰 상한(12시간)은 붙잡은 시간만 빼고 센다
+  _overdue(d, now) {
+    const waited = now - d.createdAt - (d.pausedMs || 0);
+    if (waited > (this.cfg.deliveryLongWaitMs ?? 12 * 3600000)) return true;
+    return waited - (d.freeMs || 0) > this.cfg.deliveryMaxWaitMs;
+  }
+
   pump() {
     const now = Date.now();
+    this._account(now);
     const sessions = new Set([...this.items.values()].map((d) => d.sessionId));
     for (const sid of sessions) {
       const d = this._head(sid);
@@ -322,8 +346,9 @@ export class DeliveryQueue extends EventEmitter {
       }
       // P158: 고치는 중이면 보내지 않는다(이 세션의 뒤 전달도 기다린다). 오래 놓지 않으면 저절로 놓는다
       if (d.editing) { if (now - d.editingAt > (this.cfg.editHoldMs ?? 600000)) this._release(d); continue; }
-      if (now - d.createdAt - (d.pausedMs || 0) > this.cfg.deliveryMaxWaitMs) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
+      if (this._overdue(d, now)) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
       const reason = blockReason(this.view(sid, d), now, this.cfg);
+      d.acctFree = LONG_WAIT.has(reason); // P215: 이번에 본 까닭으로 다음 pump까지를 센다
       if (reason === 'closed') { this._set(d, 'failed', 'session closed'); continue; }
       if (reason === 'working' && d.typeNow && this.inspect) { const v = this.view(sid, d); if (canTypeNow(v)) { this._typeNow(d, v, now); continue; } }
       if (reason) { if (d.reason !== reason) this._set(d, 'queued', reason); continue; }
