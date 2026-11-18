@@ -26,7 +26,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -46,8 +46,9 @@ import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSpli
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
+import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
-import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
+import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, claudeConnection } from './harness.mjs';
 import { checkOf } from './connections.mjs'; // P115: 연결 시작 전 확인 // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
@@ -223,6 +224,9 @@ export class Backend {
     // P184: 하네스의 atrium은 데이터 폴더 bin/lib/에 둔 코드를 부른다(샌드박스 Codex가 판 코드 폴더를 읽지 못해도 데이터 폴더만 읽히면 된다)
     const hbin = path.join(cfg.dataDir, 'bin');
     this.harnessFiles = writeHarnessFiles({ dir: path.join(cfg.dataDir, 'plugin'), binDir: hbin, bin: childShims({ script: path.join(hbin, 'lib', 'bin', 'atrium-child.mjs') }), lib: childBundle(), prompt: HARNESS_PROMPT });
+    // P208: PowerShell·cmd가 cmd를 거치지 않게 실행 파일 꾸러미(atrium.exe)를 두 bin 폴더에 둔다(글이 바뀌었을 때만 csc로 빌드, 기다리지 않는다).
+    //   단위 시험(node --test)은 빌드하지 않는다(cfg.shimExe로 켜고 끈다)
+    if (cfg.shimExe ?? !process.env.NODE_TEST_CONTEXT) this.shimExe = ensureShimExe({ dirs: [hbin, path.join(this.plugin.pluginDir, 'bin')], buildDir: path.join(cfg.dataDir, 'tmp', 'shim-build'), log: (m) => this.log(m) }).catch(() => null);
     // P18: 데이터 폴더를 옮겼으면 --settings·--plugin-dir 경로가 바뀌었다. 이어 가기 인자를 다시 만든다
     if (this.migration && this.migration.data === 'moved') {
       let n = 0;
@@ -1101,7 +1105,7 @@ export class Backend {
     await this.refreshAgent(s);
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'visible' });
-      if ((s.kind === 'claude' || s.kind === 'agy') && trustDialogOf(s.kind, text)) { s.rt.trustScreen = { at: Date.now() }; this.store.addEvent(s.sessionId, 'trust_dialog', { tail: tailLines(text, 6) }); }
+      if (TRUST_SCREEN_KINDS.has(s.kind || 'claude') && trustDialogOf(s.kind || 'claude', text)) { s.rt.trustScreen = { at: Date.now() }; this.store.addEvent(s.sessionId, 'trust_dialog', { tail: tailLines(text, 6) }); }
       else if ((s.kind || 'claude') === 'claude') this.noteWorktreeExit(s, text);
       if (!this.hooked(s)) s.rt.screenAsk = { tail: tailText(text, 14), at: Date.now() };
     } catch {}
@@ -1423,6 +1427,10 @@ export class Backend {
       const ap = approvalArgsOf(plan.kind, String(p.permissionMode), (plan.args || []).map(String));
       if (ap.args.length) plan.args = [...(plan.args || []), ...ap.args];
     }
+    // P208: 명시한 노력 수준(atrium child --effort, rig 자리의 effort)은 Claude Code 밖 하네스의 인자로 옮기고 호출자 인자의 같은 값을 이긴다(Codex -c model_reasoning_effort).
+    //   받지 않는 종류는 응답의 effort.ignored로 알린다. 잘못된 값은 띄우기 전에 던진다
+    const effortPlan = p.effort && plan.kind !== 'claude' && plan.kind !== SHELL ? effortArgsOf(plan.kind, String(p.effort), plan.args || []) : null;
+    if (effortPlan && effortPlan.applied) plan.args = effortPlan.args;
     const { flavor, command } = plan;
     const kind = plan.kind;
     const shell = kind === SHELL;
@@ -1513,7 +1521,7 @@ export class Backend {
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
       this.probeGit(s, cwd);
-      const out = { sessionId, name, ...(renamedFrom ? { renamedFrom, renamedWhy: 'rig_seat' } : {}), kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
+      const out = { sessionId, name, ...(renamedFrom ? { renamedFrom, renamedWhy: 'rig_seat' } : {}), ...(effortPlan ? { effort: { value: effortPlan.effort, applied: effortPlan.applied, ignored: !!effortPlan.ignored } } : {}), kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
       if (command) {
         // P25 직접 명령: 셸 프롬프트가 뜨면 그 글을 그대로 치고 Enter. 에이전트가 나타나면 promoteShell이 같은 노드의 종류를 바꾼다(hook 없음)
         const ready = await this.adapter.waitShellReady(hw.paneId);

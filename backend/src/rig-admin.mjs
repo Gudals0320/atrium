@@ -1,6 +1,7 @@
 // P188: rig 5단계 — 관리자 자리와 정의의 수명(docs research harness-arch.md 15절 "5단계").
 // - atrium rig check [파일] | log | rollback <n> | cleanup <건>: 관리자 자리 세션(켜진 rig의 manager 자리에 앉은 세션)과 사람(판 API 토큰: 창, 사람의 atrium call)만.
 //   P190: check(읽기만)는 rig가 꺼진 워크스페이스의 어느 판 세션이든, 켜진 rig에서는 사람이 맡긴 제작 일을 쥔 제작 세션도 쓴다.
+//   P209: 그 워크스페이스의 제작 세션은 제작 일을 닫은 뒤에도 check·log(읽기만)를 쓴다.
 //   그 밖 세션은 거절(종료 코드 1과 까닭). 정의의 버전 기록은 rig.mjs(adopt), 건의 버전 고정은 rig-flow.mjs(seatCtx·defOfCase)다.
 // - check: 후보 정의(파일 내용 또는 지금 rig.json)를 적용하지 않고 검사한다(정의 검사 + 사람만 고치는 포인터).
 // - log: 버전 목록과 버전마다 건 수, 반려(ok가 아닌 done 값) 수, 훅 거절 수, 상한 초과 수.
@@ -11,13 +12,15 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { RIG_FILE, validateRig, protectedHits, POINTER_RE, gitStateOf, worktreeWarnings } from './rig.mjs';
+import { RIG_FILE, validateRig, protectedHits, POINTER_RE, gitStateOf, worktreeWarnings, SEAT_KINDS, seatEffortError } from './rig.mjs';
+import { harnessOf } from './launchers.mjs'; // P209: 런처 자리의 종류
 import { shownName } from './session-label.mjs';
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
 export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup'];
+export const RIG_READ_OPS = ['check', 'log']; // P209: 읽기만(제작 세션도 쓴다)
 
 export class RigAdmin {
   // b: 백엔드(store, rig, sessions, kill, log). branch: Branch(flow)
@@ -37,15 +40,17 @@ export class RigAdmin {
     if (!RIG_ADMIN_OPS.includes(op)) throw apiError('bad_request', `atrium rig: ${RIG_ADMIN_OPS.join(' | ')} 가운데 하나다: ${op || '(없음)'}`);
     // P190(16절): check는 읽기만이라 rig가 꺼진(또는 없는) 워크스페이스의 어느 판 세션이든 쓴다. 켜진 rig에서는 관리자 자리와 사람,
     //   그리고 사람이 맡긴 제작 일(rig.describe의 "말로 고치기")을 쥔 제작 세션
-    if (op === 'check' && !this.isManager(s)) {
+    // P209: 제작 세션(그 워크스페이스의 rig.describe 일을 받은 세션)은 제작 일을 닫은 뒤에도, rig가 켜져 있어도 읽기만 하는 check·log를 쓴다.
+    //   rollback·cleanup(바꾸는 것)은 관리자 자리와 사람만
+    if (RIG_READ_OPS.includes(op) && !this.isManager(s)) {
       const rig = this.b.rig;
-      const builder = this.b.rigSetup && this.b.rigSetup.isBuilder(s);
-      if (rig && (!rig.enabled(s.workspaceKey) || builder)) return this.check(s.workspaceKey, o);
+      const builder = this.b.rigSetup && this.b.rigSetup.isWorkspaceBuilder(s);
+      if (rig && (builder || (op === 'check' && !rig.enabled(s.workspaceKey)))) return op === 'check' ? this.check(s.workspaceKey, o) : this.log(s.workspaceKey, o);
     }
     if (!this.isManager(s)) {
       const r = this.b.rig ? this.b.rig.active(s.workspaceKey) : null;
       const why = !r ? '이 워크스페이스에는 켜진 rig가 없다' : !r.def.manager ? 'rig 정의에 manager(관리자 자리)가 없다' : `관리자 자리(${r.def.manager})에 앉은 세션만 쓴다${s.rigSeat ? `(너는 ${s.rigSeat} 자리)` : '(너는 자리 없는 세션)'}`;
-      throw apiError('forbidden', `atrium rig ${op}는 관리자 자리 세션과 사람만 쓴다: ${why}.`);
+      throw apiError('forbidden', `atrium rig ${op}는 관리자 자리 세션과 사람만 쓴다: ${why}.${RIG_READ_OPS.includes(op) ? ' check·log(읽기만)는 그 워크스페이스의 rig 제작 세션도 쓴다.' : ''}`);
     }
     return this.run(s.workspaceKey, op, o, { by: 'manager', who: s });
   }
@@ -76,8 +81,34 @@ export class RigAdmin {
     const hits = base && prot ? protectedHits(raw, base.raw, prot.pointers) : [];
     const out = { ok: v.ok && !hits.length, from, hash, current: { n: cur.n ?? null, hash: cur.hash || null }, same: !!(base && base.hash === hash), warnings: v.ok ? [...(v.def.warnings || []), ...(v.def.seats && Object.values(v.def.seats).some((x) => x.worktree) ? worktreeWarnings(v.def.seats, gitStateOf(root)) : [])] : [] }; // P195: 워크트리 자리의 저장소 조건
     if (!v.ok) return { ...out, reason: v.reason };
+    // P209: 자리 effort·model. 런처 이름 자리는 그 런처의 종류로 effort를 다시 보고, 앉은 keep 자리 세션에는 다음에 띄울 때부터 먹는다고 적는다
+    const sn = this.seatNotes(key, v.def.seats);
+    out.warnings.push(...sn.warnings);
+    if (sn.reason) return { ...out, ok: false, reason: sn.reason };
     if (hits.length) return { ...out, protectedHits: hits, reason: `사람만 고치는 자리를 바꾼다: ${hits.join(', ')}. 이대로 쓰면 보드가 이 정의를 쓰지 않는다(지금 버전을 그대로 쓴다).` };
     return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), manager: v.def.manager } };
+  }
+
+  // P209: 자리 effort·model 검사(정의 검사가 모르는 것: 런처의 종류, 지금 앉은 세션) → { reason | null, warnings }
+  seatNotes(key, seats) {
+    const warnings = []; let reason = null;
+    if (!seats) return { reason, warnings };
+    const setup = this.b.rigSetup;
+    for (const x of Object.values(seats)) {
+      if (x.effort && !SEAT_KINDS.includes(x.launcher)) {
+        const l = setup && setup.findLauncher ? setup.findLauncher(x.launcher) : null;
+        const h = l ? harnessOf(l.harness) : null;
+        const why = h ? seatEffortError(h.kind, x.effort) : null;
+        if (why && !reason) reason = `seats.${x.name}.effort: 런처 ${l.name || x.launcher}는 ${why}`;
+      }
+      if ((x.effort || x.model) && x.session === 'keep' && this.b.sessions) {
+        // 앉은 세션이 띄울 때 받은 값(s.effort·s.model)과 다른 것만 알린다
+        const sat = [...this.b.sessions.values()].find((t) => t.workspaceKey === key && t.rigSeat === x.name);
+        const diff = sat ? [x.effort && sat.effort !== x.effort ? `effort ${x.effort}` : null, x.model && sat.model !== x.model ? `model ${x.model}` : null].filter(Boolean) : [];
+        if (diff.length) warnings.push(`keep 자리 ${x.name}의 ${diff.join('·')}는 다음에 띄울 때부터 먹는다. 지금 앉은 @${shownName(sat) || sat.name}는 띄울 때의 값(${[sat.effort ? `effort ${sat.effort}` : null, sat.model ? `model ${sat.model}` : null].filter(Boolean).join('·') || '런처 기본'}) 그대로 돈다.`);
+      }
+    }
+    return { reason, warnings };
   }
 
   // 버전 목록과 버전마다 건 수, 반려 수, 훅 거절 수, 상한 초과 수
