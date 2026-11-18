@@ -16,8 +16,8 @@ import { cleanEnv } from './proc-env.mjs';
 import { shownName } from './session-label.mjs';
 import { isModelName } from './model-name.mjs'; // P209: 자리 model
 import { EFFORTS } from './settings.mjs'; // P209: 자리 effort(Claude Code)
-import { CODEX_EFFORTS } from './launchers.mjs'; // P209: 자리 effort(Codex, P208의 model_reasoning_effort 옮기기와 같은 표)
-import { AMP_ATS, validateAmp, seatPermitHash } from './rig-amp.mjs'; // P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
+import { CODEX_EFFORTS, resolveLauncher } from './launchers.mjs'; // P226: resolveLauncher(승인 해시의 런처 값). P209: 자리 effort(Codex, P208의 model_reasoning_effort 옮기기와 같은 표)
+import { AMP_ATS, validateAmp, seatPermitHash } from './rig-amp.mjs'; // P226: 해시에 런처의 실행 값(seatLaunchOf). P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { validateDocs } from './rig-docs.mjs'; // P219: rig 2 문서(docs, loads·reads·writes·records)
 import { spreadLoops, loopFlowReason, finishLoops } from './rig-loops.mjs'; // P221: rig 2 고리(loops)
@@ -351,7 +351,23 @@ export class Rig {
   permitted(key, seat, def = null) {
     if (!key || !seat || !this.store().rigPermitted) return false;
     const d = def || this.read(key).def;
-    return !!d && this.store().rigPermitted(key, seat, seatPermitHash(d, seat));
+    return !!d && this.store().rigPermitted(key, seat, this.permitHash(d, seat));
+  }
+  // P226(rig2-design 11.10의 3): 자리 승인 해시 = 정의의 위험한 칸 + 런처가 푼 실제 실행 값
+  permitHash(def, seat) { return seatPermitHash(def, seat, this.seatLaunchOf(def, seat)); }
+  // 자리의 런처가 푼 종류·모델·인자 → { kind, model, … } | { launcher, missing: true }(런처를 찾지 못함) | null(자리 없음)
+  //   종류 이름 자리(claude·codex…)는 { kind, model }(model은 정의의 값). 런처 이름 자리는 보드 런처 정의를 resolveLauncher로 푼 값(환경 변수는 이름만)
+  seatLaunchOf(def, seat) {
+    const x = def && def.seats ? def.seats[seat] : null;
+    if (!x) return null;
+    if (SEAT_KINDS.includes(x.launcher)) return { kind: x.launcher, model: x.model || null };
+    const setup = this.b.rigSetup;
+    const l = setup && setup.findLauncher ? setup.findLauncher(x.launcher) : null;
+    if (!l) return { launcher: x.launcher, missing: true };
+    try {
+      const r = resolveLauncher(l);
+      return { kind: r.kind, model: r.model || null, permissionMode: r.permissionMode || null, args: r.args || r.extraArgs || [], command: r.command || '', startCommand: r.startCommand || '', connection: r.connectionId || null, env: Object.keys(r.env || {}).sort() };
+    } catch (e) { return { launcher: x.launcher, error: String(e.message || e).slice(0, 80) }; }
   }
   // P223: 정의에서 permission이 unattended인 자리 이름들
   unattendedSeats(def) { return def && def.amp ? Object.entries(def.amp.seats || {}).filter(([, x]) => x.permission === 'unattended').map(([n]) => n) : []; }
@@ -361,7 +377,7 @@ export class Rig {
     const want = this.unattendedSeats(r.def);
     const list = (seats == null ? want : seats).filter((n) => want.includes(n) && !this.permitted(key, n, r.def));
     for (const n of list) {
-      const hash = seatPermitHash(r.def, n); // P225
+      const hash = this.permitHash(r.def, n); // P225. P226: 런처 값
       this.store().setRigPermit(key, n, by, hash);
       rigEvent(this.b, { kind: 'seat_permission', ws: key, defN: r.n ?? null, seat: n, value: 'approved', actor: 'human', text: `${n}: unattended(묻지 않음)를 사람이 승인(${by})`, data: { asked: 'unattended', permission: 'unattended', approved: true, by, hash } });
     }
@@ -648,7 +664,7 @@ export class Rig {
     const lapsed = new Set();
     if (r.def && this.store().rigPermitRows) {
       const want = new Set(this.unattendedSeats(r.def));
-      for (const p of this.store().rigPermitRows(key)) if (!want.has(p.seat) || p.hash !== seatPermitHash(r.def, p.seat)) { this.store().deleteRigPermit(key, p.seat); lapsed.add(p.seat); }
+      for (const p of this.store().rigPermitRows(key)) if (!want.has(p.seat) || p.hash !== this.permitHash(r.def, p.seat)) { this.store().deleteRigPermit(key, p.seat); lapsed.add(p.seat); }
     }
     const list = this.permitNeeds(key).map((x) => x.seat);
     const sig = list.join(',');
@@ -657,7 +673,7 @@ export class Rig {
     this.permitSig.set(key, sig);
     let rows = null;
     for (const n of list) {
-      const hash = seatPermitHash(r.def, n);
+      const hash = this.permitHash(r.def, n);
       // 같은 자리·해시의 기다림을 이미 적었으면 다시 적지 않는다(판이 다시 떠도)
       if (!rows) { try { rows = this.store().rigEvents ? this.store().rigEvents({ ws: key, kinds: ['seat_permission'], limit: 200 }) : []; } catch { rows = []; } }
       const last = rows.filter((x) => x.seat === n && (x.value === 'pending' || x.value === 'approved')).at(-1);

@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS rig_loops (workspace_key TEXT NOT NULL, loop TEXT NOT
 CREATE TABLE IF NOT EXISTS rig_loop_requests (id INTEGER PRIMARY KEY, workspace_key TEXT NOT NULL, loop TEXT NOT NULL, session_id TEXT NOT NULL, from_kind TEXT NOT NULL, from_session TEXT, text TEXT NOT NULL, t INTEGER NOT NULL, state TEXT NOT NULL, case_id TEXT) STRICT;
 CREATE INDEX IF NOT EXISTS rig_loop_requests_ws ON rig_loop_requests(workspace_key, loop, state, id);
 CREATE TABLE IF NOT EXISTS rig_permits (workspace_key TEXT NOT NULL, seat TEXT NOT NULL, t INTEGER NOT NULL, by TEXT NOT NULL, PRIMARY KEY (workspace_key, seat)) STRICT;
+CREATE TABLE IF NOT EXISTS rig_run_close (session_id TEXT PRIMARY KEY, workspace_key TEXT NOT NULL, case_id TEXT NOT NULL, seat TEXT NOT NULL, t INTEGER NOT NULL) STRICT;
 `;
+// P226(rig2-design 11.10의 4): rig_run_close = 회가 닫힌 뒤 닫을 fresh 자리 세션(close run). 판이 다시 떠도 닫는다. 닫거나 남기기로 정하면 지운다
 // P223: rig_permits = 사람이 unattended(묻지 않음)를 승인한 자리(워크스페이스·자리마다 한 줄, by: enable | human).
 //   rig_loop_requests.delivery_id = 멈춘 고리에 붙잡은 전달(대기열의 loop_paused 전달, 잇기에 그 전달로 넣는다)
 // P222(rig 2 R5): 산출물 섹터의 등록부. 한 줄이 산출물 하나(섹터 폴더 안의 파일·폴더, path는 저장소 기준). state: new | accepted | superseded
@@ -362,6 +364,10 @@ export function installRig(Store) {
     rigPermitted(key, seat, hash = null) { const r = this.st('SELECT hash FROM rig_permits WHERE workspace_key = ? AND seat = ?').get(key, seat); return !!r && (hash == null || r.hash === hash); },
     setRigPermit(key, seat, by, hash = null) { this.st('INSERT INTO rig_permits (workspace_key, seat, t, by, hash) VALUES (?, ?, ?, ?, ?) ON CONFLICT(workspace_key, seat) DO UPDATE SET t = excluded.t, by = excluded.by, hash = excluded.hash').run(key, seat, Date.now(), by, hash); },
     rigPermitRows(key) { return this.st('SELECT seat, hash, by, t FROM rig_permits WHERE workspace_key = ?').all(key).map((r) => ({ seat: r.seat, hash: r.hash ?? null, by: r.by, t: r.t })); }, // P225
+    // P226: close run 대기
+    addRunClose(x) { this.st('INSERT INTO rig_run_close (session_id, workspace_key, case_id, seat, t) VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET workspace_key = excluded.workspace_key, case_id = excluded.case_id, seat = excluded.seat, t = excluded.t').run(x.sessionId, x.key, x.caseId, x.seat, x.t ?? Date.now()); },
+    runCloseRows() { return this.st('SELECT * FROM rig_run_close ORDER BY t').all().map((r) => ({ sessionId: r.session_id, key: r.workspace_key, caseId: r.case_id, seat: r.seat, t: r.t })); },
+    deleteRunClose(sessionId) { this.st('DELETE FROM rig_run_close WHERE session_id = ?').run(sessionId); },
     deleteRigPermit(key, seat) { this.st('DELETE FROM rig_permits WHERE workspace_key = ? AND seat = ?').run(key, seat); }, // P225: 해시가 바뀐 승인을 지운다
     setDeliveryParkLoop(id, park) { this.st('UPDATE deliveries SET park_loop = ? WHERE delivery_id = ?').run(park ? JSON.stringify(park) : null, id); }, // P225
     setLoopRequest(id, state, caseId = null) { this.st('UPDATE rig_loop_requests SET state = ?, case_id = ? WHERE id = ?').run(state, caseId, id); },

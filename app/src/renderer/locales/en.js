@@ -2959,9 +2959,9 @@ export default {
   },
   rigPerm: { // P223: seat permissions in the rig enable confirmation
     confirmHead: { one: '{n} seat changes permissions', other: '{n} seats change permissions' },
-    scoped: { one: 'Edits inside its write scope and {n} allowed command run without asking. Everything else asks', other: 'Edits inside its write scope and {n} allowed commands run without asking. Everything else asks' },
-    unattended: 'Never asks (writes outside its scope are blocked)',
-    unattendedWarn: 'This confirmation turns on the "never asks" seats. Their sessions run commands without asking a person. A "never asks" seat added to the definition later runs as "asks outside its scope" until you approve it again.',
+    scoped: { one: 'Reads, edits inside its write scope and {n} allowed command run without asking. Shell writes and deletes ask', other: 'Reads, edits inside its write scope and {n} allowed commands run without asking. Shell writes and deletes ask' },
+    unattended: 'Never asks: it can write and delete anywhere in the repository through the shell',
+    unattendedWarn: 'This confirmation turns on the "never asks" seats. Their sessions run commands without asking a person, and through the shell they can write and delete anywhere in the repository (the write scope only limits edit tools). A "never asks" seat added to the definition later runs as "asks outside its scope" until you approve it again.',
   },
   rigAsk: { // P224: rig approval cards (needs-you list and phone list)
     head: 'rig approvals {n}',
@@ -3000,7 +3000,8 @@ export default {
   rigPermitNeed: { // P225: unattended seat approval in the needs-you list
     line: 'Approve unattended seat: {seat}',
     what: 'Until approved it runs as "asks outside its scope"',
-    tip: 'This rig seat is "never asks" (unattended) in the definition. Its permission fields (permission, write scope, allowed commands, tools, launcher) are new or changed, so it waits for a person to approve. Once approved, its sessions run commands without asking (writes outside the scope stay blocked).',
+    tip: 'This rig seat is "never asks" (unattended) in the definition. Its permission fields (permission, write scope, allowed and denied commands, tools, launcher and what the launcher runs) are new or changed, so it waits for a person to approve. Once approved, its sessions run commands without asking. Edit tools stay inside the write scope, but the shell can write and delete anywhere in the repository.',
+    risk: 'Never asks: it can write and delete anywhere in the repository through the shell',
     approve: 'Approve',
     done: 'Approved unattended seat {seat}. Its next session runs without asking.',
     fail: 'Could not approve: {error}',

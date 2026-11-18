@@ -158,13 +158,13 @@ test('P225 승인 해시: 켜기 확인이 승인한 자리도 권한 칸이 바
     assert.equal(b.rigAmp.seatPermission(ws.key, 'worker').permission, 'unattended');
     assert.deepEqual(b.rig.permitNeeds(), []);
     const row0 = b.store.rigPermitRows(ws.key)[0];
-    assert.equal(row0.hash, seatPermitHash(b.rig.read(ws.key).def, 'worker'), '승인 줄에 해시');
+    assert.equal(row0.hash, b.rig.permitHash(b.rig.read(ws.key).def, 'worker'), '승인 줄에 해시'); // P226: 런처 값이 든 해시
     // 관리자 자리가 worker의 쓰기 범위를 넓혔다 → 승인 풀림
     const d1 = permDef(); d1.seats.worker.writes = ['out/', 'src/'];
     rewrite(b, ws.key, d1);
     assert.equal(b.rig.permitted(ws.key, 'worker'), false);
     const p = b.rigAmp.seatPermission(ws.key, 'worker');
-    assert.deepEqual([p.asked, p.permission, p.pending, p.claudeMode], ['unattended', 'scoped', true, 'acceptEdits']);
+    assert.deepEqual([p.asked, p.permission, p.pending, p.claudeMode], ['unattended', 'scoped', true, 'manual']);
     assert.deepEqual(b.rig.permitNeeds().map((x) => [x.workspace, x.seat]), [[ws.key, 'worker']]);
     assert.ok(b.rig.status(ws.key).warnings.some((w) => /seats\.worker\.permission "unattended"는 사람이 아직 승인하지 않아 scoped로 돈다\(승인한 뒤/.test(w)));
     // 주기: 장부 pending(풀림) 한 줄, 승인 줄을 지움, 창에 알림. 같은 상태로 다시 보면 아무것도 하지 않는다
@@ -278,8 +278,8 @@ test('P225 scoped 자리: 셸 안의 셸은 판의 PreToolUse가 묻지 않고 �
     assert.equal(await A.answer(m, 'PreToolUse', { tool_name: 'PowerShell', tool_input: { command: 'Get-ChildItem .' } }), null);
     const g = ledger(b, ws.key, { kinds: ['gate'] }).at(-1);
     assert.deepEqual([g.value, g.data.why, g.data.shell, g.seat], ['reject', 'nested_shell', 'cmd', 'main']);
-    // unattended(승인됨)·ask 자리는 그대로
-    assert.equal(await A.answer(w, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'powershell -c ls' } }), null);
+    // P226: unattended(승인됨)도 셸 안의 셸을 거절한다(판의 고정 기준). ask 자리는 그대로
+    assert.equal((await A.answer(w, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'powershell -c ls' } })).hookSpecificOutput.permissionDecision, 'deny');
     assert.equal(A.wants(k, 'PreToolUse'), false);
     assert.equal(claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: [], root: 'C:/r', cwd: 'C:/r', permission: 'ask', allow: [] }), null);
   } finally { await stop(); }

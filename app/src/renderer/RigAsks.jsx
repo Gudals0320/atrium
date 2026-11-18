@@ -82,6 +82,7 @@ export function RigAskCard({ a, now = Date.now(), compact = false }) {
     <div className={`mt-rigask ${a.kind}${compact ? ' compact' : ''}`} data-role="rig-ask" data-kind={a.kind} data-ask={a.id} title={a.kind === 'seat_permit' ? t('rigPermitNeed.tip') : undefined}>
       <div className="mt-rigask-title">{rigAskTitle(t, a)}</div>
       <div className="mt-rigask-meta">{meta}</div>
+      {a.kind === 'seat_permit' && <div className="mt-rigask-risk" data-role="rig-ask-risk">{t('rigPermitNeed.risk')}</div>}{/* P226: 무인 자리가 셸로 할 수 있는 것 */}
       {diff && (
         <button type="button" className="mt-rigask-link" data-action="rig-ask-diff" aria-expanded={show} onClick={() => setShow((s) => !s)}>
           {show ? t('rigAsk.hideDiff') : a.kind === 'proposal' ? t('rigAsk.showPatch') : t('rigAsk.showChange')}
