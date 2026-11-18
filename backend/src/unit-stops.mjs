@@ -35,7 +35,8 @@ export function stopLine({ child, unitId, spec, why, detail = null }) {
 export function stopNoticeText(lines) {
   const ls = lines.map((l) => (typeof l === 'string' ? l : l.line));
   const head = ls.length === 1 ? [`[Atrium 보드] 맡긴 일이 멈췄다: ${ls[0]}`] : ['[Atrium 보드] 맡긴 일이 멈췄다.', ...ls.map((l) => `- ${l}`)];
-  return [...head, '할 수 있는 것: 화면 보기 `atrium read <이름>`, 다시 시키기 `atrium prompt <이름> "<할 일>"`, 사람이 답해야 하면 사람에게 알린다. 이 일을 기다리며 폴링하지 않는다.'].join('\n');
+  const exited = lines.some((l) => l && l.why === 'exited') ? ' 셸만 남은(종료) 세션에는 다시 시키지 않는다: rig 일은 그 줄의 `atrium rig retry`(관리자 자리·사람), 그 밖은 새 하위(`atrium child`)로 맡긴다.' : ''; // P216
+  return [...head, `할 수 있는 것: 화면 보기 \`atrium read <이름>\`, 다시 시키기 \`atrium prompt <이름> "<할 일>"\`, 사람이 답해야 하면 사람에게 알린다. 이 일을 기다리며 폴링하지 않는다.${exited}`].join('\n');
 }
 
 export class UnitStops {

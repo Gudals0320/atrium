@@ -174,6 +174,7 @@ for (const kind of ['claude', 'codex', 'agy', 'pi', 'opencode']) {
       const n = stopNotices(b, lead)[0].text;
       assert.match(n, /@w1의 일 u\w+\("로그를 정리해라"\): 에이전트가 끝나 셸만 남았다/);
       assert.match(n, /atrium child/);
+      assert.match(n, /셸만 남은\(종료\) 세션에는 다시 시키지 않는다/, '끝줄: 종료된 세션에 다시 시키지 않는다');
       assert.equal(evs(b, 'unit_stop').filter((e) => e.data.why === 'exited').length, 1);
       // 같은 상태를 다시 방송해도 한 번만
       b.broadcastSession(w); await tick(120);
