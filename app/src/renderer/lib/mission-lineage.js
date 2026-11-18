@@ -489,10 +489,11 @@ export const dayStart = (now = Date.now()) => { const d = new Date(now); d.setHo
 // 다음 자정까지 ms(맵을 연 채 자정이 지나면 차례를 다시 센다)
 export const msToMidnight = (now = Date.now()) => { const d = new Date(now); d.setHours(24, 0, 0, 0); return Math.max(1000, d.getTime() - now); };
 const atMs = (v) => (typeof v === 'number' ? v : v ? Date.parse(v) || 0 : 0);
-// 세션이 오늘 활동했나: 지금 일하는 중(등급 work·live working)이면 오늘, 아니면 카드가 쓰는 활동 시각(node.activeAt, 없으면 live lastActivityAt)이 오늘 자정 이후
+// 세션이 오늘 활동했나: 지금 일하는 중(등급 work·live working)이면 오늘, 아니면 활동 시각(node.activeAt과 live lastActivityAt 중 늦은 것)이 오늘 자정 이후.
+// P210: 그래프는 활동 시각만 바뀌면 다시 읽지 않으므로(graphKey) 창이 가진 세션 값의 더 늦은 시각도 본다
 export function sessionToday(n, live, tier, now = Date.now()) {
   if (tier === 'work' || (live && live.state === 'working')) return true;
-  const at = atMs((n && n.activeAt) || (live && live.lastActivityAt) || null);
+  const at = Math.max(atMs(n && n.activeAt), atMs(live && live.lastActivityAt));
   return at > 0 && at >= dayStart(now);
 }
 // 오늘 활동한 세션이 하나라도 있는 워크스페이스 키들(그래프 세션 노드에서). liveOf(node) → live 세션, tierOf(node) → 등급
@@ -618,4 +619,59 @@ export function applyRelationStub(graph, sets) {
     if (relation !== 'auto' && !edges.some(pair)) edges.push({ from: A.id, to: B.id, kind: 'relation', relation, relationSource: 'user', relationUp: relation === 'sub' ? A.id : undefined, count: 0 });
   }
   return { ...graph, nodes, edges };
+}
+
+// ---- P210: 세션 맵 성능. 배치(선 길 찾기 포함)·카드 그리기는 그 값이 바뀔 때만 다시 한다 ----
+// 등급 표(카드 id → 등급): 같은 내용이면 앞 표(같은 객체)를 돌려준다. 일하는 세션의 활동 시각만 바뀌는 갱신에는 배치·역할 모델이 다시 돌지 않는다
+export function keepSameMap(prev, next) {
+  if (!prev || !next || prev.size !== next.size) return next;
+  for (const [k, v] of next) if (!prev.has(k) || prev.get(k) !== v) return next;
+  return prev;
+}
+// 그래프를 다시 읽을 세션 바뀜의 열쇠(글). 판 그래프(backend mission.mjs missionGraph)가 세션 요약에서 담는 값 중 자주 바뀌는 활동 시각(lastActivityAt)·턴 진행은 뺀다.
+// 그 값은 창이 가진 세션 값(live)으로 카드가 바로 보인다(cardFacts). 세션이 생기거나 닫히면 열쇠가 바뀐다
+const qText = (a) => (a ? [a.kind, a.summary, a.questions && a.questions[0] && a.questions[0].question].join('') : '');
+const errText0 = (e) => (e ? (typeof e === 'string' ? e : e.message || '') : '');
+export function graphKey(sessions) {
+  const out = [];
+  for (const s of (sessions && sessions.values ? sessions.values() : sessions || [])) {
+    if (!s) continue;
+    const br = s.branch || {};
+    out.push([s.sessionId, s.name, s.kind, s.flavor, s.state, s.unseen ? 1 : 0, s.workspaceKey, s.lineageParentSessionId, s.parentSessionId, br.parentSessionId, br.depth, br.role, br.order, br.child ? 1 : 0,
+      s.model, s.effort, s.state === 'working' && s.turn ? s.turn.startedAt : '', s.git && s.git.isWorktree ? s.git.branch : '', s.background ? JSON.stringify({ ...s.background, at: 0 }) : '',
+      s.rigSeat, s.lastPrompt, qText(s.ask), s.waitingSince, errText0(s.error), s.loops, s.createdAt].join('\u0001'));
+  }
+  return out.join('\u0002');
+}
+// 새 그래프가 앞 그래프와 시각 값(at, activeAt, since, lastAt, count)만 다르면 앞 그래프(같은 객체)를 쓴다(배치를 다시 세지 않는다)
+const VOLATILE = new Set(['at', 'activeAt', 'since', 'lastAt', 'count']);
+export const graphSig = (g) => JSON.stringify(g, (k, v) => (VOLATILE.has(k) ? undefined : v));
+export function keepSameGraph(prev, next) {
+  if (!prev || !next || prev === next) return next;
+  return graphSig(prev) === graphSig(next) ? prev : next;
+}
+// 카드 사실(cardFacts 결과)이 같은가. 글·수는 그대로, 객체(종류 k, 뒤 일 bg)는 내용으로 견준다
+export function sameFacts(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    const x = a[k], y = b[k];
+    if (x === y) continue;
+    if (x && y && typeof x === 'object' && typeof y === 'object' && JSON.stringify(x) === JSON.stringify(y)) continue;
+    return false;
+  }
+  return true;
+}
+// 새 배치의 카드 상자가 앞 배치의 것과 같으면 앞 상자(같은 객체)로 바꿔 둔다(카드 memo가 바뀐 카드만 다시 그린다). lay를 돌려준다
+export function keepCardBoxes(prev, lay) {
+  if (!prev || !lay || prev === lay) return lay;
+  for (const [id, b] of lay.cards) { const pb = prev.cards.get(id); if (pb && pb !== b && sameFacts(pb, b)) lay.cards.set(id, pb); }
+  return lay;
+}
+// 카드 사실 담기: id마다 앞 사실을 두고 같으면 앞 객체를 돌려준다(카드 memo가 다시 그리지 않는다)
+export function factsKeeper() {
+  const m = new Map();
+  return (id, f) => { const old = m.get(id); if (old && sameFacts(old, f)) return old; m.set(id, f); return f; };
 }

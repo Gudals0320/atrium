@@ -13,7 +13,8 @@ const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 const DEV = path.join(REPO, 'backend', '.dev');
 const OUT = path.join(REPO, 'experiments', 'p207', TAG);
 const CONVOS = path.join(REPO, 'experiments', 'p207', 'convos');
-const BOARD = 'atrium-dev-p207', PORT = '47979', SIM = 47981;
+// P210: 다른 워커의 판에서 돌릴 때 P207_BOARD(atrium-dev-<이름>), P207_PORT, P207_SIM으로 덮는다
+const BOARD = `atrium-dev-${process.env.P207_BOARD || 'p207'}`, PORT = process.env.P207_PORT || '47979', SIM = Number(process.env.P207_SIM || 47981);
 for (const k of Object.keys(process.env)) if (/^(ATRIUM_|MTASK_|HERDR_|HC_)/.test(k)) delete process.env[k];
 process.env.MT_E2E_OUT = path.relative(path.join(REPO, 'experiments'), OUT);
 const L = await import('./p59-lib.mjs');
