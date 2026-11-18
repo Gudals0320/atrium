@@ -343,7 +343,7 @@ test('P190 켜진 rig의 말로 고치기: 제작 일이 열린 동안 바뀐 �
     await until(() => builder && builder.texts.length && builder.rt.term.status === 'idle', 4000);
     // 제작 세션이 rig check를 쓴다(켜진 rig지만 제작 일을 쥐었다)
     assert.equal((await b.branch.rigAdmin.verb(builder, { op: 'check' })).ok, true);
-    await assert.rejects(b.branch.rigAdmin.verb(builder, { op: 'log' }), (e) => e.code === 'forbidden', 'log는 관리자 자리만');
+    assert.ok(Array.isArray((await b.branch.rigAdmin.verb(builder, { op: 'log' })).versions), 'P209: 제작 세션은 log도(읽기만)');
     const def = readRig(dir); def.seats.worker.max_live = 2;
     fs.writeFileSync(rigFile(dir), JSON.stringify(def, null, 2)); const t1 = new Date(Date.now() + 1000); fs.utimesSync(rigFile(dir), t1, t1);
     assert.equal(b.rig.read(ws.key).n, 2);

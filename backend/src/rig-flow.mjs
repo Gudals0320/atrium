@@ -106,6 +106,15 @@ export function handoffText({ fromSeat, fromName, result, doneText, firstSpec, e
   return lines.join('\n');
 }
 
+// P209: 자리의 effort·model → spawnChild 칸(atrium child --effort·--model과 같은 길. 호출자·주인의 값을 덮는다).
+//   model은 종류 이름 자리만(validateFlow). 모델을 주면 종류도 준다: --model은 그 종류의 모델로 풀린다(주인과 같은 종류여도)
+export function seatOverrides(seat) {
+  const o = {};
+  if (seat && seat.effort) o.effort = seat.effort;
+  if (seat && seat.model) { o.model = seat.model; if (SEAT_KINDS.includes(seat.launcher)) o.kind = seat.launcher; }
+  return o;
+}
+
 export class RigFlow {
   // b: 백엔드(store, sessions, rig, queue, log, linkEvent). branch: Branch(spawnChild, units, verbs)
   constructor(b, branch) {
@@ -337,7 +346,7 @@ export class RigFlow {
     let name = seat.session === 'keep' && !taken.has(seatName) ? seatName : null;
     for (let i = 0; !name && i < 1000; i++) { const n = `${seatName}-${st.nextSeatN(ctx.key, seatName)}`; if (!taken.has(n)) name = n; }
     const worktree = seat.worktree ? `${seatName}-${unitId}` : null;
-    const o = { name, role: seatName, cwd: ctx.r.root, wait: false, ...this.seatRoute(seat, seatName, owner), ...(worktree ? { worktree } : {}), [SEAT_SPAWN]: seatName }; // P189: 띄울 때부터 자리의 증폭(설정 파일·Codex 인자)
+    const o = { name, role: seatName, cwd: ctx.r.root, wait: false, ...this.seatRoute(seat, seatName, owner), ...seatOverrides(seat), ...(worktree ? { worktree } : {}), [SEAT_SPAWN]: seatName }; // P189: 띄울 때부터 자리의 증폭(설정 파일·Codex 인자)
     const k = `${ctx.key}|${seatName}`;
     this.spawning.set(k, (this.spawning.get(k) || 0) + 1);
     let r;
@@ -347,7 +356,7 @@ export class RigFlow {
     if (!s) throw apiError('spawn_failed', `${seatName} 자리 세션이 보드에 등록되지 않았다.`);
     st.setSessionSeat(s.sessionId, seatName); s.rigSeat = seatName;
     st.insertCaseItem({ caseId: c.id, sessionId: s.sessionId, seat: seatName, worktree, worktreePath: worktree ? path.join(ctx.r.root, '.claude', 'worktrees', worktree) : null });
-    st.addEvent(s.sessionId, 'rig_seat_spawn', { seat: seatName, caseId: c.id, unitId, owner: owner.name, worktree, launcher: seat.launcher, session: seat.session });
+    st.addEvent(s.sessionId, 'rig_seat_spawn', { seat: seatName, caseId: c.id, unitId, owner: owner.name, worktree, launcher: seat.launcher, session: seat.session, ...(seat.effort ? { effort: seat.effort } : {}), ...(seat.model ? { model: seat.model } : {}) });
     b.log(`rig seat ${seatName} spawned ${s.name} for case ${c.id}${worktree ? ` (worktree ${worktree})` : ''}`);
     if (b.broadcastSession) b.broadcastSession(s, { cause: 'rig_seat' });
     return s;

@@ -14,6 +14,8 @@ import path from 'node:path';
 import { runHook, pathish, HOOK_TIMEOUT_MS, HOOK_TIMEOUT_MAX_MS } from './hook-runner.mjs';
 import { cleanEnv } from './proc-env.mjs';
 import { shownName } from './session-label.mjs';
+import { isModelName } from './model-name.mjs'; // P209: 자리 model
+import { EFFORTS } from './settings.mjs'; // P209: 자리 effort(Claude Code)
 import { AMP_ATS, validateAmp } from './rig-amp.mjs'; // P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
 
 export const RIG_FILE = '.atrium/rig.json';
@@ -215,8 +217,18 @@ export const SEAT_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/; // 세션 이름(<자리>-
 export const RESULT_RE = /^[a-z][a-z0-9_]{0,23}$/;
 export const SEAT_MAX_LIVE = 3;
 export const SEAT_KINDS = ['claude', 'codex', 'opencode', 'pi'];
+// P209: 자리의 노력 수준(seats.<자리>.effort). 하네스마다 받는 값. Claude Code는 claude --effort, Codex는 model_reasoning_effort로 넘긴다.
+//   opencode·pi는 노력 수준 칸이 없다. 런처 이름 자리는 정의만으로 하네스를 모르므로 둘을 합친 값을 받고 atrium rig check가 런처의 종류로 다시 본다
+export const SEAT_EFFORTS = { claude: EFFORTS.filter(Boolean), codex: ['minimal', 'low', 'medium', 'high', 'xhigh'] };
+// 자리 effort가 그 종류에 맞나 → null(맞음) | 까닭
+export function seatEffortError(kind, effort) {
+  const ok = SEAT_EFFORTS[kind];
+  if (!ok) return `${kind} 자리는 effort를 받지 않는다(Claude Code·Codex만)`;
+  return ok.includes(effort) ? null : `${kind} 자리의 effort는 ${ok.join(', ')} 가운데 하나다: ${effort}`;
+}
 // → { ok, flow: { results, seats, flow, manager, warnings } } | { ok: false, reason }
-//   seats: { <이름>: { name, launcher, session: keep|fresh, worktree, tools: [..] | null, may: [..], maxLive, guide } } | null(자리 없음: 1~2단계 rig)
+//   seats: { <이름>: { name, launcher, session: keep|fresh, worktree, tools: [..] | null, may: [..], maxLive, guide, effort, model } } | null(자리 없음: 1~2단계 rig)
+//   P209: effort·model은 그 자리 세션을 띄울 때 호출자 기본값을 덮는다(null이면 런처·주인의 것). model은 종류 이름 자리만(런처 자리는 그 런처의 모델)
 //   flow: [{ index, from, on, to: [..], max, else }]. warnings: 상한 없는 되돌아감 등(정의는 쓰인다)
 export function validateFlow(raw, { root = null, exists = isFile, tools = null } = {}) {
   const bad = (reason) => ({ ok: false, reason });
@@ -254,7 +266,17 @@ export function validateFlow(raw, { root = null, exists = isFile, tools = null }
       if (typeof x.guide !== 'string' || !x.guide) return bad(`${at}.guide는 파일 경로 글이다`);
       if (root && (!inside(root, path.resolve(root, x.guide)) || !exists(path.resolve(root, x.guide)))) return bad(`${at}.guide의 파일이 워크스페이스 안에 없다: ${x.guide}`);
     }
-    seats[name] = { name, launcher: x.launcher.trim(), session, worktree: x.worktree === true, tools: x.tools ? x.tools.slice() : null, may: x.may ? x.may.slice() : [], maxLive: session === 'fresh' ? x.max_live || SEAT_MAX_LIVE : 1, guide: x.guide || null };
+    const kindSeat = SEAT_KINDS.includes(x.launcher.trim()) ? x.launcher.trim() : null;
+    if (x.effort != null) {
+      if (typeof x.effort !== 'string' || !x.effort) return bad(`${at}.effort는 노력 수준 낱말이다(Claude Code: ${SEAT_EFFORTS.claude.join(', ')}. Codex: ${SEAT_EFFORTS.codex.join(', ')})`);
+      const why = kindSeat ? seatEffortError(kindSeat, x.effort) : [...SEAT_EFFORTS.claude, ...SEAT_EFFORTS.codex].includes(x.effort) ? null : `${at}.effort는 ${[...new Set([...SEAT_EFFORTS.claude, ...SEAT_EFFORTS.codex])].join(', ')} 가운데 하나다: ${x.effort}`;
+      if (why) return bad(why.startsWith(at) ? why : `${at}.effort: ${why}`);
+    }
+    if (x.model != null) {
+      if (!isModelName(x.model)) return bad(`${at}.model은 모델 이름이다(영문·숫자로 시작, 영문·숫자·._:/[]- 80자까지): ${JSON.stringify(x.model)}`);
+      if (!kindSeat) return bad(`${at}.model은 launcher가 종류 이름(${SEAT_KINDS.join(', ')})인 자리에만 쓴다. 런처 자리는 그 런처의 모델로 띄운다(다른 모델이면 그 모델의 런처를 launcher에 쓴다)`);
+    }
+    seats[name] = { name, launcher: x.launcher.trim(), session, worktree: x.worktree === true, tools: x.tools ? x.tools.slice() : null, may: x.may ? x.may.slice() : [], maxLive: session === 'fresh' ? x.max_live || SEAT_MAX_LIVE : 1, guide: x.guide || null, effort: x.effort || null, model: x.model || null };
   }
   const seatNames = Object.keys(seats);
   const known = (n) => Object.prototype.hasOwnProperty.call(seats, n);
@@ -541,7 +563,7 @@ export class Rig {
       cycleRuns: def && def.cycles ? def.cycles.filter((x) => x.run).map((x) => ({ every: x.every, run: x.run })) : [], // P188: 느린 고리의 run도 사용자 계정으로 돈다
       guide: !!(def && def.guide), name: def ? def.name : null,
       // P185: 자리·흐름(켜기 확인 창과 노드 메뉴의 "자리 정하기"가 쓴다)
-      seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide })) : [],
+      seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide, effort: x.effort || null, model: x.model || null })) : [], // P209: effort·model
       flow: def ? def.flow || [] : [], results: def ? def.results || [] : [], manager: def ? def.manager || null : null,
       warnings: def ? [...(def.warnings || []), ...worktreeWarnings(def.seats, wtGit || 'ok')] : [], worktreeGit: wtGit && wtGit !== 'ok' ? wtGit : null, // P195: 워크트리 자리의 저장소 조건(norepo | nocommit | null)
       // P188: 지금 버전, 느린 고리, 사람만 고치는 목록과 어긋난 것
