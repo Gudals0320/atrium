@@ -442,7 +442,7 @@ async function rigVerb() {
   if (op === 'log' && body.events) { // P217: 장부
     if (!x.rows.length) return say(`rig 장부에 줄이 없다${body.since != null ? `(${body.since} 뒤)` : ''}. 마지막 seq ${x.last}.`);
     say(`rig 장부 ${x.rows.length}줄(오래된 것부터, 마지막 seq ${x.last}):`);
-    for (const y of x.rows) say(`  ${y.line}`);
+    for (const y of x.rows) say(`  ${y.shown}`);
     if (x.more) say(`…더 있다. 이어 읽기: atrium rig log --events --since ${x.rows[x.rows.length - 1].seq}${body.case ? ` --case ${body.case}` : ''}`);
     return;
   }

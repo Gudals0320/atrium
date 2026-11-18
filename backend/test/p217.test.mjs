@@ -320,7 +320,10 @@ test('P217 atrium rig log --events: 거르기(--case·--since·--kinds·--limit)
     let x = await A.verb(main, { op: 'log', events: true });
     assert.ok(x.rows.some((r) => r.caseId === cA) && x.rows.some((r) => r.caseId === cB));
     assert.equal(x.last, b.store.lastRigSeq(key));
-    assert.ok(x.rows.every((r) => typeof r.line === 'string' && r.line.startsWith('#')));
+    assert.ok(x.rows.every((r) => typeof r.shown === 'string' && r.shown.startsWith('#')));
+    // 장부 차례: 맡김 → 자리 세션 띄움 → 시도 시작
+    const cAk = x.rows.filter((r) => r.caseId === cA).map((r) => r.kind);
+    assert.ok(cAk.indexOf('assign') < cAk.indexOf('seat_spawn') && cAk.indexOf('seat_spawn') < cAk.indexOf('try_start'), cAk.join(','));
     // --case, --kinds, --since(seq와 시각), --limit
     x = await A.verb(main, { op: 'log', events: true, case: cA, kinds: 'assign,try_start' });
     assert.deepEqual([...new Set(x.rows.map((r) => r.kind))].sort(), ['assign', 'try_start']);

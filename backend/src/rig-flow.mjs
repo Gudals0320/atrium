@@ -356,7 +356,8 @@ export class RigFlow {
 
   // 받는 자리에 일을 만든다(자리 세션의 prompt와 흐름의 넘김). → { unit, t, made } | { unit, t: null, seatWait: true, ahead }
   //   c: 건, by: 보낸 세션(이어지는 지시 판정·기록), t: 이름으로 고른 받는 세션(없으면 자리로)
-  async assign({ ctx, c, by, seatName, t = null, spec, origin, via = null }) {
+  // P217: ledger — 넘김의 장부 줄(handoff·escalate). 없으면 assign 줄. 세션을 띄우기 전에 적는다(장부 차례: 넘김 → seat_spawn → try_start)
+  async assign({ ctx, c, by, seatName, t = null, spec, origin, via = null, ledger = null }) {
     const b = this.b; const st = this.store(); const U = this.units();
     const owner = b.sessions.get(c.owner);
     if (!owner) throw apiError('closed', `건 ${c.id}의 주인 세션이 닫혀 일을 만들지 않는다.`);
@@ -364,11 +365,12 @@ export class RigFlow {
     const id = newId('u');
     const extra = { id, fromId: owner.sessionId, caseId: c.id, seat: seatName, via: { by: by.sessionId, fromSeat: this.seatCtx(by) ? by.rigSeat : null, ...(via || {}) } };
     if (!t && seat.session === 'keep') t = this.seatedOf(ctx.key, seatName)[0] || null;
-    if (!t && seat.session === 'fresh' && this.liveCount(ctx.key, seatName) >= seat.maxLive) {
+    const queued = !t && seat.session === 'fresh' && this.liveCount(ctx.key, seatName) >= seat.maxLive;
+    this.moveEvent({ ctx, c, by, seatName, unitId: id, origin, spec, t, queued, ledger });
+    if (queued) {
       const unit = { id, from: owner.sessionId, to: '', origin, spec: String(spec), status: 'open', createdAt: Date.now(), caseId: c.id, seat: seatName, via: extra.via };
       st.insertUnit(unit);
       st.addEvent(owner.sessionId, 'unit_open', { unitId: id, from: by.name, origin, seat: seatName, seatWait: true, caseId: c.id, chars: unit.spec.length });
-      this.assignEvent({ ctx, c, by, seatName, unitId: id, origin, spec });
       rigEvent(b, { kind: 'seat_queue', caseId: c.id, unitId: id, seat: seatName, toSeat: seatName, actor: 'board', n: st.seatWaitingUnits(ctx.key, seatName).length, max: seat.maxLive, text: `${seatName} 자리 줄(max_live ${seat.maxLive})` });
       b.log(`unit ${id} → seat ${seatName} waits (max_live ${seat.maxLive})`);
       this.changed(ctx.key);
@@ -376,15 +378,16 @@ export class RigFlow {
     }
     if (!t) t = await this.spawnSeat(ctx, seatName, owner, c, id);
     const made = U.create(by, t, spec, origin, extra);
-    this.assignEvent({ ctx, c, by, seatName, unitId: made.unit.id, origin, spec, t });
     this.changed(ctx.key);
     return { unit: made.unit, t, made };
   }
-  // P217: 자리 세션의 assign 줄로 생긴 일(흐름의 넘김은 handoff가 적는다)
-  assignEvent({ ctx, c, by, seatName, unitId, origin, spec, t = null }) {
-    if (origin === 'flow') return;
+  // P217: 일이 자리로 가는 장부 줄. ledger가 있으면 넘김(handoff·escalate), 없으면 자리 세션의 assign 줄(흐름·주기의 일은 적지 않는다)
+  moveEvent({ ctx, c, by, seatName, unitId, origin, spec, t = null, queued = false, ledger = null }) {
+    const where = queued ? { queued: true } : t ? { to: t.sessionId } : {};
+    if (ledger) return rigEvent(this.b, { ...ledger, caseId: c.id, unitId, toSeat: seatName, data: { ...(ledger.data || {}), ...where } });
+    if (origin === 'flow' || origin === 'cycle') return null;
     const line = ctx.def.flow.find((l) => l.on === 'assign' && l.from === by.rigSeat && l.to[0] === seatName);
-    rigEvent(this.b, { kind: 'assign', caseId: c.id, unitId, seat: by.rigSeat || null, session: by.sessionId, fromSeat: by.rigSeat || null, toSeat: seatName, line: line ? line.index : null, value: 'assign', actor: 'agent', text: firstLine(spec, 120), data: t ? { to: t.sessionId } : { queued: true } });
+    rigEvent(this.b, { kind: 'assign', caseId: c.id, unitId, seat: by.rigSeat || null, session: by.sessionId, fromSeat: by.rigSeat || null, toSeat: seatName, line: line ? line.index : null, value: 'assign', actor: 'agent', text: firstLine(spec, 120), data: where });
   }
 
   // 자리를 위해 세션을 띄운다(건 주인의 하위로, atrium child와 같은 길: 런처·종류의 승인 방식, worktree면 claude -w)
@@ -478,13 +481,13 @@ export class RigFlow {
     const rowIds = (h.runs || []).map((x) => x.rowId).filter((x) => x != null);
     if (h.action === 'reject') return this.block(c, `넘김 글(${ctx.name} ${result} → ${to})을 deliver 훅이 거절했다: ${h.reason}`);
     let a;
-    try { a = await this.assign({ ctx, c, by: caller, seatName: to, spec: h.text, origin: 'flow', via: { result, line: line.index, prevUnit: unit.id, ...(escalated ? { escalated: true } : {}) } }); }
+    // P217: 넘김(상한을 넘어 올라간 넘김은 escalate 한 줄. else 변을 지난다). 세션을 띄우기 전에 적는다
+    const ledger = { kind: escalated ? 'escalate' : 'handoff', seat: ctx.name, session: caller.sessionId, fromSeat: ctx.name, line: line.index, value: result, n: escalated ? escalated.n : passN, max: line.max, actor: 'board', text: firstLine(doneText, 120), data: { prevUnit: unit.id } };
+    try { a = await this.assign({ ctx, c, by: caller, seatName: to, spec: h.text, origin: 'flow', via: { result, line: line.index, prevUnit: unit.id, ...(escalated ? { escalated: true } : {}) }, ledger }); }
     catch (e) { return this.block(st.getCase(c.id), `${to} 자리로 넘기지 못했다: ${e.message}`); }
     // P187: 훅은 받을 세션을 띄우기 전에 돌았다. 그 행에 받은 세션(자리 줄에 섰으면 pump가 띄운 뒤)과 이 일을 적는다(세션 맵 미리 보기)
     if (rowIds.length && st.fillHookRuns) st.fillHookRuns(rowIds, { sessionId: a.t ? a.t.sessionId : null, unitId: a.unit ? a.unit.id : null });
     st.addEvent(caller.sessionId, 'rig_handoff', { caseId: c.id, from: ctx.name, result, to, line: line.index, unitId: a.unit.id, target: a.t ? a.t.name : null, seatWait: !!a.seatWait, escalated: !!escalated });
-    // P217: 넘김(상한을 넘어 올라간 넘김은 escalate 한 줄. else 변을 지난다)
-    rigEvent(b, { kind: escalated ? 'escalate' : 'handoff', caseId: c.id, unitId: a.unit.id, seat: ctx.name, session: caller.sessionId, fromSeat: ctx.name, toSeat: to, line: line.index, value: result, n: escalated ? escalated.n : passN, max: line.max, actor: 'board', text: firstLine(doneText, 120), data: { prevUnit: unit.id, ...(a.seatWait ? { queued: true } : { to: a.t ? a.t.sessionId : null }) } });
     b.log(`rig handoff ${ctx.name}(${caller.name}) ${result} → ${to}${a.t ? ` @${a.t.name}` : ' (seat wait)'} case ${c.id}`);
     if (a.t) {
       const l = this.branch.verbs.link(caller, a.t);

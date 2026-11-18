@@ -132,10 +132,10 @@ export class RigAdmin {
     } else { const held = flow.openCaseOf(s); cases = held ? [held] : mine; }
     return this.events(key, { ...o, case: null, cases });
   }
-  // 장부 읽기(판 API rig.events도 이 길) → { workspace, rows(+line), last, more }
+  // 장부 읽기(판 API rig.events도 이 길) → { workspace, rows(+shown: 사람이 읽는 한 줄), last, more }
   events(key, o = {}) {
     const x = readEvents(this.b, key, o);
-    return { ...x, rows: x.rows.map((r) => ({ ...r, line: eventLine(r) })) };
+    return { ...x, rows: x.rows.map((r) => ({ ...r, shown: eventLine(r) })) };
   }
 
   // 버전 목록과 버전마다 건 수, 반려 수, 훅 거절 수, 상한 초과 수
