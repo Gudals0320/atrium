@@ -308,7 +308,7 @@ const ACTOR_OF = { seat: 'agent', session: 'agent', hook: 'hook', tool: 'board',
 const gitRun = (root, args) => new Promise((resolve) => { execFile('git', ['-C', root, ...args], { timeout: 4000, windowsHide: true }, (e, out) => resolve(e ? null : String(out).trim())); });
 
 // P224: 정본 문서의 승인 안 된 바뀜 → { at, by } | null
-function unapprovedOf(st, key, doc) { const m = st && st.docMark ? st.docMark(key, doc) : null; return m && m.unapprovedAt ? { at: m.unapprovedAt, by: m.unapprovedBy || null } : null; }
+function unapprovedOf(st, key, doc) { const m = st && st.docMark ? st.docMark(key, doc) : null; if (!m || !m.unapprovedAt) return null; let by = m.unapprovedBy || null; try { const x = JSON.parse(by); if (x && x.label) by = x.label; } catch {} return { at: m.unapprovedAt, by }; }
 
 // 판에 붙는 문서 보기. b: 백엔드(store, sessions, rig, summary, log, cfg)
 export class RigDocs {

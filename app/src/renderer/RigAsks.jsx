@@ -32,6 +32,15 @@ export function useRigAsks() {
 export const rigAskTitle = (t, a) => (a.kind === 'proposal' ? t('rigAsk.proposal', { doc: a.proposal.target === 'definition' ? t('rigAsk.definition') : a.proposal.target, why: a.proposal.why || t('rigAsk.noWhy') })
   : a.kind === 'doc_unapproved' ? t('rigAsk.unapproved', { doc: a.doc }) : t('rigAsk.artifact', { sector: a.artifact.sector, path: a.artifact.path }));
 
+// 승인 안 된 바뀜을 만든 쪽(보드의 구조 값) → 화면 글
+export function whoText(t, w, fallback = null) {
+  if (!w || !w.by) return fallback || t('rigAsk.unknown');
+  if (w.by === 'seat') return t('rigAsk.bySeat', { seat: w.seat || '-', name: w.name || '-' });
+  if (w.by === 'session') return t('rigAsk.bySession', { name: w.name || '-' });
+  if (w.by === 'hook' || w.by === 'tool') return t('rigAsk.byProgram');
+  if (w.by === 'human' || w.guess) return t('rigAsk.byHuman');
+  return t('rigAsk.unknown');
+}
 // diff 글 → 줄마다 색(추가·빼기·덩어리 머리)
 function DiffView({ text, clipped }) {
   const t = useT();
@@ -65,7 +74,7 @@ export function RigAskCard({ a, now = Date.now(), compact = false }) {
   const diff = p ? p.diff : a.diff;
   const meta = a.kind === 'proposal'
     ? t('rigAsk.metaProposal', { ws: a.wsName, seat: p.seat || '-', who: p.sessionName ? `@${p.sessionName}` : '', path: p.path, added: p.added ?? 0, removed: p.removed ?? 0, ago: ago(a.t, now) })
-    : a.kind === 'doc_unapproved' ? t('rigAsk.metaUnapproved', { ws: a.wsName, path: a.path, by: a.by || t('rigAsk.unknown'), ago: ago(a.t, now) })
+    : a.kind === 'doc_unapproved' ? t('rigAsk.metaUnapproved', { ws: a.wsName, path: a.path, by: whoText(t, a.who, a.by), ago: ago(a.t, now) })
       : t('rigAsk.metaArtifact', { ws: a.wsName, seat: a.artifact.seat || '-', ago: ago(a.t, now) });
   return (
     <div className={`mt-rigask ${a.kind}${compact ? ' compact' : ''}`} data-role="rig-ask" data-kind={a.kind} data-ask={a.id}>

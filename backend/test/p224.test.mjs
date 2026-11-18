@@ -349,7 +349,7 @@ test('P224 승인 안 된 정본 바뀜: 손으로 고치면 카드(diff), 되�
     const un = ledger(b, ws.key, { kinds: ['doc_unapproved'] });
     assert.equal(un.length, 1); assert.equal(un[0].value, 'rules'); assert.match(un[0].text, /승인 없이 바뀌었다\(사람 또는 바깥 프로그램\(추정\)\)/);
     let asks = (await H(b)['rig.asks']({}, local)).asks;
-    assert.equal(asks.length, 1); assert.equal(asks[0].kind, 'doc_unapproved'); assert.equal(asks[0].doc, 'rules'); assert.match(asks[0].diff, /\+- Hand rule/); assert.equal(asks[0].canRevert, true);
+    assert.equal(asks.length, 1); assert.equal(asks[0].kind, 'doc_unapproved'); assert.equal(asks[0].doc, 'rules'); assert.equal(asks[0].who.by, 'human'); assert.equal(asks[0].who.guess, true); assert.match(asks[0].by, /사람 또는 바깥 프로그램/); assert.match(asks[0].diff, /\+- Hand rule/); assert.equal(asks[0].canRevert, true);
     const st = b.rig.status(ws.key).docs.find((d) => d.name === 'rules'); assert.ok(st.unapproved && st.unapproved.at);
     // 같은 내용을 다시 보아도 한 번
     await b.rigDocs.scan(); assert.equal(ledger(b, ws.key, { kinds: ['doc_unapproved'] }).length, 1);

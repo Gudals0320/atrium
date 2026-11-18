@@ -293,7 +293,9 @@ export class RigProposals {
     if (now === m.approvedSha) { if (m.unapprovedAt) { st.setDocMark(key, d.name, { unapprovedSha: null, unapprovedAt: null, unapprovedBy: null }); this.changed(key); } return null; }
     if (m.unapprovedSha === now && m.unapprovedAt) return null;
     const by = label || (who && who.by) || null;
-    st.setDocMark(key, d.name, { path: d.rel, unapprovedSha: now, unapprovedAt: Date.now(), unapprovedBy: by });
+    // 화면이 말로 옮기도록 구조 값으로 둔다(label은 장부 글과 같은 한국어)
+    const byJson = JSON.stringify({ by: who ? who.by : null, seat: who && who.seat ? who.seat : null, name: who && who.name ? who.name : null, guess: !!(who && (who.by === 'human' || who.basis === 'no_agent_working')), label: by });
+    st.setDocMark(key, d.name, { path: d.rel, unapprovedSha: now, unapprovedAt: Date.now(), unapprovedBy: byJson });
     rigEvent(this.b, { kind: 'doc_unapproved', ws: key, seat: who && who.seat ? who.seat : null, session: who && who.sessionId ? who.sessionId : null, value: d.name, actor: 'board', text: `정본 ${d.name}(${d.rel})가 승인 없이 바뀌었다(${by || '모름'}). 사람이 되돌리거나 받아들인다`, data: { doc: d.name, path: d.rel, sha: now, approved: m.approvedSha, by: who ? who.by : null, exists: !!buf } });
     this.changed(key);
     return { doc: d.name };
@@ -354,7 +356,8 @@ export class RigProposals {
     if (!st.proposals) return out;
     const wsName = (k) => { const w = st.getWorkspace ? st.getWorkspace(k) : null; return w ? w.name || path.basename(w.root || k) : k; };
     for (const row of st.proposals({ ws, states: ['pending'], route: 'human', limit: 200 })) out.push({ id: `proposal:${row.id}`, kind: 'proposal', workspace: row.workspaceKey, wsName: wsName(row.workspaceKey), t: row.t, proposal: this.view(row) });
-    for (const m of st.docMarks(ws)) if (m.unapprovedAt) out.push({ id: `doc:${m.workspaceKey}|${m.doc}`, kind: 'doc_unapproved', workspace: m.workspaceKey, wsName: wsName(m.workspaceKey), t: m.unapprovedAt, doc: m.doc, path: m.path, by: m.unapprovedBy, canRevert: m.approvedText != null || m.approvedSha != null, ...(() => { const d = this.docDiff(m); return d ? { diff: d.text, added: d.added, removed: d.removed, clipped: d.clipped } : {}; })() });
+    const byOf = (s) => { try { const x = JSON.parse(s); return x && typeof x === 'object' ? x : { label: s }; } catch { return s ? { label: s } : null; } };
+    for (const m of st.docMarks(ws)) if (m.unapprovedAt) out.push({ id: `doc:${m.workspaceKey}|${m.doc}`, kind: 'doc_unapproved', workspace: m.workspaceKey, wsName: wsName(m.workspaceKey), t: m.unapprovedAt, doc: m.doc, path: m.path, by: (byOf(m.unapprovedBy) || {}).label || null, who: byOf(m.unapprovedBy), canRevert: m.approvedText != null || m.approvedSha != null, ...(() => { const d = this.docDiff(m); return d ? { diff: d.text, added: d.added, removed: d.removed, clipped: d.clipped } : {}; })() });
     // 받아들임 human 섹터의 새 산출물
     const keys = ws ? [ws] : (st.workspaces ? st.workspaces().map((w) => w.key) : []);
     for (const k of keys) {
