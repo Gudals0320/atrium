@@ -102,7 +102,8 @@ export function QueueGroup({ g, texts = {}, edit, onSaved, phone = false }) {
   const s = useStore((st) => st.sessions.get(g.sessionId));
   const name = (s && s.name) || g.name || '?';
   const steer = steerOf(s);
-  const queuedItems = g.items.filter((d) => d.status === 'queued');
+  const parkedOf = (d) => d.status === 'queued' && d.reason === 'loop_paused'; // P223: 멈춘 rig 고리에 붙잡은 요청(차례에 들지 않는다)
+  const queuedItems = g.items.filter((d) => d.status === 'queued' && !parkedOf(d));
   const many = queuedItems.length > 1;
   const listRef = useRef(null);
   const missing = g.items.some((d) => d.status === 'queued' && texts[d.deliveryId] == null && d.text == null);
@@ -113,6 +114,9 @@ export function QueueGroup({ g, texts = {}, edit, onSaved, phone = false }) {
     try { await api.call('delivery.reorder', { ids }); } catch (e) { toast(queueErr(t, e), 'error'); return; }
     // 옮긴 줄에 초점을 남긴다(키보드로 이어 옮길 수 있게)
     requestAnimationFrame(() => { const el = listRef.current && listRef.current.querySelector(`[data-delivery="${d.deliveryId}"]`); if (el) el.focus(); });
+  }
+  async function resumeLoop(d) { // P223: 붙잡은 요청의 [잇기](고리를 잇는다. 이 PC의 창만, 백엔드가 막는다)
+    try { await api.call('rig.resume', { workspace: d.parkLoop.workspace, target: d.parkLoop.loop }); toast(t('rigLoopHold.resumed', { loop: d.parkLoop.loop })); } catch (e) { toast(t('rigLoopHold.fail', { error: errText(e) }), 'error'); }
   }
   async function sendNow(d) {
     try { await api.call('delivery.now', { deliveryId: d.deliveryId }); } catch (e) { toast(queueErr(t, e), 'error'); }
@@ -134,8 +138,20 @@ export function QueueGroup({ g, texts = {}, edit, onSaved, phone = false }) {
           if (edit && edit.editing && edit.editing.id === d.deliveryId) {
             return <li key={d.deliveryId} className="mt-dq-editrow"><DeliveryEdit d={{ ...d, name }} text={edit.editing.text} onDone={(text) => { edit.stopEdit(); if (text != null && onSaved) onSaved(d.deliveryId, text); }} /></li>;
           }
-          const queued = d.status === 'queued';
+          const parked = parkedOf(d);
+          const queued = d.status === 'queued' && !parked;
           const qi = queuedItems.indexOf(d);
+          if (parked) return ( // P223: "고리 멈춤으로 붙잡음 · 잇기를 기다림" [잇기] [취소]
+            <li key={d.deliveryId} className="mt-dq-item ds-queued" data-delivery={d.deliveryId} data-status={d.status} data-parked="loop_paused" data-loop={d.parkLoop ? d.parkLoop.loop : undefined}>
+              <span className="mt-dq-no" aria-hidden="true" />
+              <span className="mt-dq-text">{shortText(texts[d.deliveryId] ?? d.text, phone ? 60 : 90) || <i>{t('deliveryQueue.chars', { n: d.chars || 0 })}</i>}</span>
+              <span className="mt-dq-st" title={t('rigLoopHold.tip')}>{d.parkLoop ? t('rigLoopHold.pausedLoop', { loop: d.parkLoop.loop }) : deliveryText(d)}</span>
+              <span className="mt-dq-acts">
+                {d.parkLoop && d.parkLoop.workspace && !phone && <button type="button" className="mt-btn ghost small" data-action="delivery-loop-resume" onClick={() => resumeLoop(d)} title={t('rigLoopHold.resumeTitle', { loop: d.parkLoop.loop })}>{t('rigLoopHold.resume')}</button>}
+                <button type="button" className="mt-btn ghost small" data-action="delivery-cancel" onClick={() => api.call('delivery.cancel', { deliveryId: d.deliveryId }).catch((e) => toast(errText(e), 'error'))}>{t('common.cancel')}</button>
+              </span>
+            </li>
+          );
           return (
             <li key={d.deliveryId} className={`mt-dq-item ds-${d.status}`} data-delivery={d.deliveryId} data-status={d.status} data-editing={d.editing ? '1' : undefined}
               tabIndex={queued && many ? 0 : undefined} onKeyDown={queued && many ? (e) => onRowKey(e, d) : undefined} title={queued && many ? t('deliveryQueue.keysHint') : undefined}>

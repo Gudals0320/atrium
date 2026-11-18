@@ -68,6 +68,7 @@ export function installMerge(Store) {
       // P221: 고리(멈춤·시각)는 대상에 같은 고리가 있으면 대상 것, 멈춘 동안의 요청은 옮긴다(셈 n에는 넣지 않는다)
       this.st('UPDATE OR IGNORE rig_loops SET workspace_key = ? WHERE workspace_key = ?').run(to, from);
       this.st('UPDATE rig_loop_requests SET workspace_key = ? WHERE workspace_key = ?').run(to, from);
+      this.st('UPDATE OR IGNORE rig_permits SET workspace_key = ? WHERE workspace_key = ?').run(to, from); // P223
       for (const t of ['rig_seat_counters', 'rig_cycles', 'rig_versions', 'rig_loops']) this.st(`DELETE FROM ${t} WHERE workspace_key = ?`).run(from);
       return n;
     },

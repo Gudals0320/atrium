@@ -2745,3 +2745,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-mm-retry { display: block; margin: -2px 0 6px 22px; padding: 3px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--st-error) 65%, transparent); background: color-mix(in srgb, var(--st-error) 14%, transparent); color: #ffd6de; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .mt-mm-retry:hover { background: color-mix(in srgb, var(--st-error) 26%, transparent); }
 .mt-mm-retry:focus-visible { outline: 2px solid var(--accent, #8ab4f8); outline-offset: 1px; }
+
+/* P223: rig 켜기 확인 창의 자리 권한(unattended 줄 강조), 대기열의 멈춘 고리에 붙잡은 요청 */
+.mt-rigon-perm-un .mt-rigon-at { color: var(--warn); }
+.mt-dq-item[data-parked] .mt-dq-text { color: var(--dim); }

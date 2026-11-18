@@ -1,7 +1,7 @@
 // P221: rig 2의 R2 고리(docs research rig2-design.md 2절 "고리", 2.1 "판이 하는 일"의 고리 줄, 3절 loops 칸, 4절, 5절, 11.3·11.4).
 // - 정의 칸 loops: { "<이름>": { kind: work | improve, trigger: { request: <입구 자리> } | { every: "7d", notify?, at? } | { event, … }, entry, flow, holds, produces, approve, task? } }.
 //   loops의 flow 줄은 고리 차례대로 이어 붙여 지금 흐름(validateFlow)으로 검사하고 줄 번호를 그대로 쓴다(줄마다 어느 고리인지 lines에 적는다).
-//   event 계기, produces(R5), approve(R6), at(R7), steps는 받기만 한다(경고). task는 every 회의 첫 일 글(설계에 없는 칸, 기록의 "설계에 돌려줄 것").
+//   event 계기, produces(R5), approve(R6), at(R7), steps는 받기만 한다(경고). task는 every 회의 첫 일 글(P223: rig2-design 11.6의 4로 정식 칸. request 고리에는 쓰지 않는다).
 // - loops가 없는 정의(v1, loops 없는 v2)는 그대로 돈다: seats + flow는 이름이 work인 작업 고리 하나(implicit, 건은 지금처럼 자리 세션의 첫 맡기기가 연다),
 //   cycles[i]는 개선 고리 improve(둘째부터 improve-<i+1>)의 every 계기(시각은 그대로 rig_cycles, 도는 길은 rig-flow cycleTick).
 // - 회 = 건(rig_cases, kind 이름 그대로). 회는 고리(loop)와 이름(name)을 쥔다. request 계기: 사람이나 rig 밖 세션이 입구 자리(keep)에 보낸 글이
@@ -9,12 +9,18 @@
 //   every 계기: 판이 주기를 지켜 입구 자리에 새 회의 일(improve는 장부 요약, work는 task). 고리에 끝나지 않은 회가 있으면 건너뛴다(loop_skip running).
 // - 멈추기·잇기(manager 자리와 사람): 고리를 멈추면 새 회(계기), 새 넘김, 자리 줄 띄우기를 막는다(멈춘 동안 온 요청은 줄에 서고 잇기에 회를 연다).
 //   회를 멈추면 그 회의 새 넘김만 막는다. 일하는 세션은 끊지 않는다. 멈춘 동안 done이 만든 넘김은 회에 붙잡아 두었다가 잇기에 넘긴다.
+//   P223(11.6의 6): 멈춘 동안 온 요청은 실패한 전달이 아니라 전달 대기열에 붙잡는다(까닭 loop_paused, delivery.mjs park). 잇기가 그 전달로 회의 일을 넣는다.
+// - P223(11.6의 3) 회 저절로 닫기: 고리(loops에 쓴 고리)의 회는 입구 자리의 done이 닫는 것에 더해, 입구 세션(회의 주인)이 쉼 기준(잠재우기와 같은 세션 쉼 시간,
+//   기본 30분) 동안 쉬고 그 회에 주인 밖의 열린 일·붙잡은 넘김이 없으면 판이 닫는다(case_done, value auto). 주인의 열린 일은 함께 닫는다(done auto).
+//   그 전에 온 사람 글은 같은 회의 이어지는 지시이고(주인이 회를 쥐고 있다), 닫힌 뒤 온 글은 새 회를 연다. 멈춘 회·고리와 막힌 회는 닫지 않는다.
 //   종료 세션으로 막힌 회(blocked, P216)와 글로 가른다: "멈춤(사람·관리자가 멈춤, 잇기: atrium rig resume)" / "막힘(세션 종료, atrium rig retry)".
 import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { rigEvent } from './rig-ledger.mjs';
 import { HUMAN_FROM } from './rig-templates.mjs';
 import { SEAT_SPAWN } from './rig-amp.mjs';
+import { idleSince } from './sleep.mjs'; // P223: 회 저절로 닫기의 쉼(잠재우기와 같은 기준)
+import { deriveState } from './state.mjs';
 
 const newUnitId = () => 'u' + crypto.randomBytes(3).toString('hex');
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
@@ -26,7 +32,10 @@ export const LOOP_ATS = ['session-start'];
 export const LOOP_STATES = ['running', 'waiting', 'paused', 'idle']; // 돎 · 기다림(계기를 기다림) · 멈춤 · 쉼(계기가 걸릴 수 없음: 입구 세션 없음, event 계기)
 export const IMPLICIT_WORK = 'work';
 export const RUN_NAME_MAX = 40;
+export const TASK_MAX = 4000; // P223: loops.<고리>.task(every 회의 첫 일 글) 길이
 export const NAME_MAX = 80;
+export const RUN_IDLE_MS = 30 * 60000; // P223: 회 저절로 닫기의 쉼 기본(세션 잠재우기 sessionSleepAfterMin의 기본과 같다)
+const BUSY_STATES = new Set(['working', 'waiting', 'starting', 'trust_wait']); // 쉬는 것이 아니다(일함·사람의 답을 기다림·뜨는 중)
 const UNIT_MS = { s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 };
 const parseSpan = (v) => { if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? Math.floor(v) : null; const m = /^\s*(\d+(?:\.\d+)?)\s*([smhdw])\s*$/.exec(String(v || '')); return m ? Math.floor(Number(m[1]) * UNIT_MS[m[2]]) : null; };
 const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
@@ -166,8 +175,10 @@ export function finishLoops(raw, fl, cycles, docs, lineOf, { cycleMinMs = 360000
     for (const n of pr.list) if (!docs[n].rel || docs[n].layer !== 'project') warnings.push(`${at}.produces의 ${n}는 아직 산출물을 받지 못하는 섹터다(${docs[n].rel ? `${docs[n].layer} 층` : '경로 {owns}'})`);
     if (x.approve != null) { if (!LOOP_APPROVES.includes(x.approve)) return bad(`${at}.approve는 ${LOOP_APPROVES.join(', ')} 가운데 하나다: ${JSON.stringify(x.approve)}`); warnings.push(`${at}.approve(${x.approve})는 R6(제안과 승인) 전이라 받기만 한다`); }
     if (x.steps != null) { if (!strList(x.steps)) return bad(`${at}.steps는 글 배열이다`); warnings.push(`${at}.steps는 받기만 한다(보드가 돌리지 않는다)`); }
-    if (x.task != null && (typeof x.task !== 'string' || !x.task.trim())) return bad(`${at}.task는 글이다(every 회의 첫 일 글)`);
-    if (x.task != null && trigger.type !== 'every') warnings.push(`${at}.task는 every 고리의 회에만 쓴다(request 회의 일은 요청 글이다)`);
+    if (x.task != null && (typeof x.task !== 'string' || !x.task.trim())) return bad(`${at}.task는 글이다(every 회의 첫 일 글: 판이 회를 열 때 입구 자리에 보내는 일)`);
+    if (x.task != null && x.task.length > TASK_MAX) return bad(`${at}.task는 ${TASK_MAX}자까지다(${x.task.length}자). 긴 지시는 자리의 guide나 정본 문서에 두고 task에서 가리킨다`);
+    if (x.task != null && trigger.type !== 'every') warnings.push(`${at}.task는 every 고리의 회에만 쓴다(request 회의 일은 요청 글이다). 이 고리에서는 쓰이지 않는다`);
+    if (x.task == null && trigger.type === 'every' && x.kind === 'work') warnings.push(`${at}: every 작업 고리에 task가 없다. 회마다 "안내(atrium guide)와 문서를 따르라"는 한 줄만 간다`);
     if (lines.length && x.kind === 'improve') warnings.push(`${at}: 개선 고리에 flow 줄이 있다. 보통 개선 고리는 입구 자리 하나가 장부를 읽고 고친다`);
     loops[name] = { name, kind: x.kind, implicit: false, trigger, entry, lines, holds: ho.list, reads: rd.list, produces: pr.list, approve: x.approve || null, task: x.task ? String(x.task) : null };
   }
@@ -255,14 +266,17 @@ export class RigLoops {
     const human = from.kind === 'human';
     if (this.isPaused(s.workspaceKey, loop.name)) {
       const id = st.insertLoopRequest({ workspaceKey: s.workspaceKey, loop: loop.name, sessionId: s.sessionId, fromKind: human ? 'human' : 'agent', fromSession: human ? null : from.session.sessionId, text });
-      rigEvent(this.b, { kind: 'loop_skip', ws: s.workspaceKey, seat: loop.entry, session: s.sessionId, value: 'paused', actor: human ? 'human' : 'agent', ref: id, text: `${loop.name}: 고리가 멈춰 요청을 줄에 세웠다(잇기에 회가 열린다)`, data: { loop: loop.name, trigger: 'request', held: id } });
-      this.b.log && this.b.log(`rig loop ${s.workspaceKey} ${loop.name} paused: request held #${id}`);
+      // P223: 전달 대기열에 붙잡는다(실패로 남기지 않는다). 잇기가 이 전달로 넣는다
+      const d = this.b.queue && this.b.queue.park ? this.b.queue.park(s.sessionId, text, 'loop_paused', { origin: human ? { kind: 'human' } : { kind: 'agent', session: from.session.sessionId }, loop: loop.name, workspace: s.workspaceKey }) : null;
+      if (d && st.setLoopRequestDelivery) st.setLoopRequestDelivery(id, d.deliveryId);
+      rigEvent(this.b, { kind: 'loop_skip', ws: s.workspaceKey, seat: loop.entry, session: s.sessionId, value: 'paused', actor: human ? 'human' : 'agent', ref: d ? d.deliveryId : id, text: `${loop.name}: 고리가 멈춰 요청을 대기열에 붙잡았다(잇기에 회가 열린다)`, data: { loop: loop.name, trigger: 'request', held: id, ...(d ? { deliveryId: d.deliveryId } : {}) } });
+      this.b.log && this.b.log(`rig loop ${s.workspaceKey} ${loop.name} paused: request held #${id}${d ? ` delivery ${d.deliveryId}` : ''}`);
       this.changed(s.workspaceKey);
-      return { held: true, loop: loop.name, id };
+      return { held: true, loop: loop.name, id, d };
     }
     return this.openRequest(r, loop, s, from, text);
   }
-  openRequest(r, loop, s, from, text, { heldId = null } = {}) {
+  openRequest(r, loop, s, from, text, { heldId = null, deliveryId = null } = {}) { // P223: deliveryId(붙잡았던 전달로 넣는다)
     const key = s.workspaceKey;
     const human = from.kind === 'human';
     const by = human ? { sessionId: HUMAN_FROM, name: 'human' } : from.session;
@@ -270,7 +284,8 @@ export class RigLoops {
     const c = this.flow.newCase(key, s, human ? 'human' : 'agent', { loop: loop.name, name, trigger: 'request' });
     const uid = newUnitId();
     rigEvent(this.b, { kind: 'loop_trigger', ws: key, caseId: c.id, unitId: uid, seat: loop.entry, toSeat: loop.entry, session: s.sessionId, value: 'request', actor: human ? 'human' : 'agent', text: `${loop.name}: ${human ? '사람' : `@${shownName(by) || by.name}`}의 요청`, data: { loop: loop.name, trigger: 'request', from: human ? 'human' : by.sessionId, ...(heldId ? { held: heldId } : {}) } });
-    const made = this.flow.units().create(by, s, text, 'request', { id: uid, fromId: by.sessionId, caseId: c.id, seat: s.rigSeat, via: { by: by.sessionId, request: loop.name } });
+    const made = this.flow.units().create(by, s, text, 'request', { id: uid, fromId: by.sessionId, caseId: c.id, seat: s.rigSeat, via: { by: by.sessionId, request: loop.name }, ...(deliveryId ? { deliveryId } : {}) });
+    if (deliveryId && made.held && this.b.queue && this.b.queue.dropPark) this.b.queue.dropPark(deliveryId, 'cancelled', 'loop_unit_queued'); // P223: 일이 입구 세션의 줄에 섰다(차례가 오면 일 머리와 함께 간다)
     this.changed(key);
     return { made, caseId: c.id, loop: loop.name, name };
   }
@@ -290,6 +305,7 @@ export class RigLoops {
           try { const x = await this.tickLoop(w.key, r, loop, now); if (x) fired.push(x); }
           catch (e) { b.log && b.log('rig loop tick error', e.stack); }
         }
+        try { this.autoClose(w.key, r, now); } catch (e) { b.log && b.log('rig run auto close error', e.stack); } // P223
       }
     } finally { this.ticking = false; }
     return fired;
@@ -383,6 +399,55 @@ export class RigLoops {
     return [head, loop.task || '이 자리의 안내(atrium guide)와 문서를 따라 이번 회의 일을 하고, 끝나면 done으로 한 일을 보고한다.', ...(holds.length ? ['', `이 고리가 쥔 문서: ${holds.join(', ')}`] : []), ...producesLines(loop, docs)].join('\n');
   }
 
+  // ---------- P223: 회 저절로 닫기(11.6의 3) ----------
+  // 쉼 기준: cfg.rigRunIdleMs(시험) → 세션 잠재우기 시간(설정 sessionSleepAfterMin, 0이면 끔이라 기본) → 30분
+  idleMs() {
+    const c = this.b.cfg || {};
+    if (c.rigRunIdleMs != null) return Number(c.rigRunIdleMs);
+    const ms = this.b.sleeper && this.b.sleeper.sessionAfterMs ? this.b.sleeper.sessionAfterMs() : 0;
+    return ms > 0 ? ms : RUN_IDLE_MS;
+  }
+  // 그 회를 닫지 않는 까닭 | null(닫는다). 고리(loops에 쓴 고리)의 끝나지 않은 회만
+  autoCloseWhy(c, now, idleMs) {
+    const st = this.store();
+    if (!c || !['open', 'waiting_owner'].includes(c.state)) return 'state';
+    if (c.pausedAt) return 'paused';
+    if (c.held && c.held.length) return 'held';
+    const s = this.b.sessions.get(c.owner);
+    if (!s) return 'no_owner';
+    const state = deriveState(s.rt || {}).state;
+    if (BUSY_STATES.has(state)) return 'busy';
+    if (now - idleSince(s) < idleMs) return 'recent';
+    const open = st.unitsOfCase(c.id).filter((u) => u.status === 'open');
+    if (open.some((u) => u.to !== c.owner)) return 'open_work'; // 다른 자리의 일(줄에 선 일 포함)
+    if (this.b.queue && this.b.queue.list(c.owner).some((d) => !d.parked && d.status !== 'cancelled')) return 'delivering'; // 입구 세션에 갈 글이 남았다
+    return null;
+  }
+  autoClose(key, r, now = Date.now()) {
+    const st = this.store(); const closed = [];
+    const idleMs = this.idleMs();
+    for (const loop of Object.values(this.loopsOf(r.def))) {
+      if (loop.implicit || loop.trigger.type === 'event' || this.isPaused(key, loop.name)) continue;
+      for (const c of st.liveCasesOfLoop(key, loop.name)) {
+        if (this.autoCloseWhy(c, now, idleMs)) continue;
+        // 주인(입구 세션)의 열린 일을 닫는다(done 없이 쉬었다). 아니면 다음 사람 글이 그 일의 이어지는 지시가 되고, 새 회의 일이 줄에 선다
+        const tr = st.openTryOf(c.owner);
+        for (const u of st.unitsOfCase(c.id).filter((x) => x.status === 'open')) {
+          if (tr && tr.unitId === u.id) st.updateTry(tr.id, { endedAt: now, stopReason: 'auto' });
+          st.updateUnit(u.id, { status: 'done', closedAt: now });
+          st.addEvent(c.owner, 'unit_auto_done', { unitId: u.id, tryId: tr && tr.unitId === u.id ? tr.id : null, caseId: c.id });
+        }
+        const mins = Math.round(idleMs / 60000);
+        this.flow.closeDone(c, `입구 세션이 ${mins}분 쉬고 열린 일이 없어 판이 닫음`, 'auto');
+        this.b.log && this.b.log(`rig run ${c.id} auto closed (${loop.name}, idle ${mins}m)`);
+        closed.push(c.id);
+        try { this.flow.units().pump(c.owner); } catch {}
+      }
+    }
+    if (closed.length) this.changed(key);
+    return closed;
+  }
+
   // ---------- 멈추기·잇기(옛 F1-4) ----------
   // target: 고리 이름 | 회(건) ID. by: human | manager | remote, who: 관리자 자리 세션
   resolve(key, target) {
@@ -433,10 +498,14 @@ export class RigLoops {
       for (const c of st.liveCasesOfLoop(key, name)) if (!c.pausedAt) released += await this.release(c);
       const opened = [];
       for (const q of st.heldLoopRequests(key, name)) {
+        // P223: 붙잡은 전달. 사람이 그새 취소했으면 회를 열지 않는다. 고친 글이 있으면 그 글
+        const d = q.deliveryId && this.b.queue ? this.b.queue.items.get(q.deliveryId) || null : null;
+        if (q.deliveryId && (!d || !d.parked)) { st.setLoopRequest(q.id, 'cancelled'); continue; }
         const s = this.b.sessions.get(q.sessionId) && this.b.sessions.get(q.sessionId).rigSeat === x.loop.entry ? this.b.sessions.get(q.sessionId) : this.flow.seatedOf(key, x.loop.entry)[0] || null;
-        if (!s) { st.setLoopRequest(q.id, 'dropped'); continue; }
+        if (!s) { st.setLoopRequest(q.id, 'dropped'); if (d) this.b.queue.dropPark(d.deliveryId, 'failed', 'loop_no_session'); continue; }
+        if (d && d.sessionId !== s.sessionId) { this.b.queue.dropPark(d.deliveryId, 'cancelled', 'loop_moved'); } // 입구 세션이 바뀌었다(새 세션에 새 전달)
         const from = q.fromKind === 'human' ? { kind: 'human' } : { kind: 'agent', session: this.b.sessions.get(q.fromSession) || { sessionId: q.fromSession, name: this.flow.nameOf(q.fromSession) } };
-        const o = this.openRequest(x.r, x.loop, s, from, q.text, { heldId: q.id });
+        const o = this.openRequest(x.r, x.loop, s, from, d ? d.text : q.text, { heldId: q.id, deliveryId: d && d.sessionId === s.sessionId ? d.deliveryId : null });
         st.setLoopRequest(q.id, 'opened', o.caseId);
         opened.push({ case: o.caseId, name: o.name });
       }
@@ -511,7 +580,7 @@ export class RigLoops {
       const state = row && row.pausedAt ? 'paused' : s.live > 0 ? 'running' : armed ? 'waiting' : 'idle';
       const last = s.last;
       return {
-        name: l.name, kind: l.kind, implicit: !!l.implicit, trigger: { ...l.trigger }, entry: l.entry, lines: l.lines.slice(), holds: l.holds.slice(), reads: (l.reads || []).slice(), produces: (l.produces || []).slice(), approve: l.approve || null, ...(l.cycle != null ? { cycle: l.cycle } : {}),
+        name: l.name, kind: l.kind, implicit: !!l.implicit, trigger: { ...l.trigger }, entry: l.entry, lines: l.lines.slice(), holds: l.holds.slice(), reads: (l.reads || []).slice(), produces: (l.produces || []).slice(), approve: l.approve || null, ...(l.cycle != null ? { cycle: l.cycle } : {}), task: l.task || null, // P223: task
         state, why: state === 'idle' ? (l.trigger.type === 'event' ? 'event' : 'no_session') : null,
         paused: row && row.pausedAt ? { at: row.pausedAt, by: row.pausedBy } : null, nextAt,
         lastRun: last ? { id: last.id, name: last.name, state: last.state, at: last.createdAt, closedAt: last.closedAt, paused: !!last.pausedAt } : null,

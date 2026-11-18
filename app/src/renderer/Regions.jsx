@@ -201,6 +201,19 @@ export function RigOnDialog({ ws, onClose }) {
                 {st.cycleRuns.map((x, i) => <li key={i}><span className="mt-rigon-at">{x.every}</span><code>{argv(x.run)}</code></li>)}
               </ul>
             </>}{/* P188: 느린 고리의 run도 사용자 계정으로 돈다 */}
+            {(st.seats || []).some((x) => x.permission && x.permission !== 'ask') && <>
+              <div className="mt-rigon-h">{t('rigPerm.confirmHead', { n: st.seats.filter((x) => x.permission && x.permission !== 'ask').length })}</div>
+              <ul className="mt-rigon-list" data-role="rig-confirm-perms">
+                {st.seats.filter((x) => x.permission && x.permission !== 'ask').map((x) => (
+                  <li key={x.name} data-seat={x.name} data-permission={x.permission} className={x.permission === 'unattended' ? 'mt-rigon-perm-un' : undefined}>
+                    <span className="mt-rigon-at">{x.name}</span>
+                    <span>{t(x.permission === 'unattended' ? 'rigPerm.unattended' : 'rigPerm.scoped', { n: (x.allow || []).length })}</span>
+                    {(x.allow || []).length > 0 && <code>{x.allow.join(' · ')}</code>}
+                  </li>
+                ))}
+              </ul>
+              {st.seats.some((x) => x.permission === 'unattended') && <div className="mt-rigon-warn" data-role="rig-confirm-unattended">{t('rigPerm.unattendedWarn')}</div>}
+            </>}{/* P223: 자리 권한. unattended(묻지 않음)는 이 확인으로 사람이 승인한다 */}
             <div className="mt-card-sub dim">{t('rig.confirmLater')}</div>
           </>
         )}

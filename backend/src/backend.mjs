@@ -1465,7 +1465,7 @@ export class Backend {
     pending.add(name);
     try {
       const claude = kind === 'claude';
-      const permissionMode = claude ? plan.permissionMode || 'manual' : p.permissionMode || plan.permissionMode || 'manual'; // P192: 승인 칸이 있는 하네스(AGY)는 호출자의 승인 방식
+      let permissionMode = claude ? plan.permissionMode || 'manual' : p.permissionMode || plan.permissionMode || 'manual'; // P192: 승인 칸이 있는 하네스(AGY)는 호출자의 승인 방식
       if (!PERMISSION_MODES.has(permissionMode)) throw apiError('bad_request', `승인 방식: ${permissionMode}`);
       const model = shell ? null : plan.model || null; // P115: Claude Code 밖 하네스도 모델을 기록한다(어댑터가 그 하네스 모양으로 넘긴다)
       const effort = claude ? plan.effort || null : null;
@@ -1497,6 +1497,9 @@ export class Backend {
       const sessionId = crypto.randomUUID();
       // P189: 판이 rig 자리를 위해 띄우는 세션(rig-flow spawnSeat). 띄울 때부터 자리를 알아야 설정 파일·Codex 인자에 증폭이 들어간다
       const seatSpawn = p[SEAT_SPAWN] && this.rig ? (() => { const r = this.rig.active(ws.key); return r && r.def.seats && r.def.seats[p[SEAT_SPAWN]] ? p[SEAT_SPAWN] : null; })() : null;
+      // P223: 자리 권한(scoped → acceptEdits, unattended(사람이 승인한 자리만) → bypassPermissions). ask는 띄우는 값 그대로
+      const seatPerm = seatSpawn && this.rigAmp && this.rigAmp.seatPermission ? this.rigAmp.seatPermission(ws.key, seatSpawn) : null;
+      if (claude && seatPerm && seatPerm.claudeMode) permissionMode = seatPerm.claudeMode;
       let hookToken = '', settingsPath = '', trust = { needsTrust: null, reason: `${kind}: 예상하지 않음` }, args = [], resumeArgv = null;
       const cc = claude ? claudeConnection(conn) : null; // P115: 연결 → 설정 파일의 ANTHROPIC_BASE_URL·apiKeyHelper
       const envAll = claude ? { ...((plan.env && Object.keys(plan.env).length) ? plan.env : {}), ...cc.env } : {};
@@ -1524,6 +1527,7 @@ export class Backend {
         s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan };
         this.store.insertSession({ ...s, runtime: rt });
         if (seatSpawn) { s.rigSeat = seatSpawn; this.store.setSessionSeat(sessionId, seatSpawn); } // P189: rig-flow가 띄운 뒤 다시 적는다(같은 값)
+        if (seatPerm && seatPerm.asked !== 'ask') try { this.rigAmp.notePermission(s); } catch (e) { this.log('rig permission note error', e.message); } // P223: 장부에 권한 결정 한 줄
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
       });
@@ -1621,7 +1625,8 @@ export class Backend {
       // P221(rig 2 R2): request 고리의 입구 자리 세션에 사람이 보낸 글은 새 회를 연다(그 고리의 회를 쥐었으면 이어지는 지시, 멈췄으면 요청이 줄에 선다)
       const rq = this.branch && this.branch.flow && this.branch.flow.loops && p.whileWorking !== 'type' ? this.branch.flow.loops.onRequest(s, { kind: 'human' }, body) : null;
       if (rq && rq.held) {
-        const d = this.queue.refuse(s.sessionId, body, `rig: 고리 ${rq.loop}가 멈춰 있어 요청을 줄에 세웠다. 잇기(atrium rig resume ${rq.loop})에 회가 열린다.`, { origin: { kind: 'human' } });
+        // P223: 멈춘 고리의 요청은 대기열에 붙잡혔다(까닭 loop_paused, 실패로 남기지 않는다). 잇기에 회가 열리며 들어간다
+        const d = rq.d || this.queue.refuse(s.sessionId, body, `rig: 고리 ${rq.loop}가 멈춰 있어 요청을 줄에 세웠다. 잇기(atrium rig resume ${rq.loop})에 회가 열린다.`, { origin: { kind: 'human' } });
         humanMessage(this, s, d.deliveryId, body);
         return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, held: true, loop: rq.loop };
       }
@@ -2158,7 +2163,7 @@ export class Backend {
       'delivery.now': (p) => this.queue.sendNow(p.deliveryId),
       'delivery.reorder': (p) => this.queue.reorder(p.ids),
       // P106: active면 아직 끝나지 않은 전달 모두(창이 다시 열려도 막힌 전달을 보이고 취소할 수 있게)
-      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, seq: d.seq ?? d.createdAt, editing: !!d.editing, name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
+      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, seq: d.seq ?? d.createdAt, editing: !!d.editing, ...(d.parked ? { parked: d.parked, ...(d.parkLoop ? { parkLoop: d.parkLoop } : {}) } : {}), name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
       'session.kill': (p) => this.kill(p),
       'session.answer': (p) => this.answer(p),
       'session.keys': (p, c) => this.sendKeysTo(p, c), // P104: 휴대폰 키 줄(원격 기기도 부른다)

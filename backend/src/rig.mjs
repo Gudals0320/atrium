@@ -108,7 +108,7 @@ export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN
   const amp = validateAmp(raw, { seats: fl.flow.seats, docs: dv.docs }); if (!amp.ok) return amp; // P189. P219: writes의 문서 이름 → 경로
   const lp = finishLoops(raw, fl.flow, cy.cycles, dv.docs, sp.lineOf, { cycleMinMs }); if (!lp.ok) return lp; // P221: 고리(loops 없으면 work·improve로 읽음)
   // P219: version, docs(문서), seatDocs(자리의 loads·reads·writes 문서), hookDocs·toolDocs(records·reads). 문서 경고는 정의 경고에 더한다
-  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, warnings: [...fl.flow.warnings, ...dv.warnings, ...lp.warnings], cycles: cy.cycles, loops: lp.loops, amp: amp.amp, version: dv.version, docs: dv.docs, seatDocs: dv.seatDocs, hookDocs: dv.hookDocs, toolDocs: dv.toolDocs } };
+  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, warnings: [...fl.flow.warnings, ...dv.warnings, ...lp.warnings, ...(amp.warnings || [])], cycles: cy.cycles, loops: lp.loops, amp: amp.amp, version: dv.version, docs: dv.docs, seatDocs: dv.seatDocs, hookDocs: dv.hookDocs, toolDocs: dv.toolDocs } };
 }
 
 // ---------- P195: 워크트리 자리의 저장소 조건 ----------
@@ -339,6 +339,22 @@ export class Rig {
   rootOf(key) { const w = key ? this.store().getWorkspace(key) : null; return w ? w.root : null; }
   fileOf(key) { const r = this.rootOf(key); return r ? path.join(r, RIG_FILE) : null; }
   enabled(key) { const st = key && this.store().rigState ? this.store().rigState(key) : null; return !!(st && st.enabled); }
+  // P223: 사람이 그 자리의 unattended(묻지 않음)를 승인했는가
+  permitted(key, seat) { return !!(key && seat && this.store().rigPermitted && this.store().rigPermitted(key, seat)); }
+  // P223: 정의에서 permission이 unattended인 자리 이름들
+  unattendedSeats(def) { return def && def.amp ? Object.entries(def.amp.seats || {}).filter(([, x]) => x.permission === 'unattended').map(([n]) => n) : []; }
+  // P223: 사람의 승인(켜기 확인, rig.permit). seats: 승인할 자리 이름들(unattended 자리만 받는다) → 승인한 자리
+  permit(key, seats, by = 'human') {
+    const r = this.read(key);
+    const want = this.unattendedSeats(r.def);
+    const list = (seats == null ? want : seats).filter((n) => want.includes(n) && !this.permitted(key, n));
+    for (const n of list) {
+      this.store().setRigPermit(key, n, by);
+      rigEvent(this.b, { kind: 'seat_permission', ws: key, defN: r.n ?? null, seat: n, value: 'approved', actor: 'human', text: `${n}: unattended(묻지 않음)를 사람이 승인(${by})`, data: { asked: 'unattended', permission: 'unattended', approved: true, by } });
+    }
+    if (list.length && this.b.log) this.b.log(`rig permit ${key}: ${list.join(', ')}`);
+    return list;
+  }
 
   // 정의 읽기(수정 시각·크기 캐시). → { present, def(쓸 정의: 맞은 것 또는 마지막 맞은 것), hash, invalid(지금 파일의 잘못 까닭 | null), file, root }
   read(key) {
@@ -579,20 +595,30 @@ export class Rig {
       guide: !!(def && def.guide), name: def ? def.name : null,
       format: def ? def.version || 1 : null, docs: def && def.docs && this.b.rigDocs ? this.b.rigDocs.stateOf(key, def) : [], // P219: 문서(마지막 바뀜, stale)
       // P185: 자리·흐름(켜기 확인 창과 노드 메뉴의 "자리 정하기"가 쓴다)
-      seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide, effort: x.effort || null, model: x.model || null, ...((def.seatDocs || {})[x.name] || {}) })) : [], // P209: effort·model. P219: loads·reads·writes(문서)
+      seats: def && def.seats ? Object.values(def.seats).map((x) => ({ name: x.name, launcher: x.launcher, session: x.session, worktree: x.worktree, tools: x.tools, may: x.may, maxLive: x.maxLive, guide: x.guide, effort: x.effort || null, model: x.model || null, ...((def.seatDocs || {})[x.name] || {}), ...this.permissionOf(key, def, x.name) })) : [], // P209: effort·model. P219: loads·reads·writes(문서). P223: permission
       flow: def ? def.flow || [] : [], results: def ? def.results || [] : [], manager: def ? def.manager || null : null,
-      warnings: def ? [...(def.warnings || []), ...worktreeWarnings(def.seats, wtGit || 'ok')] : [], worktreeGit: wtGit && wtGit !== 'ok' ? wtGit : null, // P195: 워크트리 자리의 저장소 조건(norepo | nocommit | null)
+      warnings: def ? [...(def.warnings || []), ...worktreeWarnings(def.seats, wtGit || 'ok'), ...this.permitWarnings(key, def)] : [], worktreeGit: wtGit && wtGit !== 'ok' ? wtGit : null, // P195: 워크트리 자리의 저장소 조건(norepo | nocommit | null)
       // P188: 지금 버전, 느린 고리, 사람만 고치는 목록과 어긋난 것
       version: r.n ?? null, cycles: def && def.cycles ? def.cycles.map((x) => ({ every: x.every, to: x.to, run: x.run })) : [],
       loops: def && this.b.branch && this.b.branch.flow && this.b.branch.flow.loops ? this.b.branch.flow.loops.view(key, def) : [], // P221: 고리와 상태
       protected: this.rigProtected(key) || { pointers: [], files: [] }, protectedHits: r.protectedHits || [], changedFiles: this.changedFiles(key).map((x) => x.path),
     };
   }
+  // P223: 자리의 권한(rig.status seats[])
+  permissionOf(key, def, seat) {
+    const sa = def && def.amp && def.amp.seats ? def.amp.seats[seat] : null;
+    const asked = (sa && sa.permission) || 'ask';
+    const approved = asked === 'unattended' ? this.permitted(key, seat) : null;
+    return { permission: asked, allow: (sa && sa.allow) || [], ...(asked === 'unattended' ? { approved, runsAs: approved ? 'unattended' : 'scoped' } : {}) };
+  }
+  // P223: 승인 전 unattended 자리의 경고(rig status, atrium rig check)
+  permitWarnings(key, def) { return this.unattendedSeats(def).filter((n) => !this.permitted(key, n)).map((n) => `seats.${n}.permission "unattended"는 사람이 아직 승인하지 않아 scoped로 돈다. 승인: 이 PC의 보드 창(rig 켜기 확인)`); }
   setEnabled(key, on, by = 'human') {
     const w = this.store().getWorkspace(key);
     if (!w) throw apiError('not_found', `워크스페이스를 찾을 수 없다: ${key}`);
     this.store().setRigEnabled(key, !!on);
     const r = this.read(key);
+    if (on && by === 'human') this.permit(key, null, 'enable'); // P223: 켜기 확인 창이 보인 unattended 자리를 사람이 승인했다
     this.store().addEvent(null, on ? 'rig_enabled' : 'rig_disabled', { workspace: key, by, hash: r.hash, present: r.present });
     rigEvent(this.b, { kind: on ? 'rig_enabled' : 'rig_disabled', ws: key, defN: r.n ?? null, actor: by === 'remote' || by === 'human' ? 'human' : 'board', text: `rig ${on ? '켜짐' : '꺼짐'}(${by})`, data: { by, hash: r.hash } });
     this.b.log && this.b.log(`rig ${on ? 'enabled' : 'disabled'} ${key}`);
@@ -744,6 +770,14 @@ export function rigHandlers(b) {
       local(c);
       if (!p || p.confirm !== true) return { ...b.rig.status(await keyOf(p || {})), needsConfirm: true };
       return set(p, c, true);
+    },
+    // P223: unattended 자리 승인(이 PC의 창만). p.seats(없으면 정의의 unattended 자리 모두)
+    'rig.permit': async (p, c) => {
+      local(c);
+      const key = await keyOf(p || {});
+      const approved = b.rig.permit(key, p && Array.isArray(p.seats) ? p.seats.map(String) : p && p.seat ? [String(p.seat)] : null, 'human');
+      if (b.broadcastWorkspaces) b.broadcastWorkspaces();
+      return { ...b.rig.status(key), approved };
     },
     // P195: 끄기는 원격 기기(기기 토큰)도 한다. 끄면 저장소의 프로그램이 멈출 뿐이다. 켜기·고치기는 이 PC의 창에서만
     'rig.disable': async (p, c) => {

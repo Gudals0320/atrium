@@ -11,12 +11,24 @@
 //   Codex: writes false → -s read-only(Windows에서 localhost HTTP는 막히지 않아 atrium done을 칠 수 있다, P189 확인).
 //     경로 목록은 Codex가 작업 폴더를 늘 쓰기 가능으로 두어 좁히지 못하므로 붙이지 않는다.
 //   opencode·pi: 붙이지 않는다(P189 보고의 표).
+// - P223(rig2-design 11.6의 12): seats.<자리>.permission = ask(기본, 지금 그대로) | scoped | unattended, seats.<자리>.allow = [Claude Code 권한 규칙](scoped에서 묻지 않는 명령).
+//   scoped: Claude Code는 --permission-mode acceptEdits + 세션 설정 파일 permissions.allow(allow) + 쓰기 범위 밖은 PreToolUse가 "ask"(질문이 응답 필요로 뜬다).
+//           Codex는 -s workspace-write -a on-request(writes false면 -s read-only).
+//   unattended: Claude Code는 bypassPermissions + 쓰기 범위 밖은 PreToolUse가 "deny". Codex는 -s workspace-write -a never.
+//     사람만 고른다: 켜기 확인(rig.enable confirm)이나 rig.permit이 그 자리를 승인한다(rig_permits). 승인 전 unattended 자리는 scoped로 돈다.
 import path from 'node:path';
 import fs from 'node:fs';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부(훅 아닌 관문)
 import { writesPaths, OWNS } from './rig-docs.mjs'; // P219: writes의 문서 이름 → 경로
 
 export const AMP_ATS = ['pre-tool'];
+export const SEAT_PERMISSIONS = ['ask', 'scoped', 'unattended']; // P223
+// P223: 자리 권한 → Claude Code 권한 모드(ask는 띄우는 값 그대로)
+export const CLAUDE_PERMISSION_MODE = { scoped: 'acceptEdits', unattended: 'bypassPermissions' };
+// P223: 자리 권한 → Codex 샌드박스·승인
+export const CODEX_APPROVAL = { scoped: 'on-request', unattended: 'never' };
+// P223: allow 규칙의 꼴(Claude Code 권한 규칙: 도구 이름, 괄호 안 지정자). 예: "Bash(git log:*)", "Read", "mcp__x__y"
+const ALLOW_RULE_RE = /^[A-Za-z][A-Za-z0-9_-]*(\(.+\))?$/;
 // 판이 자리를 위해 띄울 때(rig-flow spawnSeat → branch.spawnChild → backend.spawn) 넘기는 자리 이름의 열쇠.
 // Symbol이라 에이전트의 /branch/child 본문(JSON)이나 판 API로는 넣지 못한다(에이전트는 자리를 정하지 못한다)
 export const SEAT_SPAWN = Symbol.for('atrium.rigSeatSpawn');
@@ -34,8 +46,10 @@ const badRel = (p) => isAbs(p) || String(p).split(/[\\/]+/).includes('..');
 // 정의 검사 → { ok: true, amp: null | { stopVerify, seats: { <자리>: { writes, stopVerify } }, preTool: [{ index, match, seats }] } } | { ok: false, reason }
 // raw: 정의 JSON, seats: validateFlow가 고른 자리(없으면 null)
 //   P219: docs(validateDocs의 문서)가 있으면 writes의 문서 이름을 그 문서 경로(저장소 기준)로 바꾼다. "{owns}"는 R5 전이라 뺀다(그것만 있으면 제한 없음)
+//   P223: seats.<자리>.permission·allow → amp.seats[자리].permission·allow. warnings(정의는 쓰인다)를 함께 돌려준다
 export function validateAmp(raw, { seats = null, docs = null } = {}) {
   const bad = (reason) => ({ ok: false, reason });
+  const warnings = [];
   const known = (n) => !!(seats && Object.prototype.hasOwnProperty.call(seats, n));
   if (raw.stopVerify != null && typeof raw.stopVerify !== 'boolean') return bad('stopVerify는 true 또는 false다');
   if (raw.stopVerify && !seats) return bad('stopVerify는 seats(자리)와 함께 쓴다(자리 세션의 턴 끝을 돌려보낸다)');
@@ -55,7 +69,23 @@ export function validateAmp(raw, { seats = null, docs = null } = {}) {
       } else return bad(`${at}.writes는 false 또는 경로 배열이다(예: ["items/{item}/"])`);
     }
     if (x.stopVerify != null && typeof x.stopVerify !== 'boolean') return bad(`${at}.stopVerify는 true 또는 false다`);
-    if (writes !== null || x.stopVerify != null) seatAmp[name] = { writes, stopVerify: x.stopVerify ?? null };
+    // P223: 자리 권한
+    const permission = x.permission == null ? 'ask' : x.permission;
+    if (!SEAT_PERMISSIONS.includes(permission)) return bad(`${at}.permission은 ${SEAT_PERMISSIONS.join(', ')} 가운데 하나다(ask: 지금처럼 묻는다, scoped: 쓰기 범위와 allow 안에서는 묻지 않는다, unattended: 묻지 않는다. 사람만 고른다): ${JSON.stringify(x.permission)}`);
+    let allow = [];
+    if (x.allow != null) {
+      if (!Array.isArray(x.allow) || x.allow.some((r) => typeof r !== 'string' || !r.trim())) return bad(`${at}.allow는 Claude Code 권한 규칙 글의 배열이다(예: ["Bash(git log:*)", "Bash(gh pr list:*)"])`);
+      const off = x.allow.find((r) => !ALLOW_RULE_RE.test(r.trim()));
+      if (off) return bad(`${at}.allow의 규칙이 Claude Code 권한 규칙 꼴(도구 이름, 괄호 안 지정자)이 아니다: ${off}`);
+      allow = [...new Set(x.allow.map((r) => r.trim()))];
+      if (permission !== 'scoped') warnings.push(`${at}.allow는 permission "scoped" 자리에서만 쓴다(${permission}에서는 쓰지 않는다)`);
+    }
+    if (permission === 'unattended') {
+      warnings.push(`${at}.permission "unattended"는 사람이 승인해야 쓰인다(rig 켜기 확인 창이나 창의 승인). 승인 전에는 scoped로 돈다`);
+      if (writes === null) warnings.push(`${at}.permission "unattended"인데 writes(쓰기 범위)가 없다. 묻지 않고 어디든 쓴다`);
+    }
+    if (permission === 'scoped' && writes === null && !allow.length) warnings.push(`${at}.permission "scoped"인데 writes와 allow가 없다. 세션 폴더 안 파일 고치기만 묻지 않는다`);
+    if (writes !== null || x.stopVerify != null || permission !== 'ask') seatAmp[name] = { writes, stopVerify: x.stopVerify ?? null, ...(permission !== 'ask' ? { permission, allow } : {}) };
   }
   const preTool = [];
   const hooks = Array.isArray(raw.hooks) ? raw.hooks : [];
@@ -82,17 +112,20 @@ export function validateAmp(raw, { seats = null, docs = null } = {}) {
     preTool.push({ index: i, match, seats: only });
   }
   const has = raw.stopVerify != null || Object.keys(seatAmp).length || preTool.length;
-  return { ok: true, amp: has ? { stopVerify: raw.stopVerify === true, seats: seatAmp, preTool } : null };
+  return { ok: true, amp: has ? { stopVerify: raw.stopVerify === true, seats: seatAmp, preTool } : null, ...(warnings.length ? { warnings } : {}) };
 }
 
 // 그 자리의 증폭 값(정의만으로) → { writes, stopVerify, preTool: [hook 정의…] }
+//   P223: permission(정의의 값)과 allow
 export function seatAmpOf(def, seat) {
-  const a = def && def.amp; if (!a) return { writes: null, stopVerify: false, preTool: [] };
+  const a = def && def.amp; if (!a) return { writes: null, stopVerify: false, preTool: [], permission: 'ask', allow: [] };
   const sa = a.seats[seat] || {};
   const stopVerify = sa.stopVerify != null ? sa.stopVerify : a.stopVerify;
   const preTool = a.preTool.filter((p) => !p.seats || p.seats.includes(seat)).map((p) => ({ ...p, hook: def.hooks.find((h) => h.index === p.index) })).filter((p) => p.hook);
-  return { writes: sa.writes ?? null, stopVerify: !!stopVerify, preTool };
+  return { writes: sa.writes ?? null, stopVerify: !!stopVerify, preTool, permission: sa.permission || 'ask', allow: sa.allow || [] };
 }
+// P223: 정의의 자리 권한 → 실제로 쓰는 권한. unattended는 사람이 승인한 자리만(아니면 scoped)
+export const effectivePermission = (permission, approved) => (permission === 'unattended' && !approved ? 'scoped' : permission || 'ask');
 
 // Claude Code 권한 규칙의 절대 경로(Windows는 /c/… 꼴로 맞춘다. 문서: //는 파일 시스템 뿌리)
 export function rulePath(abs) {
@@ -112,8 +145,8 @@ function protectBases(root, cwd) {
   return out;
 }
 
-// 세션 설정 파일에 넣을 증폭 → { deny: [규칙], hooks: { <이벤트>: { timeout, onFailure? } } } | null
-//   x: { writes, stopVerify, preTool, protectedFiles: [상대 경로], root, cwd }
+// 세션 설정 파일에 넣을 증폭 → { deny: [규칙], allow: [규칙], hooks: { <이벤트>: { timeout, onFailure? } } } | null
+//   x: { writes, stopVerify, preTool, protectedFiles: [상대 경로], root, cwd, permission(실제로 쓰는 값), allow }
 export function claudeSettingsAmp(x) {
   if (!x) return null;
   const deny = [];
@@ -131,15 +164,21 @@ export function claudeSettingsAmp(x) {
   }
   if (x.stopVerify) hooks.Stop = { timeout: STOP_TIMEOUT_SEC };
   const uniq = [...new Set(deny)];
-  if (!uniq.length && !Object.keys(hooks).length) return null;
-  return { deny: uniq, hooks };
+  const allow = x.permission === 'scoped' ? [...new Set(x.allow || [])] : []; // P223: scoped 자리의 묻지 않는 규칙
+  if (!uniq.length && !allow.length && !Object.keys(hooks).length) return null;
+  return { deny: uniq, ...(allow.length ? { allow } : {}), hooks };
 }
 // 설정 파일 JSON에 증폭을 덮어 쓴다(판이 만든 파일이라 deny는 모두 판의 것). 바뀌었으면 true
-export function applySettingsAmp(j, amp, baseTimeoutSec = 2) {
+//   P223: allow는 판의 기본 규칙(baseAllow, branch.settingsExtra의 allow) + 증폭의 allow. baseAllow를 주지 않으면 지금 allow에 더하기만 한다
+export function applySettingsAmp(j, amp, baseTimeoutSec = 2, baseAllow = null) {
   const before = JSON.stringify(j);
   const deny = amp ? amp.deny : [];
   if (deny.length) j.permissions = { ...(j.permissions || {}), deny };
   else if (j.permissions && j.permissions.deny) { const { deny: _d, ...rest } = j.permissions; j.permissions = rest; if (!Object.keys(rest).length) delete j.permissions; }
+  const extra = (amp && amp.allow) || [];
+  const allow = [...new Set([...(baseAllow || ((j.permissions && j.permissions.allow) || [])), ...extra])];
+  if (allow.length) j.permissions = { ...(j.permissions || {}), allow };
+  else if (j.permissions && j.permissions.allow) { const { allow: _a, ...rest } = j.permissions; j.permissions = rest; if (!Object.keys(rest).length) delete j.permissions; }
   for (const [ev, list] of Object.entries(j.hooks || {})) {
     for (const g of list || []) for (const h of g.hooks || []) {
       if (h.type !== 'http') continue;
@@ -156,8 +195,23 @@ const SANDBOX_VALUE_FLAGS = new Set(['-s', '--sandbox']);
 const SANDBOX_BARE_FLAGS = new Set(['--dangerously-bypass-approvals-and-sandbox', '--yolo', '--full-auto']);
 const APPROVAL_FLAGS = new Set(['-a', '--ask-for-approval']);
 const SANDBOX_KEY = /^sandbox_mode\s*=/;
-export function codexArgsAmp(args = [], writes = null) {
+const APPROVAL_KEY = /^approval_policy\s*=/; // P223
+//   P223: permission scoped·unattended면 샌드박스·승인 인자를 걷어 내고 -s workspace-write(writes false면 read-only) -a on-request | never
+export function codexArgsAmp(args = [], writes = null, permission = 'ask') {
   const a = (args || []).map(String);
+  if (CODEX_APPROVAL[permission]) {
+    const out = [];
+    for (let i = 0; i < a.length; i++) {
+      const w = a[i]; const flag = w.split('=')[0];
+      if (SANDBOX_VALUE_FLAGS.has(flag) || APPROVAL_FLAGS.has(flag)) { if (!w.includes('=')) i++; continue; }
+      if (SANDBOX_BARE_FLAGS.has(w)) continue;
+      if ((w === '-c' || w === '--config') && (SANDBOX_KEY.test(a[i + 1] || '') || APPROVAL_KEY.test(a[i + 1] || ''))) { i++; continue; }
+      if ((w.startsWith('--config=') && (SANDBOX_KEY.test(w.slice(9)) || APPROVAL_KEY.test(w.slice(9)))) || (w.startsWith('-c') && w.length > 2 && (SANDBOX_KEY.test(w.slice(2)) || APPROVAL_KEY.test(w.slice(2))))) continue;
+      out.push(w);
+    }
+    out.push('--sandbox', writes === false ? 'read-only' : 'workspace-write', '--ask-for-approval', CODEX_APPROVAL[permission]);
+    return out;
+  }
   if (writes !== false) return a;
   const out = []; let bypass = false; let hasApproval = false;
   for (let i = 0; i < a.length; i++) {
@@ -188,6 +242,8 @@ export function writesVerdict({ writes, toolName, toolInput, base, unitId = null
 
 // PreToolUse 응답 본문
 export const denyBody = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
+// P223: scoped 자리의 쓰기 범위 밖 → 묻는다(acceptEdits여도 권한 질문이 뜨고, 판은 응답 필요로 보인다)
+export const askBody = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason } });
 // Stop 응답 본문
 export const stopBlockBody = (reason) => ({ decision: 'block', reason });
 export function stopReason(results) {
@@ -210,12 +266,35 @@ export class RigAmp {
     const sa = seatAmpOf(r.def, s.rigSeat);
     const prot = this.protectedOf(s.workspaceKey);
     const protectedFiles = prot && Array.isArray(prot.files) ? prot.files.map((f) => f && f.path).filter((p) => typeof p === 'string' && p && !badRel(p)) : [];
-    return { key: s.workspaceKey, r, seat: s.rigSeat, kind: s.kind || 'claude', ...sa, protectedFiles, root: r.root, cwd: (s.rt && s.rt.cwd) || s.cwd || r.root };
+    const asked = sa.permission;
+    const permission = effectivePermission(asked, asked === 'unattended' && this.approved(s.workspaceKey, s.rigSeat)); // P223
+    return { key: s.workspaceKey, r, seat: s.rigSeat, kind: s.kind || 'claude', ...sa, asked, permission, protectedFiles, root: r.root, cwd: (s.rt && s.rt.cwd) || s.cwd || r.root };
+  }
+  // P223: 사람이 그 자리의 unattended를 승인했는가(rig.mjs rig_permits)
+  approved(key, seat) { return !!(this.b.rig && this.b.rig.permitted && this.b.rig.permitted(key, seat)); }
+  // P223: 자리 세션을 띄울 때의 권한 → { asked, permission, claudeMode | null, codex: { sandbox, approval } | null, pending }
+  seatPermission(key, seat) {
+    const r = this.b.rig ? this.b.rig.active(key) : null;
+    if (!r || !r.def.seats || !r.def.seats[seat]) return null;
+    const sa = seatAmpOf(r.def, seat);
+    const approved = sa.permission === 'unattended' && this.approved(key, seat);
+    const permission = effectivePermission(sa.permission, approved);
+    return { asked: sa.permission, permission, pending: sa.permission === 'unattended' && !approved, claudeMode: CLAUDE_PERMISSION_MODE[permission] || null, codex: CODEX_APPROVAL[permission] ? { sandbox: sa.writes === false ? 'read-only' : 'workspace-write', approval: CODEX_APPROVAL[permission] } : null, allow: permission === 'scoped' ? sa.allow : [], writes: sa.writes };
+  }
+  // P223: 자리 세션을 띄운 뒤 장부에 권한 결정 한 줄(seat_permission, value = 실제로 쓰는 권한). ask는 적지 않는다(지금 그대로)
+  notePermission(s, { caseId = null } = {}) {
+    if (!s || !s.rigSeat) return null;
+    const p = this.seatPermission(s.workspaceKey, s.rigSeat);
+    if (!p || (p.asked === 'ask')) return null;
+    const kind = s.kind || 'claude';
+    const how = kind === 'claude' ? `--permission-mode ${s.permissionMode || p.claudeMode}${p.allow.length ? `, allow ${p.allow.length}` : ''}` : kind === 'codex' && p.codex ? `-s ${p.codex.sandbox} -a ${p.codex.approval}` : '이 종류는 권한 칸을 받지 않는다';
+    const text = `${s.rigSeat}: ${p.permission}${p.pending ? '(unattended는 사람의 승인 전이라 scoped)' : ''} · ${how}`;
+    return rigEvent(this.b, { kind: 'seat_permission', ws: s.workspaceKey, caseId, seat: s.rigSeat, session: s.sessionId, value: p.permission, actor: 'board', text, data: { asked: p.asked, permission: p.permission, pending: p.pending, kind, mode: kind === 'claude' ? s.permissionMode || p.claudeMode : null, codex: kind === 'codex' ? p.codex : null, allow: p.allow, writes: Array.isArray(p.writes) ? p.writes : p.writes === false ? false : null } });
   }
   // Claude Code 세션 설정 파일에 넣을 증폭(writeSessionSettings의 amp)
   claudeAmp(s) { const x = this.ctxOf(s); return x && x.kind === 'claude' ? claudeSettingsAmp(x) : null; }
   // Codex 인자
-  launcherArgs(s, args) { const x = this.ctxOf(s); return x && x.kind === 'codex' ? codexArgsAmp(args, x.writes) : (args || []); }
+  launcherArgs(s, args) { const x = this.ctxOf(s); return x && x.kind === 'codex' ? codexArgsAmp(args, x.writes, x.permission) : (args || []); } // P223: 자리 권한
   // 설정 파일을 지금 정의·자리에 맞춘다(자리를 정하거나 정의가 바뀐 뒤 다음 턴부터). 바뀌었으면 true
   syncSettings(s) {
     if (!s || (s.kind || 'claude') !== 'claude' || !s.settingsPath) return false;
@@ -224,7 +303,8 @@ export class RigAmp {
     if (s.ampSig === sig) return false;
     try {
       const j = JSON.parse(fs.readFileSync(s.settingsPath, 'utf8'));
-      const changed = applySettingsAmp(j, amp, (this.b.cfg && this.b.cfg.hookTimeoutSec) || 2);
+      const base = this.b.branch && this.b.branch.settingsExtra ? (this.b.branch.settingsExtra(s.sessionId).allow || []) : null; // P223: 판의 기본 allow
+      const changed = applySettingsAmp(j, amp, (this.b.cfg && this.b.cfg.hookTimeoutSec) || 2, base);
       if (changed) fs.writeFileSync(s.settingsPath, JSON.stringify(j, null, 2));
       s.ampSig = sig;
       if (changed) { try { this.b.store.addEvent(s.sessionId, 'rig_amp_settings', { seat: s.rigSeat || null, deny: amp ? amp.deny.length : 0, hooks: amp ? Object.keys(amp.hooks) : [] }); } catch {} }
@@ -252,6 +332,8 @@ export class RigAmp {
     const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
     const toolName = String(body.tool_name || ''); const toolInput = body.tool_input || {};
     const w = writesVerdict({ writes: x.writes, toolName, toolInput, base: x.cwd, unitId: tr ? tr.unitId : null });
+    // P223: scoped 자리는 쓰기 범위 밖을 묻는다(응답 필요로 뜬다), 그 밖(ask·unattended)은 거부
+    if (w && x.permission === 'scoped') { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'ask', why: 'writes', tool: toolName }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'writes', tool: toolName, ask: true, target: String(toolInput.file_path || toolInput.path || toolInput.notebook_path || '') || null }, `${w} (scoped: 사람에게 묻는다)`, 'ask'); return askBody(`[Atrium rig] ${w}. 이 자리(scoped)는 쓰기 범위 밖을 사람에게 묻는다.`); }
     if (w) { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'deny', why: 'writes', tool: toolName }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'writes', tool: toolName, target: String(toolInput.file_path || toolInput.path || toolInput.notebook_path || '') || null }, w); return denyBody(w); }
     const hooks = x.preTool.filter((p) => !p.match || new RegExp(`^(?:${p.match})$`).test(toolName)).map((p) => p.index);
     if (!hooks.length) return null;
@@ -266,9 +348,9 @@ export class RigAmp {
     return null;
   }
   // P217: 훅이 아닌 관문(쓰기 범위, stopVerify)의 장부 줄. 값은 reject(돌려보냄), ref는 없다(훅 실행 행이 없다)
-  gateEvent(s, x, tr, at, data, why) {
+  gateEvent(s, x, tr, at, data, why, value = 'reject') { // P223: value ask(scoped 자리가 사람에게 물음)
     const u = tr && this.b.store.getUnit ? this.b.store.getUnit(tr.unitId) : null;
-    rigEvent(this.b, { kind: 'gate', ws: x.key || s.workspaceKey, caseId: u ? u.caseId || null : null, unitId: tr ? tr.unitId : null, tryId: tr ? tr.id : null, seat: x.seat || s.rigSeat || null, session: s.sessionId, value: 'reject', actor: 'board', text: `${at}: ${why}`, data: { at, hook: null, ...data } });
+    rigEvent(this.b, { kind: 'gate', ws: x.key || s.workspaceKey, caseId: u ? u.caseId || null : null, unitId: tr ? tr.unitId : null, tryId: tr ? tr.id : null, seat: x.seat || s.rigSeat || null, session: s.sessionId, value, actor: 'board', text: `${at}: ${why}`, data: { at, hook: null, ...data } });
   }
   // 판이 다시 떴을 때: 기록(events rig_stop_block)에서 그 시도를 막은 수
   blocksFromLog(sessionId, tryId) {

@@ -21,6 +21,8 @@ export function deliveryText(d) {
   if (d.reason === 'typed') return t('delivery.withReason', { base, reason: t('typeNow.typed') }); // P90: 일하는 중에 Claude Code 대기 메시지로 넣었다
   if (d.reason === 'now' || d.reason === 'now_typed') return t('delivery.withReason', { base, reason: t(d.reason === 'now' ? 'deliveryQueue.sentNow' : 'deliveryQueue.sentNowTyped') }); // P172: 대기열에서 바로 보냄
   if (d.reason === 'draft') return t('delivery.withReason', { base, reason: t('typeNow.draft') }); // P141(#17): 보내는 중(sending)에도 원문 까닭 대신 사전 글
+  if (d.reason === 'loop_paused') return t('delivery.withReason', { base, reason: t('rigLoopHold.paused') }); // P223: 멈춘 rig 고리에 붙잡음(잇기를 기다림)
+  if (/^loop_(unit_queued|dropped|no_session|moved)$/.test(d.reason)) return t('delivery.withReason', { base, reason: t(`rigLoopHold.${d.reason.slice(5)}`) }); // P223: 잇기 뒤 붙잡았던 전달의 끝
   if (d.status === 'queued') return t('delivery.withReason', { base, reason: WAIT_REASON_LABEL[d.reason] || d.reason });
   if (d.status === 'cancelled' && d.reason === 'user') return base;
   if (/^draft_(moved|restored|partial|stashed|held)$/.test(d.reason)) return t('delivery.withReason', { base, reason: t(`draftAside.${d.reason.slice(6)}`) }); // P128

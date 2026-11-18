@@ -85,13 +85,14 @@ export class WorkUnits {
     // P217: 켜진 rig의 자리 세션이 일 하위에게 맡긴 일(건 밖. 건의 일은 rig-flow가 적는다)
     if (!unit.caseId && caller.rigSeat && this.b.rig && this.b.rig.active(caller.workspaceKey)) rigEvent(this.b, { kind: 'assign', ws: caller.workspaceKey, unitId: unit.id, seat: caller.rigSeat, session: caller.sessionId, fromSeat: caller.rigSeat, toSeat: t.rigSeat || null, value: 'assign', actor: 'agent', text: clip(unit.spec.replace(/\s+/g, ' '), 120), data: { to: t.sessionId, origin } });
     if (hold) { this.queued.add(t.sessionId); return { unit, held: true, ahead: st.queuedUnitsOf(t.sessionId).length - 1 + (st.openTryOf(t.sessionId) ? 1 : 0) }; }
-    return { unit, ...this.dispatch(unit) };
+    return { unit, ...this.dispatch(unit, { reuse: (extra && extra.deliveryId) || null }) }; // P223: 멈춘 고리에 붙잡았던 전달로 넣는다
   }
   // 일의 새 시도: 머리를 붙여 대기열에 넣고 시도를 적는다
-  dispatch(unit, { later = false } = {}) {
+  dispatch(unit, { later = false, reuse = null } = {}) {
     const b = this.b; const st = this.store();
     const header = this.headerOf(unit);
-    const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}`, { origin: unit.from === HUMAN_FROM ? { kind: 'human' } : { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션). P190: 사람이 맡긴 제작 일
+    const d = (reuse && b.queue.unpark ? b.queue.unpark(reuse, `${header}\n\n${unit.spec}`) : null) // P223: 붙잡았던 전달(같은 전달 ID로 넣는다)
+      || b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}`, { origin: unit.from === HUMAN_FROM ? { kind: 'human' } : { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션). P190: 사람이 맡긴 제작 일
     const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: d.deliveryId, startedAt: Date.now() };
     st.insertTry(tr);
     st.addEvent(unit.to, 'unit_try', { unitId: unit.id, tryId: tr.id, deliveryId: d.deliveryId, later });
