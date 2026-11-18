@@ -2,7 +2,7 @@
 // 리셋이 지난 창, 호출자 → 구독(연결·API 환경 변수는 구독이 아님), 남은 양, 시간 글, 크레딧, 알림 글
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { levelOf, livePct, topOf, pillOf, remainingOf, providerOfLauncher, spanOf, windowKey, creditOf, alertText } from '../src/renderer/lib/usage.js';
+import { levelOf, livePct, topOf, pillOf, remainingOf, providerOfLauncher, spanOf, windowKey, creditOf, alertText, windowLabel } from '../src/renderer/lib/usage.js';
 import { translate } from '../src/renderer/lib/i18n.js';
 
 const NOW = Date.parse('2026-11-18T00:00:00Z');
@@ -48,6 +48,10 @@ test('P211 시간·창·크레딧·알림 글(두 사전)', () => {
   assert.deepEqual(spanOf(3 * 86400000 + 4 * 3600000), { key: 'usage.spanDayHour', vars: { d: 3, h: 4 } });
   assert.deepEqual(spanOf(3 * 86400000), { key: 'usage.spanDay', vars: { d: 3 } });
   assert.equal(windowKey('5h'), 'usage.win.5h'); assert.equal(windowKey('gemini'), null);
+  const tk = (k, v) => translate('ko', k, v), te = (k, v) => translate('en', k, v);
+  assert.equal(windowLabel('gemini-5h', tk), 'Gemini 5시간'); assert.equal(windowLabel('gemini-weekly', te), 'Gemini Weekly');
+  assert.equal(windowLabel('3p-weekly', tk), '3p 주간'); assert.equal(windowLabel('gemini-argon-wtu-weekly', te), 'Gemini argon-wtu Weekly');
+  assert.equal(windowLabel('week', tk), '주간'); assert.equal(windowLabel('odd', tk), 'odd');
   assert.equal(translate('ko', 'usage.win.week'), '주간'); assert.equal(translate('en', 'usage.win.week'), 'Weekly');
   assert.equal(creditOf(null), null);
   assert.deepEqual(creditOf({ unlimited: true }), { key: 'usage.creditUnlimited', vars: {} });

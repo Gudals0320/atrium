@@ -2682,7 +2682,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-usage-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
 .mt-usage-plan { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--panel-3); color: var(--dim); }
 .mt-usage-ago { margin-left: auto; font-size: 12px; }
-.mt-usage-win { display: grid; grid-template-columns: 56px 1fr 42px minmax(88px, auto); align-items: center; gap: 8px; font-size: 12.5px; }
+.mt-usage-win { display: grid; grid-template-columns: minmax(56px, 118px) 1fr 42px minmax(88px, auto); align-items: center; gap: 8px; font-size: 12.5px; }
 .mt-usage-wname { color: var(--text-2, var(--text)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-usage-bar { height: 6px; border-radius: 3px; background: var(--panel-3); overflow: hidden; }
 .mt-usage-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--dim); }

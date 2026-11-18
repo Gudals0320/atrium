@@ -3,7 +3,7 @@
 // - Claude: 판이 띄운 Claude Code의 상태 줄 명령(bin/atrium-statusline.mjs)이 받은 JSON의 rate_limits(five_hour·seven_day의 used_percentage, resets_at)
 // - Codex: ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl의 token_count 줄 payload.rate_limits(primary·secondary, credits, plan_type).
 //   오늘·어제 폴더의 파일 가운데 바뀐 파일만 끝(늘어난 만큼, 처음은 끝 256KB)을 읽는다
-// - AGY: 판이 띄운 AGY의 상태 줄 명령이 받은 JSON의 quota_buckets({ 이름: { remaining_fraction, reset_in_seconds } })
+// - AGY: 판이 띄운 AGY의 상태 줄 명령이 받은 JSON의 quota({ "gemini-5h"·"gemini-weekly"·"3p-5h"…: { remaining_fraction, reset_time, reset_in_seconds } })와 plan_tier
 // 값이 바뀌면 창에 usage.updated를 보내고, 한 창이 90%를 넘으면 그 창이 리셋될 때까지 한 번 usage.alert를 보낸다(설정 usageAlerts).
 // 판 기록 meta usage(마지막 값), usageAlerted(알린 열쇠)에 남는다(판이 다시 떠도 마지막 값과 "n분 전"이 보인다)
 import fs from 'node:fs';
@@ -71,7 +71,7 @@ export function codexUsageOf(rl, at = Date.now()) {
 // 칸: remaining_fraction(0~1, 남은 몫) → 사용률 = (1 − 몫)×100, reset_in_seconds(받은 때부터) 또는 reset_time(시각)
 export function agyUsageOf(input, at = Date.now()) {
   if (!isObj(input)) return null;
-  const qb = input.quota_buckets;
+  const qb = isObj(input.quota) || Array.isArray(input.quota) ? input.quota : input.quota_buckets; // 1.5.10 시험: quota { "gemini-5h": {…}, "3p-weekly": {…} }
   const list = Array.isArray(qb) ? qb.map((b, i) => [isObj(b) ? b.name || b.id || b.key || `q${i + 1}` : `q${i + 1}`, b]) : isObj(qb) ? Object.entries(qb) : [];
   const windows = [];
   for (const [name, b] of list) {
@@ -80,11 +80,12 @@ export function agyUsageOf(input, at = Date.now()) {
     const used = rf != null ? (1 - rf) * 100 : num(b.used_percentage) ? b.used_percentage : null;
     if (used == null) continue;
     const resetsAt = num(b.reset_in_seconds) ? at + Math.round(b.reset_in_seconds * 1000) : toMs(b.reset_time ?? b.resets_at);
-    windows.push({ id: String(name), minutes: null, usedPct: pct(used), resetsAt });
+    const minutes = /(^|-)5h$/.test(name) ? 300 : /(^|-)weekly$/.test(name) ? 10080 : /(^|-)daily$/.test(name) ? 1440 : null;
+    windows.push({ id: String(name), minutes, usedPct: pct(used), resetsAt });
   }
   if (!windows.length) return null;
   const m = isObj(input.model) ? input.model.display_name || input.model.id || null : typeof input.model === 'string' ? input.model : null;
-  return { provider: 'agy', source: 'statusline', at, windows, credits: null, plan: null, model: m };
+  return { provider: 'agy', source: 'statusline', at, windows, credits: null, plan: typeof input.plan_tier === 'string' ? input.plan_tier : null, model: m };
 }
 
 // ---------- Codex rollout 끝 읽기 ----------
@@ -180,8 +181,10 @@ export const sameUsage = (a, b) => sig(a) === sig(b);
 const fwd = (p) => String(p).split(path.sep).join('/');
 const q = (s) => `"${String(s).replace(/"/g, '')}"`;
 // 상태 줄 명령 글. 셸(Git Bash·cmd)에서 같게 읽히도록 경로는 슬래시와 큰따옴표, 사용자 명령은 base64로 넘긴다
-export function statusLineCommand({ node = process.execPath, script, kind, userSettings = null, userCommand = null, quietDefault = false }) {
-  return [q(fwd(node)), q(fwd(script)), kind, ...(userCommand ? ['--user-cmd-b64', Buffer.from(userCommand, 'utf8').toString('base64')] : userSettings ? ['--user-settings', q(fwd(userSettings))] : []), ...(quietDefault ? ['--default', 'none'] : [])].join(' ');
+// shim(.cmd 꾸러미)을 주면 node·스크립트 대신 그것을 부른다. AGY는 명령의 큰따옴표를 \"로 넘겨 cmd가 읽지 못하므로(1.5.10 개발용 판 시험) 따옴표 없는 꾸러미 경로를 쓴다
+const bare = (p) => (/[\s"&|<>^]/.test(p) ? q(p) : p);
+export function statusLineCommand({ node = process.execPath, script, kind, userSettings = null, userCommand = null, quietDefault = false, shim = null }) {
+  return [...(shim ? [bare(fwd(shim))] : [q(fwd(node)), q(fwd(script))]), kind, ...(userCommand ? ['--user-cmd-b64', Buffer.from(userCommand, 'utf8').toString('base64')] : userSettings ? ['--user-settings', q(fwd(userSettings))] : []), ...(quietDefault ? ['--default', 'none'] : [])].join(' ');
 }
 // 판의 상태 줄 명령 파일을 판 데이터 폴더에 둔다(판 코드 폴더가 업데이트로 바뀌어도 띄운 세션의 설정이 그대로 가리킨다) → 파일 경로
 export function writeStatusLineScript(dir, source = new URL('../bin/atrium-statusline.mjs', import.meta.url)) {
@@ -190,6 +193,14 @@ export function writeStatusLineScript(dir, source = new URL('../bin/atrium-statu
   const text = fs.readFileSync(source, 'utf8');
   let cur = null; try { cur = fs.readFileSync(file, 'utf8'); } catch {}
   if (cur !== text) fs.writeFileSync(file, text);
+  return file;
+}
+// AGY용 꾸러미(.cmd): 이 판의 node로 같은 폴더의 atrium-statusline.mjs를 부른다(표준 입출력은 물려준다) → 파일 경로
+export function writeStatusLineShim(dir, node = process.execPath) {
+  const file = path.join(dir, 'atrium-statusline.cmd');
+  const text = `@echo off\r\nrem Atrium 보드(P211): 판의 상태 줄 명령\r\n"${node}" "%~dp0atrium-statusline.mjs" %*\r\n`;
+  let cur = null; try { cur = fs.readFileSync(file, 'utf8'); } catch {}
+  if (cur !== text) { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(file, text); }
   return file;
 }
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
@@ -278,7 +289,7 @@ export class UsageBook {
       if (gl && typeof gl.command === 'string' && gl.command.trim()) { cmd = gl.command.trim(); line = gl; }
     }
     if (cmd && cmd.includes('atrium-statusline')) cmd = null;
-    const base = { ...(line || {}), type: 'command', enabled: true, command: statusLineCommand({ node: this.o.node, script: this.o.script, kind: 'agy', userCommand: cmd, quietDefault: !cmd }) };
+    const base = { ...(line || {}), type: 'command', enabled: true, command: statusLineCommand({ node: this.o.node, script: this.o.script, kind: 'agy', userCommand: cmd, quietDefault: !cmd, shim: this.o.agyShim || null }) };
     return cmd ? base : { ...base, stack_with_default: true };
   }
 }

@@ -52,6 +52,16 @@ export function spanOf(ms) {
 }
 // 창 이름 → 사전 열쇠(5h·week·day는 사전, 그 밖은 이름 그대로)
 export const windowKey = (id) => (id === '5h' || id === 'week' || id === 'day' ? `usage.win.${id}` : null);
+// 창 이름 글: 5h·week·day는 사전, AGY의 "<무리>-5h|weekly|daily"는 "<무리 이름> <창>"(gemini-5h → Gemini 5시간), 그 밖은 이름 그대로
+const GROUP = { gemini: 'Gemini', '3p': '3p' };
+export function windowLabel(id, t = (k) => k) {
+  const k = windowKey(id);
+  if (k) return t(k);
+  const m = /^(.+)-(5h|weekly|daily)$/.exec(String(id || ''));
+  if (!m) return String(id || '');
+  const g = GROUP[m[1]] || m[1].replace(/^gemini-/, 'Gemini ');
+  return `${g} ${t(windowKey(m[2] === 'weekly' ? 'week' : m[2] === 'daily' ? 'day' : '5h'))}`;
+}
 // 크레딧 → { key, vars } | null
 export function creditOf(c) {
   if (!c) return null;

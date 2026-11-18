@@ -36,7 +36,7 @@ import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentR
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
-import { UsageBook, writeStatusLineScript } from './usage.mjs'; // P211: 구독 사용량
+import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
 import { tailText, screenAnswerText, roleNotice, unlinkNotice, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
@@ -220,7 +220,7 @@ export class Backend {
     this.usage = new UsageBook({
       store: this.store, broadcast: (e, v) => this.api.broadcast(e, v), settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}),
       codexHome: cfg.usageCodexHome, claudeUserSettings: cfg.claudeUserSettings, agyUserSettings: path.join(cfg.agyHome || agyHomeOf(), 'settings.json'),
-      script: writeStatusLineScript(path.join(cfg.dataDir, 'plugin')), node: process.execPath, pollMs: cfg.usagePollMs, log: (m) => this.log(m),
+      script: writeStatusLineScript(path.join(cfg.dataDir, 'plugin')), node: process.execPath, agyShim: process.platform === 'win32' ? writeStatusLineShim(path.join(cfg.dataDir, 'plugin')) : null, pollMs: cfg.usagePollMs, log: (m) => this.log(m),
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
     // P8: 하위 세션 명령. 플러그인에 일 맡기기 스킬과 atrium 명령을 더하고, 이미 띄운 세션의 설정 파일에 env와 승인 규칙을 더한다

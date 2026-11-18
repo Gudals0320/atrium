@@ -5,11 +5,11 @@ import { useStore, getState } from './store.js';
 import { api } from './api.js';
 import { useT, t as tt } from './lib/i18n.js';
 import { notifyAllowed } from './lib/multiclient.js';
-import { PROVIDERS, PROVIDER_NAME, pillOf, livePct, levelOf, spanOf, windowKey, creditOf, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
+import { PROVIDERS, PROVIDER_NAME, pillOf, livePct, levelOf, spanOf, windowKey, creditOf, windowLabel, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
 
 function useNow(ms = 30000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
 const span = (t, ms) => { const s = spanOf(ms); return t(s.key, s.vars); };
-const winName = (t, id) => (windowKey(id) ? t(windowKey(id)) : id);
+const winName = (t, id) => windowLabel(id, t);
 
 // 펼침: 바깥을 누르거나 Esc면 닫는다
 function useDrop() {
@@ -43,7 +43,7 @@ function ProviderBlock({ k, e, now }) {
         const lv = levelOf(p);
         return (
           <div key={w.id} className={`mt-usage-win lv-${lv}`} data-role="usage-window" data-window={w.id} data-pct={Math.round(p)}>
-            <span className="mt-usage-wname">{winName(t, w.id)}</span>
+            <span className="mt-usage-wname" title={w.id}>{winName(t, w.id)}</span>
             <span className="mt-usage-bar" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, p))}%` }} /></span>
             <span className="mt-usage-pct mono">{Math.round(p)}%</span>
             <span className="mt-usage-reset dim">{w.resetsAt ? (w.resetsAt > now ? t('usage.resetIn', { span: span(t, w.resetsAt - now) }) : t('usage.resetPassed')) : ''}</span>

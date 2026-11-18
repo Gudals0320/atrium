@@ -22,6 +22,7 @@ import { useInbox } from './InboxBar.jsx';
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
 import { UsagePill, UsageLeft, useUsageLeft } from './Usage.jsx'; // P211: 구독 사용량
+import { windowLabel } from './lib/usage.js';
 import { Icon } from './lib/icons.jsx';
 import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
@@ -371,7 +372,7 @@ function LauncherTool({ l, open, onOpen }) {
   const t = useT();
   const kind = launcherIcon(l);
   const left = useUsageLeft(l); // P211: 그 구독의 남은 양
-  const tip = launcherTooltip(l, { shellText: t('launchers.shellPreview'), envText: t('launchers.envShort') }) + (left ? `\n${t('usage.leftTitle', { pct: left.pct, win: left.window === '5h' || left.window === 'week' || left.window === 'day' ? t(`usage.win.${left.window}`) : left.window })}` : '');
+  const tip = launcherTooltip(l, { shellText: t('launchers.shellPreview'), envText: t('launchers.envShort') }) + (left ? `\n${t('usage.leftTitle', { pct: left.pct, win: windowLabel(left.window, t) })}` : '');
   const go = (e) => (e && e.shiftKey ? openDialog({ kind: 'spawn', launcher: l.id }) : onOpen(open ? null : { id: l.id, el: e.currentTarget }));
   return (
     <button className={`mt-tool${open ? ' on' : ''}`} title={tip} aria-label={l.name} aria-haspopup="dialog" aria-expanded={open} data-action="launch" data-launcher={l.id} data-name={l.name} onClick={go}>

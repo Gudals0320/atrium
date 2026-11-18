@@ -19,7 +19,7 @@ import { Branch } from '../src/branch.mjs';
 import { CONTRACT_VERSION, VERB_NAMES, VERBS } from '../src/cli-contract.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { agySettingsArgs, AGY_BOARD_SETTINGS, ADAPTERS } from '../src/harness.mjs';
-import { claudeUsageOf, codexUsageOf, agyUsageOf, lastRateLimits, CodexUsageReader, UsageBook, alertsOf, statusLineCommand, writeStatusLineScript, usageLines, toMs, windowIdOf, ALERT_PCT } from '../src/usage.mjs';
+import { claudeUsageOf, codexUsageOf, agyUsageOf, lastRateLimits, CodexUsageReader, UsageBook, alertsOf, statusLineCommand, writeStatusLineScript, writeStatusLineShim, usageLines, toMs, windowIdOf, ALERT_PCT } from '../src/usage.mjs';
 import { SETTINGS, DEFAULTS } from '../src/settings.mjs';
 import { userCommandOf, reportOf, defaultLine } from '../bin/atrium-statusline.mjs';
 
@@ -110,6 +110,11 @@ test('P211 AGY 상태 줄 입력: quota_buckets(이름 → 남은 몫, 리셋까
   assert.equal(e.provider, 'agy'); assert.equal(e.model, 'Gemini');
   assert.deepEqual(agyUsageOf({ quota_buckets: [{ name: 'pro', remaining_fraction: 0.1, reset_time: '2026-11-18T10:00:00Z' }] }, 0).windows, [{ id: 'pro', minutes: null, usedPct: 90, resetsAt: Date.parse('2026-11-18T10:00:00Z') }]);
   assert.equal(agyUsageOf({ quota_buckets: {} }), null);
+  // AGY 1.5.10에서 받은 모양: quota { 이름: { remaining_fraction, reset_time, reset_in_seconds } }, plan_tier. 이름 끝 -5h·-weekly는 창 길이
+  const real = agyUsageOf({ plan_tier: 'pro', email: 'x@example.com', quota: { 'gemini-5h': { remaining_fraction: 0.8, reset_time: '2026-11-18T05:00:00Z', reset_in_seconds: 600 }, 'gemini-weekly': { remaining_fraction: 0.35, reset_time: '2026-11-20T00:00:00Z', reset_in_seconds: 7200 } } }, 1000);
+  assert.deepEqual(real.windows.map((w) => [w.id, w.minutes, w.usedPct, w.resetsAt]), [['gemini-5h', 300, 20, 601000], ['gemini-weekly', 10080, 65, 7201000]]);
+  assert.equal(real.plan, 'pro');
+  assert.deepEqual(Object.keys(reportOf('agy', { quota: {}, plan_tier: 'pro', email: 'x@example.com', user_email: 'y', cwd: 'C:/w' })).sort(), ['model', 'plan_tier', 'quota']);
   assert.equal(agyUsageOf({ model: 'x' }), null);
 });
 
@@ -295,6 +300,19 @@ test('P211 AGY --settings: 판의 상태 줄 명령을 더한다. 사용자 명�
   const built = ADAPTERS.agy.build({ model: 'm', launcherArgs: [], statusLine: fn });
   assert.equal(settingsOf(built.args).statusLine.type, 'command');
   assert.equal(statusLineCommand({ node: 'n', script: 's', kind: 'claude' }), '"n" "s" claude');
+  // AGY는 큰따옴표를 \"로 넘겨 cmd가 못 읽는다: 꾸러미(.cmd) 경로를 따옴표 없이(빈칸이 있을 때만 묶는다)
+  assert.equal(statusLineCommand({ shim: 'C:/d/plugin/atrium-statusline.cmd', kind: 'agy', quietDefault: true }), 'C:/d/plugin/atrium-statusline.cmd agy --default none');
+  const sbook = new UsageBook({ store: memStore(), script: 'C:/d/plugin/atrium-statusline.mjs', node: 'C:/n/node.exe', agyShim: 'C:/d/plugin/atrium-statusline.cmd', agyUserSettings: agyUser });
+  assert.equal(sbook.agyStatusLine(null).command, 'C:/d/plugin/atrium-statusline.cmd agy --user-cmd-b64 ' + Buffer.from('agy-line').toString('base64'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('P211 AGY 꾸러미(.cmd): cmd에서 따옴표 없이 불러도 입력을 넘기고 판의 기본 줄을 낸다', { skip: process.platform !== 'win32' }, async () => {
+  const dir = tmp();
+  writeStatusLineScript(dir);
+  const shim = writeStatusLineShim(dir);
+  const out = await new Promise((res) => { const c = execFile('cmd.exe', ['/d', '/s', '/c', `${fwd(shim)} claude`], { env: cleanEnv(), encoding: 'utf8' }, (e, o) => res({ code: e ? e.code : 0, o })); c.stdin.end(JSON.stringify(CLAUDE_IN)); });
+  assert.equal(out.code, 0); assert.equal(out.o, 'Haiku 4.5 · 5h 34% 1W 86%');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

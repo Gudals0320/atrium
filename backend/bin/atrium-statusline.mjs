@@ -40,7 +40,7 @@ export function reportOf(k, j) {
   if (!isObj(j)) return null;
   const model = isObj(j.model) ? { id: j.model.id ?? null, display_name: j.model.display_name ?? null } : typeof j.model === 'string' ? { id: j.model, display_name: null } : null;
   if (k === 'claude') return isObj(j.rate_limits) ? { rate_limits: j.rate_limits, model } : null;
-  const pick = Object.fromEntries(Object.entries(j).filter(([key]) => /quota|credit|plan|tier|limit/i.test(key)));
+  const pick = Object.fromEntries(Object.entries(j).filter(([key]) => /quota|credit|plan|tier|limit/i.test(key) && !/mail|token|key/i.test(key))); // 계정 메일 등은 보내지 않는다
   return Object.keys(pick).length ? { ...pick, model } : null;
 }
 
