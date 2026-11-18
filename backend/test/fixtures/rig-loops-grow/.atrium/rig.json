@@ -3,12 +3,12 @@
   "name": "rules-grow-loop",
   "docs": {
     "rules": {
-      "path": "docs/rules.md",
+      "path": "docs/rules.txt",
       "role": "canon",
       "load": "always"
     },
     "facts": {
-      "path": "docs/facts.md",
+      "path": "docs/facts.txt",
       "role": "canon",
       "stale": {
         "after_change_of": "rules"

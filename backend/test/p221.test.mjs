@@ -576,7 +576,7 @@ test('P221 판: 사람이 고친 문서는 basis no_agent_working과 "사람 또
     const D = b.rigDocs;
     const main = add('main'); seat(main, 'main');
     await D.scan();
-    const rules = path.join(dir, 'docs', 'rules.md'); const corr = path.join(dir, 'ledger', 'corrections.jsonl');
+    const rules = path.join(dir, 'docs', 'rules.txt'); const corr = path.join(dir, 'ledger', 'corrections.jsonl');
     fs.appendFileSync(rules, '- 사람이 더함\n');
     await D.scan();
     let row = ledger(b, ws.key, { kinds: ['doc_changed'] }).at(-1);
@@ -596,7 +596,7 @@ test('P221 doc_stale: 신선 → 오래됨으로 넘어갈 때 한 줄, 그 문�
   const { b, ws, dir, stop } = await board();
   try {
     const D = b.rigDocs;
-    const rules = path.join(dir, 'docs', 'rules.md'); const facts = path.join(dir, 'docs', 'facts.md');
+    const rules = path.join(dir, 'docs', 'rules.txt'); const facts = path.join(dir, 'docs', 'facts.txt');
     const at = (f, ms) => { const t = new Date(ms); fs.utimesSync(f, t, t); };
     const now = Date.now();
     at(facts, now - 60000); at(rules, now - 120000); // facts가 더 새로움: 신선
@@ -606,7 +606,7 @@ test('P221 doc_stale: 신선 → 오래됨으로 넘어갈 때 한 줄, 그 문�
     await D.scan(); await D.scan(); await D.scan();
     let st = ledger(b, ws.key, { kinds: ['doc_stale'] });
     assert.equal(st.length, 1, '한 번만');
-    assert.equal(st[0].data.doc, 'facts'); assert.equal(st[0].value, 'after_change_of'); assert.match(st[0].text, /facts\(docs\/facts\.md\)가 오래됐다/);
+    assert.equal(st[0].data.doc, 'facts'); assert.equal(st[0].value, 'after_change_of'); assert.match(st[0].text, /facts\(docs\/facts\.txt\)가 오래됐다/);
     // 판이 다시 떠도(새 RigDocs) 같은 서명이면 다시 쓰지 않는다
     const D2 = new RigDocs(b, { pollMs: 50 });
     await D2.scan(); await D2.scan();
