@@ -94,7 +94,8 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     tmpDir: os.tmpdir(),
     // 시간 기준(ms)
     hookTimeoutSec: 2,
-    deliveryMaxWaitMs: 15 * 60 * 1000, // B1 규칙 2: 최대 15분
+    deliveryMaxWaitMs: (profile === 'dev' && Number(E('DELIVERY_MAX_WAIT_MS'))) || 15 * 60 * 1000, // B1 규칙 2: 최대 15분(P215: 일하는 중·사람의 답을 기다리는 동안과 앞 전달 뒤에 줄 선 동안은 세지 않는다)
+    deliveryLongWaitMs: (profile === 'dev' && Number(E('DELIVERY_LONG_WAIT_MS'))) || 12 * 60 * 60 * 1000, // P215: 일하는 중이라도 넣은 지 12시간이면 실패(보낸 세션에 알린다). 두 상한은 개발용 판에서만 ATRIUM_DELIVERY_*_MS로 줄인다(시험)
     inputQuietMs: 3000, // B1 규칙 4: 사용자가 터미널에 입력한 뒤 이만큼 기다린다
     submitConfirmMs: 30000, // 보낸 뒤 UserPromptSubmit을 기다리는 시간
     submitRetryMs: 6000, // P79: 보낸 뒤 이만큼 확인이 없으면 입력 칸을 보고 Enter나 다시 보내기

@@ -985,11 +985,34 @@ export class Branch {
   onDeliveryEnd(d) {
     const sid = this.firstOf.get(d.deliveryId);
     if (this.verbs) this.verbs.onDeliveryEnd(d); // P116: atrium prompt가 들어갔으면 받는 쪽의 지금 지시로(연결 기록)
+    if (!sid) this.senderLost(d); // P215: 첫 요청은 아래 firstPromptEnd가 부모에게 알린다
     const r = this.firstPromptEnd(d);
     // P81: 헤드의 첫 요청이 들어갔거나 못 들어갔다고 판정됐다(P79 알림 뒤) → 판이 부모 관계를 뗀다
     const s = sid && FINAL.has(d.status) ? this.b.sessions.get(sid) : null;
     if (s) this.maybeHead(s, null, d);
     return r;
+  }
+  // P215: 에이전트가 보낸 글(atrium prompt, 맡긴 일)이 끝내 들어가지 못했다(기다림 상한, 받는 세션이 닫힘·깨지 못함 등) → 보낸 세션에 판 알림 한 줄.
+  //   사람이 지운 것(cancelled user)은 알리지 않는다. 보낸 세션이 이미 닫혔으면 알리지 않는다. 사람이 창에서 보낸 글은 창의 전달 줄이 실패를 보인다
+  senderLost(d) {
+    if (d.status !== 'failed' && !(d.status === 'cancelled' && d.reason && d.reason !== 'user')) return null;
+    const b = this.b;
+    const row = b.store.getDelivery(d.deliveryId);
+    if (!row || row.origin !== 'agent' || !row.fromSession || row.fromSession === row.sessionId) return null;
+    const from = b.sessions.get(row.fromSession);
+    if (!from) return null;
+    const to = b.sessions.get(row.sessionId);
+    const old = to ? null : b.store.getSession(row.sessionId); // 닫힌 받는 쪽은 저장소의 이름
+    const name = to ? to.name : (old && old.name) || String(row.sessionId).slice(0, 8);
+    const body = String(row.text || '').replace(/^\[Atrium 보드\][^\n]*\n+/gm, '').replace(/\s+/g, ' ').trim(); // 일 머리는 떼고 본문 앞부분
+    const again = to ? `다시 보내려면: atrium prompt ${name} "<글>"` : `@${name}는 닫혔다. 필요하면 새 세션에 맡긴다`;
+    const text = `[Atrium 보드] @${name}에게 보낸 글("${clip(body, 80)}")이 들어가지 않았다(${d.status}: ${d.reason || '-'}). ${again}\n이 알림에는 "알겠다"고만 답해라.`;
+    const n = b.queue.enqueue(from.sessionId, text);
+    b.store.addEvent(from.sessionId, 'delivery_lost_notice', { deliveryId: d.deliveryId, to: row.sessionId, status: d.status, reason: d.reason || null, noticeDeliveryId: n.deliveryId });
+    b.log(`delivery lost ${name} (${d.deliveryId} ${d.status}: ${d.reason || '-'}) → notice to ${from.name}`);
+    const l = to ? b.store.linkByPair(from.sessionId, to.sessionId) : null;
+    if (l && !l.removedAt) b.linkEvent(l, 'notice', text, { deliveryId: n.deliveryId, why: 'delivery lost' }, { quiet: true });
+    return n;
   }
   firstPromptEnd(d) {
     const sid = this.firstOf.get(d.deliveryId);
