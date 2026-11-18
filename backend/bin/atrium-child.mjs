@@ -332,6 +332,7 @@ async function unitVerb(cmd) {
     say(`일 ${it.id}: @${it.from}가 맡김(${it.origin}) · ${ago(it.startedAt, Date.now())} 시작${x.queued ? ` · 뒤에 줄 선 일 ${x.queued}개` : ''}`);
     say('--- 할 일 ---'); say(it.spec.replace(/\s+$/, '')); say('---');
     if (it.caseId) say(`rig 건 ${it.caseId}의 일(${it.seat} 자리${it.by ? `, @${it.by}가 보냄` : ''})`); // P185
+    if (it.docs) { say('--- 문서(늘 싣는 것은 먼저 읽고, 읽는 것은 필요할 때) ---'); for (const d of [...it.docs.loads.map((x) => ({ ...x, h: '이 문서를 먼저 읽는다' })), ...it.docs.reads.map((x) => ({ ...x, h: '필요할 때 읽는다' }))]) say(`  ${d.path} (${d.name}, ${d.role}): ${d.h}`); } // P219
     say(it.results ? `끝나면: atrium done <값> "<보고>". 값: ${it.results.join(', ')}` : '끝나면: atrium done ok "<보고>" (못 했으면 atrium done failed "<까닭>")');
     return;
   }
@@ -438,6 +439,7 @@ async function rigVerb() {
   if (op === 'check') {
     if (x.ok) say(`맞다: ${x.from}(해시 ${String(x.hash).slice(0, 12)}${x.same ? ', 지금 버전과 같은 내용' : ''}). 지금 버전 ${x.current.n ?? '-'}. 자리 ${x.summary.seats.join(', ') || '없음'} · 흐름 줄 ${x.summary.flow} · 훅 ${x.summary.hooks} · 도구 ${x.summary.tools.join(', ') || '없음'} · 느린 고리 ${x.summary.cycles.join(', ') || '없음'} · manager ${x.summary.manager || '없음'}`);
     else { say(`맞지 않다: ${x.from}: ${x.reason}`); process.exitCode = 1; }
+    if (x.ok && x.summary.docs && x.summary.docs.length) say(`  rig ${x.summary.format} · 문서 ${x.summary.docs.map((d) => `${d.name}(${d.role}${d.layer !== 'project' ? `, ${d.layer}` : ''}) ${d.path}`).join(' · ')}`); // P219
     for (const w of x.warnings || []) say(`  경고: ${w}`);
     return;
   }
@@ -620,6 +622,7 @@ function printSeat(r) {
   say(`  끝내기: atrium done <값> "<보고>". 값: ${r.results.join(', ')}${r.next && r.next.length ? ` · 다음: ${r.next.map((n) => `${n.on} → ${n.to.join(', ')}${n.max != null ? `(최대 ${n.max}번, 넘으면 ${n.else || 'manager'})` : ''}`).join(' · ')}` : ''}`);
   say(`  보낼 수 있는 자리: 일 맡기기 ${r.assign.length ? r.assign.join(', ') : '없음'} · 글만 ${r.may.length ? r.may.join(', ') : '없음'}${r.manager && !r.may.includes('*') ? ' · rig 밖 세션에 글만(관리자 자리)' : ''}(atrium prompt <자리> "…"). 그 밖은 보드가 거절한다${r.tools ? ` · 도구: ${r.tools.join(', ') || '없음'}` : ''}`);
   if (r.owned && r.owned.length) say(`  네가 주인인 건: ${r.owned.map((c) => `${c.id} ${c.state}`).join(', ')}${r.owned.some((c) => c.state === 'waiting_owner') ? ' · waiting_owner는 너의 답을 기다린다: 다음 atrium prompt <자리>가 잇는다(여럿이면 --case <건>)' : ''}`); // P194
+  if (r.docs) say(`  문서: 먼저 읽음 ${r.docs.loads.map((d) => d.path).join(', ') || '없음'} · 필요할 때 ${r.docs.reads.map((d) => d.path).join(', ') || '없음'}${r.writesDocs && r.writesDocs.length ? ` · 쓰는 문서 ${r.writesDocs.join(', ')}` : ''}`); // P219
   if (r.manager) say(`  너는 관리자 자리다(정의 버전 ${r.version ?? '-'}): .atrium/rig.json을 직접 고치고, atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>]을 쓴다`); // P188. P216: retry
 }
 // P156: atrium relate

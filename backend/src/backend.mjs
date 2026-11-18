@@ -21,6 +21,7 @@ import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·crea
 import { rigAdminHandlers } from './rig-admin.mjs';
 import { humanMessage } from './rig-ledger.mjs'; // P217: 장부(사람 글)
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
+import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
 import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
@@ -248,6 +249,7 @@ export class Backend {
 
     this.rig = new Rig(this); // P182
     this.rigAmp = new RigAmp(this); // P189
+    this.rigDocs = new RigDocs(this); // P219: rig 2 문서 바뀜 보기
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
@@ -352,6 +354,7 @@ export class Backend {
       if (this.adapter.connected) { const pid = this.adapter.serverPid(); if (pid && pid !== this._hcPidSaved) { this._hcPidSaved = pid; this.store.setMeta('terminalServerPid', pid); } }
     }, 2000);
     this.store.setMeta('heartbeat', Date.now());
+    if (cfg.rigDocs !== false) this.rigDocs.start(); // P219
     this.quietTimer = setInterval(() => { for (const s of this.sessions.values()) this.broadcastSession(s, { onlyIfFlagsChanged: true }); }, 10000);
 
     // F4: 세션 폴더의 git(워크트리). hook이 없는 세션은 터미널이 아는 폴더를 주기적으로 본다
@@ -381,6 +384,7 @@ export class Backend {
 
   async stop(reason = 'stop') {
     this.log('backend stopping:', reason);
+    if (this.rigDocs) this.rigDocs.stop(); // P219
     clearInterval(this.heartbeat); clearInterval(this.quietTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer); clearInterval(this.modelTimer);
     if (this.tempLinks) this.tempLinks.stop();
     stopMigration(this);
@@ -849,6 +853,7 @@ export class Backend {
     // F4: Claude Code는 워크트리로 들어가면 hook의 cwd가 바뀐다
     if (body.cwd && body.cwd !== s.rt.cwd) { s.rt.cwd = body.cwd; this.probeGit(s, body.cwd); }
     if (ev === 'UserPromptSubmit') { s.draft = false; this.onLinkTargetPrompt(s, body.prompt); }
+    if (ev === 'PostToolUse' && this.rigDocs) this.rigDocs.noteToolHook(s, body); // P219: 문서를 누가 바꿨나(파일 쓰기 도구의 대상)
     if ((ev === 'UserPromptSubmit' || ev === 'Stop') && this.rigAmp) this.rigAmp.syncSettings(s); // P189: 자리를 정했거나 정의가 바뀌었으면 설정 파일의 증폭을 맞춘다
     const info = { ev, tool: body.tool_name || null, authOk, bytes: raw.length, sessionIdMatches: body.session_id === s.sessionId, permissionMode: body.permission_mode || null };
     if (ev === 'Stop') info.lastAnswer = clip(body.last_assistant_message, 300);
