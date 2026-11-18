@@ -123,7 +123,7 @@ export function bandLayout(R, o) {
   const seats = cols.map((c, i) => {
     const d = seatInfo(c.name);
     const ss = d ? d.sessions || [] : [];
-    return { name: c.name, old: c.old, mode: d ? (d.session === 'keep' ? 'keep' : 'fresh') : null, launcher: d ? d.launcher || null : null, busy: ss.filter((x) => x.busy).length, max: d && d.maxLive != null ? num(d.maxLive) : null, waiting: d ? num(d.waiting) : 0, x: colX(i), y: y0 + B.PAD, w: CW, h: B.SH };
+    return { name: c.name, old: c.old, mode: d ? (d.session === 'keep' ? 'keep' : 'fresh') : null, launcher: d ? d.launcher || null : null, busy: ss.filter((x) => x.busy).length, exited: ss.filter((x) => x.exited).length /* P216: 종료 세션은 busy(한도)에 들지 않고 따로 센다 */, max: d && d.maxLive != null ? num(d.maxLive) : null, waiting: d ? num(d.waiting) : 0, x: colX(i), y: y0 + B.PAD, w: CW, h: B.SH };
   });
   const entry = (n, x, y, extra = {}) => {
     const m = member.get(n.id), chip = !!extra.chip;
@@ -154,11 +154,13 @@ export function bandLayout(R, o) {
     for (const u of us) {
       const i = ci.get(u.seat);
       const id = nodeOf(u.sessionId);
-      if (modeOf(u.seat) === 'keep' && !(id && inBand(id) && member.get(id).mode !== 'keep')) push(i, { kind: u.status === 'open' ? 'holds' : 'did', unit: u.unit, at: num(u.createdAt), seat: u.seat, result: u.result || null, target: id && inBand(id) ? id : null, name: u.name || null });
+      // P216: 종료된 자리 세션이 쥔 열린 일(u.retry)은 "종료됨" 표시와 [다시 띄우기](keep 자리는 일 있음 대신, 그 밖은 카드·가리킴 아래에 하나 더)
+      if (modeOf(u.seat) === 'keep' && !(id && inBand(id) && member.get(id).mode !== 'keep')) push(i, { kind: u.retry ? 'exited' : u.status === 'open' ? 'holds' : 'did', unit: u.unit, at: num(u.createdAt), seat: u.seat, result: u.result || null, target: id && inBand(id) ? id : null, name: u.name || null, ...(u.retry ? { retryUnit: u.unit } : {}) });
       else if (u.queued || !u.sessionId) push(i, { kind: 'queue', unit: u.unit, at: num(u.createdAt), seat: u.seat, status: u.status });
       else if (id && inBand(id) && home.get(id) && home.get(id).c === c.id && home.get(id).unit === u.unit) push(i, { kind: 'card', id, unit: u.unit, at: num(u.createdAt) });
       else if (id && inBand(id)) push(i, { kind: 'ref', unit: u.unit, at: num(u.createdAt), target: id, name: u.name || id, result: u.result || null });
       else push(i, { kind: 'past', unit: u.unit, at: num(u.createdAt), name: u.name || null, result: u.result || null, status: u.status });
+      if (u.retry && modeOf(u.seat) !== 'keep' && u.sessionId) push(i, { kind: 'exited', key: `x${u.unit}`, retryUnit: u.unit, at: num(u.createdAt) + 0.5, seat: u.seat, name: u.name || null, target: id && inBand(id) ? id : null });
     }
     const oc = ownerCol(c);
     (c.reports || []).forEach((r, k) => push(oc, { kind: 'report', key: `r${k}`, at: num(r.at), value: r.result != null ? r.result : r.value, up: !!r.escalated, from: r.sessionId || null, seat: r.seat || null, target: nodeOf(c.ownerSessionId) }));
@@ -290,7 +292,8 @@ export function bandPhone(R, o) {
     for (const u of us.filter((q) => q.status === 'open')) {
       const id = nodeOf(u.sessionId);
       if (id && inBand(id) && member.get(id).mode !== 'keep' && !placed.has(id)) { placed.add(id); const e = entry(nodes.find((q) => q.id === id), x0, cy, { caseId: c.id, w: Math.min(CW, W) }); cy += e.h + P.GY; }
-      else if (id && inBand(id) && member.get(id).mode === 'keep') { marks.push({ kind: 'holds', ws, caseId: c.id, unit: u.unit, target: id, seat: u.seat, x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:${u.unit}` }); cy += BAND.MARK + P.GY; }
+      else if (id && inBand(id) && member.get(id).mode === 'keep') { marks.push({ kind: u.retry ? 'exited' : 'holds', ws, caseId: c.id, unit: u.unit, target: id, seat: u.seat, x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:${u.unit}`, ...(u.retry ? { retryUnit: u.unit } : {}) }); cy += BAND.MARK + P.GY; continue; }
+      if (u.retry) { marks.push({ kind: 'exited', ws, caseId: c.id, key: `x${u.unit}`, retryUnit: u.unit, target: id && inBand(id) ? id : null, seat: u.seat, x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:x${u.unit}` }); cy += BAND.MARK + P.GY; } // P216
     }
     if (c.state === 'waiting_owner') { marks.push({ kind: 'wait', ws, caseId: c.id, key: 'wait', target: nodeOf(c.ownerSessionId), x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:wait` }); cy += BAND.MARK + P.GY; }
     // 이 건의 다른 세션은 머리 자리에 접힌 항목(요약 열·사이드바가 찾는다)

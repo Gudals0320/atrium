@@ -16,6 +16,11 @@ import { RIG_HEADER_TAIL } from './rig.mjs'; // P182. P188: 세 줄 머리의 �
 import { seatHeader } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리
 import { HUMAN_FROM, BUILDER_ORIGIN, builderHeader } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일(상위 세션 없음)
 
+// P216: 에이전트만 끝나고 셸 패널이 남은 것을 멈춤(exited)으로 보는가. 판이 끄라고 한 것(잠재우기·끄기·child-kill·옮기기·다시 띄우기: normal),
+//   사람이 끝낸 것(/exit·Ctrl+C·종료 코드 0·130: user), 신뢰 거부(trust_declined), 터미널 서버가 꺼짐(terminal_stopped, 판이 되살린다)은 아니다.
+//   남는 것은 other(충돌, 프로세스가 죽음, 까닭 모를 끝남)다. 종류(Claude Code·Codex·AGY·pi·opencode)와 상관없이 hc의 놓임(agent_released)과 종료 코드로 정한다
+export const agentExited = (exit) => !!exit && exit.kind === 'other' && !exit.requested;
+
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
 export const DONE_RESULTS = ['ok', 'failed'];
@@ -272,6 +277,7 @@ export class WorkUnits {
     const sid = s.sessionId; const st = this.store();
     const prev = this.prev.get(sid);
     this.prev.set(sid, sum.state);
+    if (sum.state === 'exited' && this.onExited(s, sum)) return; // P216
     const tr = prev !== sum.state ? st.openTryOf(sid) : null;
     const why = this.stops.onState(s, sum, prev, tr);
     if (why) {
@@ -280,6 +286,27 @@ export class WorkUnits {
       if (why !== 'needs_human' && this.queued.has(sid)) { st.updateTry(tr.id, { endedAt: Date.now() }); this.pump(sid); }
     }
     if (this.queued.has(sid) && (sum.state === 'ready' || sum.state === 'sleeping')) this.pump(sid); // 백엔드가 다시 뜬 뒤 등
+  }
+  // P216: 판이 띄운 세션의 에이전트가 끝나 셸만 남았다(exited). 열린 시도를 stop_reason exited로 닫고 위 세션(rig면 건 주인)에게 한 번 알린다.
+  //   rig 건의 일은 열린 채 둔다(건은 blocked, 자리 한도에서 빠짐, `atrium rig retry`로 다시 맡긴다: rig-flow onTryExited). 그 밖의 일은 취소한다(다시 맡기기 대신 알리기만).
+  //   백엔드가 다시 떴을 때 이미 끝나 있던 세션도 첫 방송에서 같은 길을 탄다. → 'exited' | null
+  onExited(s, sum) {
+    const b = this.b; const st = this.store(); const sid = s.sessionId;
+    const exit = sum.exit || (s.rt && s.rt.exit) || null;
+    if (!agentExited(exit) || (b.killing && b.killing.has(sid))) return null;
+    const tr = st.openTryOf(sid);
+    if (!tr) return null;
+    const now = Date.now();
+    const unit = st.getUnit(tr.unitId);
+    st.updateTry(tr.id, { endedAt: now, stopReason: 'exited' });
+    st.addEvent(sid, 'unit_stop', { unitId: tr.unitId, tryId: tr.id, why: 'exited', exit: { kind: exit.kind, code: exit.code ?? null } });
+    b.log(`unit ${tr.unitId} try ${tr.id} stopped: ${this.nameOf(sid)} exited (${exit.kind}${exit.code != null ? ` code ${exit.code}` : ''})`);
+    const flow = this.branch && this.branch.flow;
+    let detail = null;
+    if (unit && unit.caseId && flow) { try { detail = flow.onTryExited(s, unit, tr); } catch (e) { b.log('rig try exited error', e.stack); } }
+    else if (unit && unit.status === 'open') { st.updateUnit(unit.id, { status: 'cancelled', closedAt: now }); detail = unit.from === HUMAN_FROM ? null : '다시 맡기려면 새 하위를 띄운다(atrium child)'; }
+    this.stops.onExited(tr, unit, detail);
+    return 'exited';
   }
   // 세션이 끝났다: 열린 시도는 closed로 끝나고 그 일과 붙잡아 둔 일은 취소된다.
   // P181: 상위에게 멈춤(closed)을 알린다(위 세션의 child-kill이면 알리지 않는다) → 알림을 건 상위 ID | null

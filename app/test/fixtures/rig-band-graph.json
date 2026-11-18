@@ -5,17 +5,17 @@
   "results": ["ok", "failed", "rejected"],
   "seats": [
     { "name": "main", "launcher": "claude", "session": "keep", "worktree": false, "maxLive": 1, "may": [], "old": false,
-      "sessions": [{ "sessionId": "s-main", "name": "main", "open": true, "busy": false }], "waiting": 0 },
+      "sessions": [{ "sessionId": "s-main", "name": "main", "open": true, "busy": false, "exited": false }], "waiting": 0 },
     { "name": "worker", "launcher": "claude", "session": "fresh", "worktree": false, "maxLive": 1, "may": ["main"], "old": false,
-      "sessions": [{ "sessionId": "s-w1", "name": "worker-1", "open": true, "busy": false }, { "sessionId": "s-w2", "name": "worker-2", "open": true, "busy": true }], "waiting": 1 },
+      "sessions": [{ "sessionId": "s-w1", "name": "worker-1", "open": true, "busy": false, "exited": false }, { "sessionId": "s-w2", "name": "worker-2", "open": true, "busy": true, "exited": false }], "waiting": 1 },
     { "name": "reviewer", "launcher": "claude", "session": "fresh", "worktree": false, "maxLive": 3, "may": ["main"], "old": false,
-      "sessions": [{ "sessionId": "s-r1", "name": "reviewer-1", "open": true, "busy": false }, { "sessionId": "s-r2", "name": "reviewer-2", "open": true, "busy": false }], "waiting": 0 },
+      "sessions": [{ "sessionId": "s-r1", "name": "reviewer-1", "open": true, "busy": false, "exited": false }, { "sessionId": "s-r2", "name": "reviewer-2", "open": true, "busy": false, "exited": false }], "waiting": 0 },
     { "name": "docs", "launcher": "claude", "session": "fresh", "worktree": false, "maxLive": 3, "may": [], "old": false,
-      "sessions": [{ "sessionId": "s-d1", "name": "docs-1", "open": true, "busy": true }], "waiting": 0 },
+      "sessions": [{ "sessionId": "s-d1", "name": "docs-1", "open": true, "busy": true, "exited": false }], "waiting": 0 },
     { "name": "manager", "launcher": "claude", "session": "keep", "worktree": false, "maxLive": 1, "may": [], "old": false,
-      "sessions": [{ "sessionId": "s-mgr", "name": "manager", "open": true, "busy": true }], "waiting": 0 },
+      "sessions": [{ "sessionId": "s-mgr", "name": "manager", "open": true, "busy": true, "exited": false }], "waiting": 0 },
     { "name": "tester", "launcher": null, "session": null, "worktree": false, "maxLive": null, "may": [], "old": true,
-      "sessions": [{ "sessionId": "s-t1", "name": "tester-1", "open": true, "busy": false }], "waiting": 0 }
+      "sessions": [{ "sessionId": "s-t1", "name": "tester-1", "open": true, "busy": false, "exited": false }], "waiting": 0 }
   ],
   "flow": [
     { "index": 0, "from": "main", "on": "assign", "to": ["worker"], "max": null, "else": null },
@@ -30,8 +30,8 @@
       "lines": [{ "index": 2, "from": "reviewer", "on": "rejected", "to": ["worker"], "max": 2, "passed": 2, "escalated": 1 }],
       "activeSeats": [],
       "units": [
-        { "unit": "u1", "seat": "worker", "sessionId": "s-w1", "name": "worker-1", "status": "done", "result": "ok", "queued": false, "createdAt": 1000, "closedAt": 1100, "via": null },
-        { "unit": "u2", "seat": "reviewer", "sessionId": "s-r1", "name": "reviewer-1", "status": "done", "result": "rejected", "queued": false, "createdAt": 1100, "closedAt": 1200, "via": { "prevUnit": "u1", "line": 1, "escalated": false, "fromSeat": "worker", "result": "ok" } }
+        { "unit": "u1", "seat": "worker", "sessionId": "s-w1", "name": "worker-1", "status": "done", "result": "ok", "queued": false, "createdAt": 1000, "closedAt": 1100, "stop": null, "retry": false, "via": null },
+        { "unit": "u2", "seat": "reviewer", "sessionId": "s-r1", "name": "reviewer-1", "status": "done", "result": "rejected", "queued": false, "createdAt": 1100, "closedAt": 1200, "stop": null, "retry": false, "via": { "prevUnit": "u1", "line": 1, "escalated": false, "fromSeat": "worker", "result": "ok" } }
       ],
       "reports": [
         { "seat": "reviewer", "sessionId": "s-r1", "name": "reviewer-1", "unit": "u2", "result": "rejected", "line": 2, "escalated": true, "at": 1600 }
@@ -41,11 +41,11 @@
       "lines": [{ "index": 2, "from": "reviewer", "on": "rejected", "to": ["worker"], "max": 2, "passed": 2, "escalated": 1 }],
       "activeSeats": ["worker", "docs"],
       "units": [
-        { "unit": "u10", "seat": "worker", "sessionId": "s-w1", "name": "worker-1", "status": "done", "result": "ok", "queued": false, "createdAt": 2000, "closedAt": 2100, "via": null },
-        { "unit": "u11", "seat": "reviewer", "sessionId": "s-r2", "name": "reviewer-2", "status": "done", "result": "rejected", "queued": false, "createdAt": 2100, "closedAt": 2200, "via": { "prevUnit": "u10", "line": 1, "escalated": false, "fromSeat": "worker", "result": "ok" } },
-        { "unit": "u12", "seat": "docs", "sessionId": "s-d1", "name": "docs-1", "status": "open", "result": null, "queued": false, "createdAt": 2100, "closedAt": null, "via": { "prevUnit": "u10", "line": 1, "escalated": false, "fromSeat": "worker", "result": "ok" } },
-        { "unit": "u13", "seat": "worker", "sessionId": "s-w2", "name": "worker-2", "status": "open", "result": null, "queued": false, "createdAt": 2200, "closedAt": null, "via": { "prevUnit": "u11", "line": 2, "escalated": false, "fromSeat": "reviewer", "result": "rejected" } },
-        { "unit": "u14", "seat": "worker", "sessionId": null, "name": "(줄)", "status": "open", "result": null, "queued": true, "createdAt": 2600, "closedAt": null, "via": { "prevUnit": "u11", "line": 2, "escalated": false, "fromSeat": "reviewer", "result": "rejected" } }
+        { "unit": "u10", "seat": "worker", "sessionId": "s-w1", "name": "worker-1", "status": "done", "result": "ok", "queued": false, "createdAt": 2000, "closedAt": 2100, "stop": null, "retry": false, "via": null },
+        { "unit": "u11", "seat": "reviewer", "sessionId": "s-r2", "name": "reviewer-2", "status": "done", "result": "rejected", "queued": false, "createdAt": 2100, "closedAt": 2200, "stop": null, "retry": false, "via": { "prevUnit": "u10", "line": 1, "escalated": false, "fromSeat": "worker", "result": "ok" } },
+        { "unit": "u12", "seat": "docs", "sessionId": "s-d1", "name": "docs-1", "status": "open", "result": null, "queued": false, "createdAt": 2100, "closedAt": null, "stop": null, "retry": false, "via": { "prevUnit": "u10", "line": 1, "escalated": false, "fromSeat": "worker", "result": "ok" } },
+        { "unit": "u13", "seat": "worker", "sessionId": "s-w2", "name": "worker-2", "status": "open", "result": null, "queued": false, "createdAt": 2200, "closedAt": null, "stop": null, "retry": false, "via": { "prevUnit": "u11", "line": 2, "escalated": false, "fromSeat": "reviewer", "result": "rejected" } },
+        { "unit": "u14", "seat": "worker", "sessionId": null, "name": "(줄)", "status": "open", "result": null, "queued": true, "createdAt": 2600, "closedAt": null, "stop": null, "retry": false, "via": { "prevUnit": "u11", "line": 2, "escalated": false, "fromSeat": "reviewer", "result": "rejected" } }
       ],
       "reports": [] },
     { "id": "c-cycle", "state": "open", "owner": "manager", "ownerSessionId": "s-mgr", "ownerOpen": true, "cycle": 0, "version": 2,
@@ -53,7 +53,7 @@
       "lines": [{ "index": 2, "from": "reviewer", "on": "rejected", "to": ["worker"], "max": 2, "passed": 0, "escalated": 0 }],
       "activeSeats": ["manager"],
       "units": [
-        { "unit": "u20", "seat": "manager", "sessionId": "s-mgr", "name": "manager", "status": "open", "result": null, "queued": false, "createdAt": 2500, "closedAt": null, "via": null }
+        { "unit": "u20", "seat": "manager", "sessionId": "s-mgr", "name": "manager", "status": "open", "result": null, "queued": false, "createdAt": 2500, "closedAt": null, "stop": null, "retry": false, "via": null }
       ],
       "reports": [] },
     { "id": "c-cancel", "state": "cancelled", "owner": "main-old", "ownerSessionId": "s-main-old", "ownerOpen": false, "cycle": null, "version": 1,
@@ -61,8 +61,8 @@
       "lines": [],
       "activeSeats": [],
       "units": [
-        { "unit": "u30", "seat": "tester", "sessionId": "s-t1", "name": "tester-1", "status": "done", "result": "ok", "queued": false, "createdAt": 500, "closedAt": 600, "via": null },
-        { "unit": "u31", "seat": "worker", "sessionId": null, "name": "(줄)", "status": "cancelled", "result": null, "queued": true, "createdAt": 600, "closedAt": 900, "via": { "prevUnit": "u30", "line": 0, "escalated": false, "fromSeat": "tester", "result": "ok" } }
+        { "unit": "u30", "seat": "tester", "sessionId": "s-t1", "name": "tester-1", "status": "done", "result": "ok", "queued": false, "createdAt": 500, "closedAt": 600, "stop": null, "retry": false, "via": null },
+        { "unit": "u31", "seat": "worker", "sessionId": null, "name": "(줄)", "status": "cancelled", "result": null, "queued": true, "createdAt": 600, "closedAt": 900, "stop": null, "retry": false, "via": { "prevUnit": "u30", "line": 0, "escalated": false, "fromSeat": "tester", "result": "ok" } }
       ],
       "reports": [] }
   ],

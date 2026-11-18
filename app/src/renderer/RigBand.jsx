@@ -18,6 +18,7 @@ export function markText(m, t) {
     case 'wait': return t('rigBand.wait');
     case 'queue': return m.status === 'cancelled' ? t('rigBand.queuedCancelled') : t('rigBand.queued');
     case 'ref': return t('rigBand.ref', { name: m.name });
+    case 'exited': return t('rigRetry.exited'); // P216
     case 'past': return m.result ? t('rigBand.past', { name: m.name || '?', result: m.result }) : t('rigBand.pastNone', { name: m.name || '?' });
     default: return '';
   }
@@ -26,7 +27,8 @@ export function markText(m, t) {
 const metaOf = (c, t, now) => [t('rigMap.handoffs', { n: c.handoffs || 0 }), c.createdAt ? t('rigBand.started', { ago: ageText(now - c.createdAt, t) }) : null, c.lastHandoffAt && c.lastHandoffAt !== c.createdAt ? t('rigBand.last', { ago: ageText(now - c.lastHandoffAt, t) }) : null].filter(Boolean).join(' · ');
 
 // 띠 바탕·자리 머리·행 머리·표시·접힌 줄(DOM). onMark(표시) → 머리 카드로, onHead(머리 상자, 요소) → 넘김 이력, onFold(ws) → 접힌 줄 펴기·접기
-export function RigBandLayer({ rb, t, now, onMark, onHead, onFold, phone = false }) {
+// P216: onRetry(ws, 건, 일) → 종료된 자리 세션의 일을 다시 맡긴다(이 PC의 창만. 없으면 "종료됨" 표시만)
+export function RigBandLayer({ rb, t, now, onMark, onHead, onFold, onRetry = null, phone = false }) {
   if (!rb || !rb.list.length) return null;
   return (
     <>
@@ -35,7 +37,7 @@ export function RigBandLayer({ rb, t, now, onMark, onHead, onFold, phone = false
           {b.seats.map((s) => (
             <div key={s.name} className={`mt-rb-seat${s.old ? ' old' : ''}`} data-role="rb-seat" data-seat={s.name} style={{ left: s.x - b.box.x, top: s.y - b.box.y, width: s.w, height: s.h }}>
               <span className="sn">{s.name}</span>
-              <span className="sm">{s.old ? <i className="old">{t('rigBand.old')}</i> : <i>{t(`rigBand.${s.mode}`)}</i>}{s.launcher ? <span>{s.launcher}</span> : null}{s.mode === 'fresh' && s.max != null ? <span data-role="rb-seat-live">{t('rigBand.live', { n: s.busy, max: s.max })}</span> : null}{s.waiting ? <span className="wq">{t('rigBand.waiting', { n: s.waiting })}</span> : null}</span>
+              <span className="sm">{s.old ? <i className="old">{t('rigBand.old')}</i> : <i>{t(`rigBand.${s.mode}`)}</i>}{s.launcher ? <span>{s.launcher}</span> : null}{s.mode === 'fresh' && s.max != null ? <span data-role="rb-seat-live">{t('rigBand.live', { n: s.busy, max: s.max })}</span> : null}{s.waiting ? <span className="wq">{t('rigBand.waiting', { n: s.waiting })}</span> : null}{s.exited ? <span className="ex" data-role="rb-seat-exited">{t('rigRetry.seatExited', { n: s.exited })}</span> : null}</span>
             </div>
           ))}
         </div>
@@ -49,7 +51,12 @@ export function RigBandLayer({ rb, t, now, onMark, onHead, onFold, phone = false
           <span className="l2">{h.c.firstTask ? clip(h.c.firstTask, 80) : <span className="dim">{t('rigBand.noTask')}</span>}{h.c.blockedReason ? <span className="why"> · {clip(h.c.blockedReason, 80)}</span> : null}</span>
         </button>
       ))}
-      {rb.marks.map((m) => (
+      {rb.marks.map((m) => m.kind === 'exited' ? (
+        <div key={`rm:${m.ws}:${m.id}`} className="mt-rb-mark k-exited" data-role="rb-mark" data-kind="exited" data-case={m.caseId} data-unit={m.retryUnit} style={{ left: m.x, top: m.y, width: m.w, height: m.h }} title={t('rigRetry.tip')}>
+          <span className="tx">{t('rigRetry.exited')}</span>
+          {onRetry ? <button type="button" className="rt" data-action="rb-retry" data-case={m.caseId} data-unit={m.retryUnit} onClick={(e) => { e.stopPropagation(); onRetry(m.ws, m.caseId, m.retryUnit); }}>{t('rigRetry.button')}</button> : null}
+        </div>
+      ) : (
         <button key={`rm:${m.ws}:${m.id}`} type="button" className={`mt-rb-mark k-${m.kind}${m.up ? ' up' : ''}`} data-role="rb-mark" data-kind={m.kind} data-case={m.caseId} data-target={m.target || undefined} style={{ left: m.x, top: m.y, width: m.w, height: m.h }}
           title={m.target ? t('rigBand.markTip') : undefined} disabled={!m.target} onClick={(e) => { e.stopPropagation(); if (m.target && onMark) onMark(m.target); }}>
           {m.up ? <span className="upk" aria-hidden="true">↑</span> : null}<span className="tx">{markText(m, t)}</span>

@@ -286,12 +286,13 @@ export class RigFlow {
       else if (turnEnded && (status === 'confirmed' || status === 'unconfirmed')) this.closeDone(c, 'owner turn ended');
     }
   }
-  block(c, reason) {
+  // P216: notify false면 주인에게 막힘 알림을 넣지 않는다(종료 멈춤은 멈춤 알림 한 줄이 따로 간다)
+  block(c, reason, { notify = true, why = null } = {}) {
     const b = this.b; const st = this.store();
     st.updateCase(c.id, { state: 'blocked', blockedReason: reason });
-    st.addEvent(c.owner, 'rig_case_blocked', { caseId: c.id, reason });
+    st.addEvent(c.owner, 'rig_case_blocked', { caseId: c.id, reason, ...(why ? { why } : {}) });
     b.log(`rig case ${c.id} blocked: ${reason}`);
-    if (b.sessions.has(c.owner)) {
+    if (notify && b.sessions.has(c.owner)) {
       const hist = this.history(c.id).map((h, i) => `${i + 1}. ${h.seat || '-'}(@${h.name}) ${h.result || h.status}${h.text ? `: ${h.text}` : ''}`);
       b.queue.enqueue(c.owner, [`[Atrium 보드] rig 건 ${c.id}이 막혔다(blocked): ${reason}`, ...(hist.length ? ['건의 이력:', ...hist] : []), '다음을 정해 일을 다시 맡기거나(atrium prompt <자리> "…") 사람에게 알린다.'].join('\n'));
     }
@@ -555,6 +556,106 @@ export class RigFlow {
     this.pumpSoon();
   }
 
+  // ---------- P216: 종료된 자리 세션(exited)과 다시 맡기기 ----------
+  // 자리 세션의 에이전트가 끝나 셸만 남았다(work-units onExited가 시도를 stop_reason exited로 닫은 뒤). 일은 열린 채 남고,
+  //   그 시도는 자리 한도(liveCount: 열린 시도를 쥔 앉은 세션)에서 빠진다. 건은 blocked("<세션> 종료"), 자리 줄에 선 일이 있으면 띄운다.
+  //   주인에게는 막힘 알림 대신 멈춤 알림 한 줄(unit-stops exited)이 간다. → 그 줄에 붙일 다시 맡기는 길
+  onTryExited(s, unit, tr) {
+    const st = this.store();
+    const c = st.getCase(unit.caseId);
+    const name = shownName(s) || s.name;
+    st.addEvent(s.sessionId, 'rig_try_stopped', { caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: unit.seat, session: name, why: 'exited' });
+    this.b.log(`rig try ${tr.id} stopped (exited): ${unit.seat}(${name}) case ${unit.caseId}`);
+    if (c && LIVE_CASE.has(c.state) && unit.status === 'open') this.block(c, `${name} 종료(일 ${unit.id})`, { notify: false, why: 'exited' });
+    this.pumpSoon();
+    if (c) this.changed(c.workspaceKey);
+    return c ? `다시 맡기기: atrium rig retry ${c.id} ${unit.id}` : null;
+  }
+  // 다시 맡길 수 있는 일인가 → 그 일의 마지막 시도 | null. 열린 일이고, 마지막 시도가 exited로 닫혔거나,
+  //   그 시도를 쥔 세션의 에이전트가 끝나 있다(사람이 /exit로 끝낸 것처럼 exited로 닫히지 않은 시도도 사람·관리자가 다시 맡길 수 있다)
+  retryable(u) {
+    if (!u || u.status !== 'open' || !u.to) return null;
+    const tr = this.store().lastTryOfUnit(u.id);
+    if (!tr || tr.result != null) return null;
+    if (tr.endedAt) return tr.stopReason === 'exited' ? tr : null;
+    const s = this.b.sessions.get(tr.sessionId);
+    const exit = s && s.rt ? s.rt.exit : null;
+    return exit && !s.rt.sleep && !s.rt.move && exit.kind !== 'terminal_stopped' ? tr : null;
+  }
+  // atrium rig retry <건> [<일>](관리자 자리·사람): 같은 일을 같은 자리의 새 세션으로. 일을 주지 않으면 그 건의 다시 맡길 수 있는 일 모두.
+  //   fresh 자리가 한도에 차 있으면 자리 줄에 세운다(차례가 오면 판이 띄운다). keep 자리면 끝난 세션을 자리에서 떼고 새 세션을 띄운다.
+  //   다시 맡길 일이 남지 않으면 건을 다시 open으로
+  async retry(key, caseId, unitId = null, { by = 'human', who = null } = {}) {
+    const b = this.b; const st = this.store();
+    const id = String(caseId || '').trim();
+    if (!id) throw apiError('bad_request', '건 ID를 준다: atrium rig retry <건> [<일>]');
+    const c = st.getCase(id);
+    if (!c || c.workspaceKey !== key) throw apiError('not_found', `이 워크스페이스의 건이 아니다: ${id}`);
+    if (!LIVE_CASE.has(c.state)) throw apiError('case_closed', `건 ${id}은 이미 ${c.state}다. 끝나지 않은 건의 일만 다시 맡긴다.`);
+    const owner = b.sessions.get(c.owner);
+    if (!owner) throw apiError('closed', `건 ${id}의 주인 세션이 닫혀 다시 맡기지 않는다.`);
+    const r = b.rig ? b.rig.active(key) : null;
+    if (!r) throw apiError('rig_off', '이 워크스페이스에는 켜진 rig가 없다.');
+    const open = st.unitsOfCase(id).filter((u) => u.status === 'open');
+    const pick = open.map((u) => ({ u, tr: this.retryable(u) })).filter((x) => x.tr);
+    let list = pick;
+    if (unitId) {
+      const want = String(unitId).trim();
+      const x = pick.find((p) => p.u.id === want);
+      if (!x) {
+        const u = open.find((q) => q.id === want) || st.unitsOfCase(id).find((q) => q.id === want);
+        const why = !u ? '이 건의 일이 아니다' : u.status !== 'open' ? `이미 ${u.status}다` : !u.to ? '자리 줄에서 차례를 기다린다' : '그 일을 쥔 세션이 아직 돈다(종료된 세션의 일만 다시 맡긴다)';
+        throw apiError('not_retryable', `일 ${want}은 다시 맡길 수 없다: ${why}.`);
+      }
+      list = [x];
+    } else if (!list.length) throw apiError('not_retryable', `건 ${id}에 다시 맡길 일이 없다(종료된 자리 세션이 쥔 열린 일이 없다).`);
+    const out = [];
+    for (const { u, tr } of list) out.push(await this.retryUnit(c, u, tr, r, { by, who }));
+    const left = st.unitsOfCase(id).filter((u) => this.retryable(u));
+    const c2 = st.getCase(id);
+    if (!left.length && c2.state === 'blocked') {
+      st.updateCase(id, { state: 'open', blockedReason: null });
+      st.addEvent(who ? who.sessionId : c.owner, 'rig_case_resume', { caseId: id, from: 'blocked', why: 'retry', by });
+    }
+    this.pumpSoon();
+    this.changed(key);
+    const c3 = st.getCase(id);
+    return { workspace: key, caseId: id, case: { id, state: c3.state, blockedReason: c3.blockedReason }, retried: out };
+  }
+  async retryUnit(c, u, tr, r, { by, who }) {
+    const b = this.b; const st = this.store(); const now = Date.now();
+    const key = c.workspaceKey;
+    const old = b.sessions.get(u.to) || null;
+    const oldName = old ? shownName(old) || old.name : this.nameOf(u.to);
+    if (!tr.endedAt) {
+      st.updateTry(tr.id, { endedAt: now, stopReason: 'exited' });
+      st.addEvent(tr.sessionId, 'rig_try_stopped', { caseId: c.id, unitId: u.id, tryId: tr.id, seat: u.seat, session: oldName, why: 'exited', by: 'retry' });
+    }
+    const cdef = this.defOfCase(c, r);
+    const seat = cdef && cdef.seats ? cdef.seats[u.seat] : null;
+    if (!seat) throw apiError('rig_seat', `건 ${c.id}의 정의(버전 ${c.versionN ?? '-'})에 ${u.seat} 자리가 없다.`);
+    // keep 자리: 끝난 세션을 자리에서 뗀다(keep 자리에는 세션 하나만 앉는다)
+    if (seat.session === 'keep' && old && old.rigSeat === u.seat) {
+      st.setSessionSeat(old.sessionId, null); old.rigSeat = null;
+      st.addEvent(old.sessionId, 'rig_seat', { workspace: key, seat: null, before: u.seat, by: 'retry' });
+      if (b.broadcastSession) b.broadcastSession(old, { cause: 'rig_seat' });
+    }
+    const base = { caseId: c.id, unitId: u.id, seat: u.seat, fromTry: tr.id, fromSession: u.to, by };
+    if (seat.session !== 'keep' && this.liveCount(key, u.seat) >= seat.maxLive) {
+      st.setUnitTarget(u.id, '');
+      st.addEvent(who ? who.sessionId : c.owner, 'rig_unit_retried', { ...base, toSession: null, seatWait: true });
+      b.log(`rig retry ${u.id} (${u.seat}) by ${by}: seat full, waits`);
+      return { unit: u.id, seat: u.seat, from: oldName, to: null, seatWait: true };
+    }
+    const owner = b.sessions.get(c.owner);
+    const s = await this.spawnSeat({ key, r, def: cdef, seat, name: u.seat }, u.seat, owner, c, u.id);
+    st.setUnitTarget(u.id, s.sessionId);
+    this.units().dispatch(st.getUnit(u.id), { later: true });
+    st.addEvent(s.sessionId, 'rig_unit_retried', { ...base, toSession: s.sessionId, to: shownName(s) || s.name });
+    b.log(`rig retry ${u.id} (${u.seat}) by ${by}: ${oldName} → ${s.name}`);
+    return { unit: u.id, seat: u.seat, from: oldName, to: shownName(s) || s.name, toSessionId: s.sessionId, seatWait: false };
+  }
+
   // ---------- P188: 느린 고리(cycles, 15절) ----------
   // 정의의 cycles 줄마다: 다음 시각이 지났으면 그 자리(보통 관리자)에 일을 하나 만든다. 글은 판의 장부 요약 + run 출력.
   //   줄이 새로 생기거나 모양(every·to·run)이 바뀌면 지금부터 한 주기 뒤가 다음 시각이다. 돈 뒤에는 지금 + 주기(놓친 회는 한 번)
@@ -682,7 +783,9 @@ export class RigFlow {
       const cdef = (c.versionN != null ? this.defOfCase(c, r) : null) || def; // 건의 버전(줄의 상한)
       const us = unitsBy[c.id] || [];
       const reports = (reportsBy[c.id] || []).map((x) => ({ seat: x.seat, sessionId: x.sessionId, name: name(x.sessionId), unit: x.unit, result: x.result, line: x.line, escalated: x.escalated, at: x.at }));
+      // P216: stop = 마지막 시도의 멈춤 까닭(exited 등), retry = 다시 맡길 수 있다(종료된 자리 세션이 쥔 열린 일)
       const units = us.map((u) => ({ unit: u.id, seat: u.seat, sessionId: u.to || null, name: u.to ? name(u.to) : '(줄)', status: u.status, result: u.tryResult, queued: !u.to, createdAt: u.createdAt, closedAt: u.closedAt,
+        stop: u.tryStop ?? null, retry: u.status === 'open' && !!u.to && !!u.tryId && u.tryResult == null && ((u.tryEnded != null && u.tryStop === 'exited') || (u.tryEnded == null && this.exitedSession(u.to))),
         via: u.via && u.via.prevUnit ? { prevUnit: u.via.prevUnit, line: u.via.line ?? null, escalated: !!u.via.escalated, fromSeat: u.via.fromSeat ?? null, result: u.via.result ?? null } : null }));
       const first = us[0] || null;
       const lastHandoffAt = Math.max(c.createdAt, ...us.map((u) => u.createdAt || 0), ...reports.map((x) => x.at || 0));
@@ -702,7 +805,7 @@ export class RigFlow {
     const rank = (c) => (c.state === 'waiting_owner' || c.state === 'blocked' ? 0 : c.state === 'open' ? 1 : 2);
     cases.sort((x, y) => rank(x) - rank(y) || (rank(x) < 2 ? y.lastHandoffAt - x.lastHandoffAt : (y.closedAt || y.createdAt) - (x.closedAt || x.createdAt)));
     // 열: 지금 정의의 자리(seatColumns) 뒤에 옛 자리(보이는 건의 일이 부르거나 세션이 아직 앉은, 지금 정의에 없는 자리)
-    const seatSessions = (n) => this.seatedOf(key, n).map((s) => ({ sessionId: s.sessionId, name: shownName(s), open: true, busy: !!st.openTryOf(s.sessionId) }));
+    const seatSessions = (n) => this.seatedOf(key, n).map((s) => ({ sessionId: s.sessionId, name: shownName(s), open: true, busy: !!st.openTryOf(s.sessionId), exited: this.exitedSession(s.sessionId) })); // P216: exited = 에이전트가 끝나 셸만 남음(한도에 들지 않는다)
     const old = [];
     const addOld = (n) => { if (n && !Object.prototype.hasOwnProperty.call(def.seats, n) && !old.includes(n)) old.push(n); };
     for (const c of cases) for (const u of c.units) addOld(u.seat);
@@ -718,6 +821,8 @@ export class RigFlow {
       cases, openCount: live.total, openMore: Math.max(0, live.total - live.rows.length), doneCount: closed.total, // P198과 정함: 끝난·취소된 건 전체 수(cases에 담긴 최근 것 포함). 접힌 줄 수 = doneCount - 담긴 끝난 건
     };
   }
+  // P216: 그 세션의 에이전트가 끝나 있는가(잠듦·옮김·터미널 서버 꺼짐은 아니다)
+  exitedSession(sid) { const s = this.b.sessions.get(sid); return !!(s && s.rt && s.rt.exit && !s.rt.sleep && !s.rt.move && s.rt.exit.kind !== 'terminal_stopped'); }
   // atrium me의 rig 칸
   meOf(s) {
     const ctx = this.seatCtx(s);

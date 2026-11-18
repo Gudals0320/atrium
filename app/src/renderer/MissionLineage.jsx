@@ -743,6 +743,12 @@ export function LineageMap() {
   const rigCases = lay ? caseGroups(g2, (ws, sid) => (sid && lay.cards.has(`s:${sid}`) ? `s:${sid}` : null), keepOf) : null;
   // P198: 띠 표시 누르기 = 그 keep 머리 카드(또는 가리킨 카드)로. 행 머리 누르기 = 넘김 이력
   const onMark = (id) => focusCard(id);
+  // P216: 종료된 자리 세션의 일 다시 맡기기([다시 띄우기]). 판 API rig.retry는 이 PC의 창만 받는다(원격 보기에는 단추가 없다)
+  const onRetry = remoteView() ? null : (ws, caseId, unitId) => {
+    api.call('rig.retry', { workspace: ws, caseId, ...(unitId ? { unitId } : {}) })
+      .then((r) => toast(t('rigRetry.done', { n: (r && r.retried ? r.retried.length : 0), id: caseId })))
+      .catch((e) => toast(t('rigRetry.fail', { error: errText(e) }), 'error'));
+  };
   const onHead = (h, el) => {
     if (!rootRef.current || !el) return;
     if (hv && hv.c.id === h.id) { setHv(null); return; }
@@ -796,7 +802,7 @@ export function LineageMap() {
             {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-sm-div" style={{ left: d.x, top: d.y, height: d.h }} />)}
             {/* P202: 오늘·이전 이름표. 두 열 = 열마다 위 머리, 한 열 = 두 칸 사이 얇은 구분 줄(위 "오늘", 아래 "이전") */}
             {(lay.sections || []).map((s) => <SectionMark key={`sec:${s.kind}`} s={s} px={lay.px.name} t={t} />)}
-            <RigBandLayer rb={lay.rb} t={t} now={now} onMark={onMark} onHead={onHead} onFold={onBandFold} />
+            <RigBandLayer rb={lay.rb} t={t} now={now} onMark={onMark} onHead={onHead} onFold={onBandFold} onRetry={onRetry} />
             <svg className="mt-ta-edges" width={1} height={1} aria-hidden="true">
               <defs>
                 {KINDS.map((k) => <marker key={k} id={`mt-sm-tip-${k}`} className={`mt-sm-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}
@@ -853,7 +859,7 @@ export function LineageMap() {
       {/* P179: 오른쪽 요약 열 = 옛 열 지도의 요약 열(SummaryColumn.jsx, 같은 부품). 창 오른쪽 끝에 위 줄 아래부터 바닥까지 붙는다. 접기는 열 가장자리의 작은 단추 */}
       {lay && sumOpen ? (
         <SummaryColumn role="ln-summary" className="mt-ta-hud mt-sm-sum" style={{ width: SUM_W }} sum={sum} t={t} nameOf={(id) => lay.cards.get(id).node.name} tierOf={(id) => tiers.get(id)}
-          textOf={sumLine} teams={nTeams} hint={t('mmSum.hint')} itemTip={t('mmSum.itemTip')} onGo={(id) => focusCard(id)} onCase={(c) => focusCase(c.ws, c.id)} onHot={sumHot} rigCases={rigCases} />
+          textOf={sumLine} teams={nTeams} hint={t('mmSum.hint')} itemTip={t('mmSum.itemTip')} onGo={(id) => focusCard(id)} onCase={(c) => focusCase(c.ws, c.id)} onHot={sumHot} rigCases={rigCases} onRetry={onRetry} />
       ) : null}
       {lay && (
         <button type="button" className={`mt-ta-hud mt-sm-sum-edge${sumOpen ? ' on' : ''}`} data-action={sumOpen ? 'ln-sum-hide' : 'ln-sum-show'} style={sumOpen ? { right: SUM_W } : undefined}

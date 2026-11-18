@@ -42,7 +42,7 @@ export function caseGroups(graph, nodeOf = () => null, repOf = () => null) {
       for (let i = open.length - 1; i >= 0 && !go; i--) if (open[i].sessionId && !open[i].queued) go = nodeOf(ws, open[i].sessionId);
       for (let i = open.length - 1; i >= 0 && !go; i--) if (open[i].seat) go = repOf(ws, open[i].seat);
       if (!go) go = nodeOf(ws, c.ownerSessionId);
-      all.push({ id: c.id, ws, row: `${ws}|${c.id}`, cycle: c.cycle != null, state: c.state, owner: c.owner, seats: c.activeSeats || [], handoffs: c.handoffs || 0, reason: c.blockedReason || null, go, at: c.closedAt || c.createdAt || 0, lines: c.lines || [] });
+      all.push({ id: c.id, ws, row: `${ws}|${c.id}`, cycle: c.cycle != null, state: c.state, owner: c.owner, seats: c.activeSeats || [], handoffs: c.handoffs || 0, reason: c.blockedReason || null, go, at: c.closedAt || c.createdAt || 0, lines: c.lines || [], retry: (c.units || []).filter((u) => u.retry).map((u) => u.unit) }); // P216: 다시 맡길 일(종료된 자리 세션이 쥔 열린 일)
     }
   }
   if (!Object.keys(rig).length) return null;

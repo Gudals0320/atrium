@@ -189,7 +189,7 @@ export default {
     chgCommand: '명령: {p}', chgPrompt: '요청: {p}', chgWasState: '중단 전 상태: {state}', chgKilled: '보드에서 종료', chgRemoved: '보드에서 제거됨 ({reason})',
     chgTerminalDown: '터미널 서버가 예기치 않게 {n}회 종료되었습니다.{up}', chgReattached: ' (다시 연결됨)',
     chgBackendRestarts: '앱 연결 서비스가 {n}회 다시 시작되었습니다.{down}', chgDownFor: ' (중단 시간: {s}초)', chgList: '{items}',
-    chgRigBuilderStop: 'Rig 제작 세션이 마치지 못하고 멈췄습니다: {what}', chgRigBuilder_idle_no_done: '보고 없이 쉬고 있습니다', chgRigBuilder_turn_error: '오류로 턴이 끝났습니다', chgRigBuilder_needs_human: '사용자의 답을 기다립니다', chgRigBuilder_closed: '세션이 닫혔습니다', // P190
+    chgRigBuilderStop: 'Rig 제작 세션이 마치지 못하고 멈췄습니다: {what}', chgRigBuilder_idle_no_done: '보고 없이 쉬고 있습니다', chgRigBuilder_turn_error: '오류로 턴이 끝났습니다', chgRigBuilder_needs_human: '사용자의 답을 기다립니다', chgRigBuilder_closed: '세션이 닫혔습니다', chgRigBuilder_exited: '에이전트가 끝났습니다', // P190
   },
   closeReason: {
     killed: '보드에서 종료',
@@ -2934,5 +2934,14 @@ export default {
   topbar: { // P214: 위 막대 탭 줄의 "+n"
     more: '나머지 프로젝트 {n}개 보기',
     moreHead: '나머지 프로젝트',
+  },
+  rigRetry: { // P216: 에이전트가 끝나 셸만 남은 자리 세션과 그 일 다시 띄우기
+    exited: '종료됨',
+    seatExited: '종료 {n}',
+    tip: '이 자리 세션의 에이전트가 끝나 셸만 남았습니다. 일은 열린 채입니다. 다시 띄우면 같은 일을 같은 자리의 새 세션에 맡깁니다.',
+    button: '다시 띄우기',
+    buttonN: '다시 띄우기({n})',
+    done: '건 {id}: 일 {n}개를 새 세션에 다시 맡겼습니다.',
+    fail: '다시 띄우지 못했습니다: {error}',
   },
 };
