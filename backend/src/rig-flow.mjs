@@ -29,6 +29,7 @@ import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
 import { rigEvent, OWNER } from './rig-ledger.mjs'; // P217: 장부
 import { seatDocsOf, docsTail, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
 import { RigLoops, runNameOf, implicitCycleLoop } from './rig-loops.mjs'; // P221: 고리(계기, 회 이름, 멈추기·잇기)
+import { sectorsFor } from './rig-sectors.mjs'; // P222: 산출물 섹터
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -283,6 +284,7 @@ export class RigFlow {
     st.updateCase(caseId, { state: 'done', closedAt: Date.now(), ownerWait: null, ownerWaitDelivery: null });
     st.addEvent(c.owner, 'rig_case_done', { caseId, ...(why ? { why } : {}) });
     rigEvent(this.b, { kind: 'case_done', caseId, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', text: why || null });
+    try { sectorsFor(this.b).onRunDone(st.getCase(caseId)); } catch (e) { this.b.log('rig artifacts run done error', e.stack); } // P222: 새 산출물은 받아들임, produces인데 없으면 경고
     this.b.log(`rig case ${caseId} done${why ? ` (${why})` : ''}`);
     this.changed(c.workspaceKey);
     return st.getCase(caseId);

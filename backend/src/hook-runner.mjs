@@ -67,6 +67,8 @@ export function parseHookOutput(stdout) {
   if (o.text != null) { if (typeof o.text !== 'string') return { ok: false, error: 'text는 글이어야 한다' }; out.text = o.text; }
   if (o.args != null) { if (!Array.isArray(o.args)) return { ok: false, error: 'args는 배열이어야 한다' }; out.args = o.args.map(String); }
   if (o.append != null) { if (typeof o.append !== 'string') return { ok: false, error: 'append는 글이어야 한다' }; out.append = o.append; }
+  // P222: done 훅이 돌려주는 산출물 경로(저장소 기준). 다른 길목은 무시한다
+  if (o.artifacts != null) { if (!Array.isArray(o.artifacts) || !o.artifacts.every((x) => typeof x === 'string')) return { ok: false, error: 'artifacts는 경로 글 배열이어야 한다' }; out.artifacts = o.artifacts.slice(0, 20); }
   if (o.reason != null) out.reason = String(o.reason).slice(0, REASON_MAX);
   if (o.note != null) out.note = (typeof o.note === 'string' ? o.note : JSON.stringify(o.note)).slice(0, NOTE_MAX);
   return { ok: true, out };

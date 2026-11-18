@@ -1,7 +1,7 @@
 // P219: rig 2의 R1 문서(docs research rig2-design.md 2절 "문서", 2.1 "판이 하는 일", 3절 정의 형식, 5절 장부 사건, 11.4의 1번).
 // - 정의 칸: "version": 2와 docs { <이름>: { path, role: canon | ledger | sector, layer, load, owner, stale, git, intake, keep } },
 //   자리의 loads·reads·writes(문서 이름. writes는 지금 경로 꼴도 그대로 받는다), 훅·도구의 records(장부 문서)·reads.
-//   layer는 project만 쓴다(global·type은 R7 전이라 받기만 하고 판이 보지 않는다). owner(고리 이름)는 R2 전이라 받기만, intake·keep은 R5 전이라 받기만.
+//   layer는 project만 쓴다(global·type은 R7 전이라 받기만 하고 판이 보지 않는다). owner는 고리 이름(P221). P222(R5): sector의 intake(register 기본, move·copy는 받기만)·keep(개수나 기간)은 rig-sectors.mjs가 쓴다.
 //   v1 정의(위 칸이 없는 것)는 그대로 돈다.
 // - 판이 문서를 본다(RigDocs): 켜진 rig의 project 층 문서 경로(파일·폴더)를 가벼운 주기 검사(수정 시각·크기)로 보고, 바뀌면 누가 바꿨는지 골라
 //   장부에 doc_changed를 남긴다. 고르는 신호: 도구 사용 뒤 hook(PostToolUse의 파일 쓰기 도구 대상 경로), records 훅이 돈 때, 그때 일하던 세션.
@@ -17,6 +17,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { rigEvent } from './rig-ledger.mjs';
 import { shownName } from './session-label.mjs';
+import { parseKeep } from './rig-sectors.mjs'; // P222
 
 export const DOC_ROLES = ['canon', 'ledger', 'sector'];
 export const DOC_LAYERS = ['global', 'type', 'project'];
@@ -95,7 +96,8 @@ export function validateDocs(raw, { root = null, exists = null } = {}) {
       }
       if ((x.intake != null || x.keep != null) && x.role !== 'sector') return bad(`${at}.intake·keep은 role "sector"(산출물 섹터) 문서에만 쓴다`);
       if (x.intake != null && !DOC_INTAKES.includes(x.intake)) return bad(`${at}.intake는 ${DOC_INTAKES.join(', ')} 가운데 하나다: ${JSON.stringify(x.intake)}`);
-      if (x.keep != null && !(typeof x.keep === 'string' || (Number.isInteger(x.keep) && x.keep > 0))) return bad(`${at}.keep은 개수(양의 정수)나 기간("90d")이다`);
+      const keepRule = parseKeep(x.keep);
+      if (keepRule && keepRule.bad) return bad(`${at}.keep은 개수(양의 정수, 예: 20)나 기간("90d", "12w")이다: ${JSON.stringify(x.keep)}`);
       const p = x.path.trim();
       if (p === OWNS && x.role !== 'sector') return bad(`${at}.path "{owns}"는 role "sector"(일마다 정해지는 산출물 자리)에만 쓴다`);
       let loc = { rel: null, dir: /[\\/]$/.test(p), abs: null };
@@ -104,8 +106,12 @@ export function validateDocs(raw, { root = null, exists = null } = {}) {
         if (loc.outside) return bad(`${at}.path가 저장소 밖이다: ${p}. project 층 문서는 워크스페이스 안 경로다(전역·유형 문서는 layer "global"·"type", R7 전에는 받기만 한다)`);
         if (!loc.owns && root && exists && !exists(loc.abs)) warnings.push(`${at}: ${loc.rel}이 아직 없다(만들면 보드가 그때부터 바뀜을 본다)`);
       } else warnings.push(`${at}: layer ${layer}는 R7(층) 전이라 받기만 한다. 보드가 이 문서의 바뀜을 보지 않고 머리에는 경로만 적는다`);
-      if (x.intake != null || x.keep != null) warnings.push(`${at}.intake·keep은 R5(산출물 섹터) 전이라 받기만 한다`);
-      docs[name] = { name, path: p, rel: loc.owns ? null : loc.rel || null, dir: !!loc.dir, role: x.role, layer, load: x.load || null, owner: x.owner || null, stale, git: x.git !== false, intake: x.intake || null, keep: x.keep ?? null, watch: layer === 'project' && !loc.owns && !!loc.rel };
+      // P222(R5): 섹터는 등록만 한다. move·copy는 받기만(register처럼 제자리에 둔다), {owns}·저장소 밖 섹터는 아직 산출물을 받지 않는다
+      if (x.intake === 'move' || x.intake === 'copy') warnings.push(`${at}.intake "${x.intake}"는 아직 안 된다(받기만). 보드는 register처럼 산출물을 제자리에 두고 적는다`);
+      if (x.role === 'sector' && loc.owns) warnings.push(`${at}: 경로 "{owns}"인 섹터는 일마다 경로가 정해지기 전(R7)이라 아직 산출물을 받지 않는다`);
+      else if (x.role === 'sector' && layer !== 'project') warnings.push(`${at}: ${layer} 층 섹터는 R7(층) 전이라 산출물을 받지 않는다(저장소 안 폴더만 받는다)`);
+      else if (x.role === 'sector' && loc.rel && !loc.dir) warnings.push(`${at}.path는 폴더로 읽는다(${loc.rel}/). 섹터는 산출물이 들어가는 폴더다`);
+      docs[name] = { name, path: p, rel: loc.owns ? null : loc.rel || null, dir: !!loc.dir || (x.role === 'sector' && !!loc.rel), role: x.role, layer, load: x.load || null, owner: x.owner || null, stale, git: x.git !== false, intake: x.role === 'sector' ? x.intake || 'register' : null, keep: x.keep ?? null, keepRule: keepRule || null, watch: layer === 'project' && !loc.owns && !!loc.rel };
     }
     for (const d of Object.values(docs)) if (d.stale && d.stale.afterChangeOf && !has(docs, d.stale.afterChangeOf)) return bad(`docs.${d.name}.stale.after_change_of가 없는 문서를 가리킨다: ${d.stale.afterChangeOf}`);
   }

@@ -134,6 +134,7 @@ export function rigGuideText() {
     '- 문서(rig 2): 맨 위에 "version": 2를 두면 docs 칸을 쓴다. { "<이름>": { "path": "docs/rules.md" | "notes/", "role": "canon"(정본: 규칙·사실) | "ledger"(장부 파일) | "sector"(산출물 폴더), "load"?: "always", "stale"?: "30d" | { "after_change_of": "<문서>" }, "git"?: false } }. 경로는 워크스페이스 안이다.',
     '  - 자리의 loads(늘 싣는 문서: 자리 머리에 경로가 붙고 먼저 읽는다)·reads(필요할 때 읽는 문서)·writes(쓰는 문서 이름. 지금처럼 경로도 된다. 그 밖은 보드가 쓰기를 막는다), 훅·도구의 records(그것이 적는 장부 문서, role ledger).',
     '  - 보드가 문서의 바뀜과 누가 바꿨는지를 rig 장부에 적고, writes에 그 문서가 없는 자리가 쓰면 경고를 남긴다. 정본은 보통 사람이 고친다.',
+    '  - 산출물 섹터(role "sector", 저장소 안 폴더): "intake"?: "register"(기본: 제자리에 두고 보드가 등록부에 적는다. move·copy는 아직 안 된다), "keep"?: 20 | "90d"(넘친 것은 등록부에서 밀려남으로 표시만 하고 파일은 지우지 않는다). 고리의 "produces": ["<섹터>"]는 그 고리의 회가 그 섹터에 산출물을 낸다는 뜻이다. 자리는 섹터를 writes에 두고, 만든 파일을 그 폴더에 쓴 뒤 atrium done ok "<보고>" --artifact <경로>로 낸다. 등록부: atrium rig artifacts.',
     '',
     '## 틀 셋(보드가 만드는 것과 같은 모양, 런처는 예)',
     '### 1. 메인 + 워커', example('main-worker'),

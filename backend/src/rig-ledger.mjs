@@ -24,6 +24,9 @@ export const RIG_EVENT_KINDS = [
   //   loop_trigger(계기가 걸림, value request | every), loop_skip(건너뜀·붙잡음, value paused | running | no_session | spawn_failed), loop_next(다음 실행 시각),
   //   loop_paused·loop_resumed(고리 멈춤·잇기), run_paused·run_resumed(회 멈춤·잇기), run_named(회 이름 붙임·고침, value auto | human | owner | manager)
   'loop_trigger', 'loop_skip', 'loop_next', 'loop_paused', 'loop_resumed', 'run_paused', 'run_resumed', 'run_named',
+  // P222: rig 2 산출물 섹터(rig2-design 5절). artifact_filed(섹터에 등록, value 섹터), artifact_superseded(밀려남, value same_path | keep),
+  //   artifact_accepted(회가 done으로 닫혀 받아들임), artifact_warning(value produces_none: produces 고리의 회가 아무것도 내지 않음 | hook_path: done 훅이 준 경로가 틀림)
+  'artifact_filed', 'artifact_superseded', 'artifact_accepted', 'artifact_warning',
 ];
 const KINDS = new Set(RIG_EVENT_KINDS);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];
