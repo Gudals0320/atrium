@@ -24,6 +24,7 @@ import { rigLoopHandlers } from './rig-loops.mjs'; // P221: rig.loops·pause·re
 import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
+import { RigProposals, rigProposalHandlers } from './rig-proposals.mjs'; // P224: rig 2 제안과 승인, 정본 지키기
 import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
@@ -252,6 +253,7 @@ export class Backend {
     this.rig = new Rig(this); // P182
     this.rigAmp = new RigAmp(this); // P189
     this.rigDocs = new RigDocs(this); // P219: rig 2 문서 바뀜 보기
+    this.rigProposals = new RigProposals(this); // P224: 제안과 승인, 정본 지키기, 응답 필요 카드(rig.asks)
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
@@ -2151,6 +2153,7 @@ export class Backend {
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만)
       ...rigLoopHandlers(this), // P221: 고리 목록, 멈추기·잇기, 회 이름 고치기
       ...rigSectorHandlers(this), // P222: 산출물 등록부
+      ...rigProposalHandlers(this), // P224: 제안과 승인(rig.asks, rig.decide, rig.proposals)
       ...rigMapHandlers(this), // P217: 장부 읽기(rig.events)와 구조 지도 데이터(rig.map)
       ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)

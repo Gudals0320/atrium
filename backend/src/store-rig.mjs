@@ -62,7 +62,17 @@ CREATE INDEX IF NOT EXISTS rig_artifacts_ws ON rig_artifacts(workspace_key, sect
 CREATE INDEX IF NOT EXISTS rig_artifacts_case ON rig_artifacts(case_id);
 CREATE INDEX IF NOT EXISTS rig_artifacts_path ON rig_artifacts(workspace_key, path);
 `;
-const artifactRow = (r) => (r ? { id: Number(r.id), workspaceKey: r.workspace_key, sector: r.sector, path: r.path, dir: !!r.dir, sha256: r.sha256 ?? null, size: r.size ?? null, loop: r.loop ?? null, caseId: r.case_id ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, seat: r.seat ?? null, sessionId: r.session_id ?? null, source: r.source, state: r.state, stateAt: r.state_at ?? null, stateWhy: r.state_why ?? null, supersededBy: r.superseded_by ?? null, t: r.t } : null);
+// P224(rig 2 R6): 제안과 승인. rig_proposals: 제안 하나(대상 문서 이름 | definition, 저장소 기준 경로, 제안 때 대상의 SHA-256과 내용, 새 내용, 까닭,
+//   승인 길 route: human(사람: 응답 필요 목록) | manager(관리자 자리나 사람), 상태 pending | applied | rejected | failed(충돌 등), 결정한 쪽·까닭, 반영된 버전).
+//   rig_doc_marks: 정본 문서마다 승인된 내용(SHA-256, 내용)과 승인 안 된 바뀜(unapproved_sha·at·by). 보드가 처음 본 내용이 승인된 내용이다
+export const RIG_PROPOSALS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS rig_proposals (id TEXT PRIMARY KEY, workspace_key TEXT NOT NULL, target TEXT NOT NULL, kind TEXT NOT NULL, path TEXT NOT NULL, base_sha TEXT, base_text TEXT, new_text TEXT NOT NULL, new_sha TEXT NOT NULL, why TEXT, route TEXT NOT NULL, state TEXT NOT NULL, loop TEXT, case_id TEXT, unit_id TEXT, seat TEXT, session_id TEXT, artifact_id INTEGER, file TEXT, t INTEGER NOT NULL, decided_at INTEGER, decided_by TEXT, reason TEXT, version_n INTEGER) STRICT;
+CREATE INDEX IF NOT EXISTS rig_proposals_ws ON rig_proposals(workspace_key, state, t);
+CREATE TABLE IF NOT EXISTS rig_doc_marks (workspace_key TEXT NOT NULL, doc TEXT NOT NULL, path TEXT NOT NULL, approved_sha TEXT, approved_text TEXT, approved_at INTEGER, approved_by TEXT, unapproved_sha TEXT, unapproved_at INTEGER, unapproved_by TEXT, PRIMARY KEY (workspace_key, doc)) STRICT;
+`;
+const proposalRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, target: r.target, kind: r.kind, path: r.path, baseSha: r.base_sha ?? null, baseText: r.base_text ?? null, newText: r.new_text, newSha: r.new_sha, why: r.why ?? null, route: r.route, state: r.state, loop: r.loop ?? null, caseId: r.case_id ?? null, unitId: r.unit_id ?? null, seat: r.seat ?? null, sessionId: r.session_id ?? null, artifactId: r.artifact_id ?? null, file: r.file ?? null, t: r.t, decidedAt: r.decided_at ?? null, decidedBy: r.decided_by ?? null, reason: r.reason ?? null, versionN: r.version_n ?? null } : null);
+const markRow = (r) => (r ? { workspaceKey: r.workspace_key, doc: r.doc, path: r.path, approvedSha: r.approved_sha ?? null, approvedText: r.approved_text ?? null, approvedAt: r.approved_at ?? null, approvedBy: r.approved_by ?? null, unapprovedSha: r.unapproved_sha ?? null, unapprovedAt: r.unapproved_at ?? null, unapprovedBy: r.unapproved_by ?? null } : null);
+const artifactRow = (r) => (r ? { id: Number(r.id), workspaceKey: r.workspace_key, sector: r.sector, path: r.path, dir: !!r.dir, sha256: r.sha256 ?? null, size: r.size ?? null, loop: r.loop ?? null, caseId: r.case_id ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, seat: r.seat ?? null, sessionId: r.session_id ?? null, source: r.source, state: r.state, stateAt: r.state_at ?? null, stateWhy: r.state_why ?? null, supersededBy: r.superseded_by ?? null, t: r.t, branch: r.branch ?? null, worktree: r.worktree ?? null, forkSha: r.fork_sha ?? null } : null); // P224: 워크트리 산출물(branch·worktree·fork_sha)
 // P217: rig 장부(18.1). 추가만 하는 표. seq는 AUTOINCREMENT라 지운 뒤에도 다시 쓰지 않는다(읽은 자리 커서의 기준).
 //   쓰는 곳은 rig-ledger.mjs rigEvent 하나(insertRigEvent). 지우는 곳은 보관 정리(pruneRigEvents) 하나
 export const RIG_EVENTS_SCHEMA = `
@@ -78,6 +88,7 @@ export const RIG_COLUMNS = {
   workspaces: { rig_enabled: 'INTEGER', rig_enabled_at: 'INTEGER', rig_protected: 'TEXT' }, // P188: rig_protected(사람만 고치는 목록)
   deliveries: { origin: 'TEXT', from_session: 'TEXT' },
   rig_loop_requests: { delivery_id: 'TEXT' }, // P223
+  rig_artifacts: { branch: 'TEXT', worktree: 'TEXT', fork_sha: 'TEXT' }, // P224(11.7의 6): 워크트리 자리의 산출물(브랜치, 워크트리 폴더, 갈라진 커밋). state pending_merge → new | accepted | lost
   rig_hook_runs: { tool_run_id: 'TEXT' }, // P183: 도구 훅이면 그 실행
   rig_cases: { version_n: 'INTEGER', owner_wait: 'TEXT', owner_wait_delivery: 'TEXT', loop: 'TEXT', name: 'TEXT', name_by: 'TEXT', paused_at: 'INTEGER', paused_by: 'TEXT', held: 'TEXT' }, // P221(rig 2 R2): 회의 고리(loop), 회 이름(name·name_by: auto | human | owner | manager), 회 멈춤(paused_at·paused_by), 멈춘 동안 붙잡은 넘김(held JSON [{ unitId, session, seat, result, text }]) // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다). P209: 주인 기다림의 종류(report | escalated)와 보고 전달 ID
   // P188: 사람만 고치는 목록. JSON { pointers: ["/seats/reviewer", …], files: [{ path, sha256, at }] } | null
@@ -278,13 +289,13 @@ export function installRig(Store) {
     setCycle(key, line, { nextAt, lastAt = null, sig = null }) { this.st('INSERT INTO rig_cycles (workspace_key, line, next_at, last_at, sig) VALUES (?, ?, ?, ?, ?) ON CONFLICT(workspace_key, line) DO UPDATE SET next_at = excluded.next_at, last_at = excluded.last_at, sig = excluded.sig').run(key, line, nextAt, lastAt, sig); },
     // ---------- P222: 산출물(rig_artifacts) ----------
     insertArtifact(x) {
-      return Number(this.st('INSERT INTO rig_artifacts (workspace_key, sector, path, dir, sha256, size, loop, case_id, unit_id, try_id, seat, session_id, source, state, state_at, t) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(x.workspaceKey, x.sector, x.path, x.dir ? 1 : 0, x.sha256 ?? null, x.size ?? null, x.loop ?? null, x.caseId ?? null, x.unitId ?? null, x.tryId ?? null, x.seat ?? null, x.sessionId ?? null, x.source || 'agent', 'new', x.t ?? Date.now(), x.t ?? Date.now()).lastInsertRowid);
+      return Number(this.st('INSERT INTO rig_artifacts (workspace_key, sector, path, dir, sha256, size, loop, case_id, unit_id, try_id, seat, session_id, source, state, state_at, t, branch, worktree, fork_sha) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(x.workspaceKey, x.sector, x.path, x.dir ? 1 : 0, x.sha256 ?? null, x.size ?? null, x.loop ?? null, x.caseId ?? null, x.unitId ?? null, x.tryId ?? null, x.seat ?? null, x.sessionId ?? null, x.source || 'agent', x.state || 'new', x.t ?? Date.now(), x.t ?? Date.now(), x.branch ?? null, x.worktree ?? null, x.forkSha ?? null).lastInsertRowid);
     },
     getArtifact(id) { return artifactRow(this.st('SELECT * FROM rig_artifacts WHERE id = ?').get(id)); },
     setArtifactState(id, state, { why = null, by = null } = {}) { this.st('UPDATE rig_artifacts SET state = ?, state_at = ?, state_why = ?, superseded_by = COALESCE(?, superseded_by) WHERE id = ?').run(state, Date.now(), why, by, id); },
     // 같은 경로의 살아 있는(new·accepted) 줄
-    liveArtifactsAt(ws, p) { return this.st("SELECT * FROM rig_artifacts WHERE workspace_key = ? AND path = ? AND state IN ('new', 'accepted') ORDER BY id").all(ws, p).map(artifactRow); },
+    liveArtifactsAt(ws, p) { return this.st("SELECT * FROM rig_artifacts WHERE workspace_key = ? AND path = ? AND state IN ('new', 'accepted', 'pending_merge') ORDER BY id").all(ws, p).map(artifactRow); },
     // 최근 것부터. q: { ws, sector?, caseId?, states?, limit }
     artifacts(q = {}) {
       const where = ['workspace_key = ?']; const vals = [q.ws];
@@ -296,11 +307,45 @@ export function installRig(Store) {
     // 섹터마다 { total, live }
     artifactCounts(ws) {
       const out = {};
-      for (const r of this.st("SELECT sector, COUNT(*) AS n, SUM(CASE WHEN state IN ('new', 'accepted') THEN 1 ELSE 0 END) AS live FROM rig_artifacts WHERE workspace_key = ? GROUP BY sector").all(ws)) out[r.sector] = { total: Number(r.n), live: Number(r.live || 0) };
+      for (const r of this.st("SELECT sector, COUNT(*) AS n, SUM(CASE WHEN state IN ('new', 'accepted', 'pending_merge') THEN 1 ELSE 0 END) AS live FROM rig_artifacts WHERE workspace_key = ? GROUP BY sector").all(ws)) out[r.sector] = { total: Number(r.n), live: Number(r.live || 0) };
       return out;
     },
     // 회마다 산출물 수(rig.map의 회 목록)
     artifactCountsByCase(ws) { return Object.fromEntries(this.st('SELECT case_id, COUNT(*) AS n FROM rig_artifacts WHERE workspace_key = ? AND case_id IS NOT NULL GROUP BY case_id').all(ws).map((r) => [r.case_id, Number(r.n)])); },
+    // P224: 워크트리에서 합치기를 기다리는 산출물(모든 워크스페이스, 오래된 것부터)
+    pendingMergeArtifacts(ws = null) { return (ws ? this.st("SELECT * FROM rig_artifacts WHERE state = 'pending_merge' AND workspace_key = ? ORDER BY id").all(ws) : this.st("SELECT * FROM rig_artifacts WHERE state = 'pending_merge' ORDER BY id").all()).map(artifactRow); },
+    // P224: 사람이 받아들일 산출물(받아들임 human 섹터의 new). sectors: [섹터 이름]
+    newArtifactsIn(ws, sectors) { if (!sectors.length) return []; return this.db.prepare(`SELECT * FROM rig_artifacts WHERE workspace_key = ? AND state = 'new' AND source != 'proposal' AND sector IN (${sectors.map(() => '?').join(',')}) ORDER BY id`).all(ws, ...sectors).map(artifactRow); },
+    // ---------- P224: 제안(rig_proposals)과 정본 표시(rig_doc_marks) ----------
+    insertProposal(x) {
+      this.st('INSERT INTO rig_proposals (id, workspace_key, target, kind, path, base_sha, base_text, new_text, new_sha, why, route, state, loop, case_id, unit_id, seat, session_id, artifact_id, file, t) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(x.id, x.workspaceKey, x.target, x.kind, x.path, x.baseSha ?? null, x.baseText ?? null, x.newText, x.newSha, x.why ?? null, x.route, 'pending', x.loop ?? null, x.caseId ?? null, x.unitId ?? null, x.seat ?? null, x.sessionId ?? null, x.artifactId ?? null, x.file ?? null, x.t ?? Date.now());
+      return this.getProposal(x.id);
+    },
+    getProposal(id) { return proposalRow(this.st('SELECT * FROM rig_proposals WHERE id = ?').get(id)); },
+    setProposal(id, f) {
+      const cols = { state: 'state', decidedAt: 'decided_at', decidedBy: 'decided_by', reason: 'reason', versionN: 'version_n', artifactId: 'artifact_id', file: 'file' };
+      const keys = Object.keys(f).filter((k) => cols[k]);
+      if (!keys.length) return;
+      this.db.prepare(`UPDATE rig_proposals SET ${keys.map((k) => `${cols[k]} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => f[k] ?? null), id);
+    },
+    // q: { ws?, states?, route?, limit } 최근 것부터
+    proposals(q = {}) {
+      const where = []; const vals = [];
+      if (q.ws != null) { where.push('workspace_key = ?'); vals.push(q.ws); }
+      if (q.states && q.states.length) { where.push(`state IN (${q.states.map(() => '?').join(',')})`); vals.push(...q.states); }
+      if (q.route != null) { where.push('route = ?'); vals.push(q.route); }
+      if (q.since != null) { where.push('COALESCE(decided_at, t) > ?'); vals.push(q.since); } // 정해진(또는 낸) 때가 since 뒤
+      return this.db.prepare(`SELECT * FROM rig_proposals ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY t DESC, rowid DESC LIMIT ?`).all(...vals, Math.max(1, Number(q.limit) || 50)).map(proposalRow);
+    },
+    docMark(ws, doc) { return markRow(this.st('SELECT * FROM rig_doc_marks WHERE workspace_key = ? AND doc = ?').get(ws, doc)); },
+    docMarks(ws = null) { return (ws ? this.st('SELECT * FROM rig_doc_marks WHERE workspace_key = ?').all(ws) : this.st('SELECT * FROM rig_doc_marks').all()).map(markRow); },
+    setDocMark(ws, doc, f) {
+      const cur = this.docMark(ws, doc) || { path: f.path || '', approvedSha: null, approvedText: null, approvedAt: null, approvedBy: null, unapprovedSha: null, unapprovedAt: null, unapprovedBy: null };
+      const x = { ...cur, ...f };
+      this.st('INSERT INTO rig_doc_marks (workspace_key, doc, path, approved_sha, approved_text, approved_at, approved_by, unapproved_sha, unapproved_at, unapproved_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_key, doc) DO UPDATE SET path = excluded.path, approved_sha = excluded.approved_sha, approved_text = excluded.approved_text, approved_at = excluded.approved_at, approved_by = excluded.approved_by, unapproved_sha = excluded.unapproved_sha, unapproved_at = excluded.unapproved_at, unapproved_by = excluded.unapproved_by')
+        .run(ws, doc, x.path || '', x.approvedSha ?? null, x.approvedText ?? null, x.approvedAt ?? null, x.approvedBy ?? null, x.unapprovedSha ?? null, x.unapprovedAt ?? null, x.unapprovedBy ?? null);
+    },
     // ---------- P221: 고리(rig_loops, rig_loop_requests) ----------
     getLoopRow(key, loop) { const r = this.st('SELECT * FROM rig_loops WHERE workspace_key = ? AND loop = ?').get(key, loop); return r ? { loop: r.loop, pausedAt: r.paused_at ?? null, pausedBy: r.paused_by ?? null, nextAt: r.next_at ?? null, lastAt: r.last_at ?? null, sig: r.sig ?? null } : null; },
     setLoopRow(key, loop, f) {

@@ -19,6 +19,7 @@ import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
 import { useDialog } from './dialog.js'; // P52
 import { useInbox } from './InboxBar.jsx';
+import { useRigAsks, RigAskList } from './RigAsks.jsx'; // P224: rig 승인 카드(제안, 승인 안 된 정본 바뀜, 받아들일 산출물)
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
 import { UsagePill } from './Usage.jsx'; // P211: 구독 사용량. 레일 호출자 단추에는 보이지 않는다(로고만, 2026-11-18 사용자 요청)
@@ -332,7 +333,8 @@ function TurnPill({ needsYou }) {
   const focusId = useStore((st) => st.focusId);
   const currentWs = useStore((st) => st.currentWs);
   const now = useNow();
-  const n = needsYou.length;
+  const asks = useRigAsks(); // P224
+  const n = needsYou.length + asks.length;
   if (!n) return null; // P214: 0이면 숨긴다(값이 생기면 나타난다)
   return (
     <div className="mt-drop" ref={ref}>
@@ -348,6 +350,7 @@ function TurnPill({ needsYou }) {
               <span className="mt-chip-what">{askLine(s)}</span>
             </button>
           ))}
+          <RigAskList asks={asks} now={now} />
           {!n && <div className="mt-dropdown-empty">{t('top.turnEmpty')}</div>}
         </div>
       )}

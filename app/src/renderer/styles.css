@@ -2749,3 +2749,26 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 /* P223: rig 켜기 확인 창의 자리 권한(unattended 줄 강조), 대기열의 멈춘 고리에 붙잡은 요청 */
 .mt-rigon-perm-un .mt-rigon-at { color: var(--warn); }
 .mt-dq-item[data-parked] .mt-dq-text { color: var(--dim); }
+
+/* ---------- P224: rig 승인 카드(내 차례 펼침 목록, 휴대폰 목록) ---------- */
+.mt-rigask-list { display: grid; gap: 6px; margin-top: 4px; }
+.mt-rigask-head { padding: 6px 8px 2px; color: var(--dim); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; border-top: 1px solid var(--panel-line); }
+.mt-rigask { display: grid; gap: 5px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--panel-line); border-left: 3px solid var(--attn); background: var(--panel-2); color: var(--text); font-size: 13px; }
+.mt-rigask.doc_unapproved { border-left-color: var(--bad); }
+.mt-rigask.artifact { border-left-color: var(--violet); }
+.mt-rigask-title { font-weight: 600; overflow-wrap: anywhere; }
+.mt-rigask-meta { color: var(--dim); font-size: 12px; overflow-wrap: anywhere; }
+.mt-rigask-link { justify-self: start; padding: 0; border: 0; background: none; color: var(--accent-2); font-size: 12.5px; cursor: pointer; }
+.mt-rigask-link:hover { text-decoration: underline; }
+.mt-rigask-diff { margin: 0; max-height: 240px; overflow: auto; padding: 6px 8px; border-radius: 6px; background: var(--field-bg); border: 1px solid var(--panel-line); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.mt-rigask-diff .add { color: var(--live); }
+.mt-rigask-diff .del { color: var(--bad); }
+.mt-rigask-diff .at { color: var(--violet); }
+.mt-rigask-diff .h { color: var(--dim); }
+.mt-rigask-acts, .mt-rigask-reject { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mt-rigask-reject input { flex: 1 1 180px; min-width: 0; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--panel-line-2); background: var(--field-bg); color: var(--text); font-size: 12.5px; }
+.mt-rigask-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--panel-line-2); background: var(--panel-3); color: var(--text); font-size: 12.5px; cursor: pointer; }
+.mt-rigask-btn:hover:not(:disabled) { background: var(--panel); }
+.mt-rigask-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.mt-rigask-btn.danger { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+.mt-rigask-btn:disabled { color: var(--dim); background: var(--panel-2); border-color: var(--panel-line); cursor: default; }

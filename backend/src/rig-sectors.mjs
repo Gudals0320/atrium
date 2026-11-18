@@ -11,10 +11,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { rigEvent } from './rig-ledger.mjs';
 
-export const ARTIFACT_STATES = ['new', 'accepted', 'superseded'];
-export const LIVE_ARTIFACT = ['new', 'accepted'];
+// P224: pending_merge(워크트리 자리가 낸 것, 본 체크아웃에 합치기 전), lost(합치지 않고 워크트리가 지워짐)
+export const ARTIFACT_STATES = ['new', 'accepted', 'superseded', 'pending_merge', 'lost'];
+export const LIVE_ARTIFACT = ['new', 'accepted', 'pending_merge'];
 export const ARTIFACTS_MAX = 20; // done 한 번에 낼 수 있는 수
 export const MAP_RECENT = 3; // 구조 지도 섹터 마디에 싣는 최근 산출물 수
 const UNIT_MS = { s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 };
@@ -42,7 +44,7 @@ export const keepText = (k) => (!k ? null : k.count ? `최근 ${k.count}개` : `
 // 정의의 섹터 목록 → [{ name, rel(폴더, / 끝) | null, owns, intake, keep }]
 export function sectorsOf(def) {
   const docs = (def && def.docs) || {};
-  return Object.values(docs).filter((d) => d.role === 'sector').map((d) => ({ name: d.name, rel: d.rel ? (d.rel.endsWith('/') ? d.rel : `${d.rel}/`) : null, owns: !d.rel, layer: d.layer, intake: d.intake || 'register', keep: d.keepRule || parseKeep(d.keep) }));
+  return Object.values(docs).filter((d) => d.role === 'sector').map((d) => ({ name: d.name, rel: d.rel ? (d.rel.endsWith('/') ? d.rel : `${d.rel}/`) : null, owns: !d.rel, layer: d.layer, intake: d.intake || 'register', accept: d.accept || 'auto', keep: d.keepRule || parseKeep(d.keep) })); // P224: accept
 }
 const sectorList = (secs) => secs.filter((x) => x.rel).map((x) => `${x.name}(${x.rel})`).join(', ') || '(없음)';
 
@@ -62,7 +64,7 @@ export function resolveArtifact(def, root, p, { cwd = null } = {}) {
   if (!hit) return { ok: false, reason: `${rel}: 섹터 폴더 밖이다. 산출물은 섹터 폴더 안에 둔다: ${sectorList(secs)}` };
   let st = null;
   try { st = fs.statSync(abs); } catch { return { ok: false, reason: `${rel}: 파일이 없다(먼저 쓰고 낸다)` }; }
-  return { ok: true, sector: hit.name, rel, abs, dir: st.isDirectory(), size: st.isDirectory() ? null : st.size };
+  return { ok: true, sector: hit.name, rel, abs, dir: st.isDirectory(), size: st.isDirectory() ? null : st.size, worktree: base !== root ? path.resolve(base) : null }; // P224: 워크트리 안의 산출물
 }
 
 // 파일은 내용의 SHA-256, 폴더는 안의 (경로, 크기, 내용 SHA-256) 줄의 SHA-256 → { sha256, size }
@@ -126,18 +128,24 @@ export class RigSectors {
     return ok;
   }
   // 등록(일을 닫은 뒤). arts: check·fromHook의 결과. ctx: 닫기 전에 잡은 ctxOf → [행]
-  file(caller, arts, ctx) {
+  //   P224: gate — done 훅들이 돌려준 accept 판정(true | false | [경로])들. 워크트리 안 산출물은 pending_merge(브랜치·갈라진 커밋을 적는다)
+  file(caller, arts, ctx, { gate = null } = {}) {
     if (!arts || !arts.length || !ctx) return [];
     const st = this.store(); const key = caller.workspaceKey; const now = Date.now();
     const rows = [];
+    const secs = sectorsOf(ctx.def);
     for (const a of dedupe(arts)) {
       let h = { sha256: null, size: a.size ?? null };
       try { h = hashArtifact(a.abs, a.dir); } catch (e) { this.b.log && this.b.log('rig artifact hash error', e.message); }
       const before = st.liveArtifactsAt(key, a.rel);
-      const id = st.insertArtifact({ workspaceKey: key, sector: a.sector, path: a.rel, dir: a.dir, sha256: h.sha256, size: h.size, loop: ctx.loop, caseId: ctx.c ? ctx.c.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.tr ? ctx.tr.id : null, seat: caller.rigSeat || null, sessionId: caller.sessionId, source: a.source || 'agent', t: now });
-      const intake = (sectorsOf(ctx.def).find((s) => s.name === a.sector) || {}).intake || 'register';
-      rigEvent(this.b, { kind: 'artifact_filed', ws: key, caseId: ctx.c ? ctx.c.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.tr ? ctx.tr.id : null, seat: caller.rigSeat || null, session: caller.sessionId, value: a.sector, actor: a.source === 'hook' ? 'hook' : 'agent', ref: String(id), text: `${a.sector}: ${a.rel}${h.size != null ? ` (${h.size}바이트)` : ''}`, data: { artifact: id, sector: a.sector, path: a.rel, sha256: h.sha256, size: h.size, dir: a.dir, loop: ctx.loop, intake, source: a.source || 'agent' } });
+      const wt = a.worktree ? worktreeInfo(a.worktree, ctx.r && ctx.r.root) : null;
+      const id = st.insertArtifact({ workspaceKey: key, sector: a.sector, path: a.rel, dir: a.dir, sha256: h.sha256, size: h.size, loop: ctx.loop, caseId: ctx.c ? ctx.c.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.tr ? ctx.tr.id : null, seat: caller.rigSeat || null, sessionId: caller.sessionId, source: a.source || 'agent', t: now, ...(wt ? { state: 'pending_merge', branch: wt.branch, worktree: a.worktree, forkSha: wt.forkSha } : {}) });
+      const sec = secs.find((s) => s.name === a.sector) || {};
+      const intake = sec.intake || 'register';
+      rigEvent(this.b, { kind: 'artifact_filed', ws: key, caseId: ctx.c ? ctx.c.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.tr ? ctx.tr.id : null, seat: caller.rigSeat || null, session: caller.sessionId, value: a.sector, actor: a.source === 'hook' ? 'hook' : 'agent', ref: String(id), text: `${a.sector}: ${a.rel}${h.size != null ? ` (${h.size}바이트)` : ''}${wt ? ` · 워크트리 ${wt.branch || a.worktree}에 있음(합치기 전)` : ''}`, data: { artifact: id, sector: a.sector, path: a.rel, sha256: h.sha256, size: h.size, dir: a.dir, loop: ctx.loop, intake, accept: sec.accept || 'auto', source: a.source || 'agent', ...(wt ? { state: 'pending_merge', branch: wt.branch, worktree: a.worktree } : {}) } });
       for (const old of before) this.supersede(key, old, { why: 'same_path', by: id });
+      // P224(11.7의 1): gate 섹터는 done 훅의 accept 판정으로 받아들인다(워크트리 산출물은 합친 뒤)
+      if (sec.accept === 'gate' && !wt) this.gateAccept(key, st.getArtifact(id), gate);
       rows.push(st.getArtifact(id));
     }
     this.sweep(key, ctx.def, now);
@@ -167,17 +175,73 @@ export class RigSectors {
     const st = this.store();
     if (!c || !st.artifacts) return;
     const rows = st.artifacts({ ws: c.workspaceKey, caseId: c.id, limit: 1000 });
-    for (const r of rows.filter((x) => x.state === 'new')) {
-      st.setArtifactState(r.id, 'accepted', { why: 'run_done' });
-      rigEvent(this.b, { kind: 'artifact_accepted', caseId: c.id, unitId: r.unitId, seat: r.seat, session: r.sessionId, value: r.sector, actor: 'board', ref: String(r.id), text: `${r.sector}: ${r.path} — 회가 끝나 받아들임`, data: { artifact: r.id, sector: r.sector, path: r.path, why: 'run_done' } });
-    }
     const r = this.b.rig ? this.b.rig.active(c.workspaceKey) : null;
     const def = r ? (this.b.branch && this.b.branch.flow && this.b.branch.flow.defOfCase ? this.b.branch.flow.defOfCase(c, r) || r.def : r.def) : null;
+    // P224(11.7의 1): auto 섹터만 회가 done이면 받아들인다. human·gate 섹터, 제안(proposals), 합치기 전(pending_merge)은 그대로
+    const acceptOf = (name) => ((sectorsOf(def).find((s) => s.name === name) || {}).accept || 'auto');
+    for (const x of rows.filter((y) => y.state === 'new' && y.source !== 'proposal' && acceptOf(y.sector) === 'auto')) this.accept(c.workspaceKey, x, { why: 'run_done', actor: 'board', text: '회가 끝나 받아들임' });
+    if (this.b.rigProposals) this.b.rigProposals.changed(c.workspaceKey); // 받아들일 산출물(human 섹터)이 생겼을 수 있다
     const loop = def && def.loops && c.loop ? def.loops[c.loop] : null;
     if (loop && loop.produces && loop.produces.length && !rows.length) rigEvent(this.b, { kind: 'artifact_warning', caseId: c.id, session: c.owner, value: 'produces_none', actor: 'board', text: `고리 ${loop.name}는 ${loop.produces.join(', ')}에 산출물을 내는 고리인데 이 회는 아무것도 내지 않고 끝났다(atrium done ok "<보고>" --artifact <경로>)`, data: { loop: loop.name, produces: loop.produces } });
     if (rows.length) this.changed(c.workspaceKey);
   }
   changed(key) { if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.artifacts', { workspace: key }); } catch {} }
+  // ---------- P224: 받아들임(11.7의 1)과 워크트리 산출물(11.7의 6) ----------
+  accept(key, row, { why, actor = 'board', text = null, by = null }) {
+    this.store().setArtifactState(row.id, 'accepted', { why });
+    rigEvent(this.b, { kind: 'artifact_accepted', ws: key, caseId: row.caseId, unitId: row.unitId, seat: row.seat, session: row.sessionId, value: row.sector, actor, ref: String(row.id), text: `${row.sector}: ${row.path} — ${text || why}`, data: { artifact: row.id, sector: row.sector, path: row.path, why, ...(by ? { by } : {}) } });
+  }
+  // gate 섹터: done 훅들의 accept 판정. true(모두) | false | [경로] → 받아들임, 아니면 new로 두고 경고 한 줄
+  gateAccept(key, row, verdicts) {
+    const list = Array.isArray(verdicts) ? verdicts : [];
+    const says = list.map((v) => (v === true || v === false ? v : Array.isArray(v) ? v.map(String).includes(row.path) : null)).filter((v) => v != null);
+    if (says.length && says.every(Boolean)) return this.accept(key, row, { why: 'gate', actor: 'hook', text: 'done 훅(관문)이 받아들임' });
+    rigEvent(this.b, { kind: 'artifact_warning', ws: key, caseId: row.caseId, unitId: row.unitId, seat: row.seat, session: row.sessionId, value: says.length ? 'gate_rejected' : 'gate_none', actor: says.length ? 'hook' : 'board', ref: String(row.id), text: `${row.sector}: ${row.path} — ${says.length ? 'done 훅(관문)이 받아들이지 않았다' : 'accept "gate" 섹터인데 done 훅이 판정(accept)을 돌려주지 않았다'}. 새것으로 남는다`, data: { artifact: row.id, sector: row.sector, path: row.path } });
+  }
+  // 사람이 응답 필요 목록에서 받아들임(accept "human" 섹터) → 행
+  acceptHuman(key, id, { by = 'human' } = {}) {
+    const st = this.store(); const row = st.getArtifact(Number(id));
+    if (!row || row.workspaceKey !== key) throw apiError('not_found', `이 워크스페이스의 산출물이 아니다: ${id}`);
+    if (row.state !== 'new') throw apiError('bad_state', `산출물 #${row.id}은 새것이 아니다(${row.state})`);
+    this.accept(key, row, { why: 'human', actor: 'human', text: `사람이 받아들임(${by})`, by });
+    this.changed(key);
+    return st.getArtifact(row.id);
+  }
+  // 워크트리 산출물이 본 체크아웃에 왔나: 같은 해시의 파일이 생겼거나, 갈라진 뒤 그 경로를 바꾼 브랜치 커밋이 본 HEAD에 합쳐졌으면 new(회가 done이고 auto면 accepted).
+  //   합치지 않고 워크트리 폴더가 없어지면 lost. ws: 한 워크스페이스만(없으면 모두) → 바뀐 수
+  async settleWorktrees(ws = null) {
+    const st = this.store();
+    if (!st.pendingMergeArtifacts) return 0;
+    let n = 0; const touched = new Set();
+    for (const row of st.pendingMergeArtifacts(ws)) {
+      const w = st.getWorkspace ? st.getWorkspace(row.workspaceKey) : null;
+      const root = w && w.root;
+      if (!root) continue;
+      const main = path.join(root, row.path);
+      let how = null;
+      try { if (fs.existsSync(main)) { const h = hashArtifact(main, row.dir); if (h.sha256 && h.sha256 === row.sha256) how = 'same_hash'; } } catch {}
+      if (!how && row.branch && row.forkSha) {
+        const c = git(root, ['log', '-1', '--format=%H', `${row.forkSha}..${row.branch}`, '--', row.path]);
+        if (c && git(root, ['merge-base', '--is-ancestor', c, 'HEAD'], { ok: true })) how = 'merged';
+      }
+      if (how) {
+        const c = row.caseId ? st.getCase(row.caseId) : null;
+        const r = this.b.rig ? this.b.rig.read(row.workspaceKey) : null;
+        const acc = (sectorsOf(r && r.def).find((s) => s.name === row.sector) || {}).accept || 'auto';
+        st.setArtifactState(row.id, 'new', { why: how });
+        rigEvent(this.b, { kind: 'artifact_merged', ws: row.workspaceKey, caseId: row.caseId, unitId: row.unitId, seat: row.seat, session: row.sessionId, value: how, actor: 'board', ref: String(row.id), text: `${row.sector}: ${row.path} — 워크트리 ${row.branch || ''}의 산출물이 본 체크아웃에 왔다(${how === 'same_hash' ? '같은 해시' : '브랜치 합침'})`, data: { artifact: row.id, sector: row.sector, path: row.path, branch: row.branch, how } });
+        if (c && c.state === 'done' && acc === 'auto') this.accept(row.workspaceKey, st.getArtifact(row.id), { why: 'run_done', text: '합쳐졌고 회가 끝나 받아들임' });
+        n++; touched.add(row.workspaceKey); continue;
+      }
+      if (row.worktree && !fs.existsSync(row.worktree)) {
+        st.setArtifactState(row.id, 'lost', { why: 'worktree_gone' });
+        rigEvent(this.b, { kind: 'artifact_lost', ws: row.workspaceKey, caseId: row.caseId, unitId: row.unitId, seat: row.seat, session: row.sessionId, value: row.sector, actor: 'board', ref: String(row.id), text: `${row.sector}: ${row.path} — 합치지 않고 워크트리(${row.branch || row.worktree})가 지워졌다`, data: { artifact: row.id, sector: row.sector, path: row.path, branch: row.branch, worktree: row.worktree } });
+        n++; touched.add(row.workspaceKey);
+      }
+    }
+    for (const k of touched) { this.changed(k); if (this.b.rigProposals) this.b.rigProposals.changed(k); }
+    return n;
+  }
 
   // 목록(atrium rig artifacts, 판 API rig.artifacts) → { workspace, sectors: [{ name, path, intake, keep, live, total }], artifacts: [행 + exists], more }
   list(key, { sector = null, run = null, limit = 50, all = true } = {}) {
@@ -188,6 +252,7 @@ export class RigSectors {
     if (sector != null && !secs.some((s) => s.name === sector)) throw apiError('not_found', `그런 섹터가 없다: ${sector}. 섹터: ${secs.map((s) => s.name).join(', ') || '(없음)'}`);
     if (run != null) { const c = st.getCase(String(run)); if (!c || c.workspaceKey !== key) throw apiError('not_found', `이 워크스페이스의 회가 아니다: ${run}`); }
     if (def && rig.enabled(key)) this.sweep(key, def);
+    if (st.pendingMergeArtifacts && st.pendingMergeArtifacts(key).length) this.settleWorktrees(key).catch(() => {}); // P224: 다음 읽기에 보인다
     const lim = Math.min(Math.max(Number(limit) || 50, 1), 1000);
     const rows = st.artifacts({ ws: key, sector, caseId: run != null ? String(run) : null, states: all ? null : LIVE_ARTIFACT, limit: lim + 1 });
     const root = r && r.root;
@@ -195,7 +260,7 @@ export class RigSectors {
     const counts = st.artifactCounts(key);
     return {
       workspace: key,
-      sectors: secs.map((s) => ({ name: s.name, path: s.rel, owns: s.owns, intake: s.intake, keep: s.keep && !s.keep.bad ? (s.keep.count ?? s.keep.text) : null, live: (counts[s.name] || {}).live || 0, total: (counts[s.name] || {}).total || 0 })),
+      sectors: secs.map((s) => ({ name: s.name, path: s.rel, owns: s.owns, intake: s.intake, accept: s.accept, keep: s.keep && !s.keep.bad ? (s.keep.count ?? s.keep.text) : null, live: (counts[s.name] || {}).live || 0, total: (counts[s.name] || {}).total || 0 })),
       artifacts: rows.slice(0, lim).map((x) => ({ ...x, sessionName: names(x.sessionId), exists: root ? fs.existsSync(path.join(root, x.path)) : null })),
       more: rows.length > lim,
     };
@@ -215,7 +280,18 @@ export class RigSectors {
   }
   ofRun(key, caseId) { const st = this.store(); return st.artifacts ? st.artifacts({ ws: key, caseId, limit: 100 }).map(mapRow) : []; }
 }
-const mapRow = (r) => ({ id: r.id, sector: r.sector, path: r.path, state: r.state, t: r.t, caseId: r.caseId, seat: r.seat, size: r.size });
+const mapRow = (r) => ({ id: r.id, sector: r.sector, path: r.path, state: r.state, t: r.t, caseId: r.caseId, seat: r.seat, size: r.size, ...(r.branch ? { branch: r.branch } : {}) }); // P224: 워크트리 브랜치
+// P224: 워크트리 폴더의 브랜치와 본 체크아웃에서 갈라진 커밋 → { branch, forkSha }
+function git(cwd, args, { ok = false } = {}) {
+  try { const out = execFileSync('git', ['-C', cwd, ...args], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true }).toString().trim(); return ok ? true : out || null; } catch { return ok ? false : null; }
+}
+export function worktreeInfo(wt, root) {
+  const branch = git(wt, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const head = git(wt, ['rev-parse', 'HEAD']);
+  const mainHead = root ? git(root, ['rev-parse', 'HEAD']) : null;
+  const forkSha = head && mainHead ? git(wt, ['merge-base', head, mainHead]) : head;
+  return { branch: branch && branch !== 'HEAD' ? branch : head, forkSha: forkSha || null };
+}
 function dedupe(arts) { const seen = new Set(); return arts.filter((a) => (seen.has(a.rel) ? false : (seen.add(a.rel), true))); }
 
 // 판 API 처리기(backend.mjs handlers에 펼친다). 보기라 판 API 토큰과 기기 토큰이 본다
