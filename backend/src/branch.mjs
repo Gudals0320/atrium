@@ -627,6 +627,8 @@ export class Branch {
     const pcwd = parent.rt.cwd && fs.existsSync(parent.rt.cwd) ? parent.rt.cwd : parent.cwd;
     const cwd = o.cwd ? path.resolve(pcwd, String(o.cwd)) : pcwd;
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw apiError('bad_request', `폴더를 찾을 수 없습니다: ${o.cwd}. Windows 경로는 슬래시로 입력하세요 (--cwd C:/Workspace/x). 따옴표로 묶지 않은 백슬래시는 Bash에서 제거됩니다.`);
+    // P220(rig 2 R3): 그 워크스페이스의 rig 제작 세션(빌더)은 거기에 하위 세션을 만들지 않는다(rig를 켜고 manager 자리에 맡긴다)
+    if (b.rigSetup) b.rigSetup.guardChild(parent, (await workspaceOf(cwd)).key, o.name ? String(o.name).replace(/^@/, '') : null);
     const worktree = o.worktree ? String(o.worktree) : null;
     if (worktree && !WORKTREE_RE.test(worktree)) throw apiError('bad_request', `워크트리 이름에는 영문, 숫자, ., -, _만 사용할 수 있습니다: ${worktree}`);
     if (worktree && !claude) throw apiError('bad_request', "--worktree는 Claude Code(claude -w)에서만 사용할 수 있습니다.");

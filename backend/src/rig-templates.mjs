@@ -13,7 +13,7 @@ export const BUILDER_NAME = 'rig-builder';
 export function builderHeader({ unitId }) {
   return [
     `[Atrium 보드] 관계: 사람이 보드에서 맡긴 rig 만들기 일 ${unitId}이다(상위 세션 없음. 보고는 보드가 사람에게 보인다).`,
-    '[Atrium 보드] 먼저 `atrium guide rig`를 읽는다. 정의를 쓰고 `atrium rig check`로 검사한 뒤 `atrium done ok "<요약>"`(못 했으면 `atrium done failed "<까닭>"`)로 닫고 쉰다. atrium 명령은 cd·&&·echo를 붙이지 않고 그대로 친다. rig는 켜지 않는다(사람이 켠다).',
+    '[Atrium 보드] 먼저 `atrium guide rig`를 읽는다. 정의를 쓰고 `atrium rig check`로 검사한 뒤 `atrium done ok "<요약>"`(못 했으면 `atrium done failed "<까닭>"`)로 닫고 쉰다. atrium 명령은 cd·&&·echo를 붙이지 않고 그대로 친다. rig는 켜지 않는다(사람이 켠다). 빌더는 rig를 짓고 읽기만 한다: atrium child와 자리 세션에 보내는 atrium prompt는 보드가 거절한다(일은 사람이 rig를 켜고 manager 자리에 맡긴다).',
     '[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.',
   ].join('\n');
 }
@@ -103,6 +103,7 @@ export function rigGuideText() {
     'rig 만들기 안내(보드 내장). rig는 이 워크스페이스의 작업 규칙이다: 자리(seats), 흐름(flow), done 값(results), 훅(hooks), 도구(tools), 느린 고리(cycles).',
     '정의는 워크스페이스 뿌리의 .atrium/rig.json 한 파일(JSON 객체, 들여쓰기 2칸)이다. 자리 안내 글은 .atrium/seats/<자리>.txt에 둔다.',
     '사람이 보드에서 켜야 돈다. 너는 켜지 않는다. 다 쓰면 사람이 보드에서 미리보기를 보고 켠다.',
+    '빌더(제작 세션)는 rig를 짓고 읽기만 한다. atrium child(하위 세션)와 자리 세션에 보내는 atrium prompt는 보드가 거절한다. 자리를 흉내 내지 말고, 일을 돌리려면 사람이 rig를 켜고 manager 자리에 맡긴다. 읽기(atrium read, atrium rig check·log --events, atrium items)는 된다.',
     '',
     '## 칸',
     '- results: 자리 세션이 atrium done에 쓰는 값. 영문 소문자 낱말 배열(assign은 못 씀). 없으면 ["ok", "failed"].',

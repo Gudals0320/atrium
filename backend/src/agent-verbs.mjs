@@ -183,6 +183,8 @@ export class AgentVerbs {
   async prompt(caller, o = {}, res = null) {
     const b = this.b;
     if (o.now && o.wait) throw apiError('bad_request', '--now와 --wait는 함께 쓸 수 없다. --now는 받는 쪽의 지금 턴에 대기 메시지로 넣어 그 글로 시작하는 턴이 없다(짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.');
+    // P220(rig 2 R3): rig 제작 세션(빌더)은 그 워크스페이스의 자리 세션에 글을 보내지 않는다(rig-setup.mjs guardPrompt)
+    if (b.rigSetup) b.rigSetup.guardPrompt(caller, o.name, this);
     // P185: rig 자리 세션의 보내기는 정의가 정한다(assign 줄 → 일, may → 글만, 그 밖 거절 rig_refused). 자리 없는 세션·꺼진 rig는 null(옛 그대로)
     const flow = this.branch && this.branch.flow ? this.branch.flow : null;
     const fp = flow ? flow.planPrompt(caller, o, this) : null;
