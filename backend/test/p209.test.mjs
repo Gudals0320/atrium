@@ -204,6 +204,11 @@ test('P209 atrium rig check: 런처 자리의 effort는 런처 종류로, 앉은
     assert.equal(c.ok, true, c.reason);
     assert.ok(c.warnings.some((w) => /keep 자리 main의 effort medium는 다음에 띄울 때부터/.test(w) && /@main/.test(w)), c.warnings.join(' | '));
     assert.ok(!c.warnings.some((w) => /worker/.test(w) && /다음에 띄울 때/.test(w)), 'fresh 자리는 알리지 않는다');
+    // 앉은 세션이 이미 그 값으로 떴으면 알리지 않는다
+    main.effort = 'medium';
+    assert.ok(!chk(def).warnings.some((w) => /keep 자리 main/.test(w)));
+    main.effort = 'high';
+    assert.ok(chk(def).warnings.some((w) => /띄울 때의 값\(effort high\)/.test(w)));
   } finally { await stop(); }
 });
 

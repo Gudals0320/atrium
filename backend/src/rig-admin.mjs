@@ -102,8 +102,10 @@ export class RigAdmin {
         if (why && !reason) reason = `seats.${x.name}.effort: 런처 ${l.name || x.launcher}는 ${why}`;
       }
       if ((x.effort || x.model) && x.session === 'keep' && this.b.sessions) {
+        // 앉은 세션이 띄울 때 받은 값(s.effort·s.model)과 다른 것만 알린다
         const sat = [...this.b.sessions.values()].find((t) => t.workspaceKey === key && t.rigSeat === x.name);
-        if (sat) warnings.push(`keep 자리 ${x.name}의 ${[x.effort ? `effort ${x.effort}` : null, x.model ? `model ${x.model}` : null].filter(Boolean).join('·')}는 다음에 띄울 때부터 먹는다. 지금 앉은 @${shownName(sat) || sat.name}는 띄울 때의 값 그대로 돈다.`);
+        const diff = sat ? [x.effort && sat.effort !== x.effort ? `effort ${x.effort}` : null, x.model && sat.model !== x.model ? `model ${x.model}` : null].filter(Boolean) : [];
+        if (diff.length) warnings.push(`keep 자리 ${x.name}의 ${diff.join('·')}는 다음에 띄울 때부터 먹는다. 지금 앉은 @${shownName(sat) || sat.name}는 띄울 때의 값(${[sat.effort ? `effort ${sat.effort}` : null, sat.model ? `model ${sat.model}` : null].filter(Boolean).join('·') || '런처 기본'}) 그대로 돈다.`);
       }
     }
     return { reason, warnings };
