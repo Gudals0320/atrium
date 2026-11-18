@@ -220,6 +220,36 @@ export class RigSetup {
     const b = s.workspaceKey ? this.builderSession(s.workspaceKey) : null;
     return !!(b && b.sessionId === s.sessionId);
   }
+  // P220(rig 2 R3): 빌더 역할 고정. 제작 세션은 그 워크스페이스에서 rig를 짓고 읽기만 한다.
+  //   atrium child(하위 세션)와 자리 세션에 보내는 atrium prompt를 거절하고 장부에 한 줄(gate, value reject, data.at builder).
+  //   rig 밖 세션·다른 워크스페이스는 막지 않는다. 읽기(atrium read, rig check·log, items)와 정의 파일 고치기는 그대로다
+  builderRefusal(s, key, { op, target = null } = {}) {
+    if (!s || !key || key !== s.workspaceKey || !this.isWorkspaceBuilder(s)) return null;
+    const rig = this.b.rig;
+    let off = '';
+    try { if (rig && rig.read(key).present && !rig.enabled(key)) off = ' rig 정의는 있지만 꺼져 있다. 사람이 판에서 켠다.'; } catch {}
+    const what = op === 'child' ? '하위 세션을 만들지 않는다(atrium child)' : `자리 세션${target ? ` @${target}` : ''}에 글을 보내지 않는다(atrium prompt)`;
+    const msg = `빌더(rig 제작 세션)는 rig를 짓고 읽는다. ${what}. 일을 돌리려면 rig를 켜고(사람) manager 자리에 맡긴다.${off} 읽기는 된다: atrium read, atrium rig check·log --events, atrium items, 정의 파일 고치기.`;
+    rigEvent(this.b, { kind: 'gate', ws: key, session: s.sessionId, value: 'reject', actor: 'board', ...(op === 'prompt' && target ? { toSeat: target } : {}), text: `builder ${op}: ${target ? `@${target}` : '-'}`, data: { at: 'builder', hook: null, op, target, off: !!off } });
+    this.store().addEvent(s.sessionId, 'rig_builder_refused', { workspace: key, op, target, off: !!off });
+    return apiError('rig_builder', msg, { op, target });
+  }
+  // atrium child: 하위 세션이 그 빌더의 워크스페이스에 뜨면 거절(throw)
+  guardChild(s, key, name = null) { const e = this.builderRefusal(s, key, { op: 'child', target: name }); if (e) throw e; }
+  // atrium prompt: 받는 쪽이 그 워크스페이스 rig의 자리(앉은 세션이나 자리 이름)면 거절(throw). 찾지 못하는 이름은 원래 길이 다룬다
+  guardPrompt(s, ref, verbs) {
+    if (!s || !s.workspaceKey || !this.isWorkspaceBuilder(s)) return;
+    const key = s.workspaceKey; const rig = this.b.rig;
+    const r = String(ref ?? '').trim().replace(/^@/, '');
+    if (!r) return;
+    let seat = null;
+    let t = null; try { t = verbs.target(s, r); } catch {}
+    if (t) { if (t.rigSeat && t.workspaceKey === key) seat = shownName(t) || t.name; }
+    else if (rig && rig.seatNamesLoose && rig.seatNamesLoose(key).includes(r.toLowerCase())) seat = r.toLowerCase();
+    if (!seat) return;
+    const e = this.builderRefusal(s, key, { op: 'prompt', target: seat });
+    if (e) throw e;
+  }
   // 이 세션이 사람이 맡긴 열린 제작 일을 쥐었나
   isBuilder(s) {
     if (!s) return false;
