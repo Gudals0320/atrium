@@ -18,7 +18,7 @@ import { Branch } from '../src/branch.mjs';
 import { Rig, validateRig, rigHandlers, SEAT_CLOSES } from '../src/rig.mjs';
 import { RigDocs } from '../src/rig-docs.mjs';
 import { TRY_STOP_VALUES } from '../src/rig-ledger.mjs';
-import { RigAmp, seatPermitHash } from '../src/rig-amp.mjs';
+import { RigAmp, seatPermitHash, nestedShell, NESTED_SHELL_REASON, claudeSettingsAmp } from '../src/rig-amp.mjs';
 import { permitNeeds } from '../../app/src/renderer/lib/rig-permits.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -233,6 +233,46 @@ test('P225 "정기 점검" 견본: allow에 읽기만 하는 PowerShell 규칙(�
     assert.ok(p.allow.includes('PowerShell(Get-ChildItem:*)'));
     const s = { sessionId: 'S', workspaceKey: ws.key, rigSeat: 'checker', kind: 'claude', cwd: b.rig.rootOf(ws.key) };
     assert.ok(b.rigAmp.claudeAmp(s).allow.includes('PowerShell(Select-String:*)'), '세션 설정 파일의 allow');
+  } finally { await stop(); }
+});
+
+test('P225 셸 안의 셸: Bash로 부른 cmd·powershell·pwsh를 찾는다(경로·따옴표·&&·; 뒤도), 글 안의 낱말은 아니다', () => {
+  const yes = [
+    "cd 'C:\\Workspace\\x' && cmd /c dir /b reports",
+    'powershell -NoProfile -Command "Get-ChildItem ."',
+    'pwsh -c ls', 'PowerShell.exe -Command Get-Item a', '"C:\\Windows\\System32\\cmd.exe" /c dir',
+    'git status; powershell -c "Remove-Item x"', 'ls | pwsh -c -', '(cmd /c dir)',
+  ];
+  for (const c of yes) assert.ok(nestedShell(c), c);
+  assert.equal(nestedShell('cmd /c dir'), 'cmd');
+  const no = ['git log --oneline', 'echo powershell is a shell', 'ls cmd/', 'grep -r pwsh src', 'cat cmdline.txt', '', null];
+  for (const c of no) assert.equal(nestedShell(c), null, String(c));
+});
+
+test('P225 scoped 자리: 셸 안의 셸은 판의 PreToolUse가 묻지 않고 거절(까닭에 PowerShell 도구·Glob·Read), 장부 gate. 다른 Bash와 unattended·ask 자리는 그대로', async () => {
+  const d = permDef(); d.seats.ask1 = { launcher: 'claude', session: 'fresh' }; d.loops.work.flow.push({ from: 'main', on: 'assign', to: 'ask1' });
+  delete d.seats.main.writes; // writes 없는 scoped 자리도 PreToolUse를 기다린다
+  const { b, ws, add, seat, stop } = await board({ def: d, enable: false });
+  try {
+    b.rig.setEnabled(ws.key, true, 'human');
+    const A = b.rigAmp;
+    const m = add('main'); seat(m, 'main');
+    const w = add('worker-1'); seat(w, 'worker');
+    const k = add('ask1-1'); seat(k, 'ask1');
+    assert.equal(A.wants(m, 'PreToolUse'), true);
+    assert.ok(A.claudeAmp(m).hooks.PreToolUse, '설정 파일이 PreToolUse를 판이 기다리게 한다');
+    const out = await A.answer(m, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: "cd 'X' && cmd /c dir /b reports" } });
+    assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(out.hookSpecificOutput.permissionDecisionReason, NESTED_SHELL_REASON);
+    assert.match(NESTED_SHELL_REASON, /PowerShell 도구/);
+    assert.equal(await A.answer(m, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'git log --oneline -5' } }), null, '다른 Bash는 판이 막지 않는다(허용 목록·질문은 Claude Code가)');
+    assert.equal(await A.answer(m, 'PreToolUse', { tool_name: 'PowerShell', tool_input: { command: 'Get-ChildItem .' } }), null);
+    const g = ledger(b, ws.key, { kinds: ['gate'] }).at(-1);
+    assert.deepEqual([g.value, g.data.why, g.data.shell, g.seat], ['reject', 'nested_shell', 'cmd', 'main']);
+    // unattended(승인됨)·ask 자리는 그대로
+    assert.equal(await A.answer(w, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'powershell -c ls' } }), null);
+    assert.equal(A.wants(k, 'PreToolUse'), false);
+    assert.equal(claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: [], root: 'C:/r', cwd: 'C:/r', permission: 'ask', allow: [] }), null);
   } finally { await stop(); }
 });
 

@@ -169,7 +169,7 @@ export function claudeSettingsAmp(x) {
   // 경로 규칙은 Edit(…)만: Claude Code는 Edit 규칙을 파일을 고치는 모든 도구(Write·MultiEdit·NotebookEdit)에 쓰고, Write(경로)는 "never matches"라고 경고한다(P189 개발용 판)
   for (const f of x.protectedFiles || []) for (const base of protectBases(x.root, x.cwd)) deny.push(`Edit(${rulePath(path.resolve(base, f))})`);
   const hooks = {};
-  const waitPre = x.preTool.length || Array.isArray(x.writes);
+  const waitPre = x.preTool.length || Array.isArray(x.writes) || x.permission === 'scoped'; // P225: scoped는 셸 안의 셸을 거른다
   if (waitPre) {
     const maxMs = x.preTool.reduce((n, p) => n + (p.hook.timeoutMs || 0), 0); // 같은 도구에 여러 훅이 차례로 돌 수 있다
     const sec = x.preTool.length ? Math.min(Math.ceil(maxMs / 1000) + PRE_TOOL_TIMEOUT_PAD_SEC, PRE_TOOL_TIMEOUT_MAX_SEC) : PRE_TOOL_WRITES_TIMEOUT_SEC;
@@ -241,6 +241,11 @@ export function codexArgsAmp(args = [], writes = null, permission = 'ask') {
   return out;
 }
 
+// P225: 셸 안의 셸(Bash 도구로 cmd·powershell·pwsh를 부름). 허용 목록 판단을 비켜 가므로(따옴표 안 스크립트는 한 명령으로 맞는다) scoped 자리는 묻지 않고 거절하고
+//   PowerShell 도구·Glob·Read를 쓰게 한다. 명령의 앞이나 &&·||·;·|·&·( 뒤에 오는 cmd(.exe)·powershell(.exe)·pwsh(.exe)만 본다(경로·따옴표가 붙어도)
+const NESTED_SHELL_RE = /(?:^|&&|\|\||[;|&\n(]|\$\()\s*["']?(?:[A-Za-z]:)?(?:[^\s;&|'"]*[\\/])?(cmd|powershell|pwsh)(?:\.exe)?["']?(?=\s|$)/i;
+export function nestedShell(command) { const m = NESTED_SHELL_RE.exec(String(command || '')); return m ? m[1].toLowerCase() : null; }
+export const NESTED_SHELL_REASON = '[Atrium rig] 이 자리(scoped)는 Bash 도구 안에서 cmd·powershell·pwsh를 부르지 않는다(허용 목록이 그 안의 명령을 보지 못한다). 파일 목록·내용·찾기는 PowerShell 도구(Get-ChildItem, Get-Content, Select-String, Test-Path)나 Glob·Read·Grep 도구로 한다.';
 // 쓰기 범위(경로 목록) 판정: 파일 쓰기 도구의 대상이 범위 밖이면 까닭, 안이면 null
 export function writesVerdict({ writes, toolName, toolInput, base, unitId = null }) {
   if (!Array.isArray(writes) || !EDIT_TOOLS.includes(toolName)) return null;
@@ -330,7 +335,7 @@ export class RigAmp {
     if (ev !== 'PreToolUse' && ev !== 'Stop') return false;
     if ((s.kind || 'claude') !== 'claude') return false;
     const x = this.ctxOf(s); if (!x) return false;
-    if (ev === 'PreToolUse') return x.preTool.length > 0 || Array.isArray(x.writes);
+    if (ev === 'PreToolUse') return x.preTool.length > 0 || Array.isArray(x.writes) || x.permission === 'scoped'; // P225
     return x.stopVerify;
   }
   // → 응답 본문(객체) | null(빈 200 = 통과)
@@ -344,6 +349,11 @@ export class RigAmp {
     const st = this.b.store;
     const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
     const toolName = String(body.tool_name || ''); const toolInput = body.tool_input || {};
+    // P225: scoped 자리의 셸 안의 셸은 묻지 않고 거절한다(모델이 PowerShell 도구·Glob·Read로 다시 한다)
+    if (x.permission === 'scoped' && toolName === 'Bash') {
+      const sh = nestedShell(toolInput.command);
+      if (sh) { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'deny', why: 'nested_shell', tool: toolName, shell: sh }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'nested_shell', tool: toolName, shell: sh }, `셸 안의 셸(${sh})을 거절(scoped: PowerShell 도구·Glob·Read로)`); return denyBody(NESTED_SHELL_REASON); }
+    }
     const w = writesVerdict({ writes: x.writes, toolName, toolInput, base: x.cwd, unitId: tr ? tr.unitId : null });
     // P223: scoped 자리는 쓰기 범위 밖을 묻는다(응답 필요로 뜬다), 그 밖(ask·unattended)은 거부
     if (w && x.permission === 'scoped') { try { st.addEvent(s.sessionId, 'rig_pre_tool', { decision: 'ask', why: 'writes', tool: toolName }); } catch {} this.gateEvent(s, x, tr, 'pre-tool', { why: 'writes', tool: toolName, ask: true, target: String(toolInput.file_path || toolInput.path || toolInput.notebook_path || '') || null }, `${w} (scoped: 사람에게 묻는다)`, 'ask'); return askBody(`[Atrium rig] ${w}. 이 자리(scoped)는 쓰기 범위 밖을 사람에게 묻는다.`); }
