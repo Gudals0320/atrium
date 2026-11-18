@@ -19,8 +19,7 @@ import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
 import { useDialog } from './dialog.js'; // P52
 import { useInbox } from './InboxBar.jsx';
-import { permitNeeds } from './lib/rig-permits.js'; // P225: 응답 필요 목록의 무인 자리 승인
-import { remoteView } from './RigSeat.jsx';
+import { useRigAsks, RigAskList } from './RigAsks.jsx'; // P224: rig 승인 카드(제안, 승인 안 된 정본 바뀜, 받아들일 산출물)
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
 import { UsagePill } from './Usage.jsx'; // P211: 구독 사용량. 레일 호출자 단추에는 보이지 않는다(로고만, 2026-11-18 사용자 요청)
@@ -333,17 +332,10 @@ function TurnPill({ needsYou }) {
   const [open, setOpen, ref] = useDropdown();
   const focusId = useStore((st) => st.focusId);
   const currentWs = useStore((st) => st.currentWs);
-  const workspaces = useStore((st) => st.workspaces);
-  const permits = useMemo(() => permitNeeds(workspaces), [workspaces]); // P225: 무인 자리 승인(세션이 아닌 사람 차례)
-  const [busy, setBusy] = useState(null);
   const now = useNow();
-  const n = needsYou.length + permits.length;
+  const asks = useRigAsks(); // P224
+  const n = needsYou.length + asks.length;
   if (!n) return null; // P214: 0이면 숨긴다(값이 생기면 나타난다)
-  const permit = async (p) => {
-    setBusy(p.key);
-    try { await api.call('rig.permit', { workspace: p.ws, seats: [p.seat] }); toast(t('rigPermitNeed.done', { seat: p.seat })); } catch (e) { toast(t('rigPermitNeed.fail', { error: errText(e) }), 'error'); }
-    setBusy(null);
-  };
   return (
     <div className="mt-drop" ref={ref}>
       <button className={`mt-cp turn${n ? ' hot' : ''}${open ? ' on' : ''}`} data-role="inbox" data-count={n} title={n ? t('top.turnTitle') : t('top.turnNone')} onClick={() => setOpen((o) => !o)}>
@@ -358,13 +350,7 @@ function TurnPill({ needsYou }) {
               <span className="mt-chip-what">{askLine(s)}</span>
             </button>
           ))}
-          {permits.map((p) => (
-            <div key={p.key} className="mt-chip need rig-permit" data-role="rig-permit" data-ws={p.ws} data-seat={p.seat} title={t('rigPermitNeed.tip')}>
-              <span className="mt-chip-line"><b>{t('rigPermitNeed.line', { seat: p.seat })}</b> <span className={`mt-chip-ws${p.ws === (currentWs || null) ? '' : ' other'}`} data-ws={p.ws}>{wsName(p.ws)}</span></span>
-              <span className="mt-chip-what">{t('rigPermitNeed.what')}</span>
-              {!remoteView() && <span className="mt-rig-permit-actions"><button type="button" className="mt-btn small primary" data-action="rig-permit" disabled={busy === p.key} onClick={() => permit(p)}>{t('rigPermitNeed.approve')}</button></span>}
-            </div>
-          ))}
+          <RigAskList asks={asks} now={now} />
           {!n && <div className="mt-dropdown-empty">{t('top.turnEmpty')}</div>}
         </div>
       )}

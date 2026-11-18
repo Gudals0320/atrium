@@ -29,6 +29,10 @@ export const RIG_EVENT_KINDS = [
   'artifact_filed', 'artifact_superseded', 'artifact_accepted', 'artifact_warning',
   // P223: 자리 권한 결정(value: scoped | unattended | approved). 자리 세션을 띄울 때와 사람이 unattended를 승인할 때
   'seat_permission',
+  // P224: rig 2 R6 제안과 승인(rig2-design 5절). proposal_made(value 대상), proposal_decided(value approved | rejected, actor 누가), proposal_applied(value applied | conflict | failed)
+  //   정본 지키기(11.5의 4): doc_unapproved(승인 없이 정본이 바뀜), doc_reverted·doc_accepted(사람이 되돌림·받아들임)
+  //   워크트리 산출물(11.7의 6): artifact_merged(pending_merge → new·accepted, value same_hash | merged), artifact_lost(합치지 않고 워크트리가 지워짐)
+  'proposal_made', 'proposal_decided', 'proposal_applied', 'doc_unapproved', 'doc_reverted', 'doc_accepted', 'artifact_merged', 'artifact_lost',
 ];
 const KINDS = new Set(RIG_EVENT_KINDS);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];

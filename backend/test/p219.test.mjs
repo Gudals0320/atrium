@@ -162,7 +162,7 @@ test('rig check의 문서 검사: version, 없는 문서 이름, 저장소 밖, 
   bad((x) => { x.hooks[0].records = 'rules'; }, /records는 장부 문서\(role "ledger"\)/);
   bad((x) => { x.docs.g = { path: '~/.claude/CLAUDE.md', role: 'canon', layer: 'global' }; x.seats.keeper.writes = ['g']; }, /global 층 문서라 쓰기 범위로 넘길 수 없다/);
   bad((x) => { x.docs.rules.role = 'rule'; }, /role은 canon, ledger, sector/);
-  bad((x) => { x.docs.rules.intake = 'move'; }, /intake·keep은 role "sector"/);
+  bad((x) => { x.docs.rules.intake = 'move'; }, /intake·keep·accept는 role "sector"/);
   bad((x) => { x.docs.facts.stale = { after_change_of: 'zzz' }; }, /after_change_of가 없는 문서/);
   bad((x) => { x.docs.facts.stale = 'soon'; }, /stale은 "30d"/);
   bad((x) => { x.docs.rules.path = '{owns}'; }, /"\{owns\}"는 role "sector"/);
@@ -183,9 +183,9 @@ test('rig check의 문서 검사: version, 없는 문서 이름, 저장소 밖, 
   assert.deepEqual(r.def.amp.seats.keeper.writes, ['ledger/corrections.jsonl', 'reports/']);
   assert.ok(r.def.warnings.some((w) => /layer global는 R7/.test(w)));
   assert.ok(r.def.warnings.some((w) => /\{owns\}"는 R5 전이라/.test(w)));
-  // 정본을 자리가 바로 쓰면 경고(정의는 쓰인다)
+  // 정본을 자리가 바로 쓰면 정의 오류(P224, rig2-design 11.5의 4: 정본은 제안과 승인으로만)
   const raw2 = sampleDef(); raw2.seats.keeper.writes = ['corrections', 'rules'];
-  const r2 = v2(raw2); assert.ok(r2.ok); assert.ok(r2.def.warnings.some((w) => /정본 문서 rules/.test(w)));
+  const r2 = v2(raw2); assert.equal(r2.ok, false); assert.match(r2.reason, /정본 문서 rules.*atrium rig propose/);
   // {owns}만 있으면 쓰기 범위를 좁히지 않는다
   const raw3 = sampleDef(); raw3.docs.out = { path: '{owns}', role: 'sector' }; raw3.seats.keeper.writes = ['{owns}'];
   const r3 = v2(raw3); assert.ok(r3.ok, r3.reason); assert.equal(r3.def.amp, null);

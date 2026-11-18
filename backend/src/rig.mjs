@@ -365,7 +365,7 @@ export class Rig {
       this.store().setRigPermit(key, n, by, hash);
       rigEvent(this.b, { kind: 'seat_permission', ws: key, defN: r.n ?? null, seat: n, value: 'approved', actor: 'human', text: `${n}: unattended(묻지 않음)를 사람이 승인(${by})`, data: { asked: 'unattended', permission: 'unattended', approved: true, by, hash } });
     }
-    if (list.length) this.permitSig.delete(key); // P225: 응답 필요 목록을 다시 본다
+    if (list.length) { this.permitSig.delete(key); if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.asks', { workspace: key }); } catch {} } // P225: 응답 필요 카드를 다시 읽게
     if (list.length && this.b.log) this.b.log(`rig permit ${key}: ${list.join(', ')}`);
     return list;
   }
@@ -665,8 +665,12 @@ export class Rig {
       const had = lapsed.has(n) || !!(last && last.value === 'approved'); // 옛 승인이 있었다(자리의 칸이 바뀜)
       rigEvent(this.b, { kind: 'seat_permission', ws: key, defN: r.n ?? null, seat: n, value: 'pending', actor: 'board', text: `${n}: unattended(묻지 않음)는 사람의 승인 전이라 scoped로 돈다${had ? '(승인한 뒤 자리의 권한 칸이 바뀜)' : ''}. 응답 필요 목록에서 승인`, data: { asked: 'unattended', permission: 'scoped', pending: true, hash, lapsed: had } });
     }
-    if (this.b.broadcastWorkspaces) try { this.b.broadcastWorkspaces(); } catch {}
+    if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.asks', { workspace: key }); } catch {} // 응답 필요 카드(P224 RigAsks)를 다시 읽게
     return true;
+  }
+  // P225: 그 자리의 승인 기다림이 시작된 때(장부의 마지막 pending 줄, 없으면 지금)
+  pendingSince(key, seat) {
+    try { const r = this.store().rigEvents({ ws: key, kinds: ['seat_permission'], limit: 200 }).filter((x) => x.seat === seat && x.value === 'pending').at(-1); return r ? r.t : Date.now(); } catch { return Date.now(); }
   }
   setEnabled(key, on, by = 'human') {
     const w = this.store().getWorkspace(key);
@@ -694,7 +698,8 @@ export class Rig {
     const appends = [];
     const runs = [];
     const artifacts = []; // P222: done 훅이 돌려준 산출물 경로
-    const out = (extra) => ({ ...extra, text, ...(args ? { args } : {}), appends, runs, hash: r.hash, ...(artifacts.length ? { artifacts } : {}) });
+    const accepts = []; // P224: done 훅의 받아들임 판정(accept "gate" 섹터): true | false | [경로]
+    const out = (extra) => ({ ...extra, text, ...(args ? { args } : {}), appends, runs, hash: r.hash, ...(artifacts.length ? { artifacts } : {}), ...(accepts.length ? { accepts } : {}) });
     for (const h of hooks) {
       const input = {
         v: 1, at: ctx.at, rigHash: r.hash, workspace: { key: ctx.key, root: r.root },
@@ -730,6 +735,7 @@ export class Rig {
       if (ctx.at === 'tool-before' && o.action === 'rewrite' && Array.isArray(o.args)) args = o.args.map(String);
       if (ctx.at === 'tool-after' && o.append) appends.push(o.append);
       if (ctx.at === 'done' && o.artifacts) artifacts.push(...o.artifacts);
+      if (ctx.at === 'done' && o.accept != null) accepts.push(o.accept); // P224
       const changed = before !== text;
       const argsChanged = beforeArgs !== args;
       const rowId = st.insertHookRun({ ...rec, decision: o.action, reason: o.reason || null, note: o.note || null, beforeText: changed ? before : argsChanged ? JSON.stringify(beforeArgs) : null });

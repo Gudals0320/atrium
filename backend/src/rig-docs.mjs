@@ -17,11 +17,12 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { rigEvent } from './rig-ledger.mjs';
 import { shownName } from './session-label.mjs';
-import { parseKeep } from './rig-sectors.mjs'; // P222
+import { parseKeep, sectorsFor } from './rig-sectors.mjs'; // P222. P224: 워크트리 산출물 합침 보기
 
 export const DOC_ROLES = ['canon', 'ledger', 'sector'];
 export const DOC_LAYERS = ['global', 'type', 'project'];
 export const DOC_INTAKES = ['register', 'move', 'copy'];
+export const DOC_ACCEPTS = ['auto', 'human', 'gate']; // P224(11.7의 1): 섹터의 받아들임
 export const DOC_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
 export const OWNS = '{owns}';
 export const DOCS_POLL_MS = 3000;
@@ -94,7 +95,8 @@ export function validateDocs(raw, { root = null, exists = null } = {}) {
         else if (x.stale && typeof x.stale === 'object' && !Array.isArray(x.stale) && typeof x.stale.after_change_of === 'string') stale = { afterChangeOf: x.stale.after_change_of };
         else return bad(`${at}.stale은 "30d" 꼴의 기간이거나 { "after_change_of": "<문서>" }다`);
       }
-      if ((x.intake != null || x.keep != null) && x.role !== 'sector') return bad(`${at}.intake·keep은 role "sector"(산출물 섹터) 문서에만 쓴다`);
+      if ((x.intake != null || x.keep != null || x.accept != null) && x.role !== 'sector') return bad(`${at}.intake·keep·accept는 role "sector"(산출물 섹터) 문서에만 쓴다`);
+      if (x.accept != null && !DOC_ACCEPTS.includes(x.accept)) return bad(`${at}.accept는 ${DOC_ACCEPTS.join(', ')} 가운데 하나다(auto: 회가 done이면 받아들임, human: 사람이 응답 필요 목록에서, gate: done 훅의 accept 판정): ${JSON.stringify(x.accept)}`);
       if (x.intake != null && !DOC_INTAKES.includes(x.intake)) return bad(`${at}.intake는 ${DOC_INTAKES.join(', ')} 가운데 하나다: ${JSON.stringify(x.intake)}`);
       const keepRule = parseKeep(x.keep);
       if (keepRule && keepRule.bad) return bad(`${at}.keep은 개수(양의 정수, 예: 20)나 기간("90d", "12w")이다: ${JSON.stringify(x.keep)}`);
@@ -111,7 +113,7 @@ export function validateDocs(raw, { root = null, exists = null } = {}) {
       if (x.role === 'sector' && loc.owns) warnings.push(`${at}: 경로 "{owns}"인 섹터는 일마다 경로가 정해지기 전(R7)이라 아직 산출물을 받지 않는다`);
       else if (x.role === 'sector' && layer !== 'project') warnings.push(`${at}: ${layer} 층 섹터는 R7(층) 전이라 산출물을 받지 않는다(저장소 안 폴더만 받는다)`);
       else if (x.role === 'sector' && loc.rel && !loc.dir) warnings.push(`${at}.path는 폴더로 읽는다(${loc.rel}/). 섹터는 산출물이 들어가는 폴더다`);
-      docs[name] = { name, path: p, rel: loc.owns ? null : loc.rel || null, dir: !!loc.dir || (x.role === 'sector' && !!loc.rel), role: x.role, layer, load: x.load || null, owner: x.owner || null, stale, git: x.git !== false, intake: x.role === 'sector' ? x.intake || 'register' : null, keep: x.keep ?? null, keepRule: keepRule || null, watch: layer === 'project' && !loc.owns && !!loc.rel };
+      docs[name] = { name, path: p, rel: loc.owns ? null : loc.rel || null, dir: !!loc.dir || (x.role === 'sector' && !!loc.rel), role: x.role, layer, load: x.load || null, owner: x.owner || null, stale, git: x.git !== false, intake: x.role === 'sector' ? x.intake || 'register' : null, accept: x.role === 'sector' ? x.accept || 'auto' : null, keep: x.keep ?? null, keepRule: keepRule || null, watch: layer === 'project' && !loc.owns && !!loc.rel };
     }
     for (const d of Object.values(docs)) if (d.stale && d.stale.afterChangeOf && !has(docs, d.stale.afterChangeOf)) return bad(`docs.${d.name}.stale.after_change_of가 없는 문서를 가리킨다: ${d.stale.afterChangeOf}`);
   }
@@ -140,7 +142,8 @@ export function validateDocs(raw, { root = null, exists = null } = {}) {
       const d = docs[w];
       if (d.layer !== 'project') return bad(`${at}.writes의 ${w}는 ${d.layer} 층 문서라 쓰기 범위로 넘길 수 없다(저장소 밖)`);
       if (!d.rel) return bad(`${at}.writes의 ${w}는 경로가 "{owns}"라 R5 전에는 쓰기 범위로 넘기지 않는다`);
-      if (d.role === 'canon') warnings.push(`${at}.writes에 정본 문서 ${w}가 있다. 정본은 보통 사람이 고치거나 개선 고리의 제안과 승인(R6)으로 고친다`);
+      // P224(11.5의 4): 정본은 제안과 승인으로만 고친다(Q1). 자리의 writes에 두면 정의 오류
+      if (d.role === 'canon') return bad(`${at}.writes에 정본 문서 ${w}가 있다. 정본은 자리가 직접 쓰지 않고 제안과 승인으로 고친다: atrium rig propose --target ${w} --file <새 내용>(사람이 승인하면 보드가 반영한다)`);
       writes.push(w);
     }
     const loads = [...new Set([...always, ...lo.list])];
@@ -268,6 +271,7 @@ export function pickChanger({ abs, dir, mtimeMs, since = null, now = Date.now(),
   const win = (t) => (mtimeMs == null || Math.abs(t - mtimeMs) <= WRITE_NOTE_MS) && (since == null || t > since);
   const w = writes.filter((x) => x.abs && hit(x.abs) && win(x.t)).sort((a, b) => b.t - a.t)[0];
   if (w) {
+    if (w.board) return { by: 'board', basis: 'board', why: w.why || null, proposal: w.proposal || null }; // P224: 보드가 쓴 것(승인된 제안 반영, 제안 기록, 되돌리기)
     if (w.hook != null) return { by: 'hook', basis: 'hook_ran', hook: w.hook };
     if (w.tool) return { by: 'tool', basis: 'tool_ran', tool: w.tool, sessionId: w.sessionId || null };
     const s = sessions.find((x) => x.sessionId === w.sessionId) || { sessionId: w.sessionId, name: w.name || null, seat: w.seat || null };
@@ -281,6 +285,7 @@ export function pickChanger({ abs, dir, mtimeMs, since = null, now = Date.now(),
 // P221(11.5의 2): 바꾼 쪽을 고른 근거 → agent_working | case_run | no_agent_working | git_author
 export const DOC_BASES = ['agent_working', 'case_run', 'no_agent_working', 'git_author'];
 export function basisOf(who, s = null, gitAuthor = null) {
+  if (who.by === 'board') return 'board'; // P224: 다섯째 근거(보드가 직접 씀: 승인된 제안 반영·되돌리기)
   if (who.by === 'human') return 'no_agent_working';
   if (['seat', 'session', 'hook', 'tool'].includes(who.by)) return s && s.caseId ? 'case_run' : 'agent_working';
   if (who.signal === 'several_working') return 'agent_working';
@@ -293,13 +298,17 @@ export function changerLabel(who, gitAuthor = null) {
   if (who.by === 'session') return `rig 밖 세션 @${who.name}`;
   if (who.by === 'hook') return `훅 ${who.hook}`;
   if (who.by === 'tool') return `도구 ${who.tool}`;
+  if (who.by === 'board') return who.why === 'proposal' ? `보드(승인된 제안 ${who.proposal || ''} 반영)` : who.why === 'revert' ? '보드(사람이 고른 되돌리기)' : '보드';
   if (who.signal === 'while_away' && !gitAuthor) return '모름(보드가 꺼져 있던 동안 바뀜)';
   if (who.by === 'human' || who.basis === 'no_agent_working') return HUMAN_GUESS;
   if (who.basis === 'git_author' && gitAuthor) return `git 커밋 작성자 ${gitAuthor}(추정)`;
   return '모름';
 }
-const ACTOR_OF = { seat: 'agent', session: 'agent', hook: 'hook', tool: 'board', human: 'human', unknown: 'board' };
+const ACTOR_OF = { seat: 'agent', session: 'agent', hook: 'hook', tool: 'board', human: 'human', unknown: 'board', board: 'board' };
 const gitRun = (root, args) => new Promise((resolve) => { execFile('git', ['-C', root, ...args], { timeout: 4000, windowsHide: true }, (e, out) => resolve(e ? null : String(out).trim())); });
+
+// P224: 정본 문서의 승인 안 된 바뀜 → { at, by } | null
+function unapprovedOf(st, key, doc) { const m = st && st.docMark ? st.docMark(key, doc) : null; if (!m || !m.unapprovedAt) return null; let by = m.unapprovedBy || null; try { const x = JSON.parse(by); if (x && x.label) by = x.label; } catch {} return { at: m.unapprovedAt, by }; }
 
 // 판에 붙는 문서 보기. b: 백엔드(store, sessions, rig, summary, log, cfg)
 export class RigDocs {
@@ -339,7 +348,7 @@ export class RigDocs {
     for (const d of Object.values(def.docs)) stats[d.name] = d.rel && root ? statDoc(path.resolve(root, d.rel), d.dir) : { exists: null, mtimeMs: null };
     const last = this.lastChanges(key);
     const holders = (n) => holdersOf(def, n);
-    return Object.values(def.docs).map((d) => ({ name: d.name, path: d.path, rel: d.rel, dir: d.dir, role: d.role, layer: d.layer, load: d.load, owner: d.owner, git: d.git, watch: d.watch, exists: stats[d.name].exists, mtimeMs: stats[d.name].mtimeMs, files: stats[d.name].files ?? null, stale: staleOf(d, stats, now), last: last[d.name] || null, holders: holders(d.name) }));
+    return Object.values(def.docs).map((d) => ({ name: d.name, path: d.path, rel: d.rel, dir: d.dir, role: d.role, layer: d.layer, load: d.load, owner: d.owner, git: d.git, watch: d.watch, exists: stats[d.name].exists, mtimeMs: stats[d.name].mtimeMs, files: stats[d.name].files ?? null, stale: staleOf(d, stats, now), last: last[d.name] || null, holders: holders(d.name), ...(d.role === 'canon' ? { unapproved: unapprovedOf(this.b.store, key, d.name) } : {}) })); // P224
   }
   // 문서마다 마지막 doc_changed(장부) → { <문서>: { t, by, seat, session, sessionName, seq } }
   lastChanges(key) {
@@ -383,6 +392,7 @@ export class RigDocs {
           const k = `${w.key}|${d.name}`;
           const prev = this.seen.get(k);
           this.seen.set(k, { sig: cur.sig, mtimeMs: cur.mtimeMs });
+          if (d.role === 'canon' && this.b.rigProposals) this.b.rigProposals.baseline(w.key, d, abs); // P224: 정본의 승인된 내용(처음 본 것)
           if (!prev) {
             // 처음 본다: 장부의 마지막 서명과 다르면 판이 쉬는 동안 바뀐 것(누가는 모름)
             if (last == null) last = this.lastChanges(w.key);
@@ -394,6 +404,9 @@ export class RigDocs {
           if (d.stale) this.noteStale(w.key, r, d, cur, now); // P221: 신선 → 오래됨에 한 번(돌려주는 수는 바뀐 문서 수 그대로)
         }
       }
+      // P224(11.7의 6): 워크트리 산출물이 합쳐졌는지(약 30초마다)
+      this.scans = (this.scans || 0) + 1;
+      if (this.scans % Math.max(1, Math.round(30000 / this.pollMs)) === 0) { try { await sectorsFor(this.b).settleWorktrees(); } catch (e) { this.b.log && this.b.log('rig worktree artifacts error', e.stack); } }
     } finally { this.busy = false; }
     return n;
   }
@@ -443,6 +456,7 @@ export class RigDocs {
       const holders = [...h.seats.map((x) => `${x} 자리`), ...h.hooks.map((x) => `훅 ${x}`), ...h.tools.map((x) => `도구 ${x}`)];
       rigEvent(this.b, { ...base, kind: 'doc_foreign_write', value: who.by === 'seat' ? who.seat : who.by === 'session' ? `@${who.name}` : who.by, actor: ACTOR_OF[who.by] || 'board', text: `쥔 쪽이 아닌 ${label}가 문서 ${d.name}(${d.rel})를 썼다. 쥔 쪽: ${holders.join(', ') || '없음(아무도 쓰지 않는 문서)'}`, data: { doc: d.name, path: d.rel, by: who.by, holders, basis: who.basis } });
     }
+    if (d.role === 'canon' && this.b.rigProposals) try { this.b.rigProposals.onCanonChanged(key, d, abs, { who, label }); } catch (e) { this.b.log && this.b.log('rig canon guard error', e.stack); } // P224(11.5의 4)
     if (this.b.log) this.b.log(`rig doc ${key} ${d.name} changed by ${who.by}${who.name ? ` @${who.name}` : ''} (${who.basis})${foreign ? ' FOREIGN' : ''}`);
     return who;
   }

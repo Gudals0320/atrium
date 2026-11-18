@@ -201,9 +201,11 @@ export class WorkUnits {
     const sectors = sectorsFor(this.b);
     let arts = o.artifacts != null && (!Array.isArray(o.artifacts) || o.artifacts.length) ? sectors.check(caller, o.artifacts) : [];
     const artCtx = sectors.ctxOf(caller);
+    let gate = null; // P224: done 훅의 accept 판정(gate 섹터)
     if (rig) {
       const h = await rig.done({ caller, tryRow: tr, unit: this.store().getUnit(tr.unitId), result, text });
       if (h.action !== 'reject' && h.artifacts && h.artifacts.length) arts = [...arts, ...sectors.fromHook(caller, h.artifacts)]; // P222
+      if (h.accepts) gate = h.accepts;
       if (h.action === 'reject') {
         this.store().addEvent(caller.sessionId, 'unit_done_rejected', { unitId: tr.unitId, tryId: tr.id, result, reason: h.reason });
         throw apiError('rig_rejected', `rig의 done 훅이 닫기를 거절했다(일 ${tr.unitId}은 열린 채다): ${h.reason}`);
@@ -216,7 +218,7 @@ export class WorkUnits {
     const unit = this.store().getUnit(tr.unitId);
     const route = flow ? flow.routeFor(caller, unit, result) : null;
     const out = this.done(caller, o, { flowClaim: !!(route && route.lines.length) });
-    if (arts.length) out.artifacts = sectors.file(caller, arts, artCtx).map((x) => ({ id: x.id, sector: x.sector, path: x.path, sha256: x.sha256, size: x.size })); // P222: 일을 닫은 뒤, 회를 닫기 전에 적는다
+    if (arts.length) out.artifacts = sectors.file(caller, arts, artCtx, { gate }).map((x) => ({ id: x.id, sector: x.sector, path: x.path, sha256: x.sha256, size: x.size })); // P222: 일을 닫은 뒤, 회를 닫기 전에 적는다
     if (route && route.lines.length) {
       const ar = await flow.afterDone(caller, unit, result, text, route);
       out.flow = this.store().unitsOfCase(unit.caseId).filter((u) => u.via && u.via.prevUnit === unit.id).map((u) => ({ unit: u.id, seat: u.seat, to: u.to ? this.nameOf(u.to) : null, waiting: !u.to }));

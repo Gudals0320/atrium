@@ -69,6 +69,9 @@ export function installMerge(Store) {
       this.st('UPDATE OR IGNORE rig_loops SET workspace_key = ? WHERE workspace_key = ?').run(to, from);
       this.st('UPDATE rig_loop_requests SET workspace_key = ? WHERE workspace_key = ?').run(to, from);
       this.st('UPDATE OR IGNORE rig_permits SET workspace_key = ? WHERE workspace_key = ?').run(to, from); // P223
+      this.st('UPDATE rig_proposals SET workspace_key = ? WHERE workspace_key = ?').run(to, from); // P224
+      this.st('UPDATE OR IGNORE rig_doc_marks SET workspace_key = ? WHERE workspace_key = ?').run(to, from); // P224
+      this.st('DELETE FROM rig_doc_marks WHERE workspace_key = ?').run(from);
       for (const t of ['rig_seat_counters', 'rig_cycles', 'rig_versions', 'rig_loops']) this.st(`DELETE FROM ${t} WHERE workspace_key = ?`).run(from);
       return n;
     },

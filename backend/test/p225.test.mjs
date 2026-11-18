@@ -19,7 +19,9 @@ import { Rig, validateRig, rigHandlers, SEAT_CLOSES } from '../src/rig.mjs';
 import { RigDocs } from '../src/rig-docs.mjs';
 import { TRY_STOP_VALUES } from '../src/rig-ledger.mjs';
 import { RigAmp, seatPermitHash, nestedShell, NESTED_SHELL_REASON, claudeSettingsAmp } from '../src/rig-amp.mjs';
-import { permitNeeds } from '../../app/src/renderer/lib/rig-permits.js';
+import { proposalsFor } from '../src/rig-proposals.mjs';
+import { sectorsFor } from '../src/rig-sectors.mjs';
+import { draftWarnings } from '../src/rig-admin.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FX = path.join(HERE, 'fixtures');
@@ -166,14 +168,14 @@ test('P225 승인 해시: 켜기 확인이 승인한 자리도 권한 칸이 바
     assert.deepEqual(b.rig.permitNeeds().map((x) => [x.workspace, x.seat]), [[ws.key, 'worker']]);
     assert.ok(b.rig.status(ws.key).warnings.some((w) => /seats\.worker\.permission "unattended"는 사람이 아직 승인하지 않아 scoped로 돈다\(승인한 뒤/.test(w)));
     // 주기: 장부 pending(풀림) 한 줄, 승인 줄을 지움, 창에 알림. 같은 상태로 다시 보면 아무것도 하지 않는다
-    const casts = b.wsCasts;
+    const casts = (b.casts || []).filter((x) => x.n === 'rig.asks').length;
     assert.equal(b.rig.watchPermits(ws.key), true);
     const pend = ledger(b, ws.key, { kinds: ['seat_permission'] }).filter((r) => r.value === 'pending');
     assert.equal(pend.length, 1);
     assert.deepEqual([pend[0].seat, pend[0].actor, pend[0].data.lapsed, pend[0].data.pending], ['worker', 'board', true, true]);
     assert.match(pend[0].text, /승인한 뒤 자리의 권한 칸이 바뀜/);
     assert.equal(b.store.rigPermitRows(ws.key).length, 0, '해시가 바뀐 승인 줄은 지운다');
-    assert.equal(b.wsCasts, casts + 1);
+    assert.equal((b.casts || []).filter((x) => x.n === 'rig.asks').length, casts + 1, '응답 필요 카드를 다시 읽게 알림');
     assert.equal(b.rig.watchPermits(ws.key), false);
     // 사람이 창에서 승인(응답 필요 항목의 [승인] = rig.permit)
     const r = await H['rig.permit']({ workspace: ws.key, seats: ['worker'] }, local);
@@ -191,7 +193,7 @@ test('P225 승인 해시: 켜기 확인이 승인한 자리도 권한 칸이 바
   } finally { await stop(); }
 });
 
-test('P225 승인 해시: 관리자가 정의에 더한 무인 자리도 응답 필요 항목. 꺼진 rig는 항목 없음(켜기 확인이 승인), 창 목록은 워크스페이스의 rigPermits로', async () => {
+test('P225 승인 해시: 관리자가 정의에 더한 무인 자리도 응답 필요 카드(seat_permit, P224 rig.asks·rig.decide). 꺼진 rig는 카드 없음(켜기 확인이 승인)', async () => {
   const { b, ws, stop } = await board({ def: permDef(), enable: false });
   try {
     assert.deepEqual(b.rig.permitNeeds(), [], '꺼진 rig');
@@ -202,17 +204,24 @@ test('P225 승인 해시: 관리자가 정의에 더한 무인 자리도 응답 
     b.rig.watchPermits(ws.key);
     const pend = ledger(b, ws.key, { kinds: ['seat_permission'] }).filter((r) => r.value === 'pending');
     assert.deepEqual(pend.map((r) => [r.seat, r.data.lapsed]), [['main', false]]);
-    // 창: 워크스페이스 목록의 rigPermits → 응답 필요 항목
-    assert.deepEqual(permitNeeds([{ key: ws.key, rigPermits: ['main'] }, { key: 'x' }]), [{ ws: ws.key, seat: 'main', key: `${ws.key}|main` }]);
-    assert.deepEqual(permitNeeds(null), []);
-    // 판(backend.mjs)의 inbox·워크스페이스 목록이 rig 항목을 싣는다
+    // 응답 필요 카드(P224 rig.asks와 같은 꼴): seat_permit, 승인은 이 PC의 창만(rig.decide)
+    const P = proposalsFor(b);
+    const card = P.asks().find((a) => a.kind === 'seat_permit');
+    assert.deepEqual([card.id, card.workspace, card.seat], [`permit:${ws.key}|main`, ws.key, 'main']);
+    assert.ok(card.t > 0 && card.wsName);
+    assert.throws(() => P.answer(card.id, 'approve', { by: 'device' }), (e) => e.code === 'forbidden');
+    assert.throws(() => P.answer(card.id, 'reject', { by: 'human' }), (e) => e.code === 'bad_request');
+    assert.deepEqual(P.answer(card.id, 'approve', { by: 'human' }).approved, ['main']);
+    assert.equal(P.asks().filter((a) => a.kind === 'seat_permit').length, 0);
+    assert.ok((b.casts || []).some((x) => x.n === 'rig.asks'), '카드 목록을 다시 읽게 알림');
+    // atrium inbox(판 inbox)에도 실린다
     const src = fs.readFileSync(path.join(HERE, '..', 'src', 'backend.mjs'), 'utf8');
     assert.match(src, /kind: 'seat_permit', \.\.\.x, text: `무인 자리 승인: \$\{x\.seat\}`/);
-    assert.match(src, /rigPermits: l\.map\(\(x\) => x\.seat\)/);
+    d.seats.main.writes = ['reports/', 'notes/']; rewrite(b, ws.key, d);
     // 주기(rig 고리 tick)가 승인 기다림을 본다
     b.rig.permitSig.clear();
     await b.branch.flow.loops.tick(Date.now());
-    assert.equal(b.rig.permitSig.get(ws.key), 'main');
+    assert.equal(b.rig.permitSig.get(ws.key), 'main', '칸이 바뀌어 다시 승인 전');
   } finally { await stop(); }
 });
 
@@ -439,3 +448,56 @@ test('P225 자리 close never와 v1 정의는 회가 닫혀도 세션을 닫지 
   } finally { await C.stop(); }
 });
 
+
+// ---------- 11.9 ----------
+test('P225(11.9의 5) 개선 고리의 회가 산출물 없이 닫히면 produces_none 경고 없이 case_done data.outcome "nothing". 작업 고리는 그대로 경고', async () => {
+  const { b, ws, add, F, seat, stop } = await board();
+  try {
+    const main = add('main'); seat(main, 'main');
+    const c = F().newCase(ws.key, main, 'cycle', { loop: 'retro', name: '회고' });
+    F().closeDone(b.store.getCase(c.id));
+    const done = ledger(b, ws.key, { kinds: ['case_done'] }).at(-1);
+    assert.equal(done.data.outcome, 'nothing');
+    assert.equal(ledger(b, ws.key, { kinds: ['artifact_warning'] }).filter((r) => r.value === 'produces_none').length, 0);
+    // 작업 고리(produces 있음)는 그대로 경고, outcome 없음
+    const d = defOf(GROW); d.loops.work.produces = ['proposals']; d.loops.work.produces = ['out']; d.docs.out = { path: 'out/', role: 'sector', intake: 'register' };
+    rewrite(b, ws.key, d);
+    const c2 = F().newCase(ws.key, main, 'human', { loop: 'work', name: '일' });
+    F().closeDone(b.store.getCase(c2.id));
+    assert.equal(ledger(b, ws.key, { kinds: ['case_done'] }).at(-1).data, null);
+    assert.equal(ledger(b, ws.key, { kinds: ['artifact_warning'] }).filter((r) => r.value === 'produces_none').length, 1);
+  } finally { await stop(); }
+});
+
+test('P225(11.9의 9) 제안을 내는 고리의 입구 자리가 초안을 쓸 폴더가 없으면 rig check 경고. 견본(규칙이 자라는 반복 작업)은 .atrium/drafts/main/', async () => {
+  const g = defOf(GROW);
+  assert.deepEqual(g.seats.main.writes, ['corrections', '.atrium/drafts/main/']);
+  const v = (mut) => { const d = defOf(GROW); mut(d); const r = validateRig(d, { root: GROW, exists }); assert.ok(r.ok, r.reason); return draftWarnings(r.def); };
+  assert.deepEqual(v(() => {}), []);
+  assert.match(v((d) => { d.seats.main.writes = ['corrections']; })[0], /^loops\.retro는 제안을 내는 고리인데 입구 자리 main가 초안을 쓸 곳이 없다.*\.atrium\/drafts\/main\//);
+  assert.equal(v((d) => { d.seats.main.writes = false; }).length, 1);
+  assert.deepEqual(v((d) => { delete d.seats.main.writes; }), [], 'writes 없음은 제한 없음');
+  const { b, ws, stop } = await board({ def: (() => { const d = defOf(GROW); d.seats.main.writes = ['corrections']; return d; })() });
+  try { const chk = await b.branch.rigAdmin.run(ws.key, 'check'); assert.ok(chk.warnings.some((w) => /초안을 쓸 곳이 없다/.test(w))); } finally { await stop(); }
+});
+
+test('P225(11.9의 10) gate 섹터에서 done 훅이 판정을 주지 않으면 사람 받아들이기 카드(human 섹터와 같은 artifact 카드), 거절 판정은 카드 없이 새것', async () => {
+  const d = defOf(GROW); d.docs.out = { path: 'out/', role: 'sector', intake: 'register', accept: 'gate' };
+  const { b, ws, stop } = await board({ def: d });
+  try {
+    const st = b.store; const S = sectorsFor(b); const P = proposalsFor(b);
+    const mk = (p) => st.getArtifact(st.insertArtifact({ workspaceKey: ws.key, sector: 'out', path: p, dir: false, sha256: 'x', size: 1, loop: 'work', caseId: null, unitId: null, tryId: null, seat: 'main', sessionId: 'S', source: 'agent', t: Date.now() }));
+    const a1 = mk('out/a.md'); const a2 = mk('out/b.md');
+    S.gateAccept(ws.key, a1, []);
+    S.gateAccept(ws.key, a2, [false]);
+    assert.equal(st.getArtifact(a1.id).stateWhy, 'gate_none');
+    const cards = P.asks().filter((a) => a.kind === 'artifact');
+    assert.deepEqual(cards.map((a) => a.artifact.path), ['out/a.md']);
+    const w = ledger(b, ws.key, { kinds: ['artifact_warning'] });
+    assert.deepEqual(w.map((r) => r.value), ['gate_none', 'gate_rejected']);
+    assert.equal(w[0].data.fallback, 'human');
+    P.answer(cards[0].id, 'accept', { by: 'human' });
+    assert.equal(st.getArtifact(a1.id).state, 'accepted');
+    assert.equal(P.asks().filter((a) => a.kind === 'artifact').length, 0);
+  } finally { await stop(); }
+});

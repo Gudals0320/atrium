@@ -286,7 +286,11 @@ export class RigFlow {
     const st = this.store(); const caseId = c.id;
     st.updateCase(caseId, { state: 'done', closedAt: Date.now(), ownerWait: null, ownerWaitDelivery: null });
     st.addEvent(c.owner, 'rig_case_done', { caseId, ...(why ? { why } : {}), ...(value ? { value } : {}) });
-    rigEvent(this.b, { kind: 'case_done', caseId, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', ...(value ? { value } : {}), text: why || null, ...(value ? { data: { loop: c.loop || null, by: value } } : {}) });
+    // P225(rig2-design 11.9의 5): 개선 고리(kind improve)의 회가 산출물(제안 포함) 없이 끝나면 경고가 아니라 data.outcome "nothing"
+    let outcome = null;
+    try { const d = c.loop ? this.defOfCase(c) : null; const lp = d && d.loops ? d.loops[c.loop] : null; if (lp && lp.kind === 'improve' && st.artifacts && !st.artifacts({ ws: c.workspaceKey, caseId, limit: 1 }).length) outcome = 'nothing'; } catch {}
+    const data = value || outcome ? { loop: c.loop || null, ...(value ? { by: value } : {}), ...(outcome ? { outcome } : {}) } : null;
+    rigEvent(this.b, { kind: 'case_done', caseId, session: c.owner, seat: this.seatOfSession(c.owner), actor: 'board', ...(value ? { value } : {}), text: why || null, ...(data ? { data } : {}) });
     try { sectorsFor(this.b).onRunDone(st.getCase(caseId)); } catch (e) { this.b.log('rig artifacts run done error', e.stack); } // P222: 새 산출물은 받아들임, produces인데 없으면 경고
     try { this.queueRunClose(st.getCase(caseId)); } catch (e) { this.b.log('rig run close error', e.stack); } // P225: close run 자리 세션
     this.b.log(`rig case ${caseId} done${why ? ` (${why})` : ''}`);

@@ -24,6 +24,7 @@ import { rigLoopHandlers } from './rig-loops.mjs'; // P221: rig.loops·pause·re
 import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
+import { RigProposals, rigProposalHandlers } from './rig-proposals.mjs'; // P224: rig 2 제안과 승인, 정본 지키기
 import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
@@ -252,6 +253,7 @@ export class Backend {
     this.rig = new Rig(this); // P182
     this.rigAmp = new RigAmp(this); // P189
     this.rigDocs = new RigDocs(this); // P219: rig 2 문서 바뀜 보기
+    this.rigProposals = new RigProposals(this); // P224: 제안과 승인, 정본 지키기, 응답 필요 카드(rig.asks)
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
@@ -605,11 +607,7 @@ export class Backend {
     const names = workspaceNames(rows);
     const sums = [...this.sessions.values()].map((s) => this.summary(s));
     const labels = wsLabels(readGroups(this), rows); // P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로(영역 이름표, 사이드바)
-    return rows.map((w) => ({ key: w.key, name: names.get(w.key), ...(labels.has(w.key) ? { label: labels.get(w.key) } : {}), kind: w.kind, root: w.root, createdAt: w.createdAt, counts: workspaceCounts(sums, w.key), x: w.x, y: w.y, auto: !!w.auto, worktrees: this.worktrees ? this.worktrees.view(w.key) : [], ...this.rigPermitsOf(w.key) })); // P27: 워크트리 영역. P225: rigPermits
-  }
-  // P225: 워크스페이스의 승인 전 무인 자리(창의 응답 필요 목록)
-  rigPermitsOf(key) {
-    try { const l = this.rig && this.rig.permitNeeds ? this.rig.permitNeeds(key) : []; return l.length ? { rigPermits: l.map((x) => x.seat) } : {}; } catch { return {}; }
+    return rows.map((w) => ({ key: w.key, name: names.get(w.key), ...(labels.has(w.key) ? { label: labels.get(w.key) } : {}), kind: w.kind, root: w.root, createdAt: w.createdAt, counts: workspaceCounts(sums, w.key), x: w.x, y: w.y, auto: !!w.auto, worktrees: this.worktrees ? this.worktrees.view(w.key) : [] })); // P27: 워크트리 영역
   }
   // P48: 폴더 탐색기의 최근 폴더(워크스페이스 뿌리, 최근 세션 폴더)
   recentDirs() { const ss = [...this.sessions.values()].sort((a, b) => (b.touchedAt || b.createdAt || 0) - (a.touchedAt || a.createdAt || 0)); return [...this.store.workspaces().map((w) => w.root), ...ss.map((x) => x.cwd)].filter(Boolean); }
@@ -2158,6 +2156,7 @@ export class Backend {
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만)
       ...rigLoopHandlers(this), // P221: 고리 목록, 멈추기·잇기, 회 이름 고치기
       ...rigSectorHandlers(this), // P222: 산출물 등록부
+      ...rigProposalHandlers(this), // P224: 제안과 승인(rig.asks, rig.decide, rig.proposals)
       ...rigMapHandlers(this), // P217: 장부 읽기(rig.events)와 구조 지도 데이터(rig.map)
       ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)

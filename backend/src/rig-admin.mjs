@@ -16,14 +16,28 @@ import path from 'node:path';
 import { RIG_FILE, validateRig, protectedHits, POINTER_RE, gitStateOf, worktreeWarnings, SEAT_KINDS, seatEffortError } from './rig.mjs';
 import { harnessOf } from './launchers.mjs'; // P209: 런처 자리의 종류
 import { codexAllowWarning } from './rig-amp.mjs'; // P225
+
+// P225(rig2-design 11.9의 9): 제안을 내는 고리(kind improve, 또는 produces에 proposals 섹터)의 입구 자리가 초안(atrium rig propose --file)을 쓸 폴더가 없으면 경고.
+//   writes가 false거나, 경로 목록에 폴더(끝이 /)가 하나도 없으면 쓸 곳이 없다(writes 없음 = 제한 없음은 괜찮다). 만들기 대화상자가 .atrium/drafts/<자리>/를 넣는다
+export function draftWarnings(def) {
+  const out = [];
+  for (const l of Object.values((def && def.loops) || {})) {
+    if (l.implicit || !(l.kind === 'improve' || (l.produces || []).includes('proposals'))) continue;
+    const sa = def.amp && def.amp.seats ? def.amp.seats[l.entry] : null;
+    const w = sa ? sa.writes : null;
+    if (w === false || (Array.isArray(w) && !w.some((p) => /[\\/]$/.test(p)))) out.push(`loops.${l.name}는 제안을 내는 고리인데 입구 자리 ${l.entry}가 초안을 쓸 곳이 없다(writes: ${w === false ? 'false' : w.join(', ')}). seats.${l.entry}.writes에 ".atrium/drafts/${l.entry}/"를 더한다(atrium rig propose --file의 초안)`);
+  }
+  return out;
+}
 import { shownName } from './session-label.mjs';
 import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장부
 import { sectorsFor } from './rig-sectors.mjs'; // P222: 산출물 등록부
+import { proposalsFor } from './rig-proposals.mjs'; // P224: 제안과 승인
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
-export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name', 'artifacts']; // P222: artifacts(산출물 등록부, 읽기만) // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
+export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name', 'artifacts', 'propose', 'proposals', 'approve', 'reject']; // P224: 제안과 승인 // P222: artifacts(산출물 등록부, 읽기만) // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
 export const RIG_READ_OPS = ['check', 'log']; // P209: 읽기만(제작 세션도 쓴다)
 
 export class RigAdmin {
@@ -47,6 +61,10 @@ export class RigAdmin {
     if (op === 'status') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig status는 워크스페이스의 세션만 쓴다.'); return this.status(s.workspaceKey); }
     // P222: artifacts도 읽기만이라 그 워크스페이스의 어느 판 세션이든
     if (op === 'artifacts') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig artifacts는 워크스페이스의 세션만 쓴다.'); return this.artifacts(s.workspaceKey, o); }
+    // P224: propose는 켜진 rig의 자리 세션(보통 개선 고리의 입구), proposals는 읽기라 그 워크스페이스의 어느 세션이든.
+    //   approve·reject는 관리자 자리가 관리자 승인 길(정의 제안)만 정한다. 사람 승인 제안은 보드 창·휴대폰의 응답 필요 목록에서
+    if (op === 'propose') return proposalsFor(this.b).propose(s, { target: o.target, text: o.text, file: o.file, why: o.why });
+    if (op === 'proposals') { if (!s.workspaceKey) throw apiError('forbidden', 'atrium rig proposals는 워크스페이스의 세션만 쓴다.'); return this.proposals(s.workspaceKey, o); }
     if (op === 'name' && !this.isManager(s)) {
       const c = this.store().getCase(String(o.caseId || o.case || '').trim());
       if (!c || c.workspaceKey !== s.workspaceKey || c.owner !== s.sessionId) throw apiError('forbidden', `atrium rig name은 관리자 자리와 그 회의 주인(입구 자리 세션)이 쓴다${c && c.workspaceKey === s.workspaceKey ? `: 회 ${c.id}의 주인은 @${this.branch.units.nameOf(c.owner)}다` : ''}.`);
@@ -79,9 +97,18 @@ export class RigAdmin {
     if (op === 'pause') return this.branch.flow.loops.pause(key, o.target, { by, who });
     if (op === 'resume') return this.branch.flow.loops.resume(key, o.target, { by, who });
     if (op === 'name') return this.branch.flow.loops.name(key, o.caseId || o.case, o.name, { by, who });
+    if (op === 'proposals') return this.proposals(key, o); // P224
+    if (op === 'approve' || op === 'reject') return proposalsFor(this.b).decide(key, o.id, op, { by, who, reason: o.reason }); // P224
     throw apiError('bad_request', `모르는 일: ${op}`);
   }
 
+  // P224: 제안 목록(atrium rig proposals [--id <제안>]) → { workspace, proposals } | { proposal }(diff 포함)
+  proposals(key, o = {}) {
+    this.rig();
+    const P = proposalsFor(this.b);
+    if (o.id) { const r = this.store().getProposal(String(o.id)); if (!r || r.workspaceKey !== key) throw apiError('not_found', `그런 제안이 없다: ${o.id}`); return { workspace: key, proposal: P.view(r) }; }
+    return P.list(key, { limit: o.limit });
+  }
   // P222: 산출물 등록부(atrium rig artifacts [--sector] [--run]) → rig-sectors list
   artifacts(key, o = {}) { this.rig(); return sectorsFor(this.b).list(key, { sector: o.sector != null ? String(o.sector) : null, run: o.run != null ? String(o.run) : null, limit: o.limit }); }
   // P221: 고리와 끝나지 않은 회(atrium rig status, 판 API rig.loops보다 넓게) → { workspace, state, version, loops, runs }
@@ -115,6 +142,7 @@ export class RigAdmin {
     // P209: 자리 effort·model. 런처 이름 자리는 그 런처의 종류로 effort를 다시 보고, 앉은 keep 자리 세션에는 다음에 띄울 때부터 먹는다고 적는다
     const sn = this.seatNotes(key, v.def.seats, v.def);
     out.warnings.push(...sn.warnings, ...(rig.permitWarnings ? rig.permitWarnings(key, v.def) : [])); // P223: 승인 전 unattended 자리
+    out.warnings.push(...draftWarnings(v.def)); // P225(11.9의 9): 제안 초안을 쓸 곳
     if (sn.reason) return { ...out, ok: false, reason: sn.reason };
     if (hits.length) return { ...out, protectedHits: hits, reason: `사람만 고치는 자리를 바꾼다: ${hits.join(', ')}. 이대로 쓰면 보드가 이 정의를 쓰지 않는다(지금 버전을 그대로 쓴다).` };
     return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], closes: v.def.seats ? Object.values(v.def.seats).filter((x) => x.close).map((x) => ({ seat: x.name, close: x.close })) : [], /* P225: fresh 자리 close */ flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), loops: Object.values(v.def.loops || {}).map((l) => ({ name: l.name, kind: l.kind, implicit: !!l.implicit, trigger: l.trigger.type === 'request' ? `request → ${l.entry}` : l.trigger.type === 'every' ? `every ${l.trigger.every} → ${l.entry}` : `event ${l.trigger.event}`, entry: l.entry, lines: l.lines.length, holds: l.holds, ...(l.task ? { task: l.task } : {}) })), manager: v.def.manager, format: v.def.version || 1, docs: v.def.docs ? Object.values(v.def.docs).map((d) => ({ name: d.name, role: d.role, layer: d.layer, path: d.rel || d.path, watch: d.watch })) : [] } }; // P219: 문서

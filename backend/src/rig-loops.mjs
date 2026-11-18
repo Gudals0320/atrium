@@ -1,7 +1,7 @@
 // P221: rig 2의 R2 고리(docs research rig2-design.md 2절 "고리", 2.1 "판이 하는 일"의 고리 줄, 3절 loops 칸, 4절, 5절, 11.3·11.4).
 // - 정의 칸 loops: { "<이름>": { kind: work | improve, trigger: { request: <입구 자리> } | { every: "7d", notify?, at? } | { event, … }, entry, flow, holds, produces, approve, task? } }.
 //   loops의 flow 줄은 고리 차례대로 이어 붙여 지금 흐름(validateFlow)으로 검사하고 줄 번호를 그대로 쓴다(줄마다 어느 고리인지 lines에 적는다).
-//   event 계기, produces(R5), approve(R6), at(R7), steps는 받기만 한다(경고). task는 every 회의 첫 일 글(P223: rig2-design 11.6의 4로 정식 칸. request 고리에는 쓰지 않는다).
+//   event 계기, at(R7), steps는 받기만 한다(경고). produces는 R5(P222), approve는 R6(P224, rig-proposals.mjs)이 쓴다. task는 every 회의 첫 일 글(P223: rig2-design 11.6의 4로 정식 칸. request 고리에는 쓰지 않는다).
 // - loops가 없는 정의(v1, loops 없는 v2)는 그대로 돈다: seats + flow는 이름이 work인 작업 고리 하나(implicit, 건은 지금처럼 자리 세션의 첫 맡기기가 연다),
 //   cycles[i]는 개선 고리 improve(둘째부터 improve-<i+1>)의 every 계기(시각은 그대로 rig_cycles, 도는 길은 rig-flow cycleTick).
 // - 회 = 건(rig_cases, kind 이름 그대로). 회는 고리(loop)와 이름(name)을 쥔다. request 계기: 사람이나 rig 밖 세션이 입구 자리(keep)에 보낸 글이
@@ -173,7 +173,7 @@ export function finishLoops(raw, fl, cycles, docs, lineOf, { cycleMinMs = 360000
     const pr = docNames(x.produces, `${at}.produces`, 'sector'); if (!pr.ok) return bad(pr.reason);
     // P222(R5): produces는 이 고리의 회가 산출물을 내는 섹터다(회가 아무것도 내지 않고 끝나면 장부에 artifact_warning). 받지 못하는 섹터({owns}·저장소 밖)는 경고
     for (const n of pr.list) if (!docs[n].rel || docs[n].layer !== 'project') warnings.push(`${at}.produces의 ${n}는 아직 산출물을 받지 못하는 섹터다(${docs[n].rel ? `${docs[n].layer} 층` : '경로 {owns}'})`);
-    if (x.approve != null) { if (!LOOP_APPROVES.includes(x.approve)) return bad(`${at}.approve는 ${LOOP_APPROVES.join(', ')} 가운데 하나다: ${JSON.stringify(x.approve)}`); warnings.push(`${at}.approve(${x.approve})는 R6(제안과 승인) 전이라 받기만 한다`); }
+    if (x.approve != null && !LOOP_APPROVES.includes(x.approve)) return bad(`${at}.approve는 ${LOOP_APPROVES.join(', ')} 가운데 하나다(정의 제안의 승인: human 사람, manager·none 관리자 자리. 정본 제안은 늘 사람): ${JSON.stringify(x.approve)}`); // P224: R6이 쓴다
     if (x.steps != null) { if (!strList(x.steps)) return bad(`${at}.steps는 글 배열이다`); warnings.push(`${at}.steps는 받기만 한다(보드가 돌리지 않는다)`); }
     if (x.task != null && (typeof x.task !== 'string' || !x.task.trim())) return bad(`${at}.task는 글이다(every 회의 첫 일 글: 판이 회를 열 때 입구 자리에 보내는 일)`);
     if (x.task != null && x.task.length > TASK_MAX) return bad(`${at}.task는 ${TASK_MAX}자까지다(${x.task.length}자). 긴 지시는 자리의 guide나 정본 문서에 두고 task에서 가리킨다`);
@@ -395,8 +395,16 @@ export class RigLoops {
     const holds = loop.holds.map((n) => (docs[n] ? `${n}(${docs[n].rel || docs[n].path})` : n));
     if (loop.kind === 'improve') {
       const body = this.flow.cycleSummary(key, r, { index: loop.name, every: loop.trigger.every, staleMs: IMPROVE_STALE_MS }, { since, now });
-      const intro = `${head} ${utc(since)}부터 ${utc(now)}까지(UTC)의 rig 장부 요약을 읽고, ${holds.length ? `이 고리가 쥔 문서(${holds.join(', ')})와 ` : ''}정의(.atrium/rig.json)·안내·정본에 고칠 것이 있으면 고친다(고친 정의는 버전으로 남는다: atrium rig log, atrium rig check). 끝나면 done으로 한 일을 보고한다.`;
-      return body.replace(/^[^\n]*/, intro);
+      // P224(R6): 정본은 직접 고치지 않고 제안한다(사람 승인). 정의는 approve가 human이면 제안, 아니면 관리자 자리가 고치거나 제안해 바로 반영. 지난 거절을 붙인다
+      const canon = Object.values(docs).filter((d) => d.role === 'canon' && d.rel && d.layer === 'project').map((d) => `${d.name}(${d.rel})`);
+      const defLine = loop.approve === 'human' ? '정의(.atrium/rig.json)도 제안으로 고친다(--target definition, 사람 승인)' : '정의(.atrium/rig.json)는 관리자 자리가 고치거나 --target definition으로 제안한다(관리자 자리의 정의 제안은 바로 반영되어 버전으로 남는다: atrium rig log)';
+      const intro = `${head} ${utc(since)}부터 ${utc(now)}까지(UTC)의 rig 장부 요약을 읽고, ${holds.length ? `이 고리가 쥔 문서(${holds.join(', ')})를 고치고 ` : ''}정본·정의에 고칠 것이 있으면 제안한다. 정본(${canon.join(', ') || '없음'})은 직접 고치지 않는다: 새 내용 전체(또는 통합 diff)를 파일에 쓰고 atrium rig propose --target <문서> --file <파일> --why "<까닭 한 줄>"로 낸다(사람이 승인하면 보드가 반영한다). ${defLine}. 끝나면 done으로 한 일과 낸 제안을 보고한다.`;
+      // 지난 회(이 고리의 끝난 회 가운데 가장 늦은 것)가 열린 뒤 거절·반영 못 한 제안. 처음 회면 모두(최근 10)
+      const st = this.b.store;
+      const prev = st.casesOf ? st.casesOf(key).filter((c) => c.loop === loop.name && (c.state === 'done' || c.state === 'cancelled')).sort((x, y) => y.createdAt - x.createdAt)[0] : null;
+      const lessons = this.b.rigProposals ? this.b.rigProposals.lessons(key, prev ? prev.createdAt : 0) : [];
+      const out = body.replace(/^[^\n]*/, intro);
+      return lessons.length ? `${out}\n\n지난 회 뒤 거절되거나 반영되지 못한 제안(같은 것을 다시 내지 않는다):\n${lessons.join('\n')}` : out;
     }
     return [head, loop.task || '이 자리의 안내(atrium guide)와 문서를 따라 이번 회의 일을 하고, 끝나면 done으로 한 일을 보고한다.', ...(holds.length ? ['', `이 고리가 쥔 문서: ${holds.join(', ')}`] : []), ...producesLines(loop, docs)].join('\n');
   }
