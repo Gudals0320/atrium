@@ -9,7 +9,12 @@ export function tailLines(text, n = 12) {
 export function isTrustDialog(text) { return /Quick safety check/i.test(text) && /trust this folder/i.test(text); }
 // P192: AGY(1.5.9)의 작업 공간 신뢰 질문("Do you trust the contents of this project?" 아래 "Yes, I trust this folder" / "No, exit"). 7501은 blocked(kind permission, "Trust this folder?")
 export function isAgyTrustDialog(text) { return /Do you trust the contents of this project\?/i.test(text) && /Yes, I trust this folder/i.test(text); }
-export const trustDialogOf = (kind, text) => (kind === 'agy' ? isAgyTrustDialog(text) : (kind || 'claude') === 'claude' ? isTrustDialog(text) : false);
+// P208: Codex(0.167)가 처음 쓰는 폴더(git 저장소)에서 묻는 신뢰 질문. "Folder access" 아래 "Trust this folder? Codex can read, edit, and run files here…",
+//   선택지 "1. Trust and continue" / "2. Back to …". Codex는 이때 터미널 상태를 말하지 않는다(hc status 없음)
+export function isCodexTrustDialog(text) { const t = String(text || ''); return /Trust this folder\?/i.test(t) && /Trust and continue/i.test(t); }
+export const trustDialogOf = (kind, text) => (kind === 'agy' ? isAgyTrustDialog(text) : kind === 'codex' ? isCodexTrustDialog(text) : (kind || 'claude') === 'claude' ? isTrustDialog(text) : false);
+// P208: 판이 화면으로 신뢰 질문을 보는 종류(hc 어댑터의 지켜보기, backend checkBlocked, state.mjs trust_wait)
+export const TRUST_SCREEN_KINDS = new Set(['claude', 'agy', 'codex']);
 
 // P71: 워크트리 나가기 질문. `claude -w`로 띄운 세션이 끝날 때 Claude Code가 묻는다(제목 "Exiting worktree session").
 // "You have 13 commits on worktree-x. The branch will be deleted if you remove the worktree." 아래에 "1. Keep worktree", "2. Remove worktree"

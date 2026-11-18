@@ -28,7 +28,7 @@ import { EFFORTS } from './settings.mjs';
 import { clip, promptTask } from './text.mjs';
 import { BACKEND_ROOT, terminalSessionEnv } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
-import { harnessOf, splitArgs, joinArgs, startOpt } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
+import { harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192
 import { buildCatalog, resolveModel, gatewaysOf, fetchGatewayModels, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
@@ -311,12 +311,15 @@ export function childBundle(root = BACKEND_ROOT, entry = 'bin/atrium-child.mjs')
   walk(entry);
   return out;
 }
+// P208: <이름>.target은 실행 파일 꾸러미(<이름>.exe, shim-exe.mjs)가 읽는 두 줄(node 경로, atrium-child.mjs 경로)이다.
+//   PowerShell·cmd는 PATHEXT 순서로 .exe를 .cmd보다 먼저 찾는다. Git Bash는 확장자 없는 sh 꾸러미를 쓴다
 export function childShims({ node = process.execPath, script = path.join(BACKEND_ROOT, 'bin', 'atrium-child.mjs') } = {}) {
   const fwd = (p) => p.split(path.sep).join('/');
   const out = {};
   for (const c of ['atrium', 'mtask']) {
     out[c] = `#!/bin/sh\n# Atrium 보드(P8, P116): 보드가 띄운 세션의 명령. 사용법: ${c} help\nexec "${fwd(node)}" "${fwd(script)}" "$@"\n`;
     out[`${c}.cmd`] = `@echo off\r\nrem Atrium 보드(P8, P116): 보드가 띄운 세션의 명령. 사용법: ${c} help\r\n"${node}" "${script}" %*\r\n`;
+    out[`${c}.target`] = `${node}\r\n${script}\r\n`;
   }
   return out;
 }
@@ -636,6 +639,10 @@ export class Branch {
     const launcherEffort = route.type === 'launcher' && harnessOf(route.launcher.harness).fields.includes('effort') ? route.launcher.effort || null : null;
     const effort = claude ? (o.effort ? String(o.effort) : route.type === 'launcher' ? launcherEffort : parent.effort || null) : null; // P36: --effort, 빼면 물려받는다. P41: 호출자면 호출자의 것
     if (effort && !EFFORTS.includes(effort)) throw apiError('bad_request', `추론 수준은 ${EFFORTS.filter(Boolean).join(', ')} 가운데 하나: ${effort}`);
+    // P208: 다른 종류에 준 --effort는 판의 띄우기 길(backend spawn, effortArgsOf)이 그 하네스 인자로 옮긴다(Codex -c model_reasoning_effort, 호출자 인자를 이긴다).
+    //   여기서는 띄우기 전에 값을 검사하고 응답에 보일 인자·"무시했다" 줄을 만든다
+    const otherEffort = !claude && o.effort ? String(o.effort) : null;
+    const effortPlan = otherEffort ? effortArgsOf(kind, otherEffort, other.args) : null;
     const prompt = o.prompt == null ? null : String(o.prompt);
     if (prompt != null && !prompt.trim()) throw apiError('bad_request', "첫 요청을 입력하세요.");
     if (prompt != null) checkAgentText(prompt, '첫 요청'); // P180: 판 알림 머리로 시작할 수 없다
@@ -675,7 +682,8 @@ export class Branch {
       // P41: 호출자면 그 호출자의 하네스·모델·옵션·env를 그대로 쓴다(준 --effort만 덮는다). 게이트웨이 모델과 게이트웨이 물려받기는 그 게이트웨이 호출자의 env로, 권한 모드는 부모의 것
       const base = { cwd, name, worktree: gate ? null : worktree, parentSessionId: parent.sessionId, branch: info, ...(o[SEAT_SPAWN] ? { [SEAT_SPAWN]: o[SEAT_SPAWN] } : {}) }; // P189: 판이 자리를 위해 띄움
       // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
-      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: joinArgs(other.args) }, permissionMode: parent.permissionMode } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
+      const oe = effortPlan && effortPlan.applied ? { effort: otherEffort } : {}; // P208
+      const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: joinArgs(other.args) }, permissionMode: parent.permissionMode, ...oe } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode, ...oe }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
         : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined }
         : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode }
         : { ...base, kind, model, effort, permissionMode: parent.permissionMode, ...(route.args ? { args: route.args } : {}) };
@@ -722,10 +730,11 @@ export class Branch {
     const needsTrust = state === 'trust_wait' || (wait && wait.state === 'trust_wait') || (!!gate && !['exited', 'closed', 'error'].includes(state) && this.gated(child.sessionId));
     return {
       name, sessionId: child.sessionId, agentName: child.agentName, paneId: child.paneId, kind, role, depth,
-      relation: head ? null : relation, relationText: head ? null : peer ? `동료(@${name}는 너의 하위 워커가 아니다. 결과를 보내오지 않고 한 일은 보드의 동료 소식에 남는다: atrium news ${name})` : `하위 워커(@${name}는 너의 워커다. 끝나면 너에게 보고한다)`, /* P156 */ cwd: cwd.split(path.sep).join('/'), workspaceKey: ws.key, worktree, model: child.model || model, effort: child.effort || effort,
+      relation: head ? null : relation, relationText: head ? null : peer ? `동료(@${name}는 너의 하위 워커가 아니다. 결과를 보내오지 않고 한 일은 보드의 동료 소식에 남는다: atrium news ${name})` : `하위 워커(@${name}는 너의 워커다. 끝나면 너에게 보고한다)`, /* P156 */ cwd: cwd.split(path.sep).join('/'), workspaceKey: ws.key, worktree, model: child.model || model, effort: child.effort || effort || (effortPlan && effortPlan.applied ? otherEffort : null),
+      effortNote: effortPlan && effortPlan.ignored ? effortIgnoredLine(kind, otherEffort) : null, // P208: 노력 수준을 받지 않는 종류
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
-      harness: other ? { ...other.record, argv: other.argv } : null, // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
+      harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...(other.model ? ['-m', other.model] : []), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
       permissionMode: child.permissionMode, state, trust: out.trust, waited: wait,
       status: needsTrust ? 'needs_trust' : state, needsTrust, tellHuman: needsTrust ? trustSentence(name) : null, gate: gate ? 'trust' : null,
       firstPrompt: first ? { ...first, status: (b.store.getDelivery(first.deliveryId) || {}).status || first.status } : null,

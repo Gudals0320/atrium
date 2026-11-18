@@ -18,8 +18,8 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { hcCall, hcSubscribe, hcPipe, HcError, FramedConn, FRAME } from './rpc.mjs';
-import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm, TRUST_STATUS, isSynthetic } from './model.mjs';
-import { isTrustDialog } from '../screen.mjs'; // P117: 신뢰 대화상자(7501 상태 전)
+import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm, TRUST_STATUS, isSynthetic, trustStatusOf, TRUST_WATCH_KINDS } from './model.mjs';
+import { trustDialogOf } from '../screen.mjs'; // P117: 신뢰 대화상자(7501 상태 전). P208: Codex도
 import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
@@ -330,13 +330,14 @@ export class HcAdapter extends EventEmitter {
     if (n) { params.name = n; await this._gcFinished(n).catch(() => {}); } // 같은 이름의 끝난 기록(되살리기·이어 가기 전의 것)을 지운다
     const r = await this.call('terminal.run', params, 60000);
     this._envOf.set(r.address, tenv);
-    if (kind === 'claude') this._watchTrust(r.address);
+    if (TRUST_WATCH_KINDS.has(kind)) this._watchTrust(r.address, Date.now(), kind); // P208: Codex의 신뢰 질문도
     return r;
   }
   // P117: 판이 띄운 claude가 7501을 말하기 전에 화면을 본다. 신뢰 대화상자("Quick safety check … trust this folder")가 보이면 막힘(blocked)을 흉내 낸다.
   // 판은 그 뒤 화면을 읽어 trust_wait로 보이고(checkBlocked), 첫 지시는 기다린다(전달 규칙). 사람이 신뢰하면 claude가 7501 idle을 말해 풀리고,
   // 거절하면 claude가 끝나 에이전트가 떠난 것으로(trust_declined) 보이고 같은 자리에 셸이 남는다(_respawnShell). 신뢰는 사람만 답한다(판은 키를 보내지 않는다)
-  _watchTrust(address, t0 = Date.now()) {
+  // P208: Codex도 신뢰 질문 동안 상태를 말하지 않으므로 같은 길로 지켜본다(kind로 화면 글과 흉내 상태를 고른다)
+  _watchTrust(address, t0 = Date.now(), kind = 'claude') {
     clearTimeout(this._trustWatch.get(address));
     const tick = async () => {
       this._trustWatch.delete(address);
@@ -347,9 +348,9 @@ export class HcAdapter extends EventEmitter {
       let text = '';
       try { text = String((await this.call('terminal.read', { terminal: address, lines: 0 }, 5000)).text || ''); } catch (e) { if (e.code === 'agent_not_found' || e.code === 'pane_not_found') return; }
       const now = this.model.terms.get(address);
-      if (now && isLive(now) && !now.status && isTrustDialog(text)) {
-        this.log(`trust dialog in ${address}: reporting blocked (no 7501 status yet)`);
-        this._emitAll(this.model.apply({ seq: null, type: 'status', terminal: address, data: { status: { ...TRUST_STATUS }, reported: false } }));
+      if (now && isLive(now) && !now.status && trustDialogOf(kind, text)) {
+        this.log(`trust dialog (${kind}) in ${address}: reporting blocked (no 7501 status yet)`);
+        this._emitAll(this.model.apply({ seq: null, type: 'status', terminal: address, data: { status: { ...trustStatusOf(kind) }, reported: false } }));
         return;
       }
       const timer = setTimeout(tick, this.trustPollMs);
@@ -365,11 +366,12 @@ export class HcAdapter extends EventEmitter {
   // 신뢰 질문이면 막힘을 흉내 낸 상태로 싣는다(판이 다시 맞출 때 "에이전트 없음"으로 보고 끝남으로 두지 않게). 아니면 지켜보기만 한다
   async _scanTrust() {
     for (const t of this.model.live()) {
-      if (t.status || !t.labels || t.labels[LABEL.agent] !== 'claude') continue;
+      const kind = t.labels && t.labels[LABEL.agent];
+      if (t.status || !TRUST_WATCH_KINDS.has(kind)) continue; // P208: Codex도
       let text = '';
       try { text = String((await this.call('terminal.read', { terminal: t.address, lines: 0 }, 5000)).text || ''); } catch {}
-      if (isTrustDialog(text)) { this.model.terms.set(t.address, { ...t, status: { ...TRUST_STATUS } }); this.model.everAgent.add(t.address); this.log(`trust dialog in ${t.address} on connect: reporting blocked`); }
-      else this._watchTrust(t.address);
+      if (trustDialogOf(kind, text)) { this.model.terms.set(t.address, { ...t, status: { ...trustStatusOf(kind) } }); this.model.everAgent.add(t.address); this.log(`trust dialog in ${t.address} on connect: reporting blocked`); }
+      else this._watchTrust(t.address, Date.now(), kind);
     }
   }
   // P117: 판이 부른 패널이 이미 다른 터미널로 바뀌었으면(에이전트가 끝나 셸이 남음 등) 그 자리를 따라간다. 셸을 띄우는 중이면 기다린다

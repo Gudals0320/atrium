@@ -23,10 +23,12 @@ const DONE_TEXT_MAX = 100000;
 
 // 첫 요청 머리(세 줄). 맨 위 관계 줄은 text.mjs RELATION_LINE과 같은 꼴이라 카드에는 아래 할 일만 지시로 보인다
 // P182: rig가 켜진 워크스페이스면 rig 한 줄을 더한다(rig.mjs RIG_HEADER_LINE)
-export function unitHeader({ parent, unitId, rig = false }) {
+// P208: Codex(Windows PowerShell 5.1)는 글 안의 큰따옴표를 빼먹으므로 둘째 줄 끝에 --file 길을 붙인다
+export const PS_DONE_TAIL = '여러 줄이나 큰따옴표가 든 보고는 파일에 쓰고 `atrium done ok --file <경로>`로 준다.';
+export function unitHeader({ parent, unitId, rig = false, kind = null }) {
   return [
     `[Atrium 보드] 관계: 너는 @${parent}의 하위 워커다. 아래 일은 @${parent}가 맡긴 일 ${unitId}이다(지금 일 보기: \`atrium item\`).`,
-    `[Atrium 보드] 끝나면 \`atrium done ok "<보고>"\`(못 했으면 \`atrium done failed "<까닭>"\`)로 닫고 쉰다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다.`,
+    `[Atrium 보드] 끝나면 \`atrium done ok "<보고>"\`(못 했으면 \`atrium done failed "<까닭>"\`)로 닫고 쉰다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다.${kind === 'codex' ? ` ${PS_DONE_TAIL}` : ''}`,
     `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.${rig ? ` ${RIG_HEADER_TAIL}` : ''}`, // P188: 판 줄은 세 줄 이하라 rig 안내는 셋째 줄 끝에
   ].join('\n');
 }
@@ -99,7 +101,7 @@ export class WorkUnits {
       const by = v.cycle != null ? `보드의 느린 고리 cycles[${v.cycle}]가 만듦` : v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
       return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide }); // P188: 세 줄. 값과 자리 목록은 atrium me
     }
-    return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)) });
+    return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)), kind: t ? t.kind || 'claude' : null }); // P208
   }
   // 붙잡아 둔 일을 넣을 차례인가(열린 시도가 없을 때 먼저 온 것 하나)
   pump(sessionId) {

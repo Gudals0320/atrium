@@ -257,6 +257,39 @@ export function resolveLauncher(l, over = {}) {
   const extra = h.fields.includes('effort') || h.fields.includes('permissionMode') ? harnessOptionArgs(h.kind, { effort: pick('effort'), permissionMode: pick('permissionMode') || defaultPermission(h.id) }, args) : [];
   return { ...base, model: model || null, args: [...args, ...extra], command: '', startCommand: l.startCommand || '', connectionId: l.connection || null, gateway: gatewayOf(l), ...(h.fields.includes('permissionMode') ? { permissionMode: pick('permissionMode') || defaultPermission(h.id) } : {}) };
 }
+// P208: Codex가 받는 추론 수준(config의 model_reasoning_effort. models_cache.json의 supported_reasoning_levels와 Codex 설정 값)
+export const CODEX_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+const CODEX_EFFORT_KEY = 'model_reasoning_effort';
+// P208: 명시한 노력 수준(atrium child --effort, rig 자리의 effort)을 Claude Code 밖 하네스의 인자로 옮긴다. 호출자 추가 인자의 같은 값을 빼고 넣는다(명시한 값이 이긴다).
+//   판이 세션을 띄우는 공통 길(backend spawn)이 부른다. → { args, applied, ignored?, effort }
+//   - codex: -c model_reasoning_effort="<값>"(호출자 인자의 -c/--config model_reasoning_effort=… 를 뺀다). Codex가 받지 않는 값은 던진다
+//   - agy: --effort <값>(호출자 인자의 --effort를 뺀다). Claude Code와 같은 값만
+//   - claude는 판이 --effort로 따로 넘긴다(바꾸지 않는다). 그 밖의 종류(opencode, pi 등)는 노력 수준을 받지 않는다(ignored)
+export function effortArgsOf(kind, effort, args = []) {
+  const a = (args || []).map(String);
+  const e = String(effort || '').trim();
+  if (!e || kind === 'claude') return { args: a, applied: false, effort: e || null };
+  if (kind === 'codex') {
+    if (!CODEX_EFFORTS.includes(e)) throw err('bad_request', `Codex 추론 수준은 ${CODEX_EFFORTS.join(', ')} 가운데 하나: ${e}`, 'effort', { effort: e.slice(0, 20) });
+    const isKey = (v) => new RegExp(`^${CODEX_EFFORT_KEY}\\s*=`).test(String(v));
+    const out = [];
+    for (let i = 0; i < a.length; i++) {
+      if ((a[i] === '-c' || a[i] === '--config') && isKey(a[i + 1])) { i++; continue; }
+      if (/^(-c|--config)=/.test(a[i]) && isKey(a[i].replace(/^(-c|--config)=/, ''))) continue;
+      out.push(a[i]);
+    }
+    return { args: [...out, '-c', `${CODEX_EFFORT_KEY}="${e}"`], applied: true, effort: e };
+  }
+  if (kind === 'agy') {
+    if (!EFFORTS.includes(e)) throw err('bad_request', `추론 수준은 ${EFFORTS.filter(Boolean).join(', ')} 가운데 하나: ${e}`, 'effort', { effort: e.slice(0, 20) });
+    const out = [];
+    for (let i = 0; i < a.length; i++) { if (a[i] === '--effort') { i++; continue; } if (a[i].startsWith('--effort=')) continue; out.push(a[i]); }
+    return { args: [...out, '--effort', e], applied: true, effort: e };
+  }
+  return { args: a, applied: false, ignored: true, effort: e };
+}
+// 노력 수준을 무시한 까닭 한 줄(atrium child 응답)
+export const effortIgnoredLine = (kind, effort) => `--effort ${effort}는 무시했다: ${kind}는 노력 수준을 받지 않는다(호출자 인자나 ${kind} 설정을 따른다).`;
 // P192: 노력 수준·승인 방식 → 그 하네스 인자(지금은 AGY만). 추가 인자에 같은 인자가 있으면 붙이지 않는다
 export function harnessOptionArgs(kind, { effort = '', permissionMode = '' } = {}, args = []) {
   if (kind !== 'agy') return [];
