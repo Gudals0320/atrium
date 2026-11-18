@@ -202,7 +202,9 @@ test('P192 신뢰 질문: AGY 화면("Do you trust the contents of this project?
   rt.trustScreen = { at: 1 };
   assert.deepEqual(deriveState(rt), { state: 'trust_wait', confirmedByScreen: true });
   const cx = newRuntime({ kind: 'codex', hooked: false }); cx.term.status = 'blocked'; cx.trustScreen = { at: 1 };
-  assert.equal(deriveState(cx).state, 'waiting', 'codex는 그대로');
+  assert.equal(deriveState(cx).state, 'trust_wait', 'P208: codex도 화면의 신뢰 질문이면 trust_wait');
+  const op = newRuntime({ kind: 'opencode', hooked: false }); op.term.status = 'blocked'; op.trustScreen = { at: 1 };
+  assert.equal(deriveState(op).state, 'waiting', '그 밖의 종류는 그대로');
 });
 
 test('P192 7501: AGY는 앱 이름 antigravity로 상태를 알린다 → 판의 종류 agy', () => {
