@@ -21,6 +21,7 @@ import { shownName } from './session-label.mjs';
 import { Rig3Guard } from './rig3-guard.mjs'; // P243: 턴 끝 남의 쓰기 되돌리기
 import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir } from './rig3.mjs';
 import { Rig3Items } from './rig3-items.mjs'; // P242: 항목·길·받음
+import { Rig3Beat } from './rig3-beat.mjs'; // P244: 박자·도구·사이클 요약
 
 // 판이 역할을 위해 띄울 때(backend.spawn) 넘기는 역할 이름의 열쇠. Symbol이라 판 API 본문으로는 넣지 못한다
 export const ROLE_SPAWN = Symbol.for('atrium.rig3RoleSpawn');
@@ -46,6 +47,7 @@ export class Rig3Roles {
     this.items = new Rig3Items(b, this); // P242
     this.offSleep = new Set(); // P242: 끈 rig(키) — 역할 세션을 모두 재울 때까지 주기마다 본다(일하는 턴은 끝나기를 기다린다)
     this.guard = new Rig3Guard(b, this); // P243
+    this.beat = new Rig3Beat(b, this); // P244
   }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
   store() { return this.b.store; }
@@ -139,6 +141,7 @@ export class Rig3Roles {
     this.offSleep.delete(key);
     const r = this.active(key); if (!r) return [];
     this.guard.prime(key); // P243: 기준 목록이 없으면 만든다
+    try { this.beat.ensureBase(key); } catch (e) { this.b.log && this.b.log('rig3 beat base ' + e.message); } // P244: 사이클 0(첫 채움)
     const out = [];
     // P242: 켜면 잠든 역할 세션을 깨운다(같은 대화로 잇는다)
     for (const role of Object.keys(r.def.rig3.roles)) for (const s of this.sessionsOf(key, role)) {
@@ -228,6 +231,7 @@ export class Rig3Roles {
           try { const x = await this.keep(w.key, role, now); if (x) out.push({ ws: w.key, role, ...x }); }
           catch (e) { this.b.log && this.b.log(`rig3 tick ${role}: ${e.stack || e.message}`); }
         }
+        try { for (const x of await this.beat.tick(w.key, r, now)) out.push({ ws: w.key, ...x }); } catch (e) { this.b.log && this.b.log(`rig3 beat tick: ${e.stack || e.message}`); } // P244: 박자·every 도구
       }
     } finally { this.ticking = false; }
     return out;
@@ -332,6 +336,6 @@ export class Rig3Roles {
     });
     let it = null; try { it = this.items.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 items view', e.message); } // P242: 길마다 수, 역할마다 받은 것
     for (const x of roles) x.items = it && it.roles[x.name] ? it.roles[x.name] : null;
-    return { purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null };
+    return { purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null, cycle: (() => { try { return this.beat.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 beat view', e.message); return null; } })() }; // P244: 사이클·다음 박자·최근 꼭지
   }
 }

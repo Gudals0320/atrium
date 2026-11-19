@@ -22,6 +22,7 @@
 // P224: rig propose|proposals|approve|reject(제안과 승인)를 더했다(더하기만이라 4 그대로)
 // P230: rig run <고리>(관리자 자리가 every 고리를 지금 한 번 돌림)를 더했다(더하기만이라 4 그대로)
 // P242: rig put|accept|return|pass|drop|inbox(rig 3 역할 세션의 항목 명령)를 더했다(더하기만이라 4 그대로)
+// P244: rig tool(rig 3 역할의 도구)과 rig beat(사람만, 역할 세션은 거절)를 더했다(더하기만이라 4 그대로)
 // P237: prompt --talk(rig 자리에 회 없이 글만)와 prompt 응답의 talk 칸, 거절 까닭 rig_run_open을 더했다(더하기만이라 4 그대로)
 export const CONTRACT_VERSION = 4;
 // P204: 동료 소식. atrium log 한 줄의 상한, atrium news가 한 번에 보이는 줄

@@ -3189,5 +3189,25 @@ export default {
     intakeOff: 'The input desk works while the rig is on.',
     returned: 'Returned input {id}: {by} "{reason}"',
   },
+  // P244: rig 3 cycle (beat) and changelog sections
+  rig3Cycle: {
+    h: 'Cycle',
+    now: 'Cycle {n}',
+    none: 'No cycle',
+    opened: 'opened {time}',
+    next: 'next beat {time} (every {every}',
+    at: ', from {at}',
+    wakes: ', wakes {role}',
+    noBeat: 'No beat (the definition has no beat)',
+    beatNow: 'Beat now',
+    beatSent: 'Opened cycle {n}',
+    tool: '{name}: every {every}, next {time}',
+    toolRunning: '{name}: running',
+    writing: 'Writing the summary of cycle {list}',
+    noEntries: 'No sections yet. On the next beat the board summarizes the last cycle.',
+    byAi: 'AI summary',
+    byNumbers: 'Counts only',
+    file: 'Changelog: {path}',
+  },
 };
 

@@ -34,6 +34,23 @@ export function returnedIntake(r3) {
   const list = r3 && r3.intake && Array.isArray(r3.intake.returned) ? r3.intake.returned : [];
   return list.map((x) => ({ id: x.id, by: (x.by || []).map((b) => b.role).join(', '), reason: (x.by || []).map((b) => b.reason).filter(Boolean).join(' / ') }));
 }
+// P244: 사이클 보기(rig3.cycle): 지금 사이클, 다음 박자, every 도구, 최근 변경 기록 꼭지(새 것부터)
+//   꼭지 글은 "## 머리\n\n몸"이다. 머리의 ## 를 떼어 제목으로, 나머지를 몸으로
+export function entryParts(text) {
+  const t = String(text || '').replace(/\r\n/g, '\n').trim();
+  const i = t.indexOf('\n');
+  const head = (i < 0 ? t : t.slice(0, i)).replace(/^#+\s*/, '');
+  return { title: head, body: i < 0 ? '' : t.slice(i + 1).trim() };
+}
+export function cycleInfo(r3) {
+  const c = r3 && r3.cycle;
+  if (!c) return null;
+  return {
+    n: c.n, openedAt: c.openedAt || null, nextAt: c.nextAt || null, beat: c.beat || null, writing: c.writing || [], changelog: c.changelog || null,
+    tools: (c.tools || []).filter((t) => t.every).map((t) => ({ name: t.name, every: t.every, nextAt: t.nextAt || null, running: !!t.running })),
+    entries: (c.entries || []).map((e) => ({ n: e.n, by: e.by, at: e.at, ...entryParts(e.text) })),
+  };
+}
 // 켜기 확인 줄의 역할 수
 export const roleCount = (st) => (st && st.rig3 && Array.isArray(st.rig3.roles) ? st.rig3.roles.length : 0);
 // 켜기를 보일까(이 PC의 창, 꺼짐, 맞는 정의)

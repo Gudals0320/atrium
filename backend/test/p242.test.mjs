@@ -88,7 +88,7 @@ test('P242 put: 정상(종류·낸 역할·해시·장부), 섹터 밖, 길에 �
   assert.equal(r.item.id, 'snapshot-1'); assert.equal(r.item.rev, 1); assert.equal(r.item.path, 'data/s1.md'); assert.deepEqual(r.item.to, ['ideas']);
   assert.match(r.item.sha256, /^[0-9a-f]{64}$/); assert.equal(r.waitingOwn, 1);
   const row = B.store.getItem(B.key, 'snapshot-1');
-  assert.equal(row.role, 'data'); assert.equal(row.kind, 'snapshot'); assert.equal(row.cycle, null); assert.equal(row.state, 'live'); assert.equal(row.sessionId, B.S('data').sessionId);
+  assert.equal(row.role, 'data'); assert.equal(row.kind, 'snapshot'); assert.equal(row.cycle, 0); /* P244: 켤 때 사이클 0(첫 채움) */ assert.equal(row.state, 'live'); assert.equal(row.sessionId, B.S('data').sessionId);
   assert.deepEqual(B.store.receipts(B.key, { itemId: 'snapshot-1' }).map((x) => [x.role, x.state, x.flow]), [['ideas', 'waiting', 0]]);
   const ev = B.ledger(['item_put']);
   assert.equal(ev.length, 1); assert.equal(ev[0].value, 'new'); assert.equal(ev[0].seat, 'data'); assert.equal(ev[0].ref, 'snapshot-1'); assert.equal(ev[0].line, 0); assert.equal(ev[0].data.sha256, r.item.sha256);

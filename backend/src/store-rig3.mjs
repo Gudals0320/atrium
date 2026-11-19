@@ -13,7 +13,15 @@ CREATE INDEX IF NOT EXISTS rig3_items_kind ON rig3_items (ws, kind, n);
 CREATE TABLE IF NOT EXISTS rig3_receipts (id INTEGER PRIMARY KEY, ws TEXT NOT NULL, item_id TEXT NOT NULL, rev INTEGER NOT NULL, role TEXT NOT NULL, flow INTEGER, state TEXT NOT NULL, late INTEGER NOT NULL DEFAULT 0, note TEXT, t INTEGER NOT NULL, answered_at INTEGER, nudged_at INTEGER, stalled_at INTEGER) STRICT;
 CREATE INDEX IF NOT EXISTS rig3_receipts_role ON rig3_receipts (ws, role, state);
 CREATE INDEX IF NOT EXISTS rig3_receipts_item ON rig3_receipts (ws, item_id);
+CREATE TABLE IF NOT EXISTS rig3_cycles (ws TEXT NOT NULL, n INTEGER NOT NULL, opened_at INTEGER NOT NULL, by TEXT NOT NULL, due_at INTEGER, open_seq INTEGER, entry_state TEXT, entry TEXT, entry_by TEXT, entry_at INTEGER, entry_meta TEXT, PRIMARY KEY (ws, n)) STRICT;
+CREATE TABLE IF NOT EXISTS rig3_clock (ws TEXT NOT NULL, who TEXT NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY (ws, who)) STRICT;
 `;
+// P244: rig 3 사이클과 시계(rig3-beat.mjs).
+//   rig3_cycles: 사이클마다 한 줄. n 0은 켤 때(첫 채움), 그 뒤 박자마다 n+1. by enable | clock | late | human, due_at은 친 박자의 칸 시각,
+//     open_seq는 그 사이클을 연 장부 줄(cycle_open)의 seq(사이클 구간은 seq로 자른다: 같은 ms의 줄도 갈린다).
+//     entry_state null(아직) | writing | done | empty(첫 채움에 아무 일도 없었음), entry는 변경 기록 꼭지(마크다운), entry_by ai | numbers, entry_meta는 한 번짜리 실행의 값(JSON: model, ms, 토큰, 비용, error).
+//   rig3_clock: 시계마다 마지막 친 때. who는 beat(사이클 박자), role:<역할>(역할 칸 beat), tool:<도구>(every 도구).
+const cycleRow = (r) => (r ? { ws: r.ws, n: r.n, openedAt: r.opened_at, by: r.by, dueAt: r.due_at, openSeq: r.open_seq ?? null, entryState: r.entry_state, entry: r.entry, entryBy: r.entry_by, entryAt: r.entry_at, entryMeta: r.entry_meta ? JSON.parse(r.entry_meta) : null } : null);
 const itemRow = (r) => (r ? { ws: r.ws, id: r.id, rev: r.rev, kind: r.kind, n: r.n, role: r.role, sessionId: r.session_id, path: r.path, sha256: r.sha256, size: r.size, fromId: r.from_id, cycle: r.cycle, state: r.state, stateWhy: r.state_why, stateAt: r.state_at, changed: r.changed, t: r.t } : null);
 const recRow = (r) => (r ? { id: r.id, ws: r.ws, itemId: r.item_id, rev: r.rev, role: r.role, flow: r.flow, state: r.state, late: !!r.late, note: r.note, t: r.t, answeredAt: r.answered_at, nudgedAt: r.nudged_at, stalledAt: r.stalled_at } : null);
 export function installRig3(Store) {
@@ -57,6 +65,22 @@ export function installRig3(Store) {
       if (q.states && q.states.length) { where.push(`state IN (${q.states.map(() => '?').join(',')})`); vals.push(...q.states); }
       return this.db.prepare(`SELECT * FROM rig3_receipts WHERE ${where.join(' AND ')} ORDER BY t, id`).all(...vals).map(recRow);
     },
+    // ---------- P244: 사이클과 시계 ----------
+    insertRig3Cycle(x) { this.st('INSERT INTO rig3_cycles (ws, n, opened_at, by, due_at, open_seq) VALUES (?, ?, ?, ?, ?, ?)').run(x.ws, x.n, x.openedAt, x.by, x.dueAt ?? null, x.openSeq ?? null); },
+    getRig3Cycle(ws, n) { return cycleRow(this.st('SELECT * FROM rig3_cycles WHERE ws = ? AND n = ?').get(ws, n)); },
+    lastRig3Cycle(ws) { return cycleRow(this.st('SELECT * FROM rig3_cycles WHERE ws = ? ORDER BY n DESC LIMIT 1').get(ws)); },
+    firstRig3Cycle(ws) { return cycleRow(this.st('SELECT * FROM rig3_cycles WHERE ws = ? ORDER BY n LIMIT 1').get(ws)); },
+    // 닫혔는데(다음 사이클이 열림) 꼭지가 없는 사이클
+    rig3CyclesNeedingEntry(ws) { return this.st("SELECT * FROM rig3_cycles c WHERE ws = ? AND (entry_state IS NULL OR entry_state = 'writing') AND EXISTS (SELECT 1 FROM rig3_cycles d WHERE d.ws = c.ws AND d.n > c.n) ORDER BY n").all(ws).map(cycleRow); },
+    rig3CycleEntries(ws, limit = 5) { return this.st("SELECT * FROM rig3_cycles WHERE ws = ? AND entry_state = 'done' ORDER BY n DESC LIMIT ?").all(ws, limit).map(cycleRow); },
+    setRig3CycleEntry(ws, n, f = {}) {
+      const cols = { entryState: 'entry_state', entry: 'entry', entryBy: 'entry_by', entryAt: 'entry_at', entryMeta: 'entry_meta' };
+      const sets = []; const vals = [];
+      for (const [k, c] of Object.entries(cols)) if (f[k] !== undefined) { sets.push(`${c} = ?`); vals.push(k === 'entryMeta' ? (f[k] == null ? null : JSON.stringify(f[k])) : f[k]); }
+      if (sets.length) this.st(`UPDATE rig3_cycles SET ${sets.join(', ')} WHERE ws = ? AND n = ?`).run(...vals, ws, n);
+    },
+    rig3ClockLast(ws, who) { const r = this.st('SELECT last_at FROM rig3_clock WHERE ws = ? AND who = ?').get(ws, who); return r ? Number(r.last_at) : null; },
+    setRig3Clock(ws, who, t) { this.st('INSERT INTO rig3_clock (ws, who, last_at) VALUES (?, ?, ?) ON CONFLICT (ws, who) DO UPDATE SET last_at = excluded.last_at').run(ws, who, t); },
     setReceipt(id, f = {}) {
       const cols = { state: 'state', note: 'note', answeredAt: 'answered_at', nudgedAt: 'nudged_at', stalledAt: 'stalled_at', late: 'late' };
       const sets = []; const vals = [];

@@ -42,7 +42,10 @@ export const RIG_EVENT_KINDS = [
 export const RIG3_EVENT_KINDS = ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept', 'item_put', 'item_accept', 'item_return', 'item_pass', 'item_drop', 'item_nudge', 'item_stalled', 'item_changed', 'role_woke'];
 // P243: rig 3 남의 쓰기 되돌리기(rig3-guard.mjs). role_foreign_write(value restored | quarantined | revived | unrestorable | failed, data.candidates), role_guard_base(처음 기준 목록, data.ms)
 export const RIG3_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];
-const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS]);
+// P244: rig 3 박자·도구·사이클 요약(rig3-beat.mjs). cycle_open(value enable | clock | late | human, n), cycle_entry(value ai | numbers, n, ref 변경 기록 파일),
+//   role_tool(value done | failed | alarm, ref 실행 ID, data.by clock | role, data.tool·exit·alarm·log), role_beat(역할 칸 beat가 그 역할을 깨움)
+export const RIG3_BEAT_KINDS = ['cycle_open', 'cycle_entry', 'role_tool', 'role_beat'];
+const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS, ...RIG3_BEAT_KINDS]);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];
 // try_stopped의 value(18.1). P216이 exited를 더한다
 // P225: auto_closed(회 저절로 닫기가 열린 시도를 닫음, rig2-design 11.8의 5)

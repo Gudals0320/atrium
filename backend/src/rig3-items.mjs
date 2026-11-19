@@ -138,7 +138,8 @@ export class Rig3Items {
     const id = prev ? prev.id : itemIdOf(kind, st.nextItemN(key, kind));
     const rev = prev ? prev.rev + 1 : 1;
     const n = prev ? prev.n : parseItemId(id).n;
-    st.insertItem({ ws: key, id, rev, kind, n, role: p.role, sessionId: p.session || null, path: rel, sha256: h.sha256, size: h.size, fromId, cycle: null, state: 'live', t: now });
+    const cycle = this.roles.beat ? this.roles.beat.current(key) : null; // P244: 지금 사이클 번호
+    st.insertItem({ ws: key, id, rev, kind, n, role: p.role, sessionId: p.session || null, path: rel, sha256: h.sha256, size: h.size, fromId, cycle, state: 'live', t: now });
     if (prev) {
       st.setItemState(key, prev.id, prev.rev, 'superseded', `판 ${rev}`, now);
       for (const rc of st.receipts(key, { itemId: prev.id, rev: prev.rev, states: ['waiting'] })) st.setReceipt(rc.id, { state: 'superseded', answeredAt: now });
@@ -149,7 +150,7 @@ export class Rig3Items {
     const who = human ? '입력 창구' : p.role;
     for (const to of flow.to) this.notify(key, to, `- ${id}${rev > 1 ? ` 판 ${rev}(다시 냄)` : ''} (${kind}, ${who}가 냄${fromId ? `, ${fromId}에서` : ''}): ${rel}`);
     this.changed(key);
-    return { item: { id, rev, kind, path: rel, sha256: h.sha256, size: h.size, from: fromId, role: p.role, to: flow.to }, waitingOwn: human ? 0 : this.waitingOwn(key, p.role) };
+    return { item: { id, rev, kind, path: rel, sha256: h.sha256, size: h.size, from: fromId, role: p.role, to: flow.to, cycle }, waitingOwn: human ? 0 : this.waitingOwn(key, p.role) };
   }
 
   // ---------- 답한다 ----------
@@ -317,16 +318,20 @@ export class Rig3Items {
   counts(key, role) { const pend = this.pendingOf(key, role); return { pending: pend.filter((x) => x.need === 'answer').length, unanswered: pend.filter((x) => x.need !== 'answer').length, returned: this.returnedOf(key, role).length, waitingOwn: this.waitingOwn(key, role) }; }
   wakeText(key, role, lines, head = '받은 것', notices = []) {
     const c = this.counts(key, role);
+    let cy = null; try { cy = this.roles.beat ? this.roles.beat.cycleLine(key, role) : null; } catch { cy = null; } // P244: 사이클 n, 이번 사이클에 돈 네 도구
     return [
       ...notices, // P243: 지키기의 알림(남의 섹터에 쓴 것을 되돌림 등)
       `[Atrium 보드] rig ${head}:`,
       ...lines,
+      ...(cy ? [cy] : []),
       `[Atrium 보드] 답하지 않은 받은 것 ${c.pending}${c.unanswered ? `, 받고 답 항목을 내지 않은 것 ${c.unanswered}` : ''}${c.returned ? `, 반려된 네 항목 ${c.returned}` : ''}. 네가 낸 것 가운데 기다리는 것 ${c.waitingOwn}.`,
       '[Atrium 보드] 답: atrium rig accept <항목> | return <항목> "<까닭>" | pass [<항목>] "<까닭>". 낼 것: 네 섹터에 파일을 쓰고 atrium rig put <파일> --item <종류> [--from <받은 항목>]. 목록: atrium rig inbox',
     ].join('\n');
   }
   // 역할 세션에 한 줄을 알린다. 아직 넣지 않은 깨우는 글이 대기열에 있으면 그 글에 더한다
-  notify(key, role, line) {
+  notify(key, role, line) { return this.notifyLines(key, role, [line]); }
+  // P244: 여러 줄과 머리(박자·도구 경보). 아직 넣지 않은 깨우는 글에 더할 때는 그 글의 머리를 둔다
+  notifyLines(key, role, add, head = '받은 것') {
     const s = this.roles.sessionsOf(key, role)[0];
     if (!s || !this.b.queue) return null; // 세션이 없으면 받음 줄만 남는다(다시 뜰 때 실을 글에 받은 것이 실린다)
     const k = `${key}|${role}`;
@@ -334,12 +339,13 @@ export class Rig3Items {
     const q = this.b.queue;
     const fresh = this.guardNotices(key, role);
     if (w && w.sessionId === s.sessionId && q.retext) {
-      const lines = [...w.lines, line]; const notices = [...(w.notices || []), ...fresh];
-      const d = q.retext(w.deliveryId, this.wakeText(key, role, lines, '받은 것', notices));
-      if (d) { w.lines = lines; w.notices = notices; return d; }
+      const lines = [...w.lines, ...add]; const notices = [...(w.notices || []), ...fresh];
+      const h = head !== '받은 것' ? head : w.head || head; // P244: 박자·도구 경보 머리는 새 것이 이긴다
+      const d = q.retext(w.deliveryId, this.wakeText(key, role, lines, h, notices));
+      if (d) { w.lines = lines; w.notices = notices; w.head = h; return d; }
     }
-    const d = this.track(q.enqueue(s.sessionId, this.wakeText(key, role, [line], '받은 것', fresh), { origin: { kind: 'board' } }));
-    this.wakes.set(k, { deliveryId: d && d.deliveryId, sessionId: s.sessionId, lines: [line], notices: fresh });
+    const d = this.track(q.enqueue(s.sessionId, this.wakeText(key, role, add, head, fresh), { origin: { kind: 'board' } }));
+    this.wakes.set(k, { deliveryId: d && d.deliveryId, sessionId: s.sessionId, lines: [...add], notices: fresh, head });
     return d;
   }
 

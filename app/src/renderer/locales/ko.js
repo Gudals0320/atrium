@@ -3189,5 +3189,25 @@ export default {
     intakeOff: '입력 창구는 rig가 켜져 있을 때 씁니다.',
     returned: '반려된 입력 {id}: {by} "{reason}"',
   },
+  // P244: rig 3 사이클(박자)과 변경 기록 꼭지
+  rig3Cycle: {
+    h: '사이클',
+    now: '사이클 {n}',
+    none: '사이클 없음',
+    opened: '{time}에 열림',
+    next: '다음 박자 {time}({every}마다',
+    at: ', {at} 기준',
+    wakes: ', {role} 깨움',
+    noBeat: '박자 없음(정의에 beat가 없습니다)',
+    beatNow: '지금 박자',
+    beatSent: '사이클 {n}을 열었습니다',
+    tool: '{name}: {every}마다, 다음 {time}',
+    toolRunning: '{name}: 도는 중',
+    writing: '사이클 {list} 요약을 쓰는 중',
+    noEntries: '아직 꼭지가 없습니다. 다음 박자에 판이 지난 사이클을 요약합니다.',
+    byAi: 'AI 요약',
+    byNumbers: '숫자만',
+    file: '변경 기록: {path}',
+  },
 };
 
