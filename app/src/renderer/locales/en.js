@@ -3154,4 +3154,25 @@ export default {
     title: 'Send to {names} as text only, without opening a run. Use it for messages that are not run work, such as asking to change the rig. Not delivered while the seat is doing run work.',
     runOpen: 'not sent without a run: the seat is working on an open run. Send again after it closes, or turn off No run', // P240: reason on the failed chip
   },
+  // P241: rig 3 (role organization) panel: read-only structure view and turning it on
+  rig3: {
+    kind: 'rig 3 · {n} roles',
+    stOn: 'Rig on · {n} roles',
+    enable: 'Turn on…',
+    confirmLine: '{n} roles run unattended, each writes only to the sectors it owns, and the board runs the tools.',
+    confirmWarn: 'Each role gets one session that runs without asking for permission. Turn it on only for a folder you trust.',
+    purpose: 'Purpose: {path}',
+    roles: 'Roles',
+    colRole: 'Role',
+    colOwns: 'Sectors',
+    colSession: 'Session',
+    colTools: 'Tools',
+    noSession: 'No session',
+    gaveUp: 'Stopped restarting (turn the rig off and on to restart)',
+    docMissing: 'Role definition missing: {list}',
+    flows: 'Flows',
+    human: 'You',
+    for: 'answers {item}',
+    readOnly: 'This rig changes only through its definition files (.atrium/rig.json, .atrium/roles/). This view is read-only.',
+  },
 };

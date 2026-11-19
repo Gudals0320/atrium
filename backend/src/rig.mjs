@@ -21,6 +21,7 @@ import { AMP_ATS, validateAmp, seatPermitHash } from './rig-amp.mjs'; // P226: �
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { validateDocs } from './rig-docs.mjs'; // P219: rig 2 문서(docs, loads·reads·writes·records)
 import { spreadLoops, loopFlowReason, finishLoops, IMPLICIT_WORK as IMPLICIT_WORK_LOOP } from './rig-loops.mjs'; // P221: rig 2 고리(loops)
+import { validateRig3 } from './rig3.mjs'; // P241: rig 3(version 3) 정의는 따로 검사한다
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
@@ -43,6 +44,7 @@ const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r
 export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN_MS } = {}) {
   const bad = (reason) => ({ ok: false, reason });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad('정의는 JSON 객체여야 한다');
+  if (raw.version === 3) return validateRig3(raw, { root, exists }); // P241: rig 3은 새 길(rig3.mjs). rig 2 칸을 비운 def를 돌려준다
   const dv = validateDocs(raw, { root, exists: root ? (f) => { try { fs.statSync(f); return true; } catch { return false; } } : null }); // P219
   if (!dv.ok) return dv;
   const hooks = [];
@@ -652,7 +654,8 @@ export class Rig {
       loops: def && this.b.branch && this.b.branch.flow && this.b.branch.flow.loops ? this.b.branch.flow.loops.view(key, def) : [], // P221: 고리와 상태
       protected: this.rigProtected(key) || { pointers: [], files: [] }, protectedHits: r.protectedHits || [], changedFiles: this.changedFiles(key).map((x) => x.path),
       // P233(rig2-design 11.15의 6): 꺼져 있을 때 정본이 마지막 승인 내용과 다르면 켜기 확인 창이 알린다(처음 켤 때는 없음)
-      canonDrift: !st.enabled && def && this.b.rigProposals && this.b.rigProposals.canonDrift ? (() => { try { return this.b.rigProposals.canonDrift(key, { ...r, root: r.root || w.root }); } catch { return []; } })() : [],
+      rig3: def && def.v3 && this.b.rig3 ? this.b.rig3.view(key, def) : null, // P241: rig 3 역할(읽기만 하는 구조 보기)
+      canonDrift: !st.enabled && def && !def.v3 && this.b.rigProposals && this.b.rigProposals.canonDrift ? (() => { try { return this.b.rigProposals.canonDrift(key, { ...r, root: r.root || w.root }); } catch { return []; } })() : [],
     };
   }
   // P223: 자리의 권한(rig.status seats[])
@@ -715,11 +718,12 @@ export class Rig {
     const was = this.enabled(key);
     this.store().setRigEnabled(key, !!on);
     const r = this.read(key);
-    if (on && !was && this.b.rigProposals && r.def) try { this.b.rigProposals.onEnabled(key, { ...r, root: r.root || w.root }); } catch (e) { this.b.log && this.b.log('rig canon baseline error', e.stack); } // P232(11.14의 8): 정본 기준 = 켤 때의 내용
+    if (on && !was && this.b.rigProposals && r.def && !r.def.v3) try { this.b.rigProposals.onEnabled(key, { ...r, root: r.root || w.root }); } catch (e) { this.b.log && this.b.log('rig canon baseline error', e.stack); } // P232(11.14의 8): 정본 기준 = 켤 때의 내용
     if (on && by === 'human') this.permit(key, null, 'enable'); // P223: 켜기 확인 창이 보인 unattended 자리를 사람이 승인했다
     this.store().addEvent(null, on ? 'rig_enabled' : 'rig_disabled', { workspace: key, by, hash: r.hash, present: r.present });
     rigEvent(this.b, { kind: on ? 'rig_enabled' : 'rig_disabled', ws: key, defN: r.n ?? null, actor: by === 'remote' || by === 'human' ? 'human' : 'board', text: `rig ${on ? '켜짐' : '꺼짐'}(${by})`, data: { by, hash: r.hash } });
     this.b.log && this.b.log(`rig ${on ? 'enabled' : 'disabled'} ${key}`);
+    if (r.def && r.def.v3 && this.b.rig3 && on !== was) this.b.rig3.onEnabled(key, !!on).catch((e) => this.b.log && this.b.log('rig3 enable error', e.stack)); // P241: 켜면 역할 세션을 띄운다(끄면 지키기만 멈춘다)
     return this.status(key);
   }
 

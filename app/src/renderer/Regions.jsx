@@ -161,6 +161,7 @@ function rigLine(t, r) {
   if (r.state === 'error') return t('rig.stError', { error: r.error });
   if (r.state === 'none') return t('rig.stNone');
   if (r.state === 'invalid') return t('rig.stInvalid', { reason: r.invalid || '?' });
+  if (r.state === 'on' && r.rig3 && !r.invalid) return t('rig3.stOn', { n: (r.rig3.roles || []).length }); // P241
   if (r.state === 'on') return r.invalid ? t('rig.stOnStale', { reason: r.invalid }) : t('rig.stOn', { n: (r.hooks || []).length });
   return r.invalid ? t('rig.stInvalid', { reason: r.invalid }) : t('rig.stOff');
 }
