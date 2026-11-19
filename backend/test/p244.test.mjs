@@ -9,7 +9,6 @@ import path from 'node:path';
 import { Store } from '../src/store.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { Rig } from '../src/rig.mjs';
-import { RigAmp } from '../src/rig-amp.mjs';
 import { RigAdmin } from '../src/rig-admin.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime } from '../src/state.mjs';
@@ -57,7 +56,7 @@ async function board(mod = null) {
   const casts = []; const items = new Map(); let dn = 0;
   const settings = { language: 'ko', rig3SummaryModel: 'haiku' };
   const b = { cfg: { hookTimeoutSec: 2, sessionsDir: path.join(outside, 'sessions'), dataDir: path.join(outside, 'data-board'), rig3DeadGraceMs: 0, rig3ToolWaitMs: 20000 }, store, sessions: new Map(), log: () => {}, api: { broadcast: (n, d) => casts.push({ n, d }) }, features: { settings: { get: () => settings } } };
-  b.rig = new Rig(b); b.rigAmp = new RigAmp(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
   b.resolveWorkspace = async () => ({ key: ws.key });
   b.queue = {
     enqueue: (sessionId, text, opts) => { const d = { deliveryId: 'd' + ++dn, sessionId, text, opts, status: 'queued' }; items.set(d.deliveryId, d); return d; },
@@ -395,7 +394,7 @@ test('P244 안내는 put <종류> <파일>만, 항목 없는 pass는 박자에�
   }
   assert.match(ITEM_HOWTO.join('\n'), /박자에 낼 것이 없으면 \x60pass "<까닭>"\x60\(박자에만 답하고 받은 것은 닫지 않는다\)/);
   const help = fs.readFileSync(new URL('../bin/atrium-child.mjs', import.meta.url), 'utf8');
-  const helpText = help.slice(help.indexOf('rig 3 역할(보드가'), help.indexOf('atrium rig log --events'));
+  const helpText = help.slice(help.indexOf('rig 역할(보드가'), help.indexOf('atrium rig log --events'));
   assert.doesNotMatch(helpText, /--item/); assert.match(helpText, /atrium rig put <종류> <파일>/);
   const contract = fs.readFileSync(new URL('../src/cli-contract.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(contract, /put <파일> --item/);

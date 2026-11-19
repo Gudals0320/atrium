@@ -9,7 +9,6 @@ import path from 'node:path';
 import { Store } from '../src/store.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { Rig } from '../src/rig.mjs';
-import { RigAmp } from '../src/rig-amp.mjs';
 import { RIG3_GUARD_KINDS } from '../src/rig-ledger.mjs';
 import { Rig3Roles } from '../src/rig3-roles.mjs';
 import { BG_POLL_MS } from '../src/rig3-guard.mjs';
@@ -55,7 +54,7 @@ async function board({ sleeper = true } = {}) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const sent = []; const logs = [];
   const b = { cfg: { dataDir: path.join(tmp(), 'data'), rig3GuardBgPollMs: 0 }, store, sessions: new Map(), log: (...a) => logs.push(a.join(' ')), api: { broadcast: () => {} } };
-  b.rig = new Rig(b); b.rigAmp = new RigAmp(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
   b.queue = { enqueue: (sessionId, text, opts) => { sent.push({ sessionId, text, opts }); return { deliveryId: 'd' + sent.length }; }, pending: () => 0 };
   const W = procWorld();
   b.adapter = { connected: true, processInfo: async (paneId) => W.info[paneId] || null };

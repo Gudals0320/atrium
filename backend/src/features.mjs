@@ -112,19 +112,9 @@ export function attachFeatures(b, { timers = true } = {}) {
     const trigger = normalizeTrigger(p.trigger), stop = normalizeStop(p.stop || {});
     if (!String(p.prompt || '').trim()) throw apiError('bad_request', "보낼 요청을 입력하세요.");
     if (!p.confirm) return confirmResult(describeLoop({ targetLabel: `@${target.name}`, prompt: p.prompt, trigger, stop }), describeLoopMsg({ target: `@${target.name}`, prompt: p.prompt, trigger, stop }));
-    // P185: 루프를 만들 때 그 글이 받는 쪽 rig의 deliver 훅(from human)을 한 번 지난다. 고친 글을 루프에 저장하고, 거절이면 만들지 않는다(되풀이할 때는 지나지 않는다).
-    //   훅이 없으면 옛처럼 바로 만든다(동기)
-    const make = (prompt) => {
-      const v = f.loops.create({ target, prompt, trigger, stop });
-      store.addEvent(target.id, 'loop_created', { loopId: v.loopId, target, trigger, stop, ...(prompt !== String(p.prompt) ? { rigRewrote: true } : {}) });
-      return v;
-    };
-    const r = b.rig ? b.rig.active(s.workspaceKey) : null;
-    if (!r || !r.def.hooks.some((h) => h.at === 'deliver')) return make(String(p.prompt));
-    return b.rig.deliver({ target: s, from: { kind: 'human' }, text: String(p.prompt) }).then((h) => {
-      if (h.action === 'reject') throw apiError('rig_rejected', `rig의 deliver 훅이 루프의 글을 거절해 루프를 만들지 않았다: ${h.reason}`);
-      return make(h.text);
-    });
+    const v = f.loops.create({ target, prompt: String(p.prompt), trigger, stop });
+    store.addEvent(target.id, 'loop_created', { loopId: v.loopId, target, trigger, stop });
+    return v;
   };
   const loopRef = (p) => p.loop || p.loopId;
 
@@ -151,7 +141,7 @@ export function attachFeatures(b, { timers = true } = {}) {
     'loop.delete': (p) => f.loops.delete(loopRef(p)),
     'loop.list': (p) => f.loops.list({ sessionId: p.session ? b.resolve(p.session).sessionId : null }),
     // I6 미션 맵
-    'mission.graph': () => missionGraph({ rig: b.branch && b.branch.flow ? b.branch.flow.graph() : null, // P185: 켜진 rig마다 { seats, flow, cases }
+    'mission.graph': () => missionGraph({
       sessions: [...b.sessions.values()].map((s) => b.summary(s)), links: b.linksOpen(), thread: f.thread.list({ limit: 500 }).items, loops: [...f.loops.loops.values()], relations: b.store.relationRows ? b.store.relationRows() : [], called: { kids: b.store.branchRows ? b.store.branchRows() : [], assigns: b.store.assignSenders ? b.store.assignSenders(Date.now() - CALLED_MS) : [] } }), // P156: 일 관계, P157: 하위를 불렀던 기록
     // I7 설정(트레이 상주)
     'settings.get': () => ({ settings: f.settings.get(), schema: f.settings.describe() }),

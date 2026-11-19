@@ -9,7 +9,6 @@ import path from 'node:path';
 import { Store } from '../src/store.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { Rig } from '../src/rig.mjs';
-import { RigAmp } from '../src/rig-amp.mjs';
 import { Backend } from '../src/backend.mjs';
 import { RIG3_GUARD_KINDS, RIG3_EVENT_KINDS, RIG_EVENT_KINDS, parseKinds } from '../src/rig-ledger.mjs';
 import { validateRig3 } from '../src/rig3.mjs';
@@ -42,7 +41,7 @@ async function board(def = DEF(), cfg = {}) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const sent = []; const logs = [];
   const b = { cfg: { dataDir: path.join(tmp(), 'data'), ...cfg }, store, sessions: new Map(), log: (...a) => logs.push(a.join(' ')), api: { broadcast: () => {} } };
-  b.rig = new Rig(b); b.rigAmp = new RigAmp(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
   b.queue = { enqueue: (sessionId, text, opts) => { sent.push({ sessionId, text, opts }); return { deliveryId: 'd' + sent.length }; } };
   const g = b.rig3.guard;
   const mk = (role, kind = 'claude') => { const s = { sessionId: 'sid-' + role, name: role, kind, workspaceKey: ws.key, rigRole: role, rt: { kind } }; b.sessions.set(s.sessionId, s); return s; };

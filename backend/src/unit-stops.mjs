@@ -13,7 +13,6 @@
 import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy } from './link-notice.mjs';
 import { treeIndex, cycleCheck } from './push-cycle.mjs';
 import { clip } from './text.mjs';
-import { HUMAN_FROM, BUILDER_ORIGIN } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일의 멈춤은 응답 필요 목록으로
 
 // P238: 띄운 지 곧바로 종료 코드 2로 끝난 에이전트는 띄우기 인자 오류일 수 있다(CLI 인자 분석기의 오류 종료 코드, Codex의 맞지 않는 인자 등).
 //   QUICK_EXIT_MS: 판이 명령을 넣은 때부터 끝남을 안 때까지(셸이 명령을 받아 CLI가 뜨고 끝나는 시간과 터미널 서버의 알림을 더한 여유)
@@ -36,7 +35,6 @@ export function launchArgsSuspect(rt, exit) {
 // 멈춤 알림에 붙이는 글(에이전트가 읽는다)
 export const badArgsText = (x) => `띄우기 인자가 잘못됐을 수 있다(launch arguments may be invalid): 띄운 지 ${(x.ms / 1000).toFixed(1)}초 만에 종료 코드 ${x.code}${x.line ? `. 명령 줄: ${x.line}` : ''}`;
 
-export const REFUSE_FLASH_MS = 1500; // P235: 판이 권한 요청을 거절한 뒤 화면의 막힘을 거절의 잔상으로 보는 시간
 export const STOP_REASONS = ['idle_no_done', 'turn_error', 'needs_human', 'closed', 'tree_quiet', 'exited'];
 const WHY = {
   idle_no_done: '보고(atrium done) 없이 턴을 끝내고 쉰다',
@@ -57,7 +55,7 @@ export function stopLine({ child, unitId, spec, why, detail = null }) {
 export function stopNoticeText(lines) {
   const ls = lines.map((l) => (typeof l === 'string' ? l : l.line));
   const head = ls.length === 1 ? [`[Atrium 보드] 맡긴 일이 멈췄다: ${ls[0]}`] : ['[Atrium 보드] 맡긴 일이 멈췄다.', ...ls.map((l) => `- ${l}`)];
-  const exited = lines.some((l) => l && l.why === 'exited') ? ' 셸만 남은(종료) 세션에는 다시 시키지 않는다: rig 일은 그 줄의 `atrium rig retry`(관리자 자리·사람), 그 밖은 새 하위(`atrium child`)로 맡긴다.' : ''; // P216
+  const exited = lines.some((l) => l && l.why === 'exited') ? ' 셸만 남은(종료) 세션에는 다시 시키지 않는다: 새 하위(`atrium child`)로 맡긴다.' : ''; // P216
   return [...head, `할 수 있는 것: 화면 보기 \`atrium read <이름>\`, 다시 시키기 \`atrium prompt <이름> "<할 일>"\`, 사람이 답해야 하면 사람에게 알린다. 이 일을 기다리며 폴링하지 않는다.${exited}`].join('\n');
 }
 
@@ -86,9 +84,8 @@ export class UnitStops {
   waited(fromId, toId) { const ws = this.units.waiters.get(`${fromId}>${toId}`); return !!(ws && ws.size); }
   // 상위의 묶음에 한 줄을 더한다
   add(tr, unit, why, detail = null) {
-    if (unit && unit.from === HUMAN_FROM) return unit.origin === BUILDER_ORIGIN && !!(this.b.rigSetup && this.b.rigSetup.onStop(tr, unit, why, detail)); // P190: 상위 세션이 없다(사람). P221: 사람의 요청이 연 회의 일은 알릴 위 세션이 없다(회 상태로 보인다)
     if (!unit || !this.b.sessions.has(unit.from)) return false;
-    if (unit.from === tr.sessionId) return false; // P185: 건 주인이 자기 자리로 받은 일(자기에게 멈춤을 알리면 끝없이 돈다)
+    if (unit.from === tr.sessionId) return false; // 자기에게 맡긴 일(자기에게 멈춤을 알리면 끝없이 돈다)
     if (why !== 'tree_quiet' && this.waited(unit.from, unit.to)) return false;
     const line = stopLine({ child: this.units.nameOf(tr.sessionId), unitId: unit.id, spec: unit.spec, why, detail });
     this.store().addEvent(tr.sessionId, 'unit_stop_seen', { unitId: unit.id, tryId: tr.id, why });
@@ -99,7 +96,7 @@ export class UnitStops {
     const st = this.store(); const tr = st.getTry(l.tryId);
     if (!tr || tr.result != null) return false;
     if (l.why === 'closed') return true;
-    if (l.why === 'exited') { const u = st.getUnit(tr.unitId); if (!u || !u.caseId) return true; const last = st.lastTryOfUnit(u.id); return u.status === 'open' && (!last || last.id === tr.id); } // P216: 그새 다시 맡겼으면 보내지 않는다
+    if (l.why === 'exited') return true;
     const unit = st.getUnit(tr.unitId);
     if (!unit || unit.status !== 'open') return false;
     if (l.why === 'tree_quiet') return this.treeQuiet(tr) === true;
@@ -123,43 +120,24 @@ export class UnitStops {
       if (state === 'error') why = 'turn_error';
       else if (st.openUnitsFromCount(s.sessionId) === 0) why = 'idle_no_done'; // 하위를 기다리며 쉬는 중간 워커는 나무 전체로 본다
     } else if (HUMAN.has(state) && !HUMAN.has(prev)) {
-      // P235: 판이 PermissionRequest를 거절로 답한 직후 Claude Code 화면이 잠깐 막힘으로 읽힌다(개발용 판: 21ms). 묻는 훅이 없는 막힘(unknown_dialog)이면 잠시 뒤 다시 본다
-      if (sum.ask && sum.ask.kind === 'unknown_dialog' && s.rigRefusedAt && Date.now() - s.rigRefusedAt < REFUSE_FLASH_MS) { this.humanLater(s, tr); return null; }
       why = 'needs_human';
     }
     if (!why) return null;
     const unit = st.getUnit(tr.unitId);
     this.add(tr, unit, why);
     return why;
-  }
-  // P235: 거절 직후의 막힘이 REFUSE_FLASH_MS 뒤에도 남았으면(진짜 대화상자) 그때 needs_human으로 적고 알린다
-  humanLater(s, tr) {
-    if (!this.humanWait) this.humanWait = new Set();
-    if (this.humanWait.has(tr.id)) return; // 그 시도에 하나만
-    this.humanWait.add(tr.id);
-    const t = setTimeout(() => {
-      this.humanWait.delete(tr.id);
-      try {
-        const st = this.store(); const cur = st.openTryOf(s.sessionId);
-        if (!cur || cur.id !== tr.id || !this.b.sessions.has(s.sessionId) || !HUMAN.has(this.units.prev.get(s.sessionId))) return;
-        this.units.recordStop(s, cur, 'needs_human');
-        this.add(cur, st.getUnit(cur.unitId), 'needs_human');
-      } catch (e) { this.b.log && this.b.log('unit stop later error', e.stack); }
-    }, REFUSE_FLASH_MS);
-    if (t.unref) t.unref();
-  }
-  // 세션이 닫혔다(열린 시도가 있었으면). → 알림을 건 상위 ID | null
+  }  // 세션이 닫혔다(열린 시도가 있었으면). → 알림을 건 상위 ID | null
   onClosed(s, tr, unit, reason, { byParent = false } = {}) {
     this.scheduleTree();
     if (!tr || !tr.header || byParent || !unit) return null;
-    return this.add(tr, unit, 'closed', reason ? closeWhy(reason) : null) && unit.from !== HUMAN_FROM ? unit.from : null;
+    return this.add(tr, unit, 'closed', reason ? closeWhy(reason) : null) ? unit.from : null;
   }
 
   // P216: 에이전트가 끝나 셸만 남았다(work-units onExited가 시도를 닫은 뒤). detail: 다시 맡기는 길 → 알림을 건 상위 ID | null
   onExited(tr, unit, detail = null) {
     this.scheduleTree();
     if (!tr || !unit) return null;
-    return this.add(tr, unit, 'exited', detail) && unit.from !== HUMAN_FROM ? unit.from : null;
+    return this.add(tr, unit, 'exited', detail) ? unit.from : null;
   }
 
   // ---------- 나무 전체가 쉬는가(중간 워커) ----------

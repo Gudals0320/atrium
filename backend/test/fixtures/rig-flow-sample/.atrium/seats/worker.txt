@@ -1,2 +1,0 @@
-worker seat: do the task in the item, then `atrium done ok "<report>"` (or `atrium done failed "<why>"`).
-You may ask main a question with `atrium prompt main "<question>"`. Do not message other seats.

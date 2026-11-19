@@ -82,7 +82,7 @@ export function validateRig3(raw, { root = null, exists = isFile, read = (f) => 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad('정의는 JSON 객체여야 한다');
   if (raw.version !== RIG3_VERSION) return bad(`version은 3이다: ${JSON.stringify(raw.version)}`);
   const old = V2_KEYS.filter((k) => raw[k] != null);
-  if (old.length) return bad(`rig 3 정의에 rig 2 칸이 있다: ${old.join(', ')}. rig 3은 purpose, beat, roles, flows, tools, tune만 쓴다(rig 2 정의면 version은 1 또는 2다)`);
+  if (old.length) return bad(`정의에 옛 rig 칸이 있다: ${old.join(', ')}. rig 정의는 purpose, beat, roles, flows, tools, tune만 쓴다`);
   const unknown = Object.keys(raw).filter((k) => !V3_KEYS.includes(k));
   if (unknown.length) return bad(`rig 3 정의에 모르는 칸이 있다: ${unknown.join(', ')}. 칸: ${V3_KEYS.join(', ')}`);
   const warnings = [];

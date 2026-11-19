@@ -105,7 +105,7 @@ export function writesVerdict({ writes, toolName, toolInput, base, unitId = null
   const norm = (p) => path.resolve(p).toLowerCase();
   const roots = writes.filter((p) => unitId || !p.includes('{item}')).map((p) => path.resolve(base, p.split('{item}').join(unitId || '')));
   const ok = roots.some((r) => { const rel = path.relative(norm(r), norm(abs)); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); });
-  return ok ? null : `rig 자리의 쓰기 범위 밖이다: ${String(file)}. 쓸 수 있는 곳: ${writes.join(', ')}`;
+  return ok ? null : `쓰기 범위 밖이다: ${String(file)}. 쓸 수 있는 곳: ${writes.join(', ')}`;
 }
 
 // PreToolUse 응답 본문(거절)

@@ -1,1 +1,0 @@
-Checker seat: one fresh session per run. Read the task, write the report under reports/, append findings to ledger/checks.jsonl, then close and file the report: atrium done ok "<one-line summary>" --artifact reports/<report file>.

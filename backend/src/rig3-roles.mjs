@@ -247,6 +247,7 @@ export class Rig3Roles {
     const out = [];
     try {
       for (const key of [...this.offSleep]) { try { for (const x of await this.sleepOff(key, now)) out.push({ ws: key, off: true, ...x }); } catch (e) { this.b.log && this.b.log(`rig3 off sleep: ${e.message}`); } } // P242
+      try { for (const x of await this.detachRemoved(now)) out.push(x); } catch (e) { this.b.log && this.b.log(`rig roles detach: ${e.stack || e.message}`); } // P249
       const st = this.store();
       for (const w of st.workspaces ? st.workspaces() : []) {
         let r = null; try { r = this.active(w.key); } catch { r = null; }
@@ -293,6 +294,36 @@ export class Rig3Roles {
     const s = await this.spawnRole(key, role, prev ? 'respawn' : 'spawn', prev);
     this.changed(key);
     return { spawned: s.name, why: prev ? prev.why : 'missing' };
+  }
+  // ---------- P249: 정의에서 빠진 역할 ----------
+  // 정의(켜짐과 상관없이 판이 아는 정의)에 없는 역할 이름을 쥔 세션: 도는 턴은 마치게 두고(다음 주기에 다시 본다), 쉬면(ready) 또는 잠들었으면
+  //   역할 표시를 떼고(sessions.rig_role) 재운다. 닫지 않는다(되돌리기로 역할이 돌아올 수 있고, 사람이 닫을 수 있다) → [{ ws, role, detached, slept? | waiting }]
+  async detachRemoved(now = Date.now()) {
+    const out = [];
+    for (const s of [...this.b.sessions.values()]) {
+      if (!s.rigRole || s.rigRole === BUILDER_ROLE || s.closedAt) continue;
+      const r = this.defOf(s.workspaceKey);
+      if (!r || r.def.rig3.roles[s.rigRole]) continue; // 정의를 모르면(파일이 없거나 잘못됨) 두고, 정의에 있으면 지금 길
+      const role = s.rigRole; const key = s.workspaceKey;
+      const asleep = !!(s.rt && s.rt.sleep) || !!(this.b.sleeper && this.b.sleeper.isAsleep && this.b.sleeper.isAsleep(s));
+      const st = s.rt ? deriveState(s.rt).state : null;
+      if (!asleep && st !== 'ready' && !(s.rt && s.rt.exit)) { out.push({ ws: key, role, waiting: st || 'unknown' }); continue; }
+      s.rigRole = null; delete s.rig3AmpSig;
+      if (this.store().setSessionRole) this.store().setSessionRole(s.sessionId, null);
+      for (const k of [this.restart, this.gaveUp]) k.delete(key + '|' + role);
+      this.docNotices.delete(key + '|' + role);
+      let slept = false;
+      if (!asleep && !(s.rt && s.rt.exit) && this.b.sleeper && this.b.sleeper.sleep) {
+        try { await this.b.sleeper.sleep(s, { by: 'rig', mode: 'hand', scope: 'session' }); slept = true; } catch (e) { this.b.log && this.b.log(`rig role detach sleep ${s.name}: ${e.code || e.message}`); }
+      }
+      rigEvent(this.b, { kind: 'role_removed', ws: key, seat: role, session: s.sessionId, value: slept ? 'slept' : asleep ? 'asleep' : 'kept', actor: 'board', text: `@${shownName(s) || s.name}: 정의에서 역할 ${role}이 빠져 rig에서 뗐다${slept ? '(재움)' : ''}` });
+      try { this.store().addEvent(s.sessionId, 'rig_role_removed', { role, slept }); } catch {}
+      this.b.log && this.b.log(`rig role ${role} removed: ${s.name} detached${slept ? ' and slept' : ''}`);
+      if (this.b.broadcastSession) try { this.b.broadcastSession(s, { cause: 'rig_role_removed' }); } catch {}
+      this.changed(key);
+      out.push({ ws: key, role, detached: s.name, slept });
+    }
+    return out;
   }
   // ---------- P247: 정의·정의서가 바뀐 판 ----------
   // Rig.adopt가 새 판을 남긴 뒤 부른다. 떠 있는 역할에게 다음 깨우는 글에 알리고, 쥔 섹터·도구·런처가 바뀐 역할은 다시 띄울 표시를 한다

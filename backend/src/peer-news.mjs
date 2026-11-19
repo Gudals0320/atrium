@@ -5,7 +5,7 @@
 //   마지막 일이 앞 기록과 같은 때(prompt_at이 같다)의 턴은 적지 않는다. 같은 일·같은 답도 거듭 적지 않는다.
 //   hook이 없는 종류는 턴이 끝난 뒤 판이 화면에서 답을 고르므로(screenAnswer) 그 답을 answerGraceMs까지 기다린다.
 // - done: atrium done으로 닫은 일(값 + 보고 첫 줄, 일의 첫 줄).
-// - log: 에이전트가 atrium log "<한 줄>"로 남긴 것(NEWS_LOG_MAX자까지). rig 자리 세션도 쓴다(메시지가 아니다).
+// - log: 에이전트가 atrium log "<한 줄>"로 남긴 것(NEWS_LOG_MAX자까지). 메시지가 아니다.
 // - 읽기: atrium news [<이름>] [--all]. 기본은 내 동료(양쪽)가 내가 마지막으로 본 뒤 남긴 것을 오래된 것부터 NEWS_LINES줄, 읽은 자리를 옮긴다.
 //   <이름>이면 판의 어느 세션이든 그 세션의 최근 것(읽기만), --all은 읽은 자리와 상관없이 동료의 최근 것(읽기만). atrium me는 읽지 않은 수만 한 줄.
 import { promptTask } from './text.mjs';
