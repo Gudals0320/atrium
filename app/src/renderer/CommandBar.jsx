@@ -36,6 +36,7 @@ import { imageTokens, mergeTokens, nextImageNo, expandImages, imageLabel, pasteP
 import { kbLift } from './lib/touch-board.js'; // P83
 import { useVoice, VoiceButton } from './Voice.jsx'; // P165
 import { splitLive } from './lib/voice-text.js'; // P165
+import { talkSeats, talkParam } from './lib/talk.js'; // P237: "회 없이"
 import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange, autoTag } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
@@ -104,6 +105,8 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const deliveries = useStore((st) => st.deliveries);
   const allCount = [...sessions.values()].filter((s) => s.kind !== 'shell').length;
   const [text, setText] = useState('');
+  const [talk, setTalk] = useState(false); // P237: 회 없이(rig 자리에 회를 열지 않고 글만)
+  const talkRef = useRef({ on: false, offered: false });
   const [pick, setPick] = useState(0);
   const [sentTexts, setSentTexts] = useState({}); // deliveryId → 글(이벤트에는 글이 없다)
   const taRef = useRef(null);
@@ -181,7 +184,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     if (!/^@\S/.test(line)) { toast(t('cmd.needTarget'), 'error'); return; }
     const out = expandImages(line, images); // P162: 그림 칩 → 파일 경로
     try {
-      const r = await api.call('session.send', { text: out });
+      const r = await api.call('session.send', { text: out, ...talkParam(talkRef.current.on, talkRef.current.offered) }); // P237
       const add = {};
       const body = out.replace(/^(@\S+\s*)+/, '');
       for (const d of r.deliveries) add[d.deliveryId] = body;
@@ -190,6 +193,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       hist.current.i = -1;
       setText('');
       setPreview(null);
+      setTalk(false); // P237: 한 번 보낸 뒤 끈다(다음 글이 모르게 회 밖으로 가지 않게)
     } catch (e) { toast(t('cmd.sendFailed', { error: errText(e) }), 'error'); }
   }
 
@@ -337,6 +341,8 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const tagTokens = useMemo(() => mentionTokens(text, sessList), [text, sessList]);
   const tokens = useMemo(() => mergeTokens(tagTokens, imageTokens(text, images)), [tagTokens, text, images]); // P162: 그림 칩도 겹에 그리고 통째로 지운다
   const toList = useMemo(() => recipients(text, sessList), [text, sessList]);
+  const talkTo = useMemo(() => talkSeats(toList, sessList), [toList, sessList]); // P237: 받는 rig 자리 세션
+  talkRef.current = { on: talk, offered: talkTo.length > 0 };
   // P142: 높이. 겹의 안쪽(글과 같은 폭으로 그려진 글)의 높이를 재어 글칸 높이를 정한다. 그리기 전에 정해 깜빡이지 않는다
   const mirRef = useRef(null), mirInRef = useRef(null), fieldRef = useRef(null);
   const [fh, setFh] = useState({ height: 0, scroll: false });
@@ -429,6 +435,9 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
             {toShown.map((r) => <span key={r.state + r.name} className={`mt-cmd-to-chip st-${r.state}`} data-to={r.name} data-state={r.state} title={toTitle(r)}>@{r.name}{r.state === 'all' ? <span className="n">{r.count}</span> : null}</span>)}
             {toMore > 0 && <span className="mt-cmd-to-chip more" title={toList.slice(3).map((r) => '@' + r.name).join(' ')}>+{toMore}</span>}
           </div>
+        )}
+        {talkTo.length > 0 && (
+          <button type="button" className={`mt-cmd-talk${talk ? ' on' : ''}`} data-action="cmd-talk" aria-pressed={talk} title={t('cmdTalk.title', { names: talkTo.map((n) => '@' + n).join(' ') })} onMouseDown={(e) => e.preventDefault()} onClick={() => setTalk((v) => !v)}>{t('cmdTalk.label')}</button>
         )}
         <ThreadToggle />
         <button className={`mt-cmd-send${text.trim() ? ' on' : ''}`} onPointerDown={(e) => { if (e.pointerType === 'touch') e.preventDefault(); }} onClick={send} title={t('cmd.send')} data-action="send"><Icon name="arrowUp" /></button>

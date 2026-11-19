@@ -480,7 +480,8 @@ export class RigAmp {
     try { tr = st.openTryOf ? st.openTryOf(s.sessionId) : null; } catch {}
     if (!tr) return false;
     const text = String(prompt || '');
-    const own = (d && (d.deliveryId === tr.deliveryId || d.origin !== 'human')) || text.includes(tr.unitId) || startsAsBoardNotice(text);
+    // P237: 회 없이 보낸 글(d.talk)은 누가 보냈든 회 밖 글이다(보낼 때 열린 시도가 없었는데 들어가기 전에 회가 열렸다)
+    const own = !(d && d.talk) && ((d && (d.deliveryId === tr.deliveryId || d.origin !== 'human')) || text.includes(tr.unitId) || startsAsBoardNotice(text));
     if (own) return false;
     s.rigForeignAt = Date.now();
     try { st.addEvent(s.sessionId, 'rig_run_foreign_prompt', { tryId: tr.id, unitId: tr.unitId, deliveryId: d ? d.deliveryId : null }); } catch {}

@@ -3148,4 +3148,9 @@ export default {
     modeDrift: 'Rig seat {seat} switched its permission mode to {mode}. Switch it back to {back} with Shift+Tab in the seat\u2019s terminal.',
     modeTip: 'In this mode, shell writes and deletes may run without asking. This card goes away once the seat is back in the mode it started with.',
   },
+  // P237 (rig2-design 11.18, second item): "No run" in the send box (text only to a rig seat, no run opened)
+  cmdTalk: {
+    label: 'No run',
+    title: 'Send to {names} as text only, without opening a run. Use it for messages that are not run work, such as asking to change the rig. Not delivered while the seat is doing run work.',
+  },
 };
