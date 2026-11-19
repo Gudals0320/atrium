@@ -295,6 +295,7 @@ export function Canvas() {
   const currentWs = useStore((st) => (PLAN.allWs ? null : st.currentWs)); // P86 단계 4: 워크스페이스를 바꾸면 그 세션만 다시 그린다
   const initialViewport = useStore((st) => st.viewport);
   const rf = useReactFlow();
+  useEffect(() => { window.__mtFlow = rf; }, [rf]); // P251: 시험이 캔버스 시점을 맞춘다(fitView)
   useBoardMotion(); // P127: 판을 움직이는 동안 작업 중 둘레를 멈춘다
   const wrapRef = useRef(null);
   const [nodes, setNodes] = useState([]);

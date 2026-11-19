@@ -10,7 +10,7 @@ import { Rig } from '../src/rig.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { RigRoles, ROLE_SPAWN } from '../src/rig-roles.mjs';
-import { rigMapOf, rigMaps, placeRoles, itemState, rigMapHandlers, MAP_RECENT } from '../src/rig-map.mjs';
+import { rigMapOf, rigMaps, placeRoles, itemState, rigMapHandlers, MAP_RECENT, PLACE } from '../src/rig-map.mjs';
 import { roleOrder, rolePairs, RIG_LAYOUT } from '../src/rig-map-layout.mjs';
 import { missionGraph } from '../src/mission.mjs';
 import { HUMAN, BUILDER_ROLE } from '../src/rig-def.mjs';
@@ -172,8 +172,9 @@ test('P251 켤 때 한 번 역할 노드를 길 차례로 놓는다(칸·가지 
   assert.ok(moved >= 3);
   const at = (role) => B.store.nodes().find((n) => n.session_id === B.S(role).sessionId);
   const x0 = at('data').x, y0 = at('data').y;
-  assert.equal(at('ideas').x, x0 + 680); assert.equal(at('news').x, x0 + 680); assert.equal(at('news').y, y0 + 470);
-  assert.equal(at('verify').x, x0 + 2 * 680); assert.equal(at('ideas').y, y0);
+  const DX = 600 + PLACE.GX, DY = 400 + PLACE.GY;
+  assert.equal(at('ideas').x, x0 + DX); assert.equal(at('news').x, x0 + DX); assert.equal(at('news').y, y0 + DY);
+  assert.equal(at('verify').x, x0 + 2 * DX); assert.equal(at('ideas').y, y0);
   assert.ok(B.casts.some((c) => c.n === 'board.node' && c.d.sessionId === B.S('news').sessionId));
 });
 

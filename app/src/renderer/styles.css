@@ -2700,7 +2700,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rm-human b, .mt-rm-builder b { font-size: 19px; }
 .mt-rm-builder { cursor: pointer; border-style: dashed; }
 .mt-rm-builder .rs i, .mt-rm-role .rs i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: #6d6a62; }
-.mt-rm-role { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 10px; background: #191917; border: 1.5px solid #3b3a36; cursor: pointer; overflow: hidden; }
+.mt-rm-role { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 10px; background: #191917; border: 1.5px solid #3b3a36; cursor: pointer; }
 .mt-rm-role:focus-visible, .mt-rm-builder:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .mt-rm-role.hot { border-color: var(--con-line-working); background: #201a16; }
 .mt-rm-role .r1 { display: flex; align-items: baseline; gap: 10px; }

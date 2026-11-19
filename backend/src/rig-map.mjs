@@ -13,7 +13,7 @@ import { roleOrder } from './rig-map-layout.mjs';
 export const MAP_RECENT = 3; // 섹터마다 보이는 최근 항목 수(더 있으면 +n)
 export const FLOW_RECENT = 4; // 길마다 마우스를 올리면 뜨는 최근 항목 수
 export const CYCLE_ITEMS = 12; // 사이클 띠의 항목 수(앞에서부터)
-export const PLACE = { GX: 80, GY: 70 }; // 켤 때 놓는 역할 노드 사이
+export const PLACE = { GX: 360, GY: 240 }; // 켤 때 놓는 역할 노드 사이(길 선과 그 글이 노드 밖에 보일 만큼)
 
 const low = (p) => String(p || '').replace(/\\/g, '/').toLowerCase();
 const RANK = { returned: 5, waiting: 4, accepted: 3, passed: 2, superseded: 1, dropped: 1 };
