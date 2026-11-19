@@ -1,4 +1,6 @@
 // P251: rig를 눈으로 보기(docs research rig3-map.md 3·4절). P253: 세션 맵 지도는 8절(쌍마다 선 하나, 한 줄 차례, 카드가 다 담음, 트리 위 고정된 rig 띠)로 다시 그렸다.
+// P254: 사용자의 시안 V7("새 rig · 캔버스의 길 선")을 그대로 옮겼다. 캔버스와 세션 맵 모두 쌍마다 방향별 두 줄, 줄마다 글, "대기 n", 붉은 점, 밝기, 빌더로 올림 점선.
+//   세션 맵의 rig는 맨 위 띠가 아니라 그 워크스페이스 줄 안의 묶음이다(v7Layout, mission-lineage.js lineageLayout rigBlocks).
 // 세션 맵의 구조 지도와 캔버스의 길 선의 순수 함수(단위 시험 test/p251-lib.test.mjs, test/p253-lib.test.mjs).
 // 자료는 판 API rig.map(backend rig-map.mjs), 역할 차례는 공유 배치(backend rig-map-layout.mjs roleOrder·rolePairs).
 // 6절 "설계 쪽이 고른 넷"은 RIG_VIEW 한 곳에서 뒤집는다(값 하나씩).
@@ -14,57 +16,24 @@ export { roleOrder, rolePairs, rowOrder, HUMAN, BUILDER_ROLE };
 // (P251의 sectorsUnder는 P253에서 없앴다: 섹터·도구는 늘 역할 카드 안 줄이다. 설계 8.2-5)
 export const RIG_VIEW = { hideInTree: true, canvasExtras: false, canvasFrame: false };
 
-// ---- P253 지도 치수(세계 px, 참고 그림 experiments/rig-map/map-v2-rig-trade 와 같은 비율) ----
-// PAD 테두리 안 여백, HEADH 머리 띠, CW 카드 폭, GAP 카드 사이(이름표가 길면 넓힌다), LABW 이름표 최소 폭, LABROW 이름표 한 줄, CHAR 이름표 글 한 자 폭(12px 고정폭)
-// LANE 위로 도는 선 사이 높이, LANETOP 머리 띠 아래 첫 선까지, LANEBOT 가장 낮은 선에서 카드 위까지, TITLEH 카드 첫 줄, LINEH 카드 줄, CPADY 카드 위아래 여백
-// BANDH 사이클·변경 기록 띠, ENTRYOPEN 펼친 변경 기록 띠, BANDGAP 띠 사이, FOLDH 접힌 지도(머리 띠 한 줄), RIGGAP 지도 띠와 트리 사이(세계 px), MAPGAP 지도 사이(세계 px)
-export const RM = {
-  PAD: 32, HEADH: 56, CW: 264, GAP: 216, LABW: 168, LABROW: 20, LABPADY: 4, CHAR: 7.4, LANE: 44, LANETOP: 36, LANEBOT: 72, LANESTEP: 18,
-  TITLEH: 28, LINEH: 22, CPADY: 14, CARDTOP: 40, BANDH: 40, ENTRYOPEN: 200, BANDGAP: 12, FOLDH: 56, RIGGAP: 160, MAPGAP: 48, MINW: 900,
-  SCALE: 1.5, // 지도 한 장을 세션 맵 세계에 놓는 배율(트리 카드 글과 맞춘다). mapLayout은 배율 1, placeMaps가 곱한다
+// ---- P254: 사용자의 시안 V7 "새 rig · 캔버스의 길 선"(experiments/rig-map-ref/project/V7.dc.html)을 그대로 옮긴 치수와 색 ----
+// 캔버스와 세션 맵이 같은 값을 쓴다(px, 시안 1240×544 판의 값 그대로).
+// CW·CH 역할 카드, BH 빌더 카드 높이, GAP 카드 사이, BGAP 카드 아래 → 빌더 위, DY 두 줄이 가운데에서 떨어진 거리(위 줄 -8, 아래 줄 +8),
+// LAB 가운데 → 줄 글 가운데(위 줄 글은 위로, 아래 줄 글은 아래로), WAIT 가운데 → "대기 n" 가운데(아래), LABW·LABH 줄 글 칸, WAITW 대기 칸,
+// DOT 붉은 점 지름(줄 시작에서 DOTAT 안쪽), W1·W2 위 줄·아래 줄 굵기, RAISEW 올림 점선 굵기, RAISEDASH 점선, RAISELX 올림 글이 선에서 떨어진 거리, RAISELW 올림 글 칸,
+// LANE·LANEBOT 이웃하지 않은 쌍이 카드 위로 도는 높이(세션 맵만, 시안에 없는 경우), SCALE 세션 맵 세계에 놓는 배율(트리 카드 글과 맞춘다)
+export const V7 = {
+  CW: 184, CH: 96, BH: 80, GAP: 104, BGAP: 104, DY: 8, LAB: 28, WAIT: 48, LABW: 88, LABH: 16, WAITW: 56, DOT: 8, DOTAT: 8,
+  W1: 2, W2: 1.5, RAISEW: 2, RAISEDASH: [2, 6], RAISELX: 12, RAISELW: 40, LANE: 104, LANEBOT: 72, SCALE: 1.5,
+  C: { dim: '#8E8B83', lit: '#ECE9E1', text: '#A9A69D', red: '#E5484D', raise: '#F0B652', card: '#1A1A18', border: '#3B3A36', borderHot: '#8E8B83', tag: '#22221F', tagText: '#A9A69D', btag: '#3A2E17', work: '#A8D08D' },
 };
 
 const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
 const r1 = (v) => Math.round(v * 10) / 10;
 export const pathD = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${r1(p[0])} ${r1(p[1])}`).join(' ');
 
-// 역할 카드의 줄(차례: 세션 / 박자 / 쥔 것 / 최근 항목 / 도구(하나씩) / 입력 / 받은 것·답 없음 / 올림). 해당 없는 줄은 뺀다(설계 8.2-5)
-//   → [{ k: 'session'|'beat'|'owns'|'recent'|'tool'|'intake'|'counts'|'raise', ... }]
-export function cardLines(r, m) {
-  if (!r) return [];
-  const out = [];
-  if (r.launcher || r.model) out.push({ k: 'session', launcher: r.launcher || null, model: r.model || null });
-  if (r.beat) out.push({ k: 'beat', every: r.beat.every || null, at: r.beat.at || null, cycle: !!r.beat.cycle });
-  const sectors = r.sectors || [];
-  if (sectors.length) out.push({ k: 'owns', paths: sectors.map((s) => s.path) });
-  const items = sectors.flatMap((s) => s.items || []).sort((a, b) => (b.t || 0) - (a.t || 0));
-  const more = sectors.reduce((s, x) => s + (x.more || 0), 0);
-  if (items.length) out.push({ k: 'recent', items, more }); // 몇 개가 통째로 드는지는 recentFit이 정한다(그 밖은 +n)
-  for (const x of r.tools || []) out.push({ k: 'tool', tool: x });
-  if ((r.intake || []).length) out.push({ k: 'intake', items: r.intake });
-  if (r.received || r.unanswered || r.material || r.foreign) out.push({ k: 'counts', received: r.received || 0, unanswered: r.unanswered || 0, material: r.material || 0, foreign: r.foreign || 0 });
-  const nr = ((m && m.raises) || []).filter((x) => x.role === r.name).length;
-  if (nr) out.push({ k: 'raise', n: nr });
-  return out;
-}
-
-// 카드 "최근" 줄: 통째로 드는 항목만, 남은 것과 섹터 밖 더 있는 수는 +n. label(state) = 상태 글
-export const RECENT_W = 264 - 32 - 48; // 카드 폭 - 좌우 여백 - 줄 이름 칸
-export function recentFit(line, label = (s) => s, maxW = RECENT_W) {
-  const texts = line.items.map((it) => it.id + ' ' + label(it.state));
-  const f = fitRow(texts, maxW, { gap: 6, moreW: 30, ascii: 7.3, cjk: 12 });
-  return { items: line.items.slice(0, f.n), more: f.more + (line.more || 0) };
-}
-// 사이클 띠: 통째로 드는 항목 사건만(까닭 글은 빼고 풍선에), 남은 것 +n. → { items, more }
-export function cycleFit(items, maxW, what = (w) => w, extra = 0) {
-  const CIRC = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
-  const texts = (items || []).map((c) => (CIRC[c.k - 1] || c.k + '.') + ' ' + c.id + ' ' + what(c.what));
-  const f = fitRow(texts, maxW, { gap: 14, moreW: 64, ascii: 7, cjk: 13 });
-  return { items: (items || []).slice(0, f.n), more: f.more + (extra || 0) };
-}
-
-// 두 역할 사이 이름표 줄(쌍마다 하나, 설계 8.2-1·2): a가 왼쪽. 방향마다 항목 종류 한 줄, 수는 이번 사이클에 낸 수가 0이 아닐 때만, 끝나지 않은 반려가 있으면 붉은 점
-//   → [{ dir: 'fwd'|'back', item, n, open, for }]
+// 두 역할 사이 길(방향마다): a → b 줄과 b → a 줄. 사람이 낸 길은 쌍이 아니다(from에 역할이 있어야 한다)
+//   → [{ dir: 'fwd'|'back', item, n(이번 사이클에 낸 수), open(끝나지 않은 반려), waiting, for }]
 export function pairRows(a, b, flows) {
   const rows = [];
   const add = (dir, x, y) => {
@@ -80,123 +49,74 @@ export function pairRows(a, b, flows) {
   add('fwd', a, b); add('back', b, a);
   return rows;
 }
-export const rowText = (r) => (r.dir === 'fwd' ? `${r.item}${r.n ? ' ' + r.n : ''} →` : `← ${r.item}${r.n ? ' ' + r.n : ''}`);
-const labelBox = (rows) => ({ w: Math.max(RM.LABW, Math.ceil(Math.max(...rows.map((r) => rowText(r).length + (r.open ? 2 : 0))) * RM.CHAR + 28)), h: rows.length * RM.LABROW + RM.LABPADY * 2 + 2 });
+// V7 한 쌍의 두 줄: top = 왼쪽(a) → 오른쪽(b) 길, bottom = b → a 길. 그 방향 길이 없으면 그 줄은 null(긋지 않는다).
+//   waiting = 두 방향 기다림 합("대기 n"), lit = 지금 오가는 쌍(기다리는 항목이 있다, 시안의 검증 창구–매매)
+export function pairLines(a, b, flows) {
+  const rows = pairRows(a, b, flows);
+  const side = (dir) => { const rs = rows.filter((r) => r.dir === dir); return rs.length ? { items: rs.map((r) => r.item), open: rs.some((r) => r.open), waiting: rs.reduce((s, r) => s + r.waiting, 0) } : null; };
+  const top = side('fwd'), bottom = side('back');
+  const waiting = (top ? top.waiting : 0) + (bottom ? bottom.waiting : 0);
+  return { a, b, top, bottom, waiting, lit: waiting > 0 };
+}
+// 줄 글: 위 줄 "스냅숏 →", 아래 줄 "← 데이터 요청"(시안). 한 방향에 종류가 여럿이면 " · "로 잇는다
+export const lineText = (side, which) => (!side ? '' : which === 'top' ? `${side.items.join(' · ')} →` : `← ${side.items.join(' · ')}`);
 
-// 지도 한 장의 그림(지도 왼쪽 위 = 0, 0, 설계 8.2)
-//   → { w, h, folded, dim, head: { x, y, w, h }, order: [이름], roles: Map 이름 → { x, y, w, h, lines },
-//       pairs: [{ key, a, b, straight, lane, pts, d, label: { x, y, w, h }, rows, tipA, tipB }], cycle, entry }
-// opts: { folded(머리 띠만), entryOpen }
-export function mapLayout(m, opts = {}) {
+// 곧은 두 줄의 자리(시안 그대로). P = 왼쪽(a) 끝, Q = 오른쪽(b) 끝, k = 화면 px 하나의 세계 크기(캔버스 1/배율, 세션 맵 1).
+//   위 줄 P → Q(끝 화살촉, 굵기 W1), 아래 줄 Q → P(끝 화살촉, 굵기 W2). 화살촉 끝이 카드 변에 닿게 줄을 화살촉 길이만큼 짧게 끝낸다(시안 99/103).
+//   → { top: { d, from, to }, bottom: {...}, topLab, botLab, wait: [x, y](가운데), dotTop, dotBot: [x, y], u, n }
+export function twoLines(P, Q, k = 1) {
+  const dx = Q[0] - P[0], dy = Q[1] - P[1], L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L, uy = dy / L, nx = uy, ny = -ux; // n = 위쪽(왼 → 오른 기준)
+  const o = V7.DY * k, at = (p, s, t = 0) => [p[0] + nx * s + ux * t, p[1] + ny * s + uy * t];
+  const tf = at(P, o), tt = at(Q, o, -2 * V7.W1 * k), bf = at(Q, -o), bt = at(P, -o, 2 * V7.W2 * k);
+  const mid = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
+  return {
+    top: { from: tf, to: tt, d: pathD([tf, tt]) }, bottom: { from: bf, to: bt, d: pathD([bf, bt]) },
+    topLab: at(mid, V7.LAB * k), botLab: at(mid, -V7.LAB * k), wait: at(mid, -V7.WAIT * k),
+    dotTop: at(P, o, V7.DOTAT * k), dotBot: at(Q, -o, -V7.DOTAT * k), u: [ux, uy], n: [nx, ny],
+  };
+}
+
+// ---- P254 세션 맵: 그 워크스페이스 줄 안의 rig 묶음(V7 꼴). 역할 카드 한 줄(rowOrder), 이웃한 쌍은 곧은 두 줄,
+//   이웃하지 않은 쌍은 카드 위로 도는 두 줄(시안에 없는 경우: 같은 굵기·색·글 자리), 빌더는 가장 오른쪽 역할 아래, 올린 역할에서 빌더로 노랑 점선.
+//   → { w, h, dim, order, roles: Map 이름 → { x, y, w, h }, builder: { x, y, w, h }, pairs: [{ key, a, b, lines(pairLines), straight, top: { d, pts }, bottom, topLab, botLab, wait, dotTop, dotBot }], raises: [{ role, n, d, lab }] }
+export function v7Layout(m) {
   if (!m) return null;
-  const off = m.status !== 'on';
   const roleList = m.roles || [];
-  const byName = new Map(roleList.map((r) => [r.name, r]));
   const flows = m.flows || [];
   const beatRole = (m.head && m.head.beat && m.head.beat.role) || null;
   const order = rowOrder(roleList.map((r) => r.name), flows, { beatRole });
   const pos = new Map(order.map((n, i) => [n, i]));
-  // 쌍(사람·빌더는 쌍이 아니다): a = 왼쪽
-  const pairs = rolePairs(order, flows).map((p) => { const [a, b] = pos.get(p.a) <= pos.get(p.b) ? [p.a, p.b] : [p.b, p.a]; return { key: a + '|' + b, a, b, rows: pairRows(a, b, flows) }; }).filter((p) => p.rows.length);
-  // 카드 사이 틈: 이웃한 쌍의 이름표가 들어갈 만큼
-  const gaps = order.slice(1).map((_, i) => { const p = pairs.find((q) => pos.get(q.a) === i && pos.get(q.b) === i + 1); return p ? Math.max(RM.GAP, labelBox(p.rows).w + 48) : RM.GAP; });
-  const xs = []; let x = RM.PAD;
-  order.forEach((n, i) => { xs.push(x); x += RM.CW + (gaps[i] || 0); });
-  const cardsW = order.length ? x - RM.PAD : 0;
-  const w = Math.max(RM.MINW, RM.PAD * 2 + cardsW);
-  const head = { x: 0, y: 0, w, h: opts.folded ? RM.FOLDH : RM.HEADH };
-  if (opts.folded) return { w, h: RM.FOLDH, folded: true, dim: off, head, order, roles: new Map(), pairs: [], cycle: null, entry: null };
-  // 위로 도는 쌍: 걸친 폭이 짧은 것이 아래(카드에 가까이)
-  const far = pairs.filter((p) => pos.get(p.b) - pos.get(p.a) > 1).sort((p, q) => (pos.get(p.b) - pos.get(p.a)) - (pos.get(q.b) - pos.get(q.a)) || pos.get(p.a) - pos.get(q.a));
-  const nLane = far.length;
-  const cardsY = RM.HEADH + (nLane ? RM.LANETOP + (nLane - 1) * RM.LANE + RM.LANEBOT : RM.CARDTOP);
-  const lines = new Map(order.map((n) => [n, cardLines(byName.get(n), m)]));
-  const maxL = Math.max(0, ...[...lines.values()].map((l) => l.length));
-  const ch = RM.CPADY * 2 + RM.TITLEH + maxL * RM.LINEH;
-  const roles = new Map(order.map((n, i) => [n, { x: xs[i], y: cardsY, w: RM.CW, h: ch, lines: lines.get(n) }]));
-  const out = [];
-  // 곧은 선: 카드 가운데 높이, 왼쪽 카드 오른쪽 변 → 오른쪽 카드 왼쪽 변. 이름표는 틈 가운데
-  for (const p of pairs) {
+  const pairs0 = rolePairs(order, flows).map((p) => { const [a, b] = pos.get(p.a) <= pos.get(p.b) ? [p.a, p.b] : [p.b, p.a]; return { key: a + '|' + b, a, b, lines: pairLines(a, b, flows) }; }).filter((p) => p.lines.top || p.lines.bottom);
+  const far = pairs0.filter((p) => pos.get(p.b) - pos.get(p.a) > 1).sort((p, q) => (pos.get(p.b) - pos.get(p.a)) - (pos.get(q.b) - pos.get(q.a)) || pos.get(p.a) - pos.get(q.a));
+  const y0 = far.length ? V7.LANEBOT + (far.length - 1) * V7.LANE + V7.LAB + V7.LABH : 0;
+  const roles = new Map(order.map((n, i) => [n, { x: i * (V7.CW + V7.GAP), y: y0, w: V7.CW, h: V7.CH }]));
+  const pairs = pairs0.map((p) => {
     const A = roles.get(p.a), B = roles.get(p.b);
-    const fwd = p.rows.some((r) => r.dir === 'fwd'), back = p.rows.some((r) => r.dir === 'back');
-    const lb = labelBox(p.rows);
-    let pts, label;
     if (pos.get(p.b) - pos.get(p.a) === 1) {
-      const y = A.y + A.h / 2;
-      pts = [[A.x + A.w + 2, y], [B.x - 2, y]];
-      label = { x: (A.x + A.w + B.x) / 2 - lb.w / 2, y: y - lb.h / 2, w: lb.w, h: lb.h };
-      out.push({ ...p, straight: true, lane: null, pts, d: pathD(pts), label, tipA: back, tipB: fwd });
-    } else {
-      const li = far.indexOf(p);
-      const ly = cardsY - RM.LANEBOT - li * RM.LANE;
-      // 한 카드에서 여러 선이 오르면 겹치지 않게 자리를 비킨다
-      const k = far.slice(0, li).filter((q) => q.a === p.a || q.b === p.a).length, k2 = far.slice(0, li).filter((q) => q.a === p.b || q.b === p.b).length;
-      const ax = A.x + Math.round(A.w * 2 / 3) - k * RM.LANESTEP, bx = B.x + Math.round(B.w / 3) + k2 * RM.LANESTEP;
-      pts = [[ax, A.y - 2], [ax, ly], [bx, ly], [bx, B.y - 2]];
-      label = { x: (ax + bx) / 2 - lb.w / 2, y: ly - lb.h / 2, w: lb.w, h: lb.h };
-      out.push({ ...p, straight: false, lane: li, pts, d: pathD(pts), label, tipA: back, tipB: fwd });
+      const y = A.y + A.h / 2, g = twoLines([A.x + A.w, y], [B.x, y], 1);
+      return { ...p, straight: true, top: g.top, bottom: g.bottom, topLab: g.topLab, botLab: g.botLab, wait: g.wait, dotTop: g.dotTop, dotBot: g.dotBot };
     }
-  }
-  let by = cardsY + ch + RM.CARDTOP;
-  const cycle = { x: RM.PAD, y: by, w: w - RM.PAD * 2, h: RM.BANDH }; by += RM.BANDH + RM.BANDGAP;
-  const entry = { x: RM.PAD, y: by, w: w - RM.PAD * 2, h: m.entry && opts.entryOpen ? RM.ENTRYOPEN : RM.BANDH }; by += entry.h;
-  return { w, h: by + RM.PAD, folded: false, dim: off, head, order, roles, pairs: out, cycle, entry, lanes: nLane };
-}
-
-// ---- P253 띠·카드 줄의 글(자르지 않고 통째로 든 것만, 남은 수는 +n) ----
-// 글 폭 어림(px): 한글·한자·가나는 cjk, 그 밖은 ascii(글꼴마다 다르게 준다)
-export function textW(s, { ascii = 7.3, cjk = 12 } = {}) {
-  let w = 0;
-  for (const ch of String(s || '')) { const c = ch.codePointAt(0); w += (c >= 0x1100 && c <= 0x11ff) || (c >= 0x2460 && c <= 0x24ff) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xff00 && c <= 0xffef) ? cjk : ascii; }
-  return w;
-}
-// texts를 앞에서부터 폭 maxW 안에 통째로 든 만큼 → { n: 보이는 수, more: 남은 수 }. 남는 것이 있으면 "+n" 자리(moreW)를 비워 둔다. 하나도 안 들어가면 0과 +전체
-export function fitRow(texts, maxW, { gap = 6, moreW = 30, ...wopt } = {}) {
-  const ws = (texts || []).map((s) => textW(s, wopt));
-  let used = 0, n = 0;
-  for (let i = 0; i < ws.length; i++) {
-    const need = (n ? gap : 0) + ws[i];
-    const rest = ws.length - i - 1;
-    if (used + need + (rest ? gap + moreW : 0) > maxW) break;
-    used += need; n++;
-  }
-  return { n, more: ws.length - n };
-}
-// 변경 기록 꼭지 → 한 줄 맨 글: 마크다운 표시(머리 #, **, __, `, 목록 머리, [글](주소))를 빼고 줄을 이어, maxChars 안에서 문장 끝에서 잘라 "…"
-export function plainEntry(text, maxChars = 200) {
-  let s = String(text || '').replace(/\r\n/g, '\n');
-  s = s.replace(/^\s{0,3}#{1,6}\s*/gm, '').replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-  s = s.replace(/\*\*|__|`/g, '').replace(/(^|\s)[*_](\S[^*_]*?)[*_](?=\s|[.,!?]|$)/g, '$1$2');
-  s = s.replace(/\s+/g, ' ').trim();
-  if (s.length <= maxChars) return s;
-  const cut = s.slice(0, maxChars);
-  let end = -1;
-  const re = /[.!?。](?=\s|$)|다\.(?=\s|$)/g; let m;
-  while ((m = re.exec(cut))) end = m.index + m[0].length;
-  return (end > maxChars * 0.3 ? cut.slice(0, end) : cut.replace(/\s+\S*$/, '')).trim() + ' …';
-}
-
-// 접힘: 사람이 접거나 편 것(mem: 워크스페이스 키 → true 접힘 | false 펼침)을 지키고, 없으면 꺼진 rig만 접는다
-export const foldedOf = (m, mem) => (m && mem && Object.prototype.hasOwnProperty.call(mem, m.workspace) ? !!mem[m.workspace] : !!m && m.status !== 'on');
-
-// ---- 세션 맵 안 자리(설계 8.3): 트리 위 고정된 rig 띠. 트리 bounds 왼쪽 위에 맞추고 위로 쌓는다(여럿이면 이름 차례로 위에서 아래).
-//   트리 배치(열·줄)를 읽기만 하고 바꾸지 않는다. 트리도 지도를 모른다. → { items: [{ key, x, y, w, h, scale }](세계 px, RM.SCALE를 곱한 크기), band: { x, y, w, h }, bounds } | null
-export function placeMaps(lay, maps, geo) {
-  if (!lay || !maps || !maps.length) return null;
-  const ms = maps.filter((m) => geo.get(m.workspace)).sort((a, b) => String(a.name || a.workspace).localeCompare(String(b.name || b.workspace)) || String(a.workspace).localeCompare(String(b.workspace)));
-  if (!ms.length) return null;
-  const b0 = lay.bounds;
-  const x = b0.x || 0;
-  const S = RM.SCALE;
-  const total = ms.reduce((s, m) => s + geo.get(m.workspace).h * S, 0) + RM.MAPGAP * (ms.length - 1);
-  let y = (b0.y || 0) - RM.RIGGAP - total;
-  const top = y;
-  const items = ms.map((m) => { const g = geo.get(m.workspace); const it = { key: m.workspace, x, y, w: g.w * S, h: g.h * S, scale: S }; y += g.h * S + RM.MAPGAP; return it; });
-  const bw = Math.max(...items.map((i) => i.w));
-  const band = { x, y: top, w: bw, h: total };
-  const right = Math.max(x + bw, (b0.x || 0) + b0.w);
-  const bounds = { x: Math.min(x, b0.x || 0), y: top, w: right - Math.min(x, b0.x || 0), h: (b0.y || 0) + b0.h - top };
-  return { items, band, bounds };
+    // 카드 위로 돈다: 위 줄은 바깥(왼쪽 카드 가운데 - DY에서 올라 오른쪽 카드 가운데 + DY로 내려온다), 아래 줄은 안쪽(되돌아온다)
+    const li = far.indexOf(p), ly = y0 - V7.LANEBOT - li * V7.LANE;
+    const ax = A.x + A.w / 2, bx = B.x + B.w / 2, o = V7.DY;
+    const tp = [[ax - o, y0], [ax - o, ly - o], [bx + o, ly - o], [bx + o, y0 - 2 * V7.W1]];
+    const bp = [[bx - o, y0], [bx - o, ly + o], [ax + o, ly + o], [ax + o, y0 - 2 * V7.W2]];
+    const mx = (ax + bx) / 2;
+    return { ...p, straight: false, lane: li, top: { d: pathD(tp), pts: tp }, bottom: { d: pathD(bp), pts: bp }, topLab: [mx, ly - o - (V7.LAB - V7.DY)], botLab: [mx, ly + o + (V7.LAB - V7.DY)], wait: [mx, ly + o + (V7.WAIT - V7.DY)], dotTop: [ax - o, y0 - V7.DOTAT], dotBot: [bx - o, y0 - V7.DOTAT] };
+  });
+  const last = order.length ? roles.get(order[order.length - 1]) : { x: 0, y: y0, w: V7.CW, h: V7.CH };
+  const builder = { x: last.x, y: y0 + V7.CH + V7.BGAP, w: V7.CW, h: V7.BH };
+  // 올림: 기다리는 올림이 있는 역할마다 하나. 빌더 바로 위 역할은 곧게 내려가고, 다른 역할은 내려가서 빌더 왼쪽 변으로 꺾는다
+  const counts = new Map();
+  for (const x of m.raises || []) if (roles.has(x.role)) counts.set(x.role, (counts.get(x.role) || 0) + 1);
+  const raises = [...counts].map(([role, n]) => {
+    const R = roles.get(role), cx = R.x + R.w / 2, y1 = R.y + R.h;
+    const pts = R.x === builder.x ? [[cx, y1], [cx, builder.y - 2 * V7.RAISEW]] : [[cx, y1], [cx, builder.y + builder.h / 2], [builder.x - 2 * V7.RAISEW, builder.y + builder.h / 2]];
+    return { role, n, pts, d: pathD(pts), lab: [cx + V7.RAISELX, (y1 + (R.x === builder.x ? builder.y : builder.y + builder.h / 2)) / 2] };
+  });
+  const w = Math.max(V7.CW, ...[...roles.values()].map((r) => r.x + r.w), builder.x + builder.w);
+  return { w, h: builder.y + builder.h, dim: m.status !== 'on', order, roles, builder, pairs, raises };
 }
 
 // ---- 세션 맵 트리에서 rig 역할·빌더 세션 빼기(RIG_VIEW.hideInTree) ----
@@ -233,7 +153,8 @@ export function rigEdges(maps, sessions, here = () => true) {
       const waiting = fl.reduce((s, f) => s + (f.waiting || 0), 0);
       const openA = fl.some((f) => f.openReturns > 0 && list(f.from).includes(p.a));
       const openB = fl.some((f) => f.openReturns > 0 && list(f.from).includes(p.b));
-      out.push({ id: `rig:${m.workspace}:${p.key}`, kind: 'path', ws: m.workspace, source: sa, target: sb, a: p.a, b: p.b, fwd: p.fwd, back: p.back, forBack: p.forBack, waiting, openA, openB, flows: p.flows });
+      // P254: lines = V7 두 줄(a → b, b → a). 캔버스가 노드 자리를 보고 왼쪽 노드 → 오른쪽 노드 줄을 위에 둔다(RigLines.jsx)
+      out.push({ id: `rig:${m.workspace}:${p.key}`, kind: 'path', ws: m.workspace, source: sa, target: sb, a: p.a, b: p.b, fwd: p.fwd, back: p.back, forBack: p.forBack, waiting, openA, openB, flows: p.flows, lines: pairLines(p.a, p.b, flows) });
     }
     const bsid = sid.get(BUILDER_ROLE);
     if (bsid && here(bsid)) {
@@ -255,9 +176,11 @@ export function pathText(e, t) {
   const s = [...a, ...b].join(' · ');
   return e.waiting ? s + ' · ' + t('rigMap.waitingShort', { n: e.waiting }) : s;
 }
-// 노드 꼬리표: 역할 세션 → { kind: 'role', role, docN, intake: [종류], beat, sectors }, 빌더 → { kind: 'builder' }, 아니면 null
+// 노드 꼬리표: 역할 세션 → { kind: 'role', role, docN, intake: [종류], beat, sectors }, 빌더 → { kind: 'builder' },
+//   P254: rig가 켜진 워크스페이스의 다른 세션 → { kind: 'general' }(시안 V7 "일반 세션"), 아니면 null
 export function rigTag(s, mapOf) {
-  if (!s || !s.rigRole) return null;
+  if (!s) return null;
+  if (!s.rigRole) { const g = mapOf ? mapOf(s.workspaceKey || null) : null; return g && g.status === 'on' && g.workspace === (s.workspaceKey || null) ? { kind: 'general' } : null; }
   if (s.rigRole === BUILDER_ROLE) return { kind: 'builder' };
   const m = mapOf ? mapOf(s.workspaceKey || null) : null;
   const r = m && (m.roles || []).find((x) => x.name === s.rigRole);

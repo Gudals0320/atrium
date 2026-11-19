@@ -2929,5 +2929,11 @@ export default {
     noRoles: '역할이 없습니다',
     openReturn: '끝나지 않은 반려',
   },
+  // P254: 시안 V7(새 rig · 캔버스의 길 선) 글: 대기 수, 꼬리표, 카드 상태 글
+  rigV7: {
+    wait: '대기 {n}',
+    tagRoleV: '역할 · {name} · v{n}', tagGeneral: '일반 세션', builderName: 'builder',
+    state: { ready: '쉼', working: '일함', sleeping: '잠', waiting: '응답 필요', error: '오류', exited: '끝남', starting: '시작 중', trust_wait: '신뢰 확인', shell_idle: '쉼', shell_running: '일함', none: '세션 없음' },
+  },
 };
 

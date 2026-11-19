@@ -43,7 +43,7 @@ import { KanbanNode } from './Kanban.jsx';
 import { wsAt } from './lib/items.js';
 import { DividerNode, GhostNode, DockGrip, DockEdge, DockLinks } from './Docks.jsx';
 import { LinkEdge, RepoEdge } from './Links.jsx';
-import { RigPathEdge, RigRaiseEdge, RigFrames, RIG_TIP, RIG_TIP_SMALL } from './RigLines.jsx'; // P251: rig 길 선
+import { RigPathEdge, RigRaiseEdge, RigFrames } from './RigLines.jsx'; // P251: rig 길 선(P254: 시안 V7 두 줄, 화살촉은 선이 그린다)
 import { rigEdges } from './lib/rig-map.js'; // P251
 import { withBoundary } from './ErrorBoundary.jsx';
 import { pickAttached, termAllowed, veryClose, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
@@ -380,7 +380,7 @@ export function Canvas() {
       : decorateEdges(out, { rectOf: rectId, links, sessions, now: Date.now() }); // P67: 한 쌍에 이름표 하나, 물러나기, 비켜 놓기
     // P146: 값이 같은 선은 옛 객체를 다시 쓴다(세션 갱신마다 선 전부를 다시 그리지 않게)
     // P251: rig 길 선(정의에서 나온다, 연결 기록이 아니다, 끊기·고르기 없음). 역할 쌍마다 하나, 기다리는 올림은 빌더로 점선
-    for (const e of rigEdges([...rigMaps.values()], sessions, here)) made.push({ id: e.id, source: e.source, target: e.target, ...sides(e.source, e.target), type: e.kind === 'raise' ? 'rigraise' : 'rigpath', data: e, selectable: false, ...(e.kind === 'path' && e.fwd.length ? { markerEnd: RIG_TIP } : {}), ...(e.kind === 'path' && e.back.length ? { markerStart: e.fwd.length ? RIG_TIP_SMALL : RIG_TIP } : {}) });
+    for (const e of rigEdges([...rigMaps.values()], sessions, here)) made.push({ id: e.id, source: e.source, target: e.target, ...sides(e.source, e.target), type: e.kind === 'raise' ? 'rigraise' : 'rigpath', data: e, selectable: false });
     const prevById = new Map((edgesRef.current || []).map((e) => [e.id, e]));
     const next = made.map((e) => { const o = prevById.get(e.id); return o && Object.keys(o).length === Object.keys(e).length && sameFields(o, e) ? o : e; });
     return sameList(edgesRef.current, next) ? edgesRef.current : next;
