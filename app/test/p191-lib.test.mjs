@@ -1,4 +1,4 @@
-// P191 단위 시험: 판 안에서 rig 만들기와 고치기(lib/rig-setup.js). 대화상자 단계와 조건(틀·말로, 런처 기본값, 미리보기 자료, 앉히기 선택),
+// P191 단위 시험: 판 안에서 rig 만들기와 고치기(lib/rig-setup.js). 대화상자 단계와 조건(말로, 미리보기 자료, 앉히기 선택. P228: 틀 길은 세 질문으로 바뀌어 p228-lib.test.mjs),
 // rig 판 표 편집과 저장 자료(세 칸), 잠금, 원격은 보기만. 판 API는 가짜(P190 계약 모양)로 돌린다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,9 +6,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  menuEntry, launcherChoices, defaultLaunchers, wizardInit, wizardPickTemplate, wizardPickDescribe, wizardSetLauncher, wizardBack, wizardCanNext,
+  menuEntry, launcherChoices, wizardInit, wizardPickDescribe, wizardBack, wizardCanNext,
   wizardRequest, wizardAfterRequest, wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions,
-  previewModel, arrowLabel, seatList, templateList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit,
+  previewModel, arrowLabel, seatList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit,
 } from '../src/renderer/lib/rig-setup.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
@@ -17,7 +17,7 @@ const R = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', '
 const read = (f) => fs.readFileSync(path.join(R, f), 'utf8');
 const WS = 'C:/w/new';
 
-// 계약 모양의 틀 셋
+// 옛 계약 모양의 3자리 틀(P228부터 판은 만들지 않지만 그 정의는 그대로 읽고 표로 고친다)
 const TEMPLATES = [
   { id: 'main-worker', title: 'Main + worker', desc: '', seats: { main: { session: 'keep' }, worker: { session: 'fresh' } }, flow: [{ from: 'main', on: 'assign', to: 'worker' }, { from: 'worker', on: 'ok', to: 'main' }], results: ['ok', 'failed'] },
   { id: 'main-worker-reviewer', title: 'Main + worker + reviewer', desc: '', seats: { main: { session: 'keep' }, worker: { session: 'fresh' }, reviewer: { session: 'fresh' } },
@@ -35,14 +35,7 @@ function fakeApi() {
     calls, st,
     async call(m, p) {
       calls.push([m, p]);
-      if (m === 'rig.templates') return { templates: TEMPLATES };
       if (m === 'rig.get') return get();
-      if (m === 'rig.create') {
-        if (st.def) throw new Error('이미 정의가 있다');
-        const tp = TEMPLATES.find((x) => x.id === p.template);
-        st.def = { ...tp, seats: Object.fromEntries(Object.entries(tp.seats).map(([k, v]) => [k, { ...v, launcher: p.launchers[k] }])) }; st.n = 1;
-        return { ok: true, path: '.atrium/rig.json', version: 1 };
-      }
       if (m === 'rig.describe') { st.builder = { session: 'b1', name: 'rig-builder', state: 'working' }; return { session: 'b1', name: 'rig-builder' }; }
       if (m === 'rig.enable') { assert.equal(p.confirm, true); st.enabled = true; return {}; }
       if (m === 'rig.seat') { st.seated[p.seat] = [{ sessionId: p.session, name: p.session }]; return {}; }
@@ -65,44 +58,9 @@ test('P191: 이름표 메뉴 — 정의가 없으면 만들기, 있으면 보기
   assert.equal(canEdit({}), true);
 });
 
-test('P191: 런처 목록과 기본값(defaultLauncher, 없으면 첫째), 셸·명령 런처는 뺀다', () => {
-  const ch = launcherChoices(LAUNCHERS);
-  assert.deepEqual(ch.map((c) => c.id), ['l-claude', 'l-codex']);
-  assert.deepEqual(defaultLaunchers(TEMPLATES[1], 'l-codex', ch), { main: 'l-codex', worker: 'l-codex', reviewer: 'l-codex' });
-  assert.deepEqual(defaultLaunchers(TEMPLATES[0], 'gone', ch), { main: 'l-claude', worker: 'l-claude' }, '목록에 없는 기본값은 첫째로');
-  assert.deepEqual(defaultLaunchers(TEMPLATES[0], null, ch), { main: 'l-claude', worker: 'l-claude' });
+test('P191: 런처 목록에서 셸·명령 런처는 뺀다', () => {
+  assert.deepEqual(launcherChoices(LAUNCHERS).map((c) => c.id), ['l-claude', 'l-codex']);
   assert.deepEqual(launcherChoices(null), []);
-});
-
-test('P191: 대화상자 — 틀 길(런처 → rig.create → 미리보기 → 켜기 → 앉히기)', async () => {
-  const api = fakeApi();
-  const ch = launcherChoices(LAUNCHERS);
-  let w = wizardInit({ defaultLauncher: 'l-codex', status: { state: 'none' } });
-  assert.equal(w.step, 'path');
-  w = wizardPickTemplate(w, TEMPLATES[1], 'l-codex', ch);
-  assert.equal(w.step, 'launchers');
-  assert.equal(wizardCanNext(w), true);
-  w = wizardSetLauncher(w, 'worker', 'l-claude');
-  assert.equal(wizardBack(w).step, 'path');
-  const bad = wizardSetLauncher(w, 'main', '');
-  assert.equal(wizardCanNext(bad), false, '빈 런처면 다음을 막는다');
-  const req = wizardRequest(w, WS);
-  assert.deepEqual(req, { method: 'rig.create', params: { workspace: WS, template: 'main-worker-reviewer', launchers: { main: 'l-codex', worker: 'l-claude', reviewer: 'l-codex' } } });
-  w = wizardAfterRequest(w, await api.call(req.method, req.params));
-  assert.equal(w.step, 'preview');
-  assert.equal(api.st.def.seats.worker.launcher, 'l-claude');
-  w = { ...w, step: 'enable' };
-  await api.call('rig.enable', { workspace: WS, confirm: true });
-  w = wizardAfterEnable(w);
-  assert.equal(w.step, 'seat');
-  const g = await api.call('rig.get', { workspace: WS });
-  const keeps = keepSeats(g.definition, g.seated);
-  assert.deepEqual(keeps.map((k) => k.name), ['main'], 'keep 자리만 앉힌다');
-  w = wizardSetSeat(w, 'main', { kind: 'session', session: 's1' });
-  const acts = seatActions(WS, w.seatPick);
-  assert.deepEqual(acts, [{ method: 'rig.seat', params: { session: 's1', seat: 'main' } }]);
-  for (const a of acts) await api.call(a.method, a.params);
-  assert.deepEqual(api.calls.map((c) => c[0]), ['rig.create', 'rig.enable', 'rig.get', 'rig.seat']);
 });
 
 test('P191: 대화상자 — 말로 길(글 → rig.describe → 만드는 중 → 정의가 생기면 미리보기), 실패·멈춤은 남는다', async () => {
@@ -133,10 +91,11 @@ test('P191: 대화상자 — 말로 길(글 → rig.describe → 만드는 중 �
   assert.equal(wizardOnBuilder({ step: 'seat' }, { state: 'done' }, { state: 'on' }).step, 'seat');
 });
 
-test('P191: 다시 연 대화상자 — 꺼진 정의는 미리보기부터, 켜진 것은 앉히기부터', () => {
+test('P191: 다시 연 대화상자 — 꺼진 정의는 요약부터, 켜진 것은 앉히기부터', () => {
   assert.equal(wizardInit({ status: { state: 'off' } }).step, 'preview');
   assert.equal(wizardInit({ status: { state: 'on' } }).step, 'seat');
-  assert.equal(wizardInit({ status: { state: 'none' } }).step, 'path');
+  assert.equal(wizardInit({ status: { state: 'none' } }).step, 'ask', 'P228: 정의가 없으면 세 질문부터');
+  assert.equal(wizardBack(wizardPickDescribe(wizardInit({}))).step, 'ask');
 });
 
 test('P191: 앉히기 — 고를 세션(같은 워크스페이스, 에이전트, 살아 있음, 다른 자리에 없음)과 새로 띄우기·건너뛰기', () => {
@@ -292,14 +251,7 @@ test('P191: 창 코드 — 원격은 보기만, 이름표 메뉴, 판 이벤트 
   }
 });
 
-test('P191(P190 모양): 틀 목록 {templates}와 영어 글, 워크트리 자리 기본 런처는 Claude, 멈춤 까닭은 stopWhy', () => {
-  const res = { templates: [{ id: 'a', title: '메인', desc: '설명', en: { title: 'Main', desc: 'Desc' }, seats: {} }] };
-  assert.equal(templateList(res, 'ko')[0].title, '메인');
-  assert.deepEqual([templateList(res, 'en')[0].title, templateList(res, 'en')[0].desc], ['Main', 'Desc']);
-  assert.deepEqual(templateList([{ id: 'b', title: 'x' }]).map((x) => x.id), ['b']);
-  assert.deepEqual(templateList({ error: 'e' }), []);
-  const ch = launcherChoices(LAUNCHERS);
-  assert.deepEqual(defaultLaunchers(TEMPLATES[2], 'l-codex', ch), { main: 'l-codex', worker: 'l-claude', reviewer: 'l-codex' });
+test('P191(P190 모양): 멈춤 까닭은 stopWhy, rig.builder 이벤트로 만드는 중이 넘어간다', () => {
   assert.deepEqual(builderView({ state: 'stopped', stopReason: 'idle_no_done', stopWhy: '보고 없이 쉰다', text: null, name: 'rig-builder' }).text, '보고 없이 쉰다');
   assert.equal(builderView({ state: 'done', result: 'failed', text: 'x' }).state, 'failed');
   assert.equal(builderView({ state: 'done', result: 'ok', text: 'y' }).state, 'ok');

@@ -1,8 +1,9 @@
-// P190: rig 7단계 — 판에 내장한 rig 틀 셋과 판 내장 안내 `atrium guide rig`(docs research harness-arch.md 16절 "만들기").
-// - 틀: (1) 메인 keep + 워커 fresh, (2) + 검토자 fresh(반려 되돌아감 최대 2, 넘으면 메인), (3) (2)에서 워커가 일마다 워크트리.
-//   자리마다 런처는 사람이 고른다(rig.create의 launchers). 판이 .atrium/rig.json과 자리 안내 .atrium/seats/<자리>.txt를 쓴다.
-// - 자리 안내 글은 일반 말이다(분야 낱말 없음). 그 자리의 할 일과 done 값을 짧게 말한다.
-// - 안내(RIG_GUIDE)는 제작 세션(rig-builder)이 읽는다: 정의 형식, 틀 셋의 예, atrium rig check로 검사하는 법, 끝나면 atrium done.
+// P190: 판 내장 안내 `atrium guide rig`(docs research harness-arch.md 16절 "만들기")와 제작 세션의 일 머리.
+// - P228(rig2-design 11.1): 판에 내장했던 3자리 틀(메인 + 워커, + 검토자, 워크트리판)은 내렸다. 만들기 대화상자는 고리 하나 + 덧붙임(rig-presets.mjs)이다.
+//   그 틀로 만든 기존 rig.json은 그대로 읽고 돈다.
+// - 안내(RIG_GUIDE)는 제작 세션(rig-builder)이 읽는다: 정의 형식, 바로가기 둘의 예, atrium rig check로 검사하는 법, 끝나면 atrium done.
+
+import { presetFiles, shortcutAnswers } from './rig-presets.mjs';
 
 // 제작 세션(rig.describe)의 일: 상위 세션이 없고 사람이 주인이다(work_units.from_session = HUMAN_FROM, origin = BUILDER_ORIGIN).
 //   done 값은 판 이벤트 rig.builder로 창에 가고, 멈춤은 응답 필요 목록(판 이벤트 rig_builder_stop)으로 간다(rig-setup.mjs)
@@ -18,86 +19,9 @@ export function builderHeader({ unitId }) {
   ].join('\n');
 }
 
-export const TEMPLATE_IDS =['main-worker', 'main-worker-reviewer', 'main-worker-reviewer-worktree'];
-export const SEAT_GUIDE_DIR = '.atrium/seats';
-export const seatGuidePath = (seat) => `${SEAT_GUIDE_DIR}/${seat}.txt`;
-
-// 자리 안내(일반 말). results: 그 틀의 done 값
-const GUIDES = {
-  main: (t) => [
-    'main 자리: 사람의 요청을 받아 일을 나누고, 결과를 모아 사람에게 답한다.',
-    '- 일을 맡길 때: atrium prompt worker "<할 일>". 할 일에는 무엇을, 어디까지, 끝났음을 어떻게 확인하는지를 적는다.',
-    '- 맡긴 일의 결과는 보드가 가져다준다. 기다리며 폴링하지 않는다.',
-    t.reviewer ? '- 워커의 결과는 reviewer 자리가 먼저 본다. reviewer가 두 번 넘게 반려하면 그 건이 이 자리로 올라온다. 그때는 할 일을 다시 나누거나 사람에게 묻는다.' : '- 워커가 failed로 닫으면 까닭을 읽고 다시 맡기거나 사람에게 묻는다.',
-    '- 사람이 맡긴 일이면 끝나면 사람에게 결과를 답한다. 보드가 맡긴 일이면 atrium done ok "<요약>"(못 했으면 failed)로 닫는다.',
-  ],
-  worker: (t) => [
-    'worker 자리: 맡은 일 하나를 끝까지 한다.',
-    t.worktree ? '- 이 자리는 일마다 새 워크트리에서 돈다. 자기 브랜치에만 커밋하고, 합치는 것은 main 자리의 일이다.' : '- 맡은 일에 필요한 것만 고친다.',
-    '- 끝나면 확인한 방법과 결과를 적어 닫는다: atrium done ok "<한 것, 확인한 것>".',
-    '- 하지 못했으면 까닭과 막힌 곳을 적어 닫는다: atrium done failed "<까닭>".',
-    t.reviewer ? '- ok로 닫으면 reviewer 자리가 그 결과를 본다. 반려되어 다시 받으면 반려 글의 지적을 먼저 고친다.' : '',
-  ],
-  reviewer: () => [
-    'reviewer 자리: worker 자리가 끝낸 일을 확인한다. 직접 고치지 않는다.',
-    '- 넘겨받은 글의 할 일과 보고를 읽고, 결과가 할 일을 채우는지 실제로 확인한다.',
-    '- 채우면: atrium done ok "<확인한 것>". main 자리로 간다.',
-    '- 고칠 것이 있으면: atrium done rejected "<고칠 것을 하나씩>". 새 worker가 그 글을 받는다(같은 건에서 두 번까지, 그 뒤는 main으로).',
-    '- 확인할 수 없으면(필요한 것이 없음 등): atrium done failed "<까닭>". main 자리로 간다.',
-  ],
-};
-
-// 틀 하나의 모양(런처 빼고)
-function shape(id) {
-  const reviewer = id !== 'main-worker';
-  const worktree = id === 'main-worker-reviewer-worktree';
-  const seats = { main: { session: 'keep' }, worker: { session: 'fresh', ...(worktree ? { worktree: true } : {}) }, ...(reviewer ? { reviewer: { session: 'fresh' } } : {}) };
-  const results = reviewer ? ['ok', 'failed', 'rejected'] : ['ok', 'failed'];
-  const flow = reviewer
-    ? [
-      { from: 'main', on: 'assign', to: 'worker' },
-      { from: 'worker', on: 'ok', to: 'reviewer' },
-      { from: 'worker', on: 'failed', to: 'main' },
-      { from: 'reviewer', on: 'rejected', to: 'worker', max: 2, else: 'main' },
-      { from: 'reviewer', on: 'ok', to: 'main' },
-      { from: 'reviewer', on: 'failed', to: 'main' },
-    ]
-    : [
-      { from: 'main', on: 'assign', to: 'worker' },
-      { from: 'worker', on: 'ok', to: 'main' },
-      { from: 'worker', on: 'failed', to: 'main' },
-    ];
-  return { reviewer, worktree, seats, results, flow };
-}
-const TITLES = {
-  'main-worker': { title: '메인 + 워커', desc: '메인 자리(계속 쓰는 세션)가 일을 나눠 워커 자리(일마다 새 세션)에 맡기고 결과를 받는다.', en: { title: 'Main + worker', desc: 'The main seat (one kept session) splits work and hands it to the worker seat (a new session per task), then gets the results.' } },
-  'main-worker-reviewer': { title: '메인 + 워커 + 검토자', desc: '워커가 끝낸 일을 검토자가 확인한다. 반려되면 새 워커가 다시 하고, 두 번 넘게 반려되면 메인으로 올라간다.', en: { title: 'Main + worker + reviewer', desc: 'A reviewer checks what the worker finished. A rejection goes back to a new worker; after two rejections it goes up to main.' } },
-  'main-worker-reviewer-worktree': { title: '메인 + 워커(워크트리) + 검토자', desc: '두 번째 틀과 같고, 워커가 일마다 새 워크트리에서 일한다(Claude Code 런처만).', en: { title: 'Main + worker (worktree) + reviewer', desc: 'Like the second template, but each worker task runs in its own new worktree (Claude Code launchers only).' } },
-};
-
-// rig.templates → [{ id, title, desc, en, seats: { 이름: { session, worktree? } }, flow, results }]
-export function rigTemplates() {
-  return TEMPLATE_IDS.map((id) => { const s = shape(id); return { id, ...TITLES[id], seats: s.seats, flow: s.flow, results: s.results, manager: 'main' }; });
-}
-export const isTemplate = (id) => TEMPLATE_IDS.includes(id);
-
-// 틀 + 자리마다 런처 → { def(rig.json 내용), guides: { <경로>: 글 } }
-export function templateFiles(id, launchers = {}) {
-  if (!isTemplate(id)) throw Object.assign(new Error(`모르는 틀: ${id}. 틀: ${TEMPLATE_IDS.join(', ')}`), { code: 'bad_request' });
-  const s = shape(id);
-  const seats = {}; const guides = {};
-  for (const [name, x] of Object.entries(s.seats)) {
-    const launcher = launchers[name];
-    if (typeof launcher !== 'string' || !launcher.trim()) throw Object.assign(new Error(`${name} 자리의 런처를 준다(launchers.${name})`), { code: 'bad_request' });
-    seats[name] = { launcher: launcher.trim(), session: x.session, ...(x.worktree ? { worktree: true } : {}), guide: seatGuidePath(name) };
-    guides[seatGuidePath(name)] = GUIDES[name](s).filter(Boolean).join('\n') + '\n';
-  }
-  const def = { name: TITLES[id].en.title, results: s.results, seats, flow: s.flow.map((l) => ({ ...l })), manager: 'main' };
-  return { def, guides };
-}
-
 // ---------- atrium guide rig(판 내장 안내) ----------
-const example = (id) => JSON.stringify(templateFiles(id, { main: 'claude', worker: 'claude', reviewer: 'codex' }).def, null, 2);
+// P228: 예는 대화상자의 바로가기 둘이 만드는 정의(런처는 claude)
+const example = (id) => JSON.stringify(presetFiles(shortcutAnswers(id), { launcher: 'claude' }).def, null, 2);
 export function rigGuideText() {
   return [
     'rig 만들기 안내(보드 내장). rig는 이 워크스페이스의 작업 규칙이다: 자리(seats), 흐름(flow), done 값(results), 훅(hooks), 도구(tools), 느린 고리(cycles).',
@@ -139,13 +63,13 @@ export function rigGuideText() {
     '  - 섹터의 "accept"?: "auto"(기본: 회가 done이면 받아들임) | "human"(사람이 응답 필요 목록에서 받아들임) | "gate"(done 훅 출력의 "accept": true | false | ["<경로>"]로 받아들임).',
     '  - 산출물 섹터(role "sector", 저장소 안 폴더): "intake"?: "register"(기본: 제자리에 두고 보드가 등록부에 적는다. move·copy는 아직 안 된다), "keep"?: 20 | "90d"(넘친 것은 등록부에서 밀려남으로 표시만 하고 파일은 지우지 않는다). 고리의 "produces": ["<섹터>"]는 그 고리의 회가 그 섹터에 산출물을 낸다는 뜻이다. 자리는 섹터를 writes에 두고, 만든 파일을 그 폴더에 쓴 뒤 atrium done ok "<보고>" --artifact <경로>로 낸다. 등록부: atrium rig artifacts.',
     '',
-    '## 틀 셋(보드가 만드는 것과 같은 모양, 런처는 예)',
-    '### 1. 메인 + 워커', example('main-worker'),
-    '### 2. 메인 + 워커 + 검토자(반려 되돌아감 최대 2, 넘으면 메인)', example('main-worker-reviewer'),
-    '### 3. 2에서 워커가 워크트리', example('main-worker-reviewer-worktree'),
+    '## 바로가기 둘(보드의 Rig 만들기 대화상자가 만드는 것과 같은 모양, 런처는 예)',
+    '대화상자는 고리 하나(요청마다 또는 정해진 때마다)와 자리 하나에 덧붙임(정본 문서, 장부와 개선, 산출물 폴더, 기계 검사, 검토 자리)을 골라 정의를 만든다. 사람이 대화상자로 만든 정의를 다듬어 달라고 하면 그 정의에서 시작해 고칠 칸만 고친다.',
+    '### 1. 정기 점검(매주, fresh 자리, 산출물 폴더 + 장부, scoped와 읽기 허용 목록)', example('check'),
+    '### 2. 규칙이 자라는 반복 작업(요청, keep 자리, 정본 문서 + 장부와 개선, 정본 고침은 사람 승인)', example('grow'),
     '',
     '## 차례',
-    '1. 사람의 설명을 읽고 자리, done 값, 흐름을 정한다. 설명이 틀 하나와 같으면 그 틀에서 시작한다. 정말 모르는 것이 있을 때만 사람에게 묻는다.',
+    '1. 사람의 설명을 읽고 고리, 자리, done 값, 흐름을 정한다. 설명이 바로가기 하나와 같으면 그 모양에서 시작한다. 정말 모르는 것이 있을 때만 사람에게 묻는다.',
     '2. .atrium/rig.json과 자리마다 .atrium/seats/<자리>.txt(일반 말로 그 자리의 할 일과 done 값)를 쓴다. 이미 정의가 있으면 고칠 내용만 고치고 다른 칸은 그대로 둔다.',
     '3. 검사한다: atrium rig check(지금 .atrium/rig.json) 또는 atrium rig check <파일>. "맞지 않다"면 까닭을 고치고 다시 검사한다. 경고(상한 없는 되돌아감 등)도 고친다.',
     '4. 맞으면 atrium done ok "<만든 자리와 흐름 요약, 고친 것>"으로 닫고 쉰다. 못 했으면 atrium done failed "<까닭>". 보드가 그 보고를 사람에게 보이고 사람이 켠다.',

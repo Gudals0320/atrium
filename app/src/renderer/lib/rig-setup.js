@@ -1,7 +1,9 @@
 // P191: 하네스 7단계 — 판 안에서 rig 만들기와 고치기(docs research harness-arch.md 16절). 순수 함수만 둔다(단위 시험 test/p191-lib.test.mjs).
-// 판 API(P190): rig.templates, rig.create, rig.describe, rig.get, rig.save, rig.spawnSeat, 이미 있는 rig.enable·rig.seat.
+// 판 API(P190): rig.presets(P228), rig.create, rig.describe, rig.get, rig.save, rig.spawnSeat, 이미 있는 rig.enable·rig.seat.
 // - 이름표 메뉴 항목(menuEntry): 정의가 없으면 "Rig 만들기", 있으면 "Rig 보기·고치기". 원격 기기는 보기만.
-// - 만들기 대화상자(wizard*): 길 고르기 → (틀) 자리마다 런처 / (말로) 글과 제작 세션 런처 → (말로) 만드는 중 → 미리보기 → 켜기 확인 → 앉히기 → 끝
+// - 만들기 대화상자(wizard*, P228: rig2-design 11.2·11.3): 세 질문(언제 도나·누가 하나·덧붙임)과 바로가기 둘 → rig.create { answers } → 켜기 전 요약(고리·계기·자리·덧붙임, 자리 권한 줄)
+//   → 켜기 확인 → 앉히기 → 끝. 말로 설명하기(제작 세션)는 처음부터 만들거나, 만든 정의를 요약 단계에서 다듬는 길이다. 옛 3자리 틀은 내렸다.
+// - 요약 자료(defSummary): 정의 → 고리·자리·덧붙임·권한
 // - 미리보기 자료(previewModel): 자리 상자와 흐름 화살표, 값 이름, max·else
 // - rig 판 표(table*): 정의 → 표 줄, 줄 고치기·더하기·지우기, 잠금(보호 포인터), 저장 자료(rig.save의 seats·flow·results 세 칸)
 
@@ -46,64 +48,107 @@ export function namedLaunchers(text, choices) {
   const re = new RegExp(`\\b(${ids.map((c) => c.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'g');
   return s.replace(re, (m) => by.get(m) || m);
 }
-// 자리마다 런처 기본값: 틀이 정한 런처가 목록에 있으면 그것, 아니면 defaultLauncher(그 워크스페이스에서 마지막으로 쓴 것), 그것도 없으면 목록의 첫째
-//   워크트리 자리는 Claude Code 런처만 되므로(P190 rig.create 검사) 기본값이 Claude가 아니면 목록의 첫 Claude 런처
-export function defaultLaunchers(template, defaultLauncher, choices = []) {
-  const ids = new Set(choices.map((c) => c.id));
-  const fallback = defaultLauncher && (!choices.length || ids.has(defaultLauncher)) ? defaultLauncher : (choices[0] ? choices[0].id : defaultLauncher || '');
-  const isClaude = (id) => { const c = choices.find((x) => x.id === id); return c ? c.harness === 'claude' : id === 'claude'; };
-  const claude = isClaude(fallback) ? fallback : (choices.find((c) => c.harness === 'claude') || {}).id || fallback;
-  const out = {};
-  for (const s of seatList(template)) out[s.name] = s.worktree ? claude : fallback;
-  return out;
+// ---------- 만들기 대화상자(P228: 세 질문 + 덧붙임) ----------
+// 단계: ask(세 질문과 바로가기) | describe(말로) → building(말로, 제작 세션이 끝날 때까지) → preview(켜기 전 요약) → enable → seat → done
+export const WIZARD_STEPS = ['ask', 'describe', 'building', 'preview', 'enable', 'seat', 'done'];
+export const ADDS = ['canon', 'ledger', 'sector', 'check', 'review'];
+export const SEAT_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/;
+const clone = (x) => JSON.parse(JSON.stringify(x));
+// 판이 rig.presets를 주기 전에도 쓰는 기본 답(백엔드 rig-presets.mjs DEFAULT_ANSWERS와 같은 모양)
+export const FALLBACK_ANSWERS = {
+  shortcut: null, trigger: 'request', every: '7d', seat: 'main', launcher: '', session: 'keep', permission: 'ask', unattended: false, task: '',
+  canon: { on: false, path: 'docs/rules.md' }, ledger: { on: false, path: 'ledger/log.jsonl', improve: false, days: 7 },
+  sector: { on: false, path: 'reports/' }, check: { on: false, script: '.atrium/hooks/check.mjs' }, review: { on: false, launcher: '' },
+};
+// rig.presets 답 → { shortcuts: [{ id, title, desc, answers }](화면 언어), defaults }
+export function presetsView(res, lang = 'ko') {
+  const ok = res && !res.error;
+  const shortcuts = ok ? (res.shortcuts || []).map((x) => (lang === 'en' && x.en ? { ...x, title: x.en.title || x.title, desc: x.en.desc || x.desc } : x)) : [];
+  return { shortcuts, defaults: ok && res.defaults ? res.defaults : FALLBACK_ANSWERS, error: res && res.error ? res.error : null };
 }
-// 틀 목록(rig.templates 답: { templates } 또는 배열) → 화면 언어의 제목·설명
-export function templateList(res, lang = 'ko') {
-  const list = res && !res.error ? (Array.isArray(res) ? res : res.templates || []) : [];
-  return list.map((x) => (lang === 'en' && x.en ? { ...x, title: x.en.title || x.title, desc: x.en.desc || x.desc } : x));
+// 검토 자리 런처 기본값: 입구 자리와 다른 종류(harness)의 첫 런처, 없으면 다른 런처, 그것도 없으면 같은 런처
+export function reviewLauncherDefault(choices = [], launcher = '') {
+  const me = choices.find((c) => c.id === launcher);
+  const other = choices.find((c) => me && c.harness && c.harness !== me.harness) || choices.find((c) => c.id !== launcher);
+  return other ? other.id : launcher;
 }
-
-// ---------- 만들기 대화상자 ----------
-// 단계: path(길 고르기) → launchers(틀) | describe(말로) → building(말로, 제작 세션이 끝날 때까지) → preview → enable → seat → done
-export const WIZARD_STEPS = ['path', 'launchers', 'describe', 'building', 'preview', 'enable', 'seat', 'done'];
-export function wizardInit({ defaultLauncher = '', status = null } = {}) {
-  const w = { step: 'path', path: null, template: null, launchers: {}, text: '', builderLauncher: defaultLauncher || '', builder: null, error: null, seatPick: {} };
-  // 이미 정의가 있고 꺼져 있으면(말로 만들기 뒤 상자를 닫았다가 다시 연 때 등) 미리보기부터
+export function wizardInit({ defaultLauncher = '', status = null, defaults = null, choices = [] } = {}) {
+  const answers = { ...clone(defaults || FALLBACK_ANSWERS), launcher: defaultLauncher || '' };
+  answers.review = { ...answers.review, launcher: reviewLauncherDefault(choices, answers.launcher) };
+  const w = { step: 'ask', answers, text: '', refine: '', builderLauncher: defaultLauncher || '', builder: null, error: null, seatPick: {} };
+  // 이미 정의가 있고 꺼져 있으면(말로 만들기 뒤 상자를 닫았다가 다시 연 때 등) 요약부터
   if (status && status.state === 'off') return { ...w, step: 'preview' };
   if (status && status.state === 'on') return { ...w, step: 'seat' };
   return w;
 }
-// 틀 고르기 → 자리마다 런처 단계
-export function wizardPickTemplate(w, template, defaultLauncher, choices) {
-  return { ...w, step: 'launchers', path: 'template', template: template.id, templateDef: template, launchers: defaultLaunchers(template, defaultLauncher, choices), error: null };
+// 바로가기를 누르면 답을 채운다(런처는 사람이 고른 것을 그대로 둔다). 그 뒤 무엇이든 바꿀 수 있다
+export function wizardApplyShortcut(w, sc) {
+  const a = clone(sc.answers || {});
+  const answers = { ...clone(FALLBACK_ANSWERS), ...a, shortcut: sc.id, launcher: w.answers.launcher };
+  for (const k of ADDS) answers[k] = { ...FALLBACK_ANSWERS[k], ...(a[k] || {}) };
+  answers.review.launcher = w.answers.review.launcher;
+  return { ...w, answers, error: null };
 }
-export function wizardPickDescribe(w) { return { ...w, step: 'describe', path: 'describe', template: null, templateDef: null, error: null }; }
-export function wizardSetLauncher(w, seat, id) { return { ...w, launchers: { ...w.launchers, [seat]: id } }; }
-export function wizardBack(w) {
-  if (w.step === 'launchers' || w.step === 'describe') return { ...w, step: 'path', error: null };
-  if (w.step === 'preview' && w.path === 'template') return { ...w, step: 'launchers', error: null };
-  return w;
+// 답 한 칸 바꾸기. key: 'trigger' | 'every' | 'seat' | … | 'canon.on' | 'ledger.path' …
+//   request를 고르면 자리는 keep(요청은 keep 자리의 세션에 온다). 덧붙임 칸은 바로가기 표시를 지우지 않는다(바꿔 쓴 것도 그 바로가기에서 시작한 것)
+export function wizardSet(w, key, value) {
+  const a = clone(w.answers);
+  const [k, f] = key.split('.');
+  if (f) a[k] = { ...a[k], [f]: value }; else a[k] = value;
+  if (k === 'trigger' && value === 'request') a.session = 'keep';
+  if (k === 'trigger' && value === 'every' && !a.every) a.every = '7d';
+  if (k === 'permission' && value === 'ask') a.unattended = false;
+  return { ...w, answers: a, error: null };
 }
-// 다음으로 갈 수 있나(단추를 막을지)
+// 정해진 때: '1d' | '7d' | '<n>h' ↔ 고르기('1d' | '7d' | 'h')와 시간 수
+export const everyMode = (e) => (e === '1d' || e === '7d' ? e : 'h');
+export const everyHours = (e) => { const m = /^(\d+)h$/.exec(String(e || '')); return m ? Number(m[1]) : 6; };
+export const everyOf = (mode, hours) => (mode === 'h' ? `${Math.max(1, Math.floor(Number(hours) || 1))}h` : mode);
+// 다음으로 갈 수 있나(단추를 막을지). ask: 자리 이름·런처, 정해진 때, 켠 덧붙임의 경로
+export function answersProblem(a) {
+  if (!a) return 'answers';
+  if (!SEAT_NAME_RE.test(String(a.seat || ''))) return 'seat';
+  if (!a.launcher) return 'launcher';
+  if (a.trigger === 'every' && !/^(1d|7d|\d+h)$/.test(String(a.every || ''))) return 'every';
+  if (a.trigger === 'every' && /^0+h$/.test(String(a.every))) return 'every';
+  if (a.canon.on && !String(a.canon.path || '').trim()) return 'canon';
+  if (a.ledger.on && !String(a.ledger.path || '').trim()) return 'ledger';
+  if (a.ledger.on && a.ledger.improve && !(Number(a.ledger.days) >= 1)) return 'ledger';
+  if (a.sector.on && !String(a.sector.path || '').trim()) return 'sector';
+  if (a.check.on && !String(a.check.script || '').trim()) return 'check';
+  if (a.review.on && a.seat === 'reviewer') return 'seat';
+  return null;
+}
 export function wizardCanNext(w) {
-  if (w.step === 'launchers') return seatList(w.templateDef).every((s) => !!w.launchers[s.name]);
+  if (w.step === 'ask') return !answersProblem(w.answers);
   if (w.step === 'describe') return !!String(w.text || '').trim() && !!w.builderLauncher;
   return true;
 }
-// 판 API 부르기 자료: 틀이면 rig.create, 말로면 rig.describe
+export function wizardPickDescribe(w) { return { ...w, step: 'describe', error: null }; }
+export function wizardBack(w) {
+  if (w.step === 'describe') return { ...w, step: 'ask', error: null };
+  return w;
+}
+// 판에 보내는 답(화면에서만 쓰는 칸 없이). 켜지 않은 덧붙임도 그대로 보낸다(판이 on만 본다)
+export const apiAnswers = (a) => ({ ...clone(a), review: { ...a.review, launcher: a.review.on ? a.review.launcher || a.launcher : '' } });
+// 판 API 부르기 자료: 세 질문이면 rig.create { answers }, 말로면 rig.describe. 요약 단계의 말로 다듬기는 wizardRefineRequest
 export function wizardRequest(w, workspace) {
-  if (w.step === 'launchers') return { method: 'rig.create', params: { workspace, template: w.template, launchers: { ...w.launchers } } };
+  if (w.step === 'ask') return { method: 'rig.create', params: { workspace, answers: apiAnswers(w.answers) } };
   if (w.step === 'describe') return { method: 'rig.describe', params: { workspace, text: String(w.text).trim(), launcher: w.builderLauncher } };
   return null;
 }
+export function wizardRefineRequest(w, workspace) {
+  const text = String(w.refine || '').trim();
+  return text ? { method: 'rig.describe', params: { workspace, text, launcher: w.builderLauncher || w.answers.launcher } } : null;
+}
 // 부른 결과를 받아 다음 단계로
 export function wizardAfterRequest(w, res) {
-  if (w.step === 'launchers') return { ...w, step: 'preview', error: null };
-  if (w.step === 'describe') return { ...w, step: 'building', builder: { session: res && res.session, name: res && res.name, state: 'working' }, error: null };
+  if (w.step === 'ask') return { ...w, step: 'preview', created: res || null, error: null };
+  if (w.step === 'describe' || w.step === 'preview') return { ...w, step: 'building', refine: '', builder: { session: res && res.session, name: res && res.name, state: 'working' }, error: null };
   return w;
 }
 // 제작 세션 소식(판 이벤트 rig.builder 또는 rig.get의 builder)과 지금 rig 상태로 building 단계를 넘긴다.
-//   맞는 정의가 생겼으면(off·on) 미리보기로, 실패·멈춤이면 building에 남아 까닭을 보인다
+//   맞는 정의가 생겼으면(off·on) 요약으로, 실패·멈춤이면 building에 남아 까닭을 보인다
 export function wizardOnBuilder(w, builder, status) {
   if (w.step !== 'building') return w;
   const b = { ...(w.builder || {}), ...(builder || {}) };
@@ -114,6 +159,47 @@ export function wizardOnBuilder(w, builder, status) {
 export function wizardAfterEnable(w) { return { ...w, step: 'seat' }; }
 // 앉히기: keep 자리마다 { kind: 'session', session } | { kind: 'spawn' } | { kind: 'skip' }
 export function wizardSetSeat(w, seat, pick) { return { ...w, seatPick: { ...w.seatPick, [seat]: pick } }; }
+
+// ---------- 켜기 전 요약(P228, 11.11) ----------
+// 정의(rig.json 내용) → { loops, seats, adds, legacy }
+//   loops: [{ name, kind, trigger: 'request' | 'every' | 'event' | null, every, entry, produces: [경로], approve }]
+//   seats: [{ name, launcher, session, permission: ask|scoped|unattended, allow: [규칙], writes: [경로·문서] | false | null }]
+//   adds: { canon: [경로], ledger: [경로], sector: [경로], check: [명령], review: 자리 | null }. legacy: loops 없는 정의(옛 틀 등)
+export function defSummary(def) {
+  const d = def || {};
+  const docs = d.docs && typeof d.docs === 'object' ? d.docs : {};
+  const pathOf = (n) => (docs[n] && docs[n].path) || n;
+  const seats = seatList(d).map((s) => ({
+    name: s.name, launcher: s.launcher || '', session: s.session === 'keep' ? 'keep' : 'fresh',
+    permission: ['scoped', 'unattended'].includes(s.permission) ? s.permission : 'ask', allow: Array.isArray(s.allow) ? s.allow : [],
+    writes: s.writes === false ? false : Array.isArray(s.writes) ? s.writes.map(pathOf) : null,
+  }));
+  const loopsRaw = d.loops && typeof d.loops === 'object' ? d.loops : null;
+  const loops = loopsRaw ? Object.entries(loopsRaw).map(([name, x]) => {
+    const t = (x && x.trigger) || {};
+    const trigger = t.request != null ? 'request' : t.every != null ? 'every' : t.event != null ? 'event' : null;
+    return { name, kind: (x && x.kind) || 'work', trigger, every: t.every || null, entry: (x && x.entry) || t.request || null, produces: ((x && x.produces) || []).map(pathOf), approve: (x && x.approve) || null };
+  }) : [];
+  const byRole = (r) => Object.values(docs).filter((x) => x && x.role === r).map((x) => x.path);
+  const entries = new Set(loops.map((l) => l.entry));
+  const flowTo = loopsRaw ? Object.values(loopsRaw).flatMap((x) => (x && Array.isArray(x.flow) ? x.flow : [])) : [];
+  const review = flowTo.find((l) => l.on === 'ok' && entries.has(l.from) && !entries.has([].concat(l.to)[0]));
+  const proposals = new Set(loops.filter((l) => l.kind === 'improve').flatMap((l) => l.produces));
+  return {
+    loops, seats, legacy: !loopsRaw,
+    adds: {
+      canon: byRole('canon'), ledger: byRole('ledger'), sector: byRole('sector').filter((p) => !proposals.has(p)),
+      check: (Array.isArray(d.hooks) ? d.hooks : []).filter((h) => h && h.at === 'done').map((h) => [].concat(h.run || []).join(' ')),
+      review: review ? [].concat(review.to)[0] : null,
+    },
+  };
+}
+// 자리 권한 줄의 사전 열쇠와 값. unattended는 11.10의 경고 문장(rigPerm.unattended) 그대로
+export function permLine(seat) {
+  if (seat.permission === 'unattended') return { key: 'rigPerm.unattended', vars: {}, warn: true };
+  if (seat.permission === 'scoped') return { key: 'rigPerm.scoped', vars: { n: seat.allow.length }, warn: false };
+  return { key: 'rigP228.permAsk', vars: {}, warn: false };
+}
 
 // 제작 세션 상태 → 보일 글 열쇠와 값. builder: { session, name, state: working|done|stopped, result: ok|failed, text, why }
 export function builderView(b) {
@@ -264,7 +350,8 @@ export function canRemove(locked, tb, part, row) {
 }
 
 // 표 → rig.save 자료 { seats, flow, results }(rig.json의 그 세 칸 모양). 표 검사(빈 이름 등)에 걸리면 { error: { key, row } }
-export function tableToSave(tb) {
+//   P228: loops가 있는 정의(rig 2)는 flow 줄이 고리 안에 있어 맨 위 flow를 보내지 않는다(보내면 정의 오류). loops: 정의에 loops가 있는가
+export function tableToSave(tb, { loops = false } = {}) {
   const seats = {};
   for (const r of tb.seats) {
     const name = String(r.name || '').trim();
@@ -291,7 +378,7 @@ export function tableToSave(tb) {
   }
   const results = [];
   for (const r of tb.results) { const v = String(r.value || '').trim(); if (v) results.push(v); }
-  return { seats, flow, results };
+  return loops ? { seats, results } : { seats, flow, results };
 }
 // 저장할 것이 있나(처음 표와 다르면)
 export function tableDirty(a, b) { return JSON.stringify(tableToSave(a)) !== JSON.stringify(tableToSave(b)); }
@@ -300,7 +387,5 @@ export function tableDirty(a, b) { return JSON.stringify(tableToSave(a)) !== JSO
 export const canEdit = ({ remote = false } = {}) => !remote;
 // P195: 끄기는 원격 기기도 한다(저장소의 프로그램을 멈출 뿐이다). 켜기·고치기는 판을 띄운 PC의 창에서만
 export const canDisable = () => true;
-// P195: rig.templates가 붙인 막힘(워크트리 틀인데 git 저장소가 아니거나 커밋이 없음) → 사전 열쇠
 // P195: rig.get·status의 worktreeGit(정의에 워크트리 자리가 있는데 저장소 조건이 안 됨) → 사전 열쇠
 export const seatBlockKey = (g) => (g === 'norepo' ? 'rigP195.seatNoRepo' : g === 'nocommit' ? 'rigP195.seatNoCommit' : null);
-export const templateBlockKey = (blocked) => (blocked === 'norepo' ? 'rigP195.wtNoRepo' : blocked === 'nocommit' ? 'rigP195.wtNoCommit' : null);
