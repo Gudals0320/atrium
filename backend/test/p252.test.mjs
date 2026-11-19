@@ -195,9 +195,9 @@ test('P252 사람이 rig 판에서 답해 닫기(판 API rig.raiseAnswer), 고�
 
 test('P252 빌더 첫 글의 판 안내·올림 알림·명령 목록·장부 종류', () => {
   const t = builderLoadText({ guide: '지침', root: '/w', state: 'on', n: 3, writes: ['.atrium/'], docs: [], alerts: [] });
-  assert.match(t, /\[Atrium 보드\] 올림\(raise-<n>\)을 고치지 않기로 하면 `atrium rig answer <올림> "<까닭 한 줄>"`로 답한다/);
+  assert.match(t, /\[Atrium 보드\] 올림\(raise-<n>\)을 고치지 않기로 정했으면 `atrium rig answer <올림> "<까닭 한 줄>"`로 답한다\..*사용자가 정할 일이면 답하지 않고 열어 둔다/);
   assert.ok(t.indexOf('atrium rig answer') < t.indexOf('## 빌더 지침')); // 지침 밖의 판 글
-  assert.match(alertText({ what: 'raise', id: 'raise-4', role: 'verify', reason: '기준' }), /\(raise-4, raise, .*atrium rig answer raise-4 "<까닭>"/);
+  assert.match(alertText({ what: 'raise', id: 'raise-4', role: 'verify', reason: '기준' }), /\(raise-4, raise, .*atrium rig answer raise-4 "<까닭>"로 닫는다\. 사용자가 정할 일이면 답하지 않고 열어 둔다\./);
   assert.ok(RIG_TUNE_OPS.includes('answer')); assert.ok(RIG_TUNE_KINDS.includes('raise_answer'));
   const rig = VERBS.find((v) => v.name === 'rig');
   assert.match(rig.args[0], /answer <올림> "<까닭>"/);
