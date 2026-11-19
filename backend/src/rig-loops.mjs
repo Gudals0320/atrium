@@ -294,6 +294,44 @@ export class RigLoops {
     this.b.log && this.b.log(`rig talk ${s.workspaceKey} → ${s.name} (${tk.seat}${tk.loop ? `, ${tk.loop} not opened` : ''}) ${deliveryId || ''}`);
   }
 
+  // ---------- P237(rig2-design 11.18, 2단계): 자리 터미널에 사람이 직접 친 요청 ----------
+  // request 고리 입구 자리에 판 전달과 맞지 않는 UserPromptSubmit(d 없음)이 왔고 열린 시도가 없으면 사람의 요청 회를 연다(출처 human, via terminal).
+  //   글은 이미 들어갔으므로 다시 넣지 않고, 그 턴 안에 판 알림(회·일·done)을 대기 메시지로 넣는다. 열린 시도 중이면 지금처럼 섞임(P235, 묻기).
+  //   빗금 명령(/…), 판 알림 머리, 보내는 중인 판 전달이 있는 때(맞추기 실패일 수 있다), 멈춘 고리는 열지 않는다 → { caseId, unitId, loop, name } | null
+  onTyped(s, prompt, d = null) {
+    if (d || !s || !s.rigSeat || !this.b.rig) return null;
+    const text = String(prompt || '').trim();
+    if (!text || text.startsWith('/') || /^\[Atrium/.test(text)) return null;
+    const r = this.b.rig.active(s.workspaceKey);
+    if (!r) return null;
+    const loop = this.requestLoopOf(r.def, s.rigSeat);
+    if (!loop) return null;
+    const st = this.store();
+    if (st.openTryOf(s.sessionId)) return null;
+    if (this.b.queue && this.b.queue.list(s.sessionId).some((x) => x.status === 'sending' || x.status === 'sent')) return null;
+    if (this.isPaused(s.workspaceKey, loop.name)) { this.b.log && this.b.log(`rig loop ${s.workspaceKey} ${loop.name} paused: terminal request not opened`); return null; }
+    const key = s.workspaceKey;
+    const name = runNameOf(text) || `${loop.name} 회`;
+    const follows = this.followsOf(key, loop, s, HUMAN_FROM);
+    const c = this.flow.newCase(key, s, 'human', { loop: loop.name, name, trigger: 'request', ...(follows ? { follows: follows.id } : {}) });
+    const uid = newUnitId();
+    rigEvent(this.b, { kind: 'loop_trigger', ws: key, caseId: c.id, unitId: uid, seat: loop.entry, toSeat: loop.entry, session: s.sessionId, value: 'request', actor: 'human', text: `${loop.name}: 사람의 요청(자리 터미널)`, data: { loop: loop.name, trigger: 'request', from: 'human', via: 'terminal' } });
+    const unit = { id: uid, from: HUMAN_FROM, to: s.sessionId, origin: 'request', spec: text, status: 'open', createdAt: Date.now(), caseId: c.id, seat: s.rigSeat, via: { by: HUMAN_FROM, request: loop.name, terminal: true } };
+    st.insertUnit(unit);
+    st.addEvent(s.sessionId, 'unit_open', { unitId: uid, from: 'human', origin: 'request', held: false, chars: text.length, caseId: c.id, seat: s.rigSeat, terminal: true });
+    const results = (r.def.results || []).join(', ') || 'ok, failed';
+    const note = `[Atrium 보드] 네가 방금 터미널에서 받은 사람의 글이 rig 건 ${c.id}의 일 ${uid}이 되었다(${loop.name} 고리의 요청 회). 끝나면 \`atrium done <값> "<보고>"\`로 닫는다(값: ${results}). 보고는 done 글에만 넣는다.`;
+    const nd = this.b.queue.enqueue(s.sessionId, note, { typeNow: true, aside: true }); // 그 턴 안에 대기 메시지로(일하는 중이 아니면 턴 뒤에)
+    const tr = { id: 't' + crypto.randomBytes(4).toString('hex'), unitId: uid, sessionId: s.sessionId, header: true, deliveryId: nd.deliveryId, startedAt: Date.now() };
+    st.insertTry(tr);
+    st.addEvent(s.sessionId, 'unit_try', { unitId: uid, tryId: tr.id, deliveryId: nd.deliveryId, terminal: true });
+    rigEvent(this.b, { kind: 'try_start', caseId: c.id, unitId: uid, tryId: tr.id, seat: s.rigSeat, session: s.sessionId, actor: 'board', ref: nd.deliveryId, data: { queued_ms: 0, via: 'terminal' } });
+    rigEvent(this.b, { kind: 'human_message', ws: key, caseId: c.id, unitId: uid, tryId: tr.id, seat: s.rigSeat, session: s.sessionId, fromSeat: '@human', toSeat: s.rigSeat, actor: 'human', text, data: { via: 'terminal' } }); // 개선 회가 읽는 사람 글
+    this.b.log && this.b.log(`rig loop ${key} ${loop.name} terminal request → case ${c.id} unit ${uid}`);
+    this.changed(key);
+    return { caseId: c.id, unitId: uid, loop: loop.name, name };
+  }
+
   // ---------- request 계기 ----------
   // 사람(from { kind: human })이나 rig 밖 세션(from { kind: agent, session })이 자리 세션 s에 보낸 글. s가 request 고리의 입구가 아니면 null(지금 그대로).
   //   입구 세션이 그 고리의 끝나지 않은 회를 쥐고 있으면 null(이어지는 지시). 고리가 멈췄으면 요청을 줄에 세운다 → { held: true, loop, id }.
@@ -353,11 +391,18 @@ export class RigLoops {
     return null;
   }
   // P232(11.14의 7): 지난 개선 회 뒤(base) 이어진 회(follows가 붙은 작업 회) 수
+  // P237(rig2-design 11.18, 2단계): 사람이 연 이어진 회만 센다(판 보내기·자리 터미널, 출처 human). 개선 회가 읽는 원천(사람 글)과 맞춘다.
+  //   에이전트가 요청자인 이어진 회도 follows는 적지만(지도 묶음) 세지 않는다. 사람이 열었는지는 회의 첫 일의 요청자(via.by, 없으면 from)로 본다
   followupsSince(key, r, base) {
     const st = this.store();
-    if (!st.followCasesSince) return 0;
+    if (!st.followCaseIdsSince) return 0;
     const works = Object.values(this.loopsOf(r.def)).filter((l) => l.kind === 'work').map((l) => l.name);
-    return st.followCasesSince(key, works, base);
+    return st.followCaseIdsSince(key, works, base).filter((id) => this.humanRun(id)).length;
+  }
+  humanRun(caseId) {
+    const st = this.store();
+    const first = st.unitsOfCase ? st.unitsOfCase(caseId)[0] : null;
+    return !!first && ((first.via && first.via.by) || first.from) === HUMAN_FROM;
   }
   // 이 고리가 낸 정해지지 않은 제안
   pendingProposalsOf(key, loopName) {

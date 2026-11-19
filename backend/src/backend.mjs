@@ -891,7 +891,8 @@ export class Backend {
     if (refused) info.refused = true; // P234: 묻지 않고 거절됨
     this.store.addEvent(s.sessionId, 'hook', info);
     this.api.broadcast('session.hook', { sessionId: s.sessionId, name: s.name, ...info });
-    if (ev === 'UserPromptSubmit') { const d = this.queue.onUserPromptSubmit(s.sessionId, body.prompt); if (s.rigSeat && this.rigAmp && this.rigAmp.notePrompt) try { this.rigAmp.notePrompt(s, body.prompt, d); } catch (e) { this.log('rig prompt note error', e.message); } } // P235: 회 밖 글이면 그 시도 동안 묻는다
+    if (ev === 'UserPromptSubmit') { const d = this.queue.onUserPromptSubmit(s.sessionId, body.prompt); if (s.rigSeat && this.rigAmp && this.rigAmp.notePrompt) try { this.rigAmp.notePrompt(s, body.prompt, d); } catch (e) { this.log('rig prompt note error', e.message); }
+      if (s.rigSeat && this.branch && this.branch.flow && this.branch.flow.loops) try { this.branch.flow.loops.onTyped(s, body.prompt, d); } catch (e) { this.log('rig typed request error', e.stack); } } // P235: 회 밖 글이면 그 시도 동안 묻는다. P237: 열린 시도 없는 입구 자리에 터미널로 친 요청은 회를 연다(notePrompt 뒤)
     if (ev === 'PermissionRequest' && s.rt.pendingAsk && (s.rt.pendingAsk.kind === 'permission' || s.rt.pendingAsk.kind === 'plan')) this.readChoicesLater(s);
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && !s.rt.pendingAsk && s.rt.term.status === 'blocked') this.recheckBlockedLater(s); // P232(H18)
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && s.rt.pendingAsk && s.rt.pendingAsk.kind === 'permission' && !s.rt.pendingAsk.choices) this.readChoicesLater(s); // P232: 줄의 다음 질문이 올라왔다

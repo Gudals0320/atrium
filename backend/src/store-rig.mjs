@@ -197,6 +197,8 @@ export function installRig(Store) {
     // P233(11.15의 3): 같은 고리에서 since 뒤에 닫힌 회(늦게 닫힌 것부터)
     closedCasesOfLoopSince(key, loop, since, limit = 200) { return this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND loop = ? AND state IN ('done', 'cancelled') AND closed_at IS NOT NULL AND closed_at >= ? ORDER BY closed_at DESC, rowid DESC LIMIT ?").all(key, loop, since, limit).map(caseRow); },
     lastClosedCaseOfLoop(key, loop) { return caseRow(this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND loop = ? AND state IN ('done', 'cancelled') AND closed_at IS NOT NULL ORDER BY closed_at DESC, rowid DESC LIMIT 1").get(key, loop)); },
+    // P237: 이어진 회 ID(사람이 연 것만 세려고 rig-loops가 거른다)
+    followCaseIdsSince(key, loops, t) { if (!loops.length) return []; return this.st(`SELECT id FROM rig_cases WHERE workspace_key = ? AND follows IS NOT NULL AND created_at > ? AND loop IN (${loops.map(() => '?').join(', ')}) ORDER BY created_at`).all(key, t, ...loops).map((r) => r.id); },
     followCasesSince(key, loops, t) { if (!loops.length) return 0; return Number(this.st(`SELECT COUNT(*) AS n FROM rig_cases WHERE workspace_key = ? AND follows IS NOT NULL AND created_at > ? AND loop IN (${loops.map(() => '?').join(', ')})`).get(key, t, ...loops).n); },
     // P232(11.14의 11): 다음 회 머리에 붙일 판 알림
     addSeatNote(key, seat, text, kind = null) { return Number(this.st('INSERT INTO rig_seat_notes (workspace_key, seat, text, kind, t) VALUES (?, ?, ?, ?, ?)').run(key, seat, String(text), kind, Date.now()).lastInsertRowid); },
@@ -410,6 +412,9 @@ export function installRig(Store) {
       // 사람이 rig 자리 세션에 보낸 글(전달 출처 human)
       // P232(11.14의 6): 그 글이 연 회(일의 첫 전달)와 그 회의 이어진 앞 회
       const human = this.st("SELECT d.session_id, d.text, d.created_at, s.name, s.rig_seat, (SELECT u.case_id FROM unit_tries t JOIN work_units u ON u.id = t.unit_id WHERE t.delivery_id = d.delivery_id LIMIT 1) AS case_id FROM deliveries d JOIN sessions s ON s.session_id = d.session_id WHERE d.origin = 'human' AND s.rig_seat IS NOT NULL AND s.workspace_key = ? AND d.created_at >= ? AND d.created_at < ? ORDER BY d.created_at LIMIT 100").all(key, since, until).map((r) => ({ sessionId: r.session_id, name: r.name, seat: r.rig_seat, text: r.text, at: r.created_at, caseId: r.case_id ?? null }));
+      // P237(rig2-design 11.18, 2단계): 자리 터미널에 사람이 직접 친 요청(전달이 없다. 회의 첫 일, via.terminal)도 사람 글이다
+      const typed = this.st("SELECT u.to_session, u.spec, u.created_at, u.case_id, s.name, s.rig_seat FROM work_units u JOIN sessions s ON s.session_id = u.to_session WHERE u.from_session = 'human' AND u.origin = 'request' AND u.via LIKE '%\"terminal\":true%' AND s.workspace_key = ? AND u.created_at >= ? AND u.created_at < ? ORDER BY u.created_at LIMIT 100").all(key, since, until).map((r) => ({ sessionId: r.to_session, name: r.name, seat: r.rig_seat, text: r.spec, at: r.created_at, caseId: r.case_id ?? null, via: 'terminal' }));
+      if (typed.length) { human.push(...typed); human.sort((a, b) => a.at - b.at); }
       return { casesOpened, casesClosed, hooks, rejectReasons, toolFails, toolRuns, human };
     },
     // 열린(open·blocked) 건과 그 건의 마지막 일 시각(마지막 넘김)

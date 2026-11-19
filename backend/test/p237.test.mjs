@@ -294,3 +294,116 @@ test('P237 안내: atrium help(계약)의 prompt --talk, 관리자·입구 자�
     assert.ok(!t.F().seatNoticeOf(r.def, 'side', t.ws.key).includes(TALK_SEAT_LINE));
   } finally { await t.stop(); }
 });
+
+// ---------- 5. 자리 터미널에 사람이 직접 친 요청(11.18 2단계) ----------
+// 판의 hook 받기 순서(backend processHook): 대기열 맞추기 → notePrompt → onTyped
+function typeInto(t, s, text, amp = null) {
+  const d = t.b.queue.onUserPromptSubmit(s.sessionId, text);
+  if (amp) amp.notePrompt(s, text, d);
+  return t.L().onTyped(s, text, d);
+}
+test('P237 터미널 요청: 열린 시도 없는 request 입구 자리에 판 전달과 맞지 않는 글이 오면 사람의 요청 회(via terminal)가 열리고, done이 회를 닫는다', async () => {
+  const t = await board();
+  const { b, ws, add, seat, stop } = t;
+  try {
+    const main = add('main'); seat(main, 'main');
+    await until(() => main.rt.term.status === 'idle' && !b.queue.list(main.sessionId).some((x) => !['confirmed', 'unconfirmed', 'failed', 'cancelled'].includes(x.status)));
+    const n0 = main.texts.length;
+    const r = typeInto(t, main, '안내서 한 편 써 줘');
+    assert.ok(r && r.caseId, '회가 열린다');
+    const c = b.store.getCase(r.caseId);
+    assert.equal(c.loop, 'work'); assert.equal(c.owner, main.sessionId);
+    const u = b.store.getUnit(r.unitId);
+    assert.equal(u.from, 'human'); assert.equal(u.spec, '안내서 한 편 써 줘'); assert.equal(u.via.terminal, true);
+    const tr = b.store.openTryOf(main.sessionId);
+    assert.equal(tr.unitId, r.unitId, '열린 시도');
+    const open = ledger(b, ws.key, { kinds: ['case_open', 'loop_trigger', 'try_start', 'human_message'] }).filter((x) => x.caseId === r.caseId);
+    assert.deepEqual(open.map((x) => x.kind), ['case_open', 'loop_trigger', 'try_start', 'human_message']);
+    assert.equal(open[0].actor, 'human'); assert.equal(open[1].data.via, 'terminal');
+    // 글은 다시 넣지 않고 판 알림(회·일·done) 한 줄만
+    await until(() => main.texts.length > n0);
+    const note = main.texts.slice(n0).join('\n');
+    assert.ok(!note.includes('안내서 한 편 써 줘\n'), '요청 글을 다시 넣지 않는다');
+    assert.match(note, new RegExp(`건 ${r.caseId}의 일 ${r.unitId}`)); assert.match(note, /atrium done/);
+    // 알림이 들어가기 전에 done이 오면 알림을 거둔다
+    {
+      const t2 = await board();
+      try {
+        const m2 = t2.add('main'); t2.seat(m2, 'main');
+        await until(() => m2.rt.term.status === 'idle' && !t2.b.queue.list(m2.sessionId).some((x) => !['confirmed', 'unconfirmed', 'failed', 'cancelled'].includes(x.status)));
+        applyTermStatus(m2.rt, 'working'); // 사람이 친 글로 턴이 도는 중
+        t2.b.queue.stop(); t2.b.queue.pump = () => {}; // 알림이 아직 들어가지 않은 때(대기 메시지로 넣지 못해 턴 뒤를 기다림)
+        const x = typeInto(t2, m2, '빨리 끝나는 요청');
+        const tr2 = t2.b.store.openTryOf(m2.sessionId);
+        await U(t2.b).doneVerb(m2, { result: 'ok', text: '끝' });
+        assert.equal(t2.b.store.getDelivery(tr2.deliveryId).status, 'cancelled', '닫힌 일의 알림은 거둔다');
+        assert.equal(t2.b.store.getCase(x.caseId).state, 'done');
+        applyTermStatus(m2.rt, 'idle');
+      } finally { await t2.stop(); }
+    }
+    // 열린 시도 중 다시 친 글은 회를 열지 않는다(섞임은 P235)
+    assert.equal(typeInto(t, main, '하나 더'), null);
+    await until(() => main.rt.term.status === 'idle');
+    await U(b).doneVerb(main, { result: 'ok', text: '썼다' });
+    await until(() => b.store.getCase(r.caseId).state === 'done');
+    // 개선 회가 읽는 사람 글에 들어간다
+    const P = b.store.rigPeriod(ws.key, 0, Date.now() + 1);
+    assert.ok(P.human.some((h) => h.text === '안내서 한 편 써 줘' && h.caseId === r.caseId && h.via === 'terminal'));
+  } finally { await stop(); }
+});
+
+test('P237 터미널 요청: 판 전달과 맞은 글, 빗금 명령, 판 알림 머리, 자리 아닌 세션, request 입구 아닌 자리, 멈춘 고리, 보내는 중인 전달은 회를 열지 않는다', async () => {
+  const def = defOf(GROW);
+  def.seats.side = { launcher: 'claude', session: 'keep' };
+  const t = await board({ def });
+  const { b, ws, add, seat, stop } = t;
+  try {
+    const main = add('main'); seat(main, 'main');
+    const side = add('side'); seat(side, 'side');
+    const plain = add('plain');
+    await until(() => main.rt.term.status === 'idle' && side.rt.term.status === 'idle');
+    assert.equal(t.L().onTyped(main, 'x', { deliveryId: 'd1' }), null, '판 전달과 맞음');
+    assert.equal(t.L().onTyped(main, '/clear', null), null);
+    assert.equal(t.L().onTyped(main, '[Atrium 보드] 알림', null), null);
+    assert.equal(t.L().onTyped(plain, '그냥', null), null);
+    assert.equal(t.L().onTyped(side, '옆 자리', null), null, 'request 입구가 아님');
+    b.store.setLoopRow(ws.key, 'work', { pausedAt: Date.now(), pausedBy: 'human' });
+    assert.equal(t.L().onTyped(main, '멈춘 동안', null), null);
+    b.store.setLoopRow(ws.key, 'work', { pausedAt: null, pausedBy: null });
+    const d = b.queue.enqueue(main.sessionId, '보내는 중'); d.status = 'sent';
+    assert.equal(t.L().onTyped(main, '다른 글', null), null, '보내는 중인 전달(맞추기 실패일 수 있다)');
+    d.status = 'cancelled';
+    assert.equal(b.store.casesOf(ws.key).length, 0);
+  } finally { await stop(); }
+});
+
+// ---------- 6. 개선 계기의 이어진 회 수: 사람이 연 것만 ----------
+test('P237 followups: 사람(보내기 칸·자리 터미널)이 연 이어진 회만 센다. 에이전트가 연 이어진 회는 follows를 적지만 세지 않는다', async () => {
+  const def = defOf(GROW); def.loops.retro.trigger.followups = 2;
+  const t = await board({ def });
+  const { b, ws, add, seat, L, stop } = t;
+  try {
+    const main = add('main'); seat(main, 'main');
+    const other = add('other');
+    const t0 = Date.now();
+    await L().tick(t0);
+    const r = b.rig.active(ws.key);
+    const base = t0 - 1;
+    // 에이전트 요청 둘: 둘째가 이어진 회지만 세지 않는다
+    const a1 = await oneRun(t, main, { kind: 'agent', session: other }, '에이전트 요청 1');
+    const a2 = await oneRun(t, main, { kind: 'agent', session: other }, '에이전트 요청 2');
+    assert.equal(a2.follows, a1.id, '지도 묶음용 follows는 적는다');
+    assert.equal(L().followupsSince(ws.key, r, base), 0, '에이전트가 연 이어진 회는 세지 않는다');
+    // 사람(보내기 칸): 앞 사람 회에 이어진 회 하나
+    const h1 = await oneRun(t, main, human, '사람 요청 1');
+    const h2 = await oneRun(t, main, human, '사람 요청 2');
+    assert.equal(h2.follows, h1.id);
+    assert.equal(L().followupsSince(ws.key, r, base), 1);
+    // 사람(자리 터미널): 이어진 회 하나 더 → 2
+    await until(() => main.rt.term.status === 'idle' && !b.queue.list(main.sessionId).some((x) => !['confirmed', 'unconfirmed', 'failed', 'cancelled'].includes(x.status)));
+    const ty = typeInto(t, main, '터미널로 고쳐 줘');
+    const tc = b.store.getCase(ty.caseId);
+    assert.equal(tc.follows, h2.id, '터미널 요청도 같은 사람(human)의 앞 회에 이어진다');
+    assert.equal(L().followupsSince(ws.key, r, base), 2);
+  } finally { await stop(); }
+});
