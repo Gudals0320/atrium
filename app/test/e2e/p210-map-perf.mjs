@@ -1,6 +1,6 @@
 // P210 창 시험: 세션 맵(PC) 성능 재기. 개발용 판(atrium-dev-p210, 47984, 창 원격 디버깅 9464, backend/.dev)만. 한 번에 창 하나.
 // - 판: 셸 세션 몇 개(p210-sh*, 시험 폴더 C:\Workspace\mtask-p210-a)가 계속 글을 찍는다(덮개 뒤 판·터미널 일).
-// - 세션 맵: 페이지 안에서 mission.graph 답을 흉내(지어낸 이름: 폴더 3, 워크스페이스 10, 세션 33, 하위·동료, rig 띠 하나)로 바꾸고,
+// - 세션 맵: 페이지 안에서 mission.graph 답을 흉내(지어낸 이름: 폴더 3, 워크스페이스 10, 세션 33, 하위·동료)로 바꾸고,
 //   흉내 세션의 session.updated를 초당 CHURN_HZ번 넣는다(일하는 세션의 활동 시각·턴, 1.5초마다 하나는 일함↔쉼).
 //   흉내 답을 줄 때 판의 실제 mission.graph도 한 번 불러 왕복 시간을 잰다(백엔드 시간).
 // - 재는 것(움직임 줄이기 reduce): 세션 맵 (가) 가만히 (나) 끌기·휠, 판 (다) 가만히 (라) 끌기·휠. CDP 추적의 프레임당 주 스레드 시간(중간값·p95),
@@ -38,7 +38,6 @@ const check = (name, ok, detail = '') => { results.push({ name, ok: !!ok, detail
 const AWAKE = ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'];
 
 // ---- 흉내 그래프(지어낸 이름) ----
-const FIX = JSON.parse(fs.readFileSync(path.join(REPO, 'app', 'test', 'fixtures', 'rig-band-graph.json'), 'utf8'));
 const FOLDERS = [
   { id: 'g1', name: 'Market', members: ['d:/work/market/web', 'd:/work/market/quant/.git'] },
   { id: 'g2', name: 'Hub', members: ['d:/hub/core/.git', 'd:/hub/rig/.git'] },
@@ -59,8 +58,6 @@ const RIGS = [['s-main', 'main', 'main', 'idle'], ['s-mgr', 'manager', 'manager'
 function mockGraph() {
   const now = Date.now(), base = now - 3 * 3600 * 1000;
   const T = (x) => (x == null ? x : base + Number(x) * 1000);
-  const R = JSON.parse(JSON.stringify(FIX)); delete R._about;
-  for (const c of R.cases) { for (const k of ['createdAt', 'closedAt', 'lastHandoffAt']) c[k] = T(c[k]); for (const u of c.units) { u.createdAt = T(u.createdAt); u.closedAt = T(u.closedAt); } for (const r of c.reports || []) r.at = T(r.at); }
   const prompts = ['Merge the workers and run the release check', 'Draft the slide notes for the second section', 'Collect the source tables', 'Review the parser diff and report back'];
   const node = (sid, name, ws, state, parent, peer, i, seat) => ({ id: `s:fk-${sid}`, kind: 'session', sessionId: `fk-${sid}`, name, agentKind: 'claude', state, category: state === 'working' ? 'working' : state === 'waiting' || state === 'error' ? 'needs_you' : 'idle', workspaceKey: ws,
     parentId: parent ? `s:fk-${parent}` : null, lineageParent: parent ? `s:fk-${parent}` : null, peers: peer ? [`s:fk-${peer}`] : [], createdAt: base + i * 1000, model: 'claude-opus-5-5', effort: 'high',
@@ -71,7 +68,7 @@ function mockGraph() {
   const edges = [];
   for (const n of nodes) if (n.parentId) { edges.push({ from: n.parentId, to: n.id, kind: 'spawn', count: 0, relation: 'sub' }); edges.push({ from: n.parentId, to: n.id, kind: 'role', label: 'worker', count: 3, relation: 'sub' }); }
   for (const s of S) if (s[5]) edges.push({ from: `s:fk-${s[5]}`, to: `s:fk-${s[0]}`, kind: 'relation', relation: 'peer', relationSource: 'user', count: 0 });
-  return { nodes: [{ id: 'human', kind: 'human', name: 'you' }, ...nodes], edges, counts: { all: nodes.length }, at: now, rig: { [WS[4]]: R } };
+  return { nodes: [{ id: 'human', kind: 'human', name: 'you' }, ...nodes], edges, counts: { all: nodes.length }, at: now };
 }
 
 // ---- 페이지 안: 흉내 답, 폴더·워크스페이스, 흉내 세션 갱신 ----

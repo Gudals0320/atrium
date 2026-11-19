@@ -21,12 +21,8 @@ import { leadTags } from './lib/cmd-input.js';
 import { MissionLight, DoneMark } from './Mission.jsx';
 import { SummaryColumn } from './SummaryColumn.jsx';
 import { commandDraft } from './Thread.jsx';
-import { caseGroups, recentLines } from './lib/rig-map.js'; // P186: rig 건 목록·미리 보기 훅·도구 줄
-import { SeatPicker, remoteView } from './RigSeat.jsx'; // P186: 노드 메뉴 자리 정하기
-import { RigBandLayer, RigBandLines, RigBandDefs, RigBandLabels, CaseHistory } from './RigBand.jsx'; // P198: rig 띠
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기·카드 그리기 세기(성능 기록 map 묶음)
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
-import { stickyHead } from './lib/rig-band.js'; // P199: 붙는 머리(띠의 자리 머리가 위로 지나가면 고정 머리 막대에 자리 이름)
 
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
 const COLH = 34; // 칸 머리 띠 높이
@@ -107,21 +103,21 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
   noteMap('cards');
   const n = b.node;
   const st = ST[tier] || 'ready';
-  const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}${b.chip ? ' chip' : ''}${b.band ? ' band' : ''}`;
+  const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}`;
   const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.bg ? `${f.bgText} (${f.bgKinds})` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip'), t('mmLine.cardDragTip')].filter(Boolean).join('\n');
   const done = tier === 'review';
   return (
-    <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws} data-thin={b.thin ? '1' : undefined} data-seat={b.seat ? b.seat.seat : undefined} data-band={b.band ? '1' : undefined} data-chip={b.chip ? '1' : undefined} data-case={b.caseId || undefined}>
+    <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws} data-thin={b.thin ? '1' : undefined} data-chip={b.chip ? '1' : undefined} data-case={b.caseId || undefined}>
       <div className="mt-ta-card" role="button" tabIndex={0} aria-pressed={tagged ? 'true' : 'false'} data-role="mm-node" data-kind="session" data-id={id} data-name={n.name} data-tier={tier} data-tagged={tagged ? '1' : undefined} aria-label={tip.replace(/\n/g, ', ')}
         onClick={(e) => onTag(id, e)} onDoubleClick={() => onOpen(id, true)} onPointerEnter={(e) => e.pointerType === 'mouse' && onHover(id, e.currentTarget)} onPointerLeave={() => onHover(null)} onFocus={(e) => onHover(id, e.currentTarget)} onBlur={() => onHover(null)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpen(id); } else if (e.key === ' ') { e.preventDefault(); onTag(id); } }}>
         {/* P163: 얇은 줄(하위 많은 리드 아래 절전 하위) = 상태 점 + 이름 + 지난 시간 한 줄. 조작은 카드와 같다 */}
         {b.thin ? <span className="mt-sm-thin" data-role="ta-thin"><i /><span className="cname" data-role="ta-name">{n.name}</span>{f.age ? <span className="cago">{f.age}</span> : null}</span> : null}
         {tier === 'work' && <MissionLight role="ta-light" />}
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
-        {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span>{b.seat ? <span className="mt-sm-seat tile" data-role="ta-seat-tile">{b.seat.seat}<i>{b.seat.mode}</i></span> : null}<span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
+        {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">
           <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" /></span>
-          <span className="c2" data-role="ta-meta">{b.seat ? <span className="mt-sm-seat" data-role="ta-seat" data-seat={b.seat.seat} data-mode={b.seat.mode} title={t('rigMap.seatTip', { seat: b.seat.seat, mode: t(`rigMap.mode.${b.seat.mode}`) })}>{b.seat.seat}<i>{b.seat.mode}</i></span> : null}{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
+          <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
           {f.more ? <span className="c4" data-role="ta-more">{f.more}</span> : null}
@@ -144,7 +140,7 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
 const HOVER_MS = 500, PEEK_TTL = 4000, PEEK_LINES = 10;
 const peekCache = new Map(); // sessionId → { at, events, screen }
 const lastLines = (text, n) => String(text || '').replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, '')).filter((l) => l.trim()).slice(-n);
-export function Peek({ pv, f, b, live, tier, t, now, folder, rig = false }) { // P160·P166: 휴대폰 세션 맵의 길게 누르기 미리 보기도 같은 내용(PhoneMap.jsx)
+export function Peek({ pv, f, b, live, tier, t, now, folder }) { // P160·P166: 휴대폰 세션 맵의 길게 누르기 미리 보기도 같은 내용(PhoneMap.jsx)
   const sid = b.node.sessionId;
   const awake = !!live && !['sleeping', 'exited'].includes(live.state) && !String(sid).startsWith('fk-');
   const [data, setData] = useState(() => peekCache.get(sid) || null);
@@ -156,10 +152,9 @@ export function Peek({ pv, f, b, live, tier, t, now, folder, rig = false }) { //
     Promise.all([
       real ? api.call('session.events', { session: sid, limit: 6 }).catch(() => []) : Promise.resolve([]),
       awake ? api.call('terminal.snapshot', { session: sid, format: 'text' }).then((r) => lastLines(r && r.text, PEEK_LINES)).catch(() => null) : Promise.resolve(null),
-      real && rig ? api.call('rig.recent', { session: sid, limit: 5 }).catch(() => null) : Promise.resolve(null), // P186: 최근 훅 판정과 도구 실행(PC만)
-    ]).then(([events, screen, rec]) => { const d = { at: Date.now(), events: (events || []).slice(-4), screen, rig: recentLines(rec, 5) }; peekCache.set(sid, d); if (alive) setData(d); });
+    ]).then(([events, screen]) => { const d = { at: Date.now(), events: (events || []).slice(-4), screen }; peekCache.set(sid, d); if (alive) setData(d); });
     return () => { alive = false; };
-  }, [sid, awake, rig]);
+  }, [sid, awake]);
   const ask = live && live.ask;
   const qs = ask && ask.kind === 'question' ? (ask.questions || []) : [];
   const answer = live && live.lastAnswer;
@@ -169,14 +164,13 @@ export function Peek({ pv, f, b, live, tier, t, now, folder, rig = false }) { //
   return (
     <div className={`mt-sm-peek st-${st}`} data-role="ln-peek" data-id={pv.id} style={{ left: pv.x, top: pv.y, width: pv.w }} aria-hidden="true">
       <div className="pk1"><b>{b.node.name}</b><span className="pst"><i />{f.stateText}{f.age ? <span className="dim"> · {f.age}</span> : null}</span></div>
-      <div className="pk2">{[b.seat ? t('rigMap.peekSeat', { seat: b.seat.seat, mode: b.seat.mode }) : null, f.role, [f.harness, f.model].filter(Boolean).join(' · '), folder].filter(Boolean).join('  ·  ')}</div>
+      <div className="pk2">{[f.role, [f.harness, f.model].filter(Boolean).join(' · '), folder].filter(Boolean).join('  ·  ')}</div>
       {task ? <div className="pkt"><span className="lb">{t(`mmTerr.kind.${f.taskKind}`)}</span>{clip(task, 600)}</div> : null}
       {qs.length ? qs.slice(0, 2).map((q, i) => <div key={i} className="pkq"><span className="lb">{t('mmPeek.asks')}</span>{q.question}{(q.options || []).length ? <span className="opts">{q.options.slice(0, 6).map((o, j) => <span key={j}>{o.label || String(o)}</span>)}</span> : null}</div>) : ask && ask.summary ? <div className="pkq"><span className="lb">{t('mmPeek.asks')}</span>{ask.summary}</div> : null}
       <BgList f={f} t={t} />
       {err ? <div className="pke">{clip(err, 400)}</div> : null}
       {answer ? <div className="pka"><span className="lb">{t('mmPeek.answer')}</span><span className="txt">{clip(answer, 400)}</span></div> : null}
       {data && data.events && data.events.length ? <div className="pkv"><span className="lb">{t('mmPeek.events')}</span>{data.events.slice().reverse().map((e) => <span key={e.id} className="ev">{e.kind}{e.data && e.data.to ? ` → ${STATE_LABEL[e.data.to] || e.data.to}` : e.data && e.data.command ? ` ${clip(e.data.command, 40)}` : ''}<span className="dim"> · {ageText(now - e.t, t)}</span></span>)}</div> : null}
-      {rig && data && data.rig && data.rig.length ? <div className="pkr" data-role="ln-peek-rig"><span className="lb">{t('rigMap.peekRig')}</span>{data.rig.map((x, i) => <span key={i} className={`rr${x.bad ? ' bad' : ''}`} data-kind={x.kind}><b>{t(`rigMap.peekKind.${x.kind}`)}</b>{x.text}{x.sub ? <span className="dim"> · {clip(x.sub, 60)}</span> : null}<span className="dim"> · {ageText(now - x.at, t)}</span></span>)}</div> : null}
       {awake ? (data && data.screen ? <pre className="pks" data-role="ln-peek-screen">{data.screen.join('\n')}</pre> : <div className="pkn dim">{data ? t('mmPeek.noScreen') : t('common.loading')}</div>) : <div className="pkn dim" data-role="ln-peek-asleep">{t('mmPeek.asleep')}</div>}
     </div>
   );
@@ -216,9 +210,6 @@ export function LineageMap() {
   const [pv, setPv] = useState(null); // 미리 보기 { id, x, y, w }(덮개 기준)
   const pvRef = useRef(null), hoverTimer = useRef(0);
   pvRef.current = pv;
-  const [cm, setCm] = useState(null); // P186: 카드 노드 메뉴(오른쪽 누르기) { id, x, y }(덮개 기준)
-  const cmRef = useRef(null);
-  cmRef.current = cm;
   const rootRef = useRef(null), vpRef = useRef(null), worldRef = useRef(null), pctRef = useRef(null), bgRef = useRef(null), colsRef = useRef(null);
   const view = useRef(null); // { k, x, y }
   const fitted = useRef(false);
@@ -228,13 +219,6 @@ export function LineageMap() {
   const [expanded, setExpanded] = useState(loadExpanded); // 깊이 접기를 편 카드
   const [pending, setPending] = useState([]); // 놓자마자 보이는 관계(판 답을 기다리는 동안). [{ a, b, relation, ok }]
   const [reloadN, setReloadN] = useState(0);
-  // P198: rig 띠의 접힌 줄 "+n 끝남"을 편 워크스페이스. 사이드바·요약 열이 접힌 세션을 부르면 펴고 그 칩으로 간다(pendingFocus)
-  const [foldOpen, setFoldOpen] = useState(() => new Set());
-  const pendingFocus = useRef(null);
-  const [hv, setHv] = useState(null); // 행 머리 넘김 이력 { c, x, y }
-  const hvRef = useRef(null);
-  hvRef.current = hv;
-  const onBandFold = useCallback((ws) => setFoldOpen((cur) => { const n = new Set(cur); if (n.has(ws)) n.delete(ws); else n.add(ws); return n; }), []);
   // P178: 이름표 배율 계단(lib/mission-lineage.js labelStep). 움직임이 멈춘 뒤에만 바꾸고(배치를 다시 센다), 바뀌면 보던 카드가 화면 같은 자리에 남게 보기를 옮긴다
   const [lstep, setLstep] = useState(1);
   const lstepRef = useRef(1), anchorRef = useRef(null), pendingView = useRef(null);
@@ -268,8 +252,6 @@ export function LineageMap() {
   }, []);
   // P153 r12: 다른 곳(에이전트 atrium child --peer, 다른 창)에서 관계가 바뀌면 그래프를 다시 읽는다
   useEffect(() => (open ? api.on('relation.updated', () => setReloadN((n) => n + 1)) : undefined), [open]);
-  // P198: rig 건이 바뀌면(넘김·보고·올림·끝남) 다시 읽는다(세션 바뀜 없이 오는 보고도 바로 보이게)
-  useEffect(() => (open ? api.on('rig.cases', () => setReloadN((n) => n + 1)) : undefined), [open]);
 
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
   // P210: 등급이 하나도 바뀌지 않은 세션 갱신(활동 시각·턴 진행)은 앞 표 그대로(배치·역할 모델·카드가 다시 돌지 않는다)
@@ -286,7 +268,7 @@ export function LineageMap() {
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
   const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
-  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, foldOpen, today, columns: 'auto', view: fitArea }), [vgroups, tiers, names, t, expanded, foldOpen, today, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea }), [vgroups, tiers, names, t, expanded, today, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
   const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
   // P178: 맞춤 보기를 셀 때 다른 계단의 배치(선 길 찾기 없이, 크기만)
@@ -311,8 +293,6 @@ export function LineageMap() {
     view.current = v;
     clearTimeout(hoverTimer.current);
     if (pvRef.current) { pvRef.current = null; setPv(null); } // 끌거나 확대하면 미리 보기는 비킨다
-    if (cmRef.current) { cmRef.current = null; setCm(null); } // P186: 노드 메뉴도
-    if (hvRef.current) { hvRef.current = null; setHv(null); } // P198: 넘김 이력도
     const w = worldRef.current, root = rootRef.current;
     const lv = levelOf(v.k);
     if (w) {
@@ -333,20 +313,6 @@ export function LineageMap() {
     // 칸 머리: 세계 칸 x를 화면으로(레일 오른쪽 띠 안의 자리)
     const cs = colsRef.current, L = layRef.current;
     if (cs && L) L.cols.forEach((c, i) => { const el = cs.children[i]; if (el) el.style.transform = `translateX(${Math.round(c.x * v.k + v.x - RAIL)}px)`; });
-    // P199: 붙는 머리. 띠의 자리 머리가 막대 위로 지나갔고 띠가 막대 선에 걸쳐 있으면, 나무 칸 이름 대신 그 띠의 자리 이름을 띠 열 x에(움직임 없이 자리만 바꾼다)
-    // P202: 두 열이면 열마다 따로 본다(data-sticky0·1이 그 열의 나무 칸 이름만 숨긴다). data-sticky는 붙은 띠가 하나라도 있을 때(첫 띠)
-    if (cs && L) {
-      const list = (L.rb && L.rb.list) || [];
-      const sts = Array.from({ length: L.ncol || 1 }, (_, c) => stickyHead(list.filter((b) => (b.col || 0) === c), v, TOPH + COLH, RAIL));
-      const first = sts.find(Boolean), want = first ? first.ws : '';
-      if ((cs.dataset.sticky || '') !== want) { if (want) cs.dataset.sticky = want; else delete cs.dataset.sticky; }
-      sts.forEach((st, c) => { const a = `sticky${c}`, w2 = st ? st.ws : ''; if ((cs.dataset[a] || '') !== w2) { if (w2) cs.dataset[a] = w2; else delete cs.dataset[a]; } });
-      for (const gEl of cs.querySelectorAll('.rbst')) {
-        const st = sts.find((x) => x && x.ws === gEl.dataset.ws), on = !!st;
-        if (gEl.hidden === on) gEl.hidden = !on;
-        if (on) st.seats.forEach((s2, i) => { const el = gEl.children[i]; if (el) el.style.transform = `translateX(${s2.x}px)`; });
-      }
-    }
     // 멀리 타일 글 하한(--ik = 1/배율): 움직이는 동안은 그대로, 멈춘 뒤(160ms)·처음·미끄러지기 때 한 번
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
@@ -417,22 +383,9 @@ export function LineageMap() {
   const focusCard = useCallback((id) => {
     const L = layRef.current, v = view.current, s = sizeRef.current, b = L && L.cards.get(id);
     if (!b || !v || !s) return false;
-    // P198: rig 띠의 접힌 줄 안 세션이면 그 줄을 펴고, 새 배치가 그려진 뒤 그 칩으로 가서 반짝인다(판으로 뛰지 않는다)
-    if (b.folded) { pendingFocus.current = id; setFoldOpen((cur) => new Set([...cur, b.ws])); return true; }
     const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, v.k, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM });
     paint({ ...c, x: c.x + RAIL }, { glide: true });
     setTimeout(() => blink(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), 460);
-    return true;
-  }, [paint, blink]); // eslint-disable-line react-hooks/exhaustive-deps
-  // P198: 건 행 머리로 가기(요약 열 건 누르기). 머리 왼쪽 위를 보기 칸 왼쪽 위 가까이(배율은 그대로, 너무 멀면 0.6까지 당긴다), 그 머리를 반짝인다
-  const focusCase = useCallback((ws, id) => {
-    const L = layRef.current, v = view.current, s = sizeRef.current;
-    const band = L && L.rb && L.rb.list.find((x) => x.ws === ws), h = band && band.rowOf.get(id);
-    if (!h || !v || !s) return false;
-    const k = Math.max(v.k, 0.6);
-    const c = centerOn(h.x + Math.min(h.w, (s.w - sumW() - 80) / k) / 2, h.y + Math.min(260, (s.h - TOPH - COLH - BOTTOM) / k / 2), k, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM });
-    paint({ ...c, x: c.x + RAIL }, { glide: true });
-    setTimeout(() => blink(`.mt-rb-head[data-case="${CSS.escape(id)}"][data-ws="${CSS.escape(ws)}"]`), 460);
     return true;
   }, [paint, blink]); // eslint-disable-line react-hooks/exhaustive-deps
   const fitBoxTo = useCallback((r) => { const s = sizeRef.current; if (!s || !r) return; const f = fitView(r, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM, pad: 40, max: OPEN_MAX }); paint({ ...f, x: f.x + RAIL }, { glide: true }); }, [paint]);
@@ -466,9 +419,6 @@ export function LineageMap() {
       anchorRef.current = null;
       paint(b ? { k: v.k, x: a.sx - b.x * v.k, y: a.sy - b.y * v.k } : v);
     } else if (view.current) paint(view.current);
-    // P198: 접힌 줄을 펴고 나서 가기로 한 칩
-    const pf = pendingFocus.current, pb = pf && lay.cards.get(pf);
-    if (pb && !pb.folded) { pendingFocus.current = null; focusCard(pf); }
   }, [open, lay, vsize, paint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 미리 보기: 카드 위에 HOVER_MS 머물면(또는 초점) 카드 옆에. 오른쪽에 자리가 없으면 왼쪽
@@ -588,7 +538,6 @@ export function LineageMap() {
       if (commit && s.moved && s.drop) setRelation(s.id, s.drop);
     };
     const down = (e) => {
-      if (cmRef.current) { cmRef.current = null; setCm(null); } // P186: 맵을 누르면 노드 메뉴를 닫는다
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       if (e.target.closest('.mt-ta-hud')) return;
       justDragged.current = false;
@@ -596,9 +545,7 @@ export function LineageMap() {
       setAlt(e.altKey);
       // P153 r11: Alt+카드 끌기 = 관계 바꾸기(마우스 왼쪽만). Alt 없이 끌면 시점 이동
       const card = e.target.closest('.mt-ta-card');
-      if (e.target.closest('.mt-rb-head, .mt-rb-mark, .mt-rb-fold')) return; // P198: 띠 머리·표시·접힌 줄은 누르기만
-      // P198: 띠 카드·칩은 Alt 끌기를 시작하지 않는다(자리는 rig 판에서 정한다). 그때는 시점 이동
-      if (card && !pts.size && e.altKey && e.pointerType === 'mouse' && e.button === 0 && !card.closest('.mt-ta-slot[data-band]')) { const p = local(e); pts.set(e.pointerId, p); g = { mode: 'card', id: card.dataset.id, p0: p, moved: false, drop: null }; return; }
+      if (card && !pts.size && e.altKey && e.pointerType === 'mouse' && e.button === 0) { const p = local(e); pts.set(e.pointerId, p); g = { mode: 'card', id: card.dataset.id, p0: p, moved: false, drop: null }; return; }
       // P155: 줄 머리 옮기기는 Alt+끌기만(headDrag). Alt 없이 누르면 줄 머리에서도 시점 이동.
       // P153 r11: 잡는 자리는 줄 머리 + 워크스페이스 칸 빈 곳 전체(.mt-sm-grab, Alt를 누르는 동안만 누를 수 있다)
       const head = e.target.closest('.mt-sm-head, .mt-sm-grab');
@@ -694,8 +641,6 @@ export function LineageMap() {
     const onKey = (e) => {
       const tag2 = (e.target && e.target.tagName) || '';
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(tag2) || (e.target && e.target.isContentEditable);
-      if (e.key === 'Escape' && !typing && cmRef.current) { e.preventDefault(); setCm(null); return; } // P186: 노드 메뉴 먼저
-      if (e.key === 'Escape' && !typing && hvRef.current) { e.preventDefault(); setHv(null); return; } // P198: 넘김 이력도
       if (e.key === 'Escape' && !typing) { e.preventDefault(); setMissionOpen(false); return; }
       if (typing || getState().dialog) return;
       if (typedKey(e) && !(e.key === ' ' && e.target && e.target.closest && e.target.closest('.mt-ta-card'))) { commandDraft.dispatchEvent(new CustomEvent('focus')); return; }
@@ -737,35 +682,6 @@ export function LineageMap() {
     if (key === 'work') return f.task ? t('mmMap.sumNow', { text: f.task }) : f.stateText;
     return f.role || f.stateText;
   };
-  // P186: rig 건 목록(rig가 없는 판은 null). 누르면 지금 일이 있는 자리의 카드로
-  // P198: 누르면 그 건의 띠 행 머리로(focusCase), 올리면 지금 일이 있는 카드를 강조
-  const keepOf = (ws, seat) => { if (!lay) return null; for (const [id, b] of lay.cards) if (b.ws === ws && b.keepHead && b.seat && b.seat.seat === seat) return id; return null; };
-  const rigCases = lay ? caseGroups(g2, (ws, sid) => (sid && lay.cards.has(`s:${sid}`) ? `s:${sid}` : null), keepOf) : null;
-  // P198: 띠 표시 누르기 = 그 keep 머리 카드(또는 가리킨 카드)로. 행 머리 누르기 = 넘김 이력
-  const onMark = (id) => focusCard(id);
-  // P216: 종료된 자리 세션의 일 다시 맡기기([다시 띄우기]). 판 API rig.retry는 이 PC의 창만 받는다(원격 보기에는 단추가 없다)
-  const onRetry = remoteView() ? null : (ws, caseId, unitId) => {
-    api.call('rig.retry', { workspace: ws, caseId, ...(unitId ? { unitId } : {}) })
-      .then((r) => toast(t('rigRetry.done', { n: (r && r.retried ? r.retried.length : 0), id: caseId })))
-      .catch((e) => toast(t('rigRetry.fail', { error: errText(e) }), 'error'));
-  };
-  const onHead = (h, el) => {
-    if (!rootRef.current || !el) return;
-    if (hv && hv.c.id === h.id) { setHv(null); return; }
-    const r = el.getBoundingClientRect(), R = rootRef.current.getBoundingClientRect();
-    clearTimeout(hoverTimer.current); setPv(null);
-    setHv({ c: h.c, x: Math.max(8, Math.min(r.left - R.left, R.width - 420)), y: Math.max(TOPH + COLH + 6, Math.min(r.bottom - R.top + 6, R.height - 340)) });
-  };
-  // P186: 카드 오른쪽 누르기 = 노드 메뉴(지금은 자리 정하기만: rig가 켜진 워크스페이스의 에이전트 세션, 이 PC의 창만). 그 밖은 전과 같다
-  const onCtx = (e) => {
-    const c = e.target.closest && e.target.closest('.mt-ta-card');
-    const L = layRef.current, b = c && L ? L.cards.get(c.dataset.id) : null;
-    if (!b || remoteView() || !L.rig.rigs.has(b.ws) || b.node.agentKind === 'shell' || !rootRef.current) return;
-    e.preventDefault();
-    clearTimeout(hoverTimer.current); setPv(null);
-    const R = rootRef.current.getBoundingClientRect();
-    setCm({ id: c.dataset.id, x: Math.min(e.clientX - R.left, R.width - 340), y: Math.min(e.clientY - R.top, R.height - 160) });
-  };
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const edgeText = (e) => (e.cross ? t('mmTerr.edgeCross', { from: lay.tree.byId.get(e.from).name, ws: wsName(lay.tree.byId.get(e.to).workspaceKey || '') || t('mmTerr.noFolder') }) : e.rel === 'role' ? (e.role || t('mmLine.role')) : t('mmLine.task'));
   // 칸 머리: 워크스페이스 · 시작 · 1단계 · 2단계 · … · 솔로
@@ -774,7 +690,7 @@ export function LineageMap() {
 
   return (
     <div className={`mt-mission mt-ta mt-sm nowheel nopan${moveWs ? ' isle-moving' : ''}`} data-role="mission" data-style="territories" data-layout="lineage" ref={rootRef}>
-      <div className="mt-ta-vp" data-role="ta-viewport" ref={vpRef} onContextMenu={onCtx} data-ncol={lay ? lay.ncol || 1 : undefined}>
+      <div className="mt-ta-vp" data-role="ta-viewport" ref={vpRef} data-ncol={lay ? lay.ncol || 1 : undefined}>
         <div className="mt-ta-bg" ref={bgRef} aria-hidden="true" />
         {!lay ? <div className="mt-ta-loading">{t('common.loading')}</div> : (
           <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef} data-label={lay.label}>
@@ -802,23 +718,18 @@ export function LineageMap() {
             {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-sm-div" style={{ left: d.x, top: d.y, height: d.h }} />)}
             {/* P202: 오늘·이전 이름표. 두 열 = 열마다 위 머리, 한 열 = 두 칸 사이 얇은 구분 줄(위 "오늘", 아래 "이전") */}
             {(lay.sections || []).map((s) => <SectionMark key={`sec:${s.kind}`} s={s} px={lay.px.name} t={t} />)}
-            <RigBandLayer rb={lay.rb} t={t} now={now} onMark={onMark} onHead={onHead} onFold={onBandFold} onRetry={onRetry} />
             <svg className="mt-ta-edges" width={1} height={1} aria-hidden="true">
               <defs>
                 {KINDS.map((k) => <marker key={k} id={`mt-sm-tip-${k}`} className={`mt-sm-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}
                 {/* P153 r11: 동료 선은 양 끝에 작은 점(화살촉 없음, 위아래가 없다) */}
                 <marker id="mt-sm-end-peer" className="mt-sm-tip k-peer" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
-                <RigBandDefs />
               </defs>
-              {/* P198: rig 띠 안 잇는 선(갈라짐·되돌아감 호·올림·보고) */}
-              <RigBandLines rb={lay.rb} />
               {lay.edges.map((e) => {
                 const k = e.peer ? 'peer' : e.lineage ? 'lineage' : e.cross ? 'cross' : e.rel;
                 const tip = e.peer ? 'url(#mt-sm-end-peer)' : e.lineage ? undefined : `url(#mt-sm-tip-${KINDS.includes(k) ? k : 'spawn'})`;
-                return <path key={e.id} className={`mt-ta-edge k-${k}${e.bandEdge ? ' band' : ''}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
+                return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
               })}
             </svg>
-            <RigBandLabels rb={lay.rb} t={t} />
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}
             {shown.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} unfold={b.depth >= LINE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
             {/* P153 r11: Alt+카드 끌기 때 놓을 자리(하위로·동료로·독립). 끄는 동안 DOM에 바로 쓴다 */}
@@ -828,14 +739,7 @@ export function LineageMap() {
         {lay && lay.cards.size === 0 && <div className="mt-ta-loading">{t('mission.empty')}</div>}
       </div>
 
-      {pv && lay && lay.cards.get(pv.id) && (() => { const b = lay.cards.get(pv.id), row = lay.rows.find((r) => r.key === b.ws), band = row && lay.bands.find((x) => (x.id || null) === (row.band || null)); return <Peek pv={pv} b={b} f={factsOf(pv.id)} live={liveOf(b.node)} tier={tiers.get(pv.id)} t={t} now={now} rig folder={[band && band.name, row && row.name].filter(Boolean).join(' / ')} />; })()}
-      {hv && lay ? <CaseHistory hv={hv} t={t} now={now} onClose={() => setHv(null)} /> : null}
-      {cm && lay && lay.cards.get(cm.id) && (() => { const n = lay.cards.get(cm.id).node; const live = liveOf(n); return (
-        <div className="mt-menu mt-sm-cmenu" data-role="ln-node-menu" data-id={cm.id} style={{ left: cm.x, top: cm.y }} onContextMenu={(e) => e.preventDefault()}>
-          <div className="mt-menu-row"><b>@{n.name}</b></div>
-          <SeatPicker s={{ sessionId: n.sessionId, name: n.name, kind: n.agentKind, rigSeat: (live && live.rigSeat !== undefined ? live.rigSeat : n.rigSeat) || null, workspaceKey: n.workspaceKey, state: live ? live.state : n.state }} onDone={() => { setCm(null); setReloadN((x) => x + 1); }} />
-          <div className="mt-menu-row"><button type="button" className="mt-btn small ghost" data-action="ln-menu-close" onClick={() => setCm(null)}>{t('common.close')}</button></div>
-        </div>); })()}
+      {pv && lay && lay.cards.get(pv.id) && (() => { const b = lay.cards.get(pv.id), row = lay.rows.find((r) => r.key === b.ws), band = row && lay.bands.find((x) => (x.id || null) === (row.band || null)); return <Peek pv={pv} b={b} f={factsOf(pv.id)} live={liveOf(b.node)} tier={tiers.get(pv.id)} t={t} now={now} folder={[band && band.name, row && row.name].filter(Boolean).join(' / ')} />; })()}
       <div className="mt-ta-hud mt-sm-top" data-role="ta-top">
         <span className="mt-ta-title">{t('mission.title')}</span>
         <span className="mt-ta-attn" data-role="ta-attn">
@@ -859,7 +763,7 @@ export function LineageMap() {
       {/* P179: 오른쪽 요약 열 = 옛 열 지도의 요약 열(SummaryColumn.jsx, 같은 부품). 창 오른쪽 끝에 위 줄 아래부터 바닥까지 붙는다. 접기는 열 가장자리의 작은 단추 */}
       {lay && sumOpen ? (
         <SummaryColumn role="ln-summary" className="mt-ta-hud mt-sm-sum" style={{ width: SUM_W }} sum={sum} t={t} nameOf={(id) => lay.cards.get(id).node.name} tierOf={(id) => tiers.get(id)}
-          textOf={sumLine} teams={nTeams} hint={t('mmSum.hint')} itemTip={t('mmSum.itemTip')} onGo={(id) => focusCard(id)} onCase={(c) => focusCase(c.ws, c.id)} onHot={sumHot} rigCases={rigCases} onRetry={onRetry} />
+          textOf={sumLine} teams={nTeams} hint={t('mmSum.hint')} itemTip={t('mmSum.itemTip')} onGo={(id) => focusCard(id)} onHot={sumHot} />
       ) : null}
       {lay && (
         <button type="button" className={`mt-ta-hud mt-sm-sum-edge${sumOpen ? ' on' : ''}`} data-action={sumOpen ? 'ln-sum-hide' : 'ln-sum-show'} style={sumOpen ? { right: SUM_W } : undefined}
@@ -870,11 +774,6 @@ export function LineageMap() {
       )}
       <div className="mt-ta-hud mt-sm-cols" data-role="ln-cols" ref={colsRef} style={lay && sumOpen ? { right: SUM_W } : undefined} aria-hidden="true">
         {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key} data-c={c.c || 0}>{colLabel(c)}</span>)}
-        {lay && lay.rb && lay.rb.list.filter((b) => !b.phone).map((b) => (
-          <div key={`st:${b.ws}`} className="rbst" data-role="ln-cols-rig" data-ws={b.ws} hidden>
-            {b.seats.map((s) => <span key={s.name} className={`colh rbs${s.old ? ' old' : ''}`} data-seat={s.name}>{s.name}<i>{s.old ? t('rigBand.old') : s.mode ? t(`rigBand.${s.mode}`) : ''}</i></span>)}
-          </div>
-        ))}
       </div>
     </div>
   );

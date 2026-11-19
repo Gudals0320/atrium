@@ -9,10 +9,7 @@ import { useInvRef, useZoomStyle } from './zoom-var.js'; // P112: 배율을 따�
 import { useStore, getState, openDialog, selectWorkspace, noteWorkspace, toast, markArranged } from './store.js';
 import { Icon } from './lib/icons.jsx';
 import { useT, t, errText } from './lib/i18n.js';
-import { useDialog } from './dialog.js'; // P183: rig 켜기 확인 창
-import { menuEntry } from './lib/rig-setup.js'; // P191
-import { remoteView } from './RigSeat.jsx';
-import { CanonDrift } from './RigAsks.jsx'; // P233: 켜기 확인의 정본 차이
+import { remoteView } from './lib/remote-view.js';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
@@ -139,10 +136,9 @@ function RegionMenu({ at, close, w, arranged, z }) {
       {item('region-fit', t('regions.fit'), () => selectWorkspace(key))}
       <div className="mt-sb2-msep" />
       <div className="mt-sb2-mh mt-rig-line" data-role="rig-status" data-rig={rig ? rig.state : 'loading'} title={rig && rig.invalid ? rig.invalid : undefined}>{rigLine(t, rig)}</div>
-      {/* P191: 정의가 없으면 Rig 만들기, 있으면 Rig 보기·고치기(켜기·끄기·사람만 고치는 목록은 rig 판 안으로 모았다). 원격 기기는 보기만 */}
-      {menuEntry(rig, { remote: remoteView() }) === 'create' && item('rig-create', t('rigSetup.menuCreate'), () => openDialog({ kind: 'rigcreate', ws: w }))}
-      {menuEntry(rig, { remote: remoteView() }) === 'create' && item('rig-builder', t('rig3Builder.menu'), () => openDialog({ kind: 'rigpanel', ws: w }))}{/* P247: rig가 없는 워크스페이스의 rig 3 빌더 */}
-      {menuEntry(rig, { remote: remoteView() }) === 'view' && item('rig-panel', (rig.protectedHits || []).length || (rig.changedFiles || []).length ? t('rigSetup.menuViewAlert') : t('rigSetup.menuView'), () => openDialog({ kind: 'rigpanel', ws: w }))}
+      {/* P191·P249: 정의가 없으면 빌더에게 말하기(이 PC의 창만), 있으면 rig 판(켜기·끄기·빌더·되돌리기는 판 안). 원격 기기는 보기만 */}
+      {rigMenu(rig, remoteView()) === 'builder' && item('rig-builder', t('rig3Builder.menu'), () => openDialog({ kind: 'rigpanel', ws: w }))}
+      {rigMenu(rig, remoteView()) === 'view' && item('rig-panel', t('rigSetup.menuView'), () => openDialog({ kind: 'rigpanel', ws: w }))}
       <div className="mt-sb2-msep" />
       {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}
     </div>,
@@ -162,137 +158,14 @@ function rigLine(t, r) {
   if (r.state === 'error') return t('rig.stError', { error: r.error });
   if (r.state === 'none') return t('rig.stNone');
   if (r.state === 'invalid') return t('rig.stInvalid', { reason: r.invalid || '?' });
-  if (r.state === 'on' && r.rig3 && !r.invalid) return t('rig3.stOn', { n: (r.rig3.roles || []).length }); // P241
-  if (r.state === 'on') return r.invalid ? t('rig.stOnStale', { reason: r.invalid }) : t('rig.stOn', { n: (r.hooks || []).length });
+  if (r.state === 'on') return r.invalid ? t('rig.stOnStale', { reason: r.invalid }) : t('rig3.stOn', { n: r.rig3 ? (r.rig3.roles || []).length : 0 }); // P241
   return r.invalid ? t('rig.stInvalid', { reason: r.invalid }) : t('rig.stOff');
 }
-async function setRig(w, on) {
-  try { await api.call(on ? 'rig.enable' : 'rig.disable', { workspace: w.key, ...(on ? { confirm: true } : {}) }); toast(t(on ? 'rig.turnedOn' : 'rig.turnedOff', { name: w.label || w.name })); return true; }
-  catch (e) { toast(t('rig.fail', { error: errText(e) }), 'error'); return false; }
-}
-// P183: rig 켜기 확인 창. 켜면 저장소의 내용(.atrium/rig.json)이 이 PC에서 사용자 계정으로 프로그램을 돌리므로, 돌 훅과 도구의 명령(인자 배열)을 보이고 확인을 받는다.
-//   정의가 나중에 바뀌어도 다시 묻지 않는다. 끌 때는 묻지 않는다. 원격 기기는 상태만 본다(백엔드가 막는다)
-export function RigOnDialog({ ws, onClose }) {
-  const t = useT();
-  const [st, setSt] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const box = useDialog(() => !busy && onClose());
-  useEffect(() => { api.call('rig.status', { workspace: ws.key }).then(setSt, (e) => setSt({ error: errText(e) })); }, [ws.key]);
-  const ok = st && !st.error && st.state !== 'none' && st.state !== 'invalid';
-  const argv = (run) => run.map((w) => (/[\s"]/.test(w) ? JSON.stringify(w) : w)).join(' ');
-  async function go() { setBusy(true); if (await setRig(ws, true)) onClose(); else setBusy(false); }
-  return (
-    <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
-      <div ref={box} className="mt-modal mt-rigon" data-role="rig-confirm" data-ws={ws.key}>
-        <h3>{t('rig.confirmTitle', { name: ws.label || ws.name })}</h3>
-        {!st ? <div>{t('rig.loading')}</div> : st.error ? <div>{st.error}</div> : (
-          <>
-            <div className="mt-rigon-warn" data-role="rig-confirm-warn">{t('rig.confirmWarn')}</div>
-            <div className="mt-rigon-root dim">{t('rig.confirmFile', { file: `${st.root}/${st.file}` })}</div>
-            {st.state === 'invalid' && <div className="mt-rigon-warn">{t('rig.stInvalid', { reason: st.invalid || '?' })}</div>}
-            <div className="mt-rigon-h">{t('rig.confirmHooks', { n: (st.hooks || []).length })}</div>
-            <ul className="mt-rigon-list" data-role="rig-confirm-hooks">
-              {(st.hooks || []).length ? st.hooks.map((h, i) => <li key={i}><span className="mt-rigon-at">{h.at}{h.from && h.from !== 'any' ? ` (${h.from})` : ''}{h.tool ? ` (${h.tool})` : ''}</span><code>{argv(h.run)}</code></li>) : <li className="dim">{t('rig.confirmNone')}</li>}
-            </ul>
-            <div className="mt-rigon-h">{t('rig.confirmTools', { n: (st.tools || []).length })}</div>
-            <ul className="mt-rigon-list" data-role="rig-confirm-tools">
-              {(st.tools || []).length ? st.tools.map((x) => <li key={x.name}><span className="mt-rigon-at">{x.name}</span><code>{argv(x.run)} …</code></li>) : <li className="dim">{t('rig.confirmNone')}</li>}
-            </ul>
-            {(st.cycleRuns || []).length > 0 && <>
-              <div className="mt-rigon-h">{t('rigAdmin.confirmCycles', { n: st.cycleRuns.length })}</div>
-              <ul className="mt-rigon-list" data-role="rig-confirm-cycles">
-                {st.cycleRuns.map((x, i) => <li key={i}><span className="mt-rigon-at">{x.every}</span><code>{argv(x.run)}</code></li>)}
-              </ul>
-            </>}{/* P188: 느린 고리의 run도 사용자 계정으로 돈다 */}
-            {(st.seats || []).some((x) => x.permission && x.permission !== 'ask') && <>
-              <div className="mt-rigon-h">{t('rigPerm.confirmHead', { n: st.seats.filter((x) => x.permission && x.permission !== 'ask').length })}</div>
-              <ul className="mt-rigon-list" data-role="rig-confirm-perms">
-                {st.seats.filter((x) => x.permission && x.permission !== 'ask').map((x) => (
-                  <li key={x.name} data-seat={x.name} data-permission={x.permission} className={x.permission === 'unattended' ? 'mt-rigon-perm-un' : undefined}>
-                    <span className="mt-rigon-at">{x.name}</span>
-                    <span>{t(x.permission === 'unattended' ? 'rigPerm.unattended' : 'rigPerm.scoped', { n: (x.allow || []).length })}</span>
-                    {(x.allow || []).length > 0 && <code>{x.allow.join(' · ')}</code>}
-                  </li>
-                ))}
-              </ul>
-              {st.seats.some((x) => x.permission === 'unattended') && <div className="mt-rigon-warn" data-role="rig-confirm-unattended">{t('rigPerm.unattendedWarn')}</div>}
-            </>}{/* P223: 자리 권한. unattended(묻지 않음)는 이 확인으로 사람이 승인한다 */}
-            <CanonDrift drift={st.canonDrift} />
-            <div className="mt-card-sub dim">{t('rig.confirmLater')}</div>
-          </>
-        )}
-        <div className="mt-card-actions">
-          <button className="mt-btn primary" disabled={busy || !ok} data-action="rig-confirm-on" onClick={go}>{t('rig.confirmOn')}</button>
-          <button className="mt-btn ghost" data-action="rig-confirm-cancel" onClick={onClose}>{t('common.cancel')}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// P188: 사람만 고치는 목록(rig 메뉴). 정의 자리(JSON 포인터)와 파일(저장소 기준 경로, 넣을 때의 해시)을 넣고 빼고, 바뀐 파일은 다시 승인한다.
-//   판 API rig.protected(보기)·rig.protect·rig.unprotect(판 API 토큰만). 보호를 어긴 최근 알림과 지금 정의 버전을 함께 보인다
-export function RigProtectDialog({ ws, onClose }) {
-  const t = useT();
-  const [st, setSt] = useState(null);
-  const [ptr, setPtr] = useState('');
-  const [file, setFile] = useState('');
-  const [busy, setBusy] = useState(false);
-  const box = useDialog(() => !busy && onClose());
-  const load = () => api.call('rig.protected', { workspace: ws.key }).then(setSt, (e) => setSt({ error: errText(e) }));
-  useEffect(() => { load(); }, [ws.key]); // eslint-disable-line react-hooks/exhaustive-deps
-  async function act(method, p, done) {
-    setBusy(true);
-    try { setSt(await api.call(method, { workspace: ws.key, ...p })); if (done) done(); }
-    catch (e) { toast(t('rigAdmin.fail', { error: errText(e) }), 'error'); }
-    setBusy(false);
-  }
-  const short = (h) => String(h || '').slice(0, 10);
-  return (
-    <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
-      <div ref={box} className="mt-modal mt-rigon mt-rigprot" data-role="rig-protect" data-ws={ws.key}>
-        <h3>{t('rigAdmin.title', { name: ws.label || ws.name })}</h3>
-        <div className="mt-card-sub dim">{t('rigAdmin.intro')}</div>
-        {!st ? <div>{t('rig.loading')}</div> : st.error ? <div>{st.error}</div> : (
-          <>
-            <div className="mt-rigon-root dim">{t('rigAdmin.version', { n: st.version ?? '-' })}</div>
-            {(st.protectedHits || []).length > 0 && <div className="mt-rigon-warn" data-role="rig-protect-hits">{t('rigAdmin.hits', { what: st.protectedHits.join(', ') })}</div>}
-            <div className="mt-rigon-h">{t('rigAdmin.pointers', { n: st.pointers.length })}</div>
-            <ul className="mt-rigon-list" data-role="rig-protect-pointers">
-              {st.pointers.length ? st.pointers.map((p) => <li key={p}><code>{p}</code><button className="mt-btn ghost small" disabled={busy} data-action="rig-unprotect-pointer" onClick={() => act('rig.unprotect', { pointer: p })}>{t('rigAdmin.remove')}</button></li>) : <li className="dim">{t('rig.confirmNone')}</li>}
-            </ul>
-            <form className="mt-rigprot-add" onSubmit={(e) => { e.preventDefault(); if (ptr.trim()) act('rig.protect', { pointer: ptr.trim() }, () => setPtr('')); }}>
-              <input className="mt-input mt-rigprot-in" value={ptr} placeholder={t('rigAdmin.pointerPh')} data-role="rig-protect-pointer-input" onChange={(e) => setPtr(e.target.value)} />
-              <button className="mt-btn" type="submit" disabled={busy || !ptr.trim()} data-action="rig-protect-pointer">{t('rigAdmin.add')}</button>
-            </form>
-            <div className="mt-rigon-h">{t('rigAdmin.files', { n: st.files.length })}</div>
-            <ul className="mt-rigon-list" data-role="rig-protect-files">
-              {st.files.length ? st.files.map((f) => (
-                <li key={f.path} data-ok={f.ok ? '1' : '0'}>
-                  <code>{f.path}</code>
-                  <span className={f.ok ? 'dim' : 'mt-rigon-warn'}>{f.ok ? t('rigAdmin.fileOk', { sha: short(f.sha256) }) : f.missing ? t('rigAdmin.fileMissing') : t('rigAdmin.fileChanged', { was: short(f.sha256), now: short(f.now) })}</span>
-                  {!f.ok && !f.missing && <button className="mt-btn small" disabled={busy} data-action="rig-reapprove" onClick={() => act('rig.protect', { file: f.path })}>{t('rigAdmin.reapprove')}</button>}
-                  <button className="mt-btn ghost small" disabled={busy} data-action="rig-unprotect-file" onClick={() => act('rig.unprotect', { file: f.path })}>{t('rigAdmin.remove')}</button>
-                </li>)) : <li className="dim">{t('rig.confirmNone')}</li>}
-            </ul>
-            <form className="mt-rigprot-add" onSubmit={(e) => { e.preventDefault(); if (file.trim()) act('rig.protect', { file: file.trim() }, () => setFile('')); }}>
-              <input className="mt-input mt-rigprot-in" value={file} placeholder={t('rigAdmin.filePh')} data-role="rig-protect-file-input" onChange={(e) => setFile(e.target.value)} />
-              <button className="mt-btn" type="submit" disabled={busy || !file.trim()} data-action="rig-protect-file">{t('rigAdmin.add')}</button>
-            </form>
-            {(st.alerts || []).length > 0 && <>
-              <div className="mt-rigon-h">{t('rigAdmin.alerts')}</div>
-              <ul className="mt-rigon-list dim" data-role="rig-protect-alerts">
-                {st.alerts.slice(0, 5).map((a, i) => <li key={i}>{new Date(a.t).toLocaleString()} · {a.kind === 'pointer' ? t('rigAdmin.alertPointer', { what: (a.items || []).join(', ') }) : t('rigAdmin.alertFile', { what: (a.items || []).join(', ') })}</li>)}
-              </ul>
-            </>}
-          </>
-        )}
-        <div className="mt-card-actions">
-          <button className="mt-btn ghost" data-action="rig-protect-close" onClick={onClose}>{t('common.close')}</button>
-        </div>
-      </div>
-    </div>
-  );
+// 영역 메뉴의 rig 줄: 정의가 없으면 빌더(원격은 없음), 있으면 rig 판 → 'builder' | 'view' | null
+export function rigMenu(status, remote = false) {
+  if (!status || status.state === 'error') return null;
+  if (status.state === 'none') return remote ? null : 'builder';
+  return 'view';
 }
 
 // P27: 워크트리 영역. P35: 리포 영역 안의 노란 상자(테두리, 옅은 바탕, 이름표 글자 모두 노란 계열, tokens.css --wt-box-*).

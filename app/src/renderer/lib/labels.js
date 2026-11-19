@@ -21,12 +21,10 @@ export function deliveryText(d) {
   if (d.reason === 'typed') return t('delivery.withReason', { base, reason: t('typeNow.typed') }); // P90: 일하는 중에 Claude Code 대기 메시지로 넣었다
   if (d.reason === 'now' || d.reason === 'now_typed') return t('delivery.withReason', { base, reason: t(d.reason === 'now' ? 'deliveryQueue.sentNow' : 'deliveryQueue.sentNowTyped') }); // P172: 대기열에서 바로 보냄
   if (d.reason === 'draft') return t('delivery.withReason', { base, reason: t('typeNow.draft') }); // P141(#17): 보내는 중(sending)에도 원문 까닭 대신 사전 글
-  if (d.reason === 'loop_paused') return t('delivery.withReason', { base, reason: t('rigLoopHold.paused') }); // P223: 멈춘 rig 고리에 붙잡음(잇기를 기다림)
-  if (/^loop_(unit_queued|dropped|no_session|moved)$/.test(d.reason)) return t('delivery.withReason', { base, reason: t(`rigLoopHold.${d.reason.slice(5)}`) }); // P223: 잇기 뒤 붙잡았던 전달의 끝
+  if (d.reason === 'loop_dropped') return t('delivery.withReason', { base, reason: t('rigLoopHold.dropped') }); // P249: 옛 rig 고리에 붙잡혔던 전달(다시 뜰 때 취소)
   if (d.status === 'queued') return t('delivery.withReason', { base, reason: WAIT_REASON_LABEL[d.reason] || d.reason });
   if (d.status === 'cancelled' && d.reason === 'user') return base;
   if (/^draft_(moved|restored|partial|stashed|held)$/.test(d.reason)) return t('delivery.withReason', { base, reason: t(`draftAside.${d.reason.slice(6)}`) }); // P128
-  if (d.reason === 'rig_run_open') return t('delivery.withReason', { base, reason: t('cmdTalk.runOpen') }); // P240: "회 없이"가 열린 회 때문에 거절됨
   if (d.reason === 'input_box_other') return t('delivery.withReason', { base, reason: t('deliveryBox.otherText') }); // P126
   return t('delivery.withReason', { base, reason: d.reason });
 }
@@ -54,14 +52,6 @@ export function askLine(s) {
   if (a.kind === 'worktree_exit') return t('wtExit.title');
   if (a.kind === 'screen') return t('ask.screen', { kind: s.kind || t('ask.agent') });
   return t('ask.permission', { what: a.summary || a.tool });
-}
-
-// P233(rig2-design 11.15의 1): rig 자리의 권한 질문은 "이번 한 번 예"와 "아니오"만. 판이 넓히는 선택지를 뺀 선택지(ask.onceOnly) → 카드의 한 줄
-export function onceOnlyLine(s) {
-  const a = s && s.ask;
-  if (!a || a.kind !== 'permission' || !a.onceOnly) return '';
-  const list = (a.choices || []).map((c) => `${c.n}. ${c.label}`).join(' · ');
-  return list ? t('rigP233.onceOnly', { choices: list }) : t('rigP233.onceOnlyBare');
 }
 
 // P6a(P4 6절 9번): 선 위 글이 옆 노드를 가리지 않게, 두 노드 사이 틈에 맞춰 글 폭을 줄인다. 틈이 좁으면 짧은 표시(역할 앞부분과 받는 쪽 상태)만 두고,

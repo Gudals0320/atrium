@@ -6,8 +6,11 @@ import { api } from './api.js';
 import { toast, useStore, goWhenOpen } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
-import { remoteView } from './RigSeat.jsx';
+import { remoteView } from './lib/remote-view.js';
 import { roleRows, flowRows, roleCount, canEnable3, intakeRows, stalledRows, returnedIntake, cycleInfo, tuneBadge, tuneLogRows, builderInfo } from './lib/rig3.js';
+
+// 영역 메뉴의 rig 판(main.jsx rigpanel). 정의가 없으면 빌더에게 말하기, 옛 꼴 정의면 그 한 줄 오류가 보인다
+export function RigPanel({ ws, onClose }) { return <Rig3Panel ws={ws} onClose={onClose} />; }
 
 export function Rig3Panel({ ws, onClose, first = null }) {
   const t = useT();
@@ -111,7 +114,7 @@ export function Rig3Panel({ ws, onClose, first = null }) {
 }
 
 // P247: 빌더에게 말하기. 빌더 세션이 있으면 그 세션으로, 없으면 판이 띄운다(판 API rig3.builder). 글을 쓰면 사람의 말로 넣고, 터미널로 들어간다.
-//   rig 3 판과 rig가 없는 워크스페이스의 rig 판(RigSetup.jsx)이 같이 쓴다
+//   rig 판(정의가 있든 없든) 안에서 쓴다
 export function Rig3BuilderTalk({ ws, st, t, onClose }) {
   const sessions = useStore((s) => s.sessions);
   const info = builderInfo(st, sessions);

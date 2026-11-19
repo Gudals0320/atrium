@@ -43,13 +43,13 @@ test('graphKey: 활동 시각·턴 진행만 바뀌면 같다(그래프를 다�
   assert.equal(graphKey([...a.values()]), graphKey(a), '배열도 받는다');
 });
 
-test('graphKey: 그래프에 닿는 값이 바뀌면 다르다(상태·이름·소속·부모·마지막 지시·질문·rig 자리·세션 생기고 닫힘)', () => {
+test('graphKey: 그래프에 닿는 값이 바뀌면 다르다(상태·이름·소속·부모·마지막 지시·질문·세션 생기고 닫힘)', () => {
   const a = live0(), k = graphKey(a);
   const put = (id, o) => { const m = new Map(a); m.set(id, { ...a.get(id), ...o }); return m; };
   for (const [what, m] of [
     ['상태', put('k2', { state: 'working', turn: { startedAt: NOW } })], ['이름', put('k2', { name: 'k2-new' })], ['소속', put('solo', { workspaceKey: 'c:/w/a/.git' })],
     ['부모', put('k2', { lineageParentSessionId: 'solo' })], ['마지막 지시', put('k2', { lastPrompt: 'Another task' })], ['질문', put('k2', { state: 'waiting', ask: { kind: 'question', summary: 'Which?' } })],
-    ['rig 자리', put('k2', { rigSeat: 'worker' })], ['모델', put('k2', { model: 'claude-sonnet-5-5' })], ['오류', put('k2', { state: 'error', error: { message: 'API Error' } })],
+    ['모델', put('k2', { model: 'claude-sonnet-5-5' })], ['오류', put('k2', { state: 'error', error: { message: 'API Error' } })],
   ]) assert.notEqual(graphKey(m), k, what);
   const plus = new Map(a); plus.set('new', sum('new'));
   assert.notEqual(graphKey(plus), k, '세션 생김');
