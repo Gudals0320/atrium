@@ -479,7 +479,7 @@ async function rigVerb() {
     if (x.ok) say(`맞다: ${x.from}(해시 ${String(x.hash).slice(0, 12)}${x.same ? ', 지금 버전과 같은 내용' : ''}). 지금 버전 ${x.current.n ?? '-'}. 자리 ${x.summary.seats.join(', ') || '없음'} · 흐름 줄 ${x.summary.flow} · 훅 ${x.summary.hooks} · 도구 ${x.summary.tools.join(', ') || '없음'} · 느린 고리 ${x.summary.cycles.join(', ') || '없음'} · manager ${x.summary.manager || '없음'}`);
     else { say(`맞지 않다: ${x.from}: ${x.reason}`); process.exitCode = 1; }
     if (x.ok && x.summary.docs && x.summary.docs.length) say(`  rig ${x.summary.format} · 문서 ${x.summary.docs.map((d) => `${d.name}(${d.role}${d.layer !== 'project' ? `, ${d.layer}` : ''}) ${d.path}`).join(' · ')}`); // P219
-    if (x.ok && x.summary.doneHooks && x.summary.doneHooks.length) say(`  done 훅: ${x.summary.doneHooks.map((h) => `hooks[${h.index}] → ${h.seats ? h.seats.join(', ') : '모든 자리'}`).join(' · ')}`); // P230
+    if (x.ok && x.summary.doneHooks && x.summary.doneHooks.length) say(`  done 훅: ${x.summary.doneHooks.map((h) => `hooks[${h.index}] → ${h.seats ? h.seats.join(', ') : '모든 자리'}${h.loops ? ` · 고리 ${h.loops.join(', ')}` : ''}`).join(' · ')}`); // P230
     for (const w of x.warnings || []) say(`  경고: ${w}`);
     return;
   }

@@ -57,6 +57,9 @@ export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN
       if (h.tool != null && (!String(h.at).startsWith('tool-') || typeof h.tool !== 'string')) return bad(`${at}.tool은 tool-before·tool-after 훅에만 쓰는 도구 이름이다`);
       // P230(rig2-design 11.12의 5): done 훅의 seat(자리 이름 글이나 목록). 없으면 모든 자리(v1 그대로). 자리는 흐름 검사 뒤에 맞춘다
       if (h.seat != null && h.at === 'done' && !(typeof h.seat === 'string' ? h.seat : Array.isArray(h.seat) && h.seat.length && h.seat.every((x) => typeof x === 'string' && x))) return bad(`${at}.seat는 자리 이름 글이나 자리 이름 배열이다: ${JSON.stringify(h.seat)}`); // pre-tool의 seat은 rig-amp가, 그 밖은 rig-amp가 거절
+      // P236(rig2-design 11.18): done 훅의 loop(고리 이름 글이나 목록). 없으면 모든 고리(v1·지금 정의 그대로). 이름은 고리 검사 뒤에 맞춘다
+      if (h.loop != null && h.at !== 'done') return bad(`${at}.loop은 done 훅에만 쓴다`);
+      if (h.loop != null && !(typeof h.loop === 'string' ? h.loop : Array.isArray(h.loop) && h.loop.length && h.loop.every((x) => typeof x === 'string' && x))) return bad(`${at}.loop은 고리 이름 글이나 고리 이름 배열이다: ${JSON.stringify(h.loop)}`);
       if (h.onFail != null && !['pass', 'block'].includes(h.onFail)) return bad(`${at}.onFail은 pass 또는 block이다: ${h.onFail}`);
       if (h.timeoutMs != null && !(Number(h.timeoutMs) > 0)) return bad(`${at}.timeoutMs는 양수다(최대 ${HOOK_TIMEOUT_MAX_MS})`);
       // 없는 스크립트: 경로 꼴 첫 낱말, 또는 해석기(node, python 등) 뒤 경로 꼴 둘째 낱말(확장자가 있는 것)
@@ -64,7 +67,7 @@ export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN
         if (pathish(h.run[0]) && !exists(path.resolve(root, h.run[0])) && !['.cmd', '.bat', '.exe', '.com'].some((e) => exists(path.resolve(root, h.run[0] + e)))) return bad(`${at}.run의 파일이 없다: ${h.run[0]}`);
         if (!pathish(h.run[0]) && h.run[1] && /[\\/]/.test(h.run[1]) && path.extname(h.run[1]) && !h.run[1].startsWith('-') && !exists(path.resolve(root, h.run[1]))) return bad(`${at}.run의 스크립트가 없다: ${h.run[1]}`);
       }
-      hooks.push({ index: i, at: h.at, from: h.from || 'any', tool: h.tool || null, run: h.run.slice(), onFail: h.onFail || 'pass', timeoutMs: Math.min(Number(h.timeoutMs) || HOOK_TIMEOUT_MS, HOOK_TIMEOUT_MAX_MS), ...(h.seat != null && h.at === 'done' ? { seat: [...new Set(typeof h.seat === 'string' ? [h.seat] : h.seat)] } : {}) });
+      hooks.push({ index: i, at: h.at, from: h.from || 'any', tool: h.tool || null, run: h.run.slice(), onFail: h.onFail || 'pass', timeoutMs: Math.min(Number(h.timeoutMs) || HOOK_TIMEOUT_MS, HOOK_TIMEOUT_MAX_MS), ...(h.seat != null && h.at === 'done' ? { seat: [...new Set(typeof h.seat === 'string' ? [h.seat] : h.seat)] } : {}), ...(h.loop != null ? { loop: [...new Set(typeof h.loop === 'string' ? [h.loop] : h.loop)] } : {}) });
     }
   }
   let guide = null;
@@ -116,6 +119,13 @@ export function validateRig(raw, { root, exists = isFile, cycleMinMs = CYCLE_MIN
   if (!cy.ok) return cy;
   const amp = validateAmp(raw, { seats: fl.flow.seats, docs: dv.docs }); if (!amp.ok) return amp; // P189. P219: writes의 문서 이름 → 경로
   const lp = finishLoops(raw, fl.flow, cy.cycles, dv.docs, sp.lineOf, { cycleMinMs }); if (!lp.ok) return lp; // P221: 고리(loops 없으면 work·improve로 읽음)
+  // P236: done 훅의 loop가 가리키는 고리가 정의에 있는가(loops 없는 정의는 읽은 고리 이름: work, improve…)
+  for (const h of hooks) {
+    if (!h.loop) continue;
+    const names = Object.keys(lp.loops || {});
+    const miss = h.loop.filter((x) => !names.includes(x));
+    if (miss.length) return bad(`hooks[${h.index}].loop에 없는 고리가 있다: ${miss.join(', ')}. 고리: ${names.join(', ') || '(없음)'}`);
+  }
   // P219: version, docs(문서), seatDocs(자리의 loads·reads·writes 문서), hookDocs·toolDocs(records·reads). 문서 경고는 정의 경고에 더한다
   return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, hooks, guide, tools, ...fl.flow, warnings: [...fl.flow.warnings, ...dv.warnings, ...lp.warnings, ...(amp.warnings || [])], cycles: cy.cycles, loops: lp.loops, amp: amp.amp, version: dv.version, docs: dv.docs, seatDocs: dv.seatDocs, hookDocs: dv.hookDocs, toolDocs: dv.toolDocs } };
 }
@@ -628,7 +638,7 @@ export class Rig {
       workspace: key, root: w.root, file: RIG_FILE, enabled: !!st.enabled, enabledAt: st.enabledAt ?? null,
       present: r.present, valid: r.present && !r.invalid, invalid: r.invalid, hash: r.hash, usingLastGood: !!(r.invalid && def),
       state: !r.present ? 'none' : !def ? 'invalid' : st.enabled ? 'on' : 'off', // invalid가 있고 def도 있으면 마지막 맞은 정의를 쓰는 중
-      hooks: def ? def.hooks.map((h) => ({ at: h.at, from: h.at === 'deliver' ? h.from : undefined, tool: h.tool || undefined, seat: h.seat || undefined, run: h.run, onFail: h.onFail })) : [], // P230: done 훅의 seat
+      hooks: def ? def.hooks.map((h) => ({ at: h.at, from: h.at === 'deliver' ? h.from : undefined, tool: h.tool || undefined, seat: h.seat || undefined, loop: h.loop || undefined, run: h.run, onFail: h.onFail })) : [], // P230: done 훅의 seat. P236: loop
       tools: def && def.tools ? Object.values(def.tools).map((x) => ({ name: x.name, run: x.run, desc: x.desc, timeoutMs: x.timeoutMs, parallel: x.parallel })) : [], // P183: 켜기 확인 창이 보인다
       cycleRuns: def && def.cycles ? def.cycles.filter((x) => x.run).map((x) => ({ every: x.every, run: x.run })) : [], // P188: 느린 고리의 run도 사용자 계정으로 돈다
       guide: !!(def && def.guide), name: def ? def.name : null,
@@ -735,6 +745,7 @@ export class Rig {
         session: ctx.session || null, from: ctx.from || null, unit: ctx.unit || null, try: ctx.try || null,
         ...(text != null ? { text } : {}), ...(ctx.result != null ? { result: ctx.result } : {}), ...(ctx.doneText != null ? { doneText: ctx.doneText } : {}),
         ...(ctx.tool != null ? { tool: ctx.tool } : {}), ...(args ? { args } : {}), ...(ctx.after || {}),
+        ...(ctx.run !== undefined ? { run: ctx.run } : {}), // P236(11.18): done 훅에 그 일의 회 { id, loop }(회가 없으면 null)
       };
       const res = await runHook({ run: h.run, cwd: r.root, env: this.env(), input, timeoutMs: h.timeoutMs });
       const rec = { workspaceKey: ctx.key, at: ctx.at, hookIndex: h.index, argv: h.run, rigHash: r.hash, sessionId: ctx.session ? ctx.session.id : null, unitId: ctx.unit ? ctx.unit.id : null, tryId: ctx.try ? ctx.try.id : null, ms: res.ms, toolRunId: ctx.toolRunId || null };
@@ -805,12 +816,16 @@ export class Rig {
   async done({ caller, tryRow, unit, result, text }) {
     const key = caller.workspaceKey;
     const r = this.active(key);
-    if (!r || !r.def.hooks.some((h) => h.at === 'done' && (!h.seat || h.seat.includes(caller.rigSeat)))) return { action: 'pass', reason: null, runs: [] };
+    // P236(11.18): loop가 있는 done 훅은 그 일의 회(unit.caseId)의 고리가 맞을 때만. 회가 없는 done(고리 밖)에는 돌지 않는다
+    let run = null;
+    if (unit && unit.caseId) { let c = null; try { c = this.store().getCase(unit.caseId); } catch {} run = { id: unit.caseId, loop: c ? c.loop || null : null }; }
+    const match = (h) => (!h.seat || h.seat.includes(caller.rigSeat)) && (!h.loop || !!(run && run.loop && h.loop.includes(run.loop)));
+    if (!r || !r.def.hooks.some((h) => h.at === 'done' && match(h))) return { action: 'pass', reason: null, runs: [] };
     return this.runAt(r, {
       key, at: 'done', session: sessionInfo(caller), from: { kind: 'agent', session: sessionInfo(caller) },
       unit: unit ? { id: unit.id, from: unit.from, spec: unit.spec, origin: unit.origin } : null, try: tryRow ? { id: tryRow.id, startedAt: tryRow.startedAt } : null,
-      result, doneText: text,
-      match: (h) => !h.seat || h.seat.includes(caller.rigSeat), // P230: seat가 있는 done 훅은 그 자리의 done에서만
+      result, doneText: text, run,
+      match, // P230: seat가 있는 done 훅은 그 자리의 done에서만. P236: loop가 있으면 그 고리의 회에서만
     });
   }
 

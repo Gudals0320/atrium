@@ -339,7 +339,7 @@ test('P230 done 훅 seat: rig check 요약(doneHooks)과 rig.status 훅 줄, rig
   try {
     const x = b.branch.rigAdmin.check(ws.key, { text: JSON.stringify(def) });
     assert.equal(x.ok, true, x.reason);
-    assert.deepEqual(x.summary.doneHooks, [{ index: 0, seats: ['main'] }, { index: 1, seats: null }]);
+    assert.deepEqual(x.summary.doneHooks, [{ index: 0, seats: ['main'], loops: null }, { index: 1, seats: null, loops: null }]);
   } finally { await stop(); }
   const v = validateRig(def);
   const m = buildRigMap({ ws: 'w', def: v.def });
@@ -359,7 +359,7 @@ test('P230 정기 점검: 일 글에 "바뀐 것 없으면 한 줄", 기계 검�
   const p = presetFiles(shortcutAnswers('check'));
   assert.match(p.def.loops.work.task, /no change \+ path of the last report/);
   const g = presetFiles({ ...shortcutAnswers('grow'), check: { on: true, script: 'scripts/check.mjs' }, review: { on: true } });
-  assert.deepEqual(g.def.hooks, [{ at: 'done', seat: 'main', run: ['node', 'scripts/check.mjs'], onFail: 'block' }]);
+  assert.deepEqual(g.def.hooks, [{ at: 'done', seat: 'main', loop: 'work', run: ['node', 'scripts/check.mjs'], onFail: 'block' }]); // P236: loop work
   const { b, ws, dir, stop } = await board();
   try {
     const H = rigSetupHandlers(b);
