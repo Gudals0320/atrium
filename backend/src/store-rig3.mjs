@@ -15,7 +15,16 @@ CREATE INDEX IF NOT EXISTS rig3_receipts_role ON rig3_receipts (ws, role, state)
 CREATE INDEX IF NOT EXISTS rig3_receipts_item ON rig3_receipts (ws, item_id);
 CREATE TABLE IF NOT EXISTS rig3_cycles (ws TEXT NOT NULL, n INTEGER NOT NULL, opened_at INTEGER NOT NULL, by TEXT NOT NULL, due_at INTEGER, open_seq INTEGER, entry_state TEXT, entry TEXT, entry_by TEXT, entry_at INTEGER, entry_meta TEXT, PRIMARY KEY (ws, n)) STRICT;
 CREATE TABLE IF NOT EXISTS rig3_clock (ws TEXT NOT NULL, who TEXT NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY (ws, who)) STRICT;
+CREATE TABLE IF NOT EXISTS rig3_bundle (ws TEXT NOT NULL, n INTEGER NOT NULL, part TEXT NOT NULL, sha TEXT NOT NULL, PRIMARY KEY (ws, n, part)) STRICT;
+CREATE TABLE IF NOT EXISTS rig3_docs (ws TEXT NOT NULL, sha TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY (ws, sha)) STRICT;
+CREATE TABLE IF NOT EXISTS rig3_tunes (id INTEGER PRIMARY KEY, ws TEXT NOT NULL, role TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, n INTEGER, prev_n INTEGER, from_n INTEGER, why TEXT, evidence TEXT, diff TEXT, added INTEGER, removed INTEGER, reason TEXT, cycle INTEGER, session_id TEXT, by TEXT, t INTEGER NOT NULL) STRICT;
+CREATE INDEX IF NOT EXISTS rig3_tunes_role ON rig3_tunes (ws, role, id);
 `;
+// P245: rig 3 판(버전) 묶음과 조정(rig3-tune.mjs).
+//   rig3_bundle: 판(rig_versions의 n)마다 묶음의 조각 해시. part는 rig.json · purpose · role:<역할>. 판 하나 = 정의·목적·모든 정의서.
+//   rig3_docs: 조각의 내용(해시로 한 번만. 정의서 하나를 지난 판의 요령 칸으로 되돌릴 때 쓴다).
+//   rig3_tunes: 조정 기록. kind tune(역할이 요령 칸을 고침) | none(고칠 것 없음) | raise(빌더에게 올림) | rollback(사람이 되돌림),
+//     state applied | rejected | noted, n은 반영된 판, prev_n은 그 앞 판, from_n은 되돌린 판, evidence는 근거 id JSON 배열, diff는 요령 칸의 통합 diff.
 // P244: rig 3 사이클과 시계(rig3-beat.mjs).
 //   rig3_cycles: 사이클마다 한 줄. n 0은 켤 때(첫 채움), 그 뒤 박자마다 n+1. by enable | clock | late | human, due_at은 친 박자의 칸 시각,
 //     open_seq는 그 사이클을 연 장부 줄(cycle_open)의 seq(사이클 구간은 seq로 자른다: 같은 ms의 줄도 갈린다).
@@ -81,6 +90,28 @@ export function installRig3(Store) {
     },
     rig3ClockLast(ws, who) { const r = this.st('SELECT last_at FROM rig3_clock WHERE ws = ? AND who = ?').get(ws, who); return r ? Number(r.last_at) : null; },
     setRig3Clock(ws, who, t) { this.st('INSERT INTO rig3_clock (ws, who, last_at) VALUES (?, ?, ?) ON CONFLICT (ws, who) DO UPDATE SET last_at = excluded.last_at').run(ws, who, t); },
+    // ---------- P245: 판 묶음과 조정 ----------
+    setRig3Bundle(ws, n, parts) {
+      const ins = this.st('INSERT OR REPLACE INTO rig3_bundle (ws, n, part, sha) VALUES (?, ?, ?, ?)');
+      const doc = this.st('INSERT OR IGNORE INTO rig3_docs (ws, sha, text) VALUES (?, ?, ?)');
+      for (const p of parts) { ins.run(ws, n, p.part, p.sha); if (p.text != null) doc.run(ws, p.sha, p.text); }
+    },
+    rig3Bundle(ws, n) { const out = {}; for (const r of this.st('SELECT part, sha FROM rig3_bundle WHERE ws = ? AND n = ?').all(ws, n)) out[r.part] = r.sha; return out; },
+    // 한 조각의 판마다 해시(오래된 것부터): [{ n, sha }]
+    rig3PartHistory(ws, part) { return this.st('SELECT n, sha FROM rig3_bundle WHERE ws = ? AND part = ? ORDER BY n').all(ws, part).map((r) => ({ n: Number(r.n), sha: r.sha })); },
+    rig3Doc(ws, sha) { const r = this.st('SELECT text FROM rig3_docs WHERE ws = ? AND sha = ?').get(ws, sha); return r ? r.text : null; },
+    insertRig3Tune(x) {
+      const r = this.st('INSERT INTO rig3_tunes (ws, role, kind, state, n, prev_n, from_n, why, evidence, diff, added, removed, reason, cycle, session_id, by, t) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(x.ws, x.role, x.kind, x.state, x.n ?? null, x.prevN ?? null, x.fromN ?? null, x.why ?? null, x.evidence ? JSON.stringify(x.evidence) : null, x.diff ?? null, x.added ?? null, x.removed ?? null, x.reason ?? null, x.cycle ?? null, x.sessionId ?? null, x.by ?? null, x.t);
+      return Number(r.lastInsertRowid);
+    },
+    // 그 역할의 조정 기록(오래된 것부터). q: { states }
+    rig3Tunes(ws, role = null, q = {}) {
+      const where = ['ws = ?']; const vals = [ws];
+      if (role) { where.push('role = ?'); vals.push(role); }
+      if (q.states && q.states.length) { where.push(`state IN (${q.states.map(() => '?').join(',')})`); vals.push(...q.states); }
+      return this.db.prepare(`SELECT * FROM rig3_tunes WHERE ${where.join(' AND ')} ORDER BY id`).all(...vals).map((r) => ({ id: r.id, ws: r.ws, role: r.role, kind: r.kind, state: r.state, n: r.n, prevN: r.prev_n, fromN: r.from_n, why: r.why, evidence: r.evidence ? JSON.parse(r.evidence) : [], diff: r.diff, added: r.added, removed: r.removed, reason: r.reason, cycle: r.cycle, sessionId: r.session_id, by: r.by, t: r.t }));
+    },
     setReceipt(id, f = {}) {
       const cols = { state: 'state', note: 'note', answeredAt: 'answered_at', nudgedAt: 'nudged_at', stalledAt: 'stalled_at', late: 'late' };
       const sets = []; const vals = [];

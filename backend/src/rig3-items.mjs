@@ -310,7 +310,12 @@ export class Rig3Items {
   // P243: 판이 워크스페이스에 쓴 파일을 지키기(guard)의 기준에 받아들인다(쓰기 직후)
   guardAccept(key, rels) { const g = this.roles.guard; if (!g || !g.accept) return null; try { return g.accept(key, rels); } catch (e) { this.b.log && this.b.log('rig3 guard accept ' + e.message); return null; } }
   // P243: 지키기가 미루어 둔 알림(잠들었거나 세션이 없을 때 쌓인 것)을 깨우는 글에 붙인다
-  guardNotices(key, role) { const g = this.roles.guard; if (!g || !g.takeNotices) return []; try { return g.takeNotices(key, role) || []; } catch { return []; } }
+  guardNotices(key, role) {
+    const g = this.roles.guard; const t = this.roles.tune; // P245: 사람이 정의서를 되돌린 알림도 붙인다
+    let out = []; try { if (g && g.takeNotices) out = g.takeNotices(key, role) || []; } catch {}
+    try { if (t && t.takeNotices) out = [...out, ...t.takeNotices(key, role)]; } catch {}
+    return out;
+  }
   // ---------- 깨우는 글 ----------
   counts(key, role) { const pend = this.pendingOf(key, role); return { pending: pend.filter((x) => x.need === 'answer').length, unanswered: pend.filter((x) => x.need !== 'answer').length, returned: this.returnedOf(key, role).length, waitingOwn: this.waitingOwn(key, role) }; }
   wakeText(key, role, lines, head = '받은 것', notices = []) {

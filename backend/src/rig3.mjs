@@ -10,6 +10,7 @@
 // - 2·3단계가 쓸 칸(flows의 for, 도구의 every, 박자)은 읽어 고른 꼴로 두기만 한다. 동작은 다음 단계다.
 // - 역할 정의서 .atrium/roles/<역할>.md의 네 칸: 맡은 것, 받는 것과 내는 것, 기준(고정 칸), 요령(조정 칸). 칸이 빠지면 오류.
 // - 역할의 기억: .atrium/roles/<역할>/memory.md(역할이 직접 쓴다. 판은 내용을 보지 않고 띄울 때 싣기만 한다).
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -269,6 +270,7 @@ export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn',
     ...ITEM_HOWTO, // P242: 항목 명령(짧게)
     ...(r.tools.length ? [`[Atrium 보드] 도구: \`atrium rig tool <이름> [인자…]\`(네 도구만, 판이 돌리고 출력은 네 섹터의 tool-logs/에 남는다). every가 있는 도구는 판이 시계로 돌리고 경보("ALARM:" 줄이나 실패)일 때만 너를 깨운다.`] : []), // P244
     ...(r3.beat && r3.beat.role === roleName ? [`[Atrium 보드] 박자: 판이 ${r3.beat.every}${r3.beat.at ? `(${r3.beat.at} 기준)` : ''}마다 사이클을 열고 너를 깨운다. 낼 것이 없으면 \`atrium rig pass "<까닭>"\`.`] : []), // P244
+    TUNE_HOWTO(r3), // P245: 바로잡음·조정
     '[Atrium 보드] 지금은 아래를 읽고 "준비됨" 한 줄로 답한 뒤 기다린다. 받은 것이 오면 판이 깨운다. 사람이 이 터미널에서 말하면 따른다.',
     `[Atrium 보드] 기억은 ${memoryPath(roleName)}에 네가 직접 쓴다(다음에 새로 뜨는 너에게 남길 것). 판은 내용을 보지 않고 띄울 때 싣기만 한다.`,
   ];
@@ -286,6 +288,8 @@ export const ITEM_HOWTO = [
   '[Atrium 보드] 낸다: 네 섹터에 파일을 쓰고 `atrium rig put <종류> <파일> [--from <받은 항목>]`. 판이 길대로 받는 역할에게 보낸다. 낸 파일은 고치지 않는다(고치려면 `atrium rig put <종류> <파일> --redo <항목>`으로 다음 판).',
   '[Atrium 보드] 받은 것에 답한다: `atrium rig accept <항목>` | `return <항목> "<까닭>"`(낸 역할에게 돌아간다) | `pass <항목> "<까닭>"`(받은 것을 답 항목 없이 닫는다). 박자에 낼 것이 없으면 `pass "<까닭>"`(박자에만 답하고 받은 것은 닫지 않는다). 받음은 그 항목에서 이어진 항목을 내기 전까지 반려로 뒤집을 수 있다. 반려된 네 항목은 `put <종류> <파일> --redo <항목>`이나 `drop <항목> "<까닭>"`으로 끝낸다. 목록: `atrium rig inbox`.',
 ];
+// P245: 조정 쓰는 법(역할 세션의 첫 글과 atrium guide). 짧게
+export const TUNE_HOWTO = (r3) => `[Atrium 보드] 사람이 이 터미널에서 네 일하는 법을 바로잡으면 \`atrium rig heard "<요지>"\`로 남긴다. 반려·바로잡음이 ${r3.tune.after}건 쌓이거나 (하나라도 있고) ${r3.tune.every}사이클이 지나면 판이 조정 턴을 준다: 정의서의 요령 칸만 네가 고친다(\`atrium rig tune\`, 고정 칸은 못 고친다, ${r3.tune.lines}줄 안). 요령으로 풀 일이 아니면 \`atrium rig raise "<무엇>"\`.`;
 // P242: atrium guide(rig 3). 역할 세션이면 그 역할의 받는 것·내는 것과 항목 명령
 export function rig3Guide(r3, roleName = null) {
   const r = roleName ? r3.roles[roleName] : null;
@@ -298,8 +302,36 @@ export function rig3Guide(r3, roleName = null) {
   const forFlows = r3.flows.filter((f) => f.for);
   if (forFlows.length) lines.push(`답이 필요한 길: ${forFlows.map((f) => `${f.from.join('|')}가 받은 ${f.for}마다 ${f.item}을 낸다(--from <받은 ${f.for}>)`).join('; ')}. 낼 것이 없으면 pass <항목> "<까닭>".`);
   if (r && r.tools.length) lines.push(`네 도구: ${r.tools.join(', ')}. 부르기: atrium rig tool <이름> [인자…](판이 돌리고 출력은 네 섹터의 tool-logs/에). every가 있는 도구는 판이 시계로 돌리고 경보일 때만 너를 깨운다.`); // P244
-  return [...lines, ...ITEM_HOWTO.map((l) => l.replace('[Atrium 보드] ', ''))].join('\n');
+  return [...lines, ...ITEM_HOWTO.map((l) => l.replace('[Atrium 보드] ', '')), TUNE_HOWTO(r3).replace('[Atrium 보드] ', '')].join('\n'); // P245: 조정
 }
+// ---------- P245: 판(버전) 묶음 ----------
+// 판 하나 = 정의(rig.json)·목적 문서·모든 정의서의 해시 묶음. rig.mjs read()가 v3 정의의 캐시 표시와 버전 해시에 쓴다.
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+// 묶음 파일 목록(정의 raw에서. 검사 전에도 쓴다) → [{ part, rel }]
+export function bundleFiles(raw) {
+  if (!raw || typeof raw !== 'object' || raw.version !== RIG3_VERSION) return [];
+  const out = [];
+  if (typeof raw.purpose === 'string' && raw.purpose.trim()) out.push({ part: 'purpose', rel: raw.purpose.trim().replace(/\\/g, '/') });
+  if (raw.roles && typeof raw.roles === 'object' && !Array.isArray(raw.roles)) for (const name of Object.keys(raw.roles)) if (ROLE_NAME_RE.test(name)) out.push({ part: 'role:' + name, rel: roleDocPath(name) });
+  return out;
+}
+// 캐시 표시: 묶음 파일의 수정 시각·크기(정의서만 바뀌어도 정의 검사가 다시 돈다)
+export function bundleSig(root, raw) {
+  if (!root) return '';
+  return bundleFiles(raw).map((f) => { try { const s = fs.statSync(path.resolve(root, f.rel)); return `${s.mtimeMs}:${s.size}`; } catch { return 'x'; } }).join(',');
+}
+// 묶음: rigSha(rig.json 해시) + 목적·정의서의 해시와 내용 → { hash, parts: [{ part, sha, text? }] }
+export function bundleOf(root, raw, rigSha) {
+  const parts = [{ part: 'rig.json', sha: rigSha }];
+  for (const f of bundleFiles(raw)) {
+    let text = null; try { text = fs.readFileSync(path.resolve(root, f.rel), 'utf8'); } catch { text = null; }
+    parts.push(text == null ? { part: f.part, sha: 'missing' } : { part: f.part, sha: sha256(text), text });
+  }
+  return { hash: sha256(JSON.stringify(parts.map((p) => [p.part, p.sha]))), parts };
+}
+// 묶음 조각 이름 → 사람 말(장부 글)
+export const partLabel = (p) => (p === 'rig.json' ? '정의' : p === 'purpose' ? '목적' : p.startsWith('role:') ? `정의서 ${p.slice(5)}` : p);
+
 // 싣는 파일을 읽는다(없으면 null)
 export function readLoadFiles(root, r3, roleName) {
   const rd = (rel) => { try { return fs.readFileSync(path.resolve(root, rel), 'utf8'); } catch { return null; } };

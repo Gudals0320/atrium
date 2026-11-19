@@ -16,7 +16,7 @@ import { newRuntime } from '../src/state.mjs';
 import { RIG3_BEAT_KINDS, RIG3_EVENT_KINDS } from '../src/rig-ledger.mjs';
 import { loadText, rig3Guide } from '../src/rig3.mjs';
 import { Rig3Roles, ROLE_SPAWN } from '../src/rig3-roles.mjs';
-import { nextDue, alarmOf, collectCycle, numbersBody, checkAiBody, addEntry, summaryEnv, summaryArgs, runClaudeOnce, rig3BeatHandlers, CHANGELOG, RIG3_BEAT_OPS } from '../src/rig3-beat.mjs';
+import { nextDue, alarmOf, collectCycle, numbersBody, cleanProse, entryBody, addEntry, summaryEnv, summaryArgs, runClaudeOnce, rig3BeatHandlers, CHANGELOG, RIG3_BEAT_OPS } from '../src/rig3-beat.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p244-'));
 const DOC = (name) => ['# ' + name, '', '## 맡은 것', name + '의 일', '', '## 받는 것과 내는 것', '-', '', '## 기준', '- 기준', '', '## 요령', '- 요령'].join('\n');
@@ -90,7 +90,7 @@ async function board(mod = null) {
   const ledger = (kinds) => store.rigEvents({ ws: key, limit: 1000, kinds });
   const toRole = (role) => [...items.values()].filter((d) => d.sessionId === S(role).sessionId && !/너는 rig 역할/.test(d.text));
   const base = store.firstRig3Cycle(key).openedAt;
-  const ai = []; BT.runner = async (prompt, o) => { ai.push({ prompt, o }); return { ok: true, text: '**돈 것**\n- 요약', meta: { model: o.model, ms: 5 } }; };
+  const ai = []; BT.runner = async (prompt, o) => { ai.push({ prompt, o }); return { ok: true, text: JSON.stringify({ summary: '요약 글이다.', ran: '가설이 반려됐다.' }), meta: { model: o.model, ms: 5 } }; };
   const active = () => b.rig3.active(key);
   return { dir, store, key, b, BT, S, file, put, ledger, toRole, items, casts, gcalls, base, ai, settings, active };
 }
@@ -265,7 +265,7 @@ test('P244 사이클 요약: 지난 사이클을 장부에서 모으고(길마�
   await B.BT.beatNow(B.key);
   await until(() => B.store.getRig3Cycle(B.key, 1).entryState === 'done');
   const c1 = B.store.getRig3Cycle(B.key, 1);
-  assert.equal(c1.entryBy, 'ai'); assert.match(c1.entry, /^## 사이클 1 · /); assert.match(c1.entry, /- 요약/);
+  assert.equal(c1.entryBy, 'ai'); assert.match(c1.entry, /^## 사이클 1 · /); assert.match(c1.entry, /요약 글이다\./); assert.match(c1.entry, /\*\*돈 것\*\*\n가설이 반려됐다\.\n- snapshot \(data → ideas\): 낸 1 · 받음 1 · 반려 0 — \[snapshot-1\]/); // P245: 숫자는 판이, 글은 AI가
   assert.equal(B.ai.length, 1); assert.equal(B.ai[0].o.model, 'haiku');
   assert.match(B.ai[0].prompt, /hypothesis-1/); assert.match(B.ai[0].prompt, /검증 번호가 없다/);
   const log = fs.readFileSync(path.join(B.dir, CHANGELOG), 'utf8');
@@ -286,8 +286,8 @@ test('P244 사이클 요약: 지난 사이클을 장부에서 모으고(길마�
   // 새 것이 위
   const log2 = fs.readFileSync(path.join(B.dir, CHANGELOG), 'utf8');
   assert.ok(log2.indexOf('## 사이클 2') < log2.indexOf('## 사이클 1'));
-  // AI가 자료에 없는 id를 쓰면 숫자만
-  B.BT.runner = async () => ({ ok: true, text: '- 바뀜 [snapshot-99]', meta: {} });
+  // P245: AI 글의 문장마다 숫자·id가 들어 있으면 모두 지워 숫자만
+  B.BT.runner = async () => ({ ok: true, text: JSON.stringify({ ran: '스냅숏 99개가 들어왔다 [snapshot-99].' }), meta: {} });
   await B.BT.beatNow(B.key);
   await until(() => B.store.getRig3Cycle(B.key, 3).entryState === 'done');
   assert.equal(B.store.getRig3Cycle(B.key, 3).entryBy, 'numbers');
@@ -319,9 +319,11 @@ test('P244 꼭지 이어 쓰기: 판이 꼭지를 쓰다 꺼진 닫힌 사이클
   assert.match(body, /ideas가 받은 것에 답하지 않고 멈췄다: \[snapshot-3\]/); assert.match(body, /넣은 입력 \[hint-1\]가 ideas에게 반려됐다: 모호하다/);
   assert.match(body, /watch \(data\): 2번\(시계 2, 역할 0\), 경보 2/);
   assert.match(numbersBody(f, 'en'), /\*\*For you to look at\*\*/);
-  assert.equal(checkAiBody('## 사이클 5\n- [hint-1] 반려 [snapshot-3]', f), '- [hint-1] 반려 [snapshot-3]');
-  assert.equal(checkAiBody('- [hint-1] 반려', f), null, '사람이 볼 것의 id(멈춘 snapshot-3)를 뺐다');
-  assert.equal(checkAiBody('- [hint-9]', f), null); assert.equal(checkAiBody('   ', f), null);
+  // P245: AI는 글만(숫자가 든 문장은 지움), 사람이 볼 것의 줄은 판이 쓴다
+  const pr = cleanProse(JSON.stringify({ summary: '입력이 반려됐다. 반려는 3건이다.', decide: '멈춘 역할을 본다.' }));
+  assert.deepEqual(pr, { summary: '입력이 반려됐다.', decide: '멈춘 역할을 본다.', dropped: 1 });
+  assert.match(entryBody(f, 'ko', pr), /\*\*사람이 볼 것\*\*\n멈춘 역할을 본다\.\n- ideas가 받은 것에 답하지 않고 멈췄다: \[snapshot-3\]/);
+  assert.equal(cleanProse('- [hint-9]'), null); assert.equal(cleanProse('   '), null); assert.equal(cleanProse('{"ran":"사이클 5"}'), null);
   assert.equal(addEntry('', '## 사이클 1\n- a').split('\n')[0], '# rig 변경 기록');
   const two = addEntry(addEntry('', '## 사이클 1\n- a'), '## 사이클 2\n- b');
   assert.ok(two.indexOf('사이클 2') < two.indexOf('사이클 1'));
@@ -373,11 +375,11 @@ test('P244 사람이 넣은 입력이 반려되면 그 사이클의 꼭지 "사�
   await B.BT.beatNow(B.key);
   const x = await B.b.rig3.items.intake(B.key, { item: 'hint', text: '가격이 오를까?' });
   B.b.rig3.items.giveBack(B.key, { role: 'ideas', id: x.item.id, reason: '무엇을 볼지 모호하다' });
-  B.BT.runner = async () => ({ ok: true, text: '**돈 것**\n- 입력 하나가 반려됐다', meta: { model: 'haiku' } }); // 사람이 볼 것을 뺀 AI 글
+  B.BT.runner = async () => ({ ok: true, text: JSON.stringify({ ran: '입력 하나가 반려됐다.' }), meta: { model: 'haiku' } }); // P245: 사람이 볼 것을 말하지 않는 AI 글이어도 그 줄은 판이 쓴다
   await B.BT.beatNow(B.key);
   await until(() => B.store.getRig3Cycle(B.key, 1).entryState === 'done');
   const c = B.store.getRig3Cycle(B.key, 1);
-  assert.equal(c.entryBy, 'numbers');
+  assert.equal(c.entryBy, 'ai');
   assert.match(c.entry, /\*\*사람이 볼 것\*\*\n- 넣은 입력 \[hint-1\]가 ideas에게 반려됐다: 무엇을 볼지 모호하다/);
   const v = B.b.rig3.view(B.key, B.active().def).cycle;
   assert.match(v.entries[0].text, /hint-1/);

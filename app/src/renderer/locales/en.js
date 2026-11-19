@@ -3209,5 +3209,26 @@ export default {
     byNumbers: 'Counts only',
     file: 'Changelog: {path}',
   },
+  // P245: rig 3 tuning and rollback (role doc version and tuning log on the role row)
+  rig3Tune: {
+    col: 'Role doc',
+    badge: 'v{n} · {k} tunes',
+    material: ' · {n} inputs',
+    turnOpen: ' · tuning turn',
+    head: '{doc} · v{n} · know-how {lines}/{budget} lines',
+    empty: '(empty)',
+    noLog: 'No tuning yet.',
+    k: {
+      tune: 'Tuned v{prev}→v{n} (+{added} −{removed}): {why}',
+      rejected: 'Rejected: {reason}',
+      none: 'Nothing to tune: {why}',
+      raise: 'Raised to the builder: {why}',
+      rollback: 'Rolled back to v{from} → v{n}',
+    },
+    evidence: 'evidence {list}',
+    undo: 'Roll back (v{n})',
+    undone: '{role} know-how rolled back to v{from} (now v{n})',
+    same: 'Already the know-how of v{n}',
+  },
 };
 

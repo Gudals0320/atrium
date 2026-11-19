@@ -11,7 +11,7 @@ export function roleRows(r3, live = null) {
     const cur = r.session && live && live.get ? live.get(r.session.sessionId) : null;
     const s = r.session ? (cur ? { ...r.session, state: cur.state || r.session.state, asleep: cur.state === 'sleeping' || (!cur.state && r.session.asleep) } : r.session) : null;
     const stateKey = r.gaveUp && !s ? 'gaveUp' : !s ? 'none' : s.asleep ? 'sleeping' : s.state || 'unknown';
-    return { name: r.name, owns: r.owns || [], tools: r.tools || [], launcher: r.launcher || 'claude', model: r.model || null, session: s, stateKey, gaveUp: !!r.gaveUp, docMissing: r.docMissing || [] };
+    return { name: r.name, owns: r.owns || [], tools: r.tools || [], launcher: r.launcher || 'claude', model: r.model || null, session: s, stateKey, gaveUp: !!r.gaveUp, docMissing: r.docMissing || [], tune: r.tune || null };
   });
 }
 // 길 줄: "snapshot: data → ideas", human은 사람(창구)
@@ -50,6 +50,20 @@ export function cycleInfo(r3) {
     tools: (c.tools || []).filter((t) => t.every).map((t) => ({ name: t.name, every: t.every, nextAt: t.nextAt || null, running: !!t.running })),
     entries: (c.entries || []).map((e) => ({ n: e.n, by: e.by, at: e.at, ...entryParts(e.text) })),
   };
+}
+// P245: 역할 줄의 정의서 판·조정 수(rig3.roles[].tune) → { n, tunes, material, open } | null
+export function tuneBadge(t) {
+  if (!t) return null;
+  return { n: t.n ?? null, tunes: t.tunes || 0, rollbacks: t.rollbacks || 0, material: t.material || 0, open: !!t.open, lines: t.lines ?? null, budget: t.budget ?? null };
+}
+// P245: 조정 기록(판 API rig3.role의 log) → 화면 줄(새 것부터). undo: 되돌릴 판(반영된 조정·되돌림의 앞 판)
+export function tuneLogRows(info) {
+  const log = info && Array.isArray(info.log) ? info.log : [];
+  return log.slice().reverse().map((x) => ({
+    id: x.id, kind: x.kind, state: x.state, n: x.n ?? null, prevN: x.prevN ?? null, fromN: x.fromN ?? null, why: x.why || '', reason: x.reason || '', evidence: x.evidence || [], added: x.added ?? 0, removed: x.removed ?? 0, t: x.t || null,
+    key: x.kind === 'tune' ? (x.state === 'rejected' ? 'rejected' : 'tune') : x.kind,
+    undo: x.state === 'applied' && x.prevN != null ? x.prevN : null,
+  }));
 }
 // 켜기 확인 줄의 역할 수
 export const roleCount = (st) => (st && st.rig3 && Array.isArray(st.rig3.roles) ? st.rig3.roles.length : 0);

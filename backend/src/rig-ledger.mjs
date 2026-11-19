@@ -45,7 +45,9 @@ export const RIG3_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];
 // P244: rig 3 박자·도구·사이클 요약(rig3-beat.mjs). cycle_open(value enable | clock | late | human, n), cycle_entry(value ai | numbers, n, ref 변경 기록 파일),
 //   role_tool(value done | failed | alarm, ref 실행 ID, data.by clock | role, data.tool·exit·alarm·log), role_beat(역할 칸 beat가 그 역할을 깨움)
 export const RIG3_BEAT_KINDS = ['cycle_open', 'cycle_entry', 'role_tool', 'role_beat'];
-const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS, ...RIG3_BEAT_KINDS]);
+// P245: rig 3 조정과 되돌리기(rig3-tune.mjs): 조정 턴, 조정(applied | rejected | none), 빌더에게 올림, 사람의 바로잡음, 사람의 되돌리기
+export const RIG3_TUNE_KINDS = ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback'];
+const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS, ...RIG3_BEAT_KINDS, ...RIG3_TUNE_KINDS]);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];
 // try_stopped의 value(18.1). P216이 exited를 더한다
 // P225: auto_closed(회 저절로 닫기가 열린 시도를 닫음, rig2-design 11.8의 5)
