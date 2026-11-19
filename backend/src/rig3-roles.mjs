@@ -18,6 +18,7 @@ import { claudeSettingsAmp, applySettingsAmp, writesVerdict, nestedShell, codexA
 import { sleepTarget, sessionActivity, idleSince } from './sleep.mjs';
 import { deriveState } from './state.mjs';
 import { shownName } from './session-label.mjs';
+import { Rig3Guard } from './rig3-guard.mjs'; // P243: 턴 끝 남의 쓰기 되돌리기
 import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir } from './rig3.mjs';
 import { Rig3Items } from './rig3-items.mjs'; // P242: 항목·길·받음
 
@@ -44,6 +45,7 @@ export class Rig3Roles {
     this.ticking = false;
     this.items = new Rig3Items(b, this); // P242
     this.offSleep = new Set(); // P242: 끈 rig(키) — 역할 세션을 모두 재울 때까지 주기마다 본다(일하는 턴은 끝나기를 기다린다)
+    this.guard = new Rig3Guard(b, this); // P243
   }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
   store() { return this.b.store; }
@@ -136,6 +138,7 @@ export class Rig3Roles {
     }
     this.offSleep.delete(key);
     const r = this.active(key); if (!r) return [];
+    this.guard.prime(key); // P243: 기준 목록이 없으면 만든다
     const out = [];
     // P242: 켜면 잠든 역할 세션을 깨운다(같은 대화로 잇는다)
     for (const role of Object.keys(r.def.rig3.roles)) for (const s of this.sessionsOf(key, role)) {

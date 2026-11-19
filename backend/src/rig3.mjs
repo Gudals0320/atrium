@@ -25,7 +25,7 @@ export const ROLE_DOC_SECTIONS = ['맡은 것', '받는 것과 내는 것', '기
 export const ROLE_DOC_FIXED = ['맡은 것', '받는 것과 내는 것', '기준']; // 고정 칸(역할이 고치지 못한다)
 export const TUNE_DEFAULT = { after: 3, every: 5, lines: 20 }; // 뼈대 10절의 처음 값
 export const LOAD_MAX = { purpose: 6000, role: 12000, memory: 8000 }; // 실을 글의 칸마다 상한(넘으면 자르고 경로를 알린다)
-const V3_KEYS = ['version', 'name', 'purpose', 'beat', 'roles', 'flows', 'tools', 'tune'];
+const V3_KEYS = ['version', 'name', 'purpose', 'beat', 'roles', 'flows', 'tools', 'tune', 'ignore']; // P243: ignore(판이 남의 쓰기를 보지 않는 폴더)
 const V2_KEYS = ['seats', 'loops', 'hooks', 'manager', 'results', 'permission', 'docs', 'guide', 'stopVerify', 'cycles', 'flow'];
 
 const isFile = (f) => { try { return fs.statSync(f).isFile(); } catch { return false; } };
@@ -201,7 +201,18 @@ export function validateRig3(raw, { root = null, exists = isFile, read = (f) => 
     if (!puts) warnings.push(`역할 ${r.name}: 내는 길이 없다(낸 것을 받을 역할이 없다)`);
   }
   for (const t of Object.keys(tools)) if (!toolOwner[t]) warnings.push(`도구 ${t}: 가진 역할이 없다(roles.<역할>.tools)`);
-  const rig3 = { purpose, beat, roles, flows, tools, tune };
+  // P243: ignore(판이 남의 쓰기를 찾지 않는 폴더, rig3-guard.mjs의 기본 목록에 더한다). .atrium/은 넣지 않는다
+  const ignore = [];
+  if (raw.ignore != null) {
+    if (!Array.isArray(raw.ignore)) return bad('ignore는 폴더 경로 배열이다(예: ["build/", "cache/"])');
+    for (const p of raw.ignore) {
+      const n = normSector(p);
+      if (!n) return bad(`ignore의 경로는 워크스페이스 안 상대 폴더다(절대 경로·..·빈 값 안 됨): ${JSON.stringify(p)}`);
+      if (sectorsOverlap(n, RIG3_DIR + '/')) return bad(`ignore에 ${RIG3_DIR}/를 넣지 않는다(정의와 정의서는 판이 늘 지킨다): ${p}`);
+      if (!ignore.includes(n)) ignore.push(n);
+    }
+  }
+  const rig3 = { purpose, beat, roles, flows, tools, tune, ignore };
   // rig 2 길이 읽는 칸은 비운다(훅·회·고리·권한·문서가 v3에서 돌지 않게)
   return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, version: RIG3_VERSION, v3: true, hooks: [], guide: null, tools: null, seats: null, flow: [], results: [], manager: null, cycles: [], loops: {}, amp: null, docs: null, seatDocs: {}, hookDocs: {}, toolDocs: {}, warnings, rig3 } };
 }

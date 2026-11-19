@@ -309,11 +309,16 @@ export class Rig3Items {
     return now;
   }
 
+  // P243: 판이 워크스페이스에 쓴 파일을 지키기(guard)의 기준에 받아들인다(쓰기 직후)
+  guardAccept(key, rels) { const g = this.roles.guard; if (!g || !g.accept) return null; try { return g.accept(key, rels); } catch (e) { this.b.log && this.b.log('rig3 guard accept ' + e.message); return null; } }
+  // P243: 지키기가 미루어 둔 알림(잠들었거나 세션이 없을 때 쌓인 것)을 깨우는 글에 붙인다
+  guardNotices(key, role) { const g = this.roles.guard; if (!g || !g.takeNotices) return []; try { return g.takeNotices(key, role) || []; } catch { return []; } }
   // ---------- 깨우는 글 ----------
   counts(key, role) { const pend = this.pendingOf(key, role); return { pending: pend.filter((x) => x.need === 'answer').length, unanswered: pend.filter((x) => x.need !== 'answer').length, returned: this.returnedOf(key, role).length, waitingOwn: this.waitingOwn(key, role) }; }
-  wakeText(key, role, lines, head = '받은 것') {
+  wakeText(key, role, lines, head = '받은 것', notices = []) {
     const c = this.counts(key, role);
     return [
+      ...notices, // P243: 지키기의 알림(남의 섹터에 쓴 것을 되돌림 등)
       `[Atrium 보드] rig ${head}:`,
       ...lines,
       `[Atrium 보드] 답하지 않은 받은 것 ${c.pending}${c.unanswered ? `, 받고 답 항목을 내지 않은 것 ${c.unanswered}` : ''}${c.returned ? `, 반려된 네 항목 ${c.returned}` : ''}. 네가 낸 것 가운데 기다리는 것 ${c.waitingOwn}.`,
@@ -327,13 +332,14 @@ export class Rig3Items {
     const k = `${key}|${role}`;
     const w = this.wakes.get(k);
     const q = this.b.queue;
+    const fresh = this.guardNotices(key, role);
     if (w && w.sessionId === s.sessionId && q.retext) {
-      const lines = [...w.lines, line];
-      const d = q.retext(w.deliveryId, this.wakeText(key, role, lines));
-      if (d) { w.lines = lines; return d; }
+      const lines = [...w.lines, line]; const notices = [...(w.notices || []), ...fresh];
+      const d = q.retext(w.deliveryId, this.wakeText(key, role, lines, '받은 것', notices));
+      if (d) { w.lines = lines; w.notices = notices; return d; }
     }
-    const d = this.track(q.enqueue(s.sessionId, this.wakeText(key, role, [line]), { origin: { kind: 'board' } }));
-    this.wakes.set(k, { deliveryId: d && d.deliveryId, sessionId: s.sessionId, lines: [line] });
+    const d = this.track(q.enqueue(s.sessionId, this.wakeText(key, role, [line], '받은 것', fresh), { origin: { kind: 'board' } }));
+    this.wakes.set(k, { deliveryId: d && d.deliveryId, sessionId: s.sessionId, lines: [line], notices: fresh });
     return d;
   }
 
@@ -353,7 +359,7 @@ export class Rig3Items {
     if (fresh.length) {
       for (const x of fresh) st.setReceipt(x.rc.id, { nudgedAt: now });
       const lines = fresh.map((x) => `- ${x.it.id}${x.it.rev > 1 ? ` 판 ${x.it.rev}` : ''} (${x.it.kind}, ${x.it.role === HUMAN ? '입력 창구' : x.it.role}): ${x.need === 'answer' ? '받음·반려·pass가 없다' : `받았는데 ${x.need.join('|')} 항목(--from ${x.it.id})도 pass도 없다`}`);
-      if (q) this.track(q.enqueue(s.sessionId, this.wakeText(key, role, lines, '받은 것에 답하지 않고 멈췄다'), { origin: { kind: 'board' } }));
+      if (q) this.track(q.enqueue(s.sessionId, this.wakeText(key, role, lines, '받은 것에 답하지 않고 멈췄다', this.guardNotices(key, role)), { origin: { kind: 'board' } }));
       rigEvent(this.b, { kind: 'item_nudge', ws: key, seat: role, session: s.sessionId, n: fresh.length, actor: 'board', ref: fresh.map((x) => x.it.id).join(','), text: `${role}: 답하지 않은 받은 것 ${fresh.length}(${fresh.map((x) => x.it.id).join(', ')}) — 한 번 일깨움`, data: { items: fresh.map((x) => x.it.id) } });
       this.changed(key);
       return { nudged: fresh.map((x) => x.it.id) };
@@ -382,6 +388,7 @@ export class Rig3Items {
     const abs = path.resolve(root, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, text.endsWith('\n') ? text : text + '\n', { flag: 'wx' });
+    this.guardAccept(key, [rel]); // P243: 판 자신의 쓰기 — 남의 쓰기 되돌리기(rig3-guard)가 되돌리지 않게 기준에 받아들인다
     return this.put(key, { role: HUMAN, session: null, file: rel, kind });
   }
 

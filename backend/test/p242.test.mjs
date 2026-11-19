@@ -429,3 +429,30 @@ test('P242 역할 칸 effort: 정의에서 읽어 모델처럼 띄울 때 넘긴
   const nope = validateRig3({ ...DEF(), roles: { ...DEF().roles, data: { owns: ['data/'], speed: 1 } } }, { root: B.dir });
   assert.match(nope.reason, /칸: owns, tools, launcher, model, effort, beat/);
 });
+
+test('P242·P243 판의 쓰기는 지키기의 기준에 받아들이고(guard.accept), 미룬 지키기 알림은 깨우는 글에 붙인다', async () => {
+  const B = await board();
+  const g = B.b.rig3.guard;
+  assert.ok(g && g.accept, '지키기(P243)가 역할 판에 있다');
+  const calls = [];
+  const orig = g.accept.bind(g);
+  g.accept = (key, rels) => { calls.push([key, rels]); return orig(key, rels); };
+  const r = await B.I.intake(B.key, { item: 'hint', text: '판이 쓴 파일' });
+  assert.deepEqual(calls, [[B.key, [r.item.path]]]);
+  const st = g.ws.get(B.key);
+  assert.ok(g.isBoardWrite(st, r.item.path), '판의 쓰기로 표시된다(진행 중 검사가 되돌리지 않는다)');
+  await g.idle(B.key);
+  assert.ok(fs.existsSync(path.join(B.dir, r.item.path)), '파일이 그대로다');
+  // 미룬 알림: 잠든(또는 세션 없는) 역할에게 쌓인 지키기 알림을 다음 깨우는 글 머리에 붙인다
+  const v = B.S('verify'); v.rt.sleep = { at: Date.now(), by: 'rig', scope: 'session' };
+  assert.equal(g.notify(B.key, 'verify', '[Atrium 보드] rig 지키기: 남의 섹터에 쓴 것을 되돌렸다(시험 알림)'), 'pending');
+  v.rt.sleep = null;
+  B.file('hypotheses/h1.md', '1');
+  await B.put('ideas', 'hypotheses/h1.md', { kind: 'hypothesis' });
+  const t = B.toRole('verify').at(-1).text;
+  assert.match(t, /^\[Atrium 보드\] rig 지키기: 남의 섹터에 쓴 것을 되돌렸다\(시험 알림\)\n\[Atrium 보드\] rig 받은 것:\n- hypothesis-1/);
+  assert.deepEqual(g.takeNotices(B.key, 'verify'), [], '한 번만 붙는다');
+  B.file('hypotheses/h2.md', '2');
+  await B.put('ideas', 'hypotheses/h2.md', { kind: 'hypothesis' });
+  assert.match(B.toRole('verify').at(-1).text, /^\[Atrium 보드\] rig 지키기: .*\n\[Atrium 보드\] rig 받은 것:\n- hypothesis-1.*\n- hypothesis-2/, '합친 글에도 남는다');
+});

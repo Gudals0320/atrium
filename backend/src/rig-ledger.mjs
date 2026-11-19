@@ -40,7 +40,9 @@ export const RIG_EVENT_KINDS = [
 //   role_woke(rig를 켜 잠든 역할 세션을 깨움. 끌 때 재우는 것은 role_slept value rig_off),
 //   item_nudge(답하지 않고 멈춘 역할을 한 번 일깨움), item_stalled(일깨운 뒤에도 그대로), item_changed(낸 파일이 바뀜, value changed | missing)
 export const RIG3_EVENT_KINDS = ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept', 'item_put', 'item_accept', 'item_return', 'item_pass', 'item_drop', 'item_nudge', 'item_stalled', 'item_changed', 'role_woke'];
-const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS]);
+// P243: rig 3 남의 쓰기 되돌리기(rig3-guard.mjs). role_foreign_write(value restored | quarantined | revived | unrestorable | failed, data.candidates), role_guard_base(처음 기준 목록, data.ms)
+export const RIG3_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];
+const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS]);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];
 // try_stopped의 value(18.1). P216이 exited를 더한다
 // P225: auto_closed(회 저절로 닫기가 열린 시도를 닫음, rig2-design 11.8의 5)

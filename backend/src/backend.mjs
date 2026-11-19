@@ -811,6 +811,7 @@ export class Backend {
     if (sum.state !== s.lastState) {
       const from = s.lastState;
       s.lastState = sum.state;
+      if (s.rigRole && this.rig3 && this.rig3.guard) this.rig3.guard.onState(s, from, sum.state); // P243: rig 3 역할의 턴 경계(모든 하네스) → 남의 쓰기 찾아 되돌리기
       if (from !== null || cause) {
         const turnless = from === 'working' && sum.work && sum.work.turnless && sum.work.endedAt === s.rt.term.at ? sum.work : null; // P173: 턴 없이 끝난 일(압축)
         this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, term: sum.termStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined, ...(turnless ? { turnless: true, compact: turnless.compact || null } : {}) });
