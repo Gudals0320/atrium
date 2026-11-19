@@ -89,11 +89,11 @@ test('P228 켜기 전 요약: 고리·계기·자리·덧붙임과 자리 권한
   assert.equal(chk.legacy, false);
   assert.deepEqual(chk.loops, [{ name: 'work', kind: 'work', trigger: 'every', every: '7d', entry: 'checker', produces: ['reports/'], approve: null }]);
   assert.equal(chk.seats[0].permission, 'scoped'); assert.ok(chk.seats[0].allow.length > 10);
-  assert.deepEqual(chk.adds, { canon: [], ledger: ['ledger/checks.jsonl'], sector: ['reports/'], check: [], review: null });
+  assert.deepEqual(chk.adds, { canon: [], ledger: ['.atrium/ledger/work.jsonl'], sector: ['reports/'], check: [], review: null }); // P232: 기본 경로 .atrium/ 아래
   assert.deepEqual(permLine(chk.seats[0]), { key: 'rigPerm.scoped', vars: { n: chk.seats[0].allow.length }, warn: false });
   const grow = defSummary(presetFiles({ ...shortcutAnswers('grow'), check: { on: true }, review: { on: true }, unattended: true, permission: 'scoped' }, { launcher: 'claude', reviewLauncher: 'codex' }).def);
   assert.deepEqual(grow.loops.map((l) => [l.name, l.kind, l.trigger, l.every, l.approve]), [['work', 'work', 'request', null, null], ['improve', 'improve', 'every', '7d', 'human']]);
-  assert.deepEqual(grow.adds.canon, ['docs/rules.md']); assert.deepEqual(grow.adds.sector, [], '제안 폴더는 산출물 폴더로 세지 않는다');
+  assert.deepEqual(grow.adds.canon, ['.atrium/canon/rules.md']); assert.deepEqual(grow.adds.sector, [], '제안 폴더는 산출물 폴더로 세지 않는다');
   assert.deepEqual(grow.adds.check, ['node .atrium/hooks/check.mjs']); assert.equal(grow.adds.review, 'reviewer');
   assert.deepEqual(grow.seats.map((x) => x.permission), ['unattended', 'scoped']);
   assert.deepEqual(permLine(grow.seats[0]), { key: 'rigPerm.unattended', vars: {}, warn: true });

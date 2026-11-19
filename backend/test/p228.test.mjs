@@ -187,9 +187,10 @@ test('P228 언제·누가: request는 keep만(fresh를 골라도 keep), every는
 test('P228 덧붙임: 정본(loads, 없으면 시작 글), 장부(writes, 개선 고리와 사람 승인), 산출물 폴더(섹터 하나와 produces), 기계 검사(done 훅), 검토 자리(다른 런처, 반려 최대 2)', () => {
   const r = presetFiles({ trigger: 'request', canon: { on: true }, ledger: { on: true, improve: true, days: 3 }, sector: { on: true, path: 'out' }, check: { on: true, script: 'scripts/check.py' }, review: { on: true } }, { launcher: 'claude', reviewLauncher: 'codex' });
   const d = r.def;
-  assert.deepEqual(d.docs.rules, { path: 'docs/rules.md', role: 'canon' }); assert.deepEqual(d.seats.main.loads, ['rules']);
-  assert.ok(r.files['docs/rules.md'].length > 0, '정본이 없으면 판이 시작 글로 만든다');
-  assert.equal(d.docs.ledger.role, 'ledger'); assert.equal(r.files['ledger/log.jsonl'], '');
+  // P232(11.14의 9): 기본 경로는 .atrium/ 아래
+  assert.deepEqual(d.docs.rules, { path: '.atrium/canon/rules.md', role: 'canon' }); assert.deepEqual(d.seats.main.loads, ['rules']);
+  assert.ok(r.files['.atrium/canon/rules.md'].length > 0, '정본이 없으면 판이 시작 글로 만든다');
+  assert.equal(d.docs.ledger.role, 'ledger'); assert.equal(r.files['.atrium/ledger/work.jsonl'], '');
   assert.deepEqual(d.loops.improve, { kind: 'improve', trigger: { every: '3d', notify: 'main' }, entry: 'main', reads: ['ledger'], produces: ['proposals'], approve: 'human' });
   assert.equal(d.docs.proposals.role, 'sector');
   assert.deepEqual(d.docs.output, { path: 'out/', role: 'sector', intake: 'register', keep: 20 });
@@ -265,7 +266,7 @@ test('P228 rig.create(정기 점검): 보고서 폴더·빈 장부·자리 안�
     const r = await HS(b)['rig.create']({ answers: shortcutAnswers('check') }, LOCAL);
     assert.equal(r.ok, true); assert.equal(r.preset, 'check'); assert.deepEqual(r.launchers, { checker: 'claude' });
     assert.deepEqual(r.warnings, []);
-    for (const f of ['reports', 'ledger/checks.jsonl', '.atrium/seats/checker.txt', '.atrium/rig.json']) assert.ok(fs.existsSync(path.join(dir, f)), f);
+    for (const f of ['reports', '.atrium/ledger/work.jsonl', '.atrium/seats/checker.txt', '.atrium/rig.json']) assert.ok(fs.existsSync(path.join(dir, f)), f); // P232: 장부 .atrium/ledger/<고리>.jsonl
     assert.deepEqual(b.store.rigVersions(ws.key).map((v) => v.note), ['create check']);
     const s = add('someone');
     const c = await new RigAdmin(b, b.branch).verb(s, { op: 'check' });
@@ -279,13 +280,13 @@ test('P228 rig.create(정기 점검): 보고서 폴더·빈 장부·자리 안�
 test('P228 rig.create(규칙이 자라는 일 + 기계 검사): 있는 정본은 덮지 않고(kept), 없는 시작 스크립트는 만들어 늘 통과한다. 질문 없이 돌리기는 켜기 확인으로 승인', async () => {
   const { b, ws, dir, stop } = await empty();
   try {
-    fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'docs', 'rules.md'), 'mine\n');
+    fs.mkdirSync(path.join(dir, '.atrium', 'canon'), { recursive: true }); // P232: 기본 정본 경로
+    fs.writeFileSync(path.join(dir, '.atrium', 'canon', 'rules.md'), 'mine\n');
     const a = { ...shortcutAnswers('grow'), check: { on: true, script: '.atrium/hooks/check.mjs' }, unattended: true };
     const r = await HS(b)['rig.create']({ answers: a }, LOCAL);
-    assert.ok(r.kept.includes('docs/rules.md')); assert.equal(fs.readFileSync(path.join(dir, 'docs', 'rules.md'), 'utf8'), 'mine\n');
+    assert.ok(r.kept.includes('.atrium/canon/rules.md')); assert.equal(fs.readFileSync(path.join(dir, '.atrium', 'canon', 'rules.md'), 'utf8'), 'mine\n');
     assert.ok(r.written.includes('.atrium/hooks/check.mjs'));
-    for (const f of ['.atrium/proposals', '.atrium/drafts/main', 'ledger/corrections.jsonl']) assert.ok(fs.existsSync(path.join(dir, f)), f);
+    for (const f of ['.atrium/proposals', '.atrium/drafts/main', '.atrium/ledger/work.jsonl']) assert.ok(fs.existsSync(path.join(dir, f)), f);
     const out = execFileSync(process.execPath, [path.join(dir, '.atrium', 'hooks', 'check.mjs')], { input: JSON.stringify({ result: 'ok' }) }).toString();
     assert.deepEqual(JSON.parse(out), { action: 'pass' });
     assert.ok(r.warnings.some((w) => /unattended/.test(w)));

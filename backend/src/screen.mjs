@@ -58,6 +58,40 @@ export function parseChoices(text) {
   return block.length && block[0].n === 1 && block.every((c, i) => c.n === i + 1) ? block : [];
 }
 
+// P232(H18): Claude Code 권한 대화상자를 화면에서 읽는다. 권한 질문을 여럿 차례로 물으면("1 of 2", "2 of 2") 둘째 질문에는 hook(PermissionRequest)이
+//   다시 오지 않아 판이 그 질문을 "알 수 없는 대화상자"로 보았다. 화면에 Yes로 시작하는 1번 선택지와 No 선택지가 있고, 질문 줄("Do you want …?")이나
+//   "n of m" 표시가 있으면 권한 질문이다. → null | { question, choices, step: { n, m } | null, tool, detail }
+//   tool·detail: 질문 위의 머리 줄(예: "Bash command")과 그 아래 내용 줄(명령). 모르면 null
+const PERM_HEADS = [/^(Bash|PowerShell) command$/i, /^(Edit|Create|Write|Read) file$/i, /^Fetch$/i, /^Web ?Search$/i, /^Tool use$/i, /^Notebook edit$/i];
+export function parsePermissionDialog(text) {
+  const s = String(text || '');
+  const choices = parseChoices(s);
+  if (choices.length < 2 || !/^Yes\b/i.test(choices[0].label) || !choices.some((c) => /^No\b/i.test(c.label))) return null;
+  const question = parsePromptLine(s);
+  const sm = s.match(/(?:^|[\s│|(])(\d{1,2}) of (\d{1,2})(?=$|[\s│|)])/m);
+  const step = sm && Number(sm[1]) >= 1 && Number(sm[1]) <= Number(sm[2]) ? { n: Number(sm[1]), m: Number(sm[2]) } : null;
+  if (!question && !step) return null;
+  // 질문 줄(없으면 선택지) 위로 올라가며 머리 줄(2.1.328: " Bash command      2 of 3")을 찾는다. 실선(───)에서 멈춘다.
+  //   머리와 질문 사이: 안내(Tip: …), 설명 한 줄, 점선(╌╌╌) 상자 안의 명령. 내용은 점선 상자 안(없으면 Tip 아닌 줄)
+  const lines = s.split('\n').map((l) => l.replace(/[│|]/g, ' ').trim());
+  let end = question ? lines.lastIndexOf(question) : -1;
+  if (end < 0) end = lines.findIndex((l) => /^(❯\s*)?1\.\s+Yes\b/i.test(l));
+  let tool = null; let head = -1;
+  for (let i = end - 1; i >= 0 && i >= end - 30; i--) {
+    const l = lines[i].replace(/\s+\d{1,2} of \d{1,2}$/, '').trim();
+    if (/^[─━]{6,}$/.test(l)) break;
+    if (PERM_HEADS.some((re) => re.test(l))) { tool = l; head = i; break; }
+  }
+  let detail = null;
+  if (tool) {
+    const mid = lines.slice(head + 1, end);
+    const dash = mid.map((l, i) => (/^[╌┄-]{6,}$/.test(l) ? i : -1)).filter((i) => i >= 0);
+    const box = dash.length >= 2 ? mid.slice(dash[0] + 1, dash[1]) : mid.filter((l) => !/^Tip:/i.test(l));
+    detail = box.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 300) || null;
+  }
+  return { question, choices, step, tool, detail };
+}
+
 // 대화상자의 질문 줄("Do you want to create e9-a.txt?")
 export function parsePromptLine(text) {
   const m = String(text || '').match(/^\s*(Do you want[^\n]*\?)\s*$/m);

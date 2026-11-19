@@ -90,7 +90,10 @@ export class WorkUnits {
   // 일의 새 시도: 머리를 붙여 대기열에 넣고 시도를 적는다
   dispatch(unit, { later = false, reuse = null } = {}) {
     const b = this.b; const st = this.store();
-    const header = this.headerOf(unit);
+    let header = this.headerOf(unit);
+    // P232(rig2-design 11.14의 11): 그 자리에 쌓인 지금 할 일 없던 알림(정본 반영, 사람 카드의 받음·멈춤)을 이 일 머리에 붙인다
+    const notes = unit.caseId && unit.origin !== BUILDER_ORIGIN && this.branch && this.branch.flow && this.branch.flow.takeSeatNotes ? this.branch.flow.takeSeatNotes(unit) : [];
+    if (notes.length) header = [header, ...notes].join('\n');
     const d = (reuse && b.queue.unpark ? b.queue.unpark(reuse, `${header}\n\n${unit.spec}`) : null) // P223: 붙잡았던 전달(같은 전달 ID로 넣는다)
       || b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}`, { origin: unit.from === HUMAN_FROM ? { kind: 'human' } : { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션). P190: 사람이 맡긴 제작 일
     const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: d.deliveryId, startedAt: Date.now() };

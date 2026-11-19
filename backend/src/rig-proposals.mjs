@@ -213,7 +213,10 @@ export class RigProposals {
     for (const s of to) try { this.b.queue.enqueue(s.sessionId, `[Atrium 보드] rig: ${row.seat} 자리가 정의(.atrium/rig.json) 고침을 제안했다(${row.id}${row.why ? `: ${row.why}` : ''}). 보기: atrium rig proposals. 정하기: atrium rig approve ${row.id} 또는 atrium rig reject ${row.id} "<까닭>"`); } catch {}
   }
   // 제안을 낸 세션에 판 알림 한 줄
+  //   P232(rig2-design 11.14의 11): 지금 할 일이 없는 알림이다. 그 자리의 다음 회 머리 글에 붙인다(쉬는 keep 세션의 턴을 쓰지 않는다). 자리가 없으면 바로 보낸다
   tell(row, text) {
+    const flow = this.b.branch && this.b.branch.flow;
+    if (row.seat && flow && flow.noteForSeat && flow.noteForSeat(row.workspaceKey, row.seat, `[Atrium 보드] rig: ${text}`, 'proposal')) return;
     const s = row.sessionId && this.b.sessions ? this.b.sessions.get(row.sessionId) : null;
     if (s && this.b.queue) try { this.b.queue.enqueue(s.sessionId, `[Atrium 보드] rig: ${text}`); } catch {}
   }
@@ -244,7 +247,8 @@ export class RigProposals {
     st.setProposal(row.id, { state: res.ok ? 'applied' : 'failed', decidedAt: Date.now(), decidedBy: by, reason: res.ok ? null : res.reason, versionN: res.n ?? null });
     rigEvent(this.b, { ...base, kind: 'proposal_applied', value: res.ok ? 'applied' : res.conflict ? 'conflict' : 'failed', actor: 'board', text: res.ok ? `제안 ${row.id} 반영: ${row.path}${res.n != null ? ` → 정의 버전 ${res.n}` : ''}` : `제안 ${row.id} 반영 못 함: ${res.reason}`, data: { proposal: row.id, target: row.target, path: row.path, before: row.baseSha, after: res.ok ? row.newSha : null, ...(res.n != null ? { version: res.n } : {}), ...(res.ok ? {} : { reason: res.reason }) } });
     if (row.artifactId) { const a = st.getArtifact(row.artifactId); if (a && a.state === 'new') sectorsFor(this.b).accept(k, a, { why: res.ok ? 'approved' : 'decided', actor: 'board', text: res.ok ? '제안이 승인되어 반영됨' : '제안을 승인했지만 반영하지 못함' }); }
-    if (!auto) this.tell(row, res.ok ? `제안 ${row.id}(${row.target})이 승인되어 ${row.path}에 반영되었다${res.n != null ? `(정의 버전 ${res.n})` : ''}.` : `제안 ${row.id}(${row.target})을 승인했지만 반영하지 못했다: ${res.reason}`);
+    // P232(11.14의 11): 정본 반영은 "정본 <이름>가 바뀌었다(p…). 다시 읽는다"(다음 회 머리)
+    if (!auto) this.tell(row, res.ok ? (row.kind === 'doc' ? `정본 ${row.target}(${row.path})가 바뀌었다(제안 ${row.id} 승인·반영). 다시 읽는다.` : `제안 ${row.id}(${row.target})이 승인되어 ${row.path}에 반영되었다${res.n != null ? `(정의 버전 ${res.n})` : ''}.`) : `제안 ${row.id}(${row.target})을 승인했지만 반영하지 못했다: ${res.reason}`);
     else if (!res.ok) this.tell(row, `정의 제안 ${row.id}을 반영하지 못했다: ${res.reason}`);
     this.b.log && this.b.log(`rig proposal ${k} ${row.id} approved by ${by}: ${res.ok ? 'applied' : res.reason}`);
     this.changed(k); sectorsFor(this.b).changed(k);
@@ -277,11 +281,32 @@ export class RigProposals {
 
   // ---------- 정본 지키기(11.5의 4) ----------
   // 처음 본 정본 내용을 승인된 내용으로(이미 있으면 그대로)
+  //   P232(11.14의 8): 표시가 다른 경로의 것이면(rig를 지우고 다른 경로로 다시 만듦) 지금 내용으로 다시 잡는다
   baseline(key, d, abs) {
     const st = this.store();
-    if (!st.docMark || st.docMark(key, d.name)) return;
+    if (!st.docMark) return;
+    const m = st.docMark(key, d.name);
+    if (m && (!d.rel || !m.path || m.path === d.rel)) return;
+    if (m) { this.setBase(key, d, abs, 'path_changed'); return; }
     const buf = readBuf(abs);
     st.setDocMark(key, d.name, { path: d.rel, approvedSha: buf ? sha(buf) : null, approvedText: buf && buf.length <= MARK_TEXT_MAX ? buf.toString('utf8') : null, approvedAt: Date.now(), approvedBy: 'first_seen' });
+  }
+  // 지금 내용을 승인된 내용으로(승인 안 된 바뀜 표시를 거둔다)
+  setBase(key, d, abs, by) {
+    const buf = readBuf(abs);
+    this.store().setDocMark(key, d.name, { path: d.rel, approvedSha: buf ? sha(buf) : null, approvedText: buf && buf.length <= MARK_TEXT_MAX ? buf.toString('utf8') : null, approvedAt: Date.now(), approvedBy: by, unapprovedSha: null, unapprovedAt: null, unapprovedBy: null });
+  }
+  // P232(rig2-design 11.9의 8, 11.14의 8): 정본의 기준은 rig를 켤 때의 내용이다(rig.create의 시작 글이 아니다). 켜질 때 정본마다 지금 내용을 승인된 내용으로 잡는다.
+  //   만들기와 켜기 사이에 사람이 손으로 쓴 첫 규칙이 "승인 안 된 바뀜"이 되지 않는다. 꺼 둔 동안 바뀐 것도 켤 때의 내용으로 받는다
+  onEnabled(key, r) {
+    if (!r || !r.def || !r.def.docs || !r.root) return 0;
+    let n = 0;
+    for (const d of Object.values(r.def.docs)) {
+      if (d.role !== 'canon' || !d.rel) continue;
+      this.setBase(key, d, path.resolve(r.root, d.rel), 'enabled'); n++;
+    }
+    if (n) this.changed(key);
+    return n;
   }
   // 문서 감시가 본 정본 바뀜. 승인된 내용과 같으면(되돌아옴, 승인된 반영) 표시를 거두고, 다르면 승인 안 된 바뀜
   onCanonChanged(key, d, abs, { who = null, label = null } = {}) {

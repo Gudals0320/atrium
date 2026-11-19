@@ -700,8 +700,10 @@ export class Rig {
   setEnabled(key, on, by = 'human') {
     const w = this.store().getWorkspace(key);
     if (!w) throw apiError('not_found', `워크스페이스를 찾을 수 없다: ${key}`);
+    const was = this.enabled(key);
     this.store().setRigEnabled(key, !!on);
     const r = this.read(key);
+    if (on && !was && this.b.rigProposals && r.def) try { this.b.rigProposals.onEnabled(key, { ...r, root: r.root || w.root }); } catch (e) { this.b.log && this.b.log('rig canon baseline error', e.stack); } // P232(11.14의 8): 정본 기준 = 켤 때의 내용
     if (on && by === 'human') this.permit(key, null, 'enable'); // P223: 켜기 확인 창이 보인 unattended 자리를 사람이 승인했다
     this.store().addEvent(null, on ? 'rig_enabled' : 'rig_disabled', { workspace: key, by, hash: r.hash, present: r.present });
     rigEvent(this.b, { kind: on ? 'rig_enabled' : 'rig_disabled', ws: key, defN: r.n ?? null, actor: by === 'remote' || by === 'human' ? 'human' : 'board', text: `rig ${on ? '켜짐' : '꺼짐'}(${by})`, data: { by, hash: r.hash } });

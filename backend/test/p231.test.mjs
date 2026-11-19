@@ -249,9 +249,10 @@ test('P231 사람이 정하면 주인 세션에 한 번 알린다: 받음 · 한
   try {
     const n0 = deliveredTo(t1.b, t1.main).length;
     await decide(t1.b, `run:${t1.c.id}`, 'accept');
-    await until(() => deliveredTo(t1.b, t1.main).length > n0);
     await tick(150);
-    const got = deliveredTo(t1.b, t1.main).slice(n0);
+    // P232(rig2-design 11.14의 11): 받음은 주인에게 지금 할 일이 없어 바로 보내지 않고 주인 자리의 다음 회 머리에 붙인다(한 번)
+    assert.equal(deliveredTo(t1.b, t1.main).length, n0, '바로 보내지 않는다');
+    const got = t1.b.store.seatNotes(t1.ws.key, 'main').map((n) => n.text);
     assert.equal(got.length, 1, '한 번');
     assert.match(got[0], /^\[Atrium 보드\] 사람이 회 c[0-9a-f]+\(.+\)의 상한 카드에서 \[그대로 받기\]를 골랐다\. 회는 done이다\(받음\)\.$/);
     assert.equal(t1.b.store.getCase(t1.c.id).state, 'done');
@@ -273,19 +274,17 @@ test('P231 사람이 정하면 주인 세션에 한 번 알린다: 받음 · 한
   try {
     const n0 = deliveredTo(t3.b, t3.main).length;
     await decide(t3.b, `run:${t3.c.id}`, 'pause');
-    await until(() => deliveredTo(t3.b, t3.main).length > n0);
     await tick(150);
-    const got = deliveredTo(t3.b, t3.main).slice(n0);
+    assert.equal(deliveredTo(t3.b, t3.main).length, n0, 'P232: 멈춤도 다음 회 머리로');
+    const got = t3.b.store.seatNotes(t3.ws.key, 'main').map((n) => n.text);
     assert.equal(got.length, 1);
     assert.match(got[0], /\[회 멈추기\]를 골랐다\. 회는 멈췄다/); assert.match(got[0], /새 회로 다시 열지 않는다/);
   } finally { await t3.stop(); }
   // 관리자 없는 rig(P230 길)도 같다
   const t4 = await toLimitWith(limitDef());
   try {
-    const n0 = deliveredTo(t4.b, t4.main).length;
     await decide(t4.b, `run:${t4.c.id}`, 'accept');
-    await until(() => deliveredTo(t4.b, t4.main).length > n0);
-    assert.match(deliveredTo(t4.b, t4.main).at(-1), /\[그대로 받기\]/);
+    assert.match(t4.b.store.seatNotes(t4.ws.key, 'main').at(-1).text, /\[그대로 받기\]/);
   } finally { await t4.stop(); }
 });
 

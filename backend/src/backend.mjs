@@ -32,13 +32,13 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
-import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyTermDisconnected, deriveState, flags, worktreeExitAsk, trackWaiting } from './state.mjs';
+import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyTermDisconnected, deriveState, flags, worktreeExitAsk, trackWaiting, screenPermissionAsk } from './state.mjs';
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
@@ -882,6 +882,8 @@ export class Backend {
     this.api.broadcast('session.hook', { sessionId: s.sessionId, name: s.name, ...info });
     if (ev === 'UserPromptSubmit') this.queue.onUserPromptSubmit(s.sessionId, body.prompt);
     if (ev === 'PermissionRequest' && s.rt.pendingAsk && (s.rt.pendingAsk.kind === 'permission' || s.rt.pendingAsk.kind === 'plan')) this.readChoicesLater(s);
+    if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && !s.rt.pendingAsk && s.rt.term.status === 'blocked') this.recheckBlockedLater(s); // P232(H18)
+    if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && s.rt.pendingAsk && s.rt.pendingAsk.kind === 'permission' && !s.rt.pendingAsk.choices) this.readChoicesLater(s); // P232: 줄의 다음 질문이 올라왔다
     if (ev === 'Stop' || ev === 'SessionStart') this.refreshModelNow(s); // P137: 턴이 끝나면 지금 모델을 바로 본다(broadcast는 아래)
     if (ev === 'Stop') this.probeGit(s, s.rt.cwd || s.cwd); // A2: 바뀐 파일 수. F4: 지금 폴더(워크트리일 수 있다)로 본다
     const late = s.rt.lastWork && s.rt.lastWork.late && !s.rt.lastWork.lateSeen ? s.rt.lastWork : null; // P173: 턴 hook이 턴 없는 일로 본 구간 뒤에 늦게 왔다
@@ -939,6 +941,7 @@ export class Backend {
       if (e.status !== 'unknown') s.resumingAfterRestart = null; // 이어 가기가 됐다
       this.store.addEvent(s.sessionId, 'terminal_status', { from: prev, to: e.status });
       if (e.status === 'blocked' && !s.rt.pendingAsk) await this.checkBlocked(s);
+      else if (e.status === 'blocked' && s.rt.pendingAsk.kind === 'permission' && !s.rt.pendingAsk.choices) this.readChoicesLater(s); // P232: 줄의 다음 질문
       if ((e.status === 'idle' || e.status === 'done') && !s.rt.term.agentSessionId) this.refreshAgent(s);
       if (!this.hooked(s)) {
         // hook이 없는 세션: 제출 확인은 터미널 상태 working으로, 마지막 답은 턴이 끝난 화면 끝으로 대신한다(F5)
@@ -1144,9 +1147,34 @@ export class Backend {
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'visible' });
       if (TRUST_SCREEN_KINDS.has(s.kind || 'claude') && trustDialogOf(s.kind || 'claude', text)) { s.rt.trustScreen = { at: Date.now() }; this.store.addEvent(s.sessionId, 'trust_dialog', { tail: tailLines(text, 6) }); }
-      else if ((s.kind || 'claude') === 'claude') this.noteWorktreeExit(s, text);
+      else if ((s.kind || 'claude') === 'claude' && !this.noteWorktreeExit(s, text)) this.noteScreenPermission(s, text);
       if (!this.hooked(s)) s.rt.screenAsk = { tail: tailText(text, 14), at: Date.now() };
     } catch {}
+  }
+  // P232(H18): hook이 붙은 Claude Code가 막혔는데 기다리는 ask가 없을 때, 화면의 권한 질문("n of m"의 둘째 질문 등)을 ask로 둔다 → 두었으면 true
+  noteScreenPermission(s, text) {
+    if (!this.hooked(s) || s.rt.pendingAsk || s.rt.term.status !== 'blocked') return false;
+    const p = parsePermissionDialog(text);
+    if (!p) return false;
+    s.rt.pendingAsk = screenPermissionAsk(p);
+    this.store.addEvent(s.sessionId, 'screen_permission', { tool: s.rt.pendingAsk.tool, summary: clip(s.rt.pendingAsk.summary, 200), step: p.step || null, choices: p.choices.map((c) => `${c.n}. ${c.label}`) });
+    this.broadcastSession(s, { cause: 'screen:permission' });
+    return true;
+  }
+  // P232(H18): ask가 풀렸는데(PostToolUse 등) 터미널이 아직 막혀 있으면 화면이 다음 질문으로 바뀐 것이다. 화면이 그려질 시간을 주고 다시 읽는다
+  recheckBlockedLater(s) {
+    if (s._recheckBlocked) return;
+    s._recheckBlocked = true;
+    (async () => {
+      try {
+        for (const wait of [300, 800, 1600]) {
+          await sleep(wait);
+          if (!this.sessions.has(s.sessionId) || s.rt.pendingAsk || s.rt.term.status !== 'blocked') return;
+          await this.checkBlocked(s);
+          if (s.rt.pendingAsk || s.rt.trustScreen || s.rt.worktreeExit) return;
+        }
+      } catch {} finally { s._recheckBlocked = false; }
+    })();
   }
   // P71: `claude -w` 세션이 끝날 때 묻는 워크트리 나가기 질문을 화면에서 읽어 둔다(승인 줄 "워크트리를 남길까요?")
   noteWorktreeExit(s, text) {
@@ -1739,6 +1767,8 @@ export class Backend {
     // 승인 카드의 키 순서는 판이 띄운 Claude Code만 안다(E9). 다른 종류와 판에 올린 에이전트는 터미널에서 답한다(F5)
     if (!this.hooked(s)) throw apiError('answer_in_terminal', `${s.name}(${s.kind})의 응답 키 입력 순서를 보드에서 확인할 수 없습니다. 터미널에서 직접 응답하세요.`);
     const card = { toolUseId: p.toolUseId || null, since: p.since || null };
+    // P232(H18): 기다리는 ask가 없는데 막혀 있으면 화면을 한 번 더 읽는다("n of m"의 둘째 권한 질문)
+    if (!s.rt.pendingAsk && s.rt.term.status === 'blocked' && (s.kind || 'claude') === 'claude') { try { await this.checkBlocked(s); } catch {} }
     const ask = s.rt.pendingAsk;
     if (!ask) return { sent: false, reason: 'no_pending_ask' };
     if (!sameAsk(ask, card)) return { sent: false, reason: 'stale' };
