@@ -1,7 +1,7 @@
 {
   "name": "atrium-app",
   "private": true,
-  "version": "0.2.2-dev.30",
+  "version": "0.2.2-dev.31",
   "description": "Atrium window: an infinite canvas of CLI agent sessions (Electron, React, xterm.js)",
   "license": "MIT",
   "type": "module",
