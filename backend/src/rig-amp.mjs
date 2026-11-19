@@ -29,6 +29,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부(훅 아닌 관문)
 import { writesPaths, OWNS } from './rig-docs.mjs'; // P219: writes의 문서 이름 → 경로
+import { startsAsBoardNotice } from './text.mjs'; // P235: 판 알림은 그 회의 글이다
 
 export const AMP_ATS = ['pre-tool'];
 export const SEAT_PERMISSIONS = ['ask', 'scoped', 'unattended']; // P223
@@ -55,6 +56,10 @@ export const PERMISSION_KEYS = ['disableAutoMode', 'disableBypassPermissionsMode
 export const PROMPTLESS_TRIGGERS = ['every'];
 // P234(11.16의 3): 받을 "Yes"가 없는 권한 질문의 장부 까닭
 export const NO_YES_WHY = '받을 Yes가 없는 선택지 꼴';
+// P235(rig2-design 11.17의 1): 판이 연 회의 scoped 자리 PermissionRequest에 판이 답하는 거절 글(모델이 이 글을 받고 턴을 잇는다. 2.1.328 헤드리스 확인)
+export const BOARD_DENY_MESSAGE = 'rig: 허용 목록 밖이라 거절했다(판이 연 회라 묻지 않는다). 하지 못한 것은 보고에 적는다.';
+// PermissionRequest 훅 응답 본문(거절). 빈 답은 결정 없음(Claude Code가 묻는다, 또는 denyInsteadOfPrompting이면 거절)
+export const permissionDenyBody = (message = BOARD_DENY_MESSAGE) => ({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message } } });
 export const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 export const EDIT_ALL = 'Edit(//**)'; // 모든 드라이브의 모든 파일(문서: Windows 경로는 /c/… 꼴로 맞춘 뒤 맞춘다)
 export const PRE_TOOL_TIMEOUT_PAD_SEC = 5; // 훅 시간 제한 위에 판이 답할 여유
@@ -204,14 +209,15 @@ function protectBases(root, cwd) {
 
 // P234(11.16의 2): 자리의 회가 판이 연 회(묻지 않고 거절)인가 → { promptless, why, loops }
 //   fresh 자리: 그 회의 고리(loop)의 계기. 모르면 unknown(묻는다)
-//   keep 자리: 그 자리에 닿는 고리(입구이거나 흐름 줄의 받는 자리)의 계기. 모두 every면 promptless,
-//     request 고리가 하나라도 있으면 묻는다(요청한 쪽이 곁에 있다. every와 섞이면 why "mixed"), 닿는 고리가 없으면 none(묻는다)
+//   keep 자리: P235(11.17의 2) 회(loop)를 주면 그 회의 고리 계기(일 머리 줄). 주지 않으면 그 자리에 닿는 고리(입구이거나 흐름 줄의 받는 자리)의 계기(자리 알림):
+//     모두 every면 promptless, request 고리가 하나라도 있으면 묻는다(every와 섞이면 why "mixed"), 닿는 고리가 없으면 none(묻는다).
+//     keep 자리의 설정 파일에는 쓰지 않는다(판이 회마다 PermissionRequest에 답한다: RigAmp.permissionVerdict)
 export function seatRunOf(def, seat, { loop = null } = {}) {
   const x = def && def.seats ? def.seats[seat] : null;
   const L = (def && def.loops) || {};
   const typeOf = (l) => (l && l.trigger ? l.trigger.type : null);
   if (!x) return { promptless: false, why: 'unknown', loops: [] };
-  if (x.session !== 'keep') {
+  if (x.session !== 'keep' || loop) {
     const l = loop ? L[loop] : null;
     if (!l) return { promptless: false, why: 'unknown', loops: loop ? [loop] : [] };
     const t = typeOf(l);
@@ -390,7 +396,9 @@ export class RigAmp {
     const asked = sa.permission;
     const permission = effectivePermission(asked, asked === 'unattended' && this.approved(s.workspaceKey, s.rigSeat, r.def)); // P223. P225: 그 정의의 해시
     const run = this.runOf(s, r); // P234: 판이 연 회면 scoped 자리는 묻지 않고 거절
-    return { key: s.workspaceKey, r, seat: s.rigSeat, kind: s.kind || 'claude', ...sa, asked, permission, protectedFiles, root: r.root, cwd: (s.rt && s.rt.cwd) || s.cwd || r.root, run, promptless: run.promptless };
+    // P235(11.17의 3): 설정 파일의 받침(denyInsteadOfPrompting)은 판이 연 회를 위해 띄운 fresh 자리에만(그 세션 전체가 그 회다). keep 자리에는 넣지 않는다
+    const fresh = r.def.seats[s.rigSeat].session !== 'keep';
+    return { key: s.workspaceKey, r, seat: s.rigSeat, kind: s.kind || 'claude', ...sa, asked, permission, protectedFiles, root: r.root, cwd: (s.rt && s.rt.cwd) || s.cwd || r.root, run, fresh, promptless: fresh && run.promptless };
   }
   // P234(11.16의 2): 그 세션의 회 계기(seatRunOf). fresh 자리는 띄울 때 받은 고리(s.rigRun) → 그 세션의 회(rig_case_items) → 열린 시도의 회
   runOf(s, r) {
@@ -406,18 +414,66 @@ export class RigAmp {
     }
     return seatRunOf(r.def, s.rigSeat, { loop });
   }
-  // P234(11.16의 2): 이 세션은 물을 호출을 묻지 않고 거절하는가(scoped 자리, 판이 연 회, 설정 파일에 denyInsteadOfPrompting이 들어 있음)
-  //   Claude Code 2.1.328은 denyInsteadOfPrompting으로 거절할 때 PermissionDenied 훅을 보내지 않고 PermissionRequest 훅만 보낸다(개발용 판·헤드리스 확인).
-  //   판의 PermissionRequest 답은 비어 있으므로(결정 없음) 그 호출은 거절된다. 판은 그 훅을 질문(응답 필요)으로 두지 않고 거절로 적는다
-  refusesPrompt(s) {
-    if (!s || (s.kind || 'claude') !== 'claude' || !s.rigSeat || !s.settingsPath) return false;
+  // P235(rig2-design 11.17의 2): 이 세션이 지금 하는 회 → { loop, caseId, tryId, now, foreign, from }
+  //   열린 시도(그 세션에 마지막으로 넣은 일)의 회. fresh 자리는 시도가 없어도 띄울 때의 회(그 세션 전체가 그 회다). keep 자리는 시도가 없으면 모른다(none)
+  //   foreign: 그 시도가 열린 뒤 그 회 밖의 글(사람이 보낸 글, 판을 거치지 않고 친 글)이 들어왔다 → 회를 가를 수 없다
+  currentRun(s, r) {
+    const st = this.b.store;
+    let tr = null;
+    try { tr = st.openTryOf ? st.openTryOf(s.sessionId) : null; } catch {}
+    if (tr) {
+      let u = null; let c = null;
+      try { u = st.getUnit ? st.getUnit(tr.unitId) : null; c = u && u.caseId && st.getCase ? st.getCase(u.caseId) : null; } catch {}
+      return { loop: c ? c.loop || null : null, caseId: c ? c.id : null, tryId: tr.id, now: !!(u && u.via && u.via.now), foreign: !!(s.rigForeignAt && s.rigForeignAt >= tr.startedAt), from: 'try' };
+    }
+    const seat = r.def.seats[s.rigSeat];
+    if (seat && seat.session !== 'keep') { const run = this.runOf(s, r); return { loop: run.loops[0] || null, caseId: null, tryId: null, now: false, foreign: false, from: 'spawn' }; }
+    return { loop: null, caseId: null, tryId: null, now: false, foreign: false, from: 'none' };
+  }
+  // P235(11.17의 1·2): 이 세션의 PermissionRequest에 판이 거절로 답하는가 → { deny, why, loop, caseId }
+  //   scoped 자리만. 판이 연 회(every 고리: every·followups·지금 돌리기) → deny. 요청 회 → 묻는다(빈 답, 응답 필요). 회를 모르거나 가를 수 없으면 묻는다.
+  //   fresh 자리의 설정 파일에 받침(denyInsteadOfPrompting)이 있으면 그 세션 전체가 판이 연 회라 늘 deny(빈 답이어도 Claude Code가 거절한다)
+  permissionVerdict(s) {
+    const no = (why, extra = {}) => ({ deny: false, why, loop: null, caseId: null, ...extra });
+    if (!s || (s.kind || 'claude') !== 'claude' || !s.rigSeat) return no('no_seat');
     const x = this.ctxOf(s);
-    if (!x || x.permission !== 'scoped' || !x.promptless) return false;
+    if (!x) return no('no_seat');
+    if (x.permission !== 'scoped') return no('permission');
+    if (x.fresh && x.promptless && this.backstopOn(s)) return { deny: true, why: 'fresh', loop: x.run.loops[0] || null, caseId: null };
+    const cur = this.currentRun(s, x.r);
+    const at = { loop: cur.loop, caseId: cur.caseId };
+    if (cur.foreign) return no('foreign', at);
+    const l = cur.loop && x.r.def.loops ? x.r.def.loops[cur.loop] : null;
+    const t = l && l.trigger ? l.trigger.type : null;
+    if (cur.now) return { deny: true, why: 'now', ...at }; // 지금 돌리기는 사람이 눌러도 판이 연 회(11.17 구현대로 3)
+    if (PROMPTLESS_TRIGGERS.includes(t)) return { deny: true, why: t, ...at };
+    return no(t === 'request' ? 'request' : 'unknown', at);
+  }
+  // fresh 자리 설정 파일에 받침(denyInsteadOfPrompting true)이 실제로 있는가
+  backstopOn(s) {
+    if (!s.settingsPath) return false;
     try { const j = JSON.parse(fs.readFileSync(s.settingsPath, 'utf8')); return !!(j.permissions && j.permissions.denyInsteadOfPrompting === true); } catch { return false; }
+  }
+  // 이 세션의 PermissionRequest는 질문이 아니라 거절인가(판이 deny로 답한다. 응답 필요에 두지 않는다)
+  refusesPrompt(s) { try { return this.permissionVerdict(s).deny; } catch { return false; } }
+  // P235: 자리 세션에 글이 들어왔다(UserPromptSubmit). d: 판 전달 대기열이 맞춘 전달(없으면 판을 거치지 않고 친 글).
+  //   열린 시도의 회 밖 글(사람이 보낸 글, 판을 거치지 않은 글)이면 표시한다 → 그 시도 동안은 회를 가를 수 없어 묻는다
+  notePrompt(s, prompt, d = null) {
+    if (!s || !s.rigSeat) return false;
+    const st = this.b.store;
+    let tr = null;
+    try { tr = st.openTryOf ? st.openTryOf(s.sessionId) : null; } catch {}
+    if (!tr) return false;
+    const text = String(prompt || '');
+    const own = (d && (d.deliveryId === tr.deliveryId || d.origin !== 'human')) || text.includes(tr.unitId) || startsAsBoardNotice(text);
+    if (own) return false;
+    s.rigForeignAt = Date.now();
+    try { st.addEvent(s.sessionId, 'rig_run_foreign_prompt', { tryId: tr.id, unitId: tr.unitId, deliveryId: d ? d.deliveryId : null }); } catch {}
+    return true;
   }
   // P234(11.16의 2): 묻지 않고 거절한 호출(PermissionDenied 훅: tool_name, tool_input, reason, 또는 위의 PermissionRequest) → 장부 gate(data.at "permission", value reject, target = 명령)
   //   via: 'PermissionDenied' | 'PermissionRequest'. 같은 호출(tool_use_id, 없으면 도구·입력)은 한 번만 적는다
-  onPermissionDenied(s, body, { via = 'PermissionDenied' } = {}) {
+  onPermissionDenied(s, body, { via = 'PermissionDenied', verdict = null } = {}) { // P235: via 'board'(판이 deny로 답함), verdict(permissionVerdict)
     const x = this.ctxOf(s); if (!x) return null;
     const key = `${s.sessionId}|${(body && body.tool_use_id) || `${body && body.tool_name}|${JSON.stringify((body && body.tool_input) || null)}|${Math.floor(Date.now() / 5000)}`}`;
     if (!this.deniedSeen) this.deniedSeen = new Map();
@@ -430,8 +486,10 @@ export class RigAmp {
     const tool = String((body && body.tool_name) || '');
     const target = deniedTarget(tool, (body && body.tool_input) || {});
     const reason = body && body.reason != null ? String(body.reason).slice(0, 300) : null;
-    try { st.addEvent(s.sessionId, 'rig_permission_denied', { tool, target, reason, promptless: !!x.promptless, via }); } catch {}
-    this.gateEvent(s, x, tr, 'permission', { tool, target, reason, promptless: !!x.promptless, via }, `${tool || '?'} ${x.promptless ? '묻지 않고 거절' : '거절'}: ${target || '-'}`, 'reject');
+    const promptless = via === 'board' || !!x.promptless;
+    const run = verdict ? { why: verdict.why, loop: verdict.loop || null, ...(verdict.caseId ? { caseId: verdict.caseId } : {}) } : {};
+    try { st.addEvent(s.sessionId, 'rig_permission_denied', { tool, target, reason, promptless, via, ...run }); } catch {}
+    this.gateEvent(s, x, tr, 'permission', { tool, target, reason, promptless, via, ...run }, `${tool || '?'} ${promptless ? '묻지 않고 거절' : '거절'}: ${target || '-'}`, 'reject');
     return { tool, target };
   }
   // P234(11.16의 3): rig 자리 권한 질문에 받을 그냥 "Yes"가 없다(Claude Code 문구가 바뀜) → 판 로그와 장부 gate(value blocked). 질문마다 한 번
@@ -492,6 +550,7 @@ export class RigAmp {
 
   // hook 수신기: 이 hook에 판이 판단을 끝내고 답해야 하는가(아니면 지금처럼 먼저 200)
   wants(s, ev) {
+    if (ev === 'PermissionRequest') return this.refusesPrompt(s); // P235: 판이 연 회의 scoped 자리는 판이 deny로 답한다
     if (ev !== 'PreToolUse' && ev !== 'Stop') return false;
     if ((s.kind || 'claude') !== 'claude') return false;
     const x = this.ctxOf(s); if (!x) return false;
@@ -503,6 +562,7 @@ export class RigAmp {
     const x = this.ctxOf(s); if (!x) return null;
     if (ev === 'PreToolUse') return this.preTool(s, x, body);
     if (ev === 'Stop') return this.stop(s, x, body);
+    if (ev === 'PermissionRequest') return this.refusesPrompt(s) ? permissionDenyBody() : null; // P235
     return null;
   }
   async preTool(s, x, body) {

@@ -25,7 +25,7 @@ import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
 import { RigProposals, rigProposalHandlers } from './rig-proposals.mjs'; // P224: rig 2 제안과 승인, 정본 지키기
-import { RigAmp, SEAT_SPAWN, SEAT_RUN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
+import { RigAmp, SEAT_SPAWN, SEAT_RUN, permissionDenyBody } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -832,31 +832,34 @@ export class Backend {
       if (!wait) { res.writeHead(200); res.end(); }
       if (tooBig) return this.log('hook body too large', size);
       setImmediate(() => {
-        try { this.processHook(req.headers, raw); } catch (e) { this.log('hook error', e.stack); }
+        try { this.processHook(req.headers, raw, wait); } catch (e) { this.log('hook error', e.stack); } // P235: 판이 정한 답(PermissionRequest 거절)을 같은 걸음에 장부에
       });
       if (wait) this.answerHook(wait, res);
     });
   }
   // P189: 판이 기다려 답할 hook인가 → { s, ev, body } | null(인증이 맞는 rig 자리 세션의 PreToolUse·Stop만)
+  //   P235(rig2-design 11.17의 1): 판이 연 회의 scoped 자리 PermissionRequest도(판이 deny로 답한다) → { s, ev, body, verdict }
   ampTarget(headers, raw) {
     try {
       const body = JSON.parse(raw); const ev = body.hook_event_name;
-      if (ev !== 'PreToolUse' && ev !== 'Stop') return null;
+      if (ev !== 'PreToolUse' && ev !== 'Stop' && ev !== 'PermissionRequest') return null;
       const sid = headers['x-mt-session'] || body.session_id;
       const s = this.sessions.get(sid);
       if (!s || headers.authorization !== `Bearer ${s.hookToken}`) return null;
+      if (ev === 'PermissionRequest') { const verdict = this.rigAmp.permissionVerdict ? this.rigAmp.permissionVerdict(s) : null; return verdict && verdict.deny ? { s, ev, body, verdict } : null; }
       return this.rigAmp.wants(s, ev) ? { s, ev, body } : null;
     } catch { return null; }
   }
   // 판단 → 응답 본문(JSON) 또는 빈 200(통과). 판의 오류는 통과(훅의 onFail block은 rig가 거절로 돌려준다)
   async answerHook({ s, ev, body }, res) {
     let out = null;
+    if (ev === 'PermissionRequest') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(permissionDenyBody())); } // P235: ampTarget이 이미 거절로 정했다
     try { out = await this.rigAmp.answer(s, ev, body); } catch (e) { this.log('rig amp error', e.stack); out = null; }
     if (res.writableEnded || res.destroyed) return;
     if (out) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(out)); }
     else { res.writeHead(200); res.end(); }
   }
-  processHook(headers, raw) {
+  processHook(headers, raw, pre = null) { // P235: pre = ampTarget(판이 답한 hook. PermissionRequest면 verdict)
     let body; try { body = JSON.parse(raw); } catch { return this.log('hook bad json'); }
     const sid = headers['x-mt-session'] || body.session_id;
     const s = this.sessions.get(sid) || [...this.sessions.values()].find((x) => x.rt.claudeSessionId === body.session_id);
@@ -866,15 +869,18 @@ export class Backend {
     s.lastHookAuthOk = authOk;
     if (!authOk) { this.store.addEvent(s.sessionId, 'hook_rejected', { ev }); this.log(`hook rejected ${s.name} ${ev}`); return; }
     s.hookCount = (s.hookCount || 0) + 1;
-    // P234(rig2-design 11.16의 2): 판이 연 회의 scoped 자리(denyInsteadOfPrompting)는 PermissionRequest가 질문이 아니라 거절이다. 응답 필요에 두지 않고 장부에 적는다
-    const refused = ev === 'PermissionRequest' && this.rigAmp && this.rigAmp.refusesPrompt ? (() => { try { return this.rigAmp.refusesPrompt(s); } catch { return false; } })() : false;
+    // P234(rig2-design 11.16의 2): 판이 연 회의 scoped 자리는 PermissionRequest가 질문이 아니라 거절이다. 응답 필요에 두지 않고 장부에 적는다
+    //   P235(11.17의 1·2): 판이 그 회(자리가 지금 하는 회)를 보고 deny로 답한다(ampTarget·answerHook). 같은 판정을 여기서 장부에 적는다
+    const verdict = ev !== 'PermissionRequest' || !this.rigAmp || !this.rigAmp.permissionVerdict ? null : pre && pre.verdict ? pre.verdict : (() => { try { return this.rigAmp.permissionVerdict(s); } catch { return null; } })();
+    const refused = !!(verdict && verdict.deny);
+    if (refused) s.rigRefusedAt = Date.now(); // P235: 거절 직후 화면의 잠깐 막힘은 응답 필요가 아니다(unit-stops REFUSE_FLASH_MS)
     if (!refused) applyHook(s.rt, body);
     if (ev === 'Stop') s.rt.answerSource = 'hook';
     // F4: Claude Code는 워크트리로 들어가면 hook의 cwd가 바뀐다
     if (body.cwd && body.cwd !== s.rt.cwd) { s.rt.cwd = body.cwd; this.probeGit(s, body.cwd); }
     if (ev === 'UserPromptSubmit') { s.draft = false; this.onLinkTargetPrompt(s, body.prompt); }
     if (ev === 'PostToolUse' && this.rigDocs) this.rigDocs.noteToolHook(s, body);
-    if ((ev === 'PermissionDenied' || refused) && this.rigAmp) try { this.rigAmp.onPermissionDenied(s, body, { via: ev }); } catch (e) { this.log('rig permission denied note error', e.message); } // P234(11.16의 2): 묻지 않고 거절 → 장부 gate // P219: 문서를 누가 바꿨나(파일 쓰기 도구의 대상)
+    if ((ev === 'PermissionDenied' || refused) && this.rigAmp) try { this.rigAmp.onPermissionDenied(s, body, refused ? { via: 'board', verdict } : { via: ev }); } catch (e) { this.log('rig permission denied note error', e.message); } // P234(11.16의 2): 묻지 않고 거절 → 장부 gate // P219: 문서를 누가 바꿨나(파일 쓰기 도구의 대상)
     if ((ev === 'UserPromptSubmit' || ev === 'Stop') && this.rigAmp) this.rigAmp.syncSettings(s); // P189: 자리를 정했거나 정의가 바뀌었으면 설정 파일의 증폭을 맞춘다
     const info = { ev, tool: body.tool_name || null, authOk, bytes: raw.length, sessionIdMatches: body.session_id === s.sessionId, permissionMode: body.permission_mode || null };
     if (ev === 'Stop') info.lastAnswer = clip(body.last_assistant_message, 300);
@@ -885,7 +891,7 @@ export class Backend {
     if (refused) info.refused = true; // P234: 묻지 않고 거절됨
     this.store.addEvent(s.sessionId, 'hook', info);
     this.api.broadcast('session.hook', { sessionId: s.sessionId, name: s.name, ...info });
-    if (ev === 'UserPromptSubmit') this.queue.onUserPromptSubmit(s.sessionId, body.prompt);
+    if (ev === 'UserPromptSubmit') { const d = this.queue.onUserPromptSubmit(s.sessionId, body.prompt); if (s.rigSeat && this.rigAmp && this.rigAmp.notePrompt) try { this.rigAmp.notePrompt(s, body.prompt, d); } catch (e) { this.log('rig prompt note error', e.message); } } // P235: 회 밖 글이면 그 시도 동안 묻는다
     if (ev === 'PermissionRequest' && s.rt.pendingAsk && (s.rt.pendingAsk.kind === 'permission' || s.rt.pendingAsk.kind === 'plan')) this.readChoicesLater(s);
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && !s.rt.pendingAsk && s.rt.term.status === 'blocked') this.recheckBlockedLater(s); // P232(H18)
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && s.rt.pendingAsk && s.rt.pendingAsk.kind === 'permission' && !s.rt.pendingAsk.choices) this.readChoicesLater(s); // P232: 줄의 다음 질문이 올라왔다
