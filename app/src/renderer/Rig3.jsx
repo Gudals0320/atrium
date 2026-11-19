@@ -7,7 +7,7 @@ import { toast, useStore } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
-import { roleRows, flowRows, roleCount, canEnable3, intakeRows, stalledRows, returnedIntake, cycleInfo } from './lib/rig3.js';
+import { roleRows, flowRows, roleCount, canEnable3, intakeRows, stalledRows, returnedIntake, cycleInfo, tuneBadge, tuneLogRows } from './lib/rig3.js';
 
 export function Rig3Panel({ ws, onClose, first = null }) {
   const t = useT();
@@ -17,6 +17,7 @@ export function Rig3Panel({ ws, onClose, first = null }) {
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [err, setErr] = useState(null);
+  const [openRole, setOpenRole] = useState(null); // P245: 조정 기록을 펼친 역할
   const sessions = useStore((s) => s.sessions); // 역할 세션의 지금 상태(판 이벤트를 기다리지 않는다)
   const load = useCallback(() => api.call('rig.get', { workspace: ws.key }).then(setSt, (e) => setSt({ status: 'error', error: errText(e) })), [ws.key]);
   useEffect(() => {
@@ -62,16 +63,18 @@ export function Rig3Panel({ ws, onClose, first = null }) {
               <>
                 <div className="mt-rigon-h">{t('rig3.roles')}</div>
                 <table className="mt-rig3-table" data-role="rig3-roles">
-                  <thead><tr><th>{t('rig3.colRole')}</th><th>{t('rig3.colOwns')}</th><th>{t('rig3.colSession')}</th><th>{t('rig3.colTools')}</th></tr></thead>
+                  <thead><tr><th>{t('rig3.colRole')}</th><th>{t('rig3.colOwns')}</th><th>{t('rig3.colSession')}</th><th>{t('rig3.colTools')}</th><th>{t('rig3Tune.col')}</th></tr></thead>
                   <tbody>
-                    {roles.map((r) => (
+                    {roles.map((r) => { const tb = tuneBadge(r.tune); return [
                       <tr key={r.name} data-role-name={r.name} data-state={r.stateKey}>
                         <td><b>{r.name}</b><span className="mt-rig3-sub dim">{r.launcher}{r.model ? ` · ${r.model}` : ''}</span>{r.docMissing.length > 0 && <span className="mt-rigon-warn mt-rig3-sub">{t('rig3.docMissing', { list: r.docMissing.join(', ') })}</span>}</td>
                         <td><code>{r.owns.join(' ')}</code></td>
                         <td data-role="rig3-session">{r.session ? <><span className={`mt-rig3-st ${r.stateKey}`} />@{r.session.name} <span className="dim">{t(`state.${r.stateKey}`)}</span></> : <span className="dim">{t(r.gaveUp ? 'rig3.gaveUp' : 'rig3.noSession')}</span>}</td>
                         <td>{r.tools.length ? r.tools.join(', ') : <span className="dim">-</span>}</td>
-                      </tr>
-                    ))}
+                        <td data-role="rig3-tune-cell">{tb ? <button className={`mt-rig3-tune-badge${tb.open ? ' open' : ''}`} data-action="rig3-tune-toggle" data-tune-n={tb.n ?? ''} data-tunes={tb.tunes} onClick={() => setOpenRole(openRole === r.name ? null : r.name)}>{t('rig3Tune.badge', { n: tb.n ?? '-', k: tb.tunes })}{tb.material ? t('rig3Tune.material', { n: tb.material }) : ''}{tb.open ? t('rig3Tune.turnOpen') : ''}</button> : <span className="dim">-</span>}</td>
+                      </tr>,
+                      openRole === r.name && <tr key={r.name + '-tune'} className="mt-rig3-tune-row"><td colSpan={5}><Rig3RoleTune ws={ws} role={r.name} remote={remote} t={t} stamp={tb ? `${tb.n}|${tb.tunes}|${tb.rollbacks}|${tb.material}` : ''} onDone={load} /></td></tr>,
+                    ]; })}
                   </tbody>
                 </table>
               </>
@@ -102,6 +105,40 @@ export function Rig3Panel({ ws, onClose, first = null }) {
           <button className="mt-btn ghost" data-action="rig-panel-close" onClick={onClose}>{t('common.close')}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// P245: 역할 하나의 요령 칸과 조정 기록, 사람의 [되돌리기](판 API rig3.role, rig3.rollback). 작게
+function Rig3RoleTune({ ws, role, remote, t, stamp, onDone }) {
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  useEffect(() => { api.call('rig3.role', { workspace: ws.key, role }).then(setInfo, (e) => setErr(errText(e))); }, [ws.key, role, stamp]);
+  if (err && !info) return <div className="mt-rigon-warn">{err}</div>;
+  if (!info) return <div className="dim">{t('rig.loading')}</div>;
+  const rows = tuneLogRows(info);
+  const undo = async (n) => {
+    setBusy(true); setErr(null);
+    try { const r = await api.call('rig3.rollback', { workspace: ws.key, role, n }); toast(r.unchanged ? t('rig3Tune.same', { n }) : t('rig3Tune.undone', { role, from: n, n: r.n })); setInfo(await api.call('rig3.role', { workspace: ws.key, role })); onDone && onDone(); }
+    catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-rig3-tune" data-role="rig3-tune" data-tune-role={role}>
+      <div className="mt-rig3-sub dim">{t('rig3Tune.head', { doc: info.doc, n: info.n ?? '-', lines: info.lines ?? '-', budget: info.budget })}</div>
+      <pre className="mt-rig3-tune-text" data-role="rig3-tune-text">{(info.tune || '').trim() || t('rig3Tune.empty')}</pre>
+      {!rows.length ? <div className="dim">{t('rig3Tune.noLog')}</div> : (
+        <ul className="mt-rigon-list mt-rig3-tune-log" data-role="rig3-tune-log">
+          {rows.map((x) => (
+            <li key={x.id} data-tune-kind={x.key} data-tune-n={x.n ?? ''}>
+              <span>{t('rig3Tune.k.' + x.key, { prev: x.prevN ?? '-', n: x.n ?? '-', from: x.fromN ?? '-', added: x.added, removed: x.removed, why: x.why, reason: x.reason })}</span>
+              {x.evidence.length > 0 && x.key === 'tune' && <span className="dim">{t('rig3Tune.evidence', { list: x.evidence.join(' ') })}</span>}
+              {!remote && x.undo != null && <button className="mt-btn small ghost" data-action="rig3-tune-undo" data-undo={x.undo} disabled={busy} onClick={() => undo(x.undo)}>{t('rig3Tune.undo', { n: x.undo })}</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {err && <div className="mt-rigon-warn" data-role="rig3-tune-error">{err}</div>}
     </div>
   );
 }

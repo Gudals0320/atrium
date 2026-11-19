@@ -21,7 +21,7 @@ import { AMP_ATS, validateAmp, seatPermitHash } from './rig-amp.mjs'; // P226: �
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { validateDocs } from './rig-docs.mjs'; // P219: rig 2 문서(docs, loads·reads·writes·records)
 import { spreadLoops, loopFlowReason, finishLoops, IMPLICIT_WORK as IMPLICIT_WORK_LOOP } from './rig-loops.mjs'; // P221: rig 2 고리(loops)
-import { validateRig3, rig3Guide } from './rig3.mjs'; // P241: rig 3(version 3) 정의는 따로 검사한다
+import { validateRig3, rig3Guide, bundleSig, bundleOf, partLabel } from './rig3.mjs'; // P241: rig 3(version 3) 정의는 따로 검사한다
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
@@ -416,24 +416,29 @@ export class Rig {
     const c = this.cache.get(key) || { sig: null, good: null };
     if (!stat || !stat.isFile()) { this.cache.set(key, { ...c, sig: null, def: null, hash: null, invalid: null }); return { present: false, def: null, hash: null, invalid: null, file, root }; }
     const on = this.enabled(key); // P188: 버전과 보호는 켜진 rig만(꺼진 워크스페이스는 지금과 같다). 켜면 다시 읽어 남긴다
-    const sig = `${stat.mtimeMs}:${stat.size}:${on ? 1 : 0}`;
+    const sig0 = `${stat.mtimeMs}:${stat.size}:${on ? 1 : 0}`;
+    const sig = c.v3raw ? `${sig0}|${bundleSig(root, c.v3raw)}` : sig0; // P245: v3은 목적·정의서도 본다(정의서만 바뀌어도 다시 검사)
     if (c.sig !== sig) {
-      let next;
+      let next; let v3raw = null;
       try {
         if (stat.size > RIG_MAX_BYTES) throw new Error(`파일이 너무 크다(${stat.size}바이트)`);
         const buf = fs.readFileSync(file);
-        const hash = sha(buf);
+        let hash = sha(buf);
         let raw;
         try { raw = JSON.parse(buf.toString('utf8').replace(/^﻿/, '')); } catch (e) { throw Object.assign(new Error(`JSON이 아니다: ${e.message}`), { hash }); }
+        if (raw && raw.version === 3) v3raw = raw;
         const v = validateRig(raw, { root, cycleMinMs: this.cycleMin() });
         if (!v.ok) throw Object.assign(new Error(v.reason), { hash });
+        // P245: v3의 판(버전) = 정의·목적·모든 정의서의 해시 묶음
+        const bundle = v.def.v3 ? bundleOf(root, raw, hash) : null;
+        if (bundle) hash = bundle.hash;
         // P188: 새 해시면 버전으로 남긴다. 사람만 고치는 포인터를 바꿨으면 쓰지 않고 마지막 맞은 버전을 쓴다
-        const a = on ? this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs: stat.mtimeMs, prev: c.good }) : { ok: true, n: null };
+        const a = on ? this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs: stat.mtimeMs, prev: c.good, parts: bundle ? bundle.parts : null }) : { ok: true, n: null };
         if (!a.ok) throw Object.assign(new Error(a.reason), { hash, fallback: a.fallback, protectedHits: a.hits });
-        next = { sig, hash, def: v.def, invalid: null, good: { def: v.def, hash, raw, n: a.n } };
+        next = { sig: v3raw ? `${sig0}|${bundleSig(root, v3raw)}` : sig0, v3raw, hash, def: v.def, invalid: null, good: { def: v.def, hash, raw, n: a.n } };
       } catch (e) {
         const good = e.fallback || c.good || this.lastGood(key);
-        next = { sig, hash: good ? good.hash : null, def: good ? good.def : null, invalid: e.message, badHash: e.hash || null, good, protectedHits: e.protectedHits || null };
+        next = { sig: v3raw ? `${sig0}|${bundleSig(root, v3raw)}` : sig0, v3raw, hash: good ? good.hash : null, def: good ? good.def : null, invalid: e.message, badHash: e.hash || null, good, protectedHits: e.protectedHits || null };
         const mark = `${e.hash || sig}:${e.message}`;
         if (c.noted !== mark) {
           next.noted = mark;
@@ -452,7 +457,7 @@ export class Rig {
   dataDir() { return this.b.cfg && this.b.cfg.dataDir ? this.b.cfg.dataDir : null; }
   versionPath(key, n, hash) { const d = this.dataDir(); return d ? path.join(d, 'rigs', rigDirName(key), `${n}-${hash}.json`) : null; }
   // 맞는 정의의 새 해시 → { ok, n } | { ok: false, reason, hits, fallback }
-  adopt(key, { buf, hash, raw, def, mtimeMs, prev }) {
+  adopt(key, { buf, hash, raw, def, mtimeMs, prev, parts = null }) {
     const st = this.store();
     if (!st.lastRigVersion) return { ok: true, n: null };
     const last = st.lastRigVersion(key);
@@ -472,8 +477,11 @@ export class Rig {
       catch (e) { this.b.log && this.b.log(`rig version file ${key} ${n}: ${e.message}`); }
     }
     this.versionDefs.set(`${key}|${n}`, { def, hash, raw, n });
+    // P245: v3은 묶음 조각(정의·목적·정의서)의 해시와 내용을 판에 남기고, 그 판에서 바뀐 조각을 장부에 적는다
+    let changed = null;
+    if (parts && st.setRig3Bundle) { const was = last && st.rig3Bundle ? st.rig3Bundle(key, last.n) : {}; st.setRig3Bundle(key, n, parts); changed = last && Object.keys(was).length ? parts.filter((p) => was[p.part] !== p.sha).map((p) => p.part) : null; }
     try { st.addEvent(null, 'rig_version', { workspace: key, n, hash, by, note }); } catch {}
-    rigEvent(this.b, { kind: 'rig_version', ws: key, defN: n, actor: by === 'manager' ? 'agent' : by === 'human' ? 'human' : 'board', ref: n, text: `버전 ${n} ${hash.slice(0, 12)} · ${by}${note ? ` · ${note}` : ''}`, data: { changed_by: by, hash, note } });
+    rigEvent(this.b, { kind: 'rig_version', ws: key, defN: n, actor: by === 'manager' || String(by).startsWith('role:') ? 'agent' : by === 'human' ? 'human' : 'board', ref: n, text: `버전 ${n} ${hash.slice(0, 12)} · ${by}${note ? ` · ${note}` : ''}${changed && changed.length ? ` · 바뀐 것: ${changed.map(partLabel).join(', ')}` : ''}`, data: { changed_by: by, hash, note, ...(parts ? { changed } : {}) } });
     this.b.log && this.b.log(`rig version ${key} #${n} ${hash.slice(0, 12)} by ${by}`);
     return { ok: true, n };
   }
@@ -499,14 +507,16 @@ export class Rig {
     const root = this.rootOf(key); const file = root ? path.join(root, RIG_FILE) : null;
     if (!file) return { ok: false, reason: '워크스페이스가 없다' };
     let buf; try { buf = fs.readFileSync(file); } catch { return { ok: false, reason: `${RIG_FILE}이 없다` }; }
-    const hash = sha(buf);
+    let hash = sha(buf);
     let raw; try { raw = JSON.parse(buf.toString('utf8').replace(/^﻿/, '')); } catch (e) { return { ok: false, reason: `JSON이 아니다: ${e.message}` }; }
     const v = validateRig(raw, { root, cycleMinMs: this.cycleMin() });
     if (!v.ok) return { ok: false, reason: v.reason };
+    const bundle = v.def.v3 ? bundleOf(root, raw, hash) : null; // P245: v3은 묶음 해시
+    if (bundle) hash = bundle.hash;
     const c = this.cache.get(key);
     let mtimeMs = Date.now(); try { mtimeMs = fs.statSync(file).mtimeMs; } catch {}
     this.pendingBy.set(key, { hash, by, note });
-    const a = this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs, prev: c && c.good });
+    const a = this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs, prev: c && c.good, parts: bundle ? bundle.parts : null });
     if (this.pendingBy.get(key) && this.pendingBy.get(key).hash === hash && a.ok) this.pendingBy.delete(key);
     this.cache.delete(key); // 다음 읽기가 다시 본다(켜진 rig는 같은 해시라 같은 버전)
     return a;

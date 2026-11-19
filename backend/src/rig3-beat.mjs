@@ -11,7 +11,9 @@
 //   경보: 종료 코드가 0이 아니거나(시간 넘김·못 띄움 포함) 출력 줄이 "ALARM:"으로 시작하면 경보다. 시계 실행의 경보는 가진 역할을 깨운다.
 // - 사이클 요약: 박자가 사이클 n을 열면 판이 지난 사이클(n-1)을 장부에서 모은다(길마다 낸 것·받음·반려·pass·drop, 돈 도구, 남의 쓰기 되돌림, 멈춤).
 //   그리고 한 번짜리 AI 실행(claude -p, 설정 rig3SummaryModel, 기본 haiku, ANTHROPIC_API_KEY를 뺀 환경)으로 사람이 읽는 한 꼭지를 쓰게 해
-//   .atrium/CHANGELOG.md 맨 위에 더한다(판의 쓰기라 guard.accept). AI가 실패하거나 모은 것에 없는 항목 id를 쓰면 판이 모은 숫자만으로 쓴다.
+//   .atrium/CHANGELOG.md 맨 위에 더한다(판의 쓰기라 guard.accept). P245: 꼭지의 숫자·id·판 번호·시각은 모두 판이 쓰고(entryBody), AI는 칸마다 글만
+//   JSON({ summary, ran, roles, decide })으로 돌려준다. 숫자가 든 문장은 판이 지운다(cleanProse). AI가 실패하거나 남는 글이 없으면 숫자만 꼭지.
+//   도구 기록은 도구마다 최근 TOOL_LOGS_KEEP(200)개만 남긴다(pruneToolLogs, 실행이 끝날 때).
 // - 장부(RIG3_BEAT_KINDS): cycle_open(value enable | clock | late | human, n), cycle_entry(value ai | numbers, n), role_tool(value done | failed | alarm, data.by clock | role), role_beat.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -29,6 +31,7 @@ export const TOOL_LOG_DIR = 'tool-logs';
 export const TOOL_TIMEOUT_MS = 30 * 60 * 1000;
 export const TOOL_WAIT_MS = 100000;
 export const TOOL_LOG_MAX = 20 * 1024 * 1024;
+export const TOOL_LOGS_KEEP = 200; // P245(설계 쪽 덧붙임): 도구마다 tool-logs/에 남기는 최근 기록 파일 수
 export const LATE_MS = 60000; // 박자 칸을 이만큼 넘겨 치면 놓친 박자(late)로 남긴다
 export const SUMMARY_TIMEOUT_MS = 180000;
 export const SUMMARY_MODEL = 'haiku';
@@ -56,6 +59,17 @@ export function nextDue(beat, last, base) {
   const slot = anchor + k * beat.everyMs;
   // last가 없으면(처음) 켠 때가 칸과 같아도 그 칸을 친다
   return last == null && from === anchor + (k - 1) * beat.everyMs ? from : slot;
+}
+// P245: 도구 하나의 기록 파일(<도구>-tr<id>.log)을 최근 keep개만 남기고 지운다(수정 시각 순) → 지운 수
+export function pruneToolLogs(dir, tool, keep = TOOL_LOGS_KEEP) {
+  let names = []; try { names = fs.readdirSync(dir); } catch { return 0; }
+  const pre = tool + '-tr';
+  const mine = names.filter((n) => n.startsWith(pre) && /^[0-9a-f]+\.log$/.test(n.slice(pre.length))).map((n) => { let t = 0; try { t = fs.statSync(path.join(dir, n)).mtimeMs; } catch {} return { n, t }; });
+  if (mine.length <= keep) return 0;
+  mine.sort((a, b) => a.t - b.t || (a.n < b.n ? -1 : 1));
+  let gone = 0;
+  for (const x of mine.slice(0, mine.length - keep)) { try { fs.unlinkSync(path.join(dir, x.n)); gone++; } catch {} }
+  return gone;
 }
 // 출력 꼬리의 경보 줄 → 글 | null
 export function alarmOf(tail) { const m = ALARM_RE.exec(String(tail || '')); return m ? (m[1].trim() || 'ALARM') : null; }
@@ -86,13 +100,18 @@ export function collectCycle(r3, rows, cycle) {
     else if (e.kind === 'item_stalled') { out.stalls.push({ role: e.seat, items: d.items || [] }); out.decide.push({ what: 'stalled', role: e.seat, items: d.items || [] }); }
     else if (e.kind === 'role_gave_up') { out.gaveUp.push(e.seat); out.decide.push({ what: 'gave_up', role: e.seat }); }
     else if (e.kind === 'role_respawn') out.respawns++;
+    // P245: 역할이 바꾼 것(조정·고칠 것 없음·사람의 되돌리기)과 빌더에게 올림(사람이 볼 것)
+    else if (e.kind === 'role_tune' && e.value === 'applied') out.tunes.push({ kind: 'tune', role: e.seat, n: d.n ?? e.defN ?? null, prevN: d.prevN ?? null, added: d.added || 0, removed: d.removed || 0, why: d.why || '', evidence: d.evidence || [] });
+    else if (e.kind === 'role_tune' && e.value === 'none') out.tunes.push({ kind: 'none', role: e.seat, why: d.why || '' });
+    else if (e.kind === 'role_rollback') out.tunes.push({ kind: 'rollback', role: e.seat, n: d.n ?? null, from: d.from ?? null, added: d.added || 0, removed: d.removed || 0 });
+    else if (e.kind === 'role_raise') out.decide.push({ what: 'raise', role: e.seat, reason: d.reason || '' });
     else if (e.kind === 'role_write_denied') out.deniedWrites++;
   }
   for (const t of Object.values(out.tools)) if (t.alarms.length >= 2) out.decide.push({ what: 'tool_alarms', tool: t.name, n: t.alarms.length });
   out.tools = Object.values(out.tools);
-  out.ids = [...new Set(flows.flatMap((f) => f.ids).concat(out.returns.map((x) => x.id), out.drops.map((x) => x.id), out.stalls.flatMap((x) => x.items), out.nudges.flatMap((x) => x.items)))];
+  out.ids = [...new Set(flows.flatMap((f) => f.ids).concat(out.returns.map((x) => x.id), out.drops.map((x) => x.id), out.stalls.flatMap((x) => x.items), out.nudges.flatMap((x) => x.items), out.tunes.flatMap((x) => x.evidence || [])))]; // P245: 조정의 근거 id
   // 빈 사이클: 항목·도구·되돌림·멈춤이 하나도 없다(역할 세션 띄움 같은 줄은 세지 않는다)
-  out.empty = !out.ids.length && !out.tools.length && !out.foreign.length && !out.stalls.length && !out.nudges.length && !out.gaveUp.length && !Object.keys(out.passTurn).length;
+  out.empty = !out.ids.length && !out.tools.length && !out.foreign.length && !out.stalls.length && !out.nudges.length && !out.gaveUp.length && !Object.keys(out.passTurn).length && !out.tunes.length && !out.decide.length;
   return out;
 }
 
@@ -109,10 +128,11 @@ const L = {
     guard: (f) => '- 남의 쓰기 되돌림: ' + f.path + ' (' + f.action + (f.candidates.length ? ', ' + f.candidates.join('|') : '') + ')',
     stall: (s) => '- 멈춘 역할: ' + s.role + ' (' + s.items.map((x) => '[' + x + ']').join(' ') + ')',
     gaveUp: (r) => '- 다시 띄우기를 그만둔 역할: ' + r,
-    roles: '**역할이 바꾼 것**', rolesNone: '- 없음(요령 칸 조정은 아직 없다)',
+    roles: '**역할이 바꾼 것**', rolesNone: '- 없음',
+    tune: (x) => x.kind === 'none' ? '- ' + x.role + ': 조정 턴에 고칠 것 없음 — ' + x.why : x.kind === 'rollback' ? '- ' + x.role + ' 요령 칸을 사람이 판 ' + x.from + '의 것으로 되돌림 → 판 ' + x.n + ' (+' + x.added + ' −' + x.removed + ')' : '- ' + x.role + ' 요령 칸 판 ' + (x.prevN ?? '-') + '→' + x.n + ' (+' + x.added + ' −' + x.removed + '): ' + x.why + (x.evidence.length ? ' — 근거 ' + x.evidence.map((i) => '[' + i + ']').join(' ') : ''),
     builder: '**빌더가 고친 것**', builderNone: '- 없음',
     decide: '**사람이 볼 것**',
-    dec: (d) => d.what === 'stalled' ? '- ' + d.role + '가 받은 것에 답하지 않고 멈췄다: ' + d.items.map((x) => '[' + x + ']').join(' ') : d.what === 'gave_up' ? '- ' + d.role + ' 역할 세션이 거듭 끝나 판이 다시 띄우기를 그만뒀다(rig를 껐다 켜면 다시 띄운다)' : d.what === 'intake_returned' ? '- 넣은 입력 [' + d.id + ']가 ' + d.by + '에게 반려됐다: ' + d.reason : d.what === 'tool_alarms' ? '- 도구 ' + d.tool + '가 경보를 ' + d.n + '번 냈다' : '- 되돌리지 못한 남의 쓰기: ' + d.path,
+    dec: (d) => d.what === 'raise' ? '- ' + d.role + '가 요령으로 풀 일이 아니라고 빌더에게 올렸다: ' + d.reason : d.what === 'stalled' ? '- ' + d.role + '가 받은 것에 답하지 않고 멈췄다: ' + d.items.map((x) => '[' + x + ']').join(' ') : d.what === 'gave_up' ? '- ' + d.role + ' 역할 세션이 거듭 끝나 판이 다시 띄우기를 그만뒀다(rig를 껐다 켜면 다시 띄운다)' : d.what === 'intake_returned' ? '- 넣은 입력 [' + d.id + ']가 ' + d.by + '에게 반려됐다: ' + d.reason : d.what === 'tool_alarms' ? '- 도구 ' + d.tool + '가 경보를 ' + d.n + '번 냈다' : '- 되돌리지 못한 남의 쓰기: ' + d.path,
     numbers: '(판이 모은 숫자만으로 썼다)',
   },
   en: {
@@ -127,16 +147,21 @@ const L = {
     guard: (f) => '- Foreign write undone: ' + f.path + ' (' + f.action + (f.candidates.length ? ', ' + f.candidates.join('|') : '') + ')',
     stall: (s) => '- Stalled role: ' + s.role + ' (' + s.items.map((x) => '[' + x + ']').join(' ') + ')',
     gaveUp: (r) => '- Gave up respawning: ' + r,
-    roles: '**What roles changed**', rolesNone: '- Nothing (no tuning yet)',
+    roles: '**What roles changed**', rolesNone: '- Nothing',
+    tune: (x) => x.kind === 'none' ? '- ' + x.role + ': nothing to tune — ' + x.why : x.kind === 'rollback' ? '- ' + x.role + ' know-how rolled back by a person to version ' + x.from + ' → version ' + x.n + ' (+' + x.added + ' −' + x.removed + ')' : '- ' + x.role + ' know-how version ' + (x.prevN ?? '-') + '→' + x.n + ' (+' + x.added + ' −' + x.removed + '): ' + x.why + (x.evidence.length ? ' — evidence ' + x.evidence.map((i) => '[' + i + ']').join(' ') : ''),
     builder: '**What the builder fixed**', builderNone: '- Nothing',
     decide: '**For you to look at**',
-    dec: (d) => d.what === 'stalled' ? '- ' + d.role + ' stopped without answering: ' + d.items.map((x) => '[' + x + ']').join(' ') : d.what === 'gave_up' ? '- The ' + d.role + ' role session kept exiting; the board stopped respawning it (turn the rig off and on to retry)' : d.what === 'intake_returned' ? '- Your input [' + d.id + '] was returned by ' + d.by + ': ' + d.reason : d.what === 'tool_alarms' ? '- Tool ' + d.tool + ' raised ' + d.n + ' alarms' : '- Foreign write that could not be undone: ' + d.path,
+    dec: (d) => d.what === 'raise' ? '- ' + d.role + ' raised to the builder (not a know-how fix): ' + d.reason : d.what === 'stalled' ? '- ' + d.role + ' stopped without answering: ' + d.items.map((x) => '[' + x + ']').join(' ') : d.what === 'gave_up' ? '- The ' + d.role + ' role session kept exiting; the board stopped respawning it (turn the rig off and on to retry)' : d.what === 'intake_returned' ? '- Your input [' + d.id + '] was returned by ' + d.by + ': ' + d.reason : d.what === 'tool_alarms' ? '- Tool ' + d.tool + ' raised ' + d.n + ' alarms' : '- Foreign write that could not be undone: ' + d.path,
     numbers: '(written from the board\'s counts only)',
   },
 };
-// 숫자만으로 쓴 꼭지(머리 줄 빼고 몸만)
-export function numbersBody(facts, lang = 'ko') {
+// 꼭지 몸(머리 줄 빼고). P245(설계 쪽 덧붙임): 숫자와 id 칸은 모두 판이 쓰고, AI는 칸마다 글(무엇이 왜 바뀌었나)만 쓴다.
+//   prose: { summary, ran, roles, decide } — cleanProse를 거친 AI 글(숫자 없음). 없으면 숫자만 꼭지
+export const PROSE_SLOTS = ['summary', 'ran', 'roles', 'decide'];
+export function entryBody(facts, lang = 'ko', prose = null) {
   const t = L[lang] || L.ko;
+  const p = prose || {};
+  const say = (k) => (p[k] ? [p[k]] : []);
   const ran = facts.flows.filter((f) => f.put || f.redo || f.accepted || f.returned || f.passed || f.dropped).map(t.flow);
   for (const r of facts.returns) ran.push(t.ret(r));
   for (const r of facts.drops) ran.push(t.drop(r));
@@ -145,41 +170,47 @@ export function numbersBody(facts, lang = 'ko') {
   for (const s of facts.stalls) ran.push(t.stall(s));
   for (const r of facts.gaveUp) ran.push(t.gaveUp(r));
   return [
-    t.ran, ...(ran.length ? ran : [t.none]), '',
+    ...(p.summary ? [p.summary, ''] : []),
+    t.ran, ...say('ran'), ...(ran.length ? ran : [t.none]), '',
     ...(facts.tools.length ? [t.tools, ...facts.tools.map(t.tool), ''] : []),
-    t.roles, ...(facts.tunes.length ? facts.tunes.map((x) => '- ' + x) : [t.rolesNone]), '',
+    t.roles, ...say('roles'), ...(facts.tunes.length ? facts.tunes.map(t.tune) : [t.rolesNone]), '',
     t.builder, ...(facts.builder.length ? facts.builder.map((x) => '- ' + x) : [t.builderNone]), '',
-    t.decide, ...(facts.decide.length ? facts.decide.map(t.dec) : [t.none]),
+    t.decide, ...say('decide'), ...(facts.decide.length ? facts.decide.map(t.dec) : [t.none]),
   ].join('\n');
 }
+// 숫자만으로 쓴 꼭지(AI 글 없음)
+export const numbersBody = (facts, lang = 'ko') => entryBody(facts, lang, null);
 export const entryHead = (facts, lang = 'ko') => (L[lang] || L.ko).head(facts);
-// 한 번짜리 AI 실행에 줄 글
+// 한 번짜리 AI 실행에 줄 글: 판이 쓴 꼭지(숫자·id)를 보이고, 칸마다 글만 JSON으로 받는다
 export function summaryPrompt(facts, draft, lang = 'ko') {
   const ko = lang !== 'en';
   return [
-    ko ? '너는 작업 조직(rig)의 한 사이클 장부를 사람이 읽는 변경 기록 한 꼭지로 다듬는다. 도구는 쓰지 않고 글만 돌려준다.' : 'You turn one cycle of a work rig\'s ledger into one human-readable changelog section. Use no tools; reply with text only.',
-    ko ? '규칙:' : 'Rules:',
-    ko ? '- 아래 초안의 네 칸(돈 것, 역할이 바꾼 것, 빌더가 고친 것, 사람이 볼 것)을 그 제목 그대로 두고, 도구 칸이 있으면 함께 둔다. 사람이 볼 것의 줄(반려된 입력: 항목, 누가, 까닭)은 빼지 않는다.' : '- Keep the four parts of the draft (what ran, what roles changed, what the builder fixed, for you to look at) with the same titles, plus the tools part if present. Never drop a line of the last part (returned input: item, by whom, why).',
-    ko ? '- 숫자와 사실은 자료에 있는 것만 쓴다. 지어내지 않는다. 바뀜·반려·버림마다 근거 항목 id를 [종류-n] 꼴로 그대로 붙인다. 자료에 없는 id는 쓰지 않는다.' : '- Use only numbers and facts from the data. Do not invent. Keep the evidence item id in [kind-n] form on every change, return and drop. Never write an id that is not in the data.',
-    ko ? '- 쉬운 말로, 왜 그렇게 됐는지 자료(까닭 글)에 있으면 한 구절로 덧붙인다. 25줄 안. 머리 줄(## …)은 쓰지 않는다(판이 붙인다).' : '- Plain words; add a short why when the data (reasons) has it. At most 25 lines. Do not write the heading line (## …); the board adds it.',
-    ko ? '- 한국어로 쓴다.' : '- Write in English.',
+    ko ? '너는 작업 조직(rig)의 한 사이클 변경 기록에 사람이 읽는 설명 글을 붙인다. 숫자·id·판 번호·시각은 판이 이미 썼다(아래 초안). 도구는 쓰지 않는다.' : 'You add plain-language explanation to one cycle of a work rig\'s changelog. The board already wrote every number, id, version and time (draft below). Use no tools.',
+    ko ? '돌려줄 것: JSON 객체 하나만 {"summary": "...", "ran": "...", "roles": "...", "decide": "..."}. summary는 사이클 전체 한두 문장, ran은 돈 것, roles는 역할이 무엇을 왜 바꿨나, decide는 사람이 볼 것을 쉬운 말로. 할 말이 없으면 빈 글.' : 'Reply with one JSON object only: {"summary": "...", "ran": "...", "roles": "...", "decide": "..."}. summary: one or two sentences for the whole cycle; ran: what ran; roles: what roles changed and why; decide: what a person should look at. Plain words. Empty string when there is nothing to say.',
+    ko ? '규칙: 숫자(아라비아 숫자)·항목 id·판 번호·시각을 쓰지 않는다(숫자가 든 문장은 판이 지운다). 역할과 항목 종류는 이름으로 말한다. 자료에 없는 것은 지어내지 않는다. 칸마다 세 문장 안.' : 'Rules: never write digits, item ids, version numbers or times (the board deletes any sentence with a digit). Name roles and item kinds by name. Invent nothing that is not in the data. At most three sentences per field.',
+    ko ? '한국어로 쓴다.' : 'Write in English.',
     '', ko ? '자료(JSON):' : 'Data (JSON):', JSON.stringify(facts),
-    '', ko ? '초안(판이 모은 숫자):' : 'Draft (board counts):', draft,
+    '', ko ? '판이 쓴 초안:' : 'Board draft:', draft,
   ].join('\n');
 }
-// AI가 쓴 몸 검사 → 고른 몸 | null(쓰지 않는다)
-export function checkAiBody(text, facts) {
-  let t = String(text || '').replace(/\r\n/g, '\n').trim();
-  t = t.replace(/^\x60\x60\x60[a-z]*\n?/i, '').replace(/\n?\x60\x60\x60$/, '').trim();
-  t = t.split('\n').filter((l) => !/^#{1,2}\s/.test(l)).join('\n').trim(); // 머리 줄은 판이 붙인다
-  if (!t || t.length > ENTRY_MAX) return null;
-  const known = new Set(facts.ids);
-  const ids = [...t.matchAll(/\[([a-z][a-z0-9_-]{0,39}-\d{1,9})\]/g)].map((m) => m[1]);
-  if (ids.some((id) => !known.has(id))) return null;
-  // P244: 사람이 볼 것(반려된 입력·멈춘 받은 것)의 항목 id는 꼭 남아야 한다(사람에게는 받은 것 목록이 없다)
-  const must = (facts.decide || []).flatMap((d) => (d.id ? [d.id] : d.items || []));
-  if (must.some((id) => !ids.includes(id))) return null;
-  return t;
+export const PROSE_MAX = 400; // 칸마다 글 상한(자)
+// AI 답 → { summary, ran, roles, decide, dropped } | null. 숫자가 든 문장(아라비아·전각 숫자, [ ] 꼴)은 지운다. 남는 글이 없으면 null(숫자만 꼭지)
+export function cleanProse(text) {
+  let s = String(text || '').replace(/\r\n/g, '\n').trim();
+  s = s.replace(/^\x60\x60\x60[a-z]*\n?/i, '').replace(/\n?\x60\x60\x60$/, '').trim();
+  let j = null;
+  try { j = JSON.parse(s); } catch { const m = /\{[\s\S]*\}/.exec(s); if (m) try { j = JSON.parse(m[0]); } catch { j = null; } }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+  const out = {}; let dropped = 0; let kept = 0;
+  for (const k of PROSE_SLOTS) {
+    if (typeof j[k] !== 'string') continue;
+    const parts = j[k].replace(/\s+/g, ' ').trim().split(/(?<=[.!?。])\s+/).filter(Boolean);
+    const good = parts.filter((x) => { const bad = /[0-9０-９]|\[|\]|^#|^\s*[-*]\s/.test(x); if (bad) dropped++; return !bad; });
+    let v = good.join(' ').trim();
+    if (v.length > PROSE_MAX) v = v.slice(0, PROSE_MAX - 1) + '…';
+    if (v) { out[k] = v; kept++; }
+  }
+  return kept ? { ...out, dropped } : null;
 }
 // 변경 기록 파일에 꼭지를 더한다(새 것이 위) → 새 내용
 export function addEntry(old, entry, lang = 'ko') {
@@ -414,6 +445,7 @@ export class Rig3Beat {
     const failed = res.status !== 'done' || res.exitCode !== 0;
     st.updateToolRun(id, { status: res.status, exitCode: res.exitCode ?? null, endedAt, logBytes: res.bytes, logCut: res.cut, outSha256: res.sha, error: res.error || null });
     const value = alarm ? 'alarm' : failed ? 'failed' : 'done';
+    try { const gone = pruneToolLogs(path.dirname(logPath), name, this.ms('rig3ToolLogsKeep', TOOL_LOGS_KEEP)); if (gone) this.log('rig3 tool ' + name + ': 오래된 기록 ' + gone + '개 지움'); } catch (e) { this.log('rig3 tool logs prune ' + e.message); } // P245: 도구마다 최근 기록만
     rigEvent(this.b, { kind: 'role_tool', ws: key, seat: role, session: session || null, n: this.current(key), value, actor: 'board', ref: id, text: name + ' ' + (by === 'clock' ? '(시계) ' : '') + res.status + (res.exitCode != null ? ' 종료 코드 ' + res.exitCode : '') + (alarm ? ' 경보: ' + alarm : ''), data: { tool: name, by, exit: res.exitCode ?? null, status: res.status, alarm, error: res.error || null, ms: endedAt - startedAt, log: sectorRel } });
     this.log('rig3 tool ' + name + ' ' + id + ' ' + res.status + ' exit=' + res.exitCode + (alarm ? ' alarm' : '') + ' ' + (endedAt - startedAt) + 'ms');
     const live = this.live.get(id);
@@ -464,8 +496,9 @@ export class Rig3Beat {
         const run = this.runner || ((p, o) => runClaudeOnce(p, o));
         const res = await run(summaryPrompt(facts, draft, lang), { model, cwd });
         meta = res.meta || { model };
-        body = res.ok ? checkAiBody(res.text, facts) : null;
-        if (res.ok && !body) meta = { ...meta, error: 'rejected_body' };
+        const prose = res.ok ? cleanProse(res.text) : null; // P245: AI는 글만. 숫자가 든 문장은 지운다
+        if (prose) { body = entryBody(facts, lang, prose); meta = { ...meta, dropped: prose.dropped }; }
+        if (res.ok && !prose) meta = { ...meta, error: 'rejected_body' };
       } catch (e) { meta = { model, error: e.message }; }
       const by = body ? 'ai' : 'numbers';
       const entry = entryHead(facts, lang) + '\n\n' + (body || draft + (skipAi ? '' : '\n\n' + (L[lang] || L.ko).numbers));

@@ -3209,5 +3209,26 @@ export default {
     byNumbers: '숫자만',
     file: '변경 기록: {path}',
   },
+  // P245: rig 3 조정과 되돌리기(역할 줄의 정의서 판·조정 기록)
+  rig3Tune: {
+    col: '정의서',
+    badge: '판 {n} · 조정 {k}',
+    material: ' · 재료 {n}',
+    turnOpen: ' · 조정 턴',
+    head: '{doc} · 판 {n} · 요령 칸 {lines}/{budget}줄',
+    empty: '(비었습니다)',
+    noLog: '조정 기록이 없습니다.',
+    k: {
+      tune: '조정 판 {prev}→{n} (+{added} −{removed}): {why}',
+      rejected: '거절: {reason}',
+      none: '고칠 것 없음: {why}',
+      raise: '빌더에게 올림: {why}',
+      rollback: '되돌림: 판 {from}의 것으로 → 판 {n}',
+    },
+    evidence: '근거 {list}',
+    undo: '되돌리기(판 {n})',
+    undone: '{role} 요령 칸을 판 {from}의 것으로 되돌렸습니다(새 판 {n})',
+    same: '이미 판 {n}의 요령 칸입니다',
+  },
 };
 

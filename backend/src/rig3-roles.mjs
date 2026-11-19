@@ -22,6 +22,7 @@ import { Rig3Guard } from './rig3-guard.mjs'; // P243: 턴 끝 남의 쓰기 되
 import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir } from './rig3.mjs';
 import { Rig3Items } from './rig3-items.mjs'; // P242: 항목·길·받음
 import { Rig3Beat } from './rig3-beat.mjs'; // P244: 박자·도구·사이클 요약
+import { Rig3Tune } from './rig3-tune.mjs'; // P245: 조정과 되돌리기
 
 // 판이 역할을 위해 띄울 때(backend.spawn) 넘기는 역할 이름의 열쇠. Symbol이라 판 API 본문으로는 넣지 못한다
 export const ROLE_SPAWN = Symbol.for('atrium.rig3RoleSpawn');
@@ -48,6 +49,7 @@ export class Rig3Roles {
     this.offSleep = new Set(); // P242: 끈 rig(키) — 역할 세션을 모두 재울 때까지 주기마다 본다(일하는 턴은 끝나기를 기다린다)
     this.guard = new Rig3Guard(b, this); // P243
     this.beat = new Rig3Beat(b, this); // P244
+    this.tune = new Rig3Tune(b, this); // P245
   }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
   store() { return this.b.store; }
@@ -243,7 +245,7 @@ export class Rig3Roles {
     const live = this.sessionsOf(key, role);
     const alive = live.filter((s) => !(s.rt && s.rt.exit && !s.rt.sleep));
     for (const s of alive) this.exitSeen.delete(s.sessionId);
-    if (alive.length) { const w = this.items.watch(key, role, alive[0], now); return w || this.idle(alive[0], now); } // P242: 받은 것에 답하지 않고 멈춘 역할을 먼저 본다
+    if (alive.length) { const w = this.items.watch(key, role, alive[0], now); return w || this.tune.check(key, role, alive[0], now) || this.idle(alive[0], now); } // P242: 받은 것에 답하지 않고 멈춘 역할을 먼저 본다. P245: 조정 턴(재료가 쌓였으면)
     let prev = null;
     if (live.length) { // 끝난 채(exited)
       const s = live[0];
@@ -336,6 +338,7 @@ export class Rig3Roles {
     });
     let it = null; try { it = this.items.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 items view', e.message); } // P242: 길마다 수, 역할마다 받은 것
     for (const x of roles) x.items = it && it.roles[x.name] ? it.roles[x.name] : null;
+    for (const x of roles) { try { x.tune = this.tune.roleView(key, r3, x.name); } catch (e) { x.tune = null; this.b.log && this.b.log('rig3 tune view', e.message); } } // P245: 정의서 판·조정 수·재료
     return { purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null, cycle: (() => { try { return this.beat.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 beat view', e.message); return null; } })() }; // P244: 사이클·다음 박자·최근 꼭지
   }
 }

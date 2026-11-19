@@ -90,6 +90,9 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       atrium rig pass "<까닭>"   박자에 낼 것이 없다(받은 것은 닫지 않는다)
       atrium rig drop <항목> "<까닭>"   반려된 네 항목을 버린다.  atrium rig inbox   받아서 답하지 않은 것, 반려된 네 항목
       atrium rig tool [<이름> [인자…]]   네 도구를 보드가 돌린다(이름 없으면 목록). 출력은 네 섹터의 tool-logs/에 남는다. 박자(사이클)는 보드가 친다(사람은 rig 판의 단추)
+      atrium rig heard "<요지>"   사람이 이 터미널에서 네 일하는 법을 바로잡은 것을 남긴다(반려처럼 조정 재료가 된다)
+      atrium rig tune --file <새 요령 칸> --why "<한 줄>" --evidence <id…> | tune --none "<까닭>" | raise "<무엇>"   조정 턴의 답: 정의서의 요령 칸만 고친다(고정 칸 그대로, 줄 수 예산 안, 근거는 네 재료의 id면 보드가 바로 반영하고 판을 올린다), 고칠 것 없음, 빌더에게 올림
+      atrium rig role [<역할>]   정의서의 요령 칸, 정의서 판, 조정 기록(되돌리기는 사람만 rig 판에서)
   atrium rig log --events [--case 건] [--since seq|시각] [--kinds a,b] [--limit n]   rig 장부(건 열림·맡김·넘김·보고·관문·도구·멈춤 등 한 꼴의 줄). 관리자 자리와 제작 세션은 워크스페이스 전체, 자리 세션은 자기 건만
   atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>]   rig의 관리자 자리(manager)만 쓴다(check는 읽기만이라 rig가 꺼진 워크스페이스면 어느 세션이든 쓴다). 관리자 자리는 .atrium/rig.json을 직접 고치고(보드가 새 해시를 버전으로 남긴다), check로 후보를 검사하고,
       log로 버전과 버전마다 건·반려·훅 거절·상한 초과 수를 보고, rollback <n>으로 되돌리고(새 버전), cleanup <건>으로 끝난 건의 fresh 세션을 닫는다(워크트리는 목록만).
@@ -513,7 +516,7 @@ async function rigVerb() {
   else say('이 건의 워크트리: 없음');
 }
 // P242: rig 3 항목 명령(역할 세션). put <종류> <파일> [--from <항목>] [--redo <항목>](P244: put <파일> --item <종류>도 받기만 하고 안내하지 않는다) | accept <항목> ["<메모>"] | return <항목> "<까닭>" | pass [<항목>] "<까닭>" | drop <항목> "<까닭>" | inbox
-const RIG3_OPS = ['put', 'accept', 'return', 'pass', 'drop', 'inbox', 'tool', 'beat']; // P244: tool(역할의 도구), beat(사람만: 보드가 역할 세션은 거절한다)
+const RIG3_OPS = ['put', 'accept', 'return', 'pass', 'drop', 'inbox', 'tool', 'beat', 'tune', 'raise', 'heard', 'role']; // P245: tune·raise·heard(역할), role(정의서와 조정 기록 보기) // P244: tool(역할의 도구), beat(사람만: 보드가 역할 세션은 거절한다)
 async function rig3Verb(op) {
   const body = { op };
   const val = (k) => { if (flags[k] == null) return null; if (flags[k] === true || flags[k] === undefined || flags[k] === '') fail(`--${k}에 값을 준다`, 2); return String(flags[k]); };
@@ -532,11 +535,24 @@ async function rig3Verb(op) {
   if (op === 'drop') { body.id = need(rest[1], 'drop <항목> "<까닭>"'); body.reason = need(rest.slice(2).join(' '), 'drop <항목> "<까닭>" (까닭과 함께 한다)'); }
   if (op === 'pass') { if (rest.length >= 3) { body.id = rest[1]; body.reason = rest.slice(2).join(' '); } else body.reason = need(rest[1], 'pass <항목> "<까닭>" | pass "<까닭>"(박자에 낼 것이 없음)'); }
   if (op === 'tool' && rest[1]) { body.tool = rest[1]; body.args = rest.slice(2); } // P244: atrium rig tool <이름> [인자…] (이름 없으면 네 도구 목록)
+  // P245: tune --file <파일> --why "<한 줄>" --evidence <id…> | tune --none "<까닭>" | raise "<무엇>" | heard "<요지>" | role [<역할>]
+  if (op === 'tune') {
+    if (flags.none != null) { if (flags.none === true || !String(flags.none).trim()) fail('사용: atrium rig tune --none "<까닭>"', 2); body.none = String(flags.none); }
+    else {
+      const file = val('file'); need(file, 'tune --file <새 요령 칸> --why "<한 줄>" --evidence <id> [<id>…] | tune --none "<까닭>"');
+      body.file = path.resolve(file); body.why = need(val('why'), 'tune --file <파일> --why "<한 줄>" --evidence <id…>');
+      body.evidence = [...String(val('evidence') || '').split(/[\s,]+/), ...rest.slice(1)].filter(Boolean);
+      if (!body.evidence.length) fail('근거 id를 준다: atrium rig tune --file <파일> --why "<한 줄>" --evidence <id> [<id>…]', 2);
+    }
+  }
+  if (op === 'raise') body.reason = need(rest.slice(1).join(' '), 'raise "<무엇>"(요령으로 풀 일이 아니라 빌더에게 올린다)');
+  if (op === 'heard') body.text = need(rest.slice(1).join(' '), 'heard "<사람이 한 말의 요지>"');
+  if (op === 'role') { if (rest[1]) body.role = rest[1]; if (flags.rollback != null) body.rollback = flags.rollback; }
   const r = await call('rig', body, op === 'tool' ? 130000 : 60000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   const x = r.result;
   if (flags.json) { say(JSON.stringify(x ?? { error: r.error }, null, 2)); if (r.error) process.exitCode = 1; return; }
-  if (r.error) fail(`${op === 'tool' ? '도구를 돌리지' : op === 'beat' ? '박자를 치지' : op === 'inbox' ? '읽지' : op === 'put' ? '내지' : op === 'accept' ? '받지' : op === 'return' ? '반려하지' : op === 'drop' ? '버리지' : 'pass하지'} 않았다(${r.error.code}): ${r.error.message}`);
+  if (r.error) fail(`${op === 'tune' ? '조정하지' : op === 'raise' ? '올리지' : op === 'heard' ? '남기지' : op === 'role' ? '보지' : op === 'tool' ? '도구를 돌리지' : op === 'beat' ? '박자를 치지' : op === 'inbox' ? '읽지' : op === 'put' ? '내지' : op === 'accept' ? '받지' : op === 'return' ? '반려하지' : op === 'drop' ? '버리지' : 'pass하지'} 않았다(${r.error.code}): ${r.error.message}`);
   if (op === 'tool') { // P244
     if (x.tools) { if (!x.tools.length) return say('네 도구가 없다.'); say(`네 도구 ${x.tools.length}개(보드가 돌린다):`); for (const t of x.tools) say(`  atrium rig tool ${t.name} [인자…]${t.desc ? `  ${t.desc}` : ''}${t.every ? ` · 보드가 ${t.every}마다 돌림` : ''}`); return; }
     const u = x.run;
@@ -544,6 +560,18 @@ async function rig3Verb(op) {
     say(`도구 ${u.tool} ${u.status}${u.exitCode != null ? ` · 종료 코드 ${u.exitCode}` : ''}${u.alarm ? ` · 경보: ${u.alarm}` : ''}${u.error ? ` · ${u.error}` : ''} · 출력: ${u.log}`);
     if (u.tail) say(u.tail.replace(/\s+$/, ''));
     if (u.status !== 'done' || u.exitCode !== 0) process.exitCode = 1;
+    return;
+  }
+  if (op === 'tune') return say(x.none ? '고칠 것이 없다고 남겼다. 다음 조정 턴은 재료가 다시 쌓이면 온다.' : `요령 칸을 반영했다: 판 ${x.prevN ?? '-'} → ${x.n} (+${x.added} −${x.removed}, ${x.lines}/${x.budget}줄, ${x.doc}). 새 줄 끝에 [v${x.n} · 근거]가 붙었다. 다음에 새로 뜨는 너는 이 정의서를 싣는다.`);
+  if (op === 'raise') return say(`빌더에게 올렸다: ${x.reason}. 5단계(빌더) 전에는 사람이 변경 기록의 "사람이 볼 것"과 rig 판에서 본다.`);
+  if (op === 'heard') return say(`사람의 바로잡음을 ${x.id}로 남겼다. 지난 조정 뒤 재료 ${x.materials}건(조정 턴 기준 ${x.after}건).`);
+  if (op === 'role') {
+    say(`역할 ${x.role} · 정의서 ${x.doc} · 정의서 판 ${x.n ?? '-'}(지금 판 ${x.current ?? '-'}) · 요령 칸 ${x.lines ?? '-'}/${x.budget}줄 · 지난 조정 뒤 재료 ${x.materials.length}건${x.open ? ' · 조정 턴 열림' : ''}`);
+    say('--- 요령 칸 ---'); say(String(x.tune || '(비었다)').replace(/\s+$/, '')); say('---');
+    if (!x.log.length) say('조정 기록 없음.');
+    for (const t of x.log) say(`  ${t.kind === 'tune' ? (t.state === 'rejected' ? '거절' : '조정') : t.kind === 'none' ? '고칠 것 없음' : t.kind === 'raise' ? '올림' : '되돌림'}${t.n != null ? ` 판 ${t.prevN ?? '-'}→${t.n}` : ''}${t.fromN != null ? ` (판 ${t.fromN}의 것으로)` : ''}${t.added != null ? ` +${t.added} −${t.removed}` : ''}${t.why ? `: ${t.why}` : ''}${t.reason ? ` [${t.reason}]` : ''}${t.evidence && t.evidence.length ? ` — 근거 ${t.evidence.join(' ')}` : ''}`);
+    if (x.materials.length) say('지난 조정 뒤 재료: ' + x.materials.map((m) => m.id).join(', '));
+    say('되돌리기는 사람만: rig 판의 역할 줄에서 [되돌리기].');
     return;
   }
   const it = x.item;
