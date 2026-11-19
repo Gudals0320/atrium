@@ -2773,7 +2773,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rig7-lab.lit, .mt-rig7-wait.lit { color: #ECE9E1; }
 .mt-rig7-raise-lab { width: 40px; text-align: left; color: #F0B652; }
 .react-flow__edgelabel-renderer .mt-rig-recent { position: absolute; left: 0; top: 0; }
-.mt-badge.rig, .mt-badge.rig.general { display: inline-block; padding: 0 6px; border: 0; border-radius: 4px; background: #22221F; color: #A9A69D; font-size: 12px; line-height: 18px; }
+.mt-badge.rig { display: inline-block; padding: 0 6px; border: 0; border-radius: 4px; background: #22221F; color: #A9A69D; font-size: 12px; line-height: 18px; }
 .mt-badge.rig.builder { border: 0; border-style: none; background: #3A2E17; color: #F0B652; }
 .mt-badge.rig .dim { color: inherit; opacity: 1; }
 /* 세션 맵: 워크스페이스 줄 안의 rig 묶음(V7 카드·선·글) */

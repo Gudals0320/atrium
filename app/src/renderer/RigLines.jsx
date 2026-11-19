@@ -2,16 +2,16 @@
 // P254: 사용자의 시안 V7 "새 rig · 캔버스의 길 선"을 그대로 옮겼다(lib/rig-map.js V7 치수·색).
 // - 두 역할 사이에 선 두 줄: 위 줄은 왼쪽 노드 → 오른쪽 노드 길(굵기 2, 오른쪽 끝 화살촉), 아래 줄은 돌아오는 길(굵기 1.5, 왼쪽 끝 화살촉).
 //   위 줄 글은 선 위("스냅숏 →"), 아래 줄 글은 선 아래("← 데이터 요청"), 기다림 수는 그 아래 "대기 n". 그 방향 길이 없으면 그 줄을 긋지 않는다.
-//   지금 오가는 쌍(기다리는 항목이 있다)은 선과 글이 밝고(#ECE9E1) 나머지는 흐리다(#8E8B83). 끝나지 않은 반려는 그 줄 시작에 붉은 점.
+//   일하는 역할에 닿은 쌍(두 끝 중 하나가 일함)은 선과 글이 밝고(#ECE9E1) 나머지는 흐리다(#8E8B83). 끝나지 않은 반려는 그 줄 시작에 붉은 점.
 //   굵기·글·점은 화면 px로 시안과 같다(배율이 바뀌어도 같은 크기: 세계 크기 = 시안 값 / 배율).
 //   정의에서 나오는 선이라 연결 기록(link)과 섞지 않고 끊기가 없다. 줄(글)을 누르면 그 길로 최근 오간 항목이 뜬다.
 // - 올림: 역할이 빌더에게 올린 것이 기다리는 동안만 역할 → 빌더 노랑 점선 화살표와 "올림" 글.
-// - 꼬리표(RigTag): 역할 노드 "역할 · <이름> · v<판>", 빌더 노드 "rig 빌더"(노랑 바탕), rig가 켜진 워크스페이스의 다른 세션 "일반 세션".
+// - 꼬리표(RigTag): 역할 노드 "역할 · <이름> · v<판>", 빌더 노드 "rig 빌더"(노랑 바탕). 일반 세션에는 새 꼬리표가 없다.
 import { useState } from 'react';
 import { EdgeLabelRenderer, ViewportPortal, useStore as useFlowStore } from '@xyflow/react';
 import { useStore, getState, openDialog } from './store.js';
 import { useT, fmtTime } from './lib/i18n.js';
-import { rigTag, rigFrames, periodText, lineText, twoLines, pathD, V7, RIG_VIEW } from './lib/rig-map.js';
+import { rigTag, rigFrames, periodText, lineText, twoLines, pairLit, pathD, V7, RIG_VIEW } from './lib/rig-map.js';
 
 const zoomOf = (s) => s.transform[2];
 const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
@@ -25,6 +25,8 @@ export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
   const zoom = useFlowStore(zoomOf);
   const [open, setOpen] = useState(false);
   const m = useStore((st) => (data ? st.rigMaps.get(data.ws) : null));
+  const aWork = useStore((st) => !!data && (st.sessions.get(data.source) || {}).state === 'working');
+  const bWork = useStore((st) => !!data && (st.sessions.get(data.target) || {}).state === 'working');
   if (!data || !data.lines) return null;
   const k = 1 / (zoom || 1);
   // 왼쪽(가로가 더 길면 x, 세로가 더 길면 y가 작은 쪽) 노드 → 오른쪽 노드 줄이 위 줄
@@ -34,7 +36,7 @@ export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
   const top = aLeft ? data.lines.top : data.lines.bottom, bottom = aLeft ? data.lines.bottom : data.lines.top;
   const left = aLeft ? data.a : data.b, right = aLeft ? data.b : data.a;
   const g = twoLines(P, Q, k);
-  const lit = !!data.lines.lit;
+  const lit = pairLit(data.a, data.b, (r) => (r === data.a ? aWork : r === data.b ? bWork : false));
   const color = lit ? V7.C.lit : V7.C.dim;
   const tid = safeId(id);
   const flows = m ? data.flows.map((i) => (m.flows || [])[i]).filter(Boolean) : [];
@@ -85,10 +87,9 @@ export function RigRaiseEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
 // 역할·빌더 노드의 꼬리표(머리줄 배지 자리)
 export function RigTag({ s }) {
   const t = useT();
-  const m = useStore((st) => (s ? st.rigMaps.get(s.workspaceKey || null) || null : null)); // 같은 객체를 고른다(새 객체를 고르면 다시 그리기가 돈다)
+  const m = useStore((st) => (s && s.rigRole ? st.rigMaps.get(s.workspaceKey || null) || null : null)); // 같은 객체를 고른다(새 객체를 고르면 다시 그리기가 돈다)
   const tag = rigTag(s, () => m);
   if (!tag) return null;
-  if (tag.kind === 'general') return <span className="mt-badge rig general" data-role="rig-tag" data-kind="general">{t('rigV7.tagGeneral')}</span>; // P254: 시안 V7 "일반 세션"
   if (tag.kind === 'builder') return <span className="mt-badge rig builder" data-role="rig-tag" data-kind="builder">{t('rigMap.tagBuilder')}</span>;
   const extra = RIG_VIEW.canvasExtras ? [tag.beat && tag.beat.every ? t('rigMap.tagBeat', { every: periodText(tag.beat.every, tag.beat.at, t) }) : null, tag.sectors.length ? t('rigMap.tagSectors', { list: tag.sectors.join(' ') }) : null].filter(Boolean) : [];
   const panel = (e) => { e.stopPropagation(); const w = (getState().workspaces || []).find((x) => x.key === tag.ws); if (w) openDialog({ kind: 'rigpanel', ws: w }); };

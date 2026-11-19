@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pairLines, lineText, twoLines, v7Layout, rigEdges, rigTag, hideRigSessions, V7, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
+import { textW13, pairLines, pairLit, lineText, twoLines, v7Layout, rigEdges, rigTag, hideRigSessions, V7, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
 import { lineageLayout } from '../src/renderer/lib/mission-lineage.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
@@ -37,17 +37,23 @@ const TRADE = (o = {}) => ({
   intake: [], cycleItems: [], entry: null,
 });
 
-test('P254 pairLines: 방향마다 한 줄(위 = 왼쪽 → 오른쪽, 아래 = 돌아오는 길), 한쪽 길만 있으면 한 줄, 대기 수, 밝기, 끝나지 않은 반려', () => {
+test('P254 pairLines: 방향마다 한 줄(위 = 왼쪽 → 오른쪽, 아래 = 돌아오는 길), 한쪽 길만 있으면 한 줄, 대기 수, 끝나지 않은 반려. 밝기 = 일하는 역할에 닿은 쌍', () => {
   const fl = TRADE().flows;
   const iv = pairLines('ideas', 'verify', fl);
   assert.deepEqual(iv.top.items, ['hypothesis']); assert.deepEqual(iv.bottom.items, ['result']);
   assert.equal(iv.top.open, true, 'hypothesis 반려가 열렸다 → 위 줄 시작에 붉은 점');
   assert.equal(iv.bottom.open, false);
-  assert.equal(iv.lit, false);
   const dv = pairLines('data', 'verify', fl);
   assert.deepEqual(dv.top.items, ['dataset']); assert.equal(dv.bottom, null, '돌아오는 길이 없으면 아래 줄을 긋지 않는다');
   const vt = pairLines('verify', 'trade', fl);
-  assert.deepEqual([vt.waiting, vt.lit], [1, true], '기다리는 항목이 있는 쌍(지금 오가는 쌍)이 밝다');
+  assert.equal(vt.waiting, 1);
+  // 밝기: 두 끝 중 하나가 일하면 밝다(기다림 수와 상관없다)
+  const work = (s) => (n) => s.includes(n);
+  assert.equal(pairLit('verify', 'trade', work([])), false, '기다림이 있어도 아무도 일하지 않으면 흐림');
+  assert.equal(pairLit('ideas', 'verify', work(['ideas'])), true);
+  assert.equal(pairLit('data', 'ideas', work(['ideas'])), true);
+  assert.equal(pairLit('verify', 'trade', work(['ideas'])), false);
+  assert.equal(pairLit('a', 'b', null), false);
   // 사람이 낸 길은 쌍이 아니다(data_request는 ideas → data만)
   assert.deepEqual(pairLines('data', 'ideas', fl).bottom.items, ['data_request']);
   assert.equal(lineText(iv.top, 'top'), 'hypothesis →');
@@ -73,22 +79,27 @@ test('P254 twoLines: 시안 V7 자리 그대로(카드 변 사이 위 줄 -8·�
   assert.deepEqual([V7.W1, V7.W2, V7.C.lit, V7.C.dim, V7.C.text, V7.C.red, V7.C.raise], [2, 1.5, '#ECE9E1', '#8E8B83', '#A9A69D', '#E5484D', '#F0B652']);
 });
 
-test('P254 v7Layout(세션 맵 묶음): 카드 184×96 한 줄, 이웃한 쌍은 곧은 두 줄, 이웃하지 않은 쌍은 카드 위로, 빌더는 오른쪽 끝 역할 아래, 올림 점선', () => {
+test('P254 v7Layout(세션 맵 묶음): 카드 184×96 한 줄, 이웃한 쌍만 곧은 두 줄(이웃하지 않은 쌍은 그리지 않는다), 빌더는 오른쪽 끝 역할 아래, 올림 점선', () => {
   const g = v7Layout(TRADE());
   assert.deepEqual(g.order, ['data', 'ideas', 'verify', 'trade']);
   const R = (n) => g.roles.get(n);
-  assert.deepEqual([R('data').w, R('data').h, R('ideas').x - R('data').x], [184, 96, 288], '시안 카드 184×96, 칸 간격 288');
+  assert.deepEqual([R('data').w, R('data').h], [184, 96], '시안 카드 184×96');
+  // 시안 글(한글 짧은 이름)이면 칸 간격 288(카드 184 + 틈 104)
+  const ko7 = v7Layout({ ...TRADE(), flows: [{ item: '스냅숏', from: ['data'], to: ['ideas'] }, { item: '데이터 요청', from: ['ideas'], to: ['data'] }, { item: '가설', from: ['ideas'], to: ['verify'] }, { item: '전략', from: ['verify'], to: ['trade'] }] });
+  assert.deepEqual(['ideas', 'verify', 'trade'].map((n) => ko7.roles.get(n).x), [288, 576, 864]);
+  // 글이 시안 틈(104)보다 길면 그 틈만 넓힌다
+  const long = v7Layout({ ...TRADE(), flows: [{ item: 'a_very_long_item_name', from: ['data'], to: ['ideas'] }, { item: 'x', from: ['ideas'], to: ['verify'] }] });
+  const gl = long.roles.get('ideas').x - (long.roles.get('data').x + 184);
+  assert.ok(gl > 104 && gl >= textW13('a_very_long_item_name →') + 16, String(gl));
+  assert.equal(long.roles.get('verify').x - (long.roles.get('ideas').x + 184), 104);
   assert.equal(new Set([...g.roles.values()].map((r) => r.y)).size, 1);
-  const st = g.pairs.filter((p) => p.straight).map((p) => p.key).sort();
-  assert.deepEqual(st, ['data|ideas', 'ideas|verify', 'verify|trade'].sort());
+  assert.deepEqual(g.pairs.map((p) => p.key).sort(), ['data|ideas', 'ideas|verify', 'verify|trade'].sort(), 'data|verify(dataset)는 이웃하지 않아 그리지 않는다');
+  assert.equal(R('data').y, 0);
   const di = g.pairs.find((p) => p.key === 'data|ideas');
-  const y = R('data').y + 48;
-  assert.equal(di.top.d, `M184 ${y - 8} L284 ${y - 8}`); assert.equal(di.bottom.d, `M288 ${y + 8} L187 ${y + 8}`);
-  assert.deepEqual(di.topLab, [236, y - 28]); assert.deepEqual(di.botLab, [236, y + 28]);
-  const lane = g.pairs.find((p) => p.key === 'data|verify');
-  assert.equal(lane.straight, false);
-  assert.ok(lane.top.pts.every((p) => p[1] <= R('data').y), '카드 위로 돈다');
-  assert.equal(lane.lines.bottom, null);
+  const y = R('data').y + 48, bx = R('ideas').x, mx = (184 + bx) / 2;
+  assert.equal(di.top.d, `M184 ${y - 8} L${bx - 4} ${y - 8}`); assert.equal(di.bottom.d, `M${bx} ${y + 8} L187 ${y + 8}`);
+  assert.deepEqual(di.topLab, [mx, y - 28]); assert.deepEqual(di.botLab, [mx, y + 28]);
+  assert.ok(bx - 184 >= textW13('← data_request') + 16, '영어 항목 이름이 틈 안에 든다');
   // 붉은 점: hypothesis(ideas → verify, 위 줄) 시작
   const iv = g.pairs.find((p) => p.key === 'ideas|verify');
   assert.ok(iv.lines.top.open && iv.dotTop[0] === R('ideas').x + 184 + 8);
@@ -111,27 +122,26 @@ test('P254 rigEdges(캔버스): 쌍마다 두 줄 자료(lines), 밝기는 기�
   const sessions = new Map(['s-data', 's-ideas', 's-verify', 's-trade', 'b1'].map((id) => [id, { sessionId: id, workspaceKey: 'C:/w/trade', rigRole: id === 'b1' ? BUILDER_ROLE : id.slice(2) }]));
   const es = rigEdges([TRADE()], sessions);
   const vt = es.find((e) => e.kind === 'path' && e.a === 'verify' && e.b === 'trade');
-  assert.deepEqual([vt.lines.top.items, vt.lines.bottom.items, vt.lines.lit], [['strategy'], ['live_report'], true]);
+  assert.deepEqual([vt.lines.top.items, vt.lines.bottom.items, vt.lines.waiting], [['strategy'], ['live_report'], 1]);
   const dv = es.find((e) => e.kind === 'path' && e.a === 'data' && e.b === 'verify');
-  assert.equal(dv.lines.bottom, null);
+  assert.equal(dv.lines.bottom, null, '캔버스에는 이웃하지 않은 쌍도 두 줄 꼴로 그린다(한쪽 길이면 한 줄)');
   assert.deepEqual(es.filter((e) => e.kind === 'raise').map((e) => [e.source, e.target]), [['s-trade', 'b1']]);
   // 캔버스 선은 시안 꼴: 두 줄(굵기 2·1.5), 화살촉은 선이 그린다(옛 RIG_TIP 없음), 글 위·아래, 대기, 붉은 점, 노랑 점선
   const src = read('RigLines.jsx');
-  for (const s of ['V7.W1 * k', 'V7.W2 * k', 'data-line="top"', 'data-line="bottom"', 'rig-wait', 'rig-open-return', 'V7.RAISEDASH', "t('rigV7.wait'"]) assert.ok(src.includes(s), s);
+  for (const s of ['pairLit(', 'V7.W1 * k', 'V7.W2 * k', 'data-line="top"', 'data-line="bottom"', 'rig-wait', 'rig-open-return', 'V7.RAISEDASH', "t('rigV7.wait'"]) assert.ok(src.includes(s), s);
   assert.ok(!/RIG_TIP/.test(read('Canvas.jsx')));
 });
 
-test('P254 꼬리표 셋: "역할 · <역할> · v<판>", "rig 빌더"(노랑), rig가 켜진 워크스페이스의 다른 세션은 "일반 세션"', () => {
+test('P254 꼬리표: "역할 · <역할> · v<판>", "rig 빌더"(노랑), 일반 세션에는 꼬리표가 없다', () => {
   const m = TRADE();
   assert.deepEqual(rigTag({ rigRole: 'data', workspaceKey: m.workspace }, () => m).docN, 2);
   assert.deepEqual(rigTag({ rigRole: BUILDER_ROLE }, () => m), { kind: 'builder' });
-  assert.deepEqual(rigTag({ name: 'multitask-1', workspaceKey: m.workspace }, () => m), { kind: 'general' });
-  assert.equal(rigTag({ name: 'x', workspaceKey: 'C:/w/else' }, () => null), null, 'rig 없는 워크스페이스는 꼬리표 없음');
-  assert.equal(rigTag({ name: 'x', workspaceKey: m.workspace }, () => ({ ...m, status: 'off' })), null, '꺼진 rig는 일반 세션 꼬리표 없음');
+  assert.equal(rigTag({ name: 'multitask-1', workspaceKey: m.workspace }, () => m), null, 'rig 워크스페이스의 일반 세션도 새 꼬리표 없음');
   const tk = (k, v = {}) => String(k.split('.').reduce((a, x) => a[x], ko)).replace(/\{(\w+)\}/g, (_, x) => v[x]);
   assert.equal(tk('rigV7.tagRoleV', { name: 'data', n: 2 }), '역할 · data · v2');
   assert.equal(tk('rigMap.tagBuilder'), 'rig 빌더');
-  assert.equal(tk('rigV7.tagGeneral'), '일반 세션');
+  assert.ok(!('tagGeneral' in ko.rigV7) && !('tagGeneral' in en.rigV7));
+  assert.ok(!/general/.test(read('RigLines.jsx')));
   assert.deepEqual(['ready', 'working', 'sleeping'].map((s) => tk('rigV7.state.' + s)), ['쉼', '일함', '잠']);
   assert.equal(tk('rigV7.wait', { n: 1 }), '대기 1');
   const keys = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? keys(v, p + k + '.') : [p + k]));
@@ -174,6 +184,8 @@ test('P254 세션 맵: rig는 그 워크스페이스 줄(폴더) 안에 있고 �
   const tr = lay.rigs.find((r) => r.key === 'C:/w/trade'), gen = lay.cards.get('s:gen');
   assert.ok(gen.y + gen.h <= tr.y || gen.x >= tr.x + tr.w || gen.x + gen.w <= tr.x);
   assert.equal(lay.bounds.y, 0, '맨 위 띠가 없어 트리가 세계 위에서 시작한다');
+  // 솔로 칸 구분선은 rig 묶음을 가로지르지 않는다
+  for (const d of lay.divs) for (const r of lay.rigs) assert.ok(!(d.x >= r.x && d.x <= r.x + r.w && d.y + d.h > r.y && d.y < r.y + r.h), '구분선이 rig 위를 지난다');
   assert.equal(lay.rig, undefined);
   assert.equal(lay.rigs.find((r) => r.key === 'C:/w/trade').w, geo.w * V7.SCALE);
   // rig 없으면 rigs 빈 목록(배치 그대로)

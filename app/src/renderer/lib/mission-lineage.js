@@ -236,15 +236,15 @@ export function lineageLayout(graph, opts = {}) {
       });
       // P254: 그 워크스페이스의 rig 묶음(역할·빌더 세션은 트리에서 빠져 여기에만 나온다). 나무·솔로 아래, 시작 칸부터
       const blk = blockOf(key);
-      let rigH = 0;
-      if (blk) { const above = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0); const top = y + (above ? above + L.RIGGAP : L.RT); rigs.push({ key, x: ox + COL[0], y: top, w: blk.w, h: blk.h }); rigH = top - y + blk.h; }
+      let rigH = 0, rigTop = null;
+      if (blk) { const above = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0); rigTop = y + (above ? above + L.RIGGAP : L.RT); rigs.push({ key, x: ox + COL[0], y: rigTop, w: blk.w, h: blk.h }); rigH = rigTop - y + blk.h; }
       const h = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0, rigH, L.ROWMIN, heads.get(key).h + 10) + L.RB;
       rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: ox + L.SPINE, w: W - L.SPINE, chips, count: all.length, ox, col: ci, today: !!g.today });
-      divs.push({ x: ox + DIV, y: y + 16, h: h - 32 });
+      divs.push({ x: ox + DIV, y: y + 16, h: rigTop == null ? h - 32 : Math.max(0, rigTop - y - 32), cut: rigTop != null }); // P254: 솔로 칸 구분선은 rig 묶음 위에서 멈춘다
       y += h;
     });
     // P157: 띠 최소 높이. 모자라면 마지막 줄을 늘린다(기둥 글이 잘리지 않게). P166: 휴대폰은 머리가 위라 없다
-    if (!phone && y - by < L.BANDMIN) { const r = rows[rows.length - 1], d = divs[divs.length - 1], dy = L.BANDMIN - (y - by); r.h += dy; d.h += dy; y += dy; }
+    if (!phone && y - by < L.BANDMIN) { const r = rows[rows.length - 1], d = divs[divs.length - 1], dy = L.BANDMIN - (y - by); r.h += dy; if (!d.cut) d.h += dy; y += dy; }
     const ids = tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).map((n) => n.id);
     bands.push({ id: g.id, name: g.name, loose: g.id == null, odd: gi % 2 === 1, y: by, h: y - by, nWs: g.keys.length, sessions: ids.length, bar: chipCounts(ids.map(tierOf)), today: !!g.today, ...(phone ? { x: 0, w: W, gi, cont: false, page: 0 } : { x: ox, col: ci }) });
   });
