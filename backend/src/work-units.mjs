@@ -302,12 +302,17 @@ export class WorkUnits {
     const tr = prev !== sum.state ? st.openTryOf(sid) : null;
     const why = this.stops.onState(s, sum, prev, tr);
     if (why) {
-      st.updateTry(tr.id, { stopReason: why });
-      st.addEvent(sid, 'unit_stop', { unitId: tr.unitId, tryId: tr.id, why });
-      this.stopEvent(s, tr, why);
+      this.recordStop(s, tr, why);
       if (why !== 'needs_human' && this.queued.has(sid)) { st.updateTry(tr.id, { endedAt: Date.now() }); this.pump(sid); }
     }
     if (this.queued.has(sid) && (sum.state === 'ready' || sum.state === 'sleeping')) this.pump(sid); // 백엔드가 다시 뜬 뒤 등
+  }
+  // 시도의 멈춤을 적는다(stop_reason, 세션 이벤트, 장부). P235: unit-stops가 늦게 적을 때도 쓴다
+  recordStop(s, tr, why) {
+    const st = this.store();
+    st.updateTry(tr.id, { stopReason: why });
+    st.addEvent(s.sessionId, 'unit_stop', { unitId: tr.unitId, tryId: tr.id, why });
+    this.stopEvent(s, tr, why);
   }
   // P217: 건의 시도가 보고 없이 멈춤(try_stopped). tree_quiet는 나무 전체의 쉼이라 장부 kind가 아니다
   stopEvent(s, tr, why, detail = null) {

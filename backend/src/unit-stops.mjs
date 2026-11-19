@@ -15,6 +15,7 @@ import { treeIndex, cycleCheck } from './push-cycle.mjs';
 import { clip } from './text.mjs';
 import { HUMAN_FROM, BUILDER_ORIGIN } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일의 멈춤은 응답 필요 목록으로
 
+export const REFUSE_FLASH_MS = 1500; // P235: 판이 권한 요청을 거절한 뒤 화면의 막힘을 거절의 잔상으로 보는 시간
 export const STOP_REASONS = ['idle_no_done', 'turn_error', 'needs_human', 'closed', 'tree_quiet', 'exited'];
 const WHY = {
   idle_no_done: '보고(atrium done) 없이 턴을 끝내고 쉰다',
@@ -100,11 +101,31 @@ export class UnitStops {
       if (turnless) return null;
       if (state === 'error') why = 'turn_error';
       else if (st.openUnitsFromCount(s.sessionId) === 0) why = 'idle_no_done'; // 하위를 기다리며 쉬는 중간 워커는 나무 전체로 본다
-    } else if (HUMAN.has(state) && !HUMAN.has(prev)) why = 'needs_human';
+    } else if (HUMAN.has(state) && !HUMAN.has(prev)) {
+      // P235: 판이 PermissionRequest를 거절로 답한 직후 Claude Code 화면이 잠깐 막힘으로 읽힌다(개발용 판: 21ms). 묻는 훅이 없는 막힘(unknown_dialog)이면 잠시 뒤 다시 본다
+      if (sum.ask && sum.ask.kind === 'unknown_dialog' && s.rigRefusedAt && Date.now() - s.rigRefusedAt < REFUSE_FLASH_MS) { this.humanLater(s, tr); return null; }
+      why = 'needs_human';
+    }
     if (!why) return null;
     const unit = st.getUnit(tr.unitId);
     this.add(tr, unit, why);
     return why;
+  }
+  // P235: 거절 직후의 막힘이 REFUSE_FLASH_MS 뒤에도 남았으면(진짜 대화상자) 그때 needs_human으로 적고 알린다
+  humanLater(s, tr) {
+    if (!this.humanWait) this.humanWait = new Set();
+    if (this.humanWait.has(tr.id)) return; // 그 시도에 하나만
+    this.humanWait.add(tr.id);
+    const t = setTimeout(() => {
+      this.humanWait.delete(tr.id);
+      try {
+        const st = this.store(); const cur = st.openTryOf(s.sessionId);
+        if (!cur || cur.id !== tr.id || !this.b.sessions.has(s.sessionId) || !HUMAN.has(this.units.prev.get(s.sessionId))) return;
+        this.units.recordStop(s, cur, 'needs_human');
+        this.add(cur, st.getUnit(cur.unitId), 'needs_human');
+      } catch (e) { this.b.log && this.b.log('unit stop later error', e.stack); }
+    }, REFUSE_FLASH_MS);
+    if (t.unref) t.unref();
   }
   // 세션이 닫혔다(열린 시도가 있었으면). → 알림을 건 상위 ID | null
   onClosed(s, tr, unit, reason, { byParent = false } = {}) {

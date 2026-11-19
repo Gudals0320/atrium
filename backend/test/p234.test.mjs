@@ -125,12 +125,12 @@ test('P234 판의 자리 세션 설정 파일: scoped·ask·unattended × reques
   assert.equal(settings(chk2).denyInsteadOfPrompting, true);
   // keep
   assert.equal(settings(add('main', { seat: 'main' })).denyInsteadOfPrompting, undefined, 'request 입구는 묻는다');
-  assert.equal(settings(add('watch', { seat: 'watch' })).denyInsteadOfPrompting, true, 'every 고리만 닿는 keep 자리');
+  assert.equal(settings(add('watch', { seat: 'watch' })).denyInsteadOfPrompting, undefined, 'P235: keep 자리에는 받침을 넣지 않는다(판이 회마다 답한다)');
   assert.equal(settings(add('dual', { seat: 'dual' })).denyInsteadOfPrompting, undefined, 'request와 every 둘의 입구는 묻는다');
   const asker = settings(add('asker', { seat: 'asker' }));
   assert.deepEqual([asker.disableAutoMode, asker.disableBypassPermissionsMode, asker.denyInsteadOfPrompting], ['disable', 'disable', undefined], 'ask 자리는 every여도 묻는다');
   const robot = add('robot', { seat: 'robot' });
-  assert.deepEqual([settings(robot).disableAutoMode, settings(robot).disableBypassPermissionsMode, settings(robot).denyInsteadOfPrompting], ['disable', 'disable', true], '승인 전 unattended는 scoped로 돈다');
+  assert.deepEqual([settings(robot).disableAutoMode, settings(robot).disableBypassPermissionsMode, settings(robot).denyInsteadOfPrompting], ['disable', 'disable', undefined], '승인 전 unattended는 scoped로 돈다(P235: keep 자리라 받침 없음)');
   // 자리 없는 세션은 그대로
   assert.deepEqual(settings(add('loose')), {});
   assert.equal(typeof SEAT_RUN, 'symbol');
@@ -190,13 +190,13 @@ test('P234 판: 묻지 않고 거절하는 자리의 PermissionRequest는 응답
   const h = casts.find((c) => c.n === 'session.hook');
   assert.equal(h.d.refused, true); assert.equal(h.d.ask, undefined);
   const g = B.gates();
-  assert.equal(g.length, 1); assert.equal(g[0].data.via, 'PermissionRequest'); assert.equal(g[0].data.target, 'mkdir zz');
+  assert.equal(g.length, 1); assert.equal(g[0].data.via, 'board'); assert.equal(g[0].data.target, 'mkdir zz'); // P235: 판이 deny로 답함
   // 뒤에 PermissionDenied가 와도(다음 판의 Claude Code) 같은 호출은 한 번
   be.processHook(hdr(chk), JSON.stringify({ hook_event_name: 'PermissionDenied', session_id: chk.sessionId, tool_name: 'Bash', tool_input: { command: 'mkdir zz' }, tool_use_id: 'tu1', reason: 'x' }));
   assert.equal(B.gates().length, 1);
-  // 설정 파일에 칸이 없으면(아직 맞추지 않은 옛 세션) 질문으로 둔다
+  // P235: 설정 파일에 칸이 없어도(아직 맞추지 않은 옛 세션) 그 세션의 회가 판이 연 회면 판이 거절로 답한다
   const chk2 = B.add('checker-2', { seat: 'checker' }); chk2.rigRun = { loop: 'check' };
-  assert.equal(B.b.rigAmp.refusesPrompt(chk2), false);
+  assert.equal(B.b.rigAmp.refusesPrompt(chk2), true);
   // request 고리의 자리는 그대로 묻는다
   const main = B.add('main', { seat: 'main' });
   assert.equal(B.b.rigAmp.refusesPrompt(main), false);
