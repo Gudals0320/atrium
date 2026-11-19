@@ -185,6 +185,25 @@ test('P231 상한: 올라갈 곳(manager)이 되돌려 받는 그 자리면 사�
   } finally { await stop(); }
 });
 
+test('P231 상한: 주인이 일을 다른 자리에 맡긴 흐름(worker 일의 반려 → main, manager main)은 지금처럼 주인 보고(escalated)', async () => {
+  const def = limitDef(); def.manager = 'main';
+  def.seats.worker = { launcher: 'claude', session: 'fresh', max_live: 1 };
+  def.loops.work.flow = [{ from: 'main', on: 'assign', to: 'worker' }, { from: 'worker', on: 'ok', to: 'reviewer' }, { from: 'reviewer', on: 'rejected', to: 'main', max: 0 }];
+  const t = await board({ def });
+  try {
+    const main = t.add('main'); t.seat(main, 'main');
+    const r = await V(t.b).prompt(main, { name: 'worker', text: '일: 표' });
+    const w = t.by(r.name); await gotUnit(w); await until(() => w.rt.term.status === 'idle');
+    const d1 = await done(t.b, w, 'ok', '했다');
+    const rv = t.by(d1.flow[0].to); await gotUnit(rv); await until(() => rv.rt.term.status === 'idle');
+    const d = await done(t.b, rv, 'rejected', '틀렸다');
+    assert.deepEqual(d.reports, [{ seat: 'main', to: 'main', escalated: true }]);
+    const c = t.b.store.getCase(d.case.id);
+    assert.equal(c.state, 'waiting_owner'); assert.equal(c.ownerWait, 'escalated');
+    assert.equal((await asks(t.b)).filter((x) => x.kind === 'run_limit').length, 0);
+  } finally { await t.stop(); }
+});
+
 test('P231 상한: else가 반려한 그 자리 자신이어도 사람 카드, else가 다른 자리면 지금처럼 그 자리에게', async () => {
   const selfElse = limitDef(); selfElse.loops.work.flow[1].else = 'reviewer';
   const t1 = await toLimitWith(selfElse);

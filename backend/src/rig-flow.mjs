@@ -580,8 +580,9 @@ export class RigFlow {
         const n = counts[k] || 0;
         if (n >= line.max) {
           let alt = line.else || ctx.def.manager || null;
-          // P231(rig2-design 11.13의 2): 올라갈 곳이 상한에 걸린 그 자리 자신(되돌려 받는 자리나 반려한 자리)이면 자기 일을 판정하게 된다. 관리자 없음처럼 사람 카드로
-          const self = alt && (line.to.includes(alt) || alt === ctx.name) ? alt : null;
+          // P231(rig2-design 11.13의 2): 올라갈 곳이 상한에 걸린 그 자리 자신(반려당한 일을 한 자리나 반려한 자리)이면 자기 일을 판정하게 된다. 관리자 없음처럼 사람 카드로.
+          //   바로가기 keep 정의(manager = 입구 자리 main, main ok → reviewer, reviewer rejected → main). 주인이 일을 다른 자리에 맡겨 둔 흐름(worker의 일이 반려되어 main으로)은 지금처럼 주인 차례다
+          const self = alt && (alt === ctx.name || alt === this.judgedSeatOf(unit)) ? alt : null;
           if (self) alt = null;
           counts[`${k}>else`] = (counts[`${k}>else`] || 0) + 1;
           st.updateCase(c.id, { edgeCounts: counts });
@@ -677,6 +678,13 @@ export class RigFlow {
     return { case: c.id, state: st.getCase(c.id).state, action };
   }
 
+  // P231(11.13의 2): 이 일이 판정한 일을 한 자리(흐름이 넘긴 일이면 앞 일의 자리, 아니면 맡긴 세션의 자리)
+  judgedSeatOf(unit) {
+    const v = (unit && unit.via) || {};
+    const prev = v.prevUnit ? this.store().getUnit(v.prevUnit) : null;
+    if (prev) return prev.seat || null;
+    return unit && unit.from ? this.seatOfSession(unit.from) : null;
+  }
   // P231(11.13의 3): 사람이 상한 카드에 답한 결과를 주인 세션에 한 번 알린다(받음 · 한 번 더 · 멈춤). 주인 세션이 닫혔으면 넣지 않는다
   tellOwnerDecided(c, action, o = {}) {
     const b = this.b;
