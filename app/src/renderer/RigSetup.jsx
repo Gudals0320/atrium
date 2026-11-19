@@ -232,7 +232,7 @@ export function RigCreateDialog({ ws, onClose }) {
             )}
             {step === 'enable' && st && <EnableBody st={st} ws={ws} />}
             {step === 'seat' && st && <SeatStep ws={ws} st={st} picks={w.seatPick} setPick={(seat, p) => setW(wizardSetSeat(w, seat, p))} />}
-            {problem && <div className="mt-rigask-problem dim" data-role="rig-ask-problem" data-problem={problem}>{t(`rigP228.bad.${problem}`)}</div>}
+            {problem && <div className="mt-rigq-problem dim" data-role="rig-ask-problem" data-problem={problem}>{t(`rigP228.bad.${problem}`)}</div>}
             {w.error && <div className="mt-rigon-warn" data-role="rig-setup-error">{w.error}</div>}
           </>
         )}
@@ -254,12 +254,12 @@ function AskStep({ w, setW, choices, shortcuts, presetsError }) {
   const set = (k, v) => setW((x) => wizardSet(x, k, v));
   const mode = everyMode(a.every);
   return (
-    <div className="mt-rigask" data-role="rig-ask" data-shortcut={a.shortcut || undefined}>
+    <div className="mt-rigq" data-role="rig-ask" data-shortcut={a.shortcut || undefined}>
       {presetsError && <div className="mt-rigon-warn">{presetsError}</div>}
       {shortcuts.length > 0 && (
-        <div className="mt-rigask-shortcuts" data-role="rig-shortcuts">
-          <div className="mt-rigask-h">{t('rigP228.shortcuts')} <span className="dim">{t('rigP228.shortcutsHint')}</span></div>
-          <div className="mt-rigask-cards">
+        <div className="mt-rigq-shortcuts" data-role="rig-shortcuts">
+          <div className="mt-rigq-h">{t('rigP228.shortcuts')} <span className="dim">{t('rigP228.shortcutsHint')}</span></div>
+          <div className="mt-rigq-cards">
             {shortcuts.map((x) => (
               <button key={x.id} type="button" className={`mt-rigsetup-card${a.shortcut === x.id ? ' on' : ''}`} data-action="rig-shortcut" data-shortcut={x.id} aria-pressed={a.shortcut === x.id} onClick={() => setW((y) => wizardApplyShortcut(y, x))}>
                 <b>{x.title}</b><span className="dim">{x.desc}</span>
@@ -268,12 +268,12 @@ function AskStep({ w, setW, choices, shortcuts, presetsError }) {
           </div>
         </div>
       )}
-      <fieldset className="mt-rigask-q" data-q="when">
+      <fieldset className="mt-rigq-q" data-q="when">
         <legend>{t('rigP228.qWhen')}</legend>
-        <label className="mt-rigask-opt"><input type="radio" name="rig-when" checked={a.trigger === 'request'} data-field="trigger" value="request" onChange={() => set('trigger', 'request')} />{t('rigP228.whenRequest')}<span className="dim">{t('rigP228.whenRequestHint')}</span></label>
-        <label className="mt-rigask-opt"><input type="radio" name="rig-when" checked={a.trigger === 'every'} data-field="trigger" value="every" onChange={() => set('trigger', 'every')} />{t('rigP228.whenEvery')}
+        <label className="mt-rigq-opt"><input type="radio" name="rig-when" checked={a.trigger === 'request'} data-field="trigger" value="request" onChange={() => set('trigger', 'request')} />{t('rigP228.whenRequest')}<span className="dim">{t('rigP228.whenRequestHint')}</span></label>
+        <label className="mt-rigq-opt"><input type="radio" name="rig-when" checked={a.trigger === 'every'} data-field="trigger" value="every" onChange={() => set('trigger', 'every')} />{t('rigP228.whenEvery')}
           {a.trigger === 'every' && (
-            <span className="mt-rigask-inline">
+            <span className="mt-rigq-inline">
               <select className="mt-input" data-field="every" value={mode} onChange={(e) => set('every', everyOf(e.target.value, everyHours(a.every)))}>
                 <option value="1d">{t('rigP228.every1d')}</option><option value="7d">{t('rigP228.every7d')}</option><option value="h">{t('rigP228.everyH')}</option>
               </select>
@@ -282,50 +282,50 @@ function AskStep({ w, setW, choices, shortcuts, presetsError }) {
           )}
         </label>
         {a.trigger === 'every' && (
-          <label className="mt-rigask-field">{t('rigP228.task')}
+          <label className="mt-rigq-field">{t('rigP228.task')}
             <textarea className="mt-input" rows={2} data-field="task" value={a.task} placeholder={t('rigP228.taskPh')} onChange={(e) => set('task', e.target.value)} />
           </label>
         )}
       </fieldset>
-      <fieldset className="mt-rigask-q" data-q="who">
+      <fieldset className="mt-rigq-q" data-q="who">
         <legend>{t('rigP228.qWho')}</legend>
-        <div className="mt-rigask-row">
-          <label className="mt-rigask-field">{t('rigP228.seatName')}<input className="mt-input" data-field="seat" value={a.seat} onChange={(e) => set('seat', e.target.value)} /></label>
-          <label className="mt-rigask-field">{t('rigP228.launcher')}<LauncherSelect choices={choices} value={a.launcher} onChange={(v) => set('launcher', v)} /></label>
+        <div className="mt-rigq-row">
+          <label className="mt-rigq-field">{t('rigP228.seatName')}<input className="mt-input" data-field="seat" value={a.seat} onChange={(e) => set('seat', e.target.value)} /></label>
+          <label className="mt-rigq-field">{t('rigP228.launcher')}<LauncherSelect choices={choices} value={a.launcher} onChange={(v) => set('launcher', v)} /></label>
         </div>
-        <label className="mt-rigask-opt"><input type="radio" name="rig-session" checked={a.session === 'keep'} data-field="session" value="keep" onChange={() => set('session', 'keep')} />{t('rigP228.keep')}<span className="dim">{t('rigP228.keepHint')}</span></label>
-        <label className={`mt-rigask-opt${a.trigger === 'request' ? ' off' : ''}`}><input type="radio" name="rig-session" checked={a.session === 'fresh'} disabled={a.trigger === 'request'} data-field="session" value="fresh" onChange={() => set('session', 'fresh')} />{t('rigP228.fresh')}<span className="dim">{t('rigP228.freshHint')}</span></label>
-        <label className="mt-rigask-field">{t('rigP228.permission')}
+        <label className="mt-rigq-opt"><input type="radio" name="rig-session" checked={a.session === 'keep'} data-field="session" value="keep" onChange={() => set('session', 'keep')} />{t('rigP228.keep')}<span className="dim">{t('rigP228.keepHint')}</span></label>
+        <label className={`mt-rigq-opt${a.trigger === 'request' ? ' off' : ''}`}><input type="radio" name="rig-session" checked={a.session === 'fresh'} disabled={a.trigger === 'request'} data-field="session" value="fresh" onChange={() => set('session', 'fresh')} />{t('rigP228.fresh')}<span className="dim">{t('rigP228.freshHint')}</span></label>
+        <label className="mt-rigq-field">{t('rigP228.permission')}
           <select className="mt-input" data-field="permission" value={a.permission} onChange={(e) => set('permission', e.target.value)}>
             <option value="ask">{t('rigP228.permAskOpt')}</option><option value="scoped">{t('rigP228.permScopedOpt')}</option>
           </select>
         </label>
-        <label className={`mt-rigask-opt mt-rigask-un${a.unattended ? ' on' : ''}`} data-role="rig-unattended">
+        <label className={`mt-rigq-opt mt-rigq-un${a.unattended ? ' on' : ''}`} data-role="rig-unattended">
           <input type="checkbox" checked={a.unattended} data-field="unattended" onChange={(e) => set('unattended', e.target.checked)} />{t('rigP228.unattended')}
           <span className="mt-rigon-warn" data-role="rig-unattended-warn">{t('rigPerm.unattended')}</span>
           <span className="dim">{t('rigP228.unattendedHint')}</span>
         </label>
       </fieldset>
-      <fieldset className="mt-rigask-q" data-q="adds">
+      <fieldset className="mt-rigq-q" data-q="adds">
         <legend>{t('rigP228.qAdds')} <span className="dim">{t('rigP228.addsHint')}</span></legend>
         <Add k="canon" a={a} set={set}>
-          <label className="mt-rigask-field">{t('rigP228.canonPath')}<input className="mt-input" data-field="canon.path" value={a.canon.path} onChange={(e) => set('canon.path', e.target.value)} /></label>
+          <label className="mt-rigq-field">{t('rigP228.canonPath')}<input className="mt-input" data-field="canon.path" value={a.canon.path} onChange={(e) => set('canon.path', e.target.value)} /></label>
           <span className="dim">{t('rigP228.canonNew')}</span>
         </Add>
         <Add k="ledger" a={a} set={set}>
-          <label className="mt-rigask-field">{t('rigP228.ledgerPath')}<input className="mt-input" data-field="ledger.path" value={a.ledger.path} onChange={(e) => set('ledger.path', e.target.value)} /></label>
-          <label className="mt-rigask-opt"><input type="checkbox" checked={!!a.ledger.improve} data-field="ledger.improve" onChange={(e) => set('ledger.improve', e.target.checked)} />{t('rigP228.improve', { n: a.ledger.days })}</label>
-          {a.ledger.improve && <label className="mt-rigask-field">{t('rigP228.improveDays')}<input className="mt-input mt-rigpanel-num" type="number" min="1" max="90" data-field="ledger.days" value={a.ledger.days} onChange={(e) => set('ledger.days', Number(e.target.value))} /></label>}
+          <label className="mt-rigq-field">{t('rigP228.ledgerPath')}<input className="mt-input" data-field="ledger.path" value={a.ledger.path} onChange={(e) => set('ledger.path', e.target.value)} /></label>
+          <label className="mt-rigq-opt"><input type="checkbox" checked={!!a.ledger.improve} data-field="ledger.improve" onChange={(e) => set('ledger.improve', e.target.checked)} />{t('rigP228.improve', { n: a.ledger.days })}</label>
+          {a.ledger.improve && <label className="mt-rigq-field">{t('rigP228.improveDays')}<input className="mt-input mt-rigpanel-num" type="number" min="1" max="90" data-field="ledger.days" value={a.ledger.days} onChange={(e) => set('ledger.days', Number(e.target.value))} /></label>}
         </Add>
         <Add k="sector" a={a} set={set}>
-          <label className="mt-rigask-field">{t('rigP228.sectorPath')}<input className="mt-input" data-field="sector.path" value={a.sector.path} onChange={(e) => set('sector.path', e.target.value)} /></label>
+          <label className="mt-rigq-field">{t('rigP228.sectorPath')}<input className="mt-input" data-field="sector.path" value={a.sector.path} onChange={(e) => set('sector.path', e.target.value)} /></label>
         </Add>
         <Add k="check" a={a} set={set}>
-          <label className="mt-rigask-field">{t('rigP228.checkPath')}<input className="mt-input" data-field="check.script" value={a.check.script} onChange={(e) => set('check.script', e.target.value)} /></label>
+          <label className="mt-rigq-field">{t('rigP228.checkPath')}<input className="mt-input" data-field="check.script" value={a.check.script} onChange={(e) => set('check.script', e.target.value)} /></label>
           <span className="dim">{t('rigP228.checkNew')}</span>
         </Add>
         <Add k="review" a={a} set={set}>
-          <label className="mt-rigask-field">{t('rigP228.reviewLauncher')}<LauncherSelect choices={choices} value={a.review.launcher || a.launcher} onChange={(v) => set('review.launcher', v)} /></label>
+          <label className="mt-rigq-field">{t('rigP228.reviewLauncher')}<LauncherSelect choices={choices} value={a.review.launcher || a.launcher} onChange={(v) => set('review.launcher', v)} /></label>
         </Add>
       </fieldset>
       <button type="button" className="mt-rigsetup-card describe" data-action="rig-describe" onClick={() => setW((x) => wizardPickDescribe(x))}>
@@ -339,9 +339,9 @@ function Add({ k, a, set, children }) {
   const t = useT();
   const on = !!a[k].on;
   return (
-    <div className={`mt-rigask-add${on ? ' on' : ''}`} data-add={k}>
-      <label className="mt-rigask-opt"><input type="checkbox" checked={on} data-field={`${k}.on`} onChange={(e) => set(`${k}.on`, e.target.checked)} /><b>{t(`rigP228.${k}`)}</b><span className="dim">{t(`rigP228.${k}Desc`)}</span></label>
-      {on && <div className="mt-rigask-addbody">{children}</div>}
+    <div className={`mt-rigq-add${on ? ' on' : ''}`} data-add={k}>
+      <label className="mt-rigq-opt"><input type="checkbox" checked={on} data-field={`${k}.on`} onChange={(e) => set(`${k}.on`, e.target.checked)} /><b>{t(`rigP228.${k}`)}</b><span className="dim">{t(`rigP228.${k}Desc`)}</span></label>
+      {on && <div className="mt-rigq-addbody">{children}</div>}
     </div>
   );
 }
