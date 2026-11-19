@@ -116,7 +116,8 @@ const evs = (b, kind) => b.store.db.prepare('SELECT * FROM events WHERE kind = ?
 
 // ---------- P190 ----------
 import { RigSetup, rigSetupHandlers } from '../src/rig-setup.mjs';
-import { rigTemplates, templateFiles, TEMPLATE_IDS, builderHeader, rigGuideText, HUMAN_FROM, BUILDER_ORIGIN } from '../src/rig-templates.mjs';
+import { builderHeader, rigGuideText, HUMAN_FROM, BUILDER_ORIGIN } from '../src/rig-templates.mjs';
+import { legacyTemplateFiles, legacyCreate, LEGACY_IDS } from './legacy-rig.mjs'; // P228: 옛 3자리 틀은 대화상자에서 내렸고 시험 도움으로만
 import { summarizeChanges, CHANGE_KINDS } from '../src/changes.mjs';
 import { SEAT_SPAWN } from '../src/rig-amp.mjs';
 
@@ -130,48 +131,37 @@ function listen(b) { const got = []; b.api.broadcast = (kind, data) => got.push(
 // rig 없는 빈 판(켜지 않음)
 const empty = (o = {}) => board({ def: null, enable: false, ...o });
 
-test('P190 틀 셋: 모양(rig.templates)과 만든 정의가 검사를 통과하고, 자리 안내는 일반 말로 done 값을 말한다', () => {
-  const ts = rigTemplates();
-  assert.deepEqual(ts.map((t) => t.id), TEMPLATE_IDS);
-  assert.deepEqual(Object.keys(ts[0].seats), ['main', 'worker']);
-  assert.equal(ts[0].seats.main.session, 'keep'); assert.equal(ts[0].seats.worker.session, 'fresh');
-  const back = ts[1].flow.find((l) => l.from === 'reviewer' && l.on === 'rejected');
-  assert.equal(back.to, 'worker'); assert.equal(back.max, 2); assert.equal(back.else, 'main');
-  assert.equal(ts[2].seats.worker.worktree, true);
-  for (const id of TEMPLATE_IDS) {
+test('P190·P228 옛 3자리 틀로 만든 정의는 그대로 검사를 통과한다(옮기기 없음)', () => {
+  for (const id of LEGACY_IDS) {
     const dir = tmp();
-    const { def, guides } = templateFiles(id, { main: 'claude', worker: 'claude', reviewer: 'codex' });
+    const { def, guides } = legacyTemplateFiles(id, { main: 'claude', worker: 'claude', reviewer: 'codex' });
     for (const [rel, text] of Object.entries(guides)) { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); }
     const v = validateRig(def, { root: dir });
     assert.ok(v.ok, `${id}: ${v.reason}`);
     assert.deepEqual(v.def.warnings, [], `${id}: 경고 없음`);
     assert.equal(v.def.manager, 'main');
-    for (const t of Object.values(guides)) assert.match(t, /atrium done/);
+    assert.equal(v.def.loops.work.implicit, true, 'loops 없는 정의는 작업 고리 하나로 읽는다');
   }
-  const g = templateFiles('main-worker-reviewer', { main: 'a', worker: 'b', reviewer: 'c' }).guides['.atrium/seats/reviewer.txt'];
-  assert.match(g, /done rejected/); assert.match(g, /done ok/);
-  assert.throws(() => templateFiles('nope', {}), /모르는 틀/);
-  assert.throws(() => templateFiles('main-worker', { main: 'claude' }), /worker 자리의 런처/);
 });
 
-test('P190 rig.create: 정의가 없을 때만, rig.json(들여쓰기 2칸)과 자리 안내 파일, 버전 1은 누가 human. 원격·에이전트는 못 함, 워크트리 자리는 Claude Code만', async () => {
+test('P190·P228 rig.create: 정의가 없을 때만, 세 질문의 답으로 rig.json(들여쓰기 2칸)과 자리 안내 파일, 버전 1은 누가 human. 원격·에이전트는 못 함', async () => {
   const { b, ws, dir, stop } = await empty();
   try {
     const got = listen(b);
-    await assert.rejects(HS(b)['rig.create']({ template: 'main-worker' }, DEVICE), (e) => e.code === 'forbidden');
-    await assert.rejects(HS(b)['rig.create']({ template: 'main-worker-reviewer-worktree', launchers: { worker: 'codex' } }, LOCAL), /Claude Code 런처만/);
+    await assert.rejects(HS(b)['rig.create']({ answers: {} }, DEVICE), (e) => e.code === 'forbidden');
+    await assert.rejects(HS(b)['rig.create']({}, LOCAL), /answers/);
+    await assert.rejects(HS(b)['rig.create']({ answers: { seat: 'reviewer', review: { on: true } } }, LOCAL), /reviewer/);
     assert.equal(fs.existsSync(rigFile(dir)), false, '거절이면 쓰지 않는다');
-    const r = await HS(b)['rig.create']({ template: 'main-worker-reviewer', launchers: { main: 'codex', worker: 'claude' } }, LOCAL);
-    assert.equal(r.ok, true); assert.equal(r.path, '.atrium/rig.json'); assert.equal(r.version, 1);
-    assert.deepEqual(r.launchers, { main: 'codex', worker: 'claude', reviewer: 'claude' }, '주지 않은 자리는 기본 런처');
-    assert.ok(r.written.length >= 2);
-    for (const s of ['main', 'worker', 'reviewer']) assert.ok(fs.existsSync(path.join(dir, '.atrium', 'seats', `${s}.txt`)));
+    const r = await HS(b)['rig.create']({ answers: { launcher: 'codex', review: { on: true, launcher: 'claude' } } }, LOCAL);
+    assert.equal(r.ok, true); assert.equal(r.path, '.atrium/rig.json'); assert.equal(r.version, 1); assert.equal(r.preset, 'custom');
+    assert.deepEqual(r.launchers, { main: 'codex', reviewer: 'claude' });
+    for (const s of ['main', 'reviewer']) assert.ok(fs.existsSync(path.join(dir, '.atrium', 'seats', `${s}.txt`)));
     const text = fs.readFileSync(rigFile(dir), 'utf8');
-    assert.match(text, /^\{\n {2}"name"/); assert.equal(text, JSON.stringify(JSON.parse(text), null, 2) + '\n');
+    assert.match(text, /^\{\n {2}"version": 2/); assert.equal(text, JSON.stringify(JSON.parse(text), null, 2) + '\n');
     const v = b.store.rigVersions(ws.key);
-    assert.equal(v.length, 1); assert.equal(v[0].by, 'human'); assert.equal(v[0].note, 'create main-worker-reviewer');
+    assert.equal(v.length, 1); assert.equal(v[0].by, 'human'); assert.equal(v[0].note, 'create custom');
     assert.equal(b.rig.status(ws.key).state, 'off', '판은 켜지 않는다');
-    await assert.rejects(HS(b)['rig.create']({ template: 'main-worker' }, LOCAL), (e) => e.code === 'rig_exists');
+    await assert.rejects(HS(b)['rig.create']({ answers: {} }, LOCAL), (e) => e.code === 'rig_exists');
     // 켜면 같은 내용이라 같은 버전
     b.store.setRigEnabled(ws.key, true); assert.equal(b.rig.read(ws.key).n, 1);
     assert.equal(b.store.rigVersions(ws.key).length, 1);
@@ -184,7 +174,7 @@ test('P190 rig.create는 사람이 둔 자리 안내 파일을 덮지 않는다'
   try {
     fs.mkdirSync(path.join(dir, '.atrium', 'seats'), { recursive: true });
     fs.writeFileSync(path.join(dir, '.atrium', 'seats', 'main.txt'), 'mine');
-    const r = await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    const r = await HS(b)['rig.create']({ answers: { launcher: 'claude' } }, LOCAL);
     assert.deepEqual(r.kept, ['.atrium/seats/main.txt']);
     assert.equal(fs.readFileSync(path.join(dir, '.atrium', 'seats', 'main.txt'), 'utf8'), 'mine');
   } finally { await stop(); }
@@ -193,7 +183,7 @@ test('P190 rig.create는 사람이 둔 자리 안내 파일을 덮지 않는다'
 test('P190 rig.save: seats·flow·results 세 칸만 바꾸고 다른 칸·칸 차례·들여쓰기는 그대로, 새 버전(human). 보호 포인터·검사 실패는 거절', async () => {
   const { b, ws, dir, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker-reviewer', launchers: { main: 'claude', worker: 'claude', reviewer: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker-reviewer', { main: 'claude', worker: 'claude', reviewer: 'claude' });
     // 사람이 손으로 더한 다른 칸
     const def0 = readRig(dir); const withExtra = { custom: { keep: [1, 2] }, ...def0, guide: '.atrium/seats/main.txt' };
     fs.writeFileSync(rigFile(dir), JSON.stringify(withExtra, null, 2) + '\n');
@@ -236,8 +226,8 @@ test('P190 rig.get: 없는 워크스페이스는 none, 만든 뒤 off와 정의�
   try {
     let g = await HS(b)['rig.get']({}, DEVICE);
     assert.equal(g.status, 'none'); assert.equal(g.definition, null); assert.equal(g.builder, null); assert.equal(g.defaultLauncher, 'claude');
-    assert.ok((await HS(b)['rig.templates']({}, DEVICE)).templates.length === 3);
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    assert.equal((await HS(b)['rig.presets']({}, DEVICE)).shortcuts.length, 2, 'P228: 바로가기 둘(원격도 읽는다)');
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     g = await HS(b)['rig.get']({}, LOCAL);
     assert.equal(g.status, 'off'); assert.equal(g.versionN, 1); assert.equal(g.definition.seats.main.session, 'keep');
     assert.deepEqual(g.locked, []); assert.equal(g.openCases, 0); assert.deepEqual(g.seated, { main: [], worker: [] });
@@ -269,7 +259,7 @@ test('P190 rig.get: 훅·도구·주기는 이름과 명령만', async () => {
 test('P190 rig.spawnSeat: keep 자리를 그 자리의 런처로 띄워 앉힌다(이름은 자리, 겹치면 <자리>-<n>). fresh·없는 자리·꺼진 rig·앉은 자리는 거절', async () => {
   const { b, ws, add, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'codex', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'codex', worker: 'claude' });
     await assert.rejects(HS(b)['rig.spawnSeat']({ seat: 'main' }, LOCAL), (e) => e.code === 'rig_off');
     b.store.setRigEnabled(ws.key, true);
     await assert.rejects(HS(b)['rig.spawnSeat']({ seat: 'main' }, DEVICE), (e) => e.code === 'forbidden');
@@ -293,7 +283,7 @@ test('P190 rig.describe: 제작 세션 rig-builder를 띄우고 사람이 주인
     // 제작 세션: 첫 요청을 받으면 정의를 쓰고 검사한 뒤 done
     b.onSpawnText = async (text, s) => {
       if (!/rig 만들기 일/.test(text)) return;
-      const { def, guides } = templateFiles('main-worker', { main: 'claude', worker: 'claude' });
+      const { def, guides } = legacyTemplateFiles('main-worker', { main: 'claude', worker: 'claude' });
       for (const [rel, t] of Object.entries(guides)) { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), t); }
       fs.writeFileSync(rigFile(dir), JSON.stringify(def, null, 2));
       const c = await b.branch.rigAdmin.verb(s, { op: 'check' });
@@ -335,7 +325,7 @@ test('P190 rig.describe: 제작 세션 rig-builder를 띄우고 사람이 주인
 test('P190 켜진 rig의 말로 고치기: 제작 일이 열린 동안 바뀐 정의는 누가 human, 그 밖은 지금 규칙(unknown)', async () => {
   const { b, ws, dir, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     b.store.setRigEnabled(ws.key, true); assert.equal(b.rig.read(ws.key).n, 1);
     let builder = null;
     b.onSpawnText = async (text, s) => { builder = s; };
@@ -379,14 +369,14 @@ test('P190 제작 세션이 보고 없이 멈추면 응답 필요 목록(rig_bui
   } finally { await stop(); }
 });
 
-test('P190 atrium guide rig: 판 내장 안내(정의 형식, 틀 셋, rig check, done)', async () => {
+test('P190 atrium guide rig: 판 내장 안내(정의 형식, 바로가기 둘, rig check, done)', async () => {
   const { b, add, stop } = await empty();
   try {
     const s = add('x');
     const r = b.branch.guideVerb(s, { topic: 'rig' });
     assert.equal(r.builtin.topic, 'rig');
     assert.equal(r.builtin.text, rigGuideText());
-    for (const w of ['atrium rig check', 'atrium done ok', '"session": "keep"', '"max": 2', '"worktree": true', 'results', 'flow', 'manager']) assert.ok(r.builtin.text.includes(w), w);
+    for (const w of ['atrium rig check', 'atrium done ok', '"session": "keep"', '"max": 2', '"loops"', '"permission": "scoped"', 'results', 'flow', 'manager']) assert.ok(r.builtin.text.includes(w), w);
     assert.equal(b.branch.guideVerb(s, {}).builtin, undefined, '주제 없으면 그대로');
     assert.match(VERBS.find((v) => v.name === 'guide').does, /guide rig/);
   } finally { await stop(); }
@@ -398,14 +388,14 @@ test('P190 atrium rig check 넓히기: 꺼졌거나 없는 rig면 어느 세션�
     const s = add('anyone');
     let c = await b.branch.rigAdmin.verb(s, { op: 'check' });
     assert.equal(c.ok, false); assert.match(c.reason, /없다/);
-    const def = templateFiles('main-worker', { main: 'claude', worker: 'claude' }).def; delete def.seats.main.guide; delete def.seats.worker.guide;
+    const def = legacyTemplateFiles('main-worker', { main: 'claude', worker: 'claude' }).def; delete def.seats.main.guide; delete def.seats.worker.guide;
     fs.mkdirSync(path.join(dir, 'cand'), { recursive: true });
     c = await b.branch.rigAdmin.verb(s, { op: 'check', text: JSON.stringify(def), file: 'cand.json' });
     assert.equal(c.ok, true, c.reason); assert.deepEqual(c.summary.seats, ['main', 'worker']);
     c = await b.branch.rigAdmin.verb(s, { op: 'check', text: JSON.stringify({ seats: { Bad: {} } }) });
     assert.equal(c.ok, false);
     await assert.rejects(b.branch.rigAdmin.verb(s, { op: 'log' }), (e) => e.code === 'forbidden');
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     assert.equal((await b.branch.rigAdmin.verb(s, { op: 'check' })).ok, true, '꺼진 rig');
     b.store.setRigEnabled(ws.key, true);
     await assert.rejects(b.branch.rigAdmin.verb(s, { op: 'check' }), (e) => e.code === 'forbidden', '켜진 rig는 관리자 자리만');

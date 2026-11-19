@@ -363,7 +363,7 @@ export class Branch {
     this.tools = new ToolRuns(b, toolOpts); // P183: atrium tool(rig 도구 실행과 장부)
     this.flow = new RigFlow(b, this); // P185: rig 자리·건·흐름(자리로 보내기, done 값에 따른 넘김, 되돌아감 상한)
     this.rigAdmin = new RigAdmin(b, this); // P188: 관리자 자리의 정의 관리(버전, 되돌리기, 정리)
-    b.rigSetup = new RigSetup(b); // P190: rig.templates·create·describe·get·save·spawnSeat와 제작 세션의 일
+    b.rigSetup = new RigSetup(b); // P190: rig.presets(P228)·create·describe·get·save·spawnSeat와 제작 세션의 일
     this.handlers = {
       'branch.tree': () => this.tree(),
     };

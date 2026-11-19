@@ -116,7 +116,8 @@ const evs = (b, kind) => b.store.db.prepare('SELECT * FROM events WHERE kind = ?
 
 // ---------- P190 ----------
 import { RigSetup, rigSetupHandlers } from '../src/rig-setup.mjs';
-import { rigTemplates, templateFiles, TEMPLATE_IDS, builderHeader, rigGuideText, HUMAN_FROM, BUILDER_ORIGIN } from '../src/rig-templates.mjs';
+import { legacyCreate } from './legacy-rig.mjs'; // P228: 옛 3자리 틀
+import { builderHeader, rigGuideText, HUMAN_FROM, BUILDER_ORIGIN } from '../src/rig-templates.mjs';
 import { summarizeChanges, CHANGE_KINDS } from '../src/changes.mjs';
 import { SEAT_SPAWN } from '../src/rig-amp.mjs';
 
@@ -142,7 +143,7 @@ const setupBuilder = async (b) => {
 test('P209 제작 세션: 제작 일을 닫은 뒤에도 켜진 rig에서 check·log를 쓴다. rollback·cleanup은 여전히 거절, 다른 자리 없는 세션은 거절', async () => {
   const { b, ws, add, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     b.store.setRigEnabled(ws.key, true);
     const { builder, r } = await setupBuilder(b);
     await U(b).doneVerb(builder, { result: 'ok', text: '고쳤다' });
@@ -190,7 +191,7 @@ test('P209 자리 effort·model 검사: 종류별 값, 틀린 값, model은 종�
 test('P209 atrium rig check: 런처 자리의 effort는 런처 종류로, 앉은 keep 자리는 다음에 띄울 때부터라고 알린다', async () => {
   const { b, ws, dir, add, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     b.rigSetup.findLauncher = (ref) => (ref === 'cx' ? { id: 'cx', name: 'cx', harness: 'codex' } : ref === 'cl' ? { id: 'cl', name: 'cl', harness: 'claude' } : null);
     b.store.setRigEnabled(ws.key, true);
     const main = add('main'); b.branch.flow.setSeat(main, 'main');
@@ -243,7 +244,7 @@ test('P209 seatOverrides: model을 주면 종류도(주인과 같은 종류여�
 test('P209 keep 자리를 사람이 앉힐 때(rig.spawnSeat) 자리의 effort·model이 런처 값을 덮는다', async () => {
   const { b, ws, dir, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     const def = readRig(dir); def.seats.main.effort = 'medium'; def.seats.main.model = 'haiku';
     fs.writeFileSync(rigFile(dir), JSON.stringify(def, null, 2)); const t = new Date(Date.now() + 2000); fs.utimesSync(rigFile(dir), t, t);
     b.store.setRigEnabled(ws.key, true);
@@ -257,7 +258,7 @@ test('P209 keep 자리를 사람이 앉힐 때(rig.spawnSeat) 자리의 effort·
 test('P209 정의 해시·버전: effort를 더하면 새 버전, 보호 포인터 /seats/worker는 effort 바꾸기도 막는다. rig 상태의 자리에 effort·model', async () => {
   const { b, ws, dir, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     b.store.setRigEnabled(ws.key, true);
     const h1 = b.rig.read(ws.key).hash; assert.equal(b.rig.read(ws.key).n, 1);
     await HS(b)['rig.save']({ seats: { main: {}, worker: { effort: 'low' } } }, LOCAL);

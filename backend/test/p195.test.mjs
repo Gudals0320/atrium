@@ -119,7 +119,7 @@ const evs = (b, kind) => b.store.db.prepare('SELECT * FROM events WHERE kind = ?
 import { rigHandlers, gitStateOf, worktreeWarnings, mayReachOutside, rigDirName } from '../src/rig.mjs';
 import { RigAdmin } from '../src/rig-admin.mjs';
 import { rigSetupHandlers } from '../src/rig-setup.mjs';
-import { templateFiles } from '../src/rig-templates.mjs';
+import { legacyTemplateFiles } from './legacy-rig.mjs'; // P228: 옛 3자리 틀은 시험 도움으로
 import { seatNotice } from '../src/rig-flow.mjs';
 
 const LOCAL = { auth: { kind: 'local' } };
@@ -128,7 +128,7 @@ const git = (dir, ...a) => execFileSync('git', ['-C', dir, ...a], { stdio: ['ign
 const gitInit = (dir) => { git(dir, 'init', '-q', '-b', 'main'); git(dir, 'config', 'user.email', 't@example.invalid'); git(dir, 'config', 'user.name', 't'); git(dir, 'config', 'commit.gpgsign', 'false'); };
 const gitCommit = (dir) => { fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n'); git(dir, 'add', 'a.txt'); git(dir, 'commit', '-q', '-m', 'first'); };
 // 틀 3 정의(런처는 claude)
-const wtDef = () => templateFiles('main-worker-reviewer-worktree', { main: 'claude', worker: 'claude', reviewer: 'claude' }).def;
+const wtDef = () => legacyTemplateFiles('main-worker-reviewer-worktree', { main: 'claude', worker: 'claude', reviewer: 'claude' }).def;
 function writeDef(dir, def) {
   fs.mkdirSync(path.join(dir, '.atrium', 'seats'), { recursive: true });
   for (const s of Object.keys(def.seats)) fs.writeFileSync(path.join(dir, '.atrium', 'seats', `${s}.txt`), `${s}\n`);
@@ -154,7 +154,7 @@ test('P195 gitStateOf와 worktreeWarnings: 저장소 아님, 커밋 없음, 정�
   assert.match(worktreeWarnings(seats, 'nocommit')[0], /커밋이 없다/);
 });
 
-test('P195 워크트리 자리 경고: rig check·rig.get·켜기 미리보기(status)·틀 목록과 만들기', async () => {
+test('P195 워크트리 자리 경고: rig check·rig.get·켜기 미리보기(status)', async () => {
   const { b, dir, ws, stop } = await board({ def: null, enable: false });
   try {
     writeDef(dir, wtDef());
@@ -169,12 +169,7 @@ test('P195 워크트리 자리 경고: rig check·rig.get·켜기 미리보기(s
     assert.equal(g0.worktreeGit, 'norepo'); assert.ok(g0.warnings.some((w) => /워크트리/.test(w)));
     const en = await rigHandlers(b)['rig.enable']({}, LOCAL);
     assert.equal(en.needsConfirm, true); assert.equal(en.worktreeGit, 'norepo', '켜기 미리보기도 안다');
-    const tp = await rigSetupHandlers(b)['rig.templates']({ workspace: ws.key }, LOCAL);
-    assert.equal(tp.git, 'norepo');
-    const t3 = tp.templates.find((t) => t.id === 'main-worker-reviewer-worktree');
-    assert.equal(t3.blocked, 'norepo'); assert.match(t3.blockedReason, /git 저장소와 첫 커밋이 필요하다/);
-    assert.equal(tp.templates.find((t) => t.id === 'main-worker').blocked, undefined, '워크트리 없는 틀은 그대로');
-    assert.equal((await rigSetupHandlers(b)['rig.templates']({}, LOCAL)).templates.every((t) => !t.blocked), true, '워크스페이스를 주지 않으면 옛 그대로');
+    // P228: 틀 목록(rig.templates)과 워크트리 틀의 막힘은 3자리 틀과 함께 내렸다. 옛 워크트리 정의는 그대로 읽고 경고한다
     // 커밋 없음
     gitInit(dir);
     await tick(3100); // gitStateOf의 3초 기억
@@ -185,16 +180,6 @@ test('P195 워크트리 자리 경고: rig check·rig.get·켜기 미리보기(s
     await tick(3100);
     assert.equal(b.rig.status(ws.key).worktreeGit, null);
     assert.equal(A.check(ws.key).warnings.some((w) => /워크트리/.test(w)), false);
-  } finally { await stop(); }
-});
-
-test('P195 rig.create: 워크트리 틀은 저장소가 아니면 까닭과 함께 거절, 다른 틀은 그대로 만든다', async () => {
-  const { b, dir, stop } = await board({ def: null, enable: false });
-  try {
-    await assert.rejects(rigSetupHandlers(b)['rig.create']({ template: 'main-worker-reviewer-worktree', launchers: { main: 'claude', worker: 'claude', reviewer: 'claude' } }, LOCAL), /워크트리를 쓴다\(worker\)/);
-    assert.equal(fs.existsSync(path.join(dir, '.atrium', 'rig.json')), false);
-    const r = await rigSetupHandlers(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
-    assert.equal(r.ok, true);
   } finally { await stop(); }
 });
 

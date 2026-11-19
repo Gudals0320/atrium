@@ -116,7 +116,8 @@ const evs = (b, kind) => b.store.db.prepare('SELECT * FROM events WHERE kind = ?
 
 // ---------- P190 ----------
 import { RigSetup, rigSetupHandlers } from '../src/rig-setup.mjs';
-import { rigTemplates, templateFiles, TEMPLATE_IDS, builderHeader, rigGuideText, HUMAN_FROM, BUILDER_ORIGIN } from '../src/rig-templates.mjs';
+import { legacyCreate } from './legacy-rig.mjs'; // P228: 옛 3자리 틀
+import { builderHeader, rigGuideText, HUMAN_FROM, BUILDER_ORIGIN } from '../src/rig-templates.mjs';
 import { summarizeChanges, CHANGE_KINDS } from '../src/changes.mjs';
 import { SEAT_SPAWN } from '../src/rig-amp.mjs';
 
@@ -146,7 +147,7 @@ const gates = (b, key) => readEvents(b, key, { kinds: 'gate' }).rows.filter((r) 
 test('P220 빌더: 꺼진 rig에서 atrium child 거절(꺼짐 문구), 장부 줄, 다른 워크스페이스는 됨', async () => {
   const { b, ws, add, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     assert.equal(b.rig.enabled(ws.key), false);
     const { builder } = await setupBuilder(b);
     assert.equal(b.rigSetup.isBuilder(builder), true);
@@ -174,7 +175,7 @@ test('P220 빌더: 꺼진 rig에서 atrium child 거절(꺼짐 문구), 장부 �
 test('P220 빌더: 켜진 rig에서 자리 세션에 보내기 거절(앉은 세션·자리 이름), rig 밖 세션은 됨, 읽기는 됨, 빌더 아닌 세션은 그대로', async () => {
   const { b, ws, add, seat, stop } = await empty();
   try {
-    await HS(b)['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     b.store.setRigEnabled(ws.key, true);
     const { builder } = await setupBuilder(b);
     await U(b).doneVerb(builder, { result: 'ok', text: '고쳤다' });

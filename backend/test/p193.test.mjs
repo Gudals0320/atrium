@@ -117,6 +117,7 @@ const evs = (b, kind) => b.store.db.prepare('SELECT * FROM events WHERE kind = ?
 // ---------- P193 ----------
 import { seatNotice, seatLeftNotice, seatNamed } from '../src/rig-flow.mjs';
 import { rigSetupHandlers } from '../src/rig-setup.mjs';
+import { legacyCreate } from './legacy-rig.mjs'; // P228: 옛 3자리 틀
 import { isBoardNotice } from '../src/text.mjs';
 import { SEAT_SPAWN } from '../src/rig-amp.mjs';
 import { Backend } from '../src/backend.mjs';
@@ -179,7 +180,7 @@ test('P193 rig.spawnSeat: 띄운 keep 자리 세션에 판 알림 한 번(첫 �
   const { b, ws, stop } = await board({ def: null, enable: false });
   try {
     const HS = rigSetupHandlers(b);
-    await HS['rig.create']({ template: 'main-worker', launchers: { main: 'claude', worker: 'claude' } }, LOCAL);
+    legacyCreate(b, ws.key, 'main-worker', { main: 'claude', worker: 'claude' });
     b.store.setRigEnabled(ws.key, true);
     const r = await HS['rig.spawnSeat']({ seat: 'main' }, LOCAL);
     const s = b.sessions.get(r.session);

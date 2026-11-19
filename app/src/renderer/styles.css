@@ -2510,13 +2510,11 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigsetup-steps { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--dim); flex-wrap: wrap; }
 .mt-rigsetup-steps li { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--panel-line); }
 .mt-rigsetup-steps li.on { color: var(--text); border-color: var(--accent-line); background: var(--panel-2); font-weight: 600; }
-.mt-rigsetup-paths { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
 .mt-rigsetup-card { display: grid; gap: 4px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--panel-line); background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 .mt-rigsetup-card:hover, .mt-rigsetup-card:focus-visible { border-color: var(--accent-line); }
 .mt-rigsetup-card .dim { font-size: 12px; }
-.mt-rigsetup-card-seats { font: 11.5px var(--font-mono); color: var(--text-2); }
 .mt-rigsetup-card.describe { border-style: dashed; }
-.mt-rigsetup-launchers, .mt-rigsetup-seats, .mt-rigsetup-describe { display: grid; gap: 8px; }
+.mt-rigsetup-seats, .mt-rigsetup-describe { display: grid; gap: 8px; }
 .mt-modal label.mt-rigsetup-seatrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: 13px; font-weight: 400; flex-wrap: wrap; }
 .mt-rigsetup-seatrow select { min-width: 200px; max-width: 100%; }
 .mt-rigsetup-builder { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--panel-line); font-size: 13px; }
@@ -2565,8 +2563,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigpanel-table th.mt-rigpanel-cbh, .mt-rigpanel-table td.mt-rigpanel-cb { width: 1%; text-align: center; padding-left: 8px; padding-right: 8px; }
 
 /* P195: 워크트리 틀이 막힘(git 저장소·첫 커밋 없음), 원격 rig 판의 안내 한 줄 */
-.mt-rigsetup-card:disabled { cursor: not-allowed; opacity: 0.75; }
-.mt-rigsetup-card:disabled:hover { border-color: var(--panel-line); }
 .mt-rigpanel-remote { font-size: 12px; margin: 4px 0 8px; }
 /* P195: 프로젝트 열기의 Git 저장소로 시작 */
 .mt-modal label.mt-wsgit { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; } /* 대화상자 label의 격자 대신 한 줄 */
@@ -2774,3 +2770,33 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigask-btn:disabled { color: var(--dim); background: var(--panel-2); border-color: var(--panel-line); cursor: default; }
 /* P226: 무인 자리 승인 카드의 위험 한 줄(셸로 저장소 어디든 쓰고 지움) */
 .mt-rigask-risk { color: var(--attn-text); font-size: 12px; overflow-wrap: anywhere; }
+/* P228: Rig 만들기 세 질문(바로가기, 언제 도나, 누가 하나, 덧붙임)과 켜기 전 요약 */
+.mt-rigask { display: grid; gap: 10px; max-height: min(62vh, 640px); overflow: auto; padding-right: 4px; }
+.mt-rigask-h { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.mt-rigask-h .dim, .mt-rigask-q legend .dim { font-weight: 400; font-size: 12px; margin-left: 6px; }
+.mt-rigask-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.mt-rigsetup-card.on { border-color: var(--accent-line); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.mt-rigask-q { display: grid; gap: 6px; margin: 0; padding: 8px 12px 10px; border: 1px solid var(--panel-line); border-radius: 10px; min-width: 0; }
+.mt-rigask-q legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+.mt-modal label.mt-rigask-opt { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; color: var(--text); font-size: 13px; font-weight: 400; }
+.mt-modal label.mt-rigask-opt .dim { font-size: 12px; flex: 1 1 260px; }
+.mt-modal label.mt-rigask-opt.off { opacity: 0.6; }
+.mt-modal label.mt-rigask-field { display: grid; gap: 3px; font-size: 12px; }
+.mt-rigask-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mt-rigask-inline { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
+.mt-rigask-un .mt-rigon-warn { margin: 0; flex: 1 1 100%; font-size: 12.5px; }
+.mt-rigask-un.on .mt-rigon-warn { font-weight: 600; }
+.mt-rigask-add { padding: 4px 0; border-top: 1px solid var(--panel-line); }
+.mt-rigask-add:first-of-type { border-top: 0; }
+.mt-rigask-addbody { display: grid; gap: 6px; padding: 4px 0 4px 22px; }
+.mt-rigask-problem { font-size: 12px; margin-top: 6px; }
+.mt-rigsum { display: grid; gap: 2px; }
+.mt-rigsum-h { font-size: 12px; font-weight: 600; color: var(--text-2); margin-top: 6px; }
+.mt-rigsum-perm { flex: 1 1 100%; font-size: 12.5px; }
+.mt-rigon-perm-un .mt-rigsum-perm { color: var(--attn-text); }
+.mt-rigsum-files { font-size: 12px; margin-top: 4px; word-break: break-all; }
+.mt-rigsetup-refine { display: grid; gap: 6px; margin-top: 10px; justify-items: start; }
+.mt-rigsetup-refine label { width: 100%; }
+.mt-modal label.mt-rigask-opt input { width: auto; flex: none; margin: 0; }
+.mt-rigsum .mt-rigon-list { max-height: none; }
+.mt-rigsum .mt-rigon-list li { flex-wrap: wrap; }

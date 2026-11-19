@@ -1,6 +1,6 @@
 // P190: rig 7단계 백엔드 — 판 안에서 rig 만들기와 고치기(docs research harness-arch.md 16절).
-// - 판 API(이 PC의 창·사람의 atrium call: 판 API 토큰만. 원격 기기는 rig.get·rig.templates만 읽는다):
-//   rig.templates, rig.create { workspace, template, launchers }, rig.describe { workspace, text, launcher }, rig.get { workspace },
+// - 판 API(이 PC의 창·사람의 atrium call: 판 API 토큰만. 원격 기기는 rig.get·rig.presets만 읽는다):
+//   rig.presets, rig.create { workspace, answers }(P228: 세 질문의 답. 옛 3자리 틀은 내렸다), rig.describe { workspace, text, launcher }, rig.get { workspace },
 //   rig.save { workspace, seats, flow, results }, rig.spawnSeat { workspace, seat }.
 // - 판이 .atrium/을 쓰는 것은 사람이 고른 rig.create(정의가 없을 때만)와 rig.save(seats·flow·results 세 칸만)뿐이다. 제작 세션은 스스로 쓴다.
 //   판이 쓴 rig.json은 켜짐과 상관없이 바로 버전으로 남는다(누가 human, Rig.recordNow).
@@ -10,13 +10,14 @@
 // - 기본 런처: 그 워크스페이스에서 마지막으로 런처로 띄운 세션의 런처(spawn 이벤트), 없으면 판 레일의 첫 에이전트 런처, 없으면 claude.
 import fs from 'node:fs';
 import path from 'node:path';
-import { RIG_FILE, validateRig, protectedHits, SEAT_KINDS, gitStateOf, worktreeWarnings } from './rig.mjs';
+import { RIG_FILE, validateRig, protectedHits, SEAT_KINDS } from './rig.mjs';
 import { SEAT_SPAWN } from './rig-amp.mjs';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { harnessOf } from './launchers.mjs';
 import { shownName } from './session-label.mjs';
 import { clip } from './text.mjs';
-import { rigTemplates, templateFiles, isTemplate, TEMPLATE_IDS, HUMAN_FROM, BUILDER_ORIGIN, BUILDER_NAME } from './rig-templates.mjs';
+import { HUMAN_FROM, BUILDER_ORIGIN, BUILDER_NAME } from './rig-templates.mjs';
+import { presetFiles, shortcutAnswers, SHORTCUTS, DEFAULT_ANSWERS, EVERY_PRESETS, HOURS_MAX, IMPROVE_DAYS_MAX, REVIEW_SEAT, READ_ALLOW } from './rig-presets.mjs'; // P228
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 export const DESCRIBE_MAX = 20000;
@@ -93,39 +94,46 @@ export class RigSetup {
   }
 
   // ---------- rig.create ----------
-  create(key, { template, launchers = {} } = {}) {
+  // P228(rig2-design 11.2·11.3): 세 질문의 답(answers, rig-presets.mjs)으로 정의를 만든다. 정의가 없을 때만.
+  //   판이 쓰는 것: .atrium/rig.json, 자리 안내 .atrium/seats/<자리>.txt, 그리고 답이 고른 파일·폴더 가운데 없는 것만(정본 문서 시작 글, 빈 장부,
+  //   산출물 폴더, 제안 폴더와 초안 폴더, 기계 검사 시작 스크립트). 이미 있는 파일은 덮지 않는다(kept).
+  create(key, { answers } = {}) {
     const rig = this.rig();
     const root = this.rootOf(key);
-    if (!isTemplate(template)) throw apiError('bad_request', `틀은 ${TEMPLATE_IDS.join(', ')} 가운데 하나다: ${template || '(없음)'}`);
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) throw apiError('bad_request', 'answers(Rig 만들기의 세 질문 답)를 준다');
     const file = path.join(root, RIG_FILE);
     if (fs.existsSync(file)) throw apiError('rig_exists', `이미 rig 정의가 있다(${RIG_FILE}). 고치려면 rig 보기·고치기를 쓴다.`);
-    const t = rigTemplates().find((x) => x.id === template);
     const dflt = this.defaultLauncher(key);
-    const picked = {};
-    for (const [seat, x] of Object.entries(t.seats)) {
-      const L = this.launcherOf((launchers && launchers[seat]) || dflt);
-      if (x.worktree && L.kind !== 'claude') throw apiError('bad_request', `${seat} 자리는 일마다 워크트리에서 돈다. Claude Code 런처만 쓴다(고른 런처: ${L.ref}, 종류 ${L.kind}).`);
-      picked[seat] = L.ref;
-    }
-    if (Object.values(t.seats).some((x) => x.worktree)) { const g = gitStateOf(root); if (g !== 'ok') throw apiError('bad_request', worktreeWarnings(Object.entries(t.seats).map(([name, x]) => ({ name, ...x })), g)[0]); } // P195
-    const { def, guides } = templateFiles(template, picked);
+    const L = this.launcherOf(answers.launcher || dflt);
+    const wantReview = !!(answers.review && answers.review.on);
+    const R = wantReview ? this.launcherOf(answers.review.launcher || answers.launcher || dflt) : null;
+    const kinds = new Map([[L.ref, L.kind], ...(R ? [[R.ref, R.kind]] : [])]);
+    let out;
+    try { out = presetFiles(answers, { launcher: L.ref, reviewLauncher: R ? R.ref : null, kindOf: (ref) => kinds.get(ref) || ref }); }
+    catch (e) { throw apiError(e.code || 'bad_request', e.message); }
+    // 쓰기 전에 검사한다: 판이 만들 파일·폴더는 있는 것으로 본다
+    const made = new Set([...Object.keys(out.files), ...Object.keys(out.guides), ...out.dirs].map((r) => path.resolve(root, r)));
+    const v = validateRig(out.def, { root, cycleMinMs: rig.cycleMin(), exists: (f) => made.has(path.resolve(f)) || fs.existsSync(f) });
+    if (!v.ok) throw apiError('rig_invalid', `만든 정의가 맞지 않다: ${v.reason}`);
     const written = []; const kept = [];
-    fs.mkdirSync(path.join(root, '.atrium', 'seats'), { recursive: true });
-    for (const [rel, text] of Object.entries(guides)) {
+    for (const d of out.dirs) fs.mkdirSync(path.join(root, d), { recursive: true });
+    for (const [rel, text] of Object.entries({ ...out.files, ...out.guides })) {
       const f = path.join(root, rel);
-      if (fs.existsSync(f)) { kept.push(rel); continue; } // 사람이 둔 자리 안내는 덮지 않는다
+      if (fs.existsSync(f)) { kept.push(rel); continue; } // 사람이 둔 파일(정본, 장부, 자리 안내, 스크립트)은 덮지 않는다
+      fs.mkdirSync(path.dirname(f), { recursive: true });
       fs.writeFileSync(f, text); written.push(rel);
     }
-    const v = validateRig(def, { root, cycleMinMs: rig.cycleMin() });
-    if (!v.ok) throw apiError('rig_invalid', `틀로 만든 정의가 맞지 않다: ${v.reason}`);
-    try { fs.writeFileSync(file, JSON.stringify(def, null, 2) + '\n', { flag: 'wx' }); }
+    try { fs.writeFileSync(file, JSON.stringify(out.def, null, 2) + '\n', { flag: 'wx' }); }
     catch (e) { if (e.code === 'EEXIST') throw apiError('rig_exists', `이미 rig 정의가 있다(${RIG_FILE}).`); throw e; }
     written.push(RIG_FILE);
-    const a = rig.recordNow(key, { by: 'human', note: `create ${template}` });
-    this.store().addEvent(null, 'rig_create', { workspace: key, template, launchers: picked, version: a.ok ? a.n : null, written, kept });
-    this.b.log && this.b.log(`rig create ${key} ${template} → #${a.ok ? a.n : '?'}`);
+    const warnings = (validateRig(out.def, { root, cycleMinMs: rig.cycleMin() }).def || v.def).warnings; // 파일을 쓴 뒤의 경고(문서가 아직 없다는 경고가 빠진다)
+    const preset = out.answers.shortcut || 'custom';
+    const launchers = { [out.answers.seat]: L.ref, ...(R ? { [REVIEW_SEAT]: R.ref } : {}) };
+    const a = rig.recordNow(key, { by: 'human', note: `create ${preset}` });
+    this.store().addEvent(null, 'rig_create', { workspace: key, preset, trigger: out.answers.trigger, launchers, version: a.ok ? a.n : null, written, kept });
+    this.b.log && this.b.log(`rig create ${key} ${preset} → #${a.ok ? a.n : '?'}`);
     this.changedWs();
-    return { ok: true, path: RIG_FILE, version: a.ok ? a.n ?? null : null, template, launchers: picked, written, kept };
+    return { ok: true, path: RIG_FILE, version: a.ok ? a.n ?? null : null, preset, launchers, written, kept, warnings };
   }
 
   // ---------- rig.save: seats·flow·results 세 칸만 ----------
@@ -353,22 +361,18 @@ export class RigSetup {
   }
 }
 
-// 판 API 처리기(backend.mjs handlers에 펼친다). rig.templates·rig.get은 보기라 기기 토큰(휴대폰·원격)도 본다.
+// 판 API 처리기(backend.mjs handlers에 펼친다). rig.presets·rig.get은 보기라 기기 토큰(휴대폰·원격)도 본다.
 // 나머지는 판 API 토큰으로 붙은 연결(이 PC의 창·사람의 atrium call, auth.kind local)만. 에이전트의 세션 토큰은 이 API에 붙지 못한다
 export function rigSetupHandlers(b) {
   const local = (c, what) => { if (!c || !c.auth || c.auth.kind !== 'local') throw apiError('forbidden', `${what}는 이 PC의 보드 창에서만 한다(판 API 토큰).`); };
   const keyOf = async (p) => (await b.resolveWorkspace(p && p.workspace)).key;
   const S = () => { if (!b.rigSetup) throw apiError('rig_off', 'rig가 없다.'); return b.rigSetup; };
   return {
-    // P195: 워크스페이스를 주면 워크트리 틀에 그 폴더의 git 상태(blocked: norepo | nocommit)를 붙인다. 창이 그 틀을 까닭과 함께 막는다
-    'rig.templates': async (p) => {
-      const list = rigTemplates();
-      if (!p || !p.workspace) return { templates: list };
-      const root = (await b.resolveWorkspace(p.workspace)).root;
-      const needs = list.some((t) => Object.values(t.seats).some((x) => x.worktree));
-      const g = needs ? gitStateOf(root) : 'ok';
-      return { templates: list.map((t) => (g !== 'ok' && Object.values(t.seats).some((x) => x.worktree) ? { ...t, blocked: g, blockedReason: worktreeWarnings(Object.entries(t.seats).map(([name, x]) => ({ name, ...x })), g)[0] } : t)), git: g };
-    },
+    // P228: Rig 만들기 대화상자의 바로가기 둘과 답의 기본값(세 질문). 옛 rig.templates(3자리 틀)를 대신한다
+    'rig.presets': async () => ({
+      shortcuts: SHORTCUTS.map((s) => ({ id: s.id, title: s.title, desc: s.desc, en: s.en, answers: shortcutAnswers(s.id) })),
+      defaults: DEFAULT_ANSWERS, every: EVERY_PRESETS, hoursMax: HOURS_MAX, improveDaysMax: IMPROVE_DAYS_MAX, readAllow: READ_ALLOW,
+    }),
     'rig.get': async (p) => S().get(await keyOf(p)),
     'rig.create': async (p, c) => { local(c, 'rig 만들기'); return S().create(await keyOf(p), p || {}); },
     'rig.describe': async (p, c) => { local(c, 'rig 말로 만들기·고치기'); return S().describe(await keyOf(p), p || {}); },

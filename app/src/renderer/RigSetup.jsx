@@ -1,5 +1,6 @@
 // P191: 하네스 7단계 창 — 판 안에서 rig 만들기(대화상자)와 보기·고치기(rig 판). docs research harness-arch.md 16절.
-// 판 API(P190): rig.templates, rig.create, rig.describe, rig.get, rig.save, rig.spawnSeat, 이미 있는 rig.enable·rig.seat. 판 이벤트 rig.builder(제작 세션이 끝남)
+// P228(rig2-design 11.2·11.3·11.11): 만들기 대화상자는 세 질문(언제 도나·누가 하나·덧붙임)과 바로가기 둘, 켜기 전 요약과 자리 권한 줄. 3자리 틀은 내렸다.
+// 판 API(P190): rig.presets(P228), rig.create, rig.describe, rig.get, rig.save, rig.spawnSeat, 이미 있는 rig.enable·rig.seat. 판 이벤트 rig.builder(제작 세션이 끝남)
 // 단계·표 편집·잠금·저장 자료는 lib/rig-setup.js(단위 시험 test/p191-lib.test.mjs). 원격 기기(웹 화면)는 보기만.
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from './api.js';
@@ -8,9 +9,10 @@ import { useT, errText, getLanguage } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
 import {
-  launcherChoices, launcherLabel, namedLaunchers, wizardInit, wizardPickTemplate, wizardPickDescribe, wizardSetLauncher, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
-  wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions, previewModel, arrowLabel, seatList,
-  templateList, tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit, canDisable, templateBlockKey, seatBlockKey,
+  launcherChoices, launcherLabel, namedLaunchers, wizardInit, wizardPickDescribe, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
+  wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions, previewModel, arrowLabel,
+  tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit, canDisable, seatBlockKey,
+  presetsView, wizardApplyShortcut, wizardSet, wizardRefineRequest, answersProblem, everyMode, everyHours, everyOf, reviewLauncherDefault, defSummary, permLine,
 } from './lib/rig-setup.js';
 
 const argv = (run) => (Array.isArray(run) ? run.join(' ') : String(run || ''));
@@ -79,8 +81,29 @@ function EnableBody({ st, ws }) {
       <div className="mt-rigon-h">{t('rig.confirmTools', { n: tools.length })}</div>
       <ul className="mt-rigon-list" data-role="rig-confirm-tools">{tools.length ? tools.map((x) => <li key={x.name}><span className="mt-rigon-at">{x.name}</span><code>{argv(x.run)} …</code></li>) : <li className="dim">{t('rig.confirmNone')}</li>}</ul>
       {cycles.length > 0 && <><div className="mt-rigon-h">{t('rigAdmin.confirmCycles', { n: cycles.length })}</div><ul className="mt-rigon-list">{cycles.map((x, i) => <li key={i}><span className="mt-rigon-at">{x.every}</span><code>{argv(x.run)}</code></li>)}</ul></>}
+      <EnablePerms def={st.definition} />
       <div className="mt-card-sub dim">{t('rig.confirmLater')}</div>
     </div>
+  );
+}
+
+// P228: 켜기 확인의 자리 권한(켜기 확인 창 RigOnDialog와 같은 글). 켜기(rig.enable confirm)가 무인 자리를 승인한다
+function EnablePerms({ def }) {
+  const t = useT();
+  const seats = defSummary(def).seats.filter((x) => x.permission !== 'ask');
+  if (!seats.length) return null;
+  return (
+    <>
+      <div className="mt-rigon-h">{t('rigPerm.confirmHead', { n: seats.length })}</div>
+      <ul className="mt-rigon-list" data-role="rig-confirm-perms">
+        {seats.map((x) => (
+          <li key={x.name} data-seat={x.name} data-permission={x.permission} className={x.permission === 'unattended' ? 'mt-rigon-perm-un' : undefined}>
+            <span className="mt-rigon-at">{x.name}</span><span>{t(permLine(x).key, permLine(x).vars)}</span>
+          </li>
+        ))}
+      </ul>
+      {seats.some((x) => x.permission === 'unattended') && <div className="mt-rigon-warn" data-role="rig-confirm-unattended">{t('rigPerm.unattendedWarn')}</div>}
+    </>
   );
 }
 
@@ -135,18 +158,21 @@ function BuilderLine({ b }) {
   );
 }
 
-// ---------- 만들기 대화상자 ----------
+// ---------- 만들기 대화상자(P228: 세 질문 + 덧붙임) ----------
 export function RigCreateDialog({ ws, onClose }) {
   const t = useT();
   const remote = remoteView();
   const box = useDialog(onClose);
   const choices = useChoices();
   const [st, load] = useRigGet(ws.key);
-  const [tpls, setTpls] = useState(null);
+  const [pre, setPre] = useState(null);
   const [w, setW] = useState(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.call('rig.templates', { workspace: ws.key }).then(setTpls, (e) => setTpls({ error: errText(e) })); }, [ws.key]); // P195: 워크트리 틀은 git 저장소와 첫 커밋이 있어야 고른다
-  useEffect(() => { if (st && !w && st.status !== 'error') setW(wizardInit({ defaultLauncher: st.defaultLauncher, status: { state: st.status } })); }, [st, w]);
+  useEffect(() => { api.call('rig.presets', { workspace: ws.key }).then(setPre, (e) => setPre({ error: errText(e) })); }, [ws.key]);
+  const pv = presetsView(pre, getLanguage());
+  useEffect(() => { if (st && pre && !w && st.status !== 'error') setW(wizardInit({ defaultLauncher: st.defaultLauncher, status: { state: st.status }, defaults: pv.defaults, choices })); }, [st, pre, w]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 런처 목록이 늦게 오면 검토 런처 기본값을 다시 고른다(사람이 고르기 전에만)
+  useEffect(() => { if (w && choices.length && w.step === 'ask' && w.answers.review.launcher === w.answers.launcher) setW((x) => wizardSet(x, 'review.launcher', reviewLauncherDefault(choices, x.answers.launcher))); }, [choices.length]); // eslint-disable-line react-hooks/exhaustive-deps
   // 제작 세션 소식: 이벤트의 builder와 새로 읽은 정의로 building을 넘긴다
   const onBuilder = useCallback((ev) => { load().then((r) => setW((x) => (x ? wizardOnBuilder(x, ev, { state: (r && r.status) || ev.definitionStatus }) : x))); }, [load]); // P190: working·stopped·done(result가 가른다)
   useBuilderEvent(ws.key, onBuilder);
@@ -160,45 +186,21 @@ export function RigCreateDialog({ ws, onClose }) {
     if (w.step === 'enable') { await api.call('rig.enable', { workspace: ws.key, confirm: true }); toast(t('rig.turnedOn', { name: ws.label || ws.name })); await load(); setW(wizardAfterEnable); return; }
     if (w.step === 'seat') { await runSeats(ws, st, w.seatPick); toast(t('rigSetup.seated')); onClose(); }
   });
+  // 요약 단계의 말로 다듬기: 만든 정의를 제작 세션이 고친다(만드는 중 → 요약으로 돌아온다)
+  const refine = () => act(async () => { const req = wizardRefineRequest(w, ws.key); if (!req) return; const r = await api.call(req.method, req.params); await load(); setW((x) => wizardAfterRequest(x, r)); });
   const step = w ? w.step : 'loading';
-  const tplList = templateList(tpls, getLanguage());
-  const nextLabel = { launchers: t('rigSetup.create'), describe: t('rigSetup.startBuilder'), preview: t('rigSetup.toEnable'), enable: t('rig.confirmOn'), seat: t('rigSetup.seatGo') }[step];
+  const nextLabel = { ask: t('rigP228.create'), describe: t('rigSetup.startBuilder'), preview: t('rigSetup.toEnable'), enable: t('rig.confirmOn'), seat: t('rigSetup.seatGo') }[step];
+  const problem = w && step === 'ask' ? answersProblem(w.answers) : null;
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div ref={box} className="mt-modal mt-rigsetup" data-role="rig-create" data-ws={ws.key} data-step={step}>
         <h3>{t('rigSetup.createTitle', { name: ws.label || ws.name })}</h3>
         <ol className="mt-rigsetup-steps" aria-hidden="true">
-          {['path', 'shape', 'preview', 'enable', 'seat'].map((k) => <li key={k} className={stepGroup(step) === k ? 'on' : ''}>{t(`rigSetup.step.${k}`)}</li>)}
+          {['ask', 'preview', 'enable', 'seat'].map((k) => <li key={k} className={stepGroup(step) === k ? 'on' : ''}>{t(`rigP228.step.${k}`)}</li>)}
         </ol>
         {!w ? <div>{st && st.status === 'error' ? st.error : t('rig.loading')}</div> : (
           <>
-            {step === 'path' && (
-              <div className="mt-rigsetup-paths" data-role="rig-paths">
-                {tpls && tpls.error && <div className="mt-rigon-warn">{tpls.error}</div>}
-                {tplList.map((x) => (
-                  <button key={x.id} type="button" className="mt-rigsetup-card" data-action="rig-template" data-template={x.id} data-blocked={x.blocked || undefined} disabled={!!x.blocked} onClick={() => setW(wizardPickTemplate(w, x, st.defaultLauncher, choices))}>
-                    <b>{x.title}</b><span className="dim">{x.desc}</span>
-                    <span className="mt-rigsetup-card-seats">{seatList(x).map((s) => s.name).join(' · ')}</span>
-                    {x.blocked && <span className="mt-rigon-warn" data-role="rig-template-blocked">{t(templateBlockKey(x.blocked))}</span>}
-                  </button>
-                ))}
-                <button type="button" className="mt-rigsetup-card describe" data-action="rig-describe" onClick={() => setW(wizardPickDescribe(w))}>
-                  <b>{t('rigSetup.describeTitle')}</b><span className="dim">{t('rigSetup.describeDesc')}</span>
-                </button>
-              </div>
-            )}
-            {step === 'launchers' && (
-              <div className="mt-rigsetup-launchers" data-role="rig-launchers">
-                <div className="dim">{t('rigSetup.launchersIntro')}</div>
-                {seatList(w.templateDef).map((s) => (
-                  <label key={s.name} className="mt-rigsetup-seatrow" data-seat={s.name}>
-                    <span><b>{s.name}</b> <span className="dim">{s.session === 'keep' ? 'keep' : 'fresh'}{s.worktree ? ' · ⎇' : ''}</span></span>
-                    <LauncherSelect choices={choices} value={w.launchers[s.name]} onChange={(v) => setW(wizardSetLauncher(w, s.name, v))} />
-                  </label>
-                ))}
-                <RigPreview def={{ ...w.templateDef, seats: Object.fromEntries(seatList(w.templateDef).map((s) => [s.name, { ...s, launcher: w.launchers[s.name] }])) }} choices={choices} />
-              </div>
-            )}
+            {step === 'ask' && <AskStep w={w} setW={setW} choices={choices} shortcuts={pv.shortcuts} presetsError={pv.error} />}
             {step === 'describe' && (
               <div className="mt-rigsetup-describe" data-role="rig-describe-form">
                 <label>{t('rigSetup.describeLabel')}
@@ -216,22 +218,180 @@ export function RigCreateDialog({ ws, onClose }) {
                 {st && st.status === 'invalid' && <div className="mt-rigon-warn">{t('rig.stInvalid', { reason: st.why || '?' })}</div>}
               </div>
             )}
-            {step === 'preview' && st && <><RigPreview def={st.definition} choices={choices} />{st.status === 'invalid' && <div className="mt-rigon-warn">{t('rig.stInvalid', { reason: st.why || '?' })}</div>}</>}
+            {step === 'preview' && st && (
+              <>
+                <RigSummary def={st.definition} choices={choices} created={w.created} />
+                {st.status === 'invalid' && <div className="mt-rigon-warn">{t('rig.stInvalid', { reason: st.why || '?' })}</div>}
+                <div className="mt-rigsetup-refine" data-role="rig-refine">
+                  <label>{t('rigP228.refine')}
+                    <textarea className="mt-input" rows={2} value={w.refine} data-role="rig-refine-text" placeholder={t('rigP228.refinePh')} onChange={(e) => setW({ ...w, refine: e.target.value })} />
+                  </label>
+                  <button type="button" className="mt-btn" data-action="rig-refine" disabled={busy || !String(w.refine || '').trim()} onClick={refine}>{t('rigP228.refineSend')}</button>
+                </div>
+              </>
+            )}
             {step === 'enable' && st && <EnableBody st={st} ws={ws} />}
             {step === 'seat' && st && <SeatStep ws={ws} st={st} picks={w.seatPick} setPick={(seat, p) => setW(wizardSetSeat(w, seat, p))} />}
+            {problem && <div className="mt-rigask-problem dim" data-role="rig-ask-problem" data-problem={problem}>{t(`rigP228.bad.${problem}`)}</div>}
             {w.error && <div className="mt-rigon-warn" data-role="rig-setup-error">{w.error}</div>}
           </>
         )}
         <div className="mt-card-actions">
           {nextLabel && <button className="mt-btn primary" data-action="rig-setup-next" disabled={busy || !w || !wizardCanNext(w) || (step === 'preview' && st && st.status === 'invalid')} onClick={next}>{nextLabel}</button>}
-          {w && (step === 'launchers' || step === 'describe') && <button className="mt-btn ghost" data-action="rig-setup-back" disabled={busy} onClick={() => setW(wizardBack(w))}>{t('rigSetup.back')}</button>}
+          {w && step === 'describe' && <button className="mt-btn ghost" data-action="rig-setup-back" disabled={busy} onClick={() => setW(wizardBack(w))}>{t('rigSetup.back')}</button>}
           <button className="mt-btn ghost" data-action="rig-setup-close" onClick={onClose}>{step === 'building' ? t('rigSetup.closeBuilding') : step === 'seat' ? t('rigSetup.seatSkip') : t('common.cancel')}</button>
         </div>
       </div>
     </div>
   );
 }
-const stepGroup = (s) => (s === 'path' ? 'path' : s === 'launchers' || s === 'describe' || s === 'building' ? 'shape' : s);
+const stepGroup = (s) => (s === 'ask' || s === 'describe' || s === 'building' ? 'ask' : s);
+
+// 세 질문: 바로가기 둘, (1) 언제 도나, (2) 누가 하나, (3) 덧붙임. 말로 설명하기로 가는 단추
+function AskStep({ w, setW, choices, shortcuts, presetsError }) {
+  const t = useT();
+  const a = w.answers;
+  const set = (k, v) => setW((x) => wizardSet(x, k, v));
+  const mode = everyMode(a.every);
+  return (
+    <div className="mt-rigask" data-role="rig-ask" data-shortcut={a.shortcut || undefined}>
+      {presetsError && <div className="mt-rigon-warn">{presetsError}</div>}
+      {shortcuts.length > 0 && (
+        <div className="mt-rigask-shortcuts" data-role="rig-shortcuts">
+          <div className="mt-rigask-h">{t('rigP228.shortcuts')} <span className="dim">{t('rigP228.shortcutsHint')}</span></div>
+          <div className="mt-rigask-cards">
+            {shortcuts.map((x) => (
+              <button key={x.id} type="button" className={`mt-rigsetup-card${a.shortcut === x.id ? ' on' : ''}`} data-action="rig-shortcut" data-shortcut={x.id} aria-pressed={a.shortcut === x.id} onClick={() => setW((y) => wizardApplyShortcut(y, x))}>
+                <b>{x.title}</b><span className="dim">{x.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <fieldset className="mt-rigask-q" data-q="when">
+        <legend>{t('rigP228.qWhen')}</legend>
+        <label className="mt-rigask-opt"><input type="radio" name="rig-when" checked={a.trigger === 'request'} data-field="trigger" value="request" onChange={() => set('trigger', 'request')} />{t('rigP228.whenRequest')}<span className="dim">{t('rigP228.whenRequestHint')}</span></label>
+        <label className="mt-rigask-opt"><input type="radio" name="rig-when" checked={a.trigger === 'every'} data-field="trigger" value="every" onChange={() => set('trigger', 'every')} />{t('rigP228.whenEvery')}
+          {a.trigger === 'every' && (
+            <span className="mt-rigask-inline">
+              <select className="mt-input" data-field="every" value={mode} onChange={(e) => set('every', everyOf(e.target.value, everyHours(a.every)))}>
+                <option value="1d">{t('rigP228.every1d')}</option><option value="7d">{t('rigP228.every7d')}</option><option value="h">{t('rigP228.everyH')}</option>
+              </select>
+              {mode === 'h' && <><input className="mt-input mt-rigpanel-num" type="number" min="1" data-field="hours" value={everyHours(a.every)} onChange={(e) => set('every', everyOf('h', e.target.value))} />{t('rigP228.hours')}</>}
+            </span>
+          )}
+        </label>
+        {a.trigger === 'every' && (
+          <label className="mt-rigask-field">{t('rigP228.task')}
+            <textarea className="mt-input" rows={2} data-field="task" value={a.task} placeholder={t('rigP228.taskPh')} onChange={(e) => set('task', e.target.value)} />
+          </label>
+        )}
+      </fieldset>
+      <fieldset className="mt-rigask-q" data-q="who">
+        <legend>{t('rigP228.qWho')}</legend>
+        <div className="mt-rigask-row">
+          <label className="mt-rigask-field">{t('rigP228.seatName')}<input className="mt-input" data-field="seat" value={a.seat} onChange={(e) => set('seat', e.target.value)} /></label>
+          <label className="mt-rigask-field">{t('rigP228.launcher')}<LauncherSelect choices={choices} value={a.launcher} onChange={(v) => set('launcher', v)} /></label>
+        </div>
+        <label className="mt-rigask-opt"><input type="radio" name="rig-session" checked={a.session === 'keep'} data-field="session" value="keep" onChange={() => set('session', 'keep')} />{t('rigP228.keep')}<span className="dim">{t('rigP228.keepHint')}</span></label>
+        <label className={`mt-rigask-opt${a.trigger === 'request' ? ' off' : ''}`}><input type="radio" name="rig-session" checked={a.session === 'fresh'} disabled={a.trigger === 'request'} data-field="session" value="fresh" onChange={() => set('session', 'fresh')} />{t('rigP228.fresh')}<span className="dim">{t('rigP228.freshHint')}</span></label>
+        <label className="mt-rigask-field">{t('rigP228.permission')}
+          <select className="mt-input" data-field="permission" value={a.permission} onChange={(e) => set('permission', e.target.value)}>
+            <option value="ask">{t('rigP228.permAskOpt')}</option><option value="scoped">{t('rigP228.permScopedOpt')}</option>
+          </select>
+        </label>
+        <label className={`mt-rigask-opt mt-rigask-un${a.unattended ? ' on' : ''}`} data-role="rig-unattended">
+          <input type="checkbox" checked={a.unattended} data-field="unattended" onChange={(e) => set('unattended', e.target.checked)} />{t('rigP228.unattended')}
+          <span className="mt-rigon-warn" data-role="rig-unattended-warn">{t('rigPerm.unattended')}</span>
+          <span className="dim">{t('rigP228.unattendedHint')}</span>
+        </label>
+      </fieldset>
+      <fieldset className="mt-rigask-q" data-q="adds">
+        <legend>{t('rigP228.qAdds')} <span className="dim">{t('rigP228.addsHint')}</span></legend>
+        <Add k="canon" a={a} set={set}>
+          <label className="mt-rigask-field">{t('rigP228.canonPath')}<input className="mt-input" data-field="canon.path" value={a.canon.path} onChange={(e) => set('canon.path', e.target.value)} /></label>
+          <span className="dim">{t('rigP228.canonNew')}</span>
+        </Add>
+        <Add k="ledger" a={a} set={set}>
+          <label className="mt-rigask-field">{t('rigP228.ledgerPath')}<input className="mt-input" data-field="ledger.path" value={a.ledger.path} onChange={(e) => set('ledger.path', e.target.value)} /></label>
+          <label className="mt-rigask-opt"><input type="checkbox" checked={!!a.ledger.improve} data-field="ledger.improve" onChange={(e) => set('ledger.improve', e.target.checked)} />{t('rigP228.improve', { n: a.ledger.days })}</label>
+          {a.ledger.improve && <label className="mt-rigask-field">{t('rigP228.improveDays')}<input className="mt-input mt-rigpanel-num" type="number" min="1" max="90" data-field="ledger.days" value={a.ledger.days} onChange={(e) => set('ledger.days', Number(e.target.value))} /></label>}
+        </Add>
+        <Add k="sector" a={a} set={set}>
+          <label className="mt-rigask-field">{t('rigP228.sectorPath')}<input className="mt-input" data-field="sector.path" value={a.sector.path} onChange={(e) => set('sector.path', e.target.value)} /></label>
+        </Add>
+        <Add k="check" a={a} set={set}>
+          <label className="mt-rigask-field">{t('rigP228.checkPath')}<input className="mt-input" data-field="check.script" value={a.check.script} onChange={(e) => set('check.script', e.target.value)} /></label>
+          <span className="dim">{t('rigP228.checkNew')}</span>
+        </Add>
+        <Add k="review" a={a} set={set}>
+          <label className="mt-rigask-field">{t('rigP228.reviewLauncher')}<LauncherSelect choices={choices} value={a.review.launcher || a.launcher} onChange={(v) => set('review.launcher', v)} /></label>
+        </Add>
+      </fieldset>
+      <button type="button" className="mt-rigsetup-card describe" data-action="rig-describe" onClick={() => setW((x) => wizardPickDescribe(x))}>
+        <b>{t('rigP228.describe')}</b><span className="dim">{t('rigP228.describeHint')}</span>
+      </button>
+    </div>
+  );
+}
+// 덧붙임 한 줄: 체크와 이름·설명, 켜면 칸
+function Add({ k, a, set, children }) {
+  const t = useT();
+  const on = !!a[k].on;
+  return (
+    <div className={`mt-rigask-add${on ? ' on' : ''}`} data-add={k}>
+      <label className="mt-rigask-opt"><input type="checkbox" checked={on} data-field={`${k}.on`} onChange={(e) => set(`${k}.on`, e.target.checked)} /><b>{t(`rigP228.${k}`)}</b><span className="dim">{t(`rigP228.${k}Desc`)}</span></label>
+      {on && <div className="mt-rigask-addbody">{children}</div>}
+    </div>
+  );
+}
+
+// 켜기 전 요약: 고리·계기·자리(권한 줄)·덧붙임. 옛 틀처럼 고리가 없는 정의는 흐름 그림
+export function RigSummary({ def, choices = [], created = null }) {
+  const t = useT();
+  const s = useMemo(() => defSummary(def), [def]);
+  const every = (e) => (e === '1d' ? t('rigP228.every1d') : e === '7d' ? t('rigP228.every7d') : /^\d+h$/.test(String(e)) ? t('rigP228.everyN', { n: parseInt(e, 10) }) : String(e || ''));
+  const loopText = (l) => (l.kind === 'improve' ? t('rigP228.loopImprove', { name: l.name, every: every(l.every), approve: t(l.approve === 'human' ? 'rigP228.approveHuman' : 'rigP228.approveManager') })
+    : l.trigger === 'request' ? t('rigP228.loopRequest', { name: l.name, entry: l.entry }) : l.trigger === 'every' ? t('rigP228.loopEvery', { name: l.name, every: every(l.every), entry: l.entry }) : t('rigP228.loopEvent', { name: l.name }));
+  const adds = [
+    s.adds.canon.length && t('rigP228.addCanon', { list: s.adds.canon.join(', ') }),
+    s.adds.ledger.length && t('rigP228.addLedger', { list: s.adds.ledger.join(', ') }),
+    s.adds.sector.length && t('rigP228.addSector', { list: s.adds.sector.join(', ') }),
+    s.adds.check.length && t('rigP228.addCheck', { list: s.adds.check.join(' · ') }),
+    s.adds.review && t('rigP228.addReview', { name: s.adds.review }),
+  ].filter(Boolean);
+  return (
+    <div className="mt-rigsum" data-role="rig-summary">
+      <div className="mt-rigon-h">{t('rigP228.sumTitle')}</div>
+      {s.legacy ? <><div className="dim" data-role="rig-summary-legacy">{t('rigP228.legacyNote')}</div><RigPreview def={def} choices={choices} /></> : (
+        <>
+          <div className="mt-rigsum-h">{t('rigP228.sumLoops')}</div>
+          <ul className="mt-rigon-list" data-role="rig-summary-loops">
+            {s.loops.map((l) => <li key={l.name} data-loop={l.name} data-trigger={l.trigger || undefined}>{loopText(l)}{l.produces.length > 0 && l.kind !== 'improve' && <span className="dim"> · {t('rigP228.produces', { list: l.produces.join(', ') })}</span>}</li>)}
+          </ul>
+        </>
+      )}
+      <div className="mt-rigsum-h">{t('rigP228.sumSeats')}</div>
+      <ul className="mt-rigon-list" data-role="rig-summary-seats">
+        {s.seats.map((x) => {
+          const p = permLine(x);
+          return (
+            <li key={x.name} data-seat={x.name} data-permission={x.permission} className={p.warn ? 'mt-rigon-perm-un' : undefined}>
+              <span className="mt-rigon-at">{x.name}</span><span className="dim">{t('rigP228.seatLine', { session: x.session, launcher: launcherName(choices, x.launcher) })}</span>
+              <span className="mt-rigsum-perm" data-role="rig-perm-line">{t(p.key, p.vars)}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {!s.legacy && <>
+        <div className="mt-rigsum-h">{t('rigP228.sumAdds')}</div>
+        <ul className="mt-rigon-list" data-role="rig-summary-adds">{adds.length ? adds.map((x, i) => <li key={i}>{x}</li>) : <li className="dim">{t('rigP228.sumNone')}</li>}</ul>
+      </>}
+      {created && (created.written || []).length > 0 && <div className="dim mt-rigsum-files" data-role="rig-summary-written">{t('rigP228.written', { list: created.written.join(', ') })}</div>}
+      {created && (created.kept || []).length > 0 && <div className="dim mt-rigsum-files" data-role="rig-summary-kept">{t('rigP228.kept', { list: created.kept.join(', ') })}</div>}
+    </div>
+  );
+}
 
 function LauncherSelect({ choices, value, onChange, disabled }) {
   const t = useT();
@@ -264,8 +424,9 @@ export function RigPanel({ ws, onClose }) {
   useEffect(() => { if (st && st.definition) { const x = tableFromDef(st.definition); setTb(x); setBase(x); } }, [defHash]); // eslint-disable-line react-hooks/exhaustive-deps
   const locked = (st && st.locked) || [];
   const act = async (fn) => { setBusy(true); setErr(null); try { await fn(); } catch (e) { setErr(errText(e)); } finally { setBusy(false); } };
+  const hasLoops = !!(st && st.definition && st.definition.loops); // P228: rig 2 정의는 흐름 줄이 고리 안에 있다(맨 위 flow를 보내지 않는다)
   const save = () => act(async () => {
-    const d = tableToSave(tb);
+    const d = tableToSave(tb, { loops: hasLoops });
     if (d.error) { setErr(t(d.error.key, d.error.vars || {})); return; }
     const r = await api.call('rig.save', { workspace: ws.key, ...d });
     toast(t('rigPanel.saved', { n: r && r.versionN != null ? r.versionN : '?' }));
@@ -307,7 +468,7 @@ export function RigPanel({ ws, onClose }) {
                 {setup.step === 'seat' && <><SeatStep ws={ws} st={st} picks={setup.picks} setPick={(s, p) => setSetup({ ...setup, picks: { ...setup.picks, [s]: p } })} /><div className="mt-card-actions"><button className="mt-btn primary" data-action="rig-panel-seat-go" disabled={busy} onClick={() => act(async () => { await runSeats(ws, st, setup.picks); toast(t('rigSetup.seated')); setSetup(null); await load(); })}>{t('rigSetup.seatGo')}</button><button className="mt-btn ghost" onClick={() => setSetup(null)}>{t('rigSetup.seatSkip')}</button></div></>}
               </div>
             )}
-            {st.definition && <RigPreview def={tb ? previewDef(tb, st.definition) : st.definition} choices={choices} />}
+            {st.definition && (hasLoops ? <RigSummary def={st.definition} choices={choices} /> : <RigPreview def={tb ? previewDef(tb, st.definition) : st.definition} choices={choices} />)}{/* P228: rig 2 정의는 요약(고리·자리 권한·덧붙임) */}
             {tb && (
               <>
                 <div className="mt-rigon-h">{t('rigPanel.seats')}</div>
@@ -342,6 +503,7 @@ export function RigPanel({ ws, onClose }) {
                 </table>
                 {edit && !partLocked(locked, 'seats') && <button className="mt-btn small" data-action="rig-add-seat" onClick={() => setTb(tableAdd(tb, 'seats', { launcher: st.defaultLauncher }))}>{t('rigPanel.addSeat')}</button>}
 
+                {!hasLoops && <>{/* P228: rig 2 정의(loops)의 흐름 줄은 고리 안에 있어 이 표로 고치지 않는다(말로 고치기) */}
                 <div className="mt-rigon-h">{t('rigPanel.flow')}</div>
                 <table className="mt-rigpanel-table" data-role="rig-flow">
                   <thead><tr><th>{t('rigPanel.colFrom')}</th><th>{t('rigPanel.colOn')}</th><th>{t('rigPanel.colTo')}</th><th>{t('rigPanel.colMax')}</th><th>{t('rigPanel.colElse')}</th><th /></tr></thead>
@@ -362,6 +524,7 @@ export function RigPanel({ ws, onClose }) {
                   </tbody>
                 </table>
                 {edit && !partLocked(locked, 'flow') && <button className="mt-btn small" data-action="rig-add-flow" onClick={() => setTb(tableAdd(tb, 'flow'))}>{t('rigPanel.addFlow')}</button>}
+                </>}
 
                 <div className="mt-rigon-h">{t('rigPanel.results')}</div>
                 <div className="mt-rigpanel-results" data-role="rig-results">
