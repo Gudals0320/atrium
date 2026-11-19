@@ -2624,45 +2624,45 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 
 /* P237(rig2-design 11.18의 둘째): 보내기 칸의 "회 없이". 받는 세션에 rig 자리가 있을 때만 받는 세션 칩 옆에 보인다. 켜면 채운 알약 */
 
-/* P241: rig 3 판(읽기만 하는 구조 보기와 켜기 확인) */
-.mt-rig3-confirm { border: 1px solid var(--panel-line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: var(--panel-2); }
-.mt-rig3-confirm-line { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-.mt-rig3-purpose { font-size: 12.5px; margin: 6px 0 2px; }
-.mt-rig3-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.mt-rig3-table th { text-align: left; font-weight: 600; color: var(--dim); padding: 3px 6px; border-bottom: 1px solid var(--panel-line); }
-.mt-rig3-table td { padding: 4px 6px; vertical-align: top; }
-.mt-rig3-table code { font-size: 12px; }
-.mt-rig3-sub { display: block; font-size: 11.5px; }
-.mt-rig3-st { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--dim); }
-.mt-rig3-st.ready { background: var(--st-ready); }
-.mt-rig3-st.working { background: var(--st-working); }
-.mt-rig3-flows li { display: flex; gap: 8px; align-items: baseline; }
+/* P241: rig 판(읽기만 하는 구조 보기와 켜기 확인) */
+.mt-rig-confirm { border: 1px solid var(--panel-line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: var(--panel-2); }
+.mt-rig-confirm-line { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.mt-rig-purpose { font-size: 12.5px; margin: 6px 0 2px; }
+.mt-rig-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mt-rig-table th { text-align: left; font-weight: 600; color: var(--dim); padding: 3px 6px; border-bottom: 1px solid var(--panel-line); }
+.mt-rig-table td { padding: 4px 6px; vertical-align: top; }
+.mt-rig-table code { font-size: 12px; }
+.mt-rig-sub { display: block; font-size: 11.5px; }
+.mt-rig-st { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--dim); }
+.mt-rig-st.ready { background: var(--st-ready); }
+.mt-rig-st.working { background: var(--st-working); }
+.mt-rig-flows li { display: flex; gap: 8px; align-items: baseline; }
 
-/* P242: rig 3 길마다 수, 멈춘 역할, 입력 창구 */
-.mt-rig3-counts { margin-left: auto; font-size: 11.5px; white-space: nowrap; }
-.mt-rig3-alerts { margin: 8px 0 2px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
-.mt-rig3-intake { margin-top: 8px; }
-.mt-rig3-intake-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
-.mt-rig3-intake-text { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--panel-line); background: var(--panel-2); color: inherit; }
+/* P242: rig 길마다 수, 멈춘 역할, 입력 창구 */
+.mt-rig-counts { margin-left: auto; font-size: 11.5px; white-space: nowrap; }
+.mt-rig-alerts { margin: 8px 0 2px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.mt-rig-intake { margin-top: 8px; }
+.mt-rig-intake-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.mt-rig-intake-text { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--panel-line); background: var(--panel-2); color: inherit; }
 
-/* P244: rig 3 사이클과 변경 기록 꼭지(작게, 생김새는 나중에 정한다) */
-.mt-rig3-cycle { margin-top: 8px; }
-.mt-rig3-cycle-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 12.5px; }
-.mt-rig3-cycle-line .mt-btn { margin-left: auto; }
-.mt-rig3-cycle-tools { font-size: 11.5px; margin-top: 3px; }
-.mt-rig3-entries { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-.mt-rig3-entry { border: 1px solid var(--panel-line); border-radius: 6px; padding: 4px 8px; font-size: 12.5px; }
-.mt-rig3-entry summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
-.mt-rig3-entry-by { margin-left: auto; font-size: 11px; color: var(--dim); }
-.mt-rig3-entry-body { white-space: pre-wrap; font: inherit; font-size: 12px; margin: 6px 0 2px; max-height: 220px; overflow: auto; }
+/* P244: rig 사이클과 변경 기록 꼭지(작게, 생김새는 나중에 정한다) */
+.mt-rig-cycle { margin-top: 8px; }
+.mt-rig-cycle-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.mt-rig-cycle-line .mt-btn { margin-left: auto; }
+.mt-rig-cycle-tools { font-size: 11.5px; margin-top: 3px; }
+.mt-rig-entries { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.mt-rig-entry { border: 1px solid var(--panel-line); border-radius: 6px; padding: 4px 8px; font-size: 12.5px; }
+.mt-rig-entry summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.mt-rig-entry-by { margin-left: auto; font-size: 11px; color: var(--dim); }
+.mt-rig-entry-body { white-space: pre-wrap; font: inherit; font-size: 12px; margin: 6px 0 2px; max-height: 220px; overflow: auto; }
 
-/* P245: rig 3 역할 줄의 정의서 판·조정 수와 조정 기록 */
-.mt-rig3-tune-badge { background: none; border: 1px solid var(--line, #3334); border-radius: 4px; padding: 1px 6px; font: inherit; font-size: 11px; color: inherit; cursor: pointer; }
-.mt-rig3-tune-badge.open { border-color: var(--warn, #c90); }
-.mt-rig3-tune-row > td { padding-top: 0; }
-.mt-rig3-tune { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; }
-.mt-rig3-tune-text { margin: 0; max-height: 140px; overflow: auto; font-size: 11px; white-space: pre-wrap; opacity: 0.9; }
-.mt-rig3-tune-log li { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
+/* P245: rig 역할 줄의 정의서 판·조정 수와 조정 기록 */
+.mt-rig-tune-badge { background: none; border: 1px solid var(--line, #3334); border-radius: 4px; padding: 1px 6px; font: inherit; font-size: 11px; color: inherit; cursor: pointer; }
+.mt-rig-tune-badge.open { border-color: var(--warn, #c90); }
+.mt-rig-tune-row > td { padding-top: 0; }
+.mt-rig-tune { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; }
+.mt-rig-tune-text { margin: 0; max-height: 140px; overflow: auto; font-size: 11px; white-space: pre-wrap; opacity: 0.9; }
+.mt-rig-tune-log li { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
 
 /* P248: 보내기 칸의 스티어링 선택(회 없이 단추와 같은 꼴). 켜면 강조, 받는 세션이 스티어링할 수 없으면 흐리게(누르면 까닭) */
 .mt-cmd-steer { flex: none; height: 22px; margin-bottom: 17px; padding: 0 9px; border-radius: 11px; border: 1px dashed var(--chrome-line-2); background: none; color: var(--chrome-text-2); font: 600 11.5px/1 var(--font-ui); white-space: nowrap; cursor: pointer; }
@@ -2670,8 +2670,8 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-cmd-steer.on { border-style: solid; color: var(--accent-2); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .mt-cmd-steer[data-off] { color: var(--chrome-text-3); border-color: var(--chrome-line); cursor: not-allowed; }
 
-/* P247: rig 3 빌더에게 말하기(rig 판) */
-.mt-rig3-builder { margin: 8px 0 10px; padding: 8px 10px; border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 6px; }
-.mt-rig3-builder-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.mt-rig3-builder-line .mt-btn { margin-left: auto; }
-.mt-rig3-builder .mt-rig3-intake-text { width: 100%; margin-top: 6px; box-sizing: border-box; }
+/* P247: rig 빌더에게 말하기(rig 판) */
+.mt-rig-builder { margin: 8px 0 10px; padding: 8px 10px; border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 6px; }
+.mt-rig-builder-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mt-rig-builder-line .mt-btn { margin-left: auto; }
+.mt-rig-builder .mt-rig-intake-text { width: 100%; margin-top: 6px; box-sizing: border-box; }

@@ -1,7 +1,7 @@
 // P245: rig 3 역할 줄의 정의서 판·조정 수(tuneBadge)와 조정 기록 줄(tuneLogRows)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { roleRows, tuneBadge, tuneLogRows } from '../src/renderer/lib/rig3.js';
+import { roleRows, tuneBadge, tuneLogRows } from '../src/renderer/lib/rig.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
 
@@ -19,6 +19,6 @@ test('P245 역할 줄의 정의서 판과 조정 기록', () => {
   const l = tuneLogRows(info);
   assert.deepEqual(l.map((x) => [x.key, x.undo]), [['rollback', 3], ['none', null], ['rejected', null], ['tune', 1]]);
   assert.deepEqual(tuneLogRows(null), []);
-  for (const d of [en, ko]) for (const k of ['col', 'badge', 'material', 'turnOpen', 'head', 'empty', 'noLog', 'evidence', 'undo', 'undone', 'same']) assert.ok(d.rig3Tune[k], k);
-  for (const d of [en, ko]) for (const k of ['tune', 'rejected', 'none', 'raise', 'rollback']) assert.ok(d.rig3Tune.k[k], k);
+  for (const d of [en, ko]) for (const k of ['col', 'badge', 'material', 'turnOpen', 'head', 'empty', 'noLog', 'evidence', 'undo', 'undone', 'same']) assert.ok(d.rigTune[k], k);
+  for (const d of [en, ko]) for (const k of ['tune', 'rejected', 'none', 'raise', 'rollback']) assert.ok(d.rigTune.k[k], k);
 });

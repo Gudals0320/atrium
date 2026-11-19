@@ -9,23 +9,23 @@ import { shownName } from './session-label.mjs';
 
 // rig의 켜기·판(버전) 사건. P249: 옛 rig(1·2)의 건·일·관문·고리·문서·제안 종류는 걷어냈다(옛 판 DB의 줄은 그대로 읽힌다)
 export const RIG_EVENT_KINDS = ['rig_enabled', 'rig_disabled', 'rig_version', 'rig_invalid', 'rig_rollback'];
-// P241: rig 3 장부 종류(역할 세션). rig 2 목록(RIG_EVENT_KINDS)과 따로 둔다(rig 2를 걷어낼 때 그 목록만 지운다)
+// P241: rig 역할 장부 종류(역할 세션).
 //   role_spawn(켜기가 띄움), role_respawn(닫히거나 끝나 다시 띄움, data.prev), role_gave_up(다시 띄우기 상한), role_write_denied(섹터 밖 쓰기·셸 안의 셸 거절, value writes | nested_shell), role_slept(쉬어 판이 재움)
-// P242: 항목·길·받음(rig3-items.mjs). item_put(value new | redo | intake), item_accept, item_return(value receiver | late), item_pass(value item | turn), item_drop,
+// P242: 항목·길·받음(rig-items.mjs). item_put(value new | redo | intake), item_accept, item_return(value receiver | late), item_pass(value item | turn), item_drop,
 //   role_woke(rig를 켜 잠든 역할 세션을 깨움. 끌 때 재우는 것은 role_slept value rig_off),
 //   item_nudge(답하지 않고 멈춘 역할을 한 번 일깨움), item_stalled(일깨운 뒤에도 그대로), item_changed(낸 파일이 바뀜, value changed | missing)
 //   P249: role_removed(정의에서 빠진 역할의 세션을 rig에서 뗌, value slept | asleep | kept)
-export const RIG3_EVENT_KINDS = ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept', 'item_put', 'item_accept', 'item_return', 'item_pass', 'item_drop', 'item_nudge', 'item_stalled', 'item_changed', 'role_woke', 'role_removed'];
-// P243: rig 3 남의 쓰기 되돌리기(rig3-guard.mjs). role_foreign_write(value restored | quarantined | revived | unrestorable | failed, data.candidates), role_guard_base(처음 기준 목록, data.ms)
-export const RIG3_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];
-// P244: rig 3 박자·도구·사이클 요약(rig3-beat.mjs). cycle_open(value enable | clock | late | human, n), cycle_entry(value ai | numbers, n, ref 변경 기록 파일),
+export const RIG_ROLE_KINDS = ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept', 'item_put', 'item_accept', 'item_return', 'item_pass', 'item_drop', 'item_nudge', 'item_stalled', 'item_changed', 'role_woke', 'role_removed'];
+// P243: rig 남의 쓰기 되돌리기(rig-guard.mjs). role_foreign_write(value restored | quarantined | revived | unrestorable | failed, data.candidates), role_guard_base(처음 기준 목록, data.ms)
+export const RIG_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];
+// P244: rig 박자·도구·사이클 요약(rig-beat.mjs). cycle_open(value enable | clock | late | human, n), cycle_entry(value ai | numbers, n, ref 변경 기록 파일),
 //   role_tool(value done | failed | alarm, ref 실행 ID, data.by clock | role, data.tool·exit·alarm·log), role_beat(역할 칸 beat가 그 역할을 깨움)
-export const RIG3_BEAT_KINDS = ['cycle_open', 'cycle_entry', 'role_tool', 'role_beat'];
-// P245: rig 3 조정과 되돌리기(rig3-tune.mjs): 조정 턴, 조정(applied | rejected | none), 빌더에게 올림, 사람의 바로잡음, 사람의 되돌리기
-export const RIG3_TUNE_KINDS = ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback'];
-// P247: rig 3 빌더(rig3-builder.mjs). builder_spawn(사람이 "빌더에게 말하기"로 빌더 세션을 띄움)
-export const RIG3_BUILDER_KINDS = ['builder_spawn'];
-const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS, ...RIG3_BEAT_KINDS, ...RIG3_TUNE_KINDS, ...RIG3_BUILDER_KINDS]);
+export const RIG_BEAT_KINDS = ['cycle_open', 'cycle_entry', 'role_tool', 'role_beat'];
+// P245: rig 조정과 되돌리기(rig-tune.mjs): 조정 턴, 조정(applied | rejected | none), 빌더에게 올림, 사람의 바로잡음, 사람의 되돌리기
+export const RIG_TUNE_KINDS = ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback'];
+// P247: rig 빌더(rig-builder.mjs). builder_spawn(사람이 "빌더에게 말하기"로 빌더 세션을 띄움)
+export const RIG_BUILDER_KINDS = ['builder_spawn'];
+const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG_ROLE_KINDS, ...RIG_GUARD_KINDS, ...RIG_BEAT_KINDS, ...RIG_TUNE_KINDS, ...RIG_BUILDER_KINDS]);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];
 export const RIG_EVENTS_MAX = 100000;
 const PRUNE_EVERY = 500;
@@ -84,7 +84,7 @@ export function parseKinds(v) {
   if (v == null || v === '') return null;
   const list = (Array.isArray(v) ? v : String(v).split(',')).map((x) => String(x).trim()).filter(Boolean);
   const bad = list.filter((k) => !KINDS.has(k));
-  if (bad.length) throw apiError('bad_request', `모르는 kind: ${bad.join(', ')}. 목록: ${[...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS].join(', ')}`);
+  if (bad.length) throw apiError('bad_request', `모르는 kind: ${bad.join(', ')}. 목록: ${[...RIG_EVENT_KINDS, ...RIG_ROLE_KINDS].join(', ')}`);
   return list;
 }
 // 장부 읽기. o: { since, kinds, limit } → { workspace, rows, last, more }

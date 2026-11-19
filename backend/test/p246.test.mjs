@@ -9,9 +9,9 @@ import path from 'node:path';
 import { Store } from '../src/store.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { Rig } from '../src/rig.mjs';
-import { RIG3_GUARD_KINDS } from '../src/rig-ledger.mjs';
-import { Rig3Roles } from '../src/rig3-roles.mjs';
-import { BG_POLL_MS } from '../src/rig3-guard.mjs';
+import { RIG_GUARD_KINDS } from '../src/rig-ledger.mjs';
+import { RigRoles } from '../src/rig-roles.mjs';
+import { BG_POLL_MS } from '../src/rig-guard.mjs';
 import { Sleeper, harnessWork, sessionActivity, sessionSleepPlan, HARNESS_SETTLE_MS, SLEEP_TICK_MS } from '../src/sleep.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p246-'));
@@ -54,7 +54,7 @@ async function board({ sleeper = true } = {}) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const sent = []; const logs = [];
   const b = { cfg: { dataDir: path.join(tmp(), 'data'), rig3GuardBgPollMs: 0 }, store, sessions: new Map(), log: (...a) => logs.push(a.join(' ')), api: { broadcast: () => {} } };
-  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new RigRoles(b);
   b.queue = { enqueue: (sessionId, text, opts) => { sent.push({ sessionId, text, opts }); return { deliveryId: 'd' + sent.length }; }, pending: () => 0 };
   const W = procWorld();
   b.adapter = { connected: true, processInfo: async (paneId) => W.info[paneId] || null };
@@ -62,7 +62,7 @@ async function board({ sleeper = true } = {}) {
   const g = b.rig3.guard;
   const mk = (role, kind) => { const s = { sessionId: 'sid-' + role, name: role, kind, workspaceKey: ws.key, rigRole: role, paneId: 'p-' + role, rt: { kind, launchedAt: T0 } }; b.sessions.set(s.sessionId, s); return s; };
   const S = { data: mk('data', 'claude'), ideas: mk('ideas', 'codex'), logic: mk('logic', 'agy') };
-  const foreign = () => store.rigEvents({ ws: ws.key, limit: 1000, kinds: RIG3_GUARD_KINDS }).filter((x) => x.kind === 'role_foreign_write');
+  const foreign = () => store.rigEvents({ ws: ws.key, limit: 1000, kinds: RIG_GUARD_KINDS }).filter((x) => x.kind === 'role_foreign_write');
   const go = (s, to) => { const from = s._st || null; s._st = to; return g.onState(s, from, to); };
   await g.prime(ws.key);
   return { dir, ws, b, g, S, W, sent, logs, foreign, go };

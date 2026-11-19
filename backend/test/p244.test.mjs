@@ -12,10 +12,10 @@ import { Rig } from '../src/rig.mjs';
 import { RigAdmin } from '../src/rig-admin.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime } from '../src/state.mjs';
-import { RIG3_BEAT_KINDS, RIG3_EVENT_KINDS } from '../src/rig-ledger.mjs';
-import { loadText, rig3Guide } from '../src/rig3.mjs';
-import { Rig3Roles, ROLE_SPAWN } from '../src/rig3-roles.mjs';
-import { nextDue, alarmOf, collectCycle, numbersBody, cleanProse, entryBody, addEntry, summaryEnv, summaryArgs, runClaudeOnce, rig3BeatHandlers, CHANGELOG, RIG3_BEAT_OPS } from '../src/rig3-beat.mjs';
+import { RIG_BEAT_KINDS, RIG_ROLE_KINDS } from '../src/rig-ledger.mjs';
+import { loadText, rigGuide } from '../src/rig-def.mjs';
+import { RigRoles, ROLE_SPAWN } from '../src/rig-roles.mjs';
+import { nextDue, alarmOf, collectCycle, numbersBody, cleanProse, entryBody, addEntry, summaryEnv, summaryArgs, runClaudeOnce, rigBeatHandlers, CHANGELOG, RIG_BEAT_OPS } from '../src/rig-beat.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p244-'));
 const DOC = (name) => ['# ' + name, '', '## 맡은 것', name + '의 일', '', '## 받는 것과 내는 것', '-', '', '## 기준', '- 기준', '', '## 요령', '- 요령'].join('\n');
@@ -56,7 +56,7 @@ async function board(mod = null) {
   const casts = []; const items = new Map(); let dn = 0;
   const settings = { language: 'ko', rig3SummaryModel: 'haiku' };
   const b = { cfg: { hookTimeoutSec: 2, sessionsDir: path.join(outside, 'sessions'), dataDir: path.join(outside, 'data-board'), rig3DeadGraceMs: 0, rig3ToolWaitMs: 20000 }, store, sessions: new Map(), log: () => {}, api: { broadcast: (n, d) => casts.push({ n, d }) }, features: { settings: { get: () => settings } } };
-  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new RigRoles(b);
   b.resolveWorkspace = async () => ({ key: ws.key });
   b.queue = {
     enqueue: (sessionId, text, opts) => { const d = { deliveryId: 'd' + ++dn, sessionId, text, opts, status: 'queued' }; items.set(d.deliveryId, d); return d; },
@@ -169,19 +169,19 @@ test('P244 박자는 일하는 역할을 끊지 않는다: 대기열로 넣고, 
 
 test('P244 손 박자: 판 API rig3.beat(사람, local만), 역할 세션의 atrium rig beat는 거절, 꺼진 rig는 거절', async () => {
   const B = await board();
-  const H = rig3BeatHandlers(B.b);
-  await code(H['rig3.beat']({ workspace: B.key }, { auth: { kind: 'remote' } }), 'forbidden');
-  const x = await H['rig3.beat']({ workspace: B.key }, { auth: { kind: 'local' } });
+  const H = rigBeatHandlers(B.b);
+  await code(H['rig.beat']({ workspace: B.key }, { auth: { kind: 'remote' } }), 'forbidden');
+  const x = await H['rig.beat']({ workspace: B.key }, { auth: { kind: 'local' } });
   assert.deepEqual(x, { n: 1, prev: 0, by: 'human' });
   assert.equal(B.ledger(['cycle_open']).at(-1).actor, 'human');
   const admin = new RigAdmin(B.b, {});
   assert.match(await code(admin.verb(B.S('data'), { op: 'beat' }), 'forbidden'), /사람만 친다/);
-  assert.deepEqual(RIG3_BEAT_OPS, ['beat', 'tool']);
+  assert.deepEqual(RIG_BEAT_OPS, ['beat', 'tool']);
   // 다음 시계 박자는 손 박자 뒤 every
   const v = B.BT.view(B.key, B.active().def.rig3);
   assert.ok(v.nextAt > Date.now() + 50000);
   B.store.setRigEnabled(B.key, false);
-  await code(B.BT.beatNow(B.key), 'rig3_off');
+  await code(B.BT.beatNow(B.key), 'rig_off');
 });
 
 test('P244 도구: 역할이 자기 도구를 부른다(출력은 섹터 tool-logs, guard 경계, 장부), 남의 도구·없는 도구 거절, 실패는 종료 코드', async () => {
@@ -348,14 +348,14 @@ test('P244 한 번짜리 실행: ANTHROPIC_API_KEY를 뺀 환경, claude -p 인�
 });
 
 test('P244 장부 종류·실을 글·안내', async () => {
-  assert.deepEqual(RIG3_BEAT_KINDS, ['cycle_open', 'cycle_entry', 'role_tool', 'role_beat']);
-  assert.ok(!RIG3_EVENT_KINDS.includes('cycle_open'));
+  assert.deepEqual(RIG_BEAT_KINDS, ['cycle_open', 'cycle_entry', 'role_tool', 'role_beat']);
+  assert.ok(!RIG_ROLE_KINDS.includes('cycle_open'));
   const B = await board();
   const r3 = B.active().def.rig3;
   const t = loadText(r3, 'data', { purpose: 'p', role: 'r', memory: null });
   assert.match(t, /atrium rig tool <이름>/); assert.match(t, /판이 1m마다 사이클을 열고 너를 깨운다/);
   assert.doesNotMatch(loadText(r3, 'verify', {}), /atrium rig tool|사이클을 열고/);
-  assert.match(rig3Guide(r3, 'data'), /네 도구: fetch, watch/);
+  assert.match(rigGuide(r3, 'data'), /네 도구: fetch, watch/);
 });
 
 test('P244 역할 칸 beat: 사이클을 열지 않고 그 역할만 깨운다', async () => {
@@ -385,11 +385,11 @@ test('P244 사람이 넣은 입력이 반려되면 그 사이클의 꼭지 "사�
 });
 
 test('P244 안내는 put <종류> <파일>만, 항목 없는 pass는 박자에만, 지키기 알림은 "네 턴 동안(돌린 스크립트 포함)"', async () => {
-  const { ITEM_HOWTO } = await import('../src/rig3.mjs');
-  const { foreignNotice } = await import('../src/rig3-guard.mjs');
+  const { ITEM_HOWTO } = await import('../src/rig-def.mjs');
+  const { foreignNotice } = await import('../src/rig-guard.mjs');
   const B = await board();
   const r3 = B.active().def.rig3;
-  for (const t of [ITEM_HOWTO.join('\n'), rig3Guide(r3, 'ideas'), loadText(r3, 'ideas', {}), B.b.rig3.items.wakeText(B.key, 'ideas', ['- x'])]) {
+  for (const t of [ITEM_HOWTO.join('\n'), rigGuide(r3, 'ideas'), loadText(r3, 'ideas', {}), B.b.rig3.items.wakeText(B.key, 'ideas', ['- x'])]) {
     assert.doesNotMatch(t, /--item/); assert.match(t, /put <종류> <파일>/); assert.doesNotMatch(t, /pass \[<항목>\]/);
   }
   assert.match(ITEM_HOWTO.join('\n'), /박자에 낼 것이 없으면 \x60pass "<까닭>"\x60\(박자에만 답하고 받은 것은 닫지 않는다\)/);

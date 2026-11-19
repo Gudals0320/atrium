@@ -41,7 +41,7 @@ import { CommandBar } from './CommandBar.jsx';
 import { SpawnDialog } from './SpawnDialog.jsx';
 import { RoleDialog, LinkPanel } from './Links.jsx';
 import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
-import { RigPanel } from './Rig3.jsx'; // P191·P249: rig 판
+import { RigPanel } from './Rig.jsx'; // P191·P249: rig 판
 import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';

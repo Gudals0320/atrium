@@ -17,11 +17,11 @@ import { DeliveryQueue, bgOnlyOf, steerBlock } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { rigAdminHandlers } from './rig-admin.mjs';
-import { rig3Handlers } from './rig3-items.mjs'; // P242
-import { rig3BeatHandlers } from './rig3-beat.mjs'; // P244: 손 박자(rig3.beat, 사람만)
-import { rig3TuneHandlers } from './rig3-tune.mjs';
-import { rig3BuilderHandlers } from './rig3-builder.mjs'; // P247: 빌더에게 말하기(rig3.builder, 사람만) // P245: 정의서 보기(rig3.role)와 되돌리기(rig3.rollback, 사람만)
-import { Rig3Roles, ROLE_SPAWN, ROLE_TICK_MS } from './rig3-roles.mjs'; // P241: rig 3 역할 세션(띄우기, 쓰기 범위, 다시 띄우기, 재우기)
+import { rigItemHandlers } from './rig-items.mjs'; // P242
+import { rigBeatHandlers } from './rig-beat.mjs'; // P244: 손 박자(rig3.beat, 사람만)
+import { rigTuneHandlers } from './rig-tune.mjs';
+import { rigBuilderHandlers } from './rig-builder.mjs'; // P247: 빌더에게 말하기(rig3.builder, 사람만) // P245: 정의서 보기(rig3.role)와 되돌리기(rig3.rollback, 사람만)
+import { RigRoles, ROLE_SPAWN, ROLE_TICK_MS } from './rig-roles.mjs'; // P241: rig 역할 세션(띄우기, 쓰기 범위, 다시 띄우기, 재우기)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -247,7 +247,7 @@ export class Backend {
     this.adopting = new Set();
 
     this.rig = new Rig(this); // P182
-    this.rig3 = new Rig3Roles(this); // P241
+    this.rig3 = new RigRoles(this); // P241
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
@@ -410,7 +410,7 @@ export class Backend {
     if (this.tailscale) this.tailscale.stop();
     // 2026-11-07: 열린 연결이 남아 있으면 http.close가 끝나지 않는다(하위 세션을 띄우며 기다리던 atrium child 요청이 업데이트를 1분 넘게 붙잡았다).
     // 기다리는 /branch 요청에 먼저 답하고, 쉬는 연결은 바로, 나머지는 1초 뒤 끊는다
-    if (this.rig3 && this.rig3.beat) this.rig3.beat.stopAll(); // P244: rig 3 도구 실행
+    if (this.rig3 && this.rig3.beat) this.rig3.beat.stopAll(); // P244: rig 도구 실행
     if (this.rig3 && this.rig3.guard && this.rig3.guard.stop) this.rig3.guard.stop(); // P246: 뒤 일 구간 주기
     const aborted = this.branch && this.branch.abortInflight ? this.branch.abortInflight() : 0;
     if (aborted) this.log(`answered ${aborted} waiting /branch request(s) before stopping`);
@@ -796,7 +796,7 @@ export class Backend {
     if (sum.state !== s.lastState) {
       const from = s.lastState;
       s.lastState = sum.state;
-      if (s.rigRole && this.rig3 && this.rig3.guard) this.rig3.guard.onState(s, from, sum.state); // P243: rig 3 역할의 턴 경계(모든 하네스) → 남의 쓰기 찾아 되돌리기
+      if (s.rigRole && this.rig3 && this.rig3.guard) this.rig3.guard.onState(s, from, sum.state); // P243: rig 역할의 턴 경계(모든 하네스) → 남의 쓰기 찾아 되돌리기
       if (from !== null || cause) {
         const turnless = from === 'working' && sum.work && sum.work.turnless && sum.work.endedAt === s.rt.term.at ? sum.work : null; // P173: 턴 없이 끝난 일(압축)
         this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, term: sum.termStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined, ...(turnless ? { turnless: true, compact: turnless.compact || null } : {}) });
@@ -2168,10 +2168,10 @@ export class Backend {
       // P182: rig 켜기는 사람만(판 API 토큰으로 붙은 이 PC의 창·명령). 기기(휴대폰) 연결은 상태만 본다. 에이전트의 세션 토큰은 이 API에 붙지 못한다
       ...rigHandlers(this), // rig.status·rig.get·rig.enable·rig.disable
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만): rig.check·log·rollback·events
-      ...rig3Handlers(this), // P242: rig 3 입력 창구(rig3.intake, 사람만)
-      ...rig3BeatHandlers(this), // P244: rig 3 손 박자(rig3.beat, 사람만)
-      ...rig3TuneHandlers(this),
-      ...rig3BuilderHandlers(this), // P247 // P245: rig 3 정의서·조정 기록(rig3.role)과 되돌리기(rig3.rollback, 사람만)
+      ...rigItemHandlers(this), // P242: rig 입력 창구(rig3.intake, 사람만)
+      ...rigBeatHandlers(this), // P244: rig 손 박자(rig3.beat, 사람만)
+      ...rigTuneHandlers(this),
+      ...rigBuilderHandlers(this), // P247 // P245: rig 정의서·조정 기록(rig3.role)과 되돌리기(rig3.rollback, 사람만)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다

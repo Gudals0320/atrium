@@ -8,10 +8,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RIG_FILE, validateRig } from './rig.mjs';
 import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장부
-import { RIG3_BEAT_OPS } from './rig3-beat.mjs'; // P244: beat(사람만)·tool(역할의 도구)
-import { RIG3_TUNE_OPS } from './rig3-tune.mjs'; // P245: tune·raise·heard(역할)·role(읽기)
-import { RIG3_ITEM_OPS } from './rig3-items.mjs'; // P242: put·accept·return·pass·drop·inbox
-import { bundleOf } from './rig3.mjs'; // P247: rig check의 same
+import { RIG_BEAT_OPS } from './rig-beat.mjs'; // P244: beat(사람만)·tool(역할의 도구)
+import { RIG_TUNE_OPS } from './rig-tune.mjs'; // P245: tune·raise·heard(역할)·role(읽기)
+import { RIG_ITEM_OPS } from './rig-items.mjs'; // P242: put·accept·return·pass·drop·inbox
+import { bundleOf } from './rig-def.mjs'; // P247: rig check의 same
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
@@ -28,10 +28,10 @@ export class RigAdmin {
   // /branch/rig: 에이전트 세션
   async verb(s, o = {}) {
     const op = String(o.op || '');
-    if (RIG3_ITEM_OPS.includes(op)) { if (!this.b.rig3 || !this.b.rig3.items) throw apiError('rig3_off', 'rig가 없다.'); return this.b.rig3.items.verb(s, o); } // P242
-    if (RIG3_TUNE_OPS.includes(op)) { if (!this.b.rig3 || !this.b.rig3.tune) throw apiError('rig3_off', 'rig가 없다.'); return this.b.rig3.tune.verb(s, o); } // P245
-    if (RIG3_BEAT_OPS.includes(op)) { if (!this.b.rig3 || !this.b.rig3.beat) throw apiError('rig3_off', 'rig가 없다.'); return this.b.rig3.beat.verb(s, o); } // P244
-    if (!RIG_ADMIN_OPS.includes(op)) throw apiError('bad_request', `atrium rig: ${[...RIG3_ITEM_OPS, ...RIG3_TUNE_OPS, ...RIG3_BEAT_OPS, ...RIG_ADMIN_OPS].join(' | ')} 가운데 하나다: ${op || '(없음)'}`);
+    if (RIG_ITEM_OPS.includes(op)) { if (!this.b.rig3 || !this.b.rig3.items) throw apiError('rig_off', 'rig가 없다.'); return this.b.rig3.items.verb(s, o); } // P242
+    if (RIG_TUNE_OPS.includes(op)) { if (!this.b.rig3 || !this.b.rig3.tune) throw apiError('rig_off', 'rig가 없다.'); return this.b.rig3.tune.verb(s, o); } // P245
+    if (RIG_BEAT_OPS.includes(op)) { if (!this.b.rig3 || !this.b.rig3.beat) throw apiError('rig_off', 'rig가 없다.'); return this.b.rig3.beat.verb(s, o); } // P244
+    if (!RIG_ADMIN_OPS.includes(op)) throw apiError('bad_request', `atrium rig: ${[...RIG_ITEM_OPS, ...RIG_TUNE_OPS, ...RIG_BEAT_OPS, ...RIG_ADMIN_OPS].join(' | ')} 가운데 하나다: ${op || '(없음)'}`);
     if (!s.workspaceKey) throw apiError('forbidden', `atrium rig ${op}는 워크스페이스의 세션만 쓴다.`);
     const builder = this.isBuilder(s);
     if (op === 'log' && o.events) {

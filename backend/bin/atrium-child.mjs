@@ -354,9 +354,9 @@ async function guideVerb() {
 // ---------- P188: atrium rig check [파일] | log [--events](빌더 세션, check는 꺼진 rig면 누구나) ----------
 async function rigVerb() {
   const op = rest[0];
-  if (RIG3_OPS.includes(op)) return rig3Verb(op); // P242: rig 역할 세션의 명령
+  if (RIG_ROLE_OPS.includes(op)) return rigRoleVerb(op); // P242: rig 역할 세션의 명령
   const ops = ['check', 'log'];
-  if (!ops.includes(op)) fail(`사용: atrium rig ${[...RIG3_OPS, ...ops].join(' | ')}(atrium help)`, 2);
+  if (!ops.includes(op)) fail(`사용: atrium rig ${[...RIG_ROLE_OPS, ...ops].join(' | ')}(atrium help)`, 2);
   const body = { op };
   if (op === 'check' && rest[1]) {
     const f = path.resolve(rest[1]);
@@ -392,9 +392,9 @@ async function rigVerb() {
   say('되돌리기는 사람만: rig 판에서.');
 }
 
-// P242: rig 3 항목 명령(역할 세션). put <종류> <파일> [--from <항목>] [--redo <항목>](P244: put <파일> --item <종류>도 받기만 하고 안내하지 않는다) | accept <항목> ["<메모>"] | return <항목> "<까닭>" | pass [<항목>] "<까닭>" | drop <항목> "<까닭>" | inbox
-const RIG3_OPS = ['put', 'accept', 'return', 'pass', 'drop', 'inbox', 'tool', 'beat', 'tune', 'raise', 'heard', 'role']; // P245: tune·raise·heard(역할), role(정의서와 조정 기록 보기) // P244: tool(역할의 도구), beat(사람만: 보드가 역할 세션은 거절한다)
-async function rig3Verb(op) {
+// P242: rig 항목 명령(역할 세션). put <종류> <파일> [--from <항목>] [--redo <항목>](P244: put <파일> --item <종류>도 받기만 하고 안내하지 않는다) | accept <항목> ["<메모>"] | return <항목> "<까닭>" | pass [<항목>] "<까닭>" | drop <항목> "<까닭>" | inbox
+const RIG_ROLE_OPS = ['put', 'accept', 'return', 'pass', 'drop', 'inbox', 'tool', 'beat', 'tune', 'raise', 'heard', 'role']; // P245: tune·raise·heard(역할), role(정의서와 조정 기록 보기) // P244: tool(역할의 도구), beat(사람만: 보드가 역할 세션은 거절한다)
+async function rigRoleVerb(op) {
   const body = { op };
   const val = (k) => { if (flags[k] == null) return null; if (flags[k] === true || flags[k] === undefined || flags[k] === '') fail(`--${k}에 값을 준다`, 2); return String(flags[k]); };
   const need = (v, use) => { if (!v || !String(v).trim()) fail(`사용: atrium rig ${use}`, 2); return v; };

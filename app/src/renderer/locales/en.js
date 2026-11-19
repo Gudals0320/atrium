@@ -2676,6 +2676,24 @@ export default {
     turnedOn: 'Turned on the rig for {name}',
     turnedOff: 'Turned off the rig for {name}',
     confirmOn: 'Turn on',
+    kind: 'rig · {n} roles',
+    stOn: 'Rig on · {n} roles',
+    enable: 'Turn on…',
+    confirmLine: '{n} roles run unattended, each writes only to the sectors it owns, and the board runs the tools.',
+    confirmWarn: 'Each role gets one session that runs without asking for permission. Turn it on only for a folder you trust.',
+    purpose: 'Purpose: {path}',
+    roles: 'Roles',
+    colRole: 'Role',
+    colOwns: 'Sectors',
+    colSession: 'Session',
+    colTools: 'Tools',
+    noSession: 'No session',
+    gaveUp: 'Stopped restarting (turn the rig off and on to restart)',
+    docMissing: 'Role definition missing: {list}',
+    flows: 'Flows',
+    human: 'You',
+    for: 'answers {item}',
+    readOnly: 'This rig changes only through its definition files (.atrium/rig.json, .atrium/roles/). This view is read-only.',
   },
   // P186: 세션 맵의 rig 자리·흐름 줄·건 목록, 노드 메뉴 자리 정하기, 미리 보기 훅·도구
   // P188: rig menu — human-only list (definition pointers and files), version, alerts
@@ -2763,29 +2781,9 @@ export default {
   // P233(rig2-design 11.15): rig seat permission questions are once only; canon difference in the turn-on confirmation
   // P239(rig2-design 11.18 stage 2): a running keep seat whose permissions changed with the definition, rig seat permission mode drift
   // P237 (rig2-design 11.18, second item): "No run" in the send box (text only to a rig seat, no run opened)
-  // P241: rig 3 (role organization) panel: read-only structure view and turning it on
-  rig3: {
-    kind: 'rig 3 · {n} roles',
-    stOn: 'Rig on · {n} roles',
-    enable: 'Turn on…',
-    confirmLine: '{n} roles run unattended, each writes only to the sectors it owns, and the board runs the tools.',
-    confirmWarn: 'Each role gets one session that runs without asking for permission. Turn it on only for a folder you trust.',
-    purpose: 'Purpose: {path}',
-    roles: 'Roles',
-    colRole: 'Role',
-    colOwns: 'Sectors',
-    colSession: 'Session',
-    colTools: 'Tools',
-    noSession: 'No session',
-    gaveUp: 'Stopped restarting (turn the rig off and on to restart)',
-    docMissing: 'Role definition missing: {list}',
-    flows: 'Flows',
-    human: 'You',
-    for: 'answers {item}',
-    readOnly: 'This rig changes only through its definition files (.atrium/rig.json, .atrium/roles/). This view is read-only.',
-  },
-  // P242: rig 3 items, flows, answers. Counts per flow, stalled roles, input desk
-  rig3Items: {
+  // P241: rig (role organization) panel: read-only structure view and turning it on
+  // P242: rig items, flows, answers. Counts per flow, stalled roles, input desk
+  rigItems: {
     counts: 'put {put} · accepted {accepted} · returned {returned} · waiting {waiting}',
     passed: ' · passed {n}',
     stalledH: 'Roles that stopped without answering',
@@ -2798,8 +2796,8 @@ export default {
     intakeOff: 'The input desk works while the rig is on.',
     returned: 'Returned input {id}: {by} "{reason}"',
   },
-  // P244: rig 3 cycle (beat) and changelog sections
-  rig3Cycle: {
+  // P244: rig cycle (beat) and changelog sections
+  rigCycle: {
     h: 'Cycle',
     now: 'Cycle {n}',
     none: 'No cycle',
@@ -2818,8 +2816,8 @@ export default {
     byNumbers: 'Counts only',
     file: 'Changelog: {path}',
   },
-  // P245: rig 3 tuning and rollback (role doc version and tuning log on the role row)
-  rig3Tune: {
+  // P245: rig tuning and rollback (role doc version and tuning log on the role row)
+  rigTune: {
     col: 'Role doc',
     badge: 'v{n} · {k} tunes',
     material: ' · {n} inputs',
@@ -2850,10 +2848,10 @@ export default {
     why_kind: 'this kind cannot take input while working',
     why_no_hook: 'not a Claude Code started by the board (no hooks)',
   },
-  // P247: rig 3 builder (talk to the builder)
-  rig3Builder: {
+  // P247: rig builder (talk to the builder)
+  rigBuilder: {
     h: 'Builder',
-    menu: 'Talk to the builder (rig 3)…',
+    menu: 'Talk to the builder…',
     talk: 'Talk to the builder',
     none: 'No builder session. Talking starts one.',
     hint: 'Build and change the rig by talking with the builder. When you approve its one-page plan, the builder writes the definition and role docs. You turn the rig on here yourself.',

@@ -12,9 +12,9 @@ import { SHELL_IN_SHELL_DENY, rulePath } from '../src/rig-writes.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime, applyHook } from '../src/state.mjs';
 import { Backend } from '../src/backend.mjs';
-import { RIG_EVENT_KINDS, RIG3_EVENT_KINDS, rigEvent, parseKinds } from '../src/rig-ledger.mjs';
-import { validateRig3, checkRoleDoc, normSector, loadText, codexRoleArgs, roleWrites, parseDuration } from '../src/rig3.mjs';
-import { Rig3Roles, ROLE_SPAWN, ROLE_PERMISSION_MODE, ROLE_NESTED_SHELL_REASON } from '../src/rig3-roles.mjs';
+import { RIG_EVENT_KINDS, RIG_ROLE_KINDS, rigEvent, parseKinds } from '../src/rig-ledger.mjs';
+import { validateRigDef, checkRoleDoc, normSector, loadText, codexRoleArgs, roleWrites, parseDuration } from '../src/rig-def.mjs';
+import { RigRoles, ROLE_SPAWN, ROLE_PERMISSION_MODE, ROLE_NESTED_SHELL_REASON } from '../src/rig-roles.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p241-'));
 const DOC = (name, o = {}) => [`# ${name}`, '', '## 맡은 것', o.owns || `${name}의 일`, '', '## 받는 것과 내는 것', '받는 것: 없음', '', '## 기준', '- 기준 하나', '', ...(o.noTips ? [] : ['## 요령', '- 요령 하나'])].join('\n');
@@ -46,15 +46,15 @@ function folder(def = DEF(), { docs = true } = {}) {
   fs.writeFileSync(path.join(dir, '.atrium', 'rig.json'), JSON.stringify(def, null, 2));
   return dir;
 }
-const v3 = (def, root) => validateRig3(def, { root });
+const v3 = (def, root) => validateRigDef(def, { root });
 
-test('P241 정의 검사: 맞는 정의는 역할·섹터·길·도구를 고른 꼴로, rig 2 칸은 비운다', () => {
+test('P241 정의 검사: 맞는 정의는 역할·섹터·길·도구를 고른 꼴로, 옛 rig 칸은 없다', () => {
   const dir = folder();
   const v = v3(DEF(), dir);
   assert.equal(v.ok, true, v.reason);
   const d = v.def;
   assert.equal(d.v3, true); assert.equal(d.version, 3);
-  assert.deepEqual(d.hooks, []); assert.equal(d.seats, null); assert.deepEqual(d.flow, []); assert.equal(d.amp, null); assert.equal(d.tools, null); assert.deepEqual(d.loops, {});
+  assert.deepEqual(Object.keys(d).sort(), ['name', 'rig3', 'v3', 'version', 'warnings'], 'P249: 옛 rig 칸이 없다');
   assert.deepEqual(d.rig3.roles.data.owns, ['data/', 'snapshots/']);
   assert.deepEqual(d.rig3.roles.data.tools, ['fetch']);
   assert.equal(d.rig3.roles.data.model, 'haiku');
@@ -140,8 +140,8 @@ test('P241 실을 글: 목적·정의서·기억, 쓰는 곳, 받는 것·내는
 });
 
 test('P241 장부: rig 역할 종류는 따로 둔 목록', () => {
-  assert.deepEqual(RIG3_EVENT_KINDS.slice(0, 5), ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept']); // P242가 item_* 종류를 뒤에 더했다
-  for (const k of RIG3_EVENT_KINDS) assert.ok(!RIG_EVENT_KINDS.includes(k), k);
+  assert.deepEqual(RIG_ROLE_KINDS.slice(0, 5), ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept']); // P242가 item_* 종류를 뒤에 더했다
+  for (const k of RIG_ROLE_KINDS) assert.ok(!RIG_EVENT_KINDS.includes(k), k);
   assert.deepEqual(parseKinds('role_spawn,rig_version'), ['role_spawn', 'rig_version']);
   assert.throws(() => parseKinds('role_nope'), /모르는 kind/);
 });
@@ -154,7 +154,7 @@ async function board(def = DEF(), cfg = {}) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const casts = []; const logs = []; const sent = []; const spawned = []; const killed = [];
   const b = { cfg: { hookTimeoutSec: 2, sessionsDir: path.join(dir, 'sessions'), dataDir: path.join(dir, 'data'), rig3DeadGraceMs: 0, ...cfg }, store, sessions: new Map(), log: (...a) => logs.push(a.join(' ')), api: { broadcast: (n, d) => casts.push({ n, d }) } };
-  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new RigRoles(b);
   b.queue = { enqueue: (sessionId, text, opts) => { sent.push({ sessionId, text, opts }); return { deliveryId: 'd' + sent.length }; } };
   let n = 0;
   // backend.spawn이 하는 것만 흉내: rig3.launchOf → 권한 모드·설정 파일, 세션에 역할

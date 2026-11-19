@@ -1,4 +1,4 @@
-// P243: rig 3 남의 쓰기 되돌리기(docs research rig3-skeleton.md 2절 원리 5 "쓰는 범위는 쥔 것으로 정해진다. 묻지 않고 막는다").
+// P243: rig 남의 쓰기 되돌리기(docs research rig3-skeleton.md 2절 원리 5 "쓰는 범위는 쥔 것으로 정해진다. 묻지 않고 막는다").
 // - 하네스를 가리지 않는다. 하네스의 훅이 아니라 판이 아는 것(역할 세션의 상태 전환, 판이 돌리는 도구의 시작·끝)으로 턴의 경계를 잡는다.
 //   Claude Code 편집 도구의 PreToolUse 거절(P241)과 Codex -C 가두기는 그대로 두고, 이 검사가 모든 하네스(Claude Code, Codex, Antigravity, opencode, pi …)에 덧붙는 받침이다.
 // - 기준 목록: 판이 v3 rig 워크스페이스의 파일 목록(상대 경로 → 크기, 수정 시각, SHA-256)을 데이터 폴더 rig3-guard/<워크스페이스 id>/base.json에 들고,
@@ -24,7 +24,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { rigEvent } from './rig-ledger.mjs';
-import { memoryDir, BUILDER_ROLE, builderOwns, builderWrites } from './rig3.mjs'; // P247: 빌더의 일 구간과 쓰기 범위
+import { memoryDir, BUILDER_ROLE, builderOwns, builderWrites } from './rig-def.mjs'; // P247: 빌더의 일 구간과 쓰기 범위
 import { backgroundOf, SLEEP_TICK_MS } from './sleep.mjs'; // P246: 뒤 일(일함 (다)·(라))
 
 export const GUARD_SKIP_NAMES = ['.git', 'node_modules', '.venv', 'venv', '__pycache__', '.pytest_cache', '.mypy_cache', '.cache'];
@@ -103,8 +103,8 @@ export function judge({ cands, owner, board = false, builder = false }) {
   return { legit: false, why: owner ? 'other_sector' : 'no_sector' };
 }
 
-export class Rig3Guard {
-  // b: 백엔드(cfg.dataDir, store, sessions, queue, log). roles: Rig3Roles(defOf, sessionsOf)
+export class RigGuard {
+  // b: 백엔드(cfg.dataDir, store, sessions, queue, log). roles: RigRoles(defOf, sessionsOf)
   constructor(b, roles) {
     this.b = b; this.roles = roles;
     this.ws = new Map(); // 워크스페이스 키 → 상태
@@ -119,7 +119,7 @@ export class Rig3Guard {
     let raw = null; try { raw = this.roles.b.rig ? this.roles.b.rig.read(key) : null; } catch { raw = null; }
     return raw && raw.present && this.good && this.good.has(key) ? this.good.get(key) : null;
   }
-  dirOf(key) { return path.join((this.b.cfg && (this.b.cfg.dataDir || this.b.cfg.sessionsDir)) || '.', 'rig3-guard', crypto.createHash('sha1').update(String(key)).digest('hex').slice(0, 16)); }
+  dirOf(key) { return path.join((this.b.cfg && (this.b.cfg.dataDir || this.b.cfg.sessionsDir)) || '.', 'rig-guard', crypto.createHash('sha1').update(String(key)).digest('hex').slice(0, 16)); }
   st(key) {
     let x = this.ws.get(key);
     if (!x) {

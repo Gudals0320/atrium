@@ -2676,6 +2676,24 @@ export default {
     turnedOn: '{name}의 rig를 켰습니다.',
     turnedOff: '{name}의 rig를 껐습니다.',
     confirmOn: '켜기',
+    kind: 'rig · 역할 {n}개',
+    stOn: 'Rig 켜짐 · 역할 {n}개',
+    enable: '켜기…',
+    confirmLine: '역할 {n}개가 무인으로 돌고, 각자 쥔 섹터에만 쓰며, 도구는 판이 돌립니다.',
+    confirmWarn: '역할마다 세션 하나가 권한을 묻지 않고 돕니다. 믿을 수 있는 폴더에서만 켜세요.',
+    purpose: '목적: {path}',
+    roles: '역할',
+    colRole: '역할',
+    colOwns: '섹터',
+    colSession: '세션',
+    colTools: '도구',
+    noSession: '세션 없음',
+    gaveUp: '다시 띄우기를 멈춤(rig를 껐다 켜면 다시 띄웁니다)',
+    docMissing: '정의서 칸 빠짐: {list}',
+    flows: '길',
+    human: '사람',
+    for: '{item}에 대한 답',
+    readOnly: '이 rig는 정의 파일(.atrium/rig.json, .atrium/roles/)로만 바꿉니다. 여기서는 구조를 보기만 합니다.',
   },
   // P186: 세션 맵의 rig 자리·흐름 줄·건 목록, 노드 메뉴 자리 정하기, 미리 보기 훅·도구
   // P188: rig 메뉴 — 사람만 고치는 목록(정의 자리와 파일), 버전, 알림
@@ -2763,29 +2781,9 @@ export default {
   // P233(rig2-design 11.15): rig 자리 권한 질문은 이번 한 번만, 켜기 확인의 정본 차이
   // P239(rig2-design 11.18 2단계): 정의가 바뀌어 떠 있는 keep 자리의 권한이 달라짐, rig 자리의 권한 모드 어긋남
   // P237(rig2-design 11.18의 둘째): 보내기 칸의 "회 없이"(rig 자리에 회를 열지 않고 글만)
-  // P241: rig 3(역할 조직) 판. 읽기만 하는 구조 보기와 켜기
-  rig3: {
-    kind: 'rig 3 · 역할 {n}개',
-    stOn: 'Rig 켜짐 · 역할 {n}개',
-    enable: '켜기…',
-    confirmLine: '역할 {n}개가 무인으로 돌고, 각자 쥔 섹터에만 쓰며, 도구는 판이 돌립니다.',
-    confirmWarn: '역할마다 세션 하나가 권한을 묻지 않고 돕니다. 믿을 수 있는 폴더에서만 켜세요.',
-    purpose: '목적: {path}',
-    roles: '역할',
-    colRole: '역할',
-    colOwns: '섹터',
-    colSession: '세션',
-    colTools: '도구',
-    noSession: '세션 없음',
-    gaveUp: '다시 띄우기를 멈춤(rig를 껐다 켜면 다시 띄웁니다)',
-    docMissing: '정의서 칸 빠짐: {list}',
-    flows: '길',
-    human: '사람',
-    for: '{item}에 대한 답',
-    readOnly: '이 rig는 정의 파일(.atrium/rig.json, .atrium/roles/)로만 바꿉니다. 여기서는 구조를 보기만 합니다.',
-  },
-  // P242: rig 3 항목·길·받음. 구조 보기의 길마다 수, 멈춘 역할 한 줄, 입력 창구
-  rig3Items: {
+  // P241: rig (역할 조직) 판. 읽기만 하는 구조 보기와 켜기
+  // P242: rig 항목·길·받음. 구조 보기의 길마다 수, 멈춘 역할 한 줄, 입력 창구
+  rigItems: {
     counts: '낸 {put} · 받음 {accepted} · 반려 {returned} · 기다림 {waiting}',
     passed: ' · pass {n}',
     stalledH: '답하지 않고 멈춘 역할',
@@ -2798,8 +2796,8 @@ export default {
     intakeOff: '입력 창구는 rig가 켜져 있을 때 씁니다.',
     returned: '반려된 입력 {id}: {by} "{reason}"',
   },
-  // P244: rig 3 사이클(박자)과 변경 기록 꼭지
-  rig3Cycle: {
+  // P244: rig 사이클(박자)과 변경 기록 꼭지
+  rigCycle: {
     h: '사이클',
     now: '사이클 {n}',
     none: '사이클 없음',
@@ -2818,8 +2816,8 @@ export default {
     byNumbers: '숫자만',
     file: '변경 기록: {path}',
   },
-  // P245: rig 3 조정과 되돌리기(역할 줄의 정의서 판·조정 기록)
-  rig3Tune: {
+  // P245: rig 조정과 되돌리기(역할 줄의 정의서 판·조정 기록)
+  rigTune: {
     col: '정의서',
     badge: '판 {n} · 조정 {k}',
     material: ' · 재료 {n}',
@@ -2850,10 +2848,10 @@ export default {
     why_kind: '일하는 중에 입력을 받지 못하는 종류',
     why_no_hook: '보드가 띄운 Claude Code가 아님(hook 없음)',
   },
-  // P247: rig 3 빌더(빌더에게 말하기)
-  rig3Builder: {
+  // P247: rig 빌더(빌더에게 말하기)
+  rigBuilder: {
     h: '빌더',
-    menu: '빌더에게 말하기(rig 3)…',
+    menu: '빌더에게 말하기…',
     talk: '빌더에게 말하기',
     none: '빌더 세션이 없습니다. 말하기를 누르면 판이 띄웁니다.',
     hint: '빌더와 말로 rig를 짓고 고칩니다. 구성안을 보고 좋다고 하면 빌더가 정의와 정의서를 씁니다. 켜는 것은 이 창에서 직접 합니다.',

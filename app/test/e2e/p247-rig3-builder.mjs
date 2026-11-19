@@ -1,6 +1,6 @@
 // P247 창 시험: rig 판의 "빌더에게 말하기"(rig가 없는 워크스페이스, rig 3 판), ko·en 그림.
 // 판: 따로 띄운 개발용 판(atrium-dev-p247, 48004, 창 9484)만. 시험 폴더 C:\Workspace\mtask-p247-rig.
-// 실행: sh backend/.dev/dev.sh node app/test/e2e/p247-rig3-builder.mjs <talk|shots> [round] ["말"]   결과는 backend/.dev/p247-exp/<round>/(저장소 밖)
+// 실행: sh backend/.dev/dev.sh node app/test/e2e/p247-rig-builder.mjs <talk|shots> [round] ["말"]   결과는 backend/.dev/p247-exp/<round>/(저장소 밖)
 //   talk: rig 판(rig 없음)에서 빌더 줄을 찍고 말하기로 글을 넣는다. shots: rig 3 판의 빌더 줄과 역할 표(ko·en)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,40 +41,40 @@ try {
   await page.waitForFunction(() => !document.querySelector('[data-role=splash]'), null, { timeout: 30000 }).catch(() => log('splash 남음'));
   if (MODE === 'talk') {
     await lang(page, 'ko');
-    const panel = st0.status === 'none' ? '[data-role=rig-panel]' : '[data-role=rig3-panel]';
+    const panel = st0.status === 'none' ? '[data-role=rig-panel]' : '[data-role=rig-panel]';
     await regionMenu(page, st0.status === 'none' ? 'rig-builder' : 'rig-panel', panel);
-    await page.waitForSelector('[data-role=rig3-builder]', { timeout: 10000 });
-    const line = await page.locator('[data-role=rig3-builder]').innerText();
-    check('rig 판에 빌더 줄과 말하기 단추', line.includes(ko.rig3Builder.h) && (await page.locator('[data-action=rig3-builder-talk]').count()) === 1, line);
+    await page.waitForSelector('[data-role=rig-builder]', { timeout: 10000 });
+    const line = await page.locator('[data-role=rig-builder]').innerText();
+    check('rig 판에 빌더 줄과 말하기 단추', line.includes(ko.rig3Builder.h) && (await page.locator('[data-action=rig-builder-talk]').count()) === 1, line);
     await shotEl(page, panel, '01-builder-' + (st0.status === 'none' ? 'norig' : 'rig3') + '-ko');
-    await page.click('[data-action=rig3-builder-talk]');
-    await page.fill('[data-role=rig3-builder-text]', SAY);
-    await shotEl(page, '[data-role=rig3-builder]', '02-builder-say-ko');
-    await page.click('[data-action=rig3-builder-go]');
+    await page.click('[data-action=rig-builder-talk]');
+    await page.fill('[data-role=rig-builder-text]', SAY);
+    await shotEl(page, '[data-role=rig-builder]', '02-builder-say-ko');
+    await page.click('[data-action=rig-builder-go]');
     await page.waitForSelector(panel, { state: 'detached', timeout: 10000 }).catch(() => {});
     await sleep(1500);
     const sel = await page.evaluate(() => window.__mt.getState().focusId).catch(() => null);
     check('말하기 뒤 창이 닫히고 빌더로 간다', !(await page.locator(panel).count()), { focus: sel });
   } else if (MODE === 'switch-on') {
     await lang(page, 'ko');
-    await regionMenu(page, 'rig-panel', '[data-role=rig3-panel]');
-    await page.waitForSelector('[data-action=rig3-enable]', { timeout: 10000 });
-    await page.click('[data-action=rig3-enable]');
-    await page.waitForSelector('[data-role=rig3-confirm]', { timeout: 5000 });
-    await shotEl(page, '[data-role=rig3-panel]', '03-rig3-enable-confirm-ko');
-    await page.click('[data-action=rig3-confirm-on]');
+    await regionMenu(page, 'rig-panel', '[data-role=rig-panel]');
+    await page.waitForSelector('[data-action=rig-enable]', { timeout: 10000 });
+    await page.click('[data-action=rig-enable]');
+    await page.waitForSelector('[data-role=rig-confirm]', { timeout: 5000 });
+    await shotEl(page, '[data-role=rig-panel]', '03-rig3-enable-confirm-ko');
+    await page.click('[data-action=rig-confirm-on]');
     let roles = [];
     for (let i = 0; i < 60; i++) { await sleep(1000); const s = call('rig.status', { workspace: WS }); roles = (s.rig3 ? s.rig3.roles : []).map((r) => [r.name, r.session && r.session.name]); if (s.state === 'on' && roles.length && roles.every((r) => r[1])) break; }
     check('켜기 한 번으로 역할 세션이 모두 뜬다', roles.length >= 2 && roles.every((r) => r[1]), roles);
   } else {
     for (const l of ['ko', 'en']) {
       await lang(page, l);
-      await regionMenu(page, 'rig-panel', '[data-role=rig3-panel]');
-      await page.waitForSelector('[data-role=rig3-builder-session]', { timeout: 10000 });
-      const t = await page.locator('[data-role=rig3-builder]').innerText();
+      await regionMenu(page, 'rig-panel', '[data-role=rig-panel]');
+      await page.waitForSelector('[data-role=rig-builder-session]', { timeout: 10000 });
+      const t = await page.locator('[data-role=rig-builder]').innerText();
       const D = l === 'ko' ? ko : en;
       check('rig 3 판의 빌더 줄(' + l + ')', t.includes(D.rig3Builder.h) && t.includes('@builder') && t.includes(D.rig3Builder.talk), t);
-      await shotEl(page, '[data-role=rig3-panel]', '04-rig3-panel-builder-' + l);
+      await shotEl(page, '[data-role=rig-panel]', '04-rig3-panel-builder-' + l);
       await page.click('[data-action=rig-panel-close]');
       await sleep(300);
     }

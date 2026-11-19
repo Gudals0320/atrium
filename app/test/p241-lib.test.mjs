@@ -1,7 +1,7 @@
-// P241 창 단위 시험: rig 3 판의 보기 자료(역할 줄, 길 줄, 켜기), 두 사전의 rig3 글
+// P241 창 단위 시험: rig 판의 보기 자료(역할 줄, 길 줄, 켜기), 두 사전의 rig 글
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isRig3, roleRows, flowRows, roleCount, canEnable3 } from '../src/renderer/lib/rig3.js';
+import { hasRigDef, roleRows, flowRows, roleCount, canEnableRig } from '../src/renderer/lib/rig.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
 
@@ -17,7 +17,7 @@ const R3 = {
 };
 
 test('P241 rig 3 판: 역할 줄의 상태(세션 상태, 잠듦, 다시 띄우기 멈춤, 세션 없음)와 길 줄', () => {
-  assert.equal(isRig3({ format: 3 }), true); assert.equal(isRig3({ format: 2 }), false); assert.equal(isRig3(null), false);
+  assert.equal(hasRigDef({ format: 3 }), true); assert.equal(hasRigDef({ format: 2 }), false); assert.equal(hasRigDef(null), false);
   const rows = roleRows(R3);
   assert.deepEqual(rows.map((r) => [r.name, r.stateKey]), [['data', 'ready'], ['ideas', 'sleeping'], ['trade', 'gaveUp'], ['verify', 'none']]);
   assert.deepEqual(rows[2].docMissing, ['요령']);
@@ -28,14 +28,14 @@ test('P241 rig 3 판: 역할 줄의 상태(세션 상태, 잠듦, 다시 띄우�
   const f = flowRows(R3);
   assert.equal(f[1].human, true); assert.equal(f[2].for, 'hypothesis');
   assert.equal(roleCount({ rig3: R3 }), 4);
-  assert.equal(canEnable3({ status: 'off' }), true);
-  assert.equal(canEnable3({ status: 'off' }, { remote: true }), false);
-  assert.equal(canEnable3({ status: 'on' }), false);
-  assert.equal(canEnable3({ status: 'off', why: '잘못됨' }), false);
+  assert.equal(canEnableRig({ status: 'off' }), true);
+  assert.equal(canEnableRig({ status: 'off' }, { remote: true }), false);
+  assert.equal(canEnableRig({ status: 'on' }), false);
+  assert.equal(canEnableRig({ status: 'off', why: '잘못됨' }), false);
 });
 
-test('P241 사전: rig3 글이 두 사전에 같은 열쇠로 있다', () => {
-  assert.deepEqual(Object.keys(ko.rig3).sort(), Object.keys(en.rig3).sort());
-  assert.match(ko.rig3.confirmLine, /역할 \{n\}개가 무인으로 돌고, 각자 쥔 섹터에만 쓰며, 도구는 판이 돌립니다/);
+test('P241 사전: rig 글이 두 사전에 같은 열쇠로 있다', () => {
+  assert.deepEqual(Object.keys(ko.rig).sort(), Object.keys(en.rig).sort());
+  assert.match(ko.rig.confirmLine, /역할 \{n\}개가 무인으로 돌고, 각자 쥔 섹터에만 쓰며, 도구는 판이 돌립니다/);
   for (const k of ['ready', 'working', 'sleeping']) assert.ok(ko.state[k] && en.state[k], k);
 });

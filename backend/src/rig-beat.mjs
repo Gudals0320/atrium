@@ -1,4 +1,4 @@
-// P244: rig 3 3단계 — 박자, 도구의 박자, 사이클 요약과 변경 기록(docs research rig3-skeleton.md 3·4·5·7·8절, rig3-roles.md 12절).
+// P244: rig 3단계 — 박자, 도구의 박자, 사이클 요약과 변경 기록(docs research rig3-skeleton.md 3·4·5·7·8절, rig3-roles.md 12절).
 // - 박자: 정의 beat { every, at?, role? }대로 판이 사이클을 연다(rig3_cycles 한 줄, 장부 cycle_open). 켤 때 사이클 0(첫 채움)을 두고, 박자마다 n+1.
 //   박자 역할이 있으면 그 세션에 깨우는 글을 대기열로 넣는다(일하는 턴을 끊지 않는다. 아직 넣지 않은 깨우는 글이 있으면 그 글에 더한다).
 //   시각: at이 있으면 그날 at에서 every 간격의 칸, 없으면 지난 박자(없으면 켠 때) + every. 판이 꺼졌거나 PC가 잠들어 칸을 놓쳤으면
@@ -6,7 +6,7 @@
 //   사람의 손 박자: 판 API rig3.beat(이 PC의 창·사람의 atrium call). 역할 세션의 atrium rig beat는 거절한다.
 //   역할 칸 beat(roles.<역할>.beat)는 사이클을 열지 않고 그 역할만 깨운다(장부 role_beat).
 // - 도구: v3 정의의 tools를 판이 돌린다. 역할은 atrium rig tool <이름> [인자…]로 자기 도구만 부른다. every가 있는 도구는 판이 시계로 돌리고 역할을 깨우지 않는다.
-//   실행은 rig 2 tool-runs.mjs의 실행기(exec)와 장부 표(tool_runs)를 빌린다(rig 2 길은 그대로). 출력은 그 도구를 가진 역할의 첫 섹터 tool-logs/<도구>-<실행 ID>.log.
+//   실행은 tool-exec.mjs의 실행기(execTool)와 장부 표(tool_runs)를 쓴다. 출력은 그 도구를 가진 역할의 첫 섹터 tool-logs/<도구>-<실행 ID>.log.
 //   실행 시작·끝에 rig3-guard toolBegin·toolEnd를 불러 도구가 쓴 것을 그 역할의 쓰기로 본다.
 //   경보: 종료 코드가 0이 아니거나(시간 넘김·못 띄움 포함) 출력 줄이 "ALARM:"으로 시작하면 경보다. 시계 실행의 경보는 가진 역할을 깨운다.
 // - 사이클 요약: 박자가 사이클 n을 열면 판이 지난 사이클(n-1)을 장부에서 모은다(길마다 낸 것·받음·반려·pass·drop, 돈 도구, 남의 쓰기 되돌림, 멈춤).
@@ -14,7 +14,7 @@
 //   .atrium/CHANGELOG.md 맨 위에 더한다(판의 쓰기라 guard.accept). P245: 꼭지의 숫자·id·판 번호·시각은 모두 판이 쓰고(entryBody), AI는 칸마다 글만
 //   JSON({ summary, ran, roles, decide })으로 돌려준다. 숫자가 든 문장은 판이 지운다(cleanProse). AI가 실패하거나 남는 글이 없으면 숫자만 꼭지.
 //   도구 기록은 도구마다 최근 TOOL_LOGS_KEEP(200)개만 남긴다(pruneToolLogs, 실행이 끝날 때).
-// - 장부(RIG3_BEAT_KINDS): cycle_open(value enable | clock | late | human, n), cycle_entry(value ai | numbers, n), role_tool(value done | failed | alarm, data.by clock | role), role_beat.
+// - 장부(RIG_BEAT_KINDS): cycle_open(value enable | clock | late | human, n), cycle_entry(value ai | numbers, n), role_tool(value done | failed | alarm, data.by clock | role), role_beat.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,9 +22,9 @@ import { spawn } from 'node:child_process';
 import { rigEvent } from './rig-ledger.mjs';
 import { execTool, rootedRun, readTail, badCmdArg, CMD_SAFE_ARG, findExe, spawnPlan, killTree } from './tool-exec.mjs';
 import { cleanEnv } from './proc-env.mjs';
-import { HUMAN } from './rig3.mjs';
+import { HUMAN } from './rig-def.mjs';
 
-export const RIG3_BEAT_OPS = ['beat', 'tool'];
+export const RIG_BEAT_OPS = ['beat', 'tool'];
 export const CHANGELOG = '.atrium/CHANGELOG.md';
 export const TOOL_LOG_DIR = 'tool-logs';
 export const TOOL_TIMEOUT_MS = 30 * 60 * 1000;
@@ -260,8 +260,8 @@ export function runClaudeOnce(prompt, { model = SUMMARY_MODEL, cwd, timeoutMs = 
   });
 }
 
-export class Rig3Beat {
-  // b: 백엔드(store, rig, queue, sessions, cfg, features.settings, log). roles: Rig3Roles(active, sessionsOf, items, guard)
+export class RigBeat {
+  // b: 백엔드(store, rig, queue, sessions, cfg, features.settings, log). roles: RigRoles(active, sessionsOf, items, guard)
   constructor(b, roles) {
     this.b = b; this.roles = roles;
     this.live = new Map(); // 실행 ID → { key, role, tool, done }
@@ -289,7 +289,7 @@ export class Rig3Beat {
   }
   base(key) { const c = this.store().firstRig3Cycle(key); return c ? c.openedAt : null; }
 
-  // 주기(Rig3Roles.tick, 켜진 v3 rig마다)
+  // 주기(RigRoles.tick, 켜진 v3 rig마다)
   async tick(key, r, now = Date.now()) {
     const r3 = r.def.rig3;
     this.ensureBase(key, now);
@@ -328,7 +328,7 @@ export class Rig3Beat {
   // 박자를 친다(시계·놓친 박자·사람) → { n, prev }
   async strike(key, { by = 'clock', due = null, now = Date.now() } = {}) {
     const r = this.roles.active(key);
-    if (!r) throw apiError('rig3_off', '이 워크스페이스에 켜진 rig 3이 없다(박자는 켜진 rig에서 친다).');
+    if (!r) throw apiError('rig_off', '이 워크스페이스에 켜진 rig가 없다(박자는 켜진 rig에서 친다).');
     const r3 = r.def.rig3;
     const st = this.store();
     this.ensureBase(key, now);
@@ -363,7 +363,7 @@ export class Rig3Beat {
     return items.notifyLines(key, role, extra, head);
   }
   inboxLine(key, role) { try { const c = this.roles.items.counts(key, role); return c.pending || c.unanswered || c.returned ? '아래 수를 보고 atrium rig inbox' : '없음'; } catch { return '-'; } }
-  // 깨우는 글 머리의 사이클 줄(Rig3Items.wakeText가 부른다)
+  // 깨우는 글 머리의 사이클 줄(RigItems.wakeText가 부른다)
   cycleLine(key, role) {
     const st = this.store();
     const c = st.lastRig3Cycle ? st.lastRig3Cycle(key) : null;
@@ -391,10 +391,10 @@ export class Rig3Beat {
   async verb(s, o = {}) {
     const op = String(o.op || '');
     if (op === 'beat') throw apiError('forbidden', 'atrium rig beat(손 박자)는 사람만 친다: rig 판의 "지금 박자" 단추나 판 API rig3.beat. 역할은 박자를 치지 않는다(박자에 답할 것이 없으면 atrium rig pass "<까닭>").');
-    if (op !== 'tool') throw apiError('bad_request', 'atrium rig: ' + RIG3_BEAT_OPS.join(' | ') + ' 가운데 하나다: ' + op);
-    if (!s || !s.rigRole) throw apiError('forbidden', 'atrium rig tool은 rig 3 역할 세션만 쓴다(보드가 rig 역할로 띄운 세션). rig 2 도구는 atrium tool.');
+    if (op !== 'tool') throw apiError('bad_request', 'atrium rig: ' + RIG_BEAT_OPS.join(' | ') + ' 가운데 하나다: ' + op);
+    if (!s || !s.rigRole) throw apiError('forbidden', 'atrium rig tool은 rig 역할 세션만 쓴다(보드가 rig 역할로 띄운 세션).');
     const r = this.roles.active(s.workspaceKey);
-    if (!r) throw apiError('rig3_off', '이 워크스페이스에 켜진 rig 3이 없다(rig는 사람이 보드에서 켠다).');
+    if (!r) throw apiError('rig_off', '이 워크스페이스에 켜진 rig가 없다(rig는 사람이 보드에서 켠다).');
     const r3 = r.def.rig3; const role = r3.roles[s.rigRole];
     if (!role) throw apiError('forbidden', '이 세션의 역할 ' + s.rigRole + '이 지금 rig 정의에 없다.');
     if (!o.tool) return { role: role.name, tools: role.tools.map((t) => ({ name: t, desc: r3.tools[t].desc || '', run: r3.tools[t].run, every: r3.tools[t].every })) };
@@ -414,7 +414,7 @@ export class Rig3Beat {
   // 도구 실행을 띄운다 → { id, done: Promise }. by: role | clock
   async start(key, role, name, args, { by = 'role', session = null } = {}) {
     const r = this.roles.active(key);
-    if (!r) throw apiError('rig3_off', '켜진 rig 3이 없다');
+    if (!r) throw apiError('rig_off', '켜진 rig가 없다');
     const r3 = r.def.rig3; const tool = r3.tools[name]; const owner = r3.roles[role];
     if (!tool || !owner || !owner.tools.includes(name)) throw apiError('forbidden', '도구 ' + name + '는 ' + role + '의 것이 아니다');
     const tk = key + '|' + name;
@@ -495,7 +495,7 @@ export class Rig3Beat {
       const model = String(this.settings().rig3SummaryModel || this.b.cfg && this.b.cfg.rig3SummaryModel || SUMMARY_MODEL);
       if (skipAi) meta = { model: null, skipped: 'empty' };
       else try {
-        const cwd = path.join(this.b.cfg.dataDir || '.', 'rig3-summary');
+        const cwd = path.join(this.b.cfg.dataDir || '.', 'rig-summary');
         fs.mkdirSync(cwd, { recursive: true });
         const run = this.runner || ((p, o) => runClaudeOnce(p, o));
         const res = await run(summaryPrompt(facts, draft, lang), { model, cwd });
@@ -544,9 +544,9 @@ export class Rig3Beat {
 }
 
 // 판 API(사람만): rig3.beat { workspace } — 손 박자
-export function rig3BeatHandlers(b) {
+export function rigBeatHandlers(b) {
   const local = (c, what) => { if (!c || !c.auth || c.auth.kind !== 'local') throw apiError('forbidden', what + '는 이 PC의 보드 창이나 사람의 atrium 명령에서만 한다(판 API 토큰).'); };
   return {
-    'rig3.beat': async (p, c) => { local(c, '손 박자'); const key = (await b.resolveWorkspace(p && p.workspace)).key; if (!b.rig3 || !b.rig3.beat) throw apiError('rig3_off', 'rig 3이 없다'); return b.rig3.beat.beatNow(key); },
+    'rig.beat': async (p, c) => { local(c, '손 박자'); const key = (await b.resolveWorkspace(p && p.workspace)).key; if (!b.rig3 || !b.rig3.beat) throw apiError('rig_off', 'rig가 없다'); return b.rig3.beat.beatNow(key); },
   };
 }

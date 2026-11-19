@@ -42,42 +42,42 @@ try {
   await page.waitForFunction(() => !document.querySelector('[data-role=splash]'), null, { timeout: 30000 }).catch(() => log('splash 남음'));
   await lang(page, 'ko');
   // 1. 영역 메뉴의 rig 줄과 rig 판(꺼짐): 읽기만 하는 구조 보기
-  await regionMenu(page, 'rig-panel', '[data-role=rig3-panel]');
-  await page.waitForSelector('[data-role=rig3-roles] tr[data-role-name=ideas]', { timeout: 10000 });
+  await regionMenu(page, 'rig-panel', '[data-role=rig-panel]');
+  await page.waitForSelector('[data-role=rig-roles] tr[data-role-name=ideas]', { timeout: 10000 });
   const off = await page.evaluate(() => ({
-    status: document.querySelector('[data-role=rig3-panel]').dataset.status,
-    roles: [...document.querySelectorAll('[data-role=rig3-roles] tbody tr')].map((tr) => [tr.dataset.roleName, tr.children[1].textContent, tr.dataset.state]),
-    flows: [...document.querySelectorAll('[data-role=rig3-flows] li')].map((li) => li.textContent),
+    status: document.querySelector('[data-role=rig-panel]').dataset.status,
+    roles: [...document.querySelectorAll('[data-role=rig-roles] tbody tr')].map((tr) => [tr.dataset.roleName, tr.children[1].textContent, tr.dataset.state]),
+    flows: [...document.querySelectorAll('[data-role=rig-flows] li')].map((li) => li.textContent),
     editTables: document.querySelectorAll('[data-role=rig-seats], [data-role=rig-flow], [data-role=rig-results], [data-role=rig-say]').length,
-    inputs: document.querySelectorAll('[data-role=rig3-panel] input, [data-role=rig3-panel] select, [data-role=rig3-panel] textarea').length,
+    inputs: document.querySelectorAll('[data-role=rig-panel] input, [data-role=rig-panel] select, [data-role=rig-panel] textarea').length,
   }));
   check('꺼진 rig 3 판: 역할 둘과 쥔 섹터, 세션 없음', off.status === 'off' && JSON.stringify(off.roles) === JSON.stringify([['data', 'data/ snapshots/', 'none'], ['ideas', 'hypotheses/', 'none']]), off.roles);
   check('길 셋(사람 창구는 "사람")', off.flows.length === 3 && off.flows[1].includes(ko.rig3.human), off.flows);
   check('편집 표·자리 표·흐름 표·말로 고치기가 없다(입력 칸 0)', off.editTables === 0 && off.inputs === 0, off);
-  await shotEl(page, '[data-role=rig3-panel]', '01-rig3-off-ko');
+  await shotEl(page, '[data-role=rig-panel]', '01-rig3-off-ko');
   // 2. 켜기 확인(한 번)
-  await page.click('[data-action=rig3-enable]');
-  await page.waitForSelector('[data-role=rig3-confirm]');
-  const line = await page.textContent('[data-role=rig3-confirm-line]');
+  await page.click('[data-action=rig-enable]');
+  await page.waitForSelector('[data-role=rig-confirm]');
+  const line = await page.textContent('[data-role=rig-confirm-line]');
   check('켜기 확인 한 줄(ko)', line === ko.rig3.confirmLine.replace('{n}', '2'), line);
-  await shotEl(page, '[data-role=rig3-panel]', '02-rig3-confirm-ko');
+  await shotEl(page, '[data-role=rig-panel]', '02-rig3-confirm-ko');
   await lang(page, 'en');
-  const lineEn = await page.textContent('[data-role=rig3-confirm-line]');
+  const lineEn = await page.textContent('[data-role=rig-confirm-line]');
   check('켜기 확인 한 줄(en)', lineEn === en.rig3.confirmLine.replace('{n}', '2'), lineEn);
-  await shotEl(page, '[data-role=rig3-panel]', '03-rig3-confirm-en');
+  await shotEl(page, '[data-role=rig-panel]', '03-rig3-confirm-en');
   await lang(page, 'ko');
   // 3. 켜기 → 역할마다 세션
-  await page.click('[data-action=rig3-confirm-on]');
+  await page.click('[data-action=rig-confirm-on]');
   await until(() => { const r = call('rig.status', { workspace: WS }); return r.state === 'on' && r.rig3.roles.every((x) => x.session && x.session.state === 'ready'); }, 180000, 2000);
   const on = call('rig.status', { workspace: WS });
   check('켜면 역할마다 세션 하나(ready)', on.rig3.roles.map((r) => r.session && r.session.name).join(',') === 'data,ideas', on.rig3.roles.map((r) => r.session));
-  await page.waitForFunction(() => [...document.querySelectorAll('[data-role=rig3-roles] tbody tr')].every((tr) => tr.dataset.state === 'ready'), null, { timeout: 20000 }).catch(() => log('판의 줄이 아직 ready가 아님'));
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-role=rig-roles] tbody tr')].every((tr) => tr.dataset.state === 'ready'), null, { timeout: 20000 }).catch(() => log('판의 줄이 아직 ready가 아님'));
   await sleep(500);
-  await shotEl(page, '[data-role=rig3-panel]', '04-rig3-on-ko');
+  await shotEl(page, '[data-role=rig-panel]', '04-rig3-on-ko');
   await lang(page, 'en');
   await sleep(300);
-  await shotEl(page, '[data-role=rig3-panel]', '05-rig3-on-en');
-  await page.click('[data-role=rig3-panel] [data-action=rig-panel-close]');
+  await shotEl(page, '[data-role=rig-panel]', '05-rig3-on-en');
+  await page.click('[data-role=rig-panel] [data-action=rig-panel-close]');
   await lang(page, 'ko');
   await sleep(500);
   await page.screenshot({ path: path.join(OUT, '06-board-ko.png') });

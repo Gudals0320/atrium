@@ -1,4 +1,4 @@
-// P245: rig 3 4단계 — 조정과 되돌리기(docs research rig3-skeleton.md 2절 원리 3·4, 3·6·8·10절, rig3-roles.md 3.1·5절).
+// P245: rig 4단계 — 조정과 되돌리기(docs research rig3-skeleton.md 2절 원리 3·4, 3·6·8·10절, rig3-roles.md 3.1·5절).
 // - 재료: 역할마다 받은 반려(item_return, 낸 역할이 그 역할), 사람의 바로잡음(atrium rig heard "<요지>", 장부 role_heard, id heard-<n>),
 //   그 역할이 후보였던 되돌린 남의 쓰기(rig3-guard의 role_foreign_write, id write-<장부 seq>). 근거 id는 항목 id(반려)·heard-<n>·write-<seq>다.
 // - 조정 턴: 지난 답(tune·tune --none·raise) 뒤 재료가 정의 tune.after건(처음 값 3) 쌓였거나, tune.every사이클(처음 값 5)이 지났고 재료가 하나라도 있으면
@@ -18,9 +18,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs';
 import { unifiedDiff } from './rig-diff.mjs';
-import { checkRoleDoc, ROLE_DOC_FIXED, memoryDir, HUMAN } from './rig3.mjs';
+import { checkRoleDoc, ROLE_DOC_FIXED, memoryDir, HUMAN } from './rig-def.mjs';
 
-export const RIG3_TUNE_OPS = ['tune', 'raise', 'heard', 'role'];
+export const RIG_TUNE_OPS = ['tune', 'raise', 'heard', 'role'];
 export const TUNE_SECTION = '요령';
 export const TUNE_FILE = 'tune.md'; // 역할이 새 요령 칸을 쓰는 곳(자기 기억 폴더 안)
 export const WHY_MAX = 300;
@@ -76,8 +76,8 @@ export function tagBody(oldBody, newBody, n, ids) {
   return String(newBody || '').replace(/\r\n/g, '\n').split('\n').map((l) => { const s = stripTag(l); if (!s.trim()) return ''; return old.has(s) ? old.get(s) : s + tag; }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-export class Rig3Tune {
-  // b: 백엔드(store, rig, queue, sessions, log). roles: Rig3Roles(active, defOf, sessionsOf, items, beat, guard)
+export class RigTune {
+  // b: 백엔드(store, rig, queue, sessions, log). roles: RigRoles(active, defOf, sessionsOf, items, beat, guard)
   constructor(b, roles) { this.b = b; this.roles = roles; this.notices = new Map(); /* '<키>|<역할>' → [글] (되돌림 알림, 다음 깨우는 글에) */ }
   store() { return this.b.store; }
   log(m) { if (this.b.log) this.b.log(m); }
@@ -132,7 +132,7 @@ export class Rig3Tune {
   // P247: 세기 기준(after)은 반려·바로잡음·되돌린 쓰기만, 주기 기준(every)은 받은 답 항목도 재료로 친다
   due(x, tune) { if (x.open) return null; if (x.mats.length >= tune.after) return 'after'; if (x.cycles >= tune.every && (x.mats.length || (x.answers || []).length)) return 'every'; return null; }
 
-  // 주기(Rig3Roles.keep): 기준에 닿았으면 조정 턴을 넣는다 → { tuneTurn: [id] } | null
+  // 주기(RigRoles.keep): 기준에 닿았으면 조정 턴을 넣는다 → { tuneTurn: [id] } | null
   check(key, role, s, now = Date.now()) {
     const r = this.roles.active(key); if (!r || !s || !this.b.queue) return null;
     const r3 = r.def.rig3; if (!r3.roles[role]) return null;
@@ -177,9 +177,9 @@ export class Rig3Tune {
 
   // ---------- 명령(역할 세션) ----------
   ctx(s) {
-    if (!s || !s.rigRole) throw apiError('forbidden', 'atrium rig tune·raise·heard는 rig 3 역할 세션만 쓴다(보드가 rig 역할로 띄운 세션).');
+    if (!s || !s.rigRole) throw apiError('forbidden', 'atrium rig tune·raise·heard는 rig 역할 세션만 쓴다(보드가 rig 역할로 띄운 세션).');
     const r = this.roles.active(s.workspaceKey);
-    if (!r) throw apiError('rig3_off', '이 워크스페이스에 켜진 rig 3이 없다(rig는 사람이 보드에서 켠다).');
+    if (!r) throw apiError('rig_off', '이 워크스페이스에 켜진 rig가 없다(rig는 사람이 보드에서 켠다).');
     const role = r.def.rig3.roles[s.rigRole];
     if (!role) throw apiError('forbidden', '이 세션의 역할 ' + s.rigRole + '이 지금 rig 정의에 없다.');
     return { key: s.workspaceKey, r, role };
@@ -198,7 +198,7 @@ export class Rig3Tune {
     if (op === 'tune') return o.none != null ? this.none(x.key, { ...who, reason: o.none === true ? o.reason : o.none }) : this.tune(x.key, { ...who, text: o.text, file: o.file, why: o.why, evidence: o.evidence });
     if (op === 'raise') return this.raise(x.key, { ...who, reason: o.reason });
     if (op === 'heard') return this.heard(x.key, { ...who, text: o.text });
-    throw apiError('bad_request', 'atrium rig: ' + RIG3_TUNE_OPS.join(' | ') + ' 가운데 하나다: ' + op);
+    throw apiError('bad_request', 'atrium rig: ' + RIG_TUNE_OPS.join(' | ') + ' 가운데 하나다: ' + op);
   }
   heard(key, p) {
     const text = clip(p.text, HEARD_MAX);
@@ -240,7 +240,7 @@ export class Rig3Tune {
   // 요령 칸 고치기 → { n, prevN, added, removed, diff, lines }
   tune(key, p) {
     const r = this.roles.active(key);
-    if (!r) throw apiError('rig3_off', '이 워크스페이스에 켜진 rig 3이 없다.');
+    if (!r) throw apiError('rig_off', '이 워크스페이스에 켜진 rig가 없다.');
     const r3 = r.def.rig3; const role = r3.roles[p.role];
     if (!role) throw apiError('forbidden', '없는 역할: ' + p.role);
     let text = p.text;
@@ -312,7 +312,7 @@ export class Rig3Tune {
   // 정의서 하나의 요령 칸을 판 n의 것으로 → { n(새 판), from, unchanged? }
   rollback(key, { role, n, by = 'human' } = {}) {
     const r = this.roles.defOf(key);
-    if (!r) throw apiError('rig3_off', '이 워크스페이스에 rig 3 정의가 없다.');
+    if (!r) throw apiError('rig_off', '이 워크스페이스에 rig 정의가 없다.');
     if (!r.def.rig3.roles[role]) throw apiError('not_found', '없는 역할: ' + role);
     const want = Number(n);
     if (!Number.isInteger(want) || want < 1) throw apiError('bad_request', '되돌릴 판 번호를 준다(1 이상)');
@@ -340,7 +340,7 @@ export class Rig3Tune {
     this.changed(key);
     return { n: a.n, from: want, prevN, role, added: diff.added, removed: diff.removed };
   }
-  // 되돌림 알림을 꺼낸다(Rig3Items 깨우는 글이 붙인다)
+  // 되돌림 알림을 꺼낸다(RigItems 깨우는 글이 붙인다)
   takeNotices(key, role) { const k = key + '|' + role; const l = this.notices.get(k) || []; this.notices.delete(k); return l; }
 
   // ---------- 보기 ----------
@@ -365,7 +365,7 @@ export class Rig3Tune {
   // atrium rig role · 판 API rig3.role: 정의서와 요령 칸, 조정 기록, 지금 재료
   roleInfo(key, role) {
     const r = this.roles.defOf(key);
-    if (!r) throw apiError('rig3_off', '이 워크스페이스에 rig 3 정의가 없다.');
+    if (!r) throw apiError('rig_off', '이 워크스페이스에 rig 정의가 없다.');
     const r3 = r.def.rig3;
     if (!r3.roles[role]) throw apiError('not_found', '없는 역할: ' + role + '. 역할: ' + Object.keys(r3.roles).join(', '));
     const doc = this.docOf(r, role);
@@ -378,11 +378,11 @@ export class Rig3Tune {
 }
 
 // 판 API: rig3.role { workspace, role }(읽기), rig3.rollback { workspace, role, n }(사람만: 이 PC의 창·사람의 atrium call)
-export function rig3TuneHandlers(b) {
+export function rigTuneHandlers(b) {
   const local = (c, what) => { if (!c || !c.auth || c.auth.kind !== 'local') throw apiError('forbidden', what + '는 이 PC의 보드 창이나 사람의 atrium 명령에서만 한다(판 API 토큰).'); };
-  const T = () => { if (!b.rig3 || !b.rig3.tune) throw apiError('rig3_off', 'rig 3이 없다'); return b.rig3.tune; };
+  const T = () => { if (!b.rig3 || !b.rig3.tune) throw apiError('rig_off', 'rig가 없다'); return b.rig3.tune; };
   return {
-    'rig3.role': async (p) => { const key = (await b.resolveWorkspace(p && p.workspace)).key; return T().roleInfo(key, String((p && p.role) || '')); },
-    'rig3.rollback': async (p, c) => { local(c, '정의서 되돌리기'); const key = (await b.resolveWorkspace(p && p.workspace)).key; return T().rollback(key, { role: String((p && p.role) || ''), n: p && p.n, by: 'human' }); },
+    'rig.role': async (p) => { const key = (await b.resolveWorkspace(p && p.workspace)).key; return T().roleInfo(key, String((p && p.role) || '')); },
+    'rig.roleRollback': async (p, c) => { local(c, '정의서 되돌리기'); const key = (await b.resolveWorkspace(p && p.workspace)).key; return T().rollback(key, { role: String((p && p.role) || ''), n: p && p.n, by: 'human' }); },
   };
 }

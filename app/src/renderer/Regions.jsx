@@ -137,7 +137,7 @@ function RegionMenu({ at, close, w, arranged, z }) {
       <div className="mt-sb2-msep" />
       <div className="mt-sb2-mh mt-rig-line" data-role="rig-status" data-rig={rig ? rig.state : 'loading'} title={rig && rig.invalid ? rig.invalid : undefined}>{rigLine(t, rig)}</div>
       {/* P191·P249: 정의가 없으면 빌더에게 말하기(이 PC의 창만), 있으면 rig 판(켜기·끄기·빌더·되돌리기는 판 안). 원격 기기는 보기만 */}
-      {rigMenu(rig, remoteView()) === 'builder' && item('rig-builder', t('rig3Builder.menu'), () => openDialog({ kind: 'rigpanel', ws: w }))}
+      {rigMenu(rig, remoteView()) === 'builder' && item('rig-builder', t('rigBuilder.menu'), () => openDialog({ kind: 'rigpanel', ws: w }))}
       {rigMenu(rig, remoteView()) === 'view' && item('rig-panel', t('rigSetup.menuView'), () => openDialog({ kind: 'rigpanel', ws: w }))}
       <div className="mt-sb2-msep" />
       {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}
@@ -158,7 +158,7 @@ function rigLine(t, r) {
   if (r.state === 'error') return t('rig.stError', { error: r.error });
   if (r.state === 'none') return t('rig.stNone');
   if (r.state === 'invalid') return t('rig.stInvalid', { reason: r.invalid || '?' });
-  if (r.state === 'on') return r.invalid ? t('rig.stOnStale', { reason: r.invalid }) : t('rig3.stOn', { n: r.rig3 ? (r.rig3.roles || []).length : 0 }); // P241
+  if (r.state === 'on') return r.invalid ? t('rig.stOnStale', { reason: r.invalid }) : t('rig.stOn', { n: r.rig3 ? (r.rig3.roles || []).length : 0 }); // P241
   return r.invalid ? t('rig.stInvalid', { reason: r.invalid }) : t('rig.stOff');
 }
 // 영역 메뉴의 rig 줄: 정의가 없으면 빌더(원격은 없음), 있으면 rig 판 → 'builder' | 'view' | null

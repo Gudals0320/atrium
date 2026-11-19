@@ -12,11 +12,11 @@ import { Rig } from '../src/rig.mjs';
 import { RigAdmin } from '../src/rig-admin.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime } from '../src/state.mjs';
-import { rigEvent, RIG3_TUNE_KINDS } from '../src/rig-ledger.mjs';
-import { loadText, rig3Guide, bundleOf, bundleSig, checkRoleDoc } from '../src/rig3.mjs';
-import { Rig3Roles, ROLE_SPAWN } from '../src/rig3-roles.mjs';
-import { collectCycle, numbersBody, entryBody, cleanProse, pruneToolLogs } from '../src/rig3-beat.mjs';
-import { replaceSection, parseTune, tagBody, countLines, sameBody, stripTag, rig3TuneHandlers, RIG3_TUNE_OPS } from '../src/rig3-tune.mjs';
+import { rigEvent, RIG_TUNE_KINDS } from '../src/rig-ledger.mjs';
+import { loadText, rigGuide, bundleOf, bundleSig, checkRoleDoc } from '../src/rig-def.mjs';
+import { RigRoles, ROLE_SPAWN } from '../src/rig-roles.mjs';
+import { collectCycle, numbersBody, entryBody, cleanProse, pruneToolLogs } from '../src/rig-beat.mjs';
+import { replaceSection, parseTune, tagBody, countLines, sameBody, stripTag, rigTuneHandlers, RIG_TUNE_OPS } from '../src/rig-tune.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p245-'));
 const DOC = (name, tune = '- 처음 요령') => ['# ' + name, '', '## 맡은 것', name + '의 일', '', '## 받는 것과 내는 것', '- 받고 낸다', '', '## 기준', '- 기준 ' + name, '', '## 요령', tune, ''].join('\n');
@@ -43,7 +43,7 @@ async function board(mod = null) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const items = new Map(); let dn = 0;
   const b = { cfg: { hookTimeoutSec: 2, sessionsDir: path.join(outside, 'sessions'), dataDir: path.join(outside, 'data-board'), rig3DeadGraceMs: 0 }, store, sessions: new Map(), log: () => {}, api: { broadcast: () => {} }, features: { settings: { get: () => ({ language: 'ko' }) } } };
-  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new RigRoles(b);
   b.resolveWorkspace = async () => ({ key: ws.key });
   b.queue = {
     enqueue: (sessionId, text, opts) => { const d = { deliveryId: 'd' + ++dn, sessionId, text, opts, status: 'queued' }; items.set(d.deliveryId, d); return d; },
@@ -247,7 +247,7 @@ test('P245 tune 거절: 고정 칸 바뀜, 예산 넘음, 없는 근거, 근거 
   // 역할 세션이 아니면·꺼진 rig면
   await code(B.T.verb({ sessionId: 'x', workspaceKey: B.key }, { op: 'tune', text: '- x', why: 'x', evidence: ['a-1'] }), 'forbidden');
   B.store.setRigEnabled(B.key, false);
-  await code(B.T.verb(B.S('ideas'), { op: 'tune', text: '- x', why: 'x', evidence: [ids[0]] }), 'rig3_off');
+  await code(B.T.verb(B.S('ideas'), { op: 'tune', text: '- x', why: 'x', evidence: [ids[0]] }), 'rig_off');
 });
 
 test('P245 tune --none과 raise: 턴을 닫는 답, 장부·기록, 변경 기록에 "역할이 바꾼 것"과 "사람이 볼 것"', async () => {
@@ -289,9 +289,9 @@ test('P245 되돌리기(사람): 정의서 하나의 요령 칸만 지난 판으
   const info = await B.T.verb(B.S('verify'), { op: 'role', role: 'ideas' });
   assert.equal(info.n, a.n); assert.deepEqual(info.versions, [v1, a.n]); assert.equal(info.log.at(-1).kind, 'tune'); assert.match(info.tune, /ideas 새 요령/);
   // 판 API: local만
-  const H = rig3TuneHandlers(B.b);
-  await code(H['rig3.rollback']({ workspace: B.key, role: 'ideas', n: v1 }, { auth: { kind: 'remote' } }), 'forbidden');
-  const r = await H['rig3.rollback']({ workspace: B.key, role: 'ideas', n: v1 }, { auth: { kind: 'local' } });
+  const H = rigTuneHandlers(B.b);
+  await code(H['rig.roleRollback']({ workspace: B.key, role: 'ideas', n: v1 }, { auth: { kind: 'remote' } }), 'forbidden');
+  const r = await H['rig.roleRollback']({ workspace: B.key, role: 'ideas', n: v1 }, { auth: { kind: 'local' } });
   assert.equal(r.from, v1); assert.equal(r.n, d.n + 1); assert.equal(r.removed, 1);
   assert.equal(B.tuneOf('ideas'), '- 처음 요령');
   assert.equal(B.tuneOf('data'), dataTune); // 다른 역할의 뒤 조정은 남는다
@@ -301,8 +301,8 @@ test('P245 되돌리기(사람): 정의서 하나의 요령 칸만 지난 판으
   assert.equal(rb.seat, 'ideas'); assert.equal(rb.actor, 'human'); assert.equal(rb.value, String(v1));
   assert.ok(B.accepts.filter((x) => x.includes('.atrium/roles/ideas.md')).length >= 2);
   // 같은 것으로 다시 되돌리면 바뀌지 않음
-  assert.equal((await H['rig3.rollback']({ workspace: B.key, role: 'ideas', n: v1 }, { auth: { kind: 'local' } })).unchanged, true);
-  await code(H['rig3.rollback']({ workspace: B.key, role: 'ideas', n: 999 }, { auth: { kind: 'local' } }), 'not_found');
+  assert.equal((await H['rig.roleRollback']({ workspace: B.key, role: 'ideas', n: v1 }, { auth: { kind: 'local' } })).unchanged, true);
+  await code(H['rig.roleRollback']({ workspace: B.key, role: 'ideas', n: 999 }, { auth: { kind: 'local' } }), 'not_found');
   // 되돌린 역할의 다음 깨우는 글에 알림(한 번)
   B.b.rig3.items.notify(B.key, 'ideas', '- 시험 줄'); // 아직 넣지 않은 깨우는 글이 있으면 그 글에 더해진다
   const wake = B.toRole('ideas').filter((x) => /- 시험 줄/.test(x.text)).map((x) => x.text).join('\n');
@@ -310,7 +310,7 @@ test('P245 되돌리기(사람): 정의서 하나의 요령 칸만 지난 판으
   assert.deepEqual(B.T.takeNotices(B.key, 'ideas'), []);
   // 꺼진 rig에서도 사람은 되돌린다
   B.store.setRigEnabled(B.key, false);
-  const r2 = await H['rig3.rollback']({ workspace: B.key, role: 'ideas', n: a.n }, { auth: { kind: 'local' } });
+  const r2 = await H['rig.roleRollback']({ workspace: B.key, role: 'ideas', n: a.n }, { auth: { kind: 'local' } });
   assert.match(B.tuneOf('ideas'), /ideas 새 요령/); assert.ok(r2.n > r.n);
   // 변경 기록: 되돌림과 조정
   const facts = collectCycle(B.b.rig.read(B.key).def.rig3, B.ledger(), { n: 1, from: 0, to: Date.now(), by: 'clock' });
@@ -339,20 +339,20 @@ test('P245 변경 기록: 조정(판 번호·근거 id)은 판이 쓰고 AI는 �
 });
 
 test('P245 장부 종류·명령·실을 글·안내', async () => {
-  assert.deepEqual(RIG3_TUNE_KINDS, ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback']);
-  assert.deepEqual(RIG3_TUNE_OPS, ['tune', 'raise', 'heard', 'role']);
+  assert.deepEqual(RIG_TUNE_KINDS, ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback']);
+  assert.deepEqual(RIG_TUNE_OPS, ['tune', 'raise', 'heard', 'role']);
   const B = await board();
   const r3 = B.b.rig.read(B.key).def.rig3;
   const t = loadText(r3, 'ideas', {});
   assert.match(t, /atrium rig heard "<요지>"/); assert.match(t, /반려·바로잡음이 3건 쌓이거나 \(하나라도 있고\) 5사이클이 지나면 판이 조정 턴을 준다/);
-  assert.match(rig3Guide(r3, 'ideas'), /atrium rig tune/);
+  assert.match(rigGuide(r3, 'ideas'), /atrium rig tune/);
   // rig-admin의 길: tune 명령이 rig 3으로 간다
   await code(B.admin.verb(B.S('ideas'), { op: 'raise' }), 'bad_request');
   const info = await B.admin.verb(B.S('ideas'), { op: 'role' });
   assert.equal(info.role, 'ideas'); assert.equal(info.budget, 20); assert.equal(info.lines, 1);
-  const H = rig3TuneHandlers(B.b);
-  assert.equal((await H['rig3.role']({ workspace: B.key, role: 'verify' })).role, 'verify');
-  await code(H['rig3.role']({ workspace: B.key, role: 'nope' }), 'not_found');
+  const H = rigTuneHandlers(B.b);
+  assert.equal((await H['rig.role']({ workspace: B.key, role: 'verify' })).role, 'verify');
+  await code(H['rig.role']({ workspace: B.key, role: 'nope' }), 'not_found');
 });
 
 test('P245 덧붙임: 꼭지의 숫자·id는 판만 쓴다 — AI 글의 숫자 든 문장은 지우고, 모두 지워지면 숫자만. 판의 숫자는 그대로 나온다', async () => {
@@ -391,5 +391,5 @@ test('P245 덧붙임: 도구 기록은 가진 역할의 섹터 tool-logs/에 도
   for (let i = 0; i < 4; i++) await B.admin.verb(B.S('data'), { op: 'tool', tool: 'fetch' });
   const logs = fs.readdirSync(path.join(B.dir, 'data', 'tool-logs')).filter((n) => /^fetch-tr[0-9a-f]+\.log$/.test(n));
   assert.equal(logs.length, 2);
-  assert.equal(B.b.rig3.beat ? (await import('../src/rig3-beat.mjs')).TOOL_LOGS_KEEP : 0, 200);
+  assert.equal(B.b.rig3.beat ? (await import('../src/rig-beat.mjs')).TOOL_LOGS_KEEP : 0, 200);
 });

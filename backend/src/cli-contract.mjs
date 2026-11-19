@@ -21,9 +21,9 @@
 // P222: done --artifact(산출물 등록, done 응답의 artifacts 칸), item 응답의 produces 칸, rig artifacts를 더했다(더하기만이라 4 그대로)
 // P224: rig propose|proposals|approve|reject(제안과 승인)를 더했다(더하기만이라 4 그대로)
 // P230: rig run <고리>(관리자 자리가 every 고리를 지금 한 번 돌림)를 더했다(더하기만이라 4 그대로)
-// P242: rig put|accept|return|pass|drop|inbox(rig 3 역할 세션의 항목 명령)를 더했다(더하기만이라 4 그대로)
-// P244: rig tool(rig 3 역할의 도구)과 rig beat(사람만, 역할 세션은 거절)를 더했다(더하기만이라 4 그대로)
-// P245: rig tune|raise|heard(rig 3 역할의 조정)와 rig role(정의서와 조정 기록 보기)을 더했다(더하기만이라 4 그대로)
+// P242: rig put|accept|return|pass|drop|inbox(rig 역할 세션의 항목 명령)를 더했다(더하기만이라 4 그대로)
+// P244: rig tool(rig 역할의 도구)과 rig beat(사람만, 역할 세션은 거절)를 더했다(더하기만이라 4 그대로)
+// P245: rig tune|raise|heard(rig 역할의 조정)와 rig role(정의서와 조정 기록 보기)을 더했다(더하기만이라 4 그대로)
 // P248: prompt --steer(스티어링, --now와 같은 길)를 더했다(더하기만이라 4 그대로)
 // P237: prompt --talk(rig 자리에 회 없이 글만)와 prompt 응답의 talk 칸, 거절 까닭 rig_run_open을 더했다(더하기만이라 4 그대로)
 // 5(P249): 옛 rig(1·2)를 걷어냈다. tool 동사, prompt --case·--talk, done --artifact와 rig 값, guide rig, rig의 rollback·cleanup·retry·status·pause·resume·name·artifacts·propose·proposals·approve·reject·run, 응답의 rig·case·flow·talk 칸이 없어졌다

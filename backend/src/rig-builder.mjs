@@ -1,7 +1,7 @@
-// P247: rig 3 5단계 — 빌더 세션(docs research rig3-skeleton.md 7절, rig3-roles.md 10절).
+// P247: rig 5단계 — 빌더 세션(docs research rig3-skeleton.md 7절, rig3-roles.md 10절).
 // - 워크스페이스마다 하나, 사람이 주인, 길 밖. 세션의 rigRole이 BUILDER_ROLE('@builder')이다(sessions.rig_role로 판이 다시 떠도 알아본다).
 //   rig 판(v3이거나 rig가 없는 워크스페이스)의 "빌더에게 말하기"(판 API rig3.builder)가 있으면 그 세션으로, 없으면 띄운다. 빌더를 꺼도 rig는 돈다.
-// - 띄울 때 싣는 글: 빌더 지침 파일(rig3-builder-guide.md, 설계 쪽이 다시 쓴다) + 지금 정의·목적·정의서 + 최근 변경 기록 꼭지 + 기다리는 raise·멈춘 역할.
+// - 띄울 때 싣는 글: 빌더 지침 파일(rig-builder-guide.md, 설계 쪽이 다시 쓴다) + 지금 정의·목적·정의서 + 최근 변경 기록 꼭지 + 기다리는 raise·멈춘 역할.
 // - 쓰기 범위: .atrium/와 정의가 가리키는 도구 스크립트(rig3.mjs builderWrites). Claude Code는 역할처럼 무인(bypassPermissions)에 PreToolUse가 범위 밖 편집을 막는다.
 //   턴 뒤 되돌리기(rig3-guard)는 빌더의 일 구간을 알고 그 경로의 주인으로 친다(역할이 .atrium/에 쓴 것은 그대로 되돌린다).
 // - 빌더가 일하던 때 바뀐 정의·목적·정의서의 새 판은 누가 builder다(Rig.byOf → wroteAt). 꺼진 rig는 빌더 턴이 끝날 때 맞는 정의를 판으로 남긴다(recordNow).
@@ -12,17 +12,17 @@ import { fileURLToPath } from 'node:url';
 import { rigEvent } from './rig-ledger.mjs';
 import { shownName } from './session-label.mjs';
 import { deriveState } from './state.mjs';
-import { BUILDER_ROLE, builderWrites, RIG3_DIR } from './rig3.mjs';
+import { BUILDER_ROLE, builderWrites, RIG_DIR } from './rig-def.mjs';
 
 export { BUILDER_ROLE };
 export const BUILDER_NAME = 'builder';
-export const GUIDE_FILE = fileURLToPath(new URL('./rig3-builder-guide.md', import.meta.url));
+export const GUIDE_FILE = fileURLToPath(new URL('./rig-builder-guide.md', import.meta.url));
 export const BUILDER_TEXT_MAX = 2000;
 export const LOAD_LIMITS = { rig: 12000, purpose: 6000, doc: 6000, docsTotal: 30000, entry: 6000 };
 export const WINDOW_KEEP = 20; // 빌더의 일 구간(벽시계) 몇 개를 들고 있나
 export const WROTE_SLACK_MS = 3000; // 구간 앞뒤 여유(파일 시각과 상태 바뀜의 틈)
 const BUSY = new Set(['working', 'waiting']);
-const ROLE_SPAWN = Symbol.for('atrium.rig3RoleSpawn'); // rig3-roles.mjs ROLE_SPAWN과 같은 열쇠
+const ROLE_SPAWN = Symbol.for('atrium.rig3RoleSpawn'); // rig-roles.mjs ROLE_SPAWN과 같은 열쇠
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const clipTo = (t, n, rel) => (t.length > n ? t.slice(0, n) + '\n…(잘림: 전체는 ' + rel + ')' : t);
 
@@ -40,7 +40,7 @@ export function builderLoadText(x) {
     '## 빌더 지침',
     String(x.guide || '').trim(),
   ];
-  if (x.rigText != null) out.push('', '## 지금 정의 (' + RIG3_DIR + '/rig.json)', clipTo(String(x.rigText).trim(), L.rig, RIG3_DIR + '/rig.json'));
+  if (x.rigText != null) out.push('', '## 지금 정의 (' + RIG_DIR + '/rig.json)', clipTo(String(x.rigText).trim(), L.rig, RIG_DIR + '/rig.json'));
   if (x.purpose && x.purpose.text != null) out.push('', '## 목적 (' + x.purpose.rel + ')', clipTo(String(x.purpose.text).trim(), L.purpose, x.purpose.rel));
   let total = 0;
   for (const d of x.docs || []) {
@@ -60,20 +60,20 @@ export function alertText(a) {
 }
 
 // 판 API: rig3.builder { workspace, text?, model?, effort? }(사람만: 이 PC의 창·사람의 atrium call) → { session, name, spawned }
-export function rig3BuilderHandlers(b) {
+export function rigBuilderHandlers(b) {
   const local = (c, what) => { if (!c || !c.auth || c.auth.kind !== 'local') throw apiError('forbidden', what + '는 이 PC의 보드 창이나 사람의 atrium 명령에서만 한다(판 API 토큰).'); };
   return {
-    'rig3.builder': async (p, c) => {
+    'rig.builder': async (p, c) => {
       local(c, '빌더에게 말하기');
-      if (!b.rig3 || !b.rig3.builder) throw apiError('rig3_off', 'rig 3이 없다');
+      if (!b.rig3 || !b.rig3.builder) throw apiError('rig_off', 'rig가 없다');
       const key = (await b.resolveWorkspace(p && p.workspace)).key;
       return b.rig3.builder.talk(key, { text: p && p.text, model: p && p.model ? String(p.model) : null, effort: p && p.effort ? String(p.effort) : null });
     },
   };
 }
 
-export class Rig3Builder {
-  // b: 백엔드(sessions, spawn, queue, store, rig, log). roles: Rig3Roles(defOf, active, beat, pickName, changed)
+export class RigBuilder {
+  // b: 백엔드(sessions, spawn, queue, store, rig, log). roles: RigRoles(defOf, active, beat, pickName, changed)
   constructor(b, roles) { this.b = b; this.roles = roles; this.windows = new Map(); /* 키 → [{ start, end }] */ this.busy = new Map(); /* 세션 ID → start */ }
   log(m) { if (this.b.log) this.b.log(m); }
   rootOf(key) { return this.b.rig && this.b.rig.rootOf ? this.b.rig.rootOf(key) : null; }
@@ -89,7 +89,6 @@ export class Rig3Builder {
     const say = text == null ? '' : String(text).trim();
     if (say.length > BUILDER_TEXT_MAX) throw apiError('bad_request', '글이 너무 길다(' + say.length + '자, ' + BUILDER_TEXT_MAX + '자까지)');
     const r = this.b.rig ? this.b.rig.read(key) : null;
-    if (r && r.present && r.def && !r.def.v3) throw apiError('rig2', '이 워크스페이스의 rig는 rig 2 정의다. 빌더는 rig 3(version 3)이나 rig가 없는 워크스페이스에서 쓴다.');
     let s = this.sessionOf(key); let spawned = false;
     if (!s) {
       const name = this.roles.pickName(BUILDER_NAME) || BUILDER_NAME + '-' + Date.now().toString(36);
@@ -119,7 +118,7 @@ export class Rig3Builder {
     try { const v = r3 && this.roles.beat ? this.roles.beat.view(key, r3) : null; const e = v && v.entries && v.entries[0]; if (e) entry = (e.title ? e.title + '\n' : '') + (e.body || ''); } catch {}
     return builderLoadText({
       guide: readGuide(), root, state: st.state || 'none', why: st.invalid || null, n: st.version ?? null, writes: this.writes(key),
-      rigText: rd(RIG3_DIR + '/rig.json'),
+      rigText: rd(RIG_DIR + '/rig.json'),
       purpose: r3 ? { rel: r3.purpose, text: rd(r3.purpose) } : null,
       docs: r3 ? Object.values(r3.roles).map((x) => ({ rel: x.doc, text: rd(x.doc) })) : [],
       entry, alerts: this.waiting(key),

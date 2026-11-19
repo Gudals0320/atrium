@@ -15,9 +15,9 @@ import { SHELL_IN_SHELL_DENY, rulePath } from '../src/rig-writes.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime, applyHook } from '../src/state.mjs';
 import { Backend } from '../src/backend.mjs';
-import { RIG_EVENT_KINDS, RIG3_EVENT_KINDS, rigEvent, parseKinds } from '../src/rig-ledger.mjs';
-import { validateRig3, checkRoleDoc, normSector, loadText, codexRoleArgs, roleWrites, parseDuration } from '../src/rig3.mjs';
-import { Rig3Roles, ROLE_SPAWN, ROLE_PERMISSION_MODE, ROLE_NESTED_SHELL_REASON } from '../src/rig3-roles.mjs';
+import { RIG_EVENT_KINDS, RIG_ROLE_KINDS, rigEvent, parseKinds } from '../src/rig-ledger.mjs';
+import { validateRigDef, checkRoleDoc, normSector, loadText, codexRoleArgs, roleWrites, parseDuration } from '../src/rig-def.mjs';
+import { RigRoles, ROLE_SPAWN, ROLE_PERMISSION_MODE, ROLE_NESTED_SHELL_REASON } from '../src/rig-roles.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p249-'));
 const DOC = (name, o = {}) => [`# ${name}`, '', '## 맡은 것', o.owns || `${name}의 일`, '', '## 받는 것과 내는 것', '받는 것: 없음', '', '## 기준', '- 기준 하나', '', ...(o.noTips ? [] : ['## 요령', '- 요령 하나'])].join('\n');
@@ -49,7 +49,7 @@ function folder(def = DEF(), { docs = true } = {}) {
   fs.writeFileSync(path.join(dir, '.atrium', 'rig.json'), JSON.stringify(def, null, 2));
   return dir;
 }
-const v3 = (def, root) => validateRig3(def, { root });
+const v3 = (def, root) => validateRigDef(def, { root });
 
 // ---------- 판(가짜 spawn·kill·sleeper, 진짜 Store·Rig·설정 파일) ----------
 async function board(def = DEF(), cfg = {}) {
@@ -59,7 +59,7 @@ async function board(def = DEF(), cfg = {}) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const casts = []; const logs = []; const sent = []; const spawned = []; const killed = [];
   const b = { cfg: { hookTimeoutSec: 2, sessionsDir: path.join(dir, 'sessions'), dataDir: path.join(dir, 'data'), rig3DeadGraceMs: 0, ...cfg }, store, sessions: new Map(), log: (...a) => logs.push(a.join(' ')), api: { broadcast: (n, d) => casts.push({ n, d }) } };
-  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new RigRoles(b);
   b.queue = { enqueue: (sessionId, text, opts) => { sent.push({ sessionId, text, opts }); return { deliveryId: 'd' + sent.length }; } };
   let n = 0;
   // backend.spawn이 하는 것만 흉내: rig3.launchOf → 권한 모드·설정 파일, 세션에 역할

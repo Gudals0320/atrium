@@ -11,10 +11,10 @@ import { Rig } from '../src/rig.mjs';
 import { RigAdmin } from '../src/rig-admin.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime, applyHook } from '../src/state.mjs';
-import { RIG3_EVENT_KINDS, RIG_EVENT_KINDS } from '../src/rig-ledger.mjs';
-import { loadText, rig3Guide, validateRig3 } from '../src/rig3.mjs';
-import { Rig3Roles, ROLE_SPAWN } from '../src/rig3-roles.mjs';
-import { RIG3_ITEM_OPS, parseItemId, answerKinds, rig3Handlers, INTAKE_DIR } from '../src/rig3-items.mjs';
+import { RIG_ROLE_KINDS, RIG_EVENT_KINDS } from '../src/rig-ledger.mjs';
+import { loadText, rigGuide, validateRigDef } from '../src/rig-def.mjs';
+import { RigRoles, ROLE_SPAWN } from '../src/rig-roles.mjs';
+import { RIG_ITEM_OPS, parseItemId, answerKinds, rigItemHandlers, INTAKE_DIR } from '../src/rig-items.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p242-'));
 const DOC = (name) => [`# ${name}`, '', '## 맡은 것', `${name}의 일`, '', '## 받는 것과 내는 것', '-', '', '## 기준', '- 기준', '', '## 요령', '- 요령'].join('\n');
@@ -42,7 +42,7 @@ async function board(cfg = {}, mod = null) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const casts = []; const items = new Map(); let dn = 0;
   const b = { cfg: { hookTimeoutSec: 2, sessionsDir: path.join(dir, 'sessions'), dataDir: path.join(dir, 'data-board'), rig3DeadGraceMs: 0, ...cfg }, store, sessions: new Map(), log: () => {}, api: { broadcast: (n, d) => casts.push({ n, d }) } };
-  b.rig = new Rig(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new RigRoles(b);
   // 대기열(넣은 글, 대기 중이면 retext로 바뀜)
   b.queue = {
     enqueue: (sessionId, text, opts) => { const d = { deliveryId: 'd' + ++dn, sessionId, text, opts, status: 'queued' }; items.set(d.deliveryId, d); return d; },
@@ -328,9 +328,9 @@ test('P242 입력 창구: 사람의 글 → .atrium/intake/<종류>-<n>.md, huma
   assert.equal(B.items.size, before, '사람에게는 세션 글을 넣지 않는다');
   assert.deepEqual(B.b.rig.status(B.key).rig3.intake, { kinds: ['hint', 'request'], returned: [{ id: 'hint-1', path: '.atrium/intake/hint-1.md', by: [{ role: 'ideas', reason: '모호하다', late: false }] }] });
   // 판 API: 사람(판 API 토큰)만
-  const h = rig3Handlers({ ...B.b, resolveWorkspace: async () => ({ key: B.key }) });
-  await code(h['rig3.intake']({ item: 'request', text: 'GC도' }, { auth: { kind: 'device' } }), 'forbidden');
-  const x = await h['rig3.intake']({ item: 'request', text: 'GC도' }, { auth: { kind: 'local' } });
+  const h = rigItemHandlers({ ...B.b, resolveWorkspace: async () => ({ key: B.key }) });
+  await code(h['rig.intake']({ item: 'request', text: 'GC도' }, { auth: { kind: 'device' } }), 'forbidden');
+  const x = await h['rig.intake']({ item: 'request', text: 'GC도' }, { auth: { kind: 'local' } });
   assert.equal(x.item.id, 'request-1'); assert.deepEqual(x.item.to, ['data']);
 });
 
@@ -345,18 +345,18 @@ test('P242 명령 길(rig-admin verb): 역할 세션만, 꺼진 rig는 거절', 
   assert.equal((await A.verb(B.S('ideas'), { op: 'accept', id: 'snapshot-1' })).item.id, 'snapshot-1');
   await code(A.verb({ sessionId: 'x', workspaceKey: B.key }, { op: 'inbox' }), 'forbidden');
   B.store.setRigEnabled(B.key, false);
-  await code(A.verb(B.S('ideas'), { op: 'inbox' }), 'rig3_off');
-  assert.deepEqual(RIG3_ITEM_OPS, ['put', 'accept', 'return', 'pass', 'drop', 'inbox']);
+  await code(A.verb(B.S('ideas'), { op: 'inbox' }), 'rig_off');
+  assert.deepEqual(RIG_ITEM_OPS, ['put', 'accept', 'return', 'pass', 'drop', 'inbox']);
 });
 
 test('P242 장부 종류, 실을 글·안내(항목 명령), 다시 뜨면 받은 것을 싣는다, 구조 보기의 길마다 수', async () => {
-  for (const k of ['item_put', 'item_accept', 'item_return', 'item_pass', 'item_drop', 'item_nudge', 'item_stalled', 'item_changed']) { assert.ok(RIG3_EVENT_KINDS.includes(k), k); assert.ok(!RIG_EVENT_KINDS.includes(k), k); }
+  for (const k of ['item_put', 'item_accept', 'item_return', 'item_pass', 'item_drop', 'item_nudge', 'item_stalled', 'item_changed']) { assert.ok(RIG_ROLE_KINDS.includes(k), k); assert.ok(!RIG_EVENT_KINDS.includes(k), k); }
   const B = await board();
   const r3 = B.b.rig.read(B.key).def.rig3;
   const t = loadText(r3, 'verify', {});
   assert.doesNotMatch(t, /명령이 아직 없다/);
   assert.match(t, /atrium rig put <종류> <파일>/); assert.doesNotMatch(t, /--item/); /* P244: 안내는 put <종류> <파일>만 */ assert.match(t, /atrium rig accept <항목>/); assert.match(t, /--redo <항목>/);
-  const g = rig3Guide(r3, 'verify');
+  const g = rigGuide(r3, 'verify');
   assert.match(g, /받는 것: hypothesis\(ideas에게서\)\. 내는 것: result\(ideas에게, 받은 hypothesis마다\)/);
   assert.match(g, /atrium rig inbox/);
   const gd = B.b.rig.guide(B.S('verify'));
@@ -379,7 +379,7 @@ test('P242 장부 종류, 실을 글·안내(항목 명령), 다시 뜨면 받�
   assert.match(load, /## 받은 것 \(판이 쥔 것/);
   assert.match(load, /- 받음 기다림: hypothesis-3 \(hypothesis, ideas\): hypotheses\/h3\.md/);
   assert.match(load, /- 받았고 답 항목\(result\)이 없음: hypothesis-1/);
-  assert.ok(validateRig3(DEF(), { root: B.dir }).ok);
+  assert.ok(validateRigDef(DEF(), { root: B.dir }).ok);
 });
 
 test('P242 끄면 역할 세션을 재운다(닫지 않음, 일하는 턴은 끝난 뒤, 넣지 않은 판 알림은 거둠), 켜면 깨운다', async () => {
@@ -400,7 +400,7 @@ test('P242 끄면 역할 세션을 재운다(닫지 않음, 일하는 턴은 끝
   assert.equal(B.b.sessions.size, 3, '닫지 않는다');
   assert.ok(B.slept.every(([, o]) => o.scope === 'session' && o.by === 'rig'));
   // 꺼진 rig에는 항목 명령이 없다
-  await code(B.put('ideas', 'hypotheses/h1.md', { kind: 'hypothesis' }), 'rig3_off');
+  await code(B.put('ideas', 'hypotheses/h1.md', { kind: 'hypothesis' }), 'rig_off');
   // 턴이 끝나면 다음 주기에 재운다
   assert.deepEqual((await B.b.rig3.tick()).filter((x) => x.off).map((x) => x.waiting), ['working']);
   B.S('ideas').rt.term.status = 'idle';
@@ -416,7 +416,7 @@ test('P242 끄면 역할 세션을 재운다(닫지 않음, 일하는 턴은 끝
   assert.deepEqual(B.woke.map((x) => x[1]), ['rig', 'rig', 'rig']);
   assert.equal(B.spawnedP.length, before);
   assert.equal(B.ledger(['role_woke']).length, 3);
-  assert.ok(RIG3_EVENT_KINDS.includes('role_woke'));
+  assert.ok(RIG_ROLE_KINDS.includes('role_woke'));
 });
 
 test('P242 역할 칸 effort: 정의에서 읽어 모델처럼 띄울 때 넘긴다', async () => {
@@ -427,9 +427,9 @@ test('P242 역할 칸 effort: 정의에서 읽어 모델처럼 띄울 때 넘긴
   assert.equal(B.b.rig.read(B.key).def.rig3.roles.verify.effort, 'high');
   assert.equal(B.b.rig.status(B.key).rig3.roles.find((r) => r.name === 'verify').effort, 'high');
   assert.equal(B.ledger(['role_spawn']).find((r) => r.seat === 'verify').data.effort, 'high');
-  const bad = validateRig3({ ...DEF(), roles: { ...DEF().roles, data: { owns: ['data/'], effort: 'very high' } } }, { root: B.dir });
+  const bad = validateRigDef({ ...DEF(), roles: { ...DEF().roles, data: { owns: ['data/'], effort: 'very high' } } }, { root: B.dir });
   assert.equal(bad.ok, false); assert.match(bad.reason, /roles\.data\.effort는 노력 수준 낱말/);
-  const nope = validateRig3({ ...DEF(), roles: { ...DEF().roles, data: { owns: ['data/'], speed: 1 } } }, { root: B.dir });
+  const nope = validateRigDef({ ...DEF(), roles: { ...DEF().roles, data: { owns: ['data/'], speed: 1 } } }, { root: B.dir });
   assert.match(nope.reason, /칸: owns, tools, launcher, model, effort, beat/);
 });
 

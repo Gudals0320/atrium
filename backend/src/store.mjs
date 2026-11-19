@@ -12,7 +12,7 @@ import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키
 import { UNITS_SCHEMA, UNITS_COLUMNS, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
 import { NEWS_SCHEMA, installNews } from './store-news.mjs'; // P204: 동료 소식
 import { RIG_COLUMNS, TOOL_RUNS_SCHEMA, RIG_ADMIN_SCHEMA, RIG_EVENTS_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기, 판, 장부, 도구 실행
-import { RIG3_COLUMNS, RIG3_SCHEMA, installRig3 } from './store-rig3.mjs'; // P241: rig 3 역할 세션
+import { RIG_ROLE_COLUMNS, RIG_ROLE_SCHEMA, installRigRoles } from './store-rig-roles.mjs'; // P241: rig 역할 세션
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -78,7 +78,7 @@ function sessionRow(r) {
     label: r.label ?? null, // P66: 판의 이름. 없으면 name(에이전트 주소)이 보인다
     startCommand: r.start_command || '', // P97: 실행 명령(빈 값은 claude)
     harnessPlan: r.harness ? JSON.parse(r.harness) : null, // P115
-    rigRole: r.rig_role ?? null, // P241: rig 3 역할
+    rigRole: r.rig_role ?? null, // P241: rig 역할
   };
 }
 function linkRow(r) {
@@ -120,8 +120,8 @@ export class Store {
     this.db.exec(RIG_ADMIN_SCHEMA); // P188: 판(버전)
     this.db.exec(RIG_EVENTS_SCHEMA); // P217: rig 장부(rig_events)
     this.db.exec(NEWS_SCHEMA); // P204: 동료 소식
-    this.db.exec(RIG3_SCHEMA); // P242: rig 3 항목과 받음
-    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS), ...Object.entries(RIG3_COLUMNS)]) {
+    this.db.exec(RIG_ROLE_SCHEMA); // P242: rig 항목과 받음
+    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS), ...Object.entries(RIG_ROLE_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
     }
@@ -293,5 +293,5 @@ installImports(Store); // P34
 installMerge(Store); // P37
 installUnits(Store); // P180
 installRig(Store); // P182
-installRig3(Store); // P241
+installRigRoles(Store); // P241
 installNews(Store); // P204

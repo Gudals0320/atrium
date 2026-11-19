@@ -1,6 +1,6 @@
 // P182·P241·P249: rig(작업 조직 정의). 정의는 워크스페이스 뿌리(본 체크아웃, workspaces.root)의 .atrium/rig.json이고 꼴은 version 3(역할 조직)이다.
-// - 검사는 rig3.mjs validateRig3. version이 3이 아닌 옛 꼴(version 2 이하, version 없음)은 한 줄 오류다(옮기는 도구 없음, P249).
-// - 켜기는 사람만(판 API rig.enable·rig.disable, workspaces.rig_enabled). 켜면 역할 세션을 띄우고 끄면 재운다(rig3-roles.mjs).
+// - 검사는 rig3.mjs validateRigDef. version이 3이 아닌 옛 꼴(version 2 이하, version 없음)은 한 줄 오류다(옮기는 도구 없음, P249).
+// - 켜기는 사람만(판 API rig.enable·rig.disable, workspaces.rig_enabled). 켜면 역할 세션을 띄우고 끄면 재운다(rig-roles.mjs).
 // - 읽기: 부를 때마다 파일 수정 시각·크기(그리고 목적·정의서 묶음)로 캐시하고 바뀌면 다시 읽어 검사한다. 잘못된 정의는 마지막으로 맞았던 정의를 그대로 쓰고
 //   판 이벤트 rig_invalid(까닭)를 한 번 남긴다(같은 내용이면 다시 남기지 않는다). atrium guide와 rig.status가 그 까닭을 보인다.
 // - 판(버전): 켜진 rig의 정의·목적·정의서 묶음 해시가 바뀌면 rig_versions에 새 판을 적고 정의 파일을 데이터 폴더 rigs/에 남긴다. 되돌리기는 rig-admin.mjs.
@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
-import { validateRig3, rig3Guide, bundleSig, bundleOf, partLabel, bundleMtime } from './rig3.mjs'; // P241
+import { validateRigDef, rigGuide, bundleSig, bundleOf, partLabel, bundleMtime } from './rig-def.mjs'; // P241
 
 export const RIG_FILE = '.atrium/rig.json';
 const RIG_MAX_BYTES = 1024 * 1024;
@@ -21,7 +21,7 @@ export const oldRigReason = (v) => `옛 rig 정의(version ${v == null ? '없음
 export function validateRig(raw, { root = null, exists } = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, reason: '정의는 JSON 객체여야 한다' };
   if (raw.version !== 3) return { ok: false, reason: oldRigReason(raw.version) };
-  return validateRig3(raw, { root, ...(exists ? { exists } : {}) });
+  return validateRigDef(raw, { root, ...(exists ? { exists } : {}) });
 }
 
 // 데이터 폴더 rigs/ 아래 워크스페이스 폴더 이름
@@ -257,7 +257,7 @@ export class Rig {
     if (!r.present) return { ...base, state: 'none', text: null };
     if (!on) return { ...base, state: r.invalid && !r.def ? 'invalid' : 'off', text: null };
     if (!r.def) return { ...base, state: 'invalid', text: null };
-    return { ...base, state: 'on', topics: [], rig3: true, text: rig3Guide(r.def.rig3, caller.rigRole || null) }; // P242: 역할의 항목 명령
+    return { ...base, state: 'on', topics: [], rig3: true, text: rigGuide(r.def.rig3, caller.rigRole || null) }; // P242: 역할의 항목 명령
   }
 }
 

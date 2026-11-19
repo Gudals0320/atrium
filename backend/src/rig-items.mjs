@@ -1,6 +1,6 @@
-// P242: rig 3 2단계 — 항목, 길, 받음·반려(docs research rig3-skeleton.md 3·4·5·8절, rig3-roles.md 12절).
+// P242: rig 2단계 — 항목, 길, 받음·반려(docs research rig3-skeleton.md 3·4·5·8절, rig3-roles.md 12절).
 // - 항목: 역할이 자기 섹터에 낸 파일 하나(atrium rig put <종류> <파일> [--from <항목>] [--redo <항목>]. P244: 안내는 이 꼴만, put <파일> --item <종류>도 받기만 한다). 판이 종류·낸 역할·사이클(3단계가 채운다)·
-//   어디서 나왔나·해시를 rig3_items(store-rig3.mjs)와 장부(item_put)에 남긴다. id는 <종류>-<n>, --redo는 같은 id의 다음 판(rev).
+//   어디서 나왔나·해시를 rig3_items(store-rig-roles.mjs)와 장부(item_put)에 남긴다. id는 <종류>-<n>, --redo는 같은 id의 다음 판(rev).
 //   섹터 밖 파일, 길(flows)에 없는 종류(그 역할이 내는 길이 없음)는 거절. 낸 파일은 고치지 않는다: 이미 낸 파일을 새 항목으로 다시 내면 거절(--redo로),
 //   낸 뒤 파일이 바뀐 것은 판이 해시로 알아보고(받음·inbox 때) 장부 item_changed로 남긴다.
 // - 길: put이 flows대로 받는 역할마다 받음 줄(rig3_receipts, waiting)을 만들고 그 역할 세션에 깨우는 글을 넣는다(queue.enqueue, 잠든 세션은 대기열이 깨운다).
@@ -12,19 +12,19 @@
 // - pass <항목> "<까닭>": 받은 것을 답 항목 없이 닫는다. pass "<까닭>"(항목 없음): 박자에 낼 것이 없다는 답으로 장부에만(item_pass value turn). P244: 받은 것을 한꺼번에 닫지 않는다.
 // - 길의 for: { item: result, from: verify, to: ideas, for: hypothesis } = verify가 받은 hypothesis마다 result가 나와야 한다.
 //   받았는데(accept) 그 항목에서 이어진 답 항목(for 길의 종류)도 pass도 없으면 "답 없는 받은 항목"으로 센다.
-// - 멈춘 역할: 주기(Rig3Roles.keep)마다 쉬는(ready, 대기열 비고 STALL_MS 넘게) 역할 세션에 답하지 않은 받은 것(waiting)이나 답 없는 받은 항목(for)이 있으면
+// - 멈춘 역할: 주기(RigRoles.keep)마다 쉬는(ready, 대기열 비고 STALL_MS 넘게) 역할 세션에 답하지 않은 받은 것(waiting)이나 답 없는 받은 항목(for)이 있으면
 //   한 번 일깨운다(item_nudge). 일깨운 뒤 한 턴이 지나도 그대로면 장부 item_stalled와 rig 판의 한 줄(5단계 빌더 전까지).
 // - 입력 창구: from이 human인 길. 사람이 rig 판에서 그 종류의 글을 넣으면 판이 .atrium/intake/<종류>-<n>.md로 쓰고 human이 낸 항목으로 등록해 받는 역할에게 보낸다(판 API rig3.intake).
-// - 장부(rig_events, RIG3_EVENT_KINDS): item_put(value new | redo | intake), item_accept, item_return(value receiver | late), item_pass, item_drop, item_nudge, item_stalled, item_changed(value changed | missing).
+// - 장부(rig_events, RIG_ROLE_KINDS): item_put(value new | redo | intake), item_accept, item_return(value receiver | late), item_pass, item_drop, item_nudge, item_stalled, item_changed(value changed | missing).
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs';
 import { hashArtifact } from './rig-diff.mjs';
 import { deriveState } from './state.mjs';
 import { idleSince } from './sleep.mjs';
-import { HUMAN, ITEM_NAME_RE } from './rig3.mjs';
+import { HUMAN, ITEM_NAME_RE } from './rig-def.mjs';
 
-export const RIG3_ITEM_OPS = ['put', 'accept', 'return', 'pass', 'drop', 'inbox'];
+export const RIG_ITEM_OPS = ['put', 'accept', 'return', 'pass', 'drop', 'inbox'];
 export const INTAKE_DIR = '.atrium/intake';
 export const INTAKE_MAX = 20000; // 입력 창구 글의 상한(자)
 export const STALL_MS = 30000; // 쉬기 시작한 뒤 이만큼 지나면 멈춘 것으로 본다
@@ -46,8 +46,8 @@ export const answerKinds = (r3, role, kind) => r3.flows.filter((f) => f.for === 
 export function sectorOf(owns, rel) { const x = String(rel).toLowerCase(); return owns.find((o) => x.startsWith(o.toLowerCase())) || null; }
 const clipReason = (s) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > REASON_MAX ? t.slice(0, REASON_MAX - 1) + '…' : t; };
 
-export class Rig3Items {
-  // b: 백엔드(store, rig, queue, sessions, api, log). roles: Rig3Roles(active, sessionsOf)
+export class RigItems {
+  // b: 백엔드(store, rig, queue, sessions, api, log). roles: RigRoles(active, sessionsOf)
   constructor(b, roles) { this.b = b; this.roles = roles; this.wakes = new Map(); /* '<키>|<역할>' → { deliveryId, lines } */ this.sent = new Map(); /* 세션 ID → Set(판이 넣은 전달 ID) */ }
   track(d) { if (d && d.deliveryId && d.sessionId) { const set = this.sent.get(d.sessionId) || new Set(); set.add(d.deliveryId); this.sent.set(d.sessionId, set); } return d; }
   // P242: rig를 끌 때 아직 넣지 않은 판 알림(깨우는 글·일깨움)을 거둔다(잠든 세션을 다시 깨우지 않게) → 거둔 수
@@ -67,12 +67,12 @@ export class Rig3Items {
   // 켜진 v3 rig → { key, r, r3, root } (꺼졌으면 던진다)
   rigOf(key) {
     const r = this.roles.active(key);
-    if (!r) throw apiError('rig3_off', '이 워크스페이스에 켜진 rig 3이 없다(rig는 사람이 보드에서 켠다).');
+    if (!r) throw apiError('rig_off', '이 워크스페이스에 켜진 rig가 없다(rig는 사람이 보드에서 켠다).');
     return { key, r, r3: r.def.rig3, root: r.root || (this.b.rig && this.b.rig.rootOf ? this.b.rig.rootOf(key) : null) };
   }
   // 역할 세션의 맥락 → { key, r3, root, role }
   ctx(s) {
-    if (!s || !s.rigRole) throw apiError('forbidden', 'atrium rig put·accept·return·pass·drop·inbox는 rig 3 역할 세션만 쓴다(보드가 rig 역할로 띄운 세션).');
+    if (!s || !s.rigRole) throw apiError('forbidden', 'atrium rig put·accept·return·pass·drop·inbox는 rig 역할 세션만 쓴다(보드가 rig 역할로 띄운 세션).');
     const x = this.rigOf(s.workspaceKey);
     const role = x.r3.roles[s.rigRole];
     if (!role) throw apiError('forbidden', `이 세션의 역할 ${s.rigRole}이 지금 rig 정의에 없다.`);
@@ -89,7 +89,7 @@ export class Rig3Items {
     if (op === 'pass') return this.pass(x.key, { ...who, id: o.id, reason: o.reason });
     if (op === 'drop') return this.drop(x.key, { ...who, id: o.id, reason: o.reason });
     if (op === 'inbox') return this.inbox(x.key, x.role.name);
-    throw apiError('bad_request', `atrium rig: ${RIG3_ITEM_OPS.join(' | ')} 가운데 하나다: ${op}`);
+    throw apiError('bad_request', `atrium rig: ${RIG_ITEM_OPS.join(' | ')} 가운데 하나다: ${op}`);
   }
 
   // ---------- 낸다 ----------
@@ -431,9 +431,9 @@ export class Rig3Items {
 }
 
 // 판 API(사람만, 이 PC의 창·사람의 atrium call): rig3.intake { workspace, item, text }
-export function rig3Handlers(b) {
+export function rigItemHandlers(b) {
   const local = (c, what) => { if (!c || !c.auth || c.auth.kind !== 'local') throw apiError('forbidden', `${what}는 이 PC의 보드 창이나 사람의 atrium 명령에서만 한다(판 API 토큰).`); };
   return {
-    'rig3.intake': async (p, c) => { local(c, '입력 창구에 넣기'); const key = (await b.resolveWorkspace(p && p.workspace)).key; if (!b.rig3 || !b.rig3.items) throw apiError('rig3_off', 'rig 3이 없다'); return b.rig3.items.intake(key, p || {}); },
+    'rig.intake': async (p, c) => { local(c, '입력 창구에 넣기'); const key = (await b.resolveWorkspace(p && p.workspace)).key; if (!b.rig3 || !b.rig3.items) throw apiError('rig_off', 'rig가 없다'); return b.rig3.items.intake(key, p || {}); },
   };
 }

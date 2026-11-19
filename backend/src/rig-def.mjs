@@ -1,12 +1,11 @@
-// P241: rig 3 1단계(docs research rig3-skeleton.md 8·9절, rig3-roles.md 3.1·11·12절). 정의(version 3)를 읽고 검사하고, 역할 세션에 실을 글과 쓰기 범위를 만든다.
-// - 이 파일은 순수 함수만 둔다(판 상태를 모른다). 역할 세션을 띄우고 지키는 일은 rig3-roles.mjs가 한다.
-// - rig.mjs validateRig는 raw.version이 3이면 validateRig3을 부르고 그 결과를 그대로 쓴다. rig 2(version 2와 그 앞)는 지금 길 그대로다.
-//   돌려주는 def는 rig 2 길이 읽는 칸(hooks, seats, flow, loops, amp, docs…)을 비운 꼴이라 rig 2 장치(훅, 회, 고리, 권한, 문서)는 v3 rig에서 돌지 않는다.
-//   v3 칸은 def.rig3에 있다: { purpose, beat, roles, flows, tools, tune }.
+// P241: rig 1단계(docs research rig3-skeleton.md 8·9절, rig3-roles.md 3.1·11·12절). 정의(version 3)를 읽고 검사하고, 역할 세션에 실을 글과 쓰기 범위를 만든다.
+// - 이 파일은 순수 함수만 둔다(판 상태를 모른다). 역할 세션을 띄우고 지키는 일은 rig-roles.mjs가 한다.
+// - rig.mjs validateRig는 raw.version이 3이면 validateRigDef을 부르고 그 결과를 그대로 쓴다. 옛 꼴(version 2 이하)은 rig.mjs가 한 줄 오류로 거절한다(P249).
+//   정의의 칸은 def.rig3에 있다: { purpose, beat, roles, flows, tools, tune }(이름 rig3은 판 안의 칸 이름이다).
 // - 정의 칸(뼈대 8절): purpose(목적 문서 경로), beat({ every, at?, role? }), roles({ <역할>: { owns: [폴더], tools?: [도구], launcher?, model?, beat? } }),
 //   P242: 역할 칸 effort(노력 수준, 모델처럼 띄울 때 하네스에 넘긴다).
 //   flows([{ item, from: 역할|human|[…], to: 역할|[…], for? }]), tools({ <이름>: { run: [...], every?, desc? } }), tune({ after, every, lines }).
-//   rig 2 칸(seats, loops, hooks, manager, results, permission, docs, guide, stopVerify, cycles)은 v3에 없다(오류).
+//   옛 rig 칸(seats, loops, hooks, manager, results, permission, docs, guide, stopVerify, cycles)은 오류다.
 // - 2·3단계가 쓸 칸(flows의 for, 도구의 every, 박자)은 읽어 고른 꼴로 두기만 한다. 동작은 다음 단계다.
 // - 역할 정의서 .atrium/roles/<역할>.md의 네 칸: 맡은 것, 받는 것과 내는 것, 기준(고정 칸), 요령(조정 칸). 칸이 빠지면 오류.
 // - 역할의 기억: .atrium/roles/<역할>/memory.md(역할이 직접 쓴다. 판은 내용을 보지 않고 띄울 때 싣기만 한다).
@@ -14,8 +13,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const RIG3_VERSION = 3;
-export const RIG3_DIR = '.atrium';
+export const RIG_VERSION = 3;
+export const RIG_DIR = '.atrium';
 export const ROLES_DIR = '.atrium/roles';
 export const HUMAN = 'human'; // 입력 창구(길의 from에만)
 export const ROLE_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/; // 세션 이름(<역할>, <역할>-<n>)이 되므로 -는 받지 않는다
@@ -77,14 +76,14 @@ export const memoryPath = (role) => `${ROLES_DIR}/${role}/memory.md`;
 
 // 정의 검사 → { ok: true, def } | { ok: false, reason }
 //   root가 있으면 목적 문서·정의서·도구 스크립트가 있는지, 정의서의 네 칸이 있는지도 본다(없으면 오류)
-export function validateRig3(raw, { root = null, exists = isFile, read = (f) => fs.readFileSync(f, 'utf8') } = {}) {
+export function validateRigDef(raw, { root = null, exists = isFile, read = (f) => fs.readFileSync(f, 'utf8') } = {}) {
   const bad = (reason) => ({ ok: false, reason });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad('정의는 JSON 객체여야 한다');
-  if (raw.version !== RIG3_VERSION) return bad(`version은 3이다: ${JSON.stringify(raw.version)}`);
+  if (raw.version !== RIG_VERSION) return bad(`version은 3이다: ${JSON.stringify(raw.version)}`);
   const old = V2_KEYS.filter((k) => raw[k] != null);
   if (old.length) return bad(`정의에 옛 rig 칸이 있다: ${old.join(', ')}. rig 정의는 purpose, beat, roles, flows, tools, tune만 쓴다`);
   const unknown = Object.keys(raw).filter((k) => !V3_KEYS.includes(k));
-  if (unknown.length) return bad(`rig 3 정의에 모르는 칸이 있다: ${unknown.join(', ')}. 칸: ${V3_KEYS.join(', ')}`);
+  if (unknown.length) return bad(`rig 정의에 모르는 칸이 있다: ${unknown.join(', ')}. 칸: ${V3_KEYS.join(', ')}`);
   const warnings = [];
   // 목적
   if (typeof raw.purpose !== 'string' || !raw.purpose.trim()) return bad('purpose는 목적 문서 경로 글이다(예: ".atrium/purpose.md")');
@@ -124,7 +123,7 @@ export function validateRig3(raw, { root = null, exists = isFile, read = (f) => 
     for (const p of owns) {
       const n = normSector(p);
       if (!n) return bad(`${at}.owns의 경로는 워크스페이스 안 상대 폴더다(절대 경로·..·빈 값 안 됨): ${JSON.stringify(p)}`);
-      if (sectorsOverlap(n, RIG3_DIR + '/')) return bad(`${at}.owns에 ${RIG3_DIR}/를 넣지 않는다(정의와 정의서는 역할의 섹터가 아니다. 기억은 ${memoryDir(name)}에 따로 쓴다): ${p}`);
+      if (sectorsOverlap(n, RIG_DIR + '/')) return bad(`${at}.owns에 ${RIG_DIR}/를 넣지 않는다(정의와 정의서는 역할의 섹터가 아니다. 기억은 ${memoryDir(name)}에 따로 쓴다): ${p}`);
       if (!norm.includes(n)) norm.push(n);
     }
     for (const n of norm) {
@@ -208,20 +207,19 @@ export function validateRig3(raw, { root = null, exists = isFile, read = (f) => 
     if (!puts) warnings.push(`역할 ${r.name}: 내는 길이 없다(낸 것을 받을 역할이 없다)`);
   }
   for (const t of Object.keys(tools)) if (!toolOwner[t]) warnings.push(`도구 ${t}: 가진 역할이 없다(roles.<역할>.tools)`);
-  // P243: ignore(판이 남의 쓰기를 찾지 않는 폴더, rig3-guard.mjs의 기본 목록에 더한다). .atrium/은 넣지 않는다
+  // P243: ignore(판이 남의 쓰기를 찾지 않는 폴더, rig-guard.mjs의 기본 목록에 더한다). .atrium/은 넣지 않는다
   const ignore = [];
   if (raw.ignore != null) {
     if (!Array.isArray(raw.ignore)) return bad('ignore는 폴더 경로 배열이다(예: ["build/", "cache/"])');
     for (const p of raw.ignore) {
       const n = normSector(p);
       if (!n) return bad(`ignore의 경로는 워크스페이스 안 상대 폴더다(절대 경로·..·빈 값 안 됨): ${JSON.stringify(p)}`);
-      if (sectorsOverlap(n, RIG3_DIR + '/')) return bad(`ignore에 ${RIG3_DIR}/를 넣지 않는다(정의와 정의서는 판이 늘 지킨다): ${p}`);
+      if (sectorsOverlap(n, RIG_DIR + '/')) return bad(`ignore에 ${RIG_DIR}/를 넣지 않는다(정의와 정의서는 판이 늘 지킨다): ${p}`);
       if (!ignore.includes(n)) ignore.push(n);
     }
   }
   const rig3 = { purpose, beat, roles, flows, tools, tune, ignore };
-  // rig 2 길이 읽는 칸은 비운다(훅·회·고리·권한·문서가 v3에서 돌지 않게)
-  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, version: RIG3_VERSION, v3: true, hooks: [], guide: null, tools: null, seats: null, flow: [], results: [], manager: null, cycles: [], loops: {}, amp: null, docs: null, seatDocs: {}, hookDocs: {}, toolDocs: {}, warnings, rig3 } };
+  return { ok: true, def: { name: typeof raw.name === 'string' ? raw.name : null, version: RIG_VERSION, v3: true, warnings, rig3 } };
 }
 function readBeat(v, at) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return { reason: `${at}는 객체다({ "every": "1d", "at": "07:00", "role": "<역할>" })` };
@@ -238,14 +236,14 @@ function readBeat(v, at) {
 // 역할의 쓰기 범위(워크스페이스 기준 상대 경로): 쥔 섹터 + 자기 기억 폴더
 export const roleWrites = (role) => [...role.owns, memoryDir(role.name)];
 // 역할 세션이 고치지 못하게 설정 파일 deny에도 넣는 정의 파일(PreToolUse가 먼저 막지만 받침으로 둔다)
-export const roleProtected = (r3) => [RIG3_DIR + '/rig.json', r3.purpose, ...Object.values(r3.roles).map((r) => r.doc)];
+export const roleProtected = (r3) => [RIG_DIR + '/rig.json', r3.purpose, ...Object.values(r3.roles).map((r) => r.doc)];
 // 역할 세션의 종류·런처 → { kind, launcher }(spawn에 넘길 값). 종류 이름이면 kind, 아니면 판의 런처 이름
 export function roleRoute(role) {
   const l = role.launcher || 'claude';
   return ROLE_KINDS.includes(l) ? { kind: l, launcher: null } : { kind: null, launcher: l };
 }
 // Codex 역할의 인자: 무인(-s workspace-write -a never)에 -C <첫 섹터>, --add-dir <나머지 섹터·기억 폴더>(P241 조사: elevated 샌드박스에서 다른 섹터 쓰기가 막힌다).
-//   base: 정리된 인자(rig-amp codexArgsAmp(args, null, 'unattended')의 결과). 같은 칸(-C, --cd, --add-dir)은 걷어 내고 판의 값을 붙인다
+//   base: 정리된 인자(rig-writes.mjs codexUnattendedArgs의 결과). 같은 칸(-C, --cd, --add-dir)은 걷어 내고 판의 값을 붙인다
 export function codexRoleArgs(base, root, role) {
   const out = [];
   const a = (base || []).map(String);
@@ -271,7 +269,7 @@ export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn',
   const block = (title, rel, text, n, empty) => [`## ${title} (${rel})`, text != null && String(text).trim() ? clipTo(String(text).replace(/^﻿/, '').trim(), n, rel) : empty].join('\n');
   const head = [
     `[Atrium 보드] 너는 rig 역할 ${roleName}이다${why === 'respawn' ? '(세션이 끝나 판이 새로 띄웠다)' : ''}. 이 세션은 늘 떠 있다. 쉬면 판이 재우고, 일이 오면 판이 깨운다.`,
-    `[Atrium 보드] 쓰는 곳: ${r.owns.join(', ')}, 기억 ${memoryDir(roleName)}. 그 밖에 쓰면 판이 묻지 않고 막는다. 모든 섹터는 읽어도 된다. ${RIG3_DIR}/의 정의와 정의서는 고치지 않는다.`,
+    `[Atrium 보드] 쓰는 곳: ${r.owns.join(', ')}, 기억 ${memoryDir(roleName)}. 그 밖에 쓰면 판이 묻지 않고 막는다. 모든 섹터는 읽어도 된다. ${RIG_DIR}/의 정의와 정의서는 고치지 않는다.`,
     `[Atrium 보드] 받는 것: ${gets.join(', ') || '없음'}. 내는 것: ${puts.join(', ') || '없음'}. 도구: ${r.tools.join(', ') || '없음'}(판이 돌린다).`,
     ...ITEM_HOWTO, // P242: 항목 명령(짧게)
     ...(r.tools.length ? [`[Atrium 보드] 도구: \`atrium rig tool <이름> [인자…]\`(네 도구만, 판이 돌리고 출력은 네 섹터의 tool-logs/에 남는다). every가 있는 도구는 판이 시계로 돌리고 경보("ALARM:" 줄이나 실패)일 때만 너를 깨운다.`] : []), // P244
@@ -297,10 +295,10 @@ export const ITEM_HOWTO = [
 ];
 // P245: 조정 쓰는 법(역할 세션의 첫 글과 atrium guide). 짧게
 export const TUNE_HOWTO = (r3) => `[Atrium 보드] 사람이 이 터미널에서 네 일하는 법을 바로잡으면 \`atrium rig heard "<요지>"\`로 남긴다. 반려·바로잡음이 ${r3.tune.after}건 쌓이거나 (하나라도 있고) ${r3.tune.every}사이클이 지나면 판이 조정 턴을 준다: 정의서의 요령 칸만 네가 고친다(\`atrium rig tune\`, 고정 칸은 못 고친다, ${r3.tune.lines}줄 안). 요령으로 풀 일이 아니면 \`atrium rig raise "<무엇>"\`.`;
-// P242: atrium guide(rig 3). 역할 세션이면 그 역할의 받는 것·내는 것과 항목 명령
-export function rig3Guide(r3, roleName = null) {
+// P242: atrium guide(rig). 역할 세션이면 그 역할의 받는 것·내는 것과 항목 명령
+export function rigGuide(r3, roleName = null) {
   const r = roleName ? r3.roles[roleName] : null;
-  const lines = ['rig 3(역할 조직). 역할은 대화하지 않고 항목을 넘긴다.'];
+  const lines = ['rig(역할 조직). 역할은 대화하지 않고 항목을 넘긴다.'];
   if (r) {
     const gets = r3.flows.filter((f) => f.to.includes(roleName)).map((f) => `${f.item}(${f.from.join('|')}에게서${f.for ? `, ${f.for}에 대한 답` : ''})`);
     const puts = r3.flows.filter((f) => f.from.includes(roleName)).map((f) => `${f.item}(${f.to.join('|')}에게${f.for ? `, 받은 ${f.for}마다` : ''})`);
@@ -316,7 +314,7 @@ export function rig3Guide(r3, roleName = null) {
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 // 묶음 파일 목록(정의 raw에서. 검사 전에도 쓴다) → [{ part, rel }]
 export function bundleFiles(raw) {
-  if (!raw || typeof raw !== 'object' || raw.version !== RIG3_VERSION) return [];
+  if (!raw || typeof raw !== 'object' || raw.version !== RIG_VERSION) return [];
   const out = [];
   if (typeof raw.purpose === 'string' && raw.purpose.trim()) out.push({ part: 'purpose', rel: raw.purpose.trim().replace(/\\/g, '/') });
   if (raw.roles && typeof raw.roles === 'object' && !Array.isArray(raw.roles)) for (const name of Object.keys(raw.roles)) if (ROLE_NAME_RE.test(name)) out.push({ part: 'role:' + name, rel: roleDocPath(name) });
@@ -349,7 +347,7 @@ export function toolScripts(r3) {
   return [...new Set(Object.values(r3.tools).map((t) => t.run && t.run[1]).filter((p) => typeof p === 'string' && /[\\/]/.test(p) && path.extname(p) && !p.startsWith('-') && !isAbs(p) && !p.split(/[\\/]/).includes('..')).map((p) => p.replace(/\\/g, '/').replace(/^(\.\/)+/, '')))];
 }
 // 빌더가 쓰는 곳: .atrium/(정의·목적·정의서·도구 스크립트 자리 .atrium/tools/)와 정의가 가리키는 그 밖의 도구 스크립트
-export const builderWrites = (r3) => [RIG3_DIR + '/', ...toolScripts(r3).filter((p) => !p.toLowerCase().startsWith(RIG3_DIR + '/'))];
+export const builderWrites = (r3) => [RIG_DIR + '/', ...toolScripts(r3).filter((p) => !p.toLowerCase().startsWith(RIG_DIR + '/'))];
 // 상대 경로가 빌더의 쓰기 범위인가(역할의 섹터·기억 폴더 판단은 먼저 한다: rig3-guard ownerOf)
 export function builderOwns(r3, rel) {
   const low = String(rel).replace(/\\/g, '/').toLowerCase();

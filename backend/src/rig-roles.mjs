@@ -1,15 +1,15 @@
-// P241: rig 3 1단계의 역할 세션(docs research rig3-skeleton.md 4절 "판이 하는 일", rig3-roles.md 3.2·11.3).
+// P241: rig 1단계의 역할 세션(docs research rig3-skeleton.md 4절 "판이 하는 일", rig3-roles.md 3.2·11.3).
 // - 켜면(rig.enable, 사람만) 역할마다 늘 떠 있는 세션 하나를 띄운다. 판이 고르는 이름은 <역할>(쓰였으면 <역할>-<n>), 폴더는 워크스페이스 뿌리.
 // - 무인: Claude Code는 --permission-mode bypassPermissions, Codex는 -s workspace-write -a never(+ -C <첫 섹터> --add-dir <나머지·기억>).
-//   켜기 확인 한 번이 승인이다(rig 2의 무인 승인 행·자리 승인 카드는 없다).
-// - 쓰기 범위 = 쥔 섹터 + 자기 기억 폴더(.atrium/roles/<역할>/). Claude Code는 세션 설정 파일(rig 2와 같은 writeSessionSettings 길)의
+//   켜기 확인 한 번이 승인이다.
+// - 쓰기 범위 = 쥔 섹터 + 자기 기억 폴더(.atrium/roles/<역할>/). Claude Code는 세션 설정 파일(writeSessionSettings 길)의
 //   PreToolUse를 판이 기다려 답한다: 편집 도구(Edit·Write·MultiEdit·NotebookEdit)가 범위 밖이면 묻지 않고 거절, Bash 안의 셸(cmd·powershell·pwsh)도 거절.
 //   정의 파일(rig.json, 목적, 정의서)은 설정 파일 deny에도 넣는다. 셸 명령의 쓰기는 막지 못한다(P241 조사, 보고).
 // - 첫 글(판 알림)에 목적·정의서·기억을 싣는다(rig3.mjs loadText). 기억은 역할이 .atrium/roles/<역할>/memory.md에 직접 쓴다.
 // - 주기(ROLE_TICK_MS)마다: 역할 세션이 없으면(닫힘) 또는 끝난 채(exited) ROLE_DEAD_GRACE_MS가 지나면 끝난 세션을 닫고 같은 글을 실어 새로 띄운다.
 //   다시 띄우기는 역할마다 RESPAWN_WINDOW_MS 안에 RESPAWN_MAX번까지. 넘으면 그만두고 장부에 role_gave_up(다시 켜면 풀린다).
 //   쉬는 역할 세션(ready, ROLE_IDLE_MS 넘게)은 판이 혼자 재운다(sleeper.sleep scope session). 잠든 세션에 전달이 오면 지금 길(대기열)이 깨운다.
-// - 장부(rig_events): role_spawn, role_respawn, role_gave_up, role_write_denied, role_slept(rig-ledger RIG3_EVENT_KINDS). seat 열에 역할 이름.
+// - 장부(rig_events): role_spawn, role_respawn, role_gave_up, role_write_denied, role_slept(rig-ledger RIG_ROLE_KINDS). seat 열에 역할 이름.
 // - 끄면 다시 띄우기를 멈추고 역할 세션을 재운다(P242: 닫지 않는다. 일하는 턴은 끝난 뒤 재우고, 아직 넣지 않은 판 알림은 거둔다). 켜면 잠든 역할 세션을 깨운다(role_woke).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,12 +18,12 @@ import { roleSettingsAmp, applySettingsAmp, writesVerdict, nestedShell, codexUna
 import { sleepTarget, sessionActivity, idleSince } from './sleep.mjs';
 import { deriveState } from './state.mjs';
 import { shownName } from './session-label.mjs';
-import { Rig3Guard } from './rig3-guard.mjs'; // P243: 턴 끝 남의 쓰기 되돌리기
-import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir, BUILDER_ROLE, builderWrites } from './rig3.mjs';
-import { Rig3Builder } from './rig3-builder.mjs'; // P247: 빌더 세션
-import { Rig3Items } from './rig3-items.mjs'; // P242: 항목·길·받음
-import { Rig3Beat } from './rig3-beat.mjs'; // P244: 박자·도구·사이클 요약
-import { Rig3Tune } from './rig3-tune.mjs'; // P245: 조정과 되돌리기
+import { RigGuard } from './rig-guard.mjs'; // P243: 턴 끝 남의 쓰기 되돌리기
+import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir, BUILDER_ROLE, builderWrites } from './rig-def.mjs';
+import { RigBuilder } from './rig-builder.mjs'; // P247: 빌더 세션
+import { RigItems } from './rig-items.mjs'; // P242: 항목·길·받음
+import { RigBeat } from './rig-beat.mjs'; // P244: 박자·도구·사이클 요약
+import { RigTune } from './rig-tune.mjs'; // P245: 조정과 되돌리기
 
 // 판이 역할을 위해 띄울 때(backend.spawn) 넘기는 역할 이름의 열쇠. Symbol이라 판 API 본문으로는 넣지 못한다
 export const ROLE_SPAWN = Symbol.for('atrium.rig3RoleSpawn');
@@ -38,7 +38,7 @@ export const ROLE_NESTED_SHELL_REASON = '[Atrium rig] rig 역할 세션은 Bash 
 export const builderDenyReason = (file, writes) => `[Atrium rig] 빌더의 쓰기 범위 밖이다: ${file}. 빌더가 쓰는 곳: ${writes.join(', ')}. 역할의 섹터와 기억 폴더는 역할의 것이다(읽기만 한다).`; // P247
 export const roleDenyReason = (role, file, writes) => `[Atrium rig] 역할 ${role}의 쓰기 범위 밖이다: ${file}. 쓸 수 있는 곳: ${writes.join(', ')}. 다른 섹터는 그 역할의 것이다(읽기만 한다).`;
 
-export class Rig3Roles {
+export class RigRoles {
   constructor(b) {
     this.b = b;
     this.spawning = new Set(); // '<키>|<역할>'
@@ -47,12 +47,12 @@ export class Rig3Roles {
     this.exitSeen = new Map(); // 세션 ID → 처음 끝난 것을 본 때
     this.sleepFail = new Map(); // 세션 ID → 마지막 재우기 실패 때
     this.ticking = false;
-    this.items = new Rig3Items(b, this); // P242
+    this.items = new RigItems(b, this); // P242
     this.offSleep = new Set(); // P242: 끈 rig(키) — 역할 세션을 모두 재울 때까지 주기마다 본다(일하는 턴은 끝나기를 기다린다)
-    this.guard = new Rig3Guard(b, this); // P243
-    this.beat = new Rig3Beat(b, this); // P244
-    this.tune = new Rig3Tune(b, this); // P245
-    this.builder = new Rig3Builder(b, this); // P247
+    this.guard = new RigGuard(b, this); // P243
+    this.beat = new RigBeat(b, this); // P244
+    this.tune = new RigTune(b, this); // P245
+    this.builder = new RigBuilder(b, this); // P247
     this.docNotices = new Map(); // P247: '<키>|<역할>' → [글] (정의·정의서가 바뀜, 다음 깨우는 글에)
     this.restart = new Set(); // P247: 쥔 섹터·도구·런처가 바뀐 역할('<키>|<역할>'), 다음 쉴 때 다시 띄운다
   }
@@ -75,7 +75,7 @@ export class Rig3Roles {
   sessionsOf(key, role) { return [...this.b.sessions.values()].filter((x) => x.workspaceKey === key && x.rigRole === role && !x.closedAt); }
 
   // ---------- 띄우기 값(backend.spawn이 부른다) ----------
-  // Claude Code 세션 설정 파일의 증폭(rig 2 claudeSettingsAmp와 같은 꼴: deny, hooks.PreToolUse, permissions)
+  // Claude Code 세션 설정 파일의 증폭(rig-writes.mjs roleSettingsAmp: deny, hooks.PreToolUse, permissions)
   claudeAmp(key, roleName, cwd = null) {
     if (roleName === BUILDER_ROLE) { // P247: 빌더(rig가 없는 워크스페이스에서도)
       const root = this.b.rig ? this.b.rig.rootOf(key) : null; if (!root) return null;
@@ -100,7 +100,7 @@ export class Rig3Roles {
     return codexRoleArgs(codexUnattendedArgs(args || []), r.root, role);
   }
 
-  // 설정 파일을 지금 정의에 맞춘다(rig 2 RigAmp.syncSettings 대신. 턴 시작·끝, 다시 띄우기 전). 바뀌었으면 true
+  // 설정 파일을 지금 정의에 맞춘다(턴 시작·끝, 다시 띄우기 전). 바뀌었으면 true
   //   Claude Code는 떠 있는 동안 --settings를 다시 읽지 않으므로 다음에 띄울 때(깨우기 포함)부터 먹는다. 쓰기 범위는 PreToolUse가 지금 정의로 바로 본다
   syncSettings(s) {
     if (!s || !s.rigRole || (s.kind || 'claude') !== 'claude' || !s.settingsPath) return false;
@@ -193,7 +193,7 @@ export class Rig3Roles {
   // 역할 세션 하나를 띄우고 첫 글(목적·정의서·기억)을 넣는다. why: spawn | respawn → 세션
   async spawnRole(key, roleName, why = 'spawn', prev = null) {
     const r = this.active(key);
-    if (!r) throw Object.assign(new Error('켜진 rig 3이 아니다'), { code: 'rig3_off' });
+    if (!r) throw Object.assign(new Error('켜진 rig가 아니다'), { code: 'rig_off' });
     const r3 = r.def.rig3; const role = r3.roles[roleName];
     if (!role) throw Object.assign(new Error(`없는 역할: ${roleName}`), { code: 'rig3_role' });
     const k = `${key}|${roleName}`;

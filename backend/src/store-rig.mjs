@@ -3,7 +3,7 @@
 // 만들지도 쓰지도 않는다. 열(sessions.rig_seat, work_units.case_id·seat·via, workspaces.rig_protected, deliveries.park_loop 등)도 같다.
 // - workspaces.rig_enabled·rig_enabled_at: 사람이 그 워크스페이스의 rig를 켰는가(판 API rig.enable·rig.disable만 바꾼다)
 // - deliveries.origin·from_session: 전달의 출처(human | agent | board)와 보낸 세션(agent일 때). 옛 행은 비어 있다(board로 읽는다)
-// - tool_runs: 판이 돌린 도구 실행 한 줄(rig3-beat.mjs). status: running | done | timeout | error | lost
+// - tool_runs: 판이 돌린 도구 실행 한 줄(rig-beat.mjs). status: running | done | timeout | error | lost
 // - rig_versions: 판(버전). 켜진 rig의 정의·목적·정의서 묶음 해시가 바뀔 때마다 한 줄(n은 워크스페이스마다 1부터). 내용은 데이터 폴더 rigs/<워크스페이스>/<n>-<해시>.json
 // - rig_events: rig 장부(rig-ledger.mjs rigEvent만 쓴다)
 // SQL은 store.mjs와 store-*.mjs에만 둔다(ARCH 5절 "저장소").

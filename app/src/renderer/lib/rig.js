@@ -1,15 +1,15 @@
-// P241: rig 3(역할 조직) 판의 보기 자료. rig.get·rig.status의 rig3(백엔드 rig3-roles.mjs view)를 화면 줄로 바꾼다.
+// P241: rig(역할 조직) 판의 보기 자료. rig.get·rig.status의 rig3(백엔드 rig-roles.mjs view)를 화면 줄로 바꾼다.
 // 화면은 읽기만 하는 구조 보기와 켜기만 있다(편집 표·자리 표·흐름 표는 없다). 단위 시험 test/p241-lib.test.mjs
-export const isRig3 = (st) => !!(st && (st.format === 3 || st.rig3));
+export const hasRigDef = (st) => !!(st && (st.format === 3 || st.rig3));
 // P247: 빌더 세션 보기(rig.get의 builder3, 또는 rig.status rig3.builder). live: 창의 세션 목록 → { session: { sessionId, name, stateKey } | null, canTalk }
-//   canTalk: rig 3 정의이거나 rig가 없는 워크스페이스(rig 2 정의에서는 빌더를 쓰지 않는다)
+//   canTalk: rig 정의가 있거나 rig가 없는 워크스페이스
 export function builderInfo(st, live = null) {
   if (!st) return { session: null, canTalk: false };
   const b = st.builder3 || (st.rig3 && st.rig3.builder) || null;
   const s = b && b.session ? b.session : null;
   const cur = s && live && live.get ? live.get(s.sessionId) : null;
   const state = cur ? cur.state : s ? (s.asleep ? 'sleeping' : s.state) : null;
-  return { session: s ? { sessionId: s.sessionId, name: s.name, stateKey: state || 'unknown' } : null, canTalk: isRig3(st) || st.status === 'none' };
+  return { session: s ? { sessionId: s.sessionId, name: s.name, stateKey: state || 'unknown' } : null, canTalk: hasRigDef(st) || st.status === 'none' };
 }
 
 // 역할 줄: { name, owns, tools, session: { name, state } | null, stateKey, gaveUp, docMissing }
@@ -66,7 +66,7 @@ export function tuneBadge(t) {
   if (!t) return null;
   return { n: t.n ?? null, tunes: t.tunes || 0, rollbacks: t.rollbacks || 0, material: t.material || 0, open: !!t.open, lines: t.lines ?? null, budget: t.budget ?? null };
 }
-// P245: 조정 기록(판 API rig3.role의 log) → 화면 줄(새 것부터). undo: 되돌릴 판(반영된 조정·되돌림의 앞 판)
+// P245: 조정 기록(판 API rig.role의 log) → 화면 줄(새 것부터). undo: 되돌릴 판(반영된 조정·되돌림의 앞 판)
 export function tuneLogRows(info) {
   const log = info && Array.isArray(info.log) ? info.log : [];
   return log.slice().reverse().map((x) => ({
@@ -78,4 +78,4 @@ export function tuneLogRows(info) {
 // 켜기 확인 줄의 역할 수
 export const roleCount = (st) => (st && st.rig3 && Array.isArray(st.rig3.roles) ? st.rig3.roles.length : 0);
 // 켜기를 보일까(이 PC의 창, 꺼짐, 맞는 정의)
-export const canEnable3 = (st, { remote = false } = {}) => !remote && !!st && st.status === 'off' && !st.why;
+export const canEnableRig = (st, { remote = false } = {}) => !remote && !!st && st.status === 'off' && !st.why;

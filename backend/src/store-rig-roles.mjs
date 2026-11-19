@@ -1,13 +1,13 @@
-// P241: rig 3 저장(세션이 맡은 역할). 역할의 장부는 rig_events(rig-ledger.mjs rigEvent), 정의 버전은 rig 2와 같은 rig_versions를 쓴다.
-// sessions.rig_role: 판이 rig 3 역할을 위해 띄운 세션의 역할 이름(판이 다시 떠도 역할 세션을 알아본다)
-// P242: rig 3 항목과 받음(2단계, rig3-items.mjs).
+// P241: rig 저장(세션이 맡은 역할). 역할의 장부는 rig_events(rig-ledger.mjs rigEvent), 정의 버전은 rig_versions를 쓴다.
+// sessions.rig_role: 판이 rig 역할을 위해 띄운 세션의 역할 이름(판이 다시 떠도 역할 세션을 알아본다)
+// P242: rig 항목과 받음(2단계, rig-items.mjs).
 //   rig3_items: 항목의 판(rev)마다 한 줄. id는 <종류>-<n>(워크스페이스·종류마다 n), --redo는 같은 id의 다음 rev(앞 rev는 superseded).
 //     role은 낸 역할(입력 창구는 human), path는 워크스페이스 기준 상대 경로, sha256·size는 낼 때의 파일, from_id는 어느 항목에서 나왔나,
 //     cycle은 3단계(박자)가 채운다, state live | superseded | dropped, changed는 낸 뒤 파일이 바뀐 것을 판이 본 때의 값(changed | missing).
 //   rig3_receipts: 받는 역할마다 한 줄(그 항목의 rev). state waiting | accepted | returned | passed | superseded | dropped.
 //     late는 받는 역할이 아니라 이어진 항목을 가진 역할의 늦은 반려, flow는 정의 flows의 번호, nudged_at·stalled_at은 멈춘 역할 일깨움(한 번)과 그 뒤 장부에 남긴 때.
-export const RIG3_COLUMNS = { sessions: { rig_role: 'TEXT' } };
-export const RIG3_SCHEMA = `
+export const RIG_ROLE_COLUMNS = { sessions: { rig_role: 'TEXT' } };
+export const RIG_ROLE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS rig3_items (ws TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, kind TEXT NOT NULL, n INTEGER NOT NULL, role TEXT NOT NULL, session_id TEXT, path TEXT NOT NULL, sha256 TEXT, size INTEGER, from_id TEXT, cycle INTEGER, state TEXT NOT NULL, state_why TEXT, state_at INTEGER, changed TEXT, t INTEGER NOT NULL, PRIMARY KEY (ws, id, rev)) STRICT;
 CREATE INDEX IF NOT EXISTS rig3_items_kind ON rig3_items (ws, kind, n);
 CREATE TABLE IF NOT EXISTS rig3_receipts (id INTEGER PRIMARY KEY, ws TEXT NOT NULL, item_id TEXT NOT NULL, rev INTEGER NOT NULL, role TEXT NOT NULL, flow INTEGER, state TEXT NOT NULL, late INTEGER NOT NULL DEFAULT 0, note TEXT, t INTEGER NOT NULL, answered_at INTEGER, nudged_at INTEGER, stalled_at INTEGER) STRICT;
@@ -20,12 +20,12 @@ CREATE TABLE IF NOT EXISTS rig3_docs (ws TEXT NOT NULL, sha TEXT NOT NULL, text 
 CREATE TABLE IF NOT EXISTS rig3_tunes (id INTEGER PRIMARY KEY, ws TEXT NOT NULL, role TEXT NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, n INTEGER, prev_n INTEGER, from_n INTEGER, why TEXT, evidence TEXT, diff TEXT, added INTEGER, removed INTEGER, reason TEXT, cycle INTEGER, session_id TEXT, by TEXT, t INTEGER NOT NULL) STRICT;
 CREATE INDEX IF NOT EXISTS rig3_tunes_role ON rig3_tunes (ws, role, id);
 `;
-// P245: rig 3 판(버전) 묶음과 조정(rig3-tune.mjs).
+// P245: rig 판(버전) 묶음과 조정(rig-tune.mjs).
 //   rig3_bundle: 판(rig_versions의 n)마다 묶음의 조각 해시. part는 rig.json · purpose · role:<역할>. 판 하나 = 정의·목적·모든 정의서.
 //   rig3_docs: 조각의 내용(해시로 한 번만. 정의서 하나를 지난 판의 요령 칸으로 되돌릴 때 쓴다).
 //   rig3_tunes: 조정 기록. kind tune(역할이 요령 칸을 고침) | none(고칠 것 없음) | raise(빌더에게 올림) | rollback(사람이 되돌림),
 //     state applied | rejected | noted, n은 반영된 판, prev_n은 그 앞 판, from_n은 되돌린 판, evidence는 근거 id JSON 배열, diff는 요령 칸의 통합 diff.
-// P244: rig 3 사이클과 시계(rig3-beat.mjs).
+// P244: rig 사이클과 시계(rig-beat.mjs).
 //   rig3_cycles: 사이클마다 한 줄. n 0은 켤 때(첫 채움), 그 뒤 박자마다 n+1. by enable | clock | late | human, due_at은 친 박자의 칸 시각,
 //     open_seq는 그 사이클을 연 장부 줄(cycle_open)의 seq(사이클 구간은 seq로 자른다: 같은 ms의 줄도 갈린다).
 //     entry_state null(아직) | writing | done | empty(첫 채움에 아무 일도 없었음), entry는 변경 기록 꼭지(마크다운), entry_by ai | numbers, entry_meta는 한 번짜리 실행의 값(JSON: model, ms, 토큰, 비용, error).
@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS rig3_tunes_role ON rig3_tunes (ws, role, id);
 const cycleRow = (r) => (r ? { ws: r.ws, n: r.n, openedAt: r.opened_at, by: r.by, dueAt: r.due_at, openSeq: r.open_seq ?? null, entryState: r.entry_state, entry: r.entry, entryBy: r.entry_by, entryAt: r.entry_at, entryMeta: r.entry_meta ? JSON.parse(r.entry_meta) : null } : null);
 const itemRow = (r) => (r ? { ws: r.ws, id: r.id, rev: r.rev, kind: r.kind, n: r.n, role: r.role, sessionId: r.session_id, path: r.path, sha256: r.sha256, size: r.size, fromId: r.from_id, cycle: r.cycle, state: r.state, stateWhy: r.state_why, stateAt: r.state_at, changed: r.changed, t: r.t } : null);
 const recRow = (r) => (r ? { id: r.id, ws: r.ws, itemId: r.item_id, rev: r.rev, role: r.role, flow: r.flow, state: r.state, late: !!r.late, note: r.note, t: r.t, answeredAt: r.answered_at, nudgedAt: r.nudged_at, stalledAt: r.stalled_at } : null);
-export function installRig3(Store) {
+export function installRigRoles(Store) {
   Object.assign(Store.prototype, {
     setSessionRole(sessionId, role) { this.st('UPDATE sessions SET rig_role = ? WHERE session_id = ?').run(role || null, sessionId); },
     // ---------- P242: 항목 ----------
