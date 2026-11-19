@@ -427,6 +427,12 @@ export class RigProposals {
     }
     // P225(rig2-design 11.8의 1·2): 무인 자리 승인(승인 전 unattended 자리. 승인은 이 PC의 창만)
     for (const x of b.rig && b.rig.permitNeeds ? b.rig.permitNeeds(ws) : []) out.push({ id: `permit:${x.workspace}|${x.seat}`, kind: 'seat_permit', workspace: x.workspace, wsName: wsName(x.workspace), t: b.rig.pendingSince ? b.rig.pendingSince(x.workspace, x.seat) : Date.now(), seat: x.seat, defN: x.defN });
+    // P239(rig2-design 11.18의 4): scoped·ask 자리의 권한 모드가 바뀜(자리 터미널에서 Shift+Tab으로 돌리면 사라진다). 잠든·닫힌 세션은 다시 뜨면 띄운 모드다
+    for (const s of b.sessions ? b.sessions.values() : []) {
+      const d = s.rt && s.rt.rigModeDrift;
+      if (!d || !s.rigSeat || s.closedAt || s.rt.sleep || (ws && s.workspaceKey !== ws)) continue;
+      out.push({ id: `mode:${s.sessionId}`, kind: 'mode_drift', workspace: s.workspaceKey, wsName: wsName(s.workspaceKey), t: d.at, seat: s.rigSeat, mode: d.mode, back: d.back || 'manual', sessionId: s.sessionId, sessionName: this.nameOf(s.sessionId) });
+    }
     return out.sort((x, y) => x.t - y.t);
   }
   // 응답 필요 카드의 단추 → 결과
@@ -459,6 +465,7 @@ export class RigProposals {
       if (this.b.broadcastWorkspaces) try { this.b.broadcastWorkspaces(); } catch {}
       return { approved };
     }
+    if (s.startsWith('mode:')) throw apiError('bad_request', '권한 모드 카드는 단추가 없다. 자리 터미널에서 Shift+Tab으로 manual로 돌리면 사라진다.'); // P239
     throw apiError('bad_request', `모르는 카드: ${s}`);
   }
 }

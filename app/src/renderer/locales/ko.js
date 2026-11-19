@@ -2958,7 +2958,7 @@ export default {
     unattendedWarn: '"묻지 않음" 자리는 이 확인으로 켜집니다. 그 자리 세션은 사람에게 묻지 않고 명령을 실행하고, 셸로 저장소 안 어디든 쓰고 지울 수 있습니다(쓰기 범위는 파일 고치기 도구만 막습니다). 나중에 정의에 새로 들어온 "묻지 않음" 자리는 다시 승인하기 전까지 "범위 안에서만 묻지 않음"으로 돕니다.',
   },
   rigAsk: { // P224: rig 승인 카드(내 차례 목록과 휴대폰 목록)
-    head: 'rig 승인 {n}개',
+    head: 'rig {n}개',
     phoneHead: 'rig 승인 {n}',
     proposal: '제안: {doc} · {why}',
     definition: 'rig 정의',
@@ -3140,6 +3140,13 @@ export default {
     drift: '정본 {doc}({path})이 마지막 승인 내용과 다릅니다(+{added} −{removed}). 켜면 지금 내용이 기준이 됩니다.',
     driftNoCount: '정본 {doc}({path})이 마지막 승인 내용과 다릅니다. 켜면 지금 내용이 기준이 됩니다.',
     showDiff: '차이 보기',
+  },
+  // P239(rig2-design 11.18 2단계): 정의가 바뀌어 떠 있는 keep 자리의 권한이 달라짐, rig 자리의 권한 모드 어긋남
+  rigP239: {
+    stale: '권한 바뀜: 다음 시작부터',
+    staleTip: '정의가 바뀌어 이 자리의 권한(writes·allow·permission·deny)이 달라졌습니다. 떠 있는 세션은 띄울 때의 권한으로 돕니다. 열린 일이 없고 쉬는 때 보드가 같은 대화로 다시 띄웁니다.',
+    modeDrift: 'rig 자리 {seat}의 권한 모드가 {mode}로 바뀌었습니다. 자리 터미널에서 Shift+Tab으로 {back}로 돌리세요.',
+    modeTip: '이 모드에서는 셸로 하는 쓰기·지우기도 묻지 않을 수 있습니다. 띄운 모드로 돌아오면 이 카드는 사라집니다.',
   },
   // P237(rig2-design 11.18의 둘째): 보내기 칸의 "회 없이"(rig 자리에 회를 열지 않고 글만)
   cmdTalk: {

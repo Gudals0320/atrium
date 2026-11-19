@@ -25,7 +25,7 @@ import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
 import { RigProposals, rigProposalHandlers } from './rig-proposals.mjs'; // P224: rig 2 제안과 승인, 정본 지키기
-import { RigAmp, SEAT_SPAWN, SEAT_RUN, permissionDenyBody } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
+import { RigAmp, SEAT_SPAWN, SEAT_RUN, permissionDenyBody, PERM_TICK_MS, MODE_DRIFT_TEXT } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -245,7 +245,7 @@ export class Backend {
     // P18: 데이터 폴더를 옮겼으면 --settings·--plugin-dir 경로가 바뀌었다. 이어 가기 인자를 다시 만든다
     if (this.migration && this.migration.data === 'moved') {
       let n = 0;
-      for (const s of this.sessions.values()) if (this.hooked(s) && s.resumeArgv) { s.resumeArgv = buildResumeArgv({ claudeCommand: cfg.claudeCommand, ...this.launchOf(s) }); s.resumeVerified = false; this.store.updateSession(s.sessionId, { resumeArgv: s.resumeArgv, resumeVerified: false }); n++; }
+      for (const s of this.sessions.values()) if (this.hooked(s) && s.resumeArgv) { s.resumeArgv = buildResumeArgv({ claudeCommand: cfg.claudeCommand, ...this.launchOf(s, { launch: false }) }); s.resumeVerified = false; this.store.updateSession(s.sessionId, { resumeArgv: s.resumeArgv, resumeVerified: false }); n++; }
       this.migration.fixed.resumeArgv = n;
     }
     this.adopting = new Set();
@@ -368,6 +368,9 @@ export class Backend {
     // G2: 일반 셸이 쉬는지, 무슨 명령을 돌리는지
     // P137: 하네스가 지금 쓰는 모델(/model, Codex 모델 바꾸기). 기록 파일이 늘어난 만큼만 읽는다
     this.modelTimer = setInterval(() => this.pollModels(), cfg.modelPollMs ?? 5000);
+    // P239(rig2-design 11.18의 3): 정의가 바뀌어 권한이 달라진 keep 자리를 쉴 때 다시 띄운다
+    this.rigPermTimer = setInterval(() => { if (this.rigAmp && this.rigAmp.permTick) this.rigAmp.permTick().catch((e) => this.log('rig perm tick error', e.stack)); }, cfg.rigPermTickMs ?? PERM_TICK_MS);
+    if (this.rigPermTimer.unref) this.rigPermTimer.unref();
     this.shellTimer = setInterval(() => this.pollShells().catch((e) => this.log('shell poll error', e.stack)), SHELL_POLL_MS);
     // P171: 읽기 선 정리(한 번)와 일시 선 쓸기
     this.tempLinks = new TempLinks(this);
@@ -401,6 +404,7 @@ export class Backend {
     if (this.recall) this.recall.stop();
     if (this.worktrees) this.worktrees.stop();
     if (this.sleeper) this.sleeper.stop();
+    clearInterval(this.rigPermTimer); // P239
     if (this.updater) this.updater.stop();
     this.relay.closeAll();
     if (this.voice) this.voice.closeAll(); // P165
@@ -874,6 +878,7 @@ export class Backend {
     s.lastHookAuthOk = authOk;
     if (!authOk) { this.store.addEvent(s.sessionId, 'hook_rejected', { ev }); this.log(`hook rejected ${s.name} ${ev}`); return; }
     s.hookCount = (s.hookCount || 0) + 1;
+    if (body.permission_mode && this.rigAmp && this.rigAmp.noteMode) try { this.rigAmp.noteMode(s, body.permission_mode); } catch (e) { this.log('rig mode note error', e.message); } // P239(11.18의 4): scoped·ask 자리의 권한 모드 어긋남
     // P234(rig2-design 11.16의 2): 판이 연 회의 scoped 자리는 PermissionRequest가 질문이 아니라 거절이다. 응답 필요에 두지 않고 장부에 적는다
     //   P235(11.17의 1·2): 판이 그 회(자리가 지금 하는 회)를 보고 deny로 답한다(ampTarget·answerHook). 같은 판정을 여기서 장부에 적는다
     const verdict = ev !== 'PermissionRequest' || !this.rigAmp || !this.rigAmp.permissionVerdict ? null : pre && pre.verdict ? pre.verdict : (() => { try { return this.rigAmp.permissionVerdict(s); } catch { return null; } })();
@@ -1086,8 +1091,10 @@ export class Backend {
   }
 
   // 판이 다시 띄울 때의 실행 값. P4 전에 띄운 세션(이어 가기 명령에 --plugin-dir가 없음)은 그대로 둔다
-  launchOf(s) {
+  //   P239: launch(기본 true)면 곧 띄운다는 뜻이라 자리 권한의 서명을 남긴다(rigAmp.noteLaunched). 이어 가기 명령만 다시 만들 때는 false
+  launchOf(s, { launch = true } = {}) {
     if (this.rigAmp) this.rigAmp.syncSettings(s); // P189: 다시 띄우기 전에 설정 파일의 증폭을 지금 자리·정의에 맞춘다
+    if (launch && this.rigAmp && this.rigAmp.noteLaunched) this.rigAmp.noteLaunched(s);
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
     return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.plugin : {}) };
   }
@@ -1138,6 +1145,7 @@ export class Backend {
     const st = await this.adapter.startAgent({ name, paneId: s.paneId, args: hl.args, kind: s.kind, command: hl.command, env: hl.env, pathFirst: hl.pathFirst });
     s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now(), firstLaunchedAt: (s.harnessPlan || {}).firstLaunchedAt || Date.now() }; // P133: firstLaunchedAt(처음 띄운 때, 대화 ID 배우기)
     this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
+    if (this.rigAmp && this.rigAmp.noteLaunched) this.rigAmp.noteLaunched(s); // P239: 띄운 권한의 서명(Codex 인자)
     if (why !== 'start') { s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.term.launchPending = st.agent ? st.agent.launchPending : true; }
     this.store.addEvent(s.sessionId, why === 'start' ? 'harness_started' : 'recovered_by_board', { plan: why, resume, resumed: hl.resumed, harnessSessionId: hl.harnessSessionId, argv: [...hl.command, ...hl.args], env: Object.keys(hl.env) });
     return { ...st, resumed: hl.resumed };
@@ -1590,7 +1598,7 @@ export class Backend {
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
         s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan };
         this.store.insertSession({ ...s, runtime: rt });
-        if (seatSpawn) { s.rigSeat = seatSpawn; this.store.setSessionSeat(sessionId, seatSpawn); if (p[SEAT_RUN]) s.rigRun = { loop: p[SEAT_RUN].loop || null }; } // P234: rigRun // P189: rig-flow가 띄운 뒤 다시 적는다(같은 값)
+        if (seatSpawn) { s.rigSeat = seatSpawn; this.store.setSessionSeat(sessionId, seatSpawn); if (p[SEAT_RUN]) s.rigRun = { loop: p[SEAT_RUN].loop || null }; if (this.rigAmp.noteLaunched) this.rigAmp.noteLaunched(s); } // P239: 띄운 권한의 서명 // P234: rigRun // P189: rig-flow가 띄운 뒤 다시 적는다(같은 값)
         if (seatPerm && seatPerm.asked !== 'ask') try { this.rigAmp.notePermission(s); } catch (e) { this.log('rig permission note error', e.message); } // P223: 장부에 권한 결정 한 줄
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
@@ -1930,6 +1938,8 @@ export class Backend {
     // P225: rig의 사람 차례(세션이 아닌 것): 무인 자리 승인(rig2-design 11.8의 1)
     let rig = [];
     try { rig = this.rig && this.rig.permitNeeds ? this.rig.permitNeeds().map((x) => ({ kind: 'seat_permit', ...x, text: `무인 자리 승인: ${x.seat}` })) : []; } catch {}
+    // P239(11.18의 4): 권한 모드가 바뀐 rig 자리
+    for (const s of this.sessions.values()) { const d = s.rt && s.rt.rigModeDrift; if (d && s.rigSeat && !s.closedAt && !s.rt.sleep) rig.push({ kind: 'mode_drift', workspace: s.workspaceKey, seat: s.rigSeat, session: s.name, mode: d.mode, text: MODE_DRIFT_TEXT(s.rigSeat, d.mode, d.back) }); }
     return { needsYou: mine, review, problems: errors, rig };
   }
 
