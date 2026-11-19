@@ -2743,7 +2743,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rm2-role.st-ready .rs i { background: #a9a69d; }
 .mt-rm2-role.st-sleeping .rs i { background: transparent; border: 1.2px dashed #8f9bb8; }
 .mt-rm2-role .ln { display: flex; align-items: baseline; height: 22px; white-space: nowrap; overflow: hidden; }
-.mt-rm2-role .lk { flex: none; width: 40px; font-size: 12px; color: #9c998f; }
+.mt-rm2-role .lk { flex: none; min-width: 40px; padding-right: 8px; box-sizing: border-box; font-size: 12px; color: #9c998f; }
 .mt-rm2-role .lv { min-width: 0; font-size: 13px; color: #a9a69d; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: baseline; gap: 6px; }
 .mt-rm2-role .lv .it { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; color: #cfcbc2; }
 .mt-rm2-role .lv .it i { font-style: normal; font-family: var(--font, inherit); color: #8e8b83; }
@@ -2757,5 +2757,4 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rm2-band.entry.open { align-items: flex-start; padding-top: 10px; }
 .mt-rm2-band.entry.open .bt { white-space: pre-wrap; overflow: auto; align-self: stretch; display: block; }
 .mt-rm2-entry-btn { flex: none; background: #22221f; border: 1px solid #3b3a36; color: #cfcbc2; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 12px; line-height: 20px; cursor: pointer; }
-.mt-ta-world.lv-far .mt-rm2 .ln, .mt-ta-world.lv-far .mt-rm2 .det, .mt-ta-world.lv-far .mt-rm2-lab { visibility: hidden; }
-.mt-ta-world.lv-far .mt-rm2-role .rn { font-size: 30px; }
+/* 멀리서도 카드 줄과 이름표를 숨기지 않는다: 지도는 한 줄 폭이 화면 폭에 맞으므로 맞춤 보기에서 글이 읽힌다(P251은 숨겨 빈 카드만 보였다) */

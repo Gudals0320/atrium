@@ -2,7 +2,7 @@
 // 위에서 아래로: 머리 띠(rig 이름, 켜짐·판, 사이클·다음 박자, 빌더, 사람이 볼 것, rig 판 단추) / 역할 카드 한 줄과 쌍마다 선 하나 / 사이클 띠 / 변경 기록 띠.
 // 사람과 빌더에게는 선을 긋지 않는다: 사람 입력은 받는 역할 카드의 "입력" 줄, 빌더는 머리 띠 칸, 올림은 올린 역할 카드의 "올림" 줄.
 // 머리 띠를 누르면 접히고 펴진다(MissionLineage가 기억). 역할 카드를 누르면 명령줄 @태그, 두 번 누르면 판의 그 세션. 조작은 rig 판에 둔다.
-// 멀리서(.lv-far)는 테두리, 역할 이름, 상태 색만 남긴다(styles.css 끝 .mt-rm2).
+// 멀리서도 줄과 이름표를 숨기지 않는다(맞춤 보기에서 지도 폭이 화면 폭에 맞아 읽힌다, styles.css 끝 .mt-rm2).
 import { memo } from 'react';
 import { STATE_LABEL, agoText } from './lib/labels.js';
 import { untilText, periodText, rowText, BUILDER_ROLE } from './lib/rig-map.js';
