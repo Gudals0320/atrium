@@ -18,7 +18,7 @@ import { shellLine } from './Workspaces.jsx';
 import { api } from './api.js';
 import { tierFor, faceOfTier, termAllowed, veryClose, zoomStep } from './lib/faces.js'; // P124: 거리 단계(터미널·요약·틀)
 import { kindOf, SHAPES, stateColor, logoFor, shownKind } from './lib/kinds.js'; // P10: 아이콘 얼굴. P25: shownKind(flavor가 먼저)
-import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
+import { STATE_LABEL, EXIT_LABEL, ago, askLine, onceOnlyLine } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { TerminalView } from './TerminalView.jsx';
 import { boardPlan } from './crash-watch.js'; // P86
@@ -227,6 +227,7 @@ function AskCallout({ s }) {
   return (
     <div className="mt-callout" data-role="ask-callout">
       <div className="mt-callout-ask"><b>@{s.name}</b> {askLine(s) || t('node.waitingForYou')}</div>
+      {onceOnlyLine(s) && <div className="mt-callout-line mt-callout-once" data-role="ask-once-only" title={t('rigP233.onceOnlyTip')}>{onceOnlyLine(s)}</div>}{/* P233 */}
       {s.lastPrompt && <div className="mt-callout-line"><span className="mt-far-k">{t('node.prompt')}</span> {oneLine(s.lastPrompt)}</div>}
     </div>
   );

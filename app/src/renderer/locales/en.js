@@ -3129,6 +3129,15 @@ export default {
     followupsHint: 'Also runs once this many follow-up requests pile up (the same sender\u2019s next request within 30 minutes of the previous run). 0 turns it off.',
     loopImproveFollow: '{name} (improvement): {every} or every {n} follow-up runs, reads the ledger and proposes · approved by {approve}',
     canonBase: 'Write the first rules in the canon {path} now; its content when you turn the rig on becomes the baseline.',
-    claudeHooks: 'This repository\u2019s Claude Code hooks (hooks in .claude/settings.json) also run in the rig seats.',
+    claudeHooks: 'This repository\u2019s Claude Code hooks (hooks in .claude/settings.json or settings.local.json) also run in the rig seats.',
+  },
+  // P233(rig2-design 11.15): rig seat permission questions are once only; canon difference in the turn-on confirmation
+  rigP233: {
+    onceOnly: 'Rig seat, this time only: {choices}',
+    onceOnlyBare: 'Rig seat: only Yes (this time) and No are accepted.',
+    onceOnlyTip: 'Choices that widen permissions (switch to auto mode, always allow, don\u2019t ask again) are hidden. To always allow something, add it to the seat\u2019s allow list in Edit rig.',
+    drift: 'Canon {doc} ({path}) differs from the last approved content (+{added} \u2212{removed}). Turning the rig on makes the current content the baseline.',
+    driftNoCount: 'Canon {doc} ({path}) differs from the last approved content. Turning the rig on makes the current content the baseline.',
+    showDiff: 'Show difference',
   },
 };

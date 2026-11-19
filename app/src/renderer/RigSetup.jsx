@@ -9,6 +9,7 @@ import { useT, errText, getLanguage } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
 import { RigLoopCards } from './RigLoopCards.jsx'; // P230: 고리 카드(지금 돌리기)
+import { CanonDrift } from './RigAsks.jsx'; // P233: 켜기 확인의 정본 차이
 import {
   launcherChoices, launcherLabel, namedLaunchers, wizardInit, wizardPickDescribe, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
   wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions, previewModel, arrowLabel,
@@ -84,6 +85,7 @@ function EnableBody({ st, ws }) {
       <ul className="mt-rigon-list" data-role="rig-confirm-tools">{tools.length ? tools.map((x) => <li key={x.name}><span className="mt-rigon-at">{x.name}</span><code>{argv(x.run)} …</code></li>) : <li className="dim">{t('rig.confirmNone')}</li>}</ul>
       {cycles.length > 0 && <><div className="mt-rigon-h">{t('rigAdmin.confirmCycles', { n: cycles.length })}</div><ul className="mt-rigon-list">{cycles.map((x, i) => <li key={i}><span className="mt-rigon-at">{x.every}</span><code>{argv(x.run)}</code></li>)}</ul></>}
       <EnablePerms def={st.definition} />
+      <CanonDrift drift={st.canonDrift} />
       <div className="mt-card-sub dim">{t('rig.confirmLater')}</div>
     </div>
   );

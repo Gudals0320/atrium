@@ -12,6 +12,7 @@ import { useT, t, errText } from './lib/i18n.js';
 import { useDialog } from './dialog.js'; // P183: rig 켜기 확인 창
 import { menuEntry } from './lib/rig-setup.js'; // P191
 import { remoteView } from './RigSeat.jsx';
+import { CanonDrift } from './RigAsks.jsx'; // P233: 켜기 확인의 정본 차이
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
@@ -214,6 +215,7 @@ export function RigOnDialog({ ws, onClose }) {
               </ul>
               {st.seats.some((x) => x.permission === 'unattended') && <div className="mt-rigon-warn" data-role="rig-confirm-unattended">{t('rigPerm.unattendedWarn')}</div>}
             </>}{/* P223: 자리 권한. unattended(묻지 않음)는 이 확인으로 사람이 승인한다 */}
+            <CanonDrift drift={st.canonDrift} />
             <div className="mt-card-sub dim">{t('rig.confirmLater')}</div>
           </>
         )}

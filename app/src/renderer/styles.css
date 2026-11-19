@@ -2815,3 +2815,9 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigq-why { display: block; color: var(--attn-text); font-size: 12px; }
 /* P232(rig2-design 11.14의 8): 켜기 전 요약의 정본 기준 줄 */
 .mt-rigsum-note { font-size: 12px; color: var(--text-2); margin-top: 4px; overflow-wrap: anywhere; }
+
+/* P233(rig2-design 11.15): rig 자리 권한 질문은 이번 한 번만(응답 필요 줄과 말풍선), 켜기 확인의 정본 차이 */
+.mt-chip-once { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-callout-once { font-size: .9em; }
+.mt-rigon-drift .mt-rigon-warn { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.mt-rigon-drift .mt-rigask-diff { flex: 1 1 100%; max-height: 220px; overflow: auto; }

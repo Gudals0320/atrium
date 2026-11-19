@@ -34,7 +34,7 @@ import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
 import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
-import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
+import { planAnswer, checkSteps, sameAsk, onceOnlyAsk, onceOnlyKeys } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
@@ -539,7 +539,7 @@ export class Backend {
     const d = deriveState(rt);
     const f = flags(rt, { seenAt: s.seenAt, delivering: this.queue ? this.queue.pending(s.sessionId) : 0, quietMs: this.cfg.quietMs });
     const waitingSince = trackWaiting(rt, d); // P141(#14): 다시 켜도 이어지는 응답 필요 시작 시각
-    const ask = d.ask ? { ...d.ask, input: undefined, waitedMs: (waitingSince || d.ask.since) ? Date.now() - (waitingSince || d.ask.since) : null } : null;
+    const ask = d.ask ? this.askView(s, { ...d.ask, input: undefined, waitedMs: (waitingSince || d.ask.since) ? Date.now() - (waitingSince || d.ask.since) : null }) : null; // P233: rig 자리는 한 번만
     return {
       sessionId: s.sessionId, name: shownName(s), cwd: s.cwd, paneId: s.paneId, termWorkspaceId: s.termWorkspaceId,
       address: s.name, label: s.label || null, // P66: name은 보이는 이름, address는 에이전트가 쓰는 주소(에이전트 이름), label은 사람이 정한 이름(없으면 null)
@@ -877,7 +877,7 @@ export class Backend {
     if (ev === 'UserPromptSubmit') info.prompt = clip(s.rt.lastPrompt, 200);
     if (ev === 'SessionEnd') info.reason = body.reason;
     if (ev === 'StopFailure') info.error = s.rt.lastError;
-    if (ev === 'PermissionRequest' || (ev === 'PreToolUse' && s.rt.pendingAsk && s.rt.pendingAsk.toolUseId === body.tool_use_id)) info.ask = { ...s.rt.pendingAsk, input: undefined };
+    if (ev === 'PermissionRequest' || (ev === 'PreToolUse' && s.rt.pendingAsk && s.rt.pendingAsk.toolUseId === body.tool_use_id)) info.ask = this.askView(s, { ...s.rt.pendingAsk, input: undefined });
     this.store.addEvent(s.sessionId, 'hook', info);
     this.api.broadcast('session.hook', { sessionId: s.sessionId, name: s.name, ...info });
     if (ev === 'UserPromptSubmit') this.queue.onUserPromptSubmit(s.sessionId, body.prompt);
@@ -1757,6 +1757,14 @@ export class Backend {
     } finally { this.killing.delete(s.sessionId); endBoardExit(this, s); }
   }
 
+  // P233(rig2-design 11.15의 1): rig 자리(권한 scoped·ask, 모르면 그쪽으로)의 권한 질문은 "이번 한 번 예"와 "아니오"만. unattended 자리와 rig 밖 세션은 그대로
+  onceOnly(s) {
+    if (!s || !s.rigSeat) return false;
+    const p = this.rigAmp && this.rigAmp.seatPermission ? this.rigAmp.seatPermission(s.workspaceKey, s.rigSeat) : null;
+    return !p || p.permission !== 'unattended';
+  }
+  askView(s, ask) { return ask && ask.kind === 'permission' && this.onceOnly(s) ? onceOnlyAsk(ask) : ask; }
+
   // A1 답하기(P2): 승인 카드의 답을 agent.send_keys(글은 pane.send_text)로 넣는다.
   // 보내기 직전 확인: 터미널 상태가 blocked인지, 카드의 요청(tool_use_id)이 아직 기다리는 요청인지(PostToolUse가 오면 pendingAsk가 풀린다).
   // 아니면 보내지 않는다. stale·no_pending_ask면 창은 카드를 닫고, not_blocked면 카드를 둔다.
@@ -1772,7 +1780,7 @@ export class Backend {
     const ask = s.rt.pendingAsk;
     if (!ask) return { sent: false, reason: 'no_pending_ask' };
     if (!sameAsk(ask, card)) return { sent: false, reason: 'stale' };
-    const plan = planAnswer(ask, p);
+    const plan = planAnswer(ask, p, { onceOnly: ask.kind === 'permission' && this.onceOnly(s) }); // P233: rig 자리는 "Yes"와 "No"만
     checkSteps(plan.steps);
     if (s.answering) throw keyed(apiError('busy', "이 세션에 이미 응답을 전송하고 있습니다."), 'answerBusy');
     s.answering = true;
@@ -1800,6 +1808,7 @@ export class Backend {
   async sendKeysTo(p, c) {
     const s = this.resolve(p.session ?? p.target);
     const keys = checkKeys(p.keys);
+    if (s.rt && s.rt.pendingAsk && s.rt.pendingAsk.kind === 'permission' && this.onceOnly(s)) onceOnlyKeys(s.rt.pendingAsk, keys); // P233: rig 자리의 권한 질문에 넓히는 선택지 번호·화살표를 보내지 않는다
     this.requireTerminal();
     if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name} 세션은 절전 중이라 터미널이 닫혀 있습니다. 먼저 작업을 재개하세요.`), 'sleepingNoPane', { name: s.name });
     await this.keyChain(s.sessionId, () => this.adapter.paneKeys(s.paneId, keys));
@@ -2175,7 +2184,7 @@ export class Backend {
 
   async get(p) {
     const s = this.resolve(p.session);
-    const out = { ...this.summary(s), ask: s.rt.pendingAsk ? { ...s.rt.pendingAsk } : null, lastPrompt: promptTask(s.rt.lastPrompt), lastAnswer: s.rt.lastAnswer, lastAskResolved: s.rt.lastAskResolved, settingsPath: s.settingsPath, resumeArgv: s.resumeArgv, transcriptPath: s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId), git: s.git || null };
+    const out = { ...this.summary(s), ask: s.rt.pendingAsk ? this.askView(s, { ...s.rt.pendingAsk }) : null, lastPrompt: promptTask(s.rt.lastPrompt), lastAnswer: s.rt.lastAnswer, lastAskResolved: s.rt.lastAskResolved, settingsPath: s.settingsPath, resumeArgv: s.resumeArgv, transcriptPath: s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.sessionId), git: s.git || null };
     if (p.screen !== false && s.rt.term.present !== undefined) { try { out.screenTail = tailLines(await this.adapter.readScreen(s.paneId, { source: 'visible' }), p.lines || 12); } catch { out.screenTail = null; } }
     if (!out.git) out.git = s.git = await gitProbe(s.rt.cwd || s.cwd);
     out.deliveries = this.store.deliveries({ sessionId: s.sessionId, limit: 10 }).map((d) => ({ ...d, text: clip(d.text, 80) }));

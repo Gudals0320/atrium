@@ -24,7 +24,7 @@ import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
 import { UsagePill } from './Usage.jsx'; // P211: 구독 사용량. 레일 호출자 단추에는 보이지 않는다(로고만, 2026-11-18 사용자 요청)
 import { Icon } from './lib/icons.jsx';
-import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
+import { STATE_LABEL, EXIT_LABEL, ago, askLine, onceOnlyLine } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { wsTabs, sumCounts, groupPick, memberLabel, groupChipView, fitTabs, stairPath } from './lib/ws-tabs.js'; // P98: 위 바 묶음 칩. P214: 탭 줄 나누기·배경 모양
@@ -348,6 +348,7 @@ function TurnPill({ needsYou }) {
             <button key={s.sessionId} className={`mt-chip need${focusId === s.sessionId ? ' current' : ''}`} data-session={s.sessionId} data-name={s.name} onClick={() => { setOpen(false); go(s.sessionId); }} title={askLine(s)}>
               <span className="mt-chip-line"><b>@{s.name}</b> {wsTag(s, currentWs)} <span className="mt-chip-time">{ago(s.waitingSince || (s.ask && s.ask.since) || s.createdAt, now)}</span></span>
               <span className="mt-chip-what">{askLine(s)}</span>
+              {onceOnlyLine(s) && <span className="mt-chip-once" data-role="ask-once-only" title={t('rigP233.onceOnlyTip')}>{onceOnlyLine(s)}</span>}{/* P233: rig 자리는 이번 한 번만 */}
             </button>
           ))}
           <RigAskList asks={asks} now={now} />

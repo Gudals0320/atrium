@@ -44,13 +44,32 @@ export function whoText(t, w, fallback = null) {
   return t('rigAsk.unknown');
 }
 // diff 글 → 줄마다 색(추가·빼기·덩어리 머리)
-function DiffView({ text, clipped }) {
+export function DiffView({ text, clipped }) { // P233: 켜기 확인의 정본 차이도 쓴다
   const t = useT();
   return (
     <pre className="mt-rigask-diff" data-role="rig-ask-diff">
       {String(text || '').replace(/\n$/, '').split('\n').map((l, i) => <span key={i} className={l.startsWith('+++') || l.startsWith('---') ? 'h' : l.startsWith('@@') ? 'at' : l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : ''}>{l}{'\n'}</span>)}
       {clipped && <span className="h">{t('rigAsk.clipped')}</span>}
     </pre>
+  );
+}
+
+// P233(rig2-design 11.15의 6): 켜기 확인 창의 정본 차이. 꺼짐 → 켜짐마다 기준을 다시 잡으므로, 정본이 마지막 승인 내용과 다르면
+//   "정본 <이름>이 마지막 승인 내용과 다르다(+n −m). 켜면 지금 내용이 기준이 된다"와 [차이 보기]. drift: rig.status·rig.get의 canonDrift(처음 켤 때는 빈 목록)
+export function CanonDrift({ drift }) {
+  const t = useT();
+  const [open, setOpen] = useState({});
+  if (!drift || !drift.length) return null;
+  return (
+    <div className="mt-rigon-drift" data-role="rig-canon-drift">
+      {drift.map((d) => (
+        <div key={d.doc} className="mt-rigon-warn" data-doc={d.doc}>
+          <span>{d.added != null ? t('rigP233.drift', { doc: d.doc, path: d.path, added: d.added, removed: d.removed }) : t('rigP233.driftNoCount', { doc: d.doc, path: d.path })}</span>
+          {d.diff && <button type="button" className="mt-rigask-link" data-action="rig-drift-diff" aria-expanded={!!open[d.doc]} onClick={() => setOpen((o) => ({ ...o, [d.doc]: !o[d.doc] }))}>{open[d.doc] ? t('rigAsk.hideDiff') : t('rigP233.showDiff')}</button>}
+          {open[d.doc] && d.diff && <DiffView text={d.diff} clipped={d.clipped} />}
+        </div>
+      ))}
+    </div>
   );
 }
 
