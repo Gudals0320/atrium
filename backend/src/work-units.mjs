@@ -239,6 +239,8 @@ export class WorkUnits {
     const now = Date.now();
     st.updateTry(tr.id, { result, doneText: text, endedAt: now });
     st.updateUnit(unit.id, { status: result === 'failed' ? 'failed' : 'done', closedAt: now }); // P185: rig의 다른 값(rejected 등)도 닫힘(done)
+    // P237: 자리 터미널에 친 요청의 판 알림(회·일·done)이 아직 들어가지 않았는데 일이 닫혔으면 거둔다(닫은 뒤 "이미 닫았다" 턴이 생기지 않게)
+    if (unit.via && unit.via.terminal && tr.deliveryId) { const nd = st.getDelivery(tr.deliveryId); if (nd && nd.status === 'queued') try { b.queue.cancel(tr.deliveryId); } catch {} }
     const parent = b.sessions.get(unit.from) || null;
     const val = { result, text };
     let claimedBy, noticeDeliveryId = null;

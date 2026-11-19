@@ -2821,3 +2821,8 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-callout-once { font-size: .9em; }
 .mt-rigon-drift .mt-rigon-warn { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .mt-rigon-drift .mt-rigask-diff { flex: 1 1 100%; max-height: 220px; overflow: auto; }
+
+/* P237(rig2-design 11.18의 둘째): 보내기 칸의 "회 없이". 받는 세션에 rig 자리가 있을 때만 받는 세션 칩 옆에 보인다. 켜면 채운 알약 */
+.mt-cmd-talk { flex: none; height: 22px; margin-bottom: 17px; padding: 0 9px; border-radius: 11px; border: 1px dashed var(--chrome-line-2); background: none; color: var(--chrome-text-2); font: 600 11.5px/1 var(--font-ui); white-space: nowrap; cursor: pointer; }
+.mt-cmd-talk:hover { color: var(--chrome-text); border-color: var(--chrome-text-3); }
+.mt-cmd-talk.on { border-style: solid; color: var(--accent-2); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }

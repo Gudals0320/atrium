@@ -3141,4 +3141,9 @@ export default {
     driftNoCount: 'Canon {doc} ({path}) differs from the last approved content. Turning the rig on makes the current content the baseline.',
     showDiff: 'Show difference',
   },
+  // P237 (rig2-design 11.18, second item): "No run" in the send box (text only to a rig seat, no run opened)
+  cmdTalk: {
+    label: 'No run',
+    title: 'Send to {names} as text only, without opening a run. Use it for messages that are not run work, such as asking to change the rig. Not delivered while the seat is doing run work.',
+  },
 };

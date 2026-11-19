@@ -199,7 +199,8 @@ test('P232 개선 계기: 이어진 회가 n개 쌓이면 every보다 먼저 돌
     const main = add('main'); seat(main, 'main');
     const t0 = Date.now();
     await L().tick(t0); // 계기를 건다
-    const mk = (id, at, follows) => b.store.insertCase({ id, workspaceKey: ws.key, owner: main.sessionId, state: 'done', createdAt: at, closedAt: at + 1, loop: 'work', follows });
+    // P237: 사람이 연 이어진 회만 센다(회의 첫 일의 요청자 human)
+    const mk = (id, at, follows) => { b.store.insertCase({ id, workspaceKey: ws.key, owner: main.sessionId, state: 'done', createdAt: at, closedAt: at + 1, loop: 'work', follows }); b.store.insertUnit({ id: 'u' + id, from: 'human', to: main.sessionId, origin: 'request', spec: id, status: 'done', createdAt: at, caseId: id, seat: 'main', via: { by: 'human', request: 'work' } }); };
     mk('cw1', t0 + 10, null); mk('cw2', t0 + 20, 'cw1');
     assert.deepEqual(await L().tick(t0 + 30), [], '이어진 회 하나는 모자라다');
     // 회 밖에서 입구 자리가 낸 제안이 기다리는 중

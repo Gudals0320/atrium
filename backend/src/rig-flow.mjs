@@ -105,7 +105,9 @@ export function seatExtraLines(def, seat, { approved = false, promptless = false
 // P193: 세션이 자리를 얻는 순간(사람의 rig.seat, rig.spawnSeat) 한 번 넣는 판 알림. 일 머리와 같이 세 줄 이하이고 모두 판 줄이라 카드의 지시가 되지 않는다.
 //   흐름이 띄운 자리 세션은 첫 일의 머리(seatHeader)가 같은 것을 알려 이 알림을 받지 않는다. P191: 머리 없이 앉은 keep 자리(main)가
 //   rig 흐름 대신 atrium child로 맡겨 건이 생기지 않았다
-export function seatNotice({ seat, assign = [], may = [], results = [], guide = false, manager = false, docs = null, extra = [] }) { // P230: extra(seatExtraLines) // P219: docs(머리의 문서 목록)
+// P237(rig2-design 11.18의 둘째): 관리자 자리와 request 고리의 입구 자리에 앉힐 때 붙는 한 줄(회 없이 온 글은 done 없이 답한다)
+export const TALK_SEAT_LINE = '[Atrium 보드] "회 밖 글이다"로 시작하는 글은 회를 열지 않고 온 말(rig를 고치자는 말 등)이다: atrium done 없이 이 턴에 답한다. rig를 고치자는 말은 rig 밖에서 `atrium prompt <자리> --talk "<글>"`로 보낸다.';
+export function seatNotice({ seat, assign = [], may = [], results = [], guide = false, manager = false, docs = null, extra = [], talk = false }) { // P237: talk(TALK_SEAT_LINE) // P230: extra(seatExtraLines) // P219: docs(머리의 문서 목록)
   const where = [assign.length ? `일 맡기기: ${assign.join(', ')}` : null, may.length ? `글만: ${may.join(', ')}` : null, manager && !may.includes('*') ? 'rig 밖 세션에 글만' : null].filter(Boolean).join(' · '); // P195: 관리자 자리는 rig 밖 세션에 글을 보낸다
   return [
     `[Atrium 보드] 관계: 사람이 너를 rig의 ${seat} 자리에 앉혔다. 이 워크스페이스의 일은 rig 흐름(자리와 건)으로 나눈다.`,
@@ -113,6 +115,7 @@ export function seatNotice({ seat, assign = [], may = [], results = [], guide = 
       ? `[Atrium 보드] 일을 맡길 때는 \`atrium child\` 대신 \`atrium prompt <자리> "<할 일>"\`로 자리에 보낸다(${where}). 받는 자리의 세션은 보드가 띄운다.`
       : '[Atrium 보드] 이 자리는 다른 자리에 일을 맡기지 않는다.',
     `[Atrium 보드] 자리로 받은 일은 \`atrium done <값> "<보고>"\`로 닫는다(값: ${results.join(', ') || 'ok, failed'}). ${guide ? '먼저 `atrium guide`로 이 자리의 안내를 읽는다.' : '안내: `atrium guide`.'}${docs ? ` ${docsTail(docs)}` : ''}`,
+    ...(talk ? [TALK_SEAT_LINE] : []),
     ...extra,
   ].join('\n');
 }
@@ -249,7 +252,7 @@ export class RigFlow {
   }
   seatNoticeOf(def, seat, key = null) {
     const x = def.seats[seat] || {};
-    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide, manager: def.manager === seat, docs: seatDocsOf(def, seat), extra: this.extraLinesOf(key, def, seat) });
+    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide, manager: def.manager === seat, docs: seatDocsOf(def, seat), extra: this.extraLinesOf(key, def, seat), talk: def.manager === seat || Object.values(def.loops || {}).some((l) => l && !l.implicit && l.trigger && l.trigger.type === 'request' && l.entry === seat) });
   }
   // P231(11.13의 5): 머리에 더할 줄(실제로 도는 권한: 승인 전 unattended는 scoped)
   // P234: caseId(그 일의 회 → 고리의 계기). 없으면 keep 자리는 닿는 고리로, fresh 자리는 모름(묻는다)
