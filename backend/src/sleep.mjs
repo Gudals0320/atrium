@@ -62,6 +62,31 @@ export function backgroundOf(hook, scan, now = Date.now()) {
   return left.length ? { n: left.length, via: 'hook' } : null;
 }
 
+// P246: Claude Code가 아닌 하네스(codex, agy, opencode, pi …)의 뒤 일 세기. 그 하네스는 뒤 일 신호(hook)가 없고 명령줄 표시도 없어,
+// 하네스 프로세스(root) 아래 나무에서 하네스가 뜬 뒤 HARNESS_SETTLE_MS가 지나 생긴 셸 프로세스(HARNESS_SHELL_RE)를 센다(셸 안의 셸은 하나로).
+// 하네스의 셸 도구는 명령이 끝날 때까지 셸이 남으므로 뒤에서 도는 명령도 셸로 보인다. 띄울 때 함께 뜬 것(MCP 서버의 cmd /c npx, .cmd 실행 껍데기)은 빠진다.
+// 한계: 셸이 끝나고 떨어져 나간 프로세스(Start-Process, start, nohup &, setsid)는 부모가 사라져 나무에 없다. 하네스가 늦게 띄운 셸 꼴 도우미(늦게 뜨는 LSP·MCP의 cmd /c)는 일로 센다.
+// procs: readProcessTable의 Map(pid → { pid, ppid, name, created }), root: 하네스(또는 셸) PID, harness: root가 하네스 자신인가. 순수 함수 → 수
+export const HARNESS_SHELL_RE = /^(powershell|pwsh|cmd|bash|sh|zsh|dash|fish|nu|wsl|busybox)(\.exe)?$/i;
+export const HARNESS_SETTLE_MS = 30000;
+export function harnessWork(procs, root, { harness = true, launchedAt = 0, settleMs = HARNESS_SETTLE_MS } = {}) {
+  const tree = descendants(procs, Number(root));
+  if (!tree.length) return 0;
+  const top = tree[0];
+  const born = harness && Number.isFinite(top.created) ? top.created : launchedAt || top.created || 0;
+  const since = born + settleMs;
+  const byPid = new Map(tree.map((p) => [p.pid, p]));
+  const work = (p) => p !== top && HARNESS_SHELL_RE.test(String(p.name || '')) && Number.isFinite(p.created) && p.created >= since;
+  let n = 0;
+  for (const p of tree) {
+    if (!work(p)) continue;
+    let a = byPid.get(p.ppid), nested = false;
+    while (a && a !== top) { if (work(a)) { nested = true; break; } a = byPid.get(a.ppid); }
+    if (!nested) n++;
+  }
+  return n;
+}
+
 // P164: 세션 맵에 보일 "지금 도는 뒤 일" 목록. 순수 함수. → { n, kinds, items: [{ kind, label }], at, via } | null
 // hook·scan은 backgroundOf와 같다. 종류 kind: shell(뒤 셸) | agent(뒤 하위 에이전트) | other.
 // - 셸 수: hook 뒤에 프로세스를 보았으면 그 수(0이면 hook의 셸 항목은 끝났다), 아니면 hook 셸 항목 수와 본 수 가운데 큰 것. 설명은 hook 항목 차례로 붙이고 모자라면 빈 줄(프로세스만 앎)
@@ -385,12 +410,24 @@ export class Sleeper {
   // ---------- P105: 뒤 일과 실패한 잠재우기 ----------
   bgOf(s, now = Date.now()) {
     if (this.b.cfg && this.b.cfg.sleepBgPrecheck === false) return null;
-    return (s.kind || 'claude') === 'claude' && s.paneId ? backgroundOf(s.rt.bg, this.bgScan.get(s.sessionId) || null, now) : null;
+    return this.bgAny(s, now);
   }
-  // P164: 세션 맵에 보일 뒤 일(판이 띄운 Claude Code, 깨어 있는 패널만). 절전 설정(sleepBgPrecheck)과 관계없이 보인다
+  // P246: 설정과 관계없이 지금 아는 뒤 일(rig 3 guard도 쓴다). Claude Code는 hook(rt.bg)과 도구 명령 수, 다른 하네스는 나무의 셸 수(harnessWork). 셸·잠든 세션은 null
+  bgAny(s, now = Date.now()) {
+    const kind = s.kind || 'claude';
+    if (kind === 'shell' || !s.paneId || s.rt.sleep) return null;
+    return backgroundOf(kind === 'claude' ? s.rt.bg : null, this.bgScan.get(s.sessionId) || null, now);
+  }
+  // P246: 세션 하나의 프로세스를 지금 보고 뒤 일을 돌려준다(rig 3 guard가 턴 끝과 주기마다 부른다)
+  async backgroundNow(s) {
+    await this.scanBackground([s]);
+    return this.bgAny(s);
+  }
+  // P164: 세션 맵에 보일 뒤 일(깨어 있는 패널만). 절전 설정(sleepBgPrecheck)과 관계없이 보인다. P246: 다른 하네스도(프로세스로 본 셸만)
   bgView(s, now = Date.now()) {
-    if ((s.kind || 'claude') !== 'claude' || !s.paneId || s.rt.sleep) return null;
-    return backgroundList(s.rt.bg, this.bgScan.get(s.sessionId) || null, now);
+    const kind = s.kind || 'claude';
+    if (kind === 'shell' || !s.paneId || s.rt.sleep) return null;
+    return backgroundList(kind === 'claude' ? s.rt.bg : null, this.bgScan.get(s.sessionId) || null, now);
   }
   // P164: 뒤 일이 보이는 세션은 tick마다(SLEEP_TICK_MS) 프로세스를 다시 보고, 보이는 수·종류가 바뀌면 요약을 다시 보낸다(뒤 셸이 끝나면 표시가 꺼진다).
   // 일하는 중인 세션은 턴 끝의 Stop이 목록을 새로 준다
@@ -408,20 +445,31 @@ export class Sleeper {
   }
   // 세션들의 claude 바로 아래 도구 명령(MCP 서버 빼고)을 센다. 터미널의 process_info로 claude PID를 얻고 PowerShell 한 번으로 그 자식을 읽는다.
   // 읽지 못하면(null) 전 값을 둔다. claude가 없는 패널은 0으로 둔다
+  // P246: 다른 하네스는 프로세스 표를 한 번 읽어 하네스 아래 셸을 센다(harnessWork). root는 셸이 아닌 앞쪽 프로세스(하네스), 없으면 셸
   async scanBackground(list) {
-    const b = this.b, now = Date.now(), pids = new Map();
+    const b = this.b, now = Date.now(), pids = new Map(), roots = new Map();
     for (const s of list) {
-      if ((s.kind || 'claude') !== 'claude' || !s.paneId || s.rt.sleep || !b.adapter) continue;
+      const kind = s.kind || 'claude';
+      if (kind === 'shell' || !s.paneId || s.rt.sleep || !b.adapter) continue;
       const info = await b.adapter.processInfo(s.paneId).catch(() => null);
       if (!info) continue;
+      if (kind !== 'claude') {
+        const fg = (info.foreground_processes || []).find((p) => p.pid && Number(p.pid) !== Number(info.shell_pid));
+        roots.set(s.sessionId, { pid: Number(fg ? fg.pid : info.shell_pid) || null, harness: !!fg, launchedAt: s.rt.launchedAt || 0 });
+        continue;
+      }
       const c = (info.foreground_processes || []).find((p) => /claude/i.test(p.name || ''));
       pids.set(s.sessionId, c ? Number(c.pid) : null);
     }
-    if (!pids.size) return;
-    const want = [...pids.values()].filter(Boolean);
-    const kids = want.length ? await this.readChildren(want).catch(() => null) : [];
-    if (!kids) return;
-    for (const [sid, pid] of pids) this.bgScan.set(sid, { at: now, n: pid ? kids.filter((k) => Number(k.ppid) === pid && isToolCommand(k)).length : 0 });
+    if (pids.size) {
+      const want = [...pids.values()].filter(Boolean);
+      const kids = want.length ? await this.readChildren(want).catch(() => null) : [];
+      if (kids) for (const [sid, pid] of pids) this.bgScan.set(sid, { at: now, n: pid ? kids.filter((k) => Number(k.ppid) === pid && isToolCommand(k)).length : 0 });
+    }
+    if (roots.size) {
+      const table = await Promise.resolve(this.readTable()).catch(() => null);
+      if (table && table.procs) for (const [sid, r] of roots) this.bgScan.set(sid, { at: now, n: r.pid ? harnessWork(table.procs, r.pid, { harness: r.harness, launchedAt: r.launchedAt }) : 0 });
+    }
   }
   // 실패한 잠재우기를 미룬다. 같은 쉼(쉬기 시작한 때가 그대로)에서 또 실패하면 간격을 두 배로 늘린다
   block(s, why, now = Date.now()) {

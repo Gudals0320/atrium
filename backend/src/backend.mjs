@@ -428,6 +428,7 @@ export class Backend {
     // 기다리는 /branch 요청에 먼저 답하고, 쉬는 연결은 바로, 나머지는 1초 뒤 끊는다
     if (this.branch && this.branch.tools) this.branch.tools.stopAll(); // P183: 도는 도구 실행을 끝낸다(장부는 lost)
     if (this.rig3 && this.rig3.beat) this.rig3.beat.stopAll(); // P244: rig 3 도구 실행
+    if (this.rig3 && this.rig3.guard && this.rig3.guard.stop) this.rig3.guard.stop(); // P246: 뒤 일 구간 주기
     if (this.branch && this.branch.flow && this.branch.flow.stopCycles) this.branch.flow.stopCycles(); // P188: 느린 고리 타이머
     const aborted = this.branch && this.branch.abortInflight ? this.branch.abortInflight() : 0;
     if (aborted) this.log(`answered ${aborted} waiting /branch request(s) before stopping`);
