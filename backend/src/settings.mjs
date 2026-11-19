@@ -41,6 +41,8 @@ export const SETTINGS = {
   // P211: 구독 사용량 알림. 한 한도 창이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알린다(usage.mjs)
   usageAlerts: { type: 'boolean', default: true, label: '구독 사용량 알림: 한 한도 창(5시간·주간 등)이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알립니다.' },
   missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
+  // P244: rig 3 사이클 요약(변경 기록 꼭지)을 쓰는 한 번짜리 실행(claude -p)의 모델(숨은 설정). 값싼 모델이 기본이다
+  rig3SummaryModel: { type: 'string', default: 'haiku', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: haiku, sonnet)', label: 'rig 사이클 요약(변경 기록)을 쓰는 한 번짜리 실행의 모델입니다.' },
   // P114의 숨은 설정 terminalBackend는 P117에서 없앴다. P129·P132: 터미널 백엔드는 herdr-core(hc) 하나다. 판 기록(meta terminalBackend)은 옛 판 옮기기(herdr-migrate)만 쓴다
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));

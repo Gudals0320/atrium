@@ -1,5 +1,5 @@
 // P242: rig 3 2단계 — 항목, 길, 받음·반려(docs research rig3-skeleton.md 3·4·5·8절, rig3-roles.md 12절).
-// - 항목: 역할이 자기 섹터에 낸 파일 하나(atrium rig put <파일> --item <종류> [--from <항목>] [--redo <항목>]). 판이 종류·낸 역할·사이클(3단계가 채운다)·
+// - 항목: 역할이 자기 섹터에 낸 파일 하나(atrium rig put <종류> <파일> [--from <항목>] [--redo <항목>]. P244: 안내는 이 꼴만, put <파일> --item <종류>도 받기만 한다). 판이 종류·낸 역할·사이클(3단계가 채운다)·
 //   어디서 나왔나·해시를 rig3_items(store-rig3.mjs)와 장부(item_put)에 남긴다. id는 <종류>-<n>, --redo는 같은 id의 다음 판(rev).
 //   섹터 밖 파일, 길(flows)에 없는 종류(그 역할이 내는 길이 없음)는 거절. 낸 파일은 고치지 않는다: 이미 낸 파일을 새 항목으로 다시 내면 거절(--redo로),
 //   낸 뒤 파일이 바뀐 것은 판이 해시로 알아보고(받음·inbox 때) 장부 item_changed로 남긴다.
@@ -9,7 +9,7 @@
 // - 받음·반려: accept <항목> ["<메모>"], return <항목> "<까닭>". 반려는 낸 역할에게 돌아가 깨우고(입력 창구의 항목이면 rig 판에 한 줄), 낸 역할은 put --redo로 고쳐 내거나
 //   drop <항목> "<까닭>"으로 버린다. 받음은 그 역할이 그 항목에서 이어진 항목을 내기 전까지 반려로 뒤집을 수 있다. 받는 역할이 아니어도
 //   그 항목에서 이어진 항목을 가진(받았거나 낸) 역할은 반려할 수 있다(늦은 반려, late).
-// - pass [<항목>] "<까닭>": 이번에는 낼 것이 없다는 답. 항목을 주면 그것만, 안 주면 답하지 않은 받은 것 모두(없으면 박자에 대한 답으로 장부에만, 3단계).
+// - pass <항목> "<까닭>": 받은 것을 답 항목 없이 닫는다. pass "<까닭>"(항목 없음): 박자에 낼 것이 없다는 답으로 장부에만(item_pass value turn). P244: 받은 것을 한꺼번에 닫지 않는다.
 // - 길의 for: { item: result, from: verify, to: ideas, for: hypothesis } = verify가 받은 hypothesis마다 result가 나와야 한다.
 //   받았는데(accept) 그 항목에서 이어진 답 항목(for 길의 종류)도 pass도 없으면 "답 없는 받은 항목"으로 센다.
 // - 멈춘 역할: 주기(Rig3Roles.keep)마다 쉬는(ready, 대기열 비고 STALL_MS 넘게) 역할 세션에 답하지 않은 받은 것(waiting)이나 답 없는 받은 항목(for)이 있으면
@@ -100,7 +100,7 @@ export class Rig3Items {
     const human = p.role === HUMAN;
     const role = human ? null : r3.roles[p.role];
     if (!human && !role) throw apiError('forbidden', `없는 역할: ${p.role}`);
-    if (!p.file || typeof p.file !== 'string') throw apiError('bad_request', '낼 파일을 준다: atrium rig put <파일> --item <종류>');
+    if (!p.file || typeof p.file !== 'string') throw apiError('bad_request', '낼 파일을 준다: atrium rig put <종류> <파일>');
     const abs = path.resolve(root, p.file);
     const rel = slash(path.relative(root, abs));
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw apiError('out_of_sector', `워크스페이스 밖 파일이다: ${p.file}. 네 섹터: ${role ? role.owns.join(', ') : '-'}`);
@@ -117,14 +117,14 @@ export class Rig3Items {
       if (prev.state === 'dropped') throw apiError('bad_request', `${prev.id}는 버린 항목이다(drop). 새 항목으로 낸다`);
     }
     const kind = p.kind ? String(p.kind).trim() : prev ? prev.kind : '';
-    if (!kind) throw apiError('bad_request', `항목 종류를 준다: --item <종류>. 네가 낼 수 있는 것: ${putKinds(r3, p.role).join(', ') || '(없음)'}`);
+    if (!kind) throw apiError('bad_request', `항목 종류를 준다: atrium rig put <종류> <파일>. 네가 낼 수 있는 것: ${putKinds(r3, p.role).join(', ') || '(없음)'}`);
     if (prev && kind !== prev.kind) throw apiError('bad_request', `다시 내기는 같은 종류다: ${prev.id}는 ${prev.kind}`);
     if (!ITEM_NAME_RE.test(kind)) throw apiError('bad_request', `항목 종류 이름이 아니다: ${kind}`);
     const flow = flowOf(r3, kind, p.role);
     if (!flow) throw apiError('no_flow', `길에 없는 종류다: ${kind}(${human ? '입력 창구' : p.role}가 ${kind}를 내는 길이 정의에 없다). ${human ? '입력 창구' : '네'}가 낼 수 있는 것: ${putKinds(r3, p.role).join(', ') || '(없음)'}`);
     // 낸 파일은 고치지 않는다: 이미 낸 파일을 새 항목으로 내지 않는다
     const used = st.items(key, { path: rel, states: ['live'] }).filter((it) => !prev || it.id !== prev.id);
-    if (used.length) throw apiError('item_file_used', `이 파일은 이미 낸 항목 ${used[0].id}다. 낸 파일은 고치지 않는다: 고쳤으면 atrium rig put ${rel} --redo ${used[0].id}로 다음 판을 내고, 새 항목이면 새 파일로 낸다`);
+    if (used.length) throw apiError('item_file_used', `이 파일은 이미 낸 항목 ${used[0].id}다. 낸 파일은 고치지 않는다: 고쳤으면 atrium rig put ${used[0].kind} ${rel} --redo ${used[0].id}로 다음 판을 내고, 새 항목이면 새 파일로 낸다`);
     let fromId = null;
     if (p.from) {
       const f = st.getItem(key, String(p.from).trim());
@@ -138,7 +138,8 @@ export class Rig3Items {
     const id = prev ? prev.id : itemIdOf(kind, st.nextItemN(key, kind));
     const rev = prev ? prev.rev + 1 : 1;
     const n = prev ? prev.n : parseItemId(id).n;
-    st.insertItem({ ws: key, id, rev, kind, n, role: p.role, sessionId: p.session || null, path: rel, sha256: h.sha256, size: h.size, fromId, cycle: null, state: 'live', t: now });
+    const cycle = this.roles.beat ? this.roles.beat.current(key) : null; // P244: 지금 사이클 번호
+    st.insertItem({ ws: key, id, rev, kind, n, role: p.role, sessionId: p.session || null, path: rel, sha256: h.sha256, size: h.size, fromId, cycle, state: 'live', t: now });
     if (prev) {
       st.setItemState(key, prev.id, prev.rev, 'superseded', `판 ${rev}`, now);
       for (const rc of st.receipts(key, { itemId: prev.id, rev: prev.rev, states: ['waiting'] })) st.setReceipt(rc.id, { state: 'superseded', answeredAt: now });
@@ -149,7 +150,7 @@ export class Rig3Items {
     const who = human ? '입력 창구' : p.role;
     for (const to of flow.to) this.notify(key, to, `- ${id}${rev > 1 ? ` 판 ${rev}(다시 냄)` : ''} (${kind}, ${who}가 냄${fromId ? `, ${fromId}에서` : ''}): ${rel}`);
     this.changed(key);
-    return { item: { id, rev, kind, path: rel, sha256: h.sha256, size: h.size, from: fromId, role: p.role, to: flow.to }, waitingOwn: human ? 0 : this.waitingOwn(key, p.role) };
+    return { item: { id, rev, kind, path: rel, sha256: h.sha256, size: h.size, from: fromId, role: p.role, to: flow.to, cycle }, waitingOwn: human ? 0 : this.waitingOwn(key, p.role) };
   }
 
   // ---------- 답한다 ----------
@@ -200,7 +201,7 @@ export class Rig3Items {
     if (rc) st.setReceipt(rc.id, { state: 'returned', note: reason, answeredAt: now, nudgedAt: null });
     else st.insertReceipt({ ws: key, itemId: it.id, rev: it.rev, role: p.role, flow: null, state: 'returned', late: true, note: reason, t: now, answeredAt: now });
     rigEvent(this.b, { kind: 'item_return', ws: key, seat: p.role, session: p.session || null, fromSeat: p.role, toSeat: it.role, line: rc ? rc.flow : null, value: late ? 'late' : 'receiver', actor: 'agent', ref: it.id, text: `${it.id}${it.rev > 1 ? ` 판 ${it.rev}` : ''}: ${reason}`, data: { id: it.id, rev: it.rev, reason, late: late || null, was: rc ? rc.state : null } });
-    if (it.role !== HUMAN) this.notify(key, it.role, `- 반려: ${it.id}${it.rev > 1 ? ` 판 ${it.rev}` : ''} (${p.role}${late ? `, ${late}에서 이어진 것을 보고` : ''}): "${reason}" → 고쳐 다시 내기 atrium rig put <파일> --redo ${it.id} | 버리기 atrium rig drop ${it.id} "<까닭>"`);
+    if (it.role !== HUMAN) this.notify(key, it.role, `- 반려: ${it.id}${it.rev > 1 ? ` 판 ${it.rev}` : ''} (${p.role}${late ? `, ${late}에서 이어진 것을 보고` : ''}): "${reason}" → 고쳐 다시 내기 atrium rig put ${it.kind} <파일> --redo ${it.id} | 버리기 atrium rig drop ${it.id} "<까닭>"`);
     this.changed(key);
     return { item: this.pub(it), late: late || null, to: it.role };
   }
@@ -218,7 +219,7 @@ export class Rig3Items {
     const { r3 } = this.rigOf(key);
     const st = this.store();
     const reason = clipReason(p.reason);
-    if (!reason) throw apiError('bad_request', 'pass는 까닭과 함께 한다: atrium rig pass [<항목>] "<까닭>"');
+    if (!reason) throw apiError('bad_request', 'pass는 까닭과 함께 한다: atrium rig pass <항목> "<까닭>" | (박자에) atrium rig pass "<까닭>"');
     let targets;
     if (p.id) {
       const { it, rc } = this.received(key, p.role, p.id);
@@ -226,10 +227,7 @@ export class Rig3Items {
       if (rc.state === 'returned') throw apiError('bad_request', `${it.id}는 이미 반려했다`);
       if (rc.state === 'passed') return { passed: [], already: true };
       targets = [{ it, rc }];
-    } else {
-      const ib = this.pendingOf(key, p.role, r3);
-      targets = ib.map((x) => ({ it: x.it, rc: x.rc }));
-    }
+    } else targets = []; // P244: 항목 없는 pass는 박자에만 답한다(받은 것을 한꺼번에 닫지 않는다)
     const now = Date.now();
     for (const { it, rc } of targets) {
       st.setReceipt(rc.id, { state: 'passed', note: reason, answeredAt: now, nudgedAt: null });
@@ -237,7 +235,7 @@ export class Rig3Items {
     }
     if (!targets.length) rigEvent(this.b, { kind: 'item_pass', ws: key, seat: p.role, session: p.session || null, value: 'turn', actor: 'agent', text: reason, data: { reason } });
     this.changed(key);
-    return { passed: targets.map((x) => x.it.id), turn: !targets.length };
+    return { passed: targets.map((x) => x.it.id), turn: !targets.length, pending: targets.length ? undefined : this.pendingOf(key, p.role, r3).length };
   }
   drop(key, p) {
     const st = this.store();
@@ -317,16 +315,20 @@ export class Rig3Items {
   counts(key, role) { const pend = this.pendingOf(key, role); return { pending: pend.filter((x) => x.need === 'answer').length, unanswered: pend.filter((x) => x.need !== 'answer').length, returned: this.returnedOf(key, role).length, waitingOwn: this.waitingOwn(key, role) }; }
   wakeText(key, role, lines, head = '받은 것', notices = []) {
     const c = this.counts(key, role);
+    let cy = null; try { cy = this.roles.beat ? this.roles.beat.cycleLine(key, role) : null; } catch { cy = null; } // P244: 사이클 n, 이번 사이클에 돈 네 도구
     return [
       ...notices, // P243: 지키기의 알림(남의 섹터에 쓴 것을 되돌림 등)
       `[Atrium 보드] rig ${head}:`,
       ...lines,
+      ...(cy ? [cy] : []),
       `[Atrium 보드] 답하지 않은 받은 것 ${c.pending}${c.unanswered ? `, 받고 답 항목을 내지 않은 것 ${c.unanswered}` : ''}${c.returned ? `, 반려된 네 항목 ${c.returned}` : ''}. 네가 낸 것 가운데 기다리는 것 ${c.waitingOwn}.`,
-      '[Atrium 보드] 답: atrium rig accept <항목> | return <항목> "<까닭>" | pass [<항목>] "<까닭>". 낼 것: 네 섹터에 파일을 쓰고 atrium rig put <파일> --item <종류> [--from <받은 항목>]. 목록: atrium rig inbox',
+      '[Atrium 보드] 답: atrium rig accept <항목> | return <항목> "<까닭>" | pass <항목> "<까닭>"(박자에 낼 것이 없으면 pass "<까닭>"). 낼 것: 네 섹터에 파일을 쓰고 atrium rig put <종류> <파일> [--from <받은 항목>]. 목록: atrium rig inbox',
     ].join('\n');
   }
   // 역할 세션에 한 줄을 알린다. 아직 넣지 않은 깨우는 글이 대기열에 있으면 그 글에 더한다
-  notify(key, role, line) {
+  notify(key, role, line) { return this.notifyLines(key, role, [line]); }
+  // P244: 여러 줄과 머리(박자·도구 경보). 아직 넣지 않은 깨우는 글에 더할 때는 그 글의 머리를 둔다
+  notifyLines(key, role, add, head = '받은 것') {
     const s = this.roles.sessionsOf(key, role)[0];
     if (!s || !this.b.queue) return null; // 세션이 없으면 받음 줄만 남는다(다시 뜰 때 실을 글에 받은 것이 실린다)
     const k = `${key}|${role}`;
@@ -334,12 +336,13 @@ export class Rig3Items {
     const q = this.b.queue;
     const fresh = this.guardNotices(key, role);
     if (w && w.sessionId === s.sessionId && q.retext) {
-      const lines = [...w.lines, line]; const notices = [...(w.notices || []), ...fresh];
-      const d = q.retext(w.deliveryId, this.wakeText(key, role, lines, '받은 것', notices));
-      if (d) { w.lines = lines; w.notices = notices; return d; }
+      const lines = [...w.lines, ...add]; const notices = [...(w.notices || []), ...fresh];
+      const h = head !== '받은 것' ? head : w.head || head; // P244: 박자·도구 경보 머리는 새 것이 이긴다
+      const d = q.retext(w.deliveryId, this.wakeText(key, role, lines, h, notices));
+      if (d) { w.lines = lines; w.notices = notices; w.head = h; return d; }
     }
-    const d = this.track(q.enqueue(s.sessionId, this.wakeText(key, role, [line], '받은 것', fresh), { origin: { kind: 'board' } }));
-    this.wakes.set(k, { deliveryId: d && d.deliveryId, sessionId: s.sessionId, lines: [line], notices: fresh });
+    const d = this.track(q.enqueue(s.sessionId, this.wakeText(key, role, add, head, fresh), { origin: { kind: 'board' } }));
+    this.wakes.set(k, { deliveryId: d && d.deliveryId, sessionId: s.sessionId, lines: [...add], notices: fresh, head });
     return d;
   }
 

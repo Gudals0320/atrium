@@ -33,6 +33,7 @@ import { shownName } from './session-label.mjs';
 import { rigEvent, readEvents, eventLine } from './rig-ledger.mjs'; // P217: 장부
 import { sectorsFor } from './rig-sectors.mjs'; // P222: 산출물 등록부
 import { proposalsFor } from './rig-proposals.mjs'; // P224: 제안과 승인
+import { RIG3_BEAT_OPS } from './rig3-beat.mjs'; // P244: rig 3 beat(사람만)·tool(역할의 도구)
 import { RIG3_ITEM_OPS } from './rig3-items.mjs'; // P242: rig 3 항목 명령(put·accept·return·pass·drop·inbox)
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
@@ -57,6 +58,7 @@ export class RigAdmin {
   async verb(s, o = {}) {
     const op = String(o.op || '');
     if (RIG3_ITEM_OPS.includes(op)) { if (!this.b.rig3 || !this.b.rig3.items) throw apiError('rig3_off', 'rig 3이 없다.'); return this.b.rig3.items.verb(s, o); } // P242: rig 3 역할 세션의 항목 명령
+    if (RIG3_BEAT_OPS.includes(op)) { if (!this.b.rig3 || !this.b.rig3.beat) throw apiError('rig3_off', 'rig 3이 없다.'); return this.b.rig3.beat.verb(s, o); } // P244
     if (!RIG_ADMIN_OPS.includes(op)) throw apiError('bad_request', `atrium rig: ${RIG_ADMIN_OPS.join(' | ')} 가운데 하나다: ${op || '(없음)'}`);
     if (op === 'log' && o.events) return this.eventsVerb(s, o); // P217: 장부(18.2)
     // P221: status는 읽기만이라 그 워크스페이스의 어느 판 세션이든. name은 관리자 자리와 그 회의 주인(입구 자리 세션)

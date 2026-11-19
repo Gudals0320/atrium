@@ -7,7 +7,7 @@ import { toast, useStore } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
-import { roleRows, flowRows, roleCount, canEnable3, intakeRows, stalledRows, returnedIntake } from './lib/rig3.js';
+import { roleRows, flowRows, roleCount, canEnable3, intakeRows, stalledRows, returnedIntake, cycleInfo } from './lib/rig3.js';
 
 export function Rig3Panel({ ws, onClose, first = null }) {
   const t = useT();
@@ -91,6 +91,7 @@ export function Rig3Panel({ ws, onClose, first = null }) {
                 </ul>
               </>
             )}
+            <Rig3Cycle ws={ws} r3={r3} on={status === 'on'} remote={remote} t={t} onBeat={load} />
             <Rig3Stalled r3={r3} t={t} />
             {!remote && <Rig3Intake ws={ws} r3={r3} on={status === 'on'} t={t} onSent={load} />}
             <div className="mt-card-sub dim" data-role="rig3-readonly">{t('rig3.readOnly')}</div>
@@ -101,6 +102,43 @@ export function Rig3Panel({ ws, onClose, first = null }) {
           <button className="mt-btn ghost" data-action="rig-panel-close" onClick={onClose}>{t('common.close')}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// P244: 사이클(지금 번호, 다음 박자, 손 박자 단추)과 최근 변경 기록 꼭지. 생김새는 사용자와 아직 정하지 않아 작게 둔다
+const hm = (t) => (t ? new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-');
+function Rig3Cycle({ ws, r3, on, remote, t, onBeat }) {
+  const c = cycleInfo(r3);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  if (!c) return null;
+  const beat = async () => {
+    setBusy(true); setErr(null);
+    try { const r = await api.call('rig3.beat', { workspace: ws.key }); toast(t('rig3Cycle.beatSent', { n: r.n })); onBeat && onBeat(); }
+    catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-rig3-cycle" data-role="rig3-cycle" data-cycle={c.n ?? ''}>
+      <div className="mt-rigon-h">{t('rig3Cycle.h')}</div>
+      <div className="mt-rig3-cycle-line">
+        <b data-role="rig3-cycle-n">{c.n == null ? t('rig3Cycle.none') : t('rig3Cycle.now', { n: c.n })}</b>
+        {c.openedAt && <span className="dim">{t('rig3Cycle.opened', { time: hm(c.openedAt) })}</span>}
+        <span className="dim" data-role="rig3-next-beat">{c.beat ? t('rig3Cycle.next', { time: hm(c.nextAt), every: c.beat.every }) + (c.beat.at ? t('rig3Cycle.at', { at: c.beat.at }) : '') + (c.beat.role ? t('rig3Cycle.wakes', { role: c.beat.role }) : '') + ')' : t('rig3Cycle.noBeat')}</span>
+        {!remote && on && <button className="mt-btn small ghost" data-action="rig3-beat" disabled={busy} onClick={beat}>{t('rig3Cycle.beatNow')}</button>}
+      </div>
+      {c.tools.length > 0 && <div className="mt-rig3-cycle-tools dim" data-role="rig3-clock-tools">{c.tools.map((x) => (x.running ? t('rig3Cycle.toolRunning', { name: x.name }) : t('rig3Cycle.tool', { name: x.name, every: x.every, time: hm(x.nextAt) }))).join(' · ')}</div>}
+      {c.writing.length > 0 && <div className="dim" data-role="rig3-writing">{t('rig3Cycle.writing', { list: c.writing.join(', ') })}</div>}
+      <div className="mt-rig3-entries" data-role="rig3-entries">
+        {!c.entries.length ? <div className="dim">{t('rig3Cycle.noEntries')}</div> : c.entries.map((e, i) => (
+          <details key={e.n} className="mt-rig3-entry" data-entry={e.n} data-by={e.by} open={i === 0}>
+            <summary><span>{e.title}</span><span className={`mt-rig3-entry-by ${e.by}`}>{t(e.by === 'ai' ? 'rig3Cycle.byAi' : 'rig3Cycle.byNumbers')}</span></summary>
+            <pre className="mt-rig3-entry-body">{e.body}</pre>
+          </details>
+        ))}
+        {c.changelog && <div className="mt-rig3-sub dim">{t('rig3Cycle.file', { path: c.changelog })}</div>}
+      </div>
+      {err && <div className="mt-rigon-warn" data-role="rig3-beat-error">{err}</div>}
     </div>
   );
 }

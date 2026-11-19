@@ -2850,3 +2850,14 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rig3-intake { margin-top: 8px; }
 .mt-rig3-intake-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .mt-rig3-intake-text { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--panel-line); background: var(--panel-2); color: inherit; }
+
+/* P244: rig 3 사이클과 변경 기록 꼭지(작게, 생김새는 나중에 정한다) */
+.mt-rig3-cycle { margin-top: 8px; }
+.mt-rig3-cycle-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.mt-rig3-cycle-line .mt-btn { margin-left: auto; }
+.mt-rig3-cycle-tools { font-size: 11.5px; margin-top: 3px; }
+.mt-rig3-entries { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.mt-rig3-entry { border: 1px solid var(--panel-line); border-radius: 6px; padding: 4px 8px; font-size: 12.5px; }
+.mt-rig3-entry summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.mt-rig3-entry-by { margin-left: auto; font-size: 11px; color: var(--dim); }
+.mt-rig3-entry-body { white-space: pre-wrap; font: inherit; font-size: 12px; margin: 6px 0 2px; max-height: 220px; overflow: auto; }

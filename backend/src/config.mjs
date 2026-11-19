@@ -109,7 +109,8 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     // P241: rig 3 역할 세션 지키기(주기, 쉬면 재우기). 시험은 개발용 판에서만 줄인다(rig3-roles.mjs 기본값)
     rig3TickMs: profile === 'dev' && E('RIG3_TICK_MS') ? Number(E('RIG3_TICK_MS')) : undefined,
     rig3IdleMs: profile === 'dev' && E('RIG3_IDLE_MS') ? Number(E('RIG3_IDLE_MS')) : undefined,
-    rig3StallMs: profile === 'dev' && E('RIG3_STALL_MS') ? Number(E('RIG3_STALL_MS')) : undefined, // P242: 받은 것에 답하지 않고 멈춘 역할을 보는 쉼(기본 30초)
+    rig3StallMs: profile === 'dev' && E('RIG3_STALL_MS') ? Number(E('RIG3_STALL_MS')) : undefined,
+    rig3ToolWaitMs: profile === 'dev' && E('RIG3_TOOL_WAIT_MS') ? Number(E('RIG3_TOOL_WAIT_MS')) : undefined, // P244: 역할이 부른 도구를 명령이 기다리는 시간(기본 100초) // P242: 받은 것에 답하지 않고 멈춘 역할을 보는 쉼(기본 30초)
     sleepBgPrecheck: !(profile === 'dev' && E('SLEEP_BG_PRECHECK') === 'off'), // P105 판 시험만(개발용 판): 뒤 일 미리 보기를 끄고 /exit 확인 창 처리를 시험한다
     wsGoneGraceMs: profile === 'dev' && E('WS_GONE_GRACE_MS') ? Number(E('WS_GONE_GRACE_MS')) : undefined, // P120 판 시험만(개발용 판): 폴더가 없어진 빈 영역을 치우기 전 유예(기본 60초)
     recoverGraceMs: 15000, // C3: 터미널 서버가 다시 뜬 뒤 이만큼 기다려도 claude가 없으면 판이 이어 간다
