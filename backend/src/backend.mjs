@@ -83,7 +83,7 @@ function apiError(code, message) { return Object.assign(new Error(message), { co
 import { m, confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이스 지우기 판단
 import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META, syncWsGroups, wsLabels } from './ws-groups.mjs'; // P44: 가상 그룹. P91: 폴더 위계 묶음(저절로)
-import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel, readPiLastAnswer } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
+import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel, readPiLastAnswer, resumeModel } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
 import { codexHomeOf } from './codex-models.mjs';
 import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171: 일시 연결
 import { linkRelationPlan, linkDefaultRole, LINK_CHOICES } from './relations.mjs'; // P175: 잇는 자리에서 하위·동료
@@ -749,9 +749,10 @@ export class Backend {
     return file;
   }
   // 바뀌었으면 true. 보이는 값이 바뀐 것은 판 이벤트(model_changed)로 남긴다
-  refreshModelNow(s) {
+  // P227: asleep이면 패널이 없어도(잠든 세션, 다시 열 닫힌 세션) 읽는다. 바뀐 값은 판 DB(runtime)에 바로 남긴다(판이 다시 떠도 이어 갈 때 쓴다)
+  refreshModelNow(s, { asleep = false } = {}) {
     const kind = s.kind || 'claude';
-    if (!['claude', 'codex', 'pi'].includes(kind) || !s.paneId) return false;
+    if (!['claude', 'codex', 'pi'].includes(kind) || (!s.paneId && !asleep)) return false;
     let st;
     try { const file = this.modelFileOf(s); if (!file) return false; st = refreshModel(kind, file, s._modelSt || null); } catch (e) { this.log('model read error', e.message); return false; }
     if (!st) return false;
@@ -764,7 +765,19 @@ export class Backend {
     const after = shownModel({ model: s.model, effort: s.effort }, s.rt.modelNow);
     // 같은 모델의 다른 이름(haiku → claude-haiku-5-5)이나 처음 알게 된 노력 수준(없음 → xhigh)은 바뀐 것으로 치지 않는다
     if (!sameModel(before.model, after.model) || (before.effort && before.effort !== after.effort)) this.store.addEvent(s.sessionId, 'model_changed', { from: before, to: after, launched: { model: s.model || null, effort: s.effort || null } });
+    if (this.sessions.has(s.sessionId)) this.store.saveRuntime(s.sessionId, s.rt);
     return true;
+  }
+  // P227: 이어 가기 직전의 지금 값. 대화 기록을 한 번 더 읽고(잠든 동안이나 판이 다시 뜬 뒤에도), 못 읽으면 판 DB에 남은 값
+  modelNowFor(s) {
+    try { this.refreshModelNow(s, { asleep: true }); } catch {}
+    return (s.rt && s.rt.modelNow) || null;
+  }
+  // P227: 같은 대화를 이어 갈 때의 실행 값(모델·노력 수준은 resumeModel). 처음 띄울 값(launchOf)은 그대로
+  resumeLaunchOf(s) {
+    const launch = this.launchOf(s);
+    const rm = resumeModel('claude', launch, this.modelNowFor(s));
+    return { ...launch, model: rm.model, effort: rm.effort };
   }
   pollModels() {
     for (const s of this.sessions.values()) {
@@ -1091,7 +1104,10 @@ export class Backend {
     const br = this.branch && typeof this.branch.token === 'function' ? this.branch : null; // 하위 세션 명령이 없는 판(시험의 가짜 판)은 env와 토큰 없이
     if (br) writeTokenFile(this.cfg.sessionsDir, s.sessionId, br.token(s.sessionId));
     const hf = this.harnessFiles || {};
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: resume ? this.harnessSessionIdOf(s) : null, model: plan.model || null, launcherArgs: this.rigAmp ? this.rigAmp.launcherArgs(s, plan.args || []) : plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
+    // P227: 같은 대화를 이어 갈 때(Codex는 대화 ID를 알 때) 모델·노력 수준은 그 대화가 마지막으로 쓰던 값. 처음 띄울 때는 띄운 값(plan.model)
+    const hsid = resume ? this.harnessSessionIdOf(s) : null;
+    const rm = resume && (s.kind === 'pi' || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: this.rigAmp ? this.rigAmp.launcherArgs(s, plan.args || []) : plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1364,8 +1380,7 @@ export class Backend {
       steps.push('/exit (no board settings)');
     }
     await this.adapter.waitShellReady(s.paneId, 8000);
-    const launch = this.launchOf(s);
-    const args = resume ? buildResumeArgs(launch) : buildStartArgs(launch);
+    const args = resume ? buildResumeArgs(this.resumeLaunchOf(s)) : buildStartArgs(this.launchOf(s)); // P227: 이어 갈 때는 지금 모델
     await this.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) });
     s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
     s.rt.term.launchPending = true; s.resumingAfterRestart = null;
