@@ -3241,5 +3241,18 @@ export default {
     why_kind: 'this kind cannot take input while working',
     why_no_hook: 'not a Claude Code started by the board (no hooks)',
   },
+  // P247: rig 3 builder (talk to the builder)
+  rig3Builder: {
+    h: 'Builder',
+    menu: 'Talk to the builder (rig 3)…',
+    talk: 'Talk to the builder',
+    none: 'No builder session. Talking starts one.',
+    hint: 'Build and change the rig by talking with the builder. When you approve its one-page plan, the builder writes the definition and role docs. You turn the rig on here yourself.',
+    placeholder: 'What to tell the builder (leave empty to just open its terminal)',
+    send: 'Send and open',
+    open: 'Open builder',
+    spawned: 'Started builder @{name}',
+    opened: 'Going to builder @{name}',
+  },
 };
 

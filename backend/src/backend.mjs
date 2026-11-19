@@ -27,7 +27,8 @@ import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
 import { RigProposals, rigProposalHandlers } from './rig-proposals.mjs'; // P224: rig 2 제안과 승인, 정본 지키기
 import { rig3Handlers } from './rig3-items.mjs'; // P242
 import { rig3BeatHandlers } from './rig3-beat.mjs'; // P244: 손 박자(rig3.beat, 사람만)
-import { rig3TuneHandlers } from './rig3-tune.mjs'; // P245: 정의서 보기(rig3.role)와 되돌리기(rig3.rollback, 사람만)
+import { rig3TuneHandlers } from './rig3-tune.mjs';
+import { rig3BuilderHandlers } from './rig3-builder.mjs'; // P247: 빌더에게 말하기(rig3.builder, 사람만) // P245: 정의서 보기(rig3.role)와 되돌리기(rig3.rollback, 사람만)
 import { Rig3Roles, ROLE_SPAWN, ROLE_TICK_MS } from './rig3-roles.mjs'; // P241: rig 3 역할 세션(띄우기, 쓰기 범위, 다시 띄우기, 재우기)
 import { RigAmp, SEAT_SPAWN, SEAT_RUN, permissionDenyBody, PERM_TICK_MS, MODE_DRIFT_TEXT } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
@@ -2292,7 +2293,8 @@ export class Backend {
       ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
       ...rig3Handlers(this), // P242: rig 3 입력 창구(rig3.intake, 사람만)
       ...rig3BeatHandlers(this), // P244: rig 3 손 박자(rig3.beat, 사람만)
-      ...rig3TuneHandlers(this), // P245: rig 3 정의서·조정 기록(rig3.role)과 되돌리기(rig3.rollback, 사람만)
+      ...rig3TuneHandlers(this),
+      ...rig3BuilderHandlers(this), // P247 // P245: rig 3 정의서·조정 기록(rig3.role)과 되돌리기(rig3.rollback, 사람만)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다

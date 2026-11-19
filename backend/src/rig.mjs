@@ -21,7 +21,7 @@ import { AMP_ATS, validateAmp, seatPermitHash } from './rig-amp.mjs'; // P226: �
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { validateDocs } from './rig-docs.mjs'; // P219: rig 2 문서(docs, loads·reads·writes·records)
 import { spreadLoops, loopFlowReason, finishLoops, IMPLICIT_WORK as IMPLICIT_WORK_LOOP } from './rig-loops.mjs'; // P221: rig 2 고리(loops)
-import { validateRig3, rig3Guide, bundleSig, bundleOf, partLabel } from './rig3.mjs'; // P241: rig 3(version 3) 정의는 따로 검사한다
+import { validateRig3, rig3Guide, bundleSig, bundleOf, partLabel, bundleMtime } from './rig3.mjs'; // P241: rig 3(version 3) 정의는 따로 검사한다
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
@@ -433,7 +433,7 @@ export class Rig {
         const bundle = v.def.v3 ? bundleOf(root, raw, hash) : null;
         if (bundle) hash = bundle.hash;
         // P188: 새 해시면 버전으로 남긴다. 사람만 고치는 포인터를 바꿨으면 쓰지 않고 마지막 맞은 버전을 쓴다
-        const a = on ? this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs: stat.mtimeMs, prev: c.good, parts: bundle ? bundle.parts : null }) : { ok: true, n: null };
+        const a = on ? this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs: bundle ? bundleMtime(root, raw, stat.mtimeMs) : stat.mtimeMs, prev: c.good, parts: bundle ? bundle.parts : null }) : { ok: true, n: null };
         if (!a.ok) throw Object.assign(new Error(a.reason), { hash, fallback: a.fallback, protectedHits: a.hits });
         next = { sig: v3raw ? `${sig0}|${bundleSig(root, v3raw)}` : sig0, v3raw, hash, def: v.def, invalid: null, good: { def: v.def, hash, raw, n: a.n } };
       } catch (e) {
@@ -483,12 +483,14 @@ export class Rig {
     try { st.addEvent(null, 'rig_version', { workspace: key, n, hash, by, note }); } catch {}
     rigEvent(this.b, { kind: 'rig_version', ws: key, defN: n, actor: by === 'manager' || String(by).startsWith('role:') ? 'agent' : by === 'human' ? 'human' : 'board', ref: n, text: `버전 ${n} ${hash.slice(0, 12)} · ${by}${note ? ` · ${note}` : ''}${changed && changed.length ? ` · 바뀐 것: ${changed.map(partLabel).join(', ')}` : ''}`, data: { changed_by: by, hash, note, ...(parts ? { changed } : {}) } });
     this.b.log && this.b.log(`rig version ${key} #${n} ${hash.slice(0, 12)} by ${by}`);
+    if (parts && this.b.rig3 && this.b.rig3.onVersion) try { this.b.rig3.onVersion(key, { n, by, note, changed, prev: base ? base.def : null, def }); } catch (e) { this.b.log && this.b.log('rig3 onVersion ' + e.message); } // P247: 떠 있는 역할에게 정의서 바뀜 알림·다시 띄울 표시
     return { ok: true, n };
   }
   // 누가 바꿨나: 파일 수정 시각에 관리자 자리 세션이 일하는 턴 중이었으면 manager, 아니면 unknown(사람의 되돌리기는 pendingBy로 human)
   //   P190: 사람이 맡긴 제작 일(rig.describe: 만들기와 말로 고치기)이 열려 있던 때의 고침은 human
   byOf(key, mtimeMs, def) {
     if (this.b.rigSetup && this.b.rigSetup.humanAt(key, mtimeMs)) return 'human';
+    if (this.b.rig3 && this.b.rig3.builder && this.b.rig3.builder.wroteAt(key, mtimeMs)) return 'builder'; // P247: 빌더 세션이 일하던 때의 바뀜
     const seat = def && def.manager;
     if (!seat || !this.b.sessions) return 'unknown';
     const st = this.store();
@@ -515,6 +517,7 @@ export class Rig {
     if (bundle) hash = bundle.hash;
     const c = this.cache.get(key);
     let mtimeMs = Date.now(); try { mtimeMs = fs.statSync(file).mtimeMs; } catch {}
+    if (bundle) mtimeMs = bundleMtime(root, raw, mtimeMs); // P247
     this.pendingBy.set(key, { hash, by, note });
     const a = this.adopt(key, { buf, hash, raw, def: v.def, mtimeMs, prev: c && c.good, parts: bundle ? bundle.parts : null });
     if (this.pendingBy.get(key) && this.pendingBy.get(key).hash === hash && a.ok) this.pendingBy.delete(key);

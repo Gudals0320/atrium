@@ -141,6 +141,7 @@ function RegionMenu({ at, close, w, arranged, z }) {
       <div className="mt-sb2-mh mt-rig-line" data-role="rig-status" data-rig={rig ? rig.state : 'loading'} title={rig && rig.invalid ? rig.invalid : undefined}>{rigLine(t, rig)}</div>
       {/* P191: 정의가 없으면 Rig 만들기, 있으면 Rig 보기·고치기(켜기·끄기·사람만 고치는 목록은 rig 판 안으로 모았다). 원격 기기는 보기만 */}
       {menuEntry(rig, { remote: remoteView() }) === 'create' && item('rig-create', t('rigSetup.menuCreate'), () => openDialog({ kind: 'rigcreate', ws: w }))}
+      {menuEntry(rig, { remote: remoteView() }) === 'create' && item('rig-builder', t('rig3Builder.menu'), () => openDialog({ kind: 'rigpanel', ws: w }))}{/* P247: rig가 없는 워크스페이스의 rig 3 빌더 */}
       {menuEntry(rig, { remote: remoteView() }) === 'view' && item('rig-panel', (rig.protectedHits || []).length || (rig.changedFiles || []).length ? t('rigSetup.menuViewAlert') : t('rigSetup.menuView'), () => openDialog({ kind: 'rigpanel', ws: w }))}
       <div className="mt-sb2-msep" />
       {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}

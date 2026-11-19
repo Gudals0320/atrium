@@ -25,7 +25,13 @@ export const ROLE_KINDS = ['claude', 'codex']; // 무인 인자를 아는 종류
 export const ROLE_DOC_SECTIONS = ['맡은 것', '받는 것과 내는 것', '기준', '요령'];
 export const ROLE_DOC_FIXED = ['맡은 것', '받는 것과 내는 것', '기준']; // 고정 칸(역할이 고치지 못한다)
 export const TUNE_DEFAULT = { after: 3, every: 5, lines: 20 }; // 뼈대 10절의 처음 값
-export const LOAD_MAX = { purpose: 6000, role: 12000, memory: 8000 }; // 실을 글의 칸마다 상한(넘으면 자르고 경로를 알린다)
+export const LOAD_MAX = { purpose: 6000, role: 12000, memory: 8000 };
+// P247: 빌더 세션(워크스페이스마다 하나, 길 밖). 세션의 rigRole 값이다(역할 이름 꼴이 아니라 정의의 역할과 겹치지 않는다)
+export const BUILDER_ROLE = '@builder';
+// P247(P246 답, 설계 쪽): 긴 일의 차례. 모든 역할 세션의 첫 글과 atrium guide에 싣는다
+//   도구가 없는 역할에는 명령 이름을 싣지 않는다(정의에 도구를 더하는 것은 빌더의 일이다)
+export const longJobLine = (hasTools = true) => '[Atrium 보드] 오래 걸리는 일은 턴을 붙들지 않는다. 먼저 판이 돌리는 도구' + (hasTools ? '(`atrium rig tool`)' : '(네 도구가 정의에 있을 때)') + '로, 아니면 하네스의 뒤 실행(백그라운드 실행)으로 한다. 분리 실행(Start-Process, start, nohup, setsid)으로는 하지 않는다: 판이 그 프로세스를 보지 못해 그것이 쓴 것을 되돌린다.';
+export const LONG_JOB_LINE = longJobLine(true); // 실을 글의 칸마다 상한(넘으면 자르고 경로를 알린다)
 const V3_KEYS = ['version', 'name', 'purpose', 'beat', 'roles', 'flows', 'tools', 'tune', 'ignore']; // P243: ignore(판이 남의 쓰기를 보지 않는 폴더)
 const V2_KEYS = ['seats', 'loops', 'hooks', 'manager', 'results', 'permission', 'docs', 'guide', 'stopVerify', 'cycles', 'flow'];
 
@@ -271,6 +277,7 @@ export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn',
     ...(r.tools.length ? [`[Atrium 보드] 도구: \`atrium rig tool <이름> [인자…]\`(네 도구만, 판이 돌리고 출력은 네 섹터의 tool-logs/에 남는다). every가 있는 도구는 판이 시계로 돌리고 경보("ALARM:" 줄이나 실패)일 때만 너를 깨운다.`] : []), // P244
     ...(r3.beat && r3.beat.role === roleName ? [`[Atrium 보드] 박자: 판이 ${r3.beat.every}${r3.beat.at ? `(${r3.beat.at} 기준)` : ''}마다 사이클을 열고 너를 깨운다. 낼 것이 없으면 \`atrium rig pass "<까닭>"\`.`] : []), // P244
     TUNE_HOWTO(r3), // P245: 바로잡음·조정
+    longJobLine(r.tools.length > 0), // P247: 긴 일의 차례(도구 → 하네스 뒤 실행, 분리 실행은 안 됨)
     '[Atrium 보드] 지금은 아래를 읽고 "준비됨" 한 줄로 답한 뒤 기다린다. 받은 것이 오면 판이 깨운다. 사람이 이 터미널에서 말하면 따른다.',
     `[Atrium 보드] 기억은 ${memoryPath(roleName)}에 네가 직접 쓴다(다음에 새로 뜨는 너에게 남길 것). 판은 내용을 보지 않고 띄울 때 싣기만 한다.`,
   ];
@@ -302,7 +309,7 @@ export function rig3Guide(r3, roleName = null) {
   const forFlows = r3.flows.filter((f) => f.for);
   if (forFlows.length) lines.push(`답이 필요한 길: ${forFlows.map((f) => `${f.from.join('|')}가 받은 ${f.for}마다 ${f.item}을 낸다(--from <받은 ${f.for}>)`).join('; ')}. 낼 것이 없으면 pass <항목> "<까닭>".`);
   if (r && r.tools.length) lines.push(`네 도구: ${r.tools.join(', ')}. 부르기: atrium rig tool <이름> [인자…](판이 돌리고 출력은 네 섹터의 tool-logs/에). every가 있는 도구는 판이 시계로 돌리고 경보일 때만 너를 깨운다.`); // P244
-  return [...lines, ...ITEM_HOWTO.map((l) => l.replace('[Atrium 보드] ', '')), TUNE_HOWTO(r3).replace('[Atrium 보드] ', '')].join('\n'); // P245: 조정
+  return [...lines, ...ITEM_HOWTO.map((l) => l.replace('[Atrium 보드] ', '')), TUNE_HOWTO(r3).replace('[Atrium 보드] ', ''), longJobLine(!r || r.tools.length > 0).replace('[Atrium 보드] ', '')].join('\n'); // P245: 조정. P247: 긴 일
 }
 // ---------- P245: 판(버전) 묶음 ----------
 // 판 하나 = 정의(rig.json)·목적 문서·모든 정의서의 해시 묶음. rig.mjs read()가 v3 정의의 캐시 표시와 버전 해시에 쓴다.
@@ -328,6 +335,25 @@ export function bundleOf(root, raw, rigSha) {
     parts.push(text == null ? { part: f.part, sha: 'missing' } : { part: f.part, sha: sha256(text), text });
   }
   return { hash: sha256(JSON.stringify(parts.map((p) => [p.part, p.sha]))), parts };
+}
+// P247: 묶음 파일 가운데 가장 늦은 수정 시각(정의서만 바뀐 판의 "누가"를 그 시각으로 본다)
+export function bundleMtime(root, raw, base = 0) {
+  let t = base;
+  if (root) for (const f of bundleFiles(raw)) { try { t = Math.max(t, fs.statSync(path.resolve(root, f.rel)).mtimeMs); } catch {} }
+  return t;
+}
+// ---------- P247: 빌더의 쓰기 범위 ----------
+// 정의가 가리키는 도구 스크립트(run[1]이 경로꼴인 것, 워크스페이스 안 상대 경로)
+export function toolScripts(r3) {
+  if (!r3 || !r3.tools) return [];
+  return [...new Set(Object.values(r3.tools).map((t) => t.run && t.run[1]).filter((p) => typeof p === 'string' && /[\\/]/.test(p) && path.extname(p) && !p.startsWith('-') && !isAbs(p) && !p.split(/[\\/]/).includes('..')).map((p) => p.replace(/\\/g, '/').replace(/^(\.\/)+/, '')))];
+}
+// 빌더가 쓰는 곳: .atrium/(정의·목적·정의서·도구 스크립트 자리 .atrium/tools/)와 정의가 가리키는 그 밖의 도구 스크립트
+export const builderWrites = (r3) => [RIG3_DIR + '/', ...toolScripts(r3).filter((p) => !p.toLowerCase().startsWith(RIG3_DIR + '/'))];
+// 상대 경로가 빌더의 쓰기 범위인가(역할의 섹터·기억 폴더 판단은 먼저 한다: rig3-guard ownerOf)
+export function builderOwns(r3, rel) {
+  const low = String(rel).replace(/\\/g, '/').toLowerCase();
+  return builderWrites(r3).some((p) => (p.endsWith('/') ? low.startsWith(p.toLowerCase()) : low === p.toLowerCase()));
 }
 // 묶음 조각 이름 → 사람 말(장부 글)
 export const partLabel = (p) => (p === 'rig.json' ? '정의' : p === 'purpose' ? '목적' : p.startsWith('role:') ? `정의서 ${p.slice(5)}` : p);

@@ -97,21 +97,22 @@ export function collectCycle(r3, rows, cycle) {
     }
     else if (e.kind === 'role_foreign_write') { out.foreign.push({ path: d.path || e.ref, action: e.value, owner: d.owner || null, candidates: d.candidates || (e.seat ? [e.seat] : []) }); if (e.value === 'unrestorable' || e.value === 'failed') out.decide.push({ what: 'foreign_' + e.value, path: d.path || e.ref }); }
     else if (e.kind === 'item_nudge') out.nudges.push({ role: e.seat, items: d.items || [] });
-    else if (e.kind === 'item_stalled') { out.stalls.push({ role: e.seat, items: d.items || [] }); out.decide.push({ what: 'stalled', role: e.seat, items: d.items || [] }); }
+    else if (e.kind === 'item_stalled') { out.stalls.push({ role: e.seat, items: d.items || [] }); out.decide.push({ what: 'stalled', role: e.seat, items: d.items || [], toBuilder: !!d.toBuilder }); }
     else if (e.kind === 'role_gave_up') { out.gaveUp.push(e.seat); out.decide.push({ what: 'gave_up', role: e.seat }); }
     else if (e.kind === 'role_respawn') out.respawns++;
     // P245: 역할이 바꾼 것(조정·고칠 것 없음·사람의 되돌리기)과 빌더에게 올림(사람이 볼 것)
     else if (e.kind === 'role_tune' && e.value === 'applied') out.tunes.push({ kind: 'tune', role: e.seat, n: d.n ?? e.defN ?? null, prevN: d.prevN ?? null, added: d.added || 0, removed: d.removed || 0, why: d.why || '', evidence: d.evidence || [] });
     else if (e.kind === 'role_tune' && e.value === 'none') out.tunes.push({ kind: 'none', role: e.seat, why: d.why || '' });
     else if (e.kind === 'role_rollback') out.tunes.push({ kind: 'rollback', role: e.seat, n: d.n ?? null, from: d.from ?? null, added: d.added || 0, removed: d.removed || 0 });
-    else if (e.kind === 'role_raise') out.decide.push({ what: 'raise', role: e.seat, reason: d.reason || '' });
+    else if (e.kind === 'role_raise') out.decide.push({ what: 'raise', role: e.seat, reason: d.reason || '', toBuilder: !!d.toBuilder }); // P247: 빌더에게 전했어도 사람이 볼 것에 남긴다
+    else if (e.kind === 'rig_version' && d.changed_by === 'builder') out.builder.push({ n: e.defN ?? e.ref ?? null, changed: d.changed || null }); // P247: 빌더가 고친 판
     else if (e.kind === 'role_write_denied') out.deniedWrites++;
   }
   for (const t of Object.values(out.tools)) if (t.alarms.length >= 2) out.decide.push({ what: 'tool_alarms', tool: t.name, n: t.alarms.length });
   out.tools = Object.values(out.tools);
   out.ids = [...new Set(flows.flatMap((f) => f.ids).concat(out.returns.map((x) => x.id), out.drops.map((x) => x.id), out.stalls.flatMap((x) => x.items), out.nudges.flatMap((x) => x.items), out.tunes.flatMap((x) => x.evidence || [])))]; // P245: 조정의 근거 id
   // 빈 사이클: 항목·도구·되돌림·멈춤이 하나도 없다(역할 세션 띄움 같은 줄은 세지 않는다)
-  out.empty = !out.ids.length && !out.tools.length && !out.foreign.length && !out.stalls.length && !out.nudges.length && !out.gaveUp.length && !Object.keys(out.passTurn).length && !out.tunes.length && !out.decide.length;
+  out.empty = !out.ids.length && !out.tools.length && !out.foreign.length && !out.stalls.length && !out.nudges.length && !out.gaveUp.length && !Object.keys(out.passTurn).length && !out.tunes.length && !out.decide.length && !out.builder.length;
   return out;
 }
 
@@ -131,6 +132,8 @@ const L = {
     roles: '**역할이 바꾼 것**', rolesNone: '- 없음',
     tune: (x) => x.kind === 'none' ? '- ' + x.role + ': 조정 턴에 고칠 것 없음 — ' + x.why : x.kind === 'rollback' ? '- ' + x.role + ' 요령 칸을 사람이 판 ' + x.from + '의 것으로 되돌림 → 판 ' + x.n + ' (+' + x.added + ' −' + x.removed + ')' : '- ' + x.role + ' 요령 칸 판 ' + (x.prevN ?? '-') + '→' + x.n + ' (+' + x.added + ' −' + x.removed + '): ' + x.why + (x.evidence.length ? ' — 근거 ' + x.evidence.map((i) => '[' + i + ']').join(' ') : ''),
     builder: '**빌더가 고친 것**', builderNone: '- 없음',
+    bld: (x) => '- 판 ' + (x.n ?? '-') + ': ' + (x.changed && x.changed.length ? x.changed.map((p) => (p === 'rig.json' ? '정의' : p === 'purpose' ? '목적' : String(p).startsWith('role:') ? '정의서 ' + String(p).slice(5) : p)).join(', ') + ' 바뀜' : '정의를 처음 남김'),
+    toB: ' (빌더에게 전함)',
     decide: '**사람이 볼 것**',
     dec: (d) => d.what === 'raise' ? '- ' + d.role + '가 요령으로 풀 일이 아니라고 빌더에게 올렸다: ' + d.reason : d.what === 'stalled' ? '- ' + d.role + '가 받은 것에 답하지 않고 멈췄다: ' + d.items.map((x) => '[' + x + ']').join(' ') : d.what === 'gave_up' ? '- ' + d.role + ' 역할 세션이 거듭 끝나 판이 다시 띄우기를 그만뒀다(rig를 껐다 켜면 다시 띄운다)' : d.what === 'intake_returned' ? '- 넣은 입력 [' + d.id + ']가 ' + d.by + '에게 반려됐다: ' + d.reason : d.what === 'tool_alarms' ? '- 도구 ' + d.tool + '가 경보를 ' + d.n + '번 냈다' : '- 되돌리지 못한 남의 쓰기: ' + d.path,
     numbers: '(판이 모은 숫자만으로 썼다)',
@@ -150,6 +153,8 @@ const L = {
     roles: '**What roles changed**', rolesNone: '- Nothing',
     tune: (x) => x.kind === 'none' ? '- ' + x.role + ': nothing to tune — ' + x.why : x.kind === 'rollback' ? '- ' + x.role + ' know-how rolled back by a person to version ' + x.from + ' → version ' + x.n + ' (+' + x.added + ' −' + x.removed + ')' : '- ' + x.role + ' know-how version ' + (x.prevN ?? '-') + '→' + x.n + ' (+' + x.added + ' −' + x.removed + '): ' + x.why + (x.evidence.length ? ' — evidence ' + x.evidence.map((i) => '[' + i + ']').join(' ') : ''),
     builder: '**What the builder fixed**', builderNone: '- Nothing',
+    bld: (x) => '- Version ' + (x.n ?? '-') + ': ' + (x.changed && x.changed.length ? x.changed.map((p) => (p === 'rig.json' ? 'definition' : p === 'purpose' ? 'purpose' : String(p).startsWith('role:') ? 'role doc ' + String(p).slice(5) : p)).join(', ') + ' changed' : 'definition first recorded'),
+    toB: ' (sent to the builder)',
     decide: '**For you to look at**',
     dec: (d) => d.what === 'raise' ? '- ' + d.role + ' raised to the builder (not a know-how fix): ' + d.reason : d.what === 'stalled' ? '- ' + d.role + ' stopped without answering: ' + d.items.map((x) => '[' + x + ']').join(' ') : d.what === 'gave_up' ? '- The ' + d.role + ' role session kept exiting; the board stopped respawning it (turn the rig off and on to retry)' : d.what === 'intake_returned' ? '- Your input [' + d.id + '] was returned by ' + d.by + ': ' + d.reason : d.what === 'tool_alarms' ? '- Tool ' + d.tool + ' raised ' + d.n + ' alarms' : '- Foreign write that could not be undone: ' + d.path,
     numbers: '(written from the board\'s counts only)',
@@ -174,8 +179,8 @@ export function entryBody(facts, lang = 'ko', prose = null) {
     t.ran, ...say('ran'), ...(ran.length ? ran : [t.none]), '',
     ...(facts.tools.length ? [t.tools, ...facts.tools.map(t.tool), ''] : []),
     t.roles, ...say('roles'), ...(facts.tunes.length ? facts.tunes.map(t.tune) : [t.rolesNone]), '',
-    t.builder, ...(facts.builder.length ? facts.builder.map((x) => '- ' + x) : [t.builderNone]), '',
-    t.decide, ...say('decide'), ...(facts.decide.length ? facts.decide.map(t.dec) : [t.none]),
+    t.builder, ...(facts.builder.length ? facts.builder.map((x) => (typeof x === 'string' ? '- ' + x : t.bld(x))) : [t.builderNone]), '',
+    t.decide, ...say('decide'), ...(facts.decide.length ? facts.decide.map((d) => t.dec(d) + (d.toBuilder ? t.toB : '')) : [t.none]),
   ].join('\n');
 }
 // 숫자만으로 쓴 꼭지(AI 글 없음)

@@ -10,7 +10,7 @@ import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
 import { RigLoopCards } from './RigLoopCards.jsx'; // P230: 고리 카드(지금 돌리기)
 import { CanonDrift } from './RigAsks.jsx'; // P233: 켜기 확인의 정본 차이
-import { Rig3Panel } from './Rig3.jsx'; // P241: rig 3 정의는 읽기만 하는 구조 보기와 켜기
+import { Rig3Panel, Rig3BuilderTalk } from './Rig3.jsx'; // P247: rig가 없는 워크스페이스에도 빌더에게 말하기 // P241: rig 3 정의는 읽기만 하는 구조 보기와 켜기
 import { isRig3 } from './lib/rig3.js';
 import {
   launcherChoices, launcherLabel, namedLaunchers, wizardInit, wizardPickDescribe, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
@@ -474,6 +474,7 @@ export function RigPanel({ ws, onClose }) {
             {st.worktreeGit && <div className="mt-rigon-warn" data-role="rig-worktree-warn">{t(seatBlockKey(st.worktreeGit))}</div>}
             {st.builder && <BuilderLine b={st.builder} />}
             {status === 'none' && !st.builder && <div className="dim">{t('rigPanel.none')}</div>}
+            {status === 'none' && !remote && <Rig3BuilderTalk ws={ws} st={st} t={t} onClose={onClose} />}
             {setup && edit && (
               <div className="mt-rigpanel-setup" data-role="rig-panel-setup" data-step={setup.step}>
                 {setup.step === 'enable' && <><EnableBody st={st} ws={ws} /><div className="mt-card-actions"><button className="mt-btn primary" data-action="rig-panel-enable" disabled={busy} onClick={enable}>{t('rig.confirmOn')}</button><button className="mt-btn ghost" onClick={() => setSetup(null)}>{t('common.cancel')}</button></div></>}
