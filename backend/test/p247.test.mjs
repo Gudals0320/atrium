@@ -142,16 +142,15 @@ test('P247 rig가 없는 워크스페이스에서도 빌더를 띄운다(실을 
   assert.ok(r2.session);
 });
 
-test('P247 실을 글(순수)과 지침 파일: 구성안 칸, 좋다고 한 뒤에만, 정의서 네 칸, rig check, 켜기는 사람, 설계 쪽이 다시 쓴다', () => {
+test('P247 실을 글(순수)과 지침 파일: 구성안 칸, 좋다고 한 뒤에만, 정의서 네 칸, rig check, 켜기는 사람, 런처 기본 claude(설계 쪽 지침 글)', () => {
   const g = readGuide();
   assert.ok(fs.existsSync(GUIDE_FILE));
-  assert.match(g, /설계 쪽\(fable-peer\)이 다시 쓴다/);
   for (const w of ['역할', '쥔 섹터', '길', '박자', '도구', '입력 창구', '기준']) assert.ok(g.includes(w), w);
-  assert.match(g, /좋다고 하기 전에는 정의와 정의서를 쓰지 않는다/);
-  assert.match(g, /## 맡은 것.*## 받는 것과 내는 것.*## 기준.*## 요령/);
+  assert.match(g, /좋다고 하면 정의와 정의서를 쓴다\. 좋다고 하기 전에는 쓰지 않는다/);
+  assert.match(g, /## 맡은 것[\s\S]*## 받는 것과 내는 것[\s\S]*## 기준[\s\S]*## 요령/);
   assert.match(g, /atrium rig check/);
   assert.match(g, /켜는 것은 사람이/);
-  assert.match(g, /역할 런처는 기본 `claude`/);
+  assert.match(g, /역할의 런처는 `claude`가 기본이다/);
   assert.match(g, /분리 실행/);
   const t = builderLoadText({ guide: 'G', root: 'C:/x', state: 'off', n: 3, writes: ['.atrium/'], rigText: '{"version":3}', purpose: { rel: '.atrium/purpose.md', text: 'P' }, docs: [{ rel: '.atrium/roles/a.md', text: 'A' }, { rel: '.atrium/roles/b.md', text: null }], entry: '## 사이클 1\n- x', alerts: ['- raise 하나'] });
   assert.match(t, /지금 rig: 꺼짐, 판 3/);
