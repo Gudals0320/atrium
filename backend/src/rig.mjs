@@ -20,7 +20,7 @@ import { CODEX_EFFORTS, resolveLauncher } from './launchers.mjs'; // P226: resol
 import { AMP_ATS, validateAmp, seatPermitHash } from './rig-amp.mjs'; // P226: 해시에 런처의 실행 값(seatLaunchOf). P189: 6단계 증폭 칸(writes, pre-tool, stopVerify)
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { validateDocs } from './rig-docs.mjs'; // P219: rig 2 문서(docs, loads·reads·writes·records)
-import { spreadLoops, loopFlowReason, finishLoops } from './rig-loops.mjs'; // P221: rig 2 고리(loops)
+import { spreadLoops, loopFlowReason, finishLoops, IMPLICIT_WORK as IMPLICIT_WORK_LOOP } from './rig-loops.mjs'; // P221: rig 2 고리(loops)
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
@@ -818,7 +818,7 @@ export class Rig {
     const r = this.active(key);
     // P236(11.18): loop가 있는 done 훅은 그 일의 회(unit.caseId)의 고리가 맞을 때만. 회가 없는 done(고리 밖)에는 돌지 않는다
     let run = null;
-    if (unit && unit.caseId) { let c = null; try { c = this.store().getCase(unit.caseId); } catch {} run = { id: unit.caseId, loop: c ? c.loop || null : null }; }
+    if (unit && unit.caseId) { let c = null; try { c = this.store().getCase(unit.caseId); } catch {} run = { id: unit.caseId, loop: c ? c.loop || IMPLICIT_WORK_LOOP : null }; } // P239(11.18, P236 답 1): loop가 null인 회(R2 전·v1 정의)는 하나뿐인 작업 고리 work로 본다
     const match = (h) => (!h.seat || h.seat.includes(caller.rigSeat)) && (!h.loop || !!(run && run.loop && h.loop.includes(run.loop)));
     if (!r || !r.def.hooks.some((h) => h.at === 'done' && match(h))) return { action: 'pass', reason: null, runs: [] };
     return this.runAt(r, {

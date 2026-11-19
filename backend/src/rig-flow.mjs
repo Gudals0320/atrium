@@ -151,6 +151,8 @@ export function handoffText({ fromSeat, fromName, result, doneText, firstSpec, e
 
 // P209: 자리의 effort·model → spawnChild 칸(atrium child --effort·--model과 같은 길. 호출자·주인의 값을 덮는다).
 //   model은 종류 이름 자리만(validateFlow). 모델을 주면 종류도 준다: --model은 그 종류의 모델로 풀린다(주인과 같은 종류여도)
+// P239(rig2-design 11.18): 다시 맡기기가 지금 정의에서 가져오는 자리 칸(그 밖의 칸과 흐름 줄·상한은 건이 쥔 버전)
+export const SEAT_FROM_NOW = ['launcher', 'model', 'effort', 'permission', 'allow', 'writes'];
 export function seatOverrides(seat) {
   const o = {};
   if (seat && seat.effort) o.effort = seat.effort;
@@ -523,7 +525,7 @@ export class RigFlow {
   }
 
   // 자리를 위해 세션을 띄운다(건 주인의 하위로, atrium child와 같은 길: 런처·종류의 승인 방식, worktree면 claude -w)
-  async spawnSeat(ctx, seatName, owner, c, unitId) {
+  async spawnSeat(ctx, seatName, owner, c, unitId, { seatFrom = null } = {}) { // P239: seatFrom(다시 맡기기가 자리 칸을 가져온 지금 정의의 버전)
     const b = this.b; const st = this.store();
     const seat = ctx.def.seats[seatName];
     const taken = new Set([...b.sessions.values()].flatMap((x) => [x.name, shownName(x)]).filter(Boolean).map((x) => String(x).toLowerCase()));
@@ -542,7 +544,7 @@ export class RigFlow {
     st.setSessionSeat(s.sessionId, seatName); s.rigSeat = seatName;
     st.insertCaseItem({ caseId: c.id, sessionId: s.sessionId, seat: seatName, worktree, worktreePath: worktree ? path.join(ctx.r.root, '.claude', 'worktrees', worktree) : null });
     st.addEvent(s.sessionId, 'rig_seat_spawn', { seat: seatName, caseId: c.id, unitId, owner: owner.name, worktree, launcher: seat.launcher, session: seat.session, ...(seat.effort ? { effort: seat.effort } : {}), ...(seat.model ? { model: seat.model } : {}) });
-    rigEvent(b, { kind: 'seat_spawn', caseId: c.id, unitId, seat: seatName, session: s.sessionId, toSeat: seatName, actor: 'board', text: `@${shownName(s) || s.name}${worktree ? ` · 워크트리 ${worktree}` : ''}`, data: { launcher: seat.launcher, session: seat.session, worktree, ...(seat.effort ? { effort: seat.effort } : {}), ...(seat.model ? { model: seat.model } : {}) } });
+    rigEvent(b, { kind: 'seat_spawn', caseId: c.id, unitId, seat: seatName, session: s.sessionId, toSeat: seatName, actor: 'board', text: `@${shownName(s) || s.name}${worktree ? ` · 워크트리 ${worktree}` : ''}`, data: { launcher: seat.launcher, session: seat.session, worktree, ...(seat.effort ? { effort: seat.effort } : {}), ...(seat.model ? { model: seat.model } : {}), ...(seatFrom != null ? { seatFrom } : {}) } });
     b.log(`rig seat ${seatName} spawned ${s.name} for case ${c.id}${worktree ? ` (worktree ${worktree})` : ''}`);
     if (b.broadcastSession) b.broadcastSession(s, { cause: 'rig_seat' });
     return s;
@@ -908,8 +910,14 @@ export class RigFlow {
       st.addEvent(tr.sessionId, 'rig_try_stopped', { caseId: c.id, unitId: u.id, tryId: tr.id, seat: u.seat, session: oldName, why: 'exited', by: 'retry' });
       rigEvent(b, { kind: 'try_stopped', caseId: c.id, unitId: u.id, tryId: tr.id, seat: u.seat, session: tr.sessionId, value: 'exited', actor: by === 'manager' ? 'agent' : 'human', text: `${oldName} 종료(다시 맡기며 닫음)`, data: { by: 'retry' } }); // P217
     }
-    const cdef = this.defOfCase(c, r);
-    const seat = cdef && cdef.seats ? cdef.seats[u.seat] : null;
+    const pinned = this.defOfCase(c, r);
+    // P239(rig2-design 11.18): 지금 정의에 그 자리가 있으면 자리 칸(SEAT_FROM_NOW)만 지금 정의의 것으로 띄운다. 흐름 줄과 상한은 건이 쥔 버전 그대로.
+    //   다시 맡기기는 대개 자리가 뜨지 못하거나 꺼졌을 때 하고, 그때 고친 자리로 띄우는 것이 목적이다. 지금 정의에 없으면 건의 버전 그대로
+    const cur = r && r.def && r.def.seats ? r.def.seats[u.seat] : null;
+    const old0 = pinned && pinned.seats ? pinned.seats[u.seat] : null;
+    const seat = old0 && cur ? { ...old0, ...Object.fromEntries(SEAT_FROM_NOW.map((k) => [k, cur[k]])) } : old0;
+    const cdef = seat && cur ? { ...pinned, seats: { ...pinned.seats, [u.seat]: seat } } : pinned;
+    const seatFrom = seat && cur ? (r.n ?? (b.rig && b.rig.cachedN ? b.rig.cachedN(key) : null)) : null;
     if (!seat) throw apiError('rig_seat', `건 ${c.id}의 정의(버전 ${c.versionN ?? '-'})에 ${u.seat} 자리가 없다.`);
     // keep 자리: 끝난 세션을 자리에서 뗀다(keep 자리에는 세션 하나만 앉는다)
     if (seat.session === 'keep' && old && old.rigSeat === u.seat) {
@@ -927,7 +935,7 @@ export class RigFlow {
       return { unit: u.id, seat: u.seat, from: oldName, to: null, seatWait: true };
     }
     const owner = b.sessions.get(c.owner);
-    const s = await this.spawnSeat({ key, r, def: cdef, seat, name: u.seat }, u.seat, owner, c, u.id);
+    const s = await this.spawnSeat({ key, r, def: cdef, seat, name: u.seat }, u.seat, owner, c, u.id, { seatFrom });
     st.setUnitTarget(u.id, s.sessionId);
     this.retriedEvent(c, u, tr, { by, who, oldName, to: s }); // P217: 장부(새 시도의 try_start보다 먼저)
     this.units().dispatch(st.getUnit(u.id), { later: true });
