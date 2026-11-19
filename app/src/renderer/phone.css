@@ -650,3 +650,7 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-sec.rig .mt-rigask { font-size: 14px; }
 .mt-ph-sec.rig .mt-rigask-btn { padding: 8px 14px; font-size: 14px; }
 .mt-ph-sec.rig .mt-rigask-diff { max-height: 50vh; font-size: 11px; }
+
+/* P237: 휴대폰 입력 줄의 "회 없이"(그 세션이 rig 자리일 때만). 마이크 단추 옆 */
+.mt-ph-talk { flex: none; height: 44px; padding: 0 12px; border-radius: 22px; border: 1px dashed var(--panel-line-2); background: none; color: var(--text-2, var(--text)); font: 600 13px/1 var(--font-ui); white-space: nowrap; }
+.mt-ph-talk.on { border-style: solid; color: var(--accent-2); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }

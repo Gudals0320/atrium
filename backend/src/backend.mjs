@@ -20,7 +20,7 @@ import { rigFlowHandlers, seatNamed } from './rig-flow.mjs'; // P185: rig.seat·
 import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·create·describe·get·save·spawnSeat
 import { rigAdminHandlers } from './rig-admin.mjs';
 import { humanMessage } from './rig-ledger.mjs'; // P217: 장부(사람 글)
-import { rigLoopHandlers } from './rig-loops.mjs'; // P221: rig.loops·pause·resume·name
+import { rigLoopHandlers, talkText } from './rig-loops.mjs'; // P221: rig.loops·pause·resume·name. P237: 회 밖 글 머리
 import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
@@ -1679,8 +1679,26 @@ export class Backend {
         return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, rejected: true };
       }
       body = h.text;
+      // P237(rig2-design 11.18의 둘째): 보내기 칸의 "회 없이"(talk). 켜진 rig의 자리면 회를 열지 않고 글만 넣는다. 그 자리에 열린 시도가 있으면 섞이므로 넣지 않는다(실패한 전달)
+      const loops = this.branch && this.branch.flow && this.branch.flow.loops ? this.branch.flow.loops : null;
+      let tk = null;
+      if (p.talk && loops) {
+        try { tk = loops.talkCheck(s); } catch (e) {
+          if (e.code !== 'rig_run_open') throw e;
+          const d = this.queue.refuse(s.sessionId, body, e.message, { origin: { kind: 'human' } });
+          return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, rejected: true, talk: true };
+        }
+      }
+      if (tk) {
+        const d = this.queue.enqueue(s.sessionId, talkText(body), { typeNow: p.whileWorking === 'type', origin: { kind: 'human' } });
+        d.talk = true; // 받는 자리의 권한 판정(rig-amp notePrompt)이 회의 글로 보지 않는다
+        this.touch(s);
+        humanMessage(this, s, d.deliveryId, body);
+        loops.noteTalk(s, tk, { kind: 'human' }, d.deliveryId);
+        return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, talk: { seat: tk.seat, loop: tk.loop } };
+      }
       // P221(rig 2 R2): request 고리의 입구 자리 세션에 사람이 보낸 글은 새 회를 연다(그 고리의 회를 쥐었으면 이어지는 지시, 멈췄으면 요청이 줄에 선다)
-      const rq = this.branch && this.branch.flow && this.branch.flow.loops && p.whileWorking !== 'type' ? this.branch.flow.loops.onRequest(s, { kind: 'human' }, body) : null;
+      const rq = loops && p.whileWorking !== 'type' ? loops.onRequest(s, { kind: 'human' }, body) : null;
       if (rq && rq.held) {
         // P223: 멈춘 고리의 요청은 대기열에 붙잡혔다(까닭 loop_paused, 실패로 남기지 않는다). 잇기에 회가 열리며 들어간다
         const d = rq.d || this.queue.refuse(s.sessionId, body, `rig: 고리 ${rq.loop}가 멈춰 있어 요청을 줄에 세웠다. 잇기(atrium rig resume ${rq.loop})에 회가 열린다.`, { origin: { kind: 'human' } });

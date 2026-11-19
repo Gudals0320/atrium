@@ -156,7 +156,7 @@ test('P193 rig.seat: 자리를 얻으면 판 알림 한 번(정의의 보낼 자
     assert.ok(r.noticeId);
     await until(() => m.texts.length === 1);
     const t = m.texts[0];
-    assert.ok(isBoardNotice(t)); assert.equal(t.split('\n').length, 3);
+    assert.ok(isBoardNotice(t)); assert.equal(t.split('\n').length, 4, '세 줄 + 관리자 자리의 회 밖 글 한 줄(P237)');
     assert.match(t, /rig의 main 자리/); assert.match(t, /일 맡기기: worker/); assert.match(t, /값: ok, failed, rejected/); assert.match(t, /먼저 `atrium guide`/);
     h['rig.seat']({ session: 'lead', seat: 'main' }, LOCAL); // 같은 자리
     assert.equal(notices(b).length, 1);

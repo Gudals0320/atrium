@@ -38,6 +38,9 @@ export const LOOP_EVENTS = ['doc_changed', 'artifact_filed', 'ledger_count'];
 export const LOOP_ATS = ['session-start'];
 export const LOOP_STATES = ['running', 'waiting', 'paused', 'idle']; // 돎 · 기다림(계기를 기다림) · 멈춤 · 쉼(계기가 걸릴 수 없음: 입구 세션 없음, event 계기)
 export const IMPLICIT_WORK = 'work';
+// P237(rig2-design 11.18의 둘째): 회 없이 글만(atrium prompt --talk, 판 보내기 칸의 "회 없이"). 자리 세션에 넣는 글 앞에 붙는 판 알림 한 줄
+export const TALK_HEAD = '[Atrium 보드] 회 밖 글이다(회 없이 보냄): rig 회의 일이 아니므로 atrium done으로 닫지 않고 이 턴에 답한다.';
+export const talkText = (text) => `${TALK_HEAD}\n\n${String(text)}`;
 export const RUN_NAME_MAX = 40;
 export const TASK_MAX = 4000; // P223: loops.<고리>.task(every 회의 첫 일 글) 길이
 export const NAME_MAX = 80;
@@ -263,6 +266,32 @@ export class RigLoops {
     return p.by === 'loop'
       ? `회 ${c.id}${nm}의 고리 ${p.loop}가 멈춰 있다(${whoText(p.who)}가 멈춤, 막힌 것이 아니다). 일하는 세션은 그대로 돌고 새 넘김만 잇기를 기다린다. 잇기: atrium rig resume ${p.loop}`
       : `회 ${c.id}${nm}가 멈춰 있다(${whoText(p.who)}가 멈춤, 막힌 것이 아니다). 일하는 세션은 그대로 돌고 새 넘김만 잇기를 기다린다. 잇기: atrium rig resume ${c.id}`;
+  }
+
+  // ---------- P237(rig2-design 11.18의 둘째): 회 없이 글만 ----------
+  // s가 켜진 rig의 자리 세션이면 → { seat, loop(그 자리가 입구인 request 고리 이름 | null) }, 아니면 null(보통 글. rig 밖 세션에는 --talk가 보통 prompt와 같다).
+  //   자리에 열린 시도(회의 일)가 있으면 그 회의 글로 섞이므로 넣지 않는다(rig_run_open). 회가 닫힌 뒤 다시 보내거나, 그 회의 글이면 --talk 없이 보낸다
+  talkCheck(s) {
+    if (!s || !s.rigSeat || !this.b.rig) return null;
+    const r = this.b.rig.active(s.workspaceKey);
+    if (!r || !r.def || !r.def.seats || !has(r.def.seats, s.rigSeat)) return null;
+    const st = this.store();
+    const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
+    if (tr) {
+      const u = st.getUnit ? st.getUnit(tr.unitId) : null;
+      const c = u && u.caseId && st.getCase ? st.getCase(u.caseId) : null;
+      const run = c ? `회 ${c.id}${c.name ? ` "${c.name}"` : ''}의 일 ${tr.unitId}` : `일 ${tr.unitId}`;
+      throw apiError('rig_run_open', `rig: ${s.rigSeat} 자리 @${shownName(s) || s.name}가 ${run}을 하고 있어 회 없이 보낸 글을 넣지 않았다(그 회의 글로 섞인다). 그 일이 닫힌 뒤 다시 보내거나, 그 회에 보탤 글이면 회 없이를 끄고 보낸다.`, { seat: s.rigSeat, caseId: c ? c.id : null, unitId: tr.unitId });
+    }
+    const loop = this.requestLoopOf(r.def, s.rigSeat);
+    return { seat: s.rigSeat, loop: loop ? loop.name : null };
+  }
+  // 회 밖 글이 들어갔다는 장부 줄(새 kind 없이 loop_skip, value talk: 계기를 걸지 않고 글만 넣었다). from: { kind: human } | { kind: agent, session }
+  noteTalk(s, tk, from, deliveryId) {
+    const human = from.kind === 'human';
+    const by = human ? '사람' : `@${shownName(from.session) || from.session.name}`;
+    rigEvent(this.b, { kind: 'loop_skip', ws: s.workspaceKey, seat: tk.seat, toSeat: tk.seat, session: s.sessionId, value: 'talk', actor: human ? 'human' : 'agent', ref: deliveryId, text: `${tk.loop ? `${tk.loop}: ` : ''}${by}의 글을 회 없이 넣었다(회를 열지 않음)`, data: { loop: tk.loop, trigger: tk.loop ? 'request' : null, talk: true, from: human ? 'human' : from.session.sessionId, ...(deliveryId ? { deliveryId } : {}) } });
+    this.b.log && this.b.log(`rig talk ${s.workspaceKey} → ${s.name} (${tk.seat}${tk.loop ? `, ${tk.loop} not opened` : ''}) ${deliveryId || ''}`);
   }
 
   // ---------- request 계기 ----------
