@@ -5,7 +5,7 @@
 // - 쓰기 범위: .atrium/와 정의가 가리키는 도구 스크립트(rig3.mjs builderWrites). Claude Code는 역할처럼 무인(bypassPermissions)에 PreToolUse가 범위 밖 편집을 막는다.
 //   턴 뒤 되돌리기(rig3-guard)는 빌더의 일 구간을 알고 그 경로의 주인으로 친다(역할이 .atrium/에 쓴 것은 그대로 되돌린다).
 // - 빌더가 일하던 때 바뀐 정의·목적·정의서의 새 판은 누가 builder다(Rig.byOf → wroteAt). 꺼진 rig는 빌더 턴이 끝날 때 맞는 정의를 판으로 남긴다(recordNow).
-// - P252: 빌더는 올림을 고치지 않기로 하면 atrium rig answer <올림> "<까닭>"로 닫는다(rig-tune.mjs answer). 첫 글의 판 안내 한 줄(지침 밖)과 올림 알림에 그 명령이 있다.
+// - P252: 빌더는 올림을 고치지 않기로 하면 atrium rig answer <올림> "<까닭>"로 닫는다(rig-tune.mjs answer). 지침(11절)과 올림 알림에 그 명령이 있다(지침 밖 판 글 한 줄은 지침에 들어가 뺐다).
 // - 역할의 raise와 "한 번 일깨운 뒤에도 멈춘 역할"은 빌더 세션이 있으면 대기열로 전한다(잠들었으면 대기열이 깨운다). 없으면 지금처럼 변경 기록과 rig 판.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,7 +38,6 @@ export function builderLoadText(x) {
     '[Atrium 보드] 쓰는 곳: ' + x.writes.join(', ') + '. 그 밖(역할의 섹터, 역할의 기억 폴더)에 쓰면 판이 막거나 되돌린다. 켜는 것은 사람이 창에서 한다.',
     '[Atrium 보드] 지금 rig: ' + (x.state === 'none' ? '없음(.atrium/rig.json이 없다)' : x.state === 'invalid' ? '정의가 잘못됐다' + (x.why ? ': ' + x.why : '') : (x.state === 'on' ? '켜짐' : '꺼짐') + (x.n != null ? ', 판 ' + x.n : '')) + '. 워크스페이스: ' + String(x.root || '').split(path.sep).join('/'),
     '[Atrium 보드] 지금은 아래를 읽고 "준비됨" 한 줄로 답한 뒤 사람의 말을 기다린다. 판이 역할의 raise나 멈춘 역할을 알려 오면 고칠지 판단하고, 사용자에게 물을 것은 사용자가 이 터미널에 올 때 말한다.',
-    '[Atrium 보드] 올림(raise-<n>)을 고치지 않기로 정했으면 \x60atrium rig answer <올림> "<까닭 한 줄>"\x60로 답한다. 올림이 닫히고 답은 올린 역할의 다음 깨우는 글에 실린다. 사용자가 정할 일이면 답하지 않고 열어 둔다(rig 판·지도에 사람이 볼 것으로 남는다). 정의·목적·정의서를 고쳐 새 판이 생기면 그 뒤의 올림은 답하지 않아도 닫힌다.', // P252
     '',
     '## 빌더 지침',
     String(x.guide || '').trim(),

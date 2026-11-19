@@ -14,7 +14,7 @@ import { rigMapOf } from '../src/rig-map.mjs';
 import { raiseStates, raiseId, waitingRaises, rigTuneHandlers, RIG_TUNE_OPS } from '../src/rig-tune.mjs';
 import { RIG_TUNE_KINDS } from '../src/rig-ledger.mjs';
 import { numbersBody, collectCycle } from '../src/rig-beat.mjs';
-import { builderLoadText, alertText } from '../src/rig-builder.mjs';
+import { builderLoadText, alertText, readGuide } from '../src/rig-builder.mjs';
 import { HUMAN, BUILDER_ROLE } from '../src/rig-def.mjs';
 import { VERBS } from '../src/cli-contract.mjs';
 
@@ -195,8 +195,10 @@ test('P252 사람이 rig 판에서 답해 닫기(판 API rig.raiseAnswer), 고�
 
 test('P252 빌더 첫 글의 판 안내·올림 알림·명령 목록·장부 종류', () => {
   const t = builderLoadText({ guide: '지침', root: '/w', state: 'on', n: 3, writes: ['.atrium/'], docs: [], alerts: [] });
-  assert.match(t, /\[Atrium 보드\] 올림\(raise-<n>\)을 고치지 않기로 정했으면 `atrium rig answer <올림> "<까닭 한 줄>"`로 답한다\..*사용자가 정할 일이면 답하지 않고 열어 둔다/);
-  assert.ok(t.indexOf('atrium rig answer') < t.indexOf('## 빌더 지침')); // 지침 밖의 판 글
+  const g = readGuide(); // 지침 11절(설계 쪽 글)
+  assert.match(g, /atrium rig answer <raise> "<까닭 한 줄>"/);
+  assert.match(g, /사용자가 정할 일\(기준의 뜻, 책임, 한도\)이면 닫지 않고 열어 둔다/);
+  assert.ok(!/\[Atrium 보드\] 올림\(raise-<n>\)을 고치지 않기로/.test(t), '지침 밖 판 글 한 줄은 지침에 들어가 뺐다');
   assert.match(alertText({ what: 'raise', id: 'raise-4', role: 'verify', reason: '기준' }), /\(raise-4, raise, .*atrium rig answer raise-4 "<까닭>"로 닫는다\. 사용자가 정할 일이면 답하지 않고 열어 둔다\./);
   assert.ok(RIG_TUNE_OPS.includes('answer')); assert.ok(RIG_TUNE_KINDS.includes('raise_answer'));
   const rig = VERBS.find((v) => v.name === 'rig');
