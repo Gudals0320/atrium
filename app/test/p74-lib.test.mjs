@@ -80,7 +80,7 @@ test('손가락 끌기 → 휠, 가상 키보드를 뺀 높이, 보내기 길, �
   assert.equal(touchWheelDelta(0), 0);
   assert.deepEqual(viewportBox({ height: 400.4, offsetTop: 12.6 }, 844), { height: 400, top: 13 });
   assert.deepEqual(viewportBox(null, 844), { height: 844, top: 0 });
-  assert.deepEqual(sendPlan(S('a'), 'line 1\r\nline 2'), { method: 'session.send', text: 'line 1\nline 2', whileWorking: 'type' }, '에이전트는 전달 대기열, 여러 줄 그대로(P90: Claude Code는 일하는 중이면 바로 넣기)');
+  assert.deepEqual(sendPlan(S('a'), 'line 1\r\nline 2'), { method: 'session.send', text: 'line 1\nline 2' }, '에이전트는 전달 대기열, 여러 줄 그대로(P248: 기본은 대기열)');
   assert.deepEqual(sendPlan(S('a', { kind: 'shell' }), 'ls -la\n\n'), { method: 'terminal.input', data: 'ls -la\r' }, '셸은 터미널 입력 + Enter');
   assert.equal(sendPlan(S('a'), '   \n '), null);
   assert.equal(nextNeed(['a', 'b', 'c'], 'b'), 'c');

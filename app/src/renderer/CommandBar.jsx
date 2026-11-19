@@ -37,6 +37,7 @@ import { kbLift } from './lib/touch-board.js'; // P83
 import { useVoice, VoiceButton } from './Voice.jsx'; // P165
 import { splitLive } from './lib/voice-text.js'; // P165
 import { talkSeats, talkParam } from './lib/talk.js'; // P237: "회 없이"
+import { steerTargets, steerParam, steerFellBack } from './lib/steer.js'; // P248: 스티어링 선택
 import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange, autoTag } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
@@ -107,6 +108,8 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const [text, setText] = useState('');
   const [talk, setTalk] = useState(false); // P237: 회 없이(rig 자리에 회를 열지 않고 글만)
   const talkRef = useRef({ on: false, offered: false });
+  const [steer, setSteer] = useState(false); // P248: 스티어링(일하는 Claude Code의 지금 턴에 넣기). 기본은 대기열
+  const steerRef = useRef({ on: false, to: { can: [], cannot: [] } });
   const [pick, setPick] = useState(0);
   const [sentTexts, setSentTexts] = useState({}); // deliveryId → 글(이벤트에는 글이 없다)
   const taRef = useRef(null);
@@ -175,7 +178,8 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     requestAnimationFrame(() => { const p = caretWord.start + name.length + 2; el.setSelectionRange(p, p); });
   }
 
-  async function send() {
+  // P248: opts.steer = 이번 한 번 스티어링(Ctrl+Enter). 단추로 켠 스티어링도 같다
+  async function send(opts = {}) {
     // P165: 녹음 중이면 끝내고 남은 확정 글을 잠깐 받은 뒤 그 글로 보낸다
     let cur = text;
     if (voice.active) { await voice.finish(1000); cur = voice.current(); }
@@ -184,7 +188,9 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     if (!/^@\S/.test(line)) { toast(t('cmd.needTarget'), 'error'); return; }
     const out = expandImages(line, images); // P162: 그림 칩 → 파일 경로
     try {
-      const r = await api.call('session.send', { text: out, ...talkParam(talkRef.current.on, talkRef.current.offered) }); // P237
+      const r = await api.call('session.send', { text: out, ...talkParam(talkRef.current.on, talkRef.current.offered), ...steerParam(steerRef.current.on || !!opts.steer, steerRef.current.to) }); // P237. P248: steer
+      const fell = steerFellBack(r.deliveries); // P248: 스티어링할 수 없는 세션은 대기열로 갔다
+      if (fell.length) toast(t('cmdSteer.fell', { names: fell.map((x) => '@' + x.name).join(' '), why: t(`cmdSteer.why_${fell[0].why}`) }));
       const add = {};
       const body = out.replace(/^(@\S+\s*)+/, '');
       for (const d of r.deliveries) add[d.deliveryId] = body;
@@ -194,6 +200,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       setText('');
       setPreview(null);
       setTalk(false); // P237: 한 번 보낸 뒤 끈다(다음 글이 모르게 회 밖으로 가지 않게)
+      setSteer(false); // P248: 한 번 보낸 뒤 끈다(다음 글은 다시 대기열)
     } catch (e) { toast(t('cmd.sendFailed', { error: errText(e) }), 'error'); }
   }
 
@@ -215,7 +222,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       }
       return;
     }
-    if (e.key === 'Enter') { e.preventDefault(); send(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); send({ steer: e.ctrlKey || e.metaKey }); return; } // P248: Ctrl+Enter = 스티어링으로 보내기
     if (e.key === 'Escape') { taRef.current.blur(); return; }
     // P155: 칩 바로 뒤 Backspace·바로 앞 Delete는 칩을 통째로 지운다(tagDeleteRange). 한글 조합 중(위의 isComposing, keyCode 229)과
     // Ctrl·Alt·Meta 조합은 기본 동작. 되돌리기(Ctrl+Z)에 남도록 그 범위를 골라 execCommand('delete')로 지우고, 안 되면 직접 지운다
@@ -343,6 +350,11 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const toList = useMemo(() => recipients(text, sessList), [text, sessList]);
   const talkTo = useMemo(() => talkSeats(toList, sessList), [toList, sessList]); // P237: 받는 rig 자리 세션
   talkRef.current = { on: talk, offered: talkTo.length > 0 };
+  const steerTo = useMemo(() => steerTargets(toList, sessList), [toList, sessList]); // P248
+  steerRef.current = { on: steer, to: steerTo };
+  const steerShown = steerTo.can.length + steerTo.cannot.length > 0, steerOff = steerShown && !steerTo.can.length;
+  const steerTitle = steerOff ? t('cmdSteer.off', { why: t(`cmdSteer.why_${steerTo.cannot[0].why}`) })
+    : t('cmdSteer.title') + (steerTo.cannot.length ? ' ' + t('cmdSteer.some', { names: steerTo.cannot.map((x) => '@' + x.name).join(' ') }) : '');
   // P142: 높이. 겹의 안쪽(글과 같은 폭으로 그려진 글)의 높이를 재어 글칸 높이를 정한다. 그리기 전에 정해 깜빡이지 않는다
   const mirRef = useRef(null), mirInRef = useRef(null), fieldRef = useRef(null);
   const [fh, setFh] = useState({ height: 0, scroll: false });
@@ -439,8 +451,11 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
         {talkTo.length > 0 && (
           <button type="button" className={`mt-cmd-talk${talk ? ' on' : ''}`} data-action="cmd-talk" aria-pressed={talk} title={t('cmdTalk.title', { names: talkTo.map((n) => '@' + n).join(' ') })} onMouseDown={(e) => e.preventDefault()} onClick={() => setTalk((v) => !v)}>{t('cmdTalk.label')}</button>
         )}
+        {steerShown && (
+          <button type="button" className={`mt-cmd-steer${steer && !steerOff ? ' on' : ''}`} data-action="cmd-steer" aria-pressed={steer && !steerOff} aria-disabled={steerOff || undefined} data-off={steerOff ? '1' : undefined} title={steerTitle} aria-label={`${t('cmdSteer.label')}: ${steerTitle}`} onMouseDown={(e) => e.preventDefault()} onClick={() => { if (!steerOff) setSteer((v) => !v); }}>{t('cmdSteer.label')}</button>
+        )}
         <ThreadToggle />
-        <button className={`mt-cmd-send${text.trim() ? ' on' : ''}`} onPointerDown={(e) => { if (e.pointerType === 'touch') e.preventDefault(); }} onClick={send} title={t('cmd.send')} data-action="send"><Icon name="arrowUp" /></button>
+        <button className={`mt-cmd-send${text.trim() ? ' on' : ''}`} onPointerDown={(e) => { if (e.pointerType === 'touch') e.preventDefault(); }} onClick={() => send()} title={t('cmd.send')} data-action="send"><Icon name="arrowUp" /></button>
       </div>
     </div>
     </>

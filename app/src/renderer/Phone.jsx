@@ -27,6 +27,7 @@ import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
 import { checkLabel } from './lib/session-name.js'; // P97: 새 세션 이름 칸
 import { BRAND_WORDMARK } from './lib/icons.jsx';
 import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou, PAD_KEYS, keyQueue, padKeyOf, padOpen } from './lib/phone.js';
+import { steerBlock } from './lib/steer.js'; // P248: 스티어링 선택
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
 import { LIST_PREF } from './lib/touch-board.js'; // P76: 목록 단추(태블릿 보드에는 보이지 않는다)
@@ -378,6 +379,7 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
+  const [steer, setSteer] = useState(false); // P248: 기본은 대기열. 켜면 일하는 Claude Code의 지금 턴에 넣는다(보내기 칸과 같은 뜻)
   const [scale, setScale] = useState(readPhoneScale);
   const [padPref, setPadPref] = useState(null); // P104: 사람이 키 패드를 열었거나(true) 닫았으면(false). 기다리는 요청이 바뀌면 비운다
   const now = useNow(5000);
@@ -449,15 +451,16 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   async function send() {
     let cur = text;
     if (voice.active) { await voice.finish(1000); cur = voice.current(); } // P165: 녹음 중이면 끝내고 남은 글을 받은 뒤
-    const plan = sendPlan(s, cur);
+    const plan = sendPlan(s, cur, { steer });
     if (!plan || busy) return;
     setBusy(true);
     markInteracted(id);
     try {
       if (plan.method === 'session.send') {
-        const r = await api.call('session.send', { target: [id], text: plan.text, ...(plan.whileWorking ? { whileWorking: plan.whileWorking } : {}) });
+        const r = await api.call('session.send', { target: [id], text: plan.text, ...(plan.steer ? { steer: true } : {}) }); // P248: 기본 대기열, 고르면 steer
         const d = r && r.deliveries && r.deliveries[0];
         setNote(d ? { deliveryId: d.deliveryId, at: Date.now() } : { text: t('phone.sent'), at: Date.now() });
+        setSteer(false); // P248: 한 번 보낸 뒤 끈다
       } else {
         await api.call('terminal.input', { session: id, data: plan.data });
         setNote({ text: t('phone.sent'), at: Date.now() });
@@ -518,6 +521,11 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
             placeholder={s.kind === 'shell' ? t('phone.inputShell') : t('phone.inputAgent', { name: s.name })}
             onChange={(e) => { setText(e.target.value); grow(e.target); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
+          {s.kind !== 'shell' && (() => { const why = steerBlock(s); return (
+            <button type="button" className={`mt-ph-steer${steer && !why ? ' on' : ''}`} data-action="phone-steer" aria-pressed={steer && !why} aria-disabled={why ? true : undefined} data-off={why ? '1' : undefined}
+              title={why ? t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) }) : t('cmdSteer.phoneTitle')} onPointerDown={(e) => e.preventDefault()}
+              onClick={() => { if (why) toast(t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) })); else setSteer((v) => !v); }}>{t('cmdSteer.label')}</button>
+          ); })()}
           <button type="submit" className="mt-ph-send" data-action="phone-send" disabled={busy || (!text.trim() && !voice.active)} aria-label={t('phone.send')}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
           </button>

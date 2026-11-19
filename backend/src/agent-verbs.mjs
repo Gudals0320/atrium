@@ -181,9 +181,11 @@ export class AgentVerbs {
   // ---------- atrium prompt <이름> "<글>" [--wait | --now] [--timeout ms] ----------
   // P143: --now면 받는 쪽이 판이 띄운 Claude Code(hook 있음)이고 일하는 중일 때 기다리지 않고 Claude Code의 대기 메시지로 바로 넣는다(P90 typeNow 길).
   //   그 밖(쉬는 중, 다른 종류, 응답 필요, 시작 중, 잠듦)은 B1 그대로다. 턴을 새로 만들지 않아 짝지을 답이 없으므로 --wait와 함께 쓰지 않는다
+  // P248: --steer(steer)는 --now의 뜻이 보이는 이름이다(같은 길). 기본은 대기열
   async prompt(caller, o = {}, res = null) {
     const b = this.b;
-    if (o.now && o.wait) throw apiError('bad_request', '--now와 --wait는 함께 쓸 수 없다. --now는 받는 쪽의 지금 턴에 대기 메시지로 넣어 그 글로 시작하는 턴이 없다(짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.');
+    if (o.steer) o = { ...o, now: true };
+    if (o.now && o.wait) throw apiError('bad_request', '--steer·--now와 --wait는 함께 쓸 수 없다. --now는 받는 쪽의 지금 턴에 대기 메시지로 넣어 그 글로 시작하는 턴이 없다(짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.');
     // P220(rig 2 R3): rig 제작 세션(빌더)은 그 워크스페이스의 자리 세션에 글을 보내지 않는다(rig-setup.mjs guardPrompt)
     if (b.rigSetup) b.rigSetup.guardPrompt(caller, o.name, this);
     // P185: rig 자리 세션의 보내기는 정의가 정한다(assign 줄 → 일, may → 글만, 그 밖 거절 rig_refused). 자리 없는 세션·꺼진 rig는 null(옛 그대로)

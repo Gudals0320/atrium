@@ -13,7 +13,7 @@ import { VoiceRelay } from './voice.mjs'; // P165
 import { TailscaleWatch, tailscaleHosts } from './tailscale.mjs'; // P49(R3): Tailscale 상태 읽기
 import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
-import { DeliveryQueue, bgOnlyOf } from './delivery.mjs';
+import { DeliveryQueue, bgOnlyOf, steerBlock } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { rigFlowHandlers, seatNamed } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
@@ -1677,7 +1677,10 @@ export class Backend {
 
   // B1·B2: 이름 하나 이상(@a @b) 또는 @all. P5: 셸에는 보내지 않는다(not_agent).
   // P6a(H8): @all은 캔버스 전체의 에이전트 세션. workspace를 주면 그 워크스페이스의 에이전트 세션만
-  // P90: whileWorking: 'type'(휴대폰 입력 줄)이면 Claude Code가 일하는 중일 때 기다리지 않고 바로 넣는다(delivery.mjs canTypeNow)
+  // P90: whileWorking: 'type'(옛 휴대폰 입력 줄)이면 Claude Code가 일하는 중일 때 기다리지 않고 바로 넣는다(delivery.mjs canTypeNow). 쓰다 만 글이 있으면 기다린다
+  // P248: steer: true(창 보내기 칸·휴대폰 입력 줄의 스티어링 선택)면 atrium prompt --steer(--now)와 같은 길(typeNow + aside)로 넣는다.
+  //   일하는 판의 Claude Code면 입력 칸에 넣어 Claude Code 대기 메시지가 되고(쓰다 만 글은 비킨다), 쉬면 곧바로 보통 보내기다.
+  //   일하는 중 입력을 받지 못하는 세션(다른 종류, hook 없는 세션)은 대기열로 보내고 그 전달에 steer: { ok: false, why }를 돌려준다. 기본(steer 없음)은 대기열
   async send(p) {
     let targets = Array.isArray(p.target) ? p.target : null;
     let text = p.text;
@@ -1704,6 +1707,8 @@ export class Backend {
       if (!one) throw keyed(apiError('not_found', `보드에서 세션을 찾을 수 없습니다: ${raw}`), 'targetNotFound', { ref: raw });
       picked.set(one.sessionId, one);
     }
+    const qopts = (s) => (p.steer ? (steerBlock(s, this.hooked(s)) ? {} : { typeNow: true, aside: true }) : { typeNow: p.whileWorking === 'type' }); // P248
+    const steerOut = (s) => { if (!p.steer) return {}; const why = steerBlock(s, this.hooked(s)); return { steer: why ? { ok: false, why } : { ok: true } }; };
     // P182: 대상마다 그 워크스페이스 rig의 deliver 훅(큐에 넣기 전). 거절이면 넣지 않고 실패한 전달로 남긴다(창은 전달 실패와 같은 길로 까닭을 보인다)
     const deliveries = await Promise.all([...picked.values()].map(async (s) => {
       let body = toLF(text);
@@ -1724,12 +1729,12 @@ export class Backend {
         }
       }
       if (tk) {
-        const d = this.queue.enqueue(s.sessionId, talkText(body), { typeNow: p.whileWorking === 'type', origin: { kind: 'human' } });
+        const d = this.queue.enqueue(s.sessionId, talkText(body), { ...qopts(s), origin: { kind: 'human' } });
         d.talk = true; // 받는 자리의 권한 판정(rig-amp notePrompt)이 회의 글로 보지 않는다
         this.touch(s);
         humanMessage(this, s, d.deliveryId, body);
         loops.noteTalk(s, tk, { kind: 'human' }, d.deliveryId);
-        return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, talk: { seat: tk.seat, loop: tk.loop } };
+        return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, talk: { seat: tk.seat, loop: tk.loop }, ...steerOut(s) };
       }
       // P221(rig 2 R2): request 고리의 입구 자리 세션에 사람이 보낸 글은 새 회를 연다(그 고리의 회를 쥐었으면 이어지는 지시, 멈췄으면 요청이 줄에 선다)
       // P237(rig2-design 11.18): 휴대폰 입력 줄(whileWorking type)도 보내기 칸과 같다. 열린 시도 중이면 보통 글(섞임, 11.17 묻기)
@@ -1746,10 +1751,10 @@ export class Backend {
         humanMessage(this, s, d0 ? d0.deliveryId : null, body);
         return { deliveryId: d0 ? d0.deliveryId : null, sessionId: s.sessionId, name: shownName(s), status: d0 ? d0.status : 'queued', run: { caseId: rq.caseId, loop: rq.loop, name: rq.name, unitId: rq.made.unit.id, held: !!rq.made.held } };
       }
-      const d = this.queue.enqueue(s.sessionId, body, { typeNow: p.whileWorking === 'type', origin: { kind: 'human' } });
+      const d = this.queue.enqueue(s.sessionId, body, { ...qopts(s), origin: { kind: 'human' } });
       this.touch(s);
       humanMessage(this, s, d.deliveryId, body); // P217: 사람이 rig 자리 세션에 보낸 글(장부)
-      return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status };
+      return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, ...steerOut(s) };
     }));
     // I2(P6b): 명령 바에서 보낸 글은 Thread에 남긴다. source: bar(기본), output(출력 보기에서 답장)
     const item = this.features ? this.features.thread.add({ source: p.source || 'bar', text: toLF(text), targets: targets.map((t) => '@' + String(t).replace(/^@/, '')), deliveries }) : null;

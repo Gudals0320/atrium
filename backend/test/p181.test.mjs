@@ -101,7 +101,7 @@ const stopNotices = (b, p) => toParent(b, p).filter((d) => d.text.startsWith('[A
 const doneNotices = (b, p) => toParent(b, p).filter((d) => /^\[Atrium 보드\] @\S+가 일 u/.test(d.text));
 const working = (s) => deriveState(s.rt).state === 'working';
 const ready = (s) => deriveState(s.rt).state === 'ready';
-const BOARD_LEN_P180 = 1323; const HARNESS_LEN_P180 = 566; // P180 때 길이(P169: 판 안내문은 매 요청에 든다)
+const BOARD_LEN_P180 = 1419; const HARNESS_LEN_P180 = 566; // P248: 판 안내문에 대기열·스티어링 한 줄(사용자 결정 2026-11-19)을 더했다(P180 때 1323) // P180 때 길이(P169: 판 안내문은 매 요청에 든다)
 const STOP_TEXT = '[Atrium 보드] 맡긴 일이 멈췄다';
 
 // ---------- 알림 글 ----------
@@ -324,7 +324,7 @@ test('P181 안내문: 옛 "결과는 한 길로·섞으면 두 번" 주된 가�
   assert.match(TEACH().relUp, /턴을 끝/);
   // --wait·--now·atrium wait는 그대로 쓸 수 있다(보조 설명)
   assert.match(BOARD_SYSTEM_PROMPT, /--wait/);
-  assert.ok(VERBS.find((v) => v.name === 'prompt').args.includes('[--wait | --now]'));
+  assert.ok(VERBS.find((v) => v.name === 'prompt').args.includes('[--wait | --steer]')); // P248: --steer(= --now)
   assert.match(VERBS.find((v) => v.name === 'prompt').does, /턴을 끝/);
   const long = fs.readFileSync(path.join(HERE, '..', 'bin', 'atrium-child.mjs'), 'utf8').match(/const HELP = `([\s\S]*?)`;/)[1];
   assert.match(long, /턴을 끝/);

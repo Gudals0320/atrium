@@ -7,10 +7,11 @@ import { setLanguage } from '../src/renderer/lib/i18n.js';
 
 const S = (id, f = {}) => ({ sessionId: id, name: id, state: 'ready', kind: 'claude', workspaceKey: 'C:/w/a/.git', createdAt: 1, lastActivityAt: 1, ...f });
 
-test('P90 보내기 계획: Claude Code는 whileWorking: type(판단은 백엔드), 셸은 터미널 입력, 다른 종류는 전달 대기열 그대로', () => {
-  assert.deepEqual(sendPlan(S('a'), 'fix it\r\nplease\n'), { method: 'session.send', text: 'fix it\nplease\n', whileWorking: 'type' });
-  assert.deepEqual(sendPlan(S('a', { kind: undefined }), 'x'), { method: 'session.send', text: 'x', whileWorking: 'type' }, '종류가 없으면 Claude Code');
-  for (const state of ['working', 'waiting', 'trust_wait', 'ready']) assert.equal(sendPlan(S('a', { state }), 'x').whileWorking, 'type', `${state}: 상태는 백엔드가 보낼 때 본다`);
+// P248: 기본은 대기열(whileWorking 없음). 스티어링은 고를 때만(p248-lib.test.mjs)
+test('P90·P248 보내기 계획: Claude Code도 기본은 대기열, 셸은 터미널 입력, 다른 종류는 전달 대기열 그대로', () => {
+  assert.deepEqual(sendPlan(S('a'), 'fix it\r\nplease\n'), { method: 'session.send', text: 'fix it\nplease\n' });
+  assert.deepEqual(sendPlan(S('a', { kind: undefined }), 'x'), { method: 'session.send', text: 'x' }, '종류가 없으면 Claude Code');
+  for (const state of ['working', 'waiting', 'trust_wait', 'ready']) { const p = sendPlan(S('a', { state }), 'x'); assert.equal(p.whileWorking, undefined, state); assert.equal(p.steer, undefined, state); }
   assert.deepEqual(sendPlan(S('c', { kind: 'codex', state: 'working' }), 'x'), { method: 'session.send', text: 'x' }, '다른 종류는 지금대로');
   assert.deepEqual(sendPlan(S('sh', { kind: 'shell', state: 'working' }), 'ls\n'), { method: 'terminal.input', data: 'ls\r' }, '셸은 지금대로');
 });

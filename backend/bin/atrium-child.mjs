@@ -28,13 +28,15 @@ import { usageLines } from '../src/usage-text.mjs'; // P211: atrium usage
 // P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
 const HAND_OFF = '기다리지 않고 턴을 끝낸다. 끝나면 보드가 done 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다.';
 const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같다)
-  atrium prompt <이름> "<할 일>" [--wait | --now] [--timeout ms] [--file 경로] [--case 건] [--talk]
+  atrium prompt <이름> "<할 일>" [--wait | --steer] [--timeout ms] [--file 경로] [--case 건] [--talk]
       다른 에이전트에게 일을 맡긴다. 이름은 보드의 세션 이름이다(@ 없이도). 보드가 받는 쪽 차례에 맞춰 넣는다: 일하는 중이거나 사람의 답을 기다리면 끝난 뒤,
       사람이 그 터미널에 치는 중이면 3초 뒤, 잠들었으면 깨운 뒤. 보낸 쪽 → 받는 쪽 연결과 오간 기록이 판에 남는다.
       하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 값과 보고를 네 차례에 한 번 넣고, 보고 없이 멈추면(쉼, 오류, 사람의 답 기다림, 닫힘) 한 번 알린다. 폴링하지 않는다.
       --wait면 그 글로 시작한 턴(또는 done)까지 기다려 답을 돌려준다(지금 답이 꼭 필요할 때만. 기본 100초. 더 길게는 --timeout 600000과 셸 도구의 시간 제한을 함께 늘린다).
-      --now는 받는 쪽이 일하는 중인 Claude Code면 끝나기를 기다리지 않고 그 세션의 대기 메시지로 바로 넣는다(지금 턴 안에서 읽는다). 일하는 중인 상대에게 바로 알릴 것이 있을 때 쓴다.
-      그 밖(쉬는 중, 다른 종류, 사람의 답을 기다림, 잠듦)은 위와 같다. --wait와 함께 쓰지 않는다.
+      기본은 대기열이다: 받는 쪽이 지금 하는 일이 끝난 뒤 들어가면 될 글은 그냥 보낸다.
+      --steer(스티어링, 옛 이름 --now)는 받는 쪽이 지금 하고 있는 일의 방향에 대한 추가 정보·정정일 때 쓴다. 받는 쪽이 일하는 중인 Claude Code면 끝나기를 기다리지 않고
+      그 세션의 대기 메시지로 바로 넣는다(지금 턴 안에서 읽는다). --now는 받는 쪽이 일하는 중인 Claude Code면 같은 길이다.
+      그 밖(쉬는 중, 다른 종류, 사람의 답을 기다림, 잠듦)은 위와 같다(다른 종류는 일하는 중 입력을 받지 못해 대기열로 간다). --wait와 함께 쓰지 않는다. done 보고와 판 알림은 늘 대기열이다.
       --file은 글을 파일에서 읽는다(긴 글, 따옴표가 많은 글).
       --case는 rig 자리 세션이 자리에 일을 맡길 때 이을 건을 고른다(내가 주인인 끝나지 않은 건, atrium me에 보인다). 없으면 보드가 고른다:
       쥔 일의 건, 아니면 너에게 올라와 기다리는 건(waiting_owner)이 하나면 그 건, 그 밖은 새 건.
@@ -114,7 +116,7 @@ ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
 const MULTI = new Set(['artifact']); // P222: done --artifact <경로>를 되풀이한다
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'peer', 'events', 'talk']); // P237: prompt --talk // P217: rig log --events // P156: child --peer // P116: prompt --wait, P143: prompt --now
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'events', 'talk']); // P248: prompt --steer(= --now) // P237: prompt --talk // P217: rig log --events // P156: child --peer // P116: prompt --wait, P143: prompt --now
 // P208: PowerShell 꾸러미(atrium.ps1)는 인자를 JSON으로 env에 실어 준다(cmd를 거치지 않아 여러 줄·따옴표·<>|&%가 그대로 온다). 읽고 지운다
 function argvOf() {
   const j = process.env.ATRIUM_ARGV_JSON; const f = process.env.ATRIUM_ARGV_FILE;
@@ -647,7 +649,8 @@ async function verb(cmd) {
     let text = rest.slice(1).join(' ');
     if (flags.file) { if (text) fail('글은 인자나 --file 가운데 하나로 준다', 2); try { text = fs.readFileSync(path.resolve(String(flags.file)), 'utf8'); } catch (e) { fail(`--file을 읽지 못했다: ${e.message}`, 2); } }
     if (!text.trim()) fail('보낼 글을 준다: atrium prompt <이름> "<할 일>"', 2);
-    if (flags.now && flags.wait) fail('--now와 --wait는 함께 쓸 수 없다(--now는 받는 쪽의 지금 턴에 넣어 짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --now만 준다.', 2); // P143
+    if (flags.steer) flags.now = true; // P248: --steer는 --now의 뜻이 보이는 이름이다
+    if (flags.now && flags.wait) fail('--steer·--now와 --wait는 함께 쓸 수 없다(--steer는 받는 쪽의 지금 턴에 넣어 짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --steer만 준다.', 2); // P143
     if (flags.case != null && !String(flags.case).trim()) fail('--case에는 건 ID를 준다(atrium me의 건)', 2); // P194
     if (flags.talk && flags.case != null) fail('--talk는 회를 열지 않으므로 --case와 함께 쓰지 않는다', 2); // P237
     r = await call('prompt', { name, text, wait: !!flags.wait, ...(flags.now ? { now: true } : {}), ...(flags.talk ? { talk: true } : {}), ...(flags.case != null ? { caseId: String(flags.case).trim() } : {}), timeoutMs }, flags.wait ? (timeoutMs || 100000) + WAIT_HTTP_EXTRA : 60000);
@@ -670,7 +673,7 @@ async function verb(cmd) {
   if (cmd === 'prompt' && x.talk) say(`${x.talk.seat} 자리 @${x.name}에게 회 없이 글만 넣었다(${x.talk.loop ? `${x.talk.loop} 고리의 회를 열지 않았다. ` : ''}일이 아니라 done이 오지 않는다).`); // P237
   if (cmd === 'prompt' && x.unit) say(x.unit.kind === 'followup' ? `@${x.name}가 맡은 일 ${x.unit.id}에 붙는 글로 보냈다(새 일이 아니다).` : x.unit.caseId ? `rig 건 ${x.unit.caseId}의 일 ${x.unit.id}로 ${x.unit.seat} 자리 @${x.name}에게 맡겼다. 끝나면 보드가 done 값에 따라 다음 자리로 넘기고, 넘길 곳이 없으면 그 값이 건의 주인에게 온다.` : `일 ${x.unit.id}로 맡겼다. @${x.name}는 끝나면 atrium done으로 닫고, 그 값이 너에게 한 번 온다.`); // P180. P185: rig 건
   if (turn) printTurn(x, turn);
-  else if (cmd === 'prompt' && flags.now) say(`--now로 보냈으니 기다리지 않는다. 화면 보기: ${x.next.read}`); // P143: 밀어 넣기는 기다리지 않는다(한 길로)
+  else if (cmd === 'prompt' && flags.now) say(`--${flags.steer ? 'steer' : 'now'}로 보냈으니 기다리지 않는다. 화면 보기: ${x.next.read}`); // P143: 밀어 넣기는 기다리지 않는다(한 길로)
   else if (cmd === 'prompt' && x.unit) say(`${HAND_OFF} 화면 보기: ${x.next.read}`); // P181: 맡기고 턴을 끝낸다
   else if (cmd === 'prompt') say(`끝나기 기다리기: ${x.next.wait} · 화면 보기: ${x.next.read}`);
 }
@@ -704,7 +707,7 @@ function printDelivery(x) {
   if (d.how === 'typed' && ['confirmed', 'sent', 'sending'].includes(d.status)) say(`@${x.name}는 일하는 중이라 Claude Code의 대기 메시지로 바로 넣었다(지금 턴 안에서 읽는다, ${d.status === 'confirmed' ? '들어감' : '들어갔는지 확인하는 중'}, ${id}).${DRAFT_NOTE[d.reason] ? ` ${DRAFT_NOTE[d.reason]}` : ''}`); // P143: --now
   else if (d.status === 'confirmed') say(`@${x.name}에게 보냈다(들어감, ${id}).${DRAFT_NOTE[d.reason] ? ` ${DRAFT_NOTE[d.reason]}` : ''}`);
   else if (d.status === 'sent' || d.status === 'sending') say(`@${x.name}에게 넣었다(들어갔는지 확인하는 중, ${id}).`);
-  else if (d.status === 'queued') say(`${(REASON[d.reason] || ((n) => `아직 넣지 못했다(${d.reason || '대기'}). 보드가 다시 넣는다`))(x.name)} (${id}).${d.how === 'queue' && d.reason === 'working' ? ' --now로 바로 넣지 못했다(판이 띄운 Claude Code가 아니거나 입력 칸을 읽지 못했다). 판 대기열에 두었다.' : ''}`);
+  else if (d.status === 'queued') say(`${(REASON[d.reason] || ((n) => `아직 넣지 못했다(${d.reason || '대기'}). 보드가 다시 넣는다`))(x.name)} (${id}).${d.how === 'queue' && d.reason === 'working' ? ` --${flags.steer ? 'steer' : 'now'}로 바로 넣지 못했다(판이 띄운 Claude Code가 아니거나 입력 칸을 읽지 못했다). 판 대기열에 두었다.` : ''}`);
   else if (d.status === 'unconfirmed' && d.reason === 'input_box_other') fail(boxOther(x.name, x.next, id));
   else if (d.status === 'unconfirmed') say(`@${x.name}에게 넣었지만 들어갔는지 확인하지 못했다(${id}). 화면 보기: ${x.next.read}`);
   else if (d.status === 'failed' || d.status === 'cancelled') fail(`@${x.name}에게 보낸 글이 들어가지 않았다(${d.status}${d.reason ? `: ${d.reason}` : ''}, ${id}).`);
