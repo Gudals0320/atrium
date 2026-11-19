@@ -242,7 +242,7 @@ export function presetFiles(answers, { launcher = 'claude', reviewLauncher = nul
       { from: REVIEW_SEAT, on: 'rejected', to: S, max: REVIEW_MAX },
     ];
   }
-  const hooks = x.check.on ? [{ at: 'done', seat: S, run: scriptRun(x.check.script), onFail: 'block' }] : null; // P230(11.12의 5): 기계 검사는 작업 자리의 done에서만(검토 자리 done에는 돌지 않는다)
+  const hooks = x.check.on ? [{ at: 'done', seat: S, loop: WORK_LOOP, run: scriptRun(x.check.script), onFail: 'block' }] : null; // P230(11.12의 5): 기계 검사는 작업 자리의 done에서만(검토 자리 done에는 돌지 않는다). P236(11.18): 작업 고리의 회에서만(개선 회의 done에는 돌지 않는다)
   if (x.check.on && /\.(mjs|js)$/i.test(x.check.script)) files[x.check.script] = CHECK_STARTER;
   const sc = x.shortcut ? shortcutOf(x.shortcut) : null;
   const def = {
