@@ -18,5 +18,5 @@ test('P46: 스킬 글 — 이름은 맡긴 일·역할을 말하고, 번호 이�
   assert.match(s, /영문 소문자로 시작, 소문자·숫자·-·_ 만, 32자까지, 판 전체에서 하나/);
   assert.match(s, /`name_taken`\)이 오면 다른 이름으로 다시 짓는다/);
   assert.equal(delegateSkill().split('\n---\n')[1], s.split('\n---\n')[1], '옛 이름 스킬도 같은 글');
-  assert.ok(Buffer.byteLength(s) < 8000, `스킬 글 ${Buffer.byteLength(s)}바이트`); // P156: 관계 고르기 절. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
+  assert.ok(Buffer.byteLength(s) < 8300, `스킬 글 ${Buffer.byteLength(s)}바이트`); // P248: 대기열·스티어링 한 줄로 300바이트를 더 둔다(전 8000). P156: 관계 고르기 절. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
 });

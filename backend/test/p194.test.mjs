@@ -273,7 +273,7 @@ test('P194 --case: 주인이 아닌 세션은 그 건을 고를 수 없다. 계�
   assert.equal(CONTRACT_VERSION, 4, '더하기만이라 4 그대로');
   assert.match(shortHelp(), /\[--case 건\]/);
   const src = fs.readFileSync(path.join(HERE, '..', 'bin', 'atrium-child.mjs'), 'utf8');
-  assert.match(src, /atrium prompt <이름> "<할 일>" \[--wait \| --now\] \[--timeout ms\] \[--file 경로\] \[--case 건\]/);
+  assert.match(src, /atrium prompt <이름> "<할 일>" \[--wait \| --steer\] \[--timeout ms\] \[--file 경로\] \[--case 건\]/); // P248: --steer(= --now)
   assert.match(src, /caseId: String\(flags\.case\)\.trim\(\)/);
 });
 

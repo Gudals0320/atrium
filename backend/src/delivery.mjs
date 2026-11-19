@@ -59,6 +59,13 @@ export function bgOnlyOf(rt, state, bg, { kind = 'claude', hooked = true } = {})
 export function canTypeNow(view) {
   return !!view && !view.closed && !!view.termConnected && !!view.agentPresent && view.state === 'working' && (view.kind || 'claude') === 'claude' && !!view.hooked;
 }
+// P248: 스티어링(일하는 중에 입력 칸에 넣기)을 받을 수 없는 세션의 까닭 | null. 상태와 상관없이 종류로 정한다(쉬는 동안 고른 스티어링도 같다)
+//   kind: 판이 띄운 Claude Code가 아니다(Codex 등), no_hook: hook이 없는 Claude Code(받아들인 세션). canTypeNow의 종류 조건과 같다
+export function steerBlock(s, hooked = s ? s.hooked !== false : false) {
+  if (!s) return 'kind';
+  if ((s.kind || 'claude') !== 'claude') return 'kind';
+  return hooked ? null : 'no_hook';
+}
 // 바로 넣을 글: 줄바꿈은 LF(B1 5), 끝 줄바꿈은 뗀다(입력 칸에 빈 줄이 남지 않게). Enter는 agent.prompt가 마지막에 한 번 누른다
 export const typedText = (text) => toLF(text).replace(/\n+$/, '');
 // P182: 전달의 출처 → 행의 칸
@@ -104,6 +111,9 @@ export class DeliveryQueue extends EventEmitter {
     if (opts.typeNow) d.typeNow = true;
     if (this._ofSession(sessionId).length) d.acctFree = true; // P215: 앞 전달 뒤에서 기다리는 시간은 짧은 상한에 넣지 않는다(맨 앞이 된 뒤 그 까닭으로 센다)
     if (opts.typeNow && opts.aside) d.typeAside = true; // P143(atrium prompt --now): 입력 칸에 쓰다 만 글이 있으면 비키고(P128·P139) 바로 넣는다. 휴대폰 입력 줄(P90)은 그대로 기다린다
+    // P248: 스티어링(typeNow + aside: atrium prompt --steer·--now, 보내기 칸·휴대폰의 스티어링)은 그 세션의 대기 중 글 맨 앞에 선다(바로 보내기 P172와 같다).
+    //   앞에 대기열 글이 있어도 그 뒤에 막히지 않고 지금 턴에 들어간다. 대기열 글의 차례는 그대로
+    if (d.typeAside) { d.seq = this._frontSeq(d); d.acctFree = false; }
     this.store.insertDelivery(d);
     this.items.set(d.deliveryId, d);
     this._emit(d);
@@ -349,10 +359,7 @@ export class DeliveryQueue extends EventEmitter {
     this._editable(id);
     const v = this.view(d.sessionId, d);
     if (v && v.state === 'working' && !canTypeNow(v)) throw Object.assign(new Error('this session cannot take input while working'), { code: 'cannot_steer' });
-    const all = this._ofSession(d.sessionId).filter((x) => x !== d);
-    const busy = all.filter((x) => x.status !== 'queued'), queued = all.filter((x) => x.status === 'queued');
-    const lo = busy.length ? Math.max(...busy.map(order)) : null, hi = queued.length ? Math.min(...queued.map(order)) : null;
-    const seq = hi == null ? (lo == null ? order(d) : Math.max(order(d), lo + 1)) : lo == null ? Math.min(order(d), hi - 1) : (lo + hi) / 2;
+    const seq = this._frontSeq(d);
     if (seq !== d.seq) { d.seq = seq; if (this.store.updateDeliverySeq) this.store.updateDeliverySeq(d.deliveryId, seq); }
     if (!d.typeNow) {
       d.typeNow = true;
@@ -366,6 +373,13 @@ export class DeliveryQueue extends EventEmitter {
     return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, seq: d.seq, how: v && v.state === 'working' && !v.bgOnly ? 'type' : 'send' }; // P240: 뒤 일만 돌면 보통 보내기
   }
 
+  // P172: 그 세션의 대기 중 맨 앞 차례(보내는 중·보낸 전달 뒤). P248: 스티어링으로 넣은 새 전달도 이 차례로 선다
+  _frontSeq(d) {
+    const all = this._ofSession(d.sessionId).filter((x) => x !== d);
+    const busy = all.filter((x) => x.status !== 'queued'), queued = all.filter((x) => x.status === 'queued' && !x.parked);
+    const lo = busy.length ? Math.max(...busy.map(order)) : null, hi = queued.length ? Math.min(...queued.map(order)) : null;
+    return hi == null ? (lo == null ? order(d) : Math.max(order(d), lo + 1)) : lo == null ? Math.min(order(d), hi - 1) : (lo + hi) / 2;
+  }
   // P215: 기다린 시간 나누기. 지난 pump부터 지금까지를 지난번에 본 까닭으로 센다: 앞 전달 뒤에 줄 섰거나 LONG_WAIT면 freeMs(짧은 상한에서 뺀다).
   //   고치는 중(붙잡음)은 pausedMs가 따로 센다. sent 뒤(확인 기다림)는 세지 않는다
   _account(now) {

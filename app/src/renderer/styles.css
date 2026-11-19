@@ -2869,3 +2869,9 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rig3-tune { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; }
 .mt-rig3-tune-text { margin: 0; max-height: 140px; overflow: auto; font-size: 11px; white-space: pre-wrap; opacity: 0.9; }
 .mt-rig3-tune-log li { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
+
+/* P248: 보내기 칸의 스티어링 선택(회 없이 단추와 같은 꼴). 켜면 강조, 받는 세션이 스티어링할 수 없으면 흐리게(누르면 까닭) */
+.mt-cmd-steer { flex: none; height: 22px; margin-bottom: 17px; padding: 0 9px; border-radius: 11px; border: 1px dashed var(--chrome-line-2); background: none; color: var(--chrome-text-2); font: 600 11.5px/1 var(--font-ui); white-space: nowrap; cursor: pointer; }
+.mt-cmd-steer:hover { color: var(--chrome-text); border-color: var(--chrome-text-3); }
+.mt-cmd-steer.on { border-style: solid; color: var(--accent-2); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.mt-cmd-steer[data-off] { color: var(--chrome-text-3); border-color: var(--chrome-line); cursor: not-allowed; }

@@ -4,6 +4,8 @@
 // - 줄마다 마지막 한 줄, 자주 쓰는 키의 바이트, 손가락 끌기 → 휠, 가상 키보드를 뺀 화면 높이
 // - P104: 키 패드의 키와 보내는 줄(keyQueue), 펼칠지(padOpen)
 
+import { steerBlock } from './steer.js'; // P248
+
 export const PHONE_MAX_WIDTH = 430;
 export const LAYOUT_KEY = 'mt.phoneLayout'; // 'board'면 휴대폰에서도 보드 화면(사용자가 고름). 없으면 저절로
 
@@ -155,13 +157,13 @@ export function screenBox({ vv, innerHeight, innerWidth, screenW, screenH, stand
 }
 
 // 입력 줄: 에이전트는 전달 대기열(session.send, 여러 줄 그대로), 셸은 터미널 입력(줄마다 Enter 대신 마지막에 한 번)
-// P90: Claude Code는 whileWorking: 'type'. 일하는 중이면 판이 기다리지 않고 바로 넣어 Claude Code가 대기 메시지로 받는다(판단은 백엔드 canTypeNow)
-export function sendPlan(s, text) {
+// P90 → P248: 에이전트는 기본이 대기열(보내기 칸과 같다). opts.steer(스티어링 선택)면 steer: true. 일하는 중인 Claude Code면 판이 기다리지 않고
+//   입력 칸에 넣어 Claude Code가 대기 메시지로 받는다(판단은 백엔드 canTypeNow). 스티어링할 수 없는 세션(steerBlock)에는 싣지 않는다(대기열)
+export function sendPlan(s, text, opts = {}) {
   const body = String(text || '').replace(/\r\n?/g, '\n');
   if (!body.trim()) return null;
   if (s && s.kind === 'shell') return { method: 'terminal.input', data: body.replace(/\n+$/, '') + '\r' };
-  if (!s || (s.kind || 'claude') === 'claude') return { method: 'session.send', text: body, whileWorking: 'type' };
-  return { method: 'session.send', text: body };
+  return { method: 'session.send', text: body, ...(opts.steer && !steerBlock(s) ? { steer: true } : {}) };
 }
 
 // 다음 응답 필요: 지금 세션 다음(없으면 처음). 지금 세션밖에 없으면 null

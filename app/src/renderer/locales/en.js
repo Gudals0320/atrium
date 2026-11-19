@@ -3230,5 +3230,16 @@ export default {
     undone: '{role} know-how rolled back to v{from} (now v{n})',
     same: 'Already the know-how of v{n}',
   },
+  // P248: steering choice in the command bar and the phone input row (default is the queue)
+  cmdSteer: {
+    label: 'Steer',
+    title: 'When on, the message goes into the working Claude Code\'s current turn (read between tool calls). Use it for extra information or a correction about what the session is doing now. When off, it goes in after the current turn ends (queue). Ctrl+Enter also sends as steering.',
+    phoneTitle: 'When on, the message goes into the working Claude Code\'s current turn (read between tool calls). Use it for extra information or a correction about what the session is doing now. When off, it goes in after the current turn ends (queue).',
+    off: 'Cannot steer: {why}. The message goes to the queue.',
+    some: '{names} cannot be steered; those go to the queue.',
+    fell: '{names}: cannot steer, sent to the queue ({why}).',
+    why_kind: 'this kind cannot take input while working',
+    why_no_hook: 'not a Claude Code started by the board (no hooks)',
+  },
 };
 
