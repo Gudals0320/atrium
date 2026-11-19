@@ -34,7 +34,10 @@ export const RIG_EVENT_KINDS = [
   //   워크트리 산출물(11.7의 6): artifact_merged(pending_merge → new·accepted, value same_hash | merged), artifact_lost(합치지 않고 워크트리가 지워짐)
   'proposal_made', 'proposal_decided', 'proposal_applied', 'doc_unapproved', 'doc_reverted', 'doc_accepted', 'artifact_merged', 'artifact_lost',
 ];
-const KINDS = new Set(RIG_EVENT_KINDS);
+// P241: rig 3 장부 종류(역할 세션). rig 2 목록(RIG_EVENT_KINDS)과 따로 둔다(rig 2를 걷어낼 때 그 목록만 지운다)
+//   role_spawn(켜기가 띄움), role_respawn(닫히거나 끝나 다시 띄움, data.prev), role_gave_up(다시 띄우기 상한), role_write_denied(섹터 밖 쓰기·셸 안의 셸 거절, value writes | nested_shell), role_slept(쉬어 판이 재움)
+export const RIG3_EVENT_KINDS = ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept'];
+const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS]);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];
 // try_stopped의 value(18.1). P216이 exited를 더한다
 // P225: auto_closed(회 저절로 닫기가 열린 시도를 닫음, rig2-design 11.8의 5)
@@ -107,7 +110,7 @@ export function parseKinds(v) {
   if (v == null || v === '') return null;
   const list = (Array.isArray(v) ? v : String(v).split(',')).map((x) => String(x).trim()).filter(Boolean);
   const bad = list.filter((k) => !KINDS.has(k));
-  if (bad.length) throw apiError('bad_request', `모르는 kind: ${bad.join(', ')}. 목록: ${RIG_EVENT_KINDS.join(', ')}`);
+  if (bad.length) throw apiError('bad_request', `모르는 kind: ${bad.join(', ')}. 목록: ${[...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS].join(', ')}`);
   return list;
 }
 // 장부 읽기. o: { case, cases(허락된 건 목록, 자리 세션), since, kinds, limit } → { workspace, rows, last, more }

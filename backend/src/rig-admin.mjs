@@ -140,6 +140,7 @@ export class RigAdmin {
     const hits = base && prot ? protectedHits(raw, base.raw, prot.pointers) : [];
     const out = { ok: v.ok && !hits.length, from, hash, current: { n: cur.n ?? null, hash: cur.hash || null }, same: !!(base && base.hash === hash), warnings: v.ok ? [...(v.def.warnings || []), ...(v.def.seats && Object.values(v.def.seats).some((x) => x.worktree) ? worktreeWarnings(v.def.seats, gitStateOf(root)) : [])] : [] }; // P195: 워크트리 자리의 저장소 조건
     if (!v.ok) return { ...out, reason: v.reason };
+    if (v.def.v3) { const r3 = v.def.rig3; return { ...out, summary: { format: 3, purpose: r3.purpose, roles: Object.values(r3.roles).map((r) => ({ name: r.name, owns: r.owns, tools: r.tools, launcher: r.launcher || 'claude', model: r.model })), flows: r3.flows.map((f) => `${f.item}: ${f.from.join('|')} → ${f.to.join('|')}${f.for ? ` (for ${f.for})` : ''}`), tools: Object.keys(r3.tools), beat: r3.beat } }; } // P241: rig 3(역할·길)
     // P209: 자리 effort·model. 런처 이름 자리는 그 런처의 종류로 effort를 다시 보고, 앉은 keep 자리 세션에는 다음에 띄울 때부터 먹는다고 적는다
     const sn = this.seatNotes(key, v.def.seats, v.def);
     out.warnings.push(...sn.warnings, ...(rig.permitWarnings ? rig.permitWarnings(key, v.def) : [])); // P223: 승인 전 unattended 자리

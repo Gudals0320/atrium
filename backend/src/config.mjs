@@ -106,6 +106,9 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     // P3
     resourcesIntervalMs: Number(E('RESOURCES_MS') || 30000), // D1: 약 30초마다
     sleepTickMs: Number(E('SLEEP_TICK_MS') || 30000), // P21(D4): 저절로 잠재울 세션을 보는 간격(시험은 짧게)
+    // P241: rig 3 역할 세션 지키기(주기, 쉬면 재우기). 시험은 개발용 판에서만 줄인다(rig3-roles.mjs 기본값)
+    rig3TickMs: profile === 'dev' && E('RIG3_TICK_MS') ? Number(E('RIG3_TICK_MS')) : undefined,
+    rig3IdleMs: profile === 'dev' && E('RIG3_IDLE_MS') ? Number(E('RIG3_IDLE_MS')) : undefined,
     sleepBgPrecheck: !(profile === 'dev' && E('SLEEP_BG_PRECHECK') === 'off'), // P105 판 시험만(개발용 판): 뒤 일 미리 보기를 끄고 /exit 확인 창 처리를 시험한다
     wsGoneGraceMs: profile === 'dev' && E('WS_GONE_GRACE_MS') ? Number(E('WS_GONE_GRACE_MS')) : undefined, // P120 판 시험만(개발용 판): 폴더가 없어진 빈 영역을 치우기 전 유예(기본 60초)
     recoverGraceMs: 15000, // C3: 터미널 서버가 다시 뜬 뒤 이만큼 기다려도 claude가 없으면 판이 이어 간다

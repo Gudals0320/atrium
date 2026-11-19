@@ -10,6 +10,8 @@ import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
 import { RigLoopCards } from './RigLoopCards.jsx'; // P230: 고리 카드(지금 돌리기)
 import { CanonDrift } from './RigAsks.jsx'; // P233: 켜기 확인의 정본 차이
+import { Rig3Panel } from './Rig3.jsx'; // P241: rig 3 정의는 읽기만 하는 구조 보기와 켜기
+import { isRig3 } from './lib/rig3.js';
 import {
   launcherChoices, launcherLabel, namedLaunchers, wizardInit, wizardPickDescribe, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
   wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions, previewModel, arrowLabel,
@@ -451,6 +453,7 @@ export function RigPanel({ ws, onClose }) {
   const results = tb ? tb.results.map((r) => r.value).filter(Boolean) : [];
   const dirty = tb && base && tableDirty(tb, base);
   const Lk = ({ on }) => (on ? <span className="mt-rigpanel-lock" title={t('rigPanel.locked')} data-role="rig-lock">🔒</span> : null);
+  if (isRig3(st)) return <Rig3Panel ws={ws} onClose={onClose} first={st} />; // P241: 편집 표·자리 표·흐름 표는 v3에 없다
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div ref={box} className="mt-modal mt-rigpanel" data-role="rig-panel" data-ws={ws.key} data-status={status} data-remote={remote ? '1' : undefined}>

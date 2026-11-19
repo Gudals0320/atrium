@@ -87,6 +87,7 @@ export class RigSetup {
       cycles: s0.cycles.map((x) => ({ every: x.every, to: x.to, ...(x.run ? { run: x.run } : {}) })),
       defaultLauncher: this.defaultLauncher(key), seated, builder: this.builderView(key),
       canonDrift: s0.canonDrift || [], // P233: 켜기 확인의 정본 차이
+      format: s0.format, rig3: s0.rig3 || null, // P241: rig 3 정의면 역할 보기(창은 읽기만 하는 구조 보기와 켜기만 보인다)
     };
   }
   sessionView(s) {

@@ -3154,4 +3154,25 @@ export default {
     title: '{names}에게 회를 열지 않고 글만 넣습니다. rig를 고치자는 말처럼 회의 일이 아닌 글에 씁니다. 받는 자리가 회의 일을 하고 있으면 넣지 않습니다.',
     runOpen: '회 없이 넣지 않음: 자리가 열린 회의 일을 하는 중. 회가 닫힌 뒤 다시 보내거나 회 없이를 끄고 보냄', // P240: 실패 칩의 까닭
   },
+  // P241: rig 3(역할 조직) 판. 읽기만 하는 구조 보기와 켜기
+  rig3: {
+    kind: 'rig 3 · 역할 {n}개',
+    stOn: 'Rig 켜짐 · 역할 {n}개',
+    enable: '켜기…',
+    confirmLine: '역할 {n}개가 무인으로 돌고, 각자 쥔 섹터에만 쓰며, 도구는 판이 돌립니다.',
+    confirmWarn: '역할마다 세션 하나가 권한을 묻지 않고 돕니다. 믿을 수 있는 폴더에서만 켜세요.',
+    purpose: '목적: {path}',
+    roles: '역할',
+    colRole: '역할',
+    colOwns: '섹터',
+    colSession: '세션',
+    colTools: '도구',
+    noSession: '세션 없음',
+    gaveUp: '다시 띄우기를 멈춤(rig를 껐다 켜면 다시 띄웁니다)',
+    docMissing: '정의서 칸 빠짐: {list}',
+    flows: '길',
+    human: '사람',
+    for: '{item}에 대한 답',
+    readOnly: '이 rig는 정의 파일(.atrium/rig.json, .atrium/roles/)로만 바꿉니다. 여기서는 구조를 보기만 합니다.',
+  },
 };
