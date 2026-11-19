@@ -24,7 +24,7 @@ import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoad
 import { RigBuilder } from './rig-builder.mjs'; // P247: 빌더 세션
 import { RigItems } from './rig-items.mjs'; // P242: 항목·길·받음
 import { RigBeat } from './rig-beat.mjs'; // P244: 박자·도구·사이클 요약
-import { RigTune } from './rig-tune.mjs'; // P245: 조정과 되돌리기
+import { RigTune, waitingRaises } from './rig-tune.mjs'; // P245: 조정과 되돌리기. P252: 기다리는 올림
 
 // 판이 역할을 위해 띄울 때(backend.spawn) 넘기는 역할 이름의 열쇠. Symbol이라 판 API 본문으로는 넣지 못한다
 export const ROLE_SPAWN = Symbol.for('atrium.rig3RoleSpawn');
@@ -476,6 +476,6 @@ export class RigRoles {
     let it = null; try { it = this.items.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 items view', e.message); } // P242: 길마다 수, 역할마다 받은 것
     for (const x of roles) x.items = it && it.roles[x.name] ? it.roles[x.name] : null;
     for (const x of roles) { try { x.tune = this.tune.roleView(key, r3, x.name); } catch (e) { x.tune = null; this.b.log && this.b.log('rig3 tune view', e.message); } } // P245: 정의서 판·조정 수·재료
-    return { builder: this.builder.view(key), purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null, cycle: (() => { try { return this.beat.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 beat view', e.message); return null; } })() }; // P244: 사이클·다음 박자·최근 꼭지
+    return { builder: this.builder.view(key), purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null, raises: (() => { try { return waitingRaises(this.b.store, key); } catch { return []; } })() /* P252: 기다리는 올림(rig 판의 올림 줄) */, cycle: (() => { try { return this.beat.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 beat view', e.message); return null; } })() }; // P244: 사이클·다음 박자·최근 꼭지
   }
 }

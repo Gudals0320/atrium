@@ -2763,3 +2763,10 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-badge.rig.builder { border-style: dashed; }
 .mt-badge.rig.intake { cursor: pointer; background: none; font: inherit; }
 .mt-rig-frame { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 1.5px solid rgba(134, 169, 189, 0.25); border-radius: 22px; pointer-events: none; }
+
+/* P252: rig 판의 기다리는 올림 줄과 답하기 */
+.mt-rig-raises { margin: 8px 0 2px; }
+.mt-rig-raises li { display: block; }
+.mt-rig-raise-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.mt-rig-raise-line .mt-btn { margin-left: auto; }
+.mt-rig-raise-text { width: 100%; box-sizing: border-box; margin-top: 6px; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--panel-line); background: var(--panel-2); color: inherit; }

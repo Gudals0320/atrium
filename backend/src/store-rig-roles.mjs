@@ -23,7 +23,8 @@ CREATE INDEX IF NOT EXISTS rig3_tunes_role ON rig3_tunes (ws, role, id);
 // P245: rig 판(버전) 묶음과 조정(rig-tune.mjs).
 //   rig3_bundle: 판(rig_versions의 n)마다 묶음의 조각 해시. part는 rig.json · purpose · role:<역할>. 판 하나 = 정의·목적·모든 정의서.
 //   rig3_docs: 조각의 내용(해시로 한 번만. 정의서 하나를 지난 판의 요령 칸으로 되돌릴 때 쓴다).
-//   rig3_tunes: 조정 기록. kind tune(역할이 요령 칸을 고침) | none(고칠 것 없음) | raise(빌더에게 올림) | rollback(사람이 되돌림),
+//   rig3_tunes: 조정 기록. kind tune(역할이 요령 칸을 고침) | none(고칠 것 없음) | raise(빌더에게 올림) | rollback(사람이 되돌림)
+//     | answer(P252: 빌더·사람이 올림에 고치지 않고 답함. role은 올린 역할, why는 답, evidence는 [올림 id], by builder | human, state noted(역할에게 아직 안 알림) | told),
 //     state applied | rejected | noted, n은 반영된 판, prev_n은 그 앞 판, from_n은 되돌린 판, evidence는 근거 id JSON 배열, diff는 요령 칸의 통합 diff.
 // P244: rig 사이클과 시계(rig-beat.mjs).
 //   rig3_cycles: 사이클마다 한 줄. n 0은 켤 때(첫 채움), 그 뒤 박자마다 n+1. by enable | clock | late | human, due_at은 친 박자의 칸 시각,
@@ -105,6 +106,8 @@ export function installRigRoles(Store) {
         .run(x.ws, x.role, x.kind, x.state, x.n ?? null, x.prevN ?? null, x.fromN ?? null, x.why ?? null, x.evidence ? JSON.stringify(x.evidence) : null, x.diff ?? null, x.added ?? null, x.removed ?? null, x.reason ?? null, x.cycle ?? null, x.sessionId ?? null, x.by ?? null, x.t);
       return Number(r.lastInsertRowid);
     },
+    // P252: 조정 기록 한 줄의 state(올림 답 알림: noted → told)
+    setRig3TuneState(id, state) { this.st('UPDATE rig3_tunes SET state = ? WHERE id = ?').run(state, id); },
     // 그 역할의 조정 기록(오래된 것부터). q: { states }
     rig3Tunes(ws, role = null, q = {}) {
       const where = ['ws = ?']; const vals = [ws];

@@ -295,3 +295,15 @@ export function phoneRig(m, live = null) {
   const flows = (m.flows || []).map((f) => ({ item: f.item, from: list(f.from).join(', '), to: list(f.to).join(', '), put: f.cycle ? f.cycle.put : 0, waiting: f.waiting || 0, open: f.openReturns || 0 }));
   return { key: m.workspace, status: m.status, name: m.name, versionN: m.versionN, cycle: m.head ? m.head.cycle : null, attention: m.head ? m.head.attention : 0, stalled: m.head ? m.head.stalled : 0, roles, flows, entry: m.entry };
 }
+
+// P252: 박자·도구 주기를 사람 말로(사전 rigPeriod). every: 정의 값("1d", "6h", "30m", "1.5h"), at: "07:00" | null
+//   → "매일 07:00", "6시간마다", "every day 07:00", "every 6 hours". 하루 단위가 아닌 주기의 at은 기준 시각("6시간마다(07:00 기준)").
+//   꼴을 모르는 값은 원래 값 그대로(at이 있으면 뒤에 붙인다)
+const PERIOD_RE = /^(\d+(?:\.\d+)?)\s*([smhd])$/;
+export function periodText(every, at, t) {
+  const raw = every == null ? '' : String(every).trim();
+  const m = PERIOD_RE.exec(raw);
+  if (!m) return [raw, at].filter(Boolean).join(' ');
+  const base = Number(m[1]) === 1 ? t(`rigPeriod.single.${m[2]}`) : t(`rigPeriod.multi.${m[2]}`, { n: m[1] });
+  return at ? t(m[2] === 'd' ? 'rigPeriod.at' : 'rigPeriod.from', { period: base, at }) : base;
+}

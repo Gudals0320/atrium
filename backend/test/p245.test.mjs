@@ -339,8 +339,8 @@ test('P245 변경 기록: 조정(판 번호·근거 id)은 판이 쓰고 AI는 �
 });
 
 test('P245 장부 종류·명령·실을 글·안내', async () => {
-  assert.deepEqual(RIG_TUNE_KINDS, ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback']);
-  assert.deepEqual(RIG_TUNE_OPS, ['tune', 'raise', 'heard', 'role']);
+  assert.deepEqual(RIG_TUNE_KINDS, ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback', 'raise_answer']); // P252: 올림 답
+  assert.deepEqual(RIG_TUNE_OPS, ['tune', 'raise', 'heard', 'role', 'answer']);
   const B = await board();
   const r3 = B.b.rig.read(B.key).def.rig3;
   const t = loadText(r3, 'ideas', {});
