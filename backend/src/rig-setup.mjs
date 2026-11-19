@@ -361,6 +361,15 @@ export class RigSetup {
   }
 }
 
+// P232(11.14의 9): 저장소의 Claude Code 프로젝트 설정(.claude/settings.json)에 훅이 있는가. rig 자리 세션도 그 저장소에서 뜨므로 그 훅이 걸린다
+export function claudeHooksOf(root) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(root, '.claude', 'settings.json'), 'utf8').replace(/^\uFEFF/, ''));
+    const h = raw && raw.hooks;
+    return !!(h && typeof h === 'object' && !Array.isArray(h) && Object.values(h).some((v) => Array.isArray(v) ? v.length > 0 : !!v));
+  } catch { return false; }
+}
+
 // 판 API 처리기(backend.mjs handlers에 펼친다). rig.presets·rig.get은 보기라 기기 토큰(휴대폰·원격)도 본다.
 // 나머지는 판 API 토큰으로 붙은 연결(이 PC의 창·사람의 atrium call, auth.kind local)만. 에이전트의 세션 토큰은 이 API에 붙지 못한다
 export function rigSetupHandlers(b) {
@@ -371,7 +380,8 @@ export function rigSetupHandlers(b) {
     // P228: Rig 만들기 대화상자의 바로가기 둘과 답의 기본값(세 질문). 옛 rig.templates(3자리 틀)를 대신한다
     // P230(11.12의 6): workspace를 주면 그 뿌리의 git 상태(norepo | nocommit | ok). 창은 정기 점검을 저장소가 아닌 곳에서 고르면 경고한다
     'rig.presets': async (p) => ({
-      ...(await (async () => { if (!p || !p.workspace) return {}; try { const w = b.store.getWorkspace(await keyOf(p)); return w && w.root ? { git: gitStateOf(w.root) } : {}; } catch { return {}; } })()),
+      // P232(rig2-design 11.14의 9): claudeHooks(워크스페이스의 .claude/settings.json에 hooks가 있다. 창이 "이 저장소의 Claude Code 훅이 rig 자리에도 걸린다"를 알린다, 막지 않음)
+      ...(await (async () => { if (!p || !p.workspace) return {}; try { const w = b.store.getWorkspace(await keyOf(p)); return w && w.root ? { git: gitStateOf(w.root), claudeHooks: claudeHooksOf(w.root) } : {}; } catch { return {}; } })()),
       shortcuts: SHORTCUTS.map((s) => ({ id: s.id, title: s.title, desc: s.desc, en: s.en, answers: shortcutAnswers(s.id) })),
       defaults: DEFAULT_ANSWERS, every: EVERY_PRESETS, hoursMax: HOURS_MAX, improveDaysMax: IMPROVE_DAYS_MAX, readAllow: READ_ALLOW,
     }),

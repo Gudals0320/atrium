@@ -8,6 +8,10 @@
 // - P230(11.12): 기계 검사 done 훅은 seat(작업 자리). 정기 점검 일 글에 "바뀐 것 없으면 한 줄". 저장소 아닌 워크스페이스의 정기 점검 경고는 rig.presets의 git(창)
 // - 정기 점검: scoped + 읽기 허용 목록(git·gh 조회 동사, PowerShell 읽기 cmdlet. Bash로 감싼 powershell은 넣지 않는다, 11.10) + 보고서 폴더를 쓰기 범위로.
 // - 옛 3자리 틀(메인 + 워커, + 검토자, 워크트리판)은 대화상자에서 내렸다(11.1). 그 틀로 만든 rig.json은 그대로 읽고 돈다(옮기기 없음).
+// - P232(rig2-design 11.14): 기본 경로는 .atrium/ 아래(정본 .atrium/canon/rules.md, 장부 .atrium/ledger/<고리>.jsonl), 산출물 폴더는 reports/ 그대로(9).
+//   개선 계기에 이어진 회 수(ledger.followups → trigger.followups, 0이면 끔. "규칙이 자라는 반복 작업"은 3)(5·6·7).
+//   "규칙이 자라는 반복 작업"은 scoped + git 읽기 허용 목록(GROW_ALLOW. git -C는 넣지 않는다)(10). 정기 점검 허용 목록에 npm·git ls-tree 읽기, 일 글에 세 줄(1·4·12).
+//   답의 allow(Claude Code 권한 규칙 배열)를 주면 scoped 자리의 허용 목록이 된다(없으면 READ_ALLOW).
 
 export const SEAT_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/;
 export const WORK_LOOP = 'work';
@@ -22,41 +26,51 @@ export const PROPOSALS_DIR = '.atrium/proposals/';
 export const draftsDir = (seat) => `.atrium/drafts/${seat}/`;
 const guidePath = (seat) => `.atrium/seats/${seat}.txt`;
 // 정기 점검의 읽기 허용 목록(Claude Code 권한 규칙 꼴). P223·P225에서 정기 점검이 이것으로 권한 질문 0번으로 돌았다
+// P232(11.14의 1·4): P229 시험 A에서 물은 읽기(npm outdated·ls·view, git ls-tree)를 더한다. gh api는 쓰기 동사를 같은 접두로 받아 넣지 않는다
 export const READ_ALLOW = [
-  'Bash(git status:*)', 'Bash(git log:*)', 'Bash(git diff:*)', 'Bash(git show:*)', 'Bash(git branch:*)',
+  'Bash(git status:*)', 'Bash(git log:*)', 'Bash(git diff:*)', 'Bash(git show:*)', 'Bash(git branch:*)', 'Bash(git ls-tree:*)',
+  'Bash(npm outdated:*)', 'Bash(npm ls:*)', 'Bash(npm view:*)',
   'Bash(gh run list:*)', 'Bash(gh run view:*)', 'Bash(gh issue list:*)', 'Bash(gh issue view:*)', 'Bash(gh pr list:*)', 'Bash(gh pr view:*)', 'Bash(gh pr checks:*)',
   'PowerShell(Get-ChildItem:*)', 'PowerShell(Get-Content:*)', 'PowerShell(Select-String:*)', 'PowerShell(Test-Path:*)', 'PowerShell(Get-Item:*)', 'PowerShell(Resolve-Path:*)', 'PowerShell(Measure-Object:*)',
 ];
+
+// P232(11.14의 10): "규칙이 자라는 반복 작업"의 허용 목록. git 읽기 동사만. git -C는 뒤에 어떤 동사든 와서 넣지 않는다(안내 줄이 -C 없이 쓰라고 한다)
+export const GROW_ALLOW = ['Bash(git log:*)', 'Bash(git show:*)', 'Bash(git diff:*)', 'Bash(git cat-file:*)'];
+// P232(11.14의 9): 기본 경로. 정본·장부는 rig의 것이라 .atrium/ 아래, 산출물은 사람이 보는 결과라 저장소의 reports/
+export const CANON_DEFAULT = '.atrium/canon/rules.md';
+export const LEDGER_DEFAULT = `.atrium/ledger/${WORK_LOOP}.jsonl`;
+export const FOLLOWUPS_MAX = 50;
+export const GROW_FOLLOWUPS = 3;
 
 // 답의 기본(모든 덧붙임이 꺼짐). 경로는 꺼져 있어도 값을 지녀, 켜면 바로 쓴다
 export const DEFAULT_ANSWERS = Object.freeze({
   shortcut: null,
   trigger: 'request', every: '7d',
   seat: 'main', launcher: '', session: 'keep', permission: 'ask', unattended: false,
-  task: '',
-  canon: { on: false, path: 'docs/rules.md' },
-  ledger: { on: false, path: 'ledger/log.jsonl', improve: false, days: 7 },
+  task: '', allow: null,
+  canon: { on: false, path: CANON_DEFAULT },
+  ledger: { on: false, path: LEDGER_DEFAULT, improve: false, days: 7, followups: 0 },
   sector: { on: false, path: 'reports/' },
   check: { on: false, script: '.atrium/hooks/check.mjs' },
   review: { on: false, launcher: '' },
 });
 
 // 산출물 폴더와 장부의 경로는 자리 안내와 회의 첫 일 글(산출물 섹터 줄)이 알려 준다. 그래서 task는 경로를 적지 않는다(사람이 경로를 바꿔도 맞다)
-export const CHECK_TASK = 'Regular check: look at failing CI runs, stale issues and pull requests, and outdated dependencies. Read the ledger first and do not repeat findings that are already there unless they changed. Write one short report file in the output folder and append one JSON line per finding to the ledger. Do not fix anything; list what a person should pick. If nothing changed since the last report, write one line: no change + path of the last report. Then close with done and file the report as an artifact: atrium done ok "<one-line summary>" --artifact <report path>.';
+export const CHECK_TASK = 'Regular check: look at failing CI runs, stale issues and pull requests, and outdated dependencies. Read the ledger first and do not repeat findings that are already there unless they changed. Write one short report file in the output folder and append one JSON line per finding to the ledger. Do not fix anything; list what a person should pick. If nothing changed since the last report, write one line: no change + path of the last report. Look at CI with gh run list and gh run view. Name the report reports/<YYYY-MM-DD>-<run ID>.md. If node_modules is missing, compare package.json with npm view <package> version. Then close with done and file the report as an artifact: atrium done ok "<one-line summary>" --artifact <report path>.';
 
 // 이름 붙인 바로가기 둘(11.3). 누르면 답을 채우고, 그 뒤 사람이 바꿀 수 있다
 export const SHORTCUTS = [
   {
     id: 'check', title: '정기 점검', desc: '매주 새 세션 하나가 저장소를 살펴 보고서를 산출물 폴더에 쓰고 장부에 적습니다. 고치지는 않고, 고칠 것은 사람이 고릅니다.',
     en: { title: 'Regular check', desc: 'Every week a new session looks over the repository, writes a report to the output folder, and notes it in the ledger. It fixes nothing; a person picks what to fix.' },
-    answers: { trigger: 'every', every: '7d', seat: 'checker', session: 'fresh', permission: 'scoped', unattended: false, task: CHECK_TASK,
-      canon: { on: false }, ledger: { on: true, path: 'ledger/checks.jsonl', improve: false }, sector: { on: true, path: 'reports/' }, check: { on: false }, review: { on: false } },
+    answers: { trigger: 'every', every: '7d', seat: 'checker', session: 'fresh', permission: 'scoped', unattended: false, task: CHECK_TASK, allow: READ_ALLOW.slice(),
+      canon: { on: false }, ledger: { on: true, path: LEDGER_DEFAULT, improve: false }, sector: { on: true, path: 'reports/' }, check: { on: false }, review: { on: false } },
   },
   {
-    id: 'grow', title: '규칙이 자라는 반복 작업', desc: '같은 종류의 일을 요청마다 되풀이합니다. 자리는 매번 정본 문서를 읽고, 교정과 실패를 장부에 적습니다. 7일마다 장부를 읽고 정본 고침을 제안하고, 사람이 승인하면 반영됩니다.',
-    en: { title: 'Repeated work with growing rules', desc: 'The same kind of task, once per request. The seat reads the canon document every time and notes corrections and failures in the ledger. Every 7 days it reads the ledger and proposes canon changes, applied when a person approves.' },
-    answers: { trigger: 'request', seat: 'main', session: 'keep', permission: 'ask', unattended: false, task: '',
-      canon: { on: true, path: 'docs/rules.md' }, ledger: { on: true, path: 'ledger/corrections.jsonl', improve: true, days: 7 }, sector: { on: false }, check: { on: false }, review: { on: false } },
+    id: 'grow', title: '규칙이 자라는 반복 작업', desc: '같은 종류의 일을 요청마다 되풀이합니다. 자리는 매번 정본 문서를 읽고, 교정과 실패를 장부에 적습니다. 7일마다, 또는 이어진 요청(30분 안의 다음 요청)이 3번 쌓이면 장부를 읽고 정본 고침을 제안하고, 사람이 승인하면 반영됩니다.',
+    en: { title: 'Repeated work with growing rules', desc: 'The same kind of task, once per request. The seat reads the canon document every time and notes corrections and failures in the ledger. Every 7 days, or after 3 follow-up requests (a next request within 30 minutes), it reads the ledger and proposes canon changes, applied when a person approves.' },
+    answers: { trigger: 'request', seat: 'main', session: 'keep', permission: 'scoped', unattended: false, task: '', allow: GROW_ALLOW.slice(),
+      canon: { on: true, path: CANON_DEFAULT }, ledger: { on: true, path: LEDGER_DEFAULT, improve: true, days: 7, followups: GROW_FOLLOWUPS }, sector: { on: false }, check: { on: false }, review: { on: false } },
   },
 ];
 export const shortcutOf = (id) => SHORTCUTS.find((x) => x.id === id) || null;
@@ -73,6 +87,7 @@ function relPath(p, what, { dir = false } = {}) {
   return r;
 }
 const sub = (base, over) => ({ ...base, ...(over || {}) });
+const ALLOW_RULE_RE = /^[A-Za-z][A-Za-z0-9_-]*(\(.+\))?$/; // rig-amp.mjs의 자리 allow 검사와 같은 꼴
 
 // 답 정리: 기본값을 채우고 서로 맞지 않는 것을 고친다(request는 keep만). 틀린 값은 던진다(code bad_request)
 export function normalizeAnswers(a = {}) {
@@ -101,6 +116,17 @@ export function normalizeAnswers(a = {}) {
   if (x.ledger.on && x.ledger.improve && !(Number.isInteger(days) && days >= 1 && days <= IMPROVE_DAYS_MAX)) throw bad(`개선 주기는 1~${IMPROVE_DAYS_MAX}일이다: ${JSON.stringify(x.ledger.days)}`);
   if (x.canon.on) x.canon.path = relPath(x.canon.path, '정본 문서');
   if (x.ledger.on) { x.ledger.path = relPath(x.ledger.path, '장부'); if (x.ledger.path.endsWith('/')) throw bad(`장부는 파일이다: ${x.ledger.path}`); x.ledger.improve = x.ledger.improve === true; x.ledger.days = days || 7; }
+  // P232(11.14의 7): 개선 계기의 이어진 회 수(0·없음이면 끔)
+  const fu = x.ledger.followups == null || x.ledger.followups === '' ? 0 : Number(x.ledger.followups);
+  if (x.ledger.on && x.ledger.improve && !(Number.isInteger(fu) && fu >= 0 && fu <= FOLLOWUPS_MAX)) throw bad(`이어진 회 수는 0~${FOLLOWUPS_MAX}이다(0이면 끔): ${JSON.stringify(x.ledger.followups)}`);
+  x.ledger.followups = Number.isInteger(fu) && fu > 0 ? fu : 0;
+  // P232: scoped 자리의 허용 목록(Claude Code 권한 규칙). git -C는 받지 않는다(어떤 동사든 뒤에 온다)
+  if (x.allow != null) {
+    if (!Array.isArray(x.allow) || x.allow.some((r) => typeof r !== 'string' || !ALLOW_RULE_RE.test(r.trim()))) throw bad(`허용 목록은 Claude Code 권한 규칙 배열이다(예: "Bash(git log:*)"): ${JSON.stringify(x.allow)}`);
+    const c = x.allow.find((r) => /^Bash\(\s*git\s+-C\b/i.test(r.trim()));
+    if (c) throw bad(`git -C는 허용 목록에 넣지 않는다(뒤에 어떤 동사든 온다): ${c}`);
+    x.allow = [...new Set(x.allow.map((r) => r.trim()))];
+  }
   if (x.sector.on) x.sector.path = relPath(x.sector.path, '산출물 폴더', { dir: true });
   if (x.check.on) { x.check.script = relPath(x.check.script, '기계 검사 스크립트'); if (x.check.script.endsWith('/')) throw bad(`기계 검사는 스크립트 파일이다: ${x.check.script}`); }
   return x;
@@ -125,7 +151,7 @@ function seatGuide(x) {
   if (x.ledger.on) L.push(`- 사람의 교정, 반려, 실패, 새로 안 사실이 있으면 장부 ${x.ledger.path}에 JSON 한 줄씩 덧붙인다({"t": "<시각>", "kind": "correction|failure|fact", "text": "<한 줄>"}). 이미 적힌 것은 다시 적지 않는다.`);
   if (x.ledger.on && x.ledger.improve) {
     const target = x.canon.on ? `--target <정본 문서 이름 rules 또는 definition>` : '--target definition';
-    L.push(`- 개선 회(보드가 ${x.ledger.days}일마다 연다)에서는 장부를 읽고 고칠 규칙을 제안한다: 새 내용 전체를 ${draftsDir(x.seat)} 안에 쓰고 atrium rig propose ${target} --file <초안> --why "<까닭>". 사람이 승인하면 보드가 반영한다. 고칠 것이 없으면 그렇게 적고 닫는다.`);
+    L.push(`- 개선 회(보드가 ${x.ledger.days}일마다${x.ledger.followups ? `, 또는 이어진 회(앞 회가 끝나고 30분 안에 같은 쪽이 보낸 다음 요청)가 ${x.ledger.followups}번 쌓이면` : ''} 연다)에서는 장부를 읽고 고칠 규칙을 제안한다: 새 내용 전체를 ${draftsDir(x.seat)} 안에 쓰고 atrium rig propose ${target} --file <초안> --why "<까닭>". 사람이 승인하면 보드가 반영한다. 고칠 것이 없으면 그렇게 적고 닫는다.`);
   }
   if (x.sector.on) L.push(`- 결과 파일은 ${x.sector.path} 안에 쓰고, 닫을 때 낸다: atrium done ok "<보고>" --artifact ${x.sector.path}<파일>.`);
   if (x.check.on) L.push(`- 닫을 때 보드가 검사 스크립트 ${x.check.script}를 돌린다. 통과하지 못하면 닫기가 막히니 까닭을 고치고 다시 닫는다.`);
@@ -187,7 +213,7 @@ export function presetFiles(answers, { launcher = 'claude', reviewLauncher = nul
       docs.proposals = { path: PROPOSALS_DIR, role: 'sector', intake: 'register' };
       dirs.add(PROPOSALS_DIR);
       writes.push(draftsDir(S)); dirs.add(draftsDir(S));
-      loops[IMPROVE_LOOP] = { kind: 'improve', trigger: { every: `${x.ledger.days}d`, ...(x.session === 'keep' ? { notify: S } : {}) }, entry: S, reads: ['ledger'], produces: ['proposals'], approve: 'human' };
+      loops[IMPROVE_LOOP] = { kind: 'improve', trigger: { every: `${x.ledger.days}d`, ...(x.ledger.followups ? { followups: x.ledger.followups } : {}), ...(x.session === 'keep' ? { notify: S } : {}) }, entry: S, reads: ['ledger'], produces: ['proposals'], approve: 'human' };
     }
   }
   if (x.sector.on) {
@@ -198,7 +224,7 @@ export function presetFiles(answers, { launcher = 'claude', reviewLauncher = nul
   if (writes.length) seat.writes = writes;
   const perm = x.unattended ? 'unattended' : x.permission;
   if (perm !== 'ask') seat.permission = perm;
-  if (perm === 'scoped' && kindOf(launcher) === 'claude') seat.allow = READ_ALLOW.slice();
+  if (perm === 'scoped' && kindOf(launcher) === 'claude') seat.allow = (x.allow || READ_ALLOW).slice(); // P232: 답의 허용 목록(바로가기가 채운다)
   if (x.trigger === 'every') work.task = x.task || `Scheduled run: read ${guidePath(S)} and do the work it describes, then close with atrium done ok "<one-line summary>" (atrium done failed "<reason>" if you could not).`;
   const seats = { [S]: seat };
   const guides = { [guidePath(S)]: seatGuide(x) };

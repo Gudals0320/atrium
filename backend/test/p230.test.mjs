@@ -232,7 +232,7 @@ test('P230 지금 돌리기: 관리자 자리는 atrium rig run <고리>, 관리
 
 // ---------- 3. scoped 머리 줄, 4. 관리자 없는 rig ----------
 test('P230 머리 안내: scoped 자리에 셸 줄, 관리자 자리가 없는 rig의 모든 자리에 보고 줄. 관리자가 있고 ask면 세 줄 그대로', async () => {
-  assert.match(SCOPED_SHELL_LINE, /^\[Atrium 보드\] Run shell commands one at a time; do not pipe or chain them\. A command that asks stops an unattended run\. Read files with Read\/Glob\/Grep\.$/);
+  assert.match(SCOPED_SHELL_LINE, /^\[Atrium 보드\] Do not pipe shell commands or wrap them in another shell\. Run git in the working folder without -C\. A command that asks stops an unattended run\. Read files with Read\/Glob\/Grep\.$/); // P232(11.14의 2)
   assert.match(NO_MANAGER_LINE, /pausing or changing the rig in your report; the human decides/);
   const v = validateRig(limitDef());
   assert.equal(v.ok, true, v.reason);

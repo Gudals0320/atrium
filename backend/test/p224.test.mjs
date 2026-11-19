@@ -237,7 +237,9 @@ test('P224 정본 제안: 개선 회 글이 propose를 알리고, 제안은 prop
     assert.deepEqual(dec.map((r) => [r.kind, r.value, r.actor]), [['proposal_decided', 'approved', 'human'], ['proposal_applied', 'applied', 'board']]);
     assert.equal(dec[1].data.before, sha('# Rules\n\n- Keep answers short.\n')); assert.equal(dec[1].data.after, sha(NEW_RULES));
     assert.equal(b.store.getArtifact(art[0].id).state, 'accepted'); assert.equal(b.store.getArtifact(art[0].id).stateWhy, 'approved');
-    await until(() => main.texts.some((x) => x.includes(`제안 ${p.id}(rules)이 승인되어 docs/rules.txt에 반영`)));
+    // P232(rig2-design 11.14의 11): 정본 반영 알림은 바로 보내지 않고 main 자리의 다음 회 머리에 붙는다
+    assert.ok(b.store.seatNotes(ws.key, 'main').some((n) => n.text.includes(`정본 rules(docs/rules.txt)가 바뀌었다(제안 ${p.id} 승인·반영). 다시 읽는다.`)));
+    await tick(100); assert.ok(!main.texts.some((x) => x.includes('다시 읽는다')), '바로 보내지 않는다');
     assert.equal((await H(b)['rig.asks']({}, local)).asks.length, 0);
     await assert.rejects(async () => H(b)['rig.decide']({ id: `proposal:${p.id}`, action: 'reject', reason: 'x' }, local), /이미 정해졌다/);
     // 문서 감시: 보드가 쓴 바뀜(승인된 제안 반영)이고 승인 안 된 바뀜이 아니다
@@ -271,7 +273,7 @@ test('P224 거절과 충돌: 거절은 한 줄 까닭과 함께 남고(산출물
     assert.equal(read(dir, 'docs/facts.txt'), base);
     const d = ledger(b, ws.key, { kinds: ['proposal_decided'] }); assert.equal(d[0].value, 'rejected'); assert.equal(d[0].data.reason, 'cadence is per project, not a global fact');
     const a = b.store.getArtifact(b.store.getProposal(r1.proposal.id).artifactId); assert.equal(a.state, 'superseded'); assert.equal(a.stateWhy, 'rejected');
-    await until(() => main.texts.some((x) => x.includes('거절되었다: cadence is per project')));
+    assert.ok(b.store.seatNotes(ws.key, 'main').some((n) => n.text.includes('거절되었다: cadence is per project')), 'P232: 다음 회 머리에 붙는다');
     // 충돌: 제안 뒤에 사람이 손으로 고침
     const r2 = await verb(b, main, { op: 'propose', target: 'rules', text: NEW_RULES, why: 'cite facts' });
     fs.appendFileSync(path.join(dir, 'docs', 'rules.txt'), '- hand edit\n');
@@ -279,7 +281,7 @@ test('P224 거절과 충돌: 거절은 한 줄 까닭과 함께 남고(산출물
     assert.equal(c.applied, false); assert.match(c.reason, /충돌/); assert.equal(c.proposal.state, 'failed');
     assert.match(read(dir, 'docs/rules.txt'), /hand edit/, '충돌이면 쓰지 않는다');
     assert.equal(ledger(b, ws.key, { kinds: ['proposal_applied'] })[0].value, 'conflict');
-    await until(() => main.texts.some((x) => x.includes('반영하지 못했다') && x.includes('충돌')));
+    assert.ok(b.store.seatNotes(ws.key, 'main').some((n) => n.text.includes('반영하지 못했다') && n.text.includes('충돌')), 'P232: 다음 회 머리에 붙는다');
     // 다음 개선 회의 글에 거절·반영 못 한 제안이 붙는다
     const doneRun = await U(b).doneVerb(main, { result: 'ok', text: 'retro done, 2 proposals' });
     assert.ok(doneRun);
@@ -325,7 +327,7 @@ test('P224 정의 제안: approve가 human이 아니면 관리자 자리의 제�
     await assert.rejects(async () => verb(b, helper, { op: 'approve', id: r2.proposal.id }), /관리자 자리/);
     const ap = await verb(b, main, { op: 'approve', id: r2.proposal.id });
     assert.equal(ap.applied, true); assert.equal(b.rig.read(ws.key).def.name, 'rules-grow-loop-2'); assert.equal(b.rig.read(ws.key).n, n1 + 1);
-    await until(() => helper.texts.some((x) => x.includes('승인되어 .atrium/rig.json에 반영')));
+    assert.ok(b.store.seatNotes(ws.key, 'helper').some((n) => n.text.includes('승인되어 .atrium/rig.json에 반영')), 'P232: 다음 회 머리에 붙는다');
   } finally { await t.stop(); }
   // approve human(견본 그대로): 관리자 자리의 정의 제안도 사람에게
   const t2 = await grow();

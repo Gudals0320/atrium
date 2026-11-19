@@ -55,9 +55,10 @@ export const ADDS = ['canon', 'ledger', 'sector', 'check', 'review'];
 export const SEAT_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/;
 const clone = (x) => JSON.parse(JSON.stringify(x));
 // 판이 rig.presets를 주기 전에도 쓰는 기본 답(백엔드 rig-presets.mjs DEFAULT_ANSWERS와 같은 모양)
+// P232(rig2-design 11.14의 9): 기본 경로는 .atrium/ 아래(정본 .atrium/canon/rules.md, 장부 .atrium/ledger/work.jsonl). followups: 개선 계기의 이어진 회 수(0이면 끔)
 export const FALLBACK_ANSWERS = {
-  shortcut: null, trigger: 'request', every: '7d', seat: 'main', launcher: '', session: 'keep', permission: 'ask', unattended: false, task: '',
-  canon: { on: false, path: 'docs/rules.md' }, ledger: { on: false, path: 'ledger/log.jsonl', improve: false, days: 7 },
+  shortcut: null, trigger: 'request', every: '7d', seat: 'main', launcher: '', session: 'keep', permission: 'ask', unattended: false, task: '', allow: null,
+  canon: { on: false, path: '.atrium/canon/rules.md' }, ledger: { on: false, path: '.atrium/ledger/work.jsonl', improve: false, days: 7, followups: 0 },
   sector: { on: false, path: 'reports/' }, check: { on: false, script: '.atrium/hooks/check.mjs' }, review: { on: false, launcher: '' },
 };
 // rig.presets 답 → { shortcuts: [{ id, title, desc, answers }](화면 언어), defaults }
@@ -114,6 +115,7 @@ export function answersProblem(a) {
   if (a.canon.on && !String(a.canon.path || '').trim()) return 'canon';
   if (a.ledger.on && !String(a.ledger.path || '').trim()) return 'ledger';
   if (a.ledger.on && a.ledger.improve && !(Number(a.ledger.days) >= 1)) return 'ledger';
+  if (a.ledger.on && a.ledger.improve && !(Number.isInteger(Number(a.ledger.followups || 0)) && Number(a.ledger.followups || 0) >= 0 && Number(a.ledger.followups || 0) <= 50)) return 'ledger'; // P232
   if (a.sector.on && !String(a.sector.path || '').trim()) return 'sector';
   if (a.check.on && !String(a.check.script || '').trim()) return 'check';
   if (a.review.on && a.seat === 'reviewer') return 'seat';
@@ -178,7 +180,7 @@ export function defSummary(def) {
   const loops = loopsRaw ? Object.entries(loopsRaw).map(([name, x]) => {
     const t = (x && x.trigger) || {};
     const trigger = t.request != null ? 'request' : t.every != null ? 'every' : t.event != null ? 'event' : null;
-    return { name, kind: (x && x.kind) || 'work', trigger, every: t.every || null, entry: (x && x.entry) || t.request || null, produces: ((x && x.produces) || []).map(pathOf), approve: (x && x.approve) || null };
+    return { name, kind: (x && x.kind) || 'work', trigger, every: t.every || null, ...(Number.isInteger(t.followups) && t.followups > 0 ? { followups: t.followups } : {}), entry: (x && x.entry) || t.request || null, produces: ((x && x.produces) || []).map(pathOf), approve: (x && x.approve) || null };
   }) : [];
   const byRole = (r) => Object.values(docs).filter((x) => x && x.role === r).map((x) => x.path);
   const entries = new Set(loops.map((l) => l.entry));

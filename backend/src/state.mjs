@@ -86,13 +86,25 @@ export function applyHook(rt, body, now = Date.now()) {
       break;
     case 'PreToolUse':
       rt.lastPre = { tool, toolUseId: body.tool_use_id, input: body.tool_input };
+      rt.recentPre = [...(rt.recentPre || []).slice(-7), { tool, toolUseId: body.tool_use_id || null, input: JSON.stringify(body.tool_input ?? null) }]; // P232: 권한 질문을 그 도구 호출에 잇는다
       if (ASK_TOOLS[tool]) rt.pendingAsk = askFrom(ASK_TOOLS[tool], tool, body.tool_input, body.tool_use_id, now);
       break;
     case 'PermissionRequest': {
-      const toolUseId = rt.lastPre && rt.lastPre.tool === tool ? rt.lastPre.toolUseId : null;
+      // P232(H18): 병렬 호출이면 PreToolUse가 여럿 먼저 올 수 있다. 같은 도구·같은 입력의 PreToolUse(아직 줄에 없는 것)로 잇는다
+      const inJson = JSON.stringify(body.tool_input ?? null);
+      const queued = new Set((rt.askQueue || []).map((a) => a.toolUseId).filter(Boolean));
+      const pre = (rt.recentPre || []).find((p) => p.tool === tool && p.input === inJson && p.toolUseId && !queued.has(p.toolUseId));
+      const toolUseId = body.tool_use_id || (pre ? pre.toolUseId : rt.lastPre && rt.lastPre.tool === tool ? rt.lastPre.toolUseId : null);
       const kind = ASK_TOOLS[tool] || 'permission';
       const prev = rt.pendingAsk && rt.pendingAsk.toolUseId === toolUseId ? rt.pendingAsk : null;
-      rt.pendingAsk = { ...askFrom(kind, tool, body.tool_input, toolUseId, prev ? prev.since : now), suggestions: body.permission_suggestions || null, choices: prev ? prev.choices : null };
+      const ask = { ...askFrom(kind, tool, body.tool_input, toolUseId, prev ? prev.since : now), suggestions: body.permission_suggestions || null, choices: prev ? prev.choices : null };
+      // P232(H18): 병렬 도구 호출의 권한 질문은 hook이 한꺼번에 오고 화면은 "1 of 2", "2 of 2"로 차례로 묻는다.
+      //   온 차례대로 줄에 세우고, 기다리는 ask는 줄의 첫째(화면의 지금 질문)다. 앞 질문이 풀리면 다음 것이 올라온다
+      const q = (rt.askQueue || []).filter((a) => !(toolUseId && a.toolUseId === toolUseId));
+      const at = (rt.askQueue || []).findIndex((a) => toolUseId && a.toolUseId === toolUseId);
+      if (at >= 0) q.splice(at, 0, ask); else q.push(ask);
+      rt.askQueue = q;
+      rt.pendingAsk = q[0];
       break;
     }
     case 'Notification':
@@ -101,7 +113,8 @@ export function applyHook(rt, body, now = Date.now()) {
     case 'PostToolUse':
     case 'PostToolUseFailure':
     case 'PermissionDenied':
-      if (rt.pendingAsk && (!rt.pendingAsk.toolUseId || rt.pendingAsk.toolUseId === body.tool_use_id)) resolveAsk(rt, ev, now);
+      if (body.tool_use_id && rt.askQueue) rt.askQueue = rt.askQueue.filter((a) => a.toolUseId !== body.tool_use_id); // P232: 줄에서 뺀다
+      if (rt.pendingAsk && (!rt.pendingAsk.toolUseId || rt.pendingAsk.toolUseId === body.tool_use_id)) { resolveAsk(rt, ev, now); nextAsk(rt); }
       break;
     case 'Stop':
       // P41: 모델 오류는 Stop으로 와도(답 글이 Claude Code의 오류 글) 오류로 본다
@@ -110,6 +123,7 @@ export function applyHook(rt, body, now = Date.now()) {
       rt.lastAnswerAt = now;
       rt.turn.endedAt = now;
       if (rt.pendingAsk) resolveAsk(rt, 'Stop', now);
+      rt.askQueue = null; rt.recentPre = null; // P232
       break;
     case 'StopFailure':
       rt.lastError = { type: body.error || body.error_type || 'unknown', message: body.message || body.error_message || body.error_details || null, at: now };
@@ -144,7 +158,21 @@ function askFrom(kind, tool, input, toolUseId, since) {
   a.input = input;
   return a;
 }
-function resolveAsk(rt, how, now) { rt.lastAskResolved = { ...rt.pendingAsk, input: undefined, resolvedBy: how, resolvedAt: now }; rt.pendingAsk = null; }
+// P232(H18): 화면에서 읽은 권한 질문(screen.mjs parsePermissionDialog) → 응답 필요 ask. hook이 없던 둘째 질문("2 of 2")도 카드와 atrium answer가 답한다
+const HEAD_TOOL = [[/^Bash command$/i, 'Bash'], [/^PowerShell command$/i, 'PowerShell'], [/^Edit file$/i, 'Edit'], [/^(Create|Write) file$/i, 'Write'], [/^Read file$/i, 'Read'], [/^Fetch$/i, 'WebFetch'], [/^Web ?Search$/i, 'WebSearch']];
+export function screenPermissionAsk(p, now = Date.now()) {
+  const hit = p.tool ? HEAD_TOOL.find(([re]) => re.test(p.tool)) : null;
+  const tool = hit ? hit[1] : null;
+  const what = p.detail || p.question || null;
+  return { kind: 'permission', tool, toolUseId: null, since: now, notifiedAt: null, summary: tool ? `${tool}: ${what || '?'}` : what || 'permission', choices: p.choices, question: p.question || null, fromScreen: true, ...(p.step ? { step: p.step } : {}) };
+}
+function resolveAsk(rt, how, now) {
+  const a = rt.pendingAsk;
+  rt.lastAskResolved = { ...a, input: undefined, resolvedBy: how, resolvedAt: now }; rt.pendingAsk = null;
+  if (rt.askQueue && a) rt.askQueue = rt.askQueue.filter((x) => x !== a && !(a.toolUseId && x.toolUseId === a.toolUseId)); // P232
+}
+// P232(H18): 줄에 남은 다음 권한 질문을 기다리는 ask로(화면이 다음 질문을 보일 때)
+function nextAsk(rt) { if (!rt.pendingAsk && rt.askQueue && rt.askQueue.length) rt.pendingAsk = rt.askQueue[0]; }
 
 // P173: 턴 없는 일. Claude Code는 사람이 친 /compact와 쉬는 동안의 압축("Compacted while idle")에도 터미널을 working → done으로 바꾼다.
 // 그 사이에 지시(UserPromptSubmit)도 턴 끝(Stop·StopFailure)도 오지 않는다(오는 것은 SubagentStop, PreCompact·PostCompact뿐).
@@ -169,6 +197,9 @@ export function applyTermStatus(rt, status, now = Date.now(), extra = {}) {
   rt.lastActivityAt = now;
   // waiting은 hook이 아니라 터미널 상태가 blocked에서 벗어날 때 끝낸다. 거부·취소에는 hook이 없다(E9).
   if (prev === 'blocked' && status !== 'blocked' && rt.pendingAsk) resolveAsk(rt, `term:${status}`, now);
+  // P232(H18): 턴이 끝나면(쉼) 줄을 비우고, 다시 막히면 줄의 다음 질문이 기다리는 ask다
+  if (status === 'idle' || status === 'done') rt.askQueue = null;
+  if (status === 'blocked') nextAsk(rt);
   if (status !== 'blocked') { rt.trustScreen = null; rt.screenAsk = null; rt.worktreeExit = null; }
   // hook이 없는 세션의 턴은 터미널 상태로 센다(검토 대기 표시에 쓴다)
   if (rt.hooked === false && status === 'working' && prev !== 'working') rt.turn = { startedAt: now, endedAt: null };

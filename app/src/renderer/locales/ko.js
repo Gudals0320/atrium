@@ -3123,4 +3123,12 @@ export default {
   rigP231: {
     limitTipSelf: '상한을 넘으면 올라갈 곳({seat})이 상한에 걸린 그 자리 자신이라, 자기 일을 스스로 판정하지 않도록 사람이 정합니다.',
   },
+  // P232(rig2-design 11.14): 개선 계기의 이어진 회 수, 켜기 전 요약의 정본 기준 줄과 저장소 훅 알림
+  rigP232: {
+    followups: '이어진 회 수',
+    followupsHint: '앞 회가 끝나고 30분 안에 같은 쪽이 보낸 다음 요청이 이만큼 쌓이면 주기를 기다리지 않고 돕니다(0이면 끔).',
+    loopImproveFollow: '{name}(개선): {every} 또는 이어진 회 {n}개마다 장부를 읽고 제안 · 승인 {approve}',
+    canonBase: '정본 {path}에 첫 규칙을 적어 두면 켤 때의 내용이 기준이 됩니다.',
+    claudeHooks: '이 저장소의 Claude Code 훅(.claude/settings.json의 hooks)이 rig 자리에도 걸립니다.',
+  },
 };

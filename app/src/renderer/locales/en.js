@@ -3123,4 +3123,12 @@ export default {
   rigP231: {
     limitTipSelf: 'Past the limit this would go up to {seat}, the same seat the limit is about, so a person decides instead of that seat judging its own work.',
   },
+  // P232(rig2-design 11.14): follow-up count on the improvement trigger, canon baseline line and repository hooks notice in the summary
+  rigP232: {
+    followups: 'Follow-up runs',
+    followupsHint: 'Also runs once this many follow-up requests pile up (the same sender\u2019s next request within 30 minutes of the previous run). 0 turns it off.',
+    loopImproveFollow: '{name} (improvement): {every} or every {n} follow-up runs, reads the ledger and proposes · approved by {approve}',
+    canonBase: 'Write the first rules in the canon {path} now; its content when you turn the rig on becomes the baseline.',
+    claudeHooks: 'This repository\u2019s Claude Code hooks (hooks in .claude/settings.json) also run in the rig seats.',
+  },
 };

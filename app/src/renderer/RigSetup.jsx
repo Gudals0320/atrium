@@ -222,7 +222,7 @@ export function RigCreateDialog({ ws, onClose }) {
             )}
             {step === 'preview' && st && (
               <>
-                <RigSummary def={st.definition} choices={choices} created={w.created} />
+                <RigSummary def={st.definition} choices={choices} created={w.created} claudeHooks={!!(pre && pre.claudeHooks)} beforeEnable={st.status === 'off'} />
                 {st.status === 'invalid' && <div className="mt-rigon-warn">{t('rig.stInvalid', { reason: st.why || '?' })}</div>}
                 <div className="mt-rigsetup-refine" data-role="rig-refine">
                   <label>{t('rigP228.refine')}
@@ -319,6 +319,7 @@ function AskStep({ w, setW, choices, shortcuts, presetsError, git = null }) { //
           <label className="mt-rigq-field">{t('rigP228.ledgerPath')}<input className="mt-input" data-field="ledger.path" value={a.ledger.path} onChange={(e) => set('ledger.path', e.target.value)} /></label>
           <label className="mt-rigq-opt"><input type="checkbox" checked={!!a.ledger.improve} data-field="ledger.improve" onChange={(e) => set('ledger.improve', e.target.checked)} />{t('rigP228.improve', { n: a.ledger.days })}</label>
           {a.ledger.improve && <label className="mt-rigq-field">{t('rigP228.improveDays')}<input className="mt-input mt-rigpanel-num" type="number" min="1" max="90" data-field="ledger.days" value={a.ledger.days} onChange={(e) => set('ledger.days', Number(e.target.value))} /></label>}
+          {a.ledger.improve && <label className="mt-rigq-field" data-role="rig-followups">{t('rigP232.followups')}<input className="mt-input mt-rigpanel-num" type="number" min="0" max="50" data-field="ledger.followups" value={a.ledger.followups || 0} onChange={(e) => set('ledger.followups', Number(e.target.value))} /><span className="dim">{t('rigP232.followupsHint')}</span></label>}{/* P232(11.14의 7) */}
         </Add>
         <Add k="sector" a={a} set={set}>
           <label className="mt-rigq-field">{t('rigP228.sectorPath')}<input className="mt-input" data-field="sector.path" value={a.sector.path} onChange={(e) => set('sector.path', e.target.value)} /></label>
@@ -350,11 +351,12 @@ function Add({ k, a, set, children }) {
 }
 
 // 켜기 전 요약: 고리·계기·자리(권한 줄)·덧붙임. 옛 틀처럼 고리가 없는 정의는 흐름 그림
-export function RigSummary({ def, choices = [], created = null }) {
+// P232(rig2-design 11.14의 8·9): beforeEnable(만들기 대화상자의 켜기 전 요약)이면 정본마다 "첫 규칙을 적어 두면 켤 때의 내용이 기준" 줄, claudeHooks면 저장소 훅 알림(막지 않음)
+export function RigSummary({ def, choices = [], created = null, claudeHooks = false, beforeEnable = false }) {
   const t = useT();
   const s = useMemo(() => defSummary(def), [def]);
   const every = (e) => (e === '1d' ? t('rigP228.every1d') : e === '7d' ? t('rigP228.every7d') : /^\d+h$/.test(String(e)) ? t('rigP228.everyN', { n: parseInt(e, 10) }) : String(e || ''));
-  const loopText = (l) => (l.kind === 'improve' ? t('rigP228.loopImprove', { name: l.name, every: every(l.every), approve: t(l.approve === 'human' ? 'rigP228.approveHuman' : 'rigP228.approveManager') })
+  const loopText = (l) => (l.kind === 'improve' ? t(l.followups ? 'rigP232.loopImproveFollow' : 'rigP228.loopImprove', { name: l.name, every: every(l.every), n: l.followups, approve: t(l.approve === 'human' ? 'rigP228.approveHuman' : 'rigP228.approveManager') })
     : l.trigger === 'request' ? t('rigP228.loopRequest', { name: l.name, entry: l.entry }) : l.trigger === 'every' ? t('rigP228.loopEvery', { name: l.name, every: every(l.every), entry: l.entry }) : t('rigP228.loopEvent', { name: l.name }));
   const adds = [
     s.adds.canon.length && t('rigP228.addCanon', { list: s.adds.canon.join(', ') }),
@@ -389,7 +391,9 @@ export function RigSummary({ def, choices = [], created = null }) {
       {!s.legacy && <>
         <div className="mt-rigsum-h">{t('rigP228.sumAdds')}</div>
         <ul className="mt-rigon-list" data-role="rig-summary-adds">{adds.length ? adds.map((x, i) => <li key={i}>{x}</li>) : <li className="dim">{t('rigP228.sumNone')}</li>}</ul>
+        {beforeEnable && s.adds.canon.map((p) => <div key={p} className="mt-rigsum-note" data-role="rig-canon-base" data-path={p}>{t('rigP232.canonBase', { path: p })}</div>)}
       </>}
+      {claudeHooks && <div className="mt-rigon-warn" data-role="rig-claude-hooks">{t('rigP232.claudeHooks')}</div>}
       {created && (created.written || []).length > 0 && <div className="dim mt-rigsum-files" data-role="rig-summary-written">{t('rigP228.written', { list: created.written.join(', ') })}</div>}
       {created && (created.kept || []).length > 0 && <div className="dim mt-rigsum-files" data-role="rig-summary-kept">{t('rigP228.kept', { list: created.kept.join(', ') })}</div>}
     </div>

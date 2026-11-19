@@ -2813,3 +2813,5 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rigloop-meta { font-size: 12px; overflow-wrap: anywhere; }
 .mt-rigloop-acts { display: flex; gap: 6px; }
 .mt-rigq-why { display: block; color: var(--attn-text); font-size: 12px; }
+/* P232(rig2-design 11.14의 8): 켜기 전 요약의 정본 기준 줄 */
+.mt-rigsum-note { font-size: 12px; color: var(--text-2); margin-top: 4px; overflow-wrap: anywhere; }

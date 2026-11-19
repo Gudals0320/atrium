@@ -60,6 +60,14 @@ export function seatColumns(def) {
 //   (머리가 길면 Claude Code가 첫 지시를 붙여 넣은 자료로 감싸는 경계를 더 자주 넘는다)
 // guide: 그 자리의 안내 파일이 있으면 일을 시작하기 전에 읽으라고 한다(P185 개발용 판: 안내를 읽지 않은 모델이 자리의 일과 다르게 닫았다)
 // P219: docs(seatDocsOf: 그 자리의 loads·reads)가 있으면 셋째 줄 끝에 늘 싣는 문서 경로와 `atrium item`(자세한 목록)을 붙인다(세 줄 그대로)
+// P232: 사람 글의 본문(일 머리 판 알림 줄 "[Atrium …]"과 그 뒤 빈 줄을 뗀 것). 본문이 없으면 원문
+export function bodyOf(text) {
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  let i = 0;
+  while (i < lines.length && (/^\[Atrium/.test(lines[i].trim()) || (i > 0 && !lines[i].trim()))) i++;
+  const rest = lines.slice(i).join('\n').trim();
+  return rest || String(text || '');
+}
 // P230(rig2-design 11.12의 2·3): extra(판이 더하는 줄). scoped 자리는 셸 안내 한 줄, 관리자 자리가 없는 rig는 보고에 적으라는 한 줄(seatExtraLines)
 export function seatHeader({ seat, unitId, caseId, by, guide = false, docs = null, extra = [] }) {
   const tail = docsTail(docs);
@@ -70,7 +78,8 @@ export function seatHeader({ seat, unitId, caseId, by, guide = false, docs = nul
     ...extra,
   ].join('\n');
 }
-export const SCOPED_SHELL_LINE = '[Atrium 보드] Run shell commands one at a time; do not pipe or chain them. A command that asks stops an unattended run. Read files with Read/Glob/Grep.';
+// P232(rig2-design 11.14의 2): cd '<폴더>' && <명령>은 Claude Code가 나눠 규칙을 맞추므로 막지 않는다. 파이프와 셸 감싸기, git -C(허용 목록이 받지 않음)만 말한다
+export const SCOPED_SHELL_LINE = '[Atrium 보드] Do not pipe shell commands or wrap them in another shell. Run git in the working folder without -C. A command that asks stops an unattended run. Read files with Read/Glob/Grep.';
 // P231(rig2-design 11.13의 3): 사람 카드를 기다리는 회에 주인이 --case로 손댈 때의 까닭
 export const humanWaitText = (caseId) => `회 ${caseId}은 사람이 정하는 중(응답 필요 카드)이다. 이 회는 기다린다. 같은 일을 새 회로 다시 열지 않는다.`;
 // P231(11.13의 3): 사람이 상한 카드에 답한 결과를 주인 세션에 한 번 알리는 판 알림. action: accept | again | pause
@@ -252,10 +261,10 @@ export class RigFlow {
     const r = this.b.rig ? this.b.rig.active(key) : null;
     const loop = o.loop !== undefined ? o.loop : r ? this.loops.loopForSeat(r.def, owner.rigSeat || null) : null;
     const name = o.name || (o.spec ? runNameOf(o.spec) : null);
-    const c = { id: newId('c'), workspaceKey: key, owner: owner.sessionId, state: 'open', createdAt: Date.now(), edgeCounts: {}, versionN: this.b.rig ? this.b.rig.currentN(key) : null, loop: loop || null, name: name || null, nameBy: name ? 'auto' : null }; // P188: 건이 쥐는 버전
+    const c = { id: newId('c'), workspaceKey: key, owner: owner.sessionId, state: 'open', createdAt: Date.now(), edgeCounts: {}, versionN: this.b.rig ? this.b.rig.currentN(key) : null, loop: loop || null, name: name || null, nameBy: name ? 'auto' : null, follows: o.follows || null }; // P188: 건이 쥐는 버전. P232: follows(이어진 회의 앞 회)
     this.store().insertCase(c);
     this.store().addEvent(owner.sessionId, 'rig_case_open', { caseId: c.id, workspace: key, version: c.versionN, ...(loop ? { loop } : {}) });
-    rigEvent(this.b, { kind: 'case_open', ws: key, defN: c.versionN, caseId: c.id, seat: owner.rigSeat || null, session: owner.sessionId, actor, text: `주인 @${shownName(owner) || owner.name}`, data: { loop: loop || null, name: name || null, trigger: o.trigger || null } }); // P221: run_open = case_open + data.loop
+    rigEvent(this.b, { kind: 'case_open', ws: key, defN: c.versionN, caseId: c.id, seat: owner.rigSeat || null, session: owner.sessionId, actor, text: `주인 @${shownName(owner) || owner.name}`, data: { loop: loop || null, name: name || null, trigger: o.trigger || null, ...(o.follows ? { follows: o.follows } : {}) } }); // P221: run_open = case_open + data.loop. P232(11.14의 5): data.follows
     if (name) rigEvent(this.b, { kind: 'run_named', ws: key, defN: c.versionN, caseId: c.id, seat: owner.rigSeat || null, session: owner.sessionId, value: 'auto', actor: 'board', text: `"${name}"`, data: { name, before: null, by: 'auto', loop: loop || null } });
     this.b.log(`rig case ${c.id} open by ${owner.name}`);
     return this.store().getCase(c.id);
@@ -686,12 +695,40 @@ export class RigFlow {
     return unit && unit.from ? this.seatOfSession(unit.from) : null;
   }
   // P231(11.13의 3): 사람이 상한 카드에 답한 결과를 주인 세션에 한 번 알린다(받음 · 한 번 더 · 멈춤). 주인 세션이 닫혔으면 넣지 않는다
+  //   P232(11.14의 11): 받음·멈춤은 주인에게 지금 할 일이 없다. 주인 자리의 다음 회 머리에 붙인다(따로 보내지 않는다). 한 번 더(again)만 바로 보낸다
   tellOwnerDecided(c, action, o = {}) {
     const b = this.b;
     if (!c || !c.owner || !b.sessions.has(c.owner)) return null;
+    const ow = b.sessions.get(c.owner);
+    if (action !== 'again' && ow.rigSeat && this.noteForSeat(c.workspaceKey, ow.rigSeat, humanDecidedText({ caseId: c.id, name: c.name, action, ...o }), `decided_${action}`)) {
+      try { this.store().addEvent(c.owner, 'rig_human_decided', { caseId: c.id, action, note: true }); } catch {}
+      return { note: true };
+    }
     const d = b.queue.enqueue(c.owner, humanDecidedText({ caseId: c.id, name: c.name, action, ...o }));
     try { this.store().addEvent(c.owner, 'rig_human_decided', { caseId: c.id, action, deliveryId: d.deliveryId }); } catch {}
     return d;
+  }
+  // P232(rig2-design 11.14의 11): 지금 할 일이 없는 판 알림은 그 자리의 다음 회 머리 글에 붙인다(쉬는 keep 세션의 턴을 쓰지 않는다) → 적었으면 true
+  noteForSeat(key, seat, text, kind = null) {
+    const st = this.store();
+    if (!key || !seat || !st.addSeatNote) return false;
+    const id = st.addSeatNote(key, seat, text, kind);
+    try { st.addEvent(null, 'rig_seat_note', { workspace: key, seat, id, kind }); } catch {}
+    this.b.log && this.b.log(`rig seat note ${key} ${seat} #${id} ${kind || ''}`);
+    return true;
+  }
+  // 일 머리에 붙일 쌓인 알림(그 자리의 다음 일). 꺼낸 것은 다시 붙지 않는다 → 줄 배열
+  takeSeatNotes(unit) {
+    const st = this.store();
+    if (!unit || !unit.caseId || !st.seatNotes) return [];
+    const c = st.getCase(unit.caseId);
+    const seat = unit.seat || null;
+    if (!c || !seat) return [];
+    const notes = st.seatNotes(c.workspaceKey, seat);
+    if (!notes.length) return [];
+    st.useSeatNotes(notes.map((n) => n.id), unit.id);
+    try { st.addEvent(unit.to, 'rig_seat_note_used', { unitId: unit.id, seat, ids: notes.map((n) => n.id) }); } catch {}
+    return notes.map((n) => n.text);
   }
   // P194: 주인에게 보고(일을 만들지 않는다). 상한을 넘어 올라온 것이면 건을 waiting_owner로 둔다(주인의 다음 맡기기가 잇는다)
   ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner, firstSpec, passN = null, lead = null }) {
@@ -973,11 +1010,25 @@ export class RigFlow {
     L.push('', '## 도구 실패', `실행 ${P.toolRuns}, 실패 ${P.toolFails.length}`);
     for (const f of P.toolFails.slice(0, 10)) L.push(`- ${f.tool} ${f.status}${f.exitCode != null ? ` 종료 코드 ${f.exitCode}` : ''}${f.error ? `: ${clip(String(f.error).replace(/\s+/g, ' '), 120)}` : ''}`);
     // 사람이 rig 자리에 보낸 글
-    L.push('', '## 사람이 rig 자리에 보낸 글', P.human.length ? P.human.slice(-20).map((x) => `- @${x.name}(${x.seat} 자리): ${clip(String(x.text).replace(/\s+/g, ' '), 200)}`).join('\n') : '없음');
+    // P232(11.14의 6): 글마다 그 글이 연 회와, 이어진 회면 앞 회와 그 결과("c… done 뒤 4분"). 판 알림 줄(일 머리)은 떼고 보인다
+    L.push('', '## 사람이 rig 자리에 보낸 글', P.human.length ? P.human.slice(-20).map((x) => `- @${x.name}(${x.seat} 자리): ${clip(bodyOf(x.text).replace(/\s+/g, ' '), 200)}${this.followNote(x.caseId)}`).join('\n') : '없음');
     // 오래 열린 건
     const stale = st.liveCasesWithLast(key).filter((c) => now - (c.lastAt || c.createdAt) >= cy.staleMs);
     L.push('', `## 오래 열린 건(마지막 넘김 뒤 ${ago(cy.staleMs)} 넘음)`, stale.length ? stale.map((c) => { const open = this.history(c.id).filter((u) => u.status === 'open'); return `- ${c.id} ${c.state}: 주인 @${this.nameOf(c.owner)}, 마지막 넘김 ${ago(now - (c.lastAt || c.createdAt))} 전${open.length ? `, 열린 일 ${open.map((u) => `${u.seat || '-'}(@${u.name})`).join(', ')}` : ''}${c.blockedReason ? `, ${c.blockedReason}` : ''}`; }).join('\n') : '없음');
     return L.join('\n');
+  }
+
+  // P232(11.14의 6): 사람 글이 연 회의 이어짐 → " (회 c2, 이어진 회: 앞 회 c1 done 뒤 4분)" | " (회 c2)" | ''
+  followNote(caseId) {
+    if (!caseId) return '';
+    const st = this.store();
+    const c = st.getCase(caseId);
+    if (!c) return '';
+    const prev = c.follows ? st.getCase(c.follows) : null;
+    if (!prev) return ` (회 ${c.id})`;
+    const gap = prev.closedAt != null ? Math.max(0, c.createdAt - prev.closedAt) : null;
+    const span = gap == null ? '' : gap >= 3600000 ? ` 뒤 ${Math.floor(gap / 3600000)}시간` : ` 뒤 ${Math.max(0, Math.round(gap / 60000))}분`;
+    return ` (회 ${c.id}, 이어진 회: 앞 회 ${prev.id}${prev.name ? ` "${clip(prev.name, 40)}"` : ''} ${prev.state}${span})`;
   }
 
   // ---------- 보이기 ----------
