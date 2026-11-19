@@ -292,8 +292,8 @@ export function bandPhone(R, o) {
     for (const u of us.filter((q) => q.status === 'open')) {
       const id = nodeOf(u.sessionId);
       if (id && inBand(id) && member.get(id).mode !== 'keep' && !placed.has(id)) { placed.add(id); const e = entry(nodes.find((q) => q.id === id), x0, cy, { caseId: c.id, w: Math.min(CW, W) }); cy += e.h + P.GY; }
-      else if (id && inBand(id) && member.get(id).mode === 'keep') { marks.push({ kind: u.retry ? 'exited' : 'holds', ws, caseId: c.id, unit: u.unit, target: id, seat: u.seat, x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:${u.unit}`, ...(u.retry ? { retryUnit: u.unit } : {}) }); cy += BAND.MARK + P.GY; continue; }
-      if (u.retry) { marks.push({ kind: 'exited', ws, caseId: c.id, key: `x${u.unit}`, retryUnit: u.unit, target: id && inBand(id) ? id : null, seat: u.seat, x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:x${u.unit}` }); cy += BAND.MARK + P.GY; } // P216
+      else if (id && inBand(id) && member.get(id).mode === 'keep') { marks.push({ kind: u.retry ? 'exited' : 'holds', ws, caseId: c.id, unit: u.unit, target: id, seat: u.seat, x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:${u.unit}`, ...(u.retry ? { retryUnit: u.unit, badArgs: u.badArgs || null } : {}) }); cy += BAND.MARK + P.GY; continue; }
+      if (u.retry) { marks.push({ kind: 'exited', ws, caseId: c.id, key: `x${u.unit}`, retryUnit: u.unit, badArgs: u.badArgs || null /* P238 */, target: id && inBand(id) ? id : null, seat: u.seat, x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:x${u.unit}` }); cy += BAND.MARK + P.GY; } // P216
     }
     if (c.state === 'waiting_owner') { marks.push({ kind: 'wait', ws, caseId: c.id, key: 'wait', target: nodeOf(c.ownerSessionId), x: x0, y: cy, w: W, h: BAND.MARK, id: `${c.id}:wait` }); cy += BAND.MARK + P.GY; }
     // 이 건의 다른 세션은 머리 자리에 접힌 항목(요약 열·사이드바가 찾는다)

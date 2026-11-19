@@ -2936,6 +2936,7 @@ export default {
     buttonN: { one: 'Relaunch {n} work item', other: 'Relaunch {n} work items' },
     done: { one: 'Run {id}: handed {n} work item to a new session.', other: 'Run {id}: handed {n} work items to new sessions.' },
     fail: 'Could not relaunch: {error}',
+    badArgs: 'Launch arguments may be invalid: it exited {s}s after launch with code {code}. Command line: {cmd}', // P238
   },
   rigLoopHold: { // P223: a request to the entry of a paused rig loop (held in the delivery queue)
     paused: 'held: loop paused',
