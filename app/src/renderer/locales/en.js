@@ -3230,5 +3230,18 @@ export default {
     undone: '{role} know-how rolled back to v{from} (now v{n})',
     same: 'Already the know-how of v{n}',
   },
+  // P247: rig 3 builder (talk to the builder)
+  rig3Builder: {
+    h: 'Builder',
+    menu: 'Talk to the builder (rig 3)…',
+    talk: 'Talk to the builder',
+    none: 'No builder session. Talking starts one.',
+    hint: 'Build and change the rig by talking with the builder. When you approve its one-page plan, the builder writes the definition and role docs. You turn the rig on here yourself.',
+    placeholder: 'What to tell the builder (leave empty to just open its terminal)',
+    send: 'Send and open',
+    open: 'Open builder',
+    spawned: 'Started builder @{name}',
+    opened: 'Going to builder @{name}',
+  },
 };
 

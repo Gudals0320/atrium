@@ -314,6 +314,7 @@ export class Rig3Items {
     const g = this.roles.guard; const t = this.roles.tune; // P245: 사람이 정의서를 되돌린 알림도 붙인다
     let out = []; try { if (g && g.takeNotices) out = g.takeNotices(key, role) || []; } catch {}
     try { if (t && t.takeNotices) out = [...out, ...t.takeNotices(key, role)]; } catch {}
+    try { if (this.roles.takeDocNotices) out = [...out, ...this.roles.takeDocNotices(key, role)]; } catch {} // P247: 정의·정의서가 바뀜(빌더 등)
     return out;
   }
   // ---------- 깨우는 글 ----------
@@ -375,7 +376,8 @@ export class Rig3Items {
     const stale = pend.filter((x) => x.rc.nudgedAt && !x.rc.stalledAt && x.rc.nudgedAt < since);
     if (!stale.length) return null;
     for (const x of stale) st.setReceipt(x.rc.id, { stalledAt: now });
-    rigEvent(this.b, { kind: 'item_stalled', ws: key, seat: role, session: s.sessionId, n: stale.length, actor: 'board', ref: stale.map((x) => x.it.id).join(','), text: `${role}: 일깨운 뒤에도 답하지 않았다 — ${stale.map((x) => x.it.id).join(', ')}`, data: { items: stale.map((x) => x.it.id) } });
+    let toBuilder = null; try { toBuilder = this.roles.builder ? this.roles.builder.alert(key, { what: 'stalled', role, items: stale.map((x) => x.it.id) }) : null; } catch {} // P247: 빌더가 있으면 전한다
+    rigEvent(this.b, { kind: 'item_stalled', ws: key, seat: role, session: s.sessionId, n: stale.length, actor: 'board', ref: stale.map((x) => x.it.id).join(','), text: `${role}: 일깨운 뒤에도 답하지 않았다 — ${stale.map((x) => x.it.id).join(', ')}${toBuilder ? ' (빌더에게 전함)' : ''}`, data: { items: stale.map((x) => x.it.id), toBuilder: !!toBuilder } });
     this.changed(key);
     return { stalled: stale.map((x) => x.it.id) };
   }

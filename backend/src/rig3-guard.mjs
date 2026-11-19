@@ -24,7 +24,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { rigEvent } from './rig-ledger.mjs';
-import { memoryDir } from './rig3.mjs';
+import { memoryDir, BUILDER_ROLE, builderOwns, builderWrites } from './rig3.mjs'; // P247: 빌더의 일 구간과 쓰기 범위
 import { backgroundOf, SLEEP_TICK_MS } from './sleep.mjs'; // P246: 뒤 일(일함 (다)·(라))
 
 export const GUARD_SKIP_NAMES = ['.git', 'node_modules', '.venv', 'venv', '__pycache__', '.pytest_cache', '.mypy_cache', '.cache'];
@@ -44,6 +44,14 @@ export const foreignNotice = (role, paths, { owns = [], others = [], quarantine 
     quarantine ? '되돌리기 전 내용은 판이 따로 두었다: ' + quarantine : '',
   ].filter(Boolean).join(' ');
 
+// P247: 빌더가 쓰기 범위 밖에 쓴 것을 되돌렸을 때
+export const builderForeignNotice = (paths, { writes = [], others = [], quarantine = null } = {}) =>
+  [
+    '[Atrium 보드] 네(빌더) 턴 동안 빌더의 쓰기 범위 밖에 쓴 것을 되돌렸다: ' + paths.join(', ') + '.',
+    '빌더는 ' + writes.join(', ') + '에만 쓴다. 역할의 섹터와 기억 폴더는 역할의 것이다.',
+    others.length ? '(같은 때 ' + others.join(', ') + '도 일하고 있어 누가 썼는지 가리지 못했다. 네가 쓰지 않았으면 넘어간다.)' : '',
+    quarantine ? '되돌리기 전 내용은 판이 따로 두었다: ' + quarantine : '',
+  ].filter(Boolean).join(' ');
 const lower = (s) => String(s).toLowerCase();
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 // 경로의 주인 → { role, kind: 'sector' | 'memory' } | null. 대소문자는 무시한다(Windows)
@@ -86,10 +94,12 @@ export async function walk(root, rules) {
 }
 // 바뀜 하나의 판단(순수) → { legit, why }
 //   cands: 그 창 동안 일하던 역할, owner: ownerOf 결과, board: 판 자신의 쓰기인가
-export function judge({ cands, owner, board = false }) {
+//   P247: builder — 바뀐 곳이 빌더의 쓰기 범위(.atrium/, 도구 스크립트)이고 역할의 것이 아니다. 빌더가 후보면 받아들인다
+export function judge({ cands, owner, board = false, builder = false }) {
   if (board) return { legit: true, why: 'board' };
   if (!cands.length) return { legit: true, why: 'outside' };
   if (owner && cands.includes(owner.role)) return { legit: true, why: 'owner' };
+  if (!owner && builder && cands.includes(BUILDER_ROLE)) return { legit: true, why: 'builder' };
   return { legit: false, why: owner ? 'other_sector' : 'no_sector' };
 }
 
@@ -123,8 +133,20 @@ export class Rig3Guard {
   // backend.broadcastSession이 상태가 바뀔 때 부른다(모든 하네스). from·to: 판 상태(working, ready, waiting, sleeping, exited …)
   onState(s, from, to) {
     if (!s || !s.rigRole || !s.workspaceKey) return null;
+    if (s.rigRole === BUILDER_ROLE) return this.onBuilder(s, from, to); // P247
     const x = this.ctx(s.workspaceKey);
     if (!x || !x.r3.roles[s.rigRole]) return null;
+    return this.track(s, from, to);
+  }
+  // P247: 빌더 세션도 역할처럼 일 구간을 연다(후보 '@builder'). 일함에서 나오면 검사가 끝난 뒤 빌더의 턴 뒤 일(꺼진 rig의 판 남기기)
+  onBuilder(s, from, to) {
+    const B = this.roles.builder;
+    const p = this.ctx(s.workspaceKey) ? this.track(s, from, to) : null;
+    const left = B ? B.onState(s, from, to) : false;
+    if (left) Promise.resolve(p).then(() => B.afterTurn(s.workspaceKey)).catch((e) => this.log('rig3 builder after turn ' + (e && e.stack || e)));
+    return p;
+  }
+  track(s, from, to) {
     const st = this.st(s.workspaceKey);
     const was = st.busy.get(s.sessionId);
     const now = BUSY_STATES.has(to);
@@ -363,7 +385,7 @@ export class Rig3Guard {
     let qdir = null;
     for (const ch of changes) {
       const owner = ownerOf(x.r3, ch.rel);
-      const v = judge({ cands, owner, board: this.isBoardWrite(st, ch.rel) });
+      const v = judge({ cands, owner, board: this.isBoardWrite(st, ch.rel), builder: !owner && builderOwns(x.r3, ch.rel) });
       const abs = path.join(x.root, ch.rel);
       if (v.legit) {
         if (ch.what === 'deleted') st.base.files.delete(ch.rel);
@@ -431,7 +453,7 @@ export class Rig3Guard {
     }
     const paths = foreign.filter((f) => f.action !== 'failed').map((f) => f.rel);
     if (!paths.length) return;
-    for (const role of cands) this.notify(key, role, foreignNotice(role, paths, { owns: r3.roles[role] ? r3.roles[role].owns : [], others: cands.filter((c) => c !== role), quarantine: qdir }));
+    for (const role of cands) this.notify(key, role, role === BUILDER_ROLE ? builderForeignNotice(paths, { writes: builderWrites(r3), others: cands.filter((c) => c !== role), quarantine: qdir }) : foreignNotice(role, paths, { owns: r3.roles[role] ? r3.roles[role].owns : [], others: cands.filter((c) => c !== role), quarantine: qdir }));
   }
   // 그 역할에게 한 줄. 잠들었거나 세션이 없으면 깰 때(또는 다음 띄움 뒤 상태가 바뀔 때)
   notify(key, role, text) {
