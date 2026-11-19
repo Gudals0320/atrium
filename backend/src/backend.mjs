@@ -1135,6 +1135,7 @@ export class Backend {
     const hl = this.harnessLaunchOf(s, { resume });
     writeLaunchFiles(hl.files);
     await this.adapter.waitShellReady(s.paneId, 8000);
+    s.rt.agentStartedAt = Date.now(); s.rt.launchArgv = [...hl.command, ...hl.args]; s.rt.launchSuspect = null; // P238: 곧바로 끝나면(종료 코드 2) 띄우기 인자 오류로 의심하고 이 명령 줄을 알린다
     const st = await this.adapter.startAgent({ name, paneId: s.paneId, args: hl.args, kind: s.kind, command: hl.command, env: hl.env, pathFirst: hl.pathFirst });
     s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now(), firstLaunchedAt: (s.harnessPlan || {}).firstLaunchedAt || Date.now() }; // P133: firstLaunchedAt(처음 띄운 때, 대화 ID 배우기)
     this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });

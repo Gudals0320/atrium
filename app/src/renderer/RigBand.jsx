@@ -52,7 +52,7 @@ export function RigBandLayer({ rb, t, now, onMark, onHead, onFold, onRetry = nul
         </button>
       ))}
       {rb.marks.map((m) => m.kind === 'exited' ? (
-        <div key={`rm:${m.ws}:${m.id}`} className="mt-rb-mark k-exited" data-role="rb-mark" data-kind="exited" data-case={m.caseId} data-unit={m.retryUnit} style={{ left: m.x, top: m.y, width: m.w, height: m.h }} title={t('rigRetry.tip')}>
+        <div key={`rm:${m.ws}:${m.id}`} className="mt-rb-mark k-exited" data-role="rb-mark" data-kind="exited" data-case={m.caseId} data-unit={m.retryUnit} data-bad-args={m.badArgs ? '1' : undefined} style={{ left: m.x, top: m.y, width: m.w, height: m.h }} title={m.badArgs ? `${t('rigRetry.tip')}\n${t('rigRetry.badArgs', { s: (m.badArgs.ms / 1000).toFixed(1), code: m.badArgs.code, cmd: m.badArgs.line || '-' })}` : t('rigRetry.tip')}>
           <span className="tx">{t('rigRetry.exited')}</span>
           {onRetry ? <button type="button" className="rt" data-action="rb-retry" data-case={m.caseId} data-unit={m.retryUnit} onClick={(e) => { e.stopPropagation(); onRetry(m.ws, m.caseId, m.retryUnit); }}>{t('rigRetry.button')}</button> : null}
         </div>

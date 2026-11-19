@@ -15,6 +15,27 @@ import { treeIndex, cycleCheck } from './push-cycle.mjs';
 import { clip } from './text.mjs';
 import { HUMAN_FROM, BUILDER_ORIGIN } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일의 멈춤은 응답 필요 목록으로
 
+// P238: 띄운 지 곧바로 종료 코드 2로 끝난 에이전트는 띄우기 인자 오류일 수 있다(CLI 인자 분석기의 오류 종료 코드, Codex의 맞지 않는 인자 등).
+//   QUICK_EXIT_MS: 판이 명령을 넣은 때부터 끝남을 안 때까지(셸이 명령을 받아 CLI가 뜨고 끝나는 시간과 터미널 서버의 알림을 더한 여유)
+export const QUICK_EXIT_MS = 2500;
+export const BAD_ARGS_CODE = 2;
+// 명령 줄 보이기: 빈칸·따옴표가 있는 낱말만 큰따옴표로 감싼다
+export function commandLine(argv) {
+  return (argv || []).map((w) => { const s = String(w); return s === '' || /[\s"]/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s; }).join(' ');
+}
+// rt(세션 런타임), exit(rt.exit) → { code, ms, argv, line } | null. rt.agentStartedAt·launchArgv는 startHarness가 적는다(없으면 launchedAt)
+export function launchArgsSuspect(rt, exit) {
+  if (!rt || !exit || exit.code !== BAD_ARGS_CODE || !exit.at) return null;
+  const t0 = rt.agentStartedAt || rt.launchedAt;
+  if (!t0) return null;
+  const ms = exit.at - t0;
+  if (ms < 0 || ms > QUICK_EXIT_MS) return null;
+  const argv = Array.isArray(rt.launchArgv) ? rt.launchArgv.map(String) : null;
+  return { code: BAD_ARGS_CODE, ms, argv, line: argv ? commandLine(argv) : null };
+}
+// 멈춤 알림에 붙이는 글(에이전트가 읽는다)
+export const badArgsText = (x) => `띄우기 인자가 잘못됐을 수 있다(launch arguments may be invalid): 띄운 지 ${(x.ms / 1000).toFixed(1)}초 만에 종료 코드 ${x.code}${x.line ? `. 명령 줄: ${x.line}` : ''}`;
+
 export const REFUSE_FLASH_MS = 1500; // P235: 판이 권한 요청을 거절한 뒤 화면의 막힘을 거절의 잔상으로 보는 시간
 export const STOP_REASONS = ['idle_no_done', 'turn_error', 'needs_human', 'closed', 'tree_quiet', 'exited'];
 const WHY = {
