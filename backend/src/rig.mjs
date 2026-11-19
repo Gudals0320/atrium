@@ -641,6 +641,8 @@ export class Rig {
       version: r.n ?? null, cycles: def && def.cycles ? def.cycles.map((x) => ({ every: x.every, to: x.to, run: x.run })) : [],
       loops: def && this.b.branch && this.b.branch.flow && this.b.branch.flow.loops ? this.b.branch.flow.loops.view(key, def) : [], // P221: 고리와 상태
       protected: this.rigProtected(key) || { pointers: [], files: [] }, protectedHits: r.protectedHits || [], changedFiles: this.changedFiles(key).map((x) => x.path),
+      // P233(rig2-design 11.15의 6): 꺼져 있을 때 정본이 마지막 승인 내용과 다르면 켜기 확인 창이 알린다(처음 켤 때는 없음)
+      canonDrift: !st.enabled && def && this.b.rigProposals && this.b.rigProposals.canonDrift ? (() => { try { return this.b.rigProposals.canonDrift(key, { ...r, root: r.root || w.root }); } catch { return []; } })() : [],
     };
   }
   // P223: 자리의 권한(rig.status seats[])

@@ -194,6 +194,8 @@ export function installRig(Store) {
     setSessionSeat(sessionId, seat) { this.st('UPDATE sessions SET rig_seat = ? WHERE session_id = ?').run(seat || null, sessionId); },
     insertCase(c) { this.st('INSERT INTO rig_cases (id, workspace_key, owner_session, state, created_at, closed_at, edge_counts, blocked_reason, version_n, loop, name, name_by, follows) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(c.id, c.workspaceKey, c.owner, c.state || 'open', c.createdAt, c.closedAt ?? null, JSON.stringify(c.edgeCounts || {}), c.blockedReason ?? null, c.versionN ?? null, c.loop ?? null, c.name ?? null, c.nameBy ?? null, c.follows ?? null); },
     // P232(11.14의 5·7): 그 고리의 가장 늦게 닫힌(done·cancelled) 회, 지난 개선 회 뒤 이어진 회 수
+    // P233(11.15의 3): 같은 고리에서 since 뒤에 닫힌 회(늦게 닫힌 것부터)
+    closedCasesOfLoopSince(key, loop, since, limit = 200) { return this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND loop = ? AND state IN ('done', 'cancelled') AND closed_at IS NOT NULL AND closed_at >= ? ORDER BY closed_at DESC, rowid DESC LIMIT ?").all(key, loop, since, limit).map(caseRow); },
     lastClosedCaseOfLoop(key, loop) { return caseRow(this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND loop = ? AND state IN ('done', 'cancelled') AND closed_at IS NOT NULL ORDER BY closed_at DESC, rowid DESC LIMIT 1").get(key, loop)); },
     followCasesSince(key, loops, t) { if (!loops.length) return 0; return Number(this.st(`SELECT COUNT(*) AS n FROM rig_cases WHERE workspace_key = ? AND follows IS NOT NULL AND created_at > ? AND loop IN (${loops.map(() => '?').join(', ')})`).get(key, t, ...loops).n); },
     // P232(11.14의 11): 다음 회 머리에 붙일 판 알림

@@ -55,6 +55,14 @@ export function askLine(s) {
   return t('ask.permission', { what: a.summary || a.tool });
 }
 
+// P233(rig2-design 11.15의 1): rig 자리의 권한 질문은 "이번 한 번 예"와 "아니오"만. 판이 넓히는 선택지를 뺀 선택지(ask.onceOnly) → 카드의 한 줄
+export function onceOnlyLine(s) {
+  const a = s && s.ask;
+  if (!a || a.kind !== 'permission' || !a.onceOnly) return '';
+  const list = (a.choices || []).map((c) => `${c.n}. ${c.label}`).join(' · ');
+  return list ? t('rigP233.onceOnly', { choices: list }) : t('rigP233.onceOnlyBare');
+}
+
 // P6a(P4 6절 9번): 선 위 글이 옆 노드를 가리지 않게, 두 노드 사이 틈에 맞춰 글 폭을 줄인다. 틈이 좁으면 짧은 표시(역할 앞부분과 받는 쪽 상태)만 두고,
 // 글 위에 마우스를 올리면 다 보인다. 틈은 Canvas가 data.gap(판 좌표)과 data.horizontal로 준다
 export function labelFit(data) {

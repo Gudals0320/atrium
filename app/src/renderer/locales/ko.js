@@ -3129,6 +3129,15 @@ export default {
     followupsHint: '앞 회가 끝나고 30분 안에 같은 쪽이 보낸 다음 요청이 이만큼 쌓이면 주기를 기다리지 않고 돕니다(0이면 끔).',
     loopImproveFollow: '{name}(개선): {every} 또는 이어진 회 {n}개마다 장부를 읽고 제안 · 승인 {approve}',
     canonBase: '정본 {path}에 첫 규칙을 적어 두면 켤 때의 내용이 기준이 됩니다.',
-    claudeHooks: '이 저장소의 Claude Code 훅(.claude/settings.json의 hooks)이 rig 자리에도 걸립니다.',
+    claudeHooks: '이 저장소의 Claude Code 훅(.claude/settings.json·settings.local.json의 hooks)이 rig 자리에도 걸립니다.',
+  },
+  // P233(rig2-design 11.15): rig 자리 권한 질문은 이번 한 번만, 켜기 확인의 정본 차이
+  rigP233: {
+    onceOnly: 'rig 자리라 이번 한 번만 받습니다: {choices}',
+    onceOnlyBare: 'rig 자리라 이번 한 번 허락(Yes)과 거절(No)만 받습니다.',
+    onceOnlyTip: '권한을 넓히는 선택지(auto mode로 바꾸기, 늘 허락, 다시 묻지 않기)는 숨겼습니다. 늘 허락하려면 rig 고치기에서 자리의 허용 목록(allow)에 더하세요.',
+    drift: '정본 {doc}({path})이 마지막 승인 내용과 다릅니다(+{added} −{removed}). 켜면 지금 내용이 기준이 됩니다.',
+    driftNoCount: '정본 {doc}({path})이 마지막 승인 내용과 다릅니다. 켜면 지금 내용이 기준이 됩니다.',
+    showDiff: '차이 보기',
   },
 };

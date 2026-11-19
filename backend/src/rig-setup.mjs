@@ -86,6 +86,7 @@ export class RigSetup {
       tools: s0.tools.map((x) => ({ name: x.name, run: x.run, desc: x.desc })),
       cycles: s0.cycles.map((x) => ({ every: x.every, to: x.to, ...(x.run ? { run: x.run } : {}) })),
       defaultLauncher: this.defaultLauncher(key), seated, builder: this.builderView(key),
+      canonDrift: s0.canonDrift || [], // P233: 켜기 확인의 정본 차이
     };
   }
   sessionView(s) {
@@ -362,12 +363,16 @@ export class RigSetup {
 }
 
 // P232(11.14의 9): 저장소의 Claude Code 프로젝트 설정(.claude/settings.json)에 훅이 있는가. rig 자리 세션도 그 저장소에서 뜨므로 그 훅이 걸린다
+// P233(11.15의 8): 개인 프로젝트 설정(.claude/settings.local.json)의 hooks도 본다. 그 폴더의 세션에 똑같이 걸린다
+export const CLAUDE_PROJECT_SETTINGS = ['settings.json', 'settings.local.json'];
 export function claudeHooksOf(root) {
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(root, '.claude', 'settings.json'), 'utf8').replace(/^\uFEFF/, ''));
-    const h = raw && raw.hooks;
-    return !!(h && typeof h === 'object' && !Array.isArray(h) && Object.values(h).some((v) => Array.isArray(v) ? v.length > 0 : !!v));
-  } catch { return false; }
+  return CLAUDE_PROJECT_SETTINGS.some((f) => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(root, '.claude', f), 'utf8').replace(/^\uFEFF/, ''));
+      const h = raw && raw.hooks;
+      return !!(h && typeof h === 'object' && !Array.isArray(h) && Object.values(h).some((v) => Array.isArray(v) ? v.length > 0 : !!v));
+    } catch { return false; }
+  });
 }
 
 // 판 API 처리기(backend.mjs handlers에 펼친다). rig.presets·rig.get은 보기라 기기 토큰(휴대폰·원격)도 본다.

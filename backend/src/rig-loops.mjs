@@ -307,18 +307,21 @@ export class RigLoops {
     return { made, caseId: c.id, loop: loop.name, name };
   }
 
-  // P232(11.14의 5): 이어진 회. 같은 고리·같은 자리의 가장 늦게 닫힌 회가 FOLLOW_MS 안에 닫혔고 요청한 쪽이 같으면 그 회. from: HUMAN_FROM | 보낸 세션 ID
+  // P232(11.14의 5): 이어진 회. from: HUMAN_FROM | 보낸 세션 ID
+  // P233(11.15의 3): 같은 고리·같은 자리에서 같은 요청자의 가장 늦게 닫힌 회가 FOLLOW_MS 안에 닫혔으면 그 회.
+  //   그사이 다른 요청자의 회가 닫혔어도 이어진다(전에는 고리의 마지막 회 하나만 보아 끊겼다)
   followMs() { const c = this.b.cfg || {}; return c.rigFollowMs != null ? Number(c.rigFollowMs) : FOLLOW_MS; }
   followsOf(key, loop, s, from, now = Date.now()) {
     const st = this.store();
-    if (!st.lastClosedCaseOfLoop) return null;
-    const prev = st.lastClosedCaseOfLoop(key, loop.name);
-    if (!prev || prev.closedAt == null || now - prev.closedAt > this.followMs()) return null;
-    const first = st.unitsOfCase ? st.unitsOfCase(prev.id)[0] : null;
-    if (first && first.seat && first.seat !== s.rigSeat) return null; // 같은 자리의 앞 회만
-    const was = first ? (first.via && first.via.by) || first.from : null;
-    if (!was || was !== from) return null;
-    return prev;
+    if (!st.closedCasesOfLoopSince || !from) return null;
+    for (const prev of st.closedCasesOfLoopSince(key, loop.name, now - this.followMs())) {
+      const first = st.unitsOfCase ? st.unitsOfCase(prev.id)[0] : null;
+      if (!first) continue;
+      if (first.seat && first.seat !== s.rigSeat) continue; // 같은 자리의 앞 회만
+      const was = (first.via && first.via.by) || first.from;
+      if (was === from) return prev;
+    }
+    return null;
   }
   // P232(11.14의 7): 지난 개선 회 뒤(base) 이어진 회(follows가 붙은 작업 회) 수
   followupsSince(key, r, base) {

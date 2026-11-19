@@ -308,6 +308,31 @@ export class RigProposals {
     if (n) this.changed(key);
     return n;
   }
+  // P233(rig2-design 11.15의 6): 켜기 확인 창에 보일 정본 차이. 꺼짐 → 켜짐마다 기준을 다시 잡는 것은 그대로이고,
+  //   정본이 마지막 승인 내용(rig_doc_marks.approved_*)과 다르면 [{ doc, path, added, removed, diff, clipped }]. 처음 켤 때(켠 적이 없음)는 견줄 것이 없어 빈 목록
+  canonDrift(key, r) {
+    const st = this.store();
+    if (!r || !r.def || !r.def.docs || !r.root || !st.docMark) return [];
+    if (!this.everEnabled(key)) return [];
+    const out = [];
+    for (const d of Object.values(r.def.docs)) {
+      if (d.role !== 'canon' || !d.rel) continue;
+      const m = st.docMark(key, d.name);
+      if (!m || m.path !== d.rel || (m.approvedSha == null && m.approvedText == null)) continue;
+      const buf = readBuf(path.resolve(r.root, d.rel));
+      const now = buf ? sha(buf) : null;
+      if (now === m.approvedSha) continue;
+      const df = m.approvedText != null ? clipDiff(unifiedDiff(m.approvedText, buf ? buf.toString('utf8') : '', { path: d.rel })) : null;
+      out.push({ doc: d.name, path: d.rel, added: df ? df.added : null, removed: df ? df.removed : null, ...(df ? { diff: df.text, clipped: df.clipped } : {}), exists: !!buf });
+    }
+    return out;
+  }
+  everEnabled(key) {
+    const st = this.store();
+    try { if (st.rigEvents && st.rigEvents({ ws: key, kinds: ['rig_enabled'], limit: 1 }).length) return true; } catch {}
+    try { const s = st.rigState ? st.rigState(key) : null; if (s && s.enabledAt) return true; } catch {}
+    return false;
+  }
   // 문서 감시가 본 정본 바뀜. 승인된 내용과 같으면(되돌아옴, 승인된 반영) 표시를 거두고, 다르면 승인 안 된 바뀜
   onCanonChanged(key, d, abs, { who = null, label = null } = {}) {
     const st = this.store();
