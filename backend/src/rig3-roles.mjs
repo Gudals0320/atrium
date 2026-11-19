@@ -18,6 +18,7 @@ import { claudeSettingsAmp, applySettingsAmp, writesVerdict, nestedShell, codexA
 import { sleepTarget, sessionActivity, idleSince } from './sleep.mjs';
 import { deriveState } from './state.mjs';
 import { shownName } from './session-label.mjs';
+import { Rig3Guard } from './rig3-guard.mjs'; // P243: 턴 끝 남의 쓰기 되돌리기
 import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir } from './rig3.mjs';
 
 // 판이 역할을 위해 띄울 때(backend.spawn) 넘기는 역할 이름의 열쇠. Symbol이라 판 API 본문으로는 넣지 못한다
@@ -41,6 +42,7 @@ export class Rig3Roles {
     this.exitSeen = new Map(); // 세션 ID → 처음 끝난 것을 본 때
     this.sleepFail = new Map(); // 세션 ID → 마지막 재우기 실패 때
     this.ticking = false;
+    this.guard = new Rig3Guard(b, this); // P243
   }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
   store() { return this.b.store; }
@@ -126,6 +128,7 @@ export class Rig3Roles {
     for (const k of [...this.respawns.keys()]) if (k.startsWith(key + '|')) this.respawns.delete(k);
     if (!on) return [];
     const r = this.active(key); if (!r) return [];
+    this.guard.prime(key); // P243: 기준 목록이 없으면 만든다
     const out = [];
     for (const role of Object.keys(r.def.rig3.roles)) {
       if (this.sessionsOf(key, role).length) { out.push({ role, name: this.sessionsOf(key, role)[0].name, kept: true }); continue; }
