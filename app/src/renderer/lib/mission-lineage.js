@@ -56,7 +56,7 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // P202: today = 오늘 일한 워크스페이스 키들(Set·배열, todayWorkspaces). 폴더 차례는 오늘 일한 폴더들(이름순) → 나머지 폴더들(이름순), 사이드바 손 차례(order)는 쓰지 않는다.
 //   columns = 1 | 2 | 'auto'(PC만: view = 맞춤 칸 { w, h }에서 두 열 맞춤 배율이 한 열보다 COLS2.GAIN배 넘게 크면 두 열). → sections(오늘·이전 이름표 자리), ncol, colDx, measure
 export function lineageLayout(graph, opts = {}) {
-  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null } = opts;
+  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스(rig 지도가 위를 맞출 줄)
   if (!phone && columns === 'auto') {
     const one = lineageLayout(graph, { ...opts, columns: 1, routing: false });
     if (pickColumns(one.measure, view) === 2) return lineageLayout(graph, { ...opts, columns: 2 });
@@ -77,7 +77,7 @@ export function lineageLayout(graph, opts = {}) {
   // ---- 소속(사이드바와 같다)과 차례(P202: 오늘 일한 폴더 → 나머지, 각각 이름순. 폴더 안 워크스페이스도 이름순) ----
   const folderOf = new Map();
   (vgroups || []).forEach((g, gi) => (g.members || []).forEach((m, mi) => { const k = normKey(m); if (k && !folderOf.has(k)) folderOf.set(k, { g, gi, mi }); }));
-  const present = [...new Set(tree.nodes.map((n) => wsOf(n.id)))];
+  const present = [...new Set([...tree.nodes.map((n) => wsOf(n.id)), ...(keepKeys || []).filter(Boolean)])]; // P251: rig 역할만 있는 워크스페이스도 줄이 남는다
   const byWsName = (a, b) => (!a) - (!b) || nameCmp(nameOf(a), nameOf(b)) || nameCmp(a, b);
   const groups0 = [];
   for (const [gi, g] of (vgroups || []).entries()) {

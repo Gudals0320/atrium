@@ -655,3 +655,18 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-steer { flex: none; align-self: center; height: 32px; padding: 0 10px; border-radius: 16px; border: 1px dashed var(--chrome-line-2); background: none; color: var(--chrome-text-2); font: 600 12.5px/1 var(--font-ui); white-space: nowrap; }
 .mt-ph-steer.on { border-style: solid; color: var(--accent-2); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .mt-ph-steer[data-off] { opacity: .45; }
+
+/* ---------- P251: 휴대폰 rig 카드(지도 대신 카드 하나와 역할 목록, PhoneMap.jsx PhoneRigSheet) ---------- */
+.mt-pl-pill.rig { border-color: rgba(134, 169, 189, 0.5); }
+.mt-pm-rig { max-height: 78vh; overflow: auto; }
+.mt-pm-rigcard { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--panel-line); font-size: 14px; }
+.mt-pm-rigcard .lb { margin-top: 6px; font-size: 12px; color: var(--chrome-text-2); }
+.mt-pm-rigcard .warn { color: var(--attn); }
+.mt-pm-rigcard .bad { color: var(--term-red); }
+.mt-pm-rigcard .dim { color: var(--chrome-text-2); }
+.mt-pm-rigcard .rr { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--panel-line); background: var(--panel-2); color: inherit; font: inherit; text-align: left; }
+.mt-pm-rigcard .rr i { width: 9px; height: 9px; border-radius: 50%; background: #8d8a80; }
+.mt-pm-rigcard .rr.st-working i { background: var(--con-line-working); }
+.mt-pm-rigcard .rr.st-waiting i { background: var(--attn); }
+.mt-pm-rigcard .ff { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.mt-pm-rigcard .ee { color: var(--chrome-text-3); }

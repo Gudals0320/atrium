@@ -9,7 +9,9 @@
 // - 성능: 보기는 ref, 세계 한 요소의 transform만 바꾼다. 확대 단계 클래스(lv-far 등)·배율 글·칸 머리 자리·배경 격자는 DOM에 바로. 멀리 타일 글 하한(--ik)은 멈춘 뒤에.
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
-import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
+import { useStore, getState, setMissionOpen, toast, wsName, openDialog } from './store.js';
+import { RigMap } from './RigMap.jsx'; // P251: rig 구조 지도
+import { mapLayout, placeMaps, hideRigSessions, roleSessions, RIG_VIEW } from './lib/rig-map.js'; // P251
 import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
@@ -194,6 +196,31 @@ export function SectionMark({ s, px, t }) {
     </div>);
 }
 
+// P251: 세션 맵 오른쪽 rig 영역. 워크스페이스 줄 오른쪽 끝에서 지도로 가는 선 하나, 지도 한 장(RigMap.jsx).
+//   RIG_VIEW.hideInTree가 false면 트리에 남은 역할 카드에서 지도 속 역할 카드로 옅은 선을 잇는다(6절 뒤집기)
+const toggleKey = (set, key) => set((cur) => { const n = new Set(cur); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+function RigArea({ lay, rigList, rigGeo, sessions, t, now, rigEntry, setRigOpen, setRigEntry, workspaces }) {
+  const byKey = new Map(rigList.map((m) => [m.workspace, m]));
+  const onTag = (name) => commandDraft.dispatchEvent(new CustomEvent('tag', { detail: name }));
+  const onGo = (sid) => { setMissionOpen(false); const st = getState(); if (sid) setTimeout(() => st.navigateTo && st.navigateTo(sid, { instant: true }), 30); };
+  const onPanel = (key) => { const w = (workspaces || []).find((x) => x.key === key); if (w) openDialog({ kind: 'rigpanel', ws: w }); };
+  const ties = [];
+  if (!RIG_VIEW.hideInTree) {
+    for (const it of lay.rig.items) {
+      const g = rigGeo.get(it.key), m = byKey.get(it.key); if (!g || g.folded) continue;
+      const sid = roleSessions(m, sessions);
+      for (const [name, b] of g.roles) { const card = [...lay.cards.values()].find((c) => c.node.sessionId === sid.get(name)); if (card) ties.push({ id: it.key + name, d: `M${card.x + card.w} ${card.y + card.h / 2} L${it.x + b.x} ${it.y + b.y + b.h / 2}` }); }
+    }
+  }
+  return <>
+    <svg className="mt-ta-edges mt-rm-links" width={1} height={1} aria-hidden="true">
+      {lay.rig.items.map((it) => <path key={it.key} className="mt-rm-link" data-role="rm-link" data-ws={it.key} d={it.link.d} />)}
+      {ties.map((x) => <path key={x.id} className="mt-rm-link tie" d={x.d} />)}
+    </svg>
+    {lay.rig.items.map((it) => { const m = byKey.get(it.key); return <RigMap key={it.key} m={m} g={rigGeo.get(it.key)} x={it.x} y={it.y} live={sessions} sid={roleSessions(m, sessions)} t={t} now={now} onTag={onTag} onGo={onGo} onPanel={onPanel} onUnfold={(k) => toggleKey(setRigOpen, k)} onEntry={(k) => toggleKey(setRigEntry, k)} entryOpen={rigEntry.has(it.key)} />; })}
+  </>;
+}
+
 export function LineageMap() {
   const t = useT();
   const open = useStore((st) => st.missionOpen);
@@ -203,6 +230,9 @@ export function LineageMap() {
   const loops = useStore((st) => st.loops);
   const workspaces = useStore((st) => st.workspaces);
   const vgroups = useStore((st) => st.groups);
+  const rigMaps = useStore((st) => st.rigMaps); // P251
+  const [rigOpen, setRigOpen] = useState(() => new Set()); // P251: 펼친 꺼진 rig(워크스페이스 키)
+  const [rigEntry, setRigEntry] = useState(() => new Set()); // P251: 변경 기록 띠를 펼친 지도
   const [graph, setGraph] = useState(null);
   const [tags, setTags] = useState([]); // 명령줄 앞머리 태그 이름들
   const [vsize, setVsize] = useState(null); // 보기 칸 크기 { w, h }
@@ -267,13 +297,20 @@ export function LineageMap() {
   const fitKey = fitArea ? `${fitArea.w}x${fitArea.h}` : '';
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
-  const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
-  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea }), [vgroups, tiers, names, t, expanded, today, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const g2 = useMemo(() => (graph ? applyRelationStub(hideRigSessions(graph, RIG_VIEW.hideInTree), pending) : null), [graph, pending]); // P251: rig 역할·빌더 세션은 지도에만(RIG_VIEW.hideInTree)
+  // P251: rig 지도 자료(정의가 있는 워크스페이스, 판에 열린 것만)와 지도 한 장마다 그림
+  const rigList = useMemo(() => [...(rigMaps || new Map()).values()].filter((m) => (workspaces || []).some((w) => w.key === m.workspace)), [rigMaps, workspaces]);
+  const rigKeys = useMemo(() => rigList.map((m) => m.workspace).sort().join('\n'), [rigList]);
+  const rigGeo = useMemo(() => new Map(rigList.map((m) => [m.workspace, mapLayout(m, { open: rigOpen.has(m.workspace), entryOpen: rigEntry.has(m.workspace) })])), [rigList, rigOpen, rigEntry]);
+  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea, keepKeys: rigKeys ? rigKeys.split('\n') : null }), [vgroups, tiers, names, t, expanded, today, fitKey, rigKeys]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
-  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
+  const lay0 = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
+  // P251: 트리 오른쪽 rig 영역(지도마다 그 워크스페이스 줄에 위를 맞춘다). 맞춤 보기가 지도까지 담게 bounds를 넓힌다
+  const withRig = (L) => { const p = L ? placeMaps(L, rigList, rigGeo) : null; return p ? { ...L, bounds: p.bounds, rig: p } : L; };
+  const lay = useMemo(() => withRig(lay0), [lay0, rigList, rigGeo]); // eslint-disable-line react-hooks/exhaustive-deps
   // P178: 맞춤 보기를 셀 때 다른 계단의 배치(선 길 찾기 없이, 크기만)
   const layForRef = useRef(null);
-  layForRef.current = (st) => (g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: st, routing: false })) : null);
+  layForRef.current = (st) => (g2 ? withRig(timedLayout(() => lineageLayout(g2, { ...layOpts, label: st, routing: false }))) : null);
   const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
   layRef.current = lay;
   sizeRef.current = vsize;
@@ -732,6 +769,7 @@ export function LineageMap() {
             </svg>
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}
             {shown.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} unfold={b.depth >= LINE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
+            {lay.rig ? <RigArea lay={lay} rigList={rigList} rigGeo={rigGeo} sessions={sessions} t={t} now={now} rigEntry={rigEntry} setRigOpen={setRigOpen} setRigEntry={setRigEntry} workspaces={workspaces} /> : null}
             {/* P153 r11: Alt+카드 끌기 때 놓을 자리(하위로·동료로·독립). 끄는 동안 DOM에 바로 쓴다 */}
             <div className="mt-sm-drop" data-role="ln-drop" hidden><span className="lb" /></div>
           </div>

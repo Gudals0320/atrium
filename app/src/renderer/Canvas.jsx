@@ -43,6 +43,8 @@ import { KanbanNode } from './Kanban.jsx';
 import { wsAt } from './lib/items.js';
 import { DividerNode, GhostNode, DockGrip, DockEdge, DockLinks } from './Docks.jsx';
 import { LinkEdge, RepoEdge } from './Links.jsx';
+import { RigPathEdge, RigRaiseEdge, RigFrames, RIG_TIP, RIG_TIP_SMALL } from './RigLines.jsx'; // P251: rig 길 선
+import { rigEdges } from './lib/rig-map.js'; // P251
 import { withBoundary } from './ErrorBoundary.jsx';
 import { pickAttached, termAllowed, veryClose, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
 import { perfLog } from './perf.js';
@@ -67,7 +69,7 @@ import { termBudgetNow, boardPlan, step } from './crash-watch.js'; // P84: 휴�
 import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
 
 const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), wsgroup: withBoundary(GroupFrameNode, 'wsgroup'),memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
-const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge };
+const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge, rigpath: RigPathEdge, rigraise: RigRaiseEdge }; // P251
 const HOLD_MS = 1500; // 화면 밖으로 나간 노드의 제어기를 놓기 전 기다리는 시간(끌 때 붙였다 뗐다 하지 않게)
 const DRAG_MIN_PX = 3; // 이보다 덜 끌었으면 자리를 바꾸지 않는다(누르기)
 const SNAP_PX = 48; // 가장자리끼리 화면에서 이만큼 가까우면 붙을 자리를 보인다
@@ -342,6 +344,7 @@ export function Canvas() {
     });
   }, [storeNodes, sessions, docks, links, workspaces, wsGroups, memos, kanbans, convoNodes, rev, currentWs]); // P23: links(덩어리 안 연결선). P91: wsGroups(묶음 테두리)
 
+  const rigMaps = useStore((st) => st.rigMaps); // P251: rig 길 선 자료
   const edgesRef = useRef(null); // P146: 지난번 선(값이 같으면 다시 쓴다)
   // 연결선. 같은 덩어리 안 두 노드 사이의 연결은 노드 위에 겹친 선으로 보인다(H5, P23 DockLinks). 같은 저장소 선은 워크트리 세션이 있을 때만(F4)
   const edges = useMemo(() => {
@@ -375,10 +378,12 @@ export function Canvas() {
     const made = !PLAN.fancyEdges ? out.filter((e) => e.type === 'link').map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, type: 'straight', selectable: false }))
       : decorateEdges(out, { rectOf: rectId, links, sessions, now: Date.now() }); // P67: 한 쌍에 이름표 하나, 물러나기, 비켜 놓기
     // P146: 값이 같은 선은 옛 객체를 다시 쓴다(세션 갱신마다 선 전부를 다시 그리지 않게)
+    // P251: rig 길 선(정의에서 나온다, 연결 기록이 아니다, 끊기·고르기 없음). 역할 쌍마다 하나, 기다리는 올림은 빌더로 점선
+    for (const e of rigEdges([...rigMaps.values()], sessions, here)) made.push({ id: e.id, source: e.source, target: e.target, ...sides(e.source, e.target), type: e.kind === 'raise' ? 'rigraise' : 'rigpath', data: e, selectable: false, ...(e.kind === 'path' && e.fwd.length ? { markerEnd: RIG_TIP } : {}), ...(e.kind === 'path' && e.back.length ? { markerStart: e.fwd.length ? RIG_TIP_SMALL : RIG_TIP } : {}) });
     const prevById = new Map((edgesRef.current || []).map((e) => [e.id, e]));
     const next = made.map((e) => { const o = prevById.get(e.id); return o && Object.keys(o).length === Object.keys(e).length && sameFields(o, e) ? o : e; });
     return sameList(edgesRef.current, next) ? edgesRef.current : next;
-  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick, currentWs]);
+  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick, currentWs, rigMaps]);
   edgesRef.current = edges;
 
   // 노드 손잡이를 끌어 이으면 역할을 묻는다(F2). 같은 쌍에 이미 역할이 있으면 고칠 수 있게 같은 대화상자를 연다
@@ -962,6 +967,7 @@ export function Canvas() {
       >
         {/* P11: 점 격자는 월드 92px 간격, 점은 줌과 함께 커지고 작아진다(목업 --dot-gap). 줌 조절은 오른쪽 아래 줌 알약(Chrome.jsx ZoomPill) */}
         <Background variant={BackgroundVariant.Dots} gap={DOT_GAP} size={3.6} className="mt-dots" />
+        <RigFrames />{/* P251: RIG_VIEW.canvasFrame일 때만 그린다 */}
       </ReactFlow>
       <EmptyHint />
     </div>

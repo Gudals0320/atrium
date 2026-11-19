@@ -63,6 +63,7 @@ const state = {
   launchers: null, // P33 호출자: { launchers: [{ id, name, harness, …, favorite, preview }], favorites: [id], harnesses }
   outputView: null, // { sessionId, turn } 출력 보기 창
   missionOpen: false, // 미션 맵 덮개
+  rigMaps: new Map(), // P251: 워크스페이스 키 → rig 구조 지도 자료(판 API rig.map). 세션 맵 지도·캔버스 길 선·노드 꼬리표가 읽는다
   itemSelected: null, // 캔버스에서 고른 메모·칸반 노드 id(memo:…, kanban:…)
   memoEdit: null, // P50(#6): 편집을 열 메모 id(메모 노드가 받아 편집을 열고 지운다)
   // P13: 판 밖 대화 노드(읽기 전용 카드)와 대화끼리의 띄움 선. 백엔드 recall.layoutCanvas가 만든다
@@ -414,3 +415,24 @@ export function setUiScale(f) { state.uiScale = saveScale(scaleStore(), SCALE_KE
 state.spotlight = loadSpot(scaleStore());
 applySpot(state.spotlight);
 export function setSpotlight(on) { state.spotlight = saveSpot(scaleStore(), on); applySpot(state.spotlight); changed(); }
+
+// P251: rig 구조 지도 자료(판 API rig.map). 처음 붙을 때, 그리고 판 이벤트 rig.roles·rig.events·workspace.updated 때 모아서(RIG_LOAD_MS) 다시 읽는다.
+//   같은 내용이면 바꾸지 않는다(세션 맵·캔버스가 다시 그리지 않게). rig.map을 모르는 옛 판이면 비어 있다
+const RIG_LOAD_MS = 400;
+let rigT = 0, rigSig = '';
+export function loadRigMaps(delay = RIG_LOAD_MS) {
+  if (rigT) return;
+  rigT = setTimeout(() => {
+    rigT = 0;
+    api.call('rig.map').then((r) => {
+      const list = (r && r.maps) || [];
+      const sig = JSON.stringify(list);
+      if (sig === rigSig) return;
+      rigSig = sig;
+      state.rigMaps = new Map(list.map((m) => [m.workspace, m]));
+      changed();
+    }).catch(() => {});
+  }, delay);
+}
+api.on('$open', () => loadRigMaps(0));
+for (const ev of ['rig.roles', 'rig.events', 'workspace.updated']) api.on(ev, () => loadRigMaps());

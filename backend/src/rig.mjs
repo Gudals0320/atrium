@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
+import { placeRoles } from './rig-map.mjs'; // P251
 import { validateRigDef, rigGuide, bundleSig, bundleOf, partLabel, bundleMtime } from './rig-def.mjs'; // P241
 
 export const RIG_FILE = '.atrium/rig.json';
@@ -243,7 +244,7 @@ export class Rig {
     this.store().addEvent(null, on ? 'rig_enabled' : 'rig_disabled', { workspace: key, by, hash: r.hash, present: r.present });
     rigEvent(this.b, { kind: on ? 'rig_enabled' : 'rig_disabled', ws: key, defN: r.n ?? null, actor: by === 'remote' || by === 'human' ? 'human' : 'board', text: `rig ${on ? '켜짐' : '꺼짐'}(${by})`, data: { by, hash: r.hash } });
     this.b.log && this.b.log(`rig ${on ? 'enabled' : 'disabled'} ${key}`);
-    if (r.def && this.b.rig3 && on !== was) this.b.rig3.onEnabled(key, !!on).catch((e) => this.b.log && this.b.log('rig roles enable error', e.stack)); // P241: 켜면 역할 세션을 띄우고 끄면 재운다
+    if (r.def && this.b.rig3 && on !== was) this.b.rig3.onEnabled(key, !!on).then(() => { if (on) try { placeRoles(this.b, key); } catch (e) { this.b.log && this.b.log('rig place ' + e.message); } }).catch( /* P251: 켤 때 한 번 역할 노드를 길 차례로 */(e) => this.b.log && this.b.log('rig roles enable error', e.stack)); // P241: 켜면 역할 세션을 띄우고 끄면 재운다
     return this.status(key);
   }
 
