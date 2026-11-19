@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs';
+import { buildResumeArgv } from './launch.mjs';
 import { roleSettingsAmp, applySettingsAmp, writesVerdict, nestedShell, codexUnattendedArgs, denyBody } from './rig-writes.mjs';
 import { sleepTarget, sessionActivity, idleSince } from './sleep.mjs';
 import { deriveState } from './state.mjs';
@@ -310,20 +311,61 @@ export class RigRoles {
       if (!asleep && st !== 'ready' && !(s.rt && s.rt.exit)) { out.push({ ws: key, role, waiting: st || 'unknown' }); continue; }
       s.rigRole = null; delete s.rig3AmpSig;
       if (this.store().setSessionRole) this.store().setSessionRole(s.sessionId, null);
+      let plain = null;
+      try { plain = this.plainLaunch(s); } catch (e) { this.b.log && this.b.log(`rig role detach plain ${s.name}: ${e.stack || e.message}`); } // P250
+      try { this.items.cancelFor(s.sessionId); } catch {} // P250: 아직 넣지 않은 판 알림(역할 글)은 거둔다
       for (const k of [this.restart, this.gaveUp]) k.delete(key + '|' + role);
       this.docNotices.delete(key + '|' + role);
       let slept = false;
       if (!asleep && !(s.rt && s.rt.exit) && this.b.sleeper && this.b.sleeper.sleep) {
         try { await this.b.sleeper.sleep(s, { by: 'rig', mode: 'hand', scope: 'session' }); slept = true; } catch (e) { this.b.log && this.b.log(`rig role detach sleep ${s.name}: ${e.code || e.message}`); }
       }
-      rigEvent(this.b, { kind: 'role_removed', ws: key, seat: role, session: s.sessionId, value: slept ? 'slept' : asleep ? 'asleep' : 'kept', actor: 'board', text: `@${shownName(s) || s.name}: 정의에서 ${role} 역할이 빠져 rig에서 뗐다${slept ? '(재움)' : ''}` });
-      try { this.store().addEvent(s.sessionId, 'rig_role_removed', { role, slept }); } catch {}
+      // P250: 재우지 못하고 떠 있는 Claude Code는 처음 띄운 무인 값(bypassPermissions)으로 돈다. 판이 더는 지키지 않으므로 닫는다
+      let closed = false;
+      if (!slept && !asleep && !(s.rt && s.rt.exit) && this.b.kill) {
+        try { await this.b.kill({ session: s.sessionId, confirm: true }); closed = true; } catch (e) { this.b.log && this.b.log(`rig role detach close ${s.name}: ${e.code || e.message}`); }
+      }
+      rigEvent(this.b, { kind: 'role_removed', ws: key, seat: role, session: s.sessionId, value: slept ? 'slept' : asleep ? 'asleep' : closed ? 'closed' : 'kept', actor: 'board', text: `@${shownName(s) || s.name}: 정의에서 ${role} 역할이 빠져 rig에서 뗐다${slept ? '(재움)' : closed ? '(닫음)' : ''}` });
+      try { this.store().addEvent(s.sessionId, 'rig_role_removed', { role, slept, plain }); } catch {}
       this.b.log && this.b.log(`rig role ${role} removed: ${s.name} detached${slept ? ' and slept' : ''}`);
-      if (this.b.broadcastSession) try { this.b.broadcastSession(s, { cause: 'rig_role_removed' }); } catch {}
+      if (!closed && this.b.broadcastSession) try { this.b.broadcastSession(s, { cause: 'rig_role_removed' }); } catch {}
       this.changed(key);
-      out.push({ ws: key, role, detached: s.name, slept });
+      out.push({ ws: key, role, detached: s.name, slept, ...(closed ? { closed } : {}) });
     }
     return out;
+  }
+  // P250: 떼어진 옛 역할 세션의 띄우기 값을 보통 세션의 것으로 바꾼다. 깨우기(사람·글·rig 켜기), 되살리기, 판 재시작 뒤 다시 띄우기가
+  //   모두 세션의 값(permissionMode, 설정 파일, 이어 가기 명령, 역할 표시)을 읽으므로 여기서 한 번 바꾸면 길마다 막을 것이 없다.
+  //   - Claude Code: 권한 모드는 사용자의 보통 값(호출자 'claude'의 승인 방식, 없으면 manual). 설정 파일에서 rig 거절 규칙·PreToolUse 시간 제한·auto 끄기를 걷어 낸다.
+  //     이어 가기 명령(resumeArgv)도 다시 만든다. 판 DB(permission_mode, resume_argv)와 설정 파일에 남아 재시작 뒤에도 먹는다
+  //   - Codex 등: 무인 인자(-s workspace-write -a never, -C·--add-dir)는 띄울 때 역할 표시가 있을 때만 붙인다(launcherArgs). 표시를 떼면 호출자 인자 그대로다
+  //   → { kind, permissionMode?, settings?, resumeArgv? }
+  plainLaunch(s) {
+    const kind = s.kind || 'claude';
+    if (kind !== 'claude') return { kind };
+    const mode = this.plainPermission();
+    s.permissionMode = mode; delete s.rig3AmpSig;
+    let settings = false;
+    if (s.settingsPath && fs.existsSync(s.settingsPath)) {
+      const j = JSON.parse(fs.readFileSync(s.settingsPath, 'utf8'));
+      const base = this.b.branch && this.b.branch.settingsExtra ? (this.b.branch.settingsExtra(s.sessionId).allow || []) : null;
+      settings = applySettingsAmp(j, null, (this.b.cfg && this.b.cfg.hookTimeoutSec) || 2, base);
+      if (settings) fs.writeFileSync(s.settingsPath, JSON.stringify(j, null, 2));
+    }
+    const fields = { permissionMode: mode };
+    if (s.resumeArgv && typeof this.b.launchOf === 'function') {
+      s.resumeArgv = buildResumeArgv({ claudeCommand: (this.b.cfg && this.b.cfg.claudeCommand) || 'claude', ...this.b.launchOf(s, { launch: false }) });
+      s.resumeVerified = false;
+      Object.assign(fields, { resumeArgv: s.resumeArgv, resumeVerified: false });
+    }
+    try { if (this.store().updateSession) this.store().updateSession(s.sessionId, fields); } catch (e) { this.b.log && this.b.log(`rig role plain ${s.name}: ${e.message}`); }
+    return { kind, permissionMode: mode, settings, resumeArgv: !!fields.resumeArgv };
+  }
+  // 사용자의 보통 Claude Code 권한 모드: 호출자 'claude'(기본 호출자)의 승인 방식, 없으면 manual(spawnPlanOf의 기본)
+  plainPermission() {
+    const L = this.b.features && this.b.features.launchers;
+    let l = null; try { l = L && L.find ? L.find('claude') : null; } catch { l = null; }
+    return l && l.harness === 'claude' && l.permissionMode ? String(l.permissionMode) : 'manual';
   }
   // ---------- P247: 정의·정의서가 바뀐 판 ----------
   // Rig.adopt가 새 판을 남긴 뒤 부른다. 떠 있는 역할에게 다음 깨우는 글에 알리고, 쥔 섹터·도구·런처가 바뀐 역할은 다시 띄울 표시를 한다

@@ -54,11 +54,15 @@ export class RigItems {
   cancelQueued(key) {
     const q = this.b.queue; let n = 0;
     const r = this.roles.defOf(key);
-    for (const role of Object.keys(r ? r.def.rig3.roles : {})) for (const s of this.roles.sessionsOf(key, role)) {
-      for (const id of this.sent.get(s.sessionId) || []) { try { if (q && q.cancel) { q.cancel(id); n++; } } catch {} }
-      this.sent.delete(s.sessionId);
-    }
+    for (const role of Object.keys(r ? r.def.rig3.roles : {})) for (const s of this.roles.sessionsOf(key, role)) n += this.cancelFor(s.sessionId, q);
     for (const k of [...this.wakes.keys()]) if (k.startsWith(key + '|')) this.wakes.delete(k);
+    return n;
+  }
+  // P250: 세션 하나에 판이 넣고 아직 보내지 않은 알림을 거둔다(정의에서 빠져 떼어진 역할 세션) → 거둔 수
+  cancelFor(sessionId, q = this.b.queue) {
+    let n = 0;
+    for (const id of this.sent.get(sessionId) || []) { try { if (q && q.cancel) { q.cancel(id); n++; } } catch {} }
+    this.sent.delete(sessionId);
     return n;
   }
   store() { return this.b.store; }

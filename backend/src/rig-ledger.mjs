@@ -14,7 +14,7 @@ export const RIG_EVENT_KINDS = ['rig_enabled', 'rig_disabled', 'rig_version', 'r
 // P242: 항목·길·받음(rig-items.mjs). item_put(value new | redo | intake), item_accept, item_return(value receiver | late), item_pass(value item | turn), item_drop,
 //   role_woke(rig를 켜 잠든 역할 세션을 깨움. 끌 때 재우는 것은 role_slept value rig_off),
 //   item_nudge(답하지 않고 멈춘 역할을 한 번 일깨움), item_stalled(일깨운 뒤에도 그대로), item_changed(낸 파일이 바뀜, value changed | missing)
-//   P249: role_removed(정의에서 빠진 역할의 세션을 rig에서 뗌, value slept | asleep | kept)
+//   P249: role_removed(정의에서 빠진 역할의 세션을 rig에서 뗌, value slept | asleep | kept | closed. P250: 재우지 못한 떠 있는 세션은 닫는다)
 export const RIG_ROLE_KINDS = ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept', 'item_put', 'item_accept', 'item_return', 'item_pass', 'item_drop', 'item_nudge', 'item_stalled', 'item_changed', 'role_woke', 'role_removed'];
 // P243: rig 남의 쓰기 되돌리기(rig-guard.mjs). role_foreign_write(value restored | quarantined | revived | unrestorable | failed, data.candidates), role_guard_base(처음 기준 목록, data.ms)
 export const RIG_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];

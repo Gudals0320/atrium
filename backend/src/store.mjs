@@ -145,7 +145,7 @@ export class Store {
       s.kind || 'claude', s.origin || 'board', s.parentSessionId ?? null, s.workspaceKey ?? null, s.flavor ?? null, s.extraArgs && s.extraArgs.length ? JSON.stringify(s.extraArgs) : null, s.startCommand || null, s.harnessPlan ? JSON.stringify(s.harnessPlan) : null);
   }
   updateSession(sessionId, fields) {
-    const map = { paneId: 'pane_id', termWorkspaceId: 'workspace_id', agentName: 'agent_name', resumeVerified: 'resume_verified', closedAt: 'closed_at', seenAt: 'seen_at', touchedAt: 'touched_at', resumeArgv: 'resume_argv', runtime: 'runtime', cwd: 'cwd', parentSessionId: 'parent_session_id', workspaceKey: 'workspace_key', kind: 'kind', origin: 'origin', flavor: 'flavor', startCommand: 'start_command', harnessPlan: 'harness', ...RECALL_SESSION_FIELDS };
+    const map = { permissionMode: 'permission_mode', paneId: 'pane_id', termWorkspaceId: 'workspace_id', agentName: 'agent_name', resumeVerified: 'resume_verified', closedAt: 'closed_at', seenAt: 'seen_at', touchedAt: 'touched_at', resumeArgv: 'resume_argv', runtime: 'runtime', cwd: 'cwd', parentSessionId: 'parent_session_id', workspaceKey: 'workspace_key', kind: 'kind', origin: 'origin', flavor: 'flavor', startCommand: 'start_command', harnessPlan: 'harness', ...RECALL_SESSION_FIELDS };
     const sets = []; const vals = [];
     for (const [k, v] of Object.entries(fields)) {
       if (!map[k]) throw new Error('unknown field ' + k);
