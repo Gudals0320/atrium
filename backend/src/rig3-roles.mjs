@@ -19,6 +19,7 @@ import { sleepTarget, sessionActivity, idleSince } from './sleep.mjs';
 import { deriveState } from './state.mjs';
 import { shownName } from './session-label.mjs';
 import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir } from './rig3.mjs';
+import { Rig3Items } from './rig3-items.mjs'; // P242: 항목·길·받음
 
 // 판이 역할을 위해 띄울 때(backend.spawn) 넘기는 역할 이름의 열쇠. Symbol이라 판 API 본문으로는 넣지 못한다
 export const ROLE_SPAWN = Symbol.for('atrium.rig3RoleSpawn');
@@ -41,6 +42,7 @@ export class Rig3Roles {
     this.exitSeen = new Map(); // 세션 ID → 처음 끝난 것을 본 때
     this.sleepFail = new Map(); // 세션 ID → 마지막 재우기 실패 때
     this.ticking = false;
+    this.items = new Rig3Items(b, this); // P242
   }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
   store() { return this.b.store; }
@@ -162,7 +164,7 @@ export class Rig3Roles {
       const s = this.b.sessions.get(res.sessionId);
       if (!s) throw Object.assign(new Error(`${roleName} 역할 세션이 판에 등록되지 않았다`), { code: 'spawn_failed' });
       if (s.rigRole !== roleName) { s.rigRole = roleName; if (this.store().setSessionRole) this.store().setSessionRole(s.sessionId, roleName); }
-      const text = loadText(r3, roleName, readLoadFiles(r.root, r3, roleName), { root: r.root, why });
+      const text = loadText(r3, roleName, readLoadFiles(r.root, r3, roleName), { root: r.root, why, inbox: this.inboxLines(key, roleName) });
       if (this.b.queue) this.b.queue.enqueue(s.sessionId, text, { origin: { kind: 'board' } });
       const kind = why === 'spawn' ? 'role_spawn' : 'role_respawn';
       rigEvent(this.b, { kind, ws: key, seat: roleName, session: s.sessionId, actor: 'board', text: `@${shownName(s) || s.name}${prev ? ` (앞 세션 @${prev.name}: ${prev.why})` : ''}`, data: { why, kind: s.kind || 'claude', launcher: role.launcher || 'claude', model: role.model || null, permissionMode: s.permissionMode || null, writes: roleWrites(role), ...(prev ? { prev } : {}) } });
@@ -198,7 +200,7 @@ export class Rig3Roles {
     const live = this.sessionsOf(key, role);
     const alive = live.filter((s) => !(s.rt && s.rt.exit && !s.rt.sleep));
     for (const s of alive) this.exitSeen.delete(s.sessionId);
-    if (alive.length) return this.idle(alive[0], now);
+    if (alive.length) { const w = this.items.watch(key, role, alive[0], now); return w || this.idle(alive[0], now); } // P242: 받은 것에 답하지 않고 멈춘 역할을 먼저 본다
     let prev = null;
     if (live.length) { // 끝난 채(exited)
       const s = live[0];
@@ -223,6 +225,17 @@ export class Rig3Roles {
     const s = await this.spawnRole(key, role, prev ? 'respawn' : 'spawn', prev);
     this.changed(key);
     return { spawned: s.name, why: prev ? prev.why : 'missing' };
+  }
+  // P242: 다시 뜨는 역할에게 실을 받은 것 줄(답하지 않은 것, 답 항목이 없는 것, 반려된 것)
+  inboxLines(key, role) {
+    try {
+      const x = this.items.inbox(key, role);
+      return [
+        ...x.received.map((i) => `- 받음 기다림: ${i.id} (${i.kind}, ${i.role === 'human' ? '입력 창구' : i.role}${i.from ? `, ${i.from}에서` : ''}): ${i.path}`),
+        ...x.unanswered.map((i) => `- 받았고 답 항목(${i.need.join('|')})이 없음: ${i.id}: ${i.path}`),
+        ...x.returned.map((i) => `- 반려된 네 항목: ${i.id} (${i.by.map((b) => `${b.role} "${b.reason}"`).join(', ')})`),
+      ];
+    } catch { return []; }
   }
   // 장부의 마지막 띄움(그 역할) → { session, name } | null
   lastSpawn(key, role) {
@@ -278,6 +291,8 @@ export class Rig3Roles {
         gaveUp: this.gaveUp.has(`${key}|${r.name}`),
       };
     });
-    return { purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f) => ({ item: f.item, from: f.from, to: f.to, for: f.for })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune };
+    let it = null; try { it = this.items.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 items view', e.message); } // P242: 길마다 수, 역할마다 받은 것
+    for (const x of roles) x.items = it && it.roles[x.name] ? it.roles[x.name] : null;
+    return { purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null };
   }
 }

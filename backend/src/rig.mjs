@@ -21,7 +21,7 @@ import { AMP_ATS, validateAmp, seatPermitHash } from './rig-amp.mjs'; // P226: �
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { validateDocs } from './rig-docs.mjs'; // P219: rig 2 문서(docs, loads·reads·writes·records)
 import { spreadLoops, loopFlowReason, finishLoops, IMPLICIT_WORK as IMPLICIT_WORK_LOOP } from './rig-loops.mjs'; // P221: rig 2 고리(loops)
-import { validateRig3 } from './rig3.mjs'; // P241: rig 3(version 3) 정의는 따로 검사한다
+import { validateRig3, rig3Guide } from './rig3.mjs'; // P241: rig 3(version 3) 정의는 따로 검사한다
 
 export const RIG_FILE = '.atrium/rig.json';
 export const HOOK_ATS = ['deliver', 'done', 'tool-before', 'tool-after', ...AMP_ATS];
@@ -843,6 +843,7 @@ export class Rig {
     if (!r.present) return { ...base, state: 'none', text: null };
     if (!on) return { ...base, state: r.invalid && !r.def ? 'invalid' : 'off', text: null };
     if (!r.def) return { ...base, state: 'invalid', text: null };
+    if (r.def.v3) return { ...base, state: 'on', topics: [], rig3: true, text: rig3Guide(r.def.rig3, caller.rigRole || null) }; // P242: rig 3 역할의 항목 명령
     const g = r.def.guide;
     const topics = g ? Object.keys(g.topics) : [];
     base.tools = r.def.tools ? Object.keys(r.def.tools) : []; // P183: atrium tool로 부를 도구 이름

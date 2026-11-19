@@ -195,6 +195,15 @@ export class DeliveryQueue extends EventEmitter {
     this._release(d);
     return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, text: d.text };
   }
+  // P242: 판 알림(rig 3 깨우는 글)이 아직 대기 중이면 글을 바꾼다(한 역할에 몰린 항목을 한 글로). 사람이 고치는 중·붙잡힘·보내는 중이면 null(새 글로 넣는다)
+  retext(id, text) {
+    const d = this.items.get(id);
+    if (!d || d.status !== 'queued' || d.parked || d.editing || d.typeNow || d.attempts) return null;
+    d.text = toLF(String(text ?? ''));
+    if (this.store.updateDeliveryText) this.store.updateDeliveryText(d.deliveryId, d.text);
+    this._emit(d);
+    return d;
+  }
   // 고치지 않고 놓는다(Esc). 이미 끝났거나 놓였으면 조용히 지금 상태를 돌려준다
   release(id) {
     const d = this.items.get(id) || this.store.getDelivery(id);

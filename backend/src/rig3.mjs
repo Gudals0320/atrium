@@ -241,7 +241,7 @@ export function codexRoleArgs(base, root, role) {
 }
 
 // 역할 세션에 싣는 첫 글(판 알림). files: { purpose, role, memory }(글 또는 null). 칸마다 LOAD_MAX에서 자른다
-export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn' } = {}) {
+export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn', inbox = null } = {}) {
   const r = r3.roles[roleName];
   const gets = r3.flows.filter((f) => f.to.includes(roleName)).map((f) => `${f.item}(${f.from.join('|')}에게서)`);
   const puts = r3.flows.filter((f) => f.from.includes(roleName)).map((f) => `${f.item}(${f.to.join('|')}에게)`);
@@ -252,7 +252,8 @@ export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn' 
     `[Atrium 보드] 너는 rig 역할 ${roleName}이다${why === 'respawn' ? '(세션이 끝나 판이 새로 띄웠다)' : ''}. 이 세션은 늘 떠 있다. 쉬면 판이 재우고, 일이 오면 판이 깨운다.`,
     `[Atrium 보드] 쓰는 곳: ${r.owns.join(', ')}, 기억 ${memoryDir(roleName)}. 그 밖에 쓰면 판이 묻지 않고 막는다. 모든 섹터는 읽어도 된다. ${RIG3_DIR}/의 정의와 정의서는 고치지 않는다.`,
     `[Atrium 보드] 받는 것: ${gets.join(', ') || '없음'}. 내는 것: ${puts.join(', ') || '없음'}. 도구: ${r.tools.join(', ') || '없음'}(판이 돌린다).`,
-    '[Atrium 보드] 이번 판에는 항목을 내고 받는 명령이 아직 없다. 지금은 아래를 읽고 "준비됨" 한 줄로 답한 뒤 기다린다. 사람이 이 터미널에서 말하면 따른다.',
+    ...ITEM_HOWTO, // P242: 항목 명령(짧게)
+    '[Atrium 보드] 지금은 아래를 읽고 "준비됨" 한 줄로 답한 뒤 기다린다. 받은 것이 오면 판이 깨운다. 사람이 이 터미널에서 말하면 따른다.',
     `[Atrium 보드] 기억은 ${memoryPath(roleName)}에 네가 직접 쓴다(다음에 새로 뜨는 너에게 남길 것). 판은 내용을 보지 않고 띄울 때 싣기만 한다.`,
   ];
   return [
@@ -260,8 +261,27 @@ export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn' 
     block('목적', r3.purpose, files.purpose, LOAD_MAX.purpose, '(목적 문서를 읽지 못했다)'), '',
     block('정의서', r.doc, files.role, LOAD_MAX.role, '(정의서를 읽지 못했다)'), '',
     block('기억', memoryPath(roleName), files.memory, LOAD_MAX.memory, '(아직 없다)'),
+    ...(inbox && inbox.length ? ['', '## 받은 것 (판이 쥔 것. 다시 뜨기 전에 온 것)', ...inbox] : []), // P242
     ...(root ? ['', `(워크스페이스: ${root.split(path.sep).join('/')})`] : []),
   ].join('\n');
+}
+// P242: 항목 명령 쓰는 법(역할 세션의 첫 글과 atrium guide). 짧게
+export const ITEM_HOWTO = [
+  '[Atrium 보드] 낸다: 네 섹터에 파일을 쓰고 `atrium rig put <파일> --item <종류> [--from <받은 항목>]`. 판이 길대로 받는 역할에게 보낸다. 낸 파일은 고치지 않는다(고치려면 `--redo <항목>`으로 다음 판).',
+  '[Atrium 보드] 받은 것에 답한다: `atrium rig accept <항목>` | `return <항목> "<까닭>"`(낸 역할에게 돌아간다) | `pass [<항목>] "<까닭>"`(이번에는 낼 것이 없다). 받음은 그 항목에서 이어진 항목을 내기 전까지 반려로 뒤집을 수 있다. 반려된 네 항목은 `put <파일> --redo <항목>`이나 `drop <항목> "<까닭>"`으로 끝낸다. 목록: `atrium rig inbox`.',
+];
+// P242: atrium guide(rig 3). 역할 세션이면 그 역할의 받는 것·내는 것과 항목 명령
+export function rig3Guide(r3, roleName = null) {
+  const r = roleName ? r3.roles[roleName] : null;
+  const lines = ['rig 3(역할 조직). 역할은 대화하지 않고 항목을 넘긴다.'];
+  if (r) {
+    const gets = r3.flows.filter((f) => f.to.includes(roleName)).map((f) => `${f.item}(${f.from.join('|')}에게서${f.for ? `, ${f.for}에 대한 답` : ''})`);
+    const puts = r3.flows.filter((f) => f.from.includes(roleName)).map((f) => `${f.item}(${f.to.join('|')}에게${f.for ? `, 받은 ${f.for}마다` : ''})`);
+    lines.push(`너는 역할 ${roleName}. 쓰는 곳: ${r.owns.join(', ')}, 기억 ${memoryDir(roleName)}.`, `받는 것: ${gets.join(', ') || '없음'}. 내는 것: ${puts.join(', ') || '없음'}.`);
+  }
+  const forFlows = r3.flows.filter((f) => f.for);
+  if (forFlows.length) lines.push(`답이 필요한 길: ${forFlows.map((f) => `${f.from.join('|')}가 받은 ${f.for}마다 ${f.item}을 낸다(--from <받은 ${f.for}>)`).join('; ')}. 낼 것이 없으면 pass.`);
+  return [...lines, ...ITEM_HOWTO.map((l) => l.replace('[Atrium 보드] ', ''))].join('\n');
 }
 // 싣는 파일을 읽는다(없으면 null)
 export function readLoadFiles(root, r3, roleName) {

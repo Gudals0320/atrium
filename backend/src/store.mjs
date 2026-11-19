@@ -12,7 +12,7 @@ import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키
 import { UNITS_SCHEMA, UNITS_COLUMNS, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
 import { NEWS_SCHEMA, installNews } from './store-news.mjs'; // P204: 동료 소식
 import { RIG_SCHEMA, RIG_COLUMNS, TOOL_RUNS_SCHEMA, RIG_FLOW_SCHEMA, RIG_ADMIN_SCHEMA, RIG_EVENTS_SCHEMA, RIG_LOOPS_SCHEMA, RIG_ARTIFACTS_SCHEMA, RIG_PROPOSALS_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기와 훅 실행 기록
-import { RIG3_COLUMNS, installRig3 } from './store-rig3.mjs'; // P241: rig 3 역할 세션
+import { RIG3_COLUMNS, RIG3_SCHEMA, installRig3 } from './store-rig3.mjs'; // P241: rig 3 역할 세션
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -126,6 +126,7 @@ export class Store {
     this.db.exec(RIG_ARTIFACTS_SCHEMA); // P222: 산출물 등록부
     this.db.exec(RIG_PROPOSALS_SCHEMA); // P224: 제안과 승인, 정본 표시
     this.db.exec(NEWS_SCHEMA); // P204: 동료 소식
+    this.db.exec(RIG3_SCHEMA); // P242: rig 3 항목과 받음
     for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS), ...Object.entries(RIG3_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);

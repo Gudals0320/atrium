@@ -84,6 +84,10 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   rig 자리(seat): 사람이 정하거나 보드가 rig의 자리를 위해 띄운 세션은 정의(seats·flow)를 따른다(atrium me에 자리가 보인다).
       atrium prompt <자리 이름> "<할 일>"은 그 자리로 보낸다: flow의 assign 줄이면 일(keep 자리는 앉은 세션, fresh 자리는 새 세션), may면 글만, 그 밖은 보드가 거절한다(종료 코드 1, 쓸 수 있는 자리를 알린다). rig 밖 세션(자리 없는 세션)에는 manager 자리, 또는 may에 "@<이름>"·"*"를 둔 자리가 글만 보낸다.
       atrium done <값> "<보고>"의 값은 정의의 results 낱말이고, 보드가 값에 따라 다음 자리로 넘긴다(넘길 곳이 없으면 건의 주인에게). 자리 안내: atrium guide
+  rig 3 역할(보드가 rig 역할로 띄운 세션): 대화하지 않고 항목을 넘긴다
+      atrium rig put <파일> --item <종류> [--from <받은 항목>] [--redo <항목>]   네 섹터의 파일 하나를 항목으로 낸다. 보드가 길대로 받는 역할을 깨운다. 낸 파일은 고치지 않는다(고치려면 --redo로 다음 판)
+      atrium rig accept <항목> | return <항목> "<까닭>" | pass [<항목>] "<까닭>"   받은 것에 답한다(반려는 낸 역할에게 간다. pass는 이번에는 낼 것이 없다)
+      atrium rig drop <항목> "<까닭>"   반려된 네 항목을 버린다.  atrium rig inbox   받아서 답하지 않은 것, 반려된 네 항목
   atrium rig log --events [--case 건] [--since seq|시각] [--kinds a,b] [--limit n]   rig 장부(건 열림·맡김·넘김·보고·관문·도구·멈춤 등 한 꼴의 줄). 관리자 자리와 제작 세션은 워크스페이스 전체, 자리 세션은 자기 건만
   atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>]   rig의 관리자 자리(manager)만 쓴다(check는 읽기만이라 rig가 꺼진 워크스페이스면 어느 세션이든 쓴다). 관리자 자리는 .atrium/rig.json을 직접 고치고(보드가 새 해시를 버전으로 남긴다), check로 후보를 검사하고,
       log로 버전과 버전마다 건·반려·훅 거절·상한 초과 수를 보고, rollback <n>으로 되돌리고(새 버전), cleanup <건>으로 끝난 건의 fresh 세션을 닫는다(워크트리는 목록만).
@@ -434,6 +438,7 @@ async function toolVerb() {
 // ---------- P188: atrium rig check [파일] | log | rollback <n> | cleanup <건> (관리자 자리만) ----------
 async function rigVerb() {
   const op = rest[0];
+  if (RIG3_OPS.includes(op)) return rig3Verb(op); // P242: rig 3 역할 세션의 항목 명령
   const ops = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name', 'artifacts', 'propose', 'proposals', 'approve', 'reject', 'run']; // P230: run. P216: retry. P221: status·pause·resume·name. P222: artifacts. P224: 제안과 승인
   if (!ops.includes(op)) fail(`사용: atrium rig check [파일] | log | rollback <n> | cleanup <건> | retry <건> [<일>] | status | pause <고리|회> | resume <고리|회> | name <회> "<이름>" | artifacts [--sector <섹터>] [--run <회>] | propose --target <문서|definition> --file <파일> [--why "<까닭>"] | proposals [<제안>] | approve <제안> | reject <제안> "<까닭>" | run <고리>`, 2);
   const body = { op };
@@ -504,6 +509,46 @@ async function rigVerb() {
   say(`건 ${x.caseId} 정리: 닫음 ${x.closed.length ? x.closed.map((y) => `@${y.name}`).join(', ') : '없음'}${x.kept.length ? ` · 남김 ${x.kept.map((y) => `@${y.name}(${y.why})`).join(', ')}` : ''}`);
   if (x.worktrees.length) { say('이 건의 워크트리(보드는 지우지 않는다. 합칠 것을 확인한 뒤 git worktree remove):'); for (const w of x.worktrees) say(`  ${w.name} ${w.path || ''}${w.exists ? '' : ' (없음)'}`); }
   else say('이 건의 워크트리: 없음');
+}
+// P242: rig 3 항목 명령(역할 세션). put <파일> --item <종류> [--from <항목>] [--redo <항목>] | accept <항목> ["<메모>"] | return <항목> "<까닭>" | pass [<항목>] "<까닭>" | drop <항목> "<까닭>" | inbox
+const RIG3_OPS = ['put', 'accept', 'return', 'pass', 'drop', 'inbox'];
+async function rig3Verb(op) {
+  const body = { op };
+  const val = (k) => { if (flags[k] == null) return null; if (flags[k] === true || flags[k] === undefined || flags[k] === '') fail(`--${k}에 값을 준다`, 2); return String(flags[k]); };
+  const need = (v, use) => { if (!v || !String(v).trim()) fail(`사용: atrium rig ${use}`, 2); return v; };
+  if (op === 'put') {
+    let file = rest[1]; let kind = val('item');
+    if (!kind && rest[2]) { kind = rest[1]; file = rest[2]; } // atrium rig put <종류> <파일>도 받는다
+    need(file, 'put <파일> --item <종류> [--from <받은 항목>] [--redo <항목>]');
+    body.file = path.resolve(file); if (kind) body.kind = kind;
+    const from = val('from'); if (from) body.from = from;
+    const redo = val('redo'); if (redo) body.redo = redo;
+    if (!kind && !redo) fail('항목 종류를 준다: atrium rig put <파일> --item <종류> (다시 내기면 --redo <항목>)', 2);
+  }
+  if (op === 'accept') { body.id = need(rest[1], 'accept <항목> ["<메모>"]'); if (rest[2]) body.note = rest.slice(2).join(' '); }
+  if (op === 'return') { body.id = need(rest[1], 'return <항목> "<까닭>"'); body.reason = need(rest.slice(2).join(' '), 'return <항목> "<까닭>" (반려는 까닭과 함께 한다)'); }
+  if (op === 'drop') { body.id = need(rest[1], 'drop <항목> "<까닭>"'); body.reason = need(rest.slice(2).join(' '), 'drop <항목> "<까닭>" (까닭과 함께 한다)'); }
+  if (op === 'pass') { if (rest.length >= 3) { body.id = rest[1]; body.reason = rest.slice(2).join(' '); } else body.reason = need(rest[1], 'pass [<항목>] "<까닭>"'); }
+  const r = await call('rig', body, 60000);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  const x = r.result;
+  if (flags.json) { say(JSON.stringify(x ?? { error: r.error }, null, 2)); if (r.error) process.exitCode = 1; return; }
+  if (r.error) fail(`${op === 'inbox' ? '읽지' : op === 'put' ? '내지' : op === 'accept' ? '받지' : op === 'return' ? '반려하지' : op === 'drop' ? '버리지' : 'pass하지'} 않았다(${r.error.code}): ${r.error.message}`);
+  const it = x.item;
+  if (op === 'put') return say(`${it.id}${it.rev > 1 ? ` 판 ${it.rev}` : ''}로 냈다(${it.kind}, ${it.path}${it.from ? `, ${it.from}에서` : ''}) → ${it.to.join(', ')}. 네가 낸 것 가운데 기다리는 것 ${x.waitingOwn}. 낸 파일은 고치지 않는다(고치려면 --redo ${it.id}).`);
+  if (op === 'accept') return say(`${it.id}${x.already ? '는 이미 받았다' : '를 받았다'}.${x.changed ? ` 주의: 낸 뒤 파일이 ${x.changed === 'missing' ? '없어졌다' : '바뀌었다'}(판이 장부에 남겼다).` : ''}${x.answer ? ` 이 항목에 대한 답으로 ${x.answer.join('|')}을 낸다(--from ${it.id}). 낼 것이 없으면 atrium rig pass ${it.id} "<까닭>".` : ''}`);
+  if (op === 'return') return say(x.already ? `${it.id}는 이미 반려했다.` : `${it.id}를 반려했다${x.late ? `(늦은 반려: 네가 가진 ${x.late}가 이 항목에서 이어졌다)` : ''}. ${x.to === 'human' ? '입력 창구의 항목이라 rig 판에 보인다.' : `${x.to}에게 돌아간다.`}`);
+  if (op === 'drop') return say(x.already ? `${it.id}는 이미 버렸다.` : `${it.id}를 버렸다.`);
+  if (op === 'pass') return say(x.already ? '이미 pass했다.' : x.turn ? '이번에는 낼 것이 없다고 남겼다(답하지 않은 받은 것은 없었다).' : `pass: ${x.passed.join(', ')}.`);
+  if (op === 'inbox') {
+    const who = (i) => (i.role === 'human' ? '입력 창구' : i.role);
+    say(`받아서 답하지 않은 것 ${x.received.length}${x.received.length ? ':' : '.'}`);
+    for (const i of x.received) say(`  ${i.id}${i.rev > 1 ? ` 판 ${i.rev}` : ''} (${i.kind}, ${who(i)}${i.from ? `, ${i.from}에서` : ''}): ${i.path}${i.changed ? ` [낸 뒤 파일이 ${i.changed === 'missing' ? '없어짐' : '바뀜'}]` : ''}`);
+    if (x.unanswered.length) { say(`받았고 답 항목을 내지 않은 것 ${x.unanswered.length}:`); for (const i of x.unanswered) say(`  ${i.id} → ${i.need.join('|')}을 --from ${i.id}로 낸다(없으면 pass ${i.id} "<까닭>")`); }
+    say(`네가 낸 것 가운데 반려된 것 ${x.returned.length}${x.returned.length ? ':' : '.'}`);
+    for (const i of x.returned) say(`  ${i.id}${i.rev > 1 ? ` 판 ${i.rev}` : ''} (${i.path}): ${i.by.map((b) => `${b.role}${b.late ? '(늦은 반려)' : ''} "${b.reason}"`).join('; ')} → put <파일> --redo ${i.id} | drop ${i.id} "<까닭>"`);
+    say(`네가 낸 것 가운데 기다리는 것 ${x.waitingOwn}. 네가 낼 수 있는 종류: ${x.puts.join(', ') || '(없음)'}.`);
+  }
 }
 // P224: atrium rig proposals
 const PROP_STATE = { pending: '기다림', applied: '반영됨', rejected: '거절됨', failed: '반영 못 함' };

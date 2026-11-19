@@ -3175,4 +3175,19 @@ export default {
     for: 'answers {item}',
     readOnly: 'This rig changes only through its definition files (.atrium/rig.json, .atrium/roles/). This view is read-only.',
   },
+  // P242: rig 3 items, flows, answers. Counts per flow, stalled roles, input desk
+  rig3Items: {
+    counts: 'put {put} · accepted {accepted} · returned {returned} · waiting {waiting}',
+    passed: ' · passed {n}',
+    stalledH: 'Roles that stopped without answering',
+    stalled: '{role}: did not answer what it received (the board nudged it once) — {items}',
+    intake: 'Input desk',
+    intakeTo: '{item} → {to}',
+    intakePlaceholder: 'Text for {to}. The board writes it to a file and sends it as an item.',
+    intakeSend: 'Send',
+    intakeSent: 'Sent {id} to {to}',
+    intakeOff: 'The input desk works while the rig is on.',
+    returned: 'Returned input {id}: {by} "{reason}"',
+  },
 };
+
