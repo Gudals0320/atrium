@@ -309,7 +309,13 @@ export class RigLoops {
     const st = this.store();
     if (st.openTryOf(s.sessionId)) return null;
     if (this.b.queue && this.b.queue.list(s.sessionId).some((x) => x.status === 'sending' || x.status === 'sent')) return null;
-    if (this.isPaused(s.workspaceKey, loop.name)) { this.b.log && this.b.log(`rig loop ${s.workspaceKey} ${loop.name} paused: terminal request not opened`); return null; }
+    if (this.isPaused(s.workspaceKey, loop.name)) {
+      // P240(P237 후속 8): 글은 이미 들어갔다(붙잡지 않는다). 회를 열지 않은 것을 장부에 남긴다
+      rigEvent(this.b, { kind: 'loop_skip', ws: s.workspaceKey, seat: loop.entry, session: s.sessionId, value: 'paused', actor: 'human', text: `${loop.name}: 고리가 멈춰 자리 터미널에 친 요청으로 회를 열지 않았다(글은 들어갔다)`, data: { loop: loop.name, trigger: 'request', from: 'human', via: 'terminal' } });
+      this.b.log && this.b.log(`rig loop ${s.workspaceKey} ${loop.name} paused: terminal request not opened`);
+      this.changed(s.workspaceKey);
+      return null;
+    }
     const key = s.workspaceKey;
     const name = runNameOf(text) || `${loop.name} 회`;
     const follows = this.followsOf(key, loop, s, HUMAN_FROM);

@@ -3145,5 +3145,6 @@ export default {
   cmdTalk: {
     label: 'No run',
     title: 'Send to {names} as text only, without opening a run. Use it for messages that are not run work, such as asking to change the rig. Not delivered while the seat is doing run work.',
+    runOpen: 'not sent without a run: the seat is working on an open run. Send again after it closes, or turn off No run', // P240: reason on the failed chip
   },
 };

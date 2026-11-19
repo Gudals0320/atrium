@@ -85,6 +85,7 @@ export function applyHook(rt, body, now = Date.now()) {
       rt.lastError = null;
       break;
     case 'PreToolUse':
+      if (!body.agent_id) rt.toolAt = now; // P240: 주 에이전트의 도구 hook(턴이 돈다는 흔적). 하위 에이전트(agent_id)의 것은 뒤 하위 에이전트일 수 있어 세지 않는다
       rt.lastPre = { tool, toolUseId: body.tool_use_id, input: body.tool_input };
       rt.recentPre = [...(rt.recentPre || []).slice(-7), { tool, toolUseId: body.tool_use_id || null, input: JSON.stringify(body.tool_input ?? null) }]; // P232: 권한 질문을 그 도구 호출에 잇는다
       if (ASK_TOOLS[tool]) rt.pendingAsk = askFrom(ASK_TOOLS[tool], tool, body.tool_input, body.tool_use_id, now);

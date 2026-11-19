@@ -29,12 +29,28 @@ export function blockReason(view, now, cfg) {
     case 'waiting': return 'waiting'; // 규칙 2
     case 'starting': return 'starting'; // 규칙 3
     case 'trust_wait': return 'trust_wait'; // 규칙 3
-    case 'working': return 'working'; // 턴 중에는 보내지 않는다(Claude Code 자체 대기열과 섞지 않기 위해)
+    case 'working': if (view.bgOnly) break; return 'working'; // P240: 턴은 끝났고 뒤 일만 돌면 쉬는 것처럼 보낸다. 턴 중에는 보내지 않는다(Claude Code 자체 대기열과 섞지 않기 위해)
     case 'exited': return 'no_agent';
     default:
   }
   if (view.lastUserInputAt && now - view.lastUserInputAt < cfg.inputQuietMs) return 'user_typing'; // 규칙 4
   return null;
+}
+
+// P240: 턴은 끝났고 뒤 일(뒤 셸·뒤 하위 에이전트)만 도는 Claude Code 세션인가. 순수 함수. 전달이 쓰는 view의 bgOnly(backend.deliveryView)가 이것 하나로 정한다.
+//   판(hc)은 뒤 일이 돌면 턴이 끝나도 working으로 본다(P92·P164). 카드·세션 맵 표시는 그대로 working이고, 전달만 기다리지 않고 보통 보내기로 넣는다.
+//   rt: 세션 runtime, state: deriveState 결과, bg: 도는 뒤 일(backgroundOf·backgroundList, 없으면 null)
+//   - 판이 띄운 Claude Code(hook)만. 다른 종류는 뒤 일 정보가 없다
+//   - 마지막 Stop이 마지막 UserPromptSubmit 뒤에 왔다(turn.endedAt ≥ startedAt) + 그 뒤 주 에이전트의 도구 hook이 없다(rt.toolAt). 압축 중은 아니다
+//   뒤 일이 끝나 Claude Code가 스스로 새 턴(<task-notification>)을 열면 UserPromptSubmit이 오지 않을 수 있다. 그 턴의 첫 도구 hook 전에 넣은 글은
+//   Claude Code 대기 메시지가 된다(턴 중 입력, canTypeNow·_typeNow 길과 같다). 그 턴이 끝나면 UserPromptSubmit이 와서 확인된다
+export function bgOnlyOf(rt, state, bg, { kind = 'claude', hooked = true } = {}) {
+  if (!rt || !bg || (kind || 'claude') !== 'claude' || !hooked) return false;
+  if (!state || state.state !== 'working' || state.estimate === 'compacting') return false;
+  const t = rt.turn || {};
+  if (!t.startedAt || !t.endedAt || t.endedAt < t.startedAt) return false;
+  if (rt.toolAt && rt.toolAt > t.endedAt) return false;
+  return Number(bg.n) > 0;
 }
 
 // P90: 휴대폰 입력 줄은 "일하는 중이면 바로 넣기"(typeNow)로 보낸다. PC 터미널에서 Enter를 친 것처럼 Claude Code가 자기 대기 메시지로 받아 둔다.
@@ -338,7 +354,7 @@ export class DeliveryQueue extends EventEmitter {
     this.emit('now', { deliveryId: d.deliveryId, sessionId: d.sessionId, state: v ? v.state : null });
     this._emit(d);
     setImmediate(() => this.pump());
-    return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, seq: d.seq, how: v && v.state === 'working' ? 'type' : 'send' };
+    return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, seq: d.seq, how: v && v.state === 'working' && !v.bgOnly ? 'type' : 'send' }; // P240: 뒤 일만 돌면 보통 보내기
   }
 
   // P215: 기다린 시간 나누기. 지난 pump부터 지금까지를 지난번에 본 까닭으로 센다: 앞 전달 뒤에 줄 섰거나 LONG_WAIT면 freeMs(짧은 상한에서 뺀다).
@@ -377,7 +393,7 @@ export class DeliveryQueue extends EventEmitter {
           const v = this.view(sid, d) || {};
           if (v.closed) { this._set(d, 'failed', 'session closed'); continue; }
           if (v.lastUserInputAt && now - v.lastUserInputAt < this.cfg.inputQuietMs) continue; // 사람이 치는 중이면 기다린다(규칙 4)
-          if (v.state === 'working' || v.state === 'waiting') continue; // 이미 돌기 시작했거나 질문 중: 확인(hook)을 더 기다린다
+          if ((v.state === 'working' && !v.bgOnly) || v.state === 'waiting') continue; // P240: 뒤 일만 도는 세션은 쉬는 세션처럼 손쓴다. 이미 돌기 시작했거나 질문 중: 확인(hook)을 더 기다린다
           // P106: 아직 뜨는 중(starting·trust_wait)이면 입력 칸이 생길 때까지 기다린다. 그동안 확인 못 함으로 끝내지 않는다(최대 deliveryMaxWaitMs)
           if (['starting', 'trust_wait', 'sleeping'].includes(v.state) && now - d.sentAt < this.cfg.deliveryMaxWaitMs) continue;
           this._recover(d);
@@ -389,13 +405,16 @@ export class DeliveryQueue extends EventEmitter {
       // P158: 고치는 중이면 보내지 않는다(이 세션의 뒤 전달도 기다린다). 오래 놓지 않으면 저절로 놓는다
       if (d.editing) { if (now - d.editingAt > (this.cfg.editHoldMs ?? 600000)) this._release(d); continue; }
       if (this._overdue(d, now)) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
-      const reason = blockReason(this.view(sid, d), now, this.cfg);
+      const view = this.view(sid, d);
+      const reason = blockReason(view, now, this.cfg);
       d.acctFree = LONG_WAIT.has(reason); // P215: 이번에 본 까닭으로 다음 pump까지를 센다
       if (reason === 'closed') { this._set(d, 'failed', 'session closed'); continue; }
       if (reason === 'working' && d.typeNow && this.inspect) { const v = this.view(sid, d); if (canTypeNow(v)) { this._typeNow(d, v, now); continue; } }
       if (reason) { if (d.reason !== reason) this._set(d, 'queued', reason); continue; }
       if (d.retryAt && now < d.retryAt) { this._noteStuck(d, now); continue; } // P106: 터미널이 앞 시도를 받지 않았다. 물러난 시간이 지날 때까지(또는 poke) 기다린다
       if (d.draftLookAt && now < d.draftLookAt) continue; // P128: 쓰다 만 글을 비키지 못했다. 잠시 뒤 다시 본다(사람이 보내거나 지우면 그때 보낸다)
+      d.bgOnly = !!(view && view.bgOnly && view.state === 'working'); // P240: 뒤 일만 도는 세션에 보통 보내기로 넣는다(다시 보내기는 하지 않는다)
+      if (d.bgOnly) this.emit('bg_only', { deliveryId: d.deliveryId, sessionId: sid });
       this._deliver(d);
     }
   }
@@ -493,7 +512,7 @@ export class DeliveryQueue extends EventEmitter {
       d.lastPeek = box === 'other' ? peek : null;
       const settled = box === 'other' && d.sameOther >= 2;
       if ((box === 'unknown' || box === 'other') && look && (d.looks || 0) < this._looks() && !settled) { d.looks = (d.looks || 0) + 1; d.lastBox = box; action = 'wait'; return; }
-      const canResend = !!look && !look.noResend && !look.seen && !d.resent && !d.mismatchSeen && !d.workingSeen;
+      const canResend = !!look && !look.noResend && !look.seen && !d.resent && !d.mismatchSeen && !d.workingSeen && !d.bgOnly; // P240: 뒤 일만 돌 때 넣은 글은 Claude Code 대기 메시지가 됐을 수 있어 다시 보내지 않는다(Enter만)
       // Enter만 이르게(submitEnterMs). 비었으면 다시 보내기는 submitRetryMs가 지난 뒤, 그리고 앞 번에도 비어 있었을 때만(hook이나 그리기가 늦을 수 있다)
       if (box === 'empty' && canResend && (Date.now() - d.sentAt < this._retryMs() || d.lastBox !== 'empty') && (d.looks || 0) < this._looks()) { d.looks = (d.looks || 0) + 1; d.lastBox = box; action = 'wait'; return; }
       d.lastBox = box;
