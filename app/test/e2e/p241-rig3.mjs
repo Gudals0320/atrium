@@ -52,18 +52,18 @@ try {
     inputs: document.querySelectorAll('[data-role=rig-panel] input, [data-role=rig-panel] select, [data-role=rig-panel] textarea').length,
   }));
   check('꺼진 rig 3 판: 역할 둘과 쥔 섹터, 세션 없음', off.status === 'off' && JSON.stringify(off.roles) === JSON.stringify([['data', 'data/ snapshots/', 'none'], ['ideas', 'hypotheses/', 'none']]), off.roles);
-  check('길 셋(사람 창구는 "사람")', off.flows.length === 3 && off.flows[1].includes(ko.rig3.human), off.flows);
+  check('길 셋(사람 창구는 "사람")', off.flows.length === 3 && off.flows[1].includes(ko.rig.human), off.flows);
   check('편집 표·자리 표·흐름 표·말로 고치기가 없다(입력 칸 0)', off.editTables === 0 && off.inputs === 0, off);
   await shotEl(page, '[data-role=rig-panel]', '01-rig3-off-ko');
   // 2. 켜기 확인(한 번)
   await page.click('[data-action=rig-enable]');
   await page.waitForSelector('[data-role=rig-confirm]');
   const line = await page.textContent('[data-role=rig-confirm-line]');
-  check('켜기 확인 한 줄(ko)', line === ko.rig3.confirmLine.replace('{n}', '2'), line);
+  check('켜기 확인 한 줄(ko)', line === ko.rig.confirmLine.replace('{n}', '2'), line);
   await shotEl(page, '[data-role=rig-panel]', '02-rig3-confirm-ko');
   await lang(page, 'en');
   const lineEn = await page.textContent('[data-role=rig-confirm-line]');
-  check('켜기 확인 한 줄(en)', lineEn === en.rig3.confirmLine.replace('{n}', '2'), lineEn);
+  check('켜기 확인 한 줄(en)', lineEn === en.rig.confirmLine.replace('{n}', '2'), lineEn);
   await shotEl(page, '[data-role=rig-panel]', '03-rig3-confirm-en');
   await lang(page, 'ko');
   // 3. 켜기 → 역할마다 세션

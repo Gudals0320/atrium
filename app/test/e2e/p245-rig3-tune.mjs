@@ -48,7 +48,7 @@ try {
   await page.waitForSelector('[data-role=rig-tune-cell]', { timeout: 10000 });
   const t0 = tuneOf(call('rig.status', { workspace: WS }), ROLE);
   const badge = await page.evaluate((r) => { const b = document.querySelector('tr[data-role-name="' + r + '"] [data-action=rig-tune-toggle]'); return b ? { text: b.textContent, n: b.dataset.tuneN, k: b.dataset.tunes } : null; }, ROLE);
-  check('역할 줄의 정의서 판·조정 수(ko)가 판과 같다', badge && badge.n === String(t0.n) && badge.k === String(t0.tunes) && badge.text.startsWith(fill(ko.rig3Tune.badge, { n: t0.n, k: t0.tunes })), { badge, t0 });
+  check('역할 줄의 정의서 판·조정 수(ko)가 판과 같다', badge && badge.n === String(t0.n) && badge.k === String(t0.tunes) && badge.text.startsWith(fill(ko.rigTune.badge, { n: t0.n, k: t0.tunes })), { badge, t0 });
   await page.click('tr[data-role-name="' + ROLE + '"] [data-action=rig-tune-toggle]');
   await page.waitForSelector('[data-role=rig-tune-log] li', { timeout: 10000 });
   const info = call('rig.role', { workspace: WS, role: ROLE });
@@ -83,7 +83,7 @@ try {
   await lang(page, 'en');
   await sleep(800);
   const col = await page.evaluate(() => [...document.querySelectorAll('[data-role=rig-roles] th')].map((x) => x.textContent).at(-1));
-  check('사전(en)', col === en.rig3Tune.col, col);
+  check('사전(en)', col === en.rigTune.col, col);
   await shotEl(page, '[data-role=rig-panel]', '04-rig3-tune-en');
   await lang(page, 'ko');
 } finally {

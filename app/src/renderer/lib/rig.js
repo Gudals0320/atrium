@@ -2,14 +2,14 @@
 // 화면은 읽기만 하는 구조 보기와 켜기만 있다(편집 표·자리 표·흐름 표는 없다). 단위 시험 test/p241-lib.test.mjs
 export const hasRigDef = (st) => !!(st && (st.format === 3 || st.rig3));
 // P247: 빌더 세션 보기(rig.get의 builder3, 또는 rig.status rig3.builder). live: 창의 세션 목록 → { session: { sessionId, name, stateKey } | null, canTalk }
-//   canTalk: rig 정의가 있거나 rig가 없는 워크스페이스
+//   canTalk: 판을 읽은 워크스페이스면 늘(정의가 있든, 없든, 옛 꼴이라 잘못됐든. P249)
 export function builderInfo(st, live = null) {
   if (!st) return { session: null, canTalk: false };
   const b = st.builder3 || (st.rig3 && st.rig3.builder) || null;
   const s = b && b.session ? b.session : null;
   const cur = s && live && live.get ? live.get(s.sessionId) : null;
   const state = cur ? cur.state : s ? (s.asleep ? 'sleeping' : s.state) : null;
-  return { session: s ? { sessionId: s.sessionId, name: s.name, stateKey: state || 'unknown' } : null, canTalk: hasRigDef(st) || st.status === 'none' };
+  return { session: s ? { sessionId: s.sessionId, name: s.name, stateKey: state || 'unknown' } : null, canTalk: st.status !== 'error' };
 }
 
 // 역할 줄: { name, owns, tools, session: { name, state } | null, stateKey, gaveUp, docMissing }

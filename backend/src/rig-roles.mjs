@@ -316,7 +316,7 @@ export class RigRoles {
       if (!asleep && !(s.rt && s.rt.exit) && this.b.sleeper && this.b.sleeper.sleep) {
         try { await this.b.sleeper.sleep(s, { by: 'rig', mode: 'hand', scope: 'session' }); slept = true; } catch (e) { this.b.log && this.b.log(`rig role detach sleep ${s.name}: ${e.code || e.message}`); }
       }
-      rigEvent(this.b, { kind: 'role_removed', ws: key, seat: role, session: s.sessionId, value: slept ? 'slept' : asleep ? 'asleep' : 'kept', actor: 'board', text: `@${shownName(s) || s.name}: 정의에서 역할 ${role}이 빠져 rig에서 뗐다${slept ? '(재움)' : ''}` });
+      rigEvent(this.b, { kind: 'role_removed', ws: key, seat: role, session: s.sessionId, value: slept ? 'slept' : asleep ? 'asleep' : 'kept', actor: 'board', text: `@${shownName(s) || s.name}: 정의에서 ${role} 역할이 빠져 rig에서 뗐다${slept ? '(재움)' : ''}` });
       try { this.store().addEvent(s.sessionId, 'rig_role_removed', { role, slept }); } catch {}
       this.b.log && this.b.log(`rig role ${role} removed: ${s.name} detached${slept ? ' and slept' : ''}`);
       if (this.b.broadcastSession) try { this.b.broadcastSession(s, { cause: 'rig_role_removed' }); } catch {}

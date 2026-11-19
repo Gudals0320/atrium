@@ -43,7 +43,7 @@ try {
   await page.waitForSelector('[data-role=rig-cycle]', { timeout: 10000 });
   const c = call('rig.status', { workspace: WS }).rig3.cycle;
   const v = await page.evaluate(() => ({ n: document.querySelector('[data-role=rig-cycle-n]').textContent, next: document.querySelector('[data-role=rig-next-beat]').textContent, entries: [...document.querySelectorAll('[data-entry]')].map((d) => d.dataset.entry), btn: !!document.querySelector('[data-action=rig-beat]') }));
-  check('지금 사이클(ko): 판의 번호와 같다', v.n === fill(ko.rig3Cycle.now, { n: c.n }), v);
+  check('지금 사이클(ko): 판의 번호와 같다', v.n === fill(ko.rigCycle.now, { n: c.n }), v);
   check('다음 박자 줄(1m마다, data 깨움)', /1m마다/.test(v.next) && /data 깨움/.test(v.next), v.next);
   check('최근 꼭지(새 것부터)가 판과 같다', JSON.stringify(v.entries) === JSON.stringify(c.entries.map((e) => String(e.n))), { ui: v.entries, board: c.entries.map((e) => e.n) });
   check('손 박자 단추', v.btn);
@@ -52,7 +52,7 @@ try {
   await page.click('[data-action=rig-beat]');
   await until(() => call('rig.status', { workspace: WS }).rig3.cycle.n >= c.n + 1, 15000, 500);
   const n2 = call('rig.status', { workspace: WS }).rig3.cycle.n;
-  await page.waitForFunction((t) => document.querySelector('[data-role=rig-cycle-n]').textContent === t, fill(ko.rig3Cycle.now, { n: n2 }), { timeout: 10000 }).catch(() => {});
+  await page.waitForFunction((t) => document.querySelector('[data-role=rig-cycle-n]').textContent === t, fill(ko.rigCycle.now, { n: n2 }), { timeout: 10000 }).catch(() => {});
   const ev = call('rig.events', { workspace: WS, limit: 80 });
   const opened = (ev.rows || ev).filter((r) => r.kind === 'cycle_open' && r.value === 'human').at(-1);
   check('창의 "지금 박자" → 사람이 친 사이클(cycle_open human)', !!opened && opened.actor === 'human', opened);
@@ -63,7 +63,7 @@ try {
   await lang(page, 'en');
   await sleep(800);
   const ven = await page.evaluate(() => document.querySelector('[data-role=rig-cycle] .mt-rigon-h').textContent);
-  check('사전(en)', ven === en.rig3Cycle.h, ven);
+  check('사전(en)', ven === en.rigCycle.h, ven);
   await shotEl(page, '[data-role=rig-panel]', '03-rig3-cycle-en');
   await lang(page, 'ko');
 } finally {

@@ -45,7 +45,7 @@ try {
     await regionMenu(page, st0.status === 'none' ? 'rig-builder' : 'rig-panel', panel);
     await page.waitForSelector('[data-role=rig-builder]', { timeout: 10000 });
     const line = await page.locator('[data-role=rig-builder]').innerText();
-    check('rig 판에 빌더 줄과 말하기 단추', line.includes(ko.rig3Builder.h) && (await page.locator('[data-action=rig-builder-talk]').count()) === 1, line);
+    check('rig 판에 빌더 줄과 말하기 단추', line.includes(ko.rigBuilder.h) && (await page.locator('[data-action=rig-builder-talk]').count()) === 1, line);
     await shotEl(page, panel, '01-builder-' + (st0.status === 'none' ? 'norig' : 'rig3') + '-ko');
     await page.click('[data-action=rig-builder-talk]');
     await page.fill('[data-role=rig-builder-text]', SAY);

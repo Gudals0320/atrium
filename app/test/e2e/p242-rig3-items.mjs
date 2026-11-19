@@ -49,7 +49,7 @@ try {
     kinds: [...document.querySelectorAll('[data-intake-item]')].map((b) => b.dataset.intakeItem),
   }));
   const hyp = st.rig3.flows.find((f) => f.item === 'hypothesis').counts;
-  check('길마다 수(ko): 화면이 판의 수와 같다', v.counts.find((x) => x[0] === 'hypothesis')[1] === fill(ko.rig3Items.counts, hyp), v.counts);
+  check('길마다 수(ko): 화면이 판의 수와 같다', v.counts.find((x) => x[0] === 'hypothesis')[1] === fill(ko.rigItems.counts, hyp), v.counts);
   check('입력 창구: 사람 길(request)만, 글 칸 하나', v.intake && JSON.stringify(v.kinds) === '["request"]', v);
   await shotEl(page, '[data-role=rig-panel]', '01-rig3-items-ko');
   // 창에서 입력 창구로 넣는다 → request 항목이 data에게
