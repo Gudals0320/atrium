@@ -155,6 +155,11 @@ test('P253 rig 띠 자리: 트리 위 고정된 자리(왼쪽 정렬, 트리 위
   // 세션 맵은 keepKeys를 더는 주지 않고, rig 띠와 워크스페이스 줄을 잇는 선이 없다
   const src = fs.readFileSync(path.join(SRC, 'MissionLineage.jsx'), 'utf8');
   assert.ok(!/keepKeys:/.test(src) && !/rm-link/.test(src));
+  // 역할 세션만 있는 판(트리 카드 0)에서도 빈 트리 글(mission.empty)은 rig 띠가 있으면 띄우지 않는다(지도와 겹치지 않게)
+  assert.ok(/lay\.cards\.size === 0 && !lay\.rig && <div className="mt-ta-loading">\{t\('mission\.empty'\)\}/.test(src));
+  const empty = lineageLayout({ nodes: [], edges: [] }, {});
+  const pe = placeMaps(empty, [m1], new Map([[m1.workspace, mapLayout(m1)]]));
+  assert.ok(pe && pe.items[0].y + pe.items[0].h <= empty.bounds.y, '트리가 비어도 rig 띠는 트리 자리 위');
   // 접은 상태를 기억한다
   assert.ok(/atrium\.sessionMap\.rigFold/.test(src) && /saveRigFold\(/.test(src));
 });
