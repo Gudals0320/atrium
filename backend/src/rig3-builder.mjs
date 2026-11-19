@@ -55,7 +55,7 @@ export function builderLoadText(x) {
 }
 // 빌더에게 전하는 한 줄(raise·멈춘 역할)
 export function alertText(a) {
-  if (a.what === 'raise') return '[Atrium 보드] 역할 ' + a.role + '이 빌더에게 올렸다(raise, 요령으로 풀 일이 아님): ' + a.reason + (a.materials && a.materials.length ? ' (재료: ' + a.materials.join(', ') + ')' : '') + '. 모양(정의·목적·정의서의 고정 칸)을 고칠 일인지 판단한다. 뜻이 바뀌는 것은 사용자에게 안을 낸다. 요령 칸은 역할의 것이다.';
+  if (a.what === 'raise') return '[Atrium 보드] 역할 ' + a.role + '이 빌더에게 올렸다(raise, 요령으로 풀 일이 아님): ' + String(a.reason || '').replace(/[.。]+\s*$/, '') + (a.materials && a.materials.length ? ' (재료: ' + a.materials.join(', ') + ')' : '') + '. 모양(정의·목적·정의서의 고정 칸)을 고칠 일인지 판단한다. 뜻이 바뀌는 것은 사용자에게 안을 낸다. 요령 칸은 역할의 것이다.';
   return '[Atrium 보드] 역할 ' + a.role + '이 받은 것에 답하지 않고 멈췄다(판이 한 번 일깨운 뒤에도 그대로): ' + (a.items || []).join(', ') + '. 정의서·길이 막는 것인지 본다(역할의 터미널은 atrium read ' + a.role + ').';
 }
 

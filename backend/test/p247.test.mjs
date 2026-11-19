@@ -158,7 +158,7 @@ test('P247 실을 글(순수)과 지침 파일: 구성안 칸, 좋다고 한 뒤
   assert.match(t, /## 정의서 \(\.atrium\/roles\/b\.md\)\n\(없다\)/);
   assert.match(t, /## 최근 변경 기록 꼭지\n## 사이클 1/);
   assert.match(t, /## 기다리는 것[^\n]*\n- raise 하나/);
-  assert.match(alertText({ what: 'raise', role: 'ideas', reason: 'R', materials: ['heard-1'] }), /역할 ideas이 빌더에게 올렸다\(raise[^)]*\): R \(재료: heard-1\)/);
+  assert.match(alertText({ what: 'raise', role: 'ideas', reason: 'R.', materials: ['heard-1'] }), /역할 ideas이 빌더에게 올렸다\(raise[^)]*\): R \(재료: heard-1\)/);
   assert.match(alertText({ what: 'stalled', role: 'verify', items: ['hypothesis-1'] }), /verify이 받은 것에 답하지 않고 멈췄다.*hypothesis-1/);
 });
 
@@ -273,7 +273,7 @@ test('P247 떠 있는 역할: 정의서가 바뀌면 다음 깨우는 글에 "�
   B.b.rig.read(B.key);
   const notes = B.b.rig3.items.guardNotices(B.key, 'verify');
   assert.equal(notes.length, 1);
-  assert.match(notes[0], /빌더\)에서 정의서\(\.atrium\/roles\/verify\.md\)이 바뀌었다\. 정의서가 바뀌었다, 다시 읽는다: \.atrium\/roles\/verify\.md/);
+  assert.match(notes[0], /빌더\)에서 바뀐 것: 정의서\(\.atrium\/roles\/verify\.md\)\. 정의서가 바뀌었다, 다시 읽는다: \.atrium\/roles\/verify\.md/);
   assert.deepEqual(B.b.rig3.items.guardNotices(B.key, 'verify'), [], '한 번만');
   assert.deepEqual(B.b.rig3.items.guardNotices(B.key, 'data'), [], '바뀌지 않은 역할에는 없다');
   // 깨우는 글에 붙는다

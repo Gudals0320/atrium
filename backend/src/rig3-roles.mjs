@@ -311,7 +311,7 @@ export class Rig3Roles {
       const moved = parts.includes('rig.json') && was && pick(was) !== pick(r3.roles[role]);
       if (moved) this.restart.add(k);
       const what = parts.map((p) => (p === 'rig.json' ? '정의(rig.json)' : p === 'purpose' ? '목적(' + r3.purpose + ')' : '정의서(' + r3.roles[role].doc + ')'));
-      const text = '[Atrium 보드] 판 ' + n + '(' + (by === 'builder' ? '빌더' : by === 'human' ? '사람' : by) + ')에서 ' + what.join(', ') + '이 바뀌었다. ' + (parts.includes('role:' + role) ? '정의서가 바뀌었다, 다시 읽는다: ' + r3.roles[role].doc + '. ' : '') + (parts.includes('purpose') ? '목적 문서를 다시 읽는다. ' : '') + (parts.includes('rig.json') ? '받는 것·내는 것은 atrium guide로 다시 본다.' : '') + (moved ? ' 쥔 섹터·도구가 바뀌어 다음 쉴 때 판이 이 세션을 새로 띄운다.' : '');
+      const text = '[Atrium 보드] 판 ' + n + '(' + (by === 'builder' ? '빌더' : by === 'human' ? '사람' : by) + ')에서 바뀐 것: ' + what.join(', ') + '. ' + (parts.includes('role:' + role) ? '정의서가 바뀌었다, 다시 읽는다: ' + r3.roles[role].doc + '. ' : '') + (parts.includes('purpose') ? '목적 문서를 다시 읽는다. ' : '') + (parts.includes('rig.json') ? '받는 것·내는 것은 atrium guide로 다시 본다.' : '') + (moved ? ' 쥔 섹터·도구가 바뀌어 다음 쉴 때 판이 이 세션을 새로 띄운다.' : '');
       const l = (this.docNotices.get(k) || []).filter((x) => !x.startsWith('[Atrium 보드] 판 ')); // 앞선 바뀜 알림은 새 것으로 갈음한다
       l.push(text.trim()); this.docNotices.set(k, l);
       out.push({ role, parts, restart: !!moved });
