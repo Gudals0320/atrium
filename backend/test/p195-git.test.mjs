@@ -19,7 +19,7 @@ const gitWith = (globalFile) => (cwd, args) => new Promise((res) => {
 
 test('P195 Git 저장소로 시작: git init과 빈 첫 커밋, 처음부터 저장소 키, 이미 저장소면 거절', async () => {
   const dir = tmp();
-  const gcfg = path.join(dir, 'gitconfig'); fs.writeFileSync(gcfg, '[user]\n\tname = t\n\temail = t@example.invalid\n[commit]\n\tgpgsign = false\n');
+  const gcfg = path.join(dir, 'gitconfig'); fs.writeFileSync(gcfg, '[user]\n\tname = t\n\temail = t@example.invalid\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = master\n');
   const proj = path.join(dir, 'proj'); fs.mkdirSync(proj);
   try {
     const run = gitWith(gcfg);
@@ -28,6 +28,7 @@ test('P195 Git 저장소로 시작: git init과 빈 첫 커밋, 처음부터 저
     assert.deepEqual(r, { init: true, commit: true });
     assert.equal(await gitStateAt(proj, { run }), 'ok', 'HEAD가 있다(워크트리를 바로 만든다)');
     assert.equal((await run(proj, ['log', '--format=%s'])).out.trim(), 'Initial commit');
+    assert.equal((await run(proj, ['branch', '--show-current'])).out.trim(), 'main', '첫 가지는 main(init.defaultBranch가 master여도, 2026-11-19 사용자 요청)');
     const ws = await workspaceOf(proj);
     assert.equal(ws.kind, 'repo', '키를 init 뒤에 잡으므로 처음부터 저장소 키');
     await assert.rejects(initRepo(proj, { run }), (e) => e.code === 'bad_request' && e.key === 'wsGitInRepo');
@@ -46,6 +47,7 @@ test('P195 Git 저장소로 시작: 이름·메일이 없으면 init은 두고 �
     const r = await initRepo(proj, { run });
     assert.equal(r.init, true); assert.equal(r.commit, false); assert.equal(r.why, 'identity', JSON.stringify(r));
     assert.equal(await gitStateAt(proj, { run }), 'nocommit', 'init은 남았다');
+    assert.equal((await run(proj, ['symbolic-ref', '--short', 'HEAD'])).out.trim(), 'main', '커밋 전에도 첫 가지는 main');
     assert.equal(fs.readFileSync(gcfg, 'utf8'), before, '전역 설정을 바꾸지 않았다');
     assert.equal((await run(proj, ['config', '--local', '--get', 'user.email'])).ok, false, '저장소 설정에도 이름·메일을 넣지 않았다');
     assert.equal(identityMissing('*** Please tell me who you are.'), true);

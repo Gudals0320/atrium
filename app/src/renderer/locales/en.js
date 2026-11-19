@@ -2828,7 +2828,7 @@ export default {
   // P195: start as a git repository in the open-project dialog
   wsGit: {
     label: 'Start as a Git repository (git init + empty first commit)',
-    hint: 'Runs git init in the folder and makes an empty first commit. Worktrees (rig worktree seats) need a first commit. Your git config is not changed.',
+    hint: 'Runs git init in the folder and makes an empty first commit on the main branch. Worktrees (rig worktree seats) need a first commit. Your git config is not changed.',
     inRepo: 'This folder is already inside a git repository, so git init is not run.',
     noFolder: 'Folder not found.',
     done: '{name}: ran git init and made an empty first commit.',

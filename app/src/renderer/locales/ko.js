@@ -2828,7 +2828,7 @@ export default {
   // P195: 프로젝트 열기의 Git 저장소로 시작
   wsGit: {
     label: 'Git 저장소로 시작 (git init + 빈 첫 커밋)',
-    hint: '켜면 폴더에 git init을 하고 빈 첫 커밋을 만듭니다. 워크트리(rig의 워크트리 자리)는 첫 커밋이 있어야 동작합니다. git 설정은 바꾸지 않습니다.',
+    hint: '켜면 폴더에 git init을 하고 main 브랜치에 빈 첫 커밋을 만듭니다. 워크트리(rig의 워크트리 자리)는 첫 커밋이 있어야 동작합니다. git 설정은 바꾸지 않습니다.',
     inRepo: '이 폴더는 이미 Git 저장소 안에 있어 git init을 하지 않습니다.',
     noFolder: '폴더를 찾을 수 없습니다.',
     done: '{name}: git init과 빈 첫 커밋을 했습니다.',
