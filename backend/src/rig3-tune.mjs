@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs';
-import { unifiedDiff } from './rig-proposals.mjs';
+import { unifiedDiff } from './rig-diff.mjs';
 import { checkRoleDoc, ROLE_DOC_FIXED, memoryDir, HUMAN } from './rig3.mjs';
 
 export const RIG3_TUNE_OPS = ['tune', 'raise', 'heard', 'role'];

@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs';
-import { hashArtifact } from './rig-sectors.mjs';
+import { hashArtifact } from './rig-diff.mjs';
 import { deriveState } from './state.mjs';
 import { idleSince } from './sleep.mjs';
 import { HUMAN, ITEM_NAME_RE } from './rig3.mjs';

@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs';
-import { claudeSettingsAmp, applySettingsAmp, writesVerdict, nestedShell, codexArgsAmp, denyBody } from './rig-amp.mjs';
+import { roleSettingsAmp, applySettingsAmp, writesVerdict, nestedShell, codexUnattendedArgs, denyBody } from './rig-writes.mjs';
 import { sleepTarget, sessionActivity, idleSince } from './sleep.mjs';
 import { deriveState } from './state.mjs';
 import { shownName } from './session-label.mjs';
@@ -79,12 +79,11 @@ export class Rig3Roles {
   claudeAmp(key, roleName, cwd = null) {
     if (roleName === BUILDER_ROLE) { // P247: 빌더(rig가 없는 워크스페이스에서도)
       const root = this.b.rig ? this.b.rig.rootOf(key) : null; if (!root) return null;
-      const d = this.defOf(key);
-      return claudeSettingsAmp({ writes: builderWrites(d ? d.def.rig3 : null), stopVerify: false, preTool: [], protectedFiles: [], root, cwd: cwd || root, permission: 'unattended', allow: [], deny: [], promptless: false });
+      return roleSettingsAmp({ protectedFiles: [], root, cwd: cwd || root });
     }
     const r = this.defOf(key); const r3 = r && r.def.rig3; const role = r3 && r3.roles[roleName];
     if (!role) return null;
-    return claudeSettingsAmp({ writes: roleWrites(role), stopVerify: false, preTool: [], protectedFiles: roleProtected(r3), root: r.root, cwd: cwd || r.root, permission: 'unattended', allow: [], deny: [], promptless: false });
+    return roleSettingsAmp({ protectedFiles: roleProtected(r3), root: r.root, cwd: cwd || r.root });
   }
   // backend.spawn: 이 역할 세션을 띄울 값 → { role, permissionMode, amp } | null(v3 역할이 아니다)
   launchOf(key, roleName, { kind = 'claude', cwd = null } = {}) {
@@ -98,7 +97,7 @@ export class Rig3Roles {
     if (!s || !s.rigRole || (s.kind || 'claude') !== 'codex') return args || [];
     const r = this.defOf(s.workspaceKey); const role = r && r.def.rig3.roles[s.rigRole];
     if (!role) return args || [];
-    return codexRoleArgs(codexArgsAmp(args || [], null, 'unattended'), r.root, role);
+    return codexRoleArgs(codexUnattendedArgs(args || []), r.root, role);
   }
 
   // 설정 파일을 지금 정의에 맞춘다(rig 2 RigAmp.syncSettings 대신. 턴 시작·끝, 다시 띄우기 전). 바뀌었으면 true

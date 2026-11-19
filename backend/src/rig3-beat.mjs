@@ -20,8 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { rigEvent } from './rig-ledger.mjs';
-import { ToolRuns, rootedRun, readTail, badCmdArg, CMD_SAFE_ARG } from './tool-runs.mjs';
-import { findExe, spawnPlan, killTree } from './hook-runner.mjs';
+import { execTool, rootedRun, readTail, badCmdArg, CMD_SAFE_ARG, findExe, spawnPlan, killTree } from './tool-exec.mjs';
 import { cleanEnv } from './proc-env.mjs';
 import { HUMAN } from './rig3.mjs';
 
@@ -270,7 +269,7 @@ export class Rig3Beat {
     this.writing = new Set(); // '<키>|<n>' 쓰는 중인 꼭지
     this.tried = new Set(); // 이번 판 실행에서 꼭지를 쓰려 한 사이클(실패해도 되풀이하지 않는다)
     this.runner = null; // 시험: async (prompt, { model, cwd }) => { ok, text, meta }
-    this.execCtx = { logMax: TOOL_LOG_MAX, platform: process.platform, kill: new Map() }; // rig 2 ToolRuns.exec를 빌린다
+    this.execCtx = { logMax: TOOL_LOG_MAX, platform: process.platform, kill: new Map() }; // tool-exec.mjs execTool의 맥락
   }
   store() { return this.b.store; }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
@@ -435,7 +434,7 @@ export class Rig3Beat {
     const guard = this.roles.guard;
     if (guard && guard.toolBegin) try { guard.toolBegin(key, role, id); } catch (e) { this.log('rig3 guard toolBegin ' + e.message); }
     this.log('rig3 tool ' + name + ' ' + id + ' (' + role + ', ' + by + '): ' + [...runWords, ...args].join(' '));
-    const done = ToolRuns.prototype.exec.call(this.execCtx, { id, argv: [...runWords, ...args], cwd: root, env, tool: { ...tool, timeoutMs: this.ms('rig3ToolTimeoutMs', TOOL_TIMEOUT_MS) }, logPath })
+    const done = execTool(this.execCtx, { id, argv: [...runWords, ...args], cwd: root, env, tool: { ...tool, timeoutMs: this.ms('rig3ToolTimeoutMs', TOOL_TIMEOUT_MS) }, logPath })
       .then((res) => this.finish(key, { id, role, name, by, session, startedAt, logPath, sectorRel, res }))
       .catch((e) => { try { st.updateToolRun(id, { status: 'error', endedAt: Date.now(), error: String(e && e.message || e) }); } catch {} })
       .finally(() => { this.byTool.delete(tk); this.live.delete(id); this.execCtx.kill.delete(id); if (guard && guard.toolEnd) try { guard.toolEnd(key, role, id); } catch (e) { this.log('rig3 guard toolEnd ' + e.message); } });
