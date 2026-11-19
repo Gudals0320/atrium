@@ -4,7 +4,12 @@
 // - 기준 목록: 판이 v3 rig 워크스페이스의 파일 목록(상대 경로 → 크기, 수정 시각, SHA-256)을 데이터 폴더 rig3-guard/<워크스페이스 id>/base.json에 들고,
 //   되돌릴 수 있게 파일 내용을 같은 폴더 keep/<해시 앞 둘>/<해시>에 둔다(내용 주소라 같은 내용은 한 벌. 파일당 KEEP_FILE_MAX, 합 KEEP_TOTAL_MAX).
 //   빼는 폴더: 이름이 GUARD_SKIP_NAMES인 폴더(어느 깊이든), 경로 GUARD_SKIP_PATHS, 정의의 ignore 칸(rig3.mjs). 파일만 본다(빈 폴더는 보지 않는다).
-// - 검사(check): 역할 세션이 일함(working·waiting)으로 들어갈 때와 나올 때(쉼·오류·끝남·잠듦), 도구 실행의 시작과 끝마다 워크스페이스를 기준과 견준다.
+// - 검사(check): 역할 세션이 일함으로 들어갈 때와 일함이 끝날 때, 도구 실행의 시작과 끝마다 워크스페이스를 기준과 견준다.
+//   P246 일함: (가) 판 상태 working·waiting, (나) 그 역할의 도구 실행(toolBegin·toolEnd, 구간이 따로다), (다) 그 세션의 프로세스 나무에 하네스 밖의 일
+//   (Claude Code는 claude 아래 도구 명령, 다른 하네스는 하네스가 뜬 뒤 생긴 셸. sleep.mjs scanBackground·harnessWork), (라) Claude Code의 rt.bg(Stop의 background_tasks).
+//   판 상태가 일함에서 나올 때 (다)·(라)를 바로 보고(sleeper.backgroundNow), 뒤 일이 있으면 구간을 열어 둔다(span.bg). 연 구간은 BG_POLL_MS마다 다시 보고
+//   뒤 일이 없어지면 닫으며 검사한다(bg_end). 뒤 일이 도는 동안 다시 턴이 시작되면 같은 구간을 잇는다.
+//   한계: 셸이 끝나고 떨어져 나간 프로세스(분리 실행)는 나무에 없어 보지 못한다. 그 프로세스가 주인이 쉬는 동안 쓴 것은 되돌린다.
 //   크기·수정 시각이 같으면 그대로 보고, 다른 것만 해시한다(내용이 같으면 시각만 고친다). 구간 시작의 검사는 계기 시각 뒤에 고쳐진 파일을 다음 검사로 넘긴다.
 // - 누가 썼나: 바뀜은 지난 검사 뒤에 일어났다. 그 창(지난 검사의 계기 ~ 이번 검사의 계기) 동안 일하던 역할이 후보다(일 구간은 순번으로 센다).
 //   후보가 없으면 판 밖(사람)의 바뀜이라 받아들인다. 바뀐 곳의 주인(섹터 또는 기억 폴더의 역할)이 후보에 있으면 주인의 것이라 받아들인다.
@@ -20,12 +25,14 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { rigEvent } from './rig-ledger.mjs';
 import { memoryDir } from './rig3.mjs';
+import { backgroundOf, SLEEP_TICK_MS } from './sleep.mjs'; // P246: 뒤 일(일함 (다)·(라))
 
 export const GUARD_SKIP_NAMES = ['.git', 'node_modules', '.venv', 'venv', '__pycache__', '.pytest_cache', '.mypy_cache', '.cache'];
 export const GUARD_SKIP_PATHS = ['.claude/worktrees/'];
 export const KEEP_FILE_MAX = 8 * 1024 * 1024;
 export const KEEP_TOTAL_MAX = 512 * 1024 * 1024;
 export const BUSY_STATES = new Set(['working', 'waiting']); // 이 상태 동안은 턴 안이다
+export const BG_POLL_MS = SLEEP_TICK_MS; // P246: 뒤 일로 열어 둔 구간을 다시 보는 간격(판의 뒤 일 주기와 같다. cfg.rig3GuardBgPollMs, 0이면 끔)
 export const BOARD_WRITE_MS = 60000; // accept 뒤 이만큼은 그 경로의 바뀜을 판의 것으로 본다(검사가 accept보다 먼저 읽었을 때)
 const GC_EVERY = 10; // 바뀜이 있던 검사 n번마다 쓰지 않는 keep을 지운다
 export const foreignNotice = (role, paths, { owns = [], others = [], quarantine = null } = {}) =>
@@ -121,11 +128,65 @@ export class Rig3Guard {
     const was = st.busy.get(s.sessionId);
     const now = BUSY_STATES.has(to);
     let p = null;
-    if (!was && now) p = this.begin(st, s.rigRole, (span) => st.busy.set(s.sessionId, span), 'start');
-    else if (was && !now) { st.busy.delete(s.sessionId); p = this.end(st, was, 'end'); }
+    if (now) {
+      if (!was) p = this.begin(st, s.rigRole, (span) => st.busy.set(s.sessionId, span), 'start');
+      else { was.leaving = false; was.bg = null; } // P246: 뒤 일 동안(또는 뒤 일을 보는 동안) 다시 턴이 시작됐다: 같은 구간을 잇는다
+    } else if (was && !was.leaving) p = this.leave(st, s, was);
     if (from === 'sleeping' && to !== 'sleeping') this.flush(s.workspaceKey, s.rigRole);
     return p;
   }
+  // ---------- P246: 뒤 일 ----------
+  // 세션의 뒤 일(일함 (다)·(라)) → { n, via } | null, 또는 그 Promise. 잠재우기(sleeper)가 있으면 프로세스를 지금 본다. 없으면(시험) rt.bg만
+  bgProbe(s) {
+    const sl = this.b.sleeper;
+    if (sl && typeof sl.backgroundNow === 'function') return sl.backgroundNow(s).catch(() => null);
+    return (s.kind || 'claude') === 'claude' && s.rt && s.rt.bg && !s.rt.sleep ? backgroundOf(s.rt.bg, null) : null;
+  }
+  // 판 상태가 일함에서 나왔다(또는 뒤 일로 연 구간을 다시 본다): 뒤 일이 있으면 구간을 열어 두고, 없으면 닫고 검사한다
+  leave(st, s, span) {
+    span.leaving = true;
+    const held = !!span.bg;
+    const done = (bg) => {
+      if (st.busy.get(s.sessionId) !== span || !span.leaving) return null; // 그새 다시 일함이 되었거나 닫혔다
+      span.leaving = false;
+      const alive = this.b.sessions && this.b.sessions.get(s.sessionId);
+      if (bg && alive && !alive.closedAt) {
+        span.bg = { n: bg.n, via: bg.via, at: Date.now() };
+        if (!held) this.log('rig3 guard ' + st.key + ' hold ' + span.role + ': background ' + bg.n + ' (' + bg.via + ')');
+        this.arm();
+        return { held: true, background: span.bg };
+      }
+      st.busy.delete(s.sessionId);
+      span.bg = null;
+      return this.end(st, span, held ? 'bg_end' : 'end');
+    };
+    const v = this.bgProbe(s);
+    return v && typeof v.then === 'function' ? v.then(done) : done(v);
+  }
+  // 뒤 일로 연 구간을 다시 본다(주기). 시험은 직접 부른다
+  async sweep() {
+    const out = [];
+    for (const st of [...this.ws.values()]) {
+      for (const [sid, span] of [...st.busy]) {
+        if (!span.bg || span.leaving) continue;
+        const s = this.b.sessions && this.b.sessions.get(sid);
+        if (!s || s.closedAt) { st.busy.delete(sid); span.end = ++this.seq; continue; }
+        out.push(await this.leave(st, s, span));
+      }
+    }
+    if (!this.held()) this.disarm();
+    return out;
+  }
+  held() { for (const st of this.ws.values()) for (const sp of st.busy.values()) if (sp.bg) return true; return false; }
+  arm() {
+    const ms = this.num('rig3GuardBgPollMs', BG_POLL_MS);
+    if (this.timer || !ms) return;
+    this.timer = setInterval(() => { if (!this._sweeping) { this._sweeping = true; this.sweep().catch((e) => this.log('rig3 guard sweep error ' + (e && e.stack || e))).finally(() => { this._sweeping = false; }); } }, ms);
+    if (this.timer.unref) this.timer.unref();
+  }
+  disarm() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
+  stop() { this.disarm(); }
+
   // 판이 돌리는 도구 실행(역할의 것)의 시작·끝. 도구가 쓴 것도 그 역할의 일 구간에 든다
   toolBegin(key, role, runId) {
     const x = this.ctx(key); if (!x || !x.r3.roles[role]) return null;
@@ -384,5 +445,5 @@ export class Rig3Guard {
   }
   // 판이 미루어 둔 알림을 꺼낸다(깨우는 글에 붙일 때. 2단계의 깨우는 글이 쓸 수 있다)
   takeNotices(key, role) { const st = this.ws.get(key); const l = (st && st.pending.get(role)) || []; if (st) st.pending.delete(role); return l; }
-  view(key) { const st = this.ws.get(key); return st ? { last: st.last, files: st.base ? st.base.files.size : null, kept: st.base ? st.base.kept : null, busy: [...new Set([...st.busy.values(), ...st.tools.values()].map((s) => s.role))] } : null; }
+  view(key) { const st = this.ws.get(key); return st ? { last: st.last, files: st.base ? st.base.files.size : null, kept: st.base ? st.base.kept : null, busy: [...new Set([...st.busy.values(), ...st.tools.values()].map((s) => s.role))], background: [...new Set([...st.busy.values()].filter((s) => s.bg).map((s) => s.role))] } : null; }
 }
