@@ -13,7 +13,7 @@ import { VoiceRelay } from './voice.mjs'; // P165
 import { TailscaleWatch, tailscaleHosts } from './tailscale.mjs'; // P49(R3): Tailscale 상태 읽기
 import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
-import { DeliveryQueue } from './delivery.mjs';
+import { DeliveryQueue, bgOnlyOf } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { rigFlowHandlers, seatNamed } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
@@ -284,6 +284,7 @@ export class Backend {
     this.queue.on('stuck', (r) => { this.store.addEvent(r.sessionId, 'delivery_stuck', r); this.log(`delivery stuck ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} (${r.attempts} tries)`); const s = this.sessions.get(r.sessionId); if (s) this.broadcastSession(s, { cause: 'delivery stuck' }); });
     this.queue.on('not_submitted', (r) => { this.store.addEvent(r.sessionId, 'delivery_not_submitted', r); this.log(`delivery not submitted ${this.nameOf(r.sessionId)} ${r.deliveryId}: input box has other text ${JSON.stringify(r.peek || '')}`); }); // P126
     this.queue.on('now', (r) => { this.store.addEvent(r.sessionId, 'delivery_now', r); this.log(`delivery now ${this.nameOf(r.sessionId)} ${r.deliveryId} (${r.state})`); }); // P172: 판에서 바로 보내기
+    this.queue.on('bg_only', (r) => { this.store.addEvent(r.sessionId, 'delivery_bg_only', r); this.log(`delivery bg-only ${this.nameOf(r.sessionId)} ${r.deliveryId}: turn ended, only background work runs → sent now`); }); // P240
     this.queue.on('late', (r) => { this.store.addEvent(r.sessionId, 'delivery_late', r); this.log(`delivery late ${this.nameOf(r.sessionId)} ${r.deliveryId}: went in after cancel`); });
     this.queue.on('delivery', (d) => {
       this.store.addEvent(d.sessionId, 'delivery', d);
@@ -532,10 +533,14 @@ export class Backend {
     const s = this.sessions.get(sid);
     if (!s) return { closed: true };
     const sleeping = this.sleeper && this.sleeper.going.has(sid); // P21: 잠재우는 중에는 보내지 않는다(끝나면 깨운다)
-    const st = deriveState(s.rt).state;
+    const ds = deriveState(s.rt), st = ds.state;
     // 깨우는 중에는 준비된 뒤 잠깐 더 기다린다(sleep.mjs WAKE_SETTLE_MS: 입력 칸이 Enter를 받기 전에 보내면 제출되지 않는다)
     const gated = this.branch && this.branch.holds(sid); // P36: 신뢰 관문을 지나 claude -w로 뜰 때까지 보내지 않는다
-    return { state: sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : st, agentPresent: s.rt.term.present, termConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s) }; // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
+    const state = sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : st;
+    // P240: 턴은 끝났고 뒤 일만 돈다(bgOnlyOf). 전달은 쉬는 세션처럼 보낸다. 판의 상태(working)와 뒤 일 표시는 그대로
+    const bg = state === 'working' ? (this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !s.rt.sleep ? backgroundList(s.rt.bg, null) : null) : null;
+    const bgOnly = state === 'working' && bgOnlyOf(s.rt, ds, bg, { kind: s.kind || 'claude', hooked: this.hooked(s) });
+    return { state, agentPresent: s.rt.term.present, termConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s), bgOnly }; // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
   }
 
   summary(s) {
@@ -1695,7 +1700,7 @@ export class Backend {
       if (p.talk && loops) {
         try { tk = loops.talkCheck(s); } catch (e) {
           if (e.code !== 'rig_run_open') throw e;
-          const d = this.queue.refuse(s.sessionId, body, e.message, { origin: { kind: 'human' } });
+          const d = this.queue.refuse(s.sessionId, body, 'rig_run_open', { origin: { kind: 'human' } }); // P240: 까닭은 코드(창이 사전 글로 보인다, labels.js)
           return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, rejected: true, talk: true };
         }
       }

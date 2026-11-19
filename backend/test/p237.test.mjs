@@ -179,7 +179,7 @@ test('P237 --talk: 열린 회(시도)가 있는 자리에는 넣지 않는다(ri
     // 사람의 "회 없이"도 같다: 실패한 전달 한 줄(까닭을 창이 보인다)
     const h = await humanSend(b, { target: ['main'], text: 'rig 이야기(사람)', talk: true });
     assert.equal(h.deliveries[0].status, 'failed'); assert.equal(h.deliveries[0].rejected, true);
-    assert.match(h.deliveries[0].reason, /회 없이 보낸 글을 넣지 않았다/);
+    assert.equal(h.deliveries[0].reason, 'rig_run_open'); // P240: 까닭은 코드(창이 사전 글로 보인다)
     await tick(80);
     assert.ok(!b.sent.some((x) => x.text.includes('rig 이야기')), '회 없이 보낸 글은 넣지 않았다');
     assert.equal(talks(b, ws.key).length, 0);
