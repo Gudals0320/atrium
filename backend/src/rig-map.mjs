@@ -137,12 +137,18 @@ export function defGraph(def, { n = null, hash = null, protectedFiles = [], docS
     if (h.at === 'deliver') {
       const flowEdges = [...ids('assign'), ...ids('result'), ...ids('else')];
       on = h.from === 'flow' ? [...ids('result'), ...ids('else')] : h.from === 'agent' ? ids('assign') : h.from === 'human' ? ids('instruct') : [...flowEdges, ...ids('instruct')];
-    } else if (h.at === 'done') { const from = h.seat ? new Set(h.seat.map(seatId)) : null; on = edges.filter((e) => (e.type === 'result' || e.type === 'report') && (!from || from.has(e.from))).map((e) => e.id); } // P230(11.12의 5): seat가 있으면 그 자리의 결과 선에만
+    } else if (h.at === 'done') { // P230(11.12의 5): seat가 있으면 그 자리의 결과 선에만. P236(11.18): loop가 있으면 그 고리의 결과 선에만
+      const from = h.seat ? new Set(h.seat.map(seatId)) : null;
+      const lps = h.loop ? h.loop.map((n) => (def.loops || {})[n]).filter(Boolean) : null;
+      const lines = lps ? new Set(lps.flatMap((l) => l.lines || [])) : null;
+      const inLoop = lps ? new Set(lps.flatMap((l) => [l.entry, ...flow.filter((x) => lines.has(x.index)).flatMap((x) => [x.from, ...x.to])]).map(seatId)) : null; // 주인 보고 선은 그 고리에 드는 자리의 것만
+      on = edges.filter((e) => (e.type === 'result' || e.type === 'report') && (!from || from.has(e.from)) && (!lps || (e.type === 'result' ? lines.has(e.meta.line) : inLoop.has(e.from)))).map((e) => e.id);
+    }
     else if (h.at === 'tool-before' || h.at === 'tool-after') on = edges.filter((e) => e.type === 'uses' && (!h.tool || e.to === `tool:${h.tool}`)).map((e) => e.id);
     else if (h.at === 'pre-tool') { const p = amp && (amp.preTool || []).find((x) => x.index === h.index); const ss = p && p.seats && p.seats.length ? p.seats : Object.keys(seats); on = ss.map(seatId); }
     // 주인 보고는 deliver 훅을 지나지 않는다(18.5 4): result 변에 걸린 deliver 관문에 notOnReports
     const notOnReports = h.at === 'deliver' && on.some((x) => x.startsWith('e:result:'));
-    gates.push({ hook: h.index, at: h.at, on, label: hookLabel(h), meta: { run: h.run, onFail: h.onFail, ...(h.seat ? { seat: h.seat } : {}), ...(h.at === 'deliver' ? { from: h.from } : {}), ...(h.tool ? { tool: h.tool } : {}), ...(notOnReports ? { notOnReports: true } : {}) } });
+    gates.push({ hook: h.index, at: h.at, on, label: hookLabel(h), meta: { run: h.run, onFail: h.onFail, ...(h.seat ? { seat: h.seat } : {}), ...(h.loop ? { loop: h.loop } : {}), ...(h.at === 'deliver' ? { from: h.from } : {}), ...(h.tool ? { tool: h.tool } : {}), ...(notOnReports ? { notOnReports: true } : {}) } });
   }
   if (amp) {
     const sv = Object.keys(seats).filter((nm) => { const a = ampSeats[nm] || {}; return a.stopVerify != null ? a.stopVerify : amp.stopVerify; });
