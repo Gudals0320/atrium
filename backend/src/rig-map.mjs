@@ -8,13 +8,20 @@
 //   P252: 빌더나 사람이 고치지 않고 답해도(atrium rig answer, 판 API rig.raiseAnswer) 사라진다. 셈은 rig-tune.mjs raiseStates 하나다.
 // - 켤 때 놓기(placeRoles): rig를 켠 뒤 역할 노드를 길 차례(rig-map-layout.mjs roleOrder)로 나란히 놓는다. 켤 때마다 한 번이고 그 뒤에는 사람이 옮긴 자리를 지킨다.
 import { collectCycle } from './rig-beat.mjs';
-import { waitingRaises } from './rig-tune.mjs';
+import { waitingRaises, raiseStates } from './rig-tune.mjs';
 import { HUMAN, BUILDER_ROLE } from './rig-def-names.mjs';
 import { roleOrder } from './rig-map-layout.mjs';
 
 export const MAP_RECENT = 3; // 섹터마다 보이는 최근 항목 수(더 있으면 +n)
 export const FLOW_RECENT = 4; // 길마다 마우스를 올리면 뜨는 최근 항목 수
 export const CYCLE_ITEMS = 12; // 사이클 띠의 항목 수(앞에서부터)
+// P253: 머리 띠 "사람이 볼 것" 수 = 이번 사이클의 사람이 볼 것(collectCycle decide) 가운데 아직 열린 것.
+//   올림(raise)은 답했거나(answered) 고친 판으로 닫힌(fixed) 것을 뺀다(raiseStates). id 없는 옛 올림은 그대로 센다.
+//   변경 기록 꼭지는 그대로 남긴다(기록이다). 수만 바뀐다.
+export function openDecide(decide, states) {
+  const closed = new Set((states || []).filter((x) => x.state !== 'waiting').map((x) => x.id));
+  return (decide || []).filter((d) => !(d && d.what === 'raise' && d.id && closed.has(d.id)));
+}
 export const PLACE = { GX: 360, GY: 240 }; // 켤 때 놓는 역할 노드 사이(길 선과 그 글이 노드 밖에 보일 만큼)
 
 const low = (p) => String(p || '').replace(/\\/g, '/').toLowerCase();
@@ -131,7 +138,9 @@ export function rigMapOf(b, key) {
   }
   const entries = (v.cycle && v.cycle.entries) || [];
   const stalledRoles = roles.filter((x) => x.stalled.length).length;
-  const decide = facts ? facts.decide.length : 0;
+  let rstates = [];
+  try { rstates = raiseStates(st.rig3Tunes(key, null) || [], st.rigVersions ? st.rigVersions(key) || [] : []); } catch { rstates = []; }
+  const decide = facts ? openDecide(facts.decide, rstates).length : 0;
   return {
     ...base, name: def.name || null, purpose: r3.purpose || null,
     head: { cycle: v.cycle ? v.cycle.n : null, nextAt: v.cycle ? v.cycle.nextAt || null : null, beat: r3.beat ? { every: r3.beat.every || null, at: r3.beat.at || null, role: r3.beat.role || null } : null, attention: decide, stalled: stalledRoles + roles.filter((x) => x.gaveUp).length, raises: raises.length },

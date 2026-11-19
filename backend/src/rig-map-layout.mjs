@@ -87,3 +87,43 @@ export function rolePairs(roles, flows = [], order = null) {
   });
   return [...m.values()];
 }
+
+// P253: 지도 한 줄 차례(docs research rig3-map.md 8.2-3). 역할을 한 줄에 놓되 이웃한 쌍(길을 함께 쓰는 두 역할)이 가장 많아지는 차례.
+//   같은 값이면 박자를 받는 역할(beatRole)이 앞에, 그다음 앞으로 가는 길(답 길·사람 입력 아님)이 왼쪽 → 오른쪽인 수가 많은 것, 그다음 정의 차례.
+//   역할이 ROW_EXACT 이하이면 모든 차례를 견주고, 많으면 roleOrder(칸·줄) 차례를 그대로 쓴다.
+export const ROW_EXACT = 8;
+export function rowOrder(roles, flows = [], { beatRole = null } = {}) {
+  const names = [...new Set((roles || []).filter(Boolean))];
+  const known = new Set(names);
+  const pairs = new Set(); const fwd = [];
+  for (const f of flows || []) {
+    if (!f) continue;
+    for (const a of list(f.from)) for (const b of list(f.to)) {
+      if (!known.has(a) || !known.has(b) || a === b) continue;
+      pairs.add(a < b ? a + '|' + b : b + '|' + a);
+      if (!f.for) fwd.push([a, b]);
+    }
+  }
+  const pairList = [...pairs].map((k) => k.split('|'));
+  const score = (p) => {
+    const pos = new Map(p.map((n, i) => [n, i]));
+    let adj = 0; for (const [a, b] of pairList) if (Math.abs(pos.get(a) - pos.get(b)) === 1) adj++;
+    let right = 0; for (const [a, b] of fwd) if (pos.get(a) < pos.get(b)) right++;
+    const bp = beatRole && pos.has(beatRole) ? pos.get(beatRole) : 0;
+    return [adj, -bp, right];
+  };
+  const better = (s, t) => { for (let i = 0; i < s.length; i++) if (s[i] !== t[i]) return s[i] > t[i]; return false; };
+  if (names.length > ROW_EXACT) {
+    const o = roleOrder(names, flows, { maxCols: 1e9 });
+    return names.slice().sort((a, b) => o.layer.get(a) - o.layer.get(b) || o.row.get(a) - o.row.get(b) || names.indexOf(a) - names.indexOf(b));
+  }
+  let best = null, bestS = null;
+  // 정의 차례로 사전순 순열을 돌므로 먼저 찾은 것이 같은 값 가운데 정의 차례가 앞선 것이다
+  const used = new Array(names.length).fill(false); const cur = [];
+  const walk = () => {
+    if (cur.length === names.length) { const s = score(cur); if (!best || better(s, bestS)) { best = cur.slice(); bestS = s; } return; }
+    for (let i = 0; i < names.length; i++) { if (used[i]) continue; used[i] = true; cur.push(names[i]); walk(); cur.pop(); used[i] = false; }
+  };
+  walk();
+  return best || [];
+}

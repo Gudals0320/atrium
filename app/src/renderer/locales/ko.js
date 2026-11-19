@@ -2912,5 +2912,22 @@ export default {
     next: '다음 박자 {time}({period}',
     tool: '{name}: {period}, 다음 {time}',
   },
+  // P253: 세션 맵 rig 지도 2차(카드 줄 이름, 머리 띠 칸, 접기)
+  rigMap2: {
+    row: { session: '세션', beat: '박자', owns: '쥔 것', recent: '최근', tool: '도구', intake: '입력', counts: '받음', raise: '올림' },
+    beatCycle: '{period}에 사이클을 연다',
+    toolOnCall: '부를 때만', toolOk: '정상', toolFail: '실패', toolRunning: '도는 중',
+    intake: '사람 → {items}',
+    raiseWait: '빌더에게 {n}건 기다림',
+    headOn: '켜짐 · 판 v{n}', headOff: '꺼짐 · 판 v{n}', headInvalid: '정의 오류',
+    headCycle: '사이클 {n}', headNext: '사이클 {n} · 다음 박자 {when} 뒤',
+    builder: '빌더 · {state}', builderNone: '빌더 · 세션 없음', raises: '올림 {n}',
+    attention: '사람이 볼 것 {n}',
+    panel: 'rig 판', panelTip: 'rig 판 열기(켜기, 박자, 입력, 올림에 답하기)',
+    foldTip: '누르면 지도를 접거나 폅니다(이 창이 기억합니다)',
+    entryEmpty: '아직 꼭지가 없습니다. 첫 박자 뒤에 생깁니다',
+    noRoles: '역할이 없습니다',
+    openReturn: '끝나지 않은 반려',
+  },
 };
 

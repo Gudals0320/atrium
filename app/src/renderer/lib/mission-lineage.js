@@ -58,9 +58,11 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 export function lineageLayout(graph, opts = {}) {
   const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스(rig 지도가 위를 맞출 줄)
   if (!phone && columns === 'auto') {
-    const one = lineageLayout(graph, { ...opts, columns: 1, routing: false });
+    // P253: 열 판단은 이름표 계단(label, 배율에 따라 바뀐다)과 상관없이 바탕 글 크기(label 1)의 한 열 배치로 한다.
+    //   전에는 그 계단의 배치로 재서, 줌인·줌아웃으로 계단이 바뀌면 열이 하나·둘로 바뀌며 밀렸다. 이제 열 수는 그래프와 보기 칸(창 크기)으로만 바뀐다
+    const one = lineageLayout(graph, { ...opts, columns: 1, routing: false, label: 1 });
     if (pickColumns(one.measure, view) === 2) return lineageLayout(graph, { ...opts, columns: 2 });
-    return routing ? lineageLayout(graph, { ...opts, columns: 1 }) : one;
+    return routing || label !== 1 ? lineageLayout(graph, { ...opts, columns: 1 }) : one;
   }
   const tree = missionTree(graph);
   const { byId } = tree;

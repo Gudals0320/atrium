@@ -2912,5 +2912,22 @@ export default {
     next: 'next beat {time} ({period}',
     tool: '{name}: {period}, next {time}',
   },
+  // P253: rig map v2 on the session map (card row names, head chips, folding)
+  rigMap2: {
+    row: { session: 'Session', beat: 'Beat', owns: 'Owns', recent: 'Recent', tool: 'Tool', intake: 'Input', counts: 'Inbox', raise: 'Raised' },
+    beatCycle: '{period}, opens the cycle',
+    toolOnCall: 'on call', toolOk: 'ok', toolFail: 'failed', toolRunning: 'running',
+    intake: 'human → {items}',
+    raiseWait: '{n} waiting for the builder',
+    headOn: 'On · v{n}', headOff: 'Off · v{n}', headInvalid: 'Definition error',
+    headCycle: 'Cycle {n}', headNext: 'Cycle {n} · next beat in {when}',
+    builder: 'Builder · {state}', builderNone: 'Builder · no session', raises: { one: '{n} raise', other: '{n} raises' },
+    attention: 'For you {n}',
+    panel: 'rig panel', panelTip: 'Open the rig panel (turn on, beat, input, answer raises)',
+    foldTip: 'Click to fold or unfold the map (this window remembers)',
+    entryEmpty: 'No entries yet. The first appears after the first beat',
+    noRoles: 'No roles',
+    openReturn: 'open return',
+  },
 };
 
