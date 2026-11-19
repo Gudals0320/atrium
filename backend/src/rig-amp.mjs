@@ -307,6 +307,9 @@ export function applySettingsAmp(j, amp, baseTimeoutSec = 2, baseAllow = null) {
 // Codex 인자: writes false면 샌드박스·승인 인자를 걷어 내고 -s read-only(승인을 건너뛰던 것은 -a never). 그 밖은 그대로
 const SANDBOX_VALUE_FLAGS = new Set(['-s', '--sandbox']);
 const SANDBOX_BARE_FLAGS = new Set(['--dangerously-bypass-approvals-and-sandbox', '--yolo', '--full-auto']);
+// P238: --approve-for-me(승인 요청을 자동 검토로, workspace-write 샌드박스)는 Codex가 --sandbox·--ask-for-approval과 함께 받지 않는다(종료 코드 2).
+//   판이 샌드박스·승인을 붙이는 자리 인자에서는 걷어 낸다. 승인을 건너뛰는 인자가 아니라(자동 검토) -a never로 바꾸지 않는다
+const SANDBOX_CONFLICT_FLAGS = new Set(['--approve-for-me']);
 const APPROVAL_FLAGS = new Set(['-a', '--ask-for-approval']);
 const SANDBOX_KEY = /^sandbox_mode\s*=/;
 const APPROVAL_KEY = /^approval_policy\s*=/; // P223
@@ -318,7 +321,7 @@ export function codexArgsAmp(args = [], writes = null, permission = 'ask') {
     for (let i = 0; i < a.length; i++) {
       const w = a[i]; const flag = w.split('=')[0];
       if (SANDBOX_VALUE_FLAGS.has(flag) || APPROVAL_FLAGS.has(flag)) { if (!w.includes('=')) i++; continue; }
-      if (SANDBOX_BARE_FLAGS.has(w)) continue;
+      if (SANDBOX_BARE_FLAGS.has(w) || SANDBOX_CONFLICT_FLAGS.has(w)) continue;
       if ((w === '-c' || w === '--config') && (SANDBOX_KEY.test(a[i + 1] || '') || APPROVAL_KEY.test(a[i + 1] || ''))) { i++; continue; }
       if ((w.startsWith('--config=') && (SANDBOX_KEY.test(w.slice(9)) || APPROVAL_KEY.test(w.slice(9)))) || (w.startsWith('-c') && w.length > 2 && (SANDBOX_KEY.test(w.slice(2)) || APPROVAL_KEY.test(w.slice(2))))) continue;
       out.push(w);
@@ -332,6 +335,7 @@ export function codexArgsAmp(args = [], writes = null, permission = 'ask') {
     const w = a[i]; const flag = w.split('=')[0];
     if (SANDBOX_VALUE_FLAGS.has(flag)) { if (!w.includes('=')) i++; continue; }
     if (SANDBOX_BARE_FLAGS.has(w)) { if (w !== '--full-auto') bypass = true; continue; }
+    if (SANDBOX_CONFLICT_FLAGS.has(w)) continue; // P238
     if ((w === '-c' || w === '--config') && SANDBOX_KEY.test(a[i + 1] || '')) { i++; continue; }
     if ((w.startsWith('--config=') && SANDBOX_KEY.test(w.slice(9))) || (w.startsWith('-c') && w.length > 2 && SANDBOX_KEY.test(w.slice(2)))) continue;
     if (APPROVAL_FLAGS.has(flag)) hasApproval = true;

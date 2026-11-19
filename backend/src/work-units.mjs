@@ -11,7 +11,7 @@
 import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
-import { UnitStops } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
+import { UnitStops, launchArgsSuspect, badArgsText } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
 import { RIG_HEADER_TAIL } from './rig.mjs'; // P182. P188: 세 줄 머리의 셋째 줄 끝
 import { seatHeader, seatExtraLines } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리. P230: 더하는 줄
 import { HUMAN_FROM, BUILDER_ORIGIN, builderHeader } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일(상위 세션 없음)
@@ -338,9 +338,13 @@ export class WorkUnits {
     st.addEvent(sid, 'unit_stop', { unitId: tr.unitId, tryId: tr.id, why: 'exited', exit: { kind: exit.kind, code: exit.code ?? null } });
     b.log(`unit ${tr.unitId} try ${tr.id} stopped: ${this.nameOf(sid)} exited (${exit.kind}${exit.code != null ? ` code ${exit.code}` : ''})`);
     const flow = this.branch && this.branch.flow;
+    const sus = launchArgsSuspect(s.rt, exit); // P238: 띄운 지 곧바로 종료 코드 2
+    if (s.rt) s.rt.launchSuspect = sus;
+    if (sus) b.log(`${this.nameOf(sid)} exited ${sus.ms}ms after launch with code ${sus.code}: launch arguments may be invalid`);
     let detail = null;
     if (unit && unit.caseId && flow) { try { detail = flow.onTryExited(s, unit, tr); } catch (e) { b.log('rig try exited error', e.stack); } }
     else if (unit && unit.status === 'open') { st.updateUnit(unit.id, { status: 'cancelled', closedAt: now }); detail = unit.from === HUMAN_FROM ? null : '다시 맡기려면 새 하위를 띄운다(atrium child)'; }
+    if (sus) detail = detail ? `${badArgsText(sus)}. ${detail}` : badArgsText(sus);
     this.stops.onExited(tr, unit, detail);
     return 'exited';
   }

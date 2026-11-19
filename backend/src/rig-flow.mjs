@@ -838,7 +838,7 @@ export class RigFlow {
     const c = st.getCase(unit.caseId);
     const name = shownName(s) || s.name;
     st.addEvent(s.sessionId, 'rig_try_stopped', { caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: unit.seat, session: name, why: 'exited' });
-    rigEvent(this.b, { kind: 'try_stopped', caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: unit.seat, session: s.sessionId, value: 'exited', actor: 'board', text: `${name} 종료`, data: s.rt && s.rt.exit ? { exit: s.rt.exit.kind, code: s.rt.exit.code ?? null } : null }); // P217: 장부
+    rigEvent(this.b, { kind: 'try_stopped', caseId: unit.caseId, unitId: unit.id, tryId: tr.id, seat: unit.seat, session: s.sessionId, value: 'exited', actor: 'board', text: `${name} 종료${s.rt && s.rt.launchSuspect ? '(띄우기 인자가 잘못됐을 수 있다)' : ''}`, data: s.rt && s.rt.exit ? { exit: s.rt.exit.kind, code: s.rt.exit.code ?? null, ...(s.rt.launchSuspect ? { badArgs: true, ms: s.rt.launchSuspect.ms, command: s.rt.launchSuspect.line } : {}) } : null }); // P217: 장부. P238: 띄우기 인자 의심
     this.b.log(`rig try ${tr.id} stopped (exited): ${unit.seat}(${name}) case ${unit.caseId}`);
     if (c && LIVE_CASE.has(c.state) && unit.status === 'open') this.block(c, `${name} 종료(일 ${unit.id})`, { notify: false, why: 'exited' });
     this.pumpSoon();
@@ -1091,6 +1091,7 @@ export class RigFlow {
       // P216: stop = 마지막 시도의 멈춤 까닭(exited 등), retry = 다시 맡길 수 있다(종료된 자리 세션이 쥔 열린 일)
       const units = us.map((u) => ({ unit: u.id, seat: u.seat, sessionId: u.to || null, name: u.to ? name(u.to) : '(줄)', status: u.status, result: u.tryResult, queued: !u.to, createdAt: u.createdAt, closedAt: u.closedAt,
         stop: u.tryStop ?? null, retry: u.status === 'open' && !!u.to && !!u.tryId && u.tryResult == null && ((u.tryEnded != null && u.tryStop === 'exited') || (u.tryEnded == null && this.exitedSession(u.to))),
+        badArgs: this.badArgsOf(u.to), // P238: 그 세션이 띄운 지 곧바로 종료 코드 2로 끝났으면 { line, ms, code }
         via: u.via && u.via.prevUnit ? { prevUnit: u.via.prevUnit, line: u.via.line ?? null, escalated: !!u.via.escalated, fromSeat: u.via.fromSeat ?? null, result: u.via.result ?? null } : null }));
       const first = us[0] || null;
       const lastHandoffAt = Math.max(c.createdAt, ...us.map((u) => u.createdAt || 0), ...reports.map((x) => x.at || 0));
@@ -1125,6 +1126,8 @@ export class RigFlow {
       cases, openCount: live.total, openMore: Math.max(0, live.total - live.rows.length), doneCount: closed.total, // P198과 정함: 끝난·취소된 건 전체 수(cases에 담긴 최근 것 포함). 접힌 줄 수 = doneCount - 담긴 끝난 건
     };
   }
+  // P238: 그 세션의 에이전트가 띄운 지 곧바로 종료 코드 2로 끝났는가(띄우기 인자 의심) → { line, ms, code } | null
+  badArgsOf(sid) { const s = sid ? this.b.sessions.get(sid) : null; const x = s && s.rt && s.rt.exit ? s.rt.launchSuspect : null; return x ? { line: x.line || null, ms: x.ms, code: x.code } : null; }
   // P216: 그 세션의 에이전트가 끝나 있는가(잠듦·옮김·터미널 서버 꺼짐은 아니다)
   exitedSession(sid) { const s = this.b.sessions.get(sid); return !!(s && s.rt && s.rt.exit && !s.rt.sleep && !s.rt.move && s.rt.exit.kind !== 'terminal_stopped'); }
   // atrium me의 rig 칸
