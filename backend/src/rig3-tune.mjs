@@ -97,7 +97,22 @@ export class Rig3Tune {
     }
     return out;
   }
-  // → { lastAnswer, lastTurn, open, since, mats, cycles }
+  // P247(P245 답): 주기 조정 턴의 재료 — 지난 조정 뒤 그 역할이 받은 답 항목(for가 있는 길로 온 것: 그 역할이 낸 것에 대한 답).
+  //   id와 종류만 싣고 내용은 역할이 읽는다. 세기 기준(after)에는 들지 않는다 → [{ id, kind: 'answer', item, by, seq, t }]
+  answersOf(key, role, sinceSeq = 0) {
+    const r = this.roles.defOf(key); const flows = r ? r.def.rig3.flows : [];
+    let rows = [];
+    try { rows = this.store().rigEvents({ ws: key, kinds: ['item_put'], sinceSeq: sinceSeq || 0, limit: 100000 }) || []; } catch { rows = []; }
+    const out = [];
+    for (const e of rows) {
+      const f = e.line != null ? flows[e.line] : flows.find((x) => x.item === String(e.ref || '').replace(/-\d+$/, '') && x.from.includes(e.fromSeat || e.seat));
+      if (!f || !f.for || !f.to.includes(role) || !e.ref) continue;
+      if (out.some((x) => x.id === e.ref)) continue; // 다시 낸 판은 한 번만
+      out.push({ id: e.ref, kind: 'answer', item: f.item, for: f.for, by: e.fromSeat || e.seat, seq: e.seq, t: e.t });
+    }
+    return out;
+  }
+  // → { lastAnswer, lastTurn, open, since, mats, cycles, answers }
   state(key, role) {
     const st = this.store();
     let ans = []; let turns = [];
@@ -110,10 +125,12 @@ export class Rig3Tune {
     // 지난 답 뒤 열린 사이클 수(사이클 0, 첫 채움은 세지 않는다)
     let cycles = 0;
     try { let c = st.lastRig3Cycle(key); while (c && c.n >= 1 && (c.openSeq == null || c.openSeq > since) && cycles < 1000) { cycles++; c = st.getRig3Cycle(key, c.n - 1); } } catch {}
-    return { lastAnswer, lastTurn, open, since, mats, cycles };
+    const answers = this.answersOf(key, role, since); // P247: 주기 턴만의 재료
+    return { lastAnswer, lastTurn, open, since, mats, cycles, answers };
   }
   // 조정 턴을 열 때인가 → 'after' | 'every' | null
-  due(x, tune) { if (x.open || !x.mats.length) return null; if (x.mats.length >= tune.after) return 'after'; if (x.cycles >= tune.every) return 'every'; return null; }
+  // P247: 세기 기준(after)은 반려·바로잡음·되돌린 쓰기만, 주기 기준(every)은 받은 답 항목도 재료로 친다
+  due(x, tune) { if (x.open) return null; if (x.mats.length >= tune.after) return 'after'; if (x.cycles >= tune.every && (x.mats.length || (x.answers || []).length)) return 'every'; return null; }
 
   // 주기(Rig3Roles.keep): 기준에 닿았으면 조정 턴을 넣는다 → { tuneTurn: [id] } | null
   check(key, role, s, now = Date.now()) {
@@ -127,7 +144,7 @@ export class Rig3Tune {
     const q = this.b.queue.enqueue(s.sessionId, text, { origin: { kind: 'board' } });
     const d = this.roles.items && this.roles.items.track ? this.roles.items.track(q) : q;
     const cycle = this.cycle(key);
-    rigEvent(this.b, { kind: 'tune_turn', ws: key, seat: role, session: s.sessionId, n: cycle, value: why, actor: 'board', ref: x.mats.map((m) => m.id).join(','), text: role + ' 조정 턴: 재료 ' + x.mats.length + '건' + (x.cycles ? ', 사이클 ' + x.cycles + '번' : '') + ' (' + (why === 'after' ? '재료 ' + r3.tune.after + '건' : r3.tune.every + '사이클') + ')', data: { why, materials: x.mats.map((m) => ({ id: m.id, kind: m.kind })), cycles: x.cycles, delivery: d && d.deliveryId } });
+    rigEvent(this.b, { kind: 'tune_turn', ws: key, seat: role, session: s.sessionId, n: cycle, value: why, actor: 'board', ref: x.mats.map((m) => m.id).join(','), text: role + ' 조정 턴: 재료 ' + x.mats.length + '건' + (x.cycles ? ', 사이클 ' + x.cycles + '번' : '') + ' (' + (why === 'after' ? '재료 ' + r3.tune.after + '건' : r3.tune.every + '사이클') + ')', data: { why, materials: x.mats.map((m) => ({ id: m.id, kind: m.kind })), ...(why === 'every' && (x.answers || []).length ? { answers: x.answers.map((a) => ({ id: a.id, item: a.item })) } : {}), cycles: x.cycles, delivery: d && d.deliveryId } });
     this.log('rig3 tune turn ' + role + ' (' + why + ', ' + x.mats.length + ')');
     this.changed(key);
     return { tuneTurn: x.mats.map((m) => m.id) };
@@ -146,6 +163,9 @@ export class Rig3Tune {
       '[Atrium 보드] 재료(근거 id):',
       ...(x.mats.length > shown.length ? ['- …앞의 ' + (x.mats.length - shown.length) + '건은 줄였다'] : []),
       ...shown.map((m) => '- ' + m.id + ' ' + kindWord[m.kind] + (m.kind === 'return' ? '(' + m.by + (m.late ? ', 늦은 반려' : '') + ')' : '') + ': ' + clip(m.text, 300)),
+      ...(!x.mats.length ? ['- (반려·바로잡음·되돌린 쓰기는 없다)'] : []),
+      // P247(P245 답): 주기 턴에는 지난 조정 뒤 받은 답 항목도 재료다(id와 종류만. 내용은 네가 파일을 읽는다. 되풀이되는 모양을 본다)
+      ...(why === 'every' && (x.answers || []).length ? ['[Atrium 보드] 지난 조정 뒤 네가 낸 것에 돌아온 답 항목(근거 id로 쓸 수 있다. 판은 내용을 읽지 않았다. atrium rig inbox나 파일로 읽는다):', ...x.answers.slice(-TURN_SHOWN).map((a) => '- ' + a.id + ' ' + a.item + '(' + a.by + '가 ' + a.for + '에 답함)'), ...(x.answers.length > TURN_SHOWN ? ['- …앞의 ' + (x.answers.length - TURN_SHOWN) + '건은 줄였다'] : [])] : []),
       '[Atrium 보드] 지금 요령 칸(' + countLines(body) + '줄, 예산 ' + r3.tune.lines + '줄, ' + doc.rel + '):',
       body.trim() ? body.trim() : '(비었다)',
       '[Atrium 보드] 셋 가운데 하나로 답한다:',
@@ -195,9 +215,11 @@ export class Rig3Tune {
     if (!reason) throw apiError('bad_request', '무엇을 올리는지 준다: atrium rig raise "<무엇>"');
     const x = this.state(key, p.role); const ids = x.mats.map((m) => m.id);
     this.store().insertRig3Tune({ ws: key, role: p.role, kind: 'raise', state: 'noted', why: reason, evidence: ids, cycle: this.cycle(key), sessionId: p.session || null, by: 'role:' + p.role, t: Date.now() });
-    rigEvent(this.b, { kind: 'role_raise', ws: key, seat: p.role, session: p.session || null, n: this.cycle(key), actor: 'agent', ref: ids.join(',') || null, text: p.role + ' → 빌더: ' + reason, data: { role: p.role, reason, materials: ids } });
+    // P247: 빌더 세션이 있으면 대기열로 전한다(잠들었으면 깨운다). 변경 기록의 "사람이 볼 것" 줄은 그대로 남는다
+    let toBuilder = null; try { toBuilder = this.roles.builder ? this.roles.builder.alert(key, { what: 'raise', role: p.role, reason, materials: ids }) : null; } catch {}
+    rigEvent(this.b, { kind: 'role_raise', ws: key, seat: p.role, session: p.session || null, n: this.cycle(key), actor: 'agent', ref: ids.join(',') || null, text: p.role + ' → 빌더: ' + reason + (toBuilder ? ' (빌더에게 전함)' : ''), data: { role: p.role, reason, materials: ids, toBuilder: !!toBuilder } });
     this.changed(key);
-    return { raised: true, reason, materials: ids };
+    return { raised: true, reason, materials: ids, toBuilder: !!toBuilder };
   }
   none(key, p) {
     const reason = clip(p.reason, WHY_MAX);
@@ -246,7 +268,7 @@ export class Rig3Tune {
     if (sameBody(oldBody, pt.body)) this.reject(key, q, 'tune_same', '지금 요령 칸과 같다. 고칠 것이 없으면 atrium rig tune --none "<까닭>"');
     const lines = countLines(pt.body);
     if (lines > r3.tune.lines) this.reject(key, q, 'over_budget', '요령 칸이 ' + lines + '줄이다. 예산 ' + r3.tune.lines + '줄 안으로 합치거나 내린다');
-    const ids = new Set(this.materials(key, p.role, 0).map((m) => m.id));
+    const ids = new Set([...this.materials(key, p.role, 0), ...this.answersOf(key, p.role, 0)].map((m) => m.id)); // P247: 주기 턴의 답 항목도 근거가 된다
     const unknown = evidence.filter((id) => !ids.has(id));
     if (unknown.length) this.reject(key, q, 'no_evidence', '근거가 ' + p.role + '의 재료에 없다: ' + unknown.join(', ') + '. 재료: ' + ([...ids].slice(-12).join(', ') || '(없음)'));
     // 반영: 꼬리표, 요령 칸 바꿔 쓰기, 판 올리기
@@ -255,10 +277,20 @@ export class Rig3Tune {
     const want = (prevN || 0) + 1;
     const tagged = tagBody(oldBody, pt.body, want, evidence);
     const next = replaceSection(doc.text, TUNE_SECTION, tagged);
-    const a = this.writeDoc(key, doc, next, { by: 'role:' + p.role, note: 'tune ' + p.role });
+    let a = this.writeDoc(key, doc, next, { by: 'role:' + p.role, note: 'tune ' + p.role });
     if (!a.ok) this.reject(key, q, 'apply_failed', '판에 반영하지 못했다: ' + a.reason);
-    if (a.n !== want) this.log('rig3 tune ' + p.role + ': 꼬리표 판 ' + want + '과 반영된 판 ' + a.n + '이 다르다');
-    const diff = unifiedDiff(oldBody, tagged, { path: doc.rel + '#' + TUNE_SECTION });
+    let tagged2 = tagged;
+    // P247(P245 답): 꼬리표는 반영된 실제 판 번호다. 쓰기와 판 남기기는 한 걸음(동기)이라 보통 같지만, 그새 다른 판이 먼저 들어왔으면 실제 판으로 다시 찍는다(판이 하나 더 남는다)
+    if (a.n != null && a.n !== want) {
+      const n1 = a.n;
+      tagged2 = tagBody(oldBody, pt.body, n1, evidence);
+      const doc2 = { ...doc, text: next };
+      const b2 = this.writeDoc(key, doc2, replaceSection(next, TUNE_SECTION, tagged2), { by: 'role:' + p.role, note: 'tune ' + p.role + ' retag' });
+      this.log('rig3 tune ' + p.role + ': 꼬리표를 반영된 판 ' + n1 + '으로 다시 찍음(짐작 ' + want + ')' + (b2.ok ? ' → 판 ' + b2.n : ' 실패: ' + b2.reason));
+      if (b2.ok) a = { ...b2, tagN: n1 };
+      else tagged2 = tagged;
+    }
+    const diff = unifiedDiff(oldBody, tagged2, { path: doc.rel + '#' + TUNE_SECTION });
     st.insertRig3Tune({ ws: key, role: p.role, kind: 'tune', state: 'applied', n: a.n, prevN, why, evidence, diff: diff.text, added: diff.added, removed: diff.removed, cycle: this.cycle(key), sessionId: p.session || null, by: 'role:' + p.role, t: Date.now() });
     rigEvent(this.b, { kind: 'role_tune', ws: key, defN: a.n, seat: p.role, session: p.session || null, n: this.cycle(key), value: 'applied', actor: 'agent', ref: evidence.join(','), text: p.role + ' 요령 칸 판 ' + (prevN ?? '-') + '→' + a.n + ' (+' + diff.added + ' −' + diff.removed + '): ' + why, data: { role: p.role, n: a.n, prevN, why, evidence, added: diff.added, removed: diff.removed, lines, diff: diff.text.slice(0, 4000) } });
     this.log('rig3 tune ' + p.role + ' v' + prevN + '→v' + a.n);

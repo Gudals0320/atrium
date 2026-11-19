@@ -47,7 +47,9 @@ export const RIG3_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];
 export const RIG3_BEAT_KINDS = ['cycle_open', 'cycle_entry', 'role_tool', 'role_beat'];
 // P245: rig 3 조정과 되돌리기(rig3-tune.mjs): 조정 턴, 조정(applied | rejected | none), 빌더에게 올림, 사람의 바로잡음, 사람의 되돌리기
 export const RIG3_TUNE_KINDS = ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback'];
-const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS, ...RIG3_BEAT_KINDS, ...RIG3_TUNE_KINDS]);
+// P247: rig 3 빌더(rig3-builder.mjs). builder_spawn(사람이 "빌더에게 말하기"로 빌더 세션을 띄움)
+export const RIG3_BUILDER_KINDS = ['builder_spawn'];
+const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS, ...RIG3_BEAT_KINDS, ...RIG3_TUNE_KINDS, ...RIG3_BUILDER_KINDS]);
 export const RIG_EVENT_ACTORS = ['agent', 'human', 'board', 'hook', 'cycle'];
 // try_stopped의 value(18.1). P216이 exited를 더한다
 // P225: auto_closed(회 저절로 닫기가 열린 시도를 닫음, rig2-design 11.8의 5)
@@ -130,7 +132,9 @@ export function readEvents(b, key, o = {}) {
   const q = { ws: key, caseIds: o.cases || (o.case ? [String(o.case)] : null), kinds: parseKinds(o.kinds), ...parseSince(o.since), limit: limit + 1 };
   const rows = st.rigEvents(q);
   const more = rows.length > limit;
-  const out = rows.slice(0, limit);
+  // P247: 커서 없이 부르면 가게가 최근 limit+1줄을 오래된 것부터 준다. 꼬리는 뒤에서 limit줄(가장 새 줄을 빠뜨리지 않는다), 커서 뒤 읽기는 앞에서 limit줄
+  const tail = q.sinceSeq == null && q.sinceT == null;
+  const out = tail ? rows.slice(-limit) : rows.slice(0, limit);
   const name = (sid) => { if (!sid) return null; const s = b.sessions && b.sessions.get(sid); if (s) return shownName(s) || s.name; const r = st.getSession ? st.getSession(sid) : null; return r ? shownName(r) || r.name : null; };
   return { workspace: key, rows: out.map((r) => ({ ...r, sessionName: name(r.session) })), last: st.lastRigSeq(key), more };
 }

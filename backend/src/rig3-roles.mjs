@@ -19,7 +19,8 @@ import { sleepTarget, sessionActivity, idleSince } from './sleep.mjs';
 import { deriveState } from './state.mjs';
 import { shownName } from './session-label.mjs';
 import { Rig3Guard } from './rig3-guard.mjs'; // P243: 턴 끝 남의 쓰기 되돌리기
-import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir } from './rig3.mjs';
+import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir, BUILDER_ROLE, builderWrites } from './rig3.mjs';
+import { Rig3Builder } from './rig3-builder.mjs'; // P247: 빌더 세션
 import { Rig3Items } from './rig3-items.mjs'; // P242: 항목·길·받음
 import { Rig3Beat } from './rig3-beat.mjs'; // P244: 박자·도구·사이클 요약
 import { Rig3Tune } from './rig3-tune.mjs'; // P245: 조정과 되돌리기
@@ -34,6 +35,7 @@ export const RESPAWN_WINDOW_MS = 10 * 60 * 1000;
 export const SLEEP_RETRY_MS = 5 * 60 * 1000;
 export const ROLE_PERMISSION_MODE = 'bypassPermissions';
 export const ROLE_NESTED_SHELL_REASON = '[Atrium rig] rig 역할 세션은 Bash 도구 안에서 cmd·powershell·pwsh를 부르지 않는다(판이 그 안의 쓰기를 보지 못한다). 파일 목록·내용·찾기는 PowerShell 도구나 Glob·Read·Grep 도구로 한다.';
+export const builderDenyReason = (file, writes) => `[Atrium rig] 빌더의 쓰기 범위 밖이다: ${file}. 빌더가 쓰는 곳: ${writes.join(', ')}. 역할의 섹터와 기억 폴더는 역할의 것이다(읽기만 한다).`; // P247
 export const roleDenyReason = (role, file, writes) => `[Atrium rig] 역할 ${role}의 쓰기 범위 밖이다: ${file}. 쓸 수 있는 곳: ${writes.join(', ')}. 다른 섹터는 그 역할의 것이다(읽기만 한다).`;
 
 export class Rig3Roles {
@@ -50,6 +52,9 @@ export class Rig3Roles {
     this.guard = new Rig3Guard(b, this); // P243
     this.beat = new Rig3Beat(b, this); // P244
     this.tune = new Rig3Tune(b, this); // P245
+    this.builder = new Rig3Builder(b, this); // P247
+    this.docNotices = new Map(); // P247: '<키>|<역할>' → [글] (정의·정의서가 바뀜, 다음 깨우는 글에)
+    this.restart = new Set(); // P247: 쥔 섹터·도구·런처가 바뀐 역할('<키>|<역할>'), 다음 쉴 때 다시 띄운다
   }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
   store() { return this.b.store; }
@@ -72,12 +77,18 @@ export class Rig3Roles {
   // ---------- 띄우기 값(backend.spawn이 부른다) ----------
   // Claude Code 세션 설정 파일의 증폭(rig 2 claudeSettingsAmp와 같은 꼴: deny, hooks.PreToolUse, permissions)
   claudeAmp(key, roleName, cwd = null) {
+    if (roleName === BUILDER_ROLE) { // P247: 빌더(rig가 없는 워크스페이스에서도)
+      const root = this.b.rig ? this.b.rig.rootOf(key) : null; if (!root) return null;
+      const d = this.defOf(key);
+      return claudeSettingsAmp({ writes: builderWrites(d ? d.def.rig3 : null), stopVerify: false, preTool: [], protectedFiles: [], root, cwd: cwd || root, permission: 'unattended', allow: [], deny: [], promptless: false });
+    }
     const r = this.defOf(key); const r3 = r && r.def.rig3; const role = r3 && r3.roles[roleName];
     if (!role) return null;
     return claudeSettingsAmp({ writes: roleWrites(role), stopVerify: false, preTool: [], protectedFiles: roleProtected(r3), root: r.root, cwd: cwd || r.root, permission: 'unattended', allow: [], deny: [], promptless: false });
   }
   // backend.spawn: 이 역할 세션을 띄울 값 → { role, permissionMode, amp } | null(v3 역할이 아니다)
   launchOf(key, roleName, { kind = 'claude', cwd = null } = {}) {
+    if (roleName === BUILDER_ROLE) return { role: BUILDER_ROLE, permissionMode: kind === 'claude' ? ROLE_PERMISSION_MODE : null, amp: kind === 'claude' ? this.claudeAmp(key, BUILDER_ROLE, cwd) : null }; // P247
     const r = this.defOf(key);
     if (!r || !r.def.rig3.roles[roleName]) return null;
     return { role: roleName, permissionMode: kind === 'claude' ? ROLE_PERMISSION_MODE : null, amp: kind === 'claude' ? this.claudeAmp(key, roleName, cwd) : null };
@@ -109,8 +120,20 @@ export class Rig3Roles {
   }
 
   // ---------- hook(PreToolUse) ----------
-  wants(s, ev) { return ev === 'PreToolUse' && (s.kind || 'claude') === 'claude' && !!this.ctxOf(s); }
+  wants(s, ev) { return ev === 'PreToolUse' && (s.kind || 'claude') === 'claude' && (!!this.ctxOf(s) || s.rigRole === BUILDER_ROLE); } // P247: 빌더도
+  // P247: 빌더 세션의 PreToolUse: 셸 안의 셸과 쓰기 범위(.atrium/, 도구 스크립트) 밖 편집을 막는다
+  builderAnswer(s, body) {
+    const root = this.b.rig ? this.b.rig.rootOf(s.workspaceKey) : null; if (!root) return null;
+    const toolName = String(body.tool_name || ''); const input = body.tool_input || {};
+    if (toolName === 'Bash' && nestedShell(input.command)) return denyBody(ROLE_NESTED_SHELL_REASON);
+    const writes = this.builder.writes(s.workspaceKey);
+    if (!writesVerdict({ writes, toolName, toolInput: input, base: root })) return null;
+    const file = String(input.file_path || input.notebook_path || input.path || '');
+    try { this.store().addEvent(s.sessionId, 'rig3_denied', { role: BUILDER_ROLE, why: 'writes', tool: toolName, target: file }); } catch {}
+    return denyBody(builderDenyReason(file, writes));
+  }
   async answer(s, ev, body) {
+    if (s && s.rigRole === BUILDER_ROLE) return ev === 'PreToolUse' ? this.builderAnswer(s, body) : null; // P247
     const x = this.ctxOf(s); if (!x || ev !== 'PreToolUse') return null;
     const toolName = String(body.tool_name || ''); const input = body.tool_input || {};
     if (toolName === 'Bash') {
@@ -245,6 +268,7 @@ export class Rig3Roles {
     const live = this.sessionsOf(key, role);
     const alive = live.filter((s) => !(s.rt && s.rt.exit && !s.rt.sleep));
     for (const s of alive) this.exitSeen.delete(s.sessionId);
+    if (alive.length && this.restart.has(k)) { const x = await this.redo(key, role, alive[0]); if (x) return x; } // P247: 쥔 섹터·도구가 바뀌었으면 쉴 때 다시 띄운다
     if (alive.length) { const w = this.items.watch(key, role, alive[0], now); return w || this.tune.check(key, role, alive[0], now) || this.idle(alive[0], now); } // P242: 받은 것에 답하지 않고 멈춘 역할을 먼저 본다. P245: 조정 턴(재료가 쌓였으면)
     let prev = null;
     if (live.length) { // 끝난 채(exited)
@@ -270,6 +294,47 @@ export class Rig3Roles {
     const s = await this.spawnRole(key, role, prev ? 'respawn' : 'spawn', prev);
     this.changed(key);
     return { spawned: s.name, why: prev ? prev.why : 'missing' };
+  }
+  // ---------- P247: 정의·정의서가 바뀐 판 ----------
+  // Rig.adopt가 새 판을 남긴 뒤 부른다. 떠 있는 역할에게 다음 깨우는 글에 알리고, 쥔 섹터·도구·런처가 바뀐 역할은 다시 띄울 표시를 한다
+  onVersion(key, { n, by, note = null, changed = null, prev = null, def = null } = {}) {
+    if (!def || !def.v3 || !changed || !changed.length) return [];
+    const r3 = def.rig3; const out = [];
+    const pick = (x) => (x ? JSON.stringify({ owns: x.owns, tools: x.tools, launcher: x.launcher || 'claude', model: x.model || null, effort: x.effort || null }) : null);
+    for (const role of Object.keys(r3.roles)) {
+      if (by === 'role:' + role) continue; // 자기 조정
+      if (note && String(note).startsWith('rollback ' + role + ' ')) continue; // 사람의 되돌림은 따로 알린다(P245)
+      const parts = changed.filter((p) => p === 'rig.json' || p === 'purpose' || p === 'role:' + role);
+      if (!parts.length) continue;
+      const k = key + '|' + role;
+      const was = prev && prev.rig3 ? prev.rig3.roles[role] : null;
+      const moved = parts.includes('rig.json') && was && pick(was) !== pick(r3.roles[role]);
+      if (moved) this.restart.add(k);
+      const what = parts.map((p) => (p === 'rig.json' ? '정의(rig.json)' : p === 'purpose' ? '목적(' + r3.purpose + ')' : '정의서(' + r3.roles[role].doc + ')'));
+      const text = '[Atrium 보드] 판 ' + n + '(' + (by === 'builder' ? '빌더' : by === 'human' ? '사람' : by) + ')에서 ' + what.join(', ') + '이 바뀌었다. ' + (parts.includes('role:' + role) ? '정의서가 바뀌었다, 다시 읽는다: ' + r3.roles[role].doc + '. ' : '') + (parts.includes('purpose') ? '목적 문서를 다시 읽는다. ' : '') + (parts.includes('rig.json') ? '받는 것·내는 것은 atrium guide로 다시 본다.' : '') + (moved ? ' 쥔 섹터·도구가 바뀌어 다음 쉴 때 판이 이 세션을 새로 띄운다.' : '');
+      const l = (this.docNotices.get(k) || []).filter((x) => !x.startsWith('[Atrium 보드] 판 ')); // 앞선 바뀜 알림은 새 것으로 갈음한다
+      l.push(text.trim()); this.docNotices.set(k, l);
+      out.push({ role, parts, restart: !!moved });
+    }
+    if (out.length) this.b.log && this.b.log('rig3 version ' + n + ' by ' + by + ': notices ' + out.map((x) => x.role + (x.restart ? '(restart)' : '')).join(', '));
+    return out;
+  }
+  takeDocNotices(key, role) { const k = key + '|' + role; const l = this.docNotices.get(k) || []; this.docNotices.delete(k); return l; }
+  // 다시 띄울 표시가 있는 역할: 쉬거나(ready) 잠들었으면 닫고 새로 띄운다. 일하는 중이거나 넣을 글이 남았으면 다음 주기에 → 한 일 | null
+  async redo(key, role, s) {
+    if (!this.active(key)) return null;
+    const asleep = !!(s.rt && s.rt.sleep);
+    const st = s.rt ? deriveState(s.rt).state : null;
+    if (!asleep && st !== 'ready') return { waiting: 'redefine' };
+    const q = this.b.queue;
+    if (!asleep && q && q._ofSession && q._ofSession(s.sessionId).some((d) => d.status === 'queued' || d.status === 'sending')) return { waiting: 'redefine' };
+    const k = key + '|' + role;
+    this.restart.delete(k);
+    this.docNotices.delete(k); // 새로 뜨는 세션은 지금 정의·정의서를 싣는다
+    try { if (this.b.kill) await this.b.kill({ session: s.sessionId, confirm: true }); } catch (e) { this.b.log && this.b.log('rig3 redefine close ' + s.name + ': ' + e.message); }
+    const n = await this.spawnRole(key, role, 'respawn', { sessionId: s.sessionId, name: s.name, why: 'redefined' });
+    this.changed(key);
+    return { spawned: n.name, why: 'redefined' };
   }
   // P242: 다시 뜨는 역할에게 실을 받은 것 줄(답하지 않은 것, 답 항목이 없는 것, 반려된 것)
   inboxLines(key, role) {
@@ -339,6 +404,6 @@ export class Rig3Roles {
     let it = null; try { it = this.items.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 items view', e.message); } // P242: 길마다 수, 역할마다 받은 것
     for (const x of roles) x.items = it && it.roles[x.name] ? it.roles[x.name] : null;
     for (const x of roles) { try { x.tune = this.tune.roleView(key, r3, x.name); } catch (e) { x.tune = null; this.b.log && this.b.log('rig3 tune view', e.message); } } // P245: 정의서 판·조정 수·재료
-    return { purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null, cycle: (() => { try { return this.beat.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 beat view', e.message); return null; } })() }; // P244: 사이클·다음 박자·최근 꼭지
+    return { builder: this.builder.view(key), purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null, cycle: (() => { try { return this.beat.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 beat view', e.message); return null; } })() }; // P244: 사이클·다음 박자·최근 꼭지
   }
 }

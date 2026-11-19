@@ -1,6 +1,16 @@
 // P241: rig 3(역할 조직) 판의 보기 자료. rig.get·rig.status의 rig3(백엔드 rig3-roles.mjs view)를 화면 줄로 바꾼다.
 // 화면은 읽기만 하는 구조 보기와 켜기만 있다(편집 표·자리 표·흐름 표는 없다). 단위 시험 test/p241-lib.test.mjs
 export const isRig3 = (st) => !!(st && (st.format === 3 || st.rig3));
+// P247: 빌더 세션 보기(rig.get의 builder3, 또는 rig.status rig3.builder). live: 창의 세션 목록 → { session: { sessionId, name, stateKey } | null, canTalk }
+//   canTalk: rig 3 정의이거나 rig가 없는 워크스페이스(rig 2 정의에서는 빌더를 쓰지 않는다)
+export function builderInfo(st, live = null) {
+  if (!st) return { session: null, canTalk: false };
+  const b = st.builder3 || (st.rig3 && st.rig3.builder) || null;
+  const s = b && b.session ? b.session : null;
+  const cur = s && live && live.get ? live.get(s.sessionId) : null;
+  const state = cur ? cur.state : s ? (s.asleep ? 'sleeping' : s.state) : null;
+  return { session: s ? { sessionId: s.sessionId, name: s.name, stateKey: state || 'unknown' } : null, canTalk: isRig3(st) || st.status === 'none' };
+}
 
 // 역할 줄: { name, owns, tools, session: { name, state } | null, stateKey, gaveUp, docMissing }
 //   stateKey: 사전 state.<값>(세션 없음은 none, 다시 띄우기를 멈춤은 gaveUp)

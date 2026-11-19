@@ -35,7 +35,8 @@ import { sectorsFor } from './rig-sectors.mjs'; // P222: 산출물 등록부
 import { proposalsFor } from './rig-proposals.mjs'; // P224: 제안과 승인
 import { RIG3_BEAT_OPS } from './rig3-beat.mjs'; // P244: rig 3 beat(사람만)·tool(역할의 도구)
 import { RIG3_TUNE_OPS } from './rig3-tune.mjs'; // P245: rig 3 tune·raise·heard(역할)·role(읽기)
-import { RIG3_ITEM_OPS } from './rig3-items.mjs'; // P242: rig 3 항목 명령(put·accept·return·pass·drop·inbox)
+import { RIG3_ITEM_OPS } from './rig3-items.mjs';
+import { bundleOf } from './rig3.mjs'; // P247: v3 rig check의 same // P242: rig 3 항목 명령(put·accept·return·pass·drop·inbox)
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
@@ -82,7 +83,7 @@ export class RigAdmin {
     //   rollback·cleanup(바꾸는 것)은 관리자 자리와 사람만
     if (RIG_READ_OPS.includes(op) && !this.isManager(s)) {
       const rig = this.b.rig;
-      const builder = this.b.rigSetup && this.b.rigSetup.isWorkspaceBuilder(s);
+      const builder = (this.b.rigSetup && this.b.rigSetup.isWorkspaceBuilder(s)) || !!(this.b.rig3 && this.b.rig3.builder && this.b.rig3.builder.isBuilder(s)); // P247: rig 3 빌더
       if (rig && (builder || (op === 'check' && !rig.enabled(s.workspaceKey)))) return op === 'check' ? this.check(s.workspaceKey, o) : this.log(s.workspaceKey, o);
     }
     if (!this.isManager(s)) {
@@ -146,6 +147,7 @@ export class RigAdmin {
     const hits = base && prot ? protectedHits(raw, base.raw, prot.pointers) : [];
     const out = { ok: v.ok && !hits.length, from, hash, current: { n: cur.n ?? null, hash: cur.hash || null }, same: !!(base && base.hash === hash), warnings: v.ok ? [...(v.def.warnings || []), ...(v.def.seats && Object.values(v.def.seats).some((x) => x.worktree) ? worktreeWarnings(v.def.seats, gitStateOf(root)) : [])] : [] }; // P195: 워크트리 자리의 저장소 조건
     if (!v.ok) return { ...out, reason: v.reason };
+    if (v.def.v3) { const bundle = bundleOf(root, raw, hash).hash; out.bundle = bundle; out.same = !!(base && base.hash === bundle); } // P247: v3 판은 정의·목적·정의서 묶음 해시로 견준다
     if (v.def.v3) { const r3 = v.def.rig3; return { ...out, summary: { format: 3, purpose: r3.purpose, roles: Object.values(r3.roles).map((r) => ({ name: r.name, owns: r.owns, tools: r.tools, launcher: r.launcher || 'claude', model: r.model })), flows: r3.flows.map((f) => `${f.item}: ${f.from.join('|')} → ${f.to.join('|')}${f.for ? ` (for ${f.for})` : ''}`), tools: Object.keys(r3.tools), beat: r3.beat } }; } // P241: rig 3(역할·길)
     // P209: 자리 effort·model. 런처 이름 자리는 그 런처의 종류로 effort를 다시 보고, 앉은 keep 자리 세션에는 다음에 띄울 때부터 먹는다고 적는다
     const sn = this.seatNotes(key, v.def.seats, v.def);
@@ -196,7 +198,7 @@ export class RigAdmin {
   eventsVerb(s, o = {}) {
     const key = s.workspaceKey;
     if (!key) throw apiError('forbidden', 'atrium rig log --events는 워크스페이스의 세션만 쓴다.');
-    const builder = this.b.rigSetup && this.b.rigSetup.isWorkspaceBuilder(s);
+    const builder = (this.b.rigSetup && this.b.rigSetup.isWorkspaceBuilder(s)) || !!(this.b.rig3 && this.b.rig3.builder && this.b.rig3.builder.isBuilder(s)); // P247
     if (this.isManager(s) || builder) return this.events(key, o);
     const flow = this.branch && this.branch.flow;
     const ctx = flow ? flow.seatCtx(s) : null;

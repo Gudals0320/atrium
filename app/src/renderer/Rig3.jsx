@@ -3,11 +3,11 @@
 // 판 API rig.get(rig3), rig.enable(confirm), rig.disable. 판 이벤트 rig.roles(역할 세션이 뜨거나 잠듦)·rig.events 때 다시 읽는다.
 import { useEffect, useState, useCallback } from 'react';
 import { api } from './api.js';
-import { toast, useStore } from './store.js';
+import { toast, useStore, goWhenOpen } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
-import { roleRows, flowRows, roleCount, canEnable3, intakeRows, stalledRows, returnedIntake, cycleInfo, tuneBadge, tuneLogRows } from './lib/rig3.js';
+import { roleRows, flowRows, roleCount, canEnable3, intakeRows, stalledRows, returnedIntake, cycleInfo, tuneBadge, tuneLogRows, builderInfo } from './lib/rig3.js';
 
 export function Rig3Panel({ ws, onClose, first = null }) {
   const t = useT();
@@ -58,6 +58,7 @@ export function Rig3Panel({ ws, onClose, first = null }) {
                 </div>
               </div>
             )}
+            {!remote && <Rig3BuilderTalk ws={ws} st={st} t={t} onClose={onClose} />}
             {r3 && <div className="mt-rig3-purpose dim" data-role="rig3-purpose">{t('rig3.purpose', { path: r3.purpose })}</div>}
             {roles.length > 0 && (
               <>
@@ -105,6 +106,48 @@ export function Rig3Panel({ ws, onClose, first = null }) {
           <button className="mt-btn ghost" data-action="rig-panel-close" onClick={onClose}>{t('common.close')}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// P247: 빌더에게 말하기. 빌더 세션이 있으면 그 세션으로, 없으면 판이 띄운다(판 API rig3.builder). 글을 쓰면 사람의 말로 넣고, 터미널로 들어간다.
+//   rig 3 판과 rig가 없는 워크스페이스의 rig 판(RigSetup.jsx)이 같이 쓴다
+export function Rig3BuilderTalk({ ws, st, t, onClose }) {
+  const sessions = useStore((s) => s.sessions);
+  const info = builderInfo(st, sessions);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  if (!info.canTalk) return null;
+  const go = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.call('rig3.builder', { workspace: ws.key, ...(text.trim() ? { text: text.trim() } : {}) });
+      toast(r.spawned ? t('rig3Builder.spawned', { name: r.name }) : t('rig3Builder.opened', { name: r.name }));
+      setText(''); setOpen(false);
+      goWhenOpen(r.session);
+      onClose && onClose();
+    } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-rig3-builder" data-role="rig3-builder" data-builder={info.session ? info.session.name : ''}>
+      <div className="mt-rig3-builder-line">
+        <b>{t('rig3Builder.h')}</b>
+        {info.session ? <span className="dim" data-role="rig3-builder-session"><span className={`mt-rig3-st ${info.session.stateKey}`} />@{info.session.name} {t(`state.${info.session.stateKey}`)}</span> : <span className="dim">{t('rig3Builder.none')}</span>}
+        {!open && <button className="mt-btn small primary" data-action="rig3-builder-talk" disabled={busy} onClick={() => setOpen(true)}>{t('rig3Builder.talk')}</button>}
+      </div>
+      <div className="mt-rig3-sub dim">{t('rig3Builder.hint')}</div>
+      {open && (
+        <>
+          <textarea className="mt-rig3-intake-text" data-role="rig3-builder-text" rows={3} value={text} disabled={busy} placeholder={t('rig3Builder.placeholder')} onChange={(e) => setText(e.target.value)} />
+          <div className="mt-card-actions">
+            <button className="mt-btn small primary" data-action="rig3-builder-go" disabled={busy} onClick={go}>{t(text.trim() ? 'rig3Builder.send' : 'rig3Builder.open')}</button>
+            <button className="mt-btn small ghost" disabled={busy} onClick={() => setOpen(false)}>{t('common.cancel')}</button>
+          </div>
+        </>
+      )}
+      {err && <div className="mt-rigon-warn" data-role="rig3-builder-error">{err}</div>}
     </div>
   );
 }
