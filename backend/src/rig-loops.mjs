@@ -25,7 +25,7 @@ import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { rigEvent } from './rig-ledger.mjs';
 import { HUMAN_FROM } from './rig-templates.mjs';
-import { SEAT_SPAWN } from './rig-amp.mjs';
+import { SEAT_SPAWN, SEAT_RUN } from './rig-amp.mjs';
 import { idleSince } from './sleep.mjs'; // P223: 회 저절로 닫기의 쉼(잠재우기와 같은 기준)
 import { deriveState } from './state.mjs';
 
@@ -423,7 +423,7 @@ export class RigLoops {
       if (!st.doneRunsSince(key, works, base)) { this.skipOnce(key, loop, `${mark || key}|no_new_runs`, 'no_new_runs', '지난 개선 회 뒤로 끝난 작업 회가 없어 이번 회를 건너뛴다(새 회 없음)'); return { skipped: 'no_new_runs' }; }
     }
     if (seat.session !== 'keep') {
-      try { t = await this.spawnEntry(key, r, loop.entry); spawned = true; }
+      try { t = await this.spawnEntry(key, r, loop.entry, loop.name); spawned = true; }
       catch (e) { this.skipOnce(key, loop, `${mark || key}|spawn`, 'spawn_failed', `${loop.entry} 자리 세션을 띄우지 못했다: ${e.message}`); return null; }
     }
     const name = `${loop.name} ${dayOf(now)}`;
@@ -478,13 +478,13 @@ export class RigLoops {
     return { ...base, ran: true, case: out.caseId, name: out.name, unit: out.unitId, to: out.to, spawned: out.spawned, by };
   }
   // fresh 입구 자리 세션을 띄운다(위 세션 없이, rig.spawnSeat과 같은 길: 자리의 런처·effort·model)
-  async spawnEntry(key, r, seatName) {
+  async spawnEntry(key, r, seatName, loopName = null) { // P234: loopName(그 회의 고리 → 설정 파일의 묻지 않고 거절)
     const b = this.b; const st = this.store();
     const x = r.def.seats[seatName];
     if (!b.rigSetup || typeof b.spawn !== 'function') throw apiError('spawn_failed', '보드가 세션을 띄우지 못한다');
     const L = b.rigSetup.launcherOf(x.launcher);
     const name = b.rigSetup.freeName(`${seatName}-${st.nextSeatN(key, seatName)}`, () => `${seatName}-${st.nextSeatN(key, seatName)}`);
-    const res = await b.spawn({ cwd: r.root, name, ...L.spawn, ...(x.effort ? { effort: x.effort } : {}), ...(x.model ? { model: x.model } : {}), [SEAT_SPAWN]: seatName });
+    const res = await b.spawn({ cwd: r.root, name, ...L.spawn, ...(x.effort ? { effort: x.effort } : {}), ...(x.model ? { model: x.model } : {}), [SEAT_SPAWN]: seatName, ...(loopName ? { [SEAT_RUN]: { loop: loopName } } : {}) });
     const s = b.sessions.get(res.sessionId);
     if (!s) throw apiError('spawn_failed', `${seatName} 자리 세션이 보드에 등록되지 않았다.`);
     st.setSessionSeat(s.sessionId, seatName); s.rigSeat = seatName;

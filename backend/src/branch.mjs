@@ -46,7 +46,7 @@ import { RigAdmin } from './rig-admin.mjs'; // P188: atrium rig check|log|rollba
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때와 동료 소식
 import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | news, 턴 끝·done 자동 기록)
-import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
+import { SEAT_SPAWN, SEAT_RUN } from './rig-amp.mjs'; // P189. P234: SEAT_RUN
 
 
 export const DEFAULT_ROLE = '워커';
@@ -687,7 +687,7 @@ export class Branch {
     try {
       // 신뢰 관문이면 처음에는 -w 없이 띄운다(그 저장소의 신뢰 질문이 뜬다)
       // P41: 호출자면 그 호출자의 하네스·모델·옵션·env를 그대로 쓴다(준 --effort만 덮는다). 게이트웨이 모델과 게이트웨이 물려받기는 그 게이트웨이 호출자의 env로, 권한 모드는 부모의 것
-      const base = { cwd, name, worktree: gate ? null : worktree, parentSessionId: parent.sessionId, branch: info, ...(o[SEAT_SPAWN] ? { [SEAT_SPAWN]: o[SEAT_SPAWN] } : {}) }; // P189: 판이 자리를 위해 띄움
+      const base = { cwd, name, worktree: gate ? null : worktree, parentSessionId: parent.sessionId, branch: info, ...(o[SEAT_SPAWN] ? { [SEAT_SPAWN]: o[SEAT_SPAWN] } : {}), ...(o[SEAT_RUN] ? { [SEAT_RUN]: o[SEAT_RUN] } : {}) }; // P189: 판이 자리를 위해 띄움. P234: 그 회의 고리
       // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
       const oe = effortPlan && effortPlan.applied ? { effort: otherEffort } : {}; // P208
       const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: joinArgs(other.args) }, permissionMode: parent.permissionMode, ...oe } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode, ...oe }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)

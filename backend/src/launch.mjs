@@ -22,6 +22,7 @@ export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutS
   const rules = [...new Set([...allow, ...((amp && amp.allow) || [])])]; // P223: scoped 자리의 allow
   if (rules.length) settings.permissions = { allow: rules };
   if (amp && amp.deny && amp.deny.length) settings.permissions = { ...(settings.permissions || {}), deny: [...amp.deny] };
+  if (amp && amp.permissions && Object.keys(amp.permissions).length) settings.permissions = { ...(settings.permissions || {}), ...amp.permissions }; // P234: rig 자리의 auto·bypass 끄기, 묻지 않고 거절
   if (env && Object.keys(env).length) settings.env = env;
   if (statusLine) settings.statusLine = statusLine;
   fs.mkdirSync(path.dirname(file), { recursive: true });

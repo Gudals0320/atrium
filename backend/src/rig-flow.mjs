@@ -25,7 +25,7 @@ import { SEAT_KINDS, mayReachOutside } from './rig.mjs';
 import { spawnPlan, killTree } from './hook-runner.mjs'; // P188: 느린 고리의 run
 import { rootedRun } from './tool-runs.mjs';
 import { cleanEnv } from './proc-env.mjs';
-import { SEAT_SPAWN, effectivePermission } from './rig-amp.mjs'; // P189. P231: 실제로 도는 권한
+import { SEAT_SPAWN, SEAT_RUN, effectivePermission, seatRunOf } from './rig-amp.mjs'; // P189. P231: 실제로 도는 권한
 import { rigEvent, OWNER } from './rig-ledger.mjs'; // P217: 장부
 import { seatDocsOf, docsTail, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
 import { RigLoops, runNameOf, implicitCycleLoop } from './rig-loops.mjs'; // P221: 고리(계기, 회 이름, 멈추기·잇기)
@@ -89,13 +89,16 @@ export function humanDecidedText({ caseId, name = null, action, line = null, to 
   if (action === 'again') return `[Atrium 보드] 사람이 ${run}의 상한 카드에서 [한 번 더]를 골랐다: flow[${line}]으로 ${to.join(', ')} 자리에 한 번 더 넘겼다. 회는 다시 이어진다.`;
   return `[Atrium 보드] 사람이 ${run}의 상한 카드에서 [회 멈추기]를 골랐다. 회는 멈췄다(사람이 이을 때까지 기다린다). 같은 일을 새 회로 다시 열지 않는다.`;
 }
+// P234(rig2-design 11.16의 2): 판이 연 회(every 고리)의 scoped 자리는 허용 목록 밖 명령을 묻지 않고 거절한다(denyInsteadOfPrompting). 셸 줄의 "묻는 명령은 멈춘다"를 바꾼다
+export const DENY_SHELL_LINE = '[Atrium 보드] Do not pipe shell commands or wrap them in another shell. Run git in the working folder without -C. Commands outside the allow list are refused without asking. Write what you could not run in your report. Read files with Read/Glob/Grep.';
 export const NO_MANAGER_LINE = '[Atrium 보드] Write anything about pausing or changing the rig in your report; the human decides.';
 // 정의와 자리 → 머리에 더할 줄. scoped: 실제로 도는 권한이 scoped. 관리자 자리가 없는 rig(자리가 있는 정의)는 모든 자리에
 // P231(rig2-design 11.13의 5): approved(사람이 그 자리의 unattended를 승인했는가). 승인 전 unattended는 scoped로 돌므로 셸 줄을 단다. ask·승인된 unattended에는 달지 않는다
-export function seatExtraLines(def, seat, { approved = false } = {}) {
+// P234: promptless(seatRunOf: 판이 연 회)면 scoped 자리의 셸 줄이 DENY_SHELL_LINE
+export function seatExtraLines(def, seat, { approved = false, promptless = false } = {}) {
   const out = [];
   const sa = def && def.amp && def.amp.seats ? def.amp.seats[seat] : null;
-  if (sa && effectivePermission(sa.permission, approved) === 'scoped') out.push(SCOPED_SHELL_LINE);
+  if (sa && effectivePermission(sa.permission, approved) === 'scoped') out.push(promptless ? DENY_SHELL_LINE : SCOPED_SHELL_LINE);
   if (def && def.seats && !def.manager) out.push(NO_MANAGER_LINE);
   return out;
 }
@@ -249,10 +252,13 @@ export class RigFlow {
     return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide, manager: def.manager === seat, docs: seatDocsOf(def, seat), extra: this.extraLinesOf(key, def, seat) });
   }
   // P231(11.13의 5): 머리에 더할 줄(실제로 도는 권한: 승인 전 unattended는 scoped)
-  extraLinesOf(key, def, seat) {
+  // P234: caseId(그 일의 회 → 고리의 계기). 없으면 keep 자리는 닿는 고리로, fresh 자리는 모름(묻는다)
+  extraLinesOf(key, def, seat, { caseId = null } = {}) {
     const rig = this.b.rig;
     const approved = !!(key && rig && rig.permitted && rig.permitted(key, seat)); // 실제 권한(rig-amp ctxOf)과 같이 지금 정의의 승인으로 본다
-    return seatExtraLines(def, seat, { approved });
+    let loop = null;
+    try { const c = caseId ? this.store().getCase(caseId) : null; loop = c ? c.loop : null; } catch {}
+    return seatExtraLines(def, seat, { approved, promptless: seatRunOf(def, seat, { loop }).promptless });
   }
 
   // ---------- 건 ----------
@@ -525,7 +531,7 @@ export class RigFlow {
     let name = seat.session === 'keep' && !taken.has(seatName) ? seatName : null;
     for (let i = 0; !name && i < 1000; i++) { const n = `${seatName}-${st.nextSeatN(ctx.key, seatName)}`; if (!taken.has(n)) name = n; }
     const worktree = seat.worktree ? `${seatName}-${unitId}` : null;
-    const o = { name, role: seatName, cwd: ctx.r.root, wait: false, ...this.seatRoute(seat, seatName, owner), ...seatOverrides(seat), ...(worktree ? { worktree } : {}), [SEAT_SPAWN]: seatName }; // P189: 띄울 때부터 자리의 증폭(설정 파일·Codex 인자)
+    const o = { name, role: seatName, cwd: ctx.r.root, wait: false, ...this.seatRoute(seat, seatName, owner), ...seatOverrides(seat), ...(worktree ? { worktree } : {}), [SEAT_SPAWN]: seatName, [SEAT_RUN]: { loop: c.loop || null } }; // P234: 그 회의 고리. P189: 띄울 때부터 자리의 증폭(설정 파일·Codex 인자)
     const k = `${ctx.key}|${seatName}`;
     this.spawning.set(k, (this.spawning.get(k) || 0) + 1);
     let r;
