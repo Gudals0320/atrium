@@ -60,7 +60,7 @@ export const ADAPTERS = {
       // 연결: 세션 단위 -c로 제공자를 정의한다(사용자 config.toml은 고치지 않는다). 키는 env_key(변수 이름)
       const conn = c ? ['-c', `model_provider=${pid}`, '-c', `model_providers.${pid}.name=${c.name}`, '-c', `model_providers.${pid}.base_url=${c.baseUrl}`, '-c', `model_providers.${pid}.wire_api=responses`, ...(c.auth && c.auth.env ? ['-c', `model_providers.${pid}.env_key=${c.auth.env}`] : [])] : [];
       // 시작할 때 업데이트 확인을 끈다(새 버전이 있으면 "Update now" 선택 창이 떠서 판의 첫 요청과 Enter가 그 창에 들어간다. 1단계 뒤 확인)
-      const args = [...(resumed ? ['resume', ctx.harnessSessionId] : fork ? ['fork', fork] : []), '-c', 'check_for_update_on_startup=false', ...conn, ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.instructions ? ['-c', `developer_instructions=${ctx.instructions.text}`] : []), ...(ctx.launcherArgs || [])];
+      const args = [...(resumed ? ['resume', ctx.harnessSessionId] : fork ? ['fork', fork] : []), '-c', 'check_for_update_on_startup=false', ...conn, ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.instructions ? ['-c', `developer_instructions=${ctx.instructions.text}`] : []), ...(ctx.launcherArgs || []), ...(resumed && ctx.effort ? ['-c', `model_reasoning_effort=${ctx.effort}`] : [])]; // P227: 이어 갈 때 지금 노력 수준(호출자 인자 뒤: 뒤의 -c가 이긴다)
       return { args, env: {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
     // 판의 인자 없이 뜬 이어 가기(`codex resume <id>`, 옛 터미널이 스스로 띄움)인가. 판이 친 줄인가
@@ -105,7 +105,7 @@ export const ADAPTERS = {
         files.push({ file, text: piExtensionText(c, modelsFor(ctx)) });
         ext = ['-e', file];
       }
-      const model = c ? (ctx.model ? `${providerIdOf(c)}/${ctx.model}` : null) : ctx.model || null;
+      const model = c ? (ctx.model ? (String(ctx.model).startsWith(`${providerIdOf(c)}/`) ? ctx.model : `${providerIdOf(c)}/${ctx.model}`) : null) : ctx.model || null; // P227: 이어 갈 지금 값은 이미 제공자/모델 꼴
       const args = ['--session-id', sid, ...ext, ...(model ? ['--model', model] : []), ...(ctx.instructions ? ['--append-system-prompt', ctx.instructions.file] : []), ...(ctx.launcherArgs || [])];
       return { args, env: {}, files, harnessSessionId: sid, resumed: !!ctx.resume };
     },
@@ -215,7 +215,7 @@ export function harnessLaunch(o) {
   const a = adapterOf(o.kind);
   if (!a) throw Object.assign(new Error(`하네스가 아닙니다: ${o.kind}`), { code: 'bad_request' });
   if (o.connection && !protocolsOf(o.kind).includes(o.connection.protocol)) throw Object.assign(new Error(`${o.kind}는 연결 프로토콜 ${o.connection.protocol}을 쓰지 않습니다.`), { code: 'connection_protocol', key: 'connections.err.protocolMismatch', vars: { harness: o.kind, protocol: o.connection.protocol } });
-  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, connection: o.connection || null, connectionModels: o.connectionModels || [], filesDir: o.filesDir || null, forkFrom: o.forkFrom || null, statusLine: o.statusLine || null }); // P211: statusLine(AGY 상태 줄 명령 만들기)
+  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, effort: o.effort || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, connection: o.connection || null, connectionModels: o.connectionModels || [], filesDir: o.filesDir || null, forkFrom: o.forkFrom || null, statusLine: o.statusLine || null }); // P211: statusLine(AGY 상태 줄 명령 만들기)
   // P115: 연결이 있는 pi는 -e 없이 띄우지 않는다(빠지면 pi가 조용히 다른 실제 제공자로 넘어간다)
   if (o.kind === 'pi' && o.connection && !r.args.includes('-e')) throw Object.assign(new Error('pi 연결 확장(-e)이 없어 띄우지 않았습니다.'), { code: 'pi_extension_missing', key: 'connections.err.piExtension' });
   const command = o.startWords && o.startWords.length ? [...o.startWords] : [a.command];
