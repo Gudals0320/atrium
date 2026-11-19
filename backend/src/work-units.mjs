@@ -113,7 +113,7 @@ export class WorkUnits {
     if (ctx) {
       const v = unit.via || {};
       const by = v.loop && v.now ? `${v.now === 'manager' ? '관리자 자리가' : '사람이'} ${v.loop} 고리를 지금 한 번 돌려 연 회` : v.loop ? `보드의 ${v.loop} 고리(${v.every}마다)가 연 회` : v.request ? `${v.request} 고리의 요청(${v.by === HUMAN_FROM ? '사람' : `@${this.nameOf(v.by)}`})이 연 회` : v.cycle != null ? `보드의 느린 고리 cycles[${v.cycle}]가 만듦` : v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
-      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide, docs: seatDocsOf(ctx.def, ctx.name), extra: seatExtraLines(ctx.def, ctx.name) }); // P230: scoped 셸 줄, 관리자 없는 rig 줄 // P188: 세 줄. 값과 자리 목록은 atrium me. P219: 문서 목록 꼬리
+      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide, docs: seatDocsOf(ctx.def, ctx.name), extra: this.branch.flow.extraLinesOf ? this.branch.flow.extraLinesOf(ctx.key, ctx.def, ctx.name) : seatExtraLines(ctx.def, ctx.name) }); // P230: scoped 셸 줄, 관리자 없는 rig 줄 // P188: 세 줄. 값과 자리 목록은 atrium me. P219: 문서 목록 꼬리
     }
     return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)), kind: t ? t.kind || 'claude' : null }); // P208
   }

@@ -3119,4 +3119,8 @@ export default {
     noRepo: 'There is no git repository to check. This workspace folder is not a git repository, so the regular check has nothing to look at.',
     freshWhy: 'A loop that runs on requests can only use a seat that keeps its context (keep).',
   },
+  // P231(rig2-design 11.13 item 2)
+  rigP231: {
+    limitTipSelf: 'Past the limit this would go up to {seat}, the same seat the limit is about, so a person decides instead of that seat judging its own work.',
+  },
 };
