@@ -281,7 +281,7 @@ test('P225 scoped 자리: 셸 안의 셸은 판의 PreToolUse가 묻지 않고 �
     // P226: unattended(승인됨)도 셸 안의 셸을 거절한다(판의 고정 기준). ask 자리는 그대로
     assert.equal((await A.answer(w, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'powershell -c ls' } })).hookSpecificOutput.permissionDecision, 'deny');
     assert.equal(A.wants(k, 'PreToolUse'), false);
-    assert.equal(claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: [], root: 'C:/r', cwd: 'C:/r', permission: 'ask', allow: [] }), null);
+    assert.deepEqual(claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: [], root: 'C:/r', cwd: 'C:/r', permission: 'ask', allow: [] }).deny, []); // P234: 이제 permissions(auto·bypass 끄기)가 있어 null이 아니다
   } finally { await stop(); }
 });
 

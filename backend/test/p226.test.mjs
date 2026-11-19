@@ -170,7 +170,7 @@ test('P226 Claude scoped: 권한 모드 manual(acceptEdits 아님), writes마다
   assert.deepEqual(un.deny, SHELL_IN_SHELL_DENY);
   assert.ok(un.hooks.PreToolUse);
   // ask: 고정 거절 없음. 자리 deny는 ask에서도 쓴다
-  assert.equal(claudeSettingsAmp({ ...base, permission: 'ask', writes: null }), null);
+  assert.deepEqual(claudeSettingsAmp({ ...base, permission: 'ask', writes: null }), { deny: [], hooks: {}, permissions: { disableAutoMode: 'disable', disableBypassPermissionsMode: 'disable' } }); // P234
   assert.deepEqual(claudeSettingsAmp({ ...base, permission: 'ask', writes: null, deny: ['Bash(rm:*)'] }).deny, ['Bash(rm:*)']);
   // 세션 설정 파일: 판의 allow(atrium) + Edit 규칙 + allow, deny
   const dir = tmp();

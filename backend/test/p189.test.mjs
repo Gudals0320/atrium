@@ -99,7 +99,7 @@ test('쓰기 범위 false → 설정 파일 permissions.deny에 Edit(//**). 보�
   const inWt = claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: ['a.txt'], root, cwd: path.join(wt, 'sub') });
   assert.deepEqual(inWt.deny, [`Edit(${rulePath(path.join(root, 'a.txt'))})`, `Edit(${rulePath(path.join(wt, 'a.txt'))})`]);
   assert.deepEqual(inWt.hooks, {}, 'deny만 있으면 hook 시간은 그대로');
-  assert.equal(claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: [], root, cwd: root }), null);
+  assert.deepEqual(claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [], protectedFiles: [], root, cwd: root }), { deny: [], hooks: {}, permissions: { disableAutoMode: 'disable', disableBypassPermissionsMode: 'disable' } }, 'P234: rig 자리면 늘 auto·bypass 끄기');
 
   const base = { hookUrl: 'http://127.0.0.1:1/hooks/claude', token: 't', sessionId: 's', allow: ['Bash(atrium prompt:*)'] };
   const f0 = writeSessionSettings({ file: path.join(dir, 'a.json'), ...base });
@@ -122,7 +122,7 @@ test('pre-tool 훅·쓰기 경로 목록 → PreToolUse hook 시간을 늘리고
   const b = claudeSettingsAmp({ writes: null, stopVerify: false, preTool: [hook(60000, 'block')], protectedFiles: [], root: dir, cwd: dir });
   assert.deepEqual(b.hooks, { PreToolUse: { timeout: 65, onFailure: 'block' } });
   const c = claudeSettingsAmp({ writes: ['x/'], stopVerify: false, preTool: [], protectedFiles: [], root: dir, cwd: dir });
-  assert.deepEqual(c, { deny: [], hooks: { PreToolUse: { timeout: 10 } } });
+  assert.deepEqual(c, { deny: [], hooks: { PreToolUse: { timeout: 10 } }, permissions: { disableAutoMode: 'disable', disableBypassPermissionsMode: 'disable' } }); // P234
   const f = writeSessionSettings({ file: path.join(dir, 's.json'), hookUrl: 'http://127.0.0.1:1/hooks/claude', token: 't', sessionId: 's', amp: { ...b, deny: ['Edit(//**)'] } });
   const j = JSON.parse(fs.readFileSync(f, 'utf8'));
   assert.deepEqual({ t: j.hooks.PreToolUse[0].hooks[0].timeout, f: j.hooks.PreToolUse[0].hooks[0].onFailure }, { t: 65, f: 'block' });
@@ -173,7 +173,7 @@ test('RigAmp: 자리 세션만 증폭한다(자리 없는 세션·꺼진 rig·�
   const def = sampleDef(); delete def.stopVerify; def.hooks = []; delete def.seats.ro.writes; delete def.seats.rocx.writes; delete def.seats.scoped.writes;
   const C = await board({ def });
   const g2 = C.add('g', { seat: 'gated' }); const r2 = C.add('r', { seat: 'ro' });
-  assert.equal(C.b.rigAmp.claudeAmp(r2), null);
+  assert.deepEqual(C.b.rigAmp.claudeAmp(r2), { deny: [], hooks: {}, permissions: { disableAutoMode: 'disable', disableBypassPermissionsMode: 'disable' } }, 'P234: 증폭 칸이 없어도 rig 자리는 auto·bypass 끄기');
   assert.equal(C.b.rigAmp.wants(g2, 'PreToolUse'), false); assert.equal(C.b.rigAmp.wants(g2, 'Stop'), false);
 });
 

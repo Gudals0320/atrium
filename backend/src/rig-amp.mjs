@@ -44,6 +44,17 @@ const ALLOW_RULE_RE = /^[A-Za-z][A-Za-z0-9_-]*(\(.+\))?$/;
 // 판이 자리를 위해 띄울 때(rig-flow spawnSeat → branch.spawnChild → backend.spawn) 넘기는 자리 이름의 열쇠.
 // Symbol이라 에이전트의 /branch/child 본문(JSON)이나 판 API로는 넣지 못한다(에이전트는 자리를 정하지 못한다)
 export const SEAT_SPAWN = Symbol.for('atrium.rigSeatSpawn');
+// P234(rig2-design 11.16의 2): 판이 자리를 위해 띄울 때 넘기는 그 회의 고리({ loop }). fresh 자리는 띄울 때부터 그 회의 계기로 설정 파일을 쓴다(spawnEntry는 회를 띄운 뒤에 연다)
+export const SEAT_RUN = Symbol.for('atrium.rigSeatRun');
+// P234(11.16의 1·2): 자리 설정 파일 permissions에 판이 쓰는 칸. Claude Code 2.1.328 설정 스키마(--settings 파일에서 먹는 것을 헤드리스로 확인)
+//   disableAutoMode "disable": auto mode를 끈다(권한 질문의 "switch to auto mode" 선택지, --permission-mode auto는 default로 돈다). 모든 rig 자리
+//   disableBypassPermissionsMode "disable": bypassPermissions를 끈다. scoped·ask 자리(unattended는 bypassPermissions로 돈다)
+//   denyInsteadOfPrompting true: 물을 호출을 묻지 않고 거절하고 모델에게 알린다(턴은 이어진다). 판이 연 회(every 고리)의 scoped 자리
+export const PERMISSION_KEYS = ['disableAutoMode', 'disableBypassPermissionsMode', 'denyInsteadOfPrompting'];
+// P234: 판이 연 회(묻지 않고 거절)가 되는 고리 계기. every 고리의 회는 every·followups·지금 돌리기(now) 어느 것으로 열려도 요청한 사람이 곁에 없다고 본다
+export const PROMPTLESS_TRIGGERS = ['every'];
+// P234(11.16의 3): 받을 "Yes"가 없는 권한 질문의 장부 까닭
+export const NO_YES_WHY = '받을 Yes가 없는 선택지 꼴';
 export const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 export const EDIT_ALL = 'Edit(//**)'; // 모든 드라이브의 모든 파일(문서: Windows 경로는 /c/… 꼴로 맞춘 뒤 맞춘다)
 export const PRE_TOOL_TIMEOUT_PAD_SEC = 5; // 훅 시간 제한 위에 판이 답할 여유
@@ -191,8 +202,37 @@ function protectBases(root, cwd) {
   return out;
 }
 
-// 세션 설정 파일에 넣을 증폭 → { deny: [규칙], allow: [규칙], hooks: { <이벤트>: { timeout, onFailure? } } } | null
-//   x: { writes, stopVerify, preTool, protectedFiles: [상대 경로], root, cwd, permission(실제로 쓰는 값), allow }
+// P234(11.16의 2): 자리의 회가 판이 연 회(묻지 않고 거절)인가 → { promptless, why, loops }
+//   fresh 자리: 그 회의 고리(loop)의 계기. 모르면 unknown(묻는다)
+//   keep 자리: 그 자리에 닿는 고리(입구이거나 흐름 줄의 받는 자리)의 계기. 모두 every면 promptless,
+//     request 고리가 하나라도 있으면 묻는다(요청한 쪽이 곁에 있다. every와 섞이면 why "mixed"), 닿는 고리가 없으면 none(묻는다)
+export function seatRunOf(def, seat, { loop = null } = {}) {
+  const x = def && def.seats ? def.seats[seat] : null;
+  const L = (def && def.loops) || {};
+  const typeOf = (l) => (l && l.trigger ? l.trigger.type : null);
+  if (!x) return { promptless: false, why: 'unknown', loops: [] };
+  if (x.session !== 'keep') {
+    const l = loop ? L[loop] : null;
+    if (!l) return { promptless: false, why: 'unknown', loops: loop ? [loop] : [] };
+    const t = typeOf(l);
+    return { promptless: PROMPTLESS_TRIGGERS.includes(t), why: t || 'unknown', loops: [l.name || loop] };
+  }
+  const flow = (def && def.flow) || [];
+  const reach = Object.values(L).filter((l) => l.entry === seat || (l.lines || []).some((i) => { const f = flow.find((z) => z.index === i); return !!(f && Array.isArray(f.to) && f.to.includes(seat)); }));
+  const types = new Set(reach.map(typeOf).filter((t) => t === 'every' || t === 'request')); // event 계기는 아직 회를 열지 않는다
+  const names = reach.map((l) => l.name);
+  if (!types.size) return { promptless: false, why: 'none', loops: names };
+  if (types.has('request')) return { promptless: false, why: types.has('every') ? 'mixed' : 'request', loops: names };
+  return { promptless: true, why: 'every', loops: names };
+}
+// P234: 자리 설정 파일 permissions의 판 칸(PERMISSION_KEYS). permission은 실제로 쓰는 값, promptless는 seatRunOf
+export function seatPermissionKeys({ permission = 'ask', promptless = false } = {}) {
+  return { disableAutoMode: 'disable', ...(permission !== 'unattended' ? { disableBypassPermissionsMode: 'disable' } : {}), ...(permission === 'scoped' && promptless ? { denyInsteadOfPrompting: true } : {}) };
+}
+
+// 세션 설정 파일에 넣을 증폭 → { deny: [규칙], allow: [규칙], hooks: { <이벤트>: { timeout, onFailure? } }, permissions: { <PERMISSION_KEYS> } } | null
+//   x: { writes, stopVerify, preTool, protectedFiles: [상대 경로], root, cwd, permission(실제로 쓰는 값), allow, promptless(P234) }
+//   P234: rig 자리면 늘 permissions(auto mode 끄기)가 있어 null이 아니다
 export function claudeSettingsAmp(x) {
   if (!x) return null;
   const deny = [];
@@ -214,8 +254,8 @@ export function claudeSettingsAmp(x) {
   if (x.stopVerify) hooks.Stop = { timeout: STOP_TIMEOUT_SEC };
   const uniq = [...new Set(deny)];
   const allow = x.permission === 'scoped' ? [...new Set([...scopedEditRules(x), ...(x.allow || [])])] : []; // P223: scoped 자리의 묻지 않는 규칙. P226: writes의 Edit 규칙
-  if (!uniq.length && !allow.length && !Object.keys(hooks).length) return null;
-  return { deny: uniq, ...(allow.length ? { allow } : {}), hooks };
+  const permissions = seatPermissionKeys({ permission: x.permission || 'ask', promptless: !!x.promptless }); // P234
+  return { deny: uniq, ...(allow.length ? { allow } : {}), hooks, permissions };
 }
 // P226: scoped 자리의 범위 안 편집 허용 규칙. writes 경로마다 Edit(//<절대 경로>/**)(세션 폴더 기준. {item}은 그 앞까지: 일마다 좁히는 것은 PreToolUse가 묻는다).
 //   writes가 없으면(제한 없음) 세션 폴더, false면 없다(Edit(//**) 거절이 있다)
@@ -241,6 +281,12 @@ export function applySettingsAmp(j, amp, baseTimeoutSec = 2, baseAllow = null) {
   const allow = [...new Set([...(baseAllow || ((j.permissions && j.permissions.allow) || [])), ...extra])];
   if (allow.length) j.permissions = { ...(j.permissions || {}), allow };
   else if (j.permissions && j.permissions.allow) { const { allow: _a, ...rest } = j.permissions; j.permissions = rest; if (!Object.keys(rest).length) delete j.permissions; }
+  // P234: auto·bypass 끄기, 묻지 않고 거절(판의 칸이라 증폭에 없으면 뺀다)
+  const want = (amp && amp.permissions) || {};
+  for (const k of PERMISSION_KEYS) {
+    if (want[k] != null) j.permissions = { ...(j.permissions || {}), [k]: want[k] };
+    else if (j.permissions && k in j.permissions) { const { [k]: _x, ...rest } = j.permissions; j.permissions = rest; if (!Object.keys(rest).length) delete j.permissions; }
+  }
   for (const [ev, list] of Object.entries(j.hooks || {})) {
     for (const g of list || []) for (const h of g.hooks || []) {
       if (h.type !== 'http') continue;
@@ -307,6 +353,14 @@ export function writesVerdict({ writes, toolName, toolInput, base, unitId = null
   return ok ? null : `rig 자리의 쓰기 범위 밖이다: ${String(file)}. 쓸 수 있는 곳: ${writes.join(', ')}`;
 }
 
+// P234: 거절된 호출의 대상(셸 도구는 명령, 파일 도구는 경로, 그 밖은 입력 JSON 앞부분)
+export function deniedTarget(tool, input) {
+  const i = input || {};
+  const v = i.command ?? i.file_path ?? i.notebook_path ?? i.path ?? i.url ?? i.pattern ?? null;
+  const t = v != null ? String(v) : Object.keys(i).length ? JSON.stringify(i) : '';
+  return t.replace(/\s+/g, ' ').trim().slice(0, 300) || null;
+}
+
 // PreToolUse 응답 본문
 export const denyBody = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 // P223: scoped 자리의 쓰기 범위 밖 → 묻는다(acceptEdits여도 권한 질문이 뜨고, 판은 응답 필요로 보인다)
@@ -335,7 +389,64 @@ export class RigAmp {
     const protectedFiles = prot && Array.isArray(prot.files) ? prot.files.map((f) => f && f.path).filter((p) => typeof p === 'string' && p && !badRel(p)) : [];
     const asked = sa.permission;
     const permission = effectivePermission(asked, asked === 'unattended' && this.approved(s.workspaceKey, s.rigSeat, r.def)); // P223. P225: 그 정의의 해시
-    return { key: s.workspaceKey, r, seat: s.rigSeat, kind: s.kind || 'claude', ...sa, asked, permission, protectedFiles, root: r.root, cwd: (s.rt && s.rt.cwd) || s.cwd || r.root };
+    const run = this.runOf(s, r); // P234: 판이 연 회면 scoped 자리는 묻지 않고 거절
+    return { key: s.workspaceKey, r, seat: s.rigSeat, kind: s.kind || 'claude', ...sa, asked, permission, protectedFiles, root: r.root, cwd: (s.rt && s.rt.cwd) || s.cwd || r.root, run, promptless: run.promptless };
+  }
+  // P234(11.16의 2): 그 세션의 회 계기(seatRunOf). fresh 자리는 띄울 때 받은 고리(s.rigRun) → 그 세션의 회(rig_case_items) → 열린 시도의 회
+  runOf(s, r) {
+    let loop = s.rigRun && s.rigRun.loop ? s.rigRun.loop : null;
+    const seat = r.def.seats[s.rigSeat];
+    if (!loop && seat && seat.session !== 'keep') {
+      const st = this.b.store;
+      try {
+        const caseId = (st.caseOfSession && st.caseOfSession(s.sessionId)) || (() => { const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null; const u = tr && st.getUnit ? st.getUnit(tr.unitId) : null; return u ? u.caseId : null; })();
+        const c = caseId && st.getCase ? st.getCase(caseId) : null;
+        if (c && c.loop) loop = c.loop;
+      } catch {}
+    }
+    return seatRunOf(r.def, s.rigSeat, { loop });
+  }
+  // P234(11.16의 2): 이 세션은 물을 호출을 묻지 않고 거절하는가(scoped 자리, 판이 연 회, 설정 파일에 denyInsteadOfPrompting이 들어 있음)
+  //   Claude Code 2.1.328은 denyInsteadOfPrompting으로 거절할 때 PermissionDenied 훅을 보내지 않고 PermissionRequest 훅만 보낸다(개발용 판·헤드리스 확인).
+  //   판의 PermissionRequest 답은 비어 있으므로(결정 없음) 그 호출은 거절된다. 판은 그 훅을 질문(응답 필요)으로 두지 않고 거절로 적는다
+  refusesPrompt(s) {
+    if (!s || (s.kind || 'claude') !== 'claude' || !s.rigSeat || !s.settingsPath) return false;
+    const x = this.ctxOf(s);
+    if (!x || x.permission !== 'scoped' || !x.promptless) return false;
+    try { const j = JSON.parse(fs.readFileSync(s.settingsPath, 'utf8')); return !!(j.permissions && j.permissions.denyInsteadOfPrompting === true); } catch { return false; }
+  }
+  // P234(11.16의 2): 묻지 않고 거절한 호출(PermissionDenied 훅: tool_name, tool_input, reason, 또는 위의 PermissionRequest) → 장부 gate(data.at "permission", value reject, target = 명령)
+  //   via: 'PermissionDenied' | 'PermissionRequest'. 같은 호출(tool_use_id, 없으면 도구·입력)은 한 번만 적는다
+  onPermissionDenied(s, body, { via = 'PermissionDenied' } = {}) {
+    const x = this.ctxOf(s); if (!x) return null;
+    const key = `${s.sessionId}|${(body && body.tool_use_id) || `${body && body.tool_name}|${JSON.stringify((body && body.tool_input) || null)}|${Math.floor(Date.now() / 5000)}`}`;
+    if (!this.deniedSeen) this.deniedSeen = new Map();
+    const now = Date.now();
+    for (const [k, t] of this.deniedSeen) if (now - t > 60000) this.deniedSeen.delete(k);
+    if (this.deniedSeen.has(key)) return null;
+    this.deniedSeen.set(key, now);
+    const st = this.b.store;
+    const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
+    const tool = String((body && body.tool_name) || '');
+    const target = deniedTarget(tool, (body && body.tool_input) || {});
+    const reason = body && body.reason != null ? String(body.reason).slice(0, 300) : null;
+    try { st.addEvent(s.sessionId, 'rig_permission_denied', { tool, target, reason, promptless: !!x.promptless, via }); } catch {}
+    this.gateEvent(s, x, tr, 'permission', { tool, target, reason, promptless: !!x.promptless, via }, `${tool || '?'} ${x.promptless ? '묻지 않고 거절' : '거절'}: ${target || '-'}`, 'reject');
+    return { tool, target };
+  }
+  // P234(11.16의 3): rig 자리 권한 질문에 받을 그냥 "Yes"가 없다(Claude Code 문구가 바뀜) → 판 로그와 장부 gate(value blocked). 질문마다 한 번
+  noteNoYes(s, ask) {
+    if (!ask || ask.kind !== 'permission' || ask.noYesNoted) return false;
+    const x = this.ctxOf(s); if (!x) return false;
+    ask.noYesNoted = true;
+    const st = this.b.store;
+    const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
+    const choices = (ask.choices || []).map((c) => `${c.n}. ${c.label}`);
+    const target = ask.summary ? String(ask.summary).slice(0, 200) : null;
+    this.b.log && this.b.log(`rig permission ask without a plain Yes ${s.name} (${x.seat}): ${choices.join(' | ')}`);
+    try { st.addEvent(s.sessionId, 'rig_permission_no_yes', { tool: ask.tool || null, choices }); } catch {}
+    this.gateEvent(s, x, tr, 'permission', { tool: ask.tool || null, target, choices, why: 'no_yes' }, `${NO_YES_WHY}: ${choices.join(' | ')}`, 'blocked');
+    return true;
   }
   // P223: 사람이 그 자리의 unattended를 승인했는가(rig.mjs rig_permits)
   approved(key, seat, def = null) { return !!(this.b.rig && this.b.rig.permitted && this.b.rig.permitted(key, seat, def)); } // P225: def(그 정의의 자리 해시로 본다)

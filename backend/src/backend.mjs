@@ -25,7 +25,7 @@ import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
 import { RigProposals, rigProposalHandlers } from './rig-proposals.mjs'; // P224: rig 2 제안과 승인, 정본 지키기
-import { RigAmp, SEAT_SPAWN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
+import { RigAmp, SEAT_SPAWN, SEAT_RUN } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -34,7 +34,7 @@ import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
 import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
-import { planAnswer, checkSteps, sameAsk, onceOnlyAsk, onceOnlyKeys } from './answer.mjs';
+import { planAnswer, checkSteps, sameAsk, onceOnlyAsk, onceOnlyKeys, onceOnlyChoice } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
@@ -546,7 +546,8 @@ export class Backend {
       state: d.state, estimate: d.estimate || null, termStatus: rt.term.status, ask, waitingSince, error: d.error || rt.lastError || null,
       permissionMode: rt.permissionMode || s.permissionMode, ...shownModel({ model: s.model, effort: s.effort }, s.rt.modelNow), // P95: 미션 맵 카드의 메타 줄. P137: 하네스가 지금 쓰는 값(모르면 띄운 값)
       launchModel: s.model || null, launchEffort: s.effort || null,
-      lastPrompt: clip(promptTask(rt.lastPrompt), 300), // P159: 관계 줄은 떼고 보인다 lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn,
+      lastPrompt: clip(promptTask(rt.lastPrompt), 300), // P159: 관계 줄은 떼고 보인다
+      lastAnswer: clip(rt.lastAnswer, 300), lastAnswerAt: rt.lastAnswerAt, turn: rt.turn, // P234: P159에서 위 주석 뒤로 들어가 빠져 있던 칸(작업 완료가 둘 넘으면 inbox가 turn.endedAt에서 던졌다)
       work: rt.lastWork || null, // P173: 끝난 일 구간 { since, endedAt, turnless, compact? }. turnless면 턴이 아니다(압축). 웹 푸시·연결 알림이 본다
       exit: rt.exit, interruptedTurn: rt.interruptedTurn, recovered: s.recovered || null, ...f, ...this.doneScope(s, f),
       deliveryStuck: this.queue && this.queue.stuckOf ? this.queue.stuckOf(s.sessionId) : null, // P106: 터미널이 오래 받지 않는 맨 앞 전달 { deliveryId, reason, code, attempts, since }
@@ -865,19 +866,23 @@ export class Backend {
     s.lastHookAuthOk = authOk;
     if (!authOk) { this.store.addEvent(s.sessionId, 'hook_rejected', { ev }); this.log(`hook rejected ${s.name} ${ev}`); return; }
     s.hookCount = (s.hookCount || 0) + 1;
-    applyHook(s.rt, body);
+    // P234(rig2-design 11.16의 2): 판이 연 회의 scoped 자리(denyInsteadOfPrompting)는 PermissionRequest가 질문이 아니라 거절이다. 응답 필요에 두지 않고 장부에 적는다
+    const refused = ev === 'PermissionRequest' && this.rigAmp && this.rigAmp.refusesPrompt ? (() => { try { return this.rigAmp.refusesPrompt(s); } catch { return false; } })() : false;
+    if (!refused) applyHook(s.rt, body);
     if (ev === 'Stop') s.rt.answerSource = 'hook';
     // F4: Claude Code는 워크트리로 들어가면 hook의 cwd가 바뀐다
     if (body.cwd && body.cwd !== s.rt.cwd) { s.rt.cwd = body.cwd; this.probeGit(s, body.cwd); }
     if (ev === 'UserPromptSubmit') { s.draft = false; this.onLinkTargetPrompt(s, body.prompt); }
-    if (ev === 'PostToolUse' && this.rigDocs) this.rigDocs.noteToolHook(s, body); // P219: 문서를 누가 바꿨나(파일 쓰기 도구의 대상)
+    if (ev === 'PostToolUse' && this.rigDocs) this.rigDocs.noteToolHook(s, body);
+    if ((ev === 'PermissionDenied' || refused) && this.rigAmp) try { this.rigAmp.onPermissionDenied(s, body, { via: ev }); } catch (e) { this.log('rig permission denied note error', e.message); } // P234(11.16의 2): 묻지 않고 거절 → 장부 gate // P219: 문서를 누가 바꿨나(파일 쓰기 도구의 대상)
     if ((ev === 'UserPromptSubmit' || ev === 'Stop') && this.rigAmp) this.rigAmp.syncSettings(s); // P189: 자리를 정했거나 정의가 바뀌었으면 설정 파일의 증폭을 맞춘다
     const info = { ev, tool: body.tool_name || null, authOk, bytes: raw.length, sessionIdMatches: body.session_id === s.sessionId, permissionMode: body.permission_mode || null };
     if (ev === 'Stop') info.lastAnswer = clip(body.last_assistant_message, 300);
     if (ev === 'UserPromptSubmit') info.prompt = clip(s.rt.lastPrompt, 200);
     if (ev === 'SessionEnd') info.reason = body.reason;
     if (ev === 'StopFailure') info.error = s.rt.lastError;
-    if (ev === 'PermissionRequest' || (ev === 'PreToolUse' && s.rt.pendingAsk && s.rt.pendingAsk.toolUseId === body.tool_use_id)) info.ask = this.askView(s, { ...s.rt.pendingAsk, input: undefined });
+    if ((ev === 'PermissionRequest' && !refused) || (ev === 'PreToolUse' && s.rt.pendingAsk && s.rt.pendingAsk.toolUseId === body.tool_use_id)) info.ask = this.askView(s, { ...s.rt.pendingAsk, input: undefined });
+    if (refused) info.refused = true; // P234: 묻지 않고 거절됨
     this.store.addEvent(s.sessionId, 'hook', info);
     this.api.broadcast('session.hook', { sessionId: s.sessionId, name: s.name, ...info });
     if (ev === 'UserPromptSubmit') this.queue.onUserPromptSubmit(s.sessionId, body.prompt);
@@ -901,7 +906,7 @@ export class Backend {
       try {
         const text = await this.adapter.readScreen(s.paneId, { source: 'detection' });
         const choices = parseChoices(text);
-        if (choices.length) { ask.choices = choices; ask.question = parsePromptLine(text); this.broadcastSession(s, { cause: 'screen:choices' }); return; }
+        if (choices.length) { ask.choices = choices; ask.question = parsePromptLine(text); this.noteNoYes(s, ask); this.broadcastSession(s, { cause: 'screen:choices' }); return; }
       } catch {}
     }
   }
@@ -1157,6 +1162,7 @@ export class Backend {
     const p = parsePermissionDialog(text);
     if (!p) return false;
     s.rt.pendingAsk = screenPermissionAsk(p);
+    this.noteNoYes(s, s.rt.pendingAsk); // P234
     this.store.addEvent(s.sessionId, 'screen_permission', { tool: s.rt.pendingAsk.tool, summary: clip(s.rt.pendingAsk.summary, 200), step: p.step || null, choices: p.choices.map((c) => `${c.n}. ${c.label}`) });
     this.broadcastSession(s, { cause: 'screen:permission' });
     return true;
@@ -1554,7 +1560,7 @@ export class Backend {
         const extra = this.branch.settingsExtra(sessionId);
         if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수와 연결. 판의 값이 이긴다
         if (Object.keys(cc.settings).length) extra.settings = cc.settings;
-        if (seatSpawn) extra.amp = this.rigAmp.claudeAmp({ rigSeat: seatSpawn, workspaceKey: ws.key, kind: 'claude', cwd }); // P189
+        if (seatSpawn) extra.amp = this.rigAmp.claudeAmp({ rigSeat: seatSpawn, workspaceKey: ws.key, kind: 'claude', cwd, rigRun: p[SEAT_RUN] || null }); // P189. P234: 그 회의 고리(fresh 자리의 계기)
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
         const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.plugin };
@@ -1571,7 +1577,7 @@ export class Backend {
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
         s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan };
         this.store.insertSession({ ...s, runtime: rt });
-        if (seatSpawn) { s.rigSeat = seatSpawn; this.store.setSessionSeat(sessionId, seatSpawn); } // P189: rig-flow가 띄운 뒤 다시 적는다(같은 값)
+        if (seatSpawn) { s.rigSeat = seatSpawn; this.store.setSessionSeat(sessionId, seatSpawn); if (p[SEAT_RUN]) s.rigRun = { loop: p[SEAT_RUN].loop || null }; } // P234: rigRun // P189: rig-flow가 띄운 뒤 다시 적는다(같은 값)
         if (seatPerm && seatPerm.asked !== 'ask') try { this.rigAmp.notePermission(s); } catch (e) { this.log('rig permission note error', e.message); } // P223: 장부에 권한 결정 한 줄
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
@@ -1762,6 +1768,12 @@ export class Backend {
     if (!s || !s.rigSeat) return false;
     const p = this.rigAmp && this.rigAmp.seatPermission ? this.rigAmp.seatPermission(s.workspaceKey, s.rigSeat) : null;
     return !p || p.permission !== 'unattended';
+  }
+  // P234(rig2-design 11.16의 3): rig 자리(onceOnly) 권한 질문의 선택지에 받을 그냥 "Yes"가 없으면 판 로그와 장부(gate blocked). 판정은 그대로(닫힌 쪽)
+  noteNoYes(s, ask) {
+    if (!ask || ask.kind !== 'permission' || !Array.isArray(ask.choices) || !ask.choices.length || !this.onceOnly(s)) return false;
+    if (ask.choices.some((c) => onceOnlyChoice(c.label) === 'yes')) return false;
+    try { return this.rigAmp ? this.rigAmp.noteNoYes(s, ask) : false; } catch (e) { this.log('rig no-yes note error', e.message); return false; }
   }
   askView(s, ask) { return ask && ask.kind === 'permission' && this.onceOnly(s) ? onceOnlyAsk(ask) : ask; }
 
