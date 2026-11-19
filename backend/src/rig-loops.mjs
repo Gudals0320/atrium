@@ -7,6 +7,9 @@
 // - 회 = 건(rig_cases, kind 이름 그대로). 회는 고리(loop)와 이름(name)을 쥔다. request 계기: 사람이나 rig 밖 세션이 입구 자리(keep)에 보낸 글이
 //   새 회를 연다(입구 세션이 주인, 그 글이 입구 자리의 일). 입구 세션이 그 고리의 회를 쥐고 있으면 글은 이어지는 지시다.
 //   every 계기: 판이 주기를 지켜 입구 자리에 새 회의 일(improve는 장부 요약, work는 task). 고리에 끝나지 않은 회가 있으면 건너뛴다(loop_skip running).
+//   P230(rig2-design 11.12의 1): 개선 고리(improve)는 지난 개선 회 뒤로 끝난 작업 회가 없으면 건너뛴다(loop_skip no_new_runs, "새 회 없음").
+// - P230(11.12의 4) 지금 한 번 돌리기(runNow): 사람(창의 고리 카드, 판 API rig.run)과 관리자 자리(atrium rig run <고리>)가 every 고리의 회를 지금 연다.
+//   끝나지 않은 회가 있거나 고리가 멈췄으면 every처럼 건너뛰고 까닭을 돌려준다(loop_skip, data.trigger now). 다음 every 시각은 그대로다.
 // - 멈추기·잇기(manager 자리와 사람): 고리를 멈추면 새 회(계기), 새 넘김, 자리 줄 띄우기를 막는다(멈춘 동안 온 요청은 줄에 서고 잇기에 회를 연다).
 //   회를 멈추면 그 회의 새 넘김만 막는다. 일하는 세션은 끊지 않는다. 멈춘 동안 done이 만든 넘김은 회에 붙잡아 두었다가 잇기에 넘긴다.
 //   P223(11.6의 6): 멈춘 동안 온 요청은 실패한 전달이 아니라 전달 대기열에 붙잡는다(까닭 loop_paused, delivery.mjs park). 잇기가 그 전달로 회의 일을 넣는다.
@@ -213,7 +216,7 @@ export class RigLoops {
   constructor(b, flow) { this.b = b; this.flow = flow; this.skipNoted = new Set(); this.ticking = false; }
   store() { return this.b.store; }
   loopsOf(def) { return (def && def.loops) || {}; }
-  changed(key) { this.flow.changed(key); if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.loops', { workspace: key }); } catch {} }
+  changed(key) { this.flow.changed(key); if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.loops', { workspace: key }); this.b.api.broadcast('rig.asks', { workspace: key }); } catch {} } // P230: 멈추기·잇기에 상한 카드(rig.asks)가 숨고 다시 뜬다
 
   // 새 회(건)가 드는 고리: 그 자리가 입구인 request 고리 → 그 자리가 흐름에 있는 작업 고리 → 입구가 그 자리인 작업 고리 → 첫 작업 고리
   loopForSeat(def, seat) {
@@ -338,7 +341,8 @@ export class RigLoops {
       const nextAt = now + every; st.setLoopRow(key, loop.name, { nextAt }); this.nextEvent(key, loop, nextAt, 'skipped'); this.changed(key);
       return null;
     }
-    const out = await this.fireEvery(key, r, loop, { since: row.lastAt || row.nextAt - every, now, mark });
+    const out = await this.fireEvery(key, r, loop, { since: row.lastAt || row.nextAt - every, now, mark, base: row.lastAt != null ? row.lastAt : row.nextAt - every });
+    if (out && out.skipped === 'no_new_runs') { const nextAt = now + every; st.setLoopRow(key, loop.name, { nextAt }); this.nextEvent(key, loop, nextAt, 'skipped'); this.changed(key); return null; }
     if (!out) return null;
     const nextAt = now + every;
     st.setLoopRow(key, loop.name, { nextAt, lastAt: now });
@@ -346,32 +350,74 @@ export class RigLoops {
     return out;
   }
   // 한 회: 입구 자리에 새 회의 일. keep 자리에 앉은 세션이 없으면 열지 않는다(다음 시각 그대로, 한 번 기록). fresh 자리는 보드가 띄운다(위 세션 없음)
-  async fireEvery(key, r, loop, { since, now, mark = null }) {
+  // P230: how = { by: human | manager | remote, who }(지금 한 번 돌리기). 없으면 every 계기
+  //   base: 지난 개선 회 시각(개선 고리의 "새 회 없음" 건너뛰기, every 계기만) → 건너뛰면 { skipped: 'no_new_runs' }
+  async fireEvery(key, r, loop, { since, now, mark = null, how = null, base = null }) {
     const b = this.b; const st = this.store();
     const seat = r.def.seats[loop.entry];
     let t = null; let spawned = false;
     if (seat.session === 'keep') {
       t = this.flow.seatedOf(key, loop.entry).sort((a, c) => (a.createdAt || 0) - (c.createdAt || 0))[0] || null;
       if (!t) { this.skipOnce(key, loop, `${mark || key}|no_session`, 'no_session', `keep 자리 ${loop.entry}에 앉은 세션이 없어 회를 열지 않는다(앉으면 돈다)`); return null; }
-    } else {
+    }
+    // P230(11.12의 1): 개선 고리는 지난 개선 회 뒤로 끝난 작업 회가 없으면 건너뛴다(쉬는 저장소에서 헛돌지 않는다). 지금 돌리기(how)는 건너뛰지 않는다
+    if (!how && loop.kind === 'improve' && base != null && st.doneRunsSince) {
+      const works = Object.values(this.loopsOf(r.def)).filter((l) => l.kind === 'work').map((l) => l.name);
+      if (!st.doneRunsSince(key, works, base)) { this.skipOnce(key, loop, `${mark || key}|no_new_runs`, 'no_new_runs', '지난 개선 회 뒤로 끝난 작업 회가 없어 이번 회를 건너뛴다(새 회 없음)'); return { skipped: 'no_new_runs' }; }
+    }
+    if (seat.session !== 'keep') {
       try { t = await this.spawnEntry(key, r, loop.entry); spawned = true; }
       catch (e) { this.skipOnce(key, loop, `${mark || key}|spawn`, 'spawn_failed', `${loop.entry} 자리 세션을 띄우지 못했다: ${e.message}`); return null; }
     }
     const name = `${loop.name} ${dayOf(now)}`;
-    const c = this.flow.newCase(key, t, 'cycle', { loop: loop.name, name, trigger: 'every' });
+    const c = this.flow.newCase(key, t, 'cycle', { loop: loop.name, name, trigger: how ? 'now' : 'every' });
     const uid = newUnitId();
-    rigEvent(b, { kind: 'loop_trigger', ws: key, caseId: c.id, unitId: uid, seat: loop.entry, toSeat: loop.entry, session: t.sessionId, value: 'every', actor: 'cycle', text: `${loop.name}: ${loop.trigger.every}마다`, data: { loop: loop.name, trigger: 'every', every: loop.trigger.every, since, until: now } });
+    rigEvent(b, { kind: 'loop_trigger', ws: key, caseId: c.id, unitId: uid, seat: loop.entry, toSeat: loop.entry, session: t.sessionId, value: how ? 'now' : 'every', actor: how ? (how.by === 'manager' ? 'agent' : 'human') : 'cycle', text: how ? `${loop.name}: 지금 한 번(${whoText(how.by)})` : `${loop.name}: ${loop.trigger.every}마다`, data: { loop: loop.name, trigger: how ? 'now' : 'every', every: loop.trigger.every, since, until: now, ...(how ? { by: how.by } : {}) } });
     if (spawned) {
       st.insertCaseItem({ caseId: c.id, sessionId: t.sessionId, seat: loop.entry, worktree: null, worktreePath: null });
       rigEvent(b, { kind: 'seat_spawn', caseId: c.id, seat: loop.entry, session: t.sessionId, toSeat: loop.entry, actor: 'board', text: `@${shownName(t) || t.name}(${loop.name} 고리)`, data: { launcher: seat.launcher, session: seat.session, loop: loop.name } });
     }
-    const text = this.everyText(key, r, loop, { since, now });
-    const made = this.flow.units().create(t, t, text, 'cycle', { id: uid, caseId: c.id, seat: loop.entry, via: { by: t.sessionId, loop: loop.name, every: loop.trigger.every } });
+    const text = this.everyText(key, r, loop, { since, now, how });
+    const made = this.flow.units().create(t, t, text, 'cycle', { id: uid, caseId: c.id, seat: loop.entry, via: { by: t.sessionId, loop: loop.name, every: loop.trigger.every, ...(how ? { now: how.by } : {}) } });
     const nt = loop.trigger.notify ? this.flow.seatedOf(key, loop.trigger.notify)[0] || null : null;
     if (nt && nt !== t) try { b.queue.enqueue(nt.sessionId, `[Atrium 보드] rig 고리 ${loop.name}(${loop.trigger.every}마다)의 회 ${c.id} "${name}"가 열렸다: ${loop.entry} 자리 @${shownName(t) || t.name}.`); } catch {}
     b.log && b.log(`rig loop ${key} ${loop.name} → ${t.name} case ${c.id} unit ${made.unit.id}`);
     this.changed(key);
     return { loop: loop.name, caseId: c.id, unitId: made.unit.id, to: t.name, name, spawned };
+  }
+  // ---------- P230(11.12의 4): 지금 한 번 돌리기 ----------
+  // target: 고리 이름. by: human | manager | remote, who: 관리자 자리 세션
+  //   → { workspace, loop, ran: true, case, name, unit, to, spawned } | { workspace, loop, ran: false, skipped: running | paused | no_session | spawn_failed, text, live? }
+  async runNow(key, target, { by = 'human', who = null, now = Date.now() } = {}) {
+    const st = this.store();
+    const r = this.b.rig ? this.b.rig.active(key) : null;
+    if (!r) throw apiError('rig_off', '이 워크스페이스에는 켜진 rig가 없다.');
+    const name = String(target ?? '').trim();
+    const L = this.loopsOf(r.def);
+    if (!name) throw apiError('bad_request', `고리 이름을 준다: atrium rig run <고리>. 고리: ${Object.keys(L).join(', ') || '(없음)'}`);
+    if (!has(L, name)) throw apiError('not_found', `이 rig에 그런 고리가 없다: ${name}. 고리: ${Object.keys(L).join(', ') || '(없음)'}`);
+    const loop = L[name];
+    if (loop.implicit) throw apiError('bad_request', `고리 ${name}는 loops 칸이 없는 정의의 고리라 지금 돌리기를 하지 않는다(rig 2 정의의 every 고리만)`);
+    if (loop.trigger.type !== 'every') throw apiError('bad_request', loop.trigger.type === 'request' ? `고리 ${name}는 요청으로 도는 고리다. 입구 자리(${loop.entry})에 요청을 보내면 회가 열린다` : `고리 ${name}는 event 계기라 아직 회를 열지 않는다`);
+    const base = { workspace: key, loop: name };
+    const actor = by === 'manager' ? 'agent' : 'human';
+    const skip = (why, text, extra = {}) => {
+      rigEvent(this.b, { kind: 'loop_skip', ws: key, seat: who ? who.rigSeat || null : loop.entry, session: who ? who.sessionId : null, value: why, actor, text: `${name}: ${text}`, data: { loop: name, trigger: 'now', by, ...extra } });
+      this.b.log && this.b.log(`rig loop ${key} ${name} run now skipped: ${why}`);
+      this.changed(key);
+      return { ...base, ran: false, skipped: why, text, ...extra };
+    };
+    const row = st.getLoopRow(key, name);
+    if (row && row.pausedAt) return skip('paused', `고리가 멈춰 있어 지금 돌리지 않는다(잇기: atrium rig resume ${name})`);
+    const live = st.liveCasesOfLoop(key, name);
+    if (live.length) return skip('running', `끝나지 않은 회(${live.map((c) => c.id).join(', ')})가 있어 지금 돌리지 않는다`, { live: live.map((c) => c.id) });
+    const seat = r.def.seats[loop.entry];
+    if (seat.session === 'keep' && !this.flow.seatedOf(key, loop.entry).length) return skip('no_session', `keep 자리 ${loop.entry}에 앉은 세션이 없어 회를 열지 않는다`);
+    const since = row && row.lastAt != null ? row.lastAt : row && row.nextAt != null ? row.nextAt - loop.trigger.everyMs : now - loop.trigger.everyMs;
+    const out = await this.fireEvery(key, r, loop, { since, now, mark: `${key}|${name}|now|${now}`, how: { by, who } });
+    if (!out) return { ...base, ran: false, skipped: 'spawn_failed', text: `${loop.entry} 자리 세션을 띄우지 못했다(장부의 loop_skip)` };
+    st.setLoopRow(key, name, { lastAt: now }); // 다음 every 시각(nextAt)은 그대로. 다음 개선 회의 장부 요약은 여기서부터
+    return { ...base, ran: true, case: out.caseId, name: out.name, unit: out.unitId, to: out.to, spawned: out.spawned, by };
   }
   // fresh 입구 자리 세션을 띄운다(위 세션 없이, rig.spawnSeat과 같은 길: 자리의 런처·effort·model)
   async spawnEntry(key, r, seatName) {
@@ -389,8 +435,8 @@ export class RigLoops {
     return s;
   }
   // every 회의 첫 일 글. improve: 판의 장부 요약(느린 고리와 같은 꼴). work: task(없으면 안내를 따르라는 한 줄)
-  everyText(key, r, loop, { since, now }) {
-    const head = `보드의 ${loop.name} 고리(${loop.trigger.every}마다)가 연 회다.`;
+  everyText(key, r, loop, { since, now, how = null }) {
+    const head = how ? `${whoText(how.by)}${how.by === 'human' ? '이' : '가'} ${loop.name} 고리(${loop.trigger.every}마다)를 지금 한 번 돌려 연 회다.` : `보드의 ${loop.name} 고리(${loop.trigger.every}마다)가 연 회다.`;
     const docs = r.def.docs || {};
     const holds = loop.holds.map((n) => (docs[n] ? `${n}(${docs[n].rel || docs[n].path})` : n));
     if (loop.kind === 'improve') {
@@ -422,6 +468,7 @@ export class RigLoops {
     const st = this.store();
     if (!c || !['open', 'waiting_owner'].includes(c.state)) return 'state';
     if (c.pausedAt) return 'paused';
+    if (c.ownerWait === 'human') return 'human'; // P230: 상한을 넘어 사람 카드를 기다린다
     if (c.held && c.held.length) return 'held';
     const s = this.b.sessions.get(c.owner);
     if (!s) return 'no_owner';
@@ -614,6 +661,8 @@ export function rigLoopHandlers(b) {
     'rig.loops': async (p) => { const key = await keyOf(p); const r = b.rig ? b.rig.read(key) : null; return { workspace: key, loops: L().view(key, r && r.def) }; },
     'rig.pause': async (p, c) => { if (!c || !c.auth || !['local', 'device'].includes(c.auth.kind)) throw apiError('forbidden', 'rig 멈추기는 보드 창이나 연결한 기기에서 한다.'); return L().pause(await keyOf(p), p && (p.target || p.loop || p.case), { by: c.auth.kind === 'device' ? 'remote' : 'human' }); },
     'rig.resume': async (p, c) => { local(c, 'rig 잇기'); return L().resume(await keyOf(p), p && (p.target || p.loop || p.case), { by: 'human' }); },
+    // P230: 지금 한 번 돌리기(고리 카드의 단추). 이 PC의 창과 연결한 기기(멈추기와 같다)
+    'rig.run': async (p, c) => { if (!c || !c.auth || !['local', 'device'].includes(c.auth.kind)) throw apiError('forbidden', '고리 지금 돌리기는 보드 창이나 연결한 기기에서 한다.'); return L().runNow(await keyOf(p), p && (p.loop || p.target), { by: c.auth.kind === 'device' ? 'remote' : 'human' }); },
     'rig.name': async (p, c) => { local(c, '회 이름 고치기'); return L().name(await keyOf(p), p && (p.case || p.caseId), p && p.name, { by: 'human' }); },
   };
 }

@@ -150,6 +150,8 @@ async function grow(opts = {}) {
 }
 // retro 회 하나를 열고 main이 그 일을 받을 때까지
 async function retro(t, at) {
+  // P230: 개선 고리는 지난 개선 회 뒤로 끝난 작업 회가 있어야 돈다("새 회 없음" 건너뛰기). 그 사이에 끝난 작업 회 하나를 둔다
+  t.b.store.insertCase({ id: `cw${at}`, workspaceKey: t.ws.key, owner: t.main.sessionId, state: 'done', createdAt: at - 2, closedAt: at - 1, loop: 'work' });
   const fired = await t.L().tick(at);
   assert.equal(fired.length, 1, 'retro 회가 열린다');
   await until(() => t.main.texts.some((x) => x.includes('retro 고리')));

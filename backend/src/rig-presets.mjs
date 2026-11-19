@@ -5,6 +5,7 @@
 //       산출물 폴더(섹터 하나), 기계 검사(done 훅 하나, 스크립트 경로), 검토 자리(다른 런처의 fresh 자리, 반려 되돌아감 최대 2).
 // - 답(answers) → { def(rig.json), guides(자리 안내), files(판이 새로 만드는 파일: 없을 때만), dirs(만들 폴더) }. rig.create(rig-setup.mjs)가 쓴다.
 // - 제안을 내는 고리(개선 고리)의 입구 자리 writes에는 .atrium/drafts/<자리>/를 저절로 넣는다(11.9의 9).
+// - P230(11.12): 기계 검사 done 훅은 seat(작업 자리). 정기 점검 일 글에 "바뀐 것 없으면 한 줄". 저장소 아닌 워크스페이스의 정기 점검 경고는 rig.presets의 git(창)
 // - 정기 점검: scoped + 읽기 허용 목록(git·gh 조회 동사, PowerShell 읽기 cmdlet. Bash로 감싼 powershell은 넣지 않는다, 11.10) + 보고서 폴더를 쓰기 범위로.
 // - 옛 3자리 틀(메인 + 워커, + 검토자, 워크트리판)은 대화상자에서 내렸다(11.1). 그 틀로 만든 rig.json은 그대로 읽고 돈다(옮기기 없음).
 
@@ -41,7 +42,7 @@ export const DEFAULT_ANSWERS = Object.freeze({
 });
 
 // 산출물 폴더와 장부의 경로는 자리 안내와 회의 첫 일 글(산출물 섹터 줄)이 알려 준다. 그래서 task는 경로를 적지 않는다(사람이 경로를 바꿔도 맞다)
-export const CHECK_TASK = 'Regular check: look at failing CI runs, stale issues and pull requests, and outdated dependencies. Read the ledger first and do not repeat findings that are already there unless they changed. Write one short report file in the output folder and append one JSON line per finding to the ledger. Do not fix anything; list what a person should pick. Then close with done and file the report as an artifact: atrium done ok "<one-line summary>" --artifact <report path>.';
+export const CHECK_TASK = 'Regular check: look at failing CI runs, stale issues and pull requests, and outdated dependencies. Read the ledger first and do not repeat findings that are already there unless they changed. Write one short report file in the output folder and append one JSON line per finding to the ledger. Do not fix anything; list what a person should pick. If nothing changed since the last report, write one line: no change + path of the last report. Then close with done and file the report as an artifact: atrium done ok "<one-line summary>" --artifact <report path>.';
 
 // 이름 붙인 바로가기 둘(11.3). 누르면 답을 채우고, 그 뒤 사람이 바꿀 수 있다
 export const SHORTCUTS = [
@@ -215,7 +216,7 @@ export function presetFiles(answers, { launcher = 'claude', reviewLauncher = nul
       { from: REVIEW_SEAT, on: 'rejected', to: S, max: REVIEW_MAX },
     ];
   }
-  const hooks = x.check.on ? [{ at: 'done', run: scriptRun(x.check.script), onFail: 'block' }] : null;
+  const hooks = x.check.on ? [{ at: 'done', seat: S, run: scriptRun(x.check.script), onFail: 'block' }] : null; // P230(11.12의 5): 기계 검사는 작업 자리의 done에서만(검토 자리 done에는 돌지 않는다)
   if (x.check.on && /\.(mjs|js)$/i.test(x.check.script)) files[x.check.script] = CHECK_STARTER;
   const sc = x.shortcut ? shortcutOf(x.shortcut) : null;
   const def = {

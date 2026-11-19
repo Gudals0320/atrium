@@ -353,7 +353,7 @@ test('P185 done 값 검사: 자리 세션은 results 낱말만, 자리 없는 �
   } finally { await stop(); }
 });
 
-test('P185 되돌아감 상한: else가 없으면 manager, manager도 없으면 건 blocked와 주인에게 판 알림(이력). 주인이 다시 맡기면 이어진다', async () => {
+test('P185 되돌아감 상한: else가 없으면 manager, manager도 없으면(P230) 사람의 답을 기다린다(waiting_owner human, 응답 필요 카드). 주인이 다시 맡기면 이어진다', async () => {
   const def = sampleDef();
   def.flow[2] = { from: 'reviewer', on: 'rejected', to: 'worker', max: 0 };
   delete def.manager; delete def.cycles; // P188: 견본의 느린 고리는 manager로 간다
@@ -365,12 +365,11 @@ test('P185 되돌아감 상한: else가 없으면 manager, manager도 없으면 
     await done(b, w1, 'ok', '했다');
     const rv1 = by('reviewer-1'); await gotUnit(rv1);
     const d = await done(b, rv1, 'rejected', '틀렸다');
-    assert.equal(d.case.state, 'blocked');
-    assert.match(d.case.blockedReason, /상한 0번을 넘었고 else도 manager도 없다/);
-    await until(() => main.texts.some((t) => t.startsWith('[Atrium 보드] rig 건')));
-    const n = main.texts.find((t) => t.startsWith('[Atrium 보드] rig 건'));
-    assert.match(n, /막혔다\(blocked\)/); assert.match(n, /reviewer\(@reviewer-1\) rejected: 틀렸다/);
-    assert.equal(evs(b, 'rig_case_blocked').length, 1);
+    // P230(rig2-design 11.12의 3): 관리자 자리가 없으면 막지 않고 사람의 답을 기다린다(카드는 p230 시험이 본다)
+    assert.equal(d.case.state, 'waiting_owner');
+    const c1 = b.store.getCase(r.unit.caseId);
+    assert.equal(c1.ownerWait, 'human'); assert.equal(c1.humanAsk.text, '틀렸다'); assert.equal(c1.humanAsk.seat, 'reviewer');
+    assert.equal(evs(b, 'rig_case_blocked').length, 0);
     // manager가 있으면 manager로
     def.manager = 'main';
     writeRig(b.store.getWorkspace(main.workspaceKey).root, def);

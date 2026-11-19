@@ -369,6 +369,12 @@ export class RigProposals {
       const gateNone = st.newArtifactsIn ? st.newArtifactsIn(k, gate).filter((a) => a.stateWhy === 'gate_none') : [];
       for (const a of [...(st.newArtifactsIn ? st.newArtifactsIn(k, human) : []), ...gateNone]) out.push({ id: `artifact:${a.id}`, kind: 'artifact', workspace: k, wsName: wsName(k), t: a.t, artifact: { id: a.id, sector: a.sector, path: a.path, size: a.size, loop: a.loop, caseId: a.caseId, seat: a.seat, sessionName: this.nameOf(a.sessionId) } });
     }
+    // P230(rig2-design 11.12의 3): 관리자 자리가 없는 rig의 상한에 닿은 회(멈춘 회는 숨긴다: 잇기에 다시 뜬다)
+    for (const c of st.humanAskCases ? st.humanAskCases(ws) : []) {
+      if (c.pausedAt || (b.branch && b.branch.flow && b.branch.flow.loops && b.branch.flow.loops.isPaused(c.workspaceKey, c.loop))) continue;
+      const a = c.humanAsk || {};
+      out.push({ id: `run:${c.id}`, kind: 'run_limit', workspace: c.workspaceKey, wsName: wsName(c.workspaceKey), t: a.t || c.createdAt, run: { id: c.id, name: c.name || null, loop: c.loop || null, seat: a.seat || null, to: a.to || [], result: a.result || null, max: a.max ?? null, line: a.line ?? null, reason: a.text || '', sessionName: this.nameOf(a.session) } });
+    }
     // P225(rig2-design 11.8의 1·2): 무인 자리 승인(승인 전 unattended 자리. 승인은 이 PC의 창만)
     for (const x of b.rig && b.rig.permitNeeds ? b.rig.permitNeeds(ws) : []) out.push({ id: `permit:${x.workspace}|${x.seat}`, kind: 'seat_permit', workspace: x.workspace, wsName: wsName(x.workspace), t: b.rig.pendingSince ? b.rig.pendingSince(x.workspace, x.seat) : Date.now(), seat: x.seat, defN: x.defN });
     return out.sort((x, y) => x.t - y.t);
@@ -390,6 +396,9 @@ export class RigProposals {
       const row = sectorsFor(this.b).acceptHuman(a.workspaceKey, a.id, { by });
       this.changed(a.workspaceKey);
       return { artifact: row };
+    }
+    if (s.startsWith('run:')) { // P230: 상한에 닿은 회 — accept(그대로 받기) | again(한 번 더) | pause(회 멈추기)
+      return this.b.branch.flow.answerHuman(s.slice(4), action, { by: by === 'device' ? 'remote' : 'human' });
     }
     if (s.startsWith('permit:')) { // P225: 무인 자리 승인(rig.permit과 같은 길, 이 PC의 창만)
       const [key, seat] = s.slice(7).split('|');
@@ -417,7 +426,7 @@ export function rigProposalHandlers(b) {
     'rig.asks': async (p, c) => { who(c, 'rig 응답 보기'); return { asks: proposalsFor(b).asks({ ws: p && p.workspace ? await keyOf(p) : null }) }; },
     'rig.proposals': async (p) => proposalsFor(b).list(await keyOf(p), { states: p && Array.isArray(p.states) ? p.states : null, limit: p && p.limit }),
     'rig.proposal': async (p) => { const r = b.store.getProposal(String((p && p.id) || '')); if (!r) throw apiError('not_found', `그런 제안이 없다: ${p && p.id}`); return { proposal: proposalsFor(b).view(r) }; },
-    // { id: "proposal:<id>" | "doc:<ws>|<문서>" | "artifact:<id>", action: approve | reject | revert | accept, reason? }
+    // { id: "proposal:<id>" | "doc:<ws>|<문서>" | "artifact:<id>" | "run:<회>"(P230), action: approve | reject | revert | accept | again | pause, reason? }
     'rig.decide': async (p, c) => { const by = who(c, 'rig 승인·거절'); return proposalsFor(b).answer(p && p.id, p && p.action, { reason: p && p.reason, by }); },
   };
 }

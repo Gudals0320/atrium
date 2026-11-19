@@ -339,6 +339,8 @@ test('P221 every(keep 입구): 앉은 세션이 없으면 열지 않고 한 번 
     assert.equal(sk.length, 1); assert.equal(sk[0].value, 'no_session');
     const main = add('main'); seat(main, 'main');
     const other = add('other'); seat(other, 'other');
+    // P230: 개선 고리는 지난 개선 회 뒤로 끝난 작업 회가 있어야 돈다
+    b.store.insertCase({ id: 'cwork1', workspaceKey: ws.key, owner: main.sessionId, state: 'done', createdAt: t0, closedAt: t0 + 1, loop: 'work' });
     const f = await L().tick(t0 + 7 * DAY + 3);
     assert.equal(f.length, 1); assert.equal(f[0].loop, 'retro'); assert.equal(f[0].to, 'main');
     await gotUnit(main);

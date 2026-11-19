@@ -93,14 +93,14 @@ export const RIG_COLUMNS = {
   rig_permits: { hash: 'TEXT' }, // P225: 승인한 때 그 자리의 위험한 칸 해시(rig-amp seatPermitHash). 다르면 승인이 풀린 것
   deliveries: { origin: 'TEXT', from_session: 'TEXT', park_loop: 'TEXT' }, // P225: park_loop(멈춘 고리에 붙잡은 전달의 { loop, workspace }, 판이 다시 떠도 [잇기])
   rig_hook_runs: { tool_run_id: 'TEXT' }, // P183: 도구 훅이면 그 실행
-  rig_cases: { version_n: 'INTEGER', owner_wait: 'TEXT', owner_wait_delivery: 'TEXT', loop: 'TEXT', name: 'TEXT', name_by: 'TEXT', paused_at: 'INTEGER', paused_by: 'TEXT', held: 'TEXT' }, // P221(rig 2 R2): 회의 고리(loop), 회 이름(name·name_by: auto | human | owner | manager), 회 멈춤(paused_at·paused_by), 멈춘 동안 붙잡은 넘김(held JSON [{ unitId, session, seat, result, text }]) // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다). P209: 주인 기다림의 종류(report | escalated)와 보고 전달 ID
+  rig_cases: { version_n: 'INTEGER', owner_wait: 'TEXT', owner_wait_delivery: 'TEXT', loop: 'TEXT', name: 'TEXT', name_by: 'TEXT', paused_at: 'INTEGER', paused_by: 'TEXT', held: 'TEXT', human_ask: 'TEXT' }, // P230: human_ask(관리자 자리 없는 rig의 상한 → 사람 카드 JSON { line, unitId, session, seat, result, text, max, t }) // P221(rig 2 R2): 회의 고리(loop), 회 이름(name·name_by: auto | human | owner | manager), 회 멈춤(paused_at·paused_by), 멈춘 동안 붙잡은 넘김(held JSON [{ unitId, session, seat, result, text }]) // P188: 건이 만들어질 때의 정의 버전(자리·흐름·상한은 이 버전을 따른다). P209: 주인 기다림의 종류(report | escalated)와 보고 전달 ID
   // P188: 사람만 고치는 목록. JSON { pointers: ["/seats/reviewer", …], files: [{ path, sha256, at }] } | null
 };
 const J = (s, d = null) => { if (s == null) return d; try { return JSON.parse(s); } catch { return d; } };
 const toolRow = (r) => (r ? { id: r.id, sessionId: r.session_id, workspaceKey: r.workspace_key ?? null, unitId: r.unit_id ?? null, tryId: r.try_id ?? null, tool: r.tool, argv: J(r.argv, []), args: J(r.args, []), argsGiven: J(r.args_given), cwd: r.cwd ?? null, rigHash: r.rig_hash ?? null, status: r.status, exitCode: r.exit_code ?? null, startedAt: r.started_at, endedAt: r.ended_at ?? null, logPath: r.log_path ?? null, logBytes: r.log_bytes ?? null, logCut: !!r.log_cut, outSha256: r.out_sha256 ?? null, hooks: J(r.hooks, []), appended: r.appended ?? null, error: r.error ?? null } : null);
 const TOOL_COLS = { status: 'status', exitCode: 'exit_code', endedAt: 'ended_at', logBytes: 'log_bytes', logCut: 'log_cut', outSha256: 'out_sha256', hooks: 'hooks', appended: 'appended', error: 'error', args: 'args', argv: 'argv' };
 
-const caseRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, owner: r.owner_session, state: r.state, createdAt: r.created_at, closedAt: r.closed_at ?? null, edgeCounts: J(r.edge_counts, {}) || {}, blockedReason: r.blocked_reason ?? null, versionN: r.version_n ?? null, ownerWait: r.owner_wait ?? null, ownerWaitDelivery: r.owner_wait_delivery ?? null, loop: r.loop ?? null, name: r.name ?? null, nameBy: r.name_by ?? null, pausedAt: r.paused_at ?? null, pausedBy: r.paused_by ?? null, held: J(r.held, []) || [] } : null);
+const caseRow = (r) => (r ? { id: r.id, workspaceKey: r.workspace_key, owner: r.owner_session, state: r.state, createdAt: r.created_at, closedAt: r.closed_at ?? null, edgeCounts: J(r.edge_counts, {}) || {}, blockedReason: r.blocked_reason ?? null, versionN: r.version_n ?? null, ownerWait: r.owner_wait ?? null, ownerWaitDelivery: r.owner_wait_delivery ?? null, loop: r.loop ?? null, name: r.name ?? null, nameBy: r.name_by ?? null, pausedAt: r.paused_at ?? null, pausedBy: r.paused_by ?? null, held: J(r.held, []) || [], humanAsk: J(r.human_ask, null) } : null);
 const versionRow = (r) => (r ? { workspaceKey: r.workspace_key, n: r.n, hash: r.hash, t: r.t, by: r.by, note: r.note ?? null, file: r.file ?? null } : null);
 // P185: 일 행 + 건 칸(store-units.mjs의 unitRow와 같은 모양). 자리 줄에 선 일은 to가 null
 const flowUnitRow = (r) => (r ? { id: r.id, from: r.from_session, to: r.to_session || null, origin: r.origin, spec: r.spec, status: r.status, createdAt: r.created_at, closedAt: r.closed_at ?? null, caseId: r.case_id ?? null, seat: r.seat ?? null, via: J(r.via) } : null);
@@ -191,14 +191,14 @@ export function installRig(Store) {
     insertCase(c) { this.st('INSERT INTO rig_cases (id, workspace_key, owner_session, state, created_at, closed_at, edge_counts, blocked_reason, version_n, loop, name, name_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(c.id, c.workspaceKey, c.owner, c.state || 'open', c.createdAt, c.closedAt ?? null, JSON.stringify(c.edgeCounts || {}), c.blockedReason ?? null, c.versionN ?? null, c.loop ?? null, c.name ?? null, c.nameBy ?? null); },
     getCase(id) { return caseRow(this.st('SELECT * FROM rig_cases WHERE id = ?').get(id)); },
     updateCase(id, fields) {
-      const cols = { state: 'state', closedAt: 'closed_at', edgeCounts: 'edge_counts', blockedReason: 'blocked_reason', ownerWait: 'owner_wait', ownerWaitDelivery: 'owner_wait_delivery', loop: 'loop', name: 'name', nameBy: 'name_by', pausedAt: 'paused_at', pausedBy: 'paused_by', held: 'held' }; // P221
+      const cols = { state: 'state', closedAt: 'closed_at', edgeCounts: 'edge_counts', blockedReason: 'blocked_reason', ownerWait: 'owner_wait', ownerWaitDelivery: 'owner_wait_delivery', loop: 'loop', name: 'name', nameBy: 'name_by', pausedAt: 'paused_at', pausedBy: 'paused_by', held: 'held', humanAsk: 'human_ask' }; // P221. P230: humanAsk
       const sets = []; const vals = [];
-      for (const [k, v] of Object.entries(fields)) { if (!cols[k]) throw new Error('unknown field ' + k); sets.push(`${cols[k]} = ?`); vals.push(k === 'edgeCounts' ? JSON.stringify(v || {}) : k === 'held' ? (v && v.length ? JSON.stringify(v) : null) : v ?? null); }
+      for (const [k, v] of Object.entries(fields)) { if (!cols[k]) throw new Error('unknown field ' + k); sets.push(`${cols[k]} = ?`); vals.push(k === 'edgeCounts' ? JSON.stringify(v || {}) : k === 'held' ? (v && v.length ? JSON.stringify(v) : null) : k === 'humanAsk' ? (v ? JSON.stringify(v) : null) : v ?? null); }
       if (sets.length) this.st(`UPDATE rig_cases SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     },
     casesOf(workspaceKey, limit = 50) { return this.st('SELECT * FROM rig_cases WHERE workspace_key = ? ORDER BY created_at DESC, rowid DESC LIMIT ?').all(workspaceKey, limit).map(caseRow); },
     // P194: 주인 세션이 쥔 waiting_owner 건(그 워크스페이스)
-    waitingCasesOfOwner(sessionId, key) { return this.st("SELECT * FROM rig_cases WHERE owner_session = ? AND workspace_key = ? AND state = 'waiting_owner' ORDER BY created_at").all(sessionId, key).map(caseRow); },
+    waitingCasesOfOwner(sessionId, key) { return this.st("SELECT * FROM rig_cases WHERE owner_session = ? AND workspace_key = ? AND state = 'waiting_owner' AND (owner_wait IS NULL OR owner_wait != 'human') ORDER BY created_at").all(sessionId, key).map(caseRow); },
     liveCasesOfOwner(sessionId) { return this.st("SELECT * FROM rig_cases WHERE owner_session = ? AND state IN ('open', 'blocked', 'waiting_owner')").all(sessionId).map(caseRow); },
     insertCaseItem(x) { this.st('INSERT INTO rig_case_items (case_id, session_id, seat, worktree, worktree_path, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(x.caseId, x.sessionId, x.seat, x.worktree ?? null, x.worktreePath ?? null, x.createdAt ?? Date.now()); },
     caseItems(caseId) { return this.st('SELECT * FROM rig_case_items WHERE case_id = ? ORDER BY id').all(caseId).map((r) => ({ caseId: r.case_id, sessionId: r.session_id, seat: r.seat, worktree: r.worktree ?? null, worktreePath: r.worktree_path ?? null, createdAt: r.created_at })); },
@@ -378,6 +378,10 @@ export function installRig(Store) {
       for (const k of Object.keys(out)) { const c = this.st('SELECT * FROM rig_cases WHERE workspace_key = ? AND ' + (k === '' ? 'loop IS NULL' : 'loop = ?') + ' ORDER BY created_at DESC, rowid DESC LIMIT 1').get(...(k === '' ? [key] : [key, k])); out[k].last = caseRow(c); }
       return out;
     },
+    // P230: 사람 카드를 기다리는 회(관리자 자리 없는 rig의 상한, rig.asks)
+    humanAskCases(key = null) { return (key ? this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND state = 'waiting_owner' AND owner_wait = 'human' ORDER BY created_at").all(key) : this.st("SELECT * FROM rig_cases WHERE state = 'waiting_owner' AND owner_wait = 'human' ORDER BY created_at").all()).map(caseRow); },
+    // P230(11.12의 1): 고리들의 회 가운데 t 뒤에 끝난(done) 회 수(개선 고리의 "새 회 없음" 건너뛰기)
+    doneRunsSince(key, loops, t) { if (!loops.length) return 0; return Number(this.st(`SELECT COUNT(*) AS n FROM rig_cases WHERE workspace_key = ? AND state = 'done' AND closed_at > ? AND loop IN (${loops.map(() => '?').join(', ')})`).get(key, t, ...loops).n); },
     liveCasesOfLoop(key, loop) { return this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND loop = ? AND state IN ('open', 'blocked', 'waiting_owner') ORDER BY created_at").all(key, loop).map(caseRow); },
     casesWithHeld(key) { return this.st("SELECT * FROM rig_cases WHERE workspace_key = ? AND held IS NOT NULL ORDER BY created_at").all(key).map(caseRow); },
     dropCyclesFrom(key, line) { this.st('DELETE FROM rig_cycles WHERE workspace_key = ? AND line >= ?').run(key, line); },
