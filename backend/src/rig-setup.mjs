@@ -10,7 +10,7 @@
 // - 기본 런처: 그 워크스페이스에서 마지막으로 런처로 띄운 세션의 런처(spawn 이벤트), 없으면 판 레일의 첫 에이전트 런처, 없으면 claude.
 import fs from 'node:fs';
 import path from 'node:path';
-import { RIG_FILE, validateRig, protectedHits, SEAT_KINDS } from './rig.mjs';
+import { RIG_FILE, validateRig, protectedHits, SEAT_KINDS, gitStateOf } from './rig.mjs'; // P230: gitStateOf(rig.presets의 git)
 import { SEAT_SPAWN } from './rig-amp.mjs';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { harnessOf } from './launchers.mjs';
@@ -369,7 +369,9 @@ export function rigSetupHandlers(b) {
   const S = () => { if (!b.rigSetup) throw apiError('rig_off', 'rig가 없다.'); return b.rigSetup; };
   return {
     // P228: Rig 만들기 대화상자의 바로가기 둘과 답의 기본값(세 질문). 옛 rig.templates(3자리 틀)를 대신한다
-    'rig.presets': async () => ({
+    // P230(11.12의 6): workspace를 주면 그 뿌리의 git 상태(norepo | nocommit | ok). 창은 정기 점검을 저장소가 아닌 곳에서 고르면 경고한다
+    'rig.presets': async (p) => ({
+      ...(await (async () => { if (!p || !p.workspace) return {}; try { const w = b.store.getWorkspace(await keyOf(p)); return w && w.root ? { git: gitStateOf(w.root) } : {}; } catch { return {}; } })()),
       shortcuts: SHORTCUTS.map((s) => ({ id: s.id, title: s.title, desc: s.desc, en: s.en, answers: shortcutAnswers(s.id) })),
       defaults: DEFAULT_ANSWERS, every: EVERY_PRESETS, hoursMax: HOURS_MAX, improveDaysMax: IMPROVE_DAYS_MAX, readAllow: READ_ALLOW,
     }),

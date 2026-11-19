@@ -8,11 +8,13 @@ import { useStore, toast, getState, openDialog, loadLaunchers } from './store.js
 import { useT, errText, getLanguage } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
+import { RigLoopCards } from './RigLoopCards.jsx'; // P230: 고리 카드(지금 돌리기)
 import {
   launcherChoices, launcherLabel, namedLaunchers, wizardInit, wizardPickDescribe, wizardBack, wizardCanNext, wizardRequest, wizardAfterRequest,
   wizardOnBuilder, wizardAfterEnable, wizardSetSeat, builderView, keepSeats, seatCandidates, seatActions, previewModel, arrowLabel,
   tableFromDef, tableEdit, tableAdd, tableRemove, rowLocked, partLocked, canRemove, tableToSave, tableDirty, canEdit, canDisable, seatBlockKey,
   presetsView, wizardApplyShortcut, wizardSet, wizardRefineRequest, answersProblem, everyMode, everyHours, everyOf, reviewLauncherDefault, defSummary, permLine,
+  checkNoRepo, freshBlocked,
 } from './lib/rig-setup.js';
 
 const argv = (run) => (Array.isArray(run) ? run.join(' ') : String(run || ''));
@@ -200,7 +202,7 @@ export function RigCreateDialog({ ws, onClose }) {
         </ol>
         {!w ? <div>{st && st.status === 'error' ? st.error : t('rig.loading')}</div> : (
           <>
-            {step === 'ask' && <AskStep w={w} setW={setW} choices={choices} shortcuts={pv.shortcuts} presetsError={pv.error} />}
+            {step === 'ask' && <AskStep w={w} setW={setW} choices={choices} shortcuts={pv.shortcuts} presetsError={pv.error} git={pre && pre.git} />}
             {step === 'describe' && (
               <div className="mt-rigsetup-describe" data-role="rig-describe-form">
                 <label>{t('rigSetup.describeLabel')}
@@ -248,7 +250,7 @@ export function RigCreateDialog({ ws, onClose }) {
 const stepGroup = (s) => (s === 'ask' || s === 'describe' || s === 'building' ? 'ask' : s);
 
 // 세 질문: 바로가기 둘, (1) 언제 도나, (2) 누가 하나, (3) 덧붙임. 말로 설명하기로 가는 단추
-function AskStep({ w, setW, choices, shortcuts, presetsError }) {
+function AskStep({ w, setW, choices, shortcuts, presetsError, git = null }) { // P230: git(rig.presets의 워크스페이스 git 상태)
   const t = useT();
   const a = w.answers;
   const set = (k, v) => setW((x) => wizardSet(x, k, v));
@@ -266,6 +268,7 @@ function AskStep({ w, setW, choices, shortcuts, presetsError }) {
               </button>
             ))}
           </div>
+          {checkNoRepo(a, git) && <div className="mt-rigon-warn" data-role="rig-check-norepo">{t('rigP230.noRepo')}</div>}{/* P230(11.12의 6) */}
         </div>
       )}
       <fieldset className="mt-rigq-q" data-q="when">
@@ -294,7 +297,7 @@ function AskStep({ w, setW, choices, shortcuts, presetsError }) {
           <label className="mt-rigq-field">{t('rigP228.launcher')}<LauncherSelect choices={choices} value={a.launcher} onChange={(v) => set('launcher', v)} /></label>
         </div>
         <label className="mt-rigq-opt"><input type="radio" name="rig-session" checked={a.session === 'keep'} data-field="session" value="keep" onChange={() => set('session', 'keep')} />{t('rigP228.keep')}<span className="dim">{t('rigP228.keepHint')}</span></label>
-        <label className={`mt-rigq-opt${a.trigger === 'request' ? ' off' : ''}`}><input type="radio" name="rig-session" checked={a.session === 'fresh'} disabled={a.trigger === 'request'} data-field="session" value="fresh" onChange={() => set('session', 'fresh')} />{t('rigP228.fresh')}<span className="dim">{t('rigP228.freshHint')}</span></label>
+        <label className={`mt-rigq-opt${a.trigger === 'request' ? ' off' : ''}`}><input type="radio" name="rig-session" checked={a.session === 'fresh'} disabled={a.trigger === 'request'} data-field="session" value="fresh" onChange={() => set('session', 'fresh')} />{t('rigP228.fresh')}<span className="dim">{t('rigP228.freshHint')}</span>{freshBlocked(a) && <span className="mt-rigq-why" data-role="rig-fresh-why">{t('rigP230.freshWhy')}</span>}</label>
         <label className="mt-rigq-field">{t('rigP228.permission')}
           <select className="mt-input" data-field="permission" value={a.permission} onChange={(e) => set('permission', e.target.value)}>
             <option value="ask">{t('rigP228.permAskOpt')}</option><option value="scoped">{t('rigP228.permScopedOpt')}</option>
@@ -468,6 +471,7 @@ export function RigPanel({ ws, onClose }) {
                 {setup.step === 'seat' && <><SeatStep ws={ws} st={st} picks={setup.picks} setPick={(s, p) => setSetup({ ...setup, picks: { ...setup.picks, [s]: p } })} /><div className="mt-card-actions"><button className="mt-btn primary" data-action="rig-panel-seat-go" disabled={busy} onClick={() => act(async () => { await runSeats(ws, st, setup.picks); toast(t('rigSetup.seated')); setSetup(null); await load(); })}>{t('rigSetup.seatGo')}</button><button className="mt-btn ghost" onClick={() => setSetup(null)}>{t('rigSetup.seatSkip')}</button></div></>}
               </div>
             )}
+            {status === 'on' && hasLoops && <RigLoopCards ws={ws} />}{/* P230: 고리 카드와 지금 돌리기 */}
             {st.definition && (hasLoops ? <RigSummary def={st.definition} choices={choices} /> : <RigPreview def={tb ? previewDef(tb, st.definition) : st.definition} choices={choices} />)}{/* P228: rig 2 정의는 요약(고리·자리 권한·덧붙임) */}
             {tb && (
               <>

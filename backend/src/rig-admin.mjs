@@ -37,7 +37,7 @@ import { proposalsFor } from './rig-proposals.mjs'; // P224: 제안과 승인
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 const inside = (root, f) => { const r = path.relative(root, f); return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
-export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name', 'artifacts', 'propose', 'proposals', 'approve', 'reject']; // P224: 제안과 승인 // P222: artifacts(산출물 등록부, 읽기만) // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
+export const RIG_ADMIN_OPS = ['check', 'log', 'rollback', 'cleanup', 'retry', 'status', 'pause', 'resume', 'name', 'artifacts', 'propose', 'proposals', 'approve', 'reject', 'run']; // P230: run(고리 지금 한 번 돌리기, 관리자 자리) // P224: 제안과 승인 // P222: artifacts(산출물 등록부, 읽기만) // P216: retry. P221: status(고리와 회), pause·resume(고리|회), name(회 이름)
 export const RIG_READ_OPS = ['check', 'log']; // P209: 읽기만(제작 세션도 쓴다)
 
 export class RigAdmin {
@@ -97,6 +97,7 @@ export class RigAdmin {
     if (op === 'pause') return this.branch.flow.loops.pause(key, o.target, { by, who });
     if (op === 'resume') return this.branch.flow.loops.resume(key, o.target, { by, who });
     if (op === 'name') return this.branch.flow.loops.name(key, o.caseId || o.case, o.name, { by, who });
+    if (op === 'run') return this.branch.flow.loops.runNow(key, o.target || o.loop, { by, who }); // P230
     if (op === 'proposals') return this.proposals(key, o); // P224
     if (op === 'approve' || op === 'reject') return proposalsFor(this.b).decide(key, o.id, op, { by, who, reason: o.reason }); // P224
     throw apiError('bad_request', `모르는 일: ${op}`);
@@ -145,7 +146,7 @@ export class RigAdmin {
     out.warnings.push(...draftWarnings(v.def)); // P225(11.9의 9): 제안 초안을 쓸 곳
     if (sn.reason) return { ...out, ok: false, reason: sn.reason };
     if (hits.length) return { ...out, protectedHits: hits, reason: `사람만 고치는 자리를 바꾼다: ${hits.join(', ')}. 이대로 쓰면 보드가 이 정의를 쓰지 않는다(지금 버전을 그대로 쓴다).` };
-    return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], closes: v.def.seats ? Object.values(v.def.seats).filter((x) => x.close).map((x) => ({ seat: x.name, close: x.close })) : [], /* P225: fresh 자리 close */ flow: (v.def.flow || []).length, hooks: v.def.hooks.length, tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), loops: Object.values(v.def.loops || {}).map((l) => ({ name: l.name, kind: l.kind, implicit: !!l.implicit, trigger: l.trigger.type === 'request' ? `request → ${l.entry}` : l.trigger.type === 'every' ? `every ${l.trigger.every} → ${l.entry}` : `event ${l.trigger.event}`, entry: l.entry, lines: l.lines.length, holds: l.holds, ...(l.task ? { task: l.task } : {}) })), manager: v.def.manager, format: v.def.version || 1, docs: v.def.docs ? Object.values(v.def.docs).map((d) => ({ name: d.name, role: d.role, layer: d.layer, path: d.rel || d.path, watch: d.watch })) : [] } }; // P219: 문서
+    return { ...out, summary: { seats: v.def.seats ? Object.keys(v.def.seats) : [], closes: v.def.seats ? Object.values(v.def.seats).filter((x) => x.close).map((x) => ({ seat: x.name, close: x.close })) : [], /* P225: fresh 자리 close */ flow: (v.def.flow || []).length, hooks: v.def.hooks.length, doneHooks: v.def.hooks.filter((h) => h.at === 'done').map((h) => ({ index: h.index, seats: h.seat || null })), /* P230: done 훅의 자리(null = 모든 자리) */ tools: v.def.tools ? Object.keys(v.def.tools) : [], cycles: (v.def.cycles || []).map((x) => `${x.every} → ${x.to}`), loops: Object.values(v.def.loops || {}).map((l) => ({ name: l.name, kind: l.kind, implicit: !!l.implicit, trigger: l.trigger.type === 'request' ? `request → ${l.entry}` : l.trigger.type === 'every' ? `every ${l.trigger.every} → ${l.entry}` : `event ${l.trigger.event}`, entry: l.entry, lines: l.lines.length, holds: l.holds, ...(l.task ? { task: l.task } : {}) })), manager: v.def.manager, format: v.def.version || 1, docs: v.def.docs ? Object.values(v.def.docs).map((d) => ({ name: d.name, role: d.role, layer: d.layer, path: d.rel || d.path, watch: d.watch })) : [] } }; // P219: 문서
   }
 
   // P209: 자리 effort·model 검사(정의 검사가 모르는 것: 런처의 종류, 지금 앉은 세션) → { reason | null, warnings }

@@ -120,7 +120,7 @@ export function validateAmp(raw, { seats = null, docs = null } = {}) {
     const h = hooks[i]; if (!h || typeof h !== 'object') continue;
     const at = `hooks[${i}]`;
     if (h.at !== 'pre-tool') {
-      if (h.match != null || h.seat != null) return bad(`${at}.match·seat은 pre-tool 훅에만 쓴다`);
+      if (h.match != null || (h.seat != null && h.at !== 'done')) return bad(h.match != null ? `${at}.match는 pre-tool 훅에만 쓴다` : `${at}.seat은 pre-tool·done 훅에만 쓴다`); // P230: done 훅의 seat(rig.mjs가 검사)
       continue;
     }
     if (!seats) return bad(`${at}: pre-tool 훅은 seats(자리)와 함께 쓴다(자리 세션의 도구 호출 직전에 돈다)`);

@@ -196,7 +196,7 @@ test('P228 덧붙임: 정본(loads, 없으면 시작 글), 장부(writes, 개선
   assert.deepEqual(d.loops.work.produces, ['output']);
   assert.deepEqual(d.seats.main.writes, ['ledger', '.atrium/drafts/main/', 'output']);
   assert.ok(!d.seats.main.writes.includes('rules'), '정본은 writes에 두지 않는다(제안으로만)');
-  assert.deepEqual(d.hooks, [{ at: 'done', run: ['python', 'scripts/check.py'], onFail: 'block' }]);
+  assert.deepEqual(d.hooks, [{ at: 'done', seat: 'main', run: ['python', 'scripts/check.py'], onFail: 'block' }]); // P230: 기계 검사는 작업 자리의 done에서만
   assert.equal(r.files['scripts/check.py'], undefined, '.py는 시작 파일을 만들지 않는다(사람이 둔다)');
   assert.deepEqual(d.seats.reviewer, { launcher: 'codex', session: 'fresh', max_live: 1, close: 'run', guide: '.atrium/seats/reviewer.txt', writes: false, reads: ['rules'] });
   assert.deepEqual(d.results, ['ok', 'failed', 'rejected']);

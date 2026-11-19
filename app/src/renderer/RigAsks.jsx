@@ -1,5 +1,6 @@
 // P224: rig 2 R6 응답 필요 카드(docs research rig2-design.md 2.1 "제안과 승인", 11.5의 4, 11.7의 1).
 // - 판 API rig.asks(사람 승인 제안, 승인 안 된 정본 바뀜, 받아들임 human 섹터의 새 산출물)를 읽고 판 이벤트 rig.asks·rig.artifacts와 다시 붙을 때 다시 읽는다.
+// - P230: 상한에 닿은 회(관리자 자리 없는 rig) "상한에 닿은 회: <이름>", 마지막 반려 까닭, [그대로 받기] [한 번 더] [회 멈추기].
 // - 카드: 제안 "제안: <문서> · <까닭>"과 패치 보기, [승인] [거절(한 줄 까닭)]. 승인 안 된 바뀜은 바뀐 내용 보기와 [되돌리기] [받아들이기]. 산출물은 [받아들이기].
 // - 위 오른쪽 "내 차례" 펼침 목록(Chrome.jsx TurnPill)과 휴대폰 목록(Phone.jsx)이 같은 부품을 쓴다. 정하기는 rig.decide(이 PC의 창과 연결한 기기)
 import { useEffect, useState } from 'react';
@@ -30,7 +31,7 @@ export function useRigAsks() {
   useEffect(() => { wire(); subs.add(set); load(); return () => { subs.delete(set); }; }, []);
   return x.asks;
 }
-export const rigAskTitle = (t, a) => (a.kind === 'seat_permit' ? t('rigPermitNeed.line', { seat: a.seat }) : a.kind === 'proposal' ? t('rigAsk.proposal', { doc: a.proposal.target === 'definition' ? t('rigAsk.definition') : a.proposal.target, why: a.proposal.why || t('rigAsk.noWhy') })
+export const rigAskTitle = (t, a) => (a.kind === 'run_limit' ? t('rigP230.limitTitle', { name: a.run.name || a.run.id }) : a.kind === 'seat_permit' ? t('rigPermitNeed.line', { seat: a.seat }) : a.kind === 'proposal' ? t('rigAsk.proposal', { doc: a.proposal.target === 'definition' ? t('rigAsk.definition') : a.proposal.target, why: a.proposal.why || t('rigAsk.noWhy') })
   : a.kind === 'doc_unapproved' ? t('rigAsk.unapproved', { doc: a.doc }) : t('rigAsk.artifact', { sector: a.artifact.sector, path: a.artifact.path }));
 
 // 승인 안 된 바뀜을 만든 쪽(보드의 구조 값) → 화면 글
@@ -64,7 +65,8 @@ export function RigAskCard({ a, now = Date.now(), compact = false }) {
     setBusy(true);
     try {
       const r = await api.call('rig.decide', { id: a.id, action, ...extra });
-      if (a.kind === 'seat_permit') toast(t('rigPermitNeed.done', { seat: a.seat }));
+      if (a.kind === 'run_limit') toast(t(action === 'accept' ? 'rigP230.accepted' : action === 'again' ? 'rigP230.againDone' : 'rigP230.paused'));
+      else if (a.kind === 'seat_permit') toast(t('rigPermitNeed.done', { seat: a.seat }));
       else if (action === 'approve') toast(r && r.applied === false ? t('rigAsk.applyFailed', { reason: r.reason || '' }) : t('rigAsk.applied'), r && r.applied === false ? 'error' : 'info');
       else if (action === 'reject') toast(t('rigAsk.rejected'));
       else if (action === 'revert') toast(t('rigAsk.reverted'));
@@ -74,15 +76,16 @@ export function RigAskCard({ a, now = Date.now(), compact = false }) {
   };
   const p = a.proposal;
   const diff = p ? p.diff : a.diff;
-  const meta = a.kind === 'seat_permit' ? `${a.wsName} · ${t('rigPermitNeed.what')} · ${ago(a.t, now)}` : a.kind === 'proposal'
+  const meta = a.kind === 'run_limit' ? t('rigP230.limitMeta', { ws: a.wsName, seat: a.run.seat || '-', result: a.run.result || '-', max: a.run.max ?? '-', ago: ago(a.t, now) }) : a.kind === 'seat_permit' ? `${a.wsName} · ${t('rigPermitNeed.what')} · ${ago(a.t, now)}` : a.kind === 'proposal'
     ? t('rigAsk.metaProposal', { ws: a.wsName, seat: p.seat || '-', who: p.sessionName ? `@${p.sessionName}` : '', path: p.path, added: p.added ?? 0, removed: p.removed ?? 0, ago: ago(a.t, now) })
     : a.kind === 'doc_unapproved' ? t('rigAsk.metaUnapproved', { ws: a.wsName, path: a.path, by: whoText(t, a.who, a.by), ago: ago(a.t, now) })
       : t('rigAsk.metaArtifact', { ws: a.wsName, seat: a.artifact.seat || '-', ago: ago(a.t, now) });
   return (
-    <div className={`mt-rigask ${a.kind}${compact ? ' compact' : ''}`} data-role="rig-ask" data-kind={a.kind} data-ask={a.id} title={a.kind === 'seat_permit' ? t('rigPermitNeed.tip') : undefined}>
+    <div className={`mt-rigask ${a.kind}${compact ? ' compact' : ''}`} data-role="rig-ask" data-kind={a.kind} data-ask={a.id} title={a.kind === 'seat_permit' ? t('rigPermitNeed.tip') : a.kind === 'run_limit' ? t('rigP230.limitTip') : undefined}>
       <div className="mt-rigask-title">{rigAskTitle(t, a)}</div>
       <div className="mt-rigask-meta">{meta}</div>
-      {a.kind === 'seat_permit' && <div className="mt-rigask-risk" data-role="rig-ask-risk">{t('rigPermitNeed.risk')}</div>}{/* P226: 무인 자리가 셸로 할 수 있는 것 */}
+      {a.kind === 'seat_permit' && <div className="mt-rigask-risk" data-role="rig-ask-risk">{t('rigPermitNeed.risk')}</div>}
+      {a.kind === 'run_limit' && <div className="mt-rigask-why" data-role="rig-ask-why"><span className="dim">{t('rigP230.limitWhy')}</span> {a.run.reason || '-'}</div>}{/* P230: 마지막 반려 까닭 */}{/* P226: 무인 자리가 셸로 할 수 있는 것 */}
       {diff && (
         <button type="button" className="mt-rigask-link" data-action="rig-ask-diff" aria-expanded={show} onClick={() => setShow((s) => !s)}>
           {show ? t('rigAsk.hideDiff') : a.kind === 'proposal' ? t('rigAsk.showPatch') : t('rigAsk.showChange')}
@@ -106,6 +109,11 @@ export function RigAskCard({ a, now = Date.now(), compact = false }) {
             <button type="button" className="mt-rigask-btn primary" data-action="rig-ask-accept" disabled={busy} onClick={() => act('accept')}>{t('rigAsk.accept')}</button>
           </>}
           {a.kind === 'seat_permit' && !remoteView() && <button type="button" className="mt-rigask-btn primary" data-action="rig-ask-permit" disabled={busy} onClick={() => act('approve')}>{t('rigPermitNeed.approve')}</button>}
+          {a.kind === 'run_limit' && <>{/* P230(rig2-design 11.12의 3): 관리자 자리 없는 rig의 상한 */}
+            <button type="button" className="mt-rigask-btn primary" data-action="rig-ask-limit-accept" disabled={busy} onClick={() => act('accept')}>{t('rigP230.accept')}</button>
+            <button type="button" className="mt-rigask-btn" data-action="rig-ask-limit-again" disabled={busy} onClick={() => act('again')}>{t('rigP230.again')}</button>
+            <button type="button" className="mt-rigask-btn" data-action="rig-ask-limit-pause" disabled={busy} onClick={() => act('pause')}>{t('rigP230.pause')}</button>
+          </>}
           {a.kind === 'artifact' && <button type="button" className="mt-rigask-btn primary" data-action="rig-ask-accept" disabled={busy} onClick={() => act('accept')}>{t('rigAsk.accept')}</button>}
         </div>
       )}

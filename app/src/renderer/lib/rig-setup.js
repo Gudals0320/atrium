@@ -389,3 +389,8 @@ export const canEdit = ({ remote = false } = {}) => !remote;
 export const canDisable = () => true;
 // P195: rig.get·status의 worktreeGit(정의에 워크트리 자리가 있는데 저장소 조건이 안 됨) → 사전 열쇠
 export const seatBlockKey = (g) => (g === 'norepo' ? 'rigP195.seatNoRepo' : g === 'nocommit' ? 'rigP195.seatNoCommit' : null);
+
+// P230(rig2-design 11.12의 6): 정기 점검 바로가기를 저장소가 아닌 워크스페이스에서 고르면 경고한다. git: rig.presets의 git(norepo | nocommit | ok | 없음)
+export const checkNoRepo = (a, git) => !!a && a.shortcut === 'check' && git === 'norepo';
+// P230(11.12의 9): 요청 계기를 고르면 fresh가 막힌다(request 입구는 keep만). 막힌 fresh 옆에 까닭을 보인다
+export const freshBlocked = (a) => !!a && a.trigger === 'request';

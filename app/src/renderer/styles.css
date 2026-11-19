@@ -2800,3 +2800,16 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-modal label.mt-rigq-opt input { width: auto; flex: none; margin: 0; }
 .mt-rigsum .mt-rigon-list { max-height: none; }
 .mt-rigsum .mt-rigon-list li { flex-wrap: wrap; }
+/* P230(rig2-design 11.12): 상한 카드의 반려 까닭, rig 판의 고리 카드(지금 돌리기), 막힌 fresh 옆 까닭 */
+.mt-rigask.run_limit { border-left-color: var(--bad); }
+.mt-rigask-why { font-size: 12.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.mt-rigloops { display: grid; gap: 6px; margin-bottom: 8px; }
+.mt-rigloop { display: grid; gap: 4px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--panel-line); background: var(--panel-2); font-size: 13px; }
+.mt-rigloop-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mt-rigloop-tag { padding: 0 6px; border-radius: 4px; background: var(--panel-3); color: var(--text-2); font-size: 11.5px; }
+.mt-rigloop-state { margin-left: auto; font-size: 12px; color: var(--dim); }
+.mt-rigloop-state.running { color: var(--live); }
+.mt-rigloop-state.paused { color: var(--attn-text); }
+.mt-rigloop-meta { font-size: 12px; overflow-wrap: anywhere; }
+.mt-rigloop-acts { display: flex; gap: 6px; }
+.mt-rigq-why { display: block; color: var(--attn-text); font-size: 12px; }

@@ -13,7 +13,7 @@ import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { UnitStops } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
 import { RIG_HEADER_TAIL } from './rig.mjs'; // P182. P188: 세 줄 머리의 셋째 줄 끝
-import { seatHeader } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리
+import { seatHeader, seatExtraLines } from './rig-flow.mjs'; // P185: 자리 세션의 일 머리. P230: 더하는 줄
 import { HUMAN_FROM, BUILDER_ORIGIN, builderHeader } from './rig-templates.mjs'; // P190: 사람이 맡긴 rig 제작 일(상위 세션 없음)
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부
 import { seatDocsOf, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
@@ -112,8 +112,8 @@ export class WorkUnits {
     const ctx = flow && unit.caseId && t ? flow.seatCtx(t, { caseId: unit.caseId }) : null; // P188: 건의 버전
     if (ctx) {
       const v = unit.via || {};
-      const by = v.loop ? `보드의 ${v.loop} 고리(${v.every}마다)가 연 회` : v.request ? `${v.request} 고리의 요청(${v.by === HUMAN_FROM ? '사람' : `@${this.nameOf(v.by)}`})이 연 회` : v.cycle != null ? `보드의 느린 고리 cycles[${v.cycle}]가 만듦` : v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
-      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide, docs: seatDocsOf(ctx.def, ctx.name) }); // P188: 세 줄. 값과 자리 목록은 atrium me. P219: 문서 목록 꼬리
+      const by = v.loop && v.now ? `${v.now === 'manager' ? '관리자 자리가' : '사람이'} ${v.loop} 고리를 지금 한 번 돌려 연 회` : v.loop ? `보드의 ${v.loop} 고리(${v.every}마다)가 연 회` : v.request ? `${v.request} 고리의 요청(${v.by === HUMAN_FROM ? '사람' : `@${this.nameOf(v.by)}`})이 연 회` : v.cycle != null ? `보드의 느린 고리 cycles[${v.cycle}]가 만듦` : v.result ? `@${this.nameOf(v.by)}${v.fromSeat ? `(${v.fromSeat} 자리)` : ''}가 done ${v.result}로 넘김${v.escalated ? ', 되돌아감 상한을 넘어 올라옴' : ''}` : `@${this.nameOf(v.by || unit.from)}가 맡김`;
+      return seatHeader({ seat: ctx.name, unitId: unit.id, caseId: unit.caseId, by, guide: !!ctx.seat.guide, docs: seatDocsOf(ctx.def, ctx.name), extra: seatExtraLines(ctx.def, ctx.name) }); // P230: scoped 셸 줄, 관리자 없는 rig 줄 // P188: 세 줄. 값과 자리 목록은 atrium me. P219: 문서 목록 꼬리
     }
     return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)), kind: t ? t.kind || 'claude' : null }); // P208
   }
