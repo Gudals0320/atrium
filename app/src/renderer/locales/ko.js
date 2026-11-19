@@ -3140,4 +3140,11 @@ export default {
     driftNoCount: '정본 {doc}({path})이 마지막 승인 내용과 다릅니다. 켜면 지금 내용이 기준이 됩니다.',
     showDiff: '차이 보기',
   },
+  // P239(rig2-design 11.18 2단계): 정의가 바뀌어 떠 있는 keep 자리의 권한이 달라짐, rig 자리의 권한 모드 어긋남
+  rigP239: {
+    stale: '권한 바뀜: 다음 시작부터',
+    staleTip: '정의가 바뀌어 이 자리의 권한(writes·allow·permission·deny)이 달라졌습니다. 떠 있는 세션은 띄울 때의 권한으로 돕니다. 열린 일이 없고 쉬는 때 보드가 같은 대화로 다시 띄웁니다.',
+    modeDrift: 'rig 자리 {seat}의 권한 모드가 {mode}로 바뀌었습니다. 자리 터미널에서 Shift+Tab으로 manual로 돌리세요.',
+    modeTip: '이 모드에서는 셸로 하는 쓰기·지우기도 묻지 않을 수 있습니다. 기본 모드로 돌아오면 이 카드는 사라집니다.',
+  },
 };

@@ -3140,4 +3140,11 @@ export default {
     driftNoCount: 'Canon {doc} ({path}) differs from the last approved content. Turning the rig on makes the current content the baseline.',
     showDiff: 'Show difference',
   },
+  // P239(rig2-design 11.18 stage 2): a running keep seat whose permissions changed with the definition, rig seat permission mode drift
+  rigP239: {
+    stale: 'Permissions changed: from next start',
+    staleTip: 'The definition changed this seat\u2019s permissions (writes, allow, permission, deny). The running session keeps the permissions it started with. When it has no open work and is idle, the board restarts it in the same conversation.',
+    modeDrift: 'Rig seat {seat} switched its permission mode to {mode}. Switch it back to manual with Shift+Tab in the seat\u2019s terminal.',
+    modeTip: 'In this mode, shell writes and deletes may run without asking. This card goes away once the seat is back in the default mode.',
+  },
 };

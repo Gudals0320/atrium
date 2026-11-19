@@ -91,7 +91,8 @@ export class RigSetup {
   }
   sessionView(s) {
     const sum = this.b.summary ? this.b.summary(s) : null;
-    return { sessionId: s.sessionId, name: shownName(s) || s.name, kind: s.kind || 'claude', state: sum ? sum.state : null, seat: s.rigSeat || null };
+    const stale = this.b.rigAmp && this.b.rigAmp.permStale ? this.b.rigAmp.permStale(s) : null; // P239: 권한 바뀜(다음 시작부터)
+    return { sessionId: s.sessionId, name: shownName(s) || s.name, kind: s.kind || 'claude', state: sum ? sum.state : null, seat: s.rigSeat || null, ...(stale ? { permStale: true } : {}) };
   }
 
   // ---------- rig.create ----------
