@@ -33,7 +33,8 @@ export const KEEP_FILE_MAX = 8 * 1024 * 1024;
 export const KEEP_TOTAL_MAX = 512 * 1024 * 1024;
 export const BUSY_STATES = new Set(['working', 'waiting']); // 이 상태 동안은 턴 안이다
 export const BG_POLL_MS = SLEEP_TICK_MS; // P246: 뒤 일로 열어 둔 구간을 다시 보는 간격(판의 뒤 일 주기와 같다. cfg.rig3GuardBgPollMs, 0이면 끔)
-export const BOARD_WRITE_MS = 60000; // accept 뒤 이만큼은 그 경로의 바뀜을 판의 것으로 본다(검사가 accept보다 먼저 읽었을 때)
+export const BOARD_WRITE_MS = 60000;
+export const CLOCK_SLACK_MS = 20; // P246: 구간 시작 검사가 넘기는 바뀜의 시각 여유(파일 시각의 거친 시계) // accept 뒤 이만큼은 그 경로의 바뀜을 판의 것으로 본다(검사가 accept보다 먼저 읽었을 때)
 const GC_EVERY = 10; // 바뀜이 있던 검사 n번마다 쓰지 않는 keep을 지운다
 export const foreignNotice = (role, paths, { owns = [], others = [], quarantine = null } = {}) =>
   [
@@ -336,7 +337,9 @@ export class Rig3Guard {
     const cands = this.candidates(st, from, trig.t0);
     const changes = []; let hashed = 0;
     // 구간 시작의 검사는 그 계기 뒤(수정 시각이 계기 시각 이후)의 바뀜을 판단하지 않고 다음 검사에 넘긴다(새로 연 구간의 역할이 이미 쓰기 시작했을 수 있다)
-    const later = (c) => trig.wall != null && c.mtimeMs >= trig.wall;
+    // P246: 파일 시각은 Windows의 거친 시계(약 16ms 틱)로 찍혀 계기 뒤에 쓴 파일이 계기보다 조금 이르게 보일 수 있다(전체 시험 부하에서 P243 시험이 흔들림). CLOCK_SLACK_MS만큼 앞당겨 본다
+    const wall = trig.wall != null ? trig.wall - CLOCK_SLACK_MS : null;
+    const later = (c) => wall != null && c.mtimeMs >= wall;
     let deferred = 0;
     for (const [rel, c] of cur) {
       const b0 = st.base.files.get(rel);
@@ -353,7 +356,7 @@ export class Rig3Guard {
     for (const rel of [...st.base.files.keys()]) {
       if (cur.has(rel)) continue;
       if (isSkipped(rules, rel)) { st.base.files.delete(rel); continue; } // 정의의 ignore가 늘었다
-      if (trig.wall != null) { let dm = 0; try { dm = Math.floor((await fsp.stat(path.dirname(path.join(x.root, rel)))).mtimeMs); } catch { dm = Infinity; } if (dm >= trig.wall) { deferred++; continue; } } // 지운 때는 폴더의 수정 시각으로 본다
+      if (trig.wall != null) { let dm = 0; try { dm = Math.floor((await fsp.stat(path.dirname(path.join(x.root, rel)))).mtimeMs); } catch { dm = Infinity; } if (dm >= wall) { deferred++; continue; } } // 지운 때는 폴더의 수정 시각으로 본다
       changes.push({ rel, what: 'deleted' });
     }
     const foreign = [];
