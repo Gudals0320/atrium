@@ -48,7 +48,19 @@ const clipReason = (s) => { const t = String(s == null ? '' : s).replace(/\s+/g,
 
 export class Rig3Items {
   // b: 백엔드(store, rig, queue, sessions, api, log). roles: Rig3Roles(active, sessionsOf)
-  constructor(b, roles) { this.b = b; this.roles = roles; this.wakes = new Map(); /* '<키>|<역할>' → { deliveryId, lines } */ }
+  constructor(b, roles) { this.b = b; this.roles = roles; this.wakes = new Map(); /* '<키>|<역할>' → { deliveryId, lines } */ this.sent = new Map(); /* 세션 ID → Set(판이 넣은 전달 ID) */ }
+  track(d) { if (d && d.deliveryId && d.sessionId) { const set = this.sent.get(d.sessionId) || new Set(); set.add(d.deliveryId); this.sent.set(d.sessionId, set); } return d; }
+  // P242: rig를 끌 때 아직 넣지 않은 판 알림(깨우는 글·일깨움)을 거둔다(잠든 세션을 다시 깨우지 않게) → 거둔 수
+  cancelQueued(key) {
+    const q = this.b.queue; let n = 0;
+    const r = this.roles.defOf(key);
+    for (const role of Object.keys(r ? r.def.rig3.roles : {})) for (const s of this.roles.sessionsOf(key, role)) {
+      for (const id of this.sent.get(s.sessionId) || []) { try { if (q && q.cancel) { q.cancel(id); n++; } } catch {} }
+      this.sent.delete(s.sessionId);
+    }
+    for (const k of [...this.wakes.keys()]) if (k.startsWith(key + '|')) this.wakes.delete(k);
+    return n;
+  }
   store() { return this.b.store; }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
 
@@ -320,7 +332,7 @@ export class Rig3Items {
       const d = q.retext(w.deliveryId, this.wakeText(key, role, lines));
       if (d) { w.lines = lines; return d; }
     }
-    const d = q.enqueue(s.sessionId, this.wakeText(key, role, [line]), { origin: { kind: 'board' } });
+    const d = this.track(q.enqueue(s.sessionId, this.wakeText(key, role, [line]), { origin: { kind: 'board' } }));
     this.wakes.set(k, { deliveryId: d && d.deliveryId, sessionId: s.sessionId, lines: [line] });
     return d;
   }
@@ -341,7 +353,7 @@ export class Rig3Items {
     if (fresh.length) {
       for (const x of fresh) st.setReceipt(x.rc.id, { nudgedAt: now });
       const lines = fresh.map((x) => `- ${x.it.id}${x.it.rev > 1 ? ` 판 ${x.it.rev}` : ''} (${x.it.kind}, ${x.it.role === HUMAN ? '입력 창구' : x.it.role}): ${x.need === 'answer' ? '받음·반려·pass가 없다' : `받았는데 ${x.need.join('|')} 항목(--from ${x.it.id})도 pass도 없다`}`);
-      if (q) q.enqueue(s.sessionId, this.wakeText(key, role, lines, '받은 것에 답하지 않고 멈췄다'), { origin: { kind: 'board' } });
+      if (q) this.track(q.enqueue(s.sessionId, this.wakeText(key, role, lines, '받은 것에 답하지 않고 멈췄다'), { origin: { kind: 'board' } }));
       rigEvent(this.b, { kind: 'item_nudge', ws: key, seat: role, session: s.sessionId, n: fresh.length, actor: 'board', ref: fresh.map((x) => x.it.id).join(','), text: `${role}: 답하지 않은 받은 것 ${fresh.length}(${fresh.map((x) => x.it.id).join(', ')}) — 한 번 일깨움`, data: { items: fresh.map((x) => x.it.id) } });
       this.changed(key);
       return { nudged: fresh.map((x) => x.it.id) };

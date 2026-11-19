@@ -4,6 +4,7 @@
 //   돌려주는 def는 rig 2 길이 읽는 칸(hooks, seats, flow, loops, amp, docs…)을 비운 꼴이라 rig 2 장치(훅, 회, 고리, 권한, 문서)는 v3 rig에서 돌지 않는다.
 //   v3 칸은 def.rig3에 있다: { purpose, beat, roles, flows, tools, tune }.
 // - 정의 칸(뼈대 8절): purpose(목적 문서 경로), beat({ every, at?, role? }), roles({ <역할>: { owns: [폴더], tools?: [도구], launcher?, model?, beat? } }),
+//   P242: 역할 칸 effort(노력 수준, 모델처럼 띄울 때 하네스에 넘긴다).
 //   flows([{ item, from: 역할|human|[…], to: 역할|[…], for? }]), tools({ <이름>: { run: [...], every?, desc? } }), tune({ after, every, lines }).
 //   rig 2 칸(seats, loops, hooks, manager, results, permission, docs, guide, stopVerify, cycles)은 v3에 없다(오류).
 // - 2·3단계가 쓸 칸(flows의 for, 도구의 every, 박자)은 읽어 고른 꼴로 두기만 한다. 동작은 다음 단계다.
@@ -108,8 +109,8 @@ export function validateRig3(raw, { root = null, exists = isFile, read = (f) => 
     if (name === HUMAN) return bad(`${at}: human은 입력 창구 이름이라 역할 이름으로 쓰지 않는다`);
     if (!ROLE_NAME_RE.test(name)) return bad(`${at}: 역할 이름은 영문 소문자로 시작하고 소문자·숫자·_로 24자까지다`);
     if (!x || typeof x !== 'object' || Array.isArray(x)) return bad(`${at}는 객체다({ "owns": ["폴더/"] })`);
-    const extra = Object.keys(x).filter((k) => !['owns', 'tools', 'launcher', 'model', 'beat'].includes(k));
-    if (extra.length) return bad(`${at}에 모르는 칸이 있다: ${extra.join(', ')}. 칸: owns, tools, launcher, model, beat`);
+    const extra = Object.keys(x).filter((k) => !['owns', 'tools', 'launcher', 'model', 'effort', 'beat'].includes(k));
+    if (extra.length) return bad(`${at}에 모르는 칸이 있다: ${extra.join(', ')}. 칸: owns, tools, launcher, model, effort, beat`);
     const owns = list(x.owns);
     if (!owns.length) return bad(`${at}.owns는 역할이 쥔 폴더 하나 이상이다(예: ["data/"])`);
     const norm = [];
@@ -134,9 +135,11 @@ export function validateRig3(raw, { root = null, exists = isFile, read = (f) => 
     if (x.launcher != null) { if (typeof x.launcher !== 'string' || !x.launcher.trim()) return bad(`${at}.launcher는 claude, codex 또는 판의 런처 이름이다`); launcher = x.launcher.trim(); }
     let model = null;
     if (x.model != null) { if (typeof x.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/.test(x.model.trim())) return bad(`${at}.model은 모델 이름 글이다: ${JSON.stringify(x.model)}`); model = x.model.trim(); }
+    let effort = null; // P242: 노력 수준(모델처럼 하네스에 넘긴다. Claude Code --effort, Codex model_reasoning_effort). 화면에는 없고 빌더가 정한다
+    if (x.effort != null) { if (typeof x.effort !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{0,19}$/.test(x.effort.trim())) return bad(`${at}.effort는 노력 수준 낱말이다(예: low, medium, high): ${JSON.stringify(x.effort)}`); effort = x.effort.trim(); }
     let beat = null;
     if (x.beat != null) { const b = readBeat(x.beat, `${at}.beat`); if (b.reason) return bad(b.reason); beat = b.beat; }
-    roles[name] = { name, owns: norm, tools: [...new Set(rt)], launcher, model, beat, doc: roleDocPath(name), memory: memoryPath(name) };
+    roles[name] = { name, owns: norm, tools: [...new Set(rt)], launcher, model, effort, beat, doc: roleDocPath(name), memory: memoryPath(name) };
   }
   // 정의서(파일과 네 칸)
   if (root) {

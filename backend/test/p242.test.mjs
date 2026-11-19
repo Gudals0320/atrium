@@ -30,8 +30,9 @@ const DEF = () => ({
     { item: 'request', from: 'human', to: 'data' },
   ],
 });
-async function board(cfg = {}) {
+async function board(cfg = {}, mod = null) {
   const def = DEF();
+  if (mod) mod(def);
   const dir = tmp();
   fs.mkdirSync(path.join(dir, '.atrium', 'roles'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.atrium', 'purpose.md'), '# 목적\nP242\n');
@@ -47,9 +48,12 @@ async function board(cfg = {}) {
   b.queue = {
     enqueue: (sessionId, text, opts) => { const d = { deliveryId: 'd' + ++dn, sessionId, text, opts, status: 'queued' }; items.set(d.deliveryId, d); return d; },
     retext: (id, text) => { const d = items.get(id); if (!d || d.status !== 'queued') return null; d.text = text; return d; },
+    cancel: (id) => { const d = items.get(id); if (!d || d.status !== 'queued') throw Object.assign(new Error('x'), { code: 'not_cancellable' }); d.status = 'cancelled'; return d; },
   };
   let n = 0;
+  const spawnedP = [];
   b.spawn = async (p) => {
+    spawnedP.push(p);
     const role = p[ROLE_SPAWN]; const kind = p.kind || 'claude';
     const L = b.rig3.launchOf(ws.key, role, { kind, cwd: p.cwd });
     const sessionId = `sid-${p.name}-${++n}`;
@@ -60,7 +64,8 @@ async function board(cfg = {}) {
     return { sessionId, name: p.name };
   };
   b.kill = async (p) => { b.sessions.delete(p.session); return { ok: true }; };
-  b.sleeper = { isAsleep: (s) => !!s.rt.sleep, info: () => null, sleep: async () => ({}) };
+  const slept = []; const woke = [];
+  b.sleeper = { isAsleep: (s) => !!s.rt.sleep, info: () => null, sleep: async (s, o) => { slept.push([s.name, o]); s.rt.sleep = { at: Date.now(), by: o.by, scope: o.scope }; return { slept: true }; }, wake: async (s, why) => { woke.push([s.name, why]); s.rt.sleep = null; return { awake: true }; } };
   store.setRigEnabled(ws.key, true);
   await b.rig3.onEnabled(ws.key, true);
   const S = (role) => [...b.sessions.values()].find((s) => s.rigRole === role);
@@ -71,7 +76,7 @@ async function board(cfg = {}) {
   const ledger = (kinds) => store.rigEvents({ ws: key, limit: 1000, kinds });
   const toRole = (role) => [...items.values()].filter((d) => d.sessionId === S(role).sessionId && !/너는 rig 역할/.test(d.text));
   const deliverAll = () => { for (const d of items.values()) d.status = 'confirmed'; };
-  return { dir, store, key, b, I, S, file, put, ledger, toRole, deliverAll, items, casts };
+  return { dir, store, key, b, I, S, file, put, ledger, toRole, deliverAll, items, casts, spawnedP, slept, woke };
 }
 const code = async (p, c) => { try { await p; } catch (e) { assert.equal(e.code, c, e.message); return e.message; } assert.fail(`기대한 거절 ${c}`); };
 const codeSync = (fn, c) => { try { fn(); } catch (e) { assert.equal(e.code, c, e.message); return e.message; } assert.fail(`기대한 거절 ${c}`); };
@@ -372,4 +377,55 @@ test('P242 장부 종류, 실을 글·안내(항목 명령), 다시 뜨면 받�
   assert.match(load, /- 받음 기다림: hypothesis-3 \(hypothesis, ideas\): hypotheses\/h3\.md/);
   assert.match(load, /- 받았고 답 항목\(result\)이 없음: hypothesis-1/);
   assert.ok(validateRig3(DEF(), { root: B.dir }).ok);
+});
+
+test('P242 끄면 역할 세션을 재운다(닫지 않음, 일하는 턴은 끝난 뒤, 넣지 않은 판 알림은 거둠), 켜면 깨운다', async () => {
+  const B = await board();
+  const ready = (s) => { applyHook(s.rt, { hook_event_name: 'Stop', session_id: s.sessionId, last_assistant_message: 'ok' }); s.rt.phase = 'running'; s.rt.term.present = true; s.rt.term.status = 'idle'; };
+  for (const r of ['data', 'ideas', 'verify']) ready(B.S(r));
+  B.deliverAll();
+  B.file('hypotheses/h1.md', '1');
+  await B.put('ideas', 'hypotheses/h1.md', { kind: 'hypothesis' }); // verify에게 아직 넣지 않은 깨우는 글
+  const pending = B.toRole('verify').at(-1);
+  assert.equal(pending.status, 'queued');
+  B.S('ideas').rt.term.status = 'working'; // 일하는 턴
+  B.store.setRigEnabled(B.key, false);
+  const out = await B.b.rig3.onEnabled(B.key, false);
+  assert.deepEqual(out.filter((x) => x.slept).map((x) => x.role).sort(), ['data', 'verify']);
+  assert.deepEqual(out.filter((x) => x.waiting).map((x) => x.role), ['ideas']);
+  assert.equal(pending.status, 'cancelled', '넣지 않은 판 알림은 거둔다');
+  assert.equal(B.b.sessions.size, 3, '닫지 않는다');
+  assert.ok(B.slept.every(([, o]) => o.scope === 'session' && o.by === 'rig'));
+  // 꺼진 rig에는 항목 명령이 없다
+  await code(B.put('ideas', 'hypotheses/h1.md', { kind: 'hypothesis' }), 'rig3_off');
+  // 턴이 끝나면 다음 주기에 재운다
+  assert.deepEqual((await B.b.rig3.tick()).filter((x) => x.off).map((x) => x.waiting), ['working']);
+  B.S('ideas').rt.term.status = 'idle';
+  assert.deepEqual((await B.b.rig3.tick()).filter((x) => x.off).map((x) => x.slept), ['ideas']);
+  assert.deepEqual(await B.b.rig3.tick(), [], '다 재웠으면 더 보지 않는다');
+  const rows = B.ledger(['role_slept']);
+  assert.equal(rows.length, 3); assert.ok(rows.every((r) => r.value === 'rig_off'));
+  // 켜면 깨운다(새로 띄우지 않는다)
+  const before = B.spawnedP.length;
+  B.store.setRigEnabled(B.key, true);
+  const on = await B.b.rig3.onEnabled(B.key, true);
+  assert.deepEqual(on.filter((x) => x.woke).map((x) => x.role).sort(), ['data', 'ideas', 'verify']);
+  assert.deepEqual(B.woke.map((x) => x[1]), ['rig', 'rig', 'rig']);
+  assert.equal(B.spawnedP.length, before);
+  assert.equal(B.ledger(['role_woke']).length, 3);
+  assert.ok(RIG3_EVENT_KINDS.includes('role_woke'));
+});
+
+test('P242 역할 칸 effort: 정의에서 읽어 모델처럼 띄울 때 넘긴다', async () => {
+  const B = await board({}, (d) => { d.roles.verify.effort = 'high'; d.roles.data.model = 'haiku'; });
+  const p = B.spawnedP.find((x) => x.name === 'verify');
+  assert.equal(p.effort, 'high');
+  assert.equal(B.spawnedP.find((x) => x.name === 'data').effort, undefined);
+  assert.equal(B.b.rig.read(B.key).def.rig3.roles.verify.effort, 'high');
+  assert.equal(B.b.rig.status(B.key).rig3.roles.find((r) => r.name === 'verify').effort, 'high');
+  assert.equal(B.ledger(['role_spawn']).find((r) => r.seat === 'verify').data.effort, 'high');
+  const bad = validateRig3({ ...DEF(), roles: { ...DEF().roles, data: { owns: ['data/'], effort: 'very high' } } }, { root: B.dir });
+  assert.equal(bad.ok, false); assert.match(bad.reason, /roles\.data\.effort는 노력 수준 낱말/);
+  const nope = validateRig3({ ...DEF(), roles: { ...DEF().roles, data: { owns: ['data/'], speed: 1 } } }, { root: B.dir });
+  assert.match(nope.reason, /칸: owns, tools, launcher, model, effort, beat/);
 });
