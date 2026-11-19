@@ -235,6 +235,7 @@ export class RigFlow {
     const before = s.rigSeat || null;
     st.setSessionSeat(s.sessionId, want);
     s.rigSeat = want;
+    if (want && b.rigAmp && b.rigAmp.noteSeated) b.rigAmp.noteSeated(s); // P239(11.18 답 1): 떠 있는 세션을 앉히면 쉬는 때 자리 권한으로 다시 띄운다
     st.addEvent(s.sessionId, 'rig_seat', { workspace: s.workspaceKey, seat: want, before, by });
     rigEvent(b, { kind: 'seat_set', ws: s.workspaceKey, seat: want, session: s.sessionId, value: want, actor: by === 'human' ? 'human' : 'board', text: `@${shownName(s)}: ${before || '-'} → ${want || '-'}`, data: { before, by } });
     b.log(`rig seat ${s.name}: ${before || '-'} → ${want || '-'} (${by})`);

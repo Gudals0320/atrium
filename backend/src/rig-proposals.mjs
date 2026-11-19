@@ -431,7 +431,7 @@ export class RigProposals {
     for (const s of b.sessions ? b.sessions.values() : []) {
       const d = s.rt && s.rt.rigModeDrift;
       if (!d || !s.rigSeat || s.closedAt || s.rt.sleep || (ws && s.workspaceKey !== ws)) continue;
-      out.push({ id: `mode:${s.sessionId}`, kind: 'mode_drift', workspace: s.workspaceKey, wsName: wsName(s.workspaceKey), t: d.at, seat: s.rigSeat, mode: d.mode, sessionId: s.sessionId, sessionName: this.nameOf(s.sessionId) });
+      out.push({ id: `mode:${s.sessionId}`, kind: 'mode_drift', workspace: s.workspaceKey, wsName: wsName(s.workspaceKey), t: d.at, seat: s.rigSeat, mode: d.mode, back: d.back || 'manual', sessionId: s.sessionId, sessionName: this.nameOf(s.sessionId) });
     }
     return out.sort((x, y) => x.t - y.t);
   }

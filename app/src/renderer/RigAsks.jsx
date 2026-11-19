@@ -32,7 +32,7 @@ export function useRigAsks() {
   useEffect(() => { wire(); subs.add(set); load(); return () => { subs.delete(set); }; }, []);
   return x.asks;
 }
-export const rigAskTitle = (t, a) => (a.kind === 'mode_drift' ? t('rigP239.modeDrift', { seat: a.seat, mode: a.mode }) : a.kind === 'run_limit' ? t('rigP230.limitTitle', { name: a.run.name || a.run.id }) : a.kind === 'seat_permit' ? t('rigPermitNeed.line', { seat: a.seat }) : a.kind === 'proposal' ? t('rigAsk.proposal', { doc: a.proposal.target === 'definition' ? t('rigAsk.definition') : a.proposal.target, why: a.proposal.why || t('rigAsk.noWhy') })
+export const rigAskTitle = (t, a) => (a.kind === 'mode_drift' ? t('rigP239.modeDrift', { seat: a.seat, mode: a.mode, back: a.back || 'manual' }) : a.kind === 'run_limit' ? t('rigP230.limitTitle', { name: a.run.name || a.run.id }) : a.kind === 'seat_permit' ? t('rigPermitNeed.line', { seat: a.seat }) : a.kind === 'proposal' ? t('rigAsk.proposal', { doc: a.proposal.target === 'definition' ? t('rigAsk.definition') : a.proposal.target, why: a.proposal.why || t('rigAsk.noWhy') })
   : a.kind === 'doc_unapproved' ? t('rigAsk.unapproved', { doc: a.doc }) : t('rigAsk.artifact', { sector: a.artifact.sector, path: a.artifact.path }));
 
 // 승인 안 된 바뀜을 만든 쪽(보드의 구조 값) → 화면 글

@@ -2958,7 +2958,7 @@ export default {
     unattendedWarn: 'This confirmation turns on the "never asks" seats. Their sessions run commands without asking a person, and through the shell they can write and delete anywhere in the repository (the write scope only limits edit tools). A "never asks" seat added to the definition later runs as "asks outside its scope" until you approve it again.',
   },
   rigAsk: { // P224: rig approval cards (needs-you list and phone list)
-    head: 'rig approvals {n}',
+    head: 'rig {n}',
     phoneHead: 'rig approvals {n}',
     proposal: 'Proposal: {doc} · {why}',
     definition: 'rig definition',
@@ -3145,7 +3145,7 @@ export default {
   rigP239: {
     stale: 'Permissions changed: from next start',
     staleTip: 'The definition changed this seat\u2019s permissions (writes, allow, permission, deny). The running session keeps the permissions it started with. When it has no open work and is idle, the board restarts it in the same conversation.',
-    modeDrift: 'Rig seat {seat} switched its permission mode to {mode}. Switch it back to manual with Shift+Tab in the seat\u2019s terminal.',
-    modeTip: 'In this mode, shell writes and deletes may run without asking. This card goes away once the seat is back in the default mode.',
+    modeDrift: 'Rig seat {seat} switched its permission mode to {mode}. Switch it back to {back} with Shift+Tab in the seat\u2019s terminal.',
+    modeTip: 'In this mode, shell writes and deletes may run without asking. This card goes away once the seat is back in the mode it started with.',
   },
 };

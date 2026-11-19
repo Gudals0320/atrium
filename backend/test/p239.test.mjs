@@ -159,15 +159,40 @@ test('P239 permission·allow·deny가 바뀐 keep 자리도 다시 띄운다. �
   assert.ok(B.b.rigAmp.permStale(main));
 });
 
-test('P239 기준이 없는 자리(떠 있는 세션에 자리를 정함): 지금 값을 기준으로 두고 다시 띄우지 않는다', async () => {
+test('P239 떠 있는 세션에 자리를 정함(rig.seat): 기준 null → 쉬면 다시 띄운다. 이 판 전에 띄운 세션(기준 없음)은 지금 값을 기준으로', async () => {
   const B = await board();
   const s = B.add('free');
-  assert.equal(s.rt.rigPermSig, null);
+  assert.equal(s.rt.rigPermSig, null, '자리 없이 띄움');
   s.rigSeat = 'main';
+  B.b.rigAmp.noteSeated(s);
+  const st = B.b.rigAmp.permStale(s);
+  assert.ok(st);
+  assert.equal(st.from, null);
+  assert.equal(st.to.permission, 'scoped');
+  assert.deepEqual(await B.b.rigAmp.permCheck(s), { restarted: true, plan: 'resume' });
   assert.equal(B.b.rigAmp.permStale(s), null);
-  assert.ok(s.rt.rigPermSig);
+  // 이 자리로 띄운 세션을 같은 자리에 다시 앉히면 그대로
+  const m = B.add('main', { seat: 'main' });
+  B.b.rigAmp.noteSeated(m);
+  assert.equal(B.b.rigAmp.permStale(m), null);
+  // 이 판 전에 띄운 세션: 기준을 지금 값으로
+  const old = B.add('old', { seat: 'main' });
+  delete old.rt.rigPermSig;
+  assert.equal(B.b.rigAmp.permStale(old), null);
+  assert.ok(old.rt.rigPermSig);
   B.put(DEF({ main: { writes: ['docs/', 'guides/'] } }));
-  assert.ok(B.b.rigAmp.permStale(s));
+  assert.ok(B.b.rigAmp.permStale(old));
+});
+
+test('P239 setSeat(rig.seat)가 noteSeated를 부른다', async () => {
+  const { RigFlow } = await import('../src/rig-flow.mjs');
+  const B = await board();
+  const s = B.add('free');
+  const f = Object.create(RigFlow.prototype);
+  Object.assign(f, { b: { ...B.b, broadcastSession: () => {} }, store: () => B.store, seatedOf: () => [] });
+  f.setSeat(s, 'asker', { by: 'human' });
+  assert.equal(s.rigSeat, 'asker');
+  assert.ok(B.b.rigAmp.permStale(s), '자리 없이 띄운 세션 → 다시 띄울 대상');
 });
 
 test('P239 launchOf: 띄울 때 서명을 남기고, 이어 가기 명령만 다시 만들 때(launch false)는 남기지 않는다', async () => {
@@ -211,13 +236,15 @@ test('P239 권한 모드 어긋남: scoped 자리가 acceptEdits → 장부 gate
   assert.equal(a.length, 1);
   assert.deepEqual({ id: a[0].id, kind: a[0].kind, seat: a[0].seat, mode: a[0].mode, sessionName: a[0].sessionName }, { id: `mode:${main.sessionId}`, kind: 'mode_drift', seat: 'main', mode: 'acceptEdits', sessionName: 'main' });
   assert.equal(MODE_DRIFT_TEXT('main', 'acceptEdits'), 'rig 자리 main의 권한 모드가 acceptEdits로 바뀌었다. 자리 터미널에서 Shift+Tab으로 manual로 돌린다.');
+  assert.equal(MODE_DRIFT_TEXT('main', 'auto', 'acceptEdits'), 'rig 자리 main의 권한 모드가 auto로 바뀌었다. 자리 터미널에서 Shift+Tab으로 acceptEdits로 돌린다.');
   assert.ok(B.casts.some((c) => c.n === 'rig.asks'));
-  // 다른 모드로 또 바뀌면 한 줄 더, 카드는 여전히 하나
-  hook(be, main, 'PostToolUse', 'plan');
+  assert.equal(a[0].back, 'manual');
+  // 더 넓은 모드로 또 바뀌면 한 줄 더, 카드는 여전히 하나
+  hook(be, main, 'PostToolUse', 'auto');
   assert.equal(B.gates().length, 2);
   a = B.asks();
   assert.equal(a.length, 1);
-  assert.equal(a[0].mode, 'plan');
+  assert.equal(a[0].mode, 'auto');
   // 잠든 자리는 카드를 숨긴다(깨면 띄운 모드)
   main.rt.sleep = { at: Date.now() };
   assert.equal(B.asks().length, 0);
@@ -231,7 +258,30 @@ test('P239 권한 모드 어긋남: scoped 자리가 acceptEdits → 장부 gate
   assert.throws(() => B.b.rigProposals.answer(`mode:${main.sessionId}`, 'accept'), /Shift\+Tab/);
 });
 
-test('P239 권한 모드 어긋남: ask 자리(기본 모드로 띄움)도 본다. unattended 자리, rig 밖 세션, 다른 모드로 띄운 ask 자리는 보지 않는다', async () => {
+test('P239 권한 모드 어긋남: 띄운 모드보다 넓을 때만. plan은 어긋남이 아니다', async () => {
+  const B = await board();
+  const be = hookBackend(B);
+  const main = B.add('main', { seat: 'main' });
+  hook(be, main, 'PostToolUse', 'plan');
+  hook(be, main, 'PostToolUse', 'dontAsk');
+  assert.equal(B.gates().length, 0);
+  assert.equal(B.asks().length, 0);
+  hook(be, main, 'PostToolUse', 'bypassPermissions');
+  assert.equal(B.asks()[0].mode, 'bypassPermissions');
+  hook(be, main, 'PostToolUse', 'plan'); // 좁아지면 사라진다
+  assert.equal(B.asks().length, 0);
+  // acceptEdits로 띄운 ask 자리: acceptEdits·default·plan은 그대로, auto·bypass만 어긋남. 돌아갈 모드는 acceptEdits
+  const a2 = B.add('asker', { seat: 'asker', permissionMode: 'acceptEdits' });
+  hook(be, a2, 'PostToolUse', 'acceptEdits');
+  hook(be, a2, 'PostToolUse', 'default');
+  assert.equal(B.asks().length, 0);
+  hook(be, a2, 'PostToolUse', 'auto');
+  const a = B.asks();
+  assert.deepEqual(a.map((x) => [x.sessionName, x.mode, x.back]), [['asker', 'auto', 'acceptEdits']]);
+  assert.equal(B.gates().at(-1).data.launched, 'acceptEdits');
+});
+
+test('P239 권한 모드 어긋남: ask 자리(기본 모드로 띄움)도 본다. unattended 자리, rig 밖 세션은 보지 않는다', async () => {
   const B = await board();
   const be = hookBackend(B);
   const asker = B.add('asker', { seat: 'asker' });
@@ -244,7 +294,7 @@ test('P239 권한 모드 어긋남: ask 자리(기본 모드로 띄움)도 본�
   hook(be, free, 'PostToolUse', 'acceptEdits');
   hook(be, askerBypass, 'PostToolUse', 'acceptEdits');
   const a = B.asks();
-  assert.deepEqual(a.map((x) => x.sessionName), ['asker']);
+  assert.deepEqual(a.map((x) => x.sessionName), ['asker'], 'acceptEdits로 띄운 ask 자리의 acceptEdits는 어긋남이 아니다');
   assert.equal(B.gates().length, 1);
   assert.equal(B.gates()[0].seat, 'asker');
 });

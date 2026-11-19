@@ -81,7 +81,7 @@ try {
         await page.waitForSelector('[data-role=rig-ask][data-kind=mode_drift]', { timeout: 15000 });
         const n = await page.$$eval('[data-role=rig-ask][data-kind=mode_drift]', (xs) => xs.length);
         const c = await page.$eval('[data-role=rig-ask][data-kind=mode_drift]', (x) => ({ title: x.querySelector('.mt-rigask-title').textContent, btns: x.querySelectorAll('button').length, tip: x.getAttribute('title') }));
-        check(`[${lang}] 카드 글`, n === 1 && c.title === fill(D[lang].rigP239.modeDrift, { seat: 'main', mode: asks[0] && asks[0].mode }) && c.btns === 0 && c.tip === D[lang].rigP239.modeTip, c);
+        check(`[${lang}] 카드 글`, n === 1 && c.title === fill(D[lang].rigP239.modeDrift, { seat: 'main', mode: asks[0] && asks[0].mode, back: 'manual' }) && c.btns === 0 && c.tip === D[lang].rigP239.modeTip, c);
         await shotEl(page, '[data-role=rig-ask][data-kind=mode_drift]', `04-mode-card-${lang}`);
         await shotEl(page, '[data-role=inbox-list]', `05-inbox-mode-${lang}`);
       } else {

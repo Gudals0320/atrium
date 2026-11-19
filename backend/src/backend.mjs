@@ -1914,7 +1914,7 @@ export class Backend {
     let rig = [];
     try { rig = this.rig && this.rig.permitNeeds ? this.rig.permitNeeds().map((x) => ({ kind: 'seat_permit', ...x, text: `무인 자리 승인: ${x.seat}` })) : []; } catch {}
     // P239(11.18의 4): 권한 모드가 바뀐 rig 자리
-    for (const s of this.sessions.values()) { const d = s.rt && s.rt.rigModeDrift; if (d && s.rigSeat && !s.closedAt && !s.rt.sleep) rig.push({ kind: 'mode_drift', workspace: s.workspaceKey, seat: s.rigSeat, session: s.name, mode: d.mode, text: MODE_DRIFT_TEXT(s.rigSeat, d.mode) }); }
+    for (const s of this.sessions.values()) { const d = s.rt && s.rt.rigModeDrift; if (d && s.rigSeat && !s.closedAt && !s.rt.sleep) rig.push({ kind: 'mode_drift', workspace: s.workspaceKey, seat: s.rigSeat, session: s.name, mode: d.mode, text: MODE_DRIFT_TEXT(s.rigSeat, d.mode, d.back) }); }
     return { needsYou: mine, review, problems: errors, rig };
   }
 
