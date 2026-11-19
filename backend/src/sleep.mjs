@@ -19,6 +19,7 @@
 //   이름표 메뉴의 "이 리포 깨우기"(workspace.wake)는 사람이 리포를 고른 것이라 둘 다 깨운다.
 import fs from 'node:fs';
 import { buildStartArgs, buildResumeArgs, transcriptPathFor } from './launch.mjs';
+import { resumeModel } from './model-now.mjs'; // P227: 이어 갈 모델·노력 수준
 import { deriveState } from './state.mjs';
 import { waitClaudeExitOr } from './worktree-exit.mjs'; // P71, P105
 import { startOpt } from './launchers.mjs'; // P97: 실행 명령
@@ -221,8 +222,11 @@ export function convoOf(s, claudeProjects) {
 }
 
 // 깨울 때의 실행 인자. 대화 기록이 있으면 그 대화로 이어 가고, 없으면(잠든 동안 지워짐) 같은 세션 ID로 새로 띄운다
-export function wakeArgs(launch, conv) {
-  return conv.exists ? { plan: 'resume', args: buildResumeArgs({ ...launch, sessionId: conv.convId }) } : { plan: 'fresh', args: buildStartArgs(launch) };
+// P227: 이어 갈 때 모델·노력 수준은 그 대화가 마지막으로 쓰던 값(now: s.rt.modelNow, resumeModel). 새로 띄울 때는 띄운 값
+export function wakeArgs(launch, conv, now = null) {
+  if (!conv.exists) return { plan: 'fresh', args: buildStartArgs(launch) };
+  const rm = resumeModel('claude', launch, now);
+  return { plan: 'resume', args: buildResumeArgs({ ...launch, model: rm.model, effort: rm.effort, sessionId: conv.convId }), model: rm };
 }
 
 // P170: 하네스 세션의 이어 갈 대화 ID(판 기록, 터미널이 아는 것). 값싼 것만 본다(Codex rollout 찾기는 잠재울 때만, backend.harnessSessionIdOf)
@@ -777,7 +781,7 @@ export class Sleeper {
       const claude = (s.kind || 'claude') === 'claude';
       const conv = this.convFor(s);
       // P170: 하네스는 되살리기·다시 열기와 같은 하네스 이어 가기 값(연결·안내문·PATH의 atrium·토큰 파일, backend.startHarness)으로 같은 대화를 잇는다
-      const { plan, args } = claude ? wakeArgs(b.launchOf(s), conv) : { plan: conv.convId ? 'resume' : 'fresh', args: null };
+      const { plan, args, model: rm } = claude ? wakeArgs(b.launchOf(s), conv, b.modelNowFor ? b.modelNowFor(s) : s.rt.modelNow) : { plan: conv.convId ? 'resume' : 'fresh', args: null };
       created = await b.withNewPane(() => b.adapter.createWorkspace({ cwd: s.cwd, label: s.name }), (r) => {
         s.paneId = r.paneId; s.termWorkspaceId = r.workspaceId;
         const rt = s.rt;
@@ -808,7 +812,7 @@ export class Sleeper {
       if (s.rt.exit) throw apiError('resume_failed', `대화를 재개한 직후 ${s.kind || 'claude'} 프로세스가 종료되었습니다 (${s.rt.exit.kind})`);
       state = deriveState(s.rt).state;
       s.wokeAt = Date.now(); s.waking = null; s.draft = false;
-      const out = { woke: true, name: s.name, why, plan, convId: conv.convId, state, ms: Date.now() - t0, sleptMs: t0 - (z.at || t0), paneId: s.paneId };
+      const out = { woke: true, name: s.name, why, plan, convId: conv.convId, state, ms: Date.now() - t0, sleptMs: t0 - (z.at || t0), paneId: s.paneId, ...(rm ? { model: rm } : {}) }; // P227: 이어 간 모델·노력 수준과 출처
       b.store.addEvent(s.sessionId, 'woke', out);
       b.log(`woke ${s.name} why=${why} plan=${plan} in ${out.ms}ms`);
       b.broadcastSession(s, { cause: `wake:${why}` });
