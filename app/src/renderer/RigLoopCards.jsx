@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from './api.js';
 import { toast } from './store.js';
-import { useT, errText } from './lib/i18n.js';
+import { useT, errText, getLanguage } from './lib/i18n.js';
 import { loopCardView, runToast } from './lib/rig-loop-card.js';
 
 export function RigLoopCards({ ws }) {
@@ -17,6 +17,7 @@ export function RigLoopCards({ ws }) {
     return () => offs.forEach((f) => f());
   }, [ws.key, load]);
   if (!loops || !loops.length) return null;
+  const every = (e) => (e === '1d' ? t('rigP228.every1d') : e === '7d' ? t('rigP228.every7d') : /^\d+h$/.test(String(e)) ? t('rigP228.everyN', { n: parseInt(e, 10) }) : String(e || '')); // 대화상자 요약과 같은 말
   const run = async (name) => {
     setBusy(name);
     try { const r = await api.call('rig.run', { workspace: ws.key, loop: name }); const m = runToast(r); toast(t(m.key, m.vars), m.kind); load(); }
@@ -36,8 +37,8 @@ export function RigLoopCards({ ws }) {
                 <span className={`mt-rigloop-state ${v.state}`}>{t(`rigP230.loopState.${v.state}`)}</span>
               </div>
               <div className="mt-rigloop-meta dim">
-                {t(v.trigger.key, v.trigger.vars)}
-                {v.nextAt != null && <> · {t('rigP230.next', { when: new Date(v.nextAt).toLocaleString() })}</>}
+                {t(v.trigger.key, v.trigger.key === 'rigP230.trigEvery' ? { ...v.trigger.vars, every: every(v.trigger.vars.every) } : v.trigger.vars)}
+                {v.nextAt != null && <> · {t('rigP230.next', { when: new Date(v.nextAt).toLocaleString(getLanguage() === 'en' ? 'en-US' : 'ko-KR') })}</>}
                 {' · '}{v.last ? t('rigP230.last', { name: v.last.name, state: t(`rigBand.state.${v.last.state}`) }) : t('rigP230.noRuns')}
               </div>
               {v.canRun && (

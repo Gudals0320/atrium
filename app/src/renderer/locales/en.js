@@ -3101,7 +3101,7 @@ export default {
     loopState: { running: 'running', waiting: 'waiting', paused: 'paused', idle: 'idle' },
     kindImprove: 'improvement',
     trigRequest: 'when a request comes · entry {entry}',
-    trigEvery: 'every {every} · entry {entry}',
+    trigEvery: '{every} · entry {entry}',
     trigEvent: 'event trigger (does not run yet)',
     next: 'next run {when}',
     last: 'last run {name} ({state})',

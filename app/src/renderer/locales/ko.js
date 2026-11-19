@@ -3101,7 +3101,7 @@ export default {
     loopState: { running: '도는 중', waiting: '기다림', paused: '멈춤', idle: '쉼' },
     kindImprove: '개선',
     trigRequest: '요청이 올 때 · 입구 {entry}',
-    trigEvery: '{every}마다 · 입구 {entry}',
+    trigEvery: '{every} · 입구 {entry}',
     trigEvent: '사건 계기(아직 돌지 않음)',
     next: '다음 회 {when}',
     last: '마지막 회 {name}({state})',
