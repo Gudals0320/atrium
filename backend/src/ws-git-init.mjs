@@ -28,6 +28,8 @@ export async function initRepo(dir, { run = runGit } = {}) {
   const i = await run(dir, ['init', '-q']);
   const why = i.err.trim().split('\n')[0];
   if (!i.ok) throw Object.assign(new Error(`git init이 실패했습니다: ${why}`), { code: 'git_failed', key: 'wsGitInitFail', vars: { error: why } });
+  // 첫 가지 이름은 사용자의 init.defaultBranch(없으면 master)와 상관없이 main(사용자 요청 2026-11-19). 첫 커밋 전이라 HEAD만 옮기면 된다(git 판을 가리지 않는다)
+  await run(dir, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
   const c = await run(dir, ['commit', '--allow-empty', '-q', '-m', 'Initial commit']);
   if (c.ok) return { init: true, commit: true };
   return { init: true, commit: false, why: identityMissing(c.err) ? 'identity' : 'error', error: c.err.trim().split('\n')[0] || null };
