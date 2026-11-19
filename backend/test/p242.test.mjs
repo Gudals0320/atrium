@@ -184,7 +184,7 @@ test('P242 accept·return·drop·pass: 반려는 낸 역할을 깨우고, 낸 �
   codeSync(() => B.I.giveBack(B.key, { role: 'ideas', id: 'hypothesis-1', reason: 'x' }), 'bad_request');
   const r = B.I.giveBack(B.key, { role: 'verify', id: 'hypothesis-1', reason: '미래 참조' });
   assert.equal(r.to, 'ideas'); assert.equal(r.late, null);
-  assert.match(B.toRole('ideas').at(-1).text, /- 반려: hypothesis-1 \(verify\): "미래 참조" → 고쳐 다시 내기 atrium rig put <파일> --redo hypothesis-1/);
+  assert.match(B.toRole('ideas').at(-1).text, /- 반려: hypothesis-1 \(verify\): "미래 참조" → 고쳐 다시 내기 atrium rig put hypothesis <파일> --redo hypothesis-1/);
   assert.match(B.toRole('ideas').at(-1).text, /반려된 네 항목 1/);
   let ib = B.I.inbox(B.key, 'ideas');
   assert.deepEqual(ib.returned.map((x) => [x.id, x.by[0].role, x.by[0].reason]), [['hypothesis-1', 'verify', '미래 참조']]);
@@ -208,13 +208,17 @@ test('P242 accept·return·drop·pass: 반려는 낸 역할을 깨우고, 낸 �
   await B.put('ideas', 'hypotheses/h3.md', { kind: 'hypothesis' });
   await B.put('ideas', 'hypotheses/h4.md', { kind: 'hypothesis' });
   assert.deepEqual(B.I.pass(B.key, { role: 'verify', id: 'hypothesis-3', reason: '이미 본 것' }).passed, ['hypothesis-3']);
+  // P244: 항목 없는 pass는 박자에만 답한다(받은 것을 닫지 않는다). 받은 것은 이름을 대고 하나씩 닫는다
   const p = B.I.pass(B.key, { role: 'verify', reason: '이번에는 없다' });
-  assert.deepEqual(p.passed.sort(), ['hypothesis-1', 'hypothesis-4'], '받고 답 항목이 없는 hypothesis-1(for)도 pass');
+  assert.deepEqual(p.passed, []); assert.equal(p.turn, true); assert.equal(p.pending, 2);
+  assert.deepEqual(B.I.pendingOf(B.key, 'verify').map((x) => x.it.id).sort(), ['hypothesis-1', 'hypothesis-4']);
+  assert.deepEqual(B.I.pass(B.key, { role: 'verify', id: 'hypothesis-1', reason: '받고 답 항목 없음(for)' }).passed, ['hypothesis-1']);
+  assert.deepEqual(B.I.pass(B.key, { role: 'verify', id: 'hypothesis-4', reason: '없다' }).passed, ['hypothesis-4']);
   assert.equal(B.I.pass(B.key, { role: 'verify', reason: '없다' }).turn, true);
   ib = B.I.inbox(B.key, 'verify');
   assert.deepEqual([ib.received.length, ib.unanswered.length], [0, 0]);
   const kinds = B.ledger(['item_accept', 'item_return', 'item_drop', 'item_pass']).map((x) => `${x.kind}:${x.ref || '-'}:${x.value || ''}`);
-  assert.deepEqual(kinds, ['item_return:hypothesis-1:receiver', 'item_accept:hypothesis-1:', 'item_return:hypothesis-2:receiver', 'item_drop:hypothesis-2:', 'item_pass:hypothesis-3:item', 'item_pass:hypothesis-1:item', 'item_pass:hypothesis-4:item', 'item_pass:-:turn']);
+  assert.deepEqual(kinds, ['item_return:hypothesis-1:receiver', 'item_accept:hypothesis-1:', 'item_return:hypothesis-2:receiver', 'item_drop:hypothesis-2:', 'item_pass:hypothesis-3:item', 'item_pass:-:turn', 'item_pass:hypothesis-1:item', 'item_pass:hypothesis-4:item', 'item_pass:-:turn']);
 });
 
 test('P242 뒤집기와 늦은 반려: 받음은 이어진 항목 전까지 뒤집고, 이어진 항목을 가진 역할도 반려한다', async () => {
@@ -352,7 +356,7 @@ test('P242 장부 종류, 실을 글·안내(항목 명령), 다시 뜨면 받�
   const r3 = B.b.rig.read(B.key).def.rig3;
   const t = loadText(r3, 'verify', {});
   assert.doesNotMatch(t, /명령이 아직 없다/);
-  assert.match(t, /atrium rig put <파일> --item <종류>/); assert.match(t, /atrium rig accept <항목>/); assert.match(t, /--redo <항목>/);
+  assert.match(t, /atrium rig put <종류> <파일>/); assert.doesNotMatch(t, /--item/); /* P244: 안내는 put <종류> <파일>만 */ assert.match(t, /atrium rig accept <항목>/); assert.match(t, /--redo <항목>/);
   const g = rig3Guide(r3, 'verify');
   assert.match(g, /받는 것: hypothesis\(ideas에게서\)\. 내는 것: result\(ideas에게, 받은 hypothesis마다\)/);
   assert.match(g, /atrium rig inbox/);

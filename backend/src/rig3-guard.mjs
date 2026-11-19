@@ -30,7 +30,7 @@ export const BOARD_WRITE_MS = 60000; // accept 뒤 이만큼은 그 경로의 �
 const GC_EVERY = 10; // 바뀜이 있던 검사 n번마다 쓰지 않는 keep을 지운다
 export const foreignNotice = (role, paths, { owns = [], others = [], quarantine = null } = {}) =>
   [
-    '[Atrium 보드] 섹터 밖에 쓴 것을 되돌렸다: ' + paths.join(', ') + '.',
+    '[Atrium 보드] 네 턴 동안(돌린 스크립트 포함) 섹터 밖에 쓴 것을 되돌렸다: ' + paths.join(', ') + '.', // P244(P243 답): 스크립트의 부수 효과도 네 턴의 것
     '자기 섹터(' + owns.join(', ') + ')와 기억 폴더(' + memoryDir(role) + ')에만 쓰고, 남에게 줄 것은 항목으로 낸다.',
     others.length ? '(같은 때 ' + others.join(', ') + '도 일하고 있어 누가 썼는지 가리지 못했다. 네가 쓰지 않았으면 넘어간다.)' : '',
     quarantine ? '되돌리기 전 내용은 판이 따로 두었다: ' + quarantine : '',

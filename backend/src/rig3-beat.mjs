@@ -90,7 +90,7 @@ export function collectCycle(r3, rows, cycle) {
   }
   for (const t of Object.values(out.tools)) if (t.alarms.length >= 2) out.decide.push({ what: 'tool_alarms', tool: t.name, n: t.alarms.length });
   out.tools = Object.values(out.tools);
-  out.ids = [...new Set(flows.flatMap((f) => f.ids).concat(out.returns.map((x) => x.id), out.drops.map((x) => x.id)))];
+  out.ids = [...new Set(flows.flatMap((f) => f.ids).concat(out.returns.map((x) => x.id), out.drops.map((x) => x.id), out.stalls.flatMap((x) => x.items), out.nudges.flatMap((x) => x.items)))];
   // 빈 사이클: 항목·도구·되돌림·멈춤이 하나도 없다(역할 세션 띄움 같은 줄은 세지 않는다)
   out.empty = !out.ids.length && !out.tools.length && !out.foreign.length && !out.stalls.length && !out.nudges.length && !out.gaveUp.length && !Object.keys(out.passTurn).length;
   return out;
@@ -111,7 +111,7 @@ const L = {
     gaveUp: (r) => '- 다시 띄우기를 그만둔 역할: ' + r,
     roles: '**역할이 바꾼 것**', rolesNone: '- 없음(요령 칸 조정은 아직 없다)',
     builder: '**빌더가 고친 것**', builderNone: '- 없음',
-    decide: '**사람이 정할 것**',
+    decide: '**사람이 볼 것**',
     dec: (d) => d.what === 'stalled' ? '- ' + d.role + '가 받은 것에 답하지 않고 멈췄다: ' + d.items.map((x) => '[' + x + ']').join(' ') : d.what === 'gave_up' ? '- ' + d.role + ' 역할 세션이 거듭 끝나 판이 다시 띄우기를 그만뒀다(rig를 껐다 켜면 다시 띄운다)' : d.what === 'intake_returned' ? '- 넣은 입력 [' + d.id + ']가 ' + d.by + '에게 반려됐다: ' + d.reason : d.what === 'tool_alarms' ? '- 도구 ' + d.tool + '가 경보를 ' + d.n + '번 냈다' : '- 되돌리지 못한 남의 쓰기: ' + d.path,
     numbers: '(판이 모은 숫자만으로 썼다)',
   },
@@ -129,7 +129,7 @@ const L = {
     gaveUp: (r) => '- Gave up respawning: ' + r,
     roles: '**What roles changed**', rolesNone: '- Nothing (no tuning yet)',
     builder: '**What the builder fixed**', builderNone: '- Nothing',
-    decide: '**For you to decide**',
+    decide: '**For you to look at**',
     dec: (d) => d.what === 'stalled' ? '- ' + d.role + ' stopped without answering: ' + d.items.map((x) => '[' + x + ']').join(' ') : d.what === 'gave_up' ? '- The ' + d.role + ' role session kept exiting; the board stopped respawning it (turn the rig off and on to retry)' : d.what === 'intake_returned' ? '- Your input [' + d.id + '] was returned by ' + d.by + ': ' + d.reason : d.what === 'tool_alarms' ? '- Tool ' + d.tool + ' raised ' + d.n + ' alarms' : '- Foreign write that could not be undone: ' + d.path,
     numbers: '(written from the board\'s counts only)',
   },
@@ -159,7 +159,7 @@ export function summaryPrompt(facts, draft, lang = 'ko') {
   return [
     ko ? '너는 작업 조직(rig)의 한 사이클 장부를 사람이 읽는 변경 기록 한 꼭지로 다듬는다. 도구는 쓰지 않고 글만 돌려준다.' : 'You turn one cycle of a work rig\'s ledger into one human-readable changelog section. Use no tools; reply with text only.',
     ko ? '규칙:' : 'Rules:',
-    ko ? '- 아래 초안의 네 칸(돈 것, 역할이 바꾼 것, 빌더가 고친 것, 사람이 정할 것)을 그 제목 그대로 두고, 도구 칸이 있으면 함께 둔다.' : '- Keep the four parts of the draft (what ran, what roles changed, what the builder fixed, for you to decide) with the same titles, plus the tools part if present.',
+    ko ? '- 아래 초안의 네 칸(돈 것, 역할이 바꾼 것, 빌더가 고친 것, 사람이 볼 것)을 그 제목 그대로 두고, 도구 칸이 있으면 함께 둔다. 사람이 볼 것의 줄(반려된 입력: 항목, 누가, 까닭)은 빼지 않는다.' : '- Keep the four parts of the draft (what ran, what roles changed, what the builder fixed, for you to look at) with the same titles, plus the tools part if present. Never drop a line of the last part (returned input: item, by whom, why).',
     ko ? '- 숫자와 사실은 자료에 있는 것만 쓴다. 지어내지 않는다. 바뀜·반려·버림마다 근거 항목 id를 [종류-n] 꼴로 그대로 붙인다. 자료에 없는 id는 쓰지 않는다.' : '- Use only numbers and facts from the data. Do not invent. Keep the evidence item id in [kind-n] form on every change, return and drop. Never write an id that is not in the data.',
     ko ? '- 쉬운 말로, 왜 그렇게 됐는지 자료(까닭 글)에 있으면 한 구절로 덧붙인다. 25줄 안. 머리 줄(## …)은 쓰지 않는다(판이 붙인다).' : '- Plain words; add a short why when the data (reasons) has it. At most 25 lines. Do not write the heading line (## …); the board adds it.',
     ko ? '- 한국어로 쓴다.' : '- Write in English.',
@@ -176,6 +176,9 @@ export function checkAiBody(text, facts) {
   const known = new Set(facts.ids);
   const ids = [...t.matchAll(/\[([a-z][a-z0-9_-]{0,39}-\d{1,9})\]/g)].map((m) => m[1]);
   if (ids.some((id) => !known.has(id))) return null;
+  // P244: 사람이 볼 것(반려된 입력·멈춘 받은 것)의 항목 id는 꼭 남아야 한다(사람에게는 받은 것 목록이 없다)
+  const must = (facts.decide || []).flatMap((d) => (d.id ? [d.id] : d.items || []));
+  if (must.some((id) => !ids.includes(id))) return null;
   return t;
 }
 // 변경 기록 파일에 꼭지를 더한다(새 것이 위) → 새 내용

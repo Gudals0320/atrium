@@ -282,7 +282,7 @@ test('P244 사이클 요약: 지난 사이클을 장부에서 모으고(길마�
   assert.equal(B.ai.at(-1).o.model, 'sonnet');
   assert.equal(c2.entryBy, 'numbers'); assert.equal(c2.entryMeta.error, 'boom');
   assert.match(c2.entry, /\*\*돈 것\*\*\n- snapshot \(data → ideas\): 낸 1 · 받음 0 · 반려 0 — \[snapshot-2\]/);
-  assert.match(c2.entry, /\*\*역할이 바꾼 것\*\*\n- 없음/); assert.match(c2.entry, /\*\*사람이 정할 것\*\*\n- 없음/); assert.match(c2.entry, /판이 모은 숫자만으로 썼다/);
+  assert.match(c2.entry, /\*\*역할이 바꾼 것\*\*\n- 없음/); assert.match(c2.entry, /\*\*사람이 볼 것\*\*\n- 없음/); assert.match(c2.entry, /판이 모은 숫자만으로 썼다/);
   // 새 것이 위
   const log2 = fs.readFileSync(path.join(B.dir, CHANGELOG), 'utf8');
   assert.ok(log2.indexOf('## 사이클 2') < log2.indexOf('## 사이클 1'));
@@ -297,7 +297,7 @@ test('P244 사이클 요약: 지난 사이클을 장부에서 모으고(길마�
   assert.deepEqual(v.beat, { every: '1m', at: null, role: 'data' });
 });
 
-test('P244 꼭지 이어 쓰기: 판이 꼭지를 쓰다 꺼진 닫힌 사이클은 다음 주기에 쓴다. 사람이 정할 것(멈춤·반려된 입력)', async () => {
+test('P244 꼭지 이어 쓰기: 판이 꼭지를 쓰다 꺼진 닫힌 사이클은 다음 주기에 쓴다. 사람이 볼 것(멈춤·반려된 입력)', async () => {
   const B = await board((d) => { delete d.beat; });
   const now = Date.now();
   B.store.insertRig3Cycle({ ws: B.key, n: 1, openedAt: now - 1000, by: 'human' });
@@ -318,8 +318,9 @@ test('P244 꼭지 이어 쓰기: 판이 꼭지를 쓰다 꺼진 닫힌 사이클
   const body = numbersBody(f, 'ko');
   assert.match(body, /ideas가 받은 것에 답하지 않고 멈췄다: \[snapshot-3\]/); assert.match(body, /넣은 입력 \[hint-1\]가 ideas에게 반려됐다: 모호하다/);
   assert.match(body, /watch \(data\): 2번\(시계 2, 역할 0\), 경보 2/);
-  assert.match(numbersBody(f, 'en'), /\*\*For you to decide\*\*/);
-  assert.equal(checkAiBody('## 사이클 5\n- [hint-1] 반려', f), '- [hint-1] 반려');
+  assert.match(numbersBody(f, 'en'), /\*\*For you to look at\*\*/);
+  assert.equal(checkAiBody('## 사이클 5\n- [hint-1] 반려 [snapshot-3]', f), '- [hint-1] 반려 [snapshot-3]');
+  assert.equal(checkAiBody('- [hint-1] 반려', f), null, '사람이 볼 것의 id(멈춘 snapshot-3)를 뺐다');
   assert.equal(checkAiBody('- [hint-9]', f), null); assert.equal(checkAiBody('   ', f), null);
   assert.equal(addEntry('', '## 사이클 1\n- a').split('\n')[0], '# rig 변경 기록');
   const two = addEntry(addEntry('', '## 사이클 1\n- a'), '## 사이클 2\n- b');
@@ -365,4 +366,43 @@ test('P244 역할 칸 beat: 사이클을 열지 않고 그 역할만 깨운다',
   assert.equal(B.toRole('verify').length, n0 + 1);
   assert.match(B.toRole('verify').at(-1).text, /rig 박자\(verify\)/);
   assert.equal(B.ledger(['role_beat']).length, 1);
+});
+
+test('P244 사람이 넣은 입력이 반려되면 그 사이클의 꼭지 "사람이 볼 것"에 항목·누가·까닭이 든다(AI가 빼면 숫자만)', async () => {
+  const B = await board();
+  await B.BT.beatNow(B.key);
+  const x = await B.b.rig3.items.intake(B.key, { item: 'hint', text: '가격이 오를까?' });
+  B.b.rig3.items.giveBack(B.key, { role: 'ideas', id: x.item.id, reason: '무엇을 볼지 모호하다' });
+  B.BT.runner = async () => ({ ok: true, text: '**돈 것**\n- 입력 하나가 반려됐다', meta: { model: 'haiku' } }); // 사람이 볼 것을 뺀 AI 글
+  await B.BT.beatNow(B.key);
+  await until(() => B.store.getRig3Cycle(B.key, 1).entryState === 'done');
+  const c = B.store.getRig3Cycle(B.key, 1);
+  assert.equal(c.entryBy, 'numbers');
+  assert.match(c.entry, /\*\*사람이 볼 것\*\*\n- 넣은 입력 \[hint-1\]가 ideas에게 반려됐다: 무엇을 볼지 모호하다/);
+  const v = B.b.rig3.view(B.key, B.active().def).cycle;
+  assert.match(v.entries[0].text, /hint-1/);
+});
+
+test('P244 안내는 put <종류> <파일>만, 항목 없는 pass는 박자에만, 지키기 알림은 "네 턴 동안(돌린 스크립트 포함)"', async () => {
+  const { ITEM_HOWTO } = await import('../src/rig3.mjs');
+  const { foreignNotice } = await import('../src/rig3-guard.mjs');
+  const B = await board();
+  const r3 = B.active().def.rig3;
+  for (const t of [ITEM_HOWTO.join('\n'), rig3Guide(r3, 'ideas'), loadText(r3, 'ideas', {}), B.b.rig3.items.wakeText(B.key, 'ideas', ['- x'])]) {
+    assert.doesNotMatch(t, /--item/); assert.match(t, /put <종류> <파일>/); assert.doesNotMatch(t, /pass \[<항목>\]/);
+  }
+  assert.match(ITEM_HOWTO.join('\n'), /박자에 낼 것이 없으면 \x60pass "<까닭>"\x60\(박자에만 답하고 받은 것은 닫지 않는다\)/);
+  const help = fs.readFileSync(new URL('../bin/atrium-child.mjs', import.meta.url), 'utf8');
+  const helpText = help.slice(help.indexOf('rig 3 역할(보드가'), help.indexOf('atrium rig log --events'));
+  assert.doesNotMatch(helpText, /--item/); assert.match(helpText, /atrium rig put <종류> <파일>/);
+  const contract = fs.readFileSync(new URL('../src/cli-contract.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(contract, /put <파일> --item/);
+  // 받은 것이 있어도 항목 없는 pass는 박자 답(turn)만
+  B.file('data/s.md', 's'); await B.put('data', 'data/s.md', { kind: 'snapshot' });
+  const p = B.b.rig3.items.pass(B.key, { role: 'ideas', reason: '박자에 낼 것 없음' });
+  assert.equal(p.turn, true); assert.deepEqual(p.passed, []); assert.equal(B.b.rig3.items.pendingOf(B.key, 'ideas').length, 1);
+  assert.deepEqual(B.b.rig3.items.pass(B.key, { role: 'ideas', id: 'snapshot-1', reason: '볼 것 없음' }).passed, ['snapshot-1']);
+  // 옛 꼴 put <파일> --item <종류>는 CLI가 받기만 한다
+  assert.match(help, /let file = rest\[1\]; let kind = val\('item'\);/);
+  assert.match(foreignNotice('ideas', ['data/a.txt'], { owns: ['hypotheses/'] }), /^\[Atrium 보드\] 네 턴 동안\(돌린 스크립트 포함\) 섹터 밖에 쓴 것을 되돌렸다: data\/a\.txt/);
 });
