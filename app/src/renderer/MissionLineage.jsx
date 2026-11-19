@@ -341,6 +341,8 @@ export function LineageMap() {
     // 칸 머리: 세계 칸 x를 화면으로(레일 오른쪽 띠 안의 자리)
     const cs = colsRef.current, L = layRef.current;
     if (cs && L) L.cols.forEach((c, i) => { const el = cs.children[i]; if (el) el.style.transform = `translateX(${Math.round(c.x * v.k + v.x - RAIL)}px)`; });
+    // P253: rig 띠가 트리 위에 있으면 칸 머리 띠는 트리가 시작하는 곳에서 시작한다(띠 위에서는 가리킬 칸이 없다). 트리 위 = 세계 y 0
+    if (cs) { const dy = L && L.rig ? Math.max(0, Math.round(v.y - (TOPH + COLH))) : 0; const tf = dy ? `translateY(${dy}px)` : ''; if (cs.style.transform !== tf) cs.style.transform = tf; }
     // 멀리 타일 글 하한(--ik = 1/배율): 움직이는 동안은 그대로, 멈춘 뒤(160ms)·처음·미끄러지기 때 한 번
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();

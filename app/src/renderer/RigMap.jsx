@@ -5,7 +5,7 @@
 // 멀리서도 줄과 이름표를 숨기지 않는다(맞춤 보기에서 지도 폭이 화면 폭에 맞아 읽힌다, styles.css 끝 .mt-rm2).
 import { memo } from 'react';
 import { STATE_LABEL, agoText } from './lib/labels.js';
-import { untilText, periodText, rowText, BUILDER_ROLE } from './lib/rig-map.js';
+import { untilText, periodText, rowText, recentFit, cycleFit, plainEntry, BUILDER_ROLE } from './lib/rig-map.js';
 import { kindOf } from './lib/kinds.js';
 
 const ST = { working: 'working', waiting: 'needs', trust_wait: 'needs', error: 'error', ready: 'ready', sleeping: 'sleeping', exited: 'exited' };
@@ -56,7 +56,7 @@ function Line({ l, t, nRaise }) {
     case 'session': return <span className="ln" data-row="session">{lab}<span className="lv">{[launcherName(l.launcher), l.model].filter(Boolean).join(' · ')}</span></span>;
     case 'beat': { const p = periodText(l.every, l.at, t); return <span className="ln" data-row="beat" data-role="rm-beat">{lab}<span className="lv"><Clock />{l.cycle ? t('rigMap2.beatCycle', { period: p }) : p}</span></span>; }
     case 'owns': return <span className="ln" data-row="owns">{lab}<span className="lv">{l.paths.map((p) => <code key={p} data-role="rm-sector">{p}</code>)}</span></span>;
-    case 'recent': return <span className="ln" data-row="recent">{lab}<span className="lv">{l.items.map((it) => <span key={it.id} className={`it is-${it.state}`} data-role="rm-item" data-id={it.id} data-state={it.state} title={it.reason || ''}>{it.id} <i>{t(`rigMap.state.${it.state}`)}</i></span>)}{l.more ? <span className="dim">{t('rigMap.more', { n: l.more })}</span> : null}</span></span>;
+    case 'recent': { const fit = recentFit(l, (s) => t(`rigMap.state.${s}`)); return <span className="ln" data-row="recent">{lab}<span className="lv">{fit.items.map((it) => <span key={it.id} className={`it is-${it.state}`} data-role="rm-item" data-id={it.id} data-state={it.state} title={it.reason || ''}>{it.id} <i>{t(`rigMap.state.${it.state}`)}</i></span>)}{fit.more ? <span className="dim" data-role="rm-recent-more">{t('rigMap.more', { n: fit.more })}</span> : null}</span></span>; }
     case 'tool': { const x = l.tool; const bad = x.last && (x.last.status !== 'done' || x.alarms); return <span className="ln" data-row="tool" data-role="rm-tool" data-name={x.name} title={x.last ? t('rigMap.toolLast', { ago: agoText(x.last.at) }) : ''}>{lab}<span className="lv"><code>{x.name}</code> · <span className={bad ? 'bad' : ''}>{toolText(x, t)}</span>{x.alarms ? <span className="bad"> · {t('rigMap.alarms', { n: x.alarms })}</span> : null}</span></span>; }
     case 'intake': return <span className="ln" data-row="intake" data-role="rm-intake">{lab}<span className="lv">{t('rigMap2.intake', { items: l.items.join(', ') })}</span></span>;
     case 'counts': return <span className="ln" data-row="counts">{lab}<span className="lv">{[l.received ? t('rigMap.received', { n: l.received }) : null, l.unanswered ? <span key="u" className="warn">{t('rigMap.unanswered', { n: l.unanswered })}</span> : null, l.material ? t('rigMap.material', { n: l.material }) : null, l.foreign ? <span key="f" className="bad">{t('rigMap.foreign', { n: l.foreign })}</span> : null].filter(Boolean).flatMap((x, i) => (i ? [' · ', x] : [x]))}</span></span>;
@@ -111,12 +111,12 @@ export const RigMap = memo(function RigMap({ m, g, x, y, scale = 1, live, sid, t
       {!g.order.length ? <span className="mt-rm2-none" style={{ left: 32, top: g.head.h + 24 }}>{t('rigMap2.noRoles')}</span> : null}
       <div className="mt-rm2-band det" style={{ left: g.cycle.x, top: g.cycle.y, width: g.cycle.w, height: g.cycle.h }} data-role="rm-cycle">
         <b>{t('rigMap.cycleBand', { n: m.head && m.head.cycle != null ? m.head.cycle : '-' })}</b>
-        <span className="bt">{(m.cycleItems || []).length ? m.cycleItems.map((c) => <span key={c.k} className={`ci w-${c.what}`} data-role="rm-cycle-item" title={c.reason || ''}>{CIRCLED[c.k - 1] || c.k + '.'} {c.id} {t(`rigMap.what.${c.what}`)}{c.reason ? <span className="dim"> "{clip(c.reason, 28)}"</span> : null}</span>) : <span className="dim">{t('rigMap.cycleEmpty')}</span>}
-        {m.cycleMore ? <span className="dim">{t('rigMap.cycleMore', { n: m.cycleMore })}</span> : null}</span>
+        {(() => { const ci = m.cycleItems || []; const fit = cycleFit(ci, g.cycle.w - 32 - 110, (w) => t(`rigMap.what.${w}`), m.cycleMore || 0); return <span className="bt">{ci.length ? fit.items.map((c) => <span key={c.k} className={`ci w-${c.what}`} data-role="rm-cycle-item" title={c.reason ? `${c.id} ${t(`rigMap.what.${c.what}`)}: "${c.reason}"` : ''}>{CIRCLED[c.k - 1] || c.k + '.'} {c.id} {t(`rigMap.what.${c.what}`)}</span>) : <span className="dim">{t('rigMap.cycleEmpty')}</span>}
+        {fit.more ? <span className="dim" data-role="rm-cycle-more">{t('rigMap.more', { n: fit.more })}</span> : null}</span>; })()}
       </div>
       <div className={`mt-rm2-band entry det${entryOpen && m.entry ? ' open' : ''}`} style={{ left: g.entry.x, top: g.entry.y, width: g.entry.w, height: g.entry.h }} data-role="rm-entry">
         <b>{t('rigMap.entry')}</b>
-        <span className="bt">{m.entry ? (entryOpen ? m.entry.text : clip(m.entry.text.replace(/^#+\s*/, ''), 220)) : <span className="dim">{t('rigMap2.entryEmpty')}</span>}</span>
+        <span className="bt">{m.entry ? (entryOpen ? m.entry.text : plainEntry(m.entry.text, Math.floor((g.entry.w - 32 - 110 - 80) / 7.2))) : <span className="dim">{t('rigMap2.entryEmpty')}</span>}</span>
         {m.entry ? <button type="button" className="mt-rm2-entry-btn" data-action="rm-entry" onClick={() => onEntry(m.workspace)}>{t(entryOpen ? 'rigMap.entryClose' : 'rigMap.entryOpen')}</button> : null}
       </div>
     </div>

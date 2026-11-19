@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mapLayout, placeMaps, cardLines, pairRows, rowText, rowOrder, foldedOf, periodText, RM, RIG_VIEW, hideRigSessions, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
+import { recentFit, cycleFit, fitRow, textW, plainEntry, mapLayout, placeMaps, cardLines, pairRows, rowText, rowOrder, foldedOf, periodText, RM, RIG_VIEW, hideRigSessions, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
 import { lineageLayout, pickColumns, todayWorkspaces } from '../src/renderer/lib/mission-lineage.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
@@ -207,4 +207,38 @@ test('P253 주기 말(P252 periodText와 같은 꼴)과 두 사전의 rigMap2·r
   const keys = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' && !('one' in v) ? keys(v, p + k + '.') : [p + k]));
   assert.deepEqual(keys(ko.rigMap2).sort(), keys(en.rigMap2).sort());
   assert.deepEqual(keys(ko.rigPeriod).sort(), keys(en.rigPeriod).sort());
+});
+
+test('P253 정리: 최근 줄·사이클 띠는 통째로 든 것만 보이고 나머지는 +n, 까닭 글은 띠에 없다', () => {
+  const its = [{ id: 'hypothesis-4', state: 'returned' }, { id: 'hypothesis-3', state: 'accepted' }, { id: 'hypothesis-2', state: 'accepted' }];
+  const lab = (s) => ({ returned: '반려', accepted: '받음' })[s];
+  const f = recentFit({ items: its, more: 2 }, lab);
+  assert.deepEqual(f.items.map((x) => x.id), ['hypothesis-4'], '하나만 통째로 들어간다');
+  assert.equal(f.more, 4, '남은 둘 + 섹터 밖 둘');
+  // 다 들어가면 +n 없음
+  assert.deepEqual(recentFit({ items: [{ id: 'a-1', state: 'accepted' }, { id: 'b-1', state: 'accepted' }], more: 0 }, lab), { items: [{ id: 'a-1', state: 'accepted' }, { id: 'b-1', state: 'accepted' }], more: 0 });
+  // 들어간 것의 폭 + +n 자리는 줄 폭을 넘지 않는다(가운데서 자르지 않는다)
+  for (const w of [60, 120, 184, 300]) {
+    const r = fitRow(its.map((x) => x.id + ' ' + lab(x.state)), w, { gap: 6, moreW: 30 });
+    const used = its.slice(0, r.n).reduce((s, x, i) => s + (i ? 6 : 0) + textW(x.id + ' ' + lab(x.state)), 0) + (r.more ? (r.n ? 6 : 0) + 30 : 0);
+    assert.ok(used <= w, w + ': ' + used);
+  }
+  const ci = Array.from({ length: 12 }, (_, i) => ({ k: i + 1, id: 'result-' + (i + 1), what: 'pass', reason: '긴 까닭 '.repeat(5) }));
+  const c = cycleFit(ci, 600, () => '넘김', 3);
+  assert.ok(c.items.length > 0 && c.items.length < 12);
+  assert.equal(c.more, 12 - c.items.length + 3, '띠에 안 든 것 + 판이 보내지 않은 것');
+  const src = fs.readFileSync(path.join(SRC, 'RigMap.jsx'), 'utf8');
+  assert.ok(!/clip\(c\.reason/.test(src), '사이클 띠에 까닭 글을 쓰지 않는다(풍선에만)');
+});
+
+test('P253 정리: 변경 기록 띠는 마크다운 표시를 뺀 맨 글, 문장 끝에서 잘라 …', () => {
+  const md = '## 사이클 0\n\n**What ran** The human put one seed. It was `seed-1`.\n- 첫째 [링크](http://x)\n- __둘째__ 일이 끝났다. 셋째 문장은 아주 길게 이어진다';
+  const p = plainEntry(md, 1000);
+  assert.ok(!/[*#`_\[\]]/.test(p), p);
+  assert.ok(p.startsWith('사이클 0 What ran The human put one seed.'), p);
+  assert.ok(p.includes('첫째 링크') && p.includes('둘째 일이 끝났다.'));
+  const cut = plainEntry(md, 70);
+  assert.ok(cut.endsWith(' …') && cut.length <= 72, cut);
+  assert.ok(/[.!?]|다\.$/.test(cut.slice(0, -2)), '문장 끝에서 자른다: ' + cut);
+  assert.equal(plainEntry('짧다.', 50), '짧다.');
 });

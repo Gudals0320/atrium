@@ -38,14 +38,29 @@ export function cardLines(r, m) {
   const sectors = r.sectors || [];
   if (sectors.length) out.push({ k: 'owns', paths: sectors.map((s) => s.path) });
   const items = sectors.flatMap((s) => s.items || []).sort((a, b) => (b.t || 0) - (a.t || 0));
-  const more = sectors.reduce((s, x) => s + (x.more || 0), 0) + Math.max(0, items.length - 3);
-  if (items.length) out.push({ k: 'recent', items: items.slice(0, 3), more });
+  const more = sectors.reduce((s, x) => s + (x.more || 0), 0);
+  if (items.length) out.push({ k: 'recent', items, more }); // 몇 개가 통째로 드는지는 recentFit이 정한다(그 밖은 +n)
   for (const x of r.tools || []) out.push({ k: 'tool', tool: x });
   if ((r.intake || []).length) out.push({ k: 'intake', items: r.intake });
   if (r.received || r.unanswered || r.material || r.foreign) out.push({ k: 'counts', received: r.received || 0, unanswered: r.unanswered || 0, material: r.material || 0, foreign: r.foreign || 0 });
   const nr = ((m && m.raises) || []).filter((x) => x.role === r.name).length;
   if (nr) out.push({ k: 'raise', n: nr });
   return out;
+}
+
+// 카드 "최근" 줄: 통째로 드는 항목만, 남은 것과 섹터 밖 더 있는 수는 +n. label(state) = 상태 글
+export const RECENT_W = 264 - 32 - 48; // 카드 폭 - 좌우 여백 - 줄 이름 칸
+export function recentFit(line, label = (s) => s, maxW = RECENT_W) {
+  const texts = line.items.map((it) => it.id + ' ' + label(it.state));
+  const f = fitRow(texts, maxW, { gap: 6, moreW: 30, ascii: 7.3, cjk: 12 });
+  return { items: line.items.slice(0, f.n), more: f.more + (line.more || 0) };
+}
+// 사이클 띠: 통째로 드는 항목 사건만(까닭 글은 빼고 풍선에), 남은 것 +n. → { items, more }
+export function cycleFit(items, maxW, what = (w) => w, extra = 0) {
+  const CIRC = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+  const texts = (items || []).map((c) => (CIRC[c.k - 1] || c.k + '.') + ' ' + c.id + ' ' + what(c.what));
+  const f = fitRow(texts, maxW, { gap: 14, moreW: 64, ascii: 7, cjk: 13 });
+  return { items: (items || []).slice(0, f.n), more: f.more + (extra || 0) };
 }
 
 // 두 역할 사이 이름표 줄(쌍마다 하나, 설계 8.2-1·2): a가 왼쪽. 방향마다 항목 종류 한 줄, 수는 이번 사이클에 낸 수가 0이 아닐 때만, 끝나지 않은 반려가 있으면 붉은 점
@@ -126,6 +141,39 @@ export function mapLayout(m, opts = {}) {
   const cycle = { x: RM.PAD, y: by, w: w - RM.PAD * 2, h: RM.BANDH }; by += RM.BANDH + RM.BANDGAP;
   const entry = { x: RM.PAD, y: by, w: w - RM.PAD * 2, h: m.entry && opts.entryOpen ? RM.ENTRYOPEN : RM.BANDH }; by += entry.h;
   return { w, h: by + RM.PAD, folded: false, dim: off, head, order, roles, pairs: out, cycle, entry, lanes: nLane };
+}
+
+// ---- P253 띠·카드 줄의 글(자르지 않고 통째로 든 것만, 남은 수는 +n) ----
+// 글 폭 어림(px): 한글·한자·가나는 cjk, 그 밖은 ascii(글꼴마다 다르게 준다)
+export function textW(s, { ascii = 7.3, cjk = 12 } = {}) {
+  let w = 0;
+  for (const ch of String(s || '')) { const c = ch.codePointAt(0); w += (c >= 0x1100 && c <= 0x11ff) || (c >= 0x2460 && c <= 0x24ff) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xff00 && c <= 0xffef) ? cjk : ascii; }
+  return w;
+}
+// texts를 앞에서부터 폭 maxW 안에 통째로 든 만큼 → { n: 보이는 수, more: 남은 수 }. 남는 것이 있으면 "+n" 자리(moreW)를 비워 둔다. 하나도 안 들어가면 0과 +전체
+export function fitRow(texts, maxW, { gap = 6, moreW = 30, ...wopt } = {}) {
+  const ws = (texts || []).map((s) => textW(s, wopt));
+  let used = 0, n = 0;
+  for (let i = 0; i < ws.length; i++) {
+    const need = (n ? gap : 0) + ws[i];
+    const rest = ws.length - i - 1;
+    if (used + need + (rest ? gap + moreW : 0) > maxW) break;
+    used += need; n++;
+  }
+  return { n, more: ws.length - n };
+}
+// 변경 기록 꼭지 → 한 줄 맨 글: 마크다운 표시(머리 #, **, __, `, 목록 머리, [글](주소))를 빼고 줄을 이어, maxChars 안에서 문장 끝에서 잘라 "…"
+export function plainEntry(text, maxChars = 200) {
+  let s = String(text || '').replace(/\r\n/g, '\n');
+  s = s.replace(/^\s{0,3}#{1,6}\s*/gm, '').replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  s = s.replace(/\*\*|__|`/g, '').replace(/(^|\s)[*_](\S[^*_]*?)[*_](?=\s|[.,!?]|$)/g, '$1$2');
+  s = s.replace(/\s+/g, ' ').trim();
+  if (s.length <= maxChars) return s;
+  const cut = s.slice(0, maxChars);
+  let end = -1;
+  const re = /[.!?。](?=\s|$)|다\.(?=\s|$)/g; let m;
+  while ((m = re.exec(cut))) end = m.index + m[0].length;
+  return (end > maxChars * 0.3 ? cut.slice(0, end) : cut.replace(/\s+\S*$/, '')).trim() + ' …';
 }
 
 // 접힘: 사람이 접거나 편 것(mem: 워크스페이스 키 → true 접힘 | false 펼침)을 지키고, 없으면 꺼진 rig만 접는다
