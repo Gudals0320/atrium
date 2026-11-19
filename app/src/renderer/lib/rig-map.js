@@ -1,201 +1,154 @@
-// P251: rig를 눈으로 보기(docs research rig3-map.md 3·4절). 세션 맵의 구조 지도와 캔버스의 길 선의 순수 함수(단위 시험 test/p251-lib.test.mjs).
+// P251: rig를 눈으로 보기(docs research rig3-map.md 3·4절). P253: 세션 맵 지도는 8절(쌍마다 선 하나, 한 줄 차례, 카드가 다 담음, 트리 위 고정된 rig 띠)로 다시 그렸다.
+// 세션 맵의 구조 지도와 캔버스의 길 선의 순수 함수(단위 시험 test/p251-lib.test.mjs, test/p253-lib.test.mjs).
 // 자료는 판 API rig.map(backend rig-map.mjs), 역할 차례는 공유 배치(backend rig-map-layout.mjs roleOrder·rolePairs).
 // 6절 "설계 쪽이 고른 넷"은 RIG_VIEW 한 곳에서 뒤집는다(값 하나씩).
-import { roleOrder, rolePairs, RIG_LAYOUT } from '../../../../backend/src/rig-map-layout.mjs';
+import { roleOrder, rolePairs, rowOrder } from '../../../../backend/src/rig-map-layout.mjs';
 import { HUMAN, BUILDER_ROLE } from '../../../../backend/src/rig-def-names.mjs';
 
-export { roleOrder, rolePairs, HUMAN, BUILDER_ROLE };
+export { roleOrder, rolePairs, rowOrder, HUMAN, BUILDER_ROLE };
 
-// ---- 6절 넷의 뒤집기 자리(설정 값 하나씩). 기본값이 설계 쪽이 고른 것이다 ----
-// sectorsUnder: 섹터와 도구를 주인 역할 아래에 매단다 | false = 시안처럼 오른쪽 끝에 따로 칸
-// hideInTree:   역할 세션과 빌더를 세션 맵 트리에서 빼고 지도에만 | false = 트리에도 두고 지도와 선으로 잇는다
+// ---- 뒤집기 자리(설정 값 하나씩). 기본값이 설계 쪽이 고른 것이다 ----
+// hideInTree:   역할 세션과 빌더를 세션 맵 트리에서 빼고 지도에만 | false = 트리에도 둔다(P253: 지도는 트리와 따로라 둘을 잇는 선은 없다)
 // canvasExtras: 캔버스에는 길 선과 꼬리표만 | true = 꼬리표에 섹터와 박자도 붙인다
 // canvasFrame:  캔버스에서 역할 묶음에 테두리를 두르지 않는다 | true = 옅은 테두리로 rig를 묶는다
-export const RIG_VIEW = { sectorsUnder: true, hideInTree: true, canvasExtras: false, canvasFrame: false };
+// (P251의 sectorsUnder는 P253에서 없앴다: 섹터·도구는 늘 역할 카드 안 줄이다. 설계 8.2-5)
+export const RIG_VIEW = { hideInTree: true, canvasExtras: false, canvasFrame: false };
 
-// ---- 지도 치수(세계 px) ----
+// ---- P253 지도 치수(세계 px, 참고 그림 experiments/rig-map/map-v2-rig-trade 와 같은 비율) ----
+// PAD 테두리 안 여백, HEADH 머리 띠, CW 카드 폭, GAP 카드 사이(이름표가 길면 넓힌다), LABW 이름표 최소 폭, LABROW 이름표 한 줄, CHAR 이름표 글 한 자 폭(12px 고정폭)
+// LANE 위로 도는 선 사이 높이, LANETOP 머리 띠 아래 첫 선까지, LANEBOT 가장 낮은 선에서 카드 위까지, TITLEH 카드 첫 줄, LINEH 카드 줄, CPADY 카드 위아래 여백
+// BANDH 사이클·변경 기록 띠, ENTRYOPEN 펼친 변경 기록 띠, BANDGAP 띠 사이, FOLDH 접힌 지도(머리 띠 한 줄), RIGGAP 지도 띠와 트리 사이(세계 px), MAPGAP 지도 사이(세계 px)
 export const RM = {
-  HEAD: 64, PAD: 24, OUTW: 250, OUTGAP: 70, RW: 300, RGX: 210, RH: 156, RGY: 46, LINEGAP: 70,
-  LANE: 24, LANETOP: 18, SECH: 36, ITEMH: 26, MOREH: 24, TOOLH: 54, STACKGAP: 10, SIDEW: 300,
-  CYCLEH: 74, ENTRYH: 72, ENTRYOPEN: 220, BANDGAP: 14, FOLDW: 420, FOLDH: 72, HUMANH: 120, BUILDERH: 120,
-  MAXCOLS: RIG_LAYOUT.MAXCOLS, AREAGAP: 160, MAPGAP: 48,
+  PAD: 32, HEADH: 56, CW: 264, GAP: 216, LABW: 168, LABROW: 20, LABPADY: 4, CHAR: 7.4, LANE: 44, LANETOP: 36, LANEBOT: 72, LANESTEP: 18,
+  TITLEH: 28, LINEH: 22, CPADY: 14, CARDTOP: 40, BANDH: 40, ENTRYOPEN: 200, BANDGAP: 12, FOLDH: 56, RIGGAP: 160, MAPGAP: 48, MINW: 900,
+  SCALE: 1.5, // 지도 한 장을 세션 맵 세계에 놓는 배율(트리 카드 글과 맞춘다). mapLayout은 배율 1, placeMaps가 곱한다
 };
 
 const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
 const r1 = (v) => Math.round(v * 10) / 10;
 export const pathD = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${r1(p[0])} ${r1(p[1])}`).join(' ');
 
-// 역할 기둥 높이(카드 + 매단 섹터·도구)
-export function stackHeight(role, { sectorsUnder = RIG_VIEW.sectorsUnder } = {}) {
-  if (!sectorsUnder || !role) return RM.RH;
-  let h = RM.RH;
-  for (const s of role.sectors || []) h += RM.STACKGAP + RM.SECH + Math.max(1, (s.items || []).length) * RM.ITEMH + (s.more ? RM.MOREH : 0);
-  h += (role.tools || []).length * (RM.STACKGAP + RM.TOOLH);
-  return h;
-}
-// 길 글: "가설 3 · 받음 2 · 반려 1"(이번 사이클). 수가 없으면 종류만. 답 길은 "결과 (가설의 답)"
-export function flowText(f, t) {
-  if (!f) return '';
-  const c = f.cycle || {};
-  const parts = [f.for ? t('rigMap.forText', { item: f.item, of: f.for }) : f.item];
-  if (c.put) parts[0] += ' ' + c.put;
-  if (c.accepted) parts.push(t('rigMap.accepted', { n: c.accepted }));
-  if (c.returned) parts.push(t('rigMap.returned', { n: c.returned }));
-  if (f.waiting) parts.push(t('rigMap.waiting', { n: f.waiting }));
-  return parts.join(' · ');
+// 역할 카드의 줄(차례: 세션 / 박자 / 쥔 것 / 최근 항목 / 도구(하나씩) / 입력 / 받은 것·답 없음 / 올림). 해당 없는 줄은 뺀다(설계 8.2-5)
+//   → [{ k: 'session'|'beat'|'owns'|'recent'|'tool'|'intake'|'counts'|'raise', ... }]
+export function cardLines(r, m) {
+  if (!r) return [];
+  const out = [];
+  if (r.launcher || r.model) out.push({ k: 'session', launcher: r.launcher || null, model: r.model || null });
+  if (r.beat) out.push({ k: 'beat', every: r.beat.every || null, at: r.beat.at || null, cycle: !!r.beat.cycle });
+  const sectors = r.sectors || [];
+  if (sectors.length) out.push({ k: 'owns', paths: sectors.map((s) => s.path) });
+  const items = sectors.flatMap((s) => s.items || []).sort((a, b) => (b.t || 0) - (a.t || 0));
+  const more = sectors.reduce((s, x) => s + (x.more || 0), 0) + Math.max(0, items.length - 3);
+  if (items.length) out.push({ k: 'recent', items: items.slice(0, 3), more });
+  for (const x of r.tools || []) out.push({ k: 'tool', tool: x });
+  if ((r.intake || []).length) out.push({ k: 'intake', items: r.intake });
+  if (r.received || r.unanswered || r.material || r.foreign) out.push({ k: 'counts', received: r.received || 0, unanswered: r.unanswered || 0, material: r.material || 0, foreign: r.foreign || 0 });
+  const nr = ((m && m.raises) || []).filter((x) => x.role === r.name).length;
+  if (nr) out.push({ k: 'raise', n: nr });
+  return out;
 }
 
-// 지도 한 장의 그림(지도 왼쪽 위 = 0, 0) → { w, h, folded, head, out: { x, y, w, h }, zone: { x, y, w, h }, human, builder, roles: Map 이름 → 카드 상자,
-//   sectors: [{ role, x, y, w, h, path, items, more }], tools: [...], side(오른쪽 칸), lines: [{ id, kind, flow, d, pts, label: { x, y, text? }, from, to, hot, openEnd }],
-//   cycle: { y, h }, entry: { y, h } }
-// opts: { folded, open(꺼진 rig를 펼침), entryOpen, sectorsUnder }
+// 두 역할 사이 이름표 줄(쌍마다 하나, 설계 8.2-1·2): a가 왼쪽. 방향마다 항목 종류 한 줄, 수는 이번 사이클에 낸 수가 0이 아닐 때만, 끝나지 않은 반려가 있으면 붉은 점
+//   → [{ dir: 'fwd'|'back', item, n, open, for }]
+export function pairRows(a, b, flows) {
+  const rows = [];
+  const add = (dir, x, y) => {
+    for (const f of flows || []) {
+      if (!f || !list(f.from).includes(x) || !list(f.to).includes(y)) continue;
+      let r = rows.find((q) => q.dir === dir && q.item === f.item);
+      if (!r) { r = { dir, item: f.item, n: 0, open: false, waiting: 0, for: f.for || null }; rows.push(r); }
+      r.n += (f.cycle && f.cycle.put) || 0;
+      r.open = r.open || (f.openReturns || 0) > 0;
+      r.waiting += f.waiting || 0;
+    }
+  };
+  add('fwd', a, b); add('back', b, a);
+  return rows;
+}
+export const rowText = (r) => (r.dir === 'fwd' ? `${r.item}${r.n ? ' ' + r.n : ''} →` : `← ${r.item}${r.n ? ' ' + r.n : ''}`);
+const labelBox = (rows) => ({ w: Math.max(RM.LABW, Math.ceil(Math.max(...rows.map((r) => rowText(r).length + (r.open ? 2 : 0))) * RM.CHAR + 28)), h: rows.length * RM.LABROW + RM.LABPADY * 2 + 2 });
+
+// 지도 한 장의 그림(지도 왼쪽 위 = 0, 0, 설계 8.2)
+//   → { w, h, folded, dim, head: { x, y, w, h }, order: [이름], roles: Map 이름 → { x, y, w, h, lines },
+//       pairs: [{ key, a, b, straight, lane, pts, d, label: { x, y, w, h }, rows, tipA, tipB }], cycle, entry }
+// opts: { folded(머리 띠만), entryOpen }
 export function mapLayout(m, opts = {}) {
-  const sectorsUnder = opts.sectorsUnder ?? RIG_VIEW.sectorsUnder;
   if (!m) return null;
   const off = m.status !== 'on';
-  if (off && !opts.open) return { w: RM.FOLDW, h: RM.FOLDH, folded: true, lines: [], roles: new Map(), sectors: [], tools: [] };
-  const names = (m.roles || []).map((r) => r.name);
-  const byName = new Map((m.roles || []).map((r) => [r.name, r]));
+  const roleList = m.roles || [];
+  const byName = new Map(roleList.map((r) => [r.name, r]));
   const flows = m.flows || [];
-  const o = roleOrder(names, flows, { maxCols: RM.MAXCOLS });
-  const zoneX = RM.PAD + RM.OUTW + RM.OUTGAP;
-  // 길 분류: 같은 줄 바로 옆 칸 앞으로 = 곧은(direct), 그 밖(뒤로·건너뜀·같은 칸·답 길·사람 입력·올림) = 위 길(lane)
-  const conns = [];
-  flows.forEach((f) => {
-    for (const a of list(f.from)) for (const b of list(f.to)) {
-      if (!byName.has(b)) continue;
-      if (a === HUMAN) { conns.push({ kind: 'intake', a, b, f }); continue; }
-      if (!byName.has(a) || a === b) continue;
-      const direct = !f.for && o.line.get(a) === o.line.get(b) && o.layer.get(b) === o.layer.get(a) + 1;
-      conns.push({ kind: direct ? 'direct' : f.for ? 'answer' : 'lane', a, b, f });
-    }
-  });
-  const raised = new Map();
-  for (const x of m.raises || []) if (byName.has(x.role)) raised.set(x.role, (raised.get(x.role) || 0) + 1);
-  for (const [role, n] of raised) conns.push({ kind: 'raise', a: role, b: BUILDER_ROLE, n });
-  // 줄마다 위 길 칸 수
-  const laneOf = new Map(); const laneN = new Map();
-  for (const c of conns) {
-    if (c.kind === 'direct') continue;
-    const l = c.kind === 'intake' || c.kind === 'raise' ? o.line.get(c.kind === 'intake' ? c.b : c.a) : Math.min(o.line.get(c.a), o.line.get(c.b));
-    const i = laneN.get(l) || 0; laneN.set(l, i + 1); laneOf.set(c, { line: l, i });
-  }
-  // 줄·칸·기둥 자리
-  const stackH = (n) => stackHeight(byName.get(n), { sectorsUnder });
-  const roles = new Map(); const lines = [];
-  let y = RM.HEAD + RM.PAD;
-  const lineTop = [];
-  for (let l = 0; l < Math.max(1, o.lines); l++) {
-    const lanes = laneN.get(l) || 0;
-    lineTop.push(y);
-    const cardsY = y + (lanes ? RM.LANETOP + lanes * RM.LANE + RM.LANETOP : RM.LANETOP);
-    let maxH = 0;
-    for (let c = 0; c < RM.MAXCOLS; c++) {
-      const L = l * RM.MAXCOLS + c;
-      const here = o.cols[L] || [];
-      let cy = cardsY;
-      for (const n of here) { roles.set(n, { x: zoneX + RM.PAD + c * (RM.RW + RM.RGX), y: cy, w: RM.RW, h: RM.RH, stack: stackH(n), line: l, col: c, row: o.row.get(n) }); cy += stackH(n) + RM.RGY; }
-      maxH = Math.max(maxH, cy - RM.RGY - cardsY);
-    }
-    y = cardsY + Math.max(RM.RH, maxH) + RM.LINEGAP;
-  }
-  const nCols = Math.max(1, Math.min(RM.MAXCOLS, o.cols.length));
-  let zoneW = RM.PAD * 2 + nCols * RM.RW + (nCols - 1) * RM.RGX;
-  // 섹터·도구: 역할 아래(기본) 또는 오른쪽 칸
-  const sectors = [], tools = [];
-  let side = null;
-  if (sectorsUnder) {
-    for (const [n, b] of roles) {
-      let sy = b.y + RM.RH;
-      const r = byName.get(n);
-      for (const s of r.sectors || []) { const h = RM.SECH + Math.max(1, (s.items || []).length) * RM.ITEMH + (s.more ? RM.MOREH : 0); sectors.push({ role: n, x: b.x + 18, y: sy + RM.STACKGAP, w: RM.RW - 18, h, path: s.path, items: s.items || [], more: s.more || 0 }); sy += RM.STACKGAP + h; }
-      for (const t of r.tools || []) { tools.push({ role: n, x: b.x + 18, y: sy + RM.STACKGAP, w: RM.RW - 18, h: RM.TOOLH, ...t }); sy += RM.STACKGAP + RM.TOOLH; }
-    }
-  } else {
-    const sx = zoneX + zoneW + RM.OUTGAP;
-    let sy = RM.HEAD + RM.PAD + RM.LANETOP;
-    for (const n of names) {
-      const r = byName.get(n);
-      for (const s of r.sectors || []) { const h = RM.SECH + Math.max(1, (s.items || []).length) * RM.ITEMH + (s.more ? RM.MOREH : 0); sectors.push({ role: n, x: sx, y: sy, w: RM.SIDEW, h, path: s.path, items: s.items || [], more: s.more || 0, side: true }); sy += h + RM.STACKGAP; }
-      for (const t of r.tools || []) { tools.push({ role: n, x: sx, y: sy, w: RM.SIDEW, h: RM.TOOLH, side: true, ...t }); sy += RM.TOOLH + RM.STACKGAP; }
-    }
-    side = { x: sx, y: RM.HEAD + RM.PAD, w: RM.SIDEW, h: Math.max(0, sy - RM.HEAD - RM.PAD) };
-    y = Math.max(y, sy + RM.LINEGAP);
-  }
-  const bodyH = y - RM.LINEGAP + RM.PAD - (RM.HEAD + RM.PAD);
-  const zone = { x: zoneX, y: RM.HEAD + RM.PAD, w: zoneW, h: Math.max(bodyH, RM.HUMANH + RM.BUILDERH + 80) };
-  const out = { x: RM.PAD, y: zone.y, w: RM.OUTW, h: zone.h };
-  const human = (m.intake || []).length ? { x: out.x + 16, y: out.y + 40, w: out.w - 32, h: RM.HUMANH } : null;
-  const builder = { x: out.x + 16, y: out.y + out.h - RM.BUILDERH - 20, w: out.w - 32, h: RM.BUILDERH };
-  // 선
-  const mid = (b) => b.y + b.h / 2;
-  const sameCount = new Map();
-  for (const c of conns) {
-    const A = c.kind === 'intake' ? human : roles.get(c.a);
-    const B = c.kind === 'raise' ? builder : roles.get(c.b);
-    if (!A || !B) continue;
+  const beatRole = (m.head && m.head.beat && m.head.beat.role) || null;
+  const order = rowOrder(roleList.map((r) => r.name), flows, { beatRole });
+  const pos = new Map(order.map((n, i) => [n, i]));
+  // 쌍(사람·빌더는 쌍이 아니다): a = 왼쪽
+  const pairs = rolePairs(order, flows).map((p) => { const [a, b] = pos.get(p.a) <= pos.get(p.b) ? [p.a, p.b] : [p.b, p.a]; return { key: a + '|' + b, a, b, rows: pairRows(a, b, flows) }; }).filter((p) => p.rows.length);
+  // 카드 사이 틈: 이웃한 쌍의 이름표가 들어갈 만큼
+  const gaps = order.slice(1).map((_, i) => { const p = pairs.find((q) => pos.get(q.a) === i && pos.get(q.b) === i + 1); return p ? Math.max(RM.GAP, labelBox(p.rows).w + 48) : RM.GAP; });
+  const xs = []; let x = RM.PAD;
+  order.forEach((n, i) => { xs.push(x); x += RM.CW + (gaps[i] || 0); });
+  const cardsW = order.length ? x - RM.PAD : 0;
+  const w = Math.max(RM.MINW, RM.PAD * 2 + cardsW);
+  const head = { x: 0, y: 0, w, h: opts.folded ? RM.FOLDH : RM.HEADH };
+  if (opts.folded) return { w, h: RM.FOLDH, folded: true, dim: off, head, order, roles: new Map(), pairs: [], cycle: null, entry: null };
+  // 위로 도는 쌍: 걸친 폭이 짧은 것이 아래(카드에 가까이)
+  const far = pairs.filter((p) => pos.get(p.b) - pos.get(p.a) > 1).sort((p, q) => (pos.get(p.b) - pos.get(p.a)) - (pos.get(q.b) - pos.get(q.a)) || pos.get(p.a) - pos.get(q.a));
+  const nLane = far.length;
+  const cardsY = RM.HEADH + (nLane ? RM.LANETOP + (nLane - 1) * RM.LANE + RM.LANEBOT : RM.CARDTOP);
+  const lines = new Map(order.map((n) => [n, cardLines(byName.get(n), m)]));
+  const maxL = Math.max(0, ...[...lines.values()].map((l) => l.length));
+  const ch = RM.CPADY * 2 + RM.TITLEH + maxL * RM.LINEH;
+  const roles = new Map(order.map((n, i) => [n, { x: xs[i], y: cardsY, w: RM.CW, h: ch, lines: lines.get(n) }]));
+  const out = [];
+  // 곧은 선: 카드 가운데 높이, 왼쪽 카드 오른쪽 변 → 오른쪽 카드 왼쪽 변. 이름표는 틈 가운데
+  for (const p of pairs) {
+    const A = roles.get(p.a), B = roles.get(p.b);
+    const fwd = p.rows.some((r) => r.dir === 'fwd'), back = p.rows.some((r) => r.dir === 'back');
+    const lb = labelBox(p.rows);
     let pts, label;
-    if (c.kind === 'direct') {
-      const k = c.a + '>' + c.b; const n = sameCount.get(k) || 0; sameCount.set(k, n + 1);
-      const ay = mid(A) - 16 + n * 22, by = mid(B) - 16 + n * 22, mx = A.x + A.w + RM.RGX / 2;
-      pts = ay === by ? [[A.x + A.w, ay], [B.x, by]] : [[A.x + A.w, ay], [mx, ay], [mx, by], [B.x, by]];
-      label = { x: A.x + A.w + RM.RGX / 2, y: ay - 4, w: RM.RGX - 16 };
+    if (pos.get(p.b) - pos.get(p.a) === 1) {
+      const y = A.y + A.h / 2;
+      pts = [[A.x + A.w + 2, y], [B.x - 2, y]];
+      label = { x: (A.x + A.w + B.x) / 2 - lb.w / 2, y: y - lb.h / 2, w: lb.w, h: lb.h };
+      out.push({ ...p, straight: true, lane: null, pts, d: pathD(pts), label, tipA: back, tipB: fwd });
     } else {
-      const ln = laneOf.get(c);
-      const ly = lineTop[ln.line] + RM.LANETOP + ln.i * RM.LANE + RM.LANE / 2;
-      if (c.kind === 'intake') {
-        const ex = zone.x - 26;
-        pts = [[A.x + A.w, mid(A)], [ex, mid(A)], [ex, ly], [B.x + 40, ly], [B.x + 40, B.y]];
-        label = { x: (ex + B.x + 40) / 2, y: ly - 2, w: Math.max(120, B.x + 40 - ex - 16) };
-      } else if (c.kind === 'raise') {
-        const sx0 = A.x + 24, ex = zone.x - 12;
-        pts = [[sx0, A.y], [sx0, ly], [ex, ly], [ex, mid(B)], [B.x + B.w, mid(B)]];
-        label = { x: (sx0 + ex) / 2, y: ly - 2, w: Math.max(100, sx0 - ex - 16) };
-      } else {
-        const ax = A.x + A.w - 40 - (ln.i % 3) * 14, bx = B.x + 40 + (ln.i % 3) * 14;
-        pts = [[ax, A.y], [ax, ly], [bx, ly], [bx, B.y]];
-        label = { x: (ax + bx) / 2, y: ly - 2, w: Math.max(120, Math.abs(bx - ax) - 24) };
-      }
+      const li = far.indexOf(p);
+      const ly = cardsY - RM.LANEBOT - li * RM.LANE;
+      // 한 카드에서 여러 선이 오르면 겹치지 않게 자리를 비킨다
+      const k = far.slice(0, li).filter((q) => q.a === p.a || q.b === p.a).length, k2 = far.slice(0, li).filter((q) => q.a === p.b || q.b === p.b).length;
+      const ax = A.x + Math.round(A.w * 2 / 3) - k * RM.LANESTEP, bx = B.x + Math.round(B.w / 3) + k2 * RM.LANESTEP;
+      pts = [[ax, A.y - 2], [ax, ly], [bx, ly], [bx, B.y - 2]];
+      label = { x: (ax + bx) / 2 - lb.w / 2, y: ly - lb.h / 2, w: lb.w, h: lb.h };
+      out.push({ ...p, straight: false, lane: li, pts, d: pathD(pts), label, tipA: back, tipB: fwd });
     }
-    const f = c.f;
-    lines.push({
-      id: c.kind + ':' + (f ? f.i : 'r') + ':' + c.a + '>' + c.b, kind: c.kind, flow: f ? f.i : null, from: c.a, to: c.b, n: c.n || 0,
-      pts, d: pathD(pts), label, hot: !!(f && f.waiting > 0), openEnd: f && f.openReturns > 0 ? pts[0] : null,
-    });
   }
-  // 빌더의 고침: 점선, 빌더에서 rig 칸 테두리로(역할마다 긋지 않는다)
-  lines.push({ id: 'builder-fix', kind: 'fix', from: BUILDER_ROLE, to: null, pts: [[builder.x + builder.w, builder.y + 30], [zone.x, builder.y + 30]], d: pathD([[builder.x + builder.w, builder.y + 30], [zone.x, builder.y + 30]]), label: { x: (builder.x + builder.w + zone.x) / 2, y: builder.y + 26, w: zone.x - builder.x - builder.w - 8 }, hot: false, openEnd: null });
-  const w = Math.max(zone.x + zone.w, side ? side.x + side.w : 0) + RM.PAD;
-  let by = zone.y + zone.h + RM.BANDGAP;
-  const cycle = { x: RM.PAD, y: by, w: w - RM.PAD * 2, h: RM.CYCLEH }; by += RM.CYCLEH + RM.BANDGAP;
-  const entry = m.entry ? { x: RM.PAD, y: by, w: w - RM.PAD * 2, h: opts.entryOpen ? RM.ENTRYOPEN : RM.ENTRYH } : null;
-  if (entry) by += entry.h + RM.BANDGAP;
-  return { w, h: by + RM.PAD - RM.BANDGAP, folded: false, dim: off, head: { x: 0, y: 0, w, h: RM.HEAD }, out, zone, human, builder, roles, sectors, tools, side, lines, cycle, entry, order: o };
+  let by = cardsY + ch + RM.CARDTOP;
+  const cycle = { x: RM.PAD, y: by, w: w - RM.PAD * 2, h: RM.BANDH }; by += RM.BANDH + RM.BANDGAP;
+  const entry = { x: RM.PAD, y: by, w: w - RM.PAD * 2, h: m.entry && opts.entryOpen ? RM.ENTRYOPEN : RM.BANDH }; by += entry.h;
+  return { w, h: by + RM.PAD, folded: false, dim: off, head, order, roles, pairs: out, cycle, entry, lanes: nLane };
 }
 
-// ---- 세션 맵 안 자리: 트리 오른쪽 rig 영역. 지도 위를 그 워크스페이스 줄에 맞추고, 겹치면 아래로 민다 ----
-// lay: lineageLayout 결과(rows, bounds), maps: [자료], geo: 키 → mapLayout. → { x, items: [{ key, x, y, w, h, link: { d } }], bounds }
+// 접힘: 사람이 접거나 편 것(mem: 워크스페이스 키 → true 접힘 | false 펼침)을 지키고, 없으면 꺼진 rig만 접는다
+export const foldedOf = (m, mem) => (m && mem && Object.prototype.hasOwnProperty.call(mem, m.workspace) ? !!mem[m.workspace] : !!m && m.status !== 'on');
+
+// ---- 세션 맵 안 자리(설계 8.3): 트리 위 고정된 rig 띠. 트리 bounds 왼쪽 위에 맞추고 위로 쌓는다(여럿이면 이름 차례로 위에서 아래).
+//   트리 배치(열·줄)를 읽기만 하고 바꾸지 않는다. 트리도 지도를 모른다. → { items: [{ key, x, y, w, h, scale }](세계 px, RM.SCALE를 곱한 크기), band: { x, y, w, h }, bounds } | null
 export function placeMaps(lay, maps, geo) {
   if (!lay || !maps || !maps.length) return null;
-  const x = (lay.bounds.x || 0) + lay.bounds.w + RM.AREAGAP;
-  const items = [];
-  let bottom = -Infinity;
-  const rowOf = new Map(lay.rows.map((r) => [r.key, r]));
-  const sorted = maps.filter((m) => rowOf.has(m.workspace) && geo.get(m.workspace)).sort((a, b) => rowOf.get(a.workspace).y - rowOf.get(b.workspace).y || (rowOf.get(a.workspace).ox || 0) - (rowOf.get(b.workspace).ox || 0));
-  for (const m of sorted) {
-    const r = rowOf.get(m.workspace), g = geo.get(m.workspace);
-    const y = Math.max(r.y + 12, bottom + RM.MAPGAP);
-    const sx = r.x + r.w, sy = r.y + 40, ty = y + Math.min(40, g.h / 2);
-    const mx = x - RM.AREAGAP / 2;
-    const pts = Math.abs(sy - ty) < 0.5 ? [[sx, sy], [x, ty]] : [[sx, sy], [mx, sy], [mx, ty], [x, ty]];
-    items.push({ key: m.workspace, x, y, w: g.w, h: g.h, link: { pts, d: pathD(pts) } });
-    bottom = y + g.h;
-  }
-  if (!items.length) return null;
-  const right = Math.max(...items.map((i) => i.x + i.w));
+  const ms = maps.filter((m) => geo.get(m.workspace)).sort((a, b) => String(a.name || a.workspace).localeCompare(String(b.name || b.workspace)) || String(a.workspace).localeCompare(String(b.workspace)));
+  if (!ms.length) return null;
   const b0 = lay.bounds;
-  const bounds = { x: b0.x || 0, y: b0.y || 0, w: right - (b0.x || 0) + RM.PAD, h: Math.max(b0.y + b0.h, bottom) - (b0.y || 0) };
-  return { x, items, bounds };
+  const x = b0.x || 0;
+  const S = RM.SCALE;
+  const total = ms.reduce((s, m) => s + geo.get(m.workspace).h * S, 0) + RM.MAPGAP * (ms.length - 1);
+  let y = (b0.y || 0) - RM.RIGGAP - total;
+  const top = y;
+  const items = ms.map((m) => { const g = geo.get(m.workspace); const it = { key: m.workspace, x, y, w: g.w * S, h: g.h * S, scale: S }; y += g.h * S + RM.MAPGAP; return it; });
+  const bw = Math.max(...items.map((i) => i.w));
+  const band = { x, y: top, w: bw, h: total };
+  const right = Math.max(x + bw, (b0.x || 0) + b0.w);
+  const bounds = { x: Math.min(x, b0.x || 0), y: top, w: right - Math.min(x, b0.x || 0), h: (b0.y || 0) + b0.h - top };
+  return { items, band, bounds };
 }
 
 // ---- 세션 맵 트리에서 rig 역할·빌더 세션 빼기(RIG_VIEW.hideInTree) ----
@@ -294,4 +247,16 @@ export function phoneRig(m, live = null) {
   });
   const flows = (m.flows || []).map((f) => ({ item: f.item, from: list(f.from).join(', '), to: list(f.to).join(', '), put: f.cycle ? f.cycle.put : 0, waiting: f.waiting || 0, open: f.openReturns || 0 }));
   return { key: m.workspace, status: m.status, name: m.name, versionN: m.versionN, cycle: m.head ? m.head.cycle : null, attention: m.head ? m.head.attention : 0, stalled: m.head ? m.head.stalled : 0, roles, flows, entry: m.entry };
+}
+
+// P252: 박자·도구 주기를 사람 말로(사전 rigPeriod). every: 정의 값("1d", "6h", "30m", "1.5h"), at: "07:00" | null
+//   → "매일 07:00", "6시간마다", "every day 07:00", "every 6 hours". 하루 단위가 아닌 주기의 at은 기준 시각("6시간마다(07:00 기준)").
+//   꼴을 모르는 값은 원래 값 그대로(at이 있으면 뒤에 붙인다)
+const PERIOD_RE = /^(\d+(?:\.\d+)?)\s*([smhd])$/;
+export function periodText(every, at, t) {
+  const raw = every == null ? '' : String(every).trim();
+  const m = PERIOD_RE.exec(raw);
+  if (!m) return [raw, at].filter(Boolean).join(' ');
+  const base = Number(m[1]) === 1 ? t(`rigPeriod.single.${m[2]}`) : t(`rigPeriod.multi.${m[2]}`, { n: m[1] });
+  return at ? t(m[2] === 'd' ? 'rigPeriod.at' : 'rigPeriod.from', { period: base, at }) : base;
 }

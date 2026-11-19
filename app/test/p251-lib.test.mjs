@@ -1,8 +1,8 @@
-// P251 창 단위 시험: rig 구조 지도 배치(mapLayout·placeMaps), 세션 맵 트리에서 빼기(hideRigSessions, keepKeys 줄), 캔버스 길 선(rigEdges)·꼬리표(rigTag)·테두리, 6절 넷의 뒤집기 자리, 휴대폰 카드, 두 사전의 rigMap 글
+// P251 창 단위 시험: 세션 맵 트리에서 빼기(hideRigSessions), 캔버스 길 선(rigEdges)·꼬리표(rigTag)·테두리, 휴대폰 카드, 두 사전의 rigMap 글.
+// (세션 맵 지도 배치 mapLayout·placeMaps와 RIG_VIEW 시험은 P253이 8절로 다시 그리며 test/p253-lib.test.mjs로 옮겼다)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapLayout, placeMaps, hideRigSessions, rigEdges, rigTag, rigFrames, roleSessions, pathText, flowText, untilText, phoneRig, stackHeight, RIG_VIEW, RM, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
-import { lineageLayout } from '../src/renderer/lib/mission-lineage.js';
+import { hideRigSessions, rigEdges, rigTag, rigFrames, roleSessions, pathText, untilText, phoneRig, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
 
@@ -30,54 +30,6 @@ const MAP = (o = {}) => ({
   cycleItems: [], entry: { n: 11, text: '## 사이클 11\n\n요령을 고쳤다' },
 });
 
-test('P251 mapLayout: 역할을 길 차례로 칸에(가지는 같은 칸 아래로), 섹터·도구는 주인 아래, 선 종류(곧은·위 길·답·사람·올림·고침), 열린 반려 붉은 점', () => {
-  const g = mapLayout(MAP());
-  assert.equal(g.folded, false);
-  const b = (n) => g.roles.get(n);
-  assert.ok(b('data').x < b('ideas').x && b('ideas').x === b('news').x && b('verify').x > b('ideas').x);
-  assert.ok(b('news').y >= b('ideas').y + stackHeight(MAP().roles[1]));
-  assert.ok(g.out.x + g.out.w <= g.zone.x); // rig 밖 칸이 왼쪽
-  const sec = g.sectors.find((s) => s.role === 'data');
-  assert.equal(sec.x, b('data').x + 18); assert.ok(sec.y >= b('data').y + RM.RH);
-  assert.equal(g.tools.find((x) => x.role === 'data').name, 'fetch');
-  const kinds = (k) => g.lines.filter((l) => l.kind === k).map((l) => `${l.from}>${l.to}`).sort();
-  assert.deepEqual(kinds('direct'), ['data>ideas', 'data>news', 'ideas>verify']);
-  assert.deepEqual(kinds('answer'), ['verify>ideas']);
-  assert.deepEqual(kinds('lane'), ['verify>data']);
-  assert.deepEqual(kinds('intake'), ['human>ideas']);
-  assert.deepEqual(kinds('raise'), ['verify>' + BUILDER_ROLE]);
-  assert.equal(kinds('fix').length, 1);
-  const hyp = g.lines.find((l) => l.flow === 1);
-  assert.deepEqual(hyp.openEnd, hyp.pts[0]); // 낸 쪽 끝
-  assert.equal(g.lines.find((l) => l.from === 'data' && l.to === 'ideas').hot, true);
-  // 위 길은 카드 위로 지나간다(카드를 덮지 않게)
-  const lane = g.lines.find((l) => l.kind === 'lane');
-  assert.ok(Math.min(...lane.pts.map((p) => p[1])) < b('data').y);
-  assert.ok(g.cycle && g.entry && g.h > g.entry.y);
-});
-
-test('P251 mapLayout: 꺼진 rig는 접힌 카드, 펴면 흐린 지도. 역할이 MAXCOLS칸을 넘으면 줄을 바꾼다', () => {
-  const off = mapLayout(MAP({ status: 'off' }));
-  assert.deepEqual([off.folded, off.w, off.h], [true, RM.FOLDW, RM.FOLDH]);
-  const open = mapLayout(MAP({ status: 'off' }), { open: true });
-  assert.equal(open.folded, false); assert.equal(open.dim, true);
-  const chain = ['a', 'b', 'c', 'd', 'e', 'f'];
-  const m = { ...MAP(), roles: chain.map((n) => role(n)), flows: chain.slice(1).map((n, i) => ({ i, item: 'k' + i, from: [chain[i]], to: [n], waiting: 0, openReturns: 0 })), raises: [], intake: [] };
-  const g = mapLayout(m);
-  assert.equal(g.roles.get('e').line, 1); assert.equal(g.roles.get('e').col, 0);
-  assert.ok(g.roles.get('e').y > g.roles.get('a').y + RM.RH);
-  // 줄을 건너는 d → e는 곧은 선이 아니라 위 길
-  assert.equal(g.lines.find((l) => l.from === 'd' && l.to === 'e').kind, 'lane');
-});
-
-test('P251 6절 뒤집기 자리: RIG_VIEW 기본값과 섹터 오른쪽 칸', () => {
-  assert.deepEqual(RIG_VIEW, { sectorsUnder: true, hideInTree: true, canvasExtras: false, canvasFrame: false });
-  const g = mapLayout(MAP(), { sectorsUnder: false });
-  assert.ok(g.side && g.side.x > g.zone.x + g.zone.w);
-  assert.ok(g.sectors.every((s) => s.side && s.x === g.side.x));
-  assert.equal(g.roles.get('ideas').stack, RM.RH);
-});
-
 const graph = () => ({
   nodes: [
     { id: 's:lead', kind: 'session', sessionId: 'lead', name: 'lead', workspaceKey: 'C:/w/app', state: 'ready', peers: [] },
@@ -96,28 +48,6 @@ test('P251 hideRigSessions: 역할·빌더 세션과 그 선을 트리에서 빼
   assert.equal(g.edges.length, 1);
   const same = graph();
   assert.equal(hideRigSessions(same, false), same);
-});
-
-test('P251 세션 맵 rig 영역: 역할만 있는 워크스페이스도 줄이 남고(keepKeys), 지도는 트리 오른쪽에 그 줄과 위를 맞추며 겹치면 아래로', () => {
-  const g = hideRigSessions(graph(), true);
-  const lay = lineageLayout(g, { keepKeys: ['C:/w/trade', 'C:/w/other'] });
-  const keys = lay.rows.map((r) => r.key);
-  assert.ok(keys.includes('C:/w/trade') && keys.includes('C:/w/other'));
-  const m1 = MAP({ ws: 'C:/w/trade' }), m2 = MAP({ ws: 'C:/w/other' });
-  const geo = new Map([[m1.workspace, mapLayout(m1)], [m2.workspace, mapLayout(m2)]]);
-  const p = placeMaps(lay, [m1, m2], geo);
-  const it1 = p.items.find((x) => x.key === m1.workspace), it2 = p.items.find((x) => x.key === m2.workspace);
-  const r1 = lay.rows.find((r) => r.key === m1.workspace), r2 = lay.rows.find((r) => r.key === m2.workspace);
-  assert.ok(p.x >= lay.bounds.w + RM.AREAGAP - 1);
-  const [first, second] = it1.y < it2.y ? [it1, it2] : [it2, it1];
-  const rowOf = (it) => (it === it1 ? r1 : r2);
-  assert.equal(first.y, rowOf(first).y + 12); // 위를 줄에 맞춘다
-  assert.ok(second.y >= first.y + first.h + RM.MAPGAP); // 겹치면 아래로 민다(트리 줄 높이는 그대로)
-  assert.equal(lay.rows.find((r) => r.key === m1.workspace).h >= 0, true);
-  assert.ok(p.bounds.w > lay.bounds.w && p.bounds.h >= second.y + second.h);
-  assert.equal(it1.link.pts[0][0], r1.x + r1.w); // 줄 오른쪽 끝에서 지도로 가는 선 하나
-  assert.equal(it1.link.pts.at(-1)[0], it1.x);
-  assert.equal(placeMaps(lay, [], geo), null);
 });
 
 test('P251 rigEdges: 켜진 rig만, 역할 쌍마다 하나(방향·기다림·열린 반려 끝), 연결 기록이 아니다. 올림은 빌더가 있을 때만 점선', () => {
@@ -152,10 +82,7 @@ test('P251 rigTag·roleSessions·rigFrames: 역할 꼬리표(정의서 판·입�
   assert.deepEqual(fr, [{ ws: m.workspace, x: -10, y: -10, w: 420, h: 170 }]);
 });
 
-test('P251 글: flowText(이번 사이클 수), untilText, 휴대폰 rig 카드', () => {
-  const t = (k, v = {}) => ({ 'rigMap.accepted': `받음 ${v.n}`, 'rigMap.returned': `반려 ${v.n}`, 'rigMap.waiting': `기다림 ${v.n}`, 'rigMap.forText': `${v.item}(${v.of}의 답)` })[k] || k;
-  assert.equal(flowText(MAP().flows[1], t), 'hypothesis 3 · 받음 2 · 반려 1');
-  assert.equal(flowText(MAP().flows[2], t), 'result(hypothesis의 답)');
+test('P251 글: untilText, 휴대폰 rig 카드', () => {
   assert.deepEqual(untilText(1000 + 3 * 3600000, 1000), { n: 3, unit: 'h' });
   assert.equal(untilText(null), null);
   const c = phoneRig(MAP(), new Map([['s-ideas', { state: 'working' }]]));
