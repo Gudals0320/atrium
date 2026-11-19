@@ -25,7 +25,7 @@ import { SEAT_KINDS, mayReachOutside } from './rig.mjs';
 import { spawnPlan, killTree } from './hook-runner.mjs'; // P188: 느린 고리의 run
 import { rootedRun } from './tool-runs.mjs';
 import { cleanEnv } from './proc-env.mjs';
-import { SEAT_SPAWN } from './rig-amp.mjs'; // P189
+import { SEAT_SPAWN, effectivePermission } from './rig-amp.mjs'; // P189. P231: 실제로 도는 권한
 import { rigEvent, OWNER } from './rig-ledger.mjs'; // P217: 장부
 import { seatDocsOf, docsTail, docLoadEvent } from './rig-docs.mjs'; // P219: 머리의 문서 목록
 import { RigLoops, runNameOf, implicitCycleLoop } from './rig-loops.mjs'; // P221: 고리(계기, 회 이름, 멈추기·잇기)
@@ -71,12 +71,22 @@ export function seatHeader({ seat, unitId, caseId, by, guide = false, docs = nul
   ].join('\n');
 }
 export const SCOPED_SHELL_LINE = '[Atrium 보드] Run shell commands one at a time; do not pipe or chain them. A command that asks stops an unattended run. Read files with Read/Glob/Grep.';
+// P231(rig2-design 11.13의 3): 사람 카드를 기다리는 회에 주인이 --case로 손댈 때의 까닭
+export const humanWaitText = (caseId) => `회 ${caseId}은 사람이 정하는 중(응답 필요 카드)이다. 이 회는 기다린다. 같은 일을 새 회로 다시 열지 않는다.`;
+// P231(11.13의 3): 사람이 상한 카드에 답한 결과를 주인 세션에 한 번 알리는 판 알림. action: accept | again | pause
+export function humanDecidedText({ caseId, name = null, action, line = null, to = [] }) {
+  const run = `회 ${caseId}${name ? `(${name})` : ''}`;
+  if (action === 'accept') return `[Atrium 보드] 사람이 ${run}의 상한 카드에서 [그대로 받기]를 골랐다. 회는 done이다(받음).`;
+  if (action === 'again') return `[Atrium 보드] 사람이 ${run}의 상한 카드에서 [한 번 더]를 골랐다: flow[${line}]으로 ${to.join(', ')} 자리에 한 번 더 넘겼다. 회는 다시 이어진다.`;
+  return `[Atrium 보드] 사람이 ${run}의 상한 카드에서 [회 멈추기]를 골랐다. 회는 멈췄다(사람이 이을 때까지 기다린다). 같은 일을 새 회로 다시 열지 않는다.`;
+}
 export const NO_MANAGER_LINE = '[Atrium 보드] Write anything about pausing or changing the rig in your report; the human decides.';
-// 정의와 자리 → 머리에 더할 줄. scoped: 정의의 자리 권한이 scoped. 관리자 자리가 없는 rig(자리가 있는 정의)는 모든 자리에
-export function seatExtraLines(def, seat) {
+// 정의와 자리 → 머리에 더할 줄. scoped: 실제로 도는 권한이 scoped. 관리자 자리가 없는 rig(자리가 있는 정의)는 모든 자리에
+// P231(rig2-design 11.13의 5): approved(사람이 그 자리의 unattended를 승인했는가). 승인 전 unattended는 scoped로 돌므로 셸 줄을 단다. ask·승인된 unattended에는 달지 않는다
+export function seatExtraLines(def, seat, { approved = false } = {}) {
   const out = [];
   const sa = def && def.amp && def.amp.seats ? def.amp.seats[seat] : null;
-  if (sa && sa.permission === 'scoped') out.push(SCOPED_SHELL_LINE);
+  if (sa && effectivePermission(sa.permission, approved) === 'scoped') out.push(SCOPED_SHELL_LINE);
   if (def && def.seats && !def.manager) out.push(NO_MANAGER_LINE);
   return out;
 }
@@ -217,7 +227,7 @@ export class RigFlow {
     if (b.broadcastSession) b.broadcastSession(s, { cause: 'rig_seat' });
     let noticeId = null;
     if (notify && (want !== before || (notify === 'spawned' && want)) && (want || before)) {
-      const text = want ? this.seatNoticeOf(r.def, want) : seatLeftNotice(before);
+      const text = want ? this.seatNoticeOf(r.def, want, s.workspaceKey) : seatLeftNotice(before);
       const d = b.queue.enqueue(s.sessionId, text);
       noticeId = d.deliveryId;
       st.addEvent(s.sessionId, 'rig_seat_notice', { seat: want, before, deliveryId: d.deliveryId });
@@ -225,9 +235,15 @@ export class RigFlow {
     }
     return { session: shownName(s), sessionId: s.sessionId, seat: want, before, workspace: s.workspaceKey, ...(noticeId ? { noticeId } : {}) };
   }
-  seatNoticeOf(def, seat) {
+  seatNoticeOf(def, seat, key = null) {
     const x = def.seats[seat] || {};
-    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide, manager: def.manager === seat, docs: seatDocsOf(def, seat), extra: seatExtraLines(def, seat) });
+    return seatNotice({ seat, assign: [...new Set(def.flow.filter((l) => l.from === seat && l.on === 'assign').map((l) => l.to[0]))], may: x.may || [], results: def.results || [], guide: !!x.guide, manager: def.manager === seat, docs: seatDocsOf(def, seat), extra: this.extraLinesOf(key, def, seat) });
+  }
+  // P231(11.13의 5): 머리에 더할 줄(실제로 도는 권한: 승인 전 unattended는 scoped)
+  extraLinesOf(key, def, seat) {
+    const rig = this.b.rig;
+    const approved = !!(key && rig && rig.permitted && rig.permitted(key, seat)); // 실제 권한(rig-amp ctxOf)과 같이 지금 정의의 승인으로 본다
+    return seatExtraLines(def, seat, { approved });
   }
 
   // ---------- 건 ----------
@@ -255,6 +271,8 @@ export class RigFlow {
       if (!c || c.workspaceKey !== key) throw apiError('rig_case', `이 워크스페이스에 건 ${want}이 없다. 내 건 보기: atrium me`);
       if (!LIVE_CASE.has(c.state)) throw apiError('rig_case', `건 ${c.id}은 이미 ${c.state}다. 새 건은 --case 없이 보낸다.`);
       if (c.owner !== caller.sessionId && this.openCaseOf(caller) !== c.id) throw apiError('rig_case', `건 ${c.id}의 주인(@${this.nameOf(c.owner)})이 아니라 이 건을 고를 수 없다.`);
+      // P231(rig2-design 11.13의 3): 사람 카드(run_limit)를 기다리는 회는 사람이 정한다. 주인에게는 미리 알리지 않고, 손대면 까닭을 말한다
+      if (c.state === 'waiting_owner' && c.ownerWait === 'human') throw apiError('rig_case', humanWaitText(c.id));
       return this.resumeCase(c, caller, 'case');
     }
     const tr = st.openTryOf(caller.sessionId);
@@ -561,13 +579,17 @@ export class RigFlow {
         const k = String(line.index); const counts = { ...c.edgeCounts };
         const n = counts[k] || 0;
         if (n >= line.max) {
-          const alt = line.else || ctx.def.manager || null;
+          let alt = line.else || ctx.def.manager || null;
+          // P231(rig2-design 11.13의 2): 올라갈 곳이 상한에 걸린 그 자리 자신(반려당한 일을 한 자리나 반려한 자리)이면 자기 일을 판정하게 된다. 관리자 없음처럼 사람 카드로.
+          //   바로가기 keep 정의(manager = 입구 자리 main, main ok → reviewer, reviewer rejected → main). 주인이 일을 다른 자리에 맡겨 둔 흐름(worker의 일이 반려되어 main으로)은 지금처럼 주인 차례다
+          const self = alt && (alt === ctx.name || alt === this.judgedSeatOf(unit)) ? alt : null;
+          if (self) alt = null;
           counts[`${k}>else`] = (counts[`${k}>else`] || 0) + 1;
           st.updateCase(c.id, { edgeCounts: counts });
-          escalated = { line: line.index, max: line.max, to: alt, n: counts[`${k}>else`] };
-          st.addEvent(caller.sessionId, 'rig_escalate', { caseId: c.id, line: line.index, max: line.max, to: alt });
+          escalated = { line: line.index, max: line.max, to: alt, n: counts[`${k}>else`], ...(self ? { self } : {}) };
+          st.addEvent(caller.sessionId, 'rig_escalate', { caseId: c.id, line: line.index, max: line.max, to: alt, ...(self ? { self } : {}) });
           // P230(rig2-design 11.12의 3): else도 관리자 자리도 없으면 사람이 관리자의 일을 받는다(응답 필요 카드: 그대로 받기 · 한 번 더 · 회 멈추기)
-          if (!alt) { rigEvent(this.b, { kind: 'escalate', caseId: c.id, unitId: unit.id, seat: ctx.name, session: caller.sessionId, fromSeat: ctx.name, toSeat: null, line: line.index, value: result, n: line.max, max: line.max, actor: 'board', text: `상한 ${line.max}번을 넘었고 else도 manager도 없어 사람에게 묻는다`, data: { human: true } }); this.askHuman(st.getCase(c.id), { ctx, caller, unit, result, doneText, line }); continue; }
+          if (!alt) { rigEvent(this.b, { kind: 'escalate', caseId: c.id, unitId: unit.id, seat: ctx.name, session: caller.sessionId, fromSeat: ctx.name, toSeat: null, line: line.index, value: result, n: line.max, max: line.max, actor: 'board', text: self ? `상한 ${line.max}번을 넘었고 올라갈 곳(${self})이 그 자리 자신이라 사람에게 묻는다` : `상한 ${line.max}번을 넘었고 else도 manager도 없어 사람에게 묻는다`, data: { human: true, ...(self ? { self } : {}) } }); this.askHuman(st.getCase(c.id), { ctx, caller, unit, result, doneText, line, self }); continue; }
           targets = [alt];
         } else { counts[k] = n + 1; passN = n + 1; st.updateCase(c.id, { edgeCounts: counts }); }
       }
@@ -578,14 +600,14 @@ export class RigFlow {
     this.changed(ctx.key); // P197: done마다(건 상태가 그대로여도 일이 닫혔다) 맵이 다시 읽는다
     return { reports };
   }
-  async handoff({ ctx, c, caller, unit, result, doneText, line, to, escalated, firstSpec, passN = null }) {
+  async handoff({ ctx, c, caller, unit, result, doneText, line, to, escalated, firstSpec, passN = null, lead = null }) { // P231: lead(주인 보고 머리에 붙일 판 줄)
     const b = this.b; const st = this.store();
     const history = escalated ? this.history(c.id) : [];
     const text = handoffText({ fromSeat: ctx.name, fromName: shownName(caller), result, doneText, firstSpec, escalated, history });
     const tSeat = ctx.def.seats[to];
     const seated = tSeat.session === 'keep' ? this.seatedOf(ctx.key, to)[0] || null : null;
     // P194: 받는 곳이 건 주인 세션 자신이면 일이 아니라 보고다. 주인이 아닌 keep 자리로 가는 줄은 그대로 일이다
-    if (seated && seated.sessionId === c.owner) return this.ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner: seated, firstSpec, passN });
+    if (seated && seated.sessionId === c.owner) return this.ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner: seated, firstSpec, passN, lead });
     const h = await b.rig.deliver({ target: seated || { workspaceKey: ctx.key, name: to, kind: null, model: null, cwd: ctx.r.root }, workspaceKey: ctx.key, from: { kind: 'flow', seat: ctx.name, session: caller }, text, ledger: { caseId: c.id, fromSeat: ctx.name, toSeat: to, line: line.index, seat: ctx.name } });
     const rowIds = (h.runs || []).map((x) => x.rowId).filter((x) => x != null);
     if (h.action === 'reject') return this.block(c, `넘김 글(${ctx.name} ${result} → ${to})을 deliver 훅이 거절했다: ${h.reason}`);
@@ -606,13 +628,14 @@ export class RigFlow {
 
   // ---------- P230(11.12의 3): 관리자 자리가 없는 rig의 상한 → 사람 카드 ----------
   // 회는 waiting_owner(owner_wait human)로 두고 마지막 넘김(반려 글)을 human_ask에 적는다. rig.asks가 카드(kind run_limit)로 보인다
-  askHuman(c, { ctx, caller, unit, result, doneText, line }) {
+  // P231: self(올라갈 곳이 상한에 걸린 그 자리 자신이라 사람에게 온 것이면 그 자리 이름)
+  askHuman(c, { ctx, caller, unit, result, doneText, line, self = null }) {
     const st = this.store();
-    const ask = { line: line.index, unitId: unit.id, session: caller.sessionId, seat: ctx.name, result, text: String(doneText || ''), max: line.max, to: line.to.slice(), t: Date.now() };
+    const ask = { line: line.index, unitId: unit.id, session: caller.sessionId, seat: ctx.name, result, text: String(doneText || ''), max: line.max, to: line.to.slice(), t: Date.now(), ...(self ? { self } : {}) };
     st.updateCase(c.id, { state: 'waiting_owner', ownerWait: 'human', ownerWaitDelivery: null, humanAsk: ask });
-    st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId: c.id, why: 'human', line: line.index, max: line.max, from: ctx.name, result });
-    rigEvent(this.b, { kind: 'case_waiting_owner', caseId: c.id, session: c.owner, seat: this.seatOfSession(c.owner), line: line.index, value: 'human', max: line.max, actor: 'board', text: `${ctx.name} ${result}: flow[${line.index}] 상한 ${line.max}번, 관리자 자리가 없어 사람의 답을 기다린다` });
-    this.b.log(`rig case ${c.id} waiting human (limit flow[${line.index}], no manager)`);
+    st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId: c.id, why: 'human', line: line.index, max: line.max, from: ctx.name, result, ...(self ? { self } : {}) });
+    rigEvent(this.b, { kind: 'case_waiting_owner', caseId: c.id, session: c.owner, seat: this.seatOfSession(c.owner), line: line.index, value: 'human', max: line.max, actor: 'board', text: `${ctx.name} ${result}: flow[${line.index}] 상한 ${line.max}번, ${self ? `올라갈 곳(${self})이 그 자리 자신이라` : '관리자 자리가 없어'} 사람의 답을 기다린다`, ...(self ? { data: { self } } : {}) });
+    this.b.log(`rig case ${c.id} waiting human (limit flow[${line.index}], ${self ? `self ${self}` : 'no manager'})`);
     if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.asks', { workspace: c.workspaceKey }); } catch {}
     this.changed(ctx.key);
   }
@@ -622,11 +645,12 @@ export class RigFlow {
     const c = st.getCase(String(caseId || ''));
     if (!c || c.state !== 'waiting_owner' || c.ownerWait !== 'human' || !c.humanAsk) throw apiError('not_found', `사람의 답을 기다리는 회가 아니다: ${caseId}`);
     const ask = c.humanAsk; const actor = 'human';
-    if (action === 'pause') { const x = this.loops.pause(c.workspaceKey, c.id, { by }); if (b.api && b.api.broadcast) try { b.api.broadcast('rig.asks', { workspace: c.workspaceKey }); } catch {} return { ...x, action }; } // 멈춘 동안 카드는 숨는다(잇기에 다시 뜬다)
+    if (action === 'pause') { const x = this.loops.pause(c.workspaceKey, c.id, { by }); this.tellOwnerDecided(c, 'pause'); if (b.api && b.api.broadcast) try { b.api.broadcast('rig.asks', { workspace: c.workspaceKey }); } catch {} return { ...x, action }; } // 멈춘 동안 카드는 숨는다(잇기에 다시 뜬다)
     if (action === 'accept') {
       st.updateCase(c.id, { state: 'open', ownerWait: null, humanAsk: null });
       rigEvent(b, { kind: 'case_resumed', caseId: c.id, value: 'human_accept', actor, text: 'waiting_owner → done(사람이 그대로 받음)', data: { from: 'waiting_owner', ownerWait: 'human', by, line: ask.line } });
       this.closeDone(st.getCase(c.id), '상한에 닿은 회를 사람이 그대로 받음', 'human');
+      this.tellOwnerDecided(c, 'accept');
       if (b.api && b.api.broadcast) try { b.api.broadcast('rig.asks', { workspace: c.workspaceKey }); } catch {}
       return { case: c.id, state: 'done', action };
     }
@@ -642,7 +666,11 @@ export class RigFlow {
     const caller = b.sessions.get(ask.session) || { sessionId: ask.session, name: this.nameOf(ask.session), rigSeat: ask.seat, workspaceKey: c.workspaceKey };
     const ctx = { key: c.workspaceKey, r, def, seat: def.seats[ask.seat], name: ask.seat };
     const firstSpec = (st.unitsOfCase(c.id)[0] || {}).spec || '';
-    for (const to of line.to) await this.handoff({ ctx, c: st.getCase(c.id), caller, unit: unit || { id: ask.unitId, from: null, to: ask.session }, result: ask.result, doneText: ask.text, line, to, escalated: null, firstSpec, passN: null });
+    // P231(11.13의 3): 넘김이 주인 보고면(주인 keep 자리로 가는 줄) 알림 줄을 그 보고 머리에 붙이고 따로 보내지 않는다(한 번)
+    const lead = humanDecidedText({ caseId: c.id, name: c.name, action: 'again', line: ask.line, to: line.to });
+    let told = false;
+    for (const to of line.to) { const rep = await this.handoff({ ctx, c: st.getCase(c.id), caller, unit: unit || { id: ask.unitId, from: null, to: ask.session }, result: ask.result, doneText: ask.text, line, to, escalated: null, firstSpec, passN: null, lead: told ? null : lead }); if (rep && rep.report) told = true; }
+    if (!told) this.tellOwnerDecided(c, 'again', { line: ask.line, to: line.to });
     this.caseCheck(c.id);
     this.pumpSoon();
     this.changed(c.workspaceKey);
@@ -650,15 +678,31 @@ export class RigFlow {
     return { case: c.id, state: st.getCase(c.id).state, action };
   }
 
+  // P231(11.13의 2): 이 일이 판정한 일을 한 자리(흐름이 넘긴 일이면 앞 일의 자리, 아니면 맡긴 세션의 자리)
+  judgedSeatOf(unit) {
+    const v = (unit && unit.via) || {};
+    const prev = v.prevUnit ? this.store().getUnit(v.prevUnit) : null;
+    if (prev) return prev.seat || null;
+    return unit && unit.from ? this.seatOfSession(unit.from) : null;
+  }
+  // P231(11.13의 3): 사람이 상한 카드에 답한 결과를 주인 세션에 한 번 알린다(받음 · 한 번 더 · 멈춤). 주인 세션이 닫혔으면 넣지 않는다
+  tellOwnerDecided(c, action, o = {}) {
+    const b = this.b;
+    if (!c || !c.owner || !b.sessions.has(c.owner)) return null;
+    const d = b.queue.enqueue(c.owner, humanDecidedText({ caseId: c.id, name: c.name, action, ...o }));
+    try { this.store().addEvent(c.owner, 'rig_human_decided', { caseId: c.id, action, deliveryId: d.deliveryId }); } catch {}
+    return d;
+  }
   // P194: 주인에게 보고(일을 만들지 않는다). 상한을 넘어 올라온 것이면 건을 waiting_owner로 둔다(주인의 다음 맡기기가 잇는다)
-  ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner, firstSpec, passN = null }) {
+  ownerReport({ ctx, c, caller, unit, result, doneText, line, to, escalated, owner, firstSpec, passN = null, lead = null }) {
     const b = this.b; const st = this.store();
     if (escalated) {
       st.updateCase(c.id, { state: 'waiting_owner', ownerWait: 'escalated', ownerWaitDelivery: null });
       st.addEvent(c.owner, 'rig_case_waiting_owner', { caseId: c.id, line: line.index, max: escalated.max, from: ctx.name, result });
       rigEvent(b, { kind: 'case_waiting_owner', caseId: c.id, session: c.owner, seat: owner.rigSeat || null, line: line.index, value: 'escalated', max: escalated.max, actor: 'board', text: `${ctx.name} ${result}: flow[${line.index}] 상한 ${escalated.max}번` });
     }
-    const text = ownerReportText({ caseId: c.id, fromSeat: ctx.name, fromName: shownName(caller), unitId: unit.id, firstSpec, result, doneText, escalated, history: escalated ? this.history(c.id) : [] });
+    const body = ownerReportText({ caseId: c.id, fromSeat: ctx.name, fromName: shownName(caller), unitId: unit.id, firstSpec, result, doneText, escalated, history: escalated ? this.history(c.id) : [] });
+    const text = lead ? `${lead}\n${body}` : body;
     const d = b.queue.enqueue(owner.sessionId, text);
     // P209: 상한 아래의 주인 보고. 건은 열린 일이 없어지면 done 대신 waiting_owner(caseCheck), 이 보고를 받은 주인의 턴이 끝나면 done(onSessionTurn)
     if (!escalated) st.updateCase(c.id, { ownerWait: 'report', ownerWaitDelivery: d.deliveryId });

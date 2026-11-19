@@ -373,7 +373,7 @@ export class RigProposals {
     for (const c of st.humanAskCases ? st.humanAskCases(ws) : []) {
       if (c.pausedAt || (b.branch && b.branch.flow && b.branch.flow.loops && b.branch.flow.loops.isPaused(c.workspaceKey, c.loop))) continue;
       const a = c.humanAsk || {};
-      out.push({ id: `run:${c.id}`, kind: 'run_limit', workspace: c.workspaceKey, wsName: wsName(c.workspaceKey), t: a.t || c.createdAt, run: { id: c.id, name: c.name || null, loop: c.loop || null, seat: a.seat || null, to: a.to || [], result: a.result || null, max: a.max ?? null, line: a.line ?? null, reason: a.text || '', sessionName: this.nameOf(a.session) } });
+      out.push({ id: `run:${c.id}`, kind: 'run_limit', workspace: c.workspaceKey, wsName: wsName(c.workspaceKey), t: a.t || c.createdAt, run: { id: c.id, name: c.name || null, loop: c.loop || null, seat: a.seat || null, to: a.to || [], result: a.result || null, max: a.max ?? null, line: a.line ?? null, reason: a.text || '', sessionName: this.nameOf(a.session), self: a.self || null } }); // P231: self(올라갈 곳이 그 자리 자신이라 사람에게 옴)
     }
     // P225(rig2-design 11.8의 1·2): 무인 자리 승인(승인 전 unattended 자리. 승인은 이 PC의 창만)
     for (const x of b.rig && b.rig.permitNeeds ? b.rig.permitNeeds(ws) : []) out.push({ id: `permit:${x.workspace}|${x.seat}`, kind: 'seat_permit', workspace: x.workspace, wsName: wsName(x.workspace), t: b.rig.pendingSince ? b.rig.pendingSince(x.workspace, x.seat) : Date.now(), seat: x.seat, defN: x.defN });

@@ -81,7 +81,7 @@ export function RigAskCard({ a, now = Date.now(), compact = false }) {
     : a.kind === 'doc_unapproved' ? t('rigAsk.metaUnapproved', { ws: a.wsName, path: a.path, by: whoText(t, a.who, a.by), ago: ago(a.t, now) })
       : t('rigAsk.metaArtifact', { ws: a.wsName, seat: a.artifact.seat || '-', ago: ago(a.t, now) });
   return (
-    <div className={`mt-rigask ${a.kind}${compact ? ' compact' : ''}`} data-role="rig-ask" data-kind={a.kind} data-ask={a.id} title={a.kind === 'seat_permit' ? t('rigPermitNeed.tip') : a.kind === 'run_limit' ? t('rigP230.limitTip') : undefined}>
+    <div className={`mt-rigask ${a.kind}${compact ? ' compact' : ''}`} data-role="rig-ask" data-kind={a.kind} data-ask={a.id} title={a.kind === 'seat_permit' ? t('rigPermitNeed.tip') : a.kind === 'run_limit' ? (a.run.self ? t('rigP231.limitTipSelf', { seat: a.run.self }) : t('rigP230.limitTip')) : undefined}>
       <div className="mt-rigask-title">{rigAskTitle(t, a)}</div>
       <div className="mt-rigask-meta">{meta}</div>
       {a.kind === 'seat_permit' && <div className="mt-rigask-risk" data-role="rig-ask-risk">{t('rigPermitNeed.risk')}</div>}
