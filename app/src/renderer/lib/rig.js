@@ -71,7 +71,7 @@ export function tuneLogRows(info) {
   const log = info && Array.isArray(info.log) ? info.log : [];
   return log.slice().reverse().map((x) => ({
     id: x.id, kind: x.kind, state: x.state, n: x.n ?? null, prevN: x.prevN ?? null, fromN: x.fromN ?? null, why: x.why || '', reason: x.reason || '', evidence: x.evidence || [], added: x.added ?? 0, removed: x.removed ?? 0, t: x.t || null,
-    key: x.kind === 'tune' ? (x.state === 'rejected' ? 'rejected' : 'tune') : x.kind,
+    key: x.kind === 'tune' ? (x.state === 'rejected' ? 'rejected' : 'tune') : x.kind, by: x.by || null, // P252: answer(올림에 답함)의 by builder | human
     undo: x.state === 'applied' && x.prevN != null ? x.prevN : null,
   }));
 }
@@ -79,3 +79,9 @@ export function tuneLogRows(info) {
 export const roleCount = (st) => (st && st.rig3 && Array.isArray(st.rig3.roles) ? st.rig3.roles.length : 0);
 // 켜기를 보일까(이 PC의 창, 꺼짐, 맞는 정의)
 export const canEnableRig = (st, { remote = false } = {}) => !remote && !!st && st.status === 'off' && !st.why;
+
+// P252: 기다리는 올림(rig3.raises, 백엔드 rig-tune.mjs waitingRaises) → [{ id, role, reason, t }]. 사람은 rig 판의 올림 줄에서 답해 닫는다(판 API rig.raiseAnswer)
+export function raiseRows(r3) {
+  const list = r3 && Array.isArray(r3.raises) ? r3.raises : [];
+  return list.filter((x) => x && x.id).map((x) => ({ id: x.id, role: x.role, reason: x.reason || '', t: x.t || null }));
+}

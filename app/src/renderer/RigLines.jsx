@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { BaseEdge, EdgeLabelRenderer, ViewportPortal, getBezierPath, useStore as useFlowStore } from '@xyflow/react';
 import { useStore, getState, openDialog } from './store.js';
 import { useT, fmtTime } from './lib/i18n.js';
-import { pathText, rigTag, rigFrames, RIG_VIEW } from './lib/rig-map.js';
+import { pathText, rigTag, rigFrames, periodText, RIG_VIEW } from './lib/rig-map.js';
 
 const LABEL_ZOOM = 0.15; // 이보다 멀면 글을 숨긴다
 // 멀어지면 글을 키워 화면에서 읽히게 한다(배율 0.75 아래에서 1/배율에 비례, 3배까지). 역할 노드 넷을 한눈에 보는 배율(0.3 안팎)에서도 길 글이 보인다
@@ -67,7 +67,7 @@ export function RigTag({ s }) {
   const tag = rigTag(s, () => m);
   if (!tag) return null;
   if (tag.kind === 'builder') return <span className="mt-badge rig builder" data-role="rig-tag" data-kind="builder">{t('rigMap.tagBuilder')}</span>;
-  const extra = RIG_VIEW.canvasExtras ? [tag.beat && tag.beat.every ? t('rigMap.tagBeat', { every: tag.beat.every }) : null, tag.sectors.length ? t('rigMap.tagSectors', { list: tag.sectors.join(' ') }) : null].filter(Boolean) : [];
+  const extra = RIG_VIEW.canvasExtras ? [tag.beat && tag.beat.every ? t('rigMap.tagBeat', { every: periodText(tag.beat.every, tag.beat.at, t) }) : null, tag.sectors.length ? t('rigMap.tagSectors', { list: tag.sectors.join(' ') }) : null].filter(Boolean) : [];
   const panel = (e) => { e.stopPropagation(); const w = (getState().workspaces || []).find((x) => x.key === tag.ws); if (w) openDialog({ kind: 'rigpanel', ws: w }); };
   return <>
     <span className="mt-badge rig" data-role="rig-tag" data-kind="role" data-rig-role={tag.role}>{t('rigMap.tagRole', { name: tag.role })}{tag.docN != null ? <span className="dim"> · v{tag.docN}</span> : null}{extra.map((x) => <span key={x} className="dim"> · {x}</span>)}</span>

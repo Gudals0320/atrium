@@ -4,7 +4,7 @@
 // 멀리서(.lv-far)는 테두리, 역할 이름, 상태 색만 남긴다(styles.css 끝 .mt-rm).
 import { memo } from 'react';
 import { STATE_LABEL, agoText } from './lib/labels.js';
-import { flowText, untilText, BUILDER_ROLE } from './lib/rig-map.js';
+import { flowText, untilText, periodText, BUILDER_ROLE } from './lib/rig-map.js';
 
 const ST = { working: 'working', waiting: 'needs', trust_wait: 'needs', error: 'error', ready: 'ready', sleeping: 'sleeping', exited: 'exited' };
 const stOf = (s) => (!s ? 'none' : ST[s] || 'ready');
@@ -42,7 +42,7 @@ function RoleCard({ r, b, lv, t, onTag, onGo }) {
   return (
     <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="rm-role" data-name={r.name} data-state={st || 'none'} role="button" tabIndex={0}
       onClick={() => lv && onTag(lv.name)} onDoubleClick={() => lv && onGo(lv.sessionId)} onKeyDown={(e) => { if (e.key === 'Enter' && lv) onGo(lv.sessionId); }}>
-      {r.beat ? <span className="beat" data-role="rm-beat"><Clock />{r.beat.every ? t('rigMap.beatEvery', { every: r.beat.every }) : ''}{r.beat.at ? ' ' + t('rigMap.beatAt', { at: r.beat.at }) : ''}</span> : null}
+      {r.beat ? <span className="beat" data-role="rm-beat"><Clock />{periodText(r.beat.every, r.beat.at, t)}</span> : null}
       <span className="r1"><span className="rn" data-role="rm-role-name">{r.name}</span><span className="rs"><i />{stText}</span></span>
       <span className="r2 det">{[r.launcher, r.model].filter(Boolean).join(' · ')}{r.docN != null ? <span> · {t('rigMap.docN', { n: r.docN })}</span> : null}</span>
       <span className="r3 det">
@@ -70,7 +70,7 @@ function Tool({ x, t, now }) {
   const st = x.last ? (x.last.status === 'done' && !x.alarms ? 'ok' : 'bad') : 'none';
   return (
     <div className={`mt-rm-tool det tl-${st}${x.side ? ' side' : ''}`} style={{ left: x.x, top: x.y, width: x.w, height: x.h }} data-role="rm-tool" data-name={x.name}>
-      <span className="t1">{x.every ? <Clock /> : '⚙'} <b>{x.name}</b>{x.every ? <span className="dim"> {t('rigMap.beatEvery', { every: x.every })}</span> : null}</span>
+      <span className="t1">{x.every ? <Clock /> : '⚙'} <b>{x.name}</b>{x.every ? <span className="dim" data-role="rm-tool-every"> {periodText(x.every, null, t)}</span> : null}</span>
       <span className="t2">{x.last ? t('rigMap.toolLast', { ago: agoText(x.last.at) }) + ' · ' + x.last.status : t('rigMap.toolNever')}{x.alarms ? <span className="bad"> · {t('rigMap.alarms', { n: x.alarms })}</span> : null}</span>
     </div>
   );

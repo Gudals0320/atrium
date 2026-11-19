@@ -5,8 +5,10 @@
 // - 갱신: 창은 rig.roles·rig.events 판 이벤트 때 다시 읽는다(자주 바뀌는 세션 상태는 창의 세션 값이 이긴다).
 // - 기다리는 raise: 역할이 빌더에게 올린 것(rig3_tunes kind raise) 뒤에 빌더나 사람이 고친 판(rig_versions by builder | human)이 아직 없으면 기다림.
 //   다뤄지면(그 뒤 판이 생기면) 사라진다(설계 4절 "다뤄지면 사라진다"를 판이 아는 사실로 옮긴 것).
+//   P252: 빌더나 사람이 고치지 않고 답해도(atrium rig answer, 판 API rig.raiseAnswer) 사라진다. 셈은 rig-tune.mjs raiseStates 하나다.
 // - 켤 때 놓기(placeRoles): rig를 켠 뒤 역할 노드를 길 차례(rig-map-layout.mjs roleOrder)로 나란히 놓는다. 켤 때마다 한 번이고 그 뒤에는 사람이 옮긴 자리를 지킨다.
 import { collectCycle } from './rig-beat.mjs';
+import { waitingRaises } from './rig-tune.mjs';
 import { HUMAN, BUILDER_ROLE } from './rig-def-names.mjs';
 import { roleOrder } from './rig-map-layout.mjs';
 
@@ -119,10 +121,7 @@ export function rigMapOf(b, key) {
   });
   // 기다리는 raise
   let raises = [];
-  try {
-    const vers = st.rigVersions ? st.rigVersions(key) : [];
-    raises = (st.rig3Tunes(key, null) || []).filter((t) => t.kind === 'raise' && !vers.some((n) => n.t > t.t && (n.by === 'builder' || n.by === 'human'))).map((t) => ({ role: t.role, reason: t.why || '', t: t.t }));
-  } catch { raises = []; }
+  try { raises = waitingRaises(st, key); } catch { raises = []; } // P252: { id, role, reason, t }
   // 사이클 항목 순서(앞에서부터)
   const cycleItems = [];
   for (const e of rows) {

@@ -22,7 +22,8 @@ export const RIG_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];
 //   role_tool(value done | failed | alarm, ref 실행 ID, data.by clock | role, data.tool·exit·alarm·log), role_beat(역할 칸 beat가 그 역할을 깨움)
 export const RIG_BEAT_KINDS = ['cycle_open', 'cycle_entry', 'role_tool', 'role_beat'];
 // P245: rig 조정과 되돌리기(rig-tune.mjs): 조정 턴, 조정(applied | rejected | none), 빌더에게 올림, 사람의 바로잡음, 사람의 되돌리기
-export const RIG_TUNE_KINDS = ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback'];
+// P252: raise_answer(빌더나 사람이 고치지 않고 올림에 한 줄로 답해 닫음. ref 올림 id raise-<n>, value builder | human, seat 올린 역할)
+export const RIG_TUNE_KINDS = ['tune_turn', 'role_tune', 'role_raise', 'role_heard', 'role_rollback', 'raise_answer'];
 // P247: rig 빌더(rig-builder.mjs). builder_spawn(사람이 "빌더에게 말하기"로 빌더 세션을 띄움)
 export const RIG_BUILDER_KINDS = ['builder_spawn'];
 const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG_ROLE_KINDS, ...RIG_GUARD_KINDS, ...RIG_BEAT_KINDS, ...RIG_TUNE_KINDS, ...RIG_BUILDER_KINDS]);
