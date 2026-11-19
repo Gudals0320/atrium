@@ -1,5 +1,6 @@
 // P224: rig 2 R6 응답 필요 카드(docs research rig2-design.md 2.1 "제안과 승인", 11.5의 4, 11.7의 1).
 // - 판 API rig.asks(사람 승인 제안, 승인 안 된 정본 바뀜, 받아들임 human 섹터의 새 산출물)를 읽고 판 이벤트 rig.asks·rig.artifacts와 다시 붙을 때 다시 읽는다.
+// - P239: 권한 모드가 바뀐 rig 자리 "rig 자리 <자리>의 권한 모드가 <모드>로 바뀌었습니다…"(단추 없음. 자리 터미널에서 Shift+Tab으로 돌리면 사라진다).
 // - P230: 상한에 닿은 회(관리자 자리 없는 rig) "상한에 닿은 회: <이름>", 마지막 반려 까닭, [그대로 받기] [한 번 더] [회 멈추기].
 // - 카드: 제안 "제안: <문서> · <까닭>"과 패치 보기, [승인] [거절(한 줄 까닭)]. 승인 안 된 바뀜은 바뀐 내용 보기와 [되돌리기] [받아들이기]. 산출물은 [받아들이기].
 // - 위 오른쪽 "내 차례" 펼침 목록(Chrome.jsx TurnPill)과 휴대폰 목록(Phone.jsx)이 같은 부품을 쓴다. 정하기는 rig.decide(이 PC의 창과 연결한 기기)
@@ -31,7 +32,7 @@ export function useRigAsks() {
   useEffect(() => { wire(); subs.add(set); load(); return () => { subs.delete(set); }; }, []);
   return x.asks;
 }
-export const rigAskTitle = (t, a) => (a.kind === 'run_limit' ? t('rigP230.limitTitle', { name: a.run.name || a.run.id }) : a.kind === 'seat_permit' ? t('rigPermitNeed.line', { seat: a.seat }) : a.kind === 'proposal' ? t('rigAsk.proposal', { doc: a.proposal.target === 'definition' ? t('rigAsk.definition') : a.proposal.target, why: a.proposal.why || t('rigAsk.noWhy') })
+export const rigAskTitle = (t, a) => (a.kind === 'mode_drift' ? t('rigP239.modeDrift', { seat: a.seat, mode: a.mode, back: a.back || 'manual' }) : a.kind === 'run_limit' ? t('rigP230.limitTitle', { name: a.run.name || a.run.id }) : a.kind === 'seat_permit' ? t('rigPermitNeed.line', { seat: a.seat }) : a.kind === 'proposal' ? t('rigAsk.proposal', { doc: a.proposal.target === 'definition' ? t('rigAsk.definition') : a.proposal.target, why: a.proposal.why || t('rigAsk.noWhy') })
   : a.kind === 'doc_unapproved' ? t('rigAsk.unapproved', { doc: a.doc }) : t('rigAsk.artifact', { sector: a.artifact.sector, path: a.artifact.path }));
 
 // 승인 안 된 바뀜을 만든 쪽(보드의 구조 값) → 화면 글
@@ -95,12 +96,12 @@ export function RigAskCard({ a, now = Date.now(), compact = false }) {
   };
   const p = a.proposal;
   const diff = p ? p.diff : a.diff;
-  const meta = a.kind === 'run_limit' ? t('rigP230.limitMeta', { ws: a.wsName, seat: a.run.seat || '-', result: a.run.result || '-', max: a.run.max ?? '-', ago: ago(a.t, now) }) : a.kind === 'seat_permit' ? `${a.wsName} · ${t('rigPermitNeed.what')} · ${ago(a.t, now)}` : a.kind === 'proposal'
+  const meta = a.kind === 'mode_drift' ? `${a.wsName} · @${a.sessionName || '-'} · ${ago(a.t, now)}` : a.kind === 'run_limit' ? t('rigP230.limitMeta', { ws: a.wsName, seat: a.run.seat || '-', result: a.run.result || '-', max: a.run.max ?? '-', ago: ago(a.t, now) }) : a.kind === 'seat_permit' ? `${a.wsName} · ${t('rigPermitNeed.what')} · ${ago(a.t, now)}` : a.kind === 'proposal'
     ? t('rigAsk.metaProposal', { ws: a.wsName, seat: p.seat || '-', who: p.sessionName ? `@${p.sessionName}` : '', path: p.path, added: p.added ?? 0, removed: p.removed ?? 0, ago: ago(a.t, now) })
     : a.kind === 'doc_unapproved' ? t('rigAsk.metaUnapproved', { ws: a.wsName, path: a.path, by: whoText(t, a.who, a.by), ago: ago(a.t, now) })
       : t('rigAsk.metaArtifact', { ws: a.wsName, seat: a.artifact.seat || '-', ago: ago(a.t, now) });
   return (
-    <div className={`mt-rigask ${a.kind}${compact ? ' compact' : ''}`} data-role="rig-ask" data-kind={a.kind} data-ask={a.id} title={a.kind === 'seat_permit' ? t('rigPermitNeed.tip') : a.kind === 'run_limit' ? (a.run.self ? t('rigP231.limitTipSelf', { seat: a.run.self }) : t('rigP230.limitTip')) : undefined}>
+    <div className={`mt-rigask ${a.kind}${compact ? ' compact' : ''}`} data-role="rig-ask" data-kind={a.kind} data-ask={a.id} title={a.kind === 'mode_drift' ? t('rigP239.modeTip') : a.kind === 'seat_permit' ? t('rigPermitNeed.tip') : a.kind === 'run_limit' ? (a.run.self ? t('rigP231.limitTipSelf', { seat: a.run.self }) : t('rigP230.limitTip')) : undefined}>
       <div className="mt-rigask-title">{rigAskTitle(t, a)}</div>
       <div className="mt-rigask-meta">{meta}</div>
       {a.kind === 'seat_permit' && <div className="mt-rigask-risk" data-role="rig-ask-risk">{t('rigPermitNeed.risk')}</div>}

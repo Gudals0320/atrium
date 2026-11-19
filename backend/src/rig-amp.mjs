@@ -30,6 +30,7 @@ import crypto from 'node:crypto';
 import { rigEvent } from './rig-ledger.mjs'; // P217: 장부(훅 아닌 관문)
 import { writesPaths, OWNS } from './rig-docs.mjs'; // P219: writes의 문서 이름 → 경로
 import { startsAsBoardNotice } from './text.mjs'; // P235: 판 알림은 그 회의 글이다
+import { sleepTarget, sessionActivity } from './sleep.mjs'; // P239: 권한이 바뀐 keep 자리를 다시 띄울 때(잠재우기와 같은 판정)
 
 export const AMP_ATS = ['pre-tool'];
 export const SEAT_PERMISSIONS = ['ask', 'scoped', 'unattended']; // P223
@@ -59,6 +60,16 @@ export const NO_YES_WHY = '받을 Yes가 없는 선택지 꼴';
 // P235(rig2-design 11.17의 1): 판이 연 회의 scoped 자리 PermissionRequest에 판이 답하는 거절 글(모델이 이 글을 받고 턴을 잇는다. 2.1.328 헤드리스 확인)
 export const BOARD_DENY_MESSAGE = 'rig: 허용 목록 밖이라 거절했다(판이 연 회라 묻지 않는다). 하지 못한 것은 보고에 적는다.';
 // PermissionRequest 훅 응답 본문(거절). 빈 답은 결정 없음(Claude Code가 묻는다, 또는 denyInsteadOfPrompting이면 거절)
+// P239(rig2-design 11.18 2단계의 3·4): 권한이 바뀐 keep 자리를 쉴 때 다시 띄우기, 권한 모드 어긋남
+export const PERM_TICK_MS = 5000; // 권한 바뀜을 보는 주기
+export const MODE_DRIFT_TEXT = (seat, mode, back = 'manual') => `rig 자리 ${seat}의 권한 모드가 ${mode}로 바뀌었다. 자리 터미널에서 Shift+Tab으로 ${back}로 돌린다.`;
+// 권한 모드의 넓이(11.18 답 2·3). 띄운 모드보다 넓으면 어긋남. plan·dontAsk는 좁다. 모르는 모드는 넓은 쪽(어긋남)으로 본다
+export const MODE_RANK = { plan: 0, dontAsk: 0, default: 1, manual: 1, acceptEdits: 2, auto: 3, bypassPermissions: 4 };
+export const modeRank = (m) => (m == null || m === '' ? 1 : MODE_RANK[m] ?? 9);
+export const modeShown = (m) => (!m || m === 'default' ? 'manual' : m); // 화면 이름(Claude Code 바닥 줄: default = manual)
+export const isModeDrift = (mode, launched) => modeRank(mode) > modeRank(launched || 'default');
+// 자리 권한의 서명: Claude Code가 세션 중에 --settings를 다시 읽지 않으므로(11.18) 띄울 때의 값과 견준다. x: ctxOf의 값
+export const permSigOf = (x) => (x ? JSON.stringify({ permission: x.permission || 'ask', writes: x.writes === undefined ? null : x.writes, allow: x.allow || [], deny: x.deny || [] }) : null);
 export const permissionDenyBody = (message = BOARD_DENY_MESSAGE) => ({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message } } });
 export const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 export const EDIT_ALL = 'Edit(//**)'; // 모든 드라이브의 모든 파일(문서: Windows 경로는 /c/… 꼴로 맞춘 뒤 맞춘다)
@@ -536,6 +547,121 @@ export class RigAmp {
   claudeAmp(s) { const x = this.ctxOf(s); return x && x.kind === 'claude' ? claudeSettingsAmp(x) : null; }
   // Codex 인자
   launcherArgs(s, args) { const x = this.ctxOf(s); return x && x.kind === 'codex' ? codexArgsAmp(args, x.writes, x.permission) : (args || []); } // P223: 자리 권한
+  // ---------- P239(rig2-design 11.18 2단계의 3): 정의가 바뀌어 떠 있는 keep 자리의 권한이 달라짐 ----------
+  // 자리 권한의 서명(writes, allow, permission(실제로 쓰는 값), deny) | null(rig 자리 아님)
+  permSig(s) { return permSigOf(this.ctxOf(s)); }
+  // 자리 세션을 (다시) 띄울 때: 그때의 서명을 남긴다(이어 가기·되살리기·다시 열기·처음 띄우기). 새 프로세스는 띄운 권한 모드로 돈다(어긋남을 지운다)
+  noteLaunched(s) {
+    if (!s || !s.rt) return;
+    s.rt.rigPermSig = s.rigSeat ? this.permSig(s) : null;
+    if (s.rt.rigModeDrift) { s.rt.rigModeDrift = null; this.asksChanged(s); }
+    try { this.b.store.saveRuntime(s.sessionId, s.rt); } catch {}
+  }
+  // 떠 있는 세션에 자리를 정했다(rig.seat): 띄운 때의 서명이 이 자리의 것이 아니면 기준을 null(띄운 때 자리 없음)로 둔다 → 쉬면 다시 띄운다(11.18 답 1)
+  noteSeated(s) {
+    if (!s || !s.rt || !s.rigSeat) return;
+    const want = this.permSig(s);
+    if (want != null && s.rt.rigPermSig === want) return; // 이 자리로 띄운 세션(SEAT_SPAWN, 같은 자리로 다시 앉힘)
+    s.rt.rigPermSig = null;
+    try { this.b.store.saveRuntime(s.sessionId, s.rt); } catch {}
+  }
+  // 떠 있는 keep 자리의 권한이 띄운 때와 다른가 → null | { from, to }(서명 풀이)
+  //   fresh 자리는 다음 회에 새로 뜨므로 보지 않는다. 기준이 없으면(떠 있는 세션에 자리를 정함, 이 판 전에 띄움) 지금 값을 기준으로 둔다
+  permStale(s) {
+    if (!s || !s.rigSeat || !s.rt || s.closedAt) return null;
+    const x = this.ctxOf(s); if (!x) return null;
+    if (x.r.def.seats[s.rigSeat].session !== 'keep') return null;
+    const now = permSigOf(x);
+    if (s.rt.rigPermSig === undefined) { s.rt.rigPermSig = now; try { this.b.store.saveRuntime(s.sessionId, s.rt); } catch {} return null; } // 이 판 전에 띄운 세션
+    // null: 자리 없이(판 밖·자리 없는 세션) 띄운 뒤 rig.seat으로 앉힘(noteSeated). 그 세션은 자리의 allow·deny와 고정 거절 없이 돈다 → 다음 쉼에 다시 띄운다(11.18 답 1)
+    if (now === s.rt.rigPermSig) return null;
+    let from = null; try { from = JSON.parse(s.rt.rigPermSig); } catch {}
+    return { from, to: JSON.parse(now) };
+  }
+  // 지금 다시 띄워도 되는가 → null(된다) | 까닭. 열린 시도가 없고, 잠재우기(사람이 잠재울 때와 같은 판정)가 되는 때
+  permIdle(s) {
+    const sl = this.b.sleeper;
+    if (!sl) return 'no_sleeper';
+    if (s.rt.sleep || sl.isAsleep(s)) return 'asleep';
+    const st = this.b.store;
+    if (st.openTryOf && st.openTryOf(s.sessionId)) return 'open_try';
+    const x = sl.info(s);
+    return sessionActivity(x, { mode: 'hand' }) || sleepTarget(x, { mode: 'hand' }) || null;
+  }
+  // 한 자리를 본다: 표시가 바뀌면 rig 판에 알리고, 쉬는 때면 잠재우기·깨우기(이어 가기)로 새 설정 파일로 다시 띄운다 → 결과 | null
+  async permCheck(s) {
+    if (!this.staleShown) this.staleShown = new Map();
+    if (!this.restarting) this.restarting = new Set();
+    const stale = this.permStale(s);
+    const was = this.staleShown.get(s.sessionId) || false;
+    if (!!stale !== was) {
+      if (stale) this.staleShown.set(s.sessionId, true); else this.staleShown.delete(s.sessionId);
+      if (stale) { try { this.b.store.addEvent(s.sessionId, 'rig_perm_stale', { seat: s.rigSeat, from: stale.from, to: stale.to }); } catch {} }
+      this.seatsChanged(s);
+    }
+    if (!stale) return null;
+    if (this.restarting.has(s.sessionId)) return { restarting: true };
+    const why = this.permIdle(s);
+    if (why) return { waiting: why };
+    const sl = this.b.sleeper;
+    this.restarting.add(s.sessionId);
+    try {
+      try { this.b.store.addEvent(s.sessionId, 'rig_perm_restart', { seat: s.rigSeat, from: stale.from, to: stale.to }); } catch {}
+      this.b.log && this.b.log(`rig seat ${s.name} (${s.rigSeat}): permissions changed, restarting with the new settings`);
+      await sl.sleep(s, { by: 'rig', mode: 'hand', scope: 'session' });
+      const w = await sl.wake(s, 'rig_perm');
+      return { restarted: true, plan: w && w.plan };
+    } catch (e) {
+      try { this.b.store.addEvent(s.sessionId, 'rig_perm_restart_failed', { seat: s.rigSeat, error: e.code || e.message }); } catch {}
+      this.b.log && this.b.log(`rig seat ${s.name} restart failed: ${e.code || e.message}`);
+      return { failed: e.code || e.message };
+    } finally {
+      this.restarting.delete(s.sessionId);
+      if (!this.permStale(s)) { this.staleShown.delete(s.sessionId); this.seatsChanged(s); }
+    }
+  }
+  // 모든 rig 자리를 본다(백엔드 주기, PERM_TICK_MS)
+  async permTick() {
+    if (this._permTicking) return [];
+    this._permTicking = true;
+    const out = [];
+    try {
+      for (const s of [...this.b.sessions.values()]) {
+        if (!s.rigSeat) { if (this.staleShown && this.staleShown.has(s.sessionId)) { this.staleShown.delete(s.sessionId); this.seatsChanged(s); } continue; }
+        try { const r = await this.permCheck(s); if (r) out.push({ name: s.name, ...r }); } catch (e) { this.b.log && this.b.log('rig perm check error', e.stack); }
+      }
+    } finally { this._permTicking = false; }
+    return out;
+  }
+  seatsChanged(s) { if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.seats', { workspace: s.workspaceKey }); } catch {} }
+  asksChanged(s) { if (this.b.api && this.b.api.broadcast) try { this.b.api.broadcast('rig.asks', { workspace: s.workspaceKey }); } catch {} }
+
+  // ---------- P239(rig2-design 11.18 2단계의 4): scoped·ask 자리의 권한 모드 어긋남 ----------
+  // hook 입력의 permission_mode. scoped·ask 자리만 본다(unattended, rig 밖, Claude Code가 아닌 종류는 보지 않는다).
+  //   11.18 답 2·3: 띄운 모드(scoped는 default, ask는 런처의 모드)보다 넓으면(plan < default < acceptEdits < auto < bypassPermissions) 장부 gate(data.at permission, value drift, data.mode)와 응답 필요 카드(rig.asks mode_drift). 같은 모드에는 한 번, default로 돌아오면 지운다
+  noteMode(s, mode) {
+    if (!s || !s.rt || mode == null || mode === '') return null;
+    const cur = s.rt.rigModeDrift || null;
+    const x = s.rigSeat && (s.kind || 'claude') === 'claude' ? this.ctxOf(s) : null;
+    const launched = x && x.permission === 'scoped' ? 'default' : (!s.permissionMode || s.permissionMode === 'manual' ? 'default' : s.permissionMode);
+    const watch = !!x && (x.permission === 'scoped' || x.permission === 'ask');
+    const m = String(mode);
+    if (!watch || !isModeDrift(m, launched)) {
+      if (cur) { s.rt.rigModeDrift = null; try { this.b.store.addEvent(s.sessionId, 'rig_mode_back', { mode: m, was: cur.mode }); } catch {} this.asksChanged(s); }
+      return null;
+    }
+    if (cur && cur.mode === m) return null;
+    const st = this.b.store;
+    const tr = st.openTryOf ? st.openTryOf(s.sessionId) : null;
+    s.rt.rigModeDrift = { mode: m, at: Date.now(), seat: x.seat, back: modeShown(launched) };
+    try { st.addEvent(s.sessionId, 'rig_mode_drift', { seat: x.seat, mode: m, permission: x.permission }); } catch {}
+    this.gateEvent(s, x, tr, 'permission', { mode: m, why: 'mode_drift', permission: x.permission, launched }, `권한 모드가 ${m}로 바뀜(${x.permission} 자리는 ${launched}로 띄움)`, 'drift');
+    this.b.log && this.b.log(`rig seat ${s.name} (${x.seat}): permission mode drift to ${m}`);
+    try { st.saveRuntime(s.sessionId, s.rt); } catch {}
+    this.asksChanged(s);
+    return s.rt.rigModeDrift;
+  }
+
   // 설정 파일을 지금 정의·자리에 맞춘다(자리를 정하거나 정의가 바뀐 뒤 다음 턴부터). 바뀌었으면 true
   syncSettings(s) {
     if (!s || (s.kind || 'claude') !== 'claude' || !s.settingsPath) return false;

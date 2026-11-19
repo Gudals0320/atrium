@@ -34,7 +34,7 @@ function useRigGet(key) {
   useEffect(() => {
     load();
     const mine = (ev) => !ev || !ev.workspace || ev.workspace === key;
-    const offs = ['rig.builder', 'rig.cases', 'rig.alert'].map((n) => api.on(n, (ev) => { if (mine(ev)) load(); }));
+    const offs = ['rig.builder', 'rig.cases', 'rig.alert', 'rig.seats'].map((n) => api.on(n, (ev) => { if (mine(ev)) load(); })); // P239: rig.seats(자리 권한 바뀜·다시 띄움)
     return () => offs.forEach((f) => f());
   }, [key, load]);
   return [st, load, setSt];
@@ -496,7 +496,7 @@ export function RigPanel({ ws, onClose }) {
                           <td><LauncherSelect choices={choices} value={r.launcher} disabled={L('launcher')} onChange={(v) => setTb(tableEdit(tb, 'seats', r.key, 'launcher', v))} /></td>
                           <td className="mt-rigpanel-cb"><input type="checkbox" checked={r.worktree} disabled={L('worktree') || r.session === 'keep'} data-field="worktree" onChange={(e) => setTb(tableEdit(tb, 'seats', r.key, 'worktree', e.target.checked))} /></td>
                           <td className="mt-rigpanel-seated">
-                            {seated.length ? seated.map((x) => <span key={x.sessionId} className="mt-rigpanel-sess">{x.name}{edit && r.session === 'keep' && <button className="mt-btn small ghost" data-action="rig-unseat" disabled={busy} onClick={() => seat(x.sessionId, null)}>{t('rigPanel.unseat')}</button>}</span>) : <span className="dim">-</span>}
+                            {seated.length ? seated.map((x) => <span key={x.sessionId} className="mt-rigpanel-sess">{x.name}{x.permStale && <span className="mt-rig-permstale" data-role="rig-perm-stale" title={t('rigP239.staleTip')}>{t('rigP239.stale')}</span>}{edit && r.session === 'keep' && <button className="mt-btn small ghost" data-action="rig-unseat" disabled={busy} onClick={() => seat(x.sessionId, null)}>{t('rigPanel.unseat')}</button>}</span>) : <span className="dim">-</span>}
                             {edit && status === 'on' && r.session === 'keep' && r.orig != null && !seated.length && (
                               <select className="mt-input small" value="" data-role="rig-seat-quick" disabled={busy} onChange={(e) => { const v = e.target.value; if (v === 'spawn') spawn(r.name); else if (v) seat(v, r.name); }}>
                                 <option value="">{t('rigPanel.seatPick')}</option>
