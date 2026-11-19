@@ -4,6 +4,7 @@
 //   돌려주는 def는 rig 2 길이 읽는 칸(hooks, seats, flow, loops, amp, docs…)을 비운 꼴이라 rig 2 장치(훅, 회, 고리, 권한, 문서)는 v3 rig에서 돌지 않는다.
 //   v3 칸은 def.rig3에 있다: { purpose, beat, roles, flows, tools, tune }.
 // - 정의 칸(뼈대 8절): purpose(목적 문서 경로), beat({ every, at?, role? }), roles({ <역할>: { owns: [폴더], tools?: [도구], launcher?, model?, beat? } }),
+//   P242: 역할 칸 effort(노력 수준, 모델처럼 띄울 때 하네스에 넘긴다).
 //   flows([{ item, from: 역할|human|[…], to: 역할|[…], for? }]), tools({ <이름>: { run: [...], every?, desc? } }), tune({ after, every, lines }).
 //   rig 2 칸(seats, loops, hooks, manager, results, permission, docs, guide, stopVerify, cycles)은 v3에 없다(오류).
 // - 2·3단계가 쓸 칸(flows의 for, 도구의 every, 박자)은 읽어 고른 꼴로 두기만 한다. 동작은 다음 단계다.
@@ -108,8 +109,8 @@ export function validateRig3(raw, { root = null, exists = isFile, read = (f) => 
     if (name === HUMAN) return bad(`${at}: human은 입력 창구 이름이라 역할 이름으로 쓰지 않는다`);
     if (!ROLE_NAME_RE.test(name)) return bad(`${at}: 역할 이름은 영문 소문자로 시작하고 소문자·숫자·_로 24자까지다`);
     if (!x || typeof x !== 'object' || Array.isArray(x)) return bad(`${at}는 객체다({ "owns": ["폴더/"] })`);
-    const extra = Object.keys(x).filter((k) => !['owns', 'tools', 'launcher', 'model', 'beat'].includes(k));
-    if (extra.length) return bad(`${at}에 모르는 칸이 있다: ${extra.join(', ')}. 칸: owns, tools, launcher, model, beat`);
+    const extra = Object.keys(x).filter((k) => !['owns', 'tools', 'launcher', 'model', 'effort', 'beat'].includes(k));
+    if (extra.length) return bad(`${at}에 모르는 칸이 있다: ${extra.join(', ')}. 칸: owns, tools, launcher, model, effort, beat`);
     const owns = list(x.owns);
     if (!owns.length) return bad(`${at}.owns는 역할이 쥔 폴더 하나 이상이다(예: ["data/"])`);
     const norm = [];
@@ -134,9 +135,11 @@ export function validateRig3(raw, { root = null, exists = isFile, read = (f) => 
     if (x.launcher != null) { if (typeof x.launcher !== 'string' || !x.launcher.trim()) return bad(`${at}.launcher는 claude, codex 또는 판의 런처 이름이다`); launcher = x.launcher.trim(); }
     let model = null;
     if (x.model != null) { if (typeof x.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/.test(x.model.trim())) return bad(`${at}.model은 모델 이름 글이다: ${JSON.stringify(x.model)}`); model = x.model.trim(); }
+    let effort = null; // P242: 노력 수준(모델처럼 하네스에 넘긴다. Claude Code --effort, Codex model_reasoning_effort). 화면에는 없고 빌더가 정한다
+    if (x.effort != null) { if (typeof x.effort !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{0,19}$/.test(x.effort.trim())) return bad(`${at}.effort는 노력 수준 낱말이다(예: low, medium, high): ${JSON.stringify(x.effort)}`); effort = x.effort.trim(); }
     let beat = null;
     if (x.beat != null) { const b = readBeat(x.beat, `${at}.beat`); if (b.reason) return bad(b.reason); beat = b.beat; }
-    roles[name] = { name, owns: norm, tools: [...new Set(rt)], launcher, model, beat, doc: roleDocPath(name), memory: memoryPath(name) };
+    roles[name] = { name, owns: norm, tools: [...new Set(rt)], launcher, model, effort, beat, doc: roleDocPath(name), memory: memoryPath(name) };
   }
   // 정의서(파일과 네 칸)
   if (root) {
@@ -252,7 +255,7 @@ export function codexRoleArgs(base, root, role) {
 }
 
 // 역할 세션에 싣는 첫 글(판 알림). files: { purpose, role, memory }(글 또는 null). 칸마다 LOAD_MAX에서 자른다
-export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn' } = {}) {
+export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn', inbox = null } = {}) {
   const r = r3.roles[roleName];
   const gets = r3.flows.filter((f) => f.to.includes(roleName)).map((f) => `${f.item}(${f.from.join('|')}에게서)`);
   const puts = r3.flows.filter((f) => f.from.includes(roleName)).map((f) => `${f.item}(${f.to.join('|')}에게)`);
@@ -263,7 +266,8 @@ export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn' 
     `[Atrium 보드] 너는 rig 역할 ${roleName}이다${why === 'respawn' ? '(세션이 끝나 판이 새로 띄웠다)' : ''}. 이 세션은 늘 떠 있다. 쉬면 판이 재우고, 일이 오면 판이 깨운다.`,
     `[Atrium 보드] 쓰는 곳: ${r.owns.join(', ')}, 기억 ${memoryDir(roleName)}. 그 밖에 쓰면 판이 묻지 않고 막는다. 모든 섹터는 읽어도 된다. ${RIG3_DIR}/의 정의와 정의서는 고치지 않는다.`,
     `[Atrium 보드] 받는 것: ${gets.join(', ') || '없음'}. 내는 것: ${puts.join(', ') || '없음'}. 도구: ${r.tools.join(', ') || '없음'}(판이 돌린다).`,
-    '[Atrium 보드] 이번 판에는 항목을 내고 받는 명령이 아직 없다. 지금은 아래를 읽고 "준비됨" 한 줄로 답한 뒤 기다린다. 사람이 이 터미널에서 말하면 따른다.',
+    ...ITEM_HOWTO, // P242: 항목 명령(짧게)
+    '[Atrium 보드] 지금은 아래를 읽고 "준비됨" 한 줄로 답한 뒤 기다린다. 받은 것이 오면 판이 깨운다. 사람이 이 터미널에서 말하면 따른다.',
     `[Atrium 보드] 기억은 ${memoryPath(roleName)}에 네가 직접 쓴다(다음에 새로 뜨는 너에게 남길 것). 판은 내용을 보지 않고 띄울 때 싣기만 한다.`,
   ];
   return [
@@ -271,8 +275,27 @@ export function loadText(r3, roleName, files = {}, { root = null, why = 'spawn' 
     block('목적', r3.purpose, files.purpose, LOAD_MAX.purpose, '(목적 문서를 읽지 못했다)'), '',
     block('정의서', r.doc, files.role, LOAD_MAX.role, '(정의서를 읽지 못했다)'), '',
     block('기억', memoryPath(roleName), files.memory, LOAD_MAX.memory, '(아직 없다)'),
+    ...(inbox && inbox.length ? ['', '## 받은 것 (판이 쥔 것. 다시 뜨기 전에 온 것)', ...inbox] : []), // P242
     ...(root ? ['', `(워크스페이스: ${root.split(path.sep).join('/')})`] : []),
   ].join('\n');
+}
+// P242: 항목 명령 쓰는 법(역할 세션의 첫 글과 atrium guide). 짧게
+export const ITEM_HOWTO = [
+  '[Atrium 보드] 낸다: 네 섹터에 파일을 쓰고 `atrium rig put <파일> --item <종류> [--from <받은 항목>]`. 판이 길대로 받는 역할에게 보낸다. 낸 파일은 고치지 않는다(고치려면 `--redo <항목>`으로 다음 판).',
+  '[Atrium 보드] 받은 것에 답한다: `atrium rig accept <항목>` | `return <항목> "<까닭>"`(낸 역할에게 돌아간다) | `pass [<항목>] "<까닭>"`(이번에는 낼 것이 없다). 받음은 그 항목에서 이어진 항목을 내기 전까지 반려로 뒤집을 수 있다. 반려된 네 항목은 `put <파일> --redo <항목>`이나 `drop <항목> "<까닭>"`으로 끝낸다. 목록: `atrium rig inbox`.',
+];
+// P242: atrium guide(rig 3). 역할 세션이면 그 역할의 받는 것·내는 것과 항목 명령
+export function rig3Guide(r3, roleName = null) {
+  const r = roleName ? r3.roles[roleName] : null;
+  const lines = ['rig 3(역할 조직). 역할은 대화하지 않고 항목을 넘긴다.'];
+  if (r) {
+    const gets = r3.flows.filter((f) => f.to.includes(roleName)).map((f) => `${f.item}(${f.from.join('|')}에게서${f.for ? `, ${f.for}에 대한 답` : ''})`);
+    const puts = r3.flows.filter((f) => f.from.includes(roleName)).map((f) => `${f.item}(${f.to.join('|')}에게${f.for ? `, 받은 ${f.for}마다` : ''})`);
+    lines.push(`너는 역할 ${roleName}. 쓰는 곳: ${r.owns.join(', ')}, 기억 ${memoryDir(roleName)}.`, `받는 것: ${gets.join(', ') || '없음'}. 내는 것: ${puts.join(', ') || '없음'}.`);
+  }
+  const forFlows = r3.flows.filter((f) => f.for);
+  if (forFlows.length) lines.push(`답이 필요한 길: ${forFlows.map((f) => `${f.from.join('|')}가 받은 ${f.for}마다 ${f.item}을 낸다(--from <받은 ${f.for}>)`).join('; ')}. 낼 것이 없으면 pass.`);
+  return [...lines, ...ITEM_HOWTO.map((l) => l.replace('[Atrium 보드] ', ''))].join('\n');
 }
 // 싣는 파일을 읽는다(없으면 null)
 export function readLoadFiles(root, r3, roleName) {

@@ -3175,4 +3175,19 @@ export default {
     for: '{item}에 대한 답',
     readOnly: '이 rig는 정의 파일(.atrium/rig.json, .atrium/roles/)로만 바꿉니다. 여기서는 구조를 보기만 합니다.',
   },
+  // P242: rig 3 항목·길·받음. 구조 보기의 길마다 수, 멈춘 역할 한 줄, 입력 창구
+  rig3Items: {
+    counts: '낸 {put} · 받음 {accepted} · 반려 {returned} · 기다림 {waiting}',
+    passed: ' · pass {n}',
+    stalledH: '답하지 않고 멈춘 역할',
+    stalled: '{role}: 받은 것에 답하지 않았습니다(판이 한 번 일깨움) — {items}',
+    intake: '입력 창구',
+    intakeTo: '{item} → {to}',
+    intakePlaceholder: '{to}에게 넣을 글. 판이 파일로 써서 항목으로 보냅니다.',
+    intakeSend: '넣기',
+    intakeSent: '{id}를 {to}에게 넣었습니다',
+    intakeOff: '입력 창구는 rig가 켜져 있을 때 씁니다.',
+    returned: '반려된 입력 {id}: {by} "{reason}"',
+  },
 };
+

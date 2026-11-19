@@ -141,7 +141,7 @@ test('P241 실을 글: 목적·정의서·기억, 쓰는 곳, 받는 것·내는
 });
 
 test('P241 장부: rig 3 종류는 따로 둔 목록(rig 2 목록은 그대로)', () => {
-  assert.deepEqual(RIG3_EVENT_KINDS, ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept']);
+  assert.deepEqual(RIG3_EVENT_KINDS.slice(0, 5), ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept']); // P242가 item_* 종류를 뒤에 더했다
   for (const k of RIG3_EVENT_KINDS) assert.ok(!RIG_EVENT_KINDS.includes(k), k);
   assert.deepEqual(parseKinds('role_spawn,gate'), ['role_spawn', 'gate']);
   assert.throws(() => parseKinds('role_nope'), /모르는 kind/);

@@ -17,7 +17,22 @@ export function roleRows(r3, live = null) {
 // 길 줄: "snapshot: data → ideas", human은 사람(창구)
 export function flowRows(r3) {
   if (!r3 || !Array.isArray(r3.flows)) return [];
-  return r3.flows.map((f, i) => ({ key: `${i}`, item: f.item, from: f.from || [], to: f.to || [], human: (f.from || []).includes('human'), for: f.for || null }));
+  return r3.flows.map((f, i) => ({ key: `${i}`, item: f.item, from: f.from || [], to: f.to || [], human: (f.from || []).includes('human'), for: f.for || null, counts: f.counts || null }));
+}
+// P242: 입력 창구 줄(from에 human이 있는 길): [{ item, to }]
+export function intakeRows(r3) {
+  if (!r3 || !Array.isArray(r3.flows)) return [];
+  return r3.flows.filter((f) => (f.from || []).includes('human')).map((f) => ({ item: f.item, to: f.to || [] }));
+}
+// P242: 받은 것에 답하지 않고 멈춘 역할: [{ role, items }]
+export function stalledRows(r3) {
+  if (!r3 || !Array.isArray(r3.roles)) return [];
+  return r3.roles.filter((r) => r.items && r.items.stalled && r.items.stalled.length).map((r) => ({ role: r.name, items: r.items.stalled }));
+}
+// P242: 반려된 입력(사람이 넣은 항목): [{ id, by, reason }]
+export function returnedIntake(r3) {
+  const list = r3 && r3.intake && Array.isArray(r3.intake.returned) ? r3.intake.returned : [];
+  return list.map((x) => ({ id: x.id, by: (x.by || []).map((b) => b.role).join(', '), reason: (x.by || []).map((b) => b.reason).filter(Boolean).join(' / ') }));
 }
 // 켜기 확인 줄의 역할 수
 export const roleCount = (st) => (st && st.rig3 && Array.isArray(st.rig3.roles) ? st.rig3.roles.length : 0);

@@ -10,7 +10,7 @@
 //   다시 띄우기는 역할마다 RESPAWN_WINDOW_MS 안에 RESPAWN_MAX번까지. 넘으면 그만두고 장부에 role_gave_up(다시 켜면 풀린다).
 //   쉬는 역할 세션(ready, ROLE_IDLE_MS 넘게)은 판이 혼자 재운다(sleeper.sleep scope session). 잠든 세션에 전달이 오면 지금 길(대기열)이 깨운다.
 // - 장부(rig_events): role_spawn, role_respawn, role_gave_up, role_write_denied, role_slept(rig-ledger RIG3_EVENT_KINDS). seat 열에 역할 이름.
-// - 끄면 다시 띄우기·재우기만 멈춘다(떠 있는 역할 세션은 그대로 둔다. 사람이 닫는다).
+// - 끄면 다시 띄우기를 멈추고 역할 세션을 재운다(P242: 닫지 않는다. 일하는 턴은 끝난 뒤 재우고, 아직 넣지 않은 판 알림은 거둔다). 켜면 잠든 역할 세션을 깨운다(role_woke).
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs';
@@ -20,6 +20,7 @@ import { deriveState } from './state.mjs';
 import { shownName } from './session-label.mjs';
 import { Rig3Guard } from './rig3-guard.mjs'; // P243: 턴 끝 남의 쓰기 되돌리기
 import { roleWrites, roleProtected, roleRoute, codexRoleArgs, loadText, readLoadFiles, checkRoleDoc, memoryDir } from './rig3.mjs';
+import { Rig3Items } from './rig3-items.mjs'; // P242: 항목·길·받음
 
 // 판이 역할을 위해 띄울 때(backend.spawn) 넘기는 역할 이름의 열쇠. Symbol이라 판 API 본문으로는 넣지 못한다
 export const ROLE_SPAWN = Symbol.for('atrium.rig3RoleSpawn');
@@ -42,6 +43,8 @@ export class Rig3Roles {
     this.exitSeen = new Map(); // 세션 ID → 처음 끝난 것을 본 때
     this.sleepFail = new Map(); // 세션 ID → 마지막 재우기 실패 때
     this.ticking = false;
+    this.items = new Rig3Items(b, this); // P242
+    this.offSleep = new Set(); // P242: 끈 rig(키) — 역할 세션을 모두 재울 때까지 주기마다 본다(일하는 턴은 끝나기를 기다린다)
     this.guard = new Rig3Guard(b, this); // P243
   }
   ms(name, dflt) { const v = this.b.cfg && this.b.cfg[name]; return v != null && Number(v) >= 0 ? Number(v) : dflt; }
@@ -126,12 +129,25 @@ export class Rig3Roles {
   async onEnabled(key, on) {
     for (const k of [...this.gaveUp]) if (k.startsWith(key + '|')) this.gaveUp.delete(k);
     for (const k of [...this.respawns.keys()]) if (k.startsWith(key + '|')) this.respawns.delete(k);
-    if (!on) return [];
+    if (!on) { // P242: 끄면 역할 세션을 재운다(닫지 않는다). 아직 넣지 않은 판 알림은 거두고, 일하는 턴은 끝난 뒤 재운다
+      this.offSleep.add(key);
+      this.items.cancelQueued(key);
+      const out = await this.sleepOff(key);
+      this.changed(key);
+      return out;
+    }
+    this.offSleep.delete(key);
     const r = this.active(key); if (!r) return [];
     this.guard.prime(key); // P243: 기준 목록이 없으면 만든다
     const out = [];
+    // P242: 켜면 잠든 역할 세션을 깨운다(같은 대화로 잇는다)
+    for (const role of Object.keys(r.def.rig3.roles)) for (const s of this.sessionsOf(key, role)) {
+      if (!(s.rt && s.rt.sleep) || !this.b.sleeper || !this.b.sleeper.wake) continue;
+      try { await this.b.sleeper.wake(s, 'rig'); rigEvent(this.b, { kind: 'role_woke', ws: key, seat: role, session: s.sessionId, actor: 'board', text: `@${shownName(s) || s.name} rig를 켜 깨움` }); out.push({ role, name: s.name, woke: true }); }
+      catch (e) { this.b.log && this.b.log(`rig3 wake ${s.name}: ${e.code || e.message}`); out.push({ role, name: s.name, wakeError: e.code || e.message }); }
+    }
     for (const role of Object.keys(r.def.rig3.roles)) {
-      if (this.sessionsOf(key, role).length) { out.push({ role, name: this.sessionsOf(key, role)[0].name, kept: true }); continue; }
+      if (this.sessionsOf(key, role).length) { if (!out.some((x) => x.role === role)) out.push({ role, name: this.sessionsOf(key, role)[0].name, kept: true }); continue; }
       try { const s = await this.spawnRole(key, role, 'spawn'); out.push({ role, name: s.name }); }
       catch (e) { out.push({ role, error: e.code || e.message }); this.b.log && this.b.log(`rig3 role ${role} spawn failed: ${e.stack || e.message}`); }
     }
@@ -160,20 +176,41 @@ export class Rig3Roles {
       this.ensureDirs(r.root, role);
       const route = roleRoute(role);
       const name = this.pickName(roleName);
-      const p = { name, cwd: r.root, ...(route.kind ? { kind: route.kind } : {}), ...(route.launcher ? { launcher: route.launcher } : {}), ...(role.model ? { model: role.model } : {}), [ROLE_SPAWN]: roleName };
+      const p = { name, cwd: r.root, ...(route.kind ? { kind: route.kind } : {}), ...(route.launcher ? { launcher: route.launcher } : {}), ...(role.model ? { model: role.model } : {}), ...(role.effort ? { effort: role.effort } : {}), [ROLE_SPAWN]: roleName }; // P242: effort
       const res = await this.b.spawn(p);
       const s = this.b.sessions.get(res.sessionId);
       if (!s) throw Object.assign(new Error(`${roleName} 역할 세션이 판에 등록되지 않았다`), { code: 'spawn_failed' });
       if (s.rigRole !== roleName) { s.rigRole = roleName; if (this.store().setSessionRole) this.store().setSessionRole(s.sessionId, roleName); }
-      const text = loadText(r3, roleName, readLoadFiles(r.root, r3, roleName), { root: r.root, why });
+      const text = loadText(r3, roleName, readLoadFiles(r.root, r3, roleName), { root: r.root, why, inbox: this.inboxLines(key, roleName) });
       if (this.b.queue) this.b.queue.enqueue(s.sessionId, text, { origin: { kind: 'board' } });
       const kind = why === 'spawn' ? 'role_spawn' : 'role_respawn';
-      rigEvent(this.b, { kind, ws: key, seat: roleName, session: s.sessionId, actor: 'board', text: `@${shownName(s) || s.name}${prev ? ` (앞 세션 @${prev.name}: ${prev.why})` : ''}`, data: { why, kind: s.kind || 'claude', launcher: role.launcher || 'claude', model: role.model || null, permissionMode: s.permissionMode || null, writes: roleWrites(role), ...(prev ? { prev } : {}) } });
+      rigEvent(this.b, { kind, ws: key, seat: roleName, session: s.sessionId, actor: 'board', text: `@${shownName(s) || s.name}${prev ? ` (앞 세션 @${prev.name}: ${prev.why})` : ''}`, data: { why, kind: s.kind || 'claude', launcher: role.launcher || 'claude', model: role.model || null, effort: role.effort || null, permissionMode: s.permissionMode || null, writes: roleWrites(role), ...(prev ? { prev } : {}) } });
       try { this.store().addEvent(s.sessionId, 'rig3_role_spawn', { role: roleName, why, prev: prev || null }); } catch {}
       this.b.log && this.b.log(`rig3 role ${roleName} ${why} ${s.name} (${s.sessionId})`);
       if (this.b.broadcastSession) try { this.b.broadcastSession(s, { cause: 'rig3_role' }); } catch {}
       return s;
     } finally { this.spawning.delete(k); }
+  }
+
+  // P242: 끈 rig의 역할 세션을 재운다. 쉬는(ready) 세션만 재우고, 일하는 턴이 있는 세션은 다음 주기에 다시 본다. 다 재우면 키를 뗀다 → [{ role, slept | waiting }]
+  async sleepOff(key, now = Date.now()) {
+    const out = [];
+    const r = this.defOf(key);
+    if (!r || this.active(key)) { this.offSleep.delete(key); return out; }
+    const sl = this.b.sleeper;
+    let left = 0;
+    for (const role of Object.keys(r.def.rig3.roles)) for (const s of this.sessionsOf(key, role)) {
+      if ((s.rt && (s.rt.sleep || s.rt.exit)) || (sl && sl.isAsleep && sl.isAsleep(s))) continue;
+      const st = s.rt ? deriveState(s.rt).state : null;
+      if (!sl || st !== 'ready') { left++; out.push({ role, waiting: st || 'unknown' }); continue; }
+      try {
+        await sl.sleep(s, { by: 'rig', mode: 'hand', scope: 'session' });
+        rigEvent(this.b, { kind: 'role_slept', ws: key, seat: role, session: s.sessionId, value: 'rig_off', actor: 'board', text: `@${shownName(s) || s.name} rig를 꺼 재움` });
+        out.push({ role, slept: s.name });
+      } catch (e) { left++; out.push({ role, waiting: e.code || e.message }); }
+    }
+    if (!left) this.offSleep.delete(key);
+    return out;
   }
 
   // ---------- 주기 ----------
@@ -182,6 +219,7 @@ export class Rig3Roles {
     this.ticking = true;
     const out = [];
     try {
+      for (const key of [...this.offSleep]) { try { for (const x of await this.sleepOff(key, now)) out.push({ ws: key, off: true, ...x }); } catch (e) { this.b.log && this.b.log(`rig3 off sleep: ${e.message}`); } } // P242
       const st = this.store();
       for (const w of st.workspaces ? st.workspaces() : []) {
         let r = null; try { r = this.active(w.key); } catch { r = null; }
@@ -201,7 +239,7 @@ export class Rig3Roles {
     const live = this.sessionsOf(key, role);
     const alive = live.filter((s) => !(s.rt && s.rt.exit && !s.rt.sleep));
     for (const s of alive) this.exitSeen.delete(s.sessionId);
-    if (alive.length) return this.idle(alive[0], now);
+    if (alive.length) { const w = this.items.watch(key, role, alive[0], now); return w || this.idle(alive[0], now); } // P242: 받은 것에 답하지 않고 멈춘 역할을 먼저 본다
     let prev = null;
     if (live.length) { // 끝난 채(exited)
       const s = live[0];
@@ -226,6 +264,17 @@ export class Rig3Roles {
     const s = await this.spawnRole(key, role, prev ? 'respawn' : 'spawn', prev);
     this.changed(key);
     return { spawned: s.name, why: prev ? prev.why : 'missing' };
+  }
+  // P242: 다시 뜨는 역할에게 실을 받은 것 줄(답하지 않은 것, 답 항목이 없는 것, 반려된 것)
+  inboxLines(key, role) {
+    try {
+      const x = this.items.inbox(key, role);
+      return [
+        ...x.received.map((i) => `- 받음 기다림: ${i.id} (${i.kind}, ${i.role === 'human' ? '입력 창구' : i.role}${i.from ? `, ${i.from}에서` : ''}): ${i.path}`),
+        ...x.unanswered.map((i) => `- 받았고 답 항목(${i.need.join('|')})이 없음: ${i.id}: ${i.path}`),
+        ...x.returned.map((i) => `- 반려된 네 항목: ${i.id} (${i.by.map((b) => `${b.role} "${b.reason}"`).join(', ')})`),
+      ];
+    } catch { return []; }
   }
   // 장부의 마지막 띄움(그 역할) → { session, name } | null
   lastSpawn(key, role) {
@@ -275,12 +324,14 @@ export class Rig3Roles {
       const s = this.sessionsOf(key, r.name)[0] || null;
       const sum = s ? summary(s) : null;
       return {
-        name: r.name, owns: r.owns, tools: r.tools, launcher: r.launcher || 'claude', model: r.model || null, doc: r.doc, docMissing: docMissing || [], memory: r.memory, memoryDir: memoryDir(r.name),
+        name: r.name, owns: r.owns, tools: r.tools, launcher: r.launcher || 'claude', model: r.model || null, effort: r.effort || null, doc: r.doc, docMissing: docMissing || [], memory: r.memory, memoryDir: memoryDir(r.name),
         gets: r3.flows.filter((f) => f.to.includes(r.name)).map((f) => f.item), puts: r3.flows.filter((f) => f.from.includes(r.name)).map((f) => f.item),
         session: s ? { sessionId: s.sessionId, name: shownName(s) || s.name, kind: s.kind || 'claude', state: sum ? sum.state : deriveState(s.rt).state, asleep: !!(s.rt && s.rt.sleep) } : null,
         gaveUp: this.gaveUp.has(`${key}|${r.name}`),
       };
     });
-    return { purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f) => ({ item: f.item, from: f.from, to: f.to, for: f.for })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune };
+    let it = null; try { it = this.items.view(key, r3); } catch (e) { this.b.log && this.b.log('rig3 items view', e.message); } // P242: 길마다 수, 역할마다 받은 것
+    for (const x of roles) x.items = it && it.roles[x.name] ? it.roles[x.name] : null;
+    return { purpose: r3.purpose, beat: r3.beat, roles, flows: r3.flows.map((f, i) => ({ item: f.item, from: f.from, to: f.to, for: f.for, counts: it ? it.flows[i] : null })), tools: Object.values(r3.tools).map((t) => ({ name: t.name, run: t.run, every: t.every })), tune: r3.tune, intake: it ? it.intake : null };
   }
 }

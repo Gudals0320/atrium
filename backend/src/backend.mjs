@@ -25,6 +25,7 @@ import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
 import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
 import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
 import { RigProposals, rigProposalHandlers } from './rig-proposals.mjs'; // P224: rig 2 제안과 승인, 정본 지키기
+import { rig3Handlers } from './rig3-items.mjs'; // P242
 import { Rig3Roles, ROLE_SPAWN, ROLE_TICK_MS } from './rig3-roles.mjs'; // P241: rig 3 역할 세션(띄우기, 쓰기 범위, 다시 띄우기, 재우기)
 import { RigAmp, SEAT_SPAWN, SEAT_RUN, permissionDenyBody, PERM_TICK_MS, MODE_DRIFT_TEXT } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
 import { TerminalRelay } from './relay.mjs';
@@ -2280,6 +2281,7 @@ export class Backend {
       ...rigProposalHandlers(this), // P224: 제안과 승인(rig.asks, rig.decide, rig.proposals)
       ...rigMapHandlers(this), // P217: 장부 읽기(rig.events)와 구조 지도 데이터(rig.map)
       ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
+      ...rig3Handlers(this), // P242: rig 3 입력 창구(rig3.intake, 사람만)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다

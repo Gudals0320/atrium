@@ -36,7 +36,10 @@ export const RIG_EVENT_KINDS = [
 ];
 // P241: rig 3 장부 종류(역할 세션). rig 2 목록(RIG_EVENT_KINDS)과 따로 둔다(rig 2를 걷어낼 때 그 목록만 지운다)
 //   role_spawn(켜기가 띄움), role_respawn(닫히거나 끝나 다시 띄움, data.prev), role_gave_up(다시 띄우기 상한), role_write_denied(섹터 밖 쓰기·셸 안의 셸 거절, value writes | nested_shell), role_slept(쉬어 판이 재움)
-export const RIG3_EVENT_KINDS = ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept'];
+// P242: 항목·길·받음(rig3-items.mjs). item_put(value new | redo | intake), item_accept, item_return(value receiver | late), item_pass(value item | turn), item_drop,
+//   role_woke(rig를 켜 잠든 역할 세션을 깨움. 끌 때 재우는 것은 role_slept value rig_off),
+//   item_nudge(답하지 않고 멈춘 역할을 한 번 일깨움), item_stalled(일깨운 뒤에도 그대로), item_changed(낸 파일이 바뀜, value changed | missing)
+export const RIG3_EVENT_KINDS = ['role_spawn', 'role_respawn', 'role_gave_up', 'role_write_denied', 'role_slept', 'item_put', 'item_accept', 'item_return', 'item_pass', 'item_drop', 'item_nudge', 'item_stalled', 'item_changed', 'role_woke'];
 // P243: rig 3 남의 쓰기 되돌리기(rig3-guard.mjs). role_foreign_write(value restored | quarantined | revived | unrestorable | failed, data.candidates), role_guard_base(처음 기준 목록, data.ms)
 export const RIG3_GUARD_KINDS = ['role_foreign_write', 'role_guard_base'];
 const KINDS = new Set([...RIG_EVENT_KINDS, ...RIG3_EVENT_KINDS, ...RIG3_GUARD_KINDS]);

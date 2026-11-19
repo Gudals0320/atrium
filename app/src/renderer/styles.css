@@ -2843,3 +2843,10 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rig3-st.ready { background: var(--st-ready); }
 .mt-rig3-st.working { background: var(--st-working); }
 .mt-rig3-flows li { display: flex; gap: 8px; align-items: baseline; }
+
+/* P242: rig 3 길마다 수, 멈춘 역할, 입력 창구 */
+.mt-rig3-counts { margin-left: auto; font-size: 11.5px; white-space: nowrap; }
+.mt-rig3-alerts { margin: 8px 0 2px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.mt-rig3-intake { margin-top: 8px; }
+.mt-rig3-intake-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.mt-rig3-intake-text { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--panel-line); background: var(--panel-2); color: inherit; }

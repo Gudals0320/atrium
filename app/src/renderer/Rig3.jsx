@@ -7,7 +7,7 @@ import { toast, useStore } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './RigSeat.jsx';
-import { roleRows, flowRows, roleCount, canEnable3 } from './lib/rig3.js';
+import { roleRows, flowRows, roleCount, canEnable3, intakeRows, stalledRows, returnedIntake } from './lib/rig3.js';
 
 export function Rig3Panel({ ws, onClose, first = null }) {
   const t = useT();
@@ -85,11 +85,14 @@ export function Rig3Panel({ ws, onClose, first = null }) {
                       <span className="mt-rigon-at">{f.item}</span>
                       <span>{f.from.map((x) => (x === 'human' ? t('rig3.human') : x)).join(', ')} → {f.to.join(', ')}</span>
                       {f.for && <span className="dim">{t('rig3.for', { item: f.for })}</span>}
+                      {f.counts && <span className="mt-rig3-counts dim" data-role="rig3-flow-counts">{t('rig3Items.counts', f.counts)}{f.counts.passed ? t('rig3Items.passed', { n: f.counts.passed }) : ''}</span>}
                     </li>
                   ))}
                 </ul>
               </>
             )}
+            <Rig3Stalled r3={r3} t={t} />
+            {!remote && <Rig3Intake ws={ws} r3={r3} on={status === 'on'} t={t} onSent={load} />}
             <div className="mt-card-sub dim" data-role="rig3-readonly">{t('rig3.readOnly')}</div>
             {err && <div className="mt-rigon-warn" data-role="rig3-error">{err}</div>}
           </>
@@ -98,6 +101,54 @@ export function Rig3Panel({ ws, onClose, first = null }) {
           <button className="mt-btn ghost" data-action="rig-panel-close" onClick={onClose}>{t('common.close')}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// P242: 받은 것에 답하지 않고 멈춘 역할(판이 한 번 일깨운 뒤에도 그대로)과 반려된 입력. 사람이 볼 곳의 한 줄(빌더는 5단계)
+function Rig3Stalled({ r3, t }) {
+  const rows = stalledRows(r3);
+  const back = returnedIntake(r3);
+  if (!rows.length && !back.length) return null;
+  return (
+    <div className="mt-rig3-alerts" data-role="rig3-stalled">
+      {rows.map((r) => <div key={r.role} className="mt-rigon-warn" data-stalled-role={r.role}>{t('rig3Items.stalled', { role: r.role, items: r.items.join(', ') })}</div>)}
+      {back.map((x) => <div key={x.id} className="mt-rigon-warn" data-returned-intake={x.id}>{t('rig3Items.returned', x)}</div>)}
+    </div>
+  );
+}
+
+// P242: 입력 창구(from이 human인 길). 글을 넣으면 판이 .atrium/intake/<종류>-<n>.md로 쓰고 항목으로 받는 역할에게 보낸다(판 API rig3.intake)
+function Rig3Intake({ ws, r3, on, t, onSent }) {
+  const rows = intakeRows(r3);
+  const [item, setItem] = useState(rows[0] ? rows[0].item : '');
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  if (!rows.length) return null;
+  const cur = rows.find((r) => r.item === item) || rows[0];
+  const send = async () => {
+    setBusy(true); setErr(null);
+    try { const r = await api.call('rig3.intake', { workspace: ws.key, item: cur.item, text }); toast(t('rig3Items.intakeSent', { id: r.item.id, to: r.item.to.join(', ') })); setText(''); onSent && onSent(); }
+    catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-rig3-intake" data-role="rig3-intake">
+      <div className="mt-rigon-h">{t('rig3Items.intake')}</div>
+      {!on ? <div className="dim">{t('rig3Items.intakeOff')}</div> : (
+        <>
+          <div className="mt-rig3-intake-kinds">
+            {rows.map((r) => (
+              <button key={r.item} className={`mt-btn small ${r.item === cur.item ? 'primary' : 'ghost'}`} data-intake-item={r.item} disabled={busy} onClick={() => setItem(r.item)}>{t('rig3Items.intakeTo', { item: r.item, to: r.to.join(', ') })}</button>
+            ))}
+          </div>
+          <textarea className="mt-rig3-intake-text" data-role="rig3-intake-text" rows={3} value={text} disabled={busy} placeholder={t('rig3Items.intakePlaceholder', { to: cur.to.join(', ') })} onChange={(e) => setText(e.target.value)} />
+          <div className="mt-card-actions">
+            <button className="mt-btn small primary" data-action="rig3-intake-send" disabled={busy || !text.trim()} onClick={send}>{t('rig3Items.intakeSend')}</button>
+          </div>
+          {err && <div className="mt-rigon-warn" data-role="rig3-intake-error">{err}</div>}
+        </>
+      )}
     </div>
   );
 }
