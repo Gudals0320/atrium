@@ -58,6 +58,8 @@ export function installRig(Store) {
       if (sets.length) this.st(`UPDATE tool_runs SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     },
     getToolRun(id) { return toolRow(this.st('SELECT * FROM tool_runs WHERE id = ?').get(id)); },
+    // P251: 워크스페이스의 도구마다 마지막 실행(구조 지도의 도구 카드)
+    lastToolRuns(ws) { return this.st('SELECT * FROM tool_runs t WHERE workspace_key = ? AND started_at = (SELECT MAX(started_at) FROM tool_runs u WHERE u.workspace_key = t.workspace_key AND u.tool = t.tool) ORDER BY tool').all(ws).map(toolRow); },
     insertRigEvent(x) {
       const r = this.st('INSERT INTO rig_events (t, ws, def_n, kind, case_id, unit_id, try_id, seat, session, from_seat, to_seat, line, value, n, max, actor, ref, text, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(x.t, x.ws, x.defN ?? null, x.kind, x.caseId ?? null, x.unitId ?? null, x.tryId ?? null, x.seat ?? null, x.session ?? null, x.fromSeat ?? null, x.toSeat ?? null, x.line ?? null, x.value ?? null, x.n ?? null, x.max ?? null, x.actor ?? null, x.ref ?? null, x.text ?? null, x.data != null ? JSON.stringify(x.data) : null);

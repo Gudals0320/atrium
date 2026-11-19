@@ -16,7 +16,8 @@ import path from 'node:path';
 export const RIG_VERSION = 3;
 export const RIG_DIR = '.atrium';
 export const ROLES_DIR = '.atrium/roles';
-export const HUMAN = 'human'; // 입력 창구(길의 from에만)
+import { HUMAN, BUILDER_ROLE } from './rig-def-names.mjs'; // P251: 창도 들여오는 이름 값
+export { HUMAN, BUILDER_ROLE }; // HUMAN: 입력 창구(길의 from에만)
 export const ROLE_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/; // 세션 이름(<역할>, <역할>-<n>)이 되므로 -는 받지 않는다
 export const ITEM_NAME_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 export const TOOL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
@@ -26,7 +27,6 @@ export const ROLE_DOC_FIXED = ['맡은 것', '받는 것과 내는 것', '기준
 export const TUNE_DEFAULT = { after: 3, every: 5, lines: 20 }; // 뼈대 10절의 처음 값
 export const LOAD_MAX = { purpose: 6000, role: 12000, memory: 8000 };
 // P247: 빌더 세션(워크스페이스마다 하나, 길 밖). 세션의 rigRole 값이다(역할 이름 꼴이 아니라 정의의 역할과 겹치지 않는다)
-export const BUILDER_ROLE = '@builder';
 // P247(P246 답, 설계 쪽): 긴 일의 차례. 모든 역할 세션의 첫 글과 atrium guide에 싣는다
 //   도구가 없는 역할에는 명령 이름을 싣지 않는다(정의에 도구를 더하는 것은 빌더의 일이다)
 export const longJobLine = (hasTools = true) => '[Atrium 보드] 오래 걸리는 일은 턴을 붙들지 않는다. 먼저 판이 돌리는 도구' + (hasTools ? '(`atrium rig tool`)' : '(네 도구가 정의에 있을 때)') + '로, 아니면 하네스의 뒤 실행(백그라운드 실행)으로 한다. 분리 실행(Start-Process, start, nohup, setsid)으로는 하지 않는다: 판이 그 프로세스를 보지 못해 그것이 쓴 것을 되돌린다.';

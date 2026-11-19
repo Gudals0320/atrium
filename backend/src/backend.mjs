@@ -18,7 +18,8 @@ import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { rigAdminHandlers } from './rig-admin.mjs';
 import { rigItemHandlers } from './rig-items.mjs'; // P242
-import { rigBeatHandlers } from './rig-beat.mjs'; // P244: 손 박자(rig3.beat, 사람만)
+import { rigBeatHandlers } from './rig-beat.mjs';
+import { rigMapHandlers } from './rig-map.mjs'; // P251: rig 구조 지도 자료 // P244: 손 박자(rig3.beat, 사람만)
 import { rigTuneHandlers } from './rig-tune.mjs';
 import { rigBuilderHandlers } from './rig-builder.mjs'; // P247: 빌더에게 말하기(rig3.builder, 사람만) // P245: 정의서 보기(rig3.role)와 되돌리기(rig3.rollback, 사람만)
 import { RigRoles, ROLE_SPAWN, ROLE_TICK_MS } from './rig-roles.mjs'; // P241: rig 역할 세션(띄우기, 쓰기 범위, 다시 띄우기, 재우기)
@@ -558,6 +559,7 @@ export class Backend {
       memMB: this.memOf(s.sessionId),
       // P4
       kind: s.kind || 'claude', origin: s.origin || 'board', parentSessionId: this.workParentOf(s.sessionId), lineageParentSessionId: s.parentSessionId || null, hooked: this.hooked(s), agentName: s.agentName, // P159: 보이는 부모는 일 부모, 계보(띄운 세션)는 사실로 따로
+      rigRole: s.rigRole || null, // P251: rig 역할 세션(역할 이름)·빌더(@builder). 세션 맵 트리에서 빼고 캔버스 꼬리표를 단다
       flavor: s.flavor || null, // P25: 띄운 방법(런처의 아이콘). 창은 종류 대신 이것으로 로고와 이름을 보인다
       // P92: 도는 Claude Code 뒤 일. P164: Stop hook 목록과 claude 아래 도구 명령 프로세스를 합친 것 { n, kinds, items: [{ kind, label }], at, via } | null(세션 맵 표시)
       background: this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !rt.sleep ? backgroundList(rt.bg, null) : null,
@@ -2170,6 +2172,7 @@ export class Backend {
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만): rig.check·log·rollback·events
       ...rigItemHandlers(this), // P242: rig 입력 창구(rig3.intake, 사람만)
       ...rigBeatHandlers(this), // P244: rig 손 박자(rig3.beat, 사람만)
+      ...rigMapHandlers(this), // P251: rig.map(구조 지도·캔버스 길 선 자료, 읽기만)
       ...rigTuneHandlers(this),
       ...rigBuilderHandlers(this), // P247 // P245: rig 정의서·조정 기록(rig3.role)과 되돌리기(rig3.rollback, 사람만)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
