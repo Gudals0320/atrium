@@ -13,14 +13,15 @@
 //   rig3_bundle에 판마다 조각 해시, rig3_docs에 내용. 장부 rig_version의 data.changed가 그 판에서 바뀐 조각(role:<역할> 등).
 // - 되돌리기(사람만): 판 API rig3.rollback { workspace, role, n } — 정의서 하나의 요령 칸을 판 n의 것으로 되돌린다(고정 칸과 다른 역할의 정의서는 그대로).
 //   되돌리기도 새 판이고 장부 role_rollback. 되돌린 역할에게는 다음 깨우는 글에 알린다.
+// - P252 올림에 답해 닫기: 빌더 atrium rig answer <올림> "<까닭>", 사람 판 API rig.raiseAnswer { workspace, raise, text }(rig 판의 올림 줄). 장부 raise_answer, 기록 rig3_tunes kind answer.
 // - 보기: atrium rig role [<역할>](정의서와 조정 기록, 누구나 읽기), 판 API rig3.role, rig.status의 역할 줄 tune(판·조정 수·재료 수·열린 턴).
 import fs from 'node:fs';
 import path from 'node:path';
 import { rigEvent } from './rig-ledger.mjs';
 import { unifiedDiff } from './rig-diff.mjs';
-import { checkRoleDoc, ROLE_DOC_FIXED, memoryDir, HUMAN } from './rig-def.mjs';
+import { checkRoleDoc, ROLE_DOC_FIXED, memoryDir, HUMAN, BUILDER_ROLE } from './rig-def.mjs';
 
-export const RIG_TUNE_OPS = ['tune', 'raise', 'heard', 'role'];
+export const RIG_TUNE_OPS = ['tune', 'raise', 'heard', 'role', 'answer']; // P252: answer(빌더가 올림에 답함)
 export const TUNE_SECTION = '요령';
 export const TUNE_FILE = 'tune.md'; // 역할이 새 요령 칸을 쓰는 곳(자기 기억 폴더 안)
 export const WHY_MAX = 300;
@@ -32,6 +33,34 @@ const MAT_KINDS = ['item_return', 'role_heard', 'role_foreign_write'];
 const ANSWER_KINDS = ['role_tune', 'role_raise'];
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
+// P252: 올림에 답해 닫기. 올림 id는 워크스페이스의 올림 차례 raise-<n>(rig3_tunes kind raise를 오래된 것부터 센다).
+//   닫힘 둘: 빌더나 사람이 고치지 않고 한 줄로 답함(kind answer, 장부 raise_answer) | 올림 뒤에 빌더나 사람이 고친 판이 생김(P251 그대로).
+//   답은 올린 역할의 다음 깨우는 글에 실린다(takeNotices, answer 줄의 state noted → told: 판이 다시 떠도 남는다).
+export const RAISE_PREFIX = 'raise-';
+// 올림 id 꼴(raise-3 또는 3) → 'raise-3' | null
+export function raiseId(v) { const m = /^(?:raise-)?(\d{1,9})$/i.exec(String(v == null ? '' : v).trim()); return m ? RAISE_PREFIX + Number(m[1]) : null; }
+// 올림마다 상태(순수). tunes: rig3Tunes(ws) 전부, vers: rigVersions(ws)
+//   → [{ id, role, reason, t, state: waiting | answered | fixed, answer: { text, by, t } | null, fixedN }]
+export function raiseStates(tunes, vers = []) {
+  const all = tunes || [];
+  const answers = new Map();
+  for (const x of all) if (x.kind === 'answer') for (const id of x.evidence || []) if (!answers.has(id)) answers.set(id, x);
+  return all.filter((x) => x.kind === 'raise').map((x, i) => {
+    const id = RAISE_PREFIX + (i + 1);
+    const a = answers.get(id) || null;
+    const fix = (vers || []).find((v) => v.t > x.t && (v.by === 'builder' || v.by === 'human')) || null;
+    const state = a && (!fix || a.t <= fix.t) ? 'answered' : fix ? 'fixed' : 'waiting';
+    return { id, role: x.role, reason: x.why || '', t: x.t, state, answer: a ? { text: a.why || '', by: a.by || null, t: a.t } : null, fixedN: fix ? fix.n ?? null : null };
+  });
+}
+// 기다리는 올림만(지도의 빌더 카드 "올림 n"·캔버스 점선·rig 판의 올림 줄) → [{ id, role, reason, t }]
+export function waitingRaises(store, key) {
+  let tunes = []; let vers = [];
+  try { tunes = store.rig3Tunes(key, null) || []; } catch { tunes = []; }
+  try { vers = store.rigVersions ? store.rigVersions(key) || [] : []; } catch { vers = []; }
+  return raiseStates(tunes, vers).filter((x) => x.state === 'waiting').map((x) => ({ id: x.id, role: x.role, reason: x.reason, t: x.t }));
+}
+export const ANSWER_MAX = 300;
 const clip = (s, n) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 
 // ---------- 순수 함수 ----------
@@ -193,6 +222,10 @@ export class RigTune {
       if (!name) throw apiError('bad_request', '역할 이름을 준다: atrium rig role <역할>');
       return this.roleInfo(s.workspaceKey, name);
     }
+    if (op === 'answer') { // P252: 빌더 세션만(사람은 rig 판의 올림 줄, 판 API rig.raiseAnswer)
+      if (!s || s.rigRole !== BUILDER_ROLE || !s.workspaceKey) throw apiError('forbidden', 'atrium rig answer는 그 워크스페이스의 빌더 세션이 쓴다(사람은 rig 판의 올림 줄에서 답한다).');
+      return this.answer(s.workspaceKey, { raise: o.raise, text: o.text, by: 'builder', session: s.sessionId });
+    }
     const x = this.ctx(s);
     const who = { role: x.role.name, session: s.sessionId };
     if (op === 'tune') return o.none != null ? this.none(x.key, { ...who, reason: o.none === true ? o.reason : o.none }) : this.tune(x.key, { ...who, text: o.text, file: o.file, why: o.why, evidence: o.evidence });
@@ -215,11 +248,32 @@ export class RigTune {
     if (!reason) throw apiError('bad_request', '무엇을 올리는지 준다: atrium rig raise "<무엇>"');
     const x = this.state(key, p.role); const ids = x.mats.map((m) => m.id);
     this.store().insertRig3Tune({ ws: key, role: p.role, kind: 'raise', state: 'noted', why: reason, evidence: ids, cycle: this.cycle(key), sessionId: p.session || null, by: 'role:' + p.role, t: Date.now() });
+    let id = null; try { id = RAISE_PREFIX + this.store().rig3Tunes(key, null).filter((t) => t.kind === 'raise').length; } catch {} // P252: 올림 id
     // P247: 빌더 세션이 있으면 대기열로 전한다(잠들었으면 깨운다). 변경 기록의 "사람이 볼 것" 줄은 그대로 남는다
-    let toBuilder = null; try { toBuilder = this.roles.builder ? this.roles.builder.alert(key, { what: 'raise', role: p.role, reason, materials: ids }) : null; } catch {}
-    rigEvent(this.b, { kind: 'role_raise', ws: key, seat: p.role, session: p.session || null, n: this.cycle(key), actor: 'agent', ref: ids.join(',') || null, text: p.role + ' → 빌더: ' + reason + (toBuilder ? ' (빌더에게 전함)' : ''), data: { role: p.role, reason, materials: ids, toBuilder: !!toBuilder } });
+    let toBuilder = null; try { toBuilder = this.roles.builder ? this.roles.builder.alert(key, { what: 'raise', id, role: p.role, reason, materials: ids }) : null; } catch {}
+    rigEvent(this.b, { kind: 'role_raise', ws: key, seat: p.role, session: p.session || null, n: this.cycle(key), actor: 'agent', ref: ids.join(',') || null, text: p.role + ' → 빌더' + (id ? ' ' + id : '') + ': ' + reason + (toBuilder ? ' (빌더에게 전함)' : ''), data: { id, role: p.role, reason, materials: ids, toBuilder: !!toBuilder } });
     this.changed(key);
-    return { raised: true, reason, materials: ids, toBuilder: !!toBuilder };
+    return { raised: true, id, reason, materials: ids, toBuilder: !!toBuilder };
+  }
+  // P252: 올림에 고치지 않고 답해 닫는다. p: { raise, text, by: builder | human, session? } → { id, role, reason, answer, by }
+  answer(key, p) {
+    const id = raiseId(p.raise);
+    if (!id) throw apiError('bad_request', '올림 id를 준다(raise-<n>): atrium rig answer <올림> "<까닭>"');
+    const text = clip(p.text, ANSWER_MAX);
+    if (!text) throw apiError('bad_request', '고치지 않는 까닭 한 줄을 준다: atrium rig answer ' + id + ' "<까닭>"');
+    const by = p.by === 'human' ? 'human' : 'builder';
+    const st = this.store();
+    let vers = []; try { vers = st.rigVersions ? st.rigVersions(key) || [] : []; } catch {}
+    const all = raiseStates(st.rig3Tunes(key, null) || [], vers);
+    const x = all.find((r) => r.id === id);
+    if (!x) throw apiError('not_found', '없는 올림: ' + id + '. 기다리는 올림: ' + (all.filter((r) => r.state === 'waiting').map((r) => r.id).join(', ') || '(없음)'));
+    if (x.state === 'answered') throw apiError('already', id + '는 이미 답해 닫혔다(' + (x.answer.by === 'human' ? '사람' : '빌더') + ': ' + x.answer.text + ')');
+    if (x.state === 'fixed') throw apiError('already', id + '는 그 뒤 고친 판' + (x.fixedN != null ? ' ' + x.fixedN : '') + '이 생겨 이미 닫혔다');
+    st.insertRig3Tune({ ws: key, role: x.role, kind: 'answer', state: 'noted', why: text, evidence: [id], cycle: this.cycle(key), sessionId: p.session || null, by, t: Date.now() });
+    rigEvent(this.b, { kind: 'raise_answer', ws: key, seat: x.role, session: p.session || null, n: this.cycle(key), value: by, actor: by === 'human' ? 'human' : 'agent', ref: id, text: id + ' ' + x.role + ' ← ' + (by === 'human' ? '사람' : '빌더') + '(고치지 않음): ' + text, data: { raise: id, role: x.role, reason: x.reason, answer: text, by } });
+    this.log('rig3 raise answer ' + id + ' (' + x.role + ') by ' + by);
+    this.changed(key);
+    return { id, role: x.role, reason: x.reason, answer: text, by };
   }
   none(key, p) {
     const reason = clip(p.reason, WHY_MAX);
@@ -341,7 +395,20 @@ export class RigTune {
     return { n: a.n, from: want, prevN, role, added: diff.added, removed: diff.removed };
   }
   // 되돌림 알림을 꺼낸다(RigItems 깨우는 글이 붙인다)
-  takeNotices(key, role) { const k = key + '|' + role; const l = this.notices.get(k) || []; this.notices.delete(k); return l; }
+  //   P252: 올림에 온 답(answer 줄 state noted)도 붙이고 told로 바꾼다
+  takeNotices(key, role) {
+    const k = key + '|' + role; const l = this.notices.get(k) || []; this.notices.delete(k);
+    let rows = []; try { rows = this.store().rig3Tunes(key, role, { states: ['noted'] }).filter((t) => t.kind === 'answer'); } catch { rows = []; }
+    if (rows.length) {
+      let byId = new Map(); try { byId = new Map(raiseStates(this.store().rig3Tunes(key, null) || []).map((r) => [r.id, r])); } catch {}
+      for (const a of rows) {
+        const id = (a.evidence || [])[0]; const r = byId.get(id);
+        l.push('[Atrium 보드] 네가 빌더에게 올린 것(' + id + (r && r.reason ? ': "' + clip(r.reason, 160) + '"' : '') + ')에 ' + (a.by === 'human' ? '사람이' : '빌더가') + ' 고치지 않기로 하고 답했다: ' + a.why + ' — 정의·정의서는 그대로다. 같은 일이 되풀이되면 까닭을 더해 다시 올린다.');
+        try { this.store().setRig3TuneState(a.id, 'told'); } catch {}
+      }
+    }
+    return l;
+  }
 
   // ---------- 보기 ----------
   // 정의서 조각이 바뀐 판 목록과 마지막으로 바뀐 판
@@ -359,7 +426,7 @@ export class RigTune {
     const root = this.b.rig ? this.b.rig.rootOf(key) : null;
     let lines = null; try { lines = countLines(checkRoleDoc(fs.readFileSync(path.resolve(root, r3.roles[role].doc), 'utf8')).sections[TUNE_SECTION]); } catch {}
     const v = this.docVersions(key, role);
-    const last = log.filter((t) => t.state !== 'rejected').at(-1) || null;
+    const last = log.filter((t) => t.state !== 'rejected' && t.kind !== 'answer').at(-1) || null; // P252: 올림 답은 역할의 조정이 아니다
     return { n: v.n, tunes: log.filter((t) => t.kind === 'tune' && t.state === 'applied').length, rollbacks: log.filter((t) => t.kind === 'rollback').length, raises: log.filter((t) => t.kind === 'raise').length, rejected: log.filter((t) => t.state === 'rejected').length, material: x ? x.mats.length : 0, open: x ? x.open : false, lines, budget: r3.tune.lines, last: last ? { kind: last.kind, n: last.n, why: last.why, t: last.t } : null };
   }
   // atrium rig role · 판 API rig3.role: 정의서와 요령 칸, 조정 기록, 지금 재료
@@ -383,6 +450,8 @@ export function rigTuneHandlers(b) {
   const T = () => { if (!b.rig3 || !b.rig3.tune) throw apiError('rig_off', 'rig가 없다'); return b.rig3.tune; };
   return {
     'rig.role': async (p) => { const key = (await b.resolveWorkspace(p && p.workspace)).key; return T().roleInfo(key, String((p && p.role) || '')); },
+    // P252: 사람이 rig 판의 올림 줄에서 답해 닫기 { workspace, raise, text }
+    'rig.raiseAnswer': async (p, c) => { local(c, '올림에 답하기'); const key = (await b.resolveWorkspace(p && p.workspace)).key; return T().answer(key, { raise: p && p.raise, text: p && p.text, by: 'human' }); },
     'rig.roleRollback': async (p, c) => { local(c, '정의서 되돌리기'); const key = (await b.resolveWorkspace(p && p.workspace)).key; return T().rollback(key, { role: String((p && p.role) || ''), n: p && p.n, by: 'human' }); },
   };
 }

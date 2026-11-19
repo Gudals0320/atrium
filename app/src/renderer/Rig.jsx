@@ -7,7 +7,8 @@ import { toast, useStore, goWhenOpen } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { useDialog } from './dialog.js';
 import { remoteView } from './lib/remote-view.js';
-import { roleRows, flowRows, roleCount, canEnableRig, intakeRows, stalledRows, returnedIntake, cycleInfo, tuneBadge, tuneLogRows, builderInfo } from './lib/rig.js';
+import { roleRows, flowRows, roleCount, canEnableRig, intakeRows, stalledRows, returnedIntake, cycleInfo, tuneBadge, tuneLogRows, builderInfo, raiseRows } from './lib/rig.js';
+import { periodText } from './lib/rig-map.js'; // P252: 주기를 사람 말로
 
 // 영역 메뉴의 rig 판(main.jsx rigpanel). 정의가 없으면 빌더에게 말하기, 옛 꼴 정의면 그 한 줄 오류가 보인다
 export function RigPanel({ ws, onClose }) { return <RigView ws={ws} onClose={onClose} />; }
@@ -100,6 +101,7 @@ export function RigView({ ws, onClose, first = null }) {
             )}
             <RigCycle ws={ws} r3={r3} on={status === 'on'} remote={remote} t={t} onBeat={load} />
             <RigStalled r3={r3} t={t} />
+            <RigRaises ws={ws} r3={r3} remote={remote} t={t} onDone={load} />
             {!remote && <RigIntake ws={ws} r3={r3} on={status === 'on'} t={t} onSent={load} />}
             <div className="mt-card-sub dim" data-role="rig-readonly">{t('rig.readOnly')}</div>
             {err && <div className="mt-rigon-warn" data-role="rig-error">{err}</div>}
@@ -177,7 +179,7 @@ function RigRoleTune({ ws, role, remote, t, stamp, onDone }) {
         <ul className="mt-rigon-list mt-rig-tune-log" data-role="rig-tune-log">
           {rows.map((x) => (
             <li key={x.id} data-tune-kind={x.key} data-tune-n={x.n ?? ''}>
-              <span>{t('rigTune.k.' + x.key, { prev: x.prevN ?? '-', n: x.n ?? '-', from: x.fromN ?? '-', added: x.added, removed: x.removed, why: x.why, reason: x.reason })}</span>
+              <span>{t('rigTune.k.' + x.key, { prev: x.prevN ?? '-', n: x.n ?? '-', from: x.fromN ?? '-', added: x.added, removed: x.removed, why: x.why, reason: x.reason, raise: x.evidence[0] || '', by: t(x.by === 'human' ? 'rigRaise.byHuman' : 'rigRaise.byBuilder') })}</span>
               {x.evidence.length > 0 && x.key === 'tune' && <span className="dim">{t('rigTune.evidence', { list: x.evidence.join(' ') })}</span>}
               {!remote && x.undo != null && <button className="mt-btn small ghost" data-action="rig-tune-undo" data-undo={x.undo} disabled={busy} onClick={() => undo(x.undo)}>{t('rigTune.undo', { n: x.undo })}</button>}
             </li>
@@ -207,10 +209,10 @@ function RigCycle({ ws, r3, on, remote, t, onBeat }) {
       <div className="mt-rig-cycle-line">
         <b data-role="rig-cycle-n">{c.n == null ? t('rigCycle.none') : t('rigCycle.now', { n: c.n })}</b>
         {c.openedAt && <span className="dim">{t('rigCycle.opened', { time: hm(c.openedAt) })}</span>}
-        <span className="dim" data-role="rig-next-beat">{c.beat ? t('rigCycle.next', { time: hm(c.nextAt), every: c.beat.every }) + (c.beat.at ? t('rigCycle.at', { at: c.beat.at }) : '') + (c.beat.role ? t('rigCycle.wakes', { role: c.beat.role }) : '') + ')' : t('rigCycle.noBeat')}</span>
+        <span className="dim" data-role="rig-next-beat">{c.beat ? t('rigPeriod.next', { time: hm(c.nextAt), period: periodText(c.beat.every, c.beat.at, t) }) + (c.beat.role ? t('rigCycle.wakes', { role: c.beat.role }) : '') + ')' : t('rigCycle.noBeat')}</span>
         {!remote && on && <button className="mt-btn small ghost" data-action="rig-beat" disabled={busy} onClick={beat}>{t('rigCycle.beatNow')}</button>}
       </div>
-      {c.tools.length > 0 && <div className="mt-rig-cycle-tools dim" data-role="rig-clock-tools">{c.tools.map((x) => (x.running ? t('rigCycle.toolRunning', { name: x.name }) : t('rigCycle.tool', { name: x.name, every: x.every, time: hm(x.nextAt) }))).join(' · ')}</div>}
+      {c.tools.length > 0 && <div className="mt-rig-cycle-tools dim" data-role="rig-clock-tools">{c.tools.map((x) => (x.running ? t('rigCycle.toolRunning', { name: x.name }) : t('rigPeriod.tool', { name: x.name, period: periodText(x.every, null, t), time: hm(x.nextAt) }))).join(' · ')}</div>}
       {c.writing.length > 0 && <div className="dim" data-role="rig-writing">{t('rigCycle.writing', { list: c.writing.join(', ') })}</div>}
       <div className="mt-rig-entries" data-role="rig-entries">
         {!c.entries.length ? <div className="dim">{t('rigCycle.noEntries')}</div> : c.entries.map((e, i) => (
@@ -235,6 +237,49 @@ function RigStalled({ r3, t }) {
     <div className="mt-rig-alerts" data-role="rig-stalled">
       {rows.map((r) => <div key={r.role} className="mt-rigon-warn" data-stalled-role={r.role}>{t('rigItems.stalled', { role: r.role, items: r.items.join(', ') })}</div>)}
       {back.map((x) => <div key={x.id} className="mt-rigon-warn" data-returned-intake={x.id}>{t('rigItems.returned', x)}</div>)}
+    </div>
+  );
+}
+
+// P252: 기다리는 올림(역할이 빌더에게 올린 것). 줄마다 [답하기] → 한 줄 까닭 → 올림이 닫히고 답은 그 역할의 다음 깨우는 글에 실린다(판 API rig.raiseAnswer).
+//   고치기로 하면 빌더에게 말한다(고친 판이 생기면 저절로 닫힌다)
+function RigRaises({ ws, r3, remote, t, onDone }) {
+  const rows = raiseRows(r3);
+  const [open, setOpen] = useState(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  if (!rows.length) return null;
+  const send = async (id) => {
+    setBusy(true); setErr(null);
+    try { const r = await api.call('rig.raiseAnswer', { workspace: ws.key, raise: id, text }); toast(t('rigRaise.done', { id: r.id, role: r.role })); setText(''); setOpen(null); onDone && onDone(); }
+    catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-rig-raises" data-role="rig-raises">
+      <div className="mt-rigon-h">{t('rigRaise.h', { n: rows.length })}</div>
+      <ul className="mt-rigon-list">
+        {rows.map((x) => (
+          <li key={x.id} data-raise={x.id} data-raise-role={x.role}>
+            <div className="mt-rig-raise-line">
+              <span className="mt-rigon-at">{x.id}</span>
+              <span><b>{x.role}</b>: {x.reason}</span>
+              {!remote && open !== x.id && <button className="mt-btn small ghost" data-action="rig-raise-answer" disabled={busy} onClick={() => { setOpen(x.id); setText(''); setErr(null); }}>{t('rigRaise.answer')}</button>}
+            </div>
+            {open === x.id && (
+              <>
+                <input className="mt-rig-raise-text" data-role="rig-raise-text" value={text} disabled={busy} maxLength={300} placeholder={t('rigRaise.placeholder')} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && text.trim()) send(x.id); }} autoFocus />
+                <div className="mt-card-actions">
+                  <button className="mt-btn small primary" data-action="rig-raise-send" disabled={busy || !text.trim()} onClick={() => send(x.id)}>{t('rigRaise.send')}</button>
+                  <button className="mt-btn small ghost" disabled={busy} onClick={() => setOpen(null)}>{t('common.cancel')}</button>
+                </div>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="mt-rig-sub dim">{t('rigRaise.hint')}</div>
+      {err && <div className="mt-rigon-warn" data-role="rig-raise-error">{err}</div>}
     </div>
   );
 }

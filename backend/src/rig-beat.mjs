@@ -81,7 +81,7 @@ export function collectCycle(r3, rows, cycle) {
   const flows = r3.flows.map((f, i) => ({ index: i, item: f.item, from: f.from, to: f.to, put: 0, redo: 0, intake: 0, accepted: 0, returned: 0, passed: 0, dropped: 0, ids: [] }));
   const flowOfItem = (id, role) => { const m = /^(.*)-\d+$/.exec(String(id || '')); const kind = m ? m[1] : null; return flows.find((f) => f.item === kind && (!role || f.from.includes(role))) || flows.find((f) => f.item === kind) || null; };
   const addId = (f, id) => { if (f && id && !f.ids.includes(id)) f.ids.push(id); };
-  const out = { n: cycle.n, from: cycle.from, to: cycle.to, by: cycle.by, flows, returns: [], drops: [], passTurn: {}, tools: {}, foreign: [], nudges: [], stalls: [], gaveUp: [], respawns: 0, deniedWrites: 0, tunes: [], builder: [], decide: [], ids: [] };
+  const out = { n: cycle.n, from: cycle.from, to: cycle.to, by: cycle.by, flows, returns: [], drops: [], passTurn: {}, tools: {}, foreign: [], nudges: [], stalls: [], gaveUp: [], respawns: 0, deniedWrites: 0, tunes: [], builder: [], answers: [], decide: [], ids: [] };
   for (const e of rows) {
     const d = e.data || {};
     if (e.kind === 'item_put') { const f = flows[e.line] || flowOfItem(e.ref, e.fromSeat); if (f) { if (e.value === 'redo') f.redo++; else if (e.value === 'intake') { f.intake++; f.put++; } else f.put++; addId(f, e.ref); } }
@@ -103,7 +103,8 @@ export function collectCycle(r3, rows, cycle) {
     else if (e.kind === 'role_tune' && e.value === 'applied') out.tunes.push({ kind: 'tune', role: e.seat, n: d.n ?? e.defN ?? null, prevN: d.prevN ?? null, added: d.added || 0, removed: d.removed || 0, why: d.why || '', evidence: d.evidence || [] });
     else if (e.kind === 'role_tune' && e.value === 'none') out.tunes.push({ kind: 'none', role: e.seat, why: d.why || '' });
     else if (e.kind === 'role_rollback') out.tunes.push({ kind: 'rollback', role: e.seat, n: d.n ?? null, from: d.from ?? null, added: d.added || 0, removed: d.removed || 0 });
-    else if (e.kind === 'role_raise') out.decide.push({ what: 'raise', role: e.seat, reason: d.reason || '', toBuilder: !!d.toBuilder }); // P247: 빌더에게 전했어도 사람이 볼 것에 남긴다
+    else if (e.kind === 'role_raise') out.decide.push({ what: 'raise', id: d.id || null, role: e.seat, reason: d.reason || '', toBuilder: !!d.toBuilder });
+    else if (e.kind === 'raise_answer') out.answers.push({ id: d.raise || e.ref, role: e.seat, by: d.by || e.value || 'builder', answer: d.answer || '' }); // P252: 올림에 고치지 않고 답함 // P247: 빌더에게 전했어도 사람이 볼 것에 남긴다
     else if (e.kind === 'rig_version' && d.changed_by === 'builder') out.builder.push({ n: e.defN ?? e.ref ?? null, changed: d.changed || null }); // P247: 빌더가 고친 판
     else if (e.kind === 'role_write_denied') out.deniedWrites++;
   }
@@ -111,7 +112,7 @@ export function collectCycle(r3, rows, cycle) {
   out.tools = Object.values(out.tools);
   out.ids = [...new Set(flows.flatMap((f) => f.ids).concat(out.returns.map((x) => x.id), out.drops.map((x) => x.id), out.stalls.flatMap((x) => x.items), out.nudges.flatMap((x) => x.items), out.tunes.flatMap((x) => x.evidence || [])))]; // P245: 조정의 근거 id
   // 빈 사이클: 항목·도구·되돌림·멈춤이 하나도 없다(역할 세션 띄움 같은 줄은 세지 않는다)
-  out.empty = !out.ids.length && !out.tools.length && !out.foreign.length && !out.stalls.length && !out.nudges.length && !out.gaveUp.length && !Object.keys(out.passTurn).length && !out.tunes.length && !out.decide.length && !out.builder.length;
+  out.empty = !out.ids.length && !out.tools.length && !out.foreign.length && !out.stalls.length && !out.nudges.length && !out.gaveUp.length && !Object.keys(out.passTurn).length && !out.tunes.length && !out.decide.length && !out.builder.length && !out.answers.length;
   return out;
 }
 
@@ -131,6 +132,8 @@ const L = {
     roles: '**역할이 바꾼 것**', rolesNone: '- 없음',
     tune: (x) => x.kind === 'none' ? '- ' + x.role + ': 조정 턴에 고칠 것 없음 — ' + x.why : x.kind === 'rollback' ? '- ' + x.role + ' 요령 칸을 사람이 판 ' + x.from + '의 것으로 되돌림 → 판 ' + x.n + ' (+' + x.added + ' −' + x.removed + ')' : '- ' + x.role + ' 요령 칸 판 ' + (x.prevN ?? '-') + '→' + x.n + ' (+' + x.added + ' −' + x.removed + '): ' + x.why + (x.evidence.length ? ' — 근거 ' + x.evidence.map((i) => '[' + i + ']').join(' ') : ''),
     builder: '**빌더가 고친 것**', builderNone: '- 없음',
+    answers: '**올림에 답한 것**', // P252
+    ans: (x) => '- [' + x.id + '] ' + x.role + '의 올림에 ' + (x.by === 'human' ? '사람이' : '빌더가') + ' 고치지 않고 답함: ' + x.answer,
     bld: (x) => '- 판 ' + (x.n ?? '-') + ': ' + (x.changed && x.changed.length ? x.changed.map((p) => (p === 'rig.json' ? '정의' : p === 'purpose' ? '목적' : String(p).startsWith('role:') ? '정의서 ' + String(p).slice(5) : p)).join(', ') + ' 바뀜' : '정의를 처음 남김'),
     toB: ' (빌더에게 전함)',
     decide: '**사람이 볼 것**',
@@ -152,6 +155,8 @@ const L = {
     roles: '**What roles changed**', rolesNone: '- Nothing',
     tune: (x) => x.kind === 'none' ? '- ' + x.role + ': nothing to tune — ' + x.why : x.kind === 'rollback' ? '- ' + x.role + ' know-how rolled back by a person to version ' + x.from + ' → version ' + x.n + ' (+' + x.added + ' −' + x.removed + ')' : '- ' + x.role + ' know-how version ' + (x.prevN ?? '-') + '→' + x.n + ' (+' + x.added + ' −' + x.removed + '): ' + x.why + (x.evidence.length ? ' — evidence ' + x.evidence.map((i) => '[' + i + ']').join(' ') : ''),
     builder: '**What the builder fixed**', builderNone: '- Nothing',
+    answers: '**Raises answered**', // P252
+    ans: (x) => '- [' + x.id + '] ' + (x.by === 'human' ? 'You' : 'The builder') + ' answered ' + x.role + '\'s raise without a change: ' + x.answer,
     bld: (x) => '- Version ' + (x.n ?? '-') + ': ' + (x.changed && x.changed.length ? x.changed.map((p) => (p === 'rig.json' ? 'definition' : p === 'purpose' ? 'purpose' : String(p).startsWith('role:') ? 'role doc ' + String(p).slice(5) : p)).join(', ') + ' changed' : 'definition first recorded'),
     toB: ' (sent to the builder)',
     decide: '**For you to look at**',
@@ -179,6 +184,7 @@ export function entryBody(facts, lang = 'ko', prose = null) {
     ...(facts.tools.length ? [t.tools, ...facts.tools.map(t.tool), ''] : []),
     t.roles, ...say('roles'), ...(facts.tunes.length ? facts.tunes.map(t.tune) : [t.rolesNone]), '',
     t.builder, ...(facts.builder.length ? facts.builder.map((x) => (typeof x === 'string' ? '- ' + x : t.bld(x))) : [t.builderNone]), '',
+    ...((facts.answers || []).length ? [t.answers, ...facts.answers.map(t.ans), ''] : []), // P252
     t.decide, ...say('decide'), ...(facts.decide.length ? facts.decide.map((d) => t.dec(d) + (d.toBuilder ? t.toB : '')) : [t.none]),
   ].join('\n');
 }

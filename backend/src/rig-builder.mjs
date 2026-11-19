@@ -5,6 +5,7 @@
 // - 쓰기 범위: .atrium/와 정의가 가리키는 도구 스크립트(rig3.mjs builderWrites). Claude Code는 역할처럼 무인(bypassPermissions)에 PreToolUse가 범위 밖 편집을 막는다.
 //   턴 뒤 되돌리기(rig3-guard)는 빌더의 일 구간을 알고 그 경로의 주인으로 친다(역할이 .atrium/에 쓴 것은 그대로 되돌린다).
 // - 빌더가 일하던 때 바뀐 정의·목적·정의서의 새 판은 누가 builder다(Rig.byOf → wroteAt). 꺼진 rig는 빌더 턴이 끝날 때 맞는 정의를 판으로 남긴다(recordNow).
+// - P252: 빌더는 올림을 고치지 않기로 하면 atrium rig answer <올림> "<까닭>"로 닫는다(rig-tune.mjs answer). 지침(11절)과 올림 알림에 그 명령이 있다(지침 밖 판 글 한 줄은 지침에 들어가 뺐다).
 // - 역할의 raise와 "한 번 일깨운 뒤에도 멈춘 역할"은 빌더 세션이 있으면 대기열로 전한다(잠들었으면 대기열이 깨운다). 없으면 지금처럼 변경 기록과 rig 판.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,6 +14,7 @@ import { rigEvent } from './rig-ledger.mjs';
 import { shownName } from './session-label.mjs';
 import { deriveState } from './state.mjs';
 import { BUILDER_ROLE, builderWrites, RIG_DIR } from './rig-def.mjs';
+import { waitingRaises } from './rig-tune.mjs'; // P252
 
 export { BUILDER_ROLE };
 export const BUILDER_NAME = 'builder';
@@ -55,7 +57,7 @@ export function builderLoadText(x) {
 }
 // 빌더에게 전하는 한 줄(raise·멈춘 역할)
 export function alertText(a) {
-  if (a.what === 'raise') return '[Atrium 보드] 역할 ' + a.role + '이 빌더에게 올렸다(raise, 요령으로 풀 일이 아님): ' + String(a.reason || '').replace(/[.。]+\s*$/, '') + (a.materials && a.materials.length ? ' (재료: ' + a.materials.join(', ') + ')' : '') + '. 모양(정의·목적·정의서의 고정 칸)을 고칠 일인지 판단한다. 뜻이 바뀌는 것은 사용자에게 안을 낸다. 요령 칸은 역할의 것이다.';
+  if (a.what === 'raise') return '[Atrium 보드] 역할 ' + a.role + '이 빌더에게 올렸다(' + (a.id ? a.id + ', ' : '') + 'raise, 요령으로 풀 일이 아님): ' + String(a.reason || '').replace(/[.。]+\s*$/, '') + (a.materials && a.materials.length ? ' (재료: ' + a.materials.join(', ') + ')' : '') + '. 모양(정의·목적·정의서의 고정 칸)을 고칠 일인지 판단한다. 뜻이 바뀌는 것은 사용자에게 안을 낸다. 요령 칸은 역할의 것이다.' + (a.id ? ' 고치지 않기로 정했으면 atrium rig answer ' + a.id + ' "<까닭>"로 닫는다. 사용자가 정할 일이면 답하지 않고 열어 둔다.' : ''); // P252
   return '[Atrium 보드] 역할 ' + a.role + '이 받은 것에 답하지 않고 멈췄다(판이 한 번 일깨운 뒤에도 그대로): ' + (a.items || []).join(', ') + '. 정의서·길이 막는 것인지 본다(역할의 터미널은 atrium read ' + a.role + ').';
 }
 
@@ -128,7 +130,9 @@ export class RigBuilder {
   waiting(key, limit = 10) {
     let rows = [];
     try { rows = this.b.store.rigEvents({ ws: key, kinds: ['role_raise', 'item_stalled'], limit: 200 }) || []; } catch { rows = []; }
-    return rows.filter((e) => !(e.data && e.data.toBuilder)).slice(-limit).map((e) => '- ' + new Date(e.t).toISOString().slice(0, 16).replace('T', ' ') + ' ' + (e.kind === 'role_raise' ? e.seat + ' raise: ' + ((e.data && e.data.reason) || e.text || '') : e.seat + ' 멈춤: ' + (((e.data && e.data.items) || []).join(', '))));
+    // P252: 이미 닫힌 올림(답함·고친 판)은 뺀다
+    let open = null; try { open = new Set(waitingRaises(this.b.store, key).map((x) => x.id)); } catch { open = null; }
+    return rows.filter((e) => !(e.data && e.data.toBuilder)).filter((e) => !(e.kind === 'role_raise' && open && e.data && e.data.id && !open.has(e.data.id))).slice(-limit).map((e) => '- ' + new Date(e.t).toISOString().slice(0, 16).replace('T', ' ') + ' ' + (e.kind === 'role_raise' ? e.seat + ' raise: ' + ((e.data && e.data.reason) || e.text || '') + (e.data && e.data.id ? ' (' + e.data.id + ')' : '') : e.seat + ' 멈춤: ' + (((e.data && e.data.items) || []).join(', '))));
   }
 
   // ---------- raise·멈춘 역할 전달 ----------
