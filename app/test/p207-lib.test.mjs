@@ -107,7 +107,6 @@ test('다른 칸 카드로 가기: tabOfId가 그 카드의 칸을 알려 주고
   assert.ok(/const k = tabOfId\(L, id\); if \(k && k !== L\.tabs\.pick\) \{ switchTab\(k, id\); return true; \}/.test(pm), 'goTo: 다른 칸이면 탭 바꾸기');
   assert.ok(/pendingGo\.current = goId/.test(pm) && /if \(go && lay\.cards\.has\(go\)\) \{ pendingGo\.current = null; goTo\(go\); \}/.test(pm), '탭을 연 뒤 그 카드로');
   assert.ok(/const allIds = tb \?/.test(pm) && /const attn = allIds\.filter/.test(pm) && /const list = allIds\.filter/.test(pm), '위 알약은 두 칸 모두');
-  assert.ok(/tabOfId\(lay, `s:\$\{sid\}`\)/.test(pm), 'rig 건 알약도 다른 칸 카드로');
   assert.ok(/tab: tabSel \|\| 'auto'/.test(pm), '휴대폰 맵은 늘 탭 모드');
 });
 test('탭 기억: 같은 날이면 기억한 탭, 날이 바뀌면 잊는다(자정 뒤 기본 규칙), 저장소가 없거나 막혀도 된다', () => {

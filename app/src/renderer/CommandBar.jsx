@@ -36,7 +36,6 @@ import { imageTokens, mergeTokens, nextImageNo, expandImages, imageLabel, pasteP
 import { kbLift } from './lib/touch-board.js'; // P83
 import { useVoice, VoiceButton } from './Voice.jsx'; // P165
 import { splitLive } from './lib/voice-text.js'; // P165
-import { talkSeats, talkParam } from './lib/talk.js'; // P237: "회 없이"
 import { steerTargets, steerParam, steerFellBack } from './lib/steer.js'; // P248: 스티어링 선택
 import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange, autoTag } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
 
@@ -106,8 +105,6 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const deliveries = useStore((st) => st.deliveries);
   const allCount = [...sessions.values()].filter((s) => s.kind !== 'shell').length;
   const [text, setText] = useState('');
-  const [talk, setTalk] = useState(false); // P237: 회 없이(rig 자리에 회를 열지 않고 글만)
-  const talkRef = useRef({ on: false, offered: false });
   const [steer, setSteer] = useState(false); // P248: 스티어링(일하는 Claude Code의 지금 턴에 넣기). 기본은 대기열
   const steerRef = useRef({ on: false, to: { can: [], cannot: [] } });
   const [pick, setPick] = useState(0);
@@ -188,7 +185,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     if (!/^@\S/.test(line)) { toast(t('cmd.needTarget'), 'error'); return; }
     const out = expandImages(line, images); // P162: 그림 칩 → 파일 경로
     try {
-      const r = await api.call('session.send', { text: out, ...talkParam(talkRef.current.on, talkRef.current.offered), ...steerParam(steerRef.current.on || !!opts.steer, steerRef.current.to) }); // P237. P248: steer
+      const r = await api.call('session.send', { text: out, ...steerParam(steerRef.current.on || !!opts.steer, steerRef.current.to) }); // P248: steer
       const fell = steerFellBack(r.deliveries); // P248: 스티어링할 수 없는 세션은 대기열로 갔다
       if (fell.length) toast(t('cmdSteer.fell', { names: fell.map((x) => '@' + x.name).join(' '), why: t(`cmdSteer.why_${fell[0].why}`) }));
       const add = {};
@@ -199,7 +196,6 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       hist.current.i = -1;
       setText('');
       setPreview(null);
-      setTalk(false); // P237: 한 번 보낸 뒤 끈다(다음 글이 모르게 회 밖으로 가지 않게)
       setSteer(false); // P248: 한 번 보낸 뒤 끈다(다음 글은 다시 대기열)
     } catch (e) { toast(t('cmd.sendFailed', { error: errText(e) }), 'error'); }
   }
@@ -348,8 +344,6 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const tagTokens = useMemo(() => mentionTokens(text, sessList), [text, sessList]);
   const tokens = useMemo(() => mergeTokens(tagTokens, imageTokens(text, images)), [tagTokens, text, images]); // P162: 그림 칩도 겹에 그리고 통째로 지운다
   const toList = useMemo(() => recipients(text, sessList), [text, sessList]);
-  const talkTo = useMemo(() => talkSeats(toList, sessList), [toList, sessList]); // P237: 받는 rig 자리 세션
-  talkRef.current = { on: talk, offered: talkTo.length > 0 };
   const steerTo = useMemo(() => steerTargets(toList, sessList), [toList, sessList]); // P248
   steerRef.current = { on: steer, to: steerTo };
   const steerShown = steerTo.can.length + steerTo.cannot.length > 0, steerOff = steerShown && !steerTo.can.length;
@@ -447,9 +441,6 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
             {toShown.map((r) => <span key={r.state + r.name} className={`mt-cmd-to-chip st-${r.state}`} data-to={r.name} data-state={r.state} title={toTitle(r)}>@{r.name}{r.state === 'all' ? <span className="n">{r.count}</span> : null}</span>)}
             {toMore > 0 && <span className="mt-cmd-to-chip more" title={toList.slice(3).map((r) => '@' + r.name).join(' ')}>+{toMore}</span>}
           </div>
-        )}
-        {talkTo.length > 0 && (
-          <button type="button" className={`mt-cmd-talk${talk ? ' on' : ''}`} data-action="cmd-talk" aria-pressed={talk} title={t('cmdTalk.title', { names: talkTo.map((n) => '@' + n).join(' ') })} onMouseDown={(e) => e.preventDefault()} onClick={() => setTalk((v) => !v)}>{t('cmdTalk.label')}</button>
         )}
         {steerShown && (
           <button type="button" className={`mt-cmd-steer${steer && !steerOff ? ' on' : ''}`} data-action="cmd-steer" aria-pressed={steer && !steerOff} aria-disabled={steerOff || undefined} data-off={steerOff ? '1' : undefined} title={steerTitle} aria-label={`${t('cmdSteer.label')}: ${steerTitle}`} onMouseDown={(e) => e.preventDefault()} onClick={() => { if (!steerOff) setSteer((v) => !v); }}>{t('cmdSteer.label')}</button>

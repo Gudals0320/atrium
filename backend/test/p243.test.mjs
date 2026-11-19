@@ -1,4 +1,4 @@
-// P243: rig 3 남의 쓰기 되돌리기(rig3-guard.mjs). 턴 경계는 판 상태 전환(모든 하네스)과 도구 실행의 시작·끝.
+// P243: rig 3 남의 쓰기 되돌리기(rig-guard.mjs). 턴 경계는 판 상태 전환(모든 하네스)과 도구 실행의 시작·끝.
 // 섹터 안 쓰기 통과, 남의 섹터 쓰기(주인 쉼) → 되돌림·격리·장부·알림, 주인도 일하던 창 → 그대로, 섹터 밖·.atrium/ → 되돌림(후보 여럿),
 // 새 파일 격리, 지운 파일 되살림, 크기 한도 → 기록만, 판 자신의 쓰기 통과, 빼는 목록, 하네스 종류와 무관(broadcastSession).
 import test from 'node:test';
@@ -9,12 +9,11 @@ import path from 'node:path';
 import { Store } from '../src/store.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { Rig } from '../src/rig.mjs';
-import { RigAmp } from '../src/rig-amp.mjs';
 import { Backend } from '../src/backend.mjs';
-import { RIG3_GUARD_KINDS, RIG3_EVENT_KINDS, RIG_EVENT_KINDS, parseKinds } from '../src/rig-ledger.mjs';
-import { validateRig3 } from '../src/rig3.mjs';
-import { Rig3Roles } from '../src/rig3-roles.mjs';
-import { ownerOf, skipRules, isSkipped, judge, walk, foreignNotice, GUARD_SKIP_NAMES } from '../src/rig3-guard.mjs';
+import { RIG_GUARD_KINDS, RIG_ROLE_KINDS, RIG_EVENT_KINDS, parseKinds } from '../src/rig-ledger.mjs';
+import { validateRigDef } from '../src/rig-def.mjs';
+import { RigRoles } from '../src/rig-roles.mjs';
+import { ownerOf, skipRules, isSkipped, judge, walk, foreignNotice, GUARD_SKIP_NAMES } from '../src/rig-guard.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p243-'));
 const DOC = (name) => ['# ' + name, '', '## 맡은 것', name, '', '## 받는 것과 내는 것', '없음', '', '## 기준', '- 하나', '', '## 요령', '- 하나'].join('\n');
@@ -42,12 +41,12 @@ async function board(def = DEF(), cfg = {}) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const sent = []; const logs = [];
   const b = { cfg: { dataDir: path.join(tmp(), 'data'), ...cfg }, store, sessions: new Map(), log: (...a) => logs.push(a.join(' ')), api: { broadcast: () => {} } };
-  b.rig = new Rig(b); b.rigAmp = new RigAmp(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new RigRoles(b);
   b.queue = { enqueue: (sessionId, text, opts) => { sent.push({ sessionId, text, opts }); return { deliveryId: 'd' + sent.length }; } };
   const g = b.rig3.guard;
   const mk = (role, kind = 'claude') => { const s = { sessionId: 'sid-' + role, name: role, kind, workspaceKey: ws.key, rigRole: role, rt: { kind } }; b.sessions.set(s.sessionId, s); return s; };
   const S = { data: mk('data', 'claude'), ideas: mk('ideas', 'codex') };
-  const ledger = () => store.rigEvents({ ws: ws.key, limit: 1000, kinds: RIG3_GUARD_KINDS });
+  const ledger = () => store.rigEvents({ ws: ws.key, limit: 1000, kinds: RIG_GUARD_KINDS });
   const foreign = () => ledger().filter((x) => x.kind === 'role_foreign_write');
   // 상태 전환 흉내(backend.broadcastSession이 부르는 것과 같다)
   const go = (s, to) => { const from = s._st || null; s._st = to; return g.onState(s, from, to); };
@@ -56,19 +55,19 @@ async function board(def = DEF(), cfg = {}) {
 }
 
 test('P243 장부 종류: rig 3 guard 종류는 따로 둔 목록', () => {
-  assert.deepEqual(RIG3_GUARD_KINDS, ['role_foreign_write', 'role_guard_base']);
-  for (const k of RIG3_GUARD_KINDS) assert.ok(!RIG_EVENT_KINDS.includes(k) && !RIG3_EVENT_KINDS.includes(k), k);
+  assert.deepEqual(RIG_GUARD_KINDS, ['role_foreign_write', 'role_guard_base']);
+  for (const k of RIG_GUARD_KINDS) assert.ok(!RIG_EVENT_KINDS.includes(k) && !RIG_ROLE_KINDS.includes(k), k);
   assert.deepEqual(parseKinds('role_foreign_write,role_spawn'), ['role_foreign_write', 'role_spawn']);
 });
 
 test('P243 정의의 ignore 칸과 주인·빼는 규칙(순수 함수)', () => {
-  const v = validateRig3(DEF({ extra: { ignore: ['build', './cache/'] } }));
+  const v = validateRigDef(DEF({ extra: { ignore: ['build', './cache/'] } }));
   assert.equal(v.ok, true, v.reason);
   assert.deepEqual(v.def.rig3.ignore, ['build/', 'cache/']);
-  assert.match(validateRig3(DEF({ extra: { ignore: ['.atrium/x/'] } })).reason, /ignore에 \.atrium\/를 넣지 않는다/);
-  assert.match(validateRig3(DEF({ extra: { ignore: '/abs' } })).reason, /ignore는 폴더 경로 배열/);
-  assert.match(validateRig3(DEF({ extra: { ignore: ['../up'] } })).reason, /상대 폴더/);
-  assert.deepEqual(validateRig3(DEF()).def.rig3.ignore, []);
+  assert.match(validateRigDef(DEF({ extra: { ignore: ['.atrium/x/'] } })).reason, /ignore에 \.atrium\/를 넣지 않는다/);
+  assert.match(validateRigDef(DEF({ extra: { ignore: '/abs' } })).reason, /ignore는 폴더 경로 배열/);
+  assert.match(validateRigDef(DEF({ extra: { ignore: ['../up'] } })).reason, /상대 폴더/);
+  assert.deepEqual(validateRigDef(DEF()).def.rig3.ignore, []);
   const r3 = v.def.rig3;
   assert.deepEqual(ownerOf(r3, 'data/x.csv'), { role: 'data', kind: 'sector' });
   assert.deepEqual(ownerOf(r3, 'Data/X.csv'), { role: 'data', kind: 'sector' });

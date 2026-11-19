@@ -322,7 +322,7 @@ test('P156 그래프: 선마다 relation·relationSource·relationUp, 세션마�
 
 // ---------- 계약·안내 ----------
 test('P156 계약과 안내: 계약 3, relate 동사·child --peer·me/children/child-kill 출력, 승인 규칙, 짧은 help·--long·스킬·판 안내에 관계 고르기', async () => {
-  assert.equal(CONTRACT_VERSION, 4); // P185: rig 자리로 4
+  assert.equal(CONTRACT_VERSION, 5); // P249: 옛 rig를 걷어 5
   assert.ok(VERB_NAMES.includes('relate'));
   const v = (n) => VERBS.find((x) => x.name === n);
   assert.ok(v('child').args.includes('[--peer]')); assert.ok(v('child').out.includes('relation'));

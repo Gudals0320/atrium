@@ -1,7 +1,7 @@
 // P244: rig 3 사이클 보기 자료(지금 사이클, 다음 박자, every 도구, 최근 꼭지)와 사전 두 벌
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cycleInfo, entryParts } from '../src/renderer/lib/rig3.js';
+import { cycleInfo, entryParts } from '../src/renderer/lib/rig.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
 
@@ -15,5 +15,5 @@ test('P244 사이클 보기와 꼭지 나누기', () => {
   assert.deepEqual(c.entries[0], { n: 2, by: 'ai', at: 60, title: '사이클 2 · 2026-11-19 10:00 ~ 10:01', body: '**돈 것**\n- a' });
   assert.equal(cycleInfo({}), null); assert.equal(cycleInfo(null), null);
   assert.deepEqual(entryParts('## x'), { title: 'x', body: '' });
-  assert.deepEqual(Object.keys(en.rig3Cycle).sort(), Object.keys(ko.rig3Cycle).sort());
+  assert.deepEqual(Object.keys(en.rigCycle).sort(), Object.keys(ko.rigCycle).sort());
 });

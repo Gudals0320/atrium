@@ -1,2 +1,0 @@
-Main seat (keep): each request is one run. Follow docs/rules.txt, check docs/facts.txt when needed, append one line to ledger/corrections.jsonl when the person corrects you, then atrium done ok "<one line>".
-In a retro run (every 7 days): read ledger/corrections.jsonl. Do not edit docs/rules.txt or docs/facts.txt yourself. Write the whole new file to a temporary file and propose it: atrium rig propose --target rules --file <file> --why "<one-line reason>". A person approves or rejects it on the board. Then atrium done ok "<what you proposed>".

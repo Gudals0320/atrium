@@ -25,28 +25,7 @@ function intIn(n, lo, hi, what) {
   return n;
 }
 
-// P233(rig2-design 11.15의 1, 보안): rig 자리(scoped·ask)의 권한 질문은 "이번 한 번 예"와 "아니오"만 받는다.
-//   Claude Code 2.1.328의 권한 대화상자에는 이번 호출을 넘어 권한을 바꾸는 선택지가 있다("Yes, and switch to auto mode",
-//   "Yes, and always allow access to <폴더> from this project", "Yes, and don't ask again …"). 번호와 글은 판마다 바뀌므로
-//   선택지 글로 판정하고 허용 쪽 목록으로 한다: 글이 그냥 "Yes"이거나 no·거절이면 받고 나머지는 모두 거절한다.
-export const ONCE_ONLY_WHY = 'rig 자리는 한 번만 허락한다. 늘 허락하려면 rig 고치기에서 자리의 허용 목록(allow)에 더한다.';
-// 선택지 글 → 'yes' | 'no' | null(받지 않음)
-export function onceOnlyChoice(label) {
-  const l = String(label ?? '').replace(/\s+/g, ' ').trim().replace(/[.!]+$/, '').trim();
-  if (/^yes$/i.test(l)) return 'yes';
-  if (/^no\b/i.test(l)) return 'no'; // "No", "No, and tell Claude what to do differently (esc)"
-  return null;
-}
-// 카드에 보이는 ask: 받지 않는 선택지를 빼고 onceOnly·hiddenChoices를 단다(번호는 화면 번호 그대로)
-export function onceOnlyAsk(ask) {
-  if (!ask || ask.kind !== 'permission') return ask;
-  const all = ask.choices || null;
-  const choices = all ? all.filter((c) => onceOnlyChoice(c.label)) : null;
-  return { ...ask, onceOnly: true, ...(all ? { choices, hiddenChoices: all.length - choices.length } : {}) };
-}
-const onceOnlyRefused = (label) => answerError('rig_once_only', `${ONCE_ONLY_WHY}${label ? ` (고른 선택지: ${label})` : ''}`);
-
-export function planAnswer(ask, a = {}, { onceOnly = false } = {}) { // P233: onceOnly(rig 자리의 권한 질문)
+export function planAnswer(ask, a = {}) {
   if (!ask) throw answerError('no_pending_ask', "응답을 기다리는 요청이 없습니다.");
   const kind = ask.kind;
   if (kind === 'unknown_dialog') throw inTerminal('알 수 없는 대화상자');
@@ -65,13 +44,11 @@ export function planAnswer(ask, a = {}, { onceOnly = false } = {}) { // P233: on
   if (kind === 'permission') {
     if (choice === 'reject') return { steps: [{ keys: ['esc'] }], label: '거부' };
     if (choice === 'amend') {
-      if (onceOnly && ask.choices && ask.choices[0] && onceOnlyChoice(ask.choices[0].label) !== 'yes') throw onceOnlyRefused(ask.choices[0].label); // 덧붙이기는 1번(커서) 승인
       return { steps: [{ keys: ['tab'] }, { text: oneLine(a.text) }, { keys: ['enter'] }], label: "승인 및 지시 추가" };
     }
     const choices = ask.choices || [];
     const n = intIn(choice, 1, Math.max(1, choices.length), '권한 선택지 번호'); // 화면에서 선택지를 아직 못 읽었으면 1(승인)만 받는다
     const c = choices[n - 1];
-    if (onceOnly && c && !onceOnlyChoice(c.label)) throw onceOnlyRefused(`${n}. ${c.label}`); // P233: 글로 판정(번호가 아니라)
     if (c && /^No\b/i.test(c.label)) return { steps: [{ keys: ['esc'] }], label: `거부(${n}. ${c.label})` }; // 거부는 번호가 바뀌어도 esc
     return { steps: [{ keys: [String(n)] }], label: c ? `${n}. ${c.label}` : `${n}` };
   }
@@ -110,20 +87,6 @@ export function planAnswer(ask, a = {}, { onceOnly = false } = {}) { // P233: on
   throw answerError('bad_request', `알 수 없는 요청 종류입니다: ${kind}`);
 }
 
-// P233: rig 자리의 권한 질문에 휴대폰 키 패드(session.keys)로 보내는 키. 숫자는 받는 선택지의 번호만(선택지를 모르면 1),
-//   위·아래 화살표는 받지 않는다(커서를 옮긴 뒤 Enter로 넓히는 선택지를 고르지 못하게). esc·enter·tab 등 나머지는 그대로
-export function onceOnlyKeys(ask, keys) {
-  const choices = (ask && ask.choices) || null;
-  for (const k of keys) {
-    if (k === 'up' || k === 'down') throw answerError('rig_once_only', `${ONCE_ONLY_WHY} (권한 질문에서는 화살표 대신 번호나 Esc를 쓴다)`);
-    if (/^\d$/.test(k)) {
-      const n = Number(k);
-      const c = choices ? choices.find((x) => x.n === n) : null;
-      if (choices ? !(c && onceOnlyChoice(c.label)) : n !== 1) throw onceOnlyRefused(c ? `${n}. ${c.label}` : k);
-    }
-  }
-  return keys;
-}
 
 // 보내기 직전에 쓰는 키가 허용 목록 안에 있는지(ctrl+g 같은 키가 섞이지 않게)
 export function checkSteps(steps) {

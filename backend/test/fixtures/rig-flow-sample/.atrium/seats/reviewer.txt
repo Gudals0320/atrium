@@ -1,2 +1,0 @@
-reviewer seat: check the report in the item. Close with `atrium done ok "<notes>"` or `atrium done rejected "<what to change>"`.
-You may ask main a question with `atrium prompt main "<question>"`.

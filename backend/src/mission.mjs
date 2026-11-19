@@ -24,8 +24,7 @@ export const CALLED_MS = 7 * 24 * 3600 * 1000;
 // relations(P156): 저장한 일 관계 줄들(store.relationRows). 선마다 실제 관계(relation, relationSource, relationUp), 세션마다 계보 부모(lineageParent)와 일 부모(parentId)
 // called(P157): { kids: 계보 기록(store.branchRows, 닫힌 세션 포함), assigns: 하위에게 지시를 보낸 세션(store.assignSenders) }.
 //   세션마다 closedKids(CALLED_MS 안에 닫힌 계보 자식 수)와 assignAt(CALLED_MS 안의 마지막 assign 지시 시각)을 붙인다(세션 맵이 솔로 칸에 보내지 않는다)
-// P185: rig — 켜진 rig마다 { [워크스페이스 키]: { seats, flow, manager, results, cases } }(rig-flow.mjs graph). 세션 노드에는 rigSeat
-export function missionGraph({ sessions = [], links = [], thread = [], loops = [], relations = [], called = null, rig = null, now = Date.now() }) {
+export function missionGraph({ sessions = [], links = [], thread = [], loops = [], relations = [], called = null, now = Date.now() }) {
   const byId = new Map(sessions.map((s) => [s.sessionId, s]));
   // P159: 요약의 parentSessionId는 일 부모라 계보는 lineageParentSessionId(옛 요약·시험 자료는 parentSessionId)
   const lineageOf = (id) => { const s = byId.get(id); if (!s) return null; if (s.lineageParentSessionId !== undefined) return s.lineageParentSessionId || null; return s.parentSessionId || (s.branch && s.branch.parentSessionId) || null; };
@@ -114,9 +113,8 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
       // P152: 오류 글(영토 지도 카드의 오류 줄, 휴대폰 시트). 판의 세션 요약이 없을 때도 보이게
       closedKids: closedKids.get(s.sessionId) || 0, assignAt: assignAt.get(s.sessionId) || null, parentClosed: !!lineageOf(s.sessionId) && !byId.has(lineageOf(s.sessionId)), // P157
       background: s.background && s.background.n ? { n: s.background.n, kinds: s.background.kinds || [], items: (s.background.items || []).slice(0, 8), at: s.background.at || null } : null, // P164: 도는 뒤 일(쉬는 세션 카드의 표시)
-      rigSeat: s.rigSeat || null, // P185
       error: s.state === 'error' && s.error ? clip(typeof s.error === 'string' ? s.error : s.error.message || String(s.error), 200) : null,
     });
   }
-  return { nodes, edges, counts, at: now, rig: rig || {} };
+  return { nodes, edges, counts, at: now };
 }

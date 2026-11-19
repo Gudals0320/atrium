@@ -11,8 +11,8 @@ import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: �
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
 import { UNITS_SCHEMA, UNITS_COLUMNS, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
 import { NEWS_SCHEMA, installNews } from './store-news.mjs'; // P204: 동료 소식
-import { RIG_SCHEMA, RIG_COLUMNS, TOOL_RUNS_SCHEMA, RIG_FLOW_SCHEMA, RIG_ADMIN_SCHEMA, RIG_EVENTS_SCHEMA, RIG_LOOPS_SCHEMA, RIG_ARTIFACTS_SCHEMA, RIG_PROPOSALS_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기와 훅 실행 기록
-import { RIG3_COLUMNS, RIG3_SCHEMA, installRig3 } from './store-rig3.mjs'; // P241: rig 3 역할 세션
+import { RIG_COLUMNS, TOOL_RUNS_SCHEMA, RIG_ADMIN_SCHEMA, RIG_EVENTS_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기, 판, 장부, 도구 실행
+import { RIG_ROLE_COLUMNS, RIG_ROLE_SCHEMA, installRigRoles } from './store-rig-roles.mjs'; // P241: rig 역할 세션
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -78,8 +78,7 @@ function sessionRow(r) {
     label: r.label ?? null, // P66: 판의 이름. 없으면 name(에이전트 주소)이 보인다
     startCommand: r.start_command || '', // P97: 실행 명령(빈 값은 claude)
     harnessPlan: r.harness ? JSON.parse(r.harness) : null, // P115
-    rigSeat: r.rig_seat ?? null, // P185: rig 자리
-    rigRole: r.rig_role ?? null, // P241: rig 3 역할
+    rigRole: r.rig_role ?? null, // P241: rig 역할
   };
 }
 function linkRow(r) {
@@ -88,7 +87,7 @@ function linkRow(r) {
 }
 function deliveryRow(r) {
   if (!r) return null;
-  return { deliveryId: r.delivery_id, sessionId: r.session_id, text: r.text, status: r.status, reason: r.reason, createdAt: r.created_at, updatedAt: r.updated_at, sentAt: r.sent_at, confirmedAt: r.confirmed_at, attempts: r.attempts, seq: r.seq ?? r.created_at, origin: r.origin || 'board', fromSession: r.from_session ?? null, ...(r.park_loop ? { parkLoop: (() => { try { return JSON.parse(r.park_loop); } catch { return null; } })() } : {}) }; // P182: 출처(옛 행은 board). P225: parkLoop(멈춘 고리에 붙잡은 전달)
+  return { deliveryId: r.delivery_id, sessionId: r.session_id, text: r.text, status: r.status, reason: r.reason, createdAt: r.created_at, updatedAt: r.updated_at, sentAt: r.sent_at, confirmedAt: r.confirmed_at, attempts: r.attempts, seq: r.seq ?? r.created_at, origin: r.origin || 'board', fromSession: r.from_session ?? null }; // P182: 출처(옛 행은 board)
 }
 function workspaceRow(r) {
   if (!r) return null;
@@ -117,17 +116,12 @@ export class Store {
     this.db.exec(IMPORTS_SCHEMA);
     this.db.exec(BRANCH_SCHEMA); // P156: 일 관계
     this.db.exec(UNITS_SCHEMA); // P180: 일 단위와 시도
-    this.db.exec(RIG_SCHEMA); // P182: 훅 실행 기록
     this.db.exec(TOOL_RUNS_SCHEMA); // P183: 도구 실행 장부
-    this.db.exec(RIG_FLOW_SCHEMA); // P185: 건과 건이 만든 세션·워크트리
-    this.db.exec(RIG_ADMIN_SCHEMA); // P188: 정의 버전, 느린 고리
+    this.db.exec(RIG_ADMIN_SCHEMA); // P188: 판(버전)
     this.db.exec(RIG_EVENTS_SCHEMA); // P217: rig 장부(rig_events)
-    this.db.exec(RIG_LOOPS_SCHEMA); // P221: 고리(멈춤, every 시각, 멈춘 동안의 요청)
-    this.db.exec(RIG_ARTIFACTS_SCHEMA); // P222: 산출물 등록부
-    this.db.exec(RIG_PROPOSALS_SCHEMA); // P224: 제안과 승인, 정본 표시
     this.db.exec(NEWS_SCHEMA); // P204: 동료 소식
-    this.db.exec(RIG3_SCHEMA); // P242: rig 3 항목과 받음
-    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS), ...Object.entries(RIG3_COLUMNS)]) {
+    this.db.exec(RIG_ROLE_SCHEMA); // P242: rig 항목과 받음
+    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS), ...Object.entries(RIG_ROLE_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
     }
@@ -299,5 +293,5 @@ installImports(Store); // P34
 installMerge(Store); // P37
 installUnits(Store); // P180
 installRig(Store); // P182
-installRig3(Store); // P241
+installRigRoles(Store); // P241
 installNews(Store); // P204

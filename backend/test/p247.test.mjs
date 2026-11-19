@@ -9,16 +9,15 @@ import path from 'node:path';
 import { Store } from '../src/store.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { Rig } from '../src/rig.mjs';
-import { RigAmp } from '../src/rig-amp.mjs';
 import { RigAdmin } from '../src/rig-admin.mjs';
 import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime, applyHook } from '../src/state.mjs';
-import { rigEvent, readEvents, RIG3_BUILDER_KINDS } from '../src/rig-ledger.mjs';
-import { loadText, rig3Guide, builderWrites, builderOwns, toolScripts, BUILDER_ROLE, LONG_JOB_LINE, checkRoleDoc } from '../src/rig3.mjs';
-import { Rig3Roles, ROLE_SPAWN } from '../src/rig3-roles.mjs';
-import { builderLoadText, readGuide, alertText, rig3BuilderHandlers, GUIDE_FILE } from '../src/rig3-builder.mjs';
-import { collectCycle, entryBody } from '../src/rig3-beat.mjs';
-import { judge } from '../src/rig3-guard.mjs';
+import { rigEvent, readEvents, RIG_BUILDER_KINDS } from '../src/rig-ledger.mjs';
+import { loadText, rigGuide, builderWrites, builderOwns, toolScripts, BUILDER_ROLE, LONG_JOB_LINE, checkRoleDoc } from '../src/rig-def.mjs';
+import { RigRoles, ROLE_SPAWN } from '../src/rig-roles.mjs';
+import { builderLoadText, readGuide, alertText, rigBuilderHandlers, GUIDE_FILE } from '../src/rig-builder.mjs';
+import { collectCycle, entryBody } from '../src/rig-beat.mjs';
+import { judge } from '../src/rig-guard.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p247-'));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -48,7 +47,7 @@ async function board({ mod = null, rig = true, cfg = {}, on = true } = {}) {
   if (!store.getWorkspace(ws.key)) store.insertWorkspace({ ...ws, createdAt: 1 });
   const items = new Map(); let dn = 0;
   const b = { cfg: { hookTimeoutSec: 2, sessionsDir: path.join(outside, 'sessions'), dataDir: path.join(outside, 'data-board'), rig3DeadGraceMs: 0, rig3GuardBgPollMs: 0, ...cfg }, store, sessions: new Map(), log: () => {}, api: { broadcast: () => {} }, features: { settings: { get: () => ({ language: 'ko' }) } } };
-  b.rig = new Rig(b); b.rigAmp = new RigAmp(b); b.rig3 = new Rig3Roles(b);
+  b.rig = new Rig(b); b.rig3 = new RigRoles(b);
   b.resolveWorkspace = async () => ({ key: ws.key });
   b.queue = {
     enqueue: (sessionId, text, opts) => { const d = { deliveryId: 'd' + ++dn, sessionId, text, opts, status: 'queued' }; items.set(d.deliveryId, d); return d; },
@@ -103,14 +102,14 @@ test('P247 빌더 띄우기·찾기: 워크스페이스마다 하나, 있으면 
   for (const role of ['data', 'ideas', 'verify']) assert.match(first.text, new RegExp('## 정의서 \\(\\.atrium/roles/' + role + '\\.md\\)'));
   assert.match(first.text, /지금 rig: 켜짐, 판 \d+/);
   assert.match(first.text, /쓰는 곳: \.atrium\//);
-  assert.equal(B.ledger(RIG3_BUILDER_KINDS).length, 1);
+  assert.equal(B.ledger(RIG_BUILDER_KINDS).length, 1);
   // 다시 말하기 → 같은 세션, 사람의 말로 넣는다
   const r2 = await B.b.rig3.builder.talk(B.key, { text: '역할 하나를 더하고 싶다' });
   assert.equal(r2.session, r.session); assert.equal(r2.spawned, false);
   const last = B.toS(s).at(-1);
   assert.equal(last.text, '역할 하나를 더하고 싶다'); assert.equal(last.opts.origin.kind, 'human');
   assert.equal([...B.b.sessions.values()].filter((x) => x.rigRole === BUILDER_ROLE).length, 1);
-  assert.equal(B.ledger(RIG3_BUILDER_KINDS).length, 1);
+  assert.equal(B.ledger(RIG_BUILDER_KINDS).length, 1);
   // 빌더는 역할이 아니다: 주기가 다시 띄우거나 역할 보기에 넣지 않는다, rig.status의 rig3.builder에 보인다
   const v = B.b.rig.status(B.key).rig3;
   assert.equal(v.builder.session.sessionId, r.session);
@@ -120,9 +119,9 @@ test('P247 빌더 띄우기·찾기: 워크스페이스마다 하나, 있으면 
   const r3 = await B.b.rig3.builder.talk(B.key, {});
   assert.equal(r3.spawned, true); assert.notEqual(r3.session, r.session);
   // 판 API: 사람만(local)
-  const H = rig3BuilderHandlers(B.b);
-  await code(H['rig3.builder']({ workspace: B.key }, { auth: { kind: 'remote' } }), 'forbidden');
-  const h = await H['rig3.builder']({ workspace: B.key, text: 'hi' }, { auth: { kind: 'local' } });
+  const H = rigBuilderHandlers(B.b);
+  await code(H['rig.builder']({ workspace: B.key }, { auth: { kind: 'remote' } }), 'forbidden');
+  const h = await H['rig.builder']({ workspace: B.key, text: 'hi' }, { auth: { kind: 'local' } });
   assert.equal(h.session, r3.session);
 });
 
@@ -361,7 +360,7 @@ test('P247 역할 첫 글과 atrium guide: 긴 일은 판의 도구 → 하네�
   const noTool = loadText(r3, 'ideas', {});
   assert.match(noTool, /오래 걸리는 일은 턴을 붙들지 않는다\. 먼저 판이 돌리는 도구\(네 도구가 정의에 있을 때\)로, 아니면 하네스의 뒤 실행/);
   assert.match(noTool, /분리 실행\(Start-Process, start, nohup, setsid\)으로는 하지 않는다/);
-  assert.match(rig3Guide(r3, 'ideas'), /분리 실행\(Start-Process, start, nohup, setsid\)으로는 하지 않는다/);
+  assert.match(rigGuide(r3, 'ideas'), /분리 실행\(Start-Process, start, nohup, setsid\)으로는 하지 않는다/);
 });
 
 test('P247 주기 조정 턴: 받은 답 항목(for 길)도 재료(id·종류만), 세기 기준은 반려·바로잡음·되돌린 쓰기만', async () => {

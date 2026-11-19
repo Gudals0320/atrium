@@ -16,21 +16,12 @@ import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, �
 import { DeliveryQueue, bgOnlyOf, steerBlock } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
-import { rigFlowHandlers, seatNamed } from './rig-flow.mjs'; // P185: rig.seat·rig.cases
-import { rigSetupHandlers } from './rig-setup.mjs'; // P190: rig.templates·create·describe·get·save·spawnSeat
 import { rigAdminHandlers } from './rig-admin.mjs';
-import { humanMessage } from './rig-ledger.mjs'; // P217: 장부(사람 글)
-import { rigLoopHandlers, talkText } from './rig-loops.mjs'; // P221: rig.loops·pause·resume·name. P237: 회 밖 글 머리
-import { rigSectorHandlers } from './rig-sectors.mjs'; // P222: rig.artifacts
-import { rigMapHandlers } from './rig-map.mjs'; // P217: rig.events·rig.map // P188: rig.check·log·rollback·cleanup·protect·unprotect·protected
-import { RigDocs } from './rig-docs.mjs'; // P219: rig 2 문서
-import { RigProposals, rigProposalHandlers } from './rig-proposals.mjs'; // P224: rig 2 제안과 승인, 정본 지키기
-import { rig3Handlers } from './rig3-items.mjs'; // P242
-import { rig3BeatHandlers } from './rig3-beat.mjs'; // P244: 손 박자(rig3.beat, 사람만)
-import { rig3TuneHandlers } from './rig3-tune.mjs';
-import { rig3BuilderHandlers } from './rig3-builder.mjs'; // P247: 빌더에게 말하기(rig3.builder, 사람만) // P245: 정의서 보기(rig3.role)와 되돌리기(rig3.rollback, 사람만)
-import { Rig3Roles, ROLE_SPAWN, ROLE_TICK_MS } from './rig3-roles.mjs'; // P241: rig 3 역할 세션(띄우기, 쓰기 범위, 다시 띄우기, 재우기)
-import { RigAmp, SEAT_SPAWN, SEAT_RUN, permissionDenyBody, PERM_TICK_MS, MODE_DRIFT_TEXT } from './rig-amp.mjs'; // P189: 종류별 증폭(자리 세션의 설정 파일 deny·hook 시간, Codex 샌드박스, PreToolUse·Stop 답)
+import { rigItemHandlers } from './rig-items.mjs'; // P242
+import { rigBeatHandlers } from './rig-beat.mjs'; // P244: 손 박자(rig3.beat, 사람만)
+import { rigTuneHandlers } from './rig-tune.mjs';
+import { rigBuilderHandlers } from './rig-builder.mjs'; // P247: 빌더에게 말하기(rig3.builder, 사람만) // P245: 정의서 보기(rig3.role)와 되돌리기(rig3.rollback, 사람만)
+import { RigRoles, ROLE_SPAWN, ROLE_TICK_MS } from './rig-roles.mjs'; // P241: rig 역할 세션(띄우기, 쓰기 범위, 다시 띄우기, 재우기)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
 import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언트와 알림 받을 클라이언트
@@ -39,7 +30,7 @@ import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
 import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
-import { planAnswer, checkSteps, sameAsk, onceOnlyAsk, onceOnlyKeys, onceOnlyChoice } from './answer.mjs';
+import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
@@ -256,10 +247,7 @@ export class Backend {
     this.adopting = new Set();
 
     this.rig = new Rig(this); // P182
-    this.rigAmp = new RigAmp(this); // P189
-    this.rig3 = new Rig3Roles(this); // P241
-    this.rigDocs = new RigDocs(this); // P219: rig 2 문서 바뀜 보기
-    this.rigProposals = new RigProposals(this); // P224: 제안과 승인, 정본 지키기, 응답 필요 카드(rig.asks)
+    this.rig3 = new RigRoles(this); // P241
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
@@ -365,7 +353,6 @@ export class Backend {
       if (this.adapter.connected) { const pid = this.adapter.serverPid(); if (pid && pid !== this._hcPidSaved) { this._hcPidSaved = pid; this.store.setMeta('terminalServerPid', pid); } }
     }, 2000);
     this.store.setMeta('heartbeat', Date.now());
-    if (cfg.rigDocs !== false) this.rigDocs.start(); // P219
     this.quietTimer = setInterval(() => { for (const s of this.sessions.values()) this.broadcastSession(s, { onlyIfFlagsChanged: true }); }, 10000);
 
     // F4: 세션 폴더의 git(워크트리). hook이 없는 세션은 터미널이 아는 폴더를 주기적으로 본다
@@ -374,9 +361,6 @@ export class Backend {
     // G2: 일반 셸이 쉬는지, 무슨 명령을 돌리는지
     // P137: 하네스가 지금 쓰는 모델(/model, Codex 모델 바꾸기). 기록 파일이 늘어난 만큼만 읽는다
     this.modelTimer = setInterval(() => this.pollModels(), cfg.modelPollMs ?? 5000);
-    // P239(rig2-design 11.18의 3): 정의가 바뀌어 권한이 달라진 keep 자리를 쉴 때 다시 띄운다
-    this.rigPermTimer = setInterval(() => { if (this.rigAmp && this.rigAmp.permTick) this.rigAmp.permTick().catch((e) => this.log('rig perm tick error', e.stack)); }, cfg.rigPermTickMs ?? PERM_TICK_MS);
-    if (this.rigPermTimer.unref) this.rigPermTimer.unref();
     this.rig3Timer = setInterval(() => { if (this.rig3) this.rig3.tick().catch((e) => this.log('rig3 tick error', e.stack)); }, cfg.rig3TickMs ?? ROLE_TICK_MS); // P241
     if (this.rig3Timer.unref) this.rig3Timer.unref();
     this.shellTimer = setInterval(() => this.pollShells().catch((e) => this.log('shell poll error', e.stack)), SHELL_POLL_MS);
@@ -400,7 +384,6 @@ export class Backend {
 
   async stop(reason = 'stop') {
     this.log('backend stopping:', reason);
-    if (this.rigDocs) this.rigDocs.stop(); // P219
     clearInterval(this.heartbeat); clearInterval(this.quietTimer); clearInterval(this.gitTimer); clearInterval(this.shellTimer); clearInterval(this.modelTimer);
     if (this.tempLinks) this.tempLinks.stop();
     stopMigration(this);
@@ -412,7 +395,6 @@ export class Backend {
     if (this.recall) this.recall.stop();
     if (this.worktrees) this.worktrees.stop();
     if (this.sleeper) this.sleeper.stop();
-    clearInterval(this.rigPermTimer); // P239
     clearInterval(this.rig3Timer); // P241
     if (this.updater) this.updater.stop();
     this.relay.closeAll();
@@ -428,10 +410,8 @@ export class Backend {
     if (this.tailscale) this.tailscale.stop();
     // 2026-11-07: 열린 연결이 남아 있으면 http.close가 끝나지 않는다(하위 세션을 띄우며 기다리던 atrium child 요청이 업데이트를 1분 넘게 붙잡았다).
     // 기다리는 /branch 요청에 먼저 답하고, 쉬는 연결은 바로, 나머지는 1초 뒤 끊는다
-    if (this.branch && this.branch.tools) this.branch.tools.stopAll(); // P183: 도는 도구 실행을 끝낸다(장부는 lost)
-    if (this.rig3 && this.rig3.beat) this.rig3.beat.stopAll(); // P244: rig 3 도구 실행
+    if (this.rig3 && this.rig3.beat) this.rig3.beat.stopAll(); // P244: rig 도구 실행
     if (this.rig3 && this.rig3.guard && this.rig3.guard.stop) this.rig3.guard.stop(); // P246: 뒤 일 구간 주기
-    if (this.branch && this.branch.flow && this.branch.flow.stopCycles) this.branch.flow.stopCycles(); // P188: 느린 고리 타이머
     const aborted = this.branch && this.branch.abortInflight ? this.branch.abortInflight() : 0;
     if (aborted) this.log(`answered ${aborted} waiting /branch request(s) before stopping`);
     await closeHttp(this.http);
@@ -816,7 +796,7 @@ export class Backend {
     if (sum.state !== s.lastState) {
       const from = s.lastState;
       s.lastState = sum.state;
-      if (s.rigRole && this.rig3 && this.rig3.guard) this.rig3.guard.onState(s, from, sum.state); // P243: rig 3 역할의 턴 경계(모든 하네스) → 남의 쓰기 찾아 되돌리기
+      if (s.rigRole && this.rig3 && this.rig3.guard) this.rig3.guard.onState(s, from, sum.state); // P243: rig 역할의 턴 경계(모든 하네스) → 남의 쓰기 찾아 되돌리기
       if (from !== null || cause) {
         const turnless = from === 'working' && sum.work && sum.work.turnless && sum.work.endedAt === s.rt.term.at ? sum.work : null; // P173: 턴 없이 끝난 일(압축)
         this.store.addEvent(s.sessionId, 'state', { from, to: sum.state, term: sum.termStatus, cause: cause || null, ask: sum.ask, exit: sum.exit, error: sum.state === 'error' ? sum.error : undefined, ...(turnless ? { turnless: true, compact: turnless.compact || null } : {}) });
@@ -847,40 +827,36 @@ export class Backend {
     req.on('data', (d) => { size += d.length; if (size > 8 * 1024 * 1024) tooBig = true; else chunks.push(d); });
     req.on('end', () => {
       const raw = tooBig ? '' : Buffer.concat(chunks).toString('utf8');
-      // P189: rig 자리 세션의 PreToolUse(pre-tool 훅, 쓰기 범위)·Stop(stopVerify)은 판단을 끝낸 뒤 답한다(harness-arch 15절 6단계).
-      //   그 밖의 hook은 지금처럼 먼저 200을 돌려준다. Claude Code는 hook 응답을 기다린다(E2 2.3)
-      const wait = !tooBig && this.rigAmp ? this.ampTarget(req.headers, raw) : null;
+      // P241: rig 역할·빌더 세션의 PreToolUse(쓰기 범위)는 판단을 끝낸 뒤 답한다. 그 밖의 hook은 먼저 200을 돌려준다(Claude Code는 hook 응답을 기다린다, E2 2.3)
+      const wait = !tooBig && this.rig3 ? this.ampTarget(req.headers, raw) : null;
       if (!wait) { res.writeHead(200); res.end(); }
       if (tooBig) return this.log('hook body too large', size);
       setImmediate(() => {
-        try { this.processHook(req.headers, raw, wait); } catch (e) { this.log('hook error', e.stack); } // P235: 판이 정한 답(PermissionRequest 거절)을 같은 걸음에 장부에
+        try { this.processHook(req.headers, raw); } catch (e) { this.log('hook error', e.stack); }
       });
       if (wait) this.answerHook(wait, res);
     });
   }
-  // P189: 판이 기다려 답할 hook인가 → { s, ev, body } | null(인증이 맞는 rig 자리 세션의 PreToolUse·Stop만)
-  //   P235(rig2-design 11.17의 1): 판이 연 회의 scoped 자리 PermissionRequest도(판이 deny로 답한다) → { s, ev, body, verdict }
+  // 판이 기다려 답할 hook인가 → { s, ev, body } | null(인증이 맞는 rig 역할·빌더 세션의 PreToolUse만)
   ampTarget(headers, raw) {
     try {
       const body = JSON.parse(raw); const ev = body.hook_event_name;
-      if (ev !== 'PreToolUse' && ev !== 'Stop' && ev !== 'PermissionRequest') return null;
+      if (ev !== 'PreToolUse') return null;
       const sid = headers['x-mt-session'] || body.session_id;
       const s = this.sessions.get(sid);
       if (!s || headers.authorization !== `Bearer ${s.hookToken}`) return null;
-      if (ev === 'PermissionRequest') { const verdict = this.rigAmp.permissionVerdict ? this.rigAmp.permissionVerdict(s) : null; return verdict && verdict.deny ? { s, ev, body, verdict } : null; }
-      return this.rigAmp.wants(s, ev) || (this.rig3 && this.rig3.wants(s, ev)) ? { s, ev, body } : null; // P241: rig 3 역할 세션의 PreToolUse
+      return this.rig3.wants(s, ev) ? { s, ev, body } : null;
     } catch { return null; }
   }
-  // 판단 → 응답 본문(JSON) 또는 빈 200(통과). 판의 오류는 통과(훅의 onFail block은 rig가 거절로 돌려준다)
+  // 판단 → 응답 본문(JSON) 또는 빈 200(통과). 판의 오류는 통과
   async answerHook({ s, ev, body }, res) {
     let out = null;
-    if (ev === 'PermissionRequest') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(permissionDenyBody())); } // P235: ampTarget이 이미 거절로 정했다
-    try { out = s.rigRole && this.rig3 ? await this.rig3.answer(s, ev, body) : await this.rigAmp.answer(s, ev, body); } catch (e) { this.log('rig amp error', e.stack); out = null; } // P241: 역할 세션은 rig 3이 답한다
+    try { out = await this.rig3.answer(s, ev, body); } catch (e) { this.log('rig hook answer error', e.stack); out = null; }
     if (res.writableEnded || res.destroyed) return;
     if (out) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(out)); }
     else { res.writeHead(200); res.end(); }
   }
-  processHook(headers, raw, pre = null) { // P235: pre = ampTarget(판이 답한 hook. PermissionRequest면 verdict)
+  processHook(headers, raw) {
     let body; try { body = JSON.parse(raw); } catch { return this.log('hook bad json'); }
     const sid = headers['x-mt-session'] || body.session_id;
     const s = this.sessions.get(sid) || [...this.sessions.values()].find((x) => x.rt.claudeSessionId === body.session_id);
@@ -890,32 +866,21 @@ export class Backend {
     s.lastHookAuthOk = authOk;
     if (!authOk) { this.store.addEvent(s.sessionId, 'hook_rejected', { ev }); this.log(`hook rejected ${s.name} ${ev}`); return; }
     s.hookCount = (s.hookCount || 0) + 1;
-    if (body.permission_mode && this.rigAmp && this.rigAmp.noteMode) try { this.rigAmp.noteMode(s, body.permission_mode); } catch (e) { this.log('rig mode note error', e.message); } // P239(11.18의 4): scoped·ask 자리의 권한 모드 어긋남
-    // P234(rig2-design 11.16의 2): 판이 연 회의 scoped 자리는 PermissionRequest가 질문이 아니라 거절이다. 응답 필요에 두지 않고 장부에 적는다
-    //   P235(11.17의 1·2): 판이 그 회(자리가 지금 하는 회)를 보고 deny로 답한다(ampTarget·answerHook). 같은 판정을 여기서 장부에 적는다
-    const verdict = ev !== 'PermissionRequest' || !this.rigAmp || !this.rigAmp.permissionVerdict ? null : pre && pre.verdict ? pre.verdict : (() => { try { return this.rigAmp.permissionVerdict(s); } catch { return null; } })();
-    const refused = !!(verdict && verdict.deny);
-    if (refused) s.rigRefusedAt = Date.now(); // P235: 거절 직후 화면의 잠깐 막힘은 응답 필요가 아니다(unit-stops REFUSE_FLASH_MS)
-    if (!refused) applyHook(s.rt, body);
+    applyHook(s.rt, body);
     if (ev === 'Stop') s.rt.answerSource = 'hook';
     // F4: Claude Code는 워크트리로 들어가면 hook의 cwd가 바뀐다
     if (body.cwd && body.cwd !== s.rt.cwd) { s.rt.cwd = body.cwd; this.probeGit(s, body.cwd); }
     if (ev === 'UserPromptSubmit') { s.draft = false; this.onLinkTargetPrompt(s, body.prompt); }
-    if (ev === 'PostToolUse' && this.rigDocs) this.rigDocs.noteToolHook(s, body);
-    if ((ev === 'PermissionDenied' || refused) && this.rigAmp) try { this.rigAmp.onPermissionDenied(s, body, refused ? { via: 'board', verdict } : { via: ev }); } catch (e) { this.log('rig permission denied note error', e.message); } // P234(11.16의 2): 묻지 않고 거절 → 장부 gate // P219: 문서를 누가 바꿨나(파일 쓰기 도구의 대상)
-    if ((ev === 'UserPromptSubmit' || ev === 'Stop') && s.rigRole && this.rig3) this.rig3.syncSettings(s); // P241: 역할 세션은 rig 3이 맞춘다(rig 2의 맞추기는 역할의 거절 규칙을 지운다)
-    else if ((ev === 'UserPromptSubmit' || ev === 'Stop') && this.rigAmp) this.rigAmp.syncSettings(s); // P189: 자리를 정했거나 정의가 바뀌었으면 설정 파일의 증폭을 맞춘다
+    if ((ev === 'UserPromptSubmit' || ev === 'Stop') && s.rigRole && this.rig3) this.rig3.syncSettings(s); // P241: 역할 세션의 설정 파일을 지금 정의에 맞춘다
     const info = { ev, tool: body.tool_name || null, authOk, bytes: raw.length, sessionIdMatches: body.session_id === s.sessionId, permissionMode: body.permission_mode || null };
     if (ev === 'Stop') info.lastAnswer = clip(body.last_assistant_message, 300);
     if (ev === 'UserPromptSubmit') info.prompt = clip(s.rt.lastPrompt, 200);
     if (ev === 'SessionEnd') info.reason = body.reason;
     if (ev === 'StopFailure') info.error = s.rt.lastError;
-    if ((ev === 'PermissionRequest' && !refused) || (ev === 'PreToolUse' && s.rt.pendingAsk && s.rt.pendingAsk.toolUseId === body.tool_use_id)) info.ask = this.askView(s, { ...s.rt.pendingAsk, input: undefined });
-    if (refused) info.refused = true; // P234: 묻지 않고 거절됨
+    if (ev === 'PermissionRequest' || (ev === 'PreToolUse' && s.rt.pendingAsk && s.rt.pendingAsk.toolUseId === body.tool_use_id)) info.ask = this.askView(s, { ...s.rt.pendingAsk, input: undefined });
     this.store.addEvent(s.sessionId, 'hook', info);
     this.api.broadcast('session.hook', { sessionId: s.sessionId, name: s.name, ...info });
-    if (ev === 'UserPromptSubmit') { const d = this.queue.onUserPromptSubmit(s.sessionId, body.prompt); if (s.rigSeat && this.rigAmp && this.rigAmp.notePrompt) try { this.rigAmp.notePrompt(s, body.prompt, d); } catch (e) { this.log('rig prompt note error', e.message); }
-      if (s.rigSeat && this.branch && this.branch.flow && this.branch.flow.loops) try { this.branch.flow.loops.onTyped(s, body.prompt, d); } catch (e) { this.log('rig typed request error', e.stack); } } // P235: 회 밖 글이면 그 시도 동안 묻는다. P237: 열린 시도 없는 입구 자리에 터미널로 친 요청은 회를 연다(notePrompt 뒤)
+    if (ev === 'UserPromptSubmit') this.queue.onUserPromptSubmit(s.sessionId, body.prompt);
     if (ev === 'PermissionRequest' && s.rt.pendingAsk && (s.rt.pendingAsk.kind === 'permission' || s.rt.pendingAsk.kind === 'plan')) this.readChoicesLater(s);
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && !s.rt.pendingAsk && s.rt.term.status === 'blocked') this.recheckBlockedLater(s); // P232(H18)
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && s.rt.pendingAsk && s.rt.pendingAsk.kind === 'permission' && !s.rt.pendingAsk.choices) this.readChoicesLater(s); // P232: 줄의 다음 질문이 올라왔다
@@ -936,7 +901,7 @@ export class Backend {
       try {
         const text = await this.adapter.readScreen(s.paneId, { source: 'detection' });
         const choices = parseChoices(text);
-        if (choices.length) { ask.choices = choices; ask.question = parsePromptLine(text); this.noteNoYes(s, ask); this.broadcastSession(s, { cause: 'screen:choices' }); return; }
+        if (choices.length) { ask.choices = choices; ask.question = parsePromptLine(text); this.broadcastSession(s, { cause: 'screen:choices' }); return; }
       } catch {}
     }
   }
@@ -1104,11 +1069,9 @@ export class Backend {
   }
 
   // 판이 다시 띄울 때의 실행 값. P4 전에 띄운 세션(이어 가기 명령에 --plugin-dir가 없음)은 그대로 둔다
-  //   P239: launch(기본 true)면 곧 띄운다는 뜻이라 자리 권한의 서명을 남긴다(rigAmp.noteLaunched). 이어 가기 명령만 다시 만들 때는 false
-  launchOf(s, { launch = true } = {}) {
-    if (s.rigRole && this.rig3) this.rig3.syncSettings(s); // P241
-    else if (this.rigAmp) this.rigAmp.syncSettings(s); // P189: 다시 띄우기 전에 설정 파일의 증폭을 지금 자리·정의에 맞춘다
-    if (launch && this.rigAmp && this.rigAmp.noteLaunched) this.rigAmp.noteLaunched(s);
+  //   launch(기본 true)는 곧 띄운다는 뜻이다(이어 가기 명령만 다시 만들 때는 false)
+  launchOf(s, { launch = true } = {}) { // eslint-disable-line no-unused-vars
+    if (s.rigRole && this.rig3) this.rig3.syncSettings(s); // P241: 다시 띄우기 전에 역할 세션의 설정 파일을 지금 정의에 맞춘다
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
     return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.plugin : {}) };
   }
@@ -1148,7 +1111,7 @@ export class Backend {
     // P227: 같은 대화를 이어 갈 때(Codex는 대화 ID를 알 때) 모델·노력 수준은 그 대화가 마지막으로 쓰던 값. 처음 띄울 때는 띄운 값(plan.model)
     const hsid = resume ? this.harnessSessionIdOf(s) : null;
     const rm = resume && (s.kind === 'pi' || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: s.rigRole && this.rig3 ? this.rig3.launcherArgs(s, plan.args || []) : this.rigAmp ? this.rigAmp.launcherArgs(s, plan.args || []) : plan.args || [], /* P241: rig 3 역할(Codex 무인·섹터) */ instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: s.rigRole && this.rig3 ? this.rig3.launcherArgs(s, plan.args || []) : plan.args || [], /* P241: rig 역할(Codex 무인·섹터) */ instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1159,7 +1122,6 @@ export class Backend {
     const st = await this.adapter.startAgent({ name, paneId: s.paneId, args: hl.args, kind: s.kind, command: hl.command, env: hl.env, pathFirst: hl.pathFirst });
     s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now(), firstLaunchedAt: (s.harnessPlan || {}).firstLaunchedAt || Date.now() }; // P133: firstLaunchedAt(처음 띄운 때, 대화 ID 배우기)
     this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
-    if (this.rigAmp && this.rigAmp.noteLaunched) this.rigAmp.noteLaunched(s); // P239: 띄운 권한의 서명(Codex 인자)
     if (why !== 'start') { s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.term.launchPending = st.agent ? st.agent.launchPending : true; }
     this.store.addEvent(s.sessionId, why === 'start' ? 'harness_started' : 'recovered_by_board', { plan: why, resume, resumed: hl.resumed, harnessSessionId: hl.harnessSessionId, argv: [...hl.command, ...hl.args], env: Object.keys(hl.env) });
     return { ...st, resumed: hl.resumed };
@@ -1197,7 +1159,6 @@ export class Backend {
     const p = parsePermissionDialog(text);
     if (!p) return false;
     s.rt.pendingAsk = screenPermissionAsk(p);
-    this.noteNoYes(s, s.rt.pendingAsk); // P234
     this.store.addEvent(s.sessionId, 'screen_permission', { tool: s.rt.pendingAsk.tool, summary: clip(s.rt.pendingAsk.summary, 200), step: p.step || null, choices: p.choices.map((c) => `${c.n}. ${c.label}`) });
     this.broadcastSession(s, { cause: 'screen:permission' });
     return true;
@@ -1519,10 +1480,6 @@ export class Backend {
     this.requireTerminal();
     const cwd = path.resolve(String(p.cwd || ''));
     if (!p.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.cwd}`), 'noFolder', { path: p.cwd });
-    // P193: rig가 켜진 워크스페이스에서 사람이 자리 이름과 같은 이름으로 띄우면 <이름>-<n>으로 바꾼다(자리 세션의 atrium prompt <자리>는 자리로 가므로
-    //   같은 이름의 세션은 이름으로 닿지 않는다). 판이 그 자리를 위해 띄우는 keep 자리 세션(SEAT_SPAWN이 그 이름)과 하위 세션(branch.mjs가 거절)은 빼고.
-    //   이름 검사 앞에서 기다려 검사와 예약 사이에 await가 끼지 않게 한다
-    const seatClash = p.name && !p.branch && this.rig && p[SEAT_SPAWN] !== p.name ? seatNamed(this.rig, (await workspaceOf(cwd)).key, p.name) : null;
     const pending = this.spawningNames || (this.spawningNames = new Set()); // 만드는 중인 세션 이름
     const taken = takenNames(this.sessions.values(), pending); // P66: 판의 이름(label)도 피한다. 대소문자 무시
     // P33: 띄울 값은 호출자(launchers.mjs)가 정한다. 함께 준 값(모델 등)이 호출자 값을 덮는다. 호출자 없이 부르면 준 값만 쓴다(atrium child, CLI --kind)
@@ -1533,7 +1490,7 @@ export class Backend {
       const ap = approvalArgsOf(plan.kind, String(p.permissionMode), (plan.args || []).map(String));
       if (ap.args.length) plan.args = [...(plan.args || []), ...ap.args];
     }
-    // P208: 명시한 노력 수준(atrium child --effort, rig 자리의 effort)은 Claude Code 밖 하네스의 인자로 옮기고 호출자 인자의 같은 값을 이긴다(Codex -c model_reasoning_effort).
+    // P208: 명시한 노력 수준(atrium child --effort)은 Claude Code 밖 하네스의 인자로 옮기고 호출자 인자의 같은 값을 이긴다(Codex -c model_reasoning_effort).
     //   받지 않는 종류는 응답의 effort.ignored로 알린다. 잘못된 값은 띄우기 전에 던진다
     const effortPlan = p.effort && plan.kind !== 'claude' && plan.kind !== SHELL ? effortArgsOf(plan.kind, String(p.effort), plan.args || []) : null;
     if (effortPlan && effortPlan.applied) plan.args = effortPlan.args;
@@ -1541,8 +1498,6 @@ export class Backend {
     const kind = plan.kind;
     const shell = kind === SHELL;
     let name = p.name;
-    let renamedFrom = null;
-    if (seatClash) { renamedFrom = name; let i = 1; while (taken.has(`${name}-${i}`)) i++; name = `${name}-${i}`; this.log(`spawn: ${renamedFrom} is a rig seat name, using ${name}`); }
     const prefix = shell ? 'sh' : 's';
     if (!name) { let i = 1; while (taken.has(`${prefix}${i}`)) i++; name = `${prefix}${i}`; }
     if (!NAME_RE.test(name) || name === 'all') throw apiError('bad_request', `이름에는 영문, 숫자, -, _만 사용할 수 있습니다 (all 제외): ${name}`);
@@ -1581,12 +1536,7 @@ export class Backend {
       const firstPrompt = p.prompt ? await this.humanFirstPrompt(p, { ws, name, kind, model, cwd }) : null;
 
       const sessionId = crypto.randomUUID();
-      // P189: 판이 rig 자리를 위해 띄우는 세션(rig-flow spawnSeat). 띄울 때부터 자리를 알아야 설정 파일·Codex 인자에 증폭이 들어간다
-      const seatSpawn = p[SEAT_SPAWN] && this.rig ? (() => { const r = this.rig.active(ws.key); return r && r.def.seats && r.def.seats[p[SEAT_SPAWN]] ? p[SEAT_SPAWN] : null; })() : null;
-      // P223: 자리 권한(scoped → manual(P226: 기본 모드 + allow 규칙), unattended(사람이 승인한 자리만) → bypassPermissions). ask는 띄우는 값 그대로
-      const seatPerm = seatSpawn && this.rigAmp && this.rigAmp.seatPermission ? this.rigAmp.seatPermission(ws.key, seatSpawn) : null;
-      if (claude && seatPerm && seatPerm.claudeMode) permissionMode = seatPerm.claudeMode;
-      // P241: 판이 rig 3 역할을 위해 띄우는 세션(rig3-roles spawnRole). 무인(bypassPermissions)과 쓰기 범위(설정 파일의 PreToolUse·deny)를 띄울 때부터
+      // P241: 판이 rig 역할을 위해 띄우는 세션(rig3-roles spawnRole). 무인(bypassPermissions)과 쓰기 범위(설정 파일의 PreToolUse·deny)를 띄울 때부터
       const roleSpawn = p[ROLE_SPAWN] && this.rig3 ? this.rig3.launchOf(ws.key, p[ROLE_SPAWN], { kind, cwd }) : null;
       if (claude && roleSpawn && roleSpawn.permissionMode) permissionMode = roleSpawn.permissionMode;
       let hookToken = '', settingsPath = '', trust = { needsTrust: null, reason: `${kind}: 예상하지 않음` }, args = [], resumeArgv = null;
@@ -1599,7 +1549,6 @@ export class Backend {
         if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수와 연결. 판의 값이 이긴다
         if (Object.keys(cc.settings).length) extra.settings = cc.settings;
         if (roleSpawn && roleSpawn.amp) extra.amp = roleSpawn.amp; // P241
-        if (seatSpawn) extra.amp = this.rigAmp.claudeAmp({ rigSeat: seatSpawn, workspaceKey: ws.key, kind: 'claude', cwd, rigRun: p[SEAT_RUN] || null }); // P189. P234: 그 회의 고리(fresh 자리의 계기)
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
         const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.plugin };
@@ -1616,9 +1565,7 @@ export class Backend {
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
         s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan };
         this.store.insertSession({ ...s, runtime: rt });
-        if (seatSpawn) { s.rigSeat = seatSpawn; this.store.setSessionSeat(sessionId, seatSpawn); if (p[SEAT_RUN]) s.rigRun = { loop: p[SEAT_RUN].loop || null }; if (this.rigAmp.noteLaunched) this.rigAmp.noteLaunched(s); } // P239: 띄운 권한의 서명 // P234: rigRun // P189: rig-flow가 띄운 뒤 다시 적는다(같은 값)
         if (roleSpawn) { s.rigRole = roleSpawn.role; this.store.setSessionRole(sessionId, roleSpawn.role); } // P241: 하네스 인자(launcherArgs)가 띄우기 전에 역할을 안다
-        if (seatPerm && seatPerm.asked !== 'ask') try { this.rigAmp.notePermission(s); } catch (e) { this.log('rig permission note error', e.message); } // P223: 장부에 권한 결정 한 줄
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
       });
@@ -1636,7 +1583,7 @@ export class Backend {
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
       this.probeGit(s, cwd);
-      const out = { sessionId, name, ...(renamedFrom ? { renamedFrom, renamedWhy: 'rig_seat' } : {}), ...(effortPlan ? { effort: { value: effortPlan.effort, applied: effortPlan.applied, ignored: !!effortPlan.ignored } } : {}), kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
+      const out = { sessionId, name, ...(effortPlan ? { effort: { value: effortPlan.effort, applied: effortPlan.applied, ignored: !!effortPlan.ignored } } : {}), kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
       if (command) {
         // P25 직접 명령: 셸 프롬프트가 뜨면 그 글을 그대로 치고 Enter. 에이전트가 나타나면 promoteShell이 같은 노드의 종류를 바꾼다(hook 없음)
         const ready = await this.adapter.waitShellReady(hw.paneId);
@@ -1655,19 +1602,14 @@ export class Backend {
         if (e.code !== 'agent_not_ready') throw e; this.store.addEvent(sessionId, 'agent_not_ready', { kind });
       } // 시작하자마자 대화상자(신뢰 등)에서 막혔다. 이름은 남는다
       rt.term.launchPending = st.agent ? st.agent.launchPending : true;
-      if (firstPrompt) this.queue.enqueue(sessionId, firstPrompt, { origin: { kind: 'human' } }); // P182: 출처(사람이 띄우며 준 첫 요청). P183: 훅이 고친 글
+      if (firstPrompt) this.queue.enqueue(sessionId, firstPrompt, { origin: { kind: 'human' } }); // P182: 출처(사람이 띄우며 준 첫 요청)
       this.log(`spawned ${name} ${kind} ${sessionId} pane=${hw.paneId} ws=${ws.key} shellReady=${shellReady} trust=${JSON.stringify(trust)}`);
       return { ...out, argv: st.argv };
     } finally { pending.delete(name); }
   }
-  // P183: 사람이 띄우며 준 첫 요청 → 넣을 글(훅이 고친 것) | null. rig가 거절하면 던진다(세션을 띄우지 않는다)
-  async humanFirstPrompt(p, { ws, name, kind, model, cwd }) {
-    if (!p.prompt) return null;
-    const text = toLF(String(p.prompt));
-    if (p.branch || !this.rig) return text;
-    const h = await this.rig.deliver({ target: { workspaceKey: ws.key, name, kind, model, cwd }, workspaceKey: ws.key, from: { kind: 'human' }, text });
-    if (h.action === 'reject') throw keyed(apiError('rig_rejected', `rig의 deliver 훅이 첫 요청을 거절해 세션을 띄우지 않았습니다: ${h.reason}`), 'rig.spawnRejected', { reason: h.reason });
-    return h.text;
+  // 사람이 띄우며 준 첫 요청 → 넣을 글 | null
+  async humanFirstPrompt(p) {
+    return p.prompt ? toLF(String(p.prompt)) : null;
   }
   // 판이 패널을 만드는 동안(작업 공간 만들기 → 세션 등록) 그 패널의 pane_created를 판에 올리지 않게 막는다(G2)
   async withNewPane(create, register) {
@@ -1709,51 +1651,10 @@ export class Backend {
     }
     const qopts = (s) => (p.steer ? (steerBlock(s, this.hooked(s)) ? {} : { typeNow: true, aside: true }) : { typeNow: p.whileWorking === 'type' }); // P248
     const steerOut = (s) => { if (!p.steer) return {}; const why = steerBlock(s, this.hooked(s)); return { steer: why ? { ok: false, why } : { ok: true } }; };
-    // P182: 대상마다 그 워크스페이스 rig의 deliver 훅(큐에 넣기 전). 거절이면 넣지 않고 실패한 전달로 남긴다(창은 전달 실패와 같은 길로 까닭을 보인다)
     const deliveries = await Promise.all([...picked.values()].map(async (s) => {
-      let body = toLF(text);
-      const h = this.rig ? await this.rig.deliver({ target: s, from: { kind: 'human' }, text: body }) : { action: 'pass', text: body };
-      if (h.action === 'reject') {
-        const d = this.queue.refuse(s.sessionId, body, `rig: ${h.reason}`, { origin: { kind: 'human' } });
-        return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, rejected: true };
-      }
-      body = h.text;
-      // P237(rig2-design 11.18의 둘째): 보내기 칸의 "회 없이"(talk). 켜진 rig의 자리면 회를 열지 않고 글만 넣는다. 그 자리에 열린 시도가 있으면 섞이므로 넣지 않는다(실패한 전달)
-      const loops = this.branch && this.branch.flow && this.branch.flow.loops ? this.branch.flow.loops : null;
-      let tk = null;
-      if (p.talk && loops) {
-        try { tk = loops.talkCheck(s); } catch (e) {
-          if (e.code !== 'rig_run_open') throw e;
-          const d = this.queue.refuse(s.sessionId, body, 'rig_run_open', { origin: { kind: 'human' } }); // P240: 까닭은 코드(창이 사전 글로 보인다, labels.js)
-          return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, rejected: true, talk: true };
-        }
-      }
-      if (tk) {
-        const d = this.queue.enqueue(s.sessionId, talkText(body), { ...qopts(s), origin: { kind: 'human' } });
-        d.talk = true; // 받는 자리의 권한 판정(rig-amp notePrompt)이 회의 글로 보지 않는다
-        this.touch(s);
-        humanMessage(this, s, d.deliveryId, body);
-        loops.noteTalk(s, tk, { kind: 'human' }, d.deliveryId);
-        return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, talk: { seat: tk.seat, loop: tk.loop }, ...steerOut(s) };
-      }
-      // P221(rig 2 R2): request 고리의 입구 자리 세션에 사람이 보낸 글은 새 회를 연다(그 고리의 회를 쥐었으면 이어지는 지시, 멈췄으면 요청이 줄에 선다)
-      // P237(rig2-design 11.18): 휴대폰 입력 줄(whileWorking type)도 보내기 칸과 같다. 열린 시도 중이면 보통 글(섞임, 11.17 묻기)
-      const rq = loops ? loops.onRequest(s, { kind: 'human' }, body) : null;
-      if (rq && rq.held) {
-        // P223: 멈춘 고리의 요청은 대기열에 붙잡혔다(까닭 loop_paused, 실패로 남기지 않는다). 잇기에 회가 열리며 들어간다
-        const d = rq.d || this.queue.refuse(s.sessionId, body, `rig: 고리 ${rq.loop}가 멈춰 있어 요청을 줄에 세웠다. 잇기(atrium rig resume ${rq.loop})에 회가 열린다.`, { origin: { kind: 'human' } });
-        humanMessage(this, s, d.deliveryId, body);
-        return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, reason: d.reason, held: true, loop: rq.loop };
-      }
-      if (rq && rq.made) {
-        this.touch(s);
-        const d0 = rq.made.d || null;
-        humanMessage(this, s, d0 ? d0.deliveryId : null, body);
-        return { deliveryId: d0 ? d0.deliveryId : null, sessionId: s.sessionId, name: shownName(s), status: d0 ? d0.status : 'queued', run: { caseId: rq.caseId, loop: rq.loop, name: rq.name, unitId: rq.made.unit.id, held: !!rq.made.held } };
-      }
+      const body = toLF(text);
       const d = this.queue.enqueue(s.sessionId, body, { ...qopts(s), origin: { kind: 'human' } });
       this.touch(s);
-      humanMessage(this, s, d.deliveryId, body); // P217: 사람이 rig 자리 세션에 보낸 글(장부)
       return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, ...steerOut(s) };
     }));
     // I2(P6b): 명령 바에서 보낸 글은 Thread에 남긴다. source: bar(기본), output(출력 보기에서 답장)
@@ -1827,19 +1728,7 @@ export class Backend {
     } finally { this.killing.delete(s.sessionId); endBoardExit(this, s); }
   }
 
-  // P233(rig2-design 11.15의 1): rig 자리(권한 scoped·ask, 모르면 그쪽으로)의 권한 질문은 "이번 한 번 예"와 "아니오"만. unattended 자리와 rig 밖 세션은 그대로
-  onceOnly(s) {
-    if (!s || !s.rigSeat) return false;
-    const p = this.rigAmp && this.rigAmp.seatPermission ? this.rigAmp.seatPermission(s.workspaceKey, s.rigSeat) : null;
-    return !p || p.permission !== 'unattended';
-  }
-  // P234(rig2-design 11.16의 3): rig 자리(onceOnly) 권한 질문의 선택지에 받을 그냥 "Yes"가 없으면 판 로그와 장부(gate blocked). 판정은 그대로(닫힌 쪽)
-  noteNoYes(s, ask) {
-    if (!ask || ask.kind !== 'permission' || !Array.isArray(ask.choices) || !ask.choices.length || !this.onceOnly(s)) return false;
-    if (ask.choices.some((c) => onceOnlyChoice(c.label) === 'yes')) return false;
-    try { return this.rigAmp ? this.rigAmp.noteNoYes(s, ask) : false; } catch (e) { this.log('rig no-yes note error', e.message); return false; }
-  }
-  askView(s, ask) { return ask && ask.kind === 'permission' && this.onceOnly(s) ? onceOnlyAsk(ask) : ask; }
+  askView(s, ask) { return ask; }
 
   // A1 답하기(P2): 승인 카드의 답을 agent.send_keys(글은 pane.send_text)로 넣는다.
   // 보내기 직전 확인: 터미널 상태가 blocked인지, 카드의 요청(tool_use_id)이 아직 기다리는 요청인지(PostToolUse가 오면 pendingAsk가 풀린다).
@@ -1856,7 +1745,7 @@ export class Backend {
     const ask = s.rt.pendingAsk;
     if (!ask) return { sent: false, reason: 'no_pending_ask' };
     if (!sameAsk(ask, card)) return { sent: false, reason: 'stale' };
-    const plan = planAnswer(ask, p, { onceOnly: ask.kind === 'permission' && this.onceOnly(s) }); // P233: rig 자리는 "Yes"와 "No"만
+    const plan = planAnswer(ask, p);
     checkSteps(plan.steps);
     if (s.answering) throw keyed(apiError('busy', "이 세션에 이미 응답을 전송하고 있습니다."), 'answerBusy');
     s.answering = true;
@@ -1884,7 +1773,6 @@ export class Backend {
   async sendKeysTo(p, c) {
     const s = this.resolve(p.session ?? p.target);
     const keys = checkKeys(p.keys);
-    if (s.rt && s.rt.pendingAsk && s.rt.pendingAsk.kind === 'permission' && this.onceOnly(s)) onceOnlyKeys(s.rt.pendingAsk, keys); // P233: rig 자리의 권한 질문에 넓히는 선택지 번호·화살표를 보내지 않는다
     this.requireTerminal();
     if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name} 세션은 절전 중이라 터미널이 닫혀 있습니다. 먼저 작업을 재개하세요.`), 'sleepingNoPane', { name: s.name });
     await this.keyChain(s.sessionId, () => this.adapter.paneKeys(s.paneId, keys));
@@ -1959,12 +1847,7 @@ export class Backend {
     const mine = all.filter((x) => x.state === 'waiting' || x.state === 'trust_wait').sort((a, b) => (a.waitingSince || (a.ask && a.ask.since) || a.createdAt) - (b.waitingSince || (b.ask && b.ask.since) || b.createdAt));
     const review = all.filter((x) => x.unseen).sort((a, b) => (a.turn.endedAt || 0) - (b.turn.endedAt || 0));
     const errors = all.filter((x) => x.state === 'error' || (x.state === 'exited' && x.exit && x.exit.kind !== 'normal' && x.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다
-    // P225: rig의 사람 차례(세션이 아닌 것): 무인 자리 승인(rig2-design 11.8의 1)
-    let rig = [];
-    try { rig = this.rig && this.rig.permitNeeds ? this.rig.permitNeeds().map((x) => ({ kind: 'seat_permit', ...x, text: `무인 자리 승인: ${x.seat}` })) : []; } catch {}
-    // P239(11.18의 4): 권한 모드가 바뀐 rig 자리
-    for (const s of this.sessions.values()) { const d = s.rt && s.rt.rigModeDrift; if (d && s.rigSeat && !s.closedAt && !s.rt.sleep) rig.push({ kind: 'mode_drift', workspace: s.workspaceKey, seat: s.rigSeat, session: s.name, mode: d.mode, text: MODE_DRIFT_TEXT(s.rigSeat, d.mode, d.back) }); }
-    return { needsYou: mine, review, problems: errors, rig };
+    return { needsYou: mine, review, problems: errors };
   }
 
   // ---------- 브리핑, 복귀 요약(E2·A3, P3). 한 줄 메모는 P22에서 뺐다 ----------
@@ -2283,18 +2166,12 @@ export class Backend {
       'session.get': (p) => this.get(p),
       'session.send': (p) => this.send(p),
       // P182: rig 켜기는 사람만(판 API 토큰으로 붙은 이 PC의 창·명령). 기기(휴대폰) 연결은 상태만 본다. 에이전트의 세션 토큰은 이 API에 붙지 못한다
-      ...rigHandlers(this), // rig.status·rig.enable·rig.disable
-      ...rigFlowHandlers(this), // P185: rig.seat(사람만, 이 PC의 창)·rig.cases
-      ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만)
-      ...rigLoopHandlers(this), // P221: 고리 목록, 멈추기·잇기, 회 이름 고치기
-      ...rigSectorHandlers(this), // P222: 산출물 등록부
-      ...rigProposalHandlers(this), // P224: 제안과 승인(rig.asks, rig.decide, rig.proposals)
-      ...rigMapHandlers(this), // P217: 장부 읽기(rig.events)와 구조 지도 데이터(rig.map)
-      ...rigSetupHandlers(this), // P190: 판 안에서 rig 만들기·고치기(rig.get·rig.templates는 보기라 원격도)
-      ...rig3Handlers(this), // P242: rig 3 입력 창구(rig3.intake, 사람만)
-      ...rig3BeatHandlers(this), // P244: rig 3 손 박자(rig3.beat, 사람만)
-      ...rig3TuneHandlers(this),
-      ...rig3BuilderHandlers(this), // P247 // P245: rig 3 정의서·조정 기록(rig3.role)과 되돌리기(rig3.rollback, 사람만)
+      ...rigHandlers(this), // rig.status·rig.get·rig.enable·rig.disable
+      ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만): rig.check·log·rollback·events
+      ...rigItemHandlers(this), // P242: rig 입력 창구(rig3.intake, 사람만)
+      ...rigBeatHandlers(this), // P244: rig 손 박자(rig3.beat, 사람만)
+      ...rigTuneHandlers(this),
+      ...rigBuilderHandlers(this), // P247 // P245: rig 정의서·조정 기록(rig3.role)과 되돌리기(rig3.rollback, 사람만)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다
@@ -2305,7 +2182,7 @@ export class Backend {
       'delivery.now': (p) => this.queue.sendNow(p.deliveryId),
       'delivery.reorder': (p) => this.queue.reorder(p.ids),
       // P106: active면 아직 끝나지 않은 전달 모두(창이 다시 열려도 막힌 전달을 보이고 취소할 수 있게)
-      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, seq: d.seq ?? d.createdAt, editing: !!d.editing, ...(d.parked ? { parked: d.parked, ...(d.parkLoop ? { parkLoop: d.parkLoop } : {}) } : {}), name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
+      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, seq: d.seq ?? d.createdAt, editing: !!d.editing, name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
       'session.kill': (p) => this.kill(p),
       'session.answer': (p) => this.answer(p),
       'session.keys': (p, c) => this.sendKeysTo(p, c), // P104: 휴대폰 키 줄(원격 기기도 부른다)

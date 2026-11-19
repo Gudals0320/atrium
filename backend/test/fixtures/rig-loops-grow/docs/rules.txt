@@ -1,3 +1,0 @@
-# Rules
-
-- Keep answers short.

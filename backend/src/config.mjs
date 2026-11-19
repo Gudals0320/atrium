@@ -106,7 +106,7 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     // P3
     resourcesIntervalMs: Number(E('RESOURCES_MS') || 30000), // D1: 약 30초마다
     sleepTickMs: Number(E('SLEEP_TICK_MS') || 30000), // P21(D4): 저절로 잠재울 세션을 보는 간격(시험은 짧게)
-    // P241: rig 3 역할 세션 지키기(주기, 쉬면 재우기). 시험은 개발용 판에서만 줄인다(rig3-roles.mjs 기본값)
+    // P241: rig 역할 세션 지키기(주기, 쉬면 재우기). 시험은 개발용 판에서만 줄인다(rig-roles.mjs 기본값)
     rig3TickMs: profile === 'dev' && E('RIG3_TICK_MS') ? Number(E('RIG3_TICK_MS')) : undefined,
     rig3IdleMs: profile === 'dev' && E('RIG3_IDLE_MS') ? Number(E('RIG3_IDLE_MS')) : undefined,
     rig3StallMs: profile === 'dev' && E('RIG3_STALL_MS') ? Number(E('RIG3_STALL_MS')) : undefined,

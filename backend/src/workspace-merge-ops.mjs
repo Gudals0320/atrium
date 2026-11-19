@@ -23,7 +23,7 @@ export function mergeWorkspace(b, from, ws, why, { quiet = false } = {}) {
   if (!r) return null;
   const moved = [];
   for (const s of b.sessions.values()) if (s.workspaceKey === from) { s.workspaceKey = ws.key; moved.push(s); }
-  // P195: rig(켜짐·목록·표는 rekeyWorkspace가 옮겼다)의 데이터 폴더 버전 파일과 기억. 자리 세션의 이름과 자리(rig_seat)는 그대로다
+  // P195: rig(켜짐·표는 rekeyWorkspace가 옮겼다)의 데이터 폴더 판 파일과 기억
   if (b.rig && b.rig.rekey) { try { r.rigFiles = b.rig.rekey(from, ws.key); } catch (e) { if (b.log) b.log(`rig rekey ${from}: ${e.message}`); } }
   if (b.sleeper && b.sleeper.busyAt && b.sleeper.busyAt.has(from)) { b.sleeper.busyAt.set(ws.key, Math.max(b.sleeper.busyAt.get(from), b.sleeper.busyAt.get(ws.key) || 0)); b.sleeper.busyAt.delete(from); }
   // 본 저장소 쪽이 비어 있던 저장소 영역(워크트리 상자만 있음)에 폴더 영역의 것이 들어왔다: 상자를 들어온 것의 오른쪽이나 아래로 다시 놓는다

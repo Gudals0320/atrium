@@ -39,32 +39,32 @@ try {
   await page.setViewportSize({ width: 1600, height: 1100 }).catch(() => {});
   await page.waitForFunction(() => !document.querySelector('[data-role=splash]'), null, { timeout: 30000 }).catch(() => log('splash 남음'));
   await lang(page, 'ko');
-  await regionMenu(page, 'rig-panel', '[data-role=rig3-panel]');
-  await page.waitForSelector('[data-role=rig3-cycle]', { timeout: 10000 });
+  await regionMenu(page, 'rig-panel', '[data-role=rig-panel]');
+  await page.waitForSelector('[data-role=rig-cycle]', { timeout: 10000 });
   const c = call('rig.status', { workspace: WS }).rig3.cycle;
-  const v = await page.evaluate(() => ({ n: document.querySelector('[data-role=rig3-cycle-n]').textContent, next: document.querySelector('[data-role=rig3-next-beat]').textContent, entries: [...document.querySelectorAll('[data-entry]')].map((d) => d.dataset.entry), btn: !!document.querySelector('[data-action=rig3-beat]') }));
-  check('지금 사이클(ko): 판의 번호와 같다', v.n === fill(ko.rig3Cycle.now, { n: c.n }), v);
+  const v = await page.evaluate(() => ({ n: document.querySelector('[data-role=rig-cycle-n]').textContent, next: document.querySelector('[data-role=rig-next-beat]').textContent, entries: [...document.querySelectorAll('[data-entry]')].map((d) => d.dataset.entry), btn: !!document.querySelector('[data-action=rig-beat]') }));
+  check('지금 사이클(ko): 판의 번호와 같다', v.n === fill(ko.rigCycle.now, { n: c.n }), v);
   check('다음 박자 줄(1m마다, data 깨움)', /1m마다/.test(v.next) && /data 깨움/.test(v.next), v.next);
   check('최근 꼭지(새 것부터)가 판과 같다', JSON.stringify(v.entries) === JSON.stringify(c.entries.map((e) => String(e.n))), { ui: v.entries, board: c.entries.map((e) => e.n) });
   check('손 박자 단추', v.btn);
-  await shotEl(page, '[data-role=rig3-panel]', '01-rig3-cycle-ko');
+  await shotEl(page, '[data-role=rig-panel]', '01-rig3-cycle-ko');
   // 손 박자: 단추 → 사이클 n+1
-  await page.click('[data-action=rig3-beat]');
+  await page.click('[data-action=rig-beat]');
   await until(() => call('rig.status', { workspace: WS }).rig3.cycle.n >= c.n + 1, 15000, 500);
   const n2 = call('rig.status', { workspace: WS }).rig3.cycle.n;
-  await page.waitForFunction((t) => document.querySelector('[data-role=rig3-cycle-n]').textContent === t, fill(ko.rig3Cycle.now, { n: n2 }), { timeout: 10000 }).catch(() => {});
+  await page.waitForFunction((t) => document.querySelector('[data-role=rig-cycle-n]').textContent === t, fill(ko.rigCycle.now, { n: n2 }), { timeout: 10000 }).catch(() => {});
   const ev = call('rig.events', { workspace: WS, limit: 80 });
   const opened = (ev.rows || ev).filter((r) => r.kind === 'cycle_open' && r.value === 'human').at(-1);
   check('창의 "지금 박자" → 사람이 친 사이클(cycle_open human)', !!opened && opened.actor === 'human', opened);
   // 손 박자가 연 사이클의 앞 사이클 꼭지가 써질 때까지(AI 한 번)
   await until(() => call('rig.status', { workspace: WS }).rig3.cycle.entries.some((e) => e.n === n2 - 1), 90000, 1000);
   await sleep(1500);
-  await shotEl(page, '[data-role=rig3-panel]', '02-rig3-cycle-after-beat-ko');
+  await shotEl(page, '[data-role=rig-panel]', '02-rig3-cycle-after-beat-ko');
   await lang(page, 'en');
   await sleep(800);
-  const ven = await page.evaluate(() => document.querySelector('[data-role=rig3-cycle] .mt-rigon-h').textContent);
-  check('사전(en)', ven === en.rig3Cycle.h, ven);
-  await shotEl(page, '[data-role=rig3-panel]', '03-rig3-cycle-en');
+  const ven = await page.evaluate(() => document.querySelector('[data-role=rig-cycle] .mt-rigon-h').textContent);
+  check('사전(en)', ven === en.rigCycle.h, ven);
+  await shotEl(page, '[data-role=rig-panel]', '03-rig3-cycle-en');
   await lang(page, 'ko');
 } finally {
   fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify(results, null, 2));

@@ -1,7 +1,7 @@
 // P242: rig 3 판의 보기 자료(길마다 수, 입력 창구 줄, 멈춘 역할, 반려된 입력)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { flowRows, intakeRows, stalledRows, returnedIntake } from '../src/renderer/lib/rig3.js';
+import { flowRows, intakeRows, stalledRows, returnedIntake } from '../src/renderer/lib/rig.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
 
@@ -30,5 +30,5 @@ test('P242 멈춘 역할과 반려된 입력, 사전 두 벌', () => {
   assert.deepEqual(stalledRows(R3), [{ role: 'verify', items: ['hypothesis-1'] }]);
   assert.deepEqual(returnedIntake(R3), [{ id: 'hint-1', by: 'ideas', reason: '모호하다' }]);
   assert.deepEqual(returnedIntake({}), []);
-  assert.deepEqual(Object.keys(en.rig3Items).sort(), Object.keys(ko.rig3Items).sort());
+  assert.deepEqual(Object.keys(en.rigItems).sort(), Object.keys(ko.rigItems).sort());
 });

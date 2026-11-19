@@ -412,13 +412,13 @@ export class Sleeper {
     if (this.b.cfg && this.b.cfg.sleepBgPrecheck === false) return null;
     return this.bgAny(s, now);
   }
-  // P246: 설정과 관계없이 지금 아는 뒤 일(rig 3 guard도 쓴다). Claude Code는 hook(rt.bg)과 도구 명령 수, 다른 하네스는 나무의 셸 수(harnessWork). 셸·잠든 세션은 null
+  // P246: 설정과 관계없이 지금 아는 뒤 일(rig guard도 쓴다). Claude Code는 hook(rt.bg)과 도구 명령 수, 다른 하네스는 나무의 셸 수(harnessWork). 셸·잠든 세션은 null
   bgAny(s, now = Date.now()) {
     const kind = s.kind || 'claude';
     if (kind === 'shell' || !s.paneId || s.rt.sleep) return null;
     return backgroundOf(kind === 'claude' ? s.rt.bg : null, this.bgScan.get(s.sessionId) || null, now);
   }
-  // P246: 세션 하나의 프로세스를 지금 보고 뒤 일을 돌려준다(rig 3 guard가 턴 끝과 주기마다 부른다)
+  // P246: 세션 하나의 프로세스를 지금 보고 뒤 일을 돌려준다(rig guard가 턴 끝과 주기마다 부른다)
   async backgroundNow(s) {
     await this.scanBackground([s]);
     return this.bgAny(s);

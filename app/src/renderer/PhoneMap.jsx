@@ -16,8 +16,6 @@ import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeK
 import { Card, Peek, cardFacts } from './MissionLineage.jsx';
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기 세기
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
-import { caseGroups } from './lib/rig-map.js'; // P186: rig 건(알약)
-import { RigBandLayer } from './RigBand.jsx'; // P198: rig 띠 휴대폰 갈래(세로 건 목록과 지금 자리)
 
 const REFRESH_MS = 600;
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
@@ -48,8 +46,6 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const [expanded, setExpanded] = useState(loadExpanded);
   const [vsize, setVsize] = useState(null);
   const [peek, setPeek] = useState(null); // 길게 누른 카드 id
-  const [foldOpen, setFoldOpen] = useState(() => new Set()); // P199: rig 띠 "+n 끝남"을 편 워크스페이스(PC처럼 눌러 펴고 접는다)
-  const onBandFold = useCallback((ws) => setFoldOpen((cur) => { const n = new Set(cur); if (n.has(ws)) n.delete(ws); else n.add(ws); return n; }), []);
   const vpRef = useRef(null), worldRef = useRef(null), bgRef = useRef(null), pctRef = useRef(null);
   const view = useRef(null), sizeRef = useRef(null), layRef = useRef(null), opened = useRef(false);
   const moveTimer = useRef(0), glideTimer = useRef(0), saveTimer = useRef(0);
@@ -66,7 +62,6 @@ export function PhoneMap({ onBack, onOpen, conn }) {
     fetchT.current = setTimeout(run, fetched.current ? REFRESH_MS : 0);
   }, [gkey, links, thread, loops, reloadN]); // P210: 세션은 그래프에 닿는 값(graphKey)이 바뀔 때만
   useEffect(() => api.on('relation.updated', () => setReloadN((n) => n + 1)), []);
-  useEffect(() => api.on('rig.cases', () => setReloadN((n) => n + 1)), []); // P198: rig 건이 바뀌면 다시 읽는다
 
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
   const tiersRef = useRef(null); // P210: 등급이 같으면 앞 표 그대로(배치를 다시 세지 않는다)
@@ -83,7 +78,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const vkey = sizeKey(vsize); // 단 나누기는 보이는 칸 비율을 따른다(크기가 조금 바뀌어도 다시 놓지 않게 20px 단위)
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
-  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(() => lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, foldOpen, tab: tabSel || 'auto' })) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, foldOpen, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(() => lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, tab: tabSel || 'auto' })) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
@@ -260,16 +255,12 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   window.__mtPm = { style: 'canvas', fitView: () => { const L = layRef.current, s = sizeRef.current; return L && s ? phoneFit(L.bounds, s.w, s.h) : null; }, lay: () => layRef.current, view: () => (view.current ? { ...view.current } : null), set: (v) => paint(v), fit: () => fit(false), goTo, last: () => lastGoId, peek: (id) => setPeek(id), size: () => sizeRef.current, tab: () => tabRef.current, setTab: (k) => switchTab(k), tabs: () => { const x = layRef.current && layRef.current.tabs; return x ? { split: x.split, pick: x.pick, today: { n: x.today.n, attn: x.today.attn }, earlier: { n: x.earlier.n, attn: x.earlier.attn } } : null; } }; // 시험이 읽는다
 
   const ids = lay ? lay.order : [];
-  // P207: 위 알약(기다리는 세션·작업 중·완료·rig 건)은 두 칸 모두에서 센다. 다른 칸 카드는 누르면 탭을 바꾼 뒤 간다
+  // P207: 위 알약(기다리는 세션·작업 중·완료)은 두 칸 모두에서 센다. 다른 칸 카드는 누르면 탭을 바꾼 뒤 간다
   const allIds = tb ? [...ids, ...tb[pick === 'today' ? 'earlier' : 'today'].ids] : ids;
   const attn = allIds.filter((id) => tiers.get(id) === 'turn' || tiers.get(id) === 'alert').sort((a, b) => (tiers.get(a) === 'turn' ? 0 : 1) - (tiers.get(b) === 'turn' ? 0 : 1));
   const nWork = allIds.filter((id) => tiers.get(id) === 'work').length, nDone = allIds.filter((id) => tiers.get(id) === 'review').length;
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const pb = peek && lay ? lay.cards.get(peek) : null;
-  // P186: rig 건 알약(막힌 건·열린 건, 둘까지). 누르면 지금 일이 있는 자리의 카드로. rig가 없는 판은 없다
-  const keepOf = (ws, seat) => { if (!lay) return null; for (const [id, b] of lay.cards) if (b.ws === ws && b.keepHead && b.seat && b.seat.seat === seat) return id; return null; }; // P198: keep 자리 머리 카드
-  const rcases = lay ? caseGroups(graph, (ws, sid) => (!sid ? null : lay.cards.has(`s:${sid}`) ? (!lay.cards.get(`s:${sid}`).folded ? `s:${sid}` : null) : tabOfId(lay, `s:${sid}`) ? `s:${sid}` : null), keepOf) : null; // P207: 다른 칸의 자리 카드도 간다
-  const rpills = rcases ? [...rcases.blocked, ...rcases.open].slice(0, 2) : [];
   return (
     <div className="mt-ph-list mt-pm mt-pl mt-pmap" data-role="phone-mission" data-style="canvas">
       <header className="mt-ph-head">
@@ -296,7 +287,6 @@ export function PhoneMap({ onBack, onOpen, conn }) {
           {attn.length > ATTN_MAX && <button type="button" className="mt-pl-pill st-needs more" data-role="pl-attn-more" onClick={() => goNext('attn', ['turn', 'alert'])}><span>{t('mmTerr.more', { n: attn.length - ATTN_MAX })}</span></button>}
           {!attn.length && <span className="mt-pl-pill quiet" data-role="pl-none"><span>{t('phoneMap.none')}</span></span>}
           {nWork > 0 && <button type="button" className="mt-pl-pill st-working count" data-role="pl-count" data-tier="work" onClick={() => goNext('work', ['work'])}><i /><b>{nWork}</b><span>{t('mmTerr.chip.work')}</span></button>}
-          {rpills.map((c) => <button key={`${c.ws}|${c.id}`} type="button" className={`mt-pl-pill case st-${c.state === 'blocked' ? 'error' : 'working'}`} data-role="pl-case" data-case={c.id} data-state={c.state} disabled={!c.go} onClick={() => c.go && goTo(c.go)}><i /><b>{t('rigMap.caseName', { id: c.id })}</b><span>{c.state === 'blocked' ? t('rigMap.blocked') : c.state === 'waiting_owner' ? t('rigMore.caseWaitingOwner') : c.seats.join(', ') || t('rigMap.caseQueued')}</span></button>)}
           {nDone > 0 && <button type="button" className="mt-pl-pill st-done count" data-role="pl-count" data-tier="review" onClick={() => goNext('review', ['review'])}><i /><b>{nDone}</b><span>{t('mmTerr.chip.review')}</span></button>}
         </div>
       )}
@@ -343,7 +333,6 @@ export function PhoneMap({ onBack, onOpen, conn }) {
                   return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
                 })}
               </svg>
-              <RigBandLayer rb={lay.rb} t={t} now={now} phone onFold={onBandFold} />
               {ids.filter((id) => !lay.cards.get(id).folded).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
             </div>
           )}
