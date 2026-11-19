@@ -3144,6 +3144,5 @@ export default {
   cmdTalk: {
     label: 'No run',
     title: 'Send to {names} as text only, without opening a run. Use it for messages that are not run work, such as asking to change the rig. Not delivered while the seat is doing run work.',
-    phoneTitle: 'Send as text only, without opening a run. Use it for messages that are not run work, such as asking to change the rig.',
   },
 };

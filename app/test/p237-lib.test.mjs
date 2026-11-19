@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { talkSeats, talkOffered, talkParam } from '../src/renderer/lib/talk.js';
+import { talkSeats, talkParam } from '../src/renderer/lib/talk.js';
 import { recipients } from '../src/renderer/lib/cmd-input.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
@@ -23,10 +23,6 @@ test('P237 "회 없이": 받는 세션 가운데 rig 자리 세션만', () => {
   assert.deepEqual(talkSeats(recipients('@all 글', S), S), ['main'], '@all은 판의 rig 자리 세션');
   assert.deepEqual(talkSeats(recipients('@nobody 글', S), S), []);
   assert.deepEqual(talkSeats(recipients('글만', S), S), []);
-  assert.equal(talkOffered(S[0]), true);
-  assert.equal(talkOffered(S[1]), false);
-  assert.equal(talkOffered(S[2]), false);
-  assert.equal(talkOffered(null), false);
 });
 
 test('P237 "회 없이": 켰고 보일 때만 session.send에 talk를 싣는다', () => {
@@ -37,7 +33,8 @@ test('P237 "회 없이": 켰고 보일 때만 session.send에 talk를 싣는다'
 
 test('P237 두 사전과 창 코드', () => {
   for (const L of [ko, en]) {
-    assert.ok(L.cmdTalk && L.cmdTalk.label && L.cmdTalk.title && L.cmdTalk.phoneTitle);
+    assert.ok(L.cmdTalk && L.cmdTalk.label && L.cmdTalk.title);
+    assert.equal(L.cmdTalk.phoneTitle, undefined, '휴대폰에는 "회 없이"가 없다(11.18)');
     assert.match(L.cmdTalk.title, /\{names\}/);
   }
   assert.equal(ko.cmdTalk.label, '회 없이');
@@ -47,6 +44,5 @@ test('P237 두 사전과 창 코드', () => {
   assert.match(cb, /data-action="cmd-talk"/);
   assert.match(cb, /talkParam\(talkRef\.current\.on, talkRef\.current\.offered\)/);
   const ph = fs.readFileSync(path.join(HERE, '..', 'src', 'renderer', 'Phone.jsx'), 'utf8');
-  assert.match(ph, /talkOffered\(s\) && <button/);
-  assert.match(ph, /talkParam\(talk, talkOffered\(s\)\)/);
+  assert.ok(!/talk/.test(ph), '휴대폰 입력 줄에는 "회 없이"를 두지 않는다(보내면 보내기 칸처럼 회가 열린다)');
 });

@@ -407,3 +407,25 @@ test('P237 followups: 사람(보내기 칸·자리 터미널)이 연 이어진 �
     assert.equal(L().followupsSince(ws.key, r, base), 2);
   } finally { await stop(); }
 });
+
+// ---------- 7. 휴대폰 입력 줄(11.18): 보내기 칸과 같다 ----------
+test('P237 휴대폰 입력 줄(whileWorking type): 열린 시도 없는 request 입구 자리에 보내면 사람의 요청 회, 열린 시도 중이면 보통 글(섞임)', async () => {
+  const t = await board();
+  const { b, ws, add, seat, stop } = t;
+  try {
+    const main = add('main'); seat(main, 'main');
+    const r = await humanSend(b, { target: [main.sessionId], text: '휴대폰에서 안내서 써 줘', whileWorking: 'type' });
+    const run = r.deliveries[0].run;
+    assert.ok(run && run.caseId, '회가 열린다');
+    assert.equal(b.store.getCase(run.caseId).loop, 'work');
+    const u = b.store.getUnit(run.unitId);
+    assert.equal(u.from, 'human'); assert.equal(u.via.by, 'human');
+    await gotUnit(main);
+    // 열린 시도 중 휴대폰 글은 회를 열지 않고 보통 글(사람 글 → 그 시도는 섞임)
+    const r2 = await humanSend(b, { target: [main.sessionId], text: '하나 더', whileWorking: 'type' });
+    assert.equal(r2.deliveries[0].run, undefined);
+    assert.equal(b.store.casesOf(ws.key).length, 1);
+    const amp = new RigAmp(b);
+    assert.equal(amp.notePrompt(main, '하나 더', { deliveryId: r2.deliveries[0].deliveryId, origin: 'human' }), true, '섞임(묻기)');
+  } finally { await stop(); }
+});

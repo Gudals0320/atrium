@@ -26,7 +26,6 @@ import { queueView } from './lib/delivery-queue.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
 import { checkLabel } from './lib/session-name.js'; // P97: 새 세션 이름 칸
 import { BRAND_WORDMARK } from './lib/icons.jsx';
-import { talkOffered, talkParam } from './lib/talk.js'; // P237: "회 없이"
 import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou, PAD_KEYS, keyQueue, padKeyOf, padOpen } from './lib/phone.js';
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
@@ -378,7 +377,6 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [talk, setTalk] = useState(false); // P237: 회 없이(rig 자리일 때만 보인다)
   const [note, setNote] = useState(null);
   const [scale, setScale] = useState(readPhoneScale);
   const [padPref, setPadPref] = useState(null); // P104: 사람이 키 패드를 열었거나(true) 닫았으면(false). 기다리는 요청이 바뀌면 비운다
@@ -457,7 +455,7 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
     markInteracted(id);
     try {
       if (plan.method === 'session.send') {
-        const r = await api.call('session.send', { target: [id], text: plan.text, ...(plan.whileWorking ? { whileWorking: plan.whileWorking } : {}), ...talkParam(talk, talkOffered(s)) }); // P237
+        const r = await api.call('session.send', { target: [id], text: plan.text, ...(plan.whileWorking ? { whileWorking: plan.whileWorking } : {}) });
         const d = r && r.deliveries && r.deliveries[0];
         setNote(d ? { deliveryId: d.deliveryId, at: Date.now() } : { text: t('phone.sent'), at: Date.now() });
       } else {
@@ -465,7 +463,6 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
         setNote({ text: t('phone.sent'), at: Date.now() });
       }
       setText('');
-      setTalk(false); // P237: 한 번 보낸 뒤 끈다
       requestAnimationFrame(() => { if (taRef.current) taRef.current.style.height = ''; });
     } catch (e) { if (e.code !== 'disconnected') toast(t('phone.sendFailed', { error: errText(e) }), 'error'); } // P82: 끊긴 동안은 글을 두고 띠가 알린다
     setBusy(false);
@@ -517,7 +514,6 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
           {noteText && !voice.active && <div className="mt-ph-note" data-role="phone-note">{noteText}</div>}
           <VoiceInterim voice={voice} />
           <VoiceButton voice={voice} className="mt-ph-voice" />
-          {talkOffered(s) && <button type="button" className={`mt-ph-talk${talk ? ' on' : ''}`} data-action="phone-talk" aria-pressed={talk} title={t('cmdTalk.phoneTitle')} onPointerDown={(e) => e.preventDefault()} onClick={() => setTalk((v) => !v)}>{t('cmdTalk.label')}</button>}
           <textarea ref={taRef} rows={1} value={text} data-field="phone-text" enterKeyHint="enter" autoCapitalize="off" autoCorrect="off" spellCheck={false}
             placeholder={s.kind === 'shell' ? t('phone.inputShell') : t('phone.inputAgent', { name: s.name })}
             onChange={(e) => { setText(e.target.value); grow(e.target); }}

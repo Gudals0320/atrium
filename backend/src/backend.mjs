@@ -1699,7 +1699,8 @@ export class Backend {
         return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, talk: { seat: tk.seat, loop: tk.loop } };
       }
       // P221(rig 2 R2): request 고리의 입구 자리 세션에 사람이 보낸 글은 새 회를 연다(그 고리의 회를 쥐었으면 이어지는 지시, 멈췄으면 요청이 줄에 선다)
-      const rq = loops && p.whileWorking !== 'type' ? loops.onRequest(s, { kind: 'human' }, body) : null;
+      // P237(rig2-design 11.18): 휴대폰 입력 줄(whileWorking type)도 보내기 칸과 같다. 열린 시도 중이면 보통 글(섞임, 11.17 묻기)
+      const rq = loops ? loops.onRequest(s, { kind: 'human' }, body) : null;
       if (rq && rq.held) {
         // P223: 멈춘 고리의 요청은 대기열에 붙잡혔다(까닭 loop_paused, 실패로 남기지 않는다). 잇기에 회가 열리며 들어간다
         const d = rq.d || this.queue.refuse(s.sessionId, body, `rig: 고리 ${rq.loop}가 멈춰 있어 요청을 줄에 세웠다. 잇기(atrium rig resume ${rq.loop})에 회가 열린다.`, { origin: { kind: 'human' } });

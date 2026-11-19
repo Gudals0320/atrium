@@ -13,7 +13,5 @@ export function talkSeats(recipients, sessions) {
   }
   return out;
 }
-// 휴대폰 입력 줄: 그 세션 하나가 rig 자리일 때만
-export const talkOffered = (s) => !!(s && s.kind !== 'shell' && s.rigSeat);
 // session.send의 talk 칸(켰고 보일 때만)
 export const talkParam = (on, offered) => (on && offered ? { talk: true } : {});
