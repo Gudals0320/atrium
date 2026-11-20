@@ -209,8 +209,9 @@ export function codexPasteState(screenText, text) {
   const tail = bare(want).slice(-24);
   return { box: box.text, done: !!tail && bare(box.text).endsWith(tail) };
 }
-// P264: 판이 붙여 넣고 화면을 본 뒤 Enter를 치는 Codex 글(여러 줄이거나 200자 넘음). 짧은 한 줄은 예전대로 hc terminal.send(붙여 넣기와 Enter를 함께)
-export const codexPasteWanted = (text) => /\n/.test(String(text || '')) || String(text || '').length > 200;
+// P264: 판이 붙여 넣고 화면을 본 뒤 Enter를 치는 Codex 글. P271(이슈 #19): 짧은 한 줄도 이 길로 보낸다. hc terminal.send(붙여 넣기와 Enter를 함께)는
+//   Enter가 글과 한꺼번에 Codex에 닿으면 Codex가 붙여 넣기의 줄바꿈으로 받아 글이 입력 칸에 남았다(글과 Enter를 한 번에 쓰면 늘 재현된다)
+export const codexPasteWanted = (text) => String(text || '').length > 0;
 // P126: ESC가 떨어져 글로 남은 SGR 마우스 보고(휠 64·65, 누르기·움직임). 숫자 셋과 M·m으로 끝나는 꼴이라 사람의 글과 헷갈리지 않는다
 const MOUSE_NOISE_G = /\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
 export const mouseNoise = (s) => (String(s || '').match(MOUSE_NOISE_G) || []).join('');

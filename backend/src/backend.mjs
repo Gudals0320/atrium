@@ -279,7 +279,8 @@ export class Backend {
     this.queue.on('late', (r) => { this.store.addEvent(r.sessionId, 'delivery_late', r); this.log(`delivery late ${this.nameOf(r.sessionId)} ${r.deliveryId}: went in after cancel`); });
     this.queue.on('delivery', (d) => {
       this.store.addEvent(d.sessionId, 'delivery', d);
-      this.api.broadcast('delivery', { ...d, name: this.nameOf(d.sessionId) });
+      // P271: 닫힌 세션의 전달(세션 닫힘으로 실패)도 받는 세션 이름을 보인다(보내기 칸의 실패 칩이 "@?"였다)
+      this.api.broadcast('delivery', { ...d, name: this.nameOf(d.sessionId) || (this.sessions.has(d.sessionId) ? null : shownName(this.store.getSession(d.sessionId))) });
       const s = this.sessions.get(d.sessionId);
       if (s && d.status === 'unconfirmed') s.draft = true; // P21: 보낸 글이 제출되지 않고 입력 칸에 남았을 수 있다(잠재우지 않는다)
       if (this.branch && ['confirmed', 'unconfirmed', 'failed', 'cancelled'].includes(d.status)) this.branch.onDeliveryEnd(d); // P79: 하위 세션의 첫 요청이 들어가지 않았으면 부모에게
@@ -1359,7 +1360,8 @@ export class Backend {
   // 그 패널에 같은 종류의 에이전트가 있을 때 패널 ID로 보낸다
   async sendPrompt(sid, text) {
     const s = this.sessions.get(sid);
-    // P264: Codex에 여러 줄이거나 긴 글은 판이 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(hc terminal.send의 Enter가 붙여 넣은 글의 줄바꿈이 됐다)
+    // P264: Codex에 여러 줄이거나 긴 글은 판이 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(hc terminal.send의 Enter가 붙여 넣은 글의 줄바꿈이 됐다).
+    //   P271(이슈 #19): 짧은 한 줄도 같다(codexPasteWanted). Enter 뒤 입력 칸에 남으면 어댑터가 Enter를 다시 친다
     const paste = s.kind === 'codex' && typeof this.adapter.pastePrompt === 'function' && codexPasteWanted(text) && !(s.rt && this.hooked(s));
     const send = (target) => (paste ? this.adapter.pastePrompt(target, text, { state: (scr) => codexPasteState(scr, text) }) : this.adapter.prompt(target, text));
     try { return await send(s.agentName); }

@@ -30,7 +30,8 @@ test('P90 판단: 판이 띄운 Claude Code(hook 있음)가 working일 때만 �
   assert.equal(canTypeNow(WORKING), true);
   for (const state of ['waiting', 'trust_wait', 'ready', 'starting', 'error', 'exited', 'sleeping']) assert.equal(canTypeNow({ ...WORKING, state }), false, state);
   assert.equal(canTypeNow({ ...WORKING, kind: 'shell' }), false, '셸');
-  assert.equal(canTypeNow({ ...WORKING, kind: 'codex' }), false, '다른 종류');
+  assert.equal(canTypeNow({ ...WORKING, kind: 'opencode' }), false, '다른 종류');
+  assert.equal(canTypeNow({ ...WORKING, kind: 'codex', hooked: false }), true, 'P271: 일하는 Codex는 입력 칸의 Enter로 지금 턴에 받는다');
   assert.equal(canTypeNow({ ...WORKING, hooked: false }), false, 'hook 없는(판에 올린) Claude Code: 제출 확인을 할 수 없다');
   assert.equal(canTypeNow({ ...WORKING, termConnected: false }), false);
   assert.equal(canTypeNow({ ...WORKING, agentPresent: false }), false);
@@ -123,7 +124,7 @@ test('P90 넣는 사이 권한 화면이 뜨면 herdr가 거부(agent_blocked)�
 });
 
 test('P90 PC 명령 바(typeNow 없음), 셸·다른 종류·hook 없는 세션은 working이면 지금처럼 기다린다', async (t) => {
-  for (const view of [{}, { kind: 'shell' }, { kind: 'codex' }, { hooked: false }]) {
+  for (const view of [{}, { kind: 'shell' }, { kind: 'opencode' }, { hooked: false }]) { // P271: Codex는 바로 넣는다(p271.test)
     const typeNow = Object.keys(view).length > 0;
     const { q, log } = rig(t, { view });
     const d = q.enqueue('s', 'wait', typeNow ? { typeNow } : {});

@@ -32,9 +32,9 @@ test('P264 codexPasteState: 접힌 자리표시의 글자 수가 보낸 글에 �
   assert.equal(promptOnScreen(cx(`[Pasted Content ${n} chars]`), long, 'codex').box, 'ours');
 });
 
-test('P264 codexPasteWanted: 여러 줄이거나 200자 넘는 글만 판이 붙여 넣는다', () => {
-  assert.equal(codexPasteWanted('one line'), false);
-  assert.equal(codexPasteWanted('x'.repeat(200)), false);
+test('P264 codexPasteWanted: 여러 줄·긴 글은 판이 붙여 넣는다(P271: 짧은 한 줄도)', () => {
+  assert.equal(codexPasteWanted('one line'), true);
+  assert.equal(codexPasteWanted('x'.repeat(200)), true);
   assert.equal(codexPasteWanted('x'.repeat(201)), true);
   assert.equal(codexPasteWanted('a\nb'), true);
   assert.equal(codexPasteWanted(''), false);
@@ -50,7 +50,7 @@ test('P264 어댑터 pastePrompt(가짜 hc): bracketed paste → 화면에 다 �
     await until(() => t.status && t.status.state === 'idle');
     const n = [...long].length;
     // 붙여 넣은 뒤 300ms 동안은 빈 칸(Codex가 받는 중), 그 뒤 자리표시
-    const shown = until(() => t.inputs.length >= 1).then(async () => { await sleep(300); t.screen = cx(`[Pasted Content ${n} chars]`); });
+    const shown = until(() => t.inputs.length >= 1).then(async () => { await sleep(300); t.screen = cx(`[Pasted Content ${n} chars]`); await until(() => t.inputs.length >= 2); t.screen = cx('Ask Codex to do anything'); }); // P271: Enter에 제출되면 입력 칸이 빈다
     const t0 = Date.now();
     const res = await a.pastePrompt('cx', long.replace(/\n/g, '\r\n'), { state: (s) => codexPasteState(s, long), pollMs: 20, stableMs: 5000 });
     await shown;
@@ -82,7 +82,7 @@ test('P264 어댑터 pastePrompt(가짜 hc): bracketed paste → 화면에 다 �
   } finally { await fake.close(); }
 });
 
-test('P264 판의 보내기: Codex(hook 없음)의 여러 줄·긴 글만 pastePrompt, 짧은 한 줄·Claude Code·다른 종류는 hc terminal.send 그대로', async () => {
+test('P264 판의 보내기: Codex(hook 없음)는 pastePrompt(P271: 짧은 한 줄도), Claude Code·다른 종류는 hc terminal.send 그대로', async () => {
   const calls = [];
   const adapter = {
     prompt: async (target, text) => { calls.push(['prompt', target, text]); return {}; },
@@ -98,7 +98,7 @@ test('P264 판의 보내기: Codex(hook 없음)의 여러 줄·긴 글만 pasteP
   const send = (sid, text) => Backend.prototype.sendPrompt.call(b, sid, text);
   await send('c', 'one\ntwo'); await send('c', 'x'.repeat(300)); await send('c', 'short one line');
   await send('l', 'one\ntwo'); await send('o', 'one\ntwo'); await send('a', 'one\ntwo');
-  assert.deepEqual(calls.map((c) => [c[0], c[1]]), [['paste', 'cx'], ['paste', 'cx'], ['prompt', 'cx'], ['prompt', 'cl'], ['prompt', 'oc'], ['prompt', 'ag']]);
+  assert.deepEqual(calls.map((c) => [c[0], c[1]]), [['paste', 'cx'], ['paste', 'cx'], ['paste', 'cx'], ['prompt', 'cl'], ['prompt', 'oc'], ['prompt', 'ag']]);
   assert.equal(calls[0][3], 'function');
   // 옛 어댑터(pastePrompt 없음)는 예전대로
   calls.length = 0;

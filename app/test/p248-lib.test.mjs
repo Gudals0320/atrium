@@ -10,17 +10,19 @@ import en from '../src/renderer/locales/en.js';
 
 const S = (name, f = {}) => ({ sessionId: 'id-' + name, name, state: 'working', kind: 'claude', hooked: true, ...f });
 
-test('P248 steerBlock: 판이 띄운 Claude Code만 스티어링한다(상태와 상관없이 종류로)', () => {
+test('P248 steerBlock: 판이 띄운 Claude Code와 Codex(P271)만 스티어링한다(상태와 상관없이 종류로)', () => {
   assert.equal(steerBlock(S('a')), null);
   assert.equal(steerBlock(S('a', { kind: undefined })), null, '종류가 없으면 Claude Code');
   assert.equal(steerBlock(S('a', { state: 'ready' })), null, '쉬는 세션도 고를 수 있다(보통 보내기)');
-  assert.equal(steerBlock(S('c', { kind: 'codex' })), 'kind');
+  assert.equal(steerBlock(S('c', { kind: 'codex' })), null, 'P271: Codex는 일하는 중 입력 칸의 Enter로 지금 턴에 받는다');
+  assert.equal(steerBlock(S('c', { kind: 'codex', hooked: false })), null);
+  assert.equal(steerBlock(S('o', { kind: 'opencode' })), 'kind');
   assert.equal(steerBlock(S('h', { hooked: false })), 'no_hook');
   assert.equal(steerBlock(null), 'kind');
 });
 
 test('P248 steerTargets: 받는 세션을 스티어링할 수 있는 것과 없는 것(까닭)으로 나눈다. @all, 없는 이름, 셸', () => {
-  const list = [S('a'), S('c', { kind: 'codex' }), S('h', { hooked: false }), S('sh', { kind: 'shell' })];
+  const list = [S('a'), S('c', { kind: 'opencode' }), S('h', { hooked: false }), S('sh', { kind: 'shell' })]; // P271: 스티어링할 수 없는 종류는 opencode로
   assert.deepEqual(steerTargets(recipients('@a 고쳐', list), list), { can: ['a'], cannot: [] });
   assert.deepEqual(steerTargets(recipients('@a @c 고쳐', list), list), { can: ['a'], cannot: [{ name: 'c', why: 'kind' }] });
   assert.deepEqual(steerTargets(recipients('@c 고쳐', list), list), { can: [], cannot: [{ name: 'c', why: 'kind' }] });
@@ -40,7 +42,8 @@ test('P248 휴대폰 sendPlan: 기본은 대기열, 스티어링을 고르면 st
   assert.deepEqual(sendPlan(S('a'), 'x'), { method: 'session.send', text: 'x' });
   assert.deepEqual(sendPlan(S('a'), 'x', { steer: true }), { method: 'session.send', text: 'x', steer: true });
   assert.deepEqual(sendPlan(S('a', { state: 'ready' }), 'x', { steer: true }), { method: 'session.send', text: 'x', steer: true }, '상태는 백엔드가 본다(쉬면 보통 보내기)');
-  assert.deepEqual(sendPlan(S('c', { kind: 'codex' }), 'x', { steer: true }), { method: 'session.send', text: 'x' });
+  assert.deepEqual(sendPlan(S('c', { kind: 'opencode' }), 'x', { steer: true }), { method: 'session.send', text: 'x' });
+  assert.deepEqual(sendPlan(S('x', { kind: 'codex', hooked: false }), 'x', { steer: true }), { method: 'session.send', text: 'x', steer: true }, 'P271: Codex는 스티어링');
   assert.deepEqual(sendPlan(S('h', { hooked: false }), 'x', { steer: true }), { method: 'session.send', text: 'x' });
   assert.deepEqual(sendPlan(S('sh', { kind: 'shell' }), 'ls\n', { steer: true }), { method: 'terminal.input', data: 'ls\r' });
   for (const p of [sendPlan(S('a'), 'x'), sendPlan(S('a'), 'x', { steer: true })]) assert.equal(p.whileWorking, undefined, '옛 바로 넣기(whileWorking type)는 쓰지 않는다');
