@@ -143,6 +143,22 @@ export function dshSummary(events = []) {
   }
   return { answer, open, model, effort, usage, lastEnd };
 }
+// P279: 턴이 끝난 때(7501 done) 기록 파일에 그 턴의 마지막 글이 아직 다 쓰이지 않았을 수 있다. 같은 턴의 앞 단계 글(도구를 부르기 전 글)만 보고
+//   그것을 마지막 답으로 잡았다(실시험: "3 fruits" 뒤 atrium me 결과를 덧붙인 마지막 글이 빠짐). 기록의 턴이 닫힐(turn/end) 때까지 다시 읽고,
+//   끝내 닫히지 않으면 그때까지 본 가장 새 답을 쓴다. read() → readDshLastAnswer 꼴({ text, at, open }) | null, since: 지난번에 쓴 답의 at
+export async function waitDshAnswer({ read, since = 0, tries = 10, gapMs = 300, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  let best = null;
+  for (let i = 0; i < tries; i++) {
+    let a = null;
+    try { a = read(); } catch { a = null; }
+    if (a && (!since || (a.at || 0) > since)) {
+      if (!a.open) return a;
+      if (!best || (a.at || 0) >= (best.at || 0)) best = a;
+    }
+    if (i < tries - 1) await sleep(gapMs);
+  }
+  return best;
+}
 export function readDshLastAnswer(file) {
   const ev = readDshEvents(file);
   if (!ev) return null;

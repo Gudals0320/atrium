@@ -49,7 +49,7 @@ import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf } from './harness.mjs';
-import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
+import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel, waitDshAnswer } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
@@ -1191,19 +1191,15 @@ export class Backend {
   }
 
   // P270: dsh의 마지막 답은 기록(zstd 프레임 JSONL)의 마지막 assistant/message 글이다(화면은 전체 화면 TUI라 고르기 어렵다).
-  //   턴이 끝난 때 기록에 아직 답이 없을 수 있어 잠깐 다시 본다. 지난번 답보다 새 답이 없으면 화면으로 돌아간다
-  async readDshAnswer(s, { tries = 6, gapMs = 300 } = {}) {
-    for (let i = 0; i < tries; i++) {
-      let a = null;
-      try { s._modelFind = s._modelFind && s._modelFind.file ? s._modelFind : null; const file = this.modelFileOf(s); a = file ? readDshLastAnswer(file) : null; } catch { a = null; }
-      if (a && (!s.rt.dshAnswerAt || (a.at || 0) > s.rt.dshAnswerAt)) {
-        s.rt.lastAnswer = a.text; s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'session'; s.rt.dshAnswerAt = a.at || Date.now();
-        this.bus.emit('screenAnswer', s);
-        return true;
-      }
-      if (i < tries - 1) await new Promise((r) => setTimeout(r, gapMs));
-    }
-    return false;
+  //   턴이 끝난 때 기록에 아직 답이 없을 수 있어 잠깐 다시 본다. P279: 기록의 턴이 닫힐 때까지 본다(앞 단계 글을 마지막 답으로 잡지 않게, waitDshAnswer).
+  //   지난번 답보다 새 답이 없으면 화면으로 돌아간다
+  async readDshAnswer(s, { tries = 10, gapMs = 300 } = {}) {
+    const read = () => { s._modelFind = s._modelFind && s._modelFind.file ? s._modelFind : null; const file = this.modelFileOf(s); return file ? readDshLastAnswer(file) : null; };
+    const a = await waitDshAnswer({ read, since: s.rt.dshAnswerAt || 0, tries, gapMs });
+    if (!a) return false;
+    s.rt.lastAnswer = a.text; s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'session'; s.rt.dshAnswerAt = a.at || Date.now();
+    this.bus.emit('screenAnswer', s);
+    return true;
   }
 
   onTermDisconnected(which = null) {
