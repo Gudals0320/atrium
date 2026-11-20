@@ -1889,7 +1889,7 @@ export default {
     key_slash: 'Slash (/)',
     fontDown: 'Smaller terminal text',
     fontUp: 'Larger terminal text',
-    inputAgent: 'Message to {name}',
+    inputAgent: 'Message', // P280: short fixed text (the header already names the session)
     inputShell: 'Command to run',
     send: 'Send',
     sent: 'Sent.',
@@ -1922,7 +1922,7 @@ export default {
   phoneBoard: {
     toList: 'Show session list',
     fullOut: 'Tap to return to the board',
-    fullType: 'Type to {name} (Enter sends)',
+    fullType: 'Type', // P280
     key_left: 'Left arrow',
     key_right: 'Right arrow',
   },
@@ -2604,10 +2604,6 @@ export default {
   launcherEffort: { // P205: 호출자 틀의 노력 수준 빈 값(하네스 이름)
     harnessDefault: '{harness} default',
   },
-  pmTab: { // P207: phone session map tabs (Today | Earlier)
-    label: 'Session map section',
-    attn: '{n} need you or failed',
-  },
   usage: { // P211: subscription usage (top bar pill, dropdown, remaining next to launchers, 90% alert)
     label: 'Usage',
     head: 'Subscription usage',
@@ -2730,7 +2726,7 @@ export default {
   cmdHead: {
     steerOn: 'Steering on',
     steerKey: 'send as steering',
-    phoneSteerOn: 'Steering on: goes into the current turn',
+    phoneSteerOn: 'Into this turn', // P280
     oldHoldDropped: 'old held queue cleared at board restart',
   },
 };

@@ -62,7 +62,7 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // P202: today = 오늘 일한 워크스페이스 키들(Set·배열, todayWorkspaces). 폴더 차례는 오늘 일한 폴더들(이름순) → 나머지 폴더들(이름순), 사이드바 손 차례(order)는 쓰지 않는다.
 //   columns = 1 | 2 | 'auto'(PC만: view = 맞춤 칸 { w, h }에서 두 열 맞춤 배율이 한 열보다 COLS2.GAIN배 넘게 크면 두 열). → sections(오늘·이전 이름표 자리), ncol, colDx, measure
 export function lineageLayout(graph, opts = {}) {
-  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null, mergers = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P276: mergers = lib/merger.js mapMergers 결과(세션 id)
+  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, keepKeys = null, mergers = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P276: mergers = lib/merger.js mapMergers 결과(세션 id)
   if (!phone && columns === 'auto') {
     // P253: 열 판단은 이름표 계단(label, 배율에 따라 바뀐다)과 상관없이 바탕 글 크기(label 1)의 한 열 배치로 한다.
     //   전에는 그 계단의 배치로 재서, 줌인·줌아웃으로 계단이 바뀌면 열이 하나·둘로 바뀌며 밀렸다. 이제 열 수는 그래프와 보기 칸(창 크기)으로만 바뀐다
@@ -95,13 +95,11 @@ export function lineageLayout(graph, opts = {}) {
   const loose = present.filter((k) => !k || !folderOf.has(normKey(k))).sort(byWsName);
   if (loose.length) groups0.push({ id: null, name: noFolder, keys: loose });
   const allGroups = folderOrder(groups0, today);
-  // P207: 휴대폰 탭(오늘 | 이전). tab = 'today' | 'earlier' | 'auto'(기본 규칙)를 주고 두 칸이 다 있으면 고른 칸의 폴더만 놓는다(구분 줄 없음).
-  //   tab을 주지 않으면 P202처럼 두 칸을 한 열에 구분 줄로 놓는다(PhoneMap.jsx는 늘 준다)
-  const tabs = phone && tab ? phoneTabs(allGroups, tree.nodes, wsOf, tierOf, tab) : null;
-  const groups = tabs && tabs.pick ? allGroups.filter((g) => g.today === (tabs.pick === 'today')) : allGroups;
+  const groups = allGroups;
   const nToday = groups.filter((g) => g.today).length;
   const split = nToday > 0 && nToday < groups.length; // 오늘 칸과 이전 칸이 둘 다 있다
-  const two = !phone && split && columns === 2;
+  // P280: 휴대폰도 columns: 2면 PC처럼 오늘 칸 오른쪽에 이전 칸(열마다 위 머리). 휴대폰 두 열은 단 나누기를 하지 않는다(PhoneMap.jsx는 늘 2를 준다)
+  const two = split && columns === 2;
 
   // P157: 기둥 폭은 가장 긴 폴더 이름에 맞춘다. 워크스페이스 머리부터 오른쪽은 늘어난 만큼 민다
   const stats = spineText ? groups.flatMap((g) => spineText(g.keys.length, tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).length)) : [];
@@ -110,7 +108,7 @@ export function lineageLayout(graph, opts = {}) {
   L.HEADX = phone ? PHONE.PADX : LINE.HEADX + (L.SPINE - LINE.SPINE);
   L.BANDMIN = Math.max(LINE.BANDMIN, Math.ceil(52 + px.kind * 1.3 + px.name * 1.2 + px.stat * 2.6 + 2 + 7 * 3 + 6 + px.bar + 24));
   // P202: 오늘·이전 이름표 자리. 두 열은 열마다 위 머리(SECH), 한 열은 두 칸 사이 구분 줄 칸(SEP, 줄 위아래에 이름표 한 줄씩). 글은 기둥 이름 글 크기를 따른다
-  const SEC = phone ? { SECH: 0, SEP: PHONE.SEP } : { SECH: Math.ceil(Math.max(COLS2.HD, px.name * 2.2 + 36)), SEP: Math.ceil(Math.max(COLS2.SEP, px.name * 3.4 + 40)) };
+  const SEC = phone ? { SECH: PHONE.SECH, SEP: PHONE.SEP } : { SECH: Math.ceil(Math.max(COLS2.HD, px.name * 2.2 + 36)), SEP: Math.ceil(Math.max(COLS2.SEP, px.name * 3.4 + 40)) };
   const heads = new Map();
   if (!phone) for (const g of groups) for (const key of g.keys) heads.set(key, headBox(key ? nameOf(key) : '', chipCounts(tree.nodes.filter((n) => wsOf(n.id) === key).map((n) => tierOf(n.id))).map(chipStr), px));
   L.HEADW2 = Math.max(LINE.HEADW, ...[...heads.values()].map((h) => h.w));
@@ -182,7 +180,8 @@ export function lineageLayout(graph, opts = {}) {
   // P166: 휴대폰 폭 = 나무 칸 수(적어도 MINCOLS)만큼. P260: 솔로도 시작 칸이라 PC와 같다
   const PCOLS = Math.max(L.MINCOLS, nCols);
   const W = phone ? PHONE.PADX * 2 + PCOLS * L.CW + (PCOLS - 1) * L.GX : COL[nCols - 1] + L.CW + 60;
-  const DX = two ? W + COLS2.GAP : 0; // P202: 오른쪽(이전) 열의 x
+  const GAP2 = phone ? PHONE.CGAP : COLS2.GAP;
+  let DX = two ? W + GAP2 : 0; // P202: 오른쪽(이전) 열의 x. P280: 휴대폰은 오늘 칸을 다 놓은 뒤 그 칸 카드 폭에 맞춰 당긴다
   let ox = 0, ci = 0; // 지금 놓는 열의 x와 번호
   const sections = [];
 
@@ -242,6 +241,12 @@ export function lineageLayout(graph, opts = {}) {
     const turn = split && gi === nToday; // P202: 오늘 칸 → 이전 칸으로 넘어가는 자리
     if (turn) {
       measure.today = y - secTop;
+      if (two && phone) { // P280: 휴대폰 오늘 칸 폭 = 그 칸 카드가 닿는 끝(적어도 시작·1단계 두 칸). 이전 칸은 그 오른쪽 CGAP 뒤
+        const TW = Math.min(W, Math.max(PHONE.PADX * 2 + L.MINCOLS * L.CW + L.GX, ...[...cards.values()].map((c) => c.x + c.w + PHONE.PADX)));
+        DX = TW + GAP2; sections[0].w = TW; sections[1].x = DX;
+        for (const r of rows) r.w = TW;
+        for (const b of bands) b.w = TW;
+      }
       if (two) { ox = DX; ci = 1; y = SEC.SECH; } // 두 열: 이전 칸은 오른쪽 열 맨 위부터
       else { sections.push({ kind: 'split', mode: 'line', x: 0, y, w: W, h: SEC.SEP, col: 0, before: g.keys[0] }); y += SEC.SEP; }
       secTop = y;
@@ -266,13 +271,13 @@ export function lineageLayout(graph, opts = {}) {
     // P157: 띠 최소 높이. 모자라면 마지막 줄을 늘린다(기둥 글이 잘리지 않게). P166: 휴대폰은 머리가 위라 없다
     if (!phone && y - by < L.BANDMIN) { const r = rows[rows.length - 1], dy = L.BANDMIN - (y - by); r.h += dy; y += dy; }
     const ids = tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).map((n) => n.id);
-    bands.push({ id: g.id, name: g.name, loose: g.id == null, odd: gi % 2 === 1, y: by, h: y - by, nWs: g.keys.length, sessions: ids.length, bar: chipCounts(ids.map(tierOf)), today: !!g.today, ...(phone ? { x: 0, w: W, gi, cont: false, page: 0 } : { x: ox, col: ci }) });
+    bands.push({ id: g.id, name: g.name, loose: g.id == null, odd: gi % 2 === 1, y: by, h: y - by, nWs: g.keys.length, sessions: ids.length, bar: chipCounts(ids.map(tierOf)), today: !!g.today, ...(phone ? { x: ox, w: W, gi, cont: false, page: 0, col: ci } : { x: ox, col: ci }) });
   });
   if (split) measure.earlier = y - secTop; else if (nToday) measure.today = y - secTop; else measure.earlier = y - secTop;
   measure.h = y;
   // P166: 휴대폰은 보이는 칸 비율에 맞춰 줄들을 단(page)으로 나눌 수 있다(신문처럼 위 → 아래, 왼 → 오른)
   let nPages = 1;
-  if (phone) { nPages = flowPages(); y = Math.max(1, ...bands.map((b) => b.y + b.h)); }
+  if (phone && !two) { nPages = flowPages(); y = Math.max(1, ...bands.map((b) => b.y + b.h)); }
 
   // ---- 선 ----
   const r1 = (v) => Math.round(v * 10) / 10;
@@ -348,6 +353,7 @@ export function lineageLayout(graph, opts = {}) {
     if (phone) { // P166: 휴대폰 머리(위 띠)는 이름·칩 자리만 막는다(선이 줄 사이를 위아래로 지날 수 있게)
       for (const r of rows) blocks.push({ x: r.x + PHONE.PADX - 6, y: r.y + 8, w: Math.min(r.w - PHONE.PADX * 2, L.CW * 1.3), h: PHONE.WH - 16 });
       for (const b of bands) blocks.push({ x: b.x + PHONE.PADX - 6, y: b.y + 8, w: Math.min(b.w - PHONE.PADX * 2, L.CW * 1.3), h: PHONE.FH - 16 });
+      if (two) blocks.push({ x: -PHONE.PADX, y: -240, w: W * 2 + GAP2 + PHONE.PADX * 2, h: SEC.SECH + 240 }); // P280: 열 위 머리
     } else {
       for (const r of rows) blocks.push({ x: (r.ox || 0) + L.HEADX - 8, y: r.y + 12, w: Math.max(L.HEADW, L.HEADW2) + 16, h: Math.max(96, heads.get(r.key).h) }); // 줄 머리(이름·칩)
       for (const b of bands) blocks.push({ x: b.x || 0, y: b.y, w: L.SPINE, h: b.h }); // 폴더 기둥
@@ -370,9 +376,9 @@ export function lineageLayout(graph, opts = {}) {
   const cols = two ? [...cols0.map((c) => ({ ...c, c: 0 })), ...cols0.map((c) => ({ ...c, x: c.x + DX, c: 1 }))] : cols0.map((c) => ({ ...c, c: 0 }));
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
-  const BW = phone ? nPages * W + (nPages - 1) * PHONE.PGAP : two ? W * 2 + COLS2.GAP : W;
+  const BW = two ? DX + W : phone ? nPages * W + (nPages - 1) * PHONE.PGAP : W;
   const BH = two ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
-  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : 1, colDx: DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages, tabs } : {}) };
+  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : 1, colDx: DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
 
   // ---- P260: 줄 안 쌓기(PC·휴대폰 같은 규칙). 시작 칸 뿌리의 나무 → 다른 워크스페이스에서 온 것(1단계 칸) → 솔로(시작 칸, 차례 = 만든 차례).
   //   나무 사이는 GY*2(동료 뿌리끼리는 PGY), 솔로끼리는 GY. 쌓은 것이 없으면 null, 있으면 마지막 카드 아래 끝 y ----
@@ -393,7 +399,7 @@ export function lineageLayout(graph, opts = {}) {
     const top = y + PHONE.WH + PHONE.RT;
     const bottom = stack(key, top) ?? top;
     const h = Math.max(bottom, top) + PHONE.RB - y;
-    rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: 0, w: W, chips, count, head: PHONE.WH, page: 0, today: !!g.today });
+    rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: ox, w: W, chips, count, head: PHONE.WH, page: 0, today: !!g.today, ox, col: ci });
     return h;
   }
 
@@ -458,32 +464,7 @@ export function lineageLayout(graph, opts = {}) {
 // - 폴더 이름: 왼쪽 기둥 대신 띠 위 머리(FH). 워크스페이스 이름·칩: 왼쪽 칸 대신 줄 위 머리(WH). 솔로: 오른쪽 두 줄 대신 나무 아래 격자(나무 칸 수만큼, 가로 점선으로 가른다).
 // - 카드 폭은 PC의 CW_K배(CW_MIN~CW_MAX), 단계 사이 GX(PC 110). 맞춤 보기에서 시작·1단계 두 칸이 화면 폭에 들게.
 // - 보이는 칸(view)을 주면 전체가 그 비율에 더 크게 들어가는 단 수(1~MAXPAGES)를 고른다(앞 단 수보다 GAIN배 이상 커질 때만). 단 사이 PGAP
-// ---- P207: 휴대폰 세션 맵 탭(오늘 | 이전). 한 번에 한 칸만 놓고 그린다 ----
-// groups = folderOrder 결과(g.today), nodes = 세션 노드. want = 고른 탭('today' | 'earlier' | null)
-// → { split(두 칸 다 있음), pick(놓는 칸, split 아니면 null), today·earlier: { n(세션 수), attn(응답 필요·오류 수), ids(폴더 차례) }, ofWs: 워크스페이스 키 → 칸 }
-export function phoneTabs(groups, nodes, wsOf, tierOf, want = null) {
-  const ofWs = new Map();
-  for (const g of groups || []) for (const k of g.keys) ofWs.set(k, g.today ? 'today' : 'earlier');
-  const sec = () => ({ n: 0, attn: 0, ids: [] });
-  const out = { today: sec(), earlier: sec(), ofWs };
-  const byWs = new Map();
-  for (const n of nodes || []) { const k = wsOf(n.id); if (!byWs.has(k)) byWs.set(k, []); byWs.get(k).push(n.id); }
-  for (const g of groups || []) for (const k of g.keys) for (const id of byWs.get(k) || []) {
-    const s = out[g.today ? 'today' : 'earlier'];
-    s.n++; s.ids.push(id);
-    const tr = tierOf(id);
-    if (tr === 'turn' || tr === 'alert') s.attn++;
-  }
-  out.split = out.today.n > 0 && out.earlier.n > 0;
-  out.pick = out.split ? tabPick(want, out) : null;
-  return out;
-}
-// 고를 칸: 고른 탭에 세션이 있으면 그것, 아니면 기본(오늘에 세션이 있으면 오늘, 없으면 이전)
-export const tabPick = (want, tabs) => (want && tabs[want] && tabs[want].n > 0 ? want : tabs.today.n > 0 ? 'today' : 'earlier');
-// 카드 id가 든 칸(탭이 없으면 null)
-export const tabOfId = (lay, id) => { const tb = lay && lay.tabs, n = tb && tb.split && lay.tree.byId.get(id); return n ? tb.ofWs.get(n.workspaceKey || '') || null : null; };
-
-export const PHONE = { FOLD: 4, PADX: 20, GX: 56, FH: 84, WH: 68, RT: 8, RB: 26, BANDGAP: 30, PGAP: 90, CW_K: 0.82, CW_MIN: 264, CW_MAX: 340, MAXPAGES: 3, GAIN: 1.2, SEP: 78 }; // P202: SEP = 오늘·이전 구분 줄 칸 높이
+export const PHONE = { FOLD: 4, PADX: 20, GX: 56, FH: 84, WH: 68, RT: 8, RB: 26, BANDGAP: 30, PGAP: 90, CW_K: 0.82, CW_MIN: 264, CW_MAX: 340, MAXPAGES: 3, GAIN: 1.2, SEP: 78, SECH: 72, CGAP: 64 }; // P202: SEP = 오늘·이전 구분 줄 칸 높이. P280: SECH = 두 열 머리 높이, CGAP = 두 열 사이
 
 // ---- P202: 세션 맵 폴더 차례(오늘 일한 폴더 먼저, 각각 이름순)와 두 열 ----
 // 이름순: 대소문자를 가리지 않고 숫자는 자연 순(localeCompare numeric·sensitivity base). 지역 설정에 따라 한글·영문 차례가 바뀌지 않게 언어를 'en'으로 못 박고(라틴 → 한글),

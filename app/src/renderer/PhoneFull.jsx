@@ -199,7 +199,7 @@ function FullView({ s, from }) {
           <VoiceInterim voice={voice} />
           <VoiceButton voice={voice} className="mt-full-voice" />
           <textarea ref={taRef} rows={1} value={text} data-field="phone-line" enterKeyHint="send" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            placeholder={t('phoneBoard.fullType', { name: s.name })}
+            placeholder={t('phoneBoard.fullType')}
             onChange={(e) => { setText(e.target.value); grow(e.target); }}
             onKeyDown={(e) => { if (lineEnterSends({ key: e.key, shiftKey: e.shiftKey, isComposing: e.nativeEvent.isComposing, keyCode: e.keyCode })) { e.preventDefault(); sendLine(); } }} />
         </div>

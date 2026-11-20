@@ -4,7 +4,8 @@ import { zoomAt, panBy, fitView, centerOn, clampK } from './mission-terr.js';
 
 // LONG_MS 동안 SLOP 안에 머물면 길게 누르기(미리 보기). 그 전에 SLOP을 넘으면 끌기(시점 이동), 그 전에 떼면 누르기(세션 열기)
 // DOCK = 맞춤에서 아래 줌 단추 자리로 비우는 높이
-export const PM = { LONG_MS: 480, SLOP: 10, PAD: 12, DOCK: 58, FIT_MAX: 1, GO_K: 1.1, SAVE_MS: 250 };
+// P280: PEEK = 두 열 맞춤에서 오른쪽 끝에 보이게 남기는 이전 칸 폭(화면 px, 이전 카드 왼쪽 가장자리부터)
+export const PM = { LONG_MS: 480, SLOP: 10, PAD: 12, DOCK: 58, FIT_MAX: 1, GO_K: 1.1, SAVE_MS: 250, PEEK: 34 };
 export const VIEW_KEY = 'atrium.phoneMap.view';
 
 // 손가락 판정. n = 닿아 있는 손가락 수(이번 손짓에서 가장 많았던 수), dx·dy = 처음 자리에서 움직인 거리, dt = 누른 뒤 지난 시간, lifted = 뗐는가
@@ -25,6 +26,13 @@ export function pinchView(v0, m0, d0, m, d) {
 // 맞춤: 세계 전체를 보이는 칸(vw × vh, 아래 줌 단추 자리 빼고)에. 가까이 단계 위로는 키우지 않는다.
 // P256: 폭에 맞춰 높이가 남으면 가운데가 아니라 위에 붙인다(맵 위가 비어 보이지 않게, 남는 칸은 아래 줌 단추 쪽)
 export const phoneFit = (bounds, vw, vh) => { const f = fitView(bounds, vw, vh, { pad: PM.PAD, bottom: PM.DOCK, max: PM.FIT_MAX }); return { ...f, y: PM.PAD - bounds.y * f.k }; };
+// P280: 세션 맵 맞춤. 두 열(오늘 | 이전)이면 오늘 칸 폭에 맞추고 위에 붙이되, 이전 칸 머리와 카드 가장자리가 오른쪽 끝에 PEEK만큼 보이게(옆에 더 있다는 표시).
+//   lay = lineageLayout 결과(ncol, colDx, bounds). 한 열이면 전과 같은 phoneFit
+export function mapFit(lay, vw, vh, padx = 20) {
+  if (!lay || lay.ncol !== 2) return phoneFit(lay.bounds, vw, vh);
+  const k = clampK(Math.min(PM.FIT_MAX, Math.max(0.01, (vw - PM.PEEK - PM.PAD) / Math.max(1, lay.colDx + padx))));
+  return { k, x: PM.PAD - lay.bounds.x * k, y: PM.PAD - lay.bounds.y * k };
+}
 // 카드로 가기(위 알약): 카드 폭이 화면 폭에 거의 차게(지금 배율이 더 크면 그대로)
 export function goView(b, v, vw, vh) {
   const k = Math.max(v ? v.k : 0, Math.min(PM.GO_K, (vw - 32) / Math.max(1, b.w)));
@@ -34,41 +42,26 @@ export function goView(b, v, vw, vh) {
 // 시점 기억: 기기(브라우저 저장소)에 화면 크기마다 하나. 세로·가로 돌리면 따로. 저장소가 없거나 깨져도 맞춤으로 연다
 export const sizeKey = (s) => (s ? `${Math.round(s.w / 20) * 20}x${Math.round(s.h / 20) * 20}` : '');
 const ok = (v) => !!v && [v.k, v.x, v.y].every((x) => typeof x === 'number' && Number.isFinite(x)) && v.k > 0;
-// P207: 탭(오늘 | 이전)이 있으면 탭마다 따로(열쇠 = 크기|탭). 탭이 없으면 전과 같은 열쇠
-const viewKey = (size, tab) => (tab ? `${sizeKey(size)}|${tab}` : sizeKey(size));
-export function loadView(store, size, tab = null) {
+export function loadView(store, size) {
   try {
     const all = JSON.parse((store && store.getItem(VIEW_KEY)) || '{}');
-    const v = all && all[viewKey(size, tab)];
+    const v = all && all[sizeKey(size)];
     return ok(v) ? { k: clampK(v.k), x: v.x, y: v.y } : null;
   } catch { return null; }
 }
-export function saveView(store, size, v, tab = null) {
+export function saveView(store, size, v) {
   if (!store || !ok(v) || !size) return false;
   try {
     let all = {};
     try { all = JSON.parse(store.getItem(VIEW_KEY) || '{}') || {}; } catch { all = {}; }
-    const key = viewKey(size, tab);
-    const keys = Object.keys(all).filter((k) => k !== key).slice(-9); // 화면 크기(× 탭)는 몇 개만 기억
+    const key = sizeKey(size);
+    const keys = Object.keys(all).filter((k) => k !== key && !k.includes('|')).slice(-4); // 화면 크기는 몇 개만 기억(P280: 옛 탭 열쇠 "크기|탭"은 버린다)
     const next = Object.fromEntries(keys.map((k) => [k, all[k]]));
     next[key] = { k: Math.round(v.k * 1e4) / 1e4, x: Math.round(v.x), y: Math.round(v.y) };
     store.setItem(VIEW_KEY, JSON.stringify(next));
     return true;
   } catch { return false; }
 }
-export const clearView = (store, size, tab = null) => { try { const all = JSON.parse(store.getItem(VIEW_KEY) || '{}') || {}; delete all[viewKey(size, tab)]; store.setItem(VIEW_KEY, JSON.stringify(all)); } catch { /* 지우지 못해도 된다 */ } };
-// 처음 보기: 이 화면 크기에서 기억한 보기, 없으면 맞춤
-export const openView = (store, size, bounds, tab = null) => loadView(store, size, tab) || phoneFit(bounds, size.w, size.h);
-
-// P207: 고른 탭(오늘 | 이전)을 기기에 기억한다. 고른 날(자정 기준 day)이 지나면 잊고 기본 규칙(tabPick)을 따른다
-export const TAB_KEY = 'atrium.phoneMap.tab';
-export function loadTab(store, day) {
-  try {
-    const v = JSON.parse((store && store.getItem(TAB_KEY)) || 'null');
-    return v && (v.tab === 'today' || v.tab === 'earlier') && v.day === day ? v.tab : null;
-  } catch { return null; }
-}
-export function saveTab(store, tab, day) {
-  if (!store || (tab !== 'today' && tab !== 'earlier')) return false;
-  try { store.setItem(TAB_KEY, JSON.stringify({ tab, day })); return true; } catch { return false; }
-}
+export const clearView = (store, size) => { try { const all = JSON.parse(store.getItem(VIEW_KEY) || '{}') || {}; delete all[sizeKey(size)]; store.setItem(VIEW_KEY, JSON.stringify(all)); } catch { /* 지우지 못해도 된다 */ } };
+// 처음 보기: 이 화면 크기에서 기억한 보기, 없으면 맞춤(P280: lay를 주면 두 열 맞춤 mapFit, 상자를 주면 phoneFit)
+export const openView = (store, size, layOrBounds) => loadView(store, size) || (layOrBounds && layOrBounds.bounds ? mapFit(layOrBounds, size.w, size.h) : phoneFit(layOrBounds, size.w, size.h));

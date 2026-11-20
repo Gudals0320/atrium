@@ -1889,7 +1889,7 @@ export default {
     key_slash: '슬래시(/)',
     fontDown: '터미널 글자 작게',
     fontUp: '터미널 글자 크게',
-    inputAgent: '{name}에게 보낼 메시지',
+    inputAgent: '메시지', // P280: 짧은 고정 글(누구에게 가는지는 머리줄이 말한다)
     inputShell: '실행할 명령',
     send: '보내기',
     sent: '보냈습니다.',
@@ -1922,7 +1922,7 @@ export default {
   phoneBoard: {
     toList: '세션 목록으로 보기',
     fullOut: '탭하면 보드로',
-    fullType: '{name}에 입력 (Enter로 보내기)',
+    fullType: '입력', // P280
     key_left: '왼쪽 화살표',
     key_right: '오른쪽 화살표',
   },
@@ -2607,10 +2607,6 @@ export default {
   launcherEffort: { // P205: 호출자 틀의 노력 수준 빈 값(하네스 이름)
     harnessDefault: '{harness} 기본값',
   },
-  pmTab: { // P207: 휴대폰 세션 맵 탭(오늘 | 이전)
-    label: '세션 맵 칸',
-    attn: '응답 필요·오류 {n}개',
-  },
   usage: { // P211: 구독 사용량(위 막대 알약, 펼침, 호출자 옆 남은 양, 90% 알림)
     label: '사용량',
     head: '구독 사용량',
@@ -2734,7 +2730,7 @@ export default {
   cmdHead: {
     steerOn: '스티어링 켬',
     steerKey: '스티어링으로 보내기',
-    phoneSteerOn: '스티어링 켬: 지금 하는 일에 넣습니다',
+    phoneSteerOn: '지금 일에 넣기', // P280
     oldHoldDropped: '보드를 다시 시작하며 옛 대기 줄을 정리함',
   },
 };
