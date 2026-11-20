@@ -7,6 +7,17 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const out = { version: null, node: process.versions.node, engines: null, protocols: null, problems: [] };
+// 이슈 #18: Node가 맞지 않으면 다른 모듈을 불러오지 않고 바로 낸다(Node 22.13은 한글 경로에서 ws를 불러오다 0xC0000005로 끝나 결과를 못 낸다)
+{
+  const { nodeSatisfies, engineRange } = await import('./node-check.mjs');
+  const engines = engineRange(path.join(HERE, '..', 'package.json'));
+  if (!nodeSatisfies(out.node, engines)) {
+    out.engines = engines;
+    out.problems.push(`Node ${out.node}가 ${engines}에 맞지 않음`);
+    console.log(JSON.stringify(out));
+    process.exit(0);
+  }
+}
 try {
   const { nodeSatisfies, versionOfRoot } = await import('./update.mjs');
   out.version = versionOfRoot(ROOT);

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url'; // 이슈 #18: 한글·공백 경로(URL 인코딩)
 import { NODE, GAP, SIZE_STEPS, REGION_GAP, REGION_HEAD, REGION_PAD, EMPTY_REGION, overlaps, bbox, regionRect, regionsOf, slotInRegion, newRegionSlot, packRegions, splitSide, arrangeTree } from '../src/canvas.mjs';
 import { edgeSnap, layout as layoutTree, fromLine, moveDivider, insert as treeInsert } from '../src/dock-tree.mjs'; // P17: 덩어리는 분할 나무
 import { searchBoard, matchScore, snippet } from '../src/search.mjs';
@@ -325,7 +326,7 @@ test('저장소: P5까지의 board.db에 열(workspaces.x·y, nodes.size)과 표
   const file = path.join(tmp(), 'board.db');
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(file);
-  db.exec(fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), 'fixtures', 'p4-schema.sql'), 'utf8'));
+  db.exec(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'p4-schema.sql'), 'utf8'));
   db.close();
   const st = new Store(file);
   st.insertWorkspace({ key: 'k', kind: 'folder', root: 'C:/k', createdAt: 1 });
