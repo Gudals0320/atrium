@@ -2632,6 +2632,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-dc-input:focus { outline: none; border-color: var(--teal); }
 .mt-dc-mark { flex: none; padding: 0 6px; border-radius: 6px; background: var(--teal-bg); border: 1px solid var(--teal); color: var(--white); font-size: 11.5px; font-weight: 700; line-height: 16px; white-space: nowrap; }
 .mt-dc-mark.map { margin-left: 4px; font-size: 10.5px; line-height: 14px; }
+.mt-dc-mark.map.tile { margin-left: .4em; font-size: .55em; line-height: 1.5; vertical-align: middle; }
 .mt-pl-pill.st-decision { border-color: var(--teal); background: var(--teal-bg); }
 .mt-pl-pill.st-decision i { background: var(--teal); }
 .mt-dc-sheet { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; justify-content: flex-end; }
