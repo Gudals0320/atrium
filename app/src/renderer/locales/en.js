@@ -2870,5 +2870,9 @@ export default {
     rep: 'Shown',
     repHint: 'Tap a subscription to show it on the pill.',
   },
+  // P258: a delivery first marked unconfirmed whose prompt was submitted later (e.g. after a compaction)
+  deliveryLate: {
+    reason: 'submitted late',
+  },
 };
 

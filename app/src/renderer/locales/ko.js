@@ -2870,5 +2870,9 @@ export default {
     rep: '대표',
     repHint: '구독을 누르면 알약에 그 구독을 보입니다.',
   },
+  // P258: 미확인으로 끝난 뒤 늦게 제출된 전달(압축 뒤 등)
+  deliveryLate: {
+    reason: '늦게 제출됨',
+  },
 };
 

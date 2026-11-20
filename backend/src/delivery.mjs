@@ -12,6 +12,9 @@ const REFUSED = { agent_not_found: 'no_agent', agent_not_ready: 'no_agent', agen
 // P215: 이 까닭으로 맨 앞에서 기다리는 시간은 짧은 상한(deliveryMaxWaitMs, 15분)에 넣지 않는다. 받는 세션이 턴을 도는 중(working)이거나
 //   그 턴 안에서 사람의 답(권한·질문, waiting)을 기다린다: 턴이 끝나면 넣는다. 아주 긴 턴은 큰 상한(deliveryLongWaitMs, 12시간)이 끊는다
 export const LONG_WAIT = new Set(['working', 'waiting']);
+// P258: 미확인(unconfirmed)으로 끝난 전달을 늦은 확인을 위해 기억해 두는 시간(cfg.lateConfirmMs). 압축 중 넣은 글은 Claude Code가 쥐고 있다가
+//   압축이 끝난 뒤 제출한다(1~2분). 그 안에 그 세션의 UserPromptSubmit이 그 글과 맞으면 confirmed(이유 late)로 바꾼다. 메모리에만 둔다(판이 다시 뜨면 잊는다)
+export const LATE_CONFIRM_MS = 10 * 60000;
 // P106: n번째 거부 뒤 다시 보내기까지 기다릴 시간(0.5초에서 두 배씩, 30초까지)
 export function retryDelay(n, cfg = {}) {
   const base = cfg.deliveryBackoffMs ?? 500, max = cfg.deliveryBackoffMaxMs ?? 30000;
@@ -88,6 +91,7 @@ export class DeliveryQueue extends EventEmitter {
     super();
     this.store = store; this.cfg = cfg; this.view = view; this.send = send; this.inspect = inspect; this.pressEnter = pressEnter; this.drafts = drafts;
     this.items = new Map();
+    this.late = new Map(); // P258: sessionId → 미확인으로 끝난 전달들(늦은 확인을 기다린다, lateUntil까지)
     for (const d of store.activeDeliveries()) {
       // 백엔드가 보내는 중에 꺼졌다면 들어갔는지 모른다 → sent로 보고 확인을 기다린다(C2에서 대화 기록으로 맞춘다)
       // sentAt이 없으면 확인 기한을 셀 수 없어 영영 sent로 남는다 → 복구 시각을 넣는다(이슈 #1-1)
@@ -207,13 +211,35 @@ export class DeliveryQueue extends EventEmitter {
   list(sessionId) { return [...this.items.values()].filter((d) => !sessionId || d.sessionId === sessionId).sort((a, b) => order(a) - order(b)); }
 
   // B1 규칙 6: hook UserPromptSubmit이 오면 맞춰 보고 "제출 확인"
+  // P258: 맨 앞 전달(보내는 중·보냄)과 맞지 않으면 미확인으로 끝난 전달(늦은 확인, LATE_CONFIRM_MS 안)과 맞춰 본다. 맞는 글이 우선이고,
+  //   같은 글이면 맨 앞 전달이 먼저다. 한 hook은 전달 하나만 확인한다. 늦게 확인한 hook은 맨 앞 전달의 "다른 글이 들어감"(mismatchSeen)으로 치지 않는다
   onUserPromptSubmit(sessionId, prompt) {
     const d = this._head(sessionId);
-    if (!d || (d.status !== 'sending' && d.status !== 'sent')) return null;
-    if (promptMatches(d.text, prompt)) { this._set(d, 'confirmed', d.typed ? 'typed' : null, { confirmedAt: Date.now() }); setImmediate(() => this.pump()); return d; }
-    d.mismatchSeen = true;
+    const open = !!d && (d.status === 'sending' || d.status === 'sent');
+    if (open && promptMatches(d.text, prompt)) { this._set(d, 'confirmed', d.typed ? 'typed' : null, { confirmedAt: Date.now() }); setImmediate(() => this.pump()); return d; }
+    const late = this._lateMatch(sessionId, prompt);
+    if (late) {
+      const now = Date.now();
+      const from = late.unconfirmedAt || now;
+      this._set(late, 'confirmed', 'late', { confirmedAt: now });
+      this.emit('late_confirm', { deliveryId: late.deliveryId, sessionId, afterMs: now - from, why: late.unconfirmedWhy || null });
+      return late;
+    }
+    if (open) d.mismatchSeen = true;
     return null;
   }
+  // P258: 미확인으로 끝난 전달 가운데 이 글과 맞는 가장 먼저 보낸 것(꺼내서 돌려준다). 기한이 지난 것은 버린다
+  _lateMatch(sessionId, prompt, now = Date.now()) {
+    const list = this.late.get(sessionId);
+    if (!list) return null;
+    const live = list.filter((x) => x.lateUntil > now && x.status === 'unconfirmed');
+    const hit = live.find((x) => promptMatches(x.text, prompt)) || null;
+    const rest = hit ? live.filter((x) => x !== hit) : live;
+    if (rest.length) this.late.set(sessionId, rest); else this.late.delete(sessionId);
+    return hit;
+  }
+  // P258: 늦은 확인을 기다리는 전달 수(시험·진단)
+  lateCount(sessionId) { const now = Date.now(); return (this.late.get(sessionId) || []).filter((x) => x.lateUntil > now).length; }
   // hook이 없는 세션(판에 올린 에이전트, Claude Code가 아닌 종류)은 보낸 뒤 터미널 상태가 working이 되면 제출 확인으로 친다(P4)
   onAgentWorking(sessionId) {
     const d = this._head(sessionId);
@@ -527,6 +553,11 @@ export class DeliveryQueue extends EventEmitter {
     d.updatedAt = Date.now();
     this.store.updateDelivery(d.deliveryId, { status, reason, ...extra });
     if (FINAL.has(status)) this.items.delete(d.deliveryId);
+    if (status === 'unconfirmed') { // P258: 늦게 제출될 수 있다(압축 중 쥐고 있던 글 등). 잠시 기억해 둔다
+      const now = Date.now();
+      d.unconfirmedAt = now; d.unconfirmedWhy = reason ?? null; d.lateUntil = now + (this.cfg.lateConfirmMs ?? LATE_CONFIRM_MS);
+      this.late.set(d.sessionId, [...(this.late.get(d.sessionId) || []).filter((x) => x.lateUntil > now && x !== d), d]);
+    }
     this._emit(d);
     if (FINAL.has(status) && d.held) this._putBack(d).catch(() => {}); // P128: 지시가 끝났다. 비켜 둔 글을 입력 칸에 되돌린다
   }

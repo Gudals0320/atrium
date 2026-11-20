@@ -12,6 +12,7 @@ import { deriveState } from './state.mjs';
 import { findSession, shownName } from './session-label.mjs';
 import { screenAnswerText, tailText } from './links.mjs';
 import { clip } from './text.mjs';
+import { LATE_CONFIRM_MS } from './delivery.mjs'; // P258
 import { checkAgentText } from './work-units.mjs'; // P180
 
 export const WAIT_DEFAULT_MS = 100000; // 한 번에 기다리는 기본(Claude Code Bash 도구의 기본 시간 제한 2분 안쪽). 더 길면 --timeout
@@ -106,7 +107,11 @@ export class AgentVerbs {
   onDeliveryEnd(d) {
     const p = this.pendingLinks.get(d.deliveryId);
     if (!p) return;
-    this.pendingLinks.delete(d.deliveryId);
+    // P258: 미확인은 늦게 들어갈 수 있다(늦은 확인, LATE_CONFIRM_MS). 그때 받는 쪽의 지금 지시로 두도록 그동안 남겨 둔다
+    const now = Date.now();
+    for (const [id, x] of this.pendingLinks) if (x.lateUntil && x.lateUntil < now) this.pendingLinks.delete(id);
+    if (d.status === 'unconfirmed' && !p.lateUntil) p.lateUntil = now + (this.b.cfg.lateConfirmMs ?? LATE_CONFIRM_MS);
+    else this.pendingLinks.delete(d.deliveryId);
     const b = this.b;
     const l = b.store.getLink(p.linkId);
     const t = b.sessions.get(p.to);
@@ -114,7 +119,7 @@ export class AgentVerbs {
     if (d.status !== 'confirmed' || !t) { b.linkEvent(l, 'prompt_result', null, { via: 'atrium', deliveryId: d.deliveryId, ok: false, status: d.status, reason: d.reason || null }, { quiet: true }); return; }
     const working = deriveState(t.rt).state === 'working'; // hook 없는 종류는 터미널 상태 working이 곧 제출 확인이다(그 상태 이벤트는 이미 지나갔다)
     t.openPromptFrom = { linkId: l.linkId, at: Date.now(), text: p.text, submitted: true, working };
-    b.linkEvent(l, 'target_submitted', null, { via: 'atrium', deliveryId: d.deliveryId, matches: true }, { quiet: true });
+    b.linkEvent(l, 'target_submitted', null, { via: 'atrium', deliveryId: d.deliveryId, matches: true, ...(d.reason === 'late' ? { late: true } : {}) }, { quiet: true });
     if (working) b.linkEvent(l, 'target_working', null, { from: 'ready' }, { quiet: true });
   }
 
