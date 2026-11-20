@@ -8,7 +8,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 import { ADAPTERS, adapterOf, harnessLaunch, reservedArg, resumable } from '../src/harness.mjs';
-import { dshPatchText, dshLaunchFiles, DSH_BOARD_PLUGIN, decodeFrames, readDshEvents, readDshHeader, dshSessionOf, findDshSession, readDshLastAnswer, dshSummary, refreshDshModel, zstdAvailable, logFileIn } from '../src/dsh.mjs';
+import { dshPatchText, dshLaunchFiles, DSH_BOARD_PLUGIN, decodeFrames, readDshEvents, readDshHeader, dshSessionOf, findDshSession, readDshLastAnswer, dshSummary, refreshDshModel, zstdAvailable, logFileIn, waitDshAnswer } from '../src/dsh.mjs';
 import { dshGateOf, dshInputBox, promptOnScreen } from '../src/screen.mjs';
 import { kindOfApp, KIND_COMMAND } from '../src/hc/model.mjs';
 import { HARNESSES } from '../src/launchers.mjs';
@@ -211,4 +211,30 @@ test('P270 hc 보내기 직전 확인: 지켜보기가 보기 전에 안내가 �
     await assert.rejects(a.prompt('d2', 'hello'), (e) => e.code === 'agent_blocked' && /star/.test(e.message));
     assert.deepEqual(fake.terms.get(addr).sent, []);
   } finally { a.stopEvents(); await fake.close(); }
+});
+
+// P279: 7501 done 때 기록에 그 턴의 마지막 글이 아직 없으면(앞 단계 글만 있고 턴이 열림) 턴이 닫힐 때까지 다시 읽는다
+test('P279 dsh 마지막 답: 기록의 턴이 닫힐 때까지 기다리고, 끝내 열려 있으면 본 것 가운데 가장 새 답을 쓴다', async () => {
+  const sleep = async () => {};
+  const seq = [
+    { text: '3 fruits.', at: 200, open: true }, // 도구를 부르기 전 글(턴이 아직 열림)
+    { text: '3 fruits.', at: 200, open: true },
+    { text: '3 fruits.\n\natrium me reports: ok', at: 210, open: false }, // 마지막 글과 turn/end가 쓰였다
+  ];
+  let i = 0;
+  const a = await waitDshAnswer({ read: () => seq[Math.min(i++, seq.length - 1)], since: 100, sleep });
+  assert.equal(a.text, '3 fruits.\n\natrium me reports: ok');
+  assert.equal(i, 3);
+  // 끝내 열려 있으면 가장 새 답(tries번 읽음)
+  let n = 0;
+  const b = await waitDshAnswer({ read: () => ({ text: 'step ' + n, at: 300 + n++, open: true }), since: 100, tries: 4, sleep });
+  assert.equal(b.text, 'step 3');
+  assert.equal(n, 4);
+  // 지난번 답보다 새 답이 없으면 null(화면으로 돌아간다), 읽기 오류는 없는 것으로
+  assert.equal(await waitDshAnswer({ read: () => ({ text: 'old', at: 100, open: false }), since: 100, tries: 3, sleep }), null);
+  assert.equal(await waitDshAnswer({ read: () => { throw new Error('busy'); }, tries: 2, sleep }), null);
+  // 닫힌 새 답은 곧바로
+  let k = 0;
+  const c = await waitDshAnswer({ read: () => { k++; return { text: 'done', at: 500, open: false }; }, since: 100, sleep });
+  assert.equal(c.text, 'done'); assert.equal(k, 1);
 });
