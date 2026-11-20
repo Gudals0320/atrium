@@ -1,71 +1,58 @@
 // P251: 캔버스의 rig 길 선(docs research rig3-map.md 4절)과 역할 노드 꼬리표.
-// P254: 사용자의 시안 V7 "새 rig · 캔버스의 길 선"을 그대로 옮겼다(lib/rig-map.js V7 치수·색).
-// - 두 역할 사이에 선 두 줄: 위 줄은 왼쪽 노드 → 오른쪽 노드 길(굵기 2, 오른쪽 끝 화살촉), 아래 줄은 돌아오는 길(굵기 1.5, 왼쪽 끝 화살촉).
-//   위 줄 글은 선 위("스냅숏 →"), 아래 줄 글은 선 아래("← 데이터 요청"), 기다림 수는 그 아래 "대기 n". 그 방향 길이 없으면 그 줄을 긋지 않는다.
-//   일하는 역할에 닿은 쌍(두 끝 중 하나가 일함)은 선과 글이 밝고(#ECE9E1) 나머지는 흐리다(#8E8B83). 끝나지 않은 반려는 그 줄 시작에 붉은 점.
-//   굵기·글·점은 화면 px로 시안과 같다(배율이 바뀌어도 같은 크기: 세계 크기 = 시안 값 / 배율).
-//   정의에서 나오는 선이라 연결 기록(link)과 섞지 않고 끊기가 없다. 줄(글)을 누르면 그 길로 최근 오간 항목이 뜬다.
-// - 올림: 역할이 빌더에게 올린 것이 기다리는 동안만 역할 → 빌더 노랑 점선 화살표와 "올림" 글.
+// P259: 보통 세션 연결(Links.jsx)과 같은 곡선·같은 구성으로 바꿨다(사용자 요청 2026-11-20). P254의 V7 곧은 두 줄·직각 길은 걷어 냈다.
+// - 방향마다 한 선(쌍에 길이 두 방향이면 선 둘). 자리·곡선·칩 자리는 Canvas가 lib/rig-map.js rigCanvasLines로 정해 data.rig에 싣는다.
+//   선은 보통 연결과 같은 베지어·굵기(세계 크기), 출발 끝에 작은 점, 도착 끝에 뚜렷한 화살촉. 선마다 글 칩(보통 연결 칩과 같은 생김새):
+//   선 방향 화살, 끝나지 않은 반려면 붉은 점, 항목 이름, 기다리면 "대기 n". 색은 보통 연결의 역할 연결(.role)과 같고,
+//   받는 역할이 일하고 그 길로 최근에 항목이 오갔으면 보통 연결과 같은 흐름(.mt-edge.active, 같은 움직임 설정)으로 흐른다(2차, 사용자 답). 올림만 노랑.
+//   멀리 보면 칩·화살촉·점·선 굵기는 화면에서 RIG_EDGE.CHIP_MIN배보다 작아지지 않게 키운다(data.rig.cs). 가까이(배율 ≥ CHIP_MIN)는 보통 연결과 같은 세계 크기.
+//   정의에서 나오는 선이라 연결 기록(link)과 섞지 않고 끊기가 없다. 선·칩을 누르면 그 길로 최근 오간 항목이 뜬다.
+// - 올림: 역할이 빌더에게 올린 것이 기다리는 동안만 역할 → 빌더 노랑 점선 곡선과 "올림" 칩.
 // - 꼬리표(RigTag): 역할 노드 "역할 · <이름> · v<판>", 빌더 노드 "rig 빌더"(노랑 바탕). 일반 세션에는 새 꼬리표가 없다.
 import { useState } from 'react';
-import { EdgeLabelRenderer, ViewportPortal, useStore as useFlowStore } from '@xyflow/react';
+import { EdgeLabelRenderer, ViewportPortal } from '@xyflow/react';
 import { useStore, getState, openDialog } from './store.js';
 import { useT, fmtTime } from './lib/i18n.js';
-import { rigTag, rigFrames, periodText, lineText, twoLines, polyLines, labelSpots, textW13, pairLit, pathD, V7, RIG_VIEW } from './lib/rig-map.js';
+import { rigTag, rigFrames, periodText, rigLineActive, RIG_EDGE, RIG_VIEW } from './lib/rig-map.js';
 
-const zoomOf = (s) => s.transform[2];
 const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
-// 시안의 화살촉(채운 삼각형, 굵기에 비례). 줄마다 색이 달라 줄마다 둔다
-const Tip = ({ id, color }) => <marker id={id} orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill={color} stroke="none" /></marker>;
-// 글 칸: 세계 자리 [x, y]를 가운데로, 화면 크기는 시안 그대로(scale = 1/배율)
-const at = (p, k, ax = '-50%', rot = 0) => ({ transform: `translate(${p[0]}px, ${p[1]}px) scale(${k})${rot ? ` rotate(${rot}deg)` : ''} translate(${ax}, -50%)`, transformOrigin: '0 0' });
-// P254(2차): 비스듬한 곧은 선(수평에서 1~45도)의 글은 선과 나란히 돌리고 시안처럼 줄 바로 위(앞 줄)·바로 아래(돌아오는 줄)에 붙인다. 가로·세로 선과 꺾은선은 그대로
-const slant = (P, Q) => { const d = Math.atan2(Q[1] - P[1], Q[0] - P[0]) * 180 / Math.PI; return Math.abs(d) > 1 && Math.abs(d) <= 45 ? d : 0; };
+// 도착 끝 화살촉(채운 삼각형, 세계 크기 × cs). 끝이 노드 모서리에 닿는다(refX = 길이)
+const Tip = ({ id, cls, cs, color }) => <marker id={id} className={cls} orient="auto" markerUnits="userSpaceOnUse" viewBox={`0 0 ${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W}`} markerWidth={RIG_EDGE.ARROW * cs} markerHeight={RIG_EDGE.ARROW_W * cs} refX={RIG_EDGE.ARROW} refY={RIG_EDGE.ARROW_W / 2}><path d={`M0 0 L${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W / 2} L0 ${RIG_EDGE.ARROW_W} Z`} style={{ fill: color, stroke: 'none' }} /></marker>;
+// 칩: 세계 자리 p를 가운데로, 배율 cs
+const chipAt = (p, cs) => ({ transform: `translate(${p[0]}px, ${p[1]}px) scale(${cs}) translate(-50%, -50%)`, transformOrigin: '0 0' });
+const angOf = (u) => Math.round(Math.atan2(u[1], u[0]) * 180 / Math.PI);
 
-export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
+export function RigPathEdge({ id, data }) {
   const t = useT();
-  const zoom = useFlowStore(zoomOf);
   const [open, setOpen] = useState(false);
   const m = useStore((st) => (data ? st.rigMaps.get(data.ws) : null));
-  const aWork = useStore((st) => !!data && (st.sessions.get(data.source) || {}).state === 'working');
-  const bWork = useStore((st) => !!data && (st.sessions.get(data.target) || {}).state === 'working');
-  if (!data || !data.lines) return null;
-  const k = 1 / (zoom || 1);
-  // 왼쪽(가로가 더 길면 x, 세로가 더 길면 y가 작은 쪽) 노드 → 오른쪽 노드 줄이 위 줄
-  // P254: 다른 노드를 지나는 선은 Canvas가 준 직각 길(data.route, a 쪽 → b 쪽)을 따른다
-  //   끝점은 Canvas가 나눈 자리(data.ends: 같은 변을 여러 선이 쓸 때)
-  const S0 = data.route ? data.route[0] : data.ends ? data.ends[0] : [sourceX, sourceY], T0 = data.route ? data.route[data.route.length - 1] : data.ends ? data.ends[1] : [targetX, targetY];
-  const dx = T0[0] - S0[0], dy = T0[1] - S0[1];
-  const aLeft = Math.abs(dx) >= Math.abs(dy) ? dx >= 0 : dy >= 0;
-  const P = aLeft ? S0 : T0, Q = aLeft ? T0 : S0;
-  const route = data.route ? (aLeft ? data.route : [...data.route].reverse()) : null;
-  const top = aLeft ? data.lines.top : data.lines.bottom, bottom = aLeft ? data.lines.bottom : data.lines.top;
-  const left = aLeft ? data.a : data.b, right = aLeft ? data.b : data.a;
-  const g = route ? polyLines(route, k) : twoLines(P, Q, k);
-  // P254: 세로·비스듬한 줄에서도 글이 줄 바깥에 붙게 글 폭으로 자리를 잰다
-  const tw = (s) => Math.max(V7.LABW, textW13(s));
-  const rot = route ? 0 : slant(P, Q);
-  const spot = rot ? { topLab: g.topLab, botLab: g.botLab, wait: g.wait } : labelSpots(g.mid, g.n, k, { topW: tw(lineText(top, 'top')), botW: tw(lineText(bottom, 'bottom')), waitW: Math.max(V7.WAITW, textW13(t('rigV7.wait', { n: data.lines.waiting }))) });
-  const lit = pairLit(data.a, data.b, (r) => (r === data.a ? aWork : r === data.b ? bWork : false));
-  const color = lit ? V7.C.lit : V7.C.dim;
+  const aState = useStore((st) => (data ? (st.sessions.get(data.source) || {}).state : null));
+  const bState = useStore((st) => (data ? (st.sessions.get(data.target) || {}).state : null));
+  if (!data || !data.rig) return null;
+  const { cs, lines } = data.rig;
   const tid = safeId(id);
   const flows = m ? data.flows.map((i) => (m.flows || [])[i]).filter(Boolean) : [];
+  // P259(2차): 보통 연결과 같은 색(역할 연결 .role)과 같은 흐름(.active: 받는 역할이 일하고 그 길로 30분 안에 항목이 오감). 굵게 하는 밝기는 걷었다
+  const act = (ln) => rigLineActive(ln, flows, ln.to === data.a ? aState : bState);
   const recent = flows.flatMap((f) => (f.last || []).map((x) => ({ ...x, item: f.item }))).sort((a, b) => b.t - a.t).slice(0, 6);
   const toggle = (e) => { e.stopPropagation(); setOpen((v) => !v); };
+  const first = lines[0];
   return <>
-    <g className={`mt-rig7${lit ? ' lit' : ''}`} data-role="rig-path" data-edge={id} data-a={data.a} data-b={data.b} data-lit={lit ? '1' : '0'}>
-      <defs><Tip id={`${tid}-t`} color={color} /><Tip id={`${tid}-b`} color={color} /></defs>
-      {top ? <path className="mt-rig7-line top" data-role="rig-line" data-line="top" data-routed={route ? '1' : '0'} data-from={left} data-to={right} d={g.top.d} fill="none" stroke={color} strokeWidth={V7.W1 * k} strokeLinecap="round" markerEnd={`url(#${tid}-t)`} /> : null}
-      {bottom ? <path className="mt-rig7-line bottom" data-role="rig-line" data-line="bottom" data-from={right} data-to={left} d={g.bottom.d} fill="none" stroke={color} strokeWidth={V7.W2 * k} strokeLinecap="round" markerEnd={`url(#${tid}-b)`} /> : null}
-      <path d={pathD(route || [P, Q])} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={22 * k} onClick={toggle} />
-      {top && top.open ? <circle className="mt-rig-open" data-role="rig-open-return" data-line="top" cx={g.dotTop[0]} cy={g.dotTop[1]} r={(V7.DOT / 2) * k} fill={V7.C.red} /> : null}
-      {bottom && bottom.open ? <circle className="mt-rig-open" data-role="rig-open-return" data-line="bottom" cx={g.dotBot[0]} cy={g.dotBot[1]} r={(V7.DOT / 2) * k} fill={V7.C.red} /> : null}
+    <g className="mt-rigc" data-role="rig-path" data-edge={id} data-a={data.a} data-b={data.b}>
+      <defs><Tip id={`${tid}-tip`} cls="mt-rigc-tip role" cs={cs} color="var(--wire-role)" /></defs>
+      {lines.map((ln) => <g key={ln.key}>
+        <path className={`react-flow__edge-path mt-edge role rigc${act(ln) ? ' active' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} data-active={act(ln) ? '1' : '0'} d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs }} markerEnd={`url(#${tid}-tip)`} />
+        <circle className="mt-edge-end role mt-rigc-end" data-role="rig-line-start" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
+        <path d={ln.d} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={24 * cs} onClick={toggle} />
+      </g>)}
     </g>
     <EdgeLabelRenderer>
-      {top ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(spot.topLab, k, '-50%', rot)} data-rot={Math.round(rot)} data-role="rig-edge-label" data-line="top" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(top, 'top')}</div> : null}
-      {bottom ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(spot.botLab, k, '-50%', rot)} data-rot={Math.round(rot)} data-role="rig-edge-label" data-line="bottom" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(bottom, 'bottom')}</div> : null}
-      {data.lines.waiting ? <div className={`mt-rig7-wait nodrag nopan${lit ? ' lit' : ''}`} style={at(bottom ? spot.wait : spot.botLab, k, '-50%', rot)} data-rot={Math.round(rot)} data-role="rig-wait" data-edge={id}>{t('rigV7.wait', { n: data.lines.waiting })}</div> : null}
-      {open ? <div className="mt-rig-recent nowheel nodrag nopan" style={at(spot.wait, k, '-50%')} data-role="rig-path-recent">
+      {lines.map((ln) => <div key={ln.key} className="mt-edge-label role rigc nodrag nopan" style={chipAt(ln.lab.p, cs)} data-role="rig-edge-label" data-line={ln.which} data-edge={id} data-from={ln.from} data-to={ln.to} data-free={ln.lab.free ? '1' : '0'} title={t('rigMap.pathTitle')} onClick={toggle}>
+        <i className="mt-rigc-dir" data-role="rig-dir" data-ang={angOf(ln.lab.u)} style={{ transform: `rotate(${angOf(ln.lab.u)}deg)` }} aria-hidden="true">➜</i>
+        {ln.open ? <i className="mt-rigc-open" data-role="rig-open-return" data-line={ln.which} /> : null}
+        <span className="mt-edge-text">{ln.text}</span>
+        {ln.waiting ? <span className="mt-rigc-wait" data-role="rig-wait" data-edge={id}>{t('rigV7.wait', { n: ln.waiting })}</span> : null}
+      </div>)}
+      {open && first ? <div className="mt-rig-recent nowheel nodrag nopan" style={chipAt([first.lab.p[0], first.lab.p[1] + first.h], cs)} data-role="rig-path-recent">
         <b>{t('rigMap.pathRecent')}</b>
         {recent.length ? recent.map((x) => <span key={x.id + x.rev} className={`is-${x.state}`}>{x.id} · {t(`rigMap.state.${x.state}`)} · {fmtTime(x.t)}{x.reason ? ` · "${x.reason}"` : ''}</span>) : <span className="dim">{t('rigMap.pathNone')}</span>}
       </div> : null}
@@ -73,29 +60,23 @@ export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
   </>;
 }
 
-// 올림: 역할 → 빌더 노랑 점선 화살표(굵기 2, 점선 2 6)와 선 오른쪽 "올림"(시안)
-export function RigRaiseEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
+// 올림: 역할 → 빌더 노랑 점선 곡선(보통 연결과 같은 베지어)과 "올림" 칩
+export function RigRaiseEdge({ id, data }) {
   const t = useT();
-  const zoom = useFlowStore(zoomOf);
-  const k = 1 / (zoom || 1);
-  // P254: 다른 노드를 지나면 Canvas가 준 직각 길(data.route)을 따른다. 글은 가장 긴 토막 옆
-  const pts = data && data.route ? data.route : data && data.ends ? data.ends : [[sourceX, sourceY], [targetX, targetY]];
-  const segs = pts.slice(1).map((q, i) => [pts[i], q]);
-  const [sp, sq] = segs.reduce((a, s) => (Math.hypot(s[1][0] - s[0][0], s[1][1] - s[0][1]) > Math.hypot(a[1][0] - a[0][0], a[1][1] - a[0][1]) ? s : a), segs[0]);
-  const [lp, lq] = segs[segs.length - 1];
-  const LL = Math.hypot(lq[0] - lp[0], lq[1] - lp[1]) || 1;
-  const end = [lq[0] - (lq[0] - lp[0]) / LL * 2 * V7.RAISEW * k, lq[1] - (lq[1] - lp[1]) / LL * 2 * V7.RAISEW * k];
-  const L = Math.hypot(sq[0] - sp[0], sq[1] - sp[1]) || 1, ux = (sq[0] - sp[0]) / L, uy = (sq[1] - sp[1]) / L;
-  let nx = -uy, ny = ux; if (nx < 0 || (nx === 0 && ny < 0)) { nx = -nx; ny = -ny; } // 선의 오른쪽(가로 선이면 아래)
-  const mid = [(sp[0] + sq[0]) / 2 + nx * V7.RAISELX * k, (sp[1] + sq[1]) / 2 + ny * V7.RAISELX * k];
+  if (!data || !data.rig || !data.rig.lines.length) return null;
+  const { cs } = data.rig, ln = data.rig.lines[0];
   const tid = safeId(id);
   return <>
-    <g className="mt-rig7-raise" data-role="rig-raise" data-edge={id}>
-      <defs><Tip id={`${tid}-r`} color={V7.C.raise} /></defs>
-      <path d={pathD([...pts.slice(0, -1), end])} fill="none" stroke={V7.C.raise} strokeWidth={V7.RAISEW * k} strokeDasharray={V7.RAISEDASH.map((x) => x * k).join(' ')} strokeLinecap="round" markerEnd={`url(#${tid}-r)`} />
+    <g className="mt-rigc-raise" data-role="rig-raise" data-edge={id}>
+      <defs><Tip id={`${tid}-r`} cls="mt-rigc-tip raise" cs={cs} color="var(--attn)" /></defs>
+      <path className="react-flow__edge-path mt-edge rigc raise" data-role="rig-line" data-line="raise" data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs, strokeDasharray: `${3 * cs} ${8 * cs}` }} markerEnd={`url(#${tid}-r)`} />
+      <circle className="mt-rigc-end raise" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
     </g>
     <EdgeLabelRenderer>
-      <div className="mt-rig7-raise-lab nodrag nopan" style={{ ...at(mid, k, '0%'), pointerEvents: 'none' }} data-role="rig-raise-label" data-edge={id}>{t('rigMap.raiseEdge')}{data && data.n > 1 ? ` ${data.n}` : ''}</div>
+      <div className="mt-edge-label rigc raise nodrag nopan" style={{ ...chipAt(ln.lab.p, cs), pointerEvents: 'none' }} data-role="rig-raise-label" data-edge={id} data-free={ln.lab.free ? '1' : '0'}>
+        <i className="mt-rigc-dir" data-role="rig-dir" style={{ transform: `rotate(${angOf(ln.lab.u)}deg)` }} aria-hidden="true">➜</i>
+        <span className="mt-edge-text">{t('rigMap.raiseEdge')}{ln.n > 1 ? ` ${ln.n}` : ''}</span>
+      </div>
     </EdgeLabelRenderer>
   </>;
 }

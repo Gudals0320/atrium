@@ -44,7 +44,7 @@ import { wsAt } from './lib/items.js';
 import { DividerNode, GhostNode, DockGrip, DockEdge, DockLinks } from './Docks.jsx';
 import { LinkEdge, RepoEdge } from './Links.jsx';
 import { RigPathEdge, RigRaiseEdge, RigFrames } from './RigLines.jsx'; // P251: rig 길 선(P254: 시안 V7 두 줄, 화살촉은 선이 그린다)
-import { rigEdges, rigRoute, spreadEnds, faceEnds } from './lib/rig-map.js'; // P251. P254: 다른 노드를 지나는 rig 선은 직각으로 돌린다
+import { rigEdges, rigCanvasLines, RIG_EDGE } from './lib/rig-map.js'; // P251. P259: 보통 연결과 같은 곡선, 모서리 등간격 끝점
 import { withBoundary } from './ErrorBoundary.jsx';
 import { pickAttached, termAllowed, veryClose, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
 import { perfLog } from './perf.js';
@@ -346,7 +346,7 @@ export function Canvas() {
   }, [storeNodes, sessions, docks, links, workspaces, wsGroups, memos, kanbans, convoNodes, rev, currentWs]); // P23: links(덩어리 안 연결선). P91: wsGroups(묶음 테두리)
 
   const rigMaps = useStore((st) => st.rigMaps); // P251: rig 길 선 자료
-  // P254: rig 선을 돌릴 때 여백(글이 화면 크기라서 배율에 따른다). 배율을 반 단계(√2)로 묶어 그때만 다시 센다
+  // P259: rig 칩·화살촉의 최소 화면 크기(배율을 반 단계(√2)로 묶어 그때만 다시 센다)
   const rigZb = useFlowStore((s) => Math.round(Math.log2(s.transform[2] || 1) * 2) / 2);
   const edgesRef = useRef(null); // P146: 지난번 선(값이 같으면 다시 쓴다)
   // 연결선. 같은 덩어리 안 두 노드 사이의 연결은 노드 위에 겹친 선으로 보인다(H5, P23 DockLinks). 같은 저장소 선은 워크트리 세션이 있을 때만(F4)
@@ -382,20 +382,14 @@ export function Canvas() {
       : decorateEdges(out, { rectOf: rectId, links, sessions, now: Date.now() }); // P67: 한 쌍에 이름표 하나, 물러나기, 비켜 놓기
     // P146: 값이 같은 선은 옛 객체를 다시 쓴다(세션 갱신마다 선 전부를 다시 그리지 않게)
     // P251: rig 길 선(정의에서 나온다, 연결 기록이 아니다, 끊기·고르기 없음). 역할 쌍마다 하나, 기다리는 올림은 빌더로 점선
-    // P254: 곧은 선이 다른 노드를 지나면 직각 길(data.route, 세계 좌표)로 돌리고, 앞 선이 쓴 통로는 비킨다(선끼리 겹치지 않게)
-    const rk = 1 / Math.pow(2, rigZb), rigTaken = [];
-    const hereRects = [...storeNodes].filter(([id]) => here(id)).map(([id, r]) => [id, r]);
+    // P259: 보통 연결과 같은 곡선. 끝점은 모서리 중앙 기준 등간격, 칩은 노드·다른 칩·화살촉을 피한다(lib/rig-map.js rigCanvasLines)
+    //   칩·화살촉 배율 cs는 배율을 반 단계(√2)로 묶어 그때만 다시 센다
+    const rigCs = Math.max(1, RIG_EDGE.CHIP_MIN / Math.pow(2, rigZb));
     const rigList = rigEdges([...rigMaps.values()], sessions, here);
-    const rigItems = rigList.map((e) => {
-      const ra = rectId(e.source), rb = rectId(e.target);
-      if (!ra || !rb) return { e, id: e.id, a: e.source, b: e.target, pts: null };
-      const route = rigRoute(ra, rb, hereRects.filter(([id]) => id !== e.source && id !== e.target).map(([, r]) => r), rigTaken, rk);
-      return { e, id: e.id, a: e.source, b: e.target, pts: route ? route.pts : faceEnds(ra, rb).slice(0, 2), routed: !!route };
-    });
-    const spread = spreadEnds(rigItems.filter((x) => x.pts), rectId); // 같은 변을 여러 선이 쓰면 끝점을 나눈다(곧은 선은 곧게)
-    for (const { e, routed } of rigItems) {
-      const pts = spread[e.id];
-      made.push({ id: e.id, source: e.source, target: e.target, ...sides(e.source, e.target), type: e.kind === 'raise' ? 'rigraise' : 'rigpath', data: !pts ? e : routed ? { ...e, route: pts } : { ...e, ends: pts }, selectable: false });
+    const rigLines = rigCanvasLines(rigList, rectId, { nodes: [...storeNodes].filter(([id]) => here(id)).map(([, r]) => r), cs: rigCs, waitText: (n) => tr('rigV7.wait', { n }) });
+    for (const e of rigList) {
+      const rig = rigLines.get(e.id);
+      made.push({ id: e.id, source: e.source, target: e.target, ...sides(e.source, e.target), type: e.kind === 'raise' ? 'rigraise' : 'rigpath', data: rig ? { ...e, rig } : e, selectable: false });
     }
     const prevById = new Map((edgesRef.current || []).map((e) => [e.id, e]));
     const next = made.map((e) => { const o = prevById.get(e.id); return o && Object.keys(o).length === Object.keys(e).length && sameFields(o, e) ? o : e; });

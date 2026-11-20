@@ -82,124 +82,156 @@ export function twoLines(P, Q, k = 1) {
   };
 }
 
-// ---- P254 캔버스: 길 선이 다른 노드를 지나면 직각으로 돌린다(사용자 결정 2026-11-20) ----
-// ra·rb = 두 역할 노드 사각형, others = 그 밖 노드 사각형, taken = 앞 선들이 쓴 통로([{ dir: 'h'|'v', at, from, to }], 같은 자리에 겹치지 않게).
-// 곧은 선(마주 보는 변 가운데끼리)이 아무 노드도 지나지 않으면 null(곧은 두 줄 그대로). 지나면 직각 길 후보(가운데 꺾기, 위·아래 또는 왼·오른쪽으로 돌기)
-// 가운데 노드를 지나지 않는 가장 짧은 것 → { pts: [[x, y]…](a 쪽에서 b 쪽으로) }. 다 막히면 가장 덜 지나는 것.
-// 여백은 화면 px 기준(글이 화면 크기라서): k = 세계 크기 / 화면 px(캔버스 1/배율). 돌아가는 선과 노드 사이에 아래 줄 글과 "대기 n"이 들어갈 만큼
-export const ROUTE = { PAD: 16, M: 96, LANE: 140, NEAR: 120 };
-const hitsOf = (pts, rects, pad) => { let n = 0; for (let i = 0; i + 1 < pts.length; i++) for (const r of rects) if (segHitsRect(pts[i], pts[i + 1], { x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad }, 0)) n++; return n; };
-const polyLen = (pts) => pts.slice(1).reduce((s, p, i) => s + Math.abs(p[0] - pts[i][0]) + Math.abs(p[1] - pts[i][1]), 0);
-const corridors = (pts) => pts.slice(1, -2).map((p, i) => { const a = pts[i + 1], b = pts[i + 2]; return a[1] === b[1] ? { dir: 'h', at: a[1], from: Math.min(a[0], b[0]), to: Math.max(a[0], b[0]) } : { dir: 'v', at: a[0], from: Math.min(a[1], b[1]), to: Math.max(a[1], b[1]) }; });
-const clash = (cs, taken, near) => cs.some((c) => taken.some((t) => t.dir === c.dir && Math.abs(t.at - c.at) < near && t.from < c.to && c.from < t.to));
-export function rigRoute(ra, rb, others = [], taken = [], k = 1, ends = null) {
-  const [P0, Q0, sa] = faceEnds(ra, rb);
-  const P = ends ? ends[0] : P0, Q = ends ? ends[1] : Q0;
-  const PAD = ROUTE.PAD * k, M = ROUTE.M * k, LANE = ROUTE.LANE * k, NEAR = ROUTE.NEAR * k;
-  const diag = !(ra.x < rb.x + rb.w && rb.x < ra.x + ra.w) && !(ra.y < rb.y + rb.h && rb.y < ra.y + ra.h); // 비스듬히 놓인 두 노드: 돌아야 하면 ㄱ자 후보도 본다
-  if (!others.some((r) => segHitsRect(P, Q, { x: r.x - PAD, y: r.y - PAD, w: r.w + 2 * PAD, h: r.h + 2 * PAD }, 0))) return null; // 지나는 노드가 없으면 곧은 선(비스듬해도 짧고 깨끗하다)
-  const cx = (r) => r.x + r.w / 2, cy = (r) => r.y + r.h / 2;
-  const cands = [];
-  if (diag) { // ㄱ자 둘(세로 먼저, 가로 먼저)
-    const ay = rb.y > ra.y ? ra.y + ra.h : ra.y, by = ra.y > rb.y ? rb.y + rb.h : rb.y, ax = rb.x > ra.x ? ra.x + ra.w : ra.x, bx = ra.x > rb.x ? rb.x + rb.w : rb.x;
-    cands.push([[cx(ra), ay], [cx(ra), cy(rb)], [bx, cy(rb)]]);
-    cands.push([[ax, cy(ra)], [cx(rb), cy(ra)], [cx(rb), by]]);
-  }
-  for (let lane = 0; lane < 4; lane++) {
-    const d = lane * LANE;
-    if (sa === 'r' || sa === 'l') {
-      const mx = (P[0] + Q[0]) / 2 + (lane % 2 ? d : -d);
-      cands.push([P, [mx, P[1]], [mx, Q[1]], Q]);
-    } else {
-      const my = (P[1] + Q[1]) / 2 + (lane % 2 ? d : -d);
-      cands.push([P, [P[0], my], [Q[0], my], Q]);
-    }
-    // 위로·아래로 돌기(두 노드 위·아래 변 가운데에서 나가고 들어온다)
-    const x0 = Math.min(ra.x, rb.x), x1 = Math.max(ra.x + ra.w, rb.x + rb.w);
-    const inX = [ra, rb, ...others].filter((r) => r.x < x1 && x0 < r.x + r.w);
-    const yT = Math.min(...inX.map((r) => r.y)) - M - d, yB = Math.max(...inX.map((r) => r.y + r.h)) + M + d;
-    cands.push([[cx(ra), ra.y], [cx(ra), yT], [cx(rb), yT], [cx(rb), rb.y]]);
-    cands.push([[cx(ra), ra.y + ra.h], [cx(ra), yB], [cx(rb), yB], [cx(rb), rb.y + rb.h]]);
-    // 왼쪽·오른쪽으로 돌기
-    const y0 = Math.min(ra.y, rb.y), y1 = Math.max(ra.y + ra.h, rb.y + rb.h);
-    const inY = [ra, rb, ...others].filter((r) => r.y < y1 && y0 < r.y + r.h);
-    const xL = Math.min(...inY.map((r) => r.x)) - M - d, xR = Math.max(...inY.map((r) => r.x + r.w)) + M + d;
-    cands.push([[ra.x, cy(ra)], [xL, cy(ra)], [xL, cy(rb)], [rb.x, cy(rb)]]);
-    cands.push([[ra.x + ra.w, cy(ra)], [xR, cy(ra)], [xR, cy(rb)], [rb.x + rb.w, cy(rb)]]);
-  }
-  let best = null;
-  for (const pts of cands) {
-    // 가운데 토막은 두 역할 노드도 지나면 안 된다(첫·끝 토막은 제 노드 변에서 나간다)
-    const mid = pts.slice(1, -1);
-    const hits = hitsOf(pts, others, PAD) + hitsOf(mid, [ra, rb], 0) + (clash(corridors(pts), taken, NEAR) ? 0.5 : 0);
-    const s = hits * 1e7 + polyLen(pts);
-    if (!best || s < best.s) best = { s, pts };
-  }
-  for (const c of corridors(best.pts)) taken.push(c);
-  return { pts: best.pts };
+// ---- P259 캔버스: rig 선을 보통 연결과 같은 곡선·같은 구성으로(사용자 요청 2026-11-20) ----
+// P254의 직각 길(rigRoute)·위아래 두 줄(polyLines·labelSpots)·끝점 나누기(spreadEnds)를 걷어 냈다.
+// - 선: 방향마다 한 선(쌍에 길이 두 방향이면 선 둘). 보통 연결(Links.jsx getBezierPath)과 같은 베지어(아래 rigCurve가 같은 식), 굵기·글 칩도 같은 가족(세계 크기).
+// - 끝점(rigPorts): 상대 노드를 향한 모서리(facingSides와 같은 규칙)의 중앙이 기준. 한 모서리를 n개 선이 쓰면(나감·들어옴 함께) 중앙이 가운데가 되게 같은 간격으로 놓는다.
+//   차례는 상대 노드 가운데의 그 모서리 방향 자리, 같은 상대면 rank(앞 길 0, 돌아오는 길 1, 올림 2)라 마주 보는 두 모서리에서 같은 차례 → 선끼리 엇갈리지 않는다.
+// - 화살표: 도착 끝에 채운 화살촉(보통 연결보다 뚜렷하게), 출발 끝에 보통 연결과 같은 작은 점, 글 칩 안에 그 자리 선 방향 화살.
+// - 글 칩(rigLabelSpots): 곡선 위 가운데에서 시작해 노드·다른 칩·화살촉과 겹치지 않는 자리를 곡선을 따라 찾는다.
+// - 배율: 선·칩은 세계 크기(보통 연결과 같다). 다만 멀리 보면 칩·화살촉·선 굵기가 화면에서 CHIP_MIN배(1 = 배율 100%의 크기)보다 작아지지 않게 키운다(cs = max(1, CHIP_MIN / 배율)).
+// PORT 모서리 길이에 대한 끝점 간격 비(n이 많으면 길이 / (n + 1)), ARROW·ARROW_W 화살촉 길이·폭, DOT 출발 점 반지름, W·WLIT 선 굵기(보통 연결 2.6, 밝은 쌍 3.4),
+// SIB_T 두 방향 쌍의 칩을 놓아 볼 자리(각자 출발 쪽 1/3쯤이라 두 칩이 곡선이 갈라지는 가운데에서 비켜 엇갈려 놓인다), SIB_GAP 같은 쌍 두 칩 사이 최소 틈(칩 높이 배),
+// ACTIVE_MS 선이 흐르는(움직이는) 때: 받는 역할이 일하고 그 방향 길로 이만큼 안에 항목이 오갔을 때(보통 연결의 ACTIVE_MS와 같다),
+// CHIP_H 칩 높이, CHIP_FONT 칩 글 크기, CHIP_MIN 칩 화면 최소 배율, LAB_T 칩을 놓아 볼 곡선 자리 차례, NODE_PAD 노드 둘레 여백, GAP 칩 사이 틈
+export const RIG_EDGE = { SIB_T: [0.36, 0.3, 0.42, 0.26, 0.48, 0.22, 0.56, 0.18, 0.64, 0.72, 0.8], SIB_GAP: 0.75, ACTIVE_MS: 30 * 60 * 1000, PORT: 0.18, ARROW: 16, ARROW_W: 12, DOT: 4.5, W: 2.6, WLIT: 3.4, CHIP_H: 24, CHIP_FONT: 12, CHIP_MIN: 1, LAB_T: [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82], NODE_PAD: 8, GAP: 6 };
+const POS = { t: 'top', r: 'right', b: 'bottom', l: 'left' };
+// 보통 연결의 손잡이 고르기(backend links.mjs facingSides)와 같은 규칙: 가로 틈이 세로 틈보다 크거나 같으면 왼·오른 모서리
+export function rigSides(a, b) {
+  const dx = (b.x + b.w / 2) - (a.x + a.w / 2), dy = (b.y + b.h / 2) - (a.y + a.h / 2);
+  const gapX = Math.abs(dx) - (a.w + b.w) / 2, gapY = Math.abs(dy) - (a.h + b.h) / 2;
+  if (gapX >= gapY) return dx >= 0 ? ['r', 'l'] : ['l', 'r'];
+  return dy >= 0 ? ['b', 't'] : ['t', 'b'];
 }
-// P254: 글 칸 자리(가운데). 줄에서 글 칸의 가까운 변까지 12px(시안: 위 줄 글 칸 아래 변이 줄 위 12). 칸 크기(w × LABH)를 법선 방향으로 재어
-//   세로·비스듬한 줄에서도 글이 줄을 덮지 않고 줄 바깥에 붙는다(가로 줄이면 시안의 ±28, 대기 +48과 같다). "대기 n"은 아래 줄 글 바깥.
-export function labelSpots(mid, n, k, { topW = 88, botW = 88, waitW = 56 } = {}) {
-  const sup = (w) => Math.abs(n[0]) * w / 2 + Math.abs(n[1]) * V7.LABH / 2;
-  const gap = V7.DY + 12;
-  const at = (s) => [mid[0] + n[0] * s * k, mid[1] + n[1] * s * k];
-  const b = gap + sup(botW);
-  const vertical = Math.abs(n[0]) > 0.7;
-  const bot = at(-b);
-  return { topLab: at(gap + sup(topW)), botLab: bot, wait: vertical ? [bot[0] + (waitW - botW) / 2 * Math.sign(-n[0]) * k, bot[1] + (V7.LABH + 4) * k] : at(-(b + sup(botW) + 4 + sup(waitW))) };
-}
-// P254: 한 노드의 같은 변을 여러 rig 선이 쓰면 끝점을 그 변을 따라 나눈다(선 끝이 겹치지 않게). 차례는 선이 나가는 쪽(왼·오른 변이면 y, 위·아래 변이면 x).
-//   곧은 가로·세로 선은 맞은편 끝도 같이 옮겨 곧게 두고, 꺾은선은 첫(끝) 모서리를 같이 옮겨 직각을 지킨다.
-//   items: [{ id, a, b, pts }](pts = a 쪽 → b 쪽, 세계 좌표), rectOf(id) → { id: pts }
-const sideOf = (r, p) => { const d = [['l', Math.abs(p[0] - r.x)], ['r', Math.abs(p[0] - r.x - r.w)], ['t', Math.abs(p[1] - r.y)], ['b', Math.abs(p[1] - r.y - r.h)]]; return d.sort((x, y) => x[1] - y[1])[0][0]; };
-export function spreadEnds(items, rectOf) {
-  const out = {}, groups = new Map();
-  for (const e of items) {
-    const ra = rectOf(e.a), rb = rectOf(e.b);
-    if (!ra || !rb || !e.pts || e.pts.length < 2) continue;
-    const pts = e.pts.map((p) => [...p]); out[e.id] = pts;
-    const last = pts.length - 1;
-    for (const [node, r, i, j] of [[e.a, ra, 0, 1], [e.b, rb, last, last - 1]]) {
-      const side = sideOf(r, pts[i]); const k = node + '|' + side;
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push({ id: e.id, i, j, side, r, other: i === 0 ? rb : ra, straight: pts.length === 2 });
+// 모서리 위 자리: 중앙에서 off만큼(왼·오른 모서리는 y, 위·아래 모서리는 x)
+const sidePoint = (r, side, off = 0) => (side === 'r' ? [r.x + r.w, r.y + r.h / 2 + off] : side === 'l' ? [r.x, r.y + r.h / 2 + off] : side === 't' ? [r.x + r.w / 2 + off, r.y] : [r.x + r.w / 2 + off, r.y + r.h]);
+// 끝점 간격: 모서리 길이 len, 그 모서리를 쓰는 선 n개
+export const portStep = (len, n) => (n < 2 ? 0 : Math.min(len * RIG_EDGE.PORT, len / (n + 1)));
+// lines: [{ id, from, to, rank }](노드 ID, from → to 방향). rectOf(id) → 사각형
+// → Map id → { s: [x, y], sp: 't'|'r'|'b'|'l', t, tp, sIdx, tIdx, sN, tN }(모서리의 몇째 자리·몇 개)
+export function rigPorts(lines, rectOf) {
+  const out = new Map(), groups = new Map();
+  for (const ln of lines || []) {
+    const ra = rectOf(ln.from), rb = rectOf(ln.to);
+    if (!ra || !rb || ln.from === ln.to) continue;
+    const [sa, sb] = rigSides(ra, rb);
+    const o = { ...ln, sp: sa, tp: sb };
+    out.set(ln.id, o);
+    for (const [node, r, side, other, end] of [[ln.from, ra, sa, rb, 's'], [ln.to, rb, sb, ra, 't']]) {
+      const k = node + '|' + side;
+      if (!groups.has(k)) groups.set(k, { r, side, list: [] });
+      const v = side === 'l' || side === 'r';
+      groups.get(k).list.push({ o, end, along: v ? other.y + other.h / 2 : other.x + other.w / 2 });
     }
   }
-  const fixed = new Set(); // 변을 따라 나눠 자리를 정한 끝(뒤 묶음의 평행 이동이 다시 옮기지 않는다)
   for (const g of groups.values()) {
-    if (g.length < 2) continue;
-    const v = g[0].side === 'l' || g[0].side === 'r', ax = v ? 1 : 0;
-    g.sort((x, y) => out[x.id][x.j][ax] - out[y.id][y.j][ax]);
-    g.forEach((x, n) => {
-      const pts = out[x.id], at = (v ? x.r.y + x.r.h * (n + 1) / (g.length + 1) : x.r.x + x.r.w * (n + 1) / (g.length + 1));
-      const was = pts[x.i][ax];
-      pts[x.i][ax] = at; fixed.add(x.id + '#' + x.i);
-      if (!x.straight) { if (Math.abs(pts[x.j][ax] - was) < 0.5) pts[x.j][ax] = at; return; }
-      if (fixed.has(x.id + '#' + x.j)) return;
-      // 곧은 선: 맞은편 끝도 같은 만큼 옮겨(그 노드 변 안에서) 선을 나란히 비킨다 — 축에 나란한 선은 곧게, 비스듬한 선은 각도 그대로
-      const o = x.other, lo = (v ? o.y : o.x) + 8, hi = (v ? o.y + o.h : o.x + o.w) - 8;
-      pts[x.j][ax] = Math.min(hi, Math.max(lo, pts[x.j][ax] + (at - was)));
-    });
+    const v = g.side === 'l' || g.side === 'r', len = v ? g.r.h : g.r.w, n = g.list.length, step = portStep(len, n);
+    g.list.sort((x, y) => x.along - y.along || (x.o.rank || 0) - (y.o.rank || 0) || String(x.o.id).localeCompare(String(y.o.id)));
+    g.list.forEach((x, i) => { const off = (i - (n - 1) / 2) * step; x.o[x.end] = sidePoint(g.r, g.side, off); x.o[x.end + 'Idx'] = i; x.o[x.end + 'N'] = n; });
   }
   return out;
 }
-// 꺾인 길의 두 줄(곧은 두 줄 twoLines와 같은 꼴). pts = 왼쪽(a) 쪽 → 오른쪽(b) 쪽. 모서리는 두 토막의 법선을 더해 나란히 비킨다
-export function polyLines(pts, k = 1) {
-  const segs = pts.slice(1).map((q, i) => { const p = pts[i], L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1; const u = [(q[0] - p[0]) / L, (q[1] - p[1]) / L]; return { p, q, L, u, n: [u[1], -u[0]] }; });
-  const off = (o) => pts.map((p, i) => { const a = segs[Math.max(0, i - 1)].n, b = segs[Math.min(segs.length - 1, i)].n; const n = i === 0 ? b : i === pts.length - 1 ? a : [a[0] + b[0], a[1] + b[1]]; return [p[0] + n[0] * o, p[1] + n[1] * o]; });
-  const cut = (ps, by) => { const a = ps[ps.length - 2], b = ps[ps.length - 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [...ps.slice(0, -1), [b[0] - (b[0] - a[0]) / L * by, b[1] - (b[1] - a[1]) / L * by]]; };
-  const o = V7.DY * k;
-  const top = cut(off(o), 2 * V7.W1 * k), bottom = cut(off(-o).reverse(), 2 * V7.W2 * k);
-  const j = segs.reduce((bi, s, i) => (s.L > segs[bi].L ? i : bi), 0), S = segs[j];
-  const mid = [(S.p[0] + S.q[0]) / 2, (S.p[1] + S.q[1]) / 2], at = (s) => [mid[0] + S.n[0] * s, mid[1] + S.n[1] * s];
-  const u0 = segs[0].u, uz = segs[segs.length - 1].u;
-  return {
-    mid, n: S.n,
-    top: { d: pathD(top), pts: top }, bottom: { d: pathD(bottom), pts: bottom },
-    topLab: at(V7.LAB * k), botLab: at(-V7.LAB * k), wait: at(-V7.WAIT * k),
-    dotTop: [top[0][0] + u0[0] * V7.DOTAT * k, top[0][1] + u0[1] * V7.DOTAT * k], dotBot: [bottom[0][0] - uz[0] * V7.DOTAT * k, bottom[0][1] - uz[1] * V7.DOTAT * k],
-  };
+// 보통 연결과 같은 베지어(@xyflow getBezierPath, 굽음 0.25): 손잡이 쪽으로 두 끝 사이 거리의 반만큼 뻗은 조절점. 뒤로 가면 25·0.25·√거리
+const ctlOff = (d, c = 0.25) => (d >= 0 ? 0.5 * d : c * 25 * Math.sqrt(-d));
+const ctl = (side, p, q) => (side === 'l' ? [p[0] - ctlOff(p[0] - q[0]), p[1]] : side === 'r' ? [p[0] + ctlOff(q[0] - p[0]), p[1]] : side === 't' ? [p[0], p[1] - ctlOff(p[1] - q[1])] : [p[0], p[1] + ctlOff(q[1] - p[1])]);
+// → { d(SVG 길, getBezierPath와 같은 글), P: [s, c1, c2, t] }
+export function rigCurve(s, sp, t, tp) {
+  const c1 = ctl(sp, s, t), c2 = ctl(tp, t, s);
+  return { d: `M${s[0]},${s[1]} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${t[0]},${t[1]}`, P: [s, c1, c2, t] };
+}
+export const POSITION = POS;
+// 곡선 위 자리와 방향(단위 벡터)
+export function bezAt(P, u) {
+  const v = 1 - u, [a, b, c, d] = P;
+  const p = [0, 1].map((i) => v * v * v * a[i] + 3 * v * v * u * b[i] + 3 * v * u * u * c[i] + u * u * u * d[i]);
+  let g = [0, 1].map((i) => 3 * v * v * (b[i] - a[i]) + 6 * v * u * (c[i] - b[i]) + 3 * u * u * (d[i] - c[i]));
+  const L = Math.hypot(g[0], g[1]) || 1; g = [g[0] / L, g[1] / L];
+  return { p, u: g };
+}
+// 칩 글: 항목 이름(" · "로 잇는다). 방향은 칩 안 화살과 선의 화살촉이 보인다
+export const chipText = (side) => (side ? side.items.join(' · ') : '');
+// 칩 크기(세계, cs 곱하기 전): 글(12px) + 안쪽 여백 18 + 테두리 2 + 방향 화살 14 + 붉은 점 12 + "대기 n" 알약
+export const chipSize = (text, { open = false, wait = '' } = {}) => ({ w: Math.ceil(textW13(text) * RIG_EDGE.CHIP_FONT / 13 + 20 + 14 + (open ? 12 : 0) + (wait ? textW13(wait) * 11 / 13 + 16 : 0)), h: RIG_EDGE.CHIP_H });
+const boxHit = (a, b, gap = 0) => a.x - gap < b.x + b.w && b.x - gap < a.x + a.w && a.y - gap < b.y + b.h && b.y - gap < a.y + a.h;
+// 글 칩 자리. items: [{ id, P(곡선), w, h(cs 곱한 세계 크기), prio, ts(놓아 볼 곡선 자리, 없으면 LAB_T), sib(같은 쌍 열쇠), sibGap(같은 쌍 칩 사이 최소 틈) }], nodes: 노드 사각형(모든 노드, 제 끝 노드도), tips: 화살촉·점 사각형
+// → Map id → { p: [x, y](칩 가운데), u(그 자리 선 방향), t(곡선 자리), free(겹침 없이 놓였나) }
+export function rigLabelSpots(items, nodes = [], tips = [], gap = RIG_EDGE.GAP) {
+  const out = new Map(), placed = [];
+  const pad = RIG_EDGE.NODE_PAD;
+  const at = (it, t) => { const { p, u } = bezAt(it.P, t); return { p, u, t, box: { x: p[0] - it.w / 2, y: p[1] - it.h / 2, w: it.w, h: it.h, sib: it.sib || null } }; };
+  const badOf = (c, extra = []) => nodes.filter((r) => boxHit(c.box, { x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad })).length * 4 + [...placed, ...extra].filter((q) => boxHit(c.box, q, gap)).length * 2 + tips.filter((q) => boxHit(c.box, q)).length;
+  const put = (it, c, bad) => { placed.push(c.box); out.set(it.id, { p: c.p, u: c.u, t: c.t, free: bad === 0 }); };
+  // 같은 쌍 두 칩(sib)은 한 번에: 두 자리 조합 가운데 둘 다 겹치지 않고 둘 사이가 sibGap 넘게 떨어진 것(ts 차례가 앞인 것부터)
+  const groups = new Map();
+  for (const it of items || []) { const k = it.sib ? 'sib:' + it.sib : 'one:' + it.id; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); }
+  const prio = (g) => Math.max(...g.map((x) => x.prio || 0));
+  const order = [...groups.values()].sort((a, b) => prio(b) - prio(a) || String(a[0].id).localeCompare(String(b[0].id)));
+  for (const g of order) {
+    if (g.length === 2) {
+      const [A, B] = g, ta = A.ts || RIG_EDGE.LAB_T, tb = B.ts || RIG_EDGE.LAB_T;
+      const combos = [];
+      ta.forEach((x, i) => tb.forEach((y, j) => combos.push([i + j, x, y])));
+      combos.sort((p, q) => p[0] - q[0]);
+      // 둘 사이 틈 sibGap은 될 수 있으면 지키고(못 지키면 0.5 감점, 그때는 가장 멀리 떨어진 조합), 맞닿음(gap 안)은 겹침으로 친다
+      let best = null;
+      const dist = (p, q) => Math.max(Math.max(p.x, q.x) - Math.min(p.x + p.w, q.x + q.w), Math.max(p.y, q.y) - Math.min(p.y + p.h, q.y + q.h));
+      for (const [, x, y] of combos) {
+        const ca = at(A, x), cb = at(B, y);
+        const d = dist(ca.box, cb.box);
+        const touch = d < gap ? 2 : 0, soft = d < (A.sibGap || 0) ? 0.5 : 0;
+        const ba = badOf(ca) + touch, bb = badOf(cb) + touch, bad = ba + bb + soft;
+        if (!best || bad < best.bad || (bad === best.bad && d > best.d)) best = { ca, cb, bad, ba, bb, d };
+        if (!bad) break;
+      }
+      put(A, best.ca, best.ba); put(B, best.cb, best.bb);
+      continue;
+    }
+    for (const it of g) {
+      let best = null;
+      for (const t of it.ts || RIG_EDGE.LAB_T) { const c = at(it, t); const bad = badOf(c); if (!best || bad < best.bad) best = { c, bad }; if (!bad) break; }
+      put(it, best.c, best.bad);
+    }
+  }
+  return out;
+}
+// P259(2차): 선이 흐르는가(보통 연결 .mt-edge.active와 같은 움직임·같은 규칙). 보통 연결은 받는 쪽이 일하고 마지막 지시가 ACTIVE_MS 안이면 흐른다.
+//   rig 선은 받는 역할(to)이 일하고, 그 방향 길(from → to)로 ACTIVE_MS 안에 항목이 오갔으면(길의 last 시각) 흐른다.
+//   line: { from, to }(역할 이름), flows: 지도 길 목록, toState: 받는 세션 상태
+export function rigLineActive(line, flows, toState, now = Date.now()) {
+  if (!line || toState !== 'working') return false;
+  let at = 0;
+  for (const f of flows || []) if (f && list(f.from).includes(line.from) && list(f.to).includes(line.to)) for (const x of f.last || []) at = Math.max(at, x.t || 0);
+  return at > 0 && now - at < RIG_EDGE.ACTIVE_MS;
+}
+export function rigCanvasLines(edges, rectOf, { nodes = [], cs = 1, waitText = (n) => 'wait ' + n } = {}) {
+  const lines = [];
+  for (const e of edges || []) {
+    if (e.kind === 'raise') { lines.push({ id: e.id + '#raise', edge: e.id, which: 'raise', from: e.source, to: e.target, rank: 2, roleFrom: e.a, roleTo: e.b, items: [], open: false, waiting: 0, n: e.n || 1 }); continue; }
+    const L = e.lines || {};
+    if (L.top) lines.push({ id: e.id + '#top', edge: e.id, which: 'top', from: e.source, to: e.target, rank: 0, roleFrom: e.a, roleTo: e.b, items: L.top.items, open: L.top.open, waiting: L.top.waiting || 0 });
+    if (L.bottom) lines.push({ id: e.id + '#bottom', edge: e.id, which: 'bottom', from: e.target, to: e.source, rank: 1, roleFrom: e.b, roleTo: e.a, items: L.bottom.items, open: L.bottom.open, waiting: L.bottom.waiting || 0 });
+  }
+  const ports = rigPorts(lines, rectOf);
+  const A = RIG_EDGE.ARROW * cs, tips = [];
+  const drawn = [];
+  for (const ln of lines) {
+    const o = ports.get(ln.id); if (!o) continue;
+    const c = rigCurve(o.s, o.sp, o.t, o.tp);
+    const end = bezAt(c.P, 1);
+    tips.push({ x: o.t[0] - end.u[0] * A / 2 - A / 2, y: o.t[1] - end.u[1] * A / 2 - A / 2, w: A, h: A });
+    const text = chipText(ln);
+    const wait = ln.waiting ? waitText(ln.waiting) : '';
+    const sz = ln.which === 'raise' ? { w: Math.ceil(textW13(text || 'raise') + 40), h: RIG_EDGE.CHIP_H } : chipSize(text, { open: ln.open, wait });
+    drawn.push({ ...ln, ...c, s: o.s, t: o.t, sp: o.sp, tp: o.tp, text, wait, w: sz.w * cs, h: sz.h * cs });
+  }
+  const pairN = new Map(); for (const x of drawn) pairN.set(x.edge, (pairN.get(x.edge) || 0) + 1);
+  const spots = rigLabelSpots(drawn.map((x) => { const two = x.which !== 'raise' && pairN.get(x.edge) > 1; return { id: x.id, P: x.P, w: x.w, h: x.h, prio: x.which === 'raise' ? 0 : x.waiting ? 2 : 1, ...(two ? { ts: RIG_EDGE.SIB_T, sib: x.edge, sibGap: RIG_EDGE.CHIP_H * cs * RIG_EDGE.SIB_GAP } : {}) }; }), nodes, tips);
+  const out = new Map();
+  for (const x of drawn) {
+    if (!out.has(x.edge)) out.set(x.edge, { cs, lines: [] });
+    out.get(x.edge).lines.push({ key: x.id, which: x.which, from: x.roleFrom, to: x.roleTo, d: x.d, P: x.P, s: x.s, t: x.t, sp: x.sp, tp: x.tp, items: x.items, text: x.text, open: x.open, waiting: x.waiting, wait: x.wait, n: x.n, lab: spots.get(x.id), w: x.w, h: x.h });
+  }
+  return out;
 }
 
 // ---- P254 세션 맵: 그 워크스페이스 줄 안의 rig 묶음(V7 꼴). 역할 카드 한 줄(rowOrder), 이웃한 쌍만 곧은 두 줄

@@ -156,6 +156,17 @@ const cross2 = (a, b, c, d) => {
   const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
   return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
 };
+// P259: 켤 때 놓는 노드 사이 간격(노드 크기에 비례, 사용자 요청 "의도적으로 공간을 더 벌려"). 선과 글 칩이 보통 연결처럼 세계 크기라
+//   간격도 노드 크기에 비례한다. 가로 GX = 노드 폭 × FX: 마주 보는 왼·오른 모서리 사이에 두 방향 칩(멀리 볼 때 커진 칩까지)과 화살촉이 편히 든다.
+//   세로 GY = 노드 높이 × FY이되 반 칸 비스듬한 선(아래 모서리 중앙 → 위 모서리 중앙)의 각도 atan(GY / ((W + GX) / 2))가 ANG도를 넘지 않게 줄인다(허용 각도 ANGLE.MAX 35도 안).
+//   너무 작은 노드에서도 MIN 아래로 줄이지 않는다. 1440×810이면 1080×787(P254는 600×600), 600×400이면 450×360.
+export const PLACE_GAP = { FX: 0.75, FY: 1, MIN: 360, ANG: 32 };
+export function placeGap(W, H) {
+  const GX = Math.max(PLACE_GAP.MIN, Math.round(W * PLACE_GAP.FX));
+  const yMax = Math.floor(Math.tan(PLACE_GAP.ANG * Math.PI / 180) * (W + GX) / 2);
+  const GY = Math.max(PLACE_GAP.MIN, Math.min(Math.round(H * PLACE_GAP.FY), yMax));
+  return { GX, GY };
+}
 // P254(2차): 선 각도 허용 범위(사용자 결정 2026-11-20). 그린 선(마주 보는 변 가운데끼리)이 수평에서 0~ANGLE.MAX도이거나 세로(ANGLE.VERT도 이상)이면 읽기 좋다.
 //   그 사이(가파른 비스듬한 선)는 점수에서 크게 깎는다(되도록 피하는 조건).
 export const ANGLE = { MAX: 35, VERT: 89 };

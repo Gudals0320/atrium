@@ -10,7 +10,7 @@
 import { collectCycle } from './rig-beat.mjs';
 import { waitingRaises, raiseStates } from './rig-tune.mjs';
 import { HUMAN, BUILDER_ROLE } from './rig-def-names.mjs';
-import { gridPlace, GRID_BUILDER } from './rig-map-layout.mjs';
+import { gridPlace, GRID_BUILDER, placeGap } from './rig-map-layout.mjs';
 
 export const MAP_RECENT = 3; // 섹터마다 보이는 최근 항목 수(더 있으면 +n)
 export const FLOW_RECENT = 4; // 길마다 마우스를 올리면 뜨는 최근 항목 수
@@ -22,7 +22,8 @@ export function openDecide(decide, states) {
   const closed = new Set((states || []).filter((x) => x.state !== 'waiting').map((x) => x.id));
   return (decide || []).filter((d) => !(d && d.what === 'raise' && d.id && closed.has(d.id)));
 }
-export const PLACE = { GX: 600, GY: 600 }; // 켤 때 놓는 역할 노드 사이(길 선과 그 글이 노드 밖에 보일 만큼). P254: 비스듬한 선(반 칸)의 각도 atan(GY / ((W + GX) / 2)) ≈ 30도로 허용 범위(35도) 안, 돌린 글이 줄 사이에 든다
+// 켤 때 놓는 역할 노드 사이. P259: 노드 크기에 비례(rig-map-layout.mjs placeGap, 1440×810이면 1080×787). PLACE는 600×400 노드의 값(옛 시험이 쓴다)
+export const PLACE = placeGap(600, 400);
 
 const low = (p) => String(p || '').replace(/\\/g, '/').toLowerCase();
 const RANK = { returned: 5, waiting: 4, accepted: 3, passed: 2, superseded: 1, dropped: 1 };
@@ -161,7 +162,7 @@ export function rigMaps(b) {
 }
 
 // 켠 뒤 한 번: 역할 노드(와 빌더가 있으면 빌더)를 2D 칸에 놓는다(P254: 선이 엇갈리거나 노드를 지나는 것이 가장 적은 자리, rig-map-layout.mjs gridPlace).
-//   닻은 역할 노드들의 왼쪽 위(처음 띄운 자리 근처). 칸 간격 = 노드 크기 + PLACE.GX·GY. → 옮긴 수
+//   닻은 역할 노드들의 왼쪽 위(처음 띄운 자리 근처). 칸 간격 = 노드 크기 + placeGap(노드 크기). → 옮긴 수
 function gridOf(b, key) {
   const r = b.rig3 ? b.rig3.defOf(key) : null;
   if (!r) return null;
@@ -173,8 +174,9 @@ function gridOf(b, key) {
   if (!nodes.size) return null;
   const xs = [...nodes.values()].map((x) => x.nd);
   const W = Math.max(...xs.map((n) => n.w)), H = Math.max(...xs.map((n) => n.h));
-  const g = gridPlace(names, r3.flows, { W, H, GX: PLACE.GX, GY: PLACE.GY, beatRole: r3.beat ? r3.beat.role : null });
-  return { g, nodes, byS, W, H, SX: g.colStep || W + PLACE.GX, SY: g.rowStep || H + PLACE.GY };
+  const { GX, GY } = placeGap(W, H);
+  const g = gridPlace(names, r3.flows, { W, H, GX, GY, beatRole: r3.beat ? r3.beat.role : null });
+  return { g, nodes, byS, W, H, GY, SX: g.colStep || W + GX, SY: g.rowStep || H + GY };
 }
 const putNode = (b, s, nd, x, y) => {
   if (x === nd.x && y === nd.y) return 0;
@@ -205,7 +207,7 @@ export function placeBuilder(b, key, sessionId) {
   const c0 = o.g.cells.get(n0);
   let x = Math.round(r0.x - c0.c * o.SX + bc.c * o.SX), y = Math.round(r0.y - c0.r * o.SY + bc.r * o.SY);
   const over = (n) => n.session_id !== sessionId && x < n.x + n.w && n.x < x + nd.w && y < n.y + n.h && n.y < y + nd.h;
-  if ([...o.byS.values()].some(over)) { const rs = [...o.nodes.values()].map((v) => v.nd); y = Math.max(...rs.map((n) => n.y + n.h)) + PLACE.GY; x = Math.max(...rs.map((n) => n.x)); }
+  if ([...o.byS.values()].some(over)) { const rs = [...o.nodes.values()].map((v) => v.nd); y = Math.max(...rs.map((n) => n.y + n.h)) + o.GY; x = Math.max(...rs.map((n) => n.x)); }
   return putNode(b, b.sessions.get(sessionId) || { sessionId }, nd, x, y);
 }
 
