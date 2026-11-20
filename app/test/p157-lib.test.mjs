@@ -40,9 +40,8 @@ test('솔로 칸: 어떤 관계도 없고 누구도 부르지 않은 세션만',
 });
 
 test('"혼자" 낱말은 세션 맵·휴대폰에서 "솔로"(영어 Solo)', () => {
-  assert.equal(ko.mmLine.colSolo, '솔로');
-  assert.equal(ko.mmTerr.solo, '솔로');
-  assert.equal(en.mmLine.colSolo, 'Solo');
+  assert.equal(ko.mmTerr.solo, '솔로'); // P260: 솔로 칸 머리(mmLine.colSolo)는 없앴다
+  assert.equal(en.mmTerr.solo.toLowerCase(), 'solo');
   for (const k of ['closedKids', 'assigned', 'parentClosed', 'altMoveHint']) { assert.ok(ko.mmLine[k], k); assert.ok(en.mmLine[k], k); }
   for (const f of ['MissionLineage.jsx', 'lib/mission-lineage.js']) assert.ok(!read(f).includes('혼자'), f);
   // 다른 뜻의 "혼자"(절전)는 그대로

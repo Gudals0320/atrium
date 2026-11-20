@@ -2393,11 +2393,7 @@ export default {
   },
   // P153 r7: 세션 맵 칸(시안 B Lineage)
   mmLine: {
-    colWs: '워크스페이스',
-    colRoot: '시작',
-    colLevel: '{n}단계',
     peer: '동료',
-    colSolo: '솔로',
     fold: '+{n}단계',
     foldTip: '이 가지의 더 깊은 단계 펼치기',
     unfold: '접기',

@@ -297,7 +297,7 @@ test('P153 r7·P202: 폴더 띠와 줄의 소속은 사이드바와 같고 차�
   for (const r of lay.rows) { const b = lay.bands.find((x) => x.id === r.band); assert.ok(r.y >= b.y && r.y + r.h <= b.y + b.h + 0.01, `${r.key}가 띠 안`); }
   for (let i = 1; i < lay.rows.length; i++) assert.ok(lay.rows[i].y >= lay.rows[i - 1].y + lay.rows[i - 1].h - 0.01, '줄은 위 → 아래로 겹치지 않는다');
 });
-test('P153 r7: 칸 — 리드는 리드 칸, 하위는 깊이만큼 오른쪽, 다른 워크스페이스 부모는 워커 칸, 혼자는 혼자 칸, 하위가 다른 곳에만 있는 세션도 리드 칸', () => {
+test('P153 r7: 칸 — 리드는 리드 칸, 하위는 깊이만큼 오른쪽, 다른 워크스페이스 부모는 워커 칸, 솔로는 시작 칸(P260), 하위가 다른 곳에만 있는 세션도 리드 칸', () => {
   const lay = lin();
   const col = (k) => (k === 'lead' ? lay.cols.find((c) => c.key === 'lv' && c.level === 0) : k === 'workers' ? lay.cols.find((c) => c.key === 'lv' && c.level === 1) : k === 'next' ? lay.cols.find((c) => c.key === 'lv' && c.level === 2) : lay.cols.find((c) => c.key === k)).x; // r11: 칸은 숫자 단계(시작 = 0)
   const x = (n) => lay.cards.get(`s:${n}`).x;
@@ -307,11 +307,12 @@ test('P153 r7: 칸 — 리드는 리드 칸, 하위는 깊이만큼 오른쪽, �
   assert.equal(x('researcher'), col('workers'), '부모(m1)가 다른 워크스페이스');
   assert.equal(x('coin-feed'), col('next'));
   assert.equal(x('m1'), col('lead'), '하위가 다른 워크스페이스에만 있어도 리드 칸');
-  for (const n of ['c1', 'hub-head', 'notes-2', 'reviewer']) assert.ok(x(n) >= col('solo'), `${n}는 혼자 칸`);
+  // P260: 솔로는 시작 칸에서 그 줄의 나무 카드 아래로 쌓는다
+  for (const n of ['c1', 'hub-head', 'notes-2', 'reviewer']) { const s = lay.cards.get(`s:${n}`); assert.equal(s.x, col('lead'), `${n}는 시작 칸`); assert.ok(s.solo && s.depth === -1, n); for (const c of lay.cards.values()) if (c.ws === s.ws && !c.solo) assert.ok(c.y + c.h <= s.y, `${n}는 ${c.node.name} 아래`); }
   const cards = [...lay.cards.values()];
   for (let i = 0; i < cards.length; i++) for (let j = i + 1; j < cards.length; j++) assert.ok(!overlap(cards[i], cards[j]), `${cards[i].node.name}×${cards[j].node.name}`);
   for (const c of cards) { const r = lay.rows.find((x2) => x2.key === c.ws); assert.ok(c.y >= r.y && c.y + c.h <= r.y + r.h + 0.01, `${c.node.name}가 자기 줄 안`); }
-  assert.deepEqual(lay.cols.map((c) => c.key === 'lv' ? c.level : c.key), ['ws', 0, 1, 2, 'solo'], '칸: 워크스페이스·시작·1단계·2단계·혼자(보이는 가장 깊은 단계까지)');
+  assert.deepEqual(lay.cols.map((c) => c.key === 'lv' ? c.level : c.key), [0, 1, 2], '칸: 시작·1단계·2단계(보이는 가장 깊은 단계까지). P260: 워크스페이스·솔로 칸은 없다');
 });
 test('P153 r7: 선은 직각, 나무 선은 부모 오른쪽 → 하위 왼쪽, 다른 워크스페이스 선은 카드·줄 머리를 지나지 않고 받는 카드 왼쪽·위로', () => {
   const lay = lin();
@@ -399,18 +400,16 @@ const deepLay = (expanded, sets = []) => { const { g, order } = deepGraph(); ret
 const colsOf = (lay) => lay.cols.map((c) => (c.key === 'lv' ? c.level : c.key));
 const lvX = (lay, n) => lay.cols.find((c) => c.key === 'lv' && c.level === n).x;
 
-test('P153 r11: 칸은 워크스페이스 · 시작 · 1단계 · … · 솔로, 4단계보다 깊은 가지는 접고(+n단계) 편 가지만 끝까지 편다', () => {
+test('P153 r11: 칸은 시작 · 1단계 · …(P260: 칸 머리 띠·솔로 칸 없음), 4단계보다 깊은 가지는 접고(+n단계) 편 가지만 끝까지 편다', () => {
   const lay = deepLay(new Set());
-  assert.deepEqual(colsOf(lay), ['ws', 0, 1, 2, 3, 4, 'solo'], '보이는 가장 깊은 단계(4)까지');
+  assert.deepEqual(colsOf(lay), [0, 1, 2, 3, 4], '보이는 가장 깊은 단계(4)까지');
   assert.equal(lay.cards.get('s:d4').fold, 2, 'd4 카드에 +2단계');
   assert.ok(!lay.cards.has('s:d5') && !lay.cards.has('s:d6'), '접힌 카드는 그리지 않는다');
   const open = deepLay(new Set(['s:d4']));
-  assert.deepEqual(colsOf(open), ['ws', 0, 1, 2, 3, 4, 5, 6, 'solo']);
+  assert.deepEqual(colsOf(open), [0, 1, 2, 3, 4, 5, 6]);
   assert.equal(open.cards.get('s:d4').fold, 0);
   assert.equal(open.cards.get('s:d6').x, lvX(open, 6), '편 가지는 끝(6단계)까지');
-  assert.equal(ko.mmLine.colRoot, '시작'); assert.equal(ko.mmLine.colLevel, '{n}단계'); assert.equal(ko.mmLine.colSolo, '솔로'); // P157: 혼자 → 솔로 assert.equal(ko.mmLine.fold, '+{n}단계');
-  assert.equal(en.mmLine.colRoot, 'Root'); assert.equal(en.mmLine.colLevel, 'Level {n}'); assert.equal(en.mmLine.colSolo, 'Solo');
-  for (const k of ['colLead', 'colWorkers', 'colNext']) assert.ok(!(k in ko.mmLine) && !(k in en.mmLine), `${k}는 없앴다`);
+  for (const k of ['colLead', 'colWorkers', 'colNext', 'colWs', 'colRoot', 'colLevel', 'colSolo']) assert.ok(!(k in ko.mmLine) && !(k in en.mmLine), `${k}는 없앴다`);
   const src = read('MissionLineage.jsx');
   assert.match(src, /data-action="ln-fold"/); assert.match(src, /localStorage\.setItem\(EXP_KEY/, '편 가지는 기억한다');
 });

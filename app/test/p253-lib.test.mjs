@@ -47,7 +47,7 @@ const LABELS = [1, 0.6, 0.35, 0.18];
 
 test('P253 줌 버그: 열 수는 이름표 계단(줌)으로 바뀌지 않고 보기 칸(창 크기)으로만 바뀐다', () => {
   // 고치기 전 판단(그 계단의 한 열 배치로 잼)은 이 창에서 줌에 따라 한 열·두 열이 바뀌었다
-  const view = { w: 1600, h: 800 };
+  const view = { w: 1600, h: 1200 }; // P260: 솔로 칸이 빠져 한 열 폭이 줄었다(옛 1600×800은 더 버그를 만들지 않는다)
   const old = LABELS.map((label) => pickColumns(lineageLayout(G, { ...BASE, columns: 1, label }).measure, view));
   assert.ok(new Set(old).size > 1, '버그를 다시 만든다: ' + old.join(''));
   const now = LABELS.map((label) => lineageLayout(G, { ...BASE, label, view }).ncol);
