@@ -174,7 +174,8 @@ export const lineAngle = (p, q) => Math.atan2(Math.abs(q[1] - p[1]), Math.abs(q[
 export const angleOk = (deg) => deg <= ANGLE.MAX + 1e-6 || deg >= ANGLE.VERT;
 // 칸은 반 칸 단위(가로 h = 반 칸 수, 세로 r = 줄). 같은 줄의 두 노드는 h가 2 이상 떨어진다. 세 역할이 서로 다 이어지면(삼각형) 둘을 한 줄에, 하나를 그 가운데 아래·위에.
 //   shape: 'flat'(기본, 줄 간격 = 노드 높이 + GY라 삼각형 변이 허용 각도 안) | 'equilateral'(줄 간격을 늘려 노드 가운데끼리 정삼각형. 그린 선은 약 40도로 허용 범위 밖이라 각도 항을 끈다)
-export function gridPlace(roles, flows = [], { W = 600, H = 400, GX = 600, GY = 600, beatRole = null, builder = true, exact = 5, shape = 'flat' } = {}) {
+export const GRID_TIDY = { LONG: 1, LONG_W: 4, ASPECT: 16 / 9, ASPECT_W: 1.5, COL_W: 0.2, EXACT: 7, B_STEEP: 3, B_THROUGH: 5 };
+export function gridPlace(roles, flows = [], { W = 600, H = 400, GX = 600, GY = 600, beatRole = null, builder = true, exact = GRID_TIDY.EXACT, shape = 'flat', _eval = null } = {}) {
   const names = [...new Set((roles || []).filter(Boolean))];
   const order = rowOrder(names, flows, { beatRole });
   const items = builder ? [...order, GRID_BUILDER] : order;
@@ -185,46 +186,98 @@ export function gridPlace(roles, flows = [], { W = 600, H = 400, GX = 600, GY = 
   const tris = [];
   for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) for (let c = b + 1; c < order.length; c++) if (has.has(a + '|' + b) && has.has(a + '|' + c) && has.has(b + '|' + c)) tris.push([a, b, c]);
   const bi = builder ? n - 1 : -1;
-  const C = Math.max(2, Math.ceil(Math.sqrt(n)) + (n > 4 ? 0 : 1)), R = Math.max(2, Math.ceil(Math.sqrt(n)));
+  // P262: 정확히 견주는 크기(n ≤ exact)는 칸을 한 열 넓게 둔다(3 위 2 엇갈림 + 빌더 같은 꼴이 들어가게)
+  const C = Math.max(2, Math.ceil(Math.sqrt(n)) + (n > 4 && n > exact ? 0 : 1)), R = Math.max(2, Math.ceil(Math.sqrt(n)));
   const SX = W + GX;
   const SY = shape === 'equilateral' ? Math.max(H + GY, Math.round(SX * Math.sqrt(3) / 2)) : H + GY;
   const HN = 2 * C - 1; // 반 칸 자리 수
   const P = []; for (let r = 0; r < R; r++) for (let h = 0; h < HN; h++) P.push([h, r]);
-  const rect = (k) => ({ x: P[k][0] * SX / 2, y: P[k][1] * SY, w: W, h: H });
-  const score = (pos) => {
-    const rs = pos.map(rect);
-    let through = 0, cross = 0, len = 0, blen = 0, steep = 0, tri = 0;
-    const segs = pairs.map(([a, b]) => { const [p, q] = faceEnds(rs[a], rs[b]); len += Math.hypot(q[0] - p[0], q[1] - p[1]) / SX; if (shape !== 'equilateral' && !angleOk(lineAngle(p, q))) steep++; return [a, b, p, q]; });
-    for (const [a, b, p, q] of segs) for (let k = 0; k < n; k++) if (k !== a && k !== b && segHitsRect(p, q, rs[k], 1)) through++;
-    for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
-      const [a1, b1, p1, q1] = segs[i], [a2, b2, p2, q2] = segs[j];
-      if (a1 === a2 || a1 === b2 || b1 === a2 || b1 === b2) continue;
-      if (cross2(p1, q1, p2, q2)) cross++;
+  const RECT = P.map(([h, r]) => ({ x: h * SX / 2, y: r * SY, w: W, h: H }));
+  const nbr = Array.from({ length: n }, () => []);
+  for (const [a, b] of pairs) { nbr[a].push(b); nbr[b].push(a); }
+  // ---- 점수(P254 + P262): 더하는 항(쌍마다·노드마다)과 끝에 한 번 재는 항(삼각형, 넓이·비율·열 맞춤)으로 나눈다.
+  //   더하는 항: 노드를 지나는 선 × 1000 + 가파른 선 × 300 + 엇갈림 × 100 + 빌더 선(가장 가까운 역할 선 하나만: 가파름 × B_STEEP, 노드를 지남 × B_THROUGH. 올림이 있을 때만 그려진다) + 선 길이(칸 간격 단위)
+  //     + P262 긴 선: 길이가 LONG(칸 간격 하나)을 넘는 만큼 × LONG_W(덩어리를 가로지르는 긴 곡선을 피한다) + 빌더까지 길이 + 차례(아주 작게)
+  //   끝 항: 삼각형 × 50 + 넓이 × 0.05 + P262 바깥 비율이 16:9에서 먼 만큼(|log|) × ASPECT_W + 쓰인 반 칸 열 수 × COL_W(열이 맞을수록 낮다)
+  const segOf = (ka, kb) => faceEnds(RECT[ka], RECT[kb]);
+  const lineCost = (p, q) => {
+    const l = Math.hypot(q[0] - p[0], q[1] - p[1]) / SX;
+    return { c: l + Math.max(0, l - GRID_TIDY.LONG) * GRID_TIDY.LONG_W, steep: shape !== 'equilateral' && !angleOk(lineAngle(p, q)) ? 300 : 0 };
+  };
+  // 놓인 것(pos[0..i-1])에 i를 k에 더할 때 늘어나는 점수
+  const segs = []; // [a, b, p, q, role]
+  const addCost = (pos, i, k) => {
+    let c = (n - i) * (P[k][1] * HN + P[k][0]) * 1e-4;
+    const R0 = RECT[k];
+    const added = [];
+    const isB = i === bi;
+    if (isB) {
+      // 빌더 선(올림이 있을 때만 그려진다): 길이 합은 아주 작게, 가장 가까운 역할 한 선만 가파름·지남을 본다(빌더가 덩어리 가장자리 가까이에 깨끗한 선 하나로 붙게)
+      let near = null;
+      for (let j = 0; j < i; j++) {
+        const [p, q] = segOf(pos[j], k);
+        const l = Math.hypot(q[0] - p[0], q[1] - p[1]) / SX;
+        c += l * (0.2 / Math.max(1, bi));
+        if (!near || l < near.l) near = { j, p, q, l };
+      }
+      if (near) {
+        if (!angleOk(lineAngle(near.p, near.q))) c += GRID_TIDY.B_STEEP;
+        for (let m = 0; m < i; m++) if (m !== near.j && segHitsRect(near.p, near.q, RECT[pos[m]], 1)) { c += GRID_TIDY.B_THROUGH; break; }
+      }
     }
+    for (let j = 0; j < i && !isB; j++) {
+      if (!nbr[i].includes(j)) continue;
+      const [p, q] = segOf(pos[j], k);
+      const lc = lineCost(p, q);
+      c += lc.c + lc.steep;
+      for (let m = 0; m < i; m++) if (m !== j && segHitsRect(p, q, RECT[pos[m]], 1)) c += 1000;
+      for (const s of segs) if (s[0] !== j && s[1] !== j && cross2(p, q, s[2], s[3])) c += 100;
+      added.push([j, i, p, q, true]);
+    }
+    // 이미 그은 선이 새 노드를 지나는가
+    for (const s of segs) if (segHitsRect(s[2], s[3], R0, 1)) c += 1000;
+    return { c, added };
+  };
+  const endCost = (pos) => {
+    let tri = 0;
     for (const t of tris) {
       const ok = t.some((apex) => { const [u, v] = t.filter((x) => x !== apex); const A = P[pos[apex]], U = P[pos[u]], V = P[pos[v]]; return U[1] === V[1] && Math.abs(U[0] - V[0]) === 2 && Math.abs(A[1] - U[1]) === 1 && A[0] * 2 === U[0] + V[0]; }); // 밑변 한 칸, 꼭짓점은 그 가운데 위·아래
       if (!ok) tri++;
     }
-    let bsteep = 0;
-    if (bi >= 0) for (let k = 0; k < bi; k++) { const [p, q] = faceEnds(rs[k], rs[bi]); blen += Math.hypot(q[0] - p[0], q[1] - p[1]) / SX; if (!angleOk(lineAngle(p, q))) bsteep++; if ([...Array(n).keys()].some((m) => m !== k && m !== bi && segHitsRect(p, q, rs[m], 1))) bsteep += 2; } // 올림선(어느 역할이 올릴지 모른다): 가파르거나 노드를 지나면 약하게 깎는다
-    let tie = 0; pos.forEach((k, i) => { tie += (n - i) * (P[k][1] * HN + P[k][0]) * 1e-4; });
     const hs = pos.map((k) => P[k][0]), rr = pos.map((k) => P[k][1]);
-    const box = ((Math.max(...hs) - Math.min(...hs)) / 2 + 1) * (Math.max(...rr) - Math.min(...rr) + 1) * 0.05;
-    return through * 1000 + steep * 300 + cross * 100 + tri * 50 + bsteep * 10 + len + blen * (0.2 / Math.max(1, bi)) + box + tie;
+    const hw = (Math.max(...hs) - Math.min(...hs)) / 2, rh = Math.max(...rr) - Math.min(...rr);
+    const box = (hw + 1) * (rh + 1) * 0.05;
+    const bw = hw * SX + W, bh = rh * SY + H;
+    const asp = Math.abs(Math.log(bw / bh / GRID_TIDY.ASPECT)) * GRID_TIDY.ASPECT_W;
+    const colN = new Set(hs).size * GRID_TIDY.COL_W;
+    return tri * 50 + box + asp + colN;
   };
+  const fullScore = (pos) => { segs.length = 0; let c = 0; for (let i = 0; i < n; i++) { const x = addCost(pos, i, pos[i]); c += x.c; segs.push(...x.added); } return c + endCost(pos); };
   // 같은 줄 두 노드는 반 칸 2 이상 떨어져야 한다
-  const fits = (pos, i, k) => { for (let j = 0; j < i; j++) { const a = P[pos[j]], b = P[k]; if (a[1] === b[1] && Math.abs(a[0] - b[0]) < 2) return false; } return true; };
+  const fits = (pos, i, k) => { for (let j = 0; j < i; j++) { const a = P[pos[j]], b = P[k]; if (pos[j] === k || (a[1] === b[1] && Math.abs(a[0] - b[0]) < 2)) return false; } return true; };
+  if (_eval) { const pos = items.map((k) => P.findIndex(([h, r]) => h === _eval[k][0] && r === _eval[k][1])); const tot = fullScore(pos); return { total: tot, end: endCost(pos) }; } // 시험·조율용: 주어진 자리([반 칸, 줄])의 점수
   let best = null, bestS = Infinity;
   if (n <= exact) {
+    // P262: 가지치기 정확 찾기. 더하는 항은 놓을수록 늘기만 하므로 지금까지의 합이 가장 좋은 값 이상이면 그 가지를 버린다
     const pos = [];
-    const walk = (i) => {
-      if (i === n) { const s = score(pos); if (s < bestS) { bestS = s; best = pos.slice(); } return; }
-      for (let k = 0; k < P.length; k++) { if (!fits(pos, i, k) || pos.slice(0, i).includes(k)) continue; pos[i] = k; walk(i + 1); }
+    const walk = (i, acc) => {
+      if (acc >= bestS) return;
+      if (i === n) { const s = acc + endCost(pos); if (s < bestS - 1e-9) { bestS = s; best = pos.slice(); } return; }
+      for (let k = 0; k < P.length; k++) {
+        if (!fits(pos, i, k)) continue;
+        const x = addCost(pos, i, k);
+        if (acc + x.c >= bestS) continue;
+        pos[i] = k; segs.push(...x.added);
+        walk(i + 1, acc + x.c);
+        segs.length -= x.added.length;
+      }
+      pos.length = i;
     };
-    walk(0);
+    walk(0, 0);
+    bestS = fullScore(best);
   } else {
     // 처음: 정의 차례로 온 칸(반 칸 0, 2, 4…)에 줄줄이. 그다음 한 노드 옮기기·두 노드 바꾸기로 낮춘다
-    best = items.map((_, i) => P.findIndex(([h, r]) => r === Math.floor(i / C) && h === (i % C) * 2)); bestS = score(best);
+    best = items.map((_, i) => P.findIndex(([h, r]) => r === Math.floor(i / C) && h === (i % C) * 2)); bestS = fullScore(best);
     const legal = (pos) => pos.every((k, i) => pos.every((m, j) => j === i || !(P[k][1] === P[m][1] && Math.abs(P[k][0] - P[m][0]) < 2)));
     for (let round = 0, better = true; better && round < 200; round++) {
       better = false;
@@ -232,7 +285,7 @@ export function gridPlace(roles, flows = [], { W = 600, H = 400, GX = 600, GY = 
         const j = best.indexOf(k); if (j === i) continue;
         const nx = best.slice(); if (j >= 0) nx[j] = best[i]; nx[i] = k;
         if (!legal(nx)) continue;
-        const s = score(nx); if (s < bestS - 1e-9) { bestS = s; best = nx; better = true; }
+        const s = fullScore(nx); if (s < bestS - 1e-9) { bestS = s; best = nx; better = true; }
       }
     }
   }

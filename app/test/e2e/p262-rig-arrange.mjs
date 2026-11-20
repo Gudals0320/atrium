@@ -58,12 +58,13 @@ const measure = (page, keys) => page.evaluate((keys) => {
   }
   const box = (el) => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
   const nodeBoxes = rs.map((r) => { const el = document.querySelector('.react-flow__node[data-id="' + r.id + '"]'); return el ? { name: r.name, ...box(el) } : null; }).filter(Boolean);
-  const chips = [...document.querySelectorAll('[data-role=rig-edge-label], [data-role=rig-raise-label]')].map((el) => ({ text: el.textContent, free: el.dataset.free, ...box(el) }));
+  const chips = [...document.querySelectorAll('[data-role=rig-edge-label], [data-role=rig-raise-label]')].map((el) => ({ text: el.textContent, free: el.dataset.free, fit: el.dataset.fit, ...box(el) }));
+  const fits = chips.map((c) => c.fit);
   const chipOnNode = chips.filter((c) => nodeBoxes.some((n) => hit(c, n))).map((c) => c.text);
   const linkLabs = [...document.querySelectorAll('.mt-edge-label[data-link]')].map(box);
   const labOnNode = linkLabs.filter((c) => nodeBoxes.some((n) => hit(c, n))).length;
   const regions = [...document.querySelectorAll('[data-role=region], .mt-region')].length;
-  return { n: rs.length, over, sizes, gaps, through, chips: chips.map((c) => [c.text, c.free]), chipOnNode, labOnNode, rigLines: document.querySelectorAll('[data-role=rig-line]').length, regions, rects: rs.map((r) => [r.name, r.x, r.y, r.w, r.h]) };
+  return { n: rs.length, over, sizes, gaps, through, chips: chips.map((c) => [c.text, c.free]), chipOnNode, labOnNode, fits, rigLines: document.querySelectorAll('[data-role=rig-line]').length, regions, rects: rs.map((r) => [r.name, r.x, r.y, r.w, r.h]) };
 }, keys);
 
 const { app, page } = await launch({ log, args: ['--remote-debugging-port=9493'] });
@@ -81,6 +82,25 @@ try {
   // 워크스페이스마다 지금 자리의 왼쪽 위에서(다른 영역과 섞이지 않게)
   const base = await page.evaluate((ids) => { const st = window.__mt.getState(); const o = {}; for (const x of ids) { const n = st.nodes.get(x.id); if (!n) continue; const b = o[x.ws] || (o[x.ws] = { x: Infinity, y: Infinity }); b.x = Math.min(b.x, n.x); b.y = Math.min(b.y, n.y); } return o; }, ids);
   const mess = () => ids.forEach((x, i) => call('board.setNode', { session: x.id, x: Math.round(base[x.ws].x) + (i % 4) * 900 + (i * 37) % 120, y: Math.round(base[x.ws].y) + Math.floor((i % 12) / 4) * 520 + (i * 53) % 90, w: x.rig ? [1440, 1040, 1200, 1600][i % 4] : 1040, h: x.rig ? [810, 585, 900, 900][i % 4] : 585, cause: 'test' }));
+  if (MODE === 'ws') {
+    // 켤 때 놓기 다시 보기: rig 끄고 켜면 placeRoles가 같은 크기·같은 칸으로 놓는다
+    mess(); await sleep(1500); // 흩뜨린 뒤 켜야 켤 때 놓기가 실제로 옮긴다
+    call('rig.disable', { workspace: WS }); await sleep(3000);
+    const before = JSON.stringify((await measure(page, keys)).rects.filter((r) => ids.find((x) => x.name === r[0] && x.rig)));
+    call('rig.enable', { workspace: WS, confirm: true });
+    // 역할을 깨우는 데 역할마다 몇 초 걸린다(깨운 뒤 놓는다). 자리가 바뀔 때까지 기다린다
+    for (let i = 0; i < 60; i++) { await sleep(1000); const now = JSON.stringify((await measure(page, keys)).rects.filter((r) => ids.find((x) => x.name === r[0] && x.rig))); if (now !== before) break; }
+    await sleep(2500);
+    const rig = ids.filter((x) => x.rig);
+    await page.evaluate((rig) => window.__mtFlow.fitView({ nodes: rig.map((x) => ({ id: x.id })), padding: 0.08, duration: 0 }), rig);
+    await sleep(2000);
+    const fe = await measure(page, keys);
+    // 켤 때 놓기는 rig 노드만 옮긴다(보통 세션은 그대로라 흩뜨린 셸 위로 선이 지날 수 있다. 정리가 그것을 푼다)
+    const rigNames = new Set(ids.filter((x) => x.rig).map((x) => x.name));
+    const rigThrough = fe.through.filter((t) => rigNames.has(t[2]));
+    check('켤 때 놓기: rig 노드 같은 크기, rig 선이 다른 rig 노드를 지나지 않는다', Object.values(fe.sizes).every((s) => s.length === 1) && !rigThrough.length, { sizes: fe.sizes, rigThrough, shells: fe.through.length });
+    await shot(page, `00-${PRE}-enable-ko`);
+  }
   for (const l of ['ko', 'en']) {
     await lang(page, l);
     mess(); await sleep(1500);
@@ -98,7 +118,7 @@ try {
     check(`정리(${l}): rig 노드는 모두 같은 크기`, Object.values(f1.sizes).every((s) => s.length === 1), f1.sizes);
     check(`정리(${l}): rig 덩어리와 보통 세션 사이 넉넉한 틈(≥ 1000)`, Object.values(f1.gaps).every((g) => g >= 1000), f1.gaps);
     check(`정리(${l}): rig 선이 다른 노드를 지나지 않는다`, f1.rigLines > 0 && !f1.through.length, { lines: f1.rigLines, through: f1.through });
-    log(`전체 맞춤(${l}) 칩(참고: 아주 먼 배율이면 P259 최소 화면 크기 칩이 틈보다 커진다) ` + JSON.stringify({ onNode: f1.chipOnNode, chips: f1.chips }));
+    check(`정리(${l}) 전체 맞춤: 보이는 글 칩이 노드·다른 칩에 걸리지 않는다(자리가 없으면 작은 칩이나 선만)`, !f1.chipOnNode.length && f1.chips.every(([, free]) => free === '1') && !f1.labOnNode, { onNode: f1.chipOnNode, chips: f1.chips, fit: f1.fits });
     await shot(page, `02-${PRE}-after-${l}`);
     // 칩은 rig 덩어리를 맞춘 배율에서 잰다(P259 창 시험과 같은 기준)
     for (const k of keys) {
