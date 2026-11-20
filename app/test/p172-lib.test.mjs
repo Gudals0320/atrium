@@ -32,9 +32,10 @@ test('moveOrder: 대기 글끼리만 옮기고 끝에서는 null', () => {
   assert.equal(moveOrder(items, 's', 1), null, '보낸 글은 옮기지 않는다');
 });
 
-test('steerOf: 일하는 Claude Code(hook)만 스티어링, 다른 종류가 일하는 중이면 끈다', () => {
+test('steerOf: 일하는 Claude Code(hook)와 Codex(P271)만 스티어링, 다른 종류가 일하는 중이면 끈다', () => {
   assert.deepEqual(steerOf({ state: 'working', kind: 'claude', hooked: true }), { ok: true, key: 'steer' });
-  assert.deepEqual(steerOf({ state: 'working', kind: 'codex', hooked: false }), { ok: false, key: 'kindBusy' });
+  assert.deepEqual(steerOf({ state: 'working', kind: 'codex', hooked: false }), { ok: true, key: 'steer' });
+  assert.deepEqual(steerOf({ state: 'working', kind: 'opencode', hooked: false }), { ok: false, key: 'kindBusy' });
   assert.deepEqual(steerOf({ state: 'working', kind: 'claude', hooked: false }), { ok: false, key: 'kindBusy' });
   assert.equal(steerOf({ state: 'ready', kind: 'codex' }).key, 'now');
   assert.equal(steerOf({ state: 'sleeping' }).key, 'wake');

@@ -35,11 +35,15 @@ export function moveOrder(items, id, dir) {
 }
 
 // 바로 보내기 단추. 받는 세션 상태와 종류로 → { ok, key }(key: 풀이 사전 열쇠 deliveryQueue.now_<key>).
-//   steer: 일하는 판의 Claude Code(hook 있음) → 입력 칸에 넣어 대기 메시지(스티어링)로. 일하는 다른 종류는 입력을 받지 못해 끈다(kindBusy).
+//   steer: 일하는 판의 Claude Code(hook 있음) → 입력 칸에 넣어 대기 메시지(스티어링)로. P271: 일하는 Codex → 입력 칸에 넣고 Enter(지금 턴에 끼워 넣는다).
+//   일하는 다른 종류(opencode 등, hook 없는 Claude Code)는 입력을 받지 못해 끈다(kindBusy).
 //   wake: 잠든 세션은 깨운 뒤 맨 먼저. afterBlock: 질문·시작 화면 중이면 그것이 끝나면 맨 먼저. now: 쉬는 중이면 곧바로
 export function steerOf(s) {
   if (!s) return { ok: false, key: 'gone' };
-  if (s.state === 'working') return (s.kind || 'claude') === 'claude' && s.hooked !== false ? { ok: true, key: 'steer' } : { ok: false, key: 'kindBusy' };
+  if (s.state === 'working') {
+    const kind = s.kind || 'claude';
+    return (kind === 'claude' && s.hooked !== false) || kind === 'codex' ? { ok: true, key: 'steer' } : { ok: false, key: 'kindBusy' };
+  }
   if (s.state === 'sleeping') return { ok: true, key: 'wake' };
   if (s.state === 'waiting' || s.state === 'trust_wait' || s.state === 'starting') return { ok: true, key: 'afterBlock' };
   return { ok: true, key: 'now' };

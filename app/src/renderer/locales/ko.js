@@ -2051,9 +2051,9 @@ export default {
     reason_timeout: '시간 초과',
     reason_endpoint_host: '허용하지 않은 푸시 서비스',
   },
-  // P90: 일하는 중인 Claude Code에 바로 넣은 휴대폰 글(Claude Code의 대기 메시지)
+  // P90: 일하는 중인 Claude Code에 바로 넣은 휴대폰 글(Claude Code의 대기 메시지). P271: 일하는 Codex는 지금 턴에 넣는다
   typeNow: {
-    typed: 'Claude Code 대기열에 추가됨',
+    typed: '지금 턴에 넣음',
     draft: '입력란에 작성 중인 글 있음',
   },
   // P94: 미션 맵의 역할과 관계(PC 창, PC 웹, 휴대폰이 lib/mission-model.js를 같이 쓴다)
@@ -2545,7 +2545,7 @@ export default {
     down: '뒤로',
     keysHint: 'Alt+↑·↓로 순서 바꾸기',
     now: '바로 보내기',
-    now_steer: '지금 입력란에 넣습니다. Claude Code가 일하는 중에 대기 메시지로 읽습니다.',
+    now_steer: '지금 입력란에 넣습니다. 일하는 Claude Code는 대기 메시지로 읽고, 일하는 Codex는 지금 턴에 넣습니다.',
     now_now: '지금 바로 보냅니다.',
     now_wake: '세션을 깨운 뒤 맨 먼저 보냅니다.',
     now_afterBlock: '세션이 답이나 확인을 기다리는 중입니다. 그 일이 끝나면 맨 먼저 보냅니다.',
@@ -2554,7 +2554,7 @@ export default {
     editingNow: '수정 중인 글은 바로 보낼 수 없습니다. 먼저 저장하거나 취소하세요.',
     editingElsewhere: '다른 곳에서 수정 중',
     sentNow: '바로 보냄',
-    sentNowTyped: '바로 보냄 · Claude Code 대기열에 추가됨',
+    sentNowTyped: '바로 보냄 · 지금 턴에 넣음',
     failed: '처리하지 못했습니다: {error}',
   },
   // P171: 일시 연결(관계 없는 세션에 한 번 보낸 요청의 선)
@@ -2656,8 +2656,8 @@ export default {
   // P248: 보내기 칸·휴대폰 입력 줄의 스티어링 선택(기본은 대기열)
   cmdSteer: {
     label: '스티어링',
-    title: '켜면 일하는 중인 Claude Code의 지금 턴에 넣습니다(다음 도구 호출 사이에 읽습니다). 지금 하는 일의 방향에 대한 추가 정보나 정정에 씁니다. 끄면 지금 턴이 끝난 뒤 들어갑니다(대기열). Ctrl+Enter로 보내도 스티어링입니다.',
-    phoneTitle: '켜면 일하는 중인 Claude Code의 지금 턴에 넣습니다(다음 도구 호출 사이에 읽습니다). 지금 하는 일의 방향에 대한 추가 정보나 정정에 씁니다. 끄면 지금 턴이 끝난 뒤 들어갑니다(대기열).',
+    title: '켜면 일하는 중인 Claude Code·Codex의 지금 턴에 넣습니다(Claude Code는 다음 도구 호출 사이에 읽습니다). 지금 하는 일의 방향에 대한 추가 정보나 정정에 씁니다. 끄면 지금 턴이 끝난 뒤 들어갑니다(대기열). Ctrl+Enter로 보내도 스티어링입니다.',
+    phoneTitle: '켜면 일하는 중인 Claude Code·Codex의 지금 턴에 넣습니다(Claude Code는 다음 도구 호출 사이에 읽습니다). 지금 하는 일의 방향에 대한 추가 정보나 정정에 씁니다. 끄면 지금 턴이 끝난 뒤 들어갑니다(대기열).',
     off: '스티어링할 수 없음: {why}. 대기열로 보냅니다.',
     some: '{names}는 스티어링할 수 없어 대기열로 보냅니다.',
     fell: '{names}: 스티어링할 수 없어 대기열로 보냈습니다({why}).',

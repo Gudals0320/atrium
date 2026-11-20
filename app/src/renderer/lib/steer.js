@@ -1,13 +1,17 @@
 // P248: 보내기 칸과 휴대폰 입력 줄의 스티어링 선택(사용자 결정 2026-11-19).
 // 사람이 보낸 글은 기본이 대기열이다(받는 세션이 지금 턴을 끝낸 뒤 들어간다). 스티어링을 고르면 일하는 중인 판의 Claude Code 입력 칸에 넣어
-// Claude Code의 대기 메시지가 된다(다음 도구 호출 사이에 읽는다, 쓰다 만 글은 비킨다). 쉬는 세션에는 보통 보내기와 같다.
+// Claude Code의 대기 메시지가 된다(다음 도구 호출 사이에 읽는다, 쓰다 만 글은 비킨다). P271: Codex는 입력 칸에 넣고 Enter를 쳐 지금 턴에 끼워 넣는다
+// (쓰다 만 글이 있으면 비키지 않고 기다린다). 쉬는 세션에는 보통 보내기와 같다.
 // 일하는 중 입력을 받지 못하는 세션(다른 종류, hook 없는 세션)은 스티어링할 수 없다(백엔드가 대기열로 보내고 까닭을 돌려준다).
 // 판단은 backend/src/delivery.mjs steerBlock과 같다(종류로만, 상태와 상관없다)
 
-// 세션 요약(kind, hooked) → 스티어링할 수 없는 까닭 | null. kind: 다른 종류(Codex 등), no_hook: hook이 없는 Claude Code
+// 세션 요약(kind, hooked) → 스티어링할 수 없는 까닭 | null. kind: 다른 종류(opencode 등), no_hook: hook이 없는 Claude Code
+// P271(이슈 #19): Codex는 받는다(일하는 중 입력 칸의 글에 Enter를 치면 지금 턴에 끼워 넣는다)
 export function steerBlock(s) {
   if (!s) return 'kind';
-  if ((s.kind || 'claude') !== 'claude') return 'kind';
+  const kind = s.kind || 'claude';
+  if (kind === 'codex') return null;
+  if (kind !== 'claude') return 'kind';
   return s.hooked === false ? 'no_hook' : null;
 }
 

@@ -537,7 +537,10 @@ export class HcAdapter extends EventEmitter {
   //   Windows Codex가 그 Enter를 붙여 넣은 글의 줄바꿈으로 받았다(여러 줄 글은 늘 판의 Enter 손쓰기를 거쳤고, hc가 턴 시작을 약 5초 기다렸다).
   //   state(화면 글) → { box, done }. done이면 곧바로, 입력 칸 글이 stableMs 동안 그대로면(다 받은 것으로 본다) Enter. 기한 안에 못 보면 Enter 없이 돌려준다
   //   (그 뒤는 판의 제출 확인·Enter 손쓰기). 에이전트 없음·막힘·신뢰 질문 거부는 prompt와 같다. 사람이 쓰다 만 글은 판의 대기열이 먼저 본다(inputQuietMs, 비키기)
-  async pastePrompt(target, text, { state, timeoutMs, pollMs = 100, stableMs = 1000 } = {}) {
+  // P271: Enter 뒤에도 화면을 본다. 입력 칸에 보낸 글이 그대로 남아 있으면(Enter가 줄바꿈으로 들어갔다) enterGapMs마다 Enter를 다시 친다(enterRetries번까지).
+  //   글은 한 번만 붙여 넣으므로 Enter를 더 쳐도 두 번 제출되지 않는다(빈 입력 칸의 Enter는 Codex가 무시한다). 일하는 중인 Codex에 넣는 스티어링도 이 길이다
+  //   (판의 Enter 손쓰기는 일하는 중에는 기다리므로 여기서 본다). → { pasted, entered, enters, submitted(true: 입력 칸이 비었다 | false: 남았다 | null: 못 봤다), why, ms }
+  async pastePrompt(target, text, { state, timeoutMs, pollMs = 100, stableMs = 1000, enterRetries = 2, enterGapMs = 700 } = {}) {
     const t = await this._target(target);
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
     if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
@@ -556,8 +559,20 @@ export class HcAdapter extends EventEmitter {
       if (Date.now() - since >= stableMs) { why = 'stable'; break; }
     }
     const entered = why !== 'timeout';
-    if (entered) await this.paneKeys(t.address, ['enter']);
-    return { pasted: true, entered, why, ms: Date.now() - t0 };
+    if (!entered) return { pasted: true, entered, enters: 0, submitted: null, why, ms: Date.now() - t0 };
+    await this.paneKeys(t.address, ['enter']);
+    let enters = 1, submitted = null;
+    // P271: Enter가 먹혔는지 본다. 입력 칸에 보낸 글이 다 보이지 않게 되면(비었거나 다른 글) 제출된 것이다
+    while (state && why === 'shown') { // 다 들어간 것을 본 글만(안정 판정은 Enter 뒤에도 글을 가려낼 수 없다)
+      const until = Date.now() + enterGapMs;
+      let gone = false;
+      while (!gone && Date.now() < until) { await sleep(pollMs); gone = !state(await this.readScreen(t.address, { source: 'visible' }).catch(() => '')).done; }
+      if (gone) { submitted = true; break; }
+      if (enters > enterRetries) { submitted = false; break; }
+      await this.paneKeys(t.address, ['enter']); enters++;
+    }
+    if (enters > 1) this.trace.note(t.address, 'paste_enter', { enters, submitted }); // P136 진단 기록
+    return { pasted: true, entered, enters, submitted, why, ms: Date.now() - t0 };
   }
   async sendKeys(target, keys) { const t = await this._target(target); return this.paneKeys(t.address, keys); }
   // 글을 Enter 없이 넣는다. 여러 줄이면 bracketed paste로 감싼다

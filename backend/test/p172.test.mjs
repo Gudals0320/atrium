@@ -102,8 +102,8 @@ test('P172 바로 보내기: 쉬는 세션은 곧바로 보낸다(reason now)', 
   void a;
 });
 
-test('P172 바로 보내기: 일하는 중 입력을 못 받는 종류(codex, hook 없는 세션)는 cannot_steer, 보낸 글·없는 글은 거절', async (t) => {
-  for (const view of [{ kind: 'codex', hooked: false }, { kind: 'claude', hooked: false }]) {
+test('P172 바로 보내기: 일하는 중 입력을 못 받는 종류(opencode, hook 없는 세션)는 cannot_steer, 보낸 글·없는 글은 거절', async (t) => {
+  for (const view of [{ kind: 'opencode', hooked: false }, { kind: 'claude', hooked: false }]) { // P271: Codex는 받는다(p271.test)
     const { q, enq, step } = rig(t, view);
     const a = enq('A');
     await step();

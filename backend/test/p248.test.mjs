@@ -171,7 +171,7 @@ test('P248 사람: 스티어링할 수 없는 세션(다른 종류·hook 없음)
   const { b, add, stop } = await board();
   try {
     const seen = spyQueue(b);
-    const cx = add('cx', { kind: 'codex' }); const nh = add('nh', { hooked: false });
+    const cx = add('cx', { kind: 'opencode' }); const nh = add('nh', { hooked: false }); // P271: Codex는 스티어링을 받는다(p271.test)
     applyTermStatus(cx.rt, 'working'); applyTermStatus(nh.rt, 'working');
     const r = await humanSend(b, { target: ['cx', 'nh'], text: '정정', steer: true });
     const by = Object.fromEntries(r.deliveries.map((d) => [d.name, d]));
