@@ -316,7 +316,6 @@ export function PhoneMap({ onOpen, head, tip }) {
                   </div>
                 </div>
               ))}
-              {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-pmap-div" data-role="pm-solo-div" style={{ left: d.x, top: d.y, width: d.w }}><span>{t('mmLine.colSolo')}</span></span>)}
               {/* P202: 오늘 일한 폴더와 그 밖 사이 구분 줄(위 "오늘", 아래 "이전") */}
               {(lay.sections || []).map((s) => (
                 <div key={`sec:${s.kind}`} className="mt-sm-sec line mt-pmap-sec" data-role="ln-section" data-kind="split" style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>

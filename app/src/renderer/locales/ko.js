@@ -2393,11 +2393,7 @@ export default {
   },
   // P153 r7: 세션 맵 칸(시안 B Lineage)
   mmLine: {
-    colWs: '워크스페이스',
-    colRoot: '시작',
-    colLevel: '{n}단계',
     peer: '동료',
-    colSolo: '솔로',
     fold: '+{n}단계',
     foldTip: '이 가지의 더 깊은 단계 펼치기',
     unfold: '접기',
@@ -2875,6 +2871,10 @@ export default {
     wait: '대기 {n}',
     tagRoleV: '역할 · {name} · v{n}', builderName: 'builder',
     state: { ready: '쉼', working: '일함', sleeping: '잠', waiting: '응답 필요', error: '오류', exited: '끝남', starting: '시작 중', trust_wait: '신뢰 확인', shell_idle: '쉼', shell_running: '일함', none: '세션 없음' },
+  },
+  // P258: 미확인으로 끝난 뒤 늦게 제출된 전달(압축 뒤 등)
+  deliveryLate: {
+    reason: '늦게 제출됨',
   },
 };
 

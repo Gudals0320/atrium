@@ -36,7 +36,7 @@ test('PC 결과는 phone 선택지를 넣어도 바뀌지 않는다(phone: false
   const a = lineageLayout(g, opt), b = lineageLayout(g, { ...opt, phone: false, view: { w: 390, h: 700 } });
   assert.deepEqual(strip(a), strip(b));
   assert.equal(a.phone, undefined); assert.equal(a.pages, undefined);
-  assert.ok(a.spine >= LINE.SPINE && a.cols[0].key === 'ws' && a.cols.at(-1).key === 'solo');
+  assert.ok(a.spine >= LINE.SPINE && a.cols.every((c) => c.key === 'lv') && a.divs === undefined); // P260: 칸 머리·솔로 칸·구분선 없음
 });
 
 test('휴대폰도 같은 판정: 같은 카드, 같은 깊이, 같은 얇은 줄, 같은 선(나무·동료·다른 워크스페이스)', () => {
@@ -50,7 +50,7 @@ test('휴대폰도 같은 판정: 같은 카드, 같은 깊이, 같은 얇은 �
   assert.deepEqual(ph.bands.map((b) => b.name), ['Product', 'Research', 'No folder']);
 });
 
-test('세로 배치: 폴더·워크스페이스 머리는 위, 나무는 왼쪽 끝에서, 솔로는 나무 아래 격자, 좁은 카드·간격', () => {
+test('세로 배치: 폴더·워크스페이스 머리는 위, 나무는 왼쪽 끝에서, 솔로는 나무 아래 시작 칸(P260), 좁은 카드·간격', () => {
   const g = board();
   const ph = lineageLayout(g, { ...opt, phone: true });
   assert.equal(ph.phone, true); assert.equal(ph.spine, 0);
@@ -64,14 +64,14 @@ test('세로 배치: 폴더·워크스페이스 머리는 위, 나무는 왼쪽 
   const inA = [...ph.cards.values()].filter((c) => c.ws === A);
   assert.ok(inA.every((c) => c.y >= rA.y + PHONE.WH && c.y + c.h <= rA.y + rA.h), '카드는 줄 머리 아래, 줄 안');
   assert.equal(ph.cards.get('s:lead').x, PHONE.PADX);
-  // 솔로: 나무 맨 아래보다 아래, 왼쪽부터 격자, 가로 가름 점선
+  // P260: 솔로는 나무 맨 아래보다 아래, 시작 칸에 세로로(PC와 같은 규칙), 가름 점선 없음
   const tree = inA.filter((c) => c.depth >= 0), solo = inA.filter((c) => c.depth < 0);
   assert.equal(solo.length, 2);
   const treeBottom = Math.max(...tree.map((c) => c.y + c.h));
   assert.ok(solo.every((c) => c.y > treeBottom));
-  assert.deepEqual(solo.map((c) => c.x).sort((a, b) => a - b), [PHONE.PADX, PHONE.PADX + ph.cw + PHONE.GX]);
-  const div = ph.divs.find((d) => d.row === A);
-  assert.ok(div && div.horiz && div.y > treeBottom && div.y < Math.min(...solo.map((c) => c.y)));
+  assert.deepEqual(solo.map((c) => c.x), [PHONE.PADX, PHONE.PADX]);
+  assert.ok(solo[1].y >= solo[0].y + solo[0].h, '솔로는 위 → 아래');
+  assert.equal(ph.divs, undefined);
   // 폭은 나무 칸 수만큼(적어도 두 칸): 세계가 세로로 길다
   assert.ok(ph.bounds.h > ph.bounds.w, '세로로 긴 세계');
   assert.ok(ph.bounds.w < lineageLayout(g, opt).bounds.w / 1.5);
@@ -80,7 +80,7 @@ test('세로 배치: 폴더·워크스페이스 머리는 위, 나무는 왼쪽 
 test('맞춤 보기: 같은 휴대폰 칸(390×700)에서 PC 배치보다 크게 들어간다', () => {
   const g = board();
   const k = (l) => phoneFit(l.bounds, 390, 700).k;
-  assert.ok(k(lineageLayout(g, { ...opt, phone: true, view: { w: 390, h: 700 } })) > k(lineageLayout(g, opt)) * 1.4);
+  assert.ok(k(lineageLayout(g, { ...opt, phone: true, view: { w: 390, h: 700 } })) > k(lineageLayout(g, opt)) * 1.1); // P260: 솔로가 시작 칸이라 PC는 좁아지고 휴대폰은 세로로 길어져 차이가 1.4배 → 1.12배
 });
 
 test('단 나누기: 보이는 칸이 가로로 넓으면 단을 나누고(폴더 머리를 다시 단다), 세로로 길면 한 단', () => {

@@ -2393,11 +2393,7 @@ export default {
   },
   // P153 r7: session map columns (mockup B Lineage)
   mmLine: {
-    colWs: 'Workspace',
-    colRoot: 'Root',
-    colLevel: 'Level {n}',
     peer: 'peer',
-    colSolo: 'Solo',
     fold: { one: '+{n} level', other: '+{n} levels' },
     foldTip: 'Show the deeper levels of this branch',
     unfold: 'Fold',
@@ -2875,6 +2871,10 @@ export default {
     wait: 'waiting {n}',
     tagRoleV: 'role · {name} · v{n}', builderName: 'builder',
     state: { ready: 'idle', working: 'working', sleeping: 'asleep', waiting: 'needs you', error: 'error', exited: 'exited', starting: 'starting', trust_wait: 'trust check', shell_idle: 'idle', shell_running: 'working', none: 'no session' },
+  },
+  // P258: a delivery first marked unconfirmed whose prompt was submitted later (e.g. after a compaction)
+  deliveryLate: {
+    reason: 'submitted late',
   },
 };
 

@@ -216,5 +216,5 @@ test('문구·화면: 두 사전에 오늘·이전, 맵은 사이드바 손 차�
   const css = fs.readFileSync(path.join(SRC, 'styles.css'), 'utf8');
   const sec = css.slice(css.indexOf('/* P202: 세션 맵 오늘·이전 이름표'));
   assert.ok(sec.length > 10 && !/animation|transition/.test(sec), '이름표는 움직임에 기대지 않는다');
-  assert.ok(/data-sticky0\] \.colh\[data-c="0"\]/.test(css) && /data-sticky1\] \.colh\[data-c="1"\]/.test(css), '붙는 머리는 열마다');
+  assert.ok(!/\.colh|mt-sm-cols/.test(css), 'P260: 칸 머리 띠(붙는 머리 포함)는 없앴다');
 });

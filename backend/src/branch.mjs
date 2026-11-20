@@ -27,7 +27,7 @@ import { deriveState, isModelError } from './state.mjs';
 import { EFFORTS } from './settings.mjs';
 import { clip, promptTask } from './text.mjs';
 import { BACKEND_ROOT, terminalSessionEnv } from './config.mjs';
-import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
+import { predictTrust, repoHasCommit, buildStartArgs, fillBoardHooks } from './launch.mjs';
 import { harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192
@@ -386,7 +386,8 @@ export class Branch {
   // writeBoardPlugin에 더할 것: 일 맡기기 스킬, atrium 명령(별칭 mtask)
   // P36: atrium 스킬과 옛 이름 delegate(같은 글)
   pluginExtra() { return { skills: { [SKILL_NAME]: boardSkill(SKILL_NAME), [LEGACY_SKILL_NAME]: boardSkill(LEGACY_SKILL_NAME) }, bin: childShims() }; }
-  // P8 전에 띄운 판 세션의 설정 파일에도 env와 규칙을 더한다(이어 갈 때 다시 읽힌다). hook과 다른 규칙은 그대로
+  // P8 전에 띄운 판 세션의 설정 파일에도 env와 규칙을 더한다(이어 갈 때 다시 읽힌다). 다른 규칙은 그대로
+  // P258: 빠진 판 hook만 더한다(fillBoardHooks). 있는 hook은 그대로
   // P18: 옛 이름의 env(MTASK_*)는 빼고 ATRIUM_*로 바꾼다(옛 데이터 폴더를 가리키는 값이 남지 않게)
   // P116: 판의 규칙(atrium prompt|wait|read)을 더한다. P129: 옛 터미널 명령 규칙은 뺀다
   refreshSettings() {
@@ -401,7 +402,9 @@ export class Branch {
         const before = (j.permissions && j.permissions.allow) || [];
         const allow = [...new Set([...before, ...rules])].filter((r) => !OLD_TERMINAL_RULE.test(r));
         const sl = this.b.usage ? this.b.usage.claudeStatusLine() : null; // P211: 판의 상태 줄 명령(이어 갈 때 다시 읽힌다)
-        if (JSON.stringify(j.env || {}) === JSON.stringify({ ...kept, ...env }) && allow.length === before.length && allow.every((r, i) => r === before[i]) && (!sl || JSON.stringify(j.statusLine || null) === JSON.stringify(sl))) continue;
+        const added = fillBoardHooks(j); // P258: 그 뒤에 생긴 판 hook(P173 PreCompact·PostCompact 등)을 그 파일의 판 hook 값으로 채운다. 있는 hook은 그대로
+        if (added.length) this.b.log(`branch: hooks added for ${s.name}: ${added.join(', ')}`);
+        if (!added.length && JSON.stringify(j.env || {}) === JSON.stringify({ ...kept, ...env }) && allow.length === before.length && allow.every((r, i) => r === before[i]) && (!sl || JSON.stringify(j.statusLine || null) === JSON.stringify(sl))) continue;
         j.env = { ...kept, ...env }; j.permissions = { ...(j.permissions || {}), allow };
         if (sl) j.statusLine = sl; // 순서: 원래 규칙, 새 규칙(빠진 것 없이 같으면 쓰지 않는다)
         fs.writeFileSync(s.settingsPath, JSON.stringify(j, null, 2)); n++;
@@ -979,6 +982,25 @@ export class Branch {
     const l = b.ensureLink(parent.sessionId, child.sessionId, {});
     b.linkEvent(l, 'notice', text, { deliveryId: n.deliveryId, why: 'first prompt lost' }, { quiet: true });
     return lost;
+  }
+  // P258: 미확인으로 끝난 전달이 늦게 들어갔다(DeliveryQueue late_confirm). 첫 요청이었으면 부모에게 보낸 "들어가지 않았다" 알림(firstPromptEnd)을
+  //   바로잡는다(다시 보내면 같은 일이 두 번 들어간다). atrium prompt의 보낸 쪽에는 미확인을 따로 알리지 않았으므로(senderLost는 failed·cancelled만) 다시 알리지 않는다
+  onLateConfirm(r) {
+    const b = this.b;
+    for (const [sid, lost] of this.lost) {
+      if (lost.deliveryId !== r.deliveryId) continue;
+      this.lost.delete(sid);
+      b.store.addEvent(sid, 'first_prompt_late', { deliveryId: r.deliveryId, afterMs: r.afterMs ?? null });
+      const child = b.sessions.get(sid);
+      const parent = child && child.parentSessionId ? b.sessions.get(child.parentSessionId) : null;
+      if (!child || !parent) return null;
+      const text = `@${child.name}에게 보낸 첫 요청은 늦게 들어갔다(앞 알림의 "들어가지 않았다"는 틀렸다). 다시 보내지 않는다.\n이 알림에는 "알겠다"고만 답해라.`;
+      const n = b.queue.enqueue(parent.sessionId, text);
+      const l = b.ensureLink(parent.sessionId, child.sessionId, {});
+      b.linkEvent(l, 'notice', text, { deliveryId: n.deliveryId, why: 'first prompt late' }, { quiet: true });
+      return n;
+    }
+    return null;
   }
   readCmd(x) { return `atrium read ${x.name} --lines 40`; } // P116
   // atrium children: 자기의 하위 세션(all이면 그 아래 모두, 나무 순서)

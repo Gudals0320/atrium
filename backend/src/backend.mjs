@@ -35,7 +35,7 @@ import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs'
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
-import { writeSessionSettings, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
+import { writeSessionSettings, fillSessionHooks, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
 import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyTermDisconnected, deriveState, flags, worktreeExitAsk, trackWaiting, screenPermissionAsk } from './state.mjs';
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
@@ -281,6 +281,8 @@ export class Backend {
     this.queue.on('not_submitted', (r) => { this.store.addEvent(r.sessionId, 'delivery_not_submitted', r); this.log(`delivery not submitted ${this.nameOf(r.sessionId)} ${r.deliveryId}: input box has other text ${JSON.stringify(r.peek || '')}`); }); // P126
     this.queue.on('now', (r) => { this.store.addEvent(r.sessionId, 'delivery_now', r); this.log(`delivery now ${this.nameOf(r.sessionId)} ${r.deliveryId} (${r.state})`); }); // P172: 판에서 바로 보내기
     this.queue.on('bg_only', (r) => { this.store.addEvent(r.sessionId, 'delivery_bg_only', r); this.log(`delivery bg-only ${this.nameOf(r.sessionId)} ${r.deliveryId}: turn ended, only background work runs → sent now`); }); // P240
+    // P258: 미확인으로 끝난 전달이 늦게 제출됐다(압축 뒤 Claude Code가 쥐고 있던 글을 제출 등). 전달은 confirmed로 바뀌었다(delivery 이벤트)
+    this.queue.on('late_confirm', (r) => { this.store.addEvent(r.sessionId, 'delivery_late_confirmed', r); this.log(`delivery late confirm ${this.nameOf(r.sessionId)} ${r.deliveryId} (${Math.round(r.afterMs / 1000)}s after unconfirmed)`); if (this.branch && this.branch.onLateConfirm) this.branch.onLateConfirm(r); });
     this.queue.on('late', (r) => { this.store.addEvent(r.sessionId, 'delivery_late', r); this.log(`delivery late ${this.nameOf(r.sessionId)} ${r.deliveryId}: went in after cancel`); });
     this.queue.on('delivery', (d) => {
       this.store.addEvent(d.sessionId, 'delivery', d);
@@ -1073,8 +1075,12 @@ export class Backend {
 
   // 판이 다시 띄울 때의 실행 값. P4 전에 띄운 세션(이어 가기 명령에 --plugin-dir가 없음)은 그대로 둔다
   //   launch(기본 true)는 곧 띄운다는 뜻이다(이어 가기 명령만 다시 만들 때는 false)
-  launchOf(s, { launch = true } = {}) { // eslint-disable-line no-unused-vars
+  launchOf(s, { launch = true } = {}) {
     if (s.rigRole && this.rig3) this.rig3.syncSettings(s); // P241: 다시 띄우기 전에 역할 세션의 설정 파일을 지금 정의에 맞춘다
+    // P258: 깨우기·다시 시작·되살리기 전에 옛 설정 파일의 빠진 판 hook(P173 PreCompact·PostCompact 등)을 채운다. 새로 뜬 Claude Code가 읽는다
+    if (launch && this.hooked(s) && (s.kind || 'claude') === 'claude' && s.settingsPath) {
+      try { const added = fillSessionHooks(s.settingsPath); if (added.length) { this.log(`hooks added for ${s.name}: ${added.join(', ')}`); this.store.addEvent(s.sessionId, 'settings_hooks_added', { events: added }); } } catch (e) { this.log(`hooks fill failed ${s.name}: ${e.message}`); }
+    }
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
     return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.plugin : {}) };
   }
