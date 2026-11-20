@@ -32,7 +32,15 @@
 // P263: me의 상위·동료·하위·독립·역할 연결마다 kind·paneId 칸을 더했다(판의 연결 알림을 없앤 대신. 더하기만이라 5 그대로)
 // P267: guide merger(merger 안내), done 응답의 merge·mergeAsk·retire 칸과 claimedBy merger, items의 merge 칸, news의 kind merge를 더했다(더하기만이라 5 그대로)
 // 6(P269): rig를 통째로 걷어냈다. rig 동사, guide 응답의 rig 칸이 없어졌다(옛 rig 역할 세션의 명령은 모르는 동사 오류)
-export const CONTRACT_VERSION = 6;
+// 7(P284): ask 동사(결정 카드: 사람이 정할 질문을 판에 남김, --done·--list)를 더하고, 하위 워커의 ask는 거절(sub_worker, 종료 코드 1)이다. 사람에게 글로 묻는 세션이 판의 결정 카드를 함께 남기는 새 약속이라 올렸다
+export const CONTRACT_VERSION = 7;
+// P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
+export const ASK_QUESTION_MAX = 300;
+export const ASK_OPTION_MAX = 80;
+export const ASK_OPTIONS_MAX = 6;
+export const ASK_WHY_MAX = 300;
+export const ASK_OPEN_MAX = 10;
+export const ASK_ANSWER_MAX = 2000;
 // P204: 동료 소식. atrium log 한 줄의 상한, atrium news가 한 번에 보이는 줄
 export const NEWS_LOG_MAX = 300;
 export const NEWS_LINES = 20;
@@ -67,6 +75,8 @@ export const VERBS = [
   { name: 'docs', args: ['[--json]'], does: '이 워크스페이스의 문서 점검 결과: 문서마다 글자 수와 예산, 허락한 꼴, PLAN의 세 절과 끝남 표시, HEAD보다 커짐. 막지 않는다. 문서는 지휘 세션이 고치고 워커는 바꿀 문장을 done 보고에 적는다', out: ['on', 'dir', 'rows', 'total', 'problems', 'lead'] },
   // P211: 구독 사용량(보드가 로컬 출처에서 모은 마지막 값. 읽기만)
   { name: 'usage', args: ['[--json]'], does: '구독 사용량(Claude, Codex, AGY): 한도 창(5시간·주간 등)마다 사용률과 리셋까지 남은 시간, 크레딧, 요금제, 받은 때. 보드가 이 PC의 로컬 출처에서 모은 마지막 값이고 모르면 모름. 일을 크게 나누기 전에 남은 양을 볼 때', out: ['providers', 'alertsOn', 'at'] },
+  // P284: 결정 카드(사람에게 글로 묻는 질문을 판에 따로 남긴다. 대화를 갈음하지 않는다)
+  { name: 'ask', args: ['"<질문 한 줄>"', '[--option "<보기>"]…', '[--why "<맥락 한 줄>"]', '| --done <번호>', '| --list', '[--json]'], does: `사람이 정해야 할 질문("이대로 마무리할까요?", "이 방향으로 갈까요?")을 대화에 글로 묻고 이것으로 보드에도 결정 카드로 남긴다(질문 ${ASK_QUESTION_MAX}자, 보기 ${ASK_OPTIONS_MAX}개·각 ${ASK_OPTION_MAX}자, 맥락 ${ASK_WHY_MAX}자, 열린 카드 ${ASK_OPEN_MAX}장까지). 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글로 들어오고, 무시하면 아무것도 오지 않는다. 권한·신뢰·하네스 질문은 아니다. 사람과 직접 일하는 세션만 쓰고 하위 워커는 부모에게 atrium prompt로 묻는다. --done <번호>는 사람이 다른 길로 답해 끝난 카드를 닫고, --list는 너의 열린 카드`, out: ['id', 'open', 'max', 'card', 'cards', 'closed', 'state'] },
 ];
 // 종료 코드: 0 성공, 1 보드가 거절하거나 실패(이유는 stderr와 --json의 error), 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(일은 계속된다. 다시 atrium wait)
 export const EXIT = { ok: 0, refused: 1, usage: 2, timeout: 3 };

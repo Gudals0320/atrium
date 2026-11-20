@@ -17,11 +17,12 @@
 //       atrium log "<한 줄>" [--json] · atrium news [<이름>] [--all] [--json]   (P204: 동료 소식)
 //       atrium guide [merger] [--json]   (P182: 자세한 사용법. P267: merger 안내)
 //       atrium docs [--json]   (P257: 이 워크스페이스의 문서 점검 결과)
+//       atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"] | --done <번호> | --list [--json]   (P284: 결정 카드)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { envVar, terminalSessionVar } from '../src/config.mjs';
-import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP, PEER_RULE_SHORT, NEWS_LOG_MAX } from '../src/cli-contract.mjs'; // P204: 동료 소식 // P115: 계약(atrium help --json). P156: 관계 고르기 안내
+import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP, PEER_RULE_SHORT, NEWS_LOG_MAX, ASK_QUESTION_MAX, ASK_OPTIONS_MAX, ASK_OPTION_MAX, ASK_WHY_MAX, ASK_OPEN_MAX } from '../src/cli-contract.mjs'; // P284: 결정 카드 상한 // P204: 동료 소식 // P115: 계약(atrium help --json). P156: 관계 고르기 안내
 import { usageLines } from '../src/usage-text.mjs'; // P211: atrium usage
 
 // P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
@@ -72,6 +73,13 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       기본은 너의 동료가 네가 마지막으로 본 뒤 남긴 것을 오래된 것부터 20줄(읽은 자리를 옮긴다). <이름>이면 판의 어느 세션이든 그 세션의 최근 것(읽기만), --all은 동료의 최근 것(읽기만).
       상대 일과 닿는 일을 시작할 때, 동료에게 묻기 전, 일을 넘겨받을 때 본다. 동료가 끝날 때마다 결과를 보내오지 않는 대신이다
   atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
+  atrium ask "<질문 한 줄>" [--option "<보기>"]… [--why "<맥락 한 줄>"]
+      사람이 정해야 할 질문("이대로 마무리할까요?", "이 방향으로 갈까요?")을 대화에 글로 묻고 이것으로 보드에도 결정 카드로 남긴다. 카드 번호를 돌려준다.
+      대화를 갈음하지 않는다. 남긴 뒤 턴을 끝낸다. 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글이 들어오고, 무시하면 아무것도 오지 않는다(되묻지 않는다).
+      사람이 대화로 직접 답하면 보드가 카드를 닫는다. 권한·신뢰·모델·하네스 질문은 카드가 아니다.
+      상한: 질문 ${ASK_QUESTION_MAX}자, 보기 ${ASK_OPTIONS_MAX}개(각 ${ASK_OPTION_MAX}자), 맥락 ${ASK_WHY_MAX}자, 열린 카드 ${ASK_OPEN_MAX}장. 사람과 직접 일하는 세션만 쓴다(하위 워커는 부모에게 atrium prompt로 묻는다).
+  atrium ask --done <번호>      사람이 다른 길로 답해 끝난(쓸모없어진) 너의 카드를 닫는다
+  atrium ask --list             너의 열린 결정 카드
   atrium guide                  이 사용법
   atrium guide merger           합치기 merger의 안내(P267: 보드가 브랜치 워커의 합치기를 맡기는 세션)
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
@@ -79,8 +87,8 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
-const MULTI = new Set([]);
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer']); // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
+const MULTI = new Set(['option']); // P284: ask --option 여럿
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'list']); // P284: ask --list // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
 // P208: PowerShell 꾸러미(atrium.ps1)는 인자를 JSON으로 env에 실어 준다(cmd를 거치지 않아 여러 줄·따옴표·<>|&%가 그대로 온다). 읽고 지운다
 function argvOf() {
   const j = process.env.ATRIUM_ARGV_JSON; const f = process.env.ATRIUM_ARGV_FILE;
@@ -142,6 +150,7 @@ async function main() {
   if (cmd === 'done' || cmd === 'item' || cmd === 'items') return unitVerb(cmd); // P180
   if (cmd === 'guide') return guideVerb(); // P182
   if (cmd === 'log' || cmd === 'news') return newsVerb(cmd); // P204
+  if (cmd === 'ask') return askVerb(); // P284
   if (cmd === 'docs') { // P257: 문서 점검 결과
     const u = await call('docs', {}, 30000);
     if (flags.json) { say(JSON.stringify(u.result ?? { error: u.error }, null, 2)); if (u.error) process.exit(1); return; }
@@ -259,6 +268,41 @@ async function main() {
   say(`껐다: ${x.killed.map((k) => `@${k.name}${k.closed ? '' : `(실패 ${k.error || ''})`}`).join(', ')}`);
   if (x.kept && x.kept.length) say(`남겼다(하위가 아니라 끄지 않음): ${x.kept.map((k) => `@${k.name}(${REL_WORD[k.relation] || k.relation})`).join(', ')}`); // P156
 }
+// ---------- P284: atrium ask ----------
+function cardLine(d, now) {
+  const opts = d.options && d.options.length ? ` [${d.options.join(' | ')}]` : '';
+  return `  #${d.id} · ${ago(d.createdAt, now)}: ${d.question}${opts}${d.why ? ` (맥락: ${d.why})` : ''}`;
+}
+async function askVerb() {
+  let body;
+  if (flags.list) { if (rest.length || flags.done != null) fail('사용법: atrium ask --list', 2); body = { list: true }; }
+  else if (flags.done != null && flags.done !== true) { if (rest.length) fail('사용법: atrium ask --done <번호>', 2); body = { done: String(flags.done) }; }
+  else {
+    if (flags.done != null) fail('닫을 카드 번호를 준다: atrium ask --done <번호>', 2);
+    const question = rest.join(' ').replace(/\s+/g, ' ').trim();
+    if (!question) fail('질문 한 줄을 준다: atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"]', 2);
+    if (question.length > ASK_QUESTION_MAX) fail(`질문이 너무 길다(${question.length}자, ${ASK_QUESTION_MAX}자까지). 한 줄로 줄이고 맥락은 --why에 쓴다`, 2);
+    const options = (flags.option || []).filter((x) => x != null).map(String);
+    if (options.length > ASK_OPTIONS_MAX) fail(`보기가 너무 많다(${options.length}개, ${ASK_OPTIONS_MAX}개까지)`, 2);
+    if (flags.why === true) fail('맥락 한 줄을 준다: --why "<맥락>"', 2);
+    body = { question, options, ...(flags.why != null ? { why: String(flags.why) } : {}) };
+  }
+  const r = await call('ask', body, 20000);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1); return; }
+  if (r.error) fail(`결정 카드를 ${body.list ? '읽지' : body.done ? '닫지' : '남기지'} 않았다(${r.error.code}): ${r.error.message}`, r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1);
+  const x = r.result; const now = Date.now();
+  if (body.list) {
+    if (!x.cards.length) return say('열린 결정 카드가 없다.');
+    say(`너의 열린 결정 카드 ${x.cards.length}장(${x.max}장까지, 오래된 것부터):`);
+    for (const d of x.cards) say(cardLine(d, now));
+    return say('사람이 다른 길로 답했거나 쓸모없어진 카드는 atrium ask --done <번호>로 닫는다.');
+  }
+  if (body.done) return say(x.closed ? `결정 카드 #${x.id}를 닫았다.` : `결정 카드 #${x.id}는 이미 끝났다(${x.state}).`);
+  say(`결정 카드 #${x.id}를 보드에 남겼다(열린 카드 ${x.open}/${x.max}). 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글로 들어온다. 무시하면 아무것도 오지 않는다.`);
+  say('대화에 쓴 질문은 그대로 두고 턴을 끝낸다. 사람이 다른 길로 답하면 보드가 닫는다(필요하면 atrium ask --done ' + x.id + ').');
+}
+
 // ---------- P204: atrium log | news ----------
 const KIND_WORD = { turn: '턴', done: 'done', log: 'log', merge: '합침' }; // P267: merger의 합침 한 줄
 function newsLine(r, now) {
