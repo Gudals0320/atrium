@@ -4,10 +4,10 @@
 // 세션 맵의 구조 지도와 캔버스의 길 선의 순수 함수(단위 시험 test/p251-lib.test.mjs, test/p253-lib.test.mjs).
 // 자료는 판 API rig.map(backend rig-map.mjs), 역할 차례는 공유 배치(backend rig-map-layout.mjs roleOrder·rolePairs).
 // 6절 "설계 쪽이 고른 넷"은 RIG_VIEW 한 곳에서 뒤집는다(값 하나씩).
-import { roleOrder, rolePairs, rowOrder } from '../../../../backend/src/rig-map-layout.mjs';
+import { roleOrder, rolePairs, rowOrder, faceEnds, segHitsRect, gridPlace } from '../../../../backend/src/rig-map-layout.mjs';
 import { HUMAN, BUILDER_ROLE } from '../../../../backend/src/rig-def-names.mjs';
 
-export { roleOrder, rolePairs, rowOrder, HUMAN, BUILDER_ROLE };
+export { roleOrder, rolePairs, rowOrder, faceEnds, segHitsRect, gridPlace, HUMAN, BUILDER_ROLE };
 
 // ---- 뒤집기 자리(설정 값 하나씩). 기본값이 설계 쪽이 고른 것이다 ----
 // hideInTree:   역할 세션과 빌더를 세션 맵 트리에서 빼고 지도에만 | false = 트리에도 둔다(P253: 지도는 트리와 따로라 둘을 잇는 선은 없다)
@@ -75,9 +75,127 @@ export function twoLines(P, Q, k = 1) {
   const tf = at(P, o), tt = at(Q, o, -2 * V7.W1 * k), bf = at(Q, -o), bt = at(P, -o, 2 * V7.W2 * k);
   const mid = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
   return {
+    mid, n: [nx, ny],
     top: { from: tf, to: tt, d: pathD([tf, tt]) }, bottom: { from: bf, to: bt, d: pathD([bf, bt]) },
     topLab: at(mid, V7.LAB * k), botLab: at(mid, -V7.LAB * k), wait: at(mid, -V7.WAIT * k),
     dotTop: at(P, o, V7.DOTAT * k), dotBot: at(Q, -o, -V7.DOTAT * k), u: [ux, uy], n: [nx, ny],
+  };
+}
+
+// ---- P254 캔버스: 길 선이 다른 노드를 지나면 직각으로 돌린다(사용자 결정 2026-11-20) ----
+// ra·rb = 두 역할 노드 사각형, others = 그 밖 노드 사각형, taken = 앞 선들이 쓴 통로([{ dir: 'h'|'v', at, from, to }], 같은 자리에 겹치지 않게).
+// 곧은 선(마주 보는 변 가운데끼리)이 아무 노드도 지나지 않으면 null(곧은 두 줄 그대로). 지나면 직각 길 후보(가운데 꺾기, 위·아래 또는 왼·오른쪽으로 돌기)
+// 가운데 노드를 지나지 않는 가장 짧은 것 → { pts: [[x, y]…](a 쪽에서 b 쪽으로) }. 다 막히면 가장 덜 지나는 것.
+// 여백은 화면 px 기준(글이 화면 크기라서): k = 세계 크기 / 화면 px(캔버스 1/배율). 돌아가는 선과 노드 사이에 아래 줄 글과 "대기 n"이 들어갈 만큼
+export const ROUTE = { PAD: 16, M: 96, LANE: 140, NEAR: 120 };
+const hitsOf = (pts, rects, pad) => { let n = 0; for (let i = 0; i + 1 < pts.length; i++) for (const r of rects) if (segHitsRect(pts[i], pts[i + 1], { x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad }, 0)) n++; return n; };
+const polyLen = (pts) => pts.slice(1).reduce((s, p, i) => s + Math.abs(p[0] - pts[i][0]) + Math.abs(p[1] - pts[i][1]), 0);
+const corridors = (pts) => pts.slice(1, -2).map((p, i) => { const a = pts[i + 1], b = pts[i + 2]; return a[1] === b[1] ? { dir: 'h', at: a[1], from: Math.min(a[0], b[0]), to: Math.max(a[0], b[0]) } : { dir: 'v', at: a[0], from: Math.min(a[1], b[1]), to: Math.max(a[1], b[1]) }; });
+const clash = (cs, taken, near) => cs.some((c) => taken.some((t) => t.dir === c.dir && Math.abs(t.at - c.at) < near && t.from < c.to && c.from < t.to));
+export function rigRoute(ra, rb, others = [], taken = [], k = 1, ends = null) {
+  const [P0, Q0, sa] = faceEnds(ra, rb);
+  const P = ends ? ends[0] : P0, Q = ends ? ends[1] : Q0;
+  const PAD = ROUTE.PAD * k, M = ROUTE.M * k, LANE = ROUTE.LANE * k, NEAR = ROUTE.NEAR * k;
+  const diag = !(ra.x < rb.x + rb.w && rb.x < ra.x + ra.w) && !(ra.y < rb.y + rb.h && rb.y < ra.y + ra.h); // 비스듬히 놓인 두 노드: 돌아야 하면 ㄱ자 후보도 본다
+  if (!others.some((r) => segHitsRect(P, Q, { x: r.x - PAD, y: r.y - PAD, w: r.w + 2 * PAD, h: r.h + 2 * PAD }, 0))) return null; // 지나는 노드가 없으면 곧은 선(비스듬해도 짧고 깨끗하다)
+  const cx = (r) => r.x + r.w / 2, cy = (r) => r.y + r.h / 2;
+  const cands = [];
+  if (diag) { // ㄱ자 둘(세로 먼저, 가로 먼저)
+    const ay = rb.y > ra.y ? ra.y + ra.h : ra.y, by = ra.y > rb.y ? rb.y + rb.h : rb.y, ax = rb.x > ra.x ? ra.x + ra.w : ra.x, bx = ra.x > rb.x ? rb.x + rb.w : rb.x;
+    cands.push([[cx(ra), ay], [cx(ra), cy(rb)], [bx, cy(rb)]]);
+    cands.push([[ax, cy(ra)], [cx(rb), cy(ra)], [cx(rb), by]]);
+  }
+  for (let lane = 0; lane < 4; lane++) {
+    const d = lane * LANE;
+    if (sa === 'r' || sa === 'l') {
+      const mx = (P[0] + Q[0]) / 2 + (lane % 2 ? d : -d);
+      cands.push([P, [mx, P[1]], [mx, Q[1]], Q]);
+    } else {
+      const my = (P[1] + Q[1]) / 2 + (lane % 2 ? d : -d);
+      cands.push([P, [P[0], my], [Q[0], my], Q]);
+    }
+    // 위로·아래로 돌기(두 노드 위·아래 변 가운데에서 나가고 들어온다)
+    const x0 = Math.min(ra.x, rb.x), x1 = Math.max(ra.x + ra.w, rb.x + rb.w);
+    const inX = [ra, rb, ...others].filter((r) => r.x < x1 && x0 < r.x + r.w);
+    const yT = Math.min(...inX.map((r) => r.y)) - M - d, yB = Math.max(...inX.map((r) => r.y + r.h)) + M + d;
+    cands.push([[cx(ra), ra.y], [cx(ra), yT], [cx(rb), yT], [cx(rb), rb.y]]);
+    cands.push([[cx(ra), ra.y + ra.h], [cx(ra), yB], [cx(rb), yB], [cx(rb), rb.y + rb.h]]);
+    // 왼쪽·오른쪽으로 돌기
+    const y0 = Math.min(ra.y, rb.y), y1 = Math.max(ra.y + ra.h, rb.y + rb.h);
+    const inY = [ra, rb, ...others].filter((r) => r.y < y1 && y0 < r.y + r.h);
+    const xL = Math.min(...inY.map((r) => r.x)) - M - d, xR = Math.max(...inY.map((r) => r.x + r.w)) + M + d;
+    cands.push([[ra.x, cy(ra)], [xL, cy(ra)], [xL, cy(rb)], [rb.x, cy(rb)]]);
+    cands.push([[ra.x + ra.w, cy(ra)], [xR, cy(ra)], [xR, cy(rb)], [rb.x + rb.w, cy(rb)]]);
+  }
+  let best = null;
+  for (const pts of cands) {
+    // 가운데 토막은 두 역할 노드도 지나면 안 된다(첫·끝 토막은 제 노드 변에서 나간다)
+    const mid = pts.slice(1, -1);
+    const hits = hitsOf(pts, others, PAD) + hitsOf(mid, [ra, rb], 0) + (clash(corridors(pts), taken, NEAR) ? 0.5 : 0);
+    const s = hits * 1e7 + polyLen(pts);
+    if (!best || s < best.s) best = { s, pts };
+  }
+  for (const c of corridors(best.pts)) taken.push(c);
+  return { pts: best.pts };
+}
+// P254: 글 칸 자리(가운데). 줄에서 글 칸의 가까운 변까지 12px(시안: 위 줄 글 칸 아래 변이 줄 위 12). 칸 크기(w × LABH)를 법선 방향으로 재어
+//   세로·비스듬한 줄에서도 글이 줄을 덮지 않고 줄 바깥에 붙는다(가로 줄이면 시안의 ±28, 대기 +48과 같다). "대기 n"은 아래 줄 글 바깥.
+export function labelSpots(mid, n, k, { topW = 88, botW = 88, waitW = 56 } = {}) {
+  const sup = (w) => Math.abs(n[0]) * w / 2 + Math.abs(n[1]) * V7.LABH / 2;
+  const gap = V7.DY + 12;
+  const at = (s) => [mid[0] + n[0] * s * k, mid[1] + n[1] * s * k];
+  const b = gap + sup(botW);
+  const vertical = Math.abs(n[0]) > 0.7;
+  const bot = at(-b);
+  return { topLab: at(gap + sup(topW)), botLab: bot, wait: vertical ? [bot[0] + (waitW - botW) / 2 * Math.sign(-n[0]) * k, bot[1] + (V7.LABH + 4) * k] : at(-(b + sup(botW) + 4 + sup(waitW))) };
+}
+// P254: 한 노드의 같은 변을 여러 rig 선이 쓰면 끝점을 그 변을 따라 나눈다(선 끝이 겹치지 않게). 차례는 선이 나가는 쪽(왼·오른 변이면 y, 위·아래 변이면 x).
+//   곧은 가로·세로 선은 맞은편 끝도 같이 옮겨 곧게 두고, 꺾은선은 첫(끝) 모서리를 같이 옮겨 직각을 지킨다.
+//   items: [{ id, a, b, pts }](pts = a 쪽 → b 쪽, 세계 좌표), rectOf(id) → { id: pts }
+const sideOf = (r, p) => { const d = [['l', Math.abs(p[0] - r.x)], ['r', Math.abs(p[0] - r.x - r.w)], ['t', Math.abs(p[1] - r.y)], ['b', Math.abs(p[1] - r.y - r.h)]]; return d.sort((x, y) => x[1] - y[1])[0][0]; };
+export function spreadEnds(items, rectOf) {
+  const out = {}, groups = new Map();
+  for (const e of items) {
+    const ra = rectOf(e.a), rb = rectOf(e.b);
+    if (!ra || !rb || !e.pts || e.pts.length < 2) continue;
+    const pts = e.pts.map((p) => [...p]); out[e.id] = pts;
+    const last = pts.length - 1;
+    for (const [node, r, i, j] of [[e.a, ra, 0, 1], [e.b, rb, last, last - 1]]) {
+      const side = sideOf(r, pts[i]); const k = node + '|' + side;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push({ id: e.id, i, j, side, r, other: i === 0 ? rb : ra, straight: pts.length === 2 });
+    }
+  }
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    const v = g[0].side === 'l' || g[0].side === 'r', ax = v ? 1 : 0;
+    g.sort((x, y) => out[x.id][x.j][ax] - out[y.id][y.j][ax]);
+    g.forEach((x, n) => {
+      const pts = out[x.id], at = (v ? x.r.y + x.r.h * (n + 1) / (g.length + 1) : x.r.x + x.r.w * (n + 1) / (g.length + 1));
+      const was = pts[x.i][ax];
+      pts[x.i][ax] = at;
+      if (!x.straight) { if (Math.abs(pts[x.j][ax] - was) < 0.5) pts[x.j][ax] = at; return; }
+      // 곧은 선: 축에 나란했으면 맞은편 끝도 같이(그 노드 변 안에서)
+      if (Math.abs(pts[x.j][ax] - was) < 0.5) { const o = x.other, lo = (v ? o.y : o.x) + 8, hi = (v ? o.y + o.h : o.x + o.w) - 8; pts[x.j][ax] = Math.min(hi, Math.max(lo, at)); }
+    });
+  }
+  return out;
+}
+// 꺾인 길의 두 줄(곧은 두 줄 twoLines와 같은 꼴). pts = 왼쪽(a) 쪽 → 오른쪽(b) 쪽. 모서리는 두 토막의 법선을 더해 나란히 비킨다
+export function polyLines(pts, k = 1) {
+  const segs = pts.slice(1).map((q, i) => { const p = pts[i], L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1; const u = [(q[0] - p[0]) / L, (q[1] - p[1]) / L]; return { p, q, L, u, n: [u[1], -u[0]] }; });
+  const off = (o) => pts.map((p, i) => { const a = segs[Math.max(0, i - 1)].n, b = segs[Math.min(segs.length - 1, i)].n; const n = i === 0 ? b : i === pts.length - 1 ? a : [a[0] + b[0], a[1] + b[1]]; return [p[0] + n[0] * o, p[1] + n[1] * o]; });
+  const cut = (ps, by) => { const a = ps[ps.length - 2], b = ps[ps.length - 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [...ps.slice(0, -1), [b[0] - (b[0] - a[0]) / L * by, b[1] - (b[1] - a[1]) / L * by]]; };
+  const o = V7.DY * k;
+  const top = cut(off(o), 2 * V7.W1 * k), bottom = cut(off(-o).reverse(), 2 * V7.W2 * k);
+  const j = segs.reduce((bi, s, i) => (s.L > segs[bi].L ? i : bi), 0), S = segs[j];
+  const mid = [(S.p[0] + S.q[0]) / 2, (S.p[1] + S.q[1]) / 2], at = (s) => [mid[0] + S.n[0] * s, mid[1] + S.n[1] * s];
+  const u0 = segs[0].u, uz = segs[segs.length - 1].u;
+  return {
+    mid, n: S.n,
+    top: { d: pathD(top), pts: top }, bottom: { d: pathD(bottom), pts: bottom },
+    topLab: at(V7.LAB * k), botLab: at(-V7.LAB * k), wait: at(-V7.WAIT * k),
+    dotTop: [top[0][0] + u0[0] * V7.DOTAT * k, top[0][1] + u0[1] * V7.DOTAT * k], dotBot: [bottom[0][0] - uz[0] * V7.DOTAT * k, bottom[0][1] - uz[1] * V7.DOTAT * k],
   };
 }
 

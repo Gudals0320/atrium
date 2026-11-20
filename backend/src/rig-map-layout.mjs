@@ -127,3 +127,83 @@ export function rowOrder(roles, flows = [], { beatRole = null } = {}) {
   walk();
   return best || [];
 }
+
+// ---- P254: 켤 때 캔버스에 역할·빌더를 2D 칸에 놓는 자리 찾기(사용자 결정 2026-11-20) ----
+// 점수 = 노드를 지나는 선 × 1000 + 선끼리 엇갈림 × 100 + 선 길이 합(칸 간격 단위) + 빌더까지 길이 × 0.2 + 앞 차례 역할이 앞 칸에(아주 작게).
+// 선은 두 노드의 마주 보는 변 가운데를 잇는다(캔버스 facingSides와 같은 규칙). 6개(역할 + 빌더)까지는 모든 자리를 견주고, 많으면 옮기기·바꾸기로 낮춘다.
+// → { cells: Map 이름 → { c, r }(빌더는 BUILDER 열쇠로), cols, rows, score }
+export const GRID_BUILDER = '@builder';
+export function faceEnds(a, b) {
+  const dx = (b.x + b.w / 2) - (a.x + a.w / 2), dy = (b.y + b.h / 2) - (a.y + a.h / 2);
+  const gapX = Math.abs(dx) - (a.w + b.w) / 2, gapY = Math.abs(dy) - (a.h + b.h) / 2;
+  const mid = (r, s) => (s === 'r' ? [r.x + r.w, r.y + r.h / 2] : s === 'l' ? [r.x, r.y + r.h / 2] : s === 't' ? [r.x + r.w / 2, r.y] : [r.x + r.w / 2, r.y + r.h]);
+  const [sa, sb] = gapX >= gapY ? (dx >= 0 ? ['r', 'l'] : ['l', 'r']) : (dy >= 0 ? ['b', 't'] : ['t', 'b']);
+  return [mid(a, sa), mid(b, sb), sa, sb];
+}
+// 선분 p-q가 사각형 r(안쪽으로 pad만큼 줄인 것)을 지나는가
+export function segHitsRect(p, q, r, pad = 0) {
+  const x0 = r.x + pad, y0 = r.y + pad, x1 = r.x + r.w - pad, y1 = r.y + r.h - pad;
+  if (x1 <= x0 || y1 <= y0) return false;
+  let t0 = 0, t1 = 1; const dx = q[0] - p[0], dy = q[1] - p[1];
+  for (const [pp, qq] of [[-dx, p[0] - x0], [dx, x1 - p[0]], [-dy, p[1] - y0], [dy, y1 - p[1]]]) {
+    if (pp === 0) { if (qq < 0) return false; continue; }
+    const t = qq / pp;
+    if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return t1 - t0 > 1e-9;
+}
+const cross2 = (a, b, c, d) => {
+  const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+};
+export function gridPlace(roles, flows = [], { W = 600, H = 400, GX = 360, GY = 240, beatRole = null, builder = true, exact = 6 } = {}) {
+  const names = [...new Set((roles || []).filter(Boolean))];
+  const order = rowOrder(names, flows, { beatRole });
+  const items = builder ? [...order, GRID_BUILDER] : order;
+  const n = items.length;
+  if (!n) return { cells: new Map(), cols: 0, rows: 0, score: 0 };
+  const pairs = rolePairs(order, flows).map((p) => [items.indexOf(p.a), items.indexOf(p.b)]);
+  const bi = builder ? n - 1 : -1;
+  const C = Math.max(2, Math.ceil(Math.sqrt(n)) + 1), R = Math.max(1, Math.ceil(Math.sqrt(n)));
+  const SX = W + GX, SY = H + GY;
+  const rect = (cell) => ({ x: (cell % C) * SX, y: Math.floor(cell / C) * SY, w: W, h: H });
+  const score = (pos) => {
+    const rs = pos.map(rect);
+    let through = 0, cross = 0, len = 0, blen = 0;
+    const segs = pairs.map(([a, b]) => { const [p, q] = faceEnds(rs[a], rs[b]); len += Math.hypot(q[0] - p[0], q[1] - p[1]) / SX; return [a, b, p, q]; });
+    for (const [a, b, p, q] of segs) for (let k = 0; k < n; k++) if (k !== a && k !== b && segHitsRect(p, q, rs[k], 1)) through++;
+    for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
+      const [a1, b1, p1, q1] = segs[i], [a2, b2, p2, q2] = segs[j];
+      if (a1 === a2 || a1 === b2 || b1 === a2 || b1 === b2) continue;
+      if (cross2(p1, q1, p2, q2)) cross++;
+    }
+    if (bi >= 0) for (let k = 0; k < bi; k++) { const [p, q] = faceEnds(rs[k], rs[bi]); blen += Math.hypot(q[0] - p[0], q[1] - p[1]) / SX; }
+    let tie = 0; pos.forEach((cell, i) => { tie += (n - i) * cell * 1e-4; }); // 앞 차례 역할일수록 앞 칸(왼쪽 위)
+    const cs = pos.map((c) => c % C), rr = pos.map((c) => Math.floor(c / C));
+    const box = (Math.max(...cs) - Math.min(...cs) + 1) * (Math.max(...rr) - Math.min(...rr) + 1) * 0.05;
+    return through * 1000 + cross * 100 + len + blen * (0.2 / Math.max(1, bi)) + box + tie;
+  };
+  const cells = C * R;
+  let best = null, bestS = Infinity;
+  if (n <= exact) {
+    const pos = [], used = new Array(cells).fill(false);
+    const walk = (i) => {
+      if (i === n) { const s = score(pos); if (s < bestS) { bestS = s; best = pos.slice(); } return; }
+      for (let c = 0; c < cells; c++) { if (used[c]) continue; used[c] = true; pos[i] = c; walk(i + 1); used[c] = false; }
+    };
+    walk(0);
+  } else {
+    best = items.map((_, i) => i); bestS = score(best);
+    for (let round = 0, better = true; better && round < 200; round++) {
+      better = false;
+      for (let i = 0; i < n; i++) for (let c = 0; c < cells; c++) {
+        const j = best.indexOf(c); if (j === i) continue;
+        const nx = best.slice(); if (j >= 0) { nx[j] = best[i]; } nx[i] = c;
+        const s = score(nx); if (s < bestS - 1e-9) { bestS = s; best = nx; better = true; }
+      }
+    }
+  }
+  const c0 = Math.min(...best.map((c) => c % C)), r0 = Math.min(...best.map((c) => Math.floor(c / C)));
+  const out = new Map(items.map((k, i) => [k, { c: (best[i] % C) - c0, r: Math.floor(best[i] / C) - r0 }]));
+  return { cells: out, cols: Math.max(...[...out.values()].map((x) => x.c)) + 1, rows: Math.max(...[...out.values()].map((x) => x.r)) + 1, score: bestS };
+}

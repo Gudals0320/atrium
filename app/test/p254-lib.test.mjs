@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { textW13, pairLines, pairLit, lineText, twoLines, v7Layout, rigEdges, rigTag, hideRigSessions, V7, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
+import { gridPlace, faceEnds, segHitsRect, rigRoute, polyLines, ROUTE, textW13, pairLines, pairLit, lineText, twoLines, v7Layout, rigEdges, rigTag, hideRigSessions, V7, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
 import { lineageLayout } from '../src/renderer/lib/mission-lineage.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
@@ -204,4 +204,53 @@ test('P254 열 머리 고정과 띠 걷어냄: 칸 머리 띠를 rig 아래로 �
   const rm = read('RigMap.jsx');
   for (const s of ['rm-cycle', 'rm-entry', 'rm-head', 'rm-sector', 'rm-tool', 'rm-beat']) assert.ok(!rm.includes(s), '시안에 없는 것: ' + s);
   for (const s of ['rm-line', 'rm-wait', 'rm-open-return', 'rm-raise', 'rm-builder', 'rm-tag']) assert.ok(rm.includes(s), s);
+});
+
+// ---- 캔버스 2D 자리와 돌리기(사용자 결정 2026-11-20) ----
+const FL = FLOWS.map((f) => ({ ...f }));
+const cellRect = (g, n, W = 1440, H = 810, GX = 360, GY = 240) => { const c = g.cells.get(n); return { x: c.c * (W + GX), y: c.r * (H + GY), w: W, h: H }; };
+
+test('P254 gridPlace(rig-trade): 역할과 빌더를 2D 칸에, 선이 노드를 지나지 않고 엇갈리지 않으며 짧다', () => {
+  const g = gridPlace(['data', 'ideas', 'verify', 'trade'], FL, { W: 1440, H: 810, beatRole: 'data' });
+  const names = ['data', 'ideas', 'verify', 'trade', '@builder'];
+  const rs = Object.fromEntries(names.map((n) => [n, cellRect(g, n)]));
+  assert.equal(new Set(names.map((n) => g.cells.get(n).c + ',' + g.cells.get(n).r)).size, 5, '칸이 겹치지 않는다');
+  assert.ok(g.rows > 1, '한 줄이 아니다(2D)');
+  const pairs = [['data', 'ideas'], ['ideas', 'verify'], ['data', 'verify'], ['verify', 'trade']];
+  for (const [a, b] of pairs) {
+    const [p, q] = faceEnds(rs[a], rs[b]);
+    for (const n of names) if (n !== a && n !== b) assert.ok(!segHitsRect(p, q, rs[n], 1), `${a}-${b} 선이 ${n}을 지난다`);
+    assert.ok(Math.hypot(q[0] - p[0], q[1] - p[1]) < 1800, `${a}-${b}는 이웃한 칸(짧은 선)`);
+  }
+  assert.deepEqual(g.cells.get('data'), { c: 0, r: 0 }, '박자 역할이 왼쪽 위');
+  // 같은 입력이면 같은 자리(켤 때마다 같다)
+  assert.deepEqual([...gridPlace(['data', 'ideas', 'verify', 'trade'], FL, { W: 1440, H: 810, beatRole: 'data' }).cells], [...g.cells]);
+  // 역할이 많으면(정확히 견주지 않는 크기) 옮기기·바꾸기로 낮춘다: 사슬은 노드를 지나지 않는다
+  const big = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const gb = gridPlace(big, big.slice(1).map((x, i) => ({ item: 'i' + i, from: [big[i]], to: [x] })), {});
+  const rb = Object.fromEntries([...big, '@builder'].map((n) => [n, cellRect(gb, n, 600, 400)]));
+  for (let i = 0; i + 1 < big.length; i++) { const [p, q] = faceEnds(rb[big[i]], rb[big[i + 1]]); for (const n of Object.keys(rb)) if (n !== big[i] && n !== big[i + 1]) assert.ok(!segHitsRect(p, q, rb[n], 1)); }
+});
+
+test('P254 rigRoute: 곧은 선이 다른 노드를 지나면 직각으로 돌고(노드를 지나지 않음), 같은 통로에 두 선을 겹치지 않는다. polyLines는 두 줄을 나란히', () => {
+  const R = (c, r) => ({ x: c * 1800, y: r * 1050, w: 1440, h: 810 });
+  const taken = [];
+  assert.equal(rigRoute(R(0, 0), R(1, 0), [R(2, 0)], taken), null, '막는 노드가 없으면 곧은 선');
+  const k = 2;
+  const r1 = rigRoute(R(0, 0), R(2, 0), [R(1, 0)], taken, k);
+  assert.ok(r1 && r1.pts.length >= 3);
+  for (let i = 0; i + 1 < r1.pts.length; i++) assert.ok(!segHitsRect(r1.pts[i], r1.pts[i + 1], R(1, 0), 0), '가운데 노드를 지나지 않는다');
+  for (let i = 1; i + 2 < r1.pts.length; i++) for (const r of [R(0, 0), R(2, 0)]) assert.ok(!segHitsRect(r1.pts[i], r1.pts[i + 1], r, 0), '제 노드도 가로지르지 않는다');
+  // 돌아가는 선과 노드 사이에 아래 줄 글·대기 칸이 들어간다(화면 px × k)
+  const ys = r1.pts.slice(1, -1).map((p) => p[1]);
+  assert.ok(Math.min(...ys) <= -ROUTE.M * k || Math.max(...ys) >= 810 + ROUTE.M * k);
+  const r2 = rigRoute(R(0, 0), R(2, 0), [R(1, 0)], taken, k);
+  const mid = (r) => r.pts[1][1];
+  assert.ok(Math.abs(mid(r2) - mid(r1)) >= ROUTE.NEAR * k, '둘째 선은 다른 통로');
+  const g = polyLines([[0, 0], [0, -200], [1000, -200], [1000, 0]], 1);
+  assert.equal(g.top.pts[1][0], -8); assert.equal(g.top.pts[1][1], -208, '모서리에서 두 법선을 더해 나란히(위 줄은 바깥)');
+  assert.equal(g.bottom.pts[1][0], 992); assert.equal(g.bottom.pts[1][1], -192);
+  assert.deepEqual(g.topLab, [500, -228]); assert.deepEqual(g.botLab, [500, -172]); assert.deepEqual(g.wait, [500, -152]);
+  // 캔버스가 쓴다
+  assert.ok(/rigRoute\(/.test(read('Canvas.jsx')) && /polyLines\(route, k\)/.test(read('RigLines.jsx')));
 });

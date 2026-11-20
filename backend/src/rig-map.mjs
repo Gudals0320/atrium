@@ -6,11 +6,11 @@
 // - 기다리는 raise: 역할이 빌더에게 올린 것(rig3_tunes kind raise) 뒤에 빌더나 사람이 고친 판(rig_versions by builder | human)이 아직 없으면 기다림.
 //   다뤄지면(그 뒤 판이 생기면) 사라진다(설계 4절 "다뤄지면 사라진다"를 판이 아는 사실로 옮긴 것).
 //   P252: 빌더나 사람이 고치지 않고 답해도(atrium rig answer, 판 API rig.raiseAnswer) 사라진다. 셈은 rig-tune.mjs raiseStates 하나다.
-// - 켤 때 놓기(placeRoles): rig를 켠 뒤 역할 노드를 길 차례(rig-map-layout.mjs roleOrder)로 나란히 놓는다. 켤 때마다 한 번이고 그 뒤에는 사람이 옮긴 자리를 지킨다.
+// - 켤 때 놓기(placeRoles): rig를 켠 뒤 역할 노드(와 빌더)를 2D 칸(rig-map-layout.mjs gridPlace, P254)에 놓는다. 빌더가 나중에 뜨면 placeBuilder가 그 칸에. 켤 때마다 한 번이고 그 뒤에는 사람이 옮긴 자리를 지킨다.
 import { collectCycle } from './rig-beat.mjs';
 import { waitingRaises, raiseStates } from './rig-tune.mjs';
 import { HUMAN, BUILDER_ROLE } from './rig-def-names.mjs';
-import { roleOrder } from './rig-map-layout.mjs';
+import { gridPlace, GRID_BUILDER } from './rig-map-layout.mjs';
 
 export const MAP_RECENT = 3; // 섹터마다 보이는 최근 항목 수(더 있으면 +n)
 export const FLOW_RECENT = 4; // 길마다 마우스를 올리면 뜨는 최근 항목 수
@@ -160,35 +160,53 @@ export function rigMaps(b) {
   return out;
 }
 
-// 켠 뒤 한 번: 역할 노드를 길 차례로 놓는다. 닻은 역할 노드들의 왼쪽 위(처음 띄운 자리 근처). → 옮긴 수
-export function placeRoles(b, key) {
+// 켠 뒤 한 번: 역할 노드(와 빌더가 있으면 빌더)를 2D 칸에 놓는다(P254: 선이 엇갈리거나 노드를 지나는 것이 가장 적은 자리, rig-map-layout.mjs gridPlace).
+//   닻은 역할 노드들의 왼쪽 위(처음 띄운 자리 근처). 칸 간격 = 노드 크기 + PLACE.GX·GY. → 옮긴 수
+function gridOf(b, key) {
   const r = b.rig3 ? b.rig3.defOf(key) : null;
-  if (!r) return 0;
+  if (!r) return null;
   const r3 = r.def.rig3;
   const names = Object.keys(r3.roles);
-  const o = roleOrder(names, r3.flows);
   const byS = new Map((b.store.nodes ? b.store.nodes() : []).map((n) => [n.session_id, n]));
   const nodes = new Map();
   for (const n of names) { const s = b.rig3.sessionsOf(key, n)[0]; const nd = s && byS.get(s.sessionId); if (nd) nodes.set(n, { s, nd }); }
-  if (!nodes.size) return 0;
+  if (!nodes.size) return null;
   const xs = [...nodes.values()].map((x) => x.nd);
-  const x0 = Math.min(...xs.map((n) => n.x)), y0 = Math.min(...xs.map((n) => n.y));
   const W = Math.max(...xs.map((n) => n.w)), H = Math.max(...xs.map((n) => n.h));
-  // 줄마다 높이 = 그 줄 칸들의 가장 많은 역할 수
-  const rowsIn = new Map();
-  for (const n of names) { const l = o.line.get(n); rowsIn.set(l, Math.max(rowsIn.get(l) || 0, o.row.get(n) + 1)); }
-  const lineY = []; let acc = 0;
-  for (let l = 0; l < o.lines; l++) { lineY.push(acc); acc += (rowsIn.get(l) || 1) * (H + PLACE.GY) + PLACE.GY; }
+  const g = gridPlace(names, r3.flows, { W, H, GX: PLACE.GX, GY: PLACE.GY, beatRole: r3.beat ? r3.beat.role : null });
+  return { g, nodes, byS, W, H, SX: W + PLACE.GX, SY: H + PLACE.GY };
+}
+const putNode = (b, s, nd, x, y) => {
+  if (x === nd.x && y === nd.y) return 0;
+  b.store.setNode({ ...nd, x, y });
+  try { b.api && b.api.broadcast('board.node', { sessionId: s.sessionId, x, y, w: nd.w, h: nd.h, z: nd.z ?? 0, by: null }); } catch {}
+  return 1;
+};
+export function placeRoles(b, key) {
+  const o = gridOf(b, key);
+  if (!o) return 0;
+  const xs = [...o.nodes.values()].map((x) => x.nd);
+  const x0 = Math.min(...xs.map((n) => n.x)), y0 = Math.min(...xs.map((n) => n.y));
   let moved = 0;
-  for (const [n, { s, nd }] of nodes) {
-    const x = Math.round(x0 + o.col.get(n) * (W + PLACE.GX)), y = Math.round(y0 + lineY[o.line.get(n)] + o.row.get(n) * (H + PLACE.GY));
-    if (x === nd.x && y === nd.y) continue;
-    b.store.setNode({ ...nd, x, y });
-    moved++;
-    try { b.api && b.api.broadcast('board.node', { sessionId: s.sessionId, x, y, w: nd.w, h: nd.h, z: nd.z ?? 0, by: null }); } catch {}
-  }
+  for (const [n, { s, nd }] of o.nodes) { const c = o.g.cells.get(n); moved += putNode(b, s, nd, Math.round(x0 + c.c * o.SX), Math.round(y0 + c.r * o.SY)); }
+  const bs = b.rig3.builder && b.rig3.builder.sessionOf ? b.rig3.builder.sessionOf(key) : null;
+  const bn = bs && o.byS.get(bs.sessionId), bc = o.g.cells.get(GRID_BUILDER);
+  if (bn && bc) moved += putNode(b, bs, bn, Math.round(x0 + bc.c * o.SX), Math.round(y0 + bc.r * o.SY));
   if (moved) b.log && b.log('rig roles placed ' + key + ': ' + moved);
   return moved;
+}
+// 빌더가 처음 뜬 뒤 한 번: 역할 노드 자리에서 거꾸로 닻을 구해 빌더 칸에 놓는다. 그 자리에 다른 노드가 있으면 역할들 아래
+export function placeBuilder(b, key, sessionId) {
+  const o = gridOf(b, key);
+  const nd = o && o.byS.get(sessionId);
+  if (!o || !nd) return 0;
+  const bc = o.g.cells.get(GRID_BUILDER);
+  const [n0, { nd: r0 }] = [...o.nodes][0];
+  const c0 = o.g.cells.get(n0);
+  let x = Math.round(r0.x - c0.c * o.SX + bc.c * o.SX), y = Math.round(r0.y - c0.r * o.SY + bc.r * o.SY);
+  const over = (n) => n.session_id !== sessionId && x < n.x + n.w && n.x < x + nd.w && y < n.y + n.h && n.y < y + nd.h;
+  if ([...o.byS.values()].some(over)) { const rs = [...o.nodes.values()].map((v) => v.nd); y = Math.max(...rs.map((n) => n.y + n.h)) + PLACE.GY; x = Math.max(...rs.map((n) => n.x)); }
+  return putNode(b, b.sessions.get(sessionId) || { sessionId }, nd, x, y);
 }
 
 // 판 API(읽기만: 창·연결한 기기)

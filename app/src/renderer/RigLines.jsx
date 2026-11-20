@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { EdgeLabelRenderer, ViewportPortal, useStore as useFlowStore } from '@xyflow/react';
 import { useStore, getState, openDialog } from './store.js';
 import { useT, fmtTime } from './lib/i18n.js';
-import { rigTag, rigFrames, periodText, lineText, twoLines, pairLit, pathD, V7, RIG_VIEW } from './lib/rig-map.js';
+import { rigTag, rigFrames, periodText, lineText, twoLines, polyLines, labelSpots, textW13, pairLit, pathD, V7, RIG_VIEW } from './lib/rig-map.js';
 
 const zoomOf = (s) => s.transform[2];
 const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
@@ -30,12 +30,19 @@ export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
   if (!data || !data.lines) return null;
   const k = 1 / (zoom || 1);
   // 왼쪽(가로가 더 길면 x, 세로가 더 길면 y가 작은 쪽) 노드 → 오른쪽 노드 줄이 위 줄
-  const dx = targetX - sourceX, dy = targetY - sourceY;
+  // P254: 다른 노드를 지나는 선은 Canvas가 준 직각 길(data.route, a 쪽 → b 쪽)을 따른다
+  //   끝점은 Canvas가 나눈 자리(data.ends: 같은 변을 여러 선이 쓸 때)
+  const S0 = data.route ? data.route[0] : data.ends ? data.ends[0] : [sourceX, sourceY], T0 = data.route ? data.route[data.route.length - 1] : data.ends ? data.ends[1] : [targetX, targetY];
+  const dx = T0[0] - S0[0], dy = T0[1] - S0[1];
   const aLeft = Math.abs(dx) >= Math.abs(dy) ? dx >= 0 : dy >= 0;
-  const P = aLeft ? [sourceX, sourceY] : [targetX, targetY], Q = aLeft ? [targetX, targetY] : [sourceX, sourceY];
+  const P = aLeft ? S0 : T0, Q = aLeft ? T0 : S0;
+  const route = data.route ? (aLeft ? data.route : [...data.route].reverse()) : null;
   const top = aLeft ? data.lines.top : data.lines.bottom, bottom = aLeft ? data.lines.bottom : data.lines.top;
   const left = aLeft ? data.a : data.b, right = aLeft ? data.b : data.a;
-  const g = twoLines(P, Q, k);
+  const g = route ? polyLines(route, k) : twoLines(P, Q, k);
+  // P254: 세로·비스듬한 줄에서도 글이 줄 바깥에 붙게 글 폭으로 자리를 잰다
+  const tw = (s) => Math.max(V7.LABW, textW13(s));
+  const spot = labelSpots(g.mid, g.n, k, { topW: tw(lineText(top, 'top')), botW: tw(lineText(bottom, 'bottom')), waitW: Math.max(V7.WAITW, textW13(t('rigV7.wait', { n: data.lines.waiting }))) });
   const lit = pairLit(data.a, data.b, (r) => (r === data.a ? aWork : r === data.b ? bWork : false));
   const color = lit ? V7.C.lit : V7.C.dim;
   const tid = safeId(id);
@@ -45,17 +52,17 @@ export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
   return <>
     <g className={`mt-rig7${lit ? ' lit' : ''}`} data-role="rig-path" data-edge={id} data-a={data.a} data-b={data.b} data-lit={lit ? '1' : '0'}>
       <defs><Tip id={`${tid}-t`} color={color} /><Tip id={`${tid}-b`} color={color} /></defs>
-      {top ? <path className="mt-rig7-line top" data-role="rig-line" data-line="top" data-from={left} data-to={right} d={g.top.d} fill="none" stroke={color} strokeWidth={V7.W1 * k} strokeLinecap="round" markerEnd={`url(#${tid}-t)`} /> : null}
+      {top ? <path className="mt-rig7-line top" data-role="rig-line" data-line="top" data-routed={route ? '1' : '0'} data-from={left} data-to={right} d={g.top.d} fill="none" stroke={color} strokeWidth={V7.W1 * k} strokeLinecap="round" markerEnd={`url(#${tid}-t)`} /> : null}
       {bottom ? <path className="mt-rig7-line bottom" data-role="rig-line" data-line="bottom" data-from={right} data-to={left} d={g.bottom.d} fill="none" stroke={color} strokeWidth={V7.W2 * k} strokeLinecap="round" markerEnd={`url(#${tid}-b)`} /> : null}
-      <path d={pathD([P, Q])} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={22 * k} onClick={toggle} />
+      <path d={pathD(route || [P, Q])} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={22 * k} onClick={toggle} />
       {top && top.open ? <circle className="mt-rig-open" data-role="rig-open-return" data-line="top" cx={g.dotTop[0]} cy={g.dotTop[1]} r={(V7.DOT / 2) * k} fill={V7.C.red} /> : null}
       {bottom && bottom.open ? <circle className="mt-rig-open" data-role="rig-open-return" data-line="bottom" cx={g.dotBot[0]} cy={g.dotBot[1]} r={(V7.DOT / 2) * k} fill={V7.C.red} /> : null}
     </g>
     <EdgeLabelRenderer>
-      {top ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(g.topLab, k)} data-role="rig-edge-label" data-line="top" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(top, 'top')}</div> : null}
-      {bottom ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(g.botLab, k)} data-role="rig-edge-label" data-line="bottom" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(bottom, 'bottom')}</div> : null}
-      {data.lines.waiting ? <div className={`mt-rig7-wait nodrag nopan${lit ? ' lit' : ''}`} style={at(bottom ? g.wait : g.botLab, k)} data-role="rig-wait" data-edge={id}>{t('rigV7.wait', { n: data.lines.waiting })}</div> : null}
-      {open ? <div className="mt-rig-recent nowheel nodrag nopan" style={at(g.wait, k, '-50%')} data-role="rig-path-recent">
+      {top ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(spot.topLab, k)} data-role="rig-edge-label" data-line="top" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(top, 'top')}</div> : null}
+      {bottom ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(spot.botLab, k)} data-role="rig-edge-label" data-line="bottom" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(bottom, 'bottom')}</div> : null}
+      {data.lines.waiting ? <div className={`mt-rig7-wait nodrag nopan${lit ? ' lit' : ''}`} style={at(bottom ? spot.wait : spot.botLab, k)} data-role="rig-wait" data-edge={id}>{t('rigV7.wait', { n: data.lines.waiting })}</div> : null}
+      {open ? <div className="mt-rig-recent nowheel nodrag nopan" style={at(spot.wait, k, '-50%')} data-role="rig-path-recent">
         <b>{t('rigMap.pathRecent')}</b>
         {recent.length ? recent.map((x) => <span key={x.id + x.rev} className={`is-${x.state}`}>{x.id} · {t(`rigMap.state.${x.state}`)} · {fmtTime(x.t)}{x.reason ? ` · "${x.reason}"` : ''}</span>) : <span className="dim">{t('rigMap.pathNone')}</span>}
       </div> : null}
@@ -68,15 +75,21 @@ export function RigRaiseEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
   const t = useT();
   const zoom = useFlowStore(zoomOf);
   const k = 1 / (zoom || 1);
-  const dx = targetX - sourceX, dy = targetY - sourceY, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
-  const end = [targetX - ux * 2 * V7.RAISEW * k, targetY - uy * 2 * V7.RAISEW * k];
+  // P254: 다른 노드를 지나면 Canvas가 준 직각 길(data.route)을 따른다. 글은 가장 긴 토막 옆
+  const pts = data && data.route ? data.route : data && data.ends ? data.ends : [[sourceX, sourceY], [targetX, targetY]];
+  const segs = pts.slice(1).map((q, i) => [pts[i], q]);
+  const [sp, sq] = segs.reduce((a, s) => (Math.hypot(s[1][0] - s[0][0], s[1][1] - s[0][1]) > Math.hypot(a[1][0] - a[0][0], a[1][1] - a[0][1]) ? s : a), segs[0]);
+  const [lp, lq] = segs[segs.length - 1];
+  const LL = Math.hypot(lq[0] - lp[0], lq[1] - lp[1]) || 1;
+  const end = [lq[0] - (lq[0] - lp[0]) / LL * 2 * V7.RAISEW * k, lq[1] - (lq[1] - lp[1]) / LL * 2 * V7.RAISEW * k];
+  const L = Math.hypot(sq[0] - sp[0], sq[1] - sp[1]) || 1, ux = (sq[0] - sp[0]) / L, uy = (sq[1] - sp[1]) / L;
   let nx = -uy, ny = ux; if (nx < 0 || (nx === 0 && ny < 0)) { nx = -nx; ny = -ny; } // 선의 오른쪽(가로 선이면 아래)
-  const mid = [(sourceX + targetX) / 2 + nx * V7.RAISELX * k, (sourceY + targetY) / 2 + ny * V7.RAISELX * k];
+  const mid = [(sp[0] + sq[0]) / 2 + nx * V7.RAISELX * k, (sp[1] + sq[1]) / 2 + ny * V7.RAISELX * k];
   const tid = safeId(id);
   return <>
     <g className="mt-rig7-raise" data-role="rig-raise" data-edge={id}>
       <defs><Tip id={`${tid}-r`} color={V7.C.raise} /></defs>
-      <path d={pathD([[sourceX, sourceY], end])} fill="none" stroke={V7.C.raise} strokeWidth={V7.RAISEW * k} strokeDasharray={V7.RAISEDASH.map((x) => x * k).join(' ')} strokeLinecap="round" markerEnd={`url(#${tid}-r)`} />
+      <path d={pathD([...pts.slice(0, -1), end])} fill="none" stroke={V7.C.raise} strokeWidth={V7.RAISEW * k} strokeDasharray={V7.RAISEDASH.map((x) => x * k).join(' ')} strokeLinecap="round" markerEnd={`url(#${tid}-r)`} />
     </g>
     <EdgeLabelRenderer>
       <div className="mt-rig7-raise-lab nodrag nopan" style={{ ...at(mid, k, '0%'), pointerEvents: 'none' }} data-role="rig-raise-label" data-edge={id}>{t('rigMap.raiseEdge')}{data && data.n > 1 ? ` ${data.n}` : ''}</div>

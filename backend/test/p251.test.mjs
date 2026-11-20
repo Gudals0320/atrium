@@ -11,7 +11,7 @@ import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { RigRoles, ROLE_SPAWN } from '../src/rig-roles.mjs';
 import { rigMapOf, rigMaps, placeRoles, itemState, rigMapHandlers, MAP_RECENT, PLACE } from '../src/rig-map.mjs';
-import { roleOrder, rolePairs, RIG_LAYOUT } from '../src/rig-map-layout.mjs';
+import { roleOrder, rolePairs, RIG_LAYOUT, gridPlace } from '../src/rig-map-layout.mjs';
 import { missionGraph } from '../src/mission.mjs';
 import { HUMAN, BUILDER_ROLE } from '../src/rig-def.mjs';
 
@@ -163,7 +163,7 @@ test('P251 꺼진 rig도 자료가 있다(status off). 정의가 없는 워크�
   assert.equal(rigMapOf(B.b, B.key), null);
 });
 
-test('P251 켤 때 한 번 역할 노드를 길 차례로 놓는다(칸·가지 줄). 그 뒤 사람이 옮긴 자리는 placeRoles를 다시 부르지 않는 한 그대로', async () => {
+test('P251(P254) 켤 때 한 번 역할 노드를 2D 칸(gridPlace)에 놓는다. 그 뒤 사람이 옮긴 자리는 placeRoles를 다시 부르지 않는 한 그대로', async () => {
   const B = await board();
   const rows = new Map(); B.store.setNode = (n) => rows.set(n.session_id, { ...n }); B.store.nodes = () => [...rows.values()]; // 시험 판은 세션 줄이 없어 노드 표만 흉내
   let i = 0;
@@ -171,10 +171,12 @@ test('P251 켤 때 한 번 역할 노드를 길 차례로 놓는다(칸·가지 
   const moved = placeRoles(B.b, B.key);
   assert.ok(moved >= 3);
   const at = (role) => B.store.nodes().find((n) => n.session_id === B.S(role).sessionId);
-  const x0 = at('data').x, y0 = at('data').y;
   const DX = 600 + PLACE.GX, DY = 400 + PLACE.GY;
-  assert.equal(at('ideas').x, x0 + DX); assert.equal(at('news').x, x0 + DX); assert.equal(at('news').y, y0 + DY);
-  assert.equal(at('verify').x, x0 + 2 * DX); assert.equal(at('ideas').y, y0);
+  const def = DEF();
+  const g = gridPlace(Object.keys(def.roles), def.flows.map((f) => ({ ...f, from: [].concat(f.from), to: [].concat(f.to) })), { W: 600, H: 400, GX: PLACE.GX, GY: PLACE.GY, beatRole: 'data' });
+  const c0 = g.cells.get('data'), x0 = at('data').x - c0.c * DX, y0 = at('data').y - c0.r * DY;
+  for (const r of ['ideas', 'news', 'verify']) { const c = g.cells.get(r); assert.deepEqual([at(r).x, at(r).y], [x0 + c.c * DX, y0 + c.r * DY], r); }
+  assert.equal(new Set(['data', 'ideas', 'news', 'verify'].map((r) => at(r).x + ',' + at(r).y)).size, 4, '겹치지 않는다');
   assert.ok(B.casts.some((c) => c.n === 'board.node' && c.d.sessionId === B.S('news').sessionId));
 });
 
