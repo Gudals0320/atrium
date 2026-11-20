@@ -19,6 +19,7 @@ import { windowTitle } from '../renderer/lib/update-notice.js'; // P71: 창 제�
 import { shouldPurgeOnClose, purgeAndDestroy } from './gpu-purge.mjs';
 import { permissionAllowed } from './media-permission.mjs'; // P165: 음성 입력 마이크 권한
 import { uriListPaths, splitFolders } from '../renderer/lib/desktop-paste.js'; // P162: 붙여 넣은 파일 목록
+import { processAppId, windowAppDetails } from './app-id.mjs'; // P277: 작업 표시줄 아이콘
 import { uploadDirOf, uploadPath, cleanupUploads, UPLOAD_MAX_BYTES } from '../../../backend/src/uploads.mjs'; // P162: 붙여 넣은 그림 자리와 정리(P48 웹 업로드와 같은 곳·규칙) // P113: 창을 닫고 트레이에 남을 때 GPU 프로세스 메모리 돌려주기
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -27,6 +28,8 @@ const APP_ROOT = path.resolve(HERE, '..', '..');
 const WINDOW_ICON = path.join(APP_ROOT, 'assets', 'icon.ico');
 const NOTIFY_ICON = path.join(APP_ROOT, 'assets', 'atrium-icon-256.png');
 const cfg = loadConfig({ argv: process.argv });
+// Windows 알림의 앱 이름. 실제 판과 개발용을 나눈다. 창은 따로 windowAppId를 쓴다(P277, app-id.mjs). 어떤 창보다 먼저 정한다
+app.setAppUserModelId(processAppId(APP_ID, cfg.profile));
 const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'package.json'), 'utf8')).version; } catch { return null; } })(); // P69
 let updating = false; // P69: 업데이트로 끝나는 중
 let quitting = false; // P113: 앱을 끝내는 중(트레이 끝내기 등). 이때 닫는 창은 GPU 메모리를 돌려주지 않고 바로 닫는다
@@ -155,6 +158,11 @@ function createWindow() {
     webPreferences: { preload: path.join(HERE, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });
   win.setMenuBarVisibility(false);
+  // P277: 창의 AUMID와 다시 띄우기 아이콘·명령. Electron이 만드는 시작 메뉴 Electron.lnk(알림 AUMID)와 묶이지 않게 한다
+  if (process.platform === 'win32') {
+    try { w.setAppDetails(global.__mtAppDetails = windowAppDetails({ appId: APP_ID, appName: APP_NAME, profile: cfg.profile, iconPath: WINDOW_ICON, appRoot: APP_ROOT, execPath: process.execPath })); }
+    catch (e) { log('setAppDetails failed', e.message); }
+  }
   // P176: 최소화·숨김(트레이)을 창에 알린다. 페이지 visibilitychange는 Chromium 플래그에 따라 오지 않을 수 있다(음성 입력을 멈춘다)
   for (const ev of ['minimize', 'hide']) win.on(ev, () => { if (!w.isDestroyed()) w.webContents.send('mt:hidden'); });
   win.on('page-title-updated', (e) => e.preventDefault()); // P9: HTML <title>이 개발용 표시("(dev)")를 덮어쓰지 않게
@@ -180,13 +188,14 @@ function createWindow() {
 
 app.on('before-quit', () => { quitting = true; }); // P113
 app.on('second-instance', () => { if (!updating) showNode(null); }); // 트레이에 남아 있을 때 다시 실행하면 창을 다시 연다(I7)
-// Windows 알림의 앱 이름. 실제 판과 개발용을 나눈다
-app.setAppUserModelId(`${APP_ID}.${cfg.profile}`);
 // P14: 트레이 메뉴의 확인창. 시험은 global.__mtTrayConfirm으로 답을 정한다
 const tr = (key, vars) => translate(tray ? tray.lang() : DEFAULT_LANGUAGE, key, vars);
 async function trayConfirm({ message, detail, ok }) {
   if (typeof global.__mtTrayConfirm === 'function') return !!global.__mtTrayConfirm({ message, detail });
-  const r = await dialog.showMessageBox({ type: 'warning', title: tr('app.name'), message, detail, buttons: [ok || tr('common.ok'), tr('common.cancel')], defaultId: 1, cancelId: 1, noLink: true });
+  // P277: 창이 보이면 그 창에 붙인다(주인 없는 확인창은 작업 표시줄에 알림 AUMID로 따로 떠 Electron 아이콘이 될 수 있다)
+  const parent = win && !win.isDestroyed() && win.isVisible() ? win : null;
+  const opts = { type: 'warning', title: tr('app.name'), message, detail, buttons: [ok || tr('common.ok'), tr('common.cancel')], defaultId: 1, cancelId: 1, noLink: true };
+  const r = await (parent ? dialog.showMessageBox(parent, opts) : dialog.showMessageBox(opts));
   return r.response === 0;
 }
 // P69: 업데이트로 백엔드를 바꾼다. 창을 닫고 앱을 끝낸다(트레이 상주여도). 새 버전의 창은 바꾸기 프로세스가 띄운다
