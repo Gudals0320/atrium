@@ -186,6 +186,7 @@ export class AgentVerbs {
     if (made && made.held) return this.heldPrompt(caller, t, made, o, res, woke);
     const d = made ? made.d : b.queue.enqueue(t.sessionId, text, { ...(o.now ? { typeNow: true, aside: true } : {}), origin: { kind: 'agent', session: caller.sessionId } }); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
     if (plan.kind === 'followup') U.noteFollowup(plan.tryRow, caller, d.deliveryId, { now: !!o.now });
+    if (U && U.stops) U.stops.notePrompt(caller.sessionId, t.sessionId); // P281: 받는 쪽 대기열에 들어간 글(부모에게 묻고 쉬면 멈춤을 알리지 않는다)
     const unitOut = made ? { id: made.unit.id, kind: 'new', held: false } : plan.kind === 'followup' ? { id: plan.unit.id, kind: 'followup' } : null;
     const l = this.link(caller, t);
     // P156: 두 세션의 일 관계로 본 꼬리표(assign 위 → 하위 지시, report 하위 → 위 보고, share 동료끼리). 선·Thread가 보고와 공유를 가른다
