@@ -15,6 +15,14 @@ export function isCodexTrustDialog(text) { const t = String(text || ''); return 
 export const trustDialogOf = (kind, text) => (kind === 'agy' ? isAgyTrustDialog(text) : kind === 'codex' ? isCodexTrustDialog(text) : (kind || 'claude') === 'claude' ? isTrustDialog(text) : false);
 // P208: 판이 화면으로 신뢰 질문을 보는 종류(hc 어댑터의 지켜보기, backend checkBlocked, state.mjs trust_wait)
 export const TRUST_SCREEN_KINDS = new Set(['claude', 'agy', 'codex']);
+// P270: dsh-TUI가 입력을 잡는 창. 첫 실행 안내(완료해야 ~/.dsh-tui/onboarding.json에 남아 그 전에는 띄울 때마다 뜬다)와 사용 이정표의 별 요청 창.
+// 판이 글·Enter를 넣으면 그 창이 받는다(구독 로그인 창 열기, GitHub 별 달기). 판은 이 동안 막힘으로 두고(답은 터미널에서) 글을 넣지 않는다 → 'guide' | 'star' | null
+export function dshGateOf(text) {
+  const t = String(text || '');
+  if (/(Welcome to dsh-TUI|欢迎使用 dsh-TUI)/.test(t) && /(Step \d+ of \d+|第 \d+ \/ \d+ 步)/.test(t)) return 'guide';
+  if (/(Feed a Star|投喂一颗 Star)/.test(t) && /(hours together|launches together|已经陪你)/.test(t)) return 'star';
+  return null;
+}
 
 // P71: 워크트리 나가기 질문. `claude -w`로 띄운 세션이 끝날 때 Claude Code가 묻는다(제목 "Exiting worktree session").
 // "You have 13 commits on worktree-x. The branch will be deleted if you remove the worktree." 아래에 "1. Keep worktree", "2. Remove worktree"
@@ -153,11 +161,24 @@ export function agyInputBox(text) {
   const b = claudeInputBox(text);
   return b.found && AGY_HINT.test(b.text) ? { ...b, text: '' } : b;
 }
+// P270: dsh-TUI 입력 칸 읽기(0.20.2). 화면 아래쪽 둥근 상자(╭…╮ 줄과 ╰…╯ 줄) 안이고 첫 줄은 "⌸ ❯ "로 시작해 오른쪽 끝에 "⛶"(전체 화면 편집 단추)가 있다.
+// 여러 줄 글은 상자 안 다음 줄들로 이어진다. 빈 칸은 "⌸ ❯" 뒤가 비어 있다. 상자 위가 대화(사용자 글은 "❯ 글", 답은 "● 글")
+export function dshInputBox(text) {
+  const lines = String(text || '').split('\n').map((l) => l.replace(/\s+$/, ''));
+  let end = -1;
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 40); i--) if (/^\s*╰─/.test(lines[i])) { end = i; break; }
+  let start = -1;
+  for (let i = end - 1; i >= 0 && i >= end - 30; i--) if (/^\s*╭─/.test(lines[i])) { start = i; break; }
+  if (end < 0 || start < 0 || !lines.slice(start + 1, end).some((l) => /^\s*(⌸\s*)?❯/.test(l))) return { found: false, text: '', above: lines };
+  const body = lines.slice(start + 1, end).map((l) => l.replace(/^\s*│?\s*(⌸\s*)?(❯\s?)?/, '').replace(/\s*⛶?\s*│?$/, ''));
+  const t = body.join(' ').replace(/\s+/g, ' ').trim();
+  return { found: true, text: t, above: lines.slice(0, start), rows: body.length };
+}
 // 보낸 글(prompt)과 화면을 견준다 → { box: 'ours' | 'empty' | 'other' | 'unknown', seen(입력 칸 위에 보낸 글 첫머리가 보인다 = 이미 들어갔을 수 있다) }
 // 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines], Codex는 [Pasted Content N chars]) 잘릴 수 있어 첫머리(40자)로 본다. kind: 'claude' | 'codex'
 const flatText = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 export function promptOnScreen(screenText, prompt, kind = 'claude') {
-  const box = kind === 'codex' ? codexInputBox(screenText) : claudeInputBox(screenText);
+  const box = kind === 'codex' ? codexInputBox(screenText) : kind === 'dsh' ? dshInputBox(screenText) : claudeInputBox(screenText); // P270: dsh
   const want = flatText(prompt);
   const head = want.slice(0, 40);
   // P184: 여러 줄 글은 화면에서 첫 줄 뒤가 다음 줄로 넘어간다. 첫 줄이 짧으면(30자 미만) 그 첫 줄(8자 이상)로도 본다

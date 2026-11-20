@@ -19,7 +19,7 @@ import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { hcCall, hcSubscribe, hcPipe, HcError, FramedConn, FRAME } from './rpc.mjs';
 import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm, TRUST_STATUS, isSynthetic, trustStatusOf, TRUST_WATCH_KINDS } from './model.mjs';
-import { trustDialogOf } from '../screen.mjs'; // P117: 신뢰 대화상자(7501 상태 전). P208: Codex도
+import { trustDialogOf, dshGateOf } from '../screen.mjs'; // P117: 신뢰 대화상자(7501 상태 전). P208: Codex도. P270: dsh-TUI가 입력을 잡는 창
 import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
@@ -49,7 +49,7 @@ export function holderIdentity(status) {
 export const KINDS_TTL_MS = 60_000; // P205: 에이전트 종류(where.exe) 결과를 쓰는 시간
 
 export class HcAdapter extends EventEmitter {
-  constructor({ session, dataDir, logDir, hcPath = null, pipe = null, pin = HC_PIN, env = process.env, fetchImpl, graceMs = GRACE_MS, tested = [HC_PIN.version], moveWaitMs = 3000, trustWatchMs = TRUST_WATCH_MS, trustPollMs = TRUST_POLL_MS }) {
+  constructor({ session, dataDir, logDir, hcPath = null, pipe = null, pin = HC_PIN, env = process.env, fetchImpl, graceMs = GRACE_MS, tested = [HC_PIN.version], moveWaitMs = 3000, trustWatchMs = TRUST_WATCH_MS, trustPollMs = TRUST_POLL_MS, dshGateWatchMs = 60000 }) {
     super();
     if (!session || session === 'default') throw new Error('이름이 지정된 터미널 세션만 사용할 수 있습니다.');
     this.backend = 'hc';
@@ -73,6 +73,10 @@ export class HcAdapter extends EventEmitter {
     this._movedTo = new Map(); // P117: 판이 바꿔 띄운 자리(옛 주소 → 새 주소). 같은 패널을 부르는 판의 흐름(passGate 등)이 새 자리를 따라간다
     this._trustWatch = new Map(); // P117: 신뢰 대화상자를 보는 터미널 → 타이머
     this.trustWatchMs = trustWatchMs; this.trustPollMs = trustPollMs;
+    this.dshGateWatchMs = dshGateWatchMs; // P270: 띄운 뒤 dsh-TUI의 입력을 잡는 창을 보는 시간(창이 떠 있는 동안은 계속 본다)
+    this._dshLaunch = new Map(); // P270: dsh 터미널 → 띄운 때(보내기 직전 확인이 갓 뜬 화면을 한 번 더 본다)
+    this._dshGone = new Map(); // P270: dsh 터미널 → 입력을 잡던 창이 사라진 때
+    this.dshSettleMs = 4000;
     this.subscribedPanes = [];
     this.trace = new InputTrace({ log: (m) => this.log(m) }); // P136: 패널마다 최근 입력·초점·크기·모드·기록 읽기(값만). 입력 칸에 마우스 보고 글이 보이면 로그에 남긴다
   }
@@ -331,7 +335,57 @@ export class HcAdapter extends EventEmitter {
     const r = await this.call('terminal.run', params, 60000);
     this._envOf.set(r.address, tenv);
     if (TRUST_WATCH_KINDS.has(kind)) this._watchTrust(r.address, Date.now(), kind); // P208: Codex의 신뢰 질문도
+    if (kind === 'dsh') { this._dshLaunch.set(r.address, Date.now()); this._watchDshGate(r.address, Date.now()); } // P270
     return r;
+  }
+  // P270: 보내기 직전 확인. dsh-TUI의 첫 실행 안내는 7501 idle과 거의 같은 때(0.2초 안) 그려져 지켜보기(_watchDshGate)보다 판의 첫 요청이 먼저 갈 수 있다
+  //   (시험에서 Enter가 안내의 구독 로그인 목록을 열었다). 그 창이 보이면 글을 거부하고(agent_blocked, 판은 물러났다 다시 보낸다), 띄운 지 30초 안이면
+  //   1.5초 기다려 한 번 더 본다
+  async _dshGuard(t) {
+    const isDsh = (t.status && t.status.app === 'dsh-tui') || (t.labels && t.labels[LABEL.agent] === 'dsh');
+    if (!isDsh) return;
+    const look = async () => { try { return dshGateOf(String((await this.call('terminal.read', { terminal: t.address, lines: 0 }, 5000)).text || '')); } catch { return null; } };
+    let gate = await look();
+    if (!gate && Date.now() - (this._dshLaunch.get(t.address) || 0) < 30000) { await sleep(1500); gate = await look(); }
+    if (gate) throw new HcError('agent_blocked', `${t.address} shows the dsh-TUI ${gate === 'guide' ? 'first-run guide' : 'star prompt'} (answer it in the terminal)`, 'terminal.send');
+  }
+  // P270: dsh-TUI는 상태(7501, 앱 이름 dsh-tui)를 스스로 알려 idle로 뜨지만, 첫 실행 안내·별 요청 창이 입력을 잡을 수 있다(Enter가 로그인 창을 열거나 별을 단다).
+  //   띄운 뒤 dshGateWatchMs 동안 화면을 보고, 그 창이 보이면 막힘을 흉내 낸다(글은 거부, 판은 waiting·화면 끝, 답은 터미널에서). 창이 떠 있는 동안은 계속 보고,
+  //   사라지면 코어가 쥔 지금 상태(플러그인의 7501)로 되돌린다. 판은 키를 보내지 않는다
+  _watchDshGate(address, t0 = Date.now()) {
+    clearTimeout(this._trustWatch.get(`dsh:${address}`));
+    const tick = async () => {
+      this._trustWatch.delete(`dsh:${address}`);
+      const m = this.model.terms.get(address);
+      if (m && !isLive(m)) return;
+      let text = '';
+      try { text = String((await this.call('terminal.read', { terminal: address, lines: 0 }, 5000)).text || ''); } catch (e) { if (e.code === 'agent_not_found' || e.code === 'pane_not_found') return; }
+      const now = this.model.terms.get(address);
+      if (!now || !isLive(now)) return;
+      const gate = dshGateOf(text);
+      const held = !!(now.status && isSynthetic(now.status));
+      if (gate && !held) {
+        this.log(`dsh ${gate} screen in ${address}: reporting blocked`);
+        this._emitAll(this.model.apply({ seq: null, type: 'status', terminal: address, data: { status: { app: 'dsh-tui', state: 'blocked', kind: 'dialog', msg: gate === 'guide' ? 'dsh-TUI first-run guide' : 'dsh-TUI star prompt', synthetic: true }, reported: false } }));
+      } else if (!gate && held && !this._dshGone.has(address)) {
+        this._dshGone.set(address, Date.now()); // 창이 닫혀도 대화 화면이 그려질 때까지(약 3초) 막힘을 둔다(시험: 닫히자마자 넣은 첫 글이 사라졌다)
+      } else if (gate) {
+        this._dshGone.delete(address);
+      } else if (!gate && held && Date.now() - this._dshGone.get(address) >= this.dshSettleMs) {
+        this._dshGone.delete(address);
+        let real = null;
+        try { real = (await this.call('terminal.get', { terminal: address }, 5000)).status || null; } catch {}
+        this.log(`dsh dialog gone in ${address}: status back to ${real ? real.state : 'none'}`);
+        this._emitAll(this.model.apply({ seq: null, type: 'status', terminal: address, data: { status: real ? { ...real, synthetic: undefined } : { app: 'dsh-tui', state: 'idle' }, reported: false } }));
+      }
+      if (!gate && !held && Date.now() - t0 > this.dshGateWatchMs) return;
+      const timer = setTimeout(tick, this.trustPollMs);
+      if (timer.unref) timer.unref();
+      this._trustWatch.set(`dsh:${address}`, timer);
+    };
+    const timer = setTimeout(tick, this.trustPollMs);
+    if (timer.unref) timer.unref();
+    this._trustWatch.set(`dsh:${address}`, timer);
   }
   // P117: 판이 띄운 claude가 7501을 말하기 전에 화면을 본다. 신뢰 대화상자("Quick safety check … trust this folder")가 보이면 막힘(blocked)을 흉내 낸다.
   // 판은 그 뒤 화면을 읽어 trust_wait로 보이고(checkBlocked), 첫 지시는 기다린다(전달 규칙). 사람이 신뢰하면 claude가 7501 idle을 말해 풀리고,
@@ -498,7 +552,7 @@ export class HcAdapter extends EventEmitter {
     if (this._kindsP) return this._kindsP;
     const where = this._where || ((k) => new Promise((res) => execFile('where.exe', [k], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (e, so) => res(e ? null : String(so).split(/\r?\n/)[0].trim() || null))));
     const kinds = Object.keys(KIND_COMMAND);
-    this._kindsP = Promise.all(kinds.map(where)).then((found) => {
+    this._kindsP = Promise.all(kinds.map((k) => where(KIND_COMMAND[k] || k))).then((found) => { // P270: 종류 이름과 실행 파일이 다를 수 있다(dsh → dsh-tui)
       this._kinds = kinds.map((k, i) => ({ kind: k, installed: !!found[i], path: found[i] }));
       this._kindsAt = Date.now();
       return this._kinds;
@@ -530,6 +584,7 @@ export class HcAdapter extends EventEmitter {
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
     // P117: 신뢰 대화상자(흉내 낸 막힘). 코어는 모르므로 판이 거부한다(글이 신뢰 질문에 들어가지 않게. 같은 코드 agent_blocked)
     if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
+    await this._dshGuard(t); // P270
     this.trace.note(t.address, 'send', { chars: String(text).length }); // P136 진단 기록(길이만)
     return this.call('terminal.send', { terminal: t.address, text: String(text).replace(/\r\n?/g, '\n') }, 120000);
   }
@@ -542,6 +597,7 @@ export class HcAdapter extends EventEmitter {
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
     if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
     if (t.status.state === 'blocked') throw new HcError('agent_blocked', `${t.address} is blocked (typing would answer its dialog)`, 'terminal.send');
+    await this._dshGuard(t); // P270
     const s = String(text).replace(/\r\n?/g, '\n');
     this.trace.note(t.address, 'paste', { chars: s.length }); // P136 진단 기록(길이만)
     const t0 = Date.now();
