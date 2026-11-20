@@ -658,3 +658,7 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-usage-prov.pickable:active { background: rgba(255, 252, 240, 0.06); }
 .mt-usage-prov.rep { border-color: var(--accent-line, rgba(255, 252, 240, 0.22)); background: rgba(255, 252, 240, 0.04); }
 .mt-usage-rep { margin-left: 6px; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--accent-text, inherit); background: color-mix(in srgb, var(--accent, #888) 16%, transparent); }
+/* P268: 합치기 merger를 켤지 묻는 카드(세션 맵 머리 아래, 위쪽에 겹친다) */
+.mt-merger-asks.phone { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 56px); left: 12px; right: 12px; width: auto; transform: none; z-index: 30; }
+.mt-merger-ask.phone { font-size: 14px; padding: 12px; border-radius: 12px; }
+.mt-merger-ask.phone .mt-btn.small { height: 36px; padding: 0 14px; font-size: 14px; }

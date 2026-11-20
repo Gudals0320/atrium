@@ -15,6 +15,7 @@ import { isWeb } from './web.js';
 import { RemoteBar } from './RemoteBar.jsx'; // P49: 웹 화면의 다시 연결 띠와 왕복 지연
 import { webGate } from './Pair.jsx';
 import { PairRequestBanner } from './WebDevices.jsx';
+import { MergerAskCards } from './Merger.jsx'; // P268: 합치기 merger를 켤지 묻는 카드
 import { PhoneApp, usePhoneLayout, useScreenFix, LightBanner, LevelBadge, phoneScreen } from './Phone.jsx'; // P74: 휴대폰 세로 화면. P86: LevelBadge(가벼운 보드 단계)
 // P87: 휴대폰은 늘 세션 목록(Phone.jsx)이다. P76의 휴대폰 보드(목록 단추, 탭한 세션의 전체 보기 PhoneFull.jsx)는 휴대폰에 그리지 않는다
 import { startRemoteNotice, remoteNotices } from './remote-notice.js'; // P58
@@ -241,6 +242,7 @@ function App() {
       </div>
       <Dialogs />
       {loaded && <PairRequestBanner />}
+      {loaded && <MergerAskCards />}
       {isWeb && <RemoteBar />}
       {light && <LightBanner floating />}
       {!light && <LevelBadge />}

@@ -65,9 +65,11 @@ import { useBoardMotion } from './zoom-var.js'; // P127: 판을 움직이는 동
 import { openFull, fullId, onFull } from './full-view.js'; // P76
 import { termBudgetNow, boardPlan, step } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게. P86: 보드 단계(levelPlan)와 단계 기록
 import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
+import { MergerEdge } from './Merger.jsx'; // P268: 하위 → merger 선
+import { mergerLines } from './lib/merger.js'; // P268
 
 const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), wsgroup: withBoundary(GroupFrameNode, 'wsgroup'),memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
-const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge };
+const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge, merge: MergerEdge }; // P268: merge
 const HOLD_MS = 1500; // 화면 밖으로 나간 노드의 제어기를 놓기 전 기다리는 시간(끌 때 붙였다 뗐다 하지 않게)
 const DRAG_MIN_PX = 3; // 이보다 덜 끌었으면 자리를 바꾸지 않는다(누르기)
 const SNAP_PX = 48; // 가장자리끼리 화면에서 이만큼 가까우면 붙을 자리를 보인다
@@ -343,6 +345,7 @@ export function Canvas() {
     });
   }, [storeNodes, sessions, docks, links, workspaces, wsGroups, memos, kanbans, convoNodes, rev, currentWs]); // P23: links(덩어리 안 연결선). P91: wsGroups(묶음 테두리)
 
+  const mergerView = useStore((st) => st.merger); // P268: 하위 → merger 선 자료(merger.status jobs)
   const edgesRef = useRef(null); // P146: 지난번 선(값이 같으면 다시 쓴다)
   // 연결선. 같은 덩어리 안 두 노드 사이의 연결은 노드 위에 겹친 선으로 보인다(H5, P23 DockLinks). 같은 저장소 선은 워크트리 세션이 있을 때만(F4)
   const edges = useMemo(() => {
@@ -376,10 +379,12 @@ export function Canvas() {
     const made = !PLAN.fancyEdges ? out.filter((e) => e.type === 'link').map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, type: 'straight', selectable: false }))
       : decorateEdges(out, { rectOf: rectId, links, sessions, now: Date.now() }); // P67: 한 쌍에 이름표 하나, 물러나기, 비켜 놓기
     // P146: 값이 같은 선은 옛 객체를 다시 쓴다(세션 갱신마다 선 전부를 다시 그리지 않게)
+    // P268: 하위 → merger 선(열린 합치기 일). 보통 연결과 같은 곡선·글 자리 규칙, 한 쌍에 선 하나
+    for (const e of mergerLines(mergerView, here)) if (!adjacent(e.source, e.target)) made.push({ id: e.id, source: e.source, target: e.target, ...sides(e.source, e.target), type: 'merge', data: { ...e, ...gapOf(e.source, e.target) }, selectable: false });
     const prevById = new Map((edgesRef.current || []).map((e) => [e.id, e]));
     const next = made.map((e) => { const o = prevById.get(e.id); return o && Object.keys(o).length === Object.keys(e).length && sameFields(o, e) ? o : e; });
     return sameList(edgesRef.current, next) ? edgesRef.current : next;
-  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick, currentWs]);
+  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick, currentWs, mergerView]);
   edgesRef.current = edges;
 
   // 노드 손잡이를 끌어 이으면 역할을 묻는다(F2). 같은 쌍에 이미 역할이 있으면 고칠 수 있게 같은 대화상자를 연다

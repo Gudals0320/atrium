@@ -2546,3 +2546,24 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-dropdown-head .mt-read-all { margin-left: auto; }
 .mt-usage-credit-v { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+/* P268: 합치기 merger. 하위 → merger 선(보라 점선, 합치는 중이면 보통 연결의 .active 흐름), 꼬리표, 묻는 카드(허락 요청 카드와 같은 자리·생김새) */
+.mt-edge.merge { stroke: var(--wire-observed); stroke-width: 2; stroke-dasharray: 6 5; }
+.mt-edge.merge.st-failed { stroke: var(--bad); }
+.mt-edge-end.merge { fill: var(--wire-observed); }
+.mt-edge-label.merge { border-color: color-mix(in srgb, var(--wire-observed) 55%, transparent); cursor: pointer; }
+.mt-edge-label.merge.st-failed { border-color: color-mix(in srgb, var(--bad) 60%, transparent); }
+.mt-edge-tag.merge { background: color-mix(in srgb, var(--wire-observed) 18%, transparent); color: var(--wire-observed); }
+.mt-merger-tag { display: inline-flex; align-items: center; height: 1.5em; font-size: .8em; font-weight: 600; padding: 0 .55em; border-radius: .75em; border: 1px solid color-mix(in srgb, var(--wire-observed) 55%, transparent); color: var(--wire-observed); white-space: nowrap; flex: none; }
+.mt-sb2-role.mt-merger-tag { height: auto; font-size: 11px; padding: 0 .45em; }
+.mt-merger-asks { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 81; display: grid; gap: 8px; width: min(520px, calc(100vw - 32px)); }
+.mt-merger-ask { background: var(--panel); border: 1px solid var(--accent-line); border-radius: var(--panel-radius); padding: 12px 14px; box-shadow: var(--panel-shadow); display: grid; gap: 6px; font-size: 13px; }
+.mt-merger-ask-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.mt-merger-ask-head b { font-size: 13.5px; }
+.mt-merger-ask-ws { font-size: 11.5px; color: var(--wire-observed); border: 1px solid color-mix(in srgb, var(--wire-observed) 50%, transparent); border-radius: 8px; padding: 0 6px; }
+.mt-merger-ask-body, .mt-merger-ask-note { margin: 0; line-height: 1.5; }
+.mt-merger-ask-note { font-size: 12px; }
+.mt-merger-ask-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.mt-merger-answer-list { display: grid; gap: 6px; }
+.mt-merger-answer { display: flex; align-items: center; gap: 8px; }
+.mt-merger-answer-v { font-size: 12px; color: var(--dim); }
+.mt-merger-answer-v.on { color: var(--wire-observed); }
