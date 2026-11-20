@@ -2612,3 +2612,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-cmd-head > .mt-cmd-steer-key { flex: 0 100 auto; min-width: 0; overflow: hidden; }
 .mt-cmd-steer-key > kbd { flex: none; }
 .mt-cmd-steer-key > .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* P283: 터미널 링크에 마우스를 올리면 뜨는 알림 글(term-links.js). 판 변환 밖 body에 그리고 누르기를 가로채지 않는다 */
+.mt-link-hint { position: fixed; z-index: 99; pointer-events: none; padding: 3px 8px; border-radius: 6px; background: var(--panel-3); color: var(--text); border: 1px solid var(--line, transparent); box-shadow: var(--panel-shadow); font-size: 12px; white-space: nowrap; }

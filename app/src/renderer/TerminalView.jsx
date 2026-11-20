@@ -37,6 +37,7 @@ import { makeHint, hintNext, hintText } from './lib/term-hint.js'; // P206
 import { fitScale, inputByLabel } from './lib/multiclient.js'; // P47: 창 여럿이 같은 패널을 볼 때
 import { isWeb, uploadFiles } from './web.js'; // P48: 웹 화면의 파일 붙여넣기·끌어 놓기
 import { pathsText, filesOf, hasFiles } from './lib/upload.js';
+import { attachTermLinks } from './term-links.js'; // P283: OSC 8·글 속 주소 링크(Ctrl+누르기, 손가락 탭)
 import { wantsDesktopPaste, pastePathsText } from './lib/desktop-paste.js'; // P162: 데스크톱 창의 파일·그림 붙여 넣기
 import { termBudgetNow, step } from './crash-watch.js'; // P84: 손가락 웹 화면은 WebGL 없이, 웹은 캔버스 픽셀 상한을 낮게. P86: 단계 기록
 import { capDims } from './lib/crumbs.js'; // P86: 웹 화면의 칸·줄 상한
@@ -139,6 +140,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     const onFocusIn = () => { if (st.pid) api.call('terminal.focus', { session: sessionId }).catch(() => {}); };
     if (term.textarea) term.textarea.addEventListener('focus', onFocusIn);
     fixMouseScale(term, sessionId);
+    const offLinks = attachTermLinks(term, host, { log: (name, d) => perfLog(name, { sessionId, ...d }) }); // P283
 
     let renderer = webgl === false ? 'dom' : budget.acquire(sessionId);
     st.renderer = renderer;
@@ -514,6 +516,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       for (const h of modeHooks) h.dispose();
       if (st.touch) { st.touch.dispose(); st.touch = null; }
       sel.dispose();
+      offLinks(); // P283
       clearTimeout(st.syncTimer);
       if (shadow) shadow.dispose();
       api.call('terminal.detach', { session: sessionId }).catch(() => {});
