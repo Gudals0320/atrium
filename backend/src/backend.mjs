@@ -22,6 +22,7 @@ import { rigItemHandlers } from './rig-items.mjs'; // P242
 import { rigBeatHandlers } from './rig-beat.mjs';
 import { rigMapHandlers } from './rig-map.mjs'; // P251: rig 구조 지도 자료 // P244: 손 박자(rig3.beat, 사람만)
 import { rigTuneHandlers } from './rig-tune.mjs';
+import { mergerHandlers } from './merger.mjs'; // P267: merger.status | asks | answer
 import { rigBuilderHandlers } from './rig-builder.mjs'; // P247: 빌더에게 말하기(rig3.builder, 사람만) // P245: 정의서 보기(rig3.role)와 되돌리기(rig3.rollback, 사람만)
 import { RigRoles, ROLE_SPAWN, ROLE_TICK_MS } from './rig-roles.mjs'; // P241: rig 역할 세션(띄우기, 쓰기 범위, 다시 띄우기, 재우기)
 import { TerminalRelay } from './relay.mjs';
@@ -2171,6 +2172,7 @@ export class Backend {
       ...rigBeatHandlers(this), // P244: rig 손 박자(rig3.beat, 사람만)
       ...rigMapHandlers(this), // P251: rig.map(구조 지도·캔버스 길 선 자료, 읽기만)
       ...rigTuneHandlers(this),
+      ...mergerHandlers(this), // P267: 합치기 merger(창 쪽 계약: merger.status, merger.asks, merger.answer)
       ...rigBuilderHandlers(this), // P247 // P245: rig 정의서·조정 기록(rig3.role)과 되돌리기(rig3.rollback, 사람만)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다

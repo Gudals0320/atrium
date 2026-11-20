@@ -74,6 +74,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       상대 일과 닿는 일을 시작할 때, 동료에게 묻기 전, 일을 넘겨받을 때 본다. 동료가 끝날 때마다 결과를 보내오지 않는 대신이다
   atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
   atrium guide                  이 사용법에, 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json, 역할 조직)가 있으면 그 안내를 붙인다
+  atrium guide merger           합치기 merger의 안내(P267: 보드가 브랜치 워커의 합치기를 맡기는 세션)
   rig 역할(보드가 rig 역할로 띄운 세션): 대화하지 않고 항목을 넘긴다
       atrium rig put <종류> <파일> [--from <받은 항목>] [--redo <항목>]   네 섹터의 파일 하나를 항목으로 낸다. 보드가 길대로 받는 역할을 깨운다. 낸 파일은 고치지 않는다(고치려면 --redo로 다음 판)
       atrium rig accept <항목> | return <항목> "<까닭>" | pass <항목> "<까닭>"   받은 것에 답한다(반려는 낸 역할에게 간다. pass는 답 항목 없이 닫는다)
@@ -274,7 +275,7 @@ async function main() {
   if (x.kept && x.kept.length) say(`남겼다(하위가 아니라 끄지 않음): ${x.kept.map((k) => `@${k.name}(${REL_WORD[k.relation] || k.relation})`).join(', ')}`); // P156
 }
 // ---------- P204: atrium log | news ----------
-const KIND_WORD = { turn: '턴', done: 'done', log: 'log' };
+const KIND_WORD = { turn: '턴', done: 'done', log: 'log', merge: '합침' }; // P267: merger의 합침 한 줄
 function newsLine(r, now) {
   const head = `  @${r.name} · ${ago(r.at, now)} · ${KIND_WORD[r.kind] || r.kind}`;
   if (r.kind === 'turn') return `${head}: "${r.task}" → ${r.text}`;
@@ -324,9 +325,10 @@ async function unitVerb(cmd) {
   if (r.error) fail(`${cmd === 'done' ? '닫지 않았다' : '읽지 않았다'}(${r.error.code}): ${r.error.message}`, cmd === 'done' && r.error.code === 'bad_request' ? 2 : 1); // 값을 잘못 씀은 2
   const x = r.result;
   if (cmd === 'done') {
-    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, record: x.parentOpen ? '네가 너에게 맡긴 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
+    // P267: merger = 브랜치에서 일한 결과라 보드가 합치기를 merger에게 맡겼다. 합치기 일의 ok(retire 칸이 있음)는 부모를 깨우지 않는다
+    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, merger: `보드가 합치기를 ${x.merge && x.merge.merger ? '@' + x.merge.merger : 'merger'}에게 맡겼다(일 ${x.merge ? x.merge.unit : '?'}). 너는 이 턴이 끝나면 보드가 재운다`, record: x.retire != null && x.result === 'ok' ? `합침을 보드가 소식에 남기고 @${x.parent}의 items에 보인다(@${x.parent}를 깨우지 않는다)` : x.parentOpen ? '네가 너에게 맡긴 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
     say(`일 ${x.unit}을 닫았다(${x.result}). ${how}. 다른 길로 따로 보고하지 않는다.`);
-    if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else say('이제 쉰다.');
+    if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else if (x.retire) say('다섯 번째 합치기 일이다. 이제 쉰다: 보드가 너를 닫고 남은 일은 새 merger가 받는다.'); else say('이제 쉰다.');
     return;
   }
   if (cmd === 'item') {
@@ -342,10 +344,21 @@ async function unitVerb(cmd) {
   for (const it of x.items) {
     say(`  ${it.id} → @${it.to || '?'} · ${it.queued ? 'open(줄 서 있음)' : it.status}${it.result ? ` · ${it.result}` : ''}${it.stopReason && it.status === 'open' ? ` · 멈춤(${it.stopReason})` : ''} · ${ago(it.createdAt, Date.now())} · "${it.spec}"`);
     if (it.text) say(`      보고: ${it.text.replace(/\s+/g, ' ').slice(0, 400)}`);
+    if (it.merge) say(`      합치기: ${{ queued: '줄 서 있음', merging: '합치는 중', merged: '합침', failed: '실패(알림을 본다)', cancelled: '취소' }[it.merge.state] || it.merge.state}${it.merge.merger ? ` · @${it.merge.merger}` : ''}${it.merge.hash ? ` · ${String(it.merge.hash).slice(0, 9)}` : ''}`); // P267
   }
 }
 // ---------- P182: atrium guide ----------
 async function guideVerb() {
+  // P267: atrium guide merger(merger 안내)
+  if (rest[0] === 'merger') {
+    const m = await call('guide', { topic: 'merger' }, 20000);
+    { const want = terminalSessionVar(); if (m.board && want && m.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${m.board.terminalSession}, 기대 ${want})`); }
+    if (flags.json) { say(JSON.stringify(m.result ?? { error: m.error }, null, 2)); if (m.error) process.exit(1); return; }
+    if (m.error) fail(`읽지 않았다(${m.error.code}): ${m.error.message}`);
+    const g = (m.result && m.result.merger) || {};
+    say(String(g.text || '').replace(/\s+$/, ''));
+    return say(`\n이 프로젝트의 merger: ${g.enabled ? '켜짐' : '꺼짐'}(설정 ${g.mode || '?'}).`);
+  }
   const r = await call('guide', {}, 20000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
