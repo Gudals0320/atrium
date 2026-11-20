@@ -634,7 +634,7 @@ async function r11() {
         planPeer: p2 && p2b && p2.x === p2b.x, trialRoot: x('trial') === col0,
       };
     });
-    check('r11 칸 머리: 워크스페이스 · 시작 · 1단계 · … · 4단계 · 혼자', info.cols.join() === 'ws,lv0,lv1,lv2,lv3,lv4,solo' && ['시작', 'Root'].includes(info.heads[1]) && /1/.test(info.heads[2]) && ['혼자', 'Solo'].includes(info.heads[6]), info);
+    check('P260: 칸 머리 띠 없음', !info.cols.length, info);
     check('r11 깊이 접기: 4단계 카드에 +2단계 칩, 그 아래는 그리지 않는다', /\+2/.test(info.fold || '') && !info.has5, info.fold);
     check('r11 동료: 같은 칸에 붙어 쌓이고 선은 양끝 점(화살촉 없음)', info.libPeer && info.planPeer && info.peerE.length === 2 && info.peerE.every((e) => /end-peer/.test(e.ms || '') && /end-peer/.test(e.me || '')), info.peerE);
     check('r11 독립: 시작 칸, 계보는 화살촉 없는 옅은 선', info.trialRoot && info.linE.some((e) => e.from === 's:g1' && e.to === 's:trial' && !e.me), info.linE);
@@ -841,8 +841,8 @@ async function p157() {
       await openMission(page);
       await shotTo(page, `p157-${w}-fit`);
       // 1. 솔로: 기록이 있는 세션은 시작 칸(depth 0), 솔로 칸 머리는 '솔로'
-      const solo = await page.evaluate((mk) => { const L = window.__mtTa.lay(); const d = (n) => { const b = n && L.cards.get(`s:${n}`); return b ? b.depth : null; }; return { closed: d(mk.closed), assign: d(mk.assign), soloN: [...L.cards.values()].filter((b) => b.depth === -1).length, head: (document.querySelector('.colh[data-col=solo]') || {}).textContent, role: mk.closed ? (document.querySelector(`.mt-ta-card[data-name="${mk.closed}"] .crole`) || {}).textContent : null }; }, marked);
-      check(`[${w}] 솔로: 닫힌 하위·지시 기록이 있는 세션은 시작 칸, 칸 머리 '솔로'`, (!marked.closed || solo.closed === 0) && (!marked.assign || solo.assign === 0) && /솔로|Solo/.test(solo.head || ''), { marked, solo });
+      const solo = await page.evaluate((mk) => { const L = window.__mtTa.lay(); const d = (n) => { const b = n && L.cards.get(`s:${n}`); return b ? b.depth : null; }; return { closed: d(mk.closed), assign: d(mk.assign), soloN: [...L.cards.values()].filter((b) => b.depth === -1).length, soloX: [...L.cards.values()].filter((b) => b.depth === -1).every((b) => Math.abs(b.x - (L.cols[0].x + (b.x >= L.colDx && L.ncol > 1 ? L.colDx : 0))) < 0.5), head: (document.querySelector('.colh[data-col=solo]') || {}).textContent, role: mk.closed ? (document.querySelector(`.mt-ta-card[data-name="${mk.closed}"] .crole`) || {}).textContent : null }; }, marked);
+      check(`[${w}] 솔로: 닫힌 하위·지시 기록이 있는 세션은 시작 칸(depth 0), 솔로도 시작 칸 x(P260), 솔로 칸 머리 없음`, (!marked.closed || solo.closed === 0) && (!marked.assign || solo.assign === 0) && solo.soloX && !solo.head, { marked, solo });
       // 2. 폴더 기둥: 이름이 잘리지 않고(…), 수는 두 줄, 기둥 글이 띠 안에
       const sp = await page.evaluate(() => [...document.querySelectorAll('[data-role=ln-band]')].map((b) => { const s = b.querySelector('.mt-sm-spine'), fn = s.querySelector('.fn'), fs2 = s.querySelector('.fs'); const kids = [...fs2.children].map((x) => x.getBoundingClientRect()); const sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(); const last = [...s.children].reduce((m, x) => Math.max(m, x.getBoundingClientRect().bottom), 0); return { name: fn.textContent, cut: fn.scrollWidth > fn.clientWidth + 1 || fn.getBoundingClientRect().right > sr.right + 1, lines: kids.length === 2 && kids[1].top >= kids[0].bottom - 1, text: fs2.innerText, dot: fs2.innerText.includes('·'), fits: last <= br.bottom + 1, spineW: Math.round(sr.width), bandH: Math.round(br.height) }; }));
       check(`[${w}] 폴더 기둥: 이름 말줄임 없음, '워크스페이스 n개'·'세션 n개' 두 줄(가운뎃점 없음), 글이 띠 안`, sp.length && sp.every((x) => !x.cut && x.lines && !x.dot && x.fits), sp);
@@ -1085,9 +1085,9 @@ async function p179() {
     const kOpen = await page.evaluate(() => { window.__mtTa.fit(); return window.__mtTa.view().k; }); await sleep(900);
     await page.click('[data-action=ln-sum-hide]'); await sleep(400);
     await page.evaluate(() => window.__mtTa.fit()); await sleep(1300);
-    const col = await page.evaluate(() => { const b = document.querySelector('[data-action=ln-sum-show]'), r = b && b.getBoundingClientRect(); return { k: window.__mtTa.view().k, panel: !!document.querySelector('[data-role=ln-summary]'), btn: r ? { r: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height), turn: (b.querySelector('b') || {}).innerText || null } : null, saved: localStorage.getItem('atrium.sessionMap.summary'), colsRight: Math.round(document.querySelector('[data-role=ln-cols]').getBoundingClientRect().right), w: innerWidth }; });
+    const col = await page.evaluate(() => { const b = document.querySelector('[data-action=ln-sum-show]'), r = b && b.getBoundingClientRect(); return { k: window.__mtTa.view().k, panel: !!document.querySelector('[data-role=ln-summary]'), btn: r ? { r: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height), turn: (b.querySelector('b') || {}).innerText || null } : null, saved: localStorage.getItem('atrium.sessionMap.summary'), w: innerWidth }; });
     await shotTo(page, 'p179-2205-fit-collapsed');
-    check('[2205] 접기: 열이 사라지고 창 오른쪽 끝에 작은 단추(응답 필요 수), 맞춤이 더 크게, 칸 머리 띠가 끝까지, 접힘 기억', !col.panel && col.btn && col.btn.r === col.w && col.btn.w <= 24 && col.saved === '0' && col.k >= kOpen && col.colsRight === col.w, { kOpen, col });
+    check('[2205] 접기: 열이 사라지고 창 오른쪽 끝에 작은 단추(응답 필요 수), 맞춤이 더 크게, 접힘 기억', !col.panel && col.btn && col.btn.r === col.w && col.btn.w <= 24 && col.saved === '0' && col.k >= kOpen, { kOpen, col });
     await closeMission(page); await sleep(400); await openMission(page);
     check('[2205] 다시 열어도 접힌 채', await page.evaluate(() => !document.querySelector('[data-role=ln-summary]') && !!document.querySelector('[data-action=ln-sum-show]')));
     await page.click('[data-action=ln-sum-show]'); await sleep(500);

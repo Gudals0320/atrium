@@ -186,8 +186,9 @@ test('P254 세션 맵: rig는 그 워크스페이스 줄(폴더) 안에 있고 �
   const tr = lay.rigs.find((r) => r.key === 'C:/w/trade'), gen = lay.cards.get('s:gen');
   assert.ok(gen.y + gen.h <= tr.y || gen.x >= tr.x + tr.w || gen.x + gen.w <= tr.x);
   assert.equal(lay.bounds.y, 0, '맨 위 띠가 없어 트리가 세계 위에서 시작한다');
-  // 솔로 칸 구분선은 rig 묶음을 가로지르지 않는다
-  for (const d of lay.divs) for (const r of lay.rigs) assert.ok(!(d.x >= r.x && d.x <= r.x + r.w && d.y + d.h > r.y && d.y < r.y + r.h), '구분선이 rig 위를 지난다');
+  // P260: 솔로 칸 구분선은 없다. 묶음은 그 줄 시작 칸에서, 줄의 카드(나무·솔로) 모두 아래
+  assert.equal(lay.divs, undefined);
+  for (const r of lay.rigs) { assert.equal(r.x, lay.cols[0].x); for (const c of lay.cards.values()) if (c.ws === r.key) assert.ok(c.y + c.h <= r.y, c.node.name + '는 묶음 위'); }
   assert.equal(lay.rig, undefined);
   assert.equal(lay.rigs.find((r) => r.key === 'C:/w/trade').w, geo.w * V7.SCALE);
   // rig 없으면 rigs 빈 목록(배치 그대로)

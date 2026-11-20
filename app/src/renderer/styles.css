@@ -2171,7 +2171,6 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-sm .lv-far .mt-sm-head .mt-ta-iico { width: 1em; height: 1em; }
 .mt-sm .lv-far .mt-sm-head .wsc > span { font-size: clamp(20px, calc(9.5px * var(--ik, 1)), 30px); padding: 4px 12px; gap: 9px; border-radius: 9px; }
 .mt-sm .lv-far .mt-sm-head .wsc i { width: 0.6em; height: 0.6em; }
-.mt-sm-div { position: absolute; width: 0; border-left: 1px dashed var(--ln-line-2); pointer-events: none; }
 /* 카드(시안 B: 각진 모서리 10, 얇은 테두리, 리드는 조금 밝게) */
 .mt-sm .mt-ta-card { padding: 12px 14px; border-radius: 10px; background: rgba(255, 252, 240, 0.04); border: 1px solid var(--ln-line-2); color: var(--ln-text); font-size: 13.5px; line-height: 1.38; }
 .mt-sm .mt-ta-slot { border-radius: 10px; }
@@ -2235,9 +2234,6 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-sm-zgrp .zb svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .mt-sm-zgrp .zpct { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--ln-text); }
 .mt-sm .mt-ta-iconbtn { width: 36px; height: 36px; border-radius: 8px; color: var(--ln-text); }
-/* 칸 머리(세계 칸을 따라 옮겨 간다, paint가 transform) */
-.mt-sm-cols { left: 0; right: 0; top: 112px; height: 34px; border-bottom-width: 1px !important; overflow: hidden; pointer-events: none; }
-.mt-sm-cols .colh { position: absolute; left: 0; top: 9px; font-size: 11.5px; font-weight: 500; letter-spacing: 0.04em; color: var(--ln-dim); white-space: nowrap; will-change: transform; }
 .mt-sm .st-needs { --sc: var(--st-waiting); } .mt-sm .st-error { --sc: #ef8099; } .mt-sm .st-working { --sc: var(--st-working); } .mt-sm .st-working.shell { --sc: #3fd18a; }
 .mt-sm .st-done { --sc: var(--st-review); } .mt-sm .st-ready { --sc: #a9a69b; } .mt-sm .st-sleeping { --sc: var(--st-sleeping); } .mt-sm .st-exited { --sc: #8d8a80; }
 /* 진행 중 빛: 시안처럼 테두리 전체가 옅게 보이고 가는 혜성이 돈다 */
@@ -2495,13 +2491,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rb.phone { border-radius: 10px; }
 /* 띠 카드는 열 머리·사슬이 자리를 말하므로 멀리 타일의 자리 이름표를 숨긴다(이름을 덮지 않게) */
 
-/* P199: 붙는 머리. 띠의 자리 머리가 고정 머리 막대 위로 지나가면 막대가 그 띠의 자리 이름을 띠 열 x에 보인다(MissionLineage.jsx paint, lib/rig-band.js stickyHead). 나무 칸 이름은 그동안 숨긴다(솔로·워크스페이스 칸은 그대로) */
-/* P202: 열마다(두 열이면 data-sticky0·1) 그 열의 나무 칸 이름만 숨긴다 */
-.mt-sm-cols[data-sticky0] .colh[data-c="0"][data-col^="lv"], .mt-sm-cols[data-sticky1] .colh[data-c="1"][data-col^="lv"] { visibility: hidden; }
-.mt-sm-cols .rbst[hidden] { display: none; }
-.mt-sm-cols .colh.rbs { color: var(--ln-text, #e6e3da); font-weight: 600; letter-spacing: 0.02em; }
-.mt-sm-cols .colh.rbs i { font-style: normal; font-weight: 500; margin-left: 6px; color: var(--ln-dim, #a3a097); }
-.mt-sm-cols .colh.rbs.old { color: var(--ln-dim, #a3a097); }
 /* P199: 휴대폰 사슬의 꺾은 줄 첫 칩은 화살표 자리만큼 들여 시작하고, 그 화살표는 꺾임 표시(띠 안) */
 /* P202: 세션 맵 오늘·이전 이름표. 두 열 = 열 위 머리(이름 + 밑줄), 한 열·휴대폰 = 두 칸 사이 가로 줄(위 "오늘", 아래 "이전"). 움직임 없음 */
 .mt-sm-sec { position: absolute; box-sizing: border-box; pointer-events: none; color: var(--ln-dim); font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }

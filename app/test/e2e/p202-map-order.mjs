@@ -105,7 +105,7 @@ const READ = () => {
   const L = window.__mtTa.lay(), v = window.__mtTa.view();
   const sx = (x) => x * v.k + v.x;
   const cs = document.querySelector('[data-role=ln-cols]');
-  const colh = [...cs.querySelectorAll(':scope > .colh')].map((e) => ({ col: e.dataset.col, c: Number(e.dataset.c), x: e.getBoundingClientRect().left, vis: getComputedStyle(e).visibility }));
+  const colh = [...(cs ? cs.querySelectorAll(':scope > .colh') : [])].map((e) => ({ col: e.dataset.col, c: Number(e.dataset.c), x: e.getBoundingClientRect().left, vis: getComputedStyle(e).visibility }));
   const vp = document.querySelector('[data-role=ta-viewport]').getBoundingClientRect();
   const lv0 = L.cols.filter((c) => c.key === 'lv' && c.level === 0).map((c) => ({ c: c.c, want: sx(c.x) + vp.left }));
   const secs = [...document.querySelectorAll('[data-role=ln-section]')].map((e) => { const r = e.getBoundingClientRect(); return { kind: e.dataset.kind, text: e.innerText.replace(/\s+/g, ' ').trim(), x: r.left, y: r.top, w: r.width, h: r.height, fs: parseFloat(getComputedStyle(e.querySelector('span')).fontSize) * v.k }; });
@@ -131,7 +131,7 @@ async function pc() {
       const heads = r.secs.filter((s) => s.kind !== 'split');
       check(`[${lang}] 두 열 머리 이름표 "${lang === 'ko' ? '오늘·이전' : 'Today·Earlier'}"(맞춤 배율에서 읽히는 크기)`, heads.length === 2 && heads[0].text.startsWith(lang === 'ko' ? '오늘' : 'Today') && heads[1].text.startsWith(lang === 'ko' ? '이전' : 'Earlier') && heads.every((s) => s.fs >= 11), heads);
       const lvh = r.colh.filter((c) => c.col === 'lv0');
-      check(`[${lang}] 고정 머리 막대: 시작 칸 머리가 두 열 모두 그 열 시작 칸 위(±2px)`, lvh.length === 2 && r.lv0.every((w) => lvh.some((h) => h.c === w.c && Math.abs(h.x - w.want) <= 2)), { lvh, lv0: r.lv0 });
+      check(`[${lang}] P260: 칸 머리 막대 없음(두 열)`, !lvh.length && !r.colh.length, { lvh, lv0: r.lv0 });
       await shotTo(page, `pc-two-${lang}`);
       if (lang === 'ko') {
         // ↑↓: 왼쪽 열 마지막 카드에서 ↓ = 오른쪽 열 첫 카드
@@ -170,7 +170,7 @@ async function pc() {
       const sp = r.secs.find((s) => s.kind === 'split');
       check(`[${lang}] 좁은 창(1000×1000)은 한 열, 두 칸 사이 구분 줄(위 오늘, 아래 이전)`, r.ncol === 1 && r.secs.length === 1 && !!sp && sp.text.includes(lang === 'ko' ? '오늘' : 'Today') && sp.text.includes(lang === 'ko' ? '이전' : 'Earlier'), { ncol: r.ncol, secs: r.secs, measure: r.measure });
       const lvh1 = r.colh.filter((c) => c.col === 'lv0');
-      check(`[${lang}] 한 열 고정 머리 막대는 하나(시작 칸 위)`, lvh1.length === 1 && Math.abs(lvh1[0].x - r.lv0[0].want) <= 2, { lvh1, lv0: r.lv0 });
+      check(`[${lang}] P260: 칸 머리 막대 없음(한 열)`, !lvh1.length && !r.colh.length, { lvh1, lv0: r.lv0 });
       // 구분 줄이 보이게 그 자리로
       await page.evaluate(() => { const L = window.__mtTa.lay(), s = L.sections[0], v = window.__mtTa.view(); window.__mtTa.set({ k: v.k, x: v.x, y: 360 - s.y * v.k }); }); await sleep(700);
       await shotTo(page, `pc-one-${lang}`);

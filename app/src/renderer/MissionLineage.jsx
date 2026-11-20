@@ -27,7 +27,6 @@ import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
 
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
-const COLH = 34; // 칸 머리 띠 높이
 const RAIL = 0; // P153 r9: 목차 레일은 없앴다(앱 사이드바를 같이 쓴다)
 const BOTTOM = 112; // 아래 명령줄 자리
 const PAD = 16;
@@ -221,7 +220,7 @@ export function LineageMap() {
   const [pv, setPv] = useState(null); // 미리 보기 { id, x, y, w }(덮개 기준)
   const pvRef = useRef(null), hoverTimer = useRef(0);
   pvRef.current = pv;
-  const rootRef = useRef(null), vpRef = useRef(null), worldRef = useRef(null), pctRef = useRef(null), bgRef = useRef(null), colsRef = useRef(null);
+  const rootRef = useRef(null), vpRef = useRef(null), worldRef = useRef(null), pctRef = useRef(null), bgRef = useRef(null);
   const view = useRef(null); // { k, x, y }
   const fitted = useRef(false);
   const moveTimer = useRef(0), glideTimer = useRef(0);
@@ -274,7 +273,7 @@ export function LineageMap() {
   const todayKey = graph ? [...todayWorkspaces(graph.nodes.filter((n) => n.kind === 'session'), { liveOf, tierOf: (n) => tiers.get(n.id), now: Math.max(Date.now(), day) })].sort().join('\n') : '';
   const today = useMemo(() => new Set(todayKey ? todayKey.split('\n') : []), [todayKey]);
   // P202: 두 열 판단에 쓰는 맞춤 칸(요약 열·머리·명령줄을 뺀 보기 칸)
-  const fitArea = vsize ? { w: vsize.w - RAIL - (sumOpen ? SUM_W + SUM_GAP : 0), h: vsize.h - TOPH - COLH - BOTTOM } : null;
+  const fitArea = vsize ? { w: vsize.w - RAIL - (sumOpen ? SUM_W + SUM_GAP : 0), h: vsize.h - TOPH - BOTTOM } : null;
   const fitKey = fitArea ? `${fitArea.w}x${fitArea.h}` : '';
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
@@ -328,10 +327,7 @@ export function LineageMap() {
       bg.style.setProperty('--dot-r', `${Math.min(DOT_R, Math.max(1, DOT_R * v.k))}px`);
       bg.style.opacity = String(Math.max(0.45, Math.min(1, v.k / 0.5)));
     }
-    // 칸 머리: 세계 칸 x를 화면으로(레일 오른쪽 띠 안의 자리)
-    const cs = colsRef.current, L = layRef.current;
-    if (cs && L) L.cols.forEach((c, i) => { const el = cs.children[i]; if (el) el.style.transform = `translateX(${Math.round(c.x * v.k + v.x - RAIL)}px)`; });
-    // P254: 칸 머리 띠는 늘 맨 위에 고정(P253의 rig 띠 아래로 내리기를 없앴다. rig는 워크스페이스 줄 안이다)
+    // P260: 칸 머리 띠는 없앴다(칸은 배치 규칙으로만 남는다)
     // 멀리 타일 글 하한(--ik = 1/배율): 움직이는 동안은 그대로, 멈춘 뒤(160ms)·처음·미끄러지기 때 한 번
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
@@ -344,7 +340,7 @@ export function LineageMap() {
     if (!v || !L) return;
     const st = labelStep(v.k);
     if (st === lstepRef.current) return;
-    const cx = s ? (s.w - sumW()) / 2 : 0, cy = s ? (s.h + TOPH + COLH - BOTTOM) / 2 : 0;
+    const cx = s ? (s.w - sumW()) / 2 : 0, cy = s ? (s.h + TOPH - BOTTOM) / 2 : 0;
     let best = null;
     for (const [id, b] of L.cards) { const sx = b.x * v.k + v.x, sy = b.y * v.k + v.y, d = Math.hypot(sx + b.w * v.k / 2 - cx, sy + b.h * v.k / 2 - cy); if (!best || d < best.d) best = { id, sx, sy, d }; }
     anchorRef.current = best ? { id: best.id, sx: best.sx, sy: best.sy } : null;
@@ -378,21 +374,21 @@ export function LineageMap() {
     if (st !== lstepRef.current) { pendingView.current = { v, opts }; anchorRef.current = null; lstepRef.current = st; setLstep(st); } else paint(v, opts);
   };
   // 맞춤: 세계 전체를 레일 오른쪽·위 줄과 칸 머리 아래·명령줄 위 칸에
-  const fitOf = (L, s) => { const f = fitView(L.bounds, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM, pad: PAD }); return { ...f, x: f.x + RAIL }; };
+  const fitOf = (L, s) => { const f = fitView(L.bounds, s.w - RAIL - sumW(), s.h, { top: TOPH, bottom: BOTTOM, pad: PAD }); return { ...f, x: f.x + RAIL }; };
   // 처음 연 화면: 폭 맞춤(위에서부터, 아래는 끌어서 본다). 전체가 그보다 크게 들어가면 맞춤. 폭 맞춤이 READ_K보다 작으면 READ_K로 왼쪽 위에서
   const openOf = (L, s) => {
     const f = fitOf(L, s);
     const kw = Math.min(OPEN_MAX, (s.w - RAIL - sumW() - PAD * 2) / L.bounds.w);
     if (f.k >= kw) return f;
     const k = Math.max(READ_K, kw);
-    return { k, x: RAIL + PAD - L.bounds.x * k, y: TOPH + COLH + 8 - L.bounds.y * k };
+    return { k, x: RAIL + PAD - L.bounds.x * k, y: TOPH + 8 - L.bounds.y * k };
   };
   const fit = useCallback((glide = true) => settle(fitOf, { glide }), [paint]); // eslint-disable-line react-hooks/exhaustive-deps
-  const zoomCenter = useCallback((k2) => { const s = sizeRef.current, v = view.current; if (s && v) paint(zoomAt(v, (s.w - sumW() + RAIL) / 2, (s.h + TOPH + COLH - BOTTOM) / 2, k2), { glide: true }); }, [paint]); // eslint-disable-line react-hooks/exhaustive-deps
+  const zoomCenter = useCallback((k2) => { const s = sizeRef.current, v = view.current; if (s && v) paint(zoomAt(v, (s.w - sumW() + RAIL) / 2, (s.h + TOPH - BOTTOM) / 2, k2), { glide: true }); }, [paint]); // eslint-disable-line react-hooks/exhaustive-deps
   const flyTo = useCallback((id, k) => {
     const L = layRef.current, s = sizeRef.current, v = view.current, b = L && L.cards.get(id);
     if (!b || !s || !v) return;
-    const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, k || Math.max(0.9, v.k), s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM });
+    const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, k || Math.max(0.9, v.k), s.w - RAIL - sumW(), s.h, { top: TOPH, bottom: BOTTOM });
     paint({ ...c, x: c.x + RAIL }, { glide: true });
   }, [paint]); // eslint-disable-line react-hooks/exhaustive-deps
   // P153 r9: 앱 사이드바가 세션 맵을 움직인다(Sidebar.jsx가 getState().mapFocus를 부른다). 세션 = 지금 배율 그대로 가운데로, 워크스페이스 줄·폴더 띠 = 그 상자에 맞춤.
@@ -402,12 +398,12 @@ export function LineageMap() {
   const focusCard = useCallback((id) => {
     const L = layRef.current, v = view.current, s = sizeRef.current, b = L && L.cards.get(id);
     if (!b || !v || !s) return false;
-    const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, v.k, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM });
+    const c = centerOn(b.x + b.w / 2, b.y + b.h / 2, v.k, s.w - RAIL - sumW(), s.h, { top: TOPH, bottom: BOTTOM });
     paint({ ...c, x: c.x + RAIL }, { glide: true });
     setTimeout(() => blink(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`), 460);
     return true;
   }, [paint, blink]); // eslint-disable-line react-hooks/exhaustive-deps
-  const fitBoxTo = useCallback((r) => { const s = sizeRef.current; if (!s || !r) return; const f = fitView(r, s.w - RAIL - sumW(), s.h, { top: TOPH + COLH, bottom: BOTTOM, pad: 40, max: OPEN_MAX }); paint({ ...f, x: f.x + RAIL }, { glide: true }); }, [paint]);
+  const fitBoxTo = useCallback((r) => { const s = sizeRef.current; if (!s || !r) return; const f = fitView(r, s.w - RAIL - sumW(), s.h, { top: TOPH, bottom: BOTTOM, pad: 40, max: OPEN_MAX }); paint({ ...f, x: f.x + RAIL }, { glide: true }); }, [paint]);
   useEffect(() => {
     if (!open) return undefined;
     const st = getState();
@@ -449,7 +445,7 @@ export function LineageMap() {
       const r = el.getBoundingClientRect(), R = root.getBoundingClientRect(), w = 380;
       let x = r.right - R.left + 12;
       if (x + w > R.width - 8) x = Math.max(8, r.left - R.left - 12 - w);
-      const y = Math.max(60 + TOPH + COLH + 6, Math.min(r.top - R.top, R.height - 360));
+      const y = Math.max(60 + TOPH + 6, Math.min(r.top - R.top, R.height - 360));
       setPv({ id, x, y, w });
     }, HOVER_MS);
   }, []);
@@ -681,7 +677,7 @@ export function LineageMap() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, flyTo, paint]);
-  window.__mtTa = { view: () => (view.current ? { ...view.current } : null), fit: () => fit(false), flyTo, lay: () => layRef.current, set: (v) => paint(v), tags: () => tags, rail: RAIL, top: TOPH + COLH, label: () => lstepRef.current, sumW }; // 시험이 읽는다
+  window.__mtTa = { view: () => (view.current ? { ...view.current } : null), fit: () => fit(false), flyTo, lay: () => layRef.current, set: (v) => paint(v), tags: () => tags, rail: RAIL, top: TOPH, label: () => lstepRef.current, sumW }; // 시험이 읽는다
 
   if (!open) return null;
   const ids = lay ? lay.order : [];
@@ -703,8 +699,6 @@ export function LineageMap() {
   };
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const edgeText = (e) => (e.cross ? t('mmTerr.edgeCross', { from: lay.tree.byId.get(e.from).name, ws: wsName(lay.tree.byId.get(e.to).workspaceKey || '') || t('mmTerr.noFolder') }) : e.rel === 'role' ? (e.role || t('mmLine.role')) : t('mmLine.task'));
-  // 칸 머리: 워크스페이스 · 시작 · 1단계 · 2단계 · … · 솔로
-  const colLabel = (c) => (c.key === 'ws' ? t('mmLine.colWs') : c.key === 'solo' ? t('mmLine.colSolo') : c.level === 0 ? t('mmLine.colRoot') : t('mmLine.colLevel', { n: c.level }));
   const col0 = lay ? (lay.cols.find((c) => c.key === 'lv') || { x: lay.headx + LINE.HEADW + 208 }).x : 0;
 
   return (
@@ -734,7 +728,6 @@ export function LineageMap() {
                 </div>
               </div>
             ))}
-            {lay.divs.map((d, i) => <span key={`d:${i}`} className="mt-sm-div" style={{ left: d.x, top: d.y, height: d.h }} />)}
             {/* P202: 오늘·이전 이름표. 두 열 = 열마다 위 머리, 한 열 = 두 칸 사이 얇은 구분 줄(위 "오늘", 아래 "이전") */}
             {(lay.sections || []).map((s) => <SectionMark key={`sec:${s.kind}`} s={s} px={lay.px.name} t={t} />)}
             <svg className="mt-ta-edges" width={1} height={1} aria-hidden="true">
@@ -792,9 +785,6 @@ export function LineageMap() {
           {!sumOpen && sum.turn.length ? <b data-role="ln-sum-edge-turn">{sum.turn.length}</b> : null}
         </button>
       )}
-      <div className="mt-ta-hud mt-sm-cols" data-role="ln-cols" ref={colsRef} style={lay && sumOpen ? { right: SUM_W } : undefined} aria-hidden="true">
-        {lay && lay.cols.map((c, i) => <span key={`${c.key}${i}`} className="colh" data-col={c.key === 'lv' ? `lv${c.level}` : c.key} data-c={c.c || 0}>{colLabel(c)}</span>)}
-      </div>
     </div>
   );
 }

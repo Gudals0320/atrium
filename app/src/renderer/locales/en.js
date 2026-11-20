@@ -2393,11 +2393,7 @@ export default {
   },
   // P153 r7: session map columns (mockup B Lineage)
   mmLine: {
-    colWs: 'Workspace',
-    colRoot: 'Root',
-    colLevel: 'Level {n}',
     peer: 'peer',
-    colSolo: 'Solo',
     fold: { one: '+{n} level', other: '+{n} levels' },
     foldTip: 'Show the deeper levels of this branch',
     unfold: 'Fold',
