@@ -14,7 +14,7 @@ import { zoomStep } from './faces.js'; // P178: 이름표 배율 계단
 
 // SPINE = 폴더 기둥 최소 폭(P157: 가장 긴 폴더 이름에 맞춰 넓어진다, spineWidth), BANDMIN = 폴더 띠 최소 높이(P157: 워크스페이스 하나인 폴더도 기둥 글이 잘리지 않게), HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // SOLOGAP = 마지막 나무 칸과 솔로 칸 사이(구분선이 가운데), SGX = 솔로 칸 두 줄 사이, MINCOLS = 늘 보이는 나무 칸 수(리드·워커·다음 단계)
-export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46, THIN: 30, TGY: 8, THINMIN: 3 }; // P163: THIN = 얇은 줄 높이, TGY = 얇은 줄끼리 간격, THINMIN = 하위가 이만큼 이상일 때 절전 하위를 얇은 줄로 // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
+export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, SOLOGAP: 120, SGX: 24, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46, THIN: 30, TGY: 8, THINMIN: 3, RIGGAP: 60 }; // P254: RIGGAP = 줄 안 나무·솔로 아래 → rig 묶음 위 // P163: THIN = 얇은 줄 높이, TGY = 얇은 줄끼리 간격, THINMIN = 하위가 이만큼 이상일 때 절전 하위를 얇은 줄로 // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
 
 // P157: 글 폭 어림(px). 한글·한자·가나는 글자 크기만큼, 대문자·숫자는 조금 넓게, 그 밖은 0.6
 export const glyphW = (s, px) => { let w = 0; for (const ch of String(s || '')) { const c = ch.codePointAt(0); w += (c >= 0x1100 && c <= 0x11ff) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xff00 && c <= 0xffef) ? 1 : /[A-Z0-9@#%&MW]/.test(ch) ? 0.7 : 0.6; } return w * px; };
@@ -56,7 +56,7 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // P202: today = 오늘 일한 워크스페이스 키들(Set·배열, todayWorkspaces). 폴더 차례는 오늘 일한 폴더들(이름순) → 나머지 폴더들(이름순), 사이드바 손 차례(order)는 쓰지 않는다.
 //   columns = 1 | 2 | 'auto'(PC만: view = 맞춤 칸 { w, h }에서 두 열 맞춤 배율이 한 열보다 COLS2.GAIN배 넘게 크면 두 열). → sections(오늘·이전 이름표 자리), ncol, colDx, measure
 export function lineageLayout(graph, opts = {}) {
-  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스(rig 지도가 위를 맞출 줄)
+  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null, rigBlocks = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P254: rigBlocks = 워크스페이스 키 → rig 묶음 크기 { w, h }(세계 px, 그 줄 안에 놓는다)
   if (!phone && columns === 'auto') {
     // P253: 열 판단은 이름표 계단(label, 배율에 따라 바뀐다)과 상관없이 바탕 글 크기(label 1)의 한 열 배치로 한다.
     //   전에는 그 계단의 배치로 재서, 줌인·줌아웃으로 계단이 바뀌면 열이 하나·둘로 바뀌며 밀렸다. 이제 열 수는 그래프와 보기 칸(창 크기)으로만 바뀐다
@@ -79,7 +79,7 @@ export function lineageLayout(graph, opts = {}) {
   // ---- 소속(사이드바와 같다)과 차례(P202: 오늘 일한 폴더 → 나머지, 각각 이름순. 폴더 안 워크스페이스도 이름순) ----
   const folderOf = new Map();
   (vgroups || []).forEach((g, gi) => (g.members || []).forEach((m, mi) => { const k = normKey(m); if (k && !folderOf.has(k)) folderOf.set(k, { g, gi, mi }); }));
-  const present = [...new Set([...tree.nodes.map((n) => wsOf(n.id)), ...(keepKeys || []).filter(Boolean)])]; // P251: rig 역할만 있는 워크스페이스도 줄이 남는다
+  const present = [...new Set([...tree.nodes.map((n) => wsOf(n.id)), ...(keepKeys || []).filter(Boolean), ...(rigBlocks && !phone ? [...rigBlocks.keys()] : []).filter(Boolean)])]; // P251: rig 역할만 있는 워크스페이스도 줄이 남는다. P254: rig 묶음이 있는 워크스페이스도
   const byWsName = (a, b) => (!a) - (!b) || nameCmp(nameOf(a), nameOf(b)) || nameCmp(a, b);
   const groups0 = [];
   for (const [gi, g] of (vgroups || []).entries()) {
@@ -159,12 +159,15 @@ export function lineageLayout(graph, opts = {}) {
   const SOLO = solo0 + L.SOLOGAP;
   // P166: 휴대폰은 솔로가 나무 아래 격자라 폭 = 나무 칸 수(적어도 MINCOLS)만큼
   const PCOLS = Math.max(L.MINCOLS, nCols);
-  const W = phone ? PHONE.PADX * 2 + PCOLS * L.CW + (PCOLS - 1) * L.GX : SOLO + (L.CW + L.SGX) * 2 + 60;
+  // P254: 줄 안 rig 묶음은 시작 칸에서 오른쪽으로 놓는다. 넓으면 줄 폭을 늘린다
+  const blockOf = (key) => (!phone && rigBlocks ? rigBlocks.get(key) || null : null);
+  const blockW = Math.max(0, ...present.map((k) => (blockOf(k) ? blockOf(k).w : 0)));
+  const W = phone ? PHONE.PADX * 2 + PCOLS * L.CW + (PCOLS - 1) * L.GX : Math.max(SOLO + (L.CW + L.SGX) * 2 + 60, blockW ? COL[0] + blockW + 60 : 0);
   const DX = two ? W + COLS2.GAP : 0; // P202: 오른쪽(이전) 열의 x
   let ox = 0, ci = 0; // 지금 놓는 열의 x와 번호
   const sections = [];
 
-  const cards = new Map(), bands = [], rows = [], divs = [];
+  const cards = new Map(), bands = [], rows = [], divs = [], rigs = [];
   // P160: 휴대폰 목록이 같은 판정을 쓰도록 남긴 줄마다 놓은 차례(시작 칸 뿌리·다른 워크스페이스에서 온 것·솔로)와 보이는 하위 차례를 남긴다(PC 배치는 그대로)
   const seq = new Map(), vkids = new Map();
   const put = (id, depth, y, ws) => cards.set(id, { x: ox + COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0, thin: thin.has(id) });
@@ -231,13 +234,17 @@ export function lineageLayout(graph, opts = {}) {
         cards.set(s.id, { x: ox + SOLO + (i % 2) * (L.CW + L.SGX), y: sy, w: L.CW, h: H(s.id), node: s, ws: key, depth: -1, fold: 0 });
         soloH.push(sy + H(s.id) - y);
       });
-      const h = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0, L.ROWMIN, heads.get(key).h + 10) + L.RB;
+      // P254: 그 워크스페이스의 rig 묶음(역할·빌더 세션은 트리에서 빠져 여기에만 나온다). 나무·솔로 아래, 시작 칸부터
+      const blk = blockOf(key);
+      let rigH = 0, rigTop = null;
+      if (blk) { const above = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0); rigTop = y + (above ? above + L.RIGGAP : L.RT); rigs.push({ key, x: ox + COL[0], y: rigTop, w: blk.w, h: blk.h }); rigH = rigTop - y + blk.h; }
+      const h = Math.max(treeH, soloH.length ? Math.max(...soloH) : 0, rigH, L.ROWMIN, heads.get(key).h + 10) + L.RB;
       rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: ox + L.SPINE, w: W - L.SPINE, chips, count: all.length, ox, col: ci, today: !!g.today });
-      divs.push({ x: ox + DIV, y: y + 16, h: h - 32 });
+      divs.push({ x: ox + DIV, y: y + 16, h: rigTop == null ? h - 32 : Math.max(0, rigTop - y - 32), cut: rigTop != null }); // P254: 솔로 칸 구분선은 rig 묶음 위에서 멈춘다
       y += h;
     });
     // P157: 띠 최소 높이. 모자라면 마지막 줄을 늘린다(기둥 글이 잘리지 않게). P166: 휴대폰은 머리가 위라 없다
-    if (!phone && y - by < L.BANDMIN) { const r = rows[rows.length - 1], d = divs[divs.length - 1], dy = L.BANDMIN - (y - by); r.h += dy; d.h += dy; y += dy; }
+    if (!phone && y - by < L.BANDMIN) { const r = rows[rows.length - 1], d = divs[divs.length - 1], dy = L.BANDMIN - (y - by); r.h += dy; if (!d.cut) d.h += dy; y += dy; }
     const ids = tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).map((n) => n.id);
     bands.push({ id: g.id, name: g.name, loose: g.id == null, odd: gi % 2 === 1, y: by, h: y - by, nWs: g.keys.length, sessions: ids.length, bar: chipCounts(ids.map(tierOf)), today: !!g.today, ...(phone ? { x: 0, w: W, gi, cont: false, page: 0 } : { x: ox, col: ci }) });
   });
@@ -301,6 +308,7 @@ export function lineageLayout(graph, opts = {}) {
     } else {
       for (const r of rows) blocks.push({ x: (r.ox || 0) + L.HEADX - 8, y: r.y + 12, w: Math.max(L.HEADW, L.HEADW2) + 16, h: Math.max(96, heads.get(r.key).h) }); // 줄 머리(이름·칩)
       for (const b of bands) blocks.push({ x: b.x || 0, y: b.y, w: L.SPINE, h: b.h }); // 폴더 기둥
+      for (const r of rigs) blocks.push({ x: r.x, y: r.y, w: r.w, h: r.h }); // P254: 줄 안 rig 묶음
       // P206: 두 열이면 열 위 머리(오늘·이전 이름표 칸)와 그 위를 막는다. 열 사이 선은 머리 아래 열 사이 틈으로 건넌다
       if (two) blocks.push({ x: -L.SPINE, y: -240, w: W * 2 + COLS2.GAP + L.SPINE * 2, h: SEC.SECH + 240 });
     }
@@ -322,7 +330,7 @@ export function lineageLayout(graph, opts = {}) {
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   const BW = phone ? nPages * W + (nPages - 1) * PHONE.PGAP : two ? W * 2 + COLS2.GAP : W;
   const BH = two ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
-  return { cards, bands, rows, cols, divs, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : 1, colDx: DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages, tabs } : {}) };
+  return { cards, bands, rows, cols, divs, edges, rigs, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : 1, colDx: DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages, tabs } : {}) };
 
   // ---- P166: 휴대폰 줄 하나(머리 = 위 띠, 나무, 그 아래 솔로 격자). 줄 높이를 돌려준다 ----
   function phoneRow(key, g, wi, roots, away, solos, chips, count) {

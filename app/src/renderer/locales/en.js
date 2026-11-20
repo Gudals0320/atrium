@@ -2870,5 +2870,11 @@ export default {
     rep: 'Shown',
     repHint: 'Tap a subscription to show it on the pill.',
   },
+  // P254: V7 mock (new rig, canvas paths) text: waiting count, tags, card state words
+  rigV7: {
+    wait: 'waiting {n}',
+    tagRoleV: 'role · {name} · v{n}', builderName: 'builder',
+    state: { ready: 'idle', working: 'working', sleeping: 'asleep', waiting: 'needs you', error: 'error', exited: 'exited', starting: 'starting', trust_wait: 'trust check', shell_idle: 'idle', shell_running: 'working', none: 'no session' },
+  },
 };
 
