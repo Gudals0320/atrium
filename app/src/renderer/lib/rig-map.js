@@ -78,7 +78,7 @@ export function twoLines(P, Q, k = 1) {
     mid, n: [nx, ny],
     top: { from: tf, to: tt, d: pathD([tf, tt]) }, bottom: { from: bf, to: bt, d: pathD([bf, bt]) },
     topLab: at(mid, V7.LAB * k), botLab: at(mid, -V7.LAB * k), wait: at(mid, -V7.WAIT * k),
-    dotTop: at(P, o, V7.DOTAT * k), dotBot: at(Q, -o, -V7.DOTAT * k), u: [ux, uy], n: [nx, ny],
+    dotTop: at(P, o, V7.DOTAT * k), dotBot: at(Q, -o, -V7.DOTAT * k), u: [ux, uy],
   };
 }
 
