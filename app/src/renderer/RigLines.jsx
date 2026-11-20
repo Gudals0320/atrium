@@ -4,6 +4,7 @@
 //   선은 보통 연결과 같은 베지어·굵기(세계 크기), 출발 끝에 작은 점, 도착 끝에 뚜렷한 화살촉. 선마다 글 칩(보통 연결 칩과 같은 생김새):
 //   선 방향 화살, 끝나지 않은 반려면 붉은 점, 항목 이름, 기다리면 "대기 n". 색은 보통 연결의 역할 연결(.role)과 같고,
 //   받는 역할이 일하고 그 길로 최근에 항목이 오갔으면 보통 연결과 같은 흐름(.mt-edge.active, 같은 움직임 설정)으로 흐른다(2차, 사용자 답). 올림만 노랑.
+//   P262: 칩 자리가 없으면 작은 칩(화살만, 마우스를 올리면 글), 그래도 없으면 칩 없이 선만(보통 연결의 compact·숨김과 같다. lib/rig-map.js rigCanvasLines).
 //   멀리 보면 칩·화살촉·점·선 굵기는 화면에서 RIG_EDGE.CHIP_MIN배보다 작아지지 않게 키운다(data.rig.cs). 가까이(배율 ≥ CHIP_MIN)는 보통 연결과 같은 세계 크기.
 //   정의에서 나오는 선이라 연결 기록(link)과 섞지 않고 끊기가 없다. 선·칩을 누르면 그 길로 최근 오간 항목이 뜬다.
 // - 올림: 역할이 빌더에게 올린 것이 기다리는 동안만 역할 → 빌더 노랑 점선 곡선과 "올림" 칩.
@@ -14,9 +15,7 @@ import { useStore, getState, openDialog } from './store.js';
 import { useT, fmtTime } from './lib/i18n.js';
 import { rigTag, rigFrames, periodText, rigLineActive, RIG_EDGE, RIG_VIEW } from './lib/rig-map.js';
 
-const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
-// 도착 끝 화살촉(채운 삼각형, 세계 크기 × cs). 끝이 노드 모서리에 닿는다(refX = 길이)
-const Tip = ({ id, cls, cs, color }) => <marker id={id} className={cls} orient="auto" markerUnits="userSpaceOnUse" viewBox={`0 0 ${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W}`} markerWidth={RIG_EDGE.ARROW * cs} markerHeight={RIG_EDGE.ARROW_W * cs} refX={RIG_EDGE.ARROW} refY={RIG_EDGE.ARROW_W / 2}><path d={`M0 0 L${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W / 2} L0 ${RIG_EDGE.ARROW_W} Z`} style={{ fill: color, stroke: 'none' }} /></marker>;
+// P262: 도착 끝 화살촉은 marker(끝 접선 = 모서리 수직)가 아니라 그린 곡선 끝 방향의 삼각형(lib/rig-map.js rigHead). 선은 화살촉 밑변에서 멈춘다
 // 칩: 세계 자리 p를 가운데로, 배율 cs
 const chipAt = (p, cs) => ({ transform: `translate(${p[0]}px, ${p[1]}px) scale(${cs}) translate(-50%, -50%)`, transformOrigin: '0 0' });
 const angOf = (u) => Math.round(Math.atan2(u[1], u[0]) * 180 / Math.PI);
@@ -29,7 +28,6 @@ export function RigPathEdge({ id, data }) {
   const bState = useStore((st) => (data ? (st.sessions.get(data.target) || {}).state : null));
   if (!data || !data.rig) return null;
   const { cs, lines } = data.rig;
-  const tid = safeId(id);
   const flows = m ? data.flows.map((i) => (m.flows || [])[i]).filter(Boolean) : [];
   // P259(2차): 보통 연결과 같은 색(역할 연결 .role)과 같은 흐름(.active: 받는 역할이 일하고 그 길로 30분 안에 항목이 오감). 굵게 하는 밝기는 걷었다
   const act = (ln) => rigLineActive(ln, flows, ln.to === data.a ? aState : bState);
@@ -38,21 +36,21 @@ export function RigPathEdge({ id, data }) {
   const first = lines[0];
   return <>
     <g className="mt-rigc" data-role="rig-path" data-edge={id} data-a={data.a} data-b={data.b}>
-      <defs><Tip id={`${tid}-tip`} cls="mt-rigc-tip role" cs={cs} color="var(--wire-role)" /></defs>
       {lines.map((ln) => <g key={ln.key}>
-        <path className={`react-flow__edge-path mt-edge role rigc${act(ln) ? ' active' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} data-active={act(ln) ? '1' : '0'} d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs }} markerEnd={`url(#${tid}-tip)`} />
+        <path className={`react-flow__edge-path mt-edge role rigc${act(ln) ? ' active' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} data-active={act(ln) ? '1' : '0'} d={ln.dLine || ln.d} data-end-d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs }} />
+        <path className="mt-rigc-head role" data-role="rig-head" d={ln.head} style={{ fill: 'var(--wire-role)', stroke: 'none' }} />
         <circle className="mt-edge-end role mt-rigc-end" data-role="rig-line-start" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
         <path d={ln.d} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={24 * cs} onClick={toggle} />
       </g>)}
     </g>
     <EdgeLabelRenderer>
-      {lines.map((ln) => <div key={ln.key} className="mt-edge-label role rigc nodrag nopan" style={chipAt(ln.lab.p, cs)} data-role="rig-edge-label" data-line={ln.which} data-edge={id} data-from={ln.from} data-to={ln.to} data-free={ln.lab.free ? '1' : '0'} title={t('rigMap.pathTitle')} onClick={toggle}>
+      {lines.filter((ln) => ln.lab).map((ln) => <div key={ln.key} className={`mt-edge-label role rigc${ln.fit === 'compact' ? ' compact' : ''} nodrag nopan`} style={chipAt(ln.lab.p, cs)} data-role="rig-edge-label" data-fit={ln.fit} data-line={ln.which} data-edge={id} data-from={ln.from} data-to={ln.to} data-free={ln.lab.free ? '1' : '0'} title={t('rigMap.pathTitle')} onClick={toggle}>
         <i className="mt-rigc-dir" data-role="rig-dir" data-ang={angOf(ln.lab.u)} style={{ transform: `rotate(${angOf(ln.lab.u)}deg)` }} aria-hidden="true">➜</i>
         {ln.open ? <i className="mt-rigc-open" data-role="rig-open-return" data-line={ln.which} /> : null}
         <span className="mt-edge-text">{ln.text}</span>
         {ln.waiting ? <span className="mt-rigc-wait" data-role="rig-wait" data-edge={id}>{t('rigV7.wait', { n: ln.waiting })}</span> : null}
       </div>)}
-      {open && first ? <div className="mt-rig-recent nowheel nodrag nopan" style={chipAt([first.lab.p[0], first.lab.p[1] + first.h], cs)} data-role="rig-path-recent">
+      {open && first ? <div className="mt-rig-recent nowheel nodrag nopan" style={chipAt(first.lab ? [first.lab.p[0], first.lab.p[1] + first.h] : [(first.s[0] + first.t[0]) / 2, (first.s[1] + first.t[1]) / 2], cs)} data-role="rig-path-recent">
         <b>{t('rigMap.pathRecent')}</b>
         {recent.length ? recent.map((x) => <span key={x.id + x.rev} className={`is-${x.state}`}>{x.id} · {t(`rigMap.state.${x.state}`)} · {fmtTime(x.t)}{x.reason ? ` · "${x.reason}"` : ''}</span>) : <span className="dim">{t('rigMap.pathNone')}</span>}
       </div> : null}
@@ -65,18 +63,18 @@ export function RigRaiseEdge({ id, data }) {
   const t = useT();
   if (!data || !data.rig || !data.rig.lines.length) return null;
   const { cs } = data.rig, ln = data.rig.lines[0];
-  const tid = safeId(id);
+  const fit = ln.fit || 'full';
   return <>
     <g className="mt-rigc-raise" data-role="rig-raise" data-edge={id}>
-      <defs><Tip id={`${tid}-r`} cls="mt-rigc-tip raise" cs={cs} color="var(--attn)" /></defs>
-      <path className="react-flow__edge-path mt-edge rigc raise" data-role="rig-line" data-line="raise" data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs, strokeDasharray: `${3 * cs} ${8 * cs}` }} markerEnd={`url(#${tid}-r)`} />
+      <path className="react-flow__edge-path mt-edge rigc raise" data-role="rig-line" data-line="raise" data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.dLine || ln.d} data-end-d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs, strokeDasharray: `${3 * cs} ${8 * cs}` }} />
+      <path className="mt-rigc-head raise" data-role="rig-head" d={ln.head} style={{ fill: 'var(--attn)', stroke: 'none' }} />
       <circle className="mt-rigc-end raise" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
     </g>
     <EdgeLabelRenderer>
-      <div className="mt-edge-label rigc raise nodrag nopan" style={{ ...chipAt(ln.lab.p, cs), pointerEvents: 'none' }} data-role="rig-raise-label" data-edge={id} data-free={ln.lab.free ? '1' : '0'}>
+      {ln.lab ? <div className={`mt-edge-label rigc raise${fit === 'compact' ? ' compact' : ''} nodrag nopan`} style={{ ...chipAt(ln.lab.p, cs), pointerEvents: 'none' }} data-role="rig-raise-label" data-fit={fit} data-edge={id} data-free={ln.lab.free ? '1' : '0'}>
         <i className="mt-rigc-dir" data-role="rig-dir" style={{ transform: `rotate(${angOf(ln.lab.u)}deg)` }} aria-hidden="true">➜</i>
         <span className="mt-edge-text">{t('rigMap.raiseEdge')}{ln.n > 1 ? ` ${ln.n}` : ''}</span>
-      </div>
+      </div> : null}
     </EdgeLabelRenderer>
   </>;
 }
