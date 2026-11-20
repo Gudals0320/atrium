@@ -28,7 +28,8 @@ import { queueView } from './lib/delivery-queue.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
 import { checkLabel } from './lib/session-name.js'; // P97: 새 세션 이름 칸
 import { BRAND_WORDMARK } from './lib/icons.jsx';
-import { phoneList, toneOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou, PAD_KEYS, keyQueue, padKeyOf, padOpen } from './lib/phone.js';
+import { setDraftSource, takeSavedDraft } from './shell-update.js'; // P282: 판 업데이트로 다시 불러올 때 보내지 않은 글
+import { phoneList, toneOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, kbOpenOf, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou, PAD_KEYS, keyQueue, padKeyOf, padOpen } from './lib/phone.js';
 import { steerBlock } from './lib/steer.js'; // P248: 스티어링 선택
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
@@ -147,10 +148,15 @@ export function PhoneApp() {
   useEffect(() => {
     const vv = window.visualViewport;
     const el = rootRef.current;
+    const tall = { w: 0, h: 0 }; // P282: 이 폭(방향)에서 본 가장 큰 보이는 높이
     const fit = () => {
       const b = screenNow(); // P83: 홈 화면 앱의 짧은 창 높이를 바로잡은 값
       if (el) { el.style.height = `${b.height}px`; el.style.transform = b.top ? `translateY(${b.top}px)` : ''; }
-      document.documentElement.classList.toggle('mt-kb-open', b.height < window.innerHeight - 120); // 키보드가 올라왔으면 아래 안전 영역을 비우지 않는다
+      const vh = vv && vv.height > 0 ? vv.height : window.innerHeight;
+      if (tall.w !== window.innerWidth) { tall.w = window.innerWidth; tall.h = 0; }
+      tall.h = Math.max(tall.h, vh, window.innerHeight);
+      // 키보드가 올라왔으면 아래 안전 영역(홈 막대 여백)을 비우지 않는다. P282: iOS 홈 화면 앱은 창 높이도 함께 줄어 가장 큰 높이와도 견준다
+      document.documentElement.classList.toggle('mt-kb-open', kbOpenOf({ vvHeight: vh, innerHeight: window.innerHeight, tallest: tall.h }));
     };
     fit();
     if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); }
@@ -192,6 +198,7 @@ export function PhoneApp() {
   const s = open ? sessions.get(open) : null;
   return (
     <div className="mt-phone" ref={rootRef} data-role="phone" data-view={s ? 'session' : 'mission'}>
+      <div className="mt-ph-topfill" aria-hidden="true" />{/* P282: 상태 줄 자리를 머리줄과 같은 불투명 색으로(phone.css) */}
       {s ? <PhoneSession key={s.sessionId} s={s} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} />
         : <PhoneMission key={mapKey} onOpen={(id) => go(id)} head={<PhoneHead onNew={() => setSpawn(true)} />} tip={<InstallTip />} />}
       {!s && <MergerAskCards phone />}
@@ -296,8 +303,10 @@ function PhoneSession({ s, onBack, onGo }) {
   const boxRef = useRef(null);
   const taRef = useRef(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => takeSavedDraft(id) || ''); // P282: 판 업데이트로 다시 불러왔으면 보내지 않은 글을 되살린다
   const [busy, setBusy] = useState(false);
+  const textRef = useRef(text); textRef.current = text;
+  useEffect(() => setDraftSource(() => ({ sessionId: id, text: textRef.current })), [id]);
   const [note, setNote] = useState(null);
   const [steer, setSteer] = useState(false); // P248: 기본은 대기열. 켜면 일하는 Claude Code의 지금 턴에 넣는다(보내기 칸과 같은 뜻)
   const [scale, setScale] = useState(readPhoneScale);

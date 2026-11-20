@@ -235,7 +235,13 @@ export function PhoneMap({ onOpen, head, tip }) {
       el.removeEventListener('gesturestart', noGesture); el.removeEventListener('gesturechange', noGesture);
     };
   }, [paint, onOpen]);
-  useEffect(() => () => { clearTimeout(saveTimer.current); if (dirty.current && view.current && sizeRef.current) saveView(store(), sizeRef.current, view.current); }, []); // 떠날 때 마지막 보기를 남긴다(P256: 옮긴 적이 있을 때만. 맵이 바탕이라 연 채로 다시 그려질 때 처음 맞춤을 기억으로 굳히지 않는다)
+  useEffect(() => () => { clearTimeout(saveTimer.current); if (dirty.current && view.current && sizeRef.current) saveView(store(), sizeRef.current, view.current); }, []);
+  // P282: 판 업데이트로 다시 불러오기 전(shell-update.js)·페이지를 떠날 때도 옮긴 보기를 곧바로 남긴다(모으는 시간을 기다리지 않는다)
+  useEffect(() => {
+    const flush = () => { if (dirty.current && view.current && sizeRef.current) { clearTimeout(saveTimer.current); saveView(store(), sizeRef.current, view.current); } };
+    window.addEventListener('mt-before-reload', flush); window.addEventListener('pagehide', flush);
+    return () => { window.removeEventListener('mt-before-reload', flush); window.removeEventListener('pagehide', flush); };
+  }, []); // 떠날 때 마지막 보기를 남긴다(P256: 옮긴 적이 있을 때만. 맵이 바탕이라 연 채로 다시 그려질 때 처음 맞춤을 기억으로 굳히지 않는다)
   window.__mtPm = { style: 'canvas', fitView: () => { const L = layRef.current, s = sizeRef.current; return L && s ? mapFit(L, s.w, s.h, PHONE.PADX) : null; }, lay: () => layRef.current, view: () => (view.current ? { ...view.current } : null), set: (v) => paint(v), fit: () => fit(false), goTo, last: () => lastGoId, peek: (id) => setPeek(id), size: () => sizeRef.current }; // 시험이 읽는다
 
   const ids = lay ? lay.order : [];

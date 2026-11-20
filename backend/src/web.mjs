@@ -248,6 +248,18 @@ export function cacheControl(rel) {
 // P74: 서비스 워커 스크립트. 브라우저는 등록·갱신 때 "Service-Worker: script" 머리글을 붙인다.
 // 그 요청은 이 파일만 내준다(다른 화면 파일을 서비스 워커로 등록하지 못하게). 범위는 / 하나다(Service-Worker-Allowed를 주지 않는다)
 export const SW_FILE = 'sw.js';
+// P282: 지금 내보내는 화면의 빌드 표식(app/scripts/build.mjs가 쓴 dist/build.json). 파일이 바뀌면(크기·시각) 다시 읽는다. 없거나 깨졌으면 null
+const buildMemo = new Map();
+export function shellBuild(dir) {
+  const f = path.join(dir, 'build.json');
+  let st; try { st = fs.statSync(f); } catch { return null; }
+  const k = `${st.size}|${st.mtimeMs}`, m = buildMemo.get(f);
+  if (m && m.k === k) return m.v;
+  let v = null;
+  try { const j = JSON.parse(fs.readFileSync(f, 'utf8')); if (j && typeof j.build === 'string' && /^[0-9a-f]{8,64}$/.test(j.build)) v = j.build; } catch {}
+  buildMemo.set(f, { k, v });
+  return v;
+}
 export const swScriptOk = (rel, headers = {}) => String(headers['service-worker'] || '').toLowerCase() !== 'script' || rel === SW_FILE;
 const SECURITY_HEADERS = { 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', 'cross-origin-opener-policy': 'same-origin' };
 const NO_BUILD = `<!doctype html><html><head><meta charset="utf-8"><title>Atrium</title><style>body{background:#070705;color:#e9e6dc;font:15px/1.6 system-ui,sans-serif;margin:0;display:grid;place-items:center;height:100vh}div{max-width:520px;padding:24px}code{background:#1d1c18;padding:2px 6px;border-radius:4px}</style></head>
@@ -682,7 +694,7 @@ export class WebServer {
           this.devices.touch(x.d.id);
           // P62: 쿠키를 세션의 남은 수명으로 다시 준다(끔이면 400일, 쓰는 동안 늘어난다. 켬 → 끔 뒤에 늘어난 수명도 브라우저에 닿는다)
           const rem = this.auth.sessions.remainingMs(x.s.hash);
-          return send(200, { ...this.boot({ id: x.d.id, name: x.d.name }), passkey: this.passkeyOn() }, rem > 0 ? cookie(sessionIdOf(req, this.cfg.port), rem, sentSecureCookie(req, this.cfg.port)) : {});
+          return send(200, { ...this.boot({ id: x.d.id, name: x.d.name }), passkey: this.passkeyOn(), build: shellBuild(this.files.dir) }, rem > 0 ? cookie(sessionIdOf(req, this.cfg.port), rem, sentSecureCookie(req, this.cfg.port)) : {});
         }
         if (p === '/web/pair/code' && req.method === 'POST') {
           const o = origin(); const tsNode = await paired(); const b = await body();

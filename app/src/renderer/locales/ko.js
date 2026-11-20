@@ -835,7 +835,7 @@ export default {
     emptyFiltered: ' 다른 필터를 선택하세요.',
   },
   markdown: {
-    copyLink: '클릭하면 링크 주소를 복사합니다.',
+    openLink: '클릭하면 링크를 엽니다.',
   },
   sidebar: {
     loadFail: '사이드바를 불러오지 못했습니다: {error}',
@@ -2751,6 +2751,11 @@ export default {
     mark: '결정',
     markN: '결정 {n}',
     markTitle: '기다리는 결정 {n}개 · 위 "결정" 알약에서 답합니다',
+  },
+  // P283: 터미널·마크다운 보기의 링크
+  urlLink: {
+    hint: 'Ctrl+클릭하면 링크를 엽니다.',
+    notOpened: '링크를 열지 않았습니다. http·https 링크만 엽니다({scheme}).',
   },
 };
 
