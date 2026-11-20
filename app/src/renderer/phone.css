@@ -688,3 +688,8 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pm-rigcard .rr .st { margin-left: auto; flex: none; font-size: 13px; color: var(--chrome-text-2); }
 .mt-pm-rigcard .rr.st-working .st { color: var(--con-line-working); }
 .mt-pm-rigcard .rr.st-waiting .st { color: var(--attn); }
+
+/* P268: 합치기 merger를 켤지 묻는 카드(세션 맵 머리 아래, 위쪽에 겹친다) */
+.mt-merger-asks.phone { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 56px); left: 12px; right: 12px; width: auto; transform: none; z-index: 30; }
+.mt-merger-ask.phone { font-size: 14px; padding: 12px; border-radius: 12px; }
+.mt-merger-ask.phone .mt-btn.small { height: 36px; padding: 0 14px; font-size: 14px; }

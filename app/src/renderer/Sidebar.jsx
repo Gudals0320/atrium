@@ -29,6 +29,7 @@ import { Icon } from './lib/icons.jsx';
 import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 세션 줄 메뉴의 이름 바꾸기
 import { addressOf, renamed } from './lib/session-name.js';
 import { canReopen } from './lib/user-close.js'; // P125: 끝난 세션 다시 열기
+import { MergerTag } from './Merger.jsx'; // P268: merger 세션 꼬리표
 
 const KEY = 'mt.sidebar';
 function load() { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { return {}; } }
@@ -285,6 +286,7 @@ const SessionRow = memo(function SessionRow({ r, now, cur, here, busy: rowBusy }
       <span className="mt-sb2-line">
         <span className={`mt-sb2-dot st-${s.state}`} data-state={s.state} />
         <b className="mt-sb2-name">{s.name}</b>
+        <MergerTag s={s} className="mt-sb2-role mt-merger-tag" />
         {r.wsName && <span className="mt-sb2-pinws" title={r.wsName}>{r.wsName}</span>}{/* P265: 접힌 그룹에 워크스페이스가 여럿이면 어느 워크스페이스의 세션인지 */}
         {s.branch && s.branch.role && <span className="mt-sb2-role">{shownRole(s.branch.role)}</span>}
         {k !== 'claude' && <span className="mt-sb2-kind">{kindText(k)}</span>}

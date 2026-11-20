@@ -9,6 +9,7 @@ import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
+import { mergerViewOf, withAsk, withoutAsk } from './lib/merger.js'; // P268
 import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107: 작업 중 테두리 빛 설정과 미션 맵 덮개를 문서 뿌리에
 
 const state = {
@@ -441,3 +442,31 @@ export function loadRigMaps(delay = RIG_LOAD_MS) {
 }
 api.on('$open', () => loadRigMaps(0));
 for (const ev of ['rig.roles', 'rig.events', 'workspace.updated']) api.on(ev, () => loadRigMaps());
+
+// P268: 합치기 merger(판 쪽 P267). 판 API merger.status를 처음 붙을 때와 merger.updated·merger.answered 때 모아서 다시 읽는다.
+//   merger.ask는 카드를 바로 넣는다(읽기를 기다리지 않게). merger를 모르는 옛 판이면 null(설정 칸·카드·선이 없다)
+const MERGER_LOAD_MS = 300;
+let mergerT = 0, mergerSig = '';
+state.merger = null;
+state.mergerDismissed = new Set(); // "나중에"로 닫은 카드(워크스페이스|물은 시각). 이 창에만, 다시 켜면 다시 보인다
+export function loadMerger(delay = MERGER_LOAD_MS) {
+  if (mergerT) return;
+  mergerT = setTimeout(() => {
+    mergerT = 0;
+    api.call('merger.status').then((r) => {
+      const v = mergerViewOf(r);
+      const sig = JSON.stringify(v);
+      if (sig === mergerSig) return;
+      mergerSig = sig;
+      state.merger = v;
+      changed();
+    }).catch(() => {});
+  }, delay);
+}
+export function putMergerAsk(card) { state.merger = withAsk(state.merger, card); mergerSig = ''; changed(); }
+export function dropMergerAsk(ws) { if (!state.merger) return; state.merger = withoutAsk(state.merger, ws); mergerSig = ''; changed(); }
+export function dismissMergerAsk(key) { state.mergerDismissed = new Set(state.mergerDismissed).add(key); changed(); }
+api.on('$open', () => loadMerger(0));
+api.on('merger.ask', (card) => { putMergerAsk(card); loadMerger(); });
+api.on('merger.answered', (d) => { if (d && d.workspace) dropMergerAsk(d.workspace); loadMerger(); });
+for (const ev of ['merger.updated', 'session.created', 'session.removed']) api.on(ev, () => loadMerger());
