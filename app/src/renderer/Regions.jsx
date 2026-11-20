@@ -9,7 +9,6 @@ import { useInvRef, useZoomStyle } from './zoom-var.js'; // P112: 배율을 따�
 import { useStore, getState, openDialog, selectWorkspace, noteWorkspace, toast, markArranged } from './store.js';
 import { Icon } from './lib/icons.jsx';
 import { useT, t, errText } from './lib/i18n.js';
-import { remoteView } from './lib/remote-view.js';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
@@ -123,7 +122,6 @@ function RegionMenu({ at, close, w, arranged, z }) {
     return () => { window.removeEventListener('mousedown', down, true); window.removeEventListener('keydown', key, true); };
   }, [close]);
   const key = w.key;
-  const rig = useRigStatus(key); // P182: rig 상태(메뉴를 열 때 묻는다)
   const item = (action, label, fn, extra = {}) => <button key={action} className={`mt-sb2-mi${extra.danger ? ' danger' : ''}`} data-action={action} disabled={extra.disabled} title={extra.title} onClick={() => { close(); fn(); }}>{label}</button>;
   return createPortal(
     <div ref={box} className="mt-sb2-menu" data-role="region-menu" data-ws={key} style={pos || { left: -9999, top: -9999 }} onContextMenu={(e) => e.preventDefault()}>
@@ -135,38 +133,12 @@ function RegionMenu({ at, close, w, arranged, z }) {
       {item('region-spawn', t('regions.addSession'), () => { noteWorkspace(key); openDialog({ kind: 'spawn', cwd: w.root }); })}
       {item('region-fit', t('regions.fit'), () => selectWorkspace(key))}
       <div className="mt-sb2-msep" />
-      <div className="mt-sb2-mh mt-rig-line" data-role="rig-status" data-rig={rig ? rig.state : 'loading'} title={rig && rig.invalid ? rig.invalid : undefined}>{rigLine(t, rig)}</div>
-      {/* P191·P249: 정의가 없으면 빌더에게 말하기(이 PC의 창만), 있으면 rig 판(켜기·끄기·빌더·되돌리기는 판 안). 원격 기기는 보기만 */}
-      {rigMenu(rig, remoteView()) === 'builder' && item('rig-builder', t('rigBuilder.menu'), () => openDialog({ kind: 'rigpanel', ws: w }))}
-      {rigMenu(rig, remoteView()) === 'view' && item('rig-panel', t('rigSetup.menuView'), () => openDialog({ kind: 'rigpanel', ws: w }))}
-      <div className="mt-sb2-msep" />
       {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}
     </div>,
     document.body,
   );
 }
 export const RegionNode = memo(RegionNodeInner);
-
-// P182: rig(워크스페이스 뿌리의 .atrium/rig.json) 상태 한 줄과 켜기·끄기. 켜기는 사람만(판 API rig.enable·rig.disable)
-function useRigStatus(key) {
-  const [st, setSt] = useState(null);
-  useEffect(() => { let live = true; api.call('rig.status', { workspace: key }).then((r) => { if (live) setSt(r); }, (e) => { if (live) setSt({ state: 'error', error: errText(e) }); }); return () => { live = false; }; }, [key]);
-  return st;
-}
-function rigLine(t, r) {
-  if (!r) return t('rig.loading');
-  if (r.state === 'error') return t('rig.stError', { error: r.error });
-  if (r.state === 'none') return t('rig.stNone');
-  if (r.state === 'invalid') return t('rig.stInvalid', { reason: r.invalid || '?' });
-  if (r.state === 'on') return r.invalid ? t('rig.stOnStale', { reason: r.invalid }) : t('rig.stOn', { n: r.rig3 ? (r.rig3.roles || []).length : 0 }); // P241
-  return r.invalid ? t('rig.stInvalid', { reason: r.invalid }) : t('rig.stOff');
-}
-// 영역 메뉴의 rig 줄: 정의가 없으면 빌더(원격은 없음), 있으면 rig 판 → 'builder' | 'view' | null
-export function rigMenu(status, remote = false) {
-  if (!status || status.state === 'error') return null;
-  if (status.state === 'none') return remote ? null : 'builder';
-  return 'view';
-}
 
 // P27: 워크트리 영역. P35: 리포 영역 안의 노란 상자(테두리, 옅은 바탕, 이름표 글자 모두 노란 계열, tokens.css --wt-box-*).
 //   이름표는 ⎇ 브랜치(폴더 이름이 다르면 함께)와 세는 값. 이름표를 끌면 이 상자와 안의 노드·대화 노드가 함께 움직이고 자리를 저장한다(worktree.move). 누르면 그 리포로 간다.

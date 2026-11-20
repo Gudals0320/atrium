@@ -1,32 +1,8 @@
-// P253 창 단위 시험: 한 줄 차례(rowOrder), 줌(이름표 계단)에 따라 열이 바뀌지 않음(창 크기만), 주기 말과 사전.
-// (지도 배치 mapLayout·placeMaps·접기·카드 줄·띠 글 시험은 P254가 세션 맵 rig를 시안 V7 꼴로 워크스페이스 줄 안에 옮기며 지웠다. 새 시험은 test/p254-lib.test.mjs)
+// P253 창 단위 시험: 줌(이름표 계단)에 따라 열이 바뀌지 않음(창 크기만).
+// (rig 한 줄 차례·주기 말 시험은 P269가 rig를 걷어 내며 지웠다)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rowOrder, periodText } from '../src/renderer/lib/rig-map.js';
 import { lineageLayout, pickColumns, todayWorkspaces } from '../src/renderer/lib/mission-lineage.js';
-import ko from '../src/renderer/locales/ko.js';
-import en from '../src/renderer/locales/en.js';
-
-// rig-trade 모양(역할 넷, 길 아홉, 사람 입력 셋, 박자 data, trade는 따로 박자). 이름만 같고 모델 등은 시험 값
-const FLOWS = [
-  { item: 'seed', from: ['human'], to: ['ideas'] },
-  { item: 'hypothesis', from: ['ideas'], to: ['verify'] },
-  { item: 'result', from: ['verify'], to: ['ideas'], for: 'hypothesis' },
-  { item: 'data_request', from: ['ideas', 'human'], to: ['data'] },
-  { item: 'data_reply', from: ['data'], to: ['ideas'], for: 'data_request' },
-  { item: 'dataset', from: ['data'], to: ['verify'] },
-  { item: 'strategy', from: ['verify'], to: ['trade'] },
-  { item: 'live_report', from: ['trade'], to: ['verify'], for: 'strategy' },
-  { item: 'halt', from: ['human'], to: ['trade'] },
-];
-test('P253 rowOrder: 이웃한 쌍이 가장 많은 한 줄 차례, 같은 값이면 박자 역할 앞(rig-trade = data, ideas, verify, trade)', () => {
-  const names = ['data', 'ideas', 'verify', 'trade'];
-  assert.deepEqual(rowOrder(names, FLOWS, { beatRole: 'data' }), ['data', 'ideas', 'verify', 'trade']);
-  // 정의 차례가 달라도 같다
-  assert.deepEqual(rowOrder(['trade', 'verify', 'ideas', 'data'], FLOWS, { beatRole: 'data' }), ['data', 'ideas', 'verify', 'trade']);
-  // 앞으로 가는 길이 왼쪽 → 오른쪽: 사슬 a → b → c는 박자 없이도 a, b, c
-  assert.deepEqual(rowOrder(['c', 'b', 'a'], [{ item: 'x', from: ['a'], to: ['b'] }, { item: 'y', from: ['b'], to: ['c'] }]), ['a', 'b', 'c']);
-});
 
 // ---- 줌에 따라 열이 바뀌지 않는다(창 크기만) ----
 const MID = new Date(2026, 10, 17, 0, 0, 0).getTime(), NOON = MID + 12 * 3600e3, OLD = MID - 3 * 86400e3;
@@ -60,15 +36,4 @@ test('P253 줌 버그: 열 수는 이름표 계단(줌)으로 바뀌지 않고 �
   // 창 크기가 바뀌면 다시 정한다(넓고 낮은 창 = 두 열, 좁은 창 = 한 열)
   assert.equal(lineageLayout(G, { ...BASE, view: { w: 2600, h: 600 } }).ncol, 2);
   assert.equal(lineageLayout(G, { ...BASE, view: { w: 700, h: 1800 } }).ncol, 1);
-});
-
-test('P253 주기 말(P252 periodText와 같은 꼴)과 두 사전의 rigMap2·rigPeriod 열쇠', () => {
-  const t = (k, v = {}) => { const o = k.split('.').reduce((a, x) => (a ? a[x] : undefined), ko); return String(o).replace(/\{(\w+)\}/g, (_, x) => v[x]); };
-  assert.equal(periodText('1d', '07:30', t), '매일 07:30');
-  assert.equal(periodText('5m', null, t), '5분마다');
-  assert.equal(periodText('1h', null, t), '매시간');
-  assert.equal(t('rigMap2.beatCycle', { period: periodText('1d', '07:30', t) }), '매일 07:30에 사이클을 연다');
-  const keys = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' && !('one' in v) ? keys(v, p + k + '.') : [p + k]));
-  assert.deepEqual(keys(ko.rigMap2).sort(), keys(en.rigMap2).sort());
-  assert.deepEqual(keys(ko.rigPeriod).sort(), keys(en.rigPeriod).sort());
 });

@@ -12,42 +12,13 @@ import { keepCard } from './bg-work.js'; // P164
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
 import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from './mission-terr.js';
 import { zoomStep } from './faces.js'; // P178: 이름표 배율 계단
-import { RIG_MAP, mapLabW, roleSessions, BUILDER_ROLE } from './rig-map.js'; // P261: 세션 맵 rig 묶음 치수·카드
 
 // SPINE = 폴더 기둥 최소 폭(P157: 가장 긴 폴더 이름에 맞춰 넓어진다, spineWidth), BANDMIN = 폴더 띠 최소 높이(P157: 워크스페이스 하나인 폴더도 기둥 글이 잘리지 않게), HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // MINCOLS = 늘 있는 나무 칸 수(시작·1단계)
-export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46, THIN: 30, TGY: 8, THINMIN: 3, RIGGAP: 60 }; // P254: RIGGAP = 줄 안 나무·솔로 아래 → rig 묶음 위 // P163: THIN = 얇은 줄 높이, TGY = 얇은 줄끼리 간격, THINMIN = 하위가 이만큼 이상일 때 절전 하위를 얇은 줄로 // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
+export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46, THIN: 30, TGY: 8, THINMIN: 3 }; // P163: THIN = 얇은 줄 높이, TGY = 얇은 줄끼리 간격, THINMIN = 하위가 이만큼 이상일 때 절전 하위를 얇은 줄로 // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
 
-// P261: 세션 맵 카드 폭(그 판의 가장 긴 이름이 멀리 타일 한 줄에 들게). rig 묶음 카드도 같은 폭을 쓴다(rigMapOpts)
+// P261: 세션 맵 카드 폭(그 판의 가장 긴 이름이 멀리 타일 한 줄에 들게)
 export const mapCardW = (graph, tree = missionTree(graph)) => cardWidth(tree.nodes.map((n) => n.name), LINE.NAME_PX);
-// P261: rig 묶음 카드 높이 = 보통 카드 높이 셈(cardHeight)으로 가장 긴 내용(일 세 줄, 또는 오류 두 줄)이 드는 높이. 역할마다 같은 크기(내용이 바뀌어도 묶음이 흔들리지 않는다)
-export const rigCardH = (cw) => Math.max(cardHeight({ lastPrompt: 'x'.repeat(400) }, 'work', false, cw), cardHeight({ lastPrompt: 'x', error: 'x'.repeat(400) }, 'alert', false, cw));
-// P261: 세션 맵 rig 묶음(lib/rig-map.js v7Layout)의 카드 꼴 = 보통 세션 카드(폭 cw, 높이 rigCardH), 틈·줄 글 = 세션 맵 선 말투(RIG_MAP)
-export const rigMapOpts = (cw) => { const ch = rigCardH(cw); return { cw, ch, bh: ch, gap: RIG_MAP.GAP, bgap: RIG_MAP.BGAP, geo: RIG_MAP, labW: (s) => mapLabW(s) + 2 * RIG_MAP.LABM }; };
-
-// P261: rig 묶음의 카드 상자(세계 자리) → Map id → { x, y, w, h, node, ws, depth: -1, fold: 0, rig: { kind, name, chip, extra, none, dim } }.
-//   node = 판 그래프의 그 세션 노드(트리에서는 뺀 것, hideRigSessions 전 그래프). 그래프에 없으면(세션 없음·아직 안 읽힘) 지도 자료로 만든다
-export function rigCardBoxes(lay, rigList, rigGeo, graph, sessions, t) {
-  const out = new Map();
-  if (!lay || !lay.rigs || !lay.rigs.length) return out;
-  const bySid = new Map(((graph && graph.nodes) || []).filter((n) => n.kind === 'session' && n.sessionId).map((n) => [n.sessionId, n]));
-  for (const it of lay.rigs) {
-    const m = rigList.find((x) => x.workspace === it.key), g = rigGeo.get(it.key);
-    if (!m || !g || !g.order.length) continue;
-    const sid = roleSessions(m, sessions);
-    const nRaise = (m.raises || []).length;
-    const add = (kind, name, box, r) => {
-      const rs = r && r.session, s = sid.get(name) || (rs && rs.sessionId) || null;
-      const lv = s && sessions ? sessions.get(s) : null;
-      const node = (s && bySid.get(s)) || { id: `rig:${it.key}:${name}`, kind: 'session', sessionId: s, name: (lv && lv.name) || (rs && rs.name) || (kind === 'builder' ? t('rigV7.builderName') : name), state: lv ? lv.state : rs ? (rs.asleep ? 'sleeping' : rs.state) : 'exited', agentKind: (lv && lv.kind) || (rs && rs.kind) || 'claude', workspaceKey: it.key, lastPrompt: (lv && lv.lastPrompt) || null, model: (lv && lv.model) || null, effort: (lv && lv.effort) || null };
-      const chip = kind === 'builder' ? t('rigMap.tagBuilder') : r && r.docN != null ? t('rigV7.tagRoleV', { name, n: r.docN }) : t('rigMap.tagRole', { name });
-      out.set(node.id, { x: it.x + box.x, y: it.y + box.y, w: box.w, h: box.h, node, ws: it.key, depth: -1, fold: 0, rig: { kind, name, chip, extra: kind === 'builder' && nRaise ? t('rigMap.raises', { n: nRaise }) : null, none: !s, dim: !!g.dim } });
-    };
-    for (const n of g.order) add('role', n, g.roles.get(n), (m.roles || []).find((r) => r.name === n));
-    add('builder', BUILDER_ROLE, g.builder, m.builder ? { session: m.builder } : null);
-  }
-  return out;
-}
 
 // P157: 글 폭 어림(px). 한글·한자·가나는 글자 크기만큼, 대문자·숫자는 조금 넓게, 그 밖은 0.6
 export const glyphW = (s, px) => { let w = 0; for (const ch of String(s || '')) { const c = ch.codePointAt(0); w += (c >= 0x1100 && c <= 0x11ff) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xff00 && c <= 0xffef) ? 1 : /[A-Z0-9@#%&MW]/.test(ch) ? 0.7 : 0.6; } return w * px; };
@@ -89,7 +60,7 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // P202: today = 오늘 일한 워크스페이스 키들(Set·배열, todayWorkspaces). 폴더 차례는 오늘 일한 폴더들(이름순) → 나머지 폴더들(이름순), 사이드바 손 차례(order)는 쓰지 않는다.
 //   columns = 1 | 2 | 'auto'(PC만: view = 맞춤 칸 { w, h }에서 두 열 맞춤 배율이 한 열보다 COLS2.GAIN배 넘게 크면 두 열). → sections(오늘·이전 이름표 자리), ncol, colDx, measure
 export function lineageLayout(graph, opts = {}) {
-  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null, rigBlocks = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P254: rigBlocks = 워크스페이스 키 → rig 묶음 크기 { w, h }(세계 px, 그 줄 안에 놓는다)
+  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스
   if (!phone && columns === 'auto') {
     // P253: 열 판단은 이름표 계단(label, 배율에 따라 바뀐다)과 상관없이 바탕 글 크기(label 1)의 한 열 배치로 한다.
     //   전에는 그 계단의 배치로 재서, 줌인·줌아웃으로 계단이 바뀌면 열이 하나·둘로 바뀌며 밀렸다. 이제 열 수는 그래프와 보기 칸(창 크기)으로만 바뀐다
@@ -112,7 +83,7 @@ export function lineageLayout(graph, opts = {}) {
   // ---- 소속(사이드바와 같다)과 차례(P202: 오늘 일한 폴더 → 나머지, 각각 이름순. 폴더 안 워크스페이스도 이름순) ----
   const folderOf = new Map();
   (vgroups || []).forEach((g, gi) => (g.members || []).forEach((m, mi) => { const k = normKey(m); if (k && !folderOf.has(k)) folderOf.set(k, { g, gi, mi }); }));
-  const present = [...new Set([...tree.nodes.map((n) => wsOf(n.id)), ...(keepKeys || []).filter(Boolean), ...(rigBlocks && !phone ? [...rigBlocks.keys()] : []).filter(Boolean)])]; // P251: rig 역할만 있는 워크스페이스도 줄이 남는다. P254: rig 묶음이 있는 워크스페이스도
+  const present = [...new Set([...tree.nodes.map((n) => wsOf(n.id)), ...(keepKeys || []).filter(Boolean)])];
   const byWsName = (a, b) => (!a) - (!b) || nameCmp(nameOf(a), nameOf(b)) || nameCmp(a, b);
   const groups0 = [];
   for (const [gi, g] of (vgroups || []).entries()) {
@@ -192,15 +163,12 @@ export function lineageLayout(graph, opts = {}) {
   const COL = Array.from({ length: nCols }, (_, i) => (phone ? PHONE.PADX : L.HEADX + Math.max(L.HEADW + 208, L.HEADW2 + 80)) + i * (L.CW + L.GX)); // 시안: 리드 칸 740 = 232 + 300 + 208. P178: 머리 글이 커지면 머리 폭 + 80
   // P166: 휴대폰 폭 = 나무 칸 수(적어도 MINCOLS)만큼. P260: 솔로도 시작 칸이라 PC와 같다
   const PCOLS = Math.max(L.MINCOLS, nCols);
-  // P254: 줄 안 rig 묶음은 시작 칸에서 오른쪽으로 놓는다. 넓으면 줄 폭을 늘린다
-  const blockOf = (key) => (!phone && rigBlocks ? rigBlocks.get(key) || null : null);
-  const blockW = Math.max(0, ...present.map((k) => (blockOf(k) ? blockOf(k).w : 0)));
-  const W = phone ? PHONE.PADX * 2 + PCOLS * L.CW + (PCOLS - 1) * L.GX : Math.max(COL[nCols - 1] + L.CW + 60, blockW ? COL[0] + blockW + 60 : 0);
+  const W = phone ? PHONE.PADX * 2 + PCOLS * L.CW + (PCOLS - 1) * L.GX : COL[nCols - 1] + L.CW + 60;
   const DX = two ? W + COLS2.GAP : 0; // P202: 오른쪽(이전) 열의 x
   let ox = 0, ci = 0; // 지금 놓는 열의 x와 번호
   const sections = [];
 
-  const cards = new Map(), bands = [], rows = [], rigs = [];
+  const cards = new Map(), bands = [], rows = [];
   // P160: 휴대폰 목록이 같은 판정을 쓰도록 남긴 줄마다 놓은 차례(시작 칸 뿌리·다른 워크스페이스에서 온 것·솔로)와 보이는 하위 차례를 남긴다(PC 배치는 그대로)
   const seq = new Map(), vkids = new Map();
   const put = (id, depth, y, ws) => cards.set(id, { x: ox + COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0, thin: thin.has(id) });
@@ -256,11 +224,7 @@ export function lineageLayout(graph, opts = {}) {
       const chips = chipCounts(all.map((n) => tierOf(n.id)));
       if (phone) { y += phoneRow(key, g, wi, chips, all.length); return; }
       const end = stack(key, y + L.RT), stackH = end == null ? 0 : end - y;
-      // P254: 그 워크스페이스의 rig 묶음(역할·빌더 세션은 트리에서 빠져 여기에만 나온다). P260: 나무·솔로 쌓음 아래, 시작 칸부터
-      const blk = blockOf(key);
-      let rigH = 0;
-      if (blk) { const rigTop = y + (stackH ? stackH + L.RIGGAP : L.RT); rigs.push({ key, x: ox + COL[0], y: rigTop, w: blk.w, h: blk.h }); rigH = rigTop - y + blk.h; }
-      const h = Math.max(stackH, rigH, L.ROWMIN, heads.get(key).h + 10) + L.RB;
+      const h = Math.max(stackH, L.ROWMIN, heads.get(key).h + 10) + L.RB;
       rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: ox + L.SPINE, w: W - L.SPINE, chips, count: all.length, ox, col: ci, today: !!g.today });
       y += h;
     });
@@ -300,9 +264,9 @@ export function lineageLayout(graph, opts = {}) {
     edges.push({ ...base, cross: false, pts, d: poly(pts), label });
   }
   // P153 r11: 동료 = 같은 칸에서 위아래로 곁에 놓고 무채색 양방향 선(위계 화살촉 없음). 칸이 다르면(다른 줄 등) 길 찾기
-  // P266: 같은 칸이어도 곧은 선이 다른 카드(또는 rig 묶음)를 지나면 칸 오른쪽 통로로 꺾어 돌아간다(peerDetours, 겹치는 우회끼리는 다른 통로 줄)
+  // P266: 같은 칸이어도 곧은 선이 다른 카드를 지나면 칸 오른쪽 통로로 꺾어 돌아간다(peerDetours, 겹치는 우회끼리는 다른 통로 줄)
   const peerSeen = new Set(), detours = [];
-  const blockers = [...[...cards.entries()].map(([id, c]) => ({ id, x: c.x, y: c.y, w: c.w, h: c.h })), ...rigs.map((r) => ({ id: null, x: r.x, y: r.y, w: r.w, h: r.h }))];
+  const blockers = [...cards.entries()].map(([id, c]) => ({ id, x: c.x, y: c.y, w: c.w, h: c.h }));
   for (const n of tree.nodes) for (const p of ((n.peers || []).filter((x) => byId.has(x)))) {
     const k = [n.id, p].sort().join('|');
     if (peerSeen.has(k)) continue;
@@ -333,7 +297,6 @@ export function lineageLayout(graph, opts = {}) {
     } else {
       for (const r of rows) blocks.push({ x: (r.ox || 0) + L.HEADX - 8, y: r.y + 12, w: Math.max(L.HEADW, L.HEADW2) + 16, h: Math.max(96, heads.get(r.key).h) }); // 줄 머리(이름·칩)
       for (const b of bands) blocks.push({ x: b.x || 0, y: b.y, w: L.SPINE, h: b.h }); // 폴더 기둥
-      for (const r of rigs) blocks.push({ x: r.x, y: r.y, w: r.w, h: r.h }); // P254: 줄 안 rig 묶음
       // P206: 두 열이면 열 위 머리(오늘·이전 이름표 칸)와 그 위를 막는다. 열 사이 선은 머리 아래 열 사이 틈으로 건넌다
       if (two) blocks.push({ x: -L.SPINE, y: -240, w: W * 2 + COLS2.GAP + L.SPINE * 2, h: SEC.SECH + 240 });
     }
@@ -355,7 +318,7 @@ export function lineageLayout(graph, opts = {}) {
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   const BW = phone ? nPages * W + (nPages - 1) * PHONE.PGAP : two ? W * 2 + COLS2.GAP : W;
   const BH = two ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
-  return { cards, bands, rows, cols, edges, rigs, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : 1, colDx: DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages, tabs } : {}) };
+  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : 1, colDx: DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages, tabs } : {}) };
 
   // ---- P260: 줄 안 쌓기(PC·휴대폰 같은 규칙). 시작 칸 뿌리의 나무 → 다른 워크스페이스에서 온 것(1단계 칸) → 솔로(시작 칸, 차례 = 만든 차례).
   //   나무 사이는 GY*2(동료 뿌리끼리는 PGY), 솔로끼리는 GY. 쌓은 것이 없으면 null, 있으면 마지막 카드 아래 끝 y ----

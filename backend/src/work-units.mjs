@@ -12,7 +12,6 @@ import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { UnitStops, launchArgsSuspect, badArgsText } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
-import { RIG_HEADER_TAIL } from './rig.mjs'; // P182. P188: 세 줄 머리의 셋째 줄 끝
 
 // P216: 에이전트만 끝나고 셸 패널이 남은 것을 멈춤(exited)으로 보는가. 판이 끄라고 한 것(잠재우기·끄기·child-kill·옮기기·다시 띄우기: normal),
 //   사람이 끝낸 것(/exit·Ctrl+C·종료 코드 0·130: user), 신뢰 거부(trust_declined), 터미널 서버가 꺼짐(terminal_stopped, 판이 되살린다)은 아니다.
@@ -27,16 +26,15 @@ export const unitTitle = (u) => (u && u.origin === 'merge' ? String(u.spec || ''
 const DONE_TEXT_MAX = 100000;
 
 // 첫 요청 머리(세 줄). 맨 위 관계 줄은 text.mjs RELATION_LINE과 같은 꼴이라 카드에는 아래 할 일만 지시로 보인다
-// P182: rig가 켜진 워크스페이스면 rig 한 줄을 더한다(rig.mjs RIG_HEADER_LINE)
 // P208: Codex(Windows PowerShell 5.1)는 글 안의 큰따옴표를 빼먹으므로 둘째 줄 끝에 --file 길을 붙인다
 export const PS_DONE_TAIL = '여러 줄이나 큰따옴표가 든 보고는 파일에 쓰고 `atrium done ok --file <경로>`로 준다.';
 // P257: docs = 문서가 있는 워크스페이스면 셋째 줄 끝에 "문서는 고치지 않고 보고만"(doc-check.mjs workerTail)
 // P267: merge = 브랜치에서 일하는 하위면 셋째 줄 끝에 합치기 한 마디(merger.mjs MERGE_CHILD_TAIL)
-export function unitHeader({ parent, unitId, rig = false, kind = null, docs = null, merge = null }) {
+export function unitHeader({ parent, unitId, kind = null, docs = null, merge = null }) {
   return [
     `[Atrium 보드] 관계: 너는 @${parent}의 하위 워커다. 아래 일은 @${parent}가 맡긴 일 ${unitId}이다(지금 일 보기: \`atrium item\`).`,
     `[Atrium 보드] 끝나면 \`atrium done ok "<보고>"\`(못 했으면 \`atrium done failed "<까닭>"\`)로 닫고 쉰다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다.${kind === 'codex' ? ` ${PS_DONE_TAIL}` : ''}`,
-    `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.${rig ? ` ${RIG_HEADER_TAIL}` : ''}${docs ? ` ${docs}` : ''}${merge ? ` ${merge}` : ''}`, // P188: 판 줄은 세 줄 이하라 rig 안내는 셋째 줄 끝에
+    `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.${docs ? ` ${docs}` : ''}${merge ? ` ${merge}` : ''}`, // 판 줄은 세 줄 이하라 덧붙임은 셋째 줄 끝에
   ].join('\n');
 }
 // 위 세션이 받는 done 글(판 알림 꼴이라 위 세션 카드의 마지막 지시가 되지 않는다)
@@ -103,7 +101,7 @@ export class WorkUnits {
     const b = this.b;
     const t = b.sessions.get(unit.to);
     if (unit.origin === 'merge' && b.merger) return b.merger.headerFor(unit); // P267: 합치기 일 머리
-    return unitHeader({ merge: b.merger ? b.merger.childTail(t) : null, /* P267 */ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)), kind: t ? t.kind || 'claude' : null, docs: b.docs ? b.docs.headerTail(t) : null }); // P208. P257: 문서 한 마디
+    return unitHeader({ merge: b.merger ? b.merger.childTail(t) : null, /* P267 */ parent: this.nameOf(unit.from), unitId: unit.id, kind: t ? t.kind || 'claude' : null, docs: b.docs ? b.docs.headerTail(t) : null }); // P208. P257: 문서 한 마디
   }
   // 붙잡아 둔 일을 넣을 차례인가(열린 시도가 없을 때 먼저 온 것 하나)
   pump(sessionId) {

@@ -15,9 +15,8 @@
 //       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다)
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
 //       atrium log "<한 줄>" [--json] · atrium news [<이름>] [--all] [--json]   (P204: 동료 소식)
-//       atrium guide [--json]   (P182: 자세한 사용법 + 켜진 rig의 역할 안내)
+//       atrium guide [merger] [--json]   (P182: 자세한 사용법. P267: merger 안내)
 //       atrium docs [--json]   (P257: 이 워크스페이스의 문서 점검 결과)
-//       atrium rig put|accept|return|pass|drop|inbox|tool|heard|tune|raise|role …(rig 역할 세션) | check [파일] | log [--events](빌더 세션) [--json]   (P188·P242~P247)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -73,28 +72,15 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       기본은 너의 동료가 네가 마지막으로 본 뒤 남긴 것을 오래된 것부터 20줄(읽은 자리를 옮긴다). <이름>이면 판의 어느 세션이든 그 세션의 최근 것(읽기만), --all은 동료의 최근 것(읽기만).
       상대 일과 닿는 일을 시작할 때, 동료에게 묻기 전, 일을 넘겨받을 때 본다. 동료가 끝날 때마다 결과를 보내오지 않는 대신이다
   atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
-  atrium guide                  이 사용법에, 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json, 역할 조직)가 있으면 그 안내를 붙인다
+  atrium guide                  이 사용법
   atrium guide merger           합치기 merger의 안내(P267: 보드가 브랜치 워커의 합치기를 맡기는 세션)
-  rig 역할(보드가 rig 역할로 띄운 세션): 대화하지 않고 항목을 넘긴다
-      atrium rig put <종류> <파일> [--from <받은 항목>] [--redo <항목>]   네 섹터의 파일 하나를 항목으로 낸다. 보드가 길대로 받는 역할을 깨운다. 낸 파일은 고치지 않는다(고치려면 --redo로 다음 판)
-      atrium rig accept <항목> | return <항목> "<까닭>" | pass <항목> "<까닭>"   받은 것에 답한다(반려는 낸 역할에게 간다. pass는 답 항목 없이 닫는다)
-      atrium rig pass "<까닭>"   박자에 낼 것이 없다(받은 것은 닫지 않는다)
-      atrium rig drop <항목> "<까닭>"   반려된 네 항목을 버린다.  atrium rig inbox   받아서 답하지 않은 것, 반려된 네 항목
-      atrium rig tool [<이름> [인자…]]   네 도구를 보드가 돌린다(이름 없으면 목록). 출력은 네 섹터의 tool-logs/에 남는다. 박자(사이클)는 보드가 친다(사람은 rig 판의 단추)
-      atrium rig heard "<요지>"   사람이 이 터미널에서 네 일하는 법을 바로잡은 것을 남긴다(반려처럼 조정 재료가 된다)
-      atrium rig tune --file <새 요령 칸> --why "<한 줄>" --evidence <id…> | tune --none "<까닭>" | raise "<무엇>"   조정 턴의 답: 정의서의 요령 칸만 고친다(고정 칸 그대로, 줄 수 예산 안, 근거는 네 재료의 id면 보드가 바로 반영하고 판을 올린다), 고칠 것 없음, 빌더에게 올림
-      atrium rig role [<역할>]   정의서의 요령 칸, 정의서 판, 조정 기록(되돌리기는 사람만 rig 판에서)
-  rig 빌더(사람이 rig 판의 "빌더에게 말하기"로 띄운 세션):
-      atrium rig check [파일]   후보 정의를 적용하지 않고 검사한다(rig가 꺼진 워크스페이스면 어느 세션이든 쓴다)
-      atrium rig log [--events [--since seq|시각] [--kinds a,b] [--limit n]]   판(버전) 목록, --events면 rig 장부(역할·항목·박자·조정의 한 꼴 줄)
-      atrium rig answer <올림> "<까닭>"   역할의 올림(raise-<n>)을 고치지 않기로 하고 한 줄로 답해 닫는다. 답은 그 역할의 다음 깨우는 글에 실린다
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
   PowerShell에서 atrium은 atrium.exe로 여러 줄·< > | & %를 그대로 넘긴다. Windows PowerShell 5.1(Codex)은 글 안의 큰따옴표를 빼먹고, cmd를 거치면(atrium.cmd) 여러 줄이 첫 줄만 간다. 그런 글은 --file로 준다
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
 const MULTI = new Set([]);
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'events']); // P248: prompt --steer(= --now) // P217: rig log --events // P156: child --peer // P116: prompt --wait, P143: prompt --now
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer']); // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
 // P208: PowerShell 꾸러미(atrium.ps1)는 인자를 JSON으로 env에 실어 준다(cmd를 거치지 않아 여러 줄·따옴표·<>|&%가 그대로 온다). 읽고 지운다
 function argvOf() {
   const j = process.env.ATRIUM_ARGV_JSON; const f = process.env.ATRIUM_ARGV_FILE;
@@ -156,7 +142,6 @@ async function main() {
   if (cmd === 'done' || cmd === 'item' || cmd === 'items') return unitVerb(cmd); // P180
   if (cmd === 'guide') return guideVerb(); // P182
   if (cmd === 'log' || cmd === 'news') return newsVerb(cmd); // P204
-  if (cmd === 'rig') return rigVerb(); // P188
   if (cmd === 'docs') { // P257: 문서 점검 결과
     const u = await call('docs', {}, 30000);
     if (flags.json) { say(JSON.stringify(u.result ?? { error: u.error }, null, 2)); if (u.error) process.exit(1); return; }
@@ -363,133 +348,7 @@ async function guideVerb() {
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
   if (r.error) fail(`읽지 않았다(${r.error.code}): ${r.error.message}`);
-  const g = (r.result && r.result.rig) || { state: 'none' };
   say(HELP);
-  say('');
-  if (g.state === 'none') return say('rig: 이 워크스페이스에는 rig 정의(.atrium/rig.json)가 없다.');
-  if (g.state === 'off') return say(`rig: 정의(${g.file})는 있지만 사람이 켜지 않았다.${g.invalid ? ` 정의가 잘못됐다: ${g.invalid}` : ''}`);
-  if (g.state === 'invalid') return say(`rig: 켜졌지만 정의가 잘못돼 쓰지 않는다: ${g.invalid || '?'}`);
-  say(`rig: 켜짐(${g.file}${g.hash ? `, 판 해시 ${String(g.hash).slice(0, 12)}` : ''}).`);
-  if (g.invalid) say(`  정의 파일이 지금 잘못됐다(마지막으로 맞았던 정의를 쓰는 중): ${g.invalid}`);
-  if (g.text) { say('--- rig 안내 ---'); say(String(g.text).replace(/\s+$/, '')); say('---'); }
-}
-// ---------- P188: atrium rig check [파일] | log [--events](빌더 세션, check는 꺼진 rig면 누구나) ----------
-async function rigVerb() {
-  const op = rest[0];
-  if (RIG_ROLE_OPS.includes(op)) return rigRoleVerb(op); // P242: rig 역할 세션의 명령
-  const ops = ['check', 'log'];
-  if (!ops.includes(op)) fail(`사용: atrium rig ${[...RIG_ROLE_OPS, ...ops].join(' | ')}(atrium help)`, 2);
-  const body = { op };
-  if (op === 'check' && rest[1]) {
-    const f = path.resolve(rest[1]);
-    try { body.text = fs.readFileSync(f, 'utf8'); body.file = rest[1]; } catch (e) { fail(`파일을 읽지 못했다: ${rest[1]} (${e.code || e.message})`, 2); }
-  }
-  // P217: rig log --events [--since seq|시각] [--kinds a,b] [--limit n]
-  if (op === 'log' && flags.events) { body.events = true; for (const k of ['since', 'kinds', 'limit']) if (flags[k] != null) { if (flags[k] === undefined || flags[k] === '') fail(`--${k}에 값을 준다`, 2); body[k] = flags[k]; } }
-  else if (op === 'log' && ['since', 'kinds'].some((k) => flags[k] != null)) fail('--since·--kinds는 --events와 함께 쓴다: atrium rig log --events', 2);
-  const r = await call('rig', body, 60000);
-  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
-  const x = r.result;
-  if (flags.json) { say(JSON.stringify(x ?? { error: r.error }, null, 2)); if (r.error || (op === 'check' && x && !x.ok)) process.exitCode = 1; return; }
-  if (r.error) fail(`${op === 'check' ? '검사하지' : '읽지'} 않았다(${r.error.code}): ${r.error.message}`);
-  const when = (t) => new Date(t).toLocaleString();
-  if (op === 'check') {
-    if (!x.ok) { say(`맞지 않다: ${x.from}: ${x.reason}`); process.exitCode = 1; return; }
-    say(`맞다: ${x.from}(해시 ${String(x.hash).slice(0, 12)}${x.same ? ', 지금 판과 같은 내용' : ''}). 지금 판 ${x.current.n ?? '-'}. 목적 ${x.summary.purpose} · 도구 ${x.summary.tools.join(', ') || '없음'}${x.summary.beat ? ` · 박자 ${x.summary.beat.every}${x.summary.beat.at ? ` ${x.summary.beat.at}` : ''}${x.summary.beat.role ? ` → ${x.summary.beat.role}` : ''}` : ''}`);
-    for (const ro of x.summary.roles) say(`  역할 ${ro.name}: 섹터 ${ro.owns.join(', ')}${ro.tools.length ? ` · 도구 ${ro.tools.join(', ')}` : ''} · ${ro.launcher}${ro.model ? ` ${ro.model}` : ''}`);
-    for (const f of x.summary.flows) say(`  길 ${f}`);
-    for (const w of x.warnings || []) say(`  경고: ${w}`);
-    return;
-  }
-  if (op === 'log' && body.events) { // P217: 장부
-    if (!x.rows.length) return say(`rig 장부에 줄이 없다${body.since != null ? `(${body.since} 뒤)` : ''}. 마지막 seq ${x.last}.`);
-    say(`rig 장부 ${x.rows.length}줄(오래된 것부터, 마지막 seq ${x.last}):`);
-    for (const y of x.rows) say(`  ${y.shown}`);
-    if (x.more) say(`…더 있다. 이어 읽기: atrium rig log --events --since ${x.rows[x.rows.length - 1].seq}`);
-    return;
-  }
-  say(`rig 판 ${x.versions.length}개(지금 ${x.current ?? '-'}):`);
-  for (const v of x.versions) say(`  ${v.current ? '*' : ' '}${v.n} ${String(v.hash).slice(0, 12)} · ${when(v.t)} · ${v.by}${v.note ? ` · ${v.note}` : ''}`);
-  if (x.invalid) say(`정의 파일을 지금 쓰지 않는다(마지막 맞은 판을 쓰는 중): ${x.invalid}`);
-  say('되돌리기는 사람만: rig 판에서.');
-}
-
-// P242: rig 항목 명령(역할 세션). put <종류> <파일> [--from <항목>] [--redo <항목>](P244: put <파일> --item <종류>도 받기만 하고 안내하지 않는다) | accept <항목> ["<메모>"] | return <항목> "<까닭>" | pass [<항목>] "<까닭>" | drop <항목> "<까닭>" | inbox
-const RIG_ROLE_OPS = ['put', 'accept', 'return', 'pass', 'drop', 'inbox', 'tool', 'beat', 'tune', 'raise', 'heard', 'role', 'answer']; // P252: answer(빌더가 올림에 답함) // P245: tune·raise·heard(역할), role(정의서와 조정 기록 보기) // P244: tool(역할의 도구), beat(사람만: 보드가 역할 세션은 거절한다)
-async function rigRoleVerb(op) {
-  const body = { op };
-  const val = (k) => { if (flags[k] == null) return null; if (flags[k] === true || flags[k] === undefined || flags[k] === '') fail(`--${k}에 값을 준다`, 2); return String(flags[k]); };
-  const need = (v, use) => { if (!v || !String(v).trim()) fail(`사용: atrium rig ${use}`, 2); return v; };
-  if (op === 'put') {
-    let file = rest[1]; let kind = val('item');
-    if (!kind && rest[2]) { kind = rest[1]; file = rest[2]; } // atrium rig put <종류> <파일>도 받는다
-    need(file, 'put <종류> <파일> [--from <받은 항목>] [--redo <항목>]');
-    body.file = path.resolve(file); if (kind) body.kind = kind;
-    const from = val('from'); if (from) body.from = from;
-    const redo = val('redo'); if (redo) body.redo = redo;
-    if (!kind && !redo) fail('항목 종류를 준다: atrium rig put <종류> <파일> (다시 내기면 --redo <항목>)', 2);
-  }
-  if (op === 'accept') { body.id = need(rest[1], 'accept <항목> ["<메모>"]'); if (rest[2]) body.note = rest.slice(2).join(' '); }
-  if (op === 'return') { body.id = need(rest[1], 'return <항목> "<까닭>"'); body.reason = need(rest.slice(2).join(' '), 'return <항목> "<까닭>" (반려는 까닭과 함께 한다)'); }
-  if (op === 'drop') { body.id = need(rest[1], 'drop <항목> "<까닭>"'); body.reason = need(rest.slice(2).join(' '), 'drop <항목> "<까닭>" (까닭과 함께 한다)'); }
-  if (op === 'pass') { if (rest.length >= 3) { body.id = rest[1]; body.reason = rest.slice(2).join(' '); } else body.reason = need(rest[1], 'pass <항목> "<까닭>" | pass "<까닭>"(박자에 낼 것이 없음)'); }
-  if (op === 'tool' && rest[1]) { body.tool = rest[1]; body.args = rest.slice(2); } // P244: atrium rig tool <이름> [인자…] (이름 없으면 네 도구 목록)
-  // P245: tune --file <파일> --why "<한 줄>" --evidence <id…> | tune --none "<까닭>" | raise "<무엇>" | heard "<요지>" | role [<역할>]
-  if (op === 'tune') {
-    if (flags.none != null) { if (flags.none === true || !String(flags.none).trim()) fail('사용: atrium rig tune --none "<까닭>"', 2); body.none = String(flags.none); }
-    else {
-      const file = val('file'); need(file, 'tune --file <새 요령 칸> --why "<한 줄>" --evidence <id> [<id>…] | tune --none "<까닭>"');
-      body.file = path.resolve(file); body.why = need(val('why'), 'tune --file <파일> --why "<한 줄>" --evidence <id…>');
-      body.evidence = [...String(val('evidence') || '').split(/[\s,]+/), ...rest.slice(1)].filter(Boolean);
-      if (!body.evidence.length) fail('근거 id를 준다: atrium rig tune --file <파일> --why "<한 줄>" --evidence <id> [<id>…]', 2);
-    }
-  }
-  if (op === 'raise') body.reason = need(rest.slice(1).join(' '), 'raise "<무엇>"(요령으로 풀 일이 아니라 빌더에게 올린다)');
-  if (op === 'heard') body.text = need(rest.slice(1).join(' '), 'heard "<사람이 한 말의 요지>"');
-  if (op === 'answer') { body.raise = need(rest[1], 'answer <올림> "<까닭>" (빌더가 올림을 고치지 않고 닫는다)'); body.text = need(rest.slice(2).join(' '), 'answer <올림> "<까닭>" (고치지 않는 까닭 한 줄)'); } // P252
-  if (op === 'role') { if (rest[1]) body.role = rest[1]; if (flags.rollback != null) body.rollback = flags.rollback; }
-  const r = await call('rig', body, op === 'tool' ? 130000 : 60000);
-  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
-  const x = r.result;
-  if (flags.json) { say(JSON.stringify(x ?? { error: r.error }, null, 2)); if (r.error) process.exitCode = 1; return; }
-  if (r.error) fail(`${op === 'answer' ? '답하지' : op === 'tune' ? '조정하지' : op === 'raise' ? '올리지' : op === 'heard' ? '남기지' : op === 'role' ? '보지' : op === 'tool' ? '도구를 돌리지' : op === 'beat' ? '박자를 치지' : op === 'inbox' ? '읽지' : op === 'put' ? '내지' : op === 'accept' ? '받지' : op === 'return' ? '반려하지' : op === 'drop' ? '버리지' : 'pass하지'} 않았다(${r.error.code}): ${r.error.message}`);
-  if (op === 'tool') { // P244
-    if (x.tools) { if (!x.tools.length) return say('네 도구가 없다.'); say(`네 도구 ${x.tools.length}개(보드가 돌린다):`); for (const t of x.tools) say(`  atrium rig tool ${t.name} [인자…]${t.desc ? `  ${t.desc}` : ''}${t.every ? ` · 보드가 ${t.every}마다 돌림` : ''}`); return; }
-    const u = x.run;
-    if (x.running) return say(`도구 ${u.tool} 실행 ${u.id}이 아직 돈다. 끝나면 보드가 결과를 알린다(기다리지 않아도 된다). 출력: ${u.log}`);
-    say(`도구 ${u.tool} ${u.status}${u.exitCode != null ? ` · 종료 코드 ${u.exitCode}` : ''}${u.alarm ? ` · 경보: ${u.alarm}` : ''}${u.error ? ` · ${u.error}` : ''} · 출력: ${u.log}`);
-    if (u.tail) say(u.tail.replace(/\s+$/, ''));
-    if (u.status !== 'done' || u.exitCode !== 0) process.exitCode = 1;
-    return;
-  }
-  if (op === 'tune') return say(x.none ? '고칠 것이 없다고 남겼다. 다음 조정 턴은 재료가 다시 쌓이면 온다.' : `요령 칸을 반영했다: 판 ${x.prevN ?? '-'} → ${x.n} (+${x.added} −${x.removed}, ${x.lines}/${x.budget}줄, ${x.doc}). 새 줄 끝에 [v${x.n} · 근거]가 붙었다. 다음에 새로 뜨는 너는 이 정의서를 싣는다.`);
-  if (op === 'raise') return say(`빌더에게 올렸다: ${x.reason}. 5단계(빌더) 전에는 사람이 변경 기록의 "사람이 볼 것"과 rig 판에서 본다.`);
-  if (op === 'answer') return say(`올림 ${x.id}(${x.role}: ${x.reason})에 답했다. 올림이 닫히고(지도·캔버스에서 사라짐) 답은 ${x.role}의 다음 깨우는 글에 실린다.`); // P252
-  if (op === 'heard') return say(`사람의 바로잡음을 ${x.id}로 남겼다. 지난 조정 뒤 재료 ${x.materials}건(조정 턴 기준 ${x.after}건).`);
-  if (op === 'role') {
-    say(`역할 ${x.role} · 정의서 ${x.doc} · 정의서 판 ${x.n ?? '-'}(지금 판 ${x.current ?? '-'}) · 요령 칸 ${x.lines ?? '-'}/${x.budget}줄 · 지난 조정 뒤 재료 ${x.materials.length}건${x.open ? ' · 조정 턴 열림' : ''}`);
-    say('--- 요령 칸 ---'); say(String(x.tune || '(비었다)').replace(/\s+$/, '')); say('---');
-    if (!x.log.length) say('조정 기록 없음.');
-    for (const t of x.log) say(`  ${t.kind === 'tune' ? (t.state === 'rejected' ? '거절' : '조정') : t.kind === 'none' ? '고칠 것 없음' : t.kind === 'raise' ? '올림' : t.kind === 'answer' ? `올림 ${(t.evidence || [])[0] || ''}에 ${t.by === 'human' ? '사람' : '빌더'}의 답` : '되돌림'}${t.n != null ? ` 판 ${t.prevN ?? '-'}→${t.n}` : ''}${t.fromN != null ? ` (판 ${t.fromN}의 것으로)` : ''}${t.added != null ? ` +${t.added} −${t.removed}` : ''}${t.why ? `: ${t.why}` : ''}${t.reason ? ` [${t.reason}]` : ''}${t.evidence && t.evidence.length ? ` — 근거 ${t.evidence.join(' ')}` : ''}`);
-    if (x.materials.length) say('지난 조정 뒤 재료: ' + x.materials.map((m) => m.id).join(', '));
-    say('되돌리기는 사람만: rig 판의 역할 줄에서 [되돌리기].');
-    return;
-  }
-  const it = x.item;
-  if (op === 'put') return say(`${it.id}${it.rev > 1 ? ` 판 ${it.rev}` : ''}로 냈다(${it.kind}, ${it.path}${it.from ? `, ${it.from}에서` : ''}) → ${it.to.join(', ')}. 네가 낸 것 가운데 기다리는 것 ${x.waitingOwn}. 낸 파일은 고치지 않는다(고치려면 --redo ${it.id}).`);
-  if (op === 'accept') return say(`${it.id}${x.already ? '는 이미 받았다' : '를 받았다'}.${x.changed ? ` 주의: 낸 뒤 파일이 ${x.changed === 'missing' ? '없어졌다' : '바뀌었다'}(판이 장부에 남겼다).` : ''}${x.answer ? ` 이 항목에 대한 답으로 ${x.answer.join('|')}을 낸다(--from ${it.id}). 낼 것이 없으면 atrium rig pass ${it.id} "<까닭>".` : ''}`);
-  if (op === 'return') return say(x.already ? `${it.id}는 이미 반려했다.` : `${it.id}를 반려했다${x.late ? `(늦은 반려: 네가 가진 ${x.late}가 이 항목에서 이어졌다)` : ''}. ${x.to === 'human' ? '입력 창구의 항목이라 rig 판에 보인다.' : `${x.to}에게 돌아간다.`}`);
-  if (op === 'drop') return say(x.already ? `${it.id}는 이미 버렸다.` : `${it.id}를 버렸다.`);
-  if (op === 'pass') return say(x.already ? '이미 pass했다.' : x.turn ? `박자에 낼 것이 없다고 남겼다.${x.pending ? ` 받은 것 ${x.pending}개는 그대로다(닫으려면 atrium rig pass <항목> "<까닭>").` : ''}` : `pass: ${x.passed.join(', ')}.`);
-  if (op === 'inbox') {
-    const who = (i) => (i.role === 'human' ? '입력 창구' : i.role);
-    say(`받아서 답하지 않은 것 ${x.received.length}${x.received.length ? ':' : '.'}`);
-    for (const i of x.received) say(`  ${i.id}${i.rev > 1 ? ` 판 ${i.rev}` : ''} (${i.kind}, ${who(i)}${i.from ? `, ${i.from}에서` : ''}): ${i.path}${i.changed ? ` [낸 뒤 파일이 ${i.changed === 'missing' ? '없어짐' : '바뀜'}]` : ''}`);
-    if (x.unanswered.length) { say(`받았고 답 항목을 내지 않은 것 ${x.unanswered.length}:`); for (const i of x.unanswered) say(`  ${i.id} → ${i.need.join('|')}을 --from ${i.id}로 낸다(없으면 pass ${i.id} "<까닭>")`); }
-    say(`네가 낸 것 가운데 반려된 것 ${x.returned.length}${x.returned.length ? ':' : '.'}`);
-    for (const i of x.returned) say(`  ${i.id}${i.rev > 1 ? ` 판 ${i.rev}` : ''} (${i.path}): ${i.by.map((b) => `${b.role}${b.late ? '(늦은 반려)' : ''} "${b.reason}"`).join('; ')} → put <파일> --redo ${i.id} | drop ${i.id} "<까닭>"`);
-    say(`네가 낸 것 가운데 기다리는 것 ${x.waitingOwn}. 네가 낼 수 있는 종류: ${x.puts.join(', ') || '(없음)'}.`);
-  }
 }
 // ---------- P116: atrium prompt | wait | read ----------
 const secs = (ms) => `${((ms || 0) / 1000).toFixed(1)}초`;

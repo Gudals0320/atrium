@@ -459,7 +459,12 @@ test('K1: 하위 세션 명령은 env의 판으로 세션 토큰을 들고 간�
     const noenv = await runChild(['child'], {});
     assert.match(noenv.stderr, /보드에서 시작한 세션이 아닙니다/);
     const nope = await runChild(['kill', 'w1'], env);
-    assert.equal(nope.code, 2); assert.match(nope.stderr, /child, relate, log, news, children, child-kill, child-wait, wake, models, done, item, items, guide, rig, docs, usage만/); // P180. P249: tool 없음. P188: rig. P204: log, news. P211: usage
+    assert.equal(nope.code, 2); assert.match(nope.stderr, /child, relate, log, news, children, child-kill, child-wait, wake, models, done, item, items, guide, docs, usage만/); // P269: rig 없음. P180. P249: tool 없음. P188: rig. P204: log, news. P211: usage
+    // P269: rig를 걷어 냈다. atrium rig는 모르는 동사(종료 코드 2), 판의 /branch rig도 모르는 명령, guide에 rig 칸이 없다
+    const rigv = await runChild(['rig', 'put', 'snapshot', 'a.md'], env);
+    assert.equal(rigv.code, 2); assert.match(rigv.stderr, /docs, usage만/);
+    assert.throws(() => b.branch.dispatch('rig', lead, { op: 'put' }), (e) => e.code === 'unknown_op');
+    assert.deepEqual(b.branch.guideVerb(lead, {}), {});
     const five = await runChild(['child-kill', 'lead'], env);
     assert.match(five.stderr, /not_parent/);
   } finally { srv.close(); }

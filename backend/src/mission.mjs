@@ -98,7 +98,6 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
     const id = sid(s.sessionId);
     nodes.push({
       id, kind: 'session', sessionId: s.sessionId, name: s.name, agentKind: s.kind || 'claude', state: s.state, category: cat, workspaceKey: s.workspaceKey || null,
-      rigRole: s.rigRole || null, // P251: rig 역할·빌더 세션(세션 맵은 트리에서 빼고 구조 지도에 그린다)
       column: directs.has(id) ? 0 : 1, directs: directs.get(id) || 0, ask: s.ask ? clip(s.ask.summary || (s.ask.questions && s.ask.questions[0] && s.ask.questions[0].question) || s.ask.kind, 120) : null,
       since: s.waitingSince || (s.ask && s.ask.since) || s.lastActivityAt || null, lastPrompt: clip(s.lastPrompt, 120), loops: s.loops || 0,
       // P8(K4): 나무(부모 아래에 들여 보인다). 판에 올린 에이전트도 부모가 있으면 같이 따른다

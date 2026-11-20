@@ -28,7 +28,6 @@ import { enterSession, markInteracted } from './touch.js';
 import { LoopBadge, SessionLoopList } from './Loops.jsx';
 import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단계"
 import { MergerTag } from './Merger.jsx'; // P268: merger 세션 꼬리표
-import { RigTag } from './RigLines.jsx'; // P251: "역할 · <이름>"·"rig 빌더" 꼬리표
 import { dockBranchOf } from './lib/dock-branch.js'; // P68: 워크트리끼리 붙인 덩어리의 칸마다 브랜치
 import { Icon } from './lib/icons.jsx';
 import { dotVar } from './lib/tokens.js';
@@ -138,7 +137,7 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
       {dockBranch && <span className={`mt-dock-branch${dbKind === 'wt' ? ' wt' : ''}`} data-role="dock-branch" data-branch={dbName} title={t(dbKind === 'wt' ? 'dockWorkers.branchWt' : 'dockWorkers.branchMain', { branch: dbName })}>⎇ {dbName}</span>}
       <MergerTag s={s} />
       {/* 표시들은 좁으면 먼저 잘린다(이름이 먼저 보이게) */}
-      <span className="mt-head-badges"><Badges s={s} /><Origin s={s} /><RigTag s={s} /><BranchBadge s={s} /><LoopBadge s={s} onClick={onLoops} /></span>
+      <span className="mt-head-badges"><Badges s={s} /><Origin s={s} /><BranchBadge s={s} /><LoopBadge s={s} onClick={onLoops} /></span>
       <span className="mt-node-sp" />
       {s.output && s.output.long && <button className="mt-btn small nodrag mt-output-btn" data-action="output-open" title={t('node.outputTitle', { n: s.output.chars })} onClick={() => setOutputView({ sessionId: s.sessionId, turn: null })}>{t('node.output')}</button>}
       {mem != null && mem >= 1 && <span className="mt-node-meta" data-role="mem" title={t('node.memTitle')}>{mem >= 1024 ? `${(mem / 1024).toFixed(1)}GB` : `${Math.round(mem)}MB`}</span>}
@@ -164,7 +163,7 @@ function FarFace({ s, w, h, open = false }) {
   return (
     <div className="mt-far" style={{ fontSize: px(12, 0.17, 1 / 16) }} data-role="far">
       {/* P141(#15): 상태 알약이 검토 대기(작업 완료)면 같은 칩을 또 두지 않는다. 이름은 칩보다 먼저 자리를 받는다(styles.css 끝) */}
-      <div className="mt-far-name" style={{ fontSize: px(14, 0.2, 1 / 13) }}><span className="mt-far-nm">@{s.name}</span> <StatePill s={s} />{!narrow && <>{s.flavor ? <span className="mt-badge kind">{kindOf(s.flavor).label}</span> : s.kind && s.kind !== 'claude' ?<span className="mt-badge kind">{s.kind === 'shell' ? t('node.shell') : s.kind}</span> : null}{s.unseen && !(s.state === 'ready' || s.state === 'shell_idle') && <span className="mt-badge review">{t('node.review')}</span>}<RigTag s={s} /><BranchBadge s={s} /></>}</div>
+      <div className="mt-far-name" style={{ fontSize: px(14, 0.2, 1 / 13) }}><span className="mt-far-nm">@{s.name}</span> <StatePill s={s} />{!narrow && <>{s.flavor ? <span className="mt-badge kind">{kindOf(s.flavor).label}</span> : s.kind && s.kind !== 'claude' ?<span className="mt-badge kind">{s.kind === 'shell' ? t('node.shell') : s.kind}</span> : null}{s.unseen && !(s.state === 'ready' || s.state === 'shell_idle') && <span className="mt-badge review">{t('node.review')}</span>}<BranchBadge s={s} /></>}</div>
       {waiting && <div className="mt-far-ask" data-role="far-ask" style={{ fontSize: px(15, 0.21, 1 / 14) }}>{askLine(s) || t('node.waitingForYou')}</div>}
       {s.kind === 'shell' && <div className="mt-far-line" data-role="shell-line">{shellLine(s)}</div>}
       {s.elsewhere && <div className="mt-far-line warn">↪ {t('node.workingIn', { name: s.elsewhere.name })}</div>}

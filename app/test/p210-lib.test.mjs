@@ -27,7 +27,7 @@ function graphOf(live) {
   for (const s of live.values()) nodes.push({ id: `s:${s.sessionId}`, kind: 'session', sessionId: s.sessionId, name: s.name, agentKind: 'claude', state: s.state, category: s.state === 'working' ? 'working' : 'idle', workspaceKey: s.workspaceKey,
     parentId: s.lineageParentSessionId ? `s:${s.lineageParentSessionId}` : null, lineageParent: s.lineageParentSessionId ? `s:${s.lineageParentSessionId}` : null, peers: [], createdAt: s.createdAt, lastPrompt: s.lastPrompt, activeAt: s.lastActivityAt, turnAt: s.turn ? s.turn.startedAt : null, model: s.model, effort: s.effort });
   const edges = nodes.filter((n) => n.parentId).map((n) => ({ id: `spawn:${n.parentId}>${n.id}`, from: n.parentId, to: n.id, kind: 'spawn', count: 1, lastAt: NOW, relation: 'sub' }));
-  return { nodes, edges, counts: {}, at: NOW, rig: {} };
+  return { nodes, edges, counts: {}, at: NOW, extra: {} };
 }
 const tiersOf = (g, live) => new Map(g.nodes.filter((n) => n.kind === 'session').map((n) => [n.id, nodeTier(n, live.get(n.sessionId))]));
 const VG = [{ id: 'g1', name: 'Folder', members: ['c:/w/a/.git'] }];
@@ -97,8 +97,8 @@ test('keepSameGraph: 시각 값(at·activeAt·since·lastAt·count)만 다르면
   assert.equal(keepSameGraph(g0, g2), g2);
   const g3 = JSON.parse(JSON.stringify(g0)); g3.edges.push({ id: 'x', from: 's:solo', to: 's:k2', kind: 'relation', relation: 'peer' });
   assert.equal(keepSameGraph(g0, g3), g3);
-  const g4 = JSON.parse(JSON.stringify(g0)); g4.rig = { 'c:/w/a/.git': { seats: [] } };
-  assert.equal(keepSameGraph(g0, g4), g4, 'rig 칸이 바뀌면 새 그래프');
+  const g4 = JSON.parse(JSON.stringify(g0)); g4.extra = { 'c:/w/a/.git': { seats: [] } };
+  assert.equal(keepSameGraph(g0, g4), g4, '다른 칸이 바뀌면 새 그래프');
   assert.equal(keepSameGraph(null, g0), g0);
 });
 

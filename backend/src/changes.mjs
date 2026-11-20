@@ -6,8 +6,7 @@ import { m } from './msg.mjs'; // P16: 줄마다 화면 글 열쇠(msg)도 준�
 
 // P129: 터미널 서버 이벤트는 terminal_*이다. 옛 이름(herdr_*)은 업데이트 전 기록이라 함께 읽는다
 const OLD_DOWN = 'herdr_disconnected', OLD_UP = 'herdr_connected';
-export const CHANGE_KINDS = ['state', 'hook', 'closed', 'turn_interrupted', 'terminal_disconnected', 'terminal_connected', OLD_DOWN, OLD_UP, 'backend_started', 'rig_protected', 'rig_builder_stop']; // P190: rig_builder_stop(사람이 맡긴 rig 제작 일이 보고 없이 멈춤 → 사람의 차례) // P188: rig_protected(사람만 고치는 목록과 어긋남 → 사람의 차례)
-const BUILDER_WHY = { idle_no_done: '보고 없이 쉼', turn_error: '오류로 턴이 끝남', needs_human: '사람의 답을 기다림', closed: '세션이 닫힘', exited: '에이전트가 끝남' }; // P216: exited
+export const CHANGE_KINDS = ['state', 'hook', 'closed', 'turn_interrupted', 'terminal_disconnected', 'terminal_connected', OLD_DOWN, OLD_UP, 'backend_started']; // P269: rig_protected·rig_builder_stop(rig)은 걷어 냈다
 const ORDER = { needs_you: 0, error: 1, interrupted: 2, exited: 3, turn_done: 4, terminal: 5, backend: 6 };
 
 const EXIT_TEXT = { normal: '정상 종료', user: '직접 종료', trust_declined: "폴더 신뢰 거부로 종료", other: "종료됨" };
@@ -67,21 +66,10 @@ export function summarizeChanges(events, { nameOf = () => null, current = new Ma
     } else if ((e.kind === 'terminal_disconnected' || e.kind === OLD_DOWN) && !d.expected) termDown++;
     else if (e.kind === 'terminal_connected' || e.kind === OLD_UP) termUp++;
     else if (e.kind === 'backend_started' && isRestart(d)) { backendRestarts++; if (d.previousRun.downMs) downMs += d.previousRun.downMs; }
-    // P188: rig의 사람만 고치는 목록과 어긋남(바뀐 보호 포인터·파일) → 사람의 차례(needs_you)
-    else if (e.kind === 'rig_protected') {
-      const what = (d.items || []).join(', ');
-      add(`rig|${d.workspace}|${d.kind}`, { sessionId: sid || null, name: sid ? nameOf(sid) || '?' : 'rig', kind: 'needs_you', rig: true }, e.t, d.kind === 'pointer' ? `rig: 사람만 고치는 자리를 바꾼 정의를 쓰지 않음(${what})` : `rig: 사람만 고치는 파일이 바뀌어 도구가 멈춤(${what})`, { msg: m(d.kind === 'pointer' ? 'chgRigPointer' : 'chgRigFile', { what }) });
-    }
-    // P190: 사람이 맡긴 rig 제작 일(rig-builder)이 보고 없이 멈춤 → 사람의 차례(needs_you). 상위 세션이 없어 알림이 사람에게 온다
-    else if (e.kind === 'rig_builder_stop') {
-      const what = BUILDER_WHY[d.why] || d.why || '';
-      add(`${sid}|rig_builder`, { ...base, name: base.name || d.name || 'rig-builder', kind: 'needs_you', rig: true }, e.t, `rig 제작 세션이 멈춤: ${what}`, { msg: m('chgRigBuilderStop', { what: m(`chgRigBuilder_${d.why}`) }) });
-    }
   }
   const out = [...lines.values()];
   for (const l of out) {
     const cur = l.sessionId ? current.get(l.sessionId) : null;
-    if (l.kind === 'needs_you' && l.rig) { l.stillOpen = true; continue; }
     if (l.kind === 'needs_you') l.stillOpen = !!(cur && (cur.state === 'waiting' || cur.state === 'trust_wait'));
     if (l.sessionId && !cur) l.closed = true;
   }

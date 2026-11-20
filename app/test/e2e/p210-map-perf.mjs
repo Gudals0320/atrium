@@ -40,10 +40,10 @@ const AWAKE = ['--disable-backgrounding-occluded-windows', '--disable-renderer-b
 // ---- 흉내 그래프(지어낸 이름) ----
 const FOLDERS = [
   { id: 'g1', name: 'Market', members: ['d:/work/market/web', 'd:/work/market/quant/.git'] },
-  { id: 'g2', name: 'Hub', members: ['d:/hub/core/.git', 'd:/hub/rig/.git'] },
+  { id: 'g2', name: 'Hub', members: ['d:/hub/core/.git', 'd:/hub/tools/.git'] },
   { id: 'g3', name: 'Campus', members: ['c:/work/library/.git', 'd:/work/campus/pbl/.git', 'd:/work/campus/exam/.git'] },
 ];
-const WS = ['c:/work/atrium/.git', 'd:/work/market/web', 'd:/work/market/quant/.git', 'd:/hub/core/.git', 'd:/hub/rig/.git', 'c:/work/library/.git', 'd:/work/campus/pbl/.git', 'd:/work/campus/exam/.git', 'c:/work/notes/.git', 'd:/work/garden/.git'];
+const WS = ['c:/work/atrium/.git', 'd:/work/market/web', 'd:/work/market/quant/.git', 'd:/hub/core/.git', 'd:/hub/tools/.git', 'c:/work/library/.git', 'd:/work/campus/pbl/.git', 'd:/work/campus/exam/.git', 'c:/work/notes/.git', 'd:/work/garden/.git'];
 // [id, name, ws, state, parent, peerOf]
 const S = [
   ['conductor', 'conductor', 0, 'working'], ['old-1', 'atrium-old', 0, 'sleeping'],
@@ -61,7 +61,7 @@ function mockGraph() {
   const prompts = ['Merge the workers and run the release check', 'Draft the slide notes for the second section', 'Collect the source tables', 'Review the parser diff and report back'];
   const node = (sid, name, ws, state, parent, peer, i, seat) => ({ id: `s:fk-${sid}`, kind: 'session', sessionId: `fk-${sid}`, name, agentKind: 'claude', state, category: state === 'working' ? 'working' : state === 'waiting' || state === 'error' ? 'needs_you' : 'idle', workspaceKey: ws,
     parentId: parent ? `s:fk-${parent}` : null, lineageParent: parent ? `s:fk-${parent}` : null, peers: peer ? [`s:fk-${peer}`] : [], createdAt: base + i * 1000, model: 'claude-opus-5-5', effort: 'high',
-    lastPrompt: prompts[i % 4], activeAt: now - i * 60000, turnAt: state === 'working' ? now - i * 30000 : null, ask: state === 'waiting' ? 'Allow npm ci in the worktree?' : null, error: state === 'error' ? 'API Error: 529 overloaded' : null, rigSeat: seat || null, closedKids: 0, assignAt: null, parentClosed: false, background: null });
+    lastPrompt: prompts[i % 4], activeAt: now - i * 60000, turnAt: state === 'working' ? now - i * 30000 : null, ask: state === 'waiting' ? 'Allow npm ci in the worktree?' : null, error: state === 'error' ? 'API Error: 529 overloaded' : null, closedKids: 0, assignAt: null, parentClosed: false, background: null });
   const nodes = S.map((s, i) => node(s[0], s[1], WS[s[2]], s[3], s[4], s[5], i));
   for (const s of S) if (s[5]) { const p = nodes.find((n) => n.sessionId === `fk-${s[5]}`); p.peers.push(`s:fk-${s[0]}`); }
   RIGS.forEach((s, i) => nodes.push(node(s[0], s[1], WS[4], s[3], s[4], null, 40 + i, s[2])));
@@ -90,7 +90,7 @@ const HOOK = ([g, folders, wsKeys]) => {
   const now = Date.now();
   window.__p210sum = new Map();
   for (const n of g.nodes) if (n.kind === 'session') {
-    const sum = { sessionId: n.sessionId, name: n.name, kind: 'claude', state: n.state === 'idle' ? 'ready' : n.state, workspaceKey: n.workspaceKey, lastActivityAt: now - 60000, createdAt: n.createdAt, model: n.model, effort: n.effort, lastPrompt: n.lastPrompt, turn: n.state === 'working' ? { startedAt: now - 30000 } : null, ask: n.ask ? { kind: 'permission', summary: n.ask } : null, rigSeat: n.rigSeat };
+    const sum = { sessionId: n.sessionId, name: n.name, kind: 'claude', state: n.state === 'idle' ? 'ready' : n.state, workspaceKey: n.workspaceKey, lastActivityAt: now - 60000, createdAt: n.createdAt, model: n.model, effort: n.effort, lastPrompt: n.lastPrompt, turn: n.state === 'working' ? { startedAt: now - 30000 } : null, ask: n.ask ? { kind: 'permission', summary: n.ask } : null };
     window.__p210sum.set(n.sessionId, sum);
     api.emit('session.updated', sum);
   }

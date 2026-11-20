@@ -41,8 +41,6 @@ export const SETTINGS = {
   // P211: 구독 사용량 알림. 한 한도 창이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알린다(usage.mjs)
   usageAlerts: { type: 'boolean', default: true, label: '구독 사용량 알림: 한 한도 창(5시간·주간 등)이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알립니다.' },
   missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
-  // P244: rig 사이클 요약(변경 기록 꼭지)을 쓰는 한 번짜리 실행(claude -p)의 모델(숨은 설정). 값싼 모델이 기본이다
-  rig3SummaryModel: { type: 'string', default: 'haiku', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: haiku, sonnet)', label: 'rig 사이클 요약(변경 기록)을 쓰는 한 번짜리 실행의 모델입니다.' },
   // P267: 합치기 merger(merger.mjs). 브랜치(워크트리)에서 일한 하위가 atrium done ok로 닫으면 판이 그 합치기를 부모 대신 merger 세션에게 맡긴다.
   //   on: 맡긴다, ask(기본): 워크스페이스마다 처음 한 번 사람에게 판 카드로 묻고 답을 기억한다(답이 올 때까지 지금처럼 부모에게), off: 지금처럼 부모에게
   mergerMode: { type: 'choice', default: 'ask', options: ['on', 'ask', 'off'], label: '합치기 merger (on: 브랜치에서 일한 워커가 끝나면 보드가 합치기를 merger 세션에 맡깁니다, ask: 프로젝트마다 처음 한 번 묻습니다, off: 지금처럼 맡긴 세션이 합칩니다).' },

@@ -30,7 +30,7 @@ test('P195 Git 저장소로 시작: 두 사전과 대화상자', () => {
   assert.equal(ko.wsGit.label, 'Git 저장소로 시작 (git init + 빈 첫 커밋)');
   assert.equal(en.wsGit.label, 'Start as a Git repository (git init + empty first commit)');
   for (const k of ['hint', 'inRepo', 'noFolder', 'done', 'noIdentity', 'commitFail']) { assert.ok(ko.wsGit[k], k); assert.ok(en.wsGit[k], k); }
-  assert.match(ko.wsGit.noIdentity, /git config --global user\.name/); assert.match(ko.wsGit.noIdentity, /워크트리 자리는 첫 커밋/);
+  assert.match(ko.wsGit.noIdentity, /git config --global user\.name/); assert.match(ko.wsGit.noIdentity, /워크트리는 첫 커밋/);
   assert.match(en.wsGit.noIdentity, /git config --global user\.email/);
   assert.ok(ko.backend.wsGitInRepo && en.backend.wsGitInRepo && ko.backend.wsGitInitFail && en.backend.wsGitInitFail);
   const src = read('Workspaces.jsx');

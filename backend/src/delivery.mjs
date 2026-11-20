@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { toLF, promptMatches } from './text.mjs';
 
 const FINAL = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']);
-// P249: 옛 rig 고리가 붙잡아 둔 전달의 까닭. 고리가 없어졌으므로 다시 뜰 때 보내지 않고 취소로 닫는다
+// P249: 옛 rig(1·2) 고리가 붙잡아 둔 전달의 까닭. 고리가 없어졌으므로 다시 뜰 때 보내지 않고 취소로 닫는다
 const OLD_PARKED = 'loop_paused';
 // P106: 터미널이 agent.prompt를 받지 않은 까닭(오류 코드) → 기다리는 이유. 같은 전달을 곧바로 다시 보내지 않고 물러난다
 const REFUSED = { agent_not_found: 'no_agent', agent_not_ready: 'no_agent', agent_blocked: 'waiting', unreachable: 'terminal_down' };
@@ -162,15 +162,6 @@ export class DeliveryQueue extends EventEmitter {
     d.mismatchSeen = false; d.checkedAt = 0;
     this._release(d);
     return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, text: d.text };
-  }
-  // P242: 판 알림(rig 깨우는 글)이 아직 대기 중이면 글을 바꾼다(한 역할에 몰린 항목을 한 글로). 사람이 고치는 중·붙잡힘·보내는 중이면 null(새 글로 넣는다)
-  retext(id, text) {
-    const d = this.items.get(id);
-    if (!d || d.status !== 'queued' || d.editing || d.typeNow || d.attempts) return null;
-    d.text = toLF(String(text ?? ''));
-    if (this.store.updateDeliveryText) this.store.updateDeliveryText(d.deliveryId, d.text);
-    this._emit(d);
-    return d;
   }
   // 고치지 않고 놓는다(Esc). 이미 끝났거나 놓였으면 조용히 지금 상태를 돌려준다
   release(id) {
