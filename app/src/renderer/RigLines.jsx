@@ -3,7 +3,7 @@
 // - 방향마다 한 선(쌍에 길이 두 방향이면 선 둘). 자리·곡선·칩 자리는 Canvas가 lib/rig-map.js rigCanvasLines로 정해 data.rig에 싣는다.
 //   선은 보통 연결과 같은 베지어·굵기(세계 크기), 출발 끝에 작은 점, 도착 끝에 뚜렷한 화살촉. 선마다 글 칩(보통 연결 칩과 같은 생김새):
 //   선 방향 화살, 끝나지 않은 반려면 붉은 점, 항목 이름, 기다리면 "대기 n". 일하는 역할에 닿은 쌍은 밝게(굵게).
-//   멀리 보면 칩·화살촉·점은 화면에서 RIG_EDGE.CHIP_MIN배보다 작아지지 않게 키운다(data.rig.cs).
+//   멀리 보면 칩·화살촉·점·선 굵기는 화면에서 RIG_EDGE.CHIP_MIN배보다 작아지지 않게 키운다(data.rig.cs). 가까이(배율 ≥ CHIP_MIN)는 보통 연결과 같은 세계 크기.
 //   정의에서 나오는 선이라 연결 기록(link)과 섞지 않고 끊기가 없다. 선·칩을 누르면 그 길로 최근 오간 항목이 뜬다.
 // - 올림: 역할이 빌더에게 올린 것이 기다리는 동안만 역할 → 빌더 노랑 점선 곡선과 "올림" 칩.
 // - 꼬리표(RigTag): 역할 노드 "역할 · <이름> · v<판>", 빌더 노드 "rig 빌더"(노랑 바탕). 일반 세션에는 새 꼬리표가 없다.
@@ -15,7 +15,7 @@ import { rigTag, rigFrames, periodText, pairLit, RIG_EDGE, RIG_VIEW } from './li
 
 const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
 // 도착 끝 화살촉(채운 삼각형, 세계 크기 × cs). 끝이 노드 모서리에 닿는다(refX = 길이)
-const Tip = ({ id, cls, cs }) => <marker id={id} className={cls} orient="auto" markerUnits="userSpaceOnUse" viewBox={`0 0 ${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W}`} markerWidth={RIG_EDGE.ARROW * cs} markerHeight={RIG_EDGE.ARROW_W * cs} refX={RIG_EDGE.ARROW} refY={RIG_EDGE.ARROW_W / 2}><path d={`M0 0 L${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W / 2} L0 ${RIG_EDGE.ARROW_W} Z`} /></marker>;
+const Tip = ({ id, cls, cs, color }) => <marker id={id} className={cls} orient="auto" markerUnits="userSpaceOnUse" viewBox={`0 0 ${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W}`} markerWidth={RIG_EDGE.ARROW * cs} markerHeight={RIG_EDGE.ARROW_W * cs} refX={RIG_EDGE.ARROW} refY={RIG_EDGE.ARROW_W / 2}><path d={`M0 0 L${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W / 2} L0 ${RIG_EDGE.ARROW_W} Z`} style={{ fill: color, stroke: 'none' }} /></marker>;
 // 칩: 세계 자리 p를 가운데로, 배율 cs
 const chipAt = (p, cs) => ({ transform: `translate(${p[0]}px, ${p[1]}px) scale(${cs}) translate(-50%, -50%)`, transformOrigin: '0 0' });
 const angOf = (u) => Math.round(Math.atan2(u[1], u[0]) * 180 / Math.PI);
@@ -36,9 +36,9 @@ export function RigPathEdge({ id, data }) {
   const first = lines[0];
   return <>
     <g className={`mt-rigc${lit ? ' lit' : ''}`} data-role="rig-path" data-edge={id} data-a={data.a} data-b={data.b} data-lit={lit ? '1' : '0'}>
-      <defs><Tip id={`${tid}-tip`} cls={`mt-rigc-tip${lit ? ' lit' : ''}`} cs={cs} /></defs>
+      <defs><Tip id={`${tid}-tip`} cls={`mt-rigc-tip${lit ? ' lit' : ''}`} cs={cs} color={lit ? 'var(--wire-rig-hot)' : 'var(--wire-rig)'} /></defs>
       {lines.map((ln) => <g key={ln.key}>
-        <path className={`react-flow__edge-path mt-edge rigc${lit ? ' lit' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.d} fill="none" strokeWidth={lit ? RIG_EDGE.WLIT : RIG_EDGE.W} markerEnd={`url(#${tid}-tip)`} />
+        <path className={`react-flow__edge-path mt-edge rigc${lit ? ' lit' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.d} fill="none" style={{ strokeWidth: (lit ? RIG_EDGE.WLIT : RIG_EDGE.W) * cs }} markerEnd={`url(#${tid}-tip)`} />
         <circle className={`mt-rigc-end${lit ? ' lit' : ''}`} data-role="rig-line-start" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
         <path d={ln.d} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={24 * cs} onClick={toggle} />
       </g>)}
@@ -66,8 +66,8 @@ export function RigRaiseEdge({ id, data }) {
   const tid = safeId(id);
   return <>
     <g className="mt-rigc-raise" data-role="rig-raise" data-edge={id}>
-      <defs><Tip id={`${tid}-r`} cls="mt-rigc-tip raise" cs={cs} /></defs>
-      <path className="react-flow__edge-path mt-edge rigc raise" data-role="rig-line" data-line="raise" data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.d} fill="none" markerEnd={`url(#${tid}-r)`} />
+      <defs><Tip id={`${tid}-r`} cls="mt-rigc-tip raise" cs={cs} color="var(--attn)" /></defs>
+      <path className="react-flow__edge-path mt-edge rigc raise" data-role="rig-line" data-line="raise" data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs, strokeDasharray: `${3 * cs} ${8 * cs}` }} markerEnd={`url(#${tid}-r)`} />
       <circle className="mt-rigc-end raise" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
     </g>
     <EdgeLabelRenderer>

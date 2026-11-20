@@ -89,10 +89,10 @@ export function twoLines(P, Q, k = 1) {
 //   차례는 상대 노드 가운데의 그 모서리 방향 자리, 같은 상대면 rank(앞 길 0, 돌아오는 길 1, 올림 2)라 마주 보는 두 모서리에서 같은 차례 → 선끼리 엇갈리지 않는다.
 // - 화살표: 도착 끝에 채운 화살촉(보통 연결보다 뚜렷하게), 출발 끝에 보통 연결과 같은 작은 점, 글 칩 안에 그 자리 선 방향 화살.
 // - 글 칩(rigLabelSpots): 곡선 위 가운데에서 시작해 노드·다른 칩·화살촉과 겹치지 않는 자리를 곡선을 따라 찾는다.
-// - 배율: 선·칩은 세계 크기(보통 연결과 같다). 다만 멀리 보면 칩과 화살촉이 화면에서 CHIP_MIN배보다 작아지지 않게 키운다(cs = max(1, CHIP_MIN / 배율)).
+// - 배율: 선·칩은 세계 크기(보통 연결과 같다). 다만 멀리 보면 칩·화살촉·선 굵기가 화면에서 CHIP_MIN배(1 = 배율 100%의 크기)보다 작아지지 않게 키운다(cs = max(1, CHIP_MIN / 배율)).
 // PORT 모서리 길이에 대한 끝점 간격 비(n이 많으면 길이 / (n + 1)), ARROW·ARROW_W 화살촉 길이·폭, DOT 출발 점 반지름, W·WLIT 선 굵기(보통 연결 2.6, 밝은 쌍 3.4),
 // CHIP_H 칩 높이, CHIP_FONT 칩 글 크기, CHIP_MIN 칩 화면 최소 배율, LAB_T 칩을 놓아 볼 곡선 자리 차례, NODE_PAD 노드 둘레 여백, GAP 칩 사이 틈
-export const RIG_EDGE = { PORT: 0.18, ARROW: 16, ARROW_W: 12, DOT: 4.5, W: 2.6, WLIT: 3.4, CHIP_H: 24, CHIP_FONT: 12, CHIP_MIN: 0.75, LAB_T: [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82], NODE_PAD: 8, GAP: 6 };
+export const RIG_EDGE = { PORT: 0.18, ARROW: 16, ARROW_W: 12, DOT: 4.5, W: 2.6, WLIT: 3.4, CHIP_H: 24, CHIP_FONT: 12, CHIP_MIN: 1, LAB_T: [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82], NODE_PAD: 8, GAP: 6 };
 const POS = { t: 'top', r: 'right', b: 'bottom', l: 'left' };
 // 보통 연결의 손잡이 고르기(backend links.mjs facingSides)와 같은 규칙: 가로 틈이 세로 틈보다 크거나 같으면 왼·오른 모서리
 export function rigSides(a, b) {
