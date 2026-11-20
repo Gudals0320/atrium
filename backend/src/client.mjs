@@ -44,7 +44,7 @@ export async function connect(cfg) {
 }
 
 // 백엔드가 없으면 띄운다. 백엔드는 터미널 서버가 없으면 띄운다(ARCH 1절 백엔드 수명).
-// nodePath: 백엔드를 돌릴 Node(22.13 이상, node:sqlite). Electron main에서는 process.execPath가 electron.exe라서 따로 준다.
+// nodePath: 백엔드를 돌릴 Node(22.15 이상, node:sqlite·zlib zstd, node-check.mjs). Electron main에서는 process.execPath가 electron.exe라서 따로 준다.
 export async function startBackend(cfg, { nodePath = process.execPath } = {}) {
   const info = backendInfo(cfg);
   if (info && (await health(info.port))) return { already: true, pid: info.pid, port: info.port };

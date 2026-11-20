@@ -9,7 +9,7 @@
 
 <p align="center">
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white">
-  <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-22.13%2B-5FA04E?logo=nodedotjs&logoColor=white">
+  <img alt="Node.js 22.15+" src="https://img.shields.io/badge/Node.js-22.15%2B-5FA04E?logo=nodedotjs&logoColor=white">
   <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1CB66D">
 </p>
@@ -109,7 +109,7 @@ Atrium은 세션을 실행하고, 세션 사이의 연결을 만들고 표시합
 
 | | |
 |---|---|
-| [Node.js](https://nodejs.org/) | 22.13 이상(22와 24에서 시험) |
+| [Node.js](https://nodejs.org/) | 22.15 이상(22.15, 22.16, 24.11, 24.19에서 시험). 더 낮은 버전에서는 안내를 내고 멈춥니다. 22.14 이하는 압축된 Codex 기록을 읽지 못하고, 22.13.0은 한글 등 비 ASCII 이름의 폴더에서 비정상 종료됩니다. |
 | [herdr-core](https://github.com/herdrdev/herdr-core) | 설치할 필요가 없습니다. 보드에서 처음 필요할 때 Atrium이 고정한 버전(0.1.20, 약 4MB)을 `releases.herdr.dev`에서 내려받아 SHA-256을 확인하고 보드 데이터 폴더에 둡니다. `PATH`, 레지스트리, 시작 프로그램은 변경하지 않습니다. 새 보드는 모두 herdr-core에서 실행됩니다. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Claude Code 세션에 쓸, `PATH`에 있는 최근 `claude` CLI. |
 | Git | 저장소와 워크트리를 인식하는 데 사용합니다. |

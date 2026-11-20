@@ -9,7 +9,7 @@
 
 <p align="center">
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white">
-  <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-22.13%2B-5FA04E?logo=nodedotjs&logoColor=white">
+  <img alt="Node.js 22.15+" src="https://img.shields.io/badge/Node.js-22.15%2B-5FA04E?logo=nodedotjs&logoColor=white">
   <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1CB66D">
 </p>
@@ -109,7 +109,7 @@ Atrium is **Windows only** for now (Windows 10 or 11, x64).
 
 | | |
 |---|---|
-| [Node.js](https://nodejs.org/) | 22.13 or later (tested on 22 and 24) |
+| [Node.js](https://nodejs.org/) | 22.15 or later (tested on 22.15, 22.16, 24.11 and 24.19). Older versions stop with a message. 22.14 and earlier cannot read compressed Codex history, and 22.13.0 crashes in folders with non-ASCII names. |
 | [herdr-core](https://github.com/herdrdev/herdr-core) | Nothing to install. The first time a board needs it, Atrium downloads the herdr-core version it pins (0.1.20, about 4 MB) from `releases.herdr.dev`, checks its SHA-256 and keeps it in the board's data folder. It does not touch `PATH`, the registry or startup programs. Every new board runs on herdr-core. |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`, for Claude Code sessions. |
 | Git | For repository and worktree detection. |
