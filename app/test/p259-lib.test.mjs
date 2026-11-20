@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { getBezierPath, Position } from '@xyflow/system';
 import { placeGap, PLACE_GAP, angleOk, lineAngle, ANGLE } from '../../backend/src/rig-map-layout.mjs';
 import { facingSides } from '../../backend/src/links.mjs';
-import { gridPlace, faceEnds, segHitsRect, rigEdges, rigSides, rigPorts, portStep, rigCurve, bezAt, rigCanvasLines, rigLabelSpots, chipSize, RIG_EDGE, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
+import { gridPlace, faceEnds, segHitsRect, rigEdges, rigSides, rigPorts, portStep, rigCurve, bezAt, rigCanvasLines, rigLabelSpots, rigLineActive, chipSize, RIG_EDGE, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer');
 const read = (f) => fs.readFileSync(path.join(SRC, f), 'utf8');
@@ -149,6 +149,14 @@ test('P259 rigCanvasLines(rig-trade 켤 때 자리): 방향마다 한 곡선, �
       const A = RIG_EDGE.ARROW * cs;
       for (const c of chips) for (const l of all) { const u = bezAt(l.P, 1).u; const tip = { x: l.t[0] - u[0] * A / 2 - A / 2, y: l.t[1] - u[1] * A / 2 - A / 2, w: A, h: A }; assert.ok(!boxHit(c, tip), `cs ${cs}: ${c.key} 칩이 화살촉 위`); }
       assert.ok(all.every((l) => l.lab.free));
+      // 같은 쌍 두 방향 칩은 곡선이 갈라지는 곳에 붙지 않고 칩 높이 × SIB_GAP 넘게 떨어진다
+      for (const e of edges.filter((x) => x.kind === 'path')) {
+        const ls = out.get(e.id).lines; if (ls.length < 2) continue;
+        const [a, b] = ls.map((l) => ({ x: l.lab.p[0] - l.w / 2, y: l.lab.p[1] - l.h / 2, w: l.w, h: l.h }));
+        // 칩이 틈보다 넓은 아주 먼 배율(마주 보는 가로 쌍, cs ≥ 4)에서는 갈 수 있는 만큼(맞닿지 않게) 떨어진다
+        const g = (cs < 4 ? RIG_EDGE.CHIP_H * cs * RIG_EDGE.SIB_GAP : RIG_EDGE.GAP) - 1e-6;
+        assert.ok(!(a.x - g < b.x + b.w && b.x - g < a.x + a.w && a.y - g < b.y + b.h && b.y - g < a.y + a.h), `cs ${cs}: ${e.id} 두 칩이 붙었다`);
+      }
     }
   }
 });
@@ -163,13 +171,25 @@ test('P259 칩: 대기 n·붉은 점이 칩 안에 들고 그만큼 넓다. 못 
 
 test('P259 그리기: 곡선 가족 클래스, 도착 끝 화살촉(userSpaceOnUse, 끝이 모서리), 출발 점, 칩 안 방향 화살, 직각 길·두 줄 걷어냄', () => {
   const src = read('RigLines.jsx');
-  for (const s of ['mt-edge rigc', 'markerUnits="userSpaceOnUse"', 'refX={RIG_EDGE.ARROW}', 'markerEnd=', 'rig-line-start', 'rig-dir', 'mt-edge-label rigc']) assert.ok(src.includes(s), s);
-  for (const s of ['twoLines', 'polyLines', 'labelSpots', 'V7.W1']) assert.ok(!src.includes(s), s);
+  for (const s of ['mt-edge role rigc', "' active'", 'markerUnits="userSpaceOnUse"', 'refX={RIG_EDGE.ARROW}', 'markerEnd=', 'rig-line-start', 'rig-dir', 'mt-edge-label rigc']) assert.ok(src.includes(s), s);
+  for (const s of ['twoLines', 'polyLines', 'labelSpots', 'V7.W1', 'pairLit', 'WLIT']) assert.ok(!src.includes(s), s);
   const cv = read('Canvas.jsx');
   assert.ok(/rigCanvasLines\(/.test(cv) && !/rigRoute|spreadEnds/.test(cv));
   const lib = read('lib/rig-map.js');
   for (const s of ['export function rigRoute', 'export function spreadEnds', 'export function polyLines', 'export function labelSpots']) assert.ok(!lib.includes(s), s);
   const css = read('styles.css');
-  assert.ok(/\.react-flow__edge-path\.mt-edge\.rigc \{[^}]*stroke-width: 2\.6/.test(css), '보통 연결과 같은 굵기 2.6');
+  assert.ok(!/--wire-rig|\.rigc[^{]*\{[^}]*stroke: (?!var\(--attn\))/.test(css), 'rig 선만의 색이 없다(올림 노랑만)');
+  assert.ok(/\.mt-edge\.active \{ stroke-dasharray: 9 6; animation: mt-dash/.test(css), '보통 연결의 흐름을 그대로 쓴다');
   assert.ok(/\.react-flow__edge-path\.mt-edge \{ stroke-width: 2\.6;/.test(css));
+});
+
+test('P259(2차) 흐름 규칙: 받는 역할이 일하고 그 방향 길로 30분 안에 항목이 오갔을 때만(보통 연결 ACTIVE_MS와 같은 규칙)', () => {
+  const now = 10_000_000;
+  const flows = [{ item: 'hypothesis', from: ['ideas'], to: ['verify'], last: [{ t: now - 60_000 }] }, { item: 'result', from: ['verify'], to: ['ideas'], last: [{ t: now - 3_600_000 }] }];
+  assert.equal(rigLineActive({ from: 'ideas', to: 'verify' }, flows, 'working', now), true);
+  assert.equal(rigLineActive({ from: 'ideas', to: 'verify' }, flows, 'ready', now), false, '받는 쪽이 쉬면 멈춤');
+  assert.equal(rigLineActive({ from: 'verify', to: 'ideas' }, flows, 'working', now), false, '오래된 항목이면 멈춤');
+  assert.equal(rigLineActive({ from: 'data', to: 'verify' }, flows, 'working', now), false, '오간 항목이 없으면 멈춤');
+  assert.equal(RIG_EDGE.ACTIVE_MS, 30 * 60 * 1000);
+  assert.ok(/to\.state === 'working' && link\.lastAt && Date\.now\(\) - link\.lastAt < ACTIVE_MS/.test(read('Links.jsx')), '보통 연결 규칙(견줄 것)');
 });

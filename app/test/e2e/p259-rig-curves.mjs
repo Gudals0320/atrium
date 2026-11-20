@@ -30,7 +30,7 @@ const inject = (page, o) => page.evaluate(({ key, working, waiting, open, raises
   const st = window.__mt.getState();
   const m = st.rigMaps.get(key);
   if (m) {
-    const flows = (m.flows || []).map((f) => ({ ...f, waiting: waiting.includes(f.item) ? 1 : 0, openReturns: open.includes(f.item) ? 1 : 0 }));
+    const flows = (m.flows || []).map((f) => ({ ...f, waiting: waiting.includes(f.item) ? 1 : 0, openReturns: open.includes(f.item) ? 1 : 0, last: [].concat(f.to).some((r) => working.includes(r)) && [].concat(f.from).some((r) => r !== 'human') ? [{ id: f.item + '-1', rev: 1, state: 'accepted', t: Date.now() - 60000 }] : [] }));
     st.rigMaps = new Map(st.rigMaps).set(key, { ...m, flows, raises: raises.map((role, i) => ({ id: 'raise-' + (i + 1), role, reason: 'test', t: Date.now() })) });
   }
   for (const s of st.sessions.values()) if (s.workspaceKey === key && s.rigRole) window.__mt.api.emit('session.updated', { ...s, state: working.includes(s.rigRole) ? 'working' : 'ready' });
@@ -71,8 +71,13 @@ const facts = (page, ids) => page.evaluate((ids) => {
   const overlap = chips.filter((a, i) => chips.some((b, j) => j > i && hit(a, b)) || linkLabs.some((b) => hit(a, b))).map((c) => c.text);
   const zoom = window.__mtFlow ? window.__mtFlow.getZoom() : null;
   const chipH = chips.length ? Math.round(Math.min(...chips.map((c) => c.h))) : 0;
-  const lit = [...document.querySelectorAll('[data-role=rig-path]')].map((e) => [e.dataset.a, e.dataset.b, e.dataset.lit]);
-  return { lines, ports, chips: chips.map((c) => [c.text, c.free]), onNode, overlap, tips, zoom, chipH, lit, dots: document.querySelectorAll('[data-role=rig-open-return]').length, waits: document.querySelectorAll('[data-role=rig-wait]').length, normal: document.querySelectorAll('.react-flow__edge-path.mt-edge.role').length };
+  const act = [...document.querySelectorAll('[data-role=rig-line]')].filter((e) => e.dataset.active === '1').map((e) => [e.dataset.from, e.dataset.to, getComputedStyle(e).animationName, getComputedStyle(e).strokeDasharray]);
+  const cs0 = (e) => e && getComputedStyle(e).stroke;
+  const rigStroke = [...new Set([...document.querySelectorAll('[data-role=rig-line]:not([data-line=raise])')].map(cs0))];
+  const normalEl = document.querySelector('.react-flow__edge-path.mt-edge.role:not(.rigc)');
+  const normalAnim = (() => { const e = document.querySelector('.react-flow__edge-path.mt-edge.active:not(.rigc)'); return e ? getComputedStyle(e).animationName : null; })();
+  const lit = act;
+  return { act, rigStroke, normalStroke: cs0(normalEl), normalAnim, lines, ports, chips: chips.map((c) => [c.text, c.free]), onNode, overlap, tips, zoom, chipH, lit, dots: document.querySelectorAll('[data-role=rig-open-return]').length, waits: document.querySelectorAll('[data-role=rig-wait]').length, normal: document.querySelectorAll('.react-flow__edge-path.mt-edge.role').length };
 }, ids);
 
 const { app, page } = await launch({ log, args: ['--remote-debugging-port=9489'] });
@@ -111,7 +116,7 @@ try {
     // 셸 lead는 가장 오른쪽 역할 노드의 오른쪽(같은 줄), worker는 그 아래. 보통 연결(흉내)은 lead → 그 역할: 한 노드에 rig 선과 보통 연결이 함께 닿는다
     const W = saved[roles[0]].w, H = saved[roles[0]].h;
     const right = rs.filter(([r]) => r !== 'builder').sort((a, b) => (b[1].x + b[1].w) - (a[1].x + a[1].w) || b[1].y - a[1].y)[0];
-    const bx = right[1].x + right[1].w + 1080, by = right[1].y;
+    const bx = Math.max(...rs.map(([, r]) => r.x + r.w)) + 1080, by = right[1].y;
     if (shells.lead) call('board.setNode', { session: shells.lead, x: bx, y: by, w: W, h: H, cause: 'test' });
     if (shells.worker) call('board.setNode', { session: shells.worker, x: bx, y: by + H + 787, w: W, h: H, cause: 'test' });
     familyRole = right[0];
@@ -124,10 +129,11 @@ try {
     await sleep(800);
     const want = await page.evaluate(() => document.querySelectorAll('[data-role=rig-line]').length);
     const f1 = await facts(page, ids);
-    log('선 ' + JSON.stringify(f1.lines.map((x) => [x.line, x.from, x.to, x.sp + x.tp])) + ' 밝기 ' + JSON.stringify(f1.lit));
+    log('선 ' + JSON.stringify(f1.lines.map((x) => [x.line, x.from, x.to, x.sp + x.tp])) + ' 흐름 ' + JSON.stringify(f1.act));
     judge(f1, `맞춤(${l})`, want);
-    check(`맞춤(${l}): 일함·대기·반려·올림이 보인다`, (!ST.working || f1.lit.some((x) => x[2] === '1')) && (!ST.waiting || f1.waits >= 1) && (!ST.open || f1.dots >= 1) && (!ST.raises || f1.lines.some((x) => x.line === 'raise')), { lit: f1.lit, waits: f1.waits, dots: f1.dots });
-    check(`맞춤(${l}): 보통 연결이 함께 그려진다`, !link || f1.normal >= 1, f1.normal);
+    check(`맞춤(${l}): 일함(흐름)·대기·반려·올림이 보인다`, (!ST.working || (f1.act.length && f1.act.every((x) => x[2] === 'mt-dash' && ST.working.includes(x[1])))) && (!ST.waiting || f1.waits >= 1) && (!ST.open || f1.dots >= 1) && (!ST.raises || f1.lines.some((x) => x.line === 'raise')), { lit: f1.lit, waits: f1.waits, dots: f1.dots });
+    check(`맞춤(${l}): 보통 연결이 함께 그려진다`, !link || f1.normal >= 2, f1.normal);
+    check(`맞춤(${l}): rig 선 색 = 보통 연결(역할) 색, 올림만 노랑`, f1.rigStroke.length === 1 && f1.rigStroke[0] === f1.normalStroke, { rig: f1.rigStroke, normal: f1.normalStroke });
     await shot(page, `01-${PRE}-fit-${l}`);
     await zoomTo(0.32);
     const f2 = await facts(page, ids);

@@ -129,7 +129,7 @@ test('P254 rigEdges(캔버스): 쌍마다 두 줄 자료(lines), 밝기는 기�
   assert.deepEqual(es.filter((e) => e.kind === 'raise').map((e) => [e.source, e.target]), [['s-trade', 'b1']]);
   // P259: 캔버스 선은 보통 연결과 같은 곡선 가족(p259-lib.test.mjs). 화살촉은 선이 그린다(옛 RIG_TIP 없음), 대기, 붉은 점
   const src = read('RigLines.jsx');
-  for (const s of ['pairLit(', 'rig-wait', 'rig-open-return', "t('rigV7.wait'", 'markerEnd']) assert.ok(src.includes(s), s);
+  for (const s of ['rig-wait', 'rig-open-return', "t('rigV7.wait'", 'markerEnd']) assert.ok(src.includes(s), s);
   assert.ok(!/RIG_TIP/.test(read('Canvas.jsx')));
 });
 

@@ -91,8 +91,10 @@ export function twoLines(P, Q, k = 1) {
 // - 글 칩(rigLabelSpots): 곡선 위 가운데에서 시작해 노드·다른 칩·화살촉과 겹치지 않는 자리를 곡선을 따라 찾는다.
 // - 배율: 선·칩은 세계 크기(보통 연결과 같다). 다만 멀리 보면 칩·화살촉·선 굵기가 화면에서 CHIP_MIN배(1 = 배율 100%의 크기)보다 작아지지 않게 키운다(cs = max(1, CHIP_MIN / 배율)).
 // PORT 모서리 길이에 대한 끝점 간격 비(n이 많으면 길이 / (n + 1)), ARROW·ARROW_W 화살촉 길이·폭, DOT 출발 점 반지름, W·WLIT 선 굵기(보통 연결 2.6, 밝은 쌍 3.4),
+// SIB_T 두 방향 쌍의 칩을 놓아 볼 자리(각자 출발 쪽 1/3쯤이라 두 칩이 곡선이 갈라지는 가운데에서 비켜 엇갈려 놓인다), SIB_GAP 같은 쌍 두 칩 사이 최소 틈(칩 높이 배),
+// ACTIVE_MS 선이 흐르는(움직이는) 때: 받는 역할이 일하고 그 방향 길로 이만큼 안에 항목이 오갔을 때(보통 연결의 ACTIVE_MS와 같다),
 // CHIP_H 칩 높이, CHIP_FONT 칩 글 크기, CHIP_MIN 칩 화면 최소 배율, LAB_T 칩을 놓아 볼 곡선 자리 차례, NODE_PAD 노드 둘레 여백, GAP 칩 사이 틈
-export const RIG_EDGE = { PORT: 0.18, ARROW: 16, ARROW_W: 12, DOT: 4.5, W: 2.6, WLIT: 3.4, CHIP_H: 24, CHIP_FONT: 12, CHIP_MIN: 1, LAB_T: [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82], NODE_PAD: 8, GAP: 6 };
+export const RIG_EDGE = { SIB_T: [0.36, 0.3, 0.42, 0.26, 0.48, 0.22, 0.56, 0.18, 0.64, 0.72, 0.8], SIB_GAP: 0.75, ACTIVE_MS: 30 * 60 * 1000, PORT: 0.18, ARROW: 16, ARROW_W: 12, DOT: 4.5, W: 2.6, WLIT: 3.4, CHIP_H: 24, CHIP_FONT: 12, CHIP_MIN: 1, LAB_T: [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82], NODE_PAD: 8, GAP: 6 };
 const POS = { t: 'top', r: 'right', b: 'bottom', l: 'left' };
 // 보통 연결의 손잡이 고르기(backend links.mjs facingSides)와 같은 규칙: 가로 틈이 세로 틈보다 크거나 같으면 왼·오른 모서리
 export function rigSides(a, b) {
@@ -151,28 +153,56 @@ export const chipText = (side) => (side ? side.items.join(' · ') : '');
 // 칩 크기(세계, cs 곱하기 전): 글(12px) + 안쪽 여백 18 + 테두리 2 + 방향 화살 14 + 붉은 점 12 + "대기 n" 알약
 export const chipSize = (text, { open = false, wait = '' } = {}) => ({ w: Math.ceil(textW13(text) * RIG_EDGE.CHIP_FONT / 13 + 20 + 14 + (open ? 12 : 0) + (wait ? textW13(wait) * 11 / 13 + 16 : 0)), h: RIG_EDGE.CHIP_H });
 const boxHit = (a, b, gap = 0) => a.x - gap < b.x + b.w && b.x - gap < a.x + a.w && a.y - gap < b.y + b.h && b.y - gap < a.y + a.h;
-// 글 칩 자리. items: [{ id, P(곡선), w, h(cs 곱한 세계 크기), prio }], nodes: 노드 사각형(모든 노드, 제 끝 노드도), tips: 화살촉·점 사각형
+// 글 칩 자리. items: [{ id, P(곡선), w, h(cs 곱한 세계 크기), prio, ts(놓아 볼 곡선 자리, 없으면 LAB_T), sib(같은 쌍 열쇠), sibGap(같은 쌍 칩 사이 최소 틈) }], nodes: 노드 사각형(모든 노드, 제 끝 노드도), tips: 화살촉·점 사각형
 // → Map id → { p: [x, y](칩 가운데), u(그 자리 선 방향), t(곡선 자리), free(겹침 없이 놓였나) }
 export function rigLabelSpots(items, nodes = [], tips = [], gap = RIG_EDGE.GAP) {
   const out = new Map(), placed = [];
   const pad = RIG_EDGE.NODE_PAD;
-  const order = [...(items || [])].sort((a, b) => (b.prio || 0) - (a.prio || 0) || String(a.id).localeCompare(String(b.id)));
-  for (const it of order) {
-    let best = null;
-    for (const t of RIG_EDGE.LAB_T) {
-      const { p, u } = bezAt(it.P, t);
-      const box = { x: p[0] - it.w / 2, y: p[1] - it.h / 2, w: it.w, h: it.h };
-      const bad = nodes.filter((r) => boxHit(box, { x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad })).length * 4 + placed.filter((q) => boxHit(box, q, gap)).length * 2 + tips.filter((q) => boxHit(box, q)).length;
-      if (!best || bad < best.bad) best = { p, u, t, bad, box };
-      if (!bad) break;
+  const at = (it, t) => { const { p, u } = bezAt(it.P, t); return { p, u, t, box: { x: p[0] - it.w / 2, y: p[1] - it.h / 2, w: it.w, h: it.h, sib: it.sib || null } }; };
+  const badOf = (c, extra = []) => nodes.filter((r) => boxHit(c.box, { x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad })).length * 4 + [...placed, ...extra].filter((q) => boxHit(c.box, q, gap)).length * 2 + tips.filter((q) => boxHit(c.box, q)).length;
+  const put = (it, c, bad) => { placed.push(c.box); out.set(it.id, { p: c.p, u: c.u, t: c.t, free: bad === 0 }); };
+  // 같은 쌍 두 칩(sib)은 한 번에: 두 자리 조합 가운데 둘 다 겹치지 않고 둘 사이가 sibGap 넘게 떨어진 것(ts 차례가 앞인 것부터)
+  const groups = new Map();
+  for (const it of items || []) { const k = it.sib ? 'sib:' + it.sib : 'one:' + it.id; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); }
+  const prio = (g) => Math.max(...g.map((x) => x.prio || 0));
+  const order = [...groups.values()].sort((a, b) => prio(b) - prio(a) || String(a[0].id).localeCompare(String(b[0].id)));
+  for (const g of order) {
+    if (g.length === 2) {
+      const [A, B] = g, ta = A.ts || RIG_EDGE.LAB_T, tb = B.ts || RIG_EDGE.LAB_T;
+      const combos = [];
+      ta.forEach((x, i) => tb.forEach((y, j) => combos.push([i + j, x, y])));
+      combos.sort((p, q) => p[0] - q[0]);
+      // 둘 사이 틈 sibGap은 될 수 있으면 지키고(못 지키면 0.5 감점, 그때는 가장 멀리 떨어진 조합), 맞닿음(gap 안)은 겹침으로 친다
+      let best = null;
+      const dist = (p, q) => Math.max(Math.max(p.x, q.x) - Math.min(p.x + p.w, q.x + q.w), Math.max(p.y, q.y) - Math.min(p.y + p.h, q.y + q.h));
+      for (const [, x, y] of combos) {
+        const ca = at(A, x), cb = at(B, y);
+        const d = dist(ca.box, cb.box);
+        const touch = d < gap ? 2 : 0, soft = d < (A.sibGap || 0) ? 0.5 : 0;
+        const ba = badOf(ca) + touch, bb = badOf(cb) + touch, bad = ba + bb + soft;
+        if (!best || bad < best.bad || (bad === best.bad && d > best.d)) best = { ca, cb, bad, ba, bb, d };
+        if (!bad) break;
+      }
+      put(A, best.ca, best.ba); put(B, best.cb, best.bb);
+      continue;
     }
-    placed.push(best.box);
-    out.set(it.id, { p: best.p, u: best.u, t: best.t, free: best.bad === 0 });
+    for (const it of g) {
+      let best = null;
+      for (const t of it.ts || RIG_EDGE.LAB_T) { const c = at(it, t); const bad = badOf(c); if (!best || bad < best.bad) best = { c, bad }; if (!bad) break; }
+      put(it, best.c, best.bad);
+    }
   }
   return out;
 }
-// 캔버스 rig 선 한 벌. edges: rigEdges 결과, rectOf(노드 ID) → 사각형, nodes: 화면의 노드 사각형 모두(칩이 피할 것), cs: 칩·화살촉 배율, waitText(n) → "대기 n"
-// → Map 선 ID → { cs, lines: [{ key, which: 'top'|'bottom'|'raise', from, to(역할 이름), d, P, s, t, sp, tp, items, text, open, waiting, wait, lab: { p, u, t, free }, w, h }] }
+// P259(2차): 선이 흐르는가(보통 연결 .mt-edge.active와 같은 움직임·같은 규칙). 보통 연결은 받는 쪽이 일하고 마지막 지시가 ACTIVE_MS 안이면 흐른다.
+//   rig 선은 받는 역할(to)이 일하고, 그 방향 길(from → to)로 ACTIVE_MS 안에 항목이 오갔으면(길의 last 시각) 흐른다.
+//   line: { from, to }(역할 이름), flows: 지도 길 목록, toState: 받는 세션 상태
+export function rigLineActive(line, flows, toState, now = Date.now()) {
+  if (!line || toState !== 'working') return false;
+  let at = 0;
+  for (const f of flows || []) if (f && list(f.from).includes(line.from) && list(f.to).includes(line.to)) for (const x of f.last || []) at = Math.max(at, x.t || 0);
+  return at > 0 && now - at < RIG_EDGE.ACTIVE_MS;
+}
 export function rigCanvasLines(edges, rectOf, { nodes = [], cs = 1, waitText = (n) => 'wait ' + n } = {}) {
   const lines = [];
   for (const e of edges || []) {
@@ -194,7 +224,8 @@ export function rigCanvasLines(edges, rectOf, { nodes = [], cs = 1, waitText = (
     const sz = ln.which === 'raise' ? { w: Math.ceil(textW13(text || 'raise') + 40), h: RIG_EDGE.CHIP_H } : chipSize(text, { open: ln.open, wait });
     drawn.push({ ...ln, ...c, s: o.s, t: o.t, sp: o.sp, tp: o.tp, text, wait, w: sz.w * cs, h: sz.h * cs });
   }
-  const spots = rigLabelSpots(drawn.map((x) => ({ id: x.id, P: x.P, w: x.w, h: x.h, prio: x.which === 'raise' ? 0 : x.waiting ? 2 : 1 })), nodes, tips);
+  const pairN = new Map(); for (const x of drawn) pairN.set(x.edge, (pairN.get(x.edge) || 0) + 1);
+  const spots = rigLabelSpots(drawn.map((x) => { const two = x.which !== 'raise' && pairN.get(x.edge) > 1; return { id: x.id, P: x.P, w: x.w, h: x.h, prio: x.which === 'raise' ? 0 : x.waiting ? 2 : 1, ...(two ? { ts: RIG_EDGE.SIB_T, sib: x.edge, sibGap: RIG_EDGE.CHIP_H * cs * RIG_EDGE.SIB_GAP } : {}) }; }), nodes, tips);
   const out = new Map();
   for (const x of drawn) {
     if (!out.has(x.edge)) out.set(x.edge, { cs, lines: [] });

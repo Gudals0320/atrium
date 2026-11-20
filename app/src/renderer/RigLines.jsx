@@ -2,7 +2,8 @@
 // P259: 보통 세션 연결(Links.jsx)과 같은 곡선·같은 구성으로 바꿨다(사용자 요청 2026-11-20). P254의 V7 곧은 두 줄·직각 길은 걷어 냈다.
 // - 방향마다 한 선(쌍에 길이 두 방향이면 선 둘). 자리·곡선·칩 자리는 Canvas가 lib/rig-map.js rigCanvasLines로 정해 data.rig에 싣는다.
 //   선은 보통 연결과 같은 베지어·굵기(세계 크기), 출발 끝에 작은 점, 도착 끝에 뚜렷한 화살촉. 선마다 글 칩(보통 연결 칩과 같은 생김새):
-//   선 방향 화살, 끝나지 않은 반려면 붉은 점, 항목 이름, 기다리면 "대기 n". 일하는 역할에 닿은 쌍은 밝게(굵게).
+//   선 방향 화살, 끝나지 않은 반려면 붉은 점, 항목 이름, 기다리면 "대기 n". 색은 보통 연결의 역할 연결(.role)과 같고,
+//   받는 역할이 일하고 그 길로 최근에 항목이 오갔으면 보통 연결과 같은 흐름(.mt-edge.active, 같은 움직임 설정)으로 흐른다(2차, 사용자 답). 올림만 노랑.
 //   멀리 보면 칩·화살촉·점·선 굵기는 화면에서 RIG_EDGE.CHIP_MIN배보다 작아지지 않게 키운다(data.rig.cs). 가까이(배율 ≥ CHIP_MIN)는 보통 연결과 같은 세계 크기.
 //   정의에서 나오는 선이라 연결 기록(link)과 섞지 않고 끊기가 없다. 선·칩을 누르면 그 길로 최근 오간 항목이 뜬다.
 // - 올림: 역할이 빌더에게 올린 것이 기다리는 동안만 역할 → 빌더 노랑 점선 곡선과 "올림" 칩.
@@ -11,7 +12,7 @@ import { useState } from 'react';
 import { EdgeLabelRenderer, ViewportPortal } from '@xyflow/react';
 import { useStore, getState, openDialog } from './store.js';
 import { useT, fmtTime } from './lib/i18n.js';
-import { rigTag, rigFrames, periodText, pairLit, RIG_EDGE, RIG_VIEW } from './lib/rig-map.js';
+import { rigTag, rigFrames, periodText, rigLineActive, RIG_EDGE, RIG_VIEW } from './lib/rig-map.js';
 
 const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
 // 도착 끝 화살촉(채운 삼각형, 세계 크기 × cs). 끝이 노드 모서리에 닿는다(refX = 길이)
@@ -24,27 +25,28 @@ export function RigPathEdge({ id, data }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const m = useStore((st) => (data ? st.rigMaps.get(data.ws) : null));
-  const aWork = useStore((st) => !!data && (st.sessions.get(data.source) || {}).state === 'working');
-  const bWork = useStore((st) => !!data && (st.sessions.get(data.target) || {}).state === 'working');
+  const aState = useStore((st) => (data ? (st.sessions.get(data.source) || {}).state : null));
+  const bState = useStore((st) => (data ? (st.sessions.get(data.target) || {}).state : null));
   if (!data || !data.rig) return null;
   const { cs, lines } = data.rig;
-  const lit = pairLit(data.a, data.b, (r) => (r === data.a ? aWork : r === data.b ? bWork : false));
   const tid = safeId(id);
   const flows = m ? data.flows.map((i) => (m.flows || [])[i]).filter(Boolean) : [];
+  // P259(2차): 보통 연결과 같은 색(역할 연결 .role)과 같은 흐름(.active: 받는 역할이 일하고 그 길로 30분 안에 항목이 오감). 굵게 하는 밝기는 걷었다
+  const act = (ln) => rigLineActive(ln, flows, ln.to === data.a ? aState : bState);
   const recent = flows.flatMap((f) => (f.last || []).map((x) => ({ ...x, item: f.item }))).sort((a, b) => b.t - a.t).slice(0, 6);
   const toggle = (e) => { e.stopPropagation(); setOpen((v) => !v); };
   const first = lines[0];
   return <>
-    <g className={`mt-rigc${lit ? ' lit' : ''}`} data-role="rig-path" data-edge={id} data-a={data.a} data-b={data.b} data-lit={lit ? '1' : '0'}>
-      <defs><Tip id={`${tid}-tip`} cls={`mt-rigc-tip${lit ? ' lit' : ''}`} cs={cs} color={lit ? 'var(--wire-rig-hot)' : 'var(--wire-rig)'} /></defs>
+    <g className="mt-rigc" data-role="rig-path" data-edge={id} data-a={data.a} data-b={data.b}>
+      <defs><Tip id={`${tid}-tip`} cls="mt-rigc-tip role" cs={cs} color="var(--wire-role)" /></defs>
       {lines.map((ln) => <g key={ln.key}>
-        <path className={`react-flow__edge-path mt-edge rigc${lit ? ' lit' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.d} fill="none" style={{ strokeWidth: (lit ? RIG_EDGE.WLIT : RIG_EDGE.W) * cs }} markerEnd={`url(#${tid}-tip)`} />
-        <circle className={`mt-rigc-end${lit ? ' lit' : ''}`} data-role="rig-line-start" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
+        <path className={`react-flow__edge-path mt-edge role rigc${act(ln) ? ' active' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} data-active={act(ln) ? '1' : '0'} d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs }} markerEnd={`url(#${tid}-tip)`} />
+        <circle className="mt-edge-end role mt-rigc-end" data-role="rig-line-start" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
         <path d={ln.d} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={24 * cs} onClick={toggle} />
       </g>)}
     </g>
     <EdgeLabelRenderer>
-      {lines.map((ln) => <div key={ln.key} className={`mt-edge-label rigc nodrag nopan${lit ? ' lit' : ''}`} style={chipAt(ln.lab.p, cs)} data-role="rig-edge-label" data-line={ln.which} data-edge={id} data-from={ln.from} data-to={ln.to} data-free={ln.lab.free ? '1' : '0'} title={t('rigMap.pathTitle')} onClick={toggle}>
+      {lines.map((ln) => <div key={ln.key} className="mt-edge-label role rigc nodrag nopan" style={chipAt(ln.lab.p, cs)} data-role="rig-edge-label" data-line={ln.which} data-edge={id} data-from={ln.from} data-to={ln.to} data-free={ln.lab.free ? '1' : '0'} title={t('rigMap.pathTitle')} onClick={toggle}>
         <i className="mt-rigc-dir" data-role="rig-dir" data-ang={angOf(ln.lab.u)} style={{ transform: `rotate(${angOf(ln.lab.u)}deg)` }} aria-hidden="true">➜</i>
         {ln.open ? <i className="mt-rigc-open" data-role="rig-open-return" data-line={ln.which} /> : null}
         <span className="mt-edge-text">{ln.text}</span>
