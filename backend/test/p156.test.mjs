@@ -273,9 +273,9 @@ test('P156 명령 글: child --peer 첫 줄이 관계, relate 글, children의 �
     const ch = await runChild(['children'], env);
     assert.match(ch.stdout, /하위 세션 1개/); assert.match(ch.stdout, /동료\(하위가 아니다, 한 일은 atrium news\): @p1 ready/);
     const me = await runChild(['me'], env);
-    assert.match(me.stdout, /상위: 없음/); assert.match(me.stdout, /동료 1명\(하위가 아니다.*\n {2}@p1 · ready · 네가 띄움 · 에이전트가 정함/);
+    assert.match(me.stdout, /상위: 없음/); assert.match(me.stdout, /동료 1명\(하위가 아니다.*\n {2}@p1 · claude, ready · 네가 띄움 · 에이전트가 정함/);
     const meP = await runChild(['me'], b.branch.envFor(byName(b, 'p1').sessionId));
-    assert.match(meP.stdout, /상위: 없음/); assert.match(meP.stdout, /@lead · ready · 너를 띄운 세션/);
+    assert.match(meP.stdout, /상위: 없음/); assert.match(meP.stdout, /@lead · claude, ready · 너를 띄운 세션/);
     const rel = await runChild(['relate', 'w1', 'peer'], env);
     assert.equal(rel.code, 0, rel.stderr); assert.match(rel.stdout, /관계를 바꿨다: 하위\(자동\) → 동료\. 지금: @w1와 너는 동료다/);
     const bad = await runChild(['relate', 'w1', 'boss'], env);

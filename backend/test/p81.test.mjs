@@ -14,7 +14,7 @@ import { Store } from '../src/store.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
 import { Branch, ATRIUM_ALLOW, boardSkill } from '../src/branch.mjs';
-import { NoticeBatcher, noticeText, closeWhy, ME_LINE, ACK_LINE } from '../src/link-notice.mjs';
+import { NoticeBatcher, noticeText, closeWhy, ME_LINE } from '../src/link-notice.mjs';
 import { workspaceOf } from '../src/git.mjs';
 import { Sleeper } from '../src/sleep.mjs';
 
@@ -81,10 +81,10 @@ function mk(b, o) {
 const notices = (b, s) => b.queued.filter((q) => q.sid === s.sessionId && /^\[Atrium 보드\]/.test(q.text) && q.text.includes(ME_LINE));
 
 // ---------- 알림 묶기(순수) ----------
-test('P81 알림 글: 한 줄이면 그대로, 여럿이면 목록. 끝에 atrium me와 "알겠다"', () => {
+test('P81 알림 글: 한 줄이면 그대로, 여럿이면 목록. 끝에 atrium me(P263: "알겠다" 줄 없음)', () => {
   const one = noticeText(['@w1가 닫혔다(사람이 닫음).']);
   assert.equal(one.split('\n')[0], '[Atrium 보드] @w1가 닫혔다(사람이 닫음).');
-  assert.ok(one.endsWith(`${ME_LINE}\n${ACK_LINE}`));
+  assert.ok(one.endsWith(ME_LINE)); assert.ok(!one.includes('알겠다'));
   const two = noticeText(['a', 'b']).split('\n');
   assert.deepEqual(two.slice(0, 3), ['[Atrium 보드] 연결이 바뀌었다.', '- a', '- b']);
   assert.equal(closeWhy('killed'), '사람이 닫음');
@@ -174,12 +174,12 @@ test('P81 명령: atrium me 글(20줄 안, 부모 없음·부모와 역할), --j
     // P116: 이름은 판의 세션 이름, 명령은 atrium prompt|wait|read(herdr 이름·패널은 --json에만)
     assert.match(lines[0], /^나: @lead \(claude\)/);
     assert.match(me.stdout, /상위: 없음/); // P156: 상위·동료·하위·독립
-    assert.match(me.stdout, /하위 세션 1개:\n {2}@w1 워커 1 · ready · 마지막 지시 \d+초 전 "do the thing"/);
+    assert.match(me.stdout, /하위 세션 1개:\n {2}@w1 워커 1 · claude, ready · 마지막 지시 \d+초 전 "do the thing"/);
     assert.match(me.stdout, /일 맡기기: atrium prompt <이름> "<할 일>"\(맡기고 턴을 끝내면 보드가 done 보고를 가져다준다\) · 화면 읽기: atrium read <이름>/); // P181
     assert.doesNotMatch(me.stdout, /herdr/);
     const w1 = [...b.sessions.values()].find((x) => x.name === 'w1');
     const meW = await runChild(['me'], b.branch.envFor(w1.sessionId));
-    assert.match(meW.stdout, /상위: @lead \(ready\) — 너는 @lead의 워커 1/);
+    assert.match(meW.stdout, /상위: @lead \(claude, ready\) — 너는 @lead의 워커 1/);
     const js = await runChild(['me', '--json'], env);
     const j = JSON.parse(js.stdout);
     assert.equal(j.children[0].name, 'w1'); assert.equal(j.parent, null); assert.equal(j.me.name, 'lead');
@@ -279,7 +279,7 @@ test('P81 알림: 사람이 떼면 옛 부모와 뗀 세션에게, 하위 세션
   assert.match(t, /- @k2가 닫혔다\(사람이 닫음\)\./);
   assert.match(t, /- @k3가 닫혔다\(스스로 끝남\)\./);
   assert.match(t, /- @k4가 닫혔다\(패널 사라짐\)\./);
-  assert.ok(t.endsWith('지금 연결은 `atrium me`.\n이 알림에는 "알겠다"고만 답해라.'));
+  assert.ok(t.endsWith('지금 연결은 `atrium me`.')); assert.ok(!t.includes('알겠다'));
   const toK1 = notices(b, kids[0]);
   assert.equal(toK1.length, 1);
   assert.equal(toK1[0].text.split('\n')[0], '[Atrium 보드] 너는 이제 @lead의 하위 세션이 아니다(사람이 독립으로 둠). 보고하지 않는다.');
@@ -386,7 +386,7 @@ test('P81 API: session.detach와 link.delete(부모 선이면 고르기, detach�
 
 // ---------- 안내와 스킬 ----------
 test('P81 안내와 스킬: 짧은 안내에 atrium me 한 줄, 스킬에 atrium me와 --head, 승인 규칙에 atrium me', () => {
-  const line = BOARD_SYSTEM_PROMPT.split('\n').find((l) => l.includes('atrium me'));
+  const line = BOARD_SYSTEM_PROMPT.split('\n').find((l) => l.includes('atrium me') && l.includes('지금 기록')); // P263: 알림 줄에도 atrium me가 있다
   assert.ok(line && /지금 기록/.test(line) && /예전 알림과 다르면 이것을 믿는다/.test(line) && /매 턴 치지는 않는다/.test(line), line);
   const skill = boardSkill('atrium');
   for (const w of ['atrium me', '--head', '첫 요청 뒤 보드가 떼므로', '시키거나 기다리지 않는다']) assert.ok(skill.includes(w), w);

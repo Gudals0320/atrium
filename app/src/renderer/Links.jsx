@@ -179,14 +179,14 @@ export function LinkPanel({ linkId, onClose }) {
     try {
       const r = await api.call('link.delete', { link: linkId, confirm: yes, ...(detach ? { detach: true } : {}) });
       if (r.needsConfirm) { setParentAsk(r.parentLink ? tMsg({ msg: r.parentMsg, message: r.parentMessage }) : null); return setConfirm(tMsg(r)); }
-      toast(r.detached ? t('detach.done', { name: r.name, parent: r.from }) : r.deliveryId ? t('links.unlinked', { a: a ? a.name : '' }) : t('links.removed'));
+      toast(r.detached ? t('detach.done', { name: r.name, parent: r.from }) : r.cut ? t('links.unlinked', { a: a ? a.name : '' }) : t('links.removed'));
       onClose();
     } catch (e) { toast(t('links.unlinkFail', { error: errText(e) }), 'error'); }
   }
   const [relBusy, setRelBusy] = useState(false);
   async function setRelation(k) { // P175: 선 기록에서 하위·동료 바꾸기(세션 맵 관계와 같은 뜻, 사람이 정한 관계)
     setRelBusy(true);
-    // 역할이 옛 관계의 기본 이름이면 새 관계의 기본 이름으로 함께 바꾼다(link.create: 관계 + 역할 + A에게 새 역할 알림). 사람이 쓴 이름은 그대로(relation.set)
+    // 역할이 옛 관계의 기본 이름이면 새 관계의 기본 이름으로 함께 바꾼다(link.create: 관계 + 역할. P263부터 A에게 역할 알림은 없다). 사람이 쓴 이름은 그대로(relation.set)
     const all = (key) => LANGUAGES.map((l) => translate(l, key));
     const next = roleOnSwitch(link.role || link.storedRole, k, { sub: all('links.defaultRole'), subNew: t('links.defaultRole'), peer: [PEER_ROLE, ...all('relations.peerRole')] });
     try { await (next ? api.call('link.create', { from: link.from, to: link.to, role: next, relation: k }) : api.call('relation.set', { a: link.from, b: link.to, relation: k })); toast(t(k === 'peer' ? 'mmLine.relPeer' : 'mmLine.relSub', { name: b ? b.name : '?', up: a ? a.name : '?' })); }

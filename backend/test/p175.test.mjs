@@ -101,7 +101,7 @@ test('P175·P185 하위로 잇기: 연결과 역할, 사람이 정한 하위 줄
   assert.equal(r.link.role, '리뷰어');
   assert.deepEqual(r.link.relation, { relation: 'sub', source: 'user', up: A.sessionId });
   assert.equal(b.branch.relIndex().workParentOf(B.sessionId), A.sessionId, 'P185: 일 부모(atrium prompt가 일을 만든다)');
-  assert.equal(b.queued.filter((q) => q.sid === A.sessionId && q.text.includes('"리뷰어"')).length, 1, 'A에 역할 알림');
+  assert.equal(b.queued.filter((q) => q.sid === A.sessionId).length, 0, 'P263: A에 역할 알림을 넣지 않는다');
   assert.equal(relNotices(b).length, 0, '보이는 관계가 같아 관계 알림은 없다');
   // relation 없이 부르면(옛 창·CLI) 하위와 같다
   const C = [...b.sessions.values()].find((x) => x.name === 'gamma');
@@ -157,7 +157,7 @@ test('P175 다시 잇기: 동료였던 쌍을 하위로 고르면 사람이 정�
   const before = b.queued.length;
   const s2 = b.linkCreate({ from: A.sessionId, to: B.sessionId, role: 'Reviewer', relation: 'sub' });
   assert.equal(s2.relationSet, 'sub'); assert.equal(s2.link.role, 'Reviewer');
-  assert.ok(b.queued.slice(before).some((q) => q.sid === A.sessionId && q.text.includes('"Reviewer"')));
+  assert.ok(!b.queued.slice(before).some((q) => q.sid === A.sessionId && q.text.includes('"Reviewer"')), 'P263: 역할 알림은 없다');
   const p2 = b.linkCreate({ from: A.sessionId, to: B.sessionId, role: PEER_ROLE, relation: 'peer' });
   assert.equal(p2.relationSet, 'peer'); assert.equal(b.store.linkByPair(A.sessionId, B.sessionId).role, PEER_ROLE);
   // 이미 동료면 관계를 다시 쓰지 않는다

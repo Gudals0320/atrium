@@ -4,7 +4,6 @@
 // - 잠든 세션은 이 알림 때문에 깨우지 않는다(넣을 때와 보낼 때 모두 본다. 깨면 atrium me로 본다).
 export const NOTICE_BATCH_MS = 10000;
 export const ME_LINE = '지금 연결은 `atrium me`.';
-export const ACK_LINE = '이 알림에는 "알겠다"고만 답해라.';
 
 // 닫힌 까닭(backend.closeSession의 reason) → 부모에게 보일 말. killed는 판에서 사람이 닫은 것(부모의 child-kill은 알리지 않는다)
 export function closeWhy(reason) {
@@ -19,7 +18,7 @@ export const childClosedLine = (child, why) => `@${child}가 닫혔다(${why}).`
 
 export function noticeText(lines) {
   const body = lines.length === 1 ? [`[Atrium 보드] ${lines[0]}`] : ['[Atrium 보드] 연결이 바뀌었다.', ...lines.map((l) => `- ${l}`)];
-  return [...body, ME_LINE, ACK_LINE].join('\n');
+  return [...body, ME_LINE].join('\n'); // P263: 알겠다고만 답하라던 줄을 뺐다(받는 쪽이 할 일을 바꾸는 알림이다)
 }
 
 // add(sessionId, line): 그 세션의 묶음에 더한다. 첫 줄에서 batchMs 뒤 한 번 보낸다.

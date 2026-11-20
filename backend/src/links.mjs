@@ -73,25 +73,7 @@ export function screenAnswerText(text, n = 20, { kind = null } = {}) {
   return body.length ? body.slice(-n).join('\n') : tailText(L.join('\n'), n);
 }
 
-// F2: 판에서 이은 연결을 A에게 알리는 글. 다음 지시("리뷰어에게 맡겨")를 알아듣도록 이름, 역할, 쓸 명령을 담는다.
-// P116: 일 시키기·기다리기·읽기는 판의 atrium 명령이고 이름은 판의 세션 이름(name, 없으면 옛 호출의 agentName)이다. 패널 ID는 쓰지 않는다
-export function roleNotice({ role, agentName, name = agentName, kind = 'claude' }) {
-  return [
-    `[Atrium 보드] 연결 알림: \`@${name}\`(종류 ${kind})가 너의 "${role}"이다.`,
-    `앞으로 "${role}에게 맡겨"처럼 이 역할을 부르면, atrium 명령으로 이 에이전트에게 일을 시키고 답을 받아 와라.`,
-    `일 시키기: atrium prompt ${name} "<할 일>" --wait`,
-    `끝나기 기다리기: atrium wait ${name} · 화면 읽기: atrium read ${name}`,
-    '이 알림에는 "알겠다"고만 답해라.',
-  ].join('\n');
-}
-export function unlinkNotice({ role, agentName, name = agentName }) {
-  return `[Atrium 보드] 연결 해제: \`@${name}\`는 더 이상 너의 "${role}"가 아니다. 이 역할로 일을 시키지 마라. 이 알림에는 "알겠다"고만 답해라.`;
-}
-// P116: 판은 이 알림을 보내지 않는다(이름으로 부르므로 패널이 바뀌어도 할 일이 없다). 옛 호출과 시험을 위해 글만 남긴다
-export function paneChangedNotice({ role, agentName, name = agentName, paneId }) {
-  return `[Atrium 보드] 연결 갱신: 너의 "${role}" \`@${name}\`의 터미널이 바뀌었다(${paneId}). 이름(${name})으로 부르면 그대로 된다. 이 알림에는 "알겠다"고만 답해라.`;
-}
-
+// P263: 판에서 잇기·끊기·패널 바뀜을 받는 세션에 알리던 글(roleNotice·unlinkNotice·paneChangedNotice)은 지웠다. 그 내용은 atrium me가 준다
 export const ROLE_RE = /^[^\n\r"`$\\]{1,40}$/;
 
 // 노드 하나를 둘 빈자리. anchor(부모 노드) 오른쪽, 아래, 왼쪽, 위 순서로, 그다음 바깥 고리로 넓혀 간다. 다른 것과 겹치지 않는다(BRIEF 4절).
