@@ -65,16 +65,8 @@ export function compareVersions(a, b) {
   return 0;
 }
 export const versionOfTag = (tag) => String(tag || '').trim().replace(/^v/, '');
-// ">=22.13" 같은 engines 범위(이 저장소가 쓰는 꼴만)
-export function nodeSatisfies(version, range) {
-  if (!range) return true;
-  const m = /^\s*>=\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?\s*$/.exec(String(range));
-  if (!m) return true;
-  const v = parseVersion(String(version).replace(/^v/, '')) || { major: 0, minor: 0, patch: 0 };
-  const need = [+m[1], +(m[2] || 0), +(m[3] || 0)], have = [v.major, v.minor, v.patch];
-  for (let i = 0; i < 3; i++) if (have[i] !== need[i]) return have[i] > need[i];
-  return true;
-}
+// engines 범위("^22.15.0 || >=24.14.0" 꼴) 확인: node-check.mjs에 있다(이슈 #18, 다른 모듈보다 먼저 부를 수 있게)
+export { nodeSatisfies } from './node-check.mjs';
 
 // ---------- 릴리즈 ----------
 // GitHub releases/latest 응답(또는 목록의 한 항목) → 쓸 값. 초안, 태그가 버전 꼴이 아닌 것, 그리고 prerelease를 켜지 않으면 사전 릴리즈는 null
