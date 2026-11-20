@@ -662,3 +662,8 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-merger-asks.phone { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 56px); left: 12px; right: 12px; width: auto; transform: none; z-index: 30; }
 .mt-merger-ask.phone { font-size: 14px; padding: 12px; border-radius: 12px; }
 .mt-merger-ask.phone .mt-btn.small { height: 36px; padding: 0 14px; font-size: 14px; }
+/* P274: 휴대폰 스티어링은 둥근 아이콘 토글(글자 단추가 글 칸을 좁혔다). 켜면 채운 단추와 입력칸 안내 글. 긴 줄은 칸 안에서 꺾는다 */
+.mt-ph-input .mt-ph-steer { width: 44px; height: 44px; padding: 0; border-radius: 50%; display: grid; place-items: center; align-self: flex-end; border: 1px dashed var(--panel-line-2); color: var(--chrome-text-2); }
+.mt-ph-input .mt-ph-steer svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.mt-ph-input .mt-ph-steer.on { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+.mt-ph-input textarea { overflow-wrap: anywhere; }

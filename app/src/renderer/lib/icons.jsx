@@ -36,6 +36,7 @@ export const PATHS = {
   foldAll: 'M7 4l5 5 5-5M7 20l5-5 5 5', // P103: 모두 접기(화살 둘이 안으로)
   unfoldAll: 'M7 9l5-5 5 5M7 15l5 5 5-5', // P103: 모두 펼치기(화살 둘이 밖으로)
   mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0M12 18v3M8 21h8', // P165: 음성 입력
+  steer: 'M13 2 4 14h7l-1 8 9-12h-7z', // P274: 스티어링 토글(번개, 지금 턴에 넣기)
 };
 
 export function Icon({ name, className = '', title }) {
