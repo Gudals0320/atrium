@@ -9,7 +9,7 @@
 
 <p align="center">
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white">
-  <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-22.13%2B-5FA04E?logo=nodedotjs&logoColor=white">
+  <img alt="Node.js 22.15+ or 24.14+" src="https://img.shields.io/badge/Node.js-22.15%2B%20%7C%2024.14%2B-5FA04E?logo=nodedotjs&logoColor=white">
   <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1CB66D">
 </p>
@@ -130,7 +130,7 @@ Atrium currently runs on **Windows 10 / 11 (x64)**.
 
 | Dependency | Details |
 |---|---|
-| [Node.js](https://nodejs.org/) | 22.13 or later (tested on 22 and 24) |
+| [Node.js](https://nodejs.org/) | 22.15 or later on Node 22, or 24.14 or later (tested on 22.15, 22.16, 22.23, 24.14, 24.19 and 25.9). Other versions stop with a message: 22.14 and earlier cannot read compressed Codex history, 22.13 crashes in folders with non-ASCII names, and 24.10 to 24.13 crash there too. |
 | [herdr-core](https://github.com/herdrdev/herdr-core) | Auto-downloaded on first run (pinned `0.1.20`, ~4 MB, SHA-256 verified) into Atrium's data folder. Does not touch `PATH` or startup items. |
 | Git | Used for repository and worktree detection. |
 | Agent CLIs | Any supported CLI on `PATH`: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex, Antigravity (`agy`), opencode, or pi. |
@@ -182,9 +182,10 @@ When a new release is available, update from **Settings › General › Update**
 | `Delete` | Close selected sessions |
 
 <details>
-<summary><b>Upgrading from Atrium 0.1.7 or earlier (herdr migration)</b></summary>
+<summary><b>Upgrading from earlier versions (model connections removed, herdr migration)</b></summary>
 
-Boards that previously ran on [herdr](https://herdr.dev) migrate automatically to `herdr-core` on first start. Idle sessions move right away with their conversation, layout, and links intact; busy sessions wait until idle. Progress is shown in **Settings › Terminal**.
+- **Model connections removed.** The Settings › Connections feature was removed; any stored connection entries are ignored. Launchers keep their own `env` and arguments (for example, `ANTHROPIC_BASE_URL` in a Claude launcher's env still works), so put custom endpoints or auth variables directly in the launcher's env or your user environment.
+- **Boards from Atrium 0.1.7 or earlier (`herdr`).** Boards that previously ran on [herdr](https://herdr.dev) migrate automatically to `herdr-core` on first start. Idle sessions move right away with their conversation, layout, and links intact; busy sessions wait until idle. Progress is shown in **Settings › Terminal**.
 
 </details>
 

@@ -9,7 +9,7 @@
 
 <p align="center">
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white">
-  <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-22.13%2B-5FA04E?logo=nodedotjs&logoColor=white">
+  <img alt="Node.js 22.15+ or 24.14+" src="https://img.shields.io/badge/Node.js-22.15%2B%20%7C%2024.14%2B-5FA04E?logo=nodedotjs&logoColor=white">
   <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1CB66D">
 </p>
@@ -130,7 +130,7 @@ atrium done ok "Added ThemeToggle and unit tests (all passing)"
 
 | 항목 | 내용 |
 |---|---|
-| [Node.js](https://nodejs.org/) | 22.13 이상(22와 24에서 시험) |
+| [Node.js](https://nodejs.org/) | Node 22는 22.15 이상, 그 밖에는 24.14 이상(22.15, 22.16, 22.23, 24.14, 24.19, 25.9에서 시험). 다른 버전에서는 안내를 내고 멈춥니다. 22.14 이하는 압축된 Codex 기록을 읽지 못하고, 22.13은 한글 등 비 ASCII 이름의 폴더에서 비정상 종료되며, 24.10~24.13도 그런 폴더에서 비정상 종료됩니다. |
 | [herdr-core](https://github.com/herdrdev/herdr-core) | 별도 설치 불필요. 첫 실행 시 고정 버전(`0.1.20`, 약 4MB)을 자동 다운로드하고 SHA-256을 검증해 데이터 폴더에 둡니다. `PATH`나 시작 프로그램을 건드리지 않습니다. |
 | Git | 저장소와 워크트리 인식에 사용합니다. |
 | 에이전트 CLI | `PATH`에 설치된 지원 CLI: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex, Antigravity(`agy`), opencode, pi 등. |
@@ -182,9 +182,10 @@ node backend\bin\atrium.mjs install --channel dev
 | `Delete` | 선택한 세션 닫기 |
 
 <details>
-<summary><b>Atrium 0.1.7 이하(herdr)에서 올릴 때</b></summary>
+<summary><b>이전 버전에서 올릴 때 (모델 연결 제거, herdr 이전)</b></summary>
 
-이전 [herdr](https://herdr.dev)에서 실행하던 보드는 새 버전 첫 시작 시 자동으로 `herdr-core`로 이전됩니다. 쉬는 세션은 대화·배치·연결 그대로 바로 옮겨지고, 작업 중인 세션은 쉴 때 옮겨집니다. 진행 상황은 **설정 › 터미널**에서 확인할 수 있습니다.
+- **모델 연결 제거.** 설정 › 연결 기능이 제거되어 기존에 저장된 연결 설정은 무시됩니다. 런처의 환경 변수(`env`)와 실행 인자는 그대로 유지되므로(예: Claude 런처의 `env`에 둔 `ANTHROPIC_BASE_URL`은 계속 동작합니다), 별도 엔드포인트나 인증 변수는 런처의 `env`나 사용자 환경 변수에 직접 두세요.
+- **Atrium 0.1.7 이하(`herdr`) 보드.** 이전 [herdr](https://herdr.dev)에서 실행하던 보드는 새 버전 첫 시작 시 자동으로 `herdr-core`로 이전됩니다. 쉬는 세션은 대화·배치·연결 그대로 바로 옮겨지고, 작업 중인 세션은 쉴 때 옮겨집니다. 진행 상황은 **설정 › 터미널**에서 확인할 수 있습니다.
 
 </details>
 
