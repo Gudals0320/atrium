@@ -430,6 +430,21 @@ test('P267 Claude Code가 아닌 하위(hook 없음)도 같은 길, 판정은 gi
   } finally { await stop(); }
 });
 
+test('P267 claude -w 하위: 띄운 폴더(s.cwd)가 본 체크아웃이어도 판이 읽은 지금 폴더(s.git.cwd)가 워크트리면 merger로', async () => {
+  const { b, dir, add, worker, mergerAct, stop } = await board();
+  try {
+    mergerAct(async () => ['ok', '합침 w']);
+    const lead = add('lead');
+    const wt = worktree(dir, 'cw1');
+    const w = worker('cw1', dir, { parent: lead });
+    w.git = { cwd: wt.split(path.sep).join('/'), isWorktree: true };
+    await assign(b, lead, 'cw1');
+    await until(() => w.doneOut);
+    assert.equal(w.doneOut.claimedBy, 'merger');
+    await until(() => b.spawned.length === 1);
+  } finally { await stop(); }
+});
+
 test('P267 merger를 띄우지 못하면 원래 done을 부모에게 그대로(돌려보낸 까닭 한 줄)', async () => {
   const { b, dir, add, worker, toS, stop } = await board({ spawnFail: true });
   try {

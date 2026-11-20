@@ -39,6 +39,8 @@ const slash = (p) => (p ? String(p).split(path.sep).join('/') : p);
 const same = (a, b) => !!a && !!b && slash(path.resolve(a)).toLowerCase() === slash(path.resolve(b)).toLowerCase();
 export const mergeKey = (ws, target) => ws + '|' + target;
 export const short = (h) => (h ? String(h).slice(0, 9) : '?');
+// 세션이 지금 일하는 폴더: 판의 git 조사가 본 폴더(hook의 cwd·터미널의 foreground_cwd, claude -w면 워크트리) → 없으면 띄운 폴더
+export const workCwd = (s) => (s && s.git && s.git.cwd) || (s && s.cwd) || null;
 
 export function readMergerGuide(file = MERGER_GUIDE_FILE) { try { return fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''); } catch (e) { return '(merger 안내 파일을 읽지 못했다: ' + e.message + ')'; } }
 
@@ -204,7 +206,8 @@ export class Merger {
     const cfg = readMergeConfig(root);
     const parent = this.b.sessions.get(unit.from) || null;
     const target = cfg.config.target || (parent && parent.cwd ? await branchOf(parent.cwd).catch(() => null) : null) || (await branchOf(root).catch(() => null));
-    const [probe, repoCommonDir] = await Promise.all([child.cwd ? branchProbe(child.cwd, target).catch(() => null) : null, this.repoCommonDir(root)]);
+    const cwd = workCwd(child); // claude -w 하위는 띄운 폴더(s.cwd)가 아니라 판이 읽은 지금 폴더(s.git.cwd)에서 일한다
+    const [probe, repoCommonDir] = await Promise.all([cwd ? branchProbe(cwd, target).catch(() => null) : null, this.repoCommonDir(root)]);
     const v = mergeVerdict({ mode, answer, probe, repoCommonDir, target });
     const out = { ...v, unitId: unit.id, ws, root, target, probe, cfg };
     if (v.ask) this.ask(ws, { child: shownName(child) || child.name, branch: probe.branch, target, root });
@@ -391,7 +394,7 @@ export class Merger {
   openBranchWork(ws, except) {
     const root = this.wsRoot(ws);
     return [...this.b.sessions.values()].filter((x) => x.workspaceKey === ws && x !== except && !this.isMerger(x) && this.store().openTryOf(x.sessionId)
-      && ((x.git && x.git.isWorktree) || (root && x.cwd && !same(x.cwd, root)))).length;
+      && ((x.git && x.git.isWorktree) || (root && workCwd(x) && !same(workCwd(x), root)))).length;
   }
   // merger의 턴이 끝났고 열린 일이 없다: 다섯 번을 채웠거나 할 일이 없으면 닫고 보관한다
   async lifecycle(s) {

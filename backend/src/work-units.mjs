@@ -246,7 +246,7 @@ export class WorkUnits {
     const units = st.unitsFrom(caller.sessionId, limit);
     const rows = units.map((u) => {
       const tr = st.lastTryOfUnit(u.id);
-      return { id: u.id, to: u.to ? this.nameOf(u.to) : null, status: u.status, origin: u.origin, spec: clip(u.spec.replace(/\s+/g, ' '), 120), createdAt: u.createdAt, closedAt: u.closedAt,
+      return { id: u.id, to: u.to ? this.nameOf(u.to) : null, status: u.status, origin: u.origin, spec: clip(unitTitle(u).replace(/\s+/g, ' '), 120), // P267: 합치기 일은 첫 줄 createdAt: u.createdAt, closedAt: u.closedAt,
         queued: !tr && u.status === 'open', result: tr ? tr.result : null, text: tr && tr.doneText ? clip(tr.doneText, 1500) : null, stopReason: tr ? tr.stopReason : null, claimedBy: tr ? tr.claimedBy : null,
         ...(this.b.merger ? { merge: this.b.merger.itemMerge(u) } : {}) }; // P267: 합치기 상태(queued·merging·merged·failed·cancelled)
     });
