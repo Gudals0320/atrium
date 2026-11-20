@@ -1311,6 +1311,7 @@ export default {
     menu: 'More',
     wsTip: 'Click to go to its area (on the board or in the session map). The arrow folds it. Drag onto a group to move it',
     attnMore: { one: '{n} more needs a look', other: '{n} more need a look' },
+    pinMore: { one: '{n} more running', other: '{n} more running' },
     kindTitle: 'Filter by kind',
     kindAll: 'All kinds',
     clear: 'Clear',
@@ -2205,6 +2206,7 @@ export default {
     unseen: 'Finished work you have not looked at',
     here: 'The session you have open',
     pinned: 'Needs a look inside a folded workspace',
+    pinnedRun: 'Running inside a folded workspace',
   },
   // P104: phone key pad (raw keys to the session pane; works in any harness)
   phoneKeys: {
