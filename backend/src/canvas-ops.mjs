@@ -9,6 +9,8 @@ import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes, dockedAreas, visibleAnchors, workersPreset } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자. P68: 워크트리끼리 붙인 덩어리
 import { layoutRegions, linkWeights } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치. P99: 다른 영역끼리의 연결 무게
 import { readGroups, groupIndex } from './ws-groups.mjs'; // P44: 가상 그룹끼리 모으기
+import { rigArrangeOf } from './rig-map.mjs'; // P262: 정리에서 rig 덩어리
+import { rigBeside } from './rig-map-layout.mjs';
 import { blockTree, pushLine, bandOf, subtreeIds, lineKids, boxFrame, BOX_PAD } from './tree-line.mjs'; // P75: 하위 세션 줄
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
@@ -757,7 +759,7 @@ function planWorkspace(b, key, { avoid = true } = {}) {
   const stepOf = (x, level) => { const r = resolveSize(x, x.aspect, { level, aspect: aspectOf(x, x.aspect) || DEFAULT_ASPECT }); return { w: r.w, h: r.h, step: r.key }; };
   // P75: 형제는 띄운 순서(블록 안에서 가장 먼저 띄운 세션의 때)로 위에서 아래로
   const rank = new Map(blocks.map((x) => [x.id, x.members.length ? Math.min(...x.members.map(born)) : Infinity]));
-  const plan = arrangeTree(blocks, edges, { origin: { x: start.x, y: start.y }, stepOf, rank, peers });
+  const plan = arrangeWithRig(b, key, blocks, edges, { origin: { x: start.x, y: start.y }, stepOf, rank, peers });
   let sx = 0, sy = 0;
   if (avoid) {
     // 정리한 영역이 다른 영역과 겹치면(맞닿는 것은 괜찮다) 영역째로 빈자리로 옮긴다
@@ -770,6 +772,23 @@ function planWorkspace(b, key, { avoid = true } = {}) {
   }
   const out = blocks.map((x) => { const q = plan.get(x.id); return { id: x.id, kind: x.kind, names: x.members.map((m) => b.nameOf(m)), from: { x: x.x, y: x.y, w: x.w, h: x.h }, to: { ...q, x: q.x + sx, y: q.y + sy } }; });
   return { blocks, out, edges, moved: sx || sy ? { dx: sx, dy: sy } : null };
+}
+// P262: rig가 켜진 워크스페이스의 정리. 역할·빌더 노드(본 저장소 영역의 단독 노드)는 한 덩어리로 rig 2D 칸(rig-map.mjs rigArrangeOf,
+//   켤 때 놓기와 같은 gridPlace·placeGap)에 모두 같은 크기로 놓고, 나머지 블록은 지금 정리 규칙(arrangeTree)으로 놓아 덩어리 아래나 오른쪽(합친 바깥이 16:9에 가까운 쪽,
+//   rig-map-layout.mjs rigBeside)에 덩어리 칸 간격보다 넓게(rigSep) 띄운다. 덩어리는 정리 전 블록들의 왼쪽 위에서 시작한다. rig가 없으면 arrangeTree 그대로
+function arrangeWithRig(b, key, blocks, edges, opts) {
+  const single = new Set(blocks.filter((x) => x.kind === 'node').map((x) => x.id));
+  const rig = rigArrangeOf(b, key, single);
+  if (!rig) return arrangeTree(blocks, edges, opts);
+  const rest = blocks.filter((x) => !(x.kind === 'node' && rig.cells.has(x.id)));
+  const o = opts.origin;
+  const restPlan = rest.length ? arrangeTree(rest, edges, { ...opts, origin: { x: 0, y: 0 } }) : new Map();
+  const rb = restPlan.size ? bbox([...restPlan.values()]) : null;
+  const side = rigBeside(rig, rb, rig.sep);
+  const plan = new Map();
+  for (const [sid, c] of rig.cells) plan.set(sid, { x: o.x + c.x, y: o.y + c.y, w: rig.size.w, h: rig.size.h, size: rig.size.size, aspect: rig.size.aspect, rig: true });
+  for (const [id, q] of restPlan) plan.set(id, { ...q, x: Math.round(o.x + side.dx + q.x - rb.x), y: Math.round(o.y + side.dy + q.y - rb.y) });
+  return plan;
 }
 // P177: 일 관계 색인(가지 기능이 없으면 null = 옛 계보 규칙)
 const relIndexOf = (b) => (b.branch && b.branch.relIndex ? b.branch.relIndex() : null);
@@ -789,7 +808,7 @@ function applyWorkspacePlan(b, { blocks, out }) {
     const dx = q.x - x.x, dy = q.y - x.y;
     if (x.kind === 'memo' || x.kind === 'kanban') { moveItem(b, x.kind, x.memoId || x.kanbanId, q.x, q.y); continue; }
     if (x.kind === 'wtbox') { if (dx || dy) shiftWorkspace(b, x.box, Math.round(dx), Math.round(dy)); continue; } // P35: 상자째(안의 노드, 대화 노드, 자리)
-    if (x.kind === 'node') { const n = byId.get(x.id); b.store.setNode({ ...n, x: Math.round(q.x), y: Math.round(q.y), w: q.w, h: q.h, size: q.size || n.size || null }); if (q.size) b.store.setNodeAspect(x.id, parseStep(q.size).aspect, q.size); continue; }
+    if (x.kind === 'node') { const n = byId.get(x.id); b.store.setNode({ ...n, x: Math.round(q.x), y: Math.round(q.y), w: q.w, h: q.h, size: q.size || n.size || null }); if (q.size) b.store.setNodeAspect(x.id, parseStep(q.size).aspect, q.size); else if (q.rig) b.store.setNodeAspect(x.id, q.aspect ?? null, null); continue; } // P262: 손으로 정한 자유 크기를 rig 전체에 맞출 때는 크기 열쇠를 지운다
     for (const m of x.members) { const n = byId.get(m); b.store.setNode({ ...n, x: Math.round(n.x + dx), y: Math.round(n.y + dy) }); }
   }
 }

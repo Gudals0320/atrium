@@ -240,3 +240,27 @@ export function gridPlace(roles, flows = [], { W = 600, H = 400, GX = 600, GY = 
   const cells = new Map(items.map((key, i) => [key, { c: (P[best[i]][0] - h0) / 2, r: P[best[i]][1] - r0 }]));
   return { cells, cols: Math.max(...[...cells.values()].map((x) => x.c)) + 1, rows: Math.max(...[...cells.values()].map((x) => x.r)) + 1, score: bestS, shape, rowStep: SY, colStep: SX };
 }
+
+// ---- P262: rig 덩어리(켤 때 놓기와 캔버스 자동 정렬이 같이 쓴다) ----
+// 모든 rig 노드(역할·빌더)는 같은 크기 W×H다. 칸 간격은 placeGap(W, H), 자리는 gridPlace(빌더 칸은 빌더가 아직 없어도 비워 둔다. 켤 때와 같은 덩어리).
+// → { at: Map 이름(빌더는 GRID_BUILDER) → { x, y }(덩어리 왼쪽 위 칸이 0, 0), GX, GY, SX, SY, grid }
+export function rigCluster(roles, flows = [], { W = 1440, H = 810, beatRole = null } = {}) {
+  const { GX, GY } = placeGap(W, H);
+  const grid = gridPlace(roles, flows, { W, H, GX, GY, beatRole });
+  const SX = grid.colStep || W + GX, SY = grid.rowStep || H + GY;
+  const at = new Map([...grid.cells].map(([k, c]) => [k, { x: Math.round(c.c * SX), y: Math.round(c.r * SY) }]));
+  return { at, GX, GY, SX, SY, grid };
+}
+// P262: 자동 정렬에서 rig 덩어리와 나머지(보통 세션 나무)를 어떻게 붙이는가.
+//   SEP_F: 덩어리와 나머지 사이 = rig 칸 간격(GX·GY 가운데 큰 것) × SEP_F. 덩어리 안 간격보다 넓어야 눈이 두 무리로 나눠 읽는다.
+//   ASPECT: 아래·오른쪽 가운데 합친 바깥이 이 비율(16:9, 캔버스 정리의 하위 열 접기 WRAP_ASPECT와 같은 값)에 가까운 쪽. 같으면 아래.
+export const RIG_ARRANGE = { SEP_F: 1.25, ASPECT: 16 / 9 };
+export const rigSep = (GX, GY) => Math.round(Math.max(GX, GY) * RIG_ARRANGE.SEP_F);
+// rig: { w, h }(덩어리 바깥), rest: { w, h } | null, sep → { side: 'below' | 'right' | null, dx, dy }(나머지의 왼쪽 위를 덩어리 왼쪽 위에서 얼마나)
+export function rigBeside(rig, rest, sep, aspect = RIG_ARRANGE.ASPECT) {
+  if (!rest || !(rest.w > 0) || !(rest.h > 0)) return { side: null, dx: 0, dy: 0 };
+  const cost = (w, h) => Math.abs(Math.log(w / h / aspect));
+  const below = cost(Math.max(rig.w, rest.w), rig.h + sep + rest.h);
+  const right = cost(rig.w + sep + rest.w, Math.max(rig.h, rest.h));
+  return right < below - 1e-9 ? { side: 'right', dx: rig.w + sep, dy: 0 } : { side: 'below', dx: 0, dy: rig.h + sep };
+}
