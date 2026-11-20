@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { placeGap, GRID_TIDY, angleOk, lineAngle } from '../../backend/src/rig-map-layout.mjs';
-import { gridPlace, faceEnds, segHitsRect, rigEdges, rigCanvasLines, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
+import { gridPlace, faceEnds, segHitsRect, rigEdges, rigCanvasLines, rigCurve, rigHead, bezAt, RIG_EDGE, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
 
 const L = (f) => ({ ...f, from: [].concat(f.from), to: [].concat(f.to) });
 const TRI = { roles: ['data', 'ideas', 'verify'], flows: [{ item: 'snapshot', from: 'data', to: 'ideas' }, { item: 'hypothesis', from: 'ideas', to: 'verify' }, { item: 'result', from: 'verify', to: 'ideas', for: 'hypothesis' }, { item: 'data_request', from: 'verify', to: 'data' }].map(L) };
@@ -54,4 +54,22 @@ test('P262 rigCanvasLines: 멀리 볼 때 칩이 노드 사이에 안 들어가�
       if (cs >= 24) assert.ok(far.some((l) => l.fit !== 'full'), 'cs ' + cs + ': 줄인 칩이 있다');
     }
   }
+});
+
+test('P262 rigHead: 화살촉은 그린 선의 끝 접선(화살촉 밑변 자리의 곡선 접선)을 따르고 모서리 수직이 아니다. 선은 화살촉 밑변에서 멈춘다. 화살촉은 작게(끝 점 크기 가까이)', () => {
+  const c = rigCurve([0, 0], 'r', [600, 300], 'l'); // 끝 접선은 모서리 수직(1, 0)
+  const len = RIG_EDGE.ARROW, h = rigHead(c.P, len, RIG_EDGE.ARROW_W);
+  assert.ok(Math.hypot(h.tip[0] - 600, h.tip[1] - 300) < len * 0.2, '끝은 도착 모서리 자리 가까이');
+  // 기대 방향: 그린 선(dLine)의 끝 접선 = 곡선 위 base 자리의 접선
+  const tb = bezAt(c.P, h.t0).u, got = Math.atan2(h.u[1], h.u[0]), want = Math.atan2(tb[1], tb[0]);
+  assert.ok(Math.abs(got) > 1e-3, '모서리 수직(0도) 그대로가 아니다');
+  assert.ok(Math.abs(want - got) * 180 / Math.PI < 1, 'tangent ' + want + ' ' + got);
+  // 머리 삼각형: 꼭짓점 → 밑변 가운데 방향 = u
+  const n = h.d.match(/-?[\d.]+/g).map(Number), mid = [(n[2] + n[4]) / 2, (n[3] + n[5]) / 2];
+  const ang = Math.atan2(n[1] - mid[1], n[0] - mid[0]);
+  assert.ok(Math.abs(ang - got) * 180 / Math.PI < 1);
+  // 그린 선의 끝 = 화살촉 밑변 가운데
+  const e = h.dLine.match(/-?[\d.]+/g).map(Number).slice(-2);
+  assert.ok(Math.hypot(e[0] - h.base[0], e[1] - h.base[1]) < 0.02);
+  assert.ok(RIG_EDGE.ARROW <= 2.5 * RIG_EDGE.DOT && RIG_EDGE.ARROW_W <= 2 * RIG_EDGE.DOT, '작은 화살촉');
 });

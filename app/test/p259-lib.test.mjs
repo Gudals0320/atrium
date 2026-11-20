@@ -169,9 +169,9 @@ test('P259 칩: 대기 n·붉은 점이 칩 안에 들고 그만큼 넓다. 못 
   assert.equal(s.get('x').free, false);
 });
 
-test('P259 그리기: 곡선 가족 클래스, 도착 끝 화살촉(userSpaceOnUse, 끝이 모서리), 출발 점, 칩 안 방향 화살, 직각 길·두 줄 걷어냄', () => {
+test('P259 그리기: 곡선 가족 클래스, 도착 끝 화살촉(P262: 그린 곡선 끝 방향의 삼각형, 끝이 모서리), 출발 점, 칩 안 방향 화살, 직각 길·두 줄 걷어냄', () => {
   const src = read('RigLines.jsx');
-  for (const s of ['mt-edge role rigc', "' active'", 'markerUnits="userSpaceOnUse"', 'refX={RIG_EDGE.ARROW}', 'markerEnd=', 'rig-line-start', 'rig-dir', 'mt-edge-label rigc']) assert.ok(src.includes(s), s);
+  for (const s of ['mt-edge role rigc', "' active'", 'data-role="rig-head"', 'ln.dLine', 'rig-line-start', 'rig-dir', 'mt-edge-label rigc']) assert.ok(src.includes(s), s);
   for (const s of ['twoLines', 'polyLines', 'labelSpots', 'V7.W1', 'pairLit', 'WLIT']) assert.ok(!src.includes(s), s);
   const cv = read('Canvas.jsx');
   assert.ok(/rigCanvasLines\(/.test(cv) && !/rigRoute|spreadEnds/.test(cv));

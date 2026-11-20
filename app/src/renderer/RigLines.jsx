@@ -15,9 +15,7 @@ import { useStore, getState, openDialog } from './store.js';
 import { useT, fmtTime } from './lib/i18n.js';
 import { rigTag, rigFrames, periodText, rigLineActive, RIG_EDGE, RIG_VIEW } from './lib/rig-map.js';
 
-const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
-// 도착 끝 화살촉(채운 삼각형, 세계 크기 × cs). 끝이 노드 모서리에 닿는다(refX = 길이)
-const Tip = ({ id, cls, cs, color }) => <marker id={id} className={cls} orient="auto" markerUnits="userSpaceOnUse" viewBox={`0 0 ${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W}`} markerWidth={RIG_EDGE.ARROW * cs} markerHeight={RIG_EDGE.ARROW_W * cs} refX={RIG_EDGE.ARROW} refY={RIG_EDGE.ARROW_W / 2}><path d={`M0 0 L${RIG_EDGE.ARROW} ${RIG_EDGE.ARROW_W / 2} L0 ${RIG_EDGE.ARROW_W} Z`} style={{ fill: color, stroke: 'none' }} /></marker>;
+// P262: 도착 끝 화살촉은 marker(끝 접선 = 모서리 수직)가 아니라 그린 곡선 끝 방향의 삼각형(lib/rig-map.js rigHead). 선은 화살촉 밑변에서 멈춘다
 // 칩: 세계 자리 p를 가운데로, 배율 cs
 const chipAt = (p, cs) => ({ transform: `translate(${p[0]}px, ${p[1]}px) scale(${cs}) translate(-50%, -50%)`, transformOrigin: '0 0' });
 const angOf = (u) => Math.round(Math.atan2(u[1], u[0]) * 180 / Math.PI);
@@ -30,7 +28,6 @@ export function RigPathEdge({ id, data }) {
   const bState = useStore((st) => (data ? (st.sessions.get(data.target) || {}).state : null));
   if (!data || !data.rig) return null;
   const { cs, lines } = data.rig;
-  const tid = safeId(id);
   const flows = m ? data.flows.map((i) => (m.flows || [])[i]).filter(Boolean) : [];
   // P259(2차): 보통 연결과 같은 색(역할 연결 .role)과 같은 흐름(.active: 받는 역할이 일하고 그 길로 30분 안에 항목이 오감). 굵게 하는 밝기는 걷었다
   const act = (ln) => rigLineActive(ln, flows, ln.to === data.a ? aState : bState);
@@ -39,9 +36,9 @@ export function RigPathEdge({ id, data }) {
   const first = lines[0];
   return <>
     <g className="mt-rigc" data-role="rig-path" data-edge={id} data-a={data.a} data-b={data.b}>
-      <defs><Tip id={`${tid}-tip`} cls="mt-rigc-tip role" cs={cs} color="var(--wire-role)" /></defs>
       {lines.map((ln) => <g key={ln.key}>
-        <path className={`react-flow__edge-path mt-edge role rigc${act(ln) ? ' active' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} data-active={act(ln) ? '1' : '0'} d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs }} markerEnd={`url(#${tid}-tip)`} />
+        <path className={`react-flow__edge-path mt-edge role rigc${act(ln) ? ' active' : ''}`} data-role="rig-line" data-line={ln.which} data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} data-active={act(ln) ? '1' : '0'} d={ln.dLine || ln.d} data-end-d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs }} />
+        <path className="mt-rigc-head role" data-role="rig-head" d={ln.head} style={{ fill: 'var(--wire-role)', stroke: 'none' }} />
         <circle className="mt-edge-end role mt-rigc-end" data-role="rig-line-start" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
         <path d={ln.d} className="mt-edge-hit" fill="none" stroke="transparent" strokeWidth={24 * cs} onClick={toggle} />
       </g>)}
@@ -67,11 +64,10 @@ export function RigRaiseEdge({ id, data }) {
   if (!data || !data.rig || !data.rig.lines.length) return null;
   const { cs } = data.rig, ln = data.rig.lines[0];
   const fit = ln.fit || 'full';
-  const tid = safeId(id);
   return <>
     <g className="mt-rigc-raise" data-role="rig-raise" data-edge={id}>
-      <defs><Tip id={`${tid}-r`} cls="mt-rigc-tip raise" cs={cs} color="var(--attn)" /></defs>
-      <path className="react-flow__edge-path mt-edge rigc raise" data-role="rig-line" data-line="raise" data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs, strokeDasharray: `${3 * cs} ${8 * cs}` }} markerEnd={`url(#${tid}-r)`} />
+      <path className="react-flow__edge-path mt-edge rigc raise" data-role="rig-line" data-line="raise" data-from={ln.from} data-to={ln.to} data-sp={ln.sp} data-tp={ln.tp} d={ln.dLine || ln.d} data-end-d={ln.d} fill="none" style={{ strokeWidth: RIG_EDGE.W * cs, strokeDasharray: `${3 * cs} ${8 * cs}` }} />
+      <path className="mt-rigc-head raise" data-role="rig-head" d={ln.head} style={{ fill: 'var(--attn)', stroke: 'none' }} />
       <circle className="mt-rigc-end raise" cx={ln.s[0]} cy={ln.s[1]} r={RIG_EDGE.DOT * cs} />
     </g>
     <EdgeLabelRenderer>
