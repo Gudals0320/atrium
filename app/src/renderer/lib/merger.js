@@ -92,3 +92,48 @@ export function pendingMerges(view) {
   for (const j of view.jobs) if (j && !j.mergerId && j.state !== 'cancelled' && j.workspace) out.set(j.workspace, (out.get(j.workspace) || 0) + 1);
   return out;
 }
+
+// ---- P276: 세션 맵에서 merger 자리(head → 하위 갈림 줄기 위에 얹는다) ----
+// 마지막으로 합친 부모 기억: merger 세션 id → { parentId, at }. 열린 일이 보일 때마다 그 일의 부모를 남긴다(같으면 앞 객체 그대로)
+export function rememberParents(prev, view) {
+  const out = { ...(prev || {}) };
+  let changed = false;
+  for (const j of (view && view.jobs) || []) {
+    if (!j || !j.mergerId || !j.parentId) continue;
+    const at = j.createdAt || 0, cur = out[j.mergerId];
+    if (cur && (cur.at || 0) > at) continue;
+    if (cur && cur.parentId === j.parentId && (cur.at || 0) === at) continue;
+    out[j.mergerId] = { parentId: j.parentId, at }; changed = true;
+  }
+  return changed ? out : prev || {};
+}
+// 세션 맵에 줄 merger 목록: 지금 떠 있는 merger마다 { mergerId, parentId(얹을 head, 없으면 null), state, kids: [{ childId, state }], idle }
+// - head: 열린 합치기 일의 원래 부모. 여럿이면 열린 일이 가장 많은 부모(같으면 가장 최근 일의 부모)
+// - 열린 일이 없으면 마지막으로 합친 부모(last)에 흐리게(idle). 그것도 모르면 parentId null(솔로 그대로)
+// - state: 합치는 중이 하나라도 있으면 merging, 아니면 실패가 있으면 failed, 아니면 queued, 열린 일이 없으면 idle
+export function mapMergers(view, last = {}) {
+  if (!view) return [];
+  const byM = new Map();
+  for (const j of view.jobs || []) {
+    if (!j || !j.mergerId || j.state === 'cancelled' || j.state === 'merged') continue;
+    if (!byM.has(j.mergerId)) byM.set(j.mergerId, []);
+    byM.get(j.mergerId).push(j);
+  }
+  const out = [];
+  const ids = new Set([...mergerSessionIds(view).keys(), ...byM.keys()]);
+  for (const mid of ids) {
+    const js = byM.get(mid) || [];
+    if (!js.length) {
+      const l = last && last[mid];
+      out.push({ mergerId: mid, parentId: (l && l.parentId) || null, state: 'idle', kids: [], idle: true });
+      continue;
+    }
+    const n = new Map(), at = new Map();
+    for (const j of js) if (j.parentId) { n.set(j.parentId, (n.get(j.parentId) || 0) + 1); at.set(j.parentId, Math.max(at.get(j.parentId) || 0, j.createdAt || 0)); }
+    const parentId = [...n.keys()].sort((a, b) => n.get(b) - n.get(a) || at.get(b) - at.get(a))[0] || null;
+    const mine = js.filter((j) => j.parentId === parentId);
+    const state = mine.some((j) => j.state === 'merging') ? 'merging' : mine.some((j) => j.state === 'failed') ? 'failed' : 'queued';
+    out.push({ mergerId: mid, parentId, state, kids: mine.filter((j) => j.childId).map((j) => ({ childId: j.childId, state: j.state })), idle: false });
+  }
+  return out;
+}

@@ -9,7 +9,7 @@ import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
-import { mergerViewOf, withAsk, withoutAsk } from './lib/merger.js'; // P268
+import { mergerViewOf, withAsk, withoutAsk, rememberParents } from './lib/merger.js'; // P268. P276: rememberParents
 import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107: 작업 중 테두리 빛 설정과 미션 맵 덮개를 문서 뿌리에
 
 const state = {
@@ -427,6 +427,15 @@ const MERGER_LOAD_MS = 300;
 let mergerT = 0, mergerSig = '';
 state.merger = null;
 state.mergerDismissed = new Set(); // "나중에"로 닫은 카드(워크스페이스|물은 시각). 이 창에만, 다시 켜면 다시 보인다
+// P276: merger마다 마지막으로 합친 부모(세션 맵이 열린 일이 없는 merger를 그 head 위에 흐리게 놓는다). 이 기기에 기억한다
+const MERGER_LAST_KEY = 'atrium.merger.lastParent';
+state.mergerLast = (() => { try { const o = JSON.parse(localStorage.getItem(MERGER_LAST_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
+function saveMergerLast(next) {
+  if (next === state.mergerLast) return;
+  const keep = Object.entries(next).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 50); // 오래된 것은 버린다
+  state.mergerLast = Object.fromEntries(keep);
+  try { localStorage.setItem(MERGER_LAST_KEY, JSON.stringify(state.mergerLast)); } catch { /* 기억 못 해도 지금 화면은 된다 */ }
+}
 export function loadMerger(delay = MERGER_LOAD_MS) {
   if (mergerT) return;
   mergerT = setTimeout(() => {
@@ -437,6 +446,7 @@ export function loadMerger(delay = MERGER_LOAD_MS) {
       if (sig === mergerSig) return;
       mergerSig = sig;
       state.merger = v;
+      saveMergerLast(rememberParents(state.mergerLast, v));
       changed();
     }).catch(() => {});
   }, delay);

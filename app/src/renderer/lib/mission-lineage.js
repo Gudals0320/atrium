@@ -15,6 +15,8 @@ import { zoomStep } from './faces.js'; // P178: 이름표 배율 계단
 
 // SPINE = 폴더 기둥 최소 폭(P157: 가장 긴 폴더 이름에 맞춰 넓어진다, spineWidth), BANDMIN = 폴더 띠 최소 높이(P157: 워크스페이스 하나인 폴더도 기둥 글이 잘리지 않게), HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // MINCOLS = 늘 있는 나무 칸 수(시작·1단계)
+// P276: MGAP = head 카드와 그 위 merger 카드 사이(연결 선이 지난다)
+const MGAP = 34;
 export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46, THIN: 30, TGY: 8, THINMIN: 3 }; // P163: THIN = 얇은 줄 높이, TGY = 얇은 줄끼리 간격, THINMIN = 하위가 이만큼 이상일 때 절전 하위를 얇은 줄로 // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
 
 // P261: 세션 맵 카드 폭(그 판의 가장 긴 이름이 멀리 타일 한 줄에 들게)
@@ -60,7 +62,7 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // P202: today = 오늘 일한 워크스페이스 키들(Set·배열, todayWorkspaces). 폴더 차례는 오늘 일한 폴더들(이름순) → 나머지 폴더들(이름순), 사이드바 손 차례(order)는 쓰지 않는다.
 //   columns = 1 | 2 | 'auto'(PC만: view = 맞춤 칸 { w, h }에서 두 열 맞춤 배율이 한 열보다 COLS2.GAIN배 넘게 크면 두 열). → sections(오늘·이전 이름표 자리), ncol, colDx, measure
 export function lineageLayout(graph, opts = {}) {
-  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스
+  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, tab = null, keepKeys = null, mergers = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P276: mergers = lib/merger.js mapMergers 결과(세션 id)
   if (!phone && columns === 'auto') {
     // P253: 열 판단은 이름표 계단(label, 배율에 따라 바뀐다)과 상관없이 바탕 글 크기(label 1)의 한 열 배치로 한다.
     //   전에는 그 계단의 배치로 재서, 줌인·줌아웃으로 계단이 바뀌면 열이 하나·둘로 바뀌며 밀렸다. 이제 열 수는 그래프와 보기 칸(창 크기)으로만 바뀐다
@@ -159,6 +161,22 @@ export function lineageLayout(graph, opts = {}) {
   for (const e of graph.edges || []) if (e.relation && e.relationSource && e.relationSource !== 'auto' && byId.has(e.from) && byId.has(e.to)) { relTouch.add(e.from); relTouch.add(e.to); }
   const treeRoot = (n) => isRoot(n) && ((layKids.get(n.id) || []).length || leadsAway(n) || peersOf(n.id).length || anyPeer(n) || relTouch.has(n.id) || lineageOnly(n) || calledBefore(n));
   for (const n of tree.nodes) { if (treeRoot(n)) depthWalk(n.id, 0, 0); else if (crossIn(n.id)) depthWalk(n.id, 1, 0); }
+  // P276: merger는 솔로 쌓음에서 빼고 그 합치기 일의 원래 부모(head) 카드 바로 위(같은 칸)에 얹는다. 같은 줄이고, merger에 나무 하위·부모·동료가 없을 때만.
+  //   head가 접힌 가지 안이라 놓이지 않으면 솔로 쌓음 끝으로 돌아간다(stack)
+  const mInfo = new Map(), mergerAt = new Map(); // merger 노드 id → { head, state, idle, kids(하위 노드 id → 일 상태) }, head 노드 id → [merger 노드 id]
+  for (const m of mergers || []) {
+    const mid = sidOf.get(m.mergerId), hid = m.parentId ? sidOf.get(m.parentId) : null;
+    if (!mid) continue;
+    const info = { head: null, state: m.state || 'queued', idle: !!m.idle, kids: new Map((m.kids || []).map((k) => [sidOf.get(k.childId), k.state]).filter((x) => x[0])) };
+    mInfo.set(mid, info);
+    if (!hid || hid === mid || wsOf(hid) !== wsOf(mid)) continue;
+    if (parentIn(mid) || crossIn(mid) || attached.has(mid) || (tree.kids.get(mid) || []).length || peersOf(mid).length || anyPeer(byId.get(mid))) continue;
+    if (isAnc(mid, hid)) continue;
+    info.head = hid;
+    if (!mergerAt.has(hid)) mergerAt.set(hid, []);
+    mergerAt.get(hid).push(mid);
+  }
+  const onHead = (id) => !!(mInfo.get(id) || {}).head;
   const nCols = Math.max(L.MINCOLS, maxDepth + 1);
   const COL = Array.from({ length: nCols }, (_, i) => (phone ? PHONE.PADX : L.HEADX + Math.max(L.HEADW + 208, L.HEADW2 + 80)) + i * (L.CW + L.GX)); // 시안: 리드 칸 740 = 232 + 300 + 208. P178: 머리 글이 커지면 머리 폭 + 80
   // P166: 휴대폰 폭 = 나무 칸 수(적어도 MINCOLS)만큼. P260: 솔로도 시작 칸이라 PC와 같다
@@ -171,7 +189,9 @@ export function lineageLayout(graph, opts = {}) {
   const cards = new Map(), bands = [], rows = [];
   // P160: 휴대폰 목록이 같은 판정을 쓰도록 남긴 줄마다 놓은 차례(시작 칸 뿌리·다른 워크스페이스에서 온 것·솔로)와 보이는 하위 차례를 남긴다(PC 배치는 그대로)
   const seq = new Map(), vkids = new Map();
-  const put = (id, depth, y, ws) => cards.set(id, { x: ox + COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0, thin: thin.has(id) });
+  const placed = []; // P276: 놓은 차례(head 위 merger 자리를 비울 때 그 가지를 함께 내린다)
+  const mFlag = (id) => (mInfo.has(id) ? { merger: { head: mInfo.get(id).head, state: mInfo.get(id).state, idle: mInfo.get(id).idle } } : {});
+  const put = (id, depth, y, ws) => { placed.push(id); cards.set(id, { x: ox + COL[Math.min(depth, nCols - 1)], y, w: L.CW, h: H(id), node: byId.get(id), ws, depth, fold: folded.get(id) || 0, thin: thin.has(id), ...mFlag(id) }); };
   // P163: 한 세션 아래 보이는 하위(곁에 붙은 동료 포함)가 THINMIN개 이상이면 절전 중인 하위만 얇은 줄(높이 THIN)로 줄이고 깨어 있는 카드 아래로 모은다(그 안은 지금 차례 = 만든 차례).
   // 줄이지 않는 것: 절전이 아닌 것(작업 중·응답 필요·오류·완료 미확인 등), 뒤 일이 도는 것(P164), 자기 아래 보이는 하위가 있거나 깊이 접기 칩이 붙는 것(카드로 둔다), 형제 중 동료가 있는 것(동료 붙이기가 먼저라 제자리 카드)
   const thin = new Set();
@@ -186,6 +206,21 @@ export function lineageLayout(graph, opts = {}) {
   // align: 하위 묶음 안에서 카드 자리. mid = 가운데, bottom = 아래 끝(바로 다음이 동료일 때), top = 위 끝(바로 앞이 동료일 때). 동료끼리 바로 위아래에 붙게
   const alignOf = (list, i) => (i + 1 < list.length && isPeer(list[i], list[i + 1]) ? 'bottom' : i > 0 && isPeer(list[i], list[i - 1]) ? 'top' : 'mid');
   const place = (id, depth, top, ws, align = 'mid') => {
+    if (mergerAt.has(id)) return placeHead(id, depth, top, ws, align);
+    return place0(id, depth, top, ws, align);
+  };
+  // P276: head 위에 merger를 얹을 자리. head 카드 위 끝이 그 가지 위 끝보다 merger 높이 + MGAP만큼 아래가 되게 가지째 내린다
+  const placeHead = (id, depth, top, ws, align) => {
+    const start = placed.length;
+    let my = place0(id, depth, top, ws, align);
+    const ms = mergerAt.get(id), need = ms.reduce((s, m) => s + H(m) + MGAP, 0);
+    const hb = cards.get(id), dy = Math.max(0, top + need - hb.y);
+    if (dy) { for (const x of placed.slice(start)) cards.get(x).y += dy; my += dy; }
+    let yy = hb.y;
+    for (const m of ms) { yy -= MGAP + H(m); put(m, depth, yy, ws); }
+    return my;
+  };
+  const place0 = (id, depth, top, ws, align = 'mid') => {
     const ks = depth > 50 ? [] : thinOrder(visKids(id, depth), depth + 1);
     vkids.set(id, ks);
     if (!ks.length) { put(id, depth, top, ws); return H(id); }
@@ -217,10 +252,10 @@ export function lineageLayout(graph, opts = {}) {
       const all = tree.nodes.filter((n) => wsOf(n.id) === key).sort(bySpawn);
       const nodes = all;
       // 시작 칸: 이 줄에 하위가 있는 뿌리, 하위가 다른 워크스페이스에만 있는 뿌리, 동료가 있는 뿌리. 뿌리끼리 동료면 바로 아래에 붙인다
-      const roots = peerChain(nodes.filter(treeRoot).map((n) => n.id), isPeer).map((id) => byId.get(id)); // P266: 뿌리끼리 동료도 사슬로 붙인다
+      const roots = peerChain(nodes.filter((n) => treeRoot(n) && !onHead(n.id)).map((n) => n.id), isPeer).map((id) => byId.get(id)); // P266: 뿌리끼리 동료도 사슬로 붙인다
       const away = nodes.filter((n) => crossIn(n.id)); // 부모가 다른 워크스페이스(1단계 칸에서 시작)
-      const solos = nodes.filter((n) => isRoot(n) && !treeRoot(n));
-      seq.set(key, { roots: roots.map((r) => r.id), away: away.map((n) => n.id), solos: solos.map((n) => n.id) });
+      const solos = nodes.filter((n) => isRoot(n) && !treeRoot(n) && !onHead(n.id));
+      seq.set(key, { roots: roots.map((r) => r.id), away: away.map((n) => n.id), solos: solos.map((n) => n.id), mergers: nodes.filter((n) => onHead(n.id)).map((n) => n.id) });
       const chips = chipCounts(all.map((n) => tierOf(n.id)));
       if (phone) { y += phoneRow(key, g, wi, chips, all.length); return; }
       const end = stack(key, y + L.RT), stackH = end == null ? 0 : end - y;
@@ -262,6 +297,25 @@ export function lineageLayout(graph, opts = {}) {
     const pts = ay === byy ? [[a.x + a.w + gap(parent), ay], [b.x - gap(child), byy]] : [[a.x + a.w + gap(parent), ay], [mx, ay], [mx, byy], [b.x - gap(child), byy]];
     const label = null; // P153 r8: 선 이름표는 없앴다(역할은 카드 둘째 줄, 다른 워크스페이스에서 온 것은 카드 맨 아래 줄이 말한다)
     edges.push({ ...base, cross: false, pts, d: poly(pts), label });
+  }
+  // P276: merger → head의 갈림 줄기. merger 오른쪽 가운데 → 줄기 x(칸 사이 틈 가운데)까지 가로, 줄기 위 끝보다 위면 줄기 위 끝까지 세로.
+  //   보이는 하위가 없으면 merger 아래 가운데 → head 위 가운데(세로). 합치는 중인 하위로 가는 나무 선은 밝게(merging), 실패면 failed
+  for (const [mid, info] of mInfo) {
+    const mc = cards.get(mid), hid = info.head, a = hid && cards.get(hid);
+    if (!mc || !a || !mc.merger || mc.merger.head !== hid) continue;
+    const ks = (vkids.get(hid) || []).filter((k) => cards.get(k) && wsOf(k) === wsOf(hid));
+    const my = mc.y + mc.h / 2;
+    let pts;
+    if (ks.length) {
+      const mx = a.x + a.w + L.GX / 2, ay = a.y + a.h / 2;
+      const top = Math.min(ay, ...ks.map((k) => cards.get(k).y + cards.get(k).h / 2));
+      pts = my >= top ? [[mc.x + mc.w + gap(mid), my], [mx, my]] : [[mc.x + mc.w + gap(mid), my], [mx, my], [mx, top]];
+    } else {
+      const cx = mc.x + mc.w / 2;
+      pts = [[cx, mc.y + mc.h + gap(mid)], [cx, a.y - gap(hid)]];
+    }
+    edges.push({ id: `merger:${mid}>${hid}`, from: mid, to: hid, rel: 'merge', merger: true, state: info.state, idle: info.idle, tree: false, cross: false, pts, d: poly(pts), label: null });
+    for (const e of edges) if (e.tree && e.from === hid && info.kids.has(e.to)) { const st = info.kids.get(e.to); if (st === 'merging') e.merging = true; else if (st === 'failed') e.mergeFailed = true; }
   }
   // P153 r11: 동료 = 같은 칸에서 위아래로 곁에 놓고 무채색 양방향 선(위계 화살촉 없음). 칸이 다르면(다른 줄 등) 길 찾기
   // P266: 같은 칸이어도 곧은 선이 다른 카드를 지나면 칸 오른쪽 통로로 꺾어 돌아간다(peerDetours, 겹치는 우회끼리는 다른 통로 줄)
@@ -323,11 +377,14 @@ export function lineageLayout(graph, opts = {}) {
   // ---- P260: 줄 안 쌓기(PC·휴대폰 같은 규칙). 시작 칸 뿌리의 나무 → 다른 워크스페이스에서 온 것(1단계 칸) → 솔로(시작 칸, 차례 = 만든 차례).
   //   나무 사이는 GY*2(동료 뿌리끼리는 PGY), 솔로끼리는 GY. 쌓은 것이 없으면 null, 있으면 마지막 카드 아래 끝 y ----
   function stack(key, top) {
-    const { roots: rs, away: aw, solos: ss } = seq.get(key);
+    const { roots: rs, away: aw, solos: ss0, mergers: ms = [] } = seq.get(key);
+    const ss = ss0.slice();
     let cy = top, last = null;
     rs.forEach((r, i) => { const peerNext = i + 1 < rs.length && isPeer(r, rs[i + 1]); cy += place(r, 0, cy, key, alignOf(rs, i)) + (last = peerNext ? L.PGY : L.GY * 2); });
     for (const s of aw) cy += place(s, 1, cy, key) + (last = L.GY * 2);
-    for (const s of ss) { cards.set(s, { x: ox + COL[0], y: cy, w: L.CW, h: H(s), node: byId.get(s), ws: key, depth: -1, solo: true, fold: 0 }); cy += H(s) + (last = L.GY); }
+    for (const s of ss) { cards.set(s, { x: ox + COL[0], y: cy, w: L.CW, h: H(s), node: byId.get(s), ws: key, depth: -1, solo: true, fold: 0, ...mFlag(s) }); cy += H(s) + (last = L.GY); }
+    // P276: head가 놓이지 않은(접힌 가지 안) merger는 솔로로
+    for (const s of ms) if (!cards.has(s)) { const f = mFlag(s); if (f.merger) f.merger.head = null; cards.set(s, { x: ox + COL[0], y: cy, w: L.CW, h: H(s), node: byId.get(s), ws: key, depth: -1, solo: true, fold: 0, ...f }); cy += H(s) + (last = L.GY); }
     return last == null ? null : cy - last;
   }
 
