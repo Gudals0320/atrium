@@ -175,6 +175,21 @@ export function promptOnScreen(screenText, prompt, kind = 'claude') {
   if (bx.startsWith(bare(head)) || (bx.length >= 12 && wn.startsWith(bx)) || pasted) return { box: 'ours', seen, ...(noise ? { noise } : {}) };
   return { box: 'other', seen, ...(noise ? { noise } : {}) };
 }
+// P264: Codex에 붙여 넣은 글이 입력 칸에 다 들어갔는가. Windows Codex는 큰 붙여 넣기를 글자 수에 비례해 천천히 받고(4,300자에 약 3초, 1만 자는 5초 넘게)
+//   다 받기 전에 들어온 Enter를 붙여 넣은 글의 줄바꿈으로 받는다. 1,000자가 넘으면 입력 칸이 "[Pasted Content N chars]"로 접히므로 N이 보낸 글자 수에 닿았는지,
+//   아니면 입력 칸 글이 보낸 글의 끝으로 끝나는지 본다 → { box: 입력 칸 글(못 찾거나 비었으면 ''), done }
+export function codexPasteState(screenText, text) {
+  const box = codexInputBox(screenText);
+  if (!box.found || !box.text) return { box: '', done: false };
+  const want = String(text || '').replace(/\r\n?/g, '\n');
+  const m = box.text.match(/\[Pasted Content (\d+) chars\]$/);
+  if (m) return { box: box.text, done: Number(m[1]) >= [...want].length };
+  const bare = (s) => s.replace(/\s+/g, '');
+  const tail = bare(want).slice(-24);
+  return { box: box.text, done: !!tail && bare(box.text).endsWith(tail) };
+}
+// P264: 판이 붙여 넣고 화면을 본 뒤 Enter를 치는 Codex 글(여러 줄이거나 200자 넘음). 짧은 한 줄은 예전대로 hc terminal.send(붙여 넣기와 Enter를 함께)
+export const codexPasteWanted = (text) => /\n/.test(String(text || '')) || String(text || '').length > 200;
 // P126: ESC가 떨어져 글로 남은 SGR 마우스 보고(휠 64·65, 누르기·움직임). 숫자 셋과 M·m으로 끝나는 꼴이라 사람의 글과 헷갈리지 않는다
 const MOUSE_NOISE_G = /\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
 export const mouseNoise = (s) => (String(s || '').match(MOUSE_NOISE_G) || []).join('');

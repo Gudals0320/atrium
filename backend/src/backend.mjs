@@ -30,7 +30,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox } from './screen.mjs';
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, codexPasteState, codexPasteWanted } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -1370,13 +1370,16 @@ export class Backend {
   // 그 패널에 같은 종류의 에이전트가 있을 때 패널 ID로 보낸다
   async sendPrompt(sid, text) {
     const s = this.sessions.get(sid);
-    try { return await this.adapter.prompt(s.agentName, text); }
+    // P264: Codex에 여러 줄이거나 긴 글은 판이 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(hc terminal.send의 Enter가 붙여 넣은 글의 줄바꿈이 됐다)
+    const paste = s.kind === 'codex' && typeof this.adapter.pastePrompt === 'function' && codexPasteWanted(text) && !(s.rt && this.hooked(s));
+    const send = (target) => (paste ? this.adapter.pastePrompt(target, text, { state: (scr) => codexPasteState(scr, text) }) : this.adapter.prompt(target, text));
+    try { return await send(s.agentName); }
     catch (e) {
       if (e.code !== 'agent_not_found' || !s.paneId || s.agentName === s.paneId) throw e;
-      if ((s.startCommand || s.origin === 'board') && (await this.ensureAgentName(s))) return this.adapter.prompt(s.agentName, text);
+      if ((s.startCommand || s.origin === 'board') && (await this.ensureAgentName(s))) return send(s.agentName);
       const p = await this.adapter.getPane(s.paneId).catch(() => null);
       if (!p || !p.agent || p.agent !== (s.kind || 'claude')) throw e;
-      return this.adapter.prompt(s.paneId, text);
+      return send(s.paneId);
     }
   }
   // P97: 판의 주소(agentName)로 찾지 못하고 그 패널에 같은 종류의 에이전트가 있으면 이름을 다시 붙인다(판의 전달이 이 이름을 쓴다)

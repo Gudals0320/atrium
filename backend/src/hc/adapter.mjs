@@ -533,6 +533,32 @@ export class HcAdapter extends EventEmitter {
     this.trace.note(t.address, 'send', { chars: String(text).length }); // P136 진단 기록(길이만)
     return this.call('terminal.send', { terminal: t.address, text: String(text).replace(/\r\n?/g, '\n') }, 120000);
   }
+  // P264: Codex 긴 글. 판이 붙여 넣고(bracketed paste) 화면에서 다 들어간 것을 본 뒤 Enter를 친다. hc terminal.send는 붙여 넣은 직후 Enter를 쳐서
+  //   Windows Codex가 그 Enter를 붙여 넣은 글의 줄바꿈으로 받았다(여러 줄 글은 늘 판의 Enter 손쓰기를 거쳤고, hc가 턴 시작을 약 5초 기다렸다).
+  //   state(화면 글) → { box, done }. done이면 곧바로, 입력 칸 글이 stableMs 동안 그대로면(다 받은 것으로 본다) Enter. 기한 안에 못 보면 Enter 없이 돌려준다
+  //   (그 뒤는 판의 제출 확인·Enter 손쓰기). 에이전트 없음·막힘·신뢰 질문 거부는 prompt와 같다. 사람이 쓰다 만 글은 판의 대기열이 먼저 본다(inputQuietMs, 비키기)
+  async pastePrompt(target, text, { state, timeoutMs, pollMs = 100, stableMs = 1000 } = {}) {
+    const t = await this._target(target);
+    if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
+    if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
+    if (t.status.state === 'blocked') throw new HcError('agent_blocked', `${t.address} is blocked (typing would answer its dialog)`, 'terminal.send');
+    const s = String(text).replace(/\r\n?/g, '\n');
+    this.trace.note(t.address, 'paste', { chars: s.length }); // P136 진단 기록(길이만)
+    const t0 = Date.now();
+    await this._typeRaw(t.address, [`\x1b[200~${s}\x1b[201~`]);
+    const limit = timeoutMs ?? Math.min(60000, 3000 + 2 * s.length);
+    let last = null, since = 0, why = 'timeout';
+    while (Date.now() - t0 < limit) {
+      await sleep(pollMs);
+      const st = state ? state(await this.readScreen(t.address, { source: 'visible' }).catch(() => '')) : { box: '', done: true };
+      if (st.done) { why = 'shown'; break; }
+      if (!st.box || st.box !== last) { last = st.box || null; since = Date.now(); continue; }
+      if (Date.now() - since >= stableMs) { why = 'stable'; break; }
+    }
+    const entered = why !== 'timeout';
+    if (entered) await this.paneKeys(t.address, ['enter']);
+    return { pasted: true, entered, why, ms: Date.now() - t0 };
+  }
   async sendKeys(target, keys) { const t = await this._target(target); return this.paneKeys(t.address, keys); }
   // 글을 Enter 없이 넣는다. 여러 줄이면 bracketed paste로 감싼다
   // person: 사람 입력(DATA)으로 친다(P130: 판이 사람의 쓰다 만 글을 입력 칸에 되돌릴 때만)
