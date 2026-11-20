@@ -2,13 +2,17 @@
 // atrium(옛 이름 mtask): 판 API를 그대로 부르는 얇은 시험용 CLI(ARCH 5절). 터미널 서버를 직접 부르지 않는다.
 // 사용: node bin/atrium.mjs [--dev] [--json] <명령> ...   (도움말: atrium help)
 import path from 'node:path';
-import { loadConfig } from '../src/config.mjs';
-import { connect as connectTo, startBackend as startBackendFor, stopBackend as stopBackendFor } from '../src/client.mjs';
-import { fmtAsk } from './atrium-fmt.mjs'; // P205: 응답 필요 줄
-import { remoteCommand } from './atrium-remote.mjs'; // P49(R3): 원격 접속(Tailscale)
-import { updateCommand } from './atrium-update.mjs'; // P69: 설치와 업데이트
-import { FEATURES_HELP, FEATURE_BOOL_FLAGS, featureCommand, featureEvent } from './atrium-features.mjs'; // P6b
-import { usageLines } from '../src/usage-text.mjs'; // P211
+// 이슈 #18: 지원하지 않는 Node면 다른 모듈(ws 등)을 불러오기 전에 알리고 끝난다(설치 명령 atrium install도 여기를 지난다)
+import { nodeProblem } from '../src/node-check.mjs';
+const badNode = nodeProblem();
+if (badNode) { console.error(`atrium: ${badNode}`); process.exit(1); }
+const { loadConfig } = await import('../src/config.mjs');
+const { connect: connectTo, startBackend: startBackendFor, stopBackend: stopBackendFor } = await import('../src/client.mjs');
+const { fmtAsk } = await import('./atrium-fmt.mjs'); // P205: 응답 필요 줄
+const { remoteCommand } = await import('./atrium-remote.mjs'); // P49(R3): 원격 접속(Tailscale)
+const { updateCommand } = await import('./atrium-update.mjs'); // P69: 설치와 업데이트
+const { FEATURES_HELP, FEATURE_BOOL_FLAGS, featureCommand, featureEvent } = await import('./atrium-features.mjs'); // P6b
+const { usageLines } = await import('../src/usage-text.mjs'); // P211
 
 const HELP = `atrium [--dev] [--json] <명령>
   backend start|stop|status               백엔드 시작·중지·상태 확인 (시작 시 터미널 서버가 없으면 함께 시작)

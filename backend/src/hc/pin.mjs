@@ -140,10 +140,20 @@ export async function ensureHc({ dataDir, pin = HC_PIN, envExe = null, coreRunni
 }
 
 // ---------- P117: 릴리스 검사(scripts/release-check.mjs) ----------
+// 이슈 #18: PowerShell 7(pwsh)에서 부르면 자식 Windows PowerShell이 pwsh의 PSModulePath(PowerShell 7 모듈 폴더가 앞)를 물려받아
+// Microsoft.PowerShell.Security를 PowerShell 7 것으로 불러오다 실패하고 서명이 null로 나온다. 자식 env에서 PSModulePath를 빼면
+// Windows PowerShell이 자기 시스템 모듈 경로를 다시 만든다. 이름은 대소문자를 가리지 않는다(Windows env)
+export function winPowerShellEnv(env = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env)) if (k.toUpperCase() !== 'PSMODULEPATH') out[k] = v;
+  return out;
+}
+// Windows PowerShell 5.1의 자리(PATH에서 찾지 않는다: pwsh만 있는 PATH나 다른 powershell.exe를 피한다)
+export const winPowerShellExe = (env = process.env) => path.join(env.SystemRoot || env.SYSTEMROOT || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 // 실행 파일의 Authenticode 서명(Windows PowerShell). → { status: 'Valid' 등, subject: 'CN=herdr, …' } | null
 export async function authenticodeOf(exe) {
   const ps = `$s = Get-AuthenticodeSignature -LiteralPath '${String(exe).replace(/'/g, "''")}'; Write-Output ("{0}|{1}" -f $s.Status, $s.SignerCertificate.Subject)`;
-  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 30000 });
+  const r = await run(winPowerShellExe(), ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 30000, env: winPowerShellEnv() });
   if (r.code !== 0 || !r.out) return null;
   const [status, subject] = r.out.split(/\r?\n/).pop().trim().split('|');
   return { status: status || null, subject: subject || null };

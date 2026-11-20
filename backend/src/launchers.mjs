@@ -48,6 +48,8 @@ export const HARNESSES = {
   pi: { id: 'pi', kind: 'pi', label: 'pi', fields: ['startCommand', 'model', 'args'], models: [] },
   // P192: AGY(Antigravity CLI). 모델은 `agy models`(agy-models.mjs)를 읽고, 노력 수준·승인 방식은 AGY 인자(--effort, --mode·--dangerously-skip-permissions)로 붙인다
   agy: { id: 'agy', kind: 'agy', label: 'Antigravity', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args'], models: ['gemini-3.8-flash-medium'] },
+  // P270: dsh(DeepSeek Harness, 실행 명령 dsh-tui). 모델·노력 수준은 dsh 안 /model·/effort(전역 기억)라 칸이 없다. 승인 칸도 없다(Windows dsh-tui는 늘 전체 권한·묻지 않음)
+  dsh: { id: 'dsh', kind: 'dsh', label: 'DeepSeek (dsh)', fields: ['startCommand', 'args'], models: [] },
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };
