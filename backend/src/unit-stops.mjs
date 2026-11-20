@@ -9,6 +9,13 @@
 //   쉬는데 열린 시도가 남았으면 그 나무의 맨 위 일의 상위에게 한 번 알린다(tree_quiet). 나무에 다시 움직임이 생기면 다음 쉼에 다시 알린다.
 // - 같은 상위로 가는 알림은 묶는다(link-notice NoticeBatcher). 보내기 전에 done이 왔거나 다시 일하기 시작했으면 그 줄은 보내지 않는다.
 // - 그 하위를 atrium wait·prompt --wait로 기다리는 상위에게는 보내지 않는다(기다림이 멈춤을 돌려준다).
+// - P281: 받는 쪽이 할 일이 없는 idle_no_done은 알리지 않는다(판 알림 하나가 상위의 턴 하나다). 시도의 stop_reason은 그대로 적고
+//   하위 세션 이벤트 unit_stop_quiet { unitId, tryId, why, because }를 남긴다.
+//   · asked_parent: 그 턴에 하위가 마지막으로 낸 판 명령(/branch/* 요청, 상태 줄의 usage-report는 빼고)이 그 일을 맡긴 세션(work_units.from)에게
+//     보낸 atrium prompt(대기열·스티어링)다. 턴의 시작은 판이 본 쉼(ready·error·sleeping 등) → working 바뀜의 시각(사람의 답을 기다렸다 돌아온 것은
+//     새 턴이 아니다). 백엔드가 다시 떠 시작 시각이나 명령을 모르면 알린다.
+//   · repeat: 같은 시도에 idle_no_done 알림을 이미 보냈고, 그 뒤로 상위가 하위에게 보낸 새 글(deliveries.from_session = 상위)이 없다.
+//     사람이나 다른 세션이 깨워 다시 멈춘 것이다. 상위가 글을 보냈으면 다시 알린다(상위는 done을 기다린다).
 // - Claude hook에 기대지 않는다: 멈춤은 터미널 상태(broadcastSession → bus 'session'), 끝은 atrium done이라 Claude Code·Codex·opencode·pi가 같다.
 import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy } from './link-notice.mjs';
 import { treeIndex, cycleCheck } from './push-cycle.mjs';
@@ -66,6 +73,8 @@ export class UnitStops {
     this.b = b; this.units = units;
     // P182: 나무 전체가 쉼을 알린 표시는 시도의 열(unit_tries.quiet_at)이다. 나무에 움직임이 생기면 지운다. 백엔드가 다시 떠도 되풀이하지 않는다
     this.timer = null;
+    // P281: 턴 시작 시각(세션 → ms), 마지막 판 명령(세션 → { at, op, to }), 시도별 idle_no_done 알림을 보낸 때(시도 → ms). 메모리에만 둔다
+    this.turnAt = new Map(); this.lastCmd = new Map(); this.idleSent = new Map();
     this.batch = new NoticeBatcher({
       batchMs,
       canSend: (sid) => b.sessions.has(sid) && !(b.killing && b.killing.has(sid)),
@@ -73,7 +82,7 @@ export class UnitStops {
       format: stopNoticeText,
       send: (sid, text, lines) => {
         const st = b.store; const d = b.queue.enqueue(sid, text); const now = Date.now();
-        for (const l of lines) st.updateTry(l.tryId, { notifiedAt: now });
+        for (const l of lines) { st.updateTry(l.tryId, { notifiedAt: now }); if (l.why === 'idle_no_done') this.idleSent.set(l.tryId, now); }
         st.addEvent(sid, 'unit_stop_notice', { items: lines.map((l) => ({ unitId: l.unitId, tryId: l.tryId, why: l.why })), deliveryId: d.deliveryId });
         b.log(`unit stop notice → ${units.nameOf(sid)}: ${lines.map((l) => `${l.unitId} ${l.why}`).join(', ')}`);
         return d;
@@ -82,6 +91,20 @@ export class UnitStops {
     });
   }
   store() { return this.b.store; }
+  // P281: 하위가 판 명령을 냈다(Branch.dispatch). 상태 줄이 알아서 부르는 usage-report는 에이전트의 명령이 아니다
+  noteCommand(sid, op) { if (op !== 'usage-report') this.lastCmd.set(sid, { at: Date.now(), op, to: null }); }
+  // P281: atrium prompt가 글을 받는 세션의 대기열에 넣었다(agent-verbs prompt)
+  notePrompt(sid, to) { this.lastCmd.set(sid, { at: Date.now(), op: 'prompt', to }); }
+  // P281: 이 idle_no_done을 알리지 않을 까닭 → 'asked_parent' | 'repeat' | null
+  quietWhy(sid, tr, unit) {
+    if (!unit) return null;
+    const c = this.lastCmd.get(sid); const t0 = this.turnAt.get(sid);
+    if (c && c.op === 'prompt' && c.to === unit.from && t0 != null && c.at >= t0) return 'asked_parent';
+    const sent = this.idleSent.get(tr.id) ?? (tr.stopReason === 'idle_no_done' && tr.notifiedAt ? tr.notifiedAt : null); // 다시 뜬 뒤는 시도의 열로
+    if (sent == null) return null;
+    const p = this.store().lastDeliveryFrom(sid, unit.from);
+    return p != null && p > sent ? null : 'repeat';
+  }
   waited(fromId, toId) { const ws = this.units.waiters.get(`${fromId}>${toId}`); return !!(ws && ws.size); }
   // 상위의 묶음에 한 줄을 더한다
   add(tr, unit, why, detail = null) {
@@ -110,6 +133,7 @@ export class UnitStops {
   onState(s, sum, prev, tr) {
     const state = sum.state;
     if (prev !== state) this.scheduleTree();
+    if (state === 'working' && prev !== 'working' && !HUMAN.has(prev)) this.turnAt.set(s.sessionId, Date.now()); // P281: 턴 시작
     if (!tr || !tr.header || prev == null || prev === state) return null;
     const st = this.store();
     const d = tr.deliveryId ? st.getDelivery(tr.deliveryId) : null;
@@ -125,11 +149,16 @@ export class UnitStops {
     }
     if (!why) return null;
     const unit = st.getUnit(tr.unitId);
-    this.add(tr, unit, why);
+    const quiet = why === 'idle_no_done' ? this.quietWhy(s.sessionId, tr, unit) : null; // P281
+    if (quiet) {
+      st.addEvent(s.sessionId, 'unit_stop_quiet', { unitId: tr.unitId, tryId: tr.id, why, because: quiet });
+      this.b.log(`unit stop not noticed: ${this.units.nameOf(s.sessionId)} ${tr.unitId} ${why} (${quiet})`);
+    } else this.add(tr, unit, why);
     return why;
   }  // 세션이 닫혔다(열린 시도가 있었으면). → 알림을 건 상위 ID | null
   onClosed(s, tr, unit, reason, { byParent = false } = {}) {
     this.scheduleTree();
+    this.turnAt.delete(s.sessionId); this.lastCmd.delete(s.sessionId); if (tr) this.idleSent.delete(tr.id);
     if (!tr || !tr.header || byParent || !unit) return null;
     return this.add(tr, unit, 'closed', reason ? closeWhy(reason) : null) ? unit.from : null;
   }

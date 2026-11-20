@@ -564,6 +564,7 @@ export class Branch {
     return { s };
   }
   dispatch(op, s, body, res) {
+    try { this.units.stops.noteCommand(s.sessionId, op); } catch {} // P281: 그 턴의 마지막 판 명령(멈춤 알림 줄이기)
     if (op === 'child') return this.spawnChild(s, body, res);
     if (op === 'children') return this.listChildren(s, body);
     if (op === 'kill') return this.killChild(s, body);

@@ -194,6 +194,8 @@ export class Store {
   }
   updateDeliveryText(id, text) { this.st('UPDATE deliveries SET text = ?, updated_at = ? WHERE delivery_id = ?').run(text, Date.now(), id); } // P158: 대기 중 수정
   updateDeliverySeq(id, seq) { this.st('UPDATE deliveries SET seq = ?, updated_at = ? WHERE delivery_id = ?').run(seq, Date.now(), id); } // P172: 순서 바꾸기·바로 보내기
+  // P281: 보낸 세션(from)이 받는 세션에 마지막으로 넣은 글의 시각 | null(unit-stops 되풀이 줄이기)
+  lastDeliveryFrom(sessionId, fromSession) { const r = this.st('SELECT MAX(created_at) AS t FROM deliveries WHERE session_id = ? AND from_session = ?').get(sessionId, fromSession); return r && r.t != null ? Number(r.t) : null; }
   getDelivery(id) { return deliveryRow(this.st('SELECT * FROM deliveries WHERE delivery_id = ?').get(id)); }
   activeDeliveries() { return this.st("SELECT * FROM deliveries WHERE status IN ('queued', 'sending', 'sent') ORDER BY COALESCE(seq, created_at)").all().map(deliveryRow); }
   deliveries({ sessionId, limit = 50 } = {}) {
