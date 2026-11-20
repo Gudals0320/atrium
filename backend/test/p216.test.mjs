@@ -13,7 +13,6 @@ import { newRuntime, applyHook, applyTermStatus, applyAgentReleased, deriveState
 import { workspaceOf } from '../src/git.mjs';
 import { DeliveryQueue } from '../src/delivery.mjs';
 import { Branch } from '../src/branch.mjs';
-import { Rig } from '../src/rig.mjs';
 import { STOP_REASONS, stopLine } from '../src/unit-stops.mjs';
 import { agentExited } from '../src/work-units.mjs';
 
@@ -55,7 +54,6 @@ async function board({ dir = tmp(), batchMs = 40 } = {}) {
     // 판의 끄기처럼: 판이 끄라고 해(exitRequested) 에이전트가 끝난 뒤(normal) 닫는다
     async kill(p) { const s = b.sessions.get(p.session); if (!s) return { closed: false }; b.killing.add(s.sessionId); try { s.rt.exitRequested = true; applyAgentReleased(s.rt, Date.now(), { exitCode: 0 }); b.broadcastSession(s); b.closeSession(s, 'killed'); } finally { b.killing.delete(s.sessionId); } return { closed: true }; },
   };
-  b.rig = new Rig(b);
   b.queue = new DeliveryQueue({
     store, cfg,
     view: (sid) => { const s = b.sessions.get(sid); if (!s) return { closed: true }; return { state: deriveState(s.rt).state, agentPresent: s.rt.term.present, termConnected: true, lastUserInputAt: 0, closed: false, kind: s.kind, hooked: b.hooked(s) }; },

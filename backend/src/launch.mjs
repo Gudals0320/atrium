@@ -12,8 +12,8 @@ export const slash = (p) => path.resolve(p).split(path.sep).join('/');
 // B3 1번: http hook(시간 제한 2초), hook 토큰, 세션 표시를 값으로 직접 쓴다. 작업 공간 env는 터미널 재시작 뒤 되살아나지 않는다(E7).
 // P8(K1·K2): env(하위 세션 명령이 판과 자기를 찾는 값)와 allow(하위 세션 명령, 일 시키기·기다리기·읽기 승인 규칙. P116: atrium prompt|wait|read)를 더 받는다. 값은 branch.mjs가 만든다
 // P115: settings는 설정 파일에 더할 값(연결의 apiKeyHelper 등). 판의 hook·env·승인 규칙이 이긴다
-// P189·P241: amp는 rig 역할·빌더 세션의 설정(rig-writes.mjs roleSettingsAmp): { deny: [규칙], hooks: { <이벤트>: { timeout, onFailure? } }, permissions }.
-//   deny는 permissions.deny로, hooks는 그 이벤트의 hook 시간 제한(판이 기다려 답하는 PreToolUse)으로 들어간다. 없으면 지금과 같다
+// P189·P241: amp는 세션 설정에 더할 칸: { deny: [규칙], hooks: { <이벤트>: { timeout, onFailure? } }, permissions }(옛 rig 역할이 썼다. P269에 rig를 걷어 판은 넘기지 않는다).
+//   deny는 permissions.deny로, hooks는 그 이벤트의 hook 시간 제한으로 들어간다. 없으면 지금과 같다
 // P211: statusLine은 판의 상태 줄 명령(usage.mjs claudeStatusLine: 사용량을 판에 알리고 사용자 상태 줄을 이어 부른다). 없으면 넣지 않는다
 export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutSec = 2, env = null, allow = [], settings: more = null, amp = null, statusLine = null }) {
   const hook = { type: 'http', url: hookUrl, timeout: timeoutSec, headers: { Authorization: `Bearer ${token}`, 'X-MT-Session': sessionId } };
@@ -22,8 +22,7 @@ export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutS
   const rules = [...new Set([...allow, ...((amp && amp.allow) || [])])];
   if (rules.length) settings.permissions = { allow: rules };
   if (amp && amp.deny && amp.deny.length) settings.permissions = { ...(settings.permissions || {}), deny: [...amp.deny] };
-  if (amp && amp.permissions && Object.keys(amp.permissions).length) settings.permissions = { ...(settings.permissions || {}), ...amp.permissions }; // P234: rig 역할의 auto 끄기
-  if (env && Object.keys(env).length) settings.env = env;
+  if (amp && amp.permissions && Object.keys(amp.permissions).length) settings.permissions = { ...(settings.permissions || {}), ...amp.permissions };  if (env && Object.keys(env).length) settings.env = env;
   if (statusLine) settings.statusLine = statusLine;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(settings, null, 2));
@@ -33,7 +32,7 @@ export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutS
 // P258: 옛 세션 설정 파일(HOOK_EVENTS가 늘기 전에 쓴 것, 예: P173 전에 띄운 세션에는 PreCompact·PostCompact가 없다)에 빠진 판 hook을 채운다.
 //   순수 함수(j를 그대로 고친다) → 더한 이벤트 목록. 판 hook = type http + X-MT-Session 머리글(writeSessionSettings가 쓰는 꼴).
 //   빠진 이벤트에는 그 파일에 이미 있는 판 hook의 값(url, headers, 가장 많이 쓰인 timeout)을 넣는다. 그 파일의 토큰을 그대로 써서 도는 세션과 맞는다.
-//   있는 이벤트(그 값과 rig 역할의 시간 제한 amp)와 판 hook이 아닌 것(사용자가 넣은 것)은 그대로 둔다. 판 hook을 하나도 못 찾으면 손대지 않는다
+//   있는 이벤트(그 값과 옛 시간 제한)와 판 hook이 아닌 것(사용자가 넣은 것)은 그대로 둔다. 판 hook을 하나도 못 찾으면 손대지 않는다
 export function fillBoardHooks(j) {
   if (!j || typeof j !== 'object' || !j.hooks || typeof j.hooks !== 'object' || Array.isArray(j.hooks)) return [];
   const isBoard = (h) => !!h && h.type === 'http' && !!h.url && !!h.headers && !!h.headers['X-MT-Session'];

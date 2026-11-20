@@ -4,7 +4,7 @@
 // - 까닭(unit_tries.stop_reason과 같다): idle_no_done(done 없이 턴을 끝내고 쉼), turn_error(오류로 턴이 끝남),
 //   needs_human(승인·신뢰 질문 등 사람의 답을 기다림: waiting·trust_wait), closed(세션이 닫힘). 멈출 때마다 한 번.
 // - P216: exited(에이전트만 끝나고 셸 패널이 남음, 판이 끄라고 하지 않았고 사람이 끝낸 것도 아님: exit.kind other). 시도를 닫는다(work-units onExited).
-//   rig 건의 일이면 일은 열린 채 남아 `atrium rig retry`로 같은 자리의 새 세션에 다시 맡긴다(알림 줄에 그 명령을 붙인다). 그 밖의 일은 취소된다.
+//   일은 취소된다.
 // - 하위를 기다리며 쉬는 중간 워커(자기가 맡긴 열린 일이 있다)는 idle_no_done을 알리지 않는다. 대신 나무 전체(push-cycle cycleCheck)가
 //   쉬는데 열린 시도가 남았으면 그 나무의 맨 위 일의 상위에게 한 번 알린다(tree_quiet). 나무에 다시 움직임이 생기면 다음 쉼에 다시 알린다.
 // - 같은 상위로 가는 알림은 묶는다(link-notice NoticeBatcher). 보내기 전에 done이 왔거나 다시 일하기 시작했으면 그 줄은 보내지 않는다.

@@ -16,8 +16,6 @@ import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeK
 import { Card, Peek, cardFacts } from './MissionLineage.jsx';
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기 세기
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
-import { hideRigSessions, phoneRig, RIG_VIEW } from './lib/rig-map.js'; // P251: 휴대폰은 지도 대신 rig 카드와 역할 목록
-import { STATE_LABEL } from './lib/labels.js';
 
 const REFRESH_MS = 600;
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
@@ -41,8 +39,6 @@ export function PhoneMap({ onOpen, head, tip }) {
   const loops = useStore((st) => st.loops);
   const workspaces = useStore((st) => st.workspaces);
   const vgroups = useStore((st) => st.groups);
-  const rigMaps = useStore((st) => st.rigMaps); // P251
-  const [rigSheet, setRigSheet] = useState(false); // P251: rig 카드 시트
   const [graph, setGraph] = useState(cache);
   const [fail, setFail] = useState(null);
   const [reloadN, setReloadN] = useState(0);
@@ -81,7 +77,7 @@ export function PhoneMap({ onOpen, head, tip }) {
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const vkey = sizeKey(vsize); // 단 나누기는 보이는 칸 비율을 따른다(크기가 조금 바뀌어도 다시 놓지 않게 20px 단위)
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
-  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(() => lineageLayout(hideRigSessions(graph, RIG_VIEW.hideInTree), { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, tab: tabSel || 'auto' })) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(() => lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, tab: tabSel || 'auto' })) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
@@ -286,7 +282,6 @@ export function PhoneMap({ onOpen, head, tip }) {
           {attn.slice(0, ATTN_MAX).map((id) => { const tr = tiers.get(id); return <button key={id} type="button" className={`mt-pl-pill st-${ST[tr]}`} data-role="pl-attn" data-id={id} onClick={() => goTo(id)}><i /><b>{lay.tree.byId.get(id).name}</b><span>{t(`mmTerr.chip.${tr}`)}</span></button>; })}
           {attn.length > ATTN_MAX && <button type="button" className="mt-pl-pill st-needs more" data-role="pl-attn-more" onClick={() => goNext('attn', ['turn', 'alert'])}><span>{t('mmTerr.more', { n: attn.length - ATTN_MAX })}</span></button>}
           {!attn.length && <span className="mt-pl-pill quiet" data-role="pl-none"><span>{t('phoneMap.none')}</span></span>}
-          {rigMaps.size > 0 && <button type="button" className="mt-pl-pill rig" data-role="pl-rig" onClick={() => setRigSheet(true)}><b>{t('rigMap.phone')}</b><span>{rigMaps.size}</span></button>}
           {nWork > 0 && <button type="button" className="mt-pl-pill st-working count" data-role="pl-count" data-tier="work" onClick={() => goNext('work', ['work'])}><i /><b>{nWork}</b><span>{t('mmTerr.chip.work')}</span></button>}
           {nDone > 0 && <button type="button" className="mt-pl-pill st-done count" data-role="pl-count" data-tier="review" onClick={() => goNext('review', ['review'])}><i /><b>{nDone}</b><span>{t('mmTerr.chip.review')}</span></button>}
         </div>
@@ -346,7 +341,6 @@ export function PhoneMap({ onOpen, head, tip }) {
           </div>
         )}
       </div>
-      {rigSheet && <PhoneRigSheet maps={[...rigMaps.values()]} live={sessions} t={t} onClose={() => setRigSheet(false)} onOpen={(sid) => { setRigSheet(false); onOpen(sid); }} />}
       {pb && (() => {
         const row = lay.rows.find((x) => x.key === pb.ws), band = row && lay.bands.find((x) => (x.id || null) === (row.band || null));
         return (
@@ -361,27 +355,6 @@ export function PhoneMap({ onOpen, head, tip }) {
           </div>
         );
       })()}
-    </div>
-  );
-}
-
-// P251: 휴대폰 rig 카드(지도를 줄여 넣지 않는다, 설계 3.2 "휴대폰"). 워크스페이스마다 카드 하나: 머리(켜짐·판·사이클·사람이 볼 것), 역할 목록(상태, 누르면 그 세션), 길 목록(이번 사이클 수·기다림·열린 반려), 최근 꼭지 앞머리
-function PhoneRigSheet({ maps, live, t, onClose, onOpen }) {
-  return (
-    <div className="mt-pl-peekwrap" data-role="pm-rig" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="mt-pl-peeksheet mt-pm-rig">
-        {maps.map(phoneRig).filter(Boolean).map((c) => { const m = maps.find((x) => x.workspace === c.key); const rv = phoneRig(m, live); return (
-          <div key={c.key} className="mt-pm-rigcard" data-role="pm-rig-card" data-ws={c.key} data-status={c.status}>
-            <div className="h"><b>{t('rigMap.title')} · {t(`rigMap.${c.status === 'on' ? 'on' : c.status === 'off' ? 'off' : 'invalid'}`)}</b>{c.name ? <span> {c.name}</span> : null}{c.versionN != null ? <span className="dim"> · {t('rigMap.version', { n: c.versionN })}</span> : null}{c.cycle != null ? <span className="dim"> · {t('rigMap.cycle', { n: c.cycle })}</span> : null}{c.attention ? <span className="warn"> · {t('rigMap.attention', { n: c.attention })}</span> : null}</div>
-            <div className="lb">{t('rigMap.phoneRoles')}</div>
-            {rv.roles.map((r) => <button key={r.name} type="button" className={`rr st-${r.state}`} data-role="pm-rig-role" disabled={!r.sessionId} onClick={() => r.sessionId && onOpen(r.sessionId)}><i /><b>{r.name}</b>{r.session ? <span className="sn">{r.session}</span> : null}<span className="st">{STATE_LABEL[r.state] || (r.state === 'none' ? t('rigMap.noSession') : r.state === 'gaveUp' ? t('rigMap.gaveUp') : r.state)}</span>{r.received ? <span className="dim">{t('rigMap.received', { n: r.received })}</span> : null}</button>)}
-            <div className="lb">{t('rigMap.phoneFlows')}</div>
-            {c.flows.map((f, i) => <div key={i} className="ff" data-role="pm-rig-flow"><b>{f.item}</b><span className="dim">{f.from} → {f.to}</span>{f.put ? <span>{f.put}</span> : null}{f.waiting ? <span>{t('rigMap.waiting', { n: f.waiting })}</span> : null}{f.open ? <span className="bad">{t('rigMap.returned', { n: f.open })}</span> : null}</div>)}
-            {c.entry ? <div className="ee"><span className="lb">{t('rigMap.entry')}</span>{String(c.entry.text || '').replace(/^#+\s*/, '').slice(0, 200)}</div> : null}
-          </div>
-        ); })}
-        <div className="mt-pl-peekact"><button type="button" data-action="pm-rig-close" onClick={onClose}>{t('common.close')}</button></div>
-      </div>
     </div>
   );
 }

@@ -250,7 +250,6 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-dot[data-tone=shell_running] { background: var(--st-shell_running); animation: mt-reconnect-pulse 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .mt-ph-dot[data-tone=shell_running] { animation: none; } }
 
-
 /* P92: 하위 세션(워커) 알림 고르기, 세션 화면의 이 세션 알림 끄기 */
 .mt-ph-subchoice { display: grid; gap: 10px; padding: 10px 14px 12px; border-radius: 12px; border: 1px solid var(--panel-line); background: var(--panel-2); color: var(--text); font-size: 15.5px; }
 .mt-ph-subchoice.off { opacity: .55; }
@@ -621,7 +620,6 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-queue .mt-dq-acts .mt-btn.small { height: 34px; padding: 0 10px; font-size: 13px; border-radius: 9px; }
 .mt-ph-queue .mt-dq-acts .mt-btn.icon { min-width: 36px; }
 
-/* P186: rig 건 알약 */
 .mt-pl-pill.case { border-style: dashed; }
 .mt-pl-pill.case:disabled { opacity: 0.7; }
 /* P202: 휴대폰 오늘·이전 구분 줄 글(세계 글 크기, 멀리서도 읽히게 --ik를 따른다) */
@@ -642,31 +640,10 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-ph-head .mt-cp.usage { height: 30px; padding: 0 9px; gap: 4px; font-size: 12px; border-radius: 15px; background: var(--chrome-bg); border: 1px solid var(--chrome-line); color: var(--chrome-text); }
 .mt-ph-head .mt-usage-list { position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top) + 52px); width: auto; max-height: 70vh; }
 
-/* ---------- P224: rig 승인 카드(목록 맨 위) ---------- */
-.mt-ph-sec.rig .mt-rigask-list { margin: 0 12px 8px; }
-.mt-ph-sec.rig .mt-rigask { font-size: 14px; }
-.mt-ph-sec.rig .mt-rigask-btn { padding: 8px 14px; font-size: 14px; }
-.mt-ph-sec.rig .mt-rigask-diff { max-height: 50vh; font-size: 11px; }
-
 /* P248: 휴대폰 입력 줄의 스티어링 선택(기본은 대기열) */
 .mt-ph-steer { flex: none; align-self: center; height: 32px; padding: 0 10px; border-radius: 16px; border: 1px dashed var(--chrome-line-2); background: none; color: var(--chrome-text-2); font: 600 12.5px/1 var(--font-ui); white-space: nowrap; }
 .mt-ph-steer.on { border-style: solid; color: var(--accent-2); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .mt-ph-steer[data-off] { opacity: .45; }
-
-/* ---------- P251: 휴대폰 rig 카드(지도 대신 카드 하나와 역할 목록, PhoneMap.jsx PhoneRigSheet) ---------- */
-.mt-pl-pill.rig { border-color: rgba(134, 169, 189, 0.5); }
-.mt-pm-rig { max-height: 78vh; overflow: auto; }
-.mt-pm-rigcard { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--panel-line); font-size: 14px; }
-.mt-pm-rigcard .lb { margin-top: 6px; font-size: 12px; color: var(--chrome-text-2); }
-.mt-pm-rigcard .warn { color: var(--attn); }
-.mt-pm-rigcard .bad { color: var(--term-red); }
-.mt-pm-rigcard .dim { color: var(--chrome-text-2); }
-.mt-pm-rigcard .rr { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--panel-line); background: var(--panel-2); color: inherit; font: inherit; text-align: left; }
-.mt-pm-rigcard .rr i { width: 9px; height: 9px; border-radius: 50%; background: #8d8a80; }
-.mt-pm-rigcard .rr.st-working i { background: var(--con-line-working); }
-.mt-pm-rigcard .rr.st-waiting i { background: var(--attn); }
-.mt-pm-rigcard .ff { display: flex; flex-wrap: wrap; gap: 4px 10px; }
-.mt-pm-rigcard .ee { color: var(--chrome-text-3); }
 
 /* P256: 휴대폰 세션 맵의 검은 구간. PC 세션 맵 규칙 .mt-sm .mt-ta-vp { top: 60px }(styles.css, PC 덮개 위 줄 자리)이
    같은 무게의 .mt-pmap .mt-ta-vp { top: 0 }보다 뒤에 실려 이겼다. 그래서 맵 칸 위 60px가 점 없는 빈 바탕으로 남고 캔버스가 그만큼 짧았다.
@@ -681,10 +658,3 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-usage-prov.pickable:active { background: rgba(255, 252, 240, 0.06); }
 .mt-usage-prov.rep { border-color: var(--accent-line, rgba(255, 252, 240, 0.22)); background: rgba(255, 252, 240, 0.04); }
 .mt-usage-rep { margin-left: 6px; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--accent-text, inherit); background: color-mix(in srgb, var(--accent, #888) 16%, transparent); }
-/* P261: 휴대폰 rig 시트의 역할 줄을 세션 맵 카드 말투로(상태 점: 절전은 빈 고리·오류는 빨강, 세션 이름은 흐리게, 상태는 오른쪽) */
-.mt-pm-rigcard .rr.st-sleeping i { background: transparent; border: 1.5px solid #8d8a80; box-sizing: border-box; }
-.mt-pm-rigcard .rr.st-error i { background: var(--term-red); }
-.mt-pm-rigcard .rr .sn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--chrome-text-2); font-size: 12.5px; }
-.mt-pm-rigcard .rr .st { margin-left: auto; flex: none; font-size: 13px; color: var(--chrome-text-2); }
-.mt-pm-rigcard .rr.st-working .st { color: var(--con-line-working); }
-.mt-pm-rigcard .rr.st-waiting .st { color: var(--attn); }

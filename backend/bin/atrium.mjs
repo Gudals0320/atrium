@@ -250,7 +250,6 @@ async function main() {
         console.log(`응답 필요 ${r.needsYou.length}`); for (const s of r.needsYou) console.log('  ' + fmtSession(s).replace(/\n/g, '\n  '));
         console.log(`작업 완료 ${r.review.length}`); for (const s of r.review) console.log('  ' + fmtSession(s).replace(/\n/g, '\n  '));
         console.log(`문제 ${r.problems.length}`); for (const s of r.problems) console.log('  ' + fmtSession(s).replace(/\n/g, '\n  '));
-        if (r.rig && r.rig.length) { console.log(`rig 승인 ${r.rig.length}`); for (const x of r.rig) console.log(`  ${x.text} (${x.workspace}) · 이 PC의 보드 창에서 승인`); } // P225
         return;
       }
       case 'last': { const s = await c.call('session.get', { session: rest[0], screen: false }); console.log(JSONOUT ? JSON.stringify({ lastAnswer: s.lastAnswer, at: s.lastAnswerAt }) : `${s.name} 마지막 응답 (${s.lastAnswerAt ? new Date(s.lastAnswerAt).toLocaleTimeString() : '-'}):\n${s.lastAnswer ?? '(없음)'}`); return; }

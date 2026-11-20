@@ -242,7 +242,7 @@ export function resolveLauncher(l, over = {}) {
 // P208: Codex가 받는 추론 수준(config의 model_reasoning_effort. models_cache.json의 supported_reasoning_levels와 Codex 설정 값)
 export const CODEX_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 const CODEX_EFFORT_KEY = 'model_reasoning_effort';
-// P208: 명시한 노력 수준(atrium child --effort, rig 자리의 effort)을 Claude Code 밖 하네스의 인자로 옮긴다. 호출자 추가 인자의 같은 값을 빼고 넣는다(명시한 값이 이긴다).
+// P208: 명시한 노력 수준(atrium child --effort)을 Claude Code 밖 하네스의 인자로 옮긴다. 호출자 추가 인자의 같은 값을 빼고 넣는다(명시한 값이 이긴다).
 //   판이 세션을 띄우는 공통 길(backend spawn)이 부른다. → { args, applied, ignored?, effort }
 //   - codex: -c model_reasoning_effort="<값>"(호출자 인자의 -c/--config model_reasoning_effort=… 를 뺀다). Codex가 받지 않는 값은 던진다
 //   - agy: --effort <값>(호출자 인자의 --effort를 뺀다). Claude Code와 같은 값만

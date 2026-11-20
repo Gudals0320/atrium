@@ -14,7 +14,6 @@ import { workspaceOf } from '../src/git.mjs';
 import { DeliveryQueue, bgOnlyOf, blockReason } from '../src/delivery.mjs';
 import { backgroundList } from '../src/sleep.mjs';
 import { Branch } from '../src/branch.mjs';
-import { Rig } from '../src/rig.mjs';
 import { Backend } from '../src/backend.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

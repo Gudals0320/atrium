@@ -184,12 +184,11 @@ export default {
     plain: '{text}',
     parentBoard: 'Board session', parentBoardClosed: 'Closed board session', parentOther: 'Another conversation', parentDesktop: 'Desktop app conversation',
     parentMissed: 'Missed conversation', parentMissedIn: 'Missed conversation · {folder}', parentArchived: 'Archived conversation', parentArchivedTitle: 'Archived conversation · {title}', parentConvo: 'Conversation · {name}',
-    chgQuestion: 'Question: {q}', chgPlan: 'Plan approval', chgUnknownDialog: 'Unknown dialog', chgWorktreeExit: 'Keep the worktree?', chgPermission: 'Permission: {what}', chgTrust: 'Trust check for a new folder', chgRigPointer: 'Rig: a change to a human-only part was not applied ({what})', chgRigFile: 'Rig: a human-only file changed, tools stopped ({what})',
+    chgQuestion: 'Question: {q}', chgPlan: 'Plan approval', chgUnknownDialog: 'Unknown dialog', chgWorktreeExit: 'Keep the worktree?', chgPermission: 'Permission: {what}', chgTrust: 'Trust check for a new folder',
     chgTurnFailed: 'Turn failed', chgExitNormal: 'Exited normally', chgExitUser: 'Closed by you', chgExitTrust: 'Exited (not trusted)', chgExited: 'Exited',
     chgCommand: 'Command: {p}', chgPrompt: 'Prompt: {p}', chgWasState: 'Was {state}', chgKilled: 'Stopped on the board', chgRemoved: 'Removed from the board ({reason})',
     chgTerminalDown: { one: 'The terminal server stopped unexpectedly {n} time{up}', other: 'The terminal server stopped unexpectedly {n} times{up}' }, chgReattached: ' (reconnected)',
-    chgBackendRestarts: { one: 'Backend restarted {n} time{down}', other: 'Backend restarted {n} times{down}' }, chgDownFor: ' (down for {s}s)', chgList: '{items}',
-    chgRigBuilderStop: 'Rig builder stopped without finishing: {what}', chgRigBuilder_idle_no_done: 'idle without a report', chgRigBuilder_turn_error: 'the turn ended with an error', chgRigBuilder_needs_human: 'waiting for your answer', chgRigBuilder_closed: 'the session closed', chgRigBuilder_exited: 'the agent exited', // P190
+    chgBackendRestarts: { one: 'Backend restarted {n} time{down}', other: 'Backend restarted {n} times{down}' }, chgDownFor: ' (down for {s}s)', chgList: '{items}', // P190
   },
   closeReason: {
     killed: 'Stopped on the board',
@@ -2110,7 +2109,6 @@ export default {
     muted: 'Notifications from this session are off on this device.',
     unmuted: 'Notifications from this session are on again.',
   },
-  // P95: mission map redrawn (left-to-right columns, small cards, summary column)
   mmMap: {
     ageNow: 'now',
     ageM: '{n}m',
@@ -2190,7 +2188,6 @@ export default {
     hintPhone: 'Leave empty to let the board name it.',
     addLauncher: 'New launcher: paste a command line and pin it here',
   },
-  // P103: tree sidebar (count beside the name, status counts on the right, tooltips)
   sb3: {
     closedN: { one: '{n} closed session', other: '{n} closed sessions' },
     convosN: { one: '{n} outside chat', other: '{n} outside chats' },
@@ -2567,7 +2564,6 @@ export default {
     kept: 'The link line is kept.',
     keepFail: 'Could not keep the link line: {error}',
   },
-  // P178: session map summary panel (right side, sessions by state)
   mmSum: {
     title: 'By state',
     hide: 'Hide the state column',
@@ -2587,61 +2583,16 @@ export default {
     createdPeer: 'Linked @{a} → @{b} as peers and notified both sessions',
     setFail: 'Could not change the relation: {error}',
   },
-  // P182: rig (workspace rules in .atrium/rig.json), region label menu
-  rig: {
-    loading: 'Rig: …',
-    stNone: 'Rig: no definition (.atrium/rig.json)',
-    stOff: 'Rig: off',
-    stOnStale: 'Rig: on, the file is invalid so the last good definition runs: {reason}',
-    stInvalid: 'Rig: invalid: {reason}',
-    stError: 'Rig: could not read the status: {error}',
-    menuOff: 'Rig: turn off',
-    turnedOn: 'Turned on the rig for {name}',
-    turnedOff: 'Turned off the rig for {name}',
-    confirmOn: 'Turn on',
-    kind: 'rig · {n} roles',
-    stOn: 'Rig on · {n} roles',
-    enable: 'Turn on…',
-    confirmLine: '{n} roles run unattended, each writes only to the sectors it owns, and the board runs the tools.',
-    confirmWarn: 'Each role gets one session that runs without asking for permission. Turn it on only for a folder you trust.',
-    purpose: 'Purpose: {path}',
-    roles: 'Roles',
-    colRole: 'Role',
-    colOwns: 'Sectors',
-    colSession: 'Session',
-    colTools: 'Tools',
-    noSession: 'No session',
-    gaveUp: 'Stopped restarting (turn the rig off and on to restart)',
-    docMissing: 'Role definition missing: {list}',
-    flows: 'Flows',
-    human: 'You',
-    for: 'answers {item}',
-    readOnly: 'This rig changes only through its definition files (.atrium/rig.json, .atrium/roles/). This view is read-only.',
-  },
-  // P186: 세션 맵의 rig 자리·흐름 줄·건 목록, 노드 메뉴 자리 정하기, 미리 보기 훅·도구
-  // P188: rig menu — human-only list (definition pointers and files), version, alerts
-  // P191: create a rig in the board (dialog) and view or edit it (rig panel)
-  rigSetup: {
-    menuView: 'View or edit rig…',
-  },
-  rigPanel: {
-    title: 'Rig of {name}',
-    st: { none: 'No definition', off: 'Off', on: 'On', invalid: 'Invalid', loading: 'Loading' },
-    version: 'version {n}',
-  },
-  // P194: rig stage 8 window touches
-  // P195: fixes from the first real rig run
   // P195: start as a git repository in the open-project dialog
   wsGit: {
     label: 'Start as a Git repository (git init + empty first commit)',
-    hint: 'Runs git init in the folder and makes an empty first commit on the main branch. Worktrees (rig worktree seats) need a first commit. Your git config is not changed.',
+    hint: 'Runs git init in the folder and makes an empty first commit on the main branch. Worktrees (claude -w) need a first commit. Your git config is not changed.',
     inRepo: 'This folder is already inside a git repository, so git init is not run.',
     noFolder: 'Folder not found.',
     done: '{name}: ran git init and made an empty first commit.',
-    noIdentity: '{name}: git init ran, but the first commit was skipped because no git user name and email are set. In a terminal run git config --global user.name "Your Name" and git config --global user.email "you@example.com", then run git commit --allow-empty -m "Initial commit" in that folder. Rig worktree seats need a first commit.',
-    commitFail: '{name}: git init ran, but the first commit failed: {error}. Rig worktree seats need a first commit.',
+    noIdentity: '{name}: git init ran, but the first commit was skipped because no git user name and email are set. In a terminal run git config --global user.name "Your Name" and git config --global user.email "you@example.com", then run git commit --allow-empty -m "Initial commit" in that folder. Worktrees need a first commit.',
+    commitFail: '{name}: git init ran, but the first commit failed: {error}. Worktrees need a first commit.',
   },
-  // P198: 세션 맵 rig 띠(17절): 자리 머리, 건 행 머리, 칸 표시, 접힌 줄, 넘김 이력
   // P202: 세션 맵 폴더 칸 이름표(오늘 일한 폴더 · 그 밖)
   mmSec: {
     today: 'Today',
@@ -2699,65 +2650,6 @@ export default {
   rigLoopHold: { // P223: a request to the entry of a paused rig loop (held in the delivery queue)
     dropped: 'loop resumed but no run was opened',
   },
-  // P231(rig2-design 11.13 item 2)
-  // P232(rig2-design 11.14): follow-up count on the improvement trigger, canon baseline line and repository hooks notice in the summary
-  // P233(rig2-design 11.15): rig seat permission questions are once only; canon difference in the turn-on confirmation
-  // P239(rig2-design 11.18 stage 2): a running keep seat whose permissions changed with the definition, rig seat permission mode drift
-  // P237 (rig2-design 11.18, second item): "No run" in the send box (text only to a rig seat, no run opened)
-  // P241: rig (role organization) panel: read-only structure view and turning it on
-  // P242: rig items, flows, answers. Counts per flow, stalled roles, input desk
-  rigItems: {
-    counts: 'put {put} · accepted {accepted} · returned {returned} · waiting {waiting}',
-    passed: ' · passed {n}',
-    stalledH: 'Roles that stopped without answering',
-    stalled: '{role}: did not answer what it received (the board nudged it once) — {items}',
-    intake: 'Input desk',
-    intakeTo: '{item} → {to}',
-    intakePlaceholder: 'Text for {to}. The board writes it to a file and sends it as an item.',
-    intakeSend: 'Send',
-    intakeSent: 'Sent {id} to {to}',
-    intakeOff: 'The input desk works while the rig is on.',
-    returned: 'Returned input {id}: {by} "{reason}"',
-  },
-  // P244: rig cycle (beat) and changelog sections
-  rigCycle: {
-    h: 'Cycle',
-    now: 'Cycle {n}',
-    none: 'No cycle',
-    opened: 'opened {time}',
-    wakes: ', wakes {role}',
-    noBeat: 'No beat (the definition has no beat)',
-    beatNow: 'Beat now',
-    beatSent: 'Opened cycle {n}',
-    toolRunning: '{name}: running',
-    writing: 'Writing the summary of cycle {list}',
-    noEntries: 'No sections yet. On the next beat the board summarizes the last cycle.',
-    byAi: 'AI summary',
-    byNumbers: 'Counts only',
-    file: 'Changelog: {path}',
-  },
-  // P245: rig tuning and rollback (role doc version and tuning log on the role row)
-  rigTune: {
-    col: 'Role doc',
-    badge: 'v{n} · {k} tunes',
-    material: ' · {n} inputs',
-    turnOpen: ' · tuning turn',
-    head: '{doc} · v{n} · know-how {lines}/{budget} lines',
-    empty: '(empty)',
-    noLog: 'No tuning yet.',
-    k: {
-      tune: 'Tuned v{prev}→v{n} (+{added} −{removed}): {why}',
-      rejected: 'Rejected: {reason}',
-      none: 'Nothing to tune: {why}',
-      raise: 'Raised to the builder: {why}',
-      rollback: 'Rolled back to v{from} → v{n}',
-      answer: '{by} answered {raise} (no change): {why}',
-    },
-    evidence: 'evidence {list}',
-    undo: 'Roll back (v{n})',
-    undone: '{role} know-how rolled back to v{from} (now v{n})',
-    same: 'Already the know-how of v{n}',
-  },
   // P248: steering choice in the command bar and the phone input row (default is the queue)
   cmdSteer: {
     label: 'Steer',
@@ -2769,90 +2661,6 @@ export default {
     why_kind: 'this kind cannot take input while working',
     why_no_hook: 'not a Claude Code started by the board (no hooks)',
   },
-  // P247: rig builder (talk to the builder)
-  rigBuilder: {
-    h: 'Builder',
-    menu: 'Talk to the builder…',
-    talk: 'Talk to the builder',
-    none: 'No builder session. Talking starts one.',
-    hint: 'Build and change the rig by talking with the builder. When you approve its one-page plan, the builder writes the definition and role docs. You turn the rig on here yourself.',
-    placeholder: 'What to tell the builder (leave empty to just open its terminal)',
-    send: 'Send and open',
-    open: 'Open builder',
-    spawned: 'Started builder @{name}',
-    opened: 'Going to builder @{name}',
-  },
-  // P251: rig structure map (session map) and path lines (canvas)
-  rigMap: {
-    title: 'rig',
-    on: 'on', off: 'off', invalid: 'definition error',
-    version: 'v{n}',
-    cycle: 'cycle {n}',
-    nextBeat: 'next beat in {when}',
-    attention: { one: '{n} for you', other: '{n} for you' },
-    stalled: { one: '{n} stalled role', other: '{n} stalled roles' },
-    openPanel: 'Open the rig panel (turn on, beat, input, rollback)',
-    outside: 'outside the rig', inside: 'rig', side: 'sectors and tools',
-    human: 'You', humanSub: 'input',
-    builder: 'Builder', builderNone: 'no builder session',
-    raises: 'raised {n}', raiseEdge: 'raised',
-    fix: 'fixes definition',
-    received: 'got {n}', unanswered: '{n} unanswered',
-    docN: 'doc v{n}', material: '{n} returns since tune', foreign: '{n} undone',
-    noSession: 'no session', gaveUp: 'stopped',
-    toolLast: 'last {ago}', toolNever: 'not run yet', alarms: { one: '{n} alarm', other: '{n} alarms' },
-    more: '+{n}',
-    cycleBand: 'Cycle {n}', cycleEmpty: 'Nothing passed this cycle yet', cycleMore: '+{n} more',
-    entry: 'Changelog', entryOpen: 'Expand', entryClose: 'Collapse',
-    folded: 'rig · off', unfold: 'Show', fold: 'Fold',
-    forText: '{item} (answer to {of})',
-    accepted: '{n} accepted', returned: '{n} returned', waiting: '{n} waiting', waitingShort: '{n} waiting',
-    what: { put: 'put', accept: 'accepted', return: 'returned', pass: 'passed', drop: 'dropped' },
-    state: { returned: 'returned', waiting: 'waiting', accepted: 'accepted', passed: 'passed', superseded: 'redone', dropped: 'dropped', live: 'put' },
-    unit: { m: '{n} min', h: '{n} h', d: '{n} d' },
-    tagRole: 'role · {name}', tagBuilder: 'rig builder', tagIntake: 'input', tagIntakeTip: 'Takes your input ({kinds}). Click to open the rig panel input.',
-    tagBeat: 'beat {every}', tagSectors: 'sectors {list}',
-    pathTitle: 'rig path (from the definition; cannot be cut here: ask the builder)',
-    pathRecent: 'Recent items on this path', pathNone: 'Nothing passed on this path yet',
-    link: 'This workspace\'s rig',
-    phone: 'rig', phoneRoles: 'Roles', phoneFlows: 'Paths', phoneOpen: 'Open',
-  },
-  // P252: answering a rig raise to close it (raise rows in the rig panel)
-  rigRaise: {
-    h: { one: '{n} waiting raise', other: '{n} waiting raises' },
-    answer: 'Answer',
-    placeholder: 'One line on why nothing changes (goes to the role)',
-    send: 'Answer and close',
-    done: 'Answered {id} ({role}). It goes in {role}\'s next wake-up message.',
-    hint: 'If nothing should change, answer in one line to close it. To change the rig, talk to the builder; a version the builder fixes closes it too.',
-    byHuman: 'You', byBuilder: 'The builder',
-  },
-  // P252: beat and tool periods in plain words (lib/rig-map.js periodText)
-  rigPeriod: {
-    single: { s: 'every second', m: 'every minute', h: 'every hour', d: 'every day' },
-    multi: { s: 'every {n} seconds', m: 'every {n} minutes', h: 'every {n} hours', d: 'every {n} days' },
-    at: '{period} {at}', from: '{period} from {at}',
-    next: 'next beat {time} ({period}',
-    tool: '{name}: {period}, next {time}',
-  },
-  // P253: rig map v2 on the session map (card row names, head chips, folding)
-  rigMap2: {
-    row: { session: 'Session', beat: 'Beat', owns: 'Owns', recent: 'Recent', tool: 'Tool', intake: 'Input', counts: 'Inbox', raise: 'Raised' },
-    beatCycle: '{period}, opens the cycle',
-    toolOnCall: 'on call', toolOk: 'ok', toolFail: 'failed', toolRunning: 'running',
-    intake: 'human → {items}',
-    raiseWait: '{n} waiting for the builder',
-    headOn: 'On · v{n}', headOff: 'Off · v{n}', headInvalid: 'Definition error',
-    headCycle: 'Cycle {n}', headNext: 'Cycle {n} · next beat in {when}',
-    builder: 'Builder · {state}', builderNone: 'Builder · no session', raises: { one: '{n} raise', other: '{n} raises' },
-    attention: 'For you {n}',
-    panel: 'rig panel', panelTip: 'Open the rig panel (turn on, beat, input, answer raises)',
-    foldTip: 'Click to fold or unfold the map (this window remembers)',
-    entryEmpty: 'No entries yet. The first appears after the first beat',
-    noRoles: 'No roles',
-    openReturn: 'open return',
-  },
-  // P255: top-right chips (done: read all, CPU in the memory chip, Codex credits)
   p255: {
     plainAuthNotice: 'Launcher {name} has an auth value in plain text in its environment ({names}). The board does not move it; keep the value in your own environment and remove it from the launcher env.',
     readAll: 'Mark all read',
@@ -2867,12 +2675,6 @@ export default {
     empty: 'No sessions on the board. Start one with the + button at the top.',
     rep: 'Shown',
     repHint: 'Tap a subscription to show it on the pill.',
-  },
-  // P254: V7 mock (new rig, canvas paths) text: waiting count, tags, card state words
-  rigV7: {
-    wait: 'waiting {n}',
-    tagRoleV: 'role · {name} · v{n}', builderName: 'builder',
-    state: { ready: 'idle', working: 'working', sleeping: 'asleep', waiting: 'needs you', error: 'error', exited: 'exited', starting: 'starting', trust_wait: 'trust check', shell_idle: 'idle', shell_running: 'working', none: 'no session' },
   },
   // P258: a delivery first marked unconfirmed whose prompt was submitted later (e.g. after a compaction)
   deliveryLate: {

@@ -1,4 +1,4 @@
-// P260 단위 시험: 세션 맵 칸 머리 띠 없음, 나무 칸 x는 그대로(보이지 않는 칸), 솔로는 시작 칸에서 나무 아래로 쌓기, rig 묶음 자리, 두 열 판단, 휴대폰, 놓기 판정.
+// P260 단위 시험: 세션 맵 칸 머리 띠 없음, 나무 칸 x는 그대로(보이지 않는 칸), 솔로는 시작 칸에서 나무 아래로 쌓기, 두 열 판단, 휴대폰, 놓기 판정.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -54,18 +54,6 @@ test('P260 솔로는 시작 칸: 나무(동료 뿌리 포함)와 다른 워크�
   const ord = lay.order.filter((id) => lay.cards.get(id).ws === A).map((id) => id.slice(2));
   assert.deepEqual(ord.filter((n) => lay.cards.get('s:' + n).x === lay.cols[0].x), ['lead', 'p1', 'p2', 's2', 's1', 's3']);
   for (const r of lay.rows) for (const x of lay.cards.values()) if (x.ws === r.key) assert.ok(x.y + x.h <= r.y + r.h, '줄 안');
-});
-
-test('P260 rig 묶음은 그 줄 시작 칸에서 솔로까지 쌓은 것 아래(RIGGAP)', () => {
-  const l = lineageLayout(G, { ...OPT, rigBlocks: new Map([[A, { w: 900, h: 300 }]]) });
-  const r = l.rigs[0], last = l.cards.get('s:s3');
-  assert.equal(r.x, l.cols[0].x);
-  assert.equal(r.y, last.y + last.h + LINE.RIGGAP);
-  const row = l.rows.find((x) => x.key === A);
-  assert.ok(r.y + r.h <= row.y + row.h);
-  // 넓은 묶음은 줄 폭을 늘린다
-  const wide = lineageLayout(G, { ...OPT, rigBlocks: new Map([[A, { w: 5000, h: 300 }]]) });
-  assert.equal(wide.W, wide.cols[0].x + 5000 + 60);
 });
 
 test('P260 두 열 판단은 새 폭(measure.W)으로: 넓고 낮은 창은 두 열, 좁은 창은 한 열', () => {

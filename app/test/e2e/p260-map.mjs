@@ -1,7 +1,7 @@
-// P260 창 시험: 세션 맵 칸 머리 띠 없음, 솔로는 시작 칸에서 나무 아래로, rig 묶음은 그 아래, 두 열, 휴대폰. 전(옛 빌드)·후 그림.
+// P260 창 시험: 세션 맵 칸 머리 띠 없음, 솔로는 시작 칸에서 나무 아래로, 두 열, 휴대폰. 전(옛 빌드)·후 그림.
 // 판: 따로 띄운 개발용 판(atrium-dev-p260, 48010, backend/.dev)만. 창의 원격 디버깅 포트 9491, 휴대폰 흉내 프록시 48210. 한 번에 한 창·브라우저만(메모리).
-//   셸 세션 하나(p260-a, 시험 폴더 C:\Workspace\mtask-p260-a)만 실제로 띄운다. 맵은 페이지 안에서 mission.graph 답, 워크스페이스·폴더, rig 지도 자료를 흉내로 바꾼다(P202와 같은 흉내).
-//   흉내 모양(지어낸 이름, P153_SHAPE 꼴): 오늘 폴더(나무 셋 깊이·동료 둘·솔로 셋·rig 묶음 워크스페이스), 이전 폴더(나무·다른 워크스페이스에서 온 하위·솔로), 폴더 밖.
+//   셸 세션 하나(p260-a, 시험 폴더 C:\Workspace\mtask-p260-a)만 실제로 띄운다. 맵은 페이지 안에서 mission.graph 답, 워크스페이스·폴더를 흉내로 바꾼다(P202와 같은 흉내).
+//   흉내 모양(지어낸 이름, P153_SHAPE 꼴): 오늘 폴더(나무 셋 깊이·동료 둘·솔로 셋), 이전 폴더(나무·다른 워크스페이스에서 온 하위·솔로), 폴더 밖.
 // 실행: sh backend/.dev/clean-env.sh node app/test/e2e/p260-map.mjs <setup|pc|phone|stop> [round]  (round가 before면 확인 없이 그림만)
 // 결과는 워크트리의 experiments/p260/<round>/(저장소 밖).
 import fs from 'node:fs';
@@ -46,10 +46,10 @@ const AWAKE = ['--disable-backgrounding-occluded-windows', '--disable-renderer-b
 const W = (k) => ({ key: k, root: k.replace(/\/\.git$/, '') });
 const SHAPE = {
   folders: [
-    { id: 'gd', name: 'studio', members: ['d:/w/studio/.git', 'd:/w/rig-trade/.git'] },
+    { id: 'gd', name: 'studio', members: ['d:/w/studio/.git', 'd:/w/trade/.git'] },
     { id: 'gr', name: '연구', members: ['d:/w/res/.git', 'd:/w/lib/.git'] },
   ],
-  workspaces: ['d:/w/studio/.git', 'd:/w/rig-trade/.git', 'd:/w/res/.git', 'd:/w/lib/.git', 'd:/w/box'].map(W),
+  workspaces: ['d:/w/studio/.git', 'd:/w/trade/.git', 'd:/w/res/.git', 'd:/w/lib/.git', 'd:/w/box'].map(W),
   // [이름, 워크스페이스 번호, 부모, 오늘?, 상태, 동료]
   sessions: [
     ['notes', 0, null, 1], ['st-lead', 0, null, 1, 'working'], ['st-ui', 0, 'st-lead', 1, 'working'], ['st-api', 0, 'st-lead', 1], ['st-api-test', 0, 'st-api', 0], ['st-review', 0, 'st-lead', 1, 'ready'],
@@ -60,33 +60,21 @@ const SHAPE = {
     ['box-1', 4, null, 0], ['box-2', 4, null, 0],
   ],
 };
-// rig 지도 자료(역할 넷, P254 시험의 rig-trade 꼴, 역할 세션은 지어낸 id)
-const FLOWS = [
-  { item: 'seed', from: ['human'], to: ['ideas'] }, { item: 'hypothesis', from: ['ideas'], to: ['verify'] }, { item: 'result', from: ['verify'], to: ['ideas'], for: 'hypothesis' },
-  { item: 'data_request', from: ['ideas', 'human'], to: ['data'] }, { item: 'data_reply', from: ['data'], to: ['ideas'], for: 'data_request' }, { item: 'dataset', from: ['data'], to: ['verify'] },
-  { item: 'strategy', from: ['verify'], to: ['trade'] }, { item: 'live_report', from: ['trade'], to: ['verify'], for: 'strategy' }, { item: 'halt', from: ['human'], to: ['trade'] },
-];
-const role = (name, docN = 1) => ({ name, docN, session: { sessionId: 'fk-r-' + name, name: 'trade-' + name, state: 'ready', asleep: false }, sectors: [], tools: [], intake: [] });
-const RIG = { workspace: 'd:/w/rig-trade/.git', status: 'on', name: 'rig-trade', versionN: 1, head: { cycle: 2, beat: { every: '1d', at: '07:30', role: 'data' } },
-  builder: { sessionId: 'fk-b1', name: 'trade-builder', state: 'sleeping', asleep: true }, raises: [{ id: 'r1', role: 'trade', reason: 'no baseline', t: 1 }],
-  roles: [role('data', 2), role('ideas', 4), role('verify', 3), role('trade', 1)],
-  flows: FLOWS.map((f, i) => ({ i, ...f, for: f.for || null, waiting: f.item === 'strategy' ? 1 : 0, openReturns: f.item === 'hypothesis' ? 1 : 0, cycle: null, last: [] })), intake: [], cycleItems: [], entry: null };
-// 페이지 안 흉내: mission.graph 답과 판의 워크스페이스·폴더·rig 지도(store)를 바꾼다
-const HOOK = ([shape, rig]) => {
+// 페이지 안 흉내: mission.graph 답과 판의 워크스페이스·폴더(store)를 바꾼다
+const HOOK = ([shape]) => {
   const api = window.__mt.api, st = window.__mt.getState();
-  if (!api.__p260orig) { api.__p260orig = api.call.bind(api); window.__p260st = { workspaces: st.workspaces, groups: st.groups, rigMaps: st.rigMaps }; }
+  if (!api.__p260orig) { api.__p260orig = api.call.bind(api); window.__p260st = { workspaces: st.workspaces, groups: st.groups }; }
   const now = Date.now(), mid = new Date(now); mid.setHours(0, 0, 0, 0);
   const todayAt = Math.max(mid.getTime() + 1000, now - 60e3), oldAt = now - 3 * 86400e3;
   const nameOf = (root) => root.split('/').filter(Boolean).pop();
   st.workspaces = [...shape.workspaces.map((w, i) => ({ key: w.key, name: nameOf(w.root), kind: 'repo', root: w.root, createdAt: 1e12 + i, counts: {}, worktrees: [] })), ...(window.__p260st.workspaces || [])];
   st.groups = shape.folders.map((f) => ({ id: f.id, name: f.name, members: [...f.members] }));
-  if (rig) st.rigMaps = new Map([[rig.workspace, rig]]);
   const nodes = shape.sessions.map(([name, wi, parent, today, state, peer], i) => ({ id: `s:${name}`, kind: 'session', sessionId: `fk-${name}`, name, agentKind: 'claude', state: state || 'sleeping', category: state === 'working' ? 'working' : 'idle', workspaceKey: shape.workspaces[wi].key,
     parentId: parent ? `s:${parent}` : null, lineageParent: parent ? `s:${parent}` : null, peers: peer ? [`s:${peer}`] : [], createdAt: 1e12 + i, model: 'claude-opus-5-5', effort: 'high', activeAt: today ? todayAt : oldAt, turnAt: state === 'working' ? todayAt : null, lastPrompt: ['Merge the workers', 'Draft the notes', 'Collect the tables', 'Review the parser diff'][i % 4] }));
   const edges = shape.sessions.filter((s) => s[2]).map(([name, , parent]) => ({ from: `s:${parent}`, to: `s:${name}`, kind: 'spawn', count: 2, lastAt: now - 6e5 }));
   api.call = async (m, p) => (m === 'mission.graph' ? { nodes: [{ id: 'human', kind: 'human', name: 'you' }, ...nodes], edges, counts: { all: nodes.length }, at: now } : api.__p260orig(m, p));
 };
-const UNHOOK = () => { const api = window.__mt.api; if (api.__p260orig) { api.call = api.__p260orig; const st = window.__mt.getState(); st.workspaces = window.__p260st.workspaces; st.groups = window.__p260st.groups; st.rigMaps = window.__p260st.rigMaps; } };
+const UNHOOK = () => { const api = window.__mt.api; if (api.__p260orig) { api.call = api.__p260orig; const st = window.__mt.getState(); st.workspaces = window.__p260st.workspaces; st.groups = window.__p260st.groups; } };
 const shotTo = (pg, name) => pg.screenshot({ path: path.join(OUT, `${name}.png`) }).then(() => log(`그림 ${name}.png`)).catch((e) => log(`스크린숏 실패 ${name} ${e.message.slice(0, 80)}`));
 const BEFORE = TAG === 'before';
 const SOLOS = { studio: ['notes', 'scratch', 'review-1'], res: ['old-solo'], lib: ['lib-solo'], box: ['box-1', 'box-2'] };
@@ -113,7 +101,7 @@ const READ = () => {
   const lv0 = (c) => L.cols.find((x) => x.key === 'lv' && x.level === 0 && (x.c || 0) === c).x;
   const cards = [...L.cards.entries()].map(([id, b]) => ({ id: id.slice(2), x: b.x, y: b.y, h: b.h, depth: b.depth, ws: b.ws, col: L.ncol > 1 && b.x >= L.colDx ? 1 : 0 }));
   return { ncol: L.ncol, k: v.k, W: L.W, cols: L.cols.map((c) => c.key + (c.level ?? '')), lv0: [lv0(0)], colsBar: !!document.querySelector('[data-role=ln-cols]'), colh: document.querySelectorAll('.colh').length, divs: document.querySelectorAll('.mt-sm-div').length,
-    cards, rigs: (L.rigs || []).map((r) => ({ key: r.key, x: r.x, y: r.y, w: r.w, h: r.h })), rigShown: !!document.querySelector('[data-role=rig-map]'), colDx: L.colDx };
+    cards, colDx: L.colDx };
 };
 const soloOk = (r) => {
   const bad = [];
@@ -130,7 +118,7 @@ async function pc() {
   const { app, page } = await launch({ log, env: { ...ENV }, args: [`--remote-debugging-port=${DEBUG}`, ...AWAKE] });
   try {
     await awayWin(app);
-    await page.evaluate(HOOK, [SHAPE, RIG]);
+    await page.evaluate(HOOK, [SHAPE]);
     for (const lang of ['ko', 'en']) {
       call('settings.set', { key: 'language', value: lang }); await sleep(800);
       // ---- 보통 창 = 한 열 ----
@@ -138,18 +126,14 @@ async function pc() {
       await openMission(page);
       await page.evaluate(() => window.__mtTa.fit()); await sleep(900);
       let r = await page.evaluate(READ);
-      log(`[${lang}] 1600: ncol ${r.ncol} W ${r.W} cols ${r.cols.join()} rigs ${JSON.stringify(r.rigs)}`);
+      log(`[${lang}] 1600: ncol ${r.ncol} W ${r.W} cols ${r.cols.join()}`);
       await shotTo(page, `pc-fit-${lang}`);
       // studio 줄 가까이
-      await page.evaluate(() => { const L = window.__mtTa.lay(), row = L.rows.find((x) => /studio/.test(x.key)), rig = (L.rigs || []).find((x) => /rig-trade/.test(x.key)); const k = 0.42; window.__mtTa.set({ k, x: window.__mtTa.rail + 20 - (row.x - 10) * k, y: window.__mtTa.top + 10 - row.y * k }); }); await sleep(900);
+      await page.evaluate(() => { const L = window.__mtTa.lay(), row = L.rows.find((x) => /studio/.test(x.key)); const k = 0.42; window.__mtTa.set({ k, x: window.__mtTa.rail + 20 - (row.x - 10) * k, y: window.__mtTa.top + 10 - row.y * k }); }); await sleep(900);
       await shotTo(page, `pc-studio-${lang}`);
-      await page.evaluate(() => { const L = window.__mtTa.lay(), row = L.rows.find((x) => /rig-trade/.test(x.key)); const k = 0.42; window.__mtTa.set({ k, x: window.__mtTa.rail + 20 - (row.x - 10) * k, y: window.__mtTa.top + 10 - row.y * k }); }); await sleep(900);
-      await shotTo(page, `pc-rig-${lang}`);
       if (!BEFORE) {
         check(`[${lang}] 칸 머리 띠·구분선 없음`, !r.colsBar && !r.colh && !r.divs, r);
         check(`[${lang}] 솔로는 시작 칸, 같은 줄 나무 아래`, !soloOk(r).length, soloOk(r));
-        const tr = r.rigs.find((x) => /rig-trade/.test(x.key)), gen = r.cards.find((x) => x.id === 'gen');
-        check(`[${lang}] rig 묶음은 시작 칸에서 그 줄 솔로(gen) 아래`, tr && Math.abs(tr.x - r.lv0[0]) < 0.5 && gen && tr.y >= gen.y + gen.h && r.rigShown, { tr, gen });
         check(`[${lang}] 나무: 깊이마다 같은 칸 x`, r.cards.filter((c) => c.depth >= 0).every((c) => Math.abs(c.x - (r.lv0[0] + (c.col ? r.colDx : 0) + c.depth * (r.cards.find((x) => x.id === 'st-ui').x - r.cards.find((x) => x.id === 'st-lead').x))) < 0.5));
       }
       // ---- 넓은 창 = 두 열 ----

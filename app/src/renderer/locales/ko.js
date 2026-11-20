@@ -184,12 +184,11 @@ export default {
     plain: '{text}',
     parentBoard: '보드의 세션', parentBoardClosed: '보드에서 닫힌 세션', parentOther: '다른 대화', parentDesktop: '데스크톱 앱 대화',
     parentMissed: '정리 대상 대화', parentMissedIn: '정리 대상 대화 · {folder}', parentArchived: '보관된 대화', parentArchivedTitle: '보관된 대화 · {title}', parentConvo: '대화 · {name}',
-    chgQuestion: '질문: {q}', chgPlan: '계획 승인 요청', chgUnknownDialog: '유형을 알 수 없는 확인 창', chgWorktreeExit: '워크트리를 남길지 확인 필요', chgPermission: '권한 승인 요청: {what}', chgTrust: '새 폴더를 신뢰할지 확인 필요', chgRigPointer: 'Rig: 사람만 고치는 자리를 바꾼 정의를 쓰지 않았습니다({what})', chgRigFile: 'Rig: 사람만 고치는 파일이 바뀌어 도구를 멈췄습니다({what})',
+    chgQuestion: '질문: {q}', chgPlan: '계획 승인 요청', chgUnknownDialog: '유형을 알 수 없는 확인 창', chgWorktreeExit: '워크트리를 남길지 확인 필요', chgPermission: '권한 승인 요청: {what}', chgTrust: '새 폴더를 신뢰할지 확인 필요',
     chgTurnFailed: '요청 처리 실패', chgExitNormal: '정상 종료', chgExitUser: '직접 종료', chgExitTrust: '폴더 신뢰 거부로 종료', chgExited: '종료됨',
     chgCommand: '명령: {p}', chgPrompt: '요청: {p}', chgWasState: '중단 전 상태: {state}', chgKilled: '보드에서 종료', chgRemoved: '보드에서 제거됨 ({reason})',
     chgTerminalDown: '터미널 서버가 예기치 않게 {n}회 종료되었습니다.{up}', chgReattached: ' (다시 연결됨)',
-    chgBackendRestarts: '앱 연결 서비스가 {n}회 다시 시작되었습니다.{down}', chgDownFor: ' (중단 시간: {s}초)', chgList: '{items}',
-    chgRigBuilderStop: 'Rig 제작 세션이 마치지 못하고 멈췄습니다: {what}', chgRigBuilder_idle_no_done: '보고 없이 쉬고 있습니다', chgRigBuilder_turn_error: '오류로 턴이 끝났습니다', chgRigBuilder_needs_human: '사용자의 답을 기다립니다', chgRigBuilder_closed: '세션이 닫혔습니다', chgRigBuilder_exited: '에이전트가 끝났습니다', // P190
+    chgBackendRestarts: '앱 연결 서비스가 {n}회 다시 시작되었습니다.{down}', chgDownFor: ' (중단 시간: {s}초)', chgList: '{items}', // P190
   },
   closeReason: {
     killed: '보드에서 종료',
@@ -2587,61 +2586,16 @@ export default {
     createdPeer: '@{a} → @{b}를 동료로 연결하고 두 세션에 알림을 보냈습니다.',
     setFail: '관계를 바꾸지 못했습니다: {error}',
   },
-  // P182: rig(.atrium/rig.json의 워크스페이스 규칙), 영역 이름표 메뉴
-  rig: {
-    loading: 'Rig: …',
-    stNone: 'Rig: 정의 없음(.atrium/rig.json)',
-    stOff: 'Rig: 꺼짐',
-    stOnStale: 'Rig: 켜짐. 정의 파일이 잘못되어 마지막으로 맞았던 정의를 씁니다: {reason}',
-    stInvalid: 'Rig: 잘못됨: {reason}',
-    stError: 'Rig: 상태를 읽지 못했습니다: {error}',
-    menuOff: 'Rig: 끄기',
-    turnedOn: '{name}의 rig를 켰습니다.',
-    turnedOff: '{name}의 rig를 껐습니다.',
-    confirmOn: '켜기',
-    kind: 'rig · 역할 {n}개',
-    stOn: 'Rig 켜짐 · 역할 {n}개',
-    enable: '켜기…',
-    confirmLine: '역할 {n}개가 무인으로 돌고, 각자 쥔 섹터에만 쓰며, 도구는 판이 돌립니다.',
-    confirmWarn: '역할마다 세션 하나가 권한을 묻지 않고 돕니다. 믿을 수 있는 폴더에서만 켜세요.',
-    purpose: '목적: {path}',
-    roles: '역할',
-    colRole: '역할',
-    colOwns: '섹터',
-    colSession: '세션',
-    colTools: '도구',
-    noSession: '세션 없음',
-    gaveUp: '다시 띄우기를 멈춤(rig를 껐다 켜면 다시 띄웁니다)',
-    docMissing: '정의서 칸 빠짐: {list}',
-    flows: '길',
-    human: '사람',
-    for: '{item}에 대한 답',
-    readOnly: '이 rig는 정의 파일(.atrium/rig.json, .atrium/roles/)로만 바꿉니다. 여기서는 구조를 보기만 합니다.',
-  },
-  // P186: 세션 맵의 rig 자리·흐름 줄·건 목록, 노드 메뉴 자리 정하기, 미리 보기 훅·도구
-  // P188: rig 메뉴 — 사람만 고치는 목록(정의 자리와 파일), 버전, 알림
-  // P191: 판 안에서 rig 만들기(대화상자)와 보기·고치기(rig 판)
-  rigSetup: {
-    menuView: 'Rig 보기·고치기…',
-  },
-  rigPanel: {
-    title: '{name}의 rig',
-    st: { none: '정의 없음', off: '꺼짐', on: '켜짐', invalid: '잘못됨', loading: '읽는 중' },
-    version: '버전 {n}',
-  },
-  // P194: rig 8단계 창 손질
-  // P195: rig를 처음 써 본 보고에서 고친 것
   // P195: 프로젝트 열기의 Git 저장소로 시작
   wsGit: {
     label: 'Git 저장소로 시작 (git init + 빈 첫 커밋)',
-    hint: '켜면 폴더에 git init을 하고 main 브랜치에 빈 첫 커밋을 만듭니다. 워크트리(rig의 워크트리 자리)는 첫 커밋이 있어야 동작합니다. git 설정은 바꾸지 않습니다.',
+    hint: '켜면 폴더에 git init을 하고 main 브랜치에 빈 첫 커밋을 만듭니다. 워크트리(claude -w)는 첫 커밋이 있어야 동작합니다. git 설정은 바꾸지 않습니다.',
     inRepo: '이 폴더는 이미 Git 저장소 안에 있어 git init을 하지 않습니다.',
     noFolder: '폴더를 찾을 수 없습니다.',
     done: '{name}: git init과 빈 첫 커밋을 했습니다.',
-    noIdentity: '{name}: git init은 했지만 첫 커밋은 하지 못했습니다. git 사용자 이름과 메일이 설정되어 있지 않습니다. 터미널에서 git config --global user.name "이름"과 git config --global user.email "메일"을 설정한 뒤, 그 폴더에서 git commit --allow-empty -m "Initial commit"을 실행하세요. rig의 워크트리 자리는 첫 커밋이 있어야 동작합니다.',
-    commitFail: '{name}: git init은 했지만 첫 커밋이 실패했습니다: {error}. rig의 워크트리 자리는 첫 커밋이 있어야 동작합니다.',
+    noIdentity: '{name}: git init은 했지만 첫 커밋은 하지 못했습니다. git 사용자 이름과 메일이 설정되어 있지 않습니다. 터미널에서 git config --global user.name "이름"과 git config --global user.email "메일"을 설정한 뒤, 그 폴더에서 git commit --allow-empty -m "Initial commit"을 실행하세요. 워크트리는 첫 커밋이 있어야 동작합니다.',
+    commitFail: '{name}: git init은 했지만 첫 커밋이 실패했습니다: {error}. 워크트리는 첫 커밋이 있어야 동작합니다.',
   },
-  // P198: 세션 맵 rig 띠(17절): 자리 머리, 건 행 머리, 칸 표시, 접힌 줄, 넘김 이력
   // P202: 세션 맵 폴더 칸 이름표(오늘 일한 폴더 · 그 밖)
   mmSec: {
     today: '오늘',
@@ -2699,65 +2653,6 @@ export default {
   rigLoopHold: { // P223: 멈춘 rig 고리의 입구로 온 요청(전달 대기열에 붙잡음)
     dropped: '고리를 이었지만 회를 열지 못했습니다',
   },
-  // P231(rig2-design 11.13의 2): 올라갈 곳이 상한에 걸린 그 자리 자신이라 사람에게 온 상한 카드의 풀이
-  // P232(rig2-design 11.14): 개선 계기의 이어진 회 수, 켜기 전 요약의 정본 기준 줄과 저장소 훅 알림
-  // P233(rig2-design 11.15): rig 자리 권한 질문은 이번 한 번만, 켜기 확인의 정본 차이
-  // P239(rig2-design 11.18 2단계): 정의가 바뀌어 떠 있는 keep 자리의 권한이 달라짐, rig 자리의 권한 모드 어긋남
-  // P237(rig2-design 11.18의 둘째): 보내기 칸의 "회 없이"(rig 자리에 회를 열지 않고 글만)
-  // P241: rig (역할 조직) 판. 읽기만 하는 구조 보기와 켜기
-  // P242: rig 항목·길·받음. 구조 보기의 길마다 수, 멈춘 역할 한 줄, 입력 창구
-  rigItems: {
-    counts: '낸 {put} · 받음 {accepted} · 반려 {returned} · 기다림 {waiting}',
-    passed: ' · pass {n}',
-    stalledH: '답하지 않고 멈춘 역할',
-    stalled: '{role}: 받은 것에 답하지 않았습니다(판이 한 번 일깨움) — {items}',
-    intake: '입력 창구',
-    intakeTo: '{item} → {to}',
-    intakePlaceholder: '{to}에게 넣을 글. 판이 파일로 써서 항목으로 보냅니다.',
-    intakeSend: '넣기',
-    intakeSent: '{id}를 {to}에게 넣었습니다',
-    intakeOff: '입력 창구는 rig가 켜져 있을 때 씁니다.',
-    returned: '반려된 입력 {id}: {by} "{reason}"',
-  },
-  // P244: rig 사이클(박자)과 변경 기록 꼭지
-  rigCycle: {
-    h: '사이클',
-    now: '사이클 {n}',
-    none: '사이클 없음',
-    opened: '{time}에 열림',
-    wakes: ', {role} 깨움',
-    noBeat: '박자 없음(정의에 beat가 없습니다)',
-    beatNow: '지금 박자',
-    beatSent: '사이클 {n}을 열었습니다',
-    toolRunning: '{name}: 도는 중',
-    writing: '사이클 {list} 요약을 쓰는 중',
-    noEntries: '아직 꼭지가 없습니다. 다음 박자에 판이 지난 사이클을 요약합니다.',
-    byAi: 'AI 요약',
-    byNumbers: '숫자만',
-    file: '변경 기록: {path}',
-  },
-  // P245: rig 조정과 되돌리기(역할 줄의 정의서 판·조정 기록)
-  rigTune: {
-    col: '정의서',
-    badge: '판 {n} · 조정 {k}',
-    material: ' · 재료 {n}',
-    turnOpen: ' · 조정 턴',
-    head: '{doc} · 판 {n} · 요령 칸 {lines}/{budget}줄',
-    empty: '(비었습니다)',
-    noLog: '조정 기록이 없습니다.',
-    k: {
-      tune: '조정 판 {prev}→{n} (+{added} −{removed}): {why}',
-      rejected: '거절: {reason}',
-      none: '고칠 것 없음: {why}',
-      raise: '빌더에게 올림: {why}',
-      rollback: '되돌림: 판 {from}의 것으로 → 판 {n}',
-      answer: '{raise}에 {by}의 답(고치지 않음): {why}',
-    },
-    evidence: '근거 {list}',
-    undo: '되돌리기(판 {n})',
-    undone: '{role} 요령 칸을 판 {from}의 것으로 되돌렸습니다(새 판 {n})',
-    same: '이미 판 {n}의 요령 칸입니다',
-  },
   // P248: 보내기 칸·휴대폰 입력 줄의 스티어링 선택(기본은 대기열)
   cmdSteer: {
     label: '스티어링',
@@ -2768,89 +2663,6 @@ export default {
     fell: '{names}: 스티어링할 수 없어 대기열로 보냈습니다({why}).',
     why_kind: '일하는 중에 입력을 받지 못하는 종류',
     why_no_hook: '보드가 띄운 Claude Code가 아님(hook 없음)',
-  },
-  // P247: rig 빌더(빌더에게 말하기)
-  rigBuilder: {
-    h: '빌더',
-    menu: '빌더에게 말하기…',
-    talk: '빌더에게 말하기',
-    none: '빌더 세션이 없습니다. 말하기를 누르면 판이 띄웁니다.',
-    hint: '빌더와 말로 rig를 짓고 고칩니다. 구성안을 보고 좋다고 하면 빌더가 정의와 정의서를 씁니다. 켜는 것은 이 창에서 직접 합니다.',
-    placeholder: '빌더에게 할 말(비워 두면 빌더 터미널만 엽니다)',
-    send: '보내고 열기',
-    open: '빌더 열기',
-    spawned: '빌더 @{name}을 띄웠습니다',
-    opened: '빌더 @{name}으로 갑니다',
-  },
-  // P251: rig 구조 지도(세션 맵)와 길 선(캔버스)
-  rigMap: {
-    title: 'rig',
-    on: '켜짐', off: '꺼짐', invalid: '정의 오류',
-    version: '판 v{n}',
-    cycle: '사이클 {n}',
-    nextBeat: '다음 박자 {when} 뒤',
-    attention: '사람이 볼 것 {n}',
-    stalled: '멈춘 역할 {n}',
-    openPanel: 'rig 판 열기(켜기, 박자, 입력, 되돌리기)',
-    outside: 'rig 밖', inside: 'rig', side: '섹터와 도구',
-    human: '사람', humanSub: '입력 창구',
-    builder: '빌더', builderNone: '빌더 세션 없음',
-    raises: '올림 {n}', raiseEdge: '올림',
-    fix: '정의 고침',
-    received: '받은 것 {n}', unanswered: '답 없음 {n}',
-    docN: '정의서 v{n}', material: '조정 뒤 반려 {n}', foreign: '되돌림 {n}',
-    noSession: '세션 없음', gaveUp: '멈춤',
-    toolLast: '마지막 {ago}', toolNever: '아직 안 돎', alarms: '경보 {n}',
-    more: '+{n}',
-    cycleBand: '사이클 {n}', cycleEmpty: '이번 사이클에 오간 항목이 아직 없습니다', cycleMore: '+{n}개 더',
-    entry: '변경 기록', entryOpen: '펼치기', entryClose: '접기',
-    folded: 'rig · 꺼짐', unfold: '펴기', fold: '접기',
-    forText: '{item}({of}의 답)',
-    accepted: '받음 {n}', returned: '반려 {n}', waiting: '기다림 {n}', waitingShort: '{n} 기다림',
-    what: { put: '냄', accept: '받음', return: '반려', pass: '넘김', drop: '버림' },
-    state: { returned: '반려', waiting: '기다림', accepted: '받음', passed: '넘김', superseded: '다음 판', dropped: '버림', live: '냄' },
-    unit: { m: '{n}분', h: '{n}시간', d: '{n}일' },
-    tagRole: '역할 · {name}', tagBuilder: 'rig 빌더', tagIntake: '입력', tagIntakeTip: '사람 입력을 받습니다({kinds}). 누르면 rig 판의 입력 넣기를 엽니다.',
-    tagBeat: '박자 {every}', tagSectors: '섹터 {list}',
-    pathTitle: 'rig 길(정의에서 나온 선이라 여기서 끊지 않습니다. 바꾸려면 빌더에게 말합니다)',
-    pathRecent: '이 길로 최근 오간 항목', pathNone: '이 길로 오간 항목이 아직 없습니다',
-    link: '이 워크스페이스의 rig',
-    phone: 'rig', phoneRoles: '역할', phoneFlows: '길', phoneOpen: '열기',
-  },
-  // P252: rig 올림에 답해 닫기(rig 판의 올림 줄)
-  rigRaise: {
-    h: '기다리는 올림 {n}',
-    answer: '답하기',
-    placeholder: '고치지 않는 까닭 한 줄(올린 역할에게 갑니다)',
-    send: '답하고 닫기',
-    done: '{id}({role})에 답했습니다. {role}의 다음 깨우는 글에 실립니다.',
-    hint: '고치지 않기로 하면 까닭 한 줄로 답해 닫습니다. 고치려면 빌더에게 말합니다. 빌더가 고친 판이 생기면 저절로 닫힙니다.',
-    byHuman: '사람', byBuilder: '빌더',
-  },
-  // P252: 박자·도구 주기를 사람 말로(lib/rig-map.js periodText)
-  rigPeriod: {
-    single: { s: '매초', m: '매분', h: '매시간', d: '매일' },
-    multi: { s: '{n}초마다', m: '{n}분마다', h: '{n}시간마다', d: '{n}일마다' },
-    at: '{period} {at}', from: '{period}({at} 기준)',
-    next: '다음 박자 {time}({period}',
-    tool: '{name}: {period}, 다음 {time}',
-  },
-  // P253: 세션 맵 rig 지도 2차(카드 줄 이름, 머리 띠 칸, 접기)
-  rigMap2: {
-    row: { session: '세션', beat: '박자', owns: '쥔 것', recent: '최근', tool: '도구', intake: '입력', counts: '받음', raise: '올림' },
-    beatCycle: '{period}에 사이클을 연다',
-    toolOnCall: '부를 때만', toolOk: '정상', toolFail: '실패', toolRunning: '도는 중',
-    intake: '사람 → {items}',
-    raiseWait: '빌더에게 {n}건 기다림',
-    headOn: '켜짐 · 판 v{n}', headOff: '꺼짐 · 판 v{n}', headInvalid: '정의 오류',
-    headCycle: '사이클 {n}', headNext: '사이클 {n} · 다음 박자 {when} 뒤',
-    builder: '빌더 · {state}', builderNone: '빌더 · 세션 없음', raises: '올림 {n}',
-    attention: '사람이 볼 것 {n}',
-    panel: 'rig 판', panelTip: 'rig 판 열기(켜기, 박자, 입력, 올림에 답하기)',
-    foldTip: '누르면 지도를 접거나 폅니다(이 창이 기억합니다)',
-    entryEmpty: '아직 꼭지가 없습니다. 첫 박자 뒤에 생깁니다',
-    noRoles: '역할이 없습니다',
-    openReturn: '끝나지 않은 반려',
   },
   // P255: 위 오른쪽 칩(작업 완료 모두 읽기, 메모리 칩의 CPU, Codex 크레딧)
   p255: {
@@ -2867,12 +2679,6 @@ export default {
     empty: '보드에 세션이 없습니다. 위쪽 + 단추로 새 세션을 시작하세요.',
     rep: '대표',
     repHint: '구독을 누르면 알약에 그 구독을 보입니다.',
-  },
-  // P254: 시안 V7(새 rig · 캔버스의 길 선) 글: 대기 수, 꼬리표, 카드 상태 글
-  rigV7: {
-    wait: '대기 {n}',
-    tagRoleV: '역할 · {name} · v{n}', builderName: 'builder',
-    state: { ready: '쉼', working: '일함', sleeping: '잠', waiting: '응답 필요', error: '오류', exited: '끝남', starting: '시작 중', trust_wait: '신뢰 확인', shell_idle: '쉼', shell_running: '일함', none: '세션 없음' },
   },
   // P258: 미확인으로 끝난 뒤 늦게 제출된 전달(압축 뒤 등)
   deliveryLate: {

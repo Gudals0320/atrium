@@ -57,24 +57,21 @@ const SHAPE = {
 // 동료는 양쪽에(판 계약)
 { const m = new Map(SHAPE.sessions.map((x) => [x[0], new Set(x[5] || [])])); for (const [n, ps] of m) for (const p of ps) m.get(p).add(n); for (const x of SHAPE.sessions) x[5] = [...m.get(x[0])]; }
 const RIG = null;
-// 페이지 안 흉내: mission.graph 답과 판의 워크스페이스·폴더·rig 지도(store)를 바꾼다
-const HOOK = ([shape, rig]) => {
+// 페이지 안 흉내: mission.graph 답과 판의 워크스페이스·폴더(store)를 바꾼다
+const HOOK = ([shape]) => {
   const api = window.__mt.api, st = window.__mt.getState();
-  if (!api.__p266orig) { api.__p266orig = api.call.bind(api); window.__p266st = { workspaces: st.workspaces, groups: st.groups, rigMaps: st.rigMaps }; }
+  if (!api.__p266orig) { api.__p266orig = api.call.bind(api); window.__p266st = { workspaces: st.workspaces, groups: st.groups }; }
   const now = Date.now(), mid = new Date(now); mid.setHours(0, 0, 0, 0);
   const todayAt = Math.max(mid.getTime() + 1000, now - 60e3), oldAt = now - 3 * 86400e3;
   const nameOf = (root) => root.split('/').filter(Boolean).pop();
   st.workspaces = [...shape.workspaces.map((w, i) => ({ key: w.key, name: nameOf(w.root), kind: 'repo', root: w.root, createdAt: 1e12 + i, counts: {}, worktrees: [] })), ...(window.__p266st.workspaces || [])];
   st.groups = shape.folders.map((f) => ({ id: f.id, name: f.name, members: [...f.members] }));
-  if (rig) st.rigMaps = new Map([[rig.workspace, rig]]);
   const nodes = shape.sessions.map(([name, wi, parent, today, state, peer], i) => ({ id: `s:${name}`, kind: 'session', sessionId: `fk-${name}`, name, agentKind: 'claude', state: state || 'sleeping', category: state === 'working' ? 'working' : 'idle', workspaceKey: shape.workspaces[wi].key,
     parentId: parent ? `s:${parent}` : null, lineageParent: parent ? `s:${parent}` : null, peers: (peer || []).map((p) => `s:${p}`), createdAt: 1e12 + i, model: 'claude-opus-5-5', effort: 'high', activeAt: today ? todayAt : oldAt, turnAt: state === 'working' ? todayAt : null, lastPrompt: ['Merge the workers', 'Draft the notes', 'Collect the tables', 'Review the parser diff'][i % 4] }));
-  if (rig) for (const [n, lp] of rig.__nodes || []) { const r = rig.roles.find((x) => x.name === n); nodes.push({ id: 's:' + r.session.sessionId, kind: 'session', sessionId: r.session.sessionId, name: r.session.name, agentKind: 'claude', state: r.session.state, category: r.session.state === 'working' ? 'working' : 'idle', workspaceKey: rig.workspace, rigRole: n, peers: [], createdAt: 1e12, model: 'claude-haiku-5-5', effort: 'medium', activeAt: todayAt, turnAt: r.session.state === 'working' ? todayAt : null, lastPrompt: lp, ask: r.session.state === 'waiting' ? lp : null }); }
-  if (rig) nodes.push({ id: 's:fk-b1', kind: 'session', sessionId: 'fk-b1', name: 'trade-builder', agentKind: 'claude', state: 'sleeping', category: 'idle', workspaceKey: rig.workspace, rigRole: '@builder', peers: [], createdAt: 1e12, model: 'claude-opus-5-5', effort: 'high', activeAt: todayAt, lastPrompt: 'Add a baseline check to trade' });
   const edges = shape.sessions.filter((s) => s[2]).map(([name, , parent]) => ({ from: `s:${parent}`, to: `s:${name}`, kind: 'spawn', count: 2, lastAt: now - 6e5 }));
   api.call = async (m, p) => (m === 'mission.graph' ? { nodes: [{ id: 'human', kind: 'human', name: 'you' }, ...nodes], edges, counts: { all: nodes.length }, at: now } : api.__p266orig(m, p));
 };
-const UNHOOK = () => { const api = window.__mt.api; if (api.__p266orig) { api.call = api.__p266orig; const st = window.__mt.getState(); st.workspaces = window.__p266st.workspaces; st.groups = window.__p266st.groups; st.rigMaps = window.__p266st.rigMaps; } };
+const UNHOOK = () => { const api = window.__mt.api; if (api.__p266orig) { api.call = api.__p266orig; const st = window.__mt.getState(); st.workspaces = window.__p266st.workspaces; st.groups = window.__p266st.groups; } };
 const shotTo = (pg, name) => pg.screenshot({ path: path.join(OUT, `${name}.png`) }).then(() => log(`그림 ${name}.png`)).catch((e) => log(`스크린숏 실패 ${name} ${e.message.slice(0, 80)}`));
 const BEFORE = TAG === 'before';
 

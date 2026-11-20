@@ -11,8 +11,6 @@ import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: �
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
 import { UNITS_SCHEMA, UNITS_COLUMNS, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
 import { NEWS_SCHEMA, installNews } from './store-news.mjs'; // P204: 동료 소식
-import { RIG_COLUMNS, TOOL_RUNS_SCHEMA, RIG_ADMIN_SCHEMA, RIG_EVENTS_SCHEMA, installRig } from './store-rig.mjs'; // P182: rig 켜기, 판, 장부, 도구 실행
-import { RIG_ROLE_COLUMNS, RIG_ROLE_SCHEMA, installRigRoles } from './store-rig-roles.mjs'; // P241: rig 역할 세션
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -60,7 +58,7 @@ const ADDED_COLUMNS = {
   sessions: { touched_at: 'INTEGER', kind: 'TEXT', origin: 'TEXT', parent_session_id: 'TEXT', workspace_key: 'TEXT', flavor: 'TEXT', extra_args: 'TEXT', label: 'TEXT', start_command: 'TEXT', harness: 'TEXT' }, // harness(P115): Claude Code 밖 하네스를 다시 띄울 값(JSON: 모델, 추가 인자, 호출자, 연결, 하네스 세션 ID) // start_command(호출자의 실행 명령, 예: mywrap claude)는 P97 // label(판의 이름, 사람이 정한 표시 이름)은 P66 // extra_args(호출자의 claude 추가 인자, JSON 배열)는 P33 // kind·origin·parent는 P4, workspace_key는 P5, flavor(띄운 방법: 런처의 아이콘)는 P25
   workspaces: { x: 'REAL', y: 'REAL' }, // P6a: 영역의 자리(빈 워크스페이스, 영역 옮기기)
   nodes: { size: 'TEXT', aspect: 'TEXT' }, // P6a: 크기 단계(large, normal, small). P73: aspect(고른 종횡비 16:9·4:3, 없으면 자유 비율)
-  deliveries: { seq: 'REAL' }, // P172: 세션 안 보낼 차례(순서 바꾸기·바로 보내기). 없으면 created_at
+  deliveries: { seq: 'REAL', origin: 'TEXT', from_session: 'TEXT' }, // P172: 세션 안 보낼 차례(순서 바꾸기·바로 보내기). 없으면 created_at. P182: 출처(human | agent | board)와 보낸 세션(agent일 때). 옛 행은 비어 있다(board로 읽는다)
   links: { transient: 'INTEGER', temp_until: 'INTEGER' }, // P171: 일시 연결(관계 없는 쌍의 atrium prompt). temp_until이 지나면 판에서 빠진다(temp-links.mjs)
   docks: { tree: 'TEXT', aspect: 'TEXT' }, // P17: 분할 나무(dock-tree.mjs). 없으면 옛 한 줄 덩어리(dir, members)이고 뜰 때 나무로 바꾼다(canvas-ops migrateDocks). P73: aspect(덩어리 바깥의 종횡비)
 };
@@ -78,7 +76,6 @@ function sessionRow(r) {
     label: r.label ?? null, // P66: 판의 이름. 없으면 name(에이전트 주소)이 보인다
     startCommand: r.start_command || '', // P97: 실행 명령(빈 값은 claude)
     harnessPlan: r.harness ? JSON.parse(r.harness) : null, // P115
-    rigRole: r.rig_role ?? null, // P241: rig 역할
   };
 }
 function linkRow(r) {
@@ -116,18 +113,21 @@ export class Store {
     this.db.exec(IMPORTS_SCHEMA);
     this.db.exec(BRANCH_SCHEMA); // P156: 일 관계
     this.db.exec(UNITS_SCHEMA); // P180: 일 단위와 시도
-    this.db.exec(TOOL_RUNS_SCHEMA); // P183: 도구 실행 장부
-    this.db.exec(RIG_ADMIN_SCHEMA); // P188: 판(버전)
-    this.db.exec(RIG_EVENTS_SCHEMA); // P217: rig 장부(rig_events)
+    // P269: rig 표(tool_runs, rig_versions, rig_events, rig3_*)와 열(workspaces.rig_enabled·rig_enabled_at, sessions.rig_role)은 옛 판 DB에 그대로 두고 만들지도 쓰지도 않는다(옛 rig 1·2와 같다)
     this.db.exec(NEWS_SCHEMA); // P204: 동료 소식
-    this.db.exec(RIG_ROLE_SCHEMA); // P242: rig 항목과 받음
-    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(RIG_COLUMNS), ...Object.entries(RIG_ROLE_COLUMNS)]) {
+    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
     }
     this.q = {};
   }
   close() { this.db.close(); }
+  // P269: 옛 rig 역할 세션(sessions.rig_role이 있는 줄). 열이 없는 판(rig 전에 만든 DB나 새 DB)은 빈 목록 → [{ sessionId, role }]
+  oldRigRoles() {
+    const have = this.db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'rig_role');
+    return have ? this.db.prepare("SELECT session_id, rig_role FROM sessions WHERE rig_role IS NOT NULL AND rig_role != ''").all().map((r) => ({ sessionId: r.session_id, role: r.rig_role })) : [];
+  }
+  clearOldRigRole(sessionId) { this.st('UPDATE sessions SET rig_role = NULL WHERE session_id = ?').run(sessionId); }
   st(sql) { return (this.q[sql] ||= this.db.prepare(sql)); }
   tx(fn) {
     this.db.exec('BEGIN');
@@ -292,6 +292,4 @@ installWorktrees(Store); // P27
 installImports(Store); // P34
 installMerge(Store); // P37
 installUnits(Store); // P180
-installRig(Store); // P182
-installRigRoles(Store); // P241
 installNews(Store); // P204
