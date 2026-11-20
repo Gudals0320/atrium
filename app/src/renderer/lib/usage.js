@@ -48,10 +48,10 @@ export function remainingOf(view, provider, now = Date.now()) {
   const top = topOf(view && view.providers && view.providers[provider], now, provider);
   return top ? { pct: Math.max(0, Math.round(100 - top.pct)), level: levelOf(top.pct), window: top.w.id } : null;
 }
-// 호출자 → 그 호출자가 쓰는 구독 | null. 연결(API)을 쓰거나 API 주소·키 환경 변수를 주는 호출자는 구독이 아니다
+// 호출자 → 그 호출자가 쓰는 구독 | null. API 주소·키 환경 변수를 주는 호출자는 구독이 아니다. P255: 옛 연결 참조(connection)는 보지 않는다
 const API_ENV = /^(ANTHROPIC_(BASE_URL|API_KEY|AUTH_TOKEN)|OPENAI_(BASE_URL|API_KEY)|CODEX_HOME)$/;
 export function providerOfLauncher(l) {
-  if (!l || l.connection) return null;
+  if (!l) return null;
   const names = [...Object.keys(l.env || {}), ...((l.preview && l.preview.env) || [])];
   if (names.some((n) => API_ENV.test(n))) return null;
   return PROVIDERS.includes(l.harness) ? l.harness : null;

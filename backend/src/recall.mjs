@@ -30,7 +30,7 @@ import { CONVO_CAP, placeCards, boardSpawnDup } from './convo-canvas.mjs';
 import { m, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { takenNames, keepLabel, findSession } from './session-label.mjs'; // P66
 import { startOpt } from './launchers.mjs'; // P97: 실행 명령
-import { adapterOf, harnessResumable, claudeConnection, codexSessionOf } from './harness.mjs'; // P115: Claude Code 밖 하네스의 이어 가기, Claude Code의 연결
+import { adapterOf, harnessResumable, codexSessionOf } from './harness.mjs'; // P115: Claude Code 밖 하네스의 이어 가기
 
 const SHELL = 'shell';
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
@@ -841,13 +841,9 @@ export class Recall {
     if (claude) {
       hookToken = crypto.randomBytes(24).toString('hex');
       const extra = b.branch ? b.branch.settingsExtra(id) : {}; // P8: 다시 연 세션도 하위 세션 명령을 쓴다
-      // P115: 연결을 쓰던 세션은 그 연결의 지금 값으로(지운 연결이면 열지 않는다). P33: 연결이 없던 세션은 띄울 때의 호출자 환경 변수
-      const conn = spec.connectionId ? (b.connectionOf ? b.connectionOf(spec.connectionId) : null) : null;
-      if (spec.connectionId && !conn) throw keyed(apiError('connection_missing', `연결(${spec.connectionId})을 찾을 수 없어 열지 않았습니다. 설정에서 연결을 다시 만든 뒤 여세요.`), 'connections.err.missingStart', { launcher: spec.name || '', id: spec.connectionId });
-      const cc = claudeConnection(conn);
-      const env = conn ? { ...(spec.launcherEnv || {}), ...cc.env } : spec.env || {};
+      // P33: 띄울 때의 호출자 환경 변수. P255: 옛 연결 세션은 연결 주소 없이 호출자 env만(하네스 기본 로그인)
+      const env = spec.env || {};
       if (Object.keys(env).length) extra.env = { ...env, ...(extra.env || {}) };
-      if (Object.keys(cc.settings).length) extra.settings = cc.settings;
       settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, ...extra });
       trust = predictTrust(cwd, cfg.claudeJson);
       const launch = { sessionId: id, settingsPath, permissionMode, model: spec.model || null, effort: spec.effort || null, extraArgs: spec.extraArgs || [], ...b.plugin };
@@ -917,9 +913,9 @@ export class Recall {
     if (row.reopenedAs) throw apiError('moved', `이 세션은 이미 다른 세션(${row.reopenedAs})으로 다시 열었습니다.`);
     const kind = row.kind || 'claude';
     const info = this.store.spawnInfo(row.sessionId) || {};
-    // P115: 연결(spawn 이벤트의 connection). P25 세션(flavor만, env 기록 없음)은 그 아이콘의 런처가 쓰는 연결
+    // P25 세션(flavor만, env 기록 없음)은 그 아이콘의 런처 env. P255: 옛 연결 세션(spawn의 connection)은 연결이 더한 주소 없이 호출자 env(launcherEnv)만
     const legacy = !info.connection && !info.env && kind === 'claude' && row.flavor && this.b.features && this.b.features.launchers ? legacyFlavorLauncher(this.b.features.launchers.data().items, row.flavor) : null;
-    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, createdAt: row.createdAt, flavor: row.flavor || null, env: info.env || null, connectionId: info.connection || (legacy ? legacy.connection : null), launcherEnv: info.launcherEnv || (legacy ? legacy.env : null), extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [], startCommand: row.startCommand || info.startCommand || '' }; // P97: 실행 명령. P33: 호출자의 환경 변수와 추가 인자도 그대로
+    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, createdAt: row.createdAt, flavor: row.flavor || null, env: info.connection ? info.launcherEnv || null : info.env || (legacy ? legacy.env : null), extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [], startCommand: row.startCommand || info.startCommand || '' }; // P97: 실행 명령. P33: 호출자의 환경 변수와 추가 인자도 그대로
     if (kind === 'claude') {
       const conv = convOf(row);
       if (conv) {

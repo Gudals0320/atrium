@@ -158,15 +158,15 @@ test('P72 atrium models: Codex 줄은 Codex 캐시의 목록이고 그 이름으
     writeCache(home, CACHE);
     const store = new Store(path.join(dir, 'board.db'));
     const launchers = new Launchers({ store, codexModels: new CodexModels({ home }) });
-    const br = new Branch({ cfg: {}, features: { launchers }, ...BOARD }, { fetchModels: async () => { throw new Error('새 판은 게이트웨이를 묻지 않는다'); } });
+    const br = new Branch({ cfg: {}, features: { launchers }, ...BOARD });
     const c = await br.catalog();
     assert.deepEqual(c.entries.filter((e) => e.source === 'harness' && e.harness === 'codex').map((e) => e.model), ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna']);
-    assert.deepEqual(c.gateways, [], '새 판에는 연결을 쓰는 런처가 없다');
+    assert.deepEqual(c.gateways, [], 'P255: 게이트웨이(연결) 목록은 늘 비었다');
     store.close();
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('P72·P115 옛 게이트웨이 환경 변수: 판 설정의 가상 게이트웨이는 없다. 설정은 그 값만 읽는다(옮기기가 연결로 옮긴다)', () => {
+test('P72·P115 옛 게이트웨이 환경 변수: 판 설정의 가상 게이트웨이는 없다. 설정은 그 값만 읽는다(P33 전 판의 처음 런처 목록만 쓴다)', () => {
   assert.equal(typeof new Branch({ cfg: {}, features: {}, ...BOARD }).defaultGateway, 'undefined');
   assert.deepEqual(loadConfig({ argv: ['--dev'], env: {} }).legacyGateway, { healthUrl: null, baseUrl: null });
   assert.deepEqual(loadConfig({ argv: ['--dev'], env: { ATRIUM_OCX_HEALTH: 'http://127.0.0.1:2/healthz' } }).legacyGateway, { healthUrl: 'http://127.0.0.1:2/healthz', baseUrl: null });
