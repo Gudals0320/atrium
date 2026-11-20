@@ -263,7 +263,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 4. 응답: 화면은 \`atrium read <이름>\`, 목록·상태·마지막 응답은 \`atrium children\`(\`--all\`이면 그 아래까지).
 5. 모아 보고, 합치기: 워커마다 답을 확인하고(완료 기준을 채웠는지, 시험이 통과했는지) 정리해 사용자에게 보고한다. 워크트리 브랜치는 네가 합친다(\`git merge worktree-<이름>\`). 충돌이나 빠진 것은 그 워커에게 다시 시킨다.
 
-- 연결: \`atrium me\`가 상위·동료·하위·독립과 역할 연결의 지금 기록이다. 헷갈리면 친다.
+- 연결: \`atrium me\`가 상위·동료·하위·독립과 역할 연결의 지금 기록이다. 판에서 잇거나 끊은 역할 연결은 알리지 않으니 모르는 이름·역할을 들으면 친다.
 - 헤드: 다른 폴더에 따로 이끌 세션을 띄우라면 \`atrium child <이름> --head --cwd <폴더> --prompt "<지시>"\`. 첫 요청 뒤 보드가 떼므로 그 뒤로 시키거나 기다리지 않는다.
 - 다른 종류(Codex 등): \`atrium child <이름> --kind codex --model "<모델>" --prompt "<지시>"\`. 레일의 Codex 설정과 너의 승인 방식을 따른다. 시키기·기다리기는 같다.
 
@@ -681,7 +681,7 @@ export class Branch {
     b.store.addEvent(child.sessionId, 'branch_parent', { parent: parent.name, parentSessionId: parent.sessionId, role, depth });
     b.log(`branch child ${parent.name} → ${name} (${kind}, ${depth}단계, ws=${ws.key}${worktree ? `, worktree ${worktree}` : ''})`);
     // 명령의 응답이 부모에게 닿지 않았으면(명령이 시간 제한으로 끊김 등) F2처럼 판이 알림을 보낸다
-    if (res) res.once('close', () => { if (!res.writableFinished && b.sessions.has(parent.sessionId)) { const d = b.queue.enqueue(parent.sessionId, `${notice}\n이 알림에는 "알겠다"고만 답해라.`); b.linkEvent(l, 'notice', notice, { deliveryId: d.deliveryId, why: 'command response lost' }, { quiet: true }); } });
+    if (res) res.once('close', () => { if (!res.writableFinished && b.sessions.has(parent.sessionId)) { const d = b.queue.enqueue(parent.sessionId, notice); b.linkEvent(l, 'notice', notice, { deliveryId: d.deliveryId, why: 'command response lost' }, { quiet: true }); } });
 
     let first = null;
     if (prompt) {
@@ -953,7 +953,7 @@ export class Branch {
     const name = to ? to.name : (old && old.name) || String(row.sessionId).slice(0, 8);
     const body = String(row.text || '').replace(/^\[Atrium 보드\][^\n]*\n+/gm, '').replace(/\s+/g, ' ').trim(); // 일 머리는 떼고 본문 앞부분
     const again = to ? `다시 보내려면: atrium prompt ${name} "<글>"` : `@${name}는 닫혔다. 필요하면 새 세션에 맡긴다`;
-    const text = `[Atrium 보드] @${name}에게 보낸 글("${clip(body, 80)}")이 들어가지 않았다(${d.status}: ${d.reason || '-'}). ${again}\n이 알림에는 "알겠다"고만 답해라.`;
+    const text = `[Atrium 보드] @${name}에게 보낸 글("${clip(body, 80)}")이 들어가지 않았다(${d.status}: ${d.reason || '-'}). ${again}`; // P263: "알겠다" 줄을 뺐다(다시 보내라는 말과 어긋났다)
     const n = b.queue.enqueue(from.sessionId, text);
     b.store.addEvent(from.sessionId, 'delivery_lost_notice', { deliveryId: d.deliveryId, to: row.sessionId, status: d.status, reason: d.reason || null, noticeDeliveryId: n.deliveryId });
     b.log(`delivery lost ${name} (${d.deliveryId} ${d.status}: ${d.reason || '-'}) → notice to ${from.name}`);
@@ -977,7 +977,7 @@ export class Branch {
     b.log(`first prompt lost ${child.name} (${d.status}: ${d.reason || '-'})`);
     const parent = child.parentSessionId ? b.sessions.get(child.parentSessionId) : null;
     if (!parent) return lost;
-    const text = `@${child.name}에게 보낸 첫 요청이 들어가지 않았다(${d.status}${d.reason ? `: ${d.reason}` : ''}). 화면을 보고(${this.readCmd(child)}) 필요하면 다시 보낸다: atrium prompt ${child.name} "<할 일>"\n이 알림에는 "알겠다"고만 답해라.`;
+    const text = `@${child.name}에게 보낸 첫 요청이 들어가지 않았다(${d.status}${d.reason ? `: ${d.reason}` : ''}). 화면을 보고(${this.readCmd(child)}) 필요하면 다시 보낸다: atrium prompt ${child.name} "<할 일>"`;
     const n = b.queue.enqueue(parent.sessionId, text);
     const l = b.ensureLink(parent.sessionId, child.sessionId, {});
     b.linkEvent(l, 'notice', text, { deliveryId: n.deliveryId, why: 'first prompt lost' }, { quiet: true });
@@ -994,7 +994,7 @@ export class Branch {
       const child = b.sessions.get(sid);
       const parent = child && child.parentSessionId ? b.sessions.get(child.parentSessionId) : null;
       if (!child || !parent) return null;
-      const text = `@${child.name}에게 보낸 첫 요청은 늦게 들어갔다(앞 알림의 "들어가지 않았다"는 틀렸다). 다시 보내지 않는다.\n이 알림에는 "알겠다"고만 답해라.`;
+      const text = `@${child.name}에게 보낸 첫 요청은 늦게 들어갔다(앞 알림의 "들어가지 않았다"는 틀렸다). 다시 보내지 않는다.`;
       const n = b.queue.enqueue(parent.sessionId, text);
       const l = b.ensureLink(parent.sessionId, child.sessionId, {});
       b.linkEvent(l, 'notice', text, { deliveryId: n.deliveryId, why: 'first prompt late' }, { quiet: true });
@@ -1129,6 +1129,7 @@ export class Branch {
 
   // ---------- P81: atrium me ----------
   // 부르는 세션의 지금 연결: 나, 부모, 열린 하위 세션, 역할 연결 양쪽, 연결마다 마지막 지시. 닫힌 하위 세션과 끊긴 연결은 뺀다
+  // P263: 판의 잇기·끊기 알림이 없어졌으므로 그 알림이 주던 것(상대의 종류·패널)을 상대마다 싣는다
   me(s) {
     const b = this.b;
     const info = this.info.get(s.sessionId) || null;
@@ -1155,13 +1156,13 @@ export class Branch {
       const row = this.rowOf(wp) || {};
       const l = links.find((x) => x.from === wp && x.to === s.sessionId);
       const lineage = wp === s.parentSessionId;
-      parent = { name: p ? shownName(p) : row.name || '?', agentName: p ? p.agentName : null, role: (lineage && info && info.role) || (l && l.role) || null, order: lineage && info ? this.orderOf(s.sessionId) : null, state: p ? stateOf(p) : 'closed', closed: !p, head: !!(info && info.head), last: lastOf(l), source: srcOf(wp, s.sessionId) };
+      parent = { name: p ? shownName(p) : row.name || '?', agentName: p ? p.agentName : null, kind: p ? p.kind || 'claude' : row.kind || null, paneId: p ? p.paneId || null : null, role: (lineage && info && info.role) || (l && l.role) || null, order: lineage && info ? this.orderOf(s.sessionId) : null, state: p ? stateOf(p) : 'closed', closed: !p, head: !!(info && info.head), last: lastOf(l), source: srcOf(wp, s.sessionId) };
     }
     const kids = this.workChildren(s.sessionId, idx).sort((x, y) => (this.orderOf(x.sessionId) || 0) - (this.orderOf(y.sessionId) || 0) || x.createdAt - y.createdAt);
     const kidIds = new Set(kids.map((x) => x.sessionId));
-    const children = kids.map((x) => { const i = this.info.get(x.sessionId) || {}; const own = x.parentSessionId === s.sessionId; return { name: shownName(x), agentName: x.agentName, role: (own && i.role) || ((links.find((l) => l.from === s.sessionId && l.to === x.sessionId) || {}).role) || null, order: own ? this.orderOf(x.sessionId) : null, state: stateOf(x), worktree: i.worktree || null, last: lastOf(links.find((l) => l.from === s.sessionId && l.to === x.sessionId)), source: srcOf(s.sessionId, x.sessionId) }; });
+    const children = kids.map((x) => { const i = this.info.get(x.sessionId) || {}; const own = x.parentSessionId === s.sessionId; return { name: shownName(x), agentName: x.agentName, kind: x.kind || 'claude', paneId: x.paneId || null, role: (own && i.role) || ((links.find((l) => l.from === s.sessionId && l.to === x.sessionId) || {}).role) || null, order: own ? this.orderOf(x.sessionId) : null, state: stateOf(x), worktree: i.worktree || null, last: lastOf(links.find((l) => l.from === s.sessionId && l.to === x.sessionId)), source: srcOf(s.sessionId, x.sessionId) }; });
     // 동료·독립(명시한 관계). spawnedBy: 이 세션을 띄운 쪽이 상대인지(계보 부모), spawned: 내가 띄운 세션인지
-    const sideOf = (list) => list.map((r) => b.sessions.get(r.id)).filter(Boolean).map((x) => ({ name: shownName(x), agentName: x.agentName, state: stateOf(x), source: srcOf(s.sessionId, x.sessionId), spawnedBy: s.parentSessionId === x.sessionId, spawned: x.parentSessionId === s.sessionId, last: lastOf(pairLink(s.sessionId, x.sessionId)) }));
+    const sideOf = (list) => list.map((r) => b.sessions.get(r.id)).filter(Boolean).map((x) => ({ name: shownName(x), agentName: x.agentName, kind: x.kind || 'claude', paneId: x.paneId || null, state: stateOf(x), source: srcOf(s.sessionId, x.sessionId), spawnedBy: s.parentSessionId === x.sessionId, spawned: x.parentSessionId === s.sessionId, last: lastOf(pairLink(s.sessionId, x.sessionId)) }));
     const peers = sideOf(idx.peersOf(s.sessionId));
     const independent = sideOf(idx.independentOf(s.sessionId));
     const sideIds = new Set([...idx.peersOf(s.sessionId), ...idx.independentOf(s.sessionId)].map((r) => r.id));
@@ -1178,7 +1179,7 @@ export class Branch {
       if (sideIds.has(out ? l.to : l.from)) continue;
       const o = b.sessions.get(out ? l.to : l.from);
       if (!o) continue;
-      roles.push({ dir: out ? 'out' : 'in', role: l.role, name: shownName(o), agentName: o.agentName, state: stateOf(o), last: lastOf(l) });
+      roles.push({ dir: out ? 'out' : 'in', role: l.role, name: shownName(o), agentName: o.agentName, kind: o.kind || 'claude', paneId: o.paneId || null, state: stateOf(o), last: lastOf(l) });
     }
     const news = this.news.meLine(s); // P204: 읽지 않은 동료 소식(없으면 칸이 없다)
     return { at: Date.now(), me, parent, peers, children, independent, lineage, roles, ...(news ? { news } : {}),

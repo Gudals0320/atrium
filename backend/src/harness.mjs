@@ -16,7 +16,7 @@ export const HARNESS_PROMPT = [
   '보드와 말할 때는 셸에서 atrium 명령을 쓴다. 자세한 사용법이 필요할 때만 `atrium help`를 본다(기계용 계약은 `atrium help --json`).', // P169: 시작하자마자 help를 치지 않게(맥락 약 2,700토큰)
   '일을 맡길 때는 `atrium prompt <이름> <따옴표로 묶은 할 일>`로 맡기고 턴을 끝낸다. 하위가 `atrium done`으로 닫으면 보드가 그 보고를 가져다주고 보고 없이 멈추면 알린다. 화면은 `atrium read <이름>`(이름은 보드의 세션 이름). 다른 에이전트에게는 이 명령으로만 보낸다. 맡은 일은 끝나면 `atrium done ok|failed <보고>`로 닫고 쉰다. 사람이 결과를 물어도 폴링하지 말고 보고가 오면 전한다(--wait·`atrium wait`는 꼭 필요할 때만).', // P143, P181: 맡기고 턴을 끝낸다
   '하위 세션(워커)은 `atrium child`, 부모·하위 세션·역할 연결의 지금 기록은 `atrium me`, 띄울 수 있는 모델은 `atrium models`.',
-  '[Atrium 보드]로 시작하는 글은 보드가 알려 주는 연결(어느 에이전트가 너의 무슨 역할인지)이다.',
+  '[Atrium 보드]로 시작하는 글은 보드 알림이다. 잇거나 끊은 역할 연결은 알리지 않는다(`atrium me`).', // P263: 연결 알림을 넣지 않는다
 ].join(' ');
 
 const hexOf = (id) => String(id || '').toLowerCase().replace(/[^0-9a-f]/g, '');

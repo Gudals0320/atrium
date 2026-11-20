@@ -57,7 +57,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium relate <이름> sub|peer|none|auto
       나와 그 세션의 관계를 바꾼다: 그 세션이 나의 sub(하위), peer(동료), none(독립: 서로 보고하거나 맡기지 않음), auto(자동: 띄움·역할 선 = 하위).
       너와 이어진 세션(띄움, 역할 선, 지시, 정한 관계)만 바꾼다. 사람이 판에서 정한 관계는 바꾸지 않는다(사람에게 묻는다). 상대에게 보드가 짧게 알린다.
-  atrium me                     너의 지금 연결: 상위(너를 하위로 둔 세션)·동료·하위·독립, 역할 연결, 연결마다 마지막 지시. 보드의 지금 기록이라 예전 알림과 다르면 이것을 믿는다
+  atrium me                     너의 지금 연결: 상위(너를 하위로 둔 세션)·동료·하위·독립, 역할 연결, 상대마다 종류와 마지막 지시. 보드의 지금 기록이라 예전 알림과 다르면 이것을 믿는다. 사람이 판에서 잇거나 끊은 역할 연결은 알림 없이 여기에만 보인다
   atrium child-wait <이름>      그 하위 세션이 지시를 받을 수 있게 될 때까지 기다린다(신뢰 질문에 사람이 답한 뒤 워크트리에서 다시 뜰 때까지. 한 번에 100초)
   atrium children [--all]       너의 하위 세션(--all이면 그 아래까지) 상태와 마지막 응답. 하위 관계만 보이고 동료는 따로 한 줄
   atrium models                 띄울 수 있는 런처와 모델(하네스 모델, 별칭, 게이트웨이 모델)과 각각을 띄우는 atrium child 명령
@@ -590,6 +590,7 @@ function ago(at, now) {
   const s = Math.max(0, Math.round((now - at) / 1000));
   return s < 60 ? `${s}초 전` : s < 3600 ? `${Math.round(s / 60)}분 전` : s < 86400 ? `${Math.round(s / 3600)}시간 전` : `${Math.round(s / 86400)}일 전`;
 }
+const kindOf = (c) => (c && c.kind ? `${c.kind}, ` : ''); // P263: 상대의 종류(옛 연결 알림이 주던 것)
 function printMe(x) {
   const last = (l) => (l ? ` · 마지막 지시 ${ago(l.at, x.at)}${l.text ? ` "${l.text}"` : ''}` : '');
   const m = x.me;
@@ -599,20 +600,20 @@ function printMe(x) {
   const src = (s) => (s === 'user' ? ' · 사람이 정함' : s === 'agent' ? ' · 에이전트가 정함' : '');
   // P156: 상위(너를 하위로 둔 세션)·동료·하위·독립. 끝나면 상위에게 보고, 동료와는 공유
   if (!p) say('상위: 없음');
-  else if (p.closed) say(`상위: @${p.name} (닫힘)${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}`);
-  else say(`상위: @${p.name} (${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${src(p.source)}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}. 끝나면 @${p.name}에게 보고한다${last(p.last)}`);
+  else if (p.closed) say(`상위: @${p.name} (${p.kind ? `${p.kind}, ` : ''}닫힘)${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}`);
+  else say(`상위: @${p.name} (${kindOf(p)}${p.state})${p.role ? ` — 너는 @${p.name}의 ${p.role}${p.order ? ` ${p.order}` : ''}` : ''}${src(p.source)}${p.head ? '. 너는 헤드로 떴다. 첫 요청 뒤 보드가 부모 관계를 뗀다' : ''}. 끝나면 @${p.name}에게 보고한다${last(p.last)}`);
   const peers = x.peers || [], indep = x.independent || [];
-  if (peers.length) { say(`동료 ${peers.length}명(하위가 아니다. ${PEER_RULE_SHORT}):`); for (const c of peers.slice(0, 10)) say(`  @${c.name} · ${c.state}${c.spawnedBy ? ' · 너를 띄운 세션' : c.spawned ? ' · 네가 띄움' : ''}${src(c.source)}${last(c.last)}`); }
+  if (peers.length) { say(`동료 ${peers.length}명(하위가 아니다. ${PEER_RULE_SHORT}):`); for (const c of peers.slice(0, 10)) say(`  @${c.name} · ${kindOf(c)}${c.state}${c.spawnedBy ? ' · 너를 띄운 세션' : c.spawned ? ' · 네가 띄움' : ''}${src(c.source)}${last(c.last)}`); }
   if (!x.children.length) say('하위 세션: 없음');
   else {
     say(`하위 세션 ${x.children.length}개:`);
-    for (const c of x.children.slice(0, 10)) say(`  @${c.name} ${c.role || '-'}${c.order ? ` ${c.order}` : ''} · ${c.state}${c.state === 'sleeping' ? '(atrium prompt하면 보드가 깨운다)' : ''}${c.worktree ? ` · 워크트리 ${c.worktree}` : ''}${last(c.last)}`);
+    for (const c of x.children.slice(0, 10)) say(`  @${c.name} ${c.role || '-'}${c.order ? ` ${c.order}` : ''} · ${kindOf(c)}${c.state}${c.state === 'sleeping' ? '(atrium prompt하면 보드가 깨운다)' : ''}${c.worktree ? ` · 워크트리 ${c.worktree}` : ''}${last(c.last)}`);
     if (x.children.length > 10) say(`  …외 ${x.children.length - 10}개(atrium children)`);
   }
-  if (indep.length) say(`독립(서로 보고하거나 맡기지 않는다): ${indep.slice(0, 10).map((c) => `@${c.name} ${c.state}${c.spawnedBy ? '(너를 띄운 세션)' : c.spawned ? '(네가 띄움)' : ''}`).join(', ')}`);
+  if (indep.length) say(`독립(서로 보고하거나 맡기지 않는다): ${indep.slice(0, 10).map((c) => `@${c.name} ${kindOf(c)}${c.state}${c.spawnedBy ? '(너를 띄운 세션)' : c.spawned ? '(네가 띄움)' : ''}`).join(', ')}`);
   if (x.roles.length) {
-    say('역할 연결:');
-    for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (${r.state})${last(r.last)}`);
+    say('역할 연결(사람이 "<역할>에게 맡겨"라고 하면 그 세션에 atrium prompt. 판에서 잇거나 끊을 때 알림은 오지 않는다):'); // P263
+    for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (${kindOf(r)}${r.state})${last(r.last)}`);
   }
   if (x.news) say(`동료 소식: ${x.news.by.map((c) => `@${c.name} ${c.n}개`).join(', ')} 새로 → atrium news`); // P204: 읽지 않은 것이 있을 때만
   say(`일 맡기기: atrium prompt <이름> "<할 일>"(맡기고 턴을 끝내면 보드가 done 보고를 가져다준다) · 화면 읽기: ${x.commands.read}`); // P181

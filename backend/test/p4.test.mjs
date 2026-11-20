@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { splitCommands, tailText, screenAnswerText, freeSlotNear, facingSides, repoEdges, roleNotice, unlinkNotice, paneChangedNotice, linkLabel, ROLE_RE } from '../src/links.mjs';
+import { splitCommands, tailText, screenAnswerText, freeSlotNear, facingSides, repoEdges, linkLabel, ROLE_RE } from '../src/links.mjs';
 import { newRuntime, applyTermStatus, applyAgentDetected, applyAgentReleased, deriveState, flags } from '../src/state.mjs';
 import { parseRevParse } from '../src/git.mjs';
 import { parseHerdrCommands } from '../src/spawns.mjs'; // P129: 옛 대화 기록 읽기용으로 spawns.mjs에만 남았다
@@ -67,12 +67,7 @@ test('F3: 새 노드는 부모 오른쪽 빈자리, 차 있으면 다음 자리.
   assert.deepEqual(facingSides(right, { x: -900, y: -100, w: 720, h: 460 }), { sourceHandle: 'l', targetHandle: 'r' });
 });
 
-test('F2: 연결 알림 글에는 이름, 역할, 쓸 명령이 있고 --session·--machine은 없다(P116: atrium prompt|wait|read, 패널·herdr 명령 없음)', () => {
-  const t = roleNotice({ role: '리뷰어', name: 'rv', kind: 'claude' });
-  for (const x of ['`@rv`', '"리뷰어"', 'atrium prompt rv', 'atrium wait rv', 'atrium read rv']) assert.ok(t.includes(x), x);
-  assert.equal(roleNotice({ role: '리뷰어', agentName: 'rv', paneId: 'w4:p1' }), t, '옛 호출 모양(agentName)도 같은 글');
-  const all = t + unlinkNotice({ role: '리뷰어', name: 'rv' }) + paneChangedNotice({ role: '리뷰어', name: 'rv', paneId: 'w5:p1' });
-  assert.ok(!/--session|--machine|--remote|herdr/.test(all));
+test('F2: 역할 이름 규칙과 선 글(P263: 연결 알림 글은 지웠다)', () => {
   assert.ok(ROLE_RE.test('리뷰어')); assert.ok(!ROLE_RE.test('a"b')); assert.ok(!ROLE_RE.test('')); assert.ok(!ROLE_RE.test('x\ny'));
   assert.equal(linkLabel({ role: '리뷰어', lastText: 'Reply with exactly: pong' }), '리뷰어 · "Reply with exactly: pong"');
   assert.equal(linkLabel({ spawned: true }), '세션 생성');

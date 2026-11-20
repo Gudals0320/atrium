@@ -41,7 +41,7 @@ import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './work
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
-import { tailText, screenAnswerText, roleNotice, unlinkNotice, ROLE_RE } from './links.mjs';
+import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
@@ -1426,7 +1426,7 @@ export class Backend {
   }
 
   // 패널 ID가 바뀌었다(이어 가기로 작업 공간을 다시 만듦, hc가 같은 자리를 바꿔 띄움). 판에서 정한 역할이 있으면 그 연결 기록에 남긴다(F2)
-  // P116: 시킨 쪽에 알림(paneChangedNotice)을 보내지 않는다. atrium 명령은 판의 이름으로 부르므로 패널이 바뀌어도 할 일이 없다(턴을 쓰지 않는다)
+  // P116: 시킨 쪽에 알림(옛 paneChangedNotice, P263에 지움)을 보내지 않는다. atrium 명령은 판의 이름으로 부르므로 패널이 바뀌어도 할 일이 없다(턴을 쓰지 않는다)
   // P117: quiet(옮기기, hc가 같은 자리를 바꿔 띄움)와 옮기는 중(rt.move)에는 연결 기록도 남기지 않는다
   async setPane(s, paneId, termWorkspaceId, why, { quiet = false } = {}) {
     const old = s.paneId;
@@ -2052,7 +2052,8 @@ export class Backend {
     this.linkEvent(l, 'target_submitted', null, { matches: String(prompt || '').includes(String(op.text || '').slice(0, 40)) }, { quiet: true });
   }
 
-  // F2: 판에서 A → B 연결을 잇고 역할을 정한다. A에게 B의 이름, 역할, atrium 명령(P116)을 B1 규칙으로 알린다
+  // F2: 판에서 A → B 연결을 잇고 역할을 정한다.
+  // P263: A에게 연결 알림을 넣지 않는다(턴 하나를 "알겠다"로 썼다). 이름·역할·명령은 atrium me가 준다. 관계가 바뀌면 관계 알림(setRelation)은 그대로 간다
   linkCreate(p) {
     const a = this.resolve(p.from), b = this.resolve(p.to);
     if (a === b) throw apiError('bad_request', "세션을 자기 자신과 연결할 수 없습니다.");
@@ -2069,14 +2070,12 @@ export class Backend {
     const same = plan === 'sub' && (!cur || (cur.relation === 'sub' && cur.up === a.sessionId));
     const rel = plan ? this.branch.setRelation(a, b, plan, { source: 'user', by: 'user', ...(same ? { quiet: true } : {}) }) : null;
     const l = this.ensureLink(a.sessionId, b.sessionId, { role });
-    const text = roleNotice({ role, name: b.name, kind: b.kind || 'claude' });
-    const d = this.queue.enqueue(a.sessionId, text);
-    this.store.updateLink(l.linkId, { notifyDelivery: d.deliveryId });
-    this.linkEvent(l, 'role', role, { deliveryId: d.deliveryId, notice: text });
+    this.linkEvent(l, 'role', role, { deliveryId: null, notice: null });
     this.store.addEvent(a.sessionId, 'link_created', { to: b.name, role, relation: choice });
-    return { link: this.linkView(this.store.getLink(l.linkId)), deliveryId: d.deliveryId, notice: text, relation: choice, relationSet: rel ? rel.relation : null };
+    return { link: this.linkView(this.store.getLink(l.linkId)), deliveryId: null, notice: null, relation: choice, relationSet: rel ? rel.relation : null };
   }
-  // 연결 끊기. 역할이 있었으면 A에게 끊겼다고 알린다. 선은 판에서 빠지고 기록은 남는다
+  // 연결 끊기. 선은 판에서 빠지고 기록은 남는다. P263: A에게 연결 해제 알림을 넣지 않는다(atrium me의 역할 연결에서 빠진다).
+  //   끊기는 관계 줄(relations)을 지우지 않아 일 부모가 바뀌지 않는다. 하위에서 빼는 것은 "독립으로도 두기"(detach)이고 그 알림은 간다
   linkDelete(p) {
     const l = this.store.getLink(p.link);
     if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`);
@@ -2085,7 +2084,7 @@ export class Backend {
     // P159: 부모는 일 부모이고 "떼기"는 독립으로 두기다(계보는 남는다)
     const parentLink = !!(a && b && this.workParentOf(b.sessionId) === a.sessionId);
     const pl = parentLink ? { parentLink: { parent: a.name, child: b.name }, parentMsg: m('linkCutParent', { from: a.name, to: b.name }), parentMessage: `@${a.name} → @${b.name}는 위 세션과 하위 세션의 선입니다. 선만 끊으면 @${b.name}는 여전히 @${a.name}의 하위 세션입니다. 독립으로도 두면 @${b.name}는 @${a.name}의 하위가 아닌 독립 세션이 됩니다(띄운 기록은 남습니다).` } : {};
-    if (!p.confirm) return l.role && a ? confirmResult(`@${a.name} → @${b ? b.name : '?'} 연결("${l.role}")을 끊는다. @${a.name}에 연결 해제를 알립니다. 주고받은 기록은 유지합니다.`, m('linkCut', { from: a.name, to: b ? b.name : '?', role: l.role }), pl) : confirmResult("보드에서 이 연결선을 제거합니다. 주고받은 기록은 유지합니다.", m('linkRemove'), pl);
+    if (!p.confirm) return l.role && a ? confirmResult(`@${a.name} → @${b ? b.name : '?'} 연결("${l.role}")을 끊는다. 주고받은 기록은 유지합니다.`, m('linkCut', { from: a.name, to: b ? b.name : '?', role: l.role }), pl) : confirmResult("보드에서 이 연결선을 제거합니다. 주고받은 기록은 유지합니다.", m('linkRemove'), pl);
     if (p.detach) {
       if (!parentLink) throw apiError('bad_request', "위 세션과 하위 세션의 선이 아닙니다. 선만 끊을 수 있습니다.");
       const r = this.branch.detach(b, { by: 'user' });
@@ -2094,12 +2093,10 @@ export class Backend {
       if (nl && !nl.removedAt) { this.linkEvent(nl, 'unlink', null, { why: 'detach', by: 'user' }, { quiet: true }); this.store.updateLink(l.linkId, { role: null, removedAt: Date.now() }); this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'detach' }); }
       return { removed: true, deliveryId: null, ...r };
     }
-    let deliveryId = null;
-    if (l.role && a && b) { const d = this.queue.enqueue(a.sessionId, unlinkNotice({ role: l.role, name: b.name })); deliveryId = d.deliveryId; }
-    this.linkEvent(l, 'unlink', l.role || null, { deliveryId }, { quiet: true });
+    this.linkEvent(l, 'unlink', l.role || null, { deliveryId: null }, { quiet: true });
     this.store.updateLink(l.linkId, { role: null, removedAt: Date.now() });
     this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'user' });
-    return { removed: true, deliveryId };
+    return { removed: true, deliveryId: null, cut: !!l.role };
   }
   // P81: 판에서 부모에서 떼기(노드 메뉴) → P159: 독립으로 두기(relation none, 계보는 남는다). 확인 글은 무엇이 바뀌는지
   detachSession(p) {

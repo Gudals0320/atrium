@@ -20,7 +20,6 @@ import { similarNames, verbLines, WAIT_DEFAULT_MS } from '../src/agent-verbs.mjs
 import { CONTRACT_VERSION, VERB_NAMES, VERBS, EXIT, shortHelp, contractJson } from '../src/cli-contract.mjs';
 import { BOARD_SYSTEM_PROMPT, writeBoardPlugin } from '../src/launch.mjs';
 import { HARNESS_PROMPT } from '../src/harness.mjs';
-import { roleNotice, unlinkNotice } from '../src/links.mjs';
 import { spawnsInCommand, matchSpawns, promptKey } from '../src/spawns.mjs';
 import { Backend } from '../src/backend.mjs';
 
@@ -384,7 +383,7 @@ test('P116 안내 글: 판 시스템 글, 하네스 안내문, atrium 스킬(옛
   const texts = {
     board: BOARD_SYSTEM_PROMPT, harness: HARNESS_PROMPT, skill: boardSkill(), delegate: boardSkill('delegate'), short: shortHelp(),
     long: fs.readFileSync(path.join(HERE, '..', 'bin', 'atrium-child.mjs'), 'utf8').match(/const HELP = `([\s\S]*?)`;/)[1],
-    child: childNotice({ role: '워커', name: 'w1', depth: 2 }), head: headNotice({ name: 'h1' }), role: roleNotice({ role: '리뷰어', name: 'rv' }), unlink: unlinkNotice({ role: '리뷰어', name: 'rv' }),
+    child: childNotice({ role: '워커', name: 'w1', depth: 2 }), head: headNotice({ name: 'h1' }),
     shim: Object.values(childShims({ node: 'C:\\n\\node.exe', script: 'C:\\b\\atrium-child.mjs' })).join('\n'),
   };
   for (const [k, t] of Object.entries(texts)) assert.doesNotMatch(t, DIRECT, k);
