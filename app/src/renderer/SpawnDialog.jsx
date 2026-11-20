@@ -120,7 +120,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
             <label>{t('spawn.kind')}
               <select value={kind} onChange={(e) => { setKind(e.target.value); setArgs(''); }} data-field="kind">
                 <option value="shell">{t('spawn.shellOption')}</option>
-                {kinds.map((k) => <option key={k.kind} value={k.kind} disabled={!k.installed}>{kindOf(k.kind).label}{k.installed ? '' : t('spawn.notInstalled')}</option>)}
+                {kinds.map((k) => <option key={k.kind} value={k.kind} disabled={k.installed === false}>{kindOf(k.kind).label}{k.installed === false ? t('spawn.notInstalled') : ''}</option>)}
               </select>
             </label>
           )}

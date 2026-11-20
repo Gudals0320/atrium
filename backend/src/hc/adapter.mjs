@@ -546,14 +546,18 @@ export class HcAdapter extends EventEmitter {
     return list.filter((t) => isLive(t) && workspaceOf(t, by) === workspaceId).map((t) => ({ paneId: t.address, tabId: null, agent: paneOf(t, by).agent }));
   }
   // P205: 찾은 결과는 KINDS_TTL_MS 동안만 쓴다(판이 도는 중에 깐 에이전트도 보이게). fresh면 바로 다시 찾는다(창이 호출자·띄우기 틀을 열 때).
-  // 겹친 찾기는 하나로 모은다. _where는 시험이 바꿔 끼운다
+  // 겹친 찾기는 하나로 모은다. _where는 시험이 바꿔 끼운다(경로 문자열 = 있음, null = 없음, undefined = 읽지 못함)
+  // P285: where.exe가 "찾지 못함"(종료 코드 1)이 아니게 끝나면(시간 넘김, CPU가 바빠 늦음 등) 그 종류는 installed: null(모름)과 error로 두고,
+  //   모름이 하나라도 있으면 담아 두지 않는다(다음 물음에 다시 찾는다). 모름을 "없음"으로 읽으면 판이 막 떴을 때 merger를 띄우지 않았다
   async agentKinds({ fresh = false } = {}) {
     if (!fresh && this._kinds && Date.now() - (this._kindsAt || 0) < KINDS_TTL_MS) return this._kinds;
     if (this._kindsP) return this._kindsP;
-    const where = this._where || ((k) => new Promise((res) => execFile('where.exe', [k], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (e, so) => res(e ? null : String(so).split(/\r?\n/)[0].trim() || null))));
+    const where = this._where || ((k) => new Promise((res) => execFile('where.exe', [k], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (e, so) => res(e ? (e.code === 1 ? null : undefined) : String(so).split(/\r?\n/)[0].trim() || null))));
     const kinds = Object.keys(KIND_COMMAND);
     this._kindsP = Promise.all(kinds.map((k) => where(KIND_COMMAND[k] || k))).then((found) => { // P270: 종류 이름과 실행 파일이 다를 수 있다(dsh → dsh-tui)
-      this._kinds = kinds.map((k, i) => ({ kind: k, installed: !!found[i], path: found[i] }));
+      const list = kinds.map((k, i) => (found[i] === undefined ? { kind: k, installed: null, path: null, error: 'where_failed' } : { kind: k, installed: !!found[i], path: found[i] }));
+      if (list.some((x) => x.installed === null)) return list; // P285: 모름이 있으면 담아 두지 않는다
+      this._kinds = list;
       this._kindsAt = Date.now();
       return this._kinds;
     }).finally(() => { this._kindsP = null; });

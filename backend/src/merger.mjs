@@ -139,15 +139,36 @@ export function mergeUnverifiedLine({ merger, child, tip, target, hash, contains
 // P275: merger 종류 고르기(순수). 설정 종류가 설치돼 있으면(또는 판이 설치 목록을 모르면) 설정대로, 아니면 설치된 하네스 가운데 MERGER_FALLBACKS 차례로. 없으면 null
 //   kinds: adapter.agentKinds()의 [{ kind, installed }]. 설정 모델이 Claude 기본 모델인데 종류가 Claude가 아니면 모델을 넘기지 않는다(그 하네스의 기본 모델)
 export const MERGER_FALLBACKS = [{ kind: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' }, { kind: 'codex', model: null, effort: 'medium' }];
-export function pickMergerSpawn({ kinds = [], set = {} } = {}) {
+// P285: read = 판이 하네스 목록을 읽었는가(readKinds). 읽지 못했으면(오류·빈 목록·시간 넘김) 설정 종류로 띄워 본다(띄우기가 실패하면 그때 부모에게).
+//   읽었는데 그 종류가 없을 때만(installed: false) Claude Code → Codex로 바꾸거나 null. installed: null(where.exe가 답하지 못함)은 있는 것으로 본다
+export function pickMergerSpawn({ kinds = [], set = {}, read = true } = {}) {
   const kind = String(set.mergerKind || '').trim().toLowerCase() || 'claude';
   const has = (k) => kinds.some((x) => x && x.kind === k && x.installed !== false);
-  if (!kinds.length || has(kind)) {
+  if (!read || !kinds.length || has(kind)) {
     const model = set.mergerModel && !(kind !== 'claude' && set.mergerModel === DEFAULTS.mergerModel) ? set.mergerModel : null;
     return { kind, model, effort: set.mergerEffort || null, picked: 'setting', wanted: kind };
   }
   for (const f of MERGER_FALLBACKS) if (has(f.kind)) return { ...f, picked: 'installed', wanted: kind };
   return null;
+}
+// P285: 하네스 목록 읽기 → { kinds, read, why }. 어댑터 없음·오류·빈 목록·시간 넘김은 read: false(why에 까닭)
+export const KINDS_WAIT_MS = 15_000; // agentKinds를 기다리는 시간(where.exe가 종류마다 5초까지)
+export const TERM_WAIT_MS = 120_000; // 판이 막 떴을 때 터미널 서버 연결을 기다리는 시간
+export const RECOVER_DELAY_MS = 10_000; // 터미널 서버에 연결된 뒤(세션 다시 붙이기가 끝나도록) 남은 합치기 일을 보기까지
+export async function readKinds(adapter, { timeoutMs = KINDS_WAIT_MS } = {}) {
+  if (!adapter || typeof adapter.agentKinds !== 'function') return { kinds: [], read: false, why: '판에 하네스 목록이 없다' };
+  let t = null;
+  try {
+    const ks = await Promise.race([adapter.agentKinds(), new Promise((_, rej) => { t = setTimeout(() => rej(apiError('timeout', (timeoutMs / 1000) + '초 안에 답이 없다')), timeoutMs); })]);
+    if (!Array.isArray(ks) || !ks.length) return { kinds: [], read: false, why: '빈 목록' };
+    return { kinds: ks, read: true, why: null };
+  } catch (e) { return { kinds: [], read: false, why: '읽기 실패: ' + (e.message || e.code || String(e)) }; } finally { if (t) clearTimeout(t); }
+}
+// 사람과 판 로그에 보일 읽은 목록: "claude 없음, codex 없음, pi 있음, dsh 모름"
+export const kindsLine = (kinds) => (kinds || []).filter((k) => k && k.kind).map((k) => k.kind + ' ' + (k.installed === false ? '없음' : k.installed == null ? '모름' : '있음')).join(', ');
+// P285: no_kind 까닭(읽은 목록을 붙인다)
+export function noKindWhy({ set = {}, kinds = [] } = {}) {
+  return 'merger를 띄울 하네스가 이 PC에 설치돼 있지 않다(설정 종류 ' + (String(set.mergerKind || '').trim() || 'claude') + ', Claude Code와 Codex도 없음. 판이 읽은 하네스 목록: ' + (kindsLine(kinds) || '없음') + ')';
 }
 // 부모에게 돌려보낼 때(merger를 띄우지 못함) 붙는 줄
 export const mergeFallbackLine = (why) => '[Atrium 보드] 보드가 이 결과를 merger에게 맡기지 못해 너에게 그대로 보낸다(' + why + '). 지금처럼 네가 합친다.';
@@ -162,8 +183,12 @@ export function mergeState(mu, lastTry) {
 
 export class Merger {
   // b: 백엔드(sessions, store, spawn, kill, sleeper, queue, adapter, api, log). units: WorkUnits. opts.settings: () => 설정(시험)
-  constructor(b, units, { settings = null, jobs = MERGER_JOBS, sleepDelayMs = 300 } = {}) {
+  constructor(b, units, { settings = null, jobs = MERGER_JOBS, sleepDelayMs = 300, termWaitMs = TERM_WAIT_MS, kindsWaitMs = KINDS_WAIT_MS, recoverDelayMs = RECOVER_DELAY_MS } = {}) {
     this.b = b; this.units = units; this.jobs = jobs; this.sleepDelayMs = sleepDelayMs; this._settings = settings;
+    this.termWaitMs = termWaitMs; this.kindsWaitMs = kindsWaitMs; this.recoverDelayMs = recoverDelayMs;
+    this.termWaiting = new Set(); // P285: 터미널 서버를 기다리는 키(연결되면 다시 띄운다)
+    // P285: 터미널 서버에 (다시) 연결되면 남은 합치기 일을 본다(판이 다시 떴을 때, 기다리던 일)
+    if (b.adapter && typeof b.adapter.on === 'function') b.adapter.on('connected', () => this.recoverSoon('connected'));
     this.pendingSleep = new Map(); // 하위 세션 ID → 해 본 수(턴이 끝나면 재운다)
     this.sleeping = new Set();
     this.pendingCheck = new Set(); // 합치기 일을 닫은 merger(그 턴이 끝나면 수명을 본다)
@@ -284,10 +309,19 @@ export class Merger {
     try {
       if (!s || this.retiring.has(s.sessionId)) s = await this.spawnFor(key, waiting()[0]);
     } catch (e) {
+      // P285: 터미널 서버에 연결되지 않았다(판이 막 떴다 등): 부모에게 넘기지 않고 기다린다. 연결되면(recover) 다시 띄운다.
+      //   연결돼 있는데 띄우기가 terminal_down이면 지금처럼 부모에게 넘긴다
+      if (e.code === 'terminal_down' && this.b.adapter && this.b.adapter.connected === false) {
+        this.termWaiting.add(key);
+        this.log('merger spawn waits for the terminal server ' + key + ': ' + (e.message || e.code));
+        try { st.addEvent(null, 'merger_wait_terminal', { key, units: waiting().map((u) => u.id) }); } catch {}
+        return null;
+      }
       this.log('merger spawn failed ' + key + ': ' + (e.code || e.message));
       for (const u of waiting()) this.fallback(u, e.code === 'no_kind' ? e.message : e.code || e.message || 'spawn failed');
       return null;
     }
+    this.termWaiting.delete(key);
     for (const u of waiting()) this.assign(u, s);
     this.changed(key.split('|')[0]);
     return s;
@@ -299,12 +333,19 @@ export class Merger {
     const root = this.wsRoot(ws) || m.root;
     const set = this.settings();
     const parent = b.sessions.get(mu.from) || null;
-    const kinds = b.adapter && b.adapter.agentKinds ? await b.adapter.agentKinds().catch(() => []) : [];
+    // P285: 판이 막 떠 터미널 서버에 아직 닿지 않았으면 잠깐 기다린다(못 닿으면 terminal_down: _ensure가 일을 붙잡아 둔다)
+    if (!(await this.waitTerminal())) throw apiError('terminal_down', '터미널 서버에 연결되지 않았다(' + Math.round(this.termWaitMs / 1000) + '초 기다림)');
+    const kr = await readKinds(b.adapter, { timeoutMs: this.kindsWaitMs });
+    if (!kr.read) this.log('merger kinds unread (' + kr.why + '), trying setting kind');
     // P275: 설치된 하네스 가운데서 고른다(설정 종류가 설치돼 있지 않으면 Claude Code → Codex). 둘 다 없으면 띄우지 않는다(부모에게 그대로, 사람에게 까닭)
-    const pick = pickMergerSpawn({ kinds, set });
-    if (!pick) throw apiError('no_kind', 'merger를 띄울 하네스가 이 PC에 설치돼 있지 않다(설정 종류 ' + (String(set.mergerKind || '').trim() || 'claude') + ', Claude Code와 Codex도 없음)');
+    const pick = pickMergerSpawn({ kinds: kr.kinds, set, read: kr.read });
+    if (!pick) {
+      const why = noKindWhy({ set, kinds: kr.kinds });
+      this.log('merger no_kind ' + key + ': read ' + (kindsLine(kr.kinds) || '-'));
+      throw apiError('no_kind', why);
+    }
     const p = { kind: pick.kind, ...(pick.model ? { model: pick.model } : {}), ...(pick.effort ? { effort: pick.effort } : {}) };
-    if (pick.picked === 'installed') this.log('merger kind ' + pick.wanted + ' not installed, using ' + pick.kind);
+    if (pick.picked === 'installed') this.log('merger kind ' + pick.wanted + ' not installed, using ' + pick.kind + ' (read ' + kindsLine(kr.kinds) + ')');
     const taken = new Set([...b.sessions.values()].filter((x) => !x.closedAt).flatMap((x) => [x.name, shownName(x)].filter(Boolean)));
     const old = this.rec(key);
     const name = mergerNameOf({ wsName: this.wsName(ws) || path.basename(root || ''), target, taken });
@@ -316,9 +357,53 @@ export class Merger {
     const rec = { key, ws, target, root: slash(root), sessionId: s.sessionId, name: s.name, jobs: 0, gen: ((old && old.gen) || 0) + 1, spawnedAt: Date.now(), guided: false, kind: p.kind, model: p.model || null };
     this.saveRec(key, rec);
     try { if (this.store().getMeta(META_PROBLEM)) this.store().setMeta(META_PROBLEM, null); } catch {}
-    try { this.store().addEvent(s.sessionId, 'merger_spawn', { key, gen: rec.gen, kind: p.kind, model: p.model || null, effort: p.effort || null, picked: pick.picked, wanted: pick.wanted }); } catch {}
+    try { this.store().addEvent(s.sessionId, 'merger_spawn', { key, gen: rec.gen, kind: p.kind, model: p.model || null, effort: p.effort || null, picked: pick.picked, wanted: pick.wanted, kindsRead: kr.read, kindsWhy: kr.why }); } catch {}
     this.log('merger ' + key + ' spawned ' + s.name + ' gen ' + rec.gen);
     return s;
+  }
+  // P285: 터미널 서버 연결 기다리기 → 연결됐는가. connected를 모르는 어댑터(시험 등)는 연결된 것으로 본다
+  waitTerminal(ms = this.termWaitMs) {
+    const a = this.b.adapter;
+    if (!a || a.connected !== false) return Promise.resolve(true);
+    if (typeof a.once !== 'function') return Promise.resolve(false);
+    this.log('merger waits for the terminal server (' + Math.round(ms / 1000) + 's)');
+    return new Promise((res) => {
+      let t = null;
+      const on = () => { if (t) clearTimeout(t); res(true); };
+      a.once('connected', on);
+      t = setTimeout(() => { (a.off || a.removeListener).call(a, 'connected', on); res(a.connected !== false); }, ms);
+    });
+  }
+  // P285: 판이 다시 떴거나 터미널 서버에 다시 닿았다: 남은 합치기 일을 본다(세션 다시 붙이기가 끝나도록 조금 뒤에)
+  recoverSoon(why) {
+    if (this._recoverT) return;
+    this._recoverT = setTimeout(() => { this._recoverT = null; this.recover(why).catch((e) => this.log('merger recover ' + e.message)); }, this.recoverDelayMs);
+    if (this._recoverT.unref) this._recoverT.unref();
+  }
+  // 열린 합치기 일 가운데
+  //   - 맡은 merger가 없는 일(to 빈칸: 터미널 서버를 기다렸거나, 판이 꺼진 사이 merger가 닫혀 떼어 둔 일) → 그 키의 merger에게(없으면 띄운다)
+  //   - 맡은 merger 세션이 판에 없거나 닫힌 일 → 열린 시도를 closed로 닫고 다시 줄 세워 새 merger에게
+  //   - 맡은 merger가 살아 있으면 그대로 둔다(다시 붙은 merger가 done 없이 쉬면 unit-stops가 부모에게 한 번 알린다. 에이전트가 끝나 셸만 남았으면
+  //     work-units onExited가 일을 취소하고 부모에게 한 번 알린다)
+  async recover(why = 'recover') {
+    const st = this.store(); const keys = new Set(); const now = Date.now();
+    for (const u of st.openMergeUnits()) {
+      const key = u.meta && u.meta.key;
+      if (!key) continue;
+      if (!u.to) { keys.add(key); continue; }
+      const s = this.b.sessions.get(u.to);
+      if (s && !s.closedAt) continue;
+      const tr = st.lastTryOfUnit(u.id);
+      if (tr && !tr.endedAt) st.updateTry(tr.id, { endedAt: now, stopReason: 'closed' });
+      st.updateUnit(u.id, { to: '' });
+      try { st.addEvent(null, 'merge_requeue', { unitId: u.id, key, lostMerger: u.to, why }); } catch {}
+      this.log('merge ' + u.id + ' lost its merger, requeued (' + why + ')');
+      keys.add(key);
+    }
+    const out = [];
+    for (const k of keys) { this.termWaiting.delete(k); out.push(await this.ensure(k).catch((e) => { this.log('merger recover ' + k + ' ' + e.message); return null; })); }
+    if (keys.size) this.log('merger recover (' + why + '): ' + [...keys].join(', '));
+    return { keys: [...keys], spawned: out.filter(Boolean).length };
   }
   // P275: 사람이 볼 까닭(merger를 띄우지 못함). 설정 › 합치기 탭(merger.status problem)과 창 알림(merger.problem)
   problem(ws, why) {
