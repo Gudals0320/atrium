@@ -20,10 +20,10 @@ test('P269 창 코드에 rig 길이 없다(판 API rig.*, rigMaps, rig 대화상
   for (const f of walk(SRC).filter((x) => /\.(jsx?|mjs)$/.test(x))) assert.doesNotMatch(fs.readFileSync(f, 'utf8'), bad, path.relative(SRC, f));
 });
 
-test('P269 사전과 CSS에 rig 화면 글·규칙이 없다(옛 전달 까닭 rigLoopHold만 남는다)', () => {
+test('P269 사전과 CSS에 rig 화면 글·규칙이 없다(P274: 옛 전달 까닭 rigLoopHold도 걷어 cmdHead.oldHoldDropped로)', () => {
   for (const d of [ko, en]) {
     const keys = Object.keys(d).filter((k) => /^rig/.test(k));
-    assert.deepEqual(keys, ['rigLoopHold']);
+    assert.deepEqual(keys, []);
   }
   const css = read('styles.css') + read('phone.css');
   assert.doesNotMatch(css, /mt-rig|mt-rm2|k-rig|mt-sm-rig|mt-pm-rig|rigask|\.rigc\b|\.rig\b/);
