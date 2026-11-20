@@ -371,9 +371,10 @@ export class HerdrAdapter extends EventEmitter {
     if (this._kinds) return this._kinds;
     const r = await execText(this.herdrPath, ['agent'], { env: cleanEnv() });
     const kinds = parseKinds(r.stdout + '\n' + r.stderr);
-    const found = await Promise.all(kinds.map((k) => execText('where.exe', [k], { timeout: 5000 }).then((x) => (x.code === 0 ? x.stdout.split(/\r?\n/)[0].trim() : null))));
-    this._kinds = kinds.map((k, i) => ({ kind: k, installed: !!found[i], path: found[i] }));
-    return this._kinds;
+    const found = await Promise.all(kinds.map((k) => execText('where.exe', [k], { timeout: 5000 }).then((x) => (x.code === 0 ? x.stdout.split(/\r?\n/)[0].trim() : x.code === 1 ? null : undefined)).catch(() => undefined)));
+    const list = kinds.map((k, i) => (found[i] === undefined ? { kind: k, installed: null, path: null, error: 'where_failed' } : { kind: k, installed: !!found[i], path: found[i] })); // P285: 읽지 못함은 모름(null)
+    if (!list.some((x) => x.installed === null)) this._kinds = list;
+    return list;
   }
   // P97: 에이전트 이름 붙이기(대상은 패널 ID나 지금 이름). herdr는 agent.start로 띄운 에이전트만 다시 켤 때 이름을 되살린다
   async renameAgent(target, name) { const r = await this.call('agent.rename', { target, name }); return agentInfo(r.agent); }
