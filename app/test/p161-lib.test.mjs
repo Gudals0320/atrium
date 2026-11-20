@@ -11,7 +11,7 @@ import ko from '../src/renderer/locales/ko.js';
 const R = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer');
 const read = (f) => fs.readFileSync(path.join(R, f), 'utf8');
 const css = read('styles.css');
-const SETTINGS = ['Launchers.jsx', 'Connections.jsx', 'SpawnDialog.jsx'];
+const SETTINGS = ['Launchers.jsx', 'SpawnDialog.jsx']; // P255: 연결 칸(Connections.jsx)은 걷어 냈다
 
 test('세션 맵은 mt-sm, 설정 쪽은 mt-ln만 쓴다', () => {
   const map = read('MissionLineage.jsx');
@@ -40,12 +40,8 @@ test('세션 맵 규칙과 반짝임 키프레임은 mt-sm 이름', () => {
   assert.match(read('PhoneMap.jsx'), /className="mt-pmap-stage mt-ta mt-sm"/, 'P166: 휴대폰 맵도 .mt-sm 반짝임을 쓴다');
 });
 
-test('연결 칸 빈 상태: 무엇을 하는 칸인지와 더하는 법, 두 사전', () => {
-  const src = read('Connections.jsx');
-  assert.match(src, /data-role="connections-empty"/);
-  for (const k of ['title', 'what', 'how']) {
-    assert.match(src, new RegExp(`connEmpty\\.${k}`));
-    assert.ok(en.connEmpty[k] && ko.connEmpty[k], k);
-  }
-  assert.match(css, /\.mt-cn-empty \{/);
+test('P255: 연결 칸과 그 빈 상태 글은 없다', () => {
+  assert.equal(fs.existsSync(path.join(R, 'Connections.jsx')), false);
+  for (const d of [en, ko]) { assert.equal(d.connEmpty, undefined); assert.equal(d.connections, undefined); assert.equal(d.launcherConn, undefined); }
+  assert.ok(!/\.mt-cn[ -{]/.test(css));
 });

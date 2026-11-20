@@ -29,11 +29,11 @@ test('P211 알약: 구독마다 가장 높은 창(리셋이 지난 창은 0%), �
   assert.deepEqual(pillOf(null, NOW), { parts: [], level: 'none', known: 0 });
 });
 
-test('P211 호출자 옆 남은 양: 구독을 쓰는 호출자만(연결·API 환경 변수는 아님), 100 − 가장 높은 창', () => {
+test('P211 호출자 옆 남은 양: 구독을 쓰는 호출자만(API 환경 변수는 아님, P255: 옛 연결 칸은 보지 않는다), 100 − 가장 높은 창', () => {
   assert.equal(providerOfLauncher({ harness: 'claude' }), 'claude');
   assert.equal(providerOfLauncher({ harness: 'codex' }), 'codex');
   assert.equal(providerOfLauncher({ harness: 'agy' }), 'agy');
-  assert.equal(providerOfLauncher({ harness: 'claude', connection: 'deepseek' }), null);
+  assert.equal(providerOfLauncher({ harness: 'claude', connection: 'deepseek' }), 'claude');
   assert.equal(providerOfLauncher({ harness: 'claude', preview: { env: ['ANTHROPIC_BASE_URL'] } }), null);
   assert.equal(providerOfLauncher({ harness: 'codex', env: { OPENAI_API_KEY: 'x' } }), null);
   assert.equal(providerOfLauncher({ harness: 'pi' }), null); assert.equal(providerOfLauncher({ harness: 'shell' }), null); assert.equal(providerOfLauncher(null), null);

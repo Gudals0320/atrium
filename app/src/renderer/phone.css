@@ -670,3 +670,17 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pm-rigcard .rr.st-waiting i { background: var(--attn); }
 .mt-pm-rigcard .ff { display: flex; flex-wrap: wrap; gap: 4px 10px; }
 .mt-pm-rigcard .ee { color: var(--chrome-text-3); }
+
+/* P256: 휴대폰 세션 맵의 검은 구간. PC 세션 맵 규칙 .mt-sm .mt-ta-vp { top: 60px }(styles.css, PC 덮개 위 줄 자리)이
+   같은 무게의 .mt-pmap .mt-ta-vp { top: 0 }보다 뒤에 실려 이겼다. 그래서 맵 칸 위 60px가 점 없는 빈 바탕으로 남고 캔버스가 그만큼 짧았다.
+   더 무거운 규칙으로 머리 아래에서 바로 캔버스를 시작한다 */
+.mt-pmap .mt-pmap-stage.mt-sm .mt-ta-vp { top: 0; }
+/* P256: 사용량 알약의 대표 구독(로고 + 값)과 펼침에서 대표 고르기 */
+.mt-ph-head .mt-cp.usage.compact .mt-usage-part { display: inline-flex; align-items: center; gap: 4px; }
+.mt-ph-head .mt-cp.usage.compact .mt-usage-logo { width: 13px; height: 13px; flex: none; }
+.mt-ph-head .mt-cp.usage.compact .mt-usage-repname { font-size: 11px; }
+.mt-usage-pickhint { padding: 0 2px 4px; font-size: 12px; }
+.mt-usage-prov.pickable { cursor: pointer; border-radius: 10px; border: 1px solid transparent; -webkit-tap-highlight-color: transparent; }
+.mt-usage-prov.pickable:active { background: rgba(255, 252, 240, 0.06); }
+.mt-usage-prov.rep { border-color: var(--accent-line, rgba(255, 252, 240, 0.22)); background: rgba(255, 252, 240, 0.04); }
+.mt-usage-rep { margin-left: 6px; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--accent-text, inherit); background: color-mix(in srgb, var(--accent, #888) 16%, transparent); }

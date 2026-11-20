@@ -22,8 +22,9 @@ export function pinchView(v0, m0, d0, m, d) {
   return panBy(z, m.x - m0.x, m.y - m0.y);
 }
 
-// 맞춤: 세계 전체를 보이는 칸(vw × vh, 아래 줌 단추 자리 빼고)에. 가까이 단계 위로는 키우지 않는다
-export const phoneFit = (bounds, vw, vh) => fitView(bounds, vw, vh, { pad: PM.PAD, bottom: PM.DOCK, max: PM.FIT_MAX });
+// 맞춤: 세계 전체를 보이는 칸(vw × vh, 아래 줌 단추 자리 빼고)에. 가까이 단계 위로는 키우지 않는다.
+// P256: 폭에 맞춰 높이가 남으면 가운데가 아니라 위에 붙인다(맵 위가 비어 보이지 않게, 남는 칸은 아래 줌 단추 쪽)
+export const phoneFit = (bounds, vw, vh) => { const f = fitView(bounds, vw, vh, { pad: PM.PAD, bottom: PM.DOCK, max: PM.FIT_MAX }); return { ...f, y: PM.PAD - bounds.y * f.k }; };
 // 카드로 가기(위 알약): 카드 폭이 화면 폭에 거의 차게(지금 배율이 더 크면 그대로)
 export function goView(b, v, vw, vh) {
   const k = Math.max(v ? v.k : 0, Math.min(PM.GO_K, (vw - 32) / Math.max(1, b.w)));

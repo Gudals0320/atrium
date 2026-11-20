@@ -167,10 +167,3 @@ test('P227 Codex·pi 이어 가기: 지금 모델(Codex는 노력 수준도), �
   b.store.close();
 });
 
-test('P227 pi 연결: 이어 갈 지금 값(제공자/모델)에 제공자를 두 번 붙이지 않는다', () => {
-  const conn = { id: 'c1', name: 'Gw', protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:1/v1', auth: null };
-  const a = harnessLaunch({ kind: 'pi', sessionId: 'P', resume: true, model: 'm1', connection: conn, filesDir: tmp() });
-  const m = flag(a.args, '--model');
-  const b2 = harnessLaunch({ kind: 'pi', sessionId: 'P', resume: true, model: m, connection: conn, filesDir: tmp() });
-  assert.equal(flag(b2.args, '--model'), m);
-});

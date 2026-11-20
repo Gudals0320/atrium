@@ -7,7 +7,7 @@
 // 새 기능은 없다. 모든 단추는 이미 있던 동작을 부른다.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useStore, getState, openDialog, toast, wsName, setMissionOpen, selectWorkspace, selectGroup, setSpotlight } from './store.js';
+import { useStore, getState, openDialog, toast, wsName, setMissionOpen, selectWorkspace, selectGroup, setSpotlight, markAllSeen } from './store.js';
 import { QuickName } from './QuickName.jsx'; // P97: 레일 빠른 생성의 이름 칸
 import { favoriteLaunchers, launcherIcon, launcherMark, launcherTooltip } from './lib/launchers.js'; // P33: 레일 = 즐겨찾기 호출자
 import { api } from './api.js';
@@ -19,6 +19,7 @@ import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
 import { useDialog } from './dialog.js'; // P52
 import { useInbox } from './InboxBar.jsx';
+import { seenTargets, cpuLine, fmtPct } from './lib/p255.js'; // P255: 작업 완료 모두 읽기, 메모리 칩의 CPU
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
 import { UsagePill } from './Usage.jsx'; // P211: 구독 사용량. 레일 호출자 단추에는 보이지 않는다(로고만, 2026-11-18 사용자 요청)
@@ -355,8 +356,13 @@ function TurnPill({ needsYou }) {
   );
 }
 
-function ListPill({ list, label, cls, role, line, empty }) {
+function ListPill({ list, label, cls, role, line, empty, readAll = false }) {
+  const t = useT();
   const [open, setOpen, ref] = useDropdown();
+  const [busy, setBusy] = useState(false);
+  const unseen = readAll ? seenTargets(list) : [];
+  // P255: 모두 읽기. 목록의 작업 완료를 모두 본 것으로 표시한다(세션마다 하나씩 보는 것과 같다)
+  const doReadAll = async () => { setBusy(true); try { await markAllSeen(unseen); } finally { setBusy(false); setOpen(false); } };
   const currentWs = useStore((st) => st.currentWs);
   return (
     <div className="mt-drop" ref={ref}>
@@ -365,7 +371,7 @@ function ListPill({ list, label, cls, role, line, empty }) {
       </button>
       {open && (
         <div className="mt-dropdown" data-role={`${role}-list`}>
-          <div className="mt-dropdown-head"><span>{label}</span></div>
+          <div className="mt-dropdown-head"><span>{label}</span>{readAll && unseen.length > 0 && <button type="button" className="mt-btn small mt-read-all" data-action="read-all" disabled={busy} title={t('p255.readAllTitle')} onClick={doReadAll}>{t('p255.readAll')}</button>}</div>
           {list.map((s) => (
             <button key={s.sessionId} className={`mt-chip ${cls}`} data-session={s.sessionId} data-name={s.name} onClick={() => { setOpen(false); go(s.sessionId); }} title={line(s)}>
               <span className="mt-chip-line"><b>@{s.name}</b> {wsTag(s, currentWs)}</span>
@@ -428,6 +434,7 @@ function ResourcePill({ maxControllers }) {
     r.terminalServer ? t('top.resTerminal', { mb: fmtMB(r.terminalServer.memMB) }) : t('top.resNoTerminal'),
     t('top.resBackend', { mb: fmtMB(r.backend.memMB) }),
     t('top.resStates', { working: r.running, waiting: r.waiting }),
+    t('p255.cpu', cpuLine(r)),
     t('top.resAt', { time: fmtTime(r.at), ms: r.ms }),
   ].join('\n');
   const repos = memByRepo(r.sessions, sessions, workspaces); // 잰 뒤 잠든 세션은 잠든 줄로만
@@ -442,12 +449,13 @@ function ResourcePill({ maxControllers }) {
         <div className="mt-dropdown" data-role="resources-list">
           <div className="mt-dropdown-head"><span>{t('sleep.memHead')} · {fmtMB(r.sessionsMB)}</span></div>
           <div className="mt-res-sum" data-role="res-asleep-line">{asleepLine}</div>
+          <div className="mt-res-sum" data-role="res-cpu" title={t('p255.cpuTitle')}>{t('p255.cpu', cpuLine(r))}</div>
           {repos.map((g) => (
             <div key={g.key || '-'} className="mt-res-group" data-role="res-repo" data-ws={g.key} data-name={g.name}>
               <div className="mt-res-repo"><b>{g.name}</b> <span className="mono">{fmtMB(g.memMB)}</span>{g.asleep.length > 0 && <span className="mt-res-asleep" data-role="res-repo-asleep"><Icon name="moon" />{t('sleep.memRepoAsleep', { n: g.asleep.length, mb: fmtMB(g.savedMB) })}</span>}</div>
               {g.rows.map((x) => (
                 <button key={x.sessionId} className="mt-chip" data-session={x.sessionId} data-name={x.name} onClick={() => { setOpen(false); go(x.sessionId); }}>
-                  <span className="mt-chip-line"><b>@{x.name}</b> <span className="mono">{fmtMB(x.memMB)}</span> <span className="dim">{STATE_LABEL[x.state] || x.state}</span></span>
+                  <span className="mt-chip-line"><b>@{x.name}</b> <span className="mono">{fmtMB(x.memMB)}</span>{x.cpuPct != null && <span className="mono dim" data-role="res-row-cpu"> · CPU {fmtPct(x.cpuPct)}</span>} <span className="dim">{STATE_LABEL[x.state] || x.state}</span></span>
                 </button>
               ))}
               {g.asleep.map((s) => (
@@ -470,7 +478,7 @@ export function TopRight({ maxControllers }) {
   return (
     <div className="mt-cluster tr" data-role="top-right">
       <TurnPill needsYou={needsYou} />
-      {review.length > 0 && <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} />}
+      {review.length > 0 && <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} readAll />}
       {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? EXIT_LABEL[s.exit && s.exit.kind] : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
       <ConnPill />
       <DevicesPill />

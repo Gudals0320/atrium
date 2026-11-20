@@ -190,7 +190,7 @@ async function pair(pg) {
 async function openMap(pg, { clear = true } = {}) {
   await pg.evaluate(HOOK, [JSON.parse(JSON.stringify(SHAPE)), MIX, await realId(pg)]);
   // 다시 연 페이지가 세션 맵을 이미 띄웠으면(흉내 전에 실제 그래프를 받았다) 목록에 갔다가 다시 연다
-  if ((await viewOf(pg)) === 'mission') { await pg.click('[data-action=phone-mission-back]'); await pg.waitForFunction(() => document.querySelector('[data-role=phone]').dataset.view === 'list', null, { timeout: 10000 }); }
+  // P256: 목록 화면이 없다(늘 맵). 아래 __mtPhone.mission()이 맵을 새로 열어 흉내 답을 다시 받는다
   await pg.evaluate((c) => { if (c) try { localStorage.removeItem('atrium.phoneMap.expanded'); localStorage.removeItem('atrium.phoneMap.view'); } catch {} window.__mtPhone.mission(); }, clear);
   await pg.waitForSelector('.mt-pmap .mt-ta-card', { timeout: 20000 });
   await pg.waitForFunction((n) => document.querySelectorAll('.mt-pmap .mt-ta-card').length >= n, Math.min(5, SHAPE.sessions.length), { timeout: 20000 }).catch(async (e) => {

@@ -2,9 +2,7 @@
 // 목록은 세 곳에서 온다.
 // - 호출자(launchers.mjs): 이름, 하네스, 모델, 게이트웨이 경유 여부. 띄우는 명령은 atrium child <이름> --launcher <호출자>.
 // - 하네스가 아는 모델(HARNESSES의 models)과 짧은 별칭(opus, sonnet, haiku, fable). P72: Codex는 Codex의 모델 목록 캐시(codex-models.mjs)를 읽은 목록이다.
-// - 연결이 알려 주는 모델(P115): 런처가 참조하는 연결(connections.mjs)마다 그 프로토콜의 모델 목록(Anthropic식 /v1/models, OpenAI식 /models)을 읽는다.
-//   이 모델은 그 연결을 쓰는 런처(레일 순서의 첫 것)의 하네스로 띄운다. 판이 알려진 Anthropic 모델은 연결을 거치지 않고 하네스 줄로 띄우므로 연결 목록에서 뺀다.
-//   출력 모양(source 'gateway', gateway, gateways)은 P41 그대로다(atrium 계약). gateway는 그 연결의 base URL이다.
+// - 게이트웨이가 알려 주는 모델(gateways): P115 모델 연결이 채웠다. P255에서 연결을 걷어 내 판은 이제 빈 목록을 준다(출력 모양 source 'gateway', gateways는 P41 계약 그대로).
 // 이름 풀기는 정확한 ID → 별칭 → 느슨한 맞춤(대소문자, 띄어쓰기·하이픈, "glm flash" ↔ glm-flash) 순서다. 같은 모델을 가리키는 줄이 여럿이면 하나로 본다(호출자 > 하네스 > 연결).
 // 서로 다른 모델이 맞으면 띄우지 않고 후보를 돌려주고, 없으면 가까운 후보를 돌려준다. 모르는 이름으로 조용히 띄우지 않는다.
 import { HARNESSES, harnessOf } from './launchers.mjs';
@@ -57,9 +55,8 @@ export function buildCatalog({ launchers = [], gateways = [], harnessModels = {}
   for (const l of launchers) {
     const h = harnessOf(l.harness);
     if (!AGENT_HARNESS(h)) continue;
-    const conn = l.connection ? gateways.find((g) => g.connection === l.connection) : null;
     const t = targetOfModel(h.id, l.model || '');
-    entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: conn ? conn.url : (l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL) || null, connection: conn ? conn.name : null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}`, startCommand: l.startCommand || '' }); // P97: 실행 명령
+    entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: (l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL) || null, connection: null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}`, startCommand: l.startCommand || '' }); // P97: 실행 명령
   }
   for (const h of Object.values(HARNESSES)) {
     for (const m of harnessModels[h.id] || h.models || []) {
@@ -168,18 +165,3 @@ export function describeEntry(e) {
 }
 export const candidateLines = (list) => list.map((e) => `  - ${describeEntry(e)}\n    ${e.command}`).join('\n');
 
-// P115: 연결 모델 목록 읽기는 프로토콜별(connections.mjs fetchConnectionModels). 옛 이름으로도 부른다
-export { fetchConnectionModels as fetchGatewayModels } from './connections.mjs';
-// 런처가 참조하는 연결들(연결마다 하나, host는 그 연결을 쓰는 첫 런처: 레일 순서 → 목록 순서). → [{ url, connection(ID), name, protocol, host, conn }]
-export function gatewaysOf(launchers, connections = [], favorites = []) {
-  const rank = (l) => { const i = favorites.indexOf(l.id); return i < 0 ? favorites.length + launchers.indexOf(l) : i; };
-  const ordered = [...launchers].sort((a, b) => rank(a) - rank(b));
-  const out = new Map();
-  for (const l of ordered) {
-    if (!l.connection || out.has(l.connection)) continue;
-    const c = connections.find((x) => x.id === l.connection);
-    if (!c) continue;
-    out.set(c.id, { url: c.baseUrl, connection: c.id, name: c.name, protocol: c.protocol, host: l, conn: c });
-  }
-  return [...out.values()];
-}

@@ -31,7 +31,7 @@ import { predictTrust, repoHasCommit, buildStartArgs } from './launch.mjs';
 import { harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192
-import { buildCatalog, resolveModel, gatewaysOf, fetchGatewayModels, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
+import { buildCatalog, resolveModel, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
 import { takenNames, shownName } from './session-label.mjs'; // P66
 import { workspaceNames } from './workspaces.mjs';
 import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy, detachedParentLine, detachedChildLine, childClosedLine } from './link-notice.mjs'; // P81
@@ -55,7 +55,6 @@ const SUBMIT_WAIT_MS = 20000; // --prompt를 준 경우 첫 지시가 들어가 
 const CHILD_WAIT_MS = 100000; // P36: atrium child-wait 한 번의 최대(Bash 도구 2분 안쪽). 더 기다리려면 다시 부른다
 const GATE_TRUST_WAIT_MS = 5000; // P36: 신뢰를 받은 뒤 ~/.claude.json에 쓰이기까지 기다리는 시간
 const BODY_MAX = 256 * 1024;
-const CATALOG_TTL_MS = 20000; // P41: 게이트웨이 모델 목록을 다시 읽기 전까지
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FINAL = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']); // P81: 전달이 끝난 상태
 export const HEAD_ROLE = '헤드'; // P81: --head로 띄운 세션의 역할(첫 요청 뒤 판이 떼기 전까지)
@@ -324,9 +323,8 @@ export function childShims({ node = process.execPath, script = path.join(BACKEND
 export function attachBranch(b, opts) { return new Branch(b, opts); }
 
 export class Branch {
-  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, fetchModels = fetchGatewayModels, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, news: newsOpts = {} } = {}) {
+  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, news: newsOpts = {} } = {}) {
     this.b = b; this.readyWaitMs = readyWaitMs; this.submitWaitMs = submitWaitMs; this.childWaitMs = childWaitMs; this.gateTrustWaitMs = gateTrustWaitMs;
-    this.fetchModels = fetchModels; this.gwCache = new Map(); // P41: 게이트웨이 주소 → { at, r }
     this.modelErrors = new Map(); // P41: 세션 ID → 마지막으로 알린 모델 오류(rt.lastError 객체. P55: 시각으로 가리면 같은 밀리초의 다음 오류를 놓친다)
     this.passing = new Set(); // P36: 신뢰 관문을 지나는 중인 세션 ID(claude -w로 다시 띄우는 중)
     this.info = new Map(); // 세션 ID → 하위 세션 기록(sessions.branch)
@@ -723,18 +721,10 @@ export class Branch {
   launchersList() { return this.launchersData().items; }
   launchersData() { const L = this.b.features && this.b.features.launchers; return L ? L.data() : { items: [], favorites: [] }; } // P96: 레일 순서(즐겨찾기)도
   findLauncher(ref) { const L = this.b.features && this.b.features.launchers; return L ? L.find(ref) : null; }
-  // P115: 연결 목록(connections.mjs). 런처가 참조하는 연결마다 모델 목록을 읽는다(판 설정의 가상 게이트웨이는 없앴다)
-  connectionsList() { const C = this.b.features && this.b.features.connections; return C ? C.items() : []; }
+  // P255: 모델 연결(P115)을 걷어 내 게이트웨이 모델 목록은 없다(gateways는 빈 목록)
   async catalog() {
-    const d = this.launchersData();
-    const launchers = d.items;
-    const gws = gatewaysOf(launchers, this.connectionsList(), d.favorites || []);
-    const probed = await Promise.all(gws.map(async (g) => {
-      const hit = this.gwCache.get(g.connection);
-      const r = hit && Date.now() - hit.at < CATALOG_TTL_MS && hit.url === g.url ? hit.r : await this.fetchModels(g.conn);
-      if (r.ok) this.gwCache.set(g.connection, { at: Date.now(), url: g.url, r }); else this.gwCache.delete(g.connection);
-      return { ...g, ...r };
-    }));
+    const launchers = this.launchersData().items;
+    const probed = [];
     const L = this.b.features && this.b.features.launchers;
     const lists = L && L.freshModelLists ? await L.freshModelLists() : L && L.modelLists ? L.modelLists() : {}; // P72: Codex 모델 목록(Codex 캐시). P192: AGY 목록은 잠깐 기다린다
     const harnessModels = Object.fromEntries(Object.entries(lists).map(([k, v]) => [k, v.models]));
@@ -763,8 +753,7 @@ export class Branch {
       if (!h || h.id === 'shell' || h.id === 'command') throw apiError('bad_request', `하위 세션에는 에이전트를 실행하는 런처만 사용할 수 있습니다: ${l.name}(${h ? h.label : l.harness})`);
       if (o.kind && o.kind !== h.kind) throw apiError('bad_request', `런처 ${l.name}은 종류 ${h.kind}다(--kind ${o.kind}와 다르다)`);
       if (o.model) throw apiError('bad_request', "--launcher와 --model은 함께 지정할 수 없습니다. 다른 모델을 사용하려면 atrium models에서 해당 모델의 실행 명령을 확인하세요.");
-      const c = l.connection ? this.connectionsList().find((x) => x.id === l.connection) : null;
-      const gw = c ? c.baseUrl : h.id === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL ? l.env.ANTHROPIC_BASE_URL : null;
+      const gw = h.id === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL ? l.env.ANTHROPIC_BASE_URL : null;
       return { type: 'launcher', launcher: l, kind: h.kind, gateway: gw, resolved: null };
     }
     if (o.model) {
@@ -778,10 +767,7 @@ export class Branch {
         return { type: 'launcher', launcher: l, kind: e.kind, gateway: e.gateway, resolved };
       }
       if (e.source === 'harness') return { type: 'model', kind: e.kind, model: e.model, args: e.kind === 'claude' ? null : ['-m', e.model], gateway: null, resolved };
-      const hostG = cat.hosts.find((g) => g.url === e.gateway && (g.name || null) === (e.connection || null));
-      const host = hostG && hostG.host ? hostG.host : null;
-      if (!host) throw apiError('gateway_down', `연결 ${e.connection || e.gateway}을 쓰는 런처를 찾을 수 없습니다.`);
-      return { type: 'gateway', kind: e.kind, model: e.model, launcherDef: { ...host, id: host.id || null, icon: '', model: e.model }, gateway: e.gateway, resolved }; // 런처의 아이콘은 그 런처 모델의 것이라 옮기지 않는다
+      throw apiError('model_unknown', `보드가 모르는 모델: "${o.model}". 띄우지 않았다.`);
     }
     // P115: 다른 종류 부모(codex 등)가 종류를 주지 않으면 같은 하네스와 그 호출자 값(모델, 추가 인자, 실행 명령)을 물려준다. 권한 모드는 옮기지 않는다
     const pk = parent.kind || 'claude';
@@ -789,19 +775,12 @@ export class Branch {
       const plan = parent.harnessPlan || {};
       const found = plan.launcherId ? this.findLauncher(plan.launcherId) : null;
       const def = found && harnessOf(found.harness) && harnessOf(found.harness).kind === pk ? found : { id: null, name: plan.launcher || pk, harness: pk, icon: '', model: '', effort: '', permissionMode: '', args: '', env: {}, command: '' };
-      return { type: 'inherit-harness', kind: pk, launcherDef: { ...def, model: plan.model || '', args: (plan.args || []).join(' '), startCommand: parent.startCommand || '', ...(plan.connectionId ? { connection: plan.connectionId } : {}) }, gateway: null, resolved: null };
+      return { type: 'inherit-harness', kind: pk, launcherDef: { ...def, model: plan.model || '', args: (plan.args || []).join(' '), startCommand: parent.startCommand || '' }, gateway: null, resolved: null };
     }
-    // 물려받기: 부모가 연결을 쓰는 claude 세션이면(spawn 이벤트의 연결, P115 전은 env) 하위 세션도 같은 연결로 띄운다
+    // 물려받기: 부모가 게이트웨이를 쓰는 claude 세션이면(spawn 이벤트의 env) 하위 세션도 같은 env로 띄운다. P255: 옛 연결 기록은 읽지 않는다
     const kind = o.kind ? String(o.kind) : 'claude';
     if (kind === 'claude' && this.b.hooked(parent)) {
       const sp = this.b.store.spawnInfo(parent.sessionId) || {};
-      const pc = sp.connection ? this.connectionsList().find((x) => x.id === sp.connection) : null;
-      if (pc) {
-        const found = sp.launcher ? this.findLauncher(sp.launcher) : null;
-        const def = found && found.harness === 'claude' && found.connection === pc.id ? found
-          : { id: null, name: sp.launcher || pc.name, harness: 'claude', icon: parent.flavor || '', model: '', effort: '', permissionMode: 'manual', args: joinArgs(sp.extraArgs || []), env: sp.launcherEnv || {}, command: '', connection: pc.id };
-        return { type: 'inherit-gateway', kind, launcherDef: { ...def, icon: parent.flavor || '', model: parent.model || def.model || '' }, gateway: pc.baseUrl, resolved: null };
-      }
       const url = sp.env && sp.env.ANTHROPIC_BASE_URL;
       if (url) {
         const found = sp.launcher ? this.findLauncher(sp.launcher) : null;

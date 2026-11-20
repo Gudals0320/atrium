@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ADAPTERS, adapterOf, harnessLaunch, reservedArg, resumable, harnessResumable, agySessionOf, agyWorkspaceUri, AGY_APPROVAL, HARNESS_PROMPT, piExtensionText, providerIdOf } from '../src/harness.mjs';
+import { ADAPTERS, adapterOf, harnessLaunch, reservedArg, resumable, harnessResumable, agySessionOf, agyWorkspaceUri, AGY_APPROVAL, HARNESS_PROMPT } from '../src/harness.mjs';
 import { normalizeLauncher, resolveLauncher, previewLauncher, harnessOptionArgs, normalizeStartCommand, describeHarnesses, HARNESSES, parseCommandLine } from '../src/launchers.mjs';
 import { approvalArgsOf, hasApprovalArgs, otherKindPlan } from '../src/branch.mjs';
 import { parseAgyModels, AgyModels } from '../src/agy-models.mjs';
@@ -47,7 +47,6 @@ test('P192 harnessLaunch: agy는 판 env·PATH의 bin·실행 명령(래퍼) 그
   assert.deepEqual(r.env, { ATRIUM_SESSION_ID: SID });
   assert.deepEqual(r.pathFirst, ['C:/d/bin']);
   assert.equal(r.files.length, 1);
-  assert.throws(() => harnessLaunch({ kind: 'agy', sessionId: SID, connection: { id: 'c1', name: 'x', protocol: 'openai-chat', baseUrl: 'http://x' } }), (e) => e.code === 'connection_protocol');
   assert.equal(KIND_COMMAND.agy, 'agy');
 });
 
@@ -121,10 +120,10 @@ test('P192 명령줄 붙여 넣기: agy 줄은 agy 하네스(모델은 추가 �
   assert.ok(!r.launcher.args.includes('--conversation'));
 });
 
-test('P192 하네스 표: agy는 연결 프로토콜이 없고, 읽어 온 모델 목록(agy models)을 쓴다', () => {
+test('P192 하네스 표: agy는 읽어 온 모델 목록(agy models)을 쓴다. P255: 하네스 표에 연결 프로토콜은 없다', () => {
   const hs = describeHarnesses({ agy: { models: ['gemini-4-argon-high'], hidden: [], labels: { 'gemini-4-argon-high': 'Gemini 4 Argon (High)' }, source: 'agy' } });
   const a = hs.find((h) => h.id === 'agy');
-  assert.deepEqual(a.protocols, []);
+  assert.equal('protocols' in a, false);
   assert.deepEqual(a.models, ['gemini-4-argon-high']);
   assert.equal(a.modelLabels['gemini-4-argon-high'], 'Gemini 4 Argon (High)');
   const cat = buildCatalog({ launchers: [], harnessModels: { agy: ['gemini-4-argon-high', 'claude-opus-5-5-high'] } });
@@ -218,22 +217,16 @@ test('P192 잠재우기: 판이 띄운 AGY 세션은 대화 ID를 알면 잠재�
   assert.notEqual(sleepTarget({ kind: 'agy', hooked: false, harness: false, convKnown: true, state: 'ready' }, { mode: 'hand' }), null);
 });
 
-test('P192 pi 회귀: 연결 확장(-e)·--session-id·--model <제공자>/<모델>·--append-system-prompt, 이어 가기도 같은 값. 연결 없으면 -e 없음', () => {
-  const dir = tmp();
-  const c = { id: 'c1', name: 'local', protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:9/v1', auth: { env: 'LOCAL_KEY' } };
-  const r = harnessLaunch({ kind: 'pi', sessionId: SID, model: 'glm-flash', instructions: INSTR, connection: c, connectionModels: ['glm-flash', 'glm-air'], filesDir: dir });
-  const ext = path.join(dir, 'pi-c1.mjs').split('\\').join('/');
-  assert.deepEqual(r.args, ['--session-id', SID, '-e', ext, '--model', `${providerIdOf(c)}/glm-flash`, '--append-system-prompt', INSTR.file]);
+test('P192 pi 회귀: --session-id·--model·--append-system-prompt, 이어 가기도 같은 값. P255: 연결 확장(-e)은 없다', () => {
+  const r = harnessLaunch({ kind: 'pi', sessionId: SID, model: 'glm-flash', instructions: INSTR, connection: { id: 'c1', protocol: 'openai-chat', baseUrl: 'http://x/v1' }, filesDir: tmp() });
+  assert.deepEqual(r.args, ['--session-id', SID, '--model', 'glm-flash', '--append-system-prompt', INSTR.file], '옛 연결 값은 무시한다');
+  assert.deepEqual(r.files, []);
   assert.equal(r.harnessSessionId, SID);
-  assert.match(r.files[0].text, /registerProvider\("atrium_c1"/);
-  assert.match(piExtensionText(c, ['glm-flash']), /"apiKey": "\$LOCAL_KEY"/);
-  assert.match(piExtensionText({ ...c, auth: null }, ['m']), /"apiKey": "atrium-no-key"/);
-  const again = harnessLaunch({ kind: 'pi', sessionId: SID, resume: true, model: 'glm-flash', instructions: INSTR, connection: c, connectionModels: [], filesDir: dir });
+  const again = harnessLaunch({ kind: 'pi', sessionId: SID, resume: true, model: 'glm-flash', instructions: INSTR });
   assert.deepEqual(again.args, r.args, '이어 가기도 같은 값(같은 세션 ID로 이어 간다)');
   assert.equal(again.resumed, true);
   const plain = harnessLaunch({ kind: 'pi', sessionId: SID, model: 'openai/gpt-x', instructions: INSTR });
   assert.deepEqual(plain.args, ['--session-id', SID, '--model', 'openai/gpt-x', '--append-system-prompt', INSTR.file]);
-  assert.throws(() => harnessLaunch({ kind: 'pi', sessionId: SID, connection: c }), (e) => e.code === 'pi_extension_missing', '확장 파일 폴더가 없으면 띄우지 않는다');
   // 실행 명령으로 secret-run 감싸기(키는 grant가 넣는다): 첫 낱말은 secret-run, 판의 인자는 그 뒤
   assert.equal(normalizeStartCommand('secret-run mygrant -- pi', 'pi'), 'secret-run mygrant -- pi');
   const w = harnessLaunch({ kind: 'pi', startWords: ['secret-run', 'mygrant', '--', 'pi'], sessionId: SID, instructions: INSTR });

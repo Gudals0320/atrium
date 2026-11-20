@@ -215,6 +215,11 @@ export function markSeen(id) {
   const s = state.sessions.get(id);
   if (s && (s.unseen || s.unseenSub)) api.call('session.markSeen', { session: id }).catch(() => {});
 }
+// P255: 작업 완료 목록 모두 읽기. 세션마다 하나씩 보는 것과 같은 봤음 처리(session.markSeen)를 한꺼번에 → 보낸 수
+export async function markAllSeen(ids) {
+  const r = await Promise.all(ids.map((id) => api.call('session.markSeen', { session: id }).then(() => 1, () => 0)));
+  return r.reduce((a, x) => a + x, 0);
+}
 
 // P6a
 // P124: 초점·고른 노드의 짝(같은 덩어리, 부모·자식. P167: 판에 선으로 바로 이어진 세션). 이 노드들도 터미널을 가질 수 있다(lib/faces.js matesOf). 같은 값이면 같은 Set을 돌려준다(구독용)

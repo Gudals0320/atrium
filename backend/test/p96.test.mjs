@@ -9,7 +9,6 @@ import http from 'node:http';
 import { Store } from '../src/store.mjs';
 import { Backend } from '../src/backend.mjs';
 import { Launchers, HARNESSES, MODEL_RE } from '../src/launchers.mjs';
-import { Connections } from '../src/connections.mjs'; // P115
 import { DEFAULTS } from '../src/settings.mjs';
 import { Branch, APPROVAL_ARGS, approvalArgsOf, hasApprovalArgs, defaultLauncherOf, withoutModelArgs, otherKindPlan, boardSkill } from '../src/branch.mjs';
 import { isModelName, MODEL_MAX } from '../src/model-name.mjs';
@@ -119,10 +118,9 @@ async function board({ permissionMode = 'manual', gatewayUrl = null } = {}) {
   const b = new Backend({ quietMs: 600000, port: 0, logDir: dir, sessionsDir: path.join(dir, 'sessions'), claudeJson: path.join(dir, 'none.json'), claudeCommand: 'claude', hookTimeoutSec: 2, terminalSession: 'atrium-dev-p96test', profile: 'dev', dataDir: dir });
   b.store = new Store(path.join(dir, 'board.db'));
   b.sessions = new Map(); b.termOk = true; b.hookUrl = 'http://127.0.0.1:1/hook'; b.plugin = {}; b.apiToken = 'board-api-token';
-  b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null, connections: null };
+  b.features = { settings: { get: () => ({ ...DEFAULTS }) }, launchers: null };
   if (gatewayUrl) b.store.setMeta('settings', {}); // DeepSeek 예시 호출자가 있는 옛 판. P115: 그 호출자는 게이트웨이 연결을 쓰는 claude 런처로 옮겨진다
-  b.features.connections = new Connections({ store: b.store, inUse: (id) => b.features.launchers.usersOf(id) });
-  b.features.launchers = new Launchers({ store: b.store, codexModels: new CodexModels({ home, fallback: HARNESSES.codex.models }), gateway: gatewayUrl ? { healthUrl: `${gatewayUrl}/healthz` } : {}, connections: b.features.connections });
+  b.features.launchers = new Launchers({ store: b.store, codexModels: new CodexModels({ home, fallback: HARNESSES.codex.models }), gateway: gatewayUrl ? { healthUrl: `${gatewayUrl}/healthz` } : {} });
   b.queue = { enqueue: () => ({ deliveryId: 'd1', status: 'queued' }), pending: () => 0 };
   b.api = { broadcast() {} };
   b.broadcastSession = () => {}; b.broadcastWorkspaces = () => {}; b.probeGit = () => {};
@@ -207,13 +205,11 @@ test('P96 acceptEdits 부모 → workspace-write + on-request. Claude 하위 세
   b.store.close();
 });
 
-test('P96 슬래시 모델: Claude 하위 세션(게이트웨이 모델 ID)과 판 spawn(호출자 + 모델)', async () => {
+test('P96 슬래시 모델: 판 spawn(호출자 + 모델). P255: 게이트웨이(연결) 모델 ID로 하위 세션을 띄우는 길은 없앴다', async () => {
   const gw = await gatewayServer();
   try {
     const { b, lead, startOf, dir } = await board({ gatewayUrl: gw.url });
-    const r = await b.branch.spawnChild(lead, { name: 'g1', model: 'zai/glm-5', wait: false });
-    assert.equal(r.kind, 'claude'); assert.equal(r.resolved.source, 'gateway');
-    const a = startOf('g1').args; assert.equal(a[a.indexOf('--model') + 1], 'zai/glm-5');
+    await assert.rejects(b.branch.spawnChild(lead, { name: 'g1', model: 'zai/glm-5', wait: false }), (e) => e.code === 'model_unknown');
     // 판의 새 세션(session.spawn): Codex 호출자 + 슬래시 모델
     const s = await b.spawn({ cwd: dir, name: 'cx9', launcher: 'codex', model: 'b.ai/glm-5.3-flash' });
     assert.equal(s.kind, 'codex'); assert.deepEqual(startOf('cx9').args, ['-c', 'check_for_update_on_startup=false', '-m', 'b.ai/glm-5.3-flash']);
