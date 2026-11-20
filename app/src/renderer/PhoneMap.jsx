@@ -31,10 +31,9 @@ const saveExpanded = (s) => { try { localStorage.setItem(EXP_KEY, JSON.stringify
 let cache = null;
 let lastGoId = null; // 마지막으로 알약이 데려간 카드(시험이 읽는다)
 const noop = () => {};
-const Chev = () => <svg className="mt-ph-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>;
 const FolderIcon = () => <svg className="mt-ta-iico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10l2 2.5h6.5A1.5 1.5 0 0 1 20 8v10.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z" /></svg>;
 
-export function PhoneMap({ onBack, onOpen, conn }) {
+export function PhoneMap({ onOpen, head, tip }) {
   const t = useT();
   const sessions = useStore((st) => st.sessions);
   const links = useStore((st) => st.links);
@@ -52,7 +51,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const [peek, setPeek] = useState(null); // 길게 누른 카드 id
   const vpRef = useRef(null), worldRef = useRef(null), bgRef = useRef(null), pctRef = useRef(null);
   const view = useRef(null), sizeRef = useRef(null), layRef = useRef(null), opened = useRef(false);
-  const moveTimer = useRef(0), glideTimer = useRef(0), saveTimer = useRef(0);
+  const moveTimer = useRef(0), glideTimer = useRef(0), saveTimer = useRef(0), dirty = useRef(false); // P256 dirty: 이 맵에서 보기를 옮겼는가
   const quiet = useRef(0); // 끌기·핀치·길게 누르기 뒤 이때까지 오는 click은 무시한다
   const lastGo = useRef({});
 
@@ -117,7 +116,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (vp && !glide) { if (vp.dataset.moving !== '1') { vp.dataset.moving = '1'; holdLights(vp, true); } clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete vp.dataset.moving; holdLights(vp, false); setIk(); }, 160); }
     // 이 기기에 기억(조금 모았다가)
-    if (save) { clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => saveView(store(), sizeRef.current, view.current, tabRef.current), PM.SAVE_MS); }
+    if (save) { dirty.current = true; clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => saveView(store(), sizeRef.current, view.current, tabRef.current), PM.SAVE_MS); }
   }, []);
   const fit = useCallback((glide = true) => { const L = layRef.current, s = sizeRef.current; if (L && s) paint(phoneFit(L.bounds, s.w, s.h), { glide }); }, [paint]);
   const zoomBy = useCallback((f) => { const s = sizeRef.current, v = view.current; if (s && v) paint(zoomAt(v, s.w / 2, s.h / 2, v.k * f), { glide: true }); }, [paint]);
@@ -255,7 +254,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
       el.removeEventListener('gesturestart', noGesture); el.removeEventListener('gesturechange', noGesture);
     };
   }, [paint, onOpen]);
-  useEffect(() => () => { clearTimeout(saveTimer.current); if (view.current && sizeRef.current) saveView(store(), sizeRef.current, view.current, tabRef.current); }, []); // 떠날 때 마지막 보기를 남긴다
+  useEffect(() => () => { clearTimeout(saveTimer.current); if (dirty.current && view.current && sizeRef.current) saveView(store(), sizeRef.current, view.current, tabRef.current); }, []); // 떠날 때 마지막 보기를 남긴다(P256: 옮긴 적이 있을 때만. 맵이 바탕이라 연 채로 다시 그려질 때 처음 맞춤을 기억으로 굳히지 않는다)
   window.__mtPm = { style: 'canvas', fitView: () => { const L = layRef.current, s = sizeRef.current; return L && s ? phoneFit(L.bounds, s.w, s.h) : null; }, lay: () => layRef.current, view: () => (view.current ? { ...view.current } : null), set: (v) => paint(v), fit: () => fit(false), goTo, last: () => lastGoId, peek: (id) => setPeek(id), size: () => sizeRef.current, tab: () => tabRef.current, setTab: (k) => switchTab(k), tabs: () => { const x = layRef.current && layRef.current.tabs; return x ? { split: x.split, pick: x.pick, today: { n: x.today.n, attn: x.today.attn }, earlier: { n: x.earlier.n, attn: x.earlier.attn } } : null; } }; // 시험이 읽는다
 
   const ids = lay ? lay.order : [];
@@ -267,11 +266,8 @@ export function PhoneMap({ onBack, onOpen, conn }) {
   const pb = peek && lay ? lay.cards.get(peek) : null;
   return (
     <div className="mt-ph-list mt-pm mt-pl mt-pmap" data-role="phone-mission" data-style="canvas">
-      <header className="mt-ph-head">
-        <button type="button" className="mt-pm-back" data-action="phone-mission-back" aria-label={t('phoneMission.back')} onClick={onBack}><Chev /><span>{t('phone.list')}</span></button>
-        <b className="mt-pm-title">{t('phoneMission.title')}</b>
-        {conn}
-      </header>
+      <header className="mt-ph-head">{head}</header>{/* P256: 휴대폰은 이 맵으로 연다(목록 화면 없음). 머리줄은 Phone.jsx PhoneHead */}
+      {tip}
       {tb && (
         <div className="mt-pmap-tabs" role="tablist" aria-label={t('pmTab.label')} data-role="pm-tabs" data-pick={pick}>
           {['today', 'earlier'].map((k) => {
@@ -300,7 +296,7 @@ export function PhoneMap({ onBack, onOpen, conn }) {
           <div className="mt-ta-bg" ref={bgRef} aria-hidden="true" />
           {!lay && !fail && <div className="mt-ta-loading">{t('common.loading')}</div>}
           {!lay && fail && <div className="mt-ta-loading" data-role="pm-fail">{t('mission.fail', { error: errText(fail) })}</div>}
-          {lay && ids.length === 0 && <div className="mt-ta-loading" data-role="pm-empty">{t('phone.empty')}</div>}
+          {lay && ids.length === 0 && <div className="mt-ta-loading" data-role="pm-empty">{t('phoneHead.empty')}</div>}
           {lay && ids.length > 0 && (
             <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef} style={view.current ? { transform: `translate(${view.current.x}px, ${view.current.y}px) scale(${view.current.k})` } : undefined}>
               {lay.bands.map((b, i) => (

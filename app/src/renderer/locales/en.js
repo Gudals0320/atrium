@@ -2864,5 +2864,11 @@ export default {
     credit: 'Credits {n}',
     creditUnlimited: 'Unlimited credits',
   },
+  // P256: phone session map head (after the list screen was removed) and the usage pill's shown subscription
+  phoneHead: {
+    empty: 'No sessions on the board. Start one with the + button at the top.',
+    rep: 'Shown',
+    repHint: 'Tap a subscription to show it on the pill.',
+  },
 };
 

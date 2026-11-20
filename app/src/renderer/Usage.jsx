@@ -5,7 +5,7 @@ import { useStore, getState } from './store.js';
 import { api } from './api.js';
 import { useT, t as tt } from './lib/i18n.js';
 import { notifyAllowed } from './lib/multiclient.js';
-import { PROVIDERS, PROVIDER_NAME, pillOf, pillLine, shortKey, shownWindows, livePct, levelOf, spanOf, windowKey, creditOf, windowLabel, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
+import { PROVIDERS, PROVIDER_NAME, pillOf, pillLine, repPart, loadRep, saveRep, shortKey, shownWindows, livePct, levelOf, spanOf, windowKey, creditOf, windowLabel, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
 import { KINDS } from './lib/kinds.js';
 import { creditMode, creditPillText } from './lib/p255.js'; // P255: Codex 한도를 다 써서 크레딧을 쓰는 중이면 퍼센트 대신 남은 크레딧
 
@@ -31,19 +31,23 @@ function useDrop() {
   return [open, setOpen, ref];
 }
 
-function ProviderBlock({ k, e, now }) {
+// P256: pick(휴대폰 compact 펼침)이 있으면 구독 칸을 누를 수 있고 누르면 대표가 된다. rep = 지금 고른 대표
+function ProviderBlock({ k, e, now, pick = null, rep = null }) {
   const t = useT();
   const wins = shownWindows(k, e); // P214: AGY는 Gemini 5시간·주간만. 보일 창이 없으면 모름과 같다
+  const on = !!pick && rep === k;
+  const tap = pick ? { role: 'button', tabIndex: 0, 'aria-pressed': on, 'data-rep': on ? '1' : undefined, title: t('phoneHead.repHint'), onClick: () => pick(k), onKeyDown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(k); } } } : {};
+  const mark = on ? <span className="mt-usage-rep" data-role="usage-rep">{t('phoneHead.rep')}</span> : null;
   if (!e || !wins.length) return (
-    <div className="mt-usage-prov unknown" data-role="usage-provider" data-provider={k}>
-      <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b><span className="dim">{t('usage.unknown')}</span></div>
+    <div className={`mt-usage-prov unknown${pick ? ' pickable' : ''}${on ? ' rep' : ''}`} data-role="usage-provider" data-provider={k} {...tap}>
+      <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b>{mark}<span className="dim">{t('usage.unknown')}</span></div>
       <div className="mt-usage-src dim">{t(`usage.unknownWhy.${k}`)}</div>
     </div>
   );
   const c = creditOf(e.credits);
   return (
-    <div className="mt-usage-prov" data-role="usage-provider" data-provider={k}>
-      <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b>{e.plan && <span className="mt-usage-plan">{e.plan}</span>}<span className="dim mt-usage-ago" title={new Date(e.at).toLocaleString()}>{t('usage.ago', { span: span(t, now - e.at) })}</span></div>
+    <div className={`mt-usage-prov${pick ? ' pickable' : ''}${on ? ' rep' : ''}`} data-role="usage-provider" data-provider={k} {...tap}>
+      <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b>{mark}{e.plan && <span className="mt-usage-plan">{e.plan}</span>}<span className="dim mt-usage-ago" title={new Date(e.at).toLocaleString()}>{t('usage.ago', { span: span(t, now - e.at) })}</span></div>
       {k === 'agy' && <div className="mt-usage-what dim" data-role="usage-what">{t('usage.agyWhat')}</div>}
       {wins.map((w) => {
         const p = livePct(w, now);
@@ -64,12 +68,16 @@ function ProviderBlock({ k, e, now }) {
 }
 
 // 위 막대 알약(P214 한 줄 꼴): 구독마다 로고 하나 + 보이는 창만(예 [로고] 5h 42 · 주 88), 값마다 색, 테두리는 가장 높은 값의 색. 누르면 펼침
-// compact(휴대폰 위쪽 줄): 점과 가장 높은 값 하나만(81%). 구독별 값은 누르면 펼침에
+// compact(휴대폰 위쪽 줄): 점과 대표 구독의 값 하나만(81%). 구독별 값은 누르면 펼침에.
+// P256: 대표는 기본 Claude, 펼침에서 구독을 누르면 바뀌고 기기에 기억한다(lib/usage.js repPart). 대표 자료가 없으면 다음 구독. 점·테두리 색은 전처럼 모든 구독 가운데 가장 높은 값
+const lsOf = () => { try { return localStorage; } catch { return null; } };
 export function UsagePill({ compact = false }) {
   const t = useT();
   const v = useStore((st) => st.usage);
   const now = useNow();
   const [open, setOpen, ref] = useDrop();
+  const [rep, setRep] = useState(() => loadRep(lsOf()));
+  const pickRep = (k) => { setRep(k); saveRep(lsOf(), k); };
   if (!v) return null;
   const pill = pillOf(v, now);
   const line = pillLine(v, now);
@@ -79,7 +87,7 @@ export function UsagePill({ compact = false }) {
     <div className="mt-drop" ref={ref}>
       <button className={`mt-cp usage lv-${pill.level}${open ? ' on' : ''}${compact ? ' compact' : ' line'}`} title={title} data-role="usage" data-level={pill.level} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {compact && <span className={`mt-usage-dot lv-${pill.level}`} aria-hidden="true" />}
-        {compact && pill.parts.length ? (() => { const top = pill.parts.reduce((a, x) => (x.pct > a.pct ? x : a)); return <span className="mt-usage-part" data-provider={top.provider} data-pct={top.pct}><span className={`mono lv-${top.level}`}>{top.pct}%</span></span>; })() : line.parts.length ? line.parts.map((x, i) => (
+        {compact && pill.parts.length ? (() => { const top = repPart(v, rep, now); return <span className="mt-usage-part" data-role="usage-rep-part" data-provider={top.provider} data-pct={top.pct} data-picked={top.picked ? '1' : '0'}>{KINDS[top.provider] && KINDS[top.provider].logo ? <img className="mt-usage-logo" src={KINDS[top.provider].logo} alt={top.name} draggable={false} /> : <span className="mt-usage-repname dim">{top.name}</span>}<span className={`mono lv-${top.level}`}>{top.pct}%</span></span>; })() : line.parts.length ? line.parts.map((x, i) => (
           <Fragment key={x.provider}>
             {i > 0 && <span className="mt-usage-sep" aria-hidden="true" />}
             <span className="mt-usage-part line" data-provider={x.provider} data-pct={Math.max(...x.wins.map((w) => w.pct))}>
@@ -97,7 +105,8 @@ export function UsagePill({ compact = false }) {
       {open && (
         <div className="mt-dropdown mt-usage-list" data-role="usage-list">
           <div className="mt-dropdown-head"><span>{t('usage.head')}</span></div>
-          {PROVIDERS.map((k) => <ProviderBlock key={k} k={k} e={v.providers ? v.providers[k] : null} now={now} />)}
+          {compact && <div className="mt-usage-pickhint dim" data-role="usage-pick-hint">{t('phoneHead.repHint')}</div>}
+          {PROVIDERS.map((k) => <ProviderBlock key={k} k={k} e={v.providers ? v.providers[k] : null} now={now} pick={compact ? pickRep : null} rep={compact ? rep : null} />)}
           <div className="mt-usage-foot dim" data-role="usage-alerts">{v.alertsOn === false ? t('usage.alertsOff') : t('usage.alertsOn')}</div>
         </div>
       )}

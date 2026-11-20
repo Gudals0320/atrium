@@ -11,6 +11,8 @@
 // P76: 휴대폰의 기본은 보드 화면(캔버스, 탭하면 전체 보기 PhoneFull.jsx)이다. 이 목록은 보드 화면의 목록 단추로 고를 때(LAYOUT_KEY 'list')만 보이고, 머리줄의 보드 단추로 돌아간다
 // P87: 휴대폰은 늘 이 목록으로 연다(lib/phone.js isPhoneDevice, 보드는 iPhone Safari에서 죽는다). 머리줄의 보드 단추는 미션 맵(PhoneMission.jsx) 단추가 되었고,
 //   가벼운 화면 안내와 "보드로 다시 열기"는 휴대폰에 보이지 않는다(죽음 기록은 그대로 남긴다). 보드 화면·전체 보기 코드는 태블릿을 위해 그대로 둔다
+// P256: 위 "목록" 화면은 없앴다. 휴대폰은 세션 맵(PhoneMission.jsx → PhoneMap.jsx)으로 열고, 목록 머리줄(로고·연결·사용량·알림)과 새 세션은 맵 머리줄(PhoneHead)로 옮겼다.
+//   세션 화면의 뒤로는 맵으로. 응답 필요로 가기는 맵 위 알약과 세션 화면의 "다음"
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, toast, markSeen, setFocus, setCloseIds, askKey } from './store.js';
@@ -20,13 +22,13 @@ import { startedText, devModel } from './SpawnDialog.jsx';
 import { enterSession, markInteracted } from './touch.js';
 import { wakeSession } from './sleep.js';
 import { useT, errText } from './lib/i18n.js';
-import { ago, STATE_LABEL, deliveryText } from './lib/labels.js';
+import { STATE_LABEL, deliveryText } from './lib/labels.js';
 import { QueueGroup, useDeliveryEditing } from './DeliveryQueue.jsx'; // P172: 이 세션의 대기 글 묶음(바로 보내기, 순서 바꾸기, 수정, 취소)
 import { queueView } from './lib/delivery-queue.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
 import { checkLabel } from './lib/session-name.js'; // P97: 새 세션 이름 칸
 import { BRAND_WORDMARK } from './lib/icons.jsx';
-import { phoneList, toneOf, lastLineOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou, PAD_KEYS, keyQueue, padKeyOf, padOpen } from './lib/phone.js';
+import { phoneList, toneOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou, PAD_KEYS, keyQueue, padKeyOf, padOpen } from './lib/phone.js';
 import { steerBlock } from './lib/steer.js'; // P248: 스티어링 선택
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
@@ -101,7 +103,6 @@ export function PhoneListButton() {
 // ---------- 작은 도우미 ----------
 function useNow(ms) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
 const Chev = ({ dir = 'right' }) => <svg className="mt-ph-chev" viewBox="0 0 24 24" aria-hidden="true"><path d={dir === 'left' ? 'm15 18-6-6 6-6' : dir === 'down' ? 'm6 9 6 6 6-6' : 'm9 18 6-6-6-6'} /></svg>;
-const readFolded = () => { try { return new Set(JSON.parse(store().getItem('mt.phoneFolded') || '[]')); } catch { return new Set(); } };
 const PHONE_SCALE_KEY = 'mt.phoneTermScale';
 // 기본 14px × 0.8 ≈ 11px: 390px 폭에 50칸쯤. P83: 가장 작게 40%(5.6px)면 110칸 안팎
 export const readPhoneScale = () => { try { return clampPhoneScale(store().getItem(PHONE_SCALE_KEY)); } catch { return PHONE_SCALE_DEFAULT; } };
@@ -133,11 +134,12 @@ function ConnPill({ compact = false }) {
 // ---------- 뿌리 ----------
 export function PhoneApp() {
   const sessions = useStore((st) => st.sessions);
-  // P87: 화면은 history.state에 둔다. mtPhone: 연 세션, mtMission: 미션 맵(그 위에서 연 세션이면 둘 다)
-  const navOf = (st) => ({ open: (st && st.mtPhone) || null, mission: !!(st && st.mtMission) });
+  // P87: 화면은 history.state에 둔다. mtPhone: 연 세션. P256: 바탕은 늘 세션 맵이다(목록 화면 없음)
+  const navOf = (st) => ({ open: (st && st.mtPhone) || null });
   const [nav, setNav] = useState(() => navOf(history.state));
   const open = nav.open;
   const [spawn, setSpawn] = useState(false);
+  const [mapKey, setMapKey] = useState(0); // P256: 시험이 __mtPhone.mission()으로 맵을 새로 열 때(옛 "맵 열기"처럼 다시 그리고 다시 받는다)
   const rootRef = useRef(null);
 
   // 가상 키보드: 보이는 높이에 맞춘다
@@ -156,7 +158,7 @@ export function PhoneApp() {
     return () => { if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } window.removeEventListener('resize', fit); document.documentElement.classList.remove('mt-phone-on', 'mt-kb-open'); };
   }, []);
 
-  // 뒤로 가기(Android 뒤로 단추, 가장자리 밀기)는 목록으로
+  // 뒤로 가기(Android 뒤로 단추, 가장자리 밀기)는 세션 맵으로
   useEffect(() => {
     const onPop = (e) => setNav(navOf(e.state));
     window.addEventListener('popstate', onPop);
@@ -164,23 +166,18 @@ export function PhoneApp() {
   }, []);
   const go = (id, { replace = false } = {}) => {
     if (!id) { if (history.state && history.state.mtPhone) history.back(); else setNav((n) => ({ ...n, open: null })); return; }
-    const next = { mtPhone: id, ...(nav.mission ? { mtMission: true } : {}) };
+    const next = { mtPhone: id };
     if (replace || (history.state && history.state.mtPhone)) history.replaceState(next, ''); else history.pushState(next, '');
-    setNav({ open: id, mission: nav.mission });
-  };
-  // P87: 미션 맵 열기·닫기(뒤로 가기도 목록으로)
-  const mission = (on) => {
-    if (on) { history.pushState({ mtMission: true }, ''); setNav({ open: null, mission: true }); return; }
-    if (history.state && history.state.mtMission && !history.state.mtPhone) history.back(); else { try { history.replaceState(null, ''); } catch {} setNav({ open: null, mission: false }); }
+    setNav({ open: id });
   };
   // 연 세션: 보는 중(잠재우기에서 뺀다), 들어간 시각, 확인함
   useEffect(() => {
     if (!open) { setCloseIds([]); return; }
     setFocus(open); setCloseIds([open]); enterSession(open); markSeen(open);
   }, [open]);
-  // 연 세션이 사라지면 목록으로
-  useEffect(() => { if (open && getState().boardLoaded && !sessions.has(open)) { const m = nav.mission; setNav({ open: null, mission: m }); try { history.replaceState(m ? { mtMission: true } : null, ''); } catch {} } }, [open, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
-  window.__mtPhone = { open: (id) => go(id), list: () => go(null), mission: () => mission(true) }; // 시험이 부른다
+  // 연 세션이 사라지면 세션 맵으로
+  useEffect(() => { if (open && getState().boardLoaded && !sessions.has(open)) { setNav({ open: null }); try { history.replaceState(null, ''); } catch {} } }, [open, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  window.__mtPhone = { open: (id) => go(id), list: () => go(null), mission: () => { go(null); setMapKey((k) => k + 1); } }; // 시험이 부른다(P256: list·mission은 둘 다 세션 맵으로, mission은 맵을 새로 연다)
   // P88: 알림을 누르면 그 세션을 연다. 열린 창이면 서비스 워커의 메시지로, 새로 열었으면 주소의 ?open=으로(세션이 들어온 뒤 한 번)
   const goRef = useRef(go); goRef.current = go;
   useEffect(() => setOpenHandler((id) => { if (getState().sessions.has(id)) goRef.current(id); }), []);
@@ -193,42 +190,15 @@ export function PhoneApp() {
 
   const s = open ? sessions.get(open) : null;
   return (
-    <div className="mt-phone" ref={rootRef} data-role="phone" data-view={s ? 'session' : nav.mission ? 'mission' : 'list'}>
-      {s ? <PhoneSession key={s.sessionId} s={s} fromMission={nav.mission} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} />
-        : nav.mission ? <PhoneMission onBack={() => mission(false)} onOpen={(id) => go(id)} conn={<ConnPill />} />
-        : <PhoneList onOpen={(id) => go(id)} onNew={() => setSpawn(true)} onMission={() => mission(true)} />}
+    <div className="mt-phone" ref={rootRef} data-role="phone" data-view={s ? 'session' : 'mission'}>
+      {s ? <PhoneSession key={s.sessionId} s={s} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} />
+        : <PhoneMission key={mapKey} onOpen={(id) => go(id)} head={<PhoneHead onNew={() => setSpawn(true)} />} tip={<InstallTip />} />}
       {spawn && <SpawnSheet onClose={() => setSpawn(false)} onStarted={(id) => { setSpawn(false); go(id); }} />}
     </div>
   );
 }
 
-// ---------- 목록 ----------
-function Row({ s, now, showRepo, wsName, onOpen }) {
-  const t = useT();
-  const tone = toneOf(s);
-  const line = lastLineOf(s);
-  const at = line.kind === 'ask' ? s.waitingSince || (s.ask && s.ask.since) : s.lastActivityAt || s.lastAnswerAt;
-  const label = s.kind === 'shell' && s.state !== 'exited' && s.state !== 'sleeping' ? (s.shell && s.shell.atPrompt === false ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[s.state] || s.state;
-  const lead = line.kind === 'ask' ? t(`phone.ask_${line.key}`, { tool: line.tool || '' }) : line.kind === 'prompt' ? t('phone.youSaid') : line.kind === 'error' ? t('state.error') : '';
-  return (
-    <button type="button" className={`mt-ph-row${needsYou(s) ? ' need' : ''}`} data-session={s.sessionId} data-tone={tone} onClick={() => onOpen(s.sessionId)}>
-      <span className="mt-ph-dot" data-tone={tone} aria-hidden="true" />
-      <span className="mt-ph-row-main">
-        <span className="mt-ph-row-top">
-          <b className="mt-ph-name">{s.name}</b>
-          {showRepo && wsName && <span className="mt-ph-repo">{wsName}</span>}
-          <span className="mt-ph-when">{at ? ago(at, now) : ''}</span>
-        </span>
-        <span className="mt-ph-line" data-kind={line.kind}>
-          {lead && <span className="mt-ph-lead">{lead}</span>}
-          <span className="mt-ph-text">{line.text || (lead ? '' : label)}</span>
-        </span>
-      </span>
-      <Chev />
-    </button>
-  );
-}
-
+// ---------- 맵 머리 ----------
 function InstallTip() {
   const t = useT();
   const [, tick] = useState(0);
@@ -277,66 +247,22 @@ export function LevelBadge() {
   );
 }
 
-function PhoneList({ onOpen, onNew, onMission }) {
+// P256: 휴대폰은 세션 맵으로 연다(세션 목록 화면은 없앴다). 맵 머리줄에 목록 머리줄에 있던 것을 그대로 옮긴다:
+// 로고, 연결 알약, 사용량 알약(대표 하나), 알림, 새 세션(+). 응답 필요로 가기는 맵의 위 알약(기다리는 세션 → 그 카드)과 세션 화면의 "다음"이 맡는다
+function PhoneHead({ onNew }) {
   const t = useT();
-  const sessions = useStore((st) => st.sessions);
-  const workspaces = useStore((st) => st.workspaces);
-  const loaded = useStore((st) => st.boardLoaded);
-  const now = useNow(15000);
-  const [folded, setFolded] = useState(readFolded);
   const [pushOpen, setPushOpen] = useState(false); // P88
-  const list = useMemo(() => phoneList([...sessions.values()], workspaces), [sessions, workspaces]);
-  const wsName = (k) => { const w = workspaces.find((x) => x.key === k); return w ? w.name : null; };
-  const toggle = (k) => setFolded((f) => { const n = new Set(f); const key = k || '-'; if (n.has(key)) n.delete(key); else n.add(key); try { store().setItem('mt.phoneFolded', JSON.stringify([...n])); } catch {} return n; });
-  const row = (s, showRepo) => <Row key={s.sessionId} s={s} now={now} showRepo={showRepo} wsName={wsName(s.workspaceKey)} onOpen={onOpen} />;
-  const nextId = list.needs[0] && list.needs[0].sessionId;
-  const empty = loaded && sessions.size === 0;
   return (
-    <div className="mt-ph-list" data-role="phone-list">
-      <header className="mt-ph-head">
-        <img className="mt-ph-brand" src={BRAND_WORDMARK} alt="Atrium" draggable={false} />
-        <ConnPill />
-        <UsagePill compact />
-        <PushButton onClick={() => setPushOpen(true)} />
-        <button type="button" className="mt-ph-icon" data-action="phone-mission" title={t('phoneMission.open')} aria-label={t('phoneMission.open')} onClick={onMission}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v5H9zM3 16h6v5H3zM15 16h6v5h-6zM12 8v4M6 16v-4h12v4" /></svg>
-        </button>
-      </header>
-      <InstallTip />
-      <div className="mt-ph-scroll" data-role="phone-scroll">
-        {list.needs.length > 0 && (
-          <section className="mt-ph-sec need" data-section="needs">
-            <h4>{t('phone.secNeeds', { n: list.needs.length })}</h4>
-            {list.needs.map((s) => row(s, true))}
-          </section>
-        )}
-        {list.working.length > 0 && (
-          <section className="mt-ph-sec" data-section="working">
-            <h4>{t('phone.secWorking', { n: list.working.length })}</h4>
-            {list.working.map((s) => row(s, true))}
-          </section>
-        )}
-        {list.groups.map((g) => {
-          const off = folded.has(g.key || '-');
-          return (
-            <section key={g.key || '-'} className={`mt-ph-sec repo${off ? ' folded' : ''}`} data-section="repo" data-ws={g.key || ''}>
-              <button type="button" className="mt-ph-group" data-action="phone-fold" aria-expanded={!off} onClick={() => toggle(g.key)}>
-                <Chev dir={off ? 'right' : 'down'} />
-                <span className="mt-ph-group-name">{g.name || t('phone.noRepo')}</span>
-                <span className="mt-ph-group-n">{g.sessions.length}</span>
-              </button>
-              {!off && g.sessions.map((s) => row(s, false))}
-            </section>
-          );
-        })}
-        {empty && <div className="mt-ph-empty" data-role="phone-empty">{t('phone.empty')}</div>}
-      </div>
-      <footer className="mt-ph-foot">
-        {nextId && <button type="button" className="mt-ph-next" data-action="phone-next" onClick={() => onOpen(nextId)}>{t('phone.nextNeed', { n: list.needs.length })}</button>}
-        <button type="button" className={`mt-ph-new${nextId ? '' : ' wide'}`} data-action="phone-new" onClick={onNew}>{t('phone.newSession')}</button>
-      </footer>
+    <>
+      <img className="mt-ph-brand" src={BRAND_WORDMARK} alt="Atrium" draggable={false} />
+      <ConnPill />
+      <UsagePill compact />
+      <PushButton onClick={() => setPushOpen(true)} />
+      <button type="button" className="mt-ph-icon" data-action="phone-new" title={t('phone.newSession')} aria-label={t('phone.newSession')} onClick={onNew}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+      </button>
       {pushOpen && <PushSheet onClose={() => setPushOpen(false)} />}
-    </div>
+    </>
   );
 }
 
@@ -360,7 +286,7 @@ function PhoneKeyPad({ onKey, onClose, need }) {
     </div>
   );
 }
-function PhoneSession({ s, onBack, onGo, fromMission = false }) {
+function PhoneSession({ s, onBack, onGo }) {
   const t = useT();
   const id = s.sessionId;
   const sessions = useStore((st) => st.sessions);
@@ -473,7 +399,7 @@ function PhoneSession({ s, onBack, onGo, fromMission = false }) {
   return (
     <div className="mt-ph-session" data-role="phone-session" data-session={id} data-state={s.state}>
       <header className="mt-ph-shead">
-        <button type="button" className="mt-ph-back" data-action="phone-back" aria-label={fromMission ? t('phoneMission.backToMap') : t('phone.back')} onClick={onBack}><Chev dir="left" /><span>{fromMission ? t('phoneMission.short') : t('phone.list')}</span></button>
+        <button type="button" className="mt-ph-back" data-action="phone-back" aria-label={t('phoneMission.backToMap')} onClick={onBack}><Chev dir="left" /><span>{t('phoneMission.short')}</span></button>
         <div className="mt-ph-title">
           <b><span className="mt-ph-dot" data-tone={toneOf(s)} aria-hidden="true" />{s.name}</b>
           <span className="mt-ph-sub">{stateText}</span>
