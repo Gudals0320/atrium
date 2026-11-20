@@ -17,7 +17,7 @@ test('이슈 #18 최소 Node: 22.15부터(22.13은 한글 경로 종료, 22.14�
   assert.equal(range, '>=22.15');
   for (const v of ['22.13.0', '22.14.0', '22.12.9', '20.18.0', 'v22.14.1']) assert.ok(!nodeSatisfies(v, range), v);
   for (const v of ['22.15.0', '22.15.1', '22.23.5', '24.11.0', 'v25.0.0']) assert.ok(nodeSatisfies(v, range), v);
-  assert.equal(nodeProblem('22.13.0', range), 'Node 22.13.0는 지원하지 않습니다. Node 22.15 이상이 필요합니다(https://nodejs.org/)');
+  assert.equal(nodeProblem('22.13.0', range), '지원하지 않는 Node 버전입니다(22.13.0). Node 22.15 이상이 필요합니다(https://nodejs.org/)');
   assert.equal(nodeProblem('22.15.0', range), null);
   assert.equal(nodeProblem(), null);
   assert.equal(U.nodeSatisfies, nodeSatisfies); // update.mjs는 같은 함수를 낸다

@@ -28,5 +28,5 @@ export function nodeSatisfies(version, range) {
 export function nodeProblem(version = process.versions.node, range = engineRange()) {
   if (nodeSatisfies(version, range)) return null;
   const min = String(range).replace(/^\s*>=\s*v?/, '').trim();
-  return `Node ${version}는 지원하지 않습니다. Node ${min} 이상이 필요합니다(https://nodejs.org/)`;
+  return `지원하지 않는 Node 버전입니다(${version}). Node ${min} 이상이 필요합니다(https://nodejs.org/)`;
 }
