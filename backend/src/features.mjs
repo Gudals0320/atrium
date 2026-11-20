@@ -14,8 +14,7 @@ import { LoopEngine, normalizeTrigger, normalizeStop, describeLoop, describeLoop
 import { confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { missionGraph, CALLED_MS } from './mission.mjs';
 import { Settings } from './settings.mjs';
-import { Launchers, HARNESSES, checkGateway } from './launchers.mjs'; // P33: 호출자
-import { Connections, checkOf, fetchConnectionModels } from './connections.mjs'; // P115: 모델 연결
+import { Launchers, HARNESSES } from './launchers.mjs'; // P33: 호출자
 import { CodexModels } from './codex-models.mjs'; // P72: Codex 모델 목록
 import { AgyModels, runAgyModels } from './agy-models.mjs'; // P192: AGY 모델 목록
 import { piModels } from './pi-models.mjs'; // P201: pi 모델 목록
@@ -55,10 +54,8 @@ export function attachFeatures(b, { timers = true } = {}) {
   // P205: 판이 켜질 때 pi 목록을 한 번 미리 받는다(pi는 1초 안에 끝난다. 처음 연 호출자 틀이 빈 목록이 아니게). 켜기를 늦추지 않게 조금 뒤에
   f.piPrefetch = f.piModels ? setTimeout(() => f.piModels.refresh().catch(() => {}), PI_PREFETCH_MS) : null;
   if (f.piPrefetch && f.piPrefetch.unref) f.piPrefetch.unref();
-  // P115: 연결 목록(런처가 ID로 참조). 쓰는 런처가 있으면 지우지 않는다
-  f.connections = new Connections({ store, broadcast, inUse: (id) => (f.launchers ? f.launchers.usersOf(id) : []) });
-  f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, agyModels: f.agyModels, piModels: f.piModels, connections: f.connections, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록(연결)을 옮긴다
-  if (f.launchers.migrated) b.log(`launchers migrated to v2 (${f.launchers.migrated.oldBoard ? 'old board' : 'new board'}): favorites ${f.launchers.migrated.favorites.join(',')}, connections moved ${(f.launchers.migrated.v2 && f.launchers.migrated.v2.moved.length) || 0}`);
+  f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, agyModels: f.agyModels, piModels: f.piModels, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록을 옮긴다. P255: 모델 연결은 걷어 냈다(옛 meta connections는 읽지 않는다)
+  if (f.launchers.migrated) b.log(`launchers migrated to v2 (${f.launchers.migrated.oldBoard ? 'old board' : 'new board'}): favorites ${f.launchers.migrated.favorites.join(',')}`);
   f.outputs = new Outputs({ cfg: b.cfg, store, resolve: (r) => b.resolve(r), hooked: (s) => b.hooked(s), transcriptOf, readMessages, workspaceName: wsName, apiError });
   f.thread = new ThreadLog({
     store, broadcast,
@@ -154,18 +151,6 @@ export function attachFeatures(b, { timers = true } = {}) {
     'launcher.favorite': (p) => f.launchers.favorite(p),
     'launcher.order': (p) => f.launchers.order(p),
     'launcher.preview': (p) => f.launchers.preview(p),
-    // P115 연결
-    'connection.list': () => f.connections.list(),
-    'connection.create': (p) => f.connections.create(p),
-    'connection.update': (p) => { const r = f.connections.update(p); broadcast('launchers.updated', f.launchers.list()); return r; },
-    'connection.delete': (p) => f.connections.delete(p),
-    // 시작 전 확인과 같은 검사(health 주소면 2xx·status ok, 아니면 base URL이 닿는지)와 모델 목록. 저장하지 않은 값(p.connection)도 본다
-    'connection.check': async (p) => {
-      const c = p && p.connection ? { ...p.connection, id: p.connection.id || 'draft' } : f.connections.get(p && p.id);
-      const health = await checkGateway({ ...checkOf(c), name: c.name }).then(() => ({ ok: true }), (e) => ({ ok: false, why: e.vars ? e.vars.why : e.message }));
-      const models = await fetchConnectionModels(c);
-      return { health, models: models.ok ? { ok: true, count: models.models.length, ids: models.models.slice(0, 50).map((m) => m.id) } : { ok: false, why: models.why } };
-    },
     // P97: 붙여 넣은 명령줄 → 호출자 칸(터미널이 아는 에이전트 종류로 하네스를 알아본다)
     'launcher.parse': async (p) => f.launchers.parse({ ...p, kinds: await b.adapter.agentKinds().then((ks) => ks.map((k) => k.kind)).catch(() => []) }),
   };

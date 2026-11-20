@@ -36,7 +36,7 @@ test('P33 풀기: codex는 -m 모델과 추가 인자, 다른 종류는 추가 �
   assert.equal(resolveLauncher(L({ harness: 'codex', model: 'gpt-6-astra' }), { model: 'o9' }).model, 'o9');
   const gk = L({ harness: 'grok', model: 'ignored', args: '--x 1' });
   assert.equal(gk.model, '', '표에 없는 종류는 모델 칸이 없다');
-  assert.deepEqual(resolveLauncher(gk), { kind: 'grok', flavor: null, launcher: 'x', launcherId: null, model: null, args: ['--x', '1'], command: '', startCommand: '', connectionId: null, gateway: null });
+  assert.deepEqual(resolveLauncher(gk), { kind: 'grok', flavor: null, launcher: 'x', launcherId: null, model: null, args: ['--x', '1'], command: '', startCommand: '', gateway: null });
   assert.equal(L({ harness: 'pi', model: 'p/m' }).model, 'p/m', 'P115: pi는 모델 칸이 있다');
   assert.deepEqual(resolveLauncher(L({ harness: 'shell' })), { kind: 'shell', flavor: null, launcher: 'x', launcherId: null, command: '' });
   const cmd = resolveLauncher(L({ harness: 'command', command: 'echo hi', env: { A: "it's" }, icon: 'grok' }));
@@ -72,11 +72,7 @@ test('P33 검사: 이름(빈 값, 겹침은 대소문자 무시), 모델 글자,
   assert.throws(() => L({ harness: 'claude', env: { A: 'a\nb' } }), (e) => e.key === 'launchers.err.envValue');
   assert.throws(() => L({ harness: 'claude', args: '--settings x.json' }), (e) => e.key === 'launchers.err.argsReserved');
   assert.throws(() => L({ harness: 'claude', args: '--model=opus' }), (e) => e.key === 'launchers.err.argsReserved');
-  // P115: 확인 주소는 연결의 health 주소로 옮겼다. 연결 참조는 있는 연결이어야 하고 그 하네스의 프로토콜이어야 한다
-  const conns = [{ id: 'ca', protocol: 'anthropic-messages' }, { id: 'co', protocol: 'openai-responses' }];
-  assert.throws(() => normalizeLauncher({ name: 'c', harness: 'claude', connection: 'nope' }, { connections: conns }), (e) => e.key === 'launchers.err.connectionMissing');
-  assert.throws(() => normalizeLauncher({ name: 'c', harness: 'codex', connection: 'ca' }, { connections: conns }), (e) => e.key === 'launchers.err.connectionProtocol');
-  assert.equal(normalizeLauncher({ name: 'c', harness: 'claude', connection: 'ca' }, { connections: conns }).connection, 'ca');
+  // P255: 모델 연결은 걷어 냈다. 옛 연결 참조는 오류 없이 버린다
   assert.equal('checkUrl' in normalizeLauncher({ name: 'c', harness: 'claude', checkUrl: 'http://x' }), false);
   assert.throws(() => L({ harness: 'claude', icon: 'Bad Icon' }), (e) => e.key === 'launchers.err.icon');
   assert.throws(() => L({ harness: 'Bad Kind' }), (e) => e.key === 'launchers.err.harness');
@@ -101,10 +97,11 @@ test('P33 옮기기: 옛 설정 → 호출자, 레일 네 단추 순서로 즐�
   // 옛 직접 명령이 있으면 DeepSeek는 명령 호출자
   const c = initialLaunchers({ oldSettings: { deepseekCommand: 'ocx claude' }, oldBoard: true }).items.find((l) => l.id === 'deepseek');
   assert.deepEqual([c.harness, c.command, c.icon], ['command', 'ocx claude', 'deepseek']);
-  // P115: 옮긴 목록(v2)의 호출자는 검사를 지난다(DeepSeek는 연결을 쓰는 보통 claude 런처)
+  // P115·P255: 옮긴 목록(v2)의 호출자는 검사를 지난다(DeepSeek는 env에 게이트웨이 주소를 그대로 둔 보통 claude 런처)
   const m = migrateLaunchers(v);
-  for (const l of m.list.items) assert.deepEqual(normalizeLauncher(l, { others: m.list.items, connections: m.connections }), l, l.id);
-  assert.equal(m.list.items.find((l) => l.id === 'deepseek').connection, m.connections[0].id);
+  for (const l of m.list.items) assert.deepEqual(normalizeLauncher(l, { others: m.list.items }), l, l.id);
+  assert.equal(m.list.items.find((l) => l.id === 'deepseek').env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:10100');
+  assert.equal('connection' in m.list.items.find((l) => l.id === 'deepseek'), false);
   assert.deepEqual(LEGACY_KEYS.sort(), Object.keys(old).sort());
 });
 

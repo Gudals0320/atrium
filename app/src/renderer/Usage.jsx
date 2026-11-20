@@ -7,6 +7,7 @@ import { useT, t as tt } from './lib/i18n.js';
 import { notifyAllowed } from './lib/multiclient.js';
 import { PROVIDERS, PROVIDER_NAME, pillOf, pillLine, shortKey, shownWindows, livePct, levelOf, spanOf, windowKey, creditOf, windowLabel, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
 import { KINDS } from './lib/kinds.js';
+import { creditMode, creditPillText } from './lib/p255.js'; // P255: Codex 한도를 다 써서 크레딧을 쓰는 중이면 퍼센트 대신 남은 크레딧
 
 function useNow(ms = 30000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
 const span = (t, ms) => { const s = spanOf(ms); return t(s.key, s.vars); };
@@ -72,7 +73,8 @@ export function UsagePill({ compact = false }) {
   if (!v) return null;
   const pill = pillOf(v, now);
   const line = pillLine(v, now);
-  const title = line.parts.map((x) => `${x.name} ${x.wins.map((w) => `${kindName(t, w)} ${w.pct}%`).join(' · ')}`).join('\n') || t('usage.none');
+  const credit = (k) => creditPillText(creditMode(v.providers && v.providers[k], now)); // P255
+  const title = line.parts.map((x) => { const c = credit(x.provider); return `${x.name} ${x.wins.map((w) => `${kindName(t, w)} ${w.pct}%`).join(' · ')}${c ? ` · ${t(c.key, c.vars)}` : ''}`; }).join('\n') || t('usage.none'); // 풍선에는 한도 창도 남긴다
   return (
     <div className="mt-drop" ref={ref}>
       <button className={`mt-cp usage lv-${pill.level}${open ? ' on' : ''}${compact ? ' compact' : ' line'}`} title={title} data-role="usage" data-level={pill.level} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
@@ -82,7 +84,7 @@ export function UsagePill({ compact = false }) {
             {i > 0 && <span className="mt-usage-sep" aria-hidden="true" />}
             <span className="mt-usage-part line" data-provider={x.provider} data-pct={Math.max(...x.wins.map((w) => w.pct))}>
               {KINDS[x.provider] && KINDS[x.provider].logo ? <img className="mt-usage-logo" src={KINDS[x.provider].logo} alt={x.name} draggable={false} /> : <span className="dim">{x.name}</span>}
-              {x.wins.map((w, j) => (
+              {credit(x.provider) ? <span className="mt-usage-credit-v" data-role="usage-credit-pill">{t(credit(x.provider).key, credit(x.provider).vars)}</span> : x.wins.map((w, j) => (
                 <Fragment key={w.id}>
                   {j > 0 && <span className="mt-usage-dotsep" aria-hidden="true">·</span>}
                   <span className="mt-usage-k">{shortName(t, w.kind)}</span><span className={`mono mt-usage-v lv-${w.level}`} data-window={w.id} data-pct={w.pct}>{w.pct}</span>

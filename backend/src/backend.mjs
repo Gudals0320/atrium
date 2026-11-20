@@ -53,8 +53,7 @@ import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 
 import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
-import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, claudeConnection, agyHomeOf } from './harness.mjs';
-import { checkOf } from './connections.mjs'; // P115: 연결 시작 전 확인 // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
+import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf } from './harness.mjs'; // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
@@ -1098,22 +1097,16 @@ export class Backend {
     return null;
   }
   // 띄울 값. 판의 env(토큰은 빼고 파일로), PATH 앞의 bin/, 안내문, 호출자 값(모델·추가 인자), 이어 가기
-  // P115: 연결 ID → 연결(없으면 null)
-  connectionOf(id) { if (!id) return null; const C = this.features && this.features.connections; return C ? C.find(id) : null; }
-  // 판이 연결에서 읽어 둔 모델 목록(opencode·pi 설정에 채운다). 없으면 []
-  connectionModels(id) { const hit = this.branch && this.branch.gwCache && this.branch.gwCache.get(id); return hit && hit.r && hit.r.ok ? hit.r.models.map((m) => m.id) : []; }
   harnessLaunchOf(s, { resume = false } = {}) {
     const plan = s.harnessPlan || {};
-    // P115: 연결을 쓰는 세션은 그 연결 없이 띄우지 않는다(pi는 -e 없이 다른 제공자로 샌다). 까닭은 오류로 보인다
-    const conn = this.connectionOf(plan.connectionId);
-    if (plan.connectionId && !conn) throw keyed(apiError('connection_missing', `${s.name}의 연결(${plan.connectionId})을 찾을 수 없어 띄우지 않았습니다. 설정에서 연결을 다시 만들거나 런처의 연결을 고른 뒤 다시 여세요.`), 'connections.err.missingStart', { launcher: s.name, id: plan.connectionId });
+    // P255: 옛 세션 기록의 연결(plan.connectionId)은 읽지 않는다(하네스 기본 로그인으로 띄운다)
     const br = this.branch && typeof this.branch.token === 'function' ? this.branch : null; // 하위 세션 명령이 없는 판(시험의 가짜 판)은 env와 토큰 없이
     if (br) writeTokenFile(this.cfg.sessionsDir, s.sessionId, br.token(s.sessionId));
     const hf = this.harnessFiles || {};
     // P227: 같은 대화를 이어 갈 때(Codex는 대화 ID를 알 때) 모델·노력 수준은 그 대화가 마지막으로 쓰던 값. 처음 띄울 때는 띄운 값(plan.model)
     const hsid = resume ? this.harnessSessionIdOf(s) : null;
     const rm = resume && (s.kind === 'pi' || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: s.rigRole && this.rig3 ? this.rig3.launcherArgs(s, plan.args || []) : plan.args || [], /* P241: rig 역할(Codex 무인·섹터) */ instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, connection: conn, connectionModels: conn ? this.connectionModels(conn.id) : [], filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: s.rigRole && this.rig3 ? this.rig3.launcherArgs(s, plan.args || []) : plan.args || [], /* P241: rig 역할(Codex 무인·섹터) */ instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1526,11 +1519,8 @@ export class Backend {
       }
       if (command && p.prompt) throw keyed(apiError('not_agent', "직접 입력한 명령으로 실행하는 세션에는 첫 요청을 자동 전송하지 않습니다. 보드에서 에이전트의 준비 상태를 확인할 수 없으므로 세션이 시작된 뒤 요청을 보내세요."), 'commandNoPrompt');
       if (shell && p.prompt) throw keyed(apiError('not_agent', "셸에는 첫 요청을 자동 전송하지 않습니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요."), 'shellNoPrompt');
-      // P25·P33·P115: 연결을 쓰는 런처는 그 연결이 닿아야 띄운다(모든 하네스). 판이 켜지 않고 알린다. 지운 연결이면 띄우지 않는다(다른 곳으로 새지 않게)
-      const conn = plan.connectionId ? this.connectionOf(plan.connectionId) : null;
-      if (plan.connectionId && !conn) throw keyed(apiError('connection_missing', `런처 ${plan.launcher || ''}의 연결(${plan.connectionId})을 찾을 수 없어 띄우지 않았습니다. 설정에서 런처의 연결을 다시 고르세요.`), 'connections.err.missingStart', { launcher: plan.launcher || '', id: plan.connectionId });
-      if (conn) await checkGateway({ ...checkOf(conn), name: conn.name });
-      else if (claude && plan.gateway && plan.gateway.url) await checkGateway({ ...plan.gateway, name: plan.launcher || '' });
+      // P25·P33: env에 게이트웨이 주소(ANTHROPIC_BASE_URL)를 둔 claude 런처는 그 주소가 닿아야 띄운다. P255: 모델 연결은 걷어 냈다
+      if (claude && plan.gateway && plan.gateway.url) await checkGateway({ ...plan.gateway, name: plan.launcher || '' });
       // G1: 시작 폴더의 워크스페이스
       const ws = await workspaceOf(cwd);
       // P183: 사람이 띄우며 준 첫 요청(창의 새 세션 대화상자, 사람의 atrium spawn --prompt)은 사람의 deliver다(session.send와 같은 규칙).
@@ -1542,14 +1532,12 @@ export class Backend {
       const roleSpawn = p[ROLE_SPAWN] && this.rig3 ? this.rig3.launchOf(ws.key, p[ROLE_SPAWN], { kind, cwd }) : null;
       if (claude && roleSpawn && roleSpawn.permissionMode) permissionMode = roleSpawn.permissionMode;
       let hookToken = '', settingsPath = '', trust = { needsTrust: null, reason: `${kind}: 예상하지 않음` }, args = [], resumeArgv = null;
-      const cc = claude ? claudeConnection(conn) : null; // P115: 연결 → 설정 파일의 ANTHROPIC_BASE_URL·apiKeyHelper
-      const envAll = claude ? { ...((plan.env && Object.keys(plan.env).length) ? plan.env : {}), ...cc.env } : {};
+      const envAll = claude ? { ...((plan.env && Object.keys(plan.env).length) ? plan.env : {}) } : {};
       const env = claude && Object.keys(envAll).length ? envAll : null;
       if (claude) {
         hookToken = crypto.randomBytes(24).toString('hex');
         const extra = this.branch.settingsExtra(sessionId);
-        if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수와 연결. 판의 값이 이긴다
-        if (Object.keys(cc.settings).length) extra.settings = cc.settings;
+        if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수. 판의 값이 이긴다
         if (roleSpawn && roleSpawn.amp) extra.amp = roleSpawn.amp; // P241
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
@@ -1558,7 +1546,7 @@ export class Backend {
         resumeArgv = buildResumeArgv({ claudeCommand: this.cfg.claudeCommand, startCommand, ...launch });
       }
       // P115: 다른 종류는 하네스 어댑터(harness.mjs)가 판의 env·안내문·세션 ID를 더한다. 다시 띄울 값(모델, 호출자 추가 인자, 호출자)은 세션에 남긴다
-      const harnessPlan = harness ? { model, args: (plan.args || []).map(String), launcher: plan.launcher || null, launcherId: plan.launcherId || null, connectionId: plan.connectionId || null, harnessSessionId: null } : null;
+      const harnessPlan = harness ? { model, args: (plan.args || []).map(String), launcher: plan.launcher || null, launcherId: plan.launcherId || null, harnessSessionId: null } : null;
 
       this.ensureWorkspace(ws, `spawn ${name}`);
       const rt = newRuntime({ trustPredicted: !!trust.needsTrust, kind, hooked: claude });
@@ -1580,7 +1568,7 @@ export class Backend {
       // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
       if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
-      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(claude && plan.connectionId ? { connection: plan.connectionId, launcherEnv: plan.env || {} } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
+      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
       await this.adapter.refreshSubscription();
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });

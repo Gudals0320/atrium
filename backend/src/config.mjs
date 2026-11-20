@@ -61,7 +61,7 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     port: Number(E('PORT') || base.port),
     dataDir: path.resolve(E('DATA_DIR') || base.dataDir),
     claudeCommand: 'claude',
-    // P115: 옛 게이트웨이 환경 변수(ATRIUM_*_HEALTH·_BASE_URL). 이번 릴리스 동안 읽어 연결로 옮기고 경고한다(launcher-migrate.mjs). 다음 릴리스에서 없앤다
+    // P115: 옛 게이트웨이 환경 변수(ATRIUM_*_HEALTH·_BASE_URL). P255: P33 전 판의 처음 런처 목록(DeepSeek 예시의 env)에만 쓴다(launcher-migrate.mjs)
     legacyGateway: { healthUrl: E('OCX_HEALTH') || null, baseUrl: E('OCX_BASE_URL') || null },
     codexHome: codexHomeOf(env), // P72: Codex 모델 목록 캐시(models_cache.json)를 읽을 폴더. CODEX_HOME(Codex와 같은 변수), 없으면 ~/.codex
     // P192: AGY 모델 목록(agy models)을 띄울 명령. ATRIUM_AGY=none이면 띄우지 않고 고정 목록. AGY 대화 기록 폴더(ATRIUM_AGY_HOME, 없으면 ~/.gemini/antigravity-cli)

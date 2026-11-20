@@ -88,10 +88,9 @@ export function harnessFields(harnesses, id) {
   const h = (harnesses || []).find((x) => x.id === id);
   return h ? h.fields : ['args'];
 }
-// P201: pi 목록은 pi 자기 설정의 모델(제공자/ID)이다. 연결을 고른 pi 호출자의 모델은 그 연결의 모델 ID라 목록을 보이지 않는다
-export function harnessModels(harnesses, id, { connection = '' } = {}) {
+// P201: pi 목록은 pi 자기 설정의 모델(제공자/ID)이다
+export function harnessModels(harnesses, id) {
   const h = (harnesses || []).find((x) => x.id === id);
-  if (id === 'pi' && connection) return [];
   return h ? h.models || [] : [];
 }
 // P72: 모델 입력칸 아래 목록에 보일 모델. 비었거나 목록의 이름 그대로면 전부, 아니면 이름·보이는 이름에 든 글자로 거른다(대소문자 무시)
@@ -107,21 +106,8 @@ export function harnessModelLabels(harnesses, id) {
   return (h && h.modelLabels) || {};
 }
 
-// 새 호출자의 빈 틀. P97: startCommand(실행 명령, 비면 그 하네스의 명령). P115: connection(연결 ID, 비면 하네스의 기본 로그인)
-export const blankLauncher = (harness = 'claude') => ({ id: null, name: '', harness, icon: '', model: '', effort: '', permissionMode: 'manual', args: '', env: {}, command: '', connection: '', startCommand: '' });
-
-// P115: 런처 틀의 연결 고르기. 그 하네스가 쓰는 프로토콜이 아닌 연결은 고를 수 없게(흐리게) 까닭과 함께
-// → [{ id, name, protocol, baseUrl, ok }]. protocols는 그 하네스의 것(백엔드 harnesses[].protocols)
-export function connectionChoices(connections, harnesses, harnessId) {
-  const h = (harnesses || []).find((x) => x.id === harnessId);
-  const ps = (h && h.protocols) || [];
-  return (connections || []).map((c) => ({ id: c.id, name: c.name, protocol: c.protocol, baseUrl: c.baseUrl, ok: ps.includes(c.protocol) }));
-}
-export const harnessProtocols = (harnesses, harnessId) => { const h = (harnesses || []).find((x) => x.id === harnessId); return (h && h.protocols) || []; };
-// P115: 연결 틀의 base URL 자리표시(프로토콜마다 /v1을 어디까지 쓰는지 다르다)
-export const baseUrlHintKey = (protocol) => (protocol === 'anthropic-messages' ? 'connections.baseUrlPhAnthropic' : 'connections.baseUrlPhOpenai');
-// P115: 연결 하나의 빈 틀
-export const blankConnection = () => ({ id: null, name: '', protocol: 'openai-chat', baseUrl: '', auth: { env: '', scheme: '' }, healthUrl: '', modelsUrl: '' });
+// 새 호출자의 빈 틀. P97: startCommand(실행 명령, 비면 그 하네스의 명령)
+export const blankLauncher = (harness = 'claude') => ({ id: null, name: '', harness, icon: '', model: '', effort: '', permissionMode: 'manual', args: '', env: {}, command: '', startCommand: '' });
 
 // P97: 붙여 넣은 명령줄을 무엇으로 알아봤는지(백엔드 launcher.parse의 recognized) → 칩 목록 [{ tone: ok|dim|warn, key, vars }]. 사전 launchers.parse.*
 export function recognizedChips(rec) {

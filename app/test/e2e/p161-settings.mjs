@@ -71,14 +71,10 @@ async function shot() {
       const lp = await page.evaluate(LAUNCHER_PROBE);
       check(`[${lang}] 런처 목록: 줄 ${lp.rows.length}개가 겹치지 않고 grid로 놓인다`, lp.rows.length >= 2 && lp.overlap === 0 && lp.rows.every((r) => r.pos !== 'absolute' && r.display === 'grid'), lp);
       await shotTo(page, `settings-launchers-${lang}`, await modalClip(page, '[data-role="settings"]'));
-      // 2 설정 연결(빈 판)
-      await openSettings(page, 'connections');
-      const cp = await page.evaluate(() => { const e = document.querySelector('[data-role="connections-empty"]'); return e ? { text: e.innerText, h: e.getBoundingClientRect().height, lines: e.children.length } : null; });
-      check(`[${lang}] 연결 칸: 빈 상태 안내(제목·무엇·어떻게)`, cp && cp.lines === 3 && cp.h > 40, cp);
-      await shotTo(page, `settings-connections-${lang}`, await modalClip(page, '[data-role="settings"]'));
+      // 2 P255: 설정의 연결 탭은 걷어 냈다
       // 3 설정의 다른 칸들(한 장씩)
       const tabs = await page.$$eval('[data-role="settings-tabs"] [data-tab]', (els) => els.map((e) => e.dataset.tab));
-      for (const t of tabs.filter((x) => !['launchers', 'connections'].includes(x))) { await openSettings(page, t); await shotTo(page, `settings-${t}-${lang}`, await modalClip(page, '[data-role="settings"]')); }
+      for (const t of tabs.filter((x) => x !== 'launchers')) { await openSettings(page, t); await shotTo(page, `settings-${t}-${lang}`, await modalClip(page, '[data-role="settings"]')); }
       await page.click('[data-action="settings-close"]').catch(() => {}); await sleep(300);
       // 4 새 세션 대화상자(Shift+런처)
       await page.click('[data-role="rail-left"] [data-launcher="claude"]', { modifiers: ['Shift'] });
