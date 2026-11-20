@@ -391,6 +391,8 @@ export class DeliveryQueue extends EventEmitter {
       if (d.draftLookAt && now < d.draftLookAt) continue; // P128: 쓰다 만 글을 비키지 못했다. 잠시 뒤 다시 본다(사람이 보내거나 지우면 그때 보낸다)
       d.bgOnly = !!(view && view.bgOnly && view.state === 'working'); // P240: 뒤 일만 도는 세션에 보통 보내기로 넣는다(다시 보내기는 하지 않는다)
       if (d.bgOnly) this.emit('bg_only', { deliveryId: d.deliveryId, sessionId: sid });
+      // P257: 전달 직전 판의 손(문서 점검 경고 한 줄을 붙이거나, 점검이 도는 동안 잠깐 붙잡는다). 'wait'면 다음 pump에
+      if (this.beforeDeliver) { let w; try { w = this.beforeDeliver(d); } catch { w = undefined; } if (w === 'wait') continue; }
       this._deliver(d);
     }
   }

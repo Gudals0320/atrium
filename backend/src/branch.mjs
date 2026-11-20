@@ -41,6 +41,7 @@ import { WorkUnits, checkAgentText } from './work-units.mjs'; // P180: 일 단�
 import { RigAdmin } from './rig-admin.mjs'; // P188: atrium rig(검사, 판 목록, 장부, 역할의 항목·도구·조정 명령)
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때와 동료 소식
+import { DocWatch } from './doc-watch.mjs'; // P257: 문서 점검(지휘 세션 턴 끝·done 알림)
 import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | news, 턴 끝·done 자동 기록)
 
 
@@ -66,9 +67,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
-    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} rig:*)`, `Bash(${c} rig *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`]), // P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P188: rig(관리자 자리만, 판이 거른다). P204: log·news
+    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} rig:*)`, `Bash(${c} rig *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`]), // P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P188: rig(관리자 자리만, 판이 거른다). P204: log·news
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
-    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} rig *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`]), // P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P188: rig. P204: log·news
+    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} rig *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`]), // P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P188: rig. P204: log·news
 ];
 // P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
 const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
@@ -345,6 +346,7 @@ export class Branch {
       onDrop: (sid, lines) => { if (b.sessions.has(sid)) b.store.addEvent(sid, 'link_notice_dropped', { lines }); },
     });
     this.news = new PeerNews(b, this, newsOpts); // P204: 동료 소식(턴 끝·done 자동 기록, atrium log | news)
+    this.docs = new DocWatch(b, this); b.docs = this.docs; // P257: 문서 점검(일 단위가 done·머리에서 부른다)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
     b.bus.on('closed', (s, reason) => {
       this.closed.set(s.sessionId, { parentSessionId: s.parentSessionId || null, name: s.name });
@@ -352,7 +354,7 @@ export class Branch {
       this.onClosed(s, reason, told);
       this.news.onClosed(s); // P204
     });
-    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
+    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } try { this.docs.onSession(s, sum); } catch (e) { b.log('docs session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read
     this.rigAdmin = new RigAdmin(b, this); // P188: atrium rig(검사, 판 목록, 장부, 역할 명령)
     this.handlers = {
@@ -577,6 +579,7 @@ export class Branch {
     if (op === 'log') return this.news.logVerb(s, body); // P204: atrium log "<한 줄>"
     if (op === 'news') return this.news.newsVerb(s, body); // P204: atrium news [<이름>] [--all]
     if (op === 'rig') return this.rigAdmin.verb(s, body); // P188: atrium rig <일>
+    if (op === 'docs') return this.docs.verb(s); // P257: atrium docs(문서 점검 결과)
     if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
     if (op === 'usage-report') return this.b.usage ? this.b.usage.report(String(body.kind || ''), body.input) : { ok: false }; // P211: 판의 상태 줄 명령이 알린 사용량
     throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
