@@ -31,7 +31,7 @@ export function creditMode(entry, now = Date.now()) {
   if (c.balance == null || c.balance === '') return null;
   const n = Number(c.balance);
   if (!Number.isFinite(n)) return null;
-  return { kind: 'balance', n: Math.floor(n).toLocaleString('en-US') };
+  return { kind: 'balance', n: Math.round(n).toLocaleString('en-US') }; // 펼침(usage.js creditOf)과 같은 반올림
 }
 // 크레딧 모드 → 사전 열쇠와 값 | null
 export function creditPillText(m) {

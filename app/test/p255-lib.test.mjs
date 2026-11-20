@@ -29,8 +29,8 @@ const W = (id, usedPct, resetsAt = NOW + 3600000) => ({ id, minutes: id === '5h'
 const codex = (windows, credits) => ({ provider: 'codex', windows, credits });
 test('Codex 크레딧: 한도 창이 100%이고 크레딧이 있으면 남은 크레딧, 무제한, 한도 남음, 자료 없음', () => {
   const cr = { hasCredits: true, unlimited: false, balance: '46647.8239250000' };
-  assert.deepEqual(creditMode(codex([W('5h', 100), W('week', 40)], cr), NOW), { kind: 'balance', n: '46,647' });
-  assert.deepEqual(creditMode(codex([W('5h', 30), W('week', 100)], cr), NOW), { kind: 'balance', n: '46,647' }, '주간 창도');
+  assert.deepEqual(creditMode(codex([W('5h', 100), W('week', 40)], cr), NOW), { kind: 'balance', n: '46,648' });
+  assert.deepEqual(creditMode(codex([W('5h', 30), W('week', 100)], cr), NOW), { kind: 'balance', n: '46,648' }, '주간 창도');
   assert.equal(creditMode(codex([W('5h', 99.9), W('week', 40)], cr), NOW), null, '한도가 남으면 퍼센트');
   assert.equal(creditMode(codex([W('5h', 100, NOW - 1)], cr), NOW), null, '리셋이 지난 창은 새 창');
   assert.deepEqual(creditMode(codex([W('5h', 100)], { hasCredits: false, unlimited: true, balance: null }), NOW), { kind: 'unlimited' });
