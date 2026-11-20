@@ -2774,3 +2774,23 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-rig7-card .st { font-size: 13px; color: #8E8B83; }
 .mt-rig7-card .st.work { color: #A8D08D; }
 .mt-rig7-none { position: absolute; left: 0; top: 0; color: #8E8B83; }
+
+/* P259: 캔버스 rig 선 — 보통 연결(.mt-edge, .mt-edge-label)과 같은 가족. 곡선·굵기·칩 생김새는 같고 색만 rig 색, 도착 끝은 뚜렷한 화살촉 */
+:root { --wire-rig: #a9a69d; --wire-rig-hot: #ece9e1; }
+.react-flow__edge-path.mt-edge.rigc { stroke: var(--wire-rig); stroke-width: 2.6; opacity: 0.8; stroke-linecap: butt; }
+.react-flow__edge-path.mt-edge.rigc.lit { stroke: var(--wire-rig-hot); stroke-width: 3.4; opacity: 1; }
+.react-flow__edge-path.mt-edge.rigc.raise { stroke: var(--attn); stroke-width: 2.6; stroke-dasharray: 3 8; opacity: 0.85; }
+.mt-rigc-tip path { fill: var(--wire-rig); }
+.mt-rigc-tip.lit path { fill: var(--wire-rig-hot); }
+.mt-rigc-tip.raise path { fill: var(--attn); }
+.mt-rigc-end { fill: var(--wire-rig); }
+.mt-rigc-end.lit { fill: var(--wire-rig-hot); }
+.mt-rigc-end.raise { fill: var(--attn); }
+.mt-edge-label.rigc { left: 0; top: 0; border-color: color-mix(in srgb, var(--wire-rig) 55%, transparent); }
+.mt-edge-label.rigc.lit { color: var(--text); border-color: var(--wire-rig-hot); }
+.mt-edge-label.rigc.raise { color: var(--attn); border-color: var(--attn-line); border-style: dashed; }
+.mt-rigc-dir { flex: none; display: inline-block; font-style: normal; font-size: 11px; line-height: 1; color: var(--wire-rig); }
+.mt-edge-label.rigc.lit .mt-rigc-dir { color: var(--wire-rig-hot); }
+.mt-edge-label.rigc.raise .mt-rigc-dir { color: var(--attn); }
+.mt-rigc-open { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #e5484d; }
+.mt-rigc-wait { flex: none; font-size: 11px; font-weight: 600; line-height: 16px; padding: 0 6px; border-radius: 8px; color: var(--attn-text); background: var(--attn-bg); }

@@ -7,8 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ANGLE, angleOk, lineAngle } from '../../backend/src/rig-map-layout.mjs';
-import { spreadEnds } from '../src/renderer/lib/rig-map.js';
-import { gridPlace, faceEnds, segHitsRect, rigRoute, polyLines, ROUTE, textW13, pairLines, pairLit, lineText, twoLines, v7Layout, rigEdges, rigTag, hideRigSessions, V7, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
+import { gridPlace, faceEnds, segHitsRect, textW13, pairLines, pairLit, lineText, twoLines, v7Layout, rigEdges, rigTag, hideRigSessions, V7, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
 import { lineageLayout } from '../src/renderer/lib/mission-lineage.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
@@ -128,9 +127,9 @@ test('P254 rigEdges(캔버스): 쌍마다 두 줄 자료(lines), 밝기는 기�
   const dv = es.find((e) => e.kind === 'path' && e.a === 'data' && e.b === 'verify');
   assert.equal(dv.lines.bottom, null, '캔버스에는 이웃하지 않은 쌍도 두 줄 꼴로 그린다(한쪽 길이면 한 줄)');
   assert.deepEqual(es.filter((e) => e.kind === 'raise').map((e) => [e.source, e.target]), [['s-trade', 'b1']]);
-  // 캔버스 선은 시안 꼴: 두 줄(굵기 2·1.5), 화살촉은 선이 그린다(옛 RIG_TIP 없음), 글 위·아래, 대기, 붉은 점, 노랑 점선
+  // P259: 캔버스 선은 보통 연결과 같은 곡선 가족(p259-lib.test.mjs). 화살촉은 선이 그린다(옛 RIG_TIP 없음), 대기, 붉은 점
   const src = read('RigLines.jsx');
-  for (const s of ['pairLit(', 'V7.W1 * k', 'V7.W2 * k', 'data-line="top"', 'data-line="bottom"', 'rig-wait', 'rig-open-return', 'V7.RAISEDASH', "t('rigV7.wait'"]) assert.ok(src.includes(s), s);
+  for (const s of ['pairLit(', 'rig-wait', 'rig-open-return', "t('rigV7.wait'", 'markerEnd']) assert.ok(src.includes(s), s);
   assert.ok(!/RIG_TIP/.test(read('Canvas.jsx')));
 });
 
@@ -242,42 +241,4 @@ test('P254 gridPlace(rig-trade): 2D 칸, 선이 노드를 지나지 않고 엇�
   const gb = gridPlace(big, big.slice(1).map((x, i) => ({ item: 'i' + i, from: [big[i]], to: [x] })), {});
   const rb = Object.fromEntries([...big, '@builder'].map((n) => { const c = gb.cells.get(n); return [n, { x: c.c * gb.colStep, y: c.r * gb.rowStep, w: 600, h: 400 }]; }));
   for (let i = 0; i + 1 < big.length; i++) { const [p, q] = faceEnds(rb[big[i]], rb[big[i + 1]]); for (const n of Object.keys(rb)) if (n !== big[i] && n !== big[i + 1]) assert.ok(!segHitsRect(p, q, rb[n], 1)); }
-});
-
-test('P254 rigRoute: 곧은 선이 다른 노드를 지나면 직각으로 돌고(노드를 지나지 않음), 같은 통로에 두 선을 겹치지 않는다. polyLines는 두 줄을 나란히', () => {
-  const R = (c, r) => ({ x: c * 1800, y: r * 1050, w: 1440, h: 810 });
-  const taken = [];
-  assert.equal(rigRoute(R(0, 0), R(1, 0), [R(2, 0)], taken), null, '막는 노드가 없으면 곧은 선');
-  const k = 2;
-  const r1 = rigRoute(R(0, 0), R(2, 0), [R(1, 0)], taken, k);
-  assert.ok(r1 && r1.pts.length >= 3);
-  for (let i = 0; i + 1 < r1.pts.length; i++) assert.ok(!segHitsRect(r1.pts[i], r1.pts[i + 1], R(1, 0), 0), '가운데 노드를 지나지 않는다');
-  for (let i = 1; i + 2 < r1.pts.length; i++) for (const r of [R(0, 0), R(2, 0)]) assert.ok(!segHitsRect(r1.pts[i], r1.pts[i + 1], r, 0), '제 노드도 가로지르지 않는다');
-  // 돌아가는 선과 노드 사이에 아래 줄 글·대기 칸이 들어간다(화면 px × k)
-  const ys = r1.pts.slice(1, -1).map((p) => p[1]);
-  assert.ok(Math.min(...ys) <= -ROUTE.M * k || Math.max(...ys) >= 810 + ROUTE.M * k);
-  const r2 = rigRoute(R(0, 0), R(2, 0), [R(1, 0)], taken, k);
-  const mid = (r) => r.pts[1][1];
-  assert.ok(Math.abs(mid(r2) - mid(r1)) >= ROUTE.NEAR * k, '둘째 선은 다른 통로');
-  const g = polyLines([[0, 0], [0, -200], [1000, -200], [1000, 0]], 1);
-  assert.equal(g.top.pts[1][0], -8); assert.equal(g.top.pts[1][1], -208, '모서리에서 두 법선을 더해 나란히(위 줄은 바깥)');
-  assert.equal(g.bottom.pts[1][0], 992); assert.equal(g.bottom.pts[1][1], -192);
-  assert.deepEqual(g.topLab, [500, -228]); assert.deepEqual(g.botLab, [500, -172]); assert.deepEqual(g.wait, [500, -152]);
-  // 캔버스가 쓴다
-  assert.ok(/rigRoute\(/.test(read('Canvas.jsx')) && /polyLines\(route, k\)/.test(read('RigLines.jsx')));
-});
-
-test('P254 비스듬한 곧은 선의 글은 선과 나란히 돌린다(가로·세로·꺾은선은 그대로)', () => {
-  const src = read('RigLines.jsx');
-  assert.ok(/const slant = /.test(src) && /rotate\(/.test(src) && /route \? 0 : slant\(P, Q\)/.test(src));
-});
-
-test('P254 spreadEnds: 한 변을 여러 선이 쓰면 끝점을 나누고, 곧은 선은 양 끝을 같이 옮겨 각도를 지키며, 정한 끝은 뒤에서 다시 옮기지 않는다', () => {
-  const R = { data: { x: 0, y: 0, w: 1440, h: 810 }, ideas: { x: 1020, y: 1767, w: 1440, h: 810 }, verify: { x: 2040, y: 0, w: 1440, h: 810 }, b: { x: 3060, y: 1767, w: 1440, h: 810 } };
-  const items = [['di', 'data', 'ideas'], ['iv', 'ideas', 'verify'], ['dv', 'data', 'verify'], ['rb', 'verify', 'b']].map(([id, a, b]) => ({ id, a, b, pts: faceEnds(R[a], R[b]).slice(0, 2) }));
-  const s = spreadEnds(items, (id) => R[id]);
-  assert.ok(Math.abs(s.di[1][0] - s.iv[0][0]) >= 400, 'ideas 위 변의 두 끝이 떨어진다');
-  const ang = (p) => Math.atan2(p[1][1] - p[0][1], p[1][0] - p[0][0]);
-  assert.ok(Math.abs(ang(s.di) - ang(items[0].pts)) < 1e-9, 'data–ideas는 나란히 비켜 각도 그대로');
-  assert.deepEqual(s.dv, items[2].pts, '혼자 쓰는 변은 그대로');
 });
