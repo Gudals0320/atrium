@@ -28,6 +28,14 @@ export const V7 = {
   C: { dim: '#8E8B83', lit: '#ECE9E1', text: '#A9A69D', red: '#E5484D', raise: '#F0B652', card: '#1A1A18', border: '#3B3A36', borderHot: '#8E8B83', tag: '#22221F', tagText: '#A9A69D', btag: '#3A2E17', work: '#A8D08D' },
 };
 
+// ---- P261: 세션 맵 rig 묶음의 선·글 치수(세계 px). 카드는 보통 세션 카드(크기는 mission-lineage.js rigMapOpts), 선은 세션 맵 나무·동료 선 말투 ----
+// DY 두 줄이 가운데에서 떨어진 거리, BACK 줄 끝을 카드 변에서 띄우는 거리(나무 선 LINE.EDGEGAP과 같다, 화살촉은 marker), LAB 가운데 → 줄 글 가운데,
+// WAIT 가운데 → "대기 n" 가운데, DOTAT 붉은 점이 줄 시작에서 안쪽, DOT 붉은 점 지름, RAISELX 올림 글이 선에서 떨어진 거리(글 칩 왼쪽 끝),
+// LABPX 줄 글 크기(세션 맵 선 이름표 .mt-sm .mt-ta-elab 11.5px), LABPAD 글 칩 안쪽 여백 + 테두리, LABM 칩 양옆 최소 빈칸, GAP 카드 사이 최소 틈(나무 칸 사이 LINE.GX와 같다), BGAP 역할 → 빌더 틈
+export const RIG_MAP = { DY: 9, BACK: 4, LAB: 22, WAIT: 44, DOTAT: 10, DOT: 7, RAISELX: 10, LABPX: 11.5, LABPAD: 18, LABM: 22, GAP: 110, BGAP: 72, W1: 1.6, W2: 1.6, RAISEW: 1.6 };
+// 세션 맵 줄 글 칩 폭(세계 px): 11.5px 글 + 안쪽 여백·테두리
+export const mapLabW = (s) => Math.ceil(textW13(s) * RIG_MAP.LABPX / 13 + RIG_MAP.LABPAD);
+
 const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
 const r1 = (v) => Math.round(v * 10) / 10;
 export const pathD = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${r1(p[0])} ${r1(p[1])}`).join(' ');
@@ -68,17 +76,19 @@ export const textW13 = (s) => { let w = 0; for (const ch of String(s || '')) { c
 // 곧은 두 줄의 자리(시안 그대로). P = 왼쪽(a) 끝, Q = 오른쪽(b) 끝, k = 화면 px 하나의 세계 크기(캔버스 1/배율, 세션 맵 1).
 //   위 줄 P → Q(끝 화살촉, 굵기 W1), 아래 줄 Q → P(끝 화살촉, 굵기 W2). 화살촉 끝이 카드 변에 닿게 줄을 화살촉 길이만큼 짧게 끝낸다(시안 99/103).
 //   → { top: { d, from, to }, bottom: {...}, topLab, botLab, wait: [x, y](가운데), dotTop, dotBot: [x, y], u, n }
-export function twoLines(P, Q, k = 1) {
+//   G = 치수(기본 V7 = 캔버스 시안 값, 세션 맵은 RIG_MAP). G.BACK이 있으면 화살촉 대신 줄 끝을 그만큼 짧게(세션 맵 선의 화살촉은 marker가 줄 끝에 단다)
+export function twoLines(P, Q, k = 1, G = V7) {
   const dx = Q[0] - P[0], dy = Q[1] - P[1], L = Math.hypot(dx, dy) || 1;
   const ux = dx / L, uy = dy / L, nx = uy, ny = -ux; // n = 위쪽(왼 → 오른 기준)
-  const o = V7.DY * k, at = (p, s, t = 0) => [p[0] + nx * s + ux * t, p[1] + ny * s + uy * t];
-  const tf = at(P, o), tt = at(Q, o, -2 * V7.W1 * k), bf = at(Q, -o), bt = at(P, -o, 2 * V7.W2 * k);
+  const o = G.DY * k, at = (p, s, t = 0) => [p[0] + nx * s + ux * t, p[1] + ny * s + uy * t];
+  const b1 = G.BACK != null ? G.BACK : 2 * G.W1, b2 = G.BACK != null ? G.BACK : 2 * G.W2;
+  const tf = at(P, o), tt = at(Q, o, -b1 * k), bf = at(Q, -o), bt = at(P, -o, b2 * k);
   const mid = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
   return {
     mid, n: [nx, ny],
     top: { from: tf, to: tt, d: pathD([tf, tt]) }, bottom: { from: bf, to: bt, d: pathD([bf, bt]) },
-    topLab: at(mid, V7.LAB * k), botLab: at(mid, -V7.LAB * k), wait: at(mid, -V7.WAIT * k),
-    dotTop: at(P, o, V7.DOTAT * k), dotBot: at(Q, -o, -V7.DOTAT * k), u: [ux, uy],
+    topLab: at(mid, G.LAB * k), botLab: at(mid, -G.LAB * k), wait: at(mid, -G.WAIT * k),
+    dotTop: at(P, o, G.DOTAT * k), dotBot: at(Q, -o, -G.DOTAT * k), u: [ux, uy],
   };
 }
 
@@ -251,8 +261,12 @@ export function rigCanvasLines(edges, rectOf, { nodes = [], cs = 1, waitText = (
 //   (이웃하지 않은 쌍은 그리지 않는다: 캔버스와 rig 판에 있다, 사용자 답 2026-11-20), 빌더는 가장 오른쪽 역할 아래, 올린 역할에서 빌더로 노랑 점선.
 //   밝기는 세션 상태에 달려 그릴 때 정한다(pairLit).
 //   → { w, h, dim, order, roles: Map 이름 → { x, y, w, h }, builder: { x, y, w, h }, pairs: [{ key, a, b, lines(pairLines), top: { d }, bottom, topLab, botLab, wait, dotTop, dotBot }], raises: [{ role, n, d, lab }] }
-export function v7Layout(m) {
+//   P261: opt = 세션 맵 카드 꼴(rigMapOpts: 카드 폭·높이 = 보통 세션 카드, 틈·줄 글 = 세션 맵 선 말투). 주지 않으면 시안 V7 값(184×96, 틈 104)
+//     { cw, ch, bh(빌더 높이), gap(카드 사이 최소 틈), bgap(역할 → 빌더 틈), geo(twoLines 치수), labW(줄 글 → 그 글이 차지하는 폭, 틈은 이보다 좁지 않다) }
+export function v7Layout(m, opt = {}) {
   if (!m) return null;
+  const CW = opt.cw || V7.CW, CH = opt.ch || V7.CH, BH = opt.bh || V7.BH, GAP = opt.gap != null ? opt.gap : V7.GAP, BGAP = opt.bgap != null ? opt.bgap : V7.BGAP;
+  const G = opt.geo || V7, labW = opt.labW || ((s) => textW13(s) + 16);
   const roleList = m.roles || [];
   const flows = m.flows || [];
   const beatRole = (m.head && m.head.beat && m.head.beat.role) || null;
@@ -264,31 +278,32 @@ export function v7Layout(m) {
     const a = order[i], b = order[i + 1];
     if (!b) return 0;
     const ln = pairLines(a, b, flows);
-    const w = Math.max(0, ...[lineText(ln.top, 'top'), lineText(ln.bottom, 'bottom')].map((s) => textW13(s)));
-    return Math.max(V7.GAP, Math.ceil(w) + 16);
+    const w = Math.max(0, ...[ln.top ? lineText(ln.top, 'top') : '', ln.bottom ? lineText(ln.bottom, 'bottom') : ''].filter(Boolean).map(labW));
+    return Math.max(GAP, Math.ceil(w));
   };
   const xs = []; let xx = 0;
-  order.forEach((n, i) => { xs.push(xx); xx += V7.CW + gapOf(i); });
-  const roles = new Map(order.map((n, i) => [n, { x: xs[i], y: y0, w: V7.CW, h: V7.CH }]));
+  order.forEach((n, i) => { xs.push(xx); xx += CW + gapOf(i); });
+  const roles = new Map(order.map((n, i) => [n, { x: xs[i], y: y0, w: CW, h: CH }]));
   const pairs = rolePairs(order, flows)
     .map((p) => { const [a, b] = pos.get(p.a) <= pos.get(p.b) ? [p.a, p.b] : [p.b, p.a]; return { key: a + '|' + b, a, b, lines: pairLines(a, b, flows) }; })
     .filter((p) => (p.lines.top || p.lines.bottom) && pos.get(p.b) - pos.get(p.a) === 1)
     .map((p) => {
       const A = roles.get(p.a), B = roles.get(p.b);
-      const y = A.y + A.h / 2, g = twoLines([A.x + A.w, y], [B.x, y], 1);
+      const y = A.y + A.h / 2, g = twoLines([A.x + A.w, y], [B.x, y], 1, G);
       return { ...p, top: g.top, bottom: g.bottom, topLab: g.topLab, botLab: g.botLab, wait: g.wait, dotTop: g.dotTop, dotBot: g.dotBot };
     });
-  const last = order.length ? roles.get(order[order.length - 1]) : { x: 0, y: y0, w: V7.CW, h: V7.CH };
-  const builder = { x: last.x, y: y0 + V7.CH + V7.BGAP, w: V7.CW, h: V7.BH };
+  const last = order.length ? roles.get(order[order.length - 1]) : { x: 0, y: y0, w: CW, h: CH };
+  const builder = { x: last.x, y: y0 + CH + BGAP, w: CW, h: BH };
   // 올림: 기다리는 올림이 있는 역할마다 하나. 빌더 바로 위 역할은 곧게 내려가고, 다른 역할은 내려가서 빌더 왼쪽 변으로 꺾는다
   const counts = new Map();
   for (const x of m.raises || []) if (roles.has(x.role)) counts.set(x.role, (counts.get(x.role) || 0) + 1);
   const raises = [...counts].map(([role, n]) => {
     const R = roles.get(role), cx = R.x + R.w / 2, y1 = R.y + R.h;
-    const pts = R.x === builder.x ? [[cx, y1], [cx, builder.y - 2 * V7.RAISEW]] : [[cx, y1], [cx, builder.y + builder.h / 2], [builder.x - 2 * V7.RAISEW, builder.y + builder.h / 2]];
-    return { role, n, pts, d: pathD(pts), lab: [cx + V7.RAISELX, (y1 + (R.x === builder.x ? builder.y : builder.y + builder.h / 2)) / 2] };
+    const back = G.BACK != null ? G.BACK : 2 * (G.RAISEW || V7.RAISEW);
+    const pts = R.x === builder.x ? [[cx, y1], [cx, builder.y - back]] : [[cx, y1], [cx, builder.y + builder.h / 2], [builder.x - back, builder.y + builder.h / 2]];
+    return { role, n, pts, d: pathD(pts), lab: [cx + (G.RAISELX != null ? G.RAISELX : V7.RAISELX), (y1 + (R.x === builder.x ? builder.y : builder.y + builder.h / 2)) / 2] };
   });
-  const w = Math.max(V7.CW, ...[...roles.values()].map((r) => r.x + r.w), builder.x + builder.w);
+  const w = Math.max(CW, ...[...roles.values()].map((r) => r.x + r.w), builder.x + builder.w);
   return { w, h: builder.y + builder.h, dim: m.status !== 'on', order, roles, builder, pairs, raises };
 }
 
@@ -386,7 +401,7 @@ export function phoneRig(m, live = null) {
   const roles = (m.roles || []).map((r) => {
     const cur = r.session && live && live.get ? live.get(r.session.sessionId) : null;
     const state = cur ? cur.state : r.session ? (r.session.asleep ? 'sleeping' : r.session.state) : r.gaveUp ? 'gaveUp' : 'none';
-    return { name: r.name, sessionId: r.session ? r.session.sessionId : null, state, received: r.received || 0 };
+    return { name: r.name, sessionId: r.session ? r.session.sessionId : null, session: cur ? cur.name : r.session ? r.session.name : null, state, received: r.received || 0 }; // P261: 세션 이름(세션 맵 카드와 같이)
   });
   const flows = (m.flows || []).map((f) => ({ item: f.item, from: list(f.from).join(', '), to: list(f.to).join(', '), put: f.cycle ? f.cycle.put : 0, waiting: f.waiting || 0, open: f.openReturns || 0 }));
   return { key: m.workspace, status: m.status, name: m.name, versionN: m.versionN, cycle: m.head ? m.head.cycle : null, attention: m.head ? m.head.attention : 0, stalled: m.head ? m.head.stalled : 0, roles, flows, entry: m.entry };

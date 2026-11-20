@@ -205,7 +205,8 @@ test('P254 열 머리 고정과 띠 걷어냄: 칸 머리 띠를 rig 아래로 �
   assert.ok(/rigBlocks/.test(src) && /RigBlocks/.test(src));
   const rm = read('RigMap.jsx');
   for (const s of ['rm-cycle', 'rm-entry', 'rm-head', 'rm-sector', 'rm-tool', 'rm-beat']) assert.ok(!rm.includes(s), '시안에 없는 것: ' + s);
-  for (const s of ['rm-line', 'rm-wait', 'rm-open-return', 'rm-raise', 'rm-builder', 'rm-tag']) assert.ok(rm.includes(s), s);
+  for (const s of ['rm-line', 'rm-wait', 'rm-open-return', 'rm-raise']) assert.ok(rm.includes(s), s);
+  for (const s of ['rm-builder', 'rm-tag']) assert.ok(src.includes(s), s); // P261: 역할·빌더 카드는 보통 카드(MissionLineage.jsx Card)
 });
 
 // ---- 캔버스 2D 자리와 돌리기(사용자 결정 2026-11-20) ----

@@ -12,10 +12,42 @@ import { keepCard } from './bg-work.js'; // P164
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
 import { chipCounts, normKey, keyName, cardWidth, cardHeight, routeOrtho } from './mission-terr.js';
 import { zoomStep } from './faces.js'; // P178: 이름표 배율 계단
+import { RIG_MAP, mapLabW, roleSessions, BUILDER_ROLE } from './rig-map.js'; // P261: 세션 맵 rig 묶음 치수·카드
 
 // SPINE = 폴더 기둥 최소 폭(P157: 가장 긴 폴더 이름에 맞춰 넓어진다, spineWidth), BANDMIN = 폴더 띠 최소 높이(P157: 워크스페이스 하나인 폴더도 기둥 글이 잘리지 않게), HEADX·HEADW = 워크스페이스 머리 자리, GX = 칸 사이(줄기가 지난다), GY = 형제 사이, RT·RB = 줄 위아래 여백, ROWMIN = 줄 최소 높이,
 // MINCOLS = 늘 있는 나무 칸 수(시작·1단계)
 export const LINE = { BANDMIN: 330, SPINE: 210, HEADX: 232, HEADW: 300, GX: 110, GY: 22, RT: 26, RB: 30, ROWMIN: 170, MINCOLS: 2, ASPECT: 1.8, NAME_PX: 30, BANDGAP: 36, RING: 12, EDGEGAP: 4, FOLD: 4, PGY: 46, THIN: 30, TGY: 8, THINMIN: 3, RIGGAP: 60 }; // P254: RIGGAP = 줄 안 나무·솔로 아래 → rig 묶음 위 // P163: THIN = 얇은 줄 높이, TGY = 얇은 줄끼리 간격, THINMIN = 하위가 이만큼 이상일 때 절전 하위를 얇은 줄로 // FOLD: 이 단계(시작 = 0)보다 깊은 가지는 접는다 // BANDGAP: 폴더 띠 사이 빈 칸. RING·EDGEGAP: 선 끝을 카드 강조 고리 바깥에(작업 중 빛 고리, 그 밖은 테두리 바로 밖) // NAME_PX: 멀리 타일 이름 세계 글 크기(처음 화면 폭 맞춤 배율 0.35~0.4에서 화면 11~12px)
+
+// P261: 세션 맵 카드 폭(그 판의 가장 긴 이름이 멀리 타일 한 줄에 들게). rig 묶음 카드도 같은 폭을 쓴다(rigMapOpts)
+export const mapCardW = (graph, tree = missionTree(graph)) => cardWidth(tree.nodes.map((n) => n.name), LINE.NAME_PX);
+// P261: rig 묶음 카드 높이 = 보통 카드 높이 셈(cardHeight)으로 가장 긴 내용(일 세 줄, 또는 오류 두 줄)이 드는 높이. 역할마다 같은 크기(내용이 바뀌어도 묶음이 흔들리지 않는다)
+export const rigCardH = (cw) => Math.max(cardHeight({ lastPrompt: 'x'.repeat(400) }, 'work', false, cw), cardHeight({ lastPrompt: 'x', error: 'x'.repeat(400) }, 'alert', false, cw));
+// P261: 세션 맵 rig 묶음(lib/rig-map.js v7Layout)의 카드 꼴 = 보통 세션 카드(폭 cw, 높이 rigCardH), 틈·줄 글 = 세션 맵 선 말투(RIG_MAP)
+export const rigMapOpts = (cw) => { const ch = rigCardH(cw); return { cw, ch, bh: ch, gap: RIG_MAP.GAP, bgap: RIG_MAP.BGAP, geo: RIG_MAP, labW: (s) => mapLabW(s) + 2 * RIG_MAP.LABM }; };
+
+// P261: rig 묶음의 카드 상자(세계 자리) → Map id → { x, y, w, h, node, ws, depth: -1, fold: 0, rig: { kind, name, chip, extra, none, dim } }.
+//   node = 판 그래프의 그 세션 노드(트리에서는 뺀 것, hideRigSessions 전 그래프). 그래프에 없으면(세션 없음·아직 안 읽힘) 지도 자료로 만든다
+export function rigCardBoxes(lay, rigList, rigGeo, graph, sessions, t) {
+  const out = new Map();
+  if (!lay || !lay.rigs || !lay.rigs.length) return out;
+  const bySid = new Map(((graph && graph.nodes) || []).filter((n) => n.kind === 'session' && n.sessionId).map((n) => [n.sessionId, n]));
+  for (const it of lay.rigs) {
+    const m = rigList.find((x) => x.workspace === it.key), g = rigGeo.get(it.key);
+    if (!m || !g || !g.order.length) continue;
+    const sid = roleSessions(m, sessions);
+    const nRaise = (m.raises || []).length;
+    const add = (kind, name, box, r) => {
+      const rs = r && r.session, s = sid.get(name) || (rs && rs.sessionId) || null;
+      const lv = s && sessions ? sessions.get(s) : null;
+      const node = (s && bySid.get(s)) || { id: `rig:${it.key}:${name}`, kind: 'session', sessionId: s, name: (lv && lv.name) || (rs && rs.name) || (kind === 'builder' ? t('rigV7.builderName') : name), state: lv ? lv.state : rs ? (rs.asleep ? 'sleeping' : rs.state) : 'exited', agentKind: (lv && lv.kind) || (rs && rs.kind) || 'claude', workspaceKey: it.key, lastPrompt: (lv && lv.lastPrompt) || null, model: (lv && lv.model) || null, effort: (lv && lv.effort) || null };
+      const chip = kind === 'builder' ? t('rigMap.tagBuilder') : r && r.docN != null ? t('rigV7.tagRoleV', { name, n: r.docN }) : t('rigMap.tagRole', { name });
+      out.set(node.id, { x: it.x + box.x, y: it.y + box.y, w: box.w, h: box.h, node, ws: it.key, depth: -1, fold: 0, rig: { kind, name, chip, extra: kind === 'builder' && nRaise ? t('rigMap.raises', { n: nRaise }) : null, none: !s, dim: !!g.dim } });
+    };
+    for (const n of g.order) add('role', n, g.roles.get(n), (m.roles || []).find((r) => r.name === n));
+    add('builder', BUILDER_ROLE, g.builder, m.builder ? { session: m.builder } : null);
+  }
+  return out;
+}
 
 // P157: 글 폭 어림(px). 한글·한자·가나는 글자 크기만큼, 대문자·숫자는 조금 넓게, 그 밖은 0.6
 export const glyphW = (s, px) => { let w = 0; for (const ch of String(s || '')) { const c = ch.codePointAt(0); w += (c >= 0x1100 && c <= 0x11ff) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xff00 && c <= 0xffef) ? 1 : /[A-Z0-9@#%&MW]/.test(ch) ? 0.7 : 0.6; } return w * px; };
@@ -68,7 +100,7 @@ export function lineageLayout(graph, opts = {}) {
   const tree = missionTree(graph);
   const { byId } = tree;
   const sidOf = new Map(tree.nodes.map((n) => [n.sessionId, n.id]));
-  const L = { ...LINE, CW: cardWidth(tree.nodes.map((n) => n.name), LINE.NAME_PX) };
+  const L = { ...LINE, CW: mapCardW(graph, tree) };
   if (phone) { L.CW = Math.min(PHONE.CW_MAX, Math.max(PHONE.CW_MIN, Math.round(L.CW * PHONE.CW_K))); L.GX = PHONE.GX; L.FOLD = PHONE.FOLD; }
   const tierOf = (id) => (tiers && tiers.has(id) ? tiers.get(id) : nodeTier(byId.get(id)));
   const wsOf = (id) => (byId.get(id) || {}).workspaceKey || '';
