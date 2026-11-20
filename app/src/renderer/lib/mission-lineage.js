@@ -162,6 +162,9 @@ export function lineageLayout(graph, opts = {}) {
       if (!list.includes(n.id)) { list.splice(list.indexOf(p) + 1, 0, n.id); attached.add(n.id); }
     }
   }
+  // P266: 형제 차례 안에서 동료로 이어진 묶음은 사이에 다른 카드가 없게 붙이고, 묶음 안은 동료끼리 바로 이웃하는 사슬로(peerChain). 동료 선이 이웃 카드끼리 곧게 잇는다
+  const isPeer = (a, b) => peersOf(a).includes(b) || peersOf(b).includes(a);
+  for (const [k, list] of layKids) if (list.length > 1) layKids.set(k, peerChain(list, isPeer));
   // 깊이 접기: 시작(0)부터 FOLD 단계까지 보이고, 그보다 깊은 가지는 FOLD 단계 카드의 '+n단계' 칩으로 접는다(expanded에 든 카드는 편다)
   const below = (id, g = 0) => { const ks = layKids.get(id) || []; return !ks.length || g > 50 ? 0 : 1 + Math.max(...ks.map((k) => below(k, g + 1))); };
   const folded = new Map();
@@ -213,13 +216,13 @@ export function lineageLayout(graph, opts = {}) {
     return [...ks.filter((k) => !ss.has(k)), ...slim];
   };
   // align: 하위 묶음 안에서 카드 자리. mid = 가운데, bottom = 아래 끝(바로 다음이 동료일 때), top = 위 끝(바로 앞이 동료일 때). 동료끼리 바로 위아래에 붙게
-  const alignOf = (list, i) => (i + 1 < list.length && peersOf(list[i]).includes(list[i + 1]) ? 'bottom' : i > 0 && peersOf(list[i]).includes(list[i - 1]) ? 'top' : 'mid');
+  const alignOf = (list, i) => (i + 1 < list.length && isPeer(list[i], list[i + 1]) ? 'bottom' : i > 0 && isPeer(list[i], list[i - 1]) ? 'top' : 'mid');
   const place = (id, depth, top, ws, align = 'mid') => {
     const ks = depth > 50 ? [] : thinOrder(visKids(id, depth), depth + 1);
     vkids.set(id, ks);
     if (!ks.length) { put(id, depth, top, ws); return H(id); }
     let t = top;
-    ks.forEach((k, i) => { t += place(k, depth + 1, t, ws, alignOf(ks, i)) + (i + 1 < ks.length && peersOf(k).includes(ks[i + 1]) ? L.PGY : thin.has(k) && thin.has(ks[i + 1]) ? L.TGY : L.GY); }); // 동료 사이는 조금 더 띄워 양끝 점 선이 보이게, 얇은 줄끼리는 좁게
+    ks.forEach((k, i) => { t += place(k, depth + 1, t, ws, alignOf(ks, i)) + (i + 1 < ks.length && isPeer(k, ks[i + 1]) ? L.PGY : thin.has(k) && thin.has(ks[i + 1]) ? L.TGY : L.GY); }); // 동료 사이는 조금 더 띄워 양끝 점 선이 보이게, 얇은 줄끼리는 좁게
     const h = t - L.GY - top;
     const my = Math.max(h, H(id));
     put(id, depth, align === 'bottom' ? top + my - H(id) : align === 'top' ? top : top + (my - H(id)) / 2, ws);
@@ -246,8 +249,7 @@ export function lineageLayout(graph, opts = {}) {
       const all = tree.nodes.filter((n) => wsOf(n.id) === key).sort(bySpawn);
       const nodes = all;
       // 시작 칸: 이 줄에 하위가 있는 뿌리, 하위가 다른 워크스페이스에만 있는 뿌리, 동료가 있는 뿌리. 뿌리끼리 동료면 바로 아래에 붙인다
-      const roots0 = nodes.filter(treeRoot), roots = [], done = new Set();
-      for (const r of roots0) { if (done.has(r.id)) continue; roots.push(r); done.add(r.id); for (const p of peersOf(r.id)) { const pn = byId.get(p); if (!done.has(p) && roots0.includes(pn)) { roots.push(pn); done.add(p); } } }
+      const roots = peerChain(nodes.filter(treeRoot).map((n) => n.id), isPeer).map((id) => byId.get(id)); // P266: 뿌리끼리 동료도 사슬로 붙인다
       const away = nodes.filter((n) => crossIn(n.id)); // 부모가 다른 워크스페이스(1단계 칸에서 시작)
       const solos = nodes.filter((n) => isRoot(n) && !treeRoot(n));
       seq.set(key, { roots: roots.map((r) => r.id), away: away.map((n) => n.id), solos: solos.map((n) => n.id) });
@@ -298,7 +300,9 @@ export function lineageLayout(graph, opts = {}) {
     edges.push({ ...base, cross: false, pts, d: poly(pts), label });
   }
   // P153 r11: 동료 = 같은 칸에서 위아래로 곁에 놓고 무채색 양방향 선(위계 화살촉 없음). 칸이 다르면(다른 줄 등) 길 찾기
-  const peerSeen = new Set();
+  // P266: 같은 칸이어도 곧은 선이 다른 카드(또는 rig 묶음)를 지나면 칸 오른쪽 통로로 꺾어 돌아간다(peerDetours, 겹치는 우회끼리는 다른 통로 줄)
+  const peerSeen = new Set(), detours = [];
+  const blockers = [...[...cards.entries()].map(([id, c]) => ({ id, x: c.x, y: c.y, w: c.w, h: c.h })), ...rigs.map((r) => ({ id: null, x: r.x, y: r.y, w: r.w, h: r.h }))];
   for (const n of tree.nodes) for (const p of ((n.peers || []).filter((x) => byId.has(x)))) {
     const k = [n.id, p].sort().join('|');
     if (peerSeen.has(k)) continue;
@@ -309,9 +313,11 @@ export function lineageLayout(graph, opts = {}) {
     if (Math.abs(a.x - b.x) < 0.5) {
       const [u, d] = a.y < b.y ? [a, b] : [b, a];
       const pts = peerPts(u, d, L.EDGEGAP); // P159: 두 카드의 가로 가운데
+      if (blockers.some((o) => o.id !== n.id && o.id !== p && ptsHitBox(pts, o))) { detours.push({ base, u, d, ug: gap(u === a ? n.id : p), dg: gap(u === a ? p : n.id) }); continue; }
       edges.push({ ...base, cross: false, pts, d: poly(pts), label: null });
     } else cross.push({ base, a, b, kind: 'peer' });
   }
+  peerDetours(detours, L.GX).forEach((pts, i) => edges.push({ ...detours[i].base, cross: false, detour: true, pts, d: poly(pts), label: null }));
   // 독립(일 부모 없음)이나 동료로 정했어도 계보(띄운 세션)는 옅은 선으로만 남긴다(화살촉 없음)
   for (const n of tree.nodes) {
     const lp = n.lineageParent;
@@ -356,7 +362,7 @@ export function lineageLayout(graph, opts = {}) {
   function stack(key, top) {
     const { roots: rs, away: aw, solos: ss } = seq.get(key);
     let cy = top, last = null;
-    rs.forEach((r, i) => { const peerNext = i + 1 < rs.length && peersOf(r).includes(rs[i + 1]); cy += place(r, 0, cy, key, alignOf(rs, i)) + (last = peerNext ? L.PGY : L.GY * 2); });
+    rs.forEach((r, i) => { const peerNext = i + 1 < rs.length && isPeer(r, rs[i + 1]); cy += place(r, 0, cy, key, alignOf(rs, i)) + (last = peerNext ? L.PGY : L.GY * 2); });
     for (const s of aw) cy += place(s, 1, cy, key) + (last = L.GY * 2);
     for (const s of ss) { cards.set(s, { x: ox + COL[0], y: cy, w: L.CW, h: H(s), node: byId.get(s), ws: key, depth: -1, solo: true, fold: 0 }); cy += H(s) + (last = L.GY); }
     return last == null ? null : cy - last;
@@ -511,6 +517,81 @@ export function peerPts(u, d, g = 0) {
   if (Math.abs(ux - dx) < 0.5) return [[ux, y1], [ux, y2]];
   const my = (u.y + u.h + d.y) / 2;
   return [[ux, y1], [ux, my], [dx, my], [dx, y2]];
+}
+
+// ---- P266: 동료 선이 카드를 지나지 않게 ----
+// 형제 차례(ids, 지금 차례 = 만든 차례)에서 동료로 이어진 묶음(isPeer로 이어진 것, 이 차례 안만)은 그 묶음의 첫 세션 자리에 붙여 놓고(사이에 다른 카드가 없게),
+// 묶음 안은 이웃한 쌍이 가장 많이 동료인 차례(사슬)로 둔다. 같은 점수면 만든 차례에 가까운 것(사전순 첫째). 나머지 세션의 차례는 그대로. max보다 큰 묶음은 욕심 걷기
+export function peerChain(ids, isPeer, max = 8) {
+  const idx = new Map(ids.map((id, i) => [id, i]));
+  const seen = new Set(), out = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    const comp = [], st = [id];
+    seen.add(id);
+    while (st.length) { const x = st.pop(); comp.push(x); for (const y of ids) if (!seen.has(y) && isPeer(x, y)) { seen.add(y); st.push(y); } }
+    comp.sort((a, b) => idx.get(a) - idx.get(b));
+    out.push(...(comp.length < 3 ? comp : chainOrder(comp, isPeer, max)));
+  }
+  return out;
+}
+function chainOrder(comp, isPeer, max) {
+  const n = comp.length;
+  if (n > max) { // 욕심: 동료가 가장 적은(같으면 앞) 세션에서 시작해, 앞선 동료로 건너가고 없으면 남은 것 중 앞선 것으로
+    const deg = (x) => comp.filter((y) => y !== x && isPeer(x, y)).length;
+    const left = comp.slice(), out = [];
+    let cur = left.reduce((b, x) => (deg(x) < deg(b) ? x : b), left[0]);
+    while (cur != null) { out.push(cur); left.splice(left.indexOf(cur), 1); cur = left.find((y) => isPeer(cur, y)) ?? left[0] ?? null; }
+    return out;
+  }
+  let best = null, bestS = -1;
+  const path = [], used = new Array(n).fill(false);
+  const dfs = (s) => {
+    if (bestS === n - 1 || s + (n - path.length) <= bestS) return;
+    if (path.length === n) { bestS = s; best = path.slice(); return; }
+    for (let i = 0; i < n; i++) {
+      if (used[i]) continue;
+      const add = path.length && isPeer(comp[path[path.length - 1]], comp[i]) ? 1 : 0;
+      used[i] = true; path.push(i); dfs(s + add); path.pop(); used[i] = false;
+    }
+  };
+  dfs(0);
+  return best.map((i) => comp[i]);
+}
+// 꺾은 선(축에 나란한 토막들)이 상자 안쪽(테두리 0.5 안)을 지나나
+export function ptsHitBox(pts, b) {
+  const x0 = b.x + 0.5, x1 = b.x + b.w - 0.5, y0 = b.y + 0.5, y1 = b.y + b.h - 0.5;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+    if (Math.max(ax, bx) > x0 && Math.min(ax, bx) < x1 && Math.max(ay, by) > y0 && Math.min(ay, by) < y1) return true;
+  }
+  return false;
+}
+// 같은 칸인데 곧은 선이 다른 카드를 지나는 동료 쌍(list: { u(위 카드), d(아래 카드), ug, dg(선 끝 틈) })을 칸 오른쪽 통로로 돌린다.
+// 선: u 오른쪽 변 → 통로 줄 x → 세로로 내려 → d 오른쪽 변. 끝점 y는 카드 위쪽(가운데는 나무 선 자리)에서 그 카드의 우회마다 PEERDET.DY씩 아래로.
+// 통로 줄: 칸마다 세로 구간이 겹치는 우회끼리 다른 줄(카드 오른쪽 + BASE부터 STEP씩, 칸 사이 틈 GX의 가운데 - 8 안으로 좁힌다. 가운데는 나무 줄기 자리). → pts 목록(list 차례)
+export const PEERDET = { BASE: 18, STEP: 8, TOP: 16, DY: 12 };
+export function peerDetours(list, gx = LINE.GX) {
+  const out = new Array(list.length);
+  if (!list.length) return out;
+  const slots = new Map(); // 카드 상자 → 쓴 끝점 수
+  const endY = (c) => { const j = slots.get(c) || 0; slots.set(c, j + 1); return Math.min(c.y + PEERDET.TOP + j * PEERDET.DY, c.y + c.h - 6); };
+  const items = list.map((it, i) => ({ i, it, yu: endY(it.u), yd: endY(it.d), right: it.u.x + it.u.w }));
+  const byCol = new Map();
+  for (const x of items) { const k = Math.round(x.right); if (!byCol.has(k)) byCol.set(k, []); byCol.get(k).push(x); }
+  for (const [, col] of byCol) {
+    // 짧은 우회부터 안쪽 줄: 구간이 겹치는(6 여유) 앞 우회가 쓰지 않은 가장 안쪽 줄. 감싸는 긴 우회가 바깥으로 가서 끝 토막이 덜 엇갈린다
+    col.sort((a, b) => (a.yd - a.yu) - (b.yd - b.yu) || a.yu - b.yu);
+    const done = [];
+    for (const x of col) { let l = 0; while (done.some((o) => o.lane === l && o.yu - 6 < x.yd && x.yu - 6 < o.yd)) l++; x.lane = l; done.push(x); }
+    const right = col[0].right, maxX = right + gx / 2 - 8, n = 1 + Math.max(...col.map((x) => x.lane));
+    const step = n > 1 ? Math.min(PEERDET.STEP, Math.max(2, (maxX - right - PEERDET.BASE) / (n - 1))) : 0;
+    for (const x of col) {
+      const lx = right + PEERDET.BASE + x.lane * step;
+      out[x.i] = [[right + x.it.ug, x.yu], [lx, x.yu], [lx, x.yd], [right + x.it.dg, x.yd]];
+    }
+  }
+  return out;
 }
 
 // P155: 세션 맵에서 누른 자리와 Alt로 끌기 종류를 정한다(단위 시험 test/p155-lib.test.mjs).
