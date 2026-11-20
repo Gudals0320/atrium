@@ -247,7 +247,7 @@ function sessionTitle(s, now, { here = false, pinned = false } = {}) {
     `@${s.name} · ${kindText(shownKind(s))} · ${STATE_LABEL[s.state] || s.state}${s.lastActivityAt ? ` · ${ago(s.lastActivityAt, now)}` : ''}`,
     here && t('sb3.here'),
     s.unseen && bucketOf(s) === 'idle' && t('sb3.unseen'),
-    pinned && t('sb3.pinned'),
+    pinned && (bucketOf(s) === 'working' ? t('sb3.pinnedRun') : t('sb3.pinned')), // P265: 접힌 묶음 아래 실행 중 세션
     renamed(s) && t('rename.address', { address: addressOf(s) }),
     ask && `${t('sb2.tipAsk')}: ${ask}`,
     s.state === 'error' && s.error && `${t('state.error')}: ${typeof s.error === 'string' ? s.error : s.error.message || ''}`,
@@ -279,12 +279,13 @@ const SessionRow = memo(function SessionRow({ r, now, cur, here, busy: rowBusy }
     </div>
   );
   return (
-    <button className={`mt-sb2-row sess b-${b}${r.attn ? ' attn' : ''}${r.pinned ? ' pinned' : ''}${cur ? ' cur' : ''}${s.unseen ? ' unseen' : ''}${here ? ' here' : ''}`} style={pad(r)} data-sb="session" data-row={r.id} data-session={s.sessionId} data-name={s.name} data-state={s.state} data-indent={r.indent || 0} data-pinned={r.pinned ? '1' : undefined} data-focused={here ? '1' : undefined}
+    <button className={`mt-sb2-row sess b-${b}${r.attn ? ' attn' : ''}${r.pinned ? ' pinned' : ''}${r.wsName ? ' inws' : ''}${cur ? ' cur' : ''}${s.unseen ? ' unseen' : ''}${here ? ' here' : ''}`} style={pad(r)} data-sb="session" data-row={r.id} data-session={s.sessionId} data-name={s.name} data-state={s.state} data-indent={r.indent || 0} data-pinned={r.pinned ? '1' : undefined} data-pinws={r.wsName || undefined} data-focused={here ? '1' : undefined}
       title={sessionTitle(s, now, { here, pinned: r.pinned })} onClick={() => { setCursor(r.id); focusSession(s.sessionId); }}
       onContextMenu={(e) => { setCursor(r.id); openMenuAt(e, 'session', s.sessionId); }}>
       <span className="mt-sb2-line">
         <span className={`mt-sb2-dot st-${s.state}`} data-state={s.state} />
         <b className="mt-sb2-name">{s.name}</b>
+        {r.wsName && <span className="mt-sb2-pinws" title={r.wsName}>{r.wsName}</span>}{/* P265: 접힌 그룹에 워크스페이스가 여럿이면 어느 워크스페이스의 세션인지 */}
         {s.branch && s.branch.role && <span className="mt-sb2-role">{shownRole(s.branch.role)}</span>}
         {k !== 'claude' && <span className="mt-sb2-kind">{kindText(k)}</span>}
         {r.attn && <span className={`mt-sb2-tag ${b}`}>{b === 'need' ? t('sb2.st_need') : t('sb2.st_error')}</span>}
@@ -374,7 +375,7 @@ function SecRow({ r }) {
 function MoreRow({ r, cur }) {
   const t = useT();
   const go = () => { setCursor(r.id); if (r.pinMore) { const k = r.key.slice(4); toggleFold(k, true); } else showMore(r.key); };
-  return <button className={`mt-sb2-row morerow${cur ? ' cur' : ''}`} style={pad(r, NAME)} data-action="more" data-row={r.id} onClick={go}>{r.pinMore ? t('sb2.attnMore', { n: r.n }) : t('sidebar.more', { n: r.n })}</button>;
+  return <button className={`mt-sb2-row morerow${cur ? ' cur' : ''}`} style={pad(r, NAME)} data-action="more" data-row={r.id} onClick={go}>{r.pinMore ? t(r.running ? 'sb2.pinMore' : 'sb2.attnMore', { n: r.n }) : t('sidebar.more', { n: r.n })}</button>;
 }
 function EmptyRow({ r }) {
   const t = useT();
