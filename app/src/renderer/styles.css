@@ -2788,3 +2788,8 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-sm .lv-far .mt-rig7-open { r: 6; }
 .mt-sm-rig.tile { display: none; }
 .mt-sm .mt-ta-world.lv-far .mt-sm-rig.tile { display: inline-block; font-size: 0.72em; line-height: 1.35; padding: 0 0.35em; border-radius: 0.25em; max-width: 50%; }
+
+/* P262: 자리가 없는 rig 칩은 작은 칩(방향 화살·붉은 점만, 마우스를 올리면 글). 보통 연결 작은 칩의 ● 대신 방향 화살을 남긴다 */
+.mt-edge-label.rigc.compact::before { content: none; }
+.mt-edge-label.rigc.compact .mt-rigc-wait { display: none; }
+.mt-edge-label.rigc.compact:hover .mt-rigc-wait { display: inline-flex; }

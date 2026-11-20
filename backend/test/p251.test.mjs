@@ -11,7 +11,8 @@ import { writeSessionSettings } from '../src/launch.mjs';
 import { newRuntime } from '../src/state.mjs';
 import { RigRoles, ROLE_SPAWN } from '../src/rig-roles.mjs';
 import { rigMapOf, rigMaps, placeRoles, itemState, rigMapHandlers, MAP_RECENT, PLACE } from '../src/rig-map.mjs';
-import { roleOrder, rolePairs, RIG_LAYOUT, gridPlace } from '../src/rig-map-layout.mjs';
+import { roleOrder, rolePairs, RIG_LAYOUT, gridPlace, placeGap } from '../src/rig-map-layout.mjs';
+import { NEW_NODE } from '../src/canvas.mjs';
 import { missionGraph } from '../src/mission.mjs';
 import { HUMAN, BUILDER_ROLE } from '../src/rig-def.mjs';
 
@@ -171,11 +172,13 @@ test('P251(P254) 켤 때 한 번 역할 노드를 2D 칸(gridPlace)에 놓는다
   const moved = placeRoles(B.b, B.key);
   assert.ok(moved >= 3);
   const at = (role) => B.store.nodes().find((n) => n.session_id === B.S(role).sessionId);
-  const DX = 600 + PLACE.GX, DY = 400 + PLACE.GY;
+  // P262: rig 노드는 모두 같은 크기(새 세션 크기)로 놓는다. 칸 간격은 그 크기의 placeGap
+  const G = placeGap(NEW_NODE.w, NEW_NODE.h);
   const def = DEF();
-  const g = gridPlace(Object.keys(def.roles), def.flows.map((f) => ({ ...f, from: [].concat(f.from), to: [].concat(f.to) })), { W: 600, H: 400, GX: PLACE.GX, GY: PLACE.GY, beatRole: 'data' });
+  const g = gridPlace(Object.keys(def.roles), def.flows.map((f) => ({ ...f, from: [].concat(f.from), to: [].concat(f.to) })), { W: NEW_NODE.w, H: NEW_NODE.h, GX: G.GX, GY: G.GY, beatRole: 'data' });
+  const DX = g.colStep, DY = g.rowStep;
   const c0 = g.cells.get('data'), x0 = at('data').x - c0.c * DX, y0 = at('data').y - c0.r * DY;
-  for (const r of ['ideas', 'news', 'verify']) { const c = g.cells.get(r); assert.deepEqual([at(r).x, at(r).y], [x0 + c.c * DX, y0 + c.r * DY], r); }
+  for (const r of ['ideas', 'news', 'verify']) { const c = g.cells.get(r); assert.deepEqual([at(r).x, at(r).y], [Math.round(x0 + c.c * DX), Math.round(y0 + c.r * DY)], r); assert.deepEqual([at(r).w, at(r).h], [NEW_NODE.w, NEW_NODE.h]); }
   assert.equal(new Set(['data', 'ideas', 'news', 'verify'].map((r) => at(r).x + ',' + at(r).y)).size, 4, '겹치지 않는다');
   assert.ok(B.casts.some((c) => c.n === 'board.node' && c.d.sessionId === B.S('news').sessionId));
 });

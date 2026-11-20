@@ -103,8 +103,8 @@ export function twoLines(P, Q, k = 1, G = V7) {
 // PORT 모서리 길이에 대한 끝점 간격 비(n이 많으면 길이 / (n + 1)), ARROW·ARROW_W 화살촉 길이·폭, DOT 출발 점 반지름, W·WLIT 선 굵기(보통 연결 2.6, 밝은 쌍 3.4),
 // SIB_T 두 방향 쌍의 칩을 놓아 볼 자리(각자 출발 쪽 1/3쯤이라 두 칩이 곡선이 갈라지는 가운데에서 비켜 엇갈려 놓인다), SIB_GAP 같은 쌍 두 칩 사이 최소 틈(칩 높이 배),
 // ACTIVE_MS 선이 흐르는(움직이는) 때: 받는 역할이 일하고 그 방향 길로 이만큼 안에 항목이 오갔을 때(보통 연결의 ACTIVE_MS와 같다),
-// CHIP_H 칩 높이, CHIP_FONT 칩 글 크기, CHIP_MIN 칩 화면 최소 배율, LAB_T 칩을 놓아 볼 곡선 자리 차례, NODE_PAD 노드 둘레 여백, GAP 칩 사이 틈
-export const RIG_EDGE = { SIB_T: [0.36, 0.3, 0.42, 0.26, 0.48, 0.22, 0.56, 0.18, 0.64, 0.72, 0.8], SIB_GAP: 0.75, ACTIVE_MS: 30 * 60 * 1000, PORT: 0.18, ARROW: 16, ARROW_W: 12, DOT: 4.5, W: 2.6, WLIT: 3.4, CHIP_H: 24, CHIP_FONT: 12, CHIP_MIN: 1, LAB_T: [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82], NODE_PAD: 8, GAP: 6 };
+// CHIP_H 칩 높이, COMPACT_W 작은 칩 폭(P262: 화살만, 붉은 점이 있으면 + 12), CHIP_FONT 칩 글 크기, CHIP_MIN 칩 화면 최소 배율, LAB_T 칩을 놓아 볼 곡선 자리 차례, NODE_PAD 노드 둘레 여백, GAP 칩 사이 틈
+export const RIG_EDGE = { SIB_T: [0.36, 0.3, 0.42, 0.26, 0.48, 0.22, 0.56, 0.18, 0.64, 0.72, 0.8], SIB_GAP: 0.75, ACTIVE_MS: 30 * 60 * 1000, PORT: 0.18, ARROW: 10, ARROW_W: 8, DOT: 4.5, W: 2.6, WLIT: 3.4, CHIP_H: 24, CHIP_FONT: 12, CHIP_MIN: 1, COMPACT_W: 30, LAB_T: [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82], NODE_PAD: 8, GAP: 6 };
 const POS = { t: 'top', r: 'right', b: 'bottom', l: 'left' };
 // 보통 연결의 손잡이 고르기(backend links.mjs facingSides)와 같은 규칙: 가로 틈이 세로 틈보다 크거나 같으면 왼·오른 모서리
 export function rigSides(a, b) {
@@ -157,6 +157,27 @@ export function bezAt(P, u) {
   let g = [0, 1].map((i) => 3 * v * v * (b[i] - a[i]) + 6 * v * u * (c[i] - b[i]) + 3 * u * u * (d[i] - c[i]));
   const L = Math.hypot(g[0], g[1]) || 1; g = [g[0] / L, g[1] / L];
   return { p, u: g };
+}
+// P262: 화살촉은 그린 곡선의 끝 방향을 따른다(사용자 2026-11-20: 모서리에 수직인 끝 접선이 아니라 선과 한 획으로 읽히게).
+//   곡선을 따라 끝에서 len만큼 뒤 자리(base)를 찾는다. 선은 base에서 멈추고(de Casteljau로 앞 조각만 그린다), 화살촉은 그 선의 끝 접선(base의 접선) 방향으로 base에서 끝까지 뻗는다.
+//   → { tip, base, u(단위 방향), t0, dLine(그릴 선), d(화살촉 삼각형), box(겹침 상자) }
+export function bezSplit(P, t) {
+  const L = (a, b) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const [a, b, c, d] = P, ab = L(a, b), bc = L(b, c), cd = L(c, d), abc = L(ab, bc), bcd = L(bc, cd), abcd = L(abc, bcd);
+  return [a, ab, abc, abcd];
+}
+export function rigHead(P, len, wid) {
+  const end = P[3];
+  let t0 = 0, prev = end, acc = 0;
+  for (let i = 1; i <= 240; i++) { const t = 1 - i / 240; const p = bezAt(P, t).p; acc += Math.hypot(p[0] - prev[0], p[1] - prev[1]); prev = p; t0 = t; if (acc >= len) break; }
+  const at0 = bezAt(P, t0), base = at0.p, u = at0.u, v = [-u[1], u[0]];
+  const ch = Math.hypot(P[3][0] - base[0], P[3][1] - base[1]);
+  const tip = [base[0] + u[0] * ch, base[1] + u[1] * ch]; // 그린 선의 끝 접선 그대로 이어 간다(끝 모서리와는 ch·(1 - cos) 안팎만 어긋난다)
+  const b1 = [base[0] + v[0] * wid / 2, base[1] + v[1] * wid / 2], b2 = [base[0] - v[0] * wid / 2, base[1] - v[1] * wid / 2];
+  const r = (x) => Math.round(x * 100) / 100;
+  const S = bezSplit(P, t0);
+  const xs = [tip[0], b1[0], b2[0]], ys = [tip[1], b1[1], b2[1]];
+  return { tip, base, u, t0, dLine: `M${r(S[0][0])},${r(S[0][1])} C${r(S[1][0])},${r(S[1][1])} ${r(S[2][0])},${r(S[2][1])} ${r(S[3][0])},${r(S[3][1])}`, d: `M${r(tip[0])},${r(tip[1])} L${r(b1[0])},${r(b1[1])} L${r(b2[0])},${r(b2[1])} Z`, box: { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } };
 }
 // 칩 글: 항목 이름(" · "로 잇는다). 방향은 칩 안 화살과 선의 화살촉이 보인다
 export const chipText = (side) => (side ? side.items.join(' · ') : '');
@@ -227,19 +248,32 @@ export function rigCanvasLines(edges, rectOf, { nodes = [], cs = 1, waitText = (
   for (const ln of lines) {
     const o = ports.get(ln.id); if (!o) continue;
     const c = rigCurve(o.s, o.sp, o.t, o.tp);
-    const end = bezAt(c.P, 1);
-    tips.push({ x: o.t[0] - end.u[0] * A / 2 - A / 2, y: o.t[1] - end.u[1] * A / 2 - A / 2, w: A, h: A });
+    const head = rigHead(c.P, A, RIG_EDGE.ARROW_W * cs); // P262: 그린 곡선 끝 방향의 화살촉
+    tips.push(head.box);
     const text = chipText(ln);
     const wait = ln.waiting ? waitText(ln.waiting) : '';
     const sz = ln.which === 'raise' ? { w: Math.ceil(textW13(text || 'raise') + 40), h: RIG_EDGE.CHIP_H } : chipSize(text, { open: ln.open, wait });
-    drawn.push({ ...ln, ...c, s: o.s, t: o.t, sp: o.sp, tp: o.tp, text, wait, w: sz.w * cs, h: sz.h * cs });
+    drawn.push({ ...ln, ...c, head, s: o.s, t: o.t, sp: o.sp, tp: o.tp, text, wait, w: sz.w * cs, h: sz.h * cs });
   }
   const pairN = new Map(); for (const x of drawn) pairN.set(x.edge, (pairN.get(x.edge) || 0) + 1);
-  const spots = rigLabelSpots(drawn.map((x) => { const two = x.which !== 'raise' && pairN.get(x.edge) > 1; return { id: x.id, P: x.P, w: x.w, h: x.h, prio: x.which === 'raise' ? 0 : x.waiting ? 2 : 1, ...(two ? { ts: RIG_EDGE.SIB_T, sib: x.edge, sibGap: RIG_EDGE.CHIP_H * cs * RIG_EDGE.SIB_GAP } : {}) }; }), nodes, tips);
+  // P262: 칩이 들어갈 자리가 없으면(멀리 볼 때 최소 화면 크기 칩이 노드 사이 틈보다 커지는 등) 보통 연결처럼 줄인다(Links.jsx fit.compact·linkLabelHidden).
+  //   1차: 온 칩으로 놓는다. 겹치는 칩은 작은 칩(방향 화살과 붉은 점만, 마우스를 올리면 글)으로 바꿔 다시 놓고, 그래도 겹치면 칩 없이 선만(hidden).
+  //   화살촉·출발 점은 그대로(cs). 자리가 남는 칩은 그대로 온 칩이다
+  const place = () => rigLabelSpots(drawn.filter((x) => !x.hidden).map((x) => { const two = x.which !== 'raise' && pairN.get(x.edge) > 1; return { id: x.id, P: x.P, w: x.w, h: x.h, prio: x.which === 'raise' ? 0 : x.waiting ? 2 : 1, ...(two ? { ts: RIG_EDGE.SIB_T, sib: x.edge, sibGap: RIG_EDGE.CHIP_H * cs * RIG_EDGE.SIB_GAP } : {}) }; }), nodes, tips);
+  let spots = place();
+  for (let round = 0; round < 6; round++) {
+    const bad = drawn.filter((x) => !x.hidden && spots.get(x.id) && !spots.get(x.id).free);
+    if (!bad.length) break;
+    for (const x of bad) {
+      if (!x.compact) { x.compact = true; x.w = (RIG_EDGE.COMPACT_W + (x.open ? 12 : 0)) * cs; }
+      else x.hidden = true;
+    }
+    spots = place();
+  }
   const out = new Map();
   for (const x of drawn) {
     if (!out.has(x.edge)) out.set(x.edge, { cs, lines: [] });
-    out.get(x.edge).lines.push({ key: x.id, which: x.which, from: x.roleFrom, to: x.roleTo, d: x.d, P: x.P, s: x.s, t: x.t, sp: x.sp, tp: x.tp, items: x.items, text: x.text, open: x.open, waiting: x.waiting, wait: x.wait, n: x.n, lab: spots.get(x.id), w: x.w, h: x.h });
+    out.get(x.edge).lines.push({ key: x.id, which: x.which, head: x.head.d, dLine: x.head.dLine, fit: x.hidden ? 'hidden' : x.compact ? 'compact' : 'full', from: x.roleFrom, to: x.roleTo, d: x.d, P: x.P, s: x.s, t: x.t, sp: x.sp, tp: x.tp, items: x.items, text: x.text, open: x.open, waiting: x.waiting, wait: x.wait, n: x.n, lab: x.hidden ? null : spots.get(x.id), w: x.w, h: x.h });
   }
   return out;
 }

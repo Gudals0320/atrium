@@ -10,7 +10,8 @@
 import { collectCycle } from './rig-beat.mjs';
 import { waitingRaises, raiseStates } from './rig-tune.mjs';
 import { HUMAN, BUILDER_ROLE } from './rig-def-names.mjs';
-import { gridPlace, GRID_BUILDER, placeGap } from './rig-map-layout.mjs';
+import { GRID_BUILDER, placeGap, rigCluster, rigSep } from './rig-map-layout.mjs';
+import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P262: rig 노드 크기의 기본
 
 export const MAP_RECENT = 3; // 섹터마다 보이는 최근 항목 수(더 있으면 +n)
 export const FLOW_RECENT = 4; // 길마다 마우스를 올리면 뜨는 최근 항목 수
@@ -163,6 +164,14 @@ export function rigMaps(b) {
 
 // 켠 뒤 한 번: 역할 노드(와 빌더가 있으면 빌더)를 2D 칸에 놓는다(P254: 선이 엇갈리거나 노드를 지나는 것이 가장 적은 자리, rig-map-layout.mjs gridPlace).
 //   닻은 역할 노드들의 왼쪽 위(처음 띄운 자리 근처). 칸 간격 = 노드 크기 + placeGap(노드 크기). → 옮긴 수
+// P262: rig 노드(역할·빌더)는 모두 같은 크기(rigNodeSize)로 놓는다. 자동 정렬(canvas-ops.mjs planWorkspace)도 같은 덩어리(rigArrangeOf)를 쓴다.
+// rig 노드 크기: 사람이 손으로 크기를 정한 rig 노드(meta handSize, canvas-ops.mjs markHandSize)가 있으면 그 가운데 가장 최근 것의 크기를 모두에,
+//   없으면 새 세션 크기(16:9 가로 보통 1440×810, canvas.mjs NEW_NODE). rows: 그 rig의 노드 줄
+export function rigNodeSize(rows, hand = {}) {
+  const h = (rows || []).filter((n) => n && hand[n.session_id] && n.w > 0 && n.h > 0).sort((a, c) => hand[c.session_id] - hand[a.session_id])[0];
+  if (h) return { w: h.w, h: h.h, size: h.size || null, aspect: h.aspect || null, hand: h.session_id };
+  return { w: NEW_NODE.w, h: NEW_NODE.h, size: NEW_NODE_STEP, aspect: DEFAULT_ASPECT, hand: null };
+}
 function gridOf(b, key) {
   const r = b.rig3 ? b.rig3.defOf(key) : null;
   if (!r) return null;
@@ -171,29 +180,28 @@ function gridOf(b, key) {
   const byS = new Map((b.store.nodes ? b.store.nodes() : []).map((n) => [n.session_id, n]));
   const nodes = new Map();
   for (const n of names) { const s = b.rig3.sessionsOf(key, n)[0]; const nd = s && byS.get(s.sessionId); if (nd) nodes.set(n, { s, nd }); }
-  if (!nodes.size) return null;
-  const xs = [...nodes.values()].map((x) => x.nd);
-  const W = Math.max(...xs.map((n) => n.w)), H = Math.max(...xs.map((n) => n.h));
-  const { GX, GY } = placeGap(W, H);
-  const g = gridPlace(names, r3.flows, { W, H, GX, GY, beatRole: r3.beat ? r3.beat.role : null });
-  return { g, nodes, byS, W, H, GY, SX: g.colStep || W + GX, SY: g.rowStep || H + GY };
+  const bs = b.rig3.builder && b.rig3.builder.sessionOf ? b.rig3.builder.sessionOf(key) : null;
+  const bn = bs ? byS.get(bs.sessionId) || null : null;
+  const sz = rigNodeSize([...[...nodes.values()].map((x) => x.nd), bn], (b.store.getMeta && b.store.getMeta('handSize')) || {});
+  const cl = rigCluster(names, r3.flows, { W: sz.w, H: sz.h, beatRole: r3.beat ? r3.beat.role : null });
+  return { g: cl.grid, at: cl.at, nodes, byS, builder: bn ? { s: bs, nd: bn } : null, size: sz, W: sz.w, H: sz.h, GX: cl.GX, GY: cl.GY, SX: cl.SX, SY: cl.SY };
 }
-const putNode = (b, s, nd, x, y) => {
-  if (x === nd.x && y === nd.y) return 0;
-  b.store.setNode({ ...nd, x, y });
-  try { b.api && b.api.broadcast('board.node', { sessionId: s.sessionId, x, y, w: nd.w, h: nd.h, z: nd.z ?? 0, by: null }); } catch {}
+const putNode = (b, s, nd, x, y, sz = null) => {
+  const w = sz ? sz.w : nd.w, h = sz ? sz.h : nd.h;
+  if (x === nd.x && y === nd.y && w === nd.w && h === nd.h) return 0;
+  b.store.setNode({ ...nd, x, y, w, h, ...(sz && sz.size ? { size: sz.size, aspect: sz.aspect } : {}) });
+  try { b.api && b.api.broadcast('board.node', { sessionId: s.sessionId, x, y, w, h, z: nd.z ?? 0, by: null }); } catch {}
   return 1;
 };
 export function placeRoles(b, key) {
   const o = gridOf(b, key);
-  if (!o) return 0;
+  if (!o || !o.nodes.size) return 0;
   const xs = [...o.nodes.values()].map((x) => x.nd);
   const x0 = Math.min(...xs.map((n) => n.x)), y0 = Math.min(...xs.map((n) => n.y));
   let moved = 0;
-  for (const [n, { s, nd }] of o.nodes) { const c = o.g.cells.get(n); moved += putNode(b, s, nd, Math.round(x0 + c.c * o.SX), Math.round(y0 + c.r * o.SY)); }
-  const bs = b.rig3.builder && b.rig3.builder.sessionOf ? b.rig3.builder.sessionOf(key) : null;
-  const bn = bs && o.byS.get(bs.sessionId), bc = o.g.cells.get(GRID_BUILDER);
-  if (bn && bc) moved += putNode(b, bs, bn, Math.round(x0 + bc.c * o.SX), Math.round(y0 + bc.r * o.SY));
+  for (const [n, { s, nd }] of o.nodes) { const c = o.at.get(n); moved += putNode(b, s, nd, x0 + c.x, y0 + c.y, o.size); }
+  const bc = o.at.get(GRID_BUILDER);
+  if (o.builder && bc) moved += putNode(b, o.builder.s, o.builder.nd, x0 + bc.x, y0 + bc.y, o.size);
   if (moved) b.log && b.log('rig roles placed ' + key + ': ' + moved);
   return moved;
 }
@@ -201,14 +209,32 @@ export function placeRoles(b, key) {
 export function placeBuilder(b, key, sessionId) {
   const o = gridOf(b, key);
   const nd = o && o.byS.get(sessionId);
-  if (!o || !nd) return 0;
-  const bc = o.g.cells.get(GRID_BUILDER);
+  if (!o || !nd || !o.nodes.size) return 0;
+  const bc = o.at.get(GRID_BUILDER);
   const [n0, { nd: r0 }] = [...o.nodes][0];
-  const c0 = o.g.cells.get(n0);
-  let x = Math.round(r0.x - c0.c * o.SX + bc.c * o.SX), y = Math.round(r0.y - c0.r * o.SY + bc.r * o.SY);
-  const over = (n) => n.session_id !== sessionId && x < n.x + n.w && n.x < x + nd.w && y < n.y + n.h && n.y < y + nd.h;
+  const c0 = o.at.get(n0);
+  const W = o.size.w, H = o.size.h;
+  let x = Math.round(r0.x - c0.x + bc.x), y = Math.round(r0.y - c0.y + bc.y);
+  const over = (n) => n.session_id !== sessionId && x < n.x + n.w && n.x < x + W && y < n.y + n.h && n.y < y + H;
   if ([...o.byS.values()].some(over)) { const rs = [...o.nodes.values()].map((v) => v.nd); y = Math.max(...rs.map((n) => n.y + n.h)) + o.GY; x = Math.max(...rs.map((n) => n.x)); }
-  return putNode(b, b.sessions.get(sessionId) || { sessionId }, nd, x, y);
+  return putNode(b, b.sessions.get(sessionId) || { sessionId }, nd, x, y, o.size);
+}
+// P262: 자동 정렬이 쓰는 rig 덩어리. rig가 켜진 워크스페이스에서 판에 노드가 있는 역할·빌더 세션 → null | {
+//   cells: Map 세션 → { x, y }(덩어리 왼쪽 위가 0, 0. 있는 노드만으로 다시 잰다), w, h(덩어리 바깥), size(rigNodeSize), sep(덩어리와 나머지 사이), GX, GY }
+//   ids를 주면 그 세션만 넣는다(정리할 블록 = 본 저장소 영역의 단독 노드. 덩어리·워크트리 상자에 든 rig 노드는 빼고 그 블록 규칙을 따른다)
+export function rigArrangeOf(b, key, ids = null) {
+  if (!b.rig || !b.rig.enabled || !b.rig.enabled(key)) return null;
+  const o = gridOf(b, key);
+  if (!o) return null;
+  const pick = [];
+  for (const [n, { s }] of o.nodes) pick.push([s.sessionId, o.at.get(n)]);
+  if (o.builder && o.at.get(GRID_BUILDER)) pick.push([o.builder.s.sessionId, o.at.get(GRID_BUILDER)]);
+  const got = pick.filter(([sid, c]) => c && (!ids || ids.has(sid)));
+  if (!got.length) return null;
+  const mx = Math.min(...got.map(([, c]) => c.x)), my = Math.min(...got.map(([, c]) => c.y));
+  const cells = new Map(got.map(([sid, c]) => [sid, { x: c.x - mx, y: c.y - my }]));
+  const w = Math.max(...[...cells.values()].map((c) => c.x)) + o.size.w, h = Math.max(...[...cells.values()].map((c) => c.y)) + o.size.h;
+  return { cells, w, h, size: o.size, sep: rigSep(o.GX, o.GY), GX: o.GX, GY: o.GY };
 }
 
 // 판 API(읽기만: 창·연결한 기기)
