@@ -2567,3 +2567,29 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-merger-answer { display: flex; align-items: center; gap: 8px; }
 .mt-merger-answer-v { font-size: 12px; color: var(--dim); }
 .mt-merger-answer-v.on { color: var(--wire-observed); }
+/* ---------- P274: 명령 바 글 칸 폭과 긴 입력 ----------
+   P248 스티어링 글자 단추와 받는 세션 칩(최대 38%)이 글 칸 옆에 서서 글 칸이 좁았다(좁은 창에서 바 560px 가운데 200px).
+   받는 세션 칩과 스티어링 상태·Ctrl+Enter 안내는 바 위 테두리에 걸친 띠(.mt-cmd-head)로 옮기고, 스티어링은 30px 둥근 아이콘 토글로 줄였다.
+   글 칸은 마크·마이크와 오른쪽 단추 셋(스티어링·Thread·보내기) 사이를 모두 쓴다. 띠는 바 배경을 깔아 테두리를 가린다 */
+.mt-cmd-head { position: absolute; left: 84px; right: 120px; top: -12px; z-index: 2; display: flex; align-items: center; gap: 6px; min-width: 0; pointer-events: none; }
+.mt-cmd-head > * { pointer-events: auto; }
+.mt-cmd-head .mt-cmd-to { flex: 0 1 auto; max-width: none; margin: 0; padding: 0 6px 0 5px; height: 24px; border-radius: 12px; background: var(--chrome-bg-2); }
+.mt-cmd-head .mt-cmd-to-chip { height: 20px; border-radius: 10px; }
+.mt-cmd-steer-state, .mt-cmd-steer-key { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 11px; white-space: nowrap; font: 600 11.5px/1 var(--font-ui); }
+.mt-cmd-steer-state { color: var(--accent-ink); background: var(--accent); }
+.mt-cmd-steer-state .mt-i { width: 12px; height: 12px; }
+.mt-cmd-steer-key { color: var(--chrome-text-3); font-weight: 500; background: var(--chrome-bg-2); border: 1px solid var(--chrome-line); }
+.mt-cmd-steer-key kbd { font: 600 10.5px/1 var(--font-mono); color: var(--chrome-text-2); }
+.mt-cmd > .mt-cmd-steer { position: relative; width: 30px; height: 30px; flex: none; margin-bottom: 14px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: 1.3px dashed var(--cmd-btn-line); background: none; color: var(--chrome-text-2); cursor: pointer; }
+.mt-cmd > .mt-cmd-steer .mt-i { width: 15px; height: 15px; }
+.mt-cmd > .mt-cmd-steer:hover { color: var(--chrome-text); border-color: var(--chrome-text-3); }
+.mt-cmd > .mt-cmd-steer.on { border: 1.3px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+.mt-cmd > .mt-cmd-steer[data-off] { color: var(--chrome-text-3); border-color: var(--chrome-line); cursor: not-allowed; }
+/* 긴 입력: 공백 없는 긴 줄(경로 등)도 글 칸 폭 안에서 꺾는다. 바가 자라도 위 Thread는 창 위로 넘치지 않는다(--mt-cmd-grow, 바·칩 줄·위 머리줄 자리를 뺀다) */
+.mt-cmd-field > .mt-cmd-input, .mt-cmd-mirror { overflow-wrap: anywhere; }
+.mt-thread { max-height: max(140px, min(42vh, calc(100vh - 240px - var(--mt-cmd-grow, 0px)))); }
+.mt-deliveries { max-height: max(80px, calc(100vh - 260px - var(--mt-cmd-grow, 0px))); overflow-y: auto; }
+/* 좁은 바: 받는 세션 칩보다 Ctrl+Enter 안내가 먼저 줄어든다(안내 글은 말줄임) */
+.mt-cmd-head > .mt-cmd-steer-key { flex: 0 100 auto; min-width: 0; overflow: hidden; }
+.mt-cmd-steer-key > kbd { flex: none; }
+.mt-cmd-steer-key > .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

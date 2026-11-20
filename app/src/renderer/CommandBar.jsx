@@ -37,6 +37,7 @@ import { kbLift } from './lib/touch-board.js'; // P83
 import { useVoice, VoiceButton } from './Voice.jsx'; // P165
 import { splitLive } from './lib/voice-text.js'; // P165
 import { steerTargets, steerParam, steerFellBack } from './lib/steer.js'; // P248: 스티어링 선택
+import { cmdHead } from './lib/cmd-head.js'; // P274: 바 위 테두리 띠(받는 세션 칩, 스티어링 상태·Ctrl+Enter 안내)
 import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange, autoTag } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
@@ -376,7 +377,8 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     if (stage && bar) stage.style.setProperty('--mt-cmd-grow', `${Math.max(0, Math.round(bar.offsetHeight - 60))}px`);
   });
   const parts = splitLive(mirrorParts(text, tokens), voice.live); // P165: 미확정 들은 글은 흐리게
-  const toShown = toList.slice(0, 3), toMore = toList.length - toShown.length;
+  const head = cmdHead({ recipients: toList, steerTo, steer, hasText: !!text.trim() }); // P274
+  const toShown = head.chips, toMore = head.more;
   const toTitle = (r) => (r.state === 'all' ? t('cmdTo.all', { n: r.count }) : r.state === 'unknown' ? t('cmdTo.unknown', { name: r.ref }) : r.state === 'shell' ? t('cmdTo.shell', { name: r.name }) : t('cmdTo.ok', { name: r.name }));
   return (
     <>
@@ -434,16 +436,23 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
             </div>
           )}
         </div>
-        {/* P142: 이 글이 가는 세션. 없는 이름·셸은 다른 모양 */}
-        {toList.length > 0 && (
-          <div className="mt-cmd-to" data-role="cmd-to" aria-label={t('cmdTo.label')}>
-            <span className="mt-cmd-to-arrow" aria-hidden="true">→</span>
-            {toShown.map((r) => <span key={r.state + r.name} className={`mt-cmd-to-chip st-${r.state}`} data-to={r.name} data-state={r.state} title={toTitle(r)}>@{r.name}{r.state === 'all' ? <span className="n">{r.count}</span> : null}</span>)}
-            {toMore > 0 && <span className="mt-cmd-to-chip more" title={toList.slice(3).map((r) => '@' + r.name).join(' ')}>+{toMore}</span>}
+        {/* P274: 바 위 테두리에 걸친 띠. 이 글이 가는 세션(P142, 없는 이름·셸은 다른 모양)과 스티어링 상태·Ctrl+Enter 안내. 글 칸 폭을 먹지 않는다 */}
+        {head.show && (
+          <div className="mt-cmd-head" data-role="cmd-head">
+            {toShown.length > 0 && (
+              <div className="mt-cmd-to" data-role="cmd-to" aria-label={t('cmdTo.label')}>
+                <span className="mt-cmd-to-arrow" aria-hidden="true">→</span>
+                {toShown.map((r) => <span key={r.state + r.name} className={`mt-cmd-to-chip st-${r.state}`} data-to={r.name} data-state={r.state} title={toTitle(r)}>@{r.name}{r.state === 'all' ? <span className="n">{r.count}</span> : null}</span>)}
+                {toMore > 0 && <span className="mt-cmd-to-chip more" title={toList.slice(3).map((r) => '@' + r.name).join(' ')}>+{toMore}</span>}
+              </div>
+            )}
+            {head.steer === 'on' && <span className="mt-cmd-steer-state" data-role="cmd-steer-state" title={steerTitle}><Icon name="steer" />{t('cmdHead.steerOn')}</span>}
+            {head.steer === 'key' && <span className="mt-cmd-steer-key" data-role="cmd-steer-key" title={steerTitle}><kbd>Ctrl+Enter</kbd><span className="t">{t('cmdHead.steerKey')}</span></span>}
           </div>
         )}
+        {/* P274: 스티어링은 둥근 아이콘 토글(P248의 글자 단추가 글 칸을 좁혔다). 켜짐은 채운 단추와 위 띠의 글로 보인다 */}
         {steerShown && (
-          <button type="button" className={`mt-cmd-steer${steer && !steerOff ? ' on' : ''}`} data-action="cmd-steer" aria-pressed={steer && !steerOff} aria-disabled={steerOff || undefined} data-off={steerOff ? '1' : undefined} title={steerTitle} aria-label={`${t('cmdSteer.label')}: ${steerTitle}`} onMouseDown={(e) => e.preventDefault()} onClick={() => { if (!steerOff) setSteer((v) => !v); }}>{t('cmdSteer.label')}</button>
+          <button type="button" className={`mt-cmd-steer${steer && !steerOff ? ' on' : ''}`} data-action="cmd-steer" aria-pressed={steer && !steerOff} aria-disabled={steerOff || undefined} data-off={steerOff ? '1' : undefined} title={steerTitle} aria-label={`${t('cmdSteer.label')}: ${steerTitle}`} onMouseDown={(e) => e.preventDefault()} onClick={() => { if (!steerOff) setSteer((v) => !v); }}><Icon name="steer" /></button>
         )}
         <ThreadToggle />
         <button className={`mt-cmd-send${text.trim() ? ' on' : ''}`} onPointerDown={(e) => { if (e.pointerType === 'touch') e.preventDefault(); }} onClick={() => send()} title={t('cmd.send')} data-action="send"><Icon name="arrowUp" /></button>
