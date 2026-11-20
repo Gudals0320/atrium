@@ -15,6 +15,7 @@ import { envVar } from './config.mjs';
 import { WebServer, isLocalProcess } from './web.mjs'; // P48(R2): 웹 화면, 짝 맺기, 기기 토큰, 폴더 목록, 업로드
 import { DeliveryQueue, bgOnlyOf, steerBlock } from './delivery.mjs';
 import { Rig, rigHandlers } from './rig.mjs'; // P182: rig(하네스 정의) 켜기·읽기·훅
+import { docHandlers } from './doc-watch.mjs'; // P257: 문서 점검 판 API(docs.status·enable·disable)
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { rigAdminHandlers } from './rig-admin.mjs';
 import { rigItemHandlers } from './rig-items.mjs'; // P242
@@ -264,6 +265,7 @@ export class Backend {
       drafts: this.draftIo(),
     });
     // P128: 쓰다 만 글을 비킴(aside)·비키지 못함(keep)·되돌림(back). 되돌리지 못한 글은 이 이벤트의 text로 판 기록에 남는다
+    this.queue.beforeDeliver = (d) => (this.docs ? this.docs.beforeDeliver(d) : undefined); // P257: 문서 점검 경고 한 줄
     this.queue.on('draft', (r) => {
       this.store.addEvent(r.sessionId, 'delivery_draft', r);
       this.log(`delivery draft ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.phase}${r.how ? ` ${r.how}` : ''}${r.result ? ` → ${r.result}${r.by ? ` (${r.by})` : ''}` : ''}${r.why ? ` [${r.why}]` : ''} ${r.chars ?? ''} chars`);
@@ -2169,6 +2171,7 @@ export class Backend {
       'session.send': (p) => this.send(p),
       // P182: rig 켜기는 사람만(판 API 토큰으로 붙은 이 PC의 창·명령). 기기(휴대폰) 연결은 상태만 본다. 에이전트의 세션 토큰은 이 API에 붙지 못한다
       ...rigHandlers(this), // rig.status·rig.get·rig.enable·rig.disable
+      ...docHandlers(this), // P257: docs.status·docs.enable·docs.disable
       ...rigAdminHandlers(this), // P188: 사람의 rig 관리(판 API 토큰만): rig.check·log·rollback·events
       ...rigItemHandlers(this), // P242: rig 입력 창구(rig3.intake, 사람만)
       ...rigBeatHandlers(this), // P244: rig 손 박자(rig3.beat, 사람만)

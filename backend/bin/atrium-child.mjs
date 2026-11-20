@@ -16,6 +16,7 @@
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
 //       atrium log "<한 줄>" [--json] · atrium news [<이름>] [--all] [--json]   (P204: 동료 소식)
 //       atrium guide [--json]   (P182: 자세한 사용법 + 켜진 rig의 역할 안내)
+//       atrium docs [--json]   (P257: 이 워크스페이스의 문서 점검 결과)
 //       atrium rig put|accept|return|pass|drop|inbox|tool|heard|tune|raise|role …(rig 역할 세션) | check [파일] | log [--events](빌더 세션) [--json]   (P188·P242~P247)
 import http from 'node:http';
 import fs from 'node:fs';
@@ -155,6 +156,13 @@ async function main() {
   if (cmd === 'guide') return guideVerb(); // P182
   if (cmd === 'log' || cmd === 'news') return newsVerb(cmd); // P204
   if (cmd === 'rig') return rigVerb(); // P188
+  if (cmd === 'docs') { // P257: 문서 점검 결과
+    const u = await call('docs', {}, 30000);
+    if (flags.json) { say(JSON.stringify(u.result ?? { error: u.error }, null, 2)); if (u.error) process.exit(1); return; }
+    if (u.error) fail(`읽지 않았다(${u.error.code}): ${u.error.message}`);
+    for (const line of u.result.lines || []) say(line);
+    return;
+  }
   if (cmd === 'usage') { // P211: 구독 사용량
     const u = await call('usage', {}, 20000);
     if (flags.json) { say(JSON.stringify(u.result ?? { error: u.error }, null, 2)); if (u.error) process.exit(1); return; }
