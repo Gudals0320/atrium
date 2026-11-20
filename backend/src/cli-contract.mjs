@@ -27,6 +27,7 @@
 // P252: rig answer <올림> "<까닭>"(빌더가 올림에 고치지 않고 답해 닫음)과 raise 응답의 id 칸을 더했다(더하기만이라 5 그대로)
 // P248: prompt --steer(스티어링, --now와 같은 길)를 더했다(더하기만이라 4 그대로)
 // P237: prompt --talk(rig 자리에 회 없이 글만)와 prompt 응답의 talk 칸, 거절 까닭 rig_run_open을 더했다(더하기만이라 4 그대로)
+// P257: docs 동사(이 워크스페이스의 문서 점검 결과, 읽기만)를 더했다(더하기만이라 5 그대로)
 // 5(P249): 옛 rig(1·2)를 걷어냈다. tool 동사, prompt --case·--talk, done --artifact와 rig 값, guide rig, rig의 rollback·cleanup·retry·status·pause·resume·name·artifacts·propose·proposals·approve·reject·run, 응답의 rig·case·flow·talk 칸이 없어졌다
 export const CONTRACT_VERSION = 5;
 // P204: 동료 소식. atrium log 한 줄의 상한, atrium news가 한 번에 보이는 줄
@@ -61,6 +62,8 @@ export const VERBS = [
   { name: 'guide', args: ['[--json]'], does: '자세한 사용법(help --long). 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json)가 있으면 역할 명령 안내를 붙이고, 정의가 잘못됐으면 그 까닭을 보인다', out: ['rig'] },
   // P188·P242~P247: rig
   { name: 'rig', args: ['put <종류> <파일> [--from <항목>] [--redo <항목>] | accept <항목> | return <항목> "<까닭>" | pass [<항목>] "<까닭>" | drop <항목> "<까닭>" | inbox | tool [<이름> [인자…]] | heard "<요지>" | tune --file <파일> --why "<한 줄>" --evidence <id…> | tune --none "<까닭>" | raise "<무엇>" | role [<역할>] | check [파일] | log [--events [--since seq|시각] [--kinds a,b] [--limit n]] | answer <올림> "<까닭>"', '[--json]'], does: 'rig 역할 세션의 명령: 항목 내기·받기·반려·pass·버리기·받은 것 보기, 자기 도구 돌리기, 바로잡음 남기기, 요령 칸 조정·올리기, 정의서 보기. check(후보 정의 검사)와 log(판 목록, --events는 장부)와 answer(올림에 고치지 않고 답해 닫기)는 그 워크스페이스의 빌더 세션이 쓴다(check는 rig가 꺼진 워크스페이스면 어느 세션이든). 그 밖 세션은 종료 코드 1과 까닭', out: ['item', 'items', 'tools', 'run', 'ok', 'reason', 'summary', 'versions', 'current', 'rows', 'last', 'more'] },
+  // P257: 문서 점검(보드가 지휘 세션의 턴 끝과 done 알림에 한 줄로 알리는 것의 자세한 결과)
+  { name: 'docs', args: ['[--json]'], does: '이 워크스페이스의 문서 점검 결과: 문서마다 글자 수와 예산, 허락한 꼴, PLAN의 세 절과 끝남 표시, HEAD보다 커짐. 막지 않는다. 문서는 지휘 세션이 고치고 워커는 바꿀 문장을 done 보고에 적는다', out: ['on', 'dir', 'rows', 'total', 'problems', 'lead'] },
   // P211: 구독 사용량(보드가 로컬 출처에서 모은 마지막 값. 읽기만)
   { name: 'usage', args: ['[--json]'], does: '구독 사용량(Claude, Codex, AGY): 한도 창(5시간·주간 등)마다 사용률과 리셋까지 남은 시간, 크레딧, 요금제, 받은 때. 보드가 이 PC의 로컬 출처에서 모은 마지막 값이고 모르면 모름. 일을 크게 나누기 전에 남은 양을 볼 때', out: ['providers', 'alertsOn', 'at'] },
 ];

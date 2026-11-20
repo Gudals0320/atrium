@@ -28,16 +28,18 @@ const DONE_TEXT_MAX = 100000;
 // P182: rig가 켜진 워크스페이스면 rig 한 줄을 더한다(rig.mjs RIG_HEADER_LINE)
 // P208: Codex(Windows PowerShell 5.1)는 글 안의 큰따옴표를 빼먹으므로 둘째 줄 끝에 --file 길을 붙인다
 export const PS_DONE_TAIL = '여러 줄이나 큰따옴표가 든 보고는 파일에 쓰고 `atrium done ok --file <경로>`로 준다.';
-export function unitHeader({ parent, unitId, rig = false, kind = null }) {
+// P257: docs = 문서가 있는 워크스페이스면 셋째 줄 끝에 "문서는 고치지 않고 보고만"(doc-check.mjs workerTail)
+export function unitHeader({ parent, unitId, rig = false, kind = null, docs = null }) {
   return [
     `[Atrium 보드] 관계: 너는 @${parent}의 하위 워커다. 아래 일은 @${parent}가 맡긴 일 ${unitId}이다(지금 일 보기: \`atrium item\`).`,
     `[Atrium 보드] 끝나면 \`atrium done ok "<보고>"\`(못 했으면 \`atrium done failed "<까닭>"\`)로 닫고 쉰다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다.${kind === 'codex' ? ` ${PS_DONE_TAIL}` : ''}`,
-    `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.${rig ? ` ${RIG_HEADER_TAIL}` : ''}`, // P188: 판 줄은 세 줄 이하라 rig 안내는 셋째 줄 끝에
+    `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.${rig ? ` ${RIG_HEADER_TAIL}` : ''}${docs ? ` ${docs}` : ''}`, // P188: 판 줄은 세 줄 이하라 rig 안내는 셋째 줄 끝에
   ].join('\n');
 }
 // 위 세션이 받는 done 글(판 알림 꼴이라 위 세션 카드의 마지막 지시가 되지 않는다)
-export function doneNotice({ child, unitId, result, text, spec }) {
-  return `[Atrium 보드] @${child}가 일 ${unitId}("${clip(String(spec || '').replace(/\s+/g, ' '), 60)}")을 닫았다: ${result}\n${text}`;
+// P257: extra = 글 끝에 붙는 판 줄(문서 규칙, doc-watch.mjs doneLines)
+export function doneNotice({ child, unitId, result, text, spec, extra = [] }) {
+  return `[Atrium 보드] @${child}가 일 ${unitId}("${clip(String(spec || '').replace(/\s+/g, ' '), 60)}")을 닫았다: ${result}\n${text}${extra.length ? `\n\n${extra.join('\n')}` : ''}`;
 }
 // 에이전트가 보내는 글은 판 알림 꼴로 시작할 수 없다(판 알림을 흉내 내 다른 세션의 머리·알림처럼 보이지 않게)
 export function checkAgentText(text, what = '보낼 글') {
@@ -74,6 +76,7 @@ export class WorkUnits {
     const hold = !!st.openTryOf(t.sessionId) || st.queuedUnitsOf(t.sessionId).length > 0;
     const unit = { id: newId('u'), from: caller.sessionId, to: t.sessionId, origin, spec: String(spec), status: 'open', createdAt: Date.now() };
     st.insertUnit(unit);
+    if (this.b.docs) this.b.docs.onDelegate(caller); // P257: 첫 위임 때 .atrium/(git 밖)
     st.addEvent(t.sessionId, 'unit_open', { unitId: unit.id, from: caller.name, origin, held: hold, chars: unit.spec.length });
     this.b.log(`unit ${unit.id} ${caller.name} → ${t.name} (${origin}${hold ? ', held' : ''})`);
     if (hold) { this.queued.add(t.sessionId); return { unit, held: true, ahead: st.queuedUnitsOf(t.sessionId).length - 1 + (st.openTryOf(t.sessionId) ? 1 : 0) }; }
@@ -95,7 +98,7 @@ export class WorkUnits {
   headerOf(unit) {
     const b = this.b;
     const t = b.sessions.get(unit.to);
-    return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)), kind: t ? t.kind || 'claude' : null }); // P208
+    return unitHeader({ parent: this.nameOf(unit.from), unitId: unit.id, rig: !!(b.rig && b.rig.activeForSession(unit.to)), kind: t ? t.kind || 'claude' : null, docs: b.docs ? b.docs.headerTail(t) : null }); // P208. P257: 문서 한 마디
   }
   // 붙잡아 둔 일을 넣을 차례인가(열린 시도가 없을 때 먼저 온 것 하나)
   pump(sessionId) {
@@ -186,7 +189,8 @@ export class WorkUnits {
     if (!parent || unit.from === unit.to) claimedBy = 'record';
     else if (ws && ws.size) { claimedBy = 'wait'; for (const w of ws) w.got = { ...val, tryId: tr.id }; }
     else {
-      const d = b.queue.enqueue(parent.sessionId, doneNotice({ child: this.nameOf(caller.sessionId), unitId: unit.id, result, text, spec: unit.spec }));
+      const extra = b.docs ? b.docs.doneLines(parent) : []; // P257: 지휘 세션이면 문서 규칙 한 줄(점검 경고는 전달 직전에 붙는다)
+      const d = b.queue.enqueue(parent.sessionId, doneNotice({ child: this.nameOf(caller.sessionId), unitId: unit.id, result, text, spec: unit.spec, extra }));
       claimedBy = 'queue'; noticeDeliveryId = d.deliveryId;
     }
     st.updateTry(tr.id, { claimedBy, noticeDeliveryId });

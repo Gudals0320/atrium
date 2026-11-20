@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rigEvent } from './rig-ledger.mjs';
+import { placeBuilder } from './rig-map.mjs'; // P254: 빌더가 처음 뜨면 빌더 칸에
 import { shownName } from './session-label.mjs';
 import { deriveState } from './state.mjs';
 import { BUILDER_ROLE, builderWrites, RIG_DIR } from './rig-def.mjs';
@@ -100,6 +101,7 @@ export class RigBuilder {
       if (s.rigRole !== BUILDER_ROLE) { s.rigRole = BUILDER_ROLE; if (this.b.store.setSessionRole) this.b.store.setSessionRole(s.sessionId, BUILDER_ROLE); }
       if (this.b.queue) this.b.queue.enqueue(s.sessionId, this.loadText(key), { origin: { kind: 'board' } });
       spawned = true;
+      try { placeBuilder(this.b, key, s.sessionId); } catch (e) { this.log('rig3 builder place ' + e.message); } // P254: 빌더 칸(켤 때 놓은 역할 자리 기준)
       rigEvent(this.b, { kind: 'builder_spawn', ws: key, session: s.sessionId, actor: 'human', text: '@' + (shownName(s) || s.name) + ' 빌더를 띄움', data: { model: model || null, writes: this.writes(key) } });
       try { this.b.store.addEvent(s.sessionId, 'rig3_builder_spawn', { workspace: key }); } catch {}
       this.log('rig3 builder ' + key + ' spawned ' + s.name);
