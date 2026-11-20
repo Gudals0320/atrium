@@ -446,5 +446,6 @@ export function dropMergerAsk(ws) { if (!state.merger) return; state.merger = wi
 export function dismissMergerAsk(key) { state.mergerDismissed = new Set(state.mergerDismissed).add(key); changed(); }
 api.on('$open', () => loadMerger(0));
 api.on('merger.ask', (card) => { putMergerAsk(card); loadMerger(); });
+api.on('merger.problem', (p) => { if (p && p.why) toast(t('merger.problem', { name: p.workspaceName || p.workspace || '?', why: p.why }), 'error'); loadMerger(); }); // P275
 api.on('merger.answered', (d) => { if (d && d.workspace) dropMergerAsk(d.workspace); loadMerger(); });
 for (const ev of ['merger.updated', 'session.created', 'session.removed']) api.on(ev, () => loadMerger());

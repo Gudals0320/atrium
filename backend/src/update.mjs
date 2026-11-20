@@ -13,6 +13,7 @@ import http from 'node:http';
 import https from 'node:https';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
+import { stripDenied, envDenyList } from './proc-env.mjs';
 import { envVar } from './config.mjs';
 
 export const UPDATE_REPO = 'Gudals0320/atrium';
@@ -299,8 +300,17 @@ export function runningVersion(codeRoot, dir) {
 // ---------- 준비 ----------
 // 부모 Claude Code 표시 변수와 ELECTRON_RUN_AS_NODE를 뺀 환경(npm, 미리 보기, 새 백엔드)
 export const cleanEnv = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AGENT_SDK|ELECTRON_RUN_AS_NODE)/.test(k)));
-// 프로세스를 돌리고 끝을 기다린다. 실패하면 출력의 끝 몇 줄을 함께 던진다
-export function run(cmd, args, { cwd, env = cleanEnv(), timeoutMs = 15 * 60 * 1000, onLine } = {}) {
+// P275: 업데이트·설치가 띄우는 자식(npm ci, Electron 설치, 새 버전 미리 보기)의 환경. cleanEnv에 더해 판이 터미널에서 지우는 비밀(proc-env.mjs envDenyList:
+// SONIOX_API_KEY와 ATRIUM_ENV_DENY에 적은 이름)과 그 목록 변수(ATRIUM_ENV_DENY, MTASK_ENV_DENY) 자체를 뺀다. PATH·프록시(HTTP(S)_PROXY, NO_PROXY)·npm_config_*·
+// 사용자 폴더(USERPROFILE, APPDATA 등)는 그대로 둔다(npm과 설치 스크립트가 쓴다).
+// 바꾸기(update-swap.mjs)와 다시 띄우는 창·백엔드는 판 자신이라 cleanEnv를 쓴다(음성 입력이 SONIOX_API_KEY를, 새 판이 ATRIUM_ENV_DENY를 읽어야 한다)
+export function childEnv(env = process.env) {
+  const out = stripDenied(cleanEnv(env), envDenyList(env));
+  for (const k of Object.keys(out)) if (/^(ATRIUM|MTASK)_ENV_DENY$/i.test(k)) delete out[k];
+  return out;
+}
+// 프로세스를 돌리고 끝을 기다린다. 실패하면 출력의 끝 몇 줄을 함께 던진다. 환경은 기본으로 childEnv(P275)
+export function run(cmd, args, { cwd, env = childEnv(), timeoutMs = 15 * 60 * 1000, onLine } = {}) {
   return new Promise((res, rej) => {
     const p = spawn(cmd, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const tail = [];

@@ -2694,7 +2694,7 @@ export default {
     modeNote: '켬: 브랜치(워크트리)에서 일한 워커가 done ok로 끝나면 보드가 그 워커를 재우고 merger 세션이 합칩니다. 합쳐지면 워커를 닫고 보관하고, 실패하면 일을 맡긴 세션에 알립니다. 물어봄: 프로젝트마다 처음 한 번 카드로 묻습니다. 끔: 지금처럼 일을 맡긴 세션이 합칩니다.',
     modeSet: { on: 'merger 켬', ask: 'merger: 프로젝트마다 물어봄', off: 'merger 끔' },
     kind: '에이전트',
-    kindHint: 'merger 세션의 에이전트 종류(예: claude). 보드에 없으면 일을 맡긴 세션의 종류를 씁니다',
+    kindHint: 'merger 세션의 에이전트 종류(예: claude). 이 PC에 설치돼 있지 않으면 Claude Code를, 그것도 없으면 Codex를 씁니다',
     model: '모델',
     modelHint: 'merger 세션의 모델',
     effort: '노력',
@@ -2728,6 +2728,8 @@ export default {
       failed: '실패 · {branch} → {target}',
       title: '@{child} → @{merger}: {branch}를 {target}에 합치기\n누르면 merger로 갑니다',
     },
+    // P275: merger를 띄우지 못했다(설치된 하네스가 없음 등)
+    problem: 'merger를 띄우지 못했습니다({name}): {why}. 결과는 맡긴 세션에게 보냈습니다.',
   },
 };
 

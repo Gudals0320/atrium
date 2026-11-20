@@ -37,6 +37,7 @@ export function mergerViewOf(r) {
     mergers: Array.isArray(x.mergers) ? x.mergers : [],
     jobs: Array.isArray(x.jobs) ? x.jobs : [],
     jobsMax: x.jobsMax || 5,
+    problem: x.problem && typeof x.problem === 'object' && x.problem.at ? x.problem : null, // P275: merger를 띄우지 못한 마지막 까닭
   };
 }
 
