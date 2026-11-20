@@ -14,6 +14,8 @@ import { roleModel, nodeTier } from './lib/mission-model.js';
 import { levelOf, zoomAt, ZOOM } from './lib/mission-terr.js';
 import { PM, touchIntent, pinchView, phoneFit, goView, openView, saveView, sizeKey, loadTab, saveTab } from './lib/phone-map.js';
 import { Card, Peek, cardFacts } from './MissionLineage.jsx';
+import { mergeEdgeCls, mergeTreeCls, mergeTip, mergerHead } from './MissionLineage.jsx'; // P276: merger 선·역할
+import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위 줄기 위에(PC와 같은 규칙)
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기 세기
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
 
@@ -76,8 +78,11 @@ export function PhoneMap({ onOpen, head, tip }) {
   const today = useMemo(() => new Set(todayKey ? todayKey.split('\n') : []), [todayKey]);
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   const vkey = sizeKey(vsize); // 단 나누기는 보이는 칸 비율을 따른다(크기가 조금 바뀌어도 다시 놓지 않게 20px 단위)
+  const mergerView = useStore((st) => st.merger), mergerLast = useStore((st) => st.mergerLast); // P276
+  const mkey = JSON.stringify(mapMergers(mergerView, mergerLast));
+  const mergers = useMemo(() => JSON.parse(mkey), [mkey]);
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
-  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(() => lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, tab: tabSel || 'auto' })) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, today, tabSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lay = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, graph && vsize ? timedLayout(() => lineageLayout(graph, { vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, phone: true, view: vsize, today, tab: tabSel || 'auto', mergers })) : null)), [graph, vgroups, tiers, names, t, expanded, vkey, today, tabSel, mergers]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (graph && lay ? roleModel(graph, { tiers, tree: lay.tree }) : new Map()), [graph, lay, tiers]);
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
@@ -91,7 +96,7 @@ export function PhoneMap({ onOpen, head, tip }) {
     const b = lay.cards.get(id), n = b.node, m = roles.get(id);
     const pid = m && m.parentId, p = pid ? lay.tree.byId.get(pid) : null;
     const pws = p ? p.workspaceKey || '' : null;
-    return keepFacts(id, cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length }));
+    return keepFacts(id, cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length, mergerFor: mergerHead(b, lay) }));
   };
   const onFold = useCallback((id) => { quiet.current = Date.now() + 400; setExpanded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); saveExpanded(n); return n; }); }, []);
 
@@ -321,11 +326,14 @@ export function PhoneMap({ onOpen, head, tip }) {
                 <defs>
                   {KINDS.map((k) => <marker key={k} id={`mt-pmap-tip-${k}`} className={`mt-sm-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}
                   <marker id="mt-pmap-end-peer" className="mt-sm-tip k-peer" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
+                  <marker id="mt-pmap-end-merge" className="mt-sm-tip k-merge" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
+                  <marker id="mt-pmap-end-merge-failed" className="mt-sm-tip k-merge st-failed" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
                 </defs>
                 {lay.edges.map((e) => {
+                  if (e.merger) return <path key={e.id} className={mergeEdgeCls(e)} data-role="ta-edge" data-merger="1" data-state={e.state} data-from={e.from} data-to={e.to} d={e.d} markerStart={mergeTip('mt-pmap', e)} markerEnd={mergeTip('mt-pmap', e)} />; // P276
                   const k = e.peer ? 'peer' : e.lineage ? 'lineage' : e.cross ? 'cross' : e.rel;
                   const tip = e.peer ? 'url(#mt-pmap-end-peer)' : e.lineage ? undefined : `url(#mt-pmap-tip-${KINDS.includes(k) ? k : 'spawn'})`;
-                  return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
+                  return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}${mergeTreeCls(e)}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
                 })}
               </svg>
               {ids.filter((id) => !lay.cards.get(id).folded).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}

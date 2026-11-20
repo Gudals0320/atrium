@@ -23,6 +23,7 @@ import { SummaryColumn } from './SummaryColumn.jsx';
 import { commandDraft } from './Thread.jsx';
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기·카드 그리기 세기(성능 기록 map 묶음)
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
+import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위 줄기 위에
 
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
 const RAIL = 0; // P153 r9: 목차 레일은 없앴다(앱 사이드바를 같이 쓴다)
@@ -58,11 +59,17 @@ const EXP_KEY = 'atrium.sessionMap.expanded';
 const loadExpanded = () => { try { const a = JSON.parse(localStorage.getItem(EXP_KEY) || '[]'); return new Set(Array.isArray(a) ? a.slice(0, 200) : []); } catch { return new Set(); } };
 const saveExpanded = (s) => { try { localStorage.setItem(EXP_KEY, JSON.stringify([...s].slice(-200))); } catch { /* 기억 못 해도 지금 화면은 된다 */ } };
 // P153 r12: 놓자마자 보이는 관계(판 답을 기다리는 동안, applyRelationStub = P156 그래프 모양)는 두 세션 쌍마다 하나
+// P276: merger 선(merger → head 줄기)과 합치는 하위로 가는 나무 선의 클래스·끝 점(휴대폰 맵도 쓴다)
+export const mergeEdgeCls = (e) => `mt-ta-edge k-merge st-${e.state || 'queued'}${e.state === 'merging' ? ' active' : ''}${e.idle ? ' idle' : ''}`;
+export const mergeTreeCls = (e) => (e.merging ? ' merging' : e.mergeFailed ? ' merge-failed' : '');
+// P276: head 위에 얹은 merger 카드의 역할 자리는 '솔로' 대신 누구의 일을 합치는지(head 이름, 아니면 null)
+export const mergerHead = (b, lay) => { const h = b && b.merger && b.merger.head && lay.tree.byId.get(b.merger.head); return h ? h.name : null; };
+export const mergeTip = (p, e) => `url(#${p}-end-merge${e.state === 'failed' ? '-failed' : ''})`;
 const relKey = (x) => [x.a, x.b].sort().join('|');
 const putRel = (list, x) => [...list.filter((y) => relKey(y) !== relKey(x)), x];
 
 // 카드 사실(보통 단계 줄들, 풍선 도움말, 휴대폰 시트가 같이 쓴다)
-export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentWs = null, cross = false, kids = 0 } = {}) {
+export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentWs = null, cross = false, kids = 0, mergerFor = null } = {}) { // P276: mergerFor = head 위에 얹은 merger 카드의 head 이름
   const kind = (live && (live.flavor || live.kind)) || n.agentKind || 'claude';
   const k = kindOf(kind);
   const shell = k.id === 'shell';
@@ -75,7 +82,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const model = shell ? null : live && live.model ? modelText(live.model, live.effort) : modelText(n.model, n.effort);
   // P157: 하위를 불렀던 세션(닫힌 하위·최근 지시)·상위가 닫힌 세션은 솔로가 아니다. 역할 자리에 작게 그 까닭
   const called = n.closedKids ? t('mmLine.closedKids', { n: n.closedKids }) : n.assignAt ? t('mmLine.assigned') : n.parentClosed ? t('mmLine.parentClosed') : null;
-  const role = m ? (m.rank === 'solo' ? ((n.peers || []).length ? t('mmLine.peer') : called || t('mmTerr.solo')) : roleText(m, t, { short: true })) : ''; // r11: 정한 동료는 '동료'
+  const role = mergerFor ? t('merger.mapFor', { name: mergerFor }) : m ? (m.rank === 'solo' ? ((n.peers || []).length ? t('mmLine.peer') : called || t('mmTerr.solo')) : roleText(m, t, { short: true })) : ''; // r11: 정한 동료는 '동료'
   const lp = n.lastPrompt || (live && live.lastPrompt) || null;
   const ask = n.ask || (live && live.ask && (live.ask.summary || live.ask.kind)) || null;
   const err = live && live.error ? (live.error.message || String(live.error)) : n.error || null;
@@ -102,7 +109,7 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
   noteMap('cards');
   const n = b.node;
   const st = ST[tier] || 'ready';
-  const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}`;
+  const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}${b.merger ? ' merger' : ''}${b.merger && b.merger.head && b.merger.idle ? ' merger-idle' : ''}`; // P276: merger 카드
   const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.bg ? `${f.bgText} (${f.bgKinds})` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip'), t('mmLine.cardDragTip')].filter(Boolean).join('\n');
   const done = tier === 'review';
   return (
@@ -113,9 +120,9 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
         {b.thin ? <span className="mt-sm-thin" data-role="ta-thin"><i /><span className="cname" data-role="ta-name">{n.name}</span>{f.age ? <span className="cago">{f.age}</span> : null}</span> : null}
         {tier === 'work' && <MissionLight role="ta-light" />}
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
-        {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
+        {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{b.merger ? <span className="mt-sm-merger-tile" data-role="ta-merger-tile">{t('merger.tag')}</span> : null}{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">
-          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" /></span>
+          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" /></span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
@@ -267,7 +274,12 @@ export function LineageMap() {
   const names = useMemo(() => new Map((workspaces || []).map((w) => [w.key, wsName(w.key)])), [workspaces]);
   // 판 그래프 + 답을 기다리는 놓기(pending). 판이 받은 관계는 판 그래프(P156)에 들어 있다
   const g2 = useMemo(() => (graph ? applyRelationStub(graph, pending) : null), [graph, pending]);
-  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea }), [vgroups, tiers, names, t, expanded, today, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // P276: merger 자리(열린 합치기 일의 원래 부모 = head 위). 내용이 같으면 같은 배열(배치를 다시 세지 않는다)
+  const mergerView = useStore((st) => st.merger);
+  const mergerLast = useStore((st) => st.mergerLast);
+  const mkey = JSON.stringify(mapMergers(mergerView, mergerLast));
+  const mergers = useMemo(() => JSON.parse(mkey), [mkey]);
+  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea, mergers }), [vgroups, tiers, names, t, expanded, today, fitKey, mergers]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
   const lay0 = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
   const lay = lay0;
@@ -284,7 +296,7 @@ export function LineageMap() {
     const b = lay.cards.get(id), n = b.node, m = roles.get(id);
     const pid = m && m.parentId, p = pid ? lay.tree.byId.get(pid) : null;
     const pws = p ? p.workspaceKey || '' : null;
-    return keepFacts(id, cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length }));
+    return keepFacts(id, cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length, mergerFor: mergerHead(b, lay) }));
   }, [lay, roles, tiers, sessions, t, relOfChild]); // eslint-disable-line react-hooks/exhaustive-deps
   const tagSet = useMemo(() => new Set(tags.map((x) => x.toLowerCase())), [tags]);
 
@@ -718,11 +730,15 @@ export function LineageMap() {
                 {KINDS.map((k) => <marker key={k} id={`mt-sm-tip-${k}`} className={`mt-sm-tip k-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 L10 5 L0 10 z" /></marker>)}
                 {/* P153 r11: 동료 선은 양 끝에 작은 점(화살촉 없음, 위아래가 없다) */}
                 <marker id="mt-sm-end-peer" className="mt-sm-tip k-peer" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
+                {/* P276: merger 선은 캔버스 merger 선처럼 양 끝에 점(실패면 빨강) */}
+                <marker id="mt-sm-end-merge" className="mt-sm-tip k-merge" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
+                <marker id="mt-sm-end-merge-failed" className="mt-sm-tip k-merge st-failed" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
               </defs>
               {lay.edges.map((e) => {
+                if (e.merger) return <path key={e.id} className={mergeEdgeCls(e)} data-role="ta-edge" data-merger="1" data-state={e.state} data-from={e.from} data-to={e.to} d={e.d} markerStart={mergeTip('mt-sm', e)} markerEnd={mergeTip('mt-sm', e)} />; // P276
                 const k = e.peer ? 'peer' : e.lineage ? 'lineage' : e.cross ? 'cross' : e.rel;
                 const tip = e.peer ? 'url(#mt-sm-end-peer)' : e.lineage ? undefined : `url(#mt-sm-tip-${KINDS.includes(k) ? k : 'spawn'})`;
-                return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
+                return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}${mergeTreeCls(e)}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
               })}
             </svg>
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}

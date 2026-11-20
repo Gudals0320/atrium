@@ -2727,6 +2727,8 @@ export default {
     },
     // P275: merger를 띄우지 못했다(설치된 하네스가 없음 등)
     problem: 'merger를 띄우지 못했습니다({name}): {why}. 결과는 맡긴 세션에게 보냈습니다.',
+    // P276: 세션 맵에서 리드 위에 얹은 merger 카드의 역할 줄
+    mapFor: '{name}의 일 합치기',
   },
   // P274: 명령 바 위 띠(스티어링 상태·Ctrl+Enter 안내), 휴대폰 스티어링 토글, 판이 다시 뜰 때 정리한 옛 대기 전달
   cmdHead: {

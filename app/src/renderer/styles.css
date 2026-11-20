@@ -2344,6 +2344,25 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 .mt-sm .mt-ta-world.lv-far .mt-sm-thin i { width: 12px; height: 12px; border-width: 2.5px; }
 .mt-sm .mt-ta-world.lv-far .mt-sm-thin .cago { font-size: 18px; }
 
+/* P276: 세션 맵의 merger. head → 하위 갈림 줄기 위에 얹은 merger 카드와 그 연결 선(캔버스 merger 선과 같은 보라 점선, 합치는 중이면 흐름, 실패면 빨강, 열린 일이 없으면 흐리게).
+   합치는 하위로 가는 나무 선은 밝게, 실패한 하위로 가는 것은 빨강 */
+.mt-ta-edge.k-merge, .mt-sm-tip.k-merge { --ec: var(--wire-observed); }
+.mt-ta-edge.k-merge { stroke-width: 2; stroke-dasharray: 6 5; opacity: 1; }
+.mt-ta-edge.k-merge.st-failed, .mt-sm-tip.k-merge.st-failed { --ec: var(--bad); }
+.mt-ta-edge.k-merge.active { animation: mt-merge-dash 0.8s linear infinite; }
+@keyframes mt-merge-dash { to { stroke-dashoffset: -11; } }
+.mt-ta-edge.k-merge.idle { opacity: 0.45; }
+.mt-sm-tip.k-merge circle { fill: var(--ec); }
+.lv-far .mt-ta-edge.k-merge { stroke-width: 4; stroke-dasharray: 12 10; }
+.lv-far .mt-ta-edge.k-merge.active { animation-name: mt-merge-dash-far; }
+@keyframes mt-merge-dash-far { to { stroke-dashoffset: -22; } }
+.mt-ta-edge.merging { stroke: color-mix(in srgb, var(--ec) 45%, #fff); stroke-width: 2.6; opacity: 1; }
+.lv-far .mt-ta-edge.merging { stroke-width: 6; }
+.mt-ta-edge.merge-failed { stroke: var(--bad); opacity: 1; }
+.mt-sm-lead.mt-sm-merger { border-color: color-mix(in srgb, var(--wire-observed) 55%, transparent); color: var(--wire-observed); }
+.mt-ta-slot.merger-idle { opacity: 0.6; }
+.mt-sm-merger-tile { flex: none; color: var(--wire-observed); font-weight: 600; margin-right: 0.5em; }
+
 /* P164: 쉬는 세션 카드의 뒤 일 표시(뒤 셸·뒤 하위 에이전트). 작업 중 빛과 달리 조용한 무채색 알약, 움직이지 않는다. 끝나면 사라진다 */
 .mt-bg-ico { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .mt-bg-badge { flex: none; display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(255, 252, 240, 0.18); background: rgba(255, 252, 240, 0.05); color: #cfcbc1; font-size: 11.5px; font-weight: 500; line-height: 1.5; white-space: nowrap; }

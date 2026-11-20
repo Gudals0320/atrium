@@ -2723,6 +2723,8 @@ export default {
     },
     // P275: the board could not start a merger (no installed harness and the like)
     problem: 'Could not start a merger ({name}): {why}. The result went to the session that assigned the work.',
+    // P276: session map, role line of a merger card set above its lead
+    mapFor: 'merges for {name}',
   },
   // P274: strip above the command bar (steering state, Ctrl+Enter hint), phone steering toggle, old held deliveries cleared at restart
   cmdHead: {
