@@ -67,9 +67,11 @@ import { useBoardMotion } from './zoom-var.js'; // P127: 판을 움직이는 동
 import { openFull, fullId, onFull } from './full-view.js'; // P76
 import { termBudgetNow, boardPlan, step } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게. P86: 보드 단계(levelPlan)와 단계 기록
 import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
+import { MergerEdge } from './Merger.jsx'; // P268: 하위 → merger 선
+import { mergerLines } from './lib/merger.js'; // P268
 
 const nodeTypes = { session: withBoundary(SessionNode, 'session'), region: withBoundary(RegionNode, 'region'), wtarea: withBoundary(WorktreeAreaNode, 'wtarea'), wsgroup: withBoundary(GroupFrameNode, 'wsgroup'),memo: withBoundary(MemoNode, 'memo'), kanban: withBoundary(KanbanNode, 'kanban'), convo: withBoundary(ConvoNode, 'convo'), wtbox: WorktreeBox, divider: DividerNode, ghost: GhostNode, dockgrip: DockGrip, dockedge: DockEdge, docklinks: DockLinks };
-const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge, rigpath: RigPathEdge, rigraise: RigRaiseEdge }; // P251
+const edgeTypes = { link: LinkEdge, repo: RepoEdge, spawnc: SpawnEdge, rigpath: RigPathEdge, rigraise: RigRaiseEdge, merge: MergerEdge }; // P251. P268: merge
 const HOLD_MS = 1500; // 화면 밖으로 나간 노드의 제어기를 놓기 전 기다리는 시간(끌 때 붙였다 뗐다 하지 않게)
 const DRAG_MIN_PX = 3; // 이보다 덜 끌었으면 자리를 바꾸지 않는다(누르기)
 const SNAP_PX = 48; // 가장자리끼리 화면에서 이만큼 가까우면 붙을 자리를 보인다
@@ -346,6 +348,7 @@ export function Canvas() {
   }, [storeNodes, sessions, docks, links, workspaces, wsGroups, memos, kanbans, convoNodes, rev, currentWs]); // P23: links(덩어리 안 연결선). P91: wsGroups(묶음 테두리)
 
   const rigMaps = useStore((st) => st.rigMaps); // P251: rig 길 선 자료
+  const mergerView = useStore((st) => st.merger); // P268: 하위 → merger 선 자료(merger.status jobs)
   // P259: rig 칩·화살촉의 최소 화면 크기(배율을 반 단계(√2)로 묶어 그때만 다시 센다)
   const rigZb = useFlowStore((s) => Math.round(Math.log2(s.transform[2] || 1) * 2) / 2);
   const edgesRef = useRef(null); // P146: 지난번 선(값이 같으면 다시 쓴다)
@@ -391,10 +394,12 @@ export function Canvas() {
       const rig = rigLines.get(e.id);
       made.push({ id: e.id, source: e.source, target: e.target, ...sides(e.source, e.target), type: e.kind === 'raise' ? 'rigraise' : 'rigpath', data: rig ? { ...e, rig } : e, selectable: false });
     }
+    // P268: 하위 → merger 선(열린 합치기 일). 보통 연결과 같은 곡선·글 자리 규칙, 한 쌍에 선 하나
+    for (const e of mergerLines(mergerView, here)) if (!adjacent(e.source, e.target)) made.push({ id: e.id, source: e.source, target: e.target, ...sides(e.source, e.target), type: 'merge', data: { ...e, ...gapOf(e.source, e.target) }, selectable: false });
     const prevById = new Map((edgesRef.current || []).map((e) => [e.id, e]));
     const next = made.map((e) => { const o = prevById.get(e.id); return o && Object.keys(o).length === Object.keys(e).length && sameFields(o, e) ? o : e; });
     return sameList(edgesRef.current, next) ? edgesRef.current : next;
-  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick, currentWs, rigMaps, rigZb]);
+  }, [links, sessions, storeNodes, docks, convoNodes, convoEdges, workspaces, labelTick, currentWs, rigMaps, rigZb, mergerView]);
   edgesRef.current = edges;
 
   // 노드 손잡이를 끌어 이으면 역할을 묻는다(F2). 같은 쌍에 이미 역할이 있으면 고칠 수 있게 같은 대화상자를 연다
