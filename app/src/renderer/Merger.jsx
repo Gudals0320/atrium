@@ -56,6 +56,7 @@ export function MergerTab({ settings }) {
         </select>
       </SetRow>
       <SetNote>{t('merger.repoNote')}</SetNote>
+      {view && view.problem && <div className="mt-set-row" data-role="merger-problem"><span className="mt-set-hint">{t('merger.problem', { name: nameOf(view.problem.workspace) || '?', why: view.problem.why })}</span></div>}
       {answers.length > 0 && <div className="mt-set-row mt-merger-answers" data-role="merger-answers">
         <span className="mt-set-name">{t('merger.answers')}</span>
         <span className="mt-set-value mt-merger-answer-list">

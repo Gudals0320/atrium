@@ -2051,9 +2051,9 @@ export default {
     reason_timeout: 'timed out',
     reason_endpoint_host: 'push service not allowed',
   },
-  // P90: phone messages typed straight into a working Claude Code session (its own queue)
+  // P90: phone messages typed straight into a working Claude Code session (its own queue). P271: a working Codex takes them into its current turn
   typeNow: {
-    typed: 'queued in Claude Code',
+    typed: 'into the current turn',
     draft: 'text in the input box',
   },
   // P94: mission map roles and relations (PC window, PC web and phone share lib/mission-model.js)
@@ -2543,7 +2543,7 @@ export default {
     down: 'Move down',
     keysHint: 'Alt+↑/↓ to reorder',
     now: 'Send now',
-    now_steer: 'Types it into the input box now. Claude Code reads it as a queued message while it works.',
+    now_steer: 'Types it into the input box now. A working Claude Code reads it as a queued message; a working Codex takes it into its current turn.',
     now_now: 'Sends it right away.',
     now_wake: 'Wakes the session and sends this first.',
     now_afterBlock: 'The session is waiting for an answer or a confirmation. This goes first once that is done.',
@@ -2552,7 +2552,7 @@ export default {
     editingNow: 'This message is being edited. Save or cancel the edit first.',
     editingElsewhere: 'Being edited elsewhere',
     sentNow: 'sent now',
-    sentNowTyped: 'sent now · added to the Claude Code queue',
+    sentNowTyped: 'sent now · into the current turn',
     failed: 'Could not do that: {error}',
   },
   // P171: temporary links (the line of a one-off request to an unrelated session)
@@ -2650,8 +2650,8 @@ export default {
   // P248: steering choice in the command bar and the phone input row (default is the queue)
   cmdSteer: {
     label: 'Steer',
-    title: 'When on, the message goes into the working Claude Code\'s current turn (read between tool calls). Use it for extra information or a correction about what the session is doing now. When off, it goes in after the current turn ends (queue). Ctrl+Enter also sends as steering.',
-    phoneTitle: 'When on, the message goes into the working Claude Code\'s current turn (read between tool calls). Use it for extra information or a correction about what the session is doing now. When off, it goes in after the current turn ends (queue).',
+    title: 'When on, the message goes into the current turn of a working Claude Code or Codex (Claude Code reads it between tool calls). Use it for extra information or a correction about what the session is doing now. When off, it goes in after the current turn ends (queue). Ctrl+Enter also sends as steering.',
+    phoneTitle: 'When on, the message goes into the current turn of a working Claude Code or Codex (Claude Code reads it between tool calls). Use it for extra information or a correction about what the session is doing now. When off, it goes in after the current turn ends (queue).',
     off: 'Cannot steer: {why}. The message goes to the queue.',
     some: '{names} cannot be steered; those go to the queue.',
     fell: '{names}: cannot steer, sent to the queue ({why}).',
@@ -2687,7 +2687,7 @@ export default {
     modeNote: 'On: when a worker that worked on a branch (worktree) finishes with done ok, the board puts it to sleep and a merger session merges it. Merged workers are closed and archived; failures go to the session that assigned the work. Ask: the board asks once per project with a card. Off: the session that assigned the work merges, as before.',
     modeSet: { on: 'Merger on', ask: 'Merger: ask per project', off: 'Merger off' },
     kind: 'Agent',
-    kindHint: 'Agent kind for the merger session (e.g. claude). If the board has no such kind, the assigning session\'s kind is used',
+    kindHint: 'Agent kind for the merger session (e.g. claude). If it is not installed on this PC, the board uses Claude Code, or Codex when Claude Code is missing',
     model: 'Model',
     modelHint: 'Model for the merger session',
     effort: 'Effort',
@@ -2721,6 +2721,8 @@ export default {
       failed: 'failed · {branch} → {target}',
       title: '@{child} → @{merger}: merge {branch} into {target}\nClick to go to the merger',
     },
+    // P275: the board could not start a merger (no installed harness and the like)
+    problem: 'Could not start a merger ({name}): {why}. The result went to the session that assigned the work.',
   },
   // P274: strip above the command bar (steering state, Ctrl+Enter hint), phone steering toggle, old held deliveries cleared at restart
   cmdHead: {

@@ -3,13 +3,13 @@
 </p>
 
 <p align="center">
-  <b>One infinite canvas for all your CLI coding agents.</b><br>
-  See every Claude Code, Codex and shell session at once, know whose turn it is, and talk to them without switching windows.
+  <b>An infinite canvas for your CLI coding agents.</b><br>
+  Run Claude Code, Codex, Antigravity, opencode, pi, and shells on one spatial board — see who is working, who needs you, and coordinate them without switching windows.
 </p>
 
 <p align="center">
   <img alt="Electron 45" src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white">
-  <img alt="Node.js 22.13+" src="https://img.shields.io/badge/Node.js-22.13%2B-5FA04E?logo=nodedotjs&logoColor=white">
+  <img alt="Node.js 22.15+ or 24.14+" src="https://img.shields.io/badge/Node.js-22.15%2B%20%7C%2024.14%2B-5FA04E?logo=nodedotjs&logoColor=white">
   <img alt="Windows 10 | 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1CB66D">
 </p>
@@ -18,106 +18,125 @@
   <b>English</b> · <a href="README.ko.md">한국어</a>
 </p>
 
-![The Atrium board: a web-app repository with a lead agent docked with two workers, a reviewer and a worker waiting for an answer, a worktree box, a memo and a kanban; an api repository with two shells](.github/images/board.png)
+![Atrium board showing a web-app workspace with docked Claude Code and Codex terminals, an active git worktree box, a merger handoff, a memo, a kanban board, and an api workspace with live shells](.github/images/board.png)
 
-## What it is
+## Why Atrium
 
-Atrium is a Windows desktop app that puts every agent CLI session on one board. Each repository gets its own area, every session shows its live terminal and its state, working agents glow orange, and the sessions that need you glow yellow.
+Running five or twenty coding agents in parallel breaks down fast in tabs and scrolling sidebars: every list reorders on activity, background sessions disappear, and you miss the one prompt waiting for approval.
 
-Atrium does not replace your agents or tell them how to work. It starts sessions, connects them and shows the connections. The agents do the work and hand it to each other with the board's `atrium` command.
+Atrium gives every repository and live terminal a fixed place on one infinite canvas. Working agents glow orange, sessions waiting for you glow yellow, and every terminal runs outside the app inside [herdr-core](https://github.com/herdrdev/herdr-core). Close the window, restart the backend, or update Atrium — your sessions keep running and reattach when you come back.
 
-The terminals live in [herdr-core](https://github.com/herdrdev/herdr-core), a terminal server that runs on its own. Close the window, restart the backend or update Atrium, and every session keeps running; the board attaches to them again when it starts. Atrium downloads a pinned herdr-core the first time it needs it, so there is nothing extra to install.
+## A quick tour
 
-## Features
+### One canvas for every repo
 
-### The board
+Each repository gets its own region, and active git worktrees appear as yellow boxes inside it. Up close, every node is a live `xterm.js` terminal you can type in directly. Zoom out and nodes simplify into status cards with their latest prompt and reply.
 
-- **Every session on one canvas.** Claude Code, Codex, opencode, pi, other agent CLIs and plain shells live side by side. Each repository is an area, and each live git worktree is a yellow box inside its repository's area.
-- **Faces that follow the zoom.** Up close a node is its terminal. Further out it becomes a chat view, then a summary card: name, state, waiting question, last request and last answer. Click a node to fly to it.
-- **Launchers.** A launcher is a harness plus a connection, a model and options, or one command line you write. Paste the command you already use (for example `claude --model haiku` or a wrapper command) and the board splits it into fields; any agent launcher can use another start command and still runs as a full board session. Star it and it sits on the left rail: click it, type a session name (or leave it empty) and press Enter. A new board starts with two launchers on the rail, Claude Code and Codex; add a shell or any other launcher with the **+** below them (it opens Settings › Launchers).
-- **Sidebar and find.** The sidebar (`Ctrl+Shift+E`) is built for boards with 200+ sessions: virtual groups of repositories, filters by state and kind, and keyboard moves. `Ctrl+F` finds sessions by name, prompt, question or answer, plus memos and kanban cards.
-- **Pick up old work.** Past Claude Code CLI conversations in an open folder appear as cards you can resume. Unarchived Claude desktop app sessions can be imported as forks, so the app's copy is never touched.
-- **Easy on memory.** A repository that stays idle for 30 minutes (configurable) goes to sleep as a whole, and a session that stays idle for 30 minutes sleeps alone even while its repository is busy. Click a sleeping node to wake it: a repository that slept as a whole wakes as a whole, a session that slept alone wakes alone. Each node shows its memory use.
+The top bar stays consistent across all repositories:
 
-![The sidebar with repositories and sessions, and the find window with results for "theme"](.github/images/sidebar.png)
+- **Needs you** (`N`) jumps straight to the oldest waiting prompt.
+- **Done** collects finished top-level turns you have not viewed yet, with **Mark all read**.
+- **Usage** tracks local Claude, Codex (including remaining credits), and Antigravity quota windows.
+- **Memory & CPU** shows per-session and system usage; idle repos and idle sessions automatically sleep to free RAM and wake on click or message with the same conversation, model, and effort level.
 
-### Your turn
+Markdown memos and session-linked kanban boards sit right next to your terminals.
 
-- **Know who is waiting.** Every session is *working*, *ready*, *your turn* or *error*, computed from the terminal server's status events and Claude Code hooks. Finished answers you have not looked at yet count as *Done*. A worker whose parent session is open on the board does not count; its parent becomes *Done* once it takes the report and ends its turn.
-- **Answer in the terminal.** The board does not answer prompts for you. A waiting node turns yellow, joins the needs-you list and notifies you; click it (or press `N`) to land in its terminal. On a phone, a small key pad (arrows, Enter, Esc, Tab, Space, 1–4) opens when a session needs you and sends those keys to its terminal, for Claude Code, Codex and shells alike.
-- **One list for all repositories.** The **Your turn** pill lists every waiting session, oldest first, and `N` jumps to the next one. OS notifications and the tray icon tell you when the window is in the background.
-- **Changes since you looked.** Come back after a break and **Changes** sums up what each session did.
+### Session Map (`Tab`)
 
-![Your turn: the list of waiting sessions, a reviewer's question card and a worker's permission card](.github/images/your-turn.png)
+![Session Map showing Today and Earlier columns, parent-worker trees, peer chains across repos, multi-harness cards, working border light, summary column, and command bar tagging](.github/images/session-map.png)
 
-### Agents working together
+Press `Tab` to switch from the canvas to the **Session Map** — an infinite lineage view organized by folder and repository, split into **Today** and **Earlier**.
 
-- **Role links.** Draw a link from one session to another and give it a role, such as `worker` or `reviewer`. The agent learns how to hand work to that role with `atrium prompt`, and the link lights up while work moves along it.
-- **Agents hand work to each other through the board.** `atrium prompt <name> "<task>" --wait` sends a task to another session and returns its final answer, `atrium wait <name>` waits for a session's current turn to end, and `atrium read <name>` shows its recent screen. The board delivers with the same rules as the command bar (it waits while the other agent is working or needs you, or while you are typing in its terminal, and wakes a sleeping session first), draws the link and keeps the exchange. The commands are the same on every terminal backend and every harness, and run without permission prompts in Claude Code sessions the board starts.
-- **Workers on demand.** Agents start their own workers with `atrium child`, with no limit on count or depth. The board's `atrium` skill tells them when to split work across workers and git worktrees. Workers line up to the right of their parent in the order they were started, and show their parent, role and number in the header.
-- **Models by name.** `atrium child --model "glm flash"` resolves a spoken model name against the models the board knows (`atrium models`), and model errors go back to the parent. A Claude Code session can start a Codex worker with `--kind codex`: it uses the rail's Codex launcher, model names with a slash such as `zai/glm-flash`, and the parent's permission mode as Codex approval flags.
-- **Every harness talks to the board.** Claude Code, Codex, opencode and pi sessions started by the board all get the `atrium` command on `PATH`, the board's environment and a short instruction (`atrium help`, `atrium help --json` for the machine contract), so any of them can run `atrium me` and start workers. Resume, recovery after a terminal server restart and reopening a closed session bring back the same environment, instruction and connection.
-- **Connections.** A connection is an endpoint, a protocol (Anthropic Messages, OpenAI Responses or OpenAI Chat Completions) and an auth environment variable name (the value stays in your environment). Launchers pick a connection; each harness only offers the protocols it speaks (Claude Code: Anthropic, Codex: Responses, opencode and pi: all three). The board checks the connection before a start, lists its models in `atrium models`, and never translates protocols.
-- **Links you can read.** A session runs `atrium me` to see its parent, workers and role links as the board has them now, and gets a short notice when they change. Detach a session from its parent on the board, or start one with `atrium child --head` to lead its own work.
-- **Mission map and Thread.** `M` opens a map of who directs whom: each workspace sits on a faint plate, teams flow left to right in small cards with model, effort and time, idle and asleep sessions are bordered pills, a light runs along the border of working cards in their state color so you can spot them from far away (it also runs around working nodes on the board; Settings › General › Working session light: On, Follow Windows, Off), thin unlabeled curves join a lead to its workers, two sessions linked both ways are joined by two short lines, a summary column lists who needs you and who is working, and pointing at a session keeps only its links. The phone map uses the same look in screen-width lanes. Thread keeps every prompt you sent from the command bar with its delivery state and the final report.
-- **Talk from the board.** Type `@name` or `@all` in the command bar. Each session has its own delivery queue, and a message is confirmed only when the agent actually submits it. Loops resend a prompt on a schedule or whenever a session goes idle.
+- Follow parent–worker trees and peer chains across Claude Code, Codex, Antigravity, and pi without crossing lines.
+- Spot running sessions from afar by their animated border light, while sleeping workers collapse into compact rows.
+- Click any card to `@tag` it directly in the bottom command bar and send a prompt without leaving the map, or double-click to jump to its terminal.
 
-![The mission map: the user, a lead with two workers and a reviewer, a worktree session, and the shells of a second repository](.github/images/agents.png)
+### Docks, delivery queues, and mid-turn steering
 
-### Live terminals
+![Docked terminals with layout presets on top and the command bar showing a per-session delivery queue and Steer toggle](.github/images/dock.png)
 
-- **Real terminals.** Every near node in the project you pick in the top bar is an xterm.js terminal attached to its herdr-core terminal, so you can type in it directly. Sessions in other projects show a summary until you click one or zoom right in, which keeps a busy board smooth.
-- **Sessions outlive the board.** herdr-core runs the terminals outside Atrium's processes. Closing the window, stopping the backend or updating Atrium does not end a session.
-- **Select like a web page.** Drag to select at any zoom; the selection follows scrolling, scrolls at the edges and copies beyond the screen.
-- **Paste that works.** Bracketed paste for agents, multi-line paste for shells.
-- **Scale.** UI and terminal text scale from 70% to 150% (terminal text on phones down to 40%).
-- **Output view.** Long answers open as Markdown on the side, where you can reply or save them as `.md`.
+- **Docks.** `Ctrl`+drag any terminal onto another node's edge to split it tmux-style, switch presets for 2–6+ panes, and keep links as clean divider bridges instead of lines across your screen.
+- **Per-session delivery queue.** Send messages to `@name` or `@all` from the command bar (`Ctrl+K` or `↓`). Prompts queue while an agent is busy and submit cleanly once its turn ends. Reorder, edit, or cancel queued messages at any time.
+- **Steer mid-turn.** Toggle **Steer** (or press `Ctrl+Enter`) to inject guidance into a running Claude Code turn immediately instead of waiting in the queue.
+- **Answer in the terminal.** Atrium does not wrap prompts in brittle modal cards — click a yellow session (or press `N`) and reply directly in the real terminal.
 
-### Docks and layout
+### Sidebar & Quick Find for large boards
 
-- **Docks.** `Ctrl`+drag a node onto another node's edge to split it, tmux style. Layout presets match the number of sessions (2 to 6, and even splits for 7 or more). Links inside a dock show as small bridges on the dividers, never as lines across your terminals.
-- **Size and arrange.** Size steps (large, normal, small, wide, tall) for nodes and docks. **Arrange** lays out the board along the links and fits the whole board to the screen ratio, with one undo. Folders inside one another, or under one project folder, are grouped under one frame with relative path labels, and show as one chip in the top bar. Workspaces linked to each other by workers, roles or requests are placed side by side.
-- **Notes on the canvas.** Markdown memos and kanban boards sit next to the sessions. A card linked to a session shows its state and takes you there.
+![Slim sidebar at high resolution showing a collapsed folder keeping active and needs-you sessions pinned underneath, alongside the Ctrl+F Quick Find overlay](.github/images/sidebar.png)
 
-![A dock: the lead on the left and two workers on the right, with the layout presets for three sessions open above](.github/images/dock.png)
+- **Collapsed folders keep active work visible.** Toggle the sidebar (`Ctrl+Shift+E`) to navigate virtual repo groups and hundreds of sessions. Even when a folder or repo is collapsed, **working and needs-you sessions stay pinned underneath** so nothing running slips out of view.
+- **Quick Find (`Ctrl+F`).** Search sessions by name, prompt, question, or reply — plus memos and kanban cards.
+- **Resume past work.** Unattached Claude Code and Codex CLI conversations appear per repo so you can bring them onto the board in one click.
 
-### Remote access
+### Multi-agent handoffs & Auto-Merger
 
-- **The board in a browser.** Open the same board from a laptop over [Tailscale](https://tailscale.com). The backend still listens only on `127.0.0.1`; `tailscale serve` on the PC passes tailnet requests to it.
-- **Pair with a code.** Press **New code** on the PC, or allow a request from the laptop. A paired browser is bound to the Tailscale device it paired from.
-- **Passkey optional.** Off by default. Turn it on to confirm sign-ins with a phone or Windows Hello passkey.
-- **Stay in control.** A connection log, attach notices, **Disconnect** and **Unpair** per device, and an **Accept remote connections** switch.
-- **On a phone.** Added to the home screen, the board opens the session list and the mission map, and notifies you when a lead's whole work cycle ends (its workers included) or a session needs an answer (session name only, never the question). Worker alerts default to answers only.
-- Each client keeps its own view. In the browser you can also pick PC folders and drop files into a terminal.
+Every agent Atrium starts — **Claude Code, Codex, Antigravity (AGY), opencode, or pi** — gets the same `atrium` command on `PATH`, regardless of harness:
+
+```powershell
+atrium child ui --worktree ui --prompt "Build the ThemeToggle component"
+atrium child api-dev --peer --prompt "Add /oauth/callback endpoint"
+atrium prompt ui "Keep the existing accent color" --steer
+atrium done ok "Added ThemeToggle and unit tests (all passing)"
+```
+
+- **Structured delegation.** Workers close their task with `atrium done ok|failed "<report>"`, delivering the result back to their parent once — no polling loops. Peers stay independent and share updates via `atrium news` and `atrium log`.
+- **Auto-Merger (`Settings › Merger`).** When a worktree worker finishes with `atrium done ok`, Atrium can sleep the worker and hand its branch to a dedicated, low-context **merger** session that merges cleanly into your target branch and reports back only if a failure or decision needs the parent. Configure per project (`On`, `Ask`, or `Off`, plus `.atrium/merge.json`).
+- **Board doc checks (`atrium docs`).** Optional, non-blocking checks that keep project docs within size and structure budgets on each turn.
+
+### Remote & mobile over Tailscale
 
 <table>
   <tr>
-    <td width="50%"><img src=".github/images/remote.png" alt="The board opened in a laptop browser at an example tailnet address"></td>
-    <td width="50%"><img src=".github/images/devices.png" alt="Settings › Connected devices on the PC: remote switch, address, pairing and one paired laptop"></td>
+    <td width="68%" valign="top"><img src=".github/images/remote.png" alt="Atrium board opened in a laptop browser over Tailscale"></td>
+    <td width="32%" valign="top"><img src=".github/images/phone.png" alt="Atrium phone Session Map with Today and Earlier tabs and representative usage pill"></td>
   </tr>
   <tr>
-    <td align="center"><sub>The same board in a laptop browser.</sub></td>
-    <td align="center"><sub>Connected devices on the PC.</sub></td>
+    <td align="center"><sub>Same board in a laptop browser over Tailscale.</sub></td>
+    <td align="center"><sub>Phone PWA opens straight to the Session Map.</sub></td>
   </tr>
 </table>
 
-English and Korean UI. The Korean translation is by [Qualop](https://github.com/Qualop).
+Open the exact same board from a laptop or phone over [Tailscale](https://tailscale.com). The backend stays bound to `127.0.0.1`; `tailscale serve` forwards tailnet HTTPS traffic to it.
 
-## Requirements
+- **Pair with a 6-digit code** in **Settings › Connected devices** (or approve a request from the browser). Sessions are bound to the paired Tailscale device via `tailscale whois`, with an optional passkey check (Windows Hello or phone).
+- **On a phone (PWA),** Atrium opens straight into the **Session Map** with **Today | Earlier** tabs, a representative usage pill, a touch keypad (arrows, Enter, Esc, Tab, Space, 1–4) for answering prompts in any harness, and Web Push alerts when a lead's work cycle ends or a session needs you.
 
-Atrium is **Windows only** for now (Windows 10 or 11, x64).
+<details>
+<summary><b>Tailscale setup & security notes</b></summary>
 
-| | |
-|---|---|
-| [Node.js](https://nodejs.org/) | 22.13 or later (tested on 22 and 24) |
-| [herdr-core](https://github.com/herdrdev/herdr-core) | Nothing to install. The first time a board needs it, Atrium downloads the herdr-core version it pins (0.1.20, about 4 MB) from `releases.herdr.dev`, checks its SHA-256 and keeps it in the board's data folder. It does not touch `PATH`, the registry or startup programs. Every new board runs on herdr-core. |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | A recent `claude` CLI on `PATH`, for Claude Code sessions. |
-| Git | For repository and worktree detection. |
-| Optional | Codex CLI for the Codex launcher. opencode or pi for those sessions. A model gateway or endpoint for connections. Tailscale for remote access. |
+1. Install Tailscale on both devices, sign in to the same tailnet, and enable **MagicDNS** and **HTTPS Certificates** in your Tailscale admin console.
+2. Enable `tailscale serve` on the PC:
 
-The first start needs an internet connection to download herdr-core.
+   ```powershell
+   node backend\bin\atrium.mjs remote status
+   node backend\bin\atrium.mjs remote enable --yes
+   ```
+
+3. Open the `https://<machine>.<tailnet>.ts.net/` URL printed by `remote status` on your laptop or phone, then pair with a code from **Settings › Connected devices**.
+
+**Security notes:**
+- A paired browser has the same local privileges as your Windows user. Pair only your own devices.
+- Sessions use `HttpOnly; SameSite=Strict` cookies (`Secure` on HTTPS); no permanent token is stored in the browser.
+- Requests are verified against `tailscale whois` and restricted to your Tailscale login by default. Do not use `tailscale funnel`.
+- Manage or revoke devices anytime in **Settings › Connected devices**, the tray menu, or `node backend\bin\atrium.mjs remote block | devices rm <id> | remote disable --yes`.
+
+</details>
 
 ## Quick start
+
+### Requirements
+
+Atrium currently runs on **Windows 10 / 11 (x64)**.
+
+| Dependency | Details |
+|---|---|
+| [Node.js](https://nodejs.org/) | 22.15 or later on Node 22, or 24.14 or later (tested on 22.15, 22.16, 22.23, 24.14, 24.19 and 25.9). Other versions stop with a message: 22.14 and earlier cannot read compressed Codex history, 22.13 crashes in folders with non-ASCII names, and 24.10 to 24.13 crash there too. |
+| [herdr-core](https://github.com/herdrdev/herdr-core) | Auto-downloaded on first run (pinned `0.1.20`, ~4 MB, SHA-256 verified) into Atrium's data folder. Does not touch `PATH` or startup items. |
+| Git | Used for repository and worktree detection. |
+| Agent CLIs | Any supported CLI on `PATH`: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex, Antigravity (`agy`), opencode, or pi. |
+| Optional | [Tailscale](https://tailscale.com) for remote laptop & phone access. |
+
+### Run from source
 
 ```powershell
 git clone https://github.com/Gudals0320/atrium.git
@@ -128,122 +147,88 @@ npm install
 npm run real
 ```
 
-`npm run real` builds the window and opens the board. The window starts the backend if it is not running (port 47800). On a new board the backend downloads herdr-core and starts its own herdr-core session named `atrium`. Your other herdr-core sessions are not touched. If the download fails, a band says herdr-core is not ready, with **Try again**; sessions cannot start until it is ready.
+`npm run real` builds the window and opens the board (starting the backend on port `47800` and downloading `herdr-core` on first run). Click **+** at the top left to open a repository, then pick a launcher on the left rail to start a session.
 
-To add a desktop shortcut:
+Create a desktop shortcut:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File app\scripts\make-shortcut.ps1
 ```
 
-Then open a folder with **+** at the top left and start a session with **Claude Code** or **Codex** on the left rail.
+### Install releases & in-app updates
 
-Keys on the board: `N` next session that needs you, `M` mission map, `Ctrl+F` or `↑` find, `↓` command bar, `←` `→` previous and next workspace, hold `Space` with nothing selected to fit the whole board, `Ctrl+Shift+E` sidebar, `Delete` close the selected sessions.
-
-### Install and updates
-
-To run a release instead of the cloned folder, install it from the clone (after `npm install` in `backend`):
+Install the latest GitHub release into `%LOCALAPPDATA%\atrium\versions` (after `npm install` in `backend`):
 
 ```powershell
 node backend\bin\atrium.mjs install
+# Or track pre-release builds from the dev branch:
+node backend\bin\atrium.mjs install --channel dev
 ```
 
-This puts the latest release into `%LOCALAPPDATA%\atrium\versions` and adds a desktop shortcut that opens the installed version. Board data stays in `%LOCALAPPDATA%\atrium`.
+When a new release is available, update from **Settings › General › Update** or the tray menu. Only the backend and window restart — running terminals stay alive in `herdr-core`, and failed starts roll back automatically.
 
-When a new release is out, the window tells you (Settings › General › Update, and the tray menu). Press Update to install it. Before it switches, the update downloads the herdr-core version the new release pins. Only the backend and the window restart. Your sessions keep running in herdr-core. If the new version does not start, the board goes back to the version you had.
+### Keyboard shortcuts
 
-The update channel is Stable by default. Pick Dev in the same place to get features merged into the `dev` branch first, as pre-releases. Dev builds may be less polished. `node backend\bin\atrium.mjs install --channel dev` installs the newest dev build.
-
-### Boards from before herdr-core
-
-A board that ran sessions on [herdr](https://herdr.dev) (Atrium 0.1.7 and earlier) moves to herdr-core by itself the first time the new version starts. New sessions start on herdr-core right away, and a band on the board shows the progress.
-
-1. Each session starts again on herdr-core with the same conversation, name, environment, instructions and connection, in the same place on the board. The old pane closes only after the new one is up. A shell gets a new shell in the same folder.
-2. A session that is working, waiting for you, holding an unsent message or running a command moves when it is idle. Until then it keeps running on herdr and stays on the board. Sleeping sessions stay asleep and wake on herdr-core.
-3. If the herdr server is not running (for example after a restart) or herdr is gone, the board starts those sessions again on herdr-core from the same conversation.
-
-When every session has moved, the board stops its herdr server (only if nothing else runs in it) and deletes its herdr session. **Settings › Terminal** shows what happened to each session. There is no way back to herdr.
-
-## Remote access (Tailscale)
-
-1. Install Tailscale on the PC and the laptop and log in to the same account. In the tailnet admin console, turn on **MagicDNS** and **HTTPS Certificates** (machine and tailnet names then go to the public Certificate Transparency log).
-2. On the PC, check and turn on serve:
-
-   ```powershell
-   node backend\bin\atrium.mjs remote status
-   node backend\bin\atrium.mjs remote enable --yes
-   ```
-
-3. On the laptop, open the address that `remote status` shows, for example `https://my-pc.example-tailnet.ts.net/`.
-4. On the PC, open **Settings › Connected devices**, press **New code**, and type the 6-digit code on the laptop. The board opens right away.
+| Key | Action |
+|---|---|
+| `Tab` | Toggle Session Map |
+| `N` | Jump to next session that needs you |
+| `Ctrl+K` / `↓` | Focus command bar |
+| `Ctrl+Enter` | Send as Steer (mid-turn) from command bar |
+| `Ctrl+F` / `↑` | Open Quick Find |
+| `Ctrl+Shift+E` | Toggle sidebar |
+| `←` / `→` | Previous / next workspace |
+| Hold `Space` | Fit entire board (when nothing is selected) |
+| `Delete` | Close selected sessions |
 
 <details>
-<summary><b>Details: serve, passkeys, security notes</b></summary>
+<summary><b>Upgrading from earlier versions (model connections removed, herdr migration)</b></summary>
 
-**Serve.** `remote enable` runs `tailscale serve --bg --https=443 http://127.0.0.1:47800`. Without `--yes` it only prints the command. If another service already uses https 443, it stops and suggests a port (`--https-port 8443`). `remote guide` prints the steps. Instead of a code, you can also ask for access from the laptop and allow it on the PC. The browser's **Install app** opens the board in its own window.
-
-**Confirm with a passkey** (**Settings › Connected devices › Security**, off by default) chooses how a paired browser signs in:
-
-- **Off**: the paired browser opens the board directly from the Tailscale device it paired from, until you unpair it. On a personal laptop, the Tailscale device binding, the session cookie, the origin check and the attach notices already keep other devices out.
-- **On**: right after pairing, the laptop asks you to press **Create passkey** and confirm on your phone (iPhone or Android, by scanning a QR code) or on this device (Windows Hello, Touch ID or a security key). When the session ends, the laptop shows **Confirm it is you**. A session ends 12 hours after you sign in, or after 30 minutes with no connection; you can change both times in the same tab. A passkey also stops someone who gets the laptop after a session ends; the Windows lock screen covers much of that too.
-- When you turn it on, a browser that paired without a passkey shows **Add a passkey for this browser** the next time it connects. The device list shows **Passkey needed** until then. When you turn it off, live sessions last until unpair, and passkey records stay.
-- Passkeys work only on a secure page: open the board at its `https://…ts.net` address, or at `http://localhost:<port>` on the PC (not `127.0.0.1`).
-
-**Security notes.**
-
-- A paired browser has the same power as your Windows user on the PC. It can start a shell and run anything. Pair only your own devices.
-- The browser keeps no password or token. The session lives in an `HttpOnly; SameSite=Strict` cookie (`Secure` on https) that scripts on the page cannot read. The board keeps only a hash of the session ID, and only the public key of a passkey.
-- A paired browser works only from the Tailscale device it paired from: the board checks the requesting device with `tailscale whois`. A browser paired on the PC itself (`localhost`) works only on the PC. Browsers paired before devices were bound (or with an old token) show **needs pairing again**; remove them and pair again.
-- Requests through Tailscale are accepted only from the Tailscale user logged in on the PC (you can add other logins in **Connected devices**). They cannot call the hook and child-session endpoints, and the board API token is never given to a browser.
-- Do not use `tailscale funnel`, which puts the board on the public internet. `remote status` warns when funnel is on.
-- The PC window shows a notice when a device attaches or pairs. The **n other devices** pill has **Disconnect** and **Unpair** for each device; a browser can unpair only itself. Turning off **Accept remote connections** (Settings, the tray menu, or `remote block`) refuses every paired device and closes their connections; `remote allow` accepts them again. With the passkey check on, disconnecting or blocking also ends sessions.
-- Pairing, sign-ins, connects and disconnects, passkey check changes and refusals with their reason are kept in a connection log (`remote log`).
-- To unpair from the CLI, run `node backend\bin\atrium.mjs devices rm <id>`. To stop serve, run `node backend\bin\atrium.mjs remote disable --yes`.
+- **Model connections removed.** The Settings › Connections feature was removed; any stored connection entries are ignored. Launchers keep their own `env` and arguments (for example, `ANTHROPIC_BASE_URL` in a Claude launcher's env still works), so put custom endpoints or auth variables directly in the launcher's env or your user environment.
+- **Boards from Atrium 0.1.7 or earlier (`herdr`).** Boards that previously ran on [herdr](https://herdr.dev) migrate automatically to `herdr-core` on first start. Idle sessions move right away with their conversation, layout, and links intact; busy sessions wait until idle. Progress is shown in **Settings › Terminal**.
 
 </details>
 
-## CLI
+## CLI & architecture
 
-The `atrium` CLI talks to the running backend. Run it as `node backend\bin\atrium.mjs <command>`; `--help` lists everything.
+Run `node backend\bin\atrium.mjs <command>` to drive the board from any terminal (`--help` lists every verb):
 
-| Command | Does |
+| Command | Purpose |
 |---|---|
 | `spawn <folder> [--launcher l] [--name n] [--model m] [--kind shell]` | Start a session |
-| `ls`, `inbox`, `get <name>` | Sessions and their state, what needs you, one session in detail |
-| `send @name [@name…] <text> [--wait]` | Send a message (`@all` for every agent) |
-| `answer <name> <n\|reject>` | Answer a permission prompt or question |
+| `ls`, `inbox`, `get <name>` | List sessions, waiting prompts, or full session detail |
+| `send @name [@name…] <text> [--wait]` | Queue a prompt (`@all` targets every agent) |
 | `link <a> <b> --role worker` | Link two sessions with a role |
-| `dock <a> <b>`, `dock layout <preset> <a> <b> …` | Dock sessions, lay out a dock |
-| `arrange --all --apply` | Arrange the whole board |
+| `dock <a> <b>`, `dock layout <preset> <a> <b> …` | Dock panes and apply split layouts |
+| `arrange --all --apply` | Auto-arrange the board along links |
+| `usage`, `res`, `docs` | Check subscription usage, memory/CPU, and board doc checks |
+| `remote status`, `remote log`, `devices` | Manage Tailscale remote access |
 | `kill <name> --yes` | Close a session |
-| `remote status`, `remote log`, `devices` | Remote access, connection log, paired devices |
 
-Sessions the board starts also get `atrium prompt`, `atrium wait` and `atrium read` to hand work to other sessions, `atrium child`, `atrium children` and `atrium models` for their own workers, and `atrium me` for their links (`atrium help` lists them all).
-
-## How it works
+Inside any board-started agent session, `atrium` is automatically on `PATH` with `prompt`, `wait`, `read`, `child`, `children`, `relate`, `done`, `item`, `items`, `me`, `news`, `log`, `models`, `usage`, `docs`, and `help --json`.
 
 ```mermaid
 flowchart LR
-  UI["Atrium window<br/>Electron, React Flow, xterm.js"]
-  WEB["Laptop browser"]
+  UI["Atrium Window<br/>Electron, React Flow, xterm.js"]
+  WEB["Laptop & Phone<br/>Browser / PWA"]
   TS["tailscale serve<br/>HTTPS, tailnet only"]
   CLI["atrium CLI"]
   B["Backend<br/>Node 22+, 127.0.0.1"]
   DB[("SQLite")]
-  H["herdr-core session: atrium"]
-  A["claude, codex, shells"]
-  UI <-->|WebSocket API| B
-  WEB --> TS -->|web screen| B
+  H["herdr-core<br/>session: atrium"]
+  A["Claude Code, Codex,<br/>AGY, opencode, pi, shells"]
+  UI <-->|WebSocket| B
+  WEB --> TS -->|WebSocket & HTTP| B
   CLI -->|WebSocket| B
   B <-->|JSON-RPC, named pipe| H
   H --> A
-  A -->|hooks over HTTP| B
+  A -->|HTTP hooks & atrium CLI| B
   B --- DB
 ```
 
-- **herdr-core** owns the terminals and processes. Sessions keep running when the window or the backend stops, and the board picks them back up when it restarts.
-- **The backend** (`backend/`) computes session state from herdr-core status events and Claude Code hooks, runs one delivery queue per session, records links and events, serves the web screen, and stores the board in SQLite (`node:sqlite`). Its only dependency is `ws`.
-- **The window** (`app/`) draws the board with React Flow and attaches xterm.js to the terminals in view. The PC window and paired browsers are all clients of the same backend.
+- **herdr-core** owns all terminals and child processes outside Atrium, so sessions survive restarts and updates.
+- **Backend** (`backend/`) tracks session state, per-session delivery queues, links, work units, usage, remote web serving, and SQLite (`node:sqlite`) with only one npm dependency (`ws`).
+- **Window** (`app/`) renders the canvas and Session Map with React Flow and attaches `xterm.js` to visible terminals.
 
 ## Development
 
@@ -256,24 +241,20 @@ cd ..\app
 npm test             # window unit tests
 ```
 
-The development board never touches the real board (`atrium`, port 47800). End-to-end scripts in `app/test/e2e/` drive the window with Playwright on a separate dev board. The pictures in this README come from a demo board built by `app/test/e2e/readme-shots.mjs` (`seed`, `shoot`, `publish`, `clean`).
+The dev profile is isolated from your real board (`atrium`, port `47800`). Screenshots in this README are generated against an isolated demo board by `app/test/e2e/p273-readme-shots.mjs` (`seed`, `shoot`, `publish`, `clean`).
 
-[CHANGELOG.md](CHANGELOG.md) lists what each stage built.
-
-## Status
-
-Atrium is an early project. It was built in stages with Claude Code, and the interface is still being polished from daily use. Expect rough edges, and please open an issue when you hit one.
+See [CHANGELOG.md](CHANGELOG.md) for full stage-by-stage history. Atrium is an active early project — bug reports and issues are welcome.
 
 ## Acknowledgments
 
-- [herdr-core](https://github.com/herdrdev/herdr-core) (Apache-2.0), which Atrium downloads and runs but does not include, and [herdr](https://herdr.dev), which boards used before herdr-core.
-- [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org) and [Electron](https://www.electronjs.org).
+- [herdr-core](https://github.com/herdrdev/herdr-core) (Apache-2.0, downloaded at runtime and not bundled in this repository) and [herdr](https://herdr.dev).
+- [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org), and [Electron](https://www.electronjs.org).
 - Korean UI translation by [Qualop](https://github.com/Qualop), adapted from [Qualop/atrium-macos](https://github.com/Qualop/atrium-macos).
-- Fonts: Geist, JetBrains Mono, Pretendard and Nanum Gothic Coding, under the SIL Open Font License.
-- Claude, Codex, DeepSeek, Grok and Pi names and logos are trademarks of their owners. Atrium uses them only to label session kinds and is not affiliated with or endorsed by them.
+- Bundled fonts: Geist, JetBrains Mono, Pretendard, and Nanum Gothic Coding (SIL Open Font License 1.1).
+- Claude, Codex, Antigravity, DeepSeek, Grok, and Pi names and logos are trademarks of their respective owners, used solely to label session kinds with no affiliation or endorsement.
 
-See [app/THIRD_PARTY_NOTICES.txt](app/THIRD_PARTY_NOTICES.txt) for details.
+See [app/THIRD_PARTY_NOTICES.txt](app/THIRD_PARTY_NOTICES.txt) for full third-party notices.
 
 ## License
 
-[MIT](LICENSE) © 2026 Gudals0320. Third-party logos and fonts are not under the MIT license; see [app/THIRD_PARTY_NOTICES.txt](app/THIRD_PARTY_NOTICES.txt).
+[MIT](LICENSE) © 2026 Gudals0320. Third-party logos and fonts remain under their respective licenses; see [app/THIRD_PARTY_NOTICES.txt](app/THIRD_PARTY_NOTICES.txt).

@@ -160,7 +160,7 @@ test('P143 prompt --now: 일하는 중인 Claude Code에는 기다리지 않고 
 test('P143 prompt --now: 쉬는 중이면 지금처럼 바로, 다른 종류·응답 필요·잠듦이면 지금 B1 대기열(how queue)', async () => {
   const { b, add, stop } = await board();
   try {
-    const lead = add('lead'); const w1 = add('w1'); const cx = add('cx', { kind: 'codex' }); const asker = add('asker'); const sleepy = add('sleepy');
+    const lead = add('lead'); const w1 = add('w1'); const cx = add('cx', { kind: 'opencode' }); const asker = add('asker'); const sleepy = add('sleepy'); // P271: 다른 종류는 opencode로(Codex는 --now를 지금 턴에 받는다, p271.test)
     const r1 = await b.branch.verbs.prompt(lead, { name: 'w1', text: '쉬는 중', now: true });
     assert.equal(r1.delivery.status, 'confirmed'); assert.equal(r1.delivery.how, 'queue'); assert.notEqual(r1.delivery.reason, 'typed');
     applyTermStatus(cx.rt, 'working');

@@ -59,14 +59,20 @@ export function bgOnlyOf(rt, state, bg, { kind = 'claude', hooked = true } = {})
 // P90: 휴대폰 입력 줄은 "일하는 중이면 바로 넣기"(typeNow)로 보낸다. PC 터미널에서 Enter를 친 것처럼 Claude Code가 자기 대기 메시지로 받아 둔다.
 // 판이 띄운 Claude Code(hook 있음)가 working일 때만이다. waiting·trust_wait(권한·질문·신뢰 화면), starting, ready, 셸, 다른 종류, hook 없는 세션은 B1 그대로.
 // 입력 칸에 쓰던 글이 있거나 입력 칸을 못 읽으면 넣지 않는다(_typeNow). 막힌 패널은 터미널의 prompt가 글을 넣기 전에 거부한다(agent_blocked)
+// P271(이슈 #19): 일하는 중인 Codex도 받는다. Codex는 일하는 중 입력 칸의 글에 Enter를 치면 지금 턴에 끼워 넣는다(Tab은 턴 뒤로 미룬다).
+//   판은 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(adapter.pastePrompt). 제출 확인은 화면(입력 칸이 비고 대화에 보임, P184)
 export function canTypeNow(view) {
-  return !!view && !view.closed && !!view.termConnected && !!view.agentPresent && view.state === 'working' && (view.kind || 'claude') === 'claude' && !!view.hooked;
+  if (!view || view.closed || !view.termConnected || !view.agentPresent || view.state !== 'working') return false;
+  const kind = view.kind || 'claude';
+  return kind === 'codex' || (kind === 'claude' && !!view.hooked);
 }
 // P248: 스티어링(일하는 중에 입력 칸에 넣기)을 받을 수 없는 세션의 까닭 | null. 상태와 상관없이 종류로 정한다(쉬는 동안 고른 스티어링도 같다)
-//   kind: 판이 띄운 Claude Code가 아니다(Codex 등), no_hook: hook이 없는 Claude Code(받아들인 세션). canTypeNow의 종류 조건과 같다
+//   kind: Claude Code·Codex가 아니다(opencode 등), no_hook: hook이 없는 Claude Code(받아들인 세션). canTypeNow의 종류 조건과 같다(P271: Codex는 받는다)
 export function steerBlock(s, hooked = s ? s.hooked !== false : false) {
   if (!s) return 'kind';
-  if ((s.kind || 'claude') !== 'claude') return 'kind';
+  const kind = s.kind || 'claude';
+  if (kind === 'codex') return null;
+  if (kind !== 'claude') return 'kind';
   return hooked ? null : 'no_hook';
 }
 // 바로 넣을 글: 줄바꿈은 LF(B1 5), 끝 줄바꿈은 뗀다(입력 칸에 빈 줄이 남지 않게). Enter는 agent.prompt가 마지막에 한 번 누른다
@@ -320,7 +326,8 @@ export class DeliveryQueue extends EventEmitter {
 
   // P172: 바로 보내기(스티어링). 대기 중 전달을 그 세션의 대기 중 맨 앞으로 옮기고 --now(P143)와 같은 길로 보낸다:
   //   받는 쪽이 일하는 중인 판의 Claude Code면 입력 칸에 넣어 Claude Code의 대기 메시지가 되고(typeNow + aside), 쉬면 곧바로, 잠들었으면 깨운 뒤 보낸다.
-  //   일하는 중 입력을 받지 못하는 종류(hook 없는 세션, codex 등)가 일하는 중이면 cannot_steer로 거절한다(창은 단추를 끄고 까닭을 보인다).
+  //   일하는 중 입력을 받지 못하는 종류(hook 없는 세션, opencode 등)가 일하는 중이면 cannot_steer로 거절한다(창은 단추를 끄고 까닭을 보인다).
+  //   P271: 일하는 Codex는 입력 칸에 붙여 넣고 Enter를 쳐 지금 턴에 끼워 넣는다(canTypeNow)
   //   보내는 중·보낸 전달(확인을 기다림)은 앞에 둔다(확인이 섞이지 않게). 붙잡은(고치는 중) 전달은 바로 보내지 않는다(editing)
   sendNow(id) {
     const d = this.items.get(id) || this.store.getDelivery(id);
@@ -425,7 +432,8 @@ export class DeliveryQueue extends EventEmitter {
       const box = look ? look.box : 'unknown';
       const v2 = this.view(d.sessionId, d) || {};
       // P143: --now의 전달은 쓰다 만 글(other)을 비키고 넣는다. 비키지 못하면(keep) _aside가 'draft'로 대기열에 돌려 둔다
-      const aside = box === 'other' && d.typeAside && !!this.drafts;
+      // P271: 일하는 Codex는 비키지 않는다(비우는 키 Ctrl+C가 빈 칸에 닿으면 지금 턴을 멈춘다). 쓰다 만 글이 있으면 기다린다
+      const aside = box === 'other' && d.typeAside && !!this.drafts && (v2.kind || 'claude') === 'claude';
       if ((box !== 'empty' && !aside) || !canTypeNow(v2) || (v2.lastUserInputAt && Date.now() - v2.lastUserInputAt < this.cfg.inputQuietMs)) {
         const why = box === 'other' || box === 'ours' ? 'draft' : 'working'; // 입력 칸에 글이 있다 / 못 읽었거나 상태가 바뀌었다
         if (d.reason !== why) this._set(d, 'queued', why);

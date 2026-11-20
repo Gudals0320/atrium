@@ -1,13 +1,13 @@
 {
   "name": "atrium-app",
   "private": true,
-  "version": "0.2.2-dev.60",
+  "version": "0.2.2-dev.65",
   "description": "Atrium window: an infinite canvas of CLI agent sessions (Electron, React, xterm.js)",
   "license": "MIT",
   "type": "module",
   "main": "src/main/main.mjs",
   "engines": {
-    "node": ">=22.13"
+    "node": "^22.15.0 || >=24.14.0"
   },
   "scripts": {
     "build": "node scripts/build.mjs",

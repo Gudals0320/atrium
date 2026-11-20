@@ -185,29 +185,36 @@ export class WorkUnits {
   }
   // 명령(/branch/done)의 길. P267: ok면 먼저 git을 읽어 합치기 갈래(merger.mjs planFor)를 본다
   async doneVerb(caller, o = {}) {
-    let merge = null;
+    let merge = null, mergeCheck = null;
     if (this.b.merger) {
       const { result, tr } = this.doneCheck(caller, o);
-      if (result === 'ok') {
-        try { merge = await this.b.merger.planFor(caller, this.store().getUnit(tr.unitId)); } catch (e) { this.b.log('merge plan error', e.stack); merge = null; }
+      const unit = this.store().getUnit(tr.unitId);
+      if (result === 'ok' && unit && unit.origin === 'merge') {
+        // P275: merger의 ok는 판이 git으로 합칠 브랜치에 하위 끝 커밋이 들어갔는지 본 뒤에만 합침으로 친다
+        try { mergeCheck = { unitId: unit.id, ...(await this.b.merger.verifyMerge(unit)) }; } catch (e) { this.b.log('merge verify error', e.stack); mergeCheck = { unitId: unit.id, hash: null, contains: null }; }
+      } else if (result === 'ok') {
+        try { merge = await this.b.merger.planFor(caller, unit); } catch (e) { this.b.log('merge plan error', e.stack); merge = null; }
       }
     }
-    return this.done(caller, o, { merge });
+    return this.done(caller, o, { merge, mergeCheck });
   }
-  done(caller, o = {}, { merge = null } = {}) {
+  done(caller, o = {}, { merge = null, mergeCheck = null } = {}) {
     const b = this.b; const st = this.store();
-    const { result, text, tr } = this.doneCheck(caller, o);
+    const { result: said, text, tr } = this.doneCheck(caller, o);
     const unit = st.getUnit(tr.unitId);
     if (merge && merge.unitId && merge.unitId !== tr.unitId) merge = null; // P267: 그새 다른 일이 열렸다
+    if (mergeCheck && mergeCheck.unitId !== tr.unitId) mergeCheck = null;
+    // P267: 합치기 일(merger가 닫음)이면 ok는 부모를 깨우지 않고(record), failed는 하위를 재운 채 둔다는 줄을 붙여 부모에게.
+    // P275: ok여도 판이 합칠 브랜치에서 하위 끝 커밋을 찾지 못하면 failed로 친다(result가 바뀐다)
+    const mergeDone = unit.origin === 'merge' && b.merger ? b.merger.onMergeDone(caller, unit, said, text, mergeCheck) : null;
+    const result = mergeDone && mergeDone.result ? mergeDone.result : said;
     const now = Date.now();
     st.updateTry(tr.id, { result, doneText: text, endedAt: now });
     st.updateUnit(unit.id, { status: result === 'failed' ? 'failed' : 'done', closedAt: now });
     const parent = b.sessions.get(unit.from) || null;
-    const val = { result, text };
+    const val = { result, text, ...(mergeDone && mergeDone.unverified ? { extra: mergeDone.extra } : {}) };
     let claimedBy, noticeDeliveryId = null;
     const ws = this.waiters.get(`${unit.from}>${unit.to}`);
-    // P267: 합치기 일(merger가 닫음)이면 ok는 부모를 깨우지 않고(record), failed는 하위를 재운 채 둔다는 줄을 붙여 부모에게
-    const mergeDone = unit.origin === 'merge' && b.merger ? b.merger.onMergeDone(caller, unit, result, text) : null;
     // P267: 브랜치에서 일한 하위의 done ok → 부모 대신 merger에게 합치기 일로
     const taken = merge && merge.route && b.merger && unit.origin !== 'merge' ? b.merger.take(merge, caller, unit, text) : null;
     if (taken) { claimedBy = 'merger'; if (ws && ws.size) for (const w of ws) w.got = { ...val, tryId: tr.id, merge: taken }; }

@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { codexHomeOf } from './codex-models.mjs';
+import { dshLaunchFiles } from './dsh.mjs';
 
 // 하네스와 상관없는 안내문(한 줄). 줄바꿈·큰따옴표 없이: Codex는 -c 값으로 받고, 판은 이것을 패널에 한 줄로 친다
 // P116: 일 시키기·기다리기·읽기는 판의 atrium 명령이다(터미널 백엔드와 상관없다). 터미널 명령을 직접 쓰라고 하지 않는다
@@ -98,6 +99,24 @@ export const ADAPTERS = {
       return { args, env: {}, files, harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
     isBoardLine: (argv) => argv.some((a) => /[\\/]agy$/.test(String(a))),
+  },
+  // P270: dsh(DeepSeek Harness). 공식 dsh에는 터미널 대화 화면이 없어 커뮤니티 dsh-TUI(dsh-tui)로 띄운다. 상태는 dsh-TUI가 스스로 OSC 7501(앱 이름 dsh-tui)로 알린다.
+  //   세션 ID는 dsh가 정해 뜬 뒤에 안다(dsh.mjs dshSessionOf), 이어 가기는 --resume <ID>(dsh-tui가 env DSH_TUI_RESUME_SESSION으로 넘긴다). 판의 것은 세션마다 쓴 덧씌움(--patch)으로 준다: 안내문(시스템 프롬프트 조각을 더하는 플러그인, dsh.mjs),
+  //   session-log-deepseek 끄기(세션 기록을 DeepSeek에 올리지 않는다). dsh-tui는 앞에 둔 dsh 옵션(--patch)을 dsh에 그대로 넘긴다. 런치패드(첫 화면)는 끈다(DSH_TUI_NO_LAUNCHPAD=1: 첫 요청이 바로 대화로).
+  //   모델·노력 수준은 dsh의 /model·/effort(~/.dsh-tui에 전역으로 남는다)가 정하고 판은 주지 않는다. 키는 dsh 자기 저장소(~/.dsh/.credentials.yaml)
+  dsh: {
+    command: 'dsh-tui',
+    sessionIdFrom: 'learned',
+    mustRePass: ['instructions'], // 덧씌움은 그 실행에만 든다. 이어 갈 때도 다시 준다
+    reserved: { flags: ['--profile', '--patch', '--from-default-profile', '--resume', '-c', '--continue', '--backend', 'run', '-p', '--print', 'cli', 'dsh', 'update', 'migrate', 'safe'] },
+    modelArgs: () => [],
+    build(ctx) {
+      const resumed = !!(ctx.resume && ctx.harnessSessionId);
+      const l = ctx.filesDir ? dshLaunchFiles({ dir: path.join(ctx.filesDir, 'dsh'), sessionId: ctx.sessionId, prompt: ctx.instructions ? ctx.instructions.text : '' }) : null;
+      const args = [...(l ? ['--patch', l.patch] : []), ...(resumed ? ['--resume', ctx.harnessSessionId] : []), ...(ctx.launcherArgs || [])];
+      return { args, env: { DSH_TUI_NO_LAUNCHPAD: '1' }, files: l ? l.files : [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
+    },
+    isBoardLine: (argv) => argv.some((a) => /[\\/]dsh[\\/][^\\/]+\.patch\.yml$/.test(String(a))),
   },
 };
 // P192: AGY 승인 방식. 판의 권한 모드 → AGY 인자. manual은 덧붙이지 않는다(AGY 기본 Agent 모드: 묻는다)

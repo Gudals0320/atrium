@@ -149,7 +149,7 @@ try {
   fs.writeFileSync(path.join(OUT, 'A-screen-queued.txt'), scrA);
   check('A2 Claude Code 화면에 대기 메시지로 보인다(스피너 위 ❯ 글, 입력 칸은 대기 안내)', /❯\s*P90 phone note/.test(scrA) && /Press up to edit queued messages|ctrl\+enter to send now/.test(scrA), scrA.split('\n').filter((l) => l.trim()).slice(-10));
   const note = await pg.evaluate(() => (document.querySelector('[data-role=phone-note]') || {}).textContent || '');
-  check('A3 휴대폰 알림 줄에 "Claude Code 대기열에 추가됨"(판 언어가 영어면 queued in Claude Code)', /Claude Code 대기열에 추가됨|queued in Claude Code/.test(note), note);
+  check('A3 휴대폰 알림 줄에 "지금 턴에 넣음"(판 언어가 영어면 into the current turn, P271)', /지금 턴에 넣음|into the current turn/.test(note), note);
   await shot(pg, '02-phone-typed');
   const tA2 = await sendFromPhone(NOTE2);
   const d2 = await until(() => deliveriesOf('p90-lead').find((d) => d.createdAt >= tA2 - 2000 && /kiwi/.test(d.text || '') && ['confirmed', 'unconfirmed', 'failed'].includes(d.status)), 20000, 500).catch(() => null);

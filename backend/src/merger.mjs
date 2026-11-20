@@ -3,7 +3,8 @@
 //   하위 폴더가 그 워크스페이스 저장소의 워크트리이고, 브랜치가 합칠 브랜치와 다르고, 합칠 브랜치보다 앞선 커밋이 있고, 이 워크스페이스에서 기능이 켜졌는가.
 //   맞으면 done 값을 부모에게 보내지 않고(claimed_by merger) 합치기 일(work_units.origin merge, from = 원래 부모, to = merger)을 만들어 그 워크스페이스·합칠 브랜치의 merger에게 넣는다.
 //   아니면 지금처럼 부모에게 간다. 설정이 ask이고 이 워크스페이스의 답이 없으면 사람에게 판 카드(merger.ask 이벤트)로 한 번 묻고, 답이 올 때까지 지금처럼 부모에게 간다.
-// - 하위는 그 턴이 끝나면 판이 바로 재운다(Windows에서 워크트리 폴더가 풀리게). merger가 ok로 닫으면 판이 하위를 닫고 보관한다(워크트리·브랜치는 merger가 지웠다).
+// - 하위는 그 턴이 끝나면 판이 바로 재운다(Windows에서 워크트리 폴더가 풀리게). merger가 ok로 닫으면 판이 합칠 브랜치에 하위의 끝 커밋이 들어갔는지 git으로 보고(P275 verifyMerge),
+//   들어갔을 때만 하위를 닫고 보관한다(워크트리·브랜치는 merger가 지웠다). 없거나 읽지 못하면 failed와 같이 다룬다(부모에게 알림, 하위는 재운 채).
 //   merger가 failed로 닫으면 그 글이 원래 부모에게만 가고 하위는 재운 채 둔다(부모가 다시 시키면 깨어나 같은 워크트리에서 잇는다).
 // - merger의 ok는 부모를 깨우지 않는다: 소식(peer_news kind merge) 한 줄과 부모의 atrium items의 "합침"으로만 보인다.
 // - merger는 워크스페이스 + 합칠 브랜치마다 하나(meta mergers). 합치기 일 MERGER_JOBS번을 닫으면, 또는 줄 선 일이 없고 그 워크스페이스에 브랜치에서 일하는 하위가 없으면
@@ -30,6 +31,7 @@ export const SLEEP_TRIES = 3; // 하위 재우기를 몇 번 해 보나(턴이 �
 const META_RECS = 'mergers';
 const META_ANSWERS = 'mergerAnswers';
 const META_ASKS = 'mergerAsks';
+const META_PROBLEM = 'mergerProblem'; // P275: 마지막으로 merger를 띄우지 못한 까닭
 const BRANCH_RE = /^(?![-/.])(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._\/-]{1,200}(?<![/.])$/;
 const NAME_MAX = 32;
 const BT = '\x60';
@@ -127,6 +129,25 @@ export const MERGE_CHILD_TAIL = '브랜치에서 일했으면 done ok 뒤 보드
 // merger가 failed로 닫은 글 끝에 붙는 줄(부모가 받는다)
 export function mergeFailLines({ child, worktree, branch, merger }) {
   return ['[Atrium 보드] @' + merger + '가 합치지 못했거나 고침이 필요하다. @' + child + '는 재운 채 둔다(워크트리 ' + slash(worktree) + ', 브랜치 ' + branch + '). 고칠 것은 ' + BT + 'atrium prompt ' + child + ' "<할 일>"' + BT + '로 다시 시킨다(깨어나 같은 워크트리에서 잇는다). 다 고쳐 done ok가 오면 보드가 다시 merger에게 맡긴다.'];
+}
+// P275: merger가 ok로 닫았지만 판이 git으로 보니 합칠 브랜치에 하위의 끝 커밋이 없다(또는 읽지 못했다). failed와 같이 다루며 부모가 받는 글 맨 앞에 붙는 줄
+export function mergeUnverifiedLine({ merger, child, tip, target, hash, contains }) {
+  return contains === false
+    ? '[Atrium 보드] @' + merger + '가 done ok로 닫았지만 보드가 확인하니 합칠 브랜치 ' + target + '(' + short(hash) + ')에 @' + child + '의 끝 커밋 ' + short(tip) + '이 없다. 합쳐지지 않은 것으로 본다.'
+    : '[Atrium 보드] @' + merger + '가 done ok로 닫았지만 보드가 합칠 브랜치 ' + target + '에 @' + child + '의 끝 커밋 ' + short(tip) + '이 들어갔는지 git으로 확인하지 못했다. 합쳐지지 않은 것으로 본다.';
+}
+// P275: merger 종류 고르기(순수). 설정 종류가 설치돼 있으면(또는 판이 설치 목록을 모르면) 설정대로, 아니면 설치된 하네스 가운데 MERGER_FALLBACKS 차례로. 없으면 null
+//   kinds: adapter.agentKinds()의 [{ kind, installed }]. 설정 모델이 Claude 기본 모델인데 종류가 Claude가 아니면 모델을 넘기지 않는다(그 하네스의 기본 모델)
+export const MERGER_FALLBACKS = [{ kind: 'claude', model: 'claude-sonnet-5-5', effort: 'medium' }, { kind: 'codex', model: null, effort: 'medium' }];
+export function pickMergerSpawn({ kinds = [], set = {} } = {}) {
+  const kind = String(set.mergerKind || '').trim().toLowerCase() || 'claude';
+  const has = (k) => kinds.some((x) => x && x.kind === k && x.installed !== false);
+  if (!kinds.length || has(kind)) {
+    const model = set.mergerModel && !(kind !== 'claude' && set.mergerModel === DEFAULTS.mergerModel) ? set.mergerModel : null;
+    return { kind, model, effort: set.mergerEffort || null, picked: 'setting', wanted: kind };
+  }
+  for (const f of MERGER_FALLBACKS) if (has(f.kind)) return { ...f, picked: 'installed', wanted: kind };
+  return null;
 }
 // 부모에게 돌려보낼 때(merger를 띄우지 못함) 붙는 줄
 export const mergeFallbackLine = (why) => '[Atrium 보드] 보드가 이 결과를 merger에게 맡기지 못해 너에게 그대로 보낸다(' + why + '). 지금처럼 네가 합친다.';
@@ -264,7 +285,7 @@ export class Merger {
       if (!s || this.retiring.has(s.sessionId)) s = await this.spawnFor(key, waiting()[0]);
     } catch (e) {
       this.log('merger spawn failed ' + key + ': ' + (e.code || e.message));
-      for (const u of waiting()) this.fallback(u, e.code || e.message || 'spawn failed');
+      for (const u of waiting()) this.fallback(u, e.code === 'no_kind' ? e.message : e.code || e.message || 'spawn failed');
       return null;
     }
     for (const u of waiting()) this.assign(u, s);
@@ -279,11 +300,11 @@ export class Merger {
     const set = this.settings();
     const parent = b.sessions.get(mu.from) || null;
     const kinds = b.adapter && b.adapter.agentKinds ? await b.adapter.agentKinds().catch(() => []) : [];
-    const kind = String(set.mergerKind || 'claude');
-    let p;
-    if (!kinds.length || kinds.some((k) => k.kind === kind)) p = { kind, ...(set.mergerModel ? { model: set.mergerModel } : {}), ...(set.mergerEffort ? { effort: set.mergerEffort } : {}) };
-    else if (parent) p = { kind: parent.kind || 'claude', ...(parent.model ? { model: parent.model } : {}), ...(parent.harnessPlan && parent.harnessPlan.launcher ? { launcher: parent.harnessPlan.launcher } : {}) };
-    else throw apiError('no_kind', 'merger 종류(' + kind + ')가 보드에 없고 일을 맡긴 세션도 닫혔다');
+    // P275: 설치된 하네스 가운데서 고른다(설정 종류가 설치돼 있지 않으면 Claude Code → Codex). 둘 다 없으면 띄우지 않는다(부모에게 그대로, 사람에게 까닭)
+    const pick = pickMergerSpawn({ kinds, set });
+    if (!pick) throw apiError('no_kind', 'merger를 띄울 하네스가 이 PC에 설치돼 있지 않다(설정 종류 ' + (String(set.mergerKind || '').trim() || 'claude') + ', Claude Code와 Codex도 없음)');
+    const p = { kind: pick.kind, ...(pick.model ? { model: pick.model } : {}), ...(pick.effort ? { effort: pick.effort } : {}) };
+    if (pick.picked === 'installed') this.log('merger kind ' + pick.wanted + ' not installed, using ' + pick.kind);
     const taken = new Set([...b.sessions.values()].filter((x) => !x.closedAt).flatMap((x) => [x.name, shownName(x)].filter(Boolean)));
     const old = this.rec(key);
     const name = mergerNameOf({ wsName: this.wsName(ws) || path.basename(root || ''), target, taken });
@@ -294,15 +315,24 @@ export class Merger {
     s.mergerKey = key;
     const rec = { key, ws, target, root: slash(root), sessionId: s.sessionId, name: s.name, jobs: 0, gen: ((old && old.gen) || 0) + 1, spawnedAt: Date.now(), guided: false, kind: p.kind, model: p.model || null };
     this.saveRec(key, rec);
-    try { this.store().addEvent(s.sessionId, 'merger_spawn', { key, gen: rec.gen, kind: p.kind, model: p.model || null, effort: p.effort || null }); } catch {}
+    try { if (this.store().getMeta(META_PROBLEM)) this.store().setMeta(META_PROBLEM, null); } catch {}
+    try { this.store().addEvent(s.sessionId, 'merger_spawn', { key, gen: rec.gen, kind: p.kind, model: p.model || null, effort: p.effort || null, picked: pick.picked, wanted: pick.wanted }); } catch {}
     this.log('merger ' + key + ' spawned ' + s.name + ' gen ' + rec.gen);
     return s;
+  }
+  // P275: 사람이 볼 까닭(merger를 띄우지 못함). 설정 › 합치기 탭(merger.status problem)과 창 알림(merger.problem)
+  problem(ws, why) {
+    const p = { at: Date.now(), workspace: ws || null, workspaceName: ws ? this.wsName(ws) : null, why: String(why || '') };
+    try { this.store().setMeta(META_PROBLEM, p); } catch {}
+    this.emit('merger.problem', p);
+    this.changed(ws);
   }
   // merger를 띄우지 못했다: 합치기 일을 취소하고 원래 done 값을 부모에게 그대로 보낸다
   fallback(mu, why) {
     const st = this.store(); const b = this.b;
     st.updateUnit(mu.id, { status: 'cancelled', closedAt: Date.now() });
     const m = mu.meta || {};
+    this.problem(m.ws, why);
     this.pendingSleep.delete(m.childId);
     const src = mu.source ? st.getUnit(mu.source) : null;
     const tr = src ? st.lastTryOfUnit(src.id) : null;
@@ -314,8 +344,21 @@ export class Merger {
   }
 
   // ---------- merger가 합치기 일을 닫았다(work-units done) ----------
-  // → { retire, extra }(extra: failed면 부모가 받는 글 끝 줄)
-  onMergeDone(caller, unit, result, text) {
+  // P275: merger의 ok를 믿기 전에 판이 git으로 본다: 합칠 브랜치(본 체크아웃 저장소의 로컬 브랜치 refs/heads/<target>)가 하위의 끝 커밋을 품는가.
+  //   워크트리들은 브랜치 ref를 함께 쓰므로 where가 worktree든 main이든 같은 곳이다. push가 켜져도 원격은 보지 않는다(merger는 로컬에서 합친 뒤 올린다. 로컬에 없으면 원격에도 합쳐진 것이 아니다)
+  //   → { hash, contains }(contains: true | false | null(읽지 못함))
+  async verifyMerge(unit) {
+    const m = (unit && unit.meta) || {};
+    const root = m.root || this.wsRoot(m.ws);
+    if (!root || !m.target) return { hash: null, contains: null };
+    const ref = 'refs/heads/' + m.target;
+    const hash = await revOf(root, ref).catch(() => null);
+    const contains = hash && m.tip ? await isAncestor(root, m.tip, hash).catch(() => null) : null;
+    return { hash, contains };
+  }
+  // → { retire, extra, result }(extra: failed면 부모가 받는 글 끝 줄. result: 판이 본 결과. ok인데 확인되지 않으면 failed)
+  // check: verifyMerge의 값(doneVerb가 ok일 때 먼저 읽는다). 없으면 확인하지 못한 것으로 본다
+  onMergeDone(caller, unit, result, text, check = null) {
     const st = this.store();
     const m = unit.meta || {};
     const [key, rec] = this.recOfSession(caller.sessionId);
@@ -324,26 +367,42 @@ export class Merger {
     if (retire) this.retiring.add(caller.sessionId);
     this.pendingCheck.add(caller.sessionId);
     const firstLine = String(text || '').split('\n').map((l) => l.trim()).find(Boolean) || '';
-    if (result === 'ok') {
-      st.updateUnit(unit.id, { meta: { ...m, merged: { at: Date.now(), line: clip(firstLine, 200) } } });
-      this.finishOk(caller, unit).catch((e) => this.log('merge finish ' + unit.id + ' ' + e.message));
+    const mergerName = shownName(caller) || caller.name;
+    const failLines = mergeFailLines({ child: m.child || '?', worktree: m.worktree, branch: m.branch, merger: mergerName });
+    if (result === 'ok' && check && check.contains === true) {
+      st.updateUnit(unit.id, { meta: { ...m, merged: { at: Date.now(), line: clip(firstLine, 200), hash: check.hash, contains: true } } });
+      this.finishOk(caller, unit, check).catch((e) => this.log('merge finish ' + unit.id + ' ' + e.message));
       this.changed(m.ws);
-      return { retire, extra: [] };
+      return { retire, extra: [], result: 'ok' };
+    }
+    if (result === 'ok') {
+      // P275: ok라 했지만 합칠 브랜치에 커밋이 없다(또는 확인하지 못했다): failed와 같이. 하위는 재운 채 두고 부모에게 알린다
+      const c = check || { hash: null, contains: null };
+      const line = mergeUnverifiedLine({ merger: mergerName, child: m.child || '?', tip: m.tip, target: m.target, hash: c.hash, contains: c.contains });
+      st.updateUnit(unit.id, { meta: { ...m, failed: { at: Date.now(), line: clip(line.replace(/^\[Atrium 보드\] /, ''), 200), unverified: true, said: clip(firstLine, 200), hash: c.hash, contains: c.contains } } });
+      try { st.addEvent(caller.sessionId, 'merge_unverified', { unitId: unit.id, target: m.target, tip: m.tip, hash: c.hash, contains: c.contains }); } catch {}
+      try { st.addNews({ sessionId: caller.sessionId, name: mergerName, at: Date.now(), kind: 'merge', task: '합치기: @' + (m.child || '?'), text: '@' + (m.child || '?') + ' 합치기 확인 실패: 끝 커밋 ' + short(m.tip) + (c.contains === false ? '이 ' + m.target + '(' + short(c.hash) + ')에 없다' : '을 ' + (m.target || '?') + '에서 확인하지 못했다'), result: 'failed' }); } catch (e) { this.log('merge news ' + e.message); }
+      this.log('merge ' + unit.id + ' ok by ' + mergerName + ' but not on ' + m.target + ' (contains ' + c.contains + ')');
+      this.keepAsleep(m.childId);
+      this.changed(m.ws);
+      return { retire, extra: [line, ...failLines], result: 'failed', unverified: true };
     }
     st.updateUnit(unit.id, { meta: { ...m, failed: { at: Date.now(), line: clip(firstLine, 200) } } });
     this.changed(m.ws);
-    return { retire, extra: mergeFailLines({ child: m.child || '?', worktree: m.worktree, branch: m.branch, merger: shownName(caller) || caller.name }) };
+    return { retire, extra: failLines, result: 'failed' };
   }
-  // 합침: 합칠 브랜치의 끝 커밋을 읽고(하위의 끝 커밋이 들어갔는지도) 소식 한 줄, 하위를 닫고 보관한다
-  async finishOk(caller, unit) {
+  // P275: 하위가 아직 깨어 있으면(재우기가 거절됐거나 끝났으면) 다시 재운다
+  keepAsleep(sid) {
+    const s = sid ? this.b.sessions.get(sid) : null;
+    if (!s || (s.rt && s.rt.sleep) || this.sleeping.has(sid)) return;
+    if (!this.pendingSleep.has(sid)) this.pendingSleep.set(sid, 0);
+    this.sleepSoon(s);
+  }
+  // 합침(판이 확인함): 소식 한 줄, 하위를 닫고 보관한다
+  async finishOk(caller, unit, check) {
     const st = this.store(); const m = unit.meta || {};
-    const root = m.root || this.wsRoot(m.ws);
-    const hash = root && m.target ? await revOf(root, m.target).catch(() => null) : null;
-    const contains = root && m.tip && m.target ? await isAncestor(root, m.tip, m.target).catch(() => null) : null;
-    const cur = st.getUnit(unit.id);
-    const cm = (cur && cur.meta) || m;
-    st.updateUnit(unit.id, { meta: { ...cm, merged: { ...(cm.merged || {}), hash, contains } } });
-    try { st.addNews({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, at: Date.now(), kind: 'merge', task: '합치기: @' + (m.child || '?'), text: '@' + (m.child || '?') + ' 합침 ' + short(hash) + (m.target ? ' → ' + m.target : '') + (contains === false ? ' (끝 커밋이 ' + m.target + '에 없다)' : ''), result: 'ok' }); } catch (e) { this.log('merge news ' + e.message); }
+    const hash = check ? check.hash : null;
+    try { st.addNews({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, at: Date.now(), kind: 'merge', task: '합치기: @' + (m.child || '?'), text: '@' + (m.child || '?') + ' 합침 ' + short(hash) + (m.target ? ' → ' + m.target : ''), result: 'ok' }); } catch (e) { this.log('merge news ' + e.message); }
     this.changed(m.ws);
     if (m.childId) await this.closeChild(m.childId);
   }
@@ -472,7 +531,8 @@ export class Merger {
     const jobs = st.openMergeUnits().filter((u) => !ws || (u.meta && u.meta.ws === ws)).map((u) => this.jobView(u));
     const answers = this.meta(META_ANSWERS);
     return { mode: MERGER_MODES.includes(set.mergerMode) ? set.mergerMode : 'ask', enabled: ws ? this.enabledFor(ws) : null, settings: { mergerMode: set.mergerMode, mergerKind: set.mergerKind, mergerModel: set.mergerModel, mergerEffort: set.mergerEffort },
-      answers: ws ? { [ws]: answers[ws] || null } : answers, asks: this.asks().filter((a) => !ws || a.workspace === ws), mergers, jobs, jobsMax: this.jobs };
+      answers: ws ? { [ws]: answers[ws] || null } : answers, asks: this.asks().filter((a) => !ws || a.workspace === ws), mergers, jobs, jobsMax: this.jobs,
+      problem: (() => { const p = this.meta(META_PROBLEM); return p && p.at && (!ws || p.workspace === ws) ? p : null; })() }; // P275: merger를 띄우지 못한 마지막 까닭
   }
   // 합치기 일 하나(창이 하위 → merger 선을 그리는 자료)
   jobView(u) {

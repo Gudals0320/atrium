@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url'; // 이슈 #18: 한글·공백 경로(URL 인코딩)
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
@@ -381,7 +382,7 @@ test('P257 계약: docs 동사(더하기만), 옛 docs-guard는 없다', () => {
   const v = VERBS.find((x) => x.name === 'docs');
   assert.deepEqual(v.args, ['[--json]']); assert.ok(v.out.includes('problems'));
   for (const r of ['Bash(atrium docs)', 'Bash(atrium docs *)', 'PowerShell(atrium docs)']) assert.ok(ATRIUM_ALLOW.includes(r), r + ': 판이 띄운 세션이 묻지 않고 친다');
-  const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  const here = path.dirname(fileURLToPath(import.meta.url));
   assert.equal(fs.existsSync(path.join(here, '..', '..', 'scripts', 'docs-guard.mjs')), false);
   const settings = fs.readFileSync(path.join(here, '..', '..', '.claude', 'settings.json'), 'utf8');
   assert.ok(!settings.includes('docs-guard') && !settings.includes('check-docs'));

@@ -24,7 +24,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, codexPasteState, codexPasteWanted } from './screen.mjs';
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, codexPasteState, codexPasteWanted } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -48,7 +48,8 @@ import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 
 import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
-import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf } from './harness.mjs'; // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
+import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf } from './harness.mjs';
+import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
@@ -243,13 +244,13 @@ export class Backend {
 
     this.queue = new DeliveryQueue({
       store: this.store, cfg, view: (sid, d) => this.deliveryView(sid, d), send: (sid, text) => this.sendPrompt(sid, text),
-      // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. 다른 종류와 셸은 손대지 않는다)
+      // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. P270: dsh는 Claude Code처럼. 다른 종류와 셸은 손대지 않는다)
       inspect: async (sid, text) => {
         const s = this.sessions.get(sid); const k = s && (s.kind || 'claude');
-        if (!s || !s.paneId || (k !== 'claude' && k !== 'codex')) return null;
+        if (!s || !s.paneId || (k !== 'claude' && k !== 'codex' && k !== 'dsh')) return null;
         const scr = await this.adapter.readScreen(s.paneId, { source: 'visible' });
         const r = promptOnScreen(scr, text, k);
-        if (r.box === 'other') r.peek = (k === 'codex' ? codexInputBox : claudeInputBox)(scr).text.slice(0, 60); // P106: 무엇이 보였는지 판 기록에 남긴다
+        if (r.box === 'other') r.peek = (k === 'codex' ? codexInputBox : k === 'dsh' ? dshInputBox : claudeInputBox)(scr).text.slice(0, 60); // P106: 무엇이 보였는지 판 기록에 남긴다
         return k === 'codex' ? { ...r, noResend: true } : r;
       },
       pressEnter: async (sid) => { const s = this.sessions.get(sid); if (s && s.paneId) await this.adapter.paneKeys(s.paneId, ['enter']); },
@@ -278,7 +279,8 @@ export class Backend {
     this.queue.on('late', (r) => { this.store.addEvent(r.sessionId, 'delivery_late', r); this.log(`delivery late ${this.nameOf(r.sessionId)} ${r.deliveryId}: went in after cancel`); });
     this.queue.on('delivery', (d) => {
       this.store.addEvent(d.sessionId, 'delivery', d);
-      this.api.broadcast('delivery', { ...d, name: this.nameOf(d.sessionId) });
+      // P271: 닫힌 세션의 전달(세션 닫힘으로 실패)도 받는 세션 이름을 보인다(보내기 칸의 실패 칩이 "@?"였다)
+      this.api.broadcast('delivery', { ...d, name: this.nameOf(d.sessionId) || (this.sessions.has(d.sessionId) ? null : shownName(this.store.getSession(d.sessionId))) });
       const s = this.sessions.get(d.sessionId);
       if (s && d.status === 'unconfirmed') s.draft = true; // P21: 보낸 글이 제출되지 않고 입력 칸에 남았을 수 있다(잠재우지 않는다)
       if (this.branch && ['confirmed', 'unconfirmed', 'failed', 'cancelled'].includes(d.status)) this.branch.onDeliveryEnd(d); // P79: 하위 세션의 첫 요청이 들어가지 않았으면 부모에게
@@ -737,6 +739,7 @@ export class Backend {
     try {
       if (kind === 'codex') { const id = this.harnessSessionIdOf(s); file = id ? findCodexRollout(this.cfg.codexConvoHome || codexHomeOf(), id) : null; }
       else if (kind === 'pi') { const id = (s.harnessPlan || {}).harnessSessionId; file = id ? findPiSession(this.cfg.piSessionsDir || path.join(os.homedir(), '.pi', 'agent', 'sessions'), id) : null; }
+      else if (kind === 'dsh') { const id = this.harnessSessionIdOf(s); file = id ? findDshSession(this.cfg.dshHome || dshHomeOf(), id) : null; } // P270
     } catch { file = null; }
     s._modelFind = { file, at: Date.now() };
     return file;
@@ -745,9 +748,9 @@ export class Backend {
   // P227: asleep이면 패널이 없어도(잠든 세션, 다시 열 닫힌 세션) 읽는다. 바뀐 값은 판 DB(runtime)에 바로 남긴다(판이 다시 떠도 이어 갈 때 쓴다)
   refreshModelNow(s, { asleep = false } = {}) {
     const kind = s.kind || 'claude';
-    if (!['claude', 'codex', 'pi'].includes(kind) || (!s.paneId && !asleep)) return false;
+    if (!['claude', 'codex', 'pi', 'dsh'].includes(kind) || (!s.paneId && !asleep)) return false; // P270: dsh는 기록(zstd 프레임)의 request/header
     let st;
-    try { const file = this.modelFileOf(s); if (!file) return false; st = refreshModel(kind, file, s._modelSt || null); } catch (e) { this.log('model read error', e.message); return false; }
+    try { const file = this.modelFileOf(s); if (!file) return false; st = kind === 'dsh' ? refreshDshModel(file, s._modelSt || null) : refreshModel(kind, file, s._modelSt || null); } catch (e) { this.log('model read error', e.message); return false; }
     if (!st) return false;
     s._modelSt = st;
     const prev = s.rt.modelNow || null;
@@ -1065,6 +1068,13 @@ export class Backend {
       const taken = [...this.sessions.values()].filter((x) => x !== s && x.kind === 'agy' && !x.closedAt).map((x) => (x.harnessPlan || {}).harnessSessionId).filter(Boolean);
       return agySessionOf({ cwd: s.cwd, since: plan.firstLaunchedAt || plan.launchedAt || s.createdAt || 0, exclude: taken, ...(this.cfg.agyHome ? { home: this.cfg.agyHome } : {}) });
     }
+    // P270: dsh도 기록 폴더(~/.dsh/sessions)에서 그 폴더·처음 띄운 뒤에 생긴 맨 위 세션을 찾는다(첫 글 뒤에 생긴다). 판의 다른 dsh 세션이 가진 것은 뺀다
+    if (s.kind === 'dsh') {
+      const taken = [...this.sessions.values()].filter((x) => x !== s && x.kind === 'dsh' && !x.closedAt).map((x) => (x.harnessPlan || {}).harnessSessionId || x._dshId).filter(Boolean);
+      const id = dshSessionOf({ cwd: s.cwd, since: plan.firstLaunchedAt || plan.launchedAt || s.createdAt || 0, exclude: taken, home: this.cfg.dshHome || dshHomeOf() });
+      if (id) s._dshId = id;
+      return id || s._dshId || null;
+    }
     return null;
   }
   // 띄울 값. 판의 env(토큰은 빼고 파일로), PATH 앞의 bin/, 안내문, 호출자 값(모델·추가 인자), 이어 가기
@@ -1156,6 +1166,7 @@ export class Backend {
   // P116: 200줄(전에는 60줄). hc의 terminal.read는 화면의 빈 줄까지 세어서, 입력 칸이 아래에 붙은 Codex 화면은 60줄 안에 그 턴이 없었다(atrium wait의 답이 상태 줄이 됐다)
   async readScreenAnswer(s) {
     if (s.kind === 'pi' && await this.readPiAnswer(s)) return; // P201
+    if (s.kind === 'dsh' && await this.readDshAnswer(s)) return; // P270
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 200 });
       s.rt.lastAnswer = screenAnswerText(text, 20, { kind: s.kind }); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen'; // P192: 종류(AGY)
@@ -1171,6 +1182,22 @@ export class Backend {
       try { s._modelFind = s._modelFind && s._modelFind.file ? s._modelFind : null; const file = this.modelFileOf(s); a = file ? readPiLastAnswer(file) : null; } catch { a = null; }
       if (a && (!s.rt.piAnswerAt || (a.at || 0) > s.rt.piAnswerAt)) {
         s.rt.lastAnswer = a.text; s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'session'; s.rt.piAnswerAt = a.at || Date.now();
+        this.bus.emit('screenAnswer', s);
+        return true;
+      }
+      if (i < tries - 1) await new Promise((r) => setTimeout(r, gapMs));
+    }
+    return false;
+  }
+
+  // P270: dsh의 마지막 답은 기록(zstd 프레임 JSONL)의 마지막 assistant/message 글이다(화면은 전체 화면 TUI라 고르기 어렵다).
+  //   턴이 끝난 때 기록에 아직 답이 없을 수 있어 잠깐 다시 본다. 지난번 답보다 새 답이 없으면 화면으로 돌아간다
+  async readDshAnswer(s, { tries = 6, gapMs = 300 } = {}) {
+    for (let i = 0; i < tries; i++) {
+      let a = null;
+      try { s._modelFind = s._modelFind && s._modelFind.file ? s._modelFind : null; const file = this.modelFileOf(s); a = file ? readDshLastAnswer(file) : null; } catch { a = null; }
+      if (a && (!s.rt.dshAnswerAt || (a.at || 0) > s.rt.dshAnswerAt)) {
+        s.rt.lastAnswer = a.text; s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'session'; s.rt.dshAnswerAt = a.at || Date.now();
         this.bus.emit('screenAnswer', s);
         return true;
       }
@@ -1333,7 +1360,8 @@ export class Backend {
   // 그 패널에 같은 종류의 에이전트가 있을 때 패널 ID로 보낸다
   async sendPrompt(sid, text) {
     const s = this.sessions.get(sid);
-    // P264: Codex에 여러 줄이거나 긴 글은 판이 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(hc terminal.send의 Enter가 붙여 넣은 글의 줄바꿈이 됐다)
+    // P264: Codex에 여러 줄이거나 긴 글은 판이 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(hc terminal.send의 Enter가 붙여 넣은 글의 줄바꿈이 됐다).
+    //   P271(이슈 #19): 짧은 한 줄도 같다(codexPasteWanted). Enter 뒤 입력 칸에 남으면 어댑터가 Enter를 다시 친다
     const paste = s.kind === 'codex' && typeof this.adapter.pastePrompt === 'function' && codexPasteWanted(text) && !(s.rt && this.hooked(s));
     const send = (target) => (paste ? this.adapter.pastePrompt(target, text, { state: (scr) => codexPasteState(scr, text) }) : this.adapter.prompt(target, text));
     try { return await send(s.agentName); }

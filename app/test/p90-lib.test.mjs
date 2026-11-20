@@ -44,11 +44,11 @@ test('P90 목록 순서: 작업 중은 시작한 지 오래된 순이고 활동 
 
 test('P90 전달 표시: Claude Code 대기열에 넣었으면 그렇게, 입력 칸에 쓰던 글이 있어 기다리면 그렇게 보인다', () => {
   setLanguage('ko');
-  assert.equal(deliveryText({ status: 'confirmed', reason: 'typed' }), '제출 확인됨 (Claude Code 대기열에 추가됨)');
-  assert.equal(deliveryText({ status: 'sent', reason: 'typed' }), '전송됨 (Claude Code 대기열에 추가됨)');
+  assert.equal(deliveryText({ status: 'confirmed', reason: 'typed' }), '제출 확인됨 (지금 턴에 넣음)');
+  assert.equal(deliveryText({ status: 'sent', reason: 'typed' }), '전송됨 (지금 턴에 넣음)');
   assert.equal(deliveryText({ status: 'queued', reason: 'draft' }), '전송 대기 중 (입력란에 작성 중인 글 있음)');
   assert.equal(deliveryText({ status: 'queued', reason: 'working' }), '전송 대기 중 (이전 요청 처리 중)');
   setLanguage('en');
-  assert.equal(deliveryText({ status: 'confirmed', reason: 'typed' }), 'Submitted (queued in Claude Code)');
+  assert.equal(deliveryText({ status: 'confirmed', reason: 'typed' }), 'Submitted (into the current turn)');
   assert.equal(deliveryText({ status: 'queued', reason: 'draft' }), 'Queued (text in the input box)');
 });
