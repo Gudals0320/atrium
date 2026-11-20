@@ -168,7 +168,7 @@ test('P263 안내 글: 판 안내·하네스 안내·스킬·help가 "[Atrium �
     assert.match(t, /atrium me|여기에만 보인다/, k);
   }
   assert.match(BOARD_SYSTEM_PROMPT, /"\[Atrium 보드\]"\(예전 이름도\)로 시작하는 글은 보드 알림이다/);
-  assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 8, '판 안내는 여덟 줄 그대로');
+  assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 9, '판 안내는 아홉 줄 그대로(P284: 결정 카드 한 줄을 더했다)');
   assert.ok(!/[\r\n"]/.test(HARNESS_PROMPT), '하네스 안내문은 한 줄, 큰따옴표 없이');
   const help = fs.readFileSync(path.join(HERE, '..', 'bin', 'atrium-child.mjs'), 'utf8');
   assert.match(help, /사람이 판에서 잇거나 끊은 역할 연결은 알림 없이 여기에만 보인다/);

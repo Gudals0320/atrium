@@ -2733,6 +2733,25 @@ export default {
     phoneSteerOn: '지금 일에 넣기', // P280
     oldHoldDropped: '보드를 다시 시작하며 옛 대기 줄을 정리함',
   },
+  // P284: 결정 카드(에이전트가 사람에게 글로 물은 질문, atrium ask). 응답 필요와 따로 센다
+  decisions: {
+    pill: '결정',
+    head: '결정 대기',
+    title: '에이전트가 정해 달라고 물은 질문(오래 기다린 것부터)',
+    empty: '기다리는 결정이 없습니다.',
+    waited: '기다린 시간',
+    goTitle: '@{name}(으)로 가기',
+    placeholder: '한 줄 답…',
+    send: '보내기',
+    ignore: '무시',
+    ignoreTitle: '세션에 아무것도 보내지 않고 이 카드만 닫습니다',
+    sent: '@{name}에게 답을 보냈습니다',
+    ignored: '@{name}의 질문을 무시했습니다',
+    fail: '처리하지 못했습니다: {error}',
+    mark: '결정',
+    markN: '결정 {n}',
+    markTitle: '기다리는 결정 {n}개 · 위 "결정" 알약에서 답합니다',
+  },
   // P283: 터미널·마크다운 보기의 링크
   urlLink: {
     hint: 'Ctrl+클릭하면 링크를 엽니다.',

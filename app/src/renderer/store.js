@@ -9,6 +9,7 @@ import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
+import { decisionsOf, withoutCard } from './lib/decisions.js'; // P284: 결정 카드
 import { mergerViewOf, withAsk, withoutAsk, rememberParents } from './lib/merger.js'; // P268. P276: rememberParents
 import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107: 작업 중 테두리 빛 설정과 미션 맵 덮개를 문서 뿌리에
 
@@ -459,3 +460,12 @@ api.on('merger.ask', (card) => { putMergerAsk(card); loadMerger(); });
 api.on('merger.problem', (p) => { if (p && p.why) toast(t('merger.problem', { name: p.workspaceName || p.workspace || '?', why: p.why }), 'error'); loadMerger(); }); // P275
 api.on('merger.answered', (d) => { if (d && d.workspace) dropMergerAsk(d.workspace); loadMerger(); });
 for (const ev of ['merger.updated', 'session.created', 'session.removed']) api.on(ev, () => loadMerger());
+
+// P284: 결정 카드(판 API decision.*). 처음 붙을 때 decision.list로 읽고, decision.changed { cards }로 바꾼다. 옛 판이면 빈 목록
+state.decisions = [];
+export function putDecisions(cards) { state.decisions = decisionsOf(cards); changed(); }
+export const loadDecisions = () => api.call('decision.list').then((r) => putDecisions(r && r.cards)).catch(() => {});
+api.on('$open', () => loadDecisions());
+api.on('decision.changed', (d) => putDecisions(d && d.cards));
+export async function answerDecision(id, answer) { const r = await api.call('decision.answer', { id, answer }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
+export async function ignoreDecision(id) { const r = await api.call('decision.ignore', { id }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }

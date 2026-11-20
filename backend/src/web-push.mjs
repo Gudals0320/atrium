@@ -168,10 +168,10 @@ export function pushKindOf(sum, from) {
   if (to === 'exited' && sum.exit && sum.exit.kind === 'other') return 'exit'; // 사람이 끄거나 판이 끈 것(normal, terminal_stopped)은 알리지 않는다
   return null;
 }
-export const prefKind = (k) => (k === 'exit' ? 'error' : k);
+export const prefKind = (k) => (k === 'exit' ? 'error' : k === 'decision' ? 'need' : k); // P284: 결정 카드는 응답 필요 스위치를 따른다
 const WORDS = {
-  ko: { done: '끝남', need: '응답 필요', error: '오류', exit: '세션 꺼짐', many: '세션 {n}개', more: '외 {n}개', subs: '하위 {n}개 포함', testTitle: 'Atrium 시험 알림', testBody: '이 기기에서 알림을 받을 수 있습니다.' },
-  en: { done: 'done', need: 'needs you', error: 'error', exit: 'session ended', many: '{n} sessions', more: '+{n} more', subs: 'incl. {n} sub-sessions', testTitle: 'Atrium test notification', testBody: 'This device can receive notifications.' },
+  ko: { decision: '결정 필요', done: '끝남', need: '응답 필요', error: '오류', exit: '세션 꺼짐', many: '세션 {n}개', more: '외 {n}개', subs: '하위 {n}개 포함', testTitle: 'Atrium 시험 알림', testBody: '이 기기에서 알림을 받을 수 있습니다.' },
+  en: { decision: 'decision needed', done: 'done', need: 'needs you', error: 'error', exit: 'session ended', many: '{n} sessions', more: '+{n} more', subs: 'incl. {n} sub-sessions', testTitle: 'Atrium test notification', testBody: 'This device can receive notifications.' },
 };
 const fill = (s, v) => s.replace(/\{(\w+)\}/g, (_, k) => String(v[k]));
 const clipName = (s, n = 40) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -190,7 +190,7 @@ export function pushText(items, lang = 'en') {
 // 알림 하나의 본문(암호화 전). 누르면 열 세션: 하나면 그것, 묶었으면 응답 필요가 먼저
 export function pushPayload(items, lang, now = Date.now()) {
   const { title, body } = pushText(items, lang);
-  const first = items.find((x) => x.kind === 'need') || items[0];
+  const first = items.find((x) => x.kind === 'need') || items.find((x) => x.kind === 'decision') || items[0];
   return { v: 1, title, body, tag: items.length === 1 ? `atrium-${first.sessionId}` : 'atrium-batch', sessionId: first.sessionId, kind: items.length === 1 ? first.kind : 'batch', n: items.length, at: now };
 }
 export const testPayload = (lang, now = Date.now()) => { const w = WORDS[langOf(lang)]; return { v: 1, title: w.testTitle, body: w.testBody, tag: 'atrium-test', sessionId: null, kind: 'test', n: 0, at: now }; };
@@ -304,6 +304,8 @@ export class Pusher {
     this.dispatch({ sessionId: sum.sessionId, name: sum.name, kind, workspaceKey: sum.workspaceKey }, (tree || this.treeNow(sum)).isSub(sum.sessionId));
     return kind;
   }
+  // P284: 결정 카드 하나(atrium ask). 응답 필요(need) 스위치·묶음·보는 중·PC 사용 중 규칙 그대로, 카드마다 한 번. 결정 카드를 남기는 세션은 하위가 아니다
+  decision(it) { this.dispatch({ sessionId: it.sessionId, name: it.name, kind: 'decision', workspaceKey: it.workspaceKey || null, coolKey: `decision|${it.id}` }, false); }
   // 판의 세션 나무. 막 바뀐 세션은 받은 요약(sum)의 상태로 맞춘다
   treeNow(sum = null) {
     let nodes = [];
@@ -322,7 +324,7 @@ export class Pusher {
     const { kind } = it;
     const subs = this.records().filter((r) => r.endpoint);
     if (!subs.length) return;
-    const t = this.now(); const ck = `${it.sessionId}|${kind}`;
+    const t = this.now(); const ck = it.coolKey || `${it.sessionId}|${kind}`; // P284: 결정 카드는 카드마다(coolKey)
     const last = this.cool.get(ck);
     if (last != null && t - last < this.cooldownMs) { this.decide({ sessionId: it.sessionId, kind, deviceId: null, why: 'cooldown' }); return; }
     this.cool.set(ck, t);

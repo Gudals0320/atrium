@@ -19,6 +19,7 @@ import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
 import { useDialog } from './dialog.js'; // P52
 import { useInbox } from './InboxBar.jsx';
+import { DecisionPill } from './Decisions.jsx'; // P284: 결정 카드
 import { seenTargets, cpuLine, fmtPct } from './lib/p255.js'; // P255: 작업 완료 모두 읽기, 메모리 칩의 CPU
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
@@ -478,6 +479,7 @@ export function TopRight({ maxControllers }) {
   return (
     <div className="mt-cluster tr" data-role="top-right">
       <TurnPill needsYou={needsYou} />
+      <DecisionPill />{/* P284: 결정 n(응답 필요와 따로 센다) */}
       {review.length > 0 && <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} readAll />}
       {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? EXIT_LABEL[s.exit && s.exit.kind] : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
       <ConnPill />

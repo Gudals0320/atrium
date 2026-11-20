@@ -48,6 +48,7 @@ import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 
 import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
+import { humanPrompt } from './decisions.mjs'; // P284: 터미널에 직접 친 글
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf } from './harness.mjs';
 import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel, waitDshAnswer } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
@@ -852,7 +853,7 @@ export class Backend {
     if (ev === 'PermissionRequest' || (ev === 'PreToolUse' && s.rt.pendingAsk && s.rt.pendingAsk.toolUseId === body.tool_use_id)) info.ask = this.askView(s, { ...s.rt.pendingAsk, input: undefined });
     this.store.addEvent(s.sessionId, 'hook', info);
     this.api.broadcast('session.hook', { sessionId: s.sessionId, name: s.name, ...info });
-    if (ev === 'UserPromptSubmit') this.queue.onUserPromptSubmit(s.sessionId, body.prompt);
+    if (ev === 'UserPromptSubmit') { const matched = this.queue.onUserPromptSubmit(s.sessionId, body.prompt); if (!matched && this.decisions && humanPrompt(body.prompt)) try { this.decisions.onHuman(s.sessionId, 'terminal'); } catch (e) { this.log('decisions human error', e.stack); } } // P284: 판의 전달과 맞지 않는 지시 = 사람이 터미널에 직접 친 글
     if (ev === 'PermissionRequest' && s.rt.pendingAsk && (s.rt.pendingAsk.kind === 'permission' || s.rt.pendingAsk.kind === 'plan')) this.readChoicesLater(s);
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && !s.rt.pendingAsk && s.rt.term.status === 'blocked') this.recheckBlockedLater(s); // P232(H18)
     if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure' || ev === 'PermissionDenied') && s.rt.pendingAsk && s.rt.pendingAsk.kind === 'permission' && !s.rt.pendingAsk.choices) this.readChoicesLater(s); // P232: 줄의 다음 질문이 올라왔다
@@ -1638,6 +1639,7 @@ export class Backend {
       const body = toLF(text);
       const d = this.queue.enqueue(s.sessionId, body, { ...qopts(s), origin: { kind: 'human' } });
       this.touch(s);
+      try { if (this.decisions) this.decisions.onHuman(s.sessionId, 'bar'); } catch (e) { this.log('decisions human error', e.stack); } // P284: 사람이 카드를 거치지 않고 직접 보낸 글(명령 바·휴대폰 입력)은 그 세션의 열린 결정 카드를 닫는다
       return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, ...steerOut(s) };
     }));
     // I2(P6b): 명령 바에서 보낸 글은 Thread에 남긴다. source: bar(기본), output(출력 보기에서 답장)
@@ -2169,7 +2171,7 @@ export class Backend {
       // P42: 셸 노드의 지난 출력(터미널 기록, 화면 너비로 감긴 줄, ANSI). 창이 xterm scrollback에 넣어 판 안에서 올려 보고 고른다
       'terminal.history': async (p) => { const s = this.resolve(p.session); if (!s.paneId) return { sessionId: s.sessionId, text: '' }; return { sessionId: s.sessionId, text: await this.adapter.readScreen(s.paneId, { source: 'recent', format: 'ansi', lines: Math.min(Math.max(Number(p.lines) || 3000, 1), 10000) }) }; },
       'terminal.attach': (p, c) => { this.requireTerminal(); const s = this.resolve(p.session); if (!s.paneId) throw keyed(apiError('sleeping', `@${s.name} 세션은 절전 중이라 터미널이 닫혀 있습니다. 먼저 작업을 재개하세요.`), 'sleepingNoPane', { name: s.name }); return this.relay.attach(s, p.cols || 120, p.rows || 40, c); },
-      'terminal.input': (p, c) => { this.relay.input(this.resolve(p.session).sessionId, String(p.data ?? ''), c); return { ok: true }; },
+      'terminal.input': (p, c) => { const s = this.resolve(p.session); const data = String(p.data ?? ''); this.relay.input(s.sessionId, data, c); if (this.decisions && data.includes('\r') && s.kind !== SHELL && !this.hooked(s) && deriveState(s.rt).state === 'ready') try { this.decisions.onHuman(s.sessionId, 'terminal'); } catch {} return { ok: true }; }, // P284: hook 없는 종류는 쉬는 중 터미널 Enter를 사람이 직접 보낸 글로 본다(Claude Code는 UserPromptSubmit으로)
       'terminal.resize': (p, c) => { this.relay.resize(this.resolve(p.session).sessionId, p.cols, p.rows, c); return { ok: true }; },
       'terminal.detach': (p, c) => { this.relay.detach(this.resolve(p.session).sessionId, c); return { ok: true }; },
       'terminal.focus': (p, c) => { this.relay.focus(this.resolve(p.session).sessionId, c); this.peers.touch(c); return { ok: true }; }, // P47: 초점을 준 클라이언트가 패널 크기를 정한다

@@ -42,6 +42,7 @@ import { Merger, readMergerGuide } from './merger.mjs'; // P267: 합치기 merge
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때와 동료 소식
 import { DocWatch } from './doc-watch.mjs'; // P257: 문서 점검(지휘 세션 턴 끝·done 알림)
+import { Decisions } from './decisions.mjs'; // P284: 결정 카드(atrium ask)
 import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | news, 턴 끝·done 자동 기록)
 
 
@@ -67,9 +68,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
-    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`]), // P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
+    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`, `Bash(${c} ask:*)`, `Bash(${c} ask *)`]), // P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
-    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`]), // P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
+    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`, `PowerShell(${c} ask *)`]), // P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
 ];
 // P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
 const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
@@ -281,6 +282,13 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 - 워커가 권한이나 질문으로 멈추면(보드의 멈춤 알림, \`atrium wait\`의 waiting) 대신 답하지 않는다. 사용자에게 "보드에서 @이름에 답해 주세요"라고 알린다.
 - 오래 쉰 워커는 혼자 잠든다. 미리 깨우려면 \`atrium wake <이름>\`.
 - 워커가 모델 오류로 답하지 못하면(\`atrium children\`의 오류 줄) 사용자에게 알리고 \`atrium models\`의 다른 줄로 다시 띄운다.
+
+## 사람에게 묻기(결정 카드)
+
+- 사람과 직접 일하는 세션(일 상위가 없는 세션)이 사람이 정해야 할 질문("이대로 마무리할까요?", "이 방향으로 갈까요?")을 글로 물었으면 \`atrium ask "<질문 한 줄>" --option "<보기>" --option "<보기>" --why "<맥락 한 줄>"\`로 보드에도 남긴다. 대화의 글은 그대로 쓴다(카드는 대화를 갈음하지 않는다). 남긴 뒤 턴을 끝낸다.
+- 사람이 카드에서 답하면 \`[결정] <질문> → <답>\` 글이 들어온다. 무시하면 아무것도 오지 않는다(되묻지 않는다). 사람이 대화로 직접 답하면 보드가 카드를 닫는다.
+- 권한·신뢰·모델·하네스 질문은 카드가 아니다(보드가 따로 알린다). 하위 워커는 카드를 남기지 않고 부모에게 \`atrium prompt\`로 묻는다.
+- 쓸모없어진 카드는 \`atrium ask --done <번호>\`, 열린 카드 목록은 \`atrium ask --list\`.
 `;
 export function boardSkill(name = SKILL_NAME) {
   const description = name === SKILL_NAME
@@ -346,6 +354,7 @@ export class Branch {
       onDrop: (sid, lines) => { if (b.sessions.has(sid)) b.store.addEvent(sid, 'link_notice_dropped', { lines }); },
     });
     this.news = new PeerNews(b, this, newsOpts); // P204: 동료 소식(턴 끝·done 자동 기록, atrium log | news)
+    this.decisions = new Decisions(b, this); b.decisions = this.decisions; // P284: 결정 카드(atrium ask, 판 API decision.*)
     this.docs = new DocWatch(b, this); b.docs = this.docs; // P257: 문서 점검(일 단위가 done·머리에서 부른다)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
     this.merger = new Merger(b, this.units, mergerOpts); b.merger = this.merger; // P267: 브랜치 하위의 done ok를 merger에게
@@ -354,11 +363,13 @@ export class Branch {
       const told = this.units.onClosed(s, { reason, byParent: this.byParentKill.has(s.sessionId) }); // P181: 열린 일이 있으면 그 상위에게 멈춤(closed) 알림
       this.onClosed(s, reason, told);
       this.news.onClosed(s); // P204
+      try { this.decisions.onClosed(s); } catch (e) { b.log('decisions closed error', e.stack); } // P284: 열린 결정 카드는 closed
     });
     b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } try { this.docs.onSession(s, sum); } catch (e) { b.log('docs session error', e.stack); } try { this.merger.onSession(s, sum); } catch (e) { b.log('merger session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read
     this.handlers = {
       'branch.tree': () => this.tree(),
+      ...this.decisions.handlers(), // P284: decision.list | decision.answer | decision.ignore
     };
   }
   asleep(s) { return !!(s.rt && s.rt.sleep) || !!(this.b.sleeper && this.b.sleeper.isAsleep && this.b.sleeper.isAsleep(s)); }
@@ -582,6 +593,7 @@ export class Branch {
     if (op === 'items') return this.units.items(s, body); // P180: atrium items
     if (op === 'log') return this.news.logVerb(s, body); // P204: atrium log "<한 줄>"
     if (op === 'news') return this.news.newsVerb(s, body); // P204: atrium news [<이름>] [--all]
+    if (op === 'ask') return this.decisions.askVerb(s, body); // P284: atrium ask "<질문>" | --done <번호> | --list
     if (op === 'docs') return this.docs.verb(s); // P257: atrium docs(문서 점검 결과)
     if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
     if (op === 'usage-report') return this.b.usage ? this.b.usage.report(String(body.kind || ''), body.input) : { ok: false }; // P211: 판의 상태 줄 명령이 알린 사용량
