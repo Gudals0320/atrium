@@ -9,6 +9,7 @@ import { hasFiles } from './lib/upload.js';
 import { webZoomOf } from './lib/scale.js'; // P49
 import { startPwa, pwaState } from './lib/pwa.js'; // P74: 홈 화면 웹 앱
 import { boardPlan } from './crash-watch.js'; // P86: 보드 단계 3부터 화면 배율(CSS zoom)을 쓰지 않는다
+import { shellSeen } from './shell-update.js'; // P282: 판이 새 화면 코드를 내보내면 다시 불러온다
 
 export const isWeb = typeof window !== 'undefined' && !window.mt;
 // P56: 옛 기기 토큰(P48~P55)이 남아 있으면 지운다. 더 쓰지 않는다
@@ -45,11 +46,21 @@ let paired = false; // 이 페이지가 로그인한 채로 시작했는지. 그
 async function backend() {
   const me = await webMe();
   if (!me) { if (paired) location.reload(); throw Object.assign(new Error('this browser is not signed in'), { code: 'not_paired' }); }
+  shellSeen(me.build); // P282: 다시 붙을 때마다 판의 화면 빌드 표식과 견준다
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   // P49: 웹 화면도 클라이언트다(P47). api.js가 client·name·kind=web을 연결 주소에 붙인다. P56: 주소에 비밀이 없다(쿠키)
   return { ...me, web: true, clientKind: 'web', deviceName: (me.device && me.device.name) || null, wsUrl: `${proto}://${location.host}/api` };
 }
 export function markPaired() { paired = true; }
+// P282: 웹소켓이 끊기지 않은 채 화면이 다시 보여도(iOS 홈 화면 앱은 페이지를 오래 메모리에 둔다) 30초에 한 번 표식을 다시 본다
+if (isWeb && typeof document !== 'undefined') {
+  let lastLook = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !paired || Date.now() - lastLook < 30000) return;
+    lastLook = Date.now();
+    webMe().then((me) => { if (me) shellSeen(me.build); }).catch(() => {});
+  });
+}
 
 // 알림
 const navFns = new Set();

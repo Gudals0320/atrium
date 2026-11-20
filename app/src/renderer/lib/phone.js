@@ -147,6 +147,12 @@ export function viewportBox(vv, innerHeight) {
 // 키보드가 닫혀 있고 모자란 높이가 TALL_GAP_MAX 안이면 화면 높이(screen, 세로면 긴 변)를 쓴다. 브라우저 탭과 키보드가 열린 때는 viewportBox 그대로
 export const TALL_GAP_MAX = 100;
 export const KB_GAP_PX = 120; // 보이는 높이가 창 높이보다 이만큼 작으면 키보드(P74, touch-board.js KB_OPEN_PX와 같다)
+// P282: 키보드가 열렸나. iOS 홈 화면 앱은 키보드가 열리면 창 높이(innerHeight)도 함께 줄어 "보이는 높이 < 창 높이 - 120"이 맞지 않는다
+// (입력 줄 아래에 홈 막대 여백이 남았다). 이 방향(폭)에서 본 가장 큰 보이는 높이(tallest)도 기준으로 삼는다
+export function kbOpenOf({ vvHeight, innerHeight, tallest = 0 }) {
+  if (!(vvHeight > 0)) return false;
+  return vvHeight < Math.max(innerHeight || 0, tallest || 0) - KB_GAP_PX;
+}
 export function screenBox({ vv, innerHeight, innerWidth, screenW, screenH, standalone = false }) {
   const b = viewportBox(vv, innerHeight);
   if (!standalone || !(screenW > 0) || !(screenH > 0)) return b;

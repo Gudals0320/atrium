@@ -664,3 +664,9 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pmap-colhead { padding: 0 0 12px 20px; }
 .mt-pmap-colhead .hn { font-size: 20px; }
 .mt-sm .lv-far .mt-pmap-colhead .hn { font-size: clamp(20px, calc(13px * var(--ik, 1)), 36px); }
+
+/* P282: 키보드가 열렸을 때의 입력 줄 아래 여백(html.mt-kb-open, 위 .mt-ph-input 규칙)은 Phone.jsx가 lib/phone.js kbOpenOf로 판단한다 */
+/* P282: 상태 줄 자리(위 안전 영역)를 머리줄과 같은 불투명 색으로 채운다. iOS 홈 화면 앱(black-translucent)은 이 자리에 반투명 시스템 막대를 덧그리며
+   theme-color로 물들인다. 머리줄과 같은 색이면 막대가 머리줄 위에 어두운 띠로 보이지 않는다(index.html theme-color도 같은 색) */
+.mt-ph-topfill { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); z-index: 95; background: var(--chrome-bg); pointer-events: none; }
+.mt-phone[data-view="mission"] .mt-ph-topfill { background: #151412; } /* 세션 맵 머리줄(.mt-pl .mt-ph-head)과 같은 색 */
