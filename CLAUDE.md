@@ -16,7 +16,8 @@
 - OpenCove(MIT) 코드를 가져올 때는 파일 머리에 원본 경로와 커밋(`DeadWaveWave/opencove@e10604b`)을 남기고, 저장소에 MIT 고지를 둔다.
 - 일을 맡길 작업자 CLI 세션은 `claude --model claude-opus-5-5 --effort high`로 띄운다. 사용자 기본 모델이 Fable이고 Opus 5.5의 기본 노력 수준이 medium이라, 둘 다 직접 지정해야 한다.
 - 작업자 여럿에게 나눠 맡길 때는 Claude Code 워크트리(`claude -w <이름>`)에서 띄우고, 작업자마다 개발용 판을 따로 준다.
-- 작업자는 자기 브랜치에만 커밋하고, `atrium done ok` 글에 브랜치와 끝 커밋, 돌린 시험과 결과, CHANGELOG에 넣을 한 줄을 적는다. 합치기는 판이 merger 세션에게 맡긴다(설정 › 합치기, `.atrium/merge.json`). merger가 dev에 닿는 기계적 작업(합치기, 충돌 풀기, 합친 뒤 시험, CHANGELOG, 버전 올리기, dev 빌드, 워크트리 치우기)을 하고, 판의 merger가 꺼져 있을 때만 지휘 세션이 한다.
+- 작업자는 자기 브랜치에만 커밋하고, `atrium done ok` 글에 브랜치와 끝 커밋, 돌린 시험과 결과, 사용자가 얻는 것 한 줄을 적는다. 합치기는 판이 merger 세션에게 맡긴다(설정 › 합치기, `.atrium/merge.json`). merger가 dev에 닿는 기계적 작업(합치기, 충돌 풀기, 합친 뒤 시험, 버전 올리기, dev 빌드, 워크트리 치우기)을 하고, 판의 merger가 꺼져 있을 때만 지휘 세션이 한다.
+- dev 빌드는 빠른 알파 시험용이다. CHANGELOG 줄과 손으로 쓴 릴리즈 글 없이 버전·태그·사전 릴리즈만 내고 최근 5개만 남긴다. `CHANGELOG.md`는 정식 릴리즈 때 지휘 세션이 묶어 쓴다.
 - merger의 실패·결정만 지휘 세션에 온다. 검토는 `experiments/<작업>/review.md`에 있고, 지휘 세션은 다른 일로 깨어났을 때 검토 파일을 모아 읽고 문서를 한 번에 고친다.
 - 작업은 `dev`에 커밋한다. 작업자는 워크트리를 연 뒤 `git merge --ff-only origin/dev`부터 한다. 릴리즈는 `scripts/release-check.mjs` 머리의 절차를 따른다.
 - 커밋 메시지에 `Co-Authored-By: Claude` 줄을 넣지 않는다(사용자 요청).
