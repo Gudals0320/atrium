@@ -179,8 +179,7 @@ async function phone() {
         await pg.evaluate(HOOK, [SHAPE, null]);
         await pg.evaluate(() => { try { localStorage.removeItem('atrium.phoneMap.view'); } catch {} window.__mtPhone.mission(); });
         await pg.waitForSelector('.mt-pmap .mt-ta-card', { timeout: 20000 }); await sleep(1500);
-        for (const tab of ['today', 'earlier']) {
-          await pg.evaluate((t) => window.__mtPm.setTab(t), tab); await sleep(900);
+        for (const tab of ['both']) { // P280: 휴대폰 탭이 없어져 두 칸을 한 번에 본다
           await pg.evaluate(() => window.__mtPm.fit()); await sleep(700);
           const r = await pg.evaluate(() => { const L = window.__mtPm.lay(); return { div: document.querySelectorAll('[data-role=pm-solo-div]').length, solos: [...L.cards.values()].filter((b) => b.depth === -1).map((b) => ({ n: b.node.name, x: b.x, y: b.y, ws: b.ws })), x0: L.cols[0].x, tree: [...L.cards.values()].filter((b) => b.depth >= 0).map((b) => ({ x: b.x, y: b.y, h: b.h, ws: b.ws })) }; });
           if (!BEFORE) check(`[phone ${lang} ${tab}] 솔로는 시작 칸(왼쪽 끝)에서 나무 아래, 가름 점선 없음`, !r.div && r.solos.length && r.solos.every((s) => s.x === r.x0 && r.tree.filter((t) => t.ws === s.ws).every((t) => t.y + t.h <= s.y)), r);
