@@ -11,7 +11,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
 import { RigMap } from './RigMap.jsx'; // P251: rig 구조 지도
-import { v7Layout, hideRigSessions, roleSessions, RIG_VIEW, V7 } from './lib/rig-map.js'; // P251·P253·P254
+import { v7Layout, hideRigSessions, RIG_VIEW } from './lib/rig-map.js'; // P251·P253·P254
+import { mapCardW, rigMapOpts, rigCardBoxes } from './lib/mission-lineage.js'; // P261: rig 묶음 카드 = 보통 카드 꼴
 import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
@@ -100,24 +101,26 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
 // P157: 카드에는 브라우저 풍선(title)을 달지 않는다. 마우스를 올리면 미리 보기(Peek) 하나만 뜬다(전에는 둘이 함께 떴다). 같은 사실은 aria-label에
+// P261: b.rig가 있으면 rig 역할·빌더 카드(같은 카드 + 첫 줄 꼬리표 "역할 · <역할> · v<판>" / "rig 빌더", 자리 data-role rm-role·rm-builder)
 export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null }) {
   noteMap('cards');
   const n = b.node;
   const st = ST[tier] || 'ready';
-  const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}`;
+  const rig = b.rig || null;
+  const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}${rig ? ` rig${rig.kind === 'builder' ? ' rig-builder' : ''}${rig.dim ? ' dim' : ''}` : ''}`;
   const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.bg ? `${f.bgText} (${f.bgKinds})` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip'), t('mmLine.cardDragTip')].filter(Boolean).join('\n');
   const done = tier === 'review';
   return (
-    <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws} data-thin={b.thin ? '1' : undefined} data-chip={b.chip ? '1' : undefined} data-case={b.caseId || undefined}>
-      <div className="mt-ta-card" role="button" tabIndex={0} aria-pressed={tagged ? 'true' : 'false'} data-role="mm-node" data-kind="session" data-id={id} data-name={n.name} data-tier={tier} data-tagged={tagged ? '1' : undefined} aria-label={tip.replace(/\n/g, ', ')}
+    <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role={rig ? (rig.kind === 'builder' ? 'rm-builder' : 'rm-role') : 'ta-slot'} data-name={rig ? rig.name : undefined} data-state={rig ? (rig.none ? 'none' : f.state || 'none') : undefined} data-id={id} data-tier={tier} data-ws={b.ws} data-thin={b.thin ? '1' : undefined} data-chip={b.chip ? '1' : undefined} data-case={b.caseId || undefined}>
+      <div className="mt-ta-card" role="button" tabIndex={0} aria-pressed={tagged ? 'true' : 'false'} data-role={rig ? 'rm-node' : 'mm-node'} data-kind="session" data-id={id} data-name={n.name} data-tier={tier} data-tagged={tagged ? '1' : undefined} aria-label={tip.replace(/\n/g, ', ')}
         onClick={(e) => onTag(id, e)} onDoubleClick={() => onOpen(id, true)} onPointerEnter={(e) => e.pointerType === 'mouse' && onHover(id, e.currentTarget)} onPointerLeave={() => onHover(null)} onFocus={(e) => onHover(id, e.currentTarget)} onBlur={() => onHover(null)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onOpen(id); } else if (e.key === ' ') { e.preventDefault(); onTag(id); } }}>
         {/* P163: 얇은 줄(하위 많은 리드 아래 절전 하위) = 상태 점 + 이름 + 지난 시간 한 줄. 조작은 카드와 같다 */}
         {b.thin ? <span className="mt-sm-thin" data-role="ta-thin"><i /><span className="cname" data-role="ta-name">{n.name}</span>{f.age ? <span className="cago">{f.age}</span> : null}</span> : null}
         {tier === 'work' && <MissionLight role="ta-light" />}
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
-        {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
+        {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}</span><span className="ts">{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{rig ? <span className={`mt-sm-rig tile${rig.kind === 'builder' ? ' b' : ''}`} data-role="rm-tile-tag">{rig.kind === 'builder' ? rig.chip : rig.name}</span> : null}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">
-          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" /></span>
+          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{rig ? <span className={`mt-sm-rig${rig.kind === 'builder' ? ' b' : ''}`} data-role="rm-tag">{rig.chip}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" /></span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
@@ -196,11 +199,15 @@ export function SectionMark({ s, px, t }) {
 }
 
 // P254: 워크스페이스 줄 안의 rig 묶음(시안 V7). 자리는 lineageLayout(rigBlocks)이 그 줄 안에 정한다(lay.rigs). 맨 위 띠는 없앴다
-function RigBlocks({ lay, rigList, rigGeo, sessions, t }) {
+// P261: 묶음은 선·줄 글만 그린다(RigMap). 역할·빌더 카드는 보통 카드(Card)로 세계에 바로(LineageMap rigCards). 밝은 쌍 = 두 끝 중 일하는 역할(등급 work)
+function RigBlocks({ lay, rigList, rigGeo, rigCards, tierOf, t }) {
   const byKey = new Map(rigList.map((m) => [m.workspace, m]));
-  const onTag = (name) => commandDraft.dispatchEvent(new CustomEvent('tag', { detail: name }));
-  const onGo = (sid) => { setMissionOpen(false); const st = getState(); if (sid) setTimeout(() => st.navigateTo && st.navigateTo(sid, { instant: true }), 30); };
-  return lay.rigs.map((it) => { const m = byKey.get(it.key); return m ? <RigMap key={it.key} m={m} g={rigGeo.get(it.key)} x={it.x} y={it.y} scale={V7.SCALE} live={sessions} sid={roleSessions(m, sessions)} t={t} onTag={onTag} onGo={onGo} /> : null; });
+  return lay.rigs.map((it) => {
+    const m = byKey.get(it.key);
+    if (!m) return null;
+    const working = (name) => { for (const [id, b] of rigCards) if (b.ws === it.key && b.rig.name === name) return tierOf(id) === 'work'; return false; };
+    return <RigMap key={it.key} m={m} g={rigGeo.get(it.key)} x={it.x} y={it.y} working={working} t={t} />;
+  });
 }
 
 export function LineageMap() {
@@ -280,10 +287,12 @@ export function LineageMap() {
   const g2 = useMemo(() => (graph ? applyRelationStub(hideRigSessions(graph, RIG_VIEW.hideInTree), pending) : null), [graph, pending]); // P251: rig 역할·빌더 세션은 지도에만(RIG_VIEW.hideInTree)
   // P251: rig 지도 자료(정의가 있는 워크스페이스, 판에 열린 것만)와 지도 한 장마다 그림
   const rigList = useMemo(() => [...(rigMaps || new Map()).values()].filter((m) => (workspaces || []).some((w) => w.key === m.workspace)), [rigMaps, workspaces]);
-  const rigGeo = useMemo(() => new Map(rigList.map((m) => [m.workspace, v7Layout(m)])), [rigList]); // P254: 시안 V7 묶음
+  // P261: 묶음 카드는 보통 카드와 같은 폭(트리 배치와 같은 셈, mapCardW)·같은 높이 체계(rigMapOpts), 세계 배율 1(옛 시안 1.5배 확대는 걷었다)
+  const rigCw = useMemo(() => (g2 ? mapCardW(g2) : 0), [g2]);
+  const rigGeo = useMemo(() => new Map(rigCw ? rigList.map((m) => [m.workspace, v7Layout(m, rigMapOpts(rigCw))]) : []), [rigList, rigCw]); // P254: 시안 V7 배치
   // P254: 묶음 크기(세계 px). 크기가 같으면 트리 배치를 다시 세지 않는다
   const rigSizeKey = [...rigGeo].map(([k, g]) => `${k}:${g.w}x${g.h}`).join('\n');
-  const rigBlocks = useMemo(() => (rigGeo.size ? new Map([...rigGeo].map(([k, g]) => [k, { w: g.w * V7.SCALE, h: g.h * V7.SCALE }])) : null), [rigSizeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rigBlocks = useMemo(() => (rigGeo.size ? new Map([...rigGeo].map(([k, g]) => [k, { w: g.w, h: g.h }])) : null), [rigSizeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea, rigBlocks }), [vgroups, tiers, names, t, expanded, today, fitKey, rigBlocks]); // P254: rig 묶음은 그 워크스페이스 줄 안(rigBlocks) // eslint-disable-line react-hooks/exhaustive-deps
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
   const lay0 = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
@@ -292,17 +301,30 @@ export function LineageMap() {
   const layForRef = useRef(null);
   layForRef.current = (st) => (g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: st, routing: false })) : null);
   const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
+  // P261: rig 묶음 카드(보통 카드, 세계 자리). 태그·판으로 가기·미리 보기는 보통 카드와 같은 길(cardOf)
+  const rigCards = useMemo(() => rigCardBoxes(lay, rigList, rigGeo, graph, sessions, t), [lay, rigList, rigGeo, graph, sessions, t]);
+  const rigCardsRef = useRef(rigCards);
+  rigCardsRef.current = rigCards;
+  const rigTierOf = (id) => { if (tiers.has(id)) return tiers.get(id); const b = rigCards.get(id); return b ? nodeTier(b.node, liveOf(b.node)) : 'rest'; };
   layRef.current = lay;
   sizeRef.current = vsize;
   const now = Date.now();
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   const keepFacts = useMemo(() => factsKeeper(), []); // P210: 같은 사실이면 앞 객체(카드 memo)
   const factsOf = useCallback((id) => {
+    const rb = !lay.cards.has(id) ? rigCards.get(id) : null;
+    if (rb) { // P261: rig 카드 사실 = 보통 카드 사실(역할 모델 없음) + 세션 없음 글·빌더 올림 수
+      const live = liveOf(rb.node);
+      let f = cardFacts(rb.node, live, null, rigTierOf(id), t, now);
+      if (rb.rig.none) f = { ...f, stateText: t('rigMap.noSession'), task: null };
+      if (rb.rig.extra) f = { ...f, role: rb.rig.extra };
+      return keepFacts(id, f);
+    }
     const b = lay.cards.get(id), n = b.node, m = roles.get(id);
     const pid = m && m.parentId, p = pid ? lay.tree.byId.get(pid) : null;
     const pws = p ? p.workspaceKey || '' : null;
     return keepFacts(id, cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length }));
-  }, [lay, roles, tiers, sessions, t, relOfChild]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lay, roles, tiers, sessions, t, relOfChild, rigCards]); // eslint-disable-line react-hooks/exhaustive-deps
   const tagSet = useMemo(() => new Set(tags.map((x) => x.toLowerCase())), [tags]);
 
   // ---- 보기 쓰기(DOM에 바로) ----
@@ -452,8 +474,9 @@ export function LineageMap() {
 
   const lastTag = useRef(null); // { id, at }: 마지막 카드 누르기(더블클릭이면 되돌린다)
   const go = useCallback((id, dbl = false) => {
-    const L = layRef.current, b = L && L.cards.get(id);
+    const L = layRef.current, b = L && (L.cards.get(id) || rigCardsRef.current.get(id)); // P261: rig 카드도
     // 더블클릭의 첫 클릭이 넣거나 뺀 태그를 되돌린다(더블클릭은 판으로 가는 것이지 태그가 아니다)
+    if (b && b.rig && b.rig.none) return; // P261: 세션 없는 역할 카드는 갈 곳이 없다
     const lt = lastTag.current;
     if (dbl && b && lt && lt.id === id && Date.now() - lt.at < 800) commandDraft.dispatchEvent(new CustomEvent('tag', { detail: b.node.name }));
     lastTag.current = null;
@@ -463,8 +486,8 @@ export function LineageMap() {
     if (b && b.node.sessionId) setTimeout(() => st.navigateTo && st.navigateTo(b.node.sessionId, { instant: true }), 30);
   }, []);
   const tag = useCallback((id, e) => {
-    const L = layRef.current, b = L && L.cards.get(id);
-    if (!b || justDragged.current || b.node.agentKind === 'shell') return; // 셸은 메시지를 받지 않는다
+    const L = layRef.current, b = L && (L.cards.get(id) || rigCardsRef.current.get(id)); // P261: rig 카드도
+    if (!b || justDragged.current || b.node.agentKind === 'shell' || (b.rig && b.rig.none)) return; // 셸은 메시지를 받지 않는다
     if (e && e.detail > 1) return; // 더블클릭의 둘째 클릭은 태그를 바꾸지 않는다(첫 클릭은 go가 되돌린다)
     lastTag.current = { id, at: Date.now() };
     commandDraft.dispatchEvent(new CustomEvent('tag', { detail: b.node.name }));
@@ -684,7 +707,7 @@ export function LineageMap() {
   const shown = lay ? ids.filter((id) => !lay.cards.get(id).folded) : []; // P198: 접힌 줄 안 세션은 카드 항목이지만 그리지 않는다
   const attn = ids.filter((id) => tiers.get(id) === 'turn' || tiers.get(id) === 'alert').sort((a, b) => (tiers.get(a) === 'turn' ? 0 : 1) - (tiers.get(b) === 'turn' ? 0 : 1));
   const nWork = ids.filter((id) => tiers.get(id) === 'work').length, nDone = ids.filter((id) => tiers.get(id) === 'review').length;
-  const tagOf = (id) => { const b = lay.cards.get(id); return !!b && tagSet.has(String(b.node.name).toLowerCase()); };
+  const tagOf = (id) => { const b = lay.cards.get(id) || rigCards.get(id); return !!b && tagSet.has(String(b.node.name).toLowerCase()); };
   const sum = summaryColumn(ids, (id) => tiers.get(id));
   const nTeams = [...roles.values()].filter((m) => m.rank === 'lead').length; // 바닥 줄 팀 수 = 하위가 있는 맨 위 세션
   // P178: 요약 칸 줄에 마우스를 올리면 그 카드를 강조한다(DOM에 바로, 다시 그리지 않는다)
@@ -744,7 +767,8 @@ export function LineageMap() {
             </svg>
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}
             {shown.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} unfold={b.depth >= LINE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
-            {lay.rigs && lay.rigs.length ? <RigBlocks lay={lay} rigList={rigList} rigGeo={rigGeo} sessions={sessions} t={t} /> : null}
+            {lay.rigs && lay.rigs.length ? <RigBlocks lay={lay} rigList={rigList} rigGeo={rigGeo} rigCards={rigCards} tierOf={rigTierOf} t={t} /> : null}
+            {[...rigCards].map(([id, b]) => <Card key={id} id={id} b={b} f={factsOf(id)} tier={rigTierOf(id)} lead={false} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} />)}
             {/* P153 r11: Alt+카드 끌기 때 놓을 자리(하위로·동료로·독립). 끄는 동안 DOM에 바로 쓴다 */}
             <div className="mt-sm-drop" data-role="ln-drop" hidden><span className="lb" /></div>
           </div>
@@ -752,7 +776,7 @@ export function LineageMap() {
         {lay && lay.cards.size === 0 && !(lay.rigs && lay.rigs.length) && <div className="mt-ta-loading">{t('mission.empty')}</div>}
       </div>
 
-      {pv && lay && lay.cards.get(pv.id) && (() => { const b = lay.cards.get(pv.id), row = lay.rows.find((r) => r.key === b.ws), band = row && lay.bands.find((x) => (x.id || null) === (row.band || null)); return <Peek pv={pv} b={b} f={factsOf(pv.id)} live={liveOf(b.node)} tier={tiers.get(pv.id)} t={t} now={now} folder={[band && band.name, row && row.name].filter(Boolean).join(' / ')} />; })()}
+      {pv && lay && (lay.cards.get(pv.id) || rigCards.get(pv.id)) && (() => { const b = lay.cards.get(pv.id) || rigCards.get(pv.id), row = lay.rows.find((r) => r.key === b.ws), band = row && lay.bands.find((x) => (x.id || null) === (row.band || null)); return <Peek pv={pv} b={b} f={factsOf(pv.id)} live={liveOf(b.node)} tier={rigTierOf(pv.id)} t={t} now={now} folder={[band && band.name, row && row.name].filter(Boolean).join(' / ')} />; })()}
       <div className="mt-ta-hud mt-sm-top" data-role="ta-top">
         <span className="mt-ta-title">{t('mission.title')}</span>
         <span className="mt-ta-attn" data-role="ta-attn">
