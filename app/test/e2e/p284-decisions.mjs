@@ -143,6 +143,13 @@ async function phone() {
         const pill = await pg.$('[data-role=pl-decisions]');
         check(`[phone ${lang}] 맵 위 알약 "결정 n"`, !!pill && Number(await pill.evaluate((e) => e.dataset.count)) === n && n > 0, { n });
         await shot(pg, `phone-map-${lang}`);
+        // 보통 확대(카드 줄)와 멀리 타일 모두에서 lead 카드에 결정 표식이 보이는가
+        const vis = () => pg.$$eval('.mt-pmap [data-role=decision-mark]', (xs) => xs.filter((x) => { const r = x.getBoundingClientRect(); const cs = getComputedStyle(x); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && x.closest('.mt-ta-card') && getComputedStyle(x.parentElement).display !== 'none'; }).length);
+        check(`[phone ${lang}] 맞춤 보기에서 카드 표식이 보인다`, (await vis()) >= 1);
+        await pg.evaluate(() => { const v = window.__mtPm.view(); window.__mtPm.set({ ...v, k: Math.max(v.k * 2.2, 1.1) }); }); await sleep(1200);
+        await shot(pg, `phone-map-zoom-${lang}`);
+        check(`[phone ${lang}] 보통 확대에서 카드 표식이 보인다`, (await vis()) >= 1);
+        await pg.evaluate(() => window.__mtPm.fit()); await sleep(600);
         await pg.tap('[data-role=pl-decisions]'); await sleep(700);
         const rows = await pg.$$eval('[data-role=decisions-sheet] [data-role=decision]', (xs) => xs.length);
         check(`[phone ${lang}] 시트에 카드 목록`, rows === n, { rows, n });
