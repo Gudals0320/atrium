@@ -86,7 +86,7 @@ const READ = () => {
   const secs = document.querySelectorAll('.mt-pmap [data-role=ln-section]').length;
   const pills = [...document.querySelectorAll('[data-role=pl-attn]')].map((e) => e.dataset.id);
   const pillsBox = document.querySelector('[data-role=pl-pills]').getBoundingClientRect();
-  return { pick: pm.tab(), info: pm.tabs(), tabs, bands, cards: L.cards.size, ws: [...ws], secs, pills, pillsTop: pillsBox.top, view: v, size: s, scrollX: document.documentElement.scrollWidth > innerWidth + 1 };
+  return { pick: null, info: null /* P280: 탭 없음 */, tabs, bands, cards: L.cards.size, ws: [...ws], secs, pills, pillsTop: pillsBox.top, view: v, size: s, scrollX: document.documentElement.scrollWidth > innerWidth + 1 };
 };
 const inView = ([id]) => { const el = document.querySelector(`.mt-pmap .mt-ta-slot[data-id="${CSS.escape(id)}"]`) || document.querySelector(`.mt-pmap .mt-ta-card[data-id="${CSS.escape(id)}"]`); const vp = document.querySelector('.mt-pmap [data-role=ta-viewport]').getBoundingClientRect(); if (!el) return { found: false }; const r = el.getBoundingClientRect(); return { found: true, inside: r.left >= vp.left - 2 && r.right <= vp.right + 2 && r.top >= vp.top - 2 && r.bottom <= vp.bottom + 2, r: { x: r.left, y: r.top, w: r.width, h: r.height } }; };
 

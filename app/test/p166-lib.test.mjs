@@ -151,7 +151,7 @@ test('시점 기억: 화면 크기마다 저장소에, 다시 열면 그대로, 
   const boom = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
   assert.equal(loadView(boom, size), null); assert.equal(saveView(boom, size, { k: 1, x: 0, y: 0 }), false);
   for (let i = 0; i < 10; i++) saveView(st, { w: 300 + i * 40, h: 600 }, { k: 1, x: i, y: 0 });
-  assert.ok(Object.keys(JSON.parse(mem.get(VIEW_KEY))).length <= 10, '화면 크기는 몇 개만(P207: 크기 × 탭이라 10)');
+  assert.ok(Object.keys(JSON.parse(mem.get(VIEW_KEY))).length <= 5, '화면 크기는 몇 개만(P280: 탭이 없어 크기만, 5)');
 });
 
 test('화면 연결: 기본은 PhoneMap(classic은 숨은 설정), PC 카드·미리 보기를 그대로, 터치 조작, Alt 끌기·명령줄 없음, 옛 목록은 지웠다', () => {

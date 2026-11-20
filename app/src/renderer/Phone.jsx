@@ -438,7 +438,7 @@ function PhoneSession({ s, onBack, onGo }) {
           <VoiceInterim voice={voice} />
           <VoiceButton voice={voice} className="mt-ph-voice" />
           <textarea ref={taRef} rows={1} value={text} data-field="phone-text" enterKeyHint="enter" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            placeholder={s.kind === 'shell' ? t('phone.inputShell') : steer && !steerBlock(s) ? t('cmdHead.phoneSteerOn') : t('phone.inputAgent', { name: s.name })}
+            placeholder={s.kind === 'shell' ? t('phone.inputShell') : steer && !steerBlock(s) ? t('cmdHead.phoneSteerOn') : t('phone.inputAgent')}
             onChange={(e) => { setText(e.target.value); grow(e.target); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
           {/* P274: 스티어링은 글자 단추 대신 둥근 아이콘 토글(글 칸 폭) */}
