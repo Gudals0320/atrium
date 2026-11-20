@@ -2647,9 +2647,6 @@ export default {
     more: { one: 'Show {n} more workspace', other: 'Show {n} more workspaces' },
     moreHead: 'More workspaces',
   },
-  rigLoopHold: { // P223: a request to the entry of a paused rig loop (held in the delivery queue)
-    dropped: 'loop resumed but no run was opened',
-  },
   // P248: steering choice in the command bar and the phone input row (default is the queue)
   cmdSteer: {
     label: 'Steer',
@@ -2724,6 +2721,13 @@ export default {
       failed: 'failed · {branch} → {target}',
       title: '@{child} → @{merger}: merge {branch} into {target}\nClick to go to the merger',
     },
+  },
+  // P274: strip above the command bar (steering state, Ctrl+Enter hint), phone steering toggle, old held deliveries cleared at restart
+  cmdHead: {
+    steerOn: 'Steering on',
+    steerKey: 'send as steering',
+    phoneSteerOn: 'Steering on: goes into the current turn',
+    oldHoldDropped: 'old held queue cleared at board restart',
   },
 };
 

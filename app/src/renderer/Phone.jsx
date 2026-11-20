@@ -438,13 +438,14 @@ function PhoneSession({ s, onBack, onGo }) {
           <VoiceInterim voice={voice} />
           <VoiceButton voice={voice} className="mt-ph-voice" />
           <textarea ref={taRef} rows={1} value={text} data-field="phone-text" enterKeyHint="enter" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            placeholder={s.kind === 'shell' ? t('phone.inputShell') : t('phone.inputAgent', { name: s.name })}
+            placeholder={s.kind === 'shell' ? t('phone.inputShell') : steer && !steerBlock(s) ? t('cmdHead.phoneSteerOn') : t('phone.inputAgent', { name: s.name })}
             onChange={(e) => { setText(e.target.value); grow(e.target); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
+          {/* P274: 스티어링은 글자 단추 대신 둥근 아이콘 토글(글 칸 폭) */}
           {s.kind !== 'shell' && (() => { const why = steerBlock(s); return (
             <button type="button" className={`mt-ph-steer${steer && !why ? ' on' : ''}`} data-action="phone-steer" aria-pressed={steer && !why} aria-disabled={why ? true : undefined} data-off={why ? '1' : undefined}
               title={why ? t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) }) : t('cmdSteer.phoneTitle')} onPointerDown={(e) => e.preventDefault()}
-              onClick={() => { if (why) toast(t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) })); else setSteer((v) => !v); }}>{t('cmdSteer.label')}</button>
+              onClick={() => { if (why) toast(t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) })); else setSteer((v) => !v); }} aria-label={t('cmdSteer.label')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg></button>
           ); })()}
           <button type="submit" className="mt-ph-send" data-action="phone-send" disabled={busy || (!text.trim() && !voice.active)} aria-label={t('phone.send')}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>

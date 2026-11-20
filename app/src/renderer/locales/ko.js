@@ -2650,9 +2650,6 @@ export default {
     more: '나머지 프로젝트 {n}개 보기',
     moreHead: '나머지 프로젝트',
   },
-  rigLoopHold: { // P223: 멈춘 rig 고리의 입구로 온 요청(전달 대기열에 붙잡음)
-    dropped: '고리를 이었지만 회를 열지 못했습니다',
-  },
   // P248: 보내기 칸·휴대폰 입력 줄의 스티어링 선택(기본은 대기열)
   cmdSteer: {
     label: '스티어링',
@@ -2728,6 +2725,13 @@ export default {
       failed: '실패 · {branch} → {target}',
       title: '@{child} → @{merger}: {branch}를 {target}에 합치기\n누르면 merger로 갑니다',
     },
+  },
+  // P274: 명령 바 위 띠(스티어링 상태·Ctrl+Enter 안내), 휴대폰 스티어링 토글, 판이 다시 뜰 때 정리한 옛 대기 전달
+  cmdHead: {
+    steerOn: '스티어링 켬',
+    steerKey: '스티어링으로 보내기',
+    phoneSteerOn: '스티어링 켬: 지금 하는 일에 넣습니다',
+    oldHoldDropped: '보드를 다시 시작하며 옛 대기 줄을 정리함',
   },
 };
 
