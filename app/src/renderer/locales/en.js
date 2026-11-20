@@ -2729,5 +2729,24 @@ export default {
     phoneSteerOn: 'Into this turn', // P280
     oldHoldDropped: 'old held queue cleared at board restart',
   },
+  // P284: decision cards (questions an agent asked the person in text, atrium ask). Counted apart from needs-you
+  decisions: {
+    pill: 'Decide',
+    head: 'Decisions waiting',
+    title: 'Questions agents asked you to decide (oldest first)',
+    empty: 'No decisions waiting.',
+    waited: 'waiting for',
+    goTitle: 'Go to @{name}',
+    placeholder: 'One-line answer…',
+    send: 'Send',
+    ignore: 'Ignore',
+    ignoreTitle: 'Close this card without sending anything to the session',
+    sent: 'Answer sent to @{name}',
+    ignored: 'Ignored the question from @{name}',
+    fail: 'Could not do that: {error}',
+    mark: 'decide',
+    markN: 'decide {n}',
+    markTitle: '{n} decision(s) waiting · answer from the "Decide" pill at the top',
+  },
 };
 

@@ -17,6 +17,7 @@ import { Card, Peek, cardFacts } from './MissionLineage.jsx';
 import { mergeEdgeCls, mergeTreeCls, mergeTip, mergerHead } from './MissionLineage.jsx'; // P276: merger 선·역할
 import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위 줄기 위에(PC와 같은 규칙)
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기 세기
+import { PhoneDecisionPill } from './Decisions.jsx'; // P284: 결정 카드 알약·시트
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
 
 const REFRESH_MS = 600;
@@ -251,6 +252,7 @@ export function PhoneMap({ onOpen, head, tip }) {
         <div className="mt-pl-pills" data-role="pl-pills">
           {attn.slice(0, ATTN_MAX).map((id) => { const tr = tiers.get(id); return <button key={id} type="button" className={`mt-pl-pill st-${ST[tr]}`} data-role="pl-attn" data-id={id} onClick={() => goTo(id)}><i /><b>{lay.tree.byId.get(id).name}</b><span>{t(`mmTerr.chip.${tr}`)}</span></button>; })}
           {attn.length > ATTN_MAX && <button type="button" className="mt-pl-pill st-needs more" data-role="pl-attn-more" onClick={() => goNext('attn', ['turn', 'alert'])}><span>{t('mmTerr.more', { n: attn.length - ATTN_MAX })}</span></button>}
+          <PhoneDecisionPill onOpen={onOpen} />{/* P284 */}
           {!attn.length && <span className="mt-pl-pill quiet" data-role="pl-none"><span>{t('phoneMap.none')}</span></span>}
           {nWork > 0 && <button type="button" className="mt-pl-pill st-working count" data-role="pl-count" data-tier="work" onClick={() => goNext('work', ['work'])}><i /><b>{nWork}</b><span>{t('mmTerr.chip.work')}</span></button>}
           {nDone > 0 && <button type="button" className="mt-pl-pill st-done count" data-role="pl-count" data-tier="review" onClick={() => goNext('review', ['review'])}><i /><b>{nDone}</b><span>{t('mmTerr.chip.review')}</span></button>}

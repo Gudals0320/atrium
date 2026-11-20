@@ -28,6 +28,7 @@ import { enterSession, markInteracted } from './touch.js';
 import { LoopBadge, SessionLoopList } from './Loops.jsx';
 import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단계"
 import { MergerTag } from './Merger.jsx'; // P268: merger 세션 꼬리표
+import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
 import { dockBranchOf } from './lib/dock-branch.js'; // P68: 워크트리끼리 붙인 덩어리의 칸마다 브랜치
 import { Icon } from './lib/icons.jsx';
 import { dotVar } from './lib/tokens.js';
@@ -136,6 +137,7 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
       {!editing && renamed(s) && <span className="mt-node-addr" data-role="node-address" title={t('rename.address', { address: addressOf(s) })}>{addressOf(s)}</span>}
       {dockBranch && <span className={`mt-dock-branch${dbKind === 'wt' ? ' wt' : ''}`} data-role="dock-branch" data-branch={dbName} title={t(dbKind === 'wt' ? 'dockWorkers.branchWt' : 'dockWorkers.branchMain', { branch: dbName })}>⎇ {dbName}</span>}
       <MergerTag s={s} />
+      <DecisionMark sessionId={s.sessionId} />
       {/* 표시들은 좁으면 먼저 잘린다(이름이 먼저 보이게) */}
       <span className="mt-head-badges"><Badges s={s} /><Origin s={s} /><BranchBadge s={s} /><LoopBadge s={s} onClick={onLoops} /></span>
       <span className="mt-node-sp" />
