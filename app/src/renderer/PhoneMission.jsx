@@ -95,7 +95,7 @@ export function PhoneMission(props) {
   return style === 'classic' ? <ClassicPhoneMission {...props} /> : <PhoneMap {...props} />;
 }
 
-function ClassicPhoneMission({ onBack, onOpen, conn }) {
+function ClassicPhoneMission({ onOpen, head, tip }) {
   const t = useT();
   const sessions = useStore((st) => st.sessions);
   const links = useStore((st) => st.links);
@@ -212,11 +212,8 @@ function ClassicPhoneMission({ onBack, onOpen, conn }) {
   const now = Date.now();
   return (
     <div className="mt-ph-list mt-pm" data-role="phone-mission">
-      <header className="mt-ph-head">
-        <button type="button" className="mt-pm-back" data-action="phone-mission-back" aria-label={t('phoneMission.back')} onClick={onBack}><Chev dir="left" /><span>{t('phone.list')}</span></button>
-        <b className="mt-pm-title">{t('phoneMission.title')}</b>
-        {conn}
-      </header>
+      <header className="mt-ph-head">{head}</header>{/* P256: 목록 화면 없음. 머리줄은 Phone.jsx PhoneHead */}
+      {tip}
       {c && (
         <div className="mt-pm-sum" data-role="pm-sum">
           <button type="button" className={`mt-pm-chip t-turn${focus === 'turn' ? ' on' : ''}`} data-n={c.turn} data-action="pm-focus-turn" aria-pressed={focus === 'turn'} disabled={!c.turn && focus !== 'turn'} title={t('phoneMission.focus')} onClick={() => pick('turn')}><i />{t('phoneMission.needs', { n: c.turn })}</button>
@@ -228,7 +225,7 @@ function ClassicPhoneMission({ onBack, onOpen, conn }) {
       <div className={`mt-pm-stage${focus ? ' focusing' : ''}`} data-role="pm-stage" ref={stageRef} onClick={onClick}>
         {!lay && !fail && <div className="mt-ph-empty">{t('common.loading')}</div>}
         {!lay && fail && <div className="mt-ph-empty" data-role="pm-fail">{t('mission.fail', { error: errText(fail) })}</div>}
-        {lay && lay.groups.length === 0 && <div className="mt-ph-empty" data-role="pm-empty">{t('phone.empty')}</div>}
+        {lay && lay.groups.length === 0 && <div className="mt-ph-empty" data-role="pm-empty">{t('phoneHead.empty')}</div>}
         {pg && pg.nodes.length + pg.groups.length > 0 && (
           <div className="mt-pm-world" data-role="pm-world" ref={worldRef} style={{ width: pg.width, height: pg.height, transform: view.current ? `translate(${view.current.x}px, ${view.current.y}px) scale(${view.current.zoom})` : 'scale(0)' }}>
             {pg.groups.map((g) => <div key={`p:${g.key || '-'}`} className={`mt-pm-plate${g.folded ? ' folded' : ''}`} data-role="pm-plate" style={{ left: g.plate.x, top: g.plate.y, width: g.plate.w, height: g.plate.h }} />)}

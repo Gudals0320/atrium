@@ -111,3 +111,19 @@ export function pillLine(view, now = Date.now()) {
 }
 // 알약 안 짧은 창 이름(사전 usage.short.*: ko 5h·1W·하루, en 5h·1W·day). 모르는 창은 이름 그대로
 export const shortKey = (kind) => (kind === '5h' || kind === 'week' || kind === 'day' ? `usage.short.${kind}` : null);
+
+// P256: 휴대폰 위쪽 줄 알약(compact)의 대표 구독. 기본은 Claude. 펼침에서 구독을 누르면 그것이 대표가 되고 기기(브라우저 저장소)에 기억한다.
+// 대표의 자료가 없으면 PROVIDERS 차례로 그 다음 것(끝이면 처음으로 돌아간다). 아무 자료도 없으면 null
+export const REP_KEY = 'atrium.usage.rep';
+export const REP_DEFAULT = 'claude';
+export const validRep = (k) => (PROVIDERS.includes(k) ? k : REP_DEFAULT);
+export function loadRep(store) { try { return validRep(store && store.getItem(REP_KEY)); } catch { return REP_DEFAULT; } }
+export function saveRep(store, k) { if (!store || !PROVIDERS.includes(k)) return false; try { store.setItem(REP_KEY, k); return true; } catch { return false; } }
+// 대표부터 시작하는 차례(claude → codex → agy → claude …)
+export const repOrder = (rep) => { const i = PROVIDERS.indexOf(validRep(rep)); return [...PROVIDERS.slice(i), ...PROVIDERS.slice(0, i)]; };
+// 알약에 보일 구독 하나 → pillOf의 part({ provider, name, pct, level, window }) + picked(고른 대표 그대로인가) | null
+export function repPart(view, rep = REP_DEFAULT, now = Date.now()) {
+  const parts = pillOf(view, now).parts;
+  for (const k of repOrder(rep)) { const x = parts.find((p) => p.provider === k); if (x) return { ...x, picked: k === validRep(rep) }; }
+  return null;
+}
