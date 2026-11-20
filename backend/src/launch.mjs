@@ -30,7 +30,41 @@ export function writeSessionSettings({ file, hookUrl, token, sessionId, timeoutS
   return slash(file);
 }
 
-// 처음 띄울 때와 이어 갈 때가 같은 설정을 쓰도록 공통 인자를 한곳에서 만든다
+// P258: 옛 세션 설정 파일(HOOK_EVENTS가 늘기 전에 쓴 것, 예: P173 전에 띄운 세션에는 PreCompact·PostCompact가 없다)에 빠진 판 hook을 채운다.
+//   순수 함수(j를 그대로 고친다) → 더한 이벤트 목록. 판 hook = type http + X-MT-Session 머리글(writeSessionSettings가 쓰는 꼴).
+//   빠진 이벤트에는 그 파일에 이미 있는 판 hook의 값(url, headers, 가장 많이 쓰인 timeout)을 넣는다. 그 파일의 토큰을 그대로 써서 도는 세션과 맞는다.
+//   있는 이벤트(그 값과 rig 역할의 시간 제한 amp)와 판 hook이 아닌 것(사용자가 넣은 것)은 그대로 둔다. 판 hook을 하나도 못 찾으면 손대지 않는다
+export function fillBoardHooks(j) {
+  if (!j || typeof j !== 'object' || !j.hooks || typeof j.hooks !== 'object' || Array.isArray(j.hooks)) return [];
+  const isBoard = (h) => !!h && h.type === 'http' && !!h.url && !!h.headers && !!h.headers['X-MT-Session'];
+  const groups = (ev) => (Array.isArray(j.hooks[ev]) ? j.hooks[ev] : []);
+  const boardIn = (ev) => groups(ev).some((m) => m && Array.isArray(m.hooks) && m.hooks.some(isBoard));
+  const found = [];
+  for (const ev of Object.keys(j.hooks)) for (const m of groups(ev)) for (const h of (m && Array.isArray(m.hooks) ? m.hooks : [])) if (isBoard(h)) found.push(h);
+  if (!found.length) return [];
+  const count = new Map();
+  for (const h of found) count.set(h.timeout, (count.get(h.timeout) || 0) + 1);
+  const timeout = [...count].reduce((a, c) => (c[1] > a[1] ? c : a))[0]; // 같은 수면 먼저 본 값
+  const base = found[0];
+  const added = [];
+  for (const ev of HOOK_EVENTS) {
+    if (boardIn(ev)) continue;
+    const hook = { type: 'http', url: base.url, ...(timeout != null ? { timeout } : {}), headers: { ...base.headers } };
+    j.hooks[ev] = [...groups(ev), { hooks: [hook] }];
+    added.push(ev);
+  }
+  return added;
+}
+// P258: 세션 설정 파일 하나에 빠진 판 hook을 채운다(바뀐 것이 있을 때만 쓴다) → 더한 이벤트 목록. 파일이 없거나 읽지 못하면 []
+export function fillSessionHooks(file) {
+  if (!file || !fs.existsSync(file)) return [];
+  const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const added = fillBoardHooks(j);
+  if (added.length) fs.writeFileSync(file, JSON.stringify(j, null, 2));
+  return added;
+}
+
+// 처음 띄울 때와 이어 갈 때가 공통 인자를 한곳에서 만든다
 // P4: 판 플러그인(스킬과 atrium 명령)을 쥐여 준다. Claude Code는 ~/.agents/skills를 읽지 않으므로 실행마다 --plugin-dir로 넘긴다(사용자 설정은 고치지 않는다).
 //     짧은 안내(--append-system-prompt-file)는 판의 연결 알림을 알아듣게 한다.
 // P33: extraArgs는 호출자의 추가 인자(판이 정하는 인자는 호출자 검사가 막는다). 끝에 붙인다
