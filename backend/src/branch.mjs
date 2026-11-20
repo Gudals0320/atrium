@@ -38,6 +38,7 @@ import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy, detachedParentLine, detachedC
 import { AgentVerbs, verbLines } from './agent-verbs.mjs'; // P116: atrium prompt | wait | read
 import { installRelations, relationHeader, RELATION_WORD } from './branch-relations.mjs'; // P156: 일 관계
 import { WorkUnits, checkAgentText } from './work-units.mjs'; // P180: 일 단위와 시도
+import { Merger, readMergerGuide } from './merger.mjs'; // P267: 합치기 merger
 import { RigAdmin } from './rig-admin.mjs'; // P188: atrium rig(검사, 판 목록, 장부, 역할의 항목·도구·조정 명령)
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때와 동료 소식
@@ -261,7 +262,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
    - 받는 쪽이 지금 하는 일이 끝난 뒤 들어가면 될 글은 그냥 보낸다(대기열). 받는 쪽이 지금 하고 있는 일의 방향에 대한 추가 정보·정정이면 \`--steer\`(스티어링).
    - 하위로 받은 일은 끝나면 \`atrium done ok|failed "<보고>"\`로 닫고 쉰다(네 하위를 기다리는 동안은 done 없이 쉰다).
 4. 응답: 화면은 \`atrium read <이름>\`, 목록·상태·마지막 응답은 \`atrium children\`(\`--all\`이면 그 아래까지).
-5. 모아 보고, 합치기: 워커마다 답을 확인하고(완료 기준을 채웠는지, 시험이 통과했는지) 정리해 사용자에게 보고한다. 워크트리 브랜치는 네가 합친다(\`git merge worktree-<이름>\`). 충돌이나 빠진 것은 그 워커에게 다시 시킨다.
+5. 모아 보고, 합치기: 워커마다 답을 확인하고(완료 기준을 채웠는지, 시험이 통과했는지) 정리해 사용자에게 보고한다. 워크트리 브랜치는 보드의 merger가 켜진 프로젝트면 merger가 합치고(아래 "지킬 것"), 아니면 네가 합친다(\`git merge worktree-<이름>\`). 충돌이나 빠진 것은 그 워커에게 다시 시킨다.
 
 - 연결: \`atrium me\`가 상위·동료·하위·독립과 역할 연결의 지금 기록이다. 판에서 잇거나 끊은 역할 연결은 알리지 않으니 모르는 이름·역할을 들으면 친다.
 - 헤드: 다른 폴더에 따로 이끌 세션을 띄우라면 \`atrium child <이름> --head --cwd <폴더> --prompt "<지시>"\`. 첫 요청 뒤 보드가 떼므로 그 뒤로 시키거나 기다리지 않는다.
@@ -277,7 +278,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 
 - 명령은 위 모양 그대로 한 줄씩 친다. \`$변수\`, \`$(…)\`, 파이프, \`&&\`, \`;\`를 섞지 않는다(섞으면 사람의 승인을 기다린다).
 - 다른 에이전트에게는 \`atrium prompt\`로만 보낸다(보드가 선과 기록을 남긴다).
-- 끝난 워커는 끄지 않고 둔다. 사람이 끄라고 할 때만 \`atrium child-kill <이름>\`으로 끈다(하위 관계로 그 아래도 함께, 자기 하위만. 동료·독립은 남는다).
+- 브랜치에서 일한 워커가 \`atrium done ok\`로 닫으면 보드가 그 워커를 재우고 합치기를 merger에게 맡긴다. 합쳐지면 보드가 그 워커를 닫고 보관한다. 합치기가 실패했거나 고침이 필요하면 보드가 너에게 알리고 워커는 재운 채 둔다: 고칠 것을 그 워커에게 \`atrium prompt\`로 다시 시킨다. 그 밖의 끝난 워커는 끄지 않고 둔다(사람이 끄라고 할 때만 \`atrium child-kill <이름>\`. 하위 관계로 그 아래도 함께, 자기 하위만. 동료·독립은 남는다).
 - 워커가 권한이나 질문으로 멈추면(보드의 멈춤 알림, \`atrium wait\`의 waiting) 대신 답하지 않는다. 사용자에게 "보드에서 @이름에 답해 주세요"라고 알린다.
 - 오래 쉰 워커는 혼자 잠든다. 미리 깨우려면 \`atrium wake <이름>\`.
 - 워커가 모델 오류로 답하지 못하면(\`atrium children\`의 오류 줄) 사용자에게 알리고 \`atrium models\`의 다른 줄로 다시 띄운다.
@@ -323,7 +324,7 @@ export function childShims({ node = process.execPath, script = path.join(BACKEND
 export function attachBranch(b, opts) { return new Branch(b, opts); }
 
 export class Branch {
-  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, news: newsOpts = {} } = {}) {
+  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, news: newsOpts = {}, merger: mergerOpts = {} } = {}) {
     this.b = b; this.readyWaitMs = readyWaitMs; this.submitWaitMs = submitWaitMs; this.childWaitMs = childWaitMs; this.gateTrustWaitMs = gateTrustWaitMs;
     this.modelErrors = new Map(); // P41: 세션 ID → 마지막으로 알린 모델 오류(rt.lastError 객체. P55: 시각으로 가리면 같은 밀리초의 다음 오류를 놓친다)
     this.passing = new Set(); // P36: 신뢰 관문을 지나는 중인 세션 ID(claude -w로 다시 띄우는 중)
@@ -348,13 +349,14 @@ export class Branch {
     this.news = new PeerNews(b, this, newsOpts); // P204: 동료 소식(턴 끝·done 자동 기록, atrium log | news)
     this.docs = new DocWatch(b, this); b.docs = this.docs; // P257: 문서 점검(일 단위가 done·머리에서 부른다)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
+    this.merger = new Merger(b, this.units, mergerOpts); b.merger = this.merger; // P267: 브랜치 하위의 done ok를 merger에게
     b.bus.on('closed', (s, reason) => {
       this.closed.set(s.sessionId, { parentSessionId: s.parentSessionId || null, name: s.name });
       const told = this.units.onClosed(s, { reason, byParent: this.byParentKill.has(s.sessionId) }); // P181: 열린 일이 있으면 그 상위에게 멈춤(closed) 알림
       this.onClosed(s, reason, told);
       this.news.onClosed(s); // P204
     });
-    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } try { this.docs.onSession(s, sum); } catch (e) { b.log('docs session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
+    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } try { this.docs.onSession(s, sum); } catch (e) { b.log('docs session error', e.stack); } try { this.merger.onSession(s, sum); } catch (e) { b.log('merger session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read
     this.rigAdmin = new RigAdmin(b, this); // P188: atrium rig(검사, 판 목록, 장부, 역할 명령)
     this.handlers = {
@@ -589,7 +591,9 @@ export class Branch {
   }
 
   // P182: atrium guide [주제]. 부르는 세션의 워크스페이스 rig 안내(켜져 있을 때만 글, 잘못된 정의면 그 까닭). 판의 일반 안내(help --long)는 CLI가 붙인다
+  // P267: atrium guide merger는 merger 안내(merger-guide.md)
   guideVerb(s, o = {}) {
+    if (o.topic === 'merger') return { merger: { text: readMergerGuide(), enabled: this.merger.enabledFor(s.workspaceKey), mode: this.merger.modeFor(s.workspaceKey).mode } };
     const r = this.b.rig ? this.b.rig.guide(s, o.topic ? String(o.topic) : null) : { state: 'none', text: null };
     return { rig: r };
   }

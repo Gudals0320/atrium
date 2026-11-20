@@ -46,3 +46,37 @@ export async function gitProbe(cwd) {
     at: Date.now(),
   };
 }
+
+// ---------- P267: 합치기(merger.mjs)가 쓰는 git 읽기. 판은 읽기만 한다(합치기·지우기는 merger 에이전트) ----------
+// `git worktree list --porcelain` 출력 → [{ path, head, branch(짧은 이름 | null), detached, bare }]
+export function parseWorktreeList(out) {
+  const rows = []; let cur = null;
+  for (const l of String(out || '').split(/\r?\n/)) {
+    if (l.startsWith('worktree ')) { cur = { path: norm(l.slice(9).trim()), head: null, branch: null, detached: false, bare: false }; rows.push(cur); continue; }
+    if (!cur) continue;
+    if (l.startsWith('HEAD ')) cur.head = l.slice(5).trim();
+    else if (l.startsWith('branch ')) cur.branch = l.slice(7).trim().replace(/^refs\/heads\//, '');
+    else if (l.trim() === 'detached') cur.detached = true;
+    else if (l.trim() === 'bare') cur.bare = true;
+  }
+  return rows;
+}
+export async function worktreeList(root) { const out = await git(root, ['worktree', 'list', '--porcelain']); return out == null ? null : parseWorktreeList(out); }
+// 브랜치·커밋 이름 → 커밋 해시 | null
+export async function revOf(cwd, ref) { const out = await git(cwd, ['rev-parse', '--verify', '--quiet', String(ref) + '^{commit}']); return out ? out.trim() || null : null; }
+// 지금 걸린 브랜치(떼어 둔 HEAD면 null)
+export async function branchOf(cwd) { const out = await git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']); return out ? out.trim() || null : null; }
+// 하위 폴더의 합칠 거리: 워크트리인가, 브랜치, 끝 커밋, 커밋 안 한 변경 수, 합칠 브랜치보다 앞선 커밋 수.
+// → { repo, isWorktree, commonDir, root, branch, tip, dirty, ahead } | null(git이 아님). target이 없으면 ahead는 null
+export async function branchProbe(cwd, target = null) {
+  const rp = cwd ? await revParse(cwd) : null;
+  if (!rp) return null;
+  const [branch, tip, status] = await Promise.all([branchOf(cwd), revOf(cwd, 'HEAD'), git(cwd, ['status', '--porcelain'])]);
+  let ahead = null;
+  if (target && tip) { const n = await git(cwd, ['rev-list', '--count', String(target) + '..HEAD']); ahead = n == null ? null : Number(n.trim()); }
+  return { repo: true, isWorktree: rp.isWorktree, commonDir: rp.commonDir, root: rp.root, mainRoot: rp.mainRoot, branch, tip, dirty: status == null ? null : status.split('\n').filter((l) => l.trim()).length, ahead };
+}
+// a가 b의 조상인가(합친 뒤 하위의 끝 커밋이 합칠 브랜치에 들어갔나) → true | false | null(모름)
+export function isAncestor(cwd, a, b) {
+  return new Promise((res) => execFile('git', ['-C', cwd, 'merge-base', '--is-ancestor', String(a), String(b)], { windowsHide: true, timeout: 5000 }, (err) => res(!err ? true : err.code === 1 ? false : null)));
+}

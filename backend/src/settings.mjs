@@ -43,6 +43,13 @@ export const SETTINGS = {
   missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
   // P244: rig 사이클 요약(변경 기록 꼭지)을 쓰는 한 번짜리 실행(claude -p)의 모델(숨은 설정). 값싼 모델이 기본이다
   rig3SummaryModel: { type: 'string', default: 'haiku', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: haiku, sonnet)', label: 'rig 사이클 요약(변경 기록)을 쓰는 한 번짜리 실행의 모델입니다.' },
+  // P267: 합치기 merger(merger.mjs). 브랜치(워크트리)에서 일한 하위가 atrium done ok로 닫으면 판이 그 합치기를 부모 대신 merger 세션에게 맡긴다.
+  //   on: 맡긴다, ask(기본): 워크스페이스마다 처음 한 번 사람에게 판 카드로 묻고 답을 기억한다(답이 올 때까지 지금처럼 부모에게), off: 지금처럼 부모에게
+  mergerMode: { type: 'choice', default: 'ask', options: ['on', 'ask', 'off'], label: '합치기 merger (on: 브랜치에서 일한 워커가 끝나면 보드가 합치기를 merger 세션에 맡깁니다, ask: 프로젝트마다 처음 한 번 묻습니다, off: 지금처럼 맡긴 세션이 합칩니다).' },
+  // merger의 종류·모델·노력. 판에 그 종류가 없으면 그 일을 맡긴 세션의 종류·런처·모델을 쓴다
+  mergerKind: { type: 'string', default: 'claude', max: 40, pattern: /^[a-z][a-z0-9_-]{0,39}$/, hint: '에이전트 종류(예: claude)', label: 'merger 세션의 에이전트 종류입니다. 보드에 없으면 일을 맡긴 세션의 종류를 씁니다.' },
+  mergerModel: { type: 'string', default: 'claude-sonnet-5-5', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: claude-sonnet-5-5)', label: 'merger 세션의 모델입니다.' },
+  mergerEffort: { type: 'choice', default: 'medium', options: EFFORTS, label: 'merger 세션의 추론 수준입니다 (빈 값: 넘기지 않음).' },
   // P114의 숨은 설정 terminalBackend는 P117에서 없앴다. P129·P132: 터미널 백엔드는 herdr-core(hc) 하나다. 판 기록(meta terminalBackend)은 옛 판 옮기기(herdr-migrate)만 쓴다
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));

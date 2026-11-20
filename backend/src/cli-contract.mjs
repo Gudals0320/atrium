@@ -30,6 +30,7 @@
 // P257: docs 동사(이 워크스페이스의 문서 점검 결과, 읽기만)를 더했다(더하기만이라 5 그대로)
 // 5(P249): 옛 rig(1·2)를 걷어냈다. tool 동사, prompt --case·--talk, done --artifact와 rig 값, guide rig, rig의 rollback·cleanup·retry·status·pause·resume·name·artifacts·propose·proposals·approve·reject·run, 응답의 rig·case·flow·talk 칸이 없어졌다
 // P263: me의 상위·동료·하위·독립·역할 연결마다 kind·paneId 칸을 더했다(판의 연결 알림을 없앤 대신. 더하기만이라 5 그대로)
+// P267: guide merger(merger 안내), done 응답의 merge·mergeAsk·retire 칸과 claimedBy merger, items의 merge 칸, news의 kind merge를 더했다(더하기만이라 5 그대로)
 export const CONTRACT_VERSION = 5;
 // P204: 동료 소식. atrium log 한 줄의 상한, atrium news가 한 번에 보이는 줄
 export const NEWS_LOG_MAX = 300;
@@ -60,7 +61,7 @@ export const VERBS = [
   { name: 'item', args: ['[--json]'], does: '너의 지금 일: 맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수', out: ['item', 'queued'] },
   { name: 'items', args: ['[--json]'], does: '네가 맡긴 일들: 맡은 세션, 상태(open·done·failed·cancelled), 결과와 보고', out: ['items', 'open'] },
   // P182: rig(워크스페이스의 역할 조직)
-  { name: 'guide', args: ['[--json]'], does: '자세한 사용법(help --long). 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json)가 있으면 역할 명령 안내를 붙이고, 정의가 잘못됐으면 그 까닭을 보인다', out: ['rig'] },
+  { name: 'guide', args: ['[merger]', '[--json]'], does: '자세한 사용법(help --long). 이 워크스페이스에 사람이 켠 rig(.atrium/rig.json)가 있으면 역할 명령 안내를 붙이고, 정의가 잘못됐으면 그 까닭을 보인다. merger면 합치기 merger의 안내', out: ['rig', 'merger'] },
   // P188·P242~P247: rig
   { name: 'rig', args: ['put <종류> <파일> [--from <항목>] [--redo <항목>] | accept <항목> | return <항목> "<까닭>" | pass [<항목>] "<까닭>" | drop <항목> "<까닭>" | inbox | tool [<이름> [인자…]] | heard "<요지>" | tune --file <파일> --why "<한 줄>" --evidence <id…> | tune --none "<까닭>" | raise "<무엇>" | role [<역할>] | check [파일] | log [--events [--since seq|시각] [--kinds a,b] [--limit n]] | answer <올림> "<까닭>"', '[--json]'], does: 'rig 역할 세션의 명령: 항목 내기·받기·반려·pass·버리기·받은 것 보기, 자기 도구 돌리기, 바로잡음 남기기, 요령 칸 조정·올리기, 정의서 보기. check(후보 정의 검사)와 log(판 목록, --events는 장부)와 answer(올림에 고치지 않고 답해 닫기)는 그 워크스페이스의 빌더 세션이 쓴다(check는 rig가 꺼진 워크스페이스면 어느 세션이든). 그 밖 세션은 종료 코드 1과 까닭', out: ['item', 'items', 'tools', 'run', 'ok', 'reason', 'summary', 'versions', 'current', 'rows', 'last', 'more'] },
   // P257: 문서 점검(보드가 지휘 세션의 턴 끝과 done 알림에 한 줄로 알리는 것의 자세한 결과)
