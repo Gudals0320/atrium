@@ -15,7 +15,7 @@ import en from '../src/renderer/locales/en.js';
 const R = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'renderer');
 const read = (f) => fs.readFileSync(path.join(R, f), 'utf8');
 const S = (name, f = {}) => ({ sessionId: 'id-' + name, name, state: 'working', kind: 'claude', hooked: true, ...f });
-const list = [S('a'), S('b'), S('c'), S('d'), S('cx', { kind: 'codex' }), S('sh', { kind: 'shell' })];
+const list = [S('a'), S('b'), S('c'), S('d'), S('cx', { kind: 'gemini' }), S('sh', { kind: 'shell' })];
 const head = (text, steer = false) => { const to = recipients(text, list); return cmdHead({ recipients: to, steerTo: steerTargets(to, list), steer, hasText: !!text.trim() }); };
 
 test('띠: 받는 세션이 없으면 숨는다', () => {
