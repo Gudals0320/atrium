@@ -72,6 +72,18 @@ export function groupLayout(workspaces = [], groups = []) {
   return { groups: out, ungrouped: rest };
 }
 
+// P278: 폴더(그룹) 머리줄 → 판에 있는 구성 워크스페이스 키(폴더 안 순서). 줄의 g는 groupLayout이 만든 { id, name, workspaces }라 members가 없다.
+// 그룹 없음 줄(none)은 어느 폴더에도 들지 않은 워크스페이스 전부. 판에 하나도 없으면 빈 배열(누르면 아무것도 하지 않는다)
+export function groupKeys(r, workspaces = [], groups = []) {
+  if (!r) return [];
+  const have = new Set((workspaces || []).map((w) => w.key));
+  if (r.none) { const inGroup = new Set((groups || []).flatMap((g) => g.members || [])); return [...have].filter((k) => !inGroup.has(k)); }
+  const g = r.g || {};
+  const own = Array.isArray(g.workspaces) ? g.workspaces.map((w) => w.key) : null;
+  const members = own || g.members || ((groups || []).find((x) => x.id === g.id) || {}).members || [];
+  return members.filter((k) => have.has(k));
+}
+
 // opts: { workspaces, groups, sessions(배열), data(recall.list: { workspaces: [{ key, closed, convos, archived }] }),
 //         collapsed: { [ws키 | 'g:'+그룹ID]: true }, extra: { [ws키]: true }(닫힘·대화 펼침), more: { [ws키|칸]: n },
 //         filter: 글, states: Set(묶음), kind: '' | 종류, selecting }

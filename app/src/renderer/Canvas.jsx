@@ -55,7 +55,7 @@ import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t�
 import { repoEdges, facingSides } from '../../../backend/src/links.mjs';
 import { boundsOf } from '../../../backend/src/workspaces.mjs';
 import { chromeInset, fitInset } from './lib/chrome-inset.js'; // P52(#5)
-import { bbox, REGION_GAP, groupFrames, groupFrameOf } from '../../../backend/src/canvas.mjs'; // P91: groupFrames(묶음 테두리). P98: groupFrameOf
+import { bbox, REGION_GAP, groupFrames, fitRectOf } from '../../../backend/src/canvas.mjs'; // P91: groupFrames(묶음 테두리). P98·P278: fitRectOf
 import { layout as layoutTree, dropZone, edgeSnap } from '../../../backend/src/dock-tree.mjs'; // P17, P23
 import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts, dockedAreas, visibleAnchors } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안. P68: 워크트리끼리 붙인 덩어리
 import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
@@ -727,7 +727,7 @@ export function Canvas() {
     // P27: 리포로 가면 워크트리 영역까지 들어오게
     const repoRect = (key) => bbox([...allRegions()].filter(([k]) => wsOfArea(k) === key).map(([, r]) => r));
     st.fitWorkspace = (key) => { const r = repoRect(key); if (r) st.navigateToRect(r); };
-    st.fitWorkspaces = (keys) => { const r = bbox(keys.map(repoRect).filter(Boolean)); if (r) st.navigateToRect(keys.length > 1 ? groupFrameOf(r) : r); }; // P98: 위 바의 묶음 칩(구성 영역 모두와 묶음 테두리·이름표)
+    st.fitWorkspaces = (keys) => { const r = fitRectOf(keys.map(repoRect)); if (r) st.navigateToRect(r); }; // P98: 위 바의 묶음 칩, P278: 사이드바 폴더 머리(구성 영역 모두와 묶음 테두리·이름표)
     st.regionOf = (key) => repoRect(key) || null;
     // P6c: 점(판 좌표)이 든 워크스페이스 영역(새 메모·칸반의 소속), 메모·칸반 노드로 가기(검색). 간 노드는 2초 동안 빛난다
     st.regionAt = (p) => wsAt({ x: p.x, y: p.y, w: 0, h: 0 }, mainOnly(allRegions())); // P27: 메모·칸반은 본 저장소 영역에만

@@ -22,7 +22,7 @@ import { useStore, getState, selectWorkspace, selectGroup, toast, goWhenOpen, op
 import { ago, askLine, STATE_LABEL } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { archiveRows, SECTION_STEP, bindingText } from './lib/sidebar.js';
-import { buildRows, offsetsOf, windowOf, scrollFor, moveCursor, parentOf, dropTarget, adjustIndex, freshGroupName, clampWidth, SIDE_W, BUCKETS, bucketOf, kindOf, TREE, headBadges } from './lib/sidebar-tree.js'; // P44. P103: TREE, headBadges
+import { buildRows, offsetsOf, windowOf, scrollFor, moveCursor, parentOf, dropTarget, adjustIndex, freshGroupName, clampWidth, SIDE_W, BUCKETS, bucketOf, kindOf, TREE, headBadges, groupKeys } from './lib/sidebar-tree.js'; // P44. P103: TREE, headBadges. P278: groupKeys
 import { shownKind } from './lib/kinds.js'; // P25: 띄운 방법(flavor, 런처 아이콘)을 종류처럼 보인다
 import { branchLabel } from './lib/branch.js'; // P8(K4): 하위 세션은 부모 아래에 들여 보인다
 import { Icon } from './lib/icons.jsx';
@@ -234,10 +234,8 @@ function focusWs(key) { const st = getState(); if (st.missionOpen && st.mapFocus
 function focusGroup(r) {
   const st = getState();
   if (st.missionOpen && st.mapFocus && st.mapFocus.group(r.none ? null : r.g.id)) return;
-  const have = new Set((st.workspaces || []).map((w) => w.key));
-  const inGroup = new Set((st.groups || []).flatMap((g) => g.members || []));
-  const keys = r.none ? [...have].filter((k) => !inGroup.has(k)) : (r.g.members || []).filter((k) => have.has(k));
-  if (!keys.length) return;
+  const keys = groupKeys(r, st.workspaces, st.groups); // P278: 줄의 g에는 members가 없어 늘 빈 목록이던 것을 고쳤다
+  if (!keys.length) return; // 판에 구성 워크스페이스가 없는 빈 폴더: 아무것도 하지 않는다(줄 아래 "빈 폴더"가 말한다)
   selectGroup(keys, keys.includes(st.currentWs) ? st.currentWs : keys[0]);
 }
 
