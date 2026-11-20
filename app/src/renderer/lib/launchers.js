@@ -5,7 +5,7 @@ import { KINDS } from './kinds.js';
 // 고를 수 있는 아이콘(lib/kinds.js의 로고와 기호). 빈 값은 하네스를 따른다
 export const ICONS = ['claude', 'codex', 'deepseek', 'pi', 'agy', 'grok', 'shell']; // P192: agy
 // P196: 하네스가 판에 기본으로 드는 에이전트 종류(백엔드 HARNESSES와 같은 순서). 하네스 표를 아직 못 받았을 때도 드롭다운에 이것을 다 보인다
-export const AGENT_HARNESSES = ['claude', 'codex', 'opencode', 'pi', 'agy'];
+export const AGENT_HARNESSES = ['claude', 'codex', 'opencode', 'pi', 'agy', 'dsh']; // P270: dsh
 
 // P196: 드롭다운·목록에 보일 하네스 이름. 백엔드 하네스 표의 이름(Antigravity 등) → 종류 이름표(lib/kinds.js) → ID 그대로.
 // command·shell은 사전 글(t)

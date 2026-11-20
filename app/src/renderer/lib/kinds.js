@@ -15,6 +15,8 @@ export const KINDS = {
   // P25: 이 아이콘은 터미널이 알아낸 종류가 아니라 런처 아이콘(flavor)이다. P115: 특별 취급 없이 고를 수 있는 아이콘 하나(옛 런처의 아이콘 값을 그대로 둔다)
   // 로고는 위키미디어 공용 DeepSeek-icon.svg(받은 그대로), 레일 단추는 같은 모양을 로고 파랑 바탕에 흰색으로 얹었다
   deepseek: { id: 'deepseek', label: 'DeepSeek', mark: 'DS', shape: 'circle', color: 'var(--kind-deepseek)', ink: 'var(--kind-deepseek-ink)', logo: LOGO('deepseek', 'svg'), logoBadge: LOGO('deepseek-badge', 'svg') },
+  // P270: dsh(DeepSeek Harness, 실행 명령 dsh-tui). DeepSeek 로고와 색을 같이 쓴다
+  dsh: { id: 'dsh', label: 'DeepSeek (dsh)', mark: 'DS', shape: 'circle', color: 'var(--kind-deepseek)', ink: 'var(--kind-deepseek-ink)', logo: LOGO('deepseek', 'svg'), logoBadge: LOGO('deepseek-badge', 'svg') },
   pi: { id: 'pi', label: 'Pi', mark: 'π', shape: 'diamond', color: 'var(--kind-pi)', ink: 'var(--kind-pi-ink)', logo: LOGO('pi') },
   // P192: AGY(Antigravity CLI). P196: 로고는 사용자 PC에 깔린 Antigravity 앱 아이콘(흰 타일)을 128px로 다듬은 것이다(사용자 요청).
   // 타일에 바탕이 있어 레일 단추도 같은 그림을 쓴다(logoBadge 없음). 화면 이름은 Antigravity
