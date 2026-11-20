@@ -15,7 +15,7 @@ import { DeliveryQueue } from '../src/delivery.mjs';
 import { Branch, boardSkill } from '../src/branch.mjs';
 import { unitHeader } from '../src/work-units.mjs';
 import { promptTask, isBoardNotice } from '../src/text.mjs';
-import { readMergeConfig, mergerNameOf, mergeVerdict, mergeJobText, mergeHeader, mergerWorktreeOf, MERGER_JOBS, MERGE_CHILD_TAIL, readMergerGuide, mergerHandlers } from '../src/merger.mjs';
+import { readMergeConfig, mergerNameOf, mergeVerdict, mergeJobText, mergeHeader, mergerWorktreeOf, MERGER_JOBS, MERGE_CHILD_TAIL, readMergerGuide, mergerHandlers, pickMergerSpawn } from '../src/merger.mjs';
 import { SETTINGS, DEFAULTS, normalizePatch } from '../src/settings.mjs';
 import { VERBS } from '../src/cli-contract.mjs';
 
@@ -276,7 +276,7 @@ test('P267 실패·고침 필요: merger failed는 부모에게만 가고 하위
     const wt = worktree(dir, 'f1');
     const w = worker('f1', wt, { parent: lead });
     let n = 0;
-    mergerAct(async () => { n++; return n === 1 ? ['failed', '결정 필요: a.txt가 dev와 겹친다'] : ['ok', '합침 x']; });
+    mergerAct(async (u) => { n++; if (n === 1) return ['failed', '결정 필요: a.txt가 dev와 겹친다']; G(dir, 'merge', '-q', '--no-ff', u.meta.branch, '-m', 'm'); return ['ok', '합침 x']; });
     await assign(b, lead, 'f1');
     await until(() => toS(lead).length === 1, 8000);
     const msg = toS(lead)[0].text;
@@ -458,5 +458,121 @@ test('P267 merger를 띄우지 못하면 원래 done을 부모에게 그대로(�
     assert.match(t, /merger에게 맡기지 못해 너에게 그대로 보낸다\(terminal_down\)/);
     const mu = b.store.db.prepare("SELECT * FROM work_units WHERE origin = 'merge'").get();
     assert.equal(mu.status, 'cancelled');
+  } finally { await stop(); }
+});
+
+
+// ---------- P275: merger의 ok는 판이 git으로 확인한 뒤에만 합침, 설치된 하네스에서 merger 종류 고르기 ----------
+test('P275 거짓 합침: merger가 합치지 않고 ok → failed처럼(부모 알림, 하위 재운 채, 일 상태 failed)', async () => {
+  const { b, dir, add, worker, mergerAct, U, toS, stop } = await board();
+  try {
+    const lead = add('lead');
+    const wt = worktree(dir, 'v1');
+    const w = worker('v1', wt, { parent: lead });
+    mergerAct(async () => ['ok', '합침 완료']);
+    await assign(b, lead, 'v1');
+    await until(() => toS(lead).length === 1, 8000);
+    const msg = toS(lead)[0].text;
+    assert.match(msg, /을 닫았다: failed\n합침 완료/);
+    assert.match(msg, /done ok로 닫았지만 보드가 확인하니 합칠 브랜치 dev\([0-9a-f]{9}\)에 @v1의 끝 커밋 [0-9a-f]{9}이 없다/);
+    assert.match(msg, /@v1는 재운 채 둔다/);
+    await until(() => b.slept.some((x) => x.name === 'v1'));
+    await tick(150);
+    assert.ok(!b.killed.some((x) => x.name === 'v1'), '하위를 닫지 않는다');
+    assert.ok(b.sessions.has(w.sessionId));
+    const mu = b.store.mergeUnitOf(w.doneOut.unit);
+    assert.equal(mu.status, 'failed');
+    assert.equal(mu.meta.failed.unverified, true);
+    assert.equal(mu.meta.failed.contains, false);
+    assert.equal(mu.meta.merged, undefined);
+    assert.equal(b.store.lastTryOfUnit(mu.id).result, 'failed');
+    const items = U().items(lead).items;
+    assert.equal(items.find((x) => x.origin === 'merge').status, 'failed');
+    const src = items.find((x) => x.origin !== 'merge');
+    assert.equal(src.merge.state, 'failed');
+    assert.match(src.merge.line, /끝 커밋/);
+    assert.equal(await isAncestor(dir, mu.meta.tip, 'dev'), false);
+  } finally { await stop(); }
+});
+
+test('P275 참 합침: merger가 합치고 ok → 지금처럼(하위 닫고 보관, 부모 깨우지 않음, 해시 기록)', async () => {
+  const { b, dir, add, worker, mergerAct, stop, toS } = await board();
+  try {
+    const lead = add('lead');
+    const wt = worktree(dir, 'v2');
+    const w = worker('v2', wt, { parent: lead });
+    mergerAct(async (u) => { G(dir, 'merge', '-q', '--no-ff', u.meta.branch, '-m', 'm'); return ['ok', '합침 ' + G(dir, 'rev-parse', 'HEAD')]; });
+    await assign(b, lead, 'v2');
+    await until(() => b.killed.some((x) => x.name === 'v2'), 8000);
+    const mu = b.store.mergeUnitOf(w.doneOut.unit);
+    assert.equal(mu.status, 'done');
+    assert.equal(mu.meta.merged.contains, true);
+    assert.equal(mu.meta.merged.hash, G(dir, 'rev-parse', 'dev'));
+    assert.equal(toS(lead).length, 0);
+  } finally { await stop(); }
+});
+
+test('P275 확인 못함: 합칠 브랜치를 읽지 못하면 ok여도 failed(확인하지 못했다)', async () => {
+  const { b, dir, add, worker, mergerAct, stop, toS } = await board();
+  try {
+    const lead = add('lead');
+    const wt = worktree(dir, 'v3');
+    const w = worker('v3', wt, { parent: lead });
+    mergerAct(async (u) => { const mu = b.store.getUnit(u.id); b.store.updateUnit(u.id, { meta: { ...mu.meta, target: 'gone-branch' } }); return ['ok', '합침 y']; });
+    await assign(b, lead, 'v3');
+    await until(() => toS(lead).length === 1, 8000);
+    assert.match(toS(lead)[0].text, /gone-branch에 @v3의 끝 커밋 [0-9a-f]{9}이 들어갔는지 git으로 확인하지 못했다/);
+    const mu = b.store.mergeUnitOf(w.doneOut.unit);
+    assert.equal(mu.status, 'failed');
+    assert.equal(mu.meta.failed.contains, null);
+    assert.ok(!b.killed.some((x) => x.name === 'v3'));
+  } finally { await stop(); }
+});
+
+test('P275 merger 종류 고르기(순수): 설치 목록 조합별', () => {
+  const set = { mergerKind: 'claude', mergerModel: 'claude-sonnet-5-5', mergerEffort: 'medium' };
+  const K = (c, x) => [{ kind: 'claude', installed: c, path: c ? 'claude' : null }, { kind: 'codex', installed: x, path: x ? 'codex' : null }];
+  assert.deepEqual(pickMergerSpawn({ kinds: K(true, true), set }), { kind: 'claude', model: 'claude-sonnet-5-5', effort: 'medium', picked: 'setting', wanted: 'claude' });
+  assert.deepEqual(pickMergerSpawn({ kinds: K(false, true), set }), { kind: 'codex', model: null, effort: 'medium', picked: 'installed', wanted: 'claude' });
+  assert.equal(pickMergerSpawn({ kinds: K(false, false), set }), null);
+  assert.deepEqual(pickMergerSpawn({ kinds: K(true, false), set: { ...set, mergerKind: 'codex' } }), { kind: 'claude', model: 'claude-sonnet-5-5', effort: 'medium', picked: 'installed', wanted: 'codex' });
+  assert.deepEqual(pickMergerSpawn({ kinds: K(true, true), set: { ...set, mergerKind: 'codex' } }), { kind: 'codex', model: null, effort: 'medium', picked: 'setting', wanted: 'codex' });
+  assert.equal(pickMergerSpawn({ kinds: K(true, true), set: { ...set, mergerKind: 'codex', mergerModel: 'gpt-x' } }).model, 'gpt-x');
+  assert.equal(pickMergerSpawn({ kinds: K(true, true), set: { mergerKind: '' } }).kind, 'claude');
+  assert.equal(pickMergerSpawn({ kinds: [], set: { ...set, mergerKind: 'codex' } }).kind, 'codex');
+  assert.equal(pickMergerSpawn({ kinds: [{ kind: 'claude' }], set }).picked, 'setting');
+  assert.equal(pickMergerSpawn({ kinds: K(true, true), set: { ...set, mergerKind: 'pi' } }).kind, 'claude');
+});
+
+test('P275 Claude가 없고 Codex만 있으면 Codex merger를 띄운다(dev60 재현)', async () => {
+  const { b, dir, add, M, stop } = await board({ settings: { mergerMode: 'on', mergerKind: 'claude', mergerModel: 'claude-sonnet-5-5', mergerEffort: 'medium' } });
+  try {
+    const parent = add('audit-parent', { kind: 'codex' });
+    b.adapter.agentKinds = async () => [{ kind: 'claude', installed: false, path: null }, { kind: 'codex', installed: true, path: 'codex' }];
+    const ws = parent.workspaceKey;
+    const s = await M().spawnFor(ws + '|dev', { from: parent.sessionId, meta: { ws, root: dir, target: 'dev' } });
+    assert.equal(s.kind, 'codex');
+    assert.equal(b.spawned[0].model, undefined);
+    assert.equal(b.spawned[0].effort, 'medium');
+  } finally { await stop(); }
+});
+
+test('P275 둘 다 없으면 merger를 띄우지 않고 부모에게 done을 그대로, 사람에게 까닭(merger.problem, status.problem)', async () => {
+  const { b, dir, add, worker, M, toS, stop, events } = await board();
+  try {
+    b.adapter.agentKinds = async () => [{ kind: 'claude', installed: false, path: null }, { kind: 'codex', installed: false, path: null }];
+    const lead = add('lead');
+    const wt = worktree(dir, 'n1');
+    worker('n1', wt, { parent: lead });
+    await assign(b, lead, 'n1');
+    await until(() => toS(lead).length === 1, 8000);
+    const msg = toS(lead)[0].text;
+    assert.match(msg, /을 닫았다: ok/);
+    assert.match(msg, /merger에게 맡기지 못해 너에게 그대로 보낸다\(merger를 띄울 하네스가 이 PC에 설치돼 있지 않다/);
+    assert.equal(b.spawned.length, 0);
+    const p = events.find(([e]) => e === 'merger.problem');
+    assert.ok(p, '창에 알림');
+    assert.match(p[1].why, /설치돼 있지 않다/);
+    assert.match(M().status().problem.why, /설치돼 있지 않다/);
   } finally { await stop(); }
 });

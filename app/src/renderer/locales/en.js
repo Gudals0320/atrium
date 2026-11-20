@@ -2690,7 +2690,7 @@ export default {
     modeNote: 'On: when a worker that worked on a branch (worktree) finishes with done ok, the board puts it to sleep and a merger session merges it. Merged workers are closed and archived; failures go to the session that assigned the work. Ask: the board asks once per project with a card. Off: the session that assigned the work merges, as before.',
     modeSet: { on: 'Merger on', ask: 'Merger: ask per project', off: 'Merger off' },
     kind: 'Agent',
-    kindHint: 'Agent kind for the merger session (e.g. claude). If the board has no such kind, the assigning session\'s kind is used',
+    kindHint: 'Agent kind for the merger session (e.g. claude). If it is not installed on this PC, the board uses Claude Code, or Codex when Claude Code is missing',
     model: 'Model',
     modelHint: 'Model for the merger session',
     effort: 'Effort',
@@ -2724,6 +2724,8 @@ export default {
       failed: 'failed · {branch} → {target}',
       title: '@{child} → @{merger}: merge {branch} into {target}\nClick to go to the merger',
     },
+    // P275: the board could not start a merger (no installed harness and the like)
+    problem: 'Could not start a merger ({name}): {why}. The result went to the session that assigned the work.',
   },
 };
 
