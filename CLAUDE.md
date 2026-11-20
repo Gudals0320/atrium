@@ -16,10 +16,8 @@
 - OpenCove(MIT) 코드를 가져올 때는 파일 머리에 원본 경로와 커밋(`DeadWaveWave/opencove@e10604b`)을 남기고, 저장소에 MIT 고지를 둔다.
 - 일을 맡길 작업자 CLI 세션은 `claude --model claude-opus-5-5 --effort high`로 띄운다. 사용자 기본 모델이 Fable이고 Opus 5.5의 기본 노력 수준이 medium이라, 둘 다 직접 지정해야 한다.
 - 작업자 여럿에게 나눠 맡길 때는 Claude Code 워크트리(`claude -w <이름>`)에서 띄우고, 작업자마다 개발용 판을 따로 준다.
-- 작업자는 자기 브랜치에만 커밋한다. dev에 닿는 기계적 작업(합치기, 충돌 풀기, 합친 뒤 시험, CHANGELOG, 버전 올리기, dev 빌드, 워크트리 치우기)은 merger 세션이 한다. merger가 없을 때만 지휘 세션이 한다.
-- 작업자는 `atrium done ok` 글에 브랜치와 끝 커밋, 돌린 시험과 결과, CHANGELOG에 넣을 한 줄을 적는다. 지휘 세션은 그 글을 살피지 않고 merger에게 그대로 넘긴 뒤 작업자 세션을 끈다.
-- merger는 작업 다섯 번(합치기나 dev 빌드)마다 인계 한 줄과 함께 다음 merger를 `atrium child <새 이름> --peer`로 띄우고, `.atrium/merger`에 새 이름을 적은 뒤 물러난다. 지휘 세션을 거치지 않는다. 지휘 세션은 넘길 때마다 그 파일에서 이름을 읽는다.
-- merger가 지휘 세션에 보내는 것은 셋뿐이다: 실패, 합친 뒤 고침이 필요한 것, 사람의 결정이 필요한 것. 검토는 `experiments/<작업>/review.md`에 쓰고 `atrium log` 한 줄을 남긴다. 지휘 세션은 다른 일로 깨어났을 때 검토 파일을 모아 읽고 문서를 한 번에 고친다.
+- 작업자는 자기 브랜치에만 커밋하고, `atrium done ok` 글에 브랜치와 끝 커밋, 돌린 시험과 결과, CHANGELOG에 넣을 한 줄을 적는다. 합치기는 판이 merger 세션에게 맡긴다(설정 › 합치기, `.atrium/merge.json`). merger가 dev에 닿는 기계적 작업(합치기, 충돌 풀기, 합친 뒤 시험, CHANGELOG, 버전 올리기, dev 빌드, 워크트리 치우기)을 하고, 판의 merger가 꺼져 있을 때만 지휘 세션이 한다.
+- merger의 실패·결정만 지휘 세션에 온다. 검토는 `experiments/<작업>/review.md`에 있고, 지휘 세션은 다른 일로 깨어났을 때 검토 파일을 모아 읽고 문서를 한 번에 고친다.
 - 작업은 `dev`에 커밋한다. 작업자는 워크트리를 연 뒤 `git merge --ff-only origin/dev`부터 한다. 릴리즈는 `scripts/release-check.mjs` 머리의 절차를 따른다.
 - 커밋 메시지에 `Co-Authored-By: Claude` 줄을 넣지 않는다(사용자 요청).
 - 이 저장소는 공개다. 사용자 경로·메일·토큰과 실제 대화 내용은 커밋하지 않고, 시험 결과는 git 밖 `experiments/`에 둔다. 공개 검사(`scripts/check-public.mjs`)를 건너뛰지 않는다. 비공개 `docs/`에는 이 제한이 없다(토큰과 비밀번호만 넣지 않는다).
