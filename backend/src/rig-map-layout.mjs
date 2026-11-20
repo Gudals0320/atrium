@@ -156,54 +156,76 @@ const cross2 = (a, b, c, d) => {
   const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
   return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
 };
-export function gridPlace(roles, flows = [], { W = 600, H = 400, GX = 360, GY = 240, beatRole = null, builder = true, exact = 6 } = {}) {
+// P254(2차): 선 각도 허용 범위(사용자 결정 2026-11-20). 그린 선(마주 보는 변 가운데끼리)이 수평에서 0~ANGLE.MAX도이거나 세로(ANGLE.VERT도 이상)이면 읽기 좋다.
+//   그 사이(가파른 비스듬한 선)는 점수에서 크게 깎는다(되도록 피하는 조건).
+export const ANGLE = { MAX: 35, VERT: 89 };
+export const lineAngle = (p, q) => Math.atan2(Math.abs(q[1] - p[1]), Math.abs(q[0] - p[0])) * 180 / Math.PI;
+export const angleOk = (deg) => deg <= ANGLE.MAX + 1e-6 || deg >= ANGLE.VERT;
+// 칸은 반 칸 단위(가로 h = 반 칸 수, 세로 r = 줄). 같은 줄의 두 노드는 h가 2 이상 떨어진다. 세 역할이 서로 다 이어지면(삼각형) 둘을 한 줄에, 하나를 그 가운데 아래·위에.
+//   shape: 'flat'(기본, 줄 간격 = 노드 높이 + GY라 삼각형 변이 허용 각도 안) | 'equilateral'(줄 간격을 늘려 노드 가운데끼리 정삼각형. 그린 선은 약 40도로 허용 범위 밖이라 각도 항을 끈다)
+export function gridPlace(roles, flows = [], { W = 600, H = 400, GX = 600, GY = 600, beatRole = null, builder = true, exact = 5, shape = 'flat' } = {}) {
   const names = [...new Set((roles || []).filter(Boolean))];
   const order = rowOrder(names, flows, { beatRole });
   const items = builder ? [...order, GRID_BUILDER] : order;
   const n = items.length;
-  if (!n) return { cells: new Map(), cols: 0, rows: 0, score: 0 };
+  if (!n) return { cells: new Map(), cols: 0, rows: 0, score: 0, shape };
   const pairs = rolePairs(order, flows).map((p) => [items.indexOf(p.a), items.indexOf(p.b)]);
+  const has = new Set(pairs.map(([a, b]) => Math.min(a, b) + '|' + Math.max(a, b)));
+  const tris = [];
+  for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) for (let c = b + 1; c < order.length; c++) if (has.has(a + '|' + b) && has.has(a + '|' + c) && has.has(b + '|' + c)) tris.push([a, b, c]);
   const bi = builder ? n - 1 : -1;
-  const C = Math.max(2, Math.ceil(Math.sqrt(n)) + 1), R = Math.max(1, Math.ceil(Math.sqrt(n)));
-  const SX = W + GX, SY = H + GY;
-  const rect = (cell) => ({ x: (cell % C) * SX, y: Math.floor(cell / C) * SY, w: W, h: H });
+  const C = Math.max(2, Math.ceil(Math.sqrt(n)) + (n > 4 ? 0 : 1)), R = Math.max(2, Math.ceil(Math.sqrt(n)));
+  const SX = W + GX;
+  const SY = shape === 'equilateral' ? Math.max(H + GY, Math.round(SX * Math.sqrt(3) / 2)) : H + GY;
+  const HN = 2 * C - 1; // 반 칸 자리 수
+  const P = []; for (let r = 0; r < R; r++) for (let h = 0; h < HN; h++) P.push([h, r]);
+  const rect = (k) => ({ x: P[k][0] * SX / 2, y: P[k][1] * SY, w: W, h: H });
   const score = (pos) => {
     const rs = pos.map(rect);
-    let through = 0, cross = 0, len = 0, blen = 0;
-    const segs = pairs.map(([a, b]) => { const [p, q] = faceEnds(rs[a], rs[b]); len += Math.hypot(q[0] - p[0], q[1] - p[1]) / SX; return [a, b, p, q]; });
+    let through = 0, cross = 0, len = 0, blen = 0, steep = 0, tri = 0;
+    const segs = pairs.map(([a, b]) => { const [p, q] = faceEnds(rs[a], rs[b]); len += Math.hypot(q[0] - p[0], q[1] - p[1]) / SX; if (shape !== 'equilateral' && !angleOk(lineAngle(p, q))) steep++; return [a, b, p, q]; });
     for (const [a, b, p, q] of segs) for (let k = 0; k < n; k++) if (k !== a && k !== b && segHitsRect(p, q, rs[k], 1)) through++;
     for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
       const [a1, b1, p1, q1] = segs[i], [a2, b2, p2, q2] = segs[j];
       if (a1 === a2 || a1 === b2 || b1 === a2 || b1 === b2) continue;
       if (cross2(p1, q1, p2, q2)) cross++;
     }
-    if (bi >= 0) for (let k = 0; k < bi; k++) { const [p, q] = faceEnds(rs[k], rs[bi]); blen += Math.hypot(q[0] - p[0], q[1] - p[1]) / SX; }
-    let tie = 0; pos.forEach((cell, i) => { tie += (n - i) * cell * 1e-4; }); // 앞 차례 역할일수록 앞 칸(왼쪽 위)
-    const cs = pos.map((c) => c % C), rr = pos.map((c) => Math.floor(c / C));
-    const box = (Math.max(...cs) - Math.min(...cs) + 1) * (Math.max(...rr) - Math.min(...rr) + 1) * 0.05;
-    return through * 1000 + cross * 100 + len + blen * (0.2 / Math.max(1, bi)) + box + tie;
+    for (const t of tris) {
+      const ok = t.some((apex) => { const [u, v] = t.filter((x) => x !== apex); const A = P[pos[apex]], U = P[pos[u]], V = P[pos[v]]; return U[1] === V[1] && Math.abs(U[0] - V[0]) === 2 && Math.abs(A[1] - U[1]) === 1 && A[0] * 2 === U[0] + V[0]; }); // 밑변 한 칸, 꼭짓점은 그 가운데 위·아래
+      if (!ok) tri++;
+    }
+    let bsteep = 0;
+    if (bi >= 0) for (let k = 0; k < bi; k++) { const [p, q] = faceEnds(rs[k], rs[bi]); blen += Math.hypot(q[0] - p[0], q[1] - p[1]) / SX; if (!angleOk(lineAngle(p, q))) bsteep++; if ([...Array(n).keys()].some((m) => m !== k && m !== bi && segHitsRect(p, q, rs[m], 1))) bsteep += 2; } // 올림선(어느 역할이 올릴지 모른다): 가파르거나 노드를 지나면 약하게 깎는다
+    let tie = 0; pos.forEach((k, i) => { tie += (n - i) * (P[k][1] * HN + P[k][0]) * 1e-4; });
+    const hs = pos.map((k) => P[k][0]), rr = pos.map((k) => P[k][1]);
+    const box = ((Math.max(...hs) - Math.min(...hs)) / 2 + 1) * (Math.max(...rr) - Math.min(...rr) + 1) * 0.05;
+    return through * 1000 + steep * 300 + cross * 100 + tri * 50 + bsteep * 10 + len + blen * (0.2 / Math.max(1, bi)) + box + tie;
   };
-  const cells = C * R;
+  // 같은 줄 두 노드는 반 칸 2 이상 떨어져야 한다
+  const fits = (pos, i, k) => { for (let j = 0; j < i; j++) { const a = P[pos[j]], b = P[k]; if (a[1] === b[1] && Math.abs(a[0] - b[0]) < 2) return false; } return true; };
   let best = null, bestS = Infinity;
   if (n <= exact) {
-    const pos = [], used = new Array(cells).fill(false);
+    const pos = [];
     const walk = (i) => {
       if (i === n) { const s = score(pos); if (s < bestS) { bestS = s; best = pos.slice(); } return; }
-      for (let c = 0; c < cells; c++) { if (used[c]) continue; used[c] = true; pos[i] = c; walk(i + 1); used[c] = false; }
+      for (let k = 0; k < P.length; k++) { if (!fits(pos, i, k) || pos.slice(0, i).includes(k)) continue; pos[i] = k; walk(i + 1); }
     };
     walk(0);
   } else {
-    best = items.map((_, i) => i); bestS = score(best);
+    // 처음: 정의 차례로 온 칸(반 칸 0, 2, 4…)에 줄줄이. 그다음 한 노드 옮기기·두 노드 바꾸기로 낮춘다
+    best = items.map((_, i) => P.findIndex(([h, r]) => r === Math.floor(i / C) && h === (i % C) * 2)); bestS = score(best);
+    const legal = (pos) => pos.every((k, i) => pos.every((m, j) => j === i || !(P[k][1] === P[m][1] && Math.abs(P[k][0] - P[m][0]) < 2)));
     for (let round = 0, better = true; better && round < 200; round++) {
       better = false;
-      for (let i = 0; i < n; i++) for (let c = 0; c < cells; c++) {
-        const j = best.indexOf(c); if (j === i) continue;
-        const nx = best.slice(); if (j >= 0) { nx[j] = best[i]; } nx[i] = c;
+      for (let i = 0; i < n; i++) for (let k = 0; k < P.length; k++) {
+        const j = best.indexOf(k); if (j === i) continue;
+        const nx = best.slice(); if (j >= 0) nx[j] = best[i]; nx[i] = k;
+        if (!legal(nx)) continue;
         const s = score(nx); if (s < bestS - 1e-9) { bestS = s; best = nx; better = true; }
       }
     }
   }
-  const c0 = Math.min(...best.map((c) => c % C)), r0 = Math.min(...best.map((c) => Math.floor(c / C)));
-  const out = new Map(items.map((k, i) => [k, { c: (best[i] % C) - c0, r: Math.floor(best[i] / C) - r0 }]));
-  return { cells: out, cols: Math.max(...[...out.values()].map((x) => x.c)) + 1, rows: Math.max(...[...out.values()].map((x) => x.r)) + 1, score: bestS };
+  const h0 = Math.min(...best.map((k) => P[k][0])), r0 = Math.min(...best.map((k) => P[k][1]));
+  const cells = new Map(items.map((key, i) => [key, { c: (P[best[i]][0] - h0) / 2, r: P[best[i]][1] - r0 }]));
+  return { cells, cols: Math.max(...[...cells.values()].map((x) => x.c)) + 1, rows: Math.max(...[...cells.values()].map((x) => x.r)) + 1, score: bestS, shape, rowStep: SY, colStep: SX };
 }

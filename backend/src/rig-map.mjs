@@ -22,7 +22,7 @@ export function openDecide(decide, states) {
   const closed = new Set((states || []).filter((x) => x.state !== 'waiting').map((x) => x.id));
   return (decide || []).filter((d) => !(d && d.what === 'raise' && d.id && closed.has(d.id)));
 }
-export const PLACE = { GX: 360, GY: 240 }; // 켤 때 놓는 역할 노드 사이(길 선과 그 글이 노드 밖에 보일 만큼)
+export const PLACE = { GX: 600, GY: 600 }; // 켤 때 놓는 역할 노드 사이(길 선과 그 글이 노드 밖에 보일 만큼). P254: 비스듬한 선(반 칸)의 각도 atan(GY / ((W + GX) / 2)) ≈ 30도로 허용 범위(35도) 안, 돌린 글이 줄 사이에 든다
 
 const low = (p) => String(p || '').replace(/\\/g, '/').toLowerCase();
 const RANK = { returned: 5, waiting: 4, accepted: 3, passed: 2, superseded: 1, dropped: 1 };
@@ -174,7 +174,7 @@ function gridOf(b, key) {
   const xs = [...nodes.values()].map((x) => x.nd);
   const W = Math.max(...xs.map((n) => n.w)), H = Math.max(...xs.map((n) => n.h));
   const g = gridPlace(names, r3.flows, { W, H, GX: PLACE.GX, GY: PLACE.GY, beatRole: r3.beat ? r3.beat.role : null });
-  return { g, nodes, byS, W, H, SX: W + PLACE.GX, SY: H + PLACE.GY };
+  return { g, nodes, byS, W, H, SX: g.colStep || W + PLACE.GX, SY: g.rowStep || H + PLACE.GY };
 }
 const putNode = (b, s, nd, x, y) => {
   if (x === nd.x && y === nd.y) return 0;

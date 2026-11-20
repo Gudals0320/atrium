@@ -18,7 +18,9 @@ const safeId = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
 // 시안의 화살촉(채운 삼각형, 굵기에 비례). 줄마다 색이 달라 줄마다 둔다
 const Tip = ({ id, color }) => <marker id={id} orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill={color} stroke="none" /></marker>;
 // 글 칸: 세계 자리 [x, y]를 가운데로, 화면 크기는 시안 그대로(scale = 1/배율)
-const at = (p, k, ax = '-50%') => ({ transform: `translate(${p[0]}px, ${p[1]}px) scale(${k}) translate(${ax}, -50%)`, transformOrigin: '0 0' });
+const at = (p, k, ax = '-50%', rot = 0) => ({ transform: `translate(${p[0]}px, ${p[1]}px) scale(${k})${rot ? ` rotate(${rot}deg)` : ''} translate(${ax}, -50%)`, transformOrigin: '0 0' });
+// P254(2차): 비스듬한 곧은 선(수평에서 1~45도)의 글은 선과 나란히 돌리고 시안처럼 줄 바로 위(앞 줄)·바로 아래(돌아오는 줄)에 붙인다. 가로·세로 선과 꺾은선은 그대로
+const slant = (P, Q) => { const d = Math.atan2(Q[1] - P[1], Q[0] - P[0]) * 180 / Math.PI; return Math.abs(d) > 1 && Math.abs(d) <= 45 ? d : 0; };
 
 export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
   const t = useT();
@@ -42,7 +44,8 @@ export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
   const g = route ? polyLines(route, k) : twoLines(P, Q, k);
   // P254: 세로·비스듬한 줄에서도 글이 줄 바깥에 붙게 글 폭으로 자리를 잰다
   const tw = (s) => Math.max(V7.LABW, textW13(s));
-  const spot = labelSpots(g.mid, g.n, k, { topW: tw(lineText(top, 'top')), botW: tw(lineText(bottom, 'bottom')), waitW: Math.max(V7.WAITW, textW13(t('rigV7.wait', { n: data.lines.waiting }))) });
+  const rot = route ? 0 : slant(P, Q);
+  const spot = rot ? { topLab: g.topLab, botLab: g.botLab, wait: g.wait } : labelSpots(g.mid, g.n, k, { topW: tw(lineText(top, 'top')), botW: tw(lineText(bottom, 'bottom')), waitW: Math.max(V7.WAITW, textW13(t('rigV7.wait', { n: data.lines.waiting }))) });
   const lit = pairLit(data.a, data.b, (r) => (r === data.a ? aWork : r === data.b ? bWork : false));
   const color = lit ? V7.C.lit : V7.C.dim;
   const tid = safeId(id);
@@ -59,9 +62,9 @@ export function RigPathEdge({ id, sourceX, sourceY, targetX, targetY, data }) {
       {bottom && bottom.open ? <circle className="mt-rig-open" data-role="rig-open-return" data-line="bottom" cx={g.dotBot[0]} cy={g.dotBot[1]} r={(V7.DOT / 2) * k} fill={V7.C.red} /> : null}
     </g>
     <EdgeLabelRenderer>
-      {top ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(spot.topLab, k)} data-role="rig-edge-label" data-line="top" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(top, 'top')}</div> : null}
-      {bottom ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(spot.botLab, k)} data-role="rig-edge-label" data-line="bottom" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(bottom, 'bottom')}</div> : null}
-      {data.lines.waiting ? <div className={`mt-rig7-wait nodrag nopan${lit ? ' lit' : ''}`} style={at(bottom ? spot.wait : spot.botLab, k)} data-role="rig-wait" data-edge={id}>{t('rigV7.wait', { n: data.lines.waiting })}</div> : null}
+      {top ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(spot.topLab, k, '-50%', rot)} data-rot={Math.round(rot)} data-role="rig-edge-label" data-line="top" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(top, 'top')}</div> : null}
+      {bottom ? <div className={`mt-rig7-lab nodrag nopan${lit ? ' lit' : ''}`} style={at(spot.botLab, k, '-50%', rot)} data-rot={Math.round(rot)} data-role="rig-edge-label" data-line="bottom" data-edge={id} data-a={data.a} data-b={data.b} title={t('rigMap.pathTitle')} onClick={toggle}>{lineText(bottom, 'bottom')}</div> : null}
+      {data.lines.waiting ? <div className={`mt-rig7-wait nodrag nopan${lit ? ' lit' : ''}`} style={at(bottom ? spot.wait : spot.botLab, k, '-50%', rot)} data-rot={Math.round(rot)} data-role="rig-wait" data-edge={id}>{t('rigV7.wait', { n: data.lines.waiting })}</div> : null}
       {open ? <div className="mt-rig-recent nowheel nodrag nopan" style={at(spot.wait, k, '-50%')} data-role="rig-path-recent">
         <b>{t('rigMap.pathRecent')}</b>
         {recent.length ? recent.map((x) => <span key={x.id + x.rev} className={`is-${x.state}`}>{x.id} · {t(`rigMap.state.${x.state}`)} · {fmtTime(x.t)}{x.reason ? ` · "${x.reason}"` : ''}</span>) : <span className="dim">{t('rigMap.pathNone')}</span>}

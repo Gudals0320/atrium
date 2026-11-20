@@ -166,6 +166,7 @@ export function spreadEnds(items, rectOf) {
       groups.get(k).push({ id: e.id, i, j, side, r, other: i === 0 ? rb : ra, straight: pts.length === 2 });
     }
   }
+  const fixed = new Set(); // 변을 따라 나눠 자리를 정한 끝(뒤 묶음의 평행 이동이 다시 옮기지 않는다)
   for (const g of groups.values()) {
     if (g.length < 2) continue;
     const v = g[0].side === 'l' || g[0].side === 'r', ax = v ? 1 : 0;
@@ -173,10 +174,12 @@ export function spreadEnds(items, rectOf) {
     g.forEach((x, n) => {
       const pts = out[x.id], at = (v ? x.r.y + x.r.h * (n + 1) / (g.length + 1) : x.r.x + x.r.w * (n + 1) / (g.length + 1));
       const was = pts[x.i][ax];
-      pts[x.i][ax] = at;
+      pts[x.i][ax] = at; fixed.add(x.id + '#' + x.i);
       if (!x.straight) { if (Math.abs(pts[x.j][ax] - was) < 0.5) pts[x.j][ax] = at; return; }
-      // 곧은 선: 축에 나란했으면 맞은편 끝도 같이(그 노드 변 안에서)
-      if (Math.abs(pts[x.j][ax] - was) < 0.5) { const o = x.other, lo = (v ? o.y : o.x) + 8, hi = (v ? o.y + o.h : o.x + o.w) - 8; pts[x.j][ax] = Math.min(hi, Math.max(lo, at)); }
+      if (fixed.has(x.id + '#' + x.j)) return;
+      // 곧은 선: 맞은편 끝도 같은 만큼 옮겨(그 노드 변 안에서) 선을 나란히 비킨다 — 축에 나란한 선은 곧게, 비스듬한 선은 각도 그대로
+      const o = x.other, lo = (v ? o.y : o.x) + 8, hi = (v ? o.y + o.h : o.x + o.w) - 8;
+      pts[x.j][ax] = Math.min(hi, Math.max(lo, pts[x.j][ax] + (at - was)));
     });
   }
   return out;

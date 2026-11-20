@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ANGLE, angleOk, lineAngle } from '../../backend/src/rig-map-layout.mjs';
+import { spreadEnds } from '../src/renderer/lib/rig-map.js';
 import { gridPlace, faceEnds, segHitsRect, rigRoute, polyLines, ROUTE, textW13, pairLines, pairLit, lineText, twoLines, v7Layout, rigEdges, rigTag, hideRigSessions, V7, BUILDER_ROLE } from '../src/renderer/lib/rig-map.js';
 import { lineageLayout } from '../src/renderer/lib/mission-lineage.js';
 import ko from '../src/renderer/locales/ko.js';
@@ -208,27 +210,37 @@ test('P254 열 머리 고정과 띠 걷어냄: 칸 머리 띠를 rig 아래로 �
 
 // ---- 캔버스 2D 자리와 돌리기(사용자 결정 2026-11-20) ----
 const FL = FLOWS.map((f) => ({ ...f }));
-const cellRect = (g, n, W = 1440, H = 810, GX = 360, GY = 240) => { const c = g.cells.get(n); return { x: c.c * (W + GX), y: c.r * (H + GY), w: W, h: H }; };
 
-test('P254 gridPlace(rig-trade): 역할과 빌더를 2D 칸에, 선이 노드를 지나지 않고 엇갈리지 않으며 짧다', () => {
+test('P254 gridPlace(rig-trade): 2D 칸, 선이 노드를 지나지 않고 엇갈리지 않으며, 모든 선이 허용 각도(수평 0~35도 또는 세로), 삼각형은 둘이 한 줄·하나가 가운데', () => {
   const g = gridPlace(['data', 'ideas', 'verify', 'trade'], FL, { W: 1440, H: 810, beatRole: 'data' });
   const names = ['data', 'ideas', 'verify', 'trade', '@builder'];
-  const rs = Object.fromEntries(names.map((n) => [n, cellRect(g, n)]));
-  assert.equal(new Set(names.map((n) => g.cells.get(n).c + ',' + g.cells.get(n).r)).size, 5, '칸이 겹치지 않는다');
+  const at = (n) => { const c = g.cells.get(n); return { x: c.c * g.colStep, y: c.r * g.rowStep, w: 1440, h: 810 }; };
+  const rs = Object.fromEntries(names.map((n) => [n, at(n)]));
+  for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) { const a = rs[names[i]], b = rs[names[j]]; assert.ok(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h), names[i] + '·' + names[j] + ' 겹침'); }
   assert.ok(g.rows > 1, '한 줄이 아니다(2D)');
   const pairs = [['data', 'ideas'], ['ideas', 'verify'], ['data', 'verify'], ['verify', 'trade']];
-  for (const [a, b] of pairs) {
-    const [p, q] = faceEnds(rs[a], rs[b]);
+  const segs = pairs.map(([a, b]) => [a, b, ...faceEnds(rs[a], rs[b])]);
+  for (const [a, b, p, q] of segs) {
     for (const n of names) if (n !== a && n !== b) assert.ok(!segHitsRect(p, q, rs[n], 1), `${a}-${b} 선이 ${n}을 지난다`);
-    assert.ok(Math.hypot(q[0] - p[0], q[1] - p[1]) < 1800, `${a}-${b}는 이웃한 칸(짧은 선)`);
+    assert.ok(angleOk(lineAngle(p, q)), `${a}-${b} 각도 ${lineAngle(p, q).toFixed(1)}`);
   }
-  assert.deepEqual(g.cells.get('data'), { c: 0, r: 0 }, '박자 역할이 왼쪽 위');
-  // 같은 입력이면 같은 자리(켤 때마다 같다)
+  // 삼각형 data·ideas·verify: 둘이 한 줄(한 칸 떨어짐), 하나가 그 가운데 위·아래 줄
+  const C = (n) => g.cells.get(n);
+  const apex = ['data', 'ideas', 'verify'].find((x) => { const [u, v] = ['data', 'ideas', 'verify'].filter((y) => y !== x); return C(u).r === C(v).r && Math.abs(C(u).c - C(v).c) === 1 && Math.abs(C(x).r - C(u).r) === 1 && C(x).c === (C(u).c + C(v).c) / 2; });
+  assert.ok(apex, JSON.stringify([...g.cells]));
+  assert.deepEqual([ANGLE.MAX, ANGLE.VERT], [35, 89]);
+  // 같은 입력이면 같은 자리
   assert.deepEqual([...gridPlace(['data', 'ideas', 'verify', 'trade'], FL, { W: 1440, H: 810, beatRole: 'data' }).cells], [...g.cells]);
+  // 정삼각형 꼴: 노드 가운데끼리 세 변이 같고(줄 간격 = 칸 간격 × √3/2), 그린 선은 약 40도로 허용 범위 밖이다(그래서 기본이 아니다)
+  const e = gridPlace(['data', 'ideas', 'verify', 'trade'], FL, { W: 1440, H: 810, beatRole: 'data', shape: 'equilateral' });
+  const ce = (n) => { const c = e.cells.get(n); return [c.c * e.colStep + 720, c.r * e.rowStep + 405]; };
+  const dist = (a, b) => Math.hypot(ce(a)[0] - ce(b)[0], ce(a)[1] - ce(b)[1]);
+  const ds = [dist('data', 'ideas'), dist('ideas', 'verify'), dist('data', 'verify')];
+  assert.ok(Math.max(...ds) - Math.min(...ds) < 2, ds.join());
   // 역할이 많으면(정확히 견주지 않는 크기) 옮기기·바꾸기로 낮춘다: 사슬은 노드를 지나지 않는다
   const big = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
   const gb = gridPlace(big, big.slice(1).map((x, i) => ({ item: 'i' + i, from: [big[i]], to: [x] })), {});
-  const rb = Object.fromEntries([...big, '@builder'].map((n) => [n, cellRect(gb, n, 600, 400)]));
+  const rb = Object.fromEntries([...big, '@builder'].map((n) => { const c = gb.cells.get(n); return [n, { x: c.c * gb.colStep, y: c.r * gb.rowStep, w: 600, h: 400 }]; }));
   for (let i = 0; i + 1 < big.length; i++) { const [p, q] = faceEnds(rb[big[i]], rb[big[i + 1]]); for (const n of Object.keys(rb)) if (n !== big[i] && n !== big[i + 1]) assert.ok(!segHitsRect(p, q, rb[n], 1)); }
 });
 
@@ -253,4 +265,19 @@ test('P254 rigRoute: 곧은 선이 다른 노드를 지나면 직각으로 돌�
   assert.deepEqual(g.topLab, [500, -228]); assert.deepEqual(g.botLab, [500, -172]); assert.deepEqual(g.wait, [500, -152]);
   // 캔버스가 쓴다
   assert.ok(/rigRoute\(/.test(read('Canvas.jsx')) && /polyLines\(route, k\)/.test(read('RigLines.jsx')));
+});
+
+test('P254 비스듬한 곧은 선의 글은 선과 나란히 돌린다(가로·세로·꺾은선은 그대로)', () => {
+  const src = read('RigLines.jsx');
+  assert.ok(/const slant = /.test(src) && /rotate\(/.test(src) && /route \? 0 : slant\(P, Q\)/.test(src));
+});
+
+test('P254 spreadEnds: 한 변을 여러 선이 쓰면 끝점을 나누고, 곧은 선은 양 끝을 같이 옮겨 각도를 지키며, 정한 끝은 뒤에서 다시 옮기지 않는다', () => {
+  const R = { data: { x: 0, y: 0, w: 1440, h: 810 }, ideas: { x: 1020, y: 1767, w: 1440, h: 810 }, verify: { x: 2040, y: 0, w: 1440, h: 810 }, b: { x: 3060, y: 1767, w: 1440, h: 810 } };
+  const items = [['di', 'data', 'ideas'], ['iv', 'ideas', 'verify'], ['dv', 'data', 'verify'], ['rb', 'verify', 'b']].map(([id, a, b]) => ({ id, a, b, pts: faceEnds(R[a], R[b]).slice(0, 2) }));
+  const s = spreadEnds(items, (id) => R[id]);
+  assert.ok(Math.abs(s.di[1][0] - s.iv[0][0]) >= 400, 'ideas 위 변의 두 끝이 떨어진다');
+  const ang = (p) => Math.atan2(p[1][1] - p[0][1], p[1][0] - p[0][0]);
+  assert.ok(Math.abs(ang(s.di) - ang(items[0].pts)) < 1e-9, 'data–ideas는 나란히 비켜 각도 그대로');
+  assert.deepEqual(s.dv, items[2].pts, '혼자 쓰는 변은 그대로');
 });

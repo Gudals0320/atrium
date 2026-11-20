@@ -11,6 +11,8 @@ if (process.env.ATRIUM_TERMINAL_SESSION !== 'atrium-dev-p254' || process.env.ATR
 process.env.MT_E2E_OUT = path.relative(path.join(REPO, 'experiments'), OUT);
 fs.mkdirSync(OUT, { recursive: true });
 const { logger, sleep, launch, closeApp } = await import('./harness.mjs');
+const { gridPlace } = await import('../../../backend/src/rig-map-layout.mjs');
+const DEF = JSON.parse(fs.readFileSync('C:/Workspace/mtask-p254-trade/.atrium/rig.json', 'utf8'));
 const log = logger('p254-' + TAG);
 const atrium = (...a) => execFileSync(process.execPath, [path.join(REPO, 'backend', 'bin', 'atrium.mjs'), '--dev', ...a], { encoding: 'utf8', env: process.env, timeout: 120000 });
 const call = (m, p = {}) => JSON.parse(atrium('--json', 'call', m, JSON.stringify(p)));
@@ -30,11 +32,25 @@ const facts = (page, ids) => page.evaluate((ids) => {
   const lines = [...document.querySelectorAll('[data-role=rig-line]')].map((e) => {
     const len = e.getTotalLength(), m = e.getScreenCTM(), hit = new Set();
     for (let s = 0; s <= 60; s++) { const p = e.getPointAtLength(len * s / 60); const q = new DOMPoint(p.x, p.y).matrixTransform(m); for (const n of nodes) if (n.role !== e.dataset.from && n.role !== e.dataset.to && inside(q, n)) hit.add(n.role); }
-    return { line: e.dataset.line, from: e.dataset.from, to: e.dataset.to, routed: e.dataset.routed, stroke: e.getAttribute('stroke'), through: [...hit] };
+    const p0 = e.getPointAtLength(0), p1 = e.getPointAtLength(len);
+    const ang = Math.round(Math.atan2(Math.abs(p1.y - p0.y), Math.abs(p1.x - p0.x)) * 1800 / Math.PI) / 10;
+    return { line: e.dataset.line, from: e.dataset.from, to: e.dataset.to, routed: e.dataset.routed, stroke: e.getAttribute('stroke'), through: [...hit], ang };
   });
-  const labels = [...document.querySelectorAll('[data-role=rig-edge-label], [data-role=rig-wait], [data-role=rig-raise-label]')].map((e) => { const b = box(e); return { text: e.textContent, on: nodes.filter((n) => meet(b, n)).map((n) => n.role), b }; });
-  const lab2 = labels.filter((a, i) => labels.some((c, j) => j > i && meet(a.b, c.b))).map((a) => a.text);
-  return { lines, labels: labels.map(({ text, on }) => ({ text, on })), labelOverlap: lab2, dots: document.querySelectorAll('[data-role=rig-open-return]').length, tags: [...document.querySelectorAll('[data-role=rig-tag]')].map((e) => e.textContent) };
+  // 돌린 글은 실제 돌린 사각형(바깥 사각형에서 거꾸로 구한 네 꼭짓점)으로 잰다. 겹침은 분리축 검사
+  const polyOf = (e) => {
+    const b = box(e), d = Number(e.dataset.rot || 0) * Math.PI / 180, c = Math.abs(Math.cos(d)), s = Math.abs(Math.sin(d));
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    if (s < 1e-3) return [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]];
+    const den = c * c - s * s, w = (b.w * c - b.h * s) / den, h = (b.h * c - b.w * s) / den;
+    const ux = [Math.cos(d), Math.sin(d)], uy = [-Math.sin(d), Math.cos(d)];
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => [cx + ux[0] * w / 2 * i + uy[0] * h / 2 * j, cy + ux[1] * w / 2 * i + uy[1] * h / 2 * j]);
+  };
+  const rectPoly = (r) => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
+  const sat = (A, B) => { for (const P of [A, B]) for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length], ax = [q[1] - p[1], p[0] - q[0]]; const pr = (Q) => Q.map((v) => v[0] * ax[0] + v[1] * ax[1]); const a = pr(A), b2 = pr(B); if (Math.max(...a) <= Math.min(...b2) || Math.max(...b2) <= Math.min(...a)) return false; } return true; };
+  const labels = [...document.querySelectorAll('[data-role=rig-edge-label], [data-role=rig-wait], [data-role=rig-raise-label]')].map((e) => { const pg = polyOf(e); return { text: e.textContent, on: nodes.filter((n) => sat(pg, rectPoly(n))).map((n) => n.role), pg }; });
+  const lab2 = labels.filter((a, i) => labels.some((c, j) => j > i && sat(a.pg, c.pg))).map((a) => a.text);
+  const rots = [...document.querySelectorAll('[data-role=rig-edge-label]')].map((e) => [e.textContent, Number(e.dataset.rot || 0)]);
+  return { lines, rots, labels: labels.map(({ text, on }) => ({ text, on })), labelOverlap: lab2, dots: document.querySelectorAll('[data-role=rig-open-return]').length, tags: [...document.querySelectorAll('[data-role=rig-tag]')].map((e) => e.textContent) };
 }, ids);
 
 const { app, page } = await launch({ log, args: ['--remote-debugging-port=9484'] });
@@ -60,6 +76,17 @@ try {
     await fit();
     judge(await facts(page, ids), `2D(${l})`);
     await shot(page, `01-canvas-2d-${l}`);
+    const fa = await facts(page, ids);
+    check(`2D(${l}): 모든 선이 허용 각도(수평 0~35도 또는 세로)`, fa.lines.every((x) => x.routed === '1' || x.ang <= 35.5 || x.ang >= 89), fa.lines.map((x) => [x.from, x.to, x.ang]));
+    check(`2D(${l}): 비스듬한 선의 글은 선과 나란히(돌림)`, fa.rots.some(([, r]) => r !== 0) && fa.rots.every(([, r]) => Math.abs(r) <= 45), fa.rots);
+    // 정삼각형 꼴(노드 가운데끼리 같은 거리, 그린 선 약 40도: 허용 범위 밖이라 기본이 아니다)를 견주어 보인다
+    const eq = gridPlace(['data', 'ideas', 'verify', 'trade'], DEF.flows.map((f) => ({ ...f, from: [].concat(f.from), to: [].concat(f.to) })), { W: saved.data.w, H: saved.data.h, GX: 600, GY: 600, beatRole: 'data', shape: 'equilateral' });
+    const c0 = eq.cells.get('data'), gx0 = saved.data.x - c0.c * eq.colStep, gy0 = saved.data.y - c0.r * eq.rowStep;
+    for (const r of ['data', 'ideas', 'verify', 'trade', 'builder']) { const c = eq.cells.get(r === 'builder' ? '@builder' : r); call('board.setNode', { session: ids[r], x: Math.round(gx0 + c.c * eq.colStep), y: Math.round(gy0 + c.r * eq.rowStep), w: saved.data.w, h: saved.data.h, cause: 'test' }); }
+    await sleep(1200); await fit();
+    const fe = await facts(page, ids);
+    check(`정삼각형(${l}): 선이 노드를 지나지 않고 글이 노드·글에 앉지 않는다`, fe.lines.every((x) => !x.through.length) && fe.labels.every((x) => !x.on.length) && !fe.labelOverlap.length, { lines: fe.lines.map((x) => [x.from, x.to, x.ang, x.through]), on: fe.labels.filter((x) => x.on.length), overlap: fe.labelOverlap });
+    await shot(page, `03-canvas-equilateral-${l}`);
     // 한 줄로 놓아 본다(사람이 옮긴 경우): data → verify가 ideas를 지나야 하므로 직각으로 돈다
     const W = saved.data.w, H = saved.data.h, x0 = saved.data.x, y0 = saved.data.y;
     ['data', 'ideas', 'verify', 'trade'].forEach((r, i) => call('board.setNode', { session: ids[r], x: x0 + i * (W + 600), y: y0, w: W, h: H, cause: 'test' }));
