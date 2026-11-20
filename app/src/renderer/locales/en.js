@@ -835,7 +835,7 @@ export default {
     emptyFiltered: ' (try another filter)',
   },
   markdown: {
-    copyLink: 'Click to copy the link',
+    openLink: 'Click to open the link',
   },
   sidebar: {
     loadFail: 'Could not load the sidebar: {error}',
@@ -2728,6 +2728,11 @@ export default {
     steerKey: 'send as steering',
     phoneSteerOn: 'Into this turn', // P280
     oldHoldDropped: 'old held queue cleared at board restart',
+  },
+  // P283: links in terminals and markdown views
+  urlLink: {
+    hint: 'Ctrl+click to open the link',
+    notOpened: 'Link not opened: only http and https links open ({scheme})',
   },
 };
 
