@@ -65,7 +65,7 @@ export function compareVersions(a, b) {
   return 0;
 }
 export const versionOfTag = (tag) => String(tag || '').trim().replace(/^v/, '');
-// ">=22.15" 같은 engines 범위: node-check.mjs에 있다(이슈 #18, 다른 모듈보다 먼저 부를 수 있게)
+// engines 범위("^22.15.0 || >=24.14.0" 꼴) 확인: node-check.mjs에 있다(이슈 #18, 다른 모듈보다 먼저 부를 수 있게)
 export { nodeSatisfies } from './node-check.mjs';
 
 // ---------- 릴리즈 ----------

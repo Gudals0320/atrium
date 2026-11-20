@@ -1,6 +1,6 @@
 // 저장소(ARCH 5절): 판 배치, 노드와 세션 ID 연결, 이벤트, 전달, 봤음 기록(P3), 세션끼리 연결과 오간 일(P4),
 // 리포지토리 워크스페이스(P5), 단일 캔버스의 영역 자리·붙여 묶기·크기 단계·검색(P6a). sessions.workspace_id는 터미널 작업 공간 ID다(코드에서는 termWorkspaceId). 판의 워크스페이스는 workspace_key다.
-// E8 결과로 Node 내장 node:sqlite를 쓴다(Node 22.13 이상, 22.5~22.12는 플래그가 필요해 받지 않는다. 지원 최소는 package.json engines의 22.15, 이슈 #18). node:sqlite 호출과 SQL은 이 파일 안에만 둔다.
+// E8 결과로 Node 내장 node:sqlite를 쓴다(Node 22.13 이상, 22.5~22.12는 플래그가 필요해 받지 않는다. 지원 범위는 package.json engines, 이슈 #18). node:sqlite 호출과 SQL은 이 파일 안에만 둔다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { RECORDS_SCHEMA, installRecords } from './store-records.mjs'; // P6b: Thread, 메모, 칸반, 루프 표
@@ -15,7 +15,7 @@ import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
 let DatabaseSync;
-try { ({ DatabaseSync } = await import('node:sqlite')); } catch (e) { throw new Error(`node:sqlite를 불러오지 못했습니다 (Node 22.15 이상 필요): ${e.message}`); }
+try { ({ DatabaseSync } = await import('node:sqlite')); } catch (e) { throw new Error(`node:sqlite를 불러오지 못했습니다 (Node 22.15 이상 필요, package.json engines): ${e.message}`); }
 
 const SCHEMA = `
 PRAGMA journal_mode = WAL;

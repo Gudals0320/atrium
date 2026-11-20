@@ -5,32 +5,37 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { nodeSatisfies, nodeProblem, engineRange } from '../src/node-check.mjs';
+import { nodeSatisfies, nodeProblem, engineRange, rangeText } from '../src/node-check.mjs';
 import * as U from '../src/update.mjs';
 import { winPowerShellEnv, winPowerShellExe, authenticodeOf } from '../src/hc/pin.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-test('이슈 #18 최소 Node: 22.15부터(22.13은 한글 경로 종료, 22.14는 zstd 없음). 지금 Node는 통과', () => {
+test('이슈 #18 지원 Node: 22.x는 22.15부터(22.13 한글 경로 종료, 22.14 zstd 없음), 24.14부터(24.10~24.13 한글 경로 종료). 지금 Node는 통과', () => {
   const range = engineRange();
-  assert.equal(range, '>=22.15');
-  for (const v of ['22.13.0', '22.14.0', '22.12.9', '20.18.0', 'v22.14.1']) assert.ok(!nodeSatisfies(v, range), v);
-  for (const v of ['22.15.0', '22.15.1', '22.23.5', '24.11.0', 'v25.0.0']) assert.ok(nodeSatisfies(v, range), v);
-  assert.equal(nodeProblem('22.13.0', range), '지원하지 않는 Node 버전입니다(22.13.0). Node 22.15 이상이 필요합니다(https://nodejs.org/)');
+  assert.equal(range, '^22.15.0 || >=24.14.0');
+  for (const v of ['22.13.0', '22.14.0', '22.12.9', '20.18.0', 'v22.14.1', '23.11.1', '24.0.0', '24.11.0', '24.13.1']) assert.ok(!nodeSatisfies(v, range), v);
+  for (const v of ['22.15.0', '22.15.1', '22.23.5', '24.14.0', '24.19.0', 'v25.9.0', '26.0.0-pre']) assert.ok(nodeSatisfies(v, range), v);
+  assert.equal(nodeProblem('24.11.0', range), '지원하지 않는 Node 버전입니다(24.11.0). 필요한 버전: 22.x는 22.15 이상, 또는 24.14 이상(https://nodejs.org/)');
+  assert.equal(rangeText('>=22.13'), '22.13 이상');
   assert.equal(nodeProblem('22.15.0', range), null);
   assert.equal(nodeProblem(), null);
   assert.equal(U.nodeSatisfies, nodeSatisfies); // update.mjs는 같은 함수를 낸다
-  assert.ok(nodeSatisfies('1.0.0', null) && nodeSatisfies('1.0.0', '^22')); // 모르는 꼴은 막지 않는다
+  // 다른 꼴: 하나만 쓴 >=, 범위 끝 <, 같음. 모르는 꼴은 막지 않는다
+  assert.ok(nodeSatisfies('22.13.0', '>=22.13') && !nodeSatisfies('22.12.0', '>=22.13'));
+  assert.ok(nodeSatisfies('22.15.0', '>=22.15 <23') && !nodeSatisfies('23.0.0', '>=22.15 <23'));
+  assert.ok(nodeSatisfies('1.0.0', null) && nodeSatisfies('1.0.0', '~22') && nodeSatisfies('1.0.0', '22.x'));
 });
 
-test('이슈 #18 같은 최소 버전: 두 package.json의 engines, README 두 벌의 배지와 요구 표', () => {
-  const min = engineRange().replace(/^>=/, '');
-  for (const p of ['backend/package.json', 'app/package.json']) assert.equal(JSON.parse(read(p)).engines.node, `>=${min}`, p);
+test('이슈 #18 같은 범위: 두 package.json의 engines, README 두 벌의 배지와 요구 표', () => {
+  const range = engineRange();
+  for (const p of ['backend/package.json', 'app/package.json']) assert.equal(JSON.parse(read(p)).engines.node, range, p);
   for (const p of ['README.md', 'README.ko.md']) {
     const t = read(p);
-    assert.ok(t.includes(`alt="Node.js ${min}+"`) && t.includes(`badge/Node.js-${min}%2B`), `${p} 배지`);
-    assert.match(t, new RegExp(`\\| \\[Node\\.js\\]\\(https://nodejs\\.org/\\) \\| ${min.replace('.', '\\.')} `), `${p} 요구 표`);
+    assert.ok(t.includes('alt="Node.js 22.15+ or 24.14+"') && t.includes('badge/Node.js-22.15%2B%20%7C%2024.14%2B'), `${p} 배지`);
+    const row = t.split('\n').find((l) => l.startsWith('| [Node.js](https://nodejs.org/) |'));
+    assert.ok(row && row.includes('22.15') && row.includes('24.14'), `${p} 요구 표`);
   }
 });
 
