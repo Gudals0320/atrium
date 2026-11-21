@@ -44,7 +44,7 @@ test('P292 두 사전: userTasks 말이 같은 열쇠로 있다', () => {
   const k = ko.default || ko; const e = en.default || en;
   const K = (o) => JSON.stringify(Object.keys(o.userTasks).sort()) + JSON.stringify(Object.keys(o.userTasks.kind).sort());
   assert.equal(K(k), K(e));
-  assert.equal(k.userTasks.pill, '내 몫'); assert.equal(e.userTasks.pill, 'For you');
+  assert.equal(k.userTasks.pill, '할 일'); assert.equal(e.userTasks.pill, 'To do'); // P305
   for (const x of ['decide', 'do', 'check', 'later']) { assert.ok(k.userTasks.kind[x]); assert.ok(e.userTasks.kind[x]); }
   assert.match(k.userTasks.later, /\{n\}/); assert.match(e.userTasks.markN, /\{n\}/);
 });

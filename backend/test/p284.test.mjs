@@ -258,8 +258,8 @@ test('P284 CLI: atrium ask → 번호, --list, --done, 하위 거절(종료 코�
 
 test('P284 웹 푸시: 결정 카드는 응답 필요 스위치를 따르고 카드마다 한 번', () => {
   assert.equal(prefKind('decision'), 'need');
-  assert.equal(pushText([{ name: 'lead', kind: 'decision', ws: 'repo' }], 'ko').title, '@lead · 결정 필요');
-  assert.equal(pushText([{ name: 'lead', kind: 'decision', ws: 'repo' }], 'en').title, '@lead · decision needed');
+  assert.equal(pushText([{ name: 'lead', kind: 'decision', ws: 'repo' }], 'ko').title, '@lead · 할 일');
+  assert.equal(pushText([{ name: 'lead', kind: 'decision', ws: 'repo' }], 'en').title, '@lead · to do');
   assert.equal(pushPayload([{ sessionId: 'a', name: 'a', kind: 'done' }, { sessionId: 'b', name: 'b', kind: 'decision' }], 'en').sessionId, 'b');
   const p = new Pusher({ store: null, timers: false, batchMs: 60000 });
   try {

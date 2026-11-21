@@ -81,7 +81,7 @@ async function pcShots(page, lang) {
   await page.waitForSelector('[data-role=decisions]', { timeout: 15000 });
   const pill = await page.$eval('[data-role=decisions]', (e) => ({ n: Number(e.dataset.count), total: Number(e.dataset.total), text: e.textContent }));
   const all = cards(); const act = all.filter((c) => !c.deferred).length;
-  check(`[${lang}] 알약 "${lang === 'ko' ? '내 몫' : 'For you'} n" = 지금 목록 수`, pill.n === act && pill.text.includes(lang === 'ko' ? '내 몫' : 'For you'), { pill, act });
+  check(`[${lang}] 알약 "${lang === 'ko' ? '할 일' : 'To do'} n" = 지금 목록 수`, pill.n === act && pill.text.includes(lang === 'ko' ? '할 일' : 'To do'), { pill, act });
   await page.click('[data-role=decisions]'); await sleep(700);
   const kinds = await page.$$eval('[data-role=decisions-list] [data-role=decision] [data-role=decision-kind]', (xs) => xs.map((x) => x.dataset.kind));
   check(`[${lang}] 목록에 종류 섞임(결정·할 일·확인)`, ['decide', 'do', 'check'].every((k) => kinds.includes(k)), kinds);
@@ -102,7 +102,7 @@ async function pcShots(page, lang) {
   const id = lead().sessionId;
   await page.evaluate((sid) => window.__mt.getState().navigateTo(sid), id); await sleep(1500);
   const marks = await page.$$eval('.mt-node-head [data-role=decision-mark]', (xs) => xs.map((x) => x.textContent));
-  check(`[${lang}] 세션 카드 머리 표식 "${lang === 'ko' ? '내 몫' : 'for you'}"`, marks.length === 1 && marks[0].includes(lang === 'ko' ? '내 몫' : 'for you'), marks);
+  check(`[${lang}] 세션 카드 머리 표식 "${lang === 'ko' ? '할 일' : 'to do'}"`, marks.length === 1 && marks[0].includes(lang === 'ko' ? '할 일' : 'to do'), marks);
   const heads = await page.$$('.mt-node-head');
   for (const h of heads) { if (await h.$('[data-role=decision-mark]')) { await h.screenshot({ path: path.join(OUT, `pc-node-mark-${lang}.png`) }).catch(() => {}); break; } }
 }
@@ -190,7 +190,7 @@ async function phone() {
         await pg.waitForSelector('[data-role=pl-decisions]', { timeout: 20000 }); await sleep(600);
         if (pass !== 'flow') {
         const pill = await pg.$eval('[data-role=pl-decisions]', (e) => ({ n: e.dataset.count, text: e.textContent }));
-        check(`[phone ${lang}] 알약 "${lang === 'ko' ? '내 몫' : 'For you'}"`, pill.text.includes(lang === 'ko' ? '내 몫' : 'For you') && Number(pill.n) === cards().filter((c) => !c.deferred).length, pill);
+        check(`[phone ${lang}] 알약 "${lang === 'ko' ? '할 일' : 'To do'}"`, pill.text.includes(lang === 'ko' ? '할 일' : 'To do') && Number(pill.n) === cards().filter((c) => !c.deferred).length, pill);
         await shot(pg, `phone-map-${lang}`);
         await pg.tap('[data-role=pl-decisions]'); await sleep(700);
         const kinds = await pg.$$eval('[data-role=decisions-sheet] [data-role=decision] [data-role=decision-kind]', (xs) => xs.map((x) => x.dataset.kind));

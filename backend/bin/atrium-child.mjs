@@ -86,8 +86,8 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium ask --done <번호>      사람이 다른 길로 답해 끝난(쓸모없어진) 너의 카드를 닫는다
   atrium ask --list             너의 열린 결정 카드
   atrium todo "<할 일 한 줄>" [--cmd "<명령>"]… [--check] [--later "<YYYY-MM-DD[ HH:MM] 또는 조건>"] [--why "<맥락 한 줄>"] [--tell] [--no-wait | --wait]
-      사람이 해야 할 일(터미널에 칠 명령, 해 줄 행동, 검증, 나중으로 미룬 일)을 대화에 쓰고 이것으로 보드의 "내 몫" 목록에도 남긴다. 카드 번호를 돌려준다.
-      기본은 할 일: 사람이 "했음"을 누르면 기록만 된다(--tell이면 "[할 일] <할 일> → 했음" 글이 온다). --cmd는 사람이 복사할 명령(${TODO_CMDS_MAX}개, 각 ${TODO_CMD_MAX}자).
+      사람이 해야 할 일(터미널에 칠 명령, 해 줄 행동, 검증, 나중으로 미룬 일)을 대화에 쓰고 이것으로 보드의 "할 일 목록"에도 남긴다. 카드 번호를 돌려준다.
+      기본은 실행: 사람이 "했음"을 누르면 기록만 된다(--tell이면 "[실행] <할 일> → 했음" 글이 온다). --cmd는 사람이 복사할 명령(${TODO_CMDS_MAX}개, 각 ${TODO_CMD_MAX}자).
       --check는 확인: 사람이 됐다/안 됐다와 한 줄 메모로 답하면 "[확인] <할 일> → 됐다: 메모" 글이 온다.
       확인 결과와 --tell의 했음은 기본으로 너에게 다음 글이 갈 때 그 앞에 실려 온다. 그 답을 기다리며 멈출 거면 --wait(곧바로 온다).
       --later는 나중에: 날짜·시각이면 그때까지 숨겼다가 띄우고(날짜만이면 그날 9시), 조건 글이면 사람이 꺼낼 때까지 "나중"에 둔다(따로 ${TODO_LATER_MAX}장까지).
@@ -339,7 +339,7 @@ async function askVerb() {
 }
 
 // ---------- P292: atrium todo ----------
-const KIND_KO = { decide: '결정', do: '할 일', check: '확인', later: '나중에' };
+const KIND_KO = { decide: '결정', do: '실행', check: '확인', later: '나중에' }; // P305: do는 "실행"(목록 이름 "할 일"과 겹치지 않게)
 function todoLine(d, now) {
   const cmds = d.cmds && d.cmds.length ? ` 명령: ${d.cmds.map((c) => `\`${c}\``).join(', ')}` : '';
   const when = d.cond ? ` (조건: ${d.cond})` : d.wakeAt && d.wakeAt > now ? ` (${new Date(d.wakeAt).toLocaleString('sv-SE').slice(0, 16)}에 띄움)` : '';
@@ -365,7 +365,7 @@ async function todoVerb() {
   const r = await call('todo', body, 20000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1); return; }
-  if (r.error) fail(`사용자 몫 카드를 ${body.list ? '읽지' : body.done ? '닫지' : '남기지'} 않았다(${r.error.code}): ${r.error.message}`, r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1);
+  if (r.error) fail(`할 일 카드를 ${body.list ? '읽지' : body.done ? '닫지' : '남기지'} 않았다(${r.error.code}): ${r.error.message}`, r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1);
   const x = r.result; const now = Date.now();
   if (body.list) {
     if (!x.cards.length) return say('열린 카드가 없다.');
@@ -379,8 +379,8 @@ async function todoVerb() {
   const what = x.kind === 'check' ? '사람이 됐다/안 됐다로 답하면 "[확인] <할 일> → 됐다: 메모" 글로 들어온다.'
     : c.cond ? '사람이 꺼낼 때까지 "나중"에 둔다.'
     : c.wakeAt ? `${new Date(c.wakeAt).toLocaleString('sv-SE').slice(0, 16)}까지 숨겼다가 띄운다.`
-    : c.tell ? '사람이 했음을 누르면 "[할 일] <할 일> → 했음" 글로 들어온다.' : '사람이 했음을 누르면 기록만 된다(알아야 하면 --tell).';
-  say(`${KIND_KO[x.kind] || x.kind} 카드 #${x.id}를 보드의 "내 몫"에 남겼다(${x.kind === 'later' ? '나중' : '열린'} 카드 ${x.open}/${x.max}). ${what}${(c.timing && (x.kind === 'check' || c.tell) && TIMING_SAY[c.timing]) || ''}`);
+    : c.tell ? '사람이 했음을 누르면 "[실행] <할 일> → 했음" 글로 들어온다.' : '사람이 했음을 누르면 기록만 된다(알아야 하면 --tell).';
+  say(`${KIND_KO[x.kind] || x.kind} 카드 #${x.id}를 보드의 "할 일 목록"에 남겼다(${x.kind === 'later' ? '나중' : '열린'} 카드 ${x.open}/${x.max}). ${what}${(c.timing && (x.kind === 'check' || c.tell) && TIMING_SAY[c.timing]) || ''}`);
   say('대화에 쓴 글은 그대로 두고 턴을 끝낸다. 끝났거나 쓸모없어지면 atrium todo --done ' + x.id + '.');
 }
 
