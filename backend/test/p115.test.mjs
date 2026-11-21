@@ -85,8 +85,8 @@ test('P115 판이 정하는 인자: 하네스마다(codex resume·-c developer_i
 
 test('P115 계약: atrium help --json은 계약 버전·동사(+help)·인자·출력·종료 코드. 짧은 사용법은 동사마다 한 줄(P116: 계약 2, prompt·wait·read, 종료 코드 3)', () => {
   const j = contractJson();
-  assert.equal(j.contract, CONTRACT_VERSION); assert.equal(CONTRACT_VERSION, 7); // P284: ask로 7. P269: rig를 걷어 6. P249: 옛 rig를 걷어 5. P185: rig 자리로 4 // P156: 일 관계로 3
-  assert.deepEqual(VERB_NAMES, ['prompt', 'wait', 'read', 'me', 'child', 'relate', 'log', 'news', 'children', 'child-kill', 'child-wait', 'wake', 'models', 'done', 'item', 'items', 'guide', 'docs', 'usage', 'ask']); // P284: ask. P269: rig 없음. P257: docs. P180: done·item·items(더하기만). P182: guide. P183: tool. P188: rig. P204: log·news. P211: usage
+  assert.equal(j.contract, CONTRACT_VERSION); assert.equal(CONTRACT_VERSION, 8); // P292: todo로 8. P284: ask로 7. P269: rig를 걷어 6. P249: 옛 rig를 걷어 5. P185: rig 자리로 4 // P156: 일 관계로 3
+  assert.deepEqual(VERB_NAMES, ['prompt', 'wait', 'read', 'me', 'child', 'relate', 'log', 'news', 'children', 'child-kill', 'child-wait', 'wake', 'models', 'done', 'item', 'items', 'guide', 'docs', 'usage', 'ask', 'todo']); // P292: todo. P284: ask. P269: rig 없음. P257: docs. P180: done·item·items(더하기만). P182: guide. P183: tool. P188: rig. P204: log·news. P211: usage
   assert.ok(VERBS.every((v) => Array.isArray(v.args) && v.does && Array.isArray(v.out)));
   assert.deepEqual(j.exit, { ok: 0, refused: 1, usage: 2, timeout: 3 });
   for (const r of ['Bash(atrium help)', 'Bash(atrium help *)', 'PowerShell(atrium help)', 'Bash(mtask help)']) assert.ok(ATRIUM_ALLOW.includes(r), r); // Claude Code가 묻지 않고 사용법을 읽는다

@@ -305,7 +305,7 @@ export class Pusher {
     return kind;
   }
   // P284: 결정 카드 하나(atrium ask). 응답 필요(need) 스위치·묶음·보는 중·PC 사용 중 규칙 그대로, 카드마다 한 번. 결정 카드를 남기는 세션은 하위가 아니다
-  decision(it) { this.dispatch({ sessionId: it.sessionId, name: it.name, kind: 'decision', workspaceKey: it.workspaceKey || null, coolKey: `decision|${it.id}` }, false); }
+  decision(it) { this.dispatch({ sessionId: it.sessionId, name: it.name, kind: 'decision', workspaceKey: it.workspaceKey || null, coolKey: `decision|${it.id}${it.wake ? `|w${it.wake}` : ''}` }, false); } // P292: 숨겼다 띄운 카드(wake)는 한 번 더
   // 판의 세션 나무. 막 바뀐 세션은 받은 요약(sum)의 상태로 맞춘다
   treeNow(sum = null) {
     let nodes = [];

@@ -18,11 +18,12 @@
 //       atrium guide [merger] [--json]   (P182: 자세한 사용법. P267: merger 안내)
 //       atrium docs [--json]   (P257: 이 워크스페이스의 문서 점검 결과)
 //       atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"] | --done <번호> | --list [--json]   (P284: 결정 카드)
+//       atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell] | --done <번호> | --list [--json]   (P292: 사용자 몫)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { envVar, terminalSessionVar } from '../src/config.mjs';
-import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP, PEER_RULE_SHORT, NEWS_LOG_MAX, ASK_QUESTION_MAX, ASK_OPTIONS_MAX, ASK_OPTION_MAX, ASK_WHY_MAX, ASK_OPEN_MAX } from '../src/cli-contract.mjs'; // P284: 결정 카드 상한 // P204: 동료 소식 // P115: 계약(atrium help --json). P156: 관계 고르기 안내
+import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP, PEER_RULE_SHORT, NEWS_LOG_MAX, ASK_QUESTION_MAX, ASK_OPTIONS_MAX, ASK_OPTION_MAX, ASK_WHY_MAX, ASK_OPEN_MAX, TODO_CMDS_MAX, TODO_CMD_MAX, TODO_LATER_MAX } from '../src/cli-contract.mjs'; // P292: 사용자 몫 상한 // P284: 결정 카드 상한 // P204: 동료 소식 // P115: 계약(atrium help --json). P156: 관계 고르기 안내
 import { usageLines } from '../src/usage-text.mjs'; // P211: atrium usage
 
 // P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
@@ -80,6 +81,14 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       상한: 질문 ${ASK_QUESTION_MAX}자, 보기 ${ASK_OPTIONS_MAX}개(각 ${ASK_OPTION_MAX}자), 맥락 ${ASK_WHY_MAX}자, 열린 카드 ${ASK_OPEN_MAX}장. 사람과 직접 일하는 세션만 쓴다(하위 워커는 부모에게 atrium prompt로 묻는다).
   atrium ask --done <번호>      사람이 다른 길로 답해 끝난(쓸모없어진) 너의 카드를 닫는다
   atrium ask --list             너의 열린 결정 카드
+  atrium todo "<할 일 한 줄>" [--cmd "<명령>"]… [--check] [--later "<YYYY-MM-DD[ HH:MM] 또는 조건>"] [--why "<맥락 한 줄>"] [--tell]
+      사람이 해야 할 일(터미널에 칠 명령, 해 줄 행동, 검증, 나중으로 미룬 일)을 대화에 쓰고 이것으로 보드의 "내 몫" 목록에도 남긴다. 카드 번호를 돌려준다.
+      기본은 할 일: 사람이 "했음"을 누르면 기록만 된다(--tell이면 "[할 일] <할 일> → 했음" 글이 온다). --cmd는 사람이 복사할 명령(${TODO_CMDS_MAX}개, 각 ${TODO_CMD_MAX}자).
+      --check는 확인: 사람이 됐다/안 됐다와 한 줄 메모로 답하면 "[확인] <할 일> → 됐다: 메모" 글이 온다.
+      --later는 나중에: 날짜·시각이면 그때까지 숨겼다가 띄우고(날짜만이면 그날 9시), 조건 글이면 사람이 꺼낼 때까지 "나중"에 둔다(따로 ${TODO_LATER_MAX}장까지).
+      열린 카드는 결정 카드와 합쳐 ${ASK_OPEN_MAX}장까지. 사람과 직접 일하는 세션만 쓴다(하위 워커는 부모에게 atrium prompt로 넘긴다).
+  atrium todo --done <번호>     끝났거나 쓸모없어진 너의 카드를 닫는다
+  atrium todo --list            너의 열린 카드와 나중 카드
   atrium guide                  이 사용법
   atrium guide merger           합치기 merger의 안내(P267: 보드가 브랜치 워커의 합치기를 맡기는 세션)
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
@@ -87,8 +96,8 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
-const MULTI = new Set(['option']); // P284: ask --option 여럿
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'list']); // P284: ask --list // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
+const MULTI = new Set(['option', 'cmd']); // P284: ask --option 여럿. P292: todo --cmd 여럿
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'list', 'check', 'tell']); // P292: todo --check·--tell // P284: ask --list // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
 // P208: PowerShell 꾸러미(atrium.ps1)는 인자를 JSON으로 env에 실어 준다(cmd를 거치지 않아 여러 줄·따옴표·<>|&%가 그대로 온다). 읽고 지운다
 function argvOf() {
   const j = process.env.ATRIUM_ARGV_JSON; const f = process.env.ATRIUM_ARGV_FILE;
@@ -151,6 +160,7 @@ async function main() {
   if (cmd === 'guide') return guideVerb(); // P182
   if (cmd === 'log' || cmd === 'news') return newsVerb(cmd); // P204
   if (cmd === 'ask') return askVerb(); // P284
+  if (cmd === 'todo') return todoVerb(); // P292
   if (cmd === 'docs') { // P257: 문서 점검 결과
     const u = await call('docs', {}, 30000);
     if (flags.json) { say(JSON.stringify(u.result ?? { error: u.error }, null, 2)); if (u.error) process.exit(1); return; }
@@ -301,6 +311,51 @@ async function askVerb() {
   if (body.done) return say(x.closed ? `결정 카드 #${x.id}를 닫았다.` : `결정 카드 #${x.id}는 이미 끝났다(${x.state}).`);
   say(`결정 카드 #${x.id}를 보드에 남겼다(열린 카드 ${x.open}/${x.max}). 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글로 들어온다. 무시하면 아무것도 오지 않는다.`);
   say('대화에 쓴 질문은 그대로 두고 턴을 끝낸다. 사람이 다른 길로 답하면 보드가 닫는다(필요하면 atrium ask --done ' + x.id + ').');
+}
+
+// ---------- P292: atrium todo ----------
+const KIND_KO = { decide: '결정', do: '할 일', check: '확인', later: '나중에' };
+function todoLine(d, now) {
+  const cmds = d.cmds && d.cmds.length ? ` 명령: ${d.cmds.map((c) => `\`${c}\``).join(', ')}` : '';
+  const when = d.cond ? ` (조건: ${d.cond})` : d.wakeAt && d.wakeAt > now ? ` (${new Date(d.wakeAt).toLocaleString('sv-SE').slice(0, 16)}에 띄움)` : '';
+  return `  #${d.id} [${KIND_KO[d.kind] || d.kind}${d.auto ? '·자동' : ''}] · ${ago(d.createdAt, now)}: ${d.question}${cmds}${when}${d.tell ? ' (했음을 알림)' : ''}`;
+}
+async function todoVerb() {
+  let body;
+  if (flags.list) { if (rest.length || flags.done != null) fail('사용법: atrium todo --list', 2); body = { list: true }; }
+  else if (flags.done != null && flags.done !== true) { if (rest.length) fail('사용법: atrium todo --done <번호>', 2); body = { done: String(flags.done) }; }
+  else {
+    if (flags.done != null) fail('닫을 카드 번호를 준다: atrium todo --done <번호>', 2);
+    const text = rest.join(' ').replace(/\s+/g, ' ').trim();
+    if (!text) fail('할 일 한 줄을 준다: atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell]', 2);
+    if (text.length > ASK_QUESTION_MAX) fail(`할 일이 너무 길다(${text.length}자, ${ASK_QUESTION_MAX}자까지). 한 줄로 줄이고 맥락은 --why에 쓴다`, 2);
+    const cmds = (flags.cmd || []).filter((x) => x != null && x !== true).map(String);
+    if (cmds.length > TODO_CMDS_MAX) fail(`명령이 너무 많다(${cmds.length}개, ${TODO_CMDS_MAX}개까지)`, 2);
+    if (flags.why === true) fail('맥락 한 줄을 준다: --why "<맥락>"', 2);
+    if (flags.later === true) fail('언제·어떤 조건에 할지 준다: --later "YYYY-MM-DD[ HH:MM]" 또는 --later "<조건>"', 2);
+    if (flags.check && flags.later != null) fail('--check와 --later는 함께 쓰지 않는다', 2);
+    body = { text, cmds, ...(flags.check ? { check: true } : {}), ...(flags.tell ? { tell: true } : {}), ...(flags.later != null ? { later: String(flags.later) } : {}), ...(flags.why != null ? { why: String(flags.why) } : {}) };
+  }
+  const r = await call('todo', body, 20000);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1); return; }
+  if (r.error) fail(`사용자 몫 카드를 ${body.list ? '읽지' : body.done ? '닫지' : '남기지'} 않았다(${r.error.code}): ${r.error.message}`, r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1);
+  const x = r.result; const now = Date.now();
+  if (body.list) {
+    if (!x.cards.length) return say('열린 카드가 없다.');
+    const act = x.cards.filter((d) => !d.deferred); const lat = x.cards.filter((d) => d.deferred);
+    if (act.length) { say(`열린 카드 ${act.length}장(오래된 것부터):`); for (const d of act) say(todoLine(d, now)); }
+    if (lat.length) { say(`나중 ${lat.length}장:`); for (const d of lat) say(todoLine(d, now)); }
+    return say('끝났거나 쓸모없어진 카드는 atrium todo --done <번호>로 닫는다.');
+  }
+  if (body.done) return say(x.closed ? `카드 #${x.id}를 닫았다.` : `카드 #${x.id}는 이미 끝났다(${x.state}).`);
+  const c = x.card || {};
+  const what = x.kind === 'check' ? '사람이 됐다/안 됐다로 답하면 "[확인] <할 일> → 됐다: 메모" 글로 들어온다.'
+    : c.cond ? '사람이 꺼낼 때까지 "나중"에 둔다.'
+    : c.wakeAt ? `${new Date(c.wakeAt).toLocaleString('sv-SE').slice(0, 16)}까지 숨겼다가 띄운다.`
+    : c.tell ? '사람이 했음을 누르면 "[할 일] <할 일> → 했음" 글로 들어온다.' : '사람이 했음을 누르면 기록만 된다(알아야 하면 --tell).';
+  say(`${KIND_KO[x.kind] || x.kind} 카드 #${x.id}를 보드의 "내 몫"에 남겼다(${x.kind === 'later' ? '나중' : '열린'} 카드 ${x.open}/${x.max}). ${what}`);
+  say('대화에 쓴 글은 그대로 두고 턴을 끝낸다. 끝났거나 쓸모없어지면 atrium todo --done ' + x.id + '.');
 }
 
 // ---------- P204: atrium log | news ----------

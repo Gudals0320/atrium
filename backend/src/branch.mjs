@@ -68,9 +68,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
-    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`, `Bash(${c} ask:*)`, `Bash(${c} ask *)`]), // P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
+    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`, `Bash(${c} ask:*)`, `Bash(${c} ask *)`, `Bash(${c} todo:*)`, `Bash(${c} todo *)`]), // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
-    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`, `PowerShell(${c} ask *)`]), // P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
+    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`, `PowerShell(${c} ask *)`, `PowerShell(${c} todo *)`]), // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
 ];
 // P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
 const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
@@ -289,6 +289,13 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 - 사람이 카드에서 답하면 \`[결정] <질문> → <답>\` 글이 들어온다. 무시하면 아무것도 오지 않는다(되묻지 않는다). 사람이 대화로 직접 답하면 보드가 카드를 닫는다.
 - 권한·신뢰·모델·하네스 질문은 카드가 아니다(보드가 따로 알린다). 하위 워커는 카드를 남기지 않고 부모에게 \`atrium prompt\`로 묻는다.
 - 쓸모없어진 카드는 \`atrium ask --done <번호>\`, 열린 카드 목록은 \`atrium ask --list\`.
+
+## 사람에게 넘기기(사용자 몫)
+
+- 사람이 해야 할 일은 대화에 쓰고 \`atrium todo "<할 일 한 줄>"\`로 보드의 "내 몫" 목록에도 남긴다. 사람이 칠 명령은 \`--cmd "<명령>"\`(여럿이면 되풀이, 카드에 복사 단추가 붙는다).
+- 사람이 확인해 줘야 하면 \`--check\`(사람이 됐다/안 됐다로 답하면 \`[확인] <할 일> → 됐다: 메모\` 글이 온다). 할 일의 했음은 기록만 되고, 알아야 하면 \`--tell\`(\`[할 일] <할 일> → 했음\`).
+- 나중으로 미룬 일은 \`--later "YYYY-MM-DD HH:MM"\`(그때 보드가 띄운다) 또는 \`--later "<조건 글>"\`(사람이 꺼낼 때까지 "나중"에 둔다).
+- 닫기 \`atrium todo --done <번호>\`, 목록 \`atrium todo --list\`. 하위 워커는 부모에게 \`atrium prompt\`로 넘긴다.
 `;
 export function boardSkill(name = SKILL_NAME) {
   const description = name === SKILL_NAME
@@ -594,6 +601,7 @@ export class Branch {
     if (op === 'log') return this.news.logVerb(s, body); // P204: atrium log "<한 줄>"
     if (op === 'news') return this.news.newsVerb(s, body); // P204: atrium news [<이름>] [--all]
     if (op === 'ask') return this.decisions.askVerb(s, body); // P284: atrium ask "<질문>" | --done <번호> | --list
+    if (op === 'todo') return this.decisions.todoVerb(s, body); // P292: atrium todo "<할 일>" [--cmd …] [--check] [--later …] [--tell] | --done <번호> | --list
     if (op === 'docs') return this.docs.verb(s); // P257: atrium docs(문서 점검 결과)
     if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
     if (op === 'usage-report') return this.b.usage ? this.b.usage.report(String(body.kind || ''), body.input) : { ok: false }; // P211: 판의 상태 줄 명령이 알린 사용량

@@ -55,9 +55,9 @@ function namedHeads(all, question) {
 }
 
 // 한국어 부탁(사람에게 정해·알려 달라는 말)
-const KO_ASK = /(정해|말씀해|알려|확인해|골라|선택해|결정해|답해|지정해|승인해|검토해)\s?(주세요|주십시오|주시겠어요|주실래요|줘|줄래)/;
+const KO_ASK = /(정해|말씀해|알려|확인해|골라|선택해|결정해|답해|지정해|승인해|검토해|봐|살펴봐|테스트해|시험해)\s?(주세요|주십시오|주시겠어요|주실래요|줘|줄래)/; // P292: 봐·살펴봐·테스트해·시험해(확인 부탁)
 const KO_Q_END = /(까요?|나요|습니까|던가요|실래요|으신가요|인가요|건가요|을지요|할지요)\s*[.!…]*$/;
-const EN_ASK = /^(let me know|please (confirm|choose|pick|decide|tell me|advise|select|let me know)|tell me (which|whether|if)|your call)/i;
+const EN_ASK = /^(let me know|please (confirm|choose|pick|decide|tell me|advise|select|let me know|check|verify|test|try)|tell me (which|whether|if)|your call|(can|could) you (check|verify|test|try)\b)/i; // P292: check·verify·test·try
 // 한 문장이 사람에게 묻는가
 export function isQuestion(sentence) {
   const s = noCode(plain(sentence)).replace(/[\s"'”’)\]】」』]+$/u, '').replace(/[\s\p{Extended_Pictographic}\uFE0F]+$/u, '').trim();
@@ -135,4 +135,89 @@ function findIn(text) {
     return { question, options, line: plain(l) };
   }
   return tail.length === 1 ? undefined : null;
+}
+
+// ---------- P292: 사용자 몫의 자동 카드 종류 ----------
+// findAsk(text) → { kind: 'do'|'check'|'decide', question, options, cmds, line } | null
+// - 할 일(do): 끝 쪽 글이 사람에게 명령 실행을 청하고("실행해 주세요", "쳐 주세요", "입력해 주세요", "please run …", "run the following")
+//   그 앞뒤 코드 덩어리, `! …` 줄, 청하는 문장 안 줄 안 코드에서 명령을 하나 이상 뽑으면. 명령은 TODO 상한(6개, 각 500자)으로 자른다.
+// - 확인(check): findQuestion이 고른 문장이 물음표 없이 확인을 청하면("확인해 주세요", "봐 주세요", "please check|verify|test|try", "let me know if it works").
+// - 그 밖의 질문은 결정(decide). 못 가리면 결정이다.
+export const AUTO_CMDS_MAX = 6;
+export const AUTO_CMD_MAX = 500;
+const KO_RUN = /(실행해|실행시켜|입력해|쳐|돌려|붙여\s?넣어|복사해\s?실행해)\s?(주세요|주십시오|주시겠어요|주실래요|줘|줄래|보세요|봐\s?주세요)|실행\s?부탁/;
+const EN_RUN = /\b(please|could you|can you|you can|you'?ll need to|you need to)\s+(run|execute|type|paste)\b|^(run|execute)\s+(this|these|the following|the command|the commands|it|`)/i;
+const KO_CHECK = /(확인해|봐|살펴봐|테스트해|시험해|써\s?봐)\s?(주세요|주십시오|주시겠어요|주실래요|줘|줄래)|확인\s?부탁/;
+const EN_CHECK = /(^|\b)(please\s+)?(check|verify|test|try)\b|let me know (if|whether) (it|that|this|everything) (works|looks|is)|(can|could) you (check|verify|test|try)/i;
+// 한 문장이 확인을 청하는가(물음표로 끝나면 결정)
+export function isCheck(sentence) {
+  const s = noCode(plain(String(sentence ?? ''))).trim();
+  if (!s) return false;
+  if (/[?？]\s*$/.test(s)) return /^(can|could|would) you (please )?(check|verify|test|try)\b/i.test(s) || /(확인해|봐|테스트해|시험해)\s?(주시겠어요|주실래요|줄래)\s*[?？]$/.test(s); // 물음꼴 확인 부탁("Can you check …?")만 확인, 그 밖의 물음은 결정
+  return KO_CHECK.test(s) || EN_CHECK.test(s);
+}
+export function isRunRequest(sentence) {
+  const s = noCode(plain(String(sentence ?? ''))).replace(/\s+/g, ' ').trim();
+  return !!s && (KO_RUN.test(s) || EN_RUN.test(s));
+}
+// 명령 한 줄 다듬기: 셸 머리($, >, PS>, PS C:\…>)를 벗기고 주석·빈 줄은 버린다(`! …`은 Claude Code 입력 칸 꼴이라 그대로 둔다)
+export function cleanCmd(l) {
+  let s = String(l ?? '').replace(/\s+$/, '');
+  s = s.replace(/^\s*(PS [^>]{0,200}>|PS>|\$|>)\s+/, '').trim();
+  if (!s || /^(#|\/\/|REM\b|::)/i.test(s)) return null;
+  return clipTo(s, AUTO_CMD_MAX);
+}
+export function findRun(text) {
+  if (typeof text !== 'string' || !text.trim()) return null;
+  // 덩어리: 글 문단(빈 줄로 나뉨)과 코드 덩어리
+  const segs = []; let cur = null; let fence = null;
+  for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
+    const m = raw.match(FENCE);
+    if (fence) { if (m && raw.trim().startsWith(fence)) { segs.push(cur); cur = null; fence = null; } else cur.lines.push(raw); continue; }
+    if (m) { if (cur) segs.push(cur); cur = { type: 'code', lines: [] }; fence = m[1].slice(0, 3); continue; }
+    if (!raw.trim()) { if (cur) segs.push(cur), cur = null; continue; }
+    if (!cur) cur = { type: 'text', lines: [] };
+    cur.lines.push(raw.replace(/\s+$/, ''));
+  }
+  if (cur) segs.push(cur);
+  // 끝에서부터 청하는 문장(끝 글 덩어리 셋 안, 그 뒤 글은 짧은 맺음 두 줄까지)
+  let after = 0; let textSeen = 0;
+  for (let i = segs.length - 1; i >= 0 && textSeen < 3; i--) {
+    const g = segs[i];
+    if (g.type !== 'text') continue;
+    textSeen++;
+    for (let j = g.lines.length - 1; j >= 0; j--) {
+      const l = g.lines[j];
+      const codes = []; const masked = l.replace(/`[^`]*`/g, (x) => { codes.push(x); return `\u0000${codes.length - 1}\u0000`; });
+      const ss = sentences(masked);
+      const k = ss.findIndex((x) => isRunRequest(x.replace(/\u0000\d+\u0000/g, ' x ')));
+      if (k < 0) { if (!/^\s*!\s/.test(l)) after++; if (after > TAIL_AFTER + 1) return null; continue; }
+      const sentence = ss.slice(k).join(' ').replace(/\u0000(\d+)\u0000/g, (_, n) => codes[Number(n)]);
+      // 명령: 뒤 코드 덩어리들, 없으면 바로 앞 코드 덩어리. 이 문단의 `! …`·`$ …` 줄. 그래도 없으면 청하는 문장 안 줄 안 코드
+      let cmds = [];
+      const later = segs.slice(i + 1).filter((x) => x.type === 'code');
+      const blocks = later.length ? later : (i > 0 && segs[i - 1].type === 'code' ? [segs[i - 1]] : []);
+      for (const b of blocks) for (const x of b.lines) { const c = cleanCmd(x); if (c) cmds.push(c); }
+      for (const x of [...g.lines, ...segs.slice(i + 1).filter((y) => y.type === 'text').flatMap((y) => y.lines)]) { const m = x.match(/^\s*(!\s.+|\$\s.+)$/); if (m) { const c = cleanCmd(m[1]); if (c) cmds.push(c); } }
+      if (!cmds.length) for (const x of codes) { const c = cleanCmd(x.slice(1, -1)); if (c && !/^\S+\.(md|txt|json|png|jpg|log)$/i.test(c)) cmds.push(c); }
+      cmds = [...new Set(cmds)].slice(0, AUTO_CMDS_MAX);
+      if (!cmds.length) return null;
+      const question = clipTo(plain(sentence).replace(/\s+/g, ' ').replace(/[:：]\s*$/, ''), AUTO_QUESTION_MAX);
+      return { question, options: [], cmds, line: plain(l) };
+    }
+  }
+  return null;
+}
+export function findAsk(text) {
+  const run = findRun(typeof text === 'string' ? text : '');
+  if (run) return { kind: 'do', ...run };
+  const q = findQuestion(typeof text === 'string' ? text : '');
+  if (!q) {
+    // 명령을 못 뽑은 실행 부탁("명령을 실행해 주세요.")은 결정으로(못 가리면 결정)
+    const last = String(text ?? '').replace(/\s+$/, '').split('\n').pop() || '';
+    const s = sentences(last.replace(/`[^`]*`/g, ' x ')).pop() || '';
+    if (!FENCE.test(last) && isRunRequest(s)) { const question = clipTo(plain(last).replace(/\s+/g, ' '), AUTO_QUESTION_MAX); return { kind: 'decide', question: clipTo(plain(sentences(last).pop() || question), AUTO_QUESTION_MAX), options: [], cmds: [], line: plain(last) }; }
+    return null;
+  }
+  return { kind: isCheck(q.question) ? 'check' : 'decide', ...q, options: isCheck(q.question) ? [] : q.options, cmds: [] };
 }

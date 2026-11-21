@@ -20,25 +20,56 @@
 //   사람이 그 세션에 직접 글을 보내면 열린 카드는 지금처럼 닫히고, 모은 답은 명령 바·휴대폰 글(session.send)이면 그 글 앞에 붙여 한 전달로 보낸다
 //   (결정은 앞서 물은 것이라 대화 차례대로 먼저 두고, 사람의 새 글이 끝에 와 에이전트가 가장 나중 지시로 읽는다. 턴도 하나만 쓴다).
 //   스티어링 글이면 답은 스티어링이 아니라 따로 보통 메시지로 보낸다. 터미널에 직접 친 글(이미 제출됨)이면 그 뒤에 한 글로 보낸다.
+// P292(사용자 2026-11-21): 사용자 몫. 결정 카드가 종류(kind) 넷을 가진 상태 있는 "사용자 몫"이 되었다(같은 표, 옛 카드는 decide).
+//   decide 결정(그대로), do 할 일(글 + 사람이 복사할 명령 0개 이상. 사람: 했음·무시·미루기. 했음은 기록만, 에이전트가 --tell을 주면 답 모으기로 보낸다),
+//   check 확인(사람: 됐다/안 됐다 + 한 줄 메모·무시·미루기. 결과는 늘 답 모으기로 보낸다), later 나중에(날짜·시각이면 wake_at까지 숨겼다가 띄우고 웹 푸시 한 번,
+//   조건 글이면 cond로 "나중"에 두고 사람이 꺼낸다. 띄운 뒤에는 할 일과 같다).
+//   모든 카드에 미루기(decision.snooze { id, until }): wake_at까지 숨겼다가 다시 띄운다. 숨긴 카드(나중)는 답 모으기의 "열린 카드"에 세지 않는다.
+//   에이전트: atrium todo "<할 일>" [--cmd …]… [--check] [--later …] [--why …] [--tell] | --done <번호> | --list. 누가·상한은 atrium ask와 같다(나중에는 따로).
+//   답 모으기 줄: [결정] q → a, [확인] q → 됐다/안 됐다: 메모, [할 일] q → 했음.
+//   사람이 세션에 직접 보낸 글이 닫는 것은 지금 보이는 결정 카드와 자동 카드뿐이다(할 일·확인·나중에 손 카드는 사람 몫이라 그대로 둔다).
+//   자동 카드는 마지막 답이 명령 실행을 청하면 할 일(명령 뽑기), 확인을 청하면 확인, 그 밖의 질문은 결정(auto-ask.mjs findAsk).
 // 표는 store-decisions.mjs.
 import { shownName } from './session-label.mjs';
-import { findQuestion } from './auto-ask.mjs';
+import { findAsk } from './auto-ask.mjs';
 import { firstLine } from './peer-news.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { checkAgentText } from './work-units.mjs';
-import { ASK_QUESTION_MAX, ASK_OPTION_MAX, ASK_OPTIONS_MAX, ASK_WHY_MAX, ASK_OPEN_MAX, ASK_ANSWER_MAX } from './cli-contract.mjs';
+import { ASK_QUESTION_MAX, ASK_OPTION_MAX, ASK_OPTIONS_MAX, ASK_WHY_MAX, ASK_OPEN_MAX, ASK_ANSWER_MAX, TODO_CMDS_MAX, TODO_CMD_MAX, TODO_LATER_MAX, TODO_LATER_TEXT_MAX, TODO_NOTE_MAX } from './cli-contract.mjs';
 
 export const ANSWER_HEAD = '[결정]';
+export const KINDS = ['decide', 'do', 'check', 'later']; // P292
+export const HEADS = { decide: '[결정]', do: '[할 일]', check: '[확인]', later: '[할 일]' }; // P292: 답 모으기 줄 머리
+export const DID = '했음';
+export const CHECK_OK = '됐다';
+export const CHECK_FAIL = '안 됐다';
+const SNOOZE_MAX_MS = 400 * 24 * 3600 * 1000; // 미루기·나중 날짜는 400일까지
+const WAKE_TICK_MAX_MS = 3600 * 1000; // 깨우기 타이머는 길어도 한 시간마다 다시 잰다
+// P292: --later 글 → { wakeAt } (날짜 "YYYY-MM-DD"는 그날 9시, "YYYY-MM-DD HH:MM"은 그때, 이 PC 시간대) | { cond } (그 밖의 글은 조건)
+export function parseLater(text, now = Date.now()) {
+  const s = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?$/);
+  if (!m) return { cond: s };
+  const [y, mo, d, h = '9', mi = '0'] = m.slice(1);
+  const t = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), 0, 0);
+  if (t.getFullYear() !== Number(y) || t.getMonth() !== Number(mo) - 1 || t.getDate() !== Number(d) || Number(h) > 23 || Number(mi) > 59) return { bad: s };
+  if (t.getTime() - now > SNOOZE_MAX_MS) return { far: s };
+  return { wakeAt: t.getTime() };
+}
 const QUESTION_SHORT = 80; // 세션에 들어가는 답 글의 질문 줄임
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const oneLine = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 // 세션에 들어가는 답 글: "[결정] <질문 줄임> → <답>"
-export function answerText(question, answer) { return `${ANSWER_HEAD} ${clip(oneLine(question), QUESTION_SHORT)} → ${String(answer ?? '').trim()}`; }
+export function answerText(question, answer, kind = 'decide') { return `${HEADS[kind] || ANSWER_HEAD} ${clip(oneLine(question), QUESTION_SHORT)} → ${String(answer ?? '').trim()}`; } // P292: 종류마다 머리
 
 export class Decisions {
   // b: 백엔드(sessions, store, queue, api, web, log, touch?). branch: Branch(relIndex)
-  constructor(b, branch, { answerGraceMs = 5000 } = {}) {
+  constructor(b, branch, { answerGraceMs = 5000, now = null } = {}) {
     this.b = b; this.branch = branch; this.answerGraceMs = answerGraceMs;
+    this.now = now || (() => Date.now()); // P292: 시험이 가짜 시계로 바꾼다
+    this.wakeTimer = null; // P292: 숨긴 카드를 띄울 타이머
+    try { this.scheduleWake(); } catch {}
     this.prev = new Map(); // P286: 세션 ID → 마지막으로 본 상태(턴 끝 판정)
     this.pending = new Map(); // P286: 세션 ID → 화면 답을 기다리는 턴 끝 { timer, off }
     this.autoSetting = null; // 시험이 바꾼다(없으면 판 설정 autoDecisions)
@@ -47,21 +78,22 @@ export class Decisions {
   // 일 상위(하위 관계의 부모)가 있으면 그 세션 ID
   workParent(s) { try { return this.branch && this.branch.relIndex ? this.branch.relIndex().workParentOf(s.sessionId) || null : null; } catch { return null; } }
   nameOf(id, fallback = null) { const s = this.b.sessions.get(id); return s ? shownName(s) || s.name : fallback || '?'; }
+  // P292: 숨긴 카드(나중: 조건, 또는 아직 때가 안 된 날짜·미루기)
+  isDeferred(d, now = this.now()) { return !!(d.cond || (d.wakeAt != null && d.wakeAt > now)); }
+  activeOpen(sessionId) { const now = this.now(); return this.store().openDecisions(sessionId).filter((d) => !this.isDeferred(d, now)); }
+  // P292: 끝나면 세션에 보낼 것이 있는 카드(결정·확인·--tell 할 일). 기록만 하는 할 일은 며칠씩 남을 수 있어 모은 답을 막지 않는다
+  sends(d) { return d.kind === 'decide' || d.kind === 'check' || !!d.tell; }
   heldCounts() { const m = {}; for (const d of this.store().heldAnswers()) if (this.b.sessions.has(d.sessionId)) m[d.sessionId] = (m[d.sessionId] || 0) + 1; return m; }
-  view(d) { const s = this.b.sessions.get(d.sessionId); return { ...d, name: s ? shownName(s) || s.name : d.name, workspaceKey: s ? s.workspaceKey || null : null }; }
+  view(d) { const s = this.b.sessions.get(d.sessionId); return { ...d, name: s ? shownName(s) || s.name : d.name, workspaceKey: s ? s.workspaceKey || null : null, deferred: this.isDeferred(d) }; } // P292: deferred(나중 줄)
   openAll() { return this.store().openDecisions().filter((d) => this.b.sessions.has(d.sessionId)).map((d) => this.view(d)); }
   changed() { try { this.b.api.broadcast('decision.changed', { cards: this.openAll(), held: this.heldCounts() }); } catch (e) { this.b.log('decision broadcast error', e && e.stack); } }
 
   // ---------- atrium ask ----------
   // o: { question, options: [], why, done: <번호>, list: true }
   askVerb(caller, o = {}) {
-    if (o.list) return { cards: this.store().openDecisions(caller.sessionId), max: ASK_OPEN_MAX };
+    if (o.list) return { cards: this.store().openDecisions(caller.sessionId).filter((d) => d.kind === 'decide').map((d) => ({ ...d, deferred: this.isDeferred(d) })), max: ASK_OPEN_MAX };
     if (o.done != null && o.done !== false) return this.doneVerb(caller, o.done);
-    const pid = this.workParent(caller);
-    if (pid) {
-      const pname = this.nameOf(pid);
-      throw apiError('sub_worker', `하위 워커는 결정 카드를 남기지 않는다. 사람에게 물을 것은 부모에게 묻는다: atrium prompt ${pname} "<질문>"`, { parent: pname });
-    }
+    this.leadOnly(caller, 'ask');
     const question = oneLine(o.question);
     if (!question) throw apiError('bad_request', '질문 한 줄을 준다: atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"]');
     if (question.length > ASK_QUESTION_MAX) throw apiError('too_long', `질문이 너무 길다(${question.length}자, ${ASK_QUESTION_MAX}자까지). 한 줄로 줄이고 맥락은 --why에 쓴다.`);
@@ -71,28 +103,88 @@ export class Decisions {
     const longOpt = options.find((x) => x.length > ASK_OPTION_MAX);
     if (longOpt) throw apiError('too_long', `보기가 너무 길다(${longOpt.length}자, ${ASK_OPTION_MAX}자까지): ${clip(longOpt, 40)}`);
     if (new Set(options).size !== options.length) throw apiError('bad_request', '같은 보기가 두 번 있다.');
-    const why = o.why == null ? null : oneLine(o.why) || null;
-    if (why && why.length > ASK_WHY_MAX) throw apiError('too_long', `맥락이 너무 길다(${why.length}자, ${ASK_WHY_MAX}자까지). 긴 글은 파일에 쓰고 그 경로를 적는다.`);
-    const open = this.store().openDecisions(caller.sessionId);
-    if (open.length >= ASK_OPEN_MAX) throw apiError('too_many', `열린 결정 카드가 이미 ${open.length}장이다(${ASK_OPEN_MAX}장까지). 사람이 답했거나 쓸모없어진 카드를 atrium ask --done <번호>로 닫는다(목록: atrium ask --list).`, { open: open.map((d) => d.id) });
-    const d = this.store().addDecision({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, question, options, why, createdAt: Date.now() });
-    this.b.store.addEvent(caller.sessionId, 'decision_ask', { id: d.id, chars: question.length, options: options.length });
-    this.b.log(`atrium ask ${caller.name} #${d.id}`);
-    this.changed();
-    this.push(caller, d);
-    return { id: d.id, open: open.length + 1, max: ASK_OPEN_MAX, card: d };
+    const why = this.whyOf(o.why);
+    return this.create(caller, { kind: 'decide', question, options, why }, 'ask');
   }
-  push(s, d) { try { if (this.b.web && this.b.web.push && this.b.web.push.decision) this.b.web.push.decision({ id: d.id, sessionId: s.sessionId, name: shownName(s) || s.name, workspaceKey: s.workspaceKey || null }); } catch (e) { this.b.log('decision push error', e && e.stack); } }
-  doneVerb(caller, ref) {
+  // P292: 하위 워커는 거절(사람에게 넘길 것은 부모에게)
+  leadOnly(caller, verb) {
+    const pid = this.workParent(caller);
+    if (!pid) return;
+    const pname = this.nameOf(pid);
+    if (verb === 'todo') throw apiError('sub_worker', `하위 워커는 사용자 몫 카드를 남기지 않는다. 사람이 할 일은 부모에게 넘긴다: atrium prompt ${pname} "<사람이 할 일>"`, { parent: pname });
+    throw apiError('sub_worker', `하위 워커는 결정 카드를 남기지 않는다. 사람에게 물을 것은 부모에게 묻는다: atrium prompt ${pname} "<질문>"`, { parent: pname });
+  }
+  whyOf(w) {
+    const why = w == null ? null : oneLine(w) || null;
+    if (why && why.length > ASK_WHY_MAX) throw apiError('too_long', `맥락이 너무 길다(${why.length}자, ${ASK_WHY_MAX}자까지). 긴 글은 파일에 쓰고 그 경로를 적는다.`);
+    return why;
+  }
+  // P292: 카드 한 장 만들기(상한: 나중에 아닌 열린 카드 ASK_OPEN_MAX, 나중에 TODO_LATER_MAX)
+  create(caller, c, verb) {
+    const open = this.store().openDecisions(caller.sessionId);
+    const later = c.kind === 'later';
+    const mine = open.filter((d) => (d.kind === 'later') === later);
+    const max = later ? TODO_LATER_MAX : ASK_OPEN_MAX;
+    if (mine.length >= max) {
+      const how = verb === 'ask' ? 'atrium ask --done <번호>로 닫는다(목록: atrium ask --list)' : 'atrium todo --done <번호>로 닫는다(목록: atrium todo --list)';
+      throw apiError('too_many', `열린 ${later ? '나중에 카드' : verb === 'ask' ? '결정 카드' : '카드(결정·할 일·확인 합쳐)'}가 이미 ${mine.length}장이다(${max}장까지). 사람이 끝냈거나 쓸모없어진 카드를 ${how}.`, { open: mine.map((d) => d.id) });
+    }
+    const d = this.store().addDecision({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, question: c.question, options: c.options || [], why: c.why || null, createdAt: this.now(), kind: c.kind, cmds: c.cmds || [], tell: !!c.tell, later: c.later || null, wakeAt: c.wakeAt ?? null, cond: c.cond ?? null });
+    if (verb === 'ask') this.b.store.addEvent(caller.sessionId, 'decision_ask', { id: d.id, chars: c.question.length, options: (c.options || []).length });
+    else this.b.store.addEvent(caller.sessionId, 'decision_todo', { id: d.id, kind: d.kind, chars: c.question.length, cmds: d.cmds.length, tell: d.tell, later: d.wakeAt ? 'date' : d.cond ? 'cond' : null });
+    this.b.log(`atrium ${verb} ${caller.name} #${d.id}${d.kind !== 'decide' ? ` (${d.kind})` : ''}`);
+    this.changed();
+    if (!this.isDeferred(d)) this.push(caller, d);
+    else this.scheduleWake();
+    return { id: d.id, kind: d.kind, open: mine.length + 1, max, card: d };
+  }
+
+  // ---------- P292: atrium todo ----------
+  // o: { text, cmds: [], check, later, why, tell, done: <번호>, list }
+  todoVerb(caller, o = {}) {
+    if (o.list) {
+      const now = this.now();
+      const cards = this.store().openDecisions(caller.sessionId).map((d) => ({ ...d, deferred: this.isDeferred(d, now) }));
+      return { cards, open: cards.filter((d) => !d.deferred).length, later: cards.filter((d) => d.deferred).length, max: ASK_OPEN_MAX, laterMax: TODO_LATER_MAX };
+    }
+    if (o.done != null && o.done !== false) return this.doneVerb(caller, o.done, 'todo');
+    this.leadOnly(caller, 'todo');
+    const question = oneLine(o.text ?? o.question);
+    if (!question) throw apiError('bad_request', '할 일 한 줄을 준다: atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell]');
+    if (question.length > ASK_QUESTION_MAX) throw apiError('too_long', `할 일이 너무 길다(${question.length}자, ${ASK_QUESTION_MAX}자까지). 한 줄로 줄이고 맥락은 --why에 쓴다.`);
+    checkAgentText(question, '할 일');
+    const cmds = (Array.isArray(o.cmds) ? o.cmds : o.cmds == null ? [] : [o.cmds]).map((x) => String(x ?? '').trim()).filter(Boolean);
+    if (cmds.length > TODO_CMDS_MAX) throw apiError('too_long', `명령이 너무 많다(${cmds.length}개, ${TODO_CMDS_MAX}개까지).`);
+    const longCmd = cmds.find((x) => x.length > TODO_CMD_MAX);
+    if (longCmd) throw apiError('too_long', `명령이 너무 길다(${longCmd.length}자, ${TODO_CMD_MAX}자까지). 긴 스크립트는 파일에 쓰고 그 파일을 부르는 명령을 준다.`);
+    const why = this.whyOf(o.why);
+    if (o.check && o.later != null && o.later !== false) throw apiError('bad_request', '--check와 --later는 함께 쓰지 않는다(나중에 할 확인은 --later로 남기고, 때가 되면 사람이 했음으로 닫는다).');
+    let kind = o.check ? 'check' : 'do'; let wakeAt = null; let cond = null; let later = null;
+    if (o.later != null && o.later !== false) {
+      if (o.later === true) throw apiError('bad_request', '언제·어떤 조건에 할지 준다: --later "YYYY-MM-DD[ HH:MM]" 또는 --later "<조건 글>"');
+      const p = parseLater(o.later, this.now());
+      if (!p) throw apiError('bad_request', '언제·어떤 조건에 할지 준다: --later "YYYY-MM-DD[ HH:MM]" 또는 --later "<조건 글>"');
+      if (p.bad) throw apiError('bad_request', `날짜가 틀렸다: ${p.bad} (YYYY-MM-DD 또는 YYYY-MM-DD HH:MM)`);
+      if (p.far) throw apiError('bad_request', `날짜가 너무 멀다: ${p.far} (400일 안)`);
+      later = oneLine(o.later);
+      if (later.length > TODO_LATER_TEXT_MAX) throw apiError('too_long', `조건 글이 너무 길다(${later.length}자, ${TODO_LATER_TEXT_MAX}자까지).`);
+      if (p.cond) checkAgentText(p.cond, '조건');
+      kind = 'later'; wakeAt = p.wakeAt ?? null; cond = p.cond ?? null;
+    }
+    return this.create(caller, { kind, question, cmds, why, tell: !!o.tell && kind !== 'check', later, wakeAt, cond }, 'todo');
+  }
+  push(s, d, { wake = false } = {}) { try { if (this.b.web && this.b.web.push && this.b.web.push.decision) this.b.web.push.decision({ id: d.id, sessionId: s.sessionId, name: shownName(s) || s.name, workspaceKey: s.workspaceKey || null, ...(wake ? { wake: this.now() } : {}) }); } catch (e) { this.b.log('decision push error', e && e.stack); } } // P292: 숨겼다 띄운 카드는 한 번 더(wake)
+  doneVerb(caller, ref, verb = 'ask') {
     const id = Number(String(ref).replace(/^#/, ''));
-    if (!Number.isInteger(id) || id <= 0) throw apiError('bad_request', '닫을 카드 번호를 준다: atrium ask --done <번호>(목록: atrium ask --list)');
+    if (!Number.isInteger(id) || id <= 0) throw apiError('bad_request', `닫을 카드 번호를 준다: atrium ${verb} --done <번호>(목록: atrium ${verb} --list)`);
     const d = this.store().getDecision(id);
-    if (!d || d.sessionId !== caller.sessionId) throw apiError('not_found', `너의 결정 카드 #${id}가 없다. 목록: atrium ask --list`);
+    if (!d || d.sessionId !== caller.sessionId) throw apiError('not_found', `너의 카드 #${id}가 없다. 목록: atrium ${verb} --list`);
     if (d.state !== 'open') return { id, closed: false, state: d.state, card: d };
     const r = this.store().endDecision(id, { state: 'closed', via: 'agent' });
-    this.b.store.addEvent(caller.sessionId, 'decision_end', { id, state: 'closed', via: 'agent', auto: d.auto });
+    this.b.store.addEvent(caller.sessionId, 'decision_end', { id, state: 'closed', via: 'agent', auto: d.auto, kind: d.kind });
     this.settle(caller.sessionId);
     this.changed();
+    this.scheduleWake();
     return { id, closed: true, state: 'closed', card: r };
   }
 
@@ -107,13 +199,14 @@ export class Decisions {
   // 답하기: 보기(option) 또는 한 줄 답(text). 세션에 보통 메시지(대기열)로 넣고 answered
   answer(p = {}, c = null) {
     const d = this.card(p.id);
+    if (d.kind !== 'decide') throw apiError('wrong_kind', '결정 카드가 아닙니다(할 일은 했음, 확인은 됐다·안 됐다).', { kind: d.kind });
     const s = this.b.sessions.get(d.sessionId);
     if (!s) throw apiError('closed', '그 세션은 닫혔습니다.');
     const text = String(p.answer ?? '').trim();
     if (!text) throw apiError('bad_request', '답을 입력하세요.');
     if (text.length > ASK_ANSWER_MAX) throw apiError('too_long', `답이 너무 깁니다(${text.length}자, ${ASK_ANSWER_MAX}자까지).`);
     const via = this.viaOf(c);
-    const r = this.store().endDecision(d.id, { state: 'answered', answer: text, via });
+    const r = this.store().endDecision(d.id, { state: 'answered', answer: text, via, at: this.now() });
     if (!r) throw apiError('already_closed', '이미 끝난 결정 카드입니다.');
     this.store().setHeld(d.id, true); // P286: 모아 두고, 그 세션의 열린 카드가 없으면 곧바로 보낸다
     try { if (this.b.touch) this.b.touch(s); } catch {}
@@ -128,14 +221,96 @@ export class Decisions {
     const d = this.card(p.id);
     const via = this.viaOf(c);
     const r = this.store().endDecision(d.id, { state: 'ignored', via });
-    this.b.store.addEvent(d.sessionId, 'decision_end', { id: d.id, state: 'ignored', via, auto: d.auto });
+    this.b.store.addEvent(d.sessionId, 'decision_end', { id: d.id, state: 'ignored', via, auto: d.auto, kind: d.kind });
     const f = this.settle(d.sessionId);
     this.changed();
+    this.scheduleWake();
     return { id: d.id, state: 'ignored', deliveryId: f ? f.deliveryId : null, card: r };
   }
+  // P292: 끝난 카드를 (보낼 것이면) 모으고 마무리 → 응답
+  finish(d, s, answer, send, extra = {}) {
+    if (send) this.store().setHeld(d.id, true);
+    try { if (this.b.touch && s) this.b.touch(s); } catch {}
+    const f = this.settle(d.sessionId);
+    this.changed();
+    this.scheduleWake();
+    const waiting = f ? 0 : this.store().heldAnswers(d.sessionId).length;
+    return { id: d.id, state: 'answered', kind: d.kind, answer, sent: send, deliveryId: f ? f.deliveryId : null, held: send && !f, waiting, open: this.activeOpen(d.sessionId).length, card: this.store().getDecision(d.id), ...extra };
+  }
+  // P292: 할 일(나중에 포함) 했음. 기록만, 에이전트가 --tell을 줬으면 답 모으기로 보낸다
+  did(p = {}, c = null) {
+    const d = this.card(p.id);
+    if (d.kind !== 'do' && d.kind !== 'later') throw apiError('wrong_kind', '할 일 카드가 아닙니다.', { kind: d.kind });
+    const s = this.b.sessions.get(d.sessionId);
+    if (!s) throw apiError('closed', '그 세션은 닫혔습니다.');
+    const via = this.viaOf(c);
+    if (!this.store().endDecision(d.id, { state: 'answered', answer: DID, via, at: this.now() })) throw apiError('already_closed', '이미 끝난 카드입니다.');
+    this.b.store.addEvent(s.sessionId, 'decision_end', { id: d.id, state: 'answered', via, auto: d.auto, kind: d.kind, tell: d.tell });
+    return this.finish(d, s, DID, d.tell);
+  }
+  // P292: 확인 결과(됐다/안 됐다 + 한 줄 메모). 늘 답 모으기로 보낸다
+  checked(p = {}, c = null) {
+    const d = this.card(p.id);
+    if (d.kind !== 'check') throw apiError('wrong_kind', '확인 카드가 아닙니다.', { kind: d.kind });
+    const s = this.b.sessions.get(d.sessionId);
+    if (!s) throw apiError('closed', '그 세션은 닫혔습니다.');
+    if (typeof p.ok !== 'boolean') throw apiError('bad_request', '됐는지(ok: true|false)를 줍니다.');
+    const note = oneLine(p.note);
+    if (note.length > TODO_NOTE_MAX) throw apiError('too_long', `메모가 너무 깁니다(${note.length}자, ${TODO_NOTE_MAX}자까지).`);
+    const answer = `${p.ok ? CHECK_OK : CHECK_FAIL}${note ? `: ${note}` : ''}`;
+    const via = this.viaOf(c);
+    if (!this.store().endDecision(d.id, { state: 'answered', answer, via, at: this.now() })) throw apiError('already_closed', '이미 끝난 카드입니다.');
+    this.b.store.addEvent(s.sessionId, 'decision_end', { id: d.id, state: 'answered', via, auto: d.auto, kind: 'check', ok: p.ok, note: !!note });
+    return this.finish(d, s, answer, true);
+  }
+  // P292: 미루기(until: ms). 그때까지 숨긴다. 숨긴 카드는 답 모으기의 열린 카드가 아니라 남은 답을 곧바로 보낼 수 있다
+  snooze(p = {}, c = null) {
+    const d = this.card(p.id);
+    const until = Number(p.until);
+    const now = this.now();
+    if (!Number.isFinite(until) || until <= now) throw apiError('bad_request', '미룰 때(지금보다 뒤)를 줍니다.');
+    if (until - now > SNOOZE_MAX_MS) throw apiError('bad_request', '400일 안으로 미룹니다.');
+    const r = this.store().setDefer(d.id, { wakeAt: Math.round(until), cond: null });
+    this.b.store.addEvent(d.sessionId, 'decision_snooze', { id: d.id, kind: d.kind, auto: d.auto, ms: Math.round(until - now), via: this.viaOf(c) });
+    const f = this.settle(d.sessionId);
+    this.changed();
+    this.scheduleWake();
+    return { id: d.id, until: r.wakeAt, deliveryId: f ? f.deliveryId : null, card: { ...r, deferred: true } };
+  }
+  // P292: 꺼내기(나중 줄의 카드를 지금 목록으로)
+  raise(p = {}, c = null) {
+    const d = this.card(p.id);
+    const r = this.store().setDefer(d.id, { wakeAt: null, cond: null });
+    this.b.store.addEvent(d.sessionId, 'decision_raise', { id: d.id, kind: d.kind, via: this.viaOf(c) });
+    this.changed();
+    this.scheduleWake();
+    return { id: d.id, card: { ...r, deferred: false } };
+  }
+  // P292: 때가 된 숨긴 카드를 띄운다(웹 푸시 한 번) → 띄운 수
+  wakeDue() {
+    const due = this.store().dueDecisions(this.now());
+    for (const d of due) {
+      this.store().setDefer(d.id, { wakeAt: null, cond: null });
+      this.b.store.addEvent(d.sessionId, 'decision_wake', { id: d.id, kind: d.kind });
+      const s = this.b.sessions.get(d.sessionId);
+      if (s) this.push(s, d, { wake: true });
+    }
+    if (due.length) this.changed();
+    this.scheduleWake();
+    return due.length;
+  }
+  scheduleWake() {
+    if (this.wakeTimer) { clearTimeout(this.wakeTimer); this.wakeTimer = null; }
+    const w = this.store() && this.store().nextWake ? this.store().nextWake() : null;
+    if (w == null) return;
+    const ms = Math.max(0, Math.min(w - this.now(), WAKE_TICK_MAX_MS));
+    this.wakeTimer = setTimeout(() => { this.wakeTimer = null; try { this.wakeDue(); } catch (e) { this.b.log('decision wake error', e && e.stack); } }, ms + 50);
+    if (this.wakeTimer.unref) this.wakeTimer.unref();
+  }
+  stop() { if (this.wakeTimer) clearTimeout(this.wakeTimer); this.wakeTimer = null; }
   // P286: 그 세션의 열린 카드가 모두 끝났고 모은 답이 있으면 한 글로 보낸다 → 보낸 것 | null
   settle(sessionId, why = 'all') {
-    if (this.store().openDecisions(sessionId).length) return null;
+    if (this.activeOpen(sessionId).some((d) => this.sends(d))) return null; // P292: 숨긴 카드(나중)와 기록만 하는 할 일은 세지 않는다
     return this.flush(sessionId, why);
   }
   // 모은 답을 꺼낸다(보낸 것으로 친다) → { ids, text } | null
@@ -143,7 +318,7 @@ export class Decisions {
     const held = this.store().heldAnswers(sessionId);
     if (!held.length) return null;
     for (const d of held) this.store().setHeld(d.id, false);
-    return { ids: held.map((d) => d.id), text: held.map((d) => answerText(d.question, d.answer)).join('\n') };
+    return { ids: held.map((d) => d.id), text: held.map((d) => answerText(d.question, d.answer, d.kind)).join('\n') }; // P292: 종류마다 머리
   }
   // 모은 답을 한 글로 보통 메시지(대기열)에 넣는다 → { deliveryId, ids } | null
   flush(sessionId, why = 'now') {
@@ -171,13 +346,17 @@ export class Decisions {
       'decision.flush': (p) => this.flushNow(p), // P286
       'decision.answer': (p, c) => this.answer(p, c),
       'decision.ignore': (p, c) => this.ignore(p, c),
+      'decision.done': (p, c) => this.did(p, c), // P292: 할 일 했음
+      'decision.check': (p, c) => this.checked(p, c), // P292: 확인 됐다/안 됐다
+      'decision.snooze': (p, c) => this.snooze(p, c), // P292: 미루기
+      'decision.raise': (p, c) => this.raise(p, c), // P292: 나중에서 꺼내기
     };
   }
 
   // ---------- 닫기 ----------
   // 사람이 카드를 거치지 않고 그 세션에 직접 글을 보냈다(where: bar | terminal). 열린 카드는 answered(via session)
   onHuman(sessionId, where = 'session') {
-    const open = this.store().openDecisions(sessionId);
+    const open = this.activeOpen(sessionId).filter((d) => d.kind === 'decide' || d.auto); // P292: 할 일·확인·나중에 손 카드는 사람 몫이라 그대로
     if (!open.length && !this.store().heldAnswers(sessionId).length) return 0;
     const at = Date.now();
     let n = 0;
@@ -196,6 +375,7 @@ export class Decisions {
     for (const d of open) this.store().endDecision(d.id, { state: 'closed', via: 'closed' });
     this.b.store.addEvent(s.sessionId, 'decision_end', { ids: open.map((d) => d.id), autoIds: open.filter((d) => d.auto).map((d) => d.id), state: 'closed', via: 'closed' });
     this.changed();
+    this.scheduleWake();
     return open.length;
   }
 
@@ -249,25 +429,28 @@ export class Decisions {
   autoAsk(s, text, since = 0) {
     const sid = s.sessionId;
     const open = this.store().openDecisions(sid);
-    if (open.some((d) => !d.auto)) return null; // 열린 손 카드가 있다
+    const now = this.now();
+    const active = open.filter((d) => !this.isDeferred(d, now));
+    if (active.some((d) => !d.auto && (d.kind === 'decide' || d.kind === 'check'))) return null; // 열린 손 결정·확인 카드가 있다(P292: 할 일·나중에는 오래 남으니 막지 않는다)
     if (this.store().decisionsSince(sid, since).some((d) => !d.auto)) return null; // 이 턴에 손 카드를 만들었다
-    const f = findQuestion(typeof text === 'string' ? text : '');
+    const f = findAsk(typeof text === 'string' ? text : ''); // P292: 할 일·확인·결정
     if (!f || startsAsBoardNotice(f.question)) return null;
     const question = clip(oneLine(f.question), ASK_QUESTION_MAX);
     const options = f.options.map((x) => clip(oneLine(x), ASK_OPTION_MAX)).slice(0, ASK_OPTIONS_MAX);
-    const old = open.filter((d) => d.auto);
-    if (old.length === 1 && old[0].question === question && JSON.stringify(old[0].options) === JSON.stringify(options)) return null; // 같은 질문이 그대로 열려 있다
+    const cmds = (f.cmds || []).map((x) => clip(String(x), TODO_CMD_MAX)).slice(0, TODO_CMDS_MAX);
+    const old = active.filter((d) => d.auto); // 사람이 미룬 자동 카드는 바꾸지 않는다
+    if (old.length === 1 && old[0].question === question && old[0].kind === f.kind && JSON.stringify(old[0].options) === JSON.stringify(options) && JSON.stringify(old[0].cmds) === JSON.stringify(cmds)) return null; // 같은 질문이 그대로 열려 있다
     const at = Date.now();
     for (const d of old) {
       this.store().endDecision(d.id, { state: 'closed', via: 'replaced', at });
       this.b.store.addEvent(sid, 'decision_end', { id: d.id, state: 'closed', via: 'replaced', auto: true });
     }
-    if (open.length - old.length >= ASK_OPEN_MAX) { if (old.length) { this.settle(sid, 'replaced'); this.changed(); } return null; }
+    if (open.filter((d) => d.kind !== 'later').length - old.length >= ASK_OPEN_MAX) { if (old.length) { this.settle(sid, 'replaced'); this.changed(); } return null; }
     const head = (() => { const l = firstLine(text, 200); return l ? clip(l.replace(/^#+\s*/, '').replace(/\*\*|__|`/g, '').trim(), 120) : null; })();
     const plainOpt = options.map((o) => o.replace(/…$/, ''));
     const why = head && head !== question && !question.includes(head) && !head.includes(question) && !/^\s*(\d{1,2}[.)]|[-*+])\s/.test(head) && !plainOpt.some((o) => head.includes(o) || o.includes(head)) ? clip(oneLine(head), ASK_WHY_MAX) : null; // 첫 줄이 목록·보기와 겹치면 비운다
-    const d = this.store().addDecision({ sessionId: sid, name: shownName(s) || s.name, question, options, why, createdAt: at, auto: true });
-    this.b.store.addEvent(sid, 'decision_auto', { id: d.id, replaced: old.map((x) => x.id), chars: question.length, options: options.length, kind: s.kind || 'claude', source: s.rt.answerSource || null });
+    const d = this.store().addDecision({ sessionId: sid, name: shownName(s) || s.name, question, options, why, createdAt: at, auto: true, kind: f.kind, cmds });
+    this.b.store.addEvent(sid, 'decision_auto', { id: d.id, replaced: old.map((x) => x.id), chars: question.length, options: options.length, kind: s.kind || 'claude', card: f.kind, cmds: cmds.length, source: s.rt.answerSource || null });
     this.b.log(`decision auto ${s.name} #${d.id}${old.length ? ` (replaced #${old.map((x) => x.id).join(',')})` : ''}`);
     this.changed();
     this.push(s, d);
@@ -279,7 +462,7 @@ export function humanPrompt(prompt) {
   const p = String(prompt ?? '').trim();
   if (!p) return false;
   if (startsAsBoardNotice(p)) return false;
-  if (p.startsWith(ANSWER_HEAD)) return false;
+  if (Object.values(HEADS).some((h) => p.startsWith(h))) return false; // P292: [결정]·[확인]·[할 일]
   if (p.startsWith('<')) return false; // <task-notification> 등
   return true;
 }
