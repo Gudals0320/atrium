@@ -22,7 +22,7 @@ import { VERB_OP, ORCH_SUB_VERBS, permOf, opRefusal } from '../src/orchestration
 import { PLAN, HUMAN_OPS, emptyPlan, applyPlanOp, applyPlanOps, planSummary, validatePlanDoc, importCounts, planMarkdown, focusUserItems, docBytes } from '../src/plan.mjs';
 import { parsePlanArgs, showLines, writeLines, importLines, meLines, PLAN_HELP } from '../src/plan-cli.mjs';
 import { laneName } from '../src/plan-board.mjs';
-import { PlanNotes, noteLine, newlyAllChecked, changeBit, PLAN_NOTIFY } from '../src/plan-notify.mjs';
+import { PlanNotes, noteLine, newlyAllChecked, changeBit, bitKey, mergeBits, PLAN_NOTIFY } from '../src/plan-notify.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p306-'));
@@ -192,10 +192,13 @@ test('P306 마일스톤이 모두 체크되면 곧바로 한 번', async () => {
     assert.deepEqual(r.note.allChecked, ['M2']);
     await until(() => l1.texts.some((x) => x.startsWith('[목표]')));
     assert.equal(l1.texts.find((x) => x.startsWith('[목표]')), '[목표] 수집 M2.1 체크, M2.2 체크, M2.3 체크(사용자) · M2 3/3');
-    // 풀고 다시 체크하면 다시 곧바로(끝 기준 확인 차례가 또 왔다)
+    // 마일스톤마다 한 번: 풀고 다시 체크하면 다음 메시지와(곧바로 다시 보내지 않는다)
+    const n0 = l1.texts.filter((x) => x.startsWith('[목표]')).length;
     await H['plan.op']({ planId: t.a, op: 'uncheck', ids: ['M2.3'] }, {});
     const r2 = await H['plan.op']({ planId: t.a, op: 'check', ids: ['M2.3'] }, {});
-    assert.equal(r2.note.why, 'all_checked');
+    assert.equal(r2.note.why, 'next');
+    await tick(200);
+    assert.equal(l1.texts.filter((x) => x.startsWith('[목표]')).length, n0);
   } finally { await t.stop(); }
 });
 
@@ -280,5 +283,52 @@ test('P306 결정 답과 함께 실리고, 실린 전달이 취소되면 다시 
     await H['plan.op']({ planId: third.planId, op: 'check', ids: ['M2.1'] }, {});
     const pre3 = b.planNotes.attach(l1.sessionId, 'dx3');
     assert.equal(pre3, '[목표] 수집 M2.3 체크(사용자) · M2 2/3\n[목표] 정리 M2.1 체크(사용자) · M2 1/3');
+  } finally { await t.stop(); }
+});
+
+test('P306 한 번만: 같은 대상은 나중 것만·최신 수로 한 줄, 보낸 줄은 다시 가지 않고, 모두 체크 곧바로는 마일스톤마다 한 번(다시 켜도)', async () => {
+  // 순수: 같은 항목의 체크·풀기·체크는 마지막 하나, 다른 대상은 차례대로
+  const m = mergeBits(new Map(), [{ op: 'check', ref: 'M2.2', summary: 'M2.2 체크' }, { op: 'focus', ref: 'M3', summary: 'focus M2 → M3' }, { op: 'uncheck', ref: 'M2.2', summary: 'M2.2 체크 풂' }, { op: 'focus', ref: 'M2', summary: 'focus M3 → M2' }, { op: 'check', ref: 'M2.2', summary: 'M2.2 체크' }]);
+  assert.deepEqual([...m.values()], ['focus M3 → M2', 'M2.2 체크']);
+  assert.equal(bitKey({ op: 'check', ref: 'M2.4' }), bitKey({ op: 'uncheck', ref: 'M2.4' }));
+  assert.notEqual(bitKey({ op: 'itemAdd', ref: 'M2.4' }), bitKey({ op: 'itemRm', ref: 'M2.4' }));
+  const t = await twoLanes();
+  const { b, l1, H } = t;
+  try {
+    const att = (id) => b.decisions.attachFront({ sessionId: l1.sessionId, deliveryId: id });
+    await H['plan.op']({ planId: t.a, op: 'check', ids: ['M2.2'] }, {});
+    await H['plan.op']({ planId: t.a, op: 'uncheck', ids: ['M2.2'] }, {});
+    await H['plan.op']({ planId: t.a, op: 'check', ids: ['M2.2'] }, {});
+    await H['plan.op']({ planId: t.a, op: 'check', ids: ['M2.1'] }, {});
+    assert.equal(att('e1'), '[목표] 수집 M2.2 체크, M2.1 체크(사용자) · M2 2/3', '이어진 바뀜은 한 줄, 수는 지금 값');
+    b.planNotes.onDelivery({ deliveryId: 'e1', sessionId: l1.sessionId, status: 'confirmed' });
+    assert.equal(att('e2'), null, '보낸 줄은 다음 전달에 다시 붙지 않는다');
+    await H['plan.op']({ planId: t.a, op: 'focus', code: 'M1' }, {});
+    assert.equal(att('e3'), '[목표] 수집 focus M2 → M1(사용자) · M1 0/0', '새 바뀜만');
+    // 실패하면 되돌리되 그새 같은 대상의 바뀜이 이긴다(한 줄)
+    await H['plan.op']({ planId: t.a, op: 'focus', code: 'M2' }, {});
+    b.planNotes.onDelivery({ deliveryId: 'e3', sessionId: l1.sessionId, status: 'failed' });
+    assert.equal(att('e4'), '[목표] 수집 focus M1 → M2(사용자) · M2 2/3');
+    b.planNotes.onDelivery({ deliveryId: 'e4', sessionId: l1.sessionId, status: 'confirmed' });
+    // 모두 체크 곧바로: 마일스톤마다 한 번
+    const r1 = await H['plan.op']({ planId: t.a, op: 'check', ids: ['M2.3'] }, {});
+    assert.equal(r1.note.why, 'all_checked');
+    await until(() => l1.texts.filter((x) => x.startsWith('[목표]')).length === 1);
+    for (let i = 0; i < 2; i++) {
+      await H['plan.op']({ planId: t.a, op: 'uncheck', ids: ['M2.3'] }, {});
+      const r = await H['plan.op']({ planId: t.a, op: 'check', ids: ['M2.3'] }, {});
+      assert.equal(r.note.why, 'next', '두 번째부터는 다음 메시지와');
+    }
+    assert.equal(att('e5'), '[목표] 수집 M2.3 체크(사용자) · M2 3/3', '풀고 다시 체크한 것은 마지막 한 줄');
+    // 다시 켠 판(새 PlanNotes, 같은 판 기록)도 같은 마일스톤에 곧바로 다시 보내지 않는다
+    const again = new PlanNotes(b);
+    const before = b.store.getPlan(t.a);
+    const mid = applyPlanOps(before.doc, [{ op: 'uncheck', ids: ['M2.3'] }], A).doc;
+    const res = again.onHuman({ ...before, doc: mid }, before, [{ op: 'check', ref: 'M2.3', summary: 'M2.3 체크' }]);
+    assert.equal(res.why, 'next');
+    // 다른 마일스톤은 따로 한 번
+    b.branch.plans.verb(l1, { action: 'op', plan: '수집', ops: [{ op: 'itemAdd', ms: 'M1', text: '센서', who: 'user' }] });
+    assert.equal((await H['plan.op']({ planId: t.a, op: 'check', ids: ['M1.1'] }, {})).note.why, 'all_checked');
+    assert.equal(l1.texts.filter((x) => x.startsWith('[목표]')).length >= 1, true);
   } finally { await t.stop(); }
 });

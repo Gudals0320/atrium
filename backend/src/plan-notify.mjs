@@ -5,6 +5,9 @@
 // - 실어 보내기: 전달 대기열이 관리자에게 어떤 글이든 처음 보낼 때(decisions.mjs attachFront), 명령 바 글 앞(backend.mjs send)에 모인 줄을 붙인다.
 //   실어 보낸 전달이 실패·취소되면 줄을 다시 붙잡는다.
 // - 관리자가 없거나 닫혔으면 알리지 않는다(모인 줄도 버린다). 미루기(snooze)는 사람 자기 몫이라 알리지 않는다.
+// - 한 번만: 모인 줄은 꺼내면 비우므로 한 바뀜은 한 번만 간다(실린 전달이 실패·취소될 때만 되돌린다). 같은 레인에 이어진 바뀜은 한 줄로 묶고,
+//   같은 대상(항목 체크·풀기, focus, 측정값, 마일스톤 상태, 관리자, 상태)의 바뀜은 가장 나중 것만 남긴다. 진행 수는 보낼 때의 지금 값.
+// - "모두 체크됨 → 곧바로"는 마일스톤마다 한 번(판 기록 meta planAllNotified, 다시 켜도 같다). 그 뒤 다시 풀고 체크해도 다음 메시지와 간다.
 // - 모인 줄은 백엔드 메모리에만 둔다(백엔드를 다시 켜면 버린다. 레인의 바뀜 기록 plan_log와 atrium plan show의 "남이 바꾼 것"은 그대로).
 import { planSummary } from './plan.mjs';
 
@@ -15,6 +18,20 @@ const QUIET_OPS = new Set(['snooze']); // 알리지 않는 사람 연산
 
 // 기록 한 줄(plan_log summary) → 알림 조각. 사람 표시는 줄 끝에 한 번
 export function changeBit(l) { return String((l && l.summary) || '').replace(/\s+/g, ' ').trim(); }
+// 같은 대상이면 나중 것이 앞 것을 갈음하는 열쇠(항목 체크·풀기는 한 열쇠, 더하기·고치기·지우기는 따로)
+export function bitKey(l) {
+  const op = l && l.op, ref = (l && l.ref) || '';
+  if (op === 'check' || op === 'uncheck') return 'chk:' + ref;
+  if (op === 'msDone' || op === 'msReopen') return 'ms:' + ref;
+  if (op === 'focus' || op === 'owner' || op === 'status') return op;
+  if (op === 'metricNow') return 'metric:' + ref;
+  return op + ':' + ref;
+}
+// 모인 조각(Map 열쇠 → 글)에 더한다. 같은 열쇠는 지우고 끝에 다시(나중 것, 나중 차례)
+export function mergeBits(m, logs) {
+  for (const l of logs || []) { const b = changeBit(l); if (!b) continue; const k = bitKey(l); m.delete(k); m.set(k, b); }
+  return m;
+}
 // 이번 바뀜에서 새로 "모두 체크됨"이 된 마일스톤 코드들(전에는 아니었고 지금은 모두 체크)
 export function newlyAllChecked(beforeDoc, afterDoc, now = Date.now()) {
   const b = planSummary(beforeDoc, now), a = planSummary(afterDoc, now);
@@ -33,7 +50,7 @@ export class PlanNotes {
   // b: 백엔드(sessions, store, queue, features?, log). opts: { mode?: () => 'next'|'now'|'off', now? }
   constructor(b, { mode = null, now = null, debounceMs = NOW_DEBOUNCE_MS } = {}) {
     this.b = b; this.modeFn = mode; this.now = now || (() => Date.now()); this.debounceMs = debounceMs;
-    this.pending = new Map(); // 관리자 세션 ID → Map(planId → { bits: [] })
+    this.pending = new Map(); // 관리자 세션 ID → Map(planId → { bits: Map(열쇠 → 글) })
     this.timers = new Map(); // 관리자 세션 ID → 곧바로 보내기 타이머
     this.rides = new Map(); // 전달 ID → { sessionId, pend: Map }(실패·취소되면 되돌린다)
     this.wireQueue(b.queue);
@@ -53,20 +70,30 @@ export class PlanNotes {
   onHuman(before, after, logs) {
     const mode = this.mode();
     if (mode === 'off') return { sent: false, why: 'off' };
-    const bits = (logs || []).filter((l) => !QUIET_OPS.has(l.op)).map(changeBit).filter(Boolean);
-    if (!bits.length) return { sent: false, why: 'quiet' };
+    const loud = (logs || []).filter((l) => !QUIET_OPS.has(l.op) && changeBit(l));
+    if (!loud.length) return { sent: false, why: 'quiet' };
     const owner = after.owner;
     if (!this.ownerOpen(owner)) { if (before && before.owner) this.drop(before.owner, after.planId); return { sent: false, why: 'no_owner' }; }
     // 관리자가 바뀌었으면 옛 관리자에게 모인 이 레인의 줄은 새 관리자에게 옮긴다
-    if (before && before.owner && before.owner !== owner) { const moved = this.drop(before.owner, after.planId); if (moved) bits.unshift(...moved.bits); }
+    const moved = before && before.owner && before.owner !== owner ? this.drop(before.owner, after.planId) : null;
     const m = this.pending.get(owner) || new Map();
-    const p = m.get(after.planId) || { bits: [] };
-    p.bits.push(...bits);
+    const p = m.get(after.planId) || moved || { bits: new Map() };
+    if (moved && p !== moved) for (const [k, v] of moved.bits) if (!p.bits.has(k)) p.bits.set(k, v);
+    mergeBits(p.bits, loud);
     m.set(after.planId, p); this.pending.set(owner, m);
-    const done = newlyAllChecked(before && before.doc, after.doc, this.now());
-    if (mode === 'now') { this.later(owner); return { sent: false, queued: true, why: 'now' }; }
+    const done = this.firstAllChecked(after.planId, newlyAllChecked(before && before.doc, after.doc, this.now()));
+    if (mode === 'now') { this.later(owner); return { sent: false, queued: true, why: 'now', ...(done.length ? { allChecked: done } : {}) }; }
     if (done.length) { const f = this.flush(owner, 'all_checked'); return { sent: !!f, why: 'all_checked', allChecked: done, deliveryId: f ? f.deliveryId : null }; }
     return { sent: false, queued: true, why: 'next' };
+  }
+  // 처음 모두 체크된 마일스톤만 남기고 표시한다(마일스톤마다 한 번, 판 기록 meta에 남겨 다시 켜도 같다)
+  firstAllChecked(planId, codes) {
+    if (!codes.length) return [];
+    let seen = {}; try { seen = this.b.store.getMeta('planAllNotified') || {}; } catch {}
+    const had = new Set(seen[planId] || []);
+    const fresh = codes.filter((c) => !had.has(c));
+    if (fresh.length) { try { this.b.store.setMeta('planAllNotified', { ...seen, [planId]: [...had, ...fresh] }); } catch {} }
+    return fresh;
   }
   drop(owner, planId) {
     const m = this.pending.get(owner); if (!m) return null;
@@ -91,7 +118,7 @@ export class PlanNotes {
       let r = null; try { r = this.b.store.getPlan(planId); } catch {}
       if (!r || r.deletedAt || r.owner !== owner) continue; // 지운 레인, 그새 관리자가 바뀐 레인은 뺀다
       const s = planSummary(r.doc, this.now());
-      lines.push(noteLine({ name: r.name, bits: p.bits, focus: s && s.focus ? { code: s.focus.code, done: s.focus.done, total: s.focus.total } : null }));
+      lines.push(noteLine({ name: r.name, bits: [...p.bits.values()], focus: s && s.focus ? { code: s.focus.code, done: s.focus.done, total: s.focus.total } : null }));
     }
     if (!lines.length) return null;
     return { text: lines.join('\n'), pend: m, lanes: lines.length };
@@ -120,7 +147,8 @@ export class PlanNotes {
     const r = this.rides.get(e.deliveryId); this.rides.delete(e.deliveryId);
     if (!this.ownerOpen(r.sessionId)) return;
     const m = this.pending.get(r.sessionId) || new Map();
-    for (const [planId, p] of r.pend) { const cur = m.get(planId); m.set(planId, { bits: [...p.bits, ...(cur ? cur.bits : [])] }); }
+    // 되돌린 줄 뒤에 그새 모인 줄(같은 열쇠면 그새 것이 나중이라 이긴다)
+    for (const [planId, p] of r.pend) { const cur = m.get(planId); const bits = new Map(p.bits); if (cur) for (const [k, v] of cur.bits) { bits.delete(k); bits.set(k, v); } m.set(planId, { bits }); }
     this.pending.set(r.sessionId, m);
     try { this.b.store.addEvent(r.sessionId, 'plan_note_back', { deliveryId: e.deliveryId, status: e.status }); } catch {}
   }
