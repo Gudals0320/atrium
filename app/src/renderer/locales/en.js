@@ -2771,5 +2771,20 @@ export default {
     draft_in_box: 'unsent text in the input box, waiting',
     toast: 'Could not put it into the current turn: {why}',
   },
+  // P286: auto decision cards (the board makes one when an agent ends a turn asking you in text without a card) and batched answers
+  autoDecisions: {
+    tag: 'Auto',
+    tagTitle: 'The board found this question in the agent’s last answer. Ignore it if it is not a real question.',
+    markTitle: '{n} decisions the board found in the last answer · answer from the Decide pill above',
+    held: 'Held answers: {n} · sent together when the other cards are done',
+    heldTitle: 'When every open card of this session is done, the held answers go as one message (each message costs the agent a turn)',
+    sendNow: 'Send now',
+    heldToast: 'Held your answer for @{name} ({n}). It goes with the others when the remaining cards are done',
+    flushed: 'Sent {n} held answers to @{name}',
+    settingName: 'Auto decision cards',
+    settingHint: 'When an agent ends a turn asking you in text without a decision card, the board makes a card from that question.',
+    setOn: 'Auto decision cards on',
+    setOff: 'Auto decision cards off',
+  },
 };
 

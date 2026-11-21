@@ -132,6 +132,15 @@ function UsageAlertSetting({ settings }) {
   return <SetRow name={t('usage.alertsName')} hint={t('usage.alertsHint')} role="usage-alert-setting"><Toggle checked={settings.usageAlerts !== false} onChange={set} field="setting-usageAlerts" /></SetRow>;
 }
 
+// P286: 자동 결정 카드(판 설정 autoDecisions, 기본 켬). 끄면 판이 마지막 답의 질문으로 카드를 만들지 않는다(손 카드는 그대로)
+function AutoDecisionSetting({ settings }) {
+  const t = useT();
+  const set = async (value) => {
+    try { await api.call('settings.set', { key: 'autoDecisions', value }); toast(value ? t('autoDecisions.setOn') : t('autoDecisions.setOff')); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
+  };
+  return <SetRow name={t('autoDecisions.settingName')} hint={t('autoDecisions.settingHint')} role="auto-decision-setting"><Toggle checked={settings.autoDecisions !== false} onChange={set} field="setting-autoDecisions" /></SetRow>;
+}
+
 // 일반: 언어, 배율(P45), 작업 중 테두리 빛(P107), 트레이 상주
 function GeneralTab({ settings }) {
   const t = useT();
@@ -151,6 +160,7 @@ function GeneralTab({ settings }) {
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>
         {'usageAlerts' in settings && <UsageAlertSetting settings={settings} />}
+        {'autoDecisions' in settings && <AutoDecisionSetting settings={settings} />}
         {'updateCheck' in settings && <UpdateSettings settings={settings} />}
         {'perfTrace' in settings && <PerfTraceSetting settings={settings} />}
       </>}

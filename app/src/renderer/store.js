@@ -9,7 +9,7 @@ import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
-import { decisionsOf, withoutCard } from './lib/decisions.js'; // P284: 결정 카드
+import { decisionsOf, withoutCard, heldOf } from './lib/decisions.js'; // P284: 결정 카드. P286: 모은 답
 import { mergerViewOf, withAsk, withoutAsk, rememberParents } from './lib/merger.js'; // P268. P276: rememberParents
 import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107: 작업 중 테두리 빛 설정과 미션 맵 덮개를 문서 뿌리에
 
@@ -463,9 +463,11 @@ for (const ev of ['merger.updated', 'session.created', 'session.removed']) api.o
 
 // P284: 결정 카드(판 API decision.*). 처음 붙을 때 decision.list로 읽고, decision.changed { cards }로 바꾼다. 옛 판이면 빈 목록
 state.decisions = [];
-export function putDecisions(cards) { state.decisions = decisionsOf(cards); changed(); }
-export const loadDecisions = () => api.call('decision.list').then((r) => putDecisions(r && r.cards)).catch(() => {});
+state.decisionHeld = {}; // P286: 세션마다 모아 둔 답 수(그 세션의 열린 카드가 모두 끝나면 판이 한 글로 보낸다)
+export function putDecisions(cards, held) { state.decisions = decisionsOf(cards); if (held !== undefined) state.decisionHeld = heldOf(held); changed(); }
+export const loadDecisions = () => api.call('decision.list').then((r) => putDecisions(r && r.cards, (r && r.held) || {})).catch(() => {});
 api.on('$open', () => loadDecisions());
-api.on('decision.changed', (d) => putDecisions(d && d.cards));
+api.on('decision.changed', (d) => putDecisions(d && d.cards, d && d.held));
+export async function flushDecisions(sessionId) { const r = await api.call('decision.flush', { sessionId }); const h = { ...state.decisionHeld }; delete h[sessionId]; state.decisionHeld = h; changed(); return r; } // P286: 모은 답 지금 보내기
 export async function answerDecision(id, answer) { const r = await api.call('decision.answer', { id, answer }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
 export async function ignoreDecision(id) { const r = await api.call('decision.ignore', { id }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }

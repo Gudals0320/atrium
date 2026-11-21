@@ -1638,8 +1638,11 @@ export class Backend {
     const qopts = (s) => (p.steer ? (steerBlock(s, this.hooked(s)) ? {} : { typeNow: true, aside: true }) : { typeNow: p.whileWorking === 'type' }); // P248
     const steerOut = (s) => { if (!p.steer) return {}; const why = steerBlock(s, this.hooked(s)); return { steer: why ? { ok: false, why } : { ok: true } }; };
     const deliveries = await Promise.all([...picked.values()].map(async (s) => {
-      const body = toLF(text);
+      let body = toLF(text);
+      const held = !p.steer && this.decisions ? this.decisions.takeHeld(s.sessionId) : null; // P286: 모아 둔 결정 답은 사람의 글 앞에 붙여 한 전달로(스티어링 글이면 onHuman이 따로 보통 메시지로)
+      if (held) body = `${held.text}\n\n${body}`;
       const d = this.queue.enqueue(s.sessionId, body, { ...qopts(s), origin: { kind: 'human' } });
+      if (held) this.store.addEvent(s.sessionId, 'decision_flush', { ids: held.ids, deliveryId: d.deliveryId, why: 'human_front' });
       this.touch(s);
       try { if (this.decisions) this.decisions.onHuman(s.sessionId, 'bar'); } catch (e) { this.log('decisions human error', e.stack); } // P284: 사람이 카드를 거치지 않고 직접 보낸 글(명령 바·휴대폰 입력)은 그 세션의 열린 결정 카드를 닫는다
       return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, ...steerOut(s) };
