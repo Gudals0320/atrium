@@ -9,7 +9,7 @@ test('설정 칸: 판에 키가 없으면(옛 판) null, 있으면 넷을 기본
   assert.equal(mergerSettingsOf(null), null);
   assert.equal(mergerSettingsOf({ tray: true }), null);
   assert.deepEqual(mergerSettingsOf({ mergerMode: 'on' }), { ...MERGER_DEFAULTS, mergerMode: 'on' });
-  assert.deepEqual(mergerSettingsOf({ mergerMode: 'ask', mergerKind: 'codex', mergerModel: 'gpt-x', mergerEffort: '' }), { mergerMode: 'ask', mergerKind: 'codex', mergerModel: 'gpt-x', mergerEffort: '' });
+  assert.deepEqual(mergerSettingsOf({ mergerMode: 'ask', mergerKind: 'codex', mergerModel: 'gpt-x', mergerEffort: '' }), { mergerMode: 'ask', mergerKind: 'codex', mergerModel: 'gpt-x', mergerEffort: '', mergerPermission: '' }); // P287: 승인 방식 칸(기본 빈 값)
   assert.equal(mergerSettingsOf({ mergerMode: 'weird', mergerEffort: 'ultra' }).mergerMode, 'ask');
   assert.equal(mergerSettingsOf({ mergerMode: 'weird', mergerEffort: 'ultra' }).mergerEffort, 'medium');
   assert.deepEqual(MERGER_MODES, ['on', 'ask', 'off']);
