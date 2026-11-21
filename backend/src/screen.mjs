@@ -49,7 +49,7 @@ export function hermesStateOf(text) {
   if (HERMES_WORKING.test(head)) return 'working';
   return null;
 }
-const HERMES_HINT = /^Try "[^"]*"(?: for commands)?$/;
+const HERMES_HINT = /^(?:Try "[^"]*"(?: for commands)?|Ask me anything(?:…|\.\.\.)?)$/; // P299: 안내 글(ui-tui i18n composer.placeholders, 실행마다 하나)에 "Ask me anything…"도 있다
 // 입력 칸 → { found, text, above, rows }. 상태 줄 아래의 "❯ " 줄(대화의 사용자 줄도 "❯ "라 상태 줄 아래만 본다)
 export function hermesInputBox(text) {
   const lines = hermesLines(text);
@@ -62,6 +62,12 @@ export function hermesInputBox(text) {
   for (let i = start + 1; i < lines.length && lines[i].trim(); i++) body.push(lines[i].trim());
   const t = body.join(' ').replace(/\s+/g, ' ').trim();
   return { found: true, text: HERMES_HINT.test(t) ? '' : t, above: lines.slice(0, at), rows: body.length };
+}
+// P299: /reasoning <값>을 넣은 뒤 Hermes가 보인 확인 줄(" ·  reasoning: high")이 있는가
+export function hermesReasoningShown(text, level) {
+  const want = String(level || '').trim().toLowerCase();
+  if (!want) return false;
+  return hermesLines(text).some((l) => { const m = /^\s*[·•]?\s*reasoning:\s*([a-z]+)\s*$/i.exec(l); return !!m && m[1].toLowerCase() === want; });
 }
 // 붙여 넣은 글이 입력 칸에 다 들어갔는가(adapter.pastePrompt의 state) → { box, done }. 글 끝(빈칸 빼고 24자)이 입력 칸 끝과 같으면 다 들어갔다
 export function hermesPasteState(screenText, text) {

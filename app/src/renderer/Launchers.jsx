@@ -11,11 +11,10 @@ import { useStore, toast, loadLaunchers, getState } from './store.js';
 import { KindIcon } from './SessionNode.jsx';
 import { Icon } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
-import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES } from './lib/launchers.js';
+import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES, harnessEfforts } from './lib/launchers.js'; // P299: harnessEfforts
 import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue } from './lib/orch.js'; // P296: 자체 오케스트레이션
 import { UsageLeft } from './Usage.jsx'; // P211: 하네스 이름 옆 그 구독의 남은 양
 
-const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 const MODES = PERMISSION_MODES;
 
 export function LauncherIcon({ l }) {
@@ -186,7 +185,7 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
           </label>
         ) : <span />}
         {has('effort') && <label className="mt-ln-f"><span>{t('settings.effort')}</span>
-          <select data-field="launcher-effort" value={d.effort} onChange={(e) => set('effort', e.target.value)}>{EFFORTS.map((o) => <option key={o} value={o}>{o === '' ? t('launcherEffort.harnessDefault', { harness: harnessName(harnesses, d.harness, t) }) : o}</option>)}</select>
+          <select data-field="launcher-effort" value={d.effort} onChange={(e) => set('effort', e.target.value)}>{harnessEfforts(harnesses, d.harness).map((o) => <option key={o} value={o}>{o === '' ? t('launcherEffort.harnessDefault', { harness: harnessName(harnesses, d.harness, t) }) : o}</option>)}</select>
         </label>}
         {has('permissionMode') && <label className="mt-ln-f"><span>{t('settings.permissionMode')}</span>
           <select data-field="launcher-permissionMode" value={d.permissionMode || defaultPermission(harnesses, d.harness)} onChange={(e) => set('permissionMode', e.target.value)}>{MODES.map((o) => <option key={o}>{o}</option>)}</select>
