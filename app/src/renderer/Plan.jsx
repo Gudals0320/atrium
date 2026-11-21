@@ -4,11 +4,11 @@
 // - ManagerChip: 관리자 세션 카드 머리와 세션 맵 카드의 자기 레인 칩(여럿이면 "레인 n").
 // - PlanPanelHost: 칩을 누르면 그 아래 화면 기준으로 뜨는 520px 목표 판. 레인 탭, 목표 문장, 측정값(지금 값 고치기), 마일스톤 계단, 펼친 마일스톤의 목적·끝 기준·항목
 //   (체크, 더하기·고치기·지우기), 바뀜 n(기록), 관리자 표시와 넘기기, 상태 바꾸기. 사람이 고치는 범위는 HUMAN_OPS(목표 문장·마일스톤 구조는 관리자 명령).
-// - PlanCards: 할 일 목록의 가상 "실행" 카드(레인마다 focus 사용자 항목 2장 + "n개 더"). 했음 = 그 항목 체크, 미루기 = 그 항목 미루기, 목표 판 = 판 열기.
+// - PlanCards: 할 일 목록의 가상 "실행" 카드(레인마다 focus 사용자 항목 2장 + "n개 더"). 했음 = 그 항목 체크, 미루기 = 그 항목 미루기, 목표 판 = 판 열기(P307: 휴대폰이면 PhonePlan.jsx 시트의 그 레인).
 // 사람이 바꾸면 판이 그 레인의 관리자에게 알린다(plan-notify.mjs, 설정 planNotify).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useStore, getState, toast, openPlanPanel, closePlanPanel, pickPlanTab, loadPlanDoc, planOp, planOwner, planStatus, wsName } from './store.js';
+import { useStore, getState, toast, openPlanPanel, openPlanBoard, closePlanPanel, pickPlanTab, loadPlanDoc, planOp, planOwner, planStatus, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago, agoText } from './lib/labels.js';
 import { regionChips, chipText, managerLanes, wsLanes, planCards, checkOp, snoozeOp, metricPct, openMs, LANE_STATUSES } from './lib/plans.js';
@@ -318,7 +318,7 @@ export function PlanCardRow({ c, onGo, t, say = null }) {
       <div className="mt-dc-why">{c.ms}{c.msTitle ? ' · ' + c.msTitle : ''}{c.note ? ' · ' + c.note : ''}</div>
       <div className="mt-ut-acts">
         <button type="button" className="mt-btn small primary" data-action="plan-card-done" disabled={busy} title={t('plan.card.didTitle')} onClick={did}>{t('plan.card.did')}</button>
-        <button type="button" className="mt-btn small" data-action="plan-card-board" data-plan-anchor="1" onClick={(e) => openPlanPanel(c.planId, e.currentTarget)}>{t('plan.card.board')}</button>
+        <button type="button" className="mt-btn small" data-action="plan-card-board" data-plan-anchor="1" onClick={(e) => openPlanBoard(c.planId, e.currentTarget)}>{t('plan.card.board')}</button>
         {snz ? <span className="mt-ut-snooze" data-role="snooze-menu">
           <button type="button" className="mt-btn small" data-action="snooze-hour" disabled={busy} onClick={() => snooze(tm.hour)}>{t('userTasks.snoozeHour')}</button>
           <button type="button" className="mt-btn small" data-action="snooze-morning" disabled={busy} onClick={() => snooze(tm.morning)}>{t('userTasks.snoozeMorning')}</button>
@@ -332,7 +332,7 @@ export function PlanMoreLine({ m, t }) {
   return (
     <div className="mt-plan-more" data-role="plan-card-more" data-plan={m.planId} data-count={m.n}>
       <span><b>{m.workspace} {m.lane} {m.ms}</b> {t('plan.card.more', { n: m.n })}</span>
-      <button type="button" className="mt-btn small" data-action="plan-card-board" data-plan-anchor="1" onClick={(e) => openPlanPanel(m.planId, e.currentTarget)}>{t('plan.card.board')}</button>
+      <button type="button" className="mt-btn small" data-action="plan-card-board" data-plan-anchor="1" onClick={(e) => openPlanBoard(m.planId, e.currentTarget)}>{t('plan.card.board')}</button>
     </div>
   );
 }

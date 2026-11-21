@@ -43,6 +43,7 @@ import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx'; // P165: 음�
 import './phone.css';
 import { UsagePill } from './Usage.jsx'; // P211: 위쪽 줄의 구독 사용량 알약
 import { MergerAskCards } from './Merger.jsx'; // P268: 합치기 merger를 켤지 묻는 카드(휴대폰에도)
+import { PhonePlanSheet } from './PhonePlan.jsx'; // P307: 목표 레인 시트
 
 // ---------- 화면 고르기(main.jsx) ----------
 const store = () => { try { return localStorage; } catch { return null; } };
@@ -202,6 +203,7 @@ export function PhoneApp() {
       {s ? <PhoneSession key={s.sessionId} s={s} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} />
         : <PhoneMission key={mapKey} onOpen={(id) => go(id)} head={<PhoneHead onNew={() => setSpawn(true)} />} tip={<InstallTip />} />}
       {!s && <MergerAskCards phone />}
+      {!s && <PhonePlanSheet />}{/* P307: 목표 레인 시트(폴더 머리 칩, 할 일 시트의 목표 판) */}
       {spawn && <SpawnSheet onClose={() => setSpawn(false)} onStarted={(id) => { setSpawn(false); go(id); }} />}
     </div>
   );

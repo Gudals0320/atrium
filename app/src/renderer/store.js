@@ -517,3 +517,15 @@ export function openPlanPanel(planId, anchor = null, wsKey = null) {
 }
 export function closePlanPanel() { if (!state.planPanel) return; state.planPanel = null; changed(); }
 export function pickPlanTab(planId) { if (!state.planPanel) return; state.planPanel = { ...state.planPanel, planId }; changed(); }
+
+// P307: 휴대폰 목표 시트(PhonePlan.jsx). { wsKey, planId | null }: planId가 없으면 레인 목록(레인이 하나면 그 레인).
+// 시트가 떠 있는 동안(휴대폰 화면) 목표 판 열기(할 일 시트의 "목표 판" 단추)는 PC 판 대신 이 시트로 간다
+state.phonePlan = null;
+let phonePlanHosts = 0;
+export function phonePlanHost() { phonePlanHosts++; return () => { phonePlanHosts = Math.max(0, phonePlanHosts - 1); if (!phonePlanHosts) closePhonePlan(); }; }
+export function openPhonePlan(wsKey, planId = null) { state.phonePlan = { wsKey: wsKey || null, planId: planId ?? null }; changed(); }
+export function closePhonePlan() { if (!state.phonePlan) return; state.phonePlan = null; changed(); }
+export function openPlanBoard(planId, anchor = null) {
+  if (phonePlanHosts > 0) { const l = state.plans.get(planId); openPhonePlan(l ? l.wsKey : null, planId); return; }
+  openPlanPanel(planId, anchor);
+}

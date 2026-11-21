@@ -2953,4 +2953,12 @@ export default {
     notify: { next: '다음 메시지와', now: '곧바로', off: '알리지 않음' },
     notifySet: '목표 바뀜 알림: {mode}',
   },
+  phonePlan: {
+    lanes: '목표 레인 {n}',
+    back: '레인 목록',
+    noLanes: '이 프로젝트에는 목표 레인이 없습니다.',
+    userOnly: '사용자 것만',
+    noUserItems: '이 마일스톤에는 사용자 항목이 없습니다.',
+    pcOnly: '휴대폰에서는 체크, 지금 마일스톤, 측정값 지금 값만 바꿉니다. 항목 고치기·관리자·상태는 PC 목표 판에서 합니다.',
+  },
 };

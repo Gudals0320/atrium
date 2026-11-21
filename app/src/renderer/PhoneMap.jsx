@@ -20,6 +20,7 @@ import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기 세기
 import { PhoneDecisionPill } from './Decisions.jsx'; // P284: 결정 카드 알약·시트
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
+import { PhoneLaneChip } from './PhonePlan.jsx'; // P307: 폴더 머리 레인 칩(가볍게 열림이면 없음)
 
 const REFRESH_MS = 600;
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
@@ -313,6 +314,7 @@ export function PhoneMap({ onOpen, head, tip }) {
                   <div className="mt-pmap-wh" data-role="pm-whead">
                     <span className="wsn"><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
                     <span className="wsc">{r.chips.map((c) => <span key={c.tier} className={`st-${ST[c.tier]}`} data-tier={c.tier}><i /><b>{c.n}</b> {t(`mmTerr.chip.${c.tier}`)}</span>)}</span>
+                    {r.key ? <PhoneLaneChip wsKey={r.key} lite={plan.lite} /> : null}
                   </div>
                 </div>
               ))}
