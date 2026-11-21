@@ -1285,7 +1285,6 @@ export default {
   },
   // P43: arrow keys on the board (the board has keyboard focus, e.g. after clicking an empty spot) and the auto-hiding bottom bar
   boardKeys: {
-    ws: '← and → on the board go to the previous and next workspace',
     search: '↑ on the board also opens search. Click outside it or press Esc to close',
     command: 'Ctrl+K or ↓ on the board to type here. The bar hides until you point at the bottom edge',
   },
@@ -2844,6 +2843,10 @@ export default {
     field: 'Self-orchestrating',
     fieldNote: 'A harness that runs its own sub-agents inside. When on, the board spawns no sessions for it, and as a child it talks only with its parent.',
     fallback: 'If the harness cannot run atrium, close its task with the last answer when a turn ends.',
+  },
+  // P294: moved from the removed top workspace bar to the sidebar workspace menu
+  p294: {
+    openWs: 'Open another workspace…',
   },
 };
 

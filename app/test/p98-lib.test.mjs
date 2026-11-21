@@ -2,7 +2,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { wsTabs, tabKeys, sumCounts, tabOf, groupPick, memberLabel } from '../src/renderer/lib/ws-tabs.js';
-import { stepWorkspace } from '../src/renderer/lib/keys.js';
 import { edgeGap, linkLabelHidden, linkLabelLevel, endInside, innerEnds } from '../src/renderer/lib/link-labels.js';
 import { labelFit } from '../src/renderer/lib/labels.js';
 import { facingSides } from '../../backend/src/links.mjs';
@@ -63,18 +62,6 @@ test('수 합: 세션·셸·작업 중·응답 필요·확인할 결과를 구�
   assert.deepEqual(sumCounts(SESS, ['core']), { sessions: 3, working: 0, needsYou: 0, review: 1, shells: 0 });
   assert.deepEqual(sumCounts(SESS, ['empty']), { sessions: 0, working: 0, needsYou: 0, review: 0, shells: 0 });
   assert.deepEqual(sumCounts(SESS, []), { sessions: 0, working: 0, needsYou: 0, review: 0, shells: 0 });
-});
-
-test('이전·다음: 칩 순서대로, 묶음 칩 자리에서는 구성을 묶음 안 순서로 지난다(끝에서 처음으로)', () => {
-  const keys = tabKeys(wsTabs(WS, GROUPS));
-  assert.deepEqual(keys, ['a1', 'a2', 'a3', 'lab-y', 'lab-x', 'proj/api', 'proj/web', 'proj/web/collector', 'empty', 'core', 'notes']);
-  assert.equal(keys.length, WS.length, '모든 워크스페이스에 키보드로 갈 수 있다');
-  assert.equal(stepWorkspace(keys, 'a3', 1), 'lab-y');
-  assert.equal(stepWorkspace(keys, 'lab-x', 1), 'proj/api');
-  assert.equal(stepWorkspace(keys, 'proj/web/collector', 1), 'empty');
-  assert.equal(stepWorkspace(keys, 'proj/api', -1), 'lab-x');
-  assert.equal(stepWorkspace(keys, 'notes', 1), 'a1');
-  assert.equal(stepWorkspace(keys, 'a1', -1), 'notes');
 });
 
 test('지금 칩과 묶음 칩을 누를 때 고를 워크스페이스', () => {

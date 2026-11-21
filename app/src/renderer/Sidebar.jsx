@@ -487,6 +487,7 @@ function SideMenu() {
     body = <>
       <div className="mt-sb2-mh">{w.name}</div>
       {item('menu-go-ws', t('sidebar.goWs'), () => selectWorkspace(w.key))}
+      {item('menu-open-ws', t('p294.openWs'), () => openDialog({ kind: 'wsopen' }))}{/* P294: 위 알약 줄의 +를 없애 여기로 옮겼다 */}
       <div className="mt-sb2-mh sub">{t('sbGroups.moveTo')}</div>
       {groups.map((g) => item('menu-move-group', g.name, () => moveToGroup(w.key, g.id), { k: g.id, group: g.id, on: cur === g.id, disabled: cur === g.id }))}
       {item('menu-new-group', t('sbGroups.newWith'), () => newGroup(w.key))}
