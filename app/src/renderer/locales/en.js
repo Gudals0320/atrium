@@ -2753,5 +2753,19 @@ export default {
     hint: 'Ctrl+click to open the link',
     notOpened: 'Link not opened: only http and https links open ({scheme})',
   },
+  // P289: why a steer (send now) could not go into the current turn (queue row, command bar chip, toast)
+  steerWhy: {
+    term_disconnected: 'terminal disconnected, goes in when it reconnects',
+    no_agent: 'no agent running, waiting',
+    waiting: 'question or permission open, goes in after the answer',
+    not_working: 'idle, sends right away',
+    kind: 'this kind takes no input while working, goes in at turn end',
+    no_hook: 'session without hooks, goes in at turn end',
+    user_typing: 'someone is typing in the terminal, waiting',
+    box_unknown: 'could not read the screen, goes in at turn end',
+    no_box: 'input box not found, goes in at turn end',
+    draft_in_box: 'unsent text in the input box, waiting',
+    toast: 'Could not put it into the current turn: {why}',
+  },
 };
 

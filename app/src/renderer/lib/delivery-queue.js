@@ -48,3 +48,12 @@ export function steerOf(s) {
   if (s.state === 'waiting' || s.state === 'trust_wait' || s.state === 'starting') return { ok: true, key: 'afterBlock' };
   return { ok: true, key: 'now' };
 }
+
+// P289: 바로 보내기를 거듭 눌러도 같은 까닭이면 알림은 하나(전달마다 마지막으로 알린 까닭). 알릴 때만 참
+const toldWhy = new Map();
+export function steerNotice(deliveryId, why) {
+  if (!why || toldWhy.get(deliveryId) === why) return false;
+  toldWhy.set(deliveryId, why);
+  if (toldWhy.size > 50) toldWhy.delete(toldWhy.keys().next().value);
+  return true;
+}

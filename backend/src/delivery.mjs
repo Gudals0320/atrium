@@ -75,6 +75,27 @@ export function steerBlock(s, hooked = s ? s.hooked !== false : false) {
   if (kind !== 'claude') return 'kind';
   return hooked ? null : 'no_hook';
 }
+// P289: 스티어링(typeNow)을 지금 입력 칸에 넣지 못하는 까닭 | null. 순수 함수. look: 화면 검사 결과(undefined면 아직 보지 않음, null이면 읽기 실패)
+//   term_disconnected·no_agent: 터미널이 없다, waiting: 권한·질문·신뢰 화면, not_working: 쉬는 중이거나 턴이 끝나고 뒤 일만 돈다(그냥 보낸다),
+//   kind·no_hook: 일하는 중 입력을 받지 않는 세션(steerBlock), user_typing: 사람이 그 터미널에 치는 중, box_unknown: 화면을 읽지 못함,
+//   no_box: 화면에서 입력 칸을 찾지 못함, draft_in_box: 입력 칸에 다른 글(쓰다 만 글)이 있고 비킬 수 없다(aside 거짓).
+//   못 넣으면 대기열은 지금처럼 기다렸다가 턴이 끝나면 보통 보내기로 넣는다(글이 사라지거나 두 번 들어가지 않는다)
+export const STEER_WHYS = ['term_disconnected', 'no_agent', 'waiting', 'not_working', 'kind', 'no_hook', 'user_typing', 'box_unknown', 'no_box', 'draft_in_box'];
+export function steerWhy({ view, look, aside = false, now = Date.now(), quietMs = 3000 } = {}) {
+  const v = view || {};
+  if (v.closed || !v.termConnected) return 'term_disconnected';
+  if (!v.agentPresent) return 'no_agent';
+  if (v.state === 'waiting' || v.state === 'trust_wait') return 'waiting';
+  if (v.state !== 'working' || v.bgOnly) return 'not_working';
+  const k = steerBlock({ kind: v.kind }, !!v.hooked);
+  if (k) return k;
+  if (v.lastUserInputAt && now - v.lastUserInputAt < quietMs) return 'user_typing';
+  if (look === undefined) return null;
+  if (!look) return 'box_unknown';
+  if (look.box === 'unknown') return 'no_box';
+  if (look.box === 'ours' || (look.box === 'other' && !aside)) return 'draft_in_box';
+  return null;
+}
 // 바로 넣을 글: 줄바꿈은 LF(B1 5), 끝 줄바꿈은 뗀다(입력 칸에 빈 줄이 남지 않게). Enter는 agent.prompt가 마지막에 한 번 누른다
 export const typedText = (text) => toLF(text).replace(/\n+$/, '');
 // P182: 전달의 출처 → 행의 칸
@@ -344,10 +365,11 @@ export class DeliveryQueue extends EventEmitter {
       if (t !== d.text && t.trim()) { d.text = t; if (this.store.updateDeliveryText) this.store.updateDeliveryText(d.deliveryId, t); }
     }
     d.typeAside = true; d.sentNow = true; d.retryAt = 0; d.checkedAt = 0; d.draftLookAt = 0;
-    this.emit('now', { deliveryId: d.deliveryId, sessionId: d.sessionId, state: v ? v.state : null });
+    d.nowPresses = (d.nowPresses || 0) + 1; // P289: 거듭 누른 수(판 기록에 남는다)
+    this.emit('now', { deliveryId: d.deliveryId, sessionId: d.sessionId, state: v ? v.state : null, why: d.steerWhy || null, n: d.nowPresses });
     this._emit(d);
     setImmediate(() => this.pump());
-    return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, seq: d.seq, how: v && v.state === 'working' && !v.bgOnly ? 'type' : 'send' }; // P240: 뒤 일만 돌면 보통 보내기
+    return { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, seq: d.seq, how: v && v.state === 'working' && !v.bgOnly ? 'type' : 'send', steerWhy: d.steerWhy || null }; // P240: 뒤 일만 돌면 보통 보내기. P289: 앞서 못 넣은 까닭
   }
 
   // P172: 그 세션의 대기 중 맨 앞 차례(보내는 중·보낸 전달 뒤). P248: 스티어링으로 넣은 새 전달도 이 차례로 선다
@@ -410,6 +432,8 @@ export class DeliveryQueue extends EventEmitter {
       d.acctFree = LONG_WAIT.has(reason); // P215: 이번에 본 까닭으로 다음 pump까지를 센다
       if (reason === 'closed') { this._set(d, 'failed', 'session closed'); continue; }
       if (reason === 'working' && d.typeNow && this.inspect) { const v = this.view(sid, d); if (canTypeNow(v)) { this._typeNow(d, v, now); continue; } }
+      // P289: 스티어링으로 넣은 글(typeAside)이 지금 턴에 들어갈 수 없는 상태(질문 중, 받지 않는 종류, 터미널 없음). 까닭만 남기고 지금처럼 기다린다
+      if (d.typeAside && reason && reason !== 'user_typing' && reason !== 'sleeping' && reason !== 'starting') { const w = steerWhy({ view, quietMs: this.cfg.inputQuietMs }); if (w && w !== 'not_working') this._steerBlocked(d, w); }
       if (reason) { if (d.reason !== reason) this._set(d, 'queued', reason); continue; }
       if (d.retryAt && now < d.retryAt) { this._noteStuck(d, now); continue; } // P106: 터미널이 앞 시도를 받지 않았다. 물러난 시간이 지날 때까지(또는 poke) 기다린다
       if (d.draftLookAt && now < d.draftLookAt) continue; // P128: 쓰다 만 글을 비키지 못했다. 잠시 뒤 다시 본다(사람이 보내거나 지우면 그때 보낸다)
@@ -424,7 +448,7 @@ export class DeliveryQueue extends EventEmitter {
   // P90: 일하는 중에 바로 넣기. 입력 칸을 읽어 비었을 때만(사람이 쓰던 글을 덮지 않는다) 넣는다. 화면 읽기는 typeCheckMs마다 한 번
   async _typeNow(d, v, now) {
     if (d.checking || now - (d.checkedAt || 0) < (this.cfg.typeCheckMs ?? 1500)) return;
-    if (v.lastUserInputAt && now - v.lastUserInputAt < this.cfg.inputQuietMs) { if (d.reason !== 'user_typing') this._set(d, 'queued', 'user_typing'); return; } // 규칙 4
+    if (v.lastUserInputAt && now - v.lastUserInputAt < this.cfg.inputQuietMs) { this._steerBlocked(d, 'user_typing'); if (d.reason !== 'user_typing') this._set(d, 'queued', 'user_typing'); return; } // 규칙 4
     d.checking = true; d.checkedAt = now;
     try {
       const look = await this.inspect(d.sessionId, d.text).catch(() => null);
@@ -436,6 +460,9 @@ export class DeliveryQueue extends EventEmitter {
       const aside = box === 'other' && d.typeAside && !!this.drafts && (v2.kind || 'claude') === 'claude';
       if ((box !== 'empty' && !aside) || !canTypeNow(v2) || (v2.lastUserInputAt && Date.now() - v2.lastUserInputAt < this.cfg.inputQuietMs)) {
         const why = box === 'other' || box === 'ours' ? 'draft' : 'working'; // 입력 칸에 글이 있다 / 못 읽었거나 상태가 바뀌었다
+        // P289: 못 넣은 까닭을 남긴다(이벤트·판 로그·창). 같은 까닭이면 한 번만
+        const sw = steerWhy({ view: v2, look, aside, quietMs: this.cfg.inputQuietMs }) || (box === 'unknown' ? 'no_box' : null);
+        if (sw && sw !== 'not_working') this._steerBlocked(d, sw, look); // 그새 턴이 끝났으면(not_working) 곧 보통 보내기로 들어간다: 남기지 않는다
         if (d.reason !== why) this._set(d, 'queued', why);
         return;
       }
@@ -446,6 +473,7 @@ export class DeliveryQueue extends EventEmitter {
   async _deliver(d, typed = false, aside = !typed) {
     d.workingSeen = false; // 앞 시도(실패) 중의 working 신호를 이 시도의 확인으로 쓰지 않는다(이슈 #1-3)
     d.typed = typed; // P90: Claude Code 대기 메시지로 넣었다(전달 기록의 이유 'typed')
+    if (typed) d.steerWhy = null; // P289: 지금 턴에 넣었다. 못 넣던 까닭은 지운다(턴 끝에 보통 보내기로 들어가면 남겨 둔다: 기록에서 왜 늦었는지 보인다)
     // P106: 앞 시도를 터미널이 받지 않았으면(물러남 중) 다시 보내기는 조용히 한다. 시도 수만 세고 이벤트는 쓰지 않는다(처음 한 번과 까닭이 바뀔 때만)
     const quiet = !!d.refusals || d.reason === 'draft'; // P128: 쓰다 만 글 때문에 기다리며 다시 보는 시도도 조용히 한다
     if (quiet) { d.status = 'sending'; d.attempts = (d.attempts || 0) + 1; d.updatedAt = Date.now(); this.store.updateDelivery(d.deliveryId, { status: 'sending', reason: d.reason, attempt: true }); }
@@ -612,5 +640,12 @@ export class DeliveryQueue extends EventEmitter {
     }
     return r;
   }
-  _emit(d) { this.emit('delivery', { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, createdAt: d.createdAt, sentAt: d.sentAt || null, confirmedAt: d.confirmedAt || null, attempts: d.attempts || 0, chars: d.text.length, seq: d.seq ?? d.createdAt, editing: !!d.editing }); }
+  // P289: 스티어링을 지금 못 넣는 까닭이 바뀌었을 때만 알린다(steer_blocked 이벤트 → 판 기록·로그, delivery 이벤트의 steerWhy → 창). 같은 까닭으로 거듭 눌러도 하나
+  _steerBlocked(d, why, look = undefined) {
+    if (!why || d.steerWhy === why) return;
+    d.steerWhy = why;
+    this.emit('steer_blocked', { deliveryId: d.deliveryId, sessionId: d.sessionId, why, ...(look && look.box ? { box: look.box } : {}) });
+    this._emit(d);
+  }
+  _emit(d) { this.emit('delivery', { deliveryId: d.deliveryId, sessionId: d.sessionId, status: d.status, reason: d.reason, createdAt: d.createdAt, sentAt: d.sentAt || null, confirmedAt: d.confirmedAt || null, attempts: d.attempts || 0, chars: d.text.length, seq: d.seq ?? d.createdAt, editing: !!d.editing, steerWhy: d.steerWhy || null }); }
 }
