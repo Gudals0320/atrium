@@ -17,6 +17,9 @@ import { envVar } from './config.mjs';
 
 export const REFRESH_MS = 60_000;
 export const RUN_TIMEOUT_MS = 6000;
+// P291: 허용 목록(Host)을 줄이려면 같은 줄어든 결과를 연속 이만큼 읽어야 한다(바쁜 PC에서 CLI가 시간 안에 못 끝나 "꺼짐"·serve 없음으로 읽히는 흔들림).
+// 로그아웃(NeedsLogin·NoState를 JSON으로 확실히 읽음)과 Tailscale 없음(ENOENT)은 곧바로 줄인다
+export const SHRINK_CONFIRM = 3;
 
 // tailscale 실행 파일. ATRIUM_TAILSCALE=none이면 읽지 않는다(시험), 경로를 주면 그것
 export function tailscaleBin({ env = envVar('TAILSCALE'), platform = process.platform, exists = fs.existsSync, programFiles = process.env.ProgramFiles } = {}) {
@@ -166,6 +169,9 @@ export const parseLogins = (s) => String(s || '').split(/[,\s]+/).map((x) => x.t
 export const WHOIS_TTL_MS = 60_000; // 주소마다 결과를 기억하는 시간
 export const WHOIS_FAIL_TTL_MS = 5_000; // 실패도 잠깐 기억한다(Tailscale이 꺼졌을 때 요청마다 프로세스를 띄우지 않게)
 export const WHOIS_MAX = 256;
+// P291: whois가 일시 실패(꺼짐으로 읽힘, 시간 초과, CLI 실패)면 RETRY_MS 뒤 한 번 더 묻고, 그래도 실패면 같은 주소의 마지막 성공 결과를 이만큼 쓴다
+export const WHOIS_RETRY_MS = 400;
+export const WHOIS_STALE_MS = 5 * 60_000;
 const LOOPBACK = /^(127\.|::1$|::ffff:127\.)/;
 const safeEq = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 
@@ -215,32 +221,47 @@ export function parseWhois(j) {
 
 // 주소마다 whois 결과를 잠깐 기억한다. lookup(addr) → { ok: true, who } | { ok: false, reason }. 던지지 않는다
 export class WhoisCache {
-  constructor({ bin, run = runTailscale, now = Date.now, ttlMs = WHOIS_TTL_MS, failTtlMs = WHOIS_FAIL_TTL_MS, max = WHOIS_MAX } = {}) {
+  constructor({ bin, run = runTailscale, now = Date.now, ttlMs = WHOIS_TTL_MS, failTtlMs = WHOIS_FAIL_TTL_MS, max = WHOIS_MAX, retryMs = WHOIS_RETRY_MS, staleMs = WHOIS_STALE_MS, wait = (ms) => new Promise((r) => setTimeout(r, ms)), log = () => {} } = {}) {
     this.bin = bin; this.run = run; this.now = now; this.ttlMs = ttlMs; this.failTtlMs = failTtlMs; this.max = max;
+    this.retryMs = retryMs; this.staleMs = staleMs; this.wait = wait; this.log = log;
     this.map = new Map(); // addr → { at, result }
+    this.good = new Map(); // P291: addr → { at, who } 마지막 성공(일시 실패 때 짧게 쓴다)
     this.pending = new Map(); // addr → Promise
+  }
+  async ask(key) {
+    try {
+      const who = parseWhois(JSON.parse(await this.run(this.bin, ['whois', '--json', key])));
+      return who ? { ok: true, who } : { ok: false, reason: 'unknown_node' };
+    } catch { return { ok: false, reason: 'whois_failed' }; } // 꺼짐, 시간 초과, 모르는 주소(tailscale이 실패로 끝난다)
+  }
+  // P291: 일시 실패(whois_failed)면 같은 주소의 마지막 성공을 staleMs 안에서 쓴다(기기가 정말 다르면 whois가 성공해 다른 StableID를 준다)
+  fallback(key, result) {
+    if (result.ok || result.reason !== 'whois_failed') return result;
+    const g = this.good.get(key);
+    if (g && this.now() - g.at < this.staleMs) return { ok: true, who: g.who, stale: true };
+    return result;
   }
   async lookup(addr) {
     if (!isTailnetAddr(addr)) return { ok: false, reason: 'bad_addr' };
     if (!this.bin) return { ok: false, reason: 'disabled' };
     const key = addr.toLowerCase();
     const hit = this.map.get(key);
-    if (hit && this.now() - hit.at < (hit.result.ok ? this.ttlMs : this.failTtlMs)) return hit.result;
+    if (hit && this.now() - hit.at < (hit.result.ok ? this.ttlMs : this.failTtlMs)) return this.fallback(key, hit.result);
     if (this.pending.has(key)) return this.pending.get(key);
     const p = (async () => {
-      let result;
-      try {
-        const who = parseWhois(JSON.parse(await this.run(this.bin, ['whois', '--json', key])));
-        result = who ? { ok: true, who } : { ok: false, reason: 'unknown_node' };
-      } catch { result = { ok: false, reason: 'whois_failed' }; } // 꺼짐, 시간 초과, 모르는 주소(tailscale이 실패로 끝난다)
+      let result = await this.ask(key);
+      if (result.reason === 'whois_failed' && this.retryMs >= 0) { await this.wait(this.retryMs); result = await this.ask(key); } // P291: 짧게 한 번 더
       this.map.delete(key); this.map.set(key, { at: this.now(), result });
       while (this.map.size > this.max) this.map.delete(this.map.keys().next().value);
-      return result;
+      if (result.ok) { this.good.delete(key); this.good.set(key, { at: this.now(), who: result.who }); while (this.good.size > this.max) this.good.delete(this.good.keys().next().value); }
+      const out = this.fallback(key, result);
+      if (out.stale) { try { this.log(`tailscale: whois failed twice, using the last good result (${Math.round((this.now() - this.good.get(key).at) / 1000)}s old)`); } catch {} }
+      return out;
     })().finally(() => this.pending.delete(key));
     this.pending.set(key, p);
     return p;
   }
-  clear() { this.map.clear(); }
+  clear() { this.map.clear(); this.good.clear(); }
 }
 
 // 바깥 요청이 whois와 맞는가(순수). w = WhoisCache.lookup 결과. whois의 로그인과 Tailscale-User-Login이 같아야 한다(대소문자 무시)
@@ -341,11 +362,57 @@ function finish(out, ts, ctx) {
   };
 }
 
-// 상태를 들고 있다가 주기마다 다시 읽는다. onChange(ts)는 이름이 바뀔 때(허용 목록)
+// P291: 한 번 읽은 결과가 확실한 "꺼짐"(로그아웃, Tailscale 없음)인가. 실행 실패·시간 초과·serve 읽기 실패는 일시 실패로 본다
+export function certainOff(ts) {
+  if (!ts) return false;
+  if (ts.installed === false) return true;
+  const st = ts.status;
+  return !ts.error && !!st && ['NeedsLogin', 'NoState'].includes(st.backendState);
+}
+// P291: 읽은 결과가 왜 이 허용 목록이 되었는지(로그용, 짧게). 상태 읽기 실패, 백엔드 상태, serve 읽기 실패, serve가 판을 가리키지 않음
+export function readWhy(ts) {
+  if (!ts) return 'no read';
+  if (ts.installed === false) return 'tailscale not installed';
+  const out = [];
+  if (ts.error) out.push(`status failed: ${ts.error}`);
+  const st = ts.status;
+  if (st && !st.running) out.push(`state ${st.backendState || 'unknown'}`);
+  if (st && st.running && !st.dnsName) out.push('no dns name');
+  if (ts.serve && ts.serve.error) out.push(`serve status failed: ${ts.serve.error}`);
+  else if (st && st.running && ts.serve && !ts.serve.board) out.push('serve has no board entry');
+  return out.join('; ') || 'ok';
+}
+// P291: 허용 목록을 정한다(순수). prev = { hosts, login, shrink: { key, n } }, ts = 이번에 읽은 것, lastGood = 마지막으로 잘 읽은 결과(serve 실패 때 serve를 빌린다)
+// → { hosts, login, shrink, changed, added, removed, held(줄어듦을 미룸) }
+export function settleHosts(prev, ts, lastGood, confirm = SHRINK_CONFIRM) {
+  const p = prev || { hosts: [], login: null, shrink: null };
+  // serve만 못 읽었고 이름이 같으면 마지막으로 잘 읽은 serve를 쓴다(판의 https 포트 항목이 빠지지 않게)
+  let view = ts;
+  if (ts && ts.serve && ts.serve.error && lastGood && lastGood.serve && !lastGood.serve.error && lastGood.status && ts.status && lastGood.status.dnsName === ts.status.dnsName) view = { ...ts, serve: lastGood.serve };
+  const next = certainOff(ts) ? [] : tailscaleHosts(view); // 로그아웃·없음이면 이름이 남아 있어도 비운다
+  const login = certainOff(ts) ? null : (ts && ts.status && ts.status.login) || null;
+  const removed = p.hosts.filter((h) => !next.includes(h));
+  const added = next.filter((h) => !p.hosts.includes(h));
+  const loginLost = !!p.login && login !== p.login;
+  if (!removed.length && !loginLost) {
+    return { hosts: next, login: login || p.login, shrink: null, changed: added.length > 0 || login !== p.login, added, removed: [], held: false };
+  }
+  // 줄어듦(또는 로그인이 바뀌거나 사라짐): 확실한 꺼짐이면 곧바로, 아니면 같은 결과를 연속 confirm번 읽을 때만
+  const key = JSON.stringify([next, login]);
+  const n = p.shrink && p.shrink.key === key ? p.shrink.n + 1 : 1;
+  if (certainOff(ts) || n >= confirm) return { hosts: next, login, shrink: null, changed: true, added, removed, held: false };
+  return { hosts: p.hosts, login: p.login, shrink: { key, n }, changed: false, added, removed, held: true, n };
+}
+
+// 상태를 들고 있다가 주기마다 다시 읽는다. onChange(ts, info)는 허용 목록이 바뀔 때. info = { hosts, added, removed, why }
+// P291: last는 마지막으로 읽은 그대로(진단), hosts()·selfLogin()은 흔들림을 거른 허용 목록(settleHosts)
 export class TailscaleWatch {
-  constructor({ port, bin, run, log = () => {}, onChange = () => {}, refreshMs = REFRESH_MS }) {
+  constructor({ port, bin, run, log = () => {}, onChange = () => {}, refreshMs = REFRESH_MS, shrinkConfirm = SHRINK_CONFIRM }) {
     this.port = port; this.bin = bin === undefined ? tailscaleBin() : bin; this.run = run || runTailscale; this.log = log; this.onChange = onChange;
     this.last = { at: 0, installed: !!this.bin, disabled: !this.bin, status: null, serve: null, error: null };
+    this.good = null; // 마지막으로 잘 읽은 결과(상태 실행 성공, 실행 중)
+    this.allow = { hosts: [], login: null, shrink: null };
+    this.shrinkConfirm = shrinkConfirm;
     this.refreshMs = refreshMs; this.timer = null; this.pending = null;
   }
   start(firstDelayMs = 500) {
@@ -358,15 +425,19 @@ export class TailscaleWatch {
     if (!this.bin) return Promise.resolve(this.last);
     if (this.pending) return this.pending;
     this.pending = readTailscale({ port: this.port, bin: this.bin, run: this.run }).then((ts) => {
-      const before = JSON.stringify(tailscaleHosts(this.last)) + (this.last.status && this.last.status.login);
       this.last = ts;
-      if (before !== JSON.stringify(tailscaleHosts(ts)) + (ts.status && ts.status.login)) { try { this.onChange(ts); } catch {} }
+      const r = settleHosts(this.allow, ts, this.good, this.shrinkConfirm);
+      this.allow = { hosts: r.hosts, login: r.login, shrink: r.shrink };
+      if (!ts.error && ts.status && ts.status.running && !(ts.serve && ts.serve.error)) this.good = ts;
+      const why = readWhy(ts);
+      if (r.held) { try { this.log(`tailscale: read gives hosts ${tailscaleHosts(ts).length}${r.removed.length ? ` (missing ${r.removed.join(', ')})` : ''}; ${why}; keeping hosts ${r.hosts.length} (${r.n}/${this.shrinkConfirm})`); } catch {} }
+      if (r.changed) { try { this.onChange(ts, { hosts: r.hosts, added: r.added, removed: r.removed, why }); } catch {} }
       return ts;
     }).finally(() => { this.pending = null; });
     return this.pending;
   }
-  hosts() { return tailscaleHosts(this.last); }
+  hosts() { return this.allow.hosts.slice(); }
   // P57: 요청한 기기 확인. 실행 파일이 없으면(ATRIUM_TAILSCALE=none) 늘 실패한다(바깥 요청은 막힌다)
-  whois(addr) { if (!this.whoisCache) this.whoisCache = new WhoisCache({ bin: this.bin, run: this.run }); return this.whoisCache.lookup(addr); }
-  selfLogin() { return (this.last.status && this.last.status.login) || null; }
+  whois(addr) { if (!this.whoisCache) this.whoisCache = new WhoisCache({ bin: this.bin, run: this.run, log: this.log, ...(this.whoisOpts || {}) }); return this.whoisCache.lookup(addr); }
+  selfLogin() { return this.allow.login || null; }
 }

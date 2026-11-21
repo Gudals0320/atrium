@@ -67,7 +67,7 @@ test('whois 결과 기억과 만료: 성공은 60초, 실패는 잠깐, 같은 �
   let t = 1_000_000; const calls = [];
   let fail = false;
   const run = async (bin, args) => { calls.push(args[2]); await new Promise((res) => setTimeout(res, 5)); if (fail) throw new Error('failed to connect to local tailscaled'); const w = fakeWhois(args[2]); if (!w) throw new Error('no match'); return JSON.stringify(w); };
-  const c = new WhoisCache({ bin: 'tailscale', run, now: () => t });
+  const c = new WhoisCache({ bin: 'tailscale', run, now: () => t, retryMs: -1, staleMs: 0 }); // P291의 다시 묻기·마지막 성공 쓰기는 p291.test.mjs
   const [x, y] = await Promise.all([c.lookup(A), c.lookup(A)]);
   assert.equal(x.ok, true); assert.equal(y.who.id, 'nFAKE0002CNTRL');
   assert.deepEqual(calls, [A], '동시 요청은 한 번');

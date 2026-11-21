@@ -13,12 +13,23 @@ export const CRASH_KEEP_MS = 15 * 60_000; // 이보다 오래된 죽음은 세�
 const num = (v) => (Number.isFinite(v) ? v : null);
 // P86: 보드 단계(0 = 전부 켬 … LEVEL_MAX). level: 다음 보드 부팅이 쓸 단계, ok: 그 단계에서 살아남은 적이 있다(기기에 기억)
 export const LEVEL_MAX = 4;
+// P291: PC 브라우저(마우스, 큰 화면)는 페이지를 잃어도(노트북 잠자기, 탭 버리기, PC 재시작) 늘 0단계로 연다.
+// 열린 지 PC_FAST_MS 안에 죽는 일이 PC_FAST_WINDOW_MS 안에 PC_FAST_CRASHES번 이어질 때만 한 단계 가볍게(정말 연이어 짧게 죽음)
+export const PC_FAST_MS = 15_000;
+export const PC_FAST_CRASHES = 3;
+export const PC_FAST_WINDOW_MS = 3 * 60_000;
+// P291: 가벼운 보기를 쓰는 기기인가(휴대폰·태블릿). 손가락 포인터, 휴대폰·태블릿 UA, 또는 터치가 되는 작은 화면
+export function touchDevice({ coarse = false, ua = '', maxTouch = 0, minScreen = Infinity } = {}) {
+  if (coarse) return true;
+  if (/iPhone|iPad|iPod|Android|Mobile/i.test(String(ua))) return true;
+  return maxTouch > 0 && minScreen <= 820;
+}
 const levelOf = (v) => (Number.isInteger(v) && v >= 0 ? Math.min(v, LEVEL_MAX) : 0);
 // 적어 둔 글 → 상태. 모양이 다르면 처음 상태
 export function parseCrumbs(text) {
   let j = null;
   try { j = JSON.parse(text || 'null'); } catch {}
-  if (!j || typeof j !== 'object' || j.v !== 1) return { v: 1, cur: null, crashes: [], light: false, retry: null, level: 0, ok: false, sent: null };
+  if (!j || typeof j !== 'object' || j.v !== 1) return { v: 1, cur: null, crashes: [], light: false, retry: null, level: 0, ok: false, sent: null, by: null };
   return {
     v: 1,
     cur: j.cur && typeof j.cur === 'object' && Number.isFinite(j.cur.boot) ? j.cur : null,
@@ -28,11 +39,15 @@ export function parseCrumbs(text) {
     level: levelOf(j.level),
     ok: j.ok === true,
     sent: num(j.sent), // P87: 백엔드가 받았다고 답한 마지막 죽음(죽은 페이지의 부팅 시각)
+    by: j.by === 'pc' || j.by === 'touch' ? j.by : null, // P291: 이 기록을 쓴 규칙(PC는 휴대폰 규칙이 남긴 단계를 쓰지 않는다)
   };
 }
 
 // 다음 부팅의 판단. 돌려줌: { crashed, hidden, light, report(백엔드에 보낼 직전 상태, 죽지 않았으면 null), state(새로 적을 상태) }
-export function bootDecide(stored, now = Date.now()) {
+// P291: opts.touch = false(PC 브라우저)면 PC 규칙: 가벼운 화면을 쓰지 않고, 휴대폰 규칙이 남긴 단계는 무시하고(0단계),
+// 열린 지 PC_FAST_MS 안에 죽은 것만 세어 PC_FAST_WINDOW_MS 안에 PC_FAST_CRASHES번이면 한 단계 가볍게(그 뒤 다시 센다)
+export function bootDecide(stored, now = Date.now(), { touch = true } = {}) {
+  if (touch === false) return pcDecide(stored, now);
   const s = stored || parseCrumbs(null);
   const prev = s.cur;
   // P87: 이미 알리고 센 죽음(sent)은 다시 죽음으로 보지 않는다. 같은 기록을 두 번 세면 1분 안에 두 번 죽은 것이 되어 가벼운 화면으로 열린다
@@ -54,9 +69,31 @@ export function bootDecide(stored, now = Date.now()) {
     const at = levelOf(prev.level);
     if (at >= level) { level = Math.min(at + 1, LEVEL_MAX); ok = false; stepped = level !== at; }
   }
-  const state = { v: 1, cur: { boot: now, alive: now, clean: false, light, retryBoot: retry != null, mode: light ? 'light' : 'board', level }, crashes: light ? [] : crashes.slice(-10), light, retry, level, ok, sent: num(s.sent) };
+  const state = { v: 1, cur: { boot: now, alive: now, clean: false, light, retryBoot: retry != null, mode: light ? 'light' : 'board', level }, crashes: light ? [] : crashes.slice(-10), light, retry, level, ok, sent: num(s.sent), by: 'touch' };
   // P87: reportId는 죽은 페이지의 부팅 시각. 백엔드는 같은 id를 한 번만 남기고(web.boot), 받았다는 답이 오면 sent에 적는다(crumbSent)
   return { crashed, hidden, light, report, reportId: crashed ? prev.boot : null, state, level, ok, stepped };
+}
+function pcDecide(stored, now) {
+  const s0 = stored || parseCrumbs(null);
+  // 휴대폰 규칙이 남긴 기록(by가 pc가 아님)의 단계·가벼운 화면은 쓰지 않는다. 죽음 기록(cur, sent)은 알리기 위해 그대로 읽는다
+  const s = s0.by === 'pc' ? s0 : { ...s0, level: 0, ok: false, light: false, retry: null, crashes: [] };
+  const prev = s.cur;
+  const crashed = !!prev && !prev.clean && !(s.sent != null && prev.boot === s.sent);
+  const hidden = crashed && prev.hidden === true;
+  const at = crashed ? num(prev.alive) ?? prev.boot : null;
+  const up = crashed ? Math.max(0, at - prev.boot) : null;
+  const fast = crashed && !hidden && up < PC_FAST_MS && prev.mode !== 'light' && prev.view !== 'list' && prev.view !== 'session';
+  let crashes = s.crashes.filter((t) => now - t < PC_FAST_WINDOW_MS);
+  if (fast && !crashes.includes(at)) crashes.push(at);
+  let level = levelOf(s.level), ok = s.ok === true, stepped = false;
+  if (crashes.length >= PC_FAST_CRASHES) {
+    const lv = levelOf(prev && prev.level);
+    if (lv >= level) { level = Math.min(lv + 1, LEVEL_MAX); ok = false; stepped = level !== lv; }
+    crashes = [];
+  }
+  const report = crashed ? reportOf(prev, now, { boots: crashes.length }) : null;
+  const state = { v: 1, cur: { boot: now, alive: now, clean: false, light: false, retryBoot: false, mode: 'board', level }, crashes: crashes.slice(-10), light: false, retry: null, level, ok, sent: num(s.sent), by: 'pc' };
+  return { crashed, hidden, light: false, report, reportId: crashed ? prev.boot : null, state, level, ok, stepped };
 }
 
 // P86: 단계 기록. 보드를 여는 단계마다(소켓 열림, 큰 메시지, 판 적용, 첫 그리기, 화면 맞춤, 터미널 붙기, 첫 프레임 쓰기) 그 자리에서 적는다(2초 주기와 별도).

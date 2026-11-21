@@ -4,7 +4,7 @@
 // - 직전 페이지가 죽었으면 연결이 열릴 때 web.boot로 직전 상태를 보낸다(연결 기록의 boot 줄). 내용(글, 화면)은 보내지 않는다
 // - 가벼운 화면: "보드로 다시 열기"(reopenBoard)는 기록을 바꾸고 페이지를 다시 읽는다
 import { api } from './api.js';
-import { CRUMB_KEY, ALIVE_EVERY_MS, parseCrumbs, bootDecide, crumbAlive, crumbLeave, crumbBack, chooseBoard, termBudget, crumbStep, levelHeavier, levelReset, levelPlan, crumbSent } from './lib/crumbs.js';
+import { CRUMB_KEY, ALIVE_EVERY_MS, parseCrumbs, bootDecide, crumbAlive, crumbLeave, crumbBack, chooseBoard, termBudget, crumbStep, levelHeavier, levelReset, levelPlan, crumbSent, touchDevice } from './lib/crumbs.js';
 // P86: 보드를 여는 단계마다 그 자리에서 적는 단계 기록(step), 다시 열 때마다 한 단계씩 가벼워지는 보드(boardLevel), 살아남은 단계를 연결 기록에(web.level)
 
 const webPage = () => typeof window !== 'undefined' && !!(window.mt ? window.mt.web : true); // web.js가 window.mt.web을 둔다. Electron은 preload가 먼저 둔다
@@ -13,11 +13,13 @@ const read = () => { try { return parseCrumbs(store().getItem(CRUMB_KEY)); } cat
 const write = (s) => { try { store().setItem(CRUMB_KEY, JSON.stringify(s)); } catch {} };
 
 let decided = null;
+const touchNow = () => { try { return touchDevice({ coarse: window.matchMedia('(pointer: coarse)').matches, ua: navigator.userAgent, maxTouch: navigator.maxTouchPoints || 0, minScreen: Math.min(screen.width, screen.height) }); } catch { return true; } };
 let leaving = false;
 export function bootState() {
   if (decided) return decided;
   if (!webPage()) return (decided = { web: false, crashed: false, hidden: false, light: false, report: null, level: 0, ok: false, stepped: false });
-  const d = bootDecide(read());
+  // P291: 가벼운 보기(단계 올리기, 가벼운 화면)는 휴대폰·태블릿 규칙. PC 브라우저는 늘 0단계(연이어 짧게 죽을 때만 한 단계)
+  const d = bootDecide(read(), Date.now(), { touch: touchNow() });
   write(d.state);
   // 정상 떠남은 짝 맺기·본인 확인 화면에서도 적는다(그 화면을 다시 읽는 것을 죽음으로 보지 않게)
   // 떠날 때는 pagehide 뒤에 visibilitychange(hidden)가 온다. 떠나는 동안은 살아 있다는 기록으로 정상 떠남을 덮지 않는다
@@ -66,7 +68,7 @@ export function startCrashWatch() {
   if (!b.web || started) return;
   started = true;
   api.onStep = step; // P86: 소켓 열림, 큰 메시지
-  step('boot', { lv: b.level, ok: b.ok ? 1 : 0, dpr: window.devicePixelRatio || 1, w: window.innerWidth, h: window.innerHeight });
+  step('boot', { lv: b.level, ok: b.ok ? 1 : 0, tc: touchNow() ? 1 : 0, dpr: window.devicePixelRatio || 1, w: window.innerWidth, h: window.innerHeight });
   const alive = () => { if (leaving) return; const s = read(), n = crumbAlive(s, sample()); write(n); if (n.ok && !s.ok) noteLevel(n.level, 'alive'); };
   alive();
   setInterval(alive, ALIVE_EVERY_MS);
