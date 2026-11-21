@@ -12,10 +12,11 @@
 
 // 종류의 기본값(런처 칸이 없을 때). 하네스 어댑터를 붙이면(P297 Hermes) 이 표에 그 종류를 둔다
 // P297 측정(Hermes 0.23 + OMH): 안의 일(에이전트 고리, 모델 호출, 도구, delegate_task)은 패널 나무 밖 프로필 공유 gateway 데몬에서 돈다.
-//   그래서 proctree·cpu는 아무것도 보지 못한다. 상태 파일(state.db, runtime/active_sessions.json)의 고친 때만 본다(내용은 읽지 않는다).
-//   공유 데몬이라 사람이 따로 쓰는 Hermes도 바쁨으로 보인다(잠재우지 않는 쪽으로 틀린다)
-export const ORCH_DEFAULTS = { hermes: { orchestrates: true, busy: [{ files: '%LOCALAPPDATA%/hermes/state.db*' }, { files: '%LOCALAPPDATA%/hermes/runtime/active_sessions.json' }] } };
-export const REPORT_FALLBACKS = ['last_answer'];
+//   그래서 proctree·cpu는 아무것도 보지 못한다.
+// P298: Hermes는 상태 파일의 고친 때 대신 그 세션만 보는 읽개(hermes.mjs hermesBusyOf: state.db의 도는 하위 에이전트·턴 임대)를 쓴다(공용 파일의 고친 때는 사람이 따로 쓰는 Hermes도 바쁨으로 보였다).
+//   보고는 atrium done(세션별 감싸개로 닿는다)이 먼저이고, done 없이 턴이 끝나면 마지막 답으로 닫는다(reportFallback, 하위가 도는 동안은 기다린다)
+export const ORCH_DEFAULTS = { hermes: { orchestrates: true, reportFallback: 'last_answer', busy: [{ reader: 'hermes' }] } };
+export const REPORT_FALLBACKS = ['last_answer', 'none']; // P298: none = 종류의 기본(hermes last_answer)을 런처에서 끈다
 export const BUSY_SIGNALS = ['proctree', 'cpu'];
 export const DEFAULT_BUSY = Object.freeze(['proctree', 'cpu']);
 export const BUSY_GLOB_MAX = 300;
@@ -73,7 +74,7 @@ export function orchOf(kind, l = null) {
   return {
     on: true,
     via: own ? 'launcher' : 'kind',
-    reportFallback: (l && l.reportFallback) || d.reportFallback || null,
+    reportFallback: l && l.reportFallback === 'none' ? null : (l && l.reportFallback) || d.reportFallback || null, // P298: none은 끔
     busy: (l && Array.isArray(l.busy) && l.busy.length ? l.busy : d.busy) || [...DEFAULT_BUSY],
   };
 }

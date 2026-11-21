@@ -454,6 +454,14 @@ export class Sleeper {
   // P246: 다른 하네스는 프로세스 표를 한 번 읽어 하네스 아래 셸을 센다(harnessWork). root는 셸이 아닌 앞쪽 프로세스(하네스), 없으면 셸
   // ---------- P296: 자체 오케스트레이션 세션의 안 일 ----------
   innerBusy(s) { const x = s && s.orch ? this.inner.get(s.sessionId) : null; return !!(x && x.busy); }
+  // P298: 지금 바쁜가(턴이 막 끝난 때). 잰 값이 바쁨이 아니면 하네스별 읽개(busy 칸 { reader })를 곧바로 한 번 더 부른다(tick 사이에 하위 에이전트를 띄우고 턴이 끝날 수 있다)
+  innerBusyNow(s) {
+    if (!s || !s.orch) return false;
+    if (this.innerBusy(s)) return true;
+    const sig = Array.isArray(s.orch.busy) ? s.orch.busy : [];
+    if (!sig.some((x) => x && typeof x === 'object' && x.reader)) return false;
+    return readerSignals(sig, { session: s, now: Date.now() }).some((r) => r.busy);
+  }
   innerView(s) { const x = s && s.orch && !s.rt.sleep ? this.inner.get(s.sessionId) : null; return x ? { busy: x.busy, why: x.why, n: x.n, at: x.at } : null; }
   // 깨어 있는 오케스트레이션 세션의 바쁨 신호를 잰다(tick마다, 손으로 잠재우기 전). 바쁨 → 조용이면 멈춤 알림을 다시 보고(unit-stops onInnerQuiet), 바뀌면 요약을 다시 보낸다
   async scanInner(list = [...this.b.sessions.values()]) {

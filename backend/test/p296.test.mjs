@@ -160,7 +160,8 @@ test('P296 런처 칸과 기본값: orchestrates·reportFallback·busy, 종류 �
   assert.equal(orchOf('claude', resolveLauncher({ ...plain, id: 'y' })), null);
   assert.equal(orchOf('claude', null), null);
   const h = orchOf('hermes', null);
-  assert.equal(h.via, 'kind'); assert.ok(h.busy.some((x) => x.files && /hermes/.test(x.files)), 'Hermes는 상태 파일 신호(P297: 나무·CPU로는 안 보인다)');
+  assert.equal(h.via, 'kind'); assert.ok(h.busy.some((x) => x.reader === 'hermes'), 'Hermes는 그 세션만 보는 읽개(P297: 나무·CPU로는 안 보인다, P298: 공용 파일 시각 대신 state.db)');
+  assert.equal(h.reportFallback, 'last_answer'); // P298
   assert.equal(orchOf('hermes', { orchestrates: false }), null, '런처가 끄면 꺼진다');
   assert.deepEqual(launcherOrch({ harness: 'claude' }, 'claude'), { orchestrates: false, via: null });
   assert.deepEqual(launcherOrch({}, 'hermes'), { orchestrates: true, via: 'kind' });

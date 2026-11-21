@@ -18,8 +18,8 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { hcCall, hcSubscribe, hcPipe, HcError, FramedConn, FRAME } from './rpc.mjs';
-import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm, TRUST_STATUS, isSynthetic, trustStatusOf, TRUST_WATCH_KINDS } from './model.mjs';
-import { trustDialogOf, dshGateOf } from '../screen.mjs'; // P117: 신뢰 대화상자(7501 상태 전). P208: Codex도. P270: dsh-TUI가 입력을 잡는 창
+import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm, TRUST_STATUS, isSynthetic, trustStatusOf, TRUST_WATCH_KINDS, isScreenStatus, SCREEN_STATUS_KINDS } from './model.mjs';
+import { trustDialogOf, dshGateOf, hermesStateOf } from '../screen.mjs'; // P117: 신뢰 대화상자(7501 상태 전). P208: Codex도. P270: dsh-TUI가 입력을 잡는 창
 import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
@@ -77,6 +77,7 @@ export class HcAdapter extends EventEmitter {
     this._dshLaunch = new Map(); // P270: dsh 터미널 → 띄운 때(보내기 직전 확인이 갓 뜬 화면을 한 번 더 본다)
     this._dshGone = new Map(); // P270: dsh 터미널 → 입력을 잡던 창이 사라진 때
     this.dshSettleMs = 4000;
+    this.screenPollMs = 1000; // P298: 화면으로 상태를 읽는 종류(Hermes)를 보는 간격
     this.subscribedPanes = [];
     this.trace = new InputTrace({ log: (m) => this.log(m) }); // P136: 패널마다 최근 입력·초점·크기·모드·기록 읽기(값만). 입력 칸에 마우스 보고 글이 보이면 로그에 남긴다
   }
@@ -336,6 +337,7 @@ export class HcAdapter extends EventEmitter {
     this._envOf.set(r.address, tenv);
     if (TRUST_WATCH_KINDS.has(kind)) this._watchTrust(r.address, Date.now(), kind); // P208: Codex의 신뢰 질문도
     if (kind === 'dsh') { this._dshLaunch.set(r.address, Date.now()); this._watchDshGate(r.address, Date.now()); } // P270
+    if (SCREEN_STATUS_KINDS.has(kind)) this._watchScreenStatus(r.address, kind); // P298
     return r;
   }
   // P270: 보내기 직전 확인. dsh-TUI의 첫 실행 안내는 7501 idle과 거의 같은 때(0.2초 안) 그려져 지켜보기(_watchDshGate)보다 판의 첫 요청이 먼저 갈 수 있다
@@ -387,6 +389,36 @@ export class HcAdapter extends EventEmitter {
     if (timer.unref) timer.unref();
     this._trustWatch.set(`dsh:${address}`, timer);
   }
+  // P298: Hermes TUI는 OSC 7501을 내지 않는다(P297). 띄운 뒤 터미널이 살아 있는 동안 screenPollMs마다 화면 맨 아래 상태 줄을 읽어(screen.mjs hermesStateOf)
+  //   코어 상태를 흉내 낸다(dsh 막힘 흉내와 같은 길에 ready·working까지): ready → idle, 일함 → working, 승인·질문·확인 창 → blocked(kind dialog, 판은 waiting).
+  //   상태 줄이 아직 없으면(첫 화면 그리는 중) 바꾸지 않는다. 판은 이 상태를 코어에 없는 흉내(synthetic, screen)로 들고 있는다(diff·_overlay)
+  _watchScreenStatus(address, kind = 'hermes') {
+    const key = `screen:${address}`;
+    clearTimeout(this._trustWatch.get(key));
+    const tick = async () => {
+      this._trustWatch.delete(key);
+      const m = this.model.terms.get(address);
+      if (m && !isLive(m)) return;
+      let text = null;
+      try { text = String((await this.call('terminal.read', { terminal: address, lines: 0 }, 5000)).text || ''); } catch (e) { if (e.code === 'agent_not_found' || e.code === 'pane_not_found') return; }
+      const now = this.model.terms.get(address);
+      if (now && !isLive(now)) return;
+      const state = text == null ? null : hermesStateOf(text);
+      if (now && state && !(now.status && now.status.app && !isScreenStatus(now.status))) { // 코어가 진짜 상태를 말하면(7501) 그것을 둔다
+        const cur = now.status && isScreenStatus(now.status) ? now.status.state : null;
+        if (cur !== state) {
+          const st = { app: kind, state, synthetic: true, screen: true, ...(state === 'blocked' ? { kind: 'dialog', msg: 'Hermes dialog' } : {}) };
+          this._emitAll(this.model.apply({ seq: null, type: 'status', terminal: address, data: { status: st, reported: false } }));
+        }
+      }
+      const timer = setTimeout(tick, this.screenPollMs);
+      if (timer.unref) timer.unref();
+      this._trustWatch.set(key, timer);
+    };
+    const timer = setTimeout(tick, this.screenPollMs);
+    if (timer.unref) timer.unref();
+    this._trustWatch.set(key, timer);
+  }
   // P117: 판이 띄운 claude가 7501을 말하기 전에 화면을 본다. 신뢰 대화상자("Quick safety check … trust this folder")가 보이면 막힘(blocked)을 흉내 낸다.
   // 판은 그 뒤 화면을 읽어 trust_wait로 보이고(checkBlocked), 첫 지시는 기다린다(전달 규칙). 사람이 신뢰하면 claude가 7501 idle을 말해 풀리고,
   // 거절하면 claude가 끝나 에이전트가 떠난 것으로(trust_declined) 보이고 같은 자리에 셸이 남는다(_respawnShell). 신뢰는 사람만 답한다(판은 키를 보내지 않는다)
@@ -421,6 +453,14 @@ export class HcAdapter extends EventEmitter {
   async _scanTrust() {
     for (const t of this.model.live()) {
       const kind = t.labels && t.labels[LABEL.agent];
+      if (!t.status && SCREEN_STATUS_KINDS.has(kind)) { // P298: 백엔드가 다시 떴다. 화면으로 상태를 읽어 싣고 지켜보기를 다시 건다
+        let text = '';
+        try { text = String((await this.call('terminal.read', { terminal: t.address, lines: 0 }, 5000)).text || ''); } catch {}
+        const state = hermesStateOf(text);
+        if (state) { this.model.terms.set(t.address, { ...t, status: { app: kind, state, synthetic: true, screen: true, ...(state === 'blocked' ? { kind: 'dialog', msg: 'Hermes dialog' } : {}) } }); this.model.everAgent.add(t.address); }
+        this._watchScreenStatus(t.address, kind);
+        continue;
+      }
       if (t.status || !TRUST_WATCH_KINDS.has(kind)) continue; // P208: Codex도
       let text = '';
       try { text = String((await this.call('terminal.read', { terminal: t.address, lines: 0 }, 5000)).text || ''); } catch {}
@@ -587,7 +627,8 @@ export class HcAdapter extends EventEmitter {
     const t = await this._target(target);
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
     // P117: 신뢰 대화상자(흉내 낸 막힘). 코어는 모르므로 판이 거부한다(글이 신뢰 질문에 들어가지 않게. 같은 코드 agent_blocked)
-    if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
+    if (isSynthetic(t.status) && !isScreenStatus(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
+    if (isScreenStatus(t.status) && t.status.state === 'blocked') throw new HcError('agent_blocked', `${t.address} shows a dialog (answer it in the terminal)`, 'terminal.send'); // P298
     await this._dshGuard(t); // P270
     this.trace.note(t.address, 'send', { chars: String(text).length }); // P136 진단 기록(길이만)
     return this.call('terminal.send', { terminal: t.address, text: String(text).replace(/\r\n?/g, '\n') }, 120000);
@@ -602,7 +643,7 @@ export class HcAdapter extends EventEmitter {
   async pastePrompt(target, text, { state, timeoutMs, pollMs = 100, stableMs = 1000, enterRetries = 2, enterGapMs = 700 } = {}) {
     const t = await this._target(target);
     if (!(t.status && t.status.app)) throw new HcError('agent_not_found', `${target} runs no agent (no status report)`, 'terminal.send');
-    if (isSynthetic(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send');
+    if (isSynthetic(t.status) && !isScreenStatus(t.status)) throw new HcError('agent_blocked', `${t.address} is waiting for the folder trust answer`, 'terminal.send'); // P298: 화면 상태(Hermes)는 받는다
     if (t.status.state === 'blocked') throw new HcError('agent_blocked', `${t.address} is blocked (typing would answer its dialog)`, 'terminal.send');
     await this._dshGuard(t); // P270
     const s = String(text).replace(/\r\n?/g, '\n');

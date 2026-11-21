@@ -119,6 +119,24 @@ export const ADAPTERS = {
     },
     isBoardLine: (argv) => argv.some((a) => /[\\/]dsh[\\/][^\\/]+\.patch\.yml$/.test(String(a))),
   },
+  // P298: Hermes(+OMH, 실행 파일 hermes). 대화 화면은 --tui(Ink)로 고정한다. 세션·도구·하위 에이전트는 프로필의 공용 gateway 데몬에서 돌아(P297)
+  //   패널 env는 허용 목록(PATH, HERMES_EPHEMERAL_SYSTEM_PROMPT 등)만 도구까지 간다. 그래서 안내문은 env HERMES_EPHEMERAL_SYSTEM_PROMPT(저장되지 않고 API 호출 때만 들어간다,
+  //   config의 개성·시스템 프롬프트를 대신한다)로, atrium은 세션별 감싸개(pathWrapper: PATH 맨 앞 폴더의 atrium이 판 env를 담아 부른다)로 준다.
+  //   세션 ID는 뜬 뒤에 state.db에서 안다(hermes.mjs hermesSessionOf), 이어 가기는 --resume <ID>. 상태는 7501이 없어 화면 상태 줄(screen.mjs hermesStateOf)
+  hermes: {
+    command: 'hermes',
+    sessionIdFrom: 'learned',
+    mustRePass: ['instructions'], // env라 그 실행에만 든다. 이어 갈 때도 다시 준다
+    pathWrapper: true,
+    reserved: { flags: ['--resume', '-r', '--continue', '-c', '-z', '--oneshot', '--tui', '--cli', '--native', '--tui-native', '--in', '--no-restore-cwd', '--safe-mode', '--ignore-rules', 'chat', 'gateway', 'acp', 'sessions', 'setup', 'update', 'config', 'auth', 'plugins', 'usage'] },
+    modelArgs: (m) => ['-m', m],
+    build(ctx) {
+      const resumed = !!(ctx.resume && ctx.harnessSessionId);
+      const args = ['--tui', ...(resumed ? ['--resume', ctx.harnessSessionId] : []), ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.launcherArgs || [])];
+      return { args, env: ctx.instructions ? { HERMES_EPHEMERAL_SYSTEM_PROMPT: ctx.instructions.text } : {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
+    },
+    isBoardLine: (argv) => argv.includes('--tui'),
+  },
 };
 // P192: AGY 승인 방식. 판의 권한 모드 → AGY 인자. manual은 덧붙이지 않는다(AGY 기본 Agent 모드: 묻는다)
 // auto는 AGY Auto 모드(Windows 11 24H2 이상·개인 계정에서만, 안 되면 AGY가 기본 모드로 돌아간다). dontAsk·bypassPermissions는 묻지 않음
@@ -169,6 +187,30 @@ export const resumable = (kind) => !!(ADAPTERS[kind] && ADAPTERS[kind].sessionId
 // 판이 띄우고 다시 띄울 값을 남긴(P115 뒤) 하네스 세션인가
 export const harnessResumable = (s) => !!s && (s.origin || 'board') === 'board' && resumable(s.kind) && !!s.harnessPlan;
 
+// P298: 세션별 atrium 감싸개(어댑터 칸 pathWrapper). env가 도구까지 가지 않는 하네스(공용 데몬이 도구를 돌리는 Hermes)는 PATH만 간다.
+//   그래서 세션마다 <판 데이터>/harness/<종류>/bin-<세션 ID>/에 판 env(토큰 없음: 토큰은 sessions/<ID>.token)를 담은 뒤 atrium-child를 부르는
+//   atrium·mtask(sh, .cmd, .ps1)를 쓰고, 그 폴더를 PATH 맨 앞에 둔다. 세션을 지우면 폴더도 지운다(removeWrapperDir)
+export const wrapperDirOf = (filesDir, kind, sessionId) => path.join(String(filesDir), String(kind), `bin-${String(sessionId).replace(/[^A-Za-z0-9_-]/g, '')}`);
+const shQ = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+const psQ = (v) => `'${String(v).replace(/'/g, "''")}'`;
+const cmdV = (v) => String(v).replace(/%/g, '%%').replace(/"/g, '');
+// → [{ file, text }]. env: 판 env(boardEnv), node·script: atrium-child를 부를 node와 스크립트
+export function wrapperFiles({ dir, env = {}, node, script }) {
+  const fwd = (p) => String(p).split('\\').join('/');
+  const keys = Object.keys(env).filter((k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && env[k] != null);
+  const out = [];
+  for (const c of ['atrium', 'mtask']) {
+    out.push({ file: path.join(dir, c), text: `#!/bin/sh\n# Atrium 보드(P298): 이 세션의 atrium(판 env를 담아 부른다)\n${keys.map((k) => `export ${k}=${shQ(env[k])}`).join('\n')}\nexec ${shQ(fwd(node))} ${shQ(fwd(script))} "$@"\n` });
+    out.push({ file: path.join(dir, `${c}.cmd`), text: `@echo off\r\nrem Atrium 보드(P298): 이 세션의 atrium(판 env를 담아 부른다)\r\nsetlocal\r\n${keys.map((k) => `set "${k}=${cmdV(env[k])}"`).join('\r\n')}\r\n"${node}" "${script}" %*\r\n` });
+    out.push({ file: path.join(dir, `${c}.ps1`), text: `# Atrium 보드(P298): 이 세션의 atrium(판 env를 담아 부른다)\r\n${keys.map((k) => `$env:${k} = ${psQ(env[k])}`).join('\r\n')}\r\n& ${psQ(node)} ${psQ(script)} @args\r\nexit $LASTEXITCODE\r\n` });
+  }
+  return out;
+}
+export function removeWrapperDir(filesDir, kind, sessionId) {
+  if (!filesDir || !sessionId || !ADAPTERS[kind] || !ADAPTERS[kind].pathWrapper) return false;
+  try { fs.rmSync(wrapperDirOf(filesDir, kind, sessionId), { recursive: true, force: true }); return true; } catch { return false; }
+}
+
 // 호출자 추가 인자·실행 명령에 판이 정하는 인자가 있는가 → 그 인자 | null
 export function reservedArg(kind, words = []) {
   const a = adapterOf(kind);
@@ -184,14 +226,17 @@ export function reservedArg(kind, words = []) {
   return null;
 }
 
-// 띄울 값 → 터미널 백엔드에 넘길 값. o: { kind, startWords, sessionId, resume, harnessSessionId, model, launcherArgs, instructions, boardEnv, binDir, filesDir }
+// 띄울 값 → 터미널 백엔드에 넘길 값. o: { kind, startWords, sessionId, resume, harnessSessionId, model, launcherArgs, instructions, boardEnv, binDir, filesDir, wrapper }
 // → { command: [낱말], args, env(판의 env + 하네스 env), pathFirst: [폴더], files, harnessSessionId, resumed }
 export function harnessLaunch(o) {
   const a = adapterOf(o.kind);
   if (!a) throw Object.assign(new Error(`하네스가 아닙니다: ${o.kind}`), { code: 'bad_request' });
   const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, effort: o.effort || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, filesDir: o.filesDir || null, forkFrom: o.forkFrom || null, statusLine: o.statusLine || null }); // P211: statusLine(AGY 상태 줄 명령 만들기)
   const command = o.startWords && o.startWords.length ? [...o.startWords] : [a.command];
-  return { command, args: r.args, env: { ...(o.boardEnv || {}), ...r.env }, pathFirst: o.binDir ? [o.binDir] : [], files: r.files, harnessSessionId: r.harnessSessionId, resumed: r.resumed };
+  // P298: 세션별 atrium 감싸개(pathWrapper). o.wrapper = { node, script }(판의 atrium-child)
+  const wrapDir = a.pathWrapper && o.wrapper && o.filesDir && o.sessionId ? wrapperDirOf(o.filesDir, o.kind, o.sessionId) : null;
+  const files = wrapDir ? [...r.files, ...wrapperFiles({ dir: wrapDir, env: o.boardEnv || {}, node: o.wrapper.node, script: o.wrapper.script })] : r.files;
+  return { command, args: r.args, env: { ...(o.boardEnv || {}), ...r.env }, pathFirst: [...(wrapDir ? [wrapDir] : []), ...(o.binDir ? [o.binDir] : [])], files, harnessSessionId: r.harnessSessionId, resumed: r.resumed };
 }
 export function writeLaunchFiles(files = []) {
   for (const f of files) { fs.mkdirSync(path.dirname(f.file), { recursive: true }); fs.writeFileSync(f.file, f.text); }

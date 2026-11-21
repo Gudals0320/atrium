@@ -24,6 +24,54 @@ export function dshGateOf(text) {
   return null;
 }
 
+// P298: Hermes TUI(hermes --tui, Ink) 화면. Hermes는 OSC 7501을 내지 않아 판이 화면 맨 아래 상태 줄로 상태를 안다(P297 실측, 문구는 영어 고정).
+//   쉼: " ─ ready │ <모델> │ …", 일함: " ─ <얼굴> <동사>… · <N>s │ <모델> │ …"(예: "(¬_¬) reasoning…  · 1s", 시간은 "1m 5s"꼴도).
+//   막힘(사람이 답할 창): 승인 창("⚠ approval required", Allow once / Allow this session / Always allow / Deny), 질문(clarify) 힌트
+//   "↑/↓ select … Esc/Ctrl+C cancel", 확인 창 "Y/N quick". 상태 줄 아래가 입력 칸("❯ 글", 꺾인 줄은 들여 쓴 다음 줄, 빈 칸은 흐린 안내 "Try …")
+const HERMES_STATUS_LINE = /^\s*─\s+(.*?)\s+│/;
+const HERMES_WORKING = /…\s*·\s*(?:\d+h\s*)?(?:\d+m\s*)?\d+s$/;
+const HERMES_BLOCKED = [/⚠\s*approval required/i, /Allow once[\s\S]*Deny|Deny[\s\S]*Allow once/, /↑\/↓ select[\s\S]*Esc\/Ctrl\+C cancel/, /\bY\/N quick\b/];
+const hermesLines = (text) => String(text || '').split('\n').map((l) => l.replace(/\s+$/, ''));
+// 맨 아래 상태 줄의 자리(없으면 -1). 아래쪽 40줄 안에서만 찾는다
+function hermesStatusAt(lines) {
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 40); i--) if (HERMES_STATUS_LINE.test(lines[i])) return i;
+  return -1;
+}
+// 화면 → 'blocked' | 'working' | 'idle' | null(Hermes 화면이 아니거나 아직 그려지지 않음)
+export function hermesStateOf(text) {
+  const lines = hermesLines(text);
+  const at = hermesStatusAt(lines);
+  const tail = lines.slice(Math.max(0, (at < 0 ? lines.length : at) - 18), at < 0 ? lines.length : at + 4).join('\n'); // 창은 상태 줄 바로 위·아래에 뜬다
+  if (HERMES_BLOCKED.some((re) => re.test(tail))) return 'blocked';
+  if (at < 0) return null;
+  const head = HERMES_STATUS_LINE.exec(lines[at])[1].trim();
+  if (/^ready$/i.test(head)) return 'idle';
+  if (HERMES_WORKING.test(head)) return 'working';
+  return null;
+}
+const HERMES_HINT = /^Try "[^"]*"(?: for commands)?$/;
+// 입력 칸 → { found, text, above, rows }. 상태 줄 아래의 "❯ " 줄(대화의 사용자 줄도 "❯ "라 상태 줄 아래만 본다)
+export function hermesInputBox(text) {
+  const lines = hermesLines(text);
+  const at = hermesStatusAt(lines);
+  if (at < 0) return { found: false, text: '', above: lines };
+  let start = -1;
+  for (let i = at + 1; i < lines.length; i++) if (/^\s*❯(\s|$)/.test(lines[i])) { start = i; break; }
+  if (start < 0) return { found: false, text: '', above: lines };
+  const body = [lines[start].replace(/^\s*❯\s?/, '')];
+  for (let i = start + 1; i < lines.length && lines[i].trim(); i++) body.push(lines[i].trim());
+  const t = body.join(' ').replace(/\s+/g, ' ').trim();
+  return { found: true, text: HERMES_HINT.test(t) ? '' : t, above: lines.slice(0, at), rows: body.length };
+}
+// 붙여 넣은 글이 입력 칸에 다 들어갔는가(adapter.pastePrompt의 state) → { box, done }. 글 끝(빈칸 빼고 24자)이 입력 칸 끝과 같으면 다 들어갔다
+export function hermesPasteState(screenText, text) {
+  const box = hermesInputBox(screenText);
+  if (!box.found || !box.text) return { box: '', done: false };
+  const bare = (s) => String(s).replace(/\s+/g, '');
+  const tail = bare(String(text || '').replace(/\r\n?/g, '\n')).slice(-24);
+  return { box: box.text, done: !!tail && bare(box.text).endsWith(tail) };
+}
+
 // P71: 워크트리 나가기 질문. `claude -w`로 띄운 세션이 끝날 때 Claude Code가 묻는다(제목 "Exiting worktree session").
 // "You have 13 commits on worktree-x. The branch will be deleted if you remove the worktree." 아래에 "1. Keep worktree", "2. Remove worktree"
 // (tmux가 있으면 "Keep worktree and tmux session" 등)가 있다. 선택지 설명(Stays at <경로>)은 같은 줄 뒤나 다음 줄이라 번호 줄의 이름만 읽는다.
@@ -187,7 +235,7 @@ export function dshInputBox(text) {
 // 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines], Codex는 [Pasted Content N chars]) 잘릴 수 있어 첫머리(40자)로 본다. kind: 'claude' | 'codex'
 const flatText = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 export function promptOnScreen(screenText, prompt, kind = 'claude') {
-  const box = kind === 'codex' ? codexInputBox(screenText) : kind === 'dsh' ? dshInputBox(screenText) : claudeInputBox(screenText); // P270: dsh
+  const box = kind === 'codex' ? codexInputBox(screenText) : kind === 'dsh' ? dshInputBox(screenText) : kind === 'hermes' ? hermesInputBox(screenText) : claudeInputBox(screenText); // P270: dsh. P298: hermes
   const want = flatText(prompt);
   const head = want.slice(0, 40);
   // P184: 여러 줄 글은 화면에서 첫 줄 뒤가 다음 줄로 넘어간다. 첫 줄이 짧으면(30자 미만) 그 첫 줄(8자 이상)로도 본다

@@ -10,6 +10,23 @@ export function orchDefault(harnesses, harness) {
   const h = (harnesses || []).find((x) => x.id === harness);
   return !!(h && h.orchDefault);
 }
+// P298: 하네스 표의 보고 물러섬 기본값(hermes는 last_answer) | null
+export function fallbackDefault(harnesses, harness) {
+  const h = (harnesses || []).find((x) => x.id === harness);
+  return (h && h.fallbackDefault) || null;
+}
+// P298: 런처의 실제 보고 물러섬(켜짐). 칸이 last_answer면 켜짐, none이면 꺼짐, 없으면 하네스 기본
+export function launcherFallback(harnesses, l) {
+  if (!l) return false;
+  if (l.reportFallback === 'last_answer') return true;
+  if (l.reportFallback === 'none') return false;
+  return fallbackDefault(harnesses, l.harness) === 'last_answer';
+}
+// P298: 체크 칸 → 저장할 값. 하네스 기본이 켜짐이면 끌 때 none, 기본이 꺼짐이면 켤 때 last_answer(같으면 칸을 두지 않는다)
+export function fallbackValue(harnesses, harness, on) {
+  const def = fallbackDefault(harnesses, harness) === 'last_answer';
+  return on === def ? '' : on ? 'last_answer' : 'none';
+}
 // 런처의 실제 성질
 export function launcherOrchestrates(harnesses, l) {
   if (!l || !orchApplies(l.harness)) return false;

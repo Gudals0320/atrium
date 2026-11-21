@@ -24,7 +24,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, codexPasteState, codexPasteWanted } from './screen.mjs';
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted } from './screen.mjs';
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -50,7 +50,9 @@ import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
 import { humanPrompt } from './decisions.mjs'; // P284: 터미널에 직접 친 글
 import { orchOf, orchPromptLines } from './orchestration.mjs'; // P296: 자체 오케스트레이션
-import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf } from './harness.mjs';
+import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf, removeWrapperDir } from './harness.mjs';
+import { hermesHomeOf, hermesSessionOf, hermesLastAnswer, hermesUsageOf, hermesBusyOf } from './hermes.mjs'; // P298: Hermes(+OMH) state.db 읽기 전용
+import { registerInnerReader } from './inner-work.mjs'; // P298: Hermes 바쁨 읽개
 import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel, waitDshAnswer } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
@@ -223,6 +225,8 @@ export class Backend {
       script: writeStatusLineScript(path.join(cfg.dataDir, 'plugin')), node: process.execPath, agyShim: process.platform === 'win32' ? writeStatusLineShim(path.join(cfg.dataDir, 'plugin')) : null, pollMs: cfg.usagePollMs, log: (m) => this.log(m),
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
+    // P298: Hermes의 바쁨 읽개(busy 칸 { reader: 'hermes' }). 그 세션이 띄운 하위 에이전트가 돌거나 턴 임대가 살아 있으면 바쁨
+    registerInnerReader('hermes', ({ session }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesBusyOf({ id, home: this.hermesHome() }) : null; });
     // P8: 하위 세션 명령. 플러그인에 일 맡기기 스킬과 atrium 명령을 더하고, 이미 띄운 세션의 설정 파일에 env와 승인 규칙을 더한다
     this.branch = attachBranch(this);
     Object.assign(this.api.handlers, this.branch.handlers);
@@ -249,11 +253,11 @@ export class Backend {
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. P270: dsh는 Claude Code처럼. 다른 종류와 셸은 손대지 않는다)
       inspect: async (sid, text) => {
         const s = this.sessions.get(sid); const k = s && (s.kind || 'claude');
-        if (!s || !s.paneId || (k !== 'claude' && k !== 'codex' && k !== 'dsh')) return null;
+        if (!s || !s.paneId || (k !== 'claude' && k !== 'codex' && k !== 'dsh' && k !== 'hermes')) return null; // P298: hermes도 화면의 입력 칸
         const scr = await this.adapter.readScreen(s.paneId, { source: 'visible' });
         const r = promptOnScreen(scr, text, k);
-        if (r.box === 'other') r.peek = (k === 'codex' ? codexInputBox : k === 'dsh' ? dshInputBox : claudeInputBox)(scr).text.slice(0, 60); // P106: 무엇이 보였는지 판 기록에 남긴다
-        return k === 'codex' ? { ...r, noResend: true } : r;
+        if (r.box === 'other') r.peek = (k === 'codex' ? codexInputBox : k === 'dsh' ? dshInputBox : k === 'hermes' ? hermesInputBox : claudeInputBox)(scr).text.slice(0, 60); // P106: 무엇이 보였는지 판 기록에 남긴다
+        return k === 'codex' || k === 'hermes' ? { ...r, noResend: true } : r; // P298: hermes도 붙여 넣기(pastePrompt)라 다시 보내지 않는다
       },
       pressEnter: async (sid) => { const s = this.sessions.get(sid); if (s && s.paneId) await this.adapter.paneKeys(s.paneId, ['enter']); },
       drafts: this.draftIo(),
@@ -753,9 +757,9 @@ export class Backend {
   // P227: asleep이면 패널이 없어도(잠든 세션, 다시 열 닫힌 세션) 읽는다. 바뀐 값은 판 DB(runtime)에 바로 남긴다(판이 다시 떠도 이어 갈 때 쓴다)
   refreshModelNow(s, { asleep = false } = {}) {
     const kind = s.kind || 'claude';
-    if (!['claude', 'codex', 'pi', 'dsh'].includes(kind) || (!s.paneId && !asleep)) return false; // P270: dsh는 기록(zstd 프레임)의 request/header
+    if (!['claude', 'codex', 'pi', 'dsh', 'hermes'].includes(kind) || (!s.paneId && !asleep)) return false; // P270: dsh는 기록(zstd 프레임)의 request/header
     let st;
-    try { const file = this.modelFileOf(s); if (!file) return false; st = kind === 'dsh' ? refreshDshModel(file, s._modelSt || null) : refreshModel(kind, file, s._modelSt || null); } catch (e) { this.log('model read error', e.message); return false; }
+    try { if (kind === 'hermes') { const id = this.harnessSessionIdOf(s); const u = id ? hermesUsageOf({ id, home: this.hermesHome() }) : null; if (!u || !u.model) return false; st = { model: u.model, effort: null }; } else { const file = this.modelFileOf(s); if (!file) return false; st = kind === 'dsh' ? refreshDshModel(file, s._modelSt || null) : refreshModel(kind, file, s._modelSt || null); } } catch (e) { this.log('model read error', e.message); return false; }
     if (!st) return false;
     s._modelSt = st;
     const prev = s.rt.modelNow || null;
@@ -1096,6 +1100,14 @@ export class Backend {
       if (id) s._dshId = id;
       return id || s._dshId || null;
     }
+    // P298: Hermes는 state.db sessions에서 그 폴더·처음 띄운 뒤에 생긴 맨 위 tui 세션을 찾는다(첫 화면이 뜰 때 생긴다). 찾으면 기록에 남긴다
+    if (s.kind === 'hermes') {
+      if (s._hermesId) return s._hermesId;
+      const taken = [...this.sessions.values()].filter((x) => x !== s && x.kind === 'hermes' && !x.closedAt).map((x) => (x.harnessPlan || {}).harnessSessionId || x._hermesId).filter(Boolean);
+      const id = hermesSessionOf({ cwd: s.cwd, since: plan.firstLaunchedAt || plan.launchedAt || s.createdAt || 0, exclude: taken, home: this.hermesHome() });
+      if (id) { s._hermesId = id; s.harnessPlan = { ...plan, harnessSessionId: id }; try { this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan }); } catch {} }
+      return id || null;
+    }
     return null;
   }
   // 띄울 값. 판의 env(토큰은 빼고 파일로), PATH 앞의 bin/, 안내문, 호출자 값(모델·추가 인자), 이어 가기
@@ -1109,7 +1121,7 @@ export class Backend {
     const hsid = resume ? this.harnessSessionIdOf(s) : null;
     const rm = resume && (s.kind === 'pi' || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
     const orchP = s.orch ? this.orchPrompt(s) : null; // P296: 오케스트레이션 세션은 그 세션의 안내문(허용 동사만)
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: plan.args || [], instructions: orchP ? { file: orchP.file, text: orchP.text } : hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: plan.args || [], instructions: orchP ? { file: orchP.file, text: orchP.text } : hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), wrapper: hf.binDir ? { node: process.execPath, script: path.join(hf.binDir, 'lib', 'bin', 'atrium-child.mjs') } : null, forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1189,6 +1201,7 @@ export class Backend {
   async readScreenAnswer(s) {
     if (s.kind === 'pi' && await this.readPiAnswer(s)) return; // P201
     if (s.kind === 'dsh' && await this.readDshAnswer(s)) return; // P270
+    if (s.kind === 'hermes' && await this.readHermesAnswer(s)) return; // P298
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 200 });
       s.rt.lastAnswer = screenAnswerText(text, 20, { kind: s.kind }); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen'; // P192: 종류(AGY)
@@ -1223,6 +1236,25 @@ export class Backend {
     this.bus.emit('screenAnswer', s);
     return true;
   }
+
+  // P298: Hermes의 마지막 답은 state.db messages의 마지막 assistant 글이다(화면은 전체 화면 TUI). 턴이 끝난 때 아직 적히지 않았을 수 있어 잠깐 다시 본다.
+  //   지난번 답보다 새 답이 없으면 화면으로 돌아간다
+  async readHermesAnswer(s, { tries = 8, gapMs = 300 } = {}) {
+    const id = this.harnessSessionIdOf(s);
+    if (!id) return false;
+    for (let i = 0; i < tries; i++) {
+      const a = hermesLastAnswer({ id, home: this.hermesHome() });
+      if (a && (!s.rt.hermesAnswerId || a.id > s.rt.hermesAnswerId)) {
+        s.rt.lastAnswer = a.text; s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'session'; s.rt.hermesAnswerId = a.id;
+        this.bus.emit('screenAnswer', s);
+        return true;
+      }
+      if (i < tries - 1) await sleep(gapMs);
+    }
+    return false;
+  }
+  hermesHome() { return this.cfg.hermesHome || hermesHomeOf(); } // P298
+  harnessDir() { return path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'); } // P115·P298: 하네스 파일 폴더(감싸개 포함)
 
   onTermDisconnected(which = null) {
     this.log(`terminal disconnected${which ? ` (${which})` : ''}`);
@@ -1380,8 +1412,10 @@ export class Backend {
     const s = this.sessions.get(sid);
     // P264: Codex에 여러 줄이거나 긴 글은 판이 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(hc terminal.send의 Enter가 붙여 넣은 글의 줄바꿈이 됐다).
     //   P271(이슈 #19): 짧은 한 줄도 같다(codexPasteWanted). Enter 뒤 입력 칸에 남으면 어댑터가 Enter를 다시 친다
-    const paste = s.kind === 'codex' && typeof this.adapter.pastePrompt === 'function' && codexPasteWanted(text) && !(s.rt && this.hooked(s));
-    const send = (target) => (paste ? this.adapter.pastePrompt(target, text, { state: (scr) => codexPasteState(scr, text) }) : this.adapter.prompt(target, text));
+    // P298: Hermes TUI도 판이 붙여 넣고 입력 칸에 다 보인 뒤 Enter를 친다(Hermes는 7501이 없어 hc terminal.send의 턴 시작 기다림이 맞지 않다)
+    const hermes = s.kind === 'hermes' && typeof this.adapter.pastePrompt === 'function' && String(text || '').length > 0;
+    const paste = hermes || (s.kind === 'codex' && typeof this.adapter.pastePrompt === 'function' && codexPasteWanted(text) && !(s.rt && this.hooked(s)));
+    const send = (target) => (paste ? this.adapter.pastePrompt(target, text, { state: (scr) => (hermes ? hermesPasteState : codexPasteState)(scr, text) }) : this.adapter.prompt(target, text));
     try { return await send(s.agentName); }
     catch (e) {
       if (e.code !== 'agent_not_found' || !s.paneId || s.agentName === s.paneId) throw e;
@@ -1460,6 +1494,7 @@ export class Backend {
     try { this.relay.detach(s.sessionId); } catch {}
     if (s.settingsPath) try { fs.rmSync(s.settingsPath, { force: true }); } catch {} // 판이 세션을 닫을 때 설정 파일을 지운다(B3)
     try { fs.rmSync(tokenFileOf(this.cfg.sessionsDir, s.sessionId), { force: true }); } catch {} // P115: 세션 토큰 파일
+    try { removeWrapperDir(path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), s.kind, s.sessionId); } catch {} // P298: 세션별 atrium 감싸개 폴더
     // 이 세션이 낀 연결은 판에서 뺀다(기록은 남는다)
     for (const l of this.store.links()) if (l.from === s.sessionId || l.to === s.sessionId) { this.store.updateLink(l.linkId, { removedAt: Date.now() }); this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'session closed' }); }
     const closedAt = Date.now();
@@ -2143,7 +2178,7 @@ export class Backend {
     for (const s of [...this.sessions.values()]) {
       if (!s.paneId || s.rt.exit) continue;
       let cwd = s.rt.cwd || s.cwd;
-      if (!this.hooked(s)) {
+      if (!this.hooked(s) && s.kind !== 'hermes') { // P298: hermes 패널의 터미널 폴더는 실행기(hermes.exe)의 Temp라 세션 폴더를 그대로 쓴다
         const p = await this.adapter.getPane(s.paneId).catch(() => null);
         if (p && p.cwd && p.cwd !== s.rt.cwd) { s.rt.cwd = p.cwd; cwd = p.cwd; }
       }
