@@ -54,3 +54,37 @@ export function orchTag(s, t) {
   const title = [o.scope === 'sub' ? t('orch.titleSub') : t('orch.titleFree'), busy ? t('orch.innerTitle', { why: innerWhyText(o.inner.why, t) }) : null].filter(Boolean).join('\n');
   return { text: busy ? t('orch.tagBusy') : t('orch.tag'), busy, title };
 }
+
+// ---------- P300: 안 진행(읽기 전용) ----------
+// 판이 하네스별 읽개로 읽은 안 진행(orch.progress: { kind: dag | delegations, key, label, done, total, running, failed, finished, items }).
+// 카드 머리·세션 맵 카드(휴대폰 포함)에 작은 칩 "DAG 2/3 · 하위 1", 누르거나 미리 보기에서 갈래 목록(이름·상태·걸린 시간)
+export const sessionProgress = (s) => { const o = sessionOrch(s); const p = o && o.progress; return p && p.total > 0 && Array.isArray(p.items) ? p : null; };
+// 걸린 시간 글(초·분·시간). 없으면 ''
+export function durText(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+// 칩 → { text, finished, failed, running, title } | null
+export function progressChip(p, t) {
+  if (!p) return null;
+  const head = t(p.kind === 'dag' ? 'progress.dag' : 'progress.deleg');
+  const parts = [p.finished ? t('progress.finished', { head, done: p.done, total: p.total }) : `${head} ${p.done}/${p.total}`];
+  if (!p.finished && p.running > 0) parts.push(t('progress.running', { n: p.running }));
+  if (p.failed > 0) parts.push(t('progress.failed', { n: p.failed }));
+  const text = parts.join(' · ');
+  const title = [p.label ? `${head} ${p.label}` : null, text, t('progress.readOnly')].filter(Boolean).join('\n');
+  const short = p.finished ? t('progress.finished', { head, done: p.done, total: p.total }) : `${head} ${p.done}/${p.total}${p.failed > 0 ? ' !' : ''}`; // 타일(멀리 단계·휴대폰)용 짧은 글
+  return { text, short, finished: !!p.finished, failed: p.failed > 0, running: p.running > 0, title };
+}
+// 갈래 목록 줄 → [{ name, state, stateText, dur }]. 도는 갈래는 지금까지 걸린 시간
+export function progressRows(p, t, now = Date.now()) {
+  if (!p) return [];
+  return p.items.map((x) => {
+    const end = x.endedAt || (x.state === 'running' ? now : null);
+    return { name: x.name, state: x.state, stateText: t(`progress.state.${x.state}`), dur: x.startedAt && end ? durText(end - x.startedAt) : '' };
+  });
+}

@@ -2866,5 +2866,16 @@ export default {
   },
   // P293: 휴대폰 세션 맵을 열자마자 페이지가 죽은 다음 열기(가볍게 열림)
   phoneLite: { text: '가볍게 열었습니다', all: '전부 보기', allTitle: '열자마자 멈춰서 오늘 칸만 가볍게 열었습니다. 누르면 전부 받아 그립니다' },
+  // P300: 자체 오케스트레이션 세션의 안 진행(읽기 전용)
+  progress: {
+    dag: 'DAG',
+    deleg: '위임',
+    finished: '{head} {done}/{total} 끝',
+    running: '하위 {n}',
+    failed: '실패 {n}',
+    readOnly: '하네스 안의 진행입니다(읽기 전용). 누르면 갈래 목록을 봅니다',
+    list: '안 진행',
+    listNote: '하네스 안에서 도는 갈래입니다. 보드 세션이 아니라 고르거나 메시지를 보낼 수 없습니다.',
+    state: { pending: '기다림', running: '도는 중', done: '끝', failed: '실패', cancelled: '취소' },
+  },
 };
-

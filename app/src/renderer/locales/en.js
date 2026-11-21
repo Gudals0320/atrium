@@ -2862,5 +2862,16 @@ export default {
   },
   // P293: 휴대폰 세션 맵을 열자마자 페이지가 죽은 다음 열기(가볍게 열림)
   phoneLite: { text: 'Opened light', all: 'Show all', allTitle: 'The page stopped right after opening, so only Today opened. Tap to load and draw everything' },
+  // P300: inner progress of a self-orchestrating session (read-only)
+  progress: {
+    dag: 'DAG',
+    deleg: 'Tasks',
+    finished: '{head} {done}/{total} done',
+    running: '{n} running',
+    failed: '{n} failed',
+    readOnly: 'Progress inside the harness (read-only). Click to see the branches',
+    list: 'Inner progress',
+    listNote: 'Branches running inside the harness. They are not board sessions, so you cannot select them or message them.',
+    state: { pending: 'Waiting', running: 'Running', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' },
+  },
 };
-

@@ -2770,3 +2770,37 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-dc-timing + .mt-dc-time { margin-left: 0; white-space: nowrap; }
 .mt-dc-held.riding { background: none; border: 1px dashed var(--teal); }
 .mt-dc-mark.mt-dc-ride { margin-right: 4px; background: none; border-style: dashed; color: var(--teal); font-weight: 600; }
+
+/* P300: 자체 오케스트레이션 세션의 안 진행 칩(읽기 전용)과 갈래 목록 겉판 */
+.mt-prog-chip { display: inline-flex; align-items: center; flex: none; margin-left: 6px; padding: 0 7px; height: 16px; border-radius: 8px; border: 1px solid rgba(124, 92, 196, 0.35); font: 600 10px/14px var(--font-mono, ui-monospace, monospace); letter-spacing: .01em; color: var(--mt-orch-fg, #7c5cc4); background: transparent; white-space: nowrap; cursor: pointer; }
+.mt-prog-chip.running { color: var(--mt-orch-busy-fg, #2f7d4f); border-color: rgba(47, 125, 79, 0.4); background: rgba(47, 125, 79, 0.08); }
+.mt-prog-chip.finished { color: var(--text-dim, #8a8580); border-color: rgba(138, 133, 128, 0.35); background: transparent; }
+.mt-prog-chip.failed { color: #c0503c; border-color: rgba(192, 80, 60, 0.45); }
+.mt-prog-chip:hover { filter: brightness(1.15); }
+.mt-prog-chip.map { margin-left: 4px; cursor: inherit; }
+.mt-prog-pop { position: fixed; z-index: 9000; width: 320px; max-height: 360px; overflow: auto; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1); background: #1c1b19; color: #e8e4de; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font: 12px/1.45 var(--font-ui, system-ui); }
+.mt-prog-pop .pp-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.mt-prog-pop .pp-head b { font-weight: 700; }
+.mt-prog-pop .pp-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #a8a39c; }
+.mt-prog-pop .pp-sum { margin-left: auto; flex: none; font-family: var(--font-mono, ui-monospace, monospace); color: #a8a39c; }
+.mt-prog-pop .pp-list { list-style: none; margin: 0; padding: 0; }
+.mt-prog-pop .pp-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+.mt-prog-pop .pp-row i { width: 7px; height: 7px; border-radius: 50%; background: #6d6862; }
+.mt-prog-pop .pp-row.st-running i { background: #4caf74; }
+.mt-prog-pop .pp-row.st-done i { background: #8a8580; }
+.mt-prog-pop .pp-row.st-failed i { background: #d0614b; }
+.mt-prog-pop .pp-row.st-cancelled i { background: transparent; border: 1px solid #8a8580; }
+.mt-prog-pop .pp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-prog-pop .pp-st { color: #a8a39c; font-size: 11px; }
+.mt-prog-pop .pp-row.st-failed .pp-st { color: #e07a63; }
+.mt-prog-pop .pp-dur { min-width: 44px; text-align: right; font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: #a8a39c; }
+.mt-prog-pop .pp-note { margin-top: 8px; color: #8a8580; font-size: 11px; }
+.mt-sm-peek .pkpg { display: flex; flex-direction: column; gap: 2px; }
+.mt-sm-peek .pkpg .it { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mt-sm-peek .pkpg .it i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #6d6862; }
+.mt-sm-peek .pkpg .it.st-running i { background: #4caf74; }
+.mt-sm-peek .pkpg .it.st-failed i { background: #d0614b; }
+.mt-sm-peek .pkpg .it .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-ta-card .c2 .mt-prog-chip.map { margin-left: 8px; flex: none; }
+.mt-prog-chip.tile { margin-left: 6px; height: auto; padding: 0 .4em; border-radius: .6em; font-size: .72em; line-height: 1.4; cursor: inherit; }
+.mt-ta-full .c2 .cmodel { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* P300: 칩이 있으면 모델 이름이 먼저 줄어든다 */

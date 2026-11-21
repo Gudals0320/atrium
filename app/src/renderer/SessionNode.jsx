@@ -28,7 +28,8 @@ import { enterSession, markInteracted } from './touch.js';
 import { LoopBadge, SessionLoopList } from './Loops.jsx';
 import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단계"
 import { MergerTag } from './Merger.jsx'; // P268: merger 세션 꼬리표
-import { orchTag } from './lib/orch.js'; // P296: 자체 오케스트레이션 표
+import { orchTag, sessionProgress, progressChip, progressRows } from './lib/orch.js'; // P296: 자체 오케스트레이션 표. P300: 안 진행 칩
+import { createPortal } from 'react-dom'; // P300: 갈래 목록 겉판
 import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
 import { dockBranchOf } from './lib/dock-branch.js'; // P68: 워크트리끼리 붙인 덩어리의 칸마다 브랜치
 import { Icon } from './lib/icons.jsx';
@@ -139,6 +140,7 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
       {dockBranch && <span className={`mt-dock-branch${dbKind === 'wt' ? ' wt' : ''}`} data-role="dock-branch" data-branch={dbName} title={t(dbKind === 'wt' ? 'dockWorkers.branchWt' : 'dockWorkers.branchMain', { branch: dbName })}>⎇ {dbName}</span>}
       <MergerTag s={s} />
       <OrchTag s={s} />
+      <ProgressChip s={s} />
       <DecisionMark sessionId={s.sessionId} />
       {/* 표시들은 좁으면 먼저 잘린다(이름이 먼저 보이게) */}
       <span className="mt-head-badges"><Badges s={s} /><Origin s={s} /><BranchBadge s={s} /><LoopBadge s={s} onClick={onLoops} /></span>
@@ -159,6 +161,50 @@ function OrchTag({ s }) {
   const t = useT();
   const o = orchTag(s, t);
   return o ? <span className={`mt-orch-tag${o.busy ? ' busy' : ''}`} data-role="orch-tag" data-busy={o.busy ? '1' : '0'} title={o.title}>{o.text}</span> : null;
+}
+// P300: 안 진행 칩(읽기 전용). 누르면 갈래 목록(이름·상태·걸린 시간)을 작은 겉판으로. 겉판은 판 밖(body)에 그려 노드 테두리에 잘리지 않는다
+function ProgressChip({ s }) {
+  const t = useT();
+  const p = sessionProgress(s);
+  const c = progressChip(p, t);
+  const [open, setOpen] = useState(null); // 열렸으면 { x, y }
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const off = (e) => { if (ref.current && ref.current.contains(e.target)) return; if (e.target.closest && e.target.closest('[data-role="progress-pop"]')) return; setOpen(null); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(null); };
+    window.addEventListener('pointerdown', off, true); window.addEventListener('keydown', esc);
+    return () => { window.removeEventListener('pointerdown', off, true); window.removeEventListener('keydown', esc); };
+  }, [open]);
+  useEffect(() => { if (!p && open) setOpen(null); }, [p, open]);
+  if (!c) return null;
+  const toggle = (e) => {
+    e.stopPropagation();
+    if (open) { setOpen(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    setOpen({ x: Math.max(8, Math.min(r.left, window.innerWidth - 328)), y: r.bottom + 4 });
+  };
+  const cls = `mt-prog-chip nodrag${c.finished ? ' finished' : ''}${c.failed ? ' failed' : ''}${c.running ? ' running' : ''}`;
+  return (
+    <>
+      <button type="button" ref={ref} className={cls} data-role="progress-chip" data-done={p.done} data-total={p.total} data-finished={c.finished ? '1' : '0'} title={c.title} aria-expanded={open ? 'true' : 'false'} onClick={toggle} onDoubleClick={(e) => e.stopPropagation()}>{c.text}</button>
+      {open && createPortal(<ProgressPop p={p} at={open} t={t} />, document.body)}
+    </>
+  );
+}
+function ProgressPop({ p, at, t }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (p.finished) return undefined; const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, [p.finished]);
+  const c = progressChip(p, t);
+  return (
+    <div className="mt-prog-pop" data-role="progress-pop" style={{ left: at.x, top: at.y }} role="dialog" aria-label={t('progress.list')}>
+      <div className="pp-head"><b>{t('progress.list')}</b>{p.label ? <span className="pp-label">{p.label}</span> : null}<span className="pp-sum">{c.text}</span></div>
+      <ul className="pp-list">
+        {progressRows(p, t, now).map((x, i) => <li key={i} className={`pp-row st-${x.state}`} data-role="progress-row" data-state={x.state}><i /><span className="pp-name" title={x.name}>{x.name}</span><span className="pp-st">{x.stateText}</span><span className="pp-dur">{x.dur}</span></li>)}
+      </ul>
+      <div className="pp-note">{t('progress.listNote')}</div>
+    </div>
+  );
 }
 const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 // 멀리 얼굴(H3): 이름, 상태, 기다리는 질문(가장 크게), 마지막 사용자 요청 한 줄, 마지막 답 한 줄. 글자 크기는 화면 기준(px / 배율)이고 노드 높이에 맞춰 줄인다.
