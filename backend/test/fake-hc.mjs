@@ -1,5 +1,6 @@
 // P114 시험 도구: 가짜 herdr-core 코어. 이름 있는 파이프에서 hc API의 일부(plain JSON-RPC, 이벤트 구독, 프레임 모드 attach)를 흉내 낸다.
 // 시험이 상태를 바꾼다: setStatus, output, finish, size, dropAll(코어 재시작 흉내)
+// 없는(지운) 터미널을 부르면 진짜 hc처럼 not_found로 답한다(P288: 부하에서 판의 요청이 rm보다 늦게 오면 예외로 시험 전체가 떨어졌다)
 import net from 'node:net';
 import crypto from 'node:crypto';
 import { FrameDecoder, encodeFrame, FRAME } from '../src/hc/rpc.mjs';
@@ -62,10 +63,10 @@ export async function startFakeHc({ version = '0.1.20', generation = 1, features
       case 'terminal.run': return run(p);
       case 'terminal.kill': { const t = find(p.terminal); if (!t) return { error: err('not_found', 'no terminal') }; if (live(t)) fake.finish(t.address, 'killed', 1); return { result: rec(t) }; }
       case 'terminal.rm': { const t = terms.get(p.terminal); if (!t) return { error: err('not_found', 'no terminal') }; terms.delete(t.address); emit('removed', t.address, {}); return { result: {} }; }
-      case 'terminal.label': { const t = find(p.terminal); for (const [k, v] of Object.entries(p.labels || {})) { if (v === '') delete t.labels[k]; else t.labels[k] = v; } emit('labels', t.address, { labels: t.labels }); return { result: rec(t) }; }
+      case 'terminal.label': { const t = find(p.terminal); if (!t) return { error: err('not_found', 'no terminal') }; for (const [k, v] of Object.entries(p.labels || {})) { if (v === '') delete t.labels[k]; else t.labels[k] = v; } emit('labels', t.address, { labels: t.labels }); return { result: rec(t) }; }
       case 'terminal.send': { const t = find(p.terminal); if (!t) return { error: err('not_found', 'no terminal') }; if (t.status && t.status.state === 'blocked' && !p.force) return { error: err('blocked', `${t.address} is blocked (permission)`) }; t.sent.push(p.text); return { result: { started: true, status: t.status ? t.status.state : null, turn: t.turn } }; }
-      case 'terminal.keys': { const t = find(p.terminal); t.keys.push(...p.keys); return { result: { status: t.status ? t.status.state : null, turn: t.turn } }; }
-      case 'terminal.read': { const t = find(p.terminal); return { result: { complete: true, how: 'screen', text: t.screen } }; }
+      case 'terminal.keys': { const t = find(p.terminal); if (!t) return { error: err('not_found', 'no terminal') }; t.keys.push(...p.keys); return { result: { status: t.status ? t.status.state : null, turn: t.turn } }; }
+      case 'terminal.read': { const t = find(p.terminal); if (!t) return { error: err('not_found', 'no terminal') }; return { result: { complete: true, how: 'screen', text: t.screen } }; }
       case 'server.restart': setTimeout(() => fake.dropAll(), 20); return { result: { stopped: true } };
       case 'server.stop': for (const t of terms.values()) if (live(t)) fake.finish(t.address, 'server_stop', null); setTimeout(() => fake.dropAll(), 20); return { result: { stopped: true } };
       case 'terminal.attach': {

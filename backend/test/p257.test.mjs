@@ -23,7 +23,7 @@ import { ATRIUM_ALLOW } from '../src/branch.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p257-'));
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
-async function until(fn, ms = 4000) { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) throw new Error('until: 시간 초과'); await tick(10); } }
+async function until(fn, ms = 20000) { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) throw new Error('until: 시간 초과'); await tick(10); } }
 const g = (cwd, ...args) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const put = (root, rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
 const PLAN_OK = '# 계획\n\n## 지금: 일 하나\n- a\n\n## 다음: 일 둘\n- b\n\n## 열린 결정\n- c\n';
@@ -220,6 +220,9 @@ async function board(dir) {
   b.queue.beforeDeliver = (d) => (b.docs ? b.docs.beforeDeliver(d) : undefined); // backend.mjs와 같은 잇기
   b.queue.start();
   b.branch = new Branch(b, { readyWaitMs: 30, submitWaitMs: 10, noticeBatchMs: 40, verbs: { pollMs: 15, settleMs: 800, turnGraceMs: 300, answerGraceMs: 200 } });
+  // P288: 점검(git 여러 번)은 PC가 바쁘면 판의 상한(DOC_WAIT_MS 3초)을 넘는다. 이 시험은 경고가 알림에 실리는지를 보므로
+  // 전달이 점검 끝을 기다리게 상한을 넉넉히 둔다(점검이 끝나면 곧바로 보내므로 평소에는 느려지지 않는다). 상한을 넘으면 그냥 보내는 동작은 '전달' 시험이 본다
+  b.docs.waitMs = 60000;
   b.queue.on('delivery', (d) => { if (['confirmed', 'unconfirmed', 'failed', 'cancelled'].includes(d.status)) b.branch.onDeliveryEnd(d); });
   const add = (name, { workMs = 60, onText = null, ...extra } = {}) => {
     const s = { sessionId: crypto.randomUUID(), name, cwd: dir, paneId: name + ':p1', agentName: name, permissionMode: 'manual', kind: 'claude', origin: 'board', parentSessionId: null, workspaceKey: ws.key, rt: newRuntime({ kind: 'claude', hooked: true }), createdAt: Date.now(), ...extra };
@@ -244,7 +247,8 @@ async function board(dir) {
     return s;
   };
   // 사람이 그 세션에게 일을 시켜 한 턴 돌린다
-  const turn = async (s) => { const n = s.texts.length; b.queue.enqueue(s.sessionId, '사람의 일 ' + n, { origin: { kind: 'human' } }); await until(() => s.texts.length === n + 1 && deriveState(s.rt).state === 'ready'); await tick(150); };
+  // 턴 끝에 판이 시작한 점검이 끝날 때까지 기다린다(고정 틈이 아니라 점검 끝이라는 사건으로)
+  const turn = async (s) => { const n = s.texts.length; b.queue.enqueue(s.sessionId, '사람의 일 ' + n, { origin: { kind: 'human' } }); await until(() => s.texts.length === n + 1 && deriveState(s.rt).state === 'ready'); await tick(50); await until(() => !b.docs.waiting.has(s.sessionId)); };
   const stop = async () => { b.stopped = true; b.queue.stop(); b.branch.notices.stop(); b.branch.units.stops.stop(); await tick(200); store.close(); };
   return { b, ws, add, turn, stop };
 }
@@ -275,7 +279,7 @@ test('P257 판: 첫 위임에 .atrium/(git 밖), 일 머리에 문서 한 마디
     const head = w1.texts[0].split('\n');
     assert.ok(head[2].endsWith(workerTail('docs')), '일 머리 셋째 줄 끝');
     // done 알림: 규칙 묶음(첫 done) + 경고 한 줄(점검이 도는 동안 잠깐 붙잡아 그 알림에 싣는다)
-    await until(() => lead.texts.length === 1, 6000);
+    await until(() => lead.texts.length === 1);
     const notice = lead.texts[0];
     assert.match(notice, /^\[Atrium 보드\] @w1가 일 u/);
     assert.ok(notice.includes(report));
@@ -302,7 +306,7 @@ test('P257 판: 첫 위임에 .atrium/(git 밖), 일 머리에 문서 한 마디
     // 두 번째 done: 규칙은 한 줄
     await b.branch.verbs.prompt(lead, { name: 'w1', text: '둘째 일' });
     w1.onText = async (text, s) => { if (text.includes('둘째 일')) await b.branch.units.done(s, { result: 'ok', text: '둘째 보고' }); };
-    await until(() => lead.texts.some((t) => t.includes('둘째 보고')), 6000);
+    await until(() => lead.texts.some((t) => t.includes('둘째 보고')));
     const n2 = lead.texts.find((t) => t.includes('둘째 보고'));
     assert.ok(n2.includes(DOC_DONE_LINE) && !n2.includes(docRules('docs')));
     assert.match(n2.split('\n').pop(), /문서 점검\(막지 않는다\)/, 'done 알림은 같은 문제여도 경고를 싣는다');
