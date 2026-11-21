@@ -117,7 +117,8 @@ export function shortHelp(perm = null) {
     `atrium(계약 ${CONTRACT_VERSION}): 보드가 띄운 세션이 보드와 말하는 명령. 옛 이름 mtask도 같다.`,
     ...(line ? [line] : []),
     ...verbsFor(perm && perm.allowed).map((v) => `  atrium ${v.name}${v.args.length ? ' ' + v.args.join(' ') : ''}\n      ${v.does}`),
-    '이름은 보드의 세션 이름이다(@ 없이도 된다). 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).',
+    orch ? '이름은 보드의 세션 이름이다(@ 없이도 된다). atrium은 보드와 말할 때만 쓴다. 하네스 안의 하위 에이전트·위임·팀은 하네스의 방식대로 쓴다(보드를 거치지 않는다).' // P296·P297: 하네스 안 위임을 막지 않게
+      : '이름은 보드의 세션 이름이다(@ 없이도 된다). 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).',
     ...(orch ? [] : RELATION_HELP),
     '종료 코드: 0 성공, 1 보드가 거절·실패, 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(다시 atrium wait). 기계용 계약: atrium help --json. 자세한 설명: atrium help --long',
   ].join('\n');

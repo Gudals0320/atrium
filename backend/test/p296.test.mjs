@@ -18,7 +18,7 @@ import { DeliveryQueue, steerBlock, steerWhy, canTypeNow } from '../src/delivery
 import { Branch } from '../src/branch.mjs';
 import { CONTRACT_VERSION, shortHelp, contractJson } from '../src/cli-contract.mjs';
 import { permOf, opRefusal, orchOf, launcherOrch, normalizeOrchFields, orchPromptLines, ORCH_SUB_VERBS, ORCH_DEFAULTS } from '../src/orchestration.mjs';
-import { innerWork, fileSignals, globTimes, expandPath } from '../src/inner-work.mjs';
+import { innerWork, fileSignals, globTimes, expandPath, registerInnerReader, readerSignals } from '../src/inner-work.mjs';
 import { Sleeper, sessionActivity, sessionSleepPlan, SLEEP_REASONS } from '../src/sleep.mjs';
 import { normalizeLauncher, resolveLauncher } from '../src/launchers.mjs';
 import { FALLBACK_MARK } from '../src/work-units.mjs';
@@ -368,4 +368,25 @@ test('P296 잠재우기 거절: 안에서 일하는 중(inner_work)은 저절로
   b.sessions.set('n1', plain);
   await sl.scanInner();
   assert.equal(sl.inner.has('n1'), false);
+});
+
+test('P296 하네스별 바쁨 읽개(꽂기)와 하네스 안 오케스트레이션 허락 안내(P297)', () => {
+  assert.deepEqual(normalizeOrchFields({ busy: [{ reader: 'hermes' }, 'cpu'] }).busy, [{ reader: 'hermes' }, 'cpu']);
+  assert.throws(() => normalizeOrchFields({ busy: [{ reader: 'Bad Name' }] }), /바쁨 신호/);
+  assert.deepEqual(readerSignals([{ reader: 'p296x' }]), [{ reader: 'p296x', busy: null, why: 'not_registered' }]);
+  const off = registerInnerReader('p296x', ({ session }) => ({ busy: session && session.name === 'a' }));
+  try {
+    const rs = readerSignals([{ reader: 'p296x' }, 'cpu'], { session: { name: 'a' } });
+    assert.deepEqual(rs, [{ reader: 'p296x', busy: true }]);
+    const x = innerWork({ readers: rs, signals: [], now: 1 });
+    assert.equal(x.busy, true); assert.deepEqual(x.why, ['reader:p296x']);
+  } finally { off(); }
+  for (const sc of ['sub', 'free']) {
+    const p = orchPromptLines(sc).join(' ');
+    assert.match(p, /하네스 안에서 나눠 돌린다/); assert.match(p, /위임/); assert.match(p, /atrium 명령은 보드와 말할 때만/);
+    assert.doesNotMatch(p, /atrium prompt로만/);
+  }
+  const h = shortHelp({ orchestrates: true, scope: 'free', allowed: ['help', 'prompt', 'done'] });
+  assert.doesNotMatch(h, /atrium prompt로만 보낸다/); assert.match(h, /하네스의 방식대로/);
+  assert.match(shortHelp(), /atrium prompt로만 보낸다/, '보통 세션은 그대로');
 });

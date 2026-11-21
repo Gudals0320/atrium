@@ -2840,7 +2840,7 @@ export default {
     titleFree: 'A self-orchestrating session. Its harness splits the inner work; the board does not spawn sessions for it. Input goes through the queue only.',
     titleSub: 'A self-orchestrating session under its parent: it talks to the board only with its parent (see its task, send to the parent, report). Input goes through the queue only.',
     innerTitle: 'Working inside even though the screen is quiet ({why}). The board does not put it to sleep meanwhile.',
-    why: { proctree: 'child processes', cpu: 'CPU use', files: 'state files', hold: 'worked moments ago' },
+    why: { proctree: 'child processes', cpu: 'CPU use', files: 'state files', reader: '{name} reader', hold: 'worked moments ago' },
     field: 'Self-orchestrating',
     fieldNote: 'A harness that runs its own sub-agents inside. When on, the board spawns no sessions for it, and as a child it talks only with its parent.',
     fallback: 'If the harness cannot run atrium, close its task with the last answer when a turn ends.',

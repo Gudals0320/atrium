@@ -18,6 +18,21 @@ export const INNER_FILE_WINDOW_MS = 90000;
 export const INNER_HOLD_MS = 60000;
 export const GLOB_DEPTH = 4;
 export const GLOB_MAX = 2000;
+// 하네스별 바쁨 읽개(꽂기). busy 칸의 { reader: '<이름>' }가 고른다. fn({ session, now }) → { busy, why? } | null(모름).
+// P297: Hermes는 안의 일이 패널 밖 공유 gateway 데몬에서 돌아 나무·CPU로는 안 보인다. 그 하네스의 읽개(state.db async_delegations·턴 임대)를 나중에 여기 꽂는다
+export const INNER_READERS = new Map();
+export function registerInnerReader(name, fn) { INNER_READERS.set(String(name), fn); return () => INNER_READERS.delete(String(name)); }
+// busy 칸의 읽개들 → [{ reader, busy }](등록되지 않은 읽개·실패는 빼고 남긴다)
+export function readerSignals(busy = [], ctx = {}) {
+  const out = [];
+  for (const x of busy || []) {
+    if (!x || typeof x !== 'object' || !x.reader) continue;
+    const fn = INNER_READERS.get(String(x.reader));
+    if (!fn) { out.push({ reader: x.reader, busy: null, why: 'not_registered' }); continue; }
+    try { const r = fn(ctx); out.push({ reader: x.reader, busy: r ? !!r.busy : null }); } catch (e) { out.push({ reader: x.reader, busy: null, why: e.message }); }
+  }
+  return out;
+}
 
 // %이름%·~ 풀기
 export function expandPath(p, { env = process.env, home = os.homedir(), cwd = '.' } = {}) {
@@ -63,7 +78,7 @@ export function globTimes(pattern, { fsx = fs, max = GLOB_MAX } = {}) {
 // 한 번 재기. 순수 함수(프로세스 표와 파일 때를 받는다).
 // o: { procs(Map pid → { pid, ppid, name, created, cpu(ms) }), root(하네스 PID), harness(root가 하네스 자신인가), launchedAt, signals, files([{ glob, newest }]), prev, now }
 // → { busy, why: [신호], n(자손 수), cpu: Map(pid → cpu), cpuMs(이번에 늘어난 CPU), at, lastBusyAt }
-export function innerWork({ procs = null, root = null, harness = true, launchedAt = 0, signals = ['proctree', 'cpu'], files = [], prev = null, now = Date.now(), settleMs = INNER_SETTLE_MS, cpuRate = INNER_CPU_RATE, fileWindowMs = INNER_FILE_WINDOW_MS, holdMs = INNER_HOLD_MS } = {}) {
+export function innerWork({ procs = null, root = null, harness = true, launchedAt = 0, signals = ['proctree', 'cpu'], files = [], readers = [], prev = null, now = Date.now(), settleMs = INNER_SETTLE_MS, cpuRate = INNER_CPU_RATE, fileWindowMs = INNER_FILE_WINDOW_MS, holdMs = INNER_HOLD_MS } = {}) {
   const want = new Set(signals.filter((x) => typeof x === 'string'));
   const why = [];
   let n = 0, cpuMs = 0;
@@ -84,6 +99,7 @@ export function innerWork({ procs = null, root = null, harness = true, launchedA
     }
   }
   if (files.some((f) => f.newest && now - f.newest <= fileWindowMs)) why.push('files');
+  for (const r of readers) if (r.busy) why.push(`reader:${r.reader}`);
   const lastBusyAt = why.length ? now : prev ? prev.lastBusyAt || 0 : 0;
   const busy = why.length > 0 || (!!lastBusyAt && now - lastBusyAt < holdMs);
   return { busy, why, n, cpu, cpuMs, at: now, lastBusyAt };

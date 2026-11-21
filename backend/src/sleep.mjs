@@ -28,7 +28,7 @@ import { workspaceNames } from './workspaces.mjs';
 import { m, keyed } from './msg.mjs';
 import { resumable, harnessResumable } from './harness.mjs'; // P170: 판이 이어 갈 수 있는 하네스(codex, opencode, pi)
 import { readDraftBox } from './draft-aside.mjs'; // P170: 하네스 입력 칸에 보내지 않은 글이 있는가
-import { innerWork, fileSignals } from './inner-work.mjs'; // P296: 자체 오케스트레이션 세션의 안 일(바쁨 신호)
+import { innerWork, fileSignals, readerSignals } from './inner-work.mjs'; // P296: 자체 오케스트레이션 세션의 안 일(바쁨 신호)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
@@ -474,7 +474,8 @@ export class Sleeper {
       let files = [];
       try { files = fileSignals(sig(s), { cwd: (s.rt && s.rt.cwd) || s.cwd }); } catch {}
       const prev = this.inner.get(s.sessionId) || null;
-      const x = innerWork({ procs: table ? table.procs : null, root, harness, launchedAt: s.rt.launchedAt || 0, signals: sig(s), files, prev, now });
+      const readers = readerSignals(sig(s), { session: s, now }); // P296: 하네스별 읽개(꽂기)
+      const x = innerWork({ procs: table ? table.procs : null, root, harness, launchedAt: s.rt.launchedAt || 0, signals: sig(s), files, readers, prev, now });
       this.inner.set(s.sessionId, x);
       const was = !!(prev && prev.busy);
       if (was !== x.busy) {

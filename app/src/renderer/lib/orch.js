@@ -26,7 +26,7 @@ export function orchBody(harnesses, d) {
 export const sessionOrch = (s) => (s && s.orch && s.orch.on ? s.orch : null);
 // 안의 일 까닭 글
 export function innerWhyText(why, t) {
-  const list = (why || []).map((w) => t(`orch.why.${w}`));
+  const list = (why || []).map((w) => (String(w).startsWith('reader:') ? t('orch.why.reader', { name: String(w).slice(7) }) : t(`orch.why.${w}`)));
   return list.length ? list.join(', ') : t('orch.why.hold');
 }
 // 카드 표 → { text, busy, title } | null
