@@ -138,8 +138,8 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
   // P156: 관계 고르기 절(하위·동료, relate)로 690바이트를 더 둔다
   // P204: 동료 줄을 보낼 때(다섯 경우)와 동료 소식(cli-contract PEER_RULE)으로 바꿔 700바이트를 더 둔다
   // P248: 대기열·스티어링 한 줄(atrium prompt 기본 대기열, --steer)로 300바이트를 더 둔다. P267: merger 문구(판 스킬 9절)로 450바이트
-  // P284: 결정 카드 절(사람에게 묻기)로 1000바이트
-  assert.ok(Buffer.byteLength(skill) <= 2 * 3107 + 80 + 230 + 690 + 700 + 300 + 450 + 1000 + 1000, `skill ${Buffer.byteLength(skill)}B`);
+  // P284: 결정 카드 절(사람에게 묻기)로 1000바이트. P295: 보내는 때(--no-wait·--wait) 두 줄로 300바이트
+  assert.ok(Buffer.byteLength(skill) <= 2 * 3107 + 80 + 230 + 690 + 700 + 300 + 450 + 1000 + 1000 + 300, `skill ${Buffer.byteLength(skill)}B`);
   assert.match(skill.split('\n')[2], /사용자가 말하지 않아도/); // 설명에 스스로 쓰는 때
   assert.equal(boardSkill('delegate'), old);
   for (const c of ['atrium', 'mtask']) { // 옛 이름 mtask는 P18 전에 띄운 세션의 스킬 글이 말한다
