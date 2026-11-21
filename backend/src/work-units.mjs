@@ -24,6 +24,9 @@ export const DONE_RESULTS = ['ok', 'failed'];
 // 알림에 보이는 일 이름. P267: 합치기 일은 첫 줄("합치기: @하위 (브랜치 → 합칠 브랜치)")만
 export const unitTitle = (u) => (u && u.origin === 'merge' ? String(u.spec || '').split('\n')[0] : u ? u.spec : '');
 const DONE_TEXT_MAX = 100000;
+// P296: 판이 마지막 답으로 닫을 때 턴의 답을 기다리는 상한과 보고 머리 표시
+export const FALLBACK_ANSWER_MS = 20000;
+export const FALLBACK_MARK = '[판이 마지막 답으로 닫음]';
 
 // 첫 요청 머리(세 줄). 맨 위 관계 줄은 text.mjs RELATION_LINE과 같은 꼴이라 카드에는 아래 할 일만 지시로 보인다
 // P208: Codex(Windows PowerShell 5.1)는 글 안의 큰따옴표를 빼먹으므로 둘째 줄 끝에 --file 길을 붙인다
@@ -274,6 +277,22 @@ export class WorkUnits {
       if (why !== 'needs_human' && this.queued.has(sid)) { st.updateTry(tr.id, { endedAt: Date.now() }); this.pump(sid); }
     }
     if (this.queued.has(sid) && (sum.state === 'ready' || sum.state === 'sleeping')) this.pump(sid); // 백엔드가 다시 뜬 뒤 등
+  }
+  // P296: 판이 마지막 답으로 닫기(런처 칸 reportFallback last_answer: 하네스가 atrium을 못 돌린다). 턴이 끝난 뒤 그 턴의 답(turnAt 뒤)을
+  //   FALLBACK_ANSWER_MS까지 기다려 done ok로 닫는다(글 머리에 판이 닫았다는 표시). 그새 done이 왔거나 다시 일하면 닫지 않는다
+  async fallbackDone(s, tr, turnAt = 0) {
+    const b = this.b; const st = this.store(); const sid = s.sessionId;
+    const t0 = Date.now();
+    const fresh = () => !!(s.rt && s.rt.lastAnswer && (s.rt.lastAnswerAt || 0) >= (turnAt || t0) - 1000);
+    while (!fresh() && Date.now() - t0 < (this.fallbackMs ?? FALLBACK_ANSWER_MS)) await new Promise((r) => setTimeout(r, 300));
+    const cur = st.openTryOf(sid);
+    if (!cur || cur.id !== tr.id || !b.sessions.has(sid) || this.prev.get(sid) === 'working') return null;
+    const answer = s.rt && s.rt.lastAnswer ? String(s.rt.lastAnswer) : '';
+    const body = answer.trim() ? clip(answer, DONE_TEXT_MAX - 200) : '(마지막 답을 읽지 못했다)';
+    const text = `${FALLBACK_MARK} ${body}`;
+    st.addEvent(sid, 'unit_done_fallback', { unitId: tr.unitId, tryId: tr.id, chars: body.length, fresh: fresh() });
+    b.log(`unit ${tr.unitId} closed by board with last answer of ${this.nameOf(sid)}`);
+    try { return await this.doneVerb(s, { result: 'ok', text, fallback: true }); } catch (e) { b.log(`fallback done failed: ${e.message}`); return null; }
   }
   // 시도의 멈춤을 적는다(stop_reason, 세션 이벤트, 장부). P235: unit-stops가 늦게 적을 때도 쓴다
   recordStop(s, tr, why) {

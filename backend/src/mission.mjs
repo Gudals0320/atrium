@@ -110,6 +110,7 @@ export function missionGraph({ sessions = [], links = [], thread = [], loops = [
       model: s.model || null, effort: s.effort || null,
       turnAt: s.state === 'working' && s.turn && s.turn.startedAt ? s.turn.startedAt : null, activeAt: s.lastActivityAt || null,
       gitBranch: (s.git && s.git.isWorktree && s.git.branch) || null,
+      orch: s.orch ? { on: true, scope: s.orch.scope || null, inner: s.orch.inner ? { busy: !!s.orch.inner.busy, why: s.orch.inner.why || [] } : null } : null, // P296: 자체 오케스트레이션 표
       // P152: 오류 글(영토 지도 카드의 오류 줄, 휴대폰 시트). 판의 세션 요약이 없을 때도 보이게
       closedKids: closedKids.get(s.sessionId) || 0, assignAt: assignAt.get(s.sessionId) || null, parentClosed: !!lineageOf(s.sessionId) && !byId.has(lineageOf(s.sessionId)), // P157
       background: s.background && s.background.n ? { n: s.background.n, kinds: s.background.kinds || [], items: (s.background.items || []).slice(0, 8), at: s.background.at || null } : null, // P164: 도는 뒤 일(쉬는 세션 카드의 표시)

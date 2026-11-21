@@ -107,6 +107,7 @@ export default {
     sleepWhy_terminal_down: '터미널 서버가 종료된 상태입니다.',
     sleepWhy_still_running: '에이전트 프로세스가 아직 종료되지 않았습니다.',
     sleepWhy_background: '백그라운드 작업(셸, 에이전트)이 실행 중입니다. 작업이 끝난 뒤 다시 시도하거나 세션에서 작업을 먼저 중지하세요.',
+    sleepWhy_inner_work: '자체 오케스트레이션 세션이 안에서 일하고 있습니다(화면은 조용해도 안의 에이전트가 돕니다). 일이 끝나면 절전 모드로 전환합니다.', // P296
     sleepWhy_sleep_failed: '조금 전 절전 모드 전환에 실패해 나중에 다시 시도합니다.',
     wsClose: '빈 프로젝트를 닫습니다: {name} ({root}). 폴더와 Git 저장소는 그대로 유지합니다.',
     wsCloseMany: '프로젝트 {n}개를 보드에서 제거합니다. 폴더와 대화 기록 파일은 그대로 유지합니다.',
@@ -1258,6 +1259,7 @@ export default {
       permissionMode: '알 수 없는 승인 방식입니다: {mode}',
       args: '추가 실행 인자는 한 줄로 {max}자까지 입력할 수 있습니다.',
       argsReserved: '{arg}는 보드가 직접 지정합니다.',
+      orchestrates: '자체 오케스트레이션 칸의 값이 맞지 않습니다.', // P296
       commandLine: '명령은 줄바꿈이나 탭 없이 한 줄로 입력하세요.',
       commandLong: '명령이 너무 깁니다. 현재 {n}자이며 최대 {max}자까지 입력할 수 있습니다.',
       commandEmpty: '명령을 입력하세요.',
@@ -2656,6 +2658,7 @@ export default {
     fell: '{names}: 스티어링할 수 없어 대기열로 보냈습니다({why}).',
     why_kind: '일하는 중에 입력을 받지 못하는 종류',
     why_no_hook: '보드가 띄운 Claude Code가 아님(hook 없음)',
+    why_orchestrates: '자체 오케스트레이션 세션은 대기열로만 받음', // P296
   },
   // P255: 위 오른쪽 칩(작업 완료 모두 읽기, 메모리 칩의 CPU, Codex 크레딧)
   p255: {
@@ -2769,6 +2772,7 @@ export default {
     not_working: '쉬는 중이라 바로 보냄',
     kind: '이 종류는 일하는 중 입력을 받지 않아 턴 끝에 넣음',
     no_hook: 'hook 없는 세션이라 턴 끝에 넣음',
+    orchestrates: '자체 오케스트레이션 세션이라 턴 끝에 넣음', // P296
     user_typing: '터미널에서 치는 중이라 잠시 기다림',
     box_unknown: '화면을 읽지 못해 턴 끝에 넣음',
     no_box: '입력 칸을 찾지 못해 턴 끝에 넣음',
@@ -2832,6 +2836,18 @@ export default {
     markTitle: '기다리는 내 몫 {n}개 · 위 "내 몫" 알약에서 처리합니다',
     // P292: 휴대폰 시트 머리의 짧은 알림(하나만)
     s: { flushed: '모은 답 {n}개 보냄', copied: '복사함', snoozed: '{when}까지 미룸', ignored: '무시함', held: '답 모음({n})', sent: '답 보냄', didSent: '했음 보냄', did: '했음 기록', checkSent: '결과 보냄', raised: '꺼냄' },
+  },
+  // P296: 자체 오케스트레이션 세션(런처 칸, 판 카드·세션 맵 표, 안에서 일하는 중)
+  orch: {
+    tag: '오케스트레이션',
+    tagBusy: '오케스트레이션 · 안에서 일하는 중',
+    titleFree: '자체 오케스트레이션 세션입니다. 안의 일은 하네스가 나누고, 보드는 하위 세션을 만들어 주지 않습니다. 입력은 대기열로만 받습니다.',
+    titleSub: '자체 오케스트레이션 세션입니다. 부모 세션의 하위라 보드와는 부모하고만 말합니다(맡은 일 보기, 부모에게 보내기, 보고). 입력은 대기열로만 받습니다.',
+    innerTitle: '화면은 조용해도 안에서 일하고 있습니다({why}). 이 동안은 절전 모드로 전환하지 않습니다.',
+    why: { proctree: '자식 프로세스', cpu: 'CPU 사용', files: '상태 파일', hold: '조금 전까지 일함' },
+    field: '자체 오케스트레이션',
+    fieldNote: '안에서 하위 에이전트를 스스로 돌리는 하네스입니다. 켜면 보드가 하위 세션을 만들어 주지 않고, 하위로 띄우면 부모하고만 말합니다.',
+    fallback: 'atrium 명령을 못 쓰는 하네스면 턴이 끝날 때 마지막 답으로 맡은 일을 닫습니다.',
   },
 };
 

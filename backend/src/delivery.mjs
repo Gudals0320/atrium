@@ -62,14 +62,17 @@ export function bgOnlyOf(rt, state, bg, { kind = 'claude', hooked = true } = {})
 // P271(이슈 #19): 일하는 중인 Codex도 받는다. Codex는 일하는 중 입력 칸의 글에 Enter를 치면 지금 턴에 끼워 넣는다(Tab은 턴 뒤로 미룬다).
 //   판은 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(adapter.pastePrompt). 제출 확인은 화면(입력 칸이 비고 대화에 보임, P184)
 export function canTypeNow(view) {
+  if (view && view.orch) return false; // P296: 대기열만
   if (!view || view.closed || !view.termConnected || !view.agentPresent || view.state !== 'working') return false;
   const kind = view.kind || 'claude';
   return kind === 'codex' || (kind === 'claude' && !!view.hooked);
 }
 // P248: 스티어링(일하는 중에 입력 칸에 넣기)을 받을 수 없는 세션의 까닭 | null. 상태와 상관없이 종류로 정한다(쉬는 동안 고른 스티어링도 같다)
 //   kind: Claude Code·Codex가 아니다(opencode 등), no_hook: hook이 없는 Claude Code(받아들인 세션). canTypeNow의 종류 조건과 같다(P271: Codex는 받는다)
+// P296: orchestrates — 자체 오케스트레이션 세션은 입력을 대기열로만 받는다(안의 오케스트레이션이 일의 중심이다)
 export function steerBlock(s, hooked = s ? s.hooked !== false : false) {
   if (!s) return 'kind';
+  if (s.orch && s.orch.on) return 'orchestrates';
   const kind = s.kind || 'claude';
   if (kind === 'codex') return null;
   if (kind !== 'claude') return 'kind';
@@ -80,14 +83,14 @@ export function steerBlock(s, hooked = s ? s.hooked !== false : false) {
 //   kind·no_hook: 일하는 중 입력을 받지 않는 세션(steerBlock), user_typing: 사람이 그 터미널에 치는 중, box_unknown: 화면을 읽지 못함,
 //   no_box: 화면에서 입력 칸을 찾지 못함, draft_in_box: 입력 칸에 다른 글(쓰다 만 글)이 있고 비킬 수 없다(aside 거짓).
 //   못 넣으면 대기열은 지금처럼 기다렸다가 턴이 끝나면 보통 보내기로 넣는다(글이 사라지거나 두 번 들어가지 않는다)
-export const STEER_WHYS = ['term_disconnected', 'no_agent', 'waiting', 'not_working', 'kind', 'no_hook', 'user_typing', 'box_unknown', 'no_box', 'draft_in_box'];
+export const STEER_WHYS = ['term_disconnected', 'no_agent', 'waiting', 'not_working', 'orchestrates', 'kind', 'no_hook', 'user_typing', 'box_unknown', 'no_box', 'draft_in_box'];
 export function steerWhy({ view, look, aside = false, now = Date.now(), quietMs = 3000 } = {}) {
   const v = view || {};
   if (v.closed || !v.termConnected) return 'term_disconnected';
   if (!v.agentPresent) return 'no_agent';
   if (v.state === 'waiting' || v.state === 'trust_wait') return 'waiting';
   if (v.state !== 'working' || v.bgOnly) return 'not_working';
-  const k = steerBlock({ kind: v.kind }, !!v.hooked);
+  const k = steerBlock({ kind: v.kind, orch: v.orch || null }, !!v.hooked);
   if (k) return k;
   if (v.lastUserInputAt && now - v.lastUserInputAt < quietMs) return 'user_typing';
   if (look === undefined) return null;

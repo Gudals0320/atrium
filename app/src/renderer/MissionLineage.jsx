@@ -15,6 +15,7 @@ import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
 import { bgShow, bgText, bgKindsText } from './lib/bg-work.js'; // P164
+import { orchTag } from './lib/orch.js'; // P296
 import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText } from './lib/i18n.js';
 import { leadTags } from './lib/cmd-input.js';
@@ -101,7 +102,8 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const more = [cross && parentWs ? relText : null, ...extra].filter(Boolean).join(' · ');
   const relAll = [relText, ...extra].filter(Boolean).join(' · ');
   const bg = bgShow(n, live, tier); // P164: 쉬는 세션에 도는 뒤 일(뒤 셸·뒤 하위 에이전트)
-  return { kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label, bg, bgText: bg ? bgText(bg, t) : null, bgKinds: bg ? bgKindsText(bg, t) : null };
+  const orch = orchTag({ orch: (live && live.orch) || n.orch || null }, t); // P296: 자체 오케스트레이션 표
+  return { orch, kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label, bg, bgText: bg ? bgText(bg, t) : null, bgKinds: bg ? bgKindsText(bg, t) : null };
 }
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
@@ -123,7 +125,7 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
         {!b.thin && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}<DecisionMark sessionId={n.sessionId} className="mt-dc-mark map tile" /></span><span className="ts">{b.merger ? <span className="mt-sm-merger-tile" data-role="ta-merger-tile">{t('merger.tag')}</span> : null}{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">
-          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><DecisionMark sessionId={n.sessionId} className="mt-dc-mark map" /><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" /></span>
+          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span><DecisionMark sessionId={n.sessionId} className="mt-dc-mark map" /><span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" />{f.orch ? <span className={`mt-orch-tag map${f.orch.busy ? ' busy' : ''}`} data-role="ta-orch" data-busy={f.orch.busy ? '1' : '0'}>{f.orch.text}</span> : null}</span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}

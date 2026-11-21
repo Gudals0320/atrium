@@ -107,6 +107,7 @@ export default {
     sleepWhy_terminal_down: 'the terminal server is down',
     sleepWhy_still_running: 'the agent did not exit',
     sleepWhy_background: 'background work (a shell or agent) is running in it; try again when it finishes, or stop it in the session first',
+    sleepWhy_inner_work: 'the self-orchestrating session is working inside (its inner agents run even when the screen is quiet); it sleeps once that work ends', // P296
     sleepWhy_sleep_failed: 'the last try to put it to sleep failed, so it will try again later',
     wsClose: 'Close empty workspace {name} ({root}). The folder and repo stay.',
     wsCloseMany: { one: 'Remove {n} workspace from the board. Folders and conversation files stay.', other: 'Remove {n} workspaces from the board. Folders and conversation files stay.' },
@@ -1258,6 +1259,7 @@ export default {
       permissionMode: 'Unknown permission mode: {mode}',
       args: 'Extra args must be one line, up to {max} characters',
       argsReserved: 'The board sets {arg} itself',
+      orchestrates: 'The self-orchestration field has an invalid value', // P296
       commandLine: 'The command must be one line (no line breaks or tabs)',
       commandLong: 'The command is too long ({n} characters, up to {max})',
       commandEmpty: 'Write the command',
@@ -2653,6 +2655,7 @@ export default {
     fell: '{names}: cannot steer, sent to the queue ({why}).',
     why_kind: 'this kind cannot take input while working',
     why_no_hook: 'not a Claude Code started by the board (no hooks)',
+    why_orchestrates: 'self-orchestrating sessions take the queue only', // P296
   },
   p255: {
     plainAuthNotice: 'Launcher {name} has an auth value in plain text in its environment ({names}). The board does not move it; keep the value in your own environment and remove it from the launcher env.',
@@ -2765,6 +2768,7 @@ export default {
     not_working: 'idle, sends right away',
     kind: 'this kind takes no input while working, goes in at turn end',
     no_hook: 'session without hooks, goes in at turn end',
+    orchestrates: 'self-orchestrating session, goes in at turn end', // P296
     user_typing: 'someone is typing in the terminal, waiting',
     box_unknown: 'could not read the screen, goes in at turn end',
     no_box: 'input box not found, goes in at turn end',
@@ -2828,6 +2832,18 @@ export default {
     markTitle: '{n} item(s) waiting for you · handle them from the "For you" pill at the top',
     // P292: 휴대폰 시트 머리의 짧은 알림(하나만)
     s: { flushed: 'Sent {n} held', copied: 'Copied', snoozed: 'Snoozed to {when}', ignored: 'Ignored', held: 'Held ({n})', sent: 'Sent', didSent: 'Done, told', did: 'Marked done', checkSent: 'Result sent', raised: 'Brought out' },
+  },
+  // P296: self-orchestrating sessions (launcher field, card and map tag, working inside)
+  orch: {
+    tag: 'Orchestrator',
+    tagBusy: 'Orchestrator · working inside',
+    titleFree: 'A self-orchestrating session. Its harness splits the inner work; the board does not spawn sessions for it. Input goes through the queue only.',
+    titleSub: 'A self-orchestrating session under its parent: it talks to the board only with its parent (see its task, send to the parent, report). Input goes through the queue only.',
+    innerTitle: 'Working inside even though the screen is quiet ({why}). The board does not put it to sleep meanwhile.',
+    why: { proctree: 'child processes', cpu: 'CPU use', files: 'state files', hold: 'worked moments ago' },
+    field: 'Self-orchestrating',
+    fieldNote: 'A harness that runs its own sub-agents inside. When on, the board spawns no sessions for it, and as a child it talks only with its parent.',
+    fallback: 'If the harness cannot run atrium, close its task with the last answer when a turn ends.',
   },
 };
 

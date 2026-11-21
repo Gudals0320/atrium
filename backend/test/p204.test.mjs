@@ -160,7 +160,7 @@ test('P204 첫 줄: 빈 줄과 코드 블록 울타리는 건너뛴다', () => {
 });
 
 test('P204 계약: log·news 동사를 더하고 계약 버전은 그대로, me 칸에 news', () => {
-  assert.equal(CONTRACT_VERSION, 8); // P292. P284. P269
+  assert.equal(CONTRACT_VERSION, 9); // P296: 오케스트레이션 허용 동사로 9. // P292. P284. P269
   assert.ok(VERB_NAMES.includes('log') && VERB_NAMES.includes('news'));
   const log = VERBS.find((v) => v.name === 'log'); const news = VERBS.find((v) => v.name === 'news');
   assert.deepEqual(news.args, ['[<이름>]', '[--all]', '[--json]']);
