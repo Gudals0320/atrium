@@ -6,7 +6,7 @@
 export function decisionsOf(cards) {
   if (!Array.isArray(cards)) return [];
   return cards.filter((d) => d && Number.isInteger(Number(d.id)) && d.sessionId && typeof d.question === 'string')
-    .map((d) => ({ ...d, id: Number(d.id), options: Array.isArray(d.options) ? d.options.map(String) : [], auto: !!d.auto, kind: KINDS.includes(d.kind) ? d.kind : 'decide', cmds: Array.isArray(d.cmds) ? d.cmds.map(String) : [], tell: !!d.tell, later: d.later || null, wakeAt: Number(d.wakeAt) || null, cond: d.cond || null, deferred: !!d.deferred })) // P292
+    .map((d) => ({ ...d, id: Number(d.id), options: Array.isArray(d.options) ? d.options.map(String) : [], auto: !!d.auto, kind: KINDS.includes(d.kind) ? d.kind : 'decide', cmds: Array.isArray(d.cmds) ? d.cmds.map(String) : [], tell: !!d.tell, later: d.later || null, wakeAt: Number(d.wakeAt) || null, cond: d.cond || null, deferred: !!d.deferred, timing: TIMINGS.includes(d.timing) ? d.timing : null })) // P292. P295: timing
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.id - b.id);
 }
 // P286: 세션마다 모아 둔 답 수(판의 held { sessionId: n }) → 0보다 큰 것만
@@ -72,3 +72,17 @@ export function whenText(at, now = Date.now()) {
 export const noteOk = (text) => typeof text === 'string' && text.trim().length <= 300;
 // 카드 하나를 나중 줄로(미루기 직후) / 지금 목록으로(꺼내기 직후)
 export const withDeferred = (cards, id, on, wakeAt = null) => (cards || []).map((d) => (d.id === id ? { ...d, deferred: on, wakeAt: on ? wakeAt : null, cond: on ? d.cond : null } : d));
+
+// ---------- P295: 보내는 때(답 실어 보내기) ----------
+export const TIMINGS = ['now', 'next'];
+// 답하면 세션에 무언가 가는 카드인가(결정·확인·--tell 할 일). 보내는 때 표시는 이 카드에만 단다
+export const sendsAnswer = (d) => !!d && (d.kind === 'decide' || d.kind === 'check' || !!d.tell);
+// 지금 보일 보내는 때: 사람이 바꾼 값 → 판이 정한 값(카드의 timing) → now
+export const timingOf = (d, picked = null) => (TIMINGS.includes(picked) ? picked : d && TIMINGS.includes(d.timing) ? d.timing : 'now');
+export const flipTiming = (t) => (t === 'next' ? 'now' : 'next');
+// 붙잡은 답만 있고 지금 목록에 카드가 없는 세션(목록 맨 위에 그 줄만 보인다)
+export function heldOnly(held, cards) {
+  const has = new Set((cards || []).map((d) => d.sessionId));
+  return Object.keys(held || {}).filter((sid) => held[sid] > 0 && !has.has(sid));
+}
+export const heldTotal = (held) => Object.values(held || {}).reduce((a, n) => a + (Number(n) || 0), 0);

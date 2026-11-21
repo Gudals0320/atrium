@@ -181,7 +181,7 @@ test('P292 했음: 기본은 기록만(세션에 보내지 않음), --tell이면
     assert.equal(r.sent, false); assert.equal(r.deliveryId, null); assert.equal(dl(b, lead).length, n0, '했음은 기록만');
     assert.equal(b.store.getDecision(a.id).state, 'answered'); assert.equal(b.store.getDecision(a.id).answer, '했음');
     // --tell
-    const t = todo(b, lead, { text: '키를 등록', tell: true });
+    const t = todo(b, lead, { text: '키를 등록', tell: true, wait: true }); // P295: 기본은 next(다음 글에 실림). 이 시험은 곧바로(--wait)
     const rt = h['decision.done']({ id: t.id });
     assert.ok(rt.deliveryId); assert.equal(dl(b, lead).at(-1).text, '[할 일] 키를 등록 → 했음');
     // 종류가 틀리면 거절
@@ -198,11 +198,11 @@ test('P292 했음: 기본은 기록만(세션에 보내지 않음), --tell이면
     assert.equal(dl(b, lead).length, n1 + 1);
     assert.equal(dl(b, lead).at(-1).text, '[확인] 로그인 화면 확인 → 안 됐다: 단추가 안 보임\n[결정] 배포할까요? → 아니오');
     // 됐다(메모 없음)
-    const c2 = todo(b, lead, { text: 'Check the page', check: true });
+    const c2 = todo(b, lead, { text: 'Check the page', check: true, wait: true }); // P295
     h['decision.check']({ id: c2.id, ok: true });
     assert.equal(dl(b, lead).at(-1).text, '[확인] Check the page → 됐다');
     // 기록만 하는 할 일은 모은 답을 막지 않는다(열려 있어도 확인 결과는 곧바로 간다). --tell 할 일은 막는다
-    const d1 = todo(b, lead, { text: '파일 옮기기' }); const c3 = todo(b, lead, { text: '빌드 확인', check: true });
+    const d1 = todo(b, lead, { text: '파일 옮기기' }); const c3 = todo(b, lead, { text: '빌드 확인', check: true, wait: true }); // P295
     const n2 = dl(b, lead).length;
     h['decision.check']({ id: c3.id, ok: true, note: '좋음' });
     assert.equal(dl(b, lead).length, n2 + 1); assert.equal(dl(b, lead).at(-1).text, '[확인] 빌드 확인 → 됐다: 좋음');
@@ -367,7 +367,7 @@ test('P292 CLI: atrium todo(--cmd 둘·--check·--later·--tell), --list(열린 
 });
 
 test('P292 안내: 계약 8과 todo 동사, 허용 규칙, 판·하네스 안내문 한 줄(줄 수 그대로), 스킬 절', () => {
-  assert.equal(CONTRACT_VERSION, 8); assert.ok(VERB_NAMES.includes('todo'));
+  assert.equal(CONTRACT_VERSION, 9); // P296: 오케스트레이션 허용 동사로 9. assert.ok(VERB_NAMES.includes('todo'));
   assert.ok(ATRIUM_ALLOW.includes('Bash(atrium todo *)')); assert.ok(ATRIUM_ALLOW.includes('PowerShell(atrium todo *)'));
   const lines = BOARD_SYSTEM_PROMPT.split('\n').filter((l) => l.includes('atrium todo'));
   assert.equal(lines.length, 1); assert.match(lines[0], /atrium ask/, '결정 카드 줄에 더했다');

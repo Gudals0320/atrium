@@ -7,8 +7,10 @@
 
 // 세션 요약(kind, hooked) → 스티어링할 수 없는 까닭 | null. kind: 다른 종류(opencode 등), no_hook: hook이 없는 Claude Code
 // P271(이슈 #19): Codex는 받는다(일하는 중 입력 칸의 글에 Enter를 치면 지금 턴에 끼워 넣는다)
+// P296: 자체 오케스트레이션 세션은 대기열만(orchestrates)
 export function steerBlock(s) {
   if (!s) return 'kind';
+  if (s.orch && s.orch.on) return 'orchestrates';
   const kind = s.kind || 'claude';
   if (kind === 'codex') return null;
   if (kind !== 'claude') return 'kind';

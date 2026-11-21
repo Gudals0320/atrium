@@ -16,7 +16,7 @@ export const DELIVERY_LABEL = labelMap('delivery', ['queued', 'sending', 'sent',
 export const WAIT_REASON_LABEL = labelMap('waitReason', ['waiting', 'starting', 'trust_wait', 'working', 'user_typing', 'no_agent', 'terminal_down', 'sleeping', 'editing']); // P158: editing(판 칩에서 고치는 중)
 
 // P289: 스티어링을 지금 턴에 넣지 못한 까닭(백엔드 delivery.mjs STEER_WHYS)
-export const STEER_WHYS = ['term_disconnected', 'no_agent', 'waiting', 'not_working', 'kind', 'no_hook', 'user_typing', 'box_unknown', 'no_box', 'draft_in_box'];
+export const STEER_WHYS = ['term_disconnected', 'no_agent', 'waiting', 'not_working', 'orchestrates', 'kind', 'no_hook', 'user_typing', 'box_unknown', 'no_box', 'draft_in_box'];
 export const steerWhyText = (why) => (STEER_WHYS.includes(why) ? t(`steerWhy.${why}`) : why);
 
 export function deliveryText(d) {

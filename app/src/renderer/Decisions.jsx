@@ -1,5 +1,5 @@
 // P284: 결정 카드의 창 쪽(판 쪽 backend/src/decisions.mjs). 에이전트가 사람에게 글로 물은 질문(atrium ask)을 "내 차례" 줄과 따로 모아 보인다.
-// - PC: 위 오른쪽 알약(DecisionPill, 응답 필요와 따로 센다). 누르면 오래 기다린 것부터 목록: 세션 이름(누르면 그 세션으로), 질문, 맥락,
+// - PC: 위 왼쪽 알약(DecisionPill, 응답 필요와 따로 센다. P294에서 오른쪽에서 옮김). 누르면 오래 기다린 것부터 목록: 세션 이름(누르면 그 세션으로), 질문, 맥락,
 //   기다린 시간, 보기 단추, 한 줄 답 칸, 무시. 보기나 답을 보내면 판이 그 세션에 "[결정] <질문> → <답>"을 대기열로 넣고, 무시는 아무것도 보내지 않는다.
 // - 세션 카드(캔버스 노드 머리)와 세션 맵 카드에 작은 표식(DecisionMark).
 // - P286: 판이 마지막 답에서 만든 자동 카드는 줄과 표식에 작게 "자동"을 단다. 한 세션의 열린 카드가 여럿이면 답을 모아 두었다가 모두 끝나면 판이 한 글로 보내고,
@@ -9,11 +9,14 @@
 //   할 일: 명령(고정폭, 명령마다 복사 단추) + 했음·미루기·무시. 확인: 됐다/안 됐다 + 한 줄 메모·미루기·무시. 결정: 지금 그대로 + 미루기.
 //   미루기는 1시간·내일 아침·날짜 고르기. 미룬 카드와 나중에 카드는 목록 끝 "나중 n"(접힘, 때·조건 보임)에 있고 꺼내기·무시.
 //   알약·표식의 수는 지금 목록(나중 줄 뺌)만 센다(종류 구별 없이).
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+// - P295: 보내는 때. 답하면 세션에 무언가 가는 카드(결정·확인·--tell 할 일)의 머리에 작은 표시 "바로 감" | "다음 메시지와"(누르면 바뀜, 답할 때 판에 넘김).
+//   다음 글에 실려 갈 답(riding)은 "@이름: 다음 메시지와 함께 갈 답 n · 지금 보내기" 줄로, 그 세션의 카드가 없어도 목록 맨 위에 보인다.
+//   세션 카드·맵 카드 표식 옆에 "실어 보낼 답 n"(RideMark).
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore, getState, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago } from './lib/labels.js';
-import { answerReady, firstCardIds, allAuto, activeCards, laterCards, actionOf, snoozeTimes, pickedTime, pickDefault, whenText } from './lib/decisions.js';
+import { answerReady, firstCardIds, allAuto, activeCards, laterCards, actionOf, snoozeTimes, pickedTime, pickDefault, whenText, sendsAnswer, timingOf, flipTiming, heldOnly, heldTotal } from './lib/decisions.js';
 
 function useNow(ms = 15000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
 const nameOf = (d) => { const s = getState().sessions.get(d.sessionId); return (s && s.name) || d.name || '?'; };
@@ -39,7 +42,7 @@ async function copyText(text) {
 }
 
 // P286: 한 세션의 모은 답 줄(그 세션의 첫 카드 위)
-function HeldLine({ sessionId, n, t }) {
+function HeldLine({ sessionId, n, t, riding = false }) {
   const say = useSay();
   const [busy, setBusy] = useState(false);
   const name = nameOf({ sessionId });
@@ -50,15 +53,15 @@ function HeldLine({ sessionId, n, t }) {
     setBusy(false);
   };
   return (
-    <div className="mt-dc-held" data-role="decision-held" data-session={sessionId} data-count={n}>
-      <span title={t('autoDecisions.heldTitle')}><b className="mt-dc-held-name">@{name}</b>: {t('autoDecisions.held', { n })}</span>
+    <div className={`mt-dc-held${riding ? ' riding' : ''}`} data-role="decision-held" data-session={sessionId} data-count={n} data-riding={riding ? '1' : undefined}>
+      <span title={riding ? t('riding.lineTitle') : t('autoDecisions.heldTitle')}><b className="mt-dc-held-name">@{name}</b>: {riding ? t('riding.line', { n }) : t('autoDecisions.held', { n })}</span>
       <button type="button" className="mt-btn small" data-action="decision-flush" disabled={busy} onClick={send}>{t('autoDecisions.sendNow')}</button>
     </div>
   );
 }
 
 // P292: 카드 머리(세션 이름, 워크스페이스, 종류 표, 자동 표, 기다린 시간)
-function CardHead({ d, onGo, now, t }) {
+function CardHead({ d, onGo, now, t, timing = null, onTiming = null }) {
   const name = nameOf(d);
   return (
     <div className="mt-dc-line">
@@ -67,9 +70,16 @@ function CardHead({ d, onGo, now, t }) {
       <span className={`mt-ut-kind k-${d.kind}`} data-role="decision-kind" data-kind={d.kind}>{t(`userTasks.kind.${d.kind}`)}</span>
       {d.auto ? <span className="mt-dc-auto" data-role="decision-auto" title={t('autoDecisions.tagTitle')}>{t('autoDecisions.tag')}</span> : null}
       {d.tell ? <span className="mt-ut-tell" data-role="decision-tell" title={t('userTasks.tellTitle')}>{t('userTasks.tell')}</span> : null}
+      {onTiming && sendsAnswer(d) ? <TimingTag d={d} timing={timing} onTiming={onTiming} t={t} /> : null}
       <span className="mt-dc-time" title={t('decisions.waited')}>{ago(d.createdAt, now)}</span>
     </div>
   );
+}
+
+// P295: 보내는 때 표시(누르면 바로 감 ↔ 다음 메시지와). 판이 정한 값은 카드의 timing, 사람이 바꾼 값은 답할 때 넘긴다
+function TimingTag({ d, timing, onTiming, t }) {
+  const v = timingOf(d, timing);
+  return <button type="button" className={`mt-dc-timing ${v}${timing ? ' picked' : ''}`} data-action="decision-timing" data-timing={v} title={t(v === 'now' ? 'riding.nowTitle' : 'riding.nextTitle')} onClick={(e) => { e.stopPropagation(); onTiming(flipTiming(v)); }}>{t(v === 'now' ? 'riding.now' : 'riding.next')}</button>;
 }
 
 // P292: 명령(고정폭, 명령마다 복사)
@@ -136,14 +146,14 @@ function IgnoreBtn({ d, t, busy, setBusy }) {
   return <button type="button" className="mt-btn small ghost" data-action="decision-ignore" title={t('decisions.ignoreTitle')} disabled={busy} onClick={ignore}>{t('decisions.ignore')}</button>;
 }
 
-function DecideBody({ d, t, busy, setBusy }) {
+function DecideBody({ d, t, busy, setBusy, timing = null }) {
   const say = useSay();
   const [text, setText] = useState('');
   const name = nameOf(d);
   const send = async (answer) => {
     if (busy || !answerReady(answer)) return;
     setBusy(true);
-    try { const r = await answerDecision(d.id, answer.trim()); say(r && r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('decisions.sent', { name }), r && r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.sent')); }
+    try { const r = await answerDecision(d.id, answer.trim(), timing); say(r && r.riding ? t('riding.toast', { name, n: r.waiting || 1 }) : r && r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('decisions.sent', { name }), r && r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.sent')); }
     catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return (
@@ -153,21 +163,24 @@ function DecideBody({ d, t, busy, setBusy }) {
           {d.options.map((o) => <button key={o} type="button" className="mt-btn small mt-dc-opt" data-action="decision-option" data-option={o} disabled={busy} onClick={() => send(o)}>{o}</button>)}
         </div>
       )}
+      {/* P294: 마지막 동작 줄. PC는 두 줄 그대로, 휴대폰 시트는 답 칸 줄에 미루기·무시를 붙인다(styles.css .mt-ut-last) */}
+      <div className="mt-ut-last">
       <form className="mt-dc-answer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
         <input type="text" className="mt-dc-input" data-field="decision-text" value={text} maxLength={2000} placeholder={t('decisions.placeholder')} disabled={busy} onChange={(e) => setText(e.target.value)} onKeyDown={stop} />
         <button type="submit" className="mt-btn small primary" data-action="decision-send" disabled={busy || !answerReady(text)}>{t('decisions.send')}</button>
       </form>
       <div className="mt-ut-acts"><Snooze d={d} t={t} busy={busy} setBusy={setBusy} /><IgnoreBtn d={d} t={t} busy={busy} setBusy={setBusy} /></div>
+      </div>
     </>
   );
 }
 
-function DoBody({ d, t, busy, setBusy }) {
+function DoBody({ d, t, busy, setBusy, timing = null }) {
   const say = useSay();
   const name = nameOf(d);
   const did = async () => {
     setBusy(true);
-    try { const r = await doneDecision(d.id); say(r && r.sent ? (r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('userTasks.didSent', { name })) : t('userTasks.didToast', { name }), r && r.sent ? (r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.didSent')) : t('userTasks.s.did')); }
+    try { const r = await doneDecision(d.id, d.tell ? timing : null); say(r && r.sent ? (r.riding ? t('riding.toast', { name, n: r.waiting || 1 }) : r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('userTasks.didSent', { name })) : t('userTasks.didToast', { name }), r && r.sent ? (r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.didSent')) : t('userTasks.s.did')); }
     catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return (
@@ -179,39 +192,57 @@ function DoBody({ d, t, busy, setBusy }) {
   );
 }
 
-function CheckBody({ d, t, busy, setBusy }) {
+// P294: 휴대폰 시트의 확인 카드. 메모 칸(110px 이상)·됐다·안 됐다·미루기·무시가 한 줄에 들면 그대로, 안 들면 미루기·무시를 메모 줄에 두고
+// 됐다·안 됐다를 다음 줄로 내린다(단추 폭은 순서와 상관없으니 그대로 더해 잰다). PC 목록에서는 재지 않는다
+function useMemoRow(ref) {
+  const [memoRow, setMemoRow] = useState(false);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box || !box.closest('.mt-dc-sheet') || typeof ResizeObserver === 'undefined') return undefined;
+    const fit = () => { const btns = [...box.querySelectorAll('.mt-btn')]; const need = 110 + btns.reduce((s, b) => s + b.getBoundingClientRect().width + 4, 0); setMemoRow(need > box.clientWidth); };
+    fit();
+    const ro = new ResizeObserver(fit); ro.observe(box);
+    return () => ro.disconnect();
+  }, [ref]);
+  return memoRow;
+}
+
+function CheckBody({ d, t, busy, setBusy, timing = null }) {
   const say = useSay();
+  const last = useRef(null);
+  const memoRow = useMemoRow(last);
   const [note, setNote] = useState('');
   const name = nameOf(d);
   const send = async (ok) => {
     if (busy) return;
     setBusy(true);
-    try { const r = await checkDecision(d.id, ok, note.trim()); say(r && r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('userTasks.checkSent', { name }), r && r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.checkSent')); }
+    try { const r = await checkDecision(d.id, ok, note.trim(), timing); say(r && r.riding ? t('riding.toast', { name, n: r.waiting || 1 }) : r && r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('userTasks.checkSent', { name }), r && r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.checkSent')); }
     catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return (
-    <>
+    <div ref={last} className={`mt-ut-last${memoRow ? ' memo-row' : ''}`} data-memo-row={memoRow ? '1' : undefined}>{/* P294: 휴대폰 시트는 됐다·안 됐다 뒤에 미루기·무시(들면 한 줄, 안 들면 메모 줄에) */}
       <div className="mt-dc-answer mt-ut-check">
         <input type="text" className="mt-dc-input" data-field="check-note" value={note} maxLength={300} placeholder={t('userTasks.notePh')} disabled={busy} onChange={(e) => setNote(e.target.value)} onKeyDown={stop} />
         <button type="button" className="mt-btn small primary mt-ut-ok" data-action="check-ok" disabled={busy} onClick={() => send(true)}>{t('userTasks.ok')}</button>
         <button type="button" className="mt-btn small mt-ut-fail" data-action="check-fail" disabled={busy} onClick={() => send(false)}>{t('userTasks.fail')}</button>
       </div>
       <div className="mt-ut-acts"><Snooze d={d} t={t} busy={busy} setBusy={setBusy} /><IgnoreBtn d={d} t={t} busy={busy} setBusy={setBusy} /></div>
-    </>
+    </div>
   );
 }
 
 function DecisionRow({ d, onGo, now, t }) {
   const [busy, setBusy] = useState(false);
+  const [timing, setTiming] = useState(null); // P295: 사람이 바꾼 보내는 때(답할 때 넘긴다)
   const act = actionOf(d);
   return (
     <div className={`mt-dc-row k-${d.kind}${d.auto ? ' auto' : ''}`} data-role="decision" data-id={d.id} data-session={d.sessionId} data-kind={d.kind} data-auto={d.auto ? '1' : undefined}>
-      <CardHead d={d} onGo={onGo} now={now} t={t} />
+      <CardHead d={d} onGo={onGo} now={now} t={t} timing={timing} onTiming={setTiming} />
       <div className="mt-dc-q" data-role="decision-question">{d.question}</div>
       {d.why ? <div className="mt-dc-why" data-role="decision-why">{d.why}</div> : null}
       {d.kind === 'later' && d.later ? <div className="mt-ut-when-line" data-role="decision-later">{t('userTasks.laterWas', { text: d.later })}</div> : null}
       <Cmds d={d} t={t} />
-      {act === 'decide' ? <DecideBody d={d} t={t} busy={busy} setBusy={setBusy} /> : act === 'check' ? <CheckBody d={d} t={t} busy={busy} setBusy={setBusy} /> : <DoBody d={d} t={t} busy={busy} setBusy={setBusy} />}
+      {act === 'decide' ? <DecideBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} /> : act === 'check' ? <CheckBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} /> : <DoBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} />}
     </div>
   );
 }
@@ -257,25 +288,28 @@ export function DecisionList({ onGo }) {
   const t = useT();
   const all = useStore((st) => st.decisions);
   const held = useStore((st) => st.decisionHeld);
+  const riding = useStore((st) => st.decisionRiding);
   const now = useNow();
   const cards = activeCards(all);
   const later = laterCards(all);
-  if (!cards.length && !later.length) return <div className="mt-dropdown-empty">{t('userTasks.empty')}</div>;
+  const only = heldOnly(held, cards); // P295: 카드는 없고 붙잡은 답만 있는 세션
+  if (!cards.length && !later.length && !only.length) return <div className="mt-dropdown-empty">{t('userTasks.empty')}</div>;
   const firsts = firstCardIds(cards);
   return (
     <>
+      {only.map((sid) => <div key={`held-${sid}`} className="mt-dc-item"><HeldLine sessionId={sid} n={held[sid]} t={t} riding={!!(riding && riding[sid])} /></div>)}
       {!cards.length && <div className="mt-dropdown-empty">{t('userTasks.emptyNow')}</div>}
-      {cards.map((d) => <div key={d.id} className="mt-dc-item">{firsts.has(d.id) && held && held[d.sessionId] ? <HeldLine sessionId={d.sessionId} n={held[d.sessionId]} t={t} /> : null}<DecisionRow d={d} onGo={onGo} now={now} t={t} /></div>)}
+      {cards.map((d) => <div key={d.id} className="mt-dc-item">{firsts.has(d.id) && held && held[d.sessionId] ? <HeldLine sessionId={d.sessionId} n={held[d.sessionId]} t={t} riding={!!(riding && riding[d.sessionId])} /> : null}<DecisionRow d={d} onGo={onGo} now={now} t={t} /></div>)}
       <LaterSection cards={later} onGo={onGo} now={now} t={t} />
     </>
   );
 }
 
-// PC: 위 오른쪽 알약과 펼침 목록(카드가 없으면 숨긴다. 수는 지금 목록만)
+// PC: 위 왼쪽 알약과 펼침 목록(카드가 없으면 숨긴다. 수는 지금 목록만)
 export function DecisionPill() {
   const t = useT();
   const n = useStore((st) => activeCards(st.decisions).length);
-  const total = useStore((st) => st.decisions.length);
+  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld)); // P295: 붙잡은 답만 있어도 알약을 둔다(지금 보내기)
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -291,7 +325,7 @@ export function DecisionPill() {
   return (
     <div className="mt-drop" ref={ref}>
       <button className={`mt-cp decision${open ? ' on' : ''}${n ? '' : ' quiet'}`} data-role="decisions" data-count={n} data-total={total} title={t('userTasks.title')} onClick={() => setOpen((o) => !o)}>
-        <span className="mt-dc-dot" />{t('userTasks.pill')} <b className="mono">{n}</b>
+        <span className="mt-dc-dot" /><span className="mt-cp-label">{t('userTasks.pill')}</span> <b className="mono">{n}</b>
       </button>
       {open && (
         <div className="mt-dropdown mt-dc-list" data-role="decisions-list">
@@ -308,7 +342,10 @@ export function DecisionMark({ sessionId, className = 'mt-dc-mark' }) {
   const t = useT();
   const n = useStore((st) => { let k = 0; for (const d of st.decisions) if (d.sessionId === sessionId && !d.deferred) k++; return k; });
   const auto = useStore((st) => allAuto(activeCards(st.decisions), sessionId));
-  if (!n) return null;
+  const ride = useStore((st) => (st.decisionRiding && st.decisionRiding[sessionId]) || 0); // P295
+  const rideEl = ride ? <span className={`${className} mt-dc-ride`} data-role="decision-ride" data-count={ride} title={t('riding.markTitle', { n: ride })}>{t('riding.mark', { n: ride })}</span> : null;
+  if (!n) return rideEl;
+  if (rideEl) return <>{rideEl}<span className={`${className}${auto ? ' auto' : ''}`} data-role="decision-mark" data-count={n} data-auto={auto ? '1' : undefined} title={auto ? t('autoDecisions.markTitle', { n }) : t('userTasks.markTitle', { n })}>{n > 1 ? t('userTasks.markN', { n }) : t('userTasks.mark')}</span></>;
   return <span className={`${className}${auto ? ' auto' : ''}`} data-role="decision-mark" data-count={n} data-auto={auto ? '1' : undefined} title={auto ? t('autoDecisions.markTitle', { n }) : t('userTasks.markTitle', { n })}>{n > 1 ? t('userTasks.markN', { n }) : t('userTasks.mark')}</span>;
 }
 
@@ -316,7 +353,7 @@ export function DecisionMark({ sessionId, className = 'mt-dc-mark' }) {
 export function PhoneDecisionPill({ onOpen }) {
   const t = useT();
   const n = useStore((st) => activeCards(st.decisions).length);
-  const total = useStore((st) => st.decisions.length);
+  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld)); // P295
   const [open, setOpen] = useState(false);
   const [note, say] = useSheetNote();
   useEffect(() => { if (!total) setOpen(false); }, [total]);

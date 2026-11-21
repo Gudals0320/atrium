@@ -2702,3 +2702,71 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-ut-note { flex: 0 1 auto; min-width: 0; margin-left: auto; padding: 3px 10px; border-radius: 999px; background: var(--teal-bg); border: 1px solid var(--teal); color: var(--white); font-size: 13px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-ut-note.error { background: none; border-color: var(--warn); color: var(--warn); }
 .mt-ut-note + .mt-dc-x { margin-left: 0; }
+
+/* P296: 자체 오케스트레이션 표(판 카드 머리, 세션 맵 카드, 런처 목록·창) */
+.mt-orch-tag { display: inline-flex; align-items: center; flex: none; margin-left: 6px; padding: 0 6px; height: 16px; border-radius: 8px; font-size: 10px; line-height: 16px; font-weight: 600; letter-spacing: .02em; color: var(--mt-orch-fg, #7c5cc4); background: var(--mt-orch-bg, rgba(124, 92, 196, 0.13)); white-space: nowrap; }
+.mt-orch-tag.busy { color: var(--mt-orch-busy-fg, #2f7d4f); background: var(--mt-orch-busy-bg, rgba(47, 125, 79, 0.14)); }
+.mt-orch-tag.map { margin-left: 4px; }
+.mt-ln-orch-row { display: flex; align-items: flex-start; gap: 6px; }
+.mt-ln-orch-row input { margin-top: 2px; }
+.mt-ln-orch-note { font-size: 12px; color: var(--mt-dim, #888); line-height: 1.4; }
+/* P294: 위 알약 나누기. 왼쪽 = 사람이 볼 것(응답 필요·내 몫·작업 완료·문제·세션), 오른쪽 = 상태. 워크스페이스 알약 줄은 없앴다 */
+.mt-cluster.tl { max-width: none; align-items: center; }
+.mt-cluster.tl > .mt-cp.round, .mt-cluster.tl > .mt-dev-badge { margin-top: 0; }
+.mt-cluster.tl .mt-dropdown { left: 0; right: auto; }
+.mt-cluster.tl.compact .mt-cp-label { display: none; }
+.mt-cluster.tl.compact > .mt-drop > .mt-cp, .mt-cluster.tl.compact > .mt-cp { gap: 5px; padding: 0 9px; }
+.mt-cluster.tr.compact .mt-cp .dim { display: none; }
+.mt-cluster.tl.stack { top: calc(17px + var(--chrome-h) + 8px); }
+.mt-cp.sessions { cursor: pointer; gap: 5px; font: inherit; color: var(--chrome-text); }
+.mt-cp.sessions:focus-visible { outline: 1px solid var(--accent-line); outline-offset: 1px; }
+.mt-cp.conn.dot-only { width: var(--chrome-h); padding: 0; justify-content: center; }
+
+/* P294: 휴대폰 내 몫 시트를 작게(한 화면에 카드 서너 장). 누를 것은 36px 높이를 지키고, 미루기·무시는 작은 글 단추 */
+.mt-dc-panel { max-height: 86vh; }
+.mt-dc-sheet-head { padding: 8px 12px 6px; font-size: 14px; }
+.mt-dc-sheet .mt-dc-x { width: 30px; height: 30px; font-size: 18px; }
+.mt-dc-sheet-body { padding: 0 8px 10px; gap: 6px; }
+.mt-dc-sheet .mt-dc-item { gap: 4px; }
+.mt-dc-sheet .mt-dc-row { gap: 4px; padding: 6px 9px 4px; font-size: 13px; }
+.mt-dc-sheet .mt-dc-line { gap: 5px; }
+.mt-dc-sheet .mt-dc-name { font-size: 13px; }
+.mt-dc-sheet .mt-chip-ws { font-size: 11px; }
+.mt-dc-sheet .mt-dc-time { font-size: 11px; }
+.mt-dc-sheet .mt-ut-kind { font-size: 10.5px; line-height: 16px; }
+.mt-dc-sheet .mt-dc-q { font-size: 13.5px; line-height: 1.3; }
+.mt-dc-sheet .mt-dc-why, .mt-dc-sheet .mt-ut-when-line { font-size: 11.5px; line-height: 1.3; }
+.mt-dc-sheet .mt-ut-cmds { gap: 3px; }
+.mt-dc-sheet .mt-ut-cmd { align-items: center; padding: 0 0 0 8px; }
+.mt-dc-sheet .mt-ut-cmd code { padding-top: 0; font-size: 12.5px; line-height: 1.3; }
+.mt-dc-sheet .mt-ut-copy { min-height: 36px; height: 36px; padding: 0 10px; font-size: 12.5px; border-color: transparent; color: var(--accent-2); }
+.mt-dc-sheet .mt-dc-opts { gap: 5px; }
+.mt-dc-sheet .mt-dc-opt, .mt-dc-sheet .mt-dc-answer .mt-btn { min-height: 36px; height: 36px; padding: 0 12px; font-size: 13px; }
+.mt-dc-sheet .mt-dc-input { height: 36px; padding: 0 8px; font-size: 16px; } /* 16px 아래면 iOS가 입력칸을 누를 때 확대한다 */
+.mt-dc-sheet .mt-ut-check { flex-wrap: nowrap; }
+.mt-dc-sheet .mt-ut-check .mt-dc-input { flex: 1 1 0; width: 0; }
+.mt-dc-sheet .mt-dc-item { grid-template-columns: minmax(0, 1fr); }
+.mt-dc-sheet .mt-ut-check .mt-btn { flex: none; }
+.mt-dc-sheet .mt-ut-acts { gap: 2px; }
+.mt-dc-sheet .mt-ut-acts .mt-btn, .mt-dc-sheet .mt-ut-snooze .mt-btn { min-height: 36px; height: 36px; padding: 0 12px; font-size: 13px; }
+.mt-dc-sheet .mt-ut-acts .mt-btn.ghost { padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--dim); }
+.mt-dc-sheet .mt-ut-later-head { min-height: 36px; font-size: 13px; }
+/* P294: 확인·결정 카드의 마지막 동작 줄. PC는 두 줄(답 칸 · 미루기·무시) 그대로, 휴대폰 시트는 한 줄로 이어 붙이고 넘치면 접는다 */
+.mt-ut-last { display: grid; gap: 6px; min-width: 0; }
+.mt-dc-sheet .mt-ut-last { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mt-dc-sheet .mt-ut-last > .mt-dc-answer, .mt-dc-sheet .mt-ut-last > .mt-ut-acts { display: contents; }
+.mt-dc-sheet .mt-ut-last .mt-dc-input { flex: 1 1 110px; width: auto; min-width: 110px; }
+.mt-dc-sheet .mt-ut-last .mt-btn { flex: none; }
+.mt-dc-sheet .mt-ut-last .mt-ut-snooze { flex: 1 1 100%; }
+.mt-dc-sheet .mt-ut-last .mt-ut-acts > .mt-btn.ghost:last-child { margin-left: 0; }
+.mt-dc-sheet .mt-ut-last.memo-row .mt-ut-ok, .mt-dc-sheet .mt-ut-last.memo-row .mt-ut-fail { order: 2; flex: 1 1 45%; } /* 45%: 메모 줄 남은 자리보다 넓어 다음 줄로 함께 내려간다 */
+
+/* P295: 답 실어 보내기. 카드의 보내는 때 표시(바로 감 | 다음 메시지와, 누르면 바뀜), 다음 메시지와 갈 답 줄, 세션 표식 옆 "실어 보낼 답 n" */
+.mt-dc-timing { flex: none; margin-left: auto; padding: 0 6px; border-radius: 5px; border: 1px solid var(--panel-line-2); background: none; color: var(--dim); font: inherit; font-size: 10.5px; line-height: 15px; white-space: nowrap; cursor: pointer; }
+.mt-dc-timing.now { border-color: var(--teal); color: var(--teal); }
+.mt-dc-timing.next { border-style: dashed; }
+.mt-dc-timing.picked { font-weight: 700; }
+.mt-dc-timing:hover { color: var(--white); border-color: var(--white); }
+.mt-dc-timing + .mt-dc-time { margin-left: 0; white-space: nowrap; }
+.mt-dc-held.riding { background: none; border: 1px dashed var(--teal); }
+.mt-dc-mark.mt-dc-ride { margin-right: 4px; background: none; border-style: dashed; color: var(--teal); font-weight: 600; }

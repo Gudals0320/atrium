@@ -17,8 +17,8 @@
 //       atrium log "<한 줄>" [--json] · atrium news [<이름>] [--all] [--json]   (P204: 동료 소식)
 //       atrium guide [merger] [--json]   (P182: 자세한 사용법. P267: merger 안내)
 //       atrium docs [--json]   (P257: 이 워크스페이스의 문서 점검 결과)
-//       atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"] | --done <번호> | --list [--json]   (P284: 결정 카드)
-//       atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell] | --done <번호> | --list [--json]   (P292: 사용자 몫)
+//       atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"] [--no-wait | --wait] | --done <번호> | --list [--json]   (P284: 결정 카드. P295: 보내는 때)
+//       atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell] [--no-wait | --wait] | --done <번호> | --list [--json]   (P292: 사용자 몫. P295: 보내는 때)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -74,17 +74,20 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       기본은 너의 동료가 네가 마지막으로 본 뒤 남긴 것을 오래된 것부터 20줄(읽은 자리를 옮긴다). <이름>이면 판의 어느 세션이든 그 세션의 최근 것(읽기만), --all은 동료의 최근 것(읽기만).
       상대 일과 닿는 일을 시작할 때, 동료에게 묻기 전, 일을 넘겨받을 때 본다. 동료가 끝날 때마다 결과를 보내오지 않는 대신이다
   atrium items                  네가 맡긴 일들(맡은 세션, 상태, 결과와 보고)
-  atrium ask "<질문 한 줄>" [--option "<보기>"]… [--why "<맥락 한 줄>"]
+  atrium ask "<질문 한 줄>" [--option "<보기>"]… [--why "<맥락 한 줄>"] [--no-wait | --wait]
       사람이 정해야 할 질문("이대로 마무리할까요?", "이 방향으로 갈까요?")을 대화에 글로 묻고 이것으로 보드에도 결정 카드로 남긴다. 카드 번호를 돌려준다.
       대화를 갈음하지 않는다. 남긴 뒤 턴을 끝낸다. 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글이 들어오고, 무시하면 아무것도 오지 않는다(되묻지 않는다).
       사람이 대화로 직접 답하면 보드가 카드를 닫는다. 권한·신뢰·모델·하네스 질문은 카드가 아니다.
+      --no-wait는 답을 기다리지 않는 질문: 답이 곧바로 오지 않고 너에게 다음 글이 갈 때 그 앞에 실려 온다(턴을 아낀다). --wait는 답을 기다리며 멈추는 질문(곧바로 온다).
+      주지 않으면 보드가 정한다: 질문한 턴 뒤로 쉬고 있으면 곧바로, 그 사이 다른 일을 했으면 다음 글에 실어.
       상한: 질문 ${ASK_QUESTION_MAX}자, 보기 ${ASK_OPTIONS_MAX}개(각 ${ASK_OPTION_MAX}자), 맥락 ${ASK_WHY_MAX}자, 열린 카드 ${ASK_OPEN_MAX}장. 사람과 직접 일하는 세션만 쓴다(하위 워커는 부모에게 atrium prompt로 묻는다).
   atrium ask --done <번호>      사람이 다른 길로 답해 끝난(쓸모없어진) 너의 카드를 닫는다
   atrium ask --list             너의 열린 결정 카드
-  atrium todo "<할 일 한 줄>" [--cmd "<명령>"]… [--check] [--later "<YYYY-MM-DD[ HH:MM] 또는 조건>"] [--why "<맥락 한 줄>"] [--tell]
+  atrium todo "<할 일 한 줄>" [--cmd "<명령>"]… [--check] [--later "<YYYY-MM-DD[ HH:MM] 또는 조건>"] [--why "<맥락 한 줄>"] [--tell] [--no-wait | --wait]
       사람이 해야 할 일(터미널에 칠 명령, 해 줄 행동, 검증, 나중으로 미룬 일)을 대화에 쓰고 이것으로 보드의 "내 몫" 목록에도 남긴다. 카드 번호를 돌려준다.
       기본은 할 일: 사람이 "했음"을 누르면 기록만 된다(--tell이면 "[할 일] <할 일> → 했음" 글이 온다). --cmd는 사람이 복사할 명령(${TODO_CMDS_MAX}개, 각 ${TODO_CMD_MAX}자).
       --check는 확인: 사람이 됐다/안 됐다와 한 줄 메모로 답하면 "[확인] <할 일> → 됐다: 메모" 글이 온다.
+      확인 결과와 --tell의 했음은 기본으로 너에게 다음 글이 갈 때 그 앞에 실려 온다. 그 답을 기다리며 멈출 거면 --wait(곧바로 온다).
       --later는 나중에: 날짜·시각이면 그때까지 숨겼다가 띄우고(날짜만이면 그날 9시), 조건 글이면 사람이 꺼낼 때까지 "나중"에 둔다(따로 ${TODO_LATER_MAX}장까지).
       열린 카드는 결정 카드와 합쳐 ${ASK_OPEN_MAX}장까지. 사람과 직접 일하는 세션만 쓴다(하위 워커는 부모에게 atrium prompt로 넘긴다).
   atrium todo --done <번호>     끝났거나 쓸모없어진 너의 카드를 닫는다
@@ -138,6 +141,12 @@ function call(op, body, timeoutMs) {
   });
 }
 
+// P296: 이 세션의 실제 권한 | null(판 세션이 아니거나 보드가 답하지 않음)
+async function permNow() {
+  TOKEN = sessionToken();
+  if (!E('PORT') || !E('SESSION_ID') || !TOKEN) return null;
+  try { const r = await call('perm', {}, 3000); return r && r.result ? r.result : null; } catch { return null; }
+}
 function counts(c) { return c ? `너의 하위 세션 ${c.children}개${c.peers ? `, 동료 ${c.peers}명` : ''}, 판 전체 ${c.total}개(상한 없음)` : ''; } // P156: 하위는 하위 관계만
 // P36: 신뢰 질문에서 멈춘 하위 세션. 사람에게 할 말은 한 문장이다(판 밖 터미널을 열라고 하지 않는다)
 function trustLines(x) {
@@ -149,7 +158,12 @@ function trustLines(x) {
 
 async function main() {
   // P115: help는 모델이 읽는 짧은 사용법, --json은 기계용 계약, --long은 예전의 긴 설명. 보드에 묻지 않는다
-  if (!cmd || cmd === 'help' || flags.help) return flags.json ? say(JSON.stringify(contractJson(), null, 2)) : say(flags.long ? HELP : shortHelp());
+  // P296: 판이 띄운 세션이면 보드에 이 세션의 허용 동사를 묻는다(자체 오케스트레이션 세션은 허용 동사만 보인다). 묻지 못하면 전체
+  if (!cmd || cmd === 'help' || flags.help) {
+    const perm = await permNow();
+    const orch = !!(perm && perm.allowed);
+    return flags.json ? say(JSON.stringify(contractJson(orch ? perm : null), null, 2)) : say(flags.long && !orch ? HELP : shortHelp(orch ? perm : null));
+  }
   if (!VERB_NAMES.includes(cmd)) fail(`알 수 없는 명령입니다: ${cmd}. 이 atrium은 ${VERB_NAMES.join(', ')}만 한다(다른 보드 명령은 사람의 atrium으로). 사용법: atrium help`, 2);
   TOKEN = sessionToken();
   if (!E('PORT') || !E('SESSION_ID') || !TOKEN) fail('보드에서 시작한 세션이 아닙니다 (보드가 준 환경 변수나 세션 토큰 파일 없음). 보드에서 시작한 세션 안에서 호출하세요.');
@@ -279,6 +293,9 @@ async function main() {
   if (x.kept && x.kept.length) say(`남겼다(하위가 아니라 끄지 않음): ${x.kept.map((k) => `@${k.name}(${REL_WORD[k.relation] || k.relation})`).join(', ')}`); // P156
 }
 // ---------- P284: atrium ask ----------
+// P295: 보내는 때. --no-wait면 답을 기다리지 않는 질문·확인(답은 너에게 다음 글이 갈 때 그 앞에 실려 온다), --wait면 답을 기다린다(곧바로 온다)
+const timingFlags = () => (flags['no-wait'] ? { noWait: true } : flags.wait ? { wait: true } : {});
+const TIMING_SAY = { next: ' 답은 곧바로 오지 않고 너에게 다음 글이 갈 때 그 앞에 실려 온다(--no-wait).', now: ' 사람이 답하면 곧바로 온다(--wait).' };
 function cardLine(d, now) {
   const opts = d.options && d.options.length ? ` [${d.options.join(' | ')}]` : '';
   return `  #${d.id} · ${ago(d.createdAt, now)}: ${d.question}${opts}${d.why ? ` (맥락: ${d.why})` : ''}`;
@@ -295,7 +312,8 @@ async function askVerb() {
     const options = (flags.option || []).filter((x) => x != null).map(String);
     if (options.length > ASK_OPTIONS_MAX) fail(`보기가 너무 많다(${options.length}개, ${ASK_OPTIONS_MAX}개까지)`, 2);
     if (flags.why === true) fail('맥락 한 줄을 준다: --why "<맥락>"', 2);
-    body = { question, options, ...(flags.why != null ? { why: String(flags.why) } : {}) };
+    if (flags.wait && flags['no-wait']) fail('--wait와 --no-wait는 함께 쓰지 않는다', 2);
+    body = { question, options, ...(flags.why != null ? { why: String(flags.why) } : {}), ...timingFlags() }; // P295
   }
   const r = await call('ask', body, 20000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
@@ -309,7 +327,7 @@ async function askVerb() {
     return say('사람이 다른 길로 답했거나 쓸모없어진 카드는 atrium ask --done <번호>로 닫는다.');
   }
   if (body.done) return say(x.closed ? `결정 카드 #${x.id}를 닫았다.` : `결정 카드 #${x.id}는 이미 끝났다(${x.state}).`);
-  say(`결정 카드 #${x.id}를 보드에 남겼다(열린 카드 ${x.open}/${x.max}). 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글로 들어온다. 무시하면 아무것도 오지 않는다.`);
+  say(`결정 카드 #${x.id}를 보드에 남겼다(열린 카드 ${x.open}/${x.max}). 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글로 들어온다. 무시하면 아무것도 오지 않는다.${(x.card && TIMING_SAY[x.card.timing]) || ''}`);
   say('대화에 쓴 질문은 그대로 두고 턴을 끝낸다. 사람이 다른 길로 답하면 보드가 닫는다(필요하면 atrium ask --done ' + x.id + ').');
 }
 
@@ -334,7 +352,8 @@ async function todoVerb() {
     if (flags.why === true) fail('맥락 한 줄을 준다: --why "<맥락>"', 2);
     if (flags.later === true) fail('언제·어떤 조건에 할지 준다: --later "YYYY-MM-DD[ HH:MM]" 또는 --later "<조건>"', 2);
     if (flags.check && flags.later != null) fail('--check와 --later는 함께 쓰지 않는다', 2);
-    body = { text, cmds, ...(flags.check ? { check: true } : {}), ...(flags.tell ? { tell: true } : {}), ...(flags.later != null ? { later: String(flags.later) } : {}), ...(flags.why != null ? { why: String(flags.why) } : {}) };
+    if (flags.wait && flags['no-wait']) fail('--wait와 --no-wait는 함께 쓰지 않는다', 2);
+    body = { text, cmds, ...timingFlags(), ...(flags.check ? { check: true } : {}), ...(flags.tell ? { tell: true } : {}), ...(flags.later != null ? { later: String(flags.later) } : {}), ...(flags.why != null ? { why: String(flags.why) } : {}) };
   }
   const r = await call('todo', body, 20000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
@@ -354,7 +373,7 @@ async function todoVerb() {
     : c.cond ? '사람이 꺼낼 때까지 "나중"에 둔다.'
     : c.wakeAt ? `${new Date(c.wakeAt).toLocaleString('sv-SE').slice(0, 16)}까지 숨겼다가 띄운다.`
     : c.tell ? '사람이 했음을 누르면 "[할 일] <할 일> → 했음" 글로 들어온다.' : '사람이 했음을 누르면 기록만 된다(알아야 하면 --tell).';
-  say(`${KIND_KO[x.kind] || x.kind} 카드 #${x.id}를 보드의 "내 몫"에 남겼다(${x.kind === 'later' ? '나중' : '열린'} 카드 ${x.open}/${x.max}). ${what}`);
+  say(`${KIND_KO[x.kind] || x.kind} 카드 #${x.id}를 보드의 "내 몫"에 남겼다(${x.kind === 'later' ? '나중' : '열린'} 카드 ${x.open}/${x.max}). ${what}${(c.timing && (x.kind === 'check' || c.tell) && TIMING_SAY[c.timing]) || ''}`);
   say('대화에 쓴 글은 그대로 두고 턴을 끝낸다. 끝났거나 쓸모없어지면 atrium todo --done ' + x.id + '.');
 }
 
@@ -567,6 +586,10 @@ function printMe(x) {
   const m = x.me;
   // P116: 이름은 보드의 세션 이름(atrium prompt|wait|read가 받는다). 에이전트 주소·패널은 보이지 않는다(--json에는 남는다)
   say(`나: @${m.name} (${m.kind}) · 워크스페이스 ${m.workspace || '-'}${m.worktree ? ` · 워크트리 ${m.worktree}` : ''}${m.branch ? ` · 브랜치 ${m.branch}` : ''}`);
+  if (x.permissions && x.permissions.allowed) { // P296: 자체 오케스트레이션 세션(하위면 허용 동사가 줄어든다)
+    const pv = x.permissions;
+    say(`권한: 자체 오케스트레이션 세션${pv.scope === 'sub' ? `, @${pv.parent || '?'}의 하위라 부모하고만 말한다(atrium prompt는 부모에게만)` : '(child·child-kill·child-wait·relate 없음)'}. 쓸 수 있는 명령: ${pv.allowed.map((v) => `atrium ${v}`).join(', ')}${pv.reportFallback === 'last_answer' ? '. 보고를 못 하면 보드가 턴 끝 마지막 답으로 일을 닫는다' : ''}`);
+  }
   const p = x.parent;
   const src = (s) => (s === 'user' ? ' · 사람이 정함' : s === 'agent' ? ' · 에이전트가 정함' : '');
   // P156: 상위(너를 하위로 둔 세션)·동료·하위·독립. 끝나면 상위에게 보고, 동료와는 공유

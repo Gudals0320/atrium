@@ -28,12 +28,14 @@ import { workspaceNames } from './workspaces.mjs';
 import { m, keyed } from './msg.mjs';
 import { resumable, harnessResumable } from './harness.mjs'; // P170: 판이 이어 갈 수 있는 하네스(codex, opencode, pi)
 import { readDraftBox } from './draft-aside.mjs'; // P170: 하네스 입력 칸에 보내지 않은 글이 있는가
+import { innerWork, fileSignals, readerSignals } from './inner-work.mjs'; // P296: 자체 오케스트레이션 세션의 안 일(바쁨 신호)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 
-export const SLEEP_TICK_MS = 30000; // 저절로 잠재울 리포를 보는 간격
+export const SLEEP_TICK_MS = 30000;
+const INNER_RESCAN_MS = 5000; // P296 // 저절로 잠재울 리포를 보는 간격
 export const WAKE_READY_MS = 90000; // 깨운 claude가 준비될 때까지 기다리는 상한
 export const WAKE_SETTLE_MS = 2500; // 준비된 뒤 입력 칸이 Enter를 받을 때까지 더 기다리는 시간(그동안 전달은 기다린다)
 export const WAKE_STAGGER_MS = 1500;
@@ -45,8 +47,9 @@ export const SLEEP_RETRY_MAX_MS = 4 * 60 * 60000;
 // P105: hook(Stop의 background_tasks)이 알려 준 뒤 일을 프로세스로 확인할 수 없을 때(뒤 하위 에이전트) 믿는 상한. 턴을 Esc로 끊어 Stop이 오지 않으면 기록이 낡는다
 export const BG_HOOK_MAX_MS = 2 * 60 * 60000;
 // 리포를 잠재우지 않는 까닭: 대상 없음(asleep, nothing), 일(sessionActivity), 시간(off, idle_short), terminal_down, 잠재우기 실패 뒤 기다림(sleep_failed, P105)
-export const SLEEP_REASONS = ['asleep', 'nothing', 'waking', 'working', 'needs_you', 'draft', 'delivering', 'loop', 'background', 'child_busy', 'parent_busy', 'viewing', 'off', 'idle_short', 'terminal_down', 'sleep_failed'];
-const ACTIVITY = new Set(['waking', 'working', 'needs_you', 'draft', 'delivering', 'loop', 'background', 'child_busy', 'parent_busy', 'viewing']);
+// P296: inner_work — 자체 오케스트레이션 세션이 안에서 일하는 중(바쁨 신호: 자손 프로세스·CPU·상태 파일). 손으로 잠재울 때도
+export const SLEEP_REASONS = ['asleep', 'nothing', 'waking', 'working', 'needs_you', 'draft', 'delivering', 'loop', 'inner_work', 'background', 'child_busy', 'parent_busy', 'viewing', 'off', 'idle_short', 'terminal_down', 'sleep_failed'];
+const ACTIVITY = new Set(['waking', 'working', 'needs_you', 'draft', 'delivering', 'loop', 'inner_work', 'background', 'child_busy', 'parent_busy', 'viewing']);
 export const isActivity = (why) => ACTIVITY.has(why);
 
 // P105: 세션에 도는 Claude Code 뒤 일(뒤 셸·뒤 하위 에이전트)이 있는가. 순수 함수. → { n, via: 'process'|'hook' } | null
@@ -183,6 +186,7 @@ export function sessionActivity(x, { mode = 'auto' } = {}) {
   if (x.draft && x.kind !== 'shell') return 'draft'; // 손으로 잠재울 때도: /exit가 초안 뒤에 붙어 제출된다. P170: 하네스는 Ctrl+C가 초안을 지운다
   if (x.delivering) return 'delivering';
   if (x.loops) return 'loop';
+  if (x.inner) return 'inner_work'; // P296: 안의 에이전트가 화면 없이 돈다(잠재우면 함께 끝난다)
   if (x.bg) return 'background'; // P105: 뒤 셸·뒤 하위 에이전트. 손으로 잠재울 때도(잠재우면 claude와 함께 끝난다)
   if (x.childBusy) return 'child_busy';
   if (x.parentBusy) return 'parent_busy';
@@ -279,6 +283,7 @@ export class Sleeper {
     this.bgScan = new Map(); // P105: 세션 ID → { at, n } claude 바로 아래 도구 명령(뒤 셸) 수를 센 때와 수
     this.blocked = new Map(); // P105: 세션 ID → { why, at, idle, n, until } 실패한 잠재우기를 미루는 중
     this.bgShown = new Map(); // P164: 세션 ID → 마지막으로 보낸 뒤 일 표시 키(수·종류)
+    this.inner = new Map(); // P296: 세션 ID → 안 일 측정(inner-work.mjs innerWork 값)
     // 백엔드가 잠재우던 중에 꺼졌다: 패널이 남았으면 깨어 있는 것으로 돌리고(resync가 상태를 맞춘다), 없으면 잠든 것으로 둔다
     for (const s of b.sessions.values()) {
       if (!s.rt.sleep || !s.rt.sleep.going) continue;
@@ -380,6 +385,7 @@ export class Sleeper {
       state: deriveState(s.rt).state, sleeping: !!s.rt.sleep, waking: this.wakes.has(s.sessionId), closing: b.killing.has(s.sessionId) || this.going.has(s.sessionId),
       draft: !!s.draft, delivering: b.queue ? b.queue.pending(s.sessionId) : 0, loops: b.features ? b.features.loops.activeCount(s.sessionId) : 0,
       bg: !s.rt.sleep && !!(this.bgOf(s) || (blk && blk.why === 'background')), blocked: blk && blk.why !== 'background' ? blk.why : null,
+      inner: !s.rt.sleep && this.innerBusy(s), // P296
       childBusy: kids.some(busy), descBusy: desc.some(busy), parentBusy: !!(parent && busy(parent)), viewed: viewAt > 0, viewAt, idleSince: idleSince(s),
     };
   }
@@ -446,7 +452,43 @@ export class Sleeper {
   // 세션들의 claude 바로 아래 도구 명령(MCP 서버 빼고)을 센다. 터미널의 process_info로 claude PID를 얻고 PowerShell 한 번으로 그 자식을 읽는다.
   // 읽지 못하면(null) 전 값을 둔다. claude가 없는 패널은 0으로 둔다
   // P246: 다른 하네스는 프로세스 표를 한 번 읽어 하네스 아래 셸을 센다(harnessWork). root는 셸이 아닌 앞쪽 프로세스(하네스), 없으면 셸
+  // ---------- P296: 자체 오케스트레이션 세션의 안 일 ----------
+  innerBusy(s) { const x = s && s.orch ? this.inner.get(s.sessionId) : null; return !!(x && x.busy); }
+  innerView(s) { const x = s && s.orch && !s.rt.sleep ? this.inner.get(s.sessionId) : null; return x ? { busy: x.busy, why: x.why, n: x.n, at: x.at } : null; }
+  // 깨어 있는 오케스트레이션 세션의 바쁨 신호를 잰다(tick마다, 손으로 잠재우기 전). 바쁨 → 조용이면 멈춤 알림을 다시 보고(unit-stops onInnerQuiet), 바뀌면 요약을 다시 보낸다
+  async scanInner(list = [...this.b.sessions.values()]) {
+    const b = this.b, now = Date.now();
+    const fresh = (s) => { const x = this.inner.get(s.sessionId); return x && now - x.at < INNER_RESCAN_MS; };
+    const mine = list.filter((s) => s.orch && s.orch.on && s.paneId && !s.rt.sleep && (s.kind || 'claude') !== 'shell' && !fresh(s)); // 방금 잰 세션은 다시 재지 않는다(CPU 차이 창이 너무 짧아진다)
+    for (const id of [...this.inner.keys()]) { const s = b.sessions.get(id); if (!s || s.rt.sleep || !s.paneId) this.inner.delete(id); }
+    if (!mine.length || !b.adapter) return;
+    const sig = (s) => (Array.isArray(s.orch.busy) && s.orch.busy.length ? s.orch.busy : ['proctree', 'cpu']);
+    const needTable = mine.some((s) => sig(s).some((x) => x === 'proctree' || x === 'cpu'));
+    const table = needTable ? await Promise.resolve(this.readTable()).catch(() => null) : null;
+    for (const s of mine) {
+      let root = null, harness = false;
+      if (table) {
+        const info = await b.adapter.processInfo(s.paneId).catch(() => null);
+        if (info) { const fg = (info.foreground_processes || []).find((p) => p.pid && Number(p.pid) !== Number(info.shell_pid)); root = Number(fg ? fg.pid : info.shell_pid) || null; harness = !!fg; }
+      }
+      let files = [];
+      try { files = fileSignals(sig(s), { cwd: (s.rt && s.rt.cwd) || s.cwd }); } catch {}
+      const prev = this.inner.get(s.sessionId) || null;
+      const readers = readerSignals(sig(s), { session: s, now }); // P296: 하네스별 읽개(꽂기)
+      const x = innerWork({ procs: table ? table.procs : null, root, harness, launchedAt: s.rt.launchedAt || 0, signals: sig(s), files, readers, prev, now });
+      this.inner.set(s.sessionId, x);
+      const was = !!(prev && prev.busy);
+      if (was !== x.busy) {
+        b.store.addEvent(s.sessionId, 'inner_work', { busy: x.busy, why: x.why, n: x.n, cpuMs: Math.round(x.cpuMs) });
+        b.log(`inner work ${s.name}: ${x.busy ? 'busy' : 'quiet'} (${x.why.join(',') || 'hold'})`);
+        if (x.busy) this.sessBusyAt.set(s.sessionId, now);
+        if (b.broadcastSession) b.broadcastSession(s, { cause: 'inner' });
+        if (!x.busy && b.branch && b.branch.units && b.branch.units.stops && b.branch.units.stops.onInnerQuiet) { try { b.branch.units.stops.onInnerQuiet(s); } catch (e) { b.log(`inner quiet notice failed: ${e.message}`); } }
+      }
+    }
+  }
   async scanBackground(list) {
+    await this.scanInner(list).catch((e) => this.b.log(`inner scan failed: ${e.message}`)); // P296
     const b = this.b, now = Date.now(), pids = new Map(), roots = new Map();
     for (const s of list) {
       const kind = s.kind || 'claude';
@@ -538,10 +580,11 @@ export class Sleeper {
     try {
       // 잠든 세션에 보낼 글이 남았는데 깨우는 중이 아니면 그 리포를 깨운다(백엔드가 다시 떠 대기열이 되살아난 경우)
       for (const s of [...b.sessions.values()]) if (s.rt.sleep && !this.wakes.has(s.sessionId) && b.queue.pending(s.sessionId) > 0 && !s.rt.sleep.error) this.wakeFor(s, 'delivery').catch(() => {});
+      await this.scanInner().catch((e) => b.log(`inner scan failed: ${e.message}`)); // P296: 자체 오케스트레이션 세션의 바쁨 신호(CPU는 tick 사이 차이)
       await this.refreshBackground().catch((e) => b.log(`background refresh failed: ${e.message}`)); // P164: 세션 맵의 뒤 일 표시
       this.learnHarnessIds(); // P170: 대화 ID를 아직 모르는 하네스 세션
       // P105: 곧 잠들 리포와 뒤 일이 보이는 리포만 프로세스를 다시 본다(뒤 셸이 끝났는지, 쉬는 claude 아래 도구 명령이 도는지)
-      const scan = this.repoKeys().filter((key) => { const w = this.plan(key, 'auto').why; return !w || w === 'background'; });
+      const scan = this.repoKeys().filter((key) => { const w = this.plan(key, 'auto').why; return !w || w === 'background'; }); // P296: inner_work는 위 scanInner가 tick마다 잰다
       if (scan.length) await this.scanBackground(scan.flatMap((key) => this.members(key)));
       const busyRepos = [];
       for (const key of this.repoKeys()) {

@@ -102,7 +102,7 @@ const events = (b, kind) => b.store.db.prepare('SELECT * FROM link_events').all(
 
 // ---------- 계약과 사용법 ----------
 test('P116 계약: 계약 2, 동사 prompt·wait·read(인자·출력 모양), 종료 코드 3(기다리는 시간이 끝남), 사용법에 다른 에이전트에게는 atrium prompt로만', () => {
-  assert.equal(CONTRACT_VERSION, 8); // P292: todo로 8. P284: 7. P269: 6. P249: 5. P185: rig 자리로 4 // P156
+  assert.equal(CONTRACT_VERSION, 9); // P296: 오케스트레이션 허용 동사로 9. // P292: todo로 8. P284: 7. P269: 6. P249: 5. P185: rig 자리로 4 // P156
   for (const v of ['prompt', 'wait', 'read']) assert.ok(VERB_NAMES.includes(v), v);
   const by = Object.fromEntries(VERBS.map((v) => [v.name, v]));
   assert.deepEqual(by.prompt.args, ['<이름>', '"<할 일>"', '[--wait | --steer]', '[--timeout ms]', '[--json]']); // P248: --steer(= --now). P143: --now, P194: --case, P237: --talk(더하기만 해 계약은 그대로)
@@ -370,7 +370,7 @@ test('P116 CLI: atrium prompt|wait|read의 --json 모양과 글, 종료 코드(�
     assert.equal((await runCli(['wait'], env)).code, 2, '이름이 없다');
     assert.equal((await runCli(['read', 'w1', '--lines', 'x'], env)).code, 2);
     const help = JSON.parse((await runCli(['help', '--json'], {})).stdout);
-    assert.equal(help.contract, 8); // P292. P284. P269 assert.ok(help.verbs.some((v) => v.name === 'prompt'));
+    assert.equal(help.contract, 9); // P296. P292. P284. P269 assert.ok(help.verbs.some((v) => v.name === 'prompt'));
     // 세션 토큰이 틀리면 거부(판에 없는 세션도)
     const bad = await runCli(['prompt', 'w1', 'x'], { ...env, ATRIUM_SESSION_TOKEN: 'nope' });
     assert.equal(bad.code, 1); assert.match(bad.stderr, /bad_token/);

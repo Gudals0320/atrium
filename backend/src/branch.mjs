@@ -44,6 +44,8 @@ import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때
 import { DocWatch } from './doc-watch.mjs'; // P257: 문서 점검(지휘 세션 턴 끝·done 알림)
 import { Decisions } from './decisions.mjs'; // P284: 결정 카드(atrium ask)
 import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | news, 턴 끝·done 자동 기록)
+import { permOf, permKey, opRefusal, refusalText } from './orchestration.mjs'; // P296: 자체 오케스트레이션 세션의 권한
+import { VERB_NAMES } from './cli-contract.mjs';
 
 
 export const DEFAULT_ROLE = '워커';
@@ -289,12 +291,14 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 - 사람이 카드에서 답하면 \`[결정] <질문> → <답>\` 글이 들어온다. 무시하면 아무것도 오지 않는다(되묻지 않는다). 사람이 대화로 직접 답하면 보드가 카드를 닫는다.
 - 권한·신뢰·모델·하네스 질문은 카드가 아니다(보드가 따로 알린다). 하위 워커는 카드를 남기지 않고 부모에게 \`atrium prompt\`로 묻는다.
 - 쓸모없어진 카드는 \`atrium ask --done <번호>\`, 열린 카드 목록은 \`atrium ask --list\`.
+- 답을 기다리지 않고 일을 이어 갈 질문은 \`--no-wait\`(답이 너에게 다음 글이 갈 때 그 앞에 실려 온다). 답을 기다리며 멈추면 \`--wait\`.
 
 ## 사람에게 넘기기(사용자 몫)
 
 - 사람이 해야 할 일은 대화에 쓰고 \`atrium todo "<할 일 한 줄>"\`로 보드의 "내 몫" 목록에도 남긴다. 사람이 칠 명령은 \`--cmd "<명령>"\`(여럿이면 되풀이, 카드에 복사 단추가 붙는다).
 - 사람이 확인해 줘야 하면 \`--check\`(사람이 됐다/안 됐다로 답하면 \`[확인] <할 일> → 됐다: 메모\` 글이 온다). 할 일의 했음은 기록만 되고, 알아야 하면 \`--tell\`(\`[할 일] <할 일> → 했음\`).
 - 나중으로 미룬 일은 \`--later "YYYY-MM-DD HH:MM"\`(그때 보드가 띄운다) 또는 \`--later "<조건 글>"\`(사람이 꺼낼 때까지 "나중"에 둔다).
+- 확인 결과와 했음 알림은 다음 글에 실려 온다(기다리며 멈추면 \`--wait\`).
 - 닫기 \`atrium todo --done <번호>\`, 목록 \`atrium todo --list\`. 하위 워커는 부모에게 \`atrium prompt\`로 넘긴다.
 `;
 export function boardSkill(name = SKILL_NAME) {
@@ -453,7 +457,54 @@ export class Branch {
     const child = this.isWorkChild(s.sessionId, wp, idx);
     return { branch: { depth: this.workDepth(s.sessionId, idx), parentSessionId: wp, parentName: shownName(parent), // P66: 보이는 이름
       parentAddress: parent ? parent.name : null, parentOpen: !!(wp && this.b.sessions.has(wp)), child, role: child ? this.workRole(s, wp, idx) : null, order: child && info && wp === (s.parentSessionId || null) ? this.orderOf(s.sessionId) : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.workChildren(s.sessionId, idx).length,
-      ...this.relationSummary(s, idx) } }; // P156: 일 부모(workParentSessionId), 계보 부모와의 관계(parentRelation), 동료(peers)
+      ...this.relationSummary(s, idx) }, // P156: 일 부모(workParentSessionId), 계보 부모와의 관계(parentRelation), 동료(peers)
+      ...(s.orch ? { orch: this.orchSummary(s, idx) } : {}) }; // P296: 자체 오케스트레이션(카드 표·세션 맵)
+  }
+
+  // ---------- P296: 자체 오케스트레이션 세션의 권한 ----------
+  // 실제 권한: 성질(s.orch) × 관계(일 부모가 있는 하위인가). 바뀌면(띄울 때, 관계가 바뀔 때) 기록(perm_set 이벤트)하고 요약을 다시 보낸다
+  permFor(s, idx = null) {
+    if (!s || !s.orch) return permOf({});
+    const ix = idx || this.relIndex();
+    const wp = ix.workParentOf(s.sessionId);
+    const sub = this.isWorkChild(s.sessionId, wp, ix);
+    const p = permOf({ orch: s.orch, relation: sub ? 'sub' : 'none', parentId: sub ? wp : null, verbs: ['help', ...VERB_NAMES] });
+    this.notePerm(s, p);
+    return p;
+  }
+  notePerm(s, p) {
+    if (!this.permKeys) this.permKeys = new Map();
+    const k = permKey(p), prev = this.permKeys.get(s.sessionId);
+    if (prev === k) return;
+    this.permKeys.set(s.sessionId, k);
+    try { this.b.store.addEvent(s.sessionId, 'perm_set', { scope: p.scope, allowed: p.allowed, parent: p.parentOnly || null, before: prev || null }); } catch {}
+    if (prev !== undefined) { this.b.log(`perm ${s.name}: ${p.scope} (${(p.allowed || []).join(',')})`); if (this.b.broadcastSession) setImmediate(() => { if (this.b.sessions.has(s.sessionId)) this.b.broadcastSession(s, { cause: 'perm' }); }); }
+  }
+  // 관계가 바뀌었다: 오케스트레이션 세션의 권한을 다시 센다
+  recomputePerms() { const idx = this.relIndex(); for (const s of this.b.sessions.values()) if (s.orch) this.permFor(s, idx); }
+  permView(s) {
+    const p = this.permFor(s);
+    const pn = p.parentOnly ? shownName(this.b.sessions.get(p.parentOnly) || this.rowOf(p.parentOnly)) : null;
+    return { orchestrates: p.orchestrates, scope: p.scope, allowed: p.allowed, parent: pn, reportFallback: s.orch ? s.orch.reportFallback || null : null };
+  }
+  orchSummary(s, idx) {
+    const p = this.permFor(s, idx);
+    const inner = this.b.sleeper && this.b.sleeper.innerView ? this.b.sleeper.innerView(s) : null;
+    return { on: true, via: s.orch.via || null, scope: p.scope, allowed: p.allowed, reportFallback: s.orch.reportFallback || null, inner };
+  }
+  // 요청을 거절할 까닭 | null. prompt면 받는 세션을 풀어 부모인지 본다
+  refusalOf(s, op, body = {}) {
+    if (!s || !s.orch) return null;
+    const p = this.permFor(s);
+    let targetId = null;
+    if (op === 'prompt' && p.parentOnly) { try { targetId = this.verbs.target(s, body.name).sessionId; } catch { targetId = null; } }
+    const r = opRefusal(p, op, { targetId });
+    if (!r) return null;
+    const parentName = p.parentOnly ? shownName(this.b.sessions.get(p.parentOnly) || this.rowOf(p.parentOnly)) : null;
+    const message = refusalText(r, { parentName, allowed: p.allowed });
+    try { this.b.store.addEvent(s.sessionId, 'branch_rejected', { op, why: 'not_permitted', reason: r.why }); } catch {}
+    this.b.log(`branch ${op} not permitted for ${s.name} (${r.why})`);
+    return { code: 'not_permitted', message, reason: r.why, verb: r.verb, allowed: p.allowed, scope: p.scope, ...(parentName ? { parent: parentName } : {}) };
   }
   tree() {
     // P159: atrium tree는 일 관계 나무(하위는 일 부모 아래, 동료·독립은 맨 위에 서고 동료 이름을 붙인다). lineageParentSessionId는 사실
@@ -547,6 +598,9 @@ export class Branch {
       try { body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}; } catch { return send(400, { error: { code: 'bad_json', message: "유효한 JSON 형식이 아닙니다." } }); }
       const caller = this.auth(req.headers, op);
       if (caller.error) return send(caller.status, { error: caller.error });
+      // P296: 오케스트레이션 세션은 허용 동사만(보드가 막는다. 안내 글만으로는 부족하다)
+      const refused = this.refusalOf(caller.s, op, body);
+      if (refused) return send(403, { error: refused });
       try {
         const result = await this.dispatch(op, caller.s, body, res);
         send(200, { result, board: { terminalSession: this.b.cfg.terminalSession, port: this.b.cfg.port } });
@@ -604,6 +658,7 @@ export class Branch {
     if (op === 'todo') return this.decisions.todoVerb(s, body); // P292: atrium todo "<할 일>" [--cmd …] [--check] [--later …] [--tell] | --done <번호> | --list
     if (op === 'docs') return this.docs.verb(s); // P257: atrium docs(문서 점검 결과)
     if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
+    if (op === 'perm') return this.permView(s); // P296: 이 세션의 허용 동사(atrium help가 묻는다)
     if (op === 'usage-report') return this.b.usage ? this.b.usage.report(String(body.kind || ''), body.input) : { ok: false }; // P211: 판의 상태 줄 명령이 알린 사용량
     throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
   }
@@ -1203,7 +1258,8 @@ export class Branch {
       roles.push({ dir: out ? 'out' : 'in', role: l.role, name: shownName(o), agentName: o.agentName, kind: o.kind || 'claude', paneId: o.paneId || null, state: stateOf(o), last: lastOf(l) });
     }
     const news = this.news.meLine(s); // P204: 읽지 않은 동료 소식(없으면 칸이 없다)
-    return { at: Date.now(), me, parent, peers, children, independent, lineage, roles, ...(news ? { news } : {}),
+    const pv = this.permView(s); // P296: 오케스트레이션 세션이면 허용 동사(하위면 줄어든다)
+    return { at: Date.now(), me, parent, peers, children, independent, lineage, roles, ...(news ? { news } : {}), ...(pv.orchestrates ? { permissions: pv } : {}),
       commands: { prompt: 'atrium prompt <이름> "<할 일>" --wait', wait: 'atrium wait <이름>', read: 'atrium read <이름>' } }; // P116
   }
 }

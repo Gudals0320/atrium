@@ -149,13 +149,29 @@ export class UnitStops {
     }
     if (!why) return null;
     const unit = st.getUnit(tr.unitId);
-    const quiet = why === 'idle_no_done' ? this.quietWhy(s.sessionId, tr, unit) : null; // P281
+    // P296: 자체 오케스트레이션 세션이 atrium을 못 돌리는 하네스(reportFallback last_answer)면 판이 턴 끝 마지막 답으로 그 일을 닫는다(멈춤 알림 대신)
+    if (why === 'idle_no_done' && s.orch && s.orch.reportFallback === 'last_answer' && this.units.fallbackDone) { this.units.fallbackDone(s, tr, this.turnAt.get(s.sessionId) || 0); return null; }
+    const inner = why === 'idle_no_done' && s.orch && this.b.sleeper && this.b.sleeper.innerBusy ? this.b.sleeper.innerBusy(s) : false; // P296: 안에서 일하는 중이면 멈춤이 아니다(끝나면 onInnerQuiet가 다시 본다)
+    const quiet = why === 'idle_no_done' ? (inner ? 'inner_work' : this.quietWhy(s.sessionId, tr, unit)) : null; // P281
     if (quiet) {
       st.addEvent(s.sessionId, 'unit_stop_quiet', { unitId: tr.unitId, tryId: tr.id, why, because: quiet });
       this.b.log(`unit stop not noticed: ${this.units.nameOf(s.sessionId)} ${tr.unitId} ${why} (${quiet})`);
     } else this.add(tr, unit, why);
     return why;
-  }  // 세션이 닫혔다(열린 시도가 있었으면). → 알림을 건 상위 ID | null
+  }
+  // P296: 오케스트레이션 세션의 안 일이 끝났다(sleep.mjs 바쁨 신호가 바쁨 → 조용). 쉬는데 done 없이 열린 머리 시도가 남았으면 그때 한 번 알린다
+  onInnerQuiet(s) {
+    const st = this.store();
+    const tr = st.openTryOf(s.sessionId);
+    if (!tr || !tr.header || !STOPPED.has(this.units.prev.get(s.sessionId))) return null;
+    const d = tr.deliveryId ? st.getDelivery(tr.deliveryId) : null;
+    if (!d || d.status !== 'confirmed' || st.openUnitsFromCount(s.sessionId)) return null;
+    const unit = st.getUnit(tr.unitId);
+    if (this.idleSent.has(tr.id)) return null;
+    this.units.recordStop(s, tr, 'idle_no_done');
+    return this.add(tr, unit, 'idle_no_done') ? 'idle_no_done' : null;
+  }
+  // 세션이 닫혔다(열린 시도가 있었으면). → 알림을 건 상위 ID | null
   onClosed(s, tr, unit, reason, { byParent = false } = {}) {
     this.scheduleTree();
     this.turnAt.delete(s.sessionId); this.lastCmd.delete(s.sessionId); if (tr) this.idleSent.delete(tr.id);

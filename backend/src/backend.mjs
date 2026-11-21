@@ -49,6 +49,7 @@ import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
 import { humanPrompt } from './decisions.mjs'; // P284: 터미널에 직접 친 글
+import { orchOf, orchPromptLines } from './orchestration.mjs'; // P296: 자체 오케스트레이션
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf } from './harness.mjs';
 import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel, waitDshAnswer } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
@@ -259,6 +260,7 @@ export class Backend {
     });
     // P128: 쓰다 만 글을 비킴(aside)·비키지 못함(keep)·되돌림(back). 되돌리지 못한 글은 이 이벤트의 text로 판 기록에 남는다
     this.queue.beforeDeliver = (d) => (this.docs ? this.docs.beforeDeliver(d) : undefined); // P257: 문서 점검 경고 한 줄
+    if (this.decisions) this.decisions.wireQueue(this.queue); // P295: 붙잡은 사용자 몫 답을 다음 전달 앞에 싣는다(Branch가 대기열보다 먼저 만들어진다)
     this.queue.on('draft', (r) => {
       this.store.addEvent(r.sessionId, 'delivery_draft', r);
       this.log(`delivery draft ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.phase}${r.how ? ` ${r.how}` : ''}${r.result ? ` → ${r.result}${r.by ? ` (${r.by})` : ''}` : ''}${r.why ? ` [${r.why}]` : ''} ${r.chars ?? ''} chars`);
@@ -529,7 +531,7 @@ export class Backend {
     // P240: 턴은 끝났고 뒤 일만 돈다(bgOnlyOf). 전달은 쉬는 세션처럼 보낸다. 판의 상태(working)와 뒤 일 표시는 그대로
     const bg = state === 'working' ? (this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !s.rt.sleep ? backgroundList(s.rt.bg, null) : null) : null;
     const bgOnly = state === 'working' && bgOnlyOf(s.rt, ds, bg, { kind: s.kind || 'claude', hooked: this.hooked(s) });
-    return { state, agentPresent: s.rt.term.present, termConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s), bgOnly }; // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
+    return { state, agentPresent: s.rt.term.present, termConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s), bgOnly, orch: s.orch || null }; // P296: orch(대기열만) // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
   }
 
   summary(s) {
@@ -1051,7 +1053,23 @@ export class Backend {
       try { const added = fillSessionHooks(s.settingsPath); if (added.length) { this.log(`hooks added for ${s.name}: ${added.join(', ')}`); this.store.addEvent(s.sessionId, 'settings_hooks_added', { events: added }); } } catch (e) { this.log(`hooks fill failed ${s.name}: ${e.message}`); }
     }
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
-    return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.plugin : {}) };
+    return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.pluginFor(s) : {}) };
+  }
+  // P296: 자체 오케스트레이션 세션의 판 안내문(그 세션의 지금 권한 범위: sub | free). Claude Code는 줄마다, 하네스는 한 줄. → { file, text } | null
+  orchPrompt(s, scope = null) {
+    if (!s || !s.orch) return null;
+    const perm = !scope && this.branch && typeof this.branch.permFor === 'function' ? this.branch.permFor(s) : null;
+    const sc = scope || (perm && perm.scope === 'sub' ? 'sub' : 'free');
+    const lines = orchPromptLines(sc);
+    const text = (s.kind || 'claude') === 'claude' ? lines.join('\n') : lines.join(' ');
+    const file = path.join(this.cfg.sessionsDir, `${s.sessionId}.orch-prompt.md`);
+    try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text + '\n'); } catch (e) { this.log(`orch prompt write failed ${s.name}: ${e.message}`); return null; }
+    return { file: slash(file), text, scope: sc };
+  }
+  // P296: 판 플러그인 값. 오케스트레이션 세션은 판 안내문만 그 세션의 것으로 바꾼다
+  pluginFor(s, scope = null) {
+    const o = s && s.orch ? this.orchPrompt(s, scope) : null;
+    return o ? { ...this.plugin, systemPromptFile: o.file } : this.plugin;
   }
 
   // ---------- P115: Claude Code 밖 하네스(harness.mjs) ----------
@@ -1090,7 +1108,8 @@ export class Backend {
     // P227: 같은 대화를 이어 갈 때(Codex는 대화 ID를 알 때) 모델·노력 수준은 그 대화가 마지막으로 쓰던 값. 처음 띄울 때는 띄운 값(plan.model)
     const hsid = resume ? this.harnessSessionIdOf(s) : null;
     const rm = resume && (s.kind === 'pi' || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: plan.args || [], instructions: hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
+    const orchP = s.orch ? this.orchPrompt(s) : null; // P296: 오케스트레이션 세션은 그 세션의 안내문(허용 동사만)
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: plan.args || [], instructions: orchP ? { file: orchP.file, text: orchP.text } : hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1493,6 +1512,8 @@ export class Backend {
     const { flavor, command } = plan;
     const kind = plan.kind;
     const shell = kind === SHELL;
+    const orch = shell || plan.command ? null : orchOf(kind, plan); // P296: 자체 오케스트레이션(런처 칸, 없으면 종류의 기본)
+    const orchScope = p.branch && !p.branch.head && p.branch.relation !== 'peer' ? 'sub' : 'free';
     let name = p.name;
     const prefix = shell ? 'sh' : 's';
     if (!name) { let i = 1; while (taken.has(`${prefix}${i}`)) i++; name = `${prefix}${i}`; }
@@ -1538,7 +1559,7 @@ export class Backend {
         if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수. 판의 값이 이긴다
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
-        const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.plugin };
+        const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.pluginFor(orch ? { sessionId, name, kind, orch } : null, orchScope) }; // P296
         args = buildStartArgs(launch);
         resumeArgv = buildResumeArgv({ claudeCommand: this.cfg.claudeCommand, startCommand, ...launch });
       }
@@ -1550,7 +1571,7 @@ export class Backend {
       if (shell) rt.phase = 'running';
       let s;
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
-        s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan };
+        s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan, orch }; // P296: orch
         this.store.insertSession({ ...s, runtime: rt });
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
@@ -1564,7 +1585,7 @@ export class Backend {
       // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
       if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
-      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
+      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(orch ? { orch } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
       await this.adapter.refreshSubscription();
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
@@ -1642,7 +1663,7 @@ export class Backend {
       const held = !p.steer && this.decisions ? this.decisions.takeHeld(s.sessionId) : null; // P286: 모아 둔 결정 답은 사람의 글 앞에 붙여 한 전달로(스티어링 글이면 onHuman이 따로 보통 메시지로)
       if (held) body = `${held.text}\n\n${body}`;
       const d = this.queue.enqueue(s.sessionId, body, { ...qopts(s), origin: { kind: 'human' } });
-      if (held) this.store.addEvent(s.sessionId, 'decision_flush', { ids: held.ids, deliveryId: d.deliveryId, why: 'human_front' });
+      if (held) { this.store.addEvent(s.sessionId, 'decision_flush', { ids: held.ids, deliveryId: d.deliveryId, why: 'human_front', now: held.now, next: held.next }); this.decisions.rides.set(d.deliveryId, held.ids); } // P295: 실패·취소되면 다시 붙잡는다
       this.touch(s);
       try { if (this.decisions) this.decisions.onHuman(s.sessionId, 'bar'); } catch (e) { this.log('decisions human error', e.stack); } // P284: 사람이 카드를 거치지 않고 직접 보낸 글(명령 바·휴대폰 입력)은 그 세션의 열린 결정 카드를 닫는다
       return { deliveryId: d.deliveryId, sessionId: s.sessionId, name: shownName(s), status: d.status, ...steerOut(s) };
