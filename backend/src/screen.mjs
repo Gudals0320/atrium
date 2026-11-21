@@ -124,7 +124,16 @@ export function shellPromptState(text) {
 
 // P79: Claude Code 입력 칸 읽기. 화면 아래쪽 가로줄(───) 둘 사이가 입력 칸이고 첫 줄은 "❯ "(옛 판은 "> ")로 시작한다.
 // → { found, text(입력 칸 글, 앞 기호를 뗀 것), above(입력 칸 위의 줄들) }. 그런 가로줄 쌍이 없으면 found: false
-const RULE = /^\s*[─━]{12,}\s*$/;
+// P289: 이름 붙은 세션(/rename)은 위 가로줄 오른쪽 끝에 이름을 끼워 그린다("────── 이름 ─"). 왼쪽·가운데에 붙는 꼴도 받는다:
+//   가로줄 글자로 시작하고 끝나며(앞뒤 빈칸 무시) 가로줄 글자가 12개 이상이고 줄의 절반 이상인 줄. 끼운 글은 이름일 뿐 입력 칸 글이 아니다
+const RULE_CH = /[─━]/g;
+export function isRuleLine(line) {
+  const s = String(line || '').trim();
+  if (!/^[─━]/.test(s) || !/[─━]$/.test(s)) return false;
+  const n = (s.match(RULE_CH) || []).length;
+  return n >= 12 && n * 2 >= [...s].length;
+}
+const RULE = { test: isRuleLine };
 // P90: 대기 메시지가 있을 때 빈 입력 칸의 안내 글(흐린 글이라 글자로는 구별되지 않는다). 빈 칸으로 본다
 // P106: 빈 입력 칸의 흐린 추천 글(예: Try "fix lint errors")도 빈 칸으로 본다
 const BOX_HINTS = [/^Press up to edit queued messages$/i, /^Try "[^"]*"$/];

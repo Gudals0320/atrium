@@ -273,7 +273,9 @@ export class Backend {
     this.queue.on('refused', (r) => this.log(`delivery refused ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} → ${r.reason}, retry in ${r.waitMs}ms (#${r.n})`));
     this.queue.on('stuck', (r) => { this.store.addEvent(r.sessionId, 'delivery_stuck', r); this.log(`delivery stuck ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.code} (${r.attempts} tries)`); const s = this.sessions.get(r.sessionId); if (s) this.broadcastSession(s, { cause: 'delivery stuck' }); });
     this.queue.on('not_submitted', (r) => { this.store.addEvent(r.sessionId, 'delivery_not_submitted', r); this.log(`delivery not submitted ${this.nameOf(r.sessionId)} ${r.deliveryId}: input box has other text ${JSON.stringify(r.peek || '')}`); }); // P126
-    this.queue.on('now', (r) => { this.store.addEvent(r.sessionId, 'delivery_now', r); this.log(`delivery now ${this.nameOf(r.sessionId)} ${r.deliveryId} (${r.state})`); }); // P172: 판에서 바로 보내기
+    this.queue.on('now', (r) => { this.store.addEvent(r.sessionId, 'delivery_now', r); this.log(`delivery now ${this.nameOf(r.sessionId)} ${r.deliveryId} (${r.state})${r.why ? ` blocked: ${r.why}` : ''}${r.n > 1 ? ` #${r.n}` : ''}`); }); // P172: 판에서 바로 보내기. P289: 앞서 못 넣은 까닭과 누른 수
+    // P289: 스티어링을 지금 턴에 넣지 못한 까닭(바뀔 때만 온다). 끝내 못 넣으면 턴이 끝난 뒤 보통 보내기로 들어간다
+    this.queue.on('steer_blocked', (r) => { this.store.addEvent(r.sessionId, 'delivery_steer_blocked', r); this.log(`delivery steer blocked ${this.nameOf(r.sessionId)} ${r.deliveryId}: ${r.why}${r.box ? ` (box ${r.box})` : ''}`); });
     this.queue.on('bg_only', (r) => { this.store.addEvent(r.sessionId, 'delivery_bg_only', r); this.log(`delivery bg-only ${this.nameOf(r.sessionId)} ${r.deliveryId}: turn ended, only background work runs → sent now`); }); // P240
     // P258: 미확인으로 끝난 전달이 늦게 제출됐다(압축 뒤 Claude Code가 쥐고 있던 글을 제출 등). 전달은 confirmed로 바뀌었다(delivery 이벤트)
     this.queue.on('late_confirm', (r) => { this.store.addEvent(r.sessionId, 'delivery_late_confirmed', r); this.log(`delivery late confirm ${this.nameOf(r.sessionId)} ${r.deliveryId} (${Math.round(r.afterMs / 1000)}s after unconfirmed)`); if (this.branch && this.branch.onLateConfirm) this.branch.onLateConfirm(r); });
@@ -2159,7 +2161,7 @@ export class Backend {
       'delivery.now': (p) => this.queue.sendNow(p.deliveryId),
       'delivery.reorder': (p) => this.queue.reorder(p.ids),
       // P106: active면 아직 끝나지 않은 전달 모두(창이 다시 열려도 막힌 전달을 보이고 취소할 수 있게)
-      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, seq: d.seq ?? d.createdAt, editing: !!d.editing, name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
+      'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, seq: d.seq ?? d.createdAt, editing: !!d.editing, steerWhy: d.steerWhy || null, name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
       'session.kill': (p) => this.kill(p),
       'session.answer': (p) => this.answer(p),
       'session.keys': (p, c) => this.sendKeysTo(p, c), // P104: 휴대폰 키 줄(원격 기기도 부른다)
