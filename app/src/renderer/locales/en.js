@@ -2689,6 +2689,10 @@ export default {
     effort: 'Effort',
     effortHint: 'Reasoning effort for the merger session',
     effortNone: '(not passed)',
+    // P287: approval (permission) mode for the merger session
+    permission: 'Permission mode',
+    permissionHint: 'Same as assigner: the merger uses the permission mode of the session that assigned the work. A skip-permissions mode (dontAsk, bypassPermissions) keeps the merger from stopping at permission prompts. Applies from the next merger',
+    permissionInherit: 'Same as assigner',
     repoNote: 'Per repository, .atrium/merge.json sets the branch to merge into (target), where to merge (worktree or main), whether to push (off by default) and a guide file.',
     answers: 'Projects',
     answersHint: 'Answers remembered from the ask card',
@@ -2696,7 +2700,7 @@ export default {
     askAgain: 'Ask again',
     forgot: '{name}: the board will ask again',
     saved: 'Saved',
-    bad: { mode: 'Pick on, ask or off', effort: 'Pick an effort from the list', kind: 'Agent kind: lowercase letters, digits, - and _', model: 'Model name: letters, digits and . _ : / [ ] -', key: 'Unknown setting' },
+    bad: { mode: 'Pick on, ask or off', effort: 'Pick an effort from the list', kind: 'Agent kind: lowercase letters, digits, - and _', model: 'Model name: letters, digits and . _ : / [ ] -', key: 'Unknown setting', permission: 'Pick a permission mode from the list' },
     card: {
       title: 'Let a merger session merge branch work in this project?',
       body: '@{child} finished on {branch}. When on, the board puts branch workers to sleep when they finish and a merger session merges into {target}; merged workers are closed and archived, failures go to the session that assigned the work.',

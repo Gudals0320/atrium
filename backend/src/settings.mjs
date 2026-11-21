@@ -50,6 +50,9 @@ export const SETTINGS = {
   mergerKind: { type: 'string', default: 'claude', max: 40, pattern: /^[a-z][a-z0-9_-]{0,39}$/, hint: '에이전트 종류(예: claude)', label: 'merger 세션의 에이전트 종류입니다. 이 PC에 설치돼 있지 않으면 Claude Code를, 그것도 없으면 Codex를 씁니다.' },
   mergerModel: { type: 'string', default: 'claude-sonnet-5-5', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: claude-sonnet-5-5)', label: 'merger 세션의 모델입니다.' },
   mergerEffort: { type: 'choice', default: 'medium', options: EFFORTS, label: 'merger 세션의 추론 수준입니다 (빈 값: 넘기지 않음).' },
+  // P287: merger의 승인 방식. 빈 값·inherit는 그 합치기를 맡긴 부모의 방식(전과 같음). 목록은 세션 띄우기 창의 승인 방식(PERMISSION_MODES).
+  //   고른 종류가 받지 않는 값이면 부모 따름으로 되돌린다(merger.mjs mergerPermissionOf)
+  mergerPermission: { type: 'choice', default: '', options: ['', 'inherit', ...PERMISSION_MODES], label: 'merger 세션의 승인 방식입니다 (빈 값: 합치기를 맡긴 세션의 방식을 따름).' },
   // P114의 숨은 설정 terminalBackend는 P117에서 없앴다. P129·P132: 터미널 백엔드는 herdr-core(hc) 하나다. 판 기록(meta terminalBackend)은 옛 판 옮기기(herdr-migrate)만 쓴다
 };
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));

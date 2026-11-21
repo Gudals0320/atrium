@@ -2693,6 +2693,10 @@ export default {
     effort: '노력',
     effortHint: 'merger 세션의 추론 수준',
     effortNone: '(넘기지 않음)',
+    // P287: merger 세션의 승인 방식
+    permission: '승인 방식',
+    permissionHint: '맡긴 세션 따름: 일을 맡긴 세션의 승인 방식을 씁니다. 권한 생략(dontAsk, bypassPermissions)을 고르면 merger가 권한 질문에 멈추지 않습니다. 다음에 띄우는 merger부터 적용됩니다',
+    permissionInherit: '맡긴 세션 따름',
     repoNote: '저장소마다 .atrium/merge.json에서 합칠 브랜치(target), 합치는 곳(worktree·main), 원격에 올리기(기본 끔), 안내 파일을 정합니다.',
     answers: '프로젝트',
     answersHint: '묻는 카드에서 기억한 답',
@@ -2700,7 +2704,7 @@ export default {
     askAgain: '다시 묻기',
     forgot: '{name}: 다음에 다시 묻습니다',
     saved: '저장했습니다',
-    bad: { mode: '켬, 물어봄, 끔 가운데 고르세요', effort: '목록에서 노력을 고르세요', kind: '에이전트 종류는 소문자, 숫자, -, _만 씁니다', model: '모델 이름은 글자, 숫자, . _ : / [ ] -만 씁니다', key: '모르는 설정입니다' },
+    bad: { mode: '켬, 물어봄, 끔 가운데 고르세요', effort: '목록에서 노력을 고르세요', kind: '에이전트 종류는 소문자, 숫자, -, _만 씁니다', model: '모델 이름은 글자, 숫자, . _ : / [ ] -만 씁니다', key: '모르는 설정입니다', permission: '목록에서 승인 방식을 고르세요' },
     card: {
       title: '이 프로젝트에서 합치기를 merger에게 맡길까요?',
       body: '@{child}가 {branch}에서 일을 끝냈습니다. 켜면 보드가 브랜치에서 일한 워커가 끝날 때 그 워커를 재우고, merger 세션이 {target}에 합칩니다. 합쳐지면 워커를 닫고 보관합니다. 실패하면 맡긴 세션에 알립니다.',
