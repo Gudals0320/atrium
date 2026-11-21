@@ -37,6 +37,7 @@ const call = (m, p = {}) => JSON.parse(atrium('--json', 'call', m, JSON.stringif
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok: !!ok, detail }); log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail !== '' ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 1600)}` : ''}`); };
 const SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const LONG = 'checkout-mail-preview-worker';
 const sess = (n) => call('session.list').find((s) => s.name === n);
 async function waitFor(fn, ms = 120000, every = 1500) { const t0 = Date.now(); for (;;) { const v = await fn(); if (v) return v; if (Date.now() - t0 > ms) return null; await sleep(every); } }
 const wsKey = (f) => { const wl = call('workspace.list'); return (wl.workspaces.find((w) => path.resolve(w.root || w.path || '').toLowerCase() === path.resolve(f).toLowerCase()) || {}).key; };
@@ -64,6 +65,7 @@ async function setup() {
   await sleep(1500);
   if (!sess('lead1')) log(atrium('spawn', FOLDERS[0], '--name', 'lead1', '--model', 'haiku'));
   if (!sess('sh1')) log(atrium('spawn', FOLDERS[1], '--name', 'sh1', '--kind', 'shell'));
+  if (!sess(LONG)) log(atrium('spawn', FOLDERS[0], '--name', LONG, '--kind', 'shell')); // 맵 카드 첫 줄이 좁은 경우(긴 이름 + 할 일 + 레인 칩)
   const s = await waitFor(() => { const x = sess('lead1'); return x && !['starting'].includes(x.state) && x; }, 120000, 2000);
   check('lead1이 떴다', s && s.state !== 'trust_wait', s && s.state);
   if (s && s.state === 'trust_wait') fs.writeFileSync(path.join(DEV, 'p307-need-trust.txt'), `lead1: ${FOLDERS[0]} 신뢰 질문\n`);
@@ -71,6 +73,8 @@ async function setup() {
   for (const [k, n, d] of [[ka, '수집', DOC_A], [ka, '결제', DOC_B], [kb, '문서', DOC_C]]) if (!lanes().find((l) => l.name === n)) log(JSON.stringify(call('plan.import', { workspace: k, new: n, doc: JSON.stringify(d) })).slice(0, 200));
   const A = lanes().find((l) => l.name === '수집');
   call('plan.owner', { planId: A.planId, session: 'lead1' });
+  const B = lanes().find((l) => l.name === '결제');
+  if (!B.owner) call('plan.owner', { planId: B.planId, session: LONG });
   call('settings.set', { key: 'planNotify', value: 'next' });
   log(lanes().map((l) => `#${l.no} ${l.name} ${l.status} ${l.owner ? l.owner.name : '-'} ${l.summary.focus ? l.summary.focus.code + ' ' + l.summary.focus.done + '/' + l.summary.focus.total : ''}`).join('\n'));
   check('장면: 레인 셋(수집 관리자 lead1)', lanes().length === 3 && lanes().find((l) => l.name === '수집').owner.name === 'lead1');
@@ -147,6 +151,13 @@ async function phone() {
           await pg.goto('about:blank'); await pg.close();
         }
         const { pg, errs } = await openMap(ctx);
+        // 0b) 맵 카드 첫 줄: 이름이 먼저(좁으면 표식·칩을 줄인다)
+        await pg.evaluate((k) => { const L = window.__mtPm.lay(), s = window.__mtPm.size(), r = L.rows.find((x) => x.key === k); const kk = Math.max(0.62, (s.w - 12) / r.w); window.__mtPm.set({ k: kk, x: 6 - r.x * kk, y: 16 - r.y * kk }); }, ka);
+        await sleep(900);
+        const names = await pg.evaluate(() => [...document.querySelectorAll('.mt-pmap .mt-ta-full .c1')].map((r) => { const n = r.querySelector('[data-role=ta-name]'); return { name: n.textContent, w: n.clientWidth, sw: n.scrollWidth, row: r.clientWidth, fit: r.classList.contains('tight2') ? 2 : r.classList.contains('tight') ? 1 : 0, mark: (r.querySelector('[data-role=decision-mark]') || {}).textContent || null, lane: (r.querySelector('[data-role=plan-manager-map]') || {}).textContent || null }; }));
+        const bad = names.filter((x) => !(x.sw <= x.w + 1 || x.w >= x.row * 0.45));
+        check(`[${tag}] 맵 카드: 이름이 밀려나지 않는다(다 보이거나 줄의 절반 이상)`, names.length >= 3 && names.every((x) => x.w > 0) && !bad.length && names.find((x) => x.name === 'lead1').sw <= names.find((x) => x.name === 'lead1').w + 1, names);
+        await shot(pg, `${tag}-0-cards`, { clip: { x: 0, y: 0, width: W, height: Math.min(H, 520) } });
         // 1) 폴더 머리 칩
         const chips = await chipsOf(pg);
         const ca = chips.find((c) => c.ws === ka), cb = chips.find((c) => c.ws === kb);
@@ -229,7 +240,7 @@ async function phone() {
 }
 
 async function stopAll() {
-  for (const n of ['lead1', 'sh1']) { try { if (sess(n)) log(atrium('kill', n, '--yes', '--delete')); } catch (e) { log('kill ' + e.message.slice(0, 120)); } }
+  for (const n of ['lead1', 'sh1', LONG]) { try { if (sess(n)) log(atrium('kill', n, '--yes', '--delete')); } catch (e) { log('kill ' + e.message.slice(0, 120)); } }
   try { log(atrium('terminal', 'stop', '--yes').slice(0, 200)); } catch (e) { log('terminal stop ' + e.message.slice(0, 120)); }
   try { log(atrium('backend', 'stop').slice(0, 200)); } catch (e) { log('backend stop ' + e.message.slice(0, 120)); }
 }

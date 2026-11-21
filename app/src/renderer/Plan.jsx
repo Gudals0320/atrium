@@ -26,7 +26,7 @@ function Chip({ c, t, onOpen, small = false }) {
     <button type="button" className={`mt-plan-chip nodrag${c.dim ? ' dim' : ''}${c.allChecked && !c.dim ? ' all' : ''}${small ? ' small' : ''}`} data-role="plan-chip" data-plan={c.planId} data-status={c.status} data-user-left={c.userLeft || undefined} data-all={c.allChecked ? '1' : undefined} data-plan-anchor="1"
       title={t('plan.chipTitle', { name: c.name, status: t(`plan.status.${c.status}`), progress: c.code ? `${c.code} ${c.done}/${c.total}` : t('plan.noMsShort') }) + (c.userLeft ? ' · ' + t('plan.userLeftTitle', { n: c.userLeft }) : '') + (c.allChecked ? ' · ' + t('plan.allChecked') : '')}
       onMouseDown={stop} onClick={(e) => { e.stopPropagation(); onOpen(c.planId, e.currentTarget); }}>
-      <span className="mt-plan-ring" aria-hidden="true" />{chipText(c)}{c.userLeft > 0 && !c.dim ? <i className="mt-plan-udot" aria-hidden="true" /> : null}
+      <span className="mt-plan-ring" aria-hidden="true" />{c.code ? <><span className="mt-plan-cn">{c.name} </span>{`${c.code} ${c.done}/${c.total}`}</> : chipText(c)}{c.userLeft > 0 && !c.dim ? <i className="mt-plan-udot" aria-hidden="true" /> : null}
     </button>
   );
 }

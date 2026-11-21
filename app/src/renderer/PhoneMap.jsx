@@ -342,7 +342,7 @@ export function PhoneMap({ onOpen, head, tip }) {
                   return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}${mergeTreeCls(e)}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
                 })}
               </svg>
-              {ids.filter((id) => !lay.cards.get(id).folded && !hidden.has(id)).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} lite={!plan.tiles} />; })}{/* P293: 이전 칸은 첫 그리기 뒤에(가볍게 열림이면 전부 보기 뒤에) */}
+              {ids.filter((id) => !lay.cards.get(id).folded && !hidden.has(id)).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} lite={!plan.tiles} fit />; })}{/* P293: 이전 칸은 첫 그리기 뒤에(가볍게 열림이면 전부 보기 뒤에) */}
             </div>
           )}
         </div>

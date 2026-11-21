@@ -775,3 +775,13 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-dc-sheet .mt-plan-mstag { display: inline-flex; align-items: center; height: 22px; box-sizing: border-box; font-size: 12px; line-height: 1; padding: 0 7px; max-width: 46%; overflow: hidden; text-overflow: ellipsis; }
 .mt-dc-sheet .mt-plan-more { font-size: 13px; }
 .mt-dc-sheet .mt-plan-more .mt-btn { min-height: 36px; }
+/* P307: 맵 카드 첫 줄에서 이름이 먼저다(lib/row-fit.js). tight: 할 일 표식은 점+수, 레인 칩은 "M2 1/5". tight2: 상태는 점만, 이름에 최소 폭 */
+.mt-pmap .mt-ta-full .c1.tight { gap: 5px; }
+.mt-pmap .mt-ta-full .c1.tight .mt-dc-mark.map { display: inline-flex; align-items: center; gap: 3px; margin-left: 0; padding: 0 5px; font-size: 0; }
+.mt-pmap .mt-ta-full .c1.tight .mt-dc-mark.map::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+.mt-pmap .mt-ta-full .c1.tight .mt-dc-mark.map::after { content: attr(data-count); font-size: 10.5px; line-height: 14px; }
+.mt-pmap .mt-ta-full .c1.tight .mt-plan-mgr.map { margin-left: 0; }
+.mt-pmap .mt-ta-full .c1.tight .mt-plan-mgr.map .mt-plan-cn { display: none; }
+.mt-pmap .mt-ta-full .c1.tight2 .mt-plan-mgr.map .mt-plan-ring { display: none; }
+.mt-pmap .mt-ta-full .c1.tight2 .cst { font-size: 0; gap: 0; }
+.mt-pmap .mt-ta-full .c1.tight2 .cname { min-width: 50%; }

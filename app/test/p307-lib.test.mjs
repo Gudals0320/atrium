@@ -7,6 +7,7 @@ import { phoneChip, sheetPick, sheetItems, sheetSteps } from '../src/renderer/li
 import { laneOf } from '../src/renderer/lib/plans.js';
 import { applyPlanOps, emptyPlan } from '../../backend/src/plan.mjs';
 import { translate } from '../src/renderer/lib/i18n.js';
+import { fitRow } from '../src/renderer/lib/row-fit.js';
 
 const read = (p) => fs.readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), 'utf8');
 const A = { now: 1000, actor: { by: 'lead', via: 'agent' } };
@@ -94,4 +95,21 @@ test('두 사전에 휴대폰 목표 글', async () => {
   assert.equal(translate('ko', 'phonePlan.lanes', { n: 3 }), '목표 레인 3');
   assert.equal(translate('en', 'phonePlan.userOnly'), 'Mine only');
   assert.equal(translate('ko', 'phonePlan.userOnly'), '사용자 것만');
+});
+
+test('맵 카드 첫 줄: 이름이 잘리면 tight(짧은 표식·칩), 그래도 잘리면 tight2(상태 점만), 넉넉하면 그대로', () => {
+  // 가짜 줄: 단계마다 이름에 남는 폭(need: 이름 전체 폭)
+  const mk = (need, room) => { const cls = new Set(['c1']); const row = { classList: { add: (...a) => a.forEach((x) => cls.add(x)), remove: (...a) => a.forEach((x) => cls.delete(x)), contains: (x) => cls.has(x) } };
+    const name = { get scrollWidth() { return need; }, get clientWidth() { return Math.min(need, cls.has('tight2') ? room[2] : cls.has('tight') ? room[1] : room[0]); } }; return { row, name, cls }; };
+  let s = mk(40, [60, 80, 120]);
+  assert.equal(fitRow(s.row, s.name), 0); assert.equal(s.cls.has('tight'), false);
+  s = mk(100, [60, 110, 160]);
+  assert.equal(fitRow(s.row, s.name), 1); assert.equal(s.cls.has('tight'), true); assert.equal(s.cls.has('tight2'), false);
+  s = mk(230, [0, 120, 207]);
+  assert.equal(fitRow(s.row, s.name), 2, '긴 이름: 둘째 단계(이름이 줄의 절반 이상)');
+  assert.equal(fitRow(s.row, mk(40, [60, 60, 60]).name), 0, '다시 재면 앞 단계를 지우고 잰다');
+  assert.equal(s.cls.has('tight'), false);
+  assert.equal(fitRow(null, null), 0);
+  assert.match(read('PhoneMap.jsx'), /lite=\{!plan\.tiles\} fit \/>/, '휴대폰 맵만 fit');
+  assert.match(read('phone.css'), /\.c1\.tight \.mt-plan-mgr\.map \.mt-plan-cn \{ display: none; \}/);
 });
