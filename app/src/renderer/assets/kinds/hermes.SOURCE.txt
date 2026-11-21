@@ -1,0 +1,1 @@
+hermes.png: oh-my-hermes (MIT) rlaope/oh-my-hermes@9da4814 apps/omher/src-tauri/icons/128x128.png, unchanged. License: app/THIRD_PARTY_NOTICES.txt

@@ -22,7 +22,7 @@ import { useStore, getState, selectWorkspace, selectGroup, toast, goWhenOpen, op
 import { ago, askLine, STATE_LABEL } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { archiveRows, SECTION_STEP, bindingText } from './lib/sidebar.js';
-import { buildRows, offsetsOf, windowOf, scrollFor, moveCursor, parentOf, dropTarget, adjustIndex, freshGroupName, clampWidth, SIDE_W, BUCKETS, bucketOf, kindOf, TREE, headBadges, groupKeys } from './lib/sidebar-tree.js'; // P44. P103: TREE, headBadges. P278: groupKeys
+import { buildRows, offsetsOf, windowOf, scrollFor, moveCursor, parentOf, dropTarget, adjustIndex, freshGroupName, clampWidth, SIDE_W, BUCKETS, bucketOf, kindOf, TREE, headBadges, groupKeys, foldAllMap } from './lib/sidebar-tree.js'; // P44. P103: TREE, headBadges. P278: groupKeys
 import { shownKind } from './lib/kinds.js'; // P25: 띄운 방법(flavor, 런처 아이콘)을 종류처럼 보인다
 import { branchLabel } from './lib/branch.js'; // P8(K4): 하위 세션은 부모 아래에 들여 보인다
 import { Icon } from './lib/icons.jsx';
@@ -171,13 +171,10 @@ const kindText = (k) => (KIND_LABEL[k] ? t(KIND_LABEL[k]) : k);
 
 // ---------- P44: 접기, 거르기, 고르기, 그룹, 폭 ----------
 function toggleFold(key, open) { side.collapsed = { ...side.collapsed, [key]: open === undefined ? !side.collapsed[key] : !open }; persist(); bump(); }
-// 모두 접기·펼치기: 지금 판의 그룹과 워크스페이스 전부
+// 모두 접기·모두 열기(P302): 지금 판의 폴더(그룹)와 워크스페이스 전부. 접힘 기억(창 프로필)도 함께 바뀐다
 function foldAll(fold) {
   const st = getState();
-  const next = { ...side.collapsed };
-  for (const w of st.workspaces) next[w.key] = fold;
-  for (const g of st.groups || []) next[`g:${g.id}`] = false; // 그룹은 펼쳐 두고 워크스페이스만 접는다(그룹 안 이름이 보이게)
-  side.collapsed = next; persist(); bump();
+  side.collapsed = foldAllMap(side.collapsed, st.workspaces, st.groups, fold); persist(); bump();
 }
 function toggleExtra(key) { side.extra = { ...side.extra, [key]: !side.extra[key] }; bump(); }
 function toggleState(b) { const n = new Set(side.states); if (n.has(b)) n.delete(b); else n.add(b); side.states = n; persist(); bump(); }
@@ -531,8 +528,7 @@ function FilterBar({ counts, kinds, rows }) {
   const filter = useSide((st) => st.filter);
   const selecting = useSide((st) => st.selecting);
   const any = states.size || kind || filter;
-  const heads = rows.filter((r) => r.type === 'ws');
-  const allFolded = heads.length > 0 && heads.every((r) => !r.open);
+  const heads = rows.filter((r) => r.type === 'ws' || (r.type === 'group' && !r.none));
   return (
     <div className="mt-sb2-chips" data-role="sidebar-chips">
       {BUCKETS.map((b) => (counts[b] > 0 || states.has(b)) && <button key={b} className={`mt-sb2-chip b-${b}${states.has(b) ? ' on' : ''}`} data-action="state-chip" data-bucket={b} onClick={() => toggleState(b)}>{t(`sb2.st_${b}`)} <span>{counts[b]}</span></button>)}
@@ -544,7 +540,9 @@ function FilterBar({ counts, kinds, rows }) {
       )}
       {any ? <button className="mt-sb2-chip clear" data-action="clear-filters" onClick={clearFilters}>{t('sb2.clear')}</button> : null}
       <span className="mt-sb2-tools">
-        <button className="mt-sb2-tool" title={allFolded ? t('sb2.unfoldAll') : t('sb2.foldAll')} aria-label={allFolded ? t('sb2.unfoldAll') : t('sb2.foldAll')} data-action={allFolded ? 'unfold-all' : 'fold-all'} onClick={() => foldAll(!allFolded)}><Icon name={allFolded ? 'unfoldAll' : 'foldAll'} /></button>
+        {/* P302: 모두 접기·모두 열기 두 단추(폴더와 워크스페이스 전부) */}
+        <button className="mt-sb2-tool" title={t('sb2.foldAll')} aria-label={t('sb2.foldAll')} data-action="fold-all" disabled={!heads.length} onClick={() => foldAll(true)}><Icon name="foldAll" /></button>
+        <button className="mt-sb2-tool" title={t('sb2.unfoldAll')} aria-label={t('sb2.unfoldAll')} data-action="unfold-all" disabled={!heads.length} onClick={() => foldAll(false)}><Icon name="unfoldAll" /></button>
         <button className="mt-sb2-tool" title={t('sbGroups.newTitle')} data-action="group-new" onClick={() => newGroup()}><Icon name="plus" /></button>
         <button className={`mt-sb2-tool text${selecting ? ' on' : ''}`} title={t('sbRemove.selectTitle')} data-action="select-mode" onClick={() => setSelecting(!selecting)}>{t('sbRemove.select')}</button>
       </span>

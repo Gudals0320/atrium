@@ -323,7 +323,7 @@ export default {
     connLinks: { one: '{n} link between sessions (drag a node handle onto another node to link)', other: '{n} links between sessions (drag a node handle onto another node to link)' },
     backendState: 'Backend {state}',
     terminalDown: 'terminal down',
-    sessions: { one: 'session', other: 'sessions' },
+    sessions: 'Sessions',
     terminalStart: 'Start terminal server',
     terminalIncompatible: 'herdr-core not supported',
     resSessions: { one: '{n} session, pane processes total {mb}', other: '{n} sessions, pane processes total {mb}' },
@@ -1316,8 +1316,8 @@ export default {
     kindAll: 'All kinds',
     clear: 'Clear',
     noMatch: 'Nothing matches the filter',
-    foldAll: 'Fold all workspaces',
-    unfoldAll: 'Unfold all workspaces',
+    foldAll: 'Collapse all',
+    unfoldAll: 'Expand all',
     resize: 'Drag to resize. Double-click for the default width',
   },
   // P44: virtual workspace groups (exist only on the Atrium board, not on disk)
@@ -2874,4 +2874,6 @@ export default {
     listNote: 'Branches running inside the harness. They are not board sessions, so you cannot select them or message them.',
     state: { pending: 'Waiting', running: 'Running', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' },
   },
+  // P302: top-left working pill
+  p302: { working: 'Working', workingEmpty: 'No sessions are working' },
 };

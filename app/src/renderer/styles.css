@@ -2804,3 +2804,10 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-ta-card .c2 .mt-prog-chip.map { margin-left: 8px; flex: none; }
 .mt-prog-chip.tile { margin-left: 6px; height: auto; padding: 0 .4em; border-radius: .6em; font-size: .72em; line-height: 1.4; cursor: inherit; }
 .mt-ta-full .c2 .cmodel { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* P300: 칩이 있으면 모델 이름이 먼저 줄어든다 */
+
+/* P302: 사이드바 단추는 창(사이드바가 열리면 판 칸) 왼쪽 끝에 붙은 탭이다. 그 오른쪽 DEV 표·알약도 함께 당겨진다(topFit은 잰 offsetLeft를 쓴다) */
+.mt-cluster.tl { left: 0; }
+.mt-cluster.tl > .mt-cp.round[data-action="sidebar"] { width: calc(var(--chrome-h) + 3px); padding: 0 0 0 1px; border-left: 0; border-radius: 0 calc(var(--chrome-h) / 2) calc(var(--chrome-h) / 2) 0; }
+/* P302: 작업 중 알약(세션 · 작업 중 · 작업 완료 · 내 몫 · 응답 필요 · 문제) */
+.mt-cp.working.has { color: var(--st-working); }
+.mt-chip.working { border-left-color: var(--st-working); }

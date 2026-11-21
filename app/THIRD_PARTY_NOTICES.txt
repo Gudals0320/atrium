@@ -1,5 +1,5 @@
 Third-party notices for the Atrium window (app/). The fonts below are bundled under the SIL Open Font License 1.1.
-Claude, Codex, DeepSeek, Grok and Pi names and logos are trademarks of their owners; Atrium uses them only to label
+Claude, Codex, DeepSeek, Grok, Pi and Hermes (oh-my-hermes, MIT) names and logos are trademarks of their owners; Atrium uses them only to label
 session kinds and is not affiliated with or endorsed by them. The rest of this file is in Korean.
 
 Atrium 창(app/)이 함께 싣는 제삼자 글꼴과 그 라이선스
@@ -149,3 +149,31 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 7. Codex, Grok, Pi 로고 (그 종류 세션의 종류 아이콘)
    파일: app/src/renderer/assets/kinds/codex.png, grok.png, pi.png(사용자가 준 로고를 어두운 판에 맞게 바탕 투명, 128px로 다듬음)
    Codex는 OpenAI, Grok은 xAI, Pi는 그 프로젝트 소유자의 상표다. 이 앱은 그 세션을 가리키는 표시로만 쓴다.
+
+8. Hermes 아이콘 (Hermes 세션의 종류 아이콘, P302)
+   파일: app/src/renderer/assets/kinds/hermes.png(받은 그대로, 128×128)
+   출처: oh-my-hermes(OMH) 앱 아이콘 https://github.com/rlaope/oh-my-hermes
+         원본 경로 apps/omher/src-tauri/icons/128x128.png, 커밋 rlaope/oh-my-hermes@9da4814
+   라이선스 MIT. 이 앱은 Hermes(OMH)로 도는 세션을 가리키는 표시로만 쓴다.
+
+   MIT License
+
+   Copyright (c) 2026 oh-my-hermes contributors
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.

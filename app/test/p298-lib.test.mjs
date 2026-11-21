@@ -7,9 +7,9 @@ import { fallbackDefault, launcherFallback, fallbackValue, orchBody, launcherOrc
 
 const H = [{ id: 'claude', label: 'Claude Code', orchDefault: false, fallbackDefault: null }, { id: 'hermes', label: 'Hermes', orchDefault: true, fallbackDefault: 'last_answer' }];
 
-test('P298 종류: hermes는 글자 기호 H(로고 그림 없음), 아이콘·하네스 목록에 있다', () => {
+test('P298 종류: hermes는 아이콘·하네스 목록에 있다(P302부터 로고는 OMH 아이콘)', () => {
   assert.equal(kindOf('hermes'), KINDS.hermes);
-  assert.equal(KINDS.hermes.mark, 'H'); assert.equal(KINDS.hermes.logo, null); assert.equal(KINDS.hermes.label, 'Hermes');
+  assert.equal(KINDS.hermes.mark, 'H'); assert.equal(KINDS.hermes.logo, 'assets/kinds/hermes.png'); assert.equal(KINDS.hermes.label, 'Hermes');
   assert.ok(ICONS.includes('hermes')); assert.ok(AGENT_HARNESSES.includes('hermes'));
   assert.equal(harnessName(H, 'hermes'), 'Hermes'); assert.equal(harnessName([], 'hermes'), 'Hermes');
   assert.ok(harnessOptions([], []).includes('hermes'));

@@ -1316,8 +1316,8 @@ export default {
     kindAll: '모든 종류',
     clear: '지우기',
     noMatch: '조건에 맞는 항목이 없습니다.',
-    foldAll: '프로젝트 모두 접기',
-    unfoldAll: '프로젝트 모두 펼치기',
+    foldAll: '모두 접기',
+    unfoldAll: '모두 열기',
     resize: '드래그해서 너비를 조절합니다. 더블 클릭하면 기본 너비로 되돌립니다.',
   },
   // P44: 프로젝트 가상 그룹(Atrium 보드에만 있고 디스크 폴더와는 상관없음)
@@ -2878,4 +2878,6 @@ export default {
     listNote: '하네스 안에서 도는 갈래입니다. 보드 세션이 아니라 고르거나 메시지를 보낼 수 없습니다.',
     state: { pending: '기다림', running: '도는 중', done: '끝', failed: '실패', cancelled: '취소' },
   },
+  // P302: 위 왼쪽 작업 중 알약
+  p302: { working: '작업 중', workingEmpty: '작업 중인 세션이 없습니다.' },
 };

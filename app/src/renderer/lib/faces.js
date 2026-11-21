@@ -137,7 +137,9 @@ export function inboxOf(sessions) {
   const needsYou = sessions.filter((s) => s.state === 'waiting' || s.state === 'trust_wait').sort((a, b) => askSince(a) - askSince(b));
   const review = sessions.filter((s) => s.unseen && s.state !== 'waiting' && s.state !== 'trust_wait').sort((a, b) => ((a.turn && a.turn.endedAt) || 0) - ((b.turn && b.turn.endedAt) || 0));
   const problems = sessions.filter((s) => s.state === 'error' || (s.state === 'exited' && s.exit && s.exit.kind !== 'normal' && s.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다
-  return { needsYou, review, problems };
+  // P302: 작업 중(사이드바 작업 중 묶음과 같다: working, shell_running, starting). 최근에 움직인 것이 먼저
+  const working = sessions.filter((s) => s.state === 'working' || s.state === 'shell_running' || s.state === 'starting').sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+  return { needsYou, review, problems, working };
 }
 
 export function nextTarget(order, currentId) {
