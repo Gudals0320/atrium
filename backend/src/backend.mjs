@@ -24,7 +24,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted } from './screen.mjs';
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted, hermesReasoningShown } from './screen.mjs'; // P299: hermesReasoningShown
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -50,7 +50,7 @@ import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.
 import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
 import { humanPrompt } from './decisions.mjs'; // P284: 터미널에 직접 친 글
 import { orchOf, orchPromptLines } from './orchestration.mjs'; // P296: 자체 오케스트레이션
-import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf, removeWrapperDir } from './harness.mjs';
+import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf, removeWrapperDir, hermesReasoningOf, reasoningIn } from './harness.mjs'; // P299: Hermes 노력 수준
 import { hermesHomeOf, hermesSessionOf, hermesLastAnswer, hermesUsageOf, hermesBusyOf, hermesProgressOf, omhHomeOf } from './hermes.mjs'; // P298: Hermes(+OMH) state.db 읽기 전용
 import { registerInnerReader } from './inner-work.mjs'; // P298: Hermes 바쁨 읽개
 import { registerProgressReader, ProgressWatcher } from './inner-progress.mjs'; // P300: 안 진행 읽개와 감시
@@ -536,7 +536,7 @@ export class Backend {
     const ds = deriveState(s.rt), st = ds.state;
     // 깨우는 중에는 준비된 뒤 잠깐 더 기다린다(sleep.mjs WAKE_SETTLE_MS: 입력 칸이 Enter를 받기 전에 보내면 제출되지 않는다)
     const gated = this.branch && this.branch.holds(sid); // P36: 신뢰 관문을 지나 claude -w로 뜰 때까지 보내지 않는다
-    const state = sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : st;
+    const state = sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : s._readyInput && st === 'ready' ? 'starting' : st; // P299: 준비된 뒤 넣을 글(Hermes /reasoning)을 넣는 동안은 보내지 않는다
     // P240: 턴은 끝났고 뒤 일만 돈다(bgOnlyOf). 전달은 쉬는 세션처럼 보낸다. 판의 상태(working)와 뒤 일 표시는 그대로
     const bg = state === 'working' ? (this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !s.rt.sleep ? backgroundList(s.rt.bg, null) : null) : null;
     const bgOnly = state === 'working' && bgOnlyOf(s.rt, ds, bg, { kind: s.kind || 'claude', hooked: this.hooked(s) });
@@ -1126,7 +1126,7 @@ export class Backend {
     const hsid = resume ? this.harnessSessionIdOf(s) : null;
     const rm = resume && (s.kind === 'pi' || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
     const orchP = s.orch ? this.orchPrompt(s) : null; // P296: 오케스트레이션 세션은 그 세션의 안내문(허용 동사만)
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: plan.args || [], instructions: orchP ? { file: orchP.file, text: orchP.text } : hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), wrapper: hf.binDir ? { node: process.execPath, script: path.join(hf.binDir, 'lib', 'bin', 'atrium-child.mjs') } : null, forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : plan.effort ? { effort: plan.effort } : {}), /* P299: Hermes 띄운 노력 수준 */ launcherArgs: plan.args || [], instructions: orchP ? { file: orchP.file, text: orchP.text } : hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), wrapper: hf.binDir ? { node: process.execPath, script: path.join(hf.binDir, 'lib', 'bin', 'atrium-child.mjs') } : null, forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1138,8 +1138,41 @@ export class Backend {
     s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now(), firstLaunchedAt: (s.harnessPlan || {}).firstLaunchedAt || Date.now() }; // P133: firstLaunchedAt(처음 띄운 때, 대화 ID 배우기)
     this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
     if (why !== 'start') { s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.term.launchPending = st.agent ? st.agent.launchPending : true; }
-    this.store.addEvent(s.sessionId, why === 'start' ? 'harness_started' : 'recovered_by_board', { plan: why, resume, resumed: hl.resumed, harnessSessionId: hl.harnessSessionId, argv: [...hl.command, ...hl.args], env: Object.keys(hl.env) });
+    this.store.addEvent(s.sessionId, why === 'start' ? 'harness_started' : 'recovered_by_board', { plan: why, resume, resumed: hl.resumed, harnessSessionId: hl.harnessSessionId, argv: [...hl.command, ...hl.args], env: Object.keys(hl.env), ...(hl.readyInput ? { readyInput: hl.readyInput } : {}) });
+    // P299: 준비된 뒤 넣을 글(Hermes /reasoning <값>). 넣을 때까지 전달을 붙잡는다(deliveryView starting). 판 기록에 남기지 않는다(다시 켜면 다시 띄울 때 다시 정한다)
+    if (hl.readyInput) { const setup = { input: hl.readyInput, reasoning: hl.reasoning, at: Date.now() }; s._readyInput = setup; this.typeReadyInput(s, setup).catch((e) => { if (s._readyInput === setup) s._readyInput = null; this.log('ready input error', e.message); }); }
     return { ...st, resumed: hl.resumed };
+  }
+  // P299: Hermes가 준비되면(ready, 빈 입력 칸) 그 글을 치고 Enter, 확인 줄(reasoning: <값>)을 기다린다. 끝나면(되든 안 되든) 전달을 푼다
+  async typeReadyInput(s, setup) {
+    const t0 = Date.now(), limit = this.cfg.readyInputWaitMs || 90000, step = this.cfg.readyInputStepMs || 500;
+    const done = (ok, why = null) => {
+      if (s._readyInput === setup) s._readyInput = null;
+      try { this.store.addEvent(s.sessionId, 'ready_input', { input: setup.input, ok, ...(why ? { why } : {}) }); } catch {}
+      if (!ok) this.log(`ready input not confirmed: ${s.name} ${setup.input} (${why})`);
+      if (this.queue && typeof this.queue.poke === 'function') this.queue.poke(s.sessionId);
+      if (this.queue && typeof this.queue.pump === 'function') setImmediate(() => this.queue.pump());
+      return ok;
+    };
+    while (Date.now() - t0 < limit) {
+      if (!this.sessions.has(s.sessionId) || s._readyInput !== setup) return false;
+      const st = deriveState(s.rt).state;
+      if (['exited', 'error', 'closed'].includes(st)) return done(false, st);
+      if (st === 'ready' && s.paneId) {
+        const scr = await this.adapter.readScreen(s.paneId, { source: 'visible' }).catch(() => '');
+        const box = hermesInputBox(scr);
+        if (box.found && !box.text) {
+          await this.adapter.sendText(s.paneId, setup.input); await sleep(300); await this.adapter.paneKeys(s.paneId, ['enter']);
+          for (const t1 = Date.now(); Date.now() - t1 < (this.cfg.readyInputConfirmMs || 6000); await sleep(250)) {
+            const sc = await this.adapter.readScreen(s.paneId, { source: 'visible' }).catch(() => '');
+            if (hermesReasoningShown(sc, setup.reasoning)) return done(true);
+          }
+          return done(false, 'no confirmation');
+        }
+      }
+      await sleep(step);
+    }
+    return done(false, 'timeout');
   }
   // 그 패널의 하네스를 끈다(ctrl+c 두 번, pi는 ctrl+d도). 꺼질 때까지 패널을 본다
   async stopHarnessAgent(s, steps = []) {
@@ -1566,7 +1599,12 @@ export class Backend {
       let permissionMode = claude ? plan.permissionMode || 'manual' : p.permissionMode || plan.permissionMode || 'manual'; // P192: 승인 칸이 있는 하네스(AGY)는 호출자의 승인 방식
       if (!PERMISSION_MODES.has(permissionMode)) throw apiError('bad_request', `승인 방식: ${permissionMode}`);
       const model = shell ? null : plan.model || null; // P115: Claude Code 밖 하네스도 모델을 기록한다(어댑터가 그 하네스 모양으로 넘긴다)
-      const effort = claude ? plan.effort || null : null;
+      // P299: Hermes는 노력 수준을 세션에 남기고(카드·맵·atrium me) 어댑터가 --reasoning으로 넘긴다(이어 가기에도). 런처 추가 인자의 --reasoning이 이긴다.
+      //   받지 않는 값은 빼고 판 로그에 한 줄
+      const hermesOwn = kind === 'hermes' ? reasoningIn(plan.args || []) : null;
+      const hermesEffort = kind === 'hermes' ? hermesReasoningOf(plan.effort, plan.args || []) : null;
+      if (kind === 'hermes' && (hermesOwn != null || plan.effort) && !hermesEffort) this.log(`hermes effort dropped: ${String(hermesOwn != null ? hermesOwn : plan.effort).slice(0, 20)} (Hermes --reasoning 값이 아니다)`);
+      const effort = claude ? plan.effort || null : kind === 'hermes' ? hermesEffort || null : null;
       const extraArgs = claude ? plan.extraArgs || [] : [];
       // P97: 실행 명령(호출자의 startCommand, 예: mywrap claude). 정하지 않은 하위 세션(atrium child의 물려받기·모델 풀기)은 부모 claude의 실행 명령을 물려받는다
       const parentS = p.parentSessionId ? this.sessions.get(p.parentSessionId) : null;
@@ -1604,7 +1642,7 @@ export class Backend {
         resumeArgv = buildResumeArgv({ claudeCommand: this.cfg.claudeCommand, startCommand, ...launch });
       }
       // P115: 다른 종류는 하네스 어댑터(harness.mjs)가 판의 env·안내문·세션 ID를 더한다. 다시 띄울 값(모델, 호출자 추가 인자, 호출자)은 세션에 남긴다
-      const harnessPlan = harness ? { model, args: (plan.args || []).map(String), launcher: plan.launcher || null, launcherId: plan.launcherId || null, harnessSessionId: null } : null;
+      const harnessPlan = harness ? { model, args: (plan.args || []).map(String), launcher: plan.launcher || null, launcherId: plan.launcherId || null, harnessSessionId: null, ...(hermesEffort && hermesOwn == null ? { effort: hermesEffort } : {}) } : null; // P299: Hermes 노력 수준(런처 인자의 --reasoning은 args에서 읽는다)
 
       this.ensureWorkspace(ws, `spawn ${name}`);
       const rt = newRuntime({ trustPredicted: !!trust.needsTrust, kind, hooked: claude });

@@ -28,8 +28,9 @@ import { EFFORTS } from './settings.mjs';
 import { clip, promptTask } from './text.mjs';
 import { BACKEND_ROOT, terminalSessionEnv } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs, fillBoardHooks } from './launch.mjs';
-import { harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
+import { HARNESSES, harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
+import { shownModel } from './model-now.mjs'; // P299: atrium me의 모델·노력 수준
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192
 import { buildCatalog, resolveModel, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
 import { takenNames, shownName } from './session-label.mjs'; // P66
@@ -130,6 +131,8 @@ export function withoutModelArgs(args = []) {
 }
 // 다른 종류 하위 세션의 띄울 값. route: routeOf의 값, lists: 호출자 목록 { items, favorites }
 // P115: route.type 'inherit-harness'(다른 종류 부모가 종류를 주지 않고 부름)는 부모의 하네스 값(호출자, 모델, 추가 인자)을 그대로 물려받는다. 승인 인자는 옮기지 않는다(이미 그 인자에 있다)
+// P299: atrium me에 보일 모델·노력 수준(하네스가 지금 쓰는 값, 모르면 띄운 값. Hermes는 띄운 --reasoning)
+const modelEffortOf = (x) => { const m = shownModel({ model: x.model, effort: x.effort }, x.rt && x.rt.modelNow); return { model: m.model || null, effort: m.effort || null }; };
 export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) {
   const kind = route.kind;
   const inherit = route.type === 'inherit-harness';
@@ -785,7 +788,7 @@ export class Branch {
     return {
       name, sessionId: child.sessionId, agentName: child.agentName, paneId: child.paneId, kind, role, depth,
       relation: head ? null : relation, relationText: head ? null : peer ? `동료(@${name}는 너의 하위 워커가 아니다. 결과를 보내오지 않고 한 일은 보드의 동료 소식에 남는다: atrium news ${name})` : `하위 워커(@${name}는 너의 워커다. 끝나면 너에게 보고한다)`, /* P156 */ cwd: cwd.split(path.sep).join('/'), workspaceKey: ws.key, worktree, model: child.model || model, effort: child.effort || effort || (effortPlan && effortPlan.applied ? otherEffort : null),
-      effortNote: effortPlan && effortPlan.ignored ? effortIgnoredLine(kind, otherEffort) : null, // P208: 노력 수준을 받지 않는 종류
+      effortNote: effortPlan && effortPlan.ignored ? effortIgnoredLine(kind, effortPlan.why === 'launcherArgs' ? effortPlan.effort : otherEffort, effortPlan.why || null) : null, // P299: Hermes 까닭 // P208: 노력 수준을 받지 않는 종류
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
       harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...(other.model ? ['-m', other.model] : []), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
@@ -815,7 +818,9 @@ export class Branch {
     const cat = await this.catalog();
     const row = (e) => ({ source: e.source, harness: e.harness, kind: e.kind, launcher: e.launcher, model: e.model || null, label: e.label || null, aliases: e.aliases || [], gateway: e.gateway, connection: e.connection || null, host: e.host || null, variants: e.variants, text: describeEntry(e), command: e.command });
     const inherit = await this.routeOf(parent, {}).catch(() => null);
-    return { entries: cat.entries.map(row), gateways: cat.gateways, parent: { name: parent.name, model: parent.model || null, effort: parent.effort || null, gateway: inherit && inherit.gateway ? inherit.gateway : null } };
+    // P299: 모델 목록을 판이 모르는 하네스(Hermes)는 안내 한 줄(이름을 그대로 -m으로, 노력 수준 값)
+    const freeModels = Object.values(HARNESSES).filter((h) => h.freeModel).map((h) => ({ harness: h.id, kind: h.kind, label: h.label, efforts: (h.efforts || []).filter(Boolean), command: `atrium child <이름> --kind ${h.kind} --model <모델 이름>${h.efforts ? ' [--effort <노력>]' : ''}` }));
+    return { entries: cat.entries.map(row), gateways: cat.gateways, freeModels, parent: { name: parent.name, model: parent.model || null, effort: parent.effort || null, gateway: inherit && inherit.gateway ? inherit.gateway : null } };
   }
   // 풀지 못한 이름의 오류(후보와 고르는 명령을 글에 넣는다)
   modelError(query, r, cat) {
@@ -839,6 +844,9 @@ export class Branch {
     if (o.model) {
       const cat = await this.catalog();
       const r = resolveModel(String(o.model), cat, { kind: o.kind || null });
+      // P299: 모델 목록을 판이 모르는 하네스(Hermes)는 --kind와 함께 준 이름을 그대로 넘긴다(-m)
+      const fh = o.kind ? harnessOf(String(o.kind)) : null;
+      if (!r.ok && fh && fh.freeModel && isModelName(String(o.model))) { const m = String(o.model); return { type: 'model', kind: fh.kind, model: m, args: ['-m', m], gateway: null, resolved: { from: m, how: 'as-is', source: 'harness', to: `${fh.label} 모델 ${m}(이름 그대로 -m)`, launcher: null, model: m, gateway: null, command: `atrium child <이름> --kind ${fh.kind} --model ${m}` } }; }
       if (!r.ok) throw this.modelError(String(o.model), r, cat);
       const e = r.entry;
       const resolved = { from: String(o.model), how: r.how, source: e.source, to: describeEntry(e), launcher: e.launcher || null, model: e.model || null, gateway: e.gateway || null, command: e.command };
@@ -1221,7 +1229,7 @@ export class Branch {
     const wsName = (k) => { if (!k) return null; try { return workspaceNames(b.store.workspaces()).get(k) || k; } catch { return k; } };
     const g = s.git || null;
     const me = { name: shownName(s), agentName: s.agentName, paneId: s.paneId || null, kind: s.kind || 'claude', workspace: wsName(s.workspaceKey), cwd: String((s.rt && s.rt.cwd) || s.cwd || '').split(path.sep).join('/'),
-      worktree: (info && info.worktree) || (g && g.isWorktree && g.root ? path.basename(g.root) : null), branch: g && g.branch ? g.branch : null, state: stateOf(s) };
+      worktree: (info && info.worktree) || (g && g.isWorktree && g.root ? path.basename(g.root) : null), branch: g && g.branch ? g.branch : null, state: stateOf(s), ...modelEffortOf(s) }; // P299: 모델·노력 수준
     // P156: 상위(일 부모)·동료·하위(일 자식)·독립으로 나눈다. 계보(누가 띄웠나)는 lineage에 남긴다
     const idx = this.relIndex();
     const pairLink = (x, y) => links.find((l) => l.from === x && l.to === y) || links.find((l) => l.from === y && l.to === x) || null;
@@ -1237,7 +1245,7 @@ export class Branch {
     }
     const kids = this.workChildren(s.sessionId, idx).sort((x, y) => (this.orderOf(x.sessionId) || 0) - (this.orderOf(y.sessionId) || 0) || x.createdAt - y.createdAt);
     const kidIds = new Set(kids.map((x) => x.sessionId));
-    const children = kids.map((x) => { const i = this.info.get(x.sessionId) || {}; const own = x.parentSessionId === s.sessionId; return { name: shownName(x), agentName: x.agentName, kind: x.kind || 'claude', paneId: x.paneId || null, role: (own && i.role) || ((links.find((l) => l.from === s.sessionId && l.to === x.sessionId) || {}).role) || null, order: own ? this.orderOf(x.sessionId) : null, state: stateOf(x), worktree: i.worktree || null, last: lastOf(links.find((l) => l.from === s.sessionId && l.to === x.sessionId)), source: srcOf(s.sessionId, x.sessionId) }; });
+    const children = kids.map((x) => { const i = this.info.get(x.sessionId) || {}; const own = x.parentSessionId === s.sessionId; return { name: shownName(x), agentName: x.agentName, kind: x.kind || 'claude', paneId: x.paneId || null, role: (own && i.role) || ((links.find((l) => l.from === s.sessionId && l.to === x.sessionId) || {}).role) || null, order: own ? this.orderOf(x.sessionId) : null, state: stateOf(x), worktree: i.worktree || null, last: lastOf(links.find((l) => l.from === s.sessionId && l.to === x.sessionId)), source: srcOf(s.sessionId, x.sessionId), ...modelEffortOf(x) }; });
     // 동료·독립(명시한 관계). spawnedBy: 이 세션을 띄운 쪽이 상대인지(계보 부모), spawned: 내가 띄운 세션인지
     const sideOf = (list) => list.map((r) => b.sessions.get(r.id)).filter(Boolean).map((x) => ({ name: shownName(x), agentName: x.agentName, kind: x.kind || 'claude', paneId: x.paneId || null, state: stateOf(x), source: srcOf(s.sessionId, x.sessionId), spawnedBy: s.parentSessionId === x.sessionId, spawned: x.parentSessionId === s.sessionId, last: lastOf(pairLink(s.sessionId, x.sessionId)) }));
     const peers = sideOf(idx.peersOf(s.sessionId));

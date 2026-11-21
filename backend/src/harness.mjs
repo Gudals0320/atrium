@@ -21,6 +21,42 @@ export const HARNESS_PROMPT = [
   '사람에게 답을 받아야 하는 질문(결정)으로 턴을 끝낼 때는 글로 묻고 그 질문을 `atrium ask <따옴표로 묶은 질문>`로 남긴다(보기가 있으면 `--option <보기>`. 권한·하네스 질문은 아니다. 하위 워커는 부모에게 묻는다. 사람에게 넘기는 일·명령·확인·미룬 일은 `atrium todo`로. 기다리지 않는 질문·확인은 `--no-wait`).', // P284: 결정 카드(줄바꿈·큰따옴표 없이). P286: 턴을 끝낼 때마다로 더 분명하게. P292: 사용자 몫(atrium todo) 몇 낱말. P295: --no-wait 몇 낱말
 ].join(' ');
 
+// P299: Hermes 노력 수준(값은 hermes --help의 --reasoning LEVEL). 판의 노력 값(low·medium·high·xhigh·max)은 이름이 같고,
+//   흔한 다른 이름(off, min, x-high 등)은 맞춰 바꾼다. 받지 않는 값은 null(빼고 판 로그에 한 줄은 부르는 쪽이 쓴다).
+//   hermes --tui는 --reasoning을 받지 않는다(Hermes 0.23.3: "Unsupported --tui options: --reasoning", 종료 코드 2, 세션을 만들지 않음).
+//   그래서 판은 인자로 넘기지 않고, TUI가 준비되면 입력 칸에 /reasoning <값>(그 세션만, --global이 아니면 config.yaml을 쓰지 않는다)을 한 번 넣는다.
+//   값은 Hermes 세션 기록(model_config)에 남아 --resume 때 되살아나지만, 판은 이어 갈 때도 다시 넣는다(같은 값이라 해가 없다)
+export const HERMES_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+const HERMES_EFFORT_ALIASES = { off: 'none', min: 'minimal', 'x-high': 'xhigh', 'extra-high': 'xhigh', extra_high: 'xhigh', x_high: 'xhigh' };
+export function hermesEffortOf(e) {
+  const v = String(e || '').trim().toLowerCase();
+  if (!v) return null;
+  const m = HERMES_EFFORT_ALIASES[v] || v;
+  return HERMES_EFFORTS.includes(m) ? m : null;
+}
+// 인자에 든 --reasoning 값(--reasoning X, --reasoning=X). 없으면 null
+export function reasoningIn(args = []) {
+  const a = (args || []).map(String);
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] === '--reasoning') return a[i + 1] != null ? a[i + 1] : '';
+    if (a[i].startsWith('--reasoning=')) return a[i].slice('--reasoning='.length);
+  }
+  return null;
+}
+// 인자에서 --reasoning(값 포함)을 뺀다(--tui가 받지 않아 넘기면 Hermes가 뜨지 않는다)
+export function withoutReasoning(args = []) {
+  const a = (args || []).map(String), out = [];
+  for (let i = 0; i < a.length; i++) { if (a[i] === '--reasoning') { i++; continue; } if (a[i].startsWith('--reasoning=')) continue; out.push(a[i]); }
+  return out;
+}
+// 띄운 뒤 넣을 노력 수준. 호출자 추가 인자에 --reasoning이 있으면 그 값을 따른다(판 값보다 먼저). 받지 않는 값이면 null
+export function hermesReasoningOf(effort, launcherArgs = []) {
+  const own = reasoningIn(launcherArgs);
+  return hermesEffortOf(own != null ? own : effort);
+}
+// 그 노력 수준을 TUI에 넣을 글(입력 칸에 치고 Enter)
+export const hermesReasoningInput = (e) => (e ? `/reasoning ${e}` : null);
+
 const hexOf = (id) => String(id || '').toLowerCase().replace(/[^0-9a-f]/g, '');
 // 하네스 어댑터. build(ctx) → { args(명령 낱말 뒤), env, files: [{ file, text }], harnessSessionId, resumed }
 // ctx: { sessionId(판 세션 ID), resume, harnessSessionId(알면), model, launcherArgs, instructions: { file, text }, filesDir }
@@ -132,8 +168,10 @@ export const ADAPTERS = {
     modelArgs: (m) => ['-m', m],
     build(ctx) {
       const resumed = !!(ctx.resume && ctx.harnessSessionId);
-      const args = ['--tui', ...(resumed ? ['--resume', ctx.harnessSessionId] : []), ...(ctx.model ? ['-m', ctx.model] : []), ...(ctx.launcherArgs || [])];
-      return { args, env: ctx.instructions ? { HERMES_EPHEMERAL_SYSTEM_PROMPT: ctx.instructions.text } : {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
+      // P299: 노력 수준(ctx.effort, 호출자 추가 인자의 --reasoning이 이긴다)은 인자가 아니라 준비된 뒤 넣을 글(readyInput: /reasoning <값>)로. 이어 가기에도
+      const reasoning = hermesReasoningOf(ctx.effort, ctx.launcherArgs);
+      const args = ['--tui', ...(resumed ? ['--resume', ctx.harnessSessionId] : []), ...(ctx.model ? ['-m', ctx.model] : []), ...withoutReasoning(ctx.launcherArgs)];
+      return { ...(reasoning ? { readyInput: hermesReasoningInput(reasoning), reasoning } : {}), args, env: ctx.instructions ? { HERMES_EPHEMERAL_SYSTEM_PROMPT: ctx.instructions.text } : {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
     isBoardLine: (argv) => argv.includes('--tui'),
   },
@@ -236,7 +274,7 @@ export function harnessLaunch(o) {
   // P298: 세션별 atrium 감싸개(pathWrapper). o.wrapper = { node, script }(판의 atrium-child)
   const wrapDir = a.pathWrapper && o.wrapper && o.filesDir && o.sessionId ? wrapperDirOf(o.filesDir, o.kind, o.sessionId) : null;
   const files = wrapDir ? [...r.files, ...wrapperFiles({ dir: wrapDir, env: o.boardEnv || {}, node: o.wrapper.node, script: o.wrapper.script })] : r.files;
-  return { command, args: r.args, env: { ...(o.boardEnv || {}), ...r.env }, pathFirst: [...(wrapDir ? [wrapDir] : []), ...(o.binDir ? [o.binDir] : [])], files, harnessSessionId: r.harnessSessionId, resumed: r.resumed };
+  return { command, args: r.args, env: { ...(o.boardEnv || {}), ...r.env }, pathFirst: [...(wrapDir ? [wrapDir] : []), ...(o.binDir ? [o.binDir] : [])], files, harnessSessionId: r.harnessSessionId, resumed: r.resumed, ...(r.readyInput ? { readyInput: r.readyInput, reasoning: r.reasoning } : {}) }; // P299: 준비된 뒤 넣을 글(Hermes /reasoning)
 }
 export function writeLaunchFiles(files = []) {
   for (const f of files) { fs.mkdirSync(path.dirname(f.file), { recursive: true }); fs.writeFileSync(f.file, f.text); }

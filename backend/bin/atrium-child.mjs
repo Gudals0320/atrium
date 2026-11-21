@@ -50,7 +50,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       누가 띄웠는지(계보)는 둘 다 남는다. 보드가 첫 요청 앞에 관계 한 줄을 붙이고, 응답 첫 줄에 관계를 쓴다.
       --model은 말로 한 이름도 받는다("glm flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
       --launcher는 그 런처(도구 모음의 단추)의 하네스·모델·옵션·환경 변수 그대로 띄운다.
-      --effort는 Codex면 -c model_reasoning_effort로 옮겨 런처 인자의 같은 값을 덮는다(low, medium, high, xhigh 등). 노력 수준을 받지 않는 종류면 무시했다고 알린다.
+      --effort는 Codex면 -c model_reasoning_effort로 옮겨 런처 인자의 같은 값을 덮는다(low, medium, high, xhigh 등). Hermes면 준비된 뒤 보드가 /reasoning <값>을 넣는다(--tui가 --reasoning을 받지 않는다. 런처 인자의 --reasoning이 있으면 그 값을 따른다). 노력 수준을 받지 않는 종류면 무시했다고 알린다.
       --kind codex(다른 종류)는 보드 레일의 그 종류 런처 설정(추가 인자·모델, --model이 모델만 덮는다)으로 띄우고, 너의 승인 방식을 그 종류의 승인 인자로 옮긴다.
       준비될 때까지 기다린 뒤 워커 이름과 일 맡기기·읽기 명령을 돌려준다. --prompt로 맡겼으면 턴을 끝낸다(보고는 보드가 가져다준다). 수와 깊이에 상한은 없다.
       --worktree는 claude -w로 워크트리를 만든다. 신뢰를 받지 않은 저장소면 신뢰 질문에서 멈추고(needs_trust) 사람에게 할 한 문장을 돌려준다.
@@ -238,7 +238,7 @@ async function main() {
   if (cmd === 'me') return printMe(x);
   if (cmd === 'relate') return printRelate(x);
   if (cmd === 'child') {
-    if (x.resolved) say(`모델 "${x.resolved.from}" → ${x.resolved.to} (${{ exact: '정확한 이름', alias: '별칭', loose: '유사 이름 일치' }[x.resolved.how] || x.resolved.how})`);
+    if (x.resolved) say(`모델 "${x.resolved.from}" → ${x.resolved.to} (${{ exact: '정확한 이름', alias: '별칭', loose: '유사 이름 일치', 'as-is': '이름 그대로' }[x.resolved.how] || x.resolved.how})`);
     else if (x.launcher) say(`런처 ${x.launcher}로 실행했습니다.${x.gateway ? `(게이트웨이 경유 ${x.gateway})` : ''}`);
     else if (x.inheritedGateway) say(`너의 게이트웨이(${x.inheritedGateway})와 모델을 물려받았다`);
     if (x.head) say(`헤드로 띄웠다: @${x.name} (종류 ${x.kind}). 너의 워커가 아니다. 첫 요청 뒤 보드가 부모 관계를 ${x.head.detached ? '뗐다' : '뗀다'}. 그 뒤로 일을 시키거나 기다리지 않는다`);
@@ -250,7 +250,7 @@ async function main() {
       const base = H.base === 'bare' ? '런처 없음(맨 명령)' : `런처 ${H.launcher}${H.base === 'rail' ? '(보드 레일의 기본 설정)' : ''}`;
       const appr = { parent: `너의 승인 방식 ${H.parentPermissionMode}을 옮김`, launcher: '런처의 인자', harness: `${x.kind}의 사용자 설정(너의 승인 방식 ${H.parentPermissionMode}은 옮기지 않음)` }[H.approvalFrom] || '옮기지 않음';
       say(`  폴더 ${x.cwd}${x.model ? ` · 모델 ${x.model}` : ''} · ${base}`);
-      say(`  명령 ${[x.kind, ...H.argv].join(' ')} · 승인: ${appr}${H.effort ? ` · 노력 ${H.effort}(런처 인자의 같은 값을 덮음)` : ''}`); // P208
+      say(`  명령 ${[x.kind, ...H.argv].join(' ')} · 승인: ${appr}${H.effort ? ` · 노력 ${H.effort}${x.kind === 'hermes' ? `(준비되면 보드가 /reasoning ${H.effort}을 넣는다)` : '(런처 인자의 같은 값을 덮음)'}` : ''}`); // P208. P299: Hermes
       say(`  ${x.kind}는 hook이 없다. 보드가 화면으로 끝과 답을 보고, atrium wait가 같은 모양으로 돌려준다`);
     } else say(`  폴더 ${x.cwd}${x.worktree ? ` · 워크트리 ${x.worktree}(claude -w${x.gate ? ', 신뢰를 받은 뒤' : ''})` : ''}${x.model ? ` · 모델 ${x.model}` : ''}${x.effort ? ` · 노력 ${x.effort}` : ''} · 승인 방식 ${x.permissionMode}`);
     if (x.effortNote) say(`  ${x.effortNote}`); // P208: 노력 수준을 받지 않는 종류
@@ -585,7 +585,8 @@ function printMe(x) {
   const last = (l) => (l ? ` · 마지막 지시 ${ago(l.at, x.at)}${l.text ? ` "${l.text}"` : ''}` : '');
   const m = x.me;
   // P116: 이름은 보드의 세션 이름(atrium prompt|wait|read가 받는다). 에이전트 주소·패널은 보이지 않는다(--json에는 남는다)
-  say(`나: @${m.name} (${m.kind}) · 워크스페이스 ${m.workspace || '-'}${m.worktree ? ` · 워크트리 ${m.worktree}` : ''}${m.branch ? ` · 브랜치 ${m.branch}` : ''}`);
+  const me2 = (c) => `${c.model ? ` · 모델 ${c.model}` : ''}${c.effort ? ` · 노력 ${c.effort}` : ''}`; // P299
+  say(`나: @${m.name} (${m.kind})${me2(m)} · 워크스페이스 ${m.workspace || '-'}${m.worktree ? ` · 워크트리 ${m.worktree}` : ''}${m.branch ? ` · 브랜치 ${m.branch}` : ''}`);
   if (x.permissions && x.permissions.allowed) { // P296: 자체 오케스트레이션 세션(하위면 허용 동사가 줄어든다)
     const pv = x.permissions;
     say(`권한: 자체 오케스트레이션 세션${pv.scope === 'sub' ? `, @${pv.parent || '?'}의 하위라 부모하고만 말한다(atrium prompt는 부모에게만)` : '(child·child-kill·child-wait·relate 없음)'}. 쓸 수 있는 명령: ${pv.allowed.map((v) => `atrium ${v}`).join(', ')}${pv.reportFallback === 'last_answer' ? '. 보고를 못 하면 보드가 턴 끝 마지막 답으로 일을 닫는다' : ''}`);
@@ -601,7 +602,7 @@ function printMe(x) {
   if (!x.children.length) say('하위 세션: 없음');
   else {
     say(`하위 세션 ${x.children.length}개:`);
-    for (const c of x.children.slice(0, 10)) say(`  @${c.name} ${c.role || '-'}${c.order ? ` ${c.order}` : ''} · ${kindOf(c)}${c.state}${c.state === 'sleeping' ? '(atrium prompt하면 보드가 깨운다)' : ''}${c.worktree ? ` · 워크트리 ${c.worktree}` : ''}${last(c.last)}`);
+    for (const c of x.children.slice(0, 10)) say(`  @${c.name} ${c.role || '-'}${c.order ? ` ${c.order}` : ''} · ${kindOf(c)}${c.state}${c.state === 'sleeping' ? '(atrium prompt하면 보드가 깨운다)' : ''}${c.worktree ? ` · 워크트리 ${c.worktree}` : ''}${last(c.last)}${me2(c)}`);
     if (x.children.length > 10) say(`  …외 ${x.children.length - 10}개(atrium children)`);
   }
   if (indep.length) say(`독립(서로 보고하거나 맡기지 않는다): ${indep.slice(0, 10).map((c) => `@${c.name} ${kindOf(c)}${c.state}${c.spawnedBy ? '(너를 띄운 세션)' : c.spawned ? '(네가 띄움)' : ''}`).join(', ')}`);
@@ -641,6 +642,10 @@ function printModels(x) {
     say(`${label}의 모델 ${list.length}개${g.host ? `(런처 ${g.host}로 띄운다)` : ''}:`);
     for (const e of list) say(`  ${e.label || e.model}
     ${e.command}`);
+  }
+  for (const f of x.freeModels || []) { // P299: 모델 목록을 판이 모르는 하네스(Hermes)
+    say(`  ${f.label}: 모델 목록은 보드가 모른다. 모델 이름을 그대로 준다(-m)${f.efforts.length ? `. 노력 ${f.efforts.join(', ')}(준비되면 보드가 /reasoning으로 넣는다)` : ''}
+    ${f.command}`);
   }
   say('');
   say('사용자가 모델을 말로 하면(예: "glm flash") --model에 그 말을 그대로 줘도 보드가 이 목록에서 푼다. 여럿이 맞으면 보드가 후보를 돌려준다.');
