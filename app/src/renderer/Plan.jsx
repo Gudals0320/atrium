@@ -125,7 +125,7 @@ function PlanPanel({ p, lane }) {
   const doc = lane.doc;
   const ms = openMs(doc, picked);
   const op = (ops, okText) => planOp(lane.planId, ops).then((r) => { if (okText) toast(okText); return r; }).catch((e) => { fail(t, e); return null; });
-  const by = lane.updatedBy ? '@' + lane.updatedBy : '';
+  const by = !lane.updatedBy ? '' : lane.updatedBy === 'user' ? t('plan.who.user') : '@' + lane.updatedBy; // 사람이 바꿨으면 "사용자"
   return createPortal(
     <div ref={box} className="mt-plan-panel" data-role="plan-panel" data-plan={lane.planId} data-ws={lane.wsKey} data-rev={lane.rev} style={{ left: pos.left, top: pos.top, maxHeight: `min(78vh, ${Math.max(240, window.innerHeight - pos.top - 12)}px)` }} onMouseDown={stop} onWheel={stop}>
       <div className="mt-plan-head">
