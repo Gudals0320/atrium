@@ -174,7 +174,7 @@ function CheckBody({ d, t, busy, setBusy }) {
   };
   return (
     <>
-      <div className="mt-dc-answer">
+      <div className="mt-dc-answer mt-ut-check">
         <input type="text" className="mt-dc-input" data-field="check-note" value={note} maxLength={300} placeholder={t('userTasks.notePh')} disabled={busy} onChange={(e) => setNote(e.target.value)} onKeyDown={stop} />
         <button type="button" className="mt-btn small primary mt-ut-ok" data-action="check-ok" disabled={busy} onClick={() => send(true)}>{t('userTasks.ok')}</button>
         <button type="button" className="mt-btn small mt-ut-fail" data-action="check-fail" disabled={busy} onClick={() => send(false)}>{t('userTasks.fail')}</button>
