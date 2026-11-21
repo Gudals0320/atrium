@@ -15,7 +15,7 @@ import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
 import { bgShow, bgText, bgKindsText } from './lib/bg-work.js'; // P164
-import { orchTag } from './lib/orch.js'; // P296
+import { orchTag, sessionProgress, progressChip, progressRows } from './lib/orch.js'; // P296. P300: 안 진행 칩
 import { STATE_LABEL } from './lib/labels.js';
 import { useT, errText } from './lib/i18n.js';
 import { leadTags } from './lib/cmd-input.js';
@@ -50,6 +50,11 @@ export function BgBadge({ f, role }) { return f.bg ? <span className="mt-bg-badg
 export function BgList({ f, t }) {
   if (!f.bg) return null;
   return <div className="pkbg" data-role="ln-peek-bg"><span className="lb">{t('mmBg.title')}</span>{f.bgKinds}{(f.bg.items || []).map((x, i) => <span key={i} className="it"><BgIcon /><b>{t(`mmBg.kind.${['shell', 'agent'].includes(x.kind) ? x.kind : 'other'}`)}</b>{x.label ? <span className="lbl">{clip(x.label, 120)}</span> : <span className="dim">{t('mmBg.noLabel')}</span>}</span>)}</div>;
+}
+// P300: 미리 보기의 안 진행 갈래 목록(읽기 전용)
+export function ProgList({ f, t, now }) {
+  if (!f.progress) return null;
+  return <div className="pkpg" data-role="ln-peek-progress"><span className="lb">{t('progress.list')}</span>{f.prog.text}{progressRows(f.progress, t, now || Date.now()).map((x, i) => <span key={i} className={`it st-${x.state}`} data-state={x.state}><i /><b>{x.stateText}</b><span className="lbl">{clip(x.name, 80)}</span>{x.dur ? <span className="dim"> · {x.dur}</span> : null}</span>)}</div>;
 }
 const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.git.branch) || null;
 // 상태 색 클래스(시안 st-*): 등급 → 색
@@ -103,7 +108,9 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const relAll = [relText, ...extra].filter(Boolean).join(' · ');
   const bg = bgShow(n, live, tier); // P164: 쉬는 세션에 도는 뒤 일(뒤 셸·뒤 하위 에이전트)
   const orch = orchTag({ orch: (live && live.orch) || n.orch || null }, t); // P296: 자체 오케스트레이션 표
-  return { orch, kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label, bg, bgText: bg ? bgText(bg, t) : null, bgKinds: bg ? bgKindsText(bg, t) : null };
+  const progress = sessionProgress({ orch: (live && live.orch) || null }); // P300: 안 진행(깨어 있는 세션의 요약에만 있다)
+  const prog = progress ? progressChip(progress, t) : null;
+  return { orch, progress, prog, kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label, bg, bgText: bg ? bgText(bg, t) : null, bgKinds: bg ? bgKindsText(bg, t) : null };
 }
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
@@ -114,7 +121,7 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
   const n = b.node;
   const st = ST[tier] || 'ready';
   const cls = `mt-ta-slot st-${st}${f.shell ? ' shell' : ''}${IDLE.has(tier) ? ' idle' : ''}${lead ? ' lead' : ''}${tagged ? ' tagged' : ''}${b.thin ? ' thin' : ''}${b.merger ? ' merger' : ''}${b.merger && b.merger.head && b.merger.idle ? ' merger-idle' : ''}`; // P276: merger 카드
-  const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.bg ? `${f.bgText} (${f.bgKinds})` : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip'), t('mmLine.cardDragTip')].filter(Boolean).join('\n');
+  const tip = [`@${n.name}${f.role ? ` · ${f.role}` : ''}`, `${f.stateText}${f.age ? ` · ${f.age}` : ''}`, [f.harness, f.model].filter(Boolean).join(' · '), f.task ? `${t(`mmTerr.kind.${f.taskKind}`)}: ${f.task}` : null, f.bg ? `${f.bgText} (${f.bgKinds})` : null, f.prog ? f.prog.text : null, f.err, f.relAll, t(f.shell ? 'mmTerr.cardTipShell' : 'mmTerr.cardTip'), t('mmLine.cardDragTip')].filter(Boolean).join('\n');
   const done = tier === 'review';
   return (
     <div className={cls} style={{ left: b.x, top: b.y, width: b.w, height: b.h }} data-role="ta-slot" data-id={id} data-tier={tier} data-ws={b.ws} data-thin={b.thin ? '1' : undefined} data-chip={b.chip ? '1' : undefined} data-case={b.caseId || undefined}>
@@ -126,7 +133,7 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
         {!b.thin && !lite && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}<DecisionMark sessionId={n.sessionId} className="mt-dc-mark map tile" /></span><span className="ts">{b.merger ? <span className="mt-sm-merger-tile" data-role="ta-merger-tile">{t('merger.tag')}</span> : null}{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">
-          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span>{lite ? null : <DecisionMark sessionId={n.sessionId} className="mt-dc-mark map" />}<span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" />{f.orch ? <span className={`mt-orch-tag map${f.orch.busy ? ' busy' : ''}`} data-role="ta-orch" data-busy={f.orch.busy ? '1' : '0'}>{f.orch.text}</span> : null}</span>
+          <span className="c1">{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name">{n.name}</span>{lite ? null : <DecisionMark sessionId={n.sessionId} className="mt-dc-mark map" />}<span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" />{f.orch ? <span className={`mt-orch-tag map${f.orch.busy ? ' busy' : ''}`} data-role="ta-orch" data-busy={f.orch.busy ? '1' : '0'}>{f.orch.text}</span> : null}{f.prog ? <span className={`mt-prog-chip map${f.prog.finished ? ' finished' : ''}${f.prog.failed ? ' failed' : ''}${f.prog.running ? ' running' : ''}`} data-role="ta-progress" data-done={f.progress.done} data-total={f.progress.total} data-finished={f.prog.finished ? '1' : '0'}>{f.prog.text}</span> : null}</span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span>{f.model}</span></> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
@@ -178,6 +185,7 @@ export function Peek({ pv, f, b, live, tier, t, now, folder }) { // P160·P166: 
       {task ? <div className="pkt"><span className="lb">{t(`mmTerr.kind.${f.taskKind}`)}</span>{clip(task, 600)}</div> : null}
       {qs.length ? qs.slice(0, 2).map((q, i) => <div key={i} className="pkq"><span className="lb">{t('mmPeek.asks')}</span>{q.question}{(q.options || []).length ? <span className="opts">{q.options.slice(0, 6).map((o, j) => <span key={j}>{o.label || String(o)}</span>)}</span> : null}</div>) : ask && ask.summary ? <div className="pkq"><span className="lb">{t('mmPeek.asks')}</span>{ask.summary}</div> : null}
       <BgList f={f} t={t} />
+      <ProgList f={f} t={t} now={now} />
       {err ? <div className="pke">{clip(err, 400)}</div> : null}
       {answer ? <div className="pka"><span className="lb">{t('mmPeek.answer')}</span><span className="txt">{clip(answer, 400)}</span></div> : null}
       {data && data.events && data.events.length ? <div className="pkv"><span className="lb">{t('mmPeek.events')}</span>{data.events.slice().reverse().map((e) => <span key={e.id} className="ev">{e.kind}{e.data && e.data.to ? ` → ${STATE_LABEL[e.data.to] || e.data.to}` : e.data && e.data.command ? ` ${clip(e.data.command, 40)}` : ''}<span className="dim"> · {ageText(now - e.t, t)}</span></span>)}</div> : null}

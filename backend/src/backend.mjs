@@ -51,8 +51,9 @@ import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, sta
 import { humanPrompt } from './decisions.mjs'; // P284: 터미널에 직접 친 글
 import { orchOf, orchPromptLines } from './orchestration.mjs'; // P296: 자체 오케스트레이션
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf, removeWrapperDir } from './harness.mjs';
-import { hermesHomeOf, hermesSessionOf, hermesLastAnswer, hermesUsageOf, hermesBusyOf } from './hermes.mjs'; // P298: Hermes(+OMH) state.db 읽기 전용
+import { hermesHomeOf, hermesSessionOf, hermesLastAnswer, hermesUsageOf, hermesBusyOf, hermesProgressOf, omhHomeOf } from './hermes.mjs'; // P298: Hermes(+OMH) state.db 읽기 전용
 import { registerInnerReader } from './inner-work.mjs'; // P298: Hermes 바쁨 읽개
+import { registerProgressReader, ProgressWatcher } from './inner-progress.mjs'; // P300: 안 진행 읽개와 감시
 import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel, waitDshAnswer } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
@@ -227,6 +228,8 @@ export class Backend {
     this.api.handlers['usage.get'] = () => this.usage.get();
     // P298: Hermes의 바쁨 읽개(busy 칸 { reader: 'hermes' }). 그 세션이 띄운 하위 에이전트가 돌거나 턴 임대가 살아 있으면 바쁨
     registerInnerReader('hermes', ({ session }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesBusyOf({ id, home: this.hermesHome() }) : null; });
+    // P300: Hermes의 안 진행 읽개(같은 busy 칸 { reader: 'hermes' }). OMH dag-ulw 실행 기록, 없으면 Hermes 자체 위임(state.db)
+    registerProgressReader('hermes', ({ session, now }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesProgressOf({ id, home: this.hermesHome(), omhHome: omhHomeOf(), now }) : null; });
     // P8: 하위 세션 명령. 플러그인에 일 맡기기 스킬과 atrium 명령을 더하고, 이미 띄운 세션의 설정 파일에 env와 승인 규칙을 더한다
     this.branch = attachBranch(this);
     Object.assign(this.api.handlers, this.branch.handlers);
@@ -316,6 +319,7 @@ export class Backend {
     this.recall = attachRecall(this);
     Object.assign(this.api.handlers, this.recall.handlers);
     this.sleeper = attachSleep(this, { tickMs: cfg.sleepTickMs });
+    this.progress = new ProgressWatcher(this, { pollMs: cfg.progressPollMs ?? undefined }).start(); // P300: 안 진행(바쁠 때만 몇 초 간격)
     Object.assign(this.api.handlers, this.sleeper.handlers);
     this.desktopImport = attachDesktopImport(this);
     Object.assign(this.api.handlers, this.desktopImport.handlers);
@@ -402,6 +406,7 @@ export class Backend {
     if (this.recall) this.recall.stop();
     if (this.worktrees) this.worktrees.stop();
     if (this.sleeper) this.sleeper.stop();
+    if (this.progress) this.progress.stop(); // P300
     if (this.updater) this.updater.stop();
     this.relay.closeAll();
     if (this.voice) this.voice.closeAll(); // P165

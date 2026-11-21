@@ -490,7 +490,8 @@ export class Branch {
   orchSummary(s, idx) {
     const p = this.permFor(s, idx);
     const inner = this.b.sleeper && this.b.sleeper.innerView ? this.b.sleeper.innerView(s) : null;
-    return { on: true, via: s.orch.via || null, scope: p.scope, allowed: p.allowed, reportFallback: s.orch.reportFallback || null, inner };
+    const progress = this.b.progress && this.b.progress.view ? this.b.progress.view(s) : null; // P300: 안 진행(읽기 전용)
+    return { on: true, via: s.orch.via || null, scope: p.scope, allowed: p.allowed, reportFallback: s.orch.reportFallback || null, inner, progress };
   }
   // 요청을 거절할 까닭 | null. prompt면 받는 세션을 풀어 부모인지 본다
   refusalOf(s, op, body = {}) {
