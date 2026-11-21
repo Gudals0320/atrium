@@ -1,5 +1,5 @@
 // P11: 캔버스 위에 떠 있는 크롬(목업 app/design/board-mock/ ?scene=ours). P6a~P10의 위쪽 줄(InboxBar)과 아래쪽 워크스페이스 단추(Regions)가 하던 일을 옮겼다.
-// - 위 왼쪽(P294): 사이드바, 사람이 볼 것(내 차례: 누르면 기다리는 세션 목록, N으로 다음 · 내 몫 · 작업 완료 · 문제 · 세션 수: 누르면 세션 맵).
+// - 위 왼쪽(P294, P302 차례): 사이드바(창 왼쪽 끝에 붙은 탭), 세션 수(누르면 세션 맵) · 작업 중 · 작업 완료 · 내 몫, 그 뒤 응답 필요(N으로 다음) · 문제.
 //   찾기는 위 막대에 칸이 없고 Ctrl+F로만 떠 있는 창을 연다(P214). 워크스페이스 탭 줄은 없앴다(사이드바에서 고른다)
 // - 위 오른쪽(P294): 상태. 연결(점), 다른 기기, 메모리, 사용량, 바뀐 것, 설정
 // - 왼쪽 레일: 선택, 새 세션(레일에 고정한 런처, P33), 메모, 칸반, 그룹, 손으로 잇기, 전체 보기, 작업 중만 또렷하게(P85)
@@ -62,18 +62,20 @@ function SidebarButton() {
 
 export function TopLeft() {
   const t = useT();
-  const { needsYou, review, problems } = useInbox();
+  const { needsYou, review, problems, working } = useInbox();
   const fit = useTopFit();
   return (
     <div className={`mt-cluster tl${fit === 'full' ? '' : ' compact'}${fit === 'stack' ? ' stack' : ''}`} data-role="top-left" data-fit={fit}>
       <SidebarButton />
       {/* P9: 개발용 판이면 표시한다. 실제 판에는 없다 */}
       {api.info && api.info.profile === 'dev' && <span className="mt-dev-badge" data-role="dev-badge" title={t('top.devBadge', { session: api.info.terminalSession, port: api.info.port })}>dev</span>}
-      <TurnPill needsYou={needsYou} />
-      <DecisionPill />{/* P284: 내 몫 n(응답 필요와 따로 센다) */}
-      {review.length > 0 && <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} readAll />}
-      {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? EXIT_LABEL[s.exit && s.exit.kind] : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
+      {/* P302: 세션 · 작업 중 · 작업 완료 · 내 몫, 그 뒤 응답 필요 · 문제(lib/top-pills.js PEOPLE_PILLS). 세션 말고는 0이면 숨긴다 */}
       <SessionsPill />
+      {working.length > 0 && <ListPill list={working} label={t('p302.working')} cls="working" role="working" line={(s) => (s.lastPrompt || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('p302.workingEmpty')} />}
+      {review.length > 0 && <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} readAll />}
+      <DecisionPill />{/* P284: 내 몫 n(응답 필요와 따로 센다) */}
+      <TurnPill needsYou={needsYou} />
+      {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? EXIT_LABEL[s.exit && s.exit.kind] : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
     </div>
   );
 }
@@ -130,7 +132,7 @@ function SessionsPill() {
   return (
     <button type="button" className={`mt-cp sessions${mission ? ' on' : ''}`} data-role="sessions-pill" data-action="sessions-mission" data-count={count} aria-pressed={mission}
       title={[t('top.connSessions', { n: count }), canOpen || mission ? t(mission ? 'mmap.pillClose' : 'mmap.pillOpen') : null].filter(Boolean).join('\n')} onClick={toggle}>
-      <span className="mono">{count}</span><span className="dim mt-cp-label">{t('top.sessions', { n: count })}</span>
+      <span className="mt-cp-label">{t('top.sessions', { n: count })}</span> <span className="mono">{count}</span>{/* P302: "이름 수" 꼴(세션 6) */}
     </button>
   );
 }

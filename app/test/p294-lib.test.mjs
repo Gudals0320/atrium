@@ -29,14 +29,14 @@ test('위 왼쪽 = 응답 필요·내 몫·작업 완료·문제·세션, 위 �
   const src = read('Chrome.jsx');
   const left = src.slice(src.indexOf('export function TopLeft('), src.indexOf('function useTopFit('));
   const right = src.slice(src.indexOf('export function TopRight('), src.indexOf('// ---------- 도구 레일'));
-  const order = ['<TurnPill', '<DecisionPill', 'role="review"', 'role="problems"', '<SessionsPill'].map((x) => left.indexOf(x));
+  const order = ['<SessionsPill', 'role="review"', '<DecisionPill', '<TurnPill', 'role="problems"'].map((x) => left.indexOf(x)); // P302 차례
   assert.ok(order.every((i) => i > 0), order.join(','));
   assert.deepEqual([...order].sort((a, b) => a - b), order, '이 차례로');
   for (const x of ['<TurnPill', '<DecisionPill', 'ListPill', '<SessionsPill']) assert.ok(!right.includes(x), x);
   const rorder = ['<ConnPill', '<DevicesPill', '<ResourcePill', '<UsagePill', 'data-action="changes"', 'data-action="settings-open"'].map((x) => right.indexOf(x));
   assert.ok(rorder.every((i) => i > 0), rorder.join(','));
   assert.deepEqual([...rorder].sort((a, b) => a - b), rorder);
-  assert.deepEqual(PEOPLE_PILLS, ['inbox', 'decisions', 'review', 'problems', 'sessions-pill']);
+  assert.deepEqual(PEOPLE_PILLS, ['sessions-pill', 'working', 'review', 'decisions', 'inbox', 'problems']); // P302
   assert.equal(STATUS_PILLS[0], 'conn');
   // 세션 수는 세션 알약으로 옮겼고, 연결 알약은 연결이 좋으면 점만
   assert.ok(src.includes('data-role="sessions-pill"') && src.includes("setMissionOpen(!mission)"));
