@@ -169,7 +169,7 @@ test('세션 맵 창(PC·휴대폰)은 그래프를 graphKey가 바뀔 때만 �
   for (const f of ['MissionLineage.jsx', 'PhoneMap.jsx']) {
     const s = fs.readFileSync(path.join(SRC, f), 'utf8');
     assert.match(s, /graphKey\(sessions\)/, f);
-    assert.match(s, /\[(open, )?gkey, links, thread, loops, reloadN\]/, `${f}: 세션 대신 gkey에 걸린다`);
+    assert.match(s, /\[(open, )?gkey, (links, thread, loops|dkey), reloadN\]/, `${f}: 세션 대신 gkey에 걸린다`); // P293: 휴대폰은 연결·Thread·루프를 내용 열쇠(dkey)로
     assert.match(s, /keepSameMap\(tiersRef\.current/, f);
     assert.match(s, /keepSameGraph\(prev, g\)/, f);
     assert.match(s, /keepFacts\(id, cardFacts\(/, f);

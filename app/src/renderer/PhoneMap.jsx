@@ -12,7 +12,8 @@ import { useT, errText } from './lib/i18n.js';
 import { lineageLayout, PHONE, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: 다시 셀 것만 // P202: 오늘 일한 폴더 먼저. P280: 오늘 칸 오른쪽에 이전 칸(두 열, 탭 없음)
 import { roleModel, nodeTier } from './lib/mission-model.js';
 import { levelOf, zoomAt, ZOOM } from './lib/mission-terr.js';
-import { PM, touchIntent, pinchView, mapFit, goView, openView, saveView, sizeKey } from './lib/phone-map.js';
+import { PM, touchIntent, pinchView, mapFit, goView, openView, saveView, sizeKey, openPlan, earlierIds, graphDepsKey } from './lib/phone-map.js'; // P293: 열기 계획, 이전 칸, 다시 받을 열쇠
+import { liteHold, onShowAll, showAll, step } from './crash-watch.js'; // P293: 빠른 죽음 뒤 가볍게 열림, 전부 보기
 import { Card, Peek, cardFacts } from './MissionLineage.jsx';
 import { mergeEdgeCls, mergeTreeCls, mergeTip, mergerHead } from './MissionLineage.jsx'; // P276: merger 선·역할
 import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위 줄기 위에(PC와 같은 규칙)
@@ -56,13 +57,14 @@ export function PhoneMap({ onOpen, head, tip }) {
 
   // 그래프 받기: 열 때 바로 한 번, 그 뒤 판이 바뀌면 REFRESH_MS 안에 한 번(바뀜이 잇따라도 미뤄지기만 하지 않게 모아서)
   const gkey = useMemo(() => graphKey(sessions), [sessions]); // P210
+  const dkey = useMemo(() => graphDepsKey({ links, thread, loops }), [links, thread, loops]); // P293: 내용이 바뀔 때만(처음 불러오기로 같은 것이 채워질 때는 다시 받지 않는다)
   const fetchT = useRef(0), alive = useRef(true), fetched = useRef(false);
   useEffect(() => { alive.current = true; return () => { alive.current = false; clearTimeout(fetchT.current); fetchT.current = 0; }; }, []);
   useEffect(() => {
     if (fetchT.current) return;
     const run = () => { fetchT.current = 0; fetched.current = true; const t0 = performance.now(); api.call('mission.graph').then((g) => { noteMap('graph', performance.now() - t0); if (alive.current) { setGraph((prev) => (cache = keepSameGraph(prev, g))); setFail(null); } else cache = g; }).catch((e) => { if (alive.current) setFail(e); }); };
     fetchT.current = setTimeout(run, fetched.current ? REFRESH_MS : 0);
-  }, [gkey, links, thread, loops, reloadN]); // P210: 세션은 그래프에 닿는 값(graphKey)이 바뀔 때만
+  }, [gkey, dkey, reloadN]); // P210: 세션은 그래프에 닿는 값(graphKey)이 바뀔 때만. P293: 연결·Thread·루프도 내용이 바뀔 때만
   useEffect(() => api.on('relation.updated', () => setReloadN((n) => n + 1)), []);
 
   const liveOf = (n) => (n && n.sessionId ? sessions.get(n.sessionId) : null);
@@ -84,6 +86,20 @@ export function PhoneMap({ onOpen, head, tip }) {
   const relOfChild = useMemo(() => { const m = new Map(); if (lay) for (const e of lay.edges) if (e.tree) m.set(e.to, e.rel); return m; }, [lay]);
   layRef.current = lay;
   sizeRef.current = vsize;
+  // P293: 열기 계획(lib/phone-map.js openPlan). 첫 그리기 뒤 EARLY_MS에 이전 칸, CALM_MS에 움직임. 가볍게 열림이면 "전부 보기"까지 오늘 칸만
+  const [all, setAll] = useState(() => !liteHold());
+  useEffect(() => onShowAll(() => setAll(true)), []);
+  const [stage, setStage] = useState(0);
+  const drawn = !!lay;
+  useEffect(() => {
+    if (!drawn) return undefined;
+    const a = setTimeout(() => setStage((s) => Math.max(s, 1)), PM.EARLY_MS), b = setTimeout(() => setStage(2), PM.CALM_MS);
+    return () => { clearTimeout(a); clearTimeout(b); };
+  }, [drawn]);
+  const plan = openPlan({ lite: !all, stage });
+  const hidden = useMemo(() => (plan.earlier ? new Set() : earlierIds(lay)), [lay, plan.earlier]);
+  const hiddenRef = useRef(hidden); hiddenRef.current = hidden;
+  useEffect(() => { if (lay) step('pmap', { c: lay.cards.size - hidden.size, h: hidden.size, lt: plan.lite ? 1 : 0 }); }, [lay ? lay.cards.size : 0, hidden.size, plan.lite]); // eslint-disable-line react-hooks/exhaustive-deps
   const now = Date.now();
   const keepFacts = useMemo(() => factsKeeper(), []); // P210: 같은 사실이면 앞 객체(카드 memo)
   const factsOf = (id) => {
@@ -135,9 +151,12 @@ export function PhoneMap({ onOpen, head, tip }) {
   }, [lay, vkey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- 알약: 그 카드로 가서 반짝인다 ----
+  const goAfter = useRef(null);
   const goTo = useCallback((id) => {
     const L = layRef.current, s = sizeRef.current, b = L && L.cards.get(id);
     if (!b || !s) return false;
+    // P293: 아직 그리지 않은 이전 칸 카드면 그 칸을 먼저 그린다(가볍게 열림이면 전부 보기)
+    if (hiddenRef.current.has(id)) { goAfter.current = id; if (liteHold()) showAll(); else setStage((x) => Math.max(x, 1)); return true; }
     lastGoId = id;
     paint(goView(b, view.current, s.w, s.h), { glide: true });
     const el = vpRef.current && vpRef.current.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`);
@@ -151,6 +170,8 @@ export function PhoneMap({ onOpen, head, tip }) {
     const id = list[(i + 1) % list.length];
     lastGo.current[key] = id; goTo(id);
   };
+
+  useEffect(() => { const id = goAfter.current; if (id && !hidden.has(id)) { goAfter.current = null; requestAnimationFrame(() => goTo(id)); } }, [hidden, goTo]);
 
   // ---- 손가락: 끌기·두 손가락·누르기·길게 누르기(포인터 이벤트, 마우스도 같다) ----
   useEffect(() => {
@@ -251,17 +272,23 @@ export function PhoneMap({ onOpen, head, tip }) {
   const leads = lay ? new Set([...lay.cards.entries()].filter(([id, b]) => b.depth >= 0 && (lay.tree.kids.get(id) || []).some((c) => (c.workspaceKey || '') === (b.node.workspaceKey || ''))).map(([id]) => id)) : new Set();
   const pb = peek && lay ? lay.cards.get(peek) : null;
   return (
-    <div className="mt-ph-list mt-pm mt-pl mt-pmap" data-role="phone-mission" data-style="canvas">
+    <div className={`mt-ph-list mt-pm mt-pl mt-pmap${plan.motion ? '' : ' mt-pmap-calm'}${plan.lite ? ' mt-pmap-lite' : ''}`} data-role="phone-mission" data-style="canvas" data-plan={`${plan.earlier ? 'e' : ''}${plan.motion ? 'm' : ''}${plan.lite ? 'l' : ''}`}>
       <header className="mt-ph-head">{head}</header>{/* P256: 휴대폰은 이 맵으로 연다(목록 화면 없음). 머리줄은 Phone.jsx PhoneHead */}
       {tip}
       {lay && ids.length > 0 && (
         <div className="mt-pl-pills" data-role="pl-pills">
           {attn.slice(0, ATTN_MAX).map((id) => { const tr = tiers.get(id); return <button key={id} type="button" className={`mt-pl-pill st-${ST[tr]}`} data-role="pl-attn" data-id={id} onClick={() => goTo(id)}><i /><b>{lay.tree.byId.get(id).name}</b><span>{t(`mmTerr.chip.${tr}`)}</span></button>; })}
           {attn.length > ATTN_MAX && <button type="button" className="mt-pl-pill st-needs more" data-role="pl-attn-more" onClick={() => goNext('attn', ['turn', 'alert'])}><span>{t('mmTerr.more', { n: attn.length - ATTN_MAX })}</span></button>}
-          <PhoneDecisionPill onOpen={onOpen} />{/* P284 */}
+          {plan.marks && <PhoneDecisionPill onOpen={onOpen} />}{/* P284. P293: 가볍게 열림이면 전부 보기 뒤에 */}
           {!attn.length && <span className="mt-pl-pill quiet" data-role="pl-none"><span>{t('phoneMap.none')}</span></span>}
           {nWork > 0 && <button type="button" className="mt-pl-pill st-working count" data-role="pl-count" data-tier="work" onClick={() => goNext('work', ['work'])}><i /><b>{nWork}</b><span>{t('mmTerr.chip.work')}</span></button>}
           {nDone > 0 && <button type="button" className="mt-pl-pill st-done count" data-role="pl-count" data-tier="review" onClick={() => goNext('review', ['review'])}><i /><b>{nDone}</b><span>{t('mmTerr.chip.review')}</span></button>}
+        </div>
+      )}
+      {plan.lite && (
+        <div className="mt-pm-lite" data-role="pm-lite" role="status">
+          <span>{t('phoneLite.text')}</span>
+          <button type="button" data-action="pm-lite-all" title={t('phoneLite.allTitle')} onClick={() => showAll()}>{t('phoneLite.all')}</button>
         </div>
       )}
       <div className="mt-pmap-stage mt-ta mt-sm" data-role="pm-stage">
@@ -272,7 +299,7 @@ export function PhoneMap({ onOpen, head, tip }) {
           {lay && ids.length === 0 && <div className="mt-ta-loading" data-role="pm-empty">{t('phoneHead.empty')}</div>}
           {lay && ids.length > 0 && (
             <div className="mt-ta-world lv-far" data-role="ta-world" ref={worldRef} style={view.current ? { transform: `translate(${view.current.x}px, ${view.current.y}px) scale(${view.current.k})` } : undefined}>
-              {lay.bands.map((b, i) => (
+              {lay.bands.filter((b) => !hidden.size || b.col !== 1).map((b, i) => (
                 <div key={`b:${b.id || 'none'}:${i}`} className={`mt-sm-band mt-pmap-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} data-cont={b.cont ? '1' : undefined} style={{ left: b.x, top: b.y, height: b.h, width: b.w }}>
                   <div className="mt-pmap-fh" data-role="pm-fhead">
                     <span className="fn" data-role="ln-band-name">{b.name}{b.cont ? <span className="cont"> {t('phoneMap.cont')}</span> : null}</span>
@@ -281,7 +308,7 @@ export function PhoneMap({ onOpen, head, tip }) {
                   </div>
                 </div>
               ))}
-              {lay.rows.map((r) => (
+              {lay.rows.filter((r) => !hidden.size || r.col !== 1).map((r) => (
                 <div key={`r:${r.key || '-'}`} className={`mt-sm-row mt-pmap-row${r.first ? ' first' : ''}`} data-role="ta-isle" data-key={r.key} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
                   <div className="mt-pmap-wh" data-role="pm-whead">
                     <span className="wsn"><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
@@ -290,7 +317,7 @@ export function PhoneMap({ onOpen, head, tip }) {
                 </div>
               ))}
               {/* P202: 오늘 일한 폴더와 그 밖 사이 구분 줄(위 "오늘", 아래 "이전"). P280: 두 열이면 열마다 위 머리("오늘" | "이전") */}
-              {(lay.sections || []).map((s) => (s.mode === 'head' ? (
+              {(lay.sections || []).filter((s) => !hidden.size || s.col !== 1).map((s) => (s.mode === 'head' ? (
                 <div key={`sec:${s.kind}`} className={`mt-sm-sec head ${s.kind} mt-pmap-sec mt-pmap-colhead`} data-role="ln-section" data-kind={s.kind} data-col={s.col} style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
                   <span className="hn">{t(s.kind === 'today' ? 'mmSec.today' : 'mmSec.earlier')}</span>
                 </div>
@@ -306,14 +333,14 @@ export function PhoneMap({ onOpen, head, tip }) {
                   <marker id="mt-pmap-end-merge" className="mt-sm-tip k-merge" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
                   <marker id="mt-pmap-end-merge-failed" className="mt-sm-tip k-merge st-failed" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" /></marker>
                 </defs>
-                {lay.edges.map((e) => {
+                {lay.edges.filter((e) => !hidden.size || (!hidden.has(e.from) && !hidden.has(e.to))).map((e) => {
                   if (e.merger) return <path key={e.id} className={mergeEdgeCls(e)} data-role="ta-edge" data-merger="1" data-state={e.state} data-from={e.from} data-to={e.to} d={e.d} markerStart={mergeTip('mt-pmap', e)} markerEnd={mergeTip('mt-pmap', e)} />; // P276
                   const k = e.peer ? 'peer' : e.lineage ? 'lineage' : e.cross ? 'cross' : e.rel;
                   const tip = e.peer ? 'url(#mt-pmap-end-peer)' : e.lineage ? undefined : `url(#mt-pmap-tip-${KINDS.includes(k) ? k : 'spawn'})`;
                   return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}${mergeTreeCls(e)}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
                 })}
               </svg>
-              {ids.filter((id) => !lay.cards.get(id).folded).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
+              {ids.filter((id) => !lay.cards.get(id).folded && !hidden.has(id)).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} lite={!plan.tiles} />; })}{/* P293: 이전 칸은 첫 그리기 뒤에(가볍게 열림이면 전부 보기 뒤에) */}
             </div>
           )}
         </div>
