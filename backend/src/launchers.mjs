@@ -18,6 +18,7 @@ import { unlistedModel } from './codex-models.mjs';
 import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는 launch.mjs
 import { adapterOf, reservedArg } from './harness.mjs'; // P115: 하네스 어댑터 표
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192: AGY 승인 인자
+import { HERMES_EFFORTS, hermesEffortOf, hermesReasoningOf, reasoningIn, withoutReasoning } from './harness.mjs'; // P299: Hermes 노력 수준
 import { V2_KEY, migrateLaunchers, legacyInitialLaunchers } from './launcher-migrate.mjs'; // P115: 옮기기(옛 이름은 그 파일에만)
 export { LEGACY_KEYS } from './launcher-migrate.mjs';
 
@@ -51,9 +52,11 @@ export const HARNESSES = {
   agy: { id: 'agy', kind: 'agy', label: 'Antigravity', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args'], models: ['gemini-3.8-flash-medium'] },
   // P270: dsh(DeepSeek Harness, 실행 명령 dsh-tui). 모델·노력 수준은 dsh 안 /model·/effort(전역 기억)라 칸이 없다. 승인 칸도 없다(Windows dsh-tui는 늘 전체 권한·묻지 않음)
   dsh: { id: 'dsh', kind: 'dsh', label: 'DeepSeek (dsh)', fields: ['startCommand', 'args'], models: [] },
-  // P298: Hermes(Hermes Agent, OMH 플러그인이면 함께). 판은 hermes --tui로 띄운다. 모델은 -m(Hermes provider의 모델 이름), 노력 수준은 추가 인자(--reasoning)로.
+  // P298: Hermes(Hermes Agent, OMH 플러그인이면 함께). 판은 hermes --tui로 띄운다. 모델은 -m(Hermes provider의 모델 이름).
   //   자체 오케스트레이션 하네스라 기본 orchestrates(orchestration.mjs ORCH_DEFAULTS). 기본 런처 목록에는 넣지 않는다(사람이 런처를 만든다)
-  hermes: { id: 'hermes', kind: 'hermes', label: 'Hermes', fields: ['startCommand', 'model', 'args'], models: [] },
+  //   P299: 노력 수준 칸(efforts: Hermes --reasoning 값, 빈 값 = Hermes 설정 기본). --tui가 --reasoning을 받지 않아 판이 준비된 뒤 /reasoning <값>을 넣는다(harness.mjs).
+  //   모델 목록은 판이 모른다(freeModel: --model 이름을 그대로 -m으로)
+  hermes: { id: 'hermes', kind: 'hermes', label: 'Hermes', fields: ['startCommand', 'model', 'effort', 'args'], models: [], efforts: ['', ...HERMES_EFFORTS], freeModel: true },
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };
@@ -198,7 +201,7 @@ export function normalizeLauncher(input, { others = [] } = {}) {
   const model = has('model') ? String(input.model ?? '').trim() : '';
   if (model.length > 80 || !MODEL_RE.test(model)) throw err('bad_request', `모델: 영문·숫자·._:/[]-만, 80자까지`, 'model', { model: model.slice(0, 40) });
   const effort = has('effort') ? String(input.effort ?? '') : '';
-  if (!EFFORTS.includes(effort)) throw err('bad_request', `추론 수준: ${effort}`, 'effort', { effort });
+  if (!(h.efforts || EFFORTS).includes(effort)) throw err('bad_request', `추론 수준: ${effort}`, 'effort', { effort });
   const permissionMode = has('permissionMode') ? String(input.permissionMode || defaultPermission(h.id)) : '';
   if (has('permissionMode') && !PERMISSION_MODES.includes(permissionMode)) throw err('bad_request', `승인 방식: ${permissionMode}`, 'permissionMode', { mode: permissionMode });
   const args = has('args') ? String(input.args ?? '').trim() : '';
@@ -248,7 +251,7 @@ export function resolveLauncher(l, over = {}) {
   const args = splitArgs(pick('args'));
   // P192: 노력 수준·승인 방식 칸이 있는 하네스(AGY)는 그 값을 그 하네스 인자로 붙인다(추가 인자에 이미 있으면 그것이 이긴다)
   const extra = h.fields.includes('effort') || h.fields.includes('permissionMode') ? harnessOptionArgs(h.kind, { effort: pick('effort'), permissionMode: pick('permissionMode') || defaultPermission(h.id) }, args) : [];
-  return { ...base, model: model || null, args: [...args, ...extra], command: '', startCommand: l.startCommand || '', gateway: gatewayOf(l), ...(h.fields.includes('permissionMode') ? { permissionMode: pick('permissionMode') || defaultPermission(h.id) } : {}) };
+  return { ...base, model: model || null, args: [...args, ...extra], command: '', startCommand: l.startCommand || '', gateway: gatewayOf(l), ...(h.kind === 'hermes' ? { effort: pick('effort') || null } : {}), /* P299: 판이 준비된 뒤 /reasoning으로 */ ...(h.fields.includes('permissionMode') ? { permissionMode: pick('permissionMode') || defaultPermission(h.id) } : {}) };
 }
 // P208: Codex가 받는 추론 수준(config의 model_reasoning_effort. models_cache.json의 supported_reasoning_levels와 Codex 설정 값)
 export const CODEX_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
@@ -279,10 +282,20 @@ export function effortArgsOf(kind, effort, args = []) {
     for (let i = 0; i < a.length; i++) { if (a[i] === '--effort') { i++; continue; } if (a[i].startsWith('--effort=')) continue; out.push(a[i]); }
     return { args: [...out, '--effort', e], applied: true, effort: e };
   }
+  // P299: hermes는 인자를 바꾸지 않는다(판이 준비된 뒤 /reasoning <값>을 넣는다, 이어 가기에도). 이름은 맞춰 바꾸고, 받지 않는 값·런처 인자에 --reasoning이 있으면 무시
+  if (kind === 'hermes') {
+    const v = hermesEffortOf(e);
+    if (!v) return { args: a, applied: false, ignored: true, why: 'value', effort: e };
+    const own = reasoningIn(a);
+    if (own != null) return { args: a, applied: false, ignored: true, why: 'launcherArgs', effort: own };
+    return { args: a, applied: true, effort: v };
+  }
   return { args: a, applied: false, ignored: true, effort: e };
 }
-// 노력 수준을 무시한 까닭 한 줄(atrium child 응답)
-export const effortIgnoredLine = (kind, effort) => `--effort ${effort}는 무시했다: ${kind}는 노력 수준을 받지 않는다(호출자 인자나 ${kind} 설정을 따른다).`;
+// 노력 수준을 무시한 까닭 한 줄(atrium child 응답). P299: Hermes의 까닭(받지 않는 값, 런처 인자의 --reasoning)
+export const effortIgnoredLine = (kind, effort, why = null) => why === 'value' ? `--effort ${effort}는 무시했다: ${kind}는 ${HERMES_EFFORTS.join(', ')}만 받는다(${kind} 설정의 기본을 따른다).`
+  : why === 'launcherArgs' ? `--effort는 무시했다: 런처 추가 인자의 --reasoning ${effort}를 따른다.`
+  : `--effort ${effort}는 무시했다: ${kind}는 노력 수준을 받지 않는다(호출자 인자나 ${kind} 설정을 따른다).`;
 // P192: 노력 수준·승인 방식 → 그 하네스 인자(지금은 AGY만). 추가 인자에 같은 인자가 있으면 붙이지 않는다
 export function harnessOptionArgs(kind, { effort = '', permissionMode = '' } = {}, args = []) {
   if (kind !== 'agy') return [];
@@ -309,7 +322,9 @@ export function previewLauncher(l) {
   const r = resolveLauncher(l);
   const a = adapterOf(h.kind);
   const s = startWords(l.startCommand); // P115: 실행 명령. 모델은 그 하네스의 모양(판이 덧붙이는 env·안내문·세션 ID는 빼고 보인다)
-  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a ? a.modelArgs(r.model) : [])].join(' ') + (r.args.length ? ' ' + joinArgs(r.args) : ''), env: [], board: !!a };
+  const ra = h.kind === 'hermes' ? hermesReasoningOf(r.effort, r.args) : null; // P299: 판이 준비된 뒤 넣는 /reasoning(--tui는 --reasoning을 받지 않는다)
+  const ha = h.kind === 'hermes' ? withoutReasoning(r.args) : r.args;
+  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a ? a.modelArgs(r.model) : [])].join(' ') + (ha.length ? ' ' + joinArgs(ha) : ''), env: [], board: !!a, ...(ra ? { after: `/reasoning ${ra}` } : {}) };
 }
 
 // ---------- 기본값과 옮기기 ----------

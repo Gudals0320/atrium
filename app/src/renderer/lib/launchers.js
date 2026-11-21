@@ -94,6 +94,12 @@ export function harnessModels(harnesses, id) {
   const h = (harnesses || []).find((x) => x.id === id);
   return h ? h.models || [] : [];
 }
+// P299: 노력 수준 칸의 값(하네스 표의 efforts, 없으면 Claude Code 값). 빈 값 = 하네스 기본
+export const DEFAULT_EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
+export function harnessEfforts(harnesses, id) {
+  const h = (harnesses || []).find((x) => x.id === id);
+  return h && Array.isArray(h.efforts) && h.efforts.length ? h.efforts : DEFAULT_EFFORTS;
+}
 // P72: 모델 입력칸 아래 목록에 보일 모델. 비었거나 목록의 이름 그대로면 전부, 아니면 이름·보이는 이름에 든 글자로 거른다(대소문자 무시)
 export function modelChoices(models, labels = {}, value = '') {
   const list = models || [];
@@ -156,5 +162,6 @@ export function defaultPermission(harnesses, id) {
 export function withHarness(d, harness, harnesses) {
   const n = { ...d, harness };
   if (!d.id && (d.permissionMode || 'manual') === defaultPermission(harnesses, d.harness)) n.permissionMode = defaultPermission(harnesses, harness);
+  if (n.effort && !harnessEfforts(harnesses, harness).includes(n.effort)) n.effort = ''; // P299: 새 하네스가 받지 않는 노력 수준은 비운다(하네스 기본)
   return n;
 }
