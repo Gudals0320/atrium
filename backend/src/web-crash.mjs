@@ -5,7 +5,8 @@
 //   gl: WebGL 터미널 수, dpr: devicePixelRatio, inB: 받은 바이트, boots: 짧은 사이에 이어 죽은 수, hidden: 가려진(백그라운드) 채 죽음,
 //   light: 가벼운 화면에서 죽음, retry: 가벼운 화면에서 "보드로 다시 열기"를 누른 뒤 죽음
 // P86: level: 그 페이지의 보드 단계(1~4, 0은 적지 않음), steps: 죽기 직전의 마지막 단계들(app/src/renderer/lib/crumbs.js stepOf). 단계마다 이름, 부팅부터 ms, 숫자 값과 종류 이름(k)만
-export const CRASH_VIEWS = ['board', 'list', 'session', 'full'];
+// P293: map = 휴대폰 세션 맵(P256부터 휴대폰의 바탕. 그 전 창은 list로 적었다), lite: 빠른 죽음 뒤 가볍게 연 휴대폰 맵에서 죽음
+export const CRASH_VIEWS = ['board', 'list', 'session', 'full', 'map'];
 const int = (v, max) => (Number.isFinite(v) && v >= 0 ? Math.min(Math.round(v), max) : null);
 
 export function crashInfo(f) {
@@ -14,7 +15,7 @@ export function crashInfo(f) {
   for (const [k, max] of [['ago', 864e5 * 30], ['up', 864e5 * 30], ['terms', 999], ['px', 1e10], ['atlas', 1e10], ['gl', 999], ['inB', 1e13], ['boots', 999]]) { const v = int(f[k], max); if (v != null) o[k] = v; }
   if (CRASH_VIEWS.includes(f.view)) o.view = f.view;
   if (Number.isFinite(f.dpr) && f.dpr > 0 && f.dpr <= 10) o.dpr = Math.round(f.dpr * 100) / 100;
-  for (const k of ['hidden', 'light', 'retry']) if (f[k] === true) o[k] = true;
+  for (const k of ['hidden', 'light', 'retry', 'lite']) if (f[k] === true) o[k] = true;
   if (Number.isInteger(f.level) && f.level > 0 && f.level <= LEVEL_MAX) o.level = f.level; // P86
   const steps = stepsInfo(f.steps); if (steps) o.steps = steps; // P86
   return Object.keys(o).length ? o : null;
@@ -68,6 +69,7 @@ export function crashLabel(c) {
   if (c.up != null) parts.push(`${(c.up / 1000).toFixed(c.up < 10000 ? 1 : 0)}s`);
   if (c.hidden) parts.push('hidden');
   if (c.light) parts.push('light');
+  if (c.lite) parts.push('lite'); // P293
   if (c.level) parts.push(`L${c.level}`); // P86
   return parts.join(' · ');
 }

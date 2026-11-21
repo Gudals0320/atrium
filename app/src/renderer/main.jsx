@@ -30,7 +30,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider } from '@xyflow/react';
 import { api } from './api.js';
-import { useStore, getState, openDialog, setKillAsk, setRenaming, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin, selectWorkspace } from './store.js';
+import { useStore, getState, openDialog, setKillAsk, setRenaming, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin, selectWorkspace, ensureThread } from './store.js';
 import { OutputPanel } from './Output.jsx';
 import { LoopDialog } from './Loops.jsx';
 import { MissionMap } from './Mission.jsx';
@@ -123,6 +123,7 @@ function App() {
   const [phone] = usePhoneLayout(isWeb); // P74. P87: 휴대폰이면 늘 목록
   const light = lightMode(); // P84: 반복해서 죽은 뒤의 가벼운 화면(태블릿·마우스 웹 화면의 보드 위 안내)
   useScreenFix(isWeb); // P83: iOS 홈 화면 앱의 짧은 창 높이
+  useEffect(() => { if (loaded && !phone) ensureThread(); }, [loaded, phone]); // P293: 휴대폰 부팅은 Thread를 받지 않았다. 판 화면이 그려질 때(가로로 돌림 등) 한 번 받는다
 
   useEffect(() => {
     // H4: 노드를 눌러 들어간 직후 터미널이 붙기 전에 친 키(입력칸 밖)는 모아 둔다. 터미널에 초점이 가면 그만 모은다
@@ -281,7 +282,7 @@ function boot() {
   if (isWeb) startPushClient(); // P88: 보이는 상태 알리기(보는 기기에는 푸시를 보내지 않는다), 알림을 누르면 그 세션으로
   startViewingReport(); // P21(D4): 초점 노드는 저절로 잠재우지 않는다
   // P84: 웹 화면의 죽기 전 기록(화면, 터미널 메모리). 직전 페이지가 죽었으면 연결 기록에 남긴다
-  setCrumbSampler(() => ({ view: document.querySelector('[data-role=phone]') ? (document.querySelector('[data-role=phone]').dataset.view === 'session' ? 'session' : 'list') : document.querySelector('[data-role=phone-full]') ? 'full' : 'board', ...termStats() }));
+  setCrumbSampler(() => ({ view: document.querySelector('[data-role=phone]') ? (document.querySelector('[data-role=phone]').dataset.view === 'session' ? 'session' : 'map') : document.querySelector('[data-role=phone-full]') ? 'full' : 'board', ...termStats() }));
   startCrashWatch();
 }
 // P48: 웹 화면은 짝을 맺은 뒤에 판에 붙는다

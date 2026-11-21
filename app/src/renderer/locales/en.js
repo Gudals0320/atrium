@@ -2829,5 +2829,7 @@ export default {
     // P292: 휴대폰 시트 머리의 짧은 알림(하나만)
     s: { flushed: 'Sent {n} held', copied: 'Copied', snoozed: 'Snoozed to {when}', ignored: 'Ignored', held: 'Held ({n})', sent: 'Sent', didSent: 'Done, told', did: 'Marked done', checkSent: 'Result sent', raised: 'Brought out' },
   },
+  // P293: 휴대폰 세션 맵을 열자마자 페이지가 죽은 다음 열기(가볍게 열림)
+  phoneLite: { text: 'Opened light', all: 'Show all', allTitle: 'The page stopped right after opening, so only Today opened. Tap to load and draw everything' },
 };
 

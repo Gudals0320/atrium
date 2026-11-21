@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from 'react';
 import { matesOf } from './lib/faces.js'; // P124
 import { api } from './api.js';
-import { step } from './crash-watch.js'; // P86: 단계 기록
+import { step, bootState, liteHold, onShowAll } from './crash-watch.js'; // P86: 단계 기록. P293: 휴대폰 부팅·가볍게 열림
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
@@ -291,7 +291,11 @@ function putThread(items, { front = false } = {}) {
   state.thread = new Map([...next.values()].sort((a, b) => a.seq - b.seq).slice(-300).map((x) => [x.itemId, x]));
   changed();
 }
+// P293: Thread는 판(캔버스)만 그린다. 휴대폰 세션 맵은 쓰지 않으므로 휴대폰으로 연 부팅은 처음에 받지 않고(108KB), 판 화면이 처음 그려질 때 한 번 받는다(ensureThread)
+let threadLoaded = false;
+export function ensureThread() { if (threadLoaded) return; threadLoaded = true; loadThread().catch(() => { threadLoaded = false; }); }
 export async function loadThread({ older = false } = {}) {
+  if (!older) threadLoaded = true;
   const r = await api.call('thread.list', older && state.threadBefore ? { before: state.threadBefore, limit: 50 } : { limit: 50 });
   state.threadMore = r.more; state.threadBefore = r.before;
   putThread(r.items, { front: older });
@@ -305,6 +309,15 @@ api.on('$open', async (r) => {
   changed();
   try {
     await loadBoard();
+    // P293: 가볍게 연 휴대폰 맵(빠른 죽음 뒤)은 맵에 꼭 필요한 것(세션, 판, 설정, 호출자, 터미널 상태)만 받고 나머지는 "전부 보기"(loadAux) 때 받는다
+    if (liteHold()) { state.auxHeld = true; changed(); await Promise.all([api.call('terminal.status').then((st) => { state.terminal = terminalStateOf(st); changed(); }).catch(() => {}), api.call('settings.get').then((r) => putSettings(r.settings)).catch(() => {}), loadLaunchers()]); return; }
+    await loadAux();
+  } catch (e) { toast(t('store.loadFailed', { error: errText(e) }), 'error'); }
+});
+// P293: 맵 밖의 답(전달·터미널 상태·자원·사용량·루프·설정·호출자·결정, 판 화면이면 Thread). 연결이 열릴 때(가볍게 열림이면 "전부 보기" 뒤에)
+async function loadAux() {
+  state.auxHeld = false;
+  {
     const ds = await api.call('delivery.list', { limit: 10 });
     const live = await api.call('delivery.list', { active: true }).catch(() => []); // P106: 오래 막힌 전달도(최근 10개 밖) 보이고 취소할 수 있게
     state.deliveries = new Map([...ds.reverse(), ...live].filter((d) => state.sessions.has(d.sessionId)).map((d) => [d.deliveryId, d])); // 판에 있는 세션 것만
@@ -316,9 +329,10 @@ api.on('$open', async (r) => {
     changed();
     api.call('usage.get').then((v) => { state.usage = v; changed(); }).catch(() => {}); // P211: 옛 백엔드면 없다
     // P6c: Thread, 루프, 설정. P6b 전 백엔드면 없다(조용히 넘어간다)
-    await Promise.all([loadThread().catch(() => {}), loadLoops().catch(() => {}), api.call('settings.get').then((r) => { putSettings(r.settings); }).catch(() => {}), loadLaunchers()]);
-  } catch (e) { toast(t('store.loadFailed', { error: errText(e) }), 'error'); }
-});
+    await Promise.all([bootState().phone && !threadLoaded ? null : loadThread().catch(() => {}), loadLoops().catch(() => {}), api.call('settings.get').then((r) => { putSettings(r.settings); }).catch(() => {}), loadLaunchers(), loadDecisions()]); // P293: 휴대폰 부팅은 Thread를 받지 않는다(판 화면이 그려지면 ensureThread)
+  }
+}
+onShowAll(() => { if (state.auxHeld && api.conn && api.conn.phase === 'open') loadAux().catch((e) => toast(t('store.loadFailed', { error: errText(e) }), 'error')); else { state.auxHeld = false; changed(); } });
 api.on('session.updated', (sum) => putSession(sum));
 api.on('session.created', () => { loadBoard().catch(() => {}); });
 api.on('session.removed', (d) => {
@@ -466,7 +480,7 @@ state.decisions = [];
 state.decisionHeld = {}; // P286: 세션마다 모아 둔 답 수(그 세션의 열린 카드가 모두 끝나면 판이 한 글로 보낸다)
 export function putDecisions(cards, held) { state.decisions = decisionsOf(cards); if (held !== undefined) state.decisionHeld = heldOf(held); changed(); }
 export const loadDecisions = () => api.call('decision.list').then((r) => putDecisions(r && r.cards, (r && r.held) || {})).catch(() => {});
-api.on('$open', () => loadDecisions());
+// P293: 결정 카드도 loadAux가 받는다(가볍게 열림이면 "전부 보기" 뒤에)
 api.on('decision.changed', (d) => putDecisions(d && d.cards, d && d.held));
 export async function flushDecisions(sessionId) { const r = await api.call('decision.flush', { sessionId }); const h = { ...state.decisionHeld }; delete h[sessionId]; state.decisionHeld = h; changed(); return r; } // P286: 모은 답 지금 보내기
 export async function answerDecision(id, answer) { const r = await api.call('decision.answer', { id, answer }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
