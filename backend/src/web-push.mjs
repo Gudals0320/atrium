@@ -168,10 +168,10 @@ export function pushKindOf(sum, from) {
   if (to === 'exited' && sum.exit && sum.exit.kind === 'other') return 'exit'; // 사람이 끄거나 판이 끈 것(normal, terminal_stopped)은 알리지 않는다
   return null;
 }
-export const prefKind = (k) => (k === 'exit' ? 'error' : k === 'decision' ? 'need' : k); // P284: 결정 카드는 응답 필요 스위치를 따른다
+export const prefKind = (k) => (k === 'exit' ? 'error' : k === 'decision' ? 'need' : k); // P284: 결정 카드는 응답 필요 스위치를 따른다. P305: 카드(할 일 목록) 알림 글은 "할 일"
 const WORDS = {
-  ko: { decision: '결정 필요', done: '끝남', need: '응답 필요', error: '오류', exit: '세션 꺼짐', many: '세션 {n}개', more: '외 {n}개', subs: '하위 {n}개 포함', testTitle: 'Atrium 시험 알림', testBody: '이 기기에서 알림을 받을 수 있습니다.' },
-  en: { decision: 'decision needed', done: 'done', need: 'needs you', error: 'error', exit: 'session ended', many: '{n} sessions', more: '+{n} more', subs: 'incl. {n} sub-sessions', testTitle: 'Atrium test notification', testBody: 'This device can receive notifications.' },
+  ko: { decision: '할 일', done: '끝남', need: '응답 필요', error: '오류', exit: '세션 꺼짐', many: '세션 {n}개', more: '외 {n}개', subs: '하위 {n}개 포함', testTitle: 'Atrium 시험 알림', testBody: '이 기기에서 알림을 받을 수 있습니다.' },
+  en: { decision: 'to do', done: 'done', need: 'needs you', error: 'error', exit: 'session ended', many: '{n} sessions', more: '+{n} more', subs: 'incl. {n} sub-sessions', testTitle: 'Atrium test notification', testBody: 'This device can receive notifications.' },
 };
 const fill = (s, v) => s.replace(/\{(\w+)\}/g, (_, k) => String(v[k]));
 const clipName = (s, n = 40) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);

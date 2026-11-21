@@ -30,8 +30,8 @@ import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단�
 import { MergerTag } from './Merger.jsx'; // P268: merger 세션 꼬리표
 import { orchTag, sessionProgress, progressChip, progressRows } from './lib/orch.js'; // P296: 자체 오케스트레이션 표. P300: 안 진행 칩
 import { createPortal } from 'react-dom'; // P300: 갈래 목록 겉판
-import { DecisionMark } from './Decisions.jsx';
-import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩 // P284: 결정 카드 표식
+import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
+import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩
 import { dockBranchOf } from './lib/dock-branch.js'; // P68: 워크트리끼리 붙인 덩어리의 칸마다 브랜치
 import { Icon } from './lib/icons.jsx';
 import { dotVar } from './lib/tokens.js';

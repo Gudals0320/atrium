@@ -9,8 +9,8 @@ import { step, bootState, liteHold, onShowAll } from './crash-watch.js'; // P86:
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
-import { decisionsOf, withoutCard, heldOf, withDeferred } from './lib/decisions.js';
-import { laneOf } from './lib/plans.js'; // P306: 목표·마일스톤 레인 // P284: 결정 카드. P286: 모은 답. P292: 사용자 몫
+import { decisionsOf, withoutCard, heldOf, withDeferred } from './lib/decisions.js'; // P284: 결정 카드. P286: 모은 답. P292: 사용자 몫
+import { laneOf } from './lib/plans.js'; // P306: 목표·마일스톤 레인
 import { mergerViewOf, withAsk, withoutAsk, rememberParents } from './lib/merger.js'; // P268. P276: rememberParents
 import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107: 작업 중 테두리 빛 설정과 미션 맵 덮개를 문서 뿌리에
 

@@ -6,12 +6,12 @@
 // 잰 폭(px)이 아직 없으면(null) 그 단계를 먼저 그려 재게 한다: 펼친 폭을 모르면 'full', 펼쳐서 안 들어가고 접은 폭을 모르면 'compact',
 // 접어서도 안 들어가고 오른쪽을 접은 폭을 모르면 'tight'.
 // win: 창 폭, left: 왼쪽 무리의 왼쪽 끝(왼쪽 레일 자리), right: 오른쪽 무리 오른쪽 여백, gap: 두 무리 사이 최소 틈
-// P302: 위 왼쪽 차례는 세션 · 작업 중 · 작업 완료 · 내 몫(사용자 요청), 그 뒤에 응답 필요 · 문제(사람이 답할 일을 놓치지 않게 남긴다)
+// P302: 위 왼쪽 차례는 세션 · 작업 중 · 작업 완료 · 할 일(사용자 요청, P305 전 이름 내 몫), 그 뒤에 응답 필요 · 문제(사람이 답할 일을 놓치지 않게 남긴다)
 export const PEOPLE_PILLS = ['sessions-pill', 'working', 'review', 'decisions', 'inbox', 'problems']; // 위 왼쪽(data-role)
 export const STATUS_PILLS = ['conn', 'devices', 'resources', 'usage', 'changes', 'settings-open']; // 위 오른쪽(data-role 또는 data-action)
 
 // P302: 위 왼쪽 알약 → 보일지. 세션은 늘 보이고, 나머지는 0이면 숨긴다(값이 생기면 나타난다, P214).
-// 내 몫은 지금 카드가 없어도 붙잡은 답이 있으면 흐리게 남는다(P295, total). n: { sessions, working, review, decisions, decisionsTotal, inbox, problems }
+// 할 일은 지금 카드가 없어도 붙잡은 답이 있으면 흐리게 남는다(P295, total). n: { sessions, working, review, decisions, decisionsTotal, inbox, problems }
 export function peoplePills(n = {}) {
   const num = (k) => Math.max(0, Number(n[k]) || 0);
   return PEOPLE_PILLS.map((role) => {

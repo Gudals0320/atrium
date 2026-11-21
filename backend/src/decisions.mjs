@@ -22,12 +22,13 @@
 //   (결정은 앞서 물은 것이라 대화 차례대로 먼저 두고, 사람의 새 글이 끝에 와 에이전트가 가장 나중 지시로 읽는다. 턴도 하나만 쓴다).
 //   스티어링 글이면 답은 스티어링이 아니라 따로 보통 메시지로 보낸다. 터미널에 직접 친 글(이미 제출됨)이면 그 뒤에 한 글로 보낸다.
 // P292(사용자 2026-11-21): 사용자 몫. 결정 카드가 종류(kind) 넷을 가진 상태 있는 "사용자 몫"이 되었다(같은 표, 옛 카드는 decide).
-//   decide 결정(그대로), do 할 일(글 + 사람이 복사할 명령 0개 이상. 사람: 했음·무시·미루기. 했음은 기록만, 에이전트가 --tell을 주면 답 모으기로 보낸다),
+//   (P305: 사람에게 보이는 목록 이름은 "할 일", do 종류 이름은 "실행". 저장 값은 그대로)
+//   decide 결정(그대로), do 실행(글 + 사람이 복사할 명령 0개 이상. 사람: 했음·무시·미루기. 했음은 기록만, 에이전트가 --tell을 주면 답 모으기로 보낸다),
 //   check 확인(사람: 됐다/안 됐다 + 한 줄 메모·무시·미루기. 결과는 늘 답 모으기로 보낸다), later 나중에(날짜·시각이면 wake_at까지 숨겼다가 띄우고 웹 푸시 한 번,
 //   조건 글이면 cond로 "나중"에 두고 사람이 꺼낸다. 띄운 뒤에는 할 일과 같다).
 //   모든 카드에 미루기(decision.snooze { id, until }): wake_at까지 숨겼다가 다시 띄운다. 숨긴 카드(나중)는 답 모으기의 "열린 카드"에 세지 않는다.
 //   에이전트: atrium todo "<할 일>" [--cmd …]… [--check] [--later …] [--why …] [--tell] | --done <번호> | --list. 누가·상한은 atrium ask와 같다(나중에는 따로).
-//   답 모으기 줄: [결정] q → a, [확인] q → 됐다/안 됐다: 메모, [할 일] q → 했음.
+//   답 모으기 줄: [결정] q → a, [확인] q → 됐다/안 됐다: 메모, [실행] q → 했음.
 //   사람이 세션에 직접 보낸 글이 닫는 것은 지금 보이는 자동 카드뿐이다(P303: 손 카드는 종류 무관 그대로 둔다).
 //   자동 카드는 마지막 답이 명령 실행을 청하면 할 일(명령 뽑기), 확인을 청하면 확인, 그 밖의 질문은 결정(auto-ask.mjs findAsk).
 // P295(사용자 2026-11-21): 답 실어 보내기. 사용자 몫 답은 세션이 그 답을 기다리며 멈춰 있을 때만 곧바로 보내고, 아니면 그 세션에 다음 글이 갈 때 실어 보내 턴을 아낀다.
@@ -52,7 +53,8 @@ import { ASK_QUESTION_MAX, ASK_OPTION_MAX, ASK_OPTIONS_MAX, ASK_WHY_MAX, ASK_OPE
 
 export const ANSWER_HEAD = '[결정]';
 export const KINDS = ['decide', 'do', 'check', 'later']; // P292
-export const HEADS = { decide: '[결정]', do: '[할 일]', check: '[확인]', later: '[할 일]' }; // P292: 답 모으기 줄 머리
+export const HEADS = { decide: '[결정]', do: '[실행]', check: '[확인]', later: '[실행]' }; // P292: 답 모으기 줄 머리. P305: 할 일 → 실행(목록 이름 "할 일"과 겹쳐서)
+const OLD_HEADS = ['[할 일]']; // P305 전의 머리(그 뒤에도 사람 글이 아니다)
 export const DID = '했음';
 export const CHECK_OK = '됐다';
 export const CHECK_FAIL = '안 됐다';
@@ -175,7 +177,7 @@ export class Decisions {
     const max = later ? TODO_LATER_MAX : ASK_OPEN_MAX;
     if (mine.length >= max) {
       const how = verb === 'ask' ? 'atrium ask --done <번호>로 닫는다(목록: atrium ask --list)' : 'atrium todo --done <번호>로 닫는다(목록: atrium todo --list)';
-      throw apiError('too_many', `열린 ${later ? '나중에 카드' : verb === 'ask' ? '결정 카드' : '카드(결정·할 일·확인 합쳐)'}가 이미 ${mine.length}장이다(${max}장까지). 사람이 끝냈거나 쓸모없어진 카드를 ${how}.`, { open: mine.map((d) => d.id) });
+      throw apiError('too_many', `열린 ${later ? '나중에 카드' : verb === 'ask' ? '결정 카드' : '카드(결정·실행·확인 합쳐)'}가 이미 ${mine.length}장이다(${max}장까지). 사람이 끝냈거나 쓸모없어진 카드를 ${how}.`, { open: mine.map((d) => d.id) });
     }
     const d = this.store().addDecision({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, question: c.question, options: c.options || [], why: c.why || null, createdAt: this.now(), kind: c.kind, cmds: c.cmds || [], tell: !!c.tell, later: c.later || null, wakeAt: c.wakeAt ?? null, cond: c.cond ?? null, timing: c.timing || null }); // P295: timing
     if (verb === 'ask') this.b.store.addEvent(caller.sessionId, 'decision_ask', { id: d.id, chars: c.question.length, options: (c.options || []).length, timing: d.timing }); // P295
@@ -248,7 +250,7 @@ export class Decisions {
   // 답하기: 보기(option) 또는 한 줄 답(text). 세션에 보통 메시지(대기열)로 넣고 answered
   answer(p = {}, c = null) {
     const d = this.card(p.id);
-    if (d.kind !== 'decide') throw apiError('wrong_kind', '결정 카드가 아닙니다(할 일은 했음, 확인은 됐다·안 됐다).', { kind: d.kind });
+    if (d.kind !== 'decide') throw apiError('wrong_kind', '결정 카드가 아닙니다(실행은 했음, 확인은 됐다·안 됐다).', { kind: d.kind });
     const s = this.b.sessions.get(d.sessionId);
     if (!s) throw apiError('closed', '그 세션은 닫혔습니다.');
     const text = String(p.answer ?? '').trim();
@@ -291,7 +293,7 @@ export class Decisions {
   // P292: 할 일(나중에 포함) 했음. 기록만, 에이전트가 --tell을 줬으면 답 모으기로 보낸다
   did(p = {}, c = null) {
     const d = this.card(p.id);
-    if (d.kind !== 'do' && d.kind !== 'later') throw apiError('wrong_kind', '할 일 카드가 아닙니다.', { kind: d.kind });
+    if (d.kind !== 'do' && d.kind !== 'later') throw apiError('wrong_kind', '실행 카드가 아닙니다.', { kind: d.kind });
     const s = this.b.sessions.get(d.sessionId);
     if (!s) throw apiError('closed', '그 세션은 닫혔습니다.');
     const via = this.viaOf(c);
@@ -570,7 +572,7 @@ export function humanPrompt(prompt) {
   const p = String(prompt ?? '').trim();
   if (!p) return false;
   if (startsAsBoardNotice(p)) return false;
-  if (Object.values(HEADS).some((h) => p.startsWith(h))) return false; // P292: [결정]·[확인]·[할 일]
+  if ([...Object.values(HEADS), ...OLD_HEADS].some((h) => p.startsWith(h))) return false; // P292: [결정]·[확인]·[실행](옛 [할 일])
   if (p.startsWith('<')) return false; // <task-notification> 등
   return true;
 }

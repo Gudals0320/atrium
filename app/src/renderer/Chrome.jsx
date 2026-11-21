@@ -1,5 +1,5 @@
 // P11: 캔버스 위에 떠 있는 크롬(목업 app/design/board-mock/ ?scene=ours). P6a~P10의 위쪽 줄(InboxBar)과 아래쪽 워크스페이스 단추(Regions)가 하던 일을 옮겼다.
-// - 위 왼쪽(P294, P302 차례): 사이드바(창 왼쪽 끝에 붙은 탭), 세션 수(누르면 세션 맵) · 작업 중 · 작업 완료 · 내 몫, 그 뒤 응답 필요(N으로 다음) · 문제.
+// - 위 왼쪽(P294, P302 차례): 사이드바(창 왼쪽 끝에 붙은 탭), 세션 수(누르면 세션 맵) · 작업 중 · 작업 완료 · 할 일(P305, 옛 내 몫), 그 뒤 응답 필요(N으로 다음) · 문제.
 //   찾기는 위 막대에 칸이 없고 Ctrl+F로만 떠 있는 창을 연다(P214). 워크스페이스 탭 줄은 없앴다(사이드바에서 고른다)
 // - 위 오른쪽(P294): 상태. 연결(점), 다른 기기, 메모리, 사용량, 바뀐 것, 설정
 // - 왼쪽 레일: 선택, 새 세션(레일에 고정한 런처, P33), 메모, 칸반, 그룹, 손으로 잇기, 전체 보기, 작업 중만 또렷하게(P85)
@@ -19,8 +19,8 @@ import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
 import { useDialog } from './dialog.js'; // P52
 import { useInbox } from './InboxBar.jsx';
-import { DecisionPill } from './Decisions.jsx';
-import { PlanPanelHost } from './Plan.jsx'; // P306: 목표 판(화면 기준, 하나) // P284: 결정 카드
+import { DecisionPill } from './Decisions.jsx'; // P284: 결정 카드
+import { PlanPanelHost } from './Plan.jsx'; // P306: 목표 판(화면 기준, 하나)
 import { seenTargets, cpuLine, fmtPct } from './lib/p255.js'; // P255: 작업 완료 모두 읽기, 메모리 칩의 CPU
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
@@ -51,7 +51,7 @@ function useDropdown() {
 
 // ---------- 위 왼쪽 ----------
 // P294: 워크스페이스 알약 줄(탭, 묶음 칩, "+n", +)은 없앴다. 워크스페이스는 사이드바에서 고르고 연다(워크스페이스 ⋯ 메뉴 › 새 워크스페이스 열기).
-// 위 왼쪽에는 사람이 볼 것(응답 필요·내 몫·작업 완료·문제·세션)을, 위 오른쪽에는 상태(연결·기기·메모리·사용량·변경 내역·설정)를 둔다.
+// 위 왼쪽에는 사람이 볼 것(응답 필요·할 일·작업 완료·문제·세션)을, 위 오른쪽에는 상태(연결·기기·메모리·사용량·변경 내역·설정)를 둔다.
 // 좁은 창에서는 왼쪽 알약의 글을 숨기고 수만 보이며(compact), 그래도 모자라면 오른쪽 알약의 글도 숨기고(tight),
 // 그래도 모자라면(사이드바를 연 좁은 창) 왼쪽 무리를 한 줄 아래로 내린다(stack). 규칙은 lib/top-pills.js topFit
 
@@ -70,11 +70,11 @@ export function TopLeft() {
       <SidebarButton />
       {/* P9: 개발용 판이면 표시한다. 실제 판에는 없다 */}
       {api.info && api.info.profile === 'dev' && <span className="mt-dev-badge" data-role="dev-badge" title={t('top.devBadge', { session: api.info.terminalSession, port: api.info.port })}>dev</span>}
-      {/* P302: 세션 · 작업 중 · 작업 완료 · 내 몫, 그 뒤 응답 필요 · 문제(lib/top-pills.js PEOPLE_PILLS). 세션 말고는 0이면 숨긴다 */}
+      {/* P302: 세션 · 작업 중 · 작업 완료 · 할 일, 그 뒤 응답 필요 · 문제(lib/top-pills.js PEOPLE_PILLS). 세션 말고는 0이면 숨긴다 */}
       <SessionsPill />
       {working.length > 0 && <ListPill list={working} label={t('p302.working')} cls="working" role="working" line={(s) => (s.lastPrompt || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('p302.workingEmpty')} />}
       {review.length > 0 && <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} readAll />}
-      <DecisionPill />{/* P284: 내 몫 n(응답 필요와 따로 센다) */}
+      <DecisionPill />{/* P284: 할 일 n(P305, 응답 필요와 따로 센다) */}
       <PlanPanelHost />
       <TurnPill needsYou={needsYou} />
       {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? EXIT_LABEL[s.exit && s.exit.kind] : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}

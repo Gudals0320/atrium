@@ -25,8 +25,8 @@ import { commandDraft } from './Thread.jsx';
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기·카드 그리기 세기(성능 기록 map 묶음)
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
 import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위 줄기 위에
-import { DecisionMark } from './Decisions.jsx';
-import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩(작게) // P284: 결정 카드 표식
+import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
+import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩(작게)
 
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
 const RAIL = 0; // P153 r9: 목차 레일은 없앴다(앱 사이드바를 같이 쓴다)

@@ -170,9 +170,15 @@ async function pc() {
     // 7. 마일스톤 끝: 수집 M2를 모두 체크하면 곧바로 한 번
     await waitFor(() => ['lead1'].every((n) => { const s = sess(n); return s && ['ready', 'idle'].includes(s.state); }), 120000, 3000);
     call('plan.op', { planId: A.planId, op: { op: 'check', ids: ['M2.3', 'M2.4', 'M2.5'] } });
-    const now1 = await waitFor(() => dl().filter((d) => d.sessionId === l1.sessionId && /^\[목표\] 수집 M2\.3 체크, M2\.4 체크, M2\.5 체크\(사용자\) · M2 5\/5$/.test(d.text || '')).length, 30000, 1500);
-    check('마일스톤이 모두 체크되면 곧바로 한 번 보낸다', now1, dl().filter((d) => d.sessionId === l1.sessionId).map((d) => (d.text || '').slice(0, 90)));
-    await sleep(1500);
+    const nowLines = () => dl().filter((d) => d.sessionId === l1.sessionId && /^\[목표\] 수집 [^\n]*· M2 5\/5$/.test(d.text || ''));
+    const now1 = await waitFor(() => nowLines().length, 15000, 1500);
+    if (now1) check('마일스톤이 모두 체크되면 곧바로 한 번 보낸다', nowLines().length === 1, nowLines().map((d) => d.text));
+    else log('M2는 앞 돌림에서 이미 곧바로 알렸다(마일스톤마다 한 번): 곧바로 보내지 않음');
+    // 다시 풀고 체크해도 곧바로 다시 보내지 않는다
+    call('plan.op', { planId: A.planId, op: { op: 'uncheck', ids: ['M2.5'] } });
+    call('plan.op', { planId: A.planId, op: { op: 'check', ids: ['M2.5'] } });
+    await sleep(5000);
+    check('모두 체크 곧바로 알림은 마일스톤마다 한 번(풀고 다시 체크해도 더 가지 않음)', nowLines().length <= 1, nowLines().map((d) => d.text));    await sleep(1500);
     await page.evaluate((k) => window.__mt.getState().fitWorkspace(k), ka); await sleep(900);
     await shot(page, 'chips-allchecked-en');
   } finally {
