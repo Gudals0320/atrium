@@ -1,5 +1,5 @@
 // P284: 결정 카드의 창 쪽(판 쪽 backend/src/decisions.mjs). 에이전트가 사람에게 글로 물은 질문(atrium ask)을 "내 차례" 줄과 따로 모아 보인다.
-// - PC: 위 오른쪽 알약(DecisionPill, 응답 필요와 따로 센다). 누르면 오래 기다린 것부터 목록: 세션 이름(누르면 그 세션으로), 질문, 맥락,
+// - PC: 위 왼쪽 알약(DecisionPill, 응답 필요와 따로 센다. P294에서 오른쪽에서 옮김). 누르면 오래 기다린 것부터 목록: 세션 이름(누르면 그 세션으로), 질문, 맥락,
 //   기다린 시간, 보기 단추, 한 줄 답 칸, 무시. 보기나 답을 보내면 판이 그 세션에 "[결정] <질문> → <답>"을 대기열로 넣고, 무시는 아무것도 보내지 않는다.
 // - 세션 카드(캔버스 노드 머리)와 세션 맵 카드에 작은 표식(DecisionMark).
 // - P286: 판이 마지막 답에서 만든 자동 카드는 줄과 표식에 작게 "자동"을 단다. 한 세션의 열린 카드가 여럿이면 답을 모아 두었다가 모두 끝나면 판이 한 글로 보내고,
@@ -9,7 +9,7 @@
 //   할 일: 명령(고정폭, 명령마다 복사 단추) + 했음·미루기·무시. 확인: 됐다/안 됐다 + 한 줄 메모·미루기·무시. 결정: 지금 그대로 + 미루기.
 //   미루기는 1시간·내일 아침·날짜 고르기. 미룬 카드와 나중에 카드는 목록 끝 "나중 n"(접힘, 때·조건 보임)에 있고 꺼내기·무시.
 //   알약·표식의 수는 지금 목록(나중 줄 뺌)만 센다(종류 구별 없이).
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore, getState, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago } from './lib/labels.js';
@@ -153,11 +153,14 @@ function DecideBody({ d, t, busy, setBusy }) {
           {d.options.map((o) => <button key={o} type="button" className="mt-btn small mt-dc-opt" data-action="decision-option" data-option={o} disabled={busy} onClick={() => send(o)}>{o}</button>)}
         </div>
       )}
+      {/* P294: 마지막 동작 줄. PC는 두 줄 그대로, 휴대폰 시트는 답 칸 줄에 미루기·무시를 붙인다(styles.css .mt-ut-last) */}
+      <div className="mt-ut-last">
       <form className="mt-dc-answer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
         <input type="text" className="mt-dc-input" data-field="decision-text" value={text} maxLength={2000} placeholder={t('decisions.placeholder')} disabled={busy} onChange={(e) => setText(e.target.value)} onKeyDown={stop} />
         <button type="submit" className="mt-btn small primary" data-action="decision-send" disabled={busy || !answerReady(text)}>{t('decisions.send')}</button>
       </form>
       <div className="mt-ut-acts"><Snooze d={d} t={t} busy={busy} setBusy={setBusy} /><IgnoreBtn d={d} t={t} busy={busy} setBusy={setBusy} /></div>
+      </div>
     </>
   );
 }
@@ -179,8 +182,25 @@ function DoBody({ d, t, busy, setBusy }) {
   );
 }
 
+// P294: 휴대폰 시트의 확인 카드. 메모 칸(110px 이상)·됐다·안 됐다·미루기·무시가 한 줄에 들면 그대로, 안 들면 미루기·무시를 메모 줄에 두고
+// 됐다·안 됐다를 다음 줄로 내린다(단추 폭은 순서와 상관없으니 그대로 더해 잰다). PC 목록에서는 재지 않는다
+function useMemoRow(ref) {
+  const [memoRow, setMemoRow] = useState(false);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box || !box.closest('.mt-dc-sheet') || typeof ResizeObserver === 'undefined') return undefined;
+    const fit = () => { const btns = [...box.querySelectorAll('.mt-btn')]; const need = 110 + btns.reduce((s, b) => s + b.getBoundingClientRect().width + 4, 0); setMemoRow(need > box.clientWidth); };
+    fit();
+    const ro = new ResizeObserver(fit); ro.observe(box);
+    return () => ro.disconnect();
+  }, [ref]);
+  return memoRow;
+}
+
 function CheckBody({ d, t, busy, setBusy }) {
   const say = useSay();
+  const last = useRef(null);
+  const memoRow = useMemoRow(last);
   const [note, setNote] = useState('');
   const name = nameOf(d);
   const send = async (ok) => {
@@ -190,14 +210,14 @@ function CheckBody({ d, t, busy, setBusy }) {
     catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return (
-    <>
+    <div ref={last} className={`mt-ut-last${memoRow ? ' memo-row' : ''}`} data-memo-row={memoRow ? '1' : undefined}>{/* P294: 휴대폰 시트는 됐다·안 됐다 뒤에 미루기·무시(들면 한 줄, 안 들면 메모 줄에) */}
       <div className="mt-dc-answer mt-ut-check">
         <input type="text" className="mt-dc-input" data-field="check-note" value={note} maxLength={300} placeholder={t('userTasks.notePh')} disabled={busy} onChange={(e) => setNote(e.target.value)} onKeyDown={stop} />
         <button type="button" className="mt-btn small primary mt-ut-ok" data-action="check-ok" disabled={busy} onClick={() => send(true)}>{t('userTasks.ok')}</button>
         <button type="button" className="mt-btn small mt-ut-fail" data-action="check-fail" disabled={busy} onClick={() => send(false)}>{t('userTasks.fail')}</button>
       </div>
       <div className="mt-ut-acts"><Snooze d={d} t={t} busy={busy} setBusy={setBusy} /><IgnoreBtn d={d} t={t} busy={busy} setBusy={setBusy} /></div>
-    </>
+    </div>
   );
 }
 
@@ -271,7 +291,7 @@ export function DecisionList({ onGo }) {
   );
 }
 
-// PC: 위 오른쪽 알약과 펼침 목록(카드가 없으면 숨긴다. 수는 지금 목록만)
+// PC: 위 왼쪽 알약과 펼침 목록(카드가 없으면 숨긴다. 수는 지금 목록만)
 export function DecisionPill() {
   const t = useT();
   const n = useStore((st) => activeCards(st.decisions).length);
@@ -291,7 +311,7 @@ export function DecisionPill() {
   return (
     <div className="mt-drop" ref={ref}>
       <button className={`mt-cp decision${open ? ' on' : ''}${n ? '' : ' quiet'}`} data-role="decisions" data-count={n} data-total={total} title={t('userTasks.title')} onClick={() => setOpen((o) => !o)}>
-        <span className="mt-dc-dot" />{t('userTasks.pill')} <b className="mono">{n}</b>
+        <span className="mt-dc-dot" /><span className="mt-cp-label">{t('userTasks.pill')}</span> <b className="mono">{n}</b>
       </button>
       {open && (
         <div className="mt-dropdown mt-dc-list" data-role="decisions-list">

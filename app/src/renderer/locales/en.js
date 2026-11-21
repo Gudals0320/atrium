@@ -1283,7 +1283,6 @@ export default {
   },
   // P43: arrow keys on the board (the board has keyboard focus, e.g. after clicking an empty spot) and the auto-hiding bottom bar
   boardKeys: {
-    ws: '← and → on the board go to the previous and next workspace',
     search: '↑ on the board also opens search. Click outside it or press Esc to close',
     command: 'Ctrl+K or ↓ on the board to type here. The bar hides until you point at the bottom edge',
   },
@@ -2828,6 +2827,10 @@ export default {
     markTitle: '{n} item(s) waiting for you · handle them from the "For you" pill at the top',
     // P292: 휴대폰 시트 머리의 짧은 알림(하나만)
     s: { flushed: 'Sent {n} held', copied: 'Copied', snoozed: 'Snoozed to {when}', ignored: 'Ignored', held: 'Held ({n})', sent: 'Sent', didSent: 'Done, told', did: 'Marked done', checkSent: 'Result sent', raised: 'Brought out' },
+  },
+  // P294: moved from the removed top workspace bar to the sidebar workspace menu
+  p294: {
+    openWs: 'Open another workspace…',
   },
 };
 

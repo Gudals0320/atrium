@@ -169,6 +169,7 @@ function useBarPlace(barRef, key) {
     measure();
     const ro = new ResizeObserver(measure);
     for (const sel of ['[data-role="top-left"]', '[data-role="top-right"]']) { const el = document.querySelector(sel); if (el) ro.observe(el); }
+    if (bar.offsetParent) ro.observe(bar.offsetParent); // P294: 사이드바를 열고 닫으면 판 칸 폭이 바뀌어 위 두 무리가 옮겨 간다(크기는 그대로)
     window.addEventListener('resize', measure);
     return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
   }, [barRef, key]);
