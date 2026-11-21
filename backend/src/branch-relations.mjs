@@ -87,6 +87,7 @@ export function installRelations(Branch) {
       if (relation === 'sub' && this.relIndex({ rows }).isWorkDescendant(a.sessionId, b.sessionId)) throw apiError('cycle', `@${shownName(a)}는 @${shownName(b)} 아래에 있어 @${shownName(b)}를 하위로 둘 수 없습니다.`);
       B.store.setRelation(a.sessionId, b.sessionId, relation === 'auto' ? null : relation, source, at);
       this._relRows = null;
+      if (this.recomputePerms) this.recomputePerms(); // P296: 오케스트레이션 세션의 권한(하위 ↔ 독립)
       const after = this.relIndex({ withLinks: true }).between(a.sessionId, b.sessionId);
       // 연결 기록: 명시한 관계면 a → b 연결을 연다(세션 맵에 선이 생긴다). 자동으로 되돌리면 있는 연결에만 남긴다
       // P159: 한쪽이 닫혀 있으면(사람이 닫힌 일 부모에서 독립으로 둘 때) 선을 새로 열지 않는다

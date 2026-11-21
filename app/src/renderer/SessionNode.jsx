@@ -28,6 +28,7 @@ import { enterSession, markInteracted } from './touch.js';
 import { LoopBadge, SessionLoopList } from './Loops.jsx';
 import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단계"
 import { MergerTag } from './Merger.jsx'; // P268: merger 세션 꼬리표
+import { orchTag } from './lib/orch.js'; // P296: 자체 오케스트레이션 표
 import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
 import { dockBranchOf } from './lib/dock-branch.js'; // P68: 워크트리끼리 붙인 덩어리의 칸마다 브랜치
 import { Icon } from './lib/icons.jsx';
@@ -137,6 +138,7 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
       {!editing && renamed(s) && <span className="mt-node-addr" data-role="node-address" title={t('rename.address', { address: addressOf(s) })}>{addressOf(s)}</span>}
       {dockBranch && <span className={`mt-dock-branch${dbKind === 'wt' ? ' wt' : ''}`} data-role="dock-branch" data-branch={dbName} title={t(dbKind === 'wt' ? 'dockWorkers.branchWt' : 'dockWorkers.branchMain', { branch: dbName })}>⎇ {dbName}</span>}
       <MergerTag s={s} />
+      <OrchTag s={s} />
       <DecisionMark sessionId={s.sessionId} />
       {/* 표시들은 좁으면 먼저 잘린다(이름이 먼저 보이게) */}
       <span className="mt-head-badges"><Badges s={s} /><Origin s={s} /><BranchBadge s={s} /><LoopBadge s={s} onClick={onLoops} /></span>
@@ -152,6 +154,12 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
   );
 }
 
+// P296: 자체 오케스트레이션 세션의 작은 표(안에서 일하는 중이면 그 까닭을 함께)
+function OrchTag({ s }) {
+  const t = useT();
+  const o = orchTag(s, t);
+  return o ? <span className={`mt-orch-tag${o.busy ? ' busy' : ''}`} data-role="orch-tag" data-busy={o.busy ? '1' : '0'} title={o.title}>{o.text}</span> : null;
+}
 const oneLine = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 // 멀리 얼굴(H3): 이름, 상태, 기다리는 질문(가장 크게), 마지막 사용자 요청 한 줄, 마지막 답 한 줄. 글자 크기는 화면 기준(px / 배율)이고 노드 높이에 맞춰 줄인다.
 // P10: 노드 너비에도 맞춰 줄인다(한 줄에 열몇 자는 들어가게). 이름 줄은 한 줄로 자르고, 좁으면(화면 180px 아래) 표시는 상태 필만 남긴다. 줄은 넘치면 자른다(styles.css)

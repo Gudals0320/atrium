@@ -34,7 +34,9 @@
 // 6(P269): rig를 통째로 걷어냈다. rig 동사, guide 응답의 rig 칸이 없어졌다(옛 rig 역할 세션의 명령은 모르는 동사 오류)
 // 7(P284): ask 동사(결정 카드: 사람이 정할 질문을 판에 남김, --done·--list)를 더하고, 하위 워커의 ask는 거절(sub_worker, 종료 코드 1)이다. 사람에게 글로 묻는 세션이 판의 결정 카드를 함께 남기는 새 약속이라 올렸다
 // 8(P292): todo 동사(사용자 몫: 사람이 할 일·칠 명령·확인·나중에 할 일을 판에 남김, --cmd·--check·--later·--tell, --done·--list)를 더하고, 결정 카드가 종류(kind) 넷을 가진 "사용자 몫"이 되었다(ask --list 응답 카드에 kind 칸). 사람에게 넘기는 일을 판에 남기는 새 약속이라 올렸다
-export const CONTRACT_VERSION = 8;
+// 9(P296): 자체 오케스트레이션 세션(런처 칸 orchestrates)은 허용 동사만 가진다. 허용되지 않은 동사는 보드가 not_permitted(종료 코드 1, error.allowed·error.reason)로
+//   거절하고, help(사람 글·--json)는 그 세션의 허용 동사만 보인다(--json의 allowed·orchestrates·scope 칸). 세션마다 쓸 수 있는 동사가 달라지는 새 약속이라 올렸다
+export const CONTRACT_VERSION = 9;
 // P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
 export const ASK_QUESTION_MAX = 300;
 export const ASK_OPTION_MAX = 80;
@@ -99,14 +101,27 @@ export const RELATION_HELP = [
   PEER_RULE, // P204
 ];
 
-// 모델이 읽는 짧은 사용법(동사마다 한 줄)
-export function shortHelp() {
+// P296: 그 세션이 쓸 수 있는 동사만(allowed null = 모두). perm: { orchestrates, scope, allowed } | null
+export const verbsFor = (allowed = null) => (allowed ? VERBS.filter((v) => allowed.includes(v.name)) : VERBS);
+export function permHelpLine(perm) {
+  if (!perm || !perm.allowed) return null;
+  return perm.scope === 'sub'
+    ? '이 세션은 자체 오케스트레이션 하네스이고 부모의 하위라 보드와는 부모하고만 말한다(atrium prompt는 부모에게만). 아래 동사만 있고 그 밖은 보드가 거절한다(not_permitted).'
+    : '이 세션은 자체 오케스트레이션 하네스라 하위 세션 만들기·끄기·관계 바꾸기(child, child-kill, child-wait, relate)가 없다. 안의 일은 하네스가 나눈다. 아래 동사만 있고 그 밖은 보드가 거절한다(not_permitted).';
+}
+// 모델이 읽는 짧은 사용법(동사마다 한 줄). P296: perm을 주면 그 세션의 허용 동사만
+export function shortHelp(perm = null) {
+  const line = permHelpLine(perm);
+  const orch = !!(perm && perm.allowed);
   return [
     `atrium(계약 ${CONTRACT_VERSION}): 보드가 띄운 세션이 보드와 말하는 명령. 옛 이름 mtask도 같다.`,
-    ...VERBS.map((v) => `  atrium ${v.name}${v.args.length ? ' ' + v.args.join(' ') : ''}\n      ${v.does}`),
-    '이름은 보드의 세션 이름이다(@ 없이도 된다). 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).',
-    ...RELATION_HELP,
+    ...(line ? [line] : []),
+    ...verbsFor(perm && perm.allowed).map((v) => `  atrium ${v.name}${v.args.length ? ' ' + v.args.join(' ') : ''}\n      ${v.does}`),
+    orch ? '이름은 보드의 세션 이름이다(@ 없이도 된다). atrium은 보드와 말할 때만 쓴다. 하네스 안의 하위 에이전트·위임·팀은 하네스의 방식대로 쓴다(보드를 거치지 않는다).' // P296·P297: 하네스 안 위임을 막지 않게
+      : '이름은 보드의 세션 이름이다(@ 없이도 된다). 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).',
+    ...(orch ? [] : RELATION_HELP),
     '종료 코드: 0 성공, 1 보드가 거절·실패, 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(다시 atrium wait). 기계용 계약: atrium help --json. 자세한 설명: atrium help --long',
   ].join('\n');
 }
-export const contractJson = () => ({ contract: CONTRACT_VERSION, verbs: VERBS, exit: EXIT, waitStatus: WAIT_STATUS, relations: ['sub', 'peer', 'none', 'auto'], relationHelp: RELATION_HELP.join('\n') }); // P156
+export const contractJson = (perm = null) => ({ contract: CONTRACT_VERSION, verbs: verbsFor(perm && perm.allowed), exit: EXIT, waitStatus: WAIT_STATUS, relations: ['sub', 'peer', 'none', 'auto'], relationHelp: RELATION_HELP.join('\n'), // P156
+  ...(perm && perm.allowed ? { orchestrates: true, scope: perm.scope, allowed: [...perm.allowed] } : {}) }); // P296: 오케스트레이션 세션의 허용 동사

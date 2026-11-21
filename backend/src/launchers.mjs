@@ -10,6 +10,7 @@
 //      터미널에 띄운다(hc 어댑터 startAgent). 이어 가기·되살리기·워크트리·하위 세션도 같은 실행 명령이다.
 //      명령줄 붙여 넣기(parseCommandLine)는 한 줄(여러 줄도)을 하네스·실행 명령·모델·옵션·추가 인자·환경 변수로 나눈다. 판이 모르는 명령이면 명령 한 줄 호출자다.
 import crypto from 'node:crypto';
+import { normalizeOrchFields, ORCH_DEFAULTS } from './orchestration.mjs'; // P296
 import fs from 'node:fs';
 import path from 'node:path';
 import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
@@ -57,7 +58,9 @@ export const HARNESSES = {
 export const harnessOf = (id) => HARNESSES[id] || (KIND_RE.test(String(id || '')) ? { id, kind: id, label: id, fields: ['startCommand', 'args'], models: [] } : null); // P115: 실행 명령은 모든 에이전트 하네스
 // dyn: 하네스별로 읽어 온 목록 { codex: { models, hidden, labels, source } }(P72). 없으면 고정 목록
 // P115: protocols는 그 하네스가 쓸 수 있는 연결 프로토콜(설정 탭이 맞지 않는 연결을 흐리게 보인다)
-export const describeHarnesses = (dyn = {}) => Object.values(HARNESSES).map((h) => ({ ...(dyn[h.id] ? { ...h, models: [...dyn[h.id].models], hiddenModels: [...(dyn[h.id].hidden || [])], modelLabels: { ...(dyn[h.id].labels || {}) }, modelSource: dyn[h.id].source || null } : { ...h }) }));
+// P296: 런처의 자체 오케스트레이션 칸만(띄울 값에 싣는다)
+export const orchFieldsOf = (l) => (l ? Object.fromEntries(['orchestrates', 'reportFallback', 'busy'].filter((k) => l[k] !== undefined).map((k) => [k, l[k]])) : {});
+export const describeHarnesses = (dyn = {}) => Object.values(HARNESSES).map((h) => ({ orchDefault: !!(ORCH_DEFAULTS[h.kind] && ORCH_DEFAULTS[h.kind].orchestrates), ...(dyn[h.id] ? { ...h, models: [...dyn[h.id].models], hiddenModels: [...(dyn[h.id].hidden || [])], modelLabels: { ...(dyn[h.id].labels || {}) }, modelSource: dyn[h.id].source || null } : { ...h }) }));
 // P72: 하네스가 경고하는 목록 밖 모델 이름인가(Codex). 막지는 않는다
 export function modelWarning(l, harnesses) {
   const h = (harnesses || []).find((x) => x.id === l.harness);
@@ -206,7 +209,10 @@ export function normalizeLauncher(input, { others = [] } = {}) {
   }
   const env = has('env') ? normalizeEnv(input.env) : {};
   const startCommand = has('startCommand') ? normalizeStartCommand(input.startCommand, h.id) : ''; // P97. P115: 모든 에이전트 하네스
-  return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, args, env, command, ...(startCommand ? { startCommand } : {}) }; // 빈 실행 명령은 두지 않는다
+  // P296: 자체 오케스트레이션(에이전트 하네스만). 칸이 없으면 종류의 기본(orchestration.mjs ORCH_DEFAULTS)
+  let orch = {};
+  if (h.kind !== 'shell') { try { orch = normalizeOrchFields(input); } catch (e) { throw err('bad_request', e.message, 'orchestrates', { key: e.key || 'orchestrates' }); } }
+  return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, args, env, command, ...(startCommand ? { startCommand } : {}), ...orch }; // 빈 실행 명령은 두지 않는다
 }
 
 // 직접 명령에 환경 변수를 붙인다(PowerShell: $env:이름='값'; 작은따옴표는 두 번). P115: launch.mjs로 옮겼다
@@ -225,7 +231,7 @@ export const flavorOf = (l) => (l.icon && l.icon !== harnessOf(l.harness).kind &
 export function resolveLauncher(l, over = {}) {
   const h = harnessOf(l.harness);
   const pick = (k) => (over[k] !== undefined && over[k] !== null && over[k] !== '' ? over[k] : l[k]);
-  const base = { kind: h.kind, flavor: flavorOf(l), launcher: l.name, launcherId: l.id || null };
+  const base = { kind: h.kind, flavor: flavorOf(l), launcher: l.name, launcherId: l.id || null, ...orchFieldsOf(l) }; // P296: 자체 오케스트레이션 칸(spawn이 세션에 남긴다)
   if (h.id === 'claude') {
     const model = String(pick('model') || '').trim();
     if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });

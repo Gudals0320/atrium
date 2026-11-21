@@ -12,6 +12,7 @@ import { usageLeftText, UsageLeft } from './Usage.jsx'; // P211: 호출자 옆 �
 import { useT, t, errText } from './lib/i18n.js';
 import { kindOf } from './lib/kinds.js';
 import { favoriteLaunchers, orderedLaunchers, previewLine } from './lib/launchers.js';
+import { launcherOrchestrates } from './lib/orch.js'; // P296
 import { useDialog } from './dialog.js';
 
 export const startedText = (r) => t('spawn.started', { name: r.name, kind: r.flavor ? t('spawn.startedKind', { kind: kindOf(r.flavor).label + (r.command ? t('spawn.startedCommand') : '') }) : r.command ? t('spawn.startedKind', { kind: t('launchers.harness.command') }) : r.kind !== 'claude' ? t('spawn.startedKind', { kind: r.kind === 'shell' ? t('spawn.shell') : kindOf(r.kind).label }) : '', trust: r.trust && r.trust.needsTrust ? t('spawn.startedTrust') : '', ws: r.workspaceKey && r.workspaceKey !== getState().currentWs ? t('spawn.startedWs', { ws: wsName(r.workspaceKey) || r.workspaceRoot }) : '' });
@@ -125,6 +126,7 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
             </label>
           )}
         </div>
+        {L && launcherOrchestrates(data && data.harnesses, L) && <div className="mt-card-sub" data-role="spawn-orch-note"><span className="mt-orch-tag">{t('orch.tag')}</span> {t('orch.fieldNote')}</div>}{/* P296 */}
         {L ? (typed ? <div className="mt-card-sub" data-role="command-note">{t('launchers.commandNote')}</div> : shell ? <div className="mt-card-sub" data-role="shell-note">{t('spawn.shellNote')}</div> : null)
           : shell ? <div className="mt-card-sub" data-role="shell-note">{t('spawn.shellNote')}</div> : claude ? <>
             <div className="mt-row">

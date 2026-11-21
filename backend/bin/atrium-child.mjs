@@ -138,6 +138,12 @@ function call(op, body, timeoutMs) {
   });
 }
 
+// P296: 이 세션의 실제 권한 | null(판 세션이 아니거나 보드가 답하지 않음)
+async function permNow() {
+  TOKEN = sessionToken();
+  if (!E('PORT') || !E('SESSION_ID') || !TOKEN) return null;
+  try { const r = await call('perm', {}, 3000); return r && r.result ? r.result : null; } catch { return null; }
+}
 function counts(c) { return c ? `너의 하위 세션 ${c.children}개${c.peers ? `, 동료 ${c.peers}명` : ''}, 판 전체 ${c.total}개(상한 없음)` : ''; } // P156: 하위는 하위 관계만
 // P36: 신뢰 질문에서 멈춘 하위 세션. 사람에게 할 말은 한 문장이다(판 밖 터미널을 열라고 하지 않는다)
 function trustLines(x) {
@@ -149,7 +155,12 @@ function trustLines(x) {
 
 async function main() {
   // P115: help는 모델이 읽는 짧은 사용법, --json은 기계용 계약, --long은 예전의 긴 설명. 보드에 묻지 않는다
-  if (!cmd || cmd === 'help' || flags.help) return flags.json ? say(JSON.stringify(contractJson(), null, 2)) : say(flags.long ? HELP : shortHelp());
+  // P296: 판이 띄운 세션이면 보드에 이 세션의 허용 동사를 묻는다(자체 오케스트레이션 세션은 허용 동사만 보인다). 묻지 못하면 전체
+  if (!cmd || cmd === 'help' || flags.help) {
+    const perm = await permNow();
+    const orch = !!(perm && perm.allowed);
+    return flags.json ? say(JSON.stringify(contractJson(orch ? perm : null), null, 2)) : say(flags.long && !orch ? HELP : shortHelp(orch ? perm : null));
+  }
   if (!VERB_NAMES.includes(cmd)) fail(`알 수 없는 명령입니다: ${cmd}. 이 atrium은 ${VERB_NAMES.join(', ')}만 한다(다른 보드 명령은 사람의 atrium으로). 사용법: atrium help`, 2);
   TOKEN = sessionToken();
   if (!E('PORT') || !E('SESSION_ID') || !TOKEN) fail('보드에서 시작한 세션이 아닙니다 (보드가 준 환경 변수나 세션 토큰 파일 없음). 보드에서 시작한 세션 안에서 호출하세요.');
@@ -567,6 +578,10 @@ function printMe(x) {
   const m = x.me;
   // P116: 이름은 보드의 세션 이름(atrium prompt|wait|read가 받는다). 에이전트 주소·패널은 보이지 않는다(--json에는 남는다)
   say(`나: @${m.name} (${m.kind}) · 워크스페이스 ${m.workspace || '-'}${m.worktree ? ` · 워크트리 ${m.worktree}` : ''}${m.branch ? ` · 브랜치 ${m.branch}` : ''}`);
+  if (x.permissions && x.permissions.allowed) { // P296: 자체 오케스트레이션 세션(하위면 허용 동사가 줄어든다)
+    const pv = x.permissions;
+    say(`권한: 자체 오케스트레이션 세션${pv.scope === 'sub' ? `, @${pv.parent || '?'}의 하위라 부모하고만 말한다(atrium prompt는 부모에게만)` : '(child·child-kill·child-wait·relate 없음)'}. 쓸 수 있는 명령: ${pv.allowed.map((v) => `atrium ${v}`).join(', ')}${pv.reportFallback === 'last_answer' ? '. 보고를 못 하면 보드가 턴 끝 마지막 답으로 일을 닫는다' : ''}`);
+  }
   const p = x.parent;
   const src = (s) => (s === 'user' ? ' · 사람이 정함' : s === 'agent' ? ' · 에이전트가 정함' : '');
   // P156: 상위(너를 하위로 둔 세션)·동료·하위·독립. 끝나면 상위에게 보고, 동료와는 공유

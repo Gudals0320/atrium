@@ -2703,6 +2703,13 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-ut-note.error { background: none; border-color: var(--warn); color: var(--warn); }
 .mt-ut-note + .mt-dc-x { margin-left: 0; }
 
+/* P296: 자체 오케스트레이션 표(판 카드 머리, 세션 맵 카드, 런처 목록·창) */
+.mt-orch-tag { display: inline-flex; align-items: center; flex: none; margin-left: 6px; padding: 0 6px; height: 16px; border-radius: 8px; font-size: 10px; line-height: 16px; font-weight: 600; letter-spacing: .02em; color: var(--mt-orch-fg, #7c5cc4); background: var(--mt-orch-bg, rgba(124, 92, 196, 0.13)); white-space: nowrap; }
+.mt-orch-tag.busy { color: var(--mt-orch-busy-fg, #2f7d4f); background: var(--mt-orch-busy-bg, rgba(47, 125, 79, 0.14)); }
+.mt-orch-tag.map { margin-left: 4px; }
+.mt-ln-orch-row { display: flex; align-items: flex-start; gap: 6px; }
+.mt-ln-orch-row input { margin-top: 2px; }
+.mt-ln-orch-note { font-size: 12px; color: var(--mt-dim, #888); line-height: 1.4; }
 /* P294: 위 알약 나누기. 왼쪽 = 사람이 볼 것(응답 필요·내 몫·작업 완료·문제·세션), 오른쪽 = 상태. 워크스페이스 알약 줄은 없앴다 */
 .mt-cluster.tl { max-width: none; align-items: center; }
 .mt-cluster.tl > .mt-cp.round, .mt-cluster.tl > .mt-dev-badge { margin-top: 0; }
