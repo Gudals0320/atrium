@@ -690,3 +690,4 @@ button.mt-pm-chip:disabled { opacity: .5; }
 
 /* P300: 휴대폰 세션 맵 카드의 안 진행 칩(작게) */
 .mt-pmap .mt-prog-chip.map { height: 14px; padding: 0 5px; font-size: 9px; line-height: 12px; }
+.mt-pmap .mt-prog-chip.tile { font-size: .62em; }

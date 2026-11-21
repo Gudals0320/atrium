@@ -2801,3 +2801,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-sm-peek .pkpg .it.st-running i { background: #4caf74; }
 .mt-sm-peek .pkpg .it.st-failed i { background: #d0614b; }
 .mt-sm-peek .pkpg .it .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-ta-card .c2 .mt-prog-chip.map { margin-left: 8px; flex: none; }
+.mt-prog-chip.tile { margin-left: 6px; height: auto; padding: 0 .4em; border-radius: .6em; font-size: .72em; line-height: 1.4; cursor: inherit; }
+.mt-ta-full .c2 .cmodel { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* P300: 칩이 있으면 모델 이름이 먼저 줄어든다 */

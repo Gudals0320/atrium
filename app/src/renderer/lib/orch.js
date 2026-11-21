@@ -77,7 +77,8 @@ export function progressChip(p, t) {
   if (p.failed > 0) parts.push(t('progress.failed', { n: p.failed }));
   const text = parts.join(' · ');
   const title = [p.label ? `${head} ${p.label}` : null, text, t('progress.readOnly')].filter(Boolean).join('\n');
-  return { text, finished: !!p.finished, failed: p.failed > 0, running: p.running > 0, title };
+  const short = p.finished ? t('progress.finished', { head, done: p.done, total: p.total }) : `${head} ${p.done}/${p.total}${p.failed > 0 ? ' !' : ''}`; // 타일(멀리 단계·휴대폰)용 짧은 글
+  return { text, short, finished: !!p.finished, failed: p.failed > 0, running: p.running > 0, title };
 }
 // 갈래 목록 줄 → [{ name, state, stateText, dur }]. 도는 갈래는 지금까지 걸린 시간
 export function progressRows(p, t, now = Date.now()) {
