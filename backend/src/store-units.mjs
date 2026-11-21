@@ -65,6 +65,8 @@ export function installUnits(Store) {
     // P267: 열린 합치기 일(창의 하위 → merger 선)
     openMergeUnits() { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status = 'open' ORDER BY created_at").all().map(unitRow); },
     unassignedMergeUnits() { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status = 'open' AND to_session = '' ORDER BY created_at").all().map(unitRow); },
+    // P290: 끝난 합치기 일 가운데 정리 알림을 아직 보내지 않은 것(meta.summary pending), 먼저 닫힌 것부터
+    pendingMergeSummaries() { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status IN ('done', 'failed') ORDER BY closed_at").all().map(unitRow).filter((u) => u.meta && u.meta.summary === 'pending'); },
     lastTryOfUnit(unitId) { return tryRow(this.st('SELECT * FROM unit_tries WHERE unit_id = ? ORDER BY started_at DESC LIMIT 1').get(unitId)); },
   });
 }

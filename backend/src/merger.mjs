@@ -181,6 +181,37 @@ export function mergeState(mu, lastTry) {
   return mu.to && lastTry ? 'merging' : 'queued';
 }
 
+// P290: 합치기 정리 알림(merger가 닫힐 때 판이 쓴다. merger 에이전트는 따로 보고하지 않는다)
+//   merger가 끝낸 합치기 일은 meta.summary = 'pending'으로 표시해 두고, 그 키의 merger가 닫힐 때(retire: idle·jobs·exited, 사람이 닫음)
+//   또는 판이 그 키의 merger가 없음을 알아챌 때(recover) 부모별로 묶어 알림 하나씩 보낸 뒤 'sent'로 바꾼다(판 기록이라 판이 다시 떠도 다시 보내지 않는다)
+// 하위 done 글에서 "사용자가 얻는 것 …"(; 또는 줄 끝까지)
+export function gainOf(text) {
+  const m = /사용자가\s*얻는\s*것\s*[:：]?\s*([^;\n]+)/.exec(String(text || ''));
+  return m ? clip(m[1].trim().replace(/[.。]$/, ''), 160) : null;
+}
+// merger done 글에서 검토 파일 경로와 dev 빌드
+export function reviewOf(text) { const m = /[\w./\\-]*review\.md/.exec(String(text || '')); return m ? m[0].split('\\').join('/') : null; }
+export function devBuildOf(text) { const m = /\bdev\.(\d+)\b/.exec(String(text || '')); return m ? 'dev.' + m[1] : null; }
+// 합치기 일의 하위 done 글(spec의 "## @<하위>의 done 글" 아래)
+export const childDoneOf = (spec) => { const s = String(spec || ''); const i = s.search(/^## @[^\n]*의 done 글$/m); return i < 0 ? '' : s.slice(s.indexOf('\n', i) + 1); };
+// 정리 줄 하나(순수)
+export function summaryLine(u) {
+  const m = u.meta || {}; const child = '@' + (m.child || '?');
+  if (u.status === 'failed') return '- ' + child + ': 실패(이미 알림)';
+  const said = (m.merged && m.merged.text) || (m.merged && m.merged.line) || '';
+  const parts = ['합침 ' + short(m.merged && m.merged.hash) + (m.target ? ' → ' + m.target : '')];
+  const dev = devBuildOf(said); if (dev) parts.push(dev);
+  const gain = gainOf(childDoneOf(u.spec)); if (gain) parts.push('사용자가 얻는 것: ' + gain);
+  const rv = reviewOf(said); if (rv) parts.push('검토 ' + rv);
+  return '- ' + child + ': ok, ' + parts.join(' · ');
+}
+// 부모 하나에게 가는 정리 알림(순수). extra: 문서 규칙 꼬리 줄
+export function mergeSummaryText({ merger, units, extra = [] }) {
+  const ok = units.filter((u) => u.status !== 'failed').length; const bad = units.length - ok;
+  const head = '[Atrium 보드] 합치기 정리: @' + merger + '가 닫히기 전에 합친 것 ' + ok + '개' + (bad ? ', 실패 ' + bad + '개' : '');
+  return [head, ...units.map(summaryLine), ...(extra.length ? ['', ...extra] : [])].join('\n');
+}
+
 export class Merger {
   // b: 백엔드(sessions, store, spawn, kill, sleeper, queue, adapter, api, log). units: WorkUnits. opts.settings: () => 설정(시험)
   constructor(b, units, { settings = null, jobs = MERGER_JOBS, sleepDelayMs = 300, termWaitMs = TERM_WAIT_MS, kindsWaitMs = KINDS_WAIT_MS, recoverDelayMs = RECOVER_DELAY_MS } = {}) {
@@ -400,6 +431,8 @@ export class Merger {
       this.log('merge ' + u.id + ' lost its merger, requeued (' + why + ')');
       keys.add(key);
     }
+    // P290: 정리 없이 사라진 merger(판이 죽었다 등)의 남은 정리를 보낸다(그 키에 열린 merger가 없을 때)
+    for (const k of new Set(st.pendingMergeSummaries().map((u) => u.meta.key))) if (!this.sessionOfKey(k)) this.summarize(k, null, 'recover');
     const out = [];
     for (const k of keys) { this.termWaiting.delete(k); out.push(await this.ensure(k).catch((e) => { this.log('merger recover ' + k + ' ' + e.message); return null; })); }
     if (keys.size) this.log('merger recover (' + why + '): ' + [...keys].join(', '));
@@ -455,7 +488,7 @@ export class Merger {
     const mergerName = shownName(caller) || caller.name;
     const failLines = mergeFailLines({ child: m.child || '?', worktree: m.worktree, branch: m.branch, merger: mergerName });
     if (result === 'ok' && check && check.contains === true) {
-      st.updateUnit(unit.id, { meta: { ...m, merged: { at: Date.now(), line: clip(firstLine, 200), hash: check.hash, contains: true } } });
+      st.updateUnit(unit.id, { meta: { ...m, summary: 'pending', merger: mergerName, merged: { at: Date.now(), line: clip(firstLine, 200), text: clip(String(text || ''), 600), hash: check.hash, contains: true } } }); // P290: 정리 알림에 넣을 일
       this.finishOk(caller, unit, check).catch((e) => this.log('merge finish ' + unit.id + ' ' + e.message));
       this.changed(m.ws);
       return { retire, extra: [], result: 'ok' };
@@ -464,7 +497,7 @@ export class Merger {
       // P275: ok라 했지만 합칠 브랜치에 커밋이 없다(또는 확인하지 못했다): failed와 같이. 하위는 재운 채 두고 부모에게 알린다
       const c = check || { hash: null, contains: null };
       const line = mergeUnverifiedLine({ merger: mergerName, child: m.child || '?', tip: m.tip, target: m.target, hash: c.hash, contains: c.contains });
-      st.updateUnit(unit.id, { meta: { ...m, failed: { at: Date.now(), line: clip(line.replace(/^\[Atrium 보드\] /, ''), 200), unverified: true, said: clip(firstLine, 200), hash: c.hash, contains: c.contains } } });
+      st.updateUnit(unit.id, { meta: { ...m, summary: 'pending', merger: mergerName, failed: { at: Date.now(), line: clip(line.replace(/^\[Atrium 보드\] /, ''), 200), unverified: true, said: clip(firstLine, 200), hash: c.hash, contains: c.contains } } });
       try { st.addEvent(caller.sessionId, 'merge_unverified', { unitId: unit.id, target: m.target, tip: m.tip, hash: c.hash, contains: c.contains }); } catch {}
       try { st.addNews({ sessionId: caller.sessionId, name: mergerName, at: Date.now(), kind: 'merge', task: '합치기: @' + (m.child || '?'), text: '@' + (m.child || '?') + ' 합치기 확인 실패: 끝 커밋 ' + short(m.tip) + (c.contains === false ? '이 ' + m.target + '(' + short(c.hash) + ')에 없다' : '을 ' + (m.target || '?') + '에서 확인하지 못했다'), result: 'failed' }); } catch (e) { this.log('merge news ' + e.message); }
       this.log('merge ' + unit.id + ' ok by ' + mergerName + ' but not on ' + m.target + ' (contains ' + c.contains + ')');
@@ -472,7 +505,7 @@ export class Merger {
       this.changed(m.ws);
       return { retire, extra: [line, ...failLines], result: 'failed', unverified: true };
     }
-    st.updateUnit(unit.id, { meta: { ...m, failed: { at: Date.now(), line: clip(firstLine, 200) } } });
+    st.updateUnit(unit.id, { meta: { ...m, summary: 'pending', merger: mergerName, failed: { at: Date.now(), line: clip(firstLine, 200) } } });
     this.changed(m.ws);
     return { retire, extra: failLines, result: 'failed' };
   }
@@ -563,9 +596,35 @@ export class Merger {
       if (key) this.saveRec(key, { ...rec, sessionId: null, jobs: 0, closedAt: Date.now(), closedWhy: why });
       try { st.addEvent(sid, 'merger_retire', { key, why, jobs: rec ? rec.jobs : null }); } catch {}
       this.log('merger ' + (key || '?') + ' retired ' + s.name + ' (' + why + ')');
+      if (key) this.summarize(key, shownName(s) || s.name, why);
     } finally { this.retiring.delete(sid); this.pendingCheck.delete(sid); }
     if (key) { this.changed(rec.ws); if (st.unassignedMergeUnits().some((u) => u.meta && u.meta.key === key)) await this.ensure(key); }
     return { retired: s.name, why };
+  }
+  // P290: 그 키의 끝낸 합치기 일(정리 전)을 부모별로 묶어 알린다. merger: 머리에 쓸 이름(없으면 일에 적힌 이름)
+  summarize(key, merger, why) {
+    const st = this.store(); const b = this.b;
+    let list;
+    try { list = st.pendingMergeSummaries().filter((u) => u.meta.key === key); } catch (e) { this.log('merge summary ' + e.message); return []; }
+    if (!list.length) return [];
+    const groups = new Map();
+    for (const u of list) { if (!groups.has(u.from)) groups.set(u.from, []); groups.get(u.from).push(u); }
+    const out = [];
+    for (const [from, units] of groups) {
+      const parent = b.sessions.get(from) || null;
+      const name = merger || units[units.length - 1].meta.merger || (this.rec(key) || {}).name || 'merger';
+      let deliveryId = null;
+      if (parent && !parent.closedAt && b.queue) {
+        const extra = b.docs ? b.docs.doneLines(parent) : []; // P257 문서 규칙 꼬리(한 번)
+        const d = b.queue.enqueue(parent.sessionId, mergeSummaryText({ merger: name, units, extra }));
+        deliveryId = d ? d.deliveryId : null;
+      }
+      for (const u of units) st.updateUnit(u.id, { meta: { ...u.meta, summary: deliveryId ? 'sent' : 'dropped', summaryAt: Date.now(), ...(deliveryId ? { summaryDelivery: deliveryId } : {}) } });
+      try { st.addEvent(parent ? parent.sessionId : null, 'merge_summary', { key, why, merger: name, units: units.map((u) => u.id), deliveryId }); } catch {}
+      this.log('merge summary ' + key + ' → ' + (parent ? parent.name : '(closed parent)') + ': ' + units.length + ' (' + why + ')');
+      out.push({ parent: from, units: units.length, deliveryId });
+    }
+    return out;
   }
   // 일 표가 merger의 닫힘을 볼 때(units.onClosed가 줄 선 일을 취소하기 전에): 줄 선 합치기 일을 떼어 두고 새 merger에게 넣는다
   onClosing(s) {
@@ -575,6 +634,7 @@ export class Merger {
     for (const u of moved) st.updateUnit(u.id, { to: '' });
     if (key) this.saveRec(key, { ...rec, sessionId: null, jobs: 0, closedAt: Date.now(), closedWhy: 'closed' });
     this.pendingCheck.delete(s.sessionId);
+    if (key) this.summarize(key, shownName(s) || s.name, 'closed'); // P290
     if (key && moved.length) { const t = setTimeout(() => this.ensure(key).catch(() => {}), 0); if (t.unref) t.unref(); }
     if (key) this.changed(rec.ws);
   }

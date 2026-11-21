@@ -113,9 +113,12 @@ async function board({ dir = repo(), settings = { mergerMode: 'on' }, jobs, spaw
   const U = () => b.branch.units;
   const worker = (name, wt, { parent, result = 'ok', text = null, kind = 'claude' } = {}) => add(name, { cwd: wt, kind, parentSessionId: parent.sessionId, onText: async (t, s) => { if (t.includes('맡긴 일 u')) s.doneOut = await U().doneVerb(s, { result, text: text || name + ': 브랜치 worktree-' + name + ' 끝냄; 시험 통과' }); } });
   const mergerAct = (act) => { b.onSpawn = (s) => { s.onText = async (t, x) => { const m = /합치는 일 (u[0-9a-f]+)/.exec(t); if (!m) return; const u = b.store.getUnit(m[1]); const [r, txt] = await act(u, x); x.mergeOut = x.mergeOut || []; x.mergeOut.push(await U().doneVerb(x, { result: r, text: txt })); }; }; };
-  const toS = (s) => store.db.prepare('SELECT * FROM deliveries WHERE session_id = ?').all(s.sessionId);
+  // P290: 합치기 정리 알림(merger가 닫힐 때)은 따로 본다(sumS)
+  const isSum = (d) => /^\[Atrium 보드\] 합치기 정리: /.test(d.text);
+  const toS = (s) => store.db.prepare('SELECT * FROM deliveries WHERE session_id = ?').all(s.sessionId).filter((d) => !isSum(d));
+  const sumS = (s) => store.db.prepare('SELECT * FROM deliveries WHERE session_id = ?').all(s.sessionId).filter(isSum);
   const stop = async () => { b.stopped = true; b.queue.stop(); b.branch.notices.stop(); U().stops.stop(); await tick(200); store.close(); };
-  return { b, dir, ws, add, worker, mergerAct, M, U, toS, stop, events };
+  return { b, dir, ws, add, worker, mergerAct, M, U, toS, sumS, stop, events };
 }
 const assign = async (b, lead, name) => { await b.branch.verbs.prompt(lead, { name, text: name + '의 일: 고쳐라' }); };
 
@@ -203,7 +206,7 @@ test('P267 git 읽기: 워크트리·브랜치·끝 커밋·앞선 커밋·커�
 });
 
 test('P267 흐름: 첫 done ok에 merger를 띄우고 하위를 재운다, 합침 ok → 부모 안 깨움·소식·items 합침·하위 닫고 보관, 할 일 없으면 merger도 닫는다', async () => {
-  const { b, dir, add, worker, mergerAct, M, U, toS, stop } = await board();
+  const { b, dir, add, worker, mergerAct, M, U, toS, sumS, stop } = await board();
   try {
     const lead = add('lead', { permissionMode: 'acceptEdits' });
     const wt = worktree(dir, 'p1');
@@ -244,6 +247,9 @@ test('P267 흐름: 첫 done ok에 merger를 띄우고 하위를 재운다, 합�
     assert.equal(news.filter((n) => n.kind === 'done').length, 0, '합침은 done 줄 대신 합침 줄');
     await until(() => b.killed.some((x) => x.name === sp.name));
     assert.equal(b.killed.find((x) => x.name === sp.name).after, 'archive');
+    // P290: merger가 닫힐 때 판이 부모에게 정리 알림 하나
+    await until(() => sumS(lead).length === 1);
+    assert.match(sumS(lead)[0].text, /^\[Atrium 보드\] 합치기 정리: @merger-.*가 닫히기 전에 합친 것 1개\n- @p1: ok, 합침 [0-9a-f]{9} → dev/);
     const st = M().status();
     assert.equal(st.mergers[0].open, false); assert.equal(st.mergers[0].gen, 1);
   } finally { await stop(); }
