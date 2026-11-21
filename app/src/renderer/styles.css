@@ -2658,3 +2658,39 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-dc-sheet .mt-dc-held { font-size: 13px; }
 .mt-dc-sheet .mt-dc-held .mt-btn { min-height: 32px; }
 .mt-dc-held-name { font-weight: 700; color: var(--white); }
+
+/* P292: 사용자 몫(내 몫). 종류 표, 명령(고정폭·복사), 확인 단추, 미루기, 나중 줄 */
+.mt-cp.decision.quiet { background: none; }
+.mt-pl-pill.st-decision.quiet { background: none; }
+.mt-dc-list { width: 470px; max-height: min(78vh, 760px); overflow: auto; }
+.mt-ut-kind { flex: none; padding: 0 6px; border-radius: 5px; font-size: 10.5px; font-weight: 700; line-height: 16px; white-space: nowrap; background: var(--teal-bg); color: var(--teal); }
+.mt-ut-kind.k-do { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-2); }
+.mt-ut-kind.k-check { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.mt-ut-kind.k-later { background: var(--panel-2); color: var(--dim); border: 1px solid var(--panel-line-2); }
+.mt-dc-row.k-do { border-left-color: var(--accent-2); }
+.mt-dc-row.k-check { border-left-color: var(--warn); }
+.mt-dc-row.k-later { border-left-color: var(--dim); }
+.mt-ut-tell { flex: none; padding: 0 5px; border-radius: 5px; border: 1px solid var(--panel-line-2); color: var(--dim); font-size: 10.5px; line-height: 15px; white-space: nowrap; }
+.mt-ut-cmds { display: grid; gap: 4px; }
+.mt-ut-cmd { display: flex; align-items: flex-start; gap: 6px; min-width: 0; padding: 4px 4px 4px 8px; border-radius: 6px; background: var(--field-bg); border: 1px solid var(--panel-line-2); }
+.mt-ut-cmd code { flex: 1; min-width: 0; padding-top: 3px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.4; color: var(--white); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.mt-ut-copy { flex: none; }
+.mt-ut-copy.ok { border-color: var(--teal); color: var(--teal); }
+.mt-ut-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mt-ut-acts > .mt-btn.ghost:last-child { margin-left: auto; }
+.mt-ut-snooze { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mt-ut-when { flex: none; width: 190px; }
+.mt-ut-ok { border-color: var(--teal); }
+.mt-ut-fail { border-color: var(--warn); color: var(--warn); }
+.mt-ut-when-line { color: var(--dim); font-size: 12px; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.mt-ut-later { display: grid; gap: 6px; padding-top: 2px; }
+.mt-ut-later-head { display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; padding: 6px 8px; border: 1px dashed var(--panel-line-2); border-radius: 7px; background: none; color: var(--text); font: inherit; font-size: 12.5px; font-weight: 650; text-align: left; cursor: pointer; }
+.mt-ut-later-head:hover { border-color: var(--dim); }
+.mt-ut-caret { flex: none; width: 12px; color: var(--dim); }
+.mt-ut-later-peek { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-weight: 400; font-family: var(--font-mono); font-size: 11.5px; }
+.mt-ut-later-row { background: none; border: 1px solid var(--panel-line-2); border-left-width: 3px; }
+.mt-dc-sheet .mt-ut-cmd code { font-size: 13.5px; }
+.mt-dc-sheet .mt-ut-acts .mt-btn, .mt-dc-sheet .mt-ut-snooze .mt-btn, .mt-dc-sheet .mt-ut-copy { min-height: 34px; font-size: 14px; }
+.mt-dc-sheet .mt-ut-when { width: 100%; height: 36px; font-size: 16px; }
+.mt-dc-sheet .mt-ut-later-head { min-height: 38px; font-size: 14px; }
+.mt-dc-sheet .mt-ut-kind { font-size: 11.5px; line-height: 18px; }
