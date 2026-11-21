@@ -170,7 +170,7 @@ test('P292 만들기: 종류 넷(할 일·확인·날짜 나중·조건 나중),
   } finally { await stop(); }
 });
 
-test('P292 했음: 기본은 기록만(세션에 보내지 않음), --tell이면 [할 일] 줄을 보냄. 확인은 늘 [확인] 줄로. 결정과 한 글로 모음', async () => {
+test('P292 했음: 기본은 기록만(세션에 보내지 않음), --tell이면 [실행] 줄을 보냄. 확인은 늘 [확인] 줄로. 결정과 한 글로 모음', async () => {
   const { b, add, stop } = await board();
   const h = b.branch.handlers;
   try {
@@ -183,7 +183,7 @@ test('P292 했음: 기본은 기록만(세션에 보내지 않음), --tell이면
     // --tell
     const t = todo(b, lead, { text: '키를 등록', tell: true, wait: true }); // P295: 기본은 next(다음 글에 실림). 이 시험은 곧바로(--wait)
     const rt = h['decision.done']({ id: t.id });
-    assert.ok(rt.deliveryId); assert.equal(dl(b, lead).at(-1).text, '[할 일] 키를 등록 → 했음');
+    assert.ok(rt.deliveryId); assert.equal(dl(b, lead).at(-1).text, '[실행] 키를 등록 → 했음');
     // 종류가 틀리면 거절
     const c = todo(b, lead, { text: '로그인 화면 확인', check: true });
     assert.equal(err(() => h['decision.done']({ id: c.id })).code, 'wrong_kind');
@@ -214,8 +214,8 @@ test('P292 했음: 기본은 기록만(세션에 보내지 않음), --tell이면
     b.clock += 1000;
     h['decision.done']({ id: d2.id });
     b.clock = null;
-    assert.equal(dl(b, lead).at(-1).text, '[결정] 이름은? → A\n[할 일] 키 넣기 → 했음');
-    assert.equal(answerText('q', '했음', 'later'), '[할 일] q → 했음');
+    assert.equal(dl(b, lead).at(-1).text, '[결정] 이름은? → A\n[실행] 키 넣기 → 했음');
+    assert.equal(answerText('q', '했음', 'later'), '[실행] q → 했음');
   } finally { await stop(); }
 });
 
@@ -346,7 +346,7 @@ test('P292 CLI: atrium todo(--cmd 둘·--check·--later·--tell), --list(열린 
     const lead = add('lead');
     const env = envOf(b, lead);
     let r = await runCli(['todo', '로그인해 주세요', '--cmd', '! gcloud auth login', '--cmd', 'gcloud config list', '--why', '배포 전'], env);
-    assert.equal(r.code, 0, r.stderr); assert.match(r.stdout, /할 일 카드 #\d+를 보드의 "내 몫"에 남겼다/); assert.match(r.stdout, /기록만/);
+    assert.equal(r.code, 0, r.stderr); assert.match(r.stdout, /실행 카드 #\d+를 보드의 "할 일 목록"에 남겼다/); assert.match(r.stdout, /기록만/);
     r = await runCli(['todo', '단추가 보이는지', '--check', '--json'], env);
     const j = JSON.parse(r.stdout); assert.equal(j.kind, 'check');
     r = await runCli(['todo', '배포', '--later', '2099-01-02 10:00', '--tell'], env);
@@ -354,7 +354,7 @@ test('P292 CLI: atrium todo(--cmd 둘·--check·--later·--tell), --list(열린 
     r = await runCli(['todo', '키 등록', '--later', '키를 받으면'], env);
     assert.match(r.stdout, /꺼낼 때까지/);
     r = await runCli(['todo', '--list'], env);
-    assert.match(r.stdout, /열린 카드 2장/); assert.match(r.stdout, /\[할 일\].*명령: `! gcloud auth login`, `gcloud config list`/); assert.match(r.stdout, /나중 2장/); assert.match(r.stdout, /조건: 키를 받으면/);
+    assert.match(r.stdout, /열린 카드 2장/); assert.match(r.stdout, /\[실행\].*명령: `! gcloud auth login`, `gcloud config list`/); assert.match(r.stdout, /나중 2장/); assert.match(r.stdout, /조건: 키를 받으면/);
     const cards = b.store.openDecisions(lead.sessionId);
     assert.equal(cards.find((d) => d.question === '배포').tell, true);
     r = await runCli(['todo', '--done', String(j.id)], env);
@@ -377,6 +377,6 @@ test('P292 안내: 계약 8과 todo 동사, 허용 규칙, 판·하네스 안내
   assert.equal(lines.length, 1); assert.match(lines[0], /atrium ask/, '결정 카드 줄에 더했다');
   assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 9);
   assert.match(HARNESS_PROMPT, /atrium todo/); assert.doesNotMatch(HARNESS_PROMPT, /["\n]/);
-  assert.match(boardSkill(), /## 사람에게 넘기기\(사용자 몫\)/); assert.match(boardSkill(), /--later/);
+  assert.match(boardSkill(), /## 사람에게 넘기기\(할 일 목록\)/); assert.match(boardSkill(), /--later/);
   assert.match(shortHelp(), /atrium todo/);
 });
