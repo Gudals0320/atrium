@@ -464,15 +464,17 @@ for (const ev of ['merger.updated', 'session.created', 'session.removed']) api.o
 // P284: 결정 카드(판 API decision.*). 처음 붙을 때 decision.list로 읽고, decision.changed { cards }로 바꾼다. 옛 판이면 빈 목록
 state.decisions = [];
 state.decisionHeld = {}; // P286: 세션마다 모아 둔 답 수(그 세션의 열린 카드가 모두 끝나면 판이 한 글로 보낸다)
-export function putDecisions(cards, held) { state.decisions = decisionsOf(cards); if (held !== undefined) state.decisionHeld = heldOf(held); changed(); }
-export const loadDecisions = () => api.call('decision.list').then((r) => putDecisions(r && r.cards, (r && r.held) || {})).catch(() => {});
+state.decisionRiding = {}; // P295: 세션마다 다음 글에 실려 갈 답 수(모두 next라 붙잡아 둔 답)
+export function putDecisions(cards, held, riding) { state.decisions = decisionsOf(cards); if (held !== undefined) state.decisionHeld = heldOf(held); if (riding !== undefined || held !== undefined) state.decisionRiding = heldOf(riding); changed(); }
+export const loadDecisions = () => api.call('decision.list').then((r) => putDecisions(r && r.cards, (r && r.held) || {}, (r && r.riding) || {})).catch(() => {});
 api.on('$open', () => loadDecisions());
-api.on('decision.changed', (d) => putDecisions(d && d.cards, d && d.held));
-export async function flushDecisions(sessionId) { const r = await api.call('decision.flush', { sessionId }); const h = { ...state.decisionHeld }; delete h[sessionId]; state.decisionHeld = h; changed(); return r; } // P286: 모은 답 지금 보내기
-export async function answerDecision(id, answer) { const r = await api.call('decision.answer', { id, answer }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
+api.on('decision.changed', (d) => putDecisions(d && d.cards, d && d.held, d && d.riding));
+export async function flushDecisions(sessionId) { const r = await api.call('decision.flush', { sessionId }); const h = { ...state.decisionHeld }; delete h[sessionId]; state.decisionHeld = h; const g = { ...state.decisionRiding }; delete g[sessionId]; state.decisionRiding = g; changed(); return r; } // P286: 모은 답 지금 보내기
+const timingOpt = (timing) => (timing ? { timing } : {}); // P295: 사람이 바꾼 보내는 때(now | next)
+export async function answerDecision(id, answer, timing = null) { const r = await api.call('decision.answer', { id, answer, ...timingOpt(timing) }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
 export async function ignoreDecision(id) { const r = await api.call('decision.ignore', { id }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
 // P292: 할 일 했음, 확인 됐다/안 됐다, 미루기, 나중에서 꺼내기
-export async function doneDecision(id) { const r = await api.call('decision.done', { id }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
-export async function checkDecision(id, ok, note = '') { const r = await api.call('decision.check', { id, ok, note }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
+export async function doneDecision(id, timing = null) { const r = await api.call('decision.done', { id, ...timingOpt(timing) }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
+export async function checkDecision(id, ok, note = '', timing = null) { const r = await api.call('decision.check', { id, ok, note, ...timingOpt(timing) }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
 export async function snoozeDecision(id, until) { const r = await api.call('decision.snooze', { id, until }); state.decisions = withDeferred(state.decisions, id, true, until); changed(); return r; }
 export async function raiseDecision(id) { const r = await api.call('decision.raise', { id }); state.decisions = withDeferred(state.decisions, id, false); changed(); return r; }

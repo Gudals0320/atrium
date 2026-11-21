@@ -2848,5 +2848,17 @@ export default {
   p294: {
     openWs: 'Open another workspace…',
   },
+  // P295: 답 실어 보내기(보내는 때: 바로 감 | 다음 메시지와)
+  riding: {
+    now: 'Goes now',
+    next: 'With next',
+    nowTitle: 'Your answer goes to this session right away (it is waiting for it). Click to send it with the next message instead',
+    nextTitle: 'Your answer is held and goes in front of the next message to this session (saves a turn). Click to send it right away instead',
+    line: '{n} answer(s) going with the next message',
+    lineTitle: 'Sent in front of the next message to this session (from you, another session, or a board notice). Send now sends them right away',
+    toast: 'Held {n} answer(s) for @{name}. They go with the next message',
+    mark: '+{n} with next',
+    markTitle: '{n} answer(s) going with the next message · send them now from the "For you" pill at the top',
+  },
 };
 

@@ -143,6 +143,7 @@ export class DeliveryQueue extends EventEmitter {
     d.seq = d.createdAt; // P172: 세션 안 차례. 순서 바꾸기·바로 보내기가 고친다(작을수록 먼저)
     if (opts.typeNow) d.typeNow = true;
     if (this._ofSession(sessionId).length) d.acctFree = true; // P215: 앞 전달 뒤에서 기다리는 시간은 짧은 상한에 넣지 않는다(맨 앞이 된 뒤 그 까닭으로 센다)
+    if (opts.rideOnly) d.rideOnly = true; // P295: 지금 턴에만 넣는 글(사람이 터미널에 친 글로 시작한 턴에 실어 보내는 답). 못 넣고 턴이 끝나면 보내지 않고 취소한다(턴을 새로 만들지 않는다)
     if (opts.typeNow && opts.aside) d.typeAside = true; // P143(atrium prompt --now): 입력 칸에 쓰다 만 글이 있으면 비키고(P128·P139) 바로 넣는다. 휴대폰 입력 줄(P90)은 그대로 기다린다
     // P248: 스티어링(typeNow + aside: atrium prompt --steer·--now, 보내기 칸·휴대폰의 스티어링)은 그 세션의 대기 중 글 맨 앞에 선다(바로 보내기 P172와 같다).
     //   앞에 대기열 글이 있어도 그 뒤에 막히지 않고 지금 턴에 들어간다. 대기열 글의 차례는 그대로
@@ -434,6 +435,12 @@ export class DeliveryQueue extends EventEmitter {
       const reason = blockReason(view, now, this.cfg);
       d.acctFree = LONG_WAIT.has(reason); // P215: 이번에 본 까닭으로 다음 pump까지를 센다
       if (reason === 'closed') { this._set(d, 'failed', 'session closed'); continue; }
+      // P295: 지금 턴에만 넣는 글. 턴이 도는 동안(working·질문 중)만 기다리고, 턴이 끝났거나(쉼·뒤 일만) 턴을 못 본 채 rideGraceMs가 지나면 취소한다(rideMissed: 판이 답을 다시 붙잡는다)
+      if (d.rideOnly) {
+        const live = (reason === 'working' && !(view && view.bgOnly)) || reason === 'waiting' || reason === 'trust_wait';
+        if (live) d.rideLive = true;
+        else { if (d.rideLive || now - d.createdAt > (this.cfg.rideGraceMs ?? 5000)) this._set(d, 'cancelled', 'ride_missed'); continue; }
+      }
       if (reason === 'working' && d.typeNow && this.inspect) { const v = this.view(sid, d); if (canTypeNow(v)) { this._typeNow(d, v, now); continue; } }
       // P289: 스티어링으로 넣은 글(typeAside)이 지금 턴에 들어갈 수 없는 상태(질문 중, 받지 않는 종류, 터미널 없음). 까닭만 남기고 지금처럼 기다린다
       if (d.typeAside && reason && reason !== 'user_typing' && reason !== 'sleeping' && reason !== 'starting') { const w = steerWhy({ view, quietMs: this.cfg.inputQuietMs }); if (w && w !== 'not_working') this._steerBlocked(d, w); }
@@ -474,6 +481,13 @@ export class DeliveryQueue extends EventEmitter {
   }
 
   async _deliver(d, typed = false, aside = !typed) {
+    // P295: 처음 보낼 때 판의 손이 앞에 붙일 글(붙잡아 둔 사용자 몫 답, decisions.mjs attachFront). 다시 보내기·되돌아온 시도에는 붙이지 않는다
+    if (this.attachFront && !d.frontDone) {
+      d.frontDone = true;
+      let pre = null;
+      try { pre = this.attachFront(d); } catch { pre = null; }
+      if (pre) { const t = d.typeNow ? typedText(`${pre}\n\n${d.text}`) : toLF(`${pre}\n\n${d.text}`); d.text = t; if (this.store.updateDeliveryText) this.store.updateDeliveryText(d.deliveryId, t); }
+    }
     d.workingSeen = false; // 앞 시도(실패) 중의 working 신호를 이 시도의 확인으로 쓰지 않는다(이슈 #1-3)
     d.typed = typed; // P90: Claude Code 대기 메시지로 넣었다(전달 기록의 이유 'typed')
     if (typed) d.steerWhy = null; // P289: 지금 턴에 넣었다. 못 넣던 까닭은 지운다(턴 끝에 보통 보내기로 들어가면 남겨 둔다: 기록에서 왜 늦었는지 보인다)

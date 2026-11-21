@@ -16,17 +16,18 @@ CREATE INDEX IF NOT EXISTS decisions_open ON decisions(state, session_id);
 `;
 
 // P286: held(1 = 사람이 답했지만 그 세션의 다른 열린 카드가 남아 아직 보내지 않은 답). 그 세션의 열린 카드가 모두 끝나면 한 글로 보내고 비운다
-export const DECISIONS_COLUMNS = { decisions: { auto: 'INTEGER', held: 'INTEGER', kind: 'TEXT', cmds: 'TEXT', tell: 'INTEGER', later: 'TEXT', wake_at: 'INTEGER', cond: 'TEXT' } }; // P286. P292: 사용자 몫
+// P295: timing(보내는 때 now | next | 비어 있음). 만들 때는 에이전트가 준 값(--wait·--no-wait), 답할 때 정해진 값(사람이 바꾼 것 또는 판의 기본)으로 바꾼다
+export const DECISIONS_COLUMNS = { decisions: { auto: 'INTEGER', held: 'INTEGER', kind: 'TEXT', cmds: 'TEXT', tell: 'INTEGER', later: 'TEXT', wake_at: 'INTEGER', cond: 'TEXT', timing: 'TEXT' } }; // P286. P292: 사용자 몫. P295: 보내는 때
 
 const parse = (s) => { try { const v = JSON.parse(s); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } };
-export const decisionRow = (r) => (r ? { id: Number(r.id), sessionId: r.session_id, name: r.name ?? null, question: r.question, options: r.options ? parse(r.options) : [], why: r.why ?? null, createdAt: r.created_at, state: r.state, answer: r.answer ?? null, answeredAt: r.answered_at ?? null, via: r.via ?? null, auto: !!r.auto, held: !!r.held, kind: r.kind || 'decide', cmds: r.cmds ? parse(r.cmds) : [], tell: !!r.tell, later: r.later ?? null, wakeAt: r.wake_at ?? null, cond: r.cond ?? null } : null); // P292
+export const decisionRow = (r) => (r ? { id: Number(r.id), sessionId: r.session_id, name: r.name ?? null, question: r.question, options: r.options ? parse(r.options) : [], why: r.why ?? null, createdAt: r.created_at, state: r.state, answer: r.answer ?? null, answeredAt: r.answered_at ?? null, via: r.via ?? null, auto: !!r.auto, held: !!r.held, kind: r.kind || 'decide', cmds: r.cmds ? parse(r.cmds) : [], tell: !!r.tell, later: r.later ?? null, wakeAt: r.wake_at ?? null, cond: r.cond ?? null, timing: r.timing || null } : null); // P292. P295: timing
 
 export function installDecisions(Store) {
   Object.assign(Store.prototype, {
     // 카드 한 장을 넣는다 → 넣은 줄
     addDecision(d, { keepMs = DECISIONS_KEEP_MS } = {}) {
-      const r = this.st('INSERT INTO decisions (session_id, name, question, options, why, created_at, state, auto, kind, cmds, tell, later, wake_at, cond) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(d.sessionId, d.name ?? null, d.question, d.options && d.options.length ? JSON.stringify(d.options) : null, d.why ?? null, d.createdAt, 'open', d.auto ? 1 : null,
-        d.kind && d.kind !== 'decide' ? d.kind : null, d.cmds && d.cmds.length ? JSON.stringify(d.cmds) : null, d.tell ? 1 : null, d.later ?? null, d.wakeAt ?? null, d.cond ?? null); // P292
+      const r = this.st('INSERT INTO decisions (session_id, name, question, options, why, created_at, state, auto, kind, cmds, tell, later, wake_at, cond, timing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(d.sessionId, d.name ?? null, d.question, d.options && d.options.length ? JSON.stringify(d.options) : null, d.why ?? null, d.createdAt, 'open', d.auto ? 1 : null,
+        d.kind && d.kind !== 'decide' ? d.kind : null, d.cmds && d.cmds.length ? JSON.stringify(d.cmds) : null, d.tell ? 1 : null, d.later ?? null, d.wakeAt ?? null, d.cond ?? null, d.timing ?? null); // P292. P295: timing
       this.st("DELETE FROM decisions WHERE state != 'open' AND COALESCE(answered_at, created_at) < ?").run(d.createdAt - keepMs);
       return decisionRow(this.st('SELECT * FROM decisions WHERE id = ?').get(r.lastInsertRowid));
     },
@@ -42,6 +43,7 @@ export function installDecisions(Store) {
     // P292: 때가 된 숨긴 카드(wake_at ≤ t), 다음 깰 때
     dueDecisions(t) { return this.st("SELECT * FROM decisions WHERE state = 'open' AND wake_at IS NOT NULL AND wake_at <= ? ORDER BY wake_at, id").all(Number(t)).map(decisionRow); },
     nextWake() { const r = this.st("SELECT MIN(wake_at) AS w FROM decisions WHERE state = 'open' AND wake_at IS NOT NULL").get(); return r && r.w != null ? Number(r.w) : null; },
+    setTiming(id, timing) { this.st('UPDATE decisions SET timing = ? WHERE id = ?').run(timing ?? null, Number(id)); }, // P295
     setHeld(id, on) { this.st('UPDATE decisions SET held = ? WHERE id = ?').run(on ? 1 : null, Number(id)); },
     // P286: 한 세션이 t 뒤에 만든 카드(열림·끝남 모두). 그 턴에 손 카드(atrium ask)를 만들었는지 본다
     decisionsSince(sessionId, t) { return this.st('SELECT * FROM decisions WHERE session_id = ? AND created_at >= ? ORDER BY id').all(sessionId, Number(t) || 0).map(decisionRow); },

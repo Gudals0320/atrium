@@ -355,18 +355,21 @@ test('P286 답 모아 보내기와 사람의 직접 글: 명령 바 글은 앞�
     const a1 = ask(b, lead, { question: 'Q1?' }); ask(b, lead, { question: 'Q2?' });
     h['decision.answer']({ id: a1.id, answer: 'x' });
     const held = b.decisions.takeHeld(lead.sessionId);
-    assert.deepEqual(held, { ids: [a1.id], text: '[결정] Q1? → x' });
+    assert.deepEqual(held, { ids: [a1.id], text: '[결정] Q1? → x', now: 1, next: 0 }); // P295: now·next 수
     const n0 = dl(lead).length;
     b.decisions.onHuman(lead.sessionId, 'bar');
     assert.equal(dl(lead).length, n0, '이미 앞에 붙였다');
     assert.equal(b.store.openDecisions(lead.sessionId).length, 0);
-    // 터미널에 직접 친 글(이미 제출됨): 열린 카드를 닫고 모은 답은 그 뒤 한 글로
+    // 터미널에 직접 친 글(이미 제출됨): 열린 카드를 닫고 모은 답은 그 턴에 스티어링으로(P295: rideOnly, 턴을 새로 만들지 않는다)
     const t1 = ask(b, lead, { question: 'T1?' }); const t2 = ask(b, lead, { question: 'T2?' }); ask(b, lead, { question: 'T3?' });
     h['decision.answer']({ id: t1.id, answer: '1' }); h['decision.answer']({ id: t2.id, answer: '2' });
     const n1 = dl(lead).length;
+    b.cfg.rideGraceMs = 50; // P295: 턴을 못 본 채 이만큼 지나면 취소
     b.decisions.onHuman(lead.sessionId, 'terminal');
     assert.equal(dl(lead).length, n1 + 1); assert.equal(dl(lead).at(-1).text, '[결정] T1? → 1\n[결정] T2? → 2');
-    assert.ok(events(b, 'decision_flush').some((e) => e.data.why === 'human'));
+    assert.ok(events(b, 'decision_flush').some((e) => e.data.why === 'ride_steer'));
+    await until(() => b.store.heldAnswers(lead.sessionId).length === 2); // 쉬는 세션이라 그 턴에 넣지 못하고 취소 → 다시 붙잡는다(P295)
+    b.decisions.flushNow({ sessionId: lead.sessionId });
     // 에이전트가 --done으로 마지막 열린 카드를 닫으면 모은 답을 보낸다
     const e1 = ask(b, lead, { question: 'E1?' }); const e2 = ask(b, lead, { question: 'E2?' });
     h['decision.answer']({ id: e1.id, answer: 'y' });

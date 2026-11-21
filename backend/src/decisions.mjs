@@ -29,12 +29,24 @@
 //   답 모으기 줄: [결정] q → a, [확인] q → 됐다/안 됐다: 메모, [할 일] q → 했음.
 //   사람이 세션에 직접 보낸 글이 닫는 것은 지금 보이는 결정 카드와 자동 카드뿐이다(할 일·확인·나중에 손 카드는 사람 몫이라 그대로 둔다).
 //   자동 카드는 마지막 답이 명령 실행을 청하면 할 일(명령 뽑기), 확인을 청하면 확인, 그 밖의 질문은 결정(auto-ask.mjs findAsk).
+// P295(사용자 2026-11-21): 답 실어 보내기. 사용자 몫 답은 세션이 그 답을 기다리며 멈춰 있을 때만 곧바로 보내고, 아니면 그 세션에 다음 글이 갈 때 실어 보내 턴을 아낀다.
+//   카드마다 보내는 때(timing): now(곧바로) | next(다음 글에 실어). 정하는 차례: 사람이 답할 때 바꾼 값(answer·check·done의 timing) → 에이전트가 준 값
+//   (atrium ask|todo --wait = now, --no-wait = next) → 판의 기본(timingOf: 확인·할 일 --tell은 next, 결정(손·자동)은 그 카드가 그 세션의 마지막 턴에서
+//   만들어졌으면(그 뒤 새 턴이 없다 = turn.startedAt ≤ 카드 만든 때) now, 그 사이 새 턴이 있었으면 next). 답할 때 정해진 값을 카드의 timing에 남긴다.
+//   보내기(settle): 보낼 것이 남은 열린 카드가 없을 때 모은 답 가운데 now가 하나라도 있으면 곧바로 한 글로(now·next 함께), 모두 next면 붙잡아 둔다(riding).
+//   실어 보내기(attachFront): 전달 대기열이 그 세션에 어떤 글이든(사람·다른 세션·판 알림·스티어링) 처음 보낼 때 붙잡은 답 모두를 그 글 앞에 한 덩어리로 붙인다.
+//   사람이 터미널에 직접 친 글로 턴이 열리면(onHuman terminal) 지금 턴에 넣을 수 있는 세션(steerBlock 없음)이면 스티어링(rideOnly)으로 그 턴에 넣고,
+//   못 넣은 채 턴이 끝나면 취소하고 다시 붙잡는다(턴을 새로 만들지 않는다). 실어 보낸 전달이 실패·취소되면 답을 다시 붙잡는다(decision_ride_back).
+//   기록(아낀 턴 세기): decision_flush { ids, deliveryId, why, now, next, origin? }. why: all(곧바로, now가 있었다) | now(사람의 지금 보내기) |
+//   human_front(명령 바 글 앞, 넣을 때) | ride(다음 전달 앞, 보낼 때) | ride_steer(터미널 글로 연 턴에 스티어링) | closed(세션 닫힘, 버림) | human(옛 판).
+//   ride·human_front·ride_steer 하나가 아낀 턴 하나다. decision_end에 timing(정해진 값)과 timingBy(human | agent | board)를 남긴다.
 // 표는 store-decisions.mjs.
 import { shownName } from './session-label.mjs';
 import { findAsk } from './auto-ask.mjs';
 import { firstLine } from './peer-news.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { checkAgentText } from './work-units.mjs';
+import { steerBlock } from './delivery.mjs';
 import { ASK_QUESTION_MAX, ASK_OPTION_MAX, ASK_OPTIONS_MAX, ASK_WHY_MAX, ASK_OPEN_MAX, ASK_ANSWER_MAX, TODO_CMDS_MAX, TODO_CMD_MAX, TODO_LATER_MAX, TODO_LATER_TEXT_MAX, TODO_NOTE_MAX } from './cli-contract.mjs';
 
 export const ANSWER_HEAD = '[결정]';
@@ -43,6 +55,13 @@ export const HEADS = { decide: '[결정]', do: '[할 일]', check: '[확인]', l
 export const DID = '했음';
 export const CHECK_OK = '됐다';
 export const CHECK_FAIL = '안 됐다';
+export const TIMINGS = ['now', 'next']; // P295: 보내는 때
+// P295: 에이전트 인자(wait·noWait 또는 timing) → now | next | null
+export function timingArg(o = {}) {
+  if (o.timing != null && o.timing !== false) { const t = String(o.timing); if (!TIMINGS.includes(t)) throw apiError('bad_request', `보내는 때는 now 또는 next다: ${t}`); return t; }
+  if (o.noWait && o.wait) throw apiError('bad_request', '--wait와 --no-wait는 함께 쓰지 않는다.');
+  return o.noWait ? 'next' : o.wait ? 'now' : null;
+}
 const SNOOZE_MAX_MS = 400 * 24 * 3600 * 1000; // 미루기·나중 날짜는 400일까지
 const WAKE_TICK_MAX_MS = 3600 * 1000; // 깨우기 타이머는 길어도 한 시간마다 다시 잰다
 // P292: --later 글 → { wakeAt } (날짜 "YYYY-MM-DD"는 그날 9시, "YYYY-MM-DD HH:MM"은 그때, 이 PC 시간대) | { cond } (그 밖의 글은 조건)
@@ -73,6 +92,15 @@ export class Decisions {
     this.prev = new Map(); // P286: 세션 ID → 마지막으로 본 상태(턴 끝 판정)
     this.pending = new Map(); // P286: 세션 ID → 화면 답을 기다리는 턴 끝 { timer, off }
     this.autoSetting = null; // 시험이 바꾼다(없으면 판 설정 autoDecisions)
+    this.rides = new Map(); // P295: 전달 ID → 그 전달에 실은 카드 ID들(실패·취소되면 다시 붙잡는다)
+    this.wireQueue(b.queue);
+  }
+  // P295: 전달 대기열에 실어 보내기 손을 단다(처음 보낼 때 앞에 붙임, 실패·취소되면 되돌림)
+  wireQueue(q) {
+    if (!q || typeof q.on !== 'function' || this.wiredQueue === q) return;
+    this.wiredQueue = q;
+    q.attachFront = (d) => this.attachFront(d);
+    q.on('delivery', (e) => { try { this.onDelivery(e); } catch (err) { this.b.log('decision ride error', err && err.stack); } });
   }
   store() { return this.b.store; }
   // 일 상위(하위 관계의 부모)가 있으면 그 세션 ID
@@ -84,9 +112,25 @@ export class Decisions {
   // P292: 끝나면 세션에 보낼 것이 있는 카드(결정·확인·--tell 할 일). 기록만 하는 할 일은 며칠씩 남을 수 있어 모은 답을 막지 않는다
   sends(d) { return d.kind === 'decide' || d.kind === 'check' || !!d.tell; }
   heldCounts() { const m = {}; for (const d of this.store().heldAnswers()) if (this.b.sessions.has(d.sessionId)) m[d.sessionId] = (m[d.sessionId] || 0) + 1; return m; }
-  view(d) { const s = this.b.sessions.get(d.sessionId); return { ...d, name: s ? shownName(s) || s.name : d.name, workspaceKey: s ? s.workspaceKey || null : null, deferred: this.isDeferred(d) }; } // P292: deferred(나중 줄)
+  // P295: 다음 글에 실려 갈 답 수(모은 답 가운데 보낼 것이 남은 열린 카드가 없는 세션 = 모두 next라 붙잡아 둔 세션)
+  ridingCounts() { const m = {}; for (const [sid, n] of Object.entries(this.heldCounts())) if (!this.activeOpen(sid).some((d) => this.sends(d))) m[sid] = n; return m; }
+  // P295: 판의 기본 보내는 때. 확인·할 일은 next. 결정은 그 카드가 그 세션의 마지막 턴에서 만들어졌으면(그 뒤 새 턴이 없다) now, 그 사이 새 턴이 있었으면 next
+  defaultTiming(d, s = this.b.sessions.get(d.sessionId)) {
+    if (d.kind !== 'decide') return 'next';
+    const start = s && s.rt && s.rt.turn ? s.rt.turn.startedAt || 0 : 0;
+    if (!start) return 'now';
+    return start <= d.createdAt ? 'now' : 'next';
+  }
+  // P295: 지금 정해진 보내는 때(에이전트가 준 값, 없으면 판의 기본) → { timing, by }
+  timingOf(d, s) { return d.timing ? { timing: d.timing, by: 'agent' } : { timing: this.defaultTiming(d, s), by: 'board' }; }
+  // P295: 답할 때 정하는 값(사람이 바꾼 값이 먼저)
+  pickTiming(d, p, s) {
+    if (p && p.timing != null) { if (!TIMINGS.includes(p.timing)) throw apiError('bad_request', '보내는 때는 now 또는 next입니다.'); return { timing: p.timing, by: 'human' }; }
+    return this.timingOf(d, s);
+  }
+  view(d) { const s = this.b.sessions.get(d.sessionId); return { ...d, name: s ? shownName(s) || s.name : d.name, workspaceKey: s ? s.workspaceKey || null : null, deferred: this.isDeferred(d), timing: d.state === 'open' ? this.timingOf(d, s).timing : d.timing, timingBy: d.state === 'open' ? this.timingOf(d, s).by : null }; } // P292: deferred(나중 줄). P295: 보내는 때(지금 정해진 값)
   openAll() { return this.store().openDecisions().filter((d) => this.b.sessions.has(d.sessionId)).map((d) => this.view(d)); }
-  changed() { try { this.b.api.broadcast('decision.changed', { cards: this.openAll(), held: this.heldCounts() }); } catch (e) { this.b.log('decision broadcast error', e && e.stack); } }
+  changed() { try { this.b.api.broadcast('decision.changed', { cards: this.openAll(), held: this.heldCounts(), riding: this.ridingCounts() }); } catch (e) { this.b.log('decision broadcast error', e && e.stack); } }
 
   // ---------- atrium ask ----------
   // o: { question, options: [], why, done: <번호>, list: true }
@@ -104,7 +148,8 @@ export class Decisions {
     if (longOpt) throw apiError('too_long', `보기가 너무 길다(${longOpt.length}자, ${ASK_OPTION_MAX}자까지): ${clip(longOpt, 40)}`);
     if (new Set(options).size !== options.length) throw apiError('bad_request', '같은 보기가 두 번 있다.');
     const why = this.whyOf(o.why);
-    return this.create(caller, { kind: 'decide', question, options, why }, 'ask');
+    const timing = timingArg(o); // P295: --wait(now) | --no-wait(next)
+    return this.create(caller, { kind: 'decide', question, options, why, timing }, 'ask');
   }
   // P292: 하위 워커는 거절(사람에게 넘길 것은 부모에게)
   leadOnly(caller, verb) {
@@ -129,9 +174,9 @@ export class Decisions {
       const how = verb === 'ask' ? 'atrium ask --done <번호>로 닫는다(목록: atrium ask --list)' : 'atrium todo --done <번호>로 닫는다(목록: atrium todo --list)';
       throw apiError('too_many', `열린 ${later ? '나중에 카드' : verb === 'ask' ? '결정 카드' : '카드(결정·할 일·확인 합쳐)'}가 이미 ${mine.length}장이다(${max}장까지). 사람이 끝냈거나 쓸모없어진 카드를 ${how}.`, { open: mine.map((d) => d.id) });
     }
-    const d = this.store().addDecision({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, question: c.question, options: c.options || [], why: c.why || null, createdAt: this.now(), kind: c.kind, cmds: c.cmds || [], tell: !!c.tell, later: c.later || null, wakeAt: c.wakeAt ?? null, cond: c.cond ?? null });
-    if (verb === 'ask') this.b.store.addEvent(caller.sessionId, 'decision_ask', { id: d.id, chars: c.question.length, options: (c.options || []).length });
-    else this.b.store.addEvent(caller.sessionId, 'decision_todo', { id: d.id, kind: d.kind, chars: c.question.length, cmds: d.cmds.length, tell: d.tell, later: d.wakeAt ? 'date' : d.cond ? 'cond' : null });
+    const d = this.store().addDecision({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, question: c.question, options: c.options || [], why: c.why || null, createdAt: this.now(), kind: c.kind, cmds: c.cmds || [], tell: !!c.tell, later: c.later || null, wakeAt: c.wakeAt ?? null, cond: c.cond ?? null, timing: c.timing || null }); // P295: timing
+    if (verb === 'ask') this.b.store.addEvent(caller.sessionId, 'decision_ask', { id: d.id, chars: c.question.length, options: (c.options || []).length, timing: d.timing }); // P295
+    else this.b.store.addEvent(caller.sessionId, 'decision_todo', { id: d.id, kind: d.kind, chars: c.question.length, cmds: d.cmds.length, tell: d.tell, later: d.wakeAt ? 'date' : d.cond ? 'cond' : null, timing: d.timing }); // P295
     this.b.log(`atrium ${verb} ${caller.name} #${d.id}${d.kind !== 'decide' ? ` (${d.kind})` : ''}`);
     this.changed();
     if (!this.isDeferred(d)) this.push(caller, d);
@@ -171,7 +216,8 @@ export class Decisions {
       if (p.cond) checkAgentText(p.cond, '조건');
       kind = 'later'; wakeAt = p.wakeAt ?? null; cond = p.cond ?? null;
     }
-    return this.create(caller, { kind, question, cmds, why, tell: !!o.tell && kind !== 'check', later, wakeAt, cond }, 'todo');
+    const timing = timingArg(o); // P295: --wait(now) | --no-wait(next)
+    return this.create(caller, { kind, question, cmds, why, tell: !!o.tell && kind !== 'check', later, wakeAt, cond, timing }, 'todo');
   }
   push(s, d, { wake = false } = {}) { try { if (this.b.web && this.b.web.push && this.b.web.push.decision) this.b.web.push.decision({ id: d.id, sessionId: s.sessionId, name: shownName(s) || s.name, workspaceKey: s.workspaceKey || null, ...(wake ? { wake: this.now() } : {}) }); } catch (e) { this.b.log('decision push error', e && e.stack); } } // P292: 숨겼다 띄운 카드는 한 번 더(wake)
   doneVerb(caller, ref, verb = 'ask') {
@@ -206,15 +252,17 @@ export class Decisions {
     if (!text) throw apiError('bad_request', '답을 입력하세요.');
     if (text.length > ASK_ANSWER_MAX) throw apiError('too_long', `답이 너무 깁니다(${text.length}자, ${ASK_ANSWER_MAX}자까지).`);
     const via = this.viaOf(c);
+    const tm = this.pickTiming(d, p, s); // P295: 보내는 때
     const r = this.store().endDecision(d.id, { state: 'answered', answer: text, via, at: this.now() });
     if (!r) throw apiError('already_closed', '이미 끝난 결정 카드입니다.');
-    this.store().setHeld(d.id, true); // P286: 모아 두고, 그 세션의 열린 카드가 없으면 곧바로 보낸다
+    this.store().setTiming(d.id, tm.timing);
+    this.store().setHeld(d.id, true); // P286: 모아 두고, 그 세션의 열린 카드가 없으면 곧바로 보낸다(P295: 모은 답에 now가 있을 때만)
     try { if (this.b.touch) this.b.touch(s); } catch {}
-    this.b.store.addEvent(s.sessionId, 'decision_end', { id: d.id, state: 'answered', via, option: d.options.includes(text), auto: d.auto });
+    this.b.store.addEvent(s.sessionId, 'decision_end', { id: d.id, state: 'answered', via, option: d.options.includes(text), auto: d.auto, timing: tm.timing, timingBy: tm.by });
     const f = this.settle(s.sessionId);
     this.changed();
     const waiting = f ? 0 : this.store().heldAnswers(s.sessionId).length;
-    return { id: d.id, state: 'answered', deliveryId: f ? f.deliveryId : null, held: !f, waiting, open: this.store().openDecisions(s.sessionId).length, card: this.store().getDecision(d.id) };
+    return { id: d.id, state: 'answered', deliveryId: f ? f.deliveryId : null, held: !f, waiting, riding: !f && !!this.ridingCounts()[s.sessionId], timing: tm.timing, open: this.store().openDecisions(s.sessionId).length, card: this.store().getDecision(d.id) }; // P295: riding(다음 글에 실려 감)
   }
   // 무시: 세션에 아무것도 보내지 않는다
   ignore(p = {}, c = null) {
@@ -229,13 +277,13 @@ export class Decisions {
   }
   // P292: 끝난 카드를 (보낼 것이면) 모으고 마무리 → 응답
   finish(d, s, answer, send, extra = {}) {
-    if (send) this.store().setHeld(d.id, true);
+    if (send) this.store().setHeld(d.id, true); // P295: 보내는 때는 부른 쪽이 이미 남겼다
     try { if (this.b.touch && s) this.b.touch(s); } catch {}
     const f = this.settle(d.sessionId);
     this.changed();
     this.scheduleWake();
     const waiting = f ? 0 : this.store().heldAnswers(d.sessionId).length;
-    return { id: d.id, state: 'answered', kind: d.kind, answer, sent: send, deliveryId: f ? f.deliveryId : null, held: send && !f, waiting, open: this.activeOpen(d.sessionId).length, card: this.store().getDecision(d.id), ...extra };
+    return { id: d.id, state: 'answered', kind: d.kind, answer, sent: send, deliveryId: f ? f.deliveryId : null, held: send && !f, waiting, riding: send && !f && !!this.ridingCounts()[d.sessionId], open: this.activeOpen(d.sessionId).length, card: this.store().getDecision(d.id), ...extra };
   }
   // P292: 할 일(나중에 포함) 했음. 기록만, 에이전트가 --tell을 줬으면 답 모으기로 보낸다
   did(p = {}, c = null) {
@@ -244,9 +292,11 @@ export class Decisions {
     const s = this.b.sessions.get(d.sessionId);
     if (!s) throw apiError('closed', '그 세션은 닫혔습니다.');
     const via = this.viaOf(c);
+    const tm = d.tell ? this.pickTiming(d, p, s) : null; // P295
     if (!this.store().endDecision(d.id, { state: 'answered', answer: DID, via, at: this.now() })) throw apiError('already_closed', '이미 끝난 카드입니다.');
-    this.b.store.addEvent(s.sessionId, 'decision_end', { id: d.id, state: 'answered', via, auto: d.auto, kind: d.kind, tell: d.tell });
-    return this.finish(d, s, DID, d.tell);
+    if (tm) this.store().setTiming(d.id, tm.timing);
+    this.b.store.addEvent(s.sessionId, 'decision_end', { id: d.id, state: 'answered', via, auto: d.auto, kind: d.kind, tell: d.tell, ...(tm ? { timing: tm.timing, timingBy: tm.by } : {}) });
+    return this.finish(d, s, DID, d.tell, tm ? { timing: tm.timing } : {});
   }
   // P292: 확인 결과(됐다/안 됐다 + 한 줄 메모). 늘 답 모으기로 보낸다
   checked(p = {}, c = null) {
@@ -259,9 +309,11 @@ export class Decisions {
     if (note.length > TODO_NOTE_MAX) throw apiError('too_long', `메모가 너무 깁니다(${note.length}자, ${TODO_NOTE_MAX}자까지).`);
     const answer = `${p.ok ? CHECK_OK : CHECK_FAIL}${note ? `: ${note}` : ''}`;
     const via = this.viaOf(c);
+    const tm = this.pickTiming(d, p, s); // P295
     if (!this.store().endDecision(d.id, { state: 'answered', answer, via, at: this.now() })) throw apiError('already_closed', '이미 끝난 카드입니다.');
-    this.b.store.addEvent(s.sessionId, 'decision_end', { id: d.id, state: 'answered', via, auto: d.auto, kind: 'check', ok: p.ok, note: !!note });
-    return this.finish(d, s, answer, true);
+    this.store().setTiming(d.id, tm.timing);
+    this.b.store.addEvent(s.sessionId, 'decision_end', { id: d.id, state: 'answered', via, auto: d.auto, kind: 'check', ok: p.ok, note: !!note, timing: tm.timing, timingBy: tm.by });
+    return this.finish(d, s, answer, true, { timing: tm.timing });
   }
   // P292: 미루기(until: ms). 그때까지 숨긴다. 숨긴 카드는 답 모으기의 열린 카드가 아니라 남은 답을 곧바로 보낼 수 있다
   snooze(p = {}, c = null) {
@@ -311,6 +363,7 @@ export class Decisions {
   // P286: 그 세션의 열린 카드가 모두 끝났고 모은 답이 있으면 한 글로 보낸다 → 보낸 것 | null
   settle(sessionId, why = 'all') {
     if (this.activeOpen(sessionId).some((d) => this.sends(d))) return null; // P292: 숨긴 카드(나중)와 기록만 하는 할 일은 세지 않는다
+    if (!this.store().heldAnswers(sessionId).some((d) => (d.timing || 'now') === 'now')) return null; // P295: 모두 next면 붙잡아 둔다(다음 글에 실려 간다). 옛 답(timing 없음)은 now
     return this.flush(sessionId, why);
   }
   // 모은 답을 꺼낸다(보낸 것으로 친다) → { ids, text } | null
@@ -318,7 +371,8 @@ export class Decisions {
     const held = this.store().heldAnswers(sessionId);
     if (!held.length) return null;
     for (const d of held) this.store().setHeld(d.id, false);
-    return { ids: held.map((d) => d.id), text: held.map((d) => answerText(d.question, d.answer, d.kind)).join('\n') }; // P292: 종류마다 머리
+    const nNow = held.filter((d) => (d.timing || 'now') === 'now').length; // P295: 기록용(now·next 수)
+    return { ids: held.map((d) => d.id), text: held.map((d) => answerText(d.question, d.answer, d.kind)).join('\n'), now: nNow, next: held.length - nNow }; // P292: 종류마다 머리
   }
   // 모은 답을 한 글로 보통 메시지(대기열)에 넣는다 → { deliveryId, ids } | null
   flush(sessionId, why = 'now') {
@@ -327,7 +381,8 @@ export class Decisions {
     const h = this.takeHeld(sessionId);
     if (!h) return null;
     const q = this.b.queue.enqueue(sessionId, h.text, { origin: { kind: 'human' } }); // B1 대기열 규칙 그대로(스티어링이 아니다)
-    this.b.store.addEvent(sessionId, 'decision_flush', { ids: h.ids, deliveryId: q.deliveryId, why });
+    this.rides.set(q.deliveryId, h.ids); // P295: 실패·취소되면 다시 붙잡는다
+    this.b.store.addEvent(sessionId, 'decision_flush', { ids: h.ids, deliveryId: q.deliveryId, why, now: h.now, next: h.next });
     return { deliveryId: q.deliveryId, ids: h.ids };
   }
   // 판 API decision.flush { sessionId }: 모은 답을 지금 보낸다(남은 열린 카드는 그대로)
@@ -342,7 +397,7 @@ export class Decisions {
   }
   handlers() {
     return {
-      'decision.list': () => ({ cards: this.openAll(), held: this.heldCounts() }),
+      'decision.list': () => ({ cards: this.openAll(), held: this.heldCounts(), riding: this.ridingCounts() }), // P295: riding
       'decision.flush': (p) => this.flushNow(p), // P286
       'decision.answer': (p, c) => this.answer(p, c),
       'decision.ignore': (p, c) => this.ignore(p, c),
@@ -362,9 +417,49 @@ export class Decisions {
     let n = 0;
     for (const d of open) if (this.store().endDecision(d.id, { state: 'answered', via: 'session', at })) n++;
     if (n) this.b.store.addEvent(sessionId, 'decision_end', { ids: open.map((d) => d.id), autoIds: open.filter((d) => d.auto).map((d) => d.id), state: 'answered', via: 'session', where });
-    const f = this.flush(sessionId, 'human'); // P286: 명령 바 글이면 이미 앞에 붙였다(takeHeld). 남은 것(터미널에 직접 친 글)은 그 뒤에 한 글로
+    // P295: 명령 바·휴대폰 글(bar)이면 모은 답은 그 글에 실려 간다(보통 글은 넣을 때 takeHeld, 스티어링 글은 보낼 때 attachFront). 따로 보내지 않는다.
+    //   터미널에 직접 친 글(terminal)로 턴이 열렸으면 지금 턴에 넣을 수 있는 세션만 스티어링(rideOnly)으로 그 턴에 넣고, 못 넣으면 다음 판 전달을 기다린다
+    const f = where === 'terminal' ? this.rideSteer(sessionId) : null;
     if (n || f) this.changed();
     return n;
+  }
+  // P295: 모은 답을 지금 턴에 스티어링으로 넣는다(rideOnly: 못 넣고 턴이 끝나면 취소되고 다시 붙잡는다) → { deliveryId, ids } | null
+  rideSteer(sessionId) {
+    const s = this.b.sessions.get(sessionId);
+    if (!s || !this.store().heldAnswers(sessionId).length) return null;
+    let hooked = true; try { hooked = this.b.hooked ? this.b.hooked(s) : true; } catch {}
+    if (steerBlock(s, hooked)) return null; // 일하는 중 입력을 받지 않는 세션: 다음 판 전달을 기다린다
+    const h = this.takeHeld(sessionId);
+    if (!h) return null;
+    const q = this.b.queue.enqueue(sessionId, h.text, { typeNow: true, aside: true, rideOnly: true, origin: { kind: 'human' } });
+    q.frontDone = true; // 이 글이 곧 모은 답이다
+    this.rides.set(q.deliveryId, h.ids);
+    this.b.store.addEvent(sessionId, 'decision_flush', { ids: h.ids, deliveryId: q.deliveryId, why: 'ride_steer', now: h.now, next: h.next });
+    return { deliveryId: q.deliveryId, ids: h.ids };
+  }
+  // P295: 전달 대기열이 그 세션에 글을 처음 보내기 직전(delivery.mjs _deliver). 붙잡은 답이 있으면 그 글 앞에 붙일 글 | null
+  attachFront(d) {
+    if (!d || !this.b.sessions.has(d.sessionId)) return null;
+    const h = this.takeHeld(d.sessionId);
+    if (!h) return null;
+    this.rides.set(d.deliveryId, [...(this.rides.get(d.deliveryId) || []), ...h.ids]);
+    this.b.store.addEvent(d.sessionId, 'decision_flush', { ids: h.ids, deliveryId: d.deliveryId, why: 'ride', now: h.now, next: h.next, origin: d.origin || null, steer: !!d.typeNow });
+    this.b.log(`decision ride ${this.nameOf(d.sessionId)} ${d.deliveryId}: ${h.ids.length} answer(s) in front (${d.origin || 'board'}${d.typeNow ? ', steer' : ''})`);
+    this.changed();
+    return h.text;
+  }
+  // P295: 답을 실은 전달이 끝났다. 실패·취소면 답을 다시 붙잡는다(다음 글에 실려 가거나 사람이 지금 보내기)
+  onDelivery(e) {
+    if (!e || !this.rides.has(e.deliveryId)) return;
+    if (e.status === 'confirmed' || e.status === 'unconfirmed') { this.rides.delete(e.deliveryId); return; }
+    if (e.status !== 'failed' && e.status !== 'cancelled') return;
+    const ids = this.rides.get(e.deliveryId); this.rides.delete(e.deliveryId);
+    if (!this.b.sessions.has(e.sessionId)) return;
+    const back = [];
+    for (const id of ids) { const d = this.store().getDecision(id); if (d && d.state === 'answered' && !d.held) { this.store().setHeld(id, true); back.push(id); } }
+    if (!back.length) return;
+    this.b.store.addEvent(e.sessionId, 'decision_ride_back', { ids: back, deliveryId: e.deliveryId, status: e.status, reason: e.reason || null });
+    this.changed();
   }
   // 세션이 닫히거나 보관됐다
   onClosed(s) {
@@ -398,6 +493,7 @@ export class Decisions {
     const sid = s.sessionId;
     const prev = this.prev.get(sid);
     this.prev.set(sid, sum.state);
+    if (prev && prev !== 'working' && sum.state === 'working' && this.activeOpen(sid).some((d) => d.kind === 'decide' && !d.timing)) this.changed(); // P295: 새 턴이 열리면 결정 카드의 기본 보내는 때(now → next)가 바뀐다
     if (prev !== 'working' || sum.state !== 'ready') return;
     if (sum.work && sum.work.turnless && sum.work.endedAt === s.rt.term.at) return; // P173: 압축만 하고 끝났다
     this.turnEnded(s);
