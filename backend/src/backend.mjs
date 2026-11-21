@@ -85,6 +85,7 @@ import { codexHomeOf } from './codex-models.mjs';
 import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171: 일시 연결
 import { linkRelationPlan, linkDefaultRole, LINK_CHOICES } from './relations.mjs'; // P175: 잇는 자리에서 하위·동료
 import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs'; // P66: 판의 이름(표시 이름)과 에이전트 주소
+import { preToolUseDecision } from './atrium-allow.mjs'; // P308: 따옴표 꼴 atrium 명령 허용
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 // HTTP 서버 닫기(2026-11-07): http.close는 열린 연결이 모두 끝나야 끝나므로, 쉬는 연결은 바로, 나머지는 forceMs 뒤 끊는다
 export async function closeHttp(server, forceMs = 1000) {
@@ -837,14 +838,26 @@ export class Backend {
     req.on('end', () => {
       const raw = tooBig ? '' : Buffer.concat(chunks).toString('utf8');
       // hook은 먼저 200을 돌려준다(Claude Code는 hook 응답을 기다린다, E2 2.3). P269: rig 역할의 PreToolUse를 기다려 답하던 길은 걷어 냈다
-      res.writeHead(200); res.end();
+      // P308: PreToolUse가 판의 atrium 명령(따옴표 꼴 포함)이면 허용 결정을 본문에 담는다(토큰이 맞는 판 세션만)
+      const allow = tooBig ? null : this.preToolAllow(req.headers, raw);
+      if (allow) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(allow)); } else { res.writeHead(200); res.end(); }
       if (tooBig) return this.log('hook body too large', size);
       setImmediate(() => {
-        try { this.processHook(req.headers, raw); } catch (e) { this.log('hook error', e.stack); }
+        try { this.processHook(req.headers, raw, !!allow); } catch (e) { this.log('hook error', e.stack); }
       });
     });
   }
-  processHook(headers, raw) {
+  // P308: PreToolUse 본문 → 허용 결정(atrium-allow.mjs) 또는 null. 세션과 hook 토큰이 맞을 때만
+  preToolAllow(headers, raw) {
+    if (!raw.includes('PreToolUse')) return null;
+    let body; try { body = JSON.parse(raw); } catch { return null; }
+    if (!body || body.hook_event_name !== 'PreToolUse') return null;
+    const sid = headers['x-mt-session'] || body.session_id;
+    const s = this.sessions.get(sid) || [...this.sessions.values()].find((x) => x.rt.claudeSessionId === body.session_id);
+    if (!s || headers.authorization !== `Bearer ${s.hookToken}`) return null;
+    try { return preToolUseDecision(body); } catch (e) { this.log('pre-tool allow error', e.stack); return null; }
+  }
+  processHook(headers, raw, boardAllow = false) {
     let body; try { body = JSON.parse(raw); } catch { return this.log('hook bad json'); }
     const sid = headers['x-mt-session'] || body.session_id;
     const s = this.sessions.get(sid) || [...this.sessions.values()].find((x) => x.rt.claudeSessionId === body.session_id);
@@ -861,6 +874,7 @@ export class Backend {
     if (ev === 'UserPromptSubmit') { s.draft = false; this.onLinkTargetPrompt(s, body.prompt); }
     const info = { ev, tool: body.tool_name || null, authOk, bytes: raw.length, sessionIdMatches: body.session_id === s.sessionId, permissionMode: body.permission_mode || null };
     if (ev === 'Stop') info.lastAnswer = clip(body.last_assistant_message, 300);
+    if (boardAllow) info.boardAllow = true; // P308: 판이 PreToolUse에 허용을 돌려줬다(atrium 명령)
     if (ev === 'UserPromptSubmit') info.prompt = clip(s.rt.lastPrompt, 200);
     if (ev === 'SessionEnd') info.reason = body.reason;
     if (ev === 'StopFailure') info.error = s.rt.lastError;
