@@ -2949,4 +2949,12 @@ export default {
     notify: { next: 'With next message', now: 'Right away', off: 'Off' },
     notifySet: 'Goal changes: {mode}',
   },
+  phonePlan: {
+    lanes: '{n} goal lane(s)',
+    back: 'Lane list',
+    noLanes: 'This project has no goal lanes.',
+    userOnly: 'Mine only',
+    noUserItems: 'No items for you in this milestone.',
+    pcOnly: 'On the phone you can check items, set the current milestone and update values. Edit items, the manager and the status on the PC goal board.',
+  },
 };

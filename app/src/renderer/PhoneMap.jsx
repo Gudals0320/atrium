@@ -20,6 +20,7 @@ import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기 세기
 import { PhoneDecisionPill } from './Decisions.jsx'; // P284: 결정 카드 알약·시트
 import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
+import { PhoneLaneChip } from './PhonePlan.jsx'; // P307: 폴더 머리 레인 칩(가볍게 열림이면 없음)
 
 const REFRESH_MS = 600;
 const ST = { turn: 'needs', alert: 'error', work: 'working', review: 'done', rest: 'ready', sleep: 'sleeping', done: 'exited' };
@@ -313,6 +314,7 @@ export function PhoneMap({ onOpen, head, tip }) {
                   <div className="mt-pmap-wh" data-role="pm-whead">
                     <span className="wsn"><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
                     <span className="wsc">{r.chips.map((c) => <span key={c.tier} className={`st-${ST[c.tier]}`} data-tier={c.tier}><i /><b>{c.n}</b> {t(`mmTerr.chip.${c.tier}`)}</span>)}</span>
+                    {r.key ? <PhoneLaneChip wsKey={r.key} lite={plan.lite} /> : null}
                   </div>
                 </div>
               ))}
@@ -340,7 +342,7 @@ export function PhoneMap({ onOpen, head, tip }) {
                   return <path key={e.id} className={`mt-ta-edge k-${k}${!e.peer && !e.lineage && (e.active || tiers.get(e.to) === 'work') ? ' active' : ''}${mergeTreeCls(e)}`} data-role="ta-edge" data-from={e.from} data-to={e.to} data-rel={e.rel} data-cross={e.cross ? '1' : undefined} d={e.d} markerEnd={tip} markerStart={e.peer ? tip : undefined} />;
                 })}
               </svg>
-              {ids.filter((id) => !lay.cards.get(id).folded && !hidden.has(id)).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} lite={!plan.tiles} />; })}{/* P293: 이전 칸은 첫 그리기 뒤에(가볍게 열림이면 전부 보기 뒤에) */}
+              {ids.filter((id) => !lay.cards.get(id).folded && !hidden.has(id)).map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={false} onTag={noop} onOpen={noop} onHover={noop} t={t} unfold={b.depth >= PHONE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} lite={!plan.tiles} fit />; })}{/* P293: 이전 칸은 첫 그리기 뒤에(가볍게 열림이면 전부 보기 뒤에) */}
             </div>
           )}
         </div>
