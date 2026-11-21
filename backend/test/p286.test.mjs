@@ -136,7 +136,7 @@ test('P286 질문 찾기: 한국어·영어 묻는 글, 코드 덩어리 안 물
   assert.equal(q('정리했습니다.\n\n**어떤 방식으로 진행할까요?**').question, '어떤 방식으로 진행할까요?');
   // 영어
   assert.equal(q('Done. Should I push the branch?').question, 'Should I push the branch?');
-  assert.equal(q('I updated the file.\n\nLet me know if you want changes.').question, 'Let me know if you want changes.');
+  assert.equal(q('I updated the file.\n\nLet me know if you want changes.'), null, 'P303: 예의상 맺음 말은 질문이 아니다');
   assert.equal(q('Which option do you prefer? I will wait.').question, 'Which option do you prefer?');
   assert.equal(q('Option A or B?\n\nI will wait for your answer.').question, 'Option A or B?');
   // 코드 덩어리 안 물음표, 줄 안 코드의 물음표는 무시
@@ -262,6 +262,7 @@ test('P286 직접 글 → 자동 카드 닫힘, 세션 닫힘 → closed, hook �
     const lead = add('lead');
     turn(b, lead, '어느 쪽으로 할까요?');
     assert.equal(openOf(b, lead).length, 1);
+    b.store.db.prepare('UPDATE decisions SET created_at = created_at - 60000').run(); // P303: 만든 지 10초 안의 자동 카드는 남긴다
     b.decisions.onHuman(lead.sessionId, 'bar');
     const r = D(b)[0];
     assert.equal(r.state, 'answered'); assert.equal(r.via, 'session');
@@ -352,16 +353,17 @@ test('P286 답 모아 보내기와 사람의 직접 글: 명령 바 글은 앞�
   try {
     const lead = add('lead');
     // 명령 바(session.send)의 길: takeHeld로 꺼내 사람 글 앞에 붙인 뒤 onHuman → 남은 열린 카드만 닫고 따로 보내지 않는다
-    const a1 = ask(b, lead, { question: 'Q1?' }); ask(b, lead, { question: 'Q2?' });
+    const a1 = ask(b, lead, { question: 'Q1?' }); const a2 = ask(b, lead, { question: 'Q2?' });
     h['decision.answer']({ id: a1.id, answer: 'x' });
     const held = b.decisions.takeHeld(lead.sessionId);
     assert.deepEqual(held, { ids: [a1.id], text: '[결정] Q1? → x', now: 1, next: 0 }); // P295: now·next 수
     const n0 = dl(lead).length;
     b.decisions.onHuman(lead.sessionId, 'bar');
     assert.equal(dl(lead).length, n0, '이미 앞에 붙였다');
-    assert.equal(b.store.openDecisions(lead.sessionId).length, 0);
-    // 터미널에 직접 친 글(이미 제출됨): 열린 카드를 닫고 모은 답은 그 턴에 스티어링으로(P295: rideOnly, 턴을 새로 만들지 않는다)
-    const t1 = ask(b, lead, { question: 'T1?' }); const t2 = ask(b, lead, { question: 'T2?' }); ask(b, lead, { question: 'T3?' });
+    assert.deepEqual(b.store.openDecisions(lead.sessionId).map((d) => d.id), [a2.id], 'P303: 손 카드는 사람의 직접 글로 닫지 않는다');
+    ask(b, lead, { done: a2.id });
+    // 터미널에 직접 친 글(이미 제출됨): 모은 답은 그 턴에 스티어링으로(P295: rideOnly, 턴을 새로 만들지 않는다)
+    const t1 = ask(b, lead, { question: 'T1?' }); const t2 = ask(b, lead, { question: 'T2?' }); const t3 = ask(b, lead, { question: 'T3?' });
     h['decision.answer']({ id: t1.id, answer: '1' }); h['decision.answer']({ id: t2.id, answer: '2' });
     const n1 = dl(lead).length;
     b.cfg.rideGraceMs = 50; // P295: 턴을 못 본 채 이만큼 지나면 취소
@@ -370,6 +372,7 @@ test('P286 답 모아 보내기와 사람의 직접 글: 명령 바 글은 앞�
     assert.ok(events(b, 'decision_flush').some((e) => e.data.why === 'ride_steer'));
     await until(() => b.store.heldAnswers(lead.sessionId).length === 2); // 쉬는 세션이라 그 턴에 넣지 못하고 취소 → 다시 붙잡는다(P295)
     b.decisions.flushNow({ sessionId: lead.sessionId });
+    ask(b, lead, { done: t3.id }); // P303: 손 카드는 에이전트가 닫는다
     // 에이전트가 --done으로 마지막 열린 카드를 닫으면 모은 답을 보낸다
     const e1 = ask(b, lead, { question: 'E1?' }); const e2 = ask(b, lead, { question: 'E2?' });
     h['decision.answer']({ id: e1.id, answer: 'y' });

@@ -269,7 +269,7 @@ test('P292 미루기·날짜 나중: 숨었다가 때가 되면 뜬다(가짜 �
   } finally { await stop(); }
 });
 
-test('P292 직접 글: 열린 결정·자동 카드는 닫고, 할 일·확인 손 카드는 그대로. 옛 decide 카드(kind 없음)는 결정 그대로', async () => {
+test('P292 직접 글: 손 카드(결정·할 일·확인)는 그대로(P303). 옛 decide 카드(kind 없음)는 결정 그대로', async () => {
   const { b, add, stop } = await board();
   try {
     const lead = add('lead');
@@ -277,7 +277,8 @@ test('P292 직접 글: 열린 결정·자동 카드는 닫고, 할 일·확인 �
     const d = todo(b, lead, { text: '명령 치기', cmds: ['ls'] });
     const c = todo(b, lead, { text: '보기', check: true });
     b.decisions.onHuman(lead.sessionId, 'bar');
-    assert.equal(b.store.getDecision(q.id).state, 'answered');
+    assert.equal(b.store.getDecision(q.id).state, 'open', 'P303: 손 결정 카드도 그대로');
+    ask(b, lead, { done: q.id });
     assert.equal(b.store.getDecision(d.id).state, 'open'); assert.equal(b.store.getDecision(c.id).state, 'open');
     // 옛 카드: kind 열이 비어 있다
     b.store.db.prepare("INSERT INTO decisions (session_id, name, question, created_at, state) VALUES (?, 'lead', '옛 질문?', ?, 'open')").run(lead.sessionId, Date.now());
@@ -328,7 +329,10 @@ test('P292 자동 카드 종류: 명령 실행 부탁 → 할 일(명령 뽑기)
     await tick(5);
     turn(b, lead, 'Should I continue?');
     assert.ok(b.store.openDecisions(lead.sessionId).some((d) => d.auto && d.kind === 'decide'));
-    // 사람의 직접 글은 자동 카드를 닫는다(종류 무관)
+    // 사람의 직접 글은 자동 카드를 닫는다(종류 무관). P303: 만든 지 10초 안이면 남긴다
+    b.decisions.onHuman(lead.sessionId, 'bar');
+    assert.equal(b.store.openDecisions(lead.sessionId).length, 2, 'P303: 갓 만든 자동 카드는 남는다');
+    b.store.db.prepare('UPDATE decisions SET created_at = created_at - 60000 WHERE auto = 1').run();
     b.decisions.onHuman(lead.sessionId, 'bar');
     assert.deepEqual(b.store.openDecisions(lead.sessionId).map((d) => d.kind), ['do']);
   } finally { await stop(); }

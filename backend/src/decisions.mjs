@@ -6,7 +6,8 @@
 // - 사람: 판 API decision.list | decision.answer | decision.ignore. 답하면 그 세션에 보통 메시지(대기열)로 "[결정] <질문 줄임> → <답>"이 들어가고 answered.
 //   무시는 세션에 아무것도 보내지 않고(세션의 턴을 쓰지 않는다) ignored.
 // - 사람이 카드를 거치지 않고 그 세션에 직접 글을 보내면(명령 바·휴대폰 입력 = session.send, 터미널에 직접 친 글 = 전달과 맞지 않는 UserPromptSubmit,
-//   hook 없는 종류는 쉬는 중 터미널 Enter) 그 세션의 열린 카드는 answered(via session)로 닫는다. 세션에 따로 알리지 않는다. 판 알림·다른 세션의 글은 닫지 않는다.
+//   hook 없는 종류는 쉬는 중 터미널 Enter) 그 세션의 열린 자동 카드는 answered(via session)로 닫는다. 세션에 따로 알리지 않는다. 판 알림·다른 세션의 글은 닫지 않는다.
+//   P303: 손 카드(atrium ask·todo)는 닫지 않는다(에이전트가 대화로 답을 받으면 --done으로 닫는다). 만들어진 지 10초 안의 자동 카드도 남긴다(onHuman).
 // - 세션이 닫히거나 보관되면 열린 카드는 closed. 바뀔 때마다 창에 decision.changed { cards }(열린 카드 모두)를 보낸다.
 // - 웹 푸시: 응답 필요 알림 설정(need)을 따라 카드마다 한 번(web-push.mjs decision).
 // P286: 판 자동 카드. 일 상위가 없는 세션(merger 제외)이 턴을 끝내고 쉴 때(working → ready. 오류·응답 필요로 끝난 턴은 아니다), 그 턴에 손 카드(atrium ask)를
@@ -27,7 +28,7 @@
 //   모든 카드에 미루기(decision.snooze { id, until }): wake_at까지 숨겼다가 다시 띄운다. 숨긴 카드(나중)는 답 모으기의 "열린 카드"에 세지 않는다.
 //   에이전트: atrium todo "<할 일>" [--cmd …]… [--check] [--later …] [--why …] [--tell] | --done <번호> | --list. 누가·상한은 atrium ask와 같다(나중에는 따로).
 //   답 모으기 줄: [결정] q → a, [확인] q → 됐다/안 됐다: 메모, [할 일] q → 했음.
-//   사람이 세션에 직접 보낸 글이 닫는 것은 지금 보이는 결정 카드와 자동 카드뿐이다(할 일·확인·나중에 손 카드는 사람 몫이라 그대로 둔다).
+//   사람이 세션에 직접 보낸 글이 닫는 것은 지금 보이는 자동 카드뿐이다(P303: 손 카드는 종류 무관 그대로 둔다).
 //   자동 카드는 마지막 답이 명령 실행을 청하면 할 일(명령 뽑기), 확인을 청하면 확인, 그 밖의 질문은 결정(auto-ask.mjs findAsk).
 // P295(사용자 2026-11-21): 답 실어 보내기. 사용자 몫 답은 세션이 그 답을 기다리며 멈춰 있을 때만 곧바로 보내고, 아니면 그 세션에 다음 글이 갈 때 실어 보내 턴을 아낀다.
 //   카드마다 보내는 때(timing): now(곧바로) | next(다음 글에 실어). 정하는 차례: 사람이 답할 때 바꾼 값(answer·check·done의 timing) → 에이전트가 준 값
@@ -56,6 +57,8 @@ export const DID = '했음';
 export const CHECK_OK = '됐다';
 export const CHECK_FAIL = '안 됐다';
 export const TIMINGS = ['now', 'next']; // P295: 보내는 때
+// P303: 자동 카드가 만들어진 뒤 이만큼 안에 온 사람의 직접 글은 그 카드를 보기 전에 보낸 것으로 보고 닫지 않는다
+export const AUTO_FRESH_MS = 10_000;
 // P295: 에이전트 인자(wait·noWait 또는 timing) → now | next | null
 export function timingArg(o = {}) {
   if (o.timing != null && o.timing !== false) { const t = String(o.timing); if (!TIMINGS.includes(t)) throw apiError('bad_request', `보내는 때는 now 또는 next다: ${t}`); return t; }
@@ -409,14 +412,21 @@ export class Decisions {
   }
 
   // ---------- 닫기 ----------
-  // 사람이 카드를 거치지 않고 그 세션에 직접 글을 보냈다(where: bar | terminal). 열린 카드는 answered(via session)
+  // 사람이 카드를 거치지 않고 그 세션에 직접 글을 보냈다(where: bar | terminal). 열린 자동 카드는 answered(via session)
+  // P303: 손 카드(atrium ask·todo, 종류 무관)는 닫지 않는다. 사람의 글이 그 질문의 답인지 판은 모른다(카드를 올린 1초 뒤 다른 요청을 보낸 일이 있다).
+  //   대화로 답을 받은 에이전트가 atrium ask|todo --done으로 닫는다. 자동 카드는 마지막 질문을 떠 둔 것이라 다음 대화가 갈음해 닫되,
+  //   만들어진 지 AUTO_FRESH_MS 안이면 사람이 카드를 보기 전에 보낸 글로 보고 남긴다. 남긴 카드는 decision_kept { hand, fresh, where }로 센다.
   onHuman(sessionId, where = 'session') {
-    const open = this.activeOpen(sessionId).filter((d) => d.kind === 'decide' || d.auto); // P292: 할 일·확인·나중에 손 카드는 사람 몫이라 그대로
+    const at = this.now();
+    const active = this.activeOpen(sessionId);
+    const open = active.filter((d) => d.auto && at - d.createdAt >= AUTO_FRESH_MS);
+    const hand = active.filter((d) => !d.auto).map((d) => d.id);
+    const fresh = active.filter((d) => d.auto && at - d.createdAt < AUTO_FRESH_MS).map((d) => d.id);
+    if (hand.length || fresh.length) this.b.store.addEvent(sessionId, 'decision_kept', { hand, fresh, where });
     if (!open.length && !this.store().heldAnswers(sessionId).length) return 0;
-    const at = Date.now();
     let n = 0;
     for (const d of open) if (this.store().endDecision(d.id, { state: 'answered', via: 'session', at })) n++;
-    if (n) this.b.store.addEvent(sessionId, 'decision_end', { ids: open.map((d) => d.id), autoIds: open.filter((d) => d.auto).map((d) => d.id), state: 'answered', via: 'session', where });
+    if (n) this.b.store.addEvent(sessionId, 'decision_end', { ids: open.map((d) => d.id), autoIds: open.map((d) => d.id), state: 'answered', via: 'session', where });
     // P295: 명령 바·휴대폰 글(bar)이면 모은 답은 그 글에 실려 간다(보통 글은 넣을 때 takeHeld, 스티어링 글은 보낼 때 attachFront). 따로 보내지 않는다.
     //   터미널에 직접 친 글(terminal)로 턴이 열렸으면 지금 턴에 넣을 수 있는 세션만 스티어링(rideOnly)으로 그 턴에 넣고, 못 넣으면 다음 판 전달을 기다린다
     const f = where === 'terminal' ? this.rideSteer(sessionId) : null;
@@ -536,7 +546,7 @@ export class Decisions {
     const cmds = (f.cmds || []).map((x) => clip(String(x), TODO_CMD_MAX)).slice(0, TODO_CMDS_MAX);
     const old = active.filter((d) => d.auto); // 사람이 미룬 자동 카드는 바꾸지 않는다
     if (old.length === 1 && old[0].question === question && old[0].kind === f.kind && JSON.stringify(old[0].options) === JSON.stringify(options) && JSON.stringify(old[0].cmds) === JSON.stringify(cmds)) return null; // 같은 질문이 그대로 열려 있다
-    const at = Date.now();
+    const at = this.now(); // P303: 자동 카드의 만든 때는 판의 시계(onHuman의 AUTO_FRESH_MS와 같은 시계)
     for (const d of old) {
       this.store().endDecision(d.id, { state: 'closed', via: 'replaced', at });
       this.b.store.addEvent(sid, 'decision_end', { id: d.id, state: 'closed', via: 'replaced', auto: true });
