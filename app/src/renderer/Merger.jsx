@@ -1,5 +1,5 @@
 // P268: 합치기 merger의 창 쪽(판 쪽 P267 merger.mjs, 계약은 판 API merger.*와 설정 mergerMode·mergerKind·mergerModel·mergerEffort).
-// - 설정 › 합치기 탭(MergerTab): 켬 / 물어봄 / 끔, merger의 종류·모델·노력, 프로젝트마다 기억한 답(다시 묻기)
+// - 설정 › 합치기 탭(MergerTab): 켬 / 물어봄 / 끔, merger의 종류·모델·노력·승인 방식(P287, 판에 그 키가 있을 때만), 프로젝트마다 기억한 답(다시 묻기)
 // - 사람에게 묻는 카드(MergerAskCards): 설정이 물어봄이고 그 프로젝트에 답이 없을 때 판이 낸 물음(merger.ask). 워크스페이스마다 한 번, 답은 merger.answer로 판이 기억한다.
 //   PC 창은 위쪽 가운데(허락 요청 카드와 같은 자리·생김새), 휴대폰은 세션 맵 머리 아래. 지휘 세션에게는 묻지 않는다(설계 12절 5번)
 // - 캔버스의 하위 → merger 선(MergerEdge): 열린 합치기 일의 childId → mergerId(lib/merger.js mergerLines). 보통 연결과 같은 곡선, 색은 합치기(보라 점선)
@@ -9,7 +9,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath } from '@xyflow/react';
 import { api } from './api.js';
 import { useStore, getState, toast, dismissMergerAsk, dropMergerAsk } from './store.js';
 import { useT, errText } from './lib/i18n.js';
-import { MERGER_MODES, MERGER_EFFORTS, MERGER_DEFAULTS, mergerSettingsOf, mergerValueOf, askCards, askKey, mergerSessionIds } from './lib/merger.js';
+import { MERGER_MODES, MERGER_EFFORTS, MERGER_PERMISSIONS, MERGER_DEFAULTS, mergerSettingsOf, mergerValueOf, askCards, askKey, mergerSessionIds } from './lib/merger.js';
 import { shifted, linkLabelHidden } from './lib/link-labels.js';
 import { labelFit } from './lib/labels.js';
 import { SetRow, SetNote } from './Settings.jsx';
@@ -55,6 +55,11 @@ export function MergerTab({ settings }) {
           {MERGER_EFFORTS.map((x) => <option key={x || 'none'} value={x}>{x ? x : t('merger.effortNone')}</option>)}
         </select>
       </SetRow>
+      {'mergerPermission' in settings && <SetRow name={t('merger.permission')} hint={t('merger.permissionHint')} role="merger-permission-setting">
+        <select className="mt-set-select" data-field="setting-mergerPermission" value={v.mergerPermission} onChange={async (e) => { if (await saveSetting(t, 'mergerPermission', e.target.value)) toast(t('merger.saved')); }}>
+          {MERGER_PERMISSIONS.map((x) => <option key={x || 'inherit'} value={x}>{x ? x : t('merger.permissionInherit')}</option>)}
+        </select>
+      </SetRow>}
       <SetNote>{t('merger.repoNote')}</SetNote>
       {view && view.problem && <div className="mt-set-row" data-role="merger-problem"><span className="mt-set-hint">{t('merger.problem', { name: nameOf(view.problem.workspace) || '?', why: view.problem.why })}</span></div>}
       {answers.length > 0 && <div className="mt-set-row mt-merger-answers" data-role="merger-answers">
