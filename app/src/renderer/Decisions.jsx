@@ -9,7 +9,7 @@
 //   할 일: 명령(고정폭, 명령마다 복사 단추) + 했음·미루기·무시. 확인: 됐다/안 됐다 + 한 줄 메모·미루기·무시. 결정: 지금 그대로 + 미루기.
 //   미루기는 1시간·내일 아침·날짜 고르기. 미룬 카드와 나중에 카드는 목록 끝 "나중 n"(접힘, 때·조건 보임)에 있고 꺼내기·무시.
 //   알약·표식의 수는 지금 목록(나중 줄 뺌)만 센다(종류 구별 없이).
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useStore, getState, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago } from './lib/labels.js';
@@ -18,6 +18,16 @@ import { answerReady, firstCardIds, allAuto, activeCards, laterCards, actionOf, 
 function useNow(ms = 15000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
 const nameOf = (d) => { const s = getState().sessions.get(d.sessionId); return (s && s.name) || d.name || '?'; };
 const stop = (e) => e.stopPropagation();
+// P292: 알림. PC는 판의 알림 줄(긴 글), 휴대폰 시트는 시트 머리 아래 한 줄(짧은 글, 새 것이 옛 것을 바꾼다. 누르는 카드를 가리지 않게)
+const SayCtx = createContext((long, short, level) => toast(long, level));
+const useSay = () => useContext(SayCtx);
+function useSheetNote() {
+  const [note, setNote] = useState(null);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const say = (long, short, level) => { clearTimeout(timer.current); setNote({ text: short || long, level: level || 'info', id: Date.now() }); timer.current = setTimeout(() => setNote(null), level === 'error' ? 4000 : 2200); };
+  return [note, say];
+}
 
 // P292: 글을 클립보드에(보안 출처가 아닌 휴대폰 웹 화면은 textarea로)
 async function copyText(text) {
@@ -30,12 +40,13 @@ async function copyText(text) {
 
 // P286: 한 세션의 모은 답 줄(그 세션의 첫 카드 위)
 function HeldLine({ sessionId, n, t }) {
+  const say = useSay();
   const [busy, setBusy] = useState(false);
   const name = nameOf({ sessionId });
   const send = async () => {
     setBusy(true);
-    try { await flushDecisions(sessionId); toast(t('autoDecisions.flushed', { name, n })); }
-    catch (e) { toast(t('decisions.fail', { error: errText(e) }), 'error'); }
+    try { await flushDecisions(sessionId); say(t('autoDecisions.flushed', { name, n }), t('userTasks.s.flushed', { n })); }
+    catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); }
     setBusy(false);
   };
   return (
@@ -63,6 +74,7 @@ function CardHead({ d, onGo, now, t }) {
 
 // P292: 명령(고정폭, 명령마다 복사)
 function Cmds({ d, t }) {
+  const say = useSay();
   const [done, setDone] = useState(null);
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -70,7 +82,7 @@ function Cmds({ d, t }) {
   const copy = async (c, i) => {
     const ok = await copyText(c);
     setDone(ok ? i : null); clearTimeout(timer.current); timer.current = setTimeout(() => setDone(null), 1500);
-    toast(ok ? t('userTasks.copied') : t('userTasks.copyFail'), ok ? undefined : 'error');
+    say(ok ? t('userTasks.copied') : t('userTasks.copyFail'), ok ? t('userTasks.s.copied') : t('userTasks.copyFail'), ok ? undefined : 'error');
   };
   return (
     <div className="mt-ut-cmds" data-role="todo-cmds">
@@ -86,14 +98,15 @@ function Cmds({ d, t }) {
 
 // P292: 미루기(1시간·내일 아침·날짜 고르기)
 function Snooze({ d, t, busy, setBusy }) {
+  const say = useSay();
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState(null);
   const name = nameOf(d);
   const go = async (until) => {
     if (!until) return;
     setBusy(true);
-    try { await snoozeDecision(d.id, until); toast(t('userTasks.snoozed', { name, when: whenText(until) })); }
-    catch (e) { toast(t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
+    try { await snoozeDecision(d.id, until); say(t('userTasks.snoozed', { name, when: whenText(until) }), t('userTasks.s.snoozed', { when: whenText(until) })); }
+    catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   if (!open) return <button type="button" className="mt-btn small ghost" data-action="snooze" disabled={busy} title={t('userTasks.snoozeTitle')} onClick={() => setOpen(true)}>{t('userTasks.snooze')}</button>;
   const tm = snoozeTimes();
@@ -113,23 +126,25 @@ function Snooze({ d, t, busy, setBusy }) {
 }
 
 function IgnoreBtn({ d, t, busy, setBusy }) {
+  const say = useSay();
   const name = nameOf(d);
   const ignore = async () => {
     setBusy(true);
-    try { await ignoreDecision(d.id); toast(t('decisions.ignored', { name })); }
-    catch (e) { toast(t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
+    try { await ignoreDecision(d.id); say(t('decisions.ignored', { name }), t('userTasks.s.ignored')); }
+    catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return <button type="button" className="mt-btn small ghost" data-action="decision-ignore" title={t('decisions.ignoreTitle')} disabled={busy} onClick={ignore}>{t('decisions.ignore')}</button>;
 }
 
 function DecideBody({ d, t, busy, setBusy }) {
+  const say = useSay();
   const [text, setText] = useState('');
   const name = nameOf(d);
   const send = async (answer) => {
     if (busy || !answerReady(answer)) return;
     setBusy(true);
-    try { const r = await answerDecision(d.id, answer.trim()); toast(r && r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('decisions.sent', { name })); }
-    catch (e) { toast(t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
+    try { const r = await answerDecision(d.id, answer.trim()); say(r && r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('decisions.sent', { name }), r && r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.sent')); }
+    catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return (
     <>
@@ -148,11 +163,12 @@ function DecideBody({ d, t, busy, setBusy }) {
 }
 
 function DoBody({ d, t, busy, setBusy }) {
+  const say = useSay();
   const name = nameOf(d);
   const did = async () => {
     setBusy(true);
-    try { const r = await doneDecision(d.id); toast(r && r.sent ? (r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('userTasks.didSent', { name })) : t('userTasks.didToast', { name })); }
-    catch (e) { toast(t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
+    try { const r = await doneDecision(d.id); say(r && r.sent ? (r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('userTasks.didSent', { name })) : t('userTasks.didToast', { name }), r && r.sent ? (r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.didSent')) : t('userTasks.s.did')); }
+    catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return (
     <div className="mt-ut-acts">
@@ -164,13 +180,14 @@ function DoBody({ d, t, busy, setBusy }) {
 }
 
 function CheckBody({ d, t, busy, setBusy }) {
+  const say = useSay();
   const [note, setNote] = useState('');
   const name = nameOf(d);
   const send = async (ok) => {
     if (busy) return;
     setBusy(true);
-    try { const r = await checkDecision(d.id, ok, note.trim()); toast(r && r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('userTasks.checkSent', { name })); }
-    catch (e) { toast(t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
+    try { const r = await checkDecision(d.id, ok, note.trim()); say(r && r.held ? t('autoDecisions.heldToast', { name, n: r.waiting || 1 }) : t('userTasks.checkSent', { name }), r && r.held ? t('userTasks.s.held', { n: r.waiting || 1 }) : t('userTasks.s.checkSent')); }
+    catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return (
     <>
@@ -201,12 +218,13 @@ function DecisionRow({ d, onGo, now, t }) {
 
 // P292: 나중 줄 하나(때·조건, 꺼내기·무시)
 function LaterRow({ d, onGo, now, t }) {
+  const say = useSay();
   const [busy, setBusy] = useState(false);
   const name = nameOf(d);
   const raise = async () => {
     setBusy(true);
-    try { await raiseDecision(d.id); toast(t('userTasks.raised', { name })); }
-    catch (e) { toast(t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
+    try { await raiseDecision(d.id); say(t('userTasks.raised', { name }), t('userTasks.s.raised')); }
+    catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); setBusy(false); }
   };
   return (
     <div className={`mt-dc-row mt-ut-later-row k-${d.kind}${d.auto ? ' auto' : ''}`} data-role="later-card" data-id={d.id} data-kind={d.kind}>
@@ -300,20 +318,21 @@ export function PhoneDecisionPill({ onOpen }) {
   const n = useStore((st) => activeCards(st.decisions).length);
   const total = useStore((st) => st.decisions.length);
   const [open, setOpen] = useState(false);
+  const [note, say] = useSheetNote();
   useEffect(() => { if (!total) setOpen(false); }, [total]);
   if (!total) return null;
   return (
-    <>
+    <SayCtx.Provider value={say}>
       <button type="button" className={`mt-pl-pill st-decision${n ? '' : ' quiet'}`} data-role="pl-decisions" data-count={n} data-total={total} onClick={() => setOpen(true)}><i /><b>{n}</b><span>{t('userTasks.pill')}</span></button>
       {open && (
         <div className="mt-dc-sheet" data-role="decisions-sheet" role="dialog" aria-label={t('userTasks.head')}>
           <div className="mt-dc-scrim" onClick={() => setOpen(false)} />
           <div className="mt-dc-panel">
-            <div className="mt-dc-sheet-head"><b>{t('userTasks.head')}</b><span className="mono">{n}</span><button type="button" className="mt-dc-x" data-action="decisions-close" aria-label={t('common.close')} onClick={() => setOpen(false)}>×</button></div>
+            <div className="mt-dc-sheet-head"><b>{t('userTasks.head')}</b><span className="mono">{n}</span>{note ? <span key={note.id} className={`mt-ut-note ${note.level}`} data-role="sheet-note" role="status">{note.text}</span> : null}<button type="button" className="mt-dc-x" data-action="decisions-close" aria-label={t('common.close')} onClick={() => setOpen(false)}>×</button></div>
             <div className="mt-dc-sheet-body"><DecisionList onGo={(id) => { setOpen(false); if (onOpen) onOpen(id); }} /></div>
           </div>
         </div>
       )}
-    </>
+    </SayCtx.Provider>
   );
 }

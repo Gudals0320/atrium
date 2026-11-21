@@ -2830,6 +2830,8 @@ export default {
     mark: '내 몫',
     markN: '내 몫 {n}',
     markTitle: '기다리는 내 몫 {n}개 · 위 "내 몫" 알약에서 처리합니다',
+    // P292: 휴대폰 시트 머리의 짧은 알림(하나만)
+    s: { flushed: '모은 답 {n}개 보냄', copied: '복사함', snoozed: '{when}까지 미룸', ignored: '무시함', held: '답 모음({n})', sent: '답 보냄', didSent: '했음 보냄', did: '했음 기록', checkSent: '결과 보냄', raised: '꺼냄' },
   },
 };
 

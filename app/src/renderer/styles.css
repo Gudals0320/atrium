@@ -2699,3 +2699,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-dc-sheet .mt-ut-check { flex-wrap: wrap; }
 .mt-dc-sheet .mt-ut-check .mt-dc-input { flex: 1 1 100%; }
 .mt-dc-sheet .mt-ut-check .mt-btn { flex: 1; }
+.mt-ut-note { flex: 0 1 auto; min-width: 0; margin-left: auto; padding: 3px 10px; border-radius: 999px; background: var(--teal-bg); border: 1px solid var(--teal); color: var(--white); font-size: 13px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-ut-note.error { background: none; border-color: var(--warn); color: var(--warn); }
+.mt-ut-note + .mt-dc-x { margin-left: 0; }

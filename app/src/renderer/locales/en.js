@@ -2826,6 +2826,8 @@ export default {
     mark: 'for you',
     markN: 'for you {n}',
     markTitle: '{n} item(s) waiting for you · handle them from the "For you" pill at the top',
+    // P292: 휴대폰 시트 머리의 짧은 알림(하나만)
+    s: { flushed: 'Sent {n} held', copied: 'Copied', snoozed: 'Snoozed to {when}', ignored: 'Ignored', held: 'Held ({n})', sent: 'Sent', didSent: 'Done, told', did: 'Marked done', checkSent: 'Result sent', raised: 'Brought out' },
   },
 };
 
