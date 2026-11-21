@@ -203,7 +203,7 @@ test('P284 답하기 → 그 세션에 "[결정] 질문 → 답" 보통 메시�
   } finally { await stop(); }
 });
 
-test('P284 직접 글 → 닫힘(세션에서 답함), 판 알림·다른 세션의 글은 닫지 않음, 세션 닫힘 → closed', async () => {
+test('P284 직접 글 → 손 카드는 그대로(P303), 판 알림·다른 세션의 글은 닫지 않음, 세션 닫힘 → closed', async () => {
   const { b, add, stop } = await board();
   try {
     const lead = add('lead'); const other = add('other');
@@ -220,9 +220,10 @@ test('P284 직접 글 → 닫힘(세션에서 답함), 판 알림·다른 세션
     assert.equal(humanPrompt('<task-notification>…'), false);
     assert.equal(humanPrompt('  '), false);
     // 사람이 직접 보낸 글(명령 바·휴대폰 입력·터미널)
-    assert.equal(b.decisions.onHuman(lead.sessionId, 'bar'), 2);
-    for (const id of [a.id, a2.id]) { const r = b.store.getDecision(id); assert.equal(r.state, 'answered'); assert.equal(r.via, 'session'); assert.equal(r.answer, null); }
+    // P303: 손 카드는 닫지 않는다(사람의 글이 그 질문의 답인지 판은 모른다. 에이전트가 --done으로 닫는다)
     assert.equal(b.decisions.onHuman(lead.sessionId, 'bar'), 0);
+    for (const id of [a.id, a2.id]) assert.equal(b.store.getDecision(id).state, 'open');
+    for (const id of [a.id, a2.id]) ask(b, lead, { done: id });
     // 세션 닫힘
     const c = ask(b, other, { question: '닫힐 질문' });
     b.closeSession(other, 'killed');

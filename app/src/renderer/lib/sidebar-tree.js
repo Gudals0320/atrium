@@ -84,6 +84,15 @@ export function groupKeys(r, workspaces = [], groups = []) {
   return members.filter((k) => have.has(k));
 }
 
+// P302: 모두 접기·모두 열기. 판의 폴더(그룹, 'g:'+ID)와 워크스페이스 전부의 접힘을 한꺼번에 바꾼 새 접힘 기억을 돌려준다.
+// 다른 키(지금 판에 없는 워크스페이스 등)는 그대로 둔다. 접혀도 응답 필요·오류·실행 중 세션 줄은 남는다(buildRows의 pinnedRows, P265)
+export function foldAllMap(collapsed = {}, workspaces = [], groups = [], fold = true) {
+  const next = { ...(collapsed || {}) };
+  for (const w of workspaces || []) if (w && w.key != null) next[w.key] = !!fold;
+  for (const g of groups || []) if (g && g.id != null) next[`g:${g.id}`] = !!fold;
+  return next;
+}
+
 // opts: { workspaces, groups, sessions(배열), data(recall.list: { workspaces: [{ key, closed, convos, archived }] }),
 //         collapsed: { [ws키 | 'g:'+그룹ID]: true }, extra: { [ws키]: true }(닫힘·대화 펼침), more: { [ws키|칸]: n },
 //         filter: 글, states: Set(묶음), kind: '' | 종류, selecting }
