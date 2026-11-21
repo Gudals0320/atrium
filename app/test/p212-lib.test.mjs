@@ -35,11 +35,11 @@ test('폴더 칩을 누르면 그 폴더로 간다(지금 것, 마지막에 보�
   assert.equal(groupPick(proj, 'a1'), proj.keys[0]);
 });
 
-test('Chrome.jsx의 묶음 칩은 안의 이름 칸을 그리지 않는다', () => {
+test('Chrome.jsx의 묶음 칩은 안의 이름 칸을 그리지 않는다(P294: 위 워크스페이스 줄째 없앴다)', () => {
   const src = fs.readFileSync(path.join(SRC, 'Chrome.jsx'), 'utf8');
   assert.ok(!src.includes('ws-group-current'));
   assert.ok(!src.includes('mt-wsgrp-sub'));
-  assert.ok(src.includes('groupChipView(tab, current)'));
+  assert.ok(!src.includes('GroupChip') && !src.includes('data-role="workspaces"'));
   const css = fs.readFileSync(path.join(SRC, 'styles.css'), 'utf8');
   assert.ok(!css.includes('.mt-wsgrp-sub'));
 });
