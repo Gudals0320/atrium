@@ -54,7 +54,7 @@ import { wakeSession } from './sleep.js'; // P21
 import { t as tr, errText, useT } from './lib/i18n.js'; // P16: 이 파일은 t를 메모·칸반 종류 이름으로도 쓴다
 import { repoEdges, facingSides } from '../../../backend/src/links.mjs';
 import { boundsOf } from '../../../backend/src/workspaces.mjs';
-import { chromeInset, fitInset } from './lib/chrome-inset.js'; // P52(#5)
+import { chromeInset, fitInset, withTitleRoom } from './lib/chrome-inset.js'; // P52(#5). P302: 영역 이름표 자리
 import { bbox, REGION_GAP, groupFrames, fitRectOf } from '../../../backend/src/canvas.mjs'; // P91: groupFrames(묶음 테두리). P98·P278: fitRectOf
 import { layout as layoutTree, dropZone, edgeSnap } from '../../../backend/src/dock-tree.mjs'; // P17, P23
 import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regionConflicts, dockedAreas, visibleAnchors } from '../../../backend/src/worktree-areas.mjs'; // P27. P35: 상자는 리포 영역 안. P68: 워크트리끼리 붙인 덩어리
@@ -681,17 +681,27 @@ export function Canvas() {
     const q = (sel) => [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
     return chromeInset(el.getBoundingClientRect(), { top: q('[data-role="top-left"], [data-role="top-right"]'), left: q('[data-role="rail-left"]'), right: q('[data-role="rail-right"]'), bottom: q(`[data-role="bottom"]:not([data-hidden]), [data-role="chips"]:not([data-hidden])${nav ? ', [data-role="zoom"]' : ''}`) }, { gap });
   }, []);
+  // P302: 영역을 맞출 때(전체 보기, 워크스페이스·폴더로 가기, 처음 열기)의 여백. 위에는 위 막대 높이만큼 더 두어 영역 이름표가 위 알약 아래에 보이게 한다
+  const regionInset = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return {};
+    const view = el.getBoundingClientRect();
+    const tl = document.querySelector('[data-role="top-left"]');
+    const r = tl && tl.getBoundingClientRect();
+    const barH = r && r.height > 0 ? r.bottom - view.top : 0;
+    return withTitleRoom(insetNow(), barH, el.clientHeight);
+  }, [insetNow]);
   // 전체가 화면에 들어오게(처음 열 때, "전체" 단추). 소속 없는 메모·칸반도 넣는다. P52: 떠 있는 크롬 밑은 빼고 맞춘다
   const fitAll = useCallback((duration = 0) => {
     const el = wrapRef.current;
     if (!el) return;
     const rects = [...allRegions().values(), ...itemRects().filter((r) => !r.ws)];
-    const vp = fitInset(boundsOf(rects, 40), { width: el.clientWidth, height: el.clientHeight }, insetNow(), { minZoom: 0.05, maxZoom: 1 });
+    const vp = fitInset(boundsOf(rects, 40), { width: el.clientWidth, height: el.clientHeight }, regionInset(), { minZoom: 0.05, maxZoom: 1 });
     perfLog('fit_all', { regions: rects.length, zoom: vp ? +vp.zoom.toFixed(3) : null });
     rf.setViewport(vp || { x: 40, y: 80, zoom: 0.75 }, { duration });
     setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), duration + 30);
     schedule(duration + 100);
-  }, [rf, schedule, insetNow]);
+  }, [rf, schedule, regionInset]);
   // 처음 열 때: 저장한 뷰포트가 없으면(처음, P5 판을 옮긴 뒤) 모두 보이게 맞춘다
   useEffect(() => { const t = setTimeout(() => { if (!getState().viewport) fitAll(0); else setViewNow(rf.getViewport(), sizeOf()); const v = rf.getViewport(); step('fit', { z: v.zoom, x: v.x, y: v.y, saved: getState().viewport ? 1 : 0 }); }, 80); return () => clearTimeout(t); }, [fitAll, rf]);
   // P86: 보드 첫 그리기(React가 노드를 붙인 뒤, 다음 화면 그리기 뒤). 그린 노드 수와 DOM 수
@@ -723,7 +733,7 @@ export function Canvas() {
       setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), 200);
       schedule(250);
     };
-    st.navigateToRect = (r, duration = 250) => { const el = wrapRef.current; const vp = fitInset(r, { width: el.clientWidth, height: el.clientHeight }, insetNow(), { minZoom: 0.05, maxZoom: 1, fill: 0.92 }); if (vp) rf.setViewport(vp, { duration }); setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), duration + 50); schedule(duration + 50); };
+    st.navigateToRect = (r, duration = 250) => { const el = wrapRef.current; const vp = fitInset(r, { width: el.clientWidth, height: el.clientHeight }, regionInset(), { minZoom: 0.05, maxZoom: 1, fill: 0.92 }); if (vp) rf.setViewport(vp, { duration }); setTimeout(() => setViewNow(rf.getViewport(), sizeOf()), duration + 50); schedule(duration + 50); };
     // P27: 리포로 가면 워크트리 영역까지 들어오게
     const repoRect = (key) => bbox([...allRegions()].filter(([k]) => wsOfArea(k) === key).map(([, r]) => r));
     st.fitWorkspace = (key) => { const r = repoRect(key); if (r) st.navigateToRect(r); };
@@ -783,7 +793,7 @@ export function Canvas() {
       markSeen(id);
       if (focusTerminal && !viewOnly) setTimeout(() => setFocus(id, { terminal: true }), 700); // 터미널이 붙은 뒤 한 번 더
     };
-  }, [rf, schedule, fitAll, insetNow]);
+  }, [rf, schedule, fitAll, insetNow, regionInset]);
 
   // P76: 터치(손가락)는 판이 캡처 단계에서 모두 받아 React Flow·터미널(xterm)에 넘기지 않고 lib/touch-board.js 규칙대로 가른다. 마우스는 이 길로 오지 않는다.
   //   한 손가락 끌기 = 판 옮기기(노드·터미널 위에서 시작해도), 두 손가락 = 확대·축소, 길게 누른 뒤 끌기 = 노드(덩어리면 덩어리) 옮기기(마우스 끌기와 같은 처리),

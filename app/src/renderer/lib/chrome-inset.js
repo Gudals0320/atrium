@@ -15,6 +15,13 @@ export function chromeInset(view, parts = {}, { gap = 12, max = 0.3 } = {}) {
   return { top: cap(top, H), left: cap(left, W), right: cap(right, W), bottom: cap(bottom, H) };
 }
 
+// P302: 영역(워크스페이스·폴더)을 맞출 때 영역 이름표는 영역 사각형 위로 튀어나와 있어, 위 크롬만 비키면 이름표가 위 알약 밑에 숨는다.
+// 위 여백에 위 막대 높이(barH, 화면 위 끝에서 위 알약 무리 아래 끝까지)를 한 번 더 둔다. 작은 창에서 칸이 없어지지 않게 높이의 max 비율까지만
+export function withTitleRoom(inset = {}, barH = 0, height = Infinity, { max = 0.4 } = {}) {
+  const top = (inset.top || 0) + Math.max(0, Math.round(Number(barH) || 0));
+  return { ...inset, top: Math.round(Math.min(top, Math.max(inset.top || 0, height * max))) };
+}
+
 // b: 판 좌표 사각형 { x, y, w, h }, screen: { width, height }, inset: chromeInset 결과
 // fill: 남은 칸 가운데 채울 비율(1이면 꽉, 0.92면 둘레를 조금 띄운다) → React Flow 뷰포트 { x, y, zoom }
 export function fitInset(b, screen, inset = {}, { minZoom = 0.05, maxZoom = 1, fill = 1 } = {}) {

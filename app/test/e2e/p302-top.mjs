@@ -106,6 +106,18 @@ async function pc() {
     const sideOpen = () => page.evaluate(() => !!document.querySelector('[data-role=sidebar]'));
     const toggleSide = async (want) => { if ((await sideOpen()) !== want) { await page.click('[data-role=top-left] [data-action=sidebar]'); await sleep(900); } };
     await toggleSide(false);
+    // P302: 전체 보기·워크스페이스로 가기·폴더로 가기 뒤 영역 이름표가 위 알약 아래에 보인다
+    const titles = () => page.evaluate(() => { const tl = document.querySelector('[data-role=top-left]').getBoundingClientRect(); return { bar: Math.round(tl.bottom), heads: [...document.querySelectorAll('.mt-region-head')].map((e) => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), text: e.textContent.slice(0, 30) }; }).filter((h) => h.top > -500) }; });
+    for (const [w, h] of [[1600, 1000], [1100, 760]]) {
+      await page.setViewportSize({ width: w, height: h }).catch(() => {}); await sleep(600);
+      const wsKeys = await page.evaluate(() => window.__mt.getState().workspaces.map((x) => x.key));
+      for (const [what, fn] of [['fit-all', () => page.evaluate(() => window.__mt.getState().fitAll(0))], ['workspace', () => page.evaluate((k) => window.__mt.getState().fitWorkspace(k), wsKeys[0])], ['folder', () => page.evaluate((ks) => window.__mt.getState().fitWorkspaces(ks), wsKeys.slice(0, 2))]]) {
+        await fn(); await sleep(700);
+        const t = await titles();
+        if (TAG !== 'before') check(`[${w}] ${what}: 영역 이름표가 위 알약 아래`, t.heads.length && t.heads.every((x) => x.top >= t.bar), t);
+        await shot(page, `fit-${what}-${w}`, { clip: { x: 0, y: 0, width: w, height: 160 } });
+      }
+    }
     for (const lang of ['ko', 'en']) {
       call('settings.set', { key: 'language', value: lang }); await sleep(900);
       await fakeInbox(page);

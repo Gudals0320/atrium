@@ -7,6 +7,7 @@ import { foldAllMap, buildRows } from '../src/renderer/lib/sidebar-tree.js';
 import { KINDS, kindOf, logoFor } from '../src/renderer/lib/kinds.js';
 import { inboxOf } from '../src/renderer/lib/faces.js';
 import { translate } from '../src/renderer/lib/i18n.js';
+import { withTitleRoom, fitInset } from '../src/renderer/lib/chrome-inset.js';
 
 const read = (p) => fs.readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), 'utf8');
 
@@ -110,4 +111,18 @@ test('사이드바 단추는 왼쪽 끝에 붙은 탭(위 왼쪽 무리 left 0)'
   const tail = css.slice(css.indexOf('/* P302: 사이드바 단추는'));
   assert.ok(tail.includes('.mt-cluster.tl { left: 0; }'));
   assert.ok(tail.includes('.mt-cluster.tl > .mt-cp.round[data-action="sidebar"] {') && tail.includes('border-left: 0;'));
+});
+
+test('영역 맞추기: 위 여백에 위 막대 높이를 더해 영역 이름표가 위 알약 아래에 보인다(작은 창은 높이 40%까지)', () => {
+  const inset = { top: 60, left: 79, right: 74, bottom: 120 };
+  assert.deepEqual(withTitleRoom(inset, 48, 1000), { top: 108, left: 79, right: 74, bottom: 120 });
+  assert.equal(withTitleRoom(inset, 48, 200).top, 80, '200px 창: 40%');
+  assert.equal(withTitleRoom({ top: 90 }, 48, 200).top, 90, '원래 여백보다 줄이지는 않는다');
+  assert.equal(withTitleRoom({}, 0, 1000).top, 0);
+  // 맞춘 영역의 위 끝이 위 알약 아래 끝(48)보다 이름표 높이 이상 아래
+  const vp = fitInset({ x: 0, y: 0, w: 1000, h: 400 }, { width: 1600, height: 1000 }, withTitleRoom(inset, 48, 1000), { fill: 0.92 });
+  assert.ok(vp.y >= 48 + 40, String(vp.y));
+  const cv = read('Canvas.jsx');
+  assert.ok(cv.includes('regionInset(), { minZoom: 0.05, maxZoom: 1 })'), '전체 보기(처음 열기 포함)');
+  assert.ok(cv.includes('st.navigateToRect = (r, duration = 250) => { const el = wrapRef.current; const vp = fitInset(r, { width: el.clientWidth, height: el.clientHeight }, regionInset()'), '워크스페이스·폴더로 가기');
 });
