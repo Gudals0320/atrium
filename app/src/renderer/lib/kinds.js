@@ -21,6 +21,8 @@ export const KINDS = {
   // P192: AGY(Antigravity CLI). P196: 로고는 사용자 PC에 깔린 Antigravity 앱 아이콘(흰 타일)을 128px로 다듬은 것이다(사용자 요청).
   // 타일에 바탕이 있어 레일 단추도 같은 그림을 쓴다(logoBadge 없음). 화면 이름은 Antigravity
   agy: { id: 'agy', label: 'Antigravity', mark: 'AG', shape: 'rounded', color: 'var(--kind-agy)', ink: 'var(--kind-agy-ink)', logo: LOGO('agy') },
+  // P298: Hermes(Hermes Agent + OMH). 로고 그림은 넣지 않고 단순한 기호(머리글자 H)를 그린다(사용자 결정)
+  hermes: { id: 'hermes', label: 'Hermes', mark: 'H', shape: 'rounded', color: 'var(--kind-hermes)', ink: 'var(--kind-hermes-ink)', logo: null },
   grok: { id: 'grok', label: 'Grok', mark: 'G', shape: 'circle', color: 'var(--kind-grok)', ink: 'var(--kind-grok-ink)', logo: LOGO('grok') },
   shell: { id: 'shell', get label() { return t('kinds.shell'); }, mark: '>_', shape: 'square', color: 'var(--kind-shell)', ink: 'var(--kind-shell-ink)', logo: null },
   other: { id: 'other', get label() { return t('ask.agent'); }, mark: '?', shape: 'rounded', color: 'var(--kind-other)', ink: 'var(--kind-other-ink)', logo: null },

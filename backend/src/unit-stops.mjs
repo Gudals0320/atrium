@@ -150,8 +150,10 @@ export class UnitStops {
     if (!why) return null;
     const unit = st.getUnit(tr.unitId);
     // P296: 자체 오케스트레이션 세션이 atrium을 못 돌리는 하네스(reportFallback last_answer)면 판이 턴 끝 마지막 답으로 그 일을 닫는다(멈춤 알림 대신)
-    if (why === 'idle_no_done' && s.orch && s.orch.reportFallback === 'last_answer' && this.units.fallbackDone) { this.units.fallbackDone(s, tr, this.turnAt.get(s.sessionId) || 0); return null; }
-    const inner = why === 'idle_no_done' && s.orch && this.b.sleeper && this.b.sleeper.innerBusy ? this.b.sleeper.innerBusy(s) : false; // P296: 안에서 일하는 중이면 멈춤이 아니다(끝나면 onInnerQuiet가 다시 본다)
+    //   P298: 안에서 하위 에이전트가 도는 동안(Hermes delegate_task: 턴이 끝난 뒤에도 돌고 끝나면 하네스가 새 턴을 스스로 넣는다)은 닫지 않고 기다린다(onInnerQuiet가 닫는다)
+    const sl = this.b.sleeper; // P296: 안에서 일하는 중이면 멈춤이 아니다(끝나면 onInnerQuiet가 다시 본다)
+    const inner = why === 'idle_no_done' && s.orch && sl ? (sl.innerBusyNow ? sl.innerBusyNow(s) : sl.innerBusy ? sl.innerBusy(s) : false) : false;
+    if (why === 'idle_no_done' && !inner && s.orch && s.orch.reportFallback === 'last_answer' && this.units.fallbackDone) { this.units.fallbackDone(s, tr, this.turnAt.get(s.sessionId) || 0); return null; }
     const quiet = why === 'idle_no_done' ? (inner ? 'inner_work' : this.quietWhy(s.sessionId, tr, unit)) : null; // P281
     if (quiet) {
       st.addEvent(s.sessionId, 'unit_stop_quiet', { unitId: tr.unitId, tryId: tr.id, why, because: quiet });
@@ -168,6 +170,7 @@ export class UnitStops {
     if (!d || d.status !== 'confirmed' || st.openUnitsFromCount(s.sessionId)) return null;
     const unit = st.getUnit(tr.unitId);
     if (this.idleSent.has(tr.id)) return null;
+    if (s.orch && s.orch.reportFallback === 'last_answer' && this.units.fallbackDone) { this.units.fallbackDone(s, tr, this.turnAt.get(s.sessionId) || 0); return 'fallback'; } // P298: 하위가 끝나 조용해졌다 → 마지막 답으로 닫는다
     this.units.recordStop(s, tr, 'idle_no_done');
     return this.add(tr, unit, 'idle_no_done') ? 'idle_no_done' : null;
   }

@@ -12,7 +12,7 @@ import { KindIcon } from './SessionNode.jsx';
 import { Icon } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
 import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES } from './lib/launchers.js';
-import { orchApplies, launcherOrchestrates, orchBody } from './lib/orch.js'; // P296: 자체 오케스트레이션
+import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue } from './lib/orch.js'; // P296: 자체 오케스트레이션
 import { UsageLeft } from './Usage.jsx'; // P211: 하네스 이름 옆 그 구독의 남은 양
 
 const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -198,7 +198,7 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
         {has('args') ? <span /> : null}
         {/* P296: 자체 오케스트레이션(켜면 하위 세션 만들기·관계 바꾸기가 없고, 하위면 부모하고만 말한다) */}
         {orchApplies(d.harness) && <label className="mt-ln-f wide mt-ln-orch" data-role="launcher-orch"><span>{t('orch.field')}</span><span className="mt-ln-orch-row"><input type="checkbox" data-field="launcher-orchestrates" checked={launcherOrchestrates(harnesses, d)} onChange={(e) => set('orchestrates', e.target.checked)} /><span className="mt-ln-orch-note">{t('orch.fieldNote')}</span></span></label>}
-        {orchApplies(d.harness) && launcherOrchestrates(harnesses, d) && <label className="mt-ln-f wide mt-ln-orch" data-role="launcher-orch-fallback"><span /><span className="mt-ln-orch-row"><input type="checkbox" data-field="launcher-reportFallback" checked={d.reportFallback === 'last_answer'} onChange={(e) => set('reportFallback', e.target.checked ? 'last_answer' : '')} /><span className="mt-ln-orch-note">{t('orch.fallback')}</span></span></label>}
+        {orchApplies(d.harness) && launcherOrchestrates(harnesses, d) && <label className="mt-ln-f wide mt-ln-orch" data-role="launcher-orch-fallback"><span /><span className="mt-ln-orch-row"><input type="checkbox" data-field="launcher-reportFallback" checked={launcherFallback(harnesses, d)} onChange={(e) => set('reportFallback', fallbackValue(harnesses, d.harness, e.target.checked))} /><span className="mt-ln-orch-note">{t('orch.fallback')}</span></span></label>}
         <div className="mt-set-sub wide">{t('launchers.advanced')}</div>
         <label className="mt-ln-f"><span>{t('launchers.icon')}</span>
           <select data-field="launcher-icon" value={d.icon} onChange={(e) => set('icon', e.target.value)}>

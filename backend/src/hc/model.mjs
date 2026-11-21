@@ -12,6 +12,9 @@ export const boardAgentKind = (t) => (t && t.labels && t.labels[LABEL.agent]) ||
 // "막힘"을 흉내 낸 상태를 둔다(synthetic). 판은 blocked + 묻는 hook 없음 + 화면 → trust_wait로 본다(state.mjs)
 export const TRUST_STATUS = Object.freeze({ app: 'claude-code', state: 'blocked', kind: 'trust', msg: 'Quick safety check: trust this folder', synthetic: true });
 export const isSynthetic = (st) => !!(st && st.synthetic);
+// P298: 화면으로 읽은 상태(7501을 내지 않는 Hermes TUI). 흉내 낸 상태(synthetic)처럼 코어에는 없어 판이 들고 있지만, 신뢰 질문과 달리 글을 받는다(막힘이 아니면)
+export const isScreenStatus = (st) => !!(st && st.synthetic && st.screen);
+export const SCREEN_STATUS_KINDS = new Set(['hermes']);
 // P208: Codex도 신뢰 질문 동안 상태를 말하지 않는다. 같은 흉내 막힘을 그 종류 이름으로 둔다
 export const CODEX_TRUST_STATUS = Object.freeze({ app: 'codex', state: 'blocked', kind: 'trust', msg: 'Trust this folder?', synthetic: true });
 export const trustStatusOf = (kind) => (kind === 'codex' ? CODEX_TRUST_STATUS : TRUST_STATUS);
@@ -33,7 +36,7 @@ export function statusDetail(st) {
 export const APP_KIND = { 'claude-code': 'claude', antigravity: 'agy', 'dsh-tui': 'dsh' }; // P270: dsh-TUI는 7501 앱 이름 dsh-tui로 스스로 알린다 → 판 종류 dsh // P192: AGY(Antigravity CLI)는 7501 앱 이름 antigravity
 export const kindOfApp = (app) => (app ? APP_KIND[app] || String(app) : null);
 // 판의 종류 → 첫 argv(실행 명령이 없을 때)
-export const KIND_COMMAND = { claude: 'claude', codex: 'codex', opencode: 'opencode', pi: 'pi', agy: 'agy', dsh: 'dsh-tui' }; // P270: dsh(실행 파일 dsh-tui) // P192: agy(Antigravity CLI)
+export const KIND_COMMAND = { claude: 'claude', codex: 'codex', opencode: 'opencode', pi: 'pi', agy: 'agy', dsh: 'dsh-tui', hermes: 'hermes' }; // P298: hermes(Hermes Agent, OMH) // P270: dsh(실행 파일 dsh-tui) // P192: agy(Antigravity CLI)
 
 // hc 이름 규칙: 1~32자 a-z 0-9 - _ . (살아 있는 터미널 사이에서 겹치지 않음). 맞지 않으면 이름 없이 띄우고 라벨로 둔다
 export const HC_NAME_RE = /^[a-z0-9._-]{1,32}$/;

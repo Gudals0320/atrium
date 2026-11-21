@@ -51,6 +51,9 @@ export const HARNESSES = {
   agy: { id: 'agy', kind: 'agy', label: 'Antigravity', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args'], models: ['gemini-3.8-flash-medium'] },
   // P270: dsh(DeepSeek Harness, 실행 명령 dsh-tui). 모델·노력 수준은 dsh 안 /model·/effort(전역 기억)라 칸이 없다. 승인 칸도 없다(Windows dsh-tui는 늘 전체 권한·묻지 않음)
   dsh: { id: 'dsh', kind: 'dsh', label: 'DeepSeek (dsh)', fields: ['startCommand', 'args'], models: [] },
+  // P298: Hermes(Hermes Agent, OMH 플러그인이면 함께). 판은 hermes --tui로 띄운다. 모델은 -m(Hermes provider의 모델 이름), 노력 수준은 추가 인자(--reasoning)로.
+  //   자체 오케스트레이션 하네스라 기본 orchestrates(orchestration.mjs ORCH_DEFAULTS). 기본 런처 목록에는 넣지 않는다(사람이 런처를 만든다)
+  hermes: { id: 'hermes', kind: 'hermes', label: 'Hermes', fields: ['startCommand', 'model', 'args'], models: [] },
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };
@@ -60,7 +63,7 @@ export const harnessOf = (id) => HARNESSES[id] || (KIND_RE.test(String(id || '')
 // P115: protocols는 그 하네스가 쓸 수 있는 연결 프로토콜(설정 탭이 맞지 않는 연결을 흐리게 보인다)
 // P296: 런처의 자체 오케스트레이션 칸만(띄울 값에 싣는다)
 export const orchFieldsOf = (l) => (l ? Object.fromEntries(['orchestrates', 'reportFallback', 'busy'].filter((k) => l[k] !== undefined).map((k) => [k, l[k]])) : {});
-export const describeHarnesses = (dyn = {}) => Object.values(HARNESSES).map((h) => ({ orchDefault: !!(ORCH_DEFAULTS[h.kind] && ORCH_DEFAULTS[h.kind].orchestrates), ...(dyn[h.id] ? { ...h, models: [...dyn[h.id].models], hiddenModels: [...(dyn[h.id].hidden || [])], modelLabels: { ...(dyn[h.id].labels || {}) }, modelSource: dyn[h.id].source || null } : { ...h }) }));
+export const describeHarnesses = (dyn = {}) => Object.values(HARNESSES).map((h) => ({ orchDefault: !!(ORCH_DEFAULTS[h.kind] && ORCH_DEFAULTS[h.kind].orchestrates), fallbackDefault: (ORCH_DEFAULTS[h.kind] && ORCH_DEFAULTS[h.kind].reportFallback) || null, ...(dyn[h.id] ? { ...h, models: [...dyn[h.id].models], hiddenModels: [...(dyn[h.id].hidden || [])], modelLabels: { ...(dyn[h.id].labels || {}) }, modelSource: dyn[h.id].source || null } : { ...h }) }));
 // P72: 하네스가 경고하는 목록 밖 모델 이름인가(Codex). 막지는 않는다
 export function modelWarning(l, harnesses) {
   const h = (harnesses || []).find((x) => x.id === l.harness);

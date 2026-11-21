@@ -19,7 +19,7 @@ export const INNER_HOLD_MS = 60000;
 export const GLOB_DEPTH = 4;
 export const GLOB_MAX = 2000;
 // 하네스별 바쁨 읽개(꽂기). busy 칸의 { reader: '<이름>' }가 고른다. fn({ session, now }) → { busy, why? } | null(모름).
-// P297: Hermes는 안의 일이 패널 밖 공유 gateway 데몬에서 돌아 나무·CPU로는 안 보인다. 그 하네스의 읽개(state.db async_delegations·턴 임대)를 나중에 여기 꽂는다
+// P297: Hermes는 안의 일이 패널 밖 공유 gateway 데몬에서 돌아 나무·CPU로는 안 보인다. P298: 백엔드가 읽개 'hermes'(hermes.mjs hermesBusyOf: state.db async_delegations·턴 임대)를 꽂는다
 export const INNER_READERS = new Map();
 export function registerInnerReader(name, fn) { INNER_READERS.set(String(name), fn); return () => INNER_READERS.delete(String(name)); }
 // busy 칸의 읽개들 → [{ reader, busy }](등록되지 않은 읽개·실패는 빼고 남긴다)
