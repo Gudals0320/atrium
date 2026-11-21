@@ -17,13 +17,15 @@ const FINAL = new Set(['exited', 'killed', 'server_stop', 'host_shutdown', 'hold
 // 이 간격 안에 온 바이트는 한 프레임으로 낸다(창의 프레임 처리와 WebSocket 메시지 수를 줄인다). 첫 화면과 쉬다가 온 첫 덩어리는 바로 낸다
 export const COALESCE_MS = 8;
 const COALESCE_MAX = 256 * 1024;
+const REAL_CLOCK = { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (t) => clearTimeout(t) };
 const RETRY_MS = [200, 400, 800, 1600, 3000, 5000];
 const MAX_RETRY_MS = 60000; // 이만큼 붙지 못하면 끝(창은 detached를 보이고 다시 붙기를 고를 수 있다)
 let nextId = 1;
 
 export class HcController extends EventEmitter {
-  constructor({ pipe, terminal, cols, rows, log = () => {}, connect = (p) => new FramedConn(p), coalesceMs = COALESCE_MS, moveWaitMs = 3000 }) {
+  constructor({ pipe, terminal, cols, rows, log = () => {}, connect = (p) => new FramedConn(p), coalesceMs = COALESCE_MS, moveWaitMs = 3000, clock = REAL_CLOCK }) {
     super();
+    this.clock = clock; // 묶기 창의 시계(시험이 가짜 시계로 바꿔 부하와 상관없이 결정적으로 본다)
     this.moveWaitMs = moveWaitMs; this._moveTimer = null;
     this.coalesceMs = coalesceMs; this.pend = []; this.pendBytes = 0; this.pendTimer = null; this.lastEmit = 0;
     this.pipe = pipe; this.terminal = terminal; this.log = log; this.connect = connect;
@@ -89,16 +91,19 @@ export class HcController extends EventEmitter {
       conn.write(this.ch, FRAME.CREDIT, u32(f.payload.length)); this.stats.credits += f.payload.length;
       if (this.firstPending) { this.firstPending = false; this._flush(); this._emitFrame([f.payload], true); return; }
       this.pend.push(f.payload); this.pendBytes += f.payload.length;
-      const idle = Date.now() - this.lastEmit >= this.coalesceMs;
+      const idle = this.clock.now() - this.lastEmit >= this.coalesceMs;
       if (this.coalesceMs <= 0 || this.pendBytes >= COALESCE_MAX || (idle && !this.pendTimer)) return this._flush();
-      if (!this.pendTimer) { this.pendTimer = setTimeout(() => this._flush(), this.coalesceMs); if (this.pendTimer.unref) this.pendTimer.unref(); }
+      if (!this.pendTimer) { this.pendTimer = this.clock.setTimeout(() => this._flush(), this.coalesceMs); if (this.pendTimer && this.pendTimer.unref) this.pendTimer.unref(); }
     } else if (f.kind === FRAME.CLOSE) {
       this._flush();
       let why = null; try { why = f.payload.length ? JSON.parse(f.payload.toString('utf8')) : null; } catch {}
       const reason = (why && why.reason) || 'closed';
       conn.release(this.ch); this.ch = null;
       if (FINAL.has(reason)) {
-        this.emit('record', { type: 'terminal.closed', reason, exitCode: why && why.exit_code }); conn.close(); this.conn = null;
+        // P288: conn.close()는 'close'를 곧바로 낸다. this.conn을 먼저 비워야 그 처리기가 끊김으로 보고 다시 붙기(_retry, 200ms)를 걸지 않는다.
+        // 예전 순서에서는 그 다시 붙기가 옮겨 붙기 기다림(moveWaitMs)을 앞질러, 셸이 200ms 안에 오지 않으면 끝난 터미널에 붙다가 not_found로 스트림이 끝났고,
+        // 셸이 먼저 오면 옮겨 붙은 뒤 한 번 더 붙어 첫 화면(full)을 두 번 냈다
+        this.emit('record', { type: 'terminal.closed', reason, exitCode: why && why.exit_code }); this.conn = null; conn.close();
         // P114 2b: 판이 그 자리에 새 터미널을 띄울 수 있다(판이 띄운 에이전트가 끝나 셸이 남음, 에이전트로 바꿔 띄움). 잠깐 기다렸다가 옮겨 붙지 않으면 끝
         if (this.moveWaitMs > 0 && (reason === 'exited' || reason === 'killed')) { clearTimeout(this._moveTimer); this._moveTimer = setTimeout(() => this._end(reason), this.moveWaitMs); if (this._moveTimer.unref) this._moveTimer.unref(); return; }
         return this._end(reason);
@@ -120,11 +125,11 @@ export class HcController extends EventEmitter {
     if (changed.length) this.emit('modes', changed);
   }
   _emitFrame(parts, full) {
-    this.lastEmit = Date.now();
+    this.lastEmit = this.clock.now();
     this.emit('frame', { seq: ++this.seq, full, width: this.size.cols, height: this.size.rows, bytes: (parts.length === 1 ? parts[0] : Buffer.concat(parts)).toString('base64') });
   }
   _flush() {
-    clearTimeout(this.pendTimer); this.pendTimer = null;
+    this.clock.clearTimeout(this.pendTimer); this.pendTimer = null;
     if (!this.pend.length) return;
     const parts = this.pend; this.pend = []; this.pendBytes = 0;
     this._emitFrame(parts, false);
@@ -159,6 +164,7 @@ export class HcController extends EventEmitter {
   retarget(terminal) {
     if (this.exited != null) return false;
     clearTimeout(this._moveTimer); this._moveTimer = null;
+    clearTimeout(this._retryTimer); this._retryTimer = null; // 옛 터미널로 걸어 둔 다시 붙기는 버린다(새 자리에 한 번만 붙는다)
     this._flush();
     const old = this.conn; this.conn = null; this.ch = null; if (old) old.close();
     this.terminal = terminal; this.paneId = terminal; this.retryStart = null; this.retryN = 0;

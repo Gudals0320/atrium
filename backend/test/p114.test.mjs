@@ -15,10 +15,11 @@ import { createTerminalAdapter } from '../src/terminal-backend.mjs';
 import { Settings, normalizePatch } from '../src/settings.mjs';
 import { TerminalRelay } from '../src/relay.mjs';
 import { shareEmpty, shareJoin, shareLeave, shareExternal, shareOwnerView, EXTERNAL_OWNER } from '../src/multiclient.mjs';
+import { HcController, COALESCE_MS } from '../src/hc/stream.mjs';
 import { startFakeHc, FIRST_PAINT } from './fake-hc.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const until = async (fn, ms = 3000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(20); } throw new Error('timed out'); };
+const until = async (fn, ms = 10000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(20); } throw new Error('timed out'); };
 
 test('P114 상태: 7501 → herdr 낱말(error는 done, 없음은 unknown), 앱 이름 → 종류', () => {
   assert.equal(statusWord({ app: 'claude-code', state: 'idle' }), 'idle');
@@ -260,21 +261,58 @@ test('P114 화면 스트림(가짜 hc): 첫 화면을 full로(응답과 한 덩�
 });
 
 test('P114 화면 스트림 묶기: 잇달아 온 작은 DATA는 한 프레임(순서 그대로), 쉬다 온 첫 덩어리는 바로', async () => {
+  // P288: 묶기 창(8ms)을 벽시계로 재면 PC가 바쁠 때 글자 사이 읽기 틈이 창을 넘어 프레임 수가 흔들린다.
+  // 가짜 시계로 시간을 시험이 정한다: 바이트가 모두 도착한 뒤에야 묶기 타이머를 울린다
+  let now = 1000; const timers = [];
+  const clock = { now: () => now, setTimeout: (fn, ms) => { const t = { fn, at: now + ms }; timers.push(t); return t; }, clearTimeout: (t) => { const i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1); } };
+  const fire = () => { const due = timers.filter((t) => t.at <= now); for (const t of due) { timers.splice(timers.indexOf(t), 1); t.fn(); } };
   const fake = await startFakeHc();
-  const a = new HcAdapter({ session: 'p114-unit', dataDir: null, pipe: fake.pipe, env: {}, moveWaitMs: 100 });
+  const t = fake.create({ argv: ['pwsh'] }).result;
+  const c = new HcController({ pipe: fake.pipe, terminal: t.address, cols: 80, rows: 24, moveWaitMs: 100, clock });
   try {
-    const t = fake.create({ argv: ['pwsh'] }).result;
-    const c = a.openController(t.address, 80, 24);
     const frames = [];
     c.on('frame', (f) => frames.push(Buffer.from(f.bytes, 'base64').toString()));
     await until(() => frames.length === 1);
-    await sleep(30);
+    const painted = c.stats.bytes;
+    now += COALESCE_MS * 4; // 쉬었다
     for (const ch of 'echo hi') fake.output(t.address, ch); // 타자 메아리처럼 글자 하나씩
-    await until(() => frames.join('').endsWith('echo hi'));
-    assert.ok(frames.length - 1 <= 2, `coalesced into ${frames.length - 1} frames`);
-    assert.equal(frames.slice(1).join(''), 'echo hi');
-    c.close();
-  } finally { await fake.close(); }
+    await until(() => c.stats.bytes === painted + 7, 10000); // 모두 받았다(시계는 멈춰 있다)
+    assert.deepEqual(frames.slice(1), ['e'], '쉬다 온 첫 덩어리는 바로');
+    assert.equal(timers.length, 1, '나머지는 묶기 타이머 하나를 기다린다');
+    now += COALESCE_MS; fire();
+    assert.deepEqual(frames.slice(1), ['e', 'cho hi'], '창 안에 온 것은 한 프레임, 순서 그대로');
+    // 창이 지나기 전에 온 덩어리는 바로 내지 않고 다음 창을 기다린다
+    fake.output(t.address, '!');
+    await until(() => c.stats.bytes === painted + 8, 10000);
+    assert.equal(frames.length, 3); assert.equal(timers.length, 1);
+    now += COALESCE_MS; fire();
+    assert.deepEqual(frames.slice(1), ['e', 'cho hi', '!']);
+  } finally { c.close(); await fake.close(); }
+});
+
+test('P114 P288 끝난 터미널의 스트림: 옮겨 붙기를 기다리는 동안 옛 터미널에 다시 붙지 않고, 옮기면 새 첫 화면은 한 번', async () => {
+  // 예전에는 CLOSE(exited) 처리에서 다시 붙기(200ms)가 걸려, 셸이 늦게 오면 끝난 터미널에 붙다 not_found로 끝났다
+  const fake = await startFakeHc();
+  const t = fake.create({ argv: ['claude'] }).result;
+  const c = new HcController({ pipe: fake.pipe, terminal: t.address, cols: 80, rows: 24, moveWaitMs: 60000 });
+  const frames = []; const errs = [];
+  c.on('frame', (f) => frames.push(f));
+  c.on('stderr', (m) => errs.push(m));
+  try {
+    await until(() => frames.length === 1);
+    fake.finish(t.address, 'exited', 0);
+    await until(() => c.conn === null);
+    await sleep(600); // 셸이 늦게 온다(예전 다시 붙기 200ms보다 길게)
+    assert.equal(c.exited, null, 'moveWaitMs 동안은 끝나지 않는다');
+    assert.deepEqual(errs, [], '끊김으로 보고 다시 붙지 않는다');
+    assert.equal(c.stats.attaches, 1);
+    const sh = fake.create({ argv: ['pwsh'] }).result;
+    assert.equal(c.retarget(sh.address), true);
+    await until(() => frames.filter((f) => f.full).length === 2);
+    await sleep(400);
+    assert.equal(frames.filter((f) => f.full).length, 2, '새 자리의 첫 화면은 한 번');
+    assert.equal(c.stats.attaches, 2);
+  } finally { c.close(); await fake.close(); }
 });
 
 test('P114 짧은 끊김(코어 재시작): disconnected 없이 다시 구독하고, 그새 바뀐 것을 이벤트로, 스트림은 다시 붙는다', async () => {
@@ -438,8 +476,7 @@ test('P114 2b 닫기: 셸을 다시 띄우는 중에 작업 공간을 닫으면 
     fake.finish(r.agent.paneId, 'exited', 0); // /exit와 판의 closeWorkspace가 겹친다
     await sleep(5);
     await a.closeWorkspace(ws.workspaceId);
-    await sleep(300);
-    assert.deepEqual([...fake.terms.values()].filter((t) => t.state === 'live').map((t) => t.address), []);
+    await until(() => ![...fake.terms.values()].some((t) => t.state === 'live')); // 다시 띄운 셸이 있었어도 닫혔다(남으면 상한에서 떨어진다)
     const ws2 = await a.createWorkspace({ cwd: 'C:/w' });
     const r2 = await a.startAgent({ name: 'lead2', paneId: ws2.paneId, kind: 'claude' });
     await until(() => ev.find((e) => e.type === 'agent_detected' && e.paneId === r2.agent.paneId));
