@@ -2702,3 +2702,13 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-ut-note { flex: 0 1 auto; min-width: 0; margin-left: auto; padding: 3px 10px; border-radius: 999px; background: var(--teal-bg); border: 1px solid var(--teal); color: var(--white); font-size: 13px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-ut-note.error { background: none; border-color: var(--warn); color: var(--warn); }
 .mt-ut-note + .mt-dc-x { margin-left: 0; }
+
+/* P295: 답 실어 보내기. 카드의 보내는 때 표시(바로 감 | 다음 메시지와, 누르면 바뀜), 다음 메시지와 갈 답 줄, 세션 표식 옆 "실어 보낼 답 n" */
+.mt-dc-timing { flex: none; margin-left: auto; padding: 0 6px; border-radius: 5px; border: 1px solid var(--panel-line-2); background: none; color: var(--dim); font: inherit; font-size: 10.5px; line-height: 15px; white-space: nowrap; cursor: pointer; }
+.mt-dc-timing.now { border-color: var(--teal); color: var(--teal); }
+.mt-dc-timing.next { border-style: dashed; }
+.mt-dc-timing.picked { font-weight: 700; }
+.mt-dc-timing:hover { color: var(--white); border-color: var(--white); }
+.mt-dc-timing + .mt-dc-time { margin-left: 0; }
+.mt-dc-held.riding { background: none; border: 1px dashed var(--teal); }
+.mt-dc-mark.mt-dc-ride { margin-right: 4px; background: none; border-style: dashed; color: var(--teal); font-weight: 600; }
