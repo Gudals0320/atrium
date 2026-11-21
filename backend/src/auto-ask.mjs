@@ -58,10 +58,23 @@ function namedHeads(all, question) {
 const KO_ASK = /(정해|말씀해|알려|확인해|골라|선택해|결정해|답해|지정해|승인해|검토해|봐|살펴봐|테스트해|시험해)\s?(주세요|주십시오|주시겠어요|주실래요|줘|줄래)/; // P292: 봐·살펴봐·테스트해·시험해(확인 부탁)
 const KO_Q_END = /(까요?|나요|습니까|던가요|실래요|으신가요|인가요|건가요|을지요|할지요)\s*[.!…]*$/;
 const EN_ASK = /^(let me know|please (confirm|choose|pick|decide|tell me|advise|select|let me know|check|verify|test|try)|tell me (which|whether|if)|your call|(can|could) you (check|verify|test|try)\b)/i; // P292: check·verify·test·try
+// P303: 예의상 덧붙인 맺음 말("필요 없으면 말씀해 주세요", "원하시면 알려 주세요", "Let me know if you need anything", "Feel free to …")은 질문이 아니다.
+//   조건 머리(필요하면·원하시면·궁금한 점이 있으면·더 필요하면·편하실 때·언제든 …) + 말해 달라는 부탁이고, 물음표·고르라는 말(어느·어떤 쪽·정해·골라·선택·결정)이 없으면.
+const KO_POLITE_IF = /(필요\s?없으시?면|필요\s?없다면|필요하시?면|필요하다면|필요한\s?(것|게|점|부분|일)이\s?(있|생기)으?시?면|더\s?필요하?시?면|추가로\s?필요하?시?면|원하시?면|원하신다면|원하시는\s?(게|것이)\s?있으시?면|궁금한\s?(점|것|게|부분)이?\s?(있|생기)으?시?면|궁금하시?면|질문이\s?(있|생기)으?시?면|문제가?\s?(있|생기)으?시?면|이상한\s?(점|것|게)이?\s?(있|보이)으?시?면|다른\s?(것|요청|질문|의견|일)이?\s?(있|생기)으?시?면|편하실\s?때|편한\s?때|시간\s?되실\s?때|언제든(지|요)?|혹시라도)/;
+const KO_POLITE_ASK = /(말씀해|알려|불러|연락해|얘기해|이야기해|요청해)\s?(주세요|주십시오|주시면|줘|주시기)|말씀\s?(주세요|주시면|부탁)|알려\s?주시면/;
+const KO_CHOICE = /(어느|어떤\s?(쪽|것|안|방식|걸)|어떻게|정해|골라|선택|결정|무엇을|뭘|어디)/;
+const EN_POLITE = /^(feel free to|don't hesitate to|do not hesitate to|happy to help|let me know if (you|there|anything|any)\b|let me know whenever|if you (need|want|'d like|would like|have) (anything|any|more|further|me to|something|other)\b|just let me know)/i;
+export function isPolite(sentence) {
+  const s = noCode(plain(String(sentence ?? ''))).replace(/\s+/g, ' ').trim();
+  if (!s || /[?？]\s*$/.test(s)) return false;
+  if (EN_POLITE.test(s)) return true;
+  return KO_POLITE_IF.test(s) && KO_POLITE_ASK.test(s) && !KO_CHOICE.test(s);
+}
 // 한 문장이 사람에게 묻는가
 export function isQuestion(sentence) {
   const s = noCode(plain(sentence)).replace(/[\s"'”’)\]】」』]+$/u, '').replace(/[\s\p{Extended_Pictographic}\uFE0F]+$/u, '').trim();
   if (!s || s.length < 3) return false;
+  if (isPolite(s)) return false; // P303: 예의상 맺음 말
   if (/[?？]$/.test(s)) return true;
   if (KO_ASK.test(s)) return true;
   if (KO_Q_END.test(s)) return true;

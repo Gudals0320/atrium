@@ -328,7 +328,7 @@ async function askVerb() {
   }
   if (body.done) return say(x.closed ? `결정 카드 #${x.id}를 닫았다.` : `결정 카드 #${x.id}는 이미 끝났다(${x.state}).`);
   say(`결정 카드 #${x.id}를 보드에 남겼다(열린 카드 ${x.open}/${x.max}). 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글로 들어온다. 무시하면 아무것도 오지 않는다.${(x.card && TIMING_SAY[x.card.timing]) || ''}`);
-  say('대화에 쓴 질문은 그대로 두고 턴을 끝낸다. 사람이 다른 길로 답하면 보드가 닫는다(필요하면 atrium ask --done ' + x.id + ').');
+  say('대화에 쓴 질문은 그대로 두고 턴을 끝낸다. 사람이 대화로 답하면 그 카드를 atrium ask --done ' + x.id + '로 닫는다.'); // P303: 사람의 직접 글은 손 카드를 닫지 않는다
 }
 
 // ---------- P292: atrium todo ----------

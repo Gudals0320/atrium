@@ -1,7 +1,8 @@
 // 저장소(store.mjs)의 P284 표: 결정 카드(decisions).
 // 결정 카드: 사람과 직접 일하는 세션(일 상위가 없는 세션)이 atrium ask로 판에 남긴 "사람이 정할 질문" 한 장(decisions.mjs).
 // state: open(기다림) | answered(사람이 답함: 카드에서, 또는 세션에 직접 글을 보냄) | ignored(사람이 무시, 세션에 아무것도 보내지 않음) | closed(에이전트가 --done으로, 또는 세션이 닫힘)
-// via(어디서 끝났나): pc | remote(카드: PC 창 | 원격 기기) | session(세션에 직접 보낸 글) | agent(atrium ask --done) | closed(세션 닫힘·보관)
+// via(어디서 끝났나): pc | remote(카드: PC 창 | 원격 기기) | session(세션에 직접 보낸 글. P303부터 자동 카드만) | agent(atrium ask|todo --done) | closed(세션 닫힘·보관)
+//   P303: 사람의 직접 글이 닫지 않고 남긴 카드는 이벤트 decision_kept { hand: 손 카드 ID들, fresh: 만든 지 10초 안의 자동 카드 ID들, where }로 센다.
 // P286: auto(1 = 판이 마지막 답에서 만든 자동 카드, decisions.mjs onSession). via에 replaced(다음 자동 카드로 바뀜)가 더해졌다.
 // P292: 사용자 몫. kind(decide 결정 | do 할 일 | check 확인 | later 나중에, 옛 카드는 비어 decide), cmds(할 일의 명령 JSON), tell(1 = 했음도 세션에 보냄),
 //   later(에이전트가 준 날짜·조건 글 그대로, 보이기용), wake_at(이때까지 숨김: 날짜 later와 미루기), cond(조건 later: 사람이 꺼낼 때까지 "나중"에 둠).
