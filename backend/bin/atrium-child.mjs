@@ -19,12 +19,14 @@
 //       atrium docs [--json]   (P257: 이 워크스페이스의 문서 점검 결과)
 //       atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"] [--no-wait | --wait] | --done <번호> | --list [--json]   (P284: 결정 카드. P295: 보내는 때)
 //       atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell] [--no-wait | --wait] | --done <번호> | --list [--json]   (P292: 사용자 몫. P295: 보내는 때)
+//       atrium plan [show|list|new|goal|metric|ms|focus|item|check|owner|status|import|export|log] … [--plan <이름|번호>] [--json]   (P304: 리포별 목표·마일스톤 레인. 사용법 atrium help plan)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { envVar, terminalSessionVar } from '../src/config.mjs';
 import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP, PEER_RULE_SHORT, NEWS_LOG_MAX, ASK_QUESTION_MAX, ASK_OPTIONS_MAX, ASK_OPTION_MAX, ASK_WHY_MAX, ASK_OPEN_MAX, TODO_CMDS_MAX, TODO_CMD_MAX, TODO_LATER_MAX } from '../src/cli-contract.mjs'; // P292: 사용자 몫 상한 // P284: 결정 카드 상한 // P204: 동료 소식 // P115: 계약(atrium help --json). P156: 관계 고르기 안내
 import { usageLines } from '../src/usage-text.mjs'; // P211: atrium usage
+import { PLAN_HELP, parsePlanArgs, showLines, listLines, writeLines, importLines, logLines, meLines as planMeLines } from '../src/plan-cli.mjs'; // P304: atrium plan
 
 // P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
 const HAND_OFF = '기다리지 않고 턴을 끝낸다. 끝나면 보드가 done 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다.';
@@ -92,6 +94,9 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       열린 카드는 결정 카드와 합쳐 ${ASK_OPEN_MAX}장까지. 사람과 직접 일하는 세션만 쓴다(하위 워커는 부모에게 atrium prompt로 넘긴다).
   atrium todo --done <번호>     끝났거나 쓸모없어진 너의 카드를 닫는다
   atrium todo --list            너의 열린 카드와 나중 카드
+  atrium plan list · atrium plan new "<이름>" · atrium plan [show] [--plan <이름|번호>]
+      이 리포의 목표·마일스톤 레인(한 리포에 여럿, 레인마다 관리자 세션). 고치라는 지시가 없으면 남의 레인은 읽기만 한다.
+      사람 몫 항목은 item <코드> "<글>" --who user(사람의 할 일 목록에 뜬다). 하위 낱말과 예: atrium help plan
   atrium guide                  이 사용법
   atrium guide merger           합치기 merger의 안내(P267: 보드가 브랜치 워커의 합치기를 맡기는 세션)
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
@@ -159,6 +164,7 @@ function trustLines(x) {
 async function main() {
   // P115: help는 모델이 읽는 짧은 사용법, --json은 기계용 계약, --long은 예전의 긴 설명. 보드에 묻지 않는다
   // P296: 판이 띄운 세션이면 보드에 이 세션의 허용 동사를 묻는다(자체 오케스트레이션 세션은 허용 동사만 보인다). 묻지 못하면 전체
+  if ((cmd === 'help' && rest[0] === 'plan') || (cmd === 'plan' && (flags.help || argv.includes('--help')))) return say(PLAN_HELP); // P304: atrium help plan
   if (!cmd || cmd === 'help' || flags.help) {
     const perm = await permNow();
     const orch = !!(perm && perm.allowed);
@@ -175,6 +181,7 @@ async function main() {
   if (cmd === 'log' || cmd === 'news') return newsVerb(cmd); // P204
   if (cmd === 'ask') return askVerb(); // P284
   if (cmd === 'todo') return todoVerb(); // P292
+  if (cmd === 'plan') return planVerb(); // P304
   if (cmd === 'docs') { // P257: 문서 점검 결과
     const u = await call('docs', {}, 30000);
     if (flags.json) { say(JSON.stringify(u.result ?? { error: u.error }, null, 2)); if (u.error) process.exit(1); return; }
@@ -574,6 +581,41 @@ function printRead(x) {
   printAnswer(x, x.answer);
 }
 
+// P304: atrium plan(리포별 목표·마일스톤). 인자는 따로 푼다(--done·--rm 같은 낱말이 다른 동사와 뜻이 다르다)
+async function planVerb() {
+  let req;
+  try { req = parsePlanArgs(argv.slice(argv.indexOf('plan') + 1)); } catch (e) { if (e.usage) fail(e.message, 2); throw e; }
+  if (req.action === 'help') return say(PLAN_HELP);
+  const body = { action: req.action, ...(req.plan !== undefined ? { plan: req.plan } : {}) };
+  if (req.action === 'show' || req.action === 'list') body.all = req.all;
+  if (req.action === 'new') body.name = req.name;
+  if (req.action === 'owner') body.owner = req.owner;
+  if (req.action === 'status') body.status = req.status;
+  if (req.action === 'op') body.ops = req.ops;
+  if (req.action === 'export') body.format = req.format;
+  if (req.action === 'log') body.lines = req.lines;
+  if (req.action === 'import') {
+    let text;
+    try { text = req.file === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(path.resolve(req.file), 'utf8'); } catch (e) { fail(`가져올 파일을 읽지 못했다: ${req.file} (${e.code || e.message})`, 2); }
+    Object.assign(body, { doc: text, replace: req.replace, dry: req.dry, ...(req.new !== undefined ? { new: req.new } : {}), ...(req.ifRev != null && !Number.isNaN(req.ifRev) ? { ifRev: req.ifRev } : {}) });
+  }
+  const r = await call('plan', body, 30000);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  if (req.json && !(req.action === 'export' && r.result)) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; } // export --json은 문서 그대로(import와 같은 꼴)
+  if (r.error) {
+    const e = r.error;
+    if (e.problems && e.problems.length) { process.stderr.write(`atrium plan: ${e.message}\n`); for (const p of e.problems) process.stderr.write(`  - ${p}\n`); process.exit(1); }
+    process.stderr.write(`atrium plan: ${e.message} (${e.code})\n`); process.exit(1);
+  }
+  const x = r.result;
+  if (req.action === 'show') return showLines(x).forEach((l) => say(l));
+  if (req.action === 'list') return listLines(x).forEach((l) => say(l));
+  if (req.action === 'export') return say(x.format === 'md' ? x.text.replace(/\n$/, '') : JSON.stringify(x.doc, null, 2));
+  if (req.action === 'log') return logLines(x).forEach((l) => say(l));
+  if (req.action === 'import') return importLines(x).forEach((l) => say(l));
+  return writeLines(x, req).forEach((l) => say(l));
+}
+
 // P81: atrium me. 보통 20줄 안. 하위 세션이 많으면 10개까지 보이고 나머지는 atrium children으로
 function ago(at, now) {
   if (!at) return '';
@@ -610,6 +652,7 @@ function printMe(x) {
     say('역할 연결(사람이 "<역할>에게 맡겨"라고 하면 그 세션에 atrium prompt. 판에서 잇거나 끊을 때 알림은 오지 않는다):'); // P263
     for (const r of x.roles.slice(0, 8)) say(`  ${r.dir === 'out' ? `너의 ${r.role}은 @${r.name}` : `너는 @${r.name}의 ${r.role}`} (${kindOf(r)}${r.state})${last(r.last)}`);
   }
+  for (const l of planMeLines(x.plans)) say(l); // P304: 내가 관리하는 레인
   if (x.news) say(`동료 소식: ${x.news.by.map((c) => `@${c.name} ${c.n}개`).join(', ')} 새로 → atrium news`); // P204: 읽지 않은 것이 있을 때만
   say(`일 맡기기: atrium prompt <이름> "<할 일>"(맡기고 턴을 끝내면 보드가 done 보고를 가져다준다) · 화면 읽기: ${x.commands.read}`); // P181
   say('이것이 보드의 지금 기록이다. 예전 알림과 다르면 이것을 믿는다.');

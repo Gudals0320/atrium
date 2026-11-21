@@ -27,7 +27,7 @@ export const ORCH_NO_SPAWN = Object.freeze(['child', 'child-kill', 'relate', 'ch
 // 하위 오케스트레이션 세션이 쓰는 동사(help는 CLI가 답한다). prompt는 부모에게만
 export const ORCH_SUB_VERBS = Object.freeze(['help', 'prompt', 'done', 'item', 'me', 'usage']);
 // atrium 동사 → /branch 요청 이름(cli-contract의 동사와 atrium-child.mjs의 길)
-export const VERB_OP = Object.freeze({ child: 'child', children: 'children', 'child-kill': 'kill', 'child-wait': 'wait', wake: 'wake', models: 'models', me: 'me', prompt: 'prompt', wait: 'turn', read: 'read', relate: 'relate', done: 'done', guide: 'guide', item: 'item', items: 'items', log: 'log', news: 'news', ask: 'ask', todo: 'todo', docs: 'docs', usage: 'usage' });
+export const VERB_OP = Object.freeze({ child: 'child', children: 'children', 'child-kill': 'kill', 'child-wait': 'wait', wake: 'wake', models: 'models', me: 'me', prompt: 'prompt', wait: 'turn', read: 'read', relate: 'relate', done: 'done', guide: 'guide', item: 'item', items: 'items', log: 'log', news: 'news', ask: 'ask', todo: 'todo', docs: 'docs', usage: 'usage', plan: 'plan' }); // P304: plan(하위 오케스트레이션 세션의 허용 동사에는 없다)
 export const OP_VERB = Object.freeze(Object.fromEntries(Object.entries(VERB_OP).map(([v, o]) => [o, v])));
 // 권한과 상관없이 늘 받는 요청: perm(CLI의 help가 허용 동사를 묻는다), usage-report(판의 상태 줄 명령)
 export const ALWAYS_OPS = Object.freeze(['perm', 'usage-report']);
