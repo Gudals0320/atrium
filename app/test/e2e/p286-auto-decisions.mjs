@@ -57,7 +57,7 @@ async function pcShots(page, lang) {
   const autos = await page.$$eval('[data-role=decisions-list] [data-role=decision-auto]', (xs) => xs.map((x) => x.textContent));
   check(`[${lang}] 목록에 자동 표시(작게)`, autos.length >= 1 && autos.length < n, { autos, n });
   const hl = await page.$$eval('[data-role=decisions-list] [data-role=decision-held]', (xs) => xs.map((x) => ({ n: x.dataset.count, t: x.textContent })));
-  check(`[${lang}] 모은 답 줄과 지금 보내기`, hl.length === 1 && hl[0].n === '1', hl);
+  check(`[${lang}] 모은 답 줄과 지금 보내기(세션 이름)`, hl.length === 1 && hl[0].n === '1' && hl[0].t.startsWith('@lead:'), hl);
   await shot(page, `pc-list-${lang}`);
   const list = await page.$('[data-role=decisions-list]');
   if (list) await list.screenshot({ path: path.join(OUT, `pc-list-crop-${lang}.png`) }).then(() => log(`그림 pc-list-crop-${lang}.png`)).catch(() => {});
@@ -123,8 +123,8 @@ async function phone() {
         await pg.waitForSelector('[data-role=pl-decisions]', { timeout: 20000 }); await sleep(800);
         await pg.tap('[data-role=pl-decisions]'); await sleep(700);
         const autos = await pg.$$eval('[data-role=decisions-sheet] [data-role=decision-auto]', (xs) => xs.length);
-        const hl = await pg.$$eval('[data-role=decisions-sheet] [data-role=decision-held]', (xs) => xs.length);
-        check(`[phone ${lang}] 시트에 자동 표시와 모은 답 줄`, autos >= 1 && hl === 1, { autos, hl });
+        const hl = await pg.$$eval('[data-role=decisions-sheet] [data-role=decision-held]', (xs) => xs.map((x) => x.textContent));
+        check(`[phone ${lang}] 시트에 자동 표시와 모은 답 줄(세션 이름)`, autos >= 1 && hl.length === 1 && hl[0].startsWith('@lead:'), { autos, hl });
         await shot(pg, `phone-sheet-${lang}`);
         await ctx.close();
       }

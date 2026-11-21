@@ -2657,3 +2657,4 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-dc-held > span { flex: 1; min-width: 0; }
 .mt-dc-sheet .mt-dc-held { font-size: 13px; }
 .mt-dc-sheet .mt-dc-held .mt-btn { min-height: 32px; }
+.mt-dc-held-name { font-weight: 700; color: var(--white); }

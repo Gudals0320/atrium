@@ -26,7 +26,7 @@ function HeldLine({ sessionId, n, t }) {
   };
   return (
     <div className="mt-dc-held" data-role="decision-held" data-session={sessionId} data-count={n}>
-      <span title={t('autoDecisions.heldTitle')}>{t('autoDecisions.held', { n })}</span>
+      <span title={t('autoDecisions.heldTitle')}><b className="mt-dc-held-name">@{name}</b>: {t('autoDecisions.held', { n })}</span>
       <button type="button" className="mt-btn small" data-action="decision-flush" disabled={busy} onClick={send}>{t('autoDecisions.sendNow')}</button>
     </div>
   );
