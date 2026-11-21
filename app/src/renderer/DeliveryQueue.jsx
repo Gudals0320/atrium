@@ -5,10 +5,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast, fillDeliveryTexts } from './store.js';
-import { deliveryText, STATE_LABEL } from './lib/labels.js';
+import { deliveryText, STATE_LABEL, steerWhyText } from './lib/labels.js';
 import { useT, errText } from './lib/i18n.js';
 import { insertNewline } from './lib/cmd-input.js';
-import { moveOrder, steerOf } from './lib/delivery-queue.js';
+import { moveOrder, steerOf, steerNotice } from './lib/delivery-queue.js';
 
 // P158: 수정 실패 까닭(이미 보냄, 이미 끝남, 빈 글)
 export function editErr(t, e) {
@@ -115,7 +115,11 @@ export function QueueGroup({ g, texts = {}, edit, onSaved, phone = false }) {
     requestAnimationFrame(() => { const el = listRef.current && listRef.current.querySelector(`[data-delivery="${d.deliveryId}"]`); if (el) el.focus(); });
   }
   async function sendNow(d) {
-    try { await api.call('delivery.now', { deliveryId: d.deliveryId }); } catch (e) { toast(queueErr(t, e), 'error'); }
+    try {
+      const r = await api.call('delivery.now', { deliveryId: d.deliveryId });
+      const why = (r && r.steerWhy) || d.steerWhy; // P289: 앞서 지금 턴에 못 넣은 까닭. 같은 까닭이면 다시 알리지 않는다(줄에는 늘 보인다)
+      if (why && why !== 'not_working' && steerNotice(d.deliveryId, why)) toast(t('steerWhy.toast', { why: steerWhyText(why) }));
+    } catch (e) { toast(queueErr(t, e), 'error'); }
   }
   const onRowKey = (e, d) => {
     if (e.target !== e.currentTarget || !e.altKey) return;
@@ -141,7 +145,7 @@ export function QueueGroup({ g, texts = {}, edit, onSaved, phone = false }) {
               tabIndex={queued && many ? 0 : undefined} onKeyDown={queued && many ? (e) => onRowKey(e, d) : undefined} title={queued && many ? t('deliveryQueue.keysHint') : undefined}>
               <span className="mt-dq-no" aria-hidden="true">{queued ? qi + 1 : ''}</span>
               <span className="mt-dq-text">{shortText(texts[d.deliveryId] ?? d.text, phone ? 60 : 90) || <i>{t('deliveryQueue.chars', { n: d.chars || 0 })}</i>}</span>
-              <span className="mt-dq-st">{d.editing ? t('deliveryQueue.editingElsewhere') : deliveryText(queued && qi > 0 && d.reason !== 'editing' ? { ...d, reason: null } : d)}</span>{/* 기다리는 까닭은 맨 앞 글의 것이다(뒤 글은 차례를 기다린다) */}
+              <span className="mt-dq-st" data-steer-why={queued && qi === 0 && d.steerWhy ? d.steerWhy : undefined}>{d.editing ? t('deliveryQueue.editingElsewhere') : deliveryText(queued && qi > 0 && d.reason !== 'editing' ? { ...d, reason: null, steerWhy: null } : d)}</span>{/* 기다리는 까닭은 맨 앞 글의 것이다(뒤 글은 차례를 기다린다) */}
               {!queued && <span className="mt-spin" />}
               {queued && (
                 <span className="mt-dq-acts">

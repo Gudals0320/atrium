@@ -2761,5 +2761,19 @@ export default {
     hint: 'Ctrl+클릭하면 링크를 엽니다.',
     notOpened: '링크를 열지 않았습니다. http·https 링크만 엽니다({scheme}).',
   },
+  // P289: 스티어링(지금 넣기)을 지금 턴에 넣지 못한 까닭(대기 글 줄·명령 바 칩·알림)
+  steerWhy: {
+    term_disconnected: '터미널 연결이 끊겨 이어지면 넣음',
+    no_agent: '에이전트가 떠 있지 않아 기다림',
+    waiting: '질문·권한 화면이라 답한 뒤 넣음',
+    not_working: '쉬는 중이라 바로 보냄',
+    kind: '이 종류는 일하는 중 입력을 받지 않아 턴 끝에 넣음',
+    no_hook: 'hook 없는 세션이라 턴 끝에 넣음',
+    user_typing: '터미널에서 치는 중이라 잠시 기다림',
+    box_unknown: '화면을 읽지 못해 턴 끝에 넣음',
+    no_box: '입력 칸을 찾지 못해 턴 끝에 넣음',
+    draft_in_box: '입력 칸에 쓰던 글이 있어 기다림',
+    toast: '지금 턴에 넣지 못했습니다: {why}',
+  },
 };
 
