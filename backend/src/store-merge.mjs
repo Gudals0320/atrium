@@ -26,6 +26,7 @@ export function installMerge(Store) {
             .run(row.key, row.kind, row.root, row.viewport ? JSON.stringify(row.viewport) : null, row.createdAt, Date.now(), row.x, row.y, row.auto ? 1 : null);
         }
         for (const t of ['sessions', 'docks', 'memos', 'kanbans', 'convo_nodes']) upd(t);
+        if (this.movePlans) n.plans = this.movePlans(from, ws.key); // P304: 목표·마일스톤 레인(번호는 새 키 뒤로)
         if (ws.kind === 'repo') n.worktree_areas = Number(this.st('UPDATE OR IGNORE worktree_areas SET workspace_key = ? WHERE workspace_key = ?').run(ws.key, from).changes);
         this.st('DELETE FROM worktree_areas WHERE workspace_key = ?').run(from);
         this.st('DELETE FROM workspaces WHERE workspace_key = ?').run(from);

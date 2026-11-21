@@ -44,6 +44,7 @@ import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때와 동료 소식
 import { DocWatch } from './doc-watch.mjs'; // P257: 문서 점검(지휘 세션 턴 끝·done 알림)
 import { Decisions } from './decisions.mjs'; // P284: 결정 카드(atrium ask)
+import { Plans } from './plan-board.mjs'; // P304: 리포별 목표·마일스톤(atrium plan, 판 API plan.*)
 import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | news, 턴 끝·done 자동 기록)
 import { permOf, permKey, opRefusal, refusalText } from './orchestration.mjs'; // P296: 자체 오케스트레이션 세션의 권한
 import { VERB_NAMES } from './cli-contract.mjs';
@@ -71,9 +72,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
-    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`, `Bash(${c} ask:*)`, `Bash(${c} ask *)`, `Bash(${c} todo:*)`, `Bash(${c} todo *)`]), // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
+    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`, `Bash(${c} ask:*)`, `Bash(${c} ask *)`, `Bash(${c} todo:*)`, `Bash(${c} todo *)`, `Bash(${c} plan)`, `Bash(${c} plan:*)`, `Bash(${c} plan *)`]), // P304: plan // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
-    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`, `PowerShell(${c} ask *)`, `PowerShell(${c} todo *)`]), // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
+    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`, `PowerShell(${c} ask *)`, `PowerShell(${c} todo *)`, `PowerShell(${c} plan)`, `PowerShell(${c} plan *)`]), // P304: plan // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
 ];
 // P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
 const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
@@ -303,6 +304,13 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 - 나중으로 미룬 일은 \`--later "YYYY-MM-DD HH:MM"\`(그때 보드가 띄운다) 또는 \`--later "<조건 글>"\`(사람이 꺼낼 때까지 "나중"에 둔다).
 - 확인 결과와 했음 알림은 다음 글에 실려 온다(기다리며 멈추면 \`--wait\`).
 - 닫기 \`atrium todo --done <번호>\`, 목록 \`atrium todo --list\`. 하위 워커는 부모에게 \`atrium prompt\`로 넘긴다.
+
+## 리포의 목표·마일스톤(레인)
+
+- 리포의 목표·마일스톤은 보드의 레인에 있다(한 리포에 여럿): \`atrium plan list\`, 보기 \`atrium plan --plan <이름|번호>\`. 쓰는 법 \`atrium help plan\`.
+- 사람이 목표를 맡기면 \`atrium plan new "<이름>"\`으로 만든다(만든 세션이 관리자). 관리자는 그 레인을 지금 상태로 유지하고(마일스톤·항목·체크·focus) 그에 맞춰 워커에게 일을 시킨다.
+- 고치라는 지시가 없으면 남의 레인은 읽기만 한다. 하위 워커는 끝낸 항목을 done 보고에 적는다(예: "M2.5 끝").
+- 마일스톤의 끝 기준에 드는 사람 몫은 \`item … --who user\`(사람의 할 일 목록에 뜬다), 일회성으로 사람에게 넘기는 것은 \`atrium todo\`. 같은 일을 둘로 만들지 않는다. 다 체크돼도 저절로 닫히지 않는다: \`ms M2 --done\`.
 `;
 export function boardSkill(name = SKILL_NAME) {
   const description = name === SKILL_NAME
@@ -369,6 +377,7 @@ export class Branch {
     });
     this.news = new PeerNews(b, this, newsOpts); // P204: 동료 소식(턴 끝·done 자동 기록, atrium log | news)
     this.decisions = new Decisions(b, this, decisionsOpts); b.decisions = this.decisions; // P284: 결정 카드(atrium ask, 판 API decision.*)
+    this.plans = new Plans(b, this); b.plans = this.plans; // P304: 리포별 목표·마일스톤(atrium plan, 판 API plan.*)
     this.docs = new DocWatch(b, this); b.docs = this.docs; // P257: 문서 점검(일 단위가 done·머리에서 부른다)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
     this.merger = new Merger(b, this.units, mergerOpts); b.merger = this.merger; // P267: 브랜치 하위의 done ok를 merger에게
@@ -384,6 +393,7 @@ export class Branch {
     this.handlers = {
       'branch.tree': () => this.tree(),
       ...this.decisions.handlers(), // P284: decision.list | decision.answer | decision.ignore
+      ...this.plans.handlers(), // P304: plan.list | plan.get | plan.op | plan.import | plan.export | plan.log
     };
   }
   asleep(s) { return !!(s.rt && s.rt.sleep) || !!(this.b.sleeper && this.b.sleeper.isAsleep && this.b.sleeper.isAsleep(s)); }
@@ -610,7 +620,7 @@ export class Branch {
         send(200, { result, board: { terminalSession: this.b.cfg.terminalSession, port: this.b.cfg.port } });
       } catch (e) {
         if (!e.code) this.b.log(`branch ${op} failed: ${e.stack}`);
-        send(['not_parent', 'not_sub', 'not_linked', 'user_set'].includes(e.code) ? 403 : e.code === 'not_found' ? 404 : 400, { error: { code: e.code || 'error', message: e.message, ...(e.limit ? { limit: e.limit, now: e.now } : {}), ...(e.candidates ? { candidates: e.candidates } : {}) } });
+        send(['not_parent', 'not_sub', 'not_linked', 'user_set'].includes(e.code) ? 403 : e.code === 'not_found' ? 404 : 400, { error: { code: e.code || 'error', message: e.message, ...(e.limit ? { limit: e.limit, now: e.now } : {}), ...(e.candidates ? { candidates: e.candidates } : {}), ...(e.problems ? { problems: e.problems } : {}), ...(e.parent ? { parent: e.parent } : {}) } }); // P304: 계획 가져오기의 문제 목록, 거절의 부모
       }
     });
     return true;
@@ -660,6 +670,7 @@ export class Branch {
     if (op === 'news') return this.news.newsVerb(s, body); // P204: atrium news [<이름>] [--all]
     if (op === 'ask') return this.decisions.askVerb(s, body); // P284: atrium ask "<질문>" | --done <번호> | --list
     if (op === 'todo') return this.decisions.todoVerb(s, body); // P292: atrium todo "<할 일>" [--cmd …] [--check] [--later …] [--tell] | --done <번호> | --list
+    if (op === 'plan') return this.plans.verb(s, body); // P304: atrium plan …
     if (op === 'docs') return this.docs.verb(s); // P257: atrium docs(문서 점검 결과)
     if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
     if (op === 'perm') return this.permView(s); // P296: 이 세션의 허용 동사(atrium help가 묻는다)
@@ -1267,8 +1278,9 @@ export class Branch {
       roles.push({ dir: out ? 'out' : 'in', role: l.role, name: shownName(o), agentName: o.agentName, kind: o.kind || 'claude', paneId: o.paneId || null, state: stateOf(o), last: lastOf(l) });
     }
     const news = this.news.meLine(s); // P204: 읽지 않은 동료 소식(없으면 칸이 없다)
+    let plans = []; try { plans = this.plans.meLines(s); } catch {} // P304: 내가 관리하는 레인(없으면 칸이 없다)
     const pv = this.permView(s); // P296: 오케스트레이션 세션이면 허용 동사(하위면 줄어든다)
-    return { at: Date.now(), me, parent, peers, children, independent, lineage, roles, ...(news ? { news } : {}), ...(pv.orchestrates ? { permissions: pv } : {}),
+    return { at: Date.now(), me, parent, peers, children, independent, lineage, roles, ...(news ? { news } : {}), ...(plans.length ? { plans } : {}), ...(pv.orchestrates ? { permissions: pv } : {}),
       commands: { prompt: 'atrium prompt <이름> "<할 일>" --wait', wait: 'atrium wait <이름>', read: 'atrium read <이름>' } }; // P116
   }
 }

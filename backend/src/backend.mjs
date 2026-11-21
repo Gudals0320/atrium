@@ -706,6 +706,7 @@ export class Backend {
     for (const m of this.store.memos().filter((x) => x.workspaceKey === key)) { this.store.updateMemo(m.memoId, { workspaceKey: null }); this.api.broadcast('memo.updated', this.store.getMemo(m.memoId)); }
     for (const k of this.store.kanbans().filter((x) => x.workspaceKey === key)) { this.store.updateKanban(k.kanbanId, { workspaceKey: null }); if (this.features) this.features.kanbans.emit(this.store.getKanban(k.kanbanId)); }
     this.store.deleteWorkspace(key);
+    try { this.store.markPlansDeleted(key); } catch {} // P304: 목표·마일스톤 레인은 30일 남겼다가 지운다(다시 열면 되살아난다)
     if (this.store.getMeta('currentWorkspace') === key) this.store.setMeta('currentWorkspace', (this.store.workspaces()[0] || {}).key || null);
     this.store.addEvent(null, 'workspace_closed', why ? { key, why } : { key });
     if (why !== 'gone') this.bus.emit('workspace_closed', key); // P10: 사람이 닫은 워크스페이스는 다시 저절로 열지 않는다
