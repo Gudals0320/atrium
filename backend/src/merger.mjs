@@ -18,7 +18,8 @@ import { fileURLToPath } from 'node:url';
 import { branchProbe, worktreeList, revOf, branchOf, isAncestor } from './git.mjs';
 import { shownName } from './session-label.mjs';
 import { ensureAtriumDir, excludeFileOf } from './doc-check.mjs';
-import { DEFAULTS } from './settings.mjs';
+import { DEFAULTS, PERMISSION_MODES } from './settings.mjs';
+import { APPROVAL_ARGS } from './branch.mjs'; // P287: 종류마다 받는 승인 방식
 import { workspaceNames } from './workspaces.mjs';
 import { clip } from './text.mjs';
 
@@ -150,6 +151,17 @@ export function pickMergerSpawn({ kinds = [], set = {}, read = true } = {}) {
   }
   for (const f of MERGER_FALLBACKS) if (has(f.kind)) return { ...f, picked: 'installed', wanted: kind };
   return null;
+}
+// P287: merger 승인 방식 고르기(순수) → { mode, from: setting | parent | null, dropped }.
+//   설정 mergerPermission이 빈 값·inherit이면 부모의 방식(전과 같음). 고른 종류(kind, 바뀌어 쓰인 종류)가 받지 않는 값이면 부모 따름으로 되돌리고 dropped에 그 값.
+//   받는 값: Claude Code는 세션 띄우기 창의 승인 방식 모두, 그 밖은 판이 승인 인자로 옮기는 표(branch.mjs APPROVAL_ARGS)의 키
+export const permissionModesOf = (kind) => (kind === 'claude' ? [...PERMISSION_MODES] : APPROVAL_ARGS[kind] ? Object.keys(APPROVAL_ARGS[kind]) : []);
+export function mergerPermissionOf({ kind, set = {}, parentMode = null } = {}) {
+  const want = String(set.mergerPermission || '').trim();
+  const parent = parentMode ? { mode: parentMode, from: 'parent' } : { mode: null, from: null };
+  if (!want || want === 'inherit') return { ...parent, dropped: null };
+  if (permissionModesOf(kind).includes(want)) return { mode: want, from: 'setting', dropped: null };
+  return { ...parent, dropped: want };
 }
 // P285: 하네스 목록 읽기 → { kinds, read, why }. 어댑터 없음·오류·빈 목록·시간 넘김은 read: false(why에 까닭)
 export const KINDS_WAIT_MS = 15_000; // agentKinds를 기다리는 시간(where.exe가 종류마다 5초까지)
@@ -326,7 +338,7 @@ export class Merger {
     this.changed(key.split('|')[0]);
     return s;
   }
-  // merger 띄우기(설정의 종류·모델·노력. 판에 그 종류가 없으면 부모의 종류·런처·모델). 승인 방식은 그 일을 맡긴 부모의 것
+  // merger 띄우기(설정의 종류·모델·노력. 판에 그 종류가 없으면 부모의 종류·런처·모델). 승인 방식은 설정 mergerPermission, 빈 값이면 그 일을 맡긴 부모의 것(P287)
   async spawnFor(key, mu) {
     const b = this.b; const m = mu.meta || {};
     const ws = m.ws; const target = m.target;
@@ -350,14 +362,17 @@ export class Merger {
     const old = this.rec(key);
     const name = mergerNameOf({ wsName: this.wsName(ws) || path.basename(root || ''), target, taken });
     try { if (root && excludeFileOf(root)) ensureAtriumDir(root); } catch (e) { this.log('merger atrium dir ' + e.message); }
-    const res = await b.spawn({ name, cwd: root, ...p, ...(parent && parent.permissionMode ? { permissionMode: parent.permissionMode } : {}) });
+    // P287: 승인 방식은 설정 mergerPermission(빈 값이면 맡긴 부모의 것). 그 종류가 받지 않는 값이면 부모 따름과 판 로그 한 줄
+    const perm = mergerPermissionOf({ kind: p.kind, set, parentMode: parent && parent.permissionMode });
+    if (perm.dropped) this.log('merger permission ' + perm.dropped + ' not for kind ' + p.kind + ', using parent (' + (perm.mode || '-') + ')');
+    const res = await b.spawn({ name, cwd: root, ...p, ...(perm.mode ? { permissionMode: perm.mode } : {}) });
     const s = b.sessions.get(res.sessionId);
     if (!s) throw apiError('spawn_failed', 'merger 세션이 판에 등록되지 않았다');
     s.mergerKey = key;
     const rec = { key, ws, target, root: slash(root), sessionId: s.sessionId, name: s.name, jobs: 0, gen: ((old && old.gen) || 0) + 1, spawnedAt: Date.now(), guided: false, kind: p.kind, model: p.model || null };
     this.saveRec(key, rec);
     try { if (this.store().getMeta(META_PROBLEM)) this.store().setMeta(META_PROBLEM, null); } catch {}
-    try { this.store().addEvent(s.sessionId, 'merger_spawn', { key, gen: rec.gen, kind: p.kind, model: p.model || null, effort: p.effort || null, picked: pick.picked, wanted: pick.wanted, kindsRead: kr.read, kindsWhy: kr.why }); } catch {}
+    try { this.store().addEvent(s.sessionId, 'merger_spawn', { key, gen: rec.gen, kind: p.kind, permissionMode: perm.mode, permissionFrom: perm.from, permissionDropped: perm.dropped, model: p.model || null, effort: p.effort || null, picked: pick.picked, wanted: pick.wanted, kindsRead: kr.read, kindsWhy: kr.why }); } catch {}
     this.log('merger ' + key + ' spawned ' + s.name + ' gen ' + rec.gen);
     return s;
   }
@@ -615,7 +630,7 @@ export class Merger {
     });
     const jobs = st.openMergeUnits().filter((u) => !ws || (u.meta && u.meta.ws === ws)).map((u) => this.jobView(u));
     const answers = this.meta(META_ANSWERS);
-    return { mode: MERGER_MODES.includes(set.mergerMode) ? set.mergerMode : 'ask', enabled: ws ? this.enabledFor(ws) : null, settings: { mergerMode: set.mergerMode, mergerKind: set.mergerKind, mergerModel: set.mergerModel, mergerEffort: set.mergerEffort },
+    return { mode: MERGER_MODES.includes(set.mergerMode) ? set.mergerMode : 'ask', enabled: ws ? this.enabledFor(ws) : null, settings: { mergerMode: set.mergerMode, mergerKind: set.mergerKind, mergerModel: set.mergerModel, mergerEffort: set.mergerEffort, mergerPermission: set.mergerPermission },
       answers: ws ? { [ws]: answers[ws] || null } : answers, asks: this.asks().filter((a) => !ws || a.workspace === ws), mergers, jobs, jobsMax: this.jobs,
       problem: (() => { const p = this.meta(META_PROBLEM); return p && p.at && (!ws || p.workspace === ws) ? p : null; })() }; // P275: merger를 띄우지 못한 마지막 까닭
   }
@@ -634,7 +649,7 @@ export class Merger {
   }
 }
 
-// 판 API(창·휴대폰·사람의 atrium call). 설정 값은 settings.set(mergerMode, mergerKind, mergerModel, mergerEffort)
+// 판 API(창·휴대폰·사람의 atrium call). 설정 값은 settings.set(mergerMode, mergerKind, mergerModel, mergerEffort, mergerPermission)
 export function mergerHandlers(b) {
   const m = () => { if (!b.merger) throw apiError('merger_off', 'merger 기능이 없다'); return b.merger; };
   const wsOf = async (p, required) => { if (!(p && p.workspace) && !required) return null; return (await b.resolveWorkspace(p && p.workspace)).key; };

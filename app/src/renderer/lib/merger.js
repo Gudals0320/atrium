@@ -1,8 +1,11 @@
 // P268: 합치기 merger의 창 쪽 자료(판 쪽 P267 merger.mjs 계약). 판 API merger.status·merger.answer, 이벤트 merger.ask·merger.answered·merger.updated.
 // 여기는 React 없는 순수 함수만 둔다(단위 시험 app/test/p268-lib.test.mjs).
+import { PERMISSION_MODES } from './permission-modes.js';
 export const MERGER_MODES = ['on', 'ask', 'off']; // 설정 mergerMode(기본 ask)
 export const MERGER_EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max']; // 설정 mergerEffort(빈 값: 넘기지 않음)
-export const MERGER_DEFAULTS = { mergerMode: 'ask', mergerKind: 'claude', mergerModel: 'claude-sonnet-5-5', mergerEffort: 'medium' };
+// P287: 설정 mergerPermission(빈 값: 맡긴 세션을 따름). 목록은 호출자 창의 승인 방식과 같다
+export const MERGER_PERMISSIONS = ['', ...PERMISSION_MODES];
+export const MERGER_DEFAULTS = { mergerMode: 'ask', mergerKind: 'claude', mergerModel: 'claude-sonnet-5-5', mergerEffort: 'medium', mergerPermission: '' };
 // 판의 설정 schema와 같은 꼴 검사(백엔드 settings.mjs). 창에서 미리 걸러 잘못된 값을 보내지 않는다
 const KIND_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/;
@@ -14,6 +17,7 @@ export function mergerSettingsOf(settings) {
   for (const k of Object.keys(MERGER_DEFAULTS)) out[k] = settings[k] == null ? MERGER_DEFAULTS[k] : settings[k];
   if (!MERGER_MODES.includes(out.mergerMode)) out.mergerMode = MERGER_DEFAULTS.mergerMode;
   if (!MERGER_EFFORTS.includes(out.mergerEffort)) out.mergerEffort = MERGER_DEFAULTS.mergerEffort;
+  if (!MERGER_PERMISSIONS.includes(out.mergerPermission)) out.mergerPermission = ''; // inherit·옛 판·모르는 값은 부모 따름
   return out;
 }
 
@@ -22,6 +26,7 @@ export function mergerValueOf(key, raw) {
   const v = String(raw == null ? '' : raw).trim();
   if (key === 'mergerMode') return MERGER_MODES.includes(v) ? { value: v } : { error: 'mode' };
   if (key === 'mergerEffort') return MERGER_EFFORTS.includes(v) ? { value: v } : { error: 'effort' };
+  if (key === 'mergerPermission') return MERGER_PERMISSIONS.includes(v) ? { value: v } : { error: 'permission' };
   if (key === 'mergerKind') { const x = (v || MERGER_DEFAULTS.mergerKind).toLowerCase(); return KIND_RE.test(x) ? { value: x } : { error: 'kind' }; }
   if (key === 'mergerModel') { const x = v || MERGER_DEFAULTS.mergerModel; return MODEL_RE.test(x) ? { value: x } : { error: 'model' }; }
   return { error: 'key' };
