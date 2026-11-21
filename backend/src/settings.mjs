@@ -42,6 +42,8 @@ export const SETTINGS = {
   usageAlerts: { type: 'boolean', default: true, label: '구독 사용량 알림: 한 한도 창(5시간·주간 등)이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알립니다.' },
   // P286: 자동 결정 카드. 사람과 직접 일하는 세션이 atrium ask 없이 사람에게 묻는 글로 턴을 끝내면 판이 그 질문으로 "자동" 결정 카드를 만든다(decisions.mjs)
   autoDecisions: { type: 'boolean', default: true, label: '자동 결정 카드: 에이전트가 결정 카드 없이 사람에게 묻는 글로 턴을 끝내면 보드가 그 질문으로 결정 카드를 만듭니다.' },
+  // P306: 사람이 목표 레인을 바꾸면(체크·focus·측정값 등) 그 레인의 관리자에게 알리는 때(plan-notify.mjs). 마일스톤이 모두 체크되면 next여도 곧바로 한 번
+  planNotify: { type: 'choice', default: 'next', options: ['next', 'now', 'off'], label: '목표 레인을 사람이 바꾸면 그 레인의 관리자 세션에 알립니다 (next: 다음 메시지와 함께, now: 곧바로, off: 알리지 않음).' },
   missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
   // P267: 합치기 merger(merger.mjs). 브랜치(워크트리)에서 일한 하위가 atrium done ok로 닫으면 판이 그 합치기를 부모 대신 merger 세션에게 맡긴다.
   //   on: 맡긴다, ask(기본): 워크스페이스마다 처음 한 번 사람에게 판 카드로 묻고 답을 기억한다(답이 올 때까지 지금처럼 부모에게), off: 지금처럼 부모에게

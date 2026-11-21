@@ -16,6 +16,8 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
 import { useStore, getState, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago } from './lib/labels.js';
+import { usePlanCards, PlanCardRow, PlanMoreLine } from './Plan.jsx'; // P306: 목표 레인의 가상 "실행" 카드
+import { planCountFor, planCards } from './lib/plans.js';
 import { answerReady, firstCardIds, allAuto, activeCards, laterCards, actionOf, snoozeTimes, pickedTime, pickDefault, whenText, sendsAnswer, timingOf, flipTiming, heldOnly, heldTotal } from './lib/decisions.js';
 
 function useNow(ms = 15000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
@@ -293,13 +295,16 @@ export function DecisionList({ onGo }) {
   const cards = activeCards(all);
   const later = laterCards(all);
   const only = heldOnly(held, cards); // P295: 카드는 없고 붙잡은 답만 있는 세션
-  if (!cards.length && !later.length && !only.length) return <div className="mt-dropdown-empty">{t('userTasks.empty')}</div>;
+  const pc = usePlanCards(now); // P306: 레인마다 focus 사용자 항목 2장 + n개 더
+  const say = useSay();
+  if (!cards.length && !later.length && !only.length && !pc.cards.length) return <div className="mt-dropdown-empty">{t('userTasks.empty')}</div>;
   const firsts = firstCardIds(cards);
   return (
     <>
       {only.map((sid) => <div key={`held-${sid}`} className="mt-dc-item"><HeldLine sessionId={sid} n={held[sid]} t={t} riding={!!(riding && riding[sid])} /></div>)}
-      {!cards.length && <div className="mt-dropdown-empty">{t('userTasks.emptyNow')}</div>}
+      {!cards.length && !pc.cards.length && <div className="mt-dropdown-empty">{t('userTasks.emptyNow')}</div>}
       {cards.map((d) => <div key={d.id} className="mt-dc-item">{firsts.has(d.id) && held && held[d.sessionId] ? <HeldLine sessionId={d.sessionId} n={held[d.sessionId]} t={t} riding={!!(riding && riding[d.sessionId])} /> : null}<DecisionRow d={d} onGo={onGo} now={now} t={t} /></div>)}
+      {pc.cards.map((c, i) => <div key={c.key} className="mt-dc-item"><PlanCardRow c={c} onGo={onGo} t={t} say={say} />{pc.more.filter((m) => m.planId === c.planId && (i === pc.cards.length - 1 || pc.cards[i + 1].planId !== c.planId)).map((m) => <PlanMoreLine key={`more-${m.planId}`} m={m} t={t} />)}</div>)}
       <LaterSection cards={later} onGo={onGo} now={now} t={t} />
     </>
   );
@@ -308,8 +313,9 @@ export function DecisionList({ onGo }) {
 // PC: 위 왼쪽 알약과 펼침 목록(카드가 없으면 숨긴다. 수는 지금 목록만)
 export function DecisionPill() {
   const t = useT();
-  const n = useStore((st) => activeCards(st.decisions).length);
-  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld)); // P295: 붙잡은 답만 있어도 알약을 둔다(지금 보내기)
+  const pn = useStore((st) => planCards([...st.plans.values()]).total); // P306: 목표 레인의 사용자 항목도 센다
+  const n = useStore((st) => activeCards(st.decisions).length) + pn;
+  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld)) + pn; // P295: 붙잡은 답만 있어도 알약을 둔다(지금 보내기)
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -340,7 +346,7 @@ export function DecisionPill() {
 // 세션 카드·세션 맵 카드의 작은 표식(지금 목록에 카드가 있을 때만, 종류 구별 없이 센다)
 export function DecisionMark({ sessionId, className = 'mt-dc-mark' }) {
   const t = useT();
-  const n = useStore((st) => { let k = 0; for (const d of st.decisions) if (d.sessionId === sessionId && !d.deferred) k++; return k; });
+  const n = useStore((st) => { let k = 0; for (const d of st.decisions) if (d.sessionId === sessionId && !d.deferred) k++; return k; }) + useStore((st) => planCountFor([...st.plans.values()], sessionId)); // P306: 관리하는 레인의 사용자 항목
   const auto = useStore((st) => allAuto(activeCards(st.decisions), sessionId));
   const ride = useStore((st) => (st.decisionRiding && st.decisionRiding[sessionId]) || 0); // P295
   const rideEl = ride ? <span className={`${className} mt-dc-ride`} data-role="decision-ride" data-count={ride} title={t('riding.markTitle', { n: ride })}>{t('riding.mark', { n: ride })}</span> : null;
@@ -352,8 +358,9 @@ export function DecisionMark({ sessionId, className = 'mt-dc-mark' }) {
 // 휴대폰: 세션 맵 위 알약과 아래 시트
 export function PhoneDecisionPill({ onOpen }) {
   const t = useT();
-  const n = useStore((st) => activeCards(st.decisions).length);
-  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld)); // P295
+  const pn = useStore((st) => planCards([...st.plans.values()]).total); // P306: 목표 레인의 사용자 항목도 센다
+  const n = useStore((st) => activeCards(st.decisions).length) + pn;
+  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld)) + pn; // P295
   const [open, setOpen] = useState(false);
   const [note, say] = useSheetNote();
   useEffect(() => { if (!total) setOpen(false); }, [total]);

@@ -9,7 +9,8 @@ import { step, bootState, liteHold, onShowAll } from './crash-watch.js'; // P86:
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
-import { decisionsOf, withoutCard, heldOf, withDeferred } from './lib/decisions.js'; // P284: 결정 카드. P286: 모은 답. P292: 사용자 몫
+import { decisionsOf, withoutCard, heldOf, withDeferred } from './lib/decisions.js';
+import { laneOf } from './lib/plans.js'; // P306: 목표·마일스톤 레인 // P284: 결정 카드. P286: 모은 답. P292: 사용자 몫
 import { mergerViewOf, withAsk, withoutAsk, rememberParents } from './lib/merger.js'; // P268. P276: rememberParents
 import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107: 작업 중 테두리 빛 설정과 미션 맵 덮개를 문서 뿌리에
 
@@ -492,3 +493,27 @@ export async function doneDecision(id, timing = null) { const r = await api.call
 export async function checkDecision(id, ok, note = '', timing = null) { const r = await api.call('decision.check', { id, ok, note, ...timingOpt(timing) }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
 export async function snoozeDecision(id, until) { const r = await api.call('decision.snooze', { id, until }); state.decisions = withDeferred(state.decisions, id, true, until); changed(); return r; }
 export async function raiseDecision(id) { const r = await api.call('decision.raise', { id }); state.decisions = withDeferred(state.decisions, id, false); changed(); return r; }
+
+// P306: 목표·마일스톤 레인(판 API plan.*). 처음 붙을 때 plan.list로 읽고 plan.changed로 바꾼다. 옛 판이면 빈 목록
+state.plans = new Map(); // planId → 레인(lib/plans.js laneOf)
+state.planPanel = null; // 열린 목표 판 { planId, wsKey, x, y }(화면 기준 자리)
+export function putLane(raw) { const old = state.plans.get(raw && raw.planId); const l = laneOf(raw, old); if (!l) return; state.plans = new Map(state.plans); if (l.deletedAt) state.plans.delete(l.planId); else state.plans.set(l.planId, l); changed(); }
+export const loadPlans = () => api.call('plan.list', { all: true }).then((r) => { const m = new Map(); for (const raw of (r && r.plans) || []) { const l = laneOf(raw, state.plans.get(raw.planId)); if (l) m.set(l.planId, l); } state.plans = m; changed(); }).catch(() => {});
+api.on('plan.changed', (ev) => putLane(ev));
+api.on('$open', () => loadPlans());
+// 판의 문서와 바뀜 기록(판을 열 때). → 레인
+export async function loadPlanDoc(planId) { const v = await api.call('plan.get', { planId, log: 20 }); putLane(v); return v; }
+export async function planOp(planId, ops, via = null) { const r = await api.call('plan.op', { planId, ops: Array.isArray(ops) ? ops : [ops], ...(via ? { via } : {}) }); if (r && r.plan) putLane(r.plan); return r; }
+export async function planOwner(planId, session) { const r = await api.call('plan.owner', { planId, session }); if (r && r.plan) putLane(r.plan); return r; }
+export async function planStatus(planId, status) { const r = await api.call('plan.status', { planId, status }); if (r && r.plan) putLane(r.plan); return r; }
+// 목표 판 열기(anchor: 누른 요소. 그 아래에 화면 기준으로 뜬다). 같은 레인을 다시 누르면 닫는다
+export function openPlanPanel(planId, anchor = null, wsKey = null) {
+  if (state.planPanel && state.planPanel.planId === planId && anchor) { state.planPanel = null; changed(); return; }
+  let x = 120, y = 90;
+  try { if (anchor && anchor.getBoundingClientRect) { const r = anchor.getBoundingClientRect(); x = r.left; y = r.bottom + 6; } } catch {}
+  const l = state.plans.get(planId);
+  state.planPanel = { planId, wsKey: wsKey || (l && l.wsKey) || null, x, y };
+  changed();
+}
+export function closePlanPanel() { if (!state.planPanel) return; state.planPanel = null; changed(); }
+export function pickPlanTab(planId) { if (!state.planPanel) return; state.planPanel = { ...state.planPanel, planId }; changed(); }

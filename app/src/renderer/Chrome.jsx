@@ -19,7 +19,8 @@ import { toggleSidebar, openArchiveBox, useSide } from './Sidebar.jsx';
 import { LoopList } from './Loops.jsx';
 import { useDialog } from './dialog.js'; // P52
 import { useInbox } from './InboxBar.jsx';
-import { DecisionPill } from './Decisions.jsx'; // P284: 결정 카드
+import { DecisionPill } from './Decisions.jsx';
+import { PlanPanelHost } from './Plan.jsx'; // P306: 목표 판(화면 기준, 하나) // P284: 결정 카드
 import { seenTargets, cpuLine, fmtPct } from './lib/p255.js'; // P255: 작업 완료 모두 읽기, 메모리 칩의 CPU
 import { KindIcon } from './SessionNode.jsx';
 import { DevicesPill } from './Peers.jsx'; // P47: 다른 기기 n
@@ -74,6 +75,7 @@ export function TopLeft() {
       {working.length > 0 && <ListPill list={working} label={t('p302.working')} cls="working" role="working" line={(s) => (s.lastPrompt || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('p302.workingEmpty')} />}
       {review.length > 0 && <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} readAll />}
       <DecisionPill />{/* P284: 내 몫 n(응답 필요와 따로 센다) */}
+      <PlanPanelHost />
       <TurnPill needsYou={needsYou} />
       {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? EXIT_LABEL[s.exit && s.exit.kind] : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
     </div>

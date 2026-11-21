@@ -12,6 +12,7 @@ import { useT, t, errText } from './lib/i18n.js';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
+import { LaneChips } from './Plan.jsx'; // P306: 목표 레인 칩
 import { worktreeLabel } from '../../../backend/src/worktree-areas.mjs'; // P27: 워크트리 영역(P35: 리포 영역 안의 노란 상자)
 
 export async function arrangeWorkspace(key, undo = false) {
@@ -87,6 +88,7 @@ function RegionNodeInner({ data }) {
         <span className="mt-region-dot" />
         <b className="mt-region-name" data-label={w.label ? 'rel' : undefined}>{w.label || w.name}</b>{/* P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로(전체 경로는 title) */}
         <span className="mt-region-meta"><span data-count="sessions">{c.sessions}</span>{c.working > 0 && <> · <span data-count="working">{t('regions.working', { n: c.working })}</span></>}{convos > 0 && <> · <span data-count="convos">{t('regions.convos', { n: convos })}</span></>}{w.kind !== 'repo' && <> · {t('regions.folder')}</>}</span>
+        <LaneChips wsKey={key} />{/* P306: 레인마다 "수집 M2 3/7" */}
         {c.needsYou > 0 && <span className="mt-ws-c need" data-count="needsYou">{t('top.turnN', { n: c.needsYou })}</span>}
         {c.review > 0 && <span className="mt-ws-c review" data-count="review">{t('regions.review', { n: c.review })}</span>}
         {z.asleep > 0 && <span className={`mt-ws-c asleep${z.all ? ' all' : ''}`} data-count="asleep" title={t('regions.asleepTitle', { n: z.asleep, mb: fmtMB(z.mb) })}><Icon name="moon" />{z.waking ? t('sleep.waking') : z.all ? t('regions.asleepAll', { mb: fmtMB(z.mb) }) : t('regions.asleepN', { n: z.asleep, mb: fmtMB(z.mb) })}</span>}

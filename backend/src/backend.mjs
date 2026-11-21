@@ -1741,7 +1741,10 @@ export class Backend {
       let body = toLF(text);
       const held = !p.steer && this.decisions ? this.decisions.takeHeld(s.sessionId) : null; // P286: 모아 둔 결정 답은 사람의 글 앞에 붙여 한 전달로(스티어링 글이면 onHuman이 따로 보통 메시지로)
       if (held) body = `${held.text}\n\n${body}`;
+      const pn = !p.steer && this.planNotes ? this.planNotes.take(s.sessionId) : null; // P306: 모인 목표 레인 알림도 사람의 글 앞에
+      if (pn) body = `${pn.text}\n\n${body}`;
       const d = this.queue.enqueue(s.sessionId, body, { ...qopts(s), origin: { kind: 'human' } });
+      if (pn) { this.planNotes.rides.set(d.deliveryId, { sessionId: s.sessionId, pend: pn.pend }); this.store.addEvent(s.sessionId, 'plan_note', { why: 'human_front', deliveryId: d.deliveryId, lanes: pn.lanes }); }
       if (held) { this.store.addEvent(s.sessionId, 'decision_flush', { ids: held.ids, deliveryId: d.deliveryId, why: 'human_front', now: held.now, next: held.next }); this.decisions.rides.set(d.deliveryId, held.ids); } // P295: 실패·취소되면 다시 붙잡는다
       this.touch(s);
       try { if (this.decisions) this.decisions.onHuman(s.sessionId, 'bar'); } catch (e) { this.log('decisions human error', e.stack); } // P284: 사람이 카드를 거치지 않고 직접 보낸 글(명령 바·휴대폰 입력)은 그 세션의 열린 결정 카드를 닫는다

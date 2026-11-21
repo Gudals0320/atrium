@@ -2811,3 +2811,102 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 /* P302: 작업 중 알약(세션 · 작업 중 · 작업 완료 · 내 몫 · 응답 필요 · 문제) */
 .mt-cp.working.has { color: var(--st-working); }
 .mt-chip.working { border-left-color: var(--st-working); }
+
+/* ---------- P306: 목표·마일스톤 레인(영역 칩, 목표 판, 관리자 칩, 실행 카드) ---------- */
+.mt-plan-chips { display: inline-flex; flex: none; gap: .35em; align-items: center; margin-left: .2em; }
+.mt-plan-chip { display: inline-flex; align-items: center; gap: .35em; flex: none; height: 1.55em; padding: 0 .55em; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); color: var(--accent-2); font: inherit; font-size: .8em; font-family: var(--mono, ui-monospace, monospace); font-weight: 600; white-space: nowrap; cursor: pointer; line-height: 1; }
+.mt-plan-chip:hover { border-color: var(--accent-2); }
+.mt-plan-chip.dim { opacity: 0.5; }
+.mt-plan-chip.all { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok) inset; color: var(--ok); }
+.mt-plan-chip.small { font-size: 10.5px; height: 17px; padding: 0 6px; }
+.mt-plan-ring { width: .65em; height: .65em; border-radius: 50%; border: 1.5px solid currentColor; flex: none; }
+.mt-plan-udot { width: .5em; height: .5em; border-radius: 50%; background: var(--teal); flex: none; display: inline-block; }
+.mt-plan-mgr { display: inline-flex; flex: none; align-items: center; margin-left: 4px; }
+.mt-plan-mgr.map .mt-plan-chip { font-size: 9.5px; height: 15px; padding: 0 5px; }
+.mt-plan-menu { position: fixed; z-index: 1200; min-width: 220px; max-width: 320px; padding: 4px; display: grid; gap: 2px; background: var(--panel); border: 1px solid var(--panel-line-2); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+.mt-plan-mi { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
+.mt-plan-mi:hover { background: var(--panel-2); }
+.mt-plan-mi .mono { color: var(--accent-2); font-size: 12px; }
+.mt-plan-mi.all .mono { color: var(--ok); }
+.mt-plan-mi.dim { opacity: 0.55; }
+.mt-plan-mi-user { color: var(--teal); font-size: 11.5px; }
+.mt-plan-mi-st { margin-left: auto; color: var(--dim); font-size: 11.5px; }
+.mt-plan-panel { position: fixed; z-index: 1100; width: 520px; max-width: calc(100vw - 16px); overflow: auto; padding: 12px 14px 12px; display: grid; gap: 10px; align-content: start; background: var(--panel); border: 1px solid var(--panel-line-2); border-radius: 12px; box-shadow: 0 18px 44px rgba(0,0,0,.5); color: var(--text); font-size: 13px; }
+.mt-plan-head { display: flex; align-items: center; gap: 6px; }
+.mt-plan-ws { font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase; }
+.mt-plan-hsub { color: var(--dim); font-size: 12px; }
+.mt-plan-rev { margin-left: auto; color: var(--dim); font-size: 11.5px; }
+.mt-plan-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.mt-plan-tab { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--panel-line-2); background: transparent; color: var(--text); font-size: 12.5px; cursor: pointer; }
+.mt-plan-tab .mono { color: var(--dim); font-size: 11px; }
+.mt-plan-tab.on { border-color: var(--accent-2); background: var(--accent-soft); }
+.mt-plan-tab.on .mono { color: var(--accent-2); }
+.mt-plan-tab.dim { opacity: 0.55; }
+.mt-plan-tab-st { font-size: 10.5px; color: var(--dim); }
+.mt-plan-bar { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mt-plan-owner { border: 0; background: none; color: var(--teal); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
+.mt-plan-owner.closed, .mt-plan-owner.none { color: var(--dim); cursor: default; font-weight: 400; }
+.mt-plan-sel { background: var(--panel-2); color: var(--text); border: 1px solid var(--panel-line-2); border-radius: 6px; font-size: 12px; padding: 2px 4px; }
+.mt-plan-sel.st-paused, .mt-plan-sel.st-archived { color: var(--dim); }
+.mt-plan-sel.st-done { color: var(--ok); }
+.mt-plan-goal { font-size: 15px; font-weight: 600; line-height: 1.4; }
+.mt-plan-goal.none { font-size: 13px; font-weight: 400; color: var(--dim); }
+.mt-plan-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.mt-plan-metric { display: grid; gap: 3px; padding: 6px 9px 7px; border: 1px solid var(--panel-line-2); border-radius: 8px; background: var(--panel-2); }
+.mt-plan-mname { color: var(--dim); font-size: 11.5px; }
+.mt-plan-mval { font-size: 13px; }
+.mt-plan-mnow { border: 0; background: none; color: var(--text); font: inherit; font-weight: 600; padding: 0; cursor: text; border-bottom: 1px dashed var(--panel-line-2); }
+.mt-plan-mbar { height: 3px; border-radius: 2px; background: var(--panel-line-2); overflow: hidden; }
+.mt-plan-mbar i { display: block; height: 100%; background: var(--accent); }
+.mt-plan-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 0; row-gap: 4px; }
+.mt-plan-stepw { display: inline-flex; align-items: center; }
+.mt-plan-step-line { width: 12px; height: 1px; background: var(--panel-line-2); }
+.mt-plan-step { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--panel-line-2); background: transparent; color: var(--dim); font-family: var(--mono, ui-monospace, monospace); font-size: 12px; cursor: pointer; }
+.mt-plan-step.done { color: var(--ok); background: var(--ok-bg); border-color: transparent; }
+.mt-plan-step.focus { color: var(--accent-2); border-color: var(--accent-2); }
+.mt-plan-step.open { box-shadow: 0 0 0 2px var(--accent-soft); }
+.mt-plan-sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.mt-plan-ms { display: grid; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border-left: 3px solid var(--panel-line-2); }
+.mt-plan-ms.focus { border-left-color: var(--accent); }
+.mt-plan-ms.done { border-left-color: var(--ok); }
+.mt-plan-ms-head { display: flex; align-items: center; gap: 8px; }
+.mt-plan-ms-head .mono { color: var(--accent-2); }
+.mt-plan-now { padding: 0 6px; border-radius: 5px; font-size: 10.5px; line-height: 16px; background: var(--accent-soft); color: var(--accent-2); }
+.mt-plan-bar2 { display: flex; height: 4px; border-radius: 2px; background: var(--panel-line-2); overflow: hidden; }
+.mt-plan-bar2 i { display: block; height: 100%; }
+.mt-plan-bar2 i.h { background: var(--accent); }
+.mt-plan-bar2 i.u { background: var(--teal); }
+.mt-plan-why { display: grid; gap: 3px; font-size: 12.5px; cursor: pointer; }
+.mt-plan-why > div { display: grid; grid-template-columns: 56px 1fr; gap: 8px; }
+.mt-plan-why:not(.open) > div > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-plan-items { display: grid; gap: 1px; }
+.mt-plan-item { display: grid; grid-template-columns: 18px 44px 1fr auto auto; align-items: start; gap: 8px; padding: 5px 4px; border-radius: 6px; }
+.mt-plan-item:hover { background: color-mix(in srgb, var(--panel) 60%, transparent); }
+.mt-plan-item.editing { grid-template-columns: 44px 1fr auto; }
+.mt-plan-check { margin: 2px 0 0; accent-color: var(--ok); cursor: pointer; }
+.mt-plan-iid { font-size: 11.5px; padding-top: 1px; }
+.mt-plan-itext { display: grid; gap: 2px; min-width: 0; }
+.mt-plan-item.done .mt-plan-it { text-decoration: line-through; color: var(--dim); }
+.mt-plan-inote { color: var(--dim); font-size: 11.5px; }
+.mt-plan-iacts { display: inline-flex; gap: 2px; opacity: 0; }
+.mt-plan-item:hover .mt-plan-iacts, .mt-plan-iacts:focus-within { opacity: 1; }
+.mt-plan-ib { border: 0; background: none; color: var(--dim); cursor: pointer; font-size: 13px; padding: 0 4px; }
+.mt-plan-ib:hover { color: var(--text); }
+.mt-plan-who { padding: 0 6px; border-radius: 5px; font-size: 10.5px; line-height: 16px; border: 1px solid var(--panel-line-2); color: var(--dim); white-space: nowrap; }
+.mt-plan-who.user { border-color: var(--teal); color: var(--teal); }
+.mt-plan-iedit { display: grid; gap: 4px; }
+.mt-plan-input { background: var(--panel); color: var(--text); border: 1px solid var(--panel-line-2); border-radius: 6px; padding: 3px 7px; font: inherit; font-size: 12.5px; min-width: 0; }
+.mt-plan-input.small { font-size: 12px; width: 7em; }
+.mt-plan-iedit .mt-plan-input.small { width: auto; }
+.mt-plan-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mt-plan-add { display: flex; flex: 1; gap: 4px; align-items: center; }
+.mt-plan-add .mt-plan-input { flex: 1; }
+.mt-plan-log-btn { border: 0; background: none; color: var(--dim); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.mt-plan-log { display: grid; gap: 3px; max-height: 200px; overflow: auto; font-size: 12px; }
+.mt-plan-log-row { display: grid; grid-template-columns: 70px 1fr auto; gap: 8px; }
+.mt-plan-none { color: var(--dim); font-size: 12.5px; }
+.mt-ut-kind.k-plan { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-2); }
+.mt-dc-row.k-plan { border-left-color: var(--accent-2); }
+.mt-plan-mstag { flex: none; padding: 0 6px; border-radius: 5px; border: 1px solid var(--teal); color: var(--teal); font-size: 10.5px; line-height: 15px; white-space: nowrap; font-family: var(--mono, ui-monospace, monospace); }
+.mt-plan-more { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding: 6px 10px; border: 1px dashed var(--panel-line-2); border-radius: 8px; font-size: 12.5px; color: var(--dim); }
+.mt-plan-more b { color: var(--text); font-weight: 600; }
