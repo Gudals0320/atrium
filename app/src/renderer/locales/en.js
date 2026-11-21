@@ -2758,7 +2758,7 @@ export default {
     tag: 'Auto',
     tagTitle: 'The board found this question in the agent’s last answer. Ignore it if it is not a real question.',
     markTitle: '{n} decisions the board found in the last answer · answer from the Decide pill above',
-    held: '{n} answers held · sent together when the other cards are done',
+    held: 'Held answers: {n} · sent together when the other cards are done',
     heldTitle: 'When every open card of this session is done, the held answers go as one message (each message costs the agent a turn)',
     sendNow: 'Send now',
     heldToast: 'Held your answer for @{name} ({n}). It goes with the others when the remaining cards are done',

@@ -156,6 +156,12 @@ test('P286 질문 찾기: 한국어·영어 묻는 글, 코드 덩어리 안 물
   assert.deepEqual(q('1. a\n2. b\n3. c\n4. d\n5. e\n\n어느 것으로 할까요?').options, [], '5개 넘으면 보기가 아니다');
   assert.deepEqual(q('- 그냥 목록\n- 둘째\n\n이대로 할까요?').options, [], '굵은 이름 없는 점 목록은 보기가 아니다');
   assert.equal(optionOf('3) 세 번째 길'), '3. 세 번째 길');
+  // 개발용 판 haiku 답(굵은 머리가 설명 문단 위에 있고 그 이름이 질문에 나온다)과 이어진 질문 문장 묶기
+  const h = q('**A: `check-auto.mjs`**\n동사 설명.\n\n**B: `auto-check.mjs`**\n수식어 설명.\n\n두 이름 모두 문제는 없습니다.\n\n어느 이름으로 할까요? **A(`check-auto.mjs`)와 B(`auto-check.mjs`) 중에서 선택해 주세요.**');
+  assert.equal(h.question, '어느 이름으로 할까요? A(`check-auto.mjs`)와 B(`auto-check.mjs`) 중에서 선택해 주세요.');
+  assert.deepEqual(h.options, ['A: check-auto.mjs', 'B: auto-check.mjs']);
+  assert.deepEqual(q('**Fast**: patch\n\n**Clean**: rewrite\n\nShould I do it now?').options, [], '질문에 이름이 없으면 보기가 아니다');
+  assert.deepEqual(q('**A: `tests-auto`**\n설명.\n\n**B: `auto-tests`**\n설명.\n\n**A(`tests-auto`)와 B(`auto-tests`) 중에서 선택해 주세요.**').options, ['A: tests-auto', 'B: auto-tests'], '굵게 쓴 질문 줄은 보기가 아니다');
   assert.ok(isQuestion('Shall we?')); assert.ok(!isQuestion('끝.'));
   // 긴 질문은 줄인다
   assert.ok(q('x'.repeat(400) + '?').question.length <= 200);
@@ -327,14 +333,15 @@ test('P286 답 모아 보내기: 열린 카드가 남으면 모으고, 모두 �
     assert.equal(dl(lead).at(-1).text, '[결정] B? → b');
     // 손 카드 하나 + 자동 카드 하나도 같다(손 카드가 열려 있으면 자동 카드는 만들지 않으니, 자동 카드 뒤 손 카드)
     const l2 = add('lead2');
-    turn(b, l2, '어느 쪽으로 할까요?');
+    turn(b, l2, '1. 왼쪽\n2. 오른쪽\n\n어느 쪽으로 할까요?');
+    assert.equal(b.store.openDecisions(l2.sessionId)[0].why, null, '첫 줄이 보기 목록이면 맥락은 비운다');
     const auto = b.store.openDecisions(l2.sessionId)[0]; assert.equal(auto.auto, true);
     const m2 = ask(b, l2, { question: '손 질문?' });
     const n2 = dl(l2).length;
-    h['decision.answer']({ id: auto.id, answer: '왼쪽' });
+    h['decision.answer']({ id: auto.id, answer: '1. 왼쪽' });
     assert.equal(dl(l2).length, n2);
     h['decision.answer']({ id: m2.id, answer: '예' });
-    assert.equal(dl(l2).length, n2 + 1); assert.equal(dl(l2).at(-1).text, '[결정] 어느 쪽으로 할까요? → 왼쪽\n[결정] 손 질문? → 예');
+    assert.equal(dl(l2).length, n2 + 1); assert.equal(dl(l2).at(-1).text, '[결정] 어느 쪽으로 할까요? → 1. 왼쪽\n[결정] 손 질문? → 예');
   } finally { await stop(); }
 });
 

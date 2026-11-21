@@ -34,6 +34,26 @@ export function optionOf(l) {
   return null;
 }
 
+// P286: 답 앞쪽의 굵은 머리 줄("**A: check-auto.mjs**", "**A안**: …", "1. **빠르게**")의 짧은 이름이 2~4개이고 모두 질문 글에 나오면 그것을 보기로
+function namedHeads(all, question) {
+  const heads = [];
+  for (const l of all) {
+    const m = l.match(/^\s*(?:\d{1,2}[.)]\s+|[-*+]\s+)?\*\*(.+?)\*\*/);
+    if (!m) continue;
+    const full = plain(m[1]).replace(/`/g, '').replace(/[:：]\s*$/, '').trim();
+    if (isQuestion(full)) continue; // 굵게 쓴 질문 줄은 보기가 아니다
+    const name = full.split(/[:：(（]/)[0].trim();
+    if (!name || name.length > 20) continue;
+    heads.push({ name, full });
+  }
+  if (heads.length < 2 || heads.length > AUTO_OPTIONS_MAX) return [];
+  const qq = question.replace(/`/g, '');
+  const has = (n) => (/^[A-Za-z0-9]{1,3}$/.test(n) ? new RegExp(`(^|[^A-Za-z0-9])${n}([^A-Za-z0-9]|$)`).test(qq) : qq.includes(n));
+  if (!heads.every((h) => has(h.name))) return [];
+  const out = [...new Set(heads.map((h) => clipTo(h.full, AUTO_OPTION_MAX)))];
+  return out.length === heads.length ? out : [];
+}
+
 // 한국어 부탁(사람에게 정해·알려 달라는 말)
 const KO_ASK = /(정해|말씀해|알려|확인해|골라|선택해|결정해|답해|지정해|승인해|검토해)\s?(주세요|주십시오|주시겠어요|주실래요|줘|줄래)/;
 const KO_Q_END = /(까요?|나요|습니까|던가요|실래요|으신가요|인가요|건가요|을지요|할지요)\s*[.!…]*$/;
@@ -91,7 +111,13 @@ function findIn(text) {
     const codes = []; const masked = l.replace(/`[^`]*`/g, (m) => { codes.push(m); return `\u0000${codes.length - 1}\u0000`; });
     const ss = sentences(masked);
     let q = null;
-    for (let j = ss.length - 1; j >= 0; j--) if (isQuestion(ss[j].replace(/\u0000\d+\u0000/g, ' x '))) { q = ss[j].replace(/\u0000(\d+)\u0000/g, (_, n) => codes[Number(n)]); break; }
+    const unmask = (x) => x.replace(/\u0000(\d+)\u0000/g, (_, n) => codes[Number(n)]);
+    const isQ = (x) => isQuestion(x.replace(/\u0000\d+\u0000/g, ' x '));
+    for (let j = ss.length - 1; j >= 0; j--) if (isQ(ss[j])) {
+      // 바로 앞의 질문 문장도 묶는다("어느 쪽으로 할까요? A와 B 중에서 골라 주세요.")
+      let k = j; while (k > 0 && isQ(ss[k - 1])) k--;
+      q = unmask(ss.slice(k, j + 1).join(' ')); break;
+    }
     if (!q) continue;
     // 보기: 질문 뒤 목록, 없으면 질문 바로 앞 목록(같은 덩어리 안 바로 위 줄들, 그다음 앞 문단의 끝 목록)
     let items = after.filter(isItem);
@@ -102,6 +128,7 @@ function findIn(text) {
     }
     let options = items.map(optionOf).filter(Boolean);
     if (options.length !== items.length || options.length < 2 || options.length > AUTO_OPTIONS_MAX) options = [];
+    if (!options.length) options = namedHeads(paras.flat(), plain(q)); // 굵은 보기 머리가 앞쪽에 있고 그 이름이 질문에 나온다
     options = [...new Set(options)];
     if (options.length < 2) options = [];
     const question = clipTo(plain(q).replace(/\s+/g, ' '), AUTO_QUESTION_MAX);

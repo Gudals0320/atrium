@@ -263,8 +263,9 @@ export class Decisions {
       this.b.store.addEvent(sid, 'decision_end', { id: d.id, state: 'closed', via: 'replaced', auto: true });
     }
     if (open.length - old.length >= ASK_OPEN_MAX) { if (old.length) { this.settle(sid, 'replaced'); this.changed(); } return null; }
-    const head = firstLine(text, 120);
-    const why = head && head !== question && !question.includes(head) && !head.includes(question) ? clip(oneLine(head), ASK_WHY_MAX) : null;
+    const head = (() => { const l = firstLine(text, 200); return l ? clip(l.replace(/^#+\s*/, '').replace(/\*\*|__|`/g, '').trim(), 120) : null; })();
+    const plainOpt = options.map((o) => o.replace(/…$/, ''));
+    const why = head && head !== question && !question.includes(head) && !head.includes(question) && !/^\s*(\d{1,2}[.)]|[-*+])\s/.test(head) && !plainOpt.some((o) => head.includes(o) || o.includes(head)) ? clip(oneLine(head), ASK_WHY_MAX) : null; // 첫 줄이 목록·보기와 겹치면 비운다
     const d = this.store().addDecision({ sessionId: sid, name: shownName(s) || s.name, question, options, why, createdAt: at, auto: true });
     this.b.store.addEvent(sid, 'decision_auto', { id: d.id, replaced: old.map((x) => x.id), chars: question.length, options: options.length, kind: s.kind || 'claude', source: s.rt.answerSource || null });
     this.b.log(`decision auto ${s.name} #${d.id}${old.length ? ` (replaced #${old.map((x) => x.id).join(',')})` : ''}`);
