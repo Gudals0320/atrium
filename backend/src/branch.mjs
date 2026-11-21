@@ -331,7 +331,7 @@ export function childShims({ node = process.execPath, script = path.join(BACKEND
 export function attachBranch(b, opts) { return new Branch(b, opts); }
 
 export class Branch {
-  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, news: newsOpts = {}, merger: mergerOpts = {} } = {}) {
+  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, news: newsOpts = {}, merger: mergerOpts = {}, decisions: decisionsOpts = {} } = {}) {
     this.b = b; this.readyWaitMs = readyWaitMs; this.submitWaitMs = submitWaitMs; this.childWaitMs = childWaitMs; this.gateTrustWaitMs = gateTrustWaitMs;
     this.modelErrors = new Map(); // P41: 세션 ID → 마지막으로 알린 모델 오류(rt.lastError 객체. P55: 시각으로 가리면 같은 밀리초의 다음 오류를 놓친다)
     this.passing = new Set(); // P36: 신뢰 관문을 지나는 중인 세션 ID(claude -w로 다시 띄우는 중)
@@ -354,7 +354,7 @@ export class Branch {
       onDrop: (sid, lines) => { if (b.sessions.has(sid)) b.store.addEvent(sid, 'link_notice_dropped', { lines }); },
     });
     this.news = new PeerNews(b, this, newsOpts); // P204: 동료 소식(턴 끝·done 자동 기록, atrium log | news)
-    this.decisions = new Decisions(b, this); b.decisions = this.decisions; // P284: 결정 카드(atrium ask, 판 API decision.*)
+    this.decisions = new Decisions(b, this, decisionsOpts); b.decisions = this.decisions; // P284: 결정 카드(atrium ask, 판 API decision.*)
     this.docs = new DocWatch(b, this); b.docs = this.docs; // P257: 문서 점검(일 단위가 done·머리에서 부른다)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
     this.merger = new Merger(b, this.units, mergerOpts); b.merger = this.merger; // P267: 브랜치 하위의 done ok를 merger에게
@@ -365,7 +365,7 @@ export class Branch {
       this.news.onClosed(s); // P204
       try { this.decisions.onClosed(s); } catch (e) { b.log('decisions closed error', e.stack); } // P284: 열린 결정 카드는 closed
     });
-    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } try { this.docs.onSession(s, sum); } catch (e) { b.log('docs session error', e.stack); } try { this.merger.onSession(s, sum); } catch (e) { b.log('merger session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
+    b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } try { this.decisions.onSession(s, sum); } catch (e) { b.log('decisions session error', e.stack); } try { this.docs.onSession(s, sum); } catch (e) { b.log('docs session error', e.stack); } try { this.merger.onSession(s, sum); } catch (e) { b.log('merger session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read
     this.handlers = {
       'branch.tree': () => this.tree(),

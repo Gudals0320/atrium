@@ -11,7 +11,7 @@ import { IMPORTS_SCHEMA, installImports } from './store-imports.mjs'; // P34: �
 import { installMerge } from './store-merge.mjs'; // P37: 워크스페이스 키 옮기기(폴더가 저장소가 되면 합치기)
 import { UNITS_SCHEMA, UNITS_COLUMNS, installUnits } from './store-units.mjs'; // P180: 일 단위와 시도
 import { NEWS_SCHEMA, installNews } from './store-news.mjs'; // P204: 동료 소식
-import { DECISIONS_SCHEMA, installDecisions } from './store-decisions.mjs'; // P284: 결정 카드
+import { DECISIONS_SCHEMA, DECISIONS_COLUMNS, installDecisions } from './store-decisions.mjs'; // P284: 결정 카드. P286: auto 열
 import { normalize, fromLine, leaves, isLeaf } from './dock-tree.mjs';
 import { upgradeRuntime } from './state.mjs'; // P129: 옛 runtime 이름 // P17: 덩어리 분할 나무
 
@@ -117,7 +117,7 @@ export class Store {
     // P269: rig 표(tool_runs, rig_versions, rig_events, rig3_*)와 열(workspaces.rig_enabled·rig_enabled_at, sessions.rig_role)은 옛 판 DB에 그대로 두고 만들지도 쓰지도 않는다(옛 rig 1·2와 같다)
     this.db.exec(NEWS_SCHEMA); // P204: 동료 소식
     this.db.exec(DECISIONS_SCHEMA); // P284: 결정 카드
-    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS)]) {
+    for (const [table, cols] of [...Object.entries(ADDED_COLUMNS), ...Object.entries(RECALL_COLUMNS), ...Object.entries(BRANCH_COLUMNS), ...Object.entries(WORKTREE_COLUMNS), ...Object.entries(UNITS_COLUMNS), ...Object.entries(DECISIONS_COLUMNS)]) {
       const have = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
       for (const [col, type] of Object.entries(cols)) if (!have.has(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
     }

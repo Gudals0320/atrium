@@ -2648,3 +2648,12 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-dc-sheet .mt-dc-name { font-size: 14px; }
 /* P283: 터미널 링크에 마우스를 올리면 뜨는 알림 글(term-links.js). 판 변환 밖 body에 그리고 누르기를 가로채지 않는다 */
 .mt-link-hint { position: fixed; z-index: 99; pointer-events: none; padding: 3px 8px; border-radius: 6px; background: var(--panel-3); color: var(--text); border: 1px solid var(--line, transparent); box-shadow: var(--panel-shadow); font-size: 12px; white-space: nowrap; }
+/* P286: 자동 결정 카드 표시(작게, 점선)와 모은 답 줄 */
+.mt-dc-item { display: grid; gap: 6px; }
+.mt-dc-auto { flex: none; padding: 0 5px; border-radius: 5px; border: 1px dashed var(--teal); color: var(--teal); font-size: 10.5px; font-weight: 600; line-height: 15px; white-space: nowrap; }
+.mt-dc-row.auto { border-left-style: dashed; }
+.mt-dc-mark.auto { border-style: dashed; background: none; color: var(--teal); }
+.mt-dc-held { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px; border-radius: 7px; background: var(--teal-bg); color: var(--white); font-size: 12px; }
+.mt-dc-held > span { flex: 1; min-width: 0; }
+.mt-dc-sheet .mt-dc-held { font-size: 13px; }
+.mt-dc-sheet .mt-dc-held .mt-btn { min-height: 32px; }
