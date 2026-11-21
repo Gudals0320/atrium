@@ -2709,6 +2709,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-dc-timing.next { border-style: dashed; }
 .mt-dc-timing.picked { font-weight: 700; }
 .mt-dc-timing:hover { color: var(--white); border-color: var(--white); }
-.mt-dc-timing + .mt-dc-time { margin-left: 0; }
+.mt-dc-timing + .mt-dc-time { margin-left: 0; white-space: nowrap; }
 .mt-dc-held.riding { background: none; border: 1px dashed var(--teal); }
 .mt-dc-mark.mt-dc-ride { margin-right: 4px; background: none; border-style: dashed; color: var(--teal); font-weight: 600; }

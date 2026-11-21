@@ -97,7 +97,8 @@ export class Decisions {
   }
   // P295: 전달 대기열에 실어 보내기 손을 단다(처음 보낼 때 앞에 붙임, 실패·취소되면 되돌림)
   wireQueue(q) {
-    if (!q || typeof q.on !== 'function') return;
+    if (!q || typeof q.on !== 'function' || this.wiredQueue === q) return;
+    this.wiredQueue = q;
     q.attachFront = (d) => this.attachFront(d);
     q.on('delivery', (e) => { try { this.onDelivery(e); } catch (err) { this.b.log('decision ride error', err && err.stack); } });
   }

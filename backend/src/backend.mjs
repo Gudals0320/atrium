@@ -259,6 +259,7 @@ export class Backend {
     });
     // P128: 쓰다 만 글을 비킴(aside)·비키지 못함(keep)·되돌림(back). 되돌리지 못한 글은 이 이벤트의 text로 판 기록에 남는다
     this.queue.beforeDeliver = (d) => (this.docs ? this.docs.beforeDeliver(d) : undefined); // P257: 문서 점검 경고 한 줄
+    if (this.decisions) this.decisions.wireQueue(this.queue); // P295: 붙잡은 사용자 몫 답을 다음 전달 앞에 싣는다(Branch가 대기열보다 먼저 만들어진다)
     this.queue.on('draft', (r) => {
       this.store.addEvent(r.sessionId, 'delivery_draft', r);
       this.log(`delivery draft ${this.nameOf(r.sessionId)} ${r.deliveryId} ${r.phase}${r.how ? ` ${r.how}` : ''}${r.result ? ` → ${r.result}${r.by ? ` (${r.by})` : ''}` : ''}${r.why ? ` [${r.why}]` : ''} ${r.chars ?? ''} chars`);

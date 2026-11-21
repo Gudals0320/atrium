@@ -2831,8 +2831,8 @@ export default {
   },
   // P295: 답 실어 보내기(보내는 때: 바로 감 | 다음 메시지와)
   riding: {
-    now: 'Send now',
-    next: 'With next message',
+    now: 'Goes now',
+    next: 'With next',
     nowTitle: 'Your answer goes to this session right away (it is waiting for it). Click to send it with the next message instead',
     nextTitle: 'Your answer is held and goes in front of the next message to this session (saves a turn). Click to send it right away instead',
     line: '{n} answer(s) going with the next message',
