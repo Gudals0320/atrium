@@ -30,7 +30,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider } from '@xyflow/react';
 import { api } from './api.js';
-import { useStore, getState, openDialog, setKillAsk, setRenaming, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin, selectWorkspace } from './store.js';
+import { useStore, getState, openDialog, setKillAsk, setRenaming, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin } from './store.js';
 import { OutputPanel } from './Output.jsx';
 import { LoopDialog } from './Loops.jsx';
 import { MissionMap } from './Mission.jsx';
@@ -45,8 +45,7 @@ import { OpenRepoDialog, CloseWsDialog } from './Workspaces.jsx';
 import { DesktopImportDialog } from './DesktopImport.jsx'; // P34
 import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사이드바
 import { SearchBox, SelectionBar } from './Search.jsx';
-import { keyToData, closeKeyTargets, boardArrowKey, boardShortcut, mapTabKey, stepWorkspace, spaceHoldReady, spaceHoldStep, SPACE_HOLD_MS } from './lib/keys.js';
-import { wsTabs, tabKeys } from './lib/ws-tabs.js'; // P98
+import { keyToData, closeKeyTargets, boardArrowKey, boardShortcut, mapTabKey, spaceHoldReady, spaceHoldStep, SPACE_HOLD_MS } from './lib/keys.js';
 import { renameKeyTarget } from './lib/session-name.js'; // P66: F2로 고른 노드의 이름 바꾸기
 import { ReturnSummary, useReturnSummary } from './ReturnSummary.jsx';
 import { CloseDialog } from './SessionNode.jsx';
@@ -141,7 +140,6 @@ function App() {
         e.preventDefault(); e.stopPropagation();
         if (arrow === 'command') cmd.current && cmd.current.focus();
         else if (arrow === 'search') { if (st.searchOpen) { const el = document.querySelector('[data-field="search"]'); if (el) el.select(); } else setSearchOpen(true); }
-        else if (arrow === 'prevWs' || arrow === 'nextWs') { const k = stepWorkspace(tabKeys(wsTabs(st.workspaces, st.groups)), st.viewWs || st.currentWs, arrow === 'prevWs' ? -1 : 1); if (k) selectWorkspace(k); } // 탭을 누른 것과 같다(고르고 그 영역으로 화면을 맞춘다). P98: 위 바 칩 순서(묶음은 그 자리에서 구성 순서로 편다)
         return;
       }
       if (!p) return;
