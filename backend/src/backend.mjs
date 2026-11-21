@@ -1121,7 +1121,7 @@ export class Backend {
     const hsid = resume ? this.harnessSessionIdOf(s) : null;
     const rm = resume && (s.kind === 'pi' || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
     const orchP = s.orch ? this.orchPrompt(s) : null; // P296: 오케스트레이션 세션은 그 세션의 안내문(허용 동사만)
-    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: plan.args || [], instructions: orchP ? { file: orchP.file, text: orchP.text } : hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: this.harnessDir(), wrapper: hf.binDir ? { node: process.execPath, script: path.join(hf.binDir, 'lib', 'bin', 'atrium-child.mjs') } : null, forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
+    return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : {}), launcherArgs: plan.args || [], instructions: orchP ? { file: orchP.file, text: orchP.text } : hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), wrapper: hf.binDir ? { node: process.execPath, script: path.join(hf.binDir, 'lib', 'bin', 'atrium-child.mjs') } : null, forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
   // 그 패널에 판의 줄로 하네스를 띄운다(hc: terminal.run의 env). 이어 가기·되살리기·다시 열기가 함께 쓴다
   async startHarness(s, { resume = false, why = 'start', name = s.agentName } = {}) {
@@ -1494,7 +1494,7 @@ export class Backend {
     try { this.relay.detach(s.sessionId); } catch {}
     if (s.settingsPath) try { fs.rmSync(s.settingsPath, { force: true }); } catch {} // 판이 세션을 닫을 때 설정 파일을 지운다(B3)
     try { fs.rmSync(tokenFileOf(this.cfg.sessionsDir, s.sessionId), { force: true }); } catch {} // P115: 세션 토큰 파일
-    removeWrapperDir(this.harnessDir(), s.kind, s.sessionId); // P298: 세션별 atrium 감싸개 폴더
+    try { removeWrapperDir(path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), s.kind, s.sessionId); } catch {} // P298: 세션별 atrium 감싸개 폴더
     // 이 세션이 낀 연결은 판에서 뺀다(기록은 남는다)
     for (const l of this.store.links()) if (l.from === s.sessionId || l.to === s.sessionId) { this.store.updateLink(l.linkId, { removedAt: Date.now() }); this.api.broadcast('link.removed', { linkId: l.linkId, reason: 'session closed' }); }
     const closedAt = Date.now();
