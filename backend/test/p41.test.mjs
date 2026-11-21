@@ -292,7 +292,7 @@ test('P41 스킬 글과 짧은 안내: 말로 한 모델은 atrium models로 골
   assert.match(s, /정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다/);
   assert.match(s, /내부 하위 에이전트로 우회하지 않는다/);
   assert.match(s, /모델 오류로 답하지 못하면/);
-  assert.ok(Buffer.byteLength(s) < 9700, `스킬 글 ${Buffer.byteLength(s)}바이트`); // P284: 결정 카드 절(사람에게 묻기)로 1000바이트를 더 둔다. P267: merger 문구(판 스킬 9절)로 400바이트를 더 둔다. P248: 대기열·스티어링 한 줄로 300바이트를 더 둔다(전 8000). P156: 관계 고르기 절. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
+  assert.ok(Buffer.byteLength(s) < 10700, `스킬 글 ${Buffer.byteLength(s)}바이트`); // P292: 사용자 몫 절(사람에게 넘기기)로 1000바이트를 더 둔다. P284: 결정 카드 절(사람에게 묻기)로 1000바이트를 더 둔다. P267: merger 문구(판 스킬 9절)로 400바이트를 더 둔다. P248: 대기열·스티어링 한 줄로 300바이트를 더 둔다(전 8000). P156: 관계 고르기 절. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
   assert.match(BOARD_SYSTEM_PROMPT, /`atrium models`에서 골라 띄운다/);
 });
 

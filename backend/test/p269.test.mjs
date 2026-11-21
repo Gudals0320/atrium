@@ -191,5 +191,5 @@ test('P269 걷어 낸 것: rig 모듈·판 API·rig 동사가 없다', async () 
   const backendSrc = fs.readFileSync(path.join(SRC, 'backend.mjs'), 'utf8');
   assert.doesNotMatch(backendSrc, /rig[A-Z]\w*Handlers|'rig3?\.|rig3\b|\bRigRoles\b/);
   const { VERB_NAMES, CONTRACT_VERSION } = await import('../src/cli-contract.mjs');
-  assert.ok(!VERB_NAMES.includes('rig')); assert.equal(CONTRACT_VERSION, 7); // P284: ask로 7
+  assert.ok(!VERB_NAMES.includes('rig')); assert.equal(CONTRACT_VERSION, 8); // P292: todo로 8. P284: ask로 7
 });

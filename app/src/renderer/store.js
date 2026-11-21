@@ -9,7 +9,7 @@ import { step } from './crash-watch.js'; // P86: 단계 기록
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
-import { decisionsOf, withoutCard, heldOf } from './lib/decisions.js'; // P284: 결정 카드. P286: 모은 답
+import { decisionsOf, withoutCard, heldOf, withDeferred } from './lib/decisions.js'; // P284: 결정 카드. P286: 모은 답. P292: 사용자 몫
 import { mergerViewOf, withAsk, withoutAsk, rememberParents } from './lib/merger.js'; // P268. P276: rememberParents
 import { applyWorkLight, applyMissionOpen } from './lib/work-light.js'; // P107: 작업 중 테두리 빛 설정과 미션 맵 덮개를 문서 뿌리에
 
@@ -471,3 +471,8 @@ api.on('decision.changed', (d) => putDecisions(d && d.cards, d && d.held));
 export async function flushDecisions(sessionId) { const r = await api.call('decision.flush', { sessionId }); const h = { ...state.decisionHeld }; delete h[sessionId]; state.decisionHeld = h; changed(); return r; } // P286: 모은 답 지금 보내기
 export async function answerDecision(id, answer) { const r = await api.call('decision.answer', { id, answer }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
 export async function ignoreDecision(id) { const r = await api.call('decision.ignore', { id }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
+// P292: 할 일 했음, 확인 됐다/안 됐다, 미루기, 나중에서 꺼내기
+export async function doneDecision(id) { const r = await api.call('decision.done', { id }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
+export async function checkDecision(id, ok, note = '') { const r = await api.call('decision.check', { id, ok, note }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }
+export async function snoozeDecision(id, until) { const r = await api.call('decision.snooze', { id, until }); state.decisions = withDeferred(state.decisions, id, true, until); changed(); return r; }
+export async function raiseDecision(id) { const r = await api.call('decision.raise', { id }); state.decisions = withDeferred(state.decisions, id, false); changed(); return r; }

@@ -33,7 +33,8 @@
 // P267: guide merger(merger 안내), done 응답의 merge·mergeAsk·retire 칸과 claimedBy merger, items의 merge 칸, news의 kind merge를 더했다(더하기만이라 5 그대로)
 // 6(P269): rig를 통째로 걷어냈다. rig 동사, guide 응답의 rig 칸이 없어졌다(옛 rig 역할 세션의 명령은 모르는 동사 오류)
 // 7(P284): ask 동사(결정 카드: 사람이 정할 질문을 판에 남김, --done·--list)를 더하고, 하위 워커의 ask는 거절(sub_worker, 종료 코드 1)이다. 사람에게 글로 묻는 세션이 판의 결정 카드를 함께 남기는 새 약속이라 올렸다
-export const CONTRACT_VERSION = 7;
+// 8(P292): todo 동사(사용자 몫: 사람이 할 일·칠 명령·확인·나중에 할 일을 판에 남김, --cmd·--check·--later·--tell, --done·--list)를 더하고, 결정 카드가 종류(kind) 넷을 가진 "사용자 몫"이 되었다(ask --list 응답 카드에 kind 칸). 사람에게 넘기는 일을 판에 남기는 새 약속이라 올렸다
+export const CONTRACT_VERSION = 8;
 // P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
 export const ASK_QUESTION_MAX = 300;
 export const ASK_OPTION_MAX = 80;
@@ -41,6 +42,12 @@ export const ASK_OPTIONS_MAX = 6;
 export const ASK_WHY_MAX = 300;
 export const ASK_OPEN_MAX = 10;
 export const ASK_ANSWER_MAX = 2000;
+// P292: 사용자 몫(atrium todo)의 상한. 할 일 글·맥락은 ASK_QUESTION_MAX·ASK_WHY_MAX. 열린 카드는 종류 합쳐 ASK_OPEN_MAX(나중에 종류는 따로 TODO_LATER_MAX)
+export const TODO_CMDS_MAX = 6;
+export const TODO_CMD_MAX = 500;
+export const TODO_LATER_MAX = 30;
+export const TODO_LATER_TEXT_MAX = 200; // 조건 글
+export const TODO_NOTE_MAX = 300; // 사람의 확인 메모
 // P204: 동료 소식. atrium log 한 줄의 상한, atrium news가 한 번에 보이는 줄
 export const NEWS_LOG_MAX = 300;
 export const NEWS_LINES = 20;
@@ -77,6 +84,8 @@ export const VERBS = [
   { name: 'usage', args: ['[--json]'], does: '구독 사용량(Claude, Codex, AGY): 한도 창(5시간·주간 등)마다 사용률과 리셋까지 남은 시간, 크레딧, 요금제, 받은 때. 보드가 이 PC의 로컬 출처에서 모은 마지막 값이고 모르면 모름. 일을 크게 나누기 전에 남은 양을 볼 때', out: ['providers', 'alertsOn', 'at'] },
   // P284: 결정 카드(사람에게 글로 묻는 질문을 판에 따로 남긴다. 대화를 갈음하지 않는다)
   { name: 'ask', args: ['"<질문 한 줄>"', '[--option "<보기>"]…', '[--why "<맥락 한 줄>"]', '| --done <번호>', '| --list', '[--json]'], does: `사람이 정해야 할 질문("이대로 마무리할까요?", "이 방향으로 갈까요?")을 대화에 글로 묻고 이것으로 보드에도 결정 카드로 남긴다(질문 ${ASK_QUESTION_MAX}자, 보기 ${ASK_OPTIONS_MAX}개·각 ${ASK_OPTION_MAX}자, 맥락 ${ASK_WHY_MAX}자, 열린 카드 ${ASK_OPEN_MAX}장까지). 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글로 들어오고, 무시하면 아무것도 오지 않는다. 권한·신뢰·하네스 질문은 아니다. 사람과 직접 일하는 세션만 쓰고 하위 워커는 부모에게 atrium prompt로 묻는다. --done <번호>는 사람이 다른 길로 답해 끝난 카드를 닫고, --list는 너의 열린 카드`, out: ['id', 'open', 'max', 'card', 'cards', 'closed', 'state'] },
+  // P292: 사용자 몫(사람에게 넘기는 일·명령·확인·미룬 일. 결정 카드와 같은 목록)
+  { name: 'todo', args: ['"<할 일 한 줄>"', '[--cmd "<명령>"]…', '[--check]', '[--later "<YYYY-MM-DD[ HH:MM] 또는 조건>"]', '[--why "<맥락 한 줄>"]', '[--tell]', '| --done <번호>', '| --list', '[--json]'], does: `사람이 해야 할 일(터미널에 칠 명령, 해 줄 행동, 검증, 나중으로 미룬 일)을 대화에 쓰고 이것으로 보드의 "내 몫" 목록에도 남긴다. 기본은 할 일(사람이 "했음"을 누르면 기록만, --tell이면 "[할 일] <할 일> → 했음" 글이 온다). --cmd는 사람이 복사할 명령(${TODO_CMDS_MAX}개, 각 ${TODO_CMD_MAX}자). --check는 확인(사람이 "됐다/안 됐다: 메모"로 답하면 "[확인] <할 일> → 됐다: 메모" 글이 온다). --later는 나중에(날짜·시각이면 그때까지 숨겼다가 띄우고, 조건 글이면 사람이 꺼낼 때까지 "나중"에 둔다). 열린 카드는 결정 카드와 합쳐 ${ASK_OPEN_MAX}장, 나중에는 따로 ${TODO_LATER_MAX}장까지. 사람과 직접 일하는 세션만 쓰고 하위 워커는 부모에게 atrium prompt로 넘긴다. --done <번호>는 끝난(쓸모없어진) 카드를 닫고, --list는 너의 열린 것과 나중 것`, out: ['id', 'kind', 'open', 'max', 'card', 'cards', 'closed', 'state'] },
 ];
 // 종료 코드: 0 성공, 1 보드가 거절하거나 실패(이유는 stderr와 --json의 error), 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(일은 계속된다. 다시 atrium wait)
 export const EXIT = { ok: 0, refused: 1, usage: 2, timeout: 3 };
