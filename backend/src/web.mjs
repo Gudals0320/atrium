@@ -261,6 +261,26 @@ export function shellBuild(dir) {
   return v;
 }
 export const swScriptOk = (rel, headers = {}) => String(headers['service-worker'] || '').toLowerCase() !== 'script' || rel === SW_FILE;
+// P291: 허용 목록에 없는 Host(421). 브라우저가 페이지를 열다 막히면(판이 Tailscale 이름을 잠깐 못 읽음) 사람이 읽을 짧은 안내와 5초 뒤 다시 읽기를 준다.
+// 안내에는 판의 내용이 없다(DNS 다시 묶기로 온 페이지도 읽을 것이 없다). 그 밖(API, 스크립트)은 지금처럼 짧은 글
+export const MISDIRECTED_RETRY_S = 5;
+const MISDIRECTED_TEXT = {
+  ko: { title: '다시 연결하는 중', body: '판이 이 주소를 잠시 확인하지 못했습니다. 곧 다시 연결합니다.', retry: '지금 다시 시도' },
+  en: { title: 'Reconnecting', body: 'The board could not confirm this address just now. Reconnecting shortly.', retry: 'Try again now' },
+};
+export function misdirectedPage(lang = 'en') {
+  const t = MISDIRECTED_TEXT[lang] || MISDIRECTED_TEXT.en;
+  return `<!doctype html><html lang="${lang === 'ko' ? 'ko' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="${MISDIRECTED_RETRY_S}"><title>${t.title}</title>` +
+    `<style>body{font:15px/1.5 system-ui,sans-serif;background:#16181d;color:#d8dce3;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}main{max-width:26rem;padding:1.5rem;text-align:center}a{color:#8ab4ff}</style></head>` +
+    `<body><main data-role="misdirected"><h1 style="font-size:1.1rem">${t.title}</h1><p>${t.body}</p><p><a href="">${t.retry}</a></p></main></body></html>`;
+}
+export function misdirected(req, res) {
+  const wantsHtml = req.method === 'GET' && /text\/html/i.test(String(req.headers.accept || ''));
+  if (!wantsHtml) { res.writeHead(421, { 'content-type': 'text/plain' }); res.end('misdirected request'); return; }
+  const lang = /^\s*ko\b/i.test(String(req.headers['accept-language'] || '')) ? 'ko' : 'en';
+  res.writeHead(421, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'retry-after': String(MISDIRECTED_RETRY_S), 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'", ...SECURITY_HEADERS });
+  res.end(misdirectedPage(lang));
+}
 const SECURITY_HEADERS = { 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', 'cross-origin-opener-policy': 'same-origin' };
 const NO_BUILD = `<!doctype html><html><head><meta charset="utf-8"><title>Atrium</title><style>body{background:#070705;color:#e9e6dc;font:15px/1.6 system-ui,sans-serif;margin:0;display:grid;place-items:center;height:100vh}div{max-width:520px;padding:24px}code{background:#1d1c18;padding:2px 6px;border-radius:4px}</style></head>
 <body><div><h2>The board screen is not built</h2><p>The backend serves the window from <code>app/dist</code>, which does not exist yet. On the PC, run <code>cd app &amp;&amp; npm run build</code>, then reload this page.</p>
@@ -634,7 +654,7 @@ export class WebServer {
     const isWeb = p.startsWith('/web/');
     const isStatic = !isWeb && (req.method === 'GET' || req.method === 'HEAD') && !p.startsWith('/hooks/') && !p.startsWith('/branch/') && p !== '/health' && p !== '/api';
     if (!isWeb && !isStatic) return false;
-    if (!hostOk(req, this.hosts)) { this.note('deny', req, { reason: 'host' }); res.writeHead(421, { 'content-type': 'text/plain' }); res.end('misdirected request'); return true; }
+    if (!hostOk(req, this.hosts)) { this.note('deny', req, { reason: 'host' }); misdirected(req, res); return true; }
     if (!this.accepting() && (isWeb || isRemoteRequest(req, this.cfg.port))) return this.blocked(req, res, isWeb); // P58: 원격 받기 꺼짐
     if (isStatic) return this.files.serve(req, res);
     const send = (status, obj, extra = {}) => { if (res.headersSent) return; res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...SECURITY_HEADERS, ...extra }); res.end(JSON.stringify(obj)); };
