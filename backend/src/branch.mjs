@@ -44,7 +44,8 @@ import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
 import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때와 동료 소식
 import { DocWatch } from './doc-watch.mjs'; // P257: 문서 점검(지휘 세션 턴 끝·done 알림)
 import { Decisions } from './decisions.mjs'; // P284: 결정 카드(atrium ask)
-import { Plans } from './plan-board.mjs'; // P304: 리포별 목표·마일스톤(atrium plan, 판 API plan.*)
+import { Plans } from './plan-board.mjs';
+import { PlanNotes } from './plan-notify.mjs'; // P306 // P304: 리포별 목표·마일스톤(atrium plan, 판 API plan.*)
 import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | news, 턴 끝·done 자동 기록)
 import { permOf, permKey, opRefusal, refusalText } from './orchestration.mjs'; // P296: 자체 오케스트레이션 세션의 권한
 import { VERB_NAMES } from './cli-contract.mjs';
@@ -378,6 +379,7 @@ export class Branch {
     this.news = new PeerNews(b, this, newsOpts); // P204: 동료 소식(턴 끝·done 자동 기록, atrium log | news)
     this.decisions = new Decisions(b, this, decisionsOpts); b.decisions = this.decisions; // P284: 결정 카드(atrium ask, 판 API decision.*)
     this.plans = new Plans(b, this); b.plans = this.plans; // P304: 리포별 목표·마일스톤(atrium plan, 판 API plan.*)
+    this.planNotes = new PlanNotes(b); b.planNotes = this.planNotes; // P306: 사람이 바꾼 레인을 관리자에게 알림(다음 메시지와 실어 보내기)
     this.docs = new DocWatch(b, this); b.docs = this.docs; // P257: 문서 점검(일 단위가 done·머리에서 부른다)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
     this.merger = new Merger(b, this.units, mergerOpts); b.merger = this.merger; // P267: 브랜치 하위의 done ok를 merger에게
@@ -387,6 +389,7 @@ export class Branch {
       this.onClosed(s, reason, told);
       this.news.onClosed(s); // P204
       try { this.decisions.onClosed(s); } catch (e) { b.log('decisions closed error', e.stack); } // P284: 열린 결정 카드는 closed
+      try { this.planNotes.onClosed(s); } catch {} // P306: 닫힌 관리자에게 모인 목표 알림은 버린다
     });
     b.bus.on('session', (s, sum) => { this.onSession(s, sum); try { this.units.onSession(s, sum); } catch (e) { b.log('units session error', e.stack); } try { this.news.onSession(s, sum); } catch (e) { b.log('news session error', e.stack); } try { this.decisions.onSession(s, sum); } catch (e) { b.log('decisions session error', e.stack); } try { this.docs.onSession(s, sum); } catch (e) { b.log('docs session error', e.stack); } try { this.merger.onSession(s, sum); } catch (e) { b.log('merger session error', e.stack); } }); // P204: 동료 소식의 턴 끝 // P36: 신뢰 관문. P180: 시도의 턴 끝
     this.verbs = new AgentVerbs(b, this, verbOpts); // P116: atrium prompt | wait | read

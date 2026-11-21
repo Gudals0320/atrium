@@ -88,14 +88,17 @@ export class Plans {
     const nr = this.store().savePlan({ planId: r.planId, rev, at, by: actor.by, keep: PLAN.logKeep, ...fields, log: logs.map((l) => ({ ...l, by: actor.by, via: actor.via, manager })) });
     try { this.store().addEvent(actor.sessionId || null, 'plan_op', { planId: r.planId, ws: r.wsKey, rev, ops: logs.map((l) => l.op), by: actor.sessionId ? 'agent' : 'user', via: actor.via, manager, ...extraEvent }); } catch {}
     const v = this.emit(nr, { by: actor.by, via: actor.via, at, manager, changes: logs.map((l) => ({ op: l.op, ref: l.ref ?? null, summary: l.summary })) });
-    return { nr, v, manager };
+    // P306: 사람이 바꾸면 그 레인의 관리자에게 알린다(plan-notify.mjs. 다음 메시지와 | 곧바로 | 끔, 마일스톤이 모두 체크되면 곧바로)
+    let note = null;
+    if (!actor.sessionId && this.b.planNotes) { try { note = this.b.planNotes.onHuman(r, nr, logs); } catch (e) { this.b.log && this.b.log('plan note error', e && e.stack); } }
+    return { nr, v, manager, note };
   }
   // 연산 여럿을 원자로
   write(r, ops, actor) {
     if (!Array.isArray(ops) || !ops.length) throw err('bad_request', '연산을 준다.');
     const { doc, results, log } = applyPlanOps(r.doc, ops, { now: this.now(), actor: { by: actor.by, via: actor.via } });
-    const { v, manager } = this.commit(r, { doc }, log, actor);
-    return { ok: true, rev: v.rev, changed: results, log: log.map((l) => l.summary), manager, plan: v };
+    const { v, manager, note } = this.commit(r, { doc }, log, actor);
+    return { ok: true, rev: v.rev, changed: results, log: log.map((l) => l.summary), manager, plan: v, ...(note ? { note } : {}) };
   }
   create(wsKey, name, actor, doc = emptyPlan()) {
     const nm = laneName(name);

@@ -141,6 +141,28 @@ function AutoDecisionSetting({ settings }) {
   return <SetRow name={t('autoDecisions.settingName')} hint={t('autoDecisions.settingHint')} role="auto-decision-setting"><Toggle checked={settings.autoDecisions !== false} onChange={set} field="setting-autoDecisions" /></SetRow>;
 }
 
+// P306: 사람이 목표 레인을 바꾸면 그 레인의 관리자에게 알리는 때(판 설정 planNotify: next 다음 메시지와 | now 곧바로 | off)
+const PLAN_NOTIFY = ['next', 'now', 'off'];
+function PlanNotifySetting({ settings }) {
+  const t = useT();
+  const [pending, setPending] = useState(null);
+  const value = pending ?? (PLAN_NOTIFY.includes(settings.planNotify) ? settings.planNotify : 'next');
+  const pick = async (mode) => {
+    setPending(mode);
+    try { await api.call('settings.set', { key: 'planNotify', value: mode }); toast(t('plan.notifySet', { mode: t(`plan.notify.${mode}`) })); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
+    setPending(null);
+  };
+  return <>
+    <div className="mt-set-row" data-role="plan-notify-setting">
+      <span className="mt-set-name">{t('plan.notifyName')}</span>
+      <span className="mt-set-value mt-seg-lang" data-field="setting-planNotify" data-value={value} role="radiogroup" aria-label={t('plan.notifyName')}>
+        {PLAN_NOTIFY.map((m) => <button key={m} type="button" role="radio" aria-checked={value === m} className={`mt-btn small${value === m ? ' primary' : ' ghost'}`} data-mode={m} onClick={() => value !== m && pick(m)}>{t(`plan.notify.${m}`)}</button>)}
+      </span>
+    </div>
+    <SetNote>{t('plan.notifyHint')}</SetNote>
+  </>;
+}
+
 // 일반: 언어, 배율(P45), 작업 중 테두리 빛(P107), 트레이 상주
 function GeneralTab({ settings }) {
   const t = useT();
@@ -161,6 +183,7 @@ function GeneralTab({ settings }) {
         <SetNote>{t('settings.trayNote')}</SetNote>
         {'usageAlerts' in settings && <UsageAlertSetting settings={settings} />}
         {'autoDecisions' in settings && <AutoDecisionSetting settings={settings} />}
+        {'planNotify' in settings && <PlanNotifySetting settings={settings} />}
         {'updateCheck' in settings && <UpdateSettings settings={settings} />}
         {'perfTrace' in settings && <PerfTraceSetting settings={settings} />}
       </>}

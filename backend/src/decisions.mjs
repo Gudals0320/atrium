@@ -452,13 +452,15 @@ export class Decisions {
   // P295: 전달 대기열이 그 세션에 글을 처음 보내기 직전(delivery.mjs _deliver). 붙잡은 답이 있으면 그 글 앞에 붙일 글 | null
   attachFront(d) {
     if (!d || !this.b.sessions.has(d.sessionId)) return null;
+    // P306: 사람이 바꾼 목표 레인 알림(plan-notify.mjs)도 같은 자리에 싣는다(결정 답 뒤)
+    let pn = null; try { pn = this.b.planNotes ? this.b.planNotes.attach(d.sessionId, d.deliveryId, 'ride') : null; } catch {}
     const h = this.takeHeld(d.sessionId);
-    if (!h) return null;
+    if (!h) return pn;
     this.rides.set(d.deliveryId, [...(this.rides.get(d.deliveryId) || []), ...h.ids]);
     this.b.store.addEvent(d.sessionId, 'decision_flush', { ids: h.ids, deliveryId: d.deliveryId, why: 'ride', now: h.now, next: h.next, origin: d.origin || null, steer: !!d.typeNow });
     this.b.log(`decision ride ${this.nameOf(d.sessionId)} ${d.deliveryId}: ${h.ids.length} answer(s) in front (${d.origin || 'board'}${d.typeNow ? ', steer' : ''})`);
     this.changed();
-    return h.text;
+    return pn ? h.text + '\n' + pn : h.text;
   }
   // P295: 답을 실은 전달이 끝났다. 실패·취소면 답을 다시 붙잡는다(다음 글에 실려 가거나 사람이 지금 보내기)
   onDelivery(e) {
