@@ -4,6 +4,7 @@
 // - 직전 페이지가 죽었으면 연결이 열릴 때 web.boot로 직전 상태를 보낸다(연결 기록의 boot 줄). 내용(글, 화면)은 보내지 않는다
 // - 가벼운 화면: "보드로 다시 열기"(reopenBoard)는 기록을 바꾸고 페이지를 다시 읽는다
 import { api } from './api.js';
+import { isPhoneDevice } from './lib/phone.js'; // P293: 휴대폰 화면(세션 맵)인가
 import { CRUMB_KEY, ALIVE_EVERY_MS, parseCrumbs, bootDecide, crumbAlive, crumbLeave, crumbBack, chooseBoard, termBudget, crumbStep, levelHeavier, levelReset, levelPlan, crumbSent, touchDevice } from './lib/crumbs.js';
 // P86: 보드를 여는 단계마다 그 자리에서 적는 단계 기록(step), 다시 열 때마다 한 단계씩 가벼워지는 보드(boardLevel), 살아남은 단계를 연결 기록에(web.level)
 
@@ -13,13 +14,14 @@ const read = () => { try { return parseCrumbs(store().getItem(CRUMB_KEY)); } cat
 const write = (s) => { try { store().setItem(CRUMB_KEY, JSON.stringify(s)); } catch {} };
 
 let decided = null;
+const phoneNow = () => { try { return isPhoneDevice({ width: window.innerWidth, height: window.innerHeight, coarse: window.matchMedia('(pointer: coarse)').matches }); } catch { return false; } };
 const touchNow = () => { try { return touchDevice({ coarse: window.matchMedia('(pointer: coarse)').matches, ua: navigator.userAgent, maxTouch: navigator.maxTouchPoints || 0, minScreen: Math.min(screen.width, screen.height) }); } catch { return true; } };
 let leaving = false;
 export function bootState() {
   if (decided) return decided;
-  if (!webPage()) return (decided = { web: false, crashed: false, hidden: false, light: false, report: null, level: 0, ok: false, stepped: false });
+  if (!webPage()) return (decided = { web: false, crashed: false, hidden: false, light: false, report: null, level: 0, ok: false, stepped: false, lite: false, phone: false });
   // P291: 가벼운 보기(단계 올리기, 가벼운 화면)는 휴대폰·태블릿 규칙. PC 브라우저는 늘 0단계(연이어 짧게 죽을 때만 한 단계)
-  const d = bootDecide(read(), Date.now(), { touch: touchNow() });
+  const d = bootDecide(read(), Date.now(), { touch: touchNow(), phone: phoneNow() }); // P293: 휴대폰 페이지면 기록에 남겨 다음 부팅이 빠른 죽음을 가볍게 열기로 본다
   write(d.state);
   // 정상 떠남은 짝 맺기·본인 확인 화면에서도 적는다(그 화면을 다시 읽는 것을 죽음으로 보지 않게)
   // 떠날 때는 pagehide 뒤에 visibilitychange(hidden)가 온다. 떠나는 동안은 살아 있다는 기록으로 정상 떠남을 덮지 않는다
@@ -28,6 +30,13 @@ export function bootState() {
   return (decided = { web: true, ...d });
 }
 export const lightMode = () => bootState().light;
+// P293: 이 부팅이 "가볍게 열림" 휴대폰 맵인가(빠른 죽음 뒤). 사람이 "전부 보기"를 누르면(showAll) 이 페이지는 보통처럼 받고 그린다
+let allShown = false;
+const allSubs = new Set();
+export const liteMode = () => bootState().lite === true;
+export const liteHold = () => liteMode() && !allShown;
+export function showAll() { if (allShown) return; allShown = true; step('all', {}); for (const fn of [...allSubs]) fn(); }
+export const onShowAll = (fn) => { allSubs.add(fn); return () => allSubs.delete(fn); };
 // P86: 이 부팅의 보드 단계(0 전부 켬 … 4)와 단계마다 끄는 것(lib/crumbs.js levelPlan). PC 창은 늘 0
 export const boardLevel = () => bootState().level || 0;
 export const boardPlan = () => levelPlan(boardLevel());
@@ -68,7 +77,7 @@ export function startCrashWatch() {
   if (!b.web || started) return;
   started = true;
   api.onStep = step; // P86: 소켓 열림, 큰 메시지
-  step('boot', { lv: b.level, ok: b.ok ? 1 : 0, tc: touchNow() ? 1 : 0, dpr: window.devicePixelRatio || 1, w: window.innerWidth, h: window.innerHeight });
+  step('boot', { lv: b.level, ok: b.ok ? 1 : 0, tc: touchNow() ? 1 : 0, lt: b.lite ? 1 : 0, dpr: window.devicePixelRatio || 1, w: window.innerWidth, h: window.innerHeight });
   const alive = () => { if (leaving) return; const s = read(), n = crumbAlive(s, sample()); write(n); if (n.ok && !s.ok) noteLevel(n.level, 'alive'); };
   alive();
   setInterval(alive, ALIVE_EVERY_MS);
@@ -82,7 +91,7 @@ export function startCrashWatch() {
       if (sent || busy) return;
       if (id != null && read().sent === id) { sent = true; return; }
       busy = true;
-      api.call('web.boot', { crashed: true, id, light: b.light, crash: b.report, level: b.level }).then(() => { sent = true; write(crumbSent(read(), id)); }, () => {}).finally(() => { busy = false; });
+      api.call('web.boot', { crashed: true, id, light: b.light, lite: b.lite, crash: b.report, level: b.level }).then(() => { sent = true; write(crumbSent(read(), id)); }, () => {}).finally(() => { busy = false; });
     };
     api.on('$open', send);
     if (api.conn && api.conn.phase === 'open') send();

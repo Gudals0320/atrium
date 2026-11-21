@@ -841,7 +841,7 @@ export class WebServer {
         // P87: 같은 죽음(id: 죽은 페이지의 부팅 시각)은 한 번만. 답을 받기 전에 끊긴 창이 다시 붙어 또 보낸다
         const bootId = Number.isFinite(p.id) && p.id > 0 ? Math.round(p.id) : null;
         if (bootId != null && this.remoteLog.entries.some((e) => e.event === 'boot' && e.bootId === bootId)) return { logged: false, dup: true };
-        this.note('boot', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, crashed: true, light: p.light === true, crash: p.crash, level: p.level, bootId });
+        this.note('boot', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, crashed: true, light: p.light === true, ...(p.lite === true ? { lite: true } : {}), crash: p.crash, level: p.level, bootId }); // P293: lite = 가볍게 연 휴대폰 맵
         return { logged: true };
       },
       // P86: 가벼운 보드 단계가 이 기기에서 살아남았다(1분 넘게 살았거나 정상으로 떠남). 기기 연결 하나에 한 번

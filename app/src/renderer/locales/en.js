@@ -2860,5 +2860,7 @@ export default {
     mark: '+{n} with next',
     markTitle: '{n} answer(s) going with the next message · send them now from the "For you" pill at the top',
   },
+  // P293: 휴대폰 세션 맵을 열자마자 페이지가 죽은 다음 열기(가볍게 열림)
+  phoneLite: { text: 'Opened light', all: 'Show all', allTitle: 'The page stopped right after opening, so only Today opened. Tap to load and draw everything' },
 };
 

@@ -18,6 +18,11 @@ export const LEVEL_MAX = 4;
 export const PC_FAST_MS = 15_000;
 export const PC_FAST_CRASHES = 3;
 export const PC_FAST_WINDOW_MS = 3 * 60_000;
+// P293: 휴대폰 세션 맵의 물러섬. 휴대폰 페이지가 열린 지 LITE_FAST_MS 안에 죽으면(빠른 죽음) 다음 열기는 "가볍게 열림"(lite) 맵이다:
+// 오늘 칸만, 움직임·먼 타일·결정 표식 없이, 맵에 꼭 필요하지 않은 답(전달·자원·결정·루프·사용량)은 사람이 "전부 보기"를 누를 때 받는다.
+// 가볍게 연 페이지가 살아남으면(정상으로 떠나거나 LITE_FAST_MS 넘게 산 뒤 죽음) 다음 열기는 다시 보통이다. 가려진 채 죽음은 판단을 바꾸지 않는다.
+// 보드 단계(level)는 휴대폰 맵에 아무것도 끄지 않으므로(main.jsx는 휴대폰에 단계를 걸지 않고 PhoneMap은 단계를 읽지 않는다) 휴대폰 페이지의 죽음으로는 올리지 않는다
+export const LITE_FAST_MS = 15_000;
 // P291: 가벼운 보기를 쓰는 기기인가(휴대폰·태블릿). 손가락 포인터, 휴대폰·태블릿 UA, 또는 터치가 되는 작은 화면
 export function touchDevice({ coarse = false, ua = '', maxTouch = 0, minScreen = Infinity } = {}) {
   if (coarse) return true;
@@ -29,7 +34,7 @@ const levelOf = (v) => (Number.isInteger(v) && v >= 0 ? Math.min(v, LEVEL_MAX) :
 export function parseCrumbs(text) {
   let j = null;
   try { j = JSON.parse(text || 'null'); } catch {}
-  if (!j || typeof j !== 'object' || j.v !== 1) return { v: 1, cur: null, crashes: [], light: false, retry: null, level: 0, ok: false, sent: null, by: null };
+  if (!j || typeof j !== 'object' || j.v !== 1) return { v: 1, cur: null, crashes: [], light: false, retry: null, level: 0, ok: false, sent: null, by: null, lite: false };
   return {
     v: 1,
     cur: j.cur && typeof j.cur === 'object' && Number.isFinite(j.cur.boot) ? j.cur : null,
@@ -40,13 +45,15 @@ export function parseCrumbs(text) {
     ok: j.ok === true,
     sent: num(j.sent), // P87: 백엔드가 받았다고 답한 마지막 죽음(죽은 페이지의 부팅 시각)
     by: j.by === 'pc' || j.by === 'touch' ? j.by : null, // P291: 이 기록을 쓴 규칙(PC는 휴대폰 규칙이 남긴 단계를 쓰지 않는다)
+    lite: j.lite === true, // P293: 다음 휴대폰 열기는 가볍게
   };
 }
 
 // 다음 부팅의 판단. 돌려줌: { crashed, hidden, light, report(백엔드에 보낼 직전 상태, 죽지 않았으면 null), state(새로 적을 상태) }
 // P291: opts.touch = false(PC 브라우저)면 PC 규칙: 가벼운 화면을 쓰지 않고, 휴대폰 규칙이 남긴 단계는 무시하고(0단계),
 // 열린 지 PC_FAST_MS 안에 죽은 것만 세어 PC_FAST_WINDOW_MS 안에 PC_FAST_CRASHES번이면 한 단계 가볍게(그 뒤 다시 센다)
-export function bootDecide(stored, now = Date.now(), { touch = true } = {}) {
+// P293: opts.phone = 이 부팅이 휴대폰 화면(세션 맵)인가. 기록(cur.phone)에 남겨 다음 부팅이 빠른 죽음을 휴대폰 규칙(lite)으로 본다
+export function bootDecide(stored, now = Date.now(), { touch = true, phone = false } = {}) {
   if (touch === false) return pcDecide(stored, now);
   const s = stored || parseCrumbs(null);
   const prev = s.cur;
@@ -56,8 +63,15 @@ export function bootDecide(stored, now = Date.now(), { touch = true } = {}) {
   const at = crashed ? num(prev.alive) ?? prev.boot : null;
   const crashes = s.crashes.filter((t) => now - t < CRASH_KEEP_MS);
   if (crashed && !hidden && !crashes.includes(at)) crashes.push(at);
+  // P293: 휴대폰 페이지의 빠른 죽음 → 가볍게. 살아남은 휴대폰 페이지(정상 떠남, 오래 산 뒤 죽음) → 보통. 가려진 채 죽음은 그대로
+  const wasPhone = !!prev && (prev.phone === true || prev.view === 'map' || prev.view === 'list'); // 옛 기록(phone 없음)은 휴대폰 화면 이름으로
+  const up = crashed ? Math.max(0, at - prev.boot) : null;
+  const fast = crashed && !hidden && wasPhone && up < LITE_FAST_MS;
+  const lite = fast ? true : crashed && hidden ? s.lite === true : false;
   let light = s.light;
-  if (!light && crashed && !hidden) {
+  // P293: 휴대폰에는 "보드로 다시 열기"가 없어(P87) 가벼운 화면 표시가 걸리면 풀리지 않았다. 휴대폰 페이지가 살아남으면 푼다
+  if (light && wasPhone && !lite && !(crashed && hidden)) light = false;
+  if (!light && crashed && !hidden && !wasPhone) {
     if (prev.retryBoot === true) light = true; // "보드로 다시 열기"로 연 보드가 또 죽었다
     else if (crashes.length >= 2 && crashes[crashes.length - 1] - crashes[crashes.length - 2] <= CRASH_WINDOW_MS) light = true;
   }
@@ -65,13 +79,13 @@ export function bootDecide(stored, now = Date.now(), { touch = true } = {}) {
   const retry = light ? null : s.retry;
   // P86: 보드로 연 페이지가 죽으면(가려진 채 죽음, 목록에서 죽음은 빼고) 다음 보드는 한 단계 가볍게. 살아남은 단계는 ok로 기억한다
   let level = levelOf(s.level), ok = s.ok === true, stepped = false;
-  if (crashed && !hidden && prev.mode !== 'light' && prev.view !== 'list' && prev.view !== 'session') {
+  if (crashed && !hidden && !wasPhone && prev.mode !== 'light' && prev.view !== 'list' && prev.view !== 'map' && prev.view !== 'session') {
     const at = levelOf(prev.level);
     if (at >= level) { level = Math.min(at + 1, LEVEL_MAX); ok = false; stepped = level !== at; }
   }
-  const state = { v: 1, cur: { boot: now, alive: now, clean: false, light, retryBoot: retry != null, mode: light ? 'light' : 'board', level }, crashes: light ? [] : crashes.slice(-10), light, retry, level, ok, sent: num(s.sent), by: 'touch' };
+  const state = { v: 1, cur: { boot: now, alive: now, clean: false, light, retryBoot: retry != null, mode: light ? 'light' : 'board', level, ...(phone ? { phone: true } : {}), ...(lite ? { lite: true } : {}) }, crashes: light ? [] : crashes.slice(-10), light, retry, level, ok, sent: num(s.sent), by: 'touch', lite };
   // P87: reportId는 죽은 페이지의 부팅 시각. 백엔드는 같은 id를 한 번만 남기고(web.boot), 받았다는 답이 오면 sent에 적는다(crumbSent)
-  return { crashed, hidden, light, report, reportId: crashed ? prev.boot : null, state, level, ok, stepped };
+  return { crashed, hidden, light, report, reportId: crashed ? prev.boot : null, state, level, ok, stepped, lite, phone: !!phone };
 }
 function pcDecide(stored, now) {
   const s0 = stored || parseCrumbs(null);
@@ -82,7 +96,7 @@ function pcDecide(stored, now) {
   const hidden = crashed && prev.hidden === true;
   const at = crashed ? num(prev.alive) ?? prev.boot : null;
   const up = crashed ? Math.max(0, at - prev.boot) : null;
-  const fast = crashed && !hidden && up < PC_FAST_MS && prev.mode !== 'light' && prev.view !== 'list' && prev.view !== 'session';
+  const fast = crashed && !hidden && up < PC_FAST_MS && prev.mode !== 'light' && prev.view !== 'list' && prev.view !== 'map' && prev.view !== 'session';
   let crashes = s.crashes.filter((t) => now - t < PC_FAST_WINDOW_MS);
   if (fast && !crashes.includes(at)) crashes.push(at);
   let level = levelOf(s.level), ok = s.ok === true, stepped = false;
@@ -93,7 +107,7 @@ function pcDecide(stored, now) {
   }
   const report = crashed ? reportOf(prev, now, { boots: crashes.length }) : null;
   const state = { v: 1, cur: { boot: now, alive: now, clean: false, light: false, retryBoot: false, mode: 'board', level }, crashes: crashes.slice(-10), light: false, retry: null, level, ok, sent: num(s.sent), by: 'pc' };
-  return { crashed, hidden, light: false, report, reportId: crashed ? prev.boot : null, state, level, ok, stepped };
+  return { crashed, hidden, light: false, report, reportId: crashed ? prev.boot : null, state, level, ok, stepped, lite: false, phone: false };
 }
 
 // P86: 단계 기록. 보드를 여는 단계마다(소켓 열림, 큰 메시지, 판 적용, 첫 그리기, 화면 맞춤, 터미널 붙기, 첫 프레임 쓰기) 그 자리에서 적는다(2초 주기와 별도).
@@ -150,6 +164,7 @@ export function reportOf(prev, now, { boots = 0 } = {}) {
   if (prev.hidden === true) r.hidden = true;
   if (prev.light === true) r.light = true;
   if (prev.retryBoot === true) r.retry = true;
+  if (prev.lite === true) r.lite = true; // P293: 가볍게 연 휴대폰 맵에서 죽음
   if (levelOf(prev.level) > 0) r.level = levelOf(prev.level); // P86: 그 페이지의 보드 단계
   const steps = keepSteps((Array.isArray(prev.steps) ? prev.steps : []).map((x) => x && stepOf(x.s, x, x.t)).filter(Boolean), STEP_REPORT);
   if (steps.length) r.steps = steps; // P86: 죽기 직전의 마지막 단계들

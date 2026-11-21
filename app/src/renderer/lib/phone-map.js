@@ -5,7 +5,8 @@ import { zoomAt, panBy, fitView, centerOn, clampK } from './mission-terr.js';
 // LONG_MS 동안 SLOP 안에 머물면 길게 누르기(미리 보기). 그 전에 SLOP을 넘으면 끌기(시점 이동), 그 전에 떼면 누르기(세션 열기)
 // DOCK = 맞춤에서 아래 줌 단추 자리로 비우는 높이
 // P280: PEEK = 두 열 맞춤에서 오른쪽 끝에 보이게 남기는 이전 칸 폭(화면 px, 이전 카드 왼쪽 가장자리부터)
-export const PM = { LONG_MS: 480, SLOP: 10, PAD: 12, DOCK: 58, FIT_MAX: 1, GO_K: 1.1, SAVE_MS: 250, PEEK: 34 };
+// P293: EARLY_MS = 첫 그리기 뒤 이전 칸을 그리기까지, CALM_MS = 첫 그리기 뒤 움직임(일하는 빛)을 켜기까지
+export const PM = { LONG_MS: 480, SLOP: 10, PAD: 12, DOCK: 58, FIT_MAX: 1, GO_K: 1.1, SAVE_MS: 250, PEEK: 34, EARLY_MS: 700, CALM_MS: 3000 };
 export const VIEW_KEY = 'atrium.phoneMap.view';
 
 // 손가락 판정. n = 닿아 있는 손가락 수(이번 손짓에서 가장 많았던 수), dx·dy = 처음 자리에서 움직인 거리, dt = 누른 뒤 지난 시간, lifted = 뗐는가
@@ -65,3 +66,29 @@ export function saveView(store, size, v) {
 export const clearView = (store, size) => { try { const all = JSON.parse(store.getItem(VIEW_KEY) || '{}') || {}; delete all[sizeKey(size)]; store.setItem(VIEW_KEY, JSON.stringify(all)); } catch { /* 지우지 못해도 된다 */ } };
 // 처음 보기: 이 화면 크기에서 기억한 보기, 없으면 맞춤(P280: lay를 주면 두 열 맞춤 mapFit, 상자를 주면 phoneFit)
 export const openView = (store, size, layOrBounds) => loadView(store, size) || (layOrBounds && layOrBounds.bounds ? mapFit(layOrBounds, size.w, size.h) : phoneFit(layOrBounds, size.w, size.h));
+
+// ---------- P293: 휴대폰 맵 열기 다이어트와 가볍게 열기 ----------
+// 열기 계획. stage = 첫 그리기 뒤 지난 단계(0: 막 그림, 1: EARLY_MS 지남, 2: CALM_MS 지남), lite = 가볍게 열림이고 "전부 보기"를 아직 누르지 않았다.
+// → { earlier: 이전 칸을 그린다, motion: 움직임(일하는 빛)을 켠다, tiles: 먼 타일을 그린다, marks: 결정 표식·알약을 그린다, lite }
+// 보통 열기: 오늘 칸과 표식 → (EARLY_MS) 이전 칸 → (CALM_MS) 움직임. 가볍게: 오늘 칸만, 움직임·먼 타일·표식 없이(전부 보기를 누르면 보통과 같다)
+export function openPlan({ lite = false, stage = 0 } = {}) {
+  if (lite) return { earlier: false, motion: false, tiles: false, marks: false, lite: true };
+  return { earlier: stage >= 1, motion: stage >= 2, tiles: true, marks: true, lite: false };
+}
+// 두 칸 배치(lay.ncol 2)에서 이전 칸(오른쪽)에 놓인 카드 id. 한 칸이면 빈 Set(가릴 것이 없다)
+export function earlierIds(lay) {
+  const out = new Set();
+  if (!lay || lay.ncol !== 2 || !lay.cards) return out;
+  for (const [id, b] of lay.cards) if (b.x >= lay.colDx) out.add(id);
+  return out;
+}
+// 그래프를 다시 받을 까닭의 열쇠(Map 객체가 바뀐 것이 아니라 내용이 바뀐 것만). 처음 불러오기로 같은 내용이 다시 채워지면 열쇠가 같아 다시 받지 않는다
+// (연결 직후 thread.list·loop.list가 채워지며 mission.graph를 한 번 더 받던 것, 실제 판 기록 2.1초의 119KB). 연결·루프는 내용, Thread는 마지막 줄
+export function graphDepsKey({ links, thread, loops } = {}) {
+  const vals = (m) => (m && typeof m.values === 'function' ? [...m.values()] : Array.isArray(m) ? m : []);
+  const lk = vals(links).map((l) => JSON.stringify(l)).sort().join('\n');
+  const lp = vals(loops).map((l) => JSON.stringify(l)).sort().join('\n');
+  const th = vals(thread);
+  const tl = th.length ? th[th.length - 1] : null;
+  return [lk, lp, tl ? `${tl.itemId}:${tl.seq}` : ''].join('|');
+}
