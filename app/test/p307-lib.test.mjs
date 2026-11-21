@@ -84,7 +84,7 @@ test('연결: 맵 폴더 머리 칩(가볍게 열림 넘김), 휴대폰 뿌리�
   const plan = read('Plan.jsx');
   assert.equal((plan.match(/openPlanBoard\((c|m)\.planId, e\.currentTarget\)/g) || []).length, 2, '실행 카드와 n개 더 줄');
   const st = read('store.js');
-  assert.match(st, /export function openPlanBoard\(planId, anchor = null\) \{\n  if \(phonePlanHosts > 0\)/);
+  assert.match(st, /export function openPlanBoard\(planId, anchor = null\) \{\r?\n  if \(phonePlanHosts > 0\)/);
 });
 
 test('두 사전에 휴대폰 목표 글', async () => {
