@@ -113,8 +113,8 @@ async function board({ dir = repo(), settings = { mergerMode: 'on' }, jobs, spaw
   const U = () => b.branch.units;
   const worker = (name, wt, { parent, result = 'ok', text = null, kind = 'claude' } = {}) => add(name, { cwd: wt, kind, parentSessionId: parent.sessionId, onText: async (t, s) => { if (t.includes('맡긴 일 u')) s.doneOut = await U().doneVerb(s, { result, text: text || name + ': 브랜치 worktree-' + name + ' 끝냄; 시험 통과' }); } });
   const mergerAct = (act) => { b.onSpawn = (s) => { s.onText = async (t, x) => { const m = /합치는 일 (u[0-9a-f]+)/.exec(t); if (!m) return; const u = b.store.getUnit(m[1]); const [r, txt] = await act(u, x); x.mergeOut = x.mergeOut || []; x.mergeOut.push(await U().doneVerb(x, { result: r, text: txt })); }; }; };
-  // P290: 합치기 정리 알림(merger가 닫힐 때)은 따로 본다(sumS)
-  const isSum = (d) => /^\[Atrium 보드\] 합치기 정리: /.test(d.text);
+  // P290: 병합 정리 알림(merger가 닫힐 때)은 따로 본다(sumS)
+  const isSum = (d) => /^\[Atrium 보드\] 병합 정리: /.test(d.text);
   const toS = (s) => store.db.prepare('SELECT * FROM deliveries WHERE session_id = ?').all(s.sessionId).filter((d) => !isSum(d));
   const sumS = (s) => store.db.prepare('SELECT * FROM deliveries WHERE session_id = ?').all(s.sessionId).filter(isSum);
   const stop = async () => { b.stopped = true; b.queue.stop(); b.branch.notices.stop(); U().stops.stop(); await tick(200); store.close(); };
@@ -157,7 +157,7 @@ test('P267 이름·판정·일 글: 워크스페이스+브랜치 이름, 판정 
   assert.equal(mergeVerdict({ mode: 'ask', answer: 'on', probe: p, target: 'dev' }).route, true);
   assert.deepEqual(mergeVerdict({ mode: 'ask', answer: 'off', probe: p, target: 'dev' }), { route: false, why: 'answered_off', ask: false });
   const job = mergeJobText({ child: 'p1', parent: 'lead', worktree: 'C:/r/.claude/worktrees/p1', branch: 'worktree-p1', tip: 'abc', ahead: 2, dirty: 0, target: 'dev', holder: 'C:/r', mergerWorktree: 'C:/r/.atrium/merge/dev', where: 'worktree', push: true, guide: 'docs/merge.md', configSource: '.atrium/merge.json', doneText: '끝냈다' });
-  assert.match(job, /^합치기: @p1 \(worktree-p1 → dev\)/);
+  assert.match(job, /^병합: @p1 \(worktree-p1 → dev\)/);
   for (const re of [/맡긴 부모: @lead/, /하위의 워크트리: C:\/r\/\.claude\/worktrees\/p1/, /끝 커밋 abc/, /앞선 커밋 2개/, /커밋 안 한 변경 0개/, /걸린 체크아웃: C:\/r/, /너의 워크트리: C:\/r\/\.atrium\/merge\/dev/, /push\): 켜짐/, /저장소 안내: docs\/merge\.md/, /## @p1의 done 글\n끝냈다$/]) assert.match(job, re);
   assert.match(mergeJobText({ child: 'p1', parent: 'l', worktree: 'w', branch: 'b', target: 'dev', holder: null, mergerWorktree: 'm', where: 'worktree', push: false }), /어디에도 걸려 있지 않다: 너의 워크트리가 건다[\s\S]*push\): 꺼짐/);
   const h = mergeHeader({ unitId: 'u1', parent: 'lead', child: 'p1' });
@@ -179,7 +179,7 @@ test('P267 설정·계약·스킬: mergerMode 기본 ask, 모델 sonnet medium, 
   assert.equal(MERGER_JOBS, 5);
   assert.deepEqual(VERBS.find((v) => v.name === 'guide').args, ['[merger]', '[--json]']);
   const sk = boardSkill();
-  assert.match(sk, /브랜치에서 일한 워커가 \x60atrium done ok\x60로 닫으면 보드가 그 워커를 재우고 합치기를 merger에게 맡긴다\. 합쳐지면 보드가 그 워커를 닫고 보관한다\./);
+  assert.match(sk, /브랜치에서 일한 워커가 \x60atrium done ok\x60로 닫으면 보드가 그 워커를 재우고 병합을 merger에게 맡긴다\. 합쳐지면 보드가 그 워커를 닫고 보관한다\./);
   assert.match(sk, /그 밖의 끝난 워커는 끄지 않고 둔다\(사람이 끄라고 할 때만 \x60atrium child-kill <이름>\x60/);
   assert.doesNotMatch(sk, /끝난 워커는 끄지 않고 둔다\. 사람이 끄라고 할 때만/);
 });
@@ -229,7 +229,7 @@ test('P267 흐름: 첫 done ok에 merger를 띄우고 하위를 재운다, 합�
     await until(() => ms.texts.length >= 1);
     const job = ms.texts[0];
     assert.match(job, /^\[Atrium 보드\] 관계: 너는 이 워크스페이스의 merger다\. 아래는 @lead가 맡긴 @p1의 결과를 합치는 일 u/);
-    assert.match(job, /합치기: @p1 \(worktree-p1 → dev\)/); assert.match(job, /p1: 브랜치 worktree-p1 끝냄; 시험 통과/);
+    assert.match(job, /병합: @p1 \(worktree-p1 → dev\)/); assert.match(job, /p1: 브랜치 worktree-p1 끝냄; 시험 통과/);
     assert.match(job, /# merger 안내/, '처음 일에는 안내');
     await until(() => ms.mergeOut && ms.mergeOut.length === 1);
     assert.equal(ms.mergeOut[0].claimedBy, 'record');
@@ -249,7 +249,7 @@ test('P267 흐름: 첫 done ok에 merger를 띄우고 하위를 재운다, 합�
     assert.equal(b.killed.find((x) => x.name === sp.name).after, 'archive');
     // P290: merger가 닫힐 때 판이 부모에게 정리 알림 하나
     await until(() => sumS(lead).length === 1);
-    assert.match(sumS(lead)[0].text, /^\[Atrium 보드\] 합치기 정리: @merger-.*가 닫히기 전에 합친 것 1개\n- @p1: ok, 합침 [0-9a-f]{9} → dev/);
+    assert.match(sumS(lead)[0].text, /^\[Atrium 보드\] 병합 정리: @merger-.*가 닫히기 전에 합친 것 1개\n- @p1: ok, 합침 [0-9a-f]{9} → dev/);
     const st = M().status();
     assert.equal(st.mergers[0].open, false); assert.equal(st.mergers[0].gen, 1);
   } finally { await stop(); }
@@ -286,7 +286,7 @@ test('P267 실패·고침 필요: merger failed는 부모에게만 가고 하위
     await assign(b, lead, 'f1');
     await until(() => toS(lead).length === 1, 8000);
     const msg = toS(lead)[0].text;
-    assert.match(msg, /^\[Atrium 보드\] @merger-.*가 일 u[0-9a-f]+\("합치기: @f1 \(worktree-f1 → dev\)"\)을 닫았다: failed\n결정 필요: a\.txt가 dev와 겹친다/);
+    assert.match(msg, /^\[Atrium 보드\] @merger-.*가 일 u[0-9a-f]+\("병합: @f1 \(worktree-f1 → dev\)"\)을 닫았다: failed\n결정 필요: a\.txt가 dev와 겹친다/);
     assert.match(msg, /@f1는 재운 채 둔다\(워크트리 .*\.claude\/worktrees\/f1, 브랜치 worktree-f1\)/); assert.match(msg, /atrium prompt f1 "<할 일>"/);
     assert.equal(isBoardNotice(msg), true);
     await until(() => b.slept.some((x) => x.name === 'f1'));
@@ -399,7 +399,7 @@ test('P267 멈춤 알림: merger가 done 없이 쉬면 그 일의 부모에게, 
     await assign(b, lead, 's1');
     await until(() => got.length === 1);
     await until(() => toS(lead).length === 1, 5000);
-    assert.match(toS(lead)[0].text, /^\[Atrium 보드\] 맡긴 일이 멈췄다: @merger-.*의 일 u[0-9a-f]+\("합치기: @s1 \(worktree-s1 → dev\)"\): 보고\(atrium done\) 없이 턴을 끝내고 쉰다/);
+    assert.match(toS(lead)[0].text, /^\[Atrium 보드\] 맡긴 일이 멈췄다: @merger-.*의 일 u[0-9a-f]+\("병합: @s1 \(worktree-s1 → dev\)"\): 보고\(atrium done\) 없이 턴을 끝내고 쉰다/);
     const w2 = worker('s2', worktree(dir, 's2'), { parent: lead });
     await assign(b, lead, 's2');
     await until(() => w2.doneOut);

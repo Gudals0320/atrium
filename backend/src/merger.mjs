@@ -103,7 +103,7 @@ export function mergeVerdict({ mode = 'ask', answer = null, probe = null, repoCo
 export function mergeJobText(x) {
   const yes = (v) => (v ? '켜짐' : '꺼짐');
   const lines = [
-    '합치기: @' + x.child + ' (' + x.branch + ' → ' + x.target + ')',
+    '병합: @' + x.child + ' (' + x.branch + ' → ' + x.target + ')',
     '',
     '- 맡긴 부모: @' + x.parent,
     '- 하위: @' + x.child + (x.childKind && x.childKind !== 'claude' ? ' (종류 ' + x.childKind + ')' : ''),
@@ -126,7 +126,7 @@ export function mergeHeader({ unitId, parent, child }) {
   ].join('\n');
 }
 // 하위 일 머리 셋째 줄 끝(브랜치에서 일하는 하위, 기능이 꺼지지 않은 워크스페이스)
-export const MERGE_CHILD_TAIL = '브랜치에서 일했으면 done ok 뒤 보드가 너를 재우고 합치기를 merger에게 맡긴다: done 글에 브랜치, 끝 커밋, 돌린 시험과 결과, 사용자가 얻는 것 한 줄을 적는다.';
+export const MERGE_CHILD_TAIL = '브랜치에서 일했으면 done ok 뒤 보드가 너를 재우고 병합을 merger에게 맡긴다: done 글에 브랜치, 끝 커밋, 돌린 시험과 결과, 사용자가 얻는 것 한 줄을 적는다.';
 // merger가 failed로 닫은 글 끝에 붙는 줄(부모가 받는다)
 export function mergeFailLines({ child, worktree, branch, merger }) {
   return ['[Atrium 보드] @' + merger + '가 합치지 못했거나 고침이 필요하다. @' + child + '는 재운 채 둔다(워크트리 ' + slash(worktree) + ', 브랜치 ' + branch + '). 고칠 것은 ' + BT + 'atrium prompt ' + child + ' "<할 일>"' + BT + '로 다시 시킨다(깨어나 같은 워크트리에서 잇는다). 다 고쳐 done ok가 오면 보드가 다시 merger에게 맡긴다.'];
@@ -220,7 +220,7 @@ export function summaryLine(u) {
 // 부모 하나에게 가는 정리 알림(순수). extra: 문서 규칙 꼬리 줄
 export function mergeSummaryText({ merger, units, extra = [] }) {
   const ok = units.filter((u) => u.status !== 'failed').length; const bad = units.length - ok;
-  const head = '[Atrium 보드] 합치기 정리: @' + merger + '가 닫히기 전에 합친 것 ' + ok + '개' + (bad ? ', 실패 ' + bad + '개' : '');
+  const head = '[Atrium 보드] 병합 정리: @' + merger + '가 닫히기 전에 합친 것 ' + ok + '개' + (bad ? ', 실패 ' + bad + '개' : '');
   return [head, ...units.map(summaryLine), ...(extra.length ? ['', ...extra] : [])].join('\n');
 }
 
@@ -514,7 +514,7 @@ export class Merger {
       const line = mergeUnverifiedLine({ merger: mergerName, child: m.child || '?', tip: m.tip, target: m.target, hash: c.hash, contains: c.contains });
       st.updateUnit(unit.id, { meta: { ...m, summary: 'pending', merger: mergerName, failed: { at: Date.now(), line: clip(line.replace(/^\[Atrium 보드\] /, ''), 200), unverified: true, said: clip(firstLine, 200), hash: c.hash, contains: c.contains } } });
       try { st.addEvent(caller.sessionId, 'merge_unverified', { unitId: unit.id, target: m.target, tip: m.tip, hash: c.hash, contains: c.contains }); } catch {}
-      try { st.addNews({ sessionId: caller.sessionId, name: mergerName, at: Date.now(), kind: 'merge', task: '합치기: @' + (m.child || '?'), text: '@' + (m.child || '?') + ' 합치기 확인 실패: 끝 커밋 ' + short(m.tip) + (c.contains === false ? '이 ' + m.target + '(' + short(c.hash) + ')에 없다' : '을 ' + (m.target || '?') + '에서 확인하지 못했다'), result: 'failed' }); } catch (e) { this.log('merge news ' + e.message); }
+      try { st.addNews({ sessionId: caller.sessionId, name: mergerName, at: Date.now(), kind: 'merge', task: '병합: @' + (m.child || '?'), text: '@' + (m.child || '?') + ' 병합 확인 실패: 끝 커밋 ' + short(m.tip) + (c.contains === false ? '이 ' + m.target + '(' + short(c.hash) + ')에 없다' : '을 ' + (m.target || '?') + '에서 확인하지 못했다'), result: 'failed' }); } catch (e) { this.log('merge news ' + e.message); }
       this.log('merge ' + unit.id + ' ok by ' + mergerName + ' but not on ' + m.target + ' (contains ' + c.contains + ')');
       this.keepAsleep(m.childId);
       this.changed(m.ws);
@@ -535,7 +535,7 @@ export class Merger {
   async finishOk(caller, unit, check) {
     const st = this.store(); const m = unit.meta || {};
     const hash = check ? check.hash : null;
-    try { st.addNews({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, at: Date.now(), kind: 'merge', task: '합치기: @' + (m.child || '?'), text: '@' + (m.child || '?') + ' 합침 ' + short(hash) + (m.target ? ' → ' + m.target : ''), result: 'ok' }); } catch (e) { this.log('merge news ' + e.message); }
+    try { st.addNews({ sessionId: caller.sessionId, name: shownName(caller) || caller.name, at: Date.now(), kind: 'merge', task: '병합: @' + (m.child || '?'), text: '@' + (m.child || '?') + ' 합침 ' + short(hash) + (m.target ? ' → ' + m.target : ''), result: 'ok' }); } catch (e) { this.log('merge news ' + e.message); }
     this.changed(m.ws);
     if (m.childId) await this.closeChild(m.childId);
   }

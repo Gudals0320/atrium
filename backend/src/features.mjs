@@ -13,7 +13,7 @@ import { Kanbans } from './kanban.mjs';
 import { LoopEngine, normalizeTrigger, normalizeStop, describeLoop, describeLoopMsg } from './loops.mjs';
 import { confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { missionGraph, CALLED_MS } from './mission.mjs';
-import { Settings } from './settings.mjs';
+import { Settings, agentsTable } from './settings.mjs'; // P313: 보조 에이전트 표
 import { Launchers, HARNESSES } from './launchers.mjs'; // P33: 호출자
 import { CodexModels } from './codex-models.mjs'; // P72: Codex 모델 목록
 import { AgyModels, runAgyModels } from './agy-models.mjs'; // P192: AGY 모델 목록
@@ -141,7 +141,7 @@ export function attachFeatures(b, { timers = true } = {}) {
     'mission.graph': () => missionGraph({
       sessions: [...b.sessions.values()].map((s) => b.summary(s)), links: b.linksOpen(), thread: f.thread.list({ limit: 500 }).items, loops: [...f.loops.loops.values()], relations: b.store.relationRows ? b.store.relationRows() : [], called: { kids: b.store.branchRows ? b.store.branchRows() : [], assigns: b.store.assignSenders ? b.store.assignSenders(Date.now() - CALLED_MS) : [] } }), // P156: 일 관계, P157: 하위를 불렀던 기록
     // I7 설정(트레이 상주)
-    'settings.get': () => ({ settings: f.settings.get(), schema: f.settings.describe() }),
+    'settings.get': () => ({ settings: f.settings.get(), schema: f.settings.describe(), agents: agentsTable() }), // P313: 보조 에이전트 표(설정 › 에이전트)
     'settings.set': (p) => ({ settings: f.settings.set(p) }),
     // P33 호출자
     'launcher.list': () => f.launchers.list(),

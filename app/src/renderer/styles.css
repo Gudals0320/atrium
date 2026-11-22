@@ -2912,3 +2912,11 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-plan-more b { color: var(--text); font-weight: 600; }
 /* P310: 사람이 정한 크기 표시(노드 메뉴 안에만) */
 .mt-hand-dot { display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--teal); vertical-align: middle; }
+
+/* P313: 설정 › 에이전트 탭. 보조 에이전트마다 한 칸(이름·한 줄 설명 머리 + 공용 설정 격자 + 그만의 칸). 칸 사이는 얇은 선 */
+.mt-agents > .mt-set-note { margin: 0 0 10px; }
+.mt-agent { padding: 10px 0 12px; border-top: 1px solid var(--panel-line); }
+.mt-agent:first-of-type { border-top: 0; padding-top: 2px; }
+.mt-agent-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 10px; }
+.mt-agent-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.mt-agent-desc { font-size: 12px; color: var(--dim); line-height: 1.4; }
