@@ -1,7 +1,9 @@
 // P211: 구독 사용량(백엔드 usage.mjs의 usage.get·usage.updated 값)을 창에서 보이는 순수 함수. 위 막대 알약, 펼침, 호출자 옆 남은 양, 알림 글이 쓴다.
 // 단위 시험 app/test/p211-lib.test.mjs
 export const PROVIDERS = ['claude', 'codex', 'agy'];
-export const PROVIDER_NAME = { claude: 'Claude', codex: 'Codex', agy: 'AGY' };
+export const PROVIDER_NAME = { claude: 'Claude', codex: 'Codex', agy: 'AGY', hermes: 'Hermes', deepseek: 'DeepSeek', openrouter: 'OpenRouter' };
+// P314: 알약에 나오지 않고 펼침 아래쪽에만 나오는 것(Hermes 계정 한도, 키로 읽는 잔액). 백엔드 usage.mjs EXTRAS와 같다
+export const EXTRAS = ['hermes', 'deepseek', 'openrouter'];
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // 색 기준(사용자 상태 줄과 같다): 60% 미만 초록(ok), 60~84 노랑(warn), 85 이상 빨강(high). 모르면 none
@@ -17,16 +19,18 @@ export const livePct = (w, now = Date.now()) => (!w || !num(w.usedPct) ? null : 
 // 그 밖 구독은 받은 창 그대로(Claude는 요금제마다 오는 창만). → [{ ...창, kind: '5h'|'day'|'week'|창 이름 }] 5시간·하루·주간·그 밖 순
 const AGY_SHOWN = { 'gemini-5h': '5h', 'gemini-weekly': 'week' };
 const KIND_ORDER = { '5h': 0, day: 1, week: 2 };
-export function shownWindows(provider, entry) {
+// P314: Claude 탐침의 모델별 주간 창(week:<모델>)은 펼침에만 보인다(all: true). 알약·남은 양은 5시간·주간·하루만(지금처럼)
+export function shownWindows(provider, entry, { all = false } = {}) {
   const list = entry && Array.isArray(entry.windows) ? entry.windows : [];
   const p = provider || (entry && entry.provider);
   const out = [];
   for (const w of list) {
     if (!w) continue;
+    if (/^week:/.test(String(w.id))) { if (all) out.push({ ...w, kind: w.id }); continue; }
     if (p === 'agy') { const k = AGY_SHOWN[w.id]; if (k) out.push({ ...w, kind: k }); continue; }
     out.push({ ...w, kind: w.id });
   }
-  return out.sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9));
+  return out.sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9)); // 정렬은 안정적이라 모델별 주간은 받은 차례대로 뒤에
 }
 // 구독 하나의 가장 높은 창(보이는 창 가운데) → { w, pct } | null
 export function topOf(entry, now = Date.now(), provider = null) {
@@ -72,6 +76,8 @@ const GROUP = { gemini: 'Gemini', '3p': '3p' };
 export function windowLabel(id, t = (k) => k) {
   const k = windowKey(id);
   if (k) return t(k);
+  const wm = /^week:(.+)$/.exec(String(id || '')); // P314: Claude 모델별 주간 → "주간 (Fable)"
+  if (wm) return `${t('usage.win.week')} (${wm[1]})`;
   const m = /^(.+)-(5h|weekly|daily)$/.exec(String(id || ''));
   if (!m) return String(id || '');
   const g = GROUP[m[1]] || m[1].replace(/^gemini-/, 'Gemini ');
@@ -126,4 +132,40 @@ export function repPart(view, rep = REP_DEFAULT, now = Date.now()) {
   const parts = pillOf(view, now).parts;
   for (const k of repOrder(rep)) { const x = parts.find((p) => p.provider === k); if (x) return { ...x, picked: k === validRep(rep) }; }
   return null;
+}
+
+// ---------- P314: 펼침 아래쪽 줄(알약 밖) ----------
+// 표시 규칙: 위 알약에는 Claude·Codex·AGY만(PROVIDERS). 그 밖(Hermes, 키로 읽는 잔액)은 펼침 아래쪽.
+// Hermes가 Codex와 같은 ChatGPT 계정으로 확인되면(백엔드 sameAs: 'codex') 따로 줄을 두지 않고 Codex 칸에 한 줄 덧붙인다
+// → [{ provider, name, type: 'windows'|'balance', entry }]
+export function extraRows(view) {
+  const p = (view && view.providers) || {};
+  const out = [];
+  for (const k of EXTRAS) {
+    const e = p[k];
+    if (!e) continue;
+    if (k === 'hermes' && e.sameAs === 'codex' && p.codex) continue;
+    if (e.balance && Number.isFinite(Number(e.balance.total))) { out.push({ provider: k, name: PROVIDER_NAME[k], type: 'balance', entry: e }); continue; }
+    if (shownWindows(k, e).length) out.push({ provider: k, name: PROVIDER_NAME[k], type: 'windows', entry: e });
+  }
+  return out;
+}
+// 이 구독 칸에 합쳐진 다른 하네스 이름들(예 codex → ['Hermes'])
+export function mergedInto(view, provider) {
+  const p = (view && view.providers) || {};
+  return EXTRAS.filter((k) => p[k] && p[k].sameAs === provider && p[provider]).map((k) => PROVIDER_NAME[k]);
+}
+// 잔액 글 → { key, vars }(사전 usageProbe.balance)
+export function balanceOf(b) {
+  if (!b || !Number.isFinite(Number(b.total))) return null;
+  const n = Number(b.total);
+  return { key: 'usageProbe.balance', vars: { n: n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), cur: b.currency || '' } };
+}
+// 출처 열쇠(사전 usage.source.*). 모르는 출처는 null
+const SOURCES = ['statusline', 'rollout', 'probe:codex', 'probe:claude', 'probe:hermes', 'probe:balance'];
+export const sourceKey = (s) => (!SOURCES.includes(s) ? null : s.startsWith('probe:') ? `usageProbe.source.${s}` : `usage.source.${s}`);
+// 묻는 중인가(백엔드 usage.get probing). 잔액 탐침(balance)은 DeepSeek·OpenRouter 칸에 보인다
+export function probingOf(view, provider) {
+  const list = (view && Array.isArray(view.probing)) ? view.probing : [];
+  return list.includes(provider) || (list.includes('balance') && (provider === 'deepseek' || provider === 'openrouter'));
 }

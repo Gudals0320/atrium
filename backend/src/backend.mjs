@@ -35,6 +35,7 @@ import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './work
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
+import { probeCodex, probeClaude, probeHermes, probeBalance, sameAccount, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
@@ -225,8 +226,19 @@ export class Backend {
       store: this.store, broadcast: (e, v) => this.api.broadcast(e, v), settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}),
       codexHome: cfg.usageCodexHome, claudeUserSettings: cfg.claudeUserSettings, agyUserSettings: path.join(cfg.agyHome || agyHomeOf(), 'settings.json'),
       script: writeStatusLineScript(path.join(cfg.dataDir, 'plugin')), node: process.execPath, agyShim: process.platform === 'win32' ? writeStatusLineShim(path.join(cfg.dataDir, 'plugin')) : null, pollMs: cfg.usagePollMs, log: (m) => this.log(m),
+      // P314: 값이 낡으면 하네스 자신의 사용량 명령으로 묻는다. 그 종류의 판 세션이 일하는 중이면 묻지 않는다(곧 상태 줄·rollout이 준다)
+      probe: cfg.usageProbe === false ? {} : {
+        codex: () => probeCodex({ command: cfg.usageCodexCommand || 'codex' }),
+        claude: () => probeClaude({ command: cfg.usageClaudeCommand || 'claude', dir: path.join(cfg.dataDir, 'usage-probe'), projectsDir: cfg.usageClaudeProjects }),
+        hermes: () => probeHermes({ command: cfg.usageHermesCommand || 'hermes' }),
+        balance: () => { const sr = findSecretRun(); return sr ? probeBalance({ secretRun: sr, grant: cfg.usageGrant || 'atrium-usage' }) : Promise.resolve(null); },
+      },
+      busy: (k) => [...this.sessions.values()].some((s) => !s.closedAt && (s.kind || 'claude') === k && s.rt && s.rt.term && s.rt.term.status === 'working'),
+      hermesWanted: () => !!(this.features && this.features.settings && this.features.settings.get().usageHermes) || [...this.sessions.values()].some((s) => !s.closedAt && s.kind === 'hermes'),
+      sameAccount,
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
+    this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
     // P298: Hermes의 바쁨 읽개(busy 칸 { reader: 'hermes' }). 그 세션이 띄운 하위 에이전트가 돌거나 턴 임대가 살아 있으면 바쁨
     registerInnerReader('hermes', ({ session }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesBusyOf({ id, home: this.hermesHome() }) : null; });
     // P300: Hermes의 안 진행 읽개(같은 busy 칸 { reader: 'hermes' }). OMH dag-ulw 실행 기록, 없으면 Hermes 자체 위임(state.db)
