@@ -2985,10 +2985,22 @@ export default {
     permissionInherit: 'Same as assigner',
     saved: 'Saved',
   },
-  // P313: to-do tidy (filters automatic to-do card candidates with a small model). Placeholder only (ready false in the board table, hidden in the tab)
+  // P313: to-do tidy (filters automatic to-do card candidates with a small model). P316: fields on (on/off, harness, model, effort, hourly cap)
   todoTidy: {
     name: 'To-do tidy',
-    desc: 'Filters automatic to-do card candidates with a small model.',
+    desc: 'When an agent ends its turn asking you something or handing you work, a small model reads the reply and makes 0 to 3 to-do cards (decide, run, check).',
+    modes: { on: 'On', off: 'Off' },
+    modeHint: 'Whether a small model decides the automatic to-do cards',
+    modeNote: 'On: only replies that end by addressing you go to the model; if it fails or is slow, the rules make the cards. Runs on your subscription, no API key. Off: rules only.',
+    modeSet: { on: 'To-do tidy on', off: 'To-do tidy off: rules only' },
+    kindHint: 'Harness to run headless (Claude Code: claude -p, Codex: codex exec)',
+    kinds: { claude: 'Claude Code', codex: 'Codex' },
+    modelHint: 'A small model is best (e.g. haiku, sonnet). With Codex, a Claude model name means the Codex default model',
+    effortHint: 'Reasoning level for to-do tidy',
+    perHour: 'Hourly cap',
+    perHourHint: 'How many times an hour the model may be called. Above it, rules only (0: always rules)',
+    perHourSet: 'To-do tidy: up to {n} an hour',
+    bad: { mode: 'Choose on or off', effort: 'Choose an effort from the list', kind: 'Choose a harness from the list', model: 'Model names use letters, digits, . _ : / [ ] - only', key: 'Unknown setting', perHour: 'Enter a whole number from 0 to 600' },
   },
   // P314: ask for usage directly (when values are stale, ask each tool's usage command), lower rows of the dropdown (Hermes, key-only balances)
   usageProbe: {

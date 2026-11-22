@@ -18,7 +18,7 @@ test('P313 판 표 → 칸: 병합 하나(켬/물어봄/끔·하네스·모델·
   assert.deepEqual(m.fields.map((f) => f.key), ['mergerMode', 'mergerKind', 'mergerModel', 'mergerEffort', 'mergerPermission']);
   assert.deepEqual(m.fields.map((f) => f.value), ['on', 'codex', 'gpt-x', 'high', 'dontAsk']);
   assert.ok(!m.fields.find((f) => f.field === 'permission').options.includes('inherit'), 'inherit는 빈 값(맡긴 세션 따름)과 같아 목록에서 뺀다');
-  assert.ok(HELPER_AGENTS.some((a) => a.id === 'todoTidy' && !a.ready), '할 일 정리는 표에 자리만');
+  assert.ok(HELPER_AGENTS.some((a) => a.id === 'todoTidy' && a.ready), 'P316: 할 일 정리는 켜졌다(판 설정에 그 키가 없으면 칸이 없다)');
 });
 
 test('P313 옛 설정 키(merger*) 그대로 읽힘: 기본값·inherit·모르는 값', () => {

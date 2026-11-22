@@ -83,6 +83,7 @@ export function isPolite(sentence) {
   const s = noCode(plain(String(sentence ?? ''))).replace(/\s+/g, ' ').trim();
   if (!s || /[?？]\s*$/.test(s)) return false;
   if (EN_POLITE.test(s)) return true;
+  if (genericOffer(s)) return true; // P316: "Let me know and I'll be happy to help", "말씀해 주시면 설명해 드리겠습니다"
   if (isLater(s)) return true; // P312
   return KO_POLITE_IF.test(s) && KO_POLITE_ASK.test(s) && !KO_CHOICE.test(s);
 }
@@ -358,4 +359,146 @@ export function findAsk(text) {
     return null;
   }
   return { kind: isCheck(q.question) ? 'check' : 'decide', ...q, options: isCheck(q.question) ? [] : q.options, cmds: [] };
+}
+
+// ---------- P316: 조건부 진행 요청과 여러 장 ----------
+// 답을 받으면 다음 일을 하겠다는 끝 문장("…확인하고 말씀해 주시면 진행하겠습니다", "Tell me and I'll open the PR")은 진행·보류 결정 카드다.
+//   질문은 그 일을 짧게("GitHub에 올리기", "Open the PR"), 보기는 진행·보류, 맥락은 앞 문단. 할 일이 걸리지 않은 순수 인사
+//   ("원하시면 말씀해 주세요", "필요하시면 말씀해 주시면 더 알려 드리겠습니다")는 지금처럼 거른다(일이 도움·설명·안내뿐이다).
+export const PROCEED_OPTIONS = { ko: ['진행', '보류'], en: ['Proceed', 'Hold'] };
+const KO_COND = /(말씀|알려|확인|답|승인|허락|결정|정해|골라|지시|컨펌|오케이|좋다고)[가-힣\s]{0,12}?(주시면|주신다면|하시면|하신다면)\s*/;
+const KO_WILL = /(겠습니다|겠어요|할게요|할께요|드릴게요|올릴게요|갈게요|볼게요|둘게요|만들게요|고칠게요)\s*[.!]*$/;
+const KO_GENERIC = /^(더\s?)?(자세히\s?)?(도와|도움|답변|답해|설명|안내|알려\s?드리|말씀\s?드리|정리해\s?드리|찾아\s?드리)/;
+const EN_COND = /\b(let me know|tell me|say the word|give me the (go-ahead|ok|word)|confirm|approve it|once you('ve| have)? (reviewed|confirmed|approved|checked) [^,]{1,80})\s*(,\s*)?(and|then)?\s*,?\s*I('ll| will)\s+(.+?)\s*[.!]*$/i;
+const EN_GENERIC = /^(be (happy|glad)|gladly|help|assist|answer|explain|clarify|walk you through|go into (more )?detail)/i;
+const GENERIC_KO_ACT = /^(진행|시작|계속|이어서 진행|작업|처리|그렇게)\s?하기$/;
+const GENERIC_EN_ACT = /^(proceed|continue|go ahead|do (it|that|so)|get started|start)$/i;
+// 행동 마디 → "…하기"("진행하겠습니다" → "진행하기", "PR을 올리겠습니다" → "PR을 올리기", "올릴게요" → "올리기")
+function koAct(s) {
+  let t = String(s).replace(/[.!]+$/, '').trim();
+  t = t.replace(/\s?(해\s?)?드리겠습니다$|\s?드릴게요$/, (m) => (/해/.test(m) ? '하기' : '기'));
+  t = t.replace(/하겠습니다$|하겠어요$|할게요$|할께요$/, '하기').replace(/겠습니다$|겠어요$/, '기');
+  t = t.replace(/([가-힣])게요$/, (m, ch) => (JONG_L(ch) ? dropL(ch) + '기' : ch + '기'));
+  t = t.replace(/^(\S+)(을|를)\s(\S+기)$/, '$1 $3'); // "PR을 올리기" → "PR 올리기"
+  return t.trim();
+}
+// 주제 마디("GitHub에 올리는 건", "배포는") → "GitHub에 올리기", "배포" | null
+function koTopic(pre) {
+  const m = pre.match(/^(.+?)\s?(는|은)\s?(건|것은|일은|작업은|부분은)(?=\s)/);
+  if (m) return m[1].trim() + (m[2] === '는' ? '기' : '');
+  const n = pre.match(/^([^\s,]+(?:\s[^\s,]+)?)(은|는)(?=\s|$)/);
+  return n ? n[1] : null;
+}
+// 할 일 없는 도움 제안("Tell me and I'll explain more", "말씀해 주시면 더 알려 드리겠습니다")
+function genericOffer(s) {
+  const en = s.match(EN_COND);
+  if (en) return EN_GENERIC.test(en[en.length - 1].trim());
+  const c = s.match(KO_COND);
+  if (!c || !KO_WILL.test(s)) return false;
+  return KO_GENERIC.test(s.slice(c.index + c[0].length).trim());
+}
+// 한 문장 → { question, lang } | null
+export function proceedOf(sentence) {
+  const s = noCode(plain(String(sentence ?? ''))).replace(/\s+/g, ' ').trim();
+  if (!s || /[?？]\s*$/.test(s)) return null;
+  const en = s.match(EN_COND);
+  if (en) {
+    const act = en[en.length - 1].replace(/\s*[.!]+$/, '').trim();
+    if (!act || EN_GENERIC.test(act)) return null;
+    const q = GENERIC_EN_ACT.test(act) ? s : act.replace(/^proceed (with|to) /i, (m) => m.replace(/^proceed (with|to) /i, (x) => x[0].toUpperCase() + x.slice(1)));
+    return { question: clipTo(q[0].toUpperCase() + q.slice(1), AUTO_QUESTION_MAX), lang: 'en' };
+  }
+  const c = s.match(KO_COND);
+  if (!c || !KO_WILL.test(s)) return null;
+  const pre = s.slice(0, c.index).trim();
+  const post = s.slice(c.index + c[0].length).trim();
+  if (!post || KO_GENERIC.test(post)) return null;
+  const topic = pre ? koTopic(pre) : null;
+  const act = koAct(post);
+  let q = topic || act;
+  if (!topic && GENERIC_KO_ACT.test(act)) q = s;
+  return { question: clipTo(q, AUTO_QUESTION_MAX), lang: 'ko' };
+}
+// 글 문단(코드 덩어리 밖, 빈 줄로 나뉨) 목록
+function parasOf(text) {
+  const paras = []; let cur = []; let inFence = false;
+  for (const raw of String(text).replace(/\r\n?/g, '\n').split('\n')) {
+    if (FENCE.test(raw)) { inFence = !inFence; if (cur.length) paras.push(cur), cur = []; continue; }
+    if (inFence) continue;
+    const l = raw.replace(/\s+$/, '');
+    if (!l.trim() || /^\s*\|/.test(l) || /^\s*([-*_]\s*){3,}$/.test(l)) { if (cur.length) paras.push(cur), cur = []; continue; }
+    cur.push(l);
+  }
+  if (cur.length) paras.push(cur);
+  return paras;
+}
+const proseOf = (ls) => ls.filter((x) => !isItem(x) && !/^\s*#{1,6}\s/.test(x) && !/[:：]\s*$/.test(x) && !/^\s*\*\*[^*]+\*\*\s*$/.test(x));
+// 끝 문단의 끝 문장이 조건부 진행 요청이면 → { kind: 'decide', question, options, context, line, proceed: true } | null
+export function findProceed(text) {
+  if (typeof text !== 'string' || !text.trim()) return null;
+  const paras = parasOf(text);
+  if (!paras.length) return null;
+  const last = paras[paras.length - 1];
+  const tailLines = last.slice(-2);
+  for (let i = tailLines.length - 1; i >= 0; i--) {
+    const l = tailLines[i];
+    if (isItem(l) && !/^\s*[-*+]\s+[^*]/.test(l)) continue;
+    const ss = sentences(l.replace(/^\s*[-*+]\s+/, ''));
+    for (let j = ss.length - 1; j >= Math.max(0, ss.length - 2); j--) {
+      const p = proceedOf(ss[j]);
+      if (!p) continue;
+      // 맥락: 같은 줄의 앞 문장, 같은 문단의 앞 글 줄, 그다음 앞 글 문단(목록 문단은 셋까지 건너뜀)
+      let ctx = ss.slice(0, j);
+      if (!ctx.length) ctx = proseOf(last.slice(0, last.length - tailLines.length + i));
+      if (!ctx.length) for (let k = paras.length - 2, skipped = 0; k >= 0; k--) { const pl = proseOf(paras[k]); if (!pl.length) { if (++skipped > 3) break; continue; } ctx = pl; break; }
+      return { kind: 'decide', question: p.question, options: PROCEED_OPTIONS[p.lang], cmds: [], context: contextOf(ctx, p.question), line: plain(l), proceed: true };
+    }
+    if (i === tailLines.length - 1 && ss.length && !isPolite(ss[ss.length - 1]) && ss[ss.length - 1].length > 80) break; // 끝 줄이 긴 글이면 그 앞 줄은 보지 않는다
+  }
+  return null;
+}
+// 끝쪽 글의 목록 줄 가운데 사람에게 확인을 청하는 것("1. … 확인해 주세요") → [{ kind: 'check', question, options: [], cmds: [], context }]
+export function findListChecks(text, max = 2) {
+  if (typeof text !== 'string' || !text.trim()) return [];
+  const paras = parasOf(text).slice(-4);
+  const out = [];
+  for (const p of paras) for (const l of p) {
+    if (!NUM_ITEM.test(l) && !/^\s*[-*+]\s+/.test(l)) continue;
+    const body = plain(l.replace(/^\s*(\d{1,2}[.)]|[-*+])\s+/, '')).replace(/\s+/g, ' ').trim();
+    const ss = sentences(body);
+    const k = ss.findIndex((x) => { const y = noCode(x).trim(); return KO_CHECK.test(y) || /^(please\s+)(check|verify|test|try)\b/i.test(y); });
+    if (k < 0) continue;
+    const q = ss.slice(0, k + 1).join(' ').replace(/[:：]\s*$/, '');
+    out.push({ kind: 'check', question: clipTo(q, AUTO_QUESTION_MAX), options: [], cmds: [], context: null, line: plain(l) });
+    if (out.length >= max) return out;
+  }
+  return out;
+}
+// P316: 마지막 답 → 카드 후보 0~3장(규칙). 첫 장은 findAsk(실행·확인·결정)나 조건부 진행 요청, 그다음 끝쪽 목록의 확인 부탁
+export const AUTO_CARDS_MAX = 3;
+export function findAsks(text) {
+  const t = typeof text === 'string' ? text : '';
+  let first = findAsk(t);
+  const p = findProceed(t);
+  if (p) {
+    const paras = parasOf(t);
+    const lastPara = paras.length ? paras[paras.length - 1].map(plain).join('\n') : '';
+    // 끝 문단 안에 진짜 질문(물음표·고르기 부탁)이 있으면 그것이 먼저다. 앞 문단에서 찾은 질문이나 질문 없음이면 진행 요청을 쓴다
+    if (!first || first.kind !== 'do' && !(first.line && lastPara.includes(first.line))) first = p;
+  }
+  if (!first) return [];
+  const out = [first];
+  if (first.kind !== 'do') for (const c of findListChecks(t)) {
+    if (out.length >= AUTO_CARDS_MAX) break;
+    if (out.some((x) => x.question === c.question || (x.line && x.line === c.line))) continue;
+    out.push(c);
+  }
+  return out;
+}
+// P316: 할 일 정리(todo-tidy.mjs)의 넓힌 예비 거르기: 끝 몇 문단(코드 밖)에 사람에게 말을 거는 표지가 있는가
+const ADDRESS = /(주세요|주십시오|주시면|주신다면|주실래요|주시겠어요|할까요|까요|나요|[?？]|말씀|확인|승인|허락|골라|정해|결정|선택|부탁|\bplease\b|\blet me know\b|\btell me\b|\bconfirm\b|\bapprove\b|\bshould I\b|\bdo you want\b|\bwould you\b|\bcan you\b|\bcould you\b|\byour call\b)/i;
+export function mayAsk(text, paras = 3) {
+  if (typeof text !== 'string' || !text.trim()) return false;
+  const ps = parasOf(text).slice(-paras);
+  return ps.some((p) => p.some((l) => ADDRESS.test(noCode(l))));
 }
