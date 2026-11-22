@@ -2679,14 +2679,16 @@ export default {
   deliveryLate: {
     reason: '늦게 제출됨',
   },
-  // P268: 합치기 merger(브랜치 일을 따로 된 세션이 합친다): 설정 탭, 묻는 카드, 캔버스 선과 꼬리표
+  // P268: 병합 merger(브랜치 일을 따로 된 세션이 합친다). P313: 설정 › 에이전트 › 병합: 설정 탭, 묻는 카드, 캔버스 선과 꼬리표
   merger: {
-    tab: '합치기',
+    tab: '병합',
+    name: '병합', // P313: 에이전트 탭의 칸 이름과 한 줄 설명
+    desc: '브랜치(워크트리)에서 일한 워커가 끝나면 merger 세션이 그 브랜치를 병합합니다.',
     noBoard: '이 보드에는 merger 기능이 없습니다.',
     mode: 'merger',
     modes: { on: '켬', ask: '물어봄', off: '끔' },
-    modeHint: '워커가 끝났을 때 브랜치 일을 누가 합칠지',
-    modeNote: '켬: 브랜치(워크트리)에서 일한 워커가 done ok로 끝나면 보드가 그 워커를 재우고 merger 세션이 합칩니다. 합쳐지면 워커를 닫고 보관하고, 실패하면 일을 맡긴 세션에 알립니다. 물어봄: 프로젝트마다 처음 한 번 카드로 묻습니다. 끔: 지금처럼 일을 맡긴 세션이 합칩니다.',
+    modeHint: '워커가 끝났을 때 브랜치 일을 누가 병합할지',
+    modeNote: '켬: 브랜치(워크트리)에서 일한 워커가 done ok로 끝나면 보드가 그 워커를 재우고 merger 세션이 병합합니다. 합쳐지면 워커를 닫고 보관하고, 실패하면 일을 맡긴 세션에 알립니다. 물어봄: 프로젝트마다 처음 한 번 카드로 묻습니다. 끔: 지금처럼 일을 맡긴 세션이 병합합니다.',
     modeSet: { on: 'merger 켬', ask: 'merger: 프로젝트마다 물어봄', off: 'merger 끔' },
     kind: '에이전트',
     kindHint: 'merger 세션의 에이전트 종류(예: claude). 이 PC에 설치돼 있지 않으면 Claude Code를, 그것도 없으면 Codex를 씁니다',
@@ -2699,7 +2701,7 @@ export default {
     permission: '승인 방식',
     permissionHint: '맡긴 세션 따름: 일을 맡긴 세션의 승인 방식을 씁니다. 권한 생략(dontAsk, bypassPermissions)을 고르면 merger가 권한 질문에 멈추지 않습니다. 다음에 띄우는 merger부터 적용됩니다',
     permissionInherit: '맡긴 세션 따름',
-    repoNote: '저장소마다 .atrium/merge.json에서 합칠 브랜치(target), 합치는 곳(worktree·main), 원격에 올리기(기본 끔), 안내 파일을 정합니다.',
+    repoNote: '저장소마다 .atrium/merge.json에서 병합할 브랜치(target), 병합하는 곳(worktree·main), 원격에 올리기(기본 끔), 안내 파일을 정합니다.',
     answers: '프로젝트',
     answersHint: '묻는 카드에서 기억한 답',
     answer: { on: '켬', off: '끔' },
@@ -2708,8 +2710,8 @@ export default {
     saved: '저장했습니다',
     bad: { mode: '켬, 물어봄, 끔 가운데 고르세요', effort: '목록에서 노력을 고르세요', kind: '에이전트 종류는 소문자, 숫자, -, _만 씁니다', model: '모델 이름은 글자, 숫자, . _ : / [ ] -만 씁니다', key: '모르는 설정입니다', permission: '목록에서 승인 방식을 고르세요' },
     card: {
-      title: '이 프로젝트에서 합치기를 merger에게 맡길까요?',
-      body: '@{child}가 {branch}에서 일을 끝냈습니다. 켜면 보드가 브랜치에서 일한 워커가 끝날 때 그 워커를 재우고, merger 세션이 {target}에 합칩니다. 합쳐지면 워커를 닫고 보관합니다. 실패하면 맡긴 세션에 알립니다.',
+      title: '이 프로젝트에서 병합을 merger에게 맡길까요?',
+      body: '@{child}가 {branch}에서 일을 끝냈습니다. 켜면 보드가 브랜치에서 일한 워커가 끝날 때 그 워커를 재우고, merger 세션이 {target}에 병합합니다. 합쳐지면 워커를 닫고 보관합니다. 실패하면 맡긴 세션에 알립니다.',
       sentNote: '이번 결과는 맡긴 세션에게 보냈습니다.',
       on: '켜기',
       off: '이 프로젝트는 끄기',
@@ -2719,18 +2721,18 @@ export default {
       fail: '답을 저장하지 못했습니다: {error}',
     },
     tag: 'merger',
-    tagTitle: 'merger 세션 · {target}에 합침 · 일 {jobs}/{max}',
+    tagTitle: 'merger 세션 · {target}에 병합 · 일 {jobs}/{max}',
     line: {
       queued: '기다림 · {branch} → {target}',
-      merging: '합치는 중 · {branch} → {target}',
-      merged: '합침 · {branch} → {target}',
+      merging: '병합 중 · {branch} → {target}',
+      merged: '병합됨 · {branch} → {target}',
       failed: '실패 · {branch} → {target}',
-      title: '@{child} → @{merger}: {branch}를 {target}에 합치기\n누르면 merger로 갑니다',
+      title: '@{child} → @{merger}: {branch}를 {target}에 병합\n누르면 merger로 갑니다',
     },
     // P275: merger를 띄우지 못했다(설치된 하네스가 없음 등)
     problem: 'merger를 띄우지 못했습니다({name}): {why}. 결과는 맡긴 세션에게 보냈습니다.',
     // P276: 세션 맵에서 리드 위에 얹은 merger 카드의 역할 줄
-    mapFor: '{name}의 일 합치기',
+    mapFor: '{name}의 일 병합',
   },
   // P274: 명령 바 위 띠(스티어링 상태·Ctrl+Enter 안내), 휴대폰 스티어링 토글, 판이 다시 뜰 때 정리한 옛 대기 전달
   cmdHead: {
@@ -2960,5 +2962,19 @@ export default {
     userOnly: '사용자 것만',
     noUserItems: '이 마일스톤에는 사용자 항목이 없습니다.',
     pcOnly: '휴대폰에서는 체크, 지금 마일스톤, 측정값 지금 값만 바꿉니다. 항목 고치기·관리자·상태는 PC 목표 판에서 합니다.',
+  },
+  // P313: 설정 › 에이전트 탭(보드가 쓰는 보조 에이전트를 같은 꼴로 모은다. 칸은 판의 보조 에이전트 표를 따른다)
+  agents: {
+    tab: '에이전트',
+    note: '보드가 쓰는 보조 에이전트입니다. 에이전트마다 켜기, 하네스, 모델, 노력, 승인 방식을 정합니다.',
+    field: { mode: '사용', kind: '하네스', model: '모델', effort: '노력', permission: '승인 방식' },
+    effortNone: '(넘기지 않음)',
+    permissionInherit: '맡긴 세션 따름',
+    saved: '저장했습니다',
+  },
+  // P313: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 낸다). 이번에는 자리만(판 표 ready false라 탭에 보이지 않는다)
+  todoTidy: {
+    name: '할 일 정리',
+    desc: '자동으로 만든 할 일 카드 후보를 작은 모델로 걸러 냅니다.',
   },
 };

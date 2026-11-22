@@ -2675,9 +2675,11 @@ export default {
   deliveryLate: {
     reason: 'submitted late',
   },
-  // P268: merger (merge branch work in a separate session): settings tab, the ask card, canvas line and tag
+  // P268: merger (merge branch work in a separate session): settings tab, the ask card, canvas line and tag. P313: Settings › Agents › Merge
   merger: {
-    tab: 'Merging',
+    tab: 'Merge',
+    name: 'Merge', // P313: section name and one-line description in the Agents tab
+    desc: 'When a worker that worked on a branch (worktree) finishes, a merger session merges that branch.',
     noBoard: 'This board has no merger feature.',
     mode: 'Merger',
     modes: { on: 'On', ask: 'Ask', off: 'Off' },
@@ -2956,5 +2958,19 @@ export default {
     userOnly: 'Mine only',
     noUserItems: 'No items for you in this milestone.',
     pcOnly: 'On the phone you can check items, set the current milestone and update values. Edit items, the manager and the status on the PC goal board.',
+  },
+  // P313: Settings › Agents tab (helper agents the board uses, in one shape; the fields follow the board's helper agent table)
+  agents: {
+    tab: 'Agents',
+    note: 'Helper agents the board uses. For each one, set whether it is on, the harness, model, effort and permission mode.',
+    field: { mode: 'Use', kind: 'Harness', model: 'Model', effort: 'Effort', permission: 'Permission mode' },
+    effortNone: '(not passed)',
+    permissionInherit: 'Same as assigner',
+    saved: 'Saved',
+  },
+  // P313: to-do tidy (filters automatic to-do card candidates with a small model). Placeholder only (ready false in the board table, hidden in the tab)
+  todoTidy: {
+    name: 'To-do tidy',
+    desc: 'Filters automatic to-do card candidates with a small model.',
   },
 };

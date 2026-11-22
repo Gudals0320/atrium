@@ -16,7 +16,8 @@ import { useDialog } from './dialog.js'; // P52
 import { UpdateSettings } from './Update.jsx'; // P69: 업데이트 묶음
 import { LIGHT_MODES, workLightOf, applyWorkLight } from './lib/work-light.js'; // P107: 작업 중 테두리 빛
 import { TerminalTab } from './Terminal.jsx'; // P117: 터미널 백엔드와 옮기기
-import { MergerTab } from './Merger.jsx'; // P268: 합치기 merger
+import { AgentsTab } from './Agents.jsx'; // P313: 에이전트 탭(P268 병합 merger와 다음 보조 에이전트)
+import { agentsOf, settingsTabOf } from './lib/agents.js'; // P313
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 export function SetRow({ name, hint, children, role }) {
@@ -243,7 +244,7 @@ const TABS = [
   { key: 'recall', has: (s) => s && s.archiveDays != null },
   { key: 'devices', has: () => true, label: 'webDevices.tab' }, // P48
   { key: 'terminal', has: (s) => !!s, label: 'terminalMove.tab' }, // P117
-  { key: 'merger', has: (s) => !!s && 'mergerMode' in s, label: 'merger.tab' }, // P268: 판에 merger가 있을 때만
+  { key: 'agents', has: (s, l, a) => agentsOf(a, s).length > 0, label: 'agents.tab' }, // P313: 보조 에이전트(옛 P268 합치기 탭). 보일 에이전트가 있을 때만
 ];
 
 export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false }) {
@@ -251,10 +252,11 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
   const settings = useStore((st) => st.settings);
   const launchers = useStore((st) => st.launchers);
   const [schema, setSchema] = useState(null);
-  const [tab, setTab] = useState(tab0 || 'general'); // P97: 연 곳이 정한 탭(레일 + → 런처)
-  useEffect(() => { api.call('settings.get').then((r) => setSchema(r.schema)).catch((e) => toast(t('settings.saveFailed', { error: errText(e) }), 'error')); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [agents, setAgents] = useState(null); // P313: 판의 보조 에이전트 표(옛 판이면 없음 → 창의 FALLBACK_AGENTS)
+  const [tab, setTab] = useState(settingsTabOf(tab0) || 'general'); // P97: 연 곳이 정한 탭(레일 + → 런처)
+  useEffect(() => { api.call('settings.get').then((r) => { setSchema(r.schema); setAgents(r.agents || null); }).catch((e) => toast(t('settings.saveFailed', { error: errText(e) }), 'error')); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const box = useDialog(onClose); // P52: Esc 닫기는 공용(dialog.js). 열면 상자에 초점, Tab은 안에서 돈다
-  const tabs = TABS.filter((x) => x.has(settings, launchers));
+  const tabs = TABS.filter((x) => x.has(settings, launchers, agents));
   const cur = tabs.some((x) => x.key === tab) ? tab : 'general';
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -271,7 +273,7 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
           {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}
           {cur === 'devices' && <DevicesTab />}
           {cur === 'terminal' && <TerminalTab />}
-          {settings && cur === 'merger' && <MergerTab settings={settings} />}
+          {settings && cur === 'agents' && <AgentsTab settings={settings} table={agents} />}
         </div>
         <div className="mt-card-actions"><button className="mt-btn" data-action="settings-close" onClick={onClose}>{t('common.close')}</button></div>
       </div>

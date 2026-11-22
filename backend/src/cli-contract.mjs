@@ -81,7 +81,7 @@ export const VERBS = [
   { name: 'item', args: ['[--json]'], does: '너의 지금 일: 맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수', out: ['item', 'queued'] },
   { name: 'items', args: ['[--json]'], does: '네가 맡긴 일들: 맡은 세션, 상태(open·done·failed·cancelled), 결과와 보고', out: ['items', 'open'] },
   // P182: 자세한 사용법. P267: merger 안내
-  { name: 'guide', args: ['[merger]', '[--json]'], does: '자세한 사용법(help --long). merger면 합치기 merger의 안내', out: ['merger'] },
+  { name: 'guide', args: ['[merger]', '[--json]'], does: '자세한 사용법(help --long). merger면 병합 merger의 안내', out: ['merger'] },
   // P257: 문서 점검(보드가 지휘 세션의 턴 끝과 done 알림에 한 줄로 알리는 것의 자세한 결과)
   { name: 'docs', args: ['[--json]'], does: '이 워크스페이스의 문서 점검 결과: 문서마다 글자 수와 예산, 허락한 꼴, PLAN의 세 절과 끝남 표시, HEAD보다 커짐. 막지 않는다. 문서는 지휘 세션이 고치고 워커는 바꿀 문장을 done 보고에 적는다', out: ['on', 'dir', 'rows', 'total', 'problems', 'lead'] },
   // P211: 구독 사용량(보드가 로컬 출처에서 모은 마지막 값. 읽기만)

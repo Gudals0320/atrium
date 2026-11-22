@@ -1,5 +1,5 @@
-// P268: 합치기 merger의 창 쪽(판 쪽 P267 merger.mjs, 계약은 판 API merger.*와 설정 mergerMode·mergerKind·mergerModel·mergerEffort).
-// - 설정 › 합치기 탭(MergerTab): 켬 / 물어봄 / 끔, merger의 종류·모델·노력·승인 방식(P287, 판에 그 키가 있을 때만), 프로젝트마다 기억한 답(다시 묻기)
+// P268: 병합 merger의 창 쪽(판 쪽 P267 merger.mjs, 계약은 판 API merger.*와 설정 mergerMode·mergerKind·mergerModel·mergerEffort).
+// - 설정 › 에이전트 › 병합(P313, 옛 합치기 탭): 공용 칸(켬/물어봄/끔·종류·모델·노력·승인 방식)은 Agents.jsx가 판의 보조 에이전트 표로 그리고, 여기는 그만의 칸(MergerExtras: 저장소 안내, 못 띄운 까닭, 프로젝트마다 기억한 답)
 // - 사람에게 묻는 카드(MergerAskCards): 설정이 물어봄이고 그 프로젝트에 답이 없을 때 판이 낸 물음(merger.ask). 워크스페이스마다 한 번, 답은 merger.answer로 판이 기억한다.
 //   PC 창은 위쪽 가운데(허락 요청 카드와 같은 자리·생김새), 휴대폰은 세션 맵 머리 아래. 지휘 세션에게는 묻지 않는다(설계 12절 5번)
 // - 캔버스의 하위 → merger 선(MergerEdge): 열린 합치기 일의 childId → mergerId(lib/merger.js mergerLines). 보통 연결과 같은 곡선, 색은 합치기(보라 점선)
@@ -9,71 +9,34 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath } from '@xyflow/react';
 import { api } from './api.js';
 import { useStore, getState, toast, dismissMergerAsk, dropMergerAsk } from './store.js';
 import { useT, errText } from './lib/i18n.js';
-import { MERGER_MODES, MERGER_EFFORTS, MERGER_PERMISSIONS, MERGER_DEFAULTS, mergerSettingsOf, mergerValueOf, askCards, askKey, mergerSessionIds } from './lib/merger.js';
+import { askCards, askKey, mergerSessionIds } from './lib/merger.js';
 import { shifted, linkLabelHidden } from './lib/link-labels.js';
 import { labelFit } from './lib/labels.js';
-import { SetRow, SetNote } from './Settings.jsx';
+import { SetNote } from './Settings.jsx';
 
-// ---------- 설정 탭 ----------
-async function saveSetting(t, key, raw) {
-  const v = mergerValueOf(key, raw);
-  if (v.error) { toast(t('merger.bad.' + v.error), 'error'); return false; }
-  try { await api.call('settings.set', { key, value: v.value }); return true; } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); return false; }
-}
-function TextSetting({ k, value, t }) {
-  const [text, setText] = useState(null);
-  const done = async () => { if (text == null) return; if (text.trim() !== value && (await saveSetting(t, k, text))) toast(t('merger.saved')); setText(null); };
-  return <input type="text" className="mt-set-text" data-field={'setting-' + k} value={text ?? value} placeholder={MERGER_DEFAULTS[k]} spellCheck={false}
-    onChange={(e) => setText(e.target.value)} onBlur={done} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } if (e.key === 'Escape') setText(null); }} />;
-}
-export function MergerTab({ settings }) {
+// ---------- 설정 › 에이전트 › 병합의 그만의 칸(P313: 켬/물어봄/끔·하네스·모델·노력·승인 방식은 Agents.jsx의 공용 칸) ----------
+// 저장소마다 정하는 것(.atrium/merge.json), merger를 띄우지 못한 까닭(P275), 프로젝트마다 기억한 답(다시 묻기)
+export function MergerExtras() {
   const t = useT();
-  const v = mergerSettingsOf(settings);
   const view = useStore((st) => st.merger);
   const workspaces = useStore((st) => st.workspaces);
-  const [pending, setPending] = useState(null);
-  if (!v) return <div className="dim">{t('merger.noBoard')}</div>;
-  const mode = pending ?? v.mergerMode;
-  const pick = async (m) => { setPending(m); if (await saveSetting(t, 'mergerMode', m)) toast(t('merger.modeSet.' + m)); setPending(null); };
   const nameOf = (ws) => { const w = (workspaces || []).find((x) => x.key === ws); return w ? w.name : ws; };
   const answers = view ? Object.entries(view.answers).filter(([, a]) => a === 'on' || a === 'off') : [];
   const forget = async (ws) => { try { await api.call('merger.answer', { workspace: ws, answer: 'ask' }); toast(t('merger.forgot', { name: nameOf(ws) })); } catch (e) { toast(errText(e), 'error'); } };
-  return (
-    <div className="mt-set-grid" data-role="merger-settings">
-      <div className="mt-set-row" data-role="merger-mode-setting">
-        <span className="mt-set-name">{t('merger.mode')}</span>
-        <span className="mt-set-value mt-seg-lang" data-field="setting-mergerMode" data-value={mode} role="radiogroup" aria-label={t('merger.mode')}>
-          {MERGER_MODES.map((m) => <button key={m} type="button" role="radio" aria-checked={mode === m} className={`mt-btn small${mode === m ? ' primary' : ' ghost'}`} data-mode={m} onClick={() => mode !== m && pick(m)}>{t('merger.modes.' + m)}</button>)}
-        </span>
-        <span className="mt-set-hint">{t('merger.modeHint')}</span>
-      </div>
-      <SetNote>{t('merger.modeNote')}</SetNote>
-      <SetRow name={t('merger.kind')} hint={t('merger.kindHint')} role="merger-kind-setting"><TextSetting k="mergerKind" value={v.mergerKind} t={t} /></SetRow>
-      <SetRow name={t('merger.model')} hint={t('merger.modelHint')} role="merger-model-setting"><TextSetting k="mergerModel" value={v.mergerModel} t={t} /></SetRow>
-      <SetRow name={t('merger.effort')} hint={t('merger.effortHint')} role="merger-effort-setting">
-        <select className="mt-set-select" data-field="setting-mergerEffort" value={v.mergerEffort} onChange={async (e) => { if (await saveSetting(t, 'mergerEffort', e.target.value)) toast(t('merger.saved')); }}>
-          {MERGER_EFFORTS.map((x) => <option key={x || 'none'} value={x}>{x ? x : t('merger.effortNone')}</option>)}
-        </select>
-      </SetRow>
-      {'mergerPermission' in settings && <SetRow name={t('merger.permission')} hint={t('merger.permissionHint')} role="merger-permission-setting">
-        <select className="mt-set-select" data-field="setting-mergerPermission" value={v.mergerPermission} onChange={async (e) => { if (await saveSetting(t, 'mergerPermission', e.target.value)) toast(t('merger.saved')); }}>
-          {MERGER_PERMISSIONS.map((x) => <option key={x || 'inherit'} value={x}>{x ? x : t('merger.permissionInherit')}</option>)}
-        </select>
-      </SetRow>}
-      <SetNote>{t('merger.repoNote')}</SetNote>
-      {view && view.problem && <div className="mt-set-row" data-role="merger-problem"><span className="mt-set-hint">{t('merger.problem', { name: nameOf(view.problem.workspace) || '?', why: view.problem.why })}</span></div>}
-      {answers.length > 0 && <div className="mt-set-row mt-merger-answers" data-role="merger-answers">
-        <span className="mt-set-name">{t('merger.answers')}</span>
-        <span className="mt-set-value mt-merger-answer-list">
-          {answers.map(([ws, a]) => <span key={ws} className="mt-merger-answer" data-ws={ws} data-answer={a}>
-            <b>{nameOf(ws)}</b><span className={`mt-merger-answer-v ${a}`}>{t('merger.answer.' + a)}</span>
-            <button type="button" className="mt-btn small ghost" data-action="merger-forget" onClick={() => forget(ws)}>{t('merger.askAgain')}</button>
-          </span>)}
-        </span>
-        <span className="mt-set-hint">{t('merger.answersHint')}</span>
-      </div>}
-    </div>
-  );
+  return <>
+    <SetNote>{t('merger.repoNote')}</SetNote>
+    {view && view.problem && <div className="mt-set-row" data-role="merger-problem"><span className="mt-set-hint">{t('merger.problem', { name: nameOf(view.problem.workspace) || '?', why: view.problem.why })}</span></div>}
+    {answers.length > 0 && <div className="mt-set-row mt-merger-answers" data-role="merger-answers">
+      <span className="mt-set-name">{t('merger.answers')}</span>
+      <span className="mt-set-value mt-merger-answer-list">
+        {answers.map(([ws, a]) => <span key={ws} className="mt-merger-answer" data-ws={ws} data-answer={a}>
+          <b>{nameOf(ws)}</b><span className={`mt-merger-answer-v ${a}`}>{t('merger.answer.' + a)}</span>
+          <button type="button" className="mt-btn small ghost" data-action="merger-forget" onClick={() => forget(ws)}>{t('merger.askAgain')}</button>
+        </span>)}
+      </span>
+      <span className="mt-set-hint">{t('merger.answersHint')}</span>
+    </div>}
+  </>;
 }
 
 // ---------- 사람에게 묻는 카드 ----------

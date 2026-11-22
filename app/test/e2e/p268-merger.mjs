@@ -38,7 +38,7 @@ try {
   for (const l of ['en', 'ko']) {
     await lang(page, l);
     const t = await page.$eval('[data-role=merger-ask]', (x) => x.innerText);
-    check(l + ' 카드 글(제목·@w1·브랜치·dev·보냄 줄)', (l === 'ko' ? /합치기를 merger에게 맡길까요/.test(t) && /이번 결과는 맡긴 세션에게/.test(t) : /Let a merger session merge/.test(t) && /This result was sent/.test(t)) && /@w1/.test(t) && /worktree-w1/.test(t) && /dev/.test(t), t);
+    check(l + ' 카드 글(제목·@w1·브랜치·dev·보냄 줄)', (l === 'ko' ? /병합을 merger에게 맡길까요/.test(t) && /이번 결과는 맡긴 세션에게/.test(t) : /Let a merger session merge/.test(t) && /This result was sent/.test(t)) && /@w1/.test(t) && /worktree-w1/.test(t) && /dev/.test(t), t);
     await shot(page, 'ask-card-' + l);
     await shot(page, 'ask-card-' + l + '-clip', await boxOf(page, '[data-role=merger-asks]', 24));
   }
@@ -53,7 +53,7 @@ try {
     const opened = await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) { b.click(); return true; } return false; });
     if (!opened) await page.evaluate(() => { const st = window.__mt.getState(); if (st.openDialog) st.openDialog({ kind: 'settings' }); });
     await page.waitForSelector('[data-role=settings]', { timeout: 10000 });
-    await page.click('[data-role=settings-tabs] [data-tab=merger]');
+    await page.click('[data-role=settings-tabs] [data-tab=agents]');
     await page.waitForSelector('[data-role=merger-settings]');
     const v = await page.evaluate(() => ({ mode: document.querySelector('[data-field=setting-mergerMode]').dataset.value, kind: document.querySelector('[data-field=setting-mergerKind]').value, model: document.querySelector('[data-field=setting-mergerModel]').value, effort: document.querySelector('[data-field=setting-mergerEffort]').value }));
     check(l + ' 설정 칸 값(ask, claude, haiku, 빈 노력)', v.mode === 'ask' && v.kind === 'claude' && v.model === 'haiku' && v.effort === '', v);
@@ -65,7 +65,7 @@ try {
   {
     await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) b.click(); else window.__mt.getState().openDialog({ kind: 'settings' }); });
     await page.waitForSelector('[data-role=settings]');
-    await page.click('[data-role=settings-tabs] [data-tab=merger]');
+    await page.click('[data-role=settings-tabs] [data-tab=agents]');
     await page.selectOption('[data-field=setting-mergerEffort]', 'low');
     await sleep(800);
     const e1 = call('settings.get').settings.mergerEffort;
@@ -86,7 +86,7 @@ try {
   // 설정 탭의 프로젝트 줄(다시 묻기)
   await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) b.click(); else window.__mt.getState().openDialog({ kind: 'settings' }); });
   await page.waitForSelector('[data-role=settings]');
-  await page.click('[data-role=settings-tabs] [data-tab=merger]');
+  await page.click('[data-role=settings-tabs] [data-tab=agents]');
   await page.waitForSelector('[data-role=merger-answers]', { timeout: 5000 }).catch(() => {});
   check('설정 탭에 기억한 답(켬) 줄', !!(await page.$('[data-role=merger-answers] [data-answer=on]')));
   await shot(page, 'settings-answers-ko', await boxOf(page, '[data-role=settings]', 8));

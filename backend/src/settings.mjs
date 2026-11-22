@@ -47,16 +47,35 @@ export const SETTINGS = {
   missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
   // P267: 합치기 merger(merger.mjs). 브랜치(워크트리)에서 일한 하위가 atrium done ok로 닫으면 판이 그 합치기를 부모 대신 merger 세션에게 맡긴다.
   //   on: 맡긴다, ask(기본): 워크스페이스마다 처음 한 번 사람에게 판 카드로 묻고 답을 기억한다(답이 올 때까지 지금처럼 부모에게), off: 지금처럼 부모에게
-  mergerMode: { type: 'choice', default: 'ask', options: ['on', 'ask', 'off'], label: '합치기 merger (on: 브랜치에서 일한 워커가 끝나면 보드가 합치기를 merger 세션에 맡깁니다, ask: 프로젝트마다 처음 한 번 묻습니다, off: 지금처럼 맡긴 세션이 합칩니다).' },
+  mergerMode: { type: 'choice', default: 'ask', options: ['on', 'ask', 'off'], label: '병합 merger (on: 브랜치에서 일한 워커가 끝나면 보드가 병합을 merger 세션에 맡깁니다, ask: 프로젝트마다 처음 한 번 묻습니다, off: 지금처럼 맡긴 세션이 합칩니다).' },
   // merger의 종류·모델·노력. P275: 그 종류가 설치돼 있지 않으면 설치된 Claude Code(claude-sonnet-5-5, medium), 없으면 Codex(기본 모델, medium). 둘 다 없으면 띄우지 않는다(merger.mjs pickMergerSpawn)
   mergerKind: { type: 'string', default: 'claude', max: 40, pattern: /^[a-z][a-z0-9_-]{0,39}$/, hint: '에이전트 종류(예: claude)', label: 'merger 세션의 에이전트 종류입니다. 이 PC에 설치돼 있지 않으면 Claude Code를, 그것도 없으면 Codex를 씁니다.' },
   mergerModel: { type: 'string', default: 'claude-sonnet-5-5', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: claude-sonnet-5-5)', label: 'merger 세션의 모델입니다.' },
   mergerEffort: { type: 'choice', default: 'medium', options: EFFORTS, label: 'merger 세션의 추론 수준입니다 (빈 값: 넘기지 않음).' },
   // P287: merger의 승인 방식. 빈 값·inherit는 그 합치기를 맡긴 부모의 방식(전과 같음). 목록은 세션 띄우기 창의 승인 방식(PERMISSION_MODES).
   //   고른 종류가 받지 않는 값이면 부모 따름으로 되돌린다(merger.mjs mergerPermissionOf)
-  mergerPermission: { type: 'choice', default: '', options: ['', 'inherit', ...PERMISSION_MODES], label: 'merger 세션의 승인 방식입니다 (빈 값: 합치기를 맡긴 세션의 방식을 따름).' },
+  mergerPermission: { type: 'choice', default: '', options: ['', 'inherit', ...PERMISSION_MODES], label: 'merger 세션의 승인 방식입니다 (빈 값: 병합을 맡긴 세션의 방식을 따름).' },
   // P114의 숨은 설정 terminalBackend는 P117에서 없앴다. P129·P132: 터미널 백엔드는 herdr-core(hc) 하나다. 판 기록(meta terminalBackend)은 옛 판 옮기기(herdr-migrate)만 쓴다
 };
+// P313: 보조 에이전트 표(설정 › 에이전트 탭). 판이 쓰는 보조 에이전트마다 이름(id), 사전 묶음(dict), 칸 → 설정 키 묶음.
+//   창은 settings.get의 agents(agentsTable)로 이 표를 받아 에이전트마다 같은 꼴의 칸(켬/물어봄/끔·하네스 종류·모델·노력·승인 방식)을 그린다(app lib/agents.js).
+//   기본값과 고를 값은 위 SETTINGS에서 온다. 표에 없는 칸은 그리지 않는다. ready false는 자리만(창은 숨긴다, 기능은 다음 일).
+//   새 보조 에이전트: SETTINGS에 키 묶음 + 여기 한 줄 + 창 사전 묶음(name·desc·…Hint) + (있으면) 창의 그만의 칸(Agents.jsx AGENT_EXTRAS).
+export const AGENT_FIELDS = ['mode', 'kind', 'model', 'effort', 'permission'];
+export const HELPER_AGENTS = [
+  { id: 'merge', dict: 'merger', keys: { mode: 'mergerMode', kind: 'mergerKind', model: 'mergerModel', effort: 'mergerEffort', permission: 'mergerPermission' }, ready: true },
+  { id: 'todoTidy', dict: 'todoTidy', keys: {}, ready: false }, // 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄): 자리만
+];
+export function agentsTable() {
+  return HELPER_AGENTS.map((a) => ({
+    id: a.id, dict: a.dict, ready: !!a.ready,
+    fields: AGENT_FIELDS.filter((f) => a.keys[f] && SETTINGS[a.keys[f]]).map((f) => {
+      const d = SETTINGS[a.keys[f]];
+      return { field: f, key: a.keys[f], default: d.default, ...(d.type === 'choice' ? { options: d.options } : {}) };
+    }),
+  }));
+}
+
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));
 
 // P49: 원격 접속 규칙(remote*: 원격 받기, 사용자 규칙, 세션 수명, P62 패스키로 확인)을 바꾸는 요청인가. 이 PC의 창·CLI만 바꾼다(backend.mjs settings.set)
