@@ -30,7 +30,7 @@ const { app, page } = await launch({ log, args: ['--remote-debugging-port=9544']
 try {
   await page.setViewportSize({ width: 1500, height: 960 }).catch(() => {});
   const got = call('settings.get');
-  check('판 settings.get에 보조 에이전트 표(병합 ready, 할 일 정리 자리)', Array.isArray(got.agents) && got.agents.some((a) => a.id === 'merge' && a.ready && a.fields.length === 5) && got.agents.some((a) => a.id === 'todoTidy' && !a.ready), got.agents);
+  check('판 settings.get에 보조 에이전트 표(병합 ready, 할 일 정리 자리)', Array.isArray(got.agents) && got.agents.some((a) => a.id === 'merge' && a.ready && a.fields.length === 5) && got.agents.some((a) => a.id === 'todoTidy'), got.agents); // P316: 할 일 정리도 ready
   for (const l of ['en', 'ko']) {
     call('settings.set', { key: 'language', value: l });
     await page.waitForFunction((x) => document.documentElement.lang === x, l, { timeout: 10000 }).catch(() => {});
@@ -44,7 +44,7 @@ try {
     check(l + ' 병합 칸 머리·칸 이름', l === 'ko' ? /병합/.test(body) && /하네스/.test(body) && /승인 방식/.test(body) : /Merge/.test(body) && /Harness/.test(body) && /Permission mode/.test(body), body.slice(0, 600));
     check(l + ' "합치기" 글 없음', !/합치기/.test(body), body.slice(0, 300));
     check(l + ' 칸 차례(옛 키)', JSON.stringify(fields) === JSON.stringify(['setting-mergerMode', 'setting-mergerKind', 'setting-mergerModel', 'setting-mergerEffort', 'setting-mergerPermission']), fields);
-    check(l + ' 할 일 정리는 숨김', JSON.stringify(agents) === JSON.stringify(['merge']), agents);
+    check(l + ' 병합 다음 할 일 정리(P316)', JSON.stringify(agents) === JSON.stringify(['merge', 'todoTidy']), agents);
     await page.screenshot({ path: path.join(OUT, 'settings-agents-' + l + '.png'), clip: await boxOf(page, '[data-role=settings]') });
     await page.click('[data-action=settings-close]');
     await sleep(300);

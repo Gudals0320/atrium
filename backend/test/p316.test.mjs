@@ -95,6 +95,8 @@ test('P316 모델 출력 검사: 꼴이 맞는 카드만, 명령은 답에 있�
   assert.deepEqual(ok.cards[1].cmds, []); assert.deepEqual(ok.cards[1].options, ['진행', '보류']);
   assert.equal(ok.cards[2].when, '내일 아침');
   assert.deepEqual(parseTidy('{"cards":[]}', text), { cards: [] });
+  assert.deepEqual(parseTidy('{"cards":[{"kind":"decide","question":"원격에 올리기","options":["Proceed","Hold"]}]}', text).cards[0].options, ['진행', '보류'], '한국어 질문에 영어 진행·보류 보기는 고친다');
+  assert.deepEqual(parseTidy('{"cards":[{"kind":"decide","question":"Push it","options":["Proceed","Hold"]}]}', text).cards[0].options, ['Proceed', 'Hold']);
   assert.equal(parseTidy(F + 'json\n{"cards":[{"kind":"check","question":"화면 보기"}]}\n' + F, text).cards.length, 1, '코드 울타리를 견딘다');
   assert.equal(parseTidy('Here you go: {"cards":[]} thanks', text).cards.length, 0, '앞뒤 글을 견딘다');
   assert.deepEqual(parseTidy('카드 없음', text), { error: 'bad_json' });
