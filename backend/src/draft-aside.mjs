@@ -20,7 +20,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { claudeInputBox, codexInputBox, opencodeInputBox, piInputBox, agyInputBox, mouseNoise, claudeSuggestion } from './screen.mjs';
+import { claudeInputBox, codexInputBox, opencodeInputBox, piInputBox, agyInputBox, hermesInputBox, mouseNoise, claudeSuggestion } from './screen.mjs'; // P309: hermesInputBox(Hermes TUI·OMH Native)
 
 const MOUSE_NOISE_G = /\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
 const bare = (s) => String(s || '').replace(/\s+/g, '');
@@ -68,7 +68,7 @@ export function draftEdit(prev, data, opts = {}) {
   return { text: exact ? text : '', exact, paste };
 }
 
-const READERS = { claude: claudeInputBox, codex: codexInputBox, opencode: opencodeInputBox, pi: piInputBox, agy: agyInputBox }; // P192: agy는 읽기만(비키기는 하지 않는다: draftKinds 밖)
+const READERS = { claude: claudeInputBox, codex: codexInputBox, opencode: opencodeInputBox, pi: piInputBox, agy: agyInputBox, hermes: hermesInputBox }; // P309: hermes(없으면 Claude Code 읽개가 OMH 안내 글 "Ask Hermes anything"을 쓰다 만 글로 읽어 잠재우기를 거절했다) // P192: agy는 읽기만(비키기는 하지 않는다: draftKinds 밖)
 // 화면에서 읽은 입력 칸. → { found, text(마우스 보고 글을 뗀 것), rows(입력 칸 줄 수), folded?, clipped? }
 export function readDraftBox(screen, kind) {
   const b = (READERS[kind] || claudeInputBox)(screen);

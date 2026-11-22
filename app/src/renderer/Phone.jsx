@@ -22,7 +22,7 @@ import { startedText, devModel } from './SpawnDialog.jsx';
 import { enterSession, markInteracted } from './touch.js';
 import { wakeSession } from './sleep.js';
 import { useT, errText } from './lib/i18n.js';
-import { STATE_LABEL, deliveryText } from './lib/labels.js';
+import { STATE_LABEL, deliveryText, shellStateText } from './lib/labels.js'; // P309: shellStateText
 import { QueueGroup, useDeliveryEditing } from './DeliveryQueue.jsx'; // P172: 이 세션의 대기 글 묶음(바로 보내기, 순서 바꾸기, 수정, 취소)
 import { queueView } from './lib/delivery-queue.js';
 import { favoriteLaunchers, orderedLaunchers } from './lib/launchers.js';
@@ -407,7 +407,7 @@ function PhoneSession({ s, onBack, onGo }) {
   const qEdit = useDeliveryEditing();
   const noteText = note && now - note.at < 20000 ? (d ? deliveryText(d) : note.text || null) : null;
   const grow = (el) => { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 132)}px`; };
-  const stateText = s.kind === 'shell' && live ? (s.shell && s.shell.atPrompt === false ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[s.state] || s.state;
+  const stateText = s.kind === 'shell' && live ? shellStateText(s) : STATE_LABEL[s.state] || s.state;
 
   return (
     <div className="mt-ph-session" data-role="phone-session" data-session={id} data-state={s.state}>

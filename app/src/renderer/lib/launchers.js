@@ -3,7 +3,7 @@
 import { KINDS } from './kinds.js';
 
 // 고를 수 있는 아이콘(lib/kinds.js의 로고와 기호). 빈 값은 하네스를 따른다
-export const ICONS = ['claude', 'codex', 'deepseek', 'pi', 'agy', 'hermes', 'grok', 'shell']; // P192: agy. P298: hermes
+export const ICONS = ['claude', 'codex', 'deepseek', 'pi', 'agy', 'hermes', 'omh', 'grok', 'shell']; // P192: agy. P298: hermes. P309: omh
 // P196: 하네스가 판에 기본으로 드는 에이전트 종류(백엔드 HARNESSES와 같은 순서). 하네스 표를 아직 못 받았을 때도 드롭다운에 이것을 다 보인다
 export { PERMISSION_MODES } from './permission-modes.js'; // P287: 호출자 창과 설정 › 합치기가 함께 쓰는 승인 방식 목록
 export const AGENT_HARNESSES = ['claude', 'codex', 'opencode', 'pi', 'agy', 'dsh', 'hermes']; // P270: dsh. P298: hermes
@@ -29,10 +29,24 @@ export function harnessOptions(harnesses, kinds = [], current = '') {
 // P196: 아이콘 드롭다운의 보이는 이름(종류 이름표, 셸은 사전 글)
 export const iconName = (id, t = (k) => k) => (id === 'shell' ? t('kinds.shell') : KINDS[id] ? KINDS[id].label : id);
 
+// P309: 명령 한 줄 런처의 하네스 계열(백엔드 launchers.mjs COMMAND_FAMILIES·familyOf와 같다). 빈 값은 자동: 감싼 호출자(omh) → hermes, 아니면 셸 명령
+export const COMMAND_FAMILIES = ['shell', 'hermes', 'agent'];
+export const WRAPPERS = { omh: { family: 'hermes', icon: 'omh' } }; // 백엔드 harness.mjs HARNESS_WRAPPERS
+const exeBase = (w) => String(w || '').replace(/^.*[\\/]/, '').replace(/\.(exe|cmd|ps1|bat)$/i, '').toLowerCase();
+export const wrapperOf = (cmd) => WRAPPERS[exeBase(String(cmd || '').trim().split(/\s+/)[0])] || null;
+export const autoFamily = (command) => { const w = wrapperOf(command); return w ? w.family : 'shell'; };
+export function commandFamily(l) {
+  if (!l || l.harness !== 'command') return null;
+  return COMMAND_FAMILIES.includes(l.family) ? l.family : autoFamily(l.command);
+}
+
 // 그릴 종류 아이콘. 아이콘을 골랐으면 그것, 셸은 shell, 직접 명령은 null(터미널 그림 위에 첫 글자), 그 밖은 하네스 종류
+// P309: 감싼 호출자(실행 명령·명령이 omh이고 그 계열)면 그 아이콘(omh)
 export function launcherIcon(l) {
   if (!l) return null;
   if (l.icon) return l.icon;
+  const w = wrapperOf(l.harness === 'command' ? l.command : l.startCommand);
+  if (w && (l.harness === w.family || (l.harness === 'command' && commandFamily(l) === w.family))) return w.icon;
   if (l.harness === 'command') return null;
   return l.harness || 'claude';
 }

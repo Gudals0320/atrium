@@ -3,8 +3,13 @@
 // - 판 카드 머리·세션 맵 카드에 작은 표("오케스트레이션")를 달고, 안에서 일하는 중(바쁨 신호)이면 그 까닭을 붙인다.
 // 판단은 backend/src/orchestration.mjs(launcherOrch)와 같다
 
-// 이 하네스(런처 칸 harness)에 자체 오케스트레이션 칸이 있는가(셸·직접 명령은 에이전트가 아니다)
-export const orchApplies = (harness) => !!harness && harness !== 'shell' && harness !== 'command';
+import { commandFamily } from './launchers.js'; // P309: 명령 한 줄 런처의 하네스 계열
+
+// 이 하네스(런처 칸 harness)에 자체 오케스트레이션 칸이 있는가(셸·직접 명령은 에이전트가 아니다).
+// P309: 직접 명령도 하네스 계열(hermes, 그 밖의 에이전트)이면 있다(l: 런처 틀)
+export const orchApplies = (harness, l = null) => !!harness && harness !== 'shell' && (harness !== 'command' || (!!l && commandFamily(l) !== 'shell'));
+// P309: 오케스트레이션 기본값을 볼 하네스(직접 명령은 그 계열: hermes는 hermes, 그 밖의 에이전트는 기본이 없다)
+export const orchHarness = (l) => (l && l.harness === 'command' ? (commandFamily(l) === 'hermes' ? 'hermes' : null) : l && l.harness);
 // 하네스 표(launcher.list의 harnesses)의 기본값
 export function orchDefault(harnesses, harness) {
   const h = (harnesses || []).find((x) => x.id === harness);
@@ -20,7 +25,7 @@ export function launcherFallback(harnesses, l) {
   if (!l) return false;
   if (l.reportFallback === 'last_answer') return true;
   if (l.reportFallback === 'none') return false;
-  return fallbackDefault(harnesses, l.harness) === 'last_answer';
+  return fallbackDefault(harnesses, orchHarness(l)) === 'last_answer';
 }
 // P298: 체크 칸 → 저장할 값. 하네스 기본이 켜짐이면 끌 때 none, 기본이 꺼짐이면 켤 때 last_answer(같으면 칸을 두지 않는다)
 export function fallbackValue(harnesses, harness, on) {
@@ -29,14 +34,14 @@ export function fallbackValue(harnesses, harness, on) {
 }
 // 런처의 실제 성질
 export function launcherOrchestrates(harnesses, l) {
-  if (!l || !orchApplies(l.harness)) return false;
-  return typeof l.orchestrates === 'boolean' ? l.orchestrates : orchDefault(harnesses, l.harness);
+  if (!l || !orchApplies(l.harness, l)) return false;
+  return typeof l.orchestrates === 'boolean' ? l.orchestrates : orchDefault(harnesses, orchHarness(l));
 }
 // 저장할 칸(런처 창 → launcher.create·update). 고른 값이 하네스 기본과 같고 전에 칸이 없었으면 두지 않는다. 보고 물러섬·바쁨 신호는 그대로 넘긴다
 export function orchBody(harnesses, d) {
-  if (!d || !orchApplies(d.harness)) return {};
+  if (!d || !orchApplies(d.harness, d)) return {};
   const on = launcherOrchestrates(harnesses, d);
-  const keep = typeof d.orchestrates === 'boolean' || on !== orchDefault(harnesses, d.harness);
+  const keep = typeof d.orchestrates === 'boolean' || on !== orchDefault(harnesses, orchHarness(d));
   return { ...(keep ? { orchestrates: on } : {}), ...(on && d.reportFallback ? { reportFallback: d.reportFallback } : { reportFallback: '' }), ...(d.busy ? { busy: d.busy } : {}) };
 }
 // 세션 요약의 orch | null

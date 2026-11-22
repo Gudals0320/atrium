@@ -11,7 +11,7 @@ import { TerminalView, terms } from './TerminalView.jsx';
 import { markInteracted } from './touch.js';
 import { wakeSession } from './sleep.js';
 import { useT, errText } from './lib/i18n.js';
-import { STATE_LABEL } from './lib/labels.js';
+import { STATE_LABEL, shellStateText } from './lib/labels.js'; // P309: shellStateText
 import { keyBytes, touchWheelDelta, toneOf } from './lib/phone.js';
 import { fullLayout, kbShift, lastContentRow, linePlan, lineEnterSends, FULL_KEYS, PINCH_EXIT_RATIO, TOUCH_SLOP_PX, TAP_MAX_MS, dist as gap2 } from './lib/touch-board.js';
 import { useFull, closeFull } from './full-view.js';
@@ -172,7 +172,7 @@ function FullView({ s, from }) {
   const bump = (d) => setScale((v) => { const n = clampPhoneScale(Math.round((v + d) * 100) / 100); writePhoneScale(n); return n; });
   const grow = (el) => { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 96)}px`; };
   useEffect(() => { if (taRef.current && text) grow(taRef.current); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
-  const stateText = s.kind === 'shell' && live ? (s.shell && s.shell.atPrompt === false ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[s.state] || s.state;
+  const stateText = s.kind === 'shell' && live ? shellStateText(s) : STATE_LABEL[s.state] || s.state;
 
   return (
     <div className={`mt-full${box.open ? ' kb' : ''}`} ref={rootRef} data-role="phone-full" data-session={id} data-kb={box.open ? '1' : undefined} style={{ top: vv.top, height: vv.height }}>

@@ -16,7 +16,7 @@ import path from 'node:path';
 import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
 import { unlistedModel } from './codex-models.mjs';
 import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는 launch.mjs
-import { adapterOf, reservedArg } from './harness.mjs'; // P115: 하네스 어댑터 표
+import { adapterOf, reservedArg, wrapperInfo } from './harness.mjs'; // P115: 하네스 어댑터 표. P309: 감싼 호출자(omh)
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192: AGY 승인 인자
 import { HERMES_EFFORTS, hermesEffortOf, hermesReasoningOf, reasoningIn, withoutReasoning } from './harness.mjs'; // P299: Hermes 노력 수준
 import { V2_KEY, migrateLaunchers, legacyInitialLaunchers } from './launcher-migrate.mjs'; // P115: 옮기기(옛 이름은 그 파일에만)
@@ -214,11 +214,22 @@ export function normalizeLauncher(input, { others = [] } = {}) {
     if (!command) throw err('bad_request', "명령을 입력하세요.", 'commandEmpty');
   }
   const env = has('env') ? normalizeEnv(input.env) : {};
+  // P309: 명령 한 줄 런처의 하네스 계열(빈 값 = 자동: 감싼 호출자 표(omh → hermes)에 있으면 그 계열, 아니면 셸 명령)
+  let family = '';
+  if (h.id === 'command') {
+    family = String(input.family ?? '').trim();
+    if (family && !COMMAND_FAMILIES.includes(family)) throw famErr(`하네스 계열: ${family}`, 'errFamily', { family: family.slice(0, 20) });
+    const fam = familyOf({ harness: 'command', command, family });
+    if (fam !== 'shell') {
+      commandAgent(command, fam); // 명령 이름과 판이 정하는 인자를 확인한다(던진다)
+      if (Object.keys(env).length) throw famErr('하네스 계열 런처는 환경 변수를 받지 않습니다(셸 명령으로 두거나 환경 변수를 지우세요).', 'errEnv');
+    }
+  }
   const startCommand = has('startCommand') ? normalizeStartCommand(input.startCommand, h.id) : ''; // P97. P115: 모든 에이전트 하네스
   // P296: 자체 오케스트레이션(에이전트 하네스만). 칸이 없으면 종류의 기본(orchestration.mjs ORCH_DEFAULTS)
   let orch = {};
-  if (h.kind !== 'shell') { try { orch = normalizeOrchFields(input); } catch (e) { throw err('bad_request', e.message, 'orchestrates', { key: e.key || 'orchestrates' }); } }
-  return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, args, env, command, ...(startCommand ? { startCommand } : {}), ...orch }; // 빈 실행 명령은 두지 않는다
+  if (h.kind !== 'shell' || (h.id === 'command' && familyOf({ harness: 'command', command, family }) !== 'shell')) { try { orch = normalizeOrchFields(input); } catch (e) { throw err('bad_request', e.message, 'orchestrates', { key: e.key || 'orchestrates' }); } } // P309: 하네스 계열 명령 런처도
+  return { id: input.id || null, name, harness: h.id, icon, model, effort, permissionMode, args, env, command, ...(startCommand ? { startCommand } : {}), ...(family ? { family } : {}), ...orch }; // 빈 실행 명령은 두지 않는다
 }
 
 // 직접 명령에 환경 변수를 붙인다(PowerShell: $env:이름='값'; 작은따옴표는 두 번). P115: launch.mjs로 옮겼다
@@ -231,7 +242,45 @@ export function gatewayOf(l) {
 }
 
 // 보여줄 종류(노드 로고). 아이콘이 하네스 종류와 다르면 세션에 flavor로 남긴다(P25)
-export const flavorOf = (l) => (l.icon && l.icon !== harnessOf(l.harness).kind && l.icon !== l.harness ? l.icon : null);
+// P309: 아이콘을 고르지 않았고 실행 명령(명령 한 줄 런처는 그 명령)이 감싼 호출자(omh)면 그 표시 종류(omh: 카드 이름 OMH)
+export const flavorOf = (l) => {
+  if (l.icon && l.icon !== harnessOf(l.harness).kind && l.icon !== l.harness) return l.icon;
+  if (l.icon) return null;
+  const w = wrapperInfo(l.harness === 'command' ? l.command : l.startCommand);
+  return w && (l.harness === w.family || (l.harness === 'command' && familyOf(l) === w.family)) ? w.flavor : null;
+};
+
+// ---------- P309: 명령 한 줄 런처의 하네스 계열 ----------
+// shell: 셸 패널에 그 줄을 친다(지금까지와 같다), hermes: Hermes 계열(어댑터 hermes: 화면 상태·state.db·이어 가기·안내문), agent: 그 밖의 에이전트(어댑터가 없으면
+//   판 env와 PATH만, 상태는 터미널이 아는 것과 화면 기반 일반 규칙). 빈 값은 자동(감싼 호출자 표에 있으면 그 계열, 아니면 shell)
+export const COMMAND_FAMILIES = ['shell', 'hermes', 'agent'];
+const famErr = (message, key, vars = {}) => Object.assign(new Error(message), { code: 'bad_request', key: `launcherFamily.${key}`, vars }); // 창 사전 launcherFamily.*
+export function familyOf(l) {
+  if (!l || l.harness !== 'command') return null;
+  if (l.family && COMMAND_FAMILIES.includes(l.family)) return l.family;
+  const w = wrapperInfo(l.command);
+  return w ? w.family : 'shell';
+}
+// P309: 하네스 계열 명령 런처를 그 계열의 에이전트 런처 모양으로(하위 세션 띄우기·물려받기가 보통 런처처럼 쓴다). 셸 명령이면 null
+export function agentLauncherOf(l) {
+  const fam = familyOf(l);
+  if (!fam || fam === 'shell') return null;
+  const a = commandAgent(l.command, fam);
+  return { ...l, harness: a.kind, startCommand: a.startCommand.toLowerCase() === defaultCommandOf(a.kind) ? '' : a.startCommand, args: joinArgs(a.args), command: '', env: {}, family: undefined };
+}
+// 하네스 계열 명령 → { kind, startCommand, args }. 한 문장, 첫 낱말은 PATH에서 찾는 명령 이름(경로·따옴표 없이). 판이 정하는 인자는 거부
+export function commandAgent(command, family) {
+  const st = shellStatements(command);
+  const words = st.length === 1 ? st[0] : null;
+  if (!words || words.some(isSpaced) || !START_FIRST_RE.test(wordText(words[0]))) throw famErr('하네스 계열 런처의 명령은 한 줄, 첫 낱말은 명령 이름(경로·따옴표 없이)입니다.', 'errCommand');
+  const first = wordText(words[0]);
+  const base = exeBase(first);
+  const kind = family === 'hermes' ? 'hermes' : KIND_RE.test(base) && base !== 'shell' && base !== 'command' ? base : 'agent';
+  const args = words.slice(1).map(wordText);
+  const bad = kind === 'claude' ? args.find((a) => RESERVED_CLAUDE_ARGS.has(a.split('=')[0])) : reservedArg(kind, args);
+  if (bad) throw err('bad_request', `보드가 정하는 인자: ${bad}`, 'argsReserved', { arg: bad });
+  return { kind, startCommand: first, args };
+}
 
 // 호출자 → session.spawn 값. over는 함께 준 값(모델, 노력 수준, 권한 모드, 추가 인자, 명령)이고 호출자 값을 덮는다
 export function resolveLauncher(l, over = {}) {
@@ -244,7 +293,15 @@ export function resolveLauncher(l, over = {}) {
     return { ...base, model: model || null, effort: pick('effort') || null, permissionMode: pick('permissionMode') || 'manual', extraArgs: splitArgs(pick('args')), env: { ...(l.env || {}) }, gateway: gatewayOf(l), command: '', startCommand: l.startCommand || '' }; // P97: 실행 명령(빈 값은 claude)
   }
   if (h.id === 'shell') return { ...base, command: '' };
-  if (h.id === 'command') { const c = over.command ? checkCommand(over.command) : l.command; return { ...base, command: psEnvPrefix(l.env) + c }; }
+  if (h.id === 'command') {
+    const c = over.command ? checkCommand(over.command) : l.command;
+    const fam = familyOf({ ...l, command: c });
+    if (fam === 'shell') return { ...base, command: psEnvPrefix(l.env) + c };
+    // P309: 하네스 계열이면 셸에 치지 않고 그 계열의 에이전트로 띄운다(실행 명령 = 그 명령 이름, 나머지 = 추가 인자)
+    const a = commandAgent(c, fam);
+    const ah = harnessOf(a.kind);
+    return { ...base, kind: a.kind, flavor: flavorOf({ ...l, command: c }), model: null, args: a.args, command: '', startCommand: a.startCommand.toLowerCase() === defaultCommandOf(a.kind) ? '' : a.startCommand, gateway: null, ...(a.kind === 'hermes' ? { effort: over.effort || null } : {}), ...(ah && ah.fields.includes('permissionMode') ? { permissionMode: over.permissionMode || defaultPermission(ah.id) } : {}) };
+  }
   const model = h.fields.includes('model') ? String(pick('model') || '').trim() : '';
   if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
   // P115: 모델과 추가 인자를 따로 준다. 하네스 어댑터(harness.mjs)가 그 하네스의 모양(-m, --model, 설정의 model)으로 바꾼다
@@ -318,13 +375,19 @@ export function previewLauncher(l) {
     return { line: [a.join(' '), joinArgs(splitArgs(l.args))].filter(Boolean).join(' '), env: envNames, board: true };
   }
   if (h.id === 'shell') return { line: '', env: [], board: false, shell: true };
-  if (h.id === 'command') return { line: psEnvPrefix(l.env) + l.command, env: envNames, board: false, typed: true };
+  if (h.id === 'command') {
+    const fam = familyOf(l);
+    if (fam === 'shell') return { line: psEnvPrefix(l.env) + l.command, env: envNames, board: false, typed: true };
+    const a = commandAgent(l.command, fam); // P309: 하네스 계열이면 그 에이전트의 줄
+    return { ...previewLauncher({ harness: a.kind, startCommand: a.startCommand, args: joinArgs(a.args), model: '', effort: '', env: {} }), family: fam };
+  }
   const r = resolveLauncher(l);
   const a = adapterOf(h.kind);
   const s = startWords(l.startCommand); // P115: 실행 명령. 모델은 그 하네스의 모양(판이 덧붙이는 env·안내문·세션 ID는 빼고 보인다)
   const ra = h.kind === 'hermes' ? hermesReasoningOf(r.effort, r.args) : null; // P299: 판이 준비된 뒤 넣는 /reasoning(--tui는 --reasoning을 받지 않는다)
   const ha = h.kind === 'hermes' ? withoutReasoning(r.args) : r.args;
-  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a ? a.modelArgs(r.model) : [])].join(' ') + (ha.length ? ' ' + joinArgs(ha) : ''), env: [], board: !!a, ...(ra ? { after: `/reasoning ${ra}` } : {}) };
+  const omh = h.kind === 'hermes' && wrapperInfo(s); // P309: omh는 모델을 인자가 아니라 env HERMES_MODEL로 받는다
+  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a && !omh ? a.modelArgs(r.model) : [])].join(' ') + (ha.length ? ' ' + joinArgs(ha) : ''), env: omh && r.model ? ['HERMES_MODEL'] : [], board: !!a, ...(ra ? { after: `/reasoning ${ra}` } : {}) };
 }
 
 // ---------- 기본값과 옮기기 ----------
@@ -531,7 +594,8 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
   const blank = { name: '', harness: 'claude', icon: '', model: '', effort: '', permissionMode: 'manual', args: '', env: {}, command: '', startCommand: '' };
   if (!cmd) return { launcher: { ...blank, env }, name: '', recognized: rec };
   const known = new Set(kinds.filter((k) => k !== 'claude' && k !== 'codex'));
-  const at = cmd.findIndex((w) => isClaudeWord(w) || exeBase(w) === 'codex' || known.has(exeBase(w)));
+  const isWrapper = (w) => !!wrapperInfo([wordText(w)]); // P309: 감싼 호출자(omh)는 그 계열(hermes)의 실행 명령
+  const at = cmd.findIndex((w) => isClaudeWord(w) || exeBase(w) === 'codex' || known.has(exeBase(w)) || isWrapper(w));
   const asCommand = (why) => {
     const line = psLine(cmd.map(wordText));
     return { launcher: { ...blank, harness: 'command', permissionMode: '', command: line, env }, name: exeBase(cmd[0]) || 'command', recognized: { ...rec, as: 'command', harness: 'command', why } };
@@ -540,7 +604,8 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
   const wrapper = cmd.slice(0, at);
   const agent = cmd[at];
   const rest = cmd.slice(at + 1);
-  const kind = isClaudeWord(agent) ? 'claude' : exeBase(agent);
+  const wrapped = isWrapper(agent) ? wrapperInfo([wordText(agent)]) : null;
+  const kind = isClaudeWord(agent) ? 'claude' : wrapped ? wrapped.family : exeBase(agent);
   // P115: 래퍼 명령(실행 명령)은 모든 에이전트 하네스가 받는다
   if (wrapper.some(isSpaced) || isSpaced(agent)) return asCommand('quoted');
   const out = { model: '', effort: '', permissionMode: '', args: [] };
@@ -573,6 +638,7 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
   let startCommand = ''; let agentPath = null;
   const exe = kind === 'claude' ? 'claude' : kind;
   if (wrapper.length) startCommand = [...wrapper, agent].map(wordText).join(' ');
+  else if (hasDir(agent) && wrapped) startCommand = exeBase(agent); // P309: 감싼 호출자를 경로로 주면 PATH의 그 이름으로(실행 명령 omh)
   else if (hasDir(agent)) agentPath = wordText(agent); // 경로로 준 명령은 PATH의 그 명령으로(이어 가기 명령의 첫 낱말은 명령 이름이어야 한다)
   else if (exeBase(agent) !== exe) startCommand = wordText(agent);
   if (startCommand.toLowerCase() === exe) startCommand = '';

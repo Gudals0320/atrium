@@ -24,7 +24,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted, hermesReasoningShown } from './screen.mjs'; // P299: hermesReasoningShown
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted, hermesReasoningShown, hermesStateOf, isOmhScreen } from './screen.mjs'; // P299: hermesReasoningShown. P309: 셸 안 Hermes·OMH 화면
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -73,6 +73,7 @@ const KIND_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 const OPEN_PROMPT_MS = 30 * 60 * 1000; // F1: 보낸 지시에 받는 쪽 상태 변화를 이만큼 이어 붙인다
 const SHELL = 'shell'; // G2(P5): 에이전트 없는 일반 셸(PowerShell) 패널의 종류
 const SHELL_POLL_MS = 2000; // G2: 셸이 프롬프트에서 쉬는지 명령을 돌리는지 보는 간격(화면 읽기 하나에 1ms 안쪽)
+const SHELL_PROGRAM_QUIET_MS = 30000; // P309: 프롬프트 줄이 화면에 없는(화면을 차지한) 프로그램의 화면이 이만큼 그대로면 "셸에서 실행 중인 프로그램"(일하는 중으로 세지 않는다)
 const SHELL_PROCS_MS = 30000; // G2: 명령을 돌리는 셸의 자식 프로세스 이름을 다시 읽는 간격(PowerShell 한 번, 약 0.5초). 새 명령이 시작되면 바로 읽는다. 오래 도는 명령(npm run dev 등)에 PowerShell을 자주 띄우지 않게 30초로 둔다
 // F3: hook이 없는 세션을 끌 때 보내는 키. Claude Code는 /exit, 나머지는 ctrl+c 두 번(codex는 두 번째에 끝난다)
 const EXIT_TEXT = { claude: '/exit' };
@@ -590,7 +591,7 @@ export class Backend {
       git: s.git ? { isRepo: s.git.isRepo, root: s.git.root, commonDir: s.git.commonDir, mainRoot: s.git.mainRoot, isWorktree: s.git.isWorktree, branch: s.git.branch, cwd: s.git.cwd, changedFiles: s.git.changedFiles } : null,
       // P5: 리포지토리 워크스페이스(시작 폴더로 정함), 지금 그 밖에서 일하는가, 셸이 돌리는 명령
       workspaceKey: s.workspaceKey || null, elsewhere: elsewhereOf(this.store.getWorkspace(s.workspaceKey), s.git),
-      shell: s.kind === SHELL ? { atPrompt: rt.shell ? rt.shell.atPrompt : true, command: rt.shell ? rt.shell.command : null, procs: (rt.shell && rt.shell.procs) || [], since: rt.shell ? rt.shell.since : null } : null,
+      shell: s.kind === SHELL ? { atPrompt: rt.shell ? rt.shell.atPrompt : true, command: rt.shell ? rt.shell.command : null, procs: (rt.shell && rt.shell.procs) || [], since: rt.shell ? rt.shell.since : null, program: !!(rt.shell && rt.shell.program) } : null, // P309: program(화면을 차지한 채 조용한 프로그램)
       fromShell: !!rt.shellBase,
       ...(this.features ? this.features.summaryExtra(s) : {}), // P6b: output(긴 답인지), loops(켜진 루프 수)
       ...(this.branch ? this.branch.summaryExtra(s) : {}), // P8: branch(깊이, 부모 이름, 하위 세션이면 역할)
@@ -1005,6 +1006,8 @@ export class Backend {
       if (a.status && a.status !== 'unknown') rt.phase = 'running';
       const from = s.kind;
       s.rt = rt; s.kind = kind; s.agentName = a.name || s.paneId; s.adoptNamed = s.origin !== 'adopted' || !!a.name;
+      // P309: 셸에서 연 OMH Native는 카드에 OMH로 보인다(런처 아이콘이 없을 때만, 셸로 돌아오면 되돌린다)
+      if (kind === 'hermes' && s._shellTuiFlavor && !s.flavor) { s.flavor = s._shellTuiFlavor; rt.flavorFromShell = true; this.store.updateSession(s.sessionId, { flavor: s.flavor, runtime: rt }); } // 판 기록(runtime)에 남겨 다시 켠 뒤에도 셸로 돌아올 때 지운다
       if (s.origin === 'adopted' && a.name && NAME_RE.test(a.name) && a.name !== s.name && !nameOwner(this.sessions.values(), a.name, s)) {
         this.store.addEvent(s.sessionId, 'renamed', { from: s.name, to: a.name }); s.name = a.name; this.store.renameSession(s.sessionId, a.name);
       }
@@ -1018,9 +1021,11 @@ export class Backend {
   // 셸에서 띄운 에이전트가 끝났다: 같은 노드를 셸로 되돌린다
   demoteToShell(s, why) {
     const from = s.kind;
+    const shellFlavor = !!(s.rt && s.rt.flavorFromShell); // P309
     const rt = newRuntime({ kind: SHELL, hooked: false });
     rt.cwd = s.rt.cwd; rt.phase = 'running'; rt.shellBase = false;
     s.rt = rt; s.kind = SHELL; s.agentName = s.paneId; s.openPromptFrom = null;
+    if (shellFlavor) { s.flavor = null; s._shellTuiFlavor = null; this.store.updateSession(s.sessionId, { flavor: null }); } // P309: 셸에서 연 OMH로 붙인 표시는 셸로 돌아오면 지운다
     this.queue.cancelSession(s.sessionId, 'agent exited, shell left');
     this.store.updateSession(s.sessionId, { kind: SHELL, agentName: s.agentName, runtime: rt });
     this.store.addEvent(s.sessionId, 'shell_agent', { from, to: SHELL, why });
@@ -1041,7 +1046,18 @@ export class Backend {
         const st = shellPromptState(text);
         const prev = s.rt.shell;
         const same = prev && prev.atPrompt === st.atPrompt && prev.command === st.command;
-        s.rt.shell = { atPrompt: st.atPrompt, command: st.command, procs: !st.atPrompt && same ? prev.procs || [] : [], procsAt: !st.atPrompt && same ? prev.procsAt || null : null, since: same ? prev.since : Date.now() };
+        // P309: 셸에서 연 Hermes·OMH TUI는 화면 모양으로 알아보고(셸 패널의 claude처럼) 같은 노드를 그 에이전트 세션으로 바꾼다. 터미널 어댑터가 화면 상태를 흉내 내면(app hermes)
+        //   agent_detected → promoteShell, TUI가 끝나 프롬프트로 돌아오면 agent_released → demoteToShell
+        if (!st.atPrompt && typeof this.adapter.watchShellTui === 'function' && hermesStateOf(text)) {
+          s._shellTuiFlavor = isOmhScreen(text) ? 'omh' : null;
+          this.adapter.watchShellTui(s.paneId, 'hermes');
+        }
+        // P309: 알아볼 수 없는 전체 화면 프로그램(프롬프트 줄이 화면에 없고 화면이 SHELL_PROGRAM_QUIET_MS 동안 그대로)은 "셸에서 실행 중인 프로그램"으로 둔다
+        const screenKey = `${text.length}:${text.slice(-400)}`;
+        const quietSince = !st.atPrompt && same && prev.screenKey === screenKey ? prev.quietSince || Date.now() : Date.now();
+        const program = !st.atPrompt && !st.command && Date.now() - quietSince >= SHELL_PROGRAM_QUIET_MS;
+        s.rt.shell = { atPrompt: st.atPrompt, command: st.command, procs: !st.atPrompt && same ? prev.procs || [] : [], procsAt: !st.atPrompt && same ? prev.procsAt || null : null, since: same ? prev.since : Date.now(), screenKey, quietSince, program };
+        if (same && !!prev.program !== program) { this.store.addEvent(s.sessionId, 'shell', { atPrompt: st.atPrompt, program }); this.broadcastSession(s, { cause: 'shell:program' }); }
         if (!st.atPrompt) busy.push(s);
         if (!same) {
           s.rt.lastActivityAt = Date.now();
@@ -1092,6 +1108,7 @@ export class Backend {
       try { const added = fillSessionHooks(s.settingsPath); if (added.length) { this.log(`hooks added for ${s.name}: ${added.join(', ')}`); this.store.addEvent(s.sessionId, 'settings_hooks_added', { events: added }); } } catch (e) { this.log(`hooks fill failed ${s.name}: ${e.message}`); }
     }
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
+    if (launch && withPlugin && this.briefNotices) try { this.briefNotices.stamp(s, 'relaunch'); } catch (e) { this.log(`brief stamp failed ${s.name}: ${e.message}`); } // P317: 이어 가기·깨우기는 지금 안내문을 다시 넣는다(알리지 않고 판을 올린다)
     return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.pluginFor(s) : {}) };
   }
   // P296: 자체 오케스트레이션 세션의 판 안내문(그 세션의 지금 권한 범위: sub | free). Claude Code는 줄마다, 하네스는 한 줄. → { file, text } | null
@@ -1167,6 +1184,7 @@ export class Backend {
     const st = await this.adapter.startAgent({ name, paneId: s.paneId, args: hl.args, kind: s.kind, command: hl.command, env: hl.env, pathFirst: hl.pathFirst });
     s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now(), firstLaunchedAt: (s.harnessPlan || {}).firstLaunchedAt || Date.now() }; // P133: firstLaunchedAt(처음 띄운 때, 대화 ID 배우기)
     this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
+    if (hl.args && this.briefNotices) try { this.briefNotices.stamp(s, why); } catch (e) { this.log(`brief stamp failed ${s.name}: ${e.message}`); } // P317: 띄우기·이어 가기는 지금 안내문을 넣는다(mustRePass)
     if (why !== 'start') { s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.term.launchPending = st.agent ? st.agent.launchPending : true; }
     this.store.addEvent(s.sessionId, why === 'start' ? 'harness_started' : 'recovered_by_board', { plan: why, resume, resumed: hl.resumed, harnessSessionId: hl.harnessSessionId, argv: [...hl.command, ...hl.args], env: Object.keys(hl.env), ...(hl.readyInput ? { readyInput: hl.readyInput } : {}) });
     // P299: 준비된 뒤 넣을 글(Hermes /reasoning <값>). 넣을 때까지 전달을 붙잡는다(deliveryView starting). 판 기록에 남기지 않는다(다시 켜면 다시 띄울 때 다시 정한다)
@@ -1684,6 +1702,7 @@ export class Backend {
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
       });
+      if (claude && this.briefNotices) try { this.briefNotices.stamp(s, 'start'); } catch {} // P317: 띄울 때 받은 판 안내문 판(하네스는 startHarness가)
       // 빈자리는 그 워크스페이스 영역 안이나 바로 옆(P6a H1). 사람이 보는 화면은 옮기지 않는다. P8(K4): 하위 세션은 부모 오른쪽 열에 형제끼리 쌓는다
       const place = p.branch && !p.branch.head ? this.branch.placeChild(p.parentSessionId, ws.key, { worktree: p.branch.worktree || null, peer: p.branch.relation === 'peer' }) : null; // P75: 워크트리 워커는 상자 테두리까지 비워 둔다
       const area = this.worktrees ? this.worktrees.areaOf(ws.key, cwd) : ''; // P27: 워크트리 폴더에서 띄우면 그 워크트리 영역

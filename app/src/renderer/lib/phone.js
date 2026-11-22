@@ -27,7 +27,7 @@ export const firstView = (o) => (isPhoneDevice(o) ? 'list' : 'board');
 const NEED = new Set(['waiting', 'trust_wait']);
 const BUSY = new Set(['working', 'starting']);
 export const needsYou = (s) => !!s && NEED.has(s.state);
-export const isBusy = (s) => !!s && (BUSY.has(s.state) || !!s.waking || (s.kind === 'shell' && s.shell && s.shell.atPrompt === false && s.state !== 'exited' && s.state !== 'sleeping'));
+export const isBusy = (s) => !!s && (BUSY.has(s.state) || !!s.waking || (s.kind === 'shell' && s.shell && s.shell.atPrompt === false && !s.shell.program && s.state !== 'exited' && s.state !== 'sleeping')); // P309: 조용한 프로그램은 바쁨이 아니다
 const askSince = (s) => s.waitingSince || (s.ask && s.ask.since) || s.lastActivityAt || s.createdAt || 0;
 // P90: 시작한 지 오래된 것부터(세션을 띄운 시각). 같으면 이름, 그다음 ID 순으로 늘 같은 자리
 const byStart = (a, b) => (a.createdAt || 0) - (b.createdAt || 0) || String(a.name).localeCompare(String(b.name)) || String(a.sessionId).localeCompare(String(b.sessionId));
@@ -62,7 +62,7 @@ export function phoneList(sessions, workspaces = []) {
 export function toneOf(s) {
   if (!s) return 'exited';
   if (s.waking) return 'starting';
-  if (s.kind === 'shell' && s.state !== 'exited' && s.state !== 'sleeping' && s.state !== 'error') return s.shell && s.shell.atPrompt === false ? 'shell_running' : 'ready';
+  if (s.kind === 'shell' && s.state !== 'exited' && s.state !== 'sleeping' && s.state !== 'error') return s.shell && s.shell.atPrompt === false && !s.shell.program ? 'shell_running' : 'ready'; // P309: shell.program
   if (s.state === 'trust_wait') return 'waiting';
   if (s.unseen && s.state === 'ready') return 'review';
   return ['starting', 'ready', 'working', 'waiting', 'error', 'exited', 'sleeping'].includes(s.state) ? s.state : 'starting';

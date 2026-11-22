@@ -37,8 +37,13 @@ function hermesStatusAt(lines) {
   for (let i = lines.length - 1; i >= Math.max(0, lines.length - 40); i--) if (HERMES_STATUS_LINE.test(lines[i])) return i;
   return -1;
 }
-// 화면 → 'blocked' | 'working' | 'idle' | null(Hermes 화면이 아니거나 아직 그려지지 않음)
+// 화면 → 'blocked' | 'working' | 'idle' | null(Hermes 화면이 아니거나 아직 그려지지 않음).
+// P309: Hermes TUI(Ink) 모양이 아니면 OMH Native(omh) 모양으로 읽는다(omhStateOf)
 export function hermesStateOf(text) {
+  const ink = hermesInkStateOf(text);
+  return ink != null ? ink : omhStateOf(text);
+}
+function hermesInkStateOf(text) {
   const lines = hermesLines(text);
   const at = hermesStatusAt(lines);
   const tail = lines.slice(Math.max(0, (at < 0 ? lines.length : at) - 18), at < 0 ? lines.length : at + 4).join('\n'); // 창은 상태 줄 바로 위·아래에 뜬다
@@ -54,7 +59,7 @@ const HERMES_HINT = /^(?:Try "[^"]*"(?: for commands)?|Ask me anything(?:…|\.\
 export function hermesInputBox(text) {
   const lines = hermesLines(text);
   const at = hermesStatusAt(lines);
-  if (at < 0) return { found: false, text: '', above: lines };
+  if (at < 0) return omhInputBox(text); // P309: OMH Native 입력 칸
   let start = -1;
   for (let i = at + 1; i < lines.length; i++) if (/^\s*❯(\s|$)/.test(lines[i])) { start = i; break; }
   if (start < 0) return { found: false, text: '', above: lines };
@@ -67,7 +72,70 @@ export function hermesInputBox(text) {
 export function hermesReasoningShown(text, level) {
   const want = String(level || '').trim().toLowerCase();
   if (!want) return false;
-  return hermesLines(text).some((l) => { const m = /^\s*[·•]?\s*reasoning:\s*([a-z]+)\s*$/i.exec(l); return !!m && m[1].toLowerCase() === want; });
+  if (hermesLines(text).some((l) => { const m = /^\s*[·•]?\s*reasoning:\s*([a-z]+)\s*$/i.exec(l); return !!m && m[1].toLowerCase() === want; })) return true;
+  // P309: OMH Native는 /reasoning <값>을 그 세션의 노력 수준으로 받고(/effort와 같다) 맨 아래 정보 줄 끝에 "· effort <값>"으로 보인다
+  const o = omhLayout(text);
+  if (!o) return false;
+  const m = /·\s*effort\s+([a-z]+)\s*$/i.exec(o.lines[o.info]);
+  return !!m && m[1].toLowerCase() === want;
+}
+
+// P309: OMH Native(omh: Hermes + OMH 플러그인을 감싼 OMH 자기 TUI, v5.0.0에서 본 모양. 소스 omh/tui의 문구는 영어 고정).
+//   맨 아래 정보 줄 "  [⚚ OMH Native v5.0.0]  …  <모델> · effort <값>"(좁으면 "[⚚ OMH Native]", "[⚚ OMH]", "⚚"), 그 위가 입력 칸
+//   (가로줄 ─ 둘 사이 "❯ 글", 빈 칸은 흐린 안내 "Ask Hermes anything"), 그 위 꼬리 줄이 일하는 줄 "<빛> <동사>… (12s · ↓1.2k tokens · esc to interrupt)"
+//   (끊는 중이면 "interrupting…"). 턴 사이의 기다림 줄 "Waiting… (…)"·"Running <실행>…"·"Watching for …"(하위 에이전트·배경 명령)은 쉼이다(안 일은 바쁨 읽개가 본다).
+//   사람이 답할 창: 승인(정보 줄 "↑↓ pick · enter confirms · esc denies and stops"), 질문(… esc cancels, "Enter to select · … · Esc to cancel"),
+//   값(esc declines), 꼬리 줄 "? waiting for your approval|answer"·"? waiting on you"
+const OMH_INFO = /^\s*(?:\[⚚ OMH(?: Native)?(?: v[\w.+-]+)?\]|⚚)(?:\s|$)/;
+const OMH_RULE = /^\s*─{8,}\s*$/;
+const OMH_WORK_ROW = /^\s*[✻✽✶✳✢·]\ufe0e?\s+(\S.*?)…/;
+const OMH_INTERRUPT = /esc (?:esc )?to interrupt|interrupting…/;
+const OMH_WAIT_VERB = /^(?:Waiting\b|Watching for\b|Running\s)/;
+const OMH_BLOCKED = [/\besc denies\b/i, /\besc (?:cancels|declines)\b/i, /\bEnter to (?:select|send|tick|skip)\b.*\bEsc to cancel\b/, /^\s*\?\s+waiting (?:for your (?:approval|answer)|on you)\b/];
+const OMH_HINT = /^Ask Hermes anything$/;
+// 화면의 OMH 뼈대 → { lines, info(정보 줄), top(입력 칸 위 가로줄, 없으면 -1), bottom(아래 가로줄, 없으면 -1) } | null(OMH 화면이 아님)
+function omhLayout(text) {
+  const lines = hermesLines(text);
+  let end = lines.length - 1;
+  while (end >= 0 && !lines[end].trim()) end--;
+  let info = -1;
+  for (let i = end; i >= Math.max(0, end - 2); i--) if (OMH_INFO.test(lines[i])) { info = i; break; } // 정보 줄은 맨 아래(질문 창의 키 줄이 그 아래 한 줄 더 있을 수 있다)
+  if (info < 0) return null;
+  let bottom = -1, top = -1;
+  for (let i = info - 1; i >= Math.max(0, info - 3); i--) if (OMH_RULE.test(lines[i])) { bottom = i; break; }
+  if (bottom < 0) return null; // 정보 줄 바로 위는 입력 칸의 가로줄이다(끝난 뒤 남은 머리글 "⚚ OH-MY-HERMES …"는 아니다)
+  if (bottom > 0) for (let i = bottom - 1; i >= Math.max(0, bottom - 30); i--) if (OMH_RULE.test(lines[i])) { top = i; break; }
+  return { lines, info, top, bottom };
+}
+// OMH Native 화면인가(맨 아래 정보 줄)
+export const isOmhScreen = (text) => !!omhLayout(text);
+// 화면 → 'blocked' | 'working' | 'idle' | null(OMH 화면이 아님)
+export function omhStateOf(text) {
+  const o = omhLayout(text);
+  if (!o) return null;
+  const tail = o.lines.slice(Math.max(0, o.info - 30), o.info + 1);
+  if (tail.some((l) => OMH_BLOCKED.some((re) => re.test(l)))) return 'blocked';
+  const from = o.top >= 0 ? o.top : o.bottom >= 0 ? o.bottom : o.info;
+  for (let i = from - 1; i >= Math.max(0, from - 4); i--) {
+    const l = o.lines[i];
+    if (!l.trim()) continue;
+    const m = OMH_WORK_ROW.exec(l);
+    if (!m) continue;
+    if (OMH_INTERRUPT.test(l)) return 'working';
+    return OMH_WAIT_VERB.test(m[1]) ? 'idle' : 'working';
+  }
+  return 'idle';
+}
+// 입력 칸 → { found, text, above, rows }(hermesInputBox와 같은 모양). 두 가로줄 사이의 "❯ " 줄부터
+export function omhInputBox(text) {
+  const o = omhLayout(text);
+  if (!o || o.top < 0 || o.bottom < 0) return { found: false, text: '', above: hermesLines(text) };
+  const rows = o.lines.slice(o.top + 1, o.bottom);
+  const start = rows.findIndex((l) => /^\s*❯(\s|$)/.test(l));
+  if (start < 0) return { found: false, text: '', above: o.lines.slice(0, o.top) };
+  const body = [rows[start].replace(/^\s*❯\s?/, ''), ...rows.slice(start + 1).map((l) => l.trim())].filter((l, i) => i === 0 || l);
+  const t = body.join(' ').replace(/\s+/g, ' ').trim();
+  return { found: true, text: OMH_HINT.test(t) ? '' : t, above: o.lines.slice(0, o.top), rows: body.length };
 }
 // 붙여 넣은 글이 입력 칸에 다 들어갔는가(adapter.pastePrompt의 state) → { box, done }. 글 끝(빈칸 빼고 24자)이 입력 칸 끝과 같으면 다 들어갔다
 export function hermesPasteState(screenText, text) {
