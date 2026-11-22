@@ -873,6 +873,7 @@ export class Recall {
       } else this.store.insertSession({ ...s, runtime: rt });
       b.sessions.set(id, s);
     });
+    if (claude && b.briefNotices) try { b.briefNotices.stamp(s, 'reopen'); } catch {} // P317: 다시 연 Claude Code는 지금 안내문을 받는다(옛 판 기록을 덮는다. 하네스는 startHarness가)
     this.store.setNode({ session_id: id, x: at.x, y: at.y, w: at.w, h: at.h, z: 0, size: at.size || null, aspect: at.aspect || null, area });
     if (spec.near) { this.store.setConvoNodesShown([id], false); this.layoutCanvas().catch(() => {}); } // P13: 대화 노드는 세션 노드가 됐다
     settleRegions(b, 'reopen');

@@ -1105,6 +1105,7 @@ export class Backend {
       try { const added = fillSessionHooks(s.settingsPath); if (added.length) { this.log(`hooks added for ${s.name}: ${added.join(', ')}`); this.store.addEvent(s.sessionId, 'settings_hooks_added', { events: added }); } } catch (e) { this.log(`hooks fill failed ${s.name}: ${e.message}`); }
     }
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
+    if (launch && withPlugin && this.briefNotices) try { this.briefNotices.stamp(s, 'relaunch'); } catch (e) { this.log(`brief stamp failed ${s.name}: ${e.message}`); } // P317: 이어 가기·깨우기는 지금 안내문을 다시 넣는다(알리지 않고 판을 올린다)
     return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.pluginFor(s) : {}) };
   }
   // P296: 자체 오케스트레이션 세션의 판 안내문(그 세션의 지금 권한 범위: sub | free). Claude Code는 줄마다, 하네스는 한 줄. → { file, text } | null
@@ -1180,6 +1181,7 @@ export class Backend {
     const st = await this.adapter.startAgent({ name, paneId: s.paneId, args: hl.args, kind: s.kind, command: hl.command, env: hl.env, pathFirst: hl.pathFirst });
     s.harnessPlan = { ...(s.harnessPlan || {}), harnessSessionId: hl.harnessSessionId || (s.harnessPlan || {}).harnessSessionId || null, launchedAt: Date.now(), firstLaunchedAt: (s.harnessPlan || {}).firstLaunchedAt || Date.now() }; // P133: firstLaunchedAt(처음 띄운 때, 대화 ID 배우기)
     this.store.updateSession(s.sessionId, { harnessPlan: s.harnessPlan });
+    if (hl.args && this.briefNotices) try { this.briefNotices.stamp(s, why); } catch (e) { this.log(`brief stamp failed ${s.name}: ${e.message}`); } // P317: 띄우기·이어 가기는 지금 안내문을 넣는다(mustRePass)
     if (why !== 'start') { s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.term.launchPending = st.agent ? st.agent.launchPending : true; }
     this.store.addEvent(s.sessionId, why === 'start' ? 'harness_started' : 'recovered_by_board', { plan: why, resume, resumed: hl.resumed, harnessSessionId: hl.harnessSessionId, argv: [...hl.command, ...hl.args], env: Object.keys(hl.env), ...(hl.readyInput ? { readyInput: hl.readyInput } : {}) });
     // P299: 준비된 뒤 넣을 글(Hermes /reasoning <값>). 넣을 때까지 전달을 붙잡는다(deliveryView starting). 판 기록에 남기지 않는다(다시 켜면 다시 띄울 때 다시 정한다)
@@ -1697,6 +1699,7 @@ export class Backend {
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
       });
+      if (claude && this.briefNotices) try { this.briefNotices.stamp(s, 'start'); } catch {} // P317: 띄울 때 받은 판 안내문 판(하네스는 startHarness가)
       // 빈자리는 그 워크스페이스 영역 안이나 바로 옆(P6a H1). 사람이 보는 화면은 옮기지 않는다. P8(K4): 하위 세션은 부모 오른쪽 열에 형제끼리 쌓는다
       const place = p.branch && !p.branch.head ? this.branch.placeChild(p.parentSessionId, ws.key, { worktree: p.branch.worktree || null, peer: p.branch.relation === 'peer' }) : null; // P75: 워크트리 워커는 상자 테두리까지 비워 둔다
       const area = this.worktrees ? this.worktrees.areaOf(ws.key, cwd) : ''; // P27: 워크트리 폴더에서 띄우면 그 워크트리 영역

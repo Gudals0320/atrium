@@ -45,6 +45,7 @@ import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때
 import { DocWatch } from './doc-watch.mjs'; // P257: 문서 점검(지휘 세션 턴 끝·done 알림)
 import { Decisions } from './decisions.mjs'; // P284: 결정 카드(atrium ask)
 import { Plans } from './plan-board.mjs';
+import { BriefNotices, boardPromptOf } from './verbs-notice.mjs'; // P317: 판 명령이 늘었다는 한 줄
 import { PlanNotes } from './plan-notify.mjs'; // P306 // P304: 리포별 목표·마일스톤(atrium plan, 판 API plan.*)
 import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | news, 턴 끝·done 자동 기록)
 import { permOf, permKey, opRefusal, refusalText } from './orchestration.mjs'; // P296: 자체 오케스트레이션 세션의 권한
@@ -380,6 +381,8 @@ export class Branch {
     this.decisions = new Decisions(b, this, decisionsOpts); b.decisions = this.decisions; // P284: 결정 카드(atrium ask, 판 API decision.*)
     this.plans = new Plans(b, this); b.plans = this.plans; // P304: 리포별 목표·마일스톤(atrium plan, 판 API plan.*)
     this.planNotes = new PlanNotes(b); b.planNotes = this.planNotes; // P306: 사람이 바꾼 레인을 관리자에게 알림(다음 메시지와 실어 보내기)
+    // P317: 띄울 때 받은 판 안내문 판을 세션마다 남기고, 그 뒤 계약에 새 동사가 생기면 다음 전달 앞에 한 줄로 알린다(decisions.mjs attachFront)
+    this.briefNotices = new BriefNotices(b, { promptOf: (s) => boardPromptOf(s, s.orch ? (this.permFor(s).scope === 'sub' ? 'sub' : 'free') : null), permOf: (s) => this.permFor(s) }); b.briefNotices = this.briefNotices;
     this.docs = new DocWatch(b, this); b.docs = this.docs; // P257: 문서 점검(일 단위가 done·머리에서 부른다)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
     this.merger = new Merger(b, this.units, mergerOpts); b.merger = this.merger; // P267: 브랜치 하위의 done ok를 merger에게
