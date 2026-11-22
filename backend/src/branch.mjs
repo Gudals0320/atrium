@@ -28,7 +28,7 @@ import { EFFORTS } from './settings.mjs';
 import { clip, promptTask } from './text.mjs';
 import { BACKEND_ROOT, terminalSessionEnv } from './config.mjs';
 import { predictTrust, repoHasCommit, buildStartArgs, fillBoardHooks } from './launch.mjs';
-import { HARNESSES, harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine } from './launchers.mjs'; // P41. P96: splitArgs. P97: 실행 명령
+import { HARNESSES, harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine, agentLauncherOf } from './launchers.mjs'; // P309: agentLauncherOf(하네스 계열 명령 런처) // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { shownModel } from './model-now.mjs'; // P299: atrium me의 모델·노력 수준
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192
@@ -774,7 +774,7 @@ export class Branch {
     if (peer) this.setRelation(parent, child, 'peer', { source: 'agent', by: parent.name, quiet: true });
     const notice = head ? headNotice({ name: child.name, kind }) : peer ? peerNotice({ role, name: child.name, kind }) : childNotice({ role, name: child.name, kind, depth }); // P116: 판의 이름과 atrium 명령
     b.linkEvent(l, 'role', role, { notice, via: 'command' });
-    b.store.addEvent(parent.sessionId, 'branch_child', { child: name, sessionId: child.sessionId, role, depth, cwd: cwd.split(path.sep).join('/'), workspace: ws.key, worktree, kind, model, ...(viaLauncher || (other && other.launcher) ? { launcher: (viaLauncher ? route.launcher : other.launcher).name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(other ? { harness: { ...other.record, argv: other.argv } } : {}) });
+    b.store.addEvent(parent.sessionId, 'branch_child', { child: name, sessionId: child.sessionId, role, depth, cwd: cwd.split(path.sep).join('/'), workspace: ws.key, worktree, kind, model, ...(viaLauncher || (other && other.launcher) ? { launcher: (viaLauncher ? route.launcher : other.launcher).name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(other ? { harness: { ...other.record, argv: other.argv, ...(other.launcher && other.launcher.startCommand ? { start: other.launcher.startCommand } : {}) } } : {}) }); // P309: start(실행 명령, omh 등)
     b.store.addEvent(child.sessionId, 'branch_parent', { parent: parent.name, parentSessionId: parent.sessionId, role, depth });
     b.log(`branch child ${parent.name} → ${name} (${kind}, ${depth}단계, ws=${ws.key}${worktree ? `, worktree ${worktree}` : ''})`);
     // 명령의 응답이 부모에게 닿지 않았으면(명령이 시간 제한으로 끊김 등) F2처럼 판이 알림을 보낸다
@@ -849,8 +849,9 @@ export class Branch {
   // 무엇으로 띄우는가. type: launcher(호출자 그대로) | model(하네스 모델) | gateway(연결 모델, 그 연결을 쓰는 호출자로) | inherit-gateway(부모가 연결을 쓰는 claude) | inherit-harness(P115) | plain
   async routeOf(parent, o) {
     if (o.launcher) {
-      const l = this.findLauncher(o.launcher);
-      if (!l) throw apiError('no_launcher', `런처를 찾을 수 없습니다: ${o.launcher}. 런처와 모델 목록: atrium models`);
+      const found = this.findLauncher(o.launcher);
+      if (!found) throw apiError('no_launcher', `런처를 찾을 수 없습니다: ${o.launcher}. 런처와 모델 목록: atrium models`);
+      const l = agentLauncherOf(found) || found; // P309: 하네스 계열 명령 런처(omh 등)는 그 계열의 에이전트 런처로
       const h = harnessOf(l.harness);
       if (!h || h.id === 'shell' || h.id === 'command') throw apiError('bad_request', `하위 세션에는 에이전트를 실행하는 런처만 사용할 수 있습니다: ${l.name}(${h ? h.label : l.harness})`);
       if (o.kind && o.kind !== h.kind) throw apiError('bad_request', `런처 ${l.name}은 종류 ${h.kind}다(--kind ${o.kind}와 다르다)`);

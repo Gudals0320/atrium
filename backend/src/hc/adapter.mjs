@@ -19,7 +19,8 @@ import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { hcCall, hcSubscribe, hcPipe, HcError, FramedConn, FRAME } from './rpc.mjs';
 import { HcModel, LABEL, paneOf, agentInfoOf, findTerminal, workspaceOf, terminalEnv, keysToBytes, hcName, KIND_COMMAND, isLive, CORE_DOWN, isBoardTerm, TRUST_STATUS, isSynthetic, trustStatusOf, TRUST_WATCH_KINDS, isScreenStatus, SCREEN_STATUS_KINDS } from './model.mjs';
-import { trustDialogOf, dshGateOf, hermesStateOf } from '../screen.mjs'; // P117: 신뢰 대화상자(7501 상태 전). P208: Codex도. P270: dsh-TUI가 입력을 잡는 창
+import { trustDialogOf, dshGateOf, hermesStateOf, shellPromptState } from '../screen.mjs'; // P309: shellPromptState(셸에서 연 TUI가 끝났나)
+import { OMH_BOARD_ENV } from '../harness.mjs'; // P309: OMH TUI 바탕색 끄기(판이 띄우는 모든 터미널) // P117: 신뢰 대화상자(7501 상태 전). P208: Codex도. P270: dsh-TUI가 입력을 잡는 창
 import { HC_PIN, ensureHc, hcBinDir, hcExeIn } from './pin.mjs';
 import { startCore, upgradeCore, hcConfigHome, writeBoardConfig, hcStateDir, hcCompat, cliVersion, coreEnv } from './core.mjs';
 import { HcController } from './stream.mjs';
@@ -308,10 +309,11 @@ export class HcAdapter extends EventEmitter {
     return { workspaces: ws, panes };
   }
   // 판이 띄우는 터미널의 env: extra(판의 env, 하네스 env) + PATH(pathFirst, 판의 hc 폴더, 레지스트리 PATH) + XDG_CONFIG_HOME 빈 값. P114 2a·2b 관리자 결정
+  // P309: OMH_BOARD_ENV(OMH_TUI_WALLPAPER=0)를 모든 판 터미널에 둔다. 셸 패널에서 사람이 omh를 쳐도 OMH가 판 카드의 바탕색을 바꾸지 않는다(extra가 이긴다)
   async paneEnv(extra = {}, pathFirst = []) {
     const reg = await registryPath().catch(() => null);
     const base = reg || this.env[Object.keys(this.env).find((k) => k.toUpperCase() === 'PATH')] || '';
-    return terminalEnv({ exeDir: this.exeDir, basePath: base, extra, pathFirst, deny: envDenyList(this.env) });
+    return terminalEnv({ exeDir: this.exeDir, basePath: base, extra: { ...OMH_BOARD_ENV, ...extra }, pathFirst, deny: envDenyList(this.env) });
   }
   // 셸 터미널 하나 = 판의 작업 공간 하나. 판이 만든 터미널이라 atrium-board 라벨
   async createWorkspace({ cwd, label, env = {} }) {
@@ -392,9 +394,20 @@ export class HcAdapter extends EventEmitter {
   // P298: Hermes TUI는 OSC 7501을 내지 않는다(P297). 띄운 뒤 터미널이 살아 있는 동안 screenPollMs마다 화면 맨 아래 상태 줄을 읽어(screen.mjs hermesStateOf)
   //   코어 상태를 흉내 낸다(dsh 막힘 흉내와 같은 길에 ready·working까지): ready → idle, 일함 → working, 승인·질문·확인 창 → blocked(kind dialog, 판은 waiting).
   //   상태 줄이 아직 없으면(첫 화면 그리는 중) 바꾸지 않는다. 판은 이 상태를 코어에 없는 흉내(synthetic, screen)로 들고 있는다(diff·_overlay)
-  _watchScreenStatus(address, kind = 'hermes') {
+  // P309: 셸에서 연 TUI(shell: true, 판 셸 패널에서 사람이 hermes·omh를 침). 프롬프트로 돌아오면(화면이 그 TUI가 아니고 셸 프롬프트가 보임) 흉내 상태를 지워
+  //   에이전트가 떠난 것으로 알리고(agent_released → 판은 같은 노드를 셸로 되돌린다) 지켜보기를 멈춘다
+  watchShellTui(address, kind = 'hermes') {
+    if (this._trustWatch.has(`screen:${address}`)) return false;
+    const m = this.model.terms.get(address);
+    if (!m || !isLive(m) || (m.status && m.status.app && !isScreenStatus(m.status))) return false; // 7501을 말하는 에이전트가 이미 있다
+    this.log(`${kind} TUI on screen in shell ${address}: watching its status line`);
+    this._watchScreenStatus(address, kind, { shell: true });
+    return true;
+  }
+  _watchScreenStatus(address, kind = 'hermes', { shell = false } = {}) {
     const key = `screen:${address}`;
     clearTimeout(this._trustWatch.get(key));
+    let gone = 0;
     const tick = async () => {
       this._trustWatch.delete(key);
       const m = this.model.terms.get(address);
@@ -404,6 +417,13 @@ export class HcAdapter extends EventEmitter {
       const now = this.model.terms.get(address);
       if (now && !isLive(now)) return;
       const state = text == null ? null : hermesStateOf(text);
+      if (shell && text != null) {
+        gone = !state && shellPromptState(text).atPrompt ? gone + 1 : 0;
+        if (gone >= 2) { // 두 번 잇달아(약 2초) 셸 프롬프트: TUI가 끝났다
+          if (now && now.status && isScreenStatus(now.status)) { this.log(`${kind} TUI left shell ${address}`); this._emitAll(this.model.apply({ seq: null, type: 'status', terminal: address, data: { status: null, reported: false } })); }
+          return;
+        }
+      }
       if (now && state && !(now.status && now.status.app && !isScreenStatus(now.status))) { // 코어가 진짜 상태를 말하면(7501) 그것을 둔다
         const cur = now.status && isScreenStatus(now.status) ? now.status.state : null;
         if (cur !== state) {

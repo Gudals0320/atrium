@@ -11,8 +11,8 @@ import { useStore, toast, loadLaunchers, getState } from './store.js';
 import { KindIcon } from './SessionNode.jsx';
 import { Icon } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
-import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES, harnessEfforts } from './lib/launchers.js'; // P299: harnessEfforts
-import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue } from './lib/orch.js'; // P296: 자체 오케스트레이션
+import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES, harnessEfforts, COMMAND_FAMILIES, autoFamily, commandFamily } from './lib/launchers.js'; // P299: harnessEfforts. P309: 하네스 계열
+import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue, orchHarness } from './lib/orch.js'; // P296: 자체 오케스트레이션. P309: orchHarness
 import { UsageLeft } from './Usage.jsx'; // P211: 하네스 이름 옆 그 구독의 남은 양
 
 const MODES = PERMISSION_MODES;
@@ -138,7 +138,7 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const fields = harnessFields(harnesses, d.harness);
   const has = (f) => fields.includes(f);
-  const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || defaultPermission(harnesses, d.harness), args: d.args, env: d.envText, command: d.command, startCommand: d.startCommand, ...orchBody(harnesses, d) }); // P296
+  const body = () => ({ id: d.id || undefined, name: d.name || '…', harness: d.harness, icon: d.icon, model: d.model, effort: d.effort, permissionMode: d.permissionMode || defaultPermission(harnesses, d.harness), args: d.args, env: d.envText, command: d.command, startCommand: d.startCommand, ...(d.harness === 'command' ? { family: d.family || '' } : {}), ...orchBody(harnesses, d) }); // P296. P309: family(하네스 계열)
   const opts = harnessOptions(harnesses, kinds, d.harness); // P115: 백엔드 하네스 표. P196: 표가 빠뜨린 기본 종류(agy 등)와 지금 값도 빠짐없이
   useEffect(() => { api.call('agent.kinds', { fresh: true }).then((ks) => setKinds(ks.map((k) => k.kind))).catch(() => {}); loadLaunchers(); }, []); // P72: 틀을 열 때 하네스 모델 목록(Codex 캐시)을 새로 받는다
   // 고르는 대로 미리보기(백엔드가 확인한다). 이름이 비었으면 이름 검사만 건너뛴다
@@ -178,7 +178,17 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
         </label>
         {has('startCommand') && <label className="mt-ln-f"><span>{t('launcherStart.label')}</span><input className="mt-set-text mono" data-field="launcher-startCommand" value={d.startCommand} spellCheck={false} autoComplete="off" onChange={(e) => set('startCommand', e.target.value)} placeholder={t('launcherStart.ph')} title={t('launcherStart.title')} /></label>}
         {has('command') ? (
-          <label className="mt-ln-f wide"><span>{t('launchers.command')}</span><input className="mt-set-text mono" data-field="launcher-command" value={d.command} onChange={(e) => set('command', e.target.value)} placeholder={t('launchers.commandPh')} /></label>
+          <>
+            <label className="mt-ln-f wide"><span>{t('launchers.command')}</span><input className="mt-set-text mono" data-field="launcher-command" value={d.command} onChange={(e) => set('command', e.target.value)} placeholder={t('launchers.commandPh')} /></label>
+            {/* P309: 하네스 계열(자동: omh → Hermes). Hermes 계열·그 밖의 에이전트면 셸에 치지 않고 그 에이전트로 띄운다 */}
+            <label className="mt-ln-f" data-role="launcher-family"><span>{t('launcherFamily.label')}</span>
+              <select data-field="launcher-family" value={d.family || ''} onChange={(e) => set('family', e.target.value)}>
+                <option value="">{t('launcherFamily.auto', { family: t(`launcherFamily.${autoFamily(d.command)}`) })}</option>
+                {COMMAND_FAMILIES.map((f) => <option key={f} value={f}>{t(`launcherFamily.${f}`)}</option>)}
+              </select>
+            </label>
+            <div className="mt-ln-orch-note mt-ln-family-note" data-role="launcher-family-note" data-family={commandFamily(d)}>{t(`launcherFamily.note_${commandFamily(d)}`)}</div>
+          </>
         ) : has('model') ? (
           <label className="mt-ln-f"><span>{t('launchers.model')}</span>
             <ModelInput value={d.model} onChange={(v) => set('model', v)} models={models} labels={labels} placeholder={t('launchers.modelPh')} />
@@ -196,8 +206,8 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
         {has('args') && <label className="mt-ln-f"><span>{t('launchers.args')}</span><input className="mt-set-text mono" data-field="launcher-args" value={d.args} onChange={(e) => set('args', e.target.value)} placeholder={t('launchers.argsPh')} /></label>}
         {has('args') ? <span /> : null}
         {/* P296: 자체 오케스트레이션(켜면 하위 세션 만들기·관계 바꾸기가 없고, 하위면 부모하고만 말한다) */}
-        {orchApplies(d.harness) && <label className="mt-ln-f wide mt-ln-orch" data-role="launcher-orch"><span>{t('orch.field')}</span><span className="mt-ln-orch-row"><input type="checkbox" data-field="launcher-orchestrates" checked={launcherOrchestrates(harnesses, d)} onChange={(e) => set('orchestrates', e.target.checked)} /><span className="mt-ln-orch-note">{t('orch.fieldNote')}</span></span></label>}
-        {orchApplies(d.harness) && launcherOrchestrates(harnesses, d) && <label className="mt-ln-f wide mt-ln-orch" data-role="launcher-orch-fallback"><span /><span className="mt-ln-orch-row"><input type="checkbox" data-field="launcher-reportFallback" checked={launcherFallback(harnesses, d)} onChange={(e) => set('reportFallback', fallbackValue(harnesses, d.harness, e.target.checked))} /><span className="mt-ln-orch-note">{t('orch.fallback')}</span></span></label>}
+        {orchApplies(d.harness, d) && <label className="mt-ln-f wide mt-ln-orch" data-role="launcher-orch"><span>{t('orch.field')}</span><span className="mt-ln-orch-row"><input type="checkbox" data-field="launcher-orchestrates" checked={launcherOrchestrates(harnesses, d)} onChange={(e) => set('orchestrates', e.target.checked)} /><span className="mt-ln-orch-note">{t('orch.fieldNote')}</span></span></label>}
+        {orchApplies(d.harness, d) && launcherOrchestrates(harnesses, d) && <label className="mt-ln-f wide mt-ln-orch" data-role="launcher-orch-fallback"><span /><span className="mt-ln-orch-row"><input type="checkbox" data-field="launcher-reportFallback" checked={launcherFallback(harnesses, d)} onChange={(e) => set('reportFallback', fallbackValue(harnesses, orchHarness(d), e.target.checked))} /><span className="mt-ln-orch-note">{t('orch.fallback')}</span></span></label>}
         <div className="mt-set-sub wide">{t('launchers.advanced')}</div>
         <label className="mt-ln-f"><span>{t('launchers.icon')}</span>
           <select data-field="launcher-icon" value={d.icon} onChange={(e) => set('icon', e.target.value)}>

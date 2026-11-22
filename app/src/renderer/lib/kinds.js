@@ -24,6 +24,8 @@ export const KINDS = {
   // P298: Hermes(Hermes Agent + OMH). P302: 로고는 OMH 앱 아이콘(rlaope/oh-my-hermes@9da4814 apps/omher/src-tauri/icons/128x128.png, MIT,
   // 고지는 app/THIRD_PARTY_NOTICES.txt). 분홍 타일에 바탕이 있어 레일 단추도 같은 그림을 쓴다(logoBadge 없음, 사용자 요청)
   hermes: { id: 'hermes', label: 'Hermes', mark: 'H', shape: 'rounded', color: 'var(--kind-hermes)', ink: 'var(--kind-hermes-ink)', logo: LOGO('hermes') },
+  // P309: OMH Native(omh: Hermes + OMH 플러그인을 감싼 OMH 자기 TUI). 종류는 hermes 계열이고 카드에 보일 이름만 OMH(flavor). 로고·색은 Hermes와 같다(OMH 앱 아이콘)
+  omh: { id: 'omh', label: 'OMH', mark: 'O', shape: 'rounded', color: 'var(--kind-hermes)', ink: 'var(--kind-hermes-ink)', logo: LOGO('hermes') },
   grok: { id: 'grok', label: 'Grok', mark: 'G', shape: 'circle', color: 'var(--kind-grok)', ink: 'var(--kind-grok-ink)', logo: LOGO('grok') },
   shell: { id: 'shell', get label() { return t('kinds.shell'); }, mark: '>_', shape: 'square', color: 'var(--kind-shell)', ink: 'var(--kind-shell-ink)', logo: null },
   other: { id: 'other', get label() { return t('ask.agent'); }, mark: '?', shape: 'rounded', color: 'var(--kind-other)', ink: 'var(--kind-other-ink)', logo: null },
