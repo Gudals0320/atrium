@@ -14,7 +14,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
-import { STATE_LABEL } from './lib/labels.js';
+import { STATE_LABEL, shellStateText } from './lib/labels.js'; // P309: shellStateText
 import { phoneMission, PM_FOLD_KEY } from './lib/phone-mission.js';
 import { phoneGraph, VIEW, fitView, clampView, zoomRange, focusView, inFocus, vpKey, branchOf } from './lib/phone-graph.js';
 import { roleText, teamText, modelText, ageText } from './lib/mission-model.js';
@@ -34,7 +34,7 @@ const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); 
 
 function stateText(r, live) {
   const s = live || { state: r.state, kind: r.agentKind };
-  if (s.kind === 'shell' && s.state !== 'exited' && s.state !== 'sleeping') return s.shell && s.shell.atPrompt === false ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle;
+  if (s.kind === 'shell' && s.state !== 'exited' && s.state !== 'sleeping') return shellStateText(s); // P309
   return STATE_LABEL[s.state] || s.state || '';
 }
 

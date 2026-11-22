@@ -162,20 +162,48 @@ export const ADAPTERS = {
   hermes: {
     command: 'hermes',
     sessionIdFrom: 'learned',
-    mustRePass: ['instructions'], // env라 그 실행에만 든다. 이어 갈 때도 다시 준다
+    mustRePass: ['instructions'], // env라 그 실행에만 든다. 이어 가기에도 다시 준다
     pathWrapper: true,
-    reserved: { flags: ['--resume', '-r', '--continue', '-c', '-z', '--oneshot', '--tui', '--cli', '--native', '--tui-native', '--in', '--no-restore-cwd', '--safe-mode', '--ignore-rules', 'chat', 'gateway', 'acp', 'sessions', 'setup', 'update', 'config', 'auth', 'plugins', 'usage'] },
+    // P309: --new·--onboard는 omh(감싼 호출자)의 것이다(판이 새로 띄울 때 --new를 붙인다)
+    reserved: { flags: ['--resume', '-r', '--continue', '-c', '-z', '--oneshot', '--tui', '--cli', '--native', '--tui-native', '--in', '--no-restore-cwd', '--safe-mode', '--ignore-rules', '--new', '--onboard', 'chat', 'gateway', 'acp', 'sessions', 'setup', 'update', 'config', 'auth', 'plugins', 'usage'] },
     modelArgs: (m) => ['-m', m],
     build(ctx) {
+      if (wrapperOf(ctx.startWords) === 'omh') return omhBuild(ctx); // P309: 실행 명령이 omh(OMH Native)
       const resumed = !!(ctx.resume && ctx.harnessSessionId);
       // P299: 노력 수준(ctx.effort, 호출자 추가 인자의 --reasoning이 이긴다)은 인자가 아니라 준비된 뒤 넣을 글(readyInput: /reasoning <값>)로. 이어 가기에도
       const reasoning = hermesReasoningOf(ctx.effort, ctx.launcherArgs);
       const args = ['--tui', ...(resumed ? ['--resume', ctx.harnessSessionId] : []), ...(ctx.model ? ['-m', ctx.model] : []), ...withoutReasoning(ctx.launcherArgs)];
       return { ...(reasoning ? { readyInput: hermesReasoningInput(reasoning), reasoning } : {}), args, env: ctx.instructions ? { HERMES_EPHEMERAL_SYSTEM_PROMPT: ctx.instructions.text } : {}, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
-    isBoardLine: (argv) => argv.includes('--tui'),
+    isBoardLine: (argv) => argv.includes('--tui') || argv.includes('--new'), // P309: omh는 --tui 대신 --new(이어 가기는 --resume)
   },
 };
+
+// P309: 감싼 호출자. 하네스 위에 자기 TUI를 얹은 명령(omh = Hermes + OMH 플러그인 + OMH Native TUI)을 판이 그 하네스 계열로 알아본다.
+//   family: 어댑터(상태 읽기·마지막 답·이어 가기·안내문)를 고르는 종류, flavor: 카드에 보일 종류(lib/kinds.js), orchestrates: 종류 기본을 따른다
+//   런처가 실행 명령으로 고르거나(하네스 hermes + 실행 명령 omh), 명령 한 줄 런처의 첫 낱말이 이것이거나, 셸에서 친 화면이 그 모양이면(P309 셸 안 TUI) 이 표를 본다
+export const HARNESS_WRAPPERS = Object.freeze({ omh: Object.freeze({ family: 'hermes', flavor: 'omh', label: 'OMH' }) });
+const exeBaseOf = (w) => String(w || '').replace(/^.*[\\/]/, '').replace(/\.(exe|cmd|ps1|bat)$/i, '').toLowerCase();
+// 실행 명령 낱말(또는 한 줄 글) → 감싼 호출자 이름 | null
+export function wrapperOf(words) {
+  const first = Array.isArray(words) ? words[0] : String(words || '').trim().split(/\s+/)[0];
+  const b = exeBaseOf(first);
+  return b && HARNESS_WRAPPERS[b] ? b : null;
+}
+export const wrapperInfo = (words) => { const w = wrapperOf(words); return w ? { id: w, ...HARNESS_WRAPPERS[w] } : null; };
+// P309: OMH Native를 띄울 값. omh는 bare 실행에 --tui·-m을 받지 않는다(argparse: setup 등 하위 명령과 -r/-c/-p/--new만).
+//   새로 띄울 때 --new(그 터미널에서 끊긴 세션을 저절로 다시 여는 auto-resume을 막는다), 이어 갈 때 --resume <ID>(같은 Hermes 세션).
+//   안내문은 Hermes와 같은 env HERMES_EPHEMERAL_SYSTEM_PROMPT(omh가 hermes --tui를 띄우고 Hermes 실행기가 허용 목록 env를 gateway 세션에 넘긴다),
+//   모델은 env HERMES_MODEL(OMH gateway_attach의 launch_options가 읽는다), 노력 수준은 Hermes와 같이 준비된 뒤 /reasoning <값>(OMH도 그 세션의 effort로 받는다).
+//   OMH_TUI_WALLPAPER=0: OMH TUI가 터미널 바탕색을 테마 색으로 바꾸지 않게(OSC 11. 판 카드 안에 다른 색 상자가 생긴다). 그 세션 env에만 준다(사용자 ~/.omh 설정은 그대로)
+export const OMH_BOARD_ENV = Object.freeze({ OMH_TUI_WALLPAPER: '0' });
+function omhBuild(ctx) {
+  const resumed = !!(ctx.resume && ctx.harnessSessionId);
+  const reasoning = hermesReasoningOf(ctx.effort, ctx.launcherArgs);
+  const args = [...(resumed ? ['--resume', ctx.harnessSessionId] : ['--new']), ...withoutReasoning(ctx.launcherArgs)];
+  const env = { ...OMH_BOARD_ENV, ...(ctx.instructions ? { HERMES_EPHEMERAL_SYSTEM_PROMPT: ctx.instructions.text } : {}), ...(ctx.model ? { HERMES_MODEL: ctx.model } : {}) };
+  return { ...(reasoning ? { readyInput: hermesReasoningInput(reasoning), reasoning } : {}), args, env, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
+}
 // P192: AGY 승인 방식. 판의 권한 모드 → AGY 인자. manual은 덧붙이지 않는다(AGY 기본 Agent 모드: 묻는다)
 // auto는 AGY Auto 모드(Windows 11 24H2 이상·개인 계정에서만, 안 되면 AGY가 기본 모드로 돌아간다). dontAsk·bypassPermissions는 묻지 않음
 export const AGY_APPROVAL = {
@@ -269,7 +297,7 @@ export function reservedArg(kind, words = []) {
 export function harnessLaunch(o) {
   const a = adapterOf(o.kind);
   if (!a) throw Object.assign(new Error(`하네스가 아닙니다: ${o.kind}`), { code: 'bad_request' });
-  const r = a.build({ sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, effort: o.effort || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, filesDir: o.filesDir || null, forkFrom: o.forkFrom || null, statusLine: o.statusLine || null }); // P211: statusLine(AGY 상태 줄 명령 만들기)
+  const r = a.build({ startWords: o.startWords || [], sessionId: o.sessionId, resume: !!o.resume, harnessSessionId: o.harnessSessionId || null, model: o.model || null, effort: o.effort || null, launcherArgs: o.launcherArgs || [], instructions: a === GENERIC || !ADAPTERS[o.kind] ? null : o.instructions || null, filesDir: o.filesDir || null, forkFrom: o.forkFrom || null, statusLine: o.statusLine || null }); // P211: statusLine(AGY 상태 줄 명령 만들기)
   const command = o.startWords && o.startWords.length ? [...o.startWords] : [a.command];
   // P298: 세션별 atrium 감싸개(pathWrapper). o.wrapper = { node, script }(판의 atrium-child)
   const wrapDir = a.pathWrapper && o.wrapper && o.filesDir && o.sessionId ? wrapperDirOf(o.filesDir, o.kind, o.sessionId) : null;

@@ -2959,6 +2959,23 @@ export default {
     noUserItems: 'No items for you in this milestone.',
     pcOnly: 'On the phone you can check items, set the current milestone and update values. Edit items, the manager and the status on the PC goal board.',
   },
+  // P309: harness family of a command launcher, a quiet full-screen program in a shell
+  launcherFamily: {
+    label: 'Harness family',
+    auto: 'Auto ({family})',
+    shell: 'Shell command (unknown)',
+    hermes: 'Hermes family',
+    agent: 'Other agent',
+    note_shell: 'Types this line into a shell. The board treats it as a shell command.',
+    note_hermes: 'Runs it as a Hermes-family harness (omh and the like). The board reads its status, last answer, resume and instructions.',
+    note_agent: 'Runs it as an agent session. The board follows the generic rules from the screen and the terminal status.',
+    errEnv: 'A harness-family launcher takes no environment variables. Keep it a shell command or remove the variables.',
+    errCommand: 'The command of a harness-family launcher is one line whose first word is a command name without a path or quotes.',
+    errFamily: 'Unknown harness family: {family}',
+  },
+  shellProgram: {
+    label: 'Program running',
+  },
   // P313: Settings › Agents tab (helper agents the board uses, in one shape; the fields follow the board's helper agent table)
   agents: {
     tab: 'Agents',

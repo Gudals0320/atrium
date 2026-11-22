@@ -50,7 +50,7 @@ export function roleFamily(name) {
 // 강조 등급(P85 tierOf). live: 판의 세션 요약(없으면 그래프 노드의 상태). 명령이 도는 셸은 일함
 export function tierFor(node, live) {
   const s = live || { state: node && node.state, unseen: node && node.category === 'done', kind: node && node.agentKind };
-  if (s.kind === 'shell' && s.shell && s.shell.atPrompt === false && s.state !== 'exited' && s.state !== 'sleeping' && s.state !== 'error') return 'work';
+  if (s.kind === 'shell' && s.shell && s.shell.atPrompt === false && !s.shell.program && s.state !== 'exited' && s.state !== 'sleeping' && s.state !== 'error') return 'work';
   return tierOf(s);
 }
 

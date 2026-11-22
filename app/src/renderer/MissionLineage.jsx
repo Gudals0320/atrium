@@ -16,7 +16,7 @@ import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from
 import { kindOf } from './lib/kinds.js';
 import { bgShow, bgText, bgKindsText } from './lib/bg-work.js'; // P164
 import { orchTag, sessionProgress, progressChip, progressRows } from './lib/orch.js'; // P296. P300: 안 진행 칩
-import { STATE_LABEL } from './lib/labels.js';
+import { STATE_LABEL, shellProgram, shellStateText } from './lib/labels.js'; // P309: 셸에서 실행 중인 프로그램
 import { useT, errText } from './lib/i18n.js';
 import { leadTags } from './lib/cmd-input.js';
 import { MissionLight, DoneMark } from './Mission.jsx';
@@ -84,7 +84,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const shell = k.id === 'shell';
   const state = live ? live.state : n.state;
   const cmd = live && live.shell && live.shell.atPrompt === false ? live.shell.command || (live.shell.procs || []).join(', ') : null;
-  const stateText = tier === 'review' ? t('doneMark.tag') : shell && state !== 'exited' && state !== 'sleeping' ? (cmd ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[state] || state || '';
+  const stateText = tier === 'review' ? t('doneMark.tag') : shell && state !== 'exited' && state !== 'sleeping' ? (live && shellProgram(live) ? shellStateText(live) : cmd ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[state] || state || '';
   const turnAt = n.turnAt || (live && live.state === 'working' && live.turn && live.turn.startedAt) || null;
   const activeAt = (live && live.lastActivityAt) || n.activeAt || null; // P210: 창이 가진 세션 값이 먼저(그래프는 활동 시각만 바뀌면 다시 읽지 않는다)
   const age = tier === 'work' && turnAt ? ageText(now - turnAt, t) : activeAt ? ageText(now - activeAt, t) : null;
