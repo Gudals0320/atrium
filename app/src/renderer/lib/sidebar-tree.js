@@ -3,8 +3,8 @@
 // - 접힌 그룹·워크스페이스 아래에도 사람이 봐야 하는 세션(응답 필요, 오류)과 실행 중인 세션(작업 중, P265)은 줄로 남긴다.
 // - 거르기: 글(이름, 요청, 질문 등), 상태 묶음, 종류. 거르는 동안에는 접힘을 무시하고 맞는 것만 보인다.
 // - 닫힌 세션과 판 밖 대화는 워크스페이스마다 한 줄(닫힘 n · 대화 m)로 접어 두고, 펼치면 SECTION_STEP씩 보인다.
-import { matches, sidebarRows, SECTION_STEP } from './sidebar.js';
-import { treeOrder, spawnOrder } from './branch.js';
+import { matches, sidebarRows, SECTION_STEP, byName } from './sidebar.js';
+import { treeOrder } from './branch.js';
 import { askLine } from './labels.js';
 import { problemExit } from './user-close.js'; // P125
 
@@ -58,7 +58,11 @@ export function countOf(list) {
   return c;
 }
 
-// 그룹 묶음 순서: 그룹(사람이 정한 순서, 안의 워크스페이스도 그 순서) → 그룹 없음(판의 워크스페이스 순서)
+// 세션 줄 차례(P315): 이름 차례만. 응답 필요·최근 활동으로 자리를 바꾸지 않는다(응답 필요는 색·줄 높이·질문 한 줄로 드러난다)
+export const sessionCmp = byName((s) => s && s.name, (s) => s && s.sessionId);
+const wsCmp = byName((w) => w && (w.label || w.name || w.key), (w) => w && w.key);
+
+// 그룹 묶음 순서: 그룹(사람이 끌어 정한 순서, 안의 워크스페이스도 그 순서) → 그룹 없음(P315: 이름 차례. 끌어 놓을 자리가 없는 곳이라)
 export function groupLayout(workspaces = [], groups = []) {
   const byKey = new Map(workspaces.map((w) => [w.key, w]));
   const used = new Set();
@@ -68,7 +72,7 @@ export function groupLayout(workspaces = [], groups = []) {
     ws.forEach((w) => used.add(w.key));
     out.push({ id: g.id, name: g.name, workspaces: ws });
   }
-  const rest = workspaces.filter((w) => !used.has(w.key));
+  const rest = workspaces.filter((w) => !used.has(w.key)).sort(wsCmp);
   return { groups: out, ungrouped: rest };
 }
 
@@ -108,12 +112,11 @@ export function buildRows(opts) {
   const byWs = new Map();
   for (const s of sessions) { const k = s.workspaceKey || ''; if (!byWs.has(k)) byWs.set(k, []); byWs.get(k).push(s); }
   const dataBy = new Map(((data && data.workspaces) || []).map((w) => [w.key, w]));
-  const at = (s) => Math.max(s.lastActivityAt || 0, s.createdAt || 0);
-  const cmp = (a, b) => (isAttn(b) ? 1 : 0) - (isAttn(a) ? 1 : 0) || at(b) - at(a) || String(a.name).localeCompare(String(b.name));
+  const cmp = sessionCmp; // P315: 이름 차례(세션이 일할 때마다 줄이 움직이지 않게)
   const rows = [];
   const push = (r) => { rows.push({ ...r, h: ROW_H[r.type], lv: levelOf(r) }); };
   const sessionRow = (s, depth, indent, pinned = false, wsName = null) => rows.push({ id: `s:${s.sessionId}`, type: 'session', h: isAttn(s) ? ROW_H.attn : ROW_H.session, s, depth, indent, pinned, attn: isAttn(s), ...(wsName ? { wsName } : {}), lv: depth + Math.min(indent || 0, MAX_INDENT) });
-  // 접힌 묶음 아래에 남기는 세션: 응답 필요·오류가 먼저, 그다음 실행 중(P265). wsNames: 세션 → 워크스페이스 이름(접힌 그룹에 워크스페이스가 여럿일 때)
+  // 접힌 묶음 아래에 남기는 세션: 응답 필요·오류와 실행 중(P265)만 골라 이름 차례로(P315). wsNames: 세션 → 워크스페이스 이름(접힌 그룹에 워크스페이스가 여럿일 때)
   const pinnedRows = (list, depth, key, wsNames = null) => {
     const hot = list.filter(isPinnable).sort(cmp);
     hot.slice(0, ATTN_CAP).forEach((s) => sessionRow(s, depth, 0, true, wsNames && wsNames.get(s.workspaceKey || '')));
@@ -132,7 +135,7 @@ export function buildRows(opts) {
     const open = filtering || !collapsed[w.key];
     push({ id: `w:${w.key}`, type: 'ws', depth, w, c, open, closedN: closedAll.length, convosN: convosAll.length, archived: (d && d.archived) || 0, matched: filtering ? shown.length : null });
     if (!open) { pinnedRows(all, depth + 1, w.key); return 1; }
-    const tree = treeOrder([...shown].sort(cmp), { cmp, kidCmp: spawnOrder((s) => (s.branch && s.branch.order) || null, (s) => s.createdAt, cmp) }); // P75: 하위 세션은 띄운 순서
+    const tree = treeOrder([...shown].sort(cmp), { cmp }); // P315: 하위 세션도 부모 아래에서 이름 차례(옛 P75 띄운 순서)
     for (const { item, indent } of tree) sessionRow(item, depth + 1, indent);
     if (!shown.length && !rest.closed.length && !rest.convos.length && !filtering) push({ id: `e:${w.key}`, type: 'empty', depth: depth + 1, key: w.key });
     const nClosed = rest.closed.length, nConvos = rest.convos.length;

@@ -1,7 +1,7 @@
 // P152·P153: 미션 맵 A "Territories"(영토 지도) 배치와 무한 캔버스 셈. 순수 함수만 둔다(단위 시험 test/p152-lib.test.mjs, test/p153-lib.test.mjs).
 // 그리는 쪽: PC는 P153 r7부터 시안 B(lib/mission-lineage.js, MissionLineage.jsx)라 이 파일의 영토 배치(territoryLayout·phoneTerr)는 P160부터 창에서 쓰지 않는다(휴대폰은 P166부터 PhoneMap.jsx = lineageLayout phone, 단위 시험만 남음). 길 찾기(routeOrtho)·카드 폭·높이·무한 캔버스 셈은 PC도 같이 쓴다.
 // - 폴더(사이드바 가상 그룹, P44) = 색 점선 영토, 워크스페이스 = 영토 안의 섬(머리에 이름과 상태 수 칩), 폴더 밖 워크스페이스 = 영토 없는 점선 섬.
-//   소속과 차례는 사이드바(lib/sidebar-tree.js groupLayout)와 같다: 폴더가 사이드바 차례로 먼저, 폴더 안은 폴더 목록 차례, 그 뒤에 폴더 밖 워크스페이스(판 차례).
+//   소속과 차례는 사이드바(lib/sidebar-tree.js groupLayout)와 같다: 폴더가 사이드바 차례로 먼저, 폴더 안은 폴더 목록 차례, 그 뒤에 폴더 밖 워크스페이스(이름 차례, P315).
 //   키는 맞출 때만 정규화한다(normKey: 역슬래시 → 슬래시, 끝 슬래시 뺌, 소문자). 폴더 목록에 없는 워크스페이스는 경로가 폴더 안이어도 폴더 밖이다(사이드바와 같다).
 // - 팀(무리) = 같은 워크스페이스 안에서 나무로 이어진 세션들(lib/mission-model.js missionTree: 부모 > 역할 연결 > 띄움 > 시킨 연결 차례로 부모를 고른다).
 //   그래서 역할 연결이나 주고받은 연결로만 이어진 세션도 한 무리로 붙는다. 리드가 위, 하위가 아래로 내려가는 나무(가운데 맞춤).
@@ -15,6 +15,7 @@
 //   나무 밖 연결(나무 선의 거꾸로 짝, 리드가 손자에게 직접 시킨 것 등)은 그리지 않는다(카드의 관계 줄과 풍선 도움말이 말한다).
 // → { cards: Map id → { x, y, w, h, node, ws }, rings, isles, terrs, edges, bounds, order(키보드 차례), tree }
 import { missionTree, relOf, bySpawn, nodeTier } from './mission-model.js';
+import { byName } from './sidebar.js'; // P315: 폴더 밖 워크스페이스 차례를 사이드바와 같은 이름 차례로
 
 // 카드 320×150(시안과 같다. 보통 단계에서 이름·상태·시간 / 역할·하네스·모델 / 일(오류면 일 한 줄과 오류 한 줄) / 관계 한 줄).
 // GH·GV = 카드 사이 가로·세로 틈(세로 틈에 버스 선이 지난다), PAD = 섬 안 여백, HEAD = 섬 머리(이름·칩) 높이, RP·RH = 무리 안 여백·무리 머리 높이,
@@ -156,9 +157,8 @@ export function territoryLayout(graph, { order: order0 = [], vgroups = [], tiers
   const folderOf = new Map(); // normKey → { g, gi, mi }
   (vgroups || []).forEach((g, gi) => (g.members || []).forEach((m, mi) => { const k = normKey(m); if (k && !folderOf.has(k)) folderOf.set(k, { g, gi, mi }); }));
   const present = [...new Set(tree.nodes.map((n) => wsOf(n.id)))];
-  const ord = new Map((order0 || []).map((k, i) => [normKey(k), i]));
-  const wsRank = (k) => (ord.has(normKey(k)) ? ord.get(normKey(k)) : 1e6);
-  const byWsOrder = (a, b) => (!a) - (!b) || wsRank(a) - wsRank(b) || String(nameOf(a)).localeCompare(String(nameOf(b))) || String(a).localeCompare(String(b));
+  const wsName = byName(nameOf, (k) => k);
+  const byWsOrder = (a, b) => (!a) - (!b) || wsName(a, b); // P315: 사이드바 그룹 없음과 같은 이름 차례(옛 판 차례)
   const terrList = [];
   for (const [gi, g] of (vgroups || []).entries()) {
     const keys = present.filter((k) => k && folderOf.has(normKey(k)) && folderOf.get(normKey(k)).gi === gi).sort((a, b) => folderOf.get(normKey(a)).mi - folderOf.get(normKey(b)).mi);

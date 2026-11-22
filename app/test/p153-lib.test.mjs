@@ -99,7 +99,7 @@ test('P153: 큰 무리(리드 + 워커 7)는 네 개씩 접고 겹치지 않는�
 
 test('P153: 폴더 소속과 차례가 사이드바와 같다(키 정규화, 폴더 목록에 없는 하위 경로는 폴더 밖)', () => {
   const lay = lay0();
-  const side = groupLayout(WS.map((key) => ({ key })), FOLDERS);
+  const side = groupLayout(WS.map((key) => ({ key, name: keyName(key) })), FOLDERS); // P315: 폴더 밖은 이름 차례라 맵과 같은 이름을 준다
   for (const g of side.groups) {
     const want = g.workspaces.map((w) => w.key);
     const got = lay.isles.filter((i) => i.folder === g.id).map((i) => i.key);
