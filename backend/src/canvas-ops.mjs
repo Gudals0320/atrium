@@ -2,7 +2,7 @@
 // - 영역과 빈자리(H1), 영역 옮기기, 검색(H2), 붙여 묶기(H5), 크기 단계와 정리(H7). 골라 묶기(그룹, H6)는 P22에서 뺐다
 // - 계산은 canvas.mjs·search.mjs의 순수 함수(창도 같이 씀). 바꾼 뒤에는 board.changed를 보내 창이 판을 다시 읽게 한다.
 import crypto from 'node:crypto';
-import { NODE, SIZE_STEPS, SIZE_DIRS, SIZE_LEVELS, ASPECTS, parseStep, resolveSize, fitsAspect, matchAspect, stepSize, DEFAULT_ASPECT, dirOf, aspectOf, DOCK_CELL, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot, levelOf, NEW_NODE, groupFrames, separateGrouped, groupSlot } from './canvas.mjs';
+import { NODE, SIZE_STEPS, SIZE_DIRS, SIZE_LEVELS, ASPECTS, parseStep, resolveSize, fitsAspect, matchAspect, stepSize, DEFAULT_ASPECT, dirOf, aspectOf, DOCK_CELL, GAP, EMPTY_REGION, AUTO_EMPTY_REGION, regionsOf, regionRect, slotInRegion, newRegionSlot, freeSlot, separateRegions, splitSide, arrangeTree, overlaps, bbox, REGION_GAP, dockSpot, levelOf, NEW_NODE, NEW_NODE_STEP, groupFrames, separateGrouped, groupSlot } from './canvas.mjs';
 import { layout as layoutTree, normalize, leaves, isLeaf, fromLine, minSize, remove as removeLeaf, removeWithOuter, insertWithOuter, rootSizes, presetTree, presetSize, PRESETS, sideDir, dockVirtual, dockFit } from './dock-tree.mjs'; // P17: 분할 나무
 import { searchBoard, searchItems } from './search.mjs';
 import { clip } from './text.mjs';
@@ -690,7 +690,7 @@ export function setSize(b, p) {
     out = resolveSize(r, r.aspect, req);
     b.store.setNode({ ...r, w: out.w, h: out.h });
     b.store.setNodeAspect(s.sessionId, out.aspect, out.key);
-    markHandSize(b, s.sessionId); // P177
+    markHandSize(b, s.sessionId, true, out); // P177. P310: 값도
   }
   b.store.addEvent(s.sessionId, 'node_size', { size: out.key || p.size || null, dir: out.dir, aspect: out.aspect, level: out.level, dock: d ? d.dockId : undefined });
   reflowLines(b, s.sessionId, 'size'); // P75: 커졌으면 줄의 뒤 형제를 아래로
@@ -773,12 +773,34 @@ function planWorkspace(b, key, { avoid = true } = {}) {
 }
 // P177: 일 관계 색인(가지 기능이 없으면 null = 옛 계보 규칙)
 const relIndexOf = (b) => (b.branch && b.branch.relIndex ? b.branch.relIndex() : null);
-// P177: 사람이 손으로 정한 크기(노드 메뉴·atrium size의 크기 단계, 테두리 끌기). 정리가 동료를 맞출 때 지킨다. meta handSize { 세션: 때 }
-export const handSizes = (b) => b.store.getMeta('handSize') || {};
-export function markHandSize(b, sid, on = true) {
+// P177: 사람이 손으로 정한 크기(노드 메뉴·atrium size의 크기 단계, 테두리 끌기, 선택 막대의 방향·비율·단계).
+// P310: meta handSize { 세션: { at: 때, w, h } }(옛 값은 때 숫자). 표가 있는 노드는 자동 정렬이 크기를 지키고 자리만 옮긴다. 노드 메뉴 "기본 크기로"가 지운다
+export const handSizes = (b) => {
+  const m = b.store.getMeta('handSize') || {};
+  const out = {};
+  for (const [k, v] of Object.entries(m)) out[k] = typeof v === 'number' ? { at: v } : v;
+  return out;
+};
+export function markHandSize(b, sid, on = true, rect = null) {
   const m = { ...handSizes(b) };
-  if (on) m[sid] = Date.now(); else delete m[sid];
+  if (on) m[sid] = { at: Date.now(), ...(rect ? { w: Math.round(rect.w), h: Math.round(rect.h) } : {}) }; else delete m[sid];
   b.store.setMeta('handSize', m);
+}
+// P310: 기본 크기로. 표를 지우고 새 세션 기본 크기(16:9 가로 보통)로 돌아간다(왼쪽 위 그대로). 다음 자동 정렬부터 자동 크기
+export function clearHandSize(b, p) {
+  const s = b.resolve(p.session);
+  const r = nodeRect(b, s.sessionId);
+  if (!r) throw apiError('not_found', '판에 노드가 없습니다.');
+  markHandSize(b, s.sessionId, false);
+  if (!dockOf(b, s.sessionId)) {
+    b.store.setNode({ ...r, w: NEW_NODE.w, h: NEW_NODE.h });
+    b.store.setNodeAspect(s.sessionId, DEFAULT_ASPECT, NEW_NODE_STEP);
+    reflowLines(b, s.sessionId, 'size');
+    settleRegions(b, 'size');
+  }
+  b.store.addEvent(s.sessionId, 'node_size_auto', {});
+  b.api.broadcast('board.changed', { why: 'size' });
+  return { session: s.name, w: NEW_NODE.w, h: NEW_NODE.h, hand: false };
 }
 // 계획을 판에 쓴다(노드, 덩어리, 메모·칸반)
 function applyWorkspacePlan(b, { blocks, out }) {
@@ -987,6 +1009,7 @@ export function canvasHandlers(b) {
     'dock.list': () => b.store.docks(),
     'board.arrange': (p) => arrange(b, p),
     'board.setSize': (p) => setSize(b, p),
+    'board.autoSize': (p) => clearHandSize(b, p), // P310: 사람이 정한 크기 표를 지우고 기본 크기로
     'workspace.move': (p) => workspaceMove(b, p),
     'group.shift': (p) => groupShift(b, p), // P91: 묶음째 옮기기
     'worktree.move': (p) => worktreeMove(b, p), // P27

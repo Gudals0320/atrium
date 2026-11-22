@@ -2973,4 +2973,9 @@ export default {
     name: 'To-do tidy',
     desc: 'Filters automatic to-do card candidates with a small model.',
   },
+  // P310: a size the person chose (auto arrange keeps it)
+  handSize: {
+    reset: 'Default size',
+    hint: 'You set this size. Auto arrange only moves it.',
+  },
 };
