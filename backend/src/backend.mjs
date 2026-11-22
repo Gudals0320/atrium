@@ -992,7 +992,7 @@ export class Backend {
       const from = s.kind;
       s.rt = rt; s.kind = kind; s.agentName = a.name || s.paneId; s.adoptNamed = s.origin !== 'adopted' || !!a.name;
       // P309: 셸에서 연 OMH Native는 카드에 OMH로 보인다(런처 아이콘이 없을 때만, 셸로 돌아오면 되돌린다)
-      if (kind === 'hermes' && s._shellTuiFlavor && !s.flavor) { s.flavor = s._shellTuiFlavor; s._flavorFromShell = true; this.store.updateSession(s.sessionId, { flavor: s.flavor }); }
+      if (kind === 'hermes' && s._shellTuiFlavor && !s.flavor) { s.flavor = s._shellTuiFlavor; rt.flavorFromShell = true; this.store.updateSession(s.sessionId, { flavor: s.flavor, runtime: rt }); } // 판 기록(runtime)에 남겨 다시 켠 뒤에도 셸로 돌아올 때 지운다
       if (s.origin === 'adopted' && a.name && NAME_RE.test(a.name) && a.name !== s.name && !nameOwner(this.sessions.values(), a.name, s)) {
         this.store.addEvent(s.sessionId, 'renamed', { from: s.name, to: a.name }); s.name = a.name; this.store.renameSession(s.sessionId, a.name);
       }
@@ -1006,10 +1006,11 @@ export class Backend {
   // 셸에서 띄운 에이전트가 끝났다: 같은 노드를 셸로 되돌린다
   demoteToShell(s, why) {
     const from = s.kind;
+    const shellFlavor = !!(s.rt && s.rt.flavorFromShell); // P309
     const rt = newRuntime({ kind: SHELL, hooked: false });
     rt.cwd = s.rt.cwd; rt.phase = 'running'; rt.shellBase = false;
     s.rt = rt; s.kind = SHELL; s.agentName = s.paneId; s.openPromptFrom = null;
-    if (s._flavorFromShell) { s.flavor = null; s._flavorFromShell = false; s._shellTuiFlavor = null; this.store.updateSession(s.sessionId, { flavor: null }); } // P309
+    if (shellFlavor) { s.flavor = null; s._shellTuiFlavor = null; this.store.updateSession(s.sessionId, { flavor: null }); } // P309: 셸에서 연 OMH로 붙인 표시는 셸로 돌아오면 지운다
     this.queue.cancelSession(s.sessionId, 'agent exited, shell left');
     this.store.updateSession(s.sessionId, { kind: SHELL, agentName: s.agentName, runtime: rt });
     this.store.addEvent(s.sessionId, 'shell_agent', { from, to: SHELL, why });
