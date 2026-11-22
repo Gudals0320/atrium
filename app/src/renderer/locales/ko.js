@@ -2986,4 +2986,9 @@ export default {
     hermesSetOn: 'Hermes 사용량을 켰습니다.',
     hermesSetOff: 'Hermes 사용량을 껐습니다.',
   },
+  // P310: 사람이 정한 크기(자동 정렬이 지킨다)
+  handSize: {
+    reset: '기본 크기로',
+    hint: '직접 정한 크기입니다. 자동 정렬은 자리만 옮깁니다.',
+  },
 };

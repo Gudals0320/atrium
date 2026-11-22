@@ -101,7 +101,7 @@ test('P177 정리: --peer로 띄운 동료와 사람이 정한 동료는 짝과 
   assert.equal(lvl(node(b, P)), 'small');
 });
 
-test('P177 정리: 사람이 손으로 정한 동료 크기는 지킨다(atrium size·노드 메뉴), 하위는 손으로 정해도 옛 규칙', async () => {
+test('P177 정리: 사람이 손으로 정한 동료 크기는 지킨다(atrium size·노드 메뉴), P310부터 하위도 지킨다', async () => {
   const { b, ws } = await fakeBoard();
   const A = mk(b, ws, 'lead', null, 0);
   const P = mk(b, ws, 'peer-b', A, 1000);
@@ -114,7 +114,7 @@ test('P177 정리: 사람이 손으로 정한 동료 크기는 지킨다(atrium 
   ops.arrange(b, { workspace: ws.key, apply: true });
   assert.equal(node(b, P).size, 'wide-normal', '동료의 손 크기는 그대로');
   assert.equal(lvl(node(b, A)), 'large');
-  assert.equal(lvl(node(b, C)), 'small', '하위는 지금 규칙 그대로');
+  assert.equal(lvl(node(b, C)), 'large', 'P310: 하위도 사람이 정한 크기는 그대로(자리만 옮긴다)');
 });
 
 test('P177 정리: 동료를 하위로 바꾸면 다시 하위 줄, 독립으로 정한 계보 자식은 나무 밖', async () => {

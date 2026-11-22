@@ -358,7 +358,7 @@ export const WRAP_ASPECT = 16 / 9; // P91: 정리에서 하위 세션 열을 접
 const WRAP_COST = 0.15;
 // P177: peers: [[세션, 세션]](일 관계가 동료인 쌍). 동료는 하위 줄에 들어가지 않고 같은 급으로 짝 옆에 선다.
 //   짝 하나가 누군가의 하위면 그 부모의 줄에서 짝 바로 아래(형제), 짝이 뿌리면 짝의 나무 바로 아래에 뿌리로. 크기는 묶음에서 가장 큰 단계로 맞춘다.
-//   블록의 hand(사람이 손으로 정한 크기, 동료만 caller가 붙인다)는 그 크기를 지키고, 단계 비교에는 handStep(크기 열쇠)을 쓴다
+//   블록의 hand(사람이 손으로 정한 크기)는 그 크기를 지키고, 단계 비교에는 handStep(크기 열쇠)을 쓴다. P310: 동료가 아닌 노드도 지킨다
 const levelRank = (step) => { const p = parseStep(step); return p ? SIZE_LEVELS.length - SIZE_LEVELS.indexOf(p.level) : 0; }; // large 3, normal 2, small 1
 export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200, gapY = GAP * 2, stepOf = null, rank = null, wrapAspect = WRAP_ASPECT, peers = [] } = {}) {
   const bySession = new Map();
@@ -417,7 +417,7 @@ export function arrangeTree(blocks, edges, { origin = { x: 0, y: 0 }, gapX = 200
     const b = byId.get(t.id);
     let step = null;
     if (b.resizable) step = t.depth === 0 ? 'large' : t.children.length ? 'normal' : 'small';
-    if (b.resizable && b.hand && inGroup.has(t.id)) size.set(t.id, { w: b.w, h: b.h, step: b.handStep || null }); // P177: 사람이 정한 동료 크기는 그대로
+    if (b.resizable && b.hand) size.set(t.id, { w: b.w, h: b.h, step: b.handStep || null }); // P177: 사람이 정한 동료 크기는 그대로. P310: 동료가 아니어도 그대로(자리만 옮긴다)
     else { const s = !step ? { w: b.w, h: b.h } : stepOf ? stepOf(b, step) : { ...SIZE_STEPS[step], step }; size.set(t.id, { w: s.w, h: s.h, step: step ? s.step || step : null }); }
     t.children.forEach(sizeOf);
   };

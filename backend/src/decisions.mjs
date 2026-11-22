@@ -45,7 +45,6 @@
 // 표는 store-decisions.mjs.
 import { shownName } from './session-label.mjs';
 import { findAsk } from './auto-ask.mjs';
-import { firstLine } from './peer-news.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { checkAgentText } from './work-units.mjs';
 import { steerBlock } from './delivery.mjs';
@@ -556,7 +555,7 @@ export class Decisions {
       this.b.store.addEvent(sid, 'decision_end', { id: d.id, state: 'closed', via: 'replaced', auto: true });
     }
     if (open.filter((d) => d.kind !== 'later').length - old.length >= ASK_OPEN_MAX) { if (old.length) { this.settle(sid, 'replaced'); this.changed(); } return null; }
-    const head = (() => { const l = firstLine(text, 200); return l ? clip(l.replace(/^#+\s*/, '').replace(/\*\*|__|`/g, '').trim(), 120) : null; })();
+    const head = f.context ? clip(oneLine(f.context), 160) : null; // P312: 답의 첫 줄이 아니라 질문 바로 앞 글(auto-ask.mjs contextOf)
     const plainOpt = options.map((o) => o.replace(/…$/, ''));
     const why = head && head !== question && !question.includes(head) && !head.includes(question) && !/^\s*(\d{1,2}[.)]|[-*+])\s/.test(head) && !plainOpt.some((o) => head.includes(o) || o.includes(head)) ? clip(oneLine(head), ASK_WHY_MAX) : null; // 첫 줄이 목록·보기와 겹치면 비운다
     const d = this.store().addDecision({ sessionId: sid, name: shownName(s) || s.name, question, options, why, createdAt: at, auto: true, kind: f.kind, cmds });

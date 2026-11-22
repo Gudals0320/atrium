@@ -2982,4 +2982,9 @@ export default {
     hermesSetOn: 'Hermes usage on.',
     hermesSetOff: 'Hermes usage off.',
   },
+  // P310: a size the person chose (auto arrange keeps it)
+  handSize: {
+    reset: 'Default size',
+    hint: 'You set this size. Auto arrange only moves it.',
+  },
 };
