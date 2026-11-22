@@ -100,7 +100,7 @@ function putSession(sum) {
 
 export async function loadBoard() {
   const b = await api.call('board.get');
-  state.nodes = new Map(b.nodes.map((n) => [n.session_id, { x: n.x, y: n.y, w: n.w, h: n.h, z: n.z, size: n.size || null, area: n.area || '', aspect: n.aspect || null }])); // P27: area(놓인 워크트리 영역). P73: aspect(고른 종횡비)
+  state.nodes = new Map(b.nodes.map((n) => [n.session_id, { x: n.x, y: n.y, w: n.w, h: n.h, z: n.z, size: n.size || null, area: n.area || '', aspect: n.aspect || null, hand: n.hand || null }])); // P310: hand(사람이 정한 크기 표 { at, w, h }). P27: area(놓인 워크트리 영역). P73: aspect(고른 종횡비)
   state.links = new Map((b.links || []).map((l) => [l.linkId, l]));
   state.docks = new Map((b.docks || []).map((d) => [d.dockId, d]));
   if (b.workspaces) state.workspaces = b.workspaces;
