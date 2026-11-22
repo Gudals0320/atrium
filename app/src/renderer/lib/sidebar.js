@@ -1,4 +1,4 @@
-// P7(J5) 사이드바의 순수 함수: 워크스페이스 묶음 안의 줄(판 세션, 닫힌 세션, 판 밖 대화)을 마지막 활동 순으로, 거르기 글로 고른다.
+// P7(J5) 사이드바의 순수 함수: 워크스페이스 묶음 안의 줄(판 세션은 이름 차례 P315, 닫힌 세션·판 밖 대화는 기록이라 마지막 활동 순)을 거르기 글로 고른다.
 // 창(Sidebar.jsx)과 단위 시험(app/test/p7-lib.test.mjs)이 같이 쓴다
 import { askLine } from './labels.js';
 import { t, tOr, translate } from './i18n.js';
@@ -31,10 +31,19 @@ export function bindingText(b) {
   return tail ? t('binding.maybe', { why: tail }) : b.label || '';
 }
 
+// P315: 이름 차례. 사람에게 보이는 이름 기준, 대소문자 무시, 숫자는 자연 차례(p9 < p10), 한글·영문이 섞여도 늘 같은 차례.
+// 같으면 원래 글자 그대로, 그래도 같으면 키로 갈라 차례가 흔들리지 않게 한다
+const NAME_COLL = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+export function byName(nameOf, keyOf = () => '') {
+  return (a, b) => {
+    const x = String(nameOf(a) ?? ''), y = String(nameOf(b) ?? '');
+    return NAME_COLL.compare(x, y) || (x < y ? -1 : x > y ? 1 : 0) || String(keyOf(a)).localeCompare(String(keyOf(b)));
+  };
+}
 const byTime = (f) => (a, b) => (f(b) || 0) - (f(a) || 0);
 export function sidebarRows({ sessions = [], closed = [], convos = [], filter = '' }) {
   return {
-    sessions: sessions.filter((s) => matches(sessionFields(s), filter)).sort(byTime((s) => Math.max(s.lastActivityAt || 0, s.createdAt || 0))),
+    sessions: sessions.filter((s) => matches(sessionFields(s), filter)).sort(byName((s) => s.name, (s) => s.sessionId)),
     closed: closed.filter((c) => matches(closedFields(c), filter)).sort(byTime((c) => c.closedAt)),
     convos: convos.filter((c) => matches(convoFields(c), filter)).sort(byTime((c) => c.lastAt)),
   };
