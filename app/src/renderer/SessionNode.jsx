@@ -295,6 +295,7 @@ function AskCallout({ s }) {
 function NodeMenu({ s, docked, onClose }) {
   const t = useT();
   const call = (method, p) => api.call(method, p).then(onClose, (e) => toast(errText(e), 'error'));
+  const hand = useStore((st) => (st.nodes.get(s.sessionId) || {}).hand); // P310
   const [detachAsk, setDetachAsk] = useState(null); // P81: 부모에서 떼기 확인 글. P159: 독립으로 두기(계보는 남는다)
   const detach = (yes) => api.call('session.detach', { session: s.sessionId, confirm: yes }).then((r) => {
     if (r && r.needsConfirm) return setDetachAsk(tMsg(r));
@@ -305,6 +306,8 @@ function NodeMenu({ s, docked, onClose }) {
       <div className="mt-menu-row"><span className="dim">{t('node.size')}</span>
         {[['large', t('node.sizeLarge')], ['normal', t('node.sizeNormal')], ['small', t('node.sizeSmall')]].map(([k, l]) => <button key={k} className="mt-btn small" data-size={k} onClick={() => call('board.setSize', { session: s.sessionId, size: k })}>{l}</button>)}
       </div>
+      {/* P310: 사람이 정한 크기(끌기·크기 단계)는 자동 정렬이 지킨다. 표시는 메뉴 안에만(노드 머리는 조용히), 되돌리기는 기본 크기로 */}
+      {hand && <div className="mt-menu-row mt-hand-size" data-role="hand-size"><button className="mt-btn small" data-action="auto-size" onClick={() => call('board.autoSize', { session: s.sessionId })}>{t('handSize.reset')}</button><span className="dim"><span className="mt-hand-dot" aria-hidden="true" />{t('handSize.hint')}</span></div>}
       {/* P66: 판의 이름 바꾸기(에이전트 주소는 그대로) */}
       <div className="mt-menu-row"><button className="mt-btn small" data-action="rename" onClick={() => { onClose(); setRenaming(s.sessionId, 'node'); }}>{t('rename.menu')}</button><span className="dim">{renamed(s) ? t('rename.address', { address: addressOf(s) }) : t('rename.menuHint')}</span></div>
       {/* P21(D4)·P24: 잠든 노드는 그 리포를 깨운다. 잠재우기는 리포 단위라 영역 이름표 메뉴에 있다 */}
@@ -563,7 +566,7 @@ function SessionNodeInner({ id, selected }) {
     <div data-tier={tier} data-dist={dist} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zSmall ? ' z-small' : ''}`} ref={invRef} data-session={id} data-name={s.name} data-face={face} data-brief={brief ? '1' : undefined} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
       <NodeResizer isVisible={selected && face === 'close' && !docked} minWidth={420} minHeight={260} lineClassName="mt-resize-line" handleClassName="mt-resize-handle"
         onResize={(_e, p) => setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height })}
-        onResizeEnd={(_e, p) => { setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height }); saveNode(id, 'resize'); }} />
+        onResizeEnd={(_e, p) => { setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height, hand: { at: Date.now(), w: Math.round(p.width), h: Math.round(p.height) } }); saveNode(id, 'resize'); }} />
       {/* 잇기 손잡이 네 개(판은 connectionMode loose). 끌기 시작한 노드가 시키는 쪽(A)이다. 선은 두 노드가 마주 보는 쪽에 붙인다 */}
       {[['t', Position.Top], ['r', Position.Right], ['b', Position.Bottom], ['l', Position.Left]].map(([hid, pos]) => (
         <Handle key={hid} type="source" position={pos} id={hid} className={`mt-handle h-${hid}`} title={t('node.handleTitle')} />

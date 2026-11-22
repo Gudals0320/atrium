@@ -97,7 +97,7 @@ test('사용량 한 줄 꼴: 구독마다 보이는 창만, 값마다 색, 테�
   // 알약은 한 줄 꼴로 그린다(로고 + 짧은 이름 + 값). 휴대폰(compact)은 지금 모양 그대로
   const src = read('Usage.jsx');
   assert.ok(src.includes('pillLine(v, now)') && src.includes('mt-usage-logo') && src.includes('shortName(t, w.kind)'));
-  assert.ok(src.includes('shownWindows(k, e)'), '펼침도 같은 규칙');
+  assert.ok(src.includes('shownWindows(k, e, { all: true })'), '펼침도 같은 규칙(P314: 모델별 주간은 펼침에만)');
 });
 
 test('0인 응답 필요·작업 완료 알약은 숨긴다', () => {

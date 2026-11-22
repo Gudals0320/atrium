@@ -35,13 +35,14 @@ import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './work
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
+import { probeCodex, probeClaude, probeHermes, probeBalance, sameAccount, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 세션 크기
-import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize } from './canvas-ops.mjs';
+import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
@@ -226,8 +227,19 @@ export class Backend {
       store: this.store, broadcast: (e, v) => this.api.broadcast(e, v), settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}),
       codexHome: cfg.usageCodexHome, claudeUserSettings: cfg.claudeUserSettings, agyUserSettings: path.join(cfg.agyHome || agyHomeOf(), 'settings.json'),
       script: writeStatusLineScript(path.join(cfg.dataDir, 'plugin')), node: process.execPath, agyShim: process.platform === 'win32' ? writeStatusLineShim(path.join(cfg.dataDir, 'plugin')) : null, pollMs: cfg.usagePollMs, log: (m) => this.log(m),
+      // P314: 값이 낡으면 하네스 자신의 사용량 명령으로 묻는다. 그 종류의 판 세션이 일하는 중이면 묻지 않는다(곧 상태 줄·rollout이 준다)
+      probe: cfg.usageProbe === false ? {} : {
+        codex: () => probeCodex({ command: cfg.usageCodexCommand || 'codex' }),
+        claude: () => probeClaude({ command: cfg.usageClaudeCommand || 'claude', dir: path.join(cfg.dataDir, 'usage-probe'), projectsDir: cfg.usageClaudeProjects }),
+        hermes: () => probeHermes({ command: cfg.usageHermesCommand || 'hermes' }),
+        balance: () => { const sr = findSecretRun(); return sr ? probeBalance({ secretRun: sr, grant: cfg.usageGrant || 'atrium-usage' }) : Promise.resolve(null); },
+      },
+      busy: (k) => [...this.sessions.values()].some((s) => !s.closedAt && (s.kind || 'claude') === k && s.rt && s.rt.term && s.rt.term.status === 'working'),
+      hermesWanted: () => !!(this.features && this.features.settings && this.features.settings.get().usageHermes) || [...this.sessions.values()].some((s) => !s.closedAt && s.kind === 'hermes'),
+      sameAccount,
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
+    this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
     // P298: Hermes의 바쁨 읽개(busy 칸 { reader: 'hermes' }). 그 세션이 띄운 하위 에이전트가 돌거나 턴 임대가 살아 있으면 바쁨
     registerInnerReader('hermes', ({ session }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesBusyOf({ id, home: this.hermesHome() }) : null; });
     // P300: Hermes의 안 진행 읽개(같은 busy 칸 { reader: 'hermes' }). OMH dag-ulw 실행 기록, 없으면 Hermes 자체 위임(state.db)
@@ -2320,7 +2332,8 @@ export class Backend {
       'board.get': async (p, c) => {
         const w = p.workspace ? await this.resolveWorkspace(p.workspace) : null;
         const inWs = (k) => !w || (k || null) === w.key;
-        const nodes = this.store.nodes().filter((n) => inWs(n.workspace_key));
+        const hand = handSizes(this); // P310: 사람이 정한 크기 표(창의 노드 메뉴가 "기본 크기로"를 보인다)
+        const nodes = this.store.nodes().filter((n) => inWs(n.workspace_key)).map((n) => (hand[n.session_id] ? { ...n, hand: hand[n.session_id] } : n));
         const ids = new Set(nodes.map((n) => n.session_id));
         return { nodes, docks: this.store.docks().filter((d) => inWs(d.workspaceKey)), viewport: viewportFor(c && c.clientId ? this.store.getMeta(viewportKey(c.clientId)) : null, this.store.getMeta('viewport')), seenAt: this.store.getMeta('boardSeenAt'), links: this.linksOpen().filter((l) => !w || ids.has(l.from) || ids.has(l.to)), workspaces: this.workspaceList(), current: this.currentWorkspace(), groups: readGroups(this).groups, canvas: this.store.getMeta('canvas'),
           // P6c: 메모·칸반 노드(P6b I3·I4)도 같은 판에 그린다
@@ -2336,7 +2349,7 @@ export class Backend {
         this.store.setNode(n);
         // P73: 사람이 테두리를 끌어 크기를 바꾸면 고른 비율과 크기 단계를 끈다(자유 비율)
         if (before && (Math.round(before.w) !== Math.round(n.w) || Math.round(before.h) !== Math.round(n.h)) && (before.aspect || before.size)) this.store.setNodeAspect(s.sessionId, null, null);
-        if (p.cause === 'resize' && before && (Math.round(before.w) !== Math.round(n.w) || Math.round(before.h) !== Math.round(n.h))) markHandSize(this, s.sessionId); // P177: 사람이 끌어 정한 크기
+        if (p.cause === 'resize' && before && (Math.round(before.w) !== Math.round(n.w) || Math.round(before.h) !== Math.round(n.h))) markHandSize(this, s.sessionId, true, n); // P177: 사람이 끌어 정한 크기. P310: 값도
         noteNodeMove(this, s, before, n, p.cause);
         // P47: 다른 창도 옮긴 자리를 바로 그린다(예전에는 다음 board.changed까지 옛 자리). 보낸 창은 by로 알아보고 무시한다
         this.api.broadcast('board.node', { sessionId: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z, by: (c && c.clientId) || null });

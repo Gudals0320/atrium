@@ -2910,3 +2910,21 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-plan-mstag { flex: none; padding: 0 6px; border-radius: 5px; border: 1px solid var(--teal); color: var(--teal); font-size: 10.5px; line-height: 15px; white-space: nowrap; font-family: var(--mono, ui-monospace, monospace); }
 .mt-plan-more { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding: 6px 10px; border: 1px dashed var(--panel-line-2); border-radius: 8px; font-size: 12.5px; color: var(--dim); }
 .mt-plan-more b { color: var(--text); font-weight: 600; }
+
+/* P314: 사용량 펼침의 묻는 중 표시, 같은 계정으로 합친 줄, 아래쪽(알약 밖) 줄 */
+.mt-usage-probing { font-size: 11.5px; margin-left: auto; }
+.mt-usage-ago + .mt-usage-probing { margin-left: 6px; }
+.mt-usage-merged { font-size: 12px; }
+.mt-usage-extras { display: grid; gap: 6px; margin-top: 2px; padding-top: 6px; border-top: 1px solid var(--line, rgba(255, 252, 240, 0.08)); }
+.mt-usage-extras-head { font-size: 11.5px; padding: 0 2px; }
+
+/* P310: 사람이 정한 크기 표시(노드 메뉴 안에만) */
+.mt-hand-dot { display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--teal); vertical-align: middle; }
+
+/* P313: 설정 › 에이전트 탭. 보조 에이전트마다 한 칸(이름·한 줄 설명 머리 + 공용 설정 격자 + 그만의 칸). 칸 사이는 얇은 선 */
+.mt-agents > .mt-set-note { margin: 0 0 10px; }
+.mt-agent { padding: 10px 0 12px; border-top: 1px solid var(--panel-line); }
+.mt-agent:first-of-type { border-top: 0; padding-top: 2px; }
+.mt-agent-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 10px; }
+.mt-agent-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.mt-agent-desc { font-size: 12px; color: var(--dim); line-height: 1.4; }

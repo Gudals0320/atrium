@@ -98,7 +98,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       이 리포의 목표·마일스톤 레인(한 리포에 여럿, 레인마다 관리자 세션). 고치라는 지시가 없으면 남의 레인은 읽기만 한다.
       사람 몫 항목은 item <코드> "<글>" --who user(사람의 할 일 목록에 뜬다). 하위 낱말과 예: atrium help plan
   atrium guide                  이 사용법
-  atrium guide merger           합치기 merger의 안내(P267: 보드가 브랜치 워커의 합치기를 맡기는 세션)
+  atrium guide merger           병합 merger의 안내(P267: 보드가 브랜치 워커의 병합을 맡기는 세션)
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
   PowerShell에서 atrium은 atrium.exe로 여러 줄·< > | & %를 그대로 넘긴다. Windows PowerShell 5.1(Codex)은 글 안의 큰따옴표를 빼먹고, cmd를 거치면(atrium.cmd) 여러 줄이 첫 줄만 간다. 그런 글은 --file로 준다
 ${RELATION_HELP.join('\n')}
@@ -385,7 +385,7 @@ async function todoVerb() {
 }
 
 // ---------- P204: atrium log | news ----------
-const KIND_WORD = { turn: '턴', done: 'done', log: 'log', merge: '합침' }; // P267: merger의 합침 한 줄
+const KIND_WORD = { turn: '턴', done: 'done', log: 'log', merge: '병합' }; // P267: merger의 합침 한 줄
 function newsLine(r, now) {
   const head = `  @${r.name} · ${ago(r.at, now)} · ${KIND_WORD[r.kind] || r.kind}`;
   if (r.kind === 'turn') return `${head}: "${r.task}" → ${r.text}`;
@@ -436,9 +436,9 @@ async function unitVerb(cmd) {
   const x = r.result;
   if (cmd === 'done') {
     // P267: merger = 브랜치에서 일한 결과라 보드가 합치기를 merger에게 맡겼다. 합치기 일의 ok(retire 칸이 있음)는 부모를 깨우지 않는다
-    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, merger: `보드가 합치기를 ${x.merge && x.merge.merger ? '@' + x.merge.merger : 'merger'}에게 맡겼다(일 ${x.merge ? x.merge.unit : '?'}). 너는 이 턴이 끝나면 보드가 재운다`, record: x.retire != null && x.result === 'ok' ? `합침을 보드가 소식에 남기고 @${x.parent}의 items에 보인다(@${x.parent}를 깨우지 않는다)` : x.parentOpen ? '네가 너에게 맡긴 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
+    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, merger: `보드가 병합을 ${x.merge && x.merge.merger ? '@' + x.merge.merger : 'merger'}에게 맡겼다(일 ${x.merge ? x.merge.unit : '?'}). 너는 이 턴이 끝나면 보드가 재운다`, record: x.retire != null && x.result === 'ok' ? `병합을 보드가 소식에 남기고 @${x.parent}의 items에 보인다(@${x.parent}를 깨우지 않는다)` : x.parentOpen ? '네가 너에게 맡긴 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
     say(`일 ${x.unit}을 닫았다(${x.result}). ${how}. 다른 길로 따로 보고하지 않는다.`);
-    if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else if (x.retire) say('다섯 번째 합치기 일이다. 이제 쉰다: 보드가 너를 닫고 남은 일은 새 merger가 받는다.'); else say('이제 쉰다.');
+    if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else if (x.retire) say('다섯 번째 병합 일이다. 이제 쉰다: 보드가 너를 닫고 남은 일은 새 merger가 받는다.'); else say('이제 쉰다.');
     return;
   }
   if (cmd === 'item') {
@@ -454,7 +454,7 @@ async function unitVerb(cmd) {
   for (const it of x.items) {
     say(`  ${it.id} → @${it.to || '?'} · ${it.queued ? 'open(줄 서 있음)' : it.status}${it.result ? ` · ${it.result}` : ''}${it.stopReason && it.status === 'open' ? ` · 멈춤(${it.stopReason})` : ''} · ${ago(it.createdAt, Date.now())} · "${it.spec}"`);
     if (it.text) say(`      보고: ${it.text.replace(/\s+/g, ' ').slice(0, 400)}`);
-    if (it.merge) say(`      합치기: ${{ queued: '줄 서 있음', merging: '합치는 중', merged: '합침', failed: '실패(알림을 본다)', cancelled: '취소' }[it.merge.state] || it.merge.state}${it.merge.merger ? ` · @${it.merge.merger}` : ''}${it.merge.hash ? ` · ${String(it.merge.hash).slice(0, 9)}` : ''}`); // P267
+    if (it.merge) say(`      병합: ${{ queued: '줄 서 있음', merging: '병합 중', merged: '병합됨', failed: '실패(알림을 본다)', cancelled: '취소' }[it.merge.state] || it.merge.state}${it.merge.merger ? ` · @${it.merge.merger}` : ''}${it.merge.hash ? ` · ${String(it.merge.hash).slice(0, 9)}` : ''}`); // P267
   }
 }
 // ---------- P182: atrium guide ----------

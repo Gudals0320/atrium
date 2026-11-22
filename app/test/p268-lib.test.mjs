@@ -87,7 +87,7 @@ test('꼬리표: 열린 merger 세션만', () => {
 test('사전: en·ko 둘 다 같은 merger 낱말(카드 글은 계약의 제안 그대로)', () => {
   const keys = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? keys(v, p + k + '.') : [p + k])).sort();
   assert.deepEqual(keys(en.merger), keys(ko.merger));
-  assert.equal(ko.merger.card.title, '이 프로젝트에서 합치기를 merger에게 맡길까요?');
+  assert.equal(ko.merger.card.title, '이 프로젝트에서 병합을 merger에게 맡길까요?');
   assert.equal(en.merger.card.title, 'Let a merger session merge branch work in this project?');
   assert.match(ko.merger.card.body, /@\{child\}가 \{branch\}에서/);
   assert.match(en.merger.card.body, /\{target\}/);

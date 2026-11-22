@@ -5,6 +5,7 @@ import { useStore, getState } from './store.js';
 import { api } from './api.js';
 import { useT, t as tt } from './lib/i18n.js';
 import { notifyAllowed } from './lib/multiclient.js';
+import { extraRows, mergedInto, balanceOf, sourceKey, probingOf } from './lib/usage.js'; // P314: 펼침 아래쪽 줄, 합친 계정, 묻는 중
 import { PROVIDERS, PROVIDER_NAME, pillOf, pillLine, repPart, loadRep, saveRep, shortKey, shownWindows, livePct, levelOf, spanOf, windowKey, creditOf, windowLabel, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
 import { KINDS } from './lib/kinds.js';
 import { creditMode, creditPillText } from './lib/p255.js'; // P255: Codex 한도를 다 써서 크레딧을 쓰는 중이면 퍼센트 대신 남은 크레딧
@@ -32,22 +33,25 @@ function useDrop() {
 }
 
 // P256: pick(휴대폰 compact 펼침)이 있으면 구독 칸을 누를 수 있고 누르면 대표가 된다. rep = 지금 고른 대표
-function ProviderBlock({ k, e, now, pick = null, rep = null }) {
+// P314: merged = 이 칸에 합쳐진 하네스 이름(같은 계정으로 확인된 Hermes), probing = 지금 하네스에 묻는 중
+const srcText = (t, s) => (sourceKey(s) ? t(sourceKey(s)) : '');
+const Probing = ({ on }) => { const t = useT(); return on ? <span className="mt-usage-probing dim" data-role="usage-probing">{t('usageProbe.probing')}</span> : null; };
+function ProviderBlock({ k, e, now, pick = null, rep = null, merged = [], probing = false }) {
   const t = useT();
-  const wins = shownWindows(k, e); // P214: AGY는 Gemini 5시간·주간만. 보일 창이 없으면 모름과 같다
+  const wins = shownWindows(k, e, { all: true }); // P214: AGY는 Gemini 5시간·주간만. 보일 창이 없으면 모름과 같다. P314: Claude 모델별 주간도
   const on = !!pick && rep === k;
   const tap = pick ? { role: 'button', tabIndex: 0, 'aria-pressed': on, 'data-rep': on ? '1' : undefined, title: t('phoneHead.repHint'), onClick: () => pick(k), onKeyDown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(k); } } } : {};
   const mark = on ? <span className="mt-usage-rep" data-role="usage-rep">{t('phoneHead.rep')}</span> : null;
   if (!e || !wins.length) return (
     <div className={`mt-usage-prov unknown${pick ? ' pickable' : ''}${on ? ' rep' : ''}`} data-role="usage-provider" data-provider={k} {...tap}>
-      <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b>{mark}<span className="dim">{t('usage.unknown')}</span></div>
+      <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b>{mark}<span className="dim">{t('usage.unknown')}</span><Probing on={probing} /></div>
       <div className="mt-usage-src dim">{t(`usage.unknownWhy.${k}`)}</div>
     </div>
   );
   const c = creditOf(e.credits);
   return (
     <div className={`mt-usage-prov${pick ? ' pickable' : ''}${on ? ' rep' : ''}`} data-role="usage-provider" data-provider={k} {...tap}>
-      <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b>{mark}{e.plan && <span className="mt-usage-plan">{e.plan}</span>}<span className="dim mt-usage-ago" title={new Date(e.at).toLocaleString()}>{t('usage.ago', { span: span(t, now - e.at) })}</span></div>
+      <div className="mt-usage-head"><b>{PROVIDER_NAME[k]}</b>{mark}{e.plan && <span className="mt-usage-plan">{e.plan}</span>}<span className="dim mt-usage-ago" title={new Date(e.at).toLocaleString()}>{t('usage.ago', { span: span(t, now - e.at) })}</span><Probing on={probing} /></div>
       {k === 'agy' && <div className="mt-usage-what dim" data-role="usage-what">{t('usage.agyWhat')}</div>}
       {wins.map((w) => {
         const p = livePct(w, now);
@@ -62,7 +66,32 @@ function ProviderBlock({ k, e, now, pick = null, rep = null }) {
         );
       })}
       {c && <div className="mt-usage-credit" data-role="usage-credit">{t(c.key, c.vars)}</div>}
-      <div className="mt-usage-src dim">{t(`usage.source.${e.source}`)}{e.model ? ` · ${e.model}` : ''}</div>
+      {merged.length > 0 && <div className="mt-usage-merged dim" data-role="usage-merged">{t('usageProbe.mergedWith', { names: merged.join(', ') })}</div>}
+      <div className="mt-usage-src dim">{srcText(t, e.source)}{e.model ? ` · ${e.model}` : ''}</div>
+    </div>
+  );
+}
+
+// P314: 펼침 아래쪽(알약 밖) 줄. Hermes 계정 한도(같은 계정이 아닐 때), 키로 읽는 잔액(DeepSeek·OpenRouter)
+function ExtraBlock({ row, now, probing = false }) {
+  const t = useT();
+  const e = row.entry;
+  const b = row.type === 'balance' ? balanceOf(e.balance) : null;
+  return (
+    <div className="mt-usage-prov mt-usage-extra" data-role="usage-extra" data-provider={row.provider} data-type={row.type}>
+      <div className="mt-usage-head"><b>{row.type === 'balance' ? t('usageProbe.balanceName', { name: row.name }) : row.name}</b>{e.hermesProvider && <span className="mt-usage-plan">{e.hermesProvider}{e.plan ? ` · ${e.plan}` : ''}</span>}<span className="dim mt-usage-ago" title={new Date(e.at).toLocaleString()}>{t('usage.ago', { span: span(t, now - e.at) })}</span><Probing on={probing} /></div>
+      {b ? <div className="mt-usage-credit" data-role="usage-balance">{t(b.key, b.vars)}</div> : shownWindows(row.provider, e, { all: true }).map((w) => {
+        const p = livePct(w, now);
+        return (
+          <div key={w.id} className={`mt-usage-win lv-${levelOf(p)}`} data-role="usage-window" data-window={w.id} data-pct={Math.round(p)}>
+            <span className="mt-usage-wname" title={w.id}>{kindName(t, w)}</span>
+            <span className="mt-usage-bar" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, p))}%` }} /></span>
+            <span className="mt-usage-pct mono">{Math.round(p)}%</span>
+            <span className="mt-usage-reset dim">{w.resetsAt ? (w.resetsAt > now ? t('usage.resetIn', { span: span(t, w.resetsAt - now) }) : t('usage.resetPassed')) : ''}</span>
+          </div>
+        );
+      })}
+      <div className="mt-usage-src dim">{srcText(t, e.source)}</div>
     </div>
   );
 }
@@ -78,6 +107,8 @@ export function UsagePill({ compact = false }) {
   const [open, setOpen, ref] = useDrop();
   const [rep, setRep] = useState(() => loadRep(lsOf()));
   const pickRep = (k) => { setRep(k); saveRep(lsOf(), k); };
+  // P314: 펼칠 때 낡은 값을 하네스에 묻는다(Claude는 이때만). 답은 usage.updated로 온다. 옛 백엔드면 없다
+  useEffect(() => { if (open) api.call('usage.refresh').catch(() => {}); }, [open]);
   if (!v) return null;
   const pill = pillOf(v, now);
   const line = pillLine(v, now);
@@ -106,7 +137,8 @@ export function UsagePill({ compact = false }) {
         <div className="mt-dropdown mt-usage-list" data-role="usage-list">
           <div className="mt-dropdown-head"><span>{t('usage.head')}</span></div>
           {compact && <div className="mt-usage-pickhint dim" data-role="usage-pick-hint">{t('phoneHead.repHint')}</div>}
-          {PROVIDERS.map((k) => <ProviderBlock key={k} k={k} e={v.providers ? v.providers[k] : null} now={now} pick={compact ? pickRep : null} rep={compact ? rep : null} />)}
+          {PROVIDERS.map((k) => <ProviderBlock key={k} k={k} e={v.providers ? v.providers[k] : null} now={now} pick={compact ? pickRep : null} rep={compact ? rep : null} merged={mergedInto(v, k)} probing={probingOf(v, k)} />)}
+          {(() => { const rows = extraRows(v); return rows.length ? <div className="mt-usage-extras" data-role="usage-extras"><div className="mt-usage-extras-head dim">{t('usageProbe.extrasHead')}</div>{rows.map((r) => <ExtraBlock key={r.provider} row={r} now={now} probing={probingOf(v, r.provider)} />)}</div> : null; })()}
           <div className="mt-usage-foot dim" data-role="usage-alerts">{v.alertsOn === false ? t('usage.alertsOff') : t('usage.alertsOn')}</div>
         </div>
       )}

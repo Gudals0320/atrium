@@ -47,7 +47,7 @@ test('P290 순수: 줄 만들기', () => {
   assert.equal(devBuildOf('검토 experiments/p290/review.md, dev.70'), 'dev.70');
   assert.equal(childDoneOf('머리\n\n## @w1의 done 글\n본문'), '본문');
   const t = mergeSummaryText({ merger: 'merger-x', units: [{ status: 'failed', meta: { child: 'w2' } }], extra: ['꼬리'] });
-  assert.equal(t, '[Atrium 보드] 합치기 정리: @merger-x가 닫히기 전에 합친 것 0개, 실패 1개\n- @w2: 실패(이미 알림)\n\n꼬리');
+  assert.equal(t, '[Atrium 보드] 병합 정리: @merger-x가 닫히기 전에 합친 것 0개, 실패 1개\n- @w2: 실패(이미 알림)\n\n꼬리');
 });
 
 test('P290 두 부모의 일 셋 → idle로 닫힘에 부모마다 알림 하나, 다시 보내지 않음', async () => {
@@ -65,11 +65,11 @@ test('P290 두 부모의 일 셋 → idle로 닫힘에 부모마다 알림 하�
     assert.equal(x.sent.length, 2, '부모마다 하나');
     const toA = x.sent.find((d) => d.sessionId === 'lead-a-id'); const toB = x.sent.find((d) => d.sessionId === 'lead-b-id');
     assert.equal(toA.text, [
-      '[Atrium 보드] 합치기 정리: @' + s.name + '가 닫히기 전에 합친 것 1개, 실패 1개',
+      '[Atrium 보드] 병합 정리: @' + s.name + '가 닫히기 전에 합친 것 1개, 실패 1개',
       '- @w1: ok, 합침 f00dbeef1 → dev · dev.70 · 사용자가 얻는 것: 창에 버튼 · 검토 experiments/p1/review.md',
       '- @w2: 실패(이미 알림)',
       '', '[Atrium 보드] 문서: 꼬리'].join('\n'));
-    assert.equal(toB.text, '[Atrium 보드] 합치기 정리: @' + s.name + '가 닫히기 전에 합친 것 1개\n- @w3: ok, 합침 cafe00001 → dev · dev.71 · 사용자가 얻는 것: 빠른 시험 · 검토 experiments/p3/review.md');
+    assert.equal(toB.text, '[Atrium 보드] 병합 정리: @' + s.name + '가 닫히기 전에 합친 것 1개\n- @w3: ok, 합침 cafe00001 → dev · dev.71 · 사용자가 얻는 것: 빠른 시험 · 검토 experiments/p3/review.md');
     assert.equal(x.store.getUnit(a1.id).meta.summary, 'sent');
     assert.deepEqual(x.m.summarize(x.key, 'again', 'test'), [], '다시 보내지 않는다');
     await x.m.recover('test');
@@ -96,7 +96,7 @@ test('P290 exited → 알림, 판이 죽어 정리 없이 사라진 merger → r
     await m2.recover('restart');
     assert.equal(x.sent.length, 2);
     assert.equal(x.sent[1].sessionId, 'lead-b-id');
-    assert.equal(x.sent[1].text, '[Atrium 보드] 합치기 정리: @' + s2.name + '가 닫히기 전에 합친 것 0개, 실패 1개\n- @w5: 실패(이미 알림)');
+    assert.equal(x.sent[1].text, '[Atrium 보드] 병합 정리: @' + s2.name + '가 닫히기 전에 합친 것 0개, 실패 1개\n- @w5: 실패(이미 알림)');
 
     const a3 = x.job('lead-a-id', 'w6', '셋'); const s3 = await m2.ensure(x.key);
     x.close(m2, s3, a3, 'ok', '합침');

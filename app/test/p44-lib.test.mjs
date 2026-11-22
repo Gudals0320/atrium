@@ -10,12 +10,12 @@ const S = (name, ws, state = 'shell_idle', extra = {}) => ({ sessionId: `id-${na
 const types = (rows) => rows.map((r) => r.type);
 const ids = (rows) => rows.map((r) => r.id);
 
-test('P44 사이드바: 그룹(사람이 정한 순서) → 그룹 없음 → 워크스페이스 → 세션, 응답 필요·오류는 위에 두 줄 높이', () => {
+test('P44 사이드바: 그룹(사람이 정한 순서) → 그룹 없음 → 워크스페이스 → 세션(P315 이름 차례), 응답 필요·오류는 두 줄 높이', () => {
   const workspaces = [WS('a'), WS('b'), WS('c')];
   const groups = [{ id: 'g1', name: 'G', members: ['c', 'a'] }];
   const sessions = [S('a1', 'a'), S('a2', 'a', 'waiting'), S('b1', 'b', 'error'), S('c1', 'c', 'working')];
   const { rows, counts } = buildRows({ workspaces, groups, sessions });
-  assert.deepEqual(ids(rows), ['g:g1', 'w:c', 's:id-c1', 'w:a', 's:id-a2', 's:id-a1', 'g:', 'w:b', 's:id-b1']);
+  assert.deepEqual(ids(rows), ['g:g1', 'w:c', 's:id-c1', 'w:a', 's:id-a1', 's:id-a2', 'g:', 'w:b', 's:id-b1']);
   assert.equal(rows.find((r) => r.id === 's:id-a2').h, ROW_H.attn, '응답 필요 줄은 질문 한 줄을 더 보인다');
   assert.equal(rows.find((r) => r.id === 's:id-a1').h, ROW_H.session);
   assert.deepEqual({ need: counts.need, error: counts.error, working: counts.working, sessions: counts.sessions }, { need: 1, error: 1, working: 1, sessions: 4 });
@@ -29,7 +29,7 @@ test('P44 사이드바: 접힌 그룹·워크스페이스 아래에도 응답 �
   const groups = [{ id: 'g1', name: 'G', members: ['a'] }];
   const sessions = [S('a1', 'a'), S('a2', 'a', 'waiting'), S('b1', 'b'), S('b2', 'b', 'error'), S('b3', 'b', 'trust_wait')];
   const { rows } = buildRows({ workspaces, groups, sessions, collapsed: { 'g:g1': true, b: true } });
-  assert.deepEqual(ids(rows), ['g:g1', 's:id-a2', 'g:', 'w:b', 's:id-b3', 's:id-b2']);
+  assert.deepEqual(ids(rows), ['g:g1', 's:id-a2', 'g:', 'w:b', 's:id-b2', 's:id-b3']);
   assert.ok(rows.filter((r) => r.type === 'session').every((r) => r.pinned && r.attn));
   const many = Array.from({ length: ATTN_CAP + 3 }, (_, i) => S(`n${i}`, 'b', 'waiting'));
   const r2 = buildRows({ workspaces: [WS('b')], sessions: many, collapsed: { b: true } }).rows;

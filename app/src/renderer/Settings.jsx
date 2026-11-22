@@ -16,7 +16,8 @@ import { useDialog } from './dialog.js'; // P52
 import { UpdateSettings } from './Update.jsx'; // P69: 업데이트 묶음
 import { LIGHT_MODES, workLightOf, applyWorkLight } from './lib/work-light.js'; // P107: 작업 중 테두리 빛
 import { TerminalTab } from './Terminal.jsx'; // P117: 터미널 백엔드와 옮기기
-import { MergerTab } from './Merger.jsx'; // P268: 합치기 merger
+import { AgentsTab } from './Agents.jsx'; // P313: 에이전트 탭(P268 병합 merger와 다음 보조 에이전트)
+import { agentsOf, settingsTabOf } from './lib/agents.js'; // P313
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 export function SetRow({ name, hint, children, role }) {
@@ -132,6 +133,24 @@ function UsageAlertSetting({ settings }) {
   return <SetRow name={t('usage.alertsName')} hint={t('usage.alertsHint')} role="usage-alert-setting"><Toggle checked={settings.usageAlerts !== false} onChange={set} field="setting-usageAlerts" /></SetRow>;
 }
 
+// P314: 사용량 직접 묻기(판 설정 usageProbe·usageProbeMin·usageHermes). 값이 낡으면 하네스의 사용량 명령으로 묻는다(백엔드 usage-probe.mjs)
+function UsageProbeSetting({ settings }) {
+  const t = useT();
+  const [min, setMin] = useState(null);
+  const save = async (key, value, msg) => {
+    try { await api.call('settings.set', { key, value }); setMin(null); toast(msg); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
+  };
+  const saveMin = () => { if (min != null && min !== '') save('usageProbeMin', Number(min), t('usageProbe.minSet', { n: Number(min) })); };
+  const on = settings.usageProbe !== false;
+  return <>
+    <SetRow name={t('usageProbe.name')} hint={t('usageProbe.hint')} role="usage-probe-setting"><Toggle checked={on} onChange={(v) => save('usageProbe', v, v ? t('usageProbe.setOn') : t('usageProbe.setOff'))} field="setting-usageProbe" /></SetRow>
+    {on && 'usageProbeMin' in settings && <SetRow name={t('usageProbe.minName')} hint={t('usageProbe.minHint')} role="usage-probe-min-setting">
+      <input type="number" className="mt-set-num" min={2} max={240} data-field="setting-usageProbeMin" value={min ?? settings.usageProbeMin} onChange={(e) => setMin(e.target.value)} onBlur={saveMin} onKeyDown={(e) => { if (e.key === 'Enter') saveMin(); }} />
+    </SetRow>}
+    {on && 'usageHermes' in settings && <SetRow name={t('usageProbe.hermesName')} hint={t('usageProbe.hermesHint')} role="usage-hermes-setting"><Toggle checked={!!settings.usageHermes} onChange={(v) => save('usageHermes', v, v ? t('usageProbe.hermesSetOn') : t('usageProbe.hermesSetOff'))} field="setting-usageHermes" /></SetRow>}
+  </>;
+}
+
 // P286: 자동 결정 카드(판 설정 autoDecisions, 기본 켬). 끄면 판이 마지막 답의 질문으로 카드를 만들지 않는다(손 카드는 그대로)
 function AutoDecisionSetting({ settings }) {
   const t = useT();
@@ -182,6 +201,7 @@ function GeneralTab({ settings }) {
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>
         {'usageAlerts' in settings && <UsageAlertSetting settings={settings} />}
+        {'usageProbe' in settings && <UsageProbeSetting settings={settings} />}
         {'autoDecisions' in settings && <AutoDecisionSetting settings={settings} />}
         {'planNotify' in settings && <PlanNotifySetting settings={settings} />}
         {'updateCheck' in settings && <UpdateSettings settings={settings} />}
@@ -243,7 +263,7 @@ const TABS = [
   { key: 'recall', has: (s) => s && s.archiveDays != null },
   { key: 'devices', has: () => true, label: 'webDevices.tab' }, // P48
   { key: 'terminal', has: (s) => !!s, label: 'terminalMove.tab' }, // P117
-  { key: 'merger', has: (s) => !!s && 'mergerMode' in s, label: 'merger.tab' }, // P268: 판에 merger가 있을 때만
+  { key: 'agents', has: (s, l, a) => agentsOf(a, s).length > 0, label: 'agents.tab' }, // P313: 보조 에이전트(옛 P268 합치기 탭). 보일 에이전트가 있을 때만
 ];
 
 export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false }) {
@@ -251,10 +271,11 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
   const settings = useStore((st) => st.settings);
   const launchers = useStore((st) => st.launchers);
   const [schema, setSchema] = useState(null);
-  const [tab, setTab] = useState(tab0 || 'general'); // P97: 연 곳이 정한 탭(레일 + → 런처)
-  useEffect(() => { api.call('settings.get').then((r) => setSchema(r.schema)).catch((e) => toast(t('settings.saveFailed', { error: errText(e) }), 'error')); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [agents, setAgents] = useState(null); // P313: 판의 보조 에이전트 표(옛 판이면 없음 → 창의 FALLBACK_AGENTS)
+  const [tab, setTab] = useState(settingsTabOf(tab0) || 'general'); // P97: 연 곳이 정한 탭(레일 + → 런처)
+  useEffect(() => { api.call('settings.get').then((r) => { setSchema(r.schema); setAgents(r.agents || null); }).catch((e) => toast(t('settings.saveFailed', { error: errText(e) }), 'error')); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const box = useDialog(onClose); // P52: Esc 닫기는 공용(dialog.js). 열면 상자에 초점, Tab은 안에서 돈다
-  const tabs = TABS.filter((x) => x.has(settings, launchers));
+  const tabs = TABS.filter((x) => x.has(settings, launchers, agents));
   const cur = tabs.some((x) => x.key === tab) ? tab : 'general';
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -271,7 +292,7 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
           {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}
           {cur === 'devices' && <DevicesTab />}
           {cur === 'terminal' && <TerminalTab />}
-          {settings && cur === 'merger' && <MergerTab settings={settings} />}
+          {settings && cur === 'agents' && <AgentsTab settings={settings} table={agents} />}
         </div>
         <div className="mt-card-actions"><button className="mt-btn" data-action="settings-close" onClick={onClose}>{t('common.close')}</button></div>
       </div>

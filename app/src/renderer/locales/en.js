@@ -2675,9 +2675,11 @@ export default {
   deliveryLate: {
     reason: 'submitted late',
   },
-  // P268: merger (merge branch work in a separate session): settings tab, the ask card, canvas line and tag
+  // P268: merger (merge branch work in a separate session): settings tab, the ask card, canvas line and tag. P313: Settings › Agents › Merge
   merger: {
-    tab: 'Merging',
+    tab: 'Merge',
+    name: 'Merge', // P313: section name and one-line description in the Agents tab
+    desc: 'When a worker that worked on a branch (worktree) finishes, a merger session merges that branch.',
     noBoard: 'This board has no merger feature.',
     mode: 'Merger',
     modes: { on: 'On', ask: 'Ask', off: 'Off' },
@@ -2973,5 +2975,49 @@ export default {
   },
   shellProgram: {
     label: 'Program running',
+  },
+  // P313: Settings › Agents tab (helper agents the board uses, in one shape; the fields follow the board's helper agent table)
+  agents: {
+    tab: 'Agents',
+    note: 'Helper agents the board uses. For each one, set whether it is on, the harness, model, effort and permission mode.',
+    field: { mode: 'Use', kind: 'Harness', model: 'Model', effort: 'Effort', permission: 'Permission mode' },
+    effortNone: '(not passed)',
+    permissionInherit: 'Same as assigner',
+    saved: 'Saved',
+  },
+  // P313: to-do tidy (filters automatic to-do card candidates with a small model). Placeholder only (ready false in the board table, hidden in the tab)
+  todoTidy: {
+    name: 'To-do tidy',
+    desc: 'Filters automatic to-do card candidates with a small model.',
+  },
+  // P314: ask for usage directly (when values are stale, ask each tool's usage command), lower rows of the dropdown (Hermes, key-only balances)
+  usageProbe: {
+    probing: 'Asking…',
+    mergedWith: '{names} uses the same ChatGPT account (same values).',
+    extrasHead: 'Other',
+    balanceName: '{name} balance',
+    balance: '{n} {cur}',
+    source: {
+      'probe:codex': 'Source: asked codex app-server',
+      'probe:claude': 'Source: asked claude /usage',
+      'probe:hermes': 'Source: asked hermes usage',
+      'probe:balance': 'Source: balance API (secret-run)',
+    },
+    name: 'Ask for usage directly',
+    hint: 'When values are stale, ask each tool\'s usage command: Codex and Hermes periodically, Claude and key-only balances when you open the usage pill. Skipped while a session of that kind is working.',
+    setOn: 'Asking for usage directly.',
+    setOff: 'Stopped asking for usage directly.',
+    minName: 'Ask interval (minutes)',
+    minHint: 'Ask again when the last value is older than this.',
+    minSet: 'Usage ask interval: {n} min',
+    hermesName: 'Hermes usage',
+    hermesHint: 'Ask hermes usage for the Hermes account limits even when no Hermes session is on the board. If it is confirmed to be the same account as Codex, it is shown in the Codex block.',
+    hermesSetOn: 'Hermes usage on.',
+    hermesSetOff: 'Hermes usage off.',
+  },
+  // P310: a size the person chose (auto arrange keeps it)
+  handSize: {
+    reset: 'Default size',
+    hint: 'You set this size. Auto arrange only moves it.',
   },
 };
