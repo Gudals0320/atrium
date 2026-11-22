@@ -2957,4 +2957,9 @@ export default {
     noUserItems: 'No items for you in this milestone.',
     pcOnly: 'On the phone you can check items, set the current milestone and update values. Edit items, the manager and the status on the PC goal board.',
   },
+  // P310: a size the person chose (auto arrange keeps it)
+  handSize: {
+    reset: 'Default size',
+    hint: 'You set this size. Auto arrange only moves it.',
+  },
 };
