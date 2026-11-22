@@ -11,6 +11,10 @@ const labelMap = (ns, keys) => new Proxy({}, {
 });
 
 export const STATE_LABEL = labelMap('state', ['starting', 'trust_wait', 'ready', 'working', 'waiting', 'error', 'exited', 'shell_idle', 'shell_running', 'sleeping']);
+// P309: 셸 상태 글. 화면을 차지한 채 조용한 프로그램(shell.program: 셸에서 연 TUI 등)은 "셸에서 실행 중인 프로그램"이고 일하는 중으로 세지 않는다
+export const shellProgram = (s) => !!(s && s.shell && s.shell.atPrompt === false && s.shell.program);
+export const shellRunning = (s) => !!(s && s.shell && s.shell.atPrompt === false && !s.shell.program);
+export const shellStateText = (s) => (shellProgram(s) ? t('shellProgram.label') : shellRunning(s) ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle);
 export const EXIT_LABEL = labelMap('exit', ['normal', 'user', 'terminal_stopped', 'trust_declined', 'other']);
 export const DELIVERY_LABEL = labelMap('delivery', ['queued', 'sending', 'sent', 'confirmed', 'unconfirmed', 'failed', 'cancelled']);
 export const WAIT_REASON_LABEL = labelMap('waitReason', ['waiting', 'starting', 'trust_wait', 'working', 'user_typing', 'no_agent', 'terminal_down', 'sleeping', 'editing']); // P158: editing(판 칩에서 고치는 중)

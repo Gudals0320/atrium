@@ -23,7 +23,7 @@ import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
 import { missionLayout, mapOrder, edgeLabel, MISSION, missionScale } from './lib/mission-layout.js';
 import { roleModel, focusOf, teamText, roleText, nodeTier, filterMatch, FILTERS, modelText, ageText, summaryColumn } from './lib/mission-model.js';
-import { STATE_LABEL } from './lib/labels.js';
+import { STATE_LABEL, shellProgram, shellStateText } from './lib/labels.js'; // P309: 셸에서 실행 중인 프로그램
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
 import { onLightStart } from './lib/work-light.js';
@@ -48,7 +48,7 @@ function facts(n, live, m, tier, t, now, cross = false) {
   const ask = n.ask || (live && live.ask && (live.ask.summary || live.ask.kind)) || null;
   const err = live && live.error ? (live.error.message || String(live.error)) : null;
   const state = live ? live.state : n.state;
-  const stateText = shell && state !== 'exited' && state !== 'sleeping' ? (cmd ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[state] || state || '';
+  const stateText = shell && state !== 'exited' && state !== 'sleeping' ? (live && shellProgram(live) ? shellStateText(live) : cmd ? STATE_LABEL.shell_running : STATE_LABEL.shell_idle) : STATE_LABEL[state] || state || '';
   const lp = n.lastPrompt || (live && live.lastPrompt) || null;
   const doing = cmd ? `$ ${cmd}` : tier === 'work' && lp ? clip(lp, 140) : null;
   const last = !doing && lp ? clip(lp, 140) : null; // P149: 일하지 않는 세션은 마지막으로 시킨 일을 남긴다

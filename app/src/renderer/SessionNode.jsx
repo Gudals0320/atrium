@@ -17,7 +17,7 @@ import { shellLine } from './Workspaces.jsx';
 import { api } from './api.js';
 import { tierFor, faceOfTier, termAllowed, veryClose, zoomStep } from './lib/faces.js'; // P124: 거리 단계(터미널·요약·틀)
 import { kindOf, SHAPES, stateColor, logoFor, shownKind } from './lib/kinds.js'; // P10: 아이콘 얼굴. P25: shownKind(flavor가 먼저)
-import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
+import { STATE_LABEL, EXIT_LABEL, ago, askLine, shellProgram, shellStateText } from './lib/labels.js'; // P309: shellProgram
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { TerminalView } from './TerminalView.jsx';
 import { boardPlan } from './crash-watch.js'; // P86
@@ -64,7 +64,7 @@ export function StatePill({ s }) {
   const t = useT();
   const review = s.unseen && (s.state === 'ready' || s.state === 'shell_idle');
   // P21: 깨우는 동안. P125: 사람이 스스로 끝낸 세션은 머리 알약도 "직접 종료"
-  const label = s.waking ? t('sleep.waking') : review ? t('node.review') : (s.state === 'exited' && s.exit && s.exit.kind === 'user' ? EXIT_LABEL.user : STATE_LABEL[s.state] || s.state);
+  const label = s.waking ? t('sleep.waking') : review ? t('node.review') : (s.state === 'exited' && s.exit && s.exit.kind === 'user' ? EXIT_LABEL.user : s.kind === 'shell' && shellProgram(s) ? shellStateText(s) : STATE_LABEL[s.state] || s.state);
   const title = `${s.state}${s.estimate ? t('node.estimate', { v: s.estimate }) : ''} · term ${s.termStatus ?? '-'}`;
   return <span className={`mt-pill st-${s.state}${review ? ' st-review' : ''}${s.estimate ? ' estimate' : ''}${s.waking ? ' st-waking' : ''}`} data-state={s.state} data-waking={s.waking ? '1' : undefined} title={title}>{s.state === 'sleeping' && !s.waking && <Icon name="moon" />}{label}{s.estimate ? '?' : ''}</span>;
 }

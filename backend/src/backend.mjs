@@ -24,7 +24,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted, hermesReasoningShown } from './screen.mjs'; // P299: hermesReasoningShown
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted, hermesReasoningShown, hermesStateOf, isOmhScreen } from './screen.mjs'; // P299: hermesReasoningShown. P309: 셸 안 Hermes·OMH 화면
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -72,6 +72,7 @@ const KIND_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 const OPEN_PROMPT_MS = 30 * 60 * 1000; // F1: 보낸 지시에 받는 쪽 상태 변화를 이만큼 이어 붙인다
 const SHELL = 'shell'; // G2(P5): 에이전트 없는 일반 셸(PowerShell) 패널의 종류
 const SHELL_POLL_MS = 2000; // G2: 셸이 프롬프트에서 쉬는지 명령을 돌리는지 보는 간격(화면 읽기 하나에 1ms 안쪽)
+const SHELL_PROGRAM_QUIET_MS = 30000; // P309: 프롬프트 줄이 화면에 없는(화면을 차지한) 프로그램의 화면이 이만큼 그대로면 "셸에서 실행 중인 프로그램"(일하는 중으로 세지 않는다)
 const SHELL_PROCS_MS = 30000; // G2: 명령을 돌리는 셸의 자식 프로세스 이름을 다시 읽는 간격(PowerShell 한 번, 약 0.5초). 새 명령이 시작되면 바로 읽는다. 오래 도는 명령(npm run dev 등)에 PowerShell을 자주 띄우지 않게 30초로 둔다
 // F3: hook이 없는 세션을 끌 때 보내는 키. Claude Code는 /exit, 나머지는 ctrl+c 두 번(codex는 두 번째에 끝난다)
 const EXIT_TEXT = { claude: '/exit' };
@@ -575,7 +576,7 @@ export class Backend {
       git: s.git ? { isRepo: s.git.isRepo, root: s.git.root, commonDir: s.git.commonDir, mainRoot: s.git.mainRoot, isWorktree: s.git.isWorktree, branch: s.git.branch, cwd: s.git.cwd, changedFiles: s.git.changedFiles } : null,
       // P5: 리포지토리 워크스페이스(시작 폴더로 정함), 지금 그 밖에서 일하는가, 셸이 돌리는 명령
       workspaceKey: s.workspaceKey || null, elsewhere: elsewhereOf(this.store.getWorkspace(s.workspaceKey), s.git),
-      shell: s.kind === SHELL ? { atPrompt: rt.shell ? rt.shell.atPrompt : true, command: rt.shell ? rt.shell.command : null, procs: (rt.shell && rt.shell.procs) || [], since: rt.shell ? rt.shell.since : null } : null,
+      shell: s.kind === SHELL ? { atPrompt: rt.shell ? rt.shell.atPrompt : true, command: rt.shell ? rt.shell.command : null, procs: (rt.shell && rt.shell.procs) || [], since: rt.shell ? rt.shell.since : null, program: !!(rt.shell && rt.shell.program) } : null, // P309: program(화면을 차지한 채 조용한 프로그램)
       fromShell: !!rt.shellBase,
       ...(this.features ? this.features.summaryExtra(s) : {}), // P6b: output(긴 답인지), loops(켜진 루프 수)
       ...(this.branch ? this.branch.summaryExtra(s) : {}), // P8: branch(깊이, 부모 이름, 하위 세션이면 역할)
@@ -990,6 +991,8 @@ export class Backend {
       if (a.status && a.status !== 'unknown') rt.phase = 'running';
       const from = s.kind;
       s.rt = rt; s.kind = kind; s.agentName = a.name || s.paneId; s.adoptNamed = s.origin !== 'adopted' || !!a.name;
+      // P309: 셸에서 연 OMH Native는 카드에 OMH로 보인다(런처 아이콘이 없을 때만, 셸로 돌아오면 되돌린다)
+      if (kind === 'hermes' && s._shellTuiFlavor && !s.flavor) { s.flavor = s._shellTuiFlavor; s._flavorFromShell = true; this.store.updateSession(s.sessionId, { flavor: s.flavor }); }
       if (s.origin === 'adopted' && a.name && NAME_RE.test(a.name) && a.name !== s.name && !nameOwner(this.sessions.values(), a.name, s)) {
         this.store.addEvent(s.sessionId, 'renamed', { from: s.name, to: a.name }); s.name = a.name; this.store.renameSession(s.sessionId, a.name);
       }
@@ -1006,6 +1009,7 @@ export class Backend {
     const rt = newRuntime({ kind: SHELL, hooked: false });
     rt.cwd = s.rt.cwd; rt.phase = 'running'; rt.shellBase = false;
     s.rt = rt; s.kind = SHELL; s.agentName = s.paneId; s.openPromptFrom = null;
+    if (s._flavorFromShell) { s.flavor = null; s._flavorFromShell = false; s._shellTuiFlavor = null; this.store.updateSession(s.sessionId, { flavor: null }); } // P309
     this.queue.cancelSession(s.sessionId, 'agent exited, shell left');
     this.store.updateSession(s.sessionId, { kind: SHELL, agentName: s.agentName, runtime: rt });
     this.store.addEvent(s.sessionId, 'shell_agent', { from, to: SHELL, why });
@@ -1026,7 +1030,18 @@ export class Backend {
         const st = shellPromptState(text);
         const prev = s.rt.shell;
         const same = prev && prev.atPrompt === st.atPrompt && prev.command === st.command;
-        s.rt.shell = { atPrompt: st.atPrompt, command: st.command, procs: !st.atPrompt && same ? prev.procs || [] : [], procsAt: !st.atPrompt && same ? prev.procsAt || null : null, since: same ? prev.since : Date.now() };
+        // P309: 셸에서 연 Hermes·OMH TUI는 화면 모양으로 알아보고(셸 패널의 claude처럼) 같은 노드를 그 에이전트 세션으로 바꾼다. 터미널 어댑터가 화면 상태를 흉내 내면(app hermes)
+        //   agent_detected → promoteShell, TUI가 끝나 프롬프트로 돌아오면 agent_released → demoteToShell
+        if (!st.atPrompt && typeof this.adapter.watchShellTui === 'function' && hermesStateOf(text)) {
+          s._shellTuiFlavor = isOmhScreen(text) ? 'omh' : null;
+          this.adapter.watchShellTui(s.paneId, 'hermes');
+        }
+        // P309: 알아볼 수 없는 전체 화면 프로그램(프롬프트 줄이 화면에 없고 화면이 SHELL_PROGRAM_QUIET_MS 동안 그대로)은 "셸에서 실행 중인 프로그램"으로 둔다
+        const screenKey = `${text.length}:${text.slice(-400)}`;
+        const quietSince = !st.atPrompt && same && prev.screenKey === screenKey ? prev.quietSince || Date.now() : Date.now();
+        const program = !st.atPrompt && !st.command && Date.now() - quietSince >= SHELL_PROGRAM_QUIET_MS;
+        s.rt.shell = { atPrompt: st.atPrompt, command: st.command, procs: !st.atPrompt && same ? prev.procs || [] : [], procsAt: !st.atPrompt && same ? prev.procsAt || null : null, since: same ? prev.since : Date.now(), screenKey, quietSince, program };
+        if (same && !!prev.program !== program) { this.store.addEvent(s.sessionId, 'shell', { atPrompt: st.atPrompt, program }); this.broadcastSession(s, { cause: 'shell:program' }); }
         if (!st.atPrompt) busy.push(s);
         if (!same) {
           s.rt.lastActivityAt = Date.now();
