@@ -21,7 +21,12 @@ export const FALLBACK_AGENTS = [
     { field: 'effort', key: 'mergerEffort', default: 'medium', options: AGENT_EFFORTS },
     { field: 'permission', key: 'mergerPermission', default: '', options: ['', 'inherit', ...PERMISSION_MODES] },
   ] },
-  { id: 'todoTidy', dict: 'todoTidy', ready: false, fields: [] },
+  { id: 'todoTidy', dict: 'todoTidy', ready: true, fields: [ // P316: 할 일 정리(판 todoTidy*). 옛 판에는 그 키가 없어 칸이 그려지지 않는다
+    { field: 'mode', key: 'todoTidyMode', default: 'on', options: ['on', 'off'] },
+    { field: 'kind', key: 'todoTidyKind', default: 'claude', options: ['claude', 'codex'] },
+    { field: 'model', key: 'todoTidyModel', default: 'haiku' },
+    { field: 'effort', key: 'todoTidyEffort', default: 'low', options: AGENT_EFFORTS },
+  ] },
 ];
 
 // 칸 하나가 고를 값 목록(창 쪽). 판이 준 options는 쓰되 permission의 inherit는 빈 값과 같아 뺀다
@@ -29,6 +34,7 @@ export function optionsOf(f) {
   if (f.field === 'mode') return Array.isArray(f.options) && f.options.length ? f.options : AGENT_MODES;
   if (f.field === 'effort') return Array.isArray(f.options) && f.options.length ? f.options : AGENT_EFFORTS;
   if (f.field === 'permission') return (Array.isArray(f.options) && f.options.length ? f.options : AGENT_PERMISSIONS).filter((x) => x !== 'inherit');
+  if (f.field === 'kind' && Array.isArray(f.options) && f.options.length) return f.options; // P316: 고를 하네스가 정해진 에이전트(할 일 정리: claude·codex)
   return null;
 }
 

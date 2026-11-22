@@ -31,6 +31,8 @@
 //   답 모으기 줄: [결정] q → a, [확인] q → 됐다/안 됐다: 메모, [실행] q → 했음.
 //   사람이 세션에 직접 보낸 글이 닫는 것은 지금 보이는 자동 카드뿐이다(P303: 손 카드는 종류 무관 그대로 둔다).
 //   자동 카드는 마지막 답이 명령 실행을 청하면 할 일(명령 뽑기), 확인을 청하면 확인, 그 밖의 질문은 결정(auto-ask.mjs findAsk).
+//   P316: 조건부 진행 요청("…말씀해 주시면 진행하겠습니다")은 진행·보류 결정, 끝쪽 목록의 확인 부탁은 확인 카드 — 한 턴에 3장까지(findAsks).
+//   할 일 정리(todo-tidy.mjs, 판 b.todoTidy)가 켜져 있고 예비 거르기(mayAsk)를 통과하면 작은 모델이 카드 0~3장을 정하고, 실패하면 규칙으로 물러선다(autoTurn).
 // P295(사용자 2026-11-21): 답 실어 보내기. 사용자 몫 답은 세션이 그 답을 기다리며 멈춰 있을 때만 곧바로 보내고, 아니면 그 세션에 다음 글이 갈 때 실어 보내 턴을 아낀다.
 //   카드마다 보내는 때(timing): now(곧바로) | next(다음 글에 실어). 정하는 차례: 사람이 답할 때 바꾼 값(answer·check·done의 timing) → 에이전트가 준 값
 //   (atrium ask|todo --wait = now, --no-wait = next) → 판의 기본(timingOf: 확인·할 일 --tell은 next, 결정(손·자동)은 그 카드가 그 세션의 마지막 턴에서
@@ -44,7 +46,7 @@
 //   ride·human_front·ride_steer 하나가 아낀 턴 하나다. decision_end에 timing(정해진 값)과 timingBy(human | agent | board)를 남긴다.
 // 표는 store-decisions.mjs.
 import { shownName } from './session-label.mjs';
-import { findAsk } from './auto-ask.mjs';
+import { findAsks, mayAsk } from './auto-ask.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { checkAgentText } from './work-units.mjs';
 import { steerBlock } from './delivery.mjs';
@@ -519,7 +521,7 @@ export class Decisions {
       this.clearPending(sid);
       if (!this.b.sessions.has(sid)) return;
       if (!since || (rt.lastAnswerAt || 0) < since) return; // 이 턴의 답이 없다
-      try { this.autoAsk(s, rt.lastAnswer, since); } catch (e) { this.b.log('decision auto error', e && e.stack); }
+      try { this.autoTurn(s, rt.lastAnswer, since); } catch (e) { this.b.log('decision auto error', e && e.stack); } // P316: 할 일 정리 → 규칙
     };
     if (!this.b.hooked(s) && (rt.lastAnswerAt || 0) < since) {
       // hook이 없는 종류: 판이 화면에서 답을 고를 때까지 기다린다(peer-news.mjs와 같다)
@@ -534,36 +536,82 @@ export class Decisions {
     run();
   }
   clearPending(sid) { const p = this.pending.get(sid); if (!p) return; clearTimeout(p.timer); p.off(); this.pending.delete(sid); }
-  // 마지막 답에서 질문을 찾아 자동 카드를 만든다 → 만든 카드 | null
+  // 이 세션에 지금 자동 카드를 만들 수 없나(열린 손 결정·확인 카드, 이 턴에 만든 손 카드)
+  autoBlocked(sid, since = 0) {
+    const now = this.now();
+    const active = this.store().openDecisions(sid).filter((d) => !this.isDeferred(d, now));
+    if (active.some((d) => !d.auto && (d.kind === 'decide' || d.kind === 'check'))) return true; // 열린 손 결정·확인 카드가 있다(P292: 할 일·나중에는 오래 남으니 막지 않는다)
+    if (this.store().decisionsSince(sid, since).some((d) => !d.auto)) return true; // 이 턴에 손 카드를 만들었다
+    return false;
+  }
+  // 마지막 답에서 질문을 찾아 자동 카드를 만든다(규칙만) → 만든 첫 카드 | null
   autoAsk(s, text, since = 0) {
+    const made = this.autoCards(s, findAsks(typeof text === 'string' ? text : ''), { since }); // P316: 여러 장
+    return made && made.length ? made[0] : null;
+  }
+  // P316: 턴 끝의 자동 카드. 할 일 정리(todo-tidy.mjs)가 켜져 있고 예비 거르기를 통과하면 모델에 묻고, 실패하면 규칙으로 물러선다
+  autoTurn(s, text, since = 0) {
     const sid = s.sessionId;
+    const t = typeof text === 'string' ? text : '';
+    const tidy = this.b.todoTidy;
+    if (!tidy || !tidy.on() || !mayAsk(t) || this.autoBlocked(sid, since)) { this.autoAsk(s, t, since); return null; }
+    const at = s.rt.lastAnswerAt || 0;
+    return tidy.ask(sid, t).then((r) => {
+      const ev = { harness: r.harness || null, model: r.model || null, ms: r.ms ?? null, cards: r.cards ? r.cards.length : null, fallback: r.fallback || null, tokensIn: r.tokensIn ?? null, tokensOut: r.tokensOut ?? null, costUsd: r.costUsd ?? null };
+      // 묻는 사이 세션이 닫혔거나 새 턴이 열렸거나 다른 답이 왔으면 버린다
+      const stale = !this.b.sessions.has(sid) || (s.rt.lastAnswerAt || 0) !== at || this.prev.get(sid) === 'working';
+      if (!r.skipped) this.b.store.addEvent(sid, 'decision_tidy', { ...ev, stale }); // P316: for-you-report.mjs가 센다(decision%)
+      if (stale) return null;
+      if (r.cards) return this.autoCards(s, r.cards, { since, tidy: true });
+      return this.autoCards(s, findAsks(t), { since, tidy: false, fallback: r.fallback || null });
+    }).catch((e) => { this.b.log('decision tidy error', e && e.stack); try { this.autoAsk(s, t, since); } catch {} return null; });
+  }
+  // 카드 후보들 → 만든 카드들 | null. cards: [{ kind, question, options, cmds, context, timing?, when? }]
+  autoCards(s, cards, { since = 0, tidy = false, fallback = null } = {}) {
+    const sid = s.sessionId;
+    if (this.autoBlocked(sid, since)) return null;
     const open = this.store().openDecisions(sid);
     const now = this.now();
     const active = open.filter((d) => !this.isDeferred(d, now));
-    if (active.some((d) => !d.auto && (d.kind === 'decide' || d.kind === 'check'))) return null; // 열린 손 결정·확인 카드가 있다(P292: 할 일·나중에는 오래 남으니 막지 않는다)
-    if (this.store().decisionsSince(sid, since).some((d) => !d.auto)) return null; // 이 턴에 손 카드를 만들었다
-    const f = findAsk(typeof text === 'string' ? text : ''); // P292: 할 일·확인·결정
-    if (!f || startsAsBoardNotice(f.question)) return null;
-    const question = clip(oneLine(f.question), ASK_QUESTION_MAX);
-    const options = f.options.map((x) => clip(oneLine(x), ASK_OPTION_MAX)).slice(0, ASK_OPTIONS_MAX);
-    const cmds = (f.cmds || []).map((x) => clip(String(x), TODO_CMD_MAX)).slice(0, TODO_CMDS_MAX);
+    const want = [];
+    for (const f of cards || []) {
+      if (!f || !f.question || startsAsBoardNotice(f.question)) continue;
+      const kind = KINDS.includes(f.kind) ? f.kind : 'decide';
+      const question = clip(oneLine(f.question), ASK_QUESTION_MAX);
+      if (want.some((w) => w.question === question)) continue;
+      const options = (f.options || []).map((x) => clip(oneLine(x), ASK_OPTION_MAX)).slice(0, ASK_OPTIONS_MAX);
+      const cmds = (f.cmds || []).map((x) => clip(String(x), TODO_CMD_MAX)).slice(0, TODO_CMDS_MAX);
+      const head = f.context ? clip(oneLine(f.context), 160) : null; // P312: 답의 첫 줄이 아니라 질문 바로 앞 글(auto-ask.mjs contextOf)
+      const plainOpt = options.map((o) => o.replace(/…$/, ''));
+      const why = head && head !== question && !question.includes(head) && !head.includes(question) && !/^\s*(\d{1,2}[.)]|[-*+])\s/.test(head) && !plainOpt.some((o) => head.includes(o) || o.includes(head)) ? clip(oneLine(head), ASK_WHY_MAX) : null; // 첫 줄이 목록·보기와 겹치면 비운다
+      const cond = kind === 'later' ? clip(oneLine(f.when || question), TODO_LATER_TEXT_MAX) : null; // P316: 모델의 나중에 카드는 조건으로 숨긴다
+      if (cond && open.some((d) => d.auto && d.kind === 'later' && d.question === question)) continue; // 같은 나중에 카드가 숨어 있다
+      want.push({ kind, question, options, cmds, why, timing: TIMINGS.includes(f.timing) ? f.timing : null, cond });
+    }
+    if (!want.length) return null;
     const old = active.filter((d) => d.auto); // 사람이 미룬 자동 카드는 바꾸지 않는다
-    if (old.length === 1 && old[0].question === question && old[0].kind === f.kind && JSON.stringify(old[0].options) === JSON.stringify(options) && JSON.stringify(old[0].cmds) === JSON.stringify(cmds)) return null; // 같은 질문이 그대로 열려 있다
+    const same = (a, w) => a.question === w.question && a.kind === w.kind && JSON.stringify(a.options) === JSON.stringify(w.options) && JSON.stringify(a.cmds) === JSON.stringify(w.cmds);
+    if (old.length === want.length && want.every((w, i) => same(old[i], w))) return null; // 같은 카드가 그대로 열려 있다
     const at = this.now(); // P303: 자동 카드의 만든 때는 판의 시계(onHuman의 AUTO_FRESH_MS와 같은 시계)
     for (const d of old) {
       this.store().endDecision(d.id, { state: 'closed', via: 'replaced', at });
       this.b.store.addEvent(sid, 'decision_end', { id: d.id, state: 'closed', via: 'replaced', auto: true });
     }
-    if (open.filter((d) => d.kind !== 'later').length - old.length >= ASK_OPEN_MAX) { if (old.length) { this.settle(sid, 'replaced'); this.changed(); } return null; }
-    const head = f.context ? clip(oneLine(f.context), 160) : null; // P312: 답의 첫 줄이 아니라 질문 바로 앞 글(auto-ask.mjs contextOf)
-    const plainOpt = options.map((o) => o.replace(/…$/, ''));
-    const why = head && head !== question && !question.includes(head) && !head.includes(question) && !/^\s*(\d{1,2}[.)]|[-*+])\s/.test(head) && !plainOpt.some((o) => head.includes(o) || o.includes(head)) ? clip(oneLine(head), ASK_WHY_MAX) : null; // 첫 줄이 목록·보기와 겹치면 비운다
-    const d = this.store().addDecision({ sessionId: sid, name: shownName(s) || s.name, question, options, why, createdAt: at, auto: true, kind: f.kind, cmds });
-    this.b.store.addEvent(sid, 'decision_auto', { id: d.id, replaced: old.map((x) => x.id), chars: question.length, options: options.length, kind: s.kind || 'claude', card: f.kind, cmds: cmds.length, source: s.rt.answerSource || null });
-    this.b.log(`decision auto ${s.name} #${d.id}${old.length ? ` (replaced #${old.map((x) => x.id).join(',')})` : ''}`);
+    let room = ASK_OPEN_MAX - (open.filter((d) => d.kind !== 'later').length - old.length);
+    let laterRoom = TODO_LATER_MAX - open.filter((d) => d.kind === 'later').length;
+    const made = [];
+    for (const w of want) {
+      if (w.kind === 'later' ? laterRoom <= 0 : room <= 0) continue;
+      if (w.kind === 'later') laterRoom--; else room--;
+      const d = this.store().addDecision({ sessionId: sid, name: shownName(s) || s.name, question: w.question, options: w.options, why: w.why, createdAt: at, auto: true, kind: w.kind, cmds: w.cmds, timing: w.timing, cond: w.cond, later: w.cond });
+      this.b.store.addEvent(sid, 'decision_auto', { id: d.id, replaced: made.length ? [] : old.map((x) => x.id), chars: w.question.length, options: w.options.length, kind: s.kind || 'claude', card: w.kind, cmds: w.cmds.length, source: s.rt.answerSource || null, tidy, ...(fallback ? { fallback } : {}) });
+      made.push(d);
+    }
+    if (!made.length) { if (old.length) { this.settle(sid, 'replaced'); this.changed(); } return null; }
+    this.b.log(`decision auto ${s.name} #${made.map((x) => x.id).join(',')}${old.length ? ` (replaced #${old.map((x) => x.id).join(',')})` : ''}${tidy ? ' (tidy)' : ''}`);
     this.changed();
-    this.push(s, d);
-    return d;
+    this.push(s, made[0]);
+    return made;
   }
 }
 // 터미널에 직접 친 글인가(UserPromptSubmit이 판의 전달과 맞지 않았다). 판 알림 머리와 Claude Code가 스스로 여는 턴의 글은 뺀다

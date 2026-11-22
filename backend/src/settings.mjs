@@ -48,6 +48,12 @@ export const SETTINGS = {
   autoDecisions: { type: 'boolean', default: true, label: '자동 결정 카드: 에이전트가 결정 카드 없이 사람에게 묻는 글로 턴을 끝내면 보드가 그 질문으로 결정 카드를 만듭니다.' },
   // P306: 사람이 목표 레인을 바꾸면(체크·focus·측정값 등) 그 레인의 관리자에게 알리는 때(plan-notify.mjs). 마일스톤이 모두 체크되면 next여도 곧바로 한 번
   planNotify: { type: 'choice', default: 'next', options: ['next', 'now', 'off'], label: '목표 레인을 사람이 바꾸면 그 레인의 관리자 세션에 알립니다 (next: 다음 메시지와 함께, now: 곧바로, off: 알리지 않음).' },
+  // P316: 할 일 정리(todo-tidy.mjs). 자동 할 일 카드 후보를 작은 모델(하네스의 헤드리스 실행, 구독)로 걸러 낸다. 끄면 규칙만
+  todoTidyMode: { type: 'choice', default: 'on', options: ['on', 'off'], label: '할 일 정리 (on: 자동 할 일 카드 후보를 작은 모델로 걸러 냅니다, off: 규칙만 씁니다).' },
+  todoTidyKind: { type: 'choice', default: 'claude', options: ['claude', 'codex'], label: '할 일 정리가 부르는 하네스입니다 (claude: Claude Code claude -p, codex: codex exec).' },
+  todoTidyModel: { type: 'string', default: 'haiku', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: haiku)', label: '할 일 정리의 모델입니다. Codex에서 Claude 모델 이름이면 Codex 기본 모델을 씁니다.' },
+  todoTidyEffort: { type: 'choice', default: 'low', options: EFFORTS, label: '할 일 정리의 추론 수준입니다 (빈 값: 넘기지 않음).' },
+  todoTidyPerHour: { type: 'number', default: 30, min: 0, max: 600, label: '할 일 정리를 한 시간에 부르는 상한입니다. 넘으면 규칙만 씁니다.' },
   missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
   // P267: 합치기 merger(merger.mjs). 브랜치(워크트리)에서 일한 하위가 atrium done ok로 닫으면 판이 그 합치기를 부모 대신 merger 세션에게 맡긴다.
   //   on: 맡긴다, ask(기본): 워크스페이스마다 처음 한 번 사람에게 판 카드로 묻고 답을 기억한다(답이 올 때까지 지금처럼 부모에게), off: 지금처럼 부모에게
@@ -68,7 +74,7 @@ export const SETTINGS = {
 export const AGENT_FIELDS = ['mode', 'kind', 'model', 'effort', 'permission'];
 export const HELPER_AGENTS = [
   { id: 'merge', dict: 'merger', keys: { mode: 'mergerMode', kind: 'mergerKind', model: 'mergerModel', effort: 'mergerEffort', permission: 'mergerPermission' }, ready: true },
-  { id: 'todoTidy', dict: 'todoTidy', keys: {}, ready: false }, // 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄): 자리만
+  { id: 'todoTidy', dict: 'todoTidy', keys: { mode: 'todoTidyMode', kind: 'todoTidyKind', model: 'todoTidyModel', effort: 'todoTidyEffort' }, ready: true }, // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄). 시간당 상한은 창의 그만의 칸
 ];
 export function agentsTable() {
   return HELPER_AGENTS.map((a) => ({

@@ -2972,10 +2972,22 @@ export default {
     permissionInherit: '맡긴 세션 따름',
     saved: '저장했습니다',
   },
-  // P313: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 낸다). 이번에는 자리만(판 표 ready false라 탭에 보이지 않는다)
+  // P313: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 낸다). P316: 칸을 켰다(켬/끔·하네스·모델·노력·시간당 상한)
   todoTidy: {
     name: '할 일 정리',
-    desc: '자동으로 만든 할 일 카드 후보를 작은 모델로 걸러 냅니다.',
+    desc: '에이전트가 사람에게 묻거나 맡기는 글로 턴을 끝내면 작은 모델이 그 답을 읽고 할 일 카드(결정·실행·확인)를 0~3장 만듭니다.',
+    modes: { on: '켬', off: '끔' },
+    modeHint: '자동 할 일 카드를 작은 모델로 정할지',
+    modeNote: '켬: 사람에게 말을 거는 글로 끝난 답만 모델에 넘기고, 모델이 실패하거나 늦으면 규칙으로 만듭니다. 구독으로 돌고 API 키를 쓰지 않습니다. 끔: 규칙만 씁니다.',
+    modeSet: { on: '할 일 정리 켬', off: '할 일 정리 끔: 규칙만 씁니다' },
+    kindHint: '헤드리스로 부를 하네스(Claude Code: claude -p, Codex: codex exec)',
+    kinds: { claude: 'Claude Code', codex: 'Codex' },
+    modelHint: '작은 모델을 권합니다(예: haiku, sonnet). Codex에서 Claude 모델 이름이면 Codex 기본 모델을 씁니다',
+    effortHint: '할 일 정리의 추론 수준',
+    perHour: '시간당 상한',
+    perHourHint: '한 시간에 모델을 부르는 횟수입니다. 넘으면 규칙만 씁니다(0: 늘 규칙)',
+    perHourSet: '할 일 정리: 시간당 {n}번까지',
+    bad: { mode: '켬, 끔 가운데 고르세요', effort: '목록에서 노력을 고르세요', kind: '목록에서 하네스를 고르세요', model: '모델 이름은 글자, 숫자, . _ : / [ ] -만 씁니다', key: '모르는 설정입니다', perHour: '0~600 사이의 정수를 넣으세요' },
   },
   // P314: 사용량 직접 묻기(값이 낡으면 하네스의 사용량 명령으로 묻는다), 펼침 아래쪽 줄(Hermes, 키로 읽는 잔액)
   usageProbe: {

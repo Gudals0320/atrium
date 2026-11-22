@@ -87,6 +87,7 @@ import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171
 import { linkRelationPlan, linkDefaultRole, LINK_CHOICES } from './relations.mjs'; // P175: 잇는 자리에서 하위·동료
 import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs'; // P66: 판의 이름(표시 이름)과 에이전트 주소
 import { preToolUseDecision } from './atrium-allow.mjs'; // P308: 따옴표 꼴 atrium 명령 허용
+import { TodoTidy } from './todo-tidy.mjs'; // P316: 할 일 정리
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 // HTTP 서버 닫기(2026-11-07): http.close는 열린 연결이 모두 끝나야 끝나므로, 쉬는 연결은 바로, 나머지는 forceMs 뒤 끊는다
 export async function closeHttp(server, forceMs = 1000) {
@@ -239,6 +240,8 @@ export class Backend {
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
     this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
+    // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄, decisions.mjs autoTurn). 단위 시험 판에서는 끈다(진짜 claude를 부르지 않게)
+    this.todoTidy = new TodoTidy({ settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}), dir: (cfg.todoTidy ?? !process.env.NODE_TEST_CONTEXT) ? path.join(cfg.dataDir, 'todo-tidy') : null, ...(cfg.todoTidyCall ? { call: cfg.todoTidyCall } : {}), log: (m) => this.log(m) });
     // P298: Hermes의 바쁨 읽개(busy 칸 { reader: 'hermes' }). 그 세션이 띄운 하위 에이전트가 돌거나 턴 임대가 살아 있으면 바쁨
     registerInnerReader('hermes', ({ session }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesBusyOf({ id, home: this.hermesHome() }) : null; });
     // P300: Hermes의 안 진행 읽개(같은 busy 칸 { reader: 'hermes' }). OMH dag-ulw 실행 기록, 없으면 Hermes 자체 위임(state.db)
