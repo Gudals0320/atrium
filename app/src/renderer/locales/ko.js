@@ -2977,6 +2977,31 @@ export default {
     name: '할 일 정리',
     desc: '자동으로 만든 할 일 카드 후보를 작은 모델로 걸러 냅니다.',
   },
+  // P314: 사용량 직접 묻기(값이 낡으면 하네스의 사용량 명령으로 묻는다), 펼침 아래쪽 줄(Hermes, 키로 읽는 잔액)
+  usageProbe: {
+    probing: '묻는 중…',
+    mergedWith: '{names}도 같은 ChatGPT 계정을 씁니다(같은 값).',
+    extrasHead: '그 밖',
+    balanceName: '{name} 잔액',
+    balance: '{n} {cur}',
+    source: {
+      'probe:codex': '출처: codex app-server에 직접 물음',
+      'probe:claude': '출처: claude /usage에 직접 물음',
+      'probe:hermes': '출처: hermes usage에 직접 물음',
+      'probe:balance': '출처: 잔액 API(secret-run)',
+    },
+    name: '사용량 직접 묻기',
+    hint: '값이 낡으면 Codex·Hermes는 주기적으로, Claude와 키로 읽는 잔액은 사용량 알약을 펼칠 때 각 도구의 사용량 명령으로 묻습니다. 그 종류의 세션이 일하는 중이면 묻지 않습니다.',
+    setOn: '사용량 직접 묻기를 켰습니다.',
+    setOff: '사용량 직접 묻기를 껐습니다.',
+    minName: '묻는 간격(분)',
+    minHint: '마지막 값이 이보다 오래되면 다시 묻습니다.',
+    minSet: '사용량 묻는 간격: {n}분',
+    hermesName: 'Hermes 사용량',
+    hermesHint: '보드에 Hermes 세션이 없어도 hermes usage로 Hermes 계정 한도를 묻습니다. Codex와 같은 계정으로 확인되면 Codex 칸에 합쳐 보입니다.',
+    hermesSetOn: 'Hermes 사용량을 켰습니다.',
+    hermesSetOff: 'Hermes 사용량을 껐습니다.',
+  },
   // P310: 사람이 정한 크기(자동 정렬이 지킨다)
   handSize: {
     reset: '기본 크기로',

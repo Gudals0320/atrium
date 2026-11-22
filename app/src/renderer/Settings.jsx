@@ -133,6 +133,24 @@ function UsageAlertSetting({ settings }) {
   return <SetRow name={t('usage.alertsName')} hint={t('usage.alertsHint')} role="usage-alert-setting"><Toggle checked={settings.usageAlerts !== false} onChange={set} field="setting-usageAlerts" /></SetRow>;
 }
 
+// P314: 사용량 직접 묻기(판 설정 usageProbe·usageProbeMin·usageHermes). 값이 낡으면 하네스의 사용량 명령으로 묻는다(백엔드 usage-probe.mjs)
+function UsageProbeSetting({ settings }) {
+  const t = useT();
+  const [min, setMin] = useState(null);
+  const save = async (key, value, msg) => {
+    try { await api.call('settings.set', { key, value }); setMin(null); toast(msg); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
+  };
+  const saveMin = () => { if (min != null && min !== '') save('usageProbeMin', Number(min), t('usageProbe.minSet', { n: Number(min) })); };
+  const on = settings.usageProbe !== false;
+  return <>
+    <SetRow name={t('usageProbe.name')} hint={t('usageProbe.hint')} role="usage-probe-setting"><Toggle checked={on} onChange={(v) => save('usageProbe', v, v ? t('usageProbe.setOn') : t('usageProbe.setOff'))} field="setting-usageProbe" /></SetRow>
+    {on && 'usageProbeMin' in settings && <SetRow name={t('usageProbe.minName')} hint={t('usageProbe.minHint')} role="usage-probe-min-setting">
+      <input type="number" className="mt-set-num" min={2} max={240} data-field="setting-usageProbeMin" value={min ?? settings.usageProbeMin} onChange={(e) => setMin(e.target.value)} onBlur={saveMin} onKeyDown={(e) => { if (e.key === 'Enter') saveMin(); }} />
+    </SetRow>}
+    {on && 'usageHermes' in settings && <SetRow name={t('usageProbe.hermesName')} hint={t('usageProbe.hermesHint')} role="usage-hermes-setting"><Toggle checked={!!settings.usageHermes} onChange={(v) => save('usageHermes', v, v ? t('usageProbe.hermesSetOn') : t('usageProbe.hermesSetOff'))} field="setting-usageHermes" /></SetRow>}
+  </>;
+}
+
 // P286: 자동 결정 카드(판 설정 autoDecisions, 기본 켬). 끄면 판이 마지막 답의 질문으로 카드를 만들지 않는다(손 카드는 그대로)
 function AutoDecisionSetting({ settings }) {
   const t = useT();
@@ -183,6 +201,7 @@ function GeneralTab({ settings }) {
         <SetRow name={t('settings.trayName')} hint={t('settings.tray')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         <SetNote>{t('settings.trayNote')}</SetNote>
         {'usageAlerts' in settings && <UsageAlertSetting settings={settings} />}
+        {'usageProbe' in settings && <UsageProbeSetting settings={settings} />}
         {'autoDecisions' in settings && <AutoDecisionSetting settings={settings} />}
         {'planNotify' in settings && <PlanNotifySetting settings={settings} />}
         {'updateCheck' in settings && <UpdateSettings settings={settings} />}

@@ -40,6 +40,10 @@ export const SETTINGS = {
   // P152: 미션 맵 모양(숨은 설정, 창의 설정 화면에 줄이 없다). territories = 영토 지도(기본, 무한 캔버스), classic = P149까지의 열 지도(되돌릴 길)
   // P211: 구독 사용량 알림. 한 한도 창이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알린다(usage.mjs)
   usageAlerts: { type: 'boolean', default: true, label: '구독 사용량 알림: 한 한도 창(5시간·주간 등)이 90%를 넘으면 그 창이 리셋될 때까지 한 번 알립니다.' },
+  // P314: 사용량 직접 묻기(usage-probe.mjs). 값이 이 간격보다 낡고 그 구독 세션이 일하지 않으면 하네스 명령으로 묻는다(Codex·Hermes는 주기적으로, Claude·잔액은 알약을 펼칠 때)
+  usageProbe: { type: 'boolean', default: true, label: '사용량 직접 묻기: 값이 낡으면 Codex·Hermes는 주기적으로, Claude와 키로 읽는 잔액은 사용량 알약을 펼칠 때 각 도구의 사용량 명령으로 묻습니다.' },
+  usageProbeMin: { type: 'number', default: 10, min: 2, max: 240, label: '사용량 직접 묻기 간격(분): 마지막 값이 이보다 오래되면 다시 묻습니다.' },
+  usageHermes: { type: 'boolean', default: false, label: 'Hermes 사용량: 보드에 Hermes 세션이 없어도 hermes usage로 Hermes 계정 한도를 묻습니다.' },
   // P286: 자동 결정 카드. 사람과 직접 일하는 세션이 atrium ask 없이 사람에게 묻는 글로 턴을 끝내면 판이 그 질문으로 "자동" 결정 카드를 만든다(decisions.mjs)
   autoDecisions: { type: 'boolean', default: true, label: '자동 결정 카드: 에이전트가 결정 카드 없이 사람에게 묻는 글로 턴을 끝내면 보드가 그 질문으로 결정 카드를 만듭니다.' },
   // P306: 사람이 목표 레인을 바꾸면(체크·focus·측정값 등) 그 레인의 관리자에게 알리는 때(plan-notify.mjs). 마일스톤이 모두 체크되면 next여도 곧바로 한 번

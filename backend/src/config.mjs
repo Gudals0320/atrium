@@ -86,6 +86,14 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     claudeUserSettings: E('CLAUDE_USER_SETTINGS') ? path.resolve(E('CLAUDE_USER_SETTINGS')) : path.join(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json'),
     usageCodexHome: E('USAGE_CODEX_HOME') === 'none' ? null : E('USAGE_CODEX_HOME') ? path.resolve(E('USAGE_CODEX_HOME')) : env.NODE_TEST_CONTEXT ? null : codexHomeOf(env),
     usagePollMs: Number(E('USAGE_POLL_MS') || 30000),
+    // P314: 사용량 탐침(usage-probe.mjs). ATRIUM_USAGE_PROBE=off면 끈다. 단위 시험(NODE_TEST_CONTEXT)은 on을 주지 않으면 끈다(실제 하네스를 띄우지 않게).
+    //   하네스 명령(ATRIUM_USAGE_CODEX_CMD·CLAUDE_CMD·HERMES_CMD, 시험용 가짜), Claude 빈 프로젝트 폴더를 치울 곳, 잔액 읽개 grant(ATRIUM_USAGE_GRANT, 기본 atrium-usage)
+    usageProbe: E('USAGE_PROBE') === 'off' ? false : E('USAGE_PROBE') === 'on' ? true : !env.NODE_TEST_CONTEXT,
+    usageCodexCommand: E('USAGE_CODEX_CMD') || null,
+    usageClaudeCommand: E('USAGE_CLAUDE_CMD') || null,
+    usageHermesCommand: E('USAGE_HERMES_CMD') || null,
+    usageClaudeProjects: path.join(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects'),
+    usageGrant: E('USAGE_GRANT') || 'atrium-usage',
     // P13(BRIEF "판 밖 대화"): missed로 보는 이 앱의 시험 폴더. 판 코드 저장소(이 코드가 있는 저장소와 그 본 저장소)의 backend/.dev·experiments, OS 임시 폴더, 이름 접두어.
     // 시험 판은 고정 자료 폴더 이름(mtask-p13-*)이 접두어에 걸리지 않게 ATRIUM_TEST_PREFIX로 바꾼다(빈 글이면 접두어 규칙을 끈다).
     // 시험 폴더 접두어는 P18 뒤에도 mtask-다(옛 시험 폴더 이름과 같게 둔다)
