@@ -3003,3 +3003,16 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-wtd-bad { color: var(--bad); font-weight: 600; font-size: 12.5px; }
 .mt-modal label.mt-wtd-check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; } /* 대화상자 label의 격자 대신 한 줄 */
 .mt-modal label.mt-wtd-check input { width: auto; flex: none; margin: 0; }
+
+/* P330: 런처 틀의 하네스 계약 안내·겹침·바꾸기·점검 */
+.mt-ln-contract { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.45; color: var(--dim-2); }
+.mt-ln-contract li { margin: 1px 0; }
+.mt-ln-contract.ov, .mt-ln-contract.conv { display: flex; align-items: flex-start; gap: 8px; }
+.mt-ln-contract.ov ul { margin: 0; padding: 0; list-style: none; flex: 1; }
+.mt-ln-contract .warn, .mt-ln-contract.conv { color: var(--warn); }
+.mt-ln-contract .bad, .mt-ln-check-rows .bad { color: var(--bad); }
+.mt-ln-contract.conv span { flex: 1; }
+.mt-ln-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; font-size: 12px; }
+.mt-ln-check-rows { flex-basis: 100%; margin: 0; padding: 0; list-style: none; font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; line-height: 1.45; }
+.mt-ln-check-rows .ok { color: var(--dim-2); }
+.mt-ln-cflag { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 6px; border-radius: 50%; font-size: 10px; font-weight: 700; background: var(--warn); color: var(--canvas, #111); vertical-align: 1px; }

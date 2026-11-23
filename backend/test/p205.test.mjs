@@ -39,7 +39,8 @@ test('P205 AGY 승인 방식 기본값: 비우면 권한 생략, 다른 하네�
   assert.equal(normalizeLauncher({ name: 'A', harness: 'agy', permissionMode: '' }).permissionMode, 'bypassPermissions');
   assert.equal(normalizeLauncher({ name: 'A', harness: 'agy', permissionMode: 'manual' }).permissionMode, 'manual');
   assert.equal(normalizeLauncher({ name: 'C', harness: 'claude' }).permissionMode, 'manual');
-  assert.equal(normalizeLauncher({ name: 'X', harness: 'codex' }).permissionMode, '', '승인 칸이 없는 하네스는 비운다');
+  assert.equal(normalizeLauncher({ name: 'X', harness: 'pi' }).permissionMode, '', '승인 칸이 없는 하네스는 비운다'); // P330: Codex는 승인 칸이 생겼다(pi는 승인 체계가 없다)
+  assert.equal(normalizeLauncher({ name: 'X', harness: 'codex' }).permissionMode, 'manual', 'Codex 기본 승인은 manual(덧붙이지 않음)');
   // 승인 방식이 빈 옛 AGY 호출자를 풀면 권한 생략 인자
   const r = resolveLauncher({ id: 'a', name: 'A', harness: 'agy', model: '', effort: '', permissionMode: '', args: '' });
   assert.equal(r.permissionMode, 'bypassPermissions'); assert.deepEqual(r.args, ['--dangerously-skip-permissions']);

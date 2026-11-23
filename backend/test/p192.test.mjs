@@ -89,10 +89,11 @@ test('P192 호출자: AGY는 모델·노력 수준·승인 방식·추가 인자
   // manual·빈 노력은 아무것도 붙이지 않는다. P205: 승인 방식을 비우면 AGY 기본은 권한 생략
   assert.deepEqual(resolveLauncher(normalizeLauncher({ name: 'AGY', harness: 'agy', permissionMode: 'manual' })).args, []);
   assert.deepEqual(resolveLauncher(normalizeLauncher({ name: 'AGY', harness: 'agy' })).args, ['--dangerously-skip-permissions']);
-  assert.deepEqual(harnessOptionArgs('codex', { effort: 'high', permissionMode: 'plan' }), [], '다른 하네스는 그대로');
-  // codex 호출자는 그대로(노력·승인 칸이 없다)
+  assert.deepEqual(harnessOptionArgs('codex', { effort: 'high', permissionMode: 'plan' }), ['-c', 'model_reasoning_effort="high"'], 'P330: Codex도 계약 표대로(plan은 덧붙이지 않음)');
+  assert.deepEqual(harnessOptionArgs('dsh', { effort: 'high', permissionMode: 'bypassPermissions' }), [], '받지 않는 하네스는 그대로');
+  // codex 호출자: 빈 노력·manual 승인은 덧붙이지 않는다(P330: 칸이 생겼다)
   const c = resolveLauncher(normalizeLauncher({ name: 'Codex', harness: 'codex', model: 'gpt-6-astra', args: '--search' }));
-  assert.deepEqual(c.args, ['--search']); assert.equal(c.permissionMode, undefined);
+  assert.deepEqual(c.args, ['--search']); assert.equal(c.permissionMode, 'manual');
 });
 
 test('P192 다른 종류 하위(atrium child --kind agy): 레일의 AGY 호출자를 바탕으로, P205: 부모 권한 모드와 상관없이 권한 생략', () => {

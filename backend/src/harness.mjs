@@ -112,7 +112,7 @@ export const ADAPTERS = {
   // 안내문: --settings에는 지시문 키가 없다(1.5.9: 모르는 키는 "unknown setting"으로 거부). AGY는 작업 공간 폴더의 AGENTS.md를 규칙으로 읽으므로
   //   판 데이터 폴더에 안내문만 든 폴더(harness/agy/AGENTS.md)를 만들어 --add-dir로 더한다(사용자 폴더·~/.gemini 설정은 건드리지 않는다).
   //   --add-dir은 그 폴더를 AGY 작업 공간에 더한다(그 폴더에는 안내문 파일 하나뿐이다)
-  // 노력 수준(--effort)과 승인 방식(--mode, --dangerously-skip-permissions)은 호출자 칸에서 추가 인자로 붙인다(launchers.mjs agyArgsOf, branch.mjs APPROVAL_ARGS)
+  // 노력 수준(--effort)과 승인 방식(--mode, --dangerously-skip-permissions)은 호출자 칸에서 추가 인자로 붙인다(launchers.mjs harnessOptionArgs, 계약 표 harness-contract.mjs)
   agy: {
     command: 'agy',
     sessionIdFrom: 'learned', // 대화 기록 폴더의 새 대화(agySessionOf)

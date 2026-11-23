@@ -151,6 +151,8 @@ export function attachFeatures(b, { timers = true } = {}) {
     'launcher.favorite': (p) => f.launchers.favorite(p),
     'launcher.order': (p) => f.launchers.order(p),
     'launcher.preview': (p) => f.launchers.preview(p),
+    'launcher.fix': (p) => f.launchers.fix(p), // P330: 칸으로 옮기기·하네스 런처로 바꾸기(저장하지 않는다)
+    'launcher.check': (p) => f.launchers.check(p), // P330: 런처 점검(--version·--help)
     // P97: 붙여 넣은 명령줄 → 호출자 칸(터미널이 아는 에이전트 종류로 하네스를 알아본다)
     'launcher.parse': async (p) => f.launchers.parse({ ...p, kinds: await b.adapter.agentKinds().then((ks) => ks.map((k) => k.kind)).catch(() => []) }),
   };

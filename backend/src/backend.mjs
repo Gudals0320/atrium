@@ -48,7 +48,8 @@ import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
 import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
-import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf } from './launchers.mjs'; // P33: 호출자. P97: 실행 명령
+import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, startOpt, effortArgsOf, effortIgnoredLine } from './launchers.mjs'; // P330: effortIgnoredLine
+import { takesModel, modelIgnoredLine } from './harness-contract.mjs'; // P330 // P33: 호출자. P97: 실행 명령
 import { humanPrompt } from './decisions.mjs'; // P284: 터미널에 직접 친 글
 import { orchOf, orchPromptLines } from './orchestration.mjs'; // P296: 자체 오케스트레이션
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf, removeWrapperDir, hermesReasoningOf, reasoningIn } from './harness.mjs'; // P299: Hermes 노력 수준
@@ -1641,13 +1642,18 @@ export class Backend {
     // P185: 사람이 승인 방식을 주고 띄우는 다른 종류(atrium spawn --kind codex --mode bypassPermissions)는 그 방식을 하네스의 승인 인자로 옮긴다
     //   (atrium child와 같은 표 APPROVAL_ARGS. 호출자의 추가 인자에 승인 인자가 있으면 호출자 것이 이긴다). 전에는 기록만 하고 인자를 붙이지 않았다
     if (p.permissionMode && !p.branch && plan.kind !== 'claude' && plan.kind !== SHELL) {
-      const ap = approvalArgsOf(plan.kind, String(p.permissionMode), (plan.args || []).map(String));
+      const ap = approvalArgsOf(plan.kind, String(p.permissionMode), (plan.args || []).map(String), plan.startCommand || ''); // P330: omh는 승인 인자를 받지 않는다
       if (ap.args.length) plan.args = [...(plan.args || []), ...ap.args];
     }
     // P208: 명시한 노력 수준(atrium child --effort)은 Claude Code 밖 하네스의 인자로 옮기고 호출자 인자의 같은 값을 이긴다(Codex -c model_reasoning_effort).
     //   받지 않는 종류는 응답의 effort.ignored로 알린다. 잘못된 값은 띄우기 전에 던진다
     const effortPlan = p.effort && plan.kind !== 'claude' && plan.kind !== SHELL ? effortArgsOf(plan.kind, String(p.effort), plan.args || []) : null;
     if (effortPlan && effortPlan.applied) plan.args = effortPlan.args;
+    // P330: 받지 않는 노력 수준·모델은 빼고 판 로그와 응답에 한 줄(조용히 버리지 않는다)
+    const effortNote = effortPlan && effortPlan.ignored ? effortIgnoredLine(plan.kind, effortPlan.why === 'launcherArgs' ? effortPlan.effort : String(p.effort), effortPlan.why || null) : null;
+    if (effortNote) this.log(`effort dropped (${plan.kind}): ${effortNote}`);
+    const modelNote = plan.model && plan.kind !== 'claude' && plan.kind !== SHELL && !takesModel(plan.kind, plan.startCommand || '') ? modelIgnoredLine(plan.kind, plan.model) : null;
+    if (modelNote) { this.log(`model dropped (${plan.kind}): ${modelNote}`); plan.model = null; }
     const { flavor, command } = plan;
     const kind = plan.kind;
     const shell = kind === SHELL;
@@ -1735,7 +1741,7 @@ export class Backend {
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
       this.probeGit(s, cwd);
-      const out = { sessionId, name, ...(effortPlan ? { effort: { value: effortPlan.effort, applied: effortPlan.applied, ignored: !!effortPlan.ignored } } : {}), kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
+      const out = { sessionId, name, ...(effortPlan ? { effort: { value: effortPlan.effort, applied: effortPlan.applied, ignored: !!effortPlan.ignored, ...(effortNote ? { note: effortNote } : {}) } } : {}), ...(modelNote ? { modelNote } : {}), kind, flavor, paneId: hw.paneId, termWorkspaceId: hw.workspaceId, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust, resumeArgv };
       if (command) {
         // P25 직접 명령: 셸 프롬프트가 뜨면 그 글을 그대로 치고 Enter. 에이전트가 나타나면 promoteShell이 같은 노드의 종류를 바꾼다(hook 없음)
         const ready = await this.adapter.waitShellReady(hw.paneId);

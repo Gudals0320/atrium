@@ -179,3 +179,35 @@ export function withHarness(d, harness, harnesses) {
   if (n.effort && !harnessEfforts(harnesses, harness).includes(n.effort)) n.effort = ''; // P299: 새 하네스가 받지 않는 노력 수준은 비운다(하네스 기본)
   return n;
 }
+
+// P330: 하네스 계약 안내(백엔드 미리보기의 contract, launchers.mjs launcherContract) → 칸 아래 줄들. 사전 launcherContract.*
+//   → { hint: [{ key, vars }], overlaps: [{ key, vars, tone }], movable, convert, flag }. flag: 목록 줄에 ⚠를 보일지(옮길 인자·바꾸기 권함·받지 않는 인자)
+export function contractView(c) {
+  const out = { hint: [], overlaps: [], movable: false, convert: null, flag: false };
+  if (!c) return out;
+  if (c.convert) { out.convert = c.convert; out.flag = true; return out; }
+  const h = c.hint;
+  if (h) {
+    out.hint.push({ key: 'launcherContract.model', vars: { how: h.modelHow, sourceKey: 'launcherContract.source_' + h.source } });
+    if (h.efforts && h.efforts.length) out.hint.push({ key: h.effortVia === 'slash' ? 'launcherContract.effortSlash' : 'launcherContract.effort', vars: { how: h.effortHow, values: h.efforts.join(', ') } });
+    else out.hint.push({ key: h.effortVia === 'slash' ? 'launcherContract.effortInside' : 'launcherContract.effortNone', vars: { how: h.effortHow } });
+    if (h.approvalVia === 'none') out.hint.push({ key: 'launcherContract.approvalNone', vars: {} });
+    else out.hint.push({ key: h.approval && h.approval.length ? 'launcherContract.approval' : 'launcherContract.approvalEmpty', vars: { args: (h.approval || []).join(' ') } });
+  }
+  for (const o of c.overlaps || []) {
+    out.overlaps.push({ key: o.movable ? 'launcherContract.overlap' : o.ok ? 'launcherContract.overlapNoField' : 'launcherContract.overlapBad', vars: { arg: o.arg, field: o.field, value: o.value }, tone: o.ok ? 'warn' : 'bad' });
+    if (o.movable) out.movable = true;
+  }
+  for (const r of c.rejected || []) out.overlaps.push({ key: 'launcherContract.rejected_' + r.why, vars: { arg: r.arg }, tone: 'bad' });
+  if (c.unknown && c.unknown.length) out.overlaps.push({ key: 'launcherContract.unknown', vars: { args: c.unknown.join(' ') }, tone: 'warn' });
+  out.flag = out.movable || (c.rejected || []).length > 0;
+  return out;
+}
+// P330: 점검 결과(launcher.check) → 줄들 [{ key, vars, tone }]
+export function checkRows(r) {
+  if (!r) return [];
+  if (r.error) return [{ key: 'launcherCheck.err_' + r.error, vars: { cmd: r.command || '' }, tone: 'bad' }];
+  const rows = [{ key: r.version ? 'launcherCheck.version' : 'launcherCheck.noVersion', vars: { cmd: r.command, version: r.version || '' }, tone: 'ok' }];
+  for (const f of r.flags || []) rows.push({ key: f.ok ? 'launcherCheck.flagOk' : 'launcherCheck.flagMissing', vars: { flag: f.flag }, tone: f.ok ? 'ok' : 'bad' });
+  return rows;
+}
