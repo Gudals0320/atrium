@@ -582,3 +582,37 @@ test('P275 둘 다 없으면 merger를 띄우지 않고 부모에게 done을 그
     assert.match(M().status().problem.why, /설치돼 있지 않다/);
   } finally { await stop(); }
 });
+
+// ---------- P320(P318 S2): 같은 워크트리 보조 하위의 done ok는 병합 일로 넘기지 않는다 ----------
+test('P320 판정(순수): 하위의 작업 트리 뿌리가 부모의 것과 같으면 parent_worktree(대소문자·빗금 무관), 다르면 지금처럼', () => {
+  const p = { isWorktree: true, commonDir: 'C:/r/.git', root: 'C:/r/.claude/worktrees/lead', branch: 'worktree-lead', ahead: 2 };
+  const v = (o) => mergeVerdict({ mode: 'on', probe: p, repoCommonDir: 'C:/r/.git', target: 'dev', ...o });
+  assert.deepEqual(v({ parentRoot: 'c:\\r\\.claude\\worktrees\\lead' }), { route: false, why: 'parent_worktree', ask: false });
+  assert.equal(v({ parentRoot: 'C:/r' }).why, 'ok', '부모가 본 체크아웃이면 자기 워크트리 하위 → 병합');
+  assert.equal(v({ parentRoot: 'C:/r/.claude/worktrees/other' }).why, 'ok');
+  assert.equal(v({ parentRoot: null }).why, 'ok', '부모 뿌리를 모르면 지금처럼');
+  assert.equal(v({ parentRoot: p.root, mode: 'ask' }).ask, false, '물음 카드도 띄우지 않는다');
+});
+
+test('P320 흐름: 워크트리 리드가 --worktree 없이 띄운 보조 하위(같은 워크트리) done ok → 병합 일 없음·부모가 보고 받음, 자기 워크트리 하위 done ok → 지금처럼 병합', async () => {
+  const { b, dir, add, worker, mergerAct, toS, stop } = await board();
+  try {
+    mergerAct(async () => ['ok', '합침 q']);
+    const top = add('top');
+    const lwt = worktree(dir, 'lead1');
+    const lead = add('lead1', { cwd: lwt, parentSessionId: top.sessionId });
+    const helper = worker('helper1', lwt, { parent: lead, text: 'helper1: 창 시안 끝냄' });
+    await assign(b, lead, 'helper1');
+    await until(() => helper.doneOut);
+    assert.equal(helper.doneOut.claimedBy, 'queue', '병합 일이 아니라 보통 done');
+    assert.equal(b.store.db.prepare("SELECT COUNT(*) AS n FROM work_units WHERE origin = 'merge'").get().n, 0, '병합 일 없음');
+    assert.equal(b.spawned.length, 0, 'merger를 띄우지 않는다');
+    assert.ok(!b.slept.some((x) => x.name === 'helper1'));
+    await until(() => toS(lead).some((d) => /helper1: 창 시안 끝냄/.test(d.text)));
+    const own = worker('own1', worktree(dir, 'own1'), { parent: lead });
+    await assign(b, lead, 'own1');
+    await until(() => own.doneOut);
+    assert.equal(own.doneOut.claimedBy, 'merger', '자기 워크트리 하위는 지금처럼 병합');
+    await until(() => b.spawned.length === 1);
+  } finally { await stop(); }
+});
