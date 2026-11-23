@@ -53,7 +53,7 @@ export function claudeSubagentProgress({ transcript, turnStartedAt = 0, now = Da
   const dir = subagentDir(transcript);
   let names; try { names = fsx.readdirSync(dir).filter((f) => /^agent-.+\.jsonl$/.test(f)); } catch { return null; }
   const from = (turnStartedAt || 0) - TURN_SLACK_MS;
-  const items = [], all = [];
+  const all = [];
   for (const f of names) {
     const id = f.slice(6, -6);
     const file = path.join(dir, f);
@@ -79,13 +79,19 @@ export function claudeSubagentProgress({ transcript, turnStartedAt = 0, now = Da
     }
     all.push(c);
   }
-  // 묶음: 이번 턴에 시작했거나, 아직 돌거나, 이번 턴에 끝난 갈래(핵심) 가운데 가장 이른 시작 이후에 시작한 갈래 모두.
-  // 끝 알림 턴이 여러 번 열려도 앞서 끝난 형제 갈래가 빠지지 않는다
+  if (cache.size > 400) for (const k of [...cache.keys()].slice(0, 200)) cache.delete(k);
+  return subagentGroup(all, { from, now });
+}
+
+// 갈래들({ id, name, depth, state, startedAt, endedAt }) → 이번 턴 묶음의 진행 | null. P326 Codex 읽개도 쓴다.
+// 묶음: 이번 턴에 시작했거나, 아직 돌거나, 이번 턴에 끝난 갈래(핵심) 가운데 가장 이른 시작 이후에 시작한 갈래 모두.
+// 끝 알림 턴이 여러 번 열려도 앞서 끝난 형제 갈래가 빠지지 않는다
+export function subagentGroup(all, { from = 0, now = Date.now() } = {}) {
+  const items = [];
   const core = all.filter((c) => c.startedAt >= from || c.state === 'running' || c.endedAt >= from);
   if (!core.length) return null;
   const groupFrom = Math.min(...core.map((c) => c.startedAt)) - TURN_SLACK_MS;
   for (const c of all) if (c.startedAt >= groupFrom) items.push({ name: (c.depth > 1 ? '↳ ' : '') + (c.name || c.id), state: c.state, startedAt: c.startedAt, endedAt: c.endedAt });
-  if (cache.size > 400) for (const k of [...cache.keys()].slice(0, 200)) cache.delete(k);
   if (!items.length) return null;
   items.sort((a, b) => a.startedAt - b.startedAt);
   const running = items.filter((x) => x.state === 'running').length;
