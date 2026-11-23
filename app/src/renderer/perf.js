@@ -40,9 +40,17 @@ export function onWritten(t0) { push(perf.writeMs, performance.now() - t0); }
 export function markInput(sessionId) { if (!perf.pendingEcho.has(sessionId)) perf.pendingEcho.set(sessionId, performance.now()); }
 export function setTerminal(sessionId, info) { if (info) perf.terminals.set(sessionId, { frames: 0, bytes: 0, ...perf.terminals.get(sessionId), ...info }); else perf.terminals.delete(sessionId); }
 
-let last = performance.now();
-function tick(now) { push(perf.rafGaps, now - last); last = now; requestAnimationFrame(tick); }
-requestAnimationFrame(tick);
+// P323: 화면 갱신 간격은 기록을 켰을 때만 잰다. 늘 도는 rAF는 가만히 있어도 화면 주기(144Hz)마다 그리게 해서
+// 렌더러 CPU를 썼다(P319: 끄면 그린 프레임 144 → 28/초, 렌더러 CPU 37 → 11%). reset()이 기록을 켠다(성능 시험은 reset 뒤 snapshot을 읽는다).
+let last = 0;
+let rafId = null;
+function tick(now) { if (last) push(perf.rafGaps, now - last); last = now; rafId = requestAnimationFrame(tick); }
+export function recordFrames(on = true) {
+  if (on && rafId == null) { last = 0; rafId = requestAnimationFrame(tick); }
+  else if (!on && rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
+  return rafId != null;
+}
+export const recordingFrames = () => rafId != null;
 
 function stats(arr) {
   if (!arr.length) return null;
@@ -59,4 +67,5 @@ export function snapshot() {
     terminals: Object.fromEntries(perf.terminals),
   };
 }
-export function reset() { perf.frames = 0; perf.bytes = 0; perf.writeMs = []; perf.rafGaps = []; perf.echo = []; for (const t of perf.terminals.values()) { t.frames = 0; t.bytes = 0; } }
+// 측정을 새로 시작한다(값을 비우고 화면 갱신 간격 기록을 켠다). 끄려면 recordFrames(false)
+export function reset() { perf.frames = 0; perf.bytes = 0; perf.writeMs = []; perf.rafGaps = []; perf.echo = []; for (const t of perf.terminals.values()) { t.frames = 0; t.bytes = 0; } recordFrames(true); }

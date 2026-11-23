@@ -28,7 +28,7 @@ import { UsagePill } from './Usage.jsx'; // P211: 구독 사용량. 레일 호�
 import { Icon } from './lib/icons.jsx';
 import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
-import { topFit } from './lib/top-pills.js'; // P294: 위 알약 접기 단계
+import { topFit, fitWatch } from './lib/top-pills.js'; // P294: 위 알약 접기 단계
 import { sleepIdle, asleepStats, memByRepo, fmtMB } from './sleep.js'; // P21(D4), P24: 리포별로 묶는다. P168 뒤: fmtMB는 모르는 값(null)을 ?로
 
 function useNow(ms = 1000) { const [n, set] = useState(Date.now()); useEffect(() => { const t = setInterval(() => set(Date.now()), ms); return () => clearInterval(t); }, [ms]); return n; }
@@ -108,18 +108,27 @@ function useTopFit() {
     tr.dataset.fit = next;
     if (next !== fit) setFit(next);
   });
-  useEffect(() => {
+  // P323: 관찰자는 한 번만 만든다. 렌더마다 새로 걸면 observe 알림이 다시 렌더를 불러 끝없이 돌았다(lib/top-pills.js fitWatch)
+  const watch = useRef(null);
+  const targets = () => {
+    const tl = document.querySelector('.mt-cluster.tl');
+    const els = [tl && tl.offsetParent]; // 사이드바를 열고 닫으면 판 칸 폭이 바뀐다
+    for (const el of document.querySelectorAll('.mt-cluster.tl, .mt-cluster.tr')) { els.push(el); for (const k of el.children) els.push(k); }
+    return els;
+  };
+  useLayoutEffect(() => {
     const kick = () => bump((n) => n + 1);
     window.addEventListener('resize', kick);
     let ro = null;
     if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(kick);
-      const tl = document.querySelector('.mt-cluster.tl');
-      if (tl && tl.offsetParent) ro.observe(tl.offsetParent); // 사이드바를 열고 닫으면 판 칸 폭이 바뀐다
-      for (const el of document.querySelectorAll('.mt-cluster.tl, .mt-cluster.tr')) { ro.observe(el); for (const k of el.children) ro.observe(k); }
+      ro = new ResizeObserver((entries) => { if (watch.current) watch.current.onResize(entries); });
+      watch.current = fitWatch(ro, kick);
+      watch.current.sync(targets());
     }
-    return () => { window.removeEventListener('resize', kick); if (ro) ro.disconnect(); };
-  });
+    return () => { window.removeEventListener('resize', kick); if (ro) ro.disconnect(); watch.current = null; };
+  }, []);
+  // 렌더마다 지켜볼 원소만 맞춘다(새 알약만 observe, 빠진 알약은 놓는다). 폭이 그대로면 다시 재지 않는다
+  useLayoutEffect(() => { if (watch.current) watch.current.sync(targets()); });
   return fit;
 }
 

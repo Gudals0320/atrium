@@ -21,6 +21,34 @@ export function peoplePills(n = {}) {
   });
 }
 
+// P323: 위 알약 무리의 크기 지켜보기. 렌더마다 ResizeObserver를 새로 걸면 observe하는 순간 알림이 와서
+// 렌더 → observe → 알림 → 다시 렌더 고리가 끝없이 돌았다(P319: 가만히 초당 ~170커밋). 그래서 관찰자는 하나만 두고,
+// 새로 생긴 원소만 observe하며(빠진 원소는 놓는다), 처음 알림은 폭만 적어 두고 폭이 정말 바뀐 때만 kick(다시 재기)한다.
+// ro: { observe(el), unobserve(el) }, kick: 다시 재라는 콜백
+export function fitWatch(ro, kick) {
+  const seen = new Map(); // 원소 → 마지막으로 본 폭(px, 반올림). undefined면 아직 알림 전
+  return {
+    sync(els) {
+      const want = new Set(els.filter(Boolean));
+      for (const el of [...seen.keys()]) if (!want.has(el)) { ro.unobserve(el); seen.delete(el); }
+      for (const el of want) if (!seen.has(el)) { seen.set(el, undefined); ro.observe(el); }
+    },
+    onResize(entries) {
+      let changed = false;
+      for (const e of entries) {
+        if (!seen.has(e.target)) continue;
+        const w = Math.round((e.contentRect && e.contentRect.width) || 0);
+        const prev = seen.get(e.target);
+        seen.set(e.target, w);
+        if (prev !== undefined && prev !== w) changed = true;
+      }
+      if (changed) kick();
+      return changed;
+    },
+    size: () => seen.size,
+  };
+}
+
 export function topFit({ win, left = 87, right = 15, gap = 16, fullL = null, compactL = null, fullR = null, compactR = null } = {}) {
   const room = (l, r) => left + l + gap + r + right <= win;
   if (fullL == null || fullR == null) return 'full';
