@@ -33,7 +33,7 @@ test('P196 하네스 드롭다운: 표가 비거나 agy가 빠져도 agy가 나�
   assert.deepEqual(harnessOptions([], []), AGENT_HARNESSES);
   const old = [{ id: 'claude' }, { id: 'codex' }, { id: 'opencode' }, { id: 'pi' }, { id: 'shell' }, { id: 'command' }];
   const o = harnessOptions(old, ['claude', 'codex', 'agy', 'gemini'], 'mystery');
-  assert.deepEqual(o, ['claude', 'codex', 'opencode', 'pi', 'agy', 'dsh', 'hermes', 'gemini', 'mystery']); // P270: dsh. P298: hermes
+  assert.deepEqual(o, ['claude', 'codex', 'opencode', 'pi', 'agy', 'dsh', 'hermes', 'omo', 'gemini', 'mystery']); // P270: dsh. P298: hermes. P329: omo
   assert.ok(!o.includes('shell') && !o.includes('command'));
   assert.equal(new Set(o).size, o.length);
   assert.deepEqual(harnessOptions([{ id: 'agy' }, { id: 'claude' }], [], 'agy').slice(0, 2), ['agy', 'claude']);

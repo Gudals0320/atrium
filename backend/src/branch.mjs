@@ -31,7 +31,7 @@ import { predictTrust, repoHasCommit, buildStartArgs, fillBoardHooks } from './l
 import { HARNESSES, harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine, agentLauncherOf } from './launchers.mjs'; // P309: agentLauncherOf(하네스 계열 명령 런처) // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { shownModel } from './model-now.mjs'; // P299: atrium me의 모델·노력 수준
-import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192
+import { AGY_APPROVAL, AGY_APPROVAL_FLAGS, adapterOf } from './harness.mjs'; // P192. P329: 보일 모델 인자(하네스 모양, omo는 --model)
 import { buildCatalog, resolveModel, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
 import { takenNames, shownName } from './session-label.mjs'; // P66
 import { workspaceNames } from './workspaces.mjs';
@@ -157,6 +157,8 @@ export function withoutModelArgs(args = []) {
 // P115: route.type 'inherit-harness'(다른 종류 부모가 종류를 주지 않고 부름)는 부모의 하네스 값(호출자, 모델, 추가 인자)을 그대로 물려받는다. 승인 인자는 옮기지 않는다(이미 그 인자에 있다)
 // P299: atrium me에 보일 모델·노력 수준(하네스가 지금 쓰는 값, 모르면 띄운 값. Hermes는 띄운 --reasoning)
 const modelEffortOf = (x) => { const m = shownModel({ model: x.model, effort: x.effort }, x.rt && x.rt.modelNow); return { model: m.model || null, effort: m.effort || null }; };
+// P329: 보일 명령의 모델 인자(그 하네스 모양: codex·hermes -m, pi·omo --model). 어댑터가 없거나 모델 인자를 받지 않는 하네스는 -m(예전과 같다)
+const modelArgv = (kind, model) => { if (!model) return []; const a = adapterOf(kind); const m = a ? a.modelArgs(model) : []; return m.length ? m : ['-m', model]; };
 export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) {
   const kind = route.kind;
   const inherit = route.type === 'inherit-harness';
@@ -174,7 +176,7 @@ export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) 
   const approval = agyBypass && approval0.from === 'parent' ? { ...approval0, from: 'agy-bypass' } : approval0;
   const args = [...largs, ...approval.args];
   return {
-    launcher: l, model, args, argv: [...(model ? ['-m', model] : []), ...args],
+    launcher: l, model, args, argv: [...modelArgv(kind, model), ...args],
     record: { base: route.type === 'launcher' ? 'launcher' : inherit ? 'parent' : l ? 'rail' : 'bare', launcher: l ? l.name : null, model, modelFrom: override ? 'model' : model ? 'launcher' : null, approvalArgs: approval.args, approvalFrom: approval.from, parentPermissionMode: permissionMode },
   };
 }
@@ -829,7 +831,7 @@ export class Branch {
       effortNote: effortPlan && effortPlan.ignored ? effortIgnoredLine(kind, effortPlan.why === 'launcherArgs' ? effortPlan.effort : otherEffort, effortPlan.why || null) : null, // P299: Hermes 까닭 // P208: 노력 수준을 받지 않는 종류
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
-      harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...(other.model ? ['-m', other.model] : []), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
+      harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...modelArgv(kind, other.model), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
       permissionMode: child.permissionMode, state, trust: out.trust, waited: wait,
       status: needsTrust ? 'needs_trust' : state, needsTrust, tellHuman: needsTrust ? trustSentence(name) : null, gate: gate ? 'trust' : null,
       firstPrompt: first ? { ...first, status: (b.store.getDelivery(first.deliveryId) || {}).status || first.status } : null,
@@ -885,7 +887,7 @@ export class Branch {
       const r = resolveModel(String(o.model), cat, { kind: o.kind || null });
       // P299: 모델 목록을 판이 모르는 하네스(Hermes)는 --kind와 함께 준 이름을 그대로 넘긴다(-m)
       const fh = o.kind ? harnessOf(String(o.kind)) : null;
-      if (!r.ok && fh && fh.freeModel && isModelName(String(o.model))) { const m = String(o.model); return { type: 'model', kind: fh.kind, model: m, args: ['-m', m], gateway: null, resolved: { from: m, how: 'as-is', source: 'harness', to: `${fh.label} 모델 ${m}(이름 그대로 -m)`, launcher: null, model: m, gateway: null, command: `atrium child <이름> --kind ${fh.kind} --model ${m}` } }; }
+      if (!r.ok && fh && fh.freeModel && isModelName(String(o.model))) { const m = String(o.model); return { type: 'model', kind: fh.kind, model: m, args: ['-m', m], gateway: null, resolved: { from: m, how: 'as-is', source: 'harness', to: `${fh.label} 모델 ${m}(이름 그대로 ${fh.kind === 'omo' ? '--model' : '-m'})`, launcher: null, model: m, gateway: null, command: `atrium child <이름> --kind ${fh.kind} --model ${m}` } }; }
       if (!r.ok) throw this.modelError(String(o.model), r, cat);
       const e = r.entry;
       const resolved = { from: String(o.model), how: r.how, source: e.source, to: describeEntry(e), launcher: e.launcher || null, model: e.model || null, gateway: e.gateway || null, command: e.command };

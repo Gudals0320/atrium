@@ -36,7 +36,7 @@ export function statusDetail(st) {
 export const APP_KIND = { 'claude-code': 'claude', antigravity: 'agy', 'dsh-tui': 'dsh' }; // P270: dsh-TUI는 7501 앱 이름 dsh-tui로 스스로 알린다 → 판 종류 dsh // P192: AGY(Antigravity CLI)는 7501 앱 이름 antigravity
 export const kindOfApp = (app) => (app ? APP_KIND[app] || String(app) : null);
 // 판의 종류 → 첫 argv(실행 명령이 없을 때)
-export const KIND_COMMAND = { claude: 'claude', codex: 'codex', opencode: 'opencode', pi: 'pi', agy: 'agy', dsh: 'dsh-tui', hermes: 'hermes' }; // P298: hermes(Hermes Agent, OMH) // P270: dsh(실행 파일 dsh-tui) // P192: agy(Antigravity CLI)
+export const KIND_COMMAND = { claude: 'claude', codex: 'codex', opencode: 'opencode', pi: 'pi', agy: 'agy', dsh: 'dsh-tui', hermes: 'hermes', omo: 'omo' }; // P329: omo(OmO, 7501 앱 이름 omo) // P298: hermes(Hermes Agent, OMH) // P270: dsh(실행 파일 dsh-tui) // P192: agy(Antigravity CLI)
 
 // hc 이름 규칙: 1~32자 a-z 0-9 - _ . (살아 있는 터미널 사이에서 겹치지 않음). 맞지 않으면 이름 없이 띄우고 라벨로 둔다
 export const HC_NAME_RE = /^[a-z0-9._-]{1,32}$/;
