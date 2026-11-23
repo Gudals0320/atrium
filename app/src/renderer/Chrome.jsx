@@ -28,11 +28,12 @@ import { UsagePill } from './Usage.jsx'; // P211: 구독 사용량. 레일 호�
 import { Icon } from './lib/icons.jsx';
 import { STATE_LABEL, EXIT_LABEL, ago, askLine } from './lib/labels.js';
 import { useT, errText, fmtTime } from './lib/i18n.js';
+import { goSession } from './lib/go-session.js';
 import { topFit, fitWatch } from './lib/top-pills.js'; // P294: 위 알약 접기 단계
 import { sleepIdle, asleepStats, memByRepo, fmtMB } from './sleep.js'; // P21(D4), P24: 리포별로 묶는다. P168 뒤: fmtMB는 모르는 값(null)을 ?로
 
 function useNow(ms = 1000) { const [n, set] = useState(Date.now()); useEffect(() => { const t = setInterval(() => set(Date.now()), ms); return () => clearInterval(t); }, [ms]); return n; }
-const go = (id) => getState().navigateTo && getState().navigateTo(id);
+const go = (id) => goSession(id, { st: getState(), closeMap: () => setMissionOpen(false) }); // P328: 위 알약 목록도 세션 맵에서는 맵을 닫고 한 번에
 
 // 펼침 목록: 알약 아래로 펼치고 바깥을 누르거나 Esc면 닫는다
 function useDropdown() {
