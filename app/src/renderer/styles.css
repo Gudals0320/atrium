@@ -2937,6 +2937,39 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-chat { font-size: 13px; }
 .mt-cv { font-size: 12px; }
 .mt-canvas[data-text="far"] :is(.mt-region-head, .mt-wsgroup-head) { overflow: visible; background: none; }
-.mt-canvas[data-text="far"] :is(.mt-region-head, .mt-wsgroup-head) > :not(.mt-region-dot) { visibility: hidden; }
-.mt-canvas[data-text="far"] .mt-region-dot { width: calc(8px * var(--inv, 1)); height: calc(8px * var(--inv, 1)); }
+.mt-canvas[data-text="far"] :is(.mt-region-head, .mt-wsgroup-head) > * { visibility: hidden; }
+/* 멀리서는 작은 이름표 대신 큰 이름 한 줄(Regions.jsx BigLabel, 판 단위 고정). 그것도 읽히지 않는 띠면 이름을 숨기고 점만(화면 기준 8px, 띠 값) */
+.mt-big-label { position: absolute; left: 14px; display: none; align-items: center; gap: .3em; max-width: calc(100% - 28px); white-space: nowrap; overflow: hidden; pointer-events: none;
+  line-height: 1.15; font-family: var(--font-ui); font-weight: 700; letter-spacing: .03em; color: var(--chrome-text); }
+.mt-big-label.region .mt-big-name { text-transform: uppercase; }
+.mt-big-label.wt { color: var(--wt-box-text); font-family: var(--font-mono); }
+.mt-big-label.group { color: color-mix(in srgb, var(--chrome-text) 80%, transparent); text-transform: uppercase; letter-spacing: .08em; }
+.mt-big-label .mt-region-dot { width: .4em; height: .4em; }
+.mt-big-label.group .mt-region-dot { display: none; }
+.mt-big-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mt-region.hot .mt-big-label .mt-region-dot { background: var(--attn); }
+.mt-canvas[data-text="far"] .mt-big-label { display: flex; }
+.mt-canvas[data-band="1"] .mt-big-label:is([data-fit="0"]),
+.mt-canvas[data-band="2"] .mt-big-label:is([data-fit="0"], [data-fit="1"]),
+.mt-canvas[data-band="3"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"]),
+.mt-canvas[data-band="4"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"]),
+.mt-canvas[data-band="5"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"]),
+.mt-canvas[data-band="6"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"], [data-fit="5"]) { overflow: visible; }
+.mt-canvas[data-band="1"] .mt-big-label:is([data-fit="0"]) .mt-big-name,
+.mt-canvas[data-band="2"] .mt-big-label:is([data-fit="0"], [data-fit="1"]) .mt-big-name,
+.mt-canvas[data-band="3"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"]) .mt-big-name,
+.mt-canvas[data-band="4"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"]) .mt-big-name,
+.mt-canvas[data-band="5"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"]) .mt-big-name,
+.mt-canvas[data-band="6"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"], [data-fit="5"]) .mt-big-name { display: none; }
+.mt-canvas[data-band="1"] .mt-big-label:is([data-fit="0"]) .mt-region-dot,
+.mt-canvas[data-band="2"] .mt-big-label:is([data-fit="0"], [data-fit="1"]) .mt-region-dot,
+.mt-canvas[data-band="3"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"]) .mt-region-dot,
+.mt-canvas[data-band="4"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"]) .mt-region-dot,
+.mt-canvas[data-band="5"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"]) .mt-region-dot,
+.mt-canvas[data-band="6"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"], [data-fit="5"]) .mt-region-dot { display: block; width: calc(8px * var(--inv, 1)); height: calc(8px * var(--inv, 1)); }
+/* 틀 얼굴(SessionNode FrameFace): 종류 로고 + 이름 + 상태 표지 한 줄, 글자 크기는 노드 높이의 1/6(인라인, 판 단위 고정) */
+.mt-frameface .mt-frame-row { display: flex; align-items: center; gap: .3em; max-width: 92%; min-width: 0; font-weight: 700; line-height: 1.15; color: var(--chrome-text); }
+.mt-frameface .mt-frame-row .mt-kind-icon { width: 1.1em; height: 1.1em; flex: none; }
+.mt-frameface .mt-frame-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.mt-frameface .mt-frame-row .mt-frame-mark { width: 1em; flex: none; }
 .mt-canvas[data-text="far"] .mt-wtbox-head { visibility: hidden; }

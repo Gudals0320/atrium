@@ -54,6 +54,13 @@ export const BORDER_TOP = REGION_HEAD + 8; // 영역 위에서 테두리까지(�
 //   글을 숨기고 점만 남긴다(styles.css 끝)
 const headAt = (fs) => { const head = fs * 2.1; return { fontSize: fs, height: head, top: BORDER_TOP - head + Math.min(head / 2, fs * 0.9) }; };
 const REGION_HEAD_STYLE = headAt(13);
+// P324: 멀리서(판 .mt-canvas[data-text=far]) 작은 이름표 대신 보이는 큰 이름 한 줄. 판 단위 고정 크기(영역 사이 틈에 들어가는 크기)이고 아래 끝이 테두리에 닿는다.
+//   그것도 화면에서 8px 아래인 배율 띠(판 data-band, Canvas.jsx)에서는 이름을 숨기고 점만 남긴다(data-fit: 이름이 읽히는 가장 큰 띠, styles.css 끝)
+const bigFit = (fs) => Math.floor(Math.log2(fs / 8));
+function BigLabel({ fs, top, kind, children }) {
+  return <div className={`mt-big-label ${kind}`} data-role="big-label" data-fit={bigFit(fs)} style={{ fontSize: fs, top }} aria-hidden="true"><span className="mt-region-dot" /><span className="mt-big-name">{children}</span></div>;
+}
+const REGION_BIG = 100, WT_BIG = 80, GROUP_BIG = 90;
 function RegionNodeInner({ data }) {
   const t = useT();
   const key = data.wsKey;
@@ -98,6 +105,7 @@ function RegionNodeInner({ data }) {
         </span>
         <button className="mt-region-chev nodrag" title={t('regions.acts')} data-action="region-acts" onClick={chev}><Icon name="chevDown" /></button>
       </div>
+      <BigLabel fs={REGION_BIG} top={BORDER_TOP - REGION_BIG * 1.15} kind="region">{w.label || w.name}</BigLabel>
       {menu && <RegionMenu at={menu} close={() => setMenu(null)} w={w} arranged={arranged} z={z} />}
     </div>
   );
@@ -152,6 +160,7 @@ function WorktreeAreaNodeInner({ data }) {
         {folder && <span className="mt-wtarea-meta" data-role="wt-folder">({folder})</span>}
         <span className="mt-wtarea-meta"><span data-count="sessions">{t('regions.wtSessions', { n: data.n || 0 })}</span>{data.working > 0 && <> · <span data-count="working">{t('regions.working', { n: data.working })}</span></>}{data.convos > 0 && <> · <span data-count="convos">{t('regions.convos', { n: data.convos })}</span></>}</span>
       </div>
+      <BigLabel fs={WT_BIG} top={BORDER_TOP - WT_BIG * 1.15} kind="wt">⎇ {branch}</BigLabel>
     </div>
   );
 }
@@ -177,6 +186,7 @@ function GroupFrameNodeInner({ data }) {
         <b className="mt-wsgroup-name">{g ? g.name : data.name}</b>
         <span className="mt-wsgroup-meta">{t('groupFrame.count', { n: (data.keys || []).length })}</span>
       </div>
+      <BigLabel fs={GROUP_BIG} top={GROUP_HEAD - GROUP_BIG * 1.2} kind="group">{g ? g.name : data.name}</BigLabel>
     </div>
   );
 }

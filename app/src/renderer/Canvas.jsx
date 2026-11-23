@@ -655,7 +655,7 @@ export function Canvas() {
       if (!el || !v) return;
       const z = v.transform[2];
       const b = invBand(z);
-      if (b !== inv) { inv = b; el.style.setProperty('--inv', b); }
+      if (b !== inv) { inv = b; el.style.setProperty('--inv', b); el.dataset.band = String(Math.round(Math.log2(b))); } // data-band: 큰 이름표가 읽히는지(styles.css)
       const f = !textReadable(z, far ? 'frame' : 'term');
       if (f !== far || el.dataset.text === undefined) { far = f; el.dataset.text = f ? 'far' : 'near'; }
     };

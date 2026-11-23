@@ -264,15 +264,22 @@ const MARK_PATH = {
   error: <path d="M7.5 7.5l9 9M16.5 7.5l-9 9" />,
   work: <path d="M12 6.5a5.5 5.5 0 1 1-5.5 5.5" />,
 };
-function FrameFace({ s, tier }) {
+// P324: 글이 읽히지 않는 배율에서 노드를 가리는 얼굴이므로 어느 세션인지는 남긴다. 종류 로고와 이름을 노드 높이의 1/6(판 단위 고정, 배율을 구독하지 않는다)
+//   한 줄로, 상태 표지는 그 줄 끝에 같은 크기로. 기본 노드(810px 높이)면 135px이라 배율 0.15에서도 화면 약 20px
+export const frameFontPx = (w, h) => +Math.max(12, Math.min(h / 6, w / 9)).toFixed(2);
+function FrameFace({ s, tier, w, h }) {
   useT();
   const k = kindOf(shownKind(s));
   const mark = frameMarkOf(tier);
   return (
-    <div className="mt-iconface mt-frameface mt-drag" data-role="frame-face" data-kind={k.id} data-mark={mark || undefined} title={`@${s.name} · ${k.label} · ${STATE_LABEL[s.state] || s.state}`}>
-      {mark && <span className="mt-frame-mark" data-mark={mark} aria-hidden="true">
-        {mark === 'sleep' ? <Icon name="moon" /> : <svg viewBox="0 0 24 24">{MARK_PATH[mark]}</svg>}
-      </span>}
+    <div className="mt-iconface mt-frameface mt-drag" data-role="frame-face" data-kind={k.id} data-mark={mark || undefined} title={`@${s.name} · ${k.label} · ${STATE_LABEL[s.state] || s.state}`} style={{ fontSize: frameFontPx(w, h) }}>
+      <div className="mt-frame-row">
+        <KindIcon kind={shownKind(s)} state={s.state} />
+        <span className="mt-frame-name" data-role="frame-name">@{s.name}</span>
+        {mark && <span className="mt-frame-mark" data-mark={mark} aria-hidden="true">
+          {mark === 'sleep' ? <Icon name="moon" /> : <svg viewBox="0 0 24 24">{MARK_PATH[mark]}</svg>}
+        </span>}
+      </div>
     </div>
   );
 }
@@ -587,7 +594,7 @@ function SessionNodeInner({ id, selected }) {
           {!asleep && (attached ? <div className={`mt-term-slot${face === 'close' ? '' : ' hold'}`} data-role="term-slot" data-hold={face === 'close' ? undefined : '1'}><TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /></div> : face === 'close' ? (NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />) : null)}
           {!asleep && face === 'middle' && <ChatView s={s} />}
           {!asleep && face === 'far' && <FarFace s={s} w={n.w} h={n.h} open={brief && dist === 'term'} />}
-          {face === 'icon' && <FrameFace s={s} tier={tier} />}
+          {face === 'icon' && <FrameFace s={s} tier={tier} w={n.w} h={n.h} />}
         </NodeBoundary>
         {!far && <div className="mt-node-overlays">
           {s.interruptedTurn && <InterruptedBanner s={s} />}

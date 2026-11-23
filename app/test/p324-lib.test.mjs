@@ -94,3 +94,23 @@ test('테두리 --inv 띠: 1/배율을 2의 거듭제곱으로', () => {
   // 띠 안에서는 같은 값(움직이는 동안 쓰지 않아도, 멈춘 뒤 바뀌는 일이 드물다)
   assert.equal(invBand(0.75), invBand(0.9));
 });
+
+test('틀 얼굴은 로고와 이름(노드 높이 1/6, 판 단위)을, 영역 이름표는 멀리서 큰 이름을 고정 크기로 보인다', async () => {
+  const fs = await import('node:fs');
+  const read = (f) => fs.readFileSync(new URL('../src/renderer/' + f, import.meta.url), 'utf8');
+  const sn = read('SessionNode.jsx');
+  const ff = sn.slice(sn.indexOf('function FrameFace'), sn.indexOf('// 아주 멀리서(노드가'));
+  assert.match(ff, /<KindIcon kind=\{shownKind\(s\)\}/);
+  assert.match(ff, /data-role="frame-name">@\{s\.name\}/);
+  assert.match(ff, /fontSize: frameFontPx\(w, h\)/);
+  assert.ok(!/useFlowStore|useSettledFlow|transform/.test(ff), '틀 얼굴은 배율을 구독하지 않는다');
+  const m = /export const frameFontPx = \(w, h\) => (.*);/.exec(sn);
+  const frameFontPx = new Function('w', 'h', 'return ' + m[1]);
+  assert.equal(frameFontPx(1440, 810), 135);
+  assert.ok(frameFontPx(1440, 810) * 0.15 >= 20);
+  const rg = read('Regions.jsx');
+  assert.equal((rg.match(/<BigLabel /g) || []).length, 3, '영역·워크트리·묶음');
+  const css = read('styles.css');
+  assert.match(css, /\.mt-canvas\[data-text="far"\] \.mt-big-label \{ display: flex; \}/);
+  assert.match(css, /\.mt-canvas\[data-band="4"\] \.mt-big-label:is\(\[data-fit="0"\], \[data-fit="1"\], \[data-fit="2"\], \[data-fit="3"\]\) \.mt-big-name/);
+});
