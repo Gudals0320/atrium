@@ -31,34 +31,34 @@ export function harnessPicks(harnesses, allowed = null, current = '') {
   return out;
 }
 const norm = (v) => String(v == null ? '' : v).trim();
-// 지금 값과 맞는 런처(하네스·모델·노력이 같음, 모델·노력이 빈 런처는 봇의 기본값과 같다고 본다). 없으면 null
-export function pickedLauncher(picks, bot) {
-  if (!bot || !bot.f.kind) return null;
-  const kind = bot.f.kind.value, model = bot.f.model ? norm(bot.f.model.value) : '', effort = bot.f.effort ? norm(bot.f.effort.value) : '';
-  const dm = bot.f.model ? norm(bot.f.model.default) : '';
-  for (const l of picks || []) {
-    if (l.harness !== kind) continue;
-    if (bot.f.model && norm(l.model || dm) !== model) continue;
-    if (bot.f.effort && norm(l.effort) !== effort) continue;
-    return l;
-  }
-  return null;
+// 봇이 쓰는 런처(판 설정 mergerLauncher·todoTidyLauncher의 ID가 고를 수 있는 런처에 있을 때). 없어졌거나 비면 null(옛 키 그대로)
+export function botLauncher(bot, picks) {
+  const id = bot && bot.f.launcher ? norm(bot.f.launcher.value) : '';
+  return id ? (picks || []).find((l) => l.id === id) || null : null;
 }
-// 런처 하나를 고르면 쓸 값: [[설정 키, 값]]. 모델이 빈 런처는 봇의 기본 모델, 노력이 봇이 받지 않는 값이면 빈 값(넘기지 않음),
-//   승인 방식(병합 봇)은 그 하네스가 승인 칸을 가질 때만
-export function patchFromLauncher(bot, l, harnesses) {
+// 실제로 쓸 값(판 settings.mjs resolveBotSettings와 같은 규칙): 런처가 있으면 하네스·모델·노력은 런처, 봇의 모델·노력 키가 차 있으면 덮어쓰기
+//   → { launcher, kind, model, effort, over: { model, effort } }. 런처가 없으면 봇 키 그대로(빈 모델·노력 = 하네스 기본)
+export function effectiveOf(bot, picks) {
+  const l = botLauncher(bot, picks);
+  const om = bot.f.model ? norm(bot.f.model.value) : '', oe = bot.f.effort ? norm(bot.f.effort.value) : '';
+  if (l) return { launcher: l, kind: l.harness, model: om || l.model, effort: oe || l.effort, over: { model: !!om, effort: !!oe } };
+  return { launcher: null, kind: bot.f.kind ? bot.f.kind.value : null, model: om, effort: oe, over: { model: false, effort: false } };
+}
+// 런처를 고르면: 런처 ID와(옛 판·없어질 때를 위해) 하네스를 쓰고, 모델·노력 덮어쓰기는 비운다(= 런처 값을 따른다)
+export function patchFromLauncher(bot, l) {
   const out = [];
   if (!bot || !l) return out;
+  if (bot.f.launcher) out.push([bot.f.launcher.key, l.id]);
   if (bot.f.kind) out.push([bot.f.kind.key, l.harness]);
-  if (bot.f.model) out.push([bot.f.model.key, norm(l.model) || bot.f.model.default]);
-  if (bot.f.effort) { const ok = (bot.f.effort.options || []).includes(norm(l.effort)); out.push([bot.f.effort.key, ok ? norm(l.effort) : '']); }
-  if (bot.f.permission && harnessFields(harnesses, l.harness).includes('permissionMode') && (bot.f.permission.options || []).includes(l.permissionMode)) out.push([bot.f.permission.key, l.permissionMode]);
+  if (bot.f.model) out.push([bot.f.model.key, '']);
+  if (bot.f.effort) out.push([bot.f.effort.key, '']);
   return out;
 }
-// 하네스만 고르면: 하네스와, 그 하네스가 모르는 모델이면 기본 모델로 되돌리기(목록이 있는 하네스만)
+// 런처 없이 하네스만 고르면: 런처 ID를 비우고 하네스, 그 하네스가 모르는 모델이면 기본 모델로, 받지 않는 노력이면 빈 값
 export function patchFromHarness(bot, kind, harnesses) {
   const out = [];
   if (!bot || !bot.f.kind) return out;
+  if (bot.f.launcher) out.push([bot.f.launcher.key, '']);
   out.push([bot.f.kind.key, kind]);
   if (bot.f.model) {
     const list = harnessModels(harnesses, kind);
@@ -67,6 +67,8 @@ export function patchFromHarness(bot, kind, harnesses) {
   if (bot.f.effort) { const e = effortChoices(harnesses, kind, bot.f.effort.options); if (!e.list.includes(norm(bot.f.effort.value))) out.push([bot.f.effort.key, '']); }
   return out;
 }
+// 고른 칸의 값: 런처면 'l:<id>', 아니면 'h:<하네스>'
+export const pickValue = (bot, picks) => { const e = effectiveOf(bot, picks); return e.launcher ? 'l:' + e.launcher.id : 'h:' + (e.kind || ''); };
 // 모델 칸: { show, list, free }. 하네스가 모델 칸을 받지 않으면 show false. 목록이 비면 글자 칸(free)
 export function modelChoices(harnesses, kind, value = '') {
   const show = harnessFields(harnesses, kind).includes('model');

@@ -177,8 +177,8 @@ test('P316 차례: 끔·시간당 상한·세션 간격, 한 번에 하나, 같�
 test('P316 설정: 할 일 정리 칸이 에이전트 표에 켜지고 값 검사가 된다', () => {
   const row = agentsTable().find((a) => a.id === 'todoTidy');
   assert.equal(row.ready, true);
-  assert.deepEqual(row.fields.map((f) => f.field), ['mode', 'kind', 'model', 'effort']);
-  assert.deepEqual(row.fields[0].options, ['on', 'off']); assert.deepEqual(row.fields[1].options, ['claude', 'codex']);
+  assert.deepEqual(row.fields.map((f) => f.field), ['mode', 'launcher', 'kind', 'model', 'effort']); // P338: launcher(봇이 쓰는 런처 ID)
+  assert.deepEqual(row.fields[0].options, ['on', 'off']); assert.deepEqual(row.fields[2].options, ['claude', 'codex']);
   assert.equal(SETTINGS.todoTidyModel.default, 'haiku'); assert.equal(SETTINGS.todoTidyMode.default, 'on'); assert.equal(SETTINGS.todoTidyPerHour.default, 30);
   assert.deepEqual(normalizePatch({ todoTidyKind: 'codex', todoTidyPerHour: '12', todoTidyModel: 'sonnet' }), { todoTidyKind: 'codex', todoTidyPerHour: 12, todoTidyModel: 'sonnet' });
   assert.throws(() => normalizePatch({ todoTidyKind: 'pi' })); assert.throws(() => normalizePatch({ todoTidyPerHour: 601 })); assert.throws(() => normalizePatch({ todoTidyMode: 'ask' }));

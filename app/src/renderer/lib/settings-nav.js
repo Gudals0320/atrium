@@ -1,14 +1,16 @@
 // P338: 설정 창의 왼쪽 목록(주제 묶음 → 쪽), 설정 찾기, 딸린 칸 흐려짐(React 없는 순수 함수, 단위 시험 app/test/p338-lib.test.mjs).
 // 쪽 이름(key)은 옛 가로 탭의 data-tab과 같게 두어(general, launchers, sleep, recall, devices, terminal) 옛 창 시험과 "설정 › …" 안내가 그대로 맞는다.
 // 새 쪽: alerts(알림·사용량, 옛 일반 탭에서 옮김), bots(봇, 옛 에이전트 탭), dev(개발: 성능 기록).
+// P338(검토 뒤): 모든 쪽을 묶음 머리 아래에 둔다(맨 쪽과 머리 섞지 않음). 쪽마다 작은 아이콘(lib/icons.jsx 이름)
 export const NAV = [
-  { group: 'general', pages: ['general'] },
+  { group: 'basics', pages: ['general', 'alerts'] },
   { group: 'session', pages: ['launchers', 'sleep', 'recall'] },
-  { group: 'alerts', pages: ['alerts'] },
-  { group: 'bots', pages: ['bots'] },
+  { group: 'automation', pages: ['bots'] },
   { group: 'connect', pages: ['devices', 'terminal'] },
-  { group: 'dev', pages: ['dev'] },
+  { group: 'advanced', pages: ['dev'] },
 ];
+export const PAGE_ICON = { general: 'gear', alerts: 'bell', launchers: 'play', sleep: 'moon', recall: 'archive', bots: 'bot', devices: 'device', terminal: 'terminal', dev: 'code' };
+export const pageDesc = (p) => 'setNav.desc.' + p;
 // 쪽이 보일 때(옛 판이면 그 키가 없어 빠진다). s = 설정 값, l = 런처 자료, bots = 보일 봇이 있나
 const PAGE_HAS = {
   general: () => true,

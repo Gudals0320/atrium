@@ -51,16 +51,19 @@ export const SETTINGS = {
   // P316: 할 일 정리(todo-tidy.mjs). 자동 할 일 카드 후보를 작은 모델(하네스의 헤드리스 실행, 구독)로 걸러 낸다. 끄면 규칙만
   todoTidyMode: { type: 'choice', default: 'on', options: ['on', 'off'], label: '할 일 정리 (on: 자동 할 일 카드 후보를 작은 모델로 걸러 냅니다, off: 규칙만 씁니다).' },
   todoTidyKind: { type: 'choice', default: 'claude', options: ['claude', 'codex'], label: '할 일 정리가 부르는 하네스입니다 (claude: Claude Code claude -p, codex: codex exec).' },
-  todoTidyModel: { type: 'string', default: 'haiku', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: haiku)', label: '할 일 정리의 모델입니다. Codex에서 Claude 모델 이름이면 Codex 기본 모델을 씁니다.' },
+  todoTidyModel: { type: 'string', default: 'haiku', max: 80, pattern: /^([A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79})?$/, hint: '모델 이름(예: haiku)', label: '할 일 정리의 모델입니다. Codex에서 Claude 모델 이름이면 Codex 기본 모델을 씁니다. 런처를 골랐으면 비운 값은 런처의 모델입니다.' },
   todoTidyEffort: { type: 'choice', default: 'low', options: EFFORTS, label: '할 일 정리의 추론 수준입니다 (빈 값: 넘기지 않음).' },
   todoTidyPerHour: { type: 'number', default: 30, min: 0, max: 600, label: '할 일 정리를 한 시간에 부르는 상한입니다. 넘으면 규칙만 씁니다.' },
+  // P338: 봇이 쓰는 런처(설정 › 런처의 ID). 비면 옛 키(종류·모델·노력)를 그대로 쓴다. 고르면 하네스·모델·노력이 런처를 따르고, 봇의 모델·노력 키가 비어 있지 않으면 그 값이 덮어쓴다(resolveBotSettings)
+  mergerLauncher: { type: 'string', default: '', max: 40, pattern: /^[A-Za-z0-9_-]{0,40}$/, hint: '런처 ID', label: '병합 봇이 쓰는 런처 ID입니다 (빈 값: 아래 종류·모델·노력).' },
+  todoTidyLauncher: { type: 'string', default: '', max: 40, pattern: /^[A-Za-z0-9_-]{0,40}$/, hint: '런처 ID', label: '할 일 정리 봇이 쓰는 런처 ID입니다 (빈 값: 아래 하네스·모델·노력). Claude Code·Codex 런처만 씁니다.' },
   missionStyle: { type: 'choice', default: 'territories', options: ['territories', 'classic'], label: '세션 맵 모양 (territories: 영토 지도, classic: 이전 열 지도).' },
   // P267: 합치기 merger(merger.mjs). 브랜치(워크트리)에서 일한 하위가 atrium done ok로 닫으면 판이 그 합치기를 부모 대신 merger 세션에게 맡긴다.
   //   on: 맡긴다, ask(기본): 워크스페이스마다 처음 한 번 사람에게 판 카드로 묻고 답을 기억한다(답이 올 때까지 지금처럼 부모에게), off: 지금처럼 부모에게
   mergerMode: { type: 'choice', default: 'ask', options: ['on', 'ask', 'off'], label: '병합 merger (on: 브랜치에서 일한 워커가 끝나면 보드가 병합을 merger 세션에 맡깁니다, ask: 프로젝트마다 처음 한 번 묻습니다, off: 지금처럼 맡긴 세션이 합칩니다).' },
   // merger의 종류·모델·노력. P275: 그 종류가 설치돼 있지 않으면 설치된 Claude Code(claude-sonnet-5-5, medium), 없으면 Codex(기본 모델, medium). 둘 다 없으면 띄우지 않는다(merger.mjs pickMergerSpawn)
   mergerKind: { type: 'string', default: 'claude', max: 40, pattern: /^[a-z][a-z0-9_-]{0,39}$/, hint: '에이전트 종류(예: claude)', label: 'merger 세션의 에이전트 종류입니다. 이 PC에 설치돼 있지 않으면 Claude Code를, 그것도 없으면 Codex를 씁니다.' },
-  mergerModel: { type: 'string', default: 'claude-sonnet-5-5', max: 80, pattern: /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/, hint: '모델 이름(예: claude-sonnet-5-5)', label: 'merger 세션의 모델입니다.' },
+  mergerModel: { type: 'string', default: 'claude-sonnet-5-5', max: 80, pattern: /^([A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79})?$/, hint: '모델 이름(예: claude-sonnet-5-5)', label: 'merger 세션의 모델입니다. 런처를 골랐으면 비운 값은 런처의 모델입니다.' },
   mergerEffort: { type: 'choice', default: 'medium', options: EFFORTS, label: 'merger 세션의 추론 수준입니다 (빈 값: 넘기지 않음).' },
   // P287: merger의 승인 방식. 빈 값·inherit는 그 합치기를 맡긴 부모의 방식(전과 같음). 목록은 세션 띄우기 창의 승인 방식(PERMISSION_MODES).
   //   고른 종류가 받지 않는 값이면 부모 따름으로 되돌린다(merger.mjs mergerPermissionOf)
@@ -71,10 +74,10 @@ export const SETTINGS = {
 //   창은 settings.get의 agents(agentsTable)로 이 표를 받아 에이전트마다 같은 꼴의 칸(켬/물어봄/끔·하네스 종류·모델·노력·승인 방식)을 그린다(app lib/agents.js).
 //   기본값과 고를 값은 위 SETTINGS에서 온다. 표에 없는 칸은 그리지 않는다. ready false는 자리만(창은 숨긴다, 기능은 다음 일).
 //   새 보조 에이전트: SETTINGS에 키 묶음 + 여기 한 줄 + 창 사전 묶음(name·desc·…Hint) + (있으면) 창의 그만의 칸(Agents.jsx AGENT_EXTRAS).
-export const AGENT_FIELDS = ['mode', 'kind', 'model', 'effort', 'permission'];
+export const AGENT_FIELDS = ['mode', 'launcher', 'kind', 'model', 'effort', 'permission']; // P338: launcher(봇이 쓰는 런처 ID)
 export const HELPER_AGENTS = [
-  { id: 'merge', dict: 'merger', keys: { mode: 'mergerMode', kind: 'mergerKind', model: 'mergerModel', effort: 'mergerEffort', permission: 'mergerPermission' }, ready: true },
-  { id: 'todoTidy', dict: 'todoTidy', keys: { mode: 'todoTidyMode', kind: 'todoTidyKind', model: 'todoTidyModel', effort: 'todoTidyEffort' }, ready: true }, // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄). 시간당 상한은 창의 그만의 칸
+  { id: 'merge', dict: 'merger', keys: { mode: 'mergerMode', launcher: 'mergerLauncher', kind: 'mergerKind', model: 'mergerModel', effort: 'mergerEffort', permission: 'mergerPermission' }, ready: true },
+  { id: 'todoTidy', dict: 'todoTidy', keys: { mode: 'todoTidyMode', launcher: 'todoTidyLauncher', kind: 'todoTidyKind', model: 'todoTidyModel', effort: 'todoTidyEffort' }, ready: true }, // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄). 시간당 상한은 창의 그만의 칸
 ];
 export function agentsTable() {
   return HELPER_AGENTS.map((a) => ({
@@ -84,6 +87,26 @@ export function agentsTable() {
       return { field: f, key: a.keys[f], default: d.default, ...(d.type === 'choice' ? { options: d.options } : {}) };
     }),
   }));
+}
+
+// P338: 봇 설정 풀기(판이 merger·할 일 정리를 띄울 때). 봇의 런처 ID가 있고 그 런처가 있으며 봇이 받는 하네스면 종류 = 런처의 하네스,
+//   모델·노력 = 봇 키 값(덮어쓰기)이 있으면 그것, 없으면 런처의 값. 런처가 없어졌거나 ID가 비면 옛 키 그대로(옮기기 걱정 없음). find(id) → 런처 | null
+export const BOT_LAUNCHER_KEYS = [
+  { launcher: 'mergerLauncher', kind: 'mergerKind', model: 'mergerModel', effort: 'mergerEffort', allowed: null },
+  { launcher: 'todoTidyLauncher', kind: 'todoTidyKind', model: 'todoTidyModel', effort: 'todoTidyEffort', allowed: ['claude', 'codex'] },
+];
+export function resolveBotSettings(set, find) {
+  const out = { ...(set || {}) };
+  for (const k of BOT_LAUNCHER_KEYS) {
+    const id = out[k.launcher];
+    if (!id || typeof find !== 'function') continue;
+    let l = null; try { l = find(id); } catch { l = null; }
+    if (!l || !l.harness || l.harness === 'shell' || l.harness === 'command' || (k.allowed && !k.allowed.includes(l.harness))) continue;
+    out[k.kind] = l.harness;
+    out[k.model] = out[k.model] || l.model || '';
+    out[k.effort] = out[k.effort] || l.effort || '';
+  }
+  return out;
 }
 
 export const DEFAULTS = Object.fromEntries(Object.entries(SETTINGS).map(([k, v]) => [k, v.default]));

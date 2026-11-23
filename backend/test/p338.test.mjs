@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Store } from '../src/store.mjs';
-import { readMergeConfig } from '../src/merger.mjs';
+import { readMergeConfig, pickMergerSpawn } from '../src/merger.mjs';
+import { resolveBotSettings, normalizePatch, agentsTable, DEFAULTS } from '../src/settings.mjs';
 import { dayStart, mergeToday, mergeState, tidyToday, patchMergeConfig, mergeConfigJson, writeMergeConfig, botsHandlers } from '../src/bots.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p338-'));
@@ -98,4 +99,32 @@ test('bots.status·merger.configs·merger.config.set: 판 자료로 요약하고
   set.todoTidyMode = 'off'; b.todoTidy.conf = () => ({ on: false, perHour: 30 });
   assert.equal(h['bots.status']().todoTidy.state, 'off');
   store.close && store.close();
+});
+
+test('봇 런처: 런처 ID가 있으면 하네스·모델·노력이 런처를 따르고 채운 모델·노력이 덮어쓴다', () => {
+  const ls = { l1: { id: 'l1', harness: 'codex', model: 'gpt-6-astra', effort: 'high' }, l2: { id: 'l2', harness: 'claude', model: '', effort: '' }, sh: { id: 'sh', harness: 'shell' }, pi: { id: 'pi', harness: 'pi', model: 'x', effort: 'low' } };
+  const find = (id) => ls[id] || null;
+  let r = resolveBotSettings({ ...DEFAULTS, mergerLauncher: 'l1', mergerModel: '', mergerEffort: '' }, find);
+  assert.deepEqual([r.mergerKind, r.mergerModel, r.mergerEffort], ['codex', 'gpt-6-astra', 'high']);
+  r = resolveBotSettings({ ...DEFAULTS, mergerLauncher: 'l1', mergerModel: 'gpt-x', mergerEffort: '' }, find);
+  assert.deepEqual([r.mergerModel, r.mergerEffort], ['gpt-x', 'high'], '채운 모델은 덮어쓰기');
+  r = resolveBotSettings({ ...DEFAULTS, mergerLauncher: 'gone' }, find);
+  assert.deepEqual([r.mergerKind, r.mergerModel, r.mergerEffort], ['claude', 'claude-sonnet-5-5', 'medium'], '없어진 런처면 옛 키');
+  r = resolveBotSettings({ ...DEFAULTS, mergerLauncher: 'sh' }, find);
+  assert.equal(r.mergerKind, 'claude', '셸 런처는 쓰지 않는다');
+  r = resolveBotSettings({ ...DEFAULTS, todoTidyLauncher: 'pi', todoTidyModel: '', todoTidyEffort: '' }, find);
+  assert.equal(r.todoTidyKind, 'claude', '할 일 정리는 claude·codex만');
+  r = resolveBotSettings({ ...DEFAULTS, todoTidyLauncher: 'l2', todoTidyModel: '', todoTidyEffort: '' }, find);
+  assert.deepEqual([r.todoTidyKind, r.todoTidyModel, r.todoTidyEffort], ['claude', '', '']);
+  assert.deepEqual(resolveBotSettings({ ...DEFAULTS }, find), { ...DEFAULTS }, '런처 ID가 없으면 그대로');
+  // 판의 merger 고르기는 풀린 값을 받는다
+  const p = pickMergerSpawn({ kinds: [{ kind: 'codex', installed: true }], set: resolveBotSettings({ ...DEFAULTS, mergerLauncher: 'l1', mergerModel: '', mergerEffort: '' }, find) });
+  assert.deepEqual([p.kind, p.model, p.effort], ['codex', 'gpt-6-astra', 'high']);
+});
+
+test('봇 런처 키와 빈 모델: 설정이 받고 봇 표에 launcher 칸이 있다', () => {
+  assert.deepEqual(normalizePatch({ mergerLauncher: 'le894f4b4', todoTidyLauncher: '', mergerModel: '', todoTidyModel: '' }), { mergerLauncher: 'le894f4b4', todoTidyLauncher: '', mergerModel: '', todoTidyModel: '' });
+  assert.throws(() => normalizePatch({ mergerLauncher: 'a b' }));
+  const t = agentsTable();
+  for (const a of t) assert.ok(a.fields.some((f) => f.field === 'launcher'), a.id);
 });

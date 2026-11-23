@@ -2,8 +2,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { navOf, pagesOf, pageOf, searchItems, rowState, parentOn, ITEMS } from '../src/renderer/lib/settings-nav.js';
-import { botsOf, allowedKinds, launcherPicks, harnessPicks, pickedLauncher, patchFromLauncher, patchFromHarness, modelChoices, effortChoices, permissionShown, statusOf, mergeRows, mergeFieldOf } from '../src/renderer/lib/bots.js';
+import { navOf, pagesOf, pageOf, searchItems, rowState, parentOn, ITEMS, NAV, PAGE_ICON } from '../src/renderer/lib/settings-nav.js';
+const ICONS_SRC = fs.readFileSync(new URL('../src/renderer/lib/icons.jsx', import.meta.url), 'utf8');
+import { botsOf, allowedKinds, launcherPicks, harnessPicks, effectiveOf, botLauncher, pickValue, patchFromLauncher, patchFromHarness, modelChoices, effortChoices, permissionShown, statusOf, mergeRows, mergeFieldOf } from '../src/renderer/lib/bots.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
 
@@ -12,11 +13,14 @@ const FULL = { sleepAfterMin: 30, archiveDays: 14, usageAlerts: true, usageProbe
 
 test('왼쪽 목록: 주제 묶음과 쪽, 옛 판이면 빠진다', () => {
   const nav = navOf(FULL, { launchers: [] }, true);
-  assert.deepEqual(nav.map((g) => g.group), ['general', 'session', 'alerts', 'bots', 'connect', 'dev']);
-  assert.deepEqual(pagesOf(nav), ['general', 'launchers', 'sleep', 'recall', 'alerts', 'bots', 'devices', 'terminal', 'dev']);
+  assert.deepEqual(nav.map((g) => g.group), ['basics', 'session', 'automation', 'connect', 'advanced']);
+  assert.deepEqual(pagesOf(nav), ['general', 'alerts', 'launchers', 'sleep', 'recall', 'bots', 'devices', 'terminal', 'dev']);
   const old = navOf({ sleepAfterMin: 30 }, null, false);
   assert.deepEqual(pagesOf(old), ['general', 'sleep', 'devices', 'terminal']);
-  assert.deepEqual(navOf(null, null, false).map((g) => g.group), ['general', 'connect']);
+  assert.deepEqual(navOf(null, null, false).map((g) => g.group), ['basics', 'connect']);
+  // 모든 쪽이 묶음 머리 아래에 있고(맨 쪽 없음) 쪽마다 있는 아이콘
+  for (const g of NAV) assert.ok(g.pages.length >= 1);
+  for (const p of NAV.flatMap((g) => g.pages)) assert.ok(new RegExp('\\n  ' + PAGE_ICON[p] + ": '").test(ICONS_SRC), p);
 });
 
 test('옛 탭 이름(merger, agents)으로 열면 봇 쪽', () => {
@@ -30,7 +34,8 @@ test('찾기 칸의 사전 열쇠는 두 사전에 다 있다', () => {
   for (const [name, d] of [['ko', ko], ['en', en]]) {
     const t = lookup(d);
     for (const it of ITEMS) for (const k of [it.name, it.hint, it.note].filter(Boolean)) assert.notEqual(t(k), k, name + ' ' + k);
-    for (const k of ['general', 'launchers', 'sleep', 'recall', 'alerts', 'bots', 'devices', 'terminal', 'dev']) assert.notEqual(t('setNav.page.' + k), 'setNav.page.' + k);
+    for (const k of ['general', 'launchers', 'sleep', 'recall', 'alerts', 'bots', 'devices', 'terminal', 'dev']) { assert.notEqual(t('setNav.page.' + k), 'setNav.page.' + k); assert.notEqual(t('setNav.desc.' + k), 'setNav.desc.' + k); }
+    for (const g of NAV) assert.notEqual(t('setNav.group.' + g.group), 'setNav.group.' + g.group);
   }
 });
 
@@ -70,7 +75,7 @@ const HARN = [
   { id: 'hermes', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args'], models: [], efforts: ['', 'low', 'medium', 'high'] },
   { id: 'shell', fields: [], models: [] }, { id: 'command', fields: ['command', 'env'], models: [] },
 ];
-const SET = { mergerMode: 'ask', mergerKind: 'claude', mergerModel: 'claude-sonnet-5-5', mergerEffort: 'medium', mergerPermission: '', todoTidyMode: 'on', todoTidyKind: 'claude', todoTidyModel: 'haiku', todoTidyEffort: 'low' };
+const SET = { mergerLauncher: '', todoTidyLauncher: '', mergerMode: 'ask', mergerKind: 'claude', mergerModel: 'claude-sonnet-5-5', mergerEffort: 'medium', mergerPermission: '', todoTidyMode: 'on', todoTidyKind: 'claude', todoTidyModel: 'haiku', todoTidyEffort: 'low' };
 const LDATA = { favorites: ['l2', 'l1'], harnesses: HARN, launchers: [
   { id: 'l1', name: 'Opus high', harness: 'claude', model: 'claude-opus-5-5', effort: 'high', permissionMode: 'acceptEdits' },
   { id: 'l2', name: 'Sonnet', harness: 'claude', model: 'claude-sonnet-5-5', effort: 'medium', permissionMode: 'manual' },
@@ -81,29 +86,40 @@ const LDATA = { favorites: ['l2', 'l1'], harnesses: HARN, launchers: [
 test('봇 목록과 받는 하네스', () => {
   const bots = botsOf(null, SET);
   assert.deepEqual(bots.map((b) => b.id), ['merge', 'todoTidy']);
+  assert.equal(bots[0].f.launcher.key, 'mergerLauncher');
   assert.equal(allowedKinds(bots[0]), null);
   assert.deepEqual(allowedKinds(bots[1]), ['claude', 'codex']);
 });
 
-test('런처 고르기: 에이전트 런처만, 봇이 받는 하네스만, 지금 값과 맞는 런처', () => {
-  const [merge, tidy] = botsOf(null, SET);
+test('런처 고르기: 에이전트 런처만, 봇이 받는 하네스만', () => {
   assert.deepEqual(launcherPicks(LDATA, null).map((l) => l.id), ['l2', 'l1', 'l3', 'l6']);
   assert.deepEqual(launcherPicks(LDATA, ['claude', 'codex']).map((l) => l.id), ['l2', 'l1', 'l3']);
-  assert.equal(pickedLauncher(launcherPicks(LDATA), merge).id, 'l2');
-  assert.equal(pickedLauncher(launcherPicks(LDATA), tidy), null);
   assert.deepEqual(harnessPicks(HARN, ['claude', 'codex']), ['claude', 'codex']);
   assert.ok(!harnessPicks(HARN, null).includes('shell'));
   assert.ok(harnessPicks(HARN, null, 'weird').includes('weird'));
 });
 
-test('런처를 고르면 그 하네스·모델·노력(받는 값만)·승인 방식을 봇 키에', () => {
+test('봇이 런처를 따른다: 런처 ID → 하네스·모델·노력, 채운 모델·노력은 덮어쓰기, 없어진 런처는 옛 값', () => {
+  const picks = launcherPicks(LDATA);
+  let [merge] = botsOf(null, { ...SET, mergerLauncher: 'l1', mergerModel: '', mergerEffort: '' });
+  assert.equal(botLauncher(merge, picks).id, 'l1');
+  assert.deepEqual(effectiveOf(merge, picks), { launcher: picks.find((l) => l.id === 'l1'), kind: 'claude', model: 'claude-opus-5-5', effort: 'high', over: { model: false, effort: false } });
+  assert.equal(pickValue(merge, picks), 'l:l1');
+  [merge] = botsOf(null, { ...SET, mergerLauncher: 'l1', mergerModel: '', mergerEffort: 'low' });
+  assert.deepEqual([effectiveOf(merge, picks).effort, effectiveOf(merge, picks).over.effort], ['low', true]);
+  [merge] = botsOf(null, { ...SET, mergerLauncher: 'gone' });
+  assert.equal(effectiveOf(merge, picks).launcher, null);
+  assert.equal(pickValue(merge, picks), 'h:claude');
+  const tidy = botsOf(null, { ...SET, todoTidyLauncher: 'l6' })[1];
+  assert.equal(effectiveOf(tidy, launcherPicks(LDATA, ['claude', 'codex'])).launcher, null, '할 일 정리는 dsh 런처를 쓰지 않는다');
+});
+
+test('런처를 고르면 ID와 하네스를 쓰고 덮어쓰기를 비운다, 하네스만 고르면 ID를 비운다', () => {
   const [merge, tidy] = botsOf(null, SET);
-  assert.deepEqual(patchFromLauncher(merge, LDATA.launchers[0], HARN), [['mergerKind', 'claude'], ['mergerModel', 'claude-opus-5-5'], ['mergerEffort', 'high'], ['mergerPermission', 'acceptEdits']]);
-  // Codex 런처: 빈 모델은 봇 기본, ultra는 봇 설정이 받지 않아 빈 값
-  assert.deepEqual(patchFromLauncher(tidy, LDATA.launchers[2], HARN), [['todoTidyKind', 'codex'], ['todoTidyModel', 'haiku'], ['todoTidyEffort', '']]);
-  // 하네스만: 모르는 모델이면 목록 첫 값, 받지 않는 노력이면 빈 값
-  assert.deepEqual(patchFromHarness(tidy, 'codex', HARN), [['todoTidyKind', 'codex'], ['todoTidyModel', 'gpt-6-astra']]);
-  assert.deepEqual(patchFromHarness(merge, 'dsh', HARN), [['mergerKind', 'dsh']]);
+  assert.deepEqual(patchFromLauncher(merge, LDATA.launchers[0]), [['mergerLauncher', 'l1'], ['mergerKind', 'claude'], ['mergerModel', ''], ['mergerEffort', '']]);
+  assert.deepEqual(patchFromLauncher(tidy, LDATA.launchers[2]), [['todoTidyLauncher', 'l3'], ['todoTidyKind', 'codex'], ['todoTidyModel', ''], ['todoTidyEffort', '']]);
+  assert.deepEqual(patchFromHarness(tidy, 'codex', HARN), [['todoTidyLauncher', ''], ['todoTidyKind', 'codex'], ['todoTidyModel', 'gpt-6-astra']]);
+  assert.deepEqual(patchFromHarness(merge, 'dsh', HARN), [['mergerLauncher', ''], ['mergerKind', 'dsh']]);
 });
 
 test('모델·노력 목록은 하네스 표(계약)가 주고, 받지 않는 칸은 숨긴다', () => {

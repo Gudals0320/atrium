@@ -59,7 +59,8 @@ async function setup() {
   mk('Haiku low', 'claude', 'haiku', 'low', 'manual');
   mk('Opus high', 'claude', 'claude-opus-5-5', 'high', 'manual');
   mk('Codex', 'codex', '', 'medium', 'auto');
-  for (const [key, value] of [['mergerMode', 'ask'], ['mergerKind', 'claude'], ['mergerModel', 'claude-sonnet-5-5'], ['mergerEffort', 'medium'], ['todoTidyMode', 'on'], ['todoTidyKind', 'claude'], ['todoTidyModel', 'haiku'], ['todoTidyEffort', 'low'], ['usageProbe', true], ['language', 'en']]) call('settings.set', { key, value });
+  const ids = Object.fromEntries((call('launcher.list').launchers || []).map((l) => [l.name, l.id]));
+  for (const [key, value] of [['mergerMode', 'ask'], ['mergerLauncher', ids['Sonnet medium']], ['mergerKind', 'claude'], ['mergerModel', ''], ['mergerEffort', ''], ['todoTidyMode', 'on'], ['todoTidyLauncher', ids['Haiku low']], ['todoTidyKind', 'claude'], ['todoTidyModel', ''], ['todoTidyEffort', ''], ['usageProbe', true], ['language', 'en']]) call('settings.set', { key, value });
   const wa = wsOf(DIRS.a);
   if (wa) { call('merger.config.set', { workspace: wa, patch: { target: 'dev', push: true } }); call('merger.answer', { workspace: wa, answer: 'on' }); }
   fs.mkdirSync(path.join(DIRS.b, '.atrium'), { recursive: true });
@@ -83,18 +84,35 @@ async function shotAfter(page) {
   for (const lang of ['en', 'ko']) {
     call('settings.set', { key: 'language', value: lang }); call('settings.set', { key: 'usageProbe', value: true }); await sleep(800);
     await openSettings(page, null);
-    const nav = await page.evaluate(() => ({ groups: [...document.querySelectorAll('.mt-set-navgroup')].map((g) => g.dataset.group), tabs: [...document.querySelectorAll('[data-role="settings-tabs"] [data-tab]')].map((e) => e.dataset.tab), search: !!document.querySelector('[data-field="settings-search"]') }));
-    check(`[${lang}] 왼쪽 목록: 묶음 6, 쪽 9, 찾기 칸`, nav.groups.length === 6 && nav.tabs.length === 9 && nav.search, nav);
+    const nav = await page.evaluate(() => ({ groups: [...document.querySelectorAll('.mt-set-navgroup')].map((g) => g.dataset.group), tabs: [...document.querySelectorAll('[data-role="settings-tabs"] [data-tab]')].map((e) => e.dataset.tab), search: !!document.querySelector('[data-field="settings-search"]'), heads: document.querySelectorAll('.mt-set-navhead').length, icons: document.querySelectorAll('.mt-set-tab > .mt-i').length }));
+    check(`[${lang}] 왼쪽 목록: 묶음 5(모두 머리 아래), 쪽 9, 찾기 칸`, nav.groups.length === 5 && nav.tabs.length === 9 && nav.search && nav.heads === 5 && nav.icons === 9, nav);
+    await shotTo(page, `sidebar-${lang}`, await page.$eval('.mt-set-nav', (e) => { const b = e.getBoundingClientRect(); return { x: b.x - 6, y: b.y - 6, width: b.width + 12, height: b.height + 12 }; }));
     for (const t of nav.tabs) { await openSettings(page, t); await shotModal(page, `page-${t}-${lang}`); }
     // 봇: 카드 둘, 런처 고르기(지금 값과 맞는 런처), 묶음 두 개
     await openSettings(page, 'bots');
-    const bots = await page.evaluate(() => [...document.querySelectorAll('[data-bot]')].map((c) => { const sel = c.querySelector('[data-field^="bot-launcher-"]'); return { id: c.dataset.bot, value: sel && sel.value, label: sel && sel.selectedOptions[0] && sel.selectedOptions[0].textContent, groups: sel ? sel.querySelectorAll('optgroup').length : 0, status: c.querySelector('[data-role="bot-status"]') && c.querySelector('[data-role="bot-status"]').dataset.state, model: !!c.querySelector('[data-role$="-model-setting"]'), effort: !!c.querySelector('[data-role$="-effort-setting"]') }; }));
-    check(`[${lang}] 봇 카드 둘, 지금 값에 맞는 런처가 골라져 있다`, bots.length === 2 && bots[0].label === 'Sonnet medium' && bots[1].label === 'Haiku low' && bots.every((b) => b.groups === 2 && b.model && b.effort && b.status), bots);
+    const bots = await page.evaluate(() => [...document.querySelectorAll('[data-bot]')].map((c) => { const sel = c.querySelector('[data-field^="bot-launcher-"]'); return { id: c.dataset.bot, value: sel && sel.value, label: sel && sel.selectedOptions[0] && sel.selectedOptions[0].textContent, groups: sel ? sel.querySelectorAll('optgroup').length : 0, status: c.querySelector('[data-role="bot-status"]') && c.querySelector('[data-role="bot-status"]').dataset.state, model: !!c.querySelector('[data-role$="-model-setting"]'), hint: c.querySelector('[data-role$="-launcher-setting"] .mt-set-hint-text').textContent }; }));
+    check(`[${lang}] 봇 카드 둘(간단한 꼴: 런처 한 줄), 고른 런처와 런처가 주는 값`, bots.length === 2 && bots[0].label === 'Sonnet medium' && bots[1].label === 'Haiku low' && bots.every((b) => b.groups === 2 && !b.model && b.status) && /claude-sonnet-5-5/.test(bots[0].hint), bots);
+    await shotModal(page, `bots-compact-${lang}`);
+    if (lang === 'en') {
+      // 런처를 고르면 판 설정에 런처 ID가 들고 덮어쓰기는 빈다. 고급에서 노력을 덮어쓰면 런처 줄이 알린다
+      const opus = (call('launcher.list').launchers || []).find((l) => l.name === 'Opus high');
+      await page.selectOption('[data-field="bot-launcher-merge"]', 'l:' + opus.id); await sleep(900);
+      let s = call('settings.get').settings;
+      check('런처를 고르면 mergerLauncher = 그 ID, 모델·노력 덮어쓰기는 빈 값', s.mergerLauncher === opus.id && s.mergerModel === '' && s.mergerEffort === '' && s.mergerKind === 'claude', { l: s.mergerLauncher, m: s.mergerModel, e: s.mergerEffort });
+      await page.click('[data-bot="merge"] [data-action="bot-advanced"]'); await sleep(300);
+      await page.selectOption('[data-field="setting-mergerEffort"]', 'low'); await sleep(900);
+      const hint = await page.$eval('[data-bot="merge"] [data-role$="-launcher-setting"] .mt-set-hint-text', (e) => e.textContent);
+      check('고급에서 덮어쓴 노력이 런처 줄 풀이에 보인다', /claude-opus-5-5/.test(hint) && /low/.test(hint) && /overridden/.test(hint), hint);
+      await page.click('[data-bot="merge"] [data-action="bot-advanced"]');
+      const son = (call('launcher.list').launchers || []).find((l) => l.name === 'Sonnet medium');
+      for (const [key, value] of [['mergerLauncher', son.id], ['mergerModel', ''], ['mergerEffort', '']]) call('settings.set', { key, value });
+      await sleep(600);
+    }
     for (const b of await page.$$('[data-action="bot-advanced"]')) await b.click();
     await sleep(300);
     await shotModal(page, `bots-advanced-${lang}`);
-    const adv = await page.evaluate(() => ({ perm: !!document.querySelector('[data-role="merger-permission-setting"]'), perHour: !!document.querySelector('[data-role="todoTidy-perHour-setting"]') }));
-    check(`[${lang}] 고급: 병합 봇 승인 방식, 할 일 정리 봇 시간당 상한`, adv.perm && adv.perHour, adv);
+    const adv = await page.evaluate(() => ({ perm: !!document.querySelector('[data-role="merger-permission-setting"]'), perHour: !!document.querySelector('[data-role="todoTidy-perHour-setting"]'), model: document.querySelectorAll('[data-role="bot-advanced"] [data-role$="-model-setting"]').length, auto: !!document.querySelector('[data-role="bot-advanced"] [data-role="auto-decision-setting"]') }));
+    check(`[${lang}] 고급: 모델·노력 덮어쓰기, 병합 봇 승인 방식, 할 일 정리 봇 시간당 상한·자동 카드`, adv.perm && adv.perHour && adv.model === 2 && adv.auto, adv);
     for (const b of await page.$$('[data-action="bot-advanced"]')) await b.click();
     await page.click('[data-action="bot-repos"]'); await sleep(800);
     await page.$eval('[data-role="merge-repos"]', (e) => e.scrollIntoView({ block: 'end' }));

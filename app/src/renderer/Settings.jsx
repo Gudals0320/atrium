@@ -22,7 +22,8 @@ import { TerminalTab } from './Terminal.jsx'; // P117: 터미널 백엔드와 �
 import { BotsTab } from './Bots.jsx'; // P338: 봇 탭(옛 P313 에이전트 탭)
 import { settingsTabOf } from './lib/agents.js'; // P313
 import { botsOf } from './lib/bots.js'; // P338
-import { navOf, pagesOf, pageOf, pageLabel, groupLabel, searchItems, rowState } from './lib/settings-nav.js'; // P338: 왼쪽 목록·찾기·딸린 칸
+import { navOf, pagesOf, pageOf, pageLabel, groupLabel, pageDesc, PAGE_ICON, searchItems, rowState } from './lib/settings-nav.js';
+import { Icon } from './lib/icons.jsx'; // P338: 왼쪽 목록·찾기·딸린 칸
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 // P338: id(찾기가 데려가는 자리), info(ⓘ를 누르면 아래에 펼치는 긴 글), child·dim(딸린 칸의 들여쓰기·흐려짐). as='div'는 단추 묶음 줄(label이면 첫 단추가 눌린다)
@@ -30,7 +31,7 @@ export function SetRow({ name, hint, children, role, id, info, child = false, di
   const t = useT();
   const [open, setOpen] = useState(false);
   const Tag = as;
-  const long = typeof hint === 'string' && hint.length > 44; // 한 줄에 다 보이지 않을 풀이는 ⓘ로 펼쳐 읽는다
+  const long = typeof hint === 'string' && hint.length > 84; // 두 줄에 다 보이지 않을 풀이는 ⓘ로 펼쳐 읽는다
   const more = info || long;
   return <>
     <Tag className={`mt-set-row${child ? ' child' : ''}${dim ? ' dim' : ''}`} data-role={role} data-set-id={id}>
@@ -207,11 +208,13 @@ function GeneralTab({ settings }) {
 
 // P338: 알림·사용량(옛 일반 탭에서 옮김): 사용량 알림(P211), 사용량 직접 묻기(P314)와 딸린 칸, 목표 레인 알림(P306)
 function AlertsTab({ settings }) {
+  const t = useT();
   return (
     <div className="mt-set-grid" data-role="alerts-settings">
+      <SetSub>{t('setNav.sub.usage')}</SetSub>
       {'usageAlerts' in settings && <UsageAlertSetting settings={settings} />}
       {'usageProbe' in settings && <UsageProbeSetting settings={settings} />}
-      {'planNotify' in settings && <PlanNotifySetting settings={settings} />}
+      {'planNotify' in settings && <><SetSub>{t('setNav.sub.goals')}</SetSub><PlanNotifySetting settings={settings} /></>}
     </div>
   );
 }
@@ -290,16 +293,18 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
     const off = setTimeout(() => { if (row) row.classList.remove('mt-set-flash'); }, 1800);
     return () => { clearTimeout(tm); clearTimeout(off); if (row) row.classList.remove('mt-set-flash'); };
   }, [hit, cur]);
-  const tabBtn = (p, label) => <button key={p} type="button" role="tab" aria-selected={cur === p} className={`mt-set-tab${cur === p ? ' on' : ''}`} data-tab={p} onClick={() => { setTab(p); setHit(null); }}>{label}</button>;
+  const tabBtn = (p) => <button key={p} type="button" role="tab" aria-selected={cur === p} className={`mt-set-tab${cur === p ? ' on' : ''}`} data-tab={p} onClick={() => { setTab(p); setHit(null); }}><Icon name={PAGE_ICON[p]} /><span>{t(pageLabel(p))}</span></button>;
   return (
     <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={box} className="mt-modal mt-settings v2" data-role="settings" data-tab={cur}>
         <h3>{t('settings.title')}</h3>
         <div className="mt-set-shell">
           <nav className="mt-set-nav">
+            <div className="mt-set-searchbox"><Icon name="search" />
             <input type="search" className="mt-set-text mt-set-search" data-field="settings-search" value={q} placeholder={t('setNav.search')} title={t('setNav.searchTitle')} aria-label={t('setNav.search')} spellCheck={false}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && results && results[0]) { e.preventDefault(); go(results[0]); } if (e.key === 'Escape' && q) { e.preventDefault(); e.stopPropagation(); setQ(''); } }} />
+            </div>
             {results ? (
               <div className="mt-set-results" data-role="settings-search-results">
                 {results.length ? results.map((r) => (
@@ -310,17 +315,16 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
               </div>
             ) : (
               <div className="mt-set-tabs" role="tablist" aria-orientation="vertical" data-role="settings-tabs">
-                {nav.map((g) => (g.pages.length === 1 && g.pages[0] !== 'launchers'
-                  ? <div key={g.group} className="mt-set-navgroup one" data-group={g.group}>{tabBtn(g.pages[0], t(groupLabel(g.group)))}</div>
-                  : <div key={g.group} className="mt-set-navgroup" data-group={g.group}>
-                      <div className="mt-set-navhead">{t(groupLabel(g.group))}</div>
-                      {g.pages.map((p) => tabBtn(p, t(pageLabel(p))))}
-                    </div>))}
+                {nav.map((g) => (
+                  <div key={g.group} className="mt-set-navgroup" data-group={g.group}>
+                    <div className="mt-set-navhead">{t(groupLabel(g.group))}</div>
+                    {g.pages.map((p) => tabBtn(p))}
+                  </div>))}
               </div>
             )}
           </nav>
           <div ref={body} className="mt-set-body" role="tabpanel" data-page={cur}>
-            <h4 className="mt-set-pagehead">{t(pageLabel(cur))}</h4>
+            <header className="mt-set-pagehead"><h4>{t(pageLabel(cur))}</h4><p>{t(pageDesc(cur))}</p></header>
             {!settings && <div className="dim">{t('settings.loading')}</div>}
             {cur === 'general' && <GeneralTab settings={settings} />}
             {cur === 'launchers' && <LaunchersTab startNew={newLauncher} />}
