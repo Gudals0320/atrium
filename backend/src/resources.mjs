@@ -241,6 +241,7 @@ export class ResourceMonitor {
         memMB: tree ? mb(tree.reduce((a, p) => a + p.ws, 0)) : null, claudeMB: claudeTree ? mb(claudeTree.reduce((a, p) => a + p.ws, 0)) : null, procs: tree ? tree.length : 0,
         cpuPct: cpuPct(ticks, dt, cores),
         kind: s.kind || null, // P341: 셸 패널(shell)인가
+        ...(s.bgOnly ? { bgOnly: true } : {}), // P341: 턴은 끝났고 뒤 일만 돈다(P240)
         ...(tree && tree.length ? treeTops(tree, prev && prev.times, prev && prev.at, dt, cores) : { topCpu: null, topMem: null }), // P341
         ...(bad ? { suspect: bad } : {}),
       });

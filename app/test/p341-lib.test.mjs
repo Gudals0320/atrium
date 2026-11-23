@@ -21,12 +21,14 @@ test('배지 글: CPU·메모리·증가, 증가가 있으면 메모리는 증�
 
 test('카드 보기: 끄기는 에이전트 본체가 아닐 때만, 일시정지는 도우미가 있을 때만, 멈췄으면 다시 돌리기', () => {
   const card = { guard: { top: { pid: 30, name: 'node.exe', agent: false } } };
-  assert.deepEqual(guardActions(card, { canPause: true }), { acts: ['kill', 'pause', 'sleep', 'mute'], recommend: null });
+  assert.deepEqual(guardActions(card, { canPause: true }), { acts: ['kill', 'pause', 'sleep', 'mute'], recommend: null, bgBlock: false });
   assert.deepEqual(guardActions(card, { canPause: false }).acts, ['kill', 'sleep', 'mute']);
   const agent = { guard: { top: { pid: 10, name: 'claude.exe', agent: true } } };
-  assert.deepEqual(guardActions(agent, { canPause: true }), { acts: ['pause', 'sleep', 'mute'], recommend: 'sleep' });
+  assert.deepEqual(guardActions(agent, { canPause: true }), { acts: ['pause', 'sleep', 'mute'], recommend: 'sleep', bgBlock: false });
   assert.deepEqual(guardActions({ guard: { ...card.guard, paused: { at: 1 } } }, { canPause: true }).acts, ['resume', 'sleep']);
   assert.deepEqual(guardActions(card, { canPause: true, sleepable: false }).acts, ['kill', 'pause', 'mute']);
+  // 뒤 일만 도는 세션: 재우기 없이 끄기 권함
+  assert.deepEqual(guardActions({ guard: { ...card.guard, bgOnly: true } }, { canPause: true }), { acts: ['kill', 'pause', 'mute'], recommend: 'kill', bgBlock: true });
 });
 
 test('지금 값: 같은 PID면 표본의 CPU·메모리로', () => {

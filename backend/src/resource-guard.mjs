@@ -6,11 +6,14 @@
 //   - mem: 나무 메모리가 기준(기본 3GB) 이상
 //   - grow: 기준 시간(기본 10분, 0이면 끔) 내내 측정마다 줄지 않고 그동안 GROW_MIN_MB 이상 늘었다
 //   종류(classify): 셸 패널은 늘 무거움(heavy, 표시만), 에이전트가 일하는 중(working·starting)이면 무거움, 쉼·기다림·잠듦·끝남이면 폭주 의심(suspect).
+//   턴은 끝났고 뒤 일(뒤 셸·뒤 하위 에이전트)만 도는 세션(P240 bgOnly, 판 상태는 working)도 쉬는 세션으로 본다: 에이전트가 뒤에 띄워 두고 잊은 프로세스가
+//   폭주하는 일이 이 경우다(실시험: 뒤 셸이 도는 동안 Claude Code는 working을 알린다).
 //   후보(어느 기준이든 80%를 넘음)가 있으면 다음 측정을 FAST_MS로 당긴다(보통 때는 그대로 30초).
 // 표시: 측정 줄(snap.sessions[i])에 guard { kind, reasons, since, top, paused?, card? }를 싣는다(창의 배지·메모리 알약 강조·카드 실시간 값).
 // 할 일 카드(kind guard): 폭주 의심이 되면 세션마다 한 장(한 번의 폭주 동안 다시 만들지 않는다. 사람이 무시해도 같은 폭주 동안은 다시 띄우지 않는다).
 //   카드의 guard 칸(JSON): { kind, reasons, top, state, at, paused? }. 보기: 그 프로세스 끄기(가장 무거운 것이 에이전트 본체·패널 뿌리면 숨기고 재우기를 권함),
 //   세션 일시정지(도우미가 있을 때만, 그동안 카드와 배지에 다시 돌리기), 재우기(대화 보존, sleep.mjs), 30분 묻지 않기. 폭주가 풀리면 카드는 판이 닫는다(closed, via resolved).
+//   카드를 만든 뒤 에이전트가 잠깐 일해도(실시험: 앞서 띄운 뒤 셸의 완료 알림이 새 턴을 연다) 폭주가 이어지는 동안은 카드를 그대로 둔다.
 // 동작 전 확인(P168): 누르는 순간 프로세스 표를 다시 읽어 그 세션의 지금 나무를 만들고, 그 PID·생성 시각이 나무 안일 때만 도우미(proc-control.mjs)에 넘긴다.
 //   도우미는 핸들을 쥔 채 생성 시각을 한 번 더 맞춘다. 패널 뿌리·에이전트 본체는 끄지 않는다(재우기). 판이 띄운 세션 나무 밖은 넘기지 않는다.
 // 기록: 이벤트 resource_alert { kind, type, cpuPct, memMB, growMB, top, state }(폭주가 시작되거나 무거움 → 의심이 될 때), resource_alert_end { kind, ms, by },
@@ -85,8 +88,9 @@ export function nearAlert(hist, cfg) {
   return (last.core != null && last.core >= cfg.cpuPct * NEAR) || (last.memMB != null && last.memMB >= cfg.memMB * NEAR);
 }
 // 폭주 의심(suspect) | 무거움(heavy). shell: 셸 패널인가, state: 판의 세션 상태. 순수 함수
-export function classify(shell, state) {
+export function classify(shell, state, bgOnly = false) {
   if (shell || state === 'shell_running' || state === 'shell_idle') return 'heavy';
+  if (bgOnly) return 'suspect';
   return BUSY.has(state) ? 'heavy' : 'suspect';
 }
 // 카드에 보일 가장 무거운 프로세스: CPU가 걸렸으면 CPU 맨 위, 아니면 메모리 맨 위. agent: 패널 뿌리이거나 에이전트 본체(끄기 대신 재우기). 순수 함수
@@ -159,6 +163,7 @@ export class ResourceGuard {
     this.alerts = new Map(); // 세션 → { kind, reasons, since, top, carded, cardId, state }
     this.mute = new Map(); // 세션 → 이때까지 카드를 만들지 않는다
     this.paused = new Map(); // 세션 → { at, procs: [{ pid, created, name }] } (판 기록 meta guardPaused에도)
+    this.resumedAt = new Map(); // 세션 → 다시 돌린 때(그 전에 시작한 측정 구간은 버린다)
     this.lowered = 0; // 이번 실행에서 낮춘 수
     try { const p = b.store.getMeta('guardPaused') || {}; for (const [sid, v] of Object.entries(p)) if (v && Array.isArray(v.procs)) this.paused.set(sid, v); } catch {}
     this.lowerWas = (() => { try { return !!b.store.getMeta('guardLowered'); } catch { return false; } })(); // 앞 실행이 낮춰 둔 채인가(끔이면 되돌린다)
@@ -185,25 +190,28 @@ export class ResourceGuard {
       const sid = row.sessionId; live.add(sid);
       const s = this.b.sessions.get(sid);
       const h = this.hist.get(sid) || [];
-      h.push(sampleOf(row, snap)); if (h.length > HIST_MAX) h.splice(0, h.length - HIST_MAX);
       this.hist.set(sid, h);
       const p = this.paused.get(sid);
-      if (p) { const a = this.alerts.get(sid); row.guard = { ...(a ? this.view(a) : { kind: 'suspect', reasons: [], since: p.at, top: null }), paused: { at: p.at } }; continue; }
+      if (p) { const a = this.alerts.get(sid); row.guard = { ...(a ? this.view(a) : { kind: 'suspect', reasons: [], since: p.at, top: null }), paused: { at: p.at } }; continue; } // 멈춘 동안의 표본은 넣지 않는다
+      // 다시 돌린 직후: 측정 구간이 다시 돌리기 전에 시작했으면(멈춘 시간이 섞인 CPU) 넣지도 판정하지도 않고 경보를 그대로 둔다
+      const back = this.resumedAt.get(sid);
+      if (back && now - ((snap.cpu && snap.cpu.spanMs) || 0) < back) { const a = this.alerts.get(sid); if (a) row.guard = this.view(a); continue; }
+      if (back) this.resumedAt.delete(sid);
+      h.push(sampleOf(row, snap)); if (h.length > HIST_MAX) h.splice(0, h.length - HIST_MAX);
       if (!cfg.detect || row.suspect) { this.endAlert(sid, row.suspect ? 'suspect_tree' : 'off'); continue; }
       const reasons = judge(h, cfg, now);
       if (!reasons.length) { this.endAlert(sid, 'resolved'); continue; }
-      const kind = classify(row.kind === SHELL || (s && s.kind === SHELL), row.state);
+      const kind = classify(row.kind === SHELL || (s && s.kind === SHELL), row.state, !!row.bgOnly);
       let a = this.alerts.get(sid);
       const fresh = !a;
       const was = a ? a.kind : null;
       if (!a) { a = { since: now, carded: false, cardId: null }; this.alerts.set(sid, a); }
-      Object.assign(a, { kind, reasons, top: topOf(row, reasons), state: row.state, memMB: row.memMB, cpuPct: row.cpuPct });
+      Object.assign(a, { kind, reasons, top: topOf(row, reasons), state: row.state, bgOnly: !!row.bgOnly, memMB: row.memMB, cpuPct: row.cpuPct });
       if (fresh || (was === 'heavy' && kind === 'suspect')) this.logAlert(sid, a, row);
-      // 카드: 의심이면 한 장(같은 폭주 동안 한 번). 일하는 중으로 바뀌면(무거움) 닫는다
+      // 카드: 의심이면 한 장(같은 폭주 동안 한 번). 그 뒤 잠깐 일하는 중(무거움)이 되어도 폭주가 이어지는 동안은 닫지 않는다(풀리면 endAlert가 닫는다)
       const open = this.openCard(sid);
       if (open && !a.cardId) a.cardId = open.id; // 판이 다시 떴을 때 열린 카드를 이어 받는다
       if (kind === 'suspect' && mayCard(a, { detect: cfg.detect, mutedUntil: this.mute.get(sid) || 0, now, open: !!open })) this.makeCard(s, a);
-      else if (kind !== 'suspect' && open) this.closeCard(open, 'working');
       row.guard = this.view(a);
     }
     for (const sid of [...this.hist.keys()]) if (!live.has(sid)) { this.hist.delete(sid); this.endAlert(sid, 'gone'); }
@@ -211,10 +219,10 @@ export class ResourceGuard {
     this.closeOrphans();
     this.sweepPriority(cfg, mon && mon.trees ? mon.trees : new Map(), snap);
   }
-  view(a) { return { kind: a.kind, reasons: a.reasons, since: a.since, top: a.top, ...(a.cardId ? { card: a.cardId } : {}) }; }
+  view(a) { return { kind: a.kind, reasons: a.reasons, since: a.since, top: a.top, ...(a.bgOnly ? { bgOnly: true } : {}), ...(a.cardId ? { card: a.cardId } : {}) }; }
   logAlert(sid, a, row) {
     const g = (t) => a.reasons.find((r) => r.type === t);
-    const data = { kind: a.kind, type: a.reasons[0].type, types: a.reasons.map((r) => r.type), cpuPct: g('cpu') ? g('cpu').pct : null, memMB: row.memMB ?? null, growMB: g('grow') ? Math.round(g('grow').toMB - g('grow').fromMB) : null, top: a.top ? { name: a.top.name, pid: a.top.pid, cpuPct: a.top.cpuPct, memMB: a.top.memMB, agent: a.top.agent } : null, state: row.state };
+    const data = { kind: a.kind, type: a.reasons[0].type, types: a.reasons.map((r) => r.type), cpuPct: g('cpu') ? g('cpu').pct : null, memMB: row.memMB ?? null, growMB: g('grow') ? Math.round(g('grow').toMB - g('grow').fromMB) : null, top: a.top ? { name: a.top.name, pid: a.top.pid, cpuPct: a.top.cpuPct, memMB: a.top.memMB, agent: a.top.agent } : null, state: row.state, ...(row.bgOnly ? { bgOnly: true } : {}) };
     this.b.store.addEvent(sid, 'resource_alert', data);
     this.b.log(`resource alert ${row.name} ${a.kind} ${data.types.join('+')} cpu=${data.cpuPct ?? '-'}% mem=${data.memMB ?? '-'}MB top=${a.top ? `${a.top.name}(${a.top.pid})` : '-'} state=${row.state}`);
   }
@@ -230,7 +238,7 @@ export class ResourceGuard {
     const d = this.dec();
     if (!d || !s) return null;
     let lang = 'en'; try { lang = (this.settings() || {}).language || 'en'; } catch {}
-    const g = { kind: a.kind, reasons: a.reasons, top: a.top, state: a.state, at: this.now() };
+    const g = { kind: a.kind, reasons: a.reasons, top: a.top, state: a.state, ...(a.bgOnly ? { bgOnly: true } : {}), at: this.now() };
     const name = s.name;
     const card = d.store().addDecision({ sessionId: s.sessionId, name, question: cardText(name, g, lang), options: [], createdAt: this.now(), kind: 'guard', guard: g });
     a.carded = true; a.cardId = card.id;
@@ -354,7 +362,7 @@ export class ResourceGuard {
     const res = await this.proc.call('resume', p.procs).catch(() => null);
     const n = p.procs.filter((x) => res && res.get(x.pid) === 'ok').length;
     this.paused.delete(s.sessionId); this.savePaused();
-    this.hist.delete(s.sessionId); // 멈춘 동안의 표본은 버리고 다시 잰다(같은 폭주면 카드는 그대로 다시 의심으로)
+    this.resumedAt.set(s.sessionId, this.now()); // 멈추기 전 표본에 이어 잰다(같은 폭주면 카드와 경보가 그대로 간다)
     const card = this.openCard(s.sessionId);
     if (card) { const g = { ...(card.guard || {}) }; delete g.paused; this.setCardGuard(card, g); }
     this.record(s.sessionId, 'resume', { ok: !!res, n, of: p.procs.length, why: why === 'resume' ? null : why });
@@ -365,7 +373,12 @@ export class ResourceGuard {
     if (!this.b.sleeper) throw apiErr('no_sleep', 'Sleep is not available.');
     if (this.paused.has(s.sessionId)) await this.resumeSession(s, 'before_sleep');
     try { await this.b.sleeper.sleep(s, { by: 'hand', mode: 'hand', scope: 'session' }); }
-    catch (e) { this.record(s.sessionId, 'sleep', { ok: false, why: e.code || 'failed' }); throw e; }
+    catch (e) {
+      this.record(s.sessionId, 'sleep', { ok: false, why: e.code || 'failed' });
+      // 뒤 일만 도는 세션(판 상태 working·뒤 셸)은 절전 규칙이 막는다: 끄기를 권한다
+      if (/^sleep_(not_ready|background|working)$/.test(String(e.code || ''))) throw apiErr(e.code, 'This session still has background work running, so it cannot sleep now. End that process first (or pause the session).');
+      throw e;
+    }
     this.record(s.sessionId, 'sleep', { ok: true });
     const c = card && card.state === 'open' ? card : this.openCard(s.sessionId);
     if (c) this.closeCard(c, 'sleep', 'answered');

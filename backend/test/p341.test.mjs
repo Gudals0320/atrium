@@ -71,6 +71,8 @@ test('종류: 쉼·기다림·잠듦·끝남은 폭주 의심, 일하는 중과 
   for (const st of ['working', 'starting']) assert.equal(classify(false, st), 'heavy', st);
   assert.equal(classify(true, 'ready'), 'heavy');
   assert.equal(classify(false, 'shell_running'), 'heavy');
+  assert.equal(classify(false, 'working', true), 'suspect'); // 턴은 끝났고 뒤 일만 돈다(P240)
+  assert.equal(classify(true, 'working', true), 'heavy');
 });
 
 test('가장 무거운 프로세스: CPU가 걸리면 CPU 맨 위, 뿌리·에이전트면 agent', () => {
@@ -180,10 +182,14 @@ test('흐름: 쉬는 세션 CPU 폭주 → 카드 한 장, 계속돼도 한 장,
   assert.equal(g.alerts.has('s1'), false);
   for (let i = 0; i < 8; i++) { t += 30_000; await g.step(snapOf(t, [row('s1', 'ready', 98, 300)])); }
   assert.equal(store.openDecisions().length, 1);
-  // 일하기 시작하면(무거움) 카드는 닫힌다, 배지는 남는다
+  // 잠깐 일해도(무거움) 폭주가 이어지면 카드는 남는다, 배지는 무거움
   t += 10_000; const s2 = snapOf(t, [row('s1', 'working', 98, 300)]); await g.step(s2);
-  assert.equal(store.openDecisions().length, 0);
+  assert.equal(store.openDecisions().length, 1);
   assert.equal(s2.sessions[0].guard.kind, 'heavy');
+  t += 10_000; await g.step(snapOf(t, [row('s1', 'ready', 98, 300)]));
+  assert.equal(store.openDecisions().length, 1); // 다시 의심이어도 같은 한 장
+  t += 10_000; await g.step(snapOf(t, [row('s1', 'working', 5, 300)]));
+  assert.equal(store.openDecisions().length, 0); // 풀리면 닫힌다
   const kinds = store.eventsAfter(0, ['resource_alert', 'resource_alert_end']).map((e) => e.kind);
   assert.deepEqual(kinds.filter((k) => k === 'resource_alert').length >= 3, true);
   assert.ok(logs.some((m) => /resource alert s1 suspect cpu/.test(m)));
@@ -252,12 +258,20 @@ test('일시정지·다시 돌리기: 나무 모두를 멈추고 기록, 카드�
   t += 10_000; const s1 = snapOf(t, [row('s1', 'ready', 0, 300)]); await g.step(s1);
   assert.ok(s1.sessions[0].guard.paused);
   assert.equal(store.openDecisions().length, 1);
+  // 다시 돌리면 같은 카드·경보가 이어진다(멈춘 시간이 섞인 첫 측정은 버린다)
+  await g.act({ id: card.id, action: 'resume' });
+  t += 10_000; const s1b = snapOf(t, [row('s1', 'ready', 40, 300)]); s1b.cpu.spanMs = 30_000; await g.step(s1b);
+  assert.equal(s1b.sessions[0].guard.kind, 'suspect');
+  t += 30_000; await g.step(snapOf(t, [row('s1', 'ready', 98, 300)]));
+  assert.equal(store.openDecisions().length, 1); assert.equal(store.openDecisions()[0].id, card.id);
+  await g.act({ id: card.id, action: 'pause' });
   // 판이 다시 떠도 멈춘 기록을 이어 받는다
   const g2 = new ResourceGuard(b, { monitor, proc });
   assert.equal(g2.paused.has('s1'), true);
   // 재우기: 먼저 다시 돌리고 잠재운다, 카드는 닫힌다
   await g2.act({ id: card.id, action: 'sleep' });
   assert.deepEqual(calls[1], ['resume', [10, 30]]);
+  assert.deepEqual(calls[3], ['resume', [10, 30]]);
   assert.deepEqual(slept, ['w1']);
   assert.equal(store.openDecisions().length, 0);
   assert.equal(g2.paused.has('s1'), false);

@@ -3262,6 +3262,7 @@ export default {
     pausedLine: 'Paused at {time}. Nothing in this session runs until you resume it.',
     cardQ: 'Uses a lot of CPU or memory while idle',
     isAgent: 'the agent itself',
+    bgOnly: 'The turn has ended; only background work the agent left running is going. Sleep is not possible while it runs (sleeping would end it too), so end that process instead.',
     sleepHint: 'The heaviest process is the agent itself. Put the session to sleep instead of ending it (the conversation is kept).',
     resume: 'Resume',
     resumed: 'Resumed the session',

@@ -420,7 +420,7 @@ export class Backend {
     // D1: 자원 감시
     this.resources = new ResourceMonitor({
       intervalMs: cfg.resourcesIntervalMs,
-      sessions: () => [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.term.present, state: deriveState(s.rt).state, kind: s.kind || null })), // P341: kind(셸 패널은 무거움으로만)
+      sessions: () => [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.term.present, state: deriveState(s.rt).state, kind: s.kind || null, bgOnly: (() => { try { return !!this.deliveryView(s.sessionId).bgOnly; } catch { return false; } })() })), // P341: kind(셸 패널은 무거움으로만), bgOnly(턴은 끝났고 뒤 일만 돈다 = 쉬는 세션으로 본다)
       processInfo: (paneId) => this.adapter.processInfo(paneId),
       controllers: () => this.relay.stats(),
       serverPid: () => this.adapter.serverPid(),

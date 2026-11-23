@@ -24,16 +24,19 @@ export function badgeParts(g) {
 }
 // 카드의 보기. card: 폭주 카드, o: { canPause, paused, sleepable, top(지금 값이 있으면) } → ['kill' | 'pause' | 'resume' | 'sleep' | 'mute']
 // 가장 무거운 것이 에이전트 본체·패널 뿌리면 끄기를 빼고 재우기를 권한다(recommend)
+// 턴은 끝났고 뒤 일만 도는 세션(bgOnly)은 판의 절전 규칙이 막는다(잠재우면 뒤 일이 함께 끝난다): 재우기를 빼고 끄기를 권한다(bgBlock)
 export function guardActions(card, o = {}) {
   const g = (card && card.guard) || {};
   const top = o.top || g.top || null;
   const paused = !!(o.paused ?? g.paused);
+  const bgOnly = !!(o.bgOnly ?? g.bgOnly);
+  const sleepable = o.sleepable !== false && !bgOnly;
   const acts = [];
   if (top && !top.agent && !paused) acts.push('kill');
   if (paused) acts.push('resume'); else if (o.canPause) acts.push('pause');
-  if (o.sleepable !== false) acts.push('sleep');
+  if (sleepable) acts.push('sleep');
   if (!paused) acts.push('mute');
-  return { acts, recommend: top && top.agent && o.sleepable !== false ? 'sleep' : null };
+  return { acts, recommend: top && top.agent && sleepable ? 'sleep' : bgOnly && top && !top.agent && !paused ? 'kill' : null, bgBlock: bgOnly && o.sleepable !== false };
 }
 // 카드 머리 글 조각(사전 열쇠 guard.why.*)
 export function whyParts(g) {

@@ -3183,3 +3183,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-guard-agent { margin-left: 6px; padding: 0 6px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); font-family: var(--font-ui); font-size: .9em; }
 .mt-guard-hint { color: var(--warn); font-size: .92em; }
 .mt-guard-acts { flex-wrap: wrap; }
+
+.mt-set-grid > .mt-guard-foldrow { grid-column: 1 / -1; padding: 6px 0 2px; }
+.mt-guard-line { margin-top: 2px; }
+.mt-guard-line .mt-guard-badge.list { margin-left: 0; }

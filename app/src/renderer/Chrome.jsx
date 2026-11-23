@@ -282,7 +282,8 @@ function ResourcePill({ maxControllers }) {
               <div className="mt-res-repo"><b>{g.name}</b> <span className="mono">{fmtMB(g.memMB)}</span>{g.asleep.length > 0 && <span className="mt-res-asleep" data-role="res-repo-asleep"><Icon name="moon" />{t('sleep.memRepoAsleep', { n: g.asleep.length, mb: fmtMB(g.savedMB) })}</span>}</div>
               {g.rows.map((x) => (
                 <button key={x.sessionId} className={`mt-chip${x.guard ? ` mt-res-guard k-${x.guard.kind}${x.guard.paused ? ' paused' : ''}` : ''}`} data-session={x.sessionId} data-name={x.name} data-guard={x.guard ? x.guard.kind : undefined} onClick={() => { setOpen(false); go(x.sessionId); }}>
-                  <span className="mt-chip-line"><b>@{x.name}</b> <span className="mono">{fmtMB(x.memMB)}</span>{x.cpuPct != null && <span className="mono dim" data-role="res-row-cpu"> · CPU {fmtPct(x.cpuPct)}</span>} <span className="dim">{STATE_LABEL[x.state] || x.state}</span>{x.guard ? <GuardBadge sessionId={x.sessionId} where="list" /> : null}</span>
+                  <span className="mt-chip-line"><b>@{x.name}</b> <span className="mono">{fmtMB(x.memMB)}</span>{x.cpuPct != null && <span className="mono dim" data-role="res-row-cpu"> · CPU {fmtPct(x.cpuPct)}</span>} <span className="dim">{STATE_LABEL[x.state] || x.state}</span></span>
+                  {x.guard ? <span className="mt-chip-line mt-guard-line"><GuardBadge sessionId={x.sessionId} where="list" /></span> : null}
                 </button>
               ))}
               {g.asleep.map((s) => (

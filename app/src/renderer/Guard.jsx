@@ -44,7 +44,8 @@ export function GuardBody({ d, t }) {
   const paused = !!(g.paused || (row && row.guard && row.guard.paused));
   const top = liveTop(d, row);
   const sleepable = !!s && (s.kind || 'claude') !== 'shell' && s.state !== 'sleeping';
-  const { acts, recommend } = guardActions(d, { canPause, paused, sleepable, top });
+  const bgOnly = row && row.guard ? !!row.guard.bgOnly : !!g.bgOnly; // 지금 값 먼저
+  const { acts, recommend } = guardActions(d, { canPause, paused, sleepable, top, bgOnly });
   const name = s ? s.name : d.name;
   const run = async (action) => {
     if (busy) return;
@@ -60,9 +61,10 @@ export function GuardBody({ d, t }) {
   return (
     <div className="mt-guard-body" data-role="guard-body" data-paused={paused ? '1' : undefined}>
       <div className="mt-guard-why" data-role="guard-why">{paused ? t('guard.pausedLine', { time: fmtClock(g.paused ? g.paused.at : row.guard.paused.at) }) : whyParts(live).map((p) => t(p.key, p.vars)).join(' · ')}</div>
+      {bgOnly && !paused ? <div className="mt-guard-hint dim" data-role="guard-bgonly">{t('guard.bgOnly')}</div> : null}
       {top ? (
         <div className="mt-guard-top mono" data-role="guard-top" data-pid={top.pid}>
-          <b>{top.name}</b> · PID {top.pid}{top.cpuPct != null ? <> · CPU {Math.round(top.cpuPct * cores)}%</> : null} · {fmtMem(top.memMB)}
+          <b>{top.name}</b> · PID {top.pid}{top.cpuPct != null && !paused ? <> · CPU {Math.round(top.cpuPct * cores)}%</> : null} · {fmtMem(top.memMB)}
           {top.agent ? <span className="mt-guard-agent" data-role="guard-agent">{t('guard.isAgent')}</span> : null}
         </div>
       ) : null}
@@ -103,8 +105,8 @@ export function ResourcesTab({ settings, schema }) {
     <div className="mt-set-grid" data-role="resources-settings">
       <SetRow id="guardLowerPriority" name={t('guard.set.lowerName')} hint={t('guard.set.lowerHint')} info={t('guard.set.lowerNote')} role="guard-lower"><Toggle checked={settings.guardLowerPriority !== false} onChange={(v) => save('guardLowerPriority', v)} field="setting-guardLowerPriority" /></SetRow>
       <SetRow id="guardDetect" name={t('guard.set.detectName')} hint={t('guard.set.detectHint')} info={t('guard.set.detectNote')} role="guard-detect"><Toggle checked={!off} onChange={(v) => save('guardDetect', v)} field="setting-guardDetect" /></SetRow>
-      {status && !status.canPause ? <div className="mt-set-note dim" data-role="guard-no-pause">{t('guard.set.noPause')}</div> : null}
-      <button type="button" className="mt-bot-fold" data-action="guard-advanced" aria-expanded={adv} onClick={() => setAdv(!adv)}>{adv ? '▾' : '▸'} {t('guard.set.advanced')}</button>
+      {status && !status.canPause ? <div className="mt-guard-foldrow mt-set-note dim" data-role="guard-no-pause">{t('guard.set.noPause')}</div> : null}
+      <div className="mt-guard-foldrow"><button type="button" className="mt-bot-fold" data-action="guard-advanced" aria-expanded={adv} onClick={() => setAdv(!adv)}>{adv ? '▾' : '▸'} {t('guard.set.advanced')}</button></div>
       {adv && <>
         <GuardNum k="guardCpuPct" settings={settings} schema={schema} label="guard.set.cpuPct" hint="guard.set.cpuPctHint" dim={off} />
         <GuardNum k="guardCpuMin" settings={settings} schema={schema} label="guard.set.cpuMin" hint="guard.set.cpuMinHint" dim={off} />
