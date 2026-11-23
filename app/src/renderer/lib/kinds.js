@@ -26,6 +26,8 @@ export const KINDS = {
   hermes: { id: 'hermes', label: 'Hermes', mark: 'H', shape: 'rounded', color: 'var(--kind-hermes)', ink: 'var(--kind-hermes-ink)', logo: LOGO('hermes') },
   // P309: OMH Native(omh: Hermes + OMH 플러그인을 감싼 OMH 자기 TUI). 종류는 hermes 계열이고 카드에 보일 이름만 OMH(flavor). 로고·색은 Hermes와 같다(OMH 앱 아이콘)
   omh: { id: 'omh', label: 'OMH', mark: 'O', shape: 'rounded', color: 'var(--kind-hermes)', ink: 'var(--kind-hermes-ink)', logo: LOGO('hermes') },
+  // P329: omo(OmO, 엔진 senpi). 로고는 쓰지 않는다(oh-my-openagent 저장소의 라이선스가 MIT가 아니다: GitHub 라이선스 "Other"). 글자 기호 Om
+  omo: { id: 'omo', label: 'OmO', mark: 'Om', shape: 'hexagon', color: 'var(--kind-omo)', ink: 'var(--kind-omo-ink)', logo: null },
   grok: { id: 'grok', label: 'Grok', mark: 'G', shape: 'circle', color: 'var(--kind-grok)', ink: 'var(--kind-grok-ink)', logo: LOGO('grok') },
   shell: { id: 'shell', get label() { return t('kinds.shell'); }, mark: '>_', shape: 'square', color: 'var(--kind-shell)', ink: 'var(--kind-shell-ink)', logo: null },
   other: { id: 'other', get label() { return t('ask.agent'); }, mark: '?', shape: 'rounded', color: 'var(--kind-other)', ink: 'var(--kind-other-ink)', logo: null },

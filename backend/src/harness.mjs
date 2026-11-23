@@ -57,6 +57,29 @@ export function hermesReasoningOf(effort, launcherArgs = []) {
 // 그 노력 수준을 TUI에 넣을 글(입력 칸에 치고 Enter)
 export const hermesReasoningInput = (e) => (e ? `/reasoning ${e}` : null);
 
+// P329: omo(OmO, oh-my-openagent의 senpi(pi 계열) 엔진 실행 파일) 생각 수준. omo --thinking 값(off, minimal, low, medium, high, xhigh, max).
+//   판의 노력 값(low·medium·high·xhigh·max)은 이름이 같고, none은 off로 바꾼다. 받지 않는 값은 null(빼고 판 로그에 한 줄은 부르는 쪽이 쓴다)
+export const OMO_EFFORTS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const OMO_EFFORT_ALIASES = { none: 'off', min: 'minimal', 'x-high': 'xhigh', 'extra-high': 'xhigh', extra_high: 'xhigh', x_high: 'xhigh' };
+export function omoEffortOf(e) {
+  const v = String(e || '').trim().toLowerCase();
+  if (!v) return null;
+  const m = OMO_EFFORT_ALIASES[v] || v;
+  return OMO_EFFORTS.includes(m) ? m : null;
+}
+// 인자에 든 --thinking 값(--thinking X, --thinking=X). 없으면 null
+export function thinkingIn(args = []) {
+  const a = (args || []).map(String);
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] === '--thinking') return a[i + 1] != null ? a[i + 1] : '';
+    if (a[i].startsWith('--thinking=')) return a[i].slice('--thinking='.length);
+  }
+  return null;
+}
+// P329: pi 계열(세션 파일 꼴·마지막 답·모델 기록이 같은 종류). 세션 폴더만 다르다(pi ~/.pi/agent/sessions, omo ~/.omo/agent/sessions)
+export const PI_FAMILY = new Set(['pi', 'omo']);
+export const piLike = (kind) => PI_FAMILY.has(String(kind || ''));
+
 const hexOf = (id) => String(id || '').toLowerCase().replace(/[^0-9a-f]/g, '');
 // 하네스 어댑터. build(ctx) → { args(명령 낱말 뒤), env, files: [{ file, text }], harnessSessionId, resumed }
 // ctx: { sessionId(판 세션 ID), resume, harnessSessionId(알면), model, launcherArgs, instructions: { file, text }, filesDir }
@@ -104,6 +127,24 @@ export const ADAPTERS = {
       const sid = ctx.sessionId;
       const model = ctx.model || null;
       const args = ['--session-id', sid, ...(model ? ['--model', model] : []), ...(ctx.instructions ? ['--append-system-prompt', ctx.instructions.file] : []), ...(ctx.launcherArgs || [])];
+      return { args, env: {}, files: [], harnessSessionId: sid, resumed: !!ctx.resume };
+    },
+    isBoardLine: (argv) => argv.includes('--session-id'),
+  },
+  // P329: omo(OmO 5.1.x, 엔진 senpi = pi 계열). 명령줄은 pi와 같다: --session-id <id>(이 폴더에 그 ID가 있으면 이어 가고 없으면 만든다),
+  //   --model <제공자/ID>(Codex 구독은 chatgpt-subscription/<모델>), --thinking <수준>, --append-system-prompt <글|파일>.
+  //   세션 파일은 ~/.omo/agent/sessions/<폴더>/<시각>_<id>.jsonl(pi와 같은 꼴), 상태는 omo가 스스로 OSC 7501(앱 이름 omo)로 알린다.
+  //   노력 수준(ctx.effort)은 --thinking으로 넘긴다(호출자 추가 인자에 --thinking이 있으면 그 값이 이긴다). 이어 갈 때도 다시 준다(세션 파일의 지금 값, resumeModel)
+  omo: {
+    command: 'omo',
+    sessionIdFrom: 'board',
+    mustRePass: ['instructions'], // pi와 같다: --append-system-prompt는 그 실행에만 든다
+    reserved: { flags: ['--session', '--session-id', '-c', '--continue', '-r', '--resume', '--fork', '--rebind', '--spawned-by', '--no-session', '--session-dir', '-p', '--print', '--mode', '--provider', '--export', '--list-models', 'setup', 'doctor', 'update', 'daemon', 'thread', 'remote', 'login', 'logout', 'whoami', 'sync', 'account', 'install', 'remove', 'uninstall', 'list', 'config'] },
+    modelArgs: (m) => ['--model', m],
+    build(ctx) {
+      const sid = ctx.sessionId;
+      const thinking = thinkingIn(ctx.launcherArgs) == null ? omoEffortOf(ctx.effort) : null;
+      const args = ['--session-id', sid, ...(ctx.model ? ['--model', ctx.model] : []), ...(thinking ? ['--thinking', thinking] : []), ...(ctx.instructions ? ['--append-system-prompt', ctx.instructions.file] : []), ...(ctx.launcherArgs || [])];
       return { args, env: {}, files: [], harnessSessionId: sid, resumed: !!ctx.resume };
     },
     isBoardLine: (argv) => argv.includes('--session-id'),
