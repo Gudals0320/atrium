@@ -99,7 +99,7 @@ test('요약의 요청 줄: 요약·잠·터미널 기다림 얼굴과 화면 �
   assert.ok(screen.indexOf('data-role="screen-prompt"') > 0 && screen.indexOf('screen-prompt') < screen.indexOf('s.lastAnswer ?'));
 });
 
-test('틀 단계: 상태 표지는 응답 필요·작업 완료·오류·작업 중·잠듦마다 다른 모양, 쉼·끝남은 표지 없음, 글 없음', () => {
+test('틀 단계: 상태 표지는 응답 필요·작업 완료·오류·작업 중·잠듦마다 다른 모양, 쉼·끝남은 표지 없음, 이름 한 줄(P324)', () => {
   const node = read('SessionNode.jsx');
   const frame = node.slice(node.indexOf('const FRAME_MARK'), node.indexOf('// 아주 멀리서(노드가 화면에서 160px'));
   const map = { waiting: 'ask', trust_wait: 'ask', error: 'error', working: 'work', shell_running: 'work', sleeping: 'sleep' };
@@ -108,7 +108,8 @@ test('틀 단계: 상태 표지는 응답 필요·작업 완료·오류·작업 
   assert.equal(marks[tierOf({ state: 'ready', unseen: true })], 'done');
   assert.equal(marks[tierOf({ state: 'ready' })], undefined);
   assert.equal(marks[tierOf({ state: 'exited' })], undefined);
-  assert.ok(!/mt-icon-name|\{s\.name\}<\/span>/.test(frame), '틀에는 이름 글이 없다');
+  // P324: 틀은 글이 읽히지 않는 배율에서 노드를 가리므로 로고와 이름 한 줄(노드 높이 1/6, 판 단위)을 남긴다(p324-lib)
+  assert.match(frame, /data-role="frame-name">@\{s\.name\}<\/span>/, '틀에는 큰 이름 한 줄');
   const css = read('styles.css');
   for (const m of ['ask', 'done', 'error', 'work', 'sleep']) assert.match(css, new RegExp(`\\.mt-frame-mark\\[data-mark="${m}"\\]`));
 });

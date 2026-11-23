@@ -35,8 +35,15 @@ export function faceFor(nodeWidth, zoom, prev = null) {
 export const TIER_TERM_PX = 240;
 export const TIER_BRIEF_PX = 120;
 export const TIER_KEEP = 0.88;
-export function tierFor(px, prev = null) {
+// P324: 노드 글(머리줄 13px, 요약 12~15px)은 판 단위 고정 크기라 배율과 함께 작아진다. 머리줄 글이 화면에서 TEXT_READ_PX 아래가 되는 배율부터는
+//   글을 그리지 않고 틀(로고) 얼굴로 가린다. 경계 여유는 다른 단계와 같다(0.615 → 0.54). zoom을 주지 않으면 이 조건은 보지 않는다(예전 호출)
+export const TEXT_BASE_PX = 13;
+export const TEXT_READ_PX = 8;
+export const TIER_TEXT_ZOOM = TEXT_READ_PX / TEXT_BASE_PX;
+export const textReadable = (zoom, prev = null) => !(zoom >= 0) || zoom >= TIER_TEXT_ZOOM || (!!prev && prev !== 'frame' && zoom >= TIER_TEXT_ZOOM * TIER_KEEP);
+export function tierFor(px, prev = null, zoom = undefined) {
   if (!(px >= 0)) px = 0;
+  if (zoom !== undefined && !textReadable(zoom, prev)) return 'frame';
   if (px >= TIER_TERM_PX || (prev === 'term' && px >= TIER_TERM_PX * TIER_KEEP)) return 'term';
   if (px >= TIER_BRIEF_PX || ((prev === 'term' || prev === 'brief') && px >= TIER_BRIEF_PX * TIER_KEEP)) return 'brief';
   return 'frame';
@@ -100,12 +107,13 @@ export const zoomStep = (z) => { const v = Math.max(Number.isFinite(z) ? z : 1, 
 // prev: 지금 붙어 있는 노드 id 모음. 그 노드에는 얼굴 이력을 적용한다(SessionNode와 같은 기준).
 // focus(초점 노드 id), selected(고른 노드 id 모음): 보이고 가까이 얼굴이면 거리와 상관없이 상한 안에 먼저 넣는다(이슈 #1-16). 초점이 먼저다
 // P121 wsLimit: { key } 를 주면 termAllowed를 따른다(key가 고른 워크스페이스, null이면 고른 것 없음). 주지 않으면 워크스페이스로 거르지 않는다
-export function pickAttached(nodes, viewport, screen, { max = DEFAULT_MAX_CONTROLLERS, margin = 80, prev = null, focus = null, selected = null, wsLimit = null, mates = null } = {}) {
+// P324 textZoom: true면 머리줄 글이 읽히지 않는 배율에서는 터미널 단계가 아니다(tierFor zoom, 판의 터미널 붙이기). 주지 않으면 예전처럼 노드 화면 너비만 본다
+export function pickAttached(nodes, viewport, screen, { max = DEFAULT_MAX_CONTROLLERS, margin = 80, prev = null, focus = null, selected = null, wsLimit = null, mates = null, textZoom = false } = {}) {
   const { x: vx, y: vy, zoom } = viewport;
   const cx = screen.width / 2, cy = screen.height / 2;
   const seen = [];
   for (const n of nodes) {
-    if (tierFor(n.w * zoom, prev && prev.has(n.id) ? 'term' : null) !== 'term') continue; // P124: 터미널 단계(예전 가까이 얼굴 360px)
+    if (tierFor(n.w * zoom, prev && prev.has(n.id) ? 'term' : null, textZoom ? zoom : undefined) !== 'term') continue; // P124: 터미널 단계(예전 가까이 얼굴 360px)
     if (wsLimit && !termAllowed({ id: n.id, ws: n.ws, viewWs: wsLimit.key ?? null, focus, selected, mates, near: veryClose(n, viewport, screen, !!(prev && prev.has(n.id))) })) continue;
     const left = n.x * zoom + vx, top = n.y * zoom + vy, right = left + n.w * zoom, bottom = top + n.h * zoom;
     if (right < -margin || bottom < -margin || left > screen.width + margin || top > screen.height + margin) continue;

@@ -101,16 +101,17 @@ test('글자 계단: 계단 위 배율에서는 지금과 같고(멈춘 화면),
   assert.ok(changes <= Math.ceil(Math.log(1.6 / 0.05) / Math.log(1.1)) + 1, '계단이 바뀌는 수는 1.1배마다 한 번');
 });
 
-test('글자 계단: 터미널 노드 뿌리 --inv, 영역·워크트리 상자·그룹 틀 이름표가 계단 값으로 쓰인다(터미널 안 글자는 --inv를 쓰지 않는다)', () => {
+// P324: 글자는 판 단위 고정 크기가 됐다. 이름표는 useZoomStyle 없이 고정 style, 노드 뿌리는 --inv를 쓰지 않는다(판이 멈춘 뒤 띠 값 하나를 쓴다, p324-lib)
+test('글자 고정(P324, 예전 P127 글자 계단): 영역·워크트리 상자·그룹 틀 이름표는 고정 크기, 노드 뿌리에 --inv를 쓰지 않는다(터미널 안 글자는 --inv를 쓰지 않는다)', () => {
   const zv = read('zoom-var.js');
   assert.match(zv, /export function useZoomStyle\(styleOf, stepped = false\)/);
   assert.match(zv, /const z = stepped \? zoomStep\(st\.transform\[2\]\) : st\.transform\[2\];/);
   assert.match(zv, /\}, \[flow, stepped\]\);/);
   const rg = read('Regions.jsx');
-  for (const f of ['regionHead', 'wtHead', 'groupHead']) assert.match(rg, new RegExp(`useZoomStyle\\(${f}, true\\)`), f);
-  assert.ok(!/useZoomStyle\((regionHead|wtHead|groupHead)\)/.test(rg), '부드러운 것이 남지 않았다');
+  assert.ok(!/useZoomStyle|useInvRef/.test(rg), '이름표는 배율을 따르지 않는다');
+  for (const s of ['REGION_HEAD_STYLE', 'WT_HEAD_STYLE', 'GROUP_HEAD_STYLE']) assert.match(rg, new RegExp(`style=\\{${s}\\}`), s);
   const sn = read('SessionNode.jsx');
-  assert.match(sn, /const invRef = useInvRef\(0\.02, id, true\);/, '모든 얼굴(터미널 포함) 노드 뿌리 --inv는 계단');
+  assert.ok(!/const invRef = useInvRef\(0\.02, id, true\);/.test(sn), '노드 뿌리 --inv는 판이 띠 값으로');
   assert.ok(!/face !== 'close';/.test(sn));
   // 터미널 칸 안은 --inv를 고정해 둔다(P112): 배율 계단이 터미널 글자에 닿지 않는다
   assert.match(noComments(read('styles.css')), /\.mt-term-wrap[^{]*\{[^}]*--inv: 1/);

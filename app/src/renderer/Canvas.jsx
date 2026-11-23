@@ -45,7 +45,7 @@ import { wsAt } from './lib/items.js';
 import { DividerNode, GhostNode, DockGrip, DockEdge, DockLinks } from './Docks.jsx';
 import { LinkEdge, RepoEdge } from './Links.jsx';
 import { withBoundary } from './ErrorBoundary.jsx';
-import { pickAttached, termAllowed, veryClose, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js';
+import { pickAttached, termAllowed, veryClose, textReadable, DEFAULT_MAX_CONTROLLERS } from './lib/faces.js'; // P324: textReadable(고정 글자가 읽히는 배율)
 import { perfLog } from './perf.js';
 import { reuseNode, sameList, sameFields, sessionNode } from './lib/node-reuse.js'; // P146: 바뀐 노드만 다시 그리기
 import { noteRebuild } from './perf-trace.js'; // P146: 성능 기록
@@ -62,7 +62,8 @@ import { wsOfArea, areaAnchorList, areaResolverOf, isBoxKey, nestedRegions, regi
 import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 import { oneFinger, releaseKind, pinchViewport, panViewport, mid, dist as gap2, tapTarget, movableId, tapAction, TAP_CONTROL, LONG_PRESS_MS } from './lib/touch-board.js'; // P76
-import { useBoardMotion } from './zoom-var.js'; // P127: 판을 움직이는 동안 작업 중 둘레를 멈춘다
+import { useBoardMotion, onSettled, settledView } from './zoom-var.js'; // P127: 판을 움직이는 동안 작업 중 둘레를 멈춘다. P324: 멈춘 화면 값
+import { invBand } from './lib/view-settle.js'; // P324: 판 테두리 굵기 띠
 import { openFull, fullId, onFull } from './full-view.js'; // P76
 import { termBudgetNow, boardPlan, step } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게. P86: 보드 단계(levelPlan)와 단계 기록
 import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
@@ -609,10 +610,10 @@ export function Canvas() {
     // P121: 고른 워크스페이스(viewWs)의 노드, 초점·고른 노드, 아주 가까이 확대한 노드만 터미널을 받는다(lib/faces.js termAllowed)
     const screen = { width: el.clientWidth, height: el.clientHeight };
     const focus = st.focusId, selected = new Set(st.selected), wsLimit = { key: st.viewWs || null }, mates = matesNow(st); // P124: 초점·고른 노드와 같은 덩어리, 부모·자식. P167: 선으로 바로 이어진 세션
-    const want = pickAttached(list, vp, screen, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus, selected, wsLimit, mates });
+    const want = pickAttached(list, vp, screen, { max: MAX_CONTROLLERS, prev: new Set(st.attached), focus, selected, wsLimit, mates, textZoom: true }); // P324: 글이 읽히지 않는 배율이면 틀 얼굴이라 붙이지 않는다
     // P24: 가까이 얼굴로 보이는 노드 모두(잠든 노드, 제어기 상한 밖 포함)는 그 리포를 보고 있는 것이다(저절로 잠재우지 않는다)
     const all = [...st.nodes].filter(([id]) => st.sessions.has(id)).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h }));
-    setCloseIds(pickAttached(all, vp, { width: el.clientWidth, height: el.clientHeight }, { max: Infinity }).sort());
+    setCloseIds(pickAttached(all, vp, { width: el.clientWidth, height: el.clientHeight }, { max: Infinity }).sort()); // P324: 저절로 잠재우기의 "보고 있음"은 예전 기준(노드 화면 너비, textZoom 없음)
     const now = Date.now();
     // P124: 놓기 기다림(HOLD_MS)은 붙일 대상에서 처음 빠진 때부터 센다. 예전에는 마지막으로 대상이던 계산 시각부터 세어, 다시 세는 주기(1.6초)에 따라
     //   실제 기다림이 0~1.5초로 들쭉날쭉했다(휠로 단계 경계를 오갈 때 터미널을 숨겨 두는 것이 운에 달렸다). 대상인 동안은 null, 빠지면 그때 시각
@@ -646,6 +647,23 @@ export function Canvas() {
   const docksNow = useStore((st) => st.docks); // P124: 덩어리가 바뀌면 짝도 바뀐다
   useEffect(() => { schedule(50); }, [storeNodes, sessions, focusId, selectedIds, viewWs, docksNow, links, schedule]); // P167: 연결이 바뀌면 짝도 바뀐다
   useEffect(() => { const t = setInterval(() => recompute(), HOLD_MS + 100); window.addEventListener('resize', () => schedule()); return () => clearInterval(t); }, [recompute, schedule]);
+  // P324: 판이 멈추면(zoom-var.js 멈춘 화면 값) 한 번에: 판 테두리·둘레·말풍선의 --inv 띠(lib/view-settle.js invBand, 노드마다 쓰지 않고 판 하나에),
+  //   고정 글자가 읽히지 않을 만큼 먼지(data-text=far: 영역 이름표의 글을 숨긴다), 터미널 붙이기를 노드 얼굴이 바뀌는 때에 맞춘다
+  useEffect(() => {
+    let far = false, inv = NaN;
+    const put = (v) => {
+      const el = wrapRef.current;
+      if (!el || !v) return;
+      const z = v.transform[2];
+      const b = invBand(z);
+      if (b !== inv) { inv = b; el.style.setProperty('--inv', b); el.dataset.band = String(Math.round(Math.log2(b))); } // data-band: 큰 이름표가 읽히는지(styles.css)
+      const f = !textReadable(z, far ? 'frame' : 'term');
+      if (f !== far || el.dataset.text === undefined) { far = f; el.dataset.text = f ? 'far' : 'near'; }
+    };
+    put(settledView());
+    const off = onSettled((v) => { put(v); schedule(0); });
+    return off;
+  }, [schedule]);
 
   // P112: 캔버스 크기는 ResizeObserver로 담아 둔다. 화면을 옮기는 프레임마다 clientWidth를 읽으면 그 프레임에 바뀐 스타일·레이아웃을 그 자리에서 다시 센다(강제 동기 레이아웃).
   //   코드로 화면을 옮기면(터치 손가락, setViewport) d3가 프레임마다 이동 끝(onMoveEnd)을 낸다

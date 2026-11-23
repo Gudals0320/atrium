@@ -16,7 +16,7 @@ import { KindIcon } from './SessionNode.jsx';
 import { openConvo, archiveItem } from './Sidebar.jsx';
 import { bindingText } from './lib/sidebar.js';
 import { convoFace } from '../../../backend/src/convo-canvas.mjs';
-import { useInvRef, useZoomStyle, awayFromView } from './zoom-var.js'; // P112: 배율을 렌더 없이. P146: awayFromView
+import { awayFromView } from './zoom-var.js'; // P146: awayFromView
 import { countRender } from './perf-trace.js'; // P146: 성능 기록
 
 const AWAY_PAD = 480; // P146: 화면 둘레 이만큼(화면 px) 밖의 대화 노드는 얼굴 없이 틀만 그린다
@@ -87,9 +87,10 @@ function CardFace({ c, now, narrow }) {
 }
 
 // 멀리: 제목과 마지막 활동, 도는 중 표시. 글자는 화면 기준 크기(노드 높이·너비에 맞춰 줄인다)
-// P146: 배율을 구독하지 않는다. 글자 크기는 CSS(--inv 계단 값, 노드 감싸개가 쓴다)와 노드 크기 상한으로 정한다(farFont). 예전에는 대화 노드마다
+// P146: 배율을 구독하지 않는다. 글자 크기는 노드 크기 상한으로 정한다(farFont). 예전에는 대화 노드마다
 // 배율을 구독해 확대·축소의 매 프레임 대화 노드 전부(화면 밖 포함)가 다시 그려졌다(P144 원인 7)
-export const farFont = (n, cap) => `min(calc(${n}px * var(--inv, 1)), ${+cap.toFixed(2)}px)`;
+// P324: 판 단위 고정 크기(예전 --inv 계단 값으로 화면 기준 크기)
+export const farFont = (n, cap) => `${+Math.min(n, cap).toFixed(2)}px`;
 function FarFace({ c, now }) {
   const t = useT();
   countRender('convoFar'); // P146: 성능 기록
@@ -132,14 +133,13 @@ function ConvoNodeInner({ id, data, selected }) {
   const [f0, narrowMark] = fn.split('|');
   const f = away ? (prevFace.current || 'far') : f0;
   const narrow = narrowMark === 'n';
-  const invRef = useInvRef(0.02, id, true); // P146: 계단 값(1.1배마다)으로. 매 프레임 쓰지 않는다
   countRender('convo'); // P146: 성능 기록
   if (!c) return null;
   prevFace.current = f;
   const face = convoFace(f);
   const b = c.binding || {};
   return (
-    <div className={`mt-cv face-${face} t-${convoTier(b)}${b.open ? ' running' : ''}${selected ? ' selected' : ''}${away ? ' away' : ''}`} ref={invRef} data-convo={c.convId} data-face={face} data-away={away ? '1' : undefined} data-ws={c.workspaceKey} data-block={c.block || ''}>
+    <div className={`mt-cv face-${face} t-${convoTier(b)}${b.open ? ' running' : ''}${selected ? ' selected' : ''}${away ? ' away' : ''}`} data-convo={c.convId} data-face={face} data-away={away ? '1' : undefined} data-ws={c.workspaceKey} data-block={c.block || ''}>
       {/* 띄움 선의 끝(잇기는 하지 않는다) */}
       {[['t', Position.Top], ['r', Position.Right], ['b', Position.Bottom], ['l', Position.Left]].map(([hid, pos]) => <Handle key={hid} type="source" position={pos} id={hid} className="mt-cv-handle" isConnectable={false} />)}
       {!away && face === 'card' && <CardFace c={c} now={now} narrow={narrow} />}
@@ -151,13 +151,12 @@ function ConvoNodeInner({ id, data, selected }) {
 export const ConvoNode = memo(ConvoNodeInner);
 
 // 워크트리 블록 배경(같은 리포의 워크트리 대화를 묶어 보인다). 누르거나 끌지 않는다
-const wtboxHead = (zoom) => ({ fontSize: Math.max(12, Math.min(28, 12 / Math.max(zoom, 0.02))) });
+// P324: 판 단위 고정 12px(읽히지 않을 만큼 멀면 styles.css가 숨긴다)
 function WorktreeBoxInner({ data }) {
   const t = useT();
-  const headRef = useZoomStyle(wtboxHead); // P112: 글자 크기는 렌더 없이
   return (
     <div className="mt-wtbox" data-worktree={data.block} data-ws={data.ws}>
-      <div className="mt-wtbox-head" ref={headRef}>⎇ {data.block} <span className="mt-cv-dim">· {t('convo.worktreeConvos', { n: data.n })}</span></div>
+      <div className="mt-wtbox-head" style={{ fontSize: 12 }}>⎇ {data.block} <span className="mt-cv-dim">· {t('convo.worktreeConvos', { n: data.n })}</span></div>
     </div>
   );
 }
