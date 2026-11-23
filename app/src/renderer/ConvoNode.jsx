@@ -152,11 +152,12 @@ export const ConvoNode = memo(ConvoNodeInner);
 
 // 워크트리 블록 배경(같은 리포의 워크트리 대화를 묶어 보인다). 누르거나 끌지 않는다
 // P324: 판 단위 고정 12px(읽히지 않을 만큼 멀면 styles.css가 숨긴다)
+const WTBOX_HEAD_STYLE = { fontSize: 'calc(12px * var(--lbl, 1))' }; // P339: 판의 되키움 배수(--lbl)로 축소할수록 커지는 이름표
 function WorktreeBoxInner({ data }) {
   const t = useT();
   return (
     <div className="mt-wtbox" data-worktree={data.block} data-ws={data.ws}>
-      <div className="mt-wtbox-head" style={{ fontSize: 12 }}>⎇ {data.block} <span className="mt-cv-dim">· {t('convo.worktreeConvos', { n: data.n })}</span></div>
+      <div className="mt-wtbox-head" style={WTBOX_HEAD_STYLE}>⎇ {data.block} <span className="mt-cv-dim">· {t('convo.worktreeConvos', { n: data.n })}</span></div>
     </div>
   );
 }

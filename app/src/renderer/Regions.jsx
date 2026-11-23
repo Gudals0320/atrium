@@ -53,7 +53,9 @@ export const BORDER_TOP = REGION_HEAD + 8; // 영역 위에서 테두리까지(�
 // 이름표는 작을 때 테두리 한가운데에, 커지면 아래 끝이 테두리 조금 아래에 오게(안의 노드를 덜 덮게)
 // P324: 이름표 글자는 판 단위 고정 크기(예전 P112·P127은 화면 기준 크기라 배율 계단마다 다시 셌다). 화면에서 읽히지 않을 만큼 멀면 판(.mt-canvas[data-text=far])이
 //   글을 숨기고 점만 남긴다(styles.css 끝)
-const headAt = (fs) => { const head = fs * 2.1; return { fontSize: fs, height: head, top: BORDER_TOP - head + Math.min(head / 2, fs * 0.9) }; };
+// P339: 글자 크기는 판의 되키움 배수(--lbl, Canvas.jsx·lib/view-settle.js labelScale)를 곱한다. 높이·자리는 em이라 함께 커지고,
+//   아래 끝은 테두리 아래 0.9em(16px까지)에 머물러 커져도 안의 노드를 덮지 않고 위(영역 사이 틈)로 자란다. 배수 1이면 예전 값과 같다
+const headAt = (fs) => ({ fontSize: `calc(${fs}px * var(--lbl, 1))`, height: '2.1em', top: `calc(${BORDER_TOP}px + min(0.9em, 16px) - 2.1em)` });
 const REGION_HEAD_STYLE = headAt(13);
 // P324: 멀리서(판 .mt-canvas[data-text=far]) 작은 이름표 대신 보이는 큰 이름 한 줄. 판 단위 고정 크기(영역 사이 틈에 들어가는 크기)이고 아래 끝이 테두리에 닿는다.
 //   그것도 화면에서 8px 아래인 배율 띠(판 data-band, Canvas.jsx)에서는 이름을 숨기고 점만 남긴다(data-fit: 이름이 읽히는 가장 큰 띠, styles.css 끝)
@@ -172,7 +174,8 @@ export const WorktreeAreaNode = memo(WorktreeAreaNodeInner);
 //   이름표를 끌면 구성 영역이 함께 움직인다(group.shift). 이름표는 판 단위 고정 크기다(P324).
 //   가볍게: filter·그림자·끝없는 움직임 없음
 // 화면에서 12px. 멀리서는 커지되 영역 사이 틈의 반(테두리 위 빈 곳)을 넘지 않게. 작을 때는 테두리 위 띠 안, 커지면 대부분 테두리 위로
-const groupHeadAt = (fs) => { const headH = fs * 2; return { fontSize: fs, height: headH, top: Math.min(Math.max(4, GROUP_HEAD / 2 - fs), -headH * 0.85 + GROUP_HEAD) }; };
+// P339: 글자는 판의 되키움 배수(--lbl)를 곱하고, 높이·자리는 em이라 함께 커진다(배수 1이면 예전 값과 같다)
+const groupHeadAt = (fs) => ({ fontSize: `calc(${fs}px * var(--lbl, 1))`, height: '2em', top: `min(max(4px, ${GROUP_HEAD / 2}px - 1em), ${GROUP_HEAD}px - 1.7em)` });
 const GROUP_HEAD_STYLE = groupHeadAt(12); // P324: 판 단위 고정
 function GroupFrameNodeInner({ data }) {
   const t = useT();

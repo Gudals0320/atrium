@@ -3148,3 +3148,9 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-bot-ans { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .mt-bot-ans.on { color: var(--ok); } .mt-bot-ans.off { color: var(--dim); } .mt-bot-ans.ask { color: var(--text-2); }
 @media (max-width: 760px) { .mt-set-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; } .mt-set-nav { border-right: 0; border-bottom: 1px solid var(--panel-line); max-height: 160px; } .mt-settings.v2 .mt-set-body { padding-left: 4px; } }
+/* ---------- P339: 축소할수록 다시 키우는 이름표 셋. 폴더 묶음(.mt-wsgroup-head)·워크스페이스와 워크트리 영역(.mt-region-head, 인라인 style, Regions.jsx)·
+   워크트리 대화 상자(.mt-wtbox-head, ConvoNode.jsx) 이름표와 세션 노드 머리줄만 판 하나의 되키움 배수(--lbl, Canvas.jsx가 멈춘 뒤 띠 값으로 한 번 쓴다,
+   lib/view-settle.js labelScale)를 곱한다. 터미널 글자, 요약·본문 글은 판 단위 고정(P324) 그대로다.
+   터미널 얼굴의 머리줄은 커진 만큼 터미널 칸 위에 겹쳐(아래 여백을 음수로) 터미널 칸 크기(칸·줄 수)가 배율 따라 바뀌지 않게 한다 ---------- */
+.mt-node-head { font-size: calc(13px * var(--lbl, 1)); }
+.mt-node.face-close .mt-node-head { position: relative; z-index: 3; margin-bottom: calc(27.95px - 2.15em); }
