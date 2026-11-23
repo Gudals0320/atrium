@@ -3104,4 +3104,14 @@ export default {
     failed: 'Could not discard the worktree: {error}',
     failedNamed: 'Could not discard the worktree of @{name}: {error}',
   },
+  // P331: session map to-do badge and the answer-in-place mini window (MapTodo.jsx)
+  mapTodo: {
+    badge: 'To do',
+    badgeTitle: 'To do {n}',
+    head: 'To do',
+    popTitle: 'To do for @{name}',
+    prev: 'Previous to do',
+    next: 'Next to do',
+    closeTitle: 'Close (Esc)',
+  },
 };
