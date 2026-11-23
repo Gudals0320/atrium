@@ -56,6 +56,7 @@ import { hermesHomeOf, hermesSessionOf, hermesLastAnswer, hermesUsageOf, hermesB
 import { registerInnerReader } from './inner-work.mjs'; // P298: Hermes 바쁨 읽개
 import { registerProgressReader, registerKindProgress, ProgressWatcher } from './inner-progress.mjs'; // P300: 안 진행 읽개와 감시
 import { claudeSubagentProgress } from './claude-subagents.mjs'; // P322: Claude Code 서브에이전트 칩
+import { codexSubagentProgress } from './codex-subagents.mjs'; // P326: Codex 서브에이전트 칩
 import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel, waitDshAnswer } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { WorktreeSessions } from './worktree-session.mjs'; // P321: 빠른 워크트리 세션, 병합 맡기기
@@ -253,6 +254,14 @@ export class Backend {
     this.subCache = new Map();
     registerProgressReader('claude-subagents', ({ session: s, now }) => s ? claudeSubagentProgress({ transcript: s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.rt.claudeSessionId || s.sessionId), turnStartedAt: (s.rt.turn && s.rt.turn.startedAt) || s.createdAt || 0, now, stops: new Set(s.rt.subStops || []), cache: this.subCache }) : null);
     registerKindProgress('claude', 'claude-subagents');
+    // P326: Codex 세션도 같은 칩(하위 스레드 rollout의 session_meta parent_thread_id = 판 세션의 Codex 스레드 ID). 스레드 ID 찾기는 15초 동안 기억한다
+    registerProgressReader('codex-subagents', ({ session: s, now }) => {
+      if (!s) return null;
+      const t = Date.now();
+      if (!s._subTid || t - s._subTid.at > 15000) s._subTid = { at: t, id: this.harnessSessionIdOf(s) };
+      return s._subTid.id ? codexSubagentProgress({ threadId: s._subTid.id, home: this.cfg.codexConvoHome || codexHomeOf(), turnStartedAt: (s.rt.turn && s.rt.turn.startedAt) || s.createdAt || 0, now, cache: this.subCache }) : null;
+    });
+    registerKindProgress('codex', 'codex-subagents');
     // P8: 하위 세션 명령. 플러그인에 일 맡기기 스킬과 atrium 명령을 더하고, 이미 띄운 세션의 설정 파일에 env와 승인 규칙을 더한다
     this.branch = attachBranch(this);
     Object.assign(this.api.handlers, this.branch.handlers);

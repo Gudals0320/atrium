@@ -120,6 +120,26 @@ export function mergeJobText(x) {
   lines.push('', '## @' + x.child + '의 done 글', String(x.doneText || '').replace(/\s+$/, ''));
   return lines.join('\n');
 }
+// P325: 치우기 일(사람이 판에서 "워크트리 치우기"를 눌렀고 이 리포는 merger가 켜져 있다). 첫 줄이 카드와 알림의 일 이름
+export function discardJobText(x) {
+  const lines = [
+    '치우기: @' + x.child + ' (' + (x.branch || '떼어 둔 HEAD') + ', 병합하지 않고 버린다)',
+    '',
+    '- 세션: @' + x.child + ' (보드가 이미 닫고 보관했다)',
+    '- 워크트리: ' + slash(x.worktree),
+    '- 브랜치: ' + (x.branch || '없음') + ', 끝 커밋 ' + (x.tip || '?') + ', ' + (x.target || '?') + '보다 앞선 커밋 ' + (x.ahead ?? '?') + '개, 커밋 안 한 변경 ' + (x.dirty ?? '?') + '개',
+    '- 할 일: ' + BT + 'git -C ' + slash(x.root) + ' worktree remove ' + (x.force ? '--force ' : '') + slash(x.worktree) + BT + (x.keepBranch || !x.branch ? ' (브랜치는 남긴다)' : ', 그다음 ' + BT + 'git -C ' + slash(x.root) + ' branch -D ' + x.branch + BT),
+    '- 사람이 고른 것: 브랜치 ' + (x.keepBranch ? '남기기' : '지우기') + ', 커밋 안 한 변경 ' + (x.force ? '까지 지우기(--force)' : '있으면 지우지 않기'),
+  ];
+  return lines.join('\n');
+}
+export function discardHeader({ unitId, child }) {
+  return [
+    '[Atrium 보드] 관계: 너는 이 워크스페이스의 merger다. 아래는 사람이 판에서 맡긴 @' + child + '의 워크트리 치우기 일 ' + unitId + '이다(병합하지 않는다. 지금 일: ' + BT + 'atrium item' + BT + ').',
+    '[Atrium 보드] 아래 명령만 하고 ' + BT + 'atrium done ok "치움 <워크트리>"' + BT + '로 닫는다. 지우지 못했으면(잠김, 변경 있음 등) 더 하지 말고 ' + BT + 'atrium done failed "못 치움: <까닭>"' + BT + '. 보드가 git으로 확인하고 사람에게 알린다.',
+    '[Atrium 보드] 다른 워크트리·브랜치는 건드리지 않는다. 안내: ' + BT + 'atrium guide merger' + BT + '.',
+  ].join('\n');
+}
 // 합치기 일 머리(세 줄, 판 알림 꼴). 첫 줄은 text.mjs RELATION_LINE 꼴이라 카드에는 아래 할 일만 지시로 보인다
 export function mergeHeader({ unitId, parent, child }) {
   return [
@@ -271,7 +291,7 @@ export class Merger {
     return mode === 'off' || (mode === 'ask' && answer === 'off') ? null : MERGE_CHILD_TAIL;
   }
   // 합치기 일 머리와 꼬리(그 merger의 처음 일이면 안내를 붙인다)
-  headerFor(unit) { const m = unit.meta || {}; return mergeHeader({ unitId: unit.id, parent: this.nameOf(unit.from), child: m.child || '?' }); }
+  headerFor(unit) { const m = unit.meta || {}; if (m.discard) return discardHeader({ unitId: unit.id, child: m.child || '?' }); return mergeHeader({ unitId: unit.id, parent: this.nameOf(unit.from), child: m.child || '?' }); } // P325: 치우기 일
   tailFor(unit) {
     const [k, r] = this.recOfSession(unit.to);
     if (!k || r.guided) return '';
@@ -331,6 +351,32 @@ export class Merger {
     this.changed(plan.ws);
     const r = this.rec(key);
     return { unit: mu.id, merger: s ? shownName(s) || s.name : r ? r.name : null };
+  }
+  // P325: 사람이 판에서 누른 치우기(worktree-session.mjs discard)를 merger 일로. 세션은 이미 닫혔다. from = 그 세션(닫힘: 알림은 판이 사람에게)
+  takeDiscard(job) {
+    const st = this.store();
+    const key = mergeKey(job.workspace, job.target);
+    const meta = { key, discard: true, ws: job.workspace, root: slash(job.root), target: job.target, child: job.name, childId: job.sessionId, childKind: job.kind || 'claude', worktree: slash(job.path), branch: job.branch, tip: job.tip, ahead: job.ahead, dirty: job.dirty, keepBranch: !!job.keepBranch, force: !!job.force, mergerWorktree: mergerWorktreeOf(job.root, job.target) };
+    const mu = { id: newId('u'), from: job.sessionId, to: '', origin: 'merge', spec: discardJobText(meta), status: 'open', createdAt: Date.now(), source: null, meta };
+    st.insertUnit(mu);
+    st.addEvent(job.sessionId, 'discard_open', { unitId: mu.id, key, branch: meta.branch, worktree: meta.worktree, keepBranch: meta.keepBranch, force: meta.force });
+    this.log('discard ' + mu.id + ' @' + job.name + ' ' + meta.worktree + ' (' + job.workspace + ')');
+    const s = this.sessionOfKey(key);
+    if (s && !this.retiring.has(s.sessionId)) this.assign(st.getUnit(mu.id), s);
+    else this.ensure(key).catch(() => {});
+    this.changed(job.workspace);
+    const r = this.rec(key);
+    return { unit: mu.id, merger: s ? shownName(s) || s.name : r ? r.name : null };
+  }
+  // P325: 치우기 일을 판이 확인한다(워크트리 목록에 그 자리가 없고, 브랜치를 지우라 했으면 브랜치도 없나) → { gone, branchGone, contains }
+  async verifyDiscard(m) {
+    const root = m.root || this.wsRoot(m.ws);
+    if (!root) return { gone: null, branchGone: null, contains: null };
+    const list = await worktreeList(root).catch(() => null);
+    const gone = list ? !list.some((w) => same(w.path, m.worktree)) : null;
+    const branchGone = m.branch ? !(await revOf(root, 'refs/heads/' + m.branch).catch(() => 'x')) : true;
+    const contains = gone == null ? null : gone && (m.keepBranch || branchGone);
+    return { gone, branchGone, contains };
   }
   // 합치기 일을 그 merger에게 넣는다(앞 일이 열려 있으면 판이 붙잡아 둔다)
   assign(mu, s) {
@@ -470,6 +516,12 @@ export class Merger {
     st.updateUnit(mu.id, { status: 'cancelled', closedAt: Date.now() });
     const m = mu.meta || {};
     this.problem(m.ws, why);
+    if (m.discard) { // P325: 치우기 일은 판이 직접 한다
+      const job = { name: m.child || '?', sessionId: m.childId, workspace: m.ws, root: m.root, path: m.worktree, branch: m.branch, keepBranch: m.keepBranch, force: m.force };
+      if (b.wtSessions) b.wtSessions.removeDirect(job).then((r) => b.wtSessions.discarded(job, { via: 'board', ...r })).catch((e) => this.log('discard fallback ' + e.message));
+      try { st.addEvent(m.childId || null, 'discard_fallback', { unitId: mu.id, why }); } catch {}
+      return;
+    }
     this.pendingSleep.delete(m.childId);
     const src = mu.source ? st.getUnit(mu.source) : null;
     const tr = src ? st.lastTryOfUnit(src.id) : null;
@@ -486,6 +538,7 @@ export class Merger {
   //   → { hash, contains }(contains: true | false | null(읽지 못함))
   async verifyMerge(unit) {
     const m = (unit && unit.meta) || {};
+    if (m.discard) return this.verifyDiscard(m); // P325
     const root = m.root || this.wsRoot(m.ws);
     if (!root || !m.target) return { hash: null, contains: null };
     const ref = 'refs/heads/' + m.target;
@@ -505,6 +558,7 @@ export class Merger {
     this.pendingCheck.add(caller.sessionId);
     const firstLine = String(text || '').split('\n').map((l) => l.trim()).find(Boolean) || '';
     const mergerName = shownName(caller) || caller.name;
+    if (m.discard) return this.onDiscardDone(caller, unit, result, text, check, retire); // P325
     const failLines = mergeFailLines({ child: m.child || '?', worktree: m.worktree, branch: m.branch, merger: mergerName });
     if (result === 'ok' && check && check.contains === true) {
       st.updateUnit(unit.id, { meta: { ...m, summary: 'pending', merger: mergerName, merged: { at: Date.now(), line: clip(firstLine, 200), text: clip(String(text || ''), 600), hash: check.hash, contains: true } } }); // P290: 정리 알림에 넣을 일
@@ -527,6 +581,22 @@ export class Merger {
     st.updateUnit(unit.id, { meta: { ...m, summary: 'pending', merger: mergerName, failed: { at: Date.now(), line: clip(firstLine, 200) } } });
     this.changed(m.ws);
     return { retire, extra: failLines, result: 'failed' };
+  }
+  // P325: merger가 치우기 일을 닫았다. ok는 판이 git으로 확인한 때만 ok. 결과는 사람에게(소식·창 알림, worktree-session.mjs discarded). 세션은 이미 닫혔다
+  onDiscardDone(caller, unit, result, text, check, retire) {
+    const st = this.store(); const m = unit.meta || {};
+    const mergerName = shownName(caller) || caller.name;
+    const firstLine = String(text || '').split('\n').map((l) => l.trim()).find(Boolean) || '';
+    const c = check || { gone: null, branchGone: null, contains: null };
+    const ok = result === 'ok' && c.contains === true;
+    const error = ok ? null : result === 'ok' ? (c.gone === false ? 'merger가 ok로 닫았지만 워크트리가 남아 있다' : c.gone == null ? 'merger가 ok로 닫았지만 보드가 git으로 확인하지 못했다' : 'merger가 ok로 닫았지만 브랜치 ' + m.branch + '가 남아 있다') : clip(firstLine, 200) || 'merger가 치우지 못했다';
+    const r = { via: 'merger', removed: c.gone === true, branchDeleted: !m.keepBranch && c.branchGone === true, error };
+    st.updateUnit(unit.id, { meta: { ...m, merger: mergerName, discarded: { at: Date.now(), ok, line: clip(firstLine, 200), gone: c.gone, branchGone: c.branchGone } } });
+    if (!ok) try { st.addEvent(caller.sessionId, 'discard_unverified', { unitId: unit.id, said: result, gone: c.gone, branchGone: c.branchGone }); } catch {}
+    const job = { name: m.child || '?', sessionId: m.childId, workspace: m.ws, branch: m.branch, path: m.worktree, keepBranch: m.keepBranch };
+    if (this.b.wtSessions) this.b.wtSessions.discarded(job, r);
+    this.changed(m.ws);
+    return { retire, extra: [], result: ok ? 'ok' : 'failed', ...(result === 'ok' && !ok ? { unverified: true } : {}) };
   }
   // P275: 하위가 아직 깨어 있으면(재우기가 거절됐거나 끝났으면) 다시 재운다
   keepAsleep(sid) {
@@ -701,7 +771,7 @@ export class Merger {
   // 합치기 일 하나(창이 하위 → merger 선을 그리는 자료)
   jobView(u) {
     const m = u.meta || {}; const tr = this.store().lastTryOfUnit(u.id);
-    return { unit: u.id, source: u.source, state: mergeState(u, tr), workspace: m.ws, target: m.target, branch: m.branch, tip: m.tip, child: m.child, childId: m.childId, childOpen: !!(m.childId && this.b.sessions.has(m.childId)), parentId: u.from, parent: this.nameOf(u.from), mergerId: u.to || null, merger: u.to ? this.nameOf(u.to) : null, createdAt: u.createdAt, closedAt: u.closedAt, hash: m.merged ? m.merged.hash || null : null };
+    return { unit: u.id, source: u.source, state: mergeState(u, tr), ...(m.discard ? { discard: true } : {}), workspace: m.ws, target: m.target, branch: m.branch, tip: m.tip, child: m.child, childId: m.childId, childOpen: !!(m.childId && this.b.sessions.has(m.childId)), parentId: u.from, parent: this.nameOf(u.from), mergerId: u.to || null, merger: u.to ? this.nameOf(u.to) : null, createdAt: u.createdAt, closedAt: u.closedAt, hash: m.merged ? m.merged.hash || null : null };
   }
   // 부모의 atrium items 한 줄에 붙는 합치기 상태
   itemMerge(u) {
