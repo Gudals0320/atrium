@@ -3,6 +3,38 @@
 export const WT_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 export const wtBranch = (name) => 'worktree-' + name;
 export const wtRel = (name) => '.claude/worktrees/' + name;
+// P337: Claude Code 워크트리(claude -w <이름>)의 자리는 정해져 있지 않다. 기본은 <리포>/.claude/worktrees/<이름>이지만 사용자의 WorktreeCreate hook이
+//   다른 곳(다른 드라이브 등)에 만들 수 있다. 그래서 워크트리는 git 워크트리 목록의 브랜치 worktree-<이름>으로 먼저 알아보고, 폴더 꼴(.claude/worktrees/<이름>)은 그중 한 경우로 둔다.
+const segs = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean);
+const brName = (b) => String(b || '').replace(/^refs\/heads\//, '');
+// 폴더 경로가 <어디든>/.claude/worktrees/<이름>(또는 그 아래)이면 그 이름, 아니면 null
+export function claudeWtDirName(p) {
+  const s = segs(p);
+  for (let i = 0; i + 2 < s.length; i++) if (s[i].toLowerCase() === '.claude' && s[i + 1].toLowerCase() === 'worktrees') return s[i + 2];
+  return null;
+}
+// 워크트리 목록 항목({ path | key, branch }) → Claude Code 워크트리 이름(브랜치 worktree-<이름>, 아니면 .claude/worktrees/<이름> 폴더) | null
+export function claudeWtName(w) {
+  if (!w) return null;
+  const br = brName(w.branch);
+  if (br.startsWith('worktree-') && br.length > 9) return br.slice(9);
+  return claudeWtDirName(w.path || w.key);
+}
+// 워크트리 목록 항목이 이름 name의 Claude Code 워크트리인가(대소문자 무시)
+export function isClaudeWt(w, name) {
+  const n = claudeWtName(w);
+  return !!n && !!name && n.toLowerCase() === String(name).toLowerCase();
+}
+// 목록에서 이름 name의 워크트리(브랜치로 맞는 것이 먼저, 그다음 폴더 꼴) | null
+export function findClaudeWt(list, name) {
+  if (!name) return null;
+  const lower = String(name).toLowerCase();
+  const all = (list || []).filter(Boolean);
+  return all.find((w) => brName(w.branch).toLowerCase() === 'worktree-' + lower)
+    || all.find((w) => (claudeWtDirName(w.path || w.key) || '').toLowerCase() === lower) || null;
+}
+// 폴더 이름이 name인 워크트리가 있나(이름 쓰임 검사: hook이 다른 곳에 만든 폴더도 같은 이름을 쓴다). 본 저장소는 빼고 본다
+export const wtFolderTaken = (list, name) => (list || []).some((w) => w && !w.main && (segs(w.path || w.key).pop() || '').toLowerCase() === String(name).toLowerCase());
 // 자동 이름 wt-<월일>-<a…z>(그 리포에서 겹치지 않게). taken: 쓰인 이름(세션 이름, 워크트리 폴더 이름). 다 차면 wt-<월일>-<수>
 export function autoName(date = new Date(), taken = []) {
   const d = new Date(date);

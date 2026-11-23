@@ -273,7 +273,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
    - 이름은 사람이 보드에서 보고 무슨 일을 맡은 워커인지 알 수 있게 네가 생각해서 짓는다. 맡긴 일이나 역할을 짧게 말한다(예: api-tests, reviewer, ko-copy, login-bug). w1·ds1 같은 번호 이름은 일이 정말 하찮을 때만 쓴다. 예를 외우지 말고 이번 일에 맞게 짓는다.
    - 규칙: 영문 소문자로 시작, 소문자·숫자·-·_ 만, 32자까지, 판 전체에서 하나. 겹친다는 답(\`name_taken\`)이 오면 다른 이름으로 다시 짓는다.
    - 워커가 준비되면 돌아온다.
-   - 코드를 고치는 조각은 \`--worktree <이름>\`을 붙인다. Claude Code가 \`claude -w\`로 \`.claude/worktrees/<이름>\`과 브랜치 \`worktree-<이름>\`을 만든다. 직접 \`git worktree add\`를 하거나 보드 외부 형제 폴더를 만들지 않는다.
+   - 코드를 고치는 조각은 \`--worktree <이름>\`을 붙인다. Claude Code가 \`claude -w\`로 브랜치 \`worktree-<이름>\`의 워크트리를 만든다(자리는 Claude Code가 정한다). 직접 \`git worktree add\`를 하거나 보드 외부 형제 폴더를 만들지 않는다.
    - 다른 폴더는 \`--cwd C:/Workspace/x\`(슬래시로). 역할 이름 \`--role 리뷰어\`(기본 워커).
    - 모델과 추론 수준은 조각에 맞게 고른다: 찾기·요약·단순 수정은 \`--model haiku\`나 \`--effort low\`, 설계·어려운 디버깅은 \`--effort high\`. 빼면 너의 것을 물려받는다.
    - 사용자가 모델을 말로 하면("glm flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "glm flash"\`처럼 들은 말을 줘도 보드가 푼다. 정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다. 사용자가 말한 모델·워커를 서브에이전트로 갈음하지 않는다.
@@ -814,6 +814,8 @@ export class Branch {
     if (head && this.info.has(child.sessionId)) { this.noteChild(child.sessionId, { ...this.info.get(child.sessionId), headArmed: true, ...(first ? { headPrompt: first.deliveryId } : {}) }); this.maybeHead(child); }
     const wait = o.wait === false ? null : await this.waitReady(child, first);
     if (head && b.sessions.has(child.sessionId)) this.maybeHead(child);
+    // P337: 띄우자마자 끝났으면 판이 끝 화면의 오류 문장을 읽어 붙이는 동안(셸로 바꾸기 전에 읽는다) 잠깐 기다려 응답에 넣는다
+    for (let i = 0; i < 8 && b.sessions.has(child.sessionId) && child.rt.exit && !child.rt.exit.error && b.summary(child).state === 'exited'; i++) await sleep(250);
     const sum = b.sessions.has(child.sessionId) ? b.summary(child) : null;
     const state = sum ? sum.state : 'closed';
     // P36: 신뢰 질문에서 멈췄으면 needs_trust와 사람에게 할 한 문장(판 밖 터미널을 열라고 하지 않는다)
@@ -827,6 +829,7 @@ export class Branch {
       harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...modelArgsFor(kind, other.model, other.launcher ? other.launcher.startCommand || '' : '', effortPlan.args), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
       permissionMode: child.permissionMode, state, trust: out.trust, waited: wait,
       status: needsTrust ? 'needs_trust' : state, needsTrust, tellHuman: needsTrust ? trustSentence(name) : null, gate: gate ? 'trust' : null,
+      exit: state === 'exited' && child.rt.exit ? { kind: child.rt.exit.kind, code: child.rt.exit.code ?? null, error: child.rt.exit.error || null } : null, // P337: 끝 화면의 오류 문장(claude -w가 워크트리를 만들지 못함 등)
       firstPrompt: first ? { ...first, status: (b.store.getDelivery(first.deliveryId) || {}).status || first.status } : null,
       notice, next: this.nextOf(child, { gated: !!gate && needsTrust }),
       counts: this.countsOf(parent),

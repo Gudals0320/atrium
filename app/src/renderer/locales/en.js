@@ -3246,4 +3246,9 @@ export default {
     lastProblem: 'Last start failure',
     bad: { target: 'Branch names use letters, digits, . _ / - only', where: 'Pick from the list', push: 'Pick on or off', guide: 'Use a relative path inside the repository', key: 'Unknown field' },
   },
+  // P337: agent that exited with an error right after launch (claude -w could not create its worktree, etc.). The card shows the error line from its last screen
+  exitError: {
+    badge: 'Exited with an error right after launch',
+    title: 'Exited with an error right after launch: {error}',
+  },
 };

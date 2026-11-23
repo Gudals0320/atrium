@@ -1,6 +1,7 @@
 // 설정: 터미널 세션 이름, 백엔드 포트, 데이터 폴더. 실제 판(real)과 개발용(dev) 프로필이 서로 겹치지 않게 한다.
 // 우선순위: 명령줄(--dev) < 환경 변수(ATRIUM_*) — 환경 변수가 프로필 기본값을 덮는다.
 // P18: 환경 변수는 ATRIUM_*가 본 이름이고 옛 이름 MTASK_*도 받는다(둘 다 있으면 ATRIUM_*). 다른 모듈도 envVar로 읽는다.
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -158,10 +159,35 @@ export function legacyAppUserData(cfg, env = process.env) {
   return LEGACY_REAL.appUserData;
 }
 
-// 이 코드가 있는 저장소 폴더와, 그것이 Claude Code 워크트리(<본 저장소>/.claude/worktrees/<이름>)면 본 저장소 폴더
-export function codeRootsOf(root) {
+// 이 코드가 있는 저장소 폴더와, 같은 저장소의 다른 체크아웃(본 저장소와 그 워크트리들)
+// P337: 워크트리 자리는 <본 저장소>/.claude/worktrees/<이름>만이 아니다(사용자 hook이 다른 드라이브에 만든다). git 파일을 읽어(git을 부르지 않고) 찾는다:
+//   워크트리의 .git 파일 "gitdir: <본 저장소>/.git/worktrees/<이름>" → 그 commondir → 본 저장소, 본 저장소의 .git/worktrees/*/gitdir → 각 워크트리 폴더.
+//   읽지 못하면 옛 규칙(.claude/worktrees/<이름>의 위 폴더)만 쓴다
+export function codeRootsOf(root, { read = (p) => fs.readFileSync(p, 'utf8'), list = (p) => fs.readdirSync(p), isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } } } = {}) {
+  const out = [root];
+  const add = (p) => { if (p && !out.some((x) => path.resolve(x).toLowerCase() === path.resolve(p).toLowerCase())) out.push(p); };
   const m = /^(.*)[\\/]\.claude[\\/]worktrees[\\/][^\\/]+$/.exec(root);
-  return m ? [root, m[1]] : [root];
+  if (m) add(m[1]);
+  const txt = (p) => { try { return String(read(p)).trim(); } catch { return null; } };
+  let commonGit = null; // 본 저장소의 .git 폴더
+  if (isDir(path.join(root, '.git'))) commonGit = path.join(root, '.git');
+  else {
+    const g = /^gitdir:\s*(.+)$/m.exec(txt(path.join(root, '.git')) || '');
+    if (g) {
+      const gitDir = path.resolve(root, g[1].trim());
+      const c = txt(path.join(gitDir, 'commondir'));
+      commonGit = c ? path.resolve(gitDir, c) : null;
+    }
+  }
+  if (!commonGit || path.basename(commonGit).toLowerCase() !== '.git') return out;
+  add(path.dirname(commonGit));
+  let names = [];
+  try { names = list(path.join(commonGit, 'worktrees')); } catch {}
+  for (const n of names) {
+    const gd = txt(path.join(commonGit, 'worktrees', n, 'gitdir'));
+    if (gd && /[\\/]\.git$/.test(gd)) add(path.dirname(path.resolve(gd)));
+  }
+  return out;
 }
 
 // atrium CLI와 백엔드가 같은 프로필로 뜨도록 자식 프로세스에 넘길 환경 변수

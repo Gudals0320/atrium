@@ -73,6 +73,7 @@ function Badges({ s }) {
   const t = useT();
   return <>
     {s.unseen && !(s.state === 'ready' || s.state === 'shell_idle') && <span className="mt-badge review" data-flag="unseen">{t('node.review')}</span>}
+    {s.state === 'exited' && s.exit && s.exit.error && <span className="mt-badge warn" data-role="exit-error" title={t('exitError.title', { error: s.exit.error })}>{t('exitError.badge')}</span>/* P337 */}
     {s.delivering > 0 && !s.deliveryStuck && <span className="mt-badge deliver" title={t('node.deliverTitle')}>{t('node.deliver', { n: s.delivering })}</span>}
     {s.deliveryStuck && <span className="mt-badge warn" data-role="delivery-stuck" title={t('deliveryStuck.title', { code: s.deliveryStuck.code || s.deliveryStuck.reason, n: s.deliveryStuck.attempts })}>{t('deliveryStuck.badge')}</span>}
     {s.quiet && <span className="mt-badge quiet">{t('node.quiet')}</span>}
@@ -228,6 +229,7 @@ function FarFace({ s, w, h, open = false }) {
       {s.kind === 'shell' && <div className="mt-far-line" data-role="shell-line">{shellLine(s)}</div>}
       {s.elsewhere && <div className="mt-far-line warn">↪ {t('node.workingIn', { name: s.elsewhere.name })}</div>}
       {s.state === 'exited' && <div className="mt-far-line">{EXIT_LABEL[s.exit && s.exit.kind] || t('state.exited')}</div>}
+      {s.state === 'exited' && s.exit && s.exit.error && <div className="mt-far-line warn" data-role="far-exit-error" title={s.exit.error}>{s.exit.error}</div>/* P337: 끝 화면의 오류 문장 */}
       {s.lastPrompt && <div className="mt-far-line one prompt" data-role="far-prompt"><span className="mt-far-k">{t('node.prompt')}</span> {oneLine(s.lastPrompt)}</div>}
       {s.lastAnswer && <div className="mt-far-line one" data-role="far-answer"><span className="mt-far-k">{t('node.answer')}</span> {oneLine(s.lastAnswer)}</div>}
       {open && <div className="mt-far-line mt-brief-hint" data-role="brief-hint">{t('brief.hint')}</div>}
