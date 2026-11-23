@@ -36,9 +36,11 @@ export const TIER_TERM_PX = 240;
 export const TIER_BRIEF_PX = 120;
 export const TIER_KEEP = 0.88;
 // P324: 노드 글(머리줄 13px, 요약 12~15px)은 판 단위 고정 크기라 배율과 함께 작아진다. 머리줄 글이 화면에서 TEXT_READ_PX 아래가 되는 배율부터는
-//   글을 그리지 않고 틀(로고) 얼굴로 가린다. 경계 여유는 다른 단계와 같다(0.615 → 0.54). zoom을 주지 않으면 이 조건은 보지 않는다(예전 호출)
+//   글을 그리지 않고 틀(로고) 얼굴로 가린다. 경계 여유는 다른 단계와 같다. zoom을 주지 않으면 이 조건은 보지 않는다(예전 호출)
+// P327: 작은 글씨도 읽힌다는 사용자 피드백으로 8px → 6px(경계 0.615 → 0.46, 여유 0.54 → 0.41). 요약 15px는 그 배율에서 화면 약 7px.
+//   영역·워크트리·묶음 이름표의 큰 이름 전환(Canvas.jsx data-text)과 판의 터미널 붙이기(pickAttached textZoom)도 이 경계를 따른다
 export const TEXT_BASE_PX = 13;
-export const TEXT_READ_PX = 8;
+export const TEXT_READ_PX = 6;
 export const TIER_TEXT_ZOOM = TEXT_READ_PX / TEXT_BASE_PX;
 export const textReadable = (zoom, prev = null) => !(zoom >= 0) || zoom >= TIER_TEXT_ZOOM || (!!prev && prev !== 'frame' && zoom >= TIER_TEXT_ZOOM * TIER_KEEP);
 export function tierFor(px, prev = null, zoom = undefined) {

@@ -4,19 +4,19 @@ import assert from 'node:assert/strict';
 import { tierFor, textReadable, pickAttached, TIER_TEXT_ZOOM, TIER_KEEP, TEXT_BASE_PX, TEXT_READ_PX } from '../src/renderer/lib/faces.js';
 import { viewSettler, invBand, SETTLE_REST_MS } from '../src/renderer/lib/view-settle.js';
 
-test('읽히는 배율: 머리줄 13px이 화면 8px 아래가 되는 배율부터 틀', () => {
+test('읽히는 배율: 머리줄 13px이 화면 6px 아래가 되는 배율부터 틀(P327)', () => {
   assert.equal(TEXT_BASE_PX, 13);
-  assert.equal(TEXT_READ_PX, 8);
-  assert.ok(Math.abs(TIER_TEXT_ZOOM - 8 / 13) < 1e-9);
+  assert.equal(TEXT_READ_PX, 6);
+  assert.ok(Math.abs(TIER_TEXT_ZOOM - 6 / 13) < 1e-9);
   assert.equal(tierFor(1440, null, 1), 'term');
-  assert.equal(tierFor(1440 * 0.62, null, 0.62), 'term');
-  assert.equal(tierFor(1440 * 0.6, null, 0.6), 'frame'); // 노드는 화면 864px이지만 글이 7.8px
+  assert.equal(tierFor(1440 * 0.47, null, 0.47), 'term');
+  assert.equal(tierFor(1440 * 0.45, null, 0.45), 'frame'); // 노드는 화면 648px이지만 글이 5.85px
   assert.equal(tierFor(1440 * 0.3, null, 0.3), 'frame');
   // 이력: 이미 글을 그리던 노드는 경계의 88%까지 남는다
-  assert.equal(tierFor(1440 * 0.56, 'term', 0.56), 'term');
-  assert.equal(tierFor(1440 * 0.56, 'brief', 0.56), 'term'); // 요약에서도 글을 그리던 노드라 남고, 노드 너비로는 터미널 단계
-  assert.equal(tierFor(1440 * 0.53, 'term', 0.53), 'frame');
-  assert.equal(tierFor(1440 * 0.56, 'frame', 0.56), 'frame'); // 틀에서 올라가려면 0.615
+  assert.equal(tierFor(1440 * 0.42, 'term', 0.42), 'term');
+  assert.equal(tierFor(1440 * 0.42, 'brief', 0.42), 'term'); // 요약에서도 글을 그리던 노드라 남고, 노드 너비로는 터미널 단계
+  assert.equal(tierFor(1440 * 0.4, 'term', 0.4), 'frame');
+  assert.equal(tierFor(1440 * 0.42, 'frame', 0.42), 'frame'); // 틀에서 올라가려면 0.46
   // zoom을 주지 않으면 예전(노드 화면 너비만)
   assert.equal(tierFor(1440 * 0.3), 'term');
   assert.equal(textReadable(undefined), true);
@@ -30,8 +30,8 @@ test('pickAttached(textZoom): 글이 읽히지 않는 배율이면 붙이지 않
   assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.8 }, screen, tz), ['a']);
   assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.4 }, screen, tz), []);
   assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.4 }, screen), ['a']);
-  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.57 }, screen, { ...tz, prev: new Set(['a']) }), ['a']); // 붙은 노드는 여유
-  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.57 }, screen, tz), []); // 새로 붙으려면 0.615
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.43 }, screen, { ...tz, prev: new Set(['a']) }), ['a']); // 붙은 노드는 여유
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.43 }, screen, tz), []); // 새로 붙으려면 0.46
 });
 
 function clock() {
@@ -95,7 +95,7 @@ test('테두리 --inv 띠: 1/배율을 2의 거듭제곱으로', () => {
   assert.equal(invBand(0.75), invBand(0.9));
 });
 
-test('틀 얼굴은 로고와 이름(노드 높이 1/6, 판 단위)을, 영역 이름표는 멀리서 큰 이름을 고정 크기로 보인다', async () => {
+test('틀 얼굴은 로고와 이름(노드 높이 1/8, 판 단위)을, 영역 이름표는 멀리서 큰 이름을 고정 크기로 보인다', async () => {
   const fs = await import('node:fs');
   const read = (f) => fs.readFileSync(new URL('../src/renderer/' + f, import.meta.url), 'utf8');
   const sn = read('SessionNode.jsx');
@@ -106,8 +106,8 @@ test('틀 얼굴은 로고와 이름(노드 높이 1/6, 판 단위)을, 영역 �
   assert.ok(!/useFlowStore|useSettledFlow|transform/.test(ff), '틀 얼굴은 배율을 구독하지 않는다');
   const m = /export const frameFontPx = \(w, h\) => (.*);/.exec(sn);
   const frameFontPx = new Function('w', 'h', 'return ' + m[1]);
-  assert.equal(frameFontPx(1440, 810), 135);
-  assert.ok(frameFontPx(1440, 810) * 0.15 >= 20);
+  assert.equal(frameFontPx(1440, 810), 101.25); // P327: 1/8
+  assert.ok(frameFontPx(1440, 810) * 0.15 >= 15);
   const rg = read('Regions.jsx');
   assert.equal((rg.match(/<BigLabel /g) || []).length, 3, '영역·워크트리·묶음');
   const css = read('styles.css');
