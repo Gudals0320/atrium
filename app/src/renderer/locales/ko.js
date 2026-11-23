@@ -3166,4 +3166,9 @@ export default {
     next: '다음 할 일',
     closeTitle: '닫기(Esc)',
   },
+  // P337: 띄우자마자 오류로 끝난 에이전트(claude -w가 워크트리를 만들지 못함 등). 끝 화면의 오류 문장을 카드에 보인다
+  exitError: {
+    badge: '실행 직후 오류로 종료',
+    title: '실행 직후 오류로 종료: {error}',
+  },
 };

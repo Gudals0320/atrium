@@ -5,7 +5,8 @@
 // - 노드: 세션의 지금 폴더(hook cwd, 없으면 시작 폴더)가 든 워크트리가 저장한 영역(nodes.area)과 다르면 그 영역의 빈자리로 옮긴다.
 //   덩어리 안 노드는 옮기지 않는다. 대화 노드는 recall.layoutCanvas가 같은 규칙(areaOf)으로 놓는다.
 //   P75: 빈 상자에 처음 드는 노드(--worktree 워커)는 옮기지 않고 상자를 그 노드 둘레로 놓는다. 워커는 하위 세션 줄에 상자 테두리까지 비운 자리에 이미 서 있다.
-//   P78: --worktree 워커의 폴더는 hook(첫 요청)을 기다리지 않는다. 띄울 때 아는 워크트리(.claude/worktrees/<이름>)가 목록에 나타나면 거기 있다고 본다(placeOf).
+//   P78: --worktree 워커의 폴더는 hook(첫 요청)을 기다리지 않는다. 띄울 때 아는 워크트리(브랜치 worktree-<이름>, 기본 자리 .claude/worktrees/<이름>)가 목록에 나타나면 거기 있다고 본다(placeOf).
+//   P337: claude -w의 자리는 사용자 hook이 바꿀 수 있다(다른 드라이브 등). 워크트리는 목록의 브랜치로 알아보고, 저장소 폴더 밖에 있어도 그 리포의 상자다.
 //   그래서 요청 없이 띄운 워커도 워크트리가 생기는 대로 상자에 들고, 정리한 뒤 일을 넘겨도 자리가 바뀌지 않는다.
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -14,6 +15,7 @@ import { canvasItems, regions, settleRegions, dockOf, slotRegions, slotItems, an
 import { slotInRegion } from './canvas.mjs';
 import { boxFrame } from './tree-line.mjs'; // P75
 import { pathKey, goneWorkspaces, workspaceNames, GONE_GRACE_MS } from './workspaces.mjs';
+import { findClaudeWt, isClaudeWt } from './worktree-names.mjs'; // P337: 자리가 아니라 브랜치 worktree-<이름>으로 알아본다
 
 const TICK_MS = 10000;
 
@@ -34,10 +36,16 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
     return worktreeOfPath(cwd, wts, pathKey(w.root));
   }
   const cwdOf = (s) => (s.rt && s.rt.cwd) || s.cwd;
-  // P75: --worktree 워커(info.worktree)는 claude -w가 만든 그 워크트리(.claude/worktrees/<이름>)에만 든다. 그 전(부모 폴더에서 막 떴을 때)에는 옮기지 않는다
+  // P75: --worktree 워커(info.worktree)는 claude -w가 만든 그 워크트리(브랜치 worktree-<이름>)에만 든다. 그 전(부모 폴더에서 막 떴을 때)에는 옮기지 않는다
   const wantsWt = (s) => { const i = b.branch && b.branch.info ? b.branch.info.get(s.sessionId) : null; return i && i.worktree ? String(i.worktree).toLowerCase() : null; };
-  const fitsWt = (s, wt) => { const name = wantsWt(s); return !name || (!!wt && wt.toLowerCase().endsWith(`/${name}`)); };
-  // P78: --worktree 워커가 들 워크트리. claude -w는 <저장소>/.claude/worktrees/<이름>을 만들고 그리로 들어간다. 판은 띄울 때 그 이름을 알므로,
+  const fitsWt = (s, wt) => {
+    const name = wantsWt(s);
+    if (!name) return true;
+    if (!wt) return false;
+    const hit = (listOf.get(s.workspaceKey) || []).find((x) => x.key === wt);
+    return hit ? isClaudeWt(hit, name) : wt.toLowerCase().endsWith(`/${name}`);
+  };
+  // P78: --worktree 워커가 들 워크트리. claude -w는 브랜치 worktree-<이름>의 워크트리를 만들고(자리는 기본 <저장소>/.claude/worktrees/<이름>, hook이 바꿀 수 있다) 그리로 들어간다. 판은 띄울 때 그 이름을 알므로,
   //   그 워크트리가 목록에 나타나면 hook(첫 요청)을 기다리지 않고 워커가 거기 있다고 본다. hook이 그 워크트리를 한 번 알린 뒤 다른 곳(본 저장소)을
   //   알리면 워커가 나간 것이므로 hook을 따른다(left)
   const seen = new Set(), left = new Set(); // 세션 ID: hook이 그 워크트리를 알렸다 / 그 뒤 다른 곳을 알렸다
@@ -47,7 +55,7 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
     const i = name && b.branch && b.branch.info ? b.branch.info.get(s.sessionId) : null;
     if (!i || !i.wtHome) return '';
     const live = listOf.get(wsKey) || [];
-    const exact = live.find((x) => x.key.toLowerCase().endsWith(`/.claude/worktrees/${name}`));
+    const exact = findClaudeWt(live, name);
     return exact ? exact.key : '';
   }
   function placeOf(wsKey, s) {

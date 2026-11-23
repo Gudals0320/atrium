@@ -564,7 +564,11 @@ export class HcAdapter extends EventEmitter {
       if (e.workspaceId) labels[LABEL.ws] = e.workspaceId;
       try {
         const env = this._envOf.get(old) || (await this.paneEnv());
-        const r = await this._replacePane(old, (launch) => this.call('terminal.run', { cwd: t.cwd, env, labels: { ...labels, [LABEL.launch]: launch }, no_parent: true }, 30000), 'agent exited, shell left', e.exitCode != null ? { exitCode: e.exitCode } : {}); // P125: 놓임이 먼저 풀렸어도(300ms) 판이 코드를 받는다
+        // P337: 새 셸로 바꾸면 끝난 에이전트의 화면이 사라진다. 그 전에 끝 화면을 읽어 pane_moved에 붙인다(띄우자마자 오류로 끝난 claude -w의 문장을 판이 보인다)
+        let exitText = null;
+        try { exitText = String((await this.call('terminal.read', { terminal: old, lines: 0 }, 3000)).text || '').split(/\r?\n/).slice(-40).join('\n'); } catch {}
+        const extra = { ...(e.exitCode != null ? { exitCode: e.exitCode } : {}), ...(exitText ? { exitText } : {}) };
+        const r = await this._replacePane(old, (launch) => this.call('terminal.run', { cwd: t.cwd, env, labels: { ...labels, [LABEL.launch]: launch }, no_parent: true }, 30000), 'agent exited, shell left', extra); // P125: 놓임이 먼저 풀렸어도(300ms) 판이 코드를 받는다
         this._envOf.set(r.address, env); this._envOf.delete(old);
         await this._rm(old);
         if (this._isClosing(old, e.workspaceId)) { this.log(`closing ${old} while its shell came back; closing ${r.address}`); await this.closePane(r.address).catch(() => {}); }

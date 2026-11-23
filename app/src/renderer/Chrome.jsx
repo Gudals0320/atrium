@@ -78,7 +78,7 @@ export function TopLeft() {
       <DecisionPill />{/* P284: 할 일 n(P305, 응답 필요와 따로 센다) */}
       <PlanPanelHost />
       <TurnPill needsYou={needsYou} />
-      {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? EXIT_LABEL[s.exit && s.exit.kind] : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
+      {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? [EXIT_LABEL[s.exit && s.exit.kind], s.exit && s.exit.error].filter(Boolean).join(': ') /* P337: 끝 화면의 오류 문장 */ : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
     </div>
   );
 }
