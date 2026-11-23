@@ -10,7 +10,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
+import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, tagScale, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
@@ -122,7 +122,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 // P157: 카드에는 브라우저 풍선(title)을 달지 않는다. 마우스를 올리면 미리 보기(Peek) 하나만 뜬다(전에는 둘이 함께 떴다). 같은 사실은 aria-label에
 // P293: lite = 휴대폰 맵 가볍게 열림(먼 타일·결정 표식을 그리지 않는다. 멀리 단계에서도 보통 사실을 보인다, phone.css)
 // P331: todo = PC 세션 맵(할 일 배지, 이름 옆 할 일 표식 대신). 휴대폰 맵은 그대로
-// P333: PC 세션 맵은 할 일 배지와 작업 완료 꼬리표를 오른쪽 위 한 무리(.mt-sm-tags)로 쌓는다: [할 일 n][작업 완료], 하나만 있으면 그것이 맨 오른쪽
+// P333·P335: PC 세션 맵은 할 일 배지와 작업 완료 꼬리표를 오른쪽 위 한 무리(.mt-sm-tags)로 세로로 쌓는다: 작업 완료가 위 테두리 자리, 할 일이 그 바로 위. 하나만 있으면 그것이 테두리 자리
 export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null, lite = false, fit = false, todo = false }) {
   noteMap('cards');
   const rowRef = useRef(null), nameRef = useRef(null);
@@ -306,10 +306,21 @@ export function LineageMap() {
   const mergerLast = useStore((st) => st.mergerLast);
   const mkey = JSON.stringify(mapMergers(mergerView, mergerLast));
   const mergers = useMemo(() => JSON.parse(mkey), [mkey]);
-  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea, mergers }), [vgroups, tiers, names, t, expanded, today, fitKey, mergers]); // eslint-disable-line react-hooks/exhaustive-deps
+  // P335: 카드마다 오른쪽 위 꼬리표 수(할 일 배지 + 작업 완료 꼬리표). 배치가 그 위를 비운다(lib/mission-lineage.js tagPass). 내용이 같으면 같은 Map(배치를 다시 세지 않는다)
+  const decisions = useStore((st) => st.decisions);
+  const plans = useStore((st) => st.plans);
+  const tagKey = useMemo(() => {
+    if (!graph) return '';
+    const pl = plans ? [...plans.values()] : null;
+    return graph.nodes.filter((n) => n.kind === 'session').map((n) => { const k = (todoCount(decisions, n.sessionId, n.sessionId && pl ? planCountFor(pl, n.sessionId) : 0) > 0 ? 1 : 0) + (tiers.get(n.id) === 'review' ? 1 : 0); return k ? `${n.id}\t${k}` : null; }).filter(Boolean).join('\n');
+  }, [graph, decisions, plans, tiers]);
+  const tagRows = useMemo(() => new Map(tagKey ? tagKey.split('\n').map((x) => { const [id, k] = x.split('\t'); return [id, Number(k)]; }) : []), [tagKey]);
+  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea, mergers, tags: tagRows }), [vgroups, tiers, names, t, expanded, today, fitKey, mergers, tagRows]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
   const lay0 = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
   const lay = lay0;
+  // P335: 꼬리표 무리 배수(--tk, CSS .mt-sm-tags)는 배치의 이름표 계단(lay.label)을 따른다. 배치가 비운 자리와 같은 배수
+  useLayoutEffect(() => { const w = worldRef.current; if (w && lay) { const v = String(tagScale(lay.label)); if (w.style.getPropertyValue('--tk') !== v) w.style.setProperty('--tk', v); } }, [lay]);
   // P178: 맞춤 보기를 셀 때 다른 계단의 배치(선 길 찾기 없이, 크기만)
   const layForRef = useRef(null);
   layForRef.current = (st) => (g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: st, routing: false })) : null);

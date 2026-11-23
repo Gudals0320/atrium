@@ -13,14 +13,14 @@ test('PC 세션 맵 카드: [할 일][작업 완료] 차례로 한 무리, 휴�
   assert.doesNotMatch(jsx, /\{todo && <TodoBadge/, '배지가 무리 밖에 따로 있지 않다');
 });
 
-test('무리는 오른쪽 위 테두리에 걸치고, 안의 꼬리표는 제자리(static)·19px·11.5px', () => {
-  assert.match(css, /\.mt-sm-tags \{ position: absolute; top: -10px; right: 18px;[^}]*display: inline-flex;[^}]*gap: 5px;/);
-  assert.match(css, /\.mt-sm-tags \.mt-sm-todo, \.mt-sm-tags \.mt-mm-donetag \{ position: static; height: 19px;[^}]*font: 700 11\.5px\/19px/);
+test('무리는 오른쪽 위에 세로로(P335), 안의 꼬리표는 제자리(static)·22px·14px', () => {
+  assert.match(css, /\.mt-sm-tags \{ position: absolute; right: 18px; bottom: calc\(100% - 11px\);[^}]*flex-direction: column; align-items: flex-end;/);
+  assert.match(css, /\.mt-sm-tags \.mt-sm-todo, \.mt-sm-tags \.mt-mm-donetag \{ position: static; height: 22px;[^}]*font: 700 14px\/22px/);
   assert.match(css, /\.mt-sm-tags:empty \{ display: none; \}/);
 });
 
-test('멀리 배율: 무리째 오른쪽 위 기준으로 키우고 안의 작업 완료 꼬리표는 따로 키우지 않는다', () => {
-  assert.match(css, /\.mt-sm \.mt-ta-world\.lv-far \.mt-sm-tags \{ transform: scale\(clamp\(1\.6, calc\(var\(--ik, 1\) \* 0\.85\), 3\.2\)\); transform-origin: right top; \}/);
+test('멀리 배율: 무리째 키우고(P335: --tk, 무리 오른쪽 아래 기준) 안의 작업 완료 꼬리표는 따로 키우지 않는다', () => {
+  assert.match(css, /\.mt-sm-tags \{[^}]*transform: scale\(var\(--tk, 1\)\); transform-origin: right bottom;/);
   assert.match(css, /\.mt-sm \.mt-ta-world\.lv-far \.mt-sm-tags \.mt-mm-donetag \{ transform: none; \}/);
   assert.doesNotMatch(css, /\.mt-sm-todo \{[^}]*left: 18px/, '옛 왼쪽 위 자리 없음');
   assert.doesNotMatch(css, /lv-far \.mt-sm-todo \{[^}]*transform-origin: left top/);

@@ -42,6 +42,15 @@ export function labelPx(s = 1) {
   for (const k of Object.keys(LABEL.BASE)) out[k] = Math.round(Math.max(LABEL.BASE[k], LABEL.SCREEN[k] / (s > 0 ? s : 1)) * 10) / 10;
   return out;
 }
+// P335: PC 세션 맵 카드 오른쪽 위 꼬리표 무리(할 일 배지 위, 작업 완료 꼬리표 아래 = 위 테두리에 걸침, MissionLineage.jsx Card .mt-sm-tags).
+// 바탕(배율 계단 1) 꼬리표 높이 H·글 FONT(px), 둘 사이 GAP. 배율이 작아지면 이름표처럼 화면 글 SCREEN px를 지키게 키우되(tagScale) CAP배까지만
+// (CAP: 가장 넓은 작업 완료 꼬리표(바탕 폭 약 85)가 카드 폭 325 - 오른쪽 18 + 왼쪽으로 70(줄 머리와 첫 칸 사이 틈 80, 칸 사이 GX 110 안)에 드는 배수. 그보다 멀면 배율과 함께 작아진다). 배치는 꼬리표가 위 카드·줄 위 끝에 닿지 않게 카드 위를 비운다(tagRoom)
+export const TAG = { H: 22, FONT: 14, GAP: 4, SCREEN: 13, CAP: 4.4, PAD: 6 };
+export const tagScale = (s = 1) => (!(s > 0) || s >= 1 ? 1 : Math.round(Math.min(TAG.CAP, Math.max(1, TAG.SCREEN / (TAG.FONT * s))) * 1000) / 1000);
+// 꼬리표 n개(0~2)가 카드 위 테두리 위로 차지하는 세계 높이(+ 여유 PAD). 무리는 아래 끝을 기준으로 위로만 커진다:
+// 보통 카드는 아래 꼬리표가 카드 안으로 늘 H/2(11)만 걸치고(키워도 멀리 타일 이름을 덮지 않게), 얇은 줄(thin, 높이 30)은 무리 전체가 테두리 2px 위(CSS .thin .mt-sm-tags)
+export const tagRoom = (n, s = 1, thin = false) => (n > 0 ? Math.ceil(tagScale(s) * (TAG.H + (n > 1 ? TAG.GAP + TAG.H : 0)) + (thin ? 2 : -TAG.H / 2) + TAG.PAD) : 0);
+
 // 줄 머리 상태 알약 한 개의 폭(글 + 점·틈·안 여백, em은 알약 글 크기)과 줄 머리 높이(위 여백 22 + 이름 줄 + 틈 + 알약 줄들)
 const chipW = (text, px) => glyphW(text, px) + px * 2.3;
 export function headBox(name, chips, px, minW = LINE.HEADW) {
@@ -62,7 +71,7 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // P202: today = 오늘 일한 워크스페이스 키들(Set·배열, todayWorkspaces). 폴더 차례는 오늘 일한 폴더들(이름순) → 나머지 폴더들(이름순), 사이드바 손 차례(order)는 쓰지 않는다.
 //   columns = 1 | 2 | 'auto'(PC만: view = 맞춤 칸 { w, h }에서 두 열 맞춤 배율이 한 열보다 COLS2.GAIN배 넘게 크면 두 열). → sections(오늘·이전 이름표 자리), ncol, colDx, measure
 export function lineageLayout(graph, opts = {}) {
-  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, keepKeys = null, mergers = null } = opts; // P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P276: mergers = lib/merger.js mapMergers 결과(세션 id)
+  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, keepKeys = null, mergers = null, tags = null } = opts; // P335: tags = 카드 id → 꼬리표 수(1~2, PC만). P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P276: mergers = lib/merger.js mapMergers 결과(세션 id)
   if (!phone && columns === 'auto') {
     // P253: 열 판단은 이름표 계단(label, 배율에 따라 바뀐다)과 상관없이 바탕 글 크기(label 1)의 한 열 배치로 한다.
     //   전에는 그 계단의 배치로 재서, 줌인·줌아웃으로 계단이 바뀌면 열이 하나·둘로 바뀌며 밀렸다. 이제 열 수는 그래프와 보기 칸(창 크기)으로만 바뀐다
@@ -263,7 +272,7 @@ export function lineageLayout(graph, opts = {}) {
       seq.set(key, { roots: roots.map((r) => r.id), away: away.map((n) => n.id), solos: solos.map((n) => n.id), mergers: nodes.filter((n) => onHead(n.id)).map((n) => n.id) });
       const chips = chipCounts(all.map((n) => tierOf(n.id)));
       if (phone) { y += phoneRow(key, g, wi, chips, all.length); return; }
-      const end = stack(key, y + L.RT), stackH = end == null ? 0 : end - y;
+      const end0 = stack(key, y + L.RT), end = end0 == null ? null : end0 + tagPass(key, y), stackH = end == null ? 0 : end - y;
       const h = Math.max(stackH, L.ROWMIN, heads.get(key).h + 10) + L.RB;
       rows.push({ key, name: nameOf(key), band: g.id, first: wi === 0, y, h, x: ox + L.SPINE, w: W - L.SPINE, chips, count: all.length, ox, col: ci, today: !!g.today });
       y += h;
@@ -392,6 +401,23 @@ export function lineageLayout(graph, opts = {}) {
     // P276: head가 놓이지 않은(접힌 가지 안) merger는 솔로로
     for (const s of ms) if (!cards.has(s)) { const f = mFlag(s); if (f.merger) f.merger.head = null; cards.set(s, { x: ox + COL[0], y: cy, w: L.CW, h: H(s), node: byId.get(s), ws: key, depth: -1, solo: true, fold: 0, ...f }); cy += H(s) + (last = L.GY); }
     return last == null ? null : cy - last;
+  }
+
+  // ---- P335: 꼬리표 자리. 줄 안에서 위에서부터, 꼬리표가 있는 카드 위(같은 열의 위 카드 아래 끝, 없으면 줄 위 끝 top)가 tagRoom보다 좁으면
+  //   그 카드와 그보다 아래(같은 줄의 모든 열)를 모자란 만큼 내린다. 늘어난 높이를 돌려준다(줄 높이에 더한다) ----
+  function tagPass(key, top) {
+    if (phone || !tags || !tags.size) return 0;
+    const bs = [...cards.entries()].filter(([, b]) => b.ws === key).sort((a, b) => a[1].y - b[1].y);
+    let total = 0;
+    for (const [id, b] of bs) {
+      const need = tagRoom(tags.get(id) || 0, label, !!b.thin);
+      if (!need) continue;
+      let floor = top;
+      for (const [, o] of bs) if (o !== b && o.x === b.x && o.y < b.y) floor = Math.max(floor, o.y + o.h);
+      const dy = Math.ceil(need - (b.y - floor));
+      if (dy > 0) { const y0 = b.y; for (const [, o] of bs) if (o.y >= y0) o.y += dy; total += dy; }
+    }
+    return total;
   }
 
   // ---- P166: 휴대폰 줄 하나(머리 = 위 띠, 그 아래 쌓음). 줄 높이를 돌려준다 ----
