@@ -64,6 +64,7 @@ export function installUnits(Store) {
     mergeUnitOf(sourceId) { return unitRow(this.st("SELECT * FROM work_units WHERE source_unit = ? AND origin = 'merge' ORDER BY created_at DESC LIMIT 1").get(sourceId)); },
     // P267: 열린 합치기 일 가운데 맡은 merger가 없는 것(띄우는 중, 교대 중), 먼저 온 것부터
     // P267: 열린 합치기 일(창의 하위 → merger 선)
+    mergeUnitsClosedSince(t) { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status IN ('done', 'failed') AND closed_at >= ? ORDER BY closed_at").all(t).map(unitRow); }, // P338: 봇 탭의 오늘 병합 수
     openMergeUnits() { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status = 'open' ORDER BY created_at").all().map(unitRow); },
     unassignedMergeUnits() { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status = 'open' AND to_session = '' ORDER BY created_at").all().map(unitRow); },
     // P290: 끝난 합치기 일 가운데 정리 알림을 아직 보내지 않은 것(meta.summary pending), 먼저 닫힌 것부터

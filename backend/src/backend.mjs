@@ -17,6 +17,7 @@ import { DeliveryQueue, bgOnlyOf, steerBlock } from './delivery.mjs';
 import { docHandlers } from './doc-watch.mjs'; // P257: 문서 점검 판 API(docs.status·enable·disable)
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { mergerHandlers } from './merger.mjs'; // P267: merger.status | asks | answer
+import { botsHandlers } from './bots.mjs'; // P338: bots.status, merger.configs, merger.config.set
 import { retireRigRoles } from './old-roles.mjs'; // P269: 옛 rig 역할 세션을 보통 세션으로(한 번)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
@@ -2333,6 +2334,7 @@ export class Backend {
       'session.get': (p) => this.get(p),
       'session.send': (p) => this.send(p),
       ...docHandlers(this), // P257: docs.status·docs.enable·docs.disable
+      ...botsHandlers(this), // P338: 설정 › 봇 탭(읽기 전용 요약, 저장소별 merge.json)
       ...mergerHandlers(this), // P267: 합치기 merger(창 쪽 계약: merger.status, merger.asks, merger.answer)
       'records.read': (p) => this.branch.units.readRecords(p || {}), // P334: 일 기록 보기(카드의 기록 단추)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
