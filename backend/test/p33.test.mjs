@@ -99,7 +99,8 @@ test('P33 옮기기: 옛 설정 → 호출자, 레일 네 단추 순서로 즐�
   assert.deepEqual([c.harness, c.command, c.icon], ['command', 'ocx claude', 'deepseek']);
   // P115·P255: 옮긴 목록(v2)의 호출자는 검사를 지난다(DeepSeek는 env에 게이트웨이 주소를 그대로 둔 보통 claude 런처)
   const m = migrateLaunchers(v);
-  for (const l of m.list.items) assert.deepEqual(normalizeLauncher(l, { others: m.list.items }), l, l.id);
+  // P330: Codex에 승인 칸이 생겨 빈 승인 방식은 manual(덧붙이지 않음)로 정리된다
+  for (const l of m.list.items) assert.deepEqual(normalizeLauncher(l, { others: m.list.items }), { ...l, ...(l.harness === 'codex' && !l.permissionMode ? { permissionMode: 'manual' } : {}) }, l.id);
   assert.equal(m.list.items.find((l) => l.id === 'deepseek').env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:10100');
   assert.equal('connection' in m.list.items.find((l) => l.id === 'deepseek'), false);
   assert.deepEqual(LEGACY_KEYS.sort(), Object.keys(old).sort());

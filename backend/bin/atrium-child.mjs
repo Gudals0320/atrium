@@ -692,6 +692,11 @@ function printModels(x) {
     say(`  ${f.label}: 모델 목록은 보드가 모른다. 모델 이름을 그대로 준다(-m)${f.efforts.length ? `. 노력 ${f.efforts.join(', ')}(준비되면 보드가 /reasoning으로 넣는다)` : ''}
     ${f.command}`);
   }
+  if (x.contracts && x.contracts.length) { // P330: 하네스 계약(보드가 --model·--effort를 그 하네스에 넘기는 길. 받지 않는 값은 빼고 응답에 한 줄)
+    say('');
+    say('에이전트별로 --model·--effort가 넘어가는 길(atrium child --kind <종류> --model <이름> --effort <값>):');
+    for (const c of x.contracts) say(`  ${c.text}`);
+  }
   say('');
   say('사용자가 모델을 말로 하면(예: "glm flash") --model에 그 말을 그대로 줘도 보드가 이 목록에서 푼다. 여럿이 맞으면 보드가 후보를 돌려준다.');
 }

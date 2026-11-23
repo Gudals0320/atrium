@@ -177,7 +177,7 @@ test('P208 띄우기 길(backend spawn): Codex 런처 인자의 model_reasoning_
     const r2 = await x.b.spawn({ cwd: x.cwd, name: 'c2', kind: 'codex', effort: 'xhigh' });
     assert.deepEqual(x.b.sessions.get(r2.sessionId).harnessPlan.args, ['-c', 'model_reasoning_effort="xhigh"']);
     const op = await x.b.spawn({ cwd: x.cwd, name: 'o1', kind: 'opencode', effort: 'low' });
-    assert.deepEqual(op.effort, { value: 'low', applied: false, ignored: true });
+    assert.deepEqual(op.effort, { value: 'low', applied: false, ignored: true, note: '--effort low는 무시했다: opencode는 노력 수준을 받지 않는다(호출자 인자나 opencode 설정을 따른다).' }); // P330: 응답에 한 줄
     assert.deepEqual(x.b.sessions.get(op.sessionId).harnessPlan.args, []);
     const before = x.b.sessions.size;
     await assert.rejects(x.b.spawn({ cwd: x.cwd, name: 'c3', kind: 'codex', effort: 'turbo' }), (e) => e.code === 'bad_request');

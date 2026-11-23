@@ -11,7 +11,7 @@ import { useStore, toast, loadLaunchers, getState } from './store.js';
 import { KindIcon } from './SessionNode.jsx';
 import { Icon } from './lib/icons.jsx';
 import { useT, errText } from './lib/i18n.js';
-import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES, harnessEfforts, COMMAND_FAMILIES, autoFamily, commandFamily } from './lib/launchers.js'; // P299: harnessEfforts. P309: 하네스 계열
+import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES, harnessEfforts, COMMAND_FAMILIES, autoFamily, commandFamily, contractView, checkRows } from './lib/launchers.js'; // P299: harnessEfforts. P309: 하네스 계열. P330: 계약 안내·점검
 import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue, orchHarness } from './lib/orch.js'; // P296: 자체 오케스트레이션. P309: orchHarness
 import { UsageLeft } from './Usage.jsx'; // P211: 하네스 이름 옆 그 구독의 남은 양
 
@@ -44,7 +44,7 @@ function LauncherList({ data, onEdit }) {
             <div key={l.id} className={`mt-ln-row${l.favorite ? ' fav' : ''}`} data-role="launcher-row" data-launcher={l.id} data-name={l.name}>
               <button type="button" className={`mt-ln-star${l.favorite ? ' on' : ''}`} data-action="launcher-favorite" title={l.favorite ? t('launchers.unfavorite') : t('launchers.favorite')} aria-pressed={l.favorite} onClick={() => call('launcher.favorite', { id: l.id, favorite: !l.favorite }, t)}>{l.favorite ? '★' : '☆'}</button>
               <LauncherIcon l={l} />
-              <span className="mt-ln-name" title={l.name}>{l.name}{launcherOrchestrates(data.harnesses, l) && <span className="mt-orch-tag" data-role="launcher-orch-tag" title={t('orch.fieldNote')}>{t('orch.tag')}</span>}<UsageLeft l={l} /></span>
+              <span className="mt-ln-name" title={l.name}>{l.name}{launcherOrchestrates(data.harnesses, l) && <span className="mt-orch-tag" data-role="launcher-orch-tag" title={t('orch.fieldNote')}>{t('orch.tag')}</span>}{contractView(l.preview && l.preview.contract).flag && <span className="mt-ln-cflag" data-role="launcher-contract-flag" title={t('launcherContract.rowFlag')}>!</span>}<UsageLeft l={l} /></span>
               <span className="mt-ln-line mono" title={previewLine(l.preview, t('launchers.shellPreview'))}>{previewLine(l.preview, t('launchers.shellPreview'))}{l.preview && l.preview.env && l.preview.env.length ? <span className="dim"> · {t('launchers.envShort')}: {l.preview.env.join(', ')}</span> : null}</span>
               <span className="mt-ln-acts">
                 <button type="button" className="mt-btn small ghost" data-action="launcher-up" disabled={fi <= 0} title={t('launchers.up')} onClick={() => move(l.id, -1)}>↑</button>
@@ -135,6 +135,8 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
   const [pv, setPv] = useState(null); // { line, env } 또는 { error }
   const [busy, setBusy] = useState(false);
   const [fav, setFav] = useState(!init.id);
+  const [ck, setCk] = useState(null); // P330: 점검 결과(launcher.check)
+  const [ckBusy, setCkBusy] = useState(false);
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const fields = harnessFields(harnesses, d.harness);
   const has = (f) => fields.includes(f);
@@ -159,6 +161,24 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
     setBusy(false);
     if (r) onDone();
   };
+  // P330: 겹치는 인자를 칸으로 옮기기·하네스 런처로 바꾸기(백엔드 launcher.fix, 저장하지 않는다). 점검(launcher.check: --version·--help만)
+  const fix = async (action) => {
+    try {
+      const r = await api.call('launcher.fix', { launcher: { ...body(), name: d.name || '…' }, action });
+      const n = r.launcher;
+      setD((x) => ({ ...x, harness: n.harness, model: n.model || '', effort: n.effort || '', permissionMode: n.permissionMode || '', args: n.args || '', command: n.command || '', startCommand: n.startCommand || '', family: n.family || '', envText: envToText(n.env) }));
+      setCk(null);
+      toast(t(action === 'harness' ? 'launcherContract.converted' : 'launcherContract.moved', { n: (r.moved || []).length }));
+    } catch (e) { toast(t('launchers.saveFailed', { error: errText(e) }), 'error'); }
+  };
+  const check = async () => {
+    setCkBusy(true);
+    try { setCk(await api.call('launcher.check', { launcher: { ...body(), name: d.name || '…' } })); } catch (e) { setCk({ error: 'failed', command: errText(e) }); }
+    setCkBusy(false);
+  };
+  const cv = contractView(pv && !pv.error ? pv.contract : null);
+  // P330: 승인 인자가 없는 하네스(실행 명령 omh 등, 계약 hint approvalVia none)는 승인 칸을 숨긴다(dsh처럼)
+  const noApproval = !!(pv && !pv.error && pv.contract && pv.contract.hint && pv.contract.hint.approvalVia === 'none');
   const secrets = secretNames(d.envText);
   const models = harnessModels(harnesses, d.harness);
   const labels = harnessModelLabels(harnesses, d.harness);
@@ -197,7 +217,7 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
         {has('effort') && <label className="mt-ln-f"><span>{t('settings.effort')}</span>
           <select data-field="launcher-effort" value={d.effort} onChange={(e) => set('effort', e.target.value)}>{harnessEfforts(harnesses, d.harness).map((o) => <option key={o} value={o}>{o === '' ? t('launcherEffort.harnessDefault', { harness: harnessName(harnesses, d.harness, t) }) : o}</option>)}</select>
         </label>}
-        {has('permissionMode') && <label className="mt-ln-f"><span>{t('settings.permissionMode')}</span>
+        {has('permissionMode') && !noApproval && <label className="mt-ln-f"><span>{t('settings.permissionMode')}</span>
           <select data-field="launcher-permissionMode" value={d.permissionMode || defaultPermission(harnesses, d.harness)} onChange={(e) => set('permissionMode', e.target.value)}>{MODES.map((o) => <option key={o}>{o}</option>)}</select>
         </label>}
         {/* P203: AGY는 권한 생략이 아니면 샌드박스가 atrium을 막는다(승인 칸 아래 한 줄) */}
@@ -225,6 +245,21 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
         </> : '…'}
       </div>
       {warns.map((w, i) => <div key={i} className="mt-ln-secret warn" data-role={w.key === 'launcherStart.notFound' ? 'launcher-start-warn' : 'launcher-model-warn'}>{t(w.key, w.vars)}</div>)}
+      {/* P330: 하네스 계약 안내(모델 이름을 얻는 곳, 노력 값과 넘기는 길, 승인 칸이 바뀌는 인자), 겹치는 추가 인자, 하네스 런처로 바꾸기 권함 */}
+      {cv.convert && <div className="mt-ln-contract conv" data-role="launcher-convert-note" data-harness={cv.convert.harness}>
+        <span>{t('launcherContract.convert', { harness: harnessName(harnesses, cv.convert.harness, t), start: cv.convert.startCommand ? t('launcherContract.convertStart', { cmd: cv.convert.startCommand }) : '' })}</span>
+        <button type="button" className="mt-btn small" data-action="launcher-convert" onClick={() => fix('harness')}>{t('launcherContract.convertBtn')}</button>
+      </div>}
+      {cv.hint.length > 0 && <ul className="mt-ln-contract" data-role="launcher-contract">{cv.hint.map((h, i) => <li key={i} className="mono-ish">{t(h.key, { ...h.vars, where: h.vars.sourceKey ? t(h.vars.sourceKey) : '' })}</li>)}</ul>}
+      {cv.overlaps.length > 0 && <div className="mt-ln-contract ov" data-role="launcher-overlap">
+        <ul>{cv.overlaps.map((o, i) => <li key={i} className={o.tone} data-tone={o.tone}>{t(o.key, { ...o.vars, field: o.vars.field ? t(`launcherPaste.field.${o.vars.field}`) : '' })}</li>)}</ul>
+        {cv.movable && <button type="button" className="mt-btn small" data-action="launcher-move-args" onClick={() => fix('fields')}>{t('launcherContract.moveBtn')}</button>}
+      </div>}
+      {d.harness !== 'shell' && <div className="mt-ln-check" data-role="launcher-check">
+        <button type="button" className="mt-btn small" data-action="launcher-check" disabled={ckBusy || (d.harness === 'command' && !d.command.trim())} onClick={check}>{ckBusy ? t('launcherCheck.running') : t('launcherCheck.btn')}</button>
+        <span className="mt-set-hint">{t('launcherCheck.note')}</span>
+        {ck && <ul className="mt-ln-check-rows" data-role="launcher-check-result" data-ok={ck.ok ? '1' : '0'}>{checkRows(ck).map((r, i) => <li key={i} className={r.tone} data-tone={r.tone}>{t(r.key, r.vars)}</li>)}</ul>}
+      </div>}
       <div className="mt-ln-foot">
         <button type="button" className="mt-btn small primary" data-action="launcher-save" disabled={busy} onClick={save}>{d.id ? t('launchers.save') : t('launchers.create')}</button>
         {/* P97: 만들면서 레일에 고정(기본 켜짐). 만들기 단추 바로 옆 */}

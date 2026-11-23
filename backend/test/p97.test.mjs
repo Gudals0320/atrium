@@ -36,8 +36,9 @@ test('P97 붙여 넣기: codex 한 줄 → Codex(-m 모델, 나머지는 추가 
   assert.equal(parse('codex --model=gpt-6-astra').launcher.model, 'gpt-6-astra');
   assert.equal(parse('codex -mgpt-6-sol').launcher.model, 'gpt-6-sol');
   const pi = parse('pi --thinking high');
-  assert.deepEqual([pi.recognized.as, pi.launcher.harness, pi.launcher.args], ['kind', 'pi', '--thinking high']);
-  assert.equal(parse('pi --x', []).recognized.as, 'command', 'herdr가 모르는 종류면 명령 한 줄');
+  assert.deepEqual([pi.recognized.as, pi.launcher.harness, pi.launcher.args, pi.launcher.effort], ['kind', 'pi', '', 'high']); // P330: pi --thinking은 노력 칸으로
+  assert.equal(parse('grok --x', []).recognized.as, 'command', 'herdr가 모르는 종류면 명령 한 줄');
+  assert.equal(parse('pi --x', []).recognized.as, 'kind', 'P330: 판이 아는 하네스(계약 표)는 터미널 목록이 없어도 그 하네스');
 });
 
 test('P97 붙여 넣기: 여러 줄(PowerShell 이어 쓰기, $env:), bash(\\ 이어 쓰기, 이름=값 앞머리, export)', () => {

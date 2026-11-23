@@ -31,7 +31,8 @@ import { predictTrust, repoHasCommit, buildStartArgs, fillBoardHooks } from './l
 import { HARNESSES, harnessOf, splitArgs, joinArgs, startOpt, effortArgsOf, effortIgnoredLine, agentLauncherOf } from './launchers.mjs'; // P309: agentLauncherOf(하네스 계열 명령 런처) // P41. P96: splitArgs. P97: 실행 명령
 import { isModelName } from './model-name.mjs'; // P96
 import { shownModel } from './model-now.mjs'; // P299: atrium me의 모델·노력 수준
-import { AGY_APPROVAL, AGY_APPROVAL_FLAGS, adapterOf } from './harness.mjs'; // P192. P329: 보일 모델 인자(하네스 모양, omo는 --model)
+import { AGY_APPROVAL } from './harness.mjs'; // P192. P329의 modelArgv는 계약 표 modelArgsFor로 합쳤다
+import { CODEX_APPROVAL, HERMES_APPROVAL, OPENCODE_APPROVAL, hasApprovalArgs as contractHasApproval, approvalArgsFor, modelArgsFor, contractLines } from './harness-contract.mjs'; // P330: 하네스 계약 표
 import { buildCatalog, resolveModel, candidateLines, describeEntry, launcherRef } from './models.mjs'; // P41
 import { takenNames, shownName } from './session-label.mjs'; // P66
 import { workspaceNames } from './workspaces.mjs';
@@ -107,33 +108,24 @@ export const branchAllow = () => ATRIUM_ALLOW;
 // 무엇으로 띄우는가: --launcher면 그 호출자, 아니면(--kind만, --model이 그 하네스 모델로 풀림) 판 레일의 그 종류 기본 호출자를 바탕으로 띄운다
 // (추가 인자·모델. --model을 주면 모델만 덮는다). 그 종류의 호출자가 없으면 맨 명령. 그래서 사람이 레일 단추로 띄운 것과 같은 설정이 된다.
 // 권한: 부모(Claude Code)의 권한 모드를 그 하네스의 승인 인자로 옮긴다. 호출자의 추가 인자에 승인·샌드박스 인자가 있으면 호출자 것이 이긴다.
-// Codex(0.167 --help): manual·plan은 덧붙이지 않는다(Codex 사용자 설정의 approval_policy). acceptEdits·auto는 작업 폴더 쓰기 샌드박스 + 필요할 때 묻기
-// (옛 --full-auto와 같은 뜻), dontAsk·bypassPermissions는 묻지 않고 샌드박스 없이. 표에 없는 종류(pi 등)는 옮기지 않는다
+// 표는 하네스 계약(harness-contract.mjs, 근거 harness-contract.md). P330: Codex auto는 --approve-for-me(0.167: 승인 요청을 자동 검토로),
+//   acceptEdits는 작업 폴더 쓰기 샌드박스 + 필요할 때 묻기, dontAsk·bypassPermissions는 묻지 않고 샌드박스 없이. manual·plan은 덧붙이지 않는다(Codex 사용자 설정).
+//   Hermes·opencode는 묻지 않는 방식만(--yolo, --auto). 표에 없는 종류(pi, dsh 등)는 옮기지 않는다
 export const APPROVAL_ARGS = {
-  codex: {
-    manual: [], plan: [],
-    acceptEdits: ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request'],
-    auto: ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request'],
-    dontAsk: ['--dangerously-bypass-approvals-and-sandbox'],
-    bypassPermissions: ['--dangerously-bypass-approvals-and-sandbox'],
-  },
+  codex: CODEX_APPROVAL,
   agy: AGY_APPROVAL, // P192: AGY(manual은 덧붙이지 않음, plan·acceptEdits·auto는 --mode, dontAsk·bypassPermissions는 --dangerously-skip-permissions)
+  hermes: HERMES_APPROVAL, // P330
+  opencode: OPENCODE_APPROVAL, // P330
 };
-const CODEX_APPROVAL_FLAGS = new Set(['-a', '--ask-for-approval', '-s', '--sandbox', '--approve-for-me', '--dangerously-bypass-approvals-and-sandbox', '--full-auto', '--yolo']);
-const CODEX_APPROVAL_KEY = /^(approval_policy|sandbox_mode)\s*=/;
-// 호출자의 추가 인자에 승인·샌드박스 인자가 있는가(-c approval_policy=…, -c sandbox_mode=…도 센다)
-export function hasApprovalArgs(kind, args = []) {
-  if (kind === 'agy') return args.some((a) => AGY_APPROVAL_FLAGS.has(String(a).split('=')[0])); // P192
-  if (kind !== 'codex') return false;
-  return args.some((a, i) => CODEX_APPROVAL_FLAGS.has(a.split('=')[0])
-    || ((a === '-c' || a === '--config') && CODEX_APPROVAL_KEY.test(args[i + 1] || ''))
-    || (a.startsWith('--config=') && CODEX_APPROVAL_KEY.test(a.slice(9))) || (a.startsWith('-c') && a.length > 2 && CODEX_APPROVAL_KEY.test(a.slice(2))));
-}
+// 호출자의 추가 인자에 승인·샌드박스 인자가 있는가(Codex는 -c approval_policy=…, -c sandbox_mode=…도 센다). P330: 계약 표 한곳
+export const hasApprovalArgs = (kind, args = []) => contractHasApproval(kind, args);
 // → { args, from: parent(옮김) | launcher(호출자 것이 이김) | harness(덧붙이지 않음, 그 하네스의 사용자 설정) | null(옮기지 않는 종류) }
-export function approvalArgsOf(kind, mode, launcherArgs = []) {
+// P330: 실행 명령이 omh면(Hermes 승인 인자를 받지 않는다) 옮기지 않는다
+export function approvalArgsOf(kind, mode, launcherArgs = [], startCommand = '') {
   const table = APPROVAL_ARGS[kind];
   if (!table) return { args: [], from: null };
   if (hasApprovalArgs(kind, launcherArgs)) return { args: [], from: 'launcher' };
+  if (kind === 'hermes' && startCommand && !approvalArgsFor(kind, 'bypassPermissions', startCommand).length) return { args: [], from: null };
   const args = table[mode] || [];
   return { args: [...args], from: args.length ? 'parent' : 'harness' };
 }
@@ -158,7 +150,6 @@ export function withoutModelArgs(args = []) {
 // P299: atrium me에 보일 모델·노력 수준(하네스가 지금 쓰는 값, 모르면 띄운 값. Hermes는 띄운 --reasoning)
 const modelEffortOf = (x) => { const m = shownModel({ model: x.model, effort: x.effort }, x.rt && x.rt.modelNow); return { model: m.model || null, effort: m.effort || null }; };
 // P329: 보일 명령의 모델 인자(그 하네스 모양: codex·hermes -m, pi·omo --model). 어댑터가 없거나 모델 인자를 받지 않는 하네스는 -m(예전과 같다)
-const modelArgv = (kind, model) => { if (!model) return []; const a = adapterOf(kind); const m = a ? a.modelArgs(model) : []; return m.length ? m : ['-m', model]; };
 export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) {
   const kind = route.kind;
   const inherit = route.type === 'inherit-harness';
@@ -172,11 +163,11 @@ export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) 
   // P205: AGY 하위는 부모 권한 모드와 상관없이 권한 생략으로 띄운다(AGY 샌드박스가 판 명령 atrium을 막아 하위가 atrium done을 못 한다).
   // 호출자 추가 인자에 AGY 승인 인자가 있으면(approvalArgsOf의 launcher) 그것을 따른다
   const agyBypass = kind === 'agy' && !inherit;
-  const approval0 = inherit ? { args: [], from: 'parent-harness' } : approvalArgsOf(kind, agyBypass ? 'bypassPermissions' : permissionMode, largs);
+  const approval0 = inherit ? { args: [], from: 'parent-harness' } : approvalArgsOf(kind, agyBypass ? 'bypassPermissions' : permissionMode, largs, l ? l.startCommand || '' : '');
   const approval = agyBypass && approval0.from === 'parent' ? { ...approval0, from: 'agy-bypass' } : approval0;
   const args = [...largs, ...approval.args];
   return {
-    launcher: l, model, args, argv: [...modelArgv(kind, model), ...args],
+    launcher: l, model, args, argv: [...modelArgsFor(kind, model, l ? l.startCommand || '' : '', args), ...args], // P330: 그 하네스의 모델 모양(-m, --model, 설정·env면 없음)
     record: { base: route.type === 'launcher' ? 'launcher' : inherit ? 'parent' : l ? 'rail' : 'bare', launcher: l ? l.name : null, model, modelFrom: override ? 'model' : model ? 'launcher' : null, approvalArgs: approval.args, approvalFrom: approval.from, parentPermissionMode: permissionMode },
   };
 }
@@ -831,7 +822,7 @@ export class Branch {
       effortNote: effortPlan && effortPlan.ignored ? effortIgnoredLine(kind, effortPlan.why === 'launcherArgs' ? effortPlan.effort : otherEffort, effortPlan.why || null) : null, // P299: Hermes 까닭 // P208: 노력 수준을 받지 않는 종류
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
-      harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...modelArgv(kind, other.model), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
+      harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...modelArgsFor(kind, other.model, other.launcher ? other.launcher.startCommand || '' : '', effortPlan.args), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
       permissionMode: child.permissionMode, state, trust: out.trust, waited: wait,
       status: needsTrust ? 'needs_trust' : state, needsTrust, tellHuman: needsTrust ? trustSentence(name) : null, gate: gate ? 'trust' : null,
       firstPrompt: first ? { ...first, status: (b.store.getDelivery(first.deliveryId) || {}).status || first.status } : null,
@@ -860,7 +851,7 @@ export class Branch {
     const inherit = await this.routeOf(parent, {}).catch(() => null);
     // P299: 모델 목록을 판이 모르는 하네스(Hermes)는 안내 한 줄(이름을 그대로 -m으로, 노력 수준 값)
     const freeModels = Object.values(HARNESSES).filter((h) => h.freeModel).map((h) => ({ harness: h.id, kind: h.kind, label: h.label, efforts: (h.efforts || []).filter(Boolean), command: `atrium child <이름> --kind ${h.kind} --model <모델 이름>${h.efforts ? ' [--effort <노력>]' : ''}` }));
-    return { entries: cat.entries.map(row), gateways: cat.gateways, freeModels, parent: { name: parent.name, model: parent.model || null, effort: parent.effort || null, gateway: inherit && inherit.gateway ? inherit.gateway : null } };
+    return { entries: cat.entries.map(row), gateways: cat.gateways, freeModels, contracts: contractLines(), /* P330: 하네스마다 --model·--effort가 무엇으로 넘어가는지 */ parent: { name: parent.name, model: parent.model || null, effort: parent.effort || null, gateway: inherit && inherit.gateway ? inherit.gateway : null } };
   }
   // 풀지 못한 이름의 오류(후보와 고르는 명령을 글에 넣는다)
   modelError(query, r, cat) {

@@ -39,7 +39,8 @@ test('P96 모델 이름 검사 한 곳: 슬래시를 받고, -로 시작·빈 �
 test('P96 승인 인자 표: 부모 권한 모드 → Codex 인자, 호출자 인자가 이긴다, 다른 종류는 옮기지 않는다', () => {
   assert.deepEqual(approvalArgsOf('codex', 'manual'), { args: [], from: 'harness' });
   assert.deepEqual(approvalArgsOf('codex', 'plan'), { args: [], from: 'harness' });
-  for (const m of ['acceptEdits', 'auto']) assert.deepEqual(approvalArgsOf('codex', m), { args: ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request'], from: 'parent' });
+  assert.deepEqual(approvalArgsOf('codex', 'acceptEdits'), { args: ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request'], from: 'parent' });
+  assert.deepEqual(approvalArgsOf('codex', 'auto'), { args: ['--approve-for-me'], from: 'parent' }); // P330: Codex 0.167 --approve-for-me(자동 검토)
   for (const m of ['dontAsk', 'bypassPermissions']) assert.deepEqual(approvalArgsOf('codex', m), { args: ['--dangerously-bypass-approvals-and-sandbox'], from: 'parent' });
   assert.deepEqual(Object.keys(APPROVAL_ARGS.codex).sort(), ['acceptEdits', 'auto', 'bypassPermissions', 'dontAsk', 'manual', 'plan']);
   for (const a of [['-s', 'read-only'], ['--sandbox=read-only'], ['-a', 'never'], ['--ask-for-approval', 'never'], ['--approve-for-me'], ['--dangerously-bypass-approvals-and-sandbox'], ['-c', 'approval_policy="never"'], ['--config', 'sandbox_mode="read-only"'], ['--config=approval_policy=never'], ['-capproval_policy=never']]) {
